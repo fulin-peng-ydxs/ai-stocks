@@ -1,0 +1,28 @@
+# ── A股趋势龙头选股、打分与回测系统 — 后端依赖 ──
+# Python 3.11+（本机 3.12）
+
+# Web / API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# 配置与校验
+pydantic>=2.6
+pydantic-settings>=2.2
+PyYAML>=6.0
+
+# 数据库（嵌入式列存）
+duckdb>=0.10
+
+# 数据处理
+pandas>=2.2
+numpy>=1.26
+
+# 数据源
+akshare>=1.13
+baostock>=0.8.8
+
+# 调度
+APScheduler>=3.10
+
+# 测试
+pytest>=8.0

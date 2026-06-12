@@ -1,0 +1,77 @@
+/* 全局重置 + 主题底色：消除浏览器默认 body 边距导致的周边空白 */
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+body {
+  background: var(--el-bg-color-page);
+  color: var(--el-text-color-primary);
+}
+
+/* ── 全站自适应布局契约（禁止整页滚动；内容超高 → 成长区内部滚动）──
+   .v-page  : 页面根（flex 纵向、占满内容区、overflow:hidden）。子元素默认按内容高（固定区）。
+   .v-grow  : 表格成长区（占剩余高度）；内部 el-table 用 height="100%" 即表体内部滚动、表头吸顶。
+   .v-scroll: 长内容成长区（区域内部滚动，如回测结果/配置/详情）。
+   用法：页面根挂 .v-page；列表/表格卡挂 .v-grow 并把 el-table height 改为 100%；
+        长内容区挂 .v-scroll。固定区（标题/筛选/操作栏/分页）无需额外类。 */
+.v-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 12px;
+}
+.v-page > * { flex: 0 0 auto; min-height: 0; }
+.v-grow { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.v-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+/* el-card 作为成长区时撑满高度，并让其 body 成为可放表格的 flex 列 */
+.v-grow > .el-card,
+.v-grow.el-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.v-grow > .el-card > .el-card__body,
+.v-grow.el-card > .el-card__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* 成长区里的表格占满；其后的分页等保持自身高 */
+.v-grow .el-table { flex: 1 1 auto; min-height: 0; }
+
+/* 交易日历高亮（回测页日期选择器，popper 挂在 body 故用全局样式 + popper-class 限定）：
+   交易日=醒目蓝色高亮块，非交易日=明显弱化，一眼区分可选与不可选 */
+.trade-cal .el-date-table td.available:not(.current):not(.today) .el-date-table-cell__text {
+  color: var(--el-color-primary);
+  font-weight: 700;
+  background: var(--el-color-primary-light-9);
+  border-radius: 5px;
+}
+.trade-cal .el-date-table td.available:not(.current):not(.today):hover .el-date-table-cell__text {
+  background: var(--el-color-primary-light-7);
+  color: var(--el-color-primary);
+}
+.trade-cal .el-date-table td.disabled .el-date-table-cell__text {
+  color: var(--el-text-color-placeholder);
+  background: transparent;
+  opacity: 0.4;
+}
+/* 夜间：高亮块底色加深一点以保证对比 */
+html.dark .trade-cal .el-date-table td.available:not(.current):not(.today) .el-date-table-cell__text {
+  background: rgba(64, 158, 255, 0.18);
+  color: #79bbff;
+}
+
+/* 夜间：用柔和的深石板蓝替代 Element Plus 默认近纯黑，降低对比、减少刺眼 */
+html.dark {
+  --el-bg-color-page: #12161e; /* 页面底色 */
+  --el-bg-color: #1a202b; /* 卡片/表格底色 */
+  --el-bg-color-overlay: #1a202b;
+  --el-fill-color-blank: #1a202b;
+  --el-text-color-primary: #d2d8e0; /* 主文字：米白而非纯白 */
+  --el-text-color-regular: #b3bac6;
+  --el-border-color: #2b3340;
+  --el-border-color-light: #252c38;
+  --el-border-color-lighter: #222834;
+  --el-fill-color: #232b37; /* 分段条空槽底色 */
+  --el-fill-color-light: #1f2632;
+}

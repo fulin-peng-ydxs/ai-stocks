@@ -1,0 +1,120 @@
+"""评分规则方案测试（v2.0 M2.2）：阈值打分 bool/band/linear + 动态权重 + 仓库 CRUD/版本。"""
+
+from __future__ import annotations
+
+import pandas as pd
+import pytest
+
+from backend.scoring.score_profile import (
+    ScoreProfileModel,
+    ScoreProfileRepo,
+    resolve_indicator,
+    score_one,
+)
+from backend.storage.ddl import init_db
+from backend.storage.duckdb_client import DuckDBClient
+
+
+def _snap():
+    return pd.DataFrame({
+        "is_bull_arrange": [True, False, True],
+        "is_vol_breakout": [True, False, False],
+        "is_turnover_healthy": [True, True, False],
+        "dist_to_high_2y": [0.0, 0.25, 0.5],   # 越小越接近新高
+        "rs_pct": [100.0, 50.0, 0.0],
+        "float_mv": [1e9, 5e9, 1e10],
+    }, index=["A", "B", "C"])
+
+
+def test_score_one_bool():
+    s = score_one(pd.Series([True, False, None]).astype("boolean"), {"type": "bool"})
+    assert list(s) == [100.0, 0.0, 0.0]
+
+
+def test_score_one_linear_increasing_and_decreasing():
+    v = pd.Series([0.0, 50.0, 100.0])
+    inc = score_one(v, {"type": "linear", "min": 0.0, "max": 100.0})
+    assert list(inc) == [0.0, 50.0, 100.0]
+    # 越小越高：min=0.5→0, max=0.0→100
+    d = pd.Series([0.0, 0.25, 0.5])
+    dec = score_one(d, {"type": "linear", "min": 0.5, "max": 0.0})
+    assert list(dec) == [100.0, 50.0, 0.0]
+
+
+def test_score_one_band():
+    v = pd.Series([95, 85, 70, 30])
+    bands = [[90, 101, 100], [80, 90, 75], [60, 80, 50], [0, 60, 0]]
+    s = score_one(v, {"type": "band", "bands": bands})
+    assert list(s) == [100.0, 75.0, 50.0, 0.0]
+
+
+def test_profile_model_weighted_total_and_grade():
+    snap = _snap()
+    profile = {
+        "grade_thresholds": {"watch": 80, "leader": 90, "core": 95},
+        "items": [
+            {"indicator": "rs_pct", "weight": 0.5, "scoring": {"type": "linear", "min": 0.0, "max": 100.0}},
+            {"indicator": "is_bull_arrange", "weight": 0.5, "scoring": {"type": "bool"}},
+        ],
+    }
+    out = ScoreProfileModel(profile).score(snap)
+    # A: rs100*0.5 + bull100*0.5 = 100；B: 50*0.5+0 =25；C: 0+100*0.5=50
+    assert out.loc["A", "total_score"] == 100.0
+    assert out.loc["B", "total_score"] == 25.0
+    assert out.loc["C", "total_score"] == 50.0
+    assert out.loc["A", "grade"] == "主升浪核心"
+    assert out.loc["A", "rs_pct"] == 100.0  # 分项达标分可解释
+
+
+def test_profile_model_weight_auto_normalize():
+    """权重和≠1 时按和归一（前端通常已归一，后端兜底）。"""
+    snap = _snap()
+    profile = {"items": [
+        {"indicator": "is_bull_arrange", "weight": 2.0, "scoring": {"type": "bool"}},
+        {"indicator": "is_vol_breakout", "weight": 2.0, "scoring": {"type": "bool"}},
+    ]}
+    out = ScoreProfileModel(profile).score(snap)
+    # A 两项都满足 → 100；权重和=4 自动归一
+    assert out.loc["A", "total_score"] == 100.0
+    # C: bull满足(100)*2 + vol否(0) → 200/4 = 50
+    assert out.loc["C", "total_score"] == 50.0
+
+
+def test_resolver_dynamic_param_and_errors():
+    snap = pd.DataFrame({"ma20": [1.0], "hhv480": [2.0], "rs_pct": [50.0]})
+    assert resolve_indicator("ma", {"period": 20}, snap).iloc[0] == 1.0
+    assert resolve_indicator("hhv", {"window": 480}, snap).iloc[0] == 2.0
+    with pytest.raises(ValueError):
+        resolve_indicator("ma", {"period": 7}, snap)       # 非内置周期
+    with pytest.raises(ValueError):
+        resolve_indicator("不存在指标", {}, snap)
+
+
+def test_repo_save_get_version_delete():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        repo = ScoreProfileRepo(c)
+        items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+        v1 = repo.save("p1", "方案一", items)
+        assert v1 == 1
+        # 内容不变 → 版本不增
+        assert repo.save("p1", "方案一", items) == 1
+        # 实质变更 → +1
+        items2 = items + [{"indicator": "is_bull_arrange", "weight": 0.5, "scoring": {"type": "bool"}}]
+        assert repo.save("p1", "方案一", items2) == 2
+        got = repo.get("p1")
+        assert got["version"] == 2 and len(got["items"]) == 2
+        assert len(repo.versions("p1")) == 2
+        repo.delete("p1")
+        assert repo.get("p1") is None
+
+
+def test_repo_validate_rejects_bad_profile():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        repo = ScoreProfileRepo(c)
+        with pytest.raises(ValueError):
+            repo.save("bad", "空", [])                                  # 无指标项
+        with pytest.raises(ValueError):
+            repo.save("bad", "零权重", [{"indicator": "rs_pct", "weight": 0,
+                                       "scoring": {"type": "bool"}}])

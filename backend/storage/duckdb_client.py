@@ -1,0 +1,126 @@
+"""DuckDB 连接层（SDD §2.2：单文件、嵌入式、列存、与 pandas 零拷贝互通）。
+
+设计要点：
+- 单文件单写多读，契合"每日批量写 + 大量分析读"。
+- 提供 execute/query_df 便捷方法；query_df 直接返回 pandas DataFrame。
+- 上下文管理器 + 模块级单例（get_client）两种用法。
+- 连接惰性创建；首次访问自动建好 data/ 目录。
+
+注意：DuckDB 默认单连接即可满足本系统（单用户本地 EOD）。
+后续 Repository 层基于此封装点时安全查询。
+"""
+
+from __future__ import annotations
+
+import threading
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Iterator
+from uuid import uuid4
+
+import duckdb
+import pandas as pd
+
+from backend.common.exceptions import StorageError
+from backend.common.logging import get_logger
+from backend.config import get_settings
+
+log = get_logger("storage.duckdb")
+
+
+class DuckDBClient:
+    """DuckDB 单文件客户端封装。"""
+
+    def __init__(self, db_path: str | Path | None = None, read_only: bool = False):
+        if db_path is None:
+            db_path = get_settings().duckdb_path()
+        self.db_path = Path(db_path)
+        self.read_only = read_only
+        self._conn: duckdb.DuckDBPyConnection | None = None
+        # DuckDB 连接非线程安全：FastAPI 同步端点跑在线程池，并发请求会同时
+        # 操作同一连接而崩（实测并发 status+quality 必有一个 500）。用可重入锁
+        # 串行化所有 SQL（本地查询毫秒级，串行无感），保证连接同一时刻仅一个线程使用。
+        self._lock = threading.RLock()
+
+    @property
+    def conn(self) -> duckdb.DuckDBPyConnection:
+        if self._conn is None:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                self._conn = duckdb.connect(
+                    database=str(self.db_path), read_only=self.read_only
+                )
+                log.info("DuckDB connected: %s (read_only=%s)", self.db_path, self.read_only)
+            except Exception as e:  # noqa: BLE001
+                raise StorageError(f"DuckDB 连接失败: {e}") from e
+        return self._conn
+
+    def execute(self, sql: str, params: list[Any] | None = None) -> duckdb.DuckDBPyConnection:
+        """执行 SQL（DDL/DML）。"""
+        try:
+            with self._lock:
+                return self.conn.execute(sql, params or [])
+        except Exception as e:  # noqa: BLE001
+            self._conn = None  # 连接状态已污染，下次访问自动重建
+            raise StorageError(f"SQL 执行失败: {e}\nSQL: {sql[:200]}") from e
+
+    def query_df(self, sql: str, params: list[Any] | None = None) -> pd.DataFrame:
+        """查询并返回 pandas DataFrame（DuckDB 与 pandas 零拷贝互通）。"""
+        try:
+            with self._lock:
+                return self.conn.execute(sql, params or []).df()
+        except Exception as e:  # noqa: BLE001
+            self._conn = None  # 连接状态已污染，下次访问自动重建
+            raise StorageError(f"查询失败: {e}\nSQL: {sql[:200]}") from e
+
+    def register_df(self, name: str, df: pd.DataFrame) -> None:
+        """把 DataFrame 注册为临时视图，便于 INSERT ... SELECT 幂等写入。"""
+        with self._lock:
+            self.conn.register(name, df)
+
+    def unregister(self, name: str) -> None:
+        # 必须同样持锁：DuckDB 连接非线程安全，未加锁的 unregister 会与其它线程
+        # 正在执行的 SQL 同时操作同一连接，导致进程级卡死/崩溃。
+        with self._lock:
+            try:
+                self.conn.unregister(name)
+            except Exception:  # noqa: BLE001
+                pass
+
+    @contextmanager
+    def temp_view(self, df: pd.DataFrame, prefix: str = "tmp") -> Iterator[str]:
+        """注册一个**进程内唯一名**的临时视图，离开作用域自动注销（register/unregister 均持锁）。
+
+        固定视图名 + 共享单连接下，并发请求会互相覆盖/注销对方的视图（数据竞争）；
+        唯一名彻底避免该冲突。用法：`with c.temp_view(df) as v: c.execute(f"... FROM {v}")`。
+        """
+        name = f"_{prefix}_{uuid4().hex}"
+        self.register_df(name, df)
+        try:
+            yield name
+        finally:
+            self.unregister(name)
+
+    def close(self) -> None:
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+            log.info("DuckDB connection closed")
+
+    # 上下文管理器
+    def __enter__(self) -> DuckDBClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+
+_client: DuckDBClient | None = None
+
+
+def get_client() -> DuckDBClient:
+    """模块级单例客户端（读写）。"""
+    global _client
+    if _client is None:
+        _client = DuckDBClient()
+    return _client

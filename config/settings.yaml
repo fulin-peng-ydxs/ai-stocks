@@ -1,0 +1,111 @@
+# ════════════════════════════════════════════════════════════════
+# A股趋势龙头选股、打分与回测系统 — 全局配置
+# 所有阈值/权重/参数集中此处，改参不改码（需求 F-CFG-01）
+# 默认值来自《需求文档》v0.4 / 《系统设计文档》v0.2
+# ════════════════════════════════════════════════════════════════
+
+# ── 路径 ──
+paths:
+  duckdb_file: "data/ai_stocks.duckdb"
+  parquet_dir: "data/parquet"
+  export_dir: "data/exports"
+  log_dir: "logs"
+
+# ── 数据源（可插拔，F-DAT-11）──
+datasource:
+  primary: "akshare"          # 主源
+  fallback: "baostock"        # 补退市股/复权因子
+  history_years: 5            # 历史深度近 5 年
+  rate_limit_per_sec: 5       # 限流：每秒请求数
+  max_retries: 3              # 重试次数
+  retry_backoff_sec: 2        # 重试退避秒数
+  socket_timeout_sec: 30      # 全局 socket 超时（秒），防公开接口请求挂死
+  cache_enabled: true
+
+# ── 标的范围 ──
+universe:
+  boards: ["主板", "创业板", "科创板"]   # 不含北交所
+  include_bse: false                      # 北交所开关（架构预留）
+  exclude_st: true                        # 剔除 ST/*ST
+  min_list_days: 60                       # 硬剔除上市 <60 交易日次新
+  long_period_na_days: 480                # 上市 <480 日：长周期指标判"不适用"
+  exclude_suspended: true                 # 剔除停牌
+  exclude_one_word_limit: true            # 剔除一字涨停（当日买不进）
+  float_mv_min: 5.0e9                      # 流通市值下限 50 亿
+  float_mv_max: 4.0e10                     # 流通市值上限 400 亿
+
+# ── 涨跌停限制（按板块/ST，回测撮合用）──
+price_limit:
+  main_board: 0.10        # 主板 ±10%
+  star_gem: 0.20          # 科创/创业 ±20%
+  st: 0.05                # ST ±5%
+
+# ── 指标参数（默认且可配，需求第 6 章）──
+indicators:
+  ma_periods: [5, 10, 20, 60, 250]
+  hhv_periods: [60, 120, 240, 480]   # 60日/120日/一年/两年 新高
+  ma_up_lookback: 5                  # 均线向上回溯 K
+  vol_breakout_n: 20                 # 放量均量窗口
+  vol_breakout_x: 2.0                # 放量倍数
+  vol_sustain_s: 5                   # 持续放量短窗
+  vol_sustain_y: 1.5                 # 持续放量倍数
+  platform_breakout_n: 60            # 平台高点窗口（用 shift(1) 防自指）
+  turnover_healthy_min: 3.0          # 健康换手下限 %
+  turnover_healthy_max: 20.0         # 健康换手上限 %
+  turnover_risk_high: 35.0           # 换手过热风险 %
+  rs_window: 120                     # RS 回溯窗口
+  adjust: "qfq"                      # 指标计算复权方式（前复权）
+
+# ── 评分模型（默认权重，可配，需求 §7.2）──
+scoring:
+  weights:
+    position: 30      # 位置（新高）
+    trend: 20         # 均线趋势
+    volume: 20        # 成交量
+    turnover: 10      # 换手率
+    rs: 10            # RS 强度
+    fund_flow: 0      # 资金流（MVP 置 0）
+  normalize_to_100: true   # 资金流缺失时其余维度重新归一到 100
+  top_n: 20                # 榜单 Top N
+  grade_thresholds:        # 分档阈值（可配）
+    watch: 80              # 观察
+    leader: 90             # 龙头候选
+    core: 95               # 主升浪核心
+
+# ── 回测（默认参数，需求 §9.2 / SDD §10.1）──
+backtest:
+  # 指数代码统一带交易所后缀，杜绝与深市个股(000xxx)代码冲突
+  benchmark_main: "000905.SH"       # 主基准：中证 500
+  benchmark_others: ["000300.SH"]   # 沪深300（中证全指 000985.SH 免费源暂取不到，待补）
+  initial_capital: 1000000.0        # 初始资金 100 万
+  top_n: 20                         # 每期最多持仓
+  lot_size: 100                     # 100 股整手
+  buy_price: "next_open"            # 买入价：次日开盘
+  sell_rule: "break_ma"             # 卖出：跌破均线
+  sell_ma_period: 20                # 默认跌破 MA20 卖
+  capital_alloc: "equal"            # 资金分配：等权
+  industry_max_pct: null            # 单行业持仓上限（null=关闭）
+  # 信号质量口径（核心概率口径）
+  hit_horizons: [5, 10, 20, 60]     # N 档
+  hit_thresholds: [0.10, 0.20, 0.30] # X 档
+  hit_horizon_main: 20              # 主口径 N=20
+  hit_threshold_main: 0.10          # 主口径 X=10%
+  # 交易成本（方向性）
+  cost:
+    commission_rate: 0.00025        # 佣金双边 万2.5
+    commission_min: 5.0             # 最低 5 元
+    stamp_tax_rate: 0.001           # 印花税卖出 千1
+    transfer_fee_rate: 0.00001      # 过户费
+    slippage: 0.002                 # 滑点 0.2%（买上浮/卖下浮）
+
+# ── 调度 ──
+scheduler:
+  enabled: false                    # 默认关闭，手动 CLI 跑
+  daily_cron_hour: 18               # 每交易日 18:00 触发
+  daily_cron_minute: 0
+
+# ── 服务 ──
+server:
+  host: "0.0.0.0"          # 0.0.0.0=对外(局域网可访问); 仅本机请改回 127.0.0.1
+  port: 8000
+  log_level: "info"

@@ -1,0 +1,257 @@
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import {
+  getIndicatorRegistry,
+  listScoreProfiles,
+  runScoreProfile,
+  type IndicatorDef,
+  type ScoreProfileSummary,
+  type ScoreRunRow,
+} from '@/api/scoreProfile'
+import TradeDatePicker from '@/components/TradeDatePicker.vue'
+import HelpTip from '@/components/HelpTip.vue'
+import { downloadCsv } from '@/utils/csv'
+import { ElMessage } from 'element-plus'
+
+const router = useRouter()
+const loading = ref(false)
+const error = ref('')
+const runDate = ref<string>('')
+const topN = ref(50)
+const rows = ref<ScoreRunRow[]>([])
+
+// 评分规则方案
+const profiles = ref<ScoreProfileSummary[]>([])
+const profileId = ref('')
+const curProfile = computed(() => profiles.value.find((p) => p.id === profileId.value))
+
+// 指标注册表：用于把指标 key 映射成中文名（分项达标分徽章）
+const registry = ref<IndicatorDef[]>([])
+function nameOf(key: string): string {
+  return registry.value.find((d) => d.key === key)?.name_cn || key
+}
+// 分项 key 顺序 = 本次结果第一行 sub_scores 的键序
+const subKeys = computed(() => (rows.value[0] ? Object.keys(rows.value[0].sub_scores) : []))
+
+function scoreLevel(v: number | undefined): string {
+  const n = v ?? 0
+  return n >= 80 ? 'hi' : n >= 50 ? 'mid' : 'lo'
+}
+function gradeType(g: string): string {
+  return g === '主升浪核心' ? 'danger' : g === '龙头候选' ? 'warning' : g === '观察' ? 'success' : 'info'
+}
+
+async function load() {
+  if (!profileId.value) return
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await runScoreProfile({
+      profile_id: profileId.value,
+      run_date: runDate.value || undefined,
+      top: topN.value,
+    })
+    rows.value = res.list
+    runDate.value = res.run_date
+    if (!res.list.length) ElMessage.info('无结果（可能该日无数据）')
+  } catch (e) {
+    error.value = (e as Error).message
+  } finally {
+    loading.value = false
+  }
+}
+
+function gotoStock(row: ScoreRunRow) {
+  router.push(`/stocks/${row.code}`)
+}
+
+function exportCsv() {
+  if (!rows.value.length) return
+  const headers = ['排名', '代码', '名称', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
+  const data = rows.value.map((r) => [
+    r.rank, r.code, r.name ?? '', r.total_score, r.grade ?? '',
+    ...subKeys.value.map((k) => Math.round(r.sub_scores[k] ?? 0)),
+  ])
+  downloadCsv(`每日榜单_${curProfile.value?.name ?? ''}_${runDate.value || 'latest'}.csv`, headers, data)
+}
+
+onMounted(async () => {
+  try {
+    registry.value = (await getIndicatorRegistry(true)).items
+    profiles.value = await listScoreProfiles()
+    if (profiles.value.length) {
+      profileId.value = profiles.value[0].id
+      await load()
+    }
+  } catch (e) {
+    error.value = (e as Error).message
+  }
+})
+</script>
+
+<template>
+  <div class="v-page">
+    <div class="page-head">
+      <div>
+        <h2 class="title-row">
+          每日榜单
+          <HelpTip title="榜单是怎么排出来的？" :width="420">
+            <p><b>不是筛选，是打分排序</b>：选一个<b>评分规则方案</b>，对全市场（仅排除 ST）每只股票按规则打分，按综合分降序取 Top N。</p>
+            <p style="margin:6px 0 2px">评分规则方案在 <b>配置管理 → 评分规则</b> 里定义和试算：每条规则 = 技术指标 + 权重 + 达标打分方式（布尔/分段/线性），权重自动归一到 100%。</p>
+            <p style="margin:6px 0 0;color:#e6a23c"><b>⚠️ 注意</b>：全市场排序、不设硬门槛，行情差时前排也是"矮个里的高个"，<b>要看分数高低而非排名</b>。</p>
+          </HelpTip>
+        </h2>
+        <span class="sub">
+          <template v-if="runDate">交易日 {{ runDate }} · 已排除 ST</template>
+          <template v-if="curProfile"> · 规则「{{ curProfile.name }}」 v{{ curProfile.version }}</template>
+        </span>
+      </div>
+      <div class="ops">
+        <span class="lbl">评分规则</span>
+        <el-select v-model="profileId" style="width: 180px" @change="load">
+          <el-option v-for="p in profiles" :key="p.id" :value="p.id" :label="p.name" />
+        </el-select>
+        <TradeDatePicker v-model="runDate" clearable />
+        <span class="lbl">Top</span>
+        <el-select v-model="topN" style="width: 88px" @change="load">
+          <el-option :value="20" label="20" />
+          <el-option :value="50" label="50" />
+          <el-option :value="100" label="100" />
+        </el-select>
+        <el-button :loading="loading" type="primary" @click="load">刷新</el-button>
+        <el-button :disabled="!rows.length" @click="exportCsv">导出 CSV</el-button>
+      </div>
+    </div>
+
+    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+
+    <el-card shadow="never" class="v-grow">
+      <el-table
+        :data="rows"
+        v-loading="loading"
+        stripe
+        height="100%"
+        @row-click="gotoStock"
+        class="clickable"
+      >
+        <el-table-column label="#" width="50">
+          <template #default="{ row }">{{ row.rank }}</template>
+        </el-table-column>
+        <el-table-column label="代码" prop="code" width="110" />
+        <el-table-column label="名称" prop="name" width="120">
+          <template #default="{ row }">{{ row.name || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="综合分" prop="total_score" width="100" sortable>
+          <template #default="{ row }">
+            <strong class="score">{{ row.total_score }}</strong>
+          </template>
+        </el-table-column>
+        <el-table-column label="评级" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.grade" :type="gradeType(row.grade)" effect="light">{{ row.grade }}</el-tag>
+            <span v-else class="muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="分项达标分" min-width="320">
+          <template #default="{ row }">
+            <div class="subchips">
+              <span
+                v-for="k in subKeys"
+                :key="k"
+                class="subchip score"
+                :class="scoreLevel(row.sub_scores[k])"
+              >
+                <i>{{ nameOf(k) }}</i><b>{{ Math.round(row.sub_scores[k] ?? 0) }}</b>
+              </span>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+  </div>
+</template>
+
+<style scoped>
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.page-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+}
+.sub {
+  color: #909399;
+  font-size: 13px;
+}
+.ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ops .lbl {
+  color: #606266;
+  font-size: 13px;
+}
+.score {
+  color: #f56c6c;
+  font-size: 15px;
+}
+.muted {
+  color: #c0c4cc;
+}
+.clickable :deep(.el-table__row) {
+  cursor: pointer;
+}
+/* 分项达标分：彩色徽章，按分值高低着色（与配置管理试算一致） */
+.subchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.subchip.score {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  padding: 2px 7px;
+  border-radius: 11px;
+  line-height: 1.5;
+  font-size: 12px;
+}
+.subchip.score i {
+  font-style: normal;
+  color: var(--el-text-color-secondary);
+}
+.subchip.score b {
+  font-variant-numeric: tabular-nums;
+}
+.subchip.score.hi {
+  background: rgba(82, 196, 26, 0.14);
+}
+.subchip.score.hi b {
+  color: #52c41a;
+}
+.subchip.score.mid {
+  background: rgba(250, 173, 20, 0.16);
+}
+.subchip.score.mid b {
+  color: #d48806;
+}
+.subchip.score.lo {
+  background: var(--el-fill-color);
+}
+.subchip.score.lo b {
+  color: var(--el-text-color-secondary);
+}
+</style>

@@ -1,0 +1,175 @@
+"""基础数据表元数据字典（数据概览·数据字典，FR-DM-1 / DM-D11）。
+
+设计：表/字段的中文说明、作用、关联关系是**相对稳定的文档**，用代码内置字典维护，
+不另建需手维护的字典表（DM-D11）。运行时由 build_catalog() 拼上每表行数、最新数据时间、
+未解决质检数，供 GET /api/data/catalog 渲染。
+
+新增基础数据维度（如股东数）时，在此登记一张表的字段说明即可被概览自动收录。
+"""
+
+from __future__ import annotations
+
+from backend.storage.duckdb_client import DuckDBClient, get_client
+
+# 每张基础数据表的元信息。
+# - date_col：用于取"最新数据时间"的列（None 表示该表无时间维度，取 NULL）。
+# - relations：与其它表的关联关系（人类可读）。
+TABLE_CATALOG: dict[str, dict] = {
+    "stock_basic": {
+        "name_cn": "股票基础信息",
+        "purpose": "全市场股票主数据：代码/名称/交易所/板块/上市退市日/行业/涨跌幅限制，所有维度的关联主键来源。",
+        "date_col": None,
+        "relations": ["daily_bar/daily_metrics 经 code 关联", "stock_group_member 经 code 关联"],
+        "fields": [
+            {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "含交易所后缀，如 600000.SH（主键）"},
+            {"name": "name", "type": "VARCHAR", "name_cn": "名称", "desc": "当前名称（含 ST 前缀）"},
+            {"name": "exchange", "type": "VARCHAR", "name_cn": "交易所", "desc": "SH 上交所 / SZ 深交所"},
+            {"name": "board", "type": "VARCHAR", "name_cn": "板块", "desc": "主板 / 创业板 / 科创板"},
+            {"name": "list_date", "type": "DATE", "name_cn": "上市日", "desc": "用于次新过滤与缺口起点"},
+            {"name": "delist_date", "type": "DATE", "name_cn": "退市日", "desc": "NULL 表示在市"},
+            {"name": "total_share", "type": "BIGINT", "name_cn": "总股本", "desc": "最新值"},
+            {"name": "float_share", "type": "BIGINT", "name_cn": "流通股本", "desc": "最新值"},
+            {"name": "industry", "type": "VARCHAR", "name_cn": "行业", "desc": "所属行业（行业集中度约束用）"},
+            {"name": "concept", "type": "VARCHAR", "name_cn": "概念", "desc": "概念标签（JSON）"},
+            {"name": "price_limit_pct", "type": "DOUBLE", "name_cn": "涨跌幅限制", "desc": "0.10 / 0.20 / 0.05(ST)"},
+        ],
+    },
+    "daily_bar": {
+        "name_cn": "日线行情",
+        "purpose": "核心大表：不复权 OHLC + 复权因子 + 成交量额/换手 + 涨跌停/停牌/一字板标记，选股与回测的行情基础。",
+        "date_col": "trade_date",
+        "relations": ["code → stock_basic", "trade_date → trade_calendar"],
+        "fields": [
+            {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "主键之一"},
+            {"name": "trade_date", "type": "DATE", "name_cn": "交易日", "desc": "主键之一"},
+            {"name": "open", "type": "DOUBLE", "name_cn": "开盘价", "desc": "不复权原始价"},
+            {"name": "high", "type": "DOUBLE", "name_cn": "最高价", "desc": "不复权"},
+            {"name": "low", "type": "DOUBLE", "name_cn": "最低价", "desc": "不复权"},
+            {"name": "close", "type": "DOUBLE", "name_cn": "收盘价", "desc": "不复权"},
+            {"name": "pre_close", "type": "DOUBLE", "name_cn": "前收盘", "desc": "算涨跌停/涨跌幅"},
+            {"name": "volume", "type": "BIGINT", "name_cn": "成交量", "desc": "股"},
+            {"name": "amount", "type": "DOUBLE", "name_cn": "成交额", "desc": "元"},
+            {"name": "adj_factor", "type": "DOUBLE", "name_cn": "复权因子", "desc": "按需算前/后复权价"},
+            {"name": "turnover_rate", "type": "DOUBLE", "name_cn": "换手率", "desc": "%"},
+            {"name": "is_st", "type": "BOOLEAN", "name_cn": "是否ST", "desc": "当日是否 ST（尽力而为）"},
+            {"name": "is_suspended", "type": "BOOLEAN", "name_cn": "是否停牌", "desc": "缺口检测区分停牌用"},
+            {"name": "limit_status", "type": "TINYINT", "name_cn": "涨跌停", "desc": "0 正常 / 1 涨停 / -1 跌停"},
+            {"name": "is_one_word", "type": "BOOLEAN", "name_cn": "一字板", "desc": "是否一字涨跌停"},
+        ],
+    },
+    "daily_metrics": {
+        "name_cn": "每日市值指标",
+        "purpose": "逐日衍生指标：流通市值 / 总市值，股票池规模过滤与分层。",
+        "date_col": "trade_date",
+        "relations": ["(code, trade_date) → daily_bar"],
+        "fields": [
+            {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "主键之一"},
+            {"name": "trade_date", "type": "DATE", "name_cn": "交易日", "desc": "主键之一"},
+            {"name": "float_mv", "type": "DOUBLE", "name_cn": "流通市值", "desc": "close × 流通股本（元）"},
+            {"name": "total_mv", "type": "DOUBLE", "name_cn": "总市值", "desc": "元（逐股质量达标关键字段）"},
+        ],
+    },
+    "index_bar": {
+        "name_cn": "指数日线",
+        "purpose": "基准指数行情（沪深300/中证500/中证全指），回测基准与相对强弱计算。",
+        "date_col": "trade_date",
+        "relations": ["trade_date → trade_calendar"],
+        "fields": [
+            {"name": "index_code", "type": "VARCHAR", "name_cn": "指数代码", "desc": "如 000300.SH（主键之一）"},
+            {"name": "trade_date", "type": "DATE", "name_cn": "交易日", "desc": "主键之一"},
+            {"name": "open", "type": "DOUBLE", "name_cn": "开盘", "desc": ""},
+            {"name": "high", "type": "DOUBLE", "name_cn": "最高", "desc": ""},
+            {"name": "low", "type": "DOUBLE", "name_cn": "最低", "desc": ""},
+            {"name": "close", "type": "DOUBLE", "name_cn": "收盘", "desc": ""},
+            {"name": "volume", "type": "BIGINT", "name_cn": "成交量", "desc": ""},
+            {"name": "amount", "type": "DOUBLE", "name_cn": "成交额", "desc": ""},
+        ],
+    },
+    "trade_calendar": {
+        "name_cn": "交易日历",
+        "purpose": "开市日判定，缺口检测（DM-D9）与点时安全的基础。",
+        "date_col": "trade_date",
+        "relations": ["被 daily_bar/index_bar 引用"],
+        "fields": [
+            {"name": "trade_date", "type": "DATE", "name_cn": "日期", "desc": "主键"},
+            {"name": "is_open", "type": "BOOLEAN", "name_cn": "是否开市", "desc": "true=交易日"},
+        ],
+    },
+    "data_update_log": {
+        "name_cn": "采集更新日志",
+        "purpose": "每次采集留痕（表/源/区间/行数/状态），支持断点续跑与采集时间线展示（FR-DM-6）。",
+        "date_col": "updated_at",
+        "relations": ["按 table_name 指向各数据表"],
+        "fields": [
+            {"name": "id", "type": "BIGINT", "name_cn": "序号", "desc": "自增"},
+            {"name": "table_name", "type": "VARCHAR", "name_cn": "目标表", "desc": "采集写入的表"},
+            {"name": "source", "type": "VARCHAR", "name_cn": "数据源", "desc": "akshare / baostock"},
+            {"name": "date_start", "type": "DATE", "name_cn": "起始日", "desc": "本次采集区间起"},
+            {"name": "date_end", "type": "DATE", "name_cn": "结束日", "desc": "本次采集区间止"},
+            {"name": "row_count", "type": "BIGINT", "name_cn": "行数", "desc": "本次写入行数"},
+            {"name": "status", "type": "VARCHAR", "name_cn": "状态", "desc": "success / failed / partial"},
+            {"name": "detail", "type": "VARCHAR", "name_cn": "详情", "desc": "失败原因/摘要"},
+            {"name": "updated_at", "type": "TIMESTAMP", "name_cn": "时间", "desc": "记录时间"},
+        ],
+    },
+    "data_quality_issue": {
+        "name_cn": "数据质量问题",
+        "purpose": "质检发现的问题台账（FR-DM-4）：类型/严重度/状态，支持单条重拉/重算修复闭环。",
+        "date_col": "detected_at",
+        "relations": ["code → stock_basic", "(code, trade_date) → daily_bar"],
+        "fields": [
+            {"name": "id", "type": "BIGINT", "name_cn": "序号", "desc": "自增"},
+            {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "涉及股票"},
+            {"name": "trade_date", "type": "DATE", "name_cn": "交易日", "desc": "涉及日期（可空）"},
+            {"name": "issue_type", "type": "VARCHAR", "name_cn": "问题类型", "desc": "ohl_repaired/abnormal_change/missing_or_suspended/adj_jump"},
+            {"name": "severity", "type": "VARCHAR", "name_cn": "严重度", "desc": "high/mid/low（DM-D10）"},
+            {"name": "status", "type": "VARCHAR", "name_cn": "状态", "desc": "open/fixing/resolved/ignored"},
+            {"name": "detail", "type": "VARCHAR", "name_cn": "详情", "desc": "问题描述"},
+            {"name": "detected_at", "type": "TIMESTAMP", "name_cn": "检出时间", "desc": ""},
+            {"name": "resolved_at", "type": "TIMESTAMP", "name_cn": "解决时间", "desc": "修复完成回写"},
+        ],
+    },
+}
+
+
+def _table_exists(client: DuckDBClient, table: str) -> bool:
+    df = client.query_df(
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema='main' AND table_name=?", [table])
+    return not df.empty
+
+
+def build_catalog(client: DuckDBClient | None = None) -> list[dict]:
+    """拼装数据字典：每表元信息 + 运行时行数 / 最新数据时间 / 未解决质检数。
+
+    返回 [{table, name_cn, purpose, rows, latest_time, fields, relations, open_issues}]。
+    """
+    client = client or get_client()
+    # 一次性取各表的未解决质检数（按 issue 涉及表归类有难度，这里给全局 open 数附在相关表）
+    out: list[dict] = []
+    for table, meta in TABLE_CATALOG.items():
+        rows = 0
+        latest_time = None
+        if _table_exists(client, table):
+            rows = int(client.query_df(f"SELECT count(*) AS n FROM {table}").iloc[0]["n"])
+            date_col = meta.get("date_col")
+            if date_col:
+                df = client.query_df(f"SELECT max({date_col}) AS t FROM {table}")
+                t = df.iloc[0]["t"]
+                latest_time = None if t is None or str(t) == "NaT" else str(t)
+        open_issues = 0
+        if table == "data_quality_issue" and _table_exists(client, table):
+            open_issues = int(client.query_df(
+                "SELECT count(*) AS n FROM data_quality_issue WHERE status='open'"
+            ).iloc[0]["n"])
+        out.append({
+            "table": table,
+            "name_cn": meta["name_cn"],
+            "purpose": meta["purpose"],
+            "rows": rows,
+            "latest_time": latest_time,
+            "fields": meta["fields"],
+            "relations": meta["relations"],
+            "open_issues": open_issues,
+        })
+    return out

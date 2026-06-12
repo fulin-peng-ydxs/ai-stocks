@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ai-stocks",
+      "runtimeExecutable": "/opt/anaconda3/bin/python3",
+      "runtimeArgs": ["-m", "backend.cli", "serve"],
+      "port": 8000
+    },
+    {
+      "name": "ai-stocks-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+[project]
+name = "ai-stocks"
+version = "0.1.0"
+description = "A股趋势龙头选股、打分与回测系统（本地 EOD，FastAPI + Vue + DuckDB）"
+requires-python = ">=3.11"
+readme = "README.md"
+
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "PyYAML>=6.0",
+    "duckdb>=0.10",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "akshare>=1.13",
+    "baostock>=0.8.8",
+    "APScheduler>=3.10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["backend*"]

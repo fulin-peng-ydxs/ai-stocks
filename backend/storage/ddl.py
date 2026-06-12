@@ -1,0 +1,601 @@
+"""DuckDB 建表 DDL（SDD §4 数据库设计）。
+
+约定：
+- 日期统一 DATE；金额单位元；价格存**不复权**原值 + adj_factor，复权价在指标层按需算。
+- 所有写入幂等：表带 PRIMARY KEY，写入用 INSERT ... ON CONFLICT DO UPDATE。
+- M1 仅建数据底座相关表；指标/方案/结果/回测表在 M2/M3/M5 各自里程碑追加。
+
+入口：init_db(client) 幂等创建全部 M1 表。
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+from backend.common.logging import get_logger
+from backend.storage.duckdb_client import DuckDBClient, get_client
+
+log = get_logger("storage.ddl")
+
+
+# ── 基础数据表（SDD §4.1）──────────────────────────────────────
+
+# 股票基础信息：ST/股本时变，此处存最新值；时变 ST/股本见 daily_bar/daily_metrics
+DDL_STOCK_BASIC = """
+CREATE TABLE IF NOT EXISTS stock_basic (
+    code            VARCHAR PRIMARY KEY,   -- 含交易所后缀，如 600000.SH
+    name            VARCHAR,               -- 当前名称
+    exchange        VARCHAR,               -- SH/SZ
+    board           VARCHAR,               -- 主板/创业板/科创板
+    list_date       DATE,                  -- 上市日
+    delist_date     DATE,                  -- 退市日（NULL=在市）
+    total_share     BIGINT,                -- 最新总股本
+    float_share     BIGINT,                -- 最新流通股本
+    industry        VARCHAR,               -- 所属行业
+    concept         VARCHAR,               -- 概念标签（JSON 字符串，可多值）
+    price_limit_pct DOUBLE                 -- 涨跌幅限制 0.10/0.20
+);
+"""
+
+# 日线行情（核心大表）：存不复权原值 + 复权因子
+DDL_DAILY_BAR = """
+CREATE TABLE IF NOT EXISTS daily_bar (
+    code          VARCHAR,
+    trade_date    DATE,
+    open          DOUBLE,        -- 不复权原始价
+    high          DOUBLE,
+    low           DOUBLE,
+    close         DOUBLE,
+    pre_close     DOUBLE,        -- 前收盘（算涨跌停用）
+    volume        BIGINT,        -- 成交量（股）
+    amount        DOUBLE,        -- 成交额（元）
+    adj_factor    DOUBLE,        -- 复权因子
+    turnover_rate DOUBLE,        -- 换手率(%)
+    is_st         BOOLEAN,       -- 当日是否 ST（尽力而为）
+    is_suspended  BOOLEAN,       -- 当日是否停牌
+    limit_status  TINYINT,       -- 0 正常 / 1 涨停 / -1 跌停
+    is_one_word   BOOLEAN,       -- 是否一字板
+    PRIMARY KEY (code, trade_date)
+);
+"""
+
+# 每日衍生指标
+DDL_DAILY_METRICS = """
+CREATE TABLE IF NOT EXISTS daily_metrics (
+    code       VARCHAR,
+    trade_date DATE,
+    float_mv   DOUBLE,    -- 流通市值 = close × float_share（自算）
+    total_mv   DOUBLE,    -- 总市值
+    PRIMARY KEY (code, trade_date)
+);
+"""
+
+# 指数日线
+DDL_INDEX_BAR = """
+CREATE TABLE IF NOT EXISTS index_bar (
+    index_code VARCHAR,   -- 000300/000905/000985 …
+    trade_date DATE,
+    open       DOUBLE,
+    high       DOUBLE,
+    low        DOUBLE,
+    close      DOUBLE,
+    volume     BIGINT,
+    amount     DOUBLE,
+    PRIMARY KEY (index_code, trade_date)
+);
+"""
+
+# 交易日历
+DDL_TRADE_CALENDAR = """
+CREATE TABLE IF NOT EXISTS trade_calendar (
+    trade_date DATE PRIMARY KEY,
+    is_open    BOOLEAN          -- 是否交易日
+);
+"""
+
+# ── 运维表（SDD §4.6）──────────────────────────────────────────
+
+# 数据更新日志（每次采集留痕，支持断点续跑）
+DDL_DATA_UPDATE_LOG = """
+CREATE TABLE IF NOT EXISTS data_update_log (
+    id          BIGINT,
+    table_name  VARCHAR,
+    source      VARCHAR,        -- akshare/baostock
+    date_start  DATE,
+    date_end    DATE,
+    row_count   BIGINT,
+    status      VARCHAR,        -- success/failed/partial
+    detail      VARCHAR,
+    updated_at  TIMESTAMP
+);
+"""
+
+# 数据质量问题（M2.8 起含 severity/status/resolved_at，支持修复闭环 FR-DM-4）
+DDL_DATA_QUALITY_ISSUE = """
+CREATE TABLE IF NOT EXISTS data_quality_issue (
+    id          BIGINT,
+    code        VARCHAR,
+    trade_date  DATE,
+    issue_type  VARCHAR,        -- ohl_repaired/abnormal_change/missing_or_suspended/adj_jump
+    severity    VARCHAR,        -- high/mid/low（DM-D10）
+    status      VARCHAR,        -- open/fixing/resolved/ignored（默认 open）
+    detail      VARCHAR,
+    detected_at TIMESTAMP,
+    resolved_at TIMESTAMP        -- 修复完成回写
+);
+"""
+
+# ── 指标定义表（M2.1b）──────────────────────────────────
+# v2.0 决策 D1：删除 indicator 预计算值表，指标全部动态实时计算。
+# 但保留一张**定义**表（非值表）：统一管理内置与自定义指标的"定义"（名称/类型/表达式/参数/启停），
+# 供 配置管理「技术指标」页 与 评分/筛选/买卖 引用。内置 kind=builtin（映射到动态计算列）；
+# 自定义 kind=expr（保存一段带 {参数} 占位的 DSL 表达式，用时渲染参数后逐股点时求值）。
+DDL_INDICATOR_DEF = """
+CREATE TABLE IF NOT EXISTS indicator_def (
+    key         VARCHAR PRIMARY KEY,
+    name_cn     VARCHAR,
+    category    VARCHAR,
+    dtype       VARCHAR,         -- bool | number
+    direction   VARCHAR,         -- higher_better | lower_better | NULL
+    kind        VARCHAR,         -- builtin | expr
+    expression  VARCHAR,         -- 表达式模板（kind=expr），含 {param} 占位
+    params      VARCHAR,         -- 参数 schema（JSON）
+    categories  VARCHAR,         -- 多分类标签（JSON 数组，可自定义）
+    enabled     BOOLEAN,
+    is_builtin  BOOLEAN,         -- 内置（不可删，仅可启停）
+    descr       VARCHAR,
+    created_at  TIMESTAMP,
+    updated_at  TIMESTAMP
+);
+"""
+
+# 自增序列（DuckDB 无 AUTO_INCREMENT，用 SEQUENCE）
+DDL_SEQUENCES = [
+    "CREATE SEQUENCE IF NOT EXISTS seq_update_log START 1;",
+    "CREATE SEQUENCE IF NOT EXISTS seq_quality_issue START 1;",
+    "CREATE SEQUENCE IF NOT EXISTS seq_task_log START 1;",
+]
+
+# M1 全部 DDL（顺序无依赖）
+M1_TABLES: dict[str, str] = {
+    "stock_basic": DDL_STOCK_BASIC,
+    "daily_bar": DDL_DAILY_BAR,
+    "daily_metrics": DDL_DAILY_METRICS,
+    "index_bar": DDL_INDEX_BAR,
+    "trade_calendar": DDL_TRADE_CALENDAR,
+    "data_update_log": DDL_DATA_UPDATE_LOG,
+    "data_quality_issue": DDL_DATA_QUALITY_ISSUE,
+}
+
+# M2 指标表：v2.0 删除 indicator 值表（动态计算）；保留 indicator_def 指标定义表
+M2_TABLES: dict[str, str] = {
+    "indicator_def": DDL_INDICATOR_DEF,
+}
+
+# ── 筛选 / 评分 / 结果表（M3，SDD §4.3/4.4）──────────────────────
+# JSON 字段统一以 VARCHAR 存 JSON 字符串（Python json.dumps/loads），不依赖 DuckDB JSON 扩展。
+
+DDL_SCREEN_PROFILE = """
+CREATE TABLE IF NOT EXISTS screen_profile (
+    id          VARCHAR PRIMARY KEY,
+    name        VARCHAR,            -- 如"趋势龙头"
+    version     INTEGER,            -- 版本号（改方案 +1）
+    expression  VARCHAR,            -- 条件 AST（JSON 字符串，含 col/expr 叶子）
+    params      VARCHAR,            -- 参数覆盖（JSON）
+    is_preset   BOOLEAN,            -- 是否内置预设
+    created_at  TIMESTAMP,
+    updated_at  TIMESTAMP
+);
+"""
+
+# 评分规则方案（v2.0 §7）：技术指标 + 权重(总和100%) + 每指标阈值打分方式(bool/band/linear)。
+# 取代 v1.0 固定 6 维 score_model。
+DDL_SCORE_PROFILE = """
+CREATE TABLE IF NOT EXISTS score_profile (
+    id               VARCHAR PRIMARY KEY,
+    name             VARCHAR,
+    version          INTEGER,
+    items            VARCHAR,       -- [{indicator,params,weight,scoring}]（JSON）
+    grade_thresholds VARCHAR,       -- 分档阈值 {watch,leader,core}（JSON）
+    is_preset        BOOLEAN,
+    created_at       TIMESTAMP,
+    updated_at       TIMESTAMP
+);
+"""
+
+DDL_SCORE_PROFILE_VERSION = """
+CREATE TABLE IF NOT EXISTS score_profile_version (
+    id               VARCHAR,
+    version          INTEGER,
+    name             VARCHAR,
+    items            VARCHAR,
+    grade_thresholds VARCHAR,
+    saved_at         TIMESTAMP,
+    PRIMARY KEY (id, version)
+);
+"""
+
+DDL_SCREEN_RESULT = """
+CREATE TABLE IF NOT EXISTS screen_result (
+    run_date    DATE,              -- 筛选所用交易日
+    profile_id  VARCHAR,
+    code        VARCHAR,
+    hit         BOOLEAN,
+    matched     VARCHAR,           -- 命中的条件明细（JSON）
+    snapshot    VARCHAR,           -- 当时各指标取值（JSON，可解释）
+    PRIMARY KEY (run_date, profile_id, code)
+);
+"""
+
+DDL_SCORE_RESULT = """
+CREATE TABLE IF NOT EXISTS score_result (
+    trade_date  DATE,
+    model_id    VARCHAR,
+    code        VARCHAR,
+    total_score DOUBLE,            -- 0~100
+    sub_scores  VARCHAR,           -- 分项分（JSON）
+    rank        INTEGER,           -- 当日排名
+    grade       VARCHAR,           -- 观察/龙头候选/主升浪核心
+    buy_point   VARCHAR,           -- 第一/二/三买点/无（M6 填）
+    risk_flags  VARCHAR,           -- 风险标签（JSON，M6 填）
+    PRIMARY KEY (trade_date, model_id, code)
+);
+"""
+
+# 买卖指标方案（v2.0 §6，M2.3）：买入条件 + 卖出条件（指标组合）+ 可选兜底，买卖成对存一条。
+DDL_TRADE_PROFILE = """
+CREATE TABLE IF NOT EXISTS trade_profile (
+    id          VARCHAR PRIMARY KEY,
+    name        VARCHAR,
+    version     INTEGER,
+    buy_tree    VARCHAR,           -- 买入条件树（JSON）
+    sell_tree   VARCHAR,           -- 卖出条件树（JSON）
+    backstop    VARCHAR,           -- 兜底 {take_profit,stop_loss,max_hold_days}（JSON，可空）
+    is_preset   BOOLEAN,
+    created_at  TIMESTAMP,
+    updated_at  TIMESTAMP
+);
+"""
+
+DDL_TRADE_PROFILE_VERSION = """
+CREATE TABLE IF NOT EXISTS trade_profile_version (
+    id          VARCHAR,
+    version     INTEGER,
+    name        VARCHAR,
+    buy_tree    VARCHAR,
+    sell_tree   VARCHAR,
+    backstop    VARCHAR,
+    saved_at    TIMESTAMP,
+    PRIMARY KEY (id, version)
+);
+"""
+
+# 方案版本历史（T-M6-7）：每次方案实质变更归档一版，供回看/恢复对比
+DDL_SCREEN_PROFILE_VERSION = """
+CREATE TABLE IF NOT EXISTS screen_profile_version (
+    id          VARCHAR,
+    version     INTEGER,
+    name        VARCHAR,
+    expression  VARCHAR,            -- 该版本条件 AST（JSON 字符串）
+    saved_at    TIMESTAMP,
+    PRIMARY KEY (id, version)
+);
+"""
+
+# 股票分组（个股查询·篮子，M2.4+）：用户手动圈定的一批股票 + 各股加入日期（=涨幅基准）
+DDL_STOCK_GROUP = """
+CREATE TABLE IF NOT EXISTS stock_group (
+    id          VARCHAR PRIMARY KEY,
+    name        VARCHAR,
+    group_date  DATE,              -- 建组日期（默认今天，可改）
+    description VARCHAR,
+    created_at  TIMESTAMP,
+    updated_at  TIMESTAMP
+);
+"""
+
+DDL_STOCK_GROUP_MEMBER = """
+CREATE TABLE IF NOT EXISTS stock_group_member (
+    group_id    VARCHAR,
+    code        VARCHAR,
+    add_date    DATE,              -- 该股加入日期（=最近涨幅基准；建组时默认=建组日期）
+    note        VARCHAR,
+    PRIMARY KEY (group_id, code)
+);
+"""
+
+M3_TABLES: dict[str, str] = {
+    "screen_profile": DDL_SCREEN_PROFILE,
+    "score_profile": DDL_SCORE_PROFILE,
+    "score_profile_version": DDL_SCORE_PROFILE_VERSION,
+    "screen_result": DDL_SCREEN_RESULT,
+    "score_result": DDL_SCORE_RESULT,
+    "screen_profile_version": DDL_SCREEN_PROFILE_VERSION,
+    "trade_profile": DDL_TRADE_PROFILE,
+    "trade_profile_version": DDL_TRADE_PROFILE_VERSION,
+    "stock_group": DDL_STOCK_GROUP,
+    "stock_group_member": DDL_STOCK_GROUP_MEMBER,
+}
+
+# ── 回测结果表（M5，SDD §4.5）──────────────────────────────────
+# JSON 字段统一以 VARCHAR 存 JSON 字符串。
+
+# 回测任务：一次 run = 一个方案/模型在一段区间的回测
+DDL_BACKTEST_RUN = """
+CREATE TABLE IF NOT EXISTS backtest_run (
+    id          VARCHAR PRIMARY KEY,
+    kind        VARCHAR,            -- strategy(完整策略) / score_check(评分验证)；旧值 signal 兼容
+    profile_id  VARCHAR,            -- 选股=筛选方案（strategy）
+    model_id    VARCHAR,            -- 旧评分模型名（默认 default，保留兼容）
+    score_profile_id VARCHAR,       -- 评分规则方案（strategy 排序 / score_check 验证）
+    trade_profile_id VARCHAR,       -- 买卖指标方案（strategy 的买/卖/兜底）
+    score_profile_version INTEGER,  -- 运行时各方案版本（命名展示 + 去重签名用）
+    profile_version       INTEGER,
+    trade_profile_version INTEGER,
+    signature   VARCHAR,            -- 全条件指纹（日期+三方案及版本+所有数值参数）；同签名记录唯一
+    date_start  DATE,
+    date_end    DATE,
+    params      VARCHAR,            -- 区间/持有期/卖出规则/成本/TopN/基准/信号口径（JSON）
+    status      VARCHAR,            -- running/done/failed
+    detail      VARCHAR,            -- 失败原因 / 摘要
+    created_at  TIMESTAMP,
+    finished_at TIMESTAMP
+);
+"""
+
+# 逐笔交易（策略回测产出；signal 模式可不写）
+DDL_BACKTEST_TRADE = """
+CREATE TABLE IF NOT EXISTS backtest_trade (
+    run_id        VARCHAR,
+    seq           INTEGER,          -- 同 run 内自增序（同股可多次买卖）
+    code          VARCHAR,
+    entry_date    DATE,
+    entry_price   DOUBLE,           -- 买入价（前复权，含滑点）
+    exit_date     DATE,
+    exit_price    DOUBLE,           -- 卖出价（前复权，含滑点）
+    exit_reason   VARCHAR,          -- 卖出信号/止盈/止损/到期/停牌/退市/区间末强平/跌破MAxx
+    exit_detail   VARCHAR,          -- 卖树部分命中时的命中指标标签（JSON 列表）；全命中或非卖树为空
+    shares        BIGINT,           -- 持股数（整手）
+    return_pct    DOUBLE,           -- 含成本净收益率
+    pnl           DOUBLE,           -- 含成本净盈亏（元）
+    hold_days     INTEGER,          -- 持有交易日数
+    grade         VARCHAR,          -- 买入时评分分档（分层分析用）
+    entry_score   DOUBLE,           -- 买入当日综合分（解释"无评级"：分未达观察阈值仍因排名买入）
+    entry_rank    INTEGER,          -- 买入当日全市场评分榜名次
+    entry_pick_rank INTEGER,        -- 方案内排名（命中票按分排序优先级）
+    entry_pool    INTEGER,          -- 当日候选池大小（方案命中数/全市场评分数）
+    PRIMARY KEY (run_id, seq)
+);
+"""
+
+# 资金曲线（逐日组合净值 + 回撤 + 基准）
+DDL_BACKTEST_EQUITY = """
+CREATE TABLE IF NOT EXISTS backtest_equity (
+    run_id           VARCHAR,
+    trade_date       DATE,
+    equity           DOUBLE,        -- 组合总权益（现金+持仓市值）
+    cash             DOUBLE,        -- 现金
+    position_value   DOUBLE,        -- 持仓市值
+    n_positions      INTEGER,       -- 持仓只数
+    drawdown         DOUBLE,        -- 相对历史峰值回撤（≤0）
+    benchmark_equity DOUBLE,        -- 基准归一净值（初始=初始资金）
+    PRIMARY KEY (run_id, trade_date)
+);
+"""
+
+# 绩效指标（一行一 run）+ 分档命中率 JSON
+DDL_BACKTEST_METRICS = """
+CREATE TABLE IF NOT EXISTS backtest_metrics (
+    run_id          VARCHAR PRIMARY KEY,
+    total_return    DOUBLE,         -- 累计收益率
+    annual_return   DOUBLE,         -- 年化收益率
+    max_drawdown    DOUBLE,         -- 最大回撤（≤0）
+    max_dd_days     INTEGER,        -- 最大回撤持续交易日
+    annual_vol      DOUBLE,         -- 年化波动
+    sharpe          DOUBLE,
+    calmar          DOUBLE,
+    sortino         DOUBLE,
+    win_rate        DOUBLE,         -- 胜率
+    profit_factor   DOUBLE,         -- 盈亏比（总盈/总亏）
+    avg_hold_days   DOUBLE,         -- 平均持有交易日
+    n_trades        INTEGER,
+    benchmark_return DOUBLE,        -- 同期基准累计收益
+    excess_return   DOUBLE,         -- 相对基准超额（累计）
+    hit_rate_by_grade VARCHAR,      -- 各分档 N日涨幅≥X% 命中率 + base rate + 超额（JSON，核心概率口径）
+    extra           VARCHAR         -- 其他（JSON，便于扩展不改表）
+);
+"""
+
+M5_TABLES: dict[str, str] = {
+    "backtest_run": DDL_BACKTEST_RUN,
+    "backtest_trade": DDL_BACKTEST_TRADE,
+    "backtest_equity": DDL_BACKTEST_EQUITY,
+    "backtest_metrics": DDL_BACKTEST_METRICS,
+}
+
+# ── M2.6 数据管理闭环 + 评分快照（SDD §10/§10.1）────────────────
+# 异步任务：更新/补数/重算/体检，后台线程执行，前端轮询进度
+DDL_ASYNC_TASK = """
+CREATE TABLE IF NOT EXISTS async_task (
+    id          VARCHAR PRIMARY KEY,
+    task_type   VARCHAR,            -- update | backfill | recompute | verify
+    params      VARCHAR,            -- 入参（JSON）
+    status      VARCHAR,            -- pending | running | done | failed
+    progress    DOUBLE,             -- 0~1
+    message     VARCHAR,            -- 当前进度文案 / 结果摘要 / 失败原因
+    result      VARCHAR,            -- 结果（JSON，可空）
+    created_at  TIMESTAMP,
+    updated_at  TIMESTAMP
+);
+"""
+
+# 评分快照明细：按 日期+方案+版本+code 物化（惰性，§10.1）
+DDL_SCORE_SNAPSHOT = """
+CREATE TABLE IF NOT EXISTS score_snapshot (
+    trade_date      DATE,
+    profile_id      VARCHAR,
+    profile_version INTEGER,
+    code            VARCHAR,
+    total_score     DOUBLE,
+    grade           VARCHAR,
+    rank            INTEGER,        -- 当日该方案全市场(排除ST)降序名次
+    sub_scores      VARCHAR,        -- 分项达标分 {指标key: 分}（JSON），供榜单分项徽章
+    PRIMARY KEY (trade_date, profile_id, profile_version, code)
+);
+"""
+
+# 评分快照元数据：失效只动这张小表（每天每方案一行），不碰百万行明细
+DDL_SCORE_SNAPSHOT_META = """
+CREATE TABLE IF NOT EXISTS score_snapshot_meta (
+    trade_date      DATE,
+    profile_id      VARCHAR,
+    profile_version INTEGER,
+    computed_at     TIMESTAMP,
+    stale           BOOLEAN,        -- true=已标记失效，下次读取时重算
+    n_codes         INTEGER,
+    PRIMARY KEY (trade_date, profile_id, profile_version)
+);
+"""
+
+M6_TABLES: dict[str, str] = {
+    "async_task": DDL_ASYNC_TASK,
+    "score_snapshot": DDL_SCORE_SNAPSHOT,
+    "score_snapshot_meta": DDL_SCORE_SNAPSHOT_META,
+}
+
+# ── M2.8 数据管理收口（见 docs/v2.0数据管理模块完善-…）────────────────
+# 配置覆盖层（DM-D3）：Web 改的参数落此，settings.yaml 仅兜底；读取覆盖层优先。
+DDL_APP_CONFIG = """
+CREATE TABLE IF NOT EXISTS app_config (
+    key         VARCHAR PRIMARY KEY,   -- 点分路径，如 datasource.update_concurrency
+    value       VARCHAR,               -- JSON 标量/对象（保留类型）
+    updated_at  TIMESTAMP
+);
+"""
+
+# 任务实时日志（FR-DM-9）：逐条记录在拉哪只股/哪天、阶段、i/N。保留策略见 DM-D8。
+DDL_TASK_LOG = """
+CREATE TABLE IF NOT EXISTS task_log (
+    id          BIGINT,
+    task_id     VARCHAR,
+    seq         INTEGER,               -- 同任务内自增（增量按 after_seq 拉取）
+    ts          TIMESTAMP,
+    level       VARCHAR,               -- info | warn | error
+    message     VARCHAR
+);
+"""
+
+# 数据维度注册表（FR-DM-1 / DM-D4/D5）：已采集 + 规划中（股东数/筹码峰占位）。
+DDL_DATA_DIMENSION_REGISTRY = """
+CREATE TABLE IF NOT EXISTS data_dimension_registry (
+    dimension   VARCHAR PRIMARY KEY,   -- 维度标识，如 quote/valuation/shareholders
+    name_cn     VARCHAR,
+    status      VARCHAR,               -- collected | planned | partial
+    source      VARCHAR,               -- 数据源/获取方式
+    tables      VARCHAR,               -- 关联表（JSON 数组）
+    descr       VARCHAR
+);
+"""
+
+M28_TABLES: dict[str, str] = {
+    "app_config": DDL_APP_CONFIG,
+    "task_log": DDL_TASK_LOG,
+    "data_dimension_registry": DDL_DATA_DIMENSION_REGISTRY,
+}
+
+# 数据维度注册表 seed（DM-D4/D5）：已采集维度 + 规划中占位（股东数/筹码峰）。
+# 幂等 ON CONFLICT DO NOTHING：已存在则保留（允许后续人工调整 status）。
+_DIMENSION_SEED: list[tuple] = [
+    ("quote",        "日线行情",   "collected", "akshare(主)/baostock(备)", '["daily_bar"]',
+     "OHLC/成交量额/换手/复权因子/涨跌停标记，选股回测核心"),
+    ("valuation",    "估值市值",   "collected", "akshare(东财)",            '["daily_metrics"]',
+     "流通市值/总市值，股票池过滤与规模分层"),
+    ("basic",        "股票基础",   "collected", "akshare/baostock",         '["stock_basic"]',
+     "代码/名称/交易所/板块/上市退市日/行业/涨跌幅限制"),
+    ("index",        "指数行情",   "collected", "akshare",                  '["index_bar"]',
+     "基准指数日线（沪深300/中证500/中证全指），回测基准与相对强弱"),
+    ("calendar",     "交易日历",   "collected", "akshare/baostock",         '["trade_calendar"]',
+     "开市日判定，缺口检测与点时安全基础"),
+    ("shareholders", "股东数据",   "planned",   "待定（东财/巨潮）",          '[]',
+     "股东户数/十大股东等，本期仅注册占位，未采集（见 DM-D5）"),
+    ("chip_peak",    "筹码分布",   "planned",   "待定（需逐笔/分价成交）",     '[]',
+     "筹码峰/成本分布，本期仅注册占位，未采集（见 DM-D5）"),
+]
+
+# 轻量迁移：给已存在的旧表补列（CREATE TABLE IF NOT EXISTS 不会改既有表结构）
+_MIGRATIONS: list[str] = [
+    "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_rank INTEGER",
+    "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_pick_rank INTEGER",
+    "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_pool INTEGER",
+    "ALTER TABLE backtest_run ADD COLUMN IF NOT EXISTS score_profile_id VARCHAR",
+    "ALTER TABLE backtest_run ADD COLUMN IF NOT EXISTS trade_profile_id VARCHAR",
+    "ALTER TABLE backtest_run ADD COLUMN IF NOT EXISTS score_profile_version INTEGER",
+    "ALTER TABLE backtest_run ADD COLUMN IF NOT EXISTS profile_version INTEGER",
+    "ALTER TABLE backtest_run ADD COLUMN IF NOT EXISTS trade_profile_version INTEGER",
+    "ALTER TABLE backtest_run ADD COLUMN IF NOT EXISTS signature VARCHAR",
+    "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS exit_detail VARCHAR",
+    "ALTER TABLE backtest_trade ADD COLUMN IF NOT EXISTS entry_score DOUBLE",
+    "DROP TABLE IF EXISTS watchlist_history",  # M2.7 废除观察池
+    "ALTER TABLE score_snapshot ADD COLUMN IF NOT EXISTS sub_scores VARCHAR",
+    "DROP TABLE IF EXISTS indicator",    # v2.0 删除指标预计算值表（改动态计算），旧库残留一并清
+    "DROP TABLE IF EXISTS score_model",  # v2.0 score_model → score_profile，旧库残留一并清
+    # M2.8 数据管理收口：质检问题加状态/严重度/解决时间（FR-DM-4），旧行回填
+    "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS status VARCHAR",
+    "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS severity VARCHAR",
+    "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP",
+    "UPDATE data_quality_issue SET status='open' WHERE status IS NULL",
+    # 严重度映射（DM-D10）：adj_jump=high；abnormal_change/missing_or_suspended=mid；ohl_repaired=low；其余 mid
+    "UPDATE data_quality_issue SET severity = CASE "
+    "WHEN issue_type='adj_jump' THEN 'high' "
+    "WHEN issue_type='ohl_repaired' THEN 'low' "
+    "ELSE 'mid' END WHERE severity IS NULL",
+]
+
+
+def seed_dimension_registry(client: DuckDBClient | None = None) -> int:
+    """幂等 seed 数据维度注册表（DM-D4/D5）；已存在维度不覆盖。返回新插入行数。"""
+    client = client or get_client()
+    before = client.query_df("SELECT count(*) AS n FROM data_dimension_registry").iloc[0]["n"]
+    df = pd.DataFrame(_DIMENSION_SEED,
+                      columns=["dimension", "name_cn", "status", "source", "tables", "descr"])
+    with client.temp_view(df, "dimseed") as v:
+        client.execute(
+            f"INSERT INTO data_dimension_registry "
+            f"(dimension, name_cn, status, source, tables, descr) "
+            f"SELECT dimension, name_cn, status, source, tables, descr FROM {v} "
+            f"ON CONFLICT (dimension) DO NOTHING")
+    after = client.query_df("SELECT count(*) AS n FROM data_dimension_registry").iloc[0]["n"]
+    return int(after) - int(before)
+
+
+def init_db(client: DuckDBClient | None = None) -> list[str]:
+    """幂等创建全部表与序列（M1 数据底座 + M2 指标），返回已创建的表名列表。"""
+    client = client or get_client()
+    for seq_sql in DDL_SEQUENCES:
+        client.execute(seq_sql)
+    created: list[str] = []
+    all_tables = {**M1_TABLES, **M2_TABLES, **M3_TABLES, **M5_TABLES, **M6_TABLES, **M28_TABLES}
+    for name, sql in all_tables.items():
+        client.execute(sql)
+        created.append(name)
+        log.info("表已就绪: %s", name)
+    for mig in _MIGRATIONS:
+        try:
+            client.execute(mig)
+        except Exception as e:  # noqa: BLE001
+            log.warning("迁移跳过: %s (%s)", mig, e)
+    try:
+        seed_dimension_registry(client)
+    except Exception as e:  # noqa: BLE001
+        log.warning("维度注册表 seed 跳过: %s", e)
+    return created
+
+
+def list_tables(client: DuckDBClient | None = None) -> list[str]:
+    """列出当前库中所有表名。"""
+    client = client or get_client()
+    df = client.query_df(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'main' ORDER BY table_name"
+    )
+    return df["table_name"].tolist()
