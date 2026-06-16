@@ -132,7 +132,7 @@ def test_screen_engine_hybrid_col_and_expr():
                              "amount": 1e4, "adj_factor": 1.0, "turnover_rate": 5.0,
                              "is_st": False, "is_suspended": False, "limit_status": 0,
                              "is_one_word": False})
-        c.register_df("b", pd.DataFrame(rows)); c.execute("INSERT INTO daily_bar SELECT * FROM b"); c.unregister("b")
+        c.register_df("b", pd.DataFrame(rows)); c.execute("INSERT INTO daily_bar BY NAME SELECT * FROM b"); c.unregister("b")
         T = days[-1]
 
         eng = ScreenEngine(c)

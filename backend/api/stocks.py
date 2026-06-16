@@ -9,6 +9,7 @@ import pandas as pd
 from fastapi import APIRouter, Query
 
 from backend.api.response import ApiResponse, ok
+from backend.groups.stock_group import StockGroupRepo
 from backend.storage import get_client
 from backend.storage.repository import MarketRepository
 
@@ -64,11 +65,13 @@ def list_stocks(q: str | None = None, board: str | None = None,
         f"WHERE {where} ORDER BY {order_clause} LIMIT {int(size)} OFFSET {int((page-1)*size)}",
         [td, *params])
     rows = df.to_dict("records")
+    groups_by_code = StockGroupRepo(c).groups_for_codes([r["code"] for r in rows])
     for r in rows:
         r["list_date"] = str(r["list_date"]) if r.get("list_date") is not None and not pd.isna(r["list_date"]) else None
         r["delist_date"] = str(r["delist_date"]) if r.get("delist_date") is not None and not pd.isna(r["delist_date"]) else None
         r["is_st"] = bool(r["is_st"])
         r["pct_chg"] = round(float(r["pct_chg"]), 2) if r.get("pct_chg") is not None and not pd.isna(r["pct_chg"]) else None
+        r["groups"] = groups_by_code.get(r["code"], [])
     return ok({"total": total, "page": page, "size": size, "trade_date": str(td), "list": rows})
 
 
@@ -218,15 +221,45 @@ def data_status() -> ApiResponse:
         "SELECT max(trade_date) AS latest, count(DISTINCT code) AS codes, count(*) AS rows FROM daily_bar").iloc[0]
     issues = int(c.query_df("SELECT count(*) AS n FROM data_quality_issue").iloc[0]["n"])
     last_updates = c.query_df(
-        "SELECT table_name, source, status, row_count, updated_at FROM data_update_log "
-        "ORDER BY id DESC LIMIT 10").to_dict("records")
+        "SELECT table_name, source, status, row_count, date_start, date_end, detail, updated_at "
+        "FROM data_update_log ORDER BY id DESC LIMIT 20").to_dict("records")
     for u in last_updates:
         u["updated_at"] = str(u["updated_at"])
+        u["date_start"] = None if u["date_start"] is None else str(u["date_start"])
+        u["date_end"] = None if u["date_end"] is None else str(u["date_end"])
     return ok({
         "latest_trade_date": str(span["latest"]),
         "distinct_codes": int(span["codes"]), "bar_rows": int(span["rows"]),
         "quality_issues": issues, "recent_updates": last_updates,
     })
+
+
+@router.get("/data/update-logs", response_model=ApiResponse)
+def update_logs(page: int = 1, size: int = 10, status: str | None = None,
+                table_name: str | None = None, sort: str = "time", order: str = "desc") -> ApiResponse:
+    """采集日志（M2.9.5 服务端分页/排序/筛选）。sort ∈ {time,table,status}，order ∈ {asc,desc}。"""
+    c = get_client()
+    conds, params = [], []
+    if status:
+        conds.append("status = ?"); params.append(status)
+    if table_name:
+        conds.append("table_name = ?"); params.append(table_name)
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    col = {"time": "updated_at", "table": "table_name", "status": "status"}.get(sort, "updated_at")
+    direction = "ASC" if str(order).lower() == "asc" else "DESC"
+    total = int(c.query_df(f"SELECT count(*) AS n FROM data_update_log{where}", params).iloc[0]["n"])
+    off = int((page - 1) * size)
+    rows = c.query_df(
+        f"SELECT table_name, source, status, row_count, date_start, date_end, detail, updated_at "
+        f"FROM data_update_log{where} ORDER BY {col} {direction}, id DESC LIMIT ? OFFSET ?",
+        [*params, int(size), off]).to_dict("records")
+    for u in rows:
+        u["updated_at"] = str(u["updated_at"])
+        u["date_start"] = None if u["date_start"] is None else str(u["date_start"])
+        u["date_end"] = None if u["date_end"] is None else str(u["date_end"])
+    # 供前端筛选下拉：去重目标表
+    tables = c.query_df("SELECT DISTINCT table_name FROM data_update_log ORDER BY table_name")["table_name"].tolist()
+    return ok({"list": rows, "total": total, "page": page, "size": size, "tables": tables})
 
 
 @router.get("/data/trade-dates", response_model=ApiResponse)

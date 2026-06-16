@@ -21,19 +21,119 @@ def overview() -> ApiResponse:
     from backend.services.data_report import DataIntegrityReport
     rep = DataIntegrityReport()
     ov = rep.overview()
-    gaps = rep.gaps_summary()
+    qm = rep.quality_model()   # M2.9：质量评分 + 分层达标 + 缺口（一次扫描，避免双扫）
     c = get_client()
     sev = c.query_df(
         "SELECT severity, count(*) AS n FROM data_quality_issue WHERE status='open' GROUP BY severity"
     )
     by_sev = {r["severity"] or "mid": int(r["n"]) for _, r in sev.iterrows()}
+    last_scan = c.query_df(
+        "SELECT max(detected_at) AS t FROM data_quality_issue").iloc[0]["t"]
+    last_scan_s = None if last_scan is None or str(last_scan) == "NaT" else str(last_scan)[:19]
     return ok({
-        "latest_trade_date": gaps["latest_trade_date"],
+        "latest_trade_date": qm["latest_trade_date"],
         "codes": {"active": ov["stock_basic_live"], "delisted": ov["stock_basic_delisted"]},
         "bar_rows": ov["row_counts"]["daily_bar"],
-        "quality": {"open": int(sum(by_sev.values())), "by_severity": by_sev},
-        "gaps": gaps,
+        "quality": {"open": int(sum(by_sev.values())), "by_severity": by_sev,
+                    "score": qm["score"], "by_layer": qm["by_layer"]},
+        "gaps": qm["gaps"],
+        "last_scan_at": last_scan_s,
     })
+
+
+# ── 数据总览首页（FR-DM-13，DM-D12）─────────────────────────
+@router.get("/hub", response_model=ApiResponse)
+def hub() -> ApiResponse:
+    """数据总览：闭环各环节实时统计 + 风险摘要（服务端算好风险列表，前端直接渲染）。"""
+    from datetime import date
+
+    import pandas as pd
+
+    from backend.scheduler.scheduler import status as sched_status
+    from backend.services.data_report import DataIntegrityReport
+    from backend.services.data_sources import source_status
+
+    rep = DataIntegrityReport()
+    ov = rep.overview()
+    qm = rep.quality_model()
+    c = get_client()
+    sev = c.query_df(
+        "SELECT severity, count(*) AS n FROM data_quality_issue WHERE status='open' GROUP BY severity")
+    by_sev = {r["severity"] or "mid": int(r["n"]) for _, r in sev.iterrows()}
+    # 距上次质检天数：自动扫描类问题最近一次 detected_at
+    last_scan = c.query_df(
+        "SELECT max(detected_at) AS t FROM data_quality_issue").iloc[0]["t"]
+    days_since_scan = None
+    if last_scan is not None and str(last_scan) != "NaT":
+        days_since_scan = (date.today() - pd.Timestamp(last_scan).date()).days
+    sched = sched_status()
+    srcs = source_status(do_ping=False)
+    sources = srcs.get("sources", []) if isinstance(srcs, dict) else srcs
+    down = [s["source"] for s in sources if s.get("up") is False]
+
+    # 闭环各环节实时数字（前端画流程图时挂在节点上）
+    stages = {
+        "ingest": {"bar_rows": ov["row_counts"]["daily_bar"],
+                   "codes_active": ov["stock_basic_live"],
+                   "latest_trade_date": qm["latest_trade_date"]},
+        "quality": {"open": int(sum(by_sev.values())), "by_severity": by_sev,
+                    "score": qm["score"], "days_since_scan": days_since_scan},
+        "score": {"latest_board_date": _latest_board_date(c)},
+    }
+
+    # 风险摘要（已算好级别/文案/下钻链接）
+    risk: list[dict] = []
+    if qm["gaps"]["stocks_with_gap"] > 0:
+        risk.append({"level": "warning",
+                     "text": f"{qm['gaps']['stocks_with_gap']} 只股票存在数据缺口（共 {qm['gaps']['gap_days_total']} 个缺口日）",
+                     "link": "/data/overview"})
+    if by_sev.get("high", 0) > 0:
+        risk.append({"level": "danger", "text": f"{by_sev['high']} 项高危质量问题待处理",
+                     "link": "/data/quality?severity=high"})
+    # 榜单新鲜度：快照已物化到的最新日 < 数据最新日 → 尚未对最新数据算榜单（按需物化，打开即补）。
+    # bd 为 None 表示从未物化过任何榜单快照。两种情况都只是"未算"，info 级提示，打开榜单页即按需算并缓存。
+    bd, dd = stages["score"]["latest_board_date"], qm["latest_trade_date"]
+    if dd and (bd is None or str(bd) < str(dd)):
+        tip = "尚未生成榜单快照" if bd is None else f"榜单快照最新到 {bd}，数据已到 {dd}"
+        risk.append({"level": "info",
+                     "text": f"{tip}——榜单按需实时计算并缓存，打开「每日榜单」(选最新交易日)即自动算到最新",
+                     "link": "/board"})
+    if days_since_scan is None:
+        risk.append({"level": "warning", "text": "尚未做过数据质检", "link": "/data/quality"})
+    elif days_since_scan > 3:
+        risk.append({"level": "warning", "text": f"已 {days_since_scan} 天未做数据质检", "link": "/data/quality"})
+    for s in down:
+        risk.append({"level": "danger", "text": f"数据源 {s} 不可达", "link": "/data/schedule"})
+    if not sched.get("enabled"):
+        risk.append({"level": "info", "text": "未配置启用中的定时任务（数据不会自动更新/质检）",
+                     "link": "/data/schedule"})
+    if not risk:
+        risk.append({"level": "success", "text": "数据状态良好，无显著风险", "link": "/data/overview"})
+
+    return ok({
+        "latest_trade_date": qm["latest_trade_date"],
+        "quality_score": qm["score"],
+        "stages": stages,
+        "risk": risk,
+        "scheduler": {"enabled": sched.get("enabled"), "next_run_time": sched.get("next_run_time")},
+        "sources": sources,
+    })
+
+
+def _latest_board_date(c):
+    """榜单最新日 = 评分快照中"已物化且未失效"的最新交易日（路线B：与榜单页同口径）。
+
+    v2.0 起榜单走快照层惰性物化（score_snapshot_meta），榜单页访问某日即物化该日并置 stale=false。
+    故此处取 max(trade_date where stale=false) 才与用户实际看到的榜单一致；旧版读 score_result
+    （遗留固定模型，仅每日流程预跑时才更新）会与榜单页脱节，导致"明明有最新榜单却报旧"的误判。
+    """
+    try:
+        import pandas as pd
+        t = c.query_df(
+            "SELECT max(trade_date) AS t FROM score_snapshot_meta WHERE stale=false").iloc[0]["t"]
+        return None if t is None or str(t) == "NaT" else str(pd.Timestamp(t).date())
+    except Exception:  # noqa: BLE001
+        return None
 
 
 @router.get("/catalog", response_model=ApiResponse)
@@ -57,11 +157,46 @@ def dimensions() -> ApiResponse:
     return ok({"dimensions": rows})
 
 
+@router.get("/provenance", response_model=ApiResponse)
+def provenance(code: str | None = None, page: int = 1, size: int = 50) -> ApiResponse:
+    """数据来源溯源（审计）：列出用了非默认源（如 baostock 兜底）的取数事件。
+
+    默认主源(akshare)不记录——查某股某段：此表有记录=该非默认源，无记录=默认主源。
+    支持按代码或名称模糊筛选，按取数时间倒序分页。
+    """
+    import pandas as pd
+    c = get_client()
+    conds, params = ["1=1"], []
+    if code:
+        kw = f"%{code.strip().lower()}%"
+        conds.append("(lower(p.code) LIKE ? OR p.code IN "
+                     "(SELECT code FROM stock_basic WHERE lower(name) LIKE ?))")
+        params += [kw, kw]
+    where = " AND ".join(conds)
+    total = int(c.query_df(
+        f"SELECT count(*) AS n FROM data_source_provenance p WHERE {where}", params).iloc[0]["n"])
+    df = c.query_df(
+        f"SELECT p.code, sb.name, p.table_name, p.date_start, p.date_end, p.source, p.rows, p.fetched_at "
+        f"FROM data_source_provenance p LEFT JOIN stock_basic sb ON sb.code = p.code WHERE {where} "
+        f"ORDER BY p.fetched_at DESC LIMIT {int(size)} OFFSET {int((page-1)*size)}", params)
+    rows = df.to_dict("records")
+    for r in rows:
+        for k in ("date_start", "date_end", "fetched_at"):
+            v = r.get(k)
+            r[k] = None if v is None or pd.isna(v) else str(v)
+        r["rows"] = int(r["rows"]) if r.get("rows") is not None and not pd.isna(r["rows"]) else 0
+        nm = r.get("name")
+        r["name"] = "" if nm is None or pd.isna(nm) else str(nm)
+    return ok({"total": total, "page": page, "size": size, "list": rows})
+
+
 @router.get("/stock-quality", response_model=ApiResponse)
-def stock_quality(codes: str | None = None, page: int = 1, size: int = 50) -> ApiResponse:
+def stock_quality(codes: str | None = None, keyword: str | None = None,
+                  page: int = 1, size: int = 50) -> ApiResponse:
     from backend.services.data_report import DataIntegrityReport
     code_list = [c.strip() for c in codes.split(",") if c.strip()] if codes else None
-    return ok(DataIntegrityReport().stock_quality(code_list, page, size))
+    kw = keyword.strip() if keyword and keyword.strip() else None
+    return ok(DataIntegrityReport().stock_quality(code_list, kw, page, size))
 
 
 # ── 质量修复（FR-DM-4）─────────────────────────────────────
@@ -69,30 +204,53 @@ def stock_quality(codes: str | None = None, page: int = 1, size: int = 50) -> Ap
 def quality(issue_type: str | None = None, severity: str | None = None,
             status: str | None = None, code: str | None = None,
             page: int = 1, size: int = 50) -> ApiResponse:
-    """质检问题列表（含 severity/status，服务端分页/筛选）。中文化由前端映射。"""
+    """质检问题列表（含 severity/status，服务端分页/筛选）。中文化由前端映射。
+
+    issue_type/severity/status 支持逗号分隔多值（前端多选），按 IN 过滤；空串/缺省即不限。
+    """
     import pandas as pd
     c = get_client()
+
+    def _multi(val: str | None) -> list[str]:
+        return [x.strip() for x in val.split(",") if x.strip()] if val else []
+
+    # 基础筛选（不含 issue_type）：summary 按此分组统计各类型，list 在此基础上再叠加 issue_type。
+    # 这样顶部分组标签 = 当前筛选(状态/严重度/代码)下的各类型分布，与列表口径一致、可对得上。
+    base_conds, base_params = ["1=1"], []
+    for col, val in (("severity", severity), ("status", status)):
+        vals = _multi(val)
+        if vals:
+            base_conds.append(f"q.{col} IN ({','.join('?' * len(vals))})")
+            base_params += vals
+    if code:  # 代码或名称模糊匹配（M2.9 DM-D17）
+        kw = f"%{code.strip().lower()}%"
+        base_conds.append("q.code IN (SELECT code FROM stock_basic WHERE lower(code) LIKE ? OR lower(name) LIKE ?)")
+        base_params += [kw, kw]
+    base_where = " AND ".join(base_conds)
     summary = c.query_df(
-        "SELECT issue_type, count(*) AS n FROM data_quality_issue WHERE status != 'resolved' "
-        "GROUP BY issue_type ORDER BY n DESC").to_dict("records")
-    conds, params = ["1=1"], []
-    for col, val in (("issue_type", issue_type), ("severity", severity),
-                     ("status", status), ("code", code)):
-        if val:
-            conds.append(f"{col} = ?")
-            params.append(val)
+        f"SELECT issue_type, count(*) AS n FROM data_quality_issue q WHERE {base_where} "
+        f"GROUP BY issue_type ORDER BY n DESC", base_params).to_dict("records")
+    summary = [{"issue_type": r["issue_type"], "n": int(r["n"])} for r in summary]
+    conds, params = list(base_conds), list(base_params)
+    types = _multi(issue_type)
+    if types:
+        conds.append(f"q.issue_type IN ({','.join('?' * len(types))})")
+        params += types
     where = " AND ".join(conds)
-    total = int(c.query_df(f"SELECT count(*) AS n FROM data_quality_issue WHERE {where}", params).iloc[0]["n"])
+    total = int(c.query_df(f"SELECT count(*) AS n FROM data_quality_issue q WHERE {where}", params).iloc[0]["n"])
     df = c.query_df(
-        f"SELECT id, code, trade_date, issue_type, severity, status, detail, detected_at, resolved_at "
-        f"FROM data_quality_issue WHERE {where} "
-        f"ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'mid' THEN 1 ELSE 2 END, detected_at DESC "
+        f"SELECT q.id, q.code, sb.name AS name, q.trade_date, q.issue_type, q.severity, q.status, "
+        f"q.detail, q.detected_at, q.resolved_at "
+        f"FROM data_quality_issue q LEFT JOIN stock_basic sb ON sb.code = q.code WHERE {where} "
+        f"ORDER BY CASE q.severity WHEN 'high' THEN 0 WHEN 'mid' THEN 1 ELSE 2 END, q.detected_at DESC "
         f"LIMIT {int(size)} OFFSET {int((page-1)*size)}", params)
     rows = df.to_dict("records")
     for r in rows:
         for k in ("trade_date", "detected_at", "resolved_at"):
             v = r.get(k)
             r[k] = None if v is None or pd.isna(v) else str(v)
+        nm = r.get("name")
+        r["name"] = "" if nm is None or pd.isna(nm) else str(nm)
         r["id"] = int(r["id"])
     return ok({"summary": summary, "total": total, "page": page, "size": size, "list": rows})
 
@@ -106,12 +264,13 @@ class FixIn(BaseModel):
 @router.post("/quality/{issue_id}/fix", response_model=ApiResponse)
 def quality_fix(issue_id: int) -> ApiResponse:
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
-    exists = get_client().query_df(
-        "SELECT 1 FROM data_quality_issue WHERE id=?", [issue_id])
-    if exists.empty:
+    row = get_client().query_df(
+        "SELECT issue_type FROM data_quality_issue WHERE id=?", [issue_id])
+    if row.empty:
         return err(404, f"质检问题不存在: id={issue_id}")
     try:
-        tid = AsyncTaskService().create("fix", {"issue_id": issue_id})
+        # 带上 issue_type，任务中心可显示「问题修复·<类型>」
+        tid = AsyncTaskService().create("fix", {"issue_id": issue_id, "issue_type": row.iloc[0]["issue_type"]})
     except ConcurrentTaskError as e:
         return err(409, f"已有修复/采集任务在运行（{e.task_type}），请稍后再试", {"running_id": e.running_id})
     except ValueError as e:
@@ -121,41 +280,162 @@ def quality_fix(issue_id: int) -> ApiResponse:
 
 @router.post("/quality/fix-batch", response_model=ApiResponse)
 def quality_fix_batch(body: dict) -> ApiResponse:
-    """批量修复（建议项）：按 issue_id 列表逐条建 fix 任务（受并发互斥约束，逐个排队）。"""
+    """批量恢复：一个 fix 任务内顺序恢复所有 issue_ids（单写者模型，逐条写实时日志 + 复检）。"""
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
-    ids = body.get("issue_ids") or []
-    svc = AsyncTaskService()
-    started, skipped = [], []
-    for iid in ids:
-        try:
-            started.append(svc.create("fix", {"issue_id": int(iid)}))
-        except ConcurrentTaskError:
-            skipped.append(iid)
-            break  # 已有任务在跑，余下留待下次
-        except ValueError:
-            skipped.append(iid)
-    return ok({"started": started, "skipped": skipped})
+    ids = [int(x) for x in (body.get("issue_ids") or [])]
+    if not ids:
+        return err(400, "缺少 issue_ids")
+    try:
+        tid = AsyncTaskService().create("fix", {"issue_ids": ids})
+    except ConcurrentTaskError as e:
+        return err(409, f"已有修复/采集任务在运行（{e.task_type}），请稍后再试", {"running_id": e.running_id})
+    return ok({"task_id": tid})
 
 
-# ── 调度（FR-DM-7）─────────────────────────────────────────
-@router.get("/scheduler", response_model=ApiResponse)
-def scheduler_get() -> ApiResponse:
-    from backend.scheduler.scheduler import status
-    return ok(status())
+@router.post("/quality/recover-batch", response_model=ApiResponse)
+def quality_recover_batch(body: dict) -> ApiResponse:
+    """按当前筛选一键恢复：取匹配的「待处理(open/fixing)」问题，建一个 fix 任务顺序恢复+复检。
+
+    只按 issue_type/severity/code 过滤（状态强制 open/fixing，恢复已解决/已忽略无意义）。
+    """
+    from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
+    c = get_client()
+
+    def _multi(val) -> list[str]:
+        if isinstance(val, list):
+            return [str(x).strip() for x in val if str(x).strip()]
+        return [x.strip() for x in str(val).split(",") if x.strip()] if val else []
+
+    conds = ["status IN ('open','fixing')"]
+    params: list = []
+    types = _multi(body.get("issue_type"))
+    if types:
+        conds.append(f"issue_type IN ({','.join('?' * len(types))})"); params += types
+    sevs = _multi(body.get("severity"))
+    if sevs:
+        conds.append(f"severity IN ({','.join('?' * len(sevs))})"); params += sevs
+    if body.get("code"):
+        kw = f"%{str(body['code']).lower()}%"
+        conds.append("code IN (SELECT code FROM stock_basic WHERE lower(code) LIKE ? OR lower(name) LIKE ?)")
+        params += [kw, kw]
+    ids = c.query_df(
+        f"SELECT id FROM data_quality_issue WHERE {' AND '.join(conds)} ORDER BY id", params)["id"].tolist()
+    if not ids:
+        return err(400, "没有符合当前筛选的待处理问题")
+    ids = [int(x) for x in ids]
+    params: dict = {"issue_ids": ids}
+    if len(types) == 1:   # 单一类型筛选 → 任务中心显示「问题修复·<类型>」
+        params["issue_type"] = types[0]
+    try:
+        tid = AsyncTaskService().create("fix", params)
+    except ConcurrentTaskError as e:
+        return err(409, f"已有修复/采集任务在运行（{e.task_type}），请稍后再试", {"running_id": e.running_id})
+    return ok({"task_id": tid, "count": len(ids)})
 
 
-class SchedulerIn(BaseModel):
-    enabled: bool
-    cron_hour: int = 18
-    cron_minute: int = 0
+@router.post("/quality/{issue_id}/reset", response_model=ApiResponse)
+def quality_reset(issue_id: int) -> ApiResponse:
+    """手动复位「修复中」→「未处理」（DM 修复中闭环）：当绑定的修复任务已失败/中断/卡死，
+    用户可一键解套，让该问题重新可被恢复。仅对 fixing 状态生效，并解除任务绑定。"""
+    c = get_client()
+    row = c.query_df("SELECT status FROM data_quality_issue WHERE id=?", [issue_id])
+    if row.empty:
+        return err(404, f"质检问题不存在: id={issue_id}")
+    if row.iloc[0]["status"] != "fixing":
+        return err(400, "仅「修复中」的问题可复位")
+    c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE id=?", [issue_id])
+    return ok({"id": issue_id, "status": "open"})
 
 
-@router.post("/scheduler", response_model=ApiResponse)
-def scheduler_set(body: SchedulerIn) -> ApiResponse:
-    if not (0 <= body.cron_hour <= 23 and 0 <= body.cron_minute <= 59):
-        return err(400, "执行时间非法（时 0-23、分 0-59）")
-    from backend.scheduler.scheduler import apply_config
-    return ok(apply_config(body.enabled, body.cron_hour, body.cron_minute), msg="定时配置已生效")
+@router.post("/quality/{issue_id}/ignore", response_model=ApiResponse)
+def quality_ignore(issue_id: int) -> ApiResponse:
+    """标记为正常/忽略（DM-D22）：不可恢复或真实极端值（如新股首日大涨）人工确认正常，
+    置 status='ignored'。质检幂等重扫不会再翻回 open（DELETE 只清 open）。"""
+    c = get_client()
+    from datetime import datetime
+    exists = c.query_df("SELECT 1 FROM data_quality_issue WHERE id=?", [issue_id])
+    if exists.empty:
+        return err(404, f"质检问题不存在: id={issue_id}")
+    c.execute("UPDATE data_quality_issue SET status='ignored', resolved_at=? WHERE id=?",
+              [datetime.now(), issue_id])
+    return ok({"id": issue_id, "status": "ignored"})
+
+
+# ── 定时任务（调度系统重构）：多条用户自定义定时任务的 CRUD + 立即触发 ─────────
+class ScheduledJobIn(BaseModel):
+    name: str
+    task_type: str
+    params: dict = {}
+    freq_type: str                 # daily | weekly | monthly | cron
+    freq_config: dict = {}         # {time} / {weekdays,time} / {day,time} / {cron}
+    trading_day_only: bool = True
+    enabled: bool = True
+
+
+@router.get("/schedules", response_model=ApiResponse)
+def schedules_list() -> ApiResponse:
+    """定时任务列表（含频率人话、下次触发、最近触发）+ 可调度类型/频率枚举，前端建表单用。"""
+    from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES, ScheduledJobService
+    return ok({"jobs": ScheduledJobService().list(),
+               "task_types": list(SCHEDULABLE_TASK_TYPES)})
+
+
+@router.post("/schedules", response_model=ApiResponse)
+def schedules_create(body: ScheduledJobIn) -> ApiResponse:
+    from backend.scheduler.scheduler import ScheduledJobService
+    try:
+        job = ScheduledJobService().create(
+            name=body.name, task_type=body.task_type, params=body.params,
+            freq_type=body.freq_type, freq_config=body.freq_config,
+            trading_day_only=body.trading_day_only, enabled=body.enabled)
+    except ValueError as e:
+        return err(400, str(e))
+    return ok(job, msg="定时任务已创建")
+
+
+@router.put("/schedules/{job_id}", response_model=ApiResponse)
+def schedules_update(job_id: str, body: ScheduledJobIn) -> ApiResponse:
+    from backend.scheduler.scheduler import ScheduledJobService
+    try:
+        job = ScheduledJobService().update(
+            job_id, name=body.name, task_type=body.task_type, params=body.params,
+            freq_type=body.freq_type, freq_config=body.freq_config,
+            trading_day_only=body.trading_day_only, enabled=body.enabled)
+    except ValueError as e:
+        return err(400, str(e))
+    return ok(job, msg="定时任务已更新")
+
+
+@router.post("/schedules/{job_id}/enabled", response_model=ApiResponse)
+def schedules_set_enabled(job_id: str, enabled: bool) -> ApiResponse:
+    from backend.scheduler.scheduler import ScheduledJobService
+    try:
+        job = ScheduledJobService().set_enabled(job_id, enabled)
+    except ValueError as e:
+        return err(400, str(e))
+    return ok(job, msg="已启用" if enabled else "已停用")
+
+
+@router.delete("/schedules/{job_id}", response_model=ApiResponse)
+def schedules_delete(job_id: str) -> ApiResponse:
+    from backend.scheduler.scheduler import ScheduledJobService
+    ScheduledJobService().delete(job_id)
+    return ok({"id": job_id}, msg="定时任务已删除")
+
+
+@router.post("/schedules/{job_id}/run", response_model=ApiResponse)
+def schedules_run_now(job_id: str) -> ApiResponse:
+    """立即触发一次（不判交易日）；已有写任务在跑则 409。"""
+    from backend.scheduler.scheduler import ScheduledJobService
+    from backend.services.async_task import ConcurrentTaskError
+    try:
+        tid = ScheduledJobService().run_now(job_id)
+    except ValueError as e:
+        return err(404, str(e))
+    except ConcurrentTaskError as e:
+        return err(409, f"已有写任务在运行（{e.task_type}），请等待其完成或稍后再试",
+                   {"running_id": e.running_id})
+    return ok({"task_id": tid}, msg="已触发")
 
 
 # ── 数据源状态（FR-DM-5）───────────────────────────────────
@@ -192,6 +472,8 @@ def get_settings_view() -> ApiResponse:
     overrides = AppConfigRepo().get_overrides()
     groups = []
     for g in CONFIG_GROUPS:
+        if g.get("hidden_in_form"):   # 定时调度收敛到调度页，不在系统设置渲染（DM-D14）
+            continue
         fields = []
         for f in g["fields"]:
             fields.append({**{k: f[k] for k in f if k != "path"},
@@ -212,10 +494,4 @@ def save_settings(body: dict) -> ApiResponse:
         n = AppConfigRepo().set_many(updates)
     except ConfigValidationError as e:
         return err(400, str(e))
-    # 调度相关改动即时套用到运行中的 scheduler
-    if any(k.startswith("scheduler.") for k in updates):
-        from backend.config import get_effective_settings
-        from backend.scheduler.scheduler import apply_config
-        s = get_effective_settings().scheduler
-        apply_config(s.enabled, s.daily_cron_hour, s.daily_cron_minute)
     return ok({"saved": n}, msg="配置已保存并生效")

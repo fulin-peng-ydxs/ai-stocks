@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
 
 client = TestClient(app)
+
+
+def _real_db_ready() -> bool:
+    """真实库能否独占可用。DuckDB 同库仅允许单写者：本机正跑着后端 dev 服务时库被锁，
+    这组"打真实库"的冒烟测试连不上。探测一次，连不上/未种子化则整组跳过而非误报 failed。"""
+    try:
+        r = client.get("/api/data/status")
+        return r.status_code == 200 and r.json().get("code") == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+if not _real_db_ready():
+    pytest.skip(
+        "真实库不可用（被占用/锁冲突/未种子化），跳过 API 冒烟测试；"
+        "释放占用 data/ai_stocks.duckdb 的进程后重跑。",
+        allow_module_level=True,
+    )
 
 
 def _data(resp):

@@ -116,8 +116,10 @@ class MarketRepository:
 
         adjust:
           - ""    不复权（原值）
-          - "qfq" 前复权 = close × adj_factor / (end_date 当日因子)  ← 点时归一，不引未来
-          - "hfq" 后复权 = close × adj_factor
+          - "qfq" 前复权 = close × 干净因子 / (end_date 当日干净因子)  ← 点时归一，不引未来
+          - "hfq" 后复权 = close × 干净因子
+        复权用**去抖后的 adj_factor_clean**（分段恒定，消除源因子的逐日舍入噪声）；
+        旧库该列为空时 COALESCE 回落原始 adj_factor，保证未回填前不报错。
         lookback: 仅返回最近 N 个交易日（在复权计算之后裁剪）。
         """
         df = self.c.query_df(
@@ -127,9 +129,10 @@ class MarketRepository:
         if df.empty:
             return df
         if adjust in ("qfq", "hfq"):
-            base = df["adj_factor"].iloc[-1] if adjust == "qfq" else 1.0
+            factor = df["adj_factor_clean"].fillna(df["adj_factor"])
+            base = factor.iloc[-1] if adjust == "qfq" else 1.0
             for col in ("open", "high", "low", "close", "pre_close"):
-                df[col] = df[col] * df["adj_factor"] / base
+                df[col] = df[col] * factor / base
         if lookback:
             df = df.tail(lookback)
         return df.reset_index(drop=True)

@@ -24,8 +24,11 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "datasource.primary", "label": "主数据源", "type": "enum", "options": ["akshare", "baostock"]},
         {"path": "datasource.fallback", "label": "备用数据源", "type": "enum", "options": ["akshare", "baostock"]},
         {"path": "datasource.history_years", "label": "回填年限", "type": "int", "min": 1, "max": 30},
-        {"path": "datasource.update_concurrency", "label": "增量并发数", "type": "int", "min": 1, "max": 16},
+        {"path": "datasource.update_concurrency", "label": "采集并发数(增量/回填/重拉/估值)", "type": "int", "min": 1, "max": 16},
+        {"path": "datasource.rate_limit_per_sec", "label": "请求限流(次/秒)", "type": "number", "min": 0.1, "max": 50},
         {"path": "datasource.socket_timeout_sec", "label": "请求超时(秒)", "type": "number", "min": 1},
+        {"path": "datasource.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10},
+        {"path": "datasource.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60},
     ]},
     {"key": "universe", "label": "股票池", "fields": [
         {"path": "universe.float_mv_min", "label": "流通市值下界(元)", "type": "number", "min": 0},
@@ -43,10 +46,13 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "backtest.top_n", "label": "回测 TopN", "type": "int", "min": 1, "max": 500},
         {"path": "scoring.top_n", "label": "榜单 TopN", "type": "int", "min": 1, "max": 500},
     ]},
-    {"key": "scheduler", "label": "定时调度", "fields": [
-        {"path": "scheduler.enabled", "label": "启用定时采集", "type": "bool"},
-        {"path": "scheduler.daily_cron_hour", "label": "执行小时", "type": "int", "min": 0, "max": 23},
-        {"path": "scheduler.daily_cron_minute", "label": "执行分钟", "type": "int", "min": 0, "max": 59},
+    # 定时调度（遗留）：调度系统重构后改用 scheduled_job 表 + 「任务调度」页，旧的单一每日配置
+    # 已不再作为运行态。这些白名单项仅供启动时一次性迁移读取旧值（读后即删，见 scheduler._migrate_legacy_config），
+    # 不在表单渲染（hidden_in_form）。迁移消费完即从 app_config 删除，正常运行期不会再出现。
+    {"key": "scheduler", "label": "定时调度（遗留）", "hidden_in_form": True, "fields": [
+        {"path": "scheduler.enabled", "label": "启用每日自动任务（遗留）", "type": "bool"},
+        {"path": "scheduler.daily_cron_hour", "label": "执行小时（遗留）", "type": "int", "min": 0, "max": 23},
+        {"path": "scheduler.daily_cron_minute", "label": "执行分钟（遗留）", "type": "int", "min": 0, "max": 59},
     ]},
 ]
 

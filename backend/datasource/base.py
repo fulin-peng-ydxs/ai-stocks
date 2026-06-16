@@ -38,9 +38,12 @@ log = get_logger("datasource.base")
 
 
 def rate_limited(min_interval_sec: float) -> Callable:
-    """方法级简单限流：相邻两次调用间隔 >= min_interval_sec。
+    """方法级简单限流：相邻两次调用间隔 >= 间隔秒数（按方法名隔离记时）。
 
-    用实例属性记录上次调用时间（按方法名隔离），单线程 EOD 场景足够。
+    间隔取值优先级：实例属性 `self._min_interval_sec`（运行时按生效配置注入，
+    见各源 __init__）> 装饰器入参 min_interval_sec（导入期默认兜底）。这样前端
+    改「请求限流」后，新建的数据源实例即按新值限流，无需重启进程。并发时每线程
+    各自独立实例 → 限流按线程隔离，总速率≈并发数×单线程速率。
     """
 
     def deco(fn: Callable) -> Callable:
@@ -48,8 +51,11 @@ def rate_limited(min_interval_sec: float) -> Callable:
 
         @wraps(fn)
         def wrapper(self, *args, **kwargs):
+            interval = getattr(self, "_min_interval_sec", None)
+            if interval is None:
+                interval = min_interval_sec
             last = getattr(self, attr, 0.0)
-            wait = min_interval_sec - (time.monotonic() - last)
+            wait = interval - (time.monotonic() - last)
             if wait > 0:
                 time.sleep(wait)
             try:
@@ -63,25 +69,37 @@ def rate_limited(min_interval_sec: float) -> Callable:
 
 
 def with_retry(max_retries: int = 3, backoff_sec: float = 2.0) -> Callable:
-    """失败重试 + 指数退避；最终失败抛 DataSourceError。"""
+    """失败重试 + 指数退避；最终失败抛 DataSourceError。
+
+    次数/退避取值优先级：实例属性 `self._max_retries` / `self._retry_backoff_sec`
+    （运行时按生效配置注入，见各源 __init__）> 装饰器入参（导入期默认兜底）。这样前端
+    改「重试次数 / 退避」后，新建的数据源实例即按新值重试，无需重启进程（与 rate_limited 同款）。
+    """
 
     def deco(fn: Callable) -> Callable:
         @wraps(fn)
         def wrapper(*args, **kwargs):
+            self = args[0] if args else None
+            retries = getattr(self, "_max_retries", None)
+            if retries is None:
+                retries = max_retries
+            backoff = getattr(self, "_retry_backoff_sec", None)
+            if backoff is None:
+                backoff = backoff_sec
             last_err: Exception | None = None
-            for attempt in range(1, max_retries + 1):
+            for attempt in range(1, retries + 1):
                 try:
                     return fn(*args, **kwargs)
                 except Exception as e:  # noqa: BLE001
                     last_err = e
-                    if attempt < max_retries:
-                        sleep = backoff_sec * (2 ** (attempt - 1))
+                    if attempt < retries:
+                        sleep = backoff * (2 ** (attempt - 1))
                         log.warning(
                             "%s 第%d次失败: %s，%.1fs 后重试", fn.__name__, attempt, e, sleep
                         )
                         time.sleep(sleep)
             raise DataSourceError(
-                f"{fn.__name__} 重试 {max_retries} 次仍失败: {last_err}"
+                f"{fn.__name__} 重试 {retries} 次仍失败: {last_err}"
             ) from last_err
 
         return wrapper
@@ -159,7 +177,8 @@ def get_source(name: str) -> DataSource:
 
         return AKShareSource()
     if name == "baostock":
-        from backend.datasource.baostock_source import BaostockSource
+        # 进程级单例：复用登录会话（baostock 登录 ~6s 且为库级全局单会话），避免每任务/每股重登。
+        from backend.datasource.baostock_source import shared_baostock
 
-        return BaostockSource()
+        return shared_baostock()
     raise DataSourceError(f"未知数据源: {name}")

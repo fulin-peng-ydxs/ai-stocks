@@ -10,12 +10,16 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+import threading
+import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
+from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
-from backend.config import get_settings
+from backend.config import get_effective_settings
 from backend.dataquality.checker import add_markers, sanitize_bars
 from backend.datasource.akshare_source import classify_board
 from backend.datasource.base import DataSource, get_source
@@ -23,12 +27,21 @@ from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import get_client
 from backend.storage.repository import MarketRepository
 
+# baostock 是会话型 API，并发不安全；兜底取数全进程串行（兜底本就罕见，几乎不影响整体速度）。
+_BAO_FALLBACK_LOCK = threading.Lock()
+_UPDATE_READY_SAMPLE = [
+    "000001.SZ", "000002.SZ", "000063.SZ", "000333.SZ", "300750.SZ",
+    "600000.SH", "600519.SH", "601318.SH", "688981.SH",
+]
+_UPDATE_READY_RATIO = 0.60
+
 log = get_logger("services.ingest")
 
 
 class IngestionService:
     def __init__(self, source: DataSource | None = None):
-        self.s = get_settings()
+        # 生效配置 = YAML ⊕ 前端 app_config 覆盖（限流/并发/超时改前端即生效）。
+        self.s = get_effective_settings()
         # 全局 socket 超时：根治公开接口"无超时挂死"——卡住的请求到点抛错，
         # 由 @with_retry 重试，循环不再僵死（需求 §10.1 稳定性）。
         import socket
@@ -70,30 +83,51 @@ class IngestionService:
         return board in self.s.universe.boards, board, limit
 
     # ── 交易日历 ──
-    def ingest_calendar(self, start: date, end: date) -> int:
-        df = self.src.get_trade_calendar(start, end)
+    def ingest_calendar(self, start: date, end: date, ctx=None) -> int:
+        # 交易日历是「已知的未来」（数据源发布当年完整日历），故上界至少延伸到本年底：
+        # 让未来交易日提前入表，避免调度「非交易日」判断把"日历还没采到这天"误当"闭市"。
+        cal_end = max(end, date(end.year, 12, 31))
+        if ctx:
+            ctx.log(f"子任务：交易日历采集开始（{start}~{cal_end}，源 {self.src.name}）")
+            ctx.flush()
+        df = self.src.get_trade_calendar(start, cal_end)
         n = self.repo.upsert_trade_calendar(df)
-        self.repo.log_update("trade_calendar", self.src.name, start, end, n, "success")
-        log.info("交易日历入库 %d 个交易日", n)
+        self.repo.log_update("trade_calendar", self.src.name, start, cal_end, n, "success")
+        log.info("交易日历入库 %d 个交易日（采至 %s）", n, cal_end)
+        if ctx:
+            ctx.log(f"子任务：交易日历采集完成，写入/更新 {n} 行，覆盖到 {cal_end}")
         return n
 
     # ── 指数 ──
-    def ingest_indices(self, start: date, end: date) -> int:
+    def ingest_indices(self, start: date, end: date, ctx=None) -> int:
         codes = [self.s.backtest.benchmark_main, *self.s.backtest.benchmark_others]
         total = 0
+        if ctx:
+            ctx.log(f"子任务：指数行情采集开始，{len(codes)} 个指数，区间 {start}~{end}")
+            ctx.flush()
         for idx in codes:
             try:
                 df = self.src.get_index_bar(idx, start, end)
                 total += self.repo.upsert_index_bar(df)
+                if ctx:
+                    ctx.log(f"指数 {idx} 完成：{len(df) if df is not None else 0} 行")
             except Exception as e:  # noqa: BLE001
                 log.warning("指数 %s 入库失败: %s", idx, e)
+                if ctx:
+                    ctx.log(f"指数 {idx} 采集失败：{e}", "warn")
                 self.repo.log_update("index_bar", self.src.name, start, end, 0, "failed", str(e))
         log.info("指数入库 %d 行（%s）", total, codes)
+        if ctx:
+            ctx.log(f"子任务：指数行情采集完成，共写入/更新 {total} 行")
         return total
 
     # ── 股票列表 + 基础信息 ──
-    def ingest_stock_basic(self, codes: list[str] | None = None) -> pd.DataFrame:
+    def ingest_stock_basic(self, codes: list[str] | None = None, ctx=None) -> pd.DataFrame:
         """入库 stock_basic（板块由代码判定），返回纳入的 code 列表 DataFrame。"""
+        if ctx:
+            scope = f"指定 {len(codes)} 只" if codes else "全市场"
+            ctx.log(f"子任务：股票基础信息采集开始（{scope}，源 {self.src.name}）")
+            ctx.flush()
         listing = self.src.get_stock_list()  # code, code6, name
         if codes:
             listing = listing[listing["code"].isin(codes)]
@@ -118,6 +152,8 @@ class IngestionService:
         n = self.repo.upsert_stock_basic(basic)
         self.repo.log_update("stock_basic", self.src.name, None, None, n, "success")
         log.info("股票基础信息入库 %d 只", n)
+        if ctx:
+            ctx.log(f"子任务：股票基础信息采集完成，目标板块 {len(basic)} 只，写入/更新 {n} 只")
         return basic
 
     # ── 单只股票日线 + 衍生指标 ──
@@ -130,16 +166,79 @@ class IngestionService:
             self._st_name_cache = cache
         return cache.get(code, False)
 
+    def _fetch_daily_with_fallback(
+        self, code: str, start: date, end: date, primary: DataSource, ctx=None,
+    ) -> tuple[pd.DataFrame | None, str]:
+        """主源取日线；**仅当主源返回空或报错**时用兜底源(baostock)整段重取（不混采，单只股票
+        尽量单一来源，避免 ak/baostock 拼接致前复权因子跳变）。返回 (df, 实际来源名)。
+
+        ctx（可选，仅串行路径传入）：把"主源失败/改用兜底源"写入任务实时日志，便于排查。
+        """
+        try:
+            df = primary.get_daily_bar(code, start, end)
+        except DataSourceError as e:
+            log.warning("%s 主源(%s)取数失败，尝试兜底源: %s", code, primary.name, e)
+            if ctx:
+                ctx.log(f"{code} 主源({primary.name})取数失败，尝试兜底源：{e}", "warn")
+            df = None
+        if df is not None and not df.empty:
+            return df, primary.name
+        bao = self._bao_source()
+        if not bao.supports("daily"):
+            msg = f"{code} {start}~{end}：主源无数据，且未找到可用兜底源，本只写入 0 行"
+            log.error(msg)
+            if ctx:
+                ctx.log(msg, "error")
+                ctx.flush()
+            raise DataSourceError(msg)
+        with _BAO_FALLBACK_LOCK:   # baostock 会话型，进程内串行
+            try:
+                if ctx:
+                    ctx.log(f"{code} 主源无数据，开始请求兜底源 {bao.name}（{start}~{end}）", "warn")
+                    ctx.flush()
+                bdf = bao.get_daily_bar(code, start, end)
+            except DataSourceError as e:
+                log.warning("%s 兜底源(%s)也失败: %s", code, bao.name, e)
+                if ctx:
+                    ctx.log(f"{code} 兜底源({bao.name})也失败：{e}", "error")
+                    ctx.flush()
+                raise DataSourceError(f"{code} {start}~{end} 主源+兜底源均取数失败: {e}") from e
+        if bdf is not None and not bdf.empty:
+            log.info("%s [%s~%s] 主源无数据，改用兜底源 %s（%d 行）", code, start, end, bao.name, len(bdf))
+            if ctx:
+                ctx.log(f"{code} {start}~{end}：主源无数据，改用兜底源 {bao.name}（{len(bdf)} 行）")
+            return bdf, bao.name
+        msg = f"{code} {start}~{end}：主源无数据，兜底源 {bao.name} 也无数据，本只写入 0 行"
+        log.error(msg)
+        if ctx:
+            ctx.log(msg, "error")
+            ctx.flush()
+        raise DataSourceError(msg)
+
+    def _record_provenance(self, code: str, table_name: str, start: date, end: date,
+                           source: str, rows: int) -> None:
+        """记录非默认源的取数事件（默认主源不记录），供审计/排查。只追加。"""
+        if source == self.s.datasource.primary:
+            return
+        self.repo.c.execute(
+            "INSERT INTO data_source_provenance "
+            "(code, table_name, date_start, date_end, source, rows, fetched_at) VALUES (?,?,?,?,?,?,?)",
+            [code, table_name, start, end, source, int(rows), datetime.now()])
+
     def ingest_one_daily(
         self, code: str, start: date, end: date,
         board_limit_pct: float | None = None, is_st: bool | None = None,
-        source: DataSource | None = None,
+        source: DataSource | None = None, ctx=None,
     ) -> int:
-        df = (source or self.src).get_daily_bar(code, start, end)
+        df, used_source = self._fetch_daily_with_fallback(code, start, end, source or self.src, ctx=ctx)
         if df is None or df.empty:
-            return 0
+            raise DataSourceError(f"{code} {start}~{end} 主源+兜底源均无数据")
         # 入库闸门：行级自清洗 + 校验（坏行入库前就处理，不再依赖事后手动修）
         df, sanitize_stats = sanitize_bars(df)
+        # L1 质量问题：被丢弃的非法收盘价行入台账（M2.9 DM-D15，入库即暴露不静默）
+        if sanitize_stats.get("dropped_dates"):
+            self._record_issues(code, sanitize_stats["dropped_dates"], "null_close",
+                                "收盘价为空或非正，已丢弃该行（原始数据缺损）")
         if df.empty:
             return 0
         if sanitize_stats["dropped"] or sanitize_stats["fixed_ohl"]:
@@ -157,7 +256,8 @@ class IngestionService:
         # OHL 修补行：真实振幅未知 → 强制不标一字板，并记入问题台账（不静默/不臆造）
         if "_ohl_repaired" in df.columns and df["_ohl_repaired"].any():
             df.loc[df["_ohl_repaired"], "is_one_word"] = False
-            self._record_ohl_repairs(code, df[df["_ohl_repaired"]]["trade_date"])
+            self._record_issues(code, df[df["_ohl_repaired"]]["trade_date"], "ohl_repaired",
+                                "开高低缺失，已用收盘价回填（不标一字板）")
             df = df.drop(columns=["_ohl_repaired"])
         bar_cols = [
             "code", "trade_date", "open", "high", "low", "close",
@@ -176,13 +276,19 @@ class IngestionService:
                 }
             )
             self.repo.upsert_daily_metrics(metrics)
+        # 非默认源（兜底）取的数据登记来源，供审计/排查（默认主源不记录）
+        if n and used_source != self.s.datasource.primary:
+            self._record_provenance(code, "daily_bar", start, end, used_source, n)
         return n
 
     # ── 估值/市值（总市值/总股本，补 G2）──
-    def ingest_valuation(self, codes: list[str] | None = None, years: int | None = None) -> dict:
+    def ingest_valuation(self, codes: list[str] | None = None, years: int | None = None,
+                         concurrency: int | None = None, ctx=None) -> dict:
         """补每日总市值到 daily_metrics.total_mv，并把最新总/流通股本写入 stock_basic。
 
         数据源 stock_value_em（东财市值接口，可用）。按在市股逐只拉取。
+        concurrency（与 update 同款）：>1 时线程池并发拉取，每线程独立 DataSource，
+        写入由 DuckDB 单写锁串行。默认 1（串行）。⚠️ 并发即提高总请求速率，注意封禁风险。
         """
         years = years or self.s.datasource.history_years
         end = date.today()
@@ -192,61 +298,323 @@ class IngestionService:
         )["code"].tolist()
         if codes:
             live = [c for c in live if c in codes]
-        val_src = self._source_for("valuation")
+        val_src = self._source_for("valuation")  # 校验能力可用（串行直接用，并发用线程局部源）
         # 断点续跑：跳过已有 total_mv 的票
         done = set(self.repo.c.query_df(
             "SELECT DISTINCT code FROM daily_metrics WHERE total_mv IS NOT NULL"
         )["code"].tolist())
-        ok, fail, skip, rows = 0, 0, 0, 0
-        for i, code in enumerate(live, 1):
-            if code in done:
-                skip += 1
-                continue
-            try:
-                v = val_src.get_valuation(code, start, end)
-                if v is None or v.empty:
-                    continue
-                # 只保留 daily_bar 已有的交易日，杜绝 value_em 日期错位产生游离 metrics 行
-                bar_dates = {
-                    pd.Timestamp(d).date()
-                    for d in self.repo.c.query_df(
-                        "SELECT trade_date FROM daily_bar WHERE code = ?", [code]
-                    )["trade_date"]
-                }
-                v = v[v["trade_date"].isin(bar_dates)]
-                if v.empty:
-                    continue
-                # 每日总市值入 daily_metrics（只更新 total_mv 列，不动 float_mv）
-                rows += self.repo.upsert_daily_metrics(v[["code", "trade_date", "total_mv"]])
-                # 最新总/流通股本入 stock_basic
-                last = v.dropna(subset=["total_share"]).tail(1)
-                if not last.empty:
-                    self.repo.upsert_stock_basic(pd.DataFrame([{
-                        "code": code,
-                        "total_share": int(last["total_share"].iloc[0]),
-                        "float_share": int(last["float_share"].iloc[0]) if pd.notna(last["float_share"].iloc[0]) else None,
-                    }]))
-                ok += 1
-                if i % 50 == 0 or i == len(live):
-                    log.info("估值进度 %d/%d（成功%d 跳过%d 失败%d，total_mv %d行）", i, len(live), ok, skip, fail, rows)
-            except Exception as e:  # noqa: BLE001
-                fail += 1
-                log.warning("%s 估值入库失败: %s", code, e)
-                self.repo.log_update("daily_metrics", val_src.name, start, end, 0, "failed", f"{code}: {e}")
+        pending = [c for c in live if c not in done]
+        skip = len(live) - len(pending)
+        concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
+        ok = fail = rows = 0
+        n = len(pending)
+        if ctx:
+            ctx.set_phase("valuation_history", phase_total=n, phase_done=0, current_item=None)
+            ctx.log(f"子任务：历史总市值补采开始，目标 {len(live)} 只，跳过 {skip} 只，待补 {n} 只，区间 {start}~{end}")
+            ctx.flush()
+
+        def _one(code: str, source) -> int:
+            return self._valuation_one(code, source, start, end)
+
+        def _tick(i: int) -> None:
+            if ctx:
+                ctx.set_phase("valuation_history", phase_total=n, phase_done=i)
+            if i % 50 == 0 or i == n:
+                log.info("估值进度 %d/%d（成功%d 失败%d 跳过%d，total_mv %d行）",
+                         i, n, ok, fail, skip, rows)
+                if ctx:
+                    ctx.log(f"历史总市值补采进度 {i}/{n}：成功{ok} 失败{fail} 跳过{skip}，写入 {rows} 行")
+                    ctx.flush()
+
+        def _fail(code: str, e: Exception) -> None:
+            log.warning("%s 估值入库失败: %s", code, e)
+            self.repo.log_update("daily_metrics", val_src.name, start, end, 0, "failed", f"{code}: {e}")
+
+        if concurrency <= 1:  # 串行（默认，最稳）
+            for i, code in enumerate(pending, 1):
+                if ctx:
+                    ctx.check_cancel()
+                    ctx.set_phase("valuation_history", phase_total=n, phase_done=i - 1, current_item=code)
+                try:
+                    rows += _one(code, val_src)
+                    ok += 1
+                    _tick(i)
+                except Exception as e:  # noqa: BLE001
+                    fail += 1
+                    _fail(code, e)
+        else:  # 并发：线程局部 DataSource，写入由 DuckDB RLock 串行
+            import threading
+
+            from backend.datasource.akshare_source import AKShareSource
+            tls = threading.local()
+
+            def _worker(code: str) -> int:
+                src = getattr(tls, "src", None)
+                if src is None:
+                    src = AKShareSource()
+                    tls.src = src
+                return _one(code, src)
+
+            with ThreadPoolExecutor(max_workers=concurrency) as ex:
+                futs = {ex.submit(_worker, c): c for c in pending}
+                pending_futs = set(futs)
+                i = 0
+                last_heartbeat = 0.0
+                while pending_futs:
+                    if ctx:
+                        ctx.check_cancel()
+                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
+                    now = time.monotonic()
+                    if not done_futs:
+                        if ctx and now - last_heartbeat >= 10:
+                            last_heartbeat = now
+                            ctx.log(f"历史总市值补采等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
+                            ctx.flush()
+                        continue
+                    for fut in done_futs:
+                        i += 1
+                        code = futs[fut]
+                        if ctx:
+                            ctx.set_phase("valuation_history", phase_total=n, phase_done=i - 1, current_item=code)
+                        try:
+                            rows += fut.result()
+                            ok += 1
+                            _tick(i)
+                        except Exception as e:  # noqa: BLE001
+                            fail += 1
+                            _fail(code, e)
         result = {"target": len(live), "ok": ok, "skip": skip, "fail": fail, "total_mv_rows": rows}
         log.info("估值入库完成: %s", result)
+        if ctx:
+            ctx.log(f"子任务：历史总市值补采完成，成功{ok} 跳过{skip} 失败{fail}，写入 {rows} 行")
         return result
 
-    def _record_ohl_repairs(self, code: str, trade_dates) -> None:
-        """把 OHL 修补行记入 data_quality_issue（修补可见、不静默）。"""
+    def ingest_valuation_latest(self, trade_date: date | None = None,
+                                codes: list[str] | None = None,
+                                concurrency: int | None = None, ctx=None) -> dict:
+        """补『最新交易日』的 total_mv：对当日仍缺 total_mv 的在市股，逐只调单只估值接口取最新市值。
+
+        治 P1：ingest_valuation 整股跳过已有 total_mv 的票 → 已采票的新交易日永远补不到。
+        这里不靠它，直接对"当日有日线但 total_mv 仍空"的在市股逐只 _valuation_one(code, 当日, 当日)，
+        用东财单只 stock_value_em 取真实总市值（准、稳，与 reconcile_gaps 收口同口径）。
+        codes 给定时仅补这些票；concurrency 同 ingest_valuation（默认配置值，>1 并发提速）。
+        """
+        if trade_date is None:
+            r = self.repo.c.query_df("SELECT max(trade_date) AS d FROM daily_bar")
+            if r.empty or pd.isna(r.iloc[0]["d"]):
+                return {"trade_date": None, "ok": 0, "fail": 0, "total_mv_rows": 0}
+            trade_date = pd.Timestamp(r.iloc[0]["d"]).date()
+        sql = ("SELECT m.code AS code FROM daily_metrics m JOIN stock_basic sb ON sb.code = m.code "
+               "WHERE m.trade_date = ? AND sb.delist_date IS NULL AND m.total_mv IS NULL")
+        params: list = [trade_date]
+        if codes:
+            sql += f" AND m.code IN ({','.join('?' * len(codes))})"
+            params += list(codes)
+        pending = self.repo.c.query_df(sql, params)["code"].tolist()
+        concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
+        ok = fail = rows = 0
+        done_latest = set(ctx.checkpoint.get("valuation_latest_done_codes") or []) if (ctx and ctx.checkpoint) else set()
+        pending = [c for c in pending if c not in done_latest]
+        n = len(pending)
+        log.info("补最新日市值：%s 有 %d 只在市股缺 total_mv，逐只取最新市值", trade_date, n)
+        if ctx:
+            ctx.set_phase("valuation_latest", phase_total=n, phase_done=0, current_item=None,
+                          valuation_latest_done_codes=sorted(done_latest))
+            ctx.log(f"子任务：最新日总市值补采开始，交易日 {trade_date}，待补 {n} 只")
+            ctx.flush()
+
+        def _one(code: str, source) -> int:
+            return self._valuation_one(code, source, trade_date, trade_date)
+
+        if concurrency <= 1:
+            src = self._source_for("valuation")
+            for i, code in enumerate(pending, 1):
+                if ctx:
+                    ctx.check_cancel()
+                    ctx.set_phase("valuation_latest", phase_total=n, phase_done=i - 1, current_item=code,
+                                  valuation_latest_done_codes=sorted(done_latest))
+                try:
+                    rows += _one(code, src); ok += 1
+                except Exception as e:  # noqa: BLE001
+                    fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
+                done_latest.add(code)
+                if i % 100 == 0 or i == n:
+                    log.info("补最新日市值进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
+                    if ctx:
+                        ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
+                                      valuation_latest_done_codes=sorted(done_latest))
+                        ctx.log(f"最新日总市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
+                        ctx.flush()
+        else:
+            import threading
+
+            from backend.datasource.akshare_source import AKShareSource
+            tls = threading.local()
+
+            def _worker(code: str) -> int:
+                src = getattr(tls, "src", None)
+                if src is None:
+                    src = AKShareSource(); tls.src = src
+                return _one(code, src)
+
+            with ThreadPoolExecutor(max_workers=concurrency) as ex:
+                futs = {ex.submit(_worker, c): c for c in pending}
+                pending_futs = set(futs)
+                i = 0
+                last_heartbeat = 0.0
+                while pending_futs:
+                    if ctx:
+                        ctx.check_cancel()
+                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
+                    now = time.monotonic()
+                    if not done_futs:
+                        if ctx and now - last_heartbeat >= 10:
+                            last_heartbeat = now
+                            ctx.log(f"最新日总市值补采等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
+                            ctx.flush()
+                        continue
+                    for fut in done_futs:
+                        i += 1
+                        code = futs[fut]
+                        if ctx:
+                            ctx.set_phase("valuation_latest", phase_total=n, phase_done=i - 1, current_item=code,
+                                          valuation_latest_done_codes=sorted(done_latest))
+                        try:
+                            rows += fut.result(); ok += 1
+                        except Exception as e:  # noqa: BLE001
+                            fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
+                        done_latest.add(code)
+                        if i % 100 == 0 or i == n:
+                            log.info("补最新日市值进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
+                            if ctx:
+                                ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
+                                              valuation_latest_done_codes=sorted(done_latest))
+                                ctx.log(f"最新日总市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
+                                ctx.flush()
+        result = {"trade_date": str(trade_date), "ok": ok, "fail": fail, "total_mv_rows": rows}
+        log.info("补最新日市值完成: %s", result)
+        if ctx:
+            ctx.log(f"子任务：最新日总市值补采完成，成功{ok} 失败{fail}，写入 {rows} 行")
+        return result
+
+    def ingest_valuation_gaps(self, codes: list[str] | None = None,
+                              concurrency: int | None = None, ctx=None) -> dict:
+        """一次性历史回补（WS2）：补所有『有 daily_bar 但 total_mv 为空』的在市股缺口。
+
+        与 ingest_valuation 的整股断点续跑互补——后者整股跳过已有 total_mv 的票，故它们的
+        历史缺失天（如 P1 遗留的存量缺口）补不到；这里逐(code,缺失区间)驱动 per-stock 回补。
+        一次性低并发跑一轮即可清干净；之后由 ingest_valuation_latest 每日维持不再产生新缺口。
+        """
+        gap = self.repo.c.query_df(
+            "SELECT m.code AS code, min(m.trade_date) AS lo, max(m.trade_date) AS hi, "
+            "count(*) AS n FROM daily_metrics m JOIN stock_basic sb ON sb.code = m.code "
+            "WHERE sb.delist_date IS NULL AND m.total_mv IS NULL GROUP BY m.code")
+        if codes:
+            gap = gap[gap["code"].isin(set(codes))]
+        pending = [(r["code"], pd.Timestamp(r["lo"]).date(), pd.Timestamp(r["hi"]).date())
+                   for _, r in gap.iterrows()]
+        concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
+        ok = fail = rows = 0
+        done_gap_codes = set(ctx.checkpoint.get("valuation_gap_done_codes") or []) if (ctx and ctx.checkpoint) else set()
+        pending = [it for it in pending if it[0] not in done_gap_codes]
+        n = len(pending)
+        log.info("市值缺口回补开始：%d 只在市股有 total_mv 缺口", n)
+        if ctx:
+            ctx.set_phase("valuation_gap", phase_total=n, phase_done=0, current_item=None,
+                          valuation_gap_done_codes=sorted(done_gap_codes))
+            ctx.log(f"子任务：总市值缺口回补开始，待补 {n} 只")
+            ctx.flush()
+
+        def _one(item, source) -> int:
+            code, lo, hi = item
+            return self._valuation_one(code, source, lo, hi)
+
+        if concurrency <= 1:
+            for i, item in enumerate(pending, 1):
+                if ctx:
+                    ctx.check_cancel()
+                    ctx.set_phase("valuation_gap", phase_total=n, phase_done=i - 1, current_item=item[0],
+                                  valuation_gap_done_codes=sorted(done_gap_codes))
+                try:
+                    rows += _one(item, self._source_for("valuation")); ok += 1
+                except Exception as e:  # noqa: BLE001
+                    fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
+                done_gap_codes.add(item[0])
+                if i % 50 == 0 or i == n:
+                    log.info("市值回补进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
+                    if ctx:
+                        ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=item[0],
+                                      valuation_gap_done_codes=sorted(done_gap_codes))
+                        ctx.log(f"总市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
+                        ctx.flush()
+        else:
+            import threading
+
+            from backend.datasource.akshare_source import AKShareSource
+            tls = threading.local()
+
+            def _worker(item) -> int:
+                src = getattr(tls, "src", None)
+                if src is None:
+                    src = AKShareSource(); tls.src = src
+                return _one(item, src)
+
+            with ThreadPoolExecutor(max_workers=concurrency) as ex:
+                futs = {ex.submit(_worker, it): it for it in pending}
+                pending_futs = set(futs)
+                i = 0
+                last_heartbeat = 0.0
+                while pending_futs:
+                    if ctx:
+                        ctx.check_cancel()
+                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
+                    now = time.monotonic()
+                    if not done_futs:
+                        if ctx and now - last_heartbeat >= 10:
+                            last_heartbeat = now
+                            ctx.log(f"总市值缺口回补等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
+                            ctx.flush()
+                        continue
+                    for fut in done_futs:
+                        i += 1
+                        item = futs[fut]
+                        if ctx:
+                            ctx.set_phase("valuation_gap", phase_total=n, phase_done=i - 1, current_item=item[0],
+                                          valuation_gap_done_codes=sorted(done_gap_codes))
+                        try:
+                            rows += fut.result(); ok += 1
+                        except Exception as e:  # noqa: BLE001
+                            fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
+                        done_gap_codes.add(item[0])
+                        if i % 50 == 0 or i == n:
+                            log.info("市值回补进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
+                            if ctx:
+                                ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=item[0],
+                                              valuation_gap_done_codes=sorted(done_gap_codes))
+                                ctx.log(f"总市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
+                                ctx.flush()
+        result = {"target": n, "ok": ok, "fail": fail, "total_mv_rows": rows}
+        log.info("市值缺口回补完成: %s", result)
+        if ctx:
+            ctx.log(f"子任务：总市值缺口回补完成，成功{ok} 失败{fail}，写入 {rows} 行")
+        return result
+
+    def _record_issues(self, code: str, trade_dates, issue_type: str, detail: str) -> None:
+        """把一批问题行记入 data_quality_issue（入库即暴露、不静默）。
+
+        通用于 L1 入库闸门各类（null_close 丢弃 / ohl_repaired 修补），severity 由类型映射。
+        """
         from datetime import datetime
 
+        from backend.dataquality.checker import severity_for
+
+        sev = severity_for(issue_type)
         rows = [
             {
                 "id": int(self.c.query_df("SELECT nextval('seq_quality_issue') AS v").iloc[0]["v"]),
-                "code": code, "trade_date": td, "issue_type": "ohl_repaired",
-                "severity": "low", "status": "open",
-                "detail": "开高低缺失，已用收盘价回填（不标一字板）", "detected_at": datetime.now(),
+                "code": code, "trade_date": td, "issue_type": issue_type,
+                "severity": sev, "status": "open",
+                "detail": detail, "detected_at": datetime.now(),
             }
             for td in trade_dates
         ]
@@ -262,19 +630,23 @@ class IngestionService:
             )
 
     # ── 全量回填 ──
-    def backfill(self, codes: list[str] | None = None, years: int | None = None, ctx=None) -> dict:
+    def backfill(self, codes: list[str] | None = None, years: int | None = None, ctx=None,
+                 concurrency: int | None = None) -> dict:
         """全量回填近 N 年。codes=None 表示全市场；可断点续跑（跳过已入库）。
 
         ctx（M2.8-B，可选）：逐股写实时日志 + 进度 + checkpoint。续跑天然幂等（跳过已入库）。
+        concurrency（与 update 同款）：>1 时线程池并发拉取，每线程独立 DataSource
+        （限流按线程隔离，总速率≈N×单线程），写入由 DuckDB 单写锁串行。默认 1（串行）。
+        ⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
         """
         years = years or self.s.datasource.history_years
         end = date.today()
         start = date(end.year - years, end.month, end.day)
         log.info("开始回填 %s ~ %s", start, end)
 
-        self.ingest_calendar(start, end)
-        self.ingest_indices(start, end)
-        basic = self.ingest_stock_basic(codes)
+        self.ingest_calendar(start, end, ctx=ctx)
+        self.ingest_indices(start, end, ctx=ctx)
+        basic = self.ingest_stock_basic(codes, ctx=ctx) if ctx else self.ingest_stock_basic(codes)
         target_codes = basic["code"].tolist()
         # 板块涨跌幅 + ST 状态查找表（ST 由名称含 "ST" 判定）
         limit_lut = dict(zip(basic["code"], basic["price_limit_pct"]))
@@ -282,35 +654,127 @@ class IngestionService:
             r["code"]: ("ST" in str(r["name"]).upper()) for _, r in basic.iterrows()
         }
 
-        loaded = self.repo.get_loaded_codes()
-        ok, skip, fail = 0, 0, 0
-        total_rows = 0
-        n = len(target_codes)
-        for i, code in enumerate(target_codes, 1):
-            if code in loaded:
-                skip += 1
-                continue
-            try:
-                rows = self.ingest_one_daily(
-                    code, start, end, limit_lut.get(code), st_lut.get(code)
-                )
-                total_rows += rows
-                ok += 1
-                if i % 20 == 0 or i == n:
-                    log.info("进度 %d/%d（成功%d 跳过%d 失败%d，累计%d行）",
-                             i, n, ok, skip, fail, total_rows)
-                    if ctx:
-                        ctx.progress(min(0.1 + 0.78 * i / max(n, 1), 0.88),
-                                     f"回填 {i}/{n}（成功{ok} 跳过{skip} 失败{fail}，累计{total_rows}行）")
-                        ctx.log(f"[{i}/{n}] {code} 回填 +{rows} 行")
-                        ctx.set_checkpoint(done=i, skipped=skip, total=n)
-            except Exception as e:  # noqa: BLE001
-                fail += 1
-                log.warning("%s 回填失败: %s", code, e)
+        # 断点续跑 + 部分覆盖修复：旧逻辑"有任意数据就跳过"会把仅有部分近期数据的股票
+        # （如经缺口兜底补了近窗口、或上次中断）误判为已完成，早期历史永远补不上。改为按
+        # "最早入库日是否已覆盖到回填起点(或上市日)"判断：mn <= max(start, 上市日)+缓冲 才算已覆盖、跳过。
+        min_df = self.repo.c.query_df("SELECT code, min(trade_date) AS mn FROM daily_bar GROUP BY code")
+        loaded_min = {r["code"]: pd.Timestamp(r["mn"]).date()
+                      for _, r in min_df.iterrows() if not pd.isna(r["mn"])}
+        ld_df = self.repo.c.query_df("SELECT code, list_date FROM stock_basic")
+        list_lut = {r["code"]: (pd.Timestamp(r["list_date"]).date() if not pd.isna(r["list_date"]) else None)
+                    for _, r in ld_df.iterrows()}
+        buffer = timedelta(days=15)   # 吸收"回填起点/上市日 vs 首个交易日"的日历误差
+
+        def _covered(c: str) -> bool:
+            mn = loaded_min.get(c)
+            if mn is None:
+                return False           # 完全无数据 → 必补
+            ld = list_lut.get(c)
+            threshold = ld if (ld and ld > start) else start   # 上市晚于回填起点的，按上市日
+            return mn <= threshold + buffer                    # 最早日已到应有起点 → 视为已覆盖
+
+        pending = [c for c in target_codes if not _covered(c)]
+        skip = len(target_codes) - len(pending)
+        concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
+        ok = fail = total_rows = 0
+        updated: set[str] = set()  # 实际有新行的股票 → 收尾刷新干净因子
+        n = len(pending)
+        if ctx:
+            ctx.set_phase("daily_bar", phase_total=n, phase_done=0, current_item=None)
+            ctx.log(f"▶ 开始历史补数：共 {len(target_codes)} 只（已入库跳过 {skip}，待补 {n}），"
+                    f"区间 {start}~{end}（并发 {concurrency}）")
+
+        def _one(code: str, source: DataSource | None = None, ctx_=None) -> int:
+            return self.ingest_one_daily(code, start, end, limit_lut.get(code), st_lut.get(code),
+                                         source=source, ctx=ctx_)
+
+        def _tick(i: int, code: str, rows: int) -> None:
+            if ctx:
+                ctx.set_checkpoint(phase="daily_bar", done=i, skipped=skip, total=n,
+                                   phase_total=n, phase_done=i, current_item=code)
+            if i % 20 == 0 or i == n:
+                log.info("回填进度 %d/%d（成功%d 失败%d 跳过%d，累计%d行，最近 %s +%d）",
+                         i, n, ok, fail, skip, total_rows, code, rows)
+            if ctx and (i % 20 == 0 or i == n):
+                ctx.progress(min(0.1 + 0.78 * i / max(n, 1), 0.88),
+                             f"回填 {i}/{n}（成功{ok} 跳过{skip} 失败{fail}，累计{total_rows}行）")
+                ctx.log(f"[{i}/{n}] 进度：成功{ok} 跳过{skip} 失败{fail}，累计 +{total_rows} 行（最近 {code} +{rows}）")
+
+        def _fail(i: int, code: str, e: Exception) -> None:
+            log.warning("%s 回填失败: %s", code, e)
+            if ctx:
+                ctx.log(f"[{i}/{n}] {code} 回填失败（{start}~{end}，主源+兜底源均未取到）: {e}", "error")
+            self.repo.log_update("daily_bar", self.src.name, start, end, 0, "failed", f"{code}: {e}")
+
+        if concurrency <= 1:  # 串行（默认，最稳）
+            for i, code in enumerate(pending, 1):
                 if ctx:
-                    ctx.log(f"[{i}/{n}] {code} 回填失败: {e}", "warn")
-                self.repo.log_update("daily_bar", self.src.name, start, end, 0, "failed", f"{code}: {e}")
+                    ctx.check_cancel()
+                    ctx.set_phase("daily_bar", phase_total=n, phase_done=i - 1, current_item=code)
+                    if i == 1 or i % 20 == 1:
+                        ctx.log(f"[{i}/{n}] 开始历史补数 {code}（串行，当前请求返回后进入下一检查点）")
+                        ctx.flush()
+                try:
+                    rows = _one(code, ctx_=ctx)
+                    total_rows += rows
+                    if rows:
+                        updated.add(code)
+                    ok += 1
+                    _tick(i, code, rows)
+                except Exception as e:  # noqa: BLE001
+                    fail += 1
+                    _fail(i, code, e)
+        else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
+            import threading
+
+            from backend.datasource.akshare_source import AKShareSource
+            tls = threading.local()
+
+            def _worker(code: str) -> int:
+                src = getattr(tls, "src", None)
+                if src is None:
+                    src = AKShareSource()
+                    tls.src = src
+                return _one(code, source=src)
+
+            with ThreadPoolExecutor(max_workers=concurrency) as ex:
+                futs = {ex.submit(_worker, c): c for c in pending}
+                pending_futs = set(futs)
+                i = 0
+                last_heartbeat = 0.0
+                while pending_futs:
+                    if ctx:
+                        ctx.check_cancel()
+                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
+                    now = time.monotonic()
+                    if not done_futs:
+                        if ctx and now - last_heartbeat >= 10:
+                            last_heartbeat = now
+                            ctx.log(f"历史补数等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
+                            ctx.flush()
+                        continue
+                    for fut in done_futs:
+                        i += 1
+                        code = futs[fut]
+                        if ctx:
+                            ctx.set_phase("daily_bar", phase_total=n, phase_done=i - 1, current_item=code)
+                        try:
+                            rows = fut.result()
+                            total_rows += rows
+                            if rows:
+                                updated.add(code)
+                            ok += 1
+                            _tick(i, code, rows)
+                        except Exception as e:  # noqa: BLE001
+                            fail += 1
+                            _fail(i, code, e)
+        if updated:
+            if ctx:
+                ctx.log(f"↻ 重算干净复权因子（{len(updated)} 只新入库）…")
+            self._refresh_clean_factors(sorted(updated), ctx=ctx)
         result = {"target": len(target_codes), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
+        if ctx:
+            ctx.log(f"■ 历史补数完成：成功 {ok}、跳过 {skip}、失败 {fail}，共写入 {total_rows} 行")
         log.info("回填完成: %s", result)
         # 入库后自动校验（全市场回填才跑契约检查，避免部分加载误报）
         if codes is None:
@@ -334,14 +798,71 @@ class IngestionService:
             log.warning("入库后自动校验异常: %s", e)
 
     # ── 增量更新 ──
-    def _update_one(self, code: str, end: date, source: DataSource | None = None) -> int:
-        """更新单只股票（增量）。供串行/并发共用。返回写入行数。"""
+    def _update_one(self, code: str, end: date, source: DataSource | None = None, ctx=None) -> int:
+        """更新单只股票（增量）。供串行/并发共用。返回写入行数。
+
+        ctx 仅串行路径传入（并发下从工作线程写实时日志不安全），用于把兜底源等细节写进任务日志。
+        """
         last = self.repo.get_max_bar_date(code)
         start = (last + timedelta(days=1)) if last else date(
             end.year - self.s.datasource.history_years, end.month, end.day)
         if start > end:
             return 0
-        return self.ingest_one_daily(code, start, end, source=source)
+        return self.ingest_one_daily(code, start, end, source=source, ctx=ctx)
+
+    def _previous_open_day(self, day: date) -> date:
+        df = self.repo.c.query_df(
+            "SELECT max(trade_date) AS d FROM trade_calendar WHERE is_open AND trade_date < ?",
+            [day],
+        )
+        if not df.empty and pd.notna(df.iloc[0]["d"]):
+            return pd.Timestamp(df.iloc[0]["d"]).date()
+        return day - timedelta(days=1)
+
+    def _resolve_update_end(self, requested_end: date, basic: list[str], codes: list[str] | None, ctx=None) -> date | None:
+        """全市场增量的目标日保护：主源当日日线未基本就绪时，直接跳过本次全市场行情更新。"""
+        cal = self.repo.c.query_df(
+            "SELECT is_open FROM trade_calendar WHERE trade_date = ?",
+            [requested_end],
+        )
+        if not cal.empty and not bool(cal.iloc[0]["is_open"]):
+            prev = self._previous_open_day(requested_end)
+            if ctx:
+                ctx.log(f"今日 {requested_end} 非交易日，上一交易日为 {prev}，本次全市场增量直接结束")
+            return None
+
+        # 指定少量股票时尊重用户意图；全市场任务才做抽样就绪保护。
+        if codes or len(basic) < 100:
+            return requested_end
+
+        basic_set = set(basic)
+        sample = [c for c in _UPDATE_READY_SAMPLE if c in basic_set]
+        if not sample and basic:
+            step = max(len(basic) // 10, 1)
+            sample = basic[::step][:10]
+
+        ready = empty = errors = 0
+        for code in sample:
+            try:
+                df = self.src.get_daily_bar(code, requested_end, requested_end)
+                if df is not None and not df.empty:
+                    ready += 1
+                else:
+                    empty += 1
+            except Exception as e:  # noqa: BLE001
+                errors += 1
+                log.warning("%s 当日就绪度探测失败: %s", code, e)
+
+        total = max(len(sample), 1)
+        ratio = ready / total
+        if ratio < _UPDATE_READY_RATIO:
+            msg = (f"今日 {requested_end} 主源日线未完全就绪：抽样 {ready}/{len(sample)} 有数据"
+                   f"（空 {empty}，异常 {errors}），本次全市场增量直接结束，不降级到上一交易日，也不逐只走兜底源")
+            log.warning(msg)
+            if ctx:
+                ctx.log(msg, "warn")
+            return None
+        return requested_end
 
     def update(self, codes: list[str] | None = None, concurrency: int | None = None, ctx=None) -> dict:
         """增量更新：每只股票从已入库最新日 +1 起补到今天。
@@ -356,39 +877,91 @@ class IngestionService:
         end = date.today()
         concurrency = concurrency or self.s.datasource.update_concurrency
         basic = (
-            self.repo.c.query_df("SELECT code FROM stock_basic WHERE delist_date IS NULL")["code"].tolist()
+            self.repo.c.query_df(
+                "SELECT code FROM stock_basic WHERE delist_date IS NULL ORDER BY code")["code"].tolist()
         )
         if codes:
             basic = [c for c in basic if c in codes]
-        self.ingest_calendar(end - timedelta(days=30), end)
-        self.ingest_indices(end - timedelta(days=30), end)
+        # 续跑（FR-DM-10）：串行老任务按 done 兼容跳过；并发任务按 done_codes 精确跳过。
+        n_total = len(basic)
+        done_codes = set(ctx.checkpoint.get("done_codes") or []) if (ctx and ctx.checkpoint) else set()
+        skip_done = 0 if done_codes else int(ctx.checkpoint.get("done", 0)) if (ctx and ctx.checkpoint) else 0
+        completed_codes = set(done_codes) | set(basic[:skip_done])
+        pending = [c for c in basic if c not in completed_codes]
+        self.ingest_calendar(end - timedelta(days=30), end, ctx=ctx)
+        self.ingest_indices(end - timedelta(days=30), end, ctx=ctx)
+        end = self._resolve_update_end(end, basic, codes, ctx=ctx)
+        if end is None:
+            result = {"target": 0, "ok": 0, "fail": 0, "rows": 0, "concurrency": concurrency,
+                      "skipped": True, "reason": "primary_not_ready"}
+            if ctx:
+                ctx.progress(1.0, "主源未就绪，本次增量未执行")
+                ctx.log("■ 增量更新结束：主源未就绪，本次未执行行情更新")
+            return result
         ok = fail = total_rows = 0
-        n = len(basic)
+        updated: set[str] = set()  # 实际有新行的股票 → 收尾增量刷新干净因子
+        n = len(pending)
+        if ctx:
+            tail = f"（续跑跳过已完成 {skip_done}）" if skip_done else ""
+            ctx.set_phase("daily_bar", done=len(completed_codes), total=n_total,
+                          phase_total=n_total, phase_done=len(completed_codes), current_item=None,
+                          done_codes=sorted(completed_codes))
+            ctx.log(f"▶ 开始增量更新：共 {n_total} 只在市股票，待补 {n} 只{tail}，"
+                    f"各股从已入库最新日+1 补到 {end}（并发 {concurrency}）")
 
-        def _tick(i: int, code: str, rows: int) -> None:
-            if ctx and (i % 20 == 0 or i == n):
-                ctx.progress(min(0.1 + 0.78 * i / max(n, 1), 0.88),
-                             f"增量更新 {i}/{n}（成功{ok} 失败{fail}，累计{total_rows}行）")
-                ctx.log(f"[{i}/{n}] {code} 增量 +{rows} 行")
-                ctx.set_checkpoint(done=i, total=n)
+        def _checkpoint(done_count: int) -> None:
+            if not ctx:
+                return
+            data = {"phase": "daily_bar", "done": done_count, "total": n_total,
+                    "phase_total": n_total, "phase_done": done_count}
+            if concurrency > 1:
+                data["done_codes"] = sorted(completed_codes)
+            elif completed_codes:
+                data["done_codes"] = sorted(completed_codes)
+            ctx.set_checkpoint(**data)
+
+        def _tick(a: int, code: str, rows: int, *, in_flight: int = 0) -> None:
+            if ctx:
+                ctx.set_phase("daily_bar", done=a, total=n_total, phase_total=n_total,
+                              phase_done=a, current_item=code, done_codes=sorted(completed_codes))
+            if a % 20 == 0 or a == n_total:
+                log.info("增量进度 %d/%d（成功%d 失败%d，累计%d行，最近 %s +%d）",
+                         a, n_total, ok, fail, total_rows, code, rows)
+            if ctx and (a % 20 == 0 or a == n_total):
+                prefix = "并发增量" if concurrency > 1 else "增量更新"
+                in_flight_note = f"，在途{in_flight}" if concurrency > 1 else ""
+                ctx.log(f"[{a}/{n_total}] {prefix}进度：成功{ok} 失败{fail}{in_flight_note}，"
+                        f"累计 +{total_rows} 行（最近完成 {code} +{rows}）")
+                ctx.progress(min(0.1 + 0.78 * a / max(n_total, 1), 0.88),
+                             f"{prefix} {a}/{n_total}（成功{ok} 失败{fail}{in_flight_note}，累计{total_rows}行）")
 
         if concurrency <= 1:  # 串行（默认，最稳）
-            for i, code in enumerate(basic, 1):
+            for idx, code in enumerate(pending, 1):
+                a = skip_done + idx
+                if ctx:
+                    ctx.check_cancel()   # 协作式终止：每只之间检查
+                    ctx.set_phase("daily_bar", phase_total=n_total, phase_done=a - 1, current_item=code,
+                                  done=len(completed_codes), total=n_total, done_codes=sorted(completed_codes))
+                    if a == 1 or a % 20 == 1:
+                        ctx.log(f"[{a}/{n_total}] 开始增量更新 {code}（串行，当前请求返回后才会进入下一检查点）")
+                        ctx.flush()
                 try:
-                    rows = self._update_one(code, end)
+                    rows = self._update_one(code, end, ctx=ctx)
                     total_rows += rows
+                    if rows:
+                        updated.add(code)
                     ok += 1
-                    _tick(i, code, rows)
+                    completed_codes.add(code)
+                    _tick(a, code, rows)
                 except Exception as e:  # noqa: BLE001
                     fail += 1
                     log.warning("%s 增量失败: %s", code, e)
+                    completed_codes.add(code)
+                    _checkpoint(a)
                     if ctx:
-                        ctx.log(f"[{i}/{n}] {code} 增量失败: {e}", "warn")
+                        ctx.log(f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，主源+兜底源均未取到）: {e}", "error")
                     self.repo.log_update("daily_bar", self.src.name, None, end, 0, "failed", f"{code}: {e}")
         else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
-            import threading
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-
             from backend.datasource.akshare_source import AKShareSource
             tls = threading.local()
 
@@ -399,59 +972,363 @@ class IngestionService:
                     tls.src = src
                 return self._update_one(code, end, source=src)
 
-            with ThreadPoolExecutor(max_workers=concurrency) as ex:
-                futs = {ex.submit(_worker, c): c for c in basic}
-                for i, fut in enumerate(as_completed(futs), 1):
-                    code = futs[fut]
-                    try:
-                        rows = fut.result()
-                        total_rows += rows
-                        ok += 1
-                        _tick(i, code, rows)  # 在调用线程内写日志，线程安全
-                    except Exception as e:  # noqa: BLE001
-                        fail += 1
-                        log.warning("%s 增量失败: %s", code, e)
+            ex = ThreadPoolExecutor(max_workers=concurrency)
+            try:
+                futs = {ex.submit(_worker, c): c for c in pending}
+                pending_futs = set(futs)
+                completed = len(completed_codes)
+                last_heartbeat = 0.0
+                while pending_futs:
+                    if ctx:
+                        ctx.check_cancel()
+                    done, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
+                    now = time.monotonic()
+                    if not done:
+                        if ctx and now - last_heartbeat >= 10:
+                            last_heartbeat = now
+                            ctx.log(f"并发增量等待中：已完成 {completed}/{n_total}，在途 {len(pending_futs)}，"
+                                    "外部数据源请求返回后继续")
+                            ctx.flush()
+                        continue
+                    for fut in done:
+                        a = completed + 1
+                        completed = a
+                        code = futs[fut]
                         if ctx:
-                            ctx.log(f"[{i}/{n}] {code} 增量失败: {e}", "warn")
-                        self.repo.log_update("daily_bar", self.src.name, None, end, 0, "failed", f"{code}: {e}")
+                            ctx.check_cancel()
+                        try:
+                            rows = fut.result()
+                            total_rows += rows
+                            if rows:
+                                updated.add(code)
+                            ok += 1
+                            completed_codes.add(code)
+                            _tick(a, code, rows, in_flight=len(pending_futs))
+                        except Exception as e:  # noqa: BLE001
+                            fail += 1
+                            completed_codes.add(code)
+                            log.warning("%s 增量失败: %s", code, e)
+                            if ctx:
+                                ctx.log(f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，主源+兜底源均未取到）: {e}", "error")
+                            self.repo.log_update("daily_bar", self.src.name, None, end, 0, "failed", f"{code}: {e}")
+                            if a % 20 == 0 or a == n_total:
+                                _checkpoint(a)
+            except Exception:
+                for fut in pending_futs:
+                    fut.cancel()
+                ex.shutdown(wait=False, cancel_futures=True)
+                raise
+            else:
+                ex.shutdown(wait=True)
 
-        result = {"target": n, "ok": ok, "fail": fail, "rows": total_rows, "concurrency": concurrency}
+        # ── 缺口收口（DM 口径统一：与质量修复-补采共用 reconcile_gaps，confirm=False 只补不确认）──
+        # 常规增量只补 max+1~today；若主源返回部分数据则兜底不触发、最新缺口会漏（如停牌次日/源端
+        # 当日缺数）。此处用批量缺口口径（同 _coverage_frame，含减确认停牌）找出有缺口/滞后的股，
+        # 窄区间重采让兜底正确触发把能补的补回。放在刷因子前，使补回行一并刷净。
+        # 注意：自动收口只补回、不自动确认停牌——真停牌交由质检+补采那条有把关的路径确认，避免把
+        # "可能只是源端当日未发布"的最新缺口在全市场范围误标成不可逆停牌。
+        recon = {"stocks": 0, "backfilled": 0}
+        try:
+            from backend.services.data_report import DataIntegrityReport
+            gapped = DataIntegrityReport(self.repo.c).gapped_codes()
+            if codes:
+                gapped = [c for c in gapped if c in codes]
+            if gapped and ctx:
+                ctx.log(f"↻ 缺口收口：{len(gapped)} 只存在缺口/滞后，窄区间重采补回（兜底正确触发；不自动确认停牌）…")
+            gtotal = len(gapped)
+            for gi, gcode in enumerate(gapped, 1):
+                if ctx:
+                    ctx.check_cancel()
+                    if gi == 1 or gi % 20 == 1:
+                        ctx.log(f"缺口收口进度 {gi}/{gtotal}：开始处理 {gcode}")
+                        ctx.flush()
+                try:
+                    r = self.reconcile_gaps(gcode, confirm=False)
+                    if r["rows"]:
+                        total_rows += r["rows"]
+                        updated.add(gcode)
+                    if r["backfilled"]:
+                        recon["stocks"] += 1
+                        recon["backfilled"] += len(r["backfilled"])
+                except Exception as e:  # noqa: BLE001  单只收口失败不影响其余
+                    log.warning("%s 缺口收口失败: %s", gcode, e)
+                    if ctx:
+                        ctx.log(f"缺口收口 {gcode} 失败：{e}", "warn")
+                if ctx and (gi % 20 == 0 or gi == gtotal):
+                    ctx.log(f"缺口收口进度 {gi}/{gtotal}：已补回 {recon['stocks']} 只 / {recon['backfilled']} 天")
+                    ctx.flush()
+            if gapped and ctx:
+                ctx.log(f"■ 缺口收口完成：{recon['stocks']} 只补回，共补回 {recon['backfilled']} 天"
+                        f"（真停牌待质检+补采确认）")
+        except Exception as e:  # noqa: BLE001  收口阶段异常不影响增量主结果
+            log.warning("缺口收口阶段异常（不影响增量结果）: %s", e)
+
+        if updated:
+            if ctx:
+                ctx.log(f"↻ 增量刷新干净复权因子（{len(updated)} 只有新行）…")
+            self._refresh_clean_factors(sorted(updated), ctx=ctx)
+        result = {"target": n, "ok": ok, "fail": fail, "rows": total_rows, "concurrency": concurrency,
+                  "reconcile": recon}
+        # 补市值并入更新行情（容错子阶段）：更新即产出 L2 完整数据（float_mv 由日线自带 + total_mv）。
+        # 幂等只补缺失股；失败仅记日志、不让整次更新失败（市值源是慢接口，单独容错隔离）。
+        try:
+            if ctx:
+                ctx.log("↻ 补市值估值（total_mv）…")
+            # 治 P1（已采票新天补不到）：逐只取最新交易日的 total_mv（单只 stock_value_em）。
+            # 失败独立隔离，不连累后面的历史补采。
+            latest_val: dict = {}
+            try:
+                latest_val = (self.ingest_valuation_latest(codes=codes, concurrency=concurrency, ctx=ctx)
+                              if ctx else self.ingest_valuation_latest(codes=codes, concurrency=concurrency))
+            except Exception as se:  # noqa: BLE001
+                log.warning("补最新日市值失败（不连累历史补采）: %s", se)
+                if ctx:
+                    ctx.log(f"补最新日市值失败（不连累历史补采）：{se}", "warn")
+            # 再跑历史补采：仅对从未采过估值的票（新上市/新入库）补全历史。
+            full_val = (self.ingest_valuation(codes=codes, concurrency=concurrency, ctx=ctx)
+                        if ctx else self.ingest_valuation(codes=codes, concurrency=concurrency))
+            result["valuation"] = {**full_val, "latest": latest_val}
+            if ctx:
+                ctx.log(f"■ 补市值完成：最新日 {latest_val.get('total_mv_rows', 0)} 行"
+                        f" + 历史补采 {full_val.get('total_mv_rows', 0)} 行")
+        except Exception as e:  # noqa: BLE001  市值源异常不影响行情更新结果
+            log.warning("补市值估值失败（不影响行情更新）: %s", e)
+            result["valuation_error"] = str(e)
+            if ctx:
+                ctx.log(f"补市值估值失败（不影响行情更新）：{e}", "warn")
+        if ctx:
+            ctx.log(f"■ 增量更新完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{n} 只）")
         log.info("增量更新完成: %s", result)
         return result
 
+    @staticmethod
+    def reconcile_note(r: dict) -> str:
+        """收口结果统一文案：只报有意义的部分（避免"补回1天、确认停牌0天"两个数一个为0的误导）。"""
+        bf, cf = len(r.get("backfilled", [])), int(r.get("confirmed", 0))
+        if bf and cf:
+            return f"补回 {bf} 天，确认停牌 {cf} 天"
+        if bf:
+            return f"补回 {bf} 天"
+        if cf:
+            return f"确认停牌 {cf} 天"
+        return "源端仍无数据，保持待处理"
+
+    def reconcile_gaps(self, code: str, ctx=None, confirm: bool = True) -> dict:
+        """收口单只股票窗口内的覆盖缺口（增量更新与质量修复-补采共用，统一口径）。
+
+        步骤：窗口内仍缺的开市日 → 窄区间重采（区间收窄到缺口，主源整段无数据时兜底才会触发，
+        治"多日区间主源返回部分数据→兜底不触发"的盲区）→（confirm 时）仍无数据者确认为停牌
+        （写 stock_suspension 收敛）。返回 {miss, backfilled, confirmed, rows}。
+
+        confirm：是否把"重采后仍无数据"确认为停牌。
+          - 质量修复-补采（有人按质检台账把关）传 True：保留"反向确认停牌"收敛语义。
+          - 增量更新自动收尾传 False：只补回，不自动确认——避免把"可能只是源端当日未发布"的最新
+            缺口在全市场范围内误标成不可逆的停牌；真停牌交由质检+补采这条把关路径确认。
+        """
+        from backend.services.data_report import DataIntegrityReport
+        rep = DataIntegrityReport()   # 默认 get_client() 单例，与 self.repo.c 同一连接
+        miss = rep.missing_days_for(code)
+        if not miss:
+            return {"miss": [], "backfilled": [], "confirmed": 0, "rows": 0}
+        lo, hi = min(miss), max(miss)
+        if ctx:
+            ctx.log(f"缺口收口：重采 {code} {lo}~{hi}（{len(miss)} 个待补开市日）")
+        try:
+            rows = self.ingest_one_daily(code, lo, hi, ctx=ctx)
+        except DataSourceError as e:
+            if not confirm:
+                raise
+            rows = 0
+            if ctx:
+                ctx.log(f"缺口收口：{code} {lo}~{hi} 源端仍无行情数据，进入停牌确认判断：{e}", "warn")
+        still = rep.missing_days_for(code)   # 仍缺的开市日（已随新 min_bar 收窄 lo，排除上市前的伪缺口）
+        confirmed = rep.confirm_suspension(code, still) if (confirm and still) else 0
+        if ctx and confirmed:
+            ctx.log(f"缺口收口：{code} 已确认停牌 {confirmed} 天")
+        # 补回数 = miss 中重采后"确实已有行情"的日期（按 daily_bar 实判）。不能用 miss−still：次新股
+        # 首次入库会令窗口起点 lo 随新 min_bar 前移，把上市前的"伪缺口"误算成补回（虚报如 90 实补 5）。
+        have_after = {pd.Timestamp(d).date() for d in rep.c.query_df(
+            "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date BETWEEN ? AND ?",
+            [code, lo, hi])["trade_date"]}
+        backfilled = [d for d in miss if d in have_after]
+        # 收口补市值（DM 口径统一）：补回了行情的天 total_mv 仍空，而 mv_missing 是整股粒度测不出、
+        # ingest_valuation 又整股跳过已有 total_mv 的票 → 这些天会永久缺市值。故对实际补回的股顺带补
+        # 一次估值（仅这只股 + 补回区间），一步到位。失败不影响补回主结果。
+        if backfilled:
+            try:
+                self._valuation_one(code, self._source_for("valuation"),
+                                    min(backfilled), max(backfilled))
+            except Exception as e:  # noqa: BLE001
+                log.warning("%s 收口补市值失败(不影响补回): %s", code, e)
+        return {"miss": miss, "backfilled": backfilled, "confirmed": confirmed, "rows": rows}
+
+    def _valuation_one(self, code: str, source, start: date, end: date) -> int:
+        """取单只 [start,end] 估值，幂等合并入 daily_metrics（只补 total_mv；float_mv 仅空缺才回填，
+        不覆盖日线更准值）+ 最新总/流通股本入 stock_basic。返回 total_mv 写入行数。
+        供 ingest_valuation 全量补市值与 reconcile_gaps 收口补市值共用，口径一致。"""
+        v = source.get_valuation(code, start, end)
+        if v is None or v.empty:
+            return 0
+        # 只保留 daily_bar 已有的交易日，杜绝 value_em 日期错位产生游离 metrics 行
+        bar_dates = {
+            pd.Timestamp(d).date()
+            for d in self.repo.c.query_df(
+                "SELECT trade_date FROM daily_bar WHERE code = ?", [code]
+            )["trade_date"]
+        }
+        v = v[v["trade_date"].isin(bar_dates)]
+        if v.empty:
+            return 0
+        # 每日总市值入 daily_metrics（只更新 total_mv 列，不动 float_mv）
+        added = self.repo.upsert_daily_metrics(v[["code", "trade_date", "total_mv"]])
+        # 补流通市值：仅 float_mv 为空的行用估值源「流通市值」回填——保证 baostock 兜底票
+        # （日线无 float_share、无 float_mv）也满足 L2 契约；新浪日线已写的更准 float_mv 不覆盖。
+        fv = v[["code", "trade_date", "float_mv"]].dropna(subset=["float_mv"])
+        if not fv.empty:
+            with self.repo.c.temp_view(fv, prefix="fv_metrics") as t:
+                self.repo.c.execute(
+                    f"UPDATE daily_metrics m SET float_mv = src.float_mv FROM {t} src "
+                    f"WHERE m.code = src.code AND m.trade_date = src.trade_date AND m.float_mv IS NULL")
+        # 最新总/流通股本入 stock_basic
+        last = v.dropna(subset=["total_share"]).tail(1)
+        if not last.empty:
+            self.repo.upsert_stock_basic(pd.DataFrame([{
+                "code": code,
+                "total_share": int(last["total_share"].iloc[0]),
+                "float_share": int(last["float_share"].iloc[0]) if pd.notna(last["float_share"].iloc[0]) else None,
+            }]))
+        return added
+
     # ── 指定日期采集（FR-DM-3 更多选项，M2.8-B）──
-    def ingest_date(self, start: date, end: date, codes: list[str] | None = None, ctx=None) -> dict:
+    def ingest_date(self, start: date, end: date, codes: list[str] | None = None, ctx=None,
+                    concurrency: int | None = None) -> dict:
         """补指定日期（或区间）的行情。codes=None 表示全部在市股票。
 
         逐股拉取 [start, end] 区间并入库（沿用 ingest_one_daily 的清洗/标记/幂等 upsert）。
         返回受影响交易日列表供调用方标记评分快照失效。
+
+        concurrency（与 update 同款）：>1 时用线程池并发拉取，每线程独立 DataSource
+        （限流按线程隔离，总请求速率≈N×rate_limit_per_sec），写入经 DuckDB 单写锁串行。
+        默认 1（串行，最稳）。⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
         """
         live = self.repo.c.query_df(
             "SELECT code, name, price_limit_pct FROM stock_basic WHERE delist_date IS NULL")
         if codes:
             live = live[live["code"].isin(codes)]
         # 确保区间内日历存在
-        self.ingest_calendar(start, end)
+        self.ingest_calendar(start, end, ctx=ctx)
         limit_lut = dict(zip(live["code"], live["price_limit_pct"]))
         st_lut = {r["code"]: ("ST" in str(r["name"]).upper()) for _, r in live.iterrows()}
         target = live["code"].tolist()
+        done_codes = set(ctx.checkpoint.get("done_codes") or []) if (ctx and ctx.checkpoint) else set()
+        target = [c for c in target if c not in done_codes]
+        full_total = len(done_codes) + len(target)
         n = len(target)
+        concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
         ok = fail = total_rows = 0
-        for i, code in enumerate(target, 1):
-            try:
-                rows = self.ingest_one_daily(code, start, end, limit_lut.get(code), st_lut.get(code))
-                total_rows += rows
-                ok += 1
-                if ctx and (i % 20 == 0 or i == n):
-                    ctx.progress(min(0.1 + 0.78 * i / max(n, 1), 0.88), f"采集 {i}/{n}（累计{total_rows}行）")
-                    ctx.log(f"[{i}/{n}] {code} {start}~{end} +{rows} 行")
-                    ctx.set_checkpoint(done=i, total=n)
-            except Exception as e:  # noqa: BLE001
-                fail += 1
-                log.warning("%s 指定采集失败: %s", code, e)
+        updated: set[str] = set()  # 实际有新行的股票 → 收尾增量刷新干净因子
+        if ctx:
+            ctx.set_phase("daily_bar", done=len(done_codes), total=full_total,
+                          phase_total=full_total, phase_done=len(done_codes),
+                          current_item=None, done_codes=sorted(done_codes))
+            ctx.log(f"▶ 开始指定日期采集：{n} 只股票，区间 {start}~{end}（并发 {concurrency}）")
+
+        def _one(code: str, source: DataSource | None = None, ctx_=None) -> int:
+            return self.ingest_one_daily(
+                code, start, end, limit_lut.get(code), st_lut.get(code), source=source, ctx=ctx_)
+
+        def _tick(i: int, code: str, rows: int) -> None:
+            if ctx:
+                ctx.set_phase("daily_bar", done=len(done_codes), total=full_total,
+                              phase_total=full_total, phase_done=len(done_codes),
+                              current_item=code, done_codes=sorted(done_codes))
+            if i % 20 == 0 or i == n:
+                log.info("指定采集进度 %d/%d（成功%d 失败%d，累计%d行，最近 %s +%d）",
+                         i, n, ok, fail, total_rows, code, rows)
+            if ctx and (i % 20 == 0 or i == n):
+                ctx.progress(min(0.1 + 0.78 * i / max(n, 1), 0.88), f"采集 {i}/{n}（累计{total_rows}行）")
+                ctx.log(f"[{i}/{n}] 进度：成功{ok} 失败{fail}，累计 +{total_rows} 行（最近 {code} +{rows}）")
+
+        def _fail(i: int, code: str, e: Exception) -> None:
+            log.warning("%s 指定采集失败: %s", code, e)
+            if ctx:
+                ctx.log(f"[{i}/{n}] {code} 采集失败（{start}~{end}，主源+兜底源均未取到）: {e}", "error")
+            self.repo.log_update("daily_bar", self.src.name, start, end, 0, "failed", f"{code}: {e}")
+
+        if concurrency <= 1:  # 串行（默认，最稳）
+            for i, code in enumerate(target, 1):
                 if ctx:
-                    ctx.log(f"[{i}/{n}] {code} 采集失败: {e}", "warn")
-                self.repo.log_update("daily_bar", self.src.name, start, end, 0, "failed", f"{code}: {e}")
+                    ctx.check_cancel()
+                    ctx.set_phase("daily_bar", done=len(done_codes), total=full_total,
+                                  phase_total=full_total, phase_done=len(done_codes),
+                                  current_item=code, done_codes=sorted(done_codes))
+                    if i == 1 or i % 20 == 1:
+                        ctx.log(f"[{i}/{n}] 开始指定日期采集 {code}（串行，当前请求返回后进入下一检查点）")
+                        ctx.flush()
+                try:
+                    rows = _one(code, ctx_=ctx)
+                    total_rows += rows
+                    if rows:
+                        updated.add(code)
+                    ok += 1
+                    done_codes.add(code)
+                    _tick(i, code, rows)
+                except Exception as e:  # noqa: BLE001
+                    fail += 1
+                    done_codes.add(code)
+                    _fail(i, code, e)
+        else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
+            import threading
+
+            from backend.datasource.akshare_source import AKShareSource
+            tls = threading.local()
+
+            def _worker(code: str) -> int:
+                src = getattr(tls, "src", None)
+                if src is None:
+                    src = AKShareSource()
+                    tls.src = src
+                return _one(code, source=src)
+
+            with ThreadPoolExecutor(max_workers=concurrency) as ex:
+                futs = {ex.submit(_worker, c): c for c in target}
+                pending_futs = set(futs)
+                i = 0
+                last_heartbeat = 0.0
+                while pending_futs:
+                    if ctx:
+                        ctx.check_cancel()
+                    done_futs, pending_futs = wait(pending_futs, timeout=1.0, return_when=FIRST_COMPLETED)
+                    now = time.monotonic()
+                    if not done_futs:
+                        if ctx and now - last_heartbeat >= 10:
+                            last_heartbeat = now
+                            ctx.log(f"指定日期采集等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
+                            ctx.flush()
+                        continue
+                    for fut in done_futs:
+                        i += 1
+                        code = futs[fut]
+                        if ctx:
+                            ctx.set_phase("daily_bar", done=len(done_codes), total=full_total,
+                                          phase_total=full_total, phase_done=len(done_codes),
+                                          current_item=code, done_codes=sorted(done_codes))
+                        try:
+                            rows = fut.result()
+                            total_rows += rows
+                            if rows:
+                                updated.add(code)
+                            ok += 1
+                            done_codes.add(code)
+                            _tick(i, code, rows)
+                        except Exception as e:  # noqa: BLE001
+                            fail += 1
+                            done_codes.add(code)
+                            _fail(i, code, e)
+        if updated:
+            if ctx:
+                ctx.log(f"↻ 增量刷新干净复权因子（{len(updated)} 只有新行）…")
+            self._refresh_clean_factors(sorted(updated), ctx=ctx)
         # 受影响交易日 = 区间内开市日
         days = self.repo.c.query_df(
             "SELECT trade_date FROM trade_calendar WHERE is_open AND trade_date BETWEEN ? AND ?",
@@ -459,23 +1336,167 @@ class IngestionService:
         dates = [str(pd.Timestamp(d).date()) for d in days]
         result = {"target": n, "ok": ok, "fail": fail, "rows": total_rows,
                   "range": [str(start), str(end)], "dates": dates}
+        if ctx:
+            ctx.log(f"■ 指定日期采集完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{start}~{end}）")
         log.info("指定日期采集完成: %s", {k: v for k, v in result.items() if k != "dates"})
         return result
+
+    def rebuild_price_factors(self, codes: list[str] | None = None, ctx=None) -> dict:
+        """全序列重算 adj_factor_clean / pre_close / 涨跌停标记（不联网）。
+
+        源 adj_factor = 后复权收盘 ÷ 不复权收盘，两端皆四舍五入到分，相除后非除权日
+        也带逐日舍入噪声；dejitter_adj_factor 把它整理成分段恒定的「干净因子」，写入
+        adj_factor_clean。K 线前/后复权（repository.get_bars）改用此列，消除 qfq 的
+        逐日漂移；pre_close / 涨跌停同源于该干净因子，口径一致。**不覆盖源 adj_factor**
+        （留作审计/后复权绝对价）。历史一次性清洗、或去抖/标记逻辑变更后全量重刷，走此
+        入口（CLI rebuild-price-factors / API 手动）。日常增量由入库收尾的
+        _refresh_clean_factors 锚定增量维护，无需手动。
+        """
+        target = codes or self.repo.c.query_df(
+            "SELECT DISTINCT code FROM daily_bar ORDER BY code"
+        )["code"].tolist()
+        return self._recompute_clean(target, ctx=ctx, full=True, verb="重算价格因子")
+
+    def _refresh_clean_factors(self, codes: list[str], ctx=None) -> dict:
+        """入库收尾：增量刷新本次更新过股票的 adj_factor_clean / pre_close / 标记。
+
+        锚定库中该股「最后一行已有干净因子」，只对其后新增的行做去抖：非除权日沿用上一日
+        干净因子、除权日重构——全程不联网、只算新行，故日常零额外网络负载且全局一致
+        （单只按全序列锚定，绕开跨窗口拼接再生噪声的坑）。某股从未算过干净因子（旧库迁移后）
+        则首次自动退化为全序列重算。"""
+        if not codes:
+            return {"target": 0, "ok": 0, "fail": 0, "rows": 0}
+        return self._recompute_clean(list(codes), ctx=ctx, full=False, verb="刷新价格因子")
+
+    def _recompute_clean(self, target: list[str], ctx=None, full: bool = True,
+                         verb: str = "重算价格因子") -> dict:
+        basic = self.repo.c.query_df("SELECT code, name, price_limit_pct FROM stock_basic")
+        limit_lut = dict(zip(basic["code"], basic["price_limit_pct"]))
+        st_lut = {r["code"]: ("ST" in str(r["name"]).upper()) for _, r in basic.iterrows()}
+        done_codes = set(ctx.checkpoint.get("factor_done_codes") or []) if (ctx and ctx.checkpoint) else set()
+        target = [c for c in target if c not in done_codes]
+        ok = fail = rows = 0
+        n = len(target)
+        if ctx:
+            ctx.set_phase("price_factor", done=len(done_codes), total=len(done_codes) + n,
+                          phase_total=len(done_codes) + n, phase_done=len(done_codes),
+                          current_item=None, factor_done_codes=sorted(done_codes))
+            ctx.log(f"▶ 开始{verb}：{n} 只股票")
+        for i, code in enumerate(target, 1):
+            if ctx:
+                ctx.check_cancel()
+                ctx.set_phase("price_factor", done=len(done_codes), total=len(done_codes) + n,
+                              phase_total=len(done_codes) + n, phase_done=len(done_codes),
+                              current_item=code, factor_done_codes=sorted(done_codes))
+            try:
+                rows += self._recompute_clean_one(
+                    code, float(limit_lut.get(code) or 0.10), bool(st_lut.get(code)), full=full)
+                ok += 1
+                done_codes.add(code)
+                if ctx:
+                    ctx.set_phase("price_factor", done=len(done_codes), total=len(done_codes) + n,
+                                  phase_total=len(done_codes) + n, phase_done=len(done_codes),
+                                  current_item=code, factor_done_codes=sorted(done_codes))
+                if ctx and (i % 50 == 0 or i == n):
+                    ctx.progress(min(0.1 + 0.8 * i / max(n, 1), 0.9),
+                                 f"{verb} {i}/{n}（累计 {rows} 行）")
+                    ctx.log(f"[{i}/{n}] {code}，累计 {rows} 行")
+            except Exception as e:  # noqa: BLE001
+                fail += 1
+                done_codes.add(code)
+                log.warning("%s %s失败: %s", code, verb, e)
+                if ctx:
+                    ctx.set_phase("price_factor", done=len(done_codes), total=len(done_codes) + n,
+                                  phase_total=len(done_codes) + n, phase_done=len(done_codes),
+                                  current_item=code, factor_done_codes=sorted(done_codes))
+                    ctx.log(f"[{i}/{n}] {code} {verb}失败: {e}", "warn")
+        result = {"target": n, "ok": ok, "fail": fail, "rows": rows}
+        log.info("%s完成: %s", verb, result)
+        if ctx:
+            ctx.log(f"■ {verb}完成：成功 {ok}、失败 {fail}，共处理 {rows} 行")
+        return result
+
+    def _recompute_clean_one(self, code: str, board_limit_pct: float, is_st: bool,
+                             full: bool = True) -> int:
+        """单只去抖重算：写 adj_factor_clean/pre_close/标记。full=False 时只算锚点之后的新行。"""
+        from backend.datasource.akshare_source import compute_pre_close, dejitter_adj_factor
+
+        anchor_date = None
+        if not full:
+            a = self.repo.c.query_df(
+                "SELECT max(trade_date) AS d FROM daily_bar "
+                "WHERE code=? AND adj_factor_clean IS NOT NULL", [code]
+            ).iloc[0]["d"]
+            anchor_date = None if pd.isna(a) else pd.Timestamp(a).date()
+
+        if anchor_date is None:  # 全量 / 旧库首次：读全序列
+            df = self.repo.c.query_df(
+                "SELECT code, trade_date, open, high, low, close, "
+                "       adj_factor, adj_factor_clean FROM daily_bar "
+                "WHERE code=? ORDER BY trade_date", [code])
+        else:  # 增量：读锚点当日起（含锚点做 shift / 去抖上下文）
+            df = self.repo.c.query_df(
+                "SELECT code, trade_date, open, high, low, close, "
+                "       adj_factor, adj_factor_clean FROM daily_bar "
+                "WHERE code=? AND trade_date>=? ORDER BY trade_date", [code, anchor_date])
+            if len(df) <= 1:  # 只剩锚点本身，无新行
+                return 0
+        if df.empty:
+            return 0
+
+        clean = dejitter_adj_factor(df["adj_factor"], df["close"])
+        if anchor_date is not None:
+            # 去抖只保「段内结构」，绝对基准随窗口起点而变；重缩放使锚点干净因子与库中已存值
+            # 连续，新行才能和历史无缝衔接（qfq 看比值，缩放因子在相除时抵消，不改 qfq/pre_close）。
+            stored = float(df["adj_factor_clean"].iloc[0])
+            head = float(clean.iloc[0])
+            if stored > 0 and head > 0:
+                clean = clean * (stored / head)
+        df = df.copy()
+        df["adj_factor_clean"] = clean.to_numpy()
+        df["pre_close"] = compute_pre_close(df["close"], clean)
+        marked = add_markers(df, board_limit_pct, is_st)
+        if anchor_date is not None:  # 只写锚点之后的新行
+            marked = marked[marked["trade_date"] > pd.Timestamp(anchor_date)]
+        if marked.empty:
+            return 0
+        cols = ["code", "trade_date", "adj_factor_clean", "pre_close",
+                "is_st", "is_suspended", "limit_status", "is_one_word"]
+        with self.c.temp_view(marked[cols], prefix="clean_rebuild") as v:
+            self.c.execute(
+                "UPDATE daily_bar AS b SET "
+                "adj_factor_clean = v.adj_factor_clean, pre_close = v.pre_close, "
+                "is_st = v.is_st, is_suspended = v.is_suspended, "
+                "limit_status = v.limit_status, is_one_word = v.is_one_word "
+                f"FROM {v} AS v "
+                "WHERE b.code = v.code AND b.trade_date = v.trade_date"
+            )
+        return len(marked)
 
     # ══════════════════════════════════════════════════════════
     # baostock 补充（T-M1-4）：上市/退市日 + 退市股历史（防幸存者偏差）
     # ══════════════════════════════════════════════════════════
 
-    def enrich_basic_dates(self) -> int:
+    def enrich_basic_dates(self, ctx=None) -> int:
         """补全 stock_basic 的上市/退市日 + 行业（含新增退市股），按能力选源。"""
         dates_src = self._source_for("basic_dates")
+        if ctx:
+            ctx.log(f"子任务：上市/退市日采集开始，源 {dates_src.name}")
+            ctx.flush()
         df = dates_src.get_basic_dates()  # code,name,list_date,delist_date,is_delisted
         # 行业映射（证监会行业）
         try:
+            if ctx:
+                ctx.log("子任务：行业信息采集开始")
+                ctx.flush()
             ind = self._source_for("industry").get_industry()
             ind_map = dict(zip(ind["code"], ind["industry"]))
+            if ctx:
+                ctx.log(f"子任务：行业信息采集完成，获得 {len(ind_map)} 条行业映射")
         except Exception as e:  # noqa: BLE001
             log.warning("行业获取失败，industry 置空: %s", e)
+            if ctx:
+                ctx.log(f"行业获取失败，industry 置空：{e}", "warn")
             ind_map = {}
         rows = []
         for _, r in df.iterrows():
@@ -496,9 +1517,11 @@ class IngestionService:
         n = self.repo.upsert_stock_basic(out)
         self.repo.log_update("stock_basic", dates_src.name, None, None, n, "success", "补上市/退市日+行业")
         log.info("%s 补全基础信息 %d 只（含退市股+行业）", dates_src.name, n)
+        if ctx:
+            ctx.log(f"子任务：上市/退市日与行业入库完成，写入/更新 {n} 只")
         return n
 
-    def ingest_delisted(self, years: int | None = None, limit: int | None = None) -> dict:
+    def ingest_delisted(self, years: int | None = None, limit: int | None = None, ctx=None) -> dict:
         """灌入"近 N 年内退市"的退市股历史日线（防幸存者偏差核心）。
 
         只取退市日落在回测窗口内的票（更早退市的在 5 年窗口内无数据，跳过）。
@@ -516,13 +1539,22 @@ class IngestionService:
         if limit:
             dl = dl.head(limit)
         log.info("待灌退市股 %d 只（退市日 >= %s）", len(dl), start)
+        if ctx:
+            ctx.log(f"子任务：退市股历史灌入开始，待处理 {len(dl)} 只，区间 {start}~{end}")
+            ctx.flush()
 
         loaded = self.repo.get_loaded_codes()
         ok, skip, fail, total_rows = 0, 0, 0, 0
-        for _, r in dl.iterrows():
+        total = len(dl)
+        for i, (_, r) in enumerate(dl.iterrows(), 1):
             code = r["code"]
+            if ctx:
+                ctx.check_cancel()
             if code in loaded:
                 skip += 1
+                if ctx and (i % 20 == 0 or i == total):
+                    ctx.log(f"退市股灌入进度 {i}/{total}：成功{ok} 跳过{skip} 失败{fail}，累计 {total_rows} 行")
+                    ctx.flush()
                 continue
             try:
                 code6 = code.split(".")[0]
@@ -541,10 +1573,17 @@ class IngestionService:
                 )
                 total_rows += rows
                 ok += 1
+                if ctx and (i == 1 or i % 20 == 0 or i == total):
+                    ctx.log(f"退市股 {code} 完成：写入 {rows} 行；进度 {i}/{total}，成功{ok} 跳过{skip} 失败{fail}")
+                    ctx.flush()
             except Exception as e:  # noqa: BLE001
                 fail += 1
                 log.warning("退市股 %s 灌入失败: %s", code, e)
+                if ctx:
+                    ctx.log(f"退市股 {code} 灌入失败：{e}", "warn")
                 self.repo.log_update("daily_bar", bao.name, start, None, 0, "failed", f"{code}: {e}")
         result = {"target": len(dl), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
         log.info("退市股灌入完成: %s", result)
+        if ctx:
+            ctx.log(f"子任务：退市股历史灌入完成，成功{ok} 跳过{skip} 失败{fail}，写入 {total_rows} 行")
         return result

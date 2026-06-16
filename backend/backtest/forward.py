@@ -60,7 +60,8 @@ def compute_forward_returns(
     # 取信号区间 + 前向缓冲（max_n 个交易日）的全部 bar
     buf_hi = date_end + timedelta(days=max_n * 3 + 30)  # 日历日宽松上界，交易日截断在下方
     sql = (
-        "SELECT code, trade_date, open, high, adj_factor FROM daily_bar "
+        "SELECT code, trade_date, open, high, "
+        "       COALESCE(adj_factor_clean, adj_factor) AS adj_factor FROM daily_bar "
         "WHERE trade_date BETWEEN ? AND ?"
     )
     params: list = [date_start, buf_hi]

@@ -23,6 +23,18 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("services.data_report")
 
+# 缺口/鲜活判定的近端窗口（DM-D21）：只在近 N 个开市日内判缺口与滞后；
+# 更早的历史空洞默认即停牌（老数据稳定，真漏采早暴露），不反复上报、不扣分。
+GAP_WINDOW_DAYS = 90
+# mv_gap（L2 逐日总市值缺口，WS4）洪泛守卫阈值：命中股票数超此值视为存量缺口未回补，
+# 跳过落台账并提示先跑 `cli valuation --fill-gaps`，避免一次质检涌入数千条。回补后自然回落。
+MV_GAP_FLOOD_LIMIT = 200
+
+# 覆盖鲜活全景缓存（M2.9.4）：概览页一次会连打 overview/stock-quality/hub 三个接口，
+# 各自都要 _coverage_frame（全市场扫描）。用「数据变更签名」做单条缓存，让同一页的多次调用复用；
+# 签名 = (最新交易日, 未解决问题数, 日线总行数, 停牌确认数, 窗口)，任一数据变更即失效重算（不会读到陈旧）。
+_FRAME_CACHE: dict = {"key": None, "frame": None, "latest": None}
+
 
 class DataIntegrityReport:
     def __init__(self, client: DuckDBClient | None = None):
@@ -50,85 +62,253 @@ class DataIntegrityReport:
             "stock_basic_delisted": delisted,
         }
 
-    # ── 缺口检测（DM-D9，FR-DM-1）──
-    def gaps_summary(self) -> dict:
-        """在市股票在 [上市日(或首行情), 全局最新交易日] 内，开市日无行情且非停牌 = 缺口日。
+    # ── 覆盖鲜活单一口径（DM-D20）：scan / quality_model / stock_quality 共用 ──
+    # 注：旧 gaps_summary（读已废弃的 daily_bar.is_suspended 死列）已于 M2.9.5 删除，
+    #     缺口口径统一到下方 _coverage_frame（减 stock_suspension 确认停牌）。
+    def _recent_open_days(self, latest: date, window_days: int) -> tuple[list[date], date | None]:
+        """近 window_days 个开市日（含 latest），升序返回 + window_lo。"""
+        df = self.c.query_df(
+            "SELECT trade_date FROM trade_calendar WHERE is_open AND trade_date <= ? "
+            "ORDER BY trade_date DESC LIMIT ?", [latest, int(window_days)])
+        days = sorted(pd.Timestamp(d).date() for d in df["trade_date"])
+        return days, (days[0] if days else None)
 
-        停牌日（daily_bar.is_suspended）从缺口中排除；连续缺口日数不在此展开（逐股下钻见 stock_quality）。
-        返回 {stocks_with_gap, gap_days_total, latest_trade_date}。
+    def _coverage_frame(self, window_days: int = GAP_WINDOW_DAYS):
+        """每只在市股票的覆盖鲜活全景（DM-D20 唯一口径）。
+
+        在近 window_days 个开市日窗口内，对每只在市股票：
+          missing = 窗口内开市日 ∩ [本股存续起, 全局最新] − 已有行情 − 已确认停牌(stock_suspension)
+          - 内部缺口 gap（疑似漏采）：missing 中 ≤ 本股最新行情日的（历史空洞，可重采反向确认）
+          - 尾部滞后 stale：missing 中 > 本股最新行情日的（未更新到最新，可增量补尾）
+        停牌（已确认入 stock_suspension）一律不计入 → 系统收敛。
+        L2 字段契约（M2.9.3）：总市值 total_mv 与流通市值 float_mv 都须有（float_mv 供选股池过滤、
+        total_mv 供评分引用）；mv_detail 说明缺哪个。
+
+        性能（M2.9.3-E）：不再逐股关联子查询，改为各扫一次的 GROUP BY 聚合 + pandas 合并。
+        返回 (DataFrame, latest_trade_date_str)。
         """
+        cols = ["code", "name", "latest_date", "is_fresh", "mv_ok", "mv_detail",
+                "mv_gap_days", "mv_gap_lo", "mv_gap_hi", "gap_days", "gap_lo",
+                "gap_hi", "stale_days", "stale_lo", "l1_open", "l3_open", "open_total"]
+        # 数据变更签名缓存：同一页多接口复用，任一数据变更即失效
+        sig = self.c.query_df(
+            "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
+            "(SELECT count(*) FROM daily_bar) bars, "
+            "(SELECT count(*) FROM data_quality_issue WHERE status='open') openi, "
+            "(SELECT count(*) FROM stock_suspension) susp, "
+            "(SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL) mvnull").iloc[0]
+        # mvnull 纳入签名：L2 现依赖逐日 total_mv 缺口，补市值后（bars/issues 可能没变）须让缓存失效
+        key = (id(self.c), str(sig["latest"]), int(sig["bars"]),
+               int(sig["openi"]), int(sig["susp"]), int(sig["mvnull"]), int(window_days))
+        if _FRAME_CACHE["key"] == key and _FRAME_CACHE["frame"] is not None:
+            return _FRAME_CACHE["frame"], _FRAME_CACHE["latest"]
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
         if latest is None:
-            return {"stocks_with_gap": 0, "gap_days_total": 0, "latest_trade_date": None}
-        df = self.c.query_df(
-            """
-            WITH live AS (SELECT code, list_date FROM stock_basic WHERE delist_date IS NULL),
-            span AS (
-                SELECT l.code,
-                       greatest(COALESCE(l.list_date, (SELECT min(trade_date) FROM daily_bar b WHERE b.code=l.code)),
-                                (SELECT min(trade_date) FROM daily_bar b WHERE b.code=l.code)) AS lo
-                FROM live l
-            ),
-            expect AS (
-                SELECT s.code,
-                       (SELECT count(*) FROM trade_calendar cal
-                        WHERE cal.is_open AND cal.trade_date BETWEEN s.lo AND ?) AS expected,
-                       (SELECT count(*) FROM daily_bar b
-                        WHERE b.code=s.code AND b.trade_date BETWEEN s.lo AND ?) AS have,
-                       (SELECT count(*) FROM daily_bar b
-                        WHERE b.code=s.code AND b.is_suspended AND b.trade_date BETWEEN s.lo AND ?) AS susp
-                FROM span s WHERE s.lo IS NOT NULL
-            )
-            SELECT code, greatest(expected - have - susp, 0) AS gap_days FROM expect
-            """, [latest, latest, latest])
-        gaps = df[df["gap_days"] > 0]
-        return {
-            "stocks_with_gap": int(len(gaps)),
-            "gap_days_total": int(gaps["gap_days"].sum()),
-            "latest_trade_date": str(pd.Timestamp(latest).date()),
-        }
+            return pd.DataFrame(columns=cols), None
+        latest = pd.Timestamp(latest).date()
+        win, win_lo = self._recent_open_days(latest, window_days)
+        if win_lo is None:
+            return pd.DataFrame(columns=cols), str(latest)
+        # 聚合（各一次全表扫描，避免逐股关联子查询）
+        span = self.c.query_df(
+            "SELECT code, min(trade_date) min_bar, max(trade_date) max_bar FROM daily_bar GROUP BY code")
+        span_map = {r["code"]: (r["min_bar"], r["max_bar"]) for _, r in span.iterrows()}
+        mv = self.c.query_df(
+            "SELECT code, count(*) FILTER (WHERE total_mv IS NOT NULL) tmv, "
+            "count(*) FILTER (WHERE float_mv IS NOT NULL) fmv FROM daily_metrics GROUP BY code")
+        mv_map = {r["code"]: (int(r["tmv"]), int(r["fmv"])) for _, r in mv.iterrows()}
+        # 窗口内逐日 total_mv 缺口（L2 统一口径：与 mv_missing/data_gap/stale 同一份 frame、同一窗口）
+        mvgap = self.c.query_df(
+            "SELECT code, count(*) g, min(trade_date) lo, max(trade_date) hi "
+            "FROM daily_metrics WHERE trade_date >= ? AND total_mv IS NULL GROUP BY code", [win_lo])
+        mvgap_map = {r["code"]: (int(r["g"]), pd.Timestamp(r["lo"]).date(), pd.Timestamp(r["hi"]).date())
+                     for _, r in mvgap.iterrows()}
+        iss = self.c.query_df(
+            "SELECT code, count(*) tot, "
+            "count(*) FILTER (WHERE issue_type IN ('null_close','ohl_repaired')) l1, "
+            "count(*) FILTER (WHERE issue_type IN ('abnormal_change','adj_jump')) l3 "
+            "FROM data_quality_issue WHERE status='open' GROUP BY code")
+        iss_map = {r["code"]: (int(r["tot"]), int(r["l1"]), int(r["l3"])) for _, r in iss.iterrows()}
+        stocks = self.c.query_df("SELECT code, name, list_date FROM stock_basic WHERE delist_date IS NULL")
+        bars = self.c.query_df("SELECT code, trade_date FROM daily_bar WHERE trade_date >= ?", [win_lo])
+        susp = self.c.query_df("SELECT code, trade_date FROM stock_suspension WHERE trade_date >= ?", [win_lo])
+        bar_map: dict[str, set] = {c: set(pd.Timestamp(d).date() for d in g["trade_date"])
+                                   for c, g in bars.groupby("code", sort=False)}
+        susp_map: dict[str, set] = {c: set(pd.Timestamp(d).date() for d in g["trade_date"])
+                                    for c, g in susp.groupby("code", sort=False)}
+        rows = []
+        win_first = str(win[0]) if win else None
+        # 列向量迭代（避免 pandas iterrows 在 5000+ 行上的高开销）
+        for code, name, ld_raw in zip(stocks["code"].tolist(), stocks["name"].tolist(),
+                                      stocks["list_date"].tolist()):
+            mn, mx = span_map.get(code, (None, None))
+            min_bar = None if mn is None or pd.isna(mn) else pd.Timestamp(mn).date()
+            max_bar = None if mx is None or pd.isna(mx) else pd.Timestamp(mx).date()
+            tmv, fmv = mv_map.get(code, (0, 0))
+            tot, l1, l3 = iss_map.get(code, (0, 0, 0))
+            mv_ok = tmv > 0 and fmv > 0
+            mvg_days, mvg_lo, mvg_hi = mvgap_map.get(code, (0, None, None))
+            mv_detail = ("" if mv_ok and mvg_days == 0
+                         else "缺总市值与流通市值" if tmv == 0 and fmv == 0
+                         else "缺总市值" if tmv == 0 else "缺流通市值"
+                         if fmv == 0 else f"近端缺总市值 {mvg_days} 天（{mvg_lo}~{mvg_hi}）")
+            base = {"code": code, "name": name, "mv_ok": mv_ok, "mv_detail": mv_detail,
+                    "mv_gap_days": mvg_days,
+                    "mv_gap_lo": str(mvg_lo) if mvg_lo else None,
+                    "mv_gap_hi": str(mvg_hi) if mvg_hi else None,
+                    "l1_open": l1, "l3_open": l3, "open_total": tot}
+            if min_bar is None:  # 从未有行情：整窗待采集（计为滞后，不细分内部缺口）
+                rows.append({**base, "latest_date": None, "is_fresh": False,
+                             "gap_days": 0, "gap_lo": None, "gap_hi": None,
+                             "stale_days": len(win), "stale_lo": win_first})
+                continue
+            ld = None if ld_raw is None or pd.isna(ld_raw) else pd.Timestamp(ld_raw).date()
+            span_lo = max(min_bar, ld) if ld else min_bar
+            lo = max(span_lo, win_lo)
+            have = bar_map.get(code, set())
+            suspd = susp_map.get(code, set())
+            missing = [d for d in win if d >= lo and d not in have and d not in suspd]
+            internal = [d for d in missing if d <= max_bar]
+            tail = [d for d in missing if d > max_bar]
+            rows.append({
+                **base, "latest_date": str(max_bar), "is_fresh": len(tail) == 0,
+                "gap_days": len(internal),
+                "gap_lo": str(internal[0]) if internal else None,
+                "gap_hi": str(internal[-1]) if internal else None,
+                "stale_days": len(tail), "stale_lo": str(tail[0]) if tail else None,
+            })
+        frame = pd.DataFrame(rows, columns=cols)
+        _FRAME_CACHE.update(key=key, frame=frame, latest=str(latest))
+        return frame, str(latest)
 
-    # ── 逐股质量（FR-DM-1 第四项）──
-    def stock_quality(self, codes: list[str] | None = None, page: int = 1, size: int = 50) -> dict:
-        """逐股关键字段达标 + 鲜活度：latest_date / is_fresh / total_mv_ok / gap_days / open_issues。"""
+    def missing_days_for(self, code: str, window_days: int = GAP_WINDOW_DAYS) -> list[date]:
+        """单股窗口内待补的开市日（内部缺口 + 尾部滞后，已减去确认停牌）——供反向重采。"""
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
-        latest_s = None if latest is None else str(pd.Timestamp(latest).date())
-        cond, params = "delist_date IS NULL", []
+        if latest is None:
+            return []
+        latest = pd.Timestamp(latest).date()
+        win, win_lo = self._recent_open_days(latest, window_days)
+        if win_lo is None:
+            return []
+        span = self.c.query_df(
+            "SELECT min(trade_date) lo, max(trade_date) hi FROM daily_bar WHERE code=?", [code]).iloc[0]
+        min_bar = None if pd.isna(span["lo"]) else pd.Timestamp(span["lo"]).date()
+        ldf = self.c.query_df("SELECT list_date FROM stock_basic WHERE code=?", [code])
+        ld = None
+        if not ldf.empty and not pd.isna(ldf.iloc[0]["list_date"]):
+            ld = pd.Timestamp(ldf.iloc[0]["list_date"]).date()
+        lo = win_lo if min_bar is None else max(max(min_bar, ld) if ld else min_bar, win_lo)
+        have = set(pd.Timestamp(d).date() for d in self.c.query_df(
+            "SELECT trade_date FROM daily_bar WHERE code=? AND trade_date>=?", [code, win_lo])["trade_date"])
+        suspd = set(pd.Timestamp(d).date() for d in self.c.query_df(
+            "SELECT trade_date FROM stock_suspension WHERE code=? AND trade_date>=?", [code, win_lo])["trade_date"])
+        return [d for d in win if d >= lo and d not in have and d not in suspd]
+
+    def confirm_suspension(self, code: str, dates: list[date]) -> int:
+        """把"重采后源端仍无数据"的开市日确认为停牌写入 stock_suspension（去重）。"""
+        if not dates:
+            return 0
+        from datetime import datetime
+        existing = set(pd.Timestamp(d).date() for d in self.c.query_df(
+            "SELECT trade_date FROM stock_suspension WHERE code=?", [code])["trade_date"])
+        fresh = [d for d in dates if d not in existing]
+        if not fresh:
+            return 0
+        df = pd.DataFrame({"code": code, "trade_date": fresh, "confirmed_at": datetime.now()})
+        with self.c.temp_view(df, "susp") as v:
+            self.c.execute(
+                f"INSERT INTO stock_suspension (code, trade_date, confirmed_at) "
+                f"SELECT code, trade_date, confirmed_at FROM {v}")
+        return len(fresh)
+
+    def gapped_codes(self, window_days: int = GAP_WINDOW_DAYS) -> list[str]:
+        """窗口内有内部缺口或末尾滞后的在市股代码——批量一次扫描（复用 _coverage_frame 缓存，
+        含减去确认停牌），供增量更新收尾按需收口，避免对全市场逐股跑全局查询。"""
+        df, _ = self._coverage_frame(window_days)
+        if df.empty:
+            return []
+        mask = (df["gap_days"] > 0) | (df["stale_days"] > 0)
+        return df.loc[mask, "code"].tolist()
+
+    # ── 逐股质量（DM-D15 四层明细 + DM-D17 名称搜索；DM-D20 口径统一）──
+    def stock_quality(self, codes: list[str] | None = None, keyword: str | None = None,
+                      page: int = 1, size: int = 50) -> dict:
+        """逐股分层体检，与全局 quality_model 同一 _coverage_frame 口径（保证三处数字一致）。"""
+        df, latest_s = self._coverage_frame()
         if codes:
-            ph = ",".join("?" * len(codes))
-            cond += f" AND code IN ({ph})"
-            params += list(codes)
-        total = int(self._scalar(f"SELECT count(*) FROM stock_basic WHERE {cond}", params))
-        rows = self.c.query_df(
-            f"""
-            WITH base AS (SELECT code, name, list_date FROM stock_basic WHERE {cond}
-                          ORDER BY code LIMIT {int(size)} OFFSET {int((page-1)*size)})
-            SELECT b.code, b.name,
-                   (SELECT max(trade_date) FROM daily_bar d WHERE d.code=b.code) AS latest_date,
-                   (SELECT count(*) FROM daily_metrics m WHERE m.code=b.code AND m.total_mv IS NOT NULL) AS mv_rows,
-                   (SELECT count(*) FROM data_quality_issue q WHERE q.code=b.code AND q.status='open') AS open_issues,
-                   b.list_date,
-                   (SELECT count(*) FROM trade_calendar cal WHERE cal.is_open
-                        AND cal.trade_date BETWEEN COALESCE(b.list_date,(SELECT min(trade_date) FROM daily_bar d2 WHERE d2.code=b.code)) AND ?) AS expected,
-                   (SELECT count(*) FROM daily_bar d WHERE d.code=b.code) AS have,
-                   (SELECT count(*) FROM daily_bar d WHERE d.code=b.code AND d.is_suspended) AS susp
-            FROM base b
-            """, [latest, *params])
+            df = df[df["code"].isin(codes)]
+        if keyword:
+            kw = keyword.lower()
+            df = df[df["code"].str.lower().str.contains(kw, regex=False)
+                    | df["name"].str.lower().str.contains(kw, regex=False, na=False)]
+        df = df.sort_values("code")
+        total = len(df)
+        page_df = df.iloc[int((page - 1) * size): int((page - 1) * size + size)]
         out = []
-        for _, r in rows.iterrows():
-            ld = r["latest_date"]
-            ld_s = None if ld is None or str(ld) == "NaT" else str(pd.Timestamp(ld).date())
-            gap = max(int(r["expected"]) - int(r["have"]) - int(r["susp"]), 0)
+        for _, r in page_df.iterrows():
+            l1, l3 = int(r["l1_open"]), int(r["l3_open"])
+            gap, stale = int(r["gap_days"]), int(r["stale_days"])
+            mv_gap = int(r["mv_gap_days"])
+            # L2 统一口径：整股有值（非"从没采过"）且近端无逐日缺口
+            l2_ok = bool(r["mv_ok"]) and mv_gap == 0
             out.append({
-                "code": r["code"], "name": r["name"],
-                "latest_date": ld_s,
-                "is_fresh": bool(latest_s is not None and ld_s == latest_s),
-                "total_mv_ok": bool(int(r["mv_rows"]) > 0),
-                "gap_days": gap,
-                "open_issues": int(r["open_issues"]),
+                "code": r["code"], "name": r["name"], "latest_date": r["latest_date"],
+                "is_fresh": bool(r["is_fresh"]), "total_mv_ok": l2_ok, "gap_days": gap,
+                "open_issues": int(r["open_total"]),
+                "layers": {
+                    "L1": {"name_cn": "入库闸门", "ok": l1 == 0, "issues": l1},
+                    "L2": {"name_cn": "字段契约", "ok": l2_ok, "issues": 0 if l2_ok else 1,
+                           "mv_gap_days": mv_gap, "mv_gap_lo": r["mv_gap_lo"], "mv_gap_hi": r["mv_gap_hi"]},
+                    "L3": {"name_cn": "正确性", "ok": l3 == 0, "issues": l3},
+                    "L4": {"name_cn": "覆盖鲜活", "ok": gap == 0 and stale == 0,
+                           "gap_days": gap, "gap_lo": r["gap_lo"], "gap_hi": r["gap_hi"],
+                           "stale_days": stale, "stale_lo": r["stale_lo"],
+                           "is_fresh": bool(r["is_fresh"])},
+                },
             })
         return {"total": total, "page": page, "size": size,
                 "latest_trade_date": latest_s, "list": out}
+
+    # ── 四层质量模型聚合（DM-D15；DM-D20 口径统一）──
+    def quality_model(self) -> dict:
+        """全局质量全景：评分 + 各层达标 + 缺口汇总，复用 _coverage_frame（与逐股/质检同口径）。"""
+        from backend.dataquality.checker import QUALITY_LAYERS
+        df, latest_s = self._coverage_frame()
+        empty_layers = [{**spec, "pass_stocks": 0, "total": 0, "pass_rate": 1.0, "issues": 0}
+                        for spec in QUALITY_LAYERS]
+        n = len(df)
+        if n == 0:
+            return {"score": 100, "latest_trade_date": latest_s, "by_layer": empty_layers,
+                    "gaps": {"stocks_with_gap": 0, "gap_days_total": 0, "latest_trade_date": latest_s}}
+        # L2 统一口径：整股有值（非"从没采过"）且近端无逐日 total_mv 缺口（与质检 mv_missing+mv_gap 一致）
+        l2_ok = df["mv_ok"] & (df["mv_gap_days"] == 0)
+        ok = {
+            "L1": df["l1_open"] == 0,
+            "L2": l2_ok,
+            "L3": df["l3_open"] == 0,
+            "L4": (df["gap_days"] == 0) & (df["stale_days"] == 0),
+        }
+        issues = {
+            "L1": int(df["l1_open"].sum()),
+            "L2": int((~l2_ok).sum()),
+            "L3": int(df["l3_open"].sum()),
+            "L4": int(df["gap_days"].sum() + df["stale_days"].sum()),
+        }
+        by_layer = []
+        for spec in QUALITY_LAYERS:
+            k = spec["layer"]
+            passed = int(ok[k].sum())
+            by_layer.append({**spec, "pass_stocks": passed, "total": n,
+                             "pass_rate": round(passed / n, 4), "issues": issues[k]})
+        all_ok = ok["L1"] & ok["L2"] & ok["L3"] & ok["L4"]
+        score = int(round(100 * float(all_ok.sum()) / n))
+        gap_mask = (df["gap_days"] > 0) | (df["stale_days"] > 0)
+        return {
+            "score": score, "latest_trade_date": latest_s, "by_layer": by_layer,
+            "gaps": {"stocks_with_gap": int(gap_mask.sum()),
+                     "gap_days_total": int(df["gap_days"].sum() + df["stale_days"].sum()),
+                     "latest_trade_date": latest_s},
+        }
 
     # ── 2. 交易日历窗口 ──
     def calendar_open_days(self, start: date, end: date) -> int:
@@ -171,59 +351,172 @@ class DataIntegrityReport:
             "worst_samples": low.head(sample_limit)[["code", "bars", "expected", "coverage"]].to_dict("records"),
         }
 
-    # ── 市场级真实质检（写 data_quality_issue）──
-    def scan_quality_issues(self) -> dict:
-        """向量化扫描真实数据质量问题（异常涨跌幅），写 data_quality_issue。
+    def _insert_issues(self, issues: list[dict]) -> int:
+        """批量写 data_quality_issue（severity 由类型映射，status=open，detected_at=now）。"""
+        if not issues:
+            return 0
+        from datetime import datetime
 
-        注意：停牌缺口属正常现象，不计入 issue（避免淹没真实问题）；
-        仅记录"单日涨跌幅超板块上限 +0.5% 容差"这类真异常。
+        from backend.dataquality.checker import severity_for
+        now = datetime.now()
+        df = pd.DataFrame([{
+            "id": self._next_qid(), "code": x["code"], "trade_date": x.get("trade_date"),
+            "issue_type": x["issue_type"], "severity": severity_for(x["issue_type"]),
+            "status": "open", "detail": x.get("detail", ""), "detected_at": now,
+        } for x in issues])
+        with self.c.temp_view(df, prefix="qi") as v:
+            self.c.execute(
+                "INSERT INTO data_quality_issue "
+                "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
+                "SELECT id, code, trade_date, issue_type, severity, status, detail, detected_at "
+                f"FROM {v}")
+        return len(df)
+
+    # ── 市场级四层质检（写 data_quality_issue，DM-D20 统一口径）──
+    def scan_quality_issues(self, gap_window_days: int = GAP_WINDOW_DAYS) -> dict:
+        """四层统一质检：L2 字段契约 / L3 正确性 / L4 覆盖鲜活，写 data_quality_issue。
+
+        L1（入库闸门）由采集即时记录，质检不重复扫；这里覆盖立即质检 + 每日自动任务质检步（同一方法）。
+        幂等（DM-D20）：每次扫描前清掉上轮 **未解决** 的自动扫描类问题（L2/L3/L4），再写当前快照；
+        已 resolved/ignored 的不动 → 反复跑收敛不堆积。停牌（已确认入 stock_suspension）不计入缺口。
         """
-        # 一次 SQL 关联板块涨跌幅，标记异常行
+        from backend.dataquality.checker import SCAN_ISSUE_TYPES
+        ph = ",".join("?" * len(SCAN_ISSUE_TYPES))
+        self.c.execute(
+            f"DELETE FROM data_quality_issue WHERE status='open' AND issue_type IN ({ph})",
+            list(SCAN_ISSUE_TYPES))
+        # 已「标记为正常/忽略」的不再上报（DM-D22）：L3 按 (股,类型,日期) 精确豁免；
+        # L2/L4 按 (股,类型) 整体豁免（缺口/滞后/市值是状态而非单日事件）。
+        ig = self.c.query_df(
+            "SELECT code, issue_type, trade_date FROM data_quality_issue WHERE status='ignored'")
+        ig_exact, ig_coarse = set(), set()
+        for _, r in ig.iterrows():
+            ig_coarse.add((r["code"], r["issue_type"]))
+            td = None if pd.isna(r["trade_date"]) else str(pd.Timestamp(r["trade_date"]).date())
+            ig_exact.add((r["code"], r["issue_type"], td))
+        # L3：异常涨跌幅（向量化，关联板块上限）
         df = self.c.query_df(
             """
-            SELECT b.code, b.trade_date,
-                   abs(b.close / b.pre_close - 1) AS chg,
+            SELECT b.code, b.trade_date, abs(b.close / b.pre_close - 1) AS chg,
                    COALESCE(sb.price_limit_pct, 0.10) AS lim
             FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
             WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
-            """
-        )
+            """)
         bad = df[df["chg"] > df["lim"] + 0.005]
-        if not bad.empty:
-            from datetime import datetime
+        ab_rows = [
+            {"code": r["code"], "trade_date": r["trade_date"], "issue_type": "abnormal_change",
+             "detail": f"涨跌幅 {r['chg']*100:.1f}% 超上限 {r['lim']*100:.0f}%"}
+            for _, r in bad.iterrows()
+            if (r["code"], "abnormal_change", str(pd.Timestamp(r["trade_date"]).date())) not in ig_exact]
+        self._insert_issues(ab_rows)
+        adj = self._scan_adj_jump(ignored_exact=ig_exact)
+        # L2 + L4：来自统一的覆盖鲜活全景（与 quality_model/stock_quality 同口径）
+        frame, _ = self._coverage_frame(gap_window_days)
+        l2 = l4_gap = l4_stale = 0
+        rows = []
+        for _, r in frame.iterrows():
+            code = r["code"]
+            if not r["mv_ok"] and (code, "mv_missing") not in ig_coarse:
+                rows.append({"code": code, "issue_type": "mv_missing",
+                             "detail": f"{r['mv_detail']}（字段契约不全，需补估值/市值数据）"})
+                l2 += 1
+            if int(r["gap_days"]) > 0 and (code, "data_gap") not in ig_coarse:
+                rows.append({"code": code, "trade_date": r["gap_lo"], "issue_type": "data_gap",
+                             "detail": f"近{gap_window_days}个交易日内 {int(r['gap_days'])} 天无行情"
+                                       f"（疑似漏采，待重采确认）：{r['gap_lo']}~{r['gap_hi']}"})
+                l4_gap += 1
+            if int(r["stale_days"]) > 0 and (code, "stale") not in ig_coarse:
+                rows.append({"code": code, "trade_date": r["latest_date"], "issue_type": "stale",
+                             "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
+                                       f"（自 {r['stale_lo']} 起）"})
+                l4_stale += 1
+        # L2 逐日总市值缺口（WS4 P2）：在市股「有日线但 total_mv 为空」的近端缺口，code 级聚合
+        # （非逐行落表，避免台账暴涨）。直接读同一份 frame 的 mv_gap_days（与概览/逐股 L2 完全统一，
+        # 同窗口同数据）。与整股 mv_missing 互补：那个查「从没采过」，这个查「采过但近端有断天」。
+        gap_rows = []
+        for _, r in frame.iterrows():
+            code = r["code"]
+            if int(r["mv_gap_days"]) > 0 and (code, "mv_gap") not in ig_coarse:
+                gap_rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
+                                 "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天缺总市值"
+                                           f"（需补估值快照）：{r['mv_gap_lo']}~{r['mv_gap_hi']}"})
+        # 自愈式洪泛守卫：若命中股票数异常多（多为存量历史缺口未回补，如 P1 遗留的全市场断天），
+        # 跳过落台账并提示先跑 `cli valuation --fill-gaps`——避免一次质检涌入数千条 mv_gap。
+        # 回补后命中数自然回落到正常量级，下次质检即恢复正常探测，无需人工开关。
+        mv_gap_flooded = len(gap_rows) > MV_GAP_FLOOD_LIMIT
+        if mv_gap_flooded:
+            l2_gap = 0
+        else:
+            l2_gap = len(gap_rows)
+            rows.extend(gap_rows)
+        self._insert_issues(rows)
+        return {"abnormal_change_rows": len(ab_rows), "adj_jump_rows": adj,
+                "mv_missing_rows": l2, "mv_gap_rows": l2_gap,
+                "mv_gap_flooded": len(gap_rows) if mv_gap_flooded else 0,
+                "data_gap_rows": l4_gap, "stale_rows": l4_stale}
 
-            from backend.dataquality.checker import severity_for
-            issues = pd.DataFrame({
-                "id": [self._next_qid() for _ in range(len(bad))],
-                "code": bad["code"].values,
-                "trade_date": bad["trade_date"].values,
-                "issue_type": "abnormal_change",
-                "severity": severity_for("abnormal_change"),
-                "status": "open",
-                "detail": [f"涨跌幅 {x*100:.1f}% 超上限 {l*100:.0f}%"
-                           for x, l in zip(bad["chg"], bad["lim"])],
-                "detected_at": datetime.now(),
-            })
-            with self.c.temp_view(issues, prefix="qi") as v:
-                self.c.execute(
-                    "INSERT INTO data_quality_issue "
-                    "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
-                    "SELECT id, code, trade_date, issue_type, severity, status, detail, detected_at "
-                    f"FROM {v}")
-        adj = self._scan_adj_jump()
-        return {"abnormal_change_rows": int(len(bad)), "adj_jump_rows": adj}
+    # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
+    def recheck_clean(self, issue_type: str, code: str, trade_date: date | None,
+                      window_days: int = GAP_WINDOW_DAYS) -> bool:
+        """复检：该 (类型,股,日期) 的问题现在是否已不存在。True=已恢复，可置 resolved。"""
+        if issue_type == "mv_missing":
+            # L2 契约：总市值与流通市值都须有
+            r = self.c.query_df(
+                "SELECT count(*) FILTER (WHERE total_mv IS NOT NULL) t, "
+                "count(*) FILTER (WHERE float_mv IS NOT NULL) f FROM daily_metrics WHERE code=?", [code]).iloc[0]
+            return int(r["t"]) > 0 and int(r["f"]) > 0
+        if issue_type == "mv_gap":
+            # L2 逐日缺口：近端窗口内不再有「有日线但 total_mv 为空」的天
+            n = self._scalar(
+                """SELECT count(*) FROM daily_metrics m
+                   JOIN stock_basic sb ON sb.code = m.code
+                   WHERE m.code = ? AND sb.delist_date IS NULL AND m.total_mv IS NULL
+                     AND m.trade_date >= (
+                         SELECT min(trade_date) FROM (
+                             SELECT trade_date FROM trade_calendar
+                             WHERE is_open AND trade_date <= (SELECT max(trade_date) FROM daily_metrics)
+                             ORDER BY trade_date DESC LIMIT ?))""", [code, window_days])
+            return int(n) == 0
+        if issue_type in ("data_gap", "stale"):
+            return len(self.missing_days_for(code, window_days)) == 0
+        if issue_type == "null_close":
+            if trade_date is None:
+                return False
+            return int(self._scalar(
+                "SELECT count(*) FROM daily_bar WHERE code=? AND trade_date=? AND close>0",
+                [code, trade_date])) > 0
+        if issue_type == "abnormal_change":
+            if trade_date is None:
+                return False
+            df = self.c.query_df(
+                "SELECT b.close, b.pre_close, COALESCE(sb.price_limit_pct,0.10) lim "
+                "FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code "
+                "WHERE b.code=? AND b.trade_date=? AND b.pre_close>0", [code, trade_date])
+            if df.empty:
+                return True  # 行已不在（被清洗）→ 不再是异常
+            r = df.iloc[0]
+            return abs(r["close"] / r["pre_close"] - 1) <= r["lim"] + 0.005
+        if issue_type == "adj_jump":
+            df = self.c.query_df(
+                "SELECT close, COALESCE(adj_factor_clean, adj_factor) AS adj_factor "
+                "FROM daily_bar WHERE code=? AND close>0 ORDER BY trade_date", [code])
+            if len(df) < 2:
+                return True
+            af = df["adj_factor"].fillna(1.0)
+            qfq = df["close"] * af / (af.iloc[-1] or 1.0)
+            return bool((qfq / qfq.shift(1) - 1).abs().max() <= 0.5)
+        return True
 
-    def _scan_adj_jump(self, threshold: float = 0.5) -> int:
+    def _scan_adj_jump(self, threshold: float = 0.5, ignored_exact: set | None = None) -> int:
         """全市场前复权价相邻日跳变 > threshold（T-M7-6，补 T-M1-8 遗留）→ 复权异常。
 
         阈值 0.5（50%）远超任一板块单日涨跌停（≤20%），故捕获的是粗粒度复权口径错误
         （如除权日因子未更新致整段错位），噪音极低。向量化：按 code 分组算 qfq 比值跳变。
         缺失/停牌缺口属正常现象，由 coverage() 汇总，不在此逐条记 issue（避免淹没真异常）。
         """
-        from datetime import datetime
-
         df = self.c.query_df(
-            "SELECT code, trade_date, close, adj_factor FROM daily_bar "
+            "SELECT code, trade_date, close, "
+            "       COALESCE(adj_factor_clean, adj_factor) AS adj_factor FROM daily_bar "
             "WHERE close > 0 ORDER BY code, trade_date"
         )
         if df.empty:
@@ -241,23 +534,15 @@ class DataIntegrityReport:
         if not parts:
             return 0
         allbad = pd.concat(parts, ignore_index=True)
-        from backend.dataquality.checker import severity_for
-        issues = pd.DataFrame({
-            "id": [self._next_qid() for _ in range(len(allbad))],
-            "code": allbad["code"].values, "trade_date": allbad["trade_date"].values,
-            "issue_type": "adj_jump",
-            "severity": severity_for("adj_jump"),
-            "status": "open",
-            "detail": [f"前复权相邻日跳变 {r*100:.0f}%（疑复权口径异常）" for r in allbad["ratio"]],
-            "detected_at": datetime.now(),
-        })
-        with self.c.temp_view(issues, prefix="aj") as v:
-            self.c.execute(
-                "INSERT INTO data_quality_issue "
-                "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
-                "SELECT id, code, trade_date, issue_type, severity, status, detail, detected_at "
-                f"FROM {v}")
-        return int(len(allbad))
+        ig = ignored_exact or set()
+        keep = [(r["code"], r["trade_date"], r["ratio"]) for _, r in allbad.iterrows()
+                if (r["code"], "adj_jump", str(pd.Timestamp(r["trade_date"]).date())) not in ig]
+        if not keep:
+            return 0
+        return self._insert_issues([
+            {"code": c, "trade_date": td, "issue_type": "adj_jump",
+             "detail": f"前复权相邻日跳变 {rt*100:.0f}%（疑复权口径异常）"}
+            for c, td, rt in keep])
 
     def _next_qid(self) -> int:
         return int(self.c.query_df("SELECT nextval('seq_quality_issue') AS v").iloc[0]["v"])

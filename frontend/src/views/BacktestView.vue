@@ -15,18 +15,36 @@ import EquityChart from '@/components/EquityChart.vue'
 import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
+import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import PageToggleRow from '@/components/PageToggleRow.vue'
+import { usePageSettings } from '@/composables/usePageSettings'
 import { useTradeDates } from '@/composables/useTradeDates'
 
 const PARAMS_KEY = 'ai-stocks-backtest-params' // 表单参数持久化
+const settingsOpen = ref(false)
+const backtestDefaults = {
+  kind: 'strategy' as 'strategy' | 'score_check',
+  topN: 10,
+  initCap: 1_000_000,
+  autoLoadHistory: true,
+  tradeSort: 'entry' as 'entry' | 'return' | 'hold',
+  robustExpanded: false,
+  compact: false,
+  tradeColumns: { ret: true, hold: true, reason: true, grade: true, rank: true },
+}
+const { settings, isDirty, reset } = usePageSettings('backtest', backtestDefaults)
 
-const kind = ref<'strategy' | 'score_check'>('strategy')
+const kind = ref<'strategy' | 'score_check'>(settings.kind)
 const dateStart = ref('2024-01-01')
 const dateEnd = ref('2024-12-31')
 const profileId = ref<string>('')      // 筛选方案（候选池），空=全市场
 const scoreProfileId = ref<string>('') // 评分方案（排序/验证），空=旧固定模型
 const tradeProfileId = ref<string>('') // 买卖方案（买/卖/兜底），空=旧式跌破MA+止盈止损
-const topN = ref(10)
-const initCap = ref(1_000_000)
+const topN = ref(Number(settings.topN))
+const initCap = ref(Number(settings.initCap))
 const industryOn = ref(false)
 const industryPct = ref(20)            // 单行业持仓上限 %
 const profiles = ref<Profile[]>([])
@@ -53,6 +71,14 @@ const fromHistory = ref(false)   // 当前结果是否来自加载历史
 const gradeTag: Record<string, '' | 'success' | 'warning' | 'info'> = {
   主升浪核心: 'success', 龙头候选: 'warning', 观察: 'info',
 }
+const robustPanels = ref<string[]>(settings.robustExpanded ? ['robust'] : [])
+const tradeRows = computed(() => {
+  const list = [...(strat.value?.trades ?? [])]
+  if (settings.tradeSort === 'return') list.sort((a, b) => b.return_pct - a.return_pct)
+  else if (settings.tradeSort === 'hold') list.sort((a, b) => b.hold_days - a.hold_days)
+  else list.sort((a, b) => b.entry_date.localeCompare(a.entry_date))
+  return list
+})
 
 // 交易日历（全站共享，数据范围用于提示行）
 const { dataMin, dataMax, prevTradeDate } = useTradeDates()
@@ -77,6 +103,10 @@ watch(
    tpOn, takeProfit, slOn, stopLoss, holdOn, maxHold, industryOn, industryPct],
   () => { if (!loadingRun.value) dirty.value = true },
 )
+watch(() => settings.kind, (value) => { kind.value = value })
+watch(() => settings.topN, (value) => { topN.value = Number(value) })
+watch(() => settings.initCap, (value) => { initCap.value = Number(value) })
+watch(() => settings.robustExpanded, (value) => { robustPanels.value = value ? ['robust'] : [] })
 // 程序化改参（运行/载入历史）后清脏：等参数 watcher 跑完再置 false
 function clearDirtySoon() {
   nextTick(() => { dirty.value = false; loadingRun.value = false })
@@ -299,12 +329,16 @@ function exportTradesCsv() {
 
 onMounted(async () => {
   restoreParams()
+  kind.value = settings.kind
+  topN.value = Number(settings.topN)
+  initCap.value = Number(settings.initCap)
+  robustPanels.value = settings.robustExpanded ? ['robust'] : []
   try { profiles.value = await listProfiles() } catch { /* ignore */ }
   try { scoreProfiles.value = await listScoreProfiles() } catch { /* ignore */ }
   try { tradeProfiles.value = await listTradeProfiles() } catch { /* ignore */ }
   await loadHistory()
   // 默认载入最近一次回测结果，避免空屏、不用反复重跑
-  if (runHistory.value.length) {
+  if (settings.autoLoadHistory && runHistory.value.length) {
     selectedRun.value = runHistory.value[0].id
     await loadRun(selectedRun.value)
   }
@@ -497,6 +531,7 @@ const layerRows = computed(() => {
   rows.push({ name: '全市场基线 (base rate)', isBase: true, cells: L.base_rate })
   return rows
 })
+const hasTradeRows = computed(() => Boolean(strat.value?.trades?.length))
 
 // —— 交易明细 → 内嵌 K 线（买卖点标注 + 卖出后表现），不跳转个股详情 ——
 interface DlgTrade extends TradeRow {
@@ -639,19 +674,22 @@ async function openTradeChart(row: TradeRow) {
           <p style="margin:6px 0 0;color:#e6a23c"><b>⚠️ 防坑</b>：① 用未来 N 日是「评估」非未来函数；② 短区间「年化/卡玛」会被放大，只看长周期；③ 样本量小(n小)的分档不可信。</p>
         </HelpTip>
       </h2>
-      <div class="hist" v-if="runHistory.length">
-        <span class="lbl">历史回测</span>
-        <el-select v-model="selectedRun" style="width: 340px" @change="loadRun(selectedRun)" size="default">
-          <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
-            <span :style="{ color: o.color, fontWeight: 600 }">{{ o.label }}</span>
-            <span class="opt-range">{{ o.range }} <b :style="{ color: o.color }">{{ o.retTxt }}</b></span>
-          </el-option>
-        </el-select>
-        <el-button :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
+      <div class="page-head-actions">
+        <div class="hist" v-if="runHistory.length">
+          <span class="lbl">历史回测</span>
+          <el-select v-model="selectedRun" style="width: 340px" @change="loadRun(selectedRun)" size="default">
+            <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
+              <span :style="{ color: o.color, fontWeight: 600 }">{{ o.label }}</span>
+              <span class="opt-range">{{ o.range }} <b :style="{ color: o.color }">{{ o.retTxt }}</b></span>
+            </el-option>
+          </el-select>
+          <el-button :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
+        </div>
+        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>
 
-    <div class="v-scroll">
+    <div class="v-grow backtest-body">
     <el-card shadow="never" class="form-card">
       <div class="form-row">
         <el-radio-group v-model="kind">
@@ -751,6 +789,7 @@ async function openTradeChart(row: TradeRow) {
     </el-card>
 
     <div v-loading="loading" class="results">
+      <div class="results-top">
       <!-- 加载历史时：显示这次回测的运行时间 -->
       <div v-if="fromHistory && runTime && (strat || sig)" class="run-time-banner">
         📂 加载的历史记录 · 回测于 <b>{{ runTime }}</b> 运行
@@ -773,7 +812,7 @@ async function openTradeChart(row: TradeRow) {
 
         <!-- 稳健性测试（即跑即看，不入历史）：用当前表单参数为基准 -->
         <el-card shadow="never" class="block">
-          <el-collapse>
+          <el-collapse v-model="robustPanels">
             <el-collapse-item name="robust">
               <template #title>
                 <span class="block-title" style="margin:0">稳健性测试
@@ -888,28 +927,31 @@ async function openTradeChart(row: TradeRow) {
           每格上为命中率，下为<b>超额</b>（命中率−基线）。超额为正说明该档比"随便买"更可能摸到目标涨幅。
         </div>
       </el-card>
+      </div>
 
       <!-- 逐笔交易（策略）-->
-      <el-card v-if="strat && strat.trades.length" shadow="never" class="block">
+      <el-card v-if="hasTradeRows" shadow="never" class="block trade-block">
         <div class="block-title">
-          逐笔交易（{{ strat.trades.length }} 笔）
+          逐笔交易（{{ strat!.trades.length }} 笔）
           <span class="sub">点任一行 → 在 K 线上看该股的买卖点与原因（不跳转）</span>
           <el-button size="small" class="export-btn" @click="exportTradesCsv">导出 CSV</el-button>
         </div>
-        <el-table :data="strat.trades" stripe size="small" height="360" class="clickable"
+        <div class="trade-table-wrap">
+        <el-table :data="tradeRows" stripe size="small" height="100%" class="clickable"
+                  :class="{ 'page-table-compact': settings.compact }"
                   @row-click="(r:any) => openTradeChart(r)">
           <el-table-column label="代码" prop="code" width="110" />
-          <el-table-column label="买入" prop="entry_date" width="110" />
+          <el-table-column label="买入" prop="entry_date" width="110" sortable :sort-by="(r:any)=>r.entry_date" />
           <el-table-column label="买价" width="90"><template #default="{ row }">{{ num(row.entry_price) }}</template></el-table-column>
-          <el-table-column label="卖出" prop="exit_date" width="110" />
+          <el-table-column label="卖出" prop="exit_date" width="110" sortable :sort-by="(r:any)=>r.exit_date" />
           <el-table-column label="卖价" width="90"><template #default="{ row }">{{ num(row.exit_price) }}</template></el-table-column>
-          <el-table-column label="收益" width="100" sortable :sort-by="(r:any)=>r.return_pct">
+          <el-table-column v-if="settings.tradeColumns.ret" label="收益" width="100" sortable :sort-by="(r:any)=>r.return_pct">
             <template #default="{ row }">
               <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="持有(日)" prop="hold_days" width="90" />
-          <el-table-column label="卖出原因" min-width="150">
+          <el-table-column v-if="settings.tradeColumns.hold" label="持有(日)" prop="hold_days" width="90" sortable :sort-by="(r:any)=>r.hold_days" />
+          <el-table-column v-if="settings.tradeColumns.reason" label="卖出原因" min-width="150">
             <template #default="{ row }">
               <template v-if="sellTags(row).length">
                 <el-tag v-for="t in sellTags(row)" :key="t" type="warning" size="small" effect="light" class="sell-tag">{{ t }}</el-tag>
@@ -917,17 +959,18 @@ async function openTradeChart(row: TradeRow) {
               <span v-else>{{ row.exit_reason }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="买入档" width="110">
+          <el-table-column v-if="settings.tradeColumns.grade" label="买入档" width="110">
             <template #default="{ row }">
               <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" size="small" effect="light">{{ row.grade }}</el-tag>
               <span v-else-if="row.entry_score != null" class="muted" title="综合分未达「观察」档阈值，但因候选池内排名靠前而买入">无评级·{{ row.entry_score.toFixed(0) }}分</span>
               <span v-else class="muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="榜单排名" width="90">
+          <el-table-column v-if="settings.tradeColumns.rank" label="榜单排名" width="90">
             <template #default="{ row }">{{ row.entry_rank ? '#' + row.entry_rank : '—' }}</template>
           </el-table-column>
         </el-table>
+        </div>
       </el-card>
 
       <el-empty v-if="!loading && !strat && !sig" description="设置参数后点「运行回测」" />
@@ -1033,12 +1076,60 @@ async function openTradeChart(row: TradeRow) {
         </el-table>
       </div>
     </el-dialog>
+
+    <PageSettingsDrawer v-model="settingsOpen" title="策略回测" :dirty="isDirty" @reset="reset">
+      <PageSettingSection title="默认参数">
+        <div class="setting-item">
+          <div class="setting-label">默认模式</div>
+          <PageSegmented v-model="settings.kind" :options="[
+            { label: '策略回测', value: 'strategy' },
+            { label: '评分验证', value: 'score_check' },
+          ]" />
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">Top N</div>
+          <PageSegmented v-model="settings.topN" :options="[
+            { label: '5', value: 5 },
+            { label: '10', value: 10 },
+            { label: '20', value: 20 },
+          ]" />
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">初始资金</div>
+          <PageSegmented v-model="settings.initCap" :options="[
+            { label: '50万', value: 500000 },
+            { label: '100万', value: 1000000 },
+            { label: '300万', value: 3000000 },
+          ]" />
+        </div>
+        <PageToggleRow v-model="settings.autoLoadHistory" label="自动加载最近历史回测" />
+        <PageToggleRow v-model="settings.robustExpanded" label="默认展开稳健性测试" />
+      </PageSettingSection>
+      <PageSettingSection title="交易明细">
+        <div class="setting-item">
+          <div class="setting-label">默认排序</div>
+          <PageSegmented v-model="settings.tradeSort" :options="[
+            { label: '买入日', value: 'entry' },
+            { label: '收益率', value: 'return' },
+            { label: '持有日', value: 'hold' },
+          ]" />
+        </div>
+        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
+        <PageToggleRow v-model="settings.tradeColumns.ret" label="显示收益" />
+        <PageToggleRow v-model="settings.tradeColumns.hold" label="显示持有日" />
+        <PageToggleRow v-model="settings.tradeColumns.reason" label="显示卖出原因" />
+        <PageToggleRow v-model="settings.tradeColumns.grade" label="显示买入档" />
+        <PageToggleRow v-model="settings.tradeColumns.rank" label="显示榜单排名" />
+      </PageSettingSection>
+    </PageSettingsDrawer>
   </div>
 </template>
 
 <style scoped>
 .page-head { margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; }
 .page-head h2 { margin: 0; font-size: 20px; }
+.setting-item { display: flex; flex-direction: column; gap: 8px; }
+.setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
 .hist { display: flex; align-items: center; gap: 6px; }
 .opt-range { float: right; color: var(--el-text-color-secondary); font-size: 12px; margin-left: 18px; }
 .dlg-legend { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; font-size: 12px; }
@@ -1072,10 +1163,29 @@ async function openTradeChart(row: TradeRow) {
   background: var(--el-color-info-light-9); color: var(--el-text-color-regular);
   border: 1px solid var(--el-color-info-light-7);
 }
+.backtest-body {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 .sell-tag { margin: 1px 2px 1px 0; }
 .dlg-tbl-title { margin: 14px 0 6px; font-weight: 600; font-size: 13px; }
 .title-row { display: flex; align-items: center; }
-.form-card { margin-bottom: 14px; }
+.form-card { margin-bottom: 14px; flex: 0 0 auto; }  /* 操作区固定高，不被结果挤压（第一层级）*/
+.results {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* 第二原则：各块最低高宽放不下时，整个结果区滚动兜底（够放时不出滚动条）*/
+  overflow: auto;
+  gap: 14px;
+  padding-right: 2px;
+}
+.results-top {
+  flex: 0 0 auto;  /* 绩效卡/资金曲线/稳健性/分层表：按内容取自然高 */
+}
 .form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .lbl { color: var(--el-text-color-secondary); font-size: 13px; margin-left: 6px; display: inline-flex; align-items: center; gap: 2px; }
 .lbl.strong { color: var(--el-text-color-primary); font-weight: 600; }
@@ -1093,6 +1203,28 @@ async function openTradeChart(row: TradeRow) {
 .prof-desc .pd-tag { font-weight: 600; color: var(--el-color-primary); white-space: nowrap; }
 .prof-desc .pd-body { color: var(--el-text-color-regular); }
 .block { margin-bottom: 14px; }
+.results-top > .block:last-child {
+  margin-bottom: 0;
+}
+.trade-block {
+  /* 第一原则：交易表填满剩余高度并表体内滚（表头吸顶）；
+     空间不足时退到约 6–8 行的最低高度，由结果区整体滚动兜底 */
+  flex: 1 1 auto;
+  min-height: 300px;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+.trade-block :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.trade-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 .block-title { font-weight: 600; margin-bottom: 10px; display: flex; align-items: baseline; gap: 10px; }
 .block-title .sub { font-weight: 400; font-size: 12px; color: var(--el-text-color-secondary); }
 .export-btn { margin-left: auto; }

@@ -6,6 +6,8 @@ export interface GroupSummary {
   name: string
   group_date: string | null
   description: string
+  color: string
+  is_default: boolean
   member_count: number
   updated_at: string
 }
@@ -24,7 +26,14 @@ export interface GroupDetail {
   name: string
   group_date: string | null
   description: string
-  members: GroupMember[]
+  color: string
+  is_default: boolean
+  members: {
+    total: number
+    page: number
+    size: number
+    list: GroupMember[]
+  }
   avg_ret: number | null    // 整组等权平均涨幅（小数）
   count: number
   created_at: string
@@ -34,13 +43,22 @@ export interface GroupDetail {
 export function listGroups(): Promise<GroupSummary[]> {
   return http.get('/stock-groups')
 }
-export function getGroup(gid: string): Promise<GroupDetail> {
-  return http.get(`/stock-groups/${gid}`)
+export interface GroupMembersParams {
+  page?: number
+  size?: number
+  q?: string
+  sort_by?: string
+  sort_order?: string
+}
+
+export function getGroup(gid: string, params?: GroupMembersParams): Promise<GroupDetail> {
+  return http.get(`/stock-groups/${gid}`, { params })
 }
 export function createGroup(body: {
   name: string
   group_date?: string
   description?: string
+  color?: string
   codes?: string[]
 }): Promise<{ id: string }> {
   return http.post('/stock-groups', body)
@@ -49,6 +67,7 @@ export function updateGroup(gid: string, body: {
   name?: string
   group_date?: string
   description?: string
+  color?: string
 }): Promise<{ id: string }> {
   return http.patch(`/stock-groups/${gid}`, body)
 }

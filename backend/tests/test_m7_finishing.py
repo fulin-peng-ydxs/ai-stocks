@@ -43,7 +43,7 @@ def test_scan_adj_jump_flags_gross_jump():
                          "adj_factor": af[i], "turnover_rate": 1.0, "is_st": False,
                          "is_suspended": False, "limit_status": 0, "is_one_word": False})
         c.register_df("t", pd.DataFrame(rows))
-        c.execute("INSERT INTO daily_bar SELECT * FROM t")
+        c.execute("INSERT INTO daily_bar BY NAME SELECT * FROM t")
         c.unregister("t")
         n = DataIntegrityReport(c)._scan_adj_jump(threshold=0.5)
         assert n >= 1

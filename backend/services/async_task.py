@@ -24,15 +24,67 @@ from backend.storage.duckdb_client import get_client
 
 log = get_logger("services.async_task")
 
-# 全部任务类型
-TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "recompute", "verify", "fix")
-# 写类任务：互斥（同类不并发），且服务重启需 reconcile
-WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes", "fix"})
+# 全部任务类型（原子任务：定时任务系统按需组合调度，不再有 daily 复合任务）
+TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_price_factors",
+              "recompute", "verify", "checkup", "fix", "enrich_basic")
+# 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
+WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
+                              "rebuild_price_factors", "fix", "enrich_basic"})
 
 # 日志保留（DM-D8）
 LOG_MAX_PER_TASK = 2000
 LOG_RETENTION_DAYS = 30
-_LOG_FLUSH_EVERY = 50  # 累计 N 条即 flush
+_LOG_FLUSH_EVERY = 10  # 累计 N 条即 flush；长任务日志要比进度条更快出现在页面上
+
+TASK_CAPABILITIES: dict[str, dict] = {
+    "update": {
+        "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
+        "resume_granularity": "phase_code",
+        "cancel_message": "会在当前股票/当前外部接口请求结束后的检查点停止",
+    },
+    "ingest_codes": {
+        "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
+        "resume_granularity": "phase_code",
+        "cancel_message": "会在当前股票/当前外部接口请求结束后的检查点停止",
+    },
+    "backfill": {
+        "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
+        "resume_granularity": "code",
+        "cancel_message": "会在当前股票/当前外部接口请求结束后的检查点停止",
+    },
+    "ingest_date": {
+        "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
+        "resume_granularity": "code",
+        "cancel_message": "会在当前股票/当前外部接口请求结束后的检查点停止",
+    },
+    "rebuild_price_factors": {
+        "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
+        "resume_granularity": "code",
+        "cancel_message": "会在当前股票价格因子重算完成后停止",
+    },
+    "fix": {
+        "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
+        "resume_granularity": "issue_id",
+        "cancel_message": "会在当前质检问题恢复完成后停止",
+    },
+    "enrich_basic": {
+        "can_cancel": True, "can_resume": False, "cancel_mode": "checkpoint",
+        "resume_granularity": None,
+        "cancel_message": "会在当前刷新步骤完成后停止；该任务不提供精确续跑",
+    },
+    "recompute": {
+        "can_cancel": False, "can_resume": False, "cancel_mode": "none",
+        "resume_granularity": None, "cancel_message": "该任务很短，不支持终止/续跑",
+    },
+    "verify": {
+        "can_cancel": False, "can_resume": False, "cancel_mode": "none",
+        "resume_granularity": None, "cancel_message": "质检扫描暂不支持中途终止/续跑",
+    },
+    "checkup": {
+        "can_cancel": False, "can_resume": False, "cancel_mode": "none",
+        "resume_granularity": None, "cancel_message": "结构体检暂不支持中途终止/续跑",
+    },
+}
 
 
 class ConcurrentTaskError(Exception):
@@ -42,6 +94,15 @@ class ConcurrentTaskError(Exception):
         self.task_type = task_type
         self.running_id = running_id
         super().__init__(f"已有同类任务在运行: {task_type}（{running_id}）")
+
+
+class TaskCancelled(Exception):
+    """用户请求取消任务（协作式：执行器在步骤间检查到即抛出）。"""
+
+
+# 协作式取消：被请求取消的任务 id 集合（同进程内执行器线程与 API 共享）。
+_CANCEL_LOCK = threading.Lock()
+_CANCELLED: set[str] = set()
 
 
 class TaskContext:
@@ -76,6 +137,17 @@ class TaskContext:
         self.svc._set(self.tid, result=json.dumps({"checkpoint": self.checkpoint},
                                                   ensure_ascii=False, default=str))
 
+    def set_phase(self, phase: str, **data) -> None:
+        """记录当前长子任务阶段；前端据此解释'下一个检查点'在哪里。"""
+        self.set_checkpoint(phase=phase, **data)
+
+    def check_cancel(self) -> None:
+        """协作式取消检查点：被请求取消则抛 TaskCancelled（执行器捕获→标记可续跑）。"""
+        with _CANCEL_LOCK:
+            cancelled = self.tid in _CANCELLED
+        if cancelled:
+            raise TaskCancelled()
+
 
 class AsyncTaskService:
     def __init__(self, client=None):
@@ -92,11 +164,18 @@ class AsyncTaskService:
         cols = ", ".join(f"{k}=?" for k in fields)
         self.c.execute(f"UPDATE async_task SET {cols} WHERE id=?", [*fields.values(), tid])
 
-    def _running_of_type(self, task_type: str) -> str | None:
+    def _running_write(self) -> tuple[str, str] | None:
+        """任一在跑的写任务（单写者模型）：写任务之间互斥，不只同类——
+
+        update/backfill/ingest_*/fix/daily 都写行情库，并发两个写没意义且易混淆；
+        DuckDB 虽 RLock 串行不会损坏，但语义上只允许一个写任务在跑。返回 (id, type)。
+        """
+        ph = ",".join("?" * len(WRITE_TASK_TYPES))
         df = self.c.query_df(
-            "SELECT id FROM async_task WHERE task_type=? AND status IN ('pending','running') "
-            "ORDER BY created_at DESC LIMIT 1", [task_type])
-        return None if df.empty else df.iloc[0]["id"]
+            f"SELECT id, task_type FROM async_task WHERE task_type IN ({ph}) "
+            "AND status IN ('pending','running') ORDER BY created_at DESC LIMIT 1",
+            list(WRITE_TASK_TYPES))
+        return None if df.empty else (df.iloc[0]["id"], df.iloc[0]["task_type"])
 
     # ── 实时日志 ──
     def _max_log_seq(self, tid: str) -> int:
@@ -136,21 +215,26 @@ class AsyncTaskService:
         return out
 
     # ── 创建 / 执行 ──
-    def create(self, task_type: str, params: dict | None = None) -> str:
+    def create(self, task_type: str, params: dict | None = None, *,
+               trigger_source: str = "manual", job_id: str | None = None,
+               job_name: str | None = None) -> str:
+        """创建并后台执行任务。trigger_source 标记来源（manual/scheduled），定时触发时
+        带上 job_id/job_name，供任务中心展示「定时·{job_name}」并据此筛选。"""
         if task_type not in TASK_TYPES:
             raise ValueError(f"未知任务类型: {task_type}（可选 {TASK_TYPES}）")
         params = params or {}
         if task_type in WRITE_TASK_TYPES:
-            busy = self._running_of_type(task_type)
+            busy = self._running_write()
             if busy:
-                raise ConcurrentTaskError(task_type, busy)
+                raise ConcurrentTaskError(busy[1], busy[0])
         tid = self._new_id(task_type)
         now = datetime.now()
         self.c.execute(
-            "INSERT INTO async_task (id, task_type, params, status, progress, message, result, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO async_task (id, task_type, params, status, progress, message, result, "
+            "trigger_source, job_id, job_name, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             [tid, task_type, json.dumps(params, ensure_ascii=False, default=str),
-             "pending", 0.0, "已排队", None, now, now])
+             "pending", 0.0, "已排队", None, trigger_source, job_id, job_name, now, now])
         threading.Thread(target=self._run, args=(tid, task_type, params, None), daemon=True).start()
         return tid
 
@@ -162,10 +246,13 @@ class AsyncTaskService:
         if t["status"] != "interrupted":
             raise ValueError(f"仅可续跑中断任务，当前状态: {t['status']}")
         task_type = t["task_type"]
+        cap = TASK_CAPABILITIES.get(task_type, {})
+        if not cap.get("can_resume"):
+            raise ValueError(f"该任务类型不支持续跑: {task_type}")
         if task_type in WRITE_TASK_TYPES:
-            busy = self._running_of_type(task_type)
+            busy = self._running_write()
             if busy:
-                raise ConcurrentTaskError(task_type, busy)
+                raise ConcurrentTaskError(busy[1], busy[0])
         params = t.get("params") or {}
         checkpoint = (t.get("result") or {}).get("checkpoint") if isinstance(t.get("result"), dict) else None
         self._set(tid, status="pending", progress=0.0, message="续跑排队…")
@@ -173,37 +260,76 @@ class AsyncTaskService:
         return tid
 
     def _run(self, tid: str, task_type: str, params: dict, checkpoint: dict | None) -> None:
+        with _CANCEL_LOCK:           # 清除上一轮残留的取消标记（避免续跑刚启动就被旧标记误终止）
+            _CANCELLED.discard(tid)
         ctx = TaskContext(self, tid, checkpoint)
         self._set(tid, status="running", progress=0.05, message="开始…")
+        ctx.log(f"▶ 任务启动：{task_type}，参数 {json.dumps(params, ensure_ascii=False, default=str)}")
         if checkpoint:
             done = checkpoint.get("done")
-            ctx.log(f"续跑：上次约完成 {done}/{checkpoint.get('total', '?')} 项，幂等续做（跳过已入库）")
+            phase = checkpoint.get("phase") or "未记录阶段"
+            item = checkpoint.get("current_item") or "-"
+            ctx.log(f"续跑：上次阶段 {phase}，位置 {item}，约完成 {done}/{checkpoint.get('total', '?')} 项；"
+                    "将按 checkpoint/已入库数据跳过已完成部分")
+        ctx.flush()
         try:
             result = _HANDLERS[task_type](params, ctx)
+            ctx.log(f"■ 任务完成：{result.get('message', '完成')}")
             ctx.flush()
             self._set(tid, status="done", progress=1.0,
                       message=result.get("message", "完成"),
                       result=json.dumps(result, ensure_ascii=False, default=str))
+        except TaskCancelled:
+            ctx.log("⏹ 任务已被用户终止（已完成的部分已入库，可续跑）", "warn")
+            self._release_fixing(tid)
+            ctx.flush()
+            self._set(tid, status="interrupted", message="已终止（可续跑）")
         except Exception as e:  # noqa: BLE001
             log.exception("异步任务失败 %s", tid)
             ctx.log(f"任务失败: {e}", "error")
+            self._release_fixing(tid)
             ctx.flush()
             self._set(tid, status="failed", progress=1.0, message=str(e))
+        finally:
+            with _CANCEL_LOCK:
+                _CANCELLED.discard(tid)
+
+    def _release_fixing(self, tid: str) -> int:
+        """把本任务名下仍卡在 fixing 的质检问题复位为 open（任务失败/中断时调用，不留孤儿）。"""
+        try:
+            stuck = self.c.query_df(
+                "SELECT count(*) AS n FROM data_quality_issue WHERE status='fixing' AND fix_task_id=?",
+                [tid]).iloc[0]["n"]
+            if int(stuck):
+                self.c.execute(
+                    "UPDATE data_quality_issue SET status='open', fix_task_id=NULL "
+                    "WHERE status='fixing' AND fix_task_id=?", [tid])
+                log.info("任务 %s 终止：复位 %d 条修复中问题为待处理", tid, int(stuck))
+            return int(stuck)
+        except Exception as e:  # noqa: BLE001  防御：复位失败不影响任务收尾
+            log.warning("复位修复中问题失败 tid=%s: %s", tid, e)
+            return 0
 
     # ── 启动期 reconcile（FR-DM-10 + 日志清理 DM-D8）──
     def reconcile(self) -> dict:
-        """服务启动调用：残留 running/pending → interrupted；清理超期日志。"""
+        """服务启动调用：残留 running/pending → interrupted；孤儿 fixing → open；清理超期日志。"""
         stuck = self.c.query_df(
             "SELECT count(*) AS n FROM async_task WHERE status IN ('pending','running')").iloc[0]["n"]
         self.c.execute(
             "UPDATE async_task SET status='interrupted', message='服务重启中断，可续跑', updated_at=? "
             "WHERE status IN ('pending','running')", [datetime.now()])
+        # 重启后没有任何任务在跑，故所有 fixing 必为孤儿（绑定的任务已中断）→ 复位为 open，可重新恢复
+        fixing = int(self.c.query_df(
+            "SELECT count(*) AS n FROM data_quality_issue WHERE status='fixing'").iloc[0]["n"])
+        if fixing:
+            self.c.execute(
+                "UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE status='fixing'")
         cutoff = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
         self.c.execute("DELETE FROM task_log WHERE ts < ?", [cutoff])
         n = int(stuck)
-        if n:
-            log.info("reconcile：%d 个残留任务标记为 interrupted", n)
-        return {"interrupted": n}
+        if n or fixing:
+            log.info("reconcile：%d 个残留任务标记 interrupted，%d 条修复中问题复位为待处理", n, fixing)
+        return {"interrupted": n, "fixing_reset": fixing}
 
     def get(self, tid: str) -> dict | None:
         df = self.c.query_df("SELECT * FROM async_task WHERE id=?", [tid])
@@ -211,13 +337,48 @@ class AsyncTaskService:
             return None
         return _row(df.iloc[0])
 
-    def list(self, limit: int = 20, status: str | None = None) -> list[dict]:
+    def cancel(self, tid: str) -> bool:
+        """请求终止运行中/排队中的任务（协作式）：执行器在下一个检查点停下并标记可续跑。"""
+        t = self.get(tid)
+        if not t or t["status"] not in ("pending", "running"):
+            return False
+        cap = TASK_CAPABILITIES.get(t["task_type"], {})
+        if not cap.get("can_cancel"):
+            return False
+        with _CANCEL_LOCK:
+            _CANCELLED.add(tid)
+        self._set(tid, message=f"终止中…（{cap.get('cancel_message') or '到下一个检查点停下'}）")
+        return True
+
+    _SORT_COLS = {"time": "created_at", "type": "task_type", "status": "status"}
+
+    def list(self, limit: int = 20, status: str | None = None, task_type: str | None = None,
+             page: int | None = None, size: int | None = None,
+             sort: str = "time", order: str = "desc") -> dict:
+        """任务列表（M2.9.5 服务端分页/排序/筛选）。
+
+        page/size 给定 → 分页返回 {tasks,total,page,size}；否则退回 limit 条（兼容旧调用）。
+        sort ∈ {time,type,status}，order ∈ {asc,desc}；status/task_type 为精确筛选。
+        """
+        conds, params = [], []
         if status:
-            df = self.c.query_df(
-                "SELECT * FROM async_task WHERE status=? ORDER BY created_at DESC LIMIT ?", [status, limit])
-        else:
-            df = self.c.query_df("SELECT * FROM async_task ORDER BY created_at DESC LIMIT ?", [limit])
-        return [_row(r) for _, r in df.iterrows()]
+            conds.append("status = ?"); params.append(status)
+        if task_type:
+            conds.append("task_type = ?"); params.append(task_type)
+        where = (" WHERE " + " AND ".join(conds)) if conds else ""
+        col = self._SORT_COLS.get(sort, "created_at")
+        direction = "ASC" if str(order).lower() == "asc" else "DESC"
+        order_sql = f" ORDER BY {col} {direction}, created_at DESC"
+        if page is None or size is None:
+            df = self.c.query_df(f"SELECT * FROM async_task{where}{order_sql} LIMIT ?", [*params, limit])
+            return {"tasks": [_row(r) for _, r in df.iterrows()]}
+        total = int(self.c.query_df(
+            f"SELECT count(*) AS n FROM async_task{where}", params).iloc[0]["n"])
+        off = int((page - 1) * size)
+        df = self.c.query_df(
+            f"SELECT * FROM async_task{where}{order_sql} LIMIT ? OFFSET ?", [*params, int(size), off])
+        return {"tasks": [_row(r) for _, r in df.iterrows()], "total": total,
+                "page": page, "size": size}
 
 
 def _row(r) -> dict:
@@ -234,6 +395,13 @@ def _row(r) -> dict:
                 d[k] = json.loads(d[k])
             except (ValueError, TypeError):
                 pass
+    cap = dict(TASK_CAPABILITIES.get(d.get("task_type"), {}))
+    checkpoint = (d.get("result") or {}).get("checkpoint") if isinstance(d.get("result"), dict) else {}
+    if isinstance(checkpoint, dict):
+        cap["current_phase"] = checkpoint.get("phase")
+        cap["current_item"] = checkpoint.get("current_item")
+        cap["checkpoint"] = checkpoint
+    d["capability"] = cap
     return d
 
 
@@ -243,21 +411,54 @@ def _mark_snapshots_stale() -> int:
     return ScoreSnapshotRepo(get_client()).mark_stale_all()
 
 
+def _concurrency(params: dict) -> int | None:
+    """从 params 读「采集并发数」并钳到 1~16；缺省返回 None（落回全局默认并发）。
+
+    定时任务可按任务覆盖全局 datasource.update_concurrency；手动任务也能带此参数。
+    """
+    c = params.get("concurrency")
+    if c in (None, "", 0):
+        return None
+    return max(1, min(int(c), 16))
+
+
+def _call_with_ctx(fn, *args, ctx: TaskContext, **kwargs):
+    """Call newer ctx-aware service methods while keeping tests/old monkeypatches compatible."""
+    import inspect
+
+    sig = inspect.signature(fn)
+    accepts_ctx = "ctx" in sig.parameters or any(
+        p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+    )
+    if accepts_ctx:
+        return fn(*args, ctx=ctx, **kwargs)
+    return fn(*args, **kwargs)
+
+
 def _h_update(params: dict, ctx: TaskContext) -> dict:
     from backend.services.ingest import IngestionService
+    ctx.log("阶段 1/3：增量更新行情")
     ctx.progress(0.1, "增量更新行情中…")
-    res = IngestionService().update(codes=params.get("codes"), ctx=ctx)
-    ctx.progress(0.9, "标记评分快照失效…")
+    res = IngestionService().update(codes=params.get("codes"), concurrency=_concurrency(params), ctx=ctx)
+    if res.get("skipped"):
+        return {"message": "主源未就绪，本次增量未执行", "ingest": res, "snapshots_marked_stale": 0}
+    ctx.log("阶段 2/3：刷新评分缓存")
+    ctx.progress(0.9, "刷新评分缓存…")
     stale = _mark_snapshots_stale()
+    ctx.log(f"阶段 3/3：增量任务收尾，已标记 {stale} 项评分快照失效")
     return {"message": f"更新完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
 
 
 def _h_backfill(params: dict, ctx: TaskContext) -> dict:
     from backend.services.ingest import IngestionService
+    ctx.log("阶段 1/3：历史行情补数")
     ctx.progress(0.1, "历史补数中（可能较久）…")
-    res = IngestionService().backfill(codes=params.get("codes"), years=params.get("years"), ctx=ctx)
-    ctx.progress(0.9, "标记评分快照失效…")
+    res = IngestionService().backfill(codes=params.get("codes"), years=params.get("years"),
+                                      concurrency=_concurrency(params), ctx=ctx)
+    ctx.log("阶段 2/3：刷新评分缓存")
+    ctx.progress(0.9, "刷新评分缓存…")
     stale = _mark_snapshots_stale()
+    ctx.log(f"阶段 3/3：补数任务收尾，已标记 {stale} 项评分快照失效")
     return {"message": f"补数完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
 
 
@@ -271,13 +472,17 @@ def _h_ingest_date(params: dict, ctx: TaskContext) -> dict:
         raise ValueError("缺少 date 或 date_start 参数")
     start = _date.fromisoformat(str(d0))
     end = _date.fromisoformat(str(d1))
+    ctx.log(f"阶段 1/3：指定日期行情采集 {start}~{end}")
     ctx.progress(0.1, f"采集 {start}~{end} 行情…")
-    res = IngestionService().ingest_date(start, end, codes=params.get("codes"), ctx=ctx)
-    ctx.progress(0.9, "标记受影响日期评分快照失效…")
+    res = IngestionService().ingest_date(start, end, codes=params.get("codes"),
+                                         concurrency=_concurrency(params), ctx=ctx)
+    ctx.log("阶段 2/3：刷新受影响日期评分缓存")
+    ctx.progress(0.9, "刷新受影响日期的评分缓存…")
     from backend.scoring.snapshot import ScoreSnapshotRepo
     days = res.get("dates", [])
     stale = ScoreSnapshotRepo(get_client()).mark_stale_dates(
         [_date.fromisoformat(x) for x in days]) if days else 0
+    ctx.log(f"阶段 3/3：指定日期采集收尾，受影响交易日 {len(days)} 天，已标记 {stale} 项评分快照失效")
     return {"message": f"指定采集完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
 
 
@@ -287,79 +492,256 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
     codes = params.get("codes")
     if not codes:
         raise ValueError("缺少 codes 参数")
+    ctx.log(f"阶段 1/3：指定股票增量采集，{len(codes)} 只")
     ctx.progress(0.1, f"采集 {len(codes)} 只指定股票…")
-    res = IngestionService().update(codes=codes, ctx=ctx)
-    ctx.progress(0.9, "标记评分快照失效…")
+    res = IngestionService().update(codes=codes, concurrency=_concurrency(params), ctx=ctx)
+    ctx.log("阶段 2/3：刷新评分缓存")
+    ctx.progress(0.9, "刷新评分缓存…")
     stale = _mark_snapshots_stale()
+    ctx.log(f"阶段 3/3：指定股票采集收尾，已标记 {stale} 项评分快照失效")
     return {"message": f"指定股票采集完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
 
 
 def _h_recompute(params: dict, ctx: TaskContext) -> dict:
-    ctx.progress(0.5, "标记评分快照失效…")
+    ctx.log("▶ 刷新评分缓存：把已物化的评分快照标记为需重算（不立即重算，下次打开榜单/方案时按需算）")
+    ctx.progress(0.5, "刷新评分缓存…")
     stale = _mark_snapshots_stale()
-    return {"message": f"已标记 {stale} 个(交易日×方案) 评分快照失效，将于下次访问时重算",
+    ctx.log(f"■ 完成：{stale} 项评分快照已标记为需重算")
+    return {"message": f"已刷新评分缓存：{stale} 项评分标记为需重算，下次打开榜单/方案时自动重新计算",
+            "snapshots_marked_stale": stale}
+
+
+def _h_rebuild_price_factors(params: dict, ctx: TaskContext) -> dict:
+    from backend.services.ingest import IngestionService
+    ctx.log("阶段 1/3：重算价格因子")
+    ctx.progress(0.05, "重算价格因子…")
+    codes = params.get("codes")
+    res = IngestionService().rebuild_price_factors(codes=codes, ctx=ctx)
+    ctx.log("阶段 2/3：刷新评分缓存")
+    ctx.progress(0.95, "刷新评分缓存…")
+    stale = _mark_snapshots_stale()
+    ctx.log(f"阶段 3/3：价格因子任务收尾，已标记 {stale} 项评分快照失效")
+    return {"message": f"价格因子重算完成：{res}", "rebuild": res,
             "snapshots_marked_stale": stale}
 
 
 def _h_verify(params: dict, ctx: TaskContext) -> dict:
-    from backend.services.data_verify import DataVerifier
+    """数据质检（与定时/手动质检同一方法 scan_quality_issues，口径一致）。
+
+    四层统一扫描写质量台账（幂等：覆盖上轮未解决的 L2/L3/L4 自动问题）：
+    L2 字段契约（市值缺失）/ L3 正确性（异常涨跌、复权跳变）/ L4 覆盖鲜活（缺口、滞后）。
+    L1 入库闸门由采集即时记录。停牌（已确认）不计入缺口。
+    """
     from backend.services.data_report import DataIntegrityReport
-    ctx.progress(0.2, "结构/价格/契约校验…")
-    ctx.log("开始数据体检：结构 / 价格 / 契约")
-    v = DataVerifier(quiet=True)
-    v.check_structure()
-    v.check_prices()
-    v.check_contract()
-    fails = v.fails()
-    ctx.progress(0.7, "数据质量扫描…")
-    ctx.log(f"结构/价格/契约校验完成，{'无异常' if not fails else f'{len(fails)} 项不达标'}")
-    quality = DataIntegrityReport().scan_quality_issues()
-    return {"message": "体检通过" if not fails else f"发现 {len(fails)} 项问题",
-            "fails": fails, "quality": quality}
+    ctx.progress(0.3, "全市场四层数据质检中…")
+    ctx.log("数据质检：扫描市值缺失 / 异常涨跌 / 复权跳变 / 缺口 / 滞后，写入质量台账")
+    q = DataIntegrityReport().scan_quality_issues()
+    n = sum(int(q.get(k, 0)) for k in
+            ("abnormal_change_rows", "adj_jump_rows", "mv_missing_rows", "mv_gap_rows",
+             "data_gap_rows", "stale_rows"))
+    ctx.log(f"质检完成：异常涨跌 {q.get('abnormal_change_rows', 0)}、复权跳变 {q.get('adj_jump_rows', 0)}、"
+            f"市值缺失 {q.get('mv_missing_rows', 0)}、市值缺口 {q.get('mv_gap_rows', 0)}、"
+            f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}")
+    if q.get("mv_gap_flooded"):
+        ctx.log(f"⚠ 检出 {q['mv_gap_flooded']} 只在市股有近端总市值缺口（疑似存量未回补），"
+                f"已跳过落台账以免刷屏；请先跑 `python -m backend.cli valuation --fill-gaps` 回补后再质检", "warn")
+    return {"message": f"质检完成：发现 {n} 项问题" if n else "质检完成：未发现新问题", "quality": q}
+
+
+def _h_checkup(params: dict, ctx: TaskContext) -> dict:
+    """数据结构体检（DataVerifier）：本地 SQL 的结构/价格正确性/字段契约核查，返回结构化报告。
+
+    与质检（_h_verify 写台账+修复闭环）互补：体检查结构合法性与整列/逐行缺失（含质检盲区的
+    在市股逐行 total_mv 缺失），只读、不写台账。cross=True 时附加联网交叉验证（默认关闭）。
+    """
+    from backend.services.data_verify import DataVerifier
+    cross = bool(params.get("cross", False))
+    ctx.progress(0.3, "数据结构体检中…")
+    ctx.log("数据体检：结构/完整性 + 价格正确性 + 字段契约" + ("（含联网交叉验证）" if cross else ""))
+    report = DataVerifier(quiet=True).run_structured(cross=cross)
+    for g in report["groups"]:
+        bad = [c["name"] for c in g["checks"] if not c["ok"]]
+        ctx.log(f"{g['group']}：{len(g['checks']) - len(bad)}/{len(g['checks'])} 通过"
+                + (f"；未过：{', '.join(bad)}" if bad else ""))
+    msg = (f"体检通过：{report['passed']}/{report['total']}" if report["all_ok"]
+           else f"体检发现 {len(report['fails'])} 项未通过（{report['passed']}/{report['total']} 通过）")
+    ctx.log(msg)
+    return {"message": msg, "checkup": report}
+
+
+def _h_enrich_basic(params: dict, ctx: TaskContext) -> dict:
+    """刷新上市/退市标记（含行业），并可选灌退市股历史（防幸存者偏差）。
+
+    退市标记 stock_basic.delist_date 仅在此刷新；而增量更新靠 `delist_date IS NULL` 选标的，
+    故须定期跑本任务——否则新退市股的 delist_date 恒为 NULL，会被增量当在市股反复采集
+    （主源无此股 → 取数失败刷错误日志）。建议每周一次（退市为低频事件）。
+
+    params：
+      - ingest_delisted（默认 False）：True 时附带灌入近 N 年退市股历史日线。
+      - years/limit：传给 ingest_delisted（仅 ingest_delisted=True 时生效）。
+    """
+    from backend.services.ingest import IngestionService
+    ing = IngestionService()
+    ctx.log("阶段 1/2：刷新股票基础信息、上市/退市日、行业")
+    ctx.progress(0.1, "刷新上市/退市标记（含退市打标）…")
+    n = ing.enrich_basic_dates(ctx=ctx)
+    ctx.log(f"已刷新基础信息 {n} 只（含退市股打标 delist_date）")
+    res: dict = {"basic_rows": n}
+    if params.get("ingest_delisted"):
+        ctx.log("阶段 2/2：灌入退市股历史行情")
+        ctx.progress(0.5, "灌入退市股历史（防幸存者偏差，可能较久）…")
+        dl = ing.ingest_delisted(years=params.get("years"), limit=params.get("limit"), ctx=ctx)
+        ctx.log(f"退市股灌入：{dl}")
+        res["delisted"] = dl
+    else:
+        ctx.log("阶段 2/2：退市股历史灌入跳过（参数未开启）")
+    ctx.progress(1.0, "完成")
+    return {"message": f"基础信息刷新 {n} 只" + ("（含退市股历史）" if "delisted" in res else ""), **res}
+
+
+def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, list, str]:
+    """恢复单条质检问题 → 复检 → 回写状态。返回 (复检是否通过, 受影响日期, 文案)。"""
+    import pandas as pd
+    df = c.query_df(
+        "SELECT code, trade_date, issue_type FROM data_quality_issue WHERE id=?", [issue_id])
+    if df.empty:
+        raise ValueError(f"质检问题不存在: id={issue_id}")
+    code, trade_date, issue_type = df.iloc[0]["code"], df.iloc[0]["trade_date"], df.iloc[0]["issue_type"]
+    td = None if trade_date is None or (isinstance(trade_date, float) and pd.isna(trade_date)) \
+        else pd.Timestamp(trade_date).date()
+    # 进入 fixing 并绑定本任务 id：任务失败/中断/重启时据 fix_task_id 复位，不留孤儿（DM 修复中闭环）
+    c.execute("UPDATE data_quality_issue SET status='fixing', fix_task_id=? WHERE id=?", [ctx.tid, issue_id])
+
+    # 恢复+复检全程包在 try 内：任何异常（如源端取数失败 DataSourceError）都先把状态复位为 open
+    # 再上抛——绝不留悬空 fixing，且让 _h_fix 如实计入失败（不再"日志失败、状态修复中、却报成功"）。
+    try:
+        affected: list = []
+        note = ""
+        if issue_type == "mv_missing":
+            ctx.log(f"恢复(L2 字段契约)：拉取 {code} 估值，补总市值")
+            res = _call_with_ctx(ing.ingest_valuation, codes=[code], ctx=ctx)
+            note = f"补市值 {res.get('total_mv_rows', 0)} 行"
+        elif issue_type == "mv_gap":
+            ctx.log(f"恢复(L2 逐日缺口)：补 {code} 的 total_mv 缺失天")
+            res = _call_with_ctx(ing.ingest_valuation_gaps, codes=[code], ctx=ctx)
+            note = f"补市值缺口 {res.get('total_mv_rows', 0)} 行"
+        elif issue_type in ("data_gap", "stale"):
+            ctx.log(f"恢复(L4 覆盖鲜活)：按缺口收口重采 {code}（与增量更新同口径）")
+            r = ing.reconcile_gaps(code, ctx=ctx)
+            if not r["miss"]:
+                note = "无待补缺口（可能已被其它任务补齐）"
+            else:
+                affected = r["backfilled"]
+                note = ing.reconcile_note(r)
+                ctx.log(f"重采写入 {r['rows']} 行；{note}"
+                        f"（内部缺口源端无数据者已确认停牌，末尾滞后不强判停牌）")
+        elif issue_type in ("null_close", "abnormal_change"):
+            if td:
+                ctx.log(f"恢复：重采 {code} {td} 单日行情")
+                ing.ingest_one_daily(code, td, td, ctx=ctx)
+                affected = [td]
+            else:
+                note = "缺少日期，无法定向重采"
+        elif issue_type == "adj_jump":
+            span = c.query_df(
+                "SELECT min(trade_date) lo, max(trade_date) hi FROM daily_bar WHERE code=?", [code]).iloc[0]
+            if not pd.isna(span["lo"]):
+                lo, hi = pd.Timestamp(span["lo"]).date(), pd.Timestamp(span["hi"]).date()
+                ctx.log(f"恢复(L3 复权口径)：重采 {code} {lo}~{hi} 整段")
+                ing.ingest_one_daily(code, lo, hi, ctx=ctx)
+            else:
+                note = "无行情可重算"
+        else:
+            ctx.log(f"未知问题类型 {issue_type}，仅复检", "warn")
+
+        clean = rep.recheck_clean(issue_type, code, td)
+    except Exception:
+        # 恢复中途失败：复位为待处理（清绑定）再上抛，由 _h_fix 计入失败、不污染状态
+        c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE id=?", [issue_id])
+        raise
+
+    if clean:
+        c.execute("UPDATE data_quality_issue SET status='resolved', resolved_at=?, fix_task_id=NULL WHERE id=?",
+                  [datetime.now(), issue_id])
+    else:
+        c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE id=?", [issue_id])
+    msg = (f"已恢复：{code} {note}（复检通过，已解决）" if clean
+           else f"{code} {note}（复检未通过：问题仍在，疑源端口径，保持待处理）")
+    return bool(clean), affected, msg
 
 
 def _h_fix(params: dict, ctx: TaskContext) -> dict:
-    """质检问题定向修复（FR-DM-4）：重拉该股该日期 → mark_stale_dates → 回写 issue 状态。"""
-    import pandas as pd
+    """质检问题定向恢复（FR-DM-4，DM-D22）：按问题类型分派恢复手段 → 复检 → 仅复检通过才置已解决。
+
+    支持单条 `issue_id` 或批量 `issue_ids`（单写者模型下，批量在一个任务内顺序恢复，逐条写实时日志）。
+    - mv_missing(L2)        → ingest_valuation([code])（补市值，不是重拉行情）
+    - data_gap/stale(L4)    → 反向重采缺口区间：补回的入库；源端仍无数据的确认为停牌写 stock_suspension（收敛）
+    - null_close/abnormal   → 重采该单日；adj_jump → 重采该股整段 + 重算复权
+    复检由 DataIntegrityReport.recheck_clean 判定：通过 → resolved；未通过 → 保持 open。
+    """
     from backend.services.ingest import IngestionService
+    from backend.services.data_report import DataIntegrityReport
     from backend.scoring.snapshot import ScoreSnapshotRepo
     c = get_client()
-    issue_id = params.get("issue_id")
-    code = params.get("code")
-    trade_date = params.get("trade_date")  # 可能为 None / 'YYYY-MM-DD' / Timestamp 串
-    if issue_id is not None and (not code):
-        df = c.query_df("SELECT code, trade_date FROM data_quality_issue WHERE id=?", [issue_id])
-        if df.empty:
-            raise ValueError(f"质检问题不存在: id={issue_id}")
-        code = df.iloc[0]["code"]
-        trade_date = df.iloc[0]["trade_date"]
-    if not code:
-        raise ValueError("缺少 code（或有效 issue_id）")
-    # 统一成 date（容忍 'YYYY-MM-DD 00:00:00' / Timestamp / None）
-    td = None if trade_date is None or (isinstance(trade_date, float) and pd.isna(trade_date)) \
-        else pd.Timestamp(trade_date).date()
-    td_s = str(td) if td else None
-    if issue_id is not None:
-        c.execute("UPDATE data_quality_issue SET status='fixing' WHERE id=?", [issue_id])
-    ctx.progress(0.2, f"重拉 {code} {td_s or '近 30 日'} 行情…")
-    ctx.log(f"定向修复：重拉 {code} {td_s or '(近 30 日)'}")
+    rep = DataIntegrityReport(c)
     ing = IngestionService()
-    if td:
-        rows = ing.ingest_one_daily(code, td, td)
-        affected = [td]
+    ids = params.get("issue_ids")
+    if not ids:
+        iid = params.get("issue_id")
+        if iid is None:
+            raise ValueError("缺少 issue_id 或 issue_ids")
+        ids = [iid]
+    ids = [int(x) for x in ids]
+    done_ids = set(int(x) for x in (ctx.checkpoint.get("issue_done_ids") or [])) if ctx.checkpoint else set()
+    ids = [x for x in ids if x not in done_ids]
+    n = len(ids)
+    resolved = 0
+    all_affected: list = []
+    failed = 0
+    last_msg = ""
+    last_err = ""
+    ctx.set_phase("fix_issue", done=len(done_ids), total=len(done_ids) + n,
+                  phase_total=len(done_ids) + n, phase_done=len(done_ids),
+                  current_item=None, issue_done_ids=sorted(done_ids))
+    for i, iid in enumerate(ids, 1):
+        ctx.check_cancel()
+        ctx.set_phase("fix_issue", done=len(done_ids), total=len(done_ids) + n,
+                      phase_total=len(done_ids) + n, phase_done=len(done_ids),
+                      current_item=iid, issue_done_ids=sorted(done_ids))
+        ctx.progress(min(0.1 + 0.8 * (i - 1) / n, 0.9), f"恢复 {i}/{n}…")
+        try:
+            clean, affected, msg = _recover_one(c, rep, ing, ctx, iid)
+            resolved += int(clean)
+            all_affected += affected
+            last_msg = msg
+            done_ids.add(iid)
+            ctx.set_phase("fix_issue", done=len(done_ids), total=len(done_ids) + n,
+                          phase_total=len(done_ids) + n, phase_done=len(done_ids),
+                          current_item=iid, issue_done_ids=sorted(done_ids))
+            ctx.log(f"[{i}/{n}] {msg}")
+        except Exception as e:  # noqa: BLE001
+            failed += 1
+            last_err = str(e)
+            done_ids.add(iid)
+            ctx.set_phase("fix_issue", done=len(done_ids), total=len(done_ids) + n,
+                          phase_total=len(done_ids) + n, phase_done=len(done_ids),
+                          current_item=iid, issue_done_ids=sorted(done_ids))
+            ctx.log(f"[{i}/{n}] 恢复失败 id={iid}: {e}（已退回待处理）", "error")
+    ctx.progress(0.95, "刷新评分缓存…")
+    stale = (ScoreSnapshotRepo(c).mark_stale_dates(sorted(set(all_affected)))
+             if all_affected else _mark_snapshots_stale())
+    # 诚实文案：区分 已解决 / 复检未通过(仍 open) / 恢复失败(异常退回 open)。单条直接给原因。
+    if n == 1:
+        msg = (last_msg if not failed
+               else f"恢复失败，已退回待处理：{last_err or '源端取数失败'}")
     else:
-        from datetime import date as _date, timedelta as _td
-        end = _date.today()
-        rows = ing.ingest_one_daily(code, end - _td(days=30), end)
-        affected = []
-    ctx.progress(0.7, "标记评分快照失效…")
-    stale = ScoreSnapshotRepo(c).mark_stale_dates(affected) if affected else _mark_snapshots_stale()
-    now = datetime.now()
-    if issue_id is not None:
-        c.execute("UPDATE data_quality_issue SET status='resolved', resolved_at=? WHERE id=?", [now, issue_id])
-    ctx.log(f"修复完成：写入 {rows} 行，问题标记为已解决")
-    return {"message": f"修复完成：{code} 重拉 {rows} 行", "code": code, "trade_date": td_s,
-            "rows": int(rows), "snapshots_marked_stale": stale}
+        msg = f"批量恢复完成：{resolved}/{n} 条已解决"
+        if failed:
+            msg += f"，{failed} 条恢复失败（已退回待处理，详见日志）"
+    # ok：单条=是否解决；批量=有解决且无失败时视为成功（部分失败由 ok=false 让前端给警告）
+    ok = (resolved == n)
+    return {"message": msg, "ok": ok, "resolved": resolved, "failed": failed, "total": n,
+            "snapshots_marked_stale": stale}
 
 
 _HANDLERS = {
@@ -367,7 +749,10 @@ _HANDLERS = {
     "backfill": _h_backfill,
     "ingest_date": _h_ingest_date,
     "ingest_codes": _h_ingest_codes,
+    "rebuild_price_factors": _h_rebuild_price_factors,
     "recompute": _h_recompute,
     "verify": _h_verify,
+    "checkup": _h_checkup,
     "fix": _h_fix,
+    "enrich_basic": _h_enrich_basic,
 }

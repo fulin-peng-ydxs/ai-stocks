@@ -98,7 +98,7 @@ def _seed_one_stock(c, code, rows, pct=0.10, name="测试", rs=50.0):
         "turnover_rate": 5.0, "is_st": False, "is_suspended": False,
         "limit_status": 0, "is_one_word": False,
     } for (d, o, h, lo, cl, pc) in all_rows]
-    c.register_df("t", pd.DataFrame(bars)); c.execute("INSERT INTO daily_bar SELECT * FROM t"); c.unregister("t")
+    c.register_df("t", pd.DataFrame(bars)); c.execute("INSERT INTO daily_bar BY NAME SELECT * FROM t"); c.unregister("t")
     c.execute("INSERT INTO stock_basic (code,name,board,price_limit_pct) VALUES (?,?,?,?)",
               [code, name, "主板", pct])
     # v2.0：指标动态计算（无 indicator 表），rs_pct 由横截面收益排名得出，不再手工灌入。

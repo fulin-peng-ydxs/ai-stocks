@@ -47,7 +47,8 @@ class BacktestEngine:
         lo 需向前预留 ma_period 个交易日缓冲以算均线。
         """
         bars = self.c.query_df(
-            "SELECT b.code, b.trade_date, b.open, b.pre_close, b.close, b.adj_factor, "
+            "SELECT b.code, b.trade_date, b.open, b.pre_close, b.close, "
+            "       COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor, "
             "       sb.price_limit_pct, sb.name "
             "FROM daily_bar b JOIN stock_basic sb ON sb.code=b.code "
             "WHERE b.trade_date BETWEEN ? AND ? ORDER BY b.code, b.trade_date",

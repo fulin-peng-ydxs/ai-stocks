@@ -118,7 +118,8 @@ class ScreenScoreService:
         lo = run_date - timedelta(days=lookback_days)
         ph = ",".join("?" * len(codes))
         df = self.c.query_df(
-            "SELECT b.code, b.trade_date, b.open, b.high, b.close, b.volume, b.turnover_rate, b.adj_factor "
+            "SELECT b.code, b.trade_date, b.open, b.high, b.close, b.volume, b.turnover_rate, "
+            "       COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor "
             "FROM daily_bar b "
             f"WHERE b.code IN ({ph}) AND b.trade_date BETWEEN ? AND ? "
             "ORDER BY b.code, b.trade_date",
@@ -171,7 +172,8 @@ class ScreenScoreService:
         from backend.signals.buypoint import BuyPointDetector
         lo = end_date - timedelta(days=lookback * 2 + 200)  # 日历日宽松下界，覆盖 lookback 交易日 + 状态机窗口
         df = self.c.query_df(
-            "SELECT b.trade_date, b.open, b.high, b.close, b.volume, b.turnover_rate, b.adj_factor "
+            "SELECT b.trade_date, b.open, b.high, b.close, b.volume, b.turnover_rate, "
+            "       COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor "
             "FROM daily_bar b "
             "WHERE b.code=? AND b.trade_date BETWEEN ? AND ? ORDER BY b.trade_date",
             [code, lo, end_date],

@@ -138,16 +138,8 @@ def _seed_market(c):
     c.execute("INSERT INTO daily_bar (code, trade_date, close, is_suspended) "
               "SELECT code, trade_date, close, is_suspended FROM _b")
     c.unregister("_b")
-    c.execute("INSERT INTO daily_metrics (code, trade_date, total_mv) VALUES ('A.SH', DATE '2024-01-05', 1e10)")
-
-
-def test_gaps_summary_excludes_suspension(client):
-    _seed_market(client)
-    g = DataIntegrityReport(client).gaps_summary()
-    # A 的 01-04 是停牌不算缺口；B 缺 01-04 算 1 个缺口日 → 仅 B 有缺口
-    assert g["stocks_with_gap"] == 1
-    assert g["gap_days_total"] == 1
-    assert g["latest_trade_date"] == "2024-01-05"
+    # L2 字段契约（M2.9.3）：total_mv 与 float_mv 都须有
+    c.execute("INSERT INTO daily_metrics (code, trade_date, total_mv, float_mv) VALUES ('A.SH', DATE '2024-01-05', 1e10, 8e9)")
 
 
 def test_stock_quality_freshness(client):

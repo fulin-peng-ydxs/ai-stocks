@@ -26,9 +26,13 @@ class DataVerifier:
         self.c = client or get_client()
         self.quiet = quiet
         self.results: list[tuple[str, bool, str]] = []
+        # 结构化留痕（供 Web 体检报告 run_structured 分组渲染；与 results 3 元组并行，互不影响）
+        self._cur_group = ""
+        self._structured: list[dict] = []
 
     def _check(self, name: str, ok: bool, detail: str = "") -> None:
         self.results.append((name, ok, detail))
+        self._structured.append({"group": self._cur_group, "name": name, "ok": ok, "detail": detail})
         if not self.quiet:
             flag = "PASS" if ok else "FAIL"
             print(f"  [{flag}] {name}" + (f" — {detail}" if detail else ""))
@@ -46,6 +50,7 @@ class DataVerifier:
 
     # ── A. 结构 / 完整性 ──
     def check_structure(self) -> None:
+        self._cur_group = "A. 结构/完整性"
         self._say("\nA. 结构 / 完整性")
         orphan = self._count(
             "SELECT count(*) FROM (SELECT DISTINCT b.code FROM daily_bar b "
@@ -82,7 +87,8 @@ class DataVerifier:
 
     # ── B. 价格正确性 ──
     def check_prices(self) -> None:
-        print("\nB. 价格正确性")
+        self._cur_group = "B. 价格正确性"
+        self._say("\nB. 价格正确性")
         nonpos = self._count("SELECT count(*) FROM daily_bar WHERE close<=0 OR open<=0 OR high<=0 OR low<=0")
         self._check("价格全为正", nonpos == 0, f"非正价行 {nonpos}")
 
@@ -114,7 +120,8 @@ class DataVerifier:
 
     # ── C. 独立数据源交叉验证 ──
     def cross_validate(self, codes: list[str] | None = None, n_dates: int = 5) -> None:
-        print("\nC. 独立数据源交叉验证（实时重拉对比）")
+        self._cur_group = "C. 独立数据源交叉验证"
+        self._say("\nC. 独立数据源交叉验证（实时重拉对比）")
         from backend.datasource.akshare_source import AKShareSource, to_full_code
 
         # 默认覆盖各板块代表
@@ -140,7 +147,8 @@ class DataVerifier:
 
                 # 本地不复权 + 前复权（点时取数）
                 local = self.c.query_df(
-                    "SELECT trade_date, close, adj_factor FROM daily_bar WHERE code=? "
+                    "SELECT trade_date, close, COALESCE(adj_factor_clean, adj_factor) AS adj_factor "
+                    "FROM daily_bar WHERE code=? "
                     "AND trade_date>=? ORDER BY trade_date", [code, start]
                 )
                 if local.empty:
@@ -172,6 +180,7 @@ class DataVerifier:
         与 check_prices 互补：那个查"已有数据对不对"，这个查"该有的字段有没有"。
         已知数据源局限（免费源无总股本/概念、退市股无市值）单列为豁免，不判失败但显式列出。
         """
+        self._cur_group = "D. 需求字段完整性契约"
         self._say("\nD. 需求字段完整性契约（F-DAT-02 / §10.2）")
         # (表, 列, 附加where, 标签) —— 必须非空
         required = [
@@ -235,3 +244,34 @@ class DataVerifier:
             print("未通过项：", fails)
         print("=" * 64)
         return passed == total
+
+    def run_structured(self, cross: bool = False) -> dict:
+        """跑体检并返回结构化结果（供 Web 体检报告渲染）。
+
+        默认 cross=False：只跑本地 SQL 的 A/B/D 组（快、无网络风险）；C 组联网交叉验证按需开。
+        返回 {passed, total, all_ok, fails, groups:[{group, checks:[{name, ok, detail}]}]}。
+        """
+        self.results = []
+        self._structured = []
+        self.check_structure()
+        self.check_prices()
+        self.check_contract()
+        if cross:
+            self.cross_validate()
+        groups: dict[str, list] = {}
+        order: list[str] = []
+        for it in self._structured:
+            g = it["group"] or "其他"
+            if g not in groups:
+                groups[g] = []
+                order.append(g)
+            groups[g].append({"name": it["name"], "ok": it["ok"], "detail": it["detail"]})
+        passed = sum(1 for it in self._structured if it["ok"])
+        total = len(self._structured)
+        return {
+            "passed": passed,
+            "total": total,
+            "all_ok": passed == total,
+            "fails": [it["name"] for it in self._structured if not it["ok"]],
+            "groups": [{"group": g, "checks": groups[g]} for g in order],
+        }

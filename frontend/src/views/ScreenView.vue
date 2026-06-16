@@ -14,10 +14,25 @@ import {
 } from '@/api/screening'
 import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
 import HelpTip from '@/components/HelpTip.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
+import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import PageToggleRow from '@/components/PageToggleRow.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
+import { usePageSettings } from '@/composables/usePageSettings'
 import { downloadCsv } from '@/utils/csv'
 
 const router = useRouter()
+const settingsOpen = ref(false)
+const screenDefaults = {
+  excludeSt: true,
+  resultSort: 'score' as 'score' | 'code',
+  astExpanded: false,
+  compact: false,
+  columns: { code: true, name: true, score: true, grade: true, st: true },
+}
+const { settings, isDirty, reset } = usePageSettings('screen', screenDefaults)
 
 // ── 指标注册表（融合：可视化条件直接从注册表取指标，支持动态传参）──
 const registry = ref<IndicatorDef[]>([])
@@ -195,18 +210,28 @@ function clearAll() {
 
 // ── 运行 / 结果 ──
 const runDate = ref('')
-const excludeSt = ref(true)
+const excludeSt = ref(Boolean(settings.excludeSt))
 const loading = ref(false)
 const result = ref<{ date: string; count: number; hits: ScreenHit[] } | null>(null)
 const gradeTag: Record<string, '' | 'success' | 'warning' | 'info'> = {
   主升浪核心: 'success', 龙头候选: 'warning', 观察: 'info',
 }
+const displayHits = computed(() => {
+  const list = [...(result.value?.hits ?? [])]
+  if (settings.resultSort === 'code') list.sort((a, b) => a.code.localeCompare(b.code))
+  else list.sort((a, b) => (b.total_score ?? 0) - (a.total_score ?? 0))
+  return list
+})
+
+watch(() => settings.excludeSt, (value) => {
+  excludeSt.value = Boolean(value)
+})
 
 async function run() {
   const ast = buildAst()
   if (!ast) return ElMessage.warning('请先添加条件')
   loading.value = true
-  result.value = null
+  // 不清空 result：让旧结果留在 loading 遮罩下，避免闪回空态（结果区盒子保持不变）
   try {
     const r = await runScreen({ expression: ast, run_date: runDate.value || undefined, exclude_st: excludeSt.value })
     result.value = { date: r.run_date, count: r.count, hits: r.hits }
@@ -295,17 +320,19 @@ onMounted(async () => {
 <template>
   <div class="v-page">
     <div class="page-head">
-      <h2 class="title-row">
-        策略筛选
-        <HelpTip title="筛选 与 榜单 的区别" :width="400">
-          <p><b>筛选</b>：给一组布尔条件，返回<b>所有满足</b>的股票（命中即入，无门槛排序）。</p>
-          <p style="margin:6px 0"><b>榜单</b>：对全市场打分排序取 Top N。</p>
-          <p style="margin:0">本页一套构建器即可：每条条件可选<b>注册表指标</b>（含动态参数）或手写<b>表达式</b>，用 且/或 组合。命中结果用榜单同款评分打分并按分排序，方便判断质量；可「排除 ST」、存为方案。</p>
-        </HelpTip>
-      </h2>
+      <div class="page-head-actions" style="width: 100%; justify-content: space-between;">
+        <h2 class="title-row">
+          策略筛选
+          <HelpTip title="筛选 与 榜单 的区别" :width="400">
+            <p><b>筛选</b>：给一组布尔条件，返回<b>所有满足</b>的股票（命中即入，无门槛排序）。</p>
+            <p style="margin:6px 0"><b>榜单</b>：对全市场打分排序取 Top N。</p>
+            <p style="margin:0">本页一套构建器即可：每条条件可选<b>注册表指标</b>（含动态参数）或手写<b>表达式</b>，用 且/或 组合。命中结果用榜单同款评分打分并按分排序，方便判断质量；可「排除 ST」、存为方案。</p>
+          </HelpTip>
+        </h2>
+        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+      </div>
     </div>
 
-    <div class="v-scroll">
     <el-card shadow="never" class="cond-card">
       <!-- 载入已存/预设方案 -->
       <div class="load-row">
@@ -344,6 +371,7 @@ onMounted(async () => {
           </el-radio-group>
         </div>
 
+        <div class="b-conds">
         <div v-for="(c, i) in rows" :key="i" class="b-cond">
           <!-- 指标条件 -->
           <template v-if="c.kind === 'ind'">
@@ -396,6 +424,7 @@ onMounted(async () => {
 
           <el-button text type="danger" size="small" @click="removeRow(i)">删除</el-button>
         </div>
+        </div>
 
         <div class="b-actions">
           <el-button size="small" @click="addIndRow">＋ 指标条件</el-button>
@@ -406,58 +435,59 @@ onMounted(async () => {
           表达式算子：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C 收 O 开 H 高 L 低 V 量 TURN 换手。
           点时安全（仅用 ≤ 当日数据，无未来函数）。
         </div>
-        <pre v-if="buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</pre>
+        <pre v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</pre>
       </template>
 
       <!-- 运行栏 -->
       <div class="run-bar">
         <TradeDatePicker v-model="runDate" placeholder="最新交易日" clearable style="width: 160px" />
-        <el-checkbox v-model="excludeSt">排除 ST 股</el-checkbox>
         <el-button type="primary" :loading="loading" @click="run">运行筛选</el-button>
         <span class="run-hint">含表达式/带参指标需全市场逐股求值，约十几秒</span>
       </div>
     </el-card>
 
-    <el-card v-if="result" shadow="never" class="result-card">
+    <el-card shadow="never" class="v-grow result-card" v-loading="loading">
       <template #header>
-        <span>
+        <span v-if="result">
           命中 <strong class="cnt">{{ result.count }}</strong> 只 · 交易日 {{ result.date }} ·
           已按综合分排序{{ excludeSt ? ' · 已排除 ST' : '' }}
         </span>
-        <el-button v-if="result.hits.length" size="small" style="float:right" @click="exportCsv">导出 CSV</el-button>
+        <span v-else>筛选结果</span>
+        <el-button v-if="result && result.hits.length" size="small" style="float:right" @click="exportCsv">导出 CSV</el-button>
       </template>
-      <el-empty v-if="!result.hits.length" description="无命中" />
       <el-table
-        v-else
-        :data="result.hits"
+        v-if="result && result.hits.length"
+        :data="displayHits"
         stripe
         :row-class-name="rowClass"
-        height="calc(100vh - 360px)"
+        height="100%"
         @row-click="(r: ScreenHit) => router.push(`/stocks/${r.code}`)"
         class="clickable"
+        :class="{ 'page-table-compact': settings.compact }"
       >
         <el-table-column label="#" type="index" width="56" />
-        <el-table-column label="代码" prop="code" width="120" />
-        <el-table-column label="名称" min-width="140">
+        <el-table-column v-if="settings.columns.code" label="代码" prop="code" width="120" sortable />
+        <el-table-column v-if="settings.columns.name" label="名称" min-width="140" sortable :sort-by="(r:any)=>r.name || ''">
           <template #default="{ row }">
             <span>{{ row.name || '—' }}</span>
-            <el-tag v-if="row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
+            <el-tag v-if="settings.columns.st && row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="综合分" prop="total_score" width="110" sortable>
+        <el-table-column v-if="settings.columns.score" label="综合分" prop="total_score" width="110" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
           <template #default="{ row }">
             <strong class="score">{{ row.total_score ?? '—' }}</strong>
           </template>
         </el-table-column>
-        <el-table-column label="评级" width="130">
+        <el-table-column v-if="settings.columns.grade" label="评级" width="130">
           <template #default="{ row }">
             <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" effect="light">{{ row.grade }}</el-tag>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
       </el-table>
+      <el-empty v-else-if="result" description="无命中" />
+      <el-empty v-else description="运行后在这里展示筛选结果" />
     </el-card>
-    </div>
 
     <!-- 历史版本 -->
     <el-dialog v-model="verVisible" :title="`历史版本 · ${loadedProfile?.name || ''}`" width="560px">
@@ -484,6 +514,29 @@ onMounted(async () => {
         <el-button type="primary" :loading="saving" @click="doSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <PageSettingsDrawer v-model="settingsOpen" title="策略筛选" :dirty="isDirty" @reset="reset">
+      <PageSettingSection title="默认行为">
+        <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
+        <div class="setting-item">
+          <div class="setting-label">结果默认排序</div>
+          <PageSegmented v-model="settings.resultSort" :options="[
+            { label: '综合分', value: 'score' },
+            { label: '代码', value: 'code' },
+          ]" />
+        </div>
+        <PageToggleRow v-model="settings.astExpanded" label="展开 AST 预览" />
+      </PageSettingSection>
+
+      <PageSettingSection title="结果表格">
+        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
+        <PageToggleRow v-model="settings.columns.code" label="显示代码列" />
+        <PageToggleRow v-model="settings.columns.name" label="显示名称列" />
+        <PageToggleRow v-model="settings.columns.score" label="显示综合分" />
+        <PageToggleRow v-model="settings.columns.grade" label="显示评级" />
+        <PageToggleRow v-model="settings.columns.st" label="显示 ST 标记" />
+      </PageSettingSection>
+    </PageSettingsDrawer>
   </div>
 </template>
 
@@ -501,6 +554,15 @@ onMounted(async () => {
 }
 .cond-card {
   margin-bottom: 16px;
+}
+/* 条件行区限高内滚：操作区(构建器)不会随条件增多无限增高、挤压下方结果区 */
+.b-conds {
+  max-height: 220px;
+  overflow-y: auto;
+}
+/* 空态/无命中在结果卡内居中，不再切换外层盒子（避免状态切换抖动）*/
+.result-card :deep(.el-card__body) > .el-empty {
+  margin: auto;
 }
 .load-row {
   display: flex;
@@ -579,6 +641,15 @@ onMounted(async () => {
 .run-hint {
   color: #c0c4cc;
   font-size: 12px;
+}
+.setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setting-label {
+  font-size: 14px;
+  color: var(--page-settings-text-subtle);
 }
 .cnt {
   color: #f56c6c;

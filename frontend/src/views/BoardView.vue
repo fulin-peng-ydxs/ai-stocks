@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getIndicatorRegistry,
@@ -11,6 +11,12 @@ import {
 } from '@/api/scoreProfile'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
+import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import PageToggleRow from '@/components/PageToggleRow.vue'
+import { usePageSettings } from '@/composables/usePageSettings'
 import { downloadCsv } from '@/utils/csv'
 import { ElMessage } from 'element-plus'
 
@@ -20,6 +26,18 @@ const error = ref('')
 const runDate = ref<string>('')
 const topN = ref(50)
 const rows = ref<ScoreRunRow[]>([])
+const syncingRunDate = ref(false)
+const settingsOpen = ref(false)
+
+const boardDefaults = {
+  topN: 50,
+  sortBy: 'score' as 'score' | 'rank',
+  subScoreMode: 'full' as 'full' | 'brief' | 'hidden',
+  compact: false,
+  columns: { code: true, name: true, score: true, grade: true, subScores: true },
+}
+const { settings, isDirty, reset } = usePageSettings('board', boardDefaults)
+topN.value = Number(settings.topN)
 
 // 评分规则方案
 const profiles = ref<ScoreProfileSummary[]>([])
@@ -33,6 +51,26 @@ function nameOf(key: string): string {
 }
 // 分项 key 顺序 = 本次结果第一行 sub_scores 的键序
 const subKeys = computed(() => (rows.value[0] ? Object.keys(rows.value[0].sub_scores) : []))
+const displayRows = computed(() => {
+  const list = [...rows.value]
+  if (settings.sortBy === 'rank') list.sort((a, b) => a.rank - b.rank)
+  else list.sort((a, b) => b.total_score - a.total_score)
+  return list
+})
+const displaySubKeys = computed(() => {
+  if (settings.subScoreMode === 'hidden') return []
+  if (settings.subScoreMode === 'brief') return subKeys.value.slice(0, 3)
+  return subKeys.value
+})
+
+watch(runDate, () => {
+  if (!profileId.value || syncingRunDate.value) return
+  load()
+})
+watch(() => settings.topN, (value) => {
+  topN.value = Number(value)
+  if (profileId.value) load()
+})
 
 function scoreLevel(v: number | undefined): string {
   const n = v ?? 0
@@ -53,7 +91,9 @@ async function load() {
       top: topN.value,
     })
     rows.value = res.list
+    syncingRunDate.value = true
     runDate.value = res.run_date
+    syncingRunDate.value = false
     if (!res.list.length) ElMessage.info('无结果（可能该日无数据）')
   } catch (e) {
     error.value = (e as Error).message
@@ -107,20 +147,23 @@ onMounted(async () => {
           <template v-if="curProfile"> · 规则「{{ curProfile.name }}」 v{{ curProfile.version }}</template>
         </span>
       </div>
-      <div class="ops">
-        <span class="lbl">评分规则</span>
-        <el-select v-model="profileId" style="width: 180px" @change="load">
-          <el-option v-for="p in profiles" :key="p.id" :value="p.id" :label="p.name" />
-        </el-select>
-        <TradeDatePicker v-model="runDate" clearable />
-        <span class="lbl">Top</span>
-        <el-select v-model="topN" style="width: 88px" @change="load">
-          <el-option :value="20" label="20" />
-          <el-option :value="50" label="50" />
-          <el-option :value="100" label="100" />
-        </el-select>
-        <el-button :loading="loading" type="primary" @click="load">刷新</el-button>
-        <el-button :disabled="!rows.length" @click="exportCsv">导出 CSV</el-button>
+      <div class="page-head-actions">
+        <div class="ops">
+          <span class="lbl">评分规则</span>
+          <el-select v-model="profileId" style="width: 180px" @change="load">
+            <el-option v-for="p in profiles" :key="p.id" :value="p.id" :label="p.name" />
+          </el-select>
+          <TradeDatePicker v-model="runDate" clearable />
+          <span class="lbl">Top</span>
+          <el-select v-model="topN" style="width: 88px" @change="load">
+            <el-option :value="20" label="20" />
+            <el-option :value="50" label="50" />
+            <el-option :value="100" label="100" />
+          </el-select>
+          <el-button :loading="loading" type="primary" @click="load">刷新</el-button>
+          <el-button :disabled="!rows.length" @click="exportCsv">导出 CSV</el-button>
+        </div>
+        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>
 
@@ -128,36 +171,37 @@ onMounted(async () => {
 
     <el-card shadow="never" class="v-grow">
       <el-table
-        :data="rows"
+        :data="displayRows"
         v-loading="loading"
         stripe
         height="100%"
         @row-click="gotoStock"
         class="clickable"
+        :class="{ 'page-table-compact': settings.compact }"
       >
-        <el-table-column label="#" width="50">
+        <el-table-column label="#" width="60" sortable :sort-by="(r:any)=>r.rank">
           <template #default="{ row }">{{ row.rank }}</template>
         </el-table-column>
-        <el-table-column label="代码" prop="code" width="110" />
-        <el-table-column label="名称" prop="name" width="120">
+        <el-table-column v-if="settings.columns.code" label="代码" prop="code" width="110" sortable />
+        <el-table-column v-if="settings.columns.name" label="名称" prop="name" width="120">
           <template #default="{ row }">{{ row.name || '—' }}</template>
         </el-table-column>
-        <el-table-column label="综合分" prop="total_score" width="100" sortable>
+        <el-table-column v-if="settings.columns.score" label="综合分" prop="total_score" width="100" sortable :sort-by="(r:any)=>r.total_score">
           <template #default="{ row }">
             <strong class="score">{{ row.total_score }}</strong>
           </template>
         </el-table-column>
-        <el-table-column label="评级" width="120">
+        <el-table-column v-if="settings.columns.grade" label="评级" width="120">
           <template #default="{ row }">
             <el-tag v-if="row.grade" :type="gradeType(row.grade)" effect="light">{{ row.grade }}</el-tag>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="分项达标分" min-width="320">
+        <el-table-column v-if="settings.columns.subScores && displaySubKeys.length" label="分项达标分" min-width="320">
           <template #default="{ row }">
             <div class="subchips">
               <span
-                v-for="k in subKeys"
+                v-for="k in displaySubKeys"
                 :key="k"
                 class="subchip score"
                 :class="scoreLevel(row.sub_scores[k])"
@@ -169,6 +213,43 @@ onMounted(async () => {
         </el-table-column>
       </el-table>
     </el-card>
+
+    <PageSettingsDrawer v-model="settingsOpen" title="每日榜单" :dirty="isDirty" @reset="reset">
+      <PageSettingSection title="默认结果" desc="偏好会同步到榜单的默认排序和展示方式。">
+        <div class="setting-item">
+          <div class="setting-label">Top N</div>
+          <PageSegmented v-model="settings.topN" :options="[
+            { label: '20', value: 20 },
+            { label: '50', value: 50 },
+            { label: '100', value: 100 },
+          ]" />
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">默认排序</div>
+          <PageSegmented v-model="settings.sortBy" :options="[
+            { label: '综合分', value: 'score' },
+            { label: '排名', value: 'rank' },
+          ]" />
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">分项达标分</div>
+          <PageSegmented v-model="settings.subScoreMode" :options="[
+            { label: '全显', value: 'full' },
+            { label: '精简', value: 'brief' },
+            { label: '隐藏', value: 'hidden' },
+          ]" />
+        </div>
+      </PageSettingSection>
+
+      <PageSettingSection title="表格显示">
+        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
+        <PageToggleRow v-model="settings.columns.code" label="显示代码列" />
+        <PageToggleRow v-model="settings.columns.name" label="显示名称列" />
+        <PageToggleRow v-model="settings.columns.score" label="显示综合分" />
+        <PageToggleRow v-model="settings.columns.grade" label="显示评级" />
+        <PageToggleRow v-model="settings.columns.subScores" label="显示分项达标分" />
+      </PageSettingSection>
+    </PageSettingsDrawer>
   </div>
 </template>
 
@@ -253,5 +334,14 @@ onMounted(async () => {
 }
 .subchip.score.lo b {
   color: var(--el-text-color-secondary);
+}
+.setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setting-label {
+  font-size: 14px;
+  color: var(--page-settings-text-subtle);
 }
 </style>

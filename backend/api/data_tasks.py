@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from backend.api.response import ApiResponse, err, ok
 from backend.services.async_task import (
     TASK_TYPES,
+    TASK_CAPABILITIES,
     AsyncTaskService,
     ConcurrentTaskError,
 )
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/api/data", tags=["data-tasks"])
 
 
 class TaskIn(BaseModel):
-    task_type: str                 # update|backfill|ingest_date|ingest_codes|recompute|verify|fix
+    task_type: str                 # update|backfill|ingest_date|ingest_codes|recompute|verify|checkup|fix
     params: dict | None = None
 
 
@@ -68,6 +69,22 @@ def resume_task(task_id: str) -> ApiResponse:
     return ok({"task_id": task_id})
 
 
+@router.post("/tasks/{task_id}/cancel", response_model=ApiResponse)
+def cancel_task(task_id: str) -> ApiResponse:
+    """请求终止运行中/排队中的任务（协作式：到下一个检查点停下，标记为可续跑）。"""
+    svc = AsyncTaskService()
+    task = svc.get(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if not TASK_CAPABILITIES.get(task["task_type"], {}).get("can_cancel"):
+        return err(400, f"该任务类型不支持终止: {task['task_type']}")
+    if not svc.cancel(task_id):
+        return err(400, "任务已结束，无法终止")
+    return ok({"task_id": task_id, "cancelling": True})
+
+
 @router.get("/tasks", response_model=ApiResponse)
-def list_tasks(limit: int = 20, status: str | None = None) -> ApiResponse:
-    return ok({"tasks": AsyncTaskService().list(limit, status)})
+def list_tasks(limit: int = 20, status: str | None = None, task_type: str | None = None,
+               page: int | None = None, size: int | None = None,
+               sort: str = "time", order: str = "desc") -> ApiResponse:
+    return ok(AsyncTaskService().list(limit, status, task_type, page, size, sort, order))

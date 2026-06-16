@@ -60,7 +60,7 @@ def _seed_stock(c, code, closes):
              "turnover_rate": 5.0, "is_st": False, "is_suspended": False,
              "limit_status": 0, "is_one_word": False}
             for d, px in zip(days, closes)]
-    c.register_df("t", pd.DataFrame(rows)); c.execute("INSERT INTO daily_bar SELECT * FROM t"); c.unregister("t")
+    c.register_df("t", pd.DataFrame(rows)); c.execute("INSERT INTO daily_bar BY NAME SELECT * FROM t"); c.unregister("t")
     return days[-1]
 
 

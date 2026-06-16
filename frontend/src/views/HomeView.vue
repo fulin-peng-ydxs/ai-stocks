@@ -22,8 +22,10 @@ onMounted(refresh)
 </script>
 
 <template>
-  <div class="home">
-    <el-card shadow="never">
+  <div class="home v-page">
+    <div class="v-scroll">
+      <div class="home-inner">
+    <el-card shadow="never" v-loading="loading">
       <template #header>
         <div class="header">
           <span>A股趋势龙头选股、打分与回测系统</span>
@@ -55,17 +57,20 @@ onMounted(refresh)
         <el-descriptions-item label="榜单 Top N">{{ health.top_n }}</el-descriptions-item>
       </el-descriptions>
 
-      <el-empty v-else description="加载中..." />
+      <el-empty v-else description="暂无自检数据" />
 
       <p class="note">M0 脚手架已就绪。后续里程碑将逐步上线榜单 / 个股 / 筛选 / 回测页面。</p>
     </el-card>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.home {
+.home-inner {
   max-width: 720px;
-  margin: 40px auto;
+  margin: 0 auto;
+  padding: 24px 0;
 }
 .header {
   display: flex;

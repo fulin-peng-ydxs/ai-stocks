@@ -4,6 +4,8 @@
 # Web / API
 fastapi>=0.110
 uvicorn[standard]>=0.29
+# 开发期热重载（serve --reload 依赖；显式声明以防 uvicorn[standard] extra 漏装）
+watchfiles>=0.21
 
 # 配置与校验
 pydantic>=2.6

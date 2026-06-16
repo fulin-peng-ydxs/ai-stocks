@@ -10,6 +10,18 @@ export interface StockBasic {
   delist_date: string | null
   is_st: boolean
   pct_chg: number | null      // 指定交易日涨跌幅（%）
+  groups: { id: string; name: string; color: string; is_default: boolean }[]
+}
+
+export interface StockListParams {
+  q?: string
+  board?: string
+  exclude_st?: boolean
+  trade_date?: string
+  sort_by?: string
+  sort_order?: string
+  page?: number
+  size?: number
 }
 
 export interface StockList {
@@ -44,16 +56,7 @@ export interface Indicators {
   indicators: Record<string, unknown>[]
 }
 
-export function listStocks(params?: {
-  q?: string
-  board?: string
-  exclude_st?: boolean
-  trade_date?: string
-  sort_by?: string
-  sort_order?: string
-  page?: number
-  size?: number
-}): Promise<StockList> {
+export function listStocks(params?: StockListParams): Promise<StockList> {
   return http.get('/stocks', { params })
 }
 

@@ -35,7 +35,7 @@ def _seed(c):
                          "is_suspended": False, "limit_status": 0, "is_one_word": False})
     df = pd.DataFrame(rows)
     c.register_df("b", df)
-    c.execute("INSERT INTO daily_bar SELECT * FROM b")
+    c.execute("INSERT INTO daily_bar BY NAME SELECT * FROM b")
     c.unregister("b")
     c.execute("INSERT INTO stock_basic (code,name,board) VALUES ('AAA.SH','甲','主板'),('BBB.SH','乙','主板')")
 

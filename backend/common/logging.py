@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -29,8 +30,9 @@ def _configure_root(log_dir: Path | None = None, level: int = logging.INFO) -> N
     sh.setFormatter(formatter)
     root.addHandler(sh)
 
-    # 文件（可选）
-    if log_dir is not None:
+    # 文件日志默认关闭：start.sh 已把 stdout/stderr 汇总到 logs/backend.log。
+    # 如需应用内另写 ai_stocks.log，可显式设置 AI_STOCKS_FILE_LOG=1。
+    if log_dir is not None and os.environ.get("AI_STOCKS_FILE_LOG") == "1":
         log_dir.mkdir(parents=True, exist_ok=True)
         fh = logging.FileHandler(log_dir / "ai_stocks.log", encoding="utf-8")
         fh.setFormatter(formatter)

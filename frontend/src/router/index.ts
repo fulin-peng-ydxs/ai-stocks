@@ -39,6 +39,7 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '个股详情' },
   },
   { path: '/data', redirect: '/data/overview' },
+  { path: '/data-hub', redirect: '/data/overview' },   // 数据总览页已下线，旧链接重定向到数据概览
   {
     path: '/data/overview',
     name: 'data-overview',
@@ -49,7 +50,7 @@ const routes: RouteRecordRaw[] = [
     path: '/data/ingest',
     name: 'data-ingest',
     component: () => import('@/views/data/IngestView.vue'),
-    meta: { title: '数据采集与任务' },
+    meta: { title: '数据采集' },
   },
   {
     path: '/data/quality',
@@ -61,7 +62,7 @@ const routes: RouteRecordRaw[] = [
     path: '/data/schedule',
     name: 'data-schedule',
     component: () => import('@/views/data/ScheduleView.vue'),
-    meta: { title: '调度与数据源' },
+    meta: { title: '任务调度' },
   },
 ]
 

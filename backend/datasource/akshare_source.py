@@ -16,20 +16,88 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import akshare as ak
 import pandas as pd
+import requests
 
 from backend.common.logging import get_logger
 from backend.common.timeutil import fmt_date, to_date
-from backend.config import get_settings
+from backend.config import get_effective_settings, get_settings
 from backend.datasource.base import DataSource, rate_limited, with_retry
 
 log = get_logger("datasource.akshare")
 
+
+# sina/东财对"无该标的/无区间数据"会抛空响应解码错误（如 "No value to decode"）而非返回空表。
+# 这类错误重试必再失败、白等指数退避（2s+4s）——识别为"无数据"即当空返回，让 @with_retry 不再
+# 无谓重试、上层（get_daily_bar/补市值）走"empty→快速降级/转兜底"。真网络错误（超时/断连）不在此
+# 列、照旧抛出由 with_retry 重试。仅用于"无数据属正常结果"的单标的取数（日线/市值/单指数）；全市场
+# 取数（股票列表/日历）空响应更可能是瞬时抖动，不走此函数、保留重试。
+_AK_NO_DATA_SIGNS = ("no value to decode", "expected object or value", "no columns to parse")
+
+
+def _ak_or_empty(fetch, who: str) -> "pd.DataFrame":
+    try:
+        return fetch()
+    except Exception as e:  # noqa: BLE001
+        if any(s in str(e).lower() for s in _AK_NO_DATA_SIGNS):
+            log.info("%s 无数据(%s)，当空处理（跳过无谓重试，立即降级/转兜底）", who, type(e).__name__)
+            return pd.DataFrame()
+        raise
+
 _s = get_settings().datasource
 _MIN_INTERVAL = 1.0 / max(_s.rate_limit_per_sec, 0.1)
+
+# 日线抓取向前多取的"锚定"日历天数：用于让请求区间首日也有上一交易日，
+# 从而正确推算 pre_close / 复权因子（取完即裁掉，不入库）。覆盖最长休市
+# （春节连休≈9 天 + 前后周末），20 天足以保证区间首日前必有一个交易日。
+_PRECLOSE_ANCHOR_DAYS = 20
+
+# 复权因子去抖阈值：现算因子=后复权收盘÷不复权收盘，两端皆四舍五入到分，
+# 非除权日因子本应恒定却带噪声。不能用固定相对比例判断真实除权，因为小额
+# 分红可能只有 0.1%~0.3%。这里改用"除权参考价是否偏离昨收至少 1 分"：
+# 若用当日原始因子推导出的参考价与昨收差异不足 1 分，视为价格舍入噪声。
+_MIN_REF_PRICE_DIFF = 0.01
+
+
+# requests 默认超时（模块级可变；由 set_default_request_timeout 运行时更新，
+# 配合前端「请求超时」配置——新建数据源实例时按生效配置刷新此值）。
+_DEFAULT_REQUEST_TIMEOUT: float = max(float(_s.socket_timeout_sec), 1.0)
+
+
+def set_default_request_timeout(timeout: float) -> None:
+    """更新 requests 默认超时（秒）。运行时可调，不必重启。"""
+    global _DEFAULT_REQUEST_TIMEOUT
+    _DEFAULT_REQUEST_TIMEOUT = max(float(timeout), 1.0)
+
+
+def _install_default_requests_timeout() -> None:
+    """一次性给 requests 注入默认 timeout（仅当调用方未显式传 timeout）。
+
+    AkShare 多处 requests 调用未传 timeout，遇到 TLS 握手/读挂起会无限等待，
+    socket.setdefaulttimeout 并不总能兜住。这里在模块加载时一次性、幂等地在
+    Session.request（requests.get/post 等顶层函数都经由它）外包一层，覆盖**所有**
+    ak.* 网络调用（日线/市值/指数/日历/列表），而非只护住日线。包装体读模块级
+    _DEFAULT_REQUEST_TIMEOUT（运行时可改），故只装一次、线程安全、不串行化并发。
+    """
+    Session = requests.sessions.Session
+    if getattr(Session, "_ai_stocks_timeout_patched", False):
+        return
+    _orig_request = Session.request
+
+    def request_with_timeout(self, *args, **kwargs):
+        if kwargs.get("timeout") is None:
+            kwargs["timeout"] = _DEFAULT_REQUEST_TIMEOUT
+        return _orig_request(self, *args, **kwargs)
+
+    Session.request = request_with_timeout
+    Session._ai_stocks_timeout_patched = True
+
+
+# 模块加载即安装：覆盖本进程所有 ak/requests 调用，统一请求超时
+_install_default_requests_timeout()
 
 
 # ── 代码 / 板块工具 ─────────────────────────────────────────────
@@ -73,13 +141,58 @@ def to_sina_symbol(code6: str) -> str:
     return f"{prefix}{code6}"
 
 
+def dejitter_adj_factor(adj_factor: pd.Series, close: pd.Series | None = None) -> pd.Series:
+    """复权因子去抖：把"现算因子"整理成分段常数（序列须按日期升序）。
+
+    因子 = 新浪后复权收盘 ÷ 不复权收盘，两端都被新浪四舍五入到分，相除后
+    在**非除权日**也会有微小抖动，进而让推算的 pre_close 偏离上一日真实
+    收盘、令涨跌幅产生细微误差。
+
+    若传入 close，则按价格可解释性判断真实除权：
+      raw_ref = 昨收 × 昨日原始因子 / 当日原始因子
+    raw_ref 与昨收差异 >= 1 分，才认作真实除权/送转。事件日不直接采用当日
+    原始因子，而是先把 raw_ref 落到分位，再反推出与上一段干净因子连续的
+    新因子，确保 compute_pre_close 能精确得到官方两位参考价。
+
+    未传 close 时保留兼容行为：仅消除完全相等附近的浮点噪声。
+    """
+    f = pd.to_numeric(adj_factor, errors="coerce").to_numpy(dtype=float)
+    out = f.copy()
+    c = None if close is None else pd.to_numeric(close, errors="coerce").to_numpy(dtype=float)
+    for i in range(1, len(f)):
+        prev = out[i - 1]
+        cur = f[i]
+        if not (prev > 0) or cur != cur:
+            continue
+        if c is None:
+            if abs(cur / prev - 1.0) <= 1e-8:
+                out[i] = prev
+            continue
+        prev_close = c[i - 1]
+        if not (prev_close > 0):
+            out[i] = prev
+            continue
+        raw_prev = f[i - 1]
+        if not (raw_prev > 0):
+            out[i] = prev
+            continue
+        implied_ref = prev_close * raw_prev / cur
+        if implied_ref == implied_ref and abs(implied_ref - prev_close) < _MIN_REF_PRICE_DIFF:
+            out[i] = prev  # 非除权日：沿用前值，消除四舍五入噪声
+        else:
+            ref_price = round(float(implied_ref), 2)
+            out[i] = prev_close * prev / ref_price if ref_price > 0 else cur
+    return pd.Series(out, index=adj_factor.index)
+
+
 def compute_pre_close(close: pd.Series, adj_factor: pd.Series) -> pd.Series:
     """官方前收盘（除权参考价）= 前日收盘 × 前日复权因子 / 当日复权因子。
 
     普通日因子不变 → 等于上一日收盘；除权除息/高送转日因子跳变 →
     得到调整后的参考价，使涨跌幅/涨跌停判定正确。序列须按日期升序。
+    传入去抖后的因子（见 dejitter_adj_factor），非除权日可精确还原上一日收盘。
     """
-    return close.shift(1) * adj_factor.shift(1) / adj_factor
+    return (close.shift(1) * adj_factor.shift(1) / adj_factor).round(2)
 
 
 def index_to_sina_symbol(index_code: str) -> str:
@@ -98,8 +211,21 @@ def index_to_sina_symbol(index_code: str) -> str:
 
 class AKShareSource(DataSource):
     name = "akshare"
-    # 新浪日线/指数/日历/列表 + 东财市值（valuation）
+    # 新浪日线/指数/日历/列表 + 东财市值（valuation 单只历史）
     capabilities = {"daily", "index", "calendar", "stock_list", "valuation"}
+
+    def __init__(self) -> None:
+        # 读"生效配置"(YAML ⊕ 前端 app_config 覆盖)，让前端改「请求限流/超时/重试」
+        # 对新建实例即时生效，无需重启。限流/重试走实例属性（被 @rate_limited / @with_retry
+        # 优先采用）；超时刷新模块级 requests 默认值。失败回落导入期默认。
+        try:
+            eff = get_effective_settings().datasource
+            self._min_interval_sec = 1.0 / max(eff.rate_limit_per_sec, 0.1)
+            self._max_retries = eff.max_retries
+            self._retry_backoff_sec = eff.retry_backoff_sec
+            set_default_request_timeout(eff.socket_timeout_sec)
+        except Exception:  # noqa: BLE001 —— 配置/DB 异常时回落 YAML 导入期默认
+            self._min_interval_sec = _MIN_INTERVAL
 
     # ── 股票列表 ──
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
@@ -135,18 +261,27 @@ class AKShareSource(DataSource):
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
     @rate_limited(_MIN_INTERVAL)
     def _sina_daily(self, code6: str, start: date, end: date, adjust: str) -> pd.DataFrame:
-        return ak.stock_zh_a_daily(
-            symbol=to_sina_symbol(code6),
-            start_date=fmt_date(start, compact=True),
-            end_date=fmt_date(end, compact=True),
-            adjust=adjust,
+        # 请求超时已由模块级 _install_default_requests_timeout 全局注入，
+        # 此处无需再局部包裹（也就不会再用锁串行化并发日线请求）。
+        return _ak_or_empty(
+            lambda: ak.stock_zh_a_daily(
+                symbol=to_sina_symbol(code6),
+                start_date=fmt_date(start, compact=True),
+                end_date=fmt_date(end, compact=True),
+                adjust=adjust,
+            ),
+            f"{code6} sina日线",
         )
 
     def get_daily_bar(
         self, code: str, start: date, end: date, adjust: str = ""
     ) -> pd.DataFrame:
         code6 = code.split(".")[0]
-        raw = self._sina_daily(code6, start, end, "")
+        # 向前多取一段"锚定"交易日：使请求区间首日也有上一交易日，从而正确推算
+        # pre_close / 复权因子（否则窗口首日 shift(1) 为 NaN → pre_close 缺失 →
+        # 涨跌幅算不出）。锚定段仅用于计算，最后裁掉、不入库。
+        fetch_start = start - timedelta(days=_PRECLOSE_ANCHOR_DAYS)
+        raw = self._sina_daily(code6, fetch_start, end, "")
         # 空数据或返回结构异常（无 date 列，如无效 symbol）→ 视为无数据，不重试
         if raw is None or raw.empty or "date" not in raw.columns:
             return pd.DataFrame()
@@ -156,7 +291,7 @@ class AKShareSource(DataSource):
 
         # 复权因子 = 后复权收盘 / 不复权收盘（比例，前复权计算时再按最新因子归一）
         try:
-            hfq = self._sina_daily(code6, start, end, "hfq")
+            hfq = self._sina_daily(code6, fetch_start, end, "hfq")
             hfq = hfq.copy()
             hfq["trade_date"] = pd.to_datetime(hfq["date"]).dt.date
             factor = hfq.set_index("trade_date")["close"] / raw.set_index("trade_date")["close"]
@@ -181,14 +316,22 @@ class AKShareSource(DataSource):
                 # 新浪自带每日流通股本（时变，用于历史市值）
                 "float_share": raw["outstanding_share"].astype("int64"),
             }
-        ).sort_values("trade_date")
+        ).sort_values("trade_date").reset_index(drop=True)
+
+        # pre_close 与 qfq 价格不能共用同一条"清洗后"因子：
+        # - qfq 价格需要保留数据源复权因子，否则历史 K 线会被官方参考价重新拉齐。
+        # - pre_close 需要用去抖后的参考因子，否则非除权日涨跌幅会被小数噪声带偏。
+        pre_close_factor = dejitter_adj_factor(out["adj_factor"], out["close"])
 
         # 前收盘 = 官方除权参考价（除权除息/高送转日需按复权因子调整）：
         #   pre_close_t = close_{t-1} × adj_factor_{t-1} / adj_factor_t
         # 普通日因子不变 → 等于上一日收盘；除权日则得到调整后的参考价，
         # 保证涨跌幅/涨跌停判定正确（新浪不直接给 preclose，故由因子推算）。
-        out["pre_close"] = compute_pre_close(out["close"], out["adj_factor"])
-        return out.reset_index(drop=True)
+        out["pre_close"] = compute_pre_close(out["close"], pre_close_factor)
+
+        # 裁掉为锚定 pre_close/因子而多取的前置交易日，只返回请求区间
+        out = out[out["trade_date"] >= start].reset_index(drop=True)
+        return out
 
     # ── 每日估值/市值（东财 stock_value_em，含总市值/总股本）──
     @with_retry(max_retries=_s.max_retries, backoff_sec=_s.retry_backoff_sec)
@@ -200,7 +343,7 @@ class AKShareSource(DataSource):
         来源 stock_value_em（东财，与被封的 push2his 不同 endpoint，可用）。
         """
         code6 = code.split(".")[0]
-        df = ak.stock_value_em(symbol=code6)
+        df = _ak_or_empty(lambda: ak.stock_value_em(symbol=code6), f"{code6} 市值")
         if df is None or df.empty or "数据日期" not in df.columns:
             return pd.DataFrame()
         df = df.copy()
@@ -224,7 +367,7 @@ class AKShareSource(DataSource):
     def get_index_bar(self, index_code: str, start: date, end: date) -> pd.DataFrame:
         # 指数代码带后缀（'000905.SH'）→ 新浪 symbol 'sh000905'
         symbol = index_to_sina_symbol(index_code)
-        df = ak.stock_zh_index_daily(symbol=symbol)
+        df = _ak_or_empty(lambda: ak.stock_zh_index_daily(symbol=symbol), f"{index_code} 指数")
         if df is None or df.empty or "date" not in df.columns:
             return pd.DataFrame()
         df = df.copy()

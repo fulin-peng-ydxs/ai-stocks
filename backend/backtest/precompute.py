@@ -46,7 +46,8 @@ class HitPrecomputer:
         expr_lookup: dict[str, dict] = {e["expr"]: {} for e in exprs}
         if exprs:
             bars = self.c.query_df(
-                "SELECT code, trade_date, open, high, low, close, volume, turnover_rate, adj_factor "
+                "SELECT code, trade_date, open, high, low, close, volume, turnover_rate, "
+                "       COALESCE(adj_factor_clean, adj_factor) AS adj_factor "
                 "FROM daily_bar WHERE trade_date <= ? ORDER BY code, trade_date",
                 [date_end],
             )

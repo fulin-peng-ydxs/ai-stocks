@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS daily_bar (
     pre_close     DOUBLE,        -- 前收盘（算涨跌停用）
     volume        BIGINT,        -- 成交量（股）
     amount        DOUBLE,        -- 成交额（元）
-    adj_factor    DOUBLE,        -- 复权因子
+    adj_factor    DOUBLE,        -- 复权因子（源端反推：后复权收盘÷不复权收盘，含舍入噪声，留作审计/后复权）
+    adj_factor_clean DOUBLE,     -- 去抖后干净因子（分段恒定，K线前复权/后复权用此列；为空回落 adj_factor）
     turnover_rate DOUBLE,        -- 换手率(%)
     is_st         BOOLEAN,       -- 当日是否 ST（尽力而为）
     is_suspended  BOOLEAN,       -- 当日是否停牌
@@ -111,17 +112,32 @@ CREATE TABLE IF NOT EXISTS data_update_log (
 """
 
 # 数据质量问题（M2.8 起含 severity/status/resolved_at，支持修复闭环 FR-DM-4）
+# M2.9.2 起四层问题类型（DM-D20）：
+#   L1 null_close/ohl_repaired（入库时记）· L2 mv_missing · L3 abnormal_change/adj_jump
+#   · L4 data_gap（疑似漏采，trade_date 存区间起，detail 含[lo,hi]）/ stale（鲜活滞后）
 DDL_DATA_QUALITY_ISSUE = """
 CREATE TABLE IF NOT EXISTS data_quality_issue (
     id          BIGINT,
     code        VARCHAR,
     trade_date  DATE,
-    issue_type  VARCHAR,        -- ohl_repaired/abnormal_change/missing_or_suspended/adj_jump
+    issue_type  VARCHAR,        -- null_close/ohl_repaired/mv_missing/abnormal_change/adj_jump/data_gap/stale
     severity    VARCHAR,        -- high/mid/low（DM-D10）
     status      VARCHAR,        -- open/fixing/resolved/ignored（默认 open）
     detail      VARCHAR,
     detected_at TIMESTAMP,
-    resolved_at TIMESTAMP        -- 修复完成回写
+    resolved_at TIMESTAMP,       -- 修复完成回写
+    fix_task_id VARCHAR          -- 进入 fixing 时绑定的异步任务 id；任务失败/中断/重启可据此复位
+);
+"""
+
+# 确认停牌日（M2.9.2 DM-D19）：经"反向确定"重采后源端确实无数据的开市日 = 真停牌。
+# 缺口判定减去本表实现收敛（停牌一旦确认就不再当缺口反复上报）。
+# 注意：停牌日 daily_bar 无行，故单独建表记忆，**绝不往 daily_bar 插占位行**（业务靠"有行=可交易"）。
+DDL_STOCK_SUSPENSION = """
+CREATE TABLE IF NOT EXISTS stock_suspension (
+    code        VARCHAR,
+    trade_date  DATE,
+    confirmed_at TIMESTAMP
 );
 """
 
@@ -165,6 +181,7 @@ M1_TABLES: dict[str, str] = {
     "trade_calendar": DDL_TRADE_CALENDAR,
     "data_update_log": DDL_DATA_UPDATE_LOG,
     "data_quality_issue": DDL_DATA_QUALITY_ISSUE,
+    "stock_suspension": DDL_STOCK_SUSPENSION,
 }
 
 # M2 指标表：v2.0 删除 indicator 值表（动态计算）；保留 indicator_def 指标定义表
@@ -289,6 +306,8 @@ CREATE TABLE IF NOT EXISTS stock_group (
     name        VARCHAR,
     group_date  DATE,              -- 建组日期（默认今天，可改）
     description VARCHAR,
+    color       VARCHAR,
+    is_default  BOOLEAN,
     created_at  TIMESTAMP,
     updated_at  TIMESTAMP
 );
@@ -485,6 +504,21 @@ CREATE TABLE IF NOT EXISTS task_log (
 );
 """
 
+# 数据来源标记/溯源（数据源兜底审计）：默认主源(akshare)不记录；只在用了非默认源(如 baostock 兜底)
+# 时按 (code, 表, 区间, 来源) 追加一条，供后续排查/审计"这段数据从哪来、两源是否有差异"。
+# 只追加不更新（保留每次取数事件），查某股某段来源：有记录=该源，无记录=默认主源。
+DDL_DATA_SOURCE_PROVENANCE = """
+CREATE TABLE IF NOT EXISTS data_source_provenance (
+    code        VARCHAR,
+    table_name  VARCHAR,               -- 'daily_bar' 等
+    date_start  DATE,
+    date_end    DATE,
+    source      VARCHAR,               -- 非默认源名（如 baostock）
+    rows        INTEGER,               -- 该次写入行数
+    fetched_at  TIMESTAMP
+);
+"""
+
 # 数据维度注册表（FR-DM-1 / DM-D4/D5）：已采集 + 规划中（股东数/筹码峰占位）。
 DDL_DATA_DIMENSION_REGISTRY = """
 CREATE TABLE IF NOT EXISTS data_dimension_registry (
@@ -497,10 +531,31 @@ CREATE TABLE IF NOT EXISTS data_dimension_registry (
 );
 """
 
+# 定时任务定义（调度系统重构）：用户自定义的多条定时任务，每条 = 一个任务类型 + 频率 + 参数。
+# 调度器启动/运行时据此注册 APScheduler job；触发即创建一条 async_task（带来源标记）。
+DDL_SCHEDULED_JOB = """
+CREATE TABLE IF NOT EXISTS scheduled_job (
+    id               VARCHAR PRIMARY KEY,   -- job_xxx
+    name             VARCHAR,               -- 用户起的任务名（任务中心展示「定时·{name}」）
+    task_type        VARCHAR,               -- update | backfill | ingest_date | recompute | verify
+    params           VARCHAR,               -- 入参（JSON，按任务类型）
+    freq_type        VARCHAR,               -- daily | weekly | monthly | cron
+    freq_config      VARCHAR,               -- 频率配置（JSON）：{time} / {weekdays,time} / {day,time} / {cron}
+    trading_day_only BOOLEAN,               -- 仅交易日执行（非交易日跳过）
+    enabled          BOOLEAN,               -- 启停
+    last_run_at      TIMESTAMP,             -- 最近一次触发时间（可空）
+    last_task_id     VARCHAR,               -- 最近一次触发产生的 async_task id（可空）
+    created_at       TIMESTAMP,
+    updated_at       TIMESTAMP
+);
+"""
+
 M28_TABLES: dict[str, str] = {
     "app_config": DDL_APP_CONFIG,
     "task_log": DDL_TASK_LOG,
     "data_dimension_registry": DDL_DATA_DIMENSION_REGISTRY,
+    "data_source_provenance": DDL_DATA_SOURCE_PROVENANCE,
+    "scheduled_job": DDL_SCHEDULED_JOB,
 }
 
 # 数据维度注册表 seed（DM-D4/D5）：已采集维度 + 规划中占位（股东数/筹码峰）。
@@ -517,9 +572,9 @@ _DIMENSION_SEED: list[tuple] = [
     ("calendar",     "交易日历",   "collected", "akshare/baostock",         '["trade_calendar"]',
      "开市日判定，缺口检测与点时安全基础"),
     ("shareholders", "股东数据",   "planned",   "待定（东财/巨潮）",          '[]',
-     "股东户数/十大股东等，本期仅注册占位，未采集（见 DM-D5）"),
+     "股东户数/十大股东等，规划中，暂未采集"),
     ("chip_peak",    "筹码分布",   "planned",   "待定（需逐笔/分价成交）",     '[]',
-     "筹码峰/成本分布，本期仅注册占位，未采集（见 DM-D5）"),
+     "筹码峰/成本分布，规划中，暂未采集"),
 ]
 
 # 轻量迁移：给已存在的旧表补列（CREATE TABLE IF NOT EXISTS 不会改既有表结构）
@@ -543,12 +598,31 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS status VARCHAR",
     "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS severity VARCHAR",
     "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP",
+    # 修复中闭环：绑定异步任务 id，任务失败/中断/重启时据此把 fixing 复位为 open（不留孤儿）
+    "ALTER TABLE data_quality_issue ADD COLUMN IF NOT EXISTS fix_task_id VARCHAR",
     "UPDATE data_quality_issue SET status='open' WHERE status IS NULL",
-    # 严重度映射（DM-D10）：adj_jump=high；abnormal_change/missing_or_suspended=mid；ohl_repaired=low；其余 mid
+    # 严重度映射（DM-D10）：adj_jump=high；ohl_repaired/mv_missing=low；其余(abnormal_change/data_gap/stale)=mid
     "UPDATE data_quality_issue SET severity = CASE "
     "WHEN issue_type='adj_jump' THEN 'high' "
     "WHEN issue_type='ohl_repaired' THEN 'low' "
     "ELSE 'mid' END WHERE severity IS NULL",
+    # qfq 根治：去抖后干净因子独立成列，K线前/后复权改用它（源 adj_factor 带舍入噪声）。
+    # 旧库该列为空，下次入库收尾或手动 rebuild-price-factors 会回填；get_bars 期间 COALESCE 回落原始因子。
+    "ALTER TABLE daily_bar ADD COLUMN IF NOT EXISTS adj_factor_clean DOUBLE",
+    "ALTER TABLE stock_group ADD COLUMN IF NOT EXISTS color VARCHAR",
+    "ALTER TABLE stock_group ADD COLUMN IF NOT EXISTS is_default BOOLEAN",
+    "UPDATE stock_group SET color='#909399' WHERE color IS NULL",
+    "UPDATE stock_group SET is_default=false WHERE is_default IS NULL",
+    # 维度说明文案润色（去任务编号/开发口吻）——种子 ON CONFLICT DO NOTHING 不覆盖存量行，故迁移刷新
+    "UPDATE data_dimension_registry SET descr='股东户数/十大股东等，规划中，暂未采集' WHERE dimension='shareholders'",
+    "UPDATE data_dimension_registry SET descr='筹码峰/成本分布，规划中，暂未采集' WHERE dimension='chip_peak'",
+    # 调度系统重构：async_task 加来源标记（任务中心区分 手动/定时·任务名），存量行回填为手动
+    "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS trigger_source VARCHAR",
+    "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS job_id VARCHAR",
+    "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS job_name VARCHAR",
+    "UPDATE async_task SET trigger_source='manual' WHERE trigger_source IS NULL",
+    # 废弃 daily 复合任务：旧库残留的每日任务记录改标为 update（语义上等价于其首步增量更新）
+    "UPDATE async_task SET task_type='update' WHERE task_type='daily'",
 ]
 
 
@@ -578,7 +652,7 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
     for name, sql in all_tables.items():
         client.execute(sql)
         created.append(name)
-        log.info("表已就绪: %s", name)
+        log.debug("表已就绪: %s", name)
     for mig in _MIGRATIONS:
         try:
             client.execute(mig)

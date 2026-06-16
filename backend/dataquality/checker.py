@@ -80,13 +80,15 @@ def sanitize_bars(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     返回 (清洗后df, 统计)。统计供 ingest 记日志，使数据问题"入库即暴露"。
     """
     if df is None or df.empty:
-        return df, {"dropped": 0, "fixed_ohl": 0, "filled_zerovol": 0}
+        return df, {"dropped": 0, "fixed_ohl": 0, "filled_zerovol": 0, "dropped_dates": []}
     out = df.copy()
     n0 = len(out)
 
-    # 1) close 无效 → 丢弃
+    # 1) close 无效 → 丢弃（记下被丢弃的交易日，供 ingest 落 L1 质量问题，不静默）
     bad_close = out["close"].isna() | (out["close"] <= 0)
     dropped = int(bad_close.sum())
+    dropped_dates = (out.loc[bad_close, "trade_date"].tolist()
+                     if dropped and "trade_date" in out.columns else [])
     out = out[~bad_close]
 
     # 2) 开/高/低 缺失或≤0 但 close 有效 → 用 close 回填（标记修补行）
@@ -109,7 +111,8 @@ def sanitize_bars(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
                 filled += int(m.sum())
                 out.loc[m, col] = 0.0
 
-    stats = {"dropped": dropped, "fixed_ohl": fixed_ohl, "filled_zerovol": filled, "in": n0, "out": len(out)}
+    stats = {"dropped": dropped, "fixed_ohl": fixed_ohl, "filled_zerovol": filled,
+             "in": n0, "out": len(out), "dropped_dates": dropped_dates}
     return out.reset_index(drop=True), stats
 
 
@@ -117,13 +120,50 @@ def sanitize_bars(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 SEVERITY_BY_TYPE: dict[str, str] = {
     "adj_jump": "high",
     "abnormal_change": "mid",
-    "missing_or_suspended": "mid",
     "ohl_repaired": "low",
+    "null_close": "mid",       # 收盘价空/非正被丢弃——原始数据缺损（M2.9 L1 入库闸门）
+    "mv_missing": "low",       # 总市值缺失——字段契约不全（M2.9.2 L2）
+    "mv_gap": "mid",           # 近端逐日总市值缺口（已采票新天补不到，WS4 P2）——逐日缺、code 聚合
+    "data_gap": "mid",         # 存续期缺口（疑似漏采，待重采反向确认）（M2.9.2 L4）
+    "stale": "mid",            # 尾部鲜活滞后（最新<全局最新交易日）（M2.9.2 L4）
 }
 
 
 def severity_for(issue_type: str) -> str:
     return SEVERITY_BY_TYPE.get(issue_type, "mid")
+
+
+# ── 四层质量模型（M2.9，DM-D15）────────────────────────────────
+# 把零散质检统一为分层体检：每个 issue_type 归一层，逐股/全局都按层展示。
+# L2/L4 为聚合度量（非空率 / 缺口鲜活），不逐行落 issue，仅在 stock_quality / quality_model 计算。
+QUALITY_LAYERS: list[dict] = [
+    {"layer": "L1", "name_cn": "入库闸门", "desc": "原始行情合法性：收盘价非空且为正、开高低合法（坏行入库即拦截/修补）"},
+    {"layer": "L2", "name_cn": "字段契约", "desc": "市值字段完整：总市值与流通市值都非空（流通市值供选股池过滤）"},
+    {"layer": "L3", "name_cn": "正确性", "desc": "复权口径一致、涨跌停约束、无异常单日涨跌"},
+    {"layer": "L4", "name_cn": "覆盖鲜活", "desc": "存续期无缺口、数据更新到最新交易日"},
+]
+ISSUE_LAYER: dict[str, str] = {
+    "null_close": "L1",
+    "ohl_repaired": "L1",
+    "mv_missing": "L2",
+    "mv_gap": "L2",
+    "abnormal_change": "L3",
+    "adj_jump": "L3",
+    "data_gap": "L4",
+    "stale": "L4",
+}
+# 各层落 data_quality_issue 表的离散异常类型（M2.9.2：四层都落表，质检可反复扫并幂等覆盖）。
+L1_ISSUE_TYPES: tuple[str, ...] = ("null_close", "ohl_repaired")
+L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap")
+L3_ISSUE_TYPES: tuple[str, ...] = ("abnormal_change", "adj_jump")
+L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale")
+# 质检（scan_quality_issues）每次重扫并幂等覆盖的"自动问题"类型（L2/L3/L4）；
+# L1 由入库闸门即时记录，质检只做防御性补扫，不在此清表。
+SCAN_ISSUE_TYPES: tuple[str, ...] = L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES
+
+
+def layer_for(issue_type: str) -> str:
+    return ISSUE_LAYER.get(issue_type, "L3")
 
 
 class QualityChecker:
@@ -173,40 +213,17 @@ class QualityChecker:
         ]
         return self._record(issues)
 
-    def check_missing(self, code: str, list_date: date | None = None) -> int:
-        """日历有交易日但该股无行情（且在上市后）→ 疑似缺失/停牌。"""
-        rng = self.c.query_df(
-            "SELECT min(trade_date) lo, max(trade_date) hi FROM daily_bar WHERE code = ?", [code]
-        )
-        if rng.iloc[0]["lo"] is None or pd.isna(rng.iloc[0]["lo"]):
-            return 0
-        lo, hi = rng.iloc[0]["lo"], rng.iloc[0]["hi"]
-        missing = self.c.query_df(
-            "SELECT cal.trade_date FROM trade_calendar cal "
-            "LEFT JOIN daily_bar b ON b.code = ? AND b.trade_date = cal.trade_date "
-            "WHERE cal.is_open AND cal.trade_date BETWEEN ? AND ? AND b.code IS NULL",
-            [code, lo, hi],
-        )
-        issues = [
-            {
-                "code": code,
-                "trade_date": r["trade_date"],
-                "issue_type": "missing_or_suspended",
-                "detail": "日历交易日缺行情（停牌或缺失）",
-            }
-            for _, r in missing.iterrows()
-        ]
-        return self._record(issues)
 
     def check_adj_jump(self, code: str, threshold: float = 0.5) -> int:
         """前复权价相邻日跳变超阈值（剔除涨跌停正常波动后）→ 复权异常。"""
         df = self.c.query_df(
-            "SELECT trade_date, close, adj_factor FROM daily_bar WHERE code = ? ORDER BY trade_date",
+            "SELECT trade_date, close, COALESCE(adj_factor_clean, adj_factor) AS adj_factor "
+            "FROM daily_bar WHERE code = ? ORDER BY trade_date",
             [code],
         )
         if len(df) < 2:
             return 0
-        # 前复权价 = close × adj_factor / 最新 adj_factor
+        # 前复权价 = close × 干净因子 / 最新干净因子
         latest = df["adj_factor"].iloc[-1]
         qfq = df["close"] * df["adj_factor"] / latest
         ratio = (qfq / qfq.shift(1) - 1).abs()

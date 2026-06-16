@@ -73,6 +73,25 @@ def test_with_retry_eventually_raises():
     assert calls["n"] == 2
 
 
+def test_with_retry_honors_instance_config():
+    """实例属性 _max_retries/_retry_backoff_sec 覆盖装饰器入参——前端改重试配置即生效。"""
+    from backend.common.exceptions import DataSourceError
+    calls = {"n": 0}
+
+    class Src:
+        _max_retries = 2          # 实例配置=2，应覆盖装饰器的 5
+        _retry_backoff_sec = 0.01
+
+        @with_retry(max_retries=5, backoff_sec=9)
+        def fetch(self):
+            calls["n"] += 1
+            raise ValueError("boom")
+
+    with pytest.raises(DataSourceError):
+        Src().fetch()
+    assert calls["n"] == 2        # 用实例的 2 次，而非装饰器导入期的 5 次
+
+
 def test_baostock_code_conversion():
     from backend.datasource.baostock_source import bs_to_full, full_to_bs
 

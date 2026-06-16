@@ -1,14 +1,41 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getBars, getIndicators, getTradeEval, type Bar, type TradeEval } from '@/api/stocks'
+import { ElMessage } from 'element-plus'
+import { Close } from '@element-plus/icons-vue'
+import { getBars, getIndicators, getTradeEval, listStocks, type Bar, type StockBasic, type TradeEval } from '@/api/stocks'
+import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
 import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
+import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
+import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import PageToggleRow from '@/components/PageToggleRow.vue'
 import { useStockSet } from '@/stores/stockSet'
+import { usePageSettings } from '@/composables/usePageSettings'
 import CandleChart from '@/components/CandleChart.vue'
 
 const route = useRoute()
 const router = useRouter()
 const code = ref(String(route.params.code))
+const settingsOpen = ref(false)
+const detailDefaults = {
+  adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
+  viewDays: 250,
+  showTradeCard: true,
+  showNav: true,
+  indicators: {
+    ma20: true,
+    ma60: true,
+    dist_to_high_2y: true,
+    is_high_2y: true,
+    is_bull_arrange: true,
+    ma20_up: true,
+    is_platform_breakout: true,
+    is_vol_breakout: true,
+  },
+}
+const { settings, isDirty, reset } = usePageSettings('stock-detail', detailDefaults)
 
 // ── 通用导航：当前集合（分组成员 / 列表勾选 / 查询结果）上一个·下一个·直选 ──
 const stockSet = useStockSet()
@@ -17,22 +44,60 @@ const inSet = computed(() => setIndex.value >= 0)
 const prevCode = computed(() => stockSet.neighbor(code.value, -1))
 const nextCode = computed(() => stockSet.neighbor(code.value, 1))
 function gotoCode(c: string | null) {
-  if (c && c !== code.value) router.push(`/stocks/${c}`)
+  if (c && c !== '__more__' && c !== code.value) router.push(`/stocks/${c}`)
+}
+const collectionTotal = computed(() => stockSet.total || stockSet.items.length)
+const collectionTotalPages = computed(() => Math.max(1, Math.ceil(collectionTotal.value / Math.max(stockSet.pageSize || 20, 1))))
+const minLoadedPage = computed(() => stockSet.loadedPages.length ? Math.min(...stockSet.loadedPages) : 1)
+const maxLoadedPage = computed(() => stockSet.loadedPages.length ? Math.max(...stockSet.loadedPages) : 1)
+const canLoadPrev = computed(() => !!stockSet.query && minLoadedPage.value > 1)
+const canLoadNext = computed(() => !!stockSet.query && maxLoadedPage.value < collectionTotalPages.value)
+const setLoading = ref(false)
+async function loadSetPage(page: number) {
+  if (!stockSet.query || stockSet.loadedPages.includes(page)) return
+  setLoading.value = true
+  try {
+    if (stockSet.query.kind === 'group') {
+      const data = await getGroup(stockSet.query.groupId, { ...stockSet.query.params, page, size: stockSet.pageSize })
+      stockSet.appendPage(data.members.list.map((r) => ({ code: r.code, name: r.name })), page)
+      stockSet.setTotal(data.members.total)
+    } else {
+      const data = await listStocks({ ...stockSet.query.params, page, size: stockSet.pageSize })
+      stockSet.appendPage(data.list.map((r) => ({ code: r.code, name: r.name })), page)
+      stockSet.setTotal(data.total)
+    }
+  } finally {
+    setLoading.value = false
+  }
+}
+async function gotoNeighbor(dir: -1 | 1) {
+  const c = stockSet.neighbor(code.value, dir)
+  if (c) return gotoCode(c)
+  if (dir < 0 && canLoadPrev.value) {
+    await loadSetPage(minLoadedPage.value - 1)
+    return gotoCode(stockSet.neighbor(code.value, dir))
+  }
+  if (dir > 0 && canLoadNext.value) {
+    await loadSetPage(maxLoadedPage.value + 1)
+    return gotoCode(stockSet.neighbor(code.value, dir))
+  }
 }
 const loading = ref(false)
 const error = ref('')
-const adjust = ref('qfq')
-const viewDays = ref(250)   // 显示范围（缩放），数据始终全量加载，可自由拖动看全部
+const adjust = ref<string>(settings.adjustMode || '')
+const viewDays = ref(Number(settings.viewDays))   // 显示范围（缩放），数据始终全量加载，可自由拖动看全部
 const bars = ref<Bar[]>([])
 const name = ref('')
+const latestQuote = ref<Bar | null>(null)
 const latest = ref<Record<string, unknown> | null>(null)
 
-// 同花顺式：全量数据 + dataZoom 缩放。viewDays 控制默认显示最近 N 日，可拖动看更早
-const zoomStart = computed(() => {
-  const n = bars.value.length
-  if (!n || viewDays.value >= n) return 0
-  return ((n - viewDays.value) / n) * 100
+const chartLookback = computed(() => viewDays.value >= 99999 ? 6000 : viewDays.value)
+const latestPct = computed(() => {
+  const b = latestQuote.value
+  if (!b?.pre_close || b.pre_close <= 0) return null
+  return ((b.close / b.pre_close) - 1) * 100
 })
+const latestClose = computed(() => latestQuote.value?.close ?? null)
 
 // 个股详情页展示的关键指标（取最新一日）
 const INDICATOR_FIELDS: { key: string; label: string }[] = [
@@ -45,12 +110,21 @@ const INDICATOR_FIELDS: { key: string; label: string }[] = [
   { key: 'is_platform_breakout', label: '平台突破' },
   { key: 'is_vol_breakout', label: '放量突破' },
 ]
+const visibleIndicatorFields = computed(() => INDICATOR_FIELDS.filter((f) => settings.indicators[f.key as keyof typeof settings.indicators]))
 
 function fmt(v: unknown): string {
   if (v === null || v === undefined) return '—'
   if (typeof v === 'boolean') return v ? '是' : '否'
   if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2)
   return String(v)
+}
+function fmtPct(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '--'
+  return (v > 0 ? '+' : '') + v.toFixed(2) + '%'
+}
+function pctClass(v: number | null | undefined): string {
+  if (v === null || v === undefined) return 'muted'
+  return v > 0 ? 'up' : v < 0 ? 'down' : ''
 }
 
 // ── 买卖指标方案评估（v2.0：替代固定买点引擎）──
@@ -87,14 +161,16 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [b, ind] = await Promise.all([
-      getBars(code.value, { adjust: adjust.value, lookback: 6000 }, ctrl.signal),
+    const [b, ind, quote] = await Promise.all([
+      getBars(code.value, { adjust: adjust.value, lookback: chartLookback.value }, ctrl.signal),
       getIndicators(code.value, { lookback: 1 }, ctrl.signal),
+      getBars(code.value, { adjust: '', lookback: 1 }, ctrl.signal),
     ])
     if (ctrl.signal.aborted) return
     bars.value = b.bars
     name.value = b.name || ''
     latest.value = ind.indicators.length ? ind.indicators[ind.indicators.length - 1] : null
+    latestQuote.value = quote.bars.length ? quote.bars[quote.bars.length - 1] : null
     if (tradeId.value) evalTrade(ctrl.signal)  // 不阻塞主图
   } catch (e) {
     if (isAbort(e)) return
@@ -103,7 +179,6 @@ async function load() {
     if (reqCtrl === ctrl) loading.value = false  // 仅最新一次负责收尾
   }
 }
-
 // 上/下一个连点防抖：路由变了立即换页，但数据加载合并到最后一次
 function scheduleLoad() {
   if (navTimer) clearTimeout(navTimer)
@@ -116,10 +191,19 @@ watch(
     if (c) {
       code.value = String(c)
       tradeEval.value = null
+      loadStockGroups()
       scheduleLoad()
     }
   },
 )
+watch(viewDays, () => load())
+watch(() => settings.adjustMode, (value) => {
+  adjust.value = value || ''
+  load()
+})
+watch(() => settings.viewDays, (value) => {
+  viewDays.value = Number(value)
+})
 
 onMounted(async () => {
   try {
@@ -128,7 +212,219 @@ onMounted(async () => {
   } catch {
     /* 方案列表失败不阻塞 */
   }
-  load()
+  await Promise.all([load(), loadGroups(), loadStockGroups()])
+})
+
+// ── 分组编辑 ──
+const groups = ref<GroupSummary[]>([])
+const stockGroups = ref<StockBasic['groups']>([])
+const groupOpsLoading = ref(false)
+const selectedGroupIds = ref<string[]>([])
+const selectedGroups = computed(() => selectedGroupIds.value.map((id) => {
+  const fromAll = groups.value.find((g) => g.id === id)
+  const fromStock = stockGroups.value.find((g) => g.id === id)
+  return fromAll ?? fromStock ?? null
+}).filter((g): g is GroupSummary | StockBasic['groups'][number] => !!g))
+const visibleSelectedGroups = computed(() => selectedGroups.value.slice(0, 2))
+const hiddenSelectedGroupCount = computed(() => Math.max(0, selectedGroups.value.length - visibleSelectedGroups.value.length))
+let syncingGroupSelect = false
+function tagStyle(color?: string) {
+  const c = color || '#909399'
+  return { color: c, borderColor: c, backgroundColor: `${c}14` }
+}
+async function loadGroups() {
+  groups.value = await listGroups()
+}
+async function loadStockGroups() {
+  const data = await listStocks({ q: code.value, page: 1, size: 1 })
+  stockGroups.value = data.list.find((r) => r.code === code.value)?.groups ?? []
+  syncingGroupSelect = true
+  selectedGroupIds.value = stockGroups.value.map((g) => g.id)
+  syncingGroupSelect = false
+}
+async function onGroupsChange(value: unknown) {
+  if (syncingGroupSelect) return
+  const nextIds = Array.isArray(value) ? value.map(String) : []
+  const prev = new Set(stockGroups.value.map((g) => g.id))
+  const next = new Set(nextIds)
+  const add = nextIds.filter((id) => !prev.has(id))
+  const remove = [...prev].filter((id) => !next.has(id))
+  if (!add.length && !remove.length) return
+  groupOpsLoading.value = true
+  try {
+    await Promise.all([
+      ...add.map((gid) => addMembers(gid, [code.value])),
+      ...remove.map((gid) => removeMembers(gid, [code.value])),
+    ])
+    await Promise.all([loadGroups(), loadStockGroups()])
+    ElMessage.success('分组已同步')
+  } finally {
+    groupOpsLoading.value = false
+  }
+}
+async function removeSelectedGroup(gid: string) {
+  if (groupOpsLoading.value) return
+  const next = selectedGroupIds.value.filter((id) => id !== gid)
+  selectedGroupIds.value = next
+  await onGroupsChange(next)
+}
+
+// ── 集合下拉：保留全量集合语义，候选项按 100 条懒加载，搜索合并在同一个下拉里 ──
+const DROPDOWN_PAGE_SIZE = 100
+const dropdownItems = ref<{ code: string; name?: string | null }[]>([])
+const dropdownPage = ref(1)
+const dropdownTotal = ref(0)
+const dropdownKeyword = ref('')
+const dropdownLoading = ref(false)
+const dropdownLoadedPages = ref<number[]>([])
+let dropdownScrollEl: HTMLElement | null = null
+let dropdownSearchTimer: ReturnType<typeof setTimeout> | null = null
+let dropdownRequestSeq = 0
+
+const dropdownHasMore = computed(() => dropdownItems.value.length < dropdownTotal.value)
+const currentDropdownItem = computed(() => {
+  const fromSet = stockSet.items.find((it) => it.code === code.value)
+  return fromSet ?? { code: code.value, name: name.value || null }
+})
+const dropdownOptions = computed(() => {
+  const current = currentDropdownItem.value
+  if (!current.code || dropdownItems.value.some((it) => it.code === current.code)) return dropdownItems.value
+  return [current, ...dropdownItems.value]
+})
+
+function mergeItems(base: { code: string; name?: string | null }[], incoming: { code: string; name?: string | null }[]) {
+  const seen = new Set(base.map((it) => it.code))
+  return [...base, ...incoming.filter((it) => !seen.has(it.code))]
+}
+
+async function fetchDropdownPage(page: number, keyword: string) {
+  if (stockSet.query) {
+    if (stockSet.query.kind === 'group') {
+      const data = await getGroup(stockSet.query.groupId, {
+        ...stockSet.query.params,
+        q: keyword || stockSet.query.params.q,
+        page,
+        size: DROPDOWN_PAGE_SIZE,
+      })
+      return {
+        total: data.members.total,
+        items: data.members.list.map((r) => ({ code: r.code, name: r.name })),
+      }
+    }
+    const data = await listStocks({
+      ...stockSet.query.params,
+      q: keyword || stockSet.query.params.q,
+      page,
+      size: DROPDOWN_PAGE_SIZE,
+    })
+    return {
+      total: data.total,
+      items: data.list.map((r) => ({ code: r.code, name: r.name })),
+    }
+  }
+
+  const q = keyword.trim().toLowerCase()
+  const source = q
+    ? stockSet.items.filter((it) => it.code.toLowerCase().includes(q) || (it.name || '').toLowerCase().includes(q))
+    : stockSet.items
+  const start = (page - 1) * DROPDOWN_PAGE_SIZE
+  return {
+    total: source.length,
+    items: source.slice(start, start + DROPDOWN_PAGE_SIZE),
+  }
+}
+
+async function loadDropdownPage(page: number, replace = false) {
+  if (dropdownLoading.value || (!replace && dropdownLoadedPages.value.includes(page))) return
+  dropdownLoading.value = true
+  const seq = ++dropdownRequestSeq
+  try {
+    const keyword = dropdownKeyword.value.trim()
+    const data = await fetchDropdownPage(page, keyword)
+    if (seq !== dropdownRequestSeq || keyword !== dropdownKeyword.value.trim()) return
+    dropdownTotal.value = data.total
+    dropdownPage.value = page
+    dropdownLoadedPages.value = replace ? [page] : [...dropdownLoadedPages.value, page]
+    dropdownItems.value = replace ? data.items : mergeItems(dropdownItems.value, data.items)
+
+    if (!keyword) {
+      stockSet.setTotal(data.total)
+      stockSet.appendPage(data.items, page)
+    }
+  } finally {
+    dropdownLoading.value = false
+  }
+}
+
+async function resetDropdown(keyword = '') {
+  dropdownRequestSeq += 1
+  dropdownKeyword.value = keyword
+  dropdownTotal.value = 0
+  dropdownLoadedPages.value = []
+  dropdownItems.value = []
+
+  if (!keyword) {
+    dropdownItems.value = stockSet.items
+    dropdownTotal.value = collectionTotal.value
+    dropdownLoadedPages.value = stockSet.loadedPages.length ? [...stockSet.loadedPages] : [1]
+    dropdownPage.value = dropdownLoadedPages.value.length ? Math.max(...dropdownLoadedPages.value) : 1
+    return
+  }
+
+  dropdownPage.value = 1
+  await loadDropdownPage(1, true)
+}
+
+function onCollectionSearch(query: string) {
+  if (dropdownSearchTimer) clearTimeout(dropdownSearchTimer)
+  dropdownSearchTimer = setTimeout(() => {
+    resetDropdown(query.trim())
+  }, 180)
+}
+
+function onCollectionSelect(c: string | null) {
+  if (!c || c === '__more__') return
+  if (stockSet.indexOf(c) < 0) {
+    stockSet.mergeItemsNear(dropdownItems.value, code.value)
+  }
+  gotoCode(c)
+}
+
+function detachDropdownScroll() {
+  if (dropdownScrollEl) {
+    dropdownScrollEl.removeEventListener('scroll', onDropdownScroll)
+    dropdownScrollEl = null
+  }
+}
+
+function onDropdownScroll() {
+  if (!dropdownScrollEl || dropdownLoading.value || !dropdownHasMore.value) return
+  const distance = dropdownScrollEl.scrollHeight - dropdownScrollEl.scrollTop - dropdownScrollEl.clientHeight
+  if (distance <= 40) {
+    const nextPage = dropdownLoadedPages.value.length ? Math.max(...dropdownLoadedPages.value) + 1 : dropdownPage.value + 1
+    loadDropdownPage(nextPage)
+  }
+}
+
+function attachDropdownScroll() {
+  detachDropdownScroll()
+  dropdownScrollEl = document.querySelector('.stock-set-dropdown .el-select-dropdown__wrap') as HTMLElement | null
+  dropdownScrollEl?.addEventListener('scroll', onDropdownScroll)
+}
+
+async function onCollectionVisibleChange(visible: boolean) {
+  if (!visible) {
+    detachDropdownScroll()
+    return
+  }
+  if (!dropdownItems.value.length || dropdownKeyword.value) await resetDropdown('')
+  await nextTick()
+  attachDropdownScroll()
+}
+
+onBeforeUnmount(() => {
+  if (dropdownSearchTimer) clearTimeout(dropdownSearchTimer)
+  detachDropdownScroll()
 })
 </script>
 
@@ -136,64 +432,130 @@ onMounted(async () => {
   <div class="v-page">
     <div class="page-head">
       <div class="title">
-        <el-button text @click="router.push('/stocks')">‹ 返回</el-button>
+        <el-button text @click="router.push('/stocks?restore=1')">‹ 返回</el-button>
         <h2>{{ name || '—' }}</h2>
         <span class="code-sub">{{ code }}</span>
+        <span class="quote-sub" :class="pctClass(latestPct)">
+          {{ latestClose == null ? '--' : latestClose.toFixed(2) }}
+          {{ fmtPct(latestPct) }}
+        </span>
+        <el-select
+          v-model="selectedGroupIds"
+          multiple
+          filterable
+          collapse-tags
+          collapse-tags-tooltip
+          :max-collapse-tags="2"
+          size="small"
+          placeholder="所属分组"
+          style="width: 260px"
+          :loading="groupOpsLoading"
+          @change="onGroupsChange"
+        >
+          <template #tag>
+            <el-tag
+              v-for="g in visibleSelectedGroups"
+              :key="g.id"
+              class="group-select-tag"
+              size="small"
+              closable
+              :disable-transitions="true"
+              :style="tagStyle(g.color)"
+              @close.stop="removeSelectedGroup(g.id)"
+            >
+              {{ g.name }}
+            </el-tag>
+            <el-tag
+              v-if="hiddenSelectedGroupCount"
+              class="group-select-tag more"
+              size="small"
+              :disable-transitions="true"
+            >
+              +{{ hiddenSelectedGroupCount }}
+            </el-tag>
+          </template>
+          <el-option
+            v-for="g in groups"
+            :key="g.id"
+            :value="g.id"
+            :label="g.name"
+          >
+            <span class="group-option">
+              <span class="color-dot" :style="{ backgroundColor: g.color }" />
+              <span>{{ g.name }}（{{ g.member_count }}）</span>
+            </span>
+          </el-option>
+        </el-select>
       </div>
-      <div class="ops">
-        <el-radio-group v-model="adjust" @change="load">
-          <el-radio-button value="qfq">前复权</el-radio-button>
-          <el-radio-button value="">不复权</el-radio-button>
-        </el-radio-group>
-        <el-select v-model="viewDays" style="width: 130px">
+      <div class="page-head-actions">
+        <div class="ops">
+        <el-select v-model="settings.viewDays" style="width: 130px">
           <el-option :value="120" label="近 120 日" />
           <el-option :value="250" label="近 250 日" />
           <el-option :value="500" label="近 500 日" />
           <el-option :value="99999" label="全部" />
         </el-select>
+        </div>
+        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>
 
     <div class="v-scroll">
     <!-- 通用集合导航条 -->
-    <div v-if="stockSet.has" class="nav-bar">
+    <div v-if="settings.showNav && stockSet.has" class="nav-bar">
       <span class="nav-label">
         {{ stockSet.label }}
-        <span v-if="inSet" class="nav-pos">{{ setIndex + 1 }}/{{ stockSet.items.length }}</span>
-        <span v-else class="nav-pos muted">不在集合内 · 共 {{ stockSet.items.length }} 只</span>
+        <span v-if="inSet" class="nav-pos">{{ setIndex + 1 }}/{{ collectionTotal }}</span>
+        <span v-else class="nav-pos muted">不在集合内 · 共 {{ collectionTotal }} 只</span>
       </span>
       <el-button-group class="nav-btns">
-        <el-button size="small" :disabled="!prevCode" @click="gotoCode(prevCode)">‹ 上一个</el-button>
-        <el-button size="small" :disabled="!nextCode" @click="gotoCode(nextCode)">下一个 ›</el-button>
+        <el-button size="small" :loading="setLoading" :disabled="!prevCode && !canLoadPrev" @click="gotoNeighbor(-1)">‹ 上一个</el-button>
+        <el-button size="small" :loading="setLoading" :disabled="!nextCode && !canLoadNext" @click="gotoNeighbor(1)">下一个 ›</el-button>
       </el-button-group>
       <el-select
-        :model-value="inSet ? code : undefined"
+        :model-value="code"
         placeholder="从集合中选择"
         filterable
+        remote
+        clearable
+        reserve-keyword
         size="small"
-        style="width: 220px"
-        @change="gotoCode"
+        popper-class="stock-set-dropdown"
+        style="width: 260px"
+        :remote-method="onCollectionSearch"
+        :loading="dropdownLoading"
+        @change="onCollectionSelect"
+        @visible-change="onCollectionVisibleChange"
       >
         <el-option
-          v-for="(it, i) in stockSet.items"
+          v-for="(it, i) in dropdownOptions"
           :key="it.code"
           :value="it.code"
           :label="`${i + 1}. ${it.name || ''} ${it.code}`"
         />
+        <el-option
+          v-if="dropdownHasMore"
+          key="__more__"
+          value="__more__"
+          disabled
+          :label="dropdownLoading ? '加载中...' : '向下滚动加载更多'"
+        />
       </el-select>
-      <el-button size="small" text @click="stockSet.clear()">退出集合</el-button>
+      <el-button size="small" text circle title="退出集合" @click="stockSet.clear()">
+        <el-icon><Close /></el-icon>
+      </el-button>
     </div>
 
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
 
     <template v-else>
       <el-card shadow="never" v-loading="loading" :body-style="{ padding: '0' }">
-        <CandleChart :bars="bars" :zoom-start="zoomStart" :zoom-end="100" />
+        <CandleChart :bars="bars" :zoom-start="0" :zoom-end="100" />
       </el-card>
 
       <el-card shadow="never" class="ind-card" header="最新指标快照">
         <el-descriptions :column="4" border size="small">
-          <el-descriptions-item v-for="f in INDICATOR_FIELDS" :key="f.key" :label="f.label">
+          <el-descriptions-item v-for="f in visibleIndicatorFields" :key="f.key" :label="f.label">
             {{ latest ? fmt(latest[f.key]) : '—' }}
           </el-descriptions-item>
         </el-descriptions>
@@ -201,7 +563,7 @@ onMounted(async () => {
       </el-card>
 
       <!-- 买卖指标方案评估 -->
-      <el-card shadow="never" class="trade-card">
+      <el-card v-if="settings.showTradeCard" shadow="never" class="trade-card">
         <template #header>
           <div class="trade-head">
             <span>买卖信号评估</span>
@@ -256,10 +618,49 @@ onMounted(async () => {
       </el-card>
     </template>
     </div>
+
+    <PageSettingsDrawer v-model="settingsOpen" title="个股详情" :dirty="isDirty" @reset="reset">
+      <PageSettingSection title="图表设置" desc="结构参考同花顺，但颜色跟随当前主题。">
+        <div class="setting-item">
+          <div class="setting-label">复权模式</div>
+          <PageSegmented v-model="settings.adjustMode" :options="[
+            { label: '不复权', value: '' },
+            { label: '前复权', value: 'qfq' },
+            { label: '后复权', value: 'hfq' },
+          ]" />
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">默认K线范围</div>
+          <PageSegmented v-model="settings.viewDays" :options="[
+            { label: '120', value: 120 },
+            { label: '250', value: 250 },
+            { label: '500', value: 500 },
+            { label: '全部', value: 99999 },
+          ]" />
+        </div>
+      </PageSettingSection>
+
+      <PageSettingSection title="指标快照">
+        <PageToggleRow v-model="settings.indicators.ma20" label="MA20" />
+        <PageToggleRow v-model="settings.indicators.ma60" label="MA60" />
+        <PageToggleRow v-model="settings.indicators.dist_to_high_2y" label="距两年高(比)" />
+        <PageToggleRow v-model="settings.indicators.is_high_2y" label="两年新高" />
+        <PageToggleRow v-model="settings.indicators.is_bull_arrange" label="多头排列" />
+        <PageToggleRow v-model="settings.indicators.ma20_up" label="MA20 向上" />
+        <PageToggleRow v-model="settings.indicators.is_platform_breakout" label="平台突破" />
+        <PageToggleRow v-model="settings.indicators.is_vol_breakout" label="放量突破" />
+      </PageSettingSection>
+
+      <PageSettingSection title="辅助模块">
+        <PageToggleRow v-model="settings.showNav" label="显示集合导航条" />
+        <PageToggleRow v-model="settings.showTradeCard" label="显示买卖信号评估卡" />
+      </PageSettingSection>
+    </PageSettingsDrawer>
   </div>
 </template>
 
 <style scoped>
+.v-scroll { padding-right: 2px; }
 .page-head {
   display: flex;
   justify-content: space-between;
@@ -270,6 +671,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .title h2 {
   margin: 0;
@@ -280,9 +682,51 @@ onMounted(async () => {
   font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
+.quote-sub {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.up {
+  color: #f56c6c;
+}
+.down {
+  color: #2e9e5b;
+}
+.group-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.group-select-tag {
+  margin: 2px 4px 2px 0;
+  border-radius: 4px;
+  border-style: solid;
+  font-weight: 600;
+}
+.group-select-tag.more {
+  color: var(--el-text-color-secondary);
+  border-color: var(--el-border-color);
+  background: var(--el-fill-color-light);
+}
+.color-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
 .ops {
   display: flex;
   gap: 10px;
+}
+.setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setting-label {
+  font-size: 14px;
+  color: var(--page-settings-text-subtle);
 }
 .nav-bar {
   display: flex;
@@ -305,6 +749,30 @@ onMounted(async () => {
   margin-left: 6px;
   color: var(--el-text-color-secondary);
   font-variant-numeric: tabular-nums;
+}
+.group-card {
+  margin-top: 16px;
+}
+.group-edit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.group-tags,
+.group-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.box-tag {
+  border-radius: 4px;
+  font-weight: 600;
+}
+.muted {
+  color: #c0c4cc;
 }
 .ind-card,
 .trade-card {

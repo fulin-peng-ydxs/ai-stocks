@@ -14,6 +14,47 @@ body {
   color: var(--el-text-color-primary);
 }
 
+:root {
+  --chrome-bg: #f5f7fb;
+  --chrome-bg-soft: #ffffff;
+  --chrome-bg-soft-hover: #edf3ff;
+  --chrome-border: #d8e1ef;
+  --chrome-border-strong: #cad7ea;
+  --chrome-border-hover: #afc4e4;
+  --chrome-text: #42526b;
+  --chrome-text-strong: #0f172a;
+  --chrome-text-muted: #8a96a8;
+  --chrome-submenu-bg: #eef4fb;
+  --chrome-active-bg: linear-gradient(90deg, #dce9ff 0%, #edf4ff 100%);
+  --drawer-bg: #f7f9fc;
+  --drawer-card-bg: #ffffff;
+  --drawer-border: #d9e2ef;
+  --drawer-text: #334155;
+  --drawer-text-muted: #7b8798;
+  --page-settings-bg: #ffffff;
+  --page-settings-border: #e4e9f2;
+  --page-settings-shadow: rgba(31, 45, 70, 0.14);
+  --page-settings-section-bg: #f7f9fc;
+  --page-settings-section-border: #e6ebf2;
+  --page-settings-divider: #eef1f6;
+  --page-settings-text: #1f2937;
+  --page-settings-text-subtle: #5b6b80;
+  --page-settings-text-muted: #97a3b4;
+  --page-settings-accent: #ef604f;
+  --page-settings-dot-ring: #ffffff;
+  --page-settings-trigger-text: #728197;
+  --page-settings-trigger-hover-text: #1f2f46;
+  --page-settings-trigger-hover-bg: rgba(180, 194, 214, 0.22);
+  --page-settings-seg-bg: #f0f3f8;
+  --page-settings-seg-hover-bg: #e7ecf3;
+  --page-settings-seg-active-bg: #ffffff;
+  --page-settings-seg-active-border: #d7dee8;
+  --page-settings-switch-off: #c4ccd8;
+  --page-settings-tip-border: #cfd6e1;
+  --page-settings-footer-btn-bg: #f0f3f8;
+  --page-settings-footer-btn-hover-bg: #e7ecf3;
+}
+
 /* ── 全站自适应布局契约（禁止整页滚动；内容超高 → 成长区内部滚动）──
    .v-page  : 页面根（flex 纵向、占满内容区、overflow:hidden）。子元素默认按内容高（固定区）。
    .v-grow  : 表格成长区（占剩余高度）；内部 el-table 用 height="100%" 即表体内部滚动、表头吸顶。
@@ -74,4 +115,55 @@ html.dark {
   --el-border-color-lighter: #222834;
   --el-fill-color: #232b37; /* 分段条空槽底色 */
   --el-fill-color-light: #1f2632;
+  --chrome-bg: #1d2331;
+  --chrome-bg-soft: #262d3d;
+  --chrome-bg-soft-hover: #2d3650;
+  --chrome-border: #2a3142;
+  --chrome-border-strong: #313a4d;
+  --chrome-border-hover: #3a4660;
+  --chrome-text: #c9d1d9;
+  --chrome-text-strong: #ffffff;
+  --chrome-text-muted: #5a6371;
+  --chrome-submenu-bg: #171c28;
+  --chrome-active-bg: #2b3346;
+  --drawer-bg: #111722;
+  --drawer-card-bg: #182131;
+  --drawer-border: #20293a;
+  --drawer-text: #d5dbea;
+  --drawer-text-muted: #8c96a8;
+  --page-settings-bg: #212833;
+  --page-settings-border: #303948;
+  --page-settings-shadow: rgba(0, 0, 0, 0.42);
+  --page-settings-section-bg: rgba(60, 67, 78, 0.54);
+  --page-settings-section-border: #3a4250;
+  --page-settings-divider: rgba(96, 107, 122, 0.42);
+  --page-settings-text: #f0f3f8;
+  --page-settings-text-subtle: #a2adbc;
+  --page-settings-text-muted: #8a95a5;
+  --page-settings-accent: #ef604f;
+  --page-settings-dot-ring: #212833;
+  --page-settings-trigger-text: #818c9d;
+  --page-settings-trigger-hover-text: #f0f3f8;
+  --page-settings-trigger-hover-bg: rgba(255, 255, 255, 0.08);
+  --page-settings-seg-bg: rgba(130, 137, 148, 0.18);
+  --page-settings-seg-hover-bg: rgba(132, 140, 152, 0.28);
+  --page-settings-seg-active-bg: rgba(255, 255, 255, 0.12);
+  --page-settings-seg-active-border: #5d6774;
+  --page-settings-switch-off: #5f6877;
+  --page-settings-tip-border: #4d5664;
+  --page-settings-footer-btn-bg: rgba(112, 120, 133, 0.22);
+  --page-settings-footer-btn-hover-bg: rgba(128, 137, 151, 0.34);
+}
+
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.page-table-compact .el-table__cell {
+  padding-top: 6px;
+  padding-bottom: 6px;
 }

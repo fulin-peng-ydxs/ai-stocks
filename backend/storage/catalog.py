@@ -9,7 +9,13 @@
 
 from __future__ import annotations
 
+import pandas as pd
+
 from backend.storage.duckdb_client import DuckDBClient, get_client
+
+# 时序数据表：其"最新数据时间"应跟上全局最新交易日，据此判鲜活（M2.9 DM-D15）。
+# 非时序表（日历/日志/质检台账）鲜活度无意义，fresh=None。
+_TIMESERIES_TABLES: frozenset[str] = frozenset({"daily_bar", "daily_metrics", "index_bar"})
 
 # 每张基础数据表的元信息。
 # - date_col：用于取"最新数据时间"的列（None 表示该表无时间维度，取 NULL）。
@@ -49,10 +55,11 @@ TABLE_CATALOG: dict[str, dict] = {
             {"name": "pre_close", "type": "DOUBLE", "name_cn": "前收盘", "desc": "算涨跌停/涨跌幅"},
             {"name": "volume", "type": "BIGINT", "name_cn": "成交量", "desc": "股"},
             {"name": "amount", "type": "DOUBLE", "name_cn": "成交额", "desc": "元"},
-            {"name": "adj_factor", "type": "DOUBLE", "name_cn": "复权因子", "desc": "按需算前/后复权价"},
+            {"name": "adj_factor", "type": "DOUBLE", "name_cn": "复权因子(源)", "desc": "源端反推，含舍入噪声，留作审计/后复权绝对价"},
+            {"name": "adj_factor_clean", "type": "DOUBLE", "name_cn": "复权因子(去抖)", "desc": "去抖后分段恒定，前/后复权 K线价/涨跌幅实际用此列"},
             {"name": "turnover_rate", "type": "DOUBLE", "name_cn": "换手率", "desc": "%"},
             {"name": "is_st", "type": "BOOLEAN", "name_cn": "是否ST", "desc": "当日是否 ST（尽力而为）"},
-            {"name": "is_suspended", "type": "BOOLEAN", "name_cn": "是否停牌", "desc": "缺口检测区分停牌用"},
+            {"name": "is_suspended", "type": "BOOLEAN", "name_cn": "是否停牌", "desc": "历史遗留列(恒False)；停牌实际以「开市日无行情」推导，确认停牌记于 stock_suspension 表"},
             {"name": "limit_status", "type": "TINYINT", "name_cn": "涨跌停", "desc": "0 正常 / 1 涨停 / -1 跌停"},
             {"name": "is_one_word", "type": "BOOLEAN", "name_cn": "一字板", "desc": "是否一字涨跌停"},
         ],
@@ -87,7 +94,7 @@ TABLE_CATALOG: dict[str, dict] = {
     },
     "trade_calendar": {
         "name_cn": "交易日历",
-        "purpose": "开市日判定，缺口检测（DM-D9）与点时安全的基础。",
+        "purpose": "开市日判定，缺口检测与点时安全的基础。",
         "date_col": "trade_date",
         "relations": ["被 daily_bar/index_bar 引用"],
         "fields": [
@@ -97,7 +104,7 @@ TABLE_CATALOG: dict[str, dict] = {
     },
     "data_update_log": {
         "name_cn": "采集更新日志",
-        "purpose": "每次采集留痕（表/源/区间/行数/状态），支持断点续跑与采集时间线展示（FR-DM-6）。",
+        "purpose": "每次采集留痕（表/源/区间/行数/状态），支持断点续跑与采集时间线展示。",
         "date_col": "updated_at",
         "relations": ["按 table_name 指向各数据表"],
         "fields": [
@@ -114,15 +121,15 @@ TABLE_CATALOG: dict[str, dict] = {
     },
     "data_quality_issue": {
         "name_cn": "数据质量问题",
-        "purpose": "质检发现的问题台账（FR-DM-4）：类型/严重度/状态，支持单条重拉/重算修复闭环。",
+        "purpose": "质检发现的问题台账：类型/严重度/状态，支持单条重拉/重算修复闭环。",
         "date_col": "detected_at",
         "relations": ["code → stock_basic", "(code, trade_date) → daily_bar"],
         "fields": [
             {"name": "id", "type": "BIGINT", "name_cn": "序号", "desc": "自增"},
             {"name": "code", "type": "VARCHAR", "name_cn": "股票代码", "desc": "涉及股票"},
             {"name": "trade_date", "type": "DATE", "name_cn": "交易日", "desc": "涉及日期（可空）"},
-            {"name": "issue_type", "type": "VARCHAR", "name_cn": "问题类型", "desc": "ohl_repaired/abnormal_change/missing_or_suspended/adj_jump"},
-            {"name": "severity", "type": "VARCHAR", "name_cn": "严重度", "desc": "high/mid/low（DM-D10）"},
+            {"name": "issue_type", "type": "VARCHAR", "name_cn": "问题类型", "desc": "null_close/ohl_repaired(L1) / mv_missing(L2) / abnormal_change/adj_jump(L3) / data_gap/stale(L4)"},
+            {"name": "severity", "type": "VARCHAR", "name_cn": "严重度", "desc": "high/mid/low"},
             {"name": "status", "type": "VARCHAR", "name_cn": "状态", "desc": "open/fixing/resolved/ignored"},
             {"name": "detail", "type": "VARCHAR", "name_cn": "详情", "desc": "问题描述"},
             {"name": "detected_at", "type": "TIMESTAMP", "name_cn": "检出时间", "desc": ""},
@@ -145,6 +152,11 @@ def build_catalog(client: DuckDBClient | None = None) -> list[dict]:
     返回 [{table, name_cn, purpose, rows, latest_time, fields, relations, open_issues}]。
     """
     client = client or get_client()
+    # 全局最新交易日：时序表鲜活度的基准（最新时间为空或滞后 → 不算正常，DM-D15）。
+    global_latest = None
+    if _table_exists(client, "daily_bar"):
+        gt = client.query_df("SELECT max(trade_date) AS t FROM daily_bar").iloc[0]["t"]
+        global_latest = None if gt is None or str(gt) == "NaT" else str(pd.Timestamp(gt).date())
     # 一次性取各表的未解决质检数（按 issue 涉及表归类有难度，这里给全局 open 数附在相关表）
     out: list[dict] = []
     for table, meta in TABLE_CATALOG.items():
@@ -162,12 +174,20 @@ def build_catalog(client: DuckDBClient | None = None) -> list[dict]:
             open_issues = int(client.query_df(
                 "SELECT count(*) AS n FROM data_quality_issue WHERE status='open'"
             ).iloc[0]["n"])
+        # 鲜活度：仅时序数据表参与判定；最新时间为空 → False（不再误判"正常"）。
+        fresh = None
+        if table in _TIMESERIES_TABLES:
+            if latest_time is None:
+                fresh = False
+            else:
+                fresh = str(pd.Timestamp(latest_time).date()) == global_latest
         out.append({
             "table": table,
             "name_cn": meta["name_cn"],
             "purpose": meta["purpose"],
             "rows": rows,
             "latest_time": latest_time,
+            "fresh": fresh,
             "fields": meta["fields"],
             "relations": meta["relations"],
             "open_issues": open_issues,

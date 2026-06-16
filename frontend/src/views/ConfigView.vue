@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   deleteIndicatorDef,
@@ -19,9 +19,23 @@ import {
   type ScoreRunRow,
 } from '@/api/scoreProfile'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
+import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import PageToggleRow from '@/components/PageToggleRow.vue'
+import { usePageSettings } from '@/composables/usePageSettings'
 import { getSettingsView, saveSettings, type SettingGroup } from '@/api/data'
 
-const tab = ref<'score' | 'tech' | 'trade' | 'system'>('score')
+const settingsOpen = ref(false)
+const configDefaults = {
+  tab: 'score' as 'score' | 'tech' | 'trade' | 'system',
+  compact: false,
+  techSort: 'catOrder' as 'catOrder' | 'name_cn' | 'srcLabel',
+  previewExpanded: true,
+}
+const { settings, isDirty, reset } = usePageSettings('config', configDefaults)
+const tab = ref<'score' | 'tech' | 'trade' | 'system'>(settings.tab)
 
 // ── 系统设置（FR-DM-12：真实参数 Web 可编辑，写 app_config 覆盖层）──
 const sysGroups = ref<SettingGroup[]>([])
@@ -58,6 +72,7 @@ async function saveSystem() {
   } catch { /* 拦截器弹错（含校验失败 400） */ } finally { sysSaving.value = false }
 }
 function onTab(name: unknown) { if (name === 'system' && !sysGroups.value.length) loadSystem() }
+watch(() => settings.tab, (value) => { tab.value = value })
 
 // ── 技术指标注册表（含内置 + 自定义）──
 const registry = ref<IndicatorDef[]>([])
@@ -103,10 +118,13 @@ const techRows = computed(() => {
       typeLabel: d.dtype === 'bool' ? '布尔' : '数值',
     }
   })
-  if (!q) return rows
-  return rows.filter((d) =>
+  const filtered = !q ? rows : rows.filter((d) =>
     [d.name_cn, d.key, d.desc, ...(d.categories ?? [])].join(' ').toLowerCase().includes(q),
   )
+  if (settings.techSort === 'name_cn') filtered.sort((a, b) => a.name_cn.localeCompare(b.name_cn, 'zh'))
+  else if (settings.techSort === 'srcLabel') filtered.sort((a, b) => a.srcLabel.localeCompare(b.srcLabel, 'zh'))
+  else filtered.sort((a, b) => a.catOrder - b.catOrder)
+  return filtered
 })
 async function onCategoriesChange(key: string, cats: string[]) {
   await setIndicatorCategories(key, cats)
@@ -490,6 +508,7 @@ async function previewSide(side: 'buy' | 'sell') {
 }
 
 onMounted(async () => {
+  tab.value = settings.tab
   try {
     await reloadRegistry()
   } catch (e) { console.error('[config] reloadRegistry 失败', e) }
@@ -508,12 +527,17 @@ onMounted(async () => {
 
 <template>
   <div class="config v-page">
-    <h2 class="page-title">配置管理</h2>
-    <div class="v-scroll">
+    <div class="page-head">
+      <h2 class="page-title">配置管理</h2>
+      <div class="page-head-actions">
+        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+      </div>
+    </div>
+    <div class="v-grow config-body">
     <el-tabs v-model="tab" class="tabs" @tab-change="onTab">
       <!-- ============ 评分规则 ============ -->
       <el-tab-pane label="评分规则" name="score">
-        <div class="score-layout">
+        <div class="score-layout pane-fill">
           <!-- 方案列表 -->
           <aside class="prof-list">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
@@ -533,7 +557,7 @@ onMounted(async () => {
           </aside>
 
           <!-- 编辑器 -->
-          <section class="editor">
+          <section class="editor editor-score">
             <div class="ed-head">
               <el-input v-model="editId" :disabled="!isNew" placeholder="方案ID(英文)" style="width: 180px" />
               <el-input v-model="editName" placeholder="方案名称" style="width: 200px" />
@@ -646,7 +670,8 @@ onMounted(async () => {
               <TradeDatePicker v-model="runDate" />
               <el-button :loading="running" type="success" plain @click="tryRun">▶ 用当前配置试算</el-button>
             </div>
-            <el-table v-if="runRows.length" :data="runRows" size="small" border max-height="360" class="run-table">
+            <div v-if="settings.previewExpanded && runRows.length" class="run-table-wrap">
+            <el-table :data="runRows" size="small" border height="100%" class="run-table" :class="{ 'page-table-compact': settings.compact }">
               <el-table-column label="#" width="46">
                 <template #default="{ row }">{{ row.rank }}</template>
               </el-table-column>
@@ -678,12 +703,14 @@ onMounted(async () => {
                 </template>
               </el-table-column>
             </el-table>
+            </div>
           </section>
         </div>
       </el-tab-pane>
 
       <!-- ============ 技术指标 ============ -->
       <el-tab-pane label="技术指标" name="tech">
+        <div class="pane-fill tech-pane">
         <div class="tech-head">
           <p class="hint" style="margin: 0">
             技术指标定义（动态实时计算,无指标值表）。内置不可删仅可启停;自定义=一段带参数的表达式,
@@ -695,7 +722,8 @@ onMounted(async () => {
             <el-button type="primary" plain size="small" @click="openNewDef">＋ 新建自定义指标</el-button>
           </div>
         </div>
-        <el-table :data="techRows" size="small" border max-height="560"
+        <div class="v-grow tech-table-wrap">
+        <el-table :data="techRows" size="small" border height="100%" :class="{ 'page-table-compact': settings.compact }"
                   :default-sort="{ prop: 'catOrder', order: 'ascending' }">
           <el-table-column prop="name_cn" label="名称" width="130" sortable />
           <el-table-column prop="key" label="标识" width="120" />
@@ -751,6 +779,7 @@ onMounted(async () => {
             </template>
           </el-table-column>
         </el-table>
+        </div>
 
         <!-- 新建自定义指标 -->
         <el-dialog v-model="defDialog" title="新建自定义指标" width="560px">
@@ -809,6 +838,7 @@ onMounted(async () => {
             <el-button type="primary" @click="submitNewDef">保存</el-button>
           </template>
         </el-dialog>
+        </div>
       </el-tab-pane>
 
       <!-- ============ 买卖指标 ============ -->
@@ -942,7 +972,7 @@ onMounted(async () => {
       <el-tab-pane label="系统设置" name="system">
         <div class="sys-wrap" v-loading="sysLoading">
           <div class="sys-head">
-            <span class="sys-tip">数据源 / 股票池 / 回测成本 / 选股数量 / 定时调度等运行参数，改后即时生效。</span>
+            <span class="sys-tip">数据源 / 股票池 / 回测成本 / 选股数量等运行参数，改后即时生效。</span>
             <el-button type="primary" :loading="sysSaving" :disabled="!sysDirty" @click="saveSystem">保存并生效</el-button>
           </div>
           <el-card v-for="g in sysGroups" :key="g.key" shadow="never" class="sys-group" :header="g.label">
@@ -966,18 +996,78 @@ onMounted(async () => {
       </el-tab-pane>
     </el-tabs>
     </div>
+
+    <PageSettingsDrawer v-model="settingsOpen" title="配置管理" :dirty="isDirty" @reset="reset">
+      <PageSettingSection title="界面默认项">
+        <div class="setting-item">
+          <div class="setting-label">默认 Tab</div>
+          <PageSegmented v-model="settings.tab" :options="[
+            { label: '评分', value: 'score' },
+            { label: '指标', value: 'tech' },
+            { label: '买卖', value: 'trade' },
+            { label: '系统', value: 'system' },
+          ]" />
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">技术指标排序</div>
+          <PageSegmented v-model="settings.techSort" :options="[
+            { label: '分类', value: 'catOrder' },
+            { label: '名称', value: 'name_cn' },
+            { label: '来源', value: 'srcLabel' },
+          ]" />
+        </div>
+        <PageToggleRow v-model="settings.previewExpanded" label="默认显示试算结果区" />
+        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
+      </PageSettingSection>
+    </PageSettingsDrawer>
   </div>
 </template>
 
 <style scoped>
 .sys-wrap { max-width: 760px; }
-.sys-head { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+.sys-head {
+  display: flex; align-items: center; gap: 16px;
+  position: sticky; top: 0; z-index: 2;  /* 保存并生效 按钮随内容滚动时保持吸顶可见 */
+  padding: 4px 0 14px;
+  background: var(--el-bg-color-page);
+}
 .sys-tip { font-size: 12px; color: var(--el-text-color-secondary); flex: 1; }
 .sys-group { margin-bottom: 14px; }
 .sys-default { font-size: 12px; color: var(--el-text-color-secondary); margin-left: 12px; }
 .ov-tag { margin-left: 6px; }
+.page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.config-body {
+  min-height: 0;
+}
+.tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.tabs :deep(.el-tabs__header) {
+  flex: 0 0 auto;
+  margin-bottom: 12px;
+}
+.tabs :deep(.el-tabs__content) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+/* pane 钉死为内容区高度（而非 min-height），让 .v-grow 表格能拿到确定高度做表体内滚；
+   表单类 tab 内容超高时仍由 .el-tabs__content(overflow:auto) 兜底滚动，单一滚动轴 */
+.tabs :deep(.el-tab-pane) {
+  height: 100%;
+}
+.pane-fill {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.setting-item { display: flex; flex-direction: column; gap: 8px; }
+.setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
 .page-title {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 20px;
 }
 .hint {
@@ -988,6 +1078,7 @@ onMounted(async () => {
 .score-layout {
   display: flex;
   gap: 16px;
+  min-height: 0;  /* 评分 tab 下作为成长列容器，需可被钳定，editor 的 flex:1 才能正确分高 */
 }
 .prof-list {
   width: 190px;
@@ -1019,6 +1110,11 @@ onMounted(async () => {
 .editor {
   flex: 1;
   min-width: 0;
+}
+.editor-score {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .ed-head {
   display: flex;
@@ -1073,6 +1169,12 @@ onMounted(async () => {
   gap: 12px;
   margin: 22px 0 10px;
 }
+.run-table-wrap {
+  flex: 1 1 auto;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
 .run-title {
   font-weight: 600;
   font-size: 15px;
@@ -1110,6 +1212,12 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+.tech-pane {
+  gap: 12px;
+}
+.tech-table-wrap {
+  min-height: 360px;
 }
 .expr {
   font-family: var(--el-font-family-mono, monospace);

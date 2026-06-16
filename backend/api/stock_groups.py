@@ -17,6 +17,7 @@ class GroupCreate(BaseModel):
     name: str
     group_date: str | None = None      # YYYY-MM-DD，默认最新交易日
     description: str = ""
+    color: str | None = None
     codes: list[str] | None = None
 
 
@@ -24,6 +25,7 @@ class GroupMeta(BaseModel):
     name: str | None = None
     group_date: str | None = None
     description: str | None = None
+    color: str | None = None
 
 
 class MembersBody(BaseModel):
@@ -45,15 +47,23 @@ def list_groups() -> ApiResponse:
 
 
 @router.get("/stock-groups/{gid}", response_model=ApiResponse)
-def get_group(gid: str) -> ApiResponse:
-    g = StockGroupRepo().get(gid)
+def get_group(gid: str, page: int = 1, size: int = 50, q: str | None = None,
+              sort_by: str = "add_date", sort_order: str = "asc") -> ApiResponse:
+    g = StockGroupRepo().get(
+        gid,
+        page=page,
+        size=size,
+        q=q,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
     return ok(g) if g else err(404, "分组不存在")
 
 
 @router.post("/stock-groups", response_model=ApiResponse)
 def create_group(body: GroupCreate) -> ApiResponse:
     try:
-        gid = StockGroupRepo().create(body.name, _d(body.group_date), body.description, body.codes)
+        gid = StockGroupRepo().create(body.name, _d(body.group_date), body.description, body.codes, body.color)
     except ValueError as e:
         return err(400, str(e))
     return ok({"id": gid, "msg": "已创建"})
@@ -61,13 +71,16 @@ def create_group(body: GroupCreate) -> ApiResponse:
 
 @router.patch("/stock-groups/{gid}", response_model=ApiResponse)
 def update_group(gid: str, body: GroupMeta) -> ApiResponse:
-    StockGroupRepo().update_meta(gid, body.name, _d(body.group_date), body.description)
+    StockGroupRepo().update_meta(gid, body.name, _d(body.group_date), body.description, body.color)
     return ok({"id": gid, "msg": "已更新"})
 
 
 @router.delete("/stock-groups/{gid}", response_model=ApiResponse)
 def delete_group(gid: str) -> ApiResponse:
-    StockGroupRepo().delete(gid)
+    try:
+        StockGroupRepo().delete(gid)
+    except ValueError as e:
+        return err(400, str(e))
     return ok({"msg": "已删除"})
 
 

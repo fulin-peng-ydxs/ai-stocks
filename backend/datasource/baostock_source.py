@@ -11,6 +11,7 @@ baostock 优势（探针实测）：
 
 from __future__ import annotations
 
+import time
 from datetime import date
 
 import pandas as pd
@@ -18,7 +19,7 @@ import pandas as pd
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 from backend.common.timeutil import fmt_date, to_date
-from backend.config import get_settings
+from backend.config import get_effective_settings, get_settings
 from backend.datasource.akshare_source import classify_board, to_full_code
 from backend.datasource.base import DataSource, rate_limited, with_retry
 
@@ -26,6 +27,12 @@ log = get_logger("datasource.baostock")
 
 _s = get_settings().datasource
 _MIN_INTERVAL = 1.0 / max(_s.rate_limit_per_sec, 0.1)
+
+# 进程级单例 + 会话复用：baostock 登录 ~6s，且 bs.login/logout 是库级全局单会话。若每个任务/每只
+# 股都新建实例重登，既慢又会互相踩（一个实例析构 logout 掉全局会话）。统一走 shared_baostock()。
+_SHARED: "BaostockSource | None" = None
+# 会话复用上限：超过则重登——_collect 在会话失效时返回空表(不抛错)，靠 TTL 重登从"过期后一直空"恢复。
+_LOGIN_TTL_SEC = 25 * 60
 
 
 def bs_to_full(bs_code: str) -> str:
@@ -55,16 +62,47 @@ class BaostockSource(DataSource):
 
     def __init__(self):
         self._logged_in = False
+        self._login_at = 0.0   # 上次登录的 monotonic 时刻，配合 _LOGIN_TTL_SEC 触发重登
+        # 限流/重试读生效配置(含前端覆盖)，前端改「请求限流/重试」对新建实例即时生效；
+        # 失败回落导入期默认。（baostock 登录态为进程级单连接，仍只能串行使用。）
+        try:
+            eff = get_effective_settings().datasource
+            self._min_interval_sec = 1.0 / max(eff.rate_limit_per_sec, 0.1)
+            self._max_retries = eff.max_retries
+            self._retry_backoff_sec = eff.retry_backoff_sec
+        except Exception:  # noqa: BLE001
+            self._min_interval_sec = _MIN_INTERVAL
 
     def _ensure_login(self) -> None:
-        if self._logged_in:
-            return
         import baostock as bs
 
+        now = time.monotonic()
+        if self._logged_in and (now - self._login_at) < _LOGIN_TTL_SEC:
+            self._apply_socket_timeout()
+            return
+        if self._logged_in:   # 已超过会话复用上限 → 先登出再重登，刷新会话（防长时空闲后服务端已失效）
+            try:
+                bs.logout()
+            except Exception:  # noqa: BLE001
+                pass
+            self._logged_in = False
         lg = bs.login()
         if lg.error_code != "0":
             raise DataSourceError(f"baostock 登录失败: {lg.error_msg}")
         self._logged_in = True
+        self._login_at = now
+        self._apply_socket_timeout()
+
+    def _apply_socket_timeout(self) -> None:
+        """baostock uses a process-global raw socket; set a read timeout explicitly."""
+        try:
+            import baostock.common.context as ctx
+
+            sock = getattr(ctx, "default_socket", None)
+            if sock is not None:
+                sock.settimeout(float(get_effective_settings().datasource.socket_timeout_sec))
+        except Exception as e:  # noqa: BLE001
+            log.debug("设置 baostock socket timeout 失败: %s", e)
 
     def close(self) -> None:
         if self._logged_in:
@@ -168,6 +206,13 @@ class BaostockSource(DataSource):
         raw["volume"] = pd.to_numeric(raw["volume"], errors="coerce").fillna(0).astype("int64")
         raw["trade_date"] = raw["date"].apply(to_date)
 
+        # 停牌日过滤（兜底源根治"直线K线"）：baostock tradestatus 1=正常交易 0=停牌。
+        # 停牌日 baostock 仍返回行（价格横在前收、量为0），若入库即成一串横线，且破坏全系统
+        # "有行=可交易 / 无行=停牌"口径。此处只保留交易状态行，停牌交由 stock_suspension 记账。
+        raw = raw[raw["tradestatus"].astype(str) == "1"]
+        if raw.empty:
+            return pd.DataFrame()
+
         # 复权因子 = 后复权收盘 / 不复权收盘
         try:
             hfq = self._k_data(code, start, end, "1")  # 1=后复权
@@ -244,3 +289,12 @@ class BaostockSource(DataSource):
                 "is_open": df["is_trading_day"] == "1",
             }
         )
+
+
+def shared_baostock() -> "BaostockSource":
+    """进程级单例 baostock 源（复用登录会话）。所有 get_source('baostock') 经此返回同一实例，
+    避免每个任务/每只股重登 ~6s；会话型，调用方仍经 _BAO_FALLBACK_LOCK 串行使用。"""
+    global _SHARED
+    if _SHARED is None:
+        _SHARED = BaostockSource()
+    return _SHARED

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date, timedelta
 
 from backend.common.logging import get_logger
 from backend.config import get_settings
@@ -22,13 +23,38 @@ from backend.config import get_settings
 log = get_logger("cli")
 
 
-def cmd_serve(_: argparse.Namespace) -> int:
+class CliTaskContext:
+    def check_cancel(self) -> None:
+        return None
+
+    def log(self, message: str, level: str = "info") -> None:
+        # flush=True：命令行 stdout 重定向到文件时默认块缓冲，不刷新会让进度
+        # 长时间积压在缓冲区里"看不到"（黑盒）。强制刷新让 CLI 实时可见。
+        print(message, flush=True)
+
+    def progress(self, progress: float, message: str) -> None:
+        print(f"{progress * 100:.1f}% {message}", flush=True)
+
+    def set_checkpoint(self, **_: object) -> None:
+        return None
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
     s = get_settings()
-    log.info("启动服务 http://%s:%s", s.server.host, s.server.port)
+    reload = bool(getattr(args, "reload", False))
+    # --host 覆盖配置：dev 通常绑 127.0.0.1（仅本机/供前端代理），prod 绑 0.0.0.0（对外）。
+    host = getattr(args, "host", None) or s.server.host
+    log.info("启动服务 http://%s:%s%s", host, s.server.port, "（热重载）" if reload else "")
     uvicorn.run(
-        "backend.main:app", host=s.server.host, port=s.server.port, log_level=s.server.log_level
+        "backend.main:app",
+        host=host,
+        port=s.server.port,
+        log_level=s.server.log_level,
+        # --reload：监控 backend 源码目录，改 .py 自动重启 worker（开发期热更，无需手动重启）。
+        reload=reload,
+        reload_dirs=["backend"] if reload else None,
     )
     return 0
 
@@ -70,7 +96,8 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     from backend.services import IngestionService
 
     codes = _resolve_codes(args)
-    result = IngestionService().backfill(codes=codes, years=args.years)
+    result = IngestionService().backfill(
+        codes=codes, years=args.years, concurrency=getattr(args, "concurrency", None))
     print(f"回填完成: {result}")
     return 0
 
@@ -88,8 +115,55 @@ def cmd_valuation(args: argparse.Namespace) -> int:
     from backend.services import IngestionService
 
     codes = _resolve_codes(args)
-    result = IngestionService().ingest_valuation(codes=codes, years=args.years)
+    svc = IngestionService()
+    conc = getattr(args, "concurrency", None)
+    if getattr(args, "fill_gaps", False):
+        # 一次性历史回补（WS2）：补在市股 total_mv 缺口（逐缺口驱动，不受整股断点跳过限制）
+        result = svc.ingest_valuation_gaps(codes=codes, concurrency=conc)
+        print(f"市值缺口回补完成: {result}")
+        return 0
+    result = svc.ingest_valuation(codes=codes, years=args.years, concurrency=conc)
     print(f"估值入库完成: {result}")
+    return 0
+
+
+def cmd_rebuild_price_factors(args: argparse.Namespace) -> int:
+    from backend.services import IngestionService
+
+    codes = _resolve_codes(args)
+    result = IngestionService().rebuild_price_factors(codes=codes)
+    print(f"干净复权因子/前收盘重算完成: {result}")
+    return 0
+
+
+def cmd_refetch_daily(args: argparse.Namespace) -> int:
+    from backend.services import IngestionService
+    from backend.storage import get_client
+
+    codes = _resolve_codes(args)
+    end = date.fromisoformat(args.end) if args.end else date.today()
+    if args.start:
+        start = date.fromisoformat(args.start)
+    else:
+        c = get_client()
+        if codes:
+            placeholders = ",".join(["?"] * len(codes))
+            df = c.query_df(
+                f"SELECT min(trade_date) AS d FROM daily_bar WHERE code IN ({placeholders})",
+                codes,
+            )
+        else:
+            df = c.query_df("SELECT min(trade_date) AS d FROM daily_bar")
+        if not df.empty and df.iloc[0]["d"] is not None:
+            import pandas as pd
+
+            start = pd.Timestamp(df.iloc[0]["d"]).date()
+        else:
+            start = end - timedelta(days=365 * 5)
+    result = IngestionService().ingest_date(
+        start=start, end=end, codes=codes, ctx=CliTaskContext(),
+        concurrency=getattr(args, "concurrency", None))
+    print(f"日线重拉完成: {result}")
     return 0
 
 
@@ -182,8 +256,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
 def cmd_daily(args: argparse.Namespace) -> int:
     from backend.services.pipeline import DailyPipeline
 
-    res = DailyPipeline().run(skip_update=args.skip_update,
-                              presets=not args.no_presets, verify=args.verify)
+    res = DailyPipeline().run(skip_update=args.skip_update, verify=args.verify)
     print(f"=== 一键日常流程 {'✓' if res['ok'] else '✗'}  run_date={res.get('run_date','-')} ===")
     for s in res["steps"]:
         mark = "✓" if s["status"] == "ok" else "✗"
@@ -247,17 +320,68 @@ def cmd_delisted(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_purge_suspension_bars(args: argparse.Namespace) -> int:
+    """清理误插入 daily_bar 的停牌日行（volume=0：停牌无成交，却被兜底源写成"直线"行情）。
+
+    默认仅预览（dry-run）；--apply 才执行：先把这些 (code, trade_date) 记入 stock_suspension
+    （收敛，质检不再反复上报），再从 daily_bar 与 daily_metrics 删除。
+    ⚠️ 写操作需独占库——先停掉占用 data/ai_stocks.duckdb 的服务再跑。
+    """
+    from datetime import datetime
+
+    from backend.storage import get_client
+
+    c = get_client()
+    cond = "(volume = 0 OR volume IS NULL)"
+    s = c.query_df(
+        f"SELECT count(*) AS rows, count(DISTINCT code) AS codes, "
+        f"min(trade_date) AS d0, max(trade_date) AS d1 FROM daily_bar WHERE {cond}").iloc[0]
+    n = int(s["rows"])
+    if n == 0:
+        print("未发现 volume=0 的停牌日行，daily_bar 已干净。")
+        return 0
+    print(f"待清理停牌日行：{n} 行，涉及 {int(s['codes'])} 只股票，日期 {s['d0']} ~ {s['d1']}")
+    print("样例（前 10 行，应都是 volume=0 的平板行）：")
+    print(c.query_df(
+        f"SELECT code, trade_date, open, high, low, close, volume "
+        f"FROM daily_bar WHERE {cond} ORDER BY code, trade_date LIMIT 10").to_string(index=False))
+    if not args.apply:
+        print("\n[dry-run] 未做任何改动。确认无误后加 --apply 执行（记入 stock_suspension 并删除）。")
+        return 0
+    # 1) 记入 stock_suspension（仅写库中尚无的，去重）——删除前先记，保证收敛
+    c.execute(
+        "INSERT INTO stock_suspension (code, trade_date, confirmed_at) "
+        f"SELECT DISTINCT b.code, b.trade_date, ? FROM daily_bar b WHERE {cond} "
+        "AND NOT EXISTS (SELECT 1 FROM stock_suspension s "
+        "WHERE s.code = b.code AND s.trade_date = b.trade_date)", [datetime.now()])
+    # 2) 删对应 daily_metrics（停牌日的衍生市值同样无意义）——须在删 daily_bar 之前
+    c.execute(
+        "DELETE FROM daily_metrics WHERE EXISTS (SELECT 1 FROM daily_bar b "
+        "WHERE b.code = daily_metrics.code AND b.trade_date = daily_metrics.trade_date "
+        "AND (b.volume = 0 OR b.volume IS NULL))")
+    # 3) 删 daily_bar 停牌日行
+    c.execute(f"DELETE FROM daily_bar WHERE {cond}")
+    print(f"已完成：记入 stock_suspension 并从 daily_bar/daily_metrics 删除 {n} 行停牌日数据。")
+    print("建议随后在应用「任务中心」跑一次『刷新评分缓存』(recompute)，让受影响榜单/方案下次自动重算；"
+          "若关心指标，可对受影响股重算指标。")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ai-stocks", description="A股趋势龙头选股系统 CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("serve", help="启动 Web 服务").set_defaults(func=cmd_serve)
+    p_serve = sub.add_parser("serve", help="启动 Web 服务")
+    p_serve.add_argument("--reload", action="store_true", help="开发期热重载：改后端 .py 自动重启 worker")
+    p_serve.add_argument("--host", help="覆盖监听地址（默认取 config.server.host；dev 建议 127.0.0.1，prod 用 0.0.0.0）")
+    p_serve.set_defaults(func=cmd_serve)
     sub.add_parser("health", help="本地自检").set_defaults(func=cmd_health)
 
     p_bf = sub.add_parser("backfill", help="全量回填数据（M1）")
     p_bf.add_argument("--codes", help="逗号分隔的代码子集（如 600000.SH,000001.SZ）")
     p_bf.add_argument("--limit", type=int, help="只取列表前 N 只（小批量验证）")
     p_bf.add_argument("--years", type=int, default=None, help="历史年数（默认按配置 5 年）")
+    p_bf.add_argument("--concurrency", type=int, default=None, help="并发线程数（默认 1 串行；>1 提速但总速率≈N×限流）")
     p_bf.set_defaults(func=cmd_backfill)
 
     p_up = sub.add_parser("update", help="增量更新数据（M1）")
@@ -276,7 +400,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_val.add_argument("--codes", help="逗号分隔代码子集")
     p_val.add_argument("--limit", type=int, help="只取前 N 只")
     p_val.add_argument("--years", type=int, default=None, help="历史年数（默认配置5年）")
+    p_val.add_argument("--concurrency", type=int, default=None, help="并发线程数（默认 1 串行；>1 提速但总速率≈N×限流）")
+    p_val.add_argument("--fill-gaps", action="store_true", dest="fill_gaps",
+                       help="一次性历史回补：补在市股 total_mv 缺口（逐缺口驱动，不受整股断点跳过限制）")
     p_val.set_defaults(func=cmd_valuation)
+
+    p_pf = sub.add_parser("rebuild-price-factors", help="全序列重算 adj_factor_clean/pre_close/涨跌停标记（不联网，不改源 adj_factor）")
+    p_pf.add_argument("--codes", help="逗号分隔代码子集")
+    p_pf.add_argument("--limit", type=int, help="只取列表前 N 只")
+    p_pf.set_defaults(func=cmd_rebuild_price_factors)
+
+    p_rf = sub.add_parser("refetch-daily", help="重新联网拉取日线并覆盖入库（恢复源 adj_factor）")
+    p_rf.add_argument("--codes", help="逗号分隔代码子集")
+    p_rf.add_argument("--limit", type=int, help="只取列表前 N 只")
+    p_rf.add_argument("--start", help="开始日 YYYY-MM-DD（默认取目标股票已入库最早日）")
+    p_rf.add_argument("--end", help="结束日 YYYY-MM-DD（默认今天）")
+    p_rf.add_argument("--concurrency", type=int, help="并发线程数（默认 1 串行；>1 提速但总请求速率≈N×限流）")
+    p_rf.set_defaults(func=cmd_refetch_daily)
 
     p_ind = sub.add_parser("indicators", help="计算全市场指标（M2）")
     p_ind.add_argument("--codes", help="逗号分隔代码子集")
@@ -311,9 +451,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_vf = sub.add_parser("verify-data", help="数据正确性+完整性系统性核查（M1）")
     p_vf.add_argument("--no-cross", action="store_true", help="跳过独立数据源交叉验证（不联网）")
     p_vf.set_defaults(func=cmd_verify_data)
-    p_daily = sub.add_parser("daily", help="一键日常流程：更新→指标→榜单→预设筛选→（可选）数据体检")
+    p_daily = sub.add_parser("daily", help="一键日常流程：更新行情(含补市值)→数据质检→（可选）数据体检")
     p_daily.add_argument("--skip-update", action="store_true", help="跳过增量更新（数据已最新时，最省时）")
-    p_daily.add_argument("--no-presets", action="store_true", help="不跑预设筛选")
     p_daily.add_argument("--verify", action="store_true", help="末尾跑数据体检")
     p_daily.set_defaults(func=cmd_daily)
 
@@ -325,6 +464,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument("--top", type=int, help="Top N 持仓")
     p_bt.add_argument("--no-persist", action="store_true", help="不落库（只算不存）")
     p_bt.set_defaults(func=cmd_backtest)
+
+    p_purge = sub.add_parser(
+        "purge-suspension-bars",
+        help="清理误插入 daily_bar 的停牌日行(volume=0)：默认预览，--apply 才执行")
+    p_purge.add_argument("--apply", action="store_true",
+                         help="确认执行（默认仅 dry-run 预览，不改数据）")
+    p_purge.set_defaults(func=cmd_purge_suspension_bars)
     return parser
 
 

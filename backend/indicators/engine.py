@@ -88,7 +88,8 @@ class IndicatorEngine:
             params += list(codes)
         params.append(lookback)
         df = self.c.query_df(
-            "SELECT code, trade_date, open, high, low, close, pre_close, volume, turnover_rate, adj_factor "
+            "SELECT code, trade_date, open, high, low, close, pre_close, volume, turnover_rate, "
+            "       COALESCE(adj_factor_clean, adj_factor) AS adj_factor "
             "FROM (SELECT *, row_number() OVER (PARTITION BY code ORDER BY trade_date DESC) AS _rn "
             f"      FROM daily_bar WHERE {where}) WHERE _rn <= ? ORDER BY code, trade_date",
             params,
