@@ -8,7 +8,8 @@
       "WebSearch",
       "Glob",
       "Grep",
-      "mcp__aiot-dm-database__*"
+      "mcp__aiot-dm-database__*",
+      "mcp__Claude_Preview__preview_start"
     ],
     "deny": [
       "Bash(rm -rf /)",

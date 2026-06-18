@@ -212,13 +212,18 @@ class BacktestService:
         return not exists.empty
 
     # ── 读取 ──
-    def list_runs(self, limit: int = 50, kind: str | None = None) -> list[dict]:
-        """历史记录。kind 给定则只列该类（strategy / score_check），策略与评分验证不混展。"""
+    def list_runs(self, limit: int | None = None, kind: str | None = None) -> list[dict]:
+        """历史记录。kind 给定则只列该类（strategy / score_check），策略与评分验证不混展；
+        limit=None 则全列（不截断），同签名因覆盖语义本就只留一条。"""
         where, args = "", []
         if kind == "score_check":
             where = "WHERE r.kind IN ('score_check','signal') "  # 兼容旧 signal 值
         elif kind == "strategy":
             where = "WHERE r.kind = 'strategy' "
+        tail = ""
+        if limit is not None:
+            tail = "LIMIT ?"
+            args = [*args, limit]
         df = self.c.query_df(
             "SELECT r.id, r.kind, r.profile_id, p.name AS profile_name, r.profile_version, "
             "       r.trade_profile_id, tp.name AS trade_profile_name, r.trade_profile_version, "
@@ -230,7 +235,7 @@ class BacktestService:
             "LEFT JOIN score_profile sp ON sp.id = r.score_profile_id "
             "LEFT JOIN backtest_metrics m ON m.run_id = r.id "
             f"{where}"
-            "ORDER BY r.created_at DESC LIMIT ?", [*args, limit])
+            f"ORDER BY r.created_at DESC {tail}", args)
         return df.to_dict("records")
 
     def get_run(self, run_id: str) -> dict | None:

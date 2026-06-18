@@ -137,11 +137,11 @@ const runOptions = computed(() =>
     const y1 = (r.date_start || '').slice(0, 4)
     const y2 = (r.date_end || '').slice(0, 4)
     const year = y1 === y2 ? y1 : `${y1}~${y2}`
-    const score = nameVer(r.score_profile_name, r.score_profile_version, '旧固定模型')
+    const score = nameVer(r.score_profile_name, r.score_profile_version, '—')
     let who: string
     if (r.kind === 'strategy') {
-      const screen = nameVer(r.profile_name, r.profile_version, '全市场')
-      const trade = nameVer(r.trade_profile_name, r.trade_profile_version, '旧式卖出')
+      const screen = nameVer(r.profile_name, r.profile_version, '—')
+      const trade = nameVer(r.trade_profile_name, r.trade_profile_version, '—')
       who = `${score}-${screen}-${trade}`
     } else {
       who = score
@@ -225,7 +225,7 @@ function restoreParams() {
 }
 
 async function loadHistory() {
-  try { runHistory.value = (await listRuns(30, kind.value)).runs } catch { /* ignore */ }
+  try { runHistory.value = (await listRuns(kind.value)).runs } catch { /* ignore */ }
 }
 
 // 从历史重新载入某次回测结果（不重跑）

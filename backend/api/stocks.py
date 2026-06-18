@@ -16,8 +16,9 @@ from backend.storage.repository import MarketRepository
 router = APIRouter(prefix="/api", tags=["stocks", "data"])
 
 
-# 服务端排序白名单（防注入）：前端字段 → SQL 列；pct_chg 为查询内别名
-_STOCK_SORT_COLS = {"pct_chg": "pct_chg", "name": "sb.name", "industry": "sb.industry", "code": "sb.code"}
+# 服务端排序白名单（防注入）：前端字段 → SQL 列；pct_chg/close 为查询内别名
+_STOCK_SORT_COLS = {"pct_chg": "pct_chg", "close": "b.close", "name": "sb.name",
+                    "industry": "sb.industry", "code": "sb.code"}
 
 
 @router.get("/stocks", response_model=ApiResponse)
@@ -58,7 +59,7 @@ def list_stocks(q: str | None = None, board: str | None = None,
     order_clause = f"{col} {order} NULLS LAST, sb.code ASC"
     df = c.query_df(
         f"SELECT sb.code, sb.name, sb.board, sb.industry, sb.list_date, sb.delist_date, "
-        f"       (sb.name LIKE '%ST%') AS is_st, "
+        f"       (sb.name LIKE '%ST%') AS is_st, b.close AS close, "
         f"       CASE WHEN b.pre_close > 0 THEN (b.close / b.pre_close - 1) * 100 END AS pct_chg "
         f"FROM stock_basic sb "
         f"LEFT JOIN daily_bar b ON b.code = sb.code AND b.trade_date = ? "
@@ -70,6 +71,7 @@ def list_stocks(q: str | None = None, board: str | None = None,
         r["list_date"] = str(r["list_date"]) if r.get("list_date") is not None and not pd.isna(r["list_date"]) else None
         r["delist_date"] = str(r["delist_date"]) if r.get("delist_date") is not None and not pd.isna(r["delist_date"]) else None
         r["is_st"] = bool(r["is_st"])
+        r["close"] = round(float(r["close"]), 2) if r.get("close") is not None and not pd.isna(r["close"]) else None
         r["pct_chg"] = round(float(r["pct_chg"]), 2) if r.get("pct_chg") is not None and not pd.isna(r["pct_chg"]) else None
         r["groups"] = groups_by_code.get(r["code"], [])
     return ok({"total": total, "page": page, "size": size, "trade_date": str(td), "list": rows})

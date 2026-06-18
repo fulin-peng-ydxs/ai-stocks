@@ -104,7 +104,7 @@ def robust(body: RobustIn) -> ApiResponse:
 
 
 @router.get("/runs", response_model=ApiResponse)
-def list_runs(limit: int = 50, kind: str | None = None) -> ApiResponse:
+def list_runs(limit: int | None = None, kind: str | None = None) -> ApiResponse:
     runs = BacktestService().list_runs(limit, kind=kind)
 
     def _nan_none(v):

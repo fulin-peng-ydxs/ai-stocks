@@ -542,9 +542,6 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     ctx.log(f"质检完成：异常涨跌 {q.get('abnormal_change_rows', 0)}、复权跳变 {q.get('adj_jump_rows', 0)}、"
             f"市值缺失 {q.get('mv_missing_rows', 0)}、市值缺口 {q.get('mv_gap_rows', 0)}、"
             f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}")
-    if q.get("mv_gap_flooded"):
-        ctx.log(f"⚠ 检出 {q['mv_gap_flooded']} 只在市股有近端总市值缺口（疑似存量未回补），"
-                f"已跳过落台账以免刷屏；请先跑 `python -m backend.cli valuation --fill-gaps` 回补后再质检", "warn")
     return {"message": f"质检完成：发现 {n} 项问题" if n else "质检完成：未发现新问题", "quality": q}
 
 

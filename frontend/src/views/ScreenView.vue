@@ -281,17 +281,13 @@ async function openVersions() {
   versions.value = (await getProfileVersions(loadId.value)).versions
   verVisible.value = true
 }
-async function restoreVersion(v: ProfileVersion) {
-  if (!loadedProfile.value) return
-  const r = await saveProfile({ id: loadId.value, name: loadedProfile.value.name, expression: v.expression })
-  ElMessage.success(`已恢复 v${v.version}（当前为 v${r.version}）`)
-  verVisible.value = false
-  await loadProfiles()
-  const p = await getProfile(loadId.value)
-  loadedProfile.value = p
-  const parsed = parseAst(p.expression)
+// 恢复=仅把该历史版本载入编辑器（不写库）；用户确认后点「保存」才生成新版本
+function restoreVersion(v: ProfileVersion) {
+  const parsed = parseAst(v.expression)
   if (parsed) { groupOp.value = parsed.op; rows.value = parsed.rows; complexAst.value = null }
-  else { complexAst.value = p.expression; rows.value = [] }
+  else { complexAst.value = v.expression; rows.value = [] }
+  verVisible.value = false
+  ElMessage.success(`已载入 v${v.version} 到编辑器，确认后点「保存」生成新版本`)
 }
 
 function rowClass({ row }: { row: ScreenHit }) {
@@ -345,8 +341,7 @@ onMounted(async () => {
             :value="p.id"
           />
         </el-select>
-        <span class="hint" v-if="loadedProfile">v{{ loadedProfile.version }}</span>
-        <el-button v-if="loadId" text type="primary" size="small" @click="openVersions">历史版本</el-button>
+        <span class="ver-link" v-if="loadedProfile" title="点击查看历史版本" @click="openVersions">v{{ loadedProfile.version }}</span>
         <el-button text size="small" @click="clearAll">清空</el-button>
       </div>
 
@@ -496,7 +491,7 @@ onMounted(async () => {
         <div class="ver-head">
           <b>v{{ v.version }}</b>
           <span class="hint">{{ v.saved_at?.slice(0, 16) }}</span>
-          <el-button text type="primary" size="small" @click="restoreVersion(v)">恢复此版本</el-button>
+          <el-button text type="primary" size="small" @click="restoreVersion(v)">载入此版本</el-button>
         </div>
         <pre class="ast">{{ JSON.stringify(v.expression, null, 2) }}</pre>
       </div>
@@ -618,6 +613,19 @@ onMounted(async () => {
   color: var(--el-text-color-regular);
   max-height: 200px;
   overflow: auto;
+}
+.ver-link {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.ver-link:hover {
+  background: var(--el-color-primary-light-7);
 }
 .ver-item {
   border: 1px solid var(--el-border-color-lighter);

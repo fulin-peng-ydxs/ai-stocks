@@ -68,10 +68,17 @@ const PHASE_LABEL: Record<string, string> = {
   fix_issue: '问题修复',
 }
 function taskPhaseText(t: AsyncTask): string {
-  const phase = t.capability?.current_phase
-  const item = t.capability?.current_item
+  const cap = t.capability
+  const phase = cap?.current_phase
+  const item = cap?.current_item
   const phaseText = phase ? (PHASE_LABEL[phase] ?? phase) : ''
-  return [phaseText, item ? String(item) : ''].filter(Boolean).join(' · ')
+  // 实时计数：phase_done/phase_total 随每只处理逐只更新（来自 checkpoint），
+  // 串行慢任务也能在列表/日志抽屉看到进展在动，不必等进度条按批刷新。
+  const cp = cap?.checkpoint
+  const done = cp?.phase_done
+  const total = cp?.phase_total
+  const count = (typeof done === 'number' && typeof total === 'number' && total > 0) ? `${done}/${total}` : ''
+  return [phaseText, count, item ? String(item) : ''].filter(Boolean).join(' · ')
 }
 function canCancelTask(t: AsyncTask): boolean {
   return (t.status === 'pending' || t.status === 'running') && Boolean(t.capability?.can_cancel)

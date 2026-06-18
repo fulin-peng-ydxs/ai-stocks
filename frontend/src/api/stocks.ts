@@ -9,6 +9,7 @@ export interface StockBasic {
   list_date: string | null
   delist_date: string | null
   is_st: boolean
+  close: number | null        // 指定交易日收盘价（元）
   pct_chg: number | null      // 指定交易日涨跌幅（%）
   groups: { id: string; name: string; color: string; is_default: boolean }[]
 }

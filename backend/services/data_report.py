@@ -26,9 +26,6 @@ log = get_logger("services.data_report")
 # 缺口/鲜活判定的近端窗口（DM-D21）：只在近 N 个开市日内判缺口与滞后；
 # 更早的历史空洞默认即停牌（老数据稳定，真漏采早暴露），不反复上报、不扣分。
 GAP_WINDOW_DAYS = 90
-# mv_gap（L2 逐日总市值缺口，WS4）洪泛守卫阈值：命中股票数超此值视为存量缺口未回补，
-# 跳过落台账并提示先跑 `cli valuation --fill-gaps`，避免一次质检涌入数千条。回补后自然回落。
-MV_GAP_FLOOD_LIMIT = 200
 
 # 覆盖鲜活全景缓存（M2.9.4）：概览页一次会连打 overview/stock-quality/hub 三个接口，
 # 各自都要 _coverage_frame（全市场扫描）。用「数据变更签名」做单条缓存，让同一页的多次调用复用；
@@ -430,29 +427,20 @@ class DataIntegrityReport:
                              "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
                                        f"（自 {r['stale_lo']} 起）"})
                 l4_stale += 1
-        # L2 逐日总市值缺口（WS4 P2）：在市股「有日线但 total_mv 为空」的近端缺口，code 级聚合
-        # （非逐行落表，避免台账暴涨）。直接读同一份 frame 的 mv_gap_days（与概览/逐股 L2 完全统一，
-        # 同窗口同数据）。与整股 mv_missing 互补：那个查「从没采过」，这个查「采过但近端有断天」。
-        gap_rows = []
+        # L2 逐日总市值缺口：在市股「有日线但 total_mv 为空」的近端缺口，按 code 聚合一条
+        # （detail 写缺失区间）。直接读同一份 frame 的 mv_gap_days（与概览/逐股 L2 完全统一，
+        # 同窗口同数据），命中多少写多少——与概览口径一致，台账不再静默。
+        l2_gap = 0
         for _, r in frame.iterrows():
             code = r["code"]
             if int(r["mv_gap_days"]) > 0 and (code, "mv_gap") not in ig_coarse:
-                gap_rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
-                                 "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天缺总市值"
-                                           f"（需补估值快照）：{r['mv_gap_lo']}~{r['mv_gap_hi']}"})
-        # 自愈式洪泛守卫：若命中股票数异常多（多为存量历史缺口未回补，如 P1 遗留的全市场断天），
-        # 跳过落台账并提示先跑 `cli valuation --fill-gaps`——避免一次质检涌入数千条 mv_gap。
-        # 回补后命中数自然回落到正常量级，下次质检即恢复正常探测，无需人工开关。
-        mv_gap_flooded = len(gap_rows) > MV_GAP_FLOOD_LIMIT
-        if mv_gap_flooded:
-            l2_gap = 0
-        else:
-            l2_gap = len(gap_rows)
-            rows.extend(gap_rows)
+                rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
+                             "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天缺总市值"
+                                       f"（需补总市值）：{r['mv_gap_lo']}~{r['mv_gap_hi']}"})
+                l2_gap += 1
         self._insert_issues(rows)
         return {"abnormal_change_rows": len(ab_rows), "adj_jump_rows": adj,
                 "mv_missing_rows": l2, "mv_gap_rows": l2_gap,
-                "mv_gap_flooded": len(gap_rows) if mv_gap_flooded else 0,
                 "data_gap_rows": l4_gap, "stale_rows": l4_stale}
 
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──

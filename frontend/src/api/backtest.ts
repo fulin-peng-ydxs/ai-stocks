@@ -175,8 +175,9 @@ export function getTradeDates(): Promise<{
   return http.get('/data/trade-dates')
 }
 
-export function listRuns(limit = 50, kind?: string): Promise<{ runs: RunSummary[] }> {
-  return http.get('/backtest/runs', { params: { limit, ...(kind ? { kind } : {}) } })
+// 不传 limit 则全列（同签名因覆盖语义本就只留一条，不会膨胀）
+export function listRuns(kind?: string): Promise<{ runs: RunSummary[] }> {
+  return http.get('/backtest/runs', { params: { ...(kind ? { kind } : {}) } })
 }
 
 export function deleteRun(runId: string): Promise<{ deleted: string }> {

@@ -36,17 +36,41 @@
 |----|-----------|------|------|
 | L1 入库闸门 | `null_close` / `ohl_repaired` | 采集时即时记录 | 逐(code,日) |
 | L2 字段契约 | `mv_missing` | 整股从没采过 total_mv/float_mv | 整股 |
-| | `mv_gap` | 近 90 交易日逐日 total_mv 缺口 | code 聚合（detail 写区间）+ 洪泛守卫 |
+| | `mv_gap` | 近 90 交易日逐日 total_mv 缺口 | code 聚合（detail 写区间）|
 | L3 正确性 | `abnormal_change` | `\|涨跌\|>板块上限+0.5%` | 逐(code,日) |
 | | `adj_jump` | 相邻日前复权价跳变>50% | 逐(code,日) |
 | L4 覆盖鲜活 | `data_gap` / `stale` | 近 90 交易日内部缺口/尾部滞后（扣已确认停牌） | 整股 |
 
 - **幂等**：每次质检先删上轮 open 的自动问题（L2/L3/L4）再写当前快照，`resolved`/`ignored` 不动 → 反复跑收敛不堆积。
-- **`mv_gap` 洪泛守卫**（`MV_GAP_FLOOD_LIMIT=200`）：命中股票数超阈值视为存量缺口未回补，跳过落台账并提示先跑 `valuation --fill-gaps`，回补后命中数自然回落、恢复正常探测（自愈，无需人工开关）。
+- **`mv_gap` 不设上限**：命中多少在市股就写多少条（按 code 聚合），与概览 L2 实时口径完全一致——台账不再静默；缺口大时（如新交易日大面积未补）台账会一次出现大量 `mv_gap`，跑 `valuation --fill-gaps` 或一键恢复后随之清零。
 - **`ignored` 豁免**：L3 按 (code,类型,日期) 精确豁免；L2/L4 按 (code,类型) 整股豁免。
 
 ### 数据体检（`backend/services/data_verify.py`，与质检互补）
 `DataVerifier` 做**结构/正确性/字段契约**逐行核查（孤儿行、键对齐、日历一致、OHLC 序、复权因子、整列字段缺失、在市股逐行市值无缺失），只读不写台账，结果以 PASS/FAIL 报告呈现（`run_structured`）。能查出质检盲区（如在市股逐行 total_mv 缺失）。可选联网交叉验证（实时重拉对比原价/前复权价），仅 CLI 用。
+
+### 异步任务执行模型（终止 / 续跑 / 三类采集差异，[async_task.py](../../backend/services/async_task.py)、[ingest.py](../../backend/services/ingest.py)）
+
+所有写库任务跑在 `async_task` 底座上：写任务全局互斥（同时只允许一个），状态 `pending→running→done/failed/interrupted`。
+
+- **协作式终止**：`cancel` 只置取消标记，执行器在每只股票/每个问题之间的检查点 `check_cancel()` 命中后抛 `TaskCancelled` → 状态转 `interrupted`（可续跑）。容错兜底块（缺口收口、补市值这类 `except` 隔离失败的尾部阶段）必须让 `TaskCancelled` 穿透，不得当成"子阶段失败"吞掉——否则终止会被吃掉、任务跑完变 `done`。
+- **续跑幂等**：`resume` 读 `result.checkpoint` 重新拉起。续跑不是"跳到中断的阶段"，而是从任务入口重进、各阶段按幂等跳过已完成项（`update`/`ingest_date` 按 checkpoint `done_codes`，`backfill` 按库内 `min(trade_date)` 覆盖判断，补市值按库内 `total_mv` 非空）。日历/指数/基础信息等前置用 `prep_done`/`target_end` 标记，续跑时跳过（已于首跑幂等入库）。
+
+三类采集任务共用"日历→指数→逐股日线→刷净复权因子"主链，差异是**刻意**的，不应强行统一：
+
+| 维度 | `update` 增量 | `backfill` 全量补数 | `ingest_date` 指定日期 |
+|------|--------------|--------------------|----------------------|
+| 目标日 | 自动取"今天"，过**就绪门**`_resolve_update_end`（今日主源未发布则整次跳过）；续跑用 `target_end` 锁定首跑目标日，不漂到今天 | `date.today()` 重算（历史区间，无就绪门，重算无害） | 用户显式 `start/end`（存 `params`，续跑天然不漂） |
+| 基础信息 | 读库不刷 | `ingest_stock_basic` 刷名册（建底路径） | 读库不刷 |
+| 补市值 | 收尾补最新日+历史 | 不补（只采行情）；结束报告缺 `total_mv` 数，由下次增量自动补全或 `valuation --fill-gaps` | 不补 |
+| 收尾 | 缺口收口 + 刷因子 | 刷因子 + 全市场契约校验 | 刷因子 |
+
+> 就绪门/`target_end` 只 `update` 需要：它是唯一自动以"今天"为目标、可能在数据未发布时被定时触发的任务；历史/显式日期任务套就绪门反而会误跳过，故保持差异。
+
+### 实时日志规范（任务中心 + CLI 同源，[async_task.py](../../backend/services/async_task.py) `TaskContext`）
+
+- **三段式文案**：`▶ 开始` / `[i/n] 进度` / `■ 完成`；失败用 `error`、可降级/非阻断用 `warn`、正常进度 `info`。
+- **及时响应**：长循环每只 `set_phase` 写 `current_phase/current_item/phase_done/phase_total` 到 checkpoint，前端列表与日志抽屉据此显示"阶段·实时计数·当前股"，串行慢任务也逐只可见进展；进度条/日志按批刷新（采集 `i%20`）。`progress()` 顺带 flush，日志攒满 `_LOG_FLUSH_EVERY` 即落库。
+- **CLI 一致**：`CliTaskContext` 完整鸭子类型 `TaskContext`，把同一套 `log/progress/set_phase` 映射到 stdout 实时打印；`update`/`backfill`/`ingest_date` 的 CLI 命令均传 ctx，与任务中心同标准（CLI 单次前台执行，不续跑、不协作终止）。
 
 ## 业务架构
 
@@ -238,7 +262,7 @@ flowchart LR
 |------|--------|------|------|
 | <span style="color:#dc2626">●</span> 高 | `total_mv` 单数据源、无兜底 | 东财单只 `stock_value_em` 异常时，当日总市值会缺；流通市值不受影响 | 通过 `mv_gap` 质检可见并补修；后续寻找第二总市值源 |
 | <span style="color:#f59e0b">●</span> 中 | 日常补 `total_mv` 约 5000 次/日单只请求 | 提高并发可提速，但会增加源端封禁风险 | 在配置里权衡限流/并发，优先稳定 |
-| <span style="color:#f59e0b">●</span> 中 | `mv_gap` 探测依赖先回补存量 | 未清历史缺口时会触发洪泛守卫，跳过落台账 | 先跑 `valuation --fill-gaps`，再进入正常逐日探测 |
+| <span style="color:#f59e0b">●</span> 中 | 缺口大时 `mv_gap` 台账量大 | 新交易日大面积未补/存量未回补时，质检会一次写入数千条 `mv_gap`（已去掉上限，与概览口径一致） | 跑 `valuation --fill-gaps` 或一键恢复后台账随之清零 |
 | <span style="color:#f59e0b">●</span> 中 | L3 既有问题存量 | 多为新股、退市整理期、复牌或粗粒度复权残留 | 人工核对后标记正常或重采，逐步收敛 |
 | <span style="color:#16a34a">●</span> 低 | 退市股缺少少量市值 | baostock 无流通股本，约少量行无法补齐 | 体检已豁免，不影响在市选股 |
 | <span style="color:#16a34a">●</span> 低 | 概览 L2 与体检口径不同 | 概览看整股/近端，体检看逐行 NULL，数字可能不一致 | 两者互补：概览看运营状态，体检查细节 |

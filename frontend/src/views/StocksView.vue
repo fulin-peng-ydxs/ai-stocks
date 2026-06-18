@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Edit } from '@element-plus/icons-vue'
 import { listStocks, type StockBasic, type StockListParams } from '@/api/stocks'
 import {
   addMembers,
@@ -29,7 +30,7 @@ import TradeDatePicker from '@/components/TradeDatePicker.vue'
 const router = useRouter()
 const route = useRoute()
 const stockSet = useStockSet()
-const { dataMax } = useTradeDates()
+const { dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
 const stocksDefaults = {
   defaultView: 'group' as 'list' | 'group',
@@ -38,8 +39,8 @@ const stocksDefaults = {
   size: DEFAULT_PAGE_SIZE,
   excludeSt: true,
   compact: false,
-  columns: { code: true, name: true, groups: true, pct: true, industry: true, board: true, status: true },
-  groupColumns: { code: true, name: true, addDate: true, ret: true, lastDate: true },
+  columns: { code: true, name: true, price: true, pct: true, groups: true, industry: true, board: true, status: true },
+  groupColumns: { code: true, name: true, price: true, pct: true, addDate: true, ret: true, lastDate: true },
 }
 const { settings, isDirty, reset } = usePageSettings('stocks', stocksDefaults)
 
@@ -60,8 +61,8 @@ const rows = ref<StockBasic[]>([])
 watch(board, (b) => {
   excludeSt.value = b !== 'ST' && b !== '退市'
 })
-// 选交易日自动触发查询
-watch(tradeDate, () => search())
+// 选交易日自动触发查询（初始化/恢复时设值不触发，避免重复加载）
+watch(tradeDate, () => { if (!restoringListState) search() })
 watch(() => settings.excludeSt, (value) => {
   if (inGroupMode.value) return
   if (board.value === 'ST' || board.value === '退市') return
@@ -194,6 +195,10 @@ function onGroupSortChange({ prop, order }: { prop: string; order: string | null
 function fmtPct(v: number | null | undefined): string {
   if (v === null || v === undefined) return '—'
   return (v > 0 ? '+' : '') + v.toFixed(2) + '%'
+}
+function fmtPrice(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '—'
+  return v.toFixed(2)
 }
 function fmtPctRatio(v: number | null | undefined): string {
   if (v === null || v === undefined) return '—'
@@ -436,6 +441,11 @@ onMounted(async () => {
   sortBy.value = String(settings.sortBy)
   sortOrder.value = settings.sortOrder
   size.value = Number(settings.size)
+  // 交易日默认直接选中最新交易日（而非留空靠占位提示）
+  await ensureLoaded()
+  restoringListState = true
+  tradeDate.value = dataMax.value || ''
+  restoringListState = false
   if (settings.defaultView === 'group' && dg && dg.member_count > 0) {
     activeGid.value = dg.id
   } else {
@@ -464,7 +474,7 @@ onMounted(async () => {
     <!-- 搜索 / 筛选（置顶）-->
     <el-card v-if="!inGroupMode" shadow="never" class="filter-card">
       <div class="filter-row">
-        <TradeDatePicker v-model="tradeDate" placeholder="交易日期(默认最新)" clearable style="width: 180px" />
+        <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable style="width: 180px" />
         <el-input v-model="q" placeholder="代码 / 名称" style="width: 220px" clearable @keyup.enter="search" @clear="search" />
         <el-select v-model="board" placeholder="全部板块" style="width: 130px" clearable @change="search">
           <el-option label="主板" value="主板" />
@@ -481,9 +491,10 @@ onMounted(async () => {
     <el-card v-if="inGroupMode && groupDetail" shadow="never" class="group-banner">
       <div class="gb-row">
         <div class="gb-main">
-          <span class="gb-name">
+          <span class="gb-name gb-name-edit" title="点击编辑分组" @click="openEdit">
             <span class="color-dot" :style="{ backgroundColor: groupDetail.color }" />
             {{ groupDetail.name }}
+            <el-icon class="gb-edit-icon"><Edit /></el-icon>
           </span>
           <el-tag size="small" effect="plain">建组 {{ groupDetail.group_date || '—' }}</el-tag>
           <el-tag v-if="groupDetail.is_default" size="small" type="danger" effect="plain">默认</el-tag>
@@ -505,7 +516,6 @@ onMounted(async () => {
             @clear="groupSearch"
           />
           <el-button size="small" :loading="groupLoading" @click="groupSearch">查询</el-button>
-          <el-button size="small" @click="openEdit">编辑</el-button>
           <el-button size="small" type="danger" plain :disabled="groupDetail.is_default" @click="doDeleteGroup">删除分组</el-button>
         </div>
       </div>
@@ -531,14 +541,20 @@ onMounted(async () => {
           <el-table-column v-if="settings.groupColumns.name" label="名称" prop="name" min-width="120" sortable="custom">
             <template #default="{ row }">{{ row.name || '—' }}</template>
           </el-table-column>
-          <el-table-column v-if="settings.groupColumns.addDate" label="加入日期" prop="add_date" width="120" sortable="custom">
-            <template #default="{ row }">{{ row.add_date || '—' }}</template>
+          <el-table-column v-if="settings.groupColumns.price" label="股价" prop="price" width="100" sortable="custom">
+            <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPrice(row.price) }}</b></template>
           </el-table-column>
-          <el-table-column v-if="settings.groupColumns.ret" label="最近涨幅" prop="ret" width="120" sortable="custom">
+          <el-table-column v-if="settings.groupColumns.pct" label="涨跌幅" prop="pct_chg" width="110" sortable="custom">
+            <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</b></template>
+          </el-table-column>
+          <el-table-column v-if="settings.groupColumns.ret" label="截止涨幅" prop="ret" width="120" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.ret)">{{ fmtPctRatio(row.ret) }}</b></template>
           </el-table-column>
-          <el-table-column v-if="settings.groupColumns.lastDate" label="截至" prop="last_date" width="120" sortable="custom">
+          <el-table-column v-if="settings.groupColumns.lastDate" label="截至当前" prop="last_date" width="120" sortable="custom">
             <template #default="{ row }">{{ row.last_date || '—' }}</template>
+          </el-table-column>
+          <el-table-column v-if="settings.groupColumns.addDate" label="加入日期" prop="add_date" width="120" sortable="custom">
+            <template #default="{ row }">{{ row.add_date || '—' }}</template>
           </el-table-column>
         </el-table>
         <div class="pager">
@@ -571,6 +587,12 @@ onMounted(async () => {
               <el-tag v-if="row.is_st" type="danger" size="small" effect="plain" style="margin-left:6px">ST</el-tag>
             </template>
           </el-table-column>
+          <el-table-column v-if="settings.columns.price" label="股价" prop="close" width="100" sortable="custom">
+            <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPrice(row.close) }}</b></template>
+          </el-table-column>
+          <el-table-column v-if="settings.columns.pct" label="涨跌幅" prop="pct_chg" width="120" sortable="custom">
+            <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</b></template>
+          </el-table-column>
           <el-table-column v-if="settings.columns.groups" label="所属分组" min-width="150">
             <template #default="{ row }">
               <span v-if="row.groups?.length" class="tag-line">
@@ -587,9 +609,6 @@ onMounted(async () => {
               </span>
               <span v-else class="muted">—</span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="settings.columns.pct" label="涨跌幅" prop="pct_chg" width="120" sortable="custom">
-            <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</b></template>
           </el-table-column>
           <el-table-column v-if="settings.columns.industry" label="行业" prop="industry" sortable="custom">
             <template #default="{ row }">
@@ -745,8 +764,9 @@ onMounted(async () => {
         <PageToggleRow v-model="settings.compact" label="紧凑表格" />
         <PageToggleRow v-model="settings.columns.code" label="显示代码列" />
         <PageToggleRow v-model="settings.columns.name" label="显示名称列" />
-        <PageToggleRow v-model="settings.columns.groups" label="显示所属分组" />
+        <PageToggleRow v-model="settings.columns.price" label="显示股价" />
         <PageToggleRow v-model="settings.columns.pct" label="显示涨跌幅" />
+        <PageToggleRow v-model="settings.columns.groups" label="显示所属分组" />
         <PageToggleRow v-model="settings.columns.industry" label="显示行业" />
         <PageToggleRow v-model="settings.columns.board" label="显示板块" />
         <PageToggleRow v-model="settings.columns.status" label="显示状态" />
@@ -755,8 +775,10 @@ onMounted(async () => {
       <PageSettingSection title="分组视图">
         <PageToggleRow v-model="settings.groupColumns.code" label="显示代码列" />
         <PageToggleRow v-model="settings.groupColumns.name" label="显示名称列" />
+        <PageToggleRow v-model="settings.groupColumns.price" label="显示股价" />
+        <PageToggleRow v-model="settings.groupColumns.pct" label="显示涨跌幅" />
         <PageToggleRow v-model="settings.groupColumns.addDate" label="显示加入日期" />
-        <PageToggleRow v-model="settings.groupColumns.ret" label="显示最近涨幅" />
+        <PageToggleRow v-model="settings.groupColumns.ret" label="显示截止涨幅" />
         <PageToggleRow v-model="settings.groupColumns.lastDate" label="显示截至日期" />
       </PageSettingSection>
     </PageSettingsDrawer>
@@ -825,6 +847,21 @@ onMounted(async () => {
 .gb-name {
   font-size: 16px;
   font-weight: 600;
+}
+.gb-name-edit {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.gb-name-edit:hover {
+  color: var(--el-color-primary);
+}
+.gb-edit-icon {
+  font-size: 13px;
+  color: #c0c4cc;
+  margin-left: 2px;
+}
+.gb-name-edit:hover .gb-edit-icon {
+  color: var(--el-color-primary);
 }
 .tag-line {
   display: inline-flex;

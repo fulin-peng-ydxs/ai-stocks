@@ -23,6 +23,7 @@ from backend.config import get_effective_settings
 from backend.dataquality.checker import add_markers, sanitize_bars
 from backend.datasource.akshare_source import classify_board
 from backend.datasource.base import DataSource, get_source
+from backend.services.async_task import TaskCancelled
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import get_client
 from backend.storage.repository import MarketRepository
@@ -155,6 +156,14 @@ class IngestionService:
         if ctx:
             ctx.log(f"子任务：股票基础信息采集完成，目标板块 {len(basic)} 只，写入/更新 {n} 只")
         return basic
+
+    def _stock_basic_from_db(self, codes: list[str] | None = None) -> pd.DataFrame:
+        """续跑用：从库读 stock_basic（首跑已刷新名册），列同 backfill 所需，避免重复触网。"""
+        df = self.repo.c.query_df(
+            "SELECT code, name, price_limit_pct FROM stock_basic WHERE delist_date IS NULL")
+        if codes:
+            df = df[df["code"].isin(codes)]
+        return df
 
     # ── 单只股票日线 + 衍生指标 ──
     def _is_st_by_name(self, code: str) -> bool:
@@ -319,7 +328,7 @@ class IngestionService:
         def _tick(i: int) -> None:
             if ctx:
                 ctx.set_phase("valuation_history", phase_total=n, phase_done=i)
-            if i % 50 == 0 or i == n:
+            if i % 20 == 0 or i == n:
                 log.info("估值进度 %d/%d（成功%d 失败%d 跳过%d，total_mv %d行）",
                          i, n, ok, fail, skip, rows)
                 if ctx:
@@ -438,7 +447,7 @@ class IngestionService:
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
                 done_latest.add(code)
-                if i % 100 == 0 or i == n:
+                if i % 20 == 0 or i == n:
                     log.info("补最新日市值进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
                     if ctx:
                         ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
@@ -484,7 +493,7 @@ class IngestionService:
                         except Exception as e:  # noqa: BLE001
                             fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
                         done_latest.add(code)
-                        if i % 100 == 0 or i == n:
+                        if i % 20 == 0 or i == n:
                             log.info("补最新日市值进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
                             if ctx:
                                 ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
@@ -540,7 +549,7 @@ class IngestionService:
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
                 done_gap_codes.add(item[0])
-                if i % 50 == 0 or i == n:
+                if i % 20 == 0 or i == n:
                     log.info("市值回补进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
                     if ctx:
                         ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=item[0],
@@ -586,7 +595,7 @@ class IngestionService:
                         except Exception as e:  # noqa: BLE001
                             fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
                         done_gap_codes.add(item[0])
-                        if i % 50 == 0 or i == n:
+                        if i % 20 == 0 or i == n:
                             log.info("市值回补进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
                             if ctx:
                                 ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=item[0],
@@ -644,9 +653,17 @@ class IngestionService:
         start = date(end.year - years, end.month, end.day)
         log.info("开始回填 %s ~ %s", start, end)
 
-        self.ingest_calendar(start, end, ctx=ctx)
-        self.ingest_indices(start, end, ctx=ctx)
-        basic = self.ingest_stock_basic(codes, ctx=ctx) if ctx else self.ingest_stock_basic(codes)
+        # 续跑跳过前置（与 update 一致）：日历/指数/基础信息首跑已幂等入库，prep_done 标记后续跑跳过；
+        # 基础信息改从库读（首跑已刷新名册），避免重复触网与刷屏。
+        if ctx and ctx.checkpoint.get("prep_done"):
+            ctx.log("续跑：跳过日历/指数/基础信息前置（已于首跑完成），从断点继续补数")
+            basic = self._stock_basic_from_db(codes)
+        else:
+            self.ingest_calendar(start, end, ctx=ctx)
+            self.ingest_indices(start, end, ctx=ctx)
+            basic = self.ingest_stock_basic(codes, ctx=ctx) if ctx else self.ingest_stock_basic(codes)
+            if ctx:
+                ctx.set_checkpoint(prep_done=True)
         target_codes = basic["code"].tolist()
         # 板块涨跌幅 + ST 状态查找表（ST 由名称含 "ST" 判定）
         limit_lut = dict(zip(basic["code"], basic["price_limit_pct"]))
@@ -773,6 +790,21 @@ class IngestionService:
                 ctx.log(f"↻ 重算干净复权因子（{len(updated)} 只新入库）…")
             self._refresh_clean_factors(sorted(updated), ctx=ctx)
         result = {"target": len(target_codes), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
+        # 市值透明化：历史补数只采行情，total_mv 历史市值不在本任务内采（市值源是慢接口，单列）。
+        # 明确告知缺口去向，避免“市值盲区”不透明——新票历史市值由下次『增量更新』自动补全。
+        try:
+            valued = set(self.repo.c.query_df(
+                "SELECT DISTINCT code FROM daily_metrics WHERE total_mv IS NOT NULL")["code"].tolist())
+            mv_missing = [c for c in target_codes if c not in valued]
+            result["mv_missing"] = len(mv_missing)
+            if ctx:
+                if mv_missing:
+                    ctx.log(f"说明：历史补数只采行情；其中 {len(mv_missing)} 只尚无任何 total_mv，"
+                            "历史市值将由下次『增量更新』自动补全，或运行 `cli valuation --fill-gaps` 一次性回补")
+                else:
+                    ctx.log("说明：历史补数只采行情；目标股票均已具备 total_mv（历史市值由增量更新维护）")
+        except Exception as e:  # noqa: BLE001  统计失败不影响回填结果
+            log.warning("回填后市值缺口统计失败（不影响结果）: %s", e)
         if ctx:
             ctx.log(f"■ 历史补数完成：成功 {ok}、跳过 {skip}、失败 {fail}，共写入 {total_rows} 行")
         log.info("回填完成: %s", result)
@@ -888,9 +920,23 @@ class IngestionService:
         skip_done = 0 if done_codes else int(ctx.checkpoint.get("done", 0)) if (ctx and ctx.checkpoint) else 0
         completed_codes = set(done_codes) | set(basic[:skip_done])
         pending = [c for c in basic if c not in completed_codes]
-        self.ingest_calendar(end - timedelta(days=30), end, ctx=ctx)
-        self.ingest_indices(end - timedelta(days=30), end, ctx=ctx)
-        end = self._resolve_update_end(end, basic, codes, ctx=ctx)
+        # 续跑锁定本次任务目标日：首跑就绪门通过后固化 target_end，续跑直接取回，避免被重算成
+        # 「今天」后又因今天源未就绪整次跳过（连原目标日本该补的也补不到）。target_end 仅在首跑成功
+        # 解析后写入，故"存在即代表前置(日历/指数)已完成"，续跑据此一并跳过这两个幂等前置。
+        pinned_end = None
+        if ctx and ctx.checkpoint.get("target_end"):
+            try:
+                pinned_end = date.fromisoformat(ctx.checkpoint["target_end"])
+            except (ValueError, TypeError):
+                pinned_end = None
+        if pinned_end is not None:
+            end = pinned_end
+            if ctx:
+                ctx.log(f"续跑：沿用本次任务目标日 {end}，跳过日历/指数前置（已于首跑完成且幂等入库）")
+        else:
+            self.ingest_calendar(end - timedelta(days=30), end, ctx=ctx)
+            self.ingest_indices(end - timedelta(days=30), end, ctx=ctx)
+            end = self._resolve_update_end(end, basic, codes, ctx=ctx)
         if end is None:
             result = {"target": 0, "ok": 0, "fail": 0, "rows": 0, "concurrency": concurrency,
                       "skipped": True, "reason": "primary_not_ready"}
@@ -898,6 +944,9 @@ class IngestionService:
                 ctx.progress(1.0, "主源未就绪，本次增量未执行")
                 ctx.log("■ 增量更新结束：主源未就绪，本次未执行行情更新")
             return result
+        if ctx:
+            # 固化目标日：此后若被终止，续跑沿用该日，不被重算成「今天」（见上方 pinned_end）。
+            ctx.set_checkpoint(target_end=end.isoformat())
         ok = fail = total_rows = 0
         updated: set[str] = set()  # 实际有新行的股票 → 收尾增量刷新干净因子
         n = len(pending)
@@ -1060,6 +1109,8 @@ class IngestionService:
             if gapped and ctx:
                 ctx.log(f"■ 缺口收口完成：{recon['stocks']} 只补回，共补回 {recon['backfilled']} 天"
                         f"（真停牌待质检+补采确认）")
+        except TaskCancelled:  # 终止信号必须穿透容错兜底，转为可续跑中断而非吞掉跑完
+            raise
         except Exception as e:  # noqa: BLE001  收口阶段异常不影响增量主结果
             log.warning("缺口收口阶段异常（不影响增量结果）: %s", e)
 
@@ -1080,6 +1131,8 @@ class IngestionService:
             try:
                 latest_val = (self.ingest_valuation_latest(codes=codes, concurrency=concurrency, ctx=ctx)
                               if ctx else self.ingest_valuation_latest(codes=codes, concurrency=concurrency))
+            except TaskCancelled:  # 终止穿透：勿与"市值源失败"混为一谈
+                raise
             except Exception as se:  # noqa: BLE001
                 log.warning("补最新日市值失败（不连累历史补采）: %s", se)
                 if ctx:
@@ -1091,6 +1144,8 @@ class IngestionService:
             if ctx:
                 ctx.log(f"■ 补市值完成：最新日 {latest_val.get('total_mv_rows', 0)} 行"
                         f" + 历史补采 {full_val.get('total_mv_rows', 0)} 行")
+        except TaskCancelled:  # 终止穿透：补市值阶段被终止应转可续跑中断，而非记为失败后跑完
+            raise
         except Exception as e:  # noqa: BLE001  市值源异常不影响行情更新结果
             log.warning("补市值估值失败（不影响行情更新）: %s", e)
             result["valuation_error"] = str(e)
@@ -1215,8 +1270,15 @@ class IngestionService:
             "SELECT code, name, price_limit_pct FROM stock_basic WHERE delist_date IS NULL")
         if codes:
             live = live[live["code"].isin(codes)]
-        # 确保区间内日历存在
-        self.ingest_calendar(start, end, ctx=ctx)
+        # 确保区间内日历+指数存在（与 update/backfill 一致：补缺口时该区间指数也一并补，避免回测基准留缺口）。
+        # 续跑跳过前置：prep_done 标记后续跑不再重采日历/指数（首跑已幂等入库）。
+        if ctx and ctx.checkpoint.get("prep_done"):
+            ctx.log("续跑：跳过日历/指数前置（已于首跑完成），从断点继续采集")
+        else:
+            self.ingest_calendar(start, end, ctx=ctx)
+            self.ingest_indices(start, end, ctx=ctx)
+            if ctx:
+                ctx.set_checkpoint(prep_done=True)
         limit_lut = dict(zip(live["code"], live["price_limit_pct"]))
         st_lut = {r["code"]: ("ST" in str(r["name"]).upper()) for _, r in live.iterrows()}
         target = live["code"].tolist()

@@ -50,6 +50,19 @@ export function saveTradeProfile(body: {
 export function deleteTradeProfile(pid: string): Promise<{ msg: string }> {
   return http.delete(`/trade-profiles/${pid}`)
 }
+
+// 方案历史版本（回看/载入）
+export interface TradeProfileVersion {
+  version: number
+  name: string
+  buy_tree: CondTree
+  sell_tree: CondTree | Record<string, never>
+  backstop: Backstop
+  saved_at: string
+}
+export function getTradeProfileVersions(pid: string): Promise<{ id: string; versions: TradeProfileVersion[] }> {
+  return http.get(`/trade-profiles/${pid}/versions`)
+}
 export function previewConditions(body: {
   tree: CondTree
   run_date?: string

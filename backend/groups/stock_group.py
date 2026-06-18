@@ -195,7 +195,7 @@ class StockGroupRepo:
         ]
 
     def _sort_members(self, members: list[dict], sort_by: str, sort_order: str) -> list[dict]:
-        key = sort_by if sort_by in {"code", "name", "add_date", "ret", "last_date"} else "add_date"
+        key = sort_by if sort_by in {"code", "name", "add_date", "ret", "last_date", "price", "pct_chg"} else "add_date"
         reverse = str(sort_order).lower() == "desc"
 
         def val(m: dict):
@@ -237,10 +237,13 @@ class StockGroupRepo:
         ph = ",".join("?" * len(codes))
         # 各股最新前复权收盘（该股可得的最大交易日）
         last = self.c.query_df(
-            f"SELECT code, close*COALESCE(adj_factor_clean, adj_factor) AS h, trade_date FROM "
+            f"SELECT code, close*COALESCE(adj_factor_clean, adj_factor) AS h, close AS px, "
+            f"       CASE WHEN pre_close > 0 THEN (close / pre_close - 1) * 100 END AS day_pct, trade_date FROM "
             f"(SELECT *, row_number() OVER (PARTITION BY code ORDER BY trade_date DESC) AS rn "
             f" FROM daily_bar WHERE code IN ({ph})) WHERE rn=1", codes)
         last_h = dict(zip(last["code"], last["h"]))
+        last_px = dict(zip(last["code"], last["px"]))
+        last_pct = dict(zip(last["code"], last["day_pct"]))
         last_d = {c: str(pd.Timestamp(d).date()) for c, d in zip(last["code"], last["trade_date"])}
         out = []
         for _, r in m.iterrows():
@@ -255,10 +258,14 @@ class StockGroupRepo:
                     entry = float(e.iloc[0]["h"])
             lh = last_h.get(code)
             ret = round(float(lh / entry - 1), 4) if entry and lh and entry > 0 else None
+            px = last_px.get(code)
+            dpct = last_pct.get(code)
             out.append({
                 "code": code, "name": r["name"],
                 "add_date": str(ad) if ad else None,
                 "ret": ret, "last_date": last_d.get(code),
+                "price": round(float(px), 2) if px is not None and not pd.isna(px) else None,
+                "pct_chg": round(float(dpct), 2) if dpct is not None and not pd.isna(dpct) else None,
                 "note": r["note"] or "",
             })
         return out

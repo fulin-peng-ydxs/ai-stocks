@@ -6,6 +6,7 @@ import {
   deleteScoreProfile,
   getIndicatorRegistry,
   getScoreProfile,
+  getScoreProfileVersions,
   listScoreProfiles,
   runScoreProfile,
   saveIndicatorDef,
@@ -16,6 +17,7 @@ import {
   type IndicatorParam,
   type ScoreItem,
   type ScoreProfileSummary,
+  type ScoreProfileVersion,
   type ScoreRunRow,
 } from '@/api/scoreProfile'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
@@ -181,6 +183,7 @@ async function submitNewDef() {
 // ── 评分方案 ──
 const profiles = ref<ScoreProfileSummary[]>([])
 const curId = ref<string>('')
+const curVersion = ref<number | null>(null)
 const editId = ref('')
 const editName = ref('')
 const items = ref<ScoreItem[]>([])
@@ -198,11 +201,27 @@ async function loadProfiles() {
 async function selectProfile(pid: string) {
   const p = await getScoreProfile(pid)
   curId.value = p.id
+  curVersion.value = p.version
   editId.value = p.id
   editName.value = p.name
   items.value = JSON.parse(JSON.stringify(p.items))
   items.value.forEach(ensureParams)
   isNew.value = false
+}
+
+// ── 评分方案历史版本（回看/载入；载入仅写入编辑器，保存后才生成新版本）──
+const sVerVisible = ref(false)
+const sVersions = ref<ScoreProfileVersion[]>([])
+async function openScoreVersions() {
+  if (!curId.value) return
+  sVersions.value = (await getScoreProfileVersions(curId.value)).versions
+  sVerVisible.value = true
+}
+function restoreScoreVersion(v: ScoreProfileVersion) {
+  items.value = JSON.parse(JSON.stringify(v.items))
+  items.value.forEach(ensureParams)
+  sVerVisible.value = false
+  ElMessage.success(`已载入 v${v.version} 到编辑器，确认后点「保存」生成新版本`)
 }
 
 // 确保评分项的 params 含该指标全部参数（补默认值），供参数输入框绑定
@@ -216,6 +235,7 @@ function ensureParams(item: ScoreItem) {
 
 function newProfile() {
   curId.value = ''
+  curVersion.value = null
   editId.value = ''
   editName.value = ''
   items.value = []
@@ -313,8 +333,9 @@ async function save() {
   }
   saving.value = true
   try {
-    await saveScoreProfile({ id: editId.value, name: editName.value, items: items.value })
-    ElMessage.success('已保存')
+    const r = await saveScoreProfile({ id: editId.value, name: editName.value, items: items.value })
+    curVersion.value = r.version
+    ElMessage.success(`已保存（v${r.version}）`)
     isNew.value = false
     curId.value = editId.value
     await loadProfiles()
@@ -371,16 +392,19 @@ async function tryRun() {
 import {
   deleteTradeProfile,
   getTradeProfile,
+  getTradeProfileVersions,
   listTradeProfiles,
   previewConditions,
   saveTradeProfile,
   type CondTree,
   type TradeCond,
   type TradeProfileSummary,
+  type TradeProfileVersion,
 } from '@/api/tradeProfile'
 
 const tProfiles = ref<TradeProfileSummary[]>([])
 const tCurId = ref('')
+const tCurVersion = ref<number | null>(null)
 const tEditId = ref('')
 const tEditName = ref('')
 const tIsNew = ref(false)
@@ -451,7 +475,7 @@ function fromTree(tree: CondTree | Record<string, never> | undefined): { logic: 
 
 async function selectTradeProfile(pid: string) {
   const p = await getTradeProfile(pid)
-  tCurId.value = p.id; tEditId.value = p.id; tEditName.value = p.name; tIsNew.value = false
+  tCurId.value = p.id; tCurVersion.value = p.version; tEditId.value = p.id; tEditName.value = p.name; tIsNew.value = false
   const b = fromTree(p.buy_tree); buyLogic.value = b.logic; buyConds.value = b.conds
   const s = fromTree(p.sell_tree); sellLogic.value = s.logic; sellConds.value = s.conds
   backstop.value = {
@@ -461,10 +485,30 @@ async function selectTradeProfile(pid: string) {
   }
 }
 function newTradeProfile() {
-  tCurId.value = ''; tEditId.value = ''; tEditName.value = ''; tIsNew.value = true
+  tCurId.value = ''; tCurVersion.value = null; tEditId.value = ''; tEditName.value = ''; tIsNew.value = true
   buyLogic.value = 'AND'; buyConds.value = []
   sellLogic.value = 'OR'; sellConds.value = []
   backstop.value = { tp: null, sl: null, hold: null }
+}
+
+// ── 买卖方案历史版本（回看/载入；载入仅写入编辑器，保存后才生成新版本）──
+const tVerVisible = ref(false)
+const tVersions = ref<TradeProfileVersion[]>([])
+async function openTradeVersions() {
+  if (!tCurId.value) return
+  tVersions.value = (await getTradeProfileVersions(tCurId.value)).versions
+  tVerVisible.value = true
+}
+function restoreTradeVersion(v: TradeProfileVersion) {
+  const b = fromTree(v.buy_tree); buyLogic.value = b.logic; buyConds.value = b.conds
+  const s = fromTree(v.sell_tree); sellLogic.value = s.logic; sellConds.value = s.conds
+  backstop.value = {
+    tp: v.backstop?.take_profit != null ? Math.round(v.backstop.take_profit * 100) : null,
+    sl: v.backstop?.stop_loss != null ? Math.round(v.backstop.stop_loss * 100) : null,
+    hold: v.backstop?.max_hold_days ?? null,
+  }
+  tVerVisible.value = false
+  ElMessage.success(`已载入 v${v.version} 到编辑器，确认后点「保存」生成新版本`)
 }
 async function saveTrade() {
   if (!tEditId.value || !tEditName.value) { ElMessage.warning('请填写方案 ID 和名称'); return }
@@ -476,13 +520,14 @@ async function saveTrade() {
   }
   tSaving.value = true
   try {
-    await saveTradeProfile({
+    const r = await saveTradeProfile({
       id: tEditId.value, name: tEditName.value,
       buy_tree: toTree(buyLogic.value, buyConds.value),
       sell_tree: toTree(sellLogic.value, sellConds.value),
       backstop: bs,
     })
-    ElMessage.success('已保存'); tIsNew.value = false; tCurId.value = tEditId.value
+    tCurVersion.value = r.version
+    ElMessage.success(`已保存（v${r.version}）`); tIsNew.value = false; tCurId.value = tEditId.value
     await loadTradeProfiles()
   } catch { /* 拦截器已提示 */ } finally { tSaving.value = false }
 }
@@ -561,6 +606,7 @@ onMounted(async () => {
             <div class="ed-head">
               <el-input v-model="editId" :disabled="!isNew" placeholder="方案ID(英文)" style="width: 180px" />
               <el-input v-model="editName" placeholder="方案名称" style="width: 200px" />
+              <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openScoreVersions">v{{ curVersion }}</span>
               <span class="wsum" :class="{ bad: weightSum !== 100 }">权重合计 {{ weightSum }}%</span>
               <div class="spacer" />
               <el-button :loading="saving" type="primary" @click="save">保存</el-button>
@@ -861,6 +907,7 @@ onMounted(async () => {
             <div class="ed-head">
               <el-input v-model="tEditId" :disabled="!tIsNew" placeholder="方案ID(英文)" style="width: 170px" />
               <el-input v-model="tEditName" placeholder="方案名称" style="width: 190px" />
+              <span v-if="tCurVersion && !tIsNew" class="ver-badge" title="点击查看历史版本" @click="openTradeVersions">v{{ tCurVersion }}</span>
               <div class="spacer" />
               <el-button :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
               <el-button v-if="tCurId && !tIsNew" type="danger" plain @click="removeTrade">删除</el-button>
@@ -997,6 +1044,37 @@ onMounted(async () => {
     </el-tabs>
     </div>
 
+    <!-- 评分方案历史版本 -->
+    <el-dialog v-model="sVerVisible" :title="`历史版本 · ${editName || ''}`" width="560px">
+      <el-empty v-if="!sVersions.length" description="暂无历史版本" />
+      <div v-for="v in sVersions" :key="v.version" class="ver-item">
+        <div class="ver-head">
+          <b>v{{ v.version }}</b>
+          <span class="hint">{{ v.saved_at?.slice(0, 16) }}</span>
+          <span class="hint">{{ v.items.length }} 项指标</span>
+          <div class="spacer" />
+          <el-button text type="primary" size="small" @click="restoreScoreVersion(v)">载入此版本</el-button>
+        </div>
+        <pre class="ast">{{ JSON.stringify(v.items, null, 2) }}</pre>
+      </div>
+    </el-dialog>
+
+    <!-- 买卖方案历史版本 -->
+    <el-dialog v-model="tVerVisible" :title="`历史版本 · ${tEditName || ''}`" width="560px">
+      <el-empty v-if="!tVersions.length" description="暂无历史版本" />
+      <div v-for="v in tVersions" :key="v.version" class="ver-item">
+        <div class="ver-head">
+          <b>v{{ v.version }}</b>
+          <span class="hint">{{ v.saved_at?.slice(0, 16) }}</span>
+          <div class="spacer" />
+          <el-button text type="primary" size="small" @click="restoreTradeVersion(v)">载入此版本</el-button>
+        </div>
+        <pre class="ast">买入 {{ JSON.stringify(v.buy_tree, null, 2) }}
+卖出 {{ JSON.stringify(v.sell_tree, null, 2) }}
+兜底 {{ JSON.stringify(v.backstop, null, 2) }}</pre>
+      </div>
+    </el-dialog>
+
     <PageSettingsDrawer v-model="settingsOpen" title="配置管理" :dirty="isDirty" @reset="reset">
       <PageSettingSection title="界面默认项">
         <div class="setting-item">
@@ -1123,6 +1201,41 @@ onMounted(async () => {
 }
 .spacer {
   flex: 1;
+}
+.ver-badge {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.ver-badge:hover {
+  background: var(--el-color-primary-light-7);
+}
+.ver-item {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.ver-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ast {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
 }
 .wsum {
   font-size: 13px;

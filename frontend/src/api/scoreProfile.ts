@@ -105,6 +105,18 @@ export function saveScoreProfile(body: {
 export function deleteScoreProfile(pid: string): Promise<{ msg: string }> {
   return http.delete(`/score-profiles/${pid}`)
 }
+
+// 方案历史版本（回看/载入）
+export interface ScoreProfileVersion {
+  version: number
+  name: string
+  items: ScoreItem[]
+  grade_thresholds: Record<string, number>
+  saved_at: string
+}
+export function getScoreProfileVersions(pid: string): Promise<{ id: string; versions: ScoreProfileVersion[] }> {
+  return http.get(`/score-profiles/${pid}/versions`)
+}
 export function runScoreProfile(body: {
   profile_id?: string
   items?: ScoreItem[]

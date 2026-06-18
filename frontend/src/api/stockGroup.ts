@@ -17,6 +17,8 @@ export interface GroupMember {
   name: string | null
   add_date: string | null
   ret: number | null        // 最近涨幅（加入日 → 最新，小数）
+  price: number | null      // 最新收盘价（元）
+  pct_chg: number | null    // 最新交易日当日涨跌幅（%）
   last_date: string | null
   note: string
 }

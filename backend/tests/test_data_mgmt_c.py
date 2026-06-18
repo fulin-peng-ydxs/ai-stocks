@@ -426,6 +426,131 @@ def test_update_includes_valuation(client, monkeypatch):
     assert called["val"] is True and "valuation" in res
 
 
+# ── 续跑修复：终止信号穿透尾部容错兜底 / 续跑锁定目标日且跳过前置 ──
+def test_update_cancel_in_valuation_propagates(client, monkeypatch):
+    """回归：补市值阶段被终止时 TaskCancelled 必须穿透 update() 容错兜底（而非被
+    except Exception 当成"市值源失败"吞掉后跑完）→ 任务才能转可续跑中断。"""
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.services.async_task import TaskCancelled, TaskContext
+    from backend.storage.repository import MarketRepository
+
+    def _init(self, source=None):
+        self.s = get_effective_settings()
+        self.c = client
+        self.repo = MarketRepository(client)
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_calendar", lambda self, *a, **k: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_indices", lambda self, *a, **k: None, raising=True)
+
+    def _cancel(self, *a, **k):  # 模拟在补最新日市值的检查点点了终止
+        raise TaskCancelled()
+    monkeypatch.setattr(ingest.IngestionService, "ingest_valuation_latest", _cancel, raising=True)
+
+    ctx = TaskContext(AsyncTaskService(client), "task_cancel_val")
+    with pytest.raises(TaskCancelled):
+        ingest.IngestionService().update(ctx=ctx)
+
+
+def test_resume_pins_target_end_and_skips_prep(client, monkeypatch):
+    """续跑：checkpoint 有 target_end 时沿用该目标日、跳过日历/指数前置与就绪重探，
+    不被重算成今天（修问题 2a/2b）。"""
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.services.async_task import TaskContext
+    from backend.storage.repository import MarketRepository
+
+    def _init(self, source=None):
+        self.s = get_effective_settings()
+        self.c = client
+        self.repo = MarketRepository(client)
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    calls = {"cal": 0, "idx": 0, "resolve": 0}
+    monkeypatch.setattr(ingest.IngestionService, "ingest_calendar",
+                        lambda self, *a, **k: calls.__setitem__("cal", calls["cal"] + 1), raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_indices",
+                        lambda self, *a, **k: calls.__setitem__("idx", calls["idx"] + 1), raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "_resolve_update_end",
+                        lambda self, *a, **k: calls.__setitem__("resolve", calls["resolve"] + 1) or date.today(),
+                        raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_valuation_latest", lambda self, *a, **k: {}, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_valuation",
+                        lambda self, *a, **k: {"total_mv_rows": 0}, raising=True)
+
+    ctx = TaskContext(AsyncTaskService(client), "task_resume_pin",
+                      checkpoint={"target_end": "2024-01-05", "done_codes": []})
+    ingest.IngestionService().update(ctx=ctx)
+    assert calls == {"cal": 0, "idx": 0, "resolve": 0}      # 前置/就绪门全跳过
+    assert ctx.checkpoint["target_end"] == "2024-01-05"     # 沿用原目标日，未被重算成今天
+
+
+def test_ingest_date_collects_indices_and_resume_skips_prep(client, monkeypatch):
+    """B-2：指定日期采集也补区间指数（避免回测基准缺口）；C：续跑跳过日历/指数前置。"""
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.services.async_task import TaskContext
+    from backend.storage.repository import MarketRepository
+
+    client.execute("INSERT INTO stock_basic (code, name, price_limit_pct) VALUES ('A.SH','甲',0.10)")
+
+    def _init(self, source=None):
+        self.s = get_effective_settings(); self.c = client; self.repo = MarketRepository(client)
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    calls = {"cal": 0, "idx": 0}
+    monkeypatch.setattr(ingest.IngestionService, "ingest_calendar",
+                        lambda self, *a, **k: calls.__setitem__("cal", calls["cal"] + 1), raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_indices",
+                        lambda self, *a, **k: calls.__setitem__("idx", calls["idx"] + 1), raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily", lambda self, *a, **k: 0, raising=True)
+
+    ctx = TaskContext(AsyncTaskService(client), "id_first")
+    ingest.IngestionService().ingest_date(date(2024, 1, 2), date(2024, 1, 3), ctx=ctx)
+    assert calls == {"cal": 1, "idx": 1}                    # B-2：指数也采了
+    assert ctx.checkpoint.get("prep_done") is True
+
+    ctx2 = TaskContext(AsyncTaskService(client), "id_resume",
+                       checkpoint={"prep_done": True, "done_codes": []})
+    ingest.IngestionService().ingest_date(date(2024, 1, 2), date(2024, 1, 3), ctx=ctx2)
+    assert calls == {"cal": 1, "idx": 1}                    # C：续跑没再采前置
+
+
+def test_backfill_resume_skips_prep_and_reports_mv(client, monkeypatch):
+    """C：backfill 续跑跳过日历/指数/基础信息（基础信息改从库读）；B-1：结束报告缺 total_mv 数。"""
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.services.async_task import TaskContext
+    from backend.storage.repository import MarketRepository
+
+    client.execute("INSERT INTO stock_basic (code, name, price_limit_pct) VALUES ('A.SH','甲',0.10)")
+
+    def _init(self, source=None):
+        self.s = get_effective_settings(); self.c = client; self.repo = MarketRepository(client)
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    calls = {"cal": 0, "idx": 0, "basic": 0}
+    monkeypatch.setattr(ingest.IngestionService, "ingest_calendar",
+                        lambda self, *a, **k: calls.__setitem__("cal", calls["cal"] + 1), raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_indices",
+                        lambda self, *a, **k: calls.__setitem__("idx", calls["idx"] + 1), raising=True)
+
+    def _basic(self, codes=None, ctx=None):
+        calls["basic"] += 1
+        return pd.DataFrame([{"code": "A.SH", "name": "甲", "price_limit_pct": 0.10}])
+    monkeypatch.setattr(ingest.IngestionService, "ingest_stock_basic", _basic, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily", lambda self, *a, **k: 0, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "_post_ingest_validate", lambda self: None, raising=True)
+
+    ctx = TaskContext(AsyncTaskService(client), "bf_first")
+    res = ingest.IngestionService().backfill(ctx=ctx)
+    assert calls == {"cal": 1, "idx": 1, "basic": 1}        # 首跑前置全采
+    assert ctx.checkpoint.get("prep_done") is True
+    assert res["mv_missing"] == 1                            # A.SH 尚无 total_mv → 透明提示
+
+    ctx2 = TaskContext(AsyncTaskService(client), "bf_resume", checkpoint={"prep_done": True})
+    res2 = ingest.IngestionService().backfill(ctx=ctx2)
+    assert calls == {"cal": 1, "idx": 1, "basic": 1}         # C：续跑未再触发前置/基础信息（改从库读）
+    assert res2["target"] == 1                               # 从库读到 A.SH
+
+
 # ── 补市值：流通市值仅填空缺、不覆盖新浪日线已写的更准值（baostock 兜底票靠此拿 float_mv）──
 def test_valuation_fills_missing_float_mv_only(client, monkeypatch):
     from backend.config import get_effective_settings

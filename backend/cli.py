@@ -24,6 +24,14 @@ log = get_logger("cli")
 
 
 class CliTaskContext:
+    """CLI 侧轻量任务上下文：完整鸭子类型 TaskContext（log/progress/flush/set_phase/
+    set_checkpoint/check_cancel + checkpoint 属性），把进度/日志映射到 stdout 实时打印，
+    让 CLI 与任务中心同源同标准。CLI 单次前台执行：不续跑、不协作终止，故 check_cancel 空操作、
+    checkpoint 仅进程内保存（单次运行内自洽，不落库）。"""
+
+    def __init__(self) -> None:
+        self.checkpoint: dict = {}
+
     def check_cancel(self) -> None:
         return None
 
@@ -35,8 +43,14 @@ class CliTaskContext:
     def progress(self, progress: float, message: str) -> None:
         print(f"{progress * 100:.1f}% {message}", flush=True)
 
-    def set_checkpoint(self, **_: object) -> None:
+    def flush(self) -> None:
         return None
+
+    def set_checkpoint(self, **data: object) -> None:
+        self.checkpoint.update(data)
+
+    def set_phase(self, phase: str, **data: object) -> None:
+        self.checkpoint.update({"phase": phase, **data})
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -97,7 +111,8 @@ def cmd_backfill(args: argparse.Namespace) -> int:
 
     codes = _resolve_codes(args)
     result = IngestionService().backfill(
-        codes=codes, years=args.years, concurrency=getattr(args, "concurrency", None))
+        codes=codes, years=args.years, concurrency=getattr(args, "concurrency", None),
+        ctx=CliTaskContext())
     print(f"回填完成: {result}")
     return 0
 
@@ -106,7 +121,7 @@ def cmd_update(args: argparse.Namespace) -> int:
     from backend.services import IngestionService
 
     codes = _resolve_codes(args)
-    result = IngestionService().update(codes=codes, concurrency=args.concurrency)
+    result = IngestionService().update(codes=codes, concurrency=args.concurrency, ctx=CliTaskContext())
     print(f"增量更新完成: {result}")
     return 0
 
