@@ -13,7 +13,7 @@
 - **APScheduler 定时调度**：`backend/scheduler/scheduler.py`。定义持久化在 `scheduled_job` 表，`SCHEDULABLE_TASK_TYPES`（`:25`）限定可定时的类型。频率 `daily/weekly/monthly/cron` 经 `compile_trigger()`（`:65`）统一编译成 APScheduler `CronTrigger`，注册到进程内 `BackgroundScheduler` 单例（`:22`）。到点回调 `_fire_job()`（`:140`）读最新 job 定义→`trading_day_only` 判交易日→`create()` 创建 `async_task`（`trigger_source='scheduled'`）。
 - **配置覆盖层即时生效**：基线 `config/settings.yaml` 经 Pydantic v2 模型校验（`backend/config/settings.py`），`get_settings()`（`:188`）`lru_cache` 单例只读 YAML。Web 表单改的参数落 `app_config` 表（点分路径→JSON，`backend/storage/app_config.py`，仅白名单 `WHITELIST`（`:64`）可改、逐项类型/范围校验）。`get_effective_settings()`（`backend/config/settings.py:199`）每次调用重新合并 `YAML ⊕ 覆盖层`（不缓存），故改参即时生效，DB 不可用时静默回落 YAML。
 - **dev/prod 部署**：`start.sh` 用 `nohup` 脱离会话启动 `backend.cli serve`，防误杀。dev 模式 `--reload`（改 `backend/*.py` 热重启 worker）+ 绑 `127.0.0.1`（仅本机，外部走前端 5173 代理）；prod 无热重载、绑 `0.0.0.0` 对外托管。生产期 `frontend/dist` 由 FastAPI `StaticFiles` 同源托管，SPA 深链/刷新回退 `index.html`（`backend/main.py:80-96`）。
-- **前端布局自适应 + 列表交互标准**：Vue 3 + Element Plus + Pinia + vue-router（history 模式）。布局硬约束见 `docs/前端布局自适应规范.md`：整页/视口永不滚动，超高内容由页内"成长区"内部消化；契约样式 `.v-page/.v-grow/.v-scroll` 落在 `frontend/src/styles/global.css`，外壳 `App.vue` 的 `.main` 已 `overflow:hidden`+flex 填充（`:393`）。列表交互走服务端分页/排序/筛选、筛选变更自动触发、多选跨页累积。
+- **前端布局自适应 + 列表交互标准**：Vue 3 + Element Plus + Pinia + vue-router（history 模式）。布局硬约束见 `ai-agent/前端布局自适应规范.md`：整页/视口永不滚动，超高内容由页内"成长区"内部消化；契约样式 `.v-page/.v-grow/.v-scroll` 落在 `frontend/src/styles/global.css`，外壳 `App.vue` 的 `.main` 已 `overflow:hidden`+flex 填充（`:393`）。列表交互走服务端分页/排序/筛选、筛选变更自动触发、多选跨页累积。
 
 ## 业务架构
 
@@ -40,10 +40,14 @@
 | 模式 | 命令 | 端口 | 适用场景 |
 |------|------|------|----------|
 | 开发后端 | `./start.sh` 或 `./start.sh dev` | `127.0.0.1:8000` | 后端热重载，配合前端 Vite |
-| 开发前端 | `cd frontend && npm run dev` | `0.0.0.0:5173` | 前端 HMR，代理 `/api` 到后端 |
+| 开发前端 | `./start-web.sh` | `0.0.0.0:5173` | 前端 HMR，代理 `/api` 到后端 |
+| 自动化验证 | `npm run dev -- --port 5181 --strictPort` | `5181` | AI 截图/交互核查专用，不占用日常 5173 |
 | 生产/集成 | `npm run build` 后 `./start.sh prod` | `0.0.0.0:8000` | 后端托管 `frontend/dist` |
 
 开发期浏览器访问 `5173`，生产/集成期访问 `8000`。不要把无鉴权的 `prod` 端口暴露到公网。
+
+自动化验证（AI 用 preview 做截图/交互核查）走**独立端口 5181**，与日常 5173 并存、互不干扰，同样由 Vite 代理 `/api` 回 8000。Claude Code 的 preview 工具配置在 `.claude/launch.json`；它只服务 AI 验证，与日常开发的 `start.sh`/`start-web.sh` 无关。
+preview 工具只能托管自己启动的进程，故验证一律用 `ai-stocks-verify`，不要去抢占或杀掉用户手动起的 5173。
 
 ### 2. 进程、任务、数据库关系
 
@@ -100,7 +104,7 @@ flowchart LR
 | 多选跨页用前端集合 | 避免用户翻页后选择丢失 |
 | 图表和表格要有稳定高度 | 避免布局抖动和遮挡 |
 
-详细 CSS 和布局规则见 `docs/前端布局自适应规范.md`。
+详细 CSS 和布局规则见 `ai-agent/前端布局自适应规范.md`。
 
 ### 6. 常见平台级故障定位
 
