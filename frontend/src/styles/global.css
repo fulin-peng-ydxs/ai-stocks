@@ -104,35 +104,35 @@ html.dark .trade-cal .el-date-table td.available:not(.current):not(.today) .el-d
 
 /* 夜间：用柔和的深石板蓝替代 Element Plus 默认近纯黑，降低对比、减少刺眼 */
 html.dark {
-  --el-bg-color-page: #12161e; /* 页面底色 */
-  --el-bg-color: #1a202b; /* 卡片/表格底色 */
-  --el-bg-color-overlay: #1a202b;
-  --el-fill-color-blank: #1a202b;
-  --el-text-color-primary: #d2d8e0; /* 主文字：米白而非纯白 */
+  --el-bg-color-page: #000000; /* 页面底色：纯黑 */
+  --el-bg-color: #0c0e12; /* 卡片/表格底色：近黑，保留层次 */
+  --el-bg-color-overlay: #14171d; /* 弹层：更高一层 */
+  --el-fill-color-blank: #0c0e12;
+  --el-text-color-primary: #d2d8e0; /* 主文字：米白而非纯白，避免刺眼 */
   --el-text-color-regular: #b3bac6;
-  --el-border-color: #2b3340;
-  --el-border-color-light: #252c38;
-  --el-border-color-lighter: #222834;
-  --el-fill-color: #232b37; /* 分段条空槽底色 */
-  --el-fill-color-light: #1f2632;
-  --chrome-bg: #1d2331;
-  --chrome-bg-soft: #262d3d;
-  --chrome-bg-soft-hover: #2d3650;
-  --chrome-border: #2a3142;
-  --chrome-border-strong: #313a4d;
-  --chrome-border-hover: #3a4660;
+  --el-border-color: #2e3644; /* 纯黑底上略提亮，保证边框可见 */
+  --el-border-color-light: #262d39;
+  --el-border-color-lighter: #20262f;
+  --el-fill-color: #1b212b; /* 分段条空槽底色 */
+  --el-fill-color-light: #14181f;
+  --chrome-bg: #070a0f; /* 顶/侧菜单：近黑 */
+  --chrome-bg-soft: #11151d;
+  --chrome-bg-soft-hover: #1a2030;
+  --chrome-border: #20283a;
+  --chrome-border-strong: #2a3346;
+  --chrome-border-hover: #36425c;
   --chrome-text: #c9d1d9;
   --chrome-text-strong: #ffffff;
   --chrome-text-muted: #5a6371;
-  --chrome-submenu-bg: #171c28;
-  --chrome-active-bg: #2b3346;
-  --drawer-bg: #111722;
-  --drawer-card-bg: #182131;
-  --drawer-border: #20293a;
+  --chrome-submenu-bg: #050709;
+  --chrome-active-bg: #202a3d;
+  --drawer-bg: #050709;
+  --drawer-card-bg: #0e131c;
+  --drawer-border: #1a2230;
   --drawer-text: #d5dbea;
   --drawer-text-muted: #8c96a8;
-  --page-settings-bg: #212833;
-  --page-settings-border: #303948;
+  --page-settings-bg: #14181f;
+  --page-settings-border: #283041;
   --page-settings-shadow: rgba(0, 0, 0, 0.42);
   --page-settings-section-bg: rgba(60, 67, 78, 0.54);
   --page-settings-section-border: #3a4250;
@@ -141,7 +141,7 @@ html.dark {
   --page-settings-text-subtle: #a2adbc;
   --page-settings-text-muted: #8a95a5;
   --page-settings-accent: #ef604f;
-  --page-settings-dot-ring: #212833;
+  --page-settings-dot-ring: #14181f;
   --page-settings-trigger-text: #818c9d;
   --page-settings-trigger-hover-text: #f0f3f8;
   --page-settings-trigger-hover-bg: rgba(255, 255, 255, 0.08);
@@ -166,4 +166,16 @@ html.dark {
 .page-table-compact .el-table__cell {
   padding-top: 6px;
   padding-bottom: 6px;
+}
+
+/* 全局：所有列表统一不隔行变色（兜底，即使误带 stripe 也保持一致） */
+.el-table .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: transparent;
+}
+
+/* 暗色：行 hover 高亮。
+   注意 Element Plus 在 .el-table 上把 --el-table-row-hover-bg-color 重声明为
+   var(--el-fill-color-light)，会遮蔽 html.dark 根级覆盖，故必须在 .el-table 作用域覆盖。 */
+html.dark .el-table {
+  --el-table-row-hover-bg-color: #33456a;
 }

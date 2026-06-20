@@ -524,7 +524,7 @@ onMounted(async () => {
     <el-card shadow="never" class="v-grow">
       <!-- 分组视图 -->
       <template v-if="inGroupMode">
-        <el-table :data="groupRows" v-loading="groupLoading" stripe row-key="code"
+        <el-table :data="groupRows" v-loading="groupLoading" row-key="code"
           height="100%"
           class="clickable" @row-click="(r: GroupMember) => enterDetail(r.code)"
           @sort-change="onGroupSortChange"
@@ -567,7 +567,7 @@ onMounted(async () => {
 
       <!-- 普通查询 -->
       <template v-else>
-        <el-table :data="rows" v-loading="loading" stripe row-key="code"
+        <el-table :data="rows" v-loading="loading" row-key="code"
           height="100%"
           class="clickable" @row-click="(r: StockBasic) => enterDetail(r.code)"
           :default-sort="{ prop: 'pct_chg', order: 'ascending' }" @sort-change="onSortChange"

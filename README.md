@@ -67,18 +67,19 @@
 
 ## 2. 功能模块与技术文档
 
-系统按"数据先可靠、方案可配置、结果可验证"组织成六个业务模块。README 负责说明**从哪里进、做什么、和谁关联**；每个模块的详细说明书放在 [`docs/architecture/`](docs/architecture/)。
+系统按"数据先可靠、方案可配置、结果可验证"组织成六个业务模块。README 负责说明**从哪里进、做什么、和谁关联**；每个模块的详细说明书放在 [`agent-works/architecture/`](agent-works/architecture/)。
 
 | 模块 | 页面入口 | 主要 API | 你在这里完成什么 | 详细说明书 |
 |------|----------|----------|------|----------|
-| 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按选定**评分方案**全市场排序（0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](docs/architecture/screening-and-board.md) |
-| 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存 + 版本回看 | [screening-and-board.md](docs/architecture/screening-and-board.md) |
-| 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率 | [backtest.md](docs/architecture/backtest.md) |
-| 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 列表（服务端排序/分页，含退市股）；详情（K 线 + 指标快照 + 当前买卖方案信号）；股票分组篮子 | [stocks-and-groups.md](docs/architecture/stocks-and-groups.md) |
-| ⚙️ **配置管理** | `ConfigView` | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 三大定义：技术指标（注册表）/ 买卖方案（买入+卖出+兜底）/ 评分规则（阈值打分+动态权重） | [config-definitions.md](docs/architecture/config-definitions.md) |
-| 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](docs/architecture/data-management.md) |
+| 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按选定**评分方案**全市场排序（0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
+| 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存 + 版本回看 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
+| 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率 | [backtest.md](agent-works/architecture/backtest.md) |
+| 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 列表（服务端排序/分页，含退市股）；详情（K 线 + 指标快照 + 当前买卖方案信号）；股票分组篮子 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
+| ⚙️ **配置管理** | `ConfigView` | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 三大定义：技术指标（注册表）/ 买卖方案（买入+卖出+兜底）/ 评分规则（阈值打分+动态权重） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
+| 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
+| 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线 + T+1 真实撮合买卖；一局产出评分/评级/资金曲线；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
-> 横切的基础设施（点时安全仓库、异步任务底座、定时调度、配置生效、服务部署、前端布局规范）见 [platform.md](docs/architecture/platform.md)。
+> 横切的基础设施（点时安全仓库、异步任务底座、定时调度、配置生效、服务部署、前端布局规范）见 [platform.md](agent-works/architecture/platform.md)。
 
 ### 2.1 模块关系图
 
@@ -94,6 +95,7 @@ flowchart LR
   CFG --> BT
   DB --> STK["个股与分组\nK线 / 信号 / 股票篮子"]
   CFG --> STK
+  DB --> TRN["盘感训练\n盲测 / T+1撮合 / 评分成长"]
 ```
 
 ### 2.2 常用工作流
@@ -106,6 +108,7 @@ flowchart LR
 | 新建选股思路 | 配置管理建指标/评分/买卖方案 → 策略筛选试条件 → 每日榜单看排序 | 得到可保存、可版本回看的一组方案 |
 | 验证策略能否交易 | 策略筛选 + 评分方案 + 买卖方案 → 回测验证 | 净值、回撤、逐笔成交、卖出原因、分层命中率 |
 | 跟踪一批股票 | 个股查询跨页勾选 → 存为分组 → 详情页连续翻看 | 分组篮子、组内涨幅、K线与买卖信号联动 |
+| 练盘感 / 验手感 | 盘感训练 → 配置窗口/资金 → 盲测随机股逐日买卖 → 结算看评级与成长曲线 | 成交明细、资金曲线、评分、身份揭晓、跨局成长轨迹 |
 
 ---
 
@@ -115,10 +118,10 @@ flowchart LR
 backend/
   api/            REST 路由（薄层）：board / stocks / screen / backtest / config
                   / indicators / score_profiles / trade_profiles / stock_groups
-                  / data_tasks / data_admin / health
+                  / data_tasks / data_admin / health / training
   services/       编排层：ingest（入库）· screen_score（筛选打分）· backtest
                   · pipeline（一键日常 DailyPipeline）· async_task（异步任务底座）
-                  · data_report / data_verify / data_sources
+                  · data_report / data_verify / data_sources · training（盘感训练）
   datasource/     数据源适配（akshare / baostock；限流·重试·超时·兜底·溯源）
   storage/        DuckDB 连接 / DDL / 点时安全仓库 / 配置覆盖层 / 数据目录
   dataquality/    入库清洗 + 四层质检（checker）
@@ -135,10 +138,12 @@ backend/
   tests/          后端单测（pytest）
 
 frontend/         Vue3 + TS + Element Plus + ECharts，构建产物 frontend/dist 由后端托管
-docs/architecture/ 各模块技术文档（核心技术 / 业务架构 / 业务流程 / 风险事项）
+agent-works/architecture/ 各模块技术文档（核心技术 / 业务架构 / 业务流程 / 风险事项）
+agent-works/market-sense-training/ 盘感训练模块需求 / 开发计划 / 开发留痕 / DDL 归档
 config/           settings.yaml —— 所有阈值/权重/参数（改参不改码）
 data/             ai_stocks.duckdb（DuckDB 数据文件）+ exports（导出）
-docs/             需求 / 系统设计 / 任务清单 / 演进过程文档 / 前端布局规范（见 §7）
+agent-works/initialization/ 需求 / 系统设计 / 任务清单 / 演进过程文档
+ai-agent/         前端布局自适应规范等通用规范文档（见 §7）
 start.sh          后端启停脚本（dev/prod，见 §5.1）
 ```
 
@@ -168,17 +173,20 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 
 ```bash
 ./start.sh                      # 后端 8000，热重载（= python -m backend.cli serve --reload，nohup 脱离会话）
-cd frontend && npm run dev      # 前端 5173，HMR（首次先 npm install）
+./start-web.sh                  # 前端 5173，HMR（nohup 脱离会话，首次先 npm install）
 ```
+
+两个脚本接口一致：`dev`(默认) / `stop` / `restart` / `status` / `logs`。后端日志 `logs/backend.log`，前端日志 `logs/frontend.log`。
 
 | 角色 | 命令 | 监听 | 对外? | 热更 |
 |------|------|------|-------|------|
 | 后端 | `./start.sh`（dev，默认） | `127.0.0.1:8000` | ❌ 仅本机 | watchfiles 自动重启 |
-| 前端 | `npm run dev` | `0.0.0.0:5173` | ✅ 局域网 | Vite HMR |
+| 前端 | `./start-web.sh` | `0.0.0.0:5173` | ✅ 局域网 | Vite HMR |
 
 - 唯一对外入口是前端 5173；后端 8000 只对本机，由 Vite 代理 `/api` 回 `127.0.0.1:8000`。
 - 开发期改前端**不要** `npm run build`（那是生产产物、不带 HMR）。
 - 日志在 `logs/backend.log`，`./start.sh logs` 跟踪、`./start.sh status` 查状态（`/health=200` 即就绪）。
+- 自动化验证（AI 截图/交互核查）走**专用端口 5181**，不占用日常的 5173。两个前端实例可并存，同样由 Vite 代理 `/api` 回 8000。Claude Code 的 preview 工具配置在 `.claude/launch.json`，与日常开发的 `start.sh`/`start-web.sh` 互不相关。
 
 **启动检查顺序**：
 
@@ -304,7 +312,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 
 ## 6. 开发契约（不可破坏）
 
-> 系统命脉与扩展边界。新增/修改功能前务必先读；细节见各模块技术文档与 [platform.md](docs/architecture/platform.md)。
+> 系统命脉与扩展边界。新增/修改功能前务必先读；细节见各模块技术文档与 [platform.md](agent-works/architecture/platform.md)。
 
 - **防未来函数**：指标/均线一律后向计算；选股只用 ≤T 数据，回测 T 日选股、**T+1 开盘成交**；平台突破用 `shift(1)` 防自指（AST 单测拦截 `shift(负)`）。
 - **防幸存者偏差**：universe 点时构造，含"当时存活、后来退市"的票；退市股历史已入库。
@@ -319,7 +327,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 
 ## 7. 开发历程与关联文档
 
-系统由"趋势龙头选股与回测底座"起步，逐步收敛为当前"统一基座 + 配置化 + 闭环化"的形态；数据管理模块经历了从基础采集到"四层质检 + 修复闭环 + 逐只补市值"的完善。以下 [`docs/`](docs/) 下文档记录了需求、设计与各阶段演进过程，**作为历史与设计依据保留**（当前系统实况以 §2 各模块技术文档为准）：
+系统由"趋势龙头选股与回测底座"起步，逐步收敛为当前"统一基座 + 配置化 + 闭环化"的形态；数据管理模块经历了从基础采集到"四层质检 + 修复闭环 + 逐只补市值"的完善。以下 [`agent-works/initialization/`](agent-works/initialization/) 下文档记录了需求、设计与各阶段演进过程，**作为历史与设计依据保留**（当前系统实况以 §2 各模块技术文档为准）：
 
 | 文档 | 内容 |
 |------|------|
@@ -328,6 +336,6 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | 《任务清单 — 趋势龙头选股与回测系统》 | 里程碑任务分解 |
 | 《重构 — 需求设计任务》 | 统一基座 / 配置化 / 废观察池等关键决策与模块明细 |
 | 《数据管理模块完善 — 需求设计任务》 | 数据管理重构（异步任务底座 / 评分快照 / 四层质检）需求 |
-| [《前端布局自适应规范》](docs/前端布局自适应规范.md) | 布局两层自适应 + 列表交互标准（前端开发契约） |
+| [《前端布局自适应规范》](ai-agent/前端布局自适应规范.md) | 布局两层自适应 + 列表交互标准（前端开发契约） |
 
-> 说明：`docs/` 为过程性设计文档，可能与最新实现存在差异；模块当前实况请以 [`docs/architecture/`](docs/architecture/) 下技术文档为准。
+> 说明：`agent-works/initialization/` 为过程性设计文档，可能与最新实现存在差异；模块当前实况请以 [`agent-works/architecture/`](agent-works/architecture/) 下技术文档为准。

@@ -903,7 +903,7 @@ async function openTradeChart(row: TradeRow) {
           分层命中率 vs 全市场基线（超额）
           <span class="sub">区间 {{ layersData.date_start }} ~ {{ layersData.date_end }}，总信号 {{ layersData.total_signals }}</span>
         </div>
-        <el-table :data="layerRows" stripe size="small">
+        <el-table :data="layerRows" size="small">
           <el-table-column label="分档" min-width="160">
             <template #default="{ row }">
               <b :class="{ base: row.isBase }">{{ row.name }}</b>
@@ -937,7 +937,7 @@ async function openTradeChart(row: TradeRow) {
           <el-button size="small" class="export-btn" @click="exportTradesCsv">导出 CSV</el-button>
         </div>
         <div class="trade-table-wrap">
-        <el-table :data="tradeRows" stripe size="small" height="100%" class="clickable"
+        <el-table :data="tradeRows" size="small" height="100%" class="clickable"
                   :class="{ 'page-table-compact': settings.compact }"
                   @row-click="(r:any) => openTradeChart(r)">
           <el-table-column label="代码" prop="code" width="110" />
@@ -1014,7 +1014,7 @@ async function openTradeChart(row: TradeRow) {
         <CandleChart v-if="dlgBars.length" :bars="dlgBars" :markers="dlgMarkers"
                      :zoom-start="dlgZoom.start" :zoom-end="dlgZoom.end" />
         <div class="dlg-tbl-title">本股交易明细 + 卖出后表现（看卖得对不对）</div>
-        <el-table :data="dlgTrades" size="small" stripe class="dlg-trades">
+        <el-table :data="dlgTrades" size="small" class="dlg-trades">
           <el-table-column label="买入" prop="entry_date" width="110" />
           <el-table-column label="卖出" prop="exit_date" width="110" />
           <el-table-column label="收益" width="90">
@@ -1065,7 +1065,7 @@ async function openTradeChart(row: TradeRow) {
         </div>
         <el-alert v-if="boardMissing && boardRows.length" type="warning" :closable="false" show-icon style="margin-bottom:8px"
                   title="本笔买入的票不在 Top 50 内（榜单名次更靠后）——它因选股方案命中且方案内排名靠前而被买入，并非综合分靠前。" />
-        <el-table :data="boardRows" size="small" stripe height="460" :row-class-name="boardRowClass">
+        <el-table :data="boardRows" size="small" height="460" :row-class-name="boardRowClass">
           <el-table-column label="#" prop="rank" width="60" />
           <el-table-column label="代码" prop="code" width="120" />
           <el-table-column label="名称" prop="name" width="120">

@@ -558,6 +558,94 @@ M28_TABLES: dict[str, str] = {
     "scheduled_job": DDL_SCHEDULED_JOB,
 }
 
+# ── 盘感训练（agent-works/market-sense-training/）────────────────
+# 手动交易训练：盲测 + 逐日揭示 + T+1 真实撮合。一局 = N 回合，每回合 = 一只随机股
+# + 区间内随机起点 + 连续 window_days 个交易日窗口。回合内独立资金账户。
+# 价格口径（防失真）：回合内统一以 start_date 的 adj_factor_clean 为基准（base_factor）做前复权，
+# 整段窗口固定基准 → 显示与记账价位一致、且只用 <= start_date 的因子（不引未来）。
+# 涨跌停判定用**原始价**（pre_close/open 四舍五入到分），与 broker.can_buy/sell_at_open 口径一致。
+DDL_TRAINING_SESSION = """
+CREATE TABLE IF NOT EXISTS training_session (
+    id              VARCHAR PRIMARY KEY,   -- train_YYYYMMDDHHMMSSffffff
+    user_id         VARCHAR,               -- 预留多用户，本期空
+    mode            VARCHAR,               -- single | multi
+    range_start     DATE,                  -- 随机起点范围
+    range_end       DATE,
+    n_rounds        INTEGER,               -- 回合数
+    window_days     INTEGER,               -- 每回合连续交易日 K
+    initial_capital DOUBLE,                -- 每回合初始资金
+    filters         VARCHAR,               -- 随机范围过滤快照（JSON）
+    fee_enabled     BOOLEAN,               -- 是否计入佣金/印花/过户/滑点
+    status          VARCHAR,               -- running | completed | aborted
+    cur_round       INTEGER,               -- 当前活跃回合序号（0-based）
+    total_return    DOUBLE,                -- 结算汇总：各回合收益率等权均值
+    score           DOUBLE,                -- 综合评分 0~100
+    grade           VARCHAR,               -- 评级 S/A/B/C/D
+    win_rate        DOUBLE,                -- 整局胜率（按卖出笔）
+    max_drawdown    DOUBLE,                -- 各回合最大回撤的最差值
+    n_trades        INTEGER,               -- 总成交笔数
+    review_note     VARCHAR,               -- 整局复盘笔记
+    created_at      TIMESTAMP,
+    completed_at    TIMESTAMP
+);
+"""
+
+# 回合：账户状态随训练实时更新，结算后落收益/基准
+DDL_TRAINING_ROUND = """
+CREATE TABLE IF NOT EXISTS training_round (
+    session_id      VARCHAR,
+    seq             INTEGER,               -- 回合序号（0-based）
+    code            VARCHAR,               -- 真实个股（running 态前端不返回）
+    start_date      DATE,                  -- 真实起点（窗口第 0 天）
+    end_date        DATE,                  -- 窗口末交易日（预计算）
+    window_days     INTEGER,
+    base_factor     DOUBLE,                -- start_date 的 adj_factor_clean（回合内固定复权基准）
+    price_limit_pct DOUBLE,                -- 板块涨跌幅限制（0.10/0.20/0.05）
+    cursor_date     DATE,                  -- 当前已揭示到的真实交易日
+    cursor_idx      INTEGER,               -- 当前相对第几天（0-based）
+    status          VARCHAR,               -- pending | running | done
+    cash            DOUBLE,                -- 当前现金
+    pos_shares      BIGINT,                -- 当前持仓股数
+    pos_cost        DOUBLE,                -- 当前持仓成本基（元，含费）
+    pos_avg_price   DOUBLE,                -- 持仓均价（复权显示价）
+    pending         VARCHAR,               -- 待成交意图（JSON {side,hands,reason} 或空）
+    realized_pnl    DOUBLE,                -- 已实现盈亏累计
+    round_return    DOUBLE,                -- 回合收益率（结算后）
+    benchmark_return DOUBLE,               -- 首日满仓持有基准收益率
+    final_equity    DOUBLE,                -- 回合结束总权益
+    PRIMARY KEY (session_id, seq)
+);
+"""
+
+# 逐笔成交（T+1 开盘成交后落库）
+DDL_TRAINING_TRADE = """
+CREATE TABLE IF NOT EXISTS training_trade (
+    session_id      VARCHAR,
+    round_seq       INTEGER,
+    seq             INTEGER,               -- 回合内笔序（0-based）
+    side            VARCHAR,               -- buy | sell
+    decide_date     DATE,                  -- 决策日（看到的最后一根 K）
+    fill_date       DATE,                  -- T+1 成交日
+    rel_day         INTEGER,               -- 成交相对第几天（盲测展示）
+    price           DOUBLE,                -- 复权成交价（含滑点）
+    hands           INTEGER,               -- 手数
+    shares          BIGINT,
+    amount          DOUBLE,                -- 成交额（price×shares）
+    fee             DOUBLE,                -- 费用合计
+    pnl             DOUBLE,                -- 卖出/清算已实现盈亏（元）
+    return_pct      DOUBLE,                -- 该笔卖出收益率（相对本次卖出对应成本）
+    reason          VARCHAR,               -- 每笔操作理由（选填）
+    auto_close      BOOLEAN,               -- 是否到期强制清算
+    PRIMARY KEY (session_id, round_seq, seq)
+);
+"""
+
+M_TRAINING_TABLES: dict[str, str] = {
+    "training_session": DDL_TRAINING_SESSION,
+    "training_round": DDL_TRAINING_ROUND,
+    "training_trade": DDL_TRAINING_TRADE,
+}
+
 # 数据维度注册表 seed（DM-D4/D5）：已采集维度 + 规划中占位（股东数/筹码峰）。
 # 幂等 ON CONFLICT DO NOTHING：已存在则保留（允许后续人工调整 status）。
 _DIMENSION_SEED: list[tuple] = [
@@ -648,7 +736,8 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
     for seq_sql in DDL_SEQUENCES:
         client.execute(seq_sql)
     created: list[str] = []
-    all_tables = {**M1_TABLES, **M2_TABLES, **M3_TABLES, **M5_TABLES, **M6_TABLES, **M28_TABLES}
+    all_tables = {**M1_TABLES, **M2_TABLES, **M3_TABLES, **M5_TABLES, **M6_TABLES,
+                  **M28_TABLES, **M_TRAINING_TABLES}
     for name, sql in all_tables.items():
         client.execute(sql)
         created.append(name)

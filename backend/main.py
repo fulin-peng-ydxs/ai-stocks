@@ -30,6 +30,7 @@ from backend.api.stock_groups import router as stock_groups_router
 from backend.api.stocks import router as stocks_router
 from backend.api.data_tasks import router as data_tasks_router
 from backend.api.data_admin import router as data_admin_router
+from backend.api.training import router as training_router
 from backend.common.exceptions import AIStocksError
 from backend.common.logging import get_logger
 from backend.config import PROJECT_ROOT, get_settings
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(stock_groups_router)
     app.include_router(data_tasks_router)
     app.include_router(data_admin_router)
+    app.include_router(training_router)
 
     # ── 前端静态托管（M4：frontend/dist 存在时生效）──
     # 关键：SPA 前端路由（/board、/stocks/xxx）在客户端，刷新/深链接需回退到

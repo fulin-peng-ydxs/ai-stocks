@@ -173,7 +173,6 @@ onMounted(async () => {
       <el-table
         :data="displayRows"
         v-loading="loading"
-        stripe
         height="100%"
         @row-click="gotoStock"
         class="clickable"

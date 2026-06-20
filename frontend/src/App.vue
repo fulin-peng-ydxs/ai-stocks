@@ -49,6 +49,7 @@ const activeMenu = computed(() => {
         <el-menu-item index="/board">📈 每日榜单</el-menu-item>
         <el-menu-item index="/screen">🧮 策略筛选</el-menu-item>
         <el-menu-item index="/backtest">🧪 策略回测</el-menu-item>
+        <el-menu-item index="/training">🎮 盘感训练</el-menu-item>
         <el-menu-item index="/config">⚙️ 配置管理</el-menu-item>
         <el-sub-menu index="data">
           <template #title>

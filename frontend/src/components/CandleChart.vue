@@ -12,10 +12,11 @@ export interface TradeMarker {
 }
 
 const props = defineProps<{
-  bars: Bar[]
+  bars: Bar[]           // 展示用 bar，直接渲染到 ECharts（由父组件按范围切好）
+  warmupBars?: Bar[]    // 热身用历史 bar，仅参与 MA 计算，不渲染到图表
   markers?: TradeMarker[]
-  zoomStart?: number  // dataZoom 初始起点(%)，默认 55
-  zoomEnd?: number    // dataZoom 初始终点(%)，默认 100
+  zoomStart?: number
+  zoomEnd?: number
 }>()
 const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -63,8 +64,14 @@ const hoverIdx = ref<number | null>(null)
 const lastIdx = computed(() => props.bars.length - 1)
 const activeIdx = computed(() => hoverIdx.value ?? lastIdx.value)
 
-const closes = computed(() => props.bars.map((b) => b.close))
-const maSeries = computed(() => MA_DEFS.value.map((d) => ({ ...d, data: ma(closes.value, d.n) })))
+// warmupBars 在前，bars 在后拼接，计算完整 MA 后只取尾部 bars.length 个值用于展示
+const allCloses = computed(() => [...(props.warmupBars ?? []), ...props.bars].map((b) => b.close))
+const maSeries = computed(() =>
+  MA_DEFS.value.map((d) => {
+    const full = ma(allCloses.value, d.n)
+    return { ...d, data: full.slice(full.length - props.bars.length) }
+  }),
+)
 
 // 顶部 MA 数值条（随光标更新）
 const maLabels = computed(() =>
@@ -78,9 +85,9 @@ const maLabels = computed(() =>
 // 量能均线（VMA5/VMA10）颜色 + 随光标更新的数值（供 HTML 图例叠加层）
 const VMA5_COLOR = '#f5a623'
 const VMA10_COLOR = '#16b8c4'
-const volumes = computed(() => props.bars.map((b) => b.volume))
-const volMa5Arr = computed(() => ma(volumes.value, 5))
-const volMa10Arr = computed(() => ma(volumes.value, 10))
+const allVolumes = computed(() => [...(props.warmupBars ?? []), ...props.bars].map((b) => b.volume))
+const volMa5Arr = computed(() => { const f = ma(allVolumes.value, 5); return f.slice(f.length - props.bars.length) })
+const volMa10Arr = computed(() => { const f = ma(allVolumes.value, 10); return f.slice(f.length - props.bars.length) })
 const volLabels = computed(() => {
   const i = activeIdx.value
   const b = props.bars[i]
@@ -107,7 +114,7 @@ function fmtVol(shares: number): string {
 
 function render() {
   if (!chart) return
-  const zStart = props.zoomStart ?? 55
+  const zStart = props.zoomStart ?? 0
   const zEnd = props.zoomEnd ?? 100
   const bars = props.bars
   const dates = bars.map((b) => b.date)
@@ -282,8 +289,9 @@ onMounted(() => {
   }
 })
 watch(() => props.bars, () => { hoverIdx.value = null; render() }, { deep: true })
-watch(() => props.markers, () => render(), { deep: true }) // 买卖标记变化重渲染
-watch(() => [props.zoomStart, props.zoomEnd], () => render()) // 初始缩放变化重渲染
+watch(() => props.warmupBars, () => render(), { deep: true })
+watch(() => props.markers, () => render(), { deep: true })
+watch(() => [props.zoomStart, props.zoomEnd], () => render())
 watch(isDark, () => render()) // 主题切换重渲染
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resize)

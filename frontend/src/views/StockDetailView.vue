@@ -11,8 +11,11 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
+import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
+import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import { useStockSet } from '@/stores/stockSet'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import CandleChart from '@/components/CandleChart.vue'
 
 const route = useRoute()
@@ -21,7 +24,6 @@ const code = ref(String(route.params.code))
 const settingsOpen = ref(false)
 const detailDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
-  viewDays: 250,
   showTradeCard: true,
   showNav: true,
   indicators: {
@@ -85,13 +87,20 @@ async function gotoNeighbor(dir: -1 | 1) {
 const loading = ref(false)
 const error = ref('')
 const adjust = ref<string>(settings.adjustMode || '')
-const viewDays = ref(Number(settings.viewDays))   // 显示范围（缩放），数据始终全量加载，可自由拖动看全部
+// 显示范围（缩放）：默认来自全局 K 线偏好，数据始终全量加载，可自由拖动看全部
+const { validDefault: klineDefault } = useKlinePrefs()
+const viewDays = ref(klineDefault.value)
 const bars = ref<Bar[]>([])
 const name = ref('')
 const latestQuote = ref<Bar | null>(null)
 const latest = ref<Record<string, unknown> | null>(null)
 
-const chartLookback = computed(() => viewDays.value >= 99999 ? 6000 : viewDays.value)
+// 始终至少加载 5 年数据保证 MA60/MA120 有足够热身窗口，displayBars 控制图表可见范围
+const MIN_HISTORY_DAYS = 1250
+const chartLookback = computed(() => viewDays.value >= 99999 ? 6000 : Math.max(viewDays.value, MIN_HISTORY_DAYS))
+// 展示用：按选项切末尾 N 根；热身用：剩余部分仅参与 MA 计算不渲染
+const displayBars = computed(() => viewDays.value >= 99999 ? bars.value : bars.value.slice(-viewDays.value))
+const warmupBars = computed(() => viewDays.value >= 99999 ? [] : bars.value.slice(0, -viewDays.value || undefined))
 const latestPct = computed(() => {
   const b = latestQuote.value
   if (!b?.pre_close || b.pre_close <= 0) return null
@@ -200,9 +209,6 @@ watch(viewDays, () => load())
 watch(() => settings.adjustMode, (value) => {
   adjust.value = value || ''
   load()
-})
-watch(() => settings.viewDays, (value) => {
-  viewDays.value = Number(value)
 })
 
 onMounted(async () => {
@@ -489,12 +495,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="page-head-actions">
         <div class="ops">
-        <el-select v-model="settings.viewDays" style="width: 130px">
-          <el-option :value="120" label="近 120 日" />
-          <el-option :value="250" label="近 250 日" />
-          <el-option :value="500" label="近 500 日" />
-          <el-option :value="99999" label="全部" />
-        </el-select>
+          <KlineRangeSelect v-model="viewDays" />
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -550,7 +551,7 @@ onBeforeUnmount(() => {
 
     <template v-else>
       <el-card shadow="never" v-loading="loading" :body-style="{ padding: '0' }">
-        <CandleChart :bars="bars" :zoom-start="0" :zoom-end="100" />
+        <CandleChart :bars="displayBars" :warmup-bars="warmupBars" :zoom-start="0" :zoom-end="100" />
       </el-card>
 
       <el-card shadow="never" class="ind-card" header="最新指标快照">
@@ -629,16 +630,9 @@ onBeforeUnmount(() => {
             { label: '后复权', value: 'hfq' },
           ]" />
         </div>
-        <div class="setting-item">
-          <div class="setting-label">默认K线范围</div>
-          <PageSegmented v-model="settings.viewDays" :options="[
-            { label: '120', value: 120 },
-            { label: '250', value: 250 },
-            { label: '500', value: 500 },
-            { label: '全部', value: 99999 },
-          ]" />
-        </div>
       </PageSettingSection>
+
+      <KlineSettingSection />
 
       <PageSettingSection title="指标快照">
         <PageToggleRow v-model="settings.indicators.ma20" label="MA20" />

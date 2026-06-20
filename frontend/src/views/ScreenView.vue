@@ -453,7 +453,6 @@ onMounted(async () => {
       <el-table
         v-if="result && result.hits.length"
         :data="displayHits"
-        stripe
         :row-class-name="rowClass"
         height="100%"
         @row-click="(r: ScreenHit) => router.push(`/stocks/${r.code}`)"
