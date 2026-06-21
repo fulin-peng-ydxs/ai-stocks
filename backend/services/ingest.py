@@ -122,6 +122,19 @@ class IngestionService:
             ctx.log(f"子任务：指数行情采集完成，共写入/更新 {total} 行")
         return total
 
+    def _ingest_indices_incremental(self, end: date, ctx=None) -> int:
+        """指数行情增量：从 index_bar 已入库最新日 +1 补到 end（与日行情同口径）。
+
+        增量更新调用——避免原先每次固定拉「今天-30~今天」整窗导致"指数一直在更新"。已最新则跳过。
+        """
+        last = self.repo.c.query_df("SELECT max(trade_date) AS d FROM index_bar").iloc[0]["d"]
+        start = (pd.Timestamp(last).date() + timedelta(days=1)) if pd.notna(last) else (end - timedelta(days=30))
+        if start > end:
+            if ctx:
+                ctx.log(f"子任务：指数行情已是最新（到 {pd.Timestamp(last).date()}），本次跳过")
+            return 0
+        return self.ingest_indices(start, end, ctx=ctx)
+
     # ── 股票列表 + 基础信息 ──
     def ingest_stock_basic(self, codes: list[str] | None = None, ctx=None) -> pd.DataFrame:
         """入库 stock_basic（板块由代码判定），返回纳入的 code 列表 DataFrame。"""
@@ -300,7 +313,7 @@ class IngestionService:
         写入由 DuckDB 单写锁串行。默认 1（串行）。⚠️ 并发即提高总请求速率，注意封禁风险。
         """
         years = years or self.s.datasource.history_years
-        end = date.today()
+        end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
         start = date(end.year - years, end.month, end.day)
         live = self.repo.c.query_df(
             "SELECT code FROM stock_basic WHERE delist_date IS NULL"
@@ -649,7 +662,7 @@ class IngestionService:
         ⚠️ 调高并发即调高总请求速率，注意免费源封禁风险。
         """
         years = years or self.s.datasource.history_years
-        end = date.today()
+        end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
         start = date(end.year - years, end.month, end.day)
         log.info("开始回填 %s ~ %s", start, end)
 
@@ -851,21 +864,52 @@ class IngestionService:
             return pd.Timestamp(df.iloc[0]["d"]).date()
         return day - timedelta(days=1)
 
+    def _latest_open_day(self, ref: date | None = None) -> date:
+        """≤ ref（默认今天）的最近交易日：ref 本身是交易日则为 ref，否则回退到上一交易日。
+
+        各类"补到最新"的采集（行情/市值/退市/补数）统一用它当截止日，避免把非交易日（周末/节假日）
+        当成数据截止，导致日志区间出现"今天=非交易日"这种语义错乱。日历缺该日时回退到 _previous_open_day。
+        """
+        ref = ref or date.today()
+        cal = self.repo.c.query_df(
+            "SELECT is_open FROM trade_calendar WHERE trade_date = ?", [ref])
+        if not cal.empty and bool(cal.iloc[0]["is_open"]):
+            return ref
+        return self._previous_open_day(ref)
+
     def _resolve_update_end(self, requested_end: date, basic: list[str], codes: list[str] | None, ctx=None) -> date | None:
-        """全市场增量的目标日保护：主源当日日线未基本就绪时，直接跳过本次全市场行情更新。"""
+        """收敛增量更新的目标截止日：
+
+        ① 非交易日（requested_end 无开市行且日历已覆盖到该日）→ **回退到最新交易日**为截止，
+           不跳过任务（周末/节假日跑也能确保补齐到上一交易日；已最新则逐股短路，无网络开销）。
+        ② 全市场 + 今天确是交易日 → 抽样探测主源当日日线是否就绪；未就绪 → 返回 None 跳过本次
+           （只在"当天交易日但数据没出"时跳过，**不**降级到上一交易日，避免拉半成品）。
+        ③ 指定股票/小批量 → 尊重用户意图，直接用收敛后的目标日。
+        """
         cal = self.repo.c.query_df(
             "SELECT is_open FROM trade_calendar WHERE trade_date = ?",
             [requested_end],
         )
-        if not cal.empty and not bool(cal.iloc[0]["is_open"]):
-            prev = self._previous_open_day(requested_end)
-            if ctx:
-                ctx.log(f"今日 {requested_end} 非交易日，上一交易日为 {prev}，本次全市场增量直接结束")
-            return None
+        # 交易日历只存开市日 → requested_end 无开市行即非交易日。仅当日历确已覆盖到该日
+        # （update() 在本方法前已 ingest_calendar 补到年底）才据"缺行"判闭市，避免把"还没采到"误判成闭市。
+        is_open = (not cal.empty) and bool(cal.iloc[0]["is_open"])
+        target = requested_end
+        if not is_open:
+            mx = self.repo.c.query_df("SELECT max(trade_date) AS m FROM trade_calendar").iloc[0]["m"]
+            covered = mx is not None and pd.notna(mx) and pd.Timestamp(mx).date() >= requested_end
+            if covered:
+                target = self._previous_open_day(requested_end)
+                if ctx:
+                    ctx.log(f"今日 {requested_end} 非交易日，回退到最新交易日 {target} 截止")
+            # 日历未覆盖到该日（异常）→ 不武断判闭市，沿用 requested_end 继续
 
-        # 指定少量股票时尊重用户意图；全市场任务才做抽样就绪保护。
+        # 指定股票/小批量：尊重用户意图，直接用收敛后的目标日（不做全市场就绪保护）。
         if codes or len(basic) < 100:
-            return requested_end
+            return target
+
+        # 全市场：只有"今天确是交易日"才做主源当日就绪探测；非交易日已回退到上一交易日（数据必就绪），无需探测。
+        if target != requested_end:
+            return target
 
         basic_set = set(basic)
         sample = [c for c in _UPDATE_READY_SAMPLE if c in basic_set]
@@ -893,6 +937,7 @@ class IngestionService:
             log.warning(msg)
             if ctx:
                 ctx.log(msg, "warn")
+            self._skip_reason = "primary_not_ready"
             return None
         return requested_end
 
@@ -934,16 +979,20 @@ class IngestionService:
             if ctx:
                 ctx.log(f"续跑：沿用本次任务目标日 {end}，跳过日历/指数前置（已于首跑完成且幂等入库）")
         else:
-            self.ingest_calendar(end - timedelta(days=30), end, ctx=ctx)
-            self.ingest_indices(end - timedelta(days=30), end, ctx=ctx)
+            self.ingest_calendar(end - timedelta(days=30), end, ctx=ctx)  # 先补日历（判交易日要用）
+            self._skip_reason = "primary_not_ready"
             end = self._resolve_update_end(end, basic, codes, ctx=ctx)
-        if end is None:
+        if end is None:   # 仅"今天是交易日但主源当日数据未就绪"才走到这里（非交易日已回退到上一交易日）
             result = {"target": 0, "ok": 0, "fail": 0, "rows": 0, "concurrency": concurrency,
                       "skipped": True, "reason": "primary_not_ready"}
             if ctx:
-                ctx.progress(1.0, "主源未就绪，本次增量未执行")
-                ctx.log("■ 增量更新结束：主源未就绪，本次未执行行情更新")
+                ctx.progress(1.0, "主源当日数据未就绪，本次未执行行情更新")
+                ctx.log("■ 增量更新结束：主源当日数据未就绪，本次未执行行情更新")
             return result
+        if pinned_end is None:
+            # 指数行情与日行情同口径：从 index_bar 已入库最新日 +1 增量补到 end（已收敛到最新交易日），
+            # 不再每次固定拉「今天-30」窗口；已最新则跳过，不会"凭空一直更新"。
+            self._ingest_indices_incremental(end, ctx=ctx)
         if ctx:
             # 固化目标日：此后若被终止，续跑沿用该日，不被重算成「今天」（见上方 pinned_end）。
             ctx.set_checkpoint(target_end=end.isoformat())
@@ -1589,7 +1638,7 @@ class IngestionService:
         只取退市日落在回测窗口内的票（更早退市的在 5 年窗口内无数据，跳过）。
         """
         years = years or self.s.datasource.history_years
-        end = date.today()
+        end = self._latest_open_day()   # 收敛到最近交易日，非交易日不当截止
         start = date(end.year - years, end.month, end.day)
         bao = self._source_for("delisted")  # 退市股能力源
 

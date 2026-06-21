@@ -8,6 +8,7 @@ import {
   type ScheduledJob, type ScheduledJobInput, type SourceStatus, type TaskType, type FreqType,
 } from '@/api/data'
 import HelpTip from '@/components/HelpTip.vue'
+import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -145,8 +146,10 @@ async function remove(j: ScheduledJob) {
 
 async function runNow(j: ScheduledJob) {
   try {
-    await ElMessageBox.confirm(`立即执行一次「${j.name}」（${TASK_LABEL[j.task_type]}，不受交易日判断限制）？`,
-                               '立即执行', { type: 'warning' })
+    await ElMessageBox.confirm(
+      `立即执行一次「${j.name}」（${TASK_LABEL[j.task_type]}）？不等定时时间点直接触发；`
+      + `采集类任务在非交易日 / 当日数据未就绪时会自行跳过实际拉取。`,
+      '立即执行', { type: 'warning' })
   } catch { return }
   try {
     await runSchedule(j.id)
@@ -266,10 +269,10 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         <!-- 按类型的动态参数 -->
         <template v-if="form.task_type === 'ingest_date'">
           <el-form-item label="起始日期">
-            <el-date-picker v-model="form.date_start" type="date" value-format="YYYY-MM-DD" placeholder="必填" />
+            <TradeDatePicker v-model="form.date_start" placeholder="必填，仅可选交易日" />
           </el-form-item>
           <el-form-item label="结束日期">
-            <el-date-picker v-model="form.date_end" type="date" value-format="YYYY-MM-DD" placeholder="留空=仅起始日" />
+            <TradeDatePicker v-model="form.date_end" placeholder="留空=仅起始日" clearable />
           </el-form-item>
         </template>
         <el-form-item v-if="form.task_type === 'backfill'" label="回填年限">

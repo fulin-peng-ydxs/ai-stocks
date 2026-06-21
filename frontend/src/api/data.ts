@@ -154,6 +154,11 @@ export function ignoreQualityIssue(issueId: number): Promise<{ id: number; statu
 export function resetQualityIssue(issueId: number): Promise<{ id: number; status: string }> {
   return http.post(`/data/quality/${issueId}/reset`)
 }
+// 标记退市：人工指定退市日，解决该股缺口/滞后（应对数据源退市识别不准）
+export function markDelisted(issueId: number, delistDate: string):
+  Promise<{ code: string; delist_date: string; resolved: number }> {
+  return http.post(`/data/quality/${issueId}/mark-delisted`, { delist_date: delistDate })
+}
 export function recoverQualityBatch(
   // issue_type/severity 支持多值（数组，后端按 IN 过滤）
   filter: { issue_type?: string[]; severity?: string[]; code?: string },

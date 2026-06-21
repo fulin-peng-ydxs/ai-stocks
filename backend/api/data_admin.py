@@ -361,6 +361,42 @@ def quality_ignore(issue_id: int) -> ApiResponse:
     return ok({"id": issue_id, "status": "ignored"})
 
 
+class MarkDelistedIn(BaseModel):
+    delist_date: str               # YYYY-MM-DD：人工指定的退市日
+
+
+@router.post("/quality/{issue_id}/mark-delisted", response_model=ApiResponse)
+def quality_mark_delisted(issue_id: int, body: MarkDelistedIn) -> ApiResponse:
+    """标记退市（应对数据源退市识别不准导致的持续缺口/滞后）：把人工指定的退市日写入
+    stock_basic.delist_date，并把该股所有未处理的缺口/滞后问题置为已解决——退市后无后续行情属正常，
+    覆盖鲜活扫描据 delist_date 自动排除该股，不再复发。仅对缺口(data_gap)/滞后(stale)类问题开放。"""
+    from datetime import date as _date, datetime
+    c = get_client()
+    row = c.query_df("SELECT code, issue_type FROM data_quality_issue WHERE id=?", [issue_id])
+    if row.empty:
+        return err(404, f"质检问题不存在: id={issue_id}")
+    code, issue_type = row.iloc[0]["code"], row.iloc[0]["issue_type"]
+    if issue_type not in ("data_gap", "stale"):
+        return err(400, "仅缺口/滞后类问题支持标记退市")
+    if not code:
+        return err(400, "该问题无关联股票代码，无法标记退市")
+    try:
+        dl = _date.fromisoformat(str(body.delist_date)[:10])   # 容错：截掉可能带的 00:00:00 时间段
+    except (ValueError, TypeError):
+        return err(400, f"退市日期非法: {body.delist_date}（需 YYYY-MM-DD）")
+    c.execute("UPDATE stock_basic SET delist_date=? WHERE code=?", [dl, code])
+    now = datetime.now()
+    affected = int(c.query_df(
+        "SELECT count(*) AS n FROM data_quality_issue WHERE code=? "
+        "AND issue_type IN ('data_gap','stale') AND status IN ('open','fixing')", [code]).iloc[0]["n"])
+    c.execute(
+        "UPDATE data_quality_issue SET status='resolved', resolved_at=?, fix_task_id=NULL "
+        "WHERE code=? AND issue_type IN ('data_gap','stale') AND status IN ('open','fixing')",
+        [now, code])
+    return ok({"code": code, "delist_date": str(dl), "resolved": affected},
+              msg=f"已标记 {code} 于 {dl} 退市，解决 {affected} 项缺口/滞后")
+
+
 # ── 定时任务（调度系统重构）：多条用户自定义定时任务的 CRUD + 立即触发 ─────────
 class ScheduledJobIn(BaseModel):
     name: str

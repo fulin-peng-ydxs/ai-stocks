@@ -44,13 +44,17 @@ const activeMenu = computed(() => {
           <div class="brand-title">复盘啦</div>
         </div>
       </div>
-      <el-menu :default-active="activeMenu" router class="menu">
-        <el-menu-item index="/stocks">🔍 个股查询</el-menu-item>
-        <el-menu-item index="/board">📈 每日榜单</el-menu-item>
+      <el-menu :default-active="activeMenu" :default-openeds="['quotes', 'data', 'system']" router class="menu">
+        <el-sub-menu index="quotes">
+          <template #title>
+            <span class="data-parent" @click.stop="$router.push('/stocks')">📈 最新行情</span>
+          </template>
+          <el-menu-item index="/stocks">个股行情</el-menu-item>
+          <el-menu-item index="/board">每日榜单</el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/screen">🧮 策略筛选</el-menu-item>
         <el-menu-item index="/backtest">🧪 策略回测</el-menu-item>
         <el-menu-item index="/training">🎮 盘感训练</el-menu-item>
-        <el-menu-item index="/config">⚙️ 配置管理</el-menu-item>
         <el-sub-menu index="data">
           <template #title>
             <span class="data-parent" @click.stop="$router.push('/data/overview')">🗄️ 数据管理</span>
@@ -59,6 +63,12 @@ const activeMenu = computed(() => {
           <el-menu-item index="/data/quality">数据质量</el-menu-item>
           <el-menu-item index="/data/ingest">数据采集</el-menu-item>
           <el-menu-item index="/data/schedule">任务调度</el-menu-item>
+        </el-sub-menu>
+        <el-sub-menu index="system">
+          <template #title>
+            <span class="data-parent" @click.stop="$router.push('/config')">⚙️ 系统管理</span>
+          </template>
+          <el-menu-item index="/config">配置管理</el-menu-item>
         </el-sub-menu>
       </el-menu>
       <div class="aside-foot">

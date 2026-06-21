@@ -9,6 +9,7 @@ import {
   type DataStatus, type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
 } from '@/api/data'
 import HelpTip from '@/components/HelpTip.vue'
+import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -99,6 +100,23 @@ function logRowClass({ row }: { row: { status: string } }): string {
 const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
     && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'fix'].includes(t.task_type)))
+
+// 总耗时：进行中=开始到现在(随 now 每秒刷新)；已结束/人工终止=开始到截止时间(updated_at)。
+const now = ref(Date.now())
+const nowTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
+function taskDuration(t: AsyncTask): string {
+  if (!t.created_at) return '—'
+  const start = Date.parse(t.created_at.slice(0, 19).replace(' ', 'T'))
+  if (Number.isNaN(start)) return '—'
+  const live = t.status === 'running' || t.status === 'pending'
+  const end = live
+    ? now.value
+    : (t.updated_at ? Date.parse(t.updated_at.slice(0, 19).replace(' ', 'T')) : now.value)
+  let s = Math.max(0, Math.floor((end - start) / 1000))
+  const h = Math.floor(s / 3600); s -= h * 3600
+  const m = Math.floor(s / 60); const sec = s - m * 60
+  return h ? `${h}h${m}m${sec}s` : m ? `${m}m${sec}s` : `${sec}s`
+}
 
 // ── 更多选项对话框 ──
 const optDlg = ref(false)
@@ -319,7 +337,7 @@ function pollLogs(id: string) {
 }
 
 function closeLogs() { logDrawer.value = false; if (logTimer) clearTimeout(logTimer) }
-onUnmounted(() => { if (logTimer) clearTimeout(logTimer); if (taskTimer) clearTimeout(taskTimer) })
+onUnmounted(() => { if (logTimer) clearTimeout(logTimer); if (taskTimer) clearTimeout(taskTimer); clearInterval(nowTimer) })
 onMounted(async () => {
   optType.value = settings.defaultTaskType
   if (settings.taskStatus === 'active') taskFilter.value.status = 'running'
@@ -417,6 +435,9 @@ onMounted(async () => {
         <div class="panel-table-wrap">
           <el-table :data="tasks" size="small" height="100%" @row-click="(r: AsyncTask) => openLogs(r.id)"
                     class="clk-tbl" @sort-change="onTaskSort" :class="{ 'page-table-compact': settings.compact }">
+            <el-table-column label="任务ID" width="220" show-overflow-tooltip>
+              <template #default="{ row }"><span class="task-id">{{ row.id }}</span></template>
+            </el-table-column>
             <el-table-column label="类型" prop="type" width="150" sortable="custom">
               <template #default="{ row }">
                 {{ TASK_LABEL[row.task_type as TaskType] ?? row.task_type }}<!--
@@ -447,8 +468,11 @@ onMounted(async () => {
               </template>
             </el-table-column>
             <el-table-column label="信息" prop="message" show-overflow-tooltip />
-            <el-table-column label="时间" prop="time" width="160" sortable="custom">
+            <el-table-column label="截止时间" prop="time" width="160" sortable="custom">
               <template #default="{ row }">{{ (row.updated_at || '').slice(0, 19) }}</template>
+            </el-table-column>
+            <el-table-column label="总耗时" width="100">
+              <template #default="{ row }">{{ taskDuration(row) }}</template>
             </el-table-column>
             <el-table-column label="操作" width="130">
               <template #default="{ row }">
@@ -535,10 +559,10 @@ onMounted(async () => {
     <el-dialog v-model="optDlg" :title="`${TASK_LABEL[optType]} · 更多选项`" width="460px">
       <el-form label-width="92px">
         <el-form-item v-if="optType === 'ingest_date'" label="起始日期">
-          <el-date-picker v-model="optForm.date_start" type="date" value-format="YYYY-MM-DD" placeholder="必填" />
+          <TradeDatePicker v-model="optForm.date_start" placeholder="必填，仅可选交易日" />
         </el-form-item>
         <el-form-item v-if="optType === 'ingest_date'" label="结束日期">
-          <el-date-picker v-model="optForm.date_end" type="date" value-format="YYYY-MM-DD" placeholder="留空=仅起始日" />
+          <TradeDatePicker v-model="optForm.date_end" placeholder="留空=仅起始日" clearable />
         </el-form-item>
         <el-form-item v-if="optType === 'backfill'" label="回填年限">
           <el-input-number v-model="optForm.years" :min="1" :max="30" placeholder="留空=默认" />
@@ -668,6 +692,7 @@ onMounted(async () => {
 .act-t { font-weight: 600; }
 .act-d { font-size: 12px; color: var(--el-text-color-secondary); margin: 4px 0 10px; }
 .clk-tbl :deep(tbody tr) { cursor: pointer; }
+.task-id { font-family: var(--el-font-family-mono, monospace); font-size: 12px; color: var(--el-text-color-secondary); }
 .log-meta { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .lm-msg { font-size: 12px; color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lm-phase { font-size: 12px; color: var(--el-color-warning); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -441,7 +441,7 @@ def _h_update(params: dict, ctx: TaskContext) -> dict:
     ctx.progress(0.1, "增量更新行情中…")
     res = IngestionService().update(codes=params.get("codes"), concurrency=_concurrency(params), ctx=ctx)
     if res.get("skipped"):
-        return {"message": "主源未就绪，本次增量未执行", "ingest": res, "snapshots_marked_stale": 0}
+        return {"message": "主源当日数据未就绪，本次增量未执行", "ingest": res, "snapshots_marked_stale": 0}
     ctx.log("阶段 2/3：刷新评分缓存")
     ctx.progress(0.9, "刷新评分缓存…")
     stale = _mark_snapshots_stale()

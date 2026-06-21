@@ -5,7 +5,7 @@ import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElMessage } from 'element-plus'
 import {
   getDataQuality, fixQualityIssue, ignoreQualityIssue, resetQualityIssue, recoverQualityBatch,
-  createTask, getTask,
+  markDelisted, createTask, getTask,
   ISSUE_TYPE_LABEL, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL, RECOVER_ACTION_LABEL,
   type DataQuality, type QualityIssue, type CheckupReport,
 } from '@/api/data'
@@ -123,6 +123,30 @@ async function resetOne(row: QualityIssue) {
     ElMessage.success('已复位为未处理，可重新发起恢复')
     await load()
   } catch { /* 拦截器弹错 */ }
+}
+
+// 标记退市：应对数据源退市识别不准（一直把已退市股报缺口/滞后）。指定退市日 → 写 delist_date +
+// 解决该股缺口/滞后，覆盖鲜活扫描据 delist_date 自动排除，不再复发。仅缺口/滞后类可用。
+const GAP_TYPES = ['data_gap', 'stale']
+const delistDlg = ref(false)
+const delistRow = ref<QualityIssue | null>(null)
+const delistDate = ref('')
+const delisting = ref(false)
+function openDelist(row: QualityIssue) {
+  delistRow.value = row
+  delistDate.value = (row.trade_date || '').slice(0, 10)   // 截到 YYYY-MM-DD（trade_date 可能带 00:00:00）
+  delistDlg.value = true
+}
+async function confirmDelist() {
+  if (!delistRow.value) return
+  if (!delistDate.value) { ElMessage.warning('请指定退市日期'); return }
+  delisting.value = true
+  try {
+    const r = await markDelisted(delistRow.value.id, delistDate.value)
+    ElMessage.success(`已标记 ${r.code} 于 ${r.delist_date} 退市，解决 ${r.resolved} 项缺口/滞后`)
+    delistDlg.value = false
+    await load()
+  } catch { /* 拦截器弹错 */ } finally { delisting.value = false }
 }
 
 function rowClass({ row }: { row: QualityIssue }): string {
@@ -290,6 +314,8 @@ onMounted(() => {
               <!-- 修复中且非本页正在处理 → 可能是孤儿状态（任务失败/中断/卡死），允许手动复位解套 -->
               <el-button v-if="row.status === 'fixing' && busyId !== row.id" type="warning" size="small" link
                          @click="resetOne(row)">复位</el-button>
+              <el-button v-if="GAP_TYPES.includes(row.issue_type)" type="warning" size="small" link
+                         :disabled="busyId !== null" @click="openDelist(row)">标记退市</el-button>
               <el-button type="info" size="small" link :disabled="busyId !== null"
                          @click="ignoreOne(row)">标记正常</el-button>
             </template>
@@ -305,6 +331,27 @@ onMounted(() => {
                      @current-change="(p: number) => { page = p; load() }"
                      @size-change="(s: number) => { size = s; page = 1; load() }" />
     </div>
+
+    <!-- 标记退市对话框 -->
+    <el-dialog v-model="delistDlg" title="标记退市" width="440px">
+      <p class="delist-tip">
+        用于<b>数据源退市识别不准</b>（已退市却仍被当在市股、持续报缺口/滞后）的场景。指定退市日后：
+        写入该股退市日、解决其缺口/滞后问题，之后覆盖鲜活扫描会据退市日自动排除该股，不再复发。
+      </p>
+      <el-form label-width="84px">
+        <el-form-item label="股票">
+          <span>{{ delistRow?.code }} {{ delistRow?.name }}</span>
+        </el-form-item>
+        <el-form-item label="退市日期">
+          <el-date-picker v-model="delistDate" type="date" value-format="YYYY-MM-DD"
+                          format="YYYY年MM月DD日" placeholder="该股最后有效交易日" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="delistDlg = false">取消</el-button>
+        <el-button type="warning" :loading="delisting" @click="confirmDelist">确认标记退市</el-button>
+      </template>
+    </el-dialog>
 
     <PageSettingsDrawer v-model="settingsOpen" title="数据质量" :dirty="isDirty" @reset="reset">
       <PageSettingSection title="默认筛选">
