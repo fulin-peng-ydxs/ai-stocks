@@ -19,6 +19,41 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { downloadCsv } from '@/utils/csv'
 import { ElMessage } from 'element-plus'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
+import { useLayoutConfig, type PageLayout } from '@/layout'
+
+// 列表页布局（原型 A）：操作区=头部（标题+控件），主内容区=榜单表格（撑满·表体内滚）。
+// 经 LayoutHost 渲染 → 由构造即合规；不再手写 .v-page/.v-grow。
+// editable：密度为 L2 可配置旋钮（统一控制整页间距与表格行高，取代原 L3「紧凑表格」开关）。
+const boardLayout: PageLayout = {
+  pageKey: 'board',
+  archetype: 'list',
+  hasActionRegion: true,
+  slots: [
+    { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
+    { id: 'table', component: 'data-table', region: 'main', growMain: true, order: 1 },
+  ],
+  responsive: { allowReflow: false, breakpoints: [{ minWidth: 0, columns: 1 }] },
+  density: 'standard',
+  editable: [
+    {
+      path: 'density',
+      label: '信息密度',
+      type: 'enum',
+      options: ['compact', 'standard', 'comfortable'],
+      optionLabels: { compact: '紧凑', standard: '标准', comfortable: '宽松' },
+    },
+  ],
+}
+const {
+  effective: boardEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+} = useLayoutConfig(boardLayout)
 
 const router = useRouter()
 const loading = ref(false)
@@ -33,7 +68,6 @@ const boardDefaults = {
   topN: 50,
   sortBy: 'score' as 'score' | 'rank',
   subScoreMode: 'full' as 'full' | 'brief' | 'hidden',
-  compact: false,
   columns: { code: true, name: true, score: true, grade: true, subScores: true },
 }
 const { settings, isDirty, reset } = usePageSettings('board', boardDefaults)
@@ -131,7 +165,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="v-page">
+  <LayoutHost :layout="boardEffective">
+    <template #action>
+    <div class="lh-action">
     <div class="page-head">
       <div>
         <h2 class="title-row">
@@ -168,15 +204,17 @@ onMounted(async () => {
     </div>
 
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+    </div>
+    </template>
 
-    <el-card shadow="never" class="v-grow">
+    <template #main>
+    <el-card shadow="never">
       <el-table
         :data="displayRows"
         v-loading="loading"
         height="100%"
         @row-click="gotoStock"
         class="clickable"
-        :class="{ 'page-table-compact': settings.compact }"
       >
         <el-table-column label="#" width="60" sortable :sort-by="(r:any)=>r.rank">
           <template #default="{ row }">{{ row.rank }}</template>
@@ -212,8 +250,19 @@ onMounted(async () => {
         </el-table-column>
       </el-table>
     </el-card>
+    </template>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="每日榜单" :dirty="isDirty" @reset="reset">
+    <template #overlays>
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="每日榜单"
+      :dirty="isDirty || layoutDirty"
+      @reset="reset(); resetLayout()"
+    >
+      <PageSettingSection title="布局" desc="调整整页信息密度，立即生效并记忆。">
+        <LayoutSettingsSection :knobs="layoutKnobs" :value-of="valueOf" :set="setKnob" />
+      </PageSettingSection>
+
       <PageSettingSection title="默认结果" desc="偏好会同步到榜单的默认排序和展示方式。">
         <div class="setting-item">
           <div class="setting-label">Top N</div>
@@ -241,7 +290,6 @@ onMounted(async () => {
       </PageSettingSection>
 
       <PageSettingSection title="表格显示">
-        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
         <PageToggleRow v-model="settings.columns.code" label="显示代码列" />
         <PageToggleRow v-model="settings.columns.name" label="显示名称列" />
         <PageToggleRow v-model="settings.columns.score" label="显示综合分" />
@@ -249,7 +297,8 @@ onMounted(async () => {
         <PageToggleRow v-model="settings.columns.subScores" label="显示分项达标分" />
       </PageSettingSection>
     </PageSettingsDrawer>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>

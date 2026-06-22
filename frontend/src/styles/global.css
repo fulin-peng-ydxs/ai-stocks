@@ -70,6 +70,9 @@ body {
 }
 .v-page > * { flex: 0 0 auto; min-height: 0; }
 .v-grow { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* LayoutHost 操作区/单组件主区插槽要求单根；用 .lh-action 把多个固定块（工具栏 + 筛选条等）
+   收进一个根容器，纵向自然排列、保留区块间距。 */
+.lh-action { display: flex; flex-direction: column; gap: 12px; }
 .v-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 /* el-card 作为成长区时撑满高度，并让其 body 成为可放表格的 flex 列 */
 .v-grow > .el-card,
@@ -166,6 +169,23 @@ html.dark {
 .page-table-compact .el-table__cell {
   padding-top: 6px;
   padding-bottom: 6px;
+}
+
+/* 布局密度（L2 可配置层，由 LayoutHost 在 .v-page 上挂 lh-density-*）：
+   统一控制整页区块间距与表格行高。standard=默认不覆盖。 */
+.lh-density-compact {
+  gap: 8px;
+}
+.lh-density-compact .el-table__cell {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.lh-density-comfortable {
+  gap: 18px;
+}
+.lh-density-comfortable .el-table__cell {
+  padding-top: 14px;
+  padding-bottom: 14px;
 }
 
 /* 全局：所有列表统一不隔行变色（兜底，即使误带 stripe 也保持一致） */

@@ -17,6 +17,9 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
+import { useLayoutConfig, type PageLayout } from '@/layout'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,11 +28,41 @@ const qualityDefaults = {
   defaultStatus: 'todo' as 'todo' | 'all' | 'open',
   defaultSeverity: 'all' as 'all' | 'high',
   defaultSort: 'time' as 'time' | 'severity',
-  compact: false,
   hideDoneRows: false,
   columns: { severity: true, code: true, name: true, date: true, layer: true, type: true, detail: true, status: true, detectedAt: true },
 }
 const { settings, isDirty, reset } = usePageSettings('data-quality', qualityDefaults)
+
+// 列表页布局（原型 A）：操作区=头部工具栏+筛选条，主内容区=问题台账表（撑满·表体内滚），分页固定表下。
+// density 为 L2 旋钮（统一整页间距与表格行高），取代原 L3「紧凑表格」开关。
+const qualityLayout: PageLayout = {
+  pageKey: 'data-quality',
+  archetype: 'list',
+  hasActionRegion: true,
+  slots: [
+    { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
+    { id: 'table', component: 'data-table', region: 'main', growMain: true, order: 1 },
+  ],
+  responsive: { allowReflow: false, breakpoints: [{ minWidth: 0, columns: 1 }] },
+  density: 'standard',
+  editable: [
+    {
+      path: 'density',
+      label: '信息密度',
+      type: 'enum',
+      options: ['compact', 'standard', 'comfortable'],
+      optionLabels: { compact: '紧凑', standard: '标准', comfortable: '宽松' },
+    },
+  ],
+}
+const {
+  effective: qualityEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+} = useLayoutConfig(qualityLayout)
 const loading = ref(false)
 const data = ref<DataQuality | null>(null)
 const page = ref(1)
@@ -222,7 +255,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="v-page">
+  <LayoutHost :layout="qualityEffective">
+    <template #action>
+    <div class="lh-action">
     <div class="page-head">
       <h2>
         数据质量
@@ -269,10 +304,13 @@ onMounted(() => {
         </el-tag>
       </div>
     </div>
+    </div>
+    </template>
 
-    <el-card shadow="never" class="v-grow">
+    <template #main>
+    <el-card shadow="never">
       <el-table :data="displayList" size="small" height="100%" v-loading="loading"
-                :row-class-name="rowClass" :class="{ 'page-table-compact': settings.compact }">
+                :row-class-name="rowClass">
         <el-table-column v-if="settings.columns.severity" label="严重度" width="90">
           <template #default="{ row }">
             <el-tag :type="sevType[row.severity] ?? 'info'" size="small" effect="dark">{{ SEVERITY_LABEL[row.severity] ?? row.severity }}</el-tag>
@@ -323,15 +361,16 @@ onMounted(() => {
           </template>
         </el-table-column>
       </el-table>
+      <div class="pager">
+        <el-pagination layout="total, sizes, prev, pager, next" :total="data?.total ?? 0" background
+                       :current-page="page" :page-size="size" :page-sizes="PAGE_SIZE_OPTIONS"
+                       @current-change="(p: number) => { page = p; load() }"
+                       @size-change="(s: number) => { size = s; page = 1; load() }" />
+      </div>
     </el-card>
+    </template>
 
-    <div class="pager">
-      <el-pagination layout="total, sizes, prev, pager, next" :total="data?.total ?? 0" background
-                     :current-page="page" :page-size="size" :page-sizes="PAGE_SIZE_OPTIONS"
-                     @current-change="(p: number) => { page = p; load() }"
-                     @size-change="(s: number) => { size = s; page = 1; load() }" />
-    </div>
-
+    <template #overlays>
     <!-- 标记退市对话框 -->
     <el-dialog v-model="delistDlg" title="标记退市" width="440px">
       <p class="delist-tip">
@@ -353,7 +392,16 @@ onMounted(() => {
       </template>
     </el-dialog>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="数据质量" :dirty="isDirty" @reset="reset">
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="数据质量"
+      :dirty="isDirty || layoutDirty"
+      @reset="reset(); resetLayout()"
+    >
+      <PageSettingSection title="布局" desc="调整整页信息密度，立即生效并记忆。">
+        <LayoutSettingsSection :knobs="layoutKnobs" :value-of="valueOf" :set="setKnob" />
+      </PageSettingSection>
+
       <PageSettingSection title="默认筛选">
         <div class="setting-item">
           <div class="setting-label">状态筛选</div>
@@ -379,7 +427,6 @@ onMounted(() => {
         </div>
       </PageSettingSection>
       <PageSettingSection title="列表显示">
-        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
         <PageToggleRow v-model="settings.hideDoneRows" label="隐藏已解决/已忽略" />
         <PageToggleRow v-model="settings.columns.severity" label="显示严重度" />
         <PageToggleRow v-model="settings.columns.code" label="显示代码" />
@@ -414,7 +461,8 @@ onMounted(() => {
         </div>
       </template>
     </el-dialog>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>

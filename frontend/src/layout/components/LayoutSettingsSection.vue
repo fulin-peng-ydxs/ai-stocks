@@ -1,0 +1,61 @@
+<script setup lang="ts">
+/**
+ * 布局自定义表单（M3）：由 PageLayout.editable 白名单**自动**渲染控件，
+ * 每个旋钮按 type 选控件（enum→分段器 / bool→开关 / int·number→数字输入）。
+ * 取值/写值经 useLayoutConfig 的 valueOf/set（set 内含取值域守门）。复用既有设置面板组件，风格统一。
+ */
+import type { EditableKnob } from '../schema'
+import PageSegmented from '@/components/PageSegmented.vue'
+import PageToggleRow from '@/components/PageToggleRow.vue'
+
+const props = defineProps<{
+  knobs: EditableKnob[]
+  valueOf: (path: string) => unknown
+  set: (path: string, value: unknown) => void
+}>()
+
+function segOptions(knob: EditableKnob) {
+  return (knob.options ?? []).map((o) => ({ label: knob.optionLabels?.[String(o)] ?? String(o), value: o }))
+}
+</script>
+
+<template>
+  <template v-for="knob in props.knobs" :key="knob.path">
+    <PageToggleRow
+      v-if="knob.type === 'bool'"
+      :label="knob.label"
+      :model-value="Boolean(props.valueOf(knob.path))"
+      @update:model-value="(v) => props.set(knob.path, v)"
+    />
+    <div v-else class="setting-item">
+      <div class="setting-label">{{ knob.label }}</div>
+      <PageSegmented
+        v-if="knob.type === 'enum'"
+        :model-value="props.valueOf(knob.path) as string | number"
+        :options="segOptions(knob)"
+        @update:model-value="(v) => props.set(knob.path, v)"
+      />
+      <el-input-number
+        v-else
+        :model-value="props.valueOf(knob.path) as number"
+        :min="knob.min"
+        :max="knob.max"
+        :step="knob.type === 'int' ? 10 : undefined"
+        controls-position="right"
+        @update:model-value="(v: number | undefined) => v != null && props.set(knob.path, v)"
+      />
+    </div>
+  </template>
+</template>
+
+<style scoped>
+.setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setting-label {
+  font-size: 14px;
+  color: var(--page-settings-text-subtle);
+}
+</style>

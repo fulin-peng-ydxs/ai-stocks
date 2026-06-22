@@ -22,4 +22,13 @@ export default defineConfig({
     build: {
         outDir: 'dist',
     },
+    // vite preview（服务构建产物）不复用 server.proxy，需单独声明，使 /api 仍转发到后端。
+    preview: {
+        proxy: {
+            '/api': {
+                target: 'http://127.0.0.1:8000',
+                changeOrigin: true,
+            },
+        },
+    },
 });
