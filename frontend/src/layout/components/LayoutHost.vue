@@ -20,7 +20,8 @@ if (import.meta.env.DEV) assertLayout(props.layout)
 
 const byOrder = (a: SlotSpec, b: SlotSpec) => (a.order ?? 0) - (b.order ?? 0)
 // 多组件主区（mixed/columns）按 order 逐个具名放置；操作区与单组件主区走固定区域插槽（#action/#main）。
-const mainSlots = computed(() => props.layout.slots.filter((s) => s.region === 'main').sort(byOrder))
+// 嵌套 slot（parentId，如 section 内承载的表）与 overlay 区只进入可寻址/配置模型，不参与顶层主流渲染，由父组件/页面自行渲染。
+const mainSlots = computed(() => props.layout.slots.filter((s) => s.region === 'main' && !s.parentId).sort(byOrder))
 
 const effScroll = (s: SlotSpec): ScrollOwnership => s.scroll ?? COMPONENT_CATALOG[s.component]?.defaultScroll ?? 'none'
 
@@ -62,6 +63,8 @@ const mainStrategy = computed<MainStrategy>(() => {
     <div v-else class="v-scroll">
       <slot name="main" />
     </div>
+    <!-- 固定底部区（如多选批量条/购物车条）：随 .v-page 取自身高、不滚动，在主区之下。纯渲染槽，不入 schema（同 #overlays）。 -->
+    <slot name="footer" />
     <slot name="overlays" />
   </div>
 </template>

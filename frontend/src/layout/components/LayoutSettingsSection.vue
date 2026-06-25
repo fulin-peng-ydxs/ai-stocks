@@ -5,17 +5,25 @@
  * 取值/写值经 useLayoutConfig 的 valueOf/set（set 内含取值域守门）。复用既有设置面板组件，风格统一。
  */
 import type { EditableKnob } from '../schema'
+import type { LayoutConfigLayer } from '../merge'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
+import SourceTag from '@/components/SourceTag.vue'
 
 const props = defineProps<{
   knobs: EditableKnob[]
   valueOf: (path: string) => unknown
+  sourceOf?: (path: string) => LayoutConfigLayer
+  layerValuesOf?: (path: string) => Partial<Record<LayoutConfigLayer, unknown>>
   set: (path: string, value: unknown) => void
 }>()
 
 function segOptions(knob: EditableKnob) {
   return (knob.options ?? []).map((o) => ({ label: knob.optionLabels?.[String(o)] ?? String(o), value: o }))
+}
+
+function sourceOf(path: string): LayoutConfigLayer {
+  return props.sourceOf?.(path) ?? 'default'
 }
 </script>
 
@@ -28,7 +36,10 @@ function segOptions(knob: EditableKnob) {
       @update:model-value="(v) => props.set(knob.path, v)"
     />
     <div v-else class="setting-item">
-      <div class="setting-label">{{ knob.label }}</div>
+      <div class="setting-label">
+        <span>{{ knob.label }}</span>
+        <SourceTag :source="sourceOf(knob.path)" :values="props.layerValuesOf?.(knob.path)" />
+      </div>
       <PageSegmented
         v-if="knob.type === 'enum'"
         :model-value="props.valueOf(knob.path) as string | number"
@@ -55,6 +66,10 @@ function segOptions(knob: EditableKnob) {
   gap: 8px;
 }
 .setting-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   font-size: 14px;
   color: var(--page-settings-text-subtle);
 }

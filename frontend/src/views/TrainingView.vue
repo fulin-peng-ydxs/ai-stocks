@@ -14,6 +14,9 @@ import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   startSession, getSession, listSessions, growth as fetchGrowth, revealNext,
   placeTrade, cancelIntent, settleRound, saveReview, deleteSession,
@@ -44,6 +47,26 @@ const { settings: cfg, isDirty, reset } = usePageSettings('training', {
   amountWanPresetStr: '1,10,20',
 })
 const settingsOpen = ref(false)
+
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const trainingLayout = getPageLayout('training')
+const {
+  effective: trainingEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  sourceOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(trainingLayout)
+
+// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
 // K 线显示范围：选项与默认值来自全局偏好（抽屉里可配，跨页同步）
 const { validDefault: klineDefault } = useKlinePrefs()
@@ -239,10 +262,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <template>
-  <div class="v-page training">
-    <!-- ══════════ 阶段一：未开局（配置 + 历史主表 + 成长）══════════ -->
-    <template v-if="phase === 'config'">
-      <div class="page-head">
+  <!-- ══════════ 阶段一：未开局（配置 + 历史主表 + 成长）══════════ -->
+  <LayoutHost v-if="phase === 'config'" :layout="trainingEffective">
+    <template #action>
+    <div class="page-head">
         <div>
           <h2 class="title-row">
             🎮 盘感训练
@@ -256,8 +279,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
+    </template>
 
-      <div class="cfg-body">
+    <template #main>
+    <div class="cfg-body">
         <el-card shadow="never" class="cfg-card">
           <div class="cfg-grid">
             <div class="cfg-item">
@@ -334,12 +359,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             :total="history.total" :page-size="history.size" :current-page="history.page"
             @current-change="(p:number)=>{ history.page=p; loadHistory() }" class="pager" />
         </el-card>
-      </div>
+    </div>
     </template>
+  </LayoutHost>
 
-    <!-- ══════════ 阶段二：训练中（混合成长区）══════════ -->
-    <template v-else-if="phase === 'running' && round">
-      <div class="page-head">
+  <!-- ══════════ 阶段二：训练中（混合成长区）══════════ -->
+  <LayoutHost v-else-if="phase === 'running' && round" :layout="trainingEffective">
+    <template #action>
+    <div class="page-head">
         <div>
           <h2 class="title-row">
             🎮 盘感训练 · 进行中
@@ -358,8 +385,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
         </div>
       </div>
+    </template>
 
-      <div class="run-body">
+    <template #main>
+    <div class="run-body">
         <div class="chart-block">
           <CandleChart :bars="displayBars" :warmup-bars="warmupBars" :markers="round.markers" :zoom-start="0" :zoom-end="100" />
         </div>
@@ -430,12 +459,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <el-table-column label="理由" min-width="120"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></el-table-column>
           </el-table>
         </el-card>
-      </div>
+    </div>
     </template>
+  </LayoutHost>
 
-    <!-- ══════════ 阶段三：结算回看 ══════════ -->
-    <template v-else-if="phase === 'result' && detail">
-      <div class="page-head">
+  <!-- ══════════ 阶段三：结算回看 ══════════ -->
+  <LayoutHost v-else-if="phase === 'result' && detail" :layout="trainingEffective">
+    <template #action>
+    <div class="page-head">
         <div>
           <h2 class="title-row">
             🎮 训练结算
@@ -446,8 +477,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         </div>
         <el-button @click="backToConfig">返回</el-button>
       </div>
+    </template>
 
-      <div class="result-body">
+    <template #main>
+    <div class="result-body">
         <div class="kpi-row">
           <div class="kpi"><label>平均收益</label><b :class="(detail.total_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(detail.total_return) }}</b></div>
           <div class="kpi"><label>胜率</label><b>{{ detail.win_rate != null ? (detail.win_rate * 100).toFixed(0) + '%' : '--' }}</b></div>
@@ -489,11 +522,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <el-input v-model="reviewNote" type="textarea" :rows="4" placeholder="记录本局思路、复盘总结、改进点……" />
           <div class="review-actions"><el-button type="primary" @click="persistReview">保存复盘</el-button></div>
         </el-card>
-      </div>
+    </div>
     </template>
+  </LayoutHost>
 
-    <!-- 设置抽屉：快捷下单预设 -->
-    <PageSettingsDrawer v-model="settingsOpen" title="盘感训练" :dirty="isDirty" @reset="reset">
+  <!-- 设置抽屉：快捷下单预设（三阶段共享，作为根级兄弟，teleport 到 body）-->
+  <PageSettingsDrawer
+    v-model="settingsOpen"
+    title="盘感训练"
+    :dirty="isDirty || layoutDirty"
+    page-key="training"
+    :config="drawerConfig"
+    @reset="reset(); resetLayout()"
+  >
+      <template #business>
       <PageSettingSection title="开局默认" desc="每次开局沿用的默认参数，开局前可临时改。">
         <div v-if="cfg.mode === 'multi'" class="setting-item">
           <div class="setting-label">回合数（只）</div>
@@ -536,8 +578,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <el-input v-model="cfg.amountWanPresetStr" placeholder="1,10,20" />
         </div>
       </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
-  </div>
 </template>
 
 <style scoped>

@@ -336,6 +336,63 @@ M3_TABLES: dict[str, str] = {
     "stock_group_member": DDL_STOCK_GROUP_MEMBER,
 }
 
+# ── 可配置布局系统（agent-works/configurable-layout-system M4）──────────────
+# 布局配置独立于 app_config：预设、页面层、用户层分表存储，config 为 JSON 字符串。
+DDL_LAYOUT_PRESET = """
+CREATE TABLE IF NOT EXISTS layout_preset (
+    key            VARCHAR PRIMARY KEY,
+    name           VARCHAR,
+    description    VARCHAR,
+    config         VARCHAR,
+    enabled        BOOLEAN,
+    is_builtin     BOOLEAN,
+    schema_version INTEGER,
+    created_at     TIMESTAMP,
+    updated_at     TIMESTAMP
+);
+"""
+
+DDL_LAYOUT_PAGE_CONFIG = """
+CREATE TABLE IF NOT EXISTS layout_page_config (
+    page_key       VARCHAR PRIMARY KEY,
+    preset_key     VARCHAR,
+    config         VARCHAR,
+    schema_version INTEGER,
+    updated_at     TIMESTAMP
+);
+"""
+
+DDL_LAYOUT_USER_CONFIG = """
+CREATE TABLE IF NOT EXISTS layout_user_config (
+    user_id        VARCHAR,
+    page_key       VARCHAR,
+    config         VARCHAR,
+    schema_version INTEGER,
+    updated_at     TIMESTAMP,
+    PRIMARY KEY (user_id, page_key)
+);
+"""
+
+# 字段开放策略（layout-config-productization P10）：管理员收紧/放开"某组件某字段可在哪几层覆盖"。
+# 是元配置（policy），不参与运行时值合并、不构成第五层优先级；缺行回落代码声明的最大开放集。
+# allowed_layers 存 JSON 数组（preset/page/user 的子集），且必须 ⊆ 代码最大集。
+DDL_LAYOUT_FIELD_POLICY = """
+CREATE TABLE IF NOT EXISTS layout_field_policy (
+    component_kind    VARCHAR,
+    field             VARCHAR,
+    allowed_layers    VARCHAR,
+    updated_at        TIMESTAMP,
+    PRIMARY KEY (component_kind, field)
+);
+"""
+
+M4_TABLES: dict[str, str] = {
+    "layout_preset": DDL_LAYOUT_PRESET,
+    "layout_page_config": DDL_LAYOUT_PAGE_CONFIG,
+    "layout_user_config": DDL_LAYOUT_USER_CONFIG,
+    "layout_field_policy": DDL_LAYOUT_FIELD_POLICY,
+}
+
 # ── 回测结果表（M5，SDD §4.5）──────────────────────────────────
 # JSON 字段统一以 VARCHAR 存 JSON 字符串。
 
@@ -736,7 +793,7 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
     for seq_sql in DDL_SEQUENCES:
         client.execute(seq_sql)
     created: list[str] = []
-    all_tables = {**M1_TABLES, **M2_TABLES, **M3_TABLES, **M5_TABLES, **M6_TABLES,
+    all_tables = {**M1_TABLES, **M2_TABLES, **M3_TABLES, **M4_TABLES, **M5_TABLES, **M6_TABLES,
                   **M28_TABLES, **M_TRAINING_TABLES}
     for name, sql in all_tables.items():
         client.execute(sql)

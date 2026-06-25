@@ -13,16 +13,38 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const router = useRouter()
 const settingsOpen = ref(false)
 const overviewDefaults = {
   sqSize: DEFAULT_PAGE_SIZE,
   focusLayer: 'all' as 'all' | 'L12' | 'L34',
-  compact: false,
   kpi: { latestTradeDate: true, codes: true, barRows: true, score: true, quality: true, gaps: true },
 }
 const { settings, isDirty, reset } = usePageSettings('data-overview', overviewDefaults)
+
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const overviewLayout = getPageLayout('data-overview')
+const {
+  effective: overviewEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  sourceOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(overviewLayout)
+
+// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 const loading = ref(false)
 const error = ref('')
 const ov = ref<Overview | null>(null)
@@ -192,7 +214,8 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="v-page">
+  <LayoutHost :layout="overviewEffective">
+    <template #action>
     <div class="page-head">
       <h2>
         数据概览
@@ -206,8 +229,10 @@ onMounted(load)
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>
+    </template>
 
-    <div class="v-scroll overview-scroll">
+    <template #main>
+    <div class="overview-scroll">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
 
       <template v-else>
@@ -290,7 +315,7 @@ onMounted(load)
               <span class="hint">展开行可看字段字典与表间关联；规划中维度为占位（无物理表）</span>
             </div>
           </template>
-          <el-table :data="assets" size="small" height="100%" v-loading="loading" row-key="key" :class="{ 'page-table-compact': settings.compact }">
+          <el-table :data="assets" size="small" height="100%" v-loading="loading" row-key="key">
             <el-table-column type="expand">
               <template #default="{ row }">
                 <div class="expand">
@@ -360,7 +385,7 @@ onMounted(load)
               <el-option v-for="o in sqOptions" :key="o.code" :label="o.label" :value="o.code" />
             </el-select>
           </div>
-          <el-table :data="sq?.list ?? []" size="small" height="100%" v-loading="sqLoading" row-key="code" :class="{ 'page-table-compact': settings.compact }">
+          <el-table :data="sq?.list ?? []" size="small" height="100%" v-loading="sqLoading" row-key="code">
             <el-table-column label="代码" prop="code" width="110" />
             <el-table-column label="名称" prop="name" width="100" />
             <el-table-column label="最新数据" width="110">
@@ -390,41 +415,52 @@ onMounted(load)
         </div>
       </template>
     </div>
+    </template>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="数据概览" :dirty="isDirty" @reset="reset">
-      <PageSettingSection title="逐股体检">
-        <div class="setting-item">
-          <div class="setting-label">每页条数</div>
-          <PageSegmented v-model="settings.sqSize" :options="[
-            { label: '20', value: 20 },
-            { label: '50', value: 50 },
-            { label: '100', value: 100 },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">默认关注层</div>
-          <PageSegmented v-model="settings.focusLayer" :options="[
-            { label: '全部', value: 'all' },
-            { label: 'L1-L2', value: 'L12' },
-            { label: 'L3-L4', value: 'L34' },
-          ]" />
-        </div>
-        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
-      </PageSettingSection>
-      <PageSettingSection title="KPI 卡片">
-        <PageToggleRow v-model="settings.kpi.latestTradeDate" label="最新交易日" />
-        <PageToggleRow v-model="settings.kpi.codes" label="在市 / 退市" />
-        <PageToggleRow v-model="settings.kpi.barRows" label="日线总行数" />
-        <PageToggleRow v-model="settings.kpi.score" label="全局质量评分" />
-        <PageToggleRow v-model="settings.kpi.quality" label="未解决质检" />
-        <PageToggleRow v-model="settings.kpi.gaps" label="缺口 / 滞后" />
-      </PageSettingSection>
+    <template #overlays>
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="数据概览"
+      :dirty="isDirty || layoutDirty"
+      page-key="data-overview"
+      :config="drawerConfig"
+      @reset="reset(); resetLayout()"
+    >
+      <template #business>
+        <PageSettingSection title="逐股体检">
+          <div class="setting-item">
+            <div class="setting-label">每页条数</div>
+            <PageSegmented v-model="settings.sqSize" :options="[
+              { label: '20', value: 20 },
+              { label: '50', value: 50 },
+              { label: '100', value: 100 },
+            ]" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">默认关注层</div>
+            <PageSegmented v-model="settings.focusLayer" :options="[
+              { label: '全部', value: 'all' },
+              { label: 'L1-L2', value: 'L12' },
+              { label: 'L3-L4', value: 'L34' },
+            ]" />
+          </div>
+        </PageSettingSection>
+        <PageSettingSection title="KPI 卡片">
+          <PageToggleRow v-model="settings.kpi.latestTradeDate" label="最新交易日" />
+          <PageToggleRow v-model="settings.kpi.codes" label="在市 / 退市" />
+          <PageToggleRow v-model="settings.kpi.barRows" label="日线总行数" />
+          <PageToggleRow v-model="settings.kpi.score" label="全局质量评分" />
+          <PageToggleRow v-model="settings.kpi.quality" label="未解决质检" />
+          <PageToggleRow v-model="settings.kpi.gaps" label="缺口 / 滞后" />
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .page-head h2 { margin: 0; font-size: 20px; }
 .setting-item { display: flex; flex-direction: column; gap: 8px; }
 .setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
@@ -433,6 +469,7 @@ onMounted(load)
    宽屏左右两列、各自表体内滚（横向换高度）；窄屏回落上下单列、等分高度内滚；
    连最低高都放不下→ .overview-scroll 整体滚动兜底（不裁切）。 */
 .overview-scroll {
+  flex: 1 1 auto;          /* 填满 LayoutHost 的 .v-grow */
   overflow: auto;
   min-height: 0;
   padding-right: 2px;

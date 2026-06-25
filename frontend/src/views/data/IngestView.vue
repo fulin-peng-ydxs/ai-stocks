@@ -16,6 +16,9 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const route = useRoute()
 const settingsOpen = ref(false)
@@ -24,10 +27,29 @@ const ingestDefaults = {
   taskSort: 'time' as 'time' | 'status',
   logStatus: 'all' as 'all' | 'failed',
   autoScroll: true,
-  compact: false,
   defaultTaskType: 'ingest_date' as TaskType,
 }
 const { settings, isDirty, reset } = usePageSettings('data-ingest', ingestDefaults)
+
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const ingestLayout = getPageLayout('data-ingest')
+const {
+  effective: ingestEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  sourceOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(ingestLayout)
+
+// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 const loading = ref(false)
 const status = ref<DataStatus | null>(null)
 
@@ -350,7 +372,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="v-page">
+  <LayoutHost :layout="ingestEffective">
+    <template #action>
     <div class="page-head">
       <h2>
         数据采集
@@ -364,8 +387,10 @@ onMounted(async () => {
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>
+    </template>
 
-    <div class="v-grow ingest-body">
+    <template #main>
+    <div class="ingest-body">
       <div class="ingest-top">
       <!-- 采集区 -->
       <el-card shadow="never" class="blk">
@@ -434,7 +459,7 @@ onMounted(async () => {
         </template>
         <div class="panel-table-wrap">
           <el-table :data="tasks" size="small" height="100%" @row-click="(r: AsyncTask) => openLogs(r.id)"
-                    class="clk-tbl" @sort-change="onTaskSort" :class="{ 'page-table-compact': settings.compact }">
+                    class="clk-tbl" @sort-change="onTaskSort">
             <el-table-column label="任务ID" width="220" show-overflow-tooltip>
               <template #default="{ row }"><span class="task-id">{{ row.id }}</span></template>
             </el-table-column>
@@ -517,7 +542,7 @@ onMounted(async () => {
           </div>
         </template>
         <div class="panel-table-wrap">
-          <el-table :data="updateLogList" size="small" height="100%" :row-class-name="logRowClass" @sort-change="onLogSort" :class="{ 'page-table-compact': settings.compact }">
+          <el-table :data="updateLogList" size="small" height="100%" :row-class-name="logRowClass" @sort-change="onLogSort">
             <el-table-column label="目标表" prop="table" width="130" sortable="custom">
               <template #default="{ row }">{{ row.table_name }}</template>
             </el-table-column>
@@ -554,7 +579,9 @@ onMounted(async () => {
       </el-card>
       </div>
     </div>
+    </template>
 
+    <template #overlays>
     <!-- 更多选项对话框 -->
     <el-dialog v-model="optDlg" :title="`${TASK_LABEL[optType]} · 更多选项`" width="460px">
       <el-form label-width="92px">
@@ -600,51 +627,62 @@ onMounted(async () => {
       </div>
     </el-drawer>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="数据采集" :dirty="isDirty" @reset="reset">
-      <PageSettingSection title="任务中心">
-        <div class="setting-item">
-          <div class="setting-label">默认任务筛选</div>
-          <PageSegmented v-model="settings.taskStatus" :options="[
-            { label: '全部', value: 'all' },
-            { label: '运行中', value: 'active' },
-            { label: '失败项', value: 'failed' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">默认排序</div>
-          <PageSegmented v-model="settings.taskSort" :options="[
-            { label: '时间', value: 'time' },
-            { label: '状态', value: 'status' },
-          ]" />
-        </div>
-      </PageSettingSection>
-      <PageSettingSection title="日志与显示">
-        <div class="setting-item">
-          <div class="setting-label">采集日志筛选</div>
-          <PageSegmented v-model="settings.logStatus" :options="[
-            { label: '全部', value: 'all' },
-            { label: '仅失败', value: 'failed' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">更多选项默认任务</div>
-          <PageSegmented v-model="settings.defaultTaskType" :options="[
-            { label: '指定日期', value: 'ingest_date' },
-            { label: '增量更新', value: 'update' },
-            { label: '历史补数', value: 'backfill' },
-          ]" />
-        </div>
-        <PageToggleRow v-model="settings.autoScroll" label="日志默认自动滚动" />
-        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
-      </PageSettingSection>
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="数据采集"
+      :dirty="isDirty || layoutDirty"
+      page-key="data-ingest"
+      :config="drawerConfig"
+      @reset="reset(); resetLayout()"
+    >
+      <template #business>
+        <PageSettingSection title="任务中心">
+          <div class="setting-item">
+            <div class="setting-label">默认任务筛选</div>
+            <PageSegmented v-model="settings.taskStatus" :options="[
+              { label: '全部', value: 'all' },
+              { label: '运行中', value: 'active' },
+              { label: '失败项', value: 'failed' },
+            ]" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">默认排序</div>
+            <PageSegmented v-model="settings.taskSort" :options="[
+              { label: '时间', value: 'time' },
+              { label: '状态', value: 'status' },
+            ]" />
+          </div>
+        </PageSettingSection>
+        <PageSettingSection title="日志与显示">
+          <div class="setting-item">
+            <div class="setting-label">采集日志筛选</div>
+            <PageSegmented v-model="settings.logStatus" :options="[
+              { label: '全部', value: 'all' },
+              { label: '仅失败', value: 'failed' },
+            ]" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">更多选项默认任务</div>
+            <PageSegmented v-model="settings.defaultTaskType" :options="[
+              { label: '指定日期', value: 'ingest_date' },
+              { label: '增量更新', value: 'update' },
+              { label: '历史补数', value: 'backfill' },
+            ]" />
+          </div>
+          <PageToggleRow v-model="settings.autoScroll" label="日志默认自动滚动" />
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .page-head h2 { margin: 0; font-size: 20px; }
+/* 填满 LayoutHost 的 .v-grow；内部「顶部固定卡 + 底部双栏成长表」，放不下时整区内滚 */
 .ingest-body {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   display: flex;

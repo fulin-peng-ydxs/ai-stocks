@@ -9,9 +9,11 @@ from backend.storage.ddl import (
     M1_TABLES,
     M2_TABLES,
     M3_TABLES,
+    M4_TABLES,
     M5_TABLES,
     M6_TABLES,
     M28_TABLES,
+    M_TRAINING_TABLES,
     init_db,
     list_tables,
 )
@@ -21,7 +23,16 @@ from backend.storage.duckdb_client import DuckDBClient
 def test_init_db_creates_all_tables():
     with DuckDBClient(db_path=":memory:") as client:
         created = init_db(client)
-        expected = {**M1_TABLES, **M2_TABLES, **M3_TABLES, **M5_TABLES, **M6_TABLES, **M28_TABLES}
+        expected = {
+            **M1_TABLES,
+            **M2_TABLES,
+            **M3_TABLES,
+            **M4_TABLES,
+            **M5_TABLES,
+            **M6_TABLES,
+            **M28_TABLES,
+            **M_TRAINING_TABLES,
+        }
         assert set(created) == set(expected.keys())
         tables = list_tables(client)
         for name in expected:

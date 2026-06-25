@@ -23,6 +23,7 @@ from backend.api.board import router as board_router
 from backend.api.config import router as config_router
 from backend.api.health import router as health_router
 from backend.api.indicators import router as indicators_router
+from backend.api.layout import router as layout_router
 from backend.api.profiles import router as profiles_router
 from backend.api.score_profiles import router as score_profiles_router
 from backend.api.trade_profiles import router as trade_profiles_router
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(backtest_router)
     app.include_router(config_router)
     app.include_router(indicators_router)
+    app.include_router(layout_router)
     app.include_router(score_profiles_router)
     app.include_router(trade_profiles_router)
     app.include_router(stock_groups_router)

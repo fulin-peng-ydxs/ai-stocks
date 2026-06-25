@@ -20,40 +20,29 @@ import { usePageSettings } from '@/composables/usePageSettings'
 import { downloadCsv } from '@/utils/csv'
 import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
-import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
-import { useLayoutConfig, type PageLayout } from '@/layout'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 // 列表页布局（原型 A）：操作区=头部（标题+控件），主内容区=榜单表格（撑满·表体内滚）。
-// 经 LayoutHost 渲染 → 由构造即合规；不再手写 .v-page/.v-grow。
-// editable：密度为 L2 可配置旋钮（统一控制整页间距与表格行高，取代原 L3「紧凑表格」开关）。
-const boardLayout: PageLayout = {
-  pageKey: 'board',
-  archetype: 'list',
-  hasActionRegion: true,
-  slots: [
-    { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-    { id: 'table', component: 'data-table', region: 'main', growMain: true, order: 1 },
-  ],
-  responsive: { allowReflow: false, breakpoints: [{ minWidth: 0, columns: 1 }] },
-  density: 'standard',
-  editable: [
-    {
-      path: 'density',
-      label: '信息密度',
-      type: 'enum',
-      options: ['compact', 'standard', 'comfortable'],
-      optionLabels: { compact: '紧凑', standard: '标准', comfortable: '宽松' },
-    },
-  ],
-}
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const boardLayout = getPageLayout('board')
 const {
   effective: boardEffective,
   knobs: layoutKnobs,
   setKnob,
   valueOf,
+  sourceOf,
   isDirty: layoutDirty,
   resetAll: resetLayout,
-} = useLayoutConfig(boardLayout)
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(boardLayout)
+
+// 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
 const router = useRouter()
 const loading = ref(false)
@@ -64,14 +53,21 @@ const rows = ref<ScoreRunRow[]>([])
 const syncingRunDate = ref(false)
 const settingsOpen = ref(false)
 
+// topN、分项达标分模式属榜单业务态偏好，保留在 usePageSettings；
+// 列显隐与默认排序迁入组件配置层（slots.table.config.*），消除与 usePageSettings 的双入口（plan.md §13.3）。
 const boardDefaults = {
   topN: 50,
-  sortBy: 'score' as 'score' | 'rank',
   subScoreMode: 'full' as 'full' | 'brief' | 'hidden',
-  columns: { code: true, name: true, score: true, grade: true, subScores: true },
 }
 const { settings, isDirty, reset } = usePageSettings('board', boardDefaults)
 topN.value = Number(settings.topN)
+
+// 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留渲染/排序要读的 getter（写值经组件配置层）。
+const sortBy = computed<'score' | 'rank'>(() => (componentValueOf('table', 'defaultSort') as 'score' | 'rank') ?? 'score')
+const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
+function colVisible(key: string): boolean {
+  return !hiddenColumns.value.includes(key)
+}
 
 // 评分规则方案
 const profiles = ref<ScoreProfileSummary[]>([])
@@ -87,7 +83,7 @@ function nameOf(key: string): string {
 const subKeys = computed(() => (rows.value[0] ? Object.keys(rows.value[0].sub_scores) : []))
 const displayRows = computed(() => {
   const list = [...rows.value]
-  if (settings.sortBy === 'rank') list.sort((a, b) => a.rank - b.rank)
+  if (sortBy.value === 'rank') list.sort((a, b) => a.rank - b.rank)
   else list.sort((a, b) => b.total_score - a.total_score)
   return list
 })
@@ -199,7 +195,7 @@ onMounted(async () => {
           <el-button :loading="loading" type="primary" @click="load">刷新</el-button>
           <el-button :disabled="!rows.length" @click="exportCsv">导出 CSV</el-button>
         </div>
-        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+        <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
 
@@ -219,22 +215,22 @@ onMounted(async () => {
         <el-table-column label="#" width="60" sortable :sort-by="(r:any)=>r.rank">
           <template #default="{ row }">{{ row.rank }}</template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.code" label="代码" prop="code" width="110" sortable />
-        <el-table-column v-if="settings.columns.name" label="名称" prop="name" width="120">
+        <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="110" sortable />
+        <el-table-column v-if="colVisible('name')" label="名称" prop="name" width="120">
           <template #default="{ row }">{{ row.name || '—' }}</template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.score" label="综合分" prop="total_score" width="100" sortable :sort-by="(r:any)=>r.total_score">
+        <el-table-column v-if="colVisible('score')" label="综合分" prop="total_score" width="100" sortable :sort-by="(r:any)=>r.total_score">
           <template #default="{ row }">
             <strong class="score">{{ row.total_score }}</strong>
           </template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.grade" label="评级" width="120">
+        <el-table-column v-if="colVisible('grade')" label="评级" width="120">
           <template #default="{ row }">
             <el-tag v-if="row.grade" :type="gradeType(row.grade)" effect="light">{{ row.grade }}</el-tag>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.subScores && displaySubKeys.length" label="分项达标分" min-width="320">
+        <el-table-column v-if="colVisible('subScores') && displaySubKeys.length" label="分项达标分" min-width="320">
           <template #default="{ row }">
             <div class="subchips">
               <span
@@ -257,45 +253,30 @@ onMounted(async () => {
       v-model="settingsOpen"
       title="每日榜单"
       :dirty="isDirty || layoutDirty"
+      page-key="board"
+      :config="drawerConfig"
       @reset="reset(); resetLayout()"
     >
-      <PageSettingSection title="布局" desc="调整整页信息密度，立即生效并记忆。">
-        <LayoutSettingsSection :knobs="layoutKnobs" :value-of="valueOf" :set="setKnob" />
-      </PageSettingSection>
-
-      <PageSettingSection title="默认结果" desc="偏好会同步到榜单的默认排序和展示方式。">
-        <div class="setting-item">
-          <div class="setting-label">Top N</div>
-          <PageSegmented v-model="settings.topN" :options="[
-            { label: '20', value: 20 },
-            { label: '50', value: 50 },
-            { label: '100', value: 100 },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">默认排序</div>
-          <PageSegmented v-model="settings.sortBy" :options="[
-            { label: '综合分', value: 'score' },
-            { label: '排名', value: 'rank' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">分项达标分</div>
-          <PageSegmented v-model="settings.subScoreMode" :options="[
-            { label: '全显', value: 'full' },
-            { label: '精简', value: 'brief' },
-            { label: '隐藏', value: 'hidden' },
-          ]" />
-        </div>
-      </PageSettingSection>
-
-      <PageSettingSection title="表格显示">
-        <PageToggleRow v-model="settings.columns.code" label="显示代码列" />
-        <PageToggleRow v-model="settings.columns.name" label="显示名称列" />
-        <PageToggleRow v-model="settings.columns.score" label="显示综合分" />
-        <PageToggleRow v-model="settings.columns.grade" label="显示评级" />
-        <PageToggleRow v-model="settings.columns.subScores" label="显示分项达标分" />
-      </PageSettingSection>
+      <template #business>
+        <PageSettingSection title="默认结果">
+          <div class="setting-item">
+            <div class="setting-label">Top N</div>
+            <PageSegmented v-model="settings.topN" :options="[
+              { label: '20', value: 20 },
+              { label: '50', value: 50 },
+              { label: '100', value: 100 },
+            ]" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">分项达标分</div>
+            <PageSegmented v-model="settings.subScoreMode" :options="[
+              { label: '全显', value: 'full' },
+              { label: '精简', value: 'brief' },
+              { label: '隐藏', value: 'hidden' },
+            ]" />
+          </div>
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
     </template>
   </LayoutHost>

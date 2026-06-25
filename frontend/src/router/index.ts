@@ -8,11 +8,32 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/BoardView.vue'),
     meta: { title: '每日榜单' },
   },
+  // 系统管理父菜单（P9 IA 归位）：系统配置 + 布局配置（三孙工作区）统一收入 /system/* 下。
+  // 旧路由 /config、/layout-config/* 直接废弃、不做重定向（单用户本地、无外部书签）。
   {
-    path: '/config',
+    path: '/system/config',
     name: 'config',
     component: () => import('@/views/ConfigView.vue'),
     meta: { title: '配置管理' },
+  },
+  { path: '/system/layout', redirect: '/system/layout/presets' },
+  {
+    path: '/system/layout/presets',
+    name: 'layout-presets',
+    component: () => import('@/views/layout/LayoutPresetsView.vue'),
+    meta: { title: '预设管理' },
+  },
+  {
+    path: '/system/layout/pages',
+    name: 'layout-pages',
+    component: () => import('@/views/layout/LayoutPagesView.vue'),
+    meta: { title: '页面布局' },
+  },
+  {
+    path: '/system/layout/components',
+    name: 'layout-components',
+    component: () => import('@/views/layout/LayoutComponentsView.vue'),
+    meta: { title: '系统组件' },
   },
   {
     path: '/screen',
@@ -70,6 +91,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/data/ScheduleView.vue'),
     meta: { title: '任务调度' },
   },
+  // 兜底：未匹配路径（含已废弃的 /config、/layout-config/* 旧链接与误输）回首页，避免空白页。
+  { path: '/:pathMatch(.*)*', redirect: '/board' },
 ]
 
 const router = createRouter({

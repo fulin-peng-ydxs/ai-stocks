@@ -18,51 +18,46 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
-import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
-import { useLayoutConfig, type PageLayout } from '@/layout'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const route = useRoute()
 const router = useRouter()
 const settingsOpen = ref(false)
+// 默认筛选/隐藏已办属业务态偏好，保留 usePageSettings；默认排序与列显隐迁入组件配置层（plan.md §13.3）。
 const qualityDefaults = {
   defaultStatus: 'todo' as 'todo' | 'all' | 'open',
   defaultSeverity: 'all' as 'all' | 'high',
-  defaultSort: 'time' as 'time' | 'severity',
   hideDoneRows: false,
-  columns: { severity: true, code: true, name: true, date: true, layer: true, type: true, detail: true, status: true, detectedAt: true },
 }
 const { settings, isDirty, reset } = usePageSettings('data-quality', qualityDefaults)
 
-// 列表页布局（原型 A）：操作区=头部工具栏+筛选条，主内容区=问题台账表（撑满·表体内滚），分页固定表下。
-// density 为 L2 旋钮（统一整页间距与表格行高），取代原 L3「紧凑表格」开关。
-const qualityLayout: PageLayout = {
-  pageKey: 'data-quality',
-  archetype: 'list',
-  hasActionRegion: true,
-  slots: [
-    { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-    { id: 'table', component: 'data-table', region: 'main', growMain: true, order: 1 },
-  ],
-  responsive: { allowReflow: false, breakpoints: [{ minWidth: 0, columns: 1 }] },
-  density: 'standard',
-  editable: [
-    {
-      path: 'density',
-      label: '信息密度',
-      type: 'enum',
-      options: ['compact', 'standard', 'comfortable'],
-      optionLabels: { compact: '紧凑', standard: '标准', comfortable: '宽松' },
-    },
-  ],
-}
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const qualityLayout = getPageLayout('data-quality')
 const {
   effective: qualityEffective,
   knobs: layoutKnobs,
   setKnob,
   valueOf,
+  sourceOf,
   isDirty: layoutDirty,
   resetAll: resetLayout,
-} = useLayoutConfig(qualityLayout)
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(qualityLayout)
+
+// 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+
+// 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留排序/渲染要读的 getter。
+const defaultSort = computed<'time' | 'severity'>(() => (componentValueOf('table', 'defaultSort') as 'time' | 'severity') ?? 'time')
+const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
+function colVisible(key: string): boolean {
+  return !hiddenColumns.value.includes(key)
+}
 const loading = ref(false)
 const data = ref<DataQuality | null>(null)
 const page = ref(1)
@@ -78,7 +73,7 @@ const statType: Record<string, 'info' | 'warning' | 'success'> = {
 const displayList = computed(() => {
   let list = [...(data.value?.list ?? [])]
   if (settings.hideDoneRows) list = list.filter((row) => row.status !== 'resolved' && row.status !== 'ignored')
-  if (settings.defaultSort === 'severity') {
+  if (defaultSort.value === 'severity') {
     const order = { high: 0, mid: 1, low: 2 }
     list.sort((a, b) => (order[a.severity as keyof typeof order] ?? 9) - (order[b.severity as keyof typeof order] ?? 9))
   }
@@ -279,7 +274,7 @@ onMounted(() => {
         <el-button type="primary" plain @click="runVerify">立即质检</el-button>
         <el-button type="success" plain :loading="checkupRunning" @click="runCheckup">结构体检</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
-        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+        <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
 
@@ -311,33 +306,33 @@ onMounted(() => {
     <el-card shadow="never">
       <el-table :data="displayList" size="small" height="100%" v-loading="loading"
                 :row-class-name="rowClass">
-        <el-table-column v-if="settings.columns.severity" label="严重度" width="90">
+        <el-table-column v-if="colVisible('severity')" label="严重度" width="90">
           <template #default="{ row }">
             <el-tag :type="sevType[row.severity] ?? 'info'" size="small" effect="dark">{{ SEVERITY_LABEL[row.severity] ?? row.severity }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.code" label="代码" prop="code" width="110" />
-        <el-table-column v-if="settings.columns.name" label="名称" prop="name" width="100" show-overflow-tooltip />
-        <el-table-column v-if="settings.columns.date" label="日期" width="110">
+        <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="110" />
+        <el-table-column v-if="colVisible('name')" label="名称" prop="name" width="100" show-overflow-tooltip />
+        <el-table-column v-if="colVisible('date')" label="日期" width="110">
           <template #default="{ row }">{{ (row.trade_date || '—').slice(0, 10) }}</template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.layer" label="层" width="64">
+        <el-table-column v-if="colVisible('layer')" label="层" width="64">
           <template #default="{ row }">
             <el-tooltip :content="LAYER_LABEL[ISSUE_LAYER[row.issue_type]] ?? '—'" placement="top">
               <span class="layer-tag">{{ ISSUE_LAYER[row.issue_type] ?? '—' }}</span>
             </el-tooltip>
           </template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.type" label="类型" width="130">
+        <el-table-column v-if="colVisible('type')" label="类型" width="130">
           <template #default="{ row }">{{ ISSUE_TYPE_LABEL[row.issue_type] ?? row.issue_type }}</template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.detail" label="详情" prop="detail" show-overflow-tooltip />
-        <el-table-column v-if="settings.columns.status" label="状态" width="90">
+        <el-table-column v-if="colVisible('detail')" label="详情" prop="detail" show-overflow-tooltip />
+        <el-table-column v-if="colVisible('status')" label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="statType[row.status] ?? 'info'" size="small" effect="plain">{{ ISSUE_STATUS_LABEL[row.status] ?? row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.detectedAt" label="检出时间" width="160">
+        <el-table-column v-if="colVisible('detectedAt')" label="检出时间" width="160">
           <template #default="{ row }">{{ (row.detected_at || '').slice(0, 19) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
@@ -396,48 +391,30 @@ onMounted(() => {
       v-model="settingsOpen"
       title="数据质量"
       :dirty="isDirty || layoutDirty"
+      page-key="data-quality"
+      :config="drawerConfig"
       @reset="reset(); resetLayout()"
     >
-      <PageSettingSection title="布局" desc="调整整页信息密度，立即生效并记忆。">
-        <LayoutSettingsSection :knobs="layoutKnobs" :value-of="valueOf" :set="setKnob" />
-      </PageSettingSection>
-
-      <PageSettingSection title="默认筛选">
-        <div class="setting-item">
-          <div class="setting-label">状态筛选</div>
-          <PageSegmented v-model="settings.defaultStatus" :options="[
-            { label: '待办两态', value: 'todo' },
-            { label: '仅未处理', value: 'open' },
-            { label: '全部', value: 'all' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">严重度筛选</div>
-          <PageSegmented v-model="settings.defaultSeverity" :options="[
-            { label: '全部', value: 'all' },
-            { label: '高危优先', value: 'high' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">默认排序</div>
-          <PageSegmented v-model="settings.defaultSort" :options="[
-            { label: '检出时间', value: 'time' },
-            { label: '严重度', value: 'severity' },
-          ]" />
-        </div>
-      </PageSettingSection>
-      <PageSettingSection title="列表显示">
-        <PageToggleRow v-model="settings.hideDoneRows" label="隐藏已解决/已忽略" />
-        <PageToggleRow v-model="settings.columns.severity" label="显示严重度" />
-        <PageToggleRow v-model="settings.columns.code" label="显示代码" />
-        <PageToggleRow v-model="settings.columns.name" label="显示名称" />
-        <PageToggleRow v-model="settings.columns.date" label="显示日期" />
-        <PageToggleRow v-model="settings.columns.layer" label="显示层" />
-        <PageToggleRow v-model="settings.columns.type" label="显示类型" />
-        <PageToggleRow v-model="settings.columns.detail" label="显示详情" />
-        <PageToggleRow v-model="settings.columns.status" label="显示状态" />
-        <PageToggleRow v-model="settings.columns.detectedAt" label="显示检出时间" />
-      </PageSettingSection>
+      <template #business>
+        <PageSettingSection title="默认筛选">
+          <div class="setting-item">
+            <div class="setting-label">状态筛选</div>
+            <PageSegmented v-model="settings.defaultStatus" :options="[
+              { label: '待办两态', value: 'todo' },
+              { label: '仅未处理', value: 'open' },
+              { label: '全部', value: 'all' },
+            ]" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">严重度筛选</div>
+            <PageSegmented v-model="settings.defaultSeverity" :options="[
+              { label: '全部', value: 'all' },
+              { label: '高危优先', value: 'high' },
+            ]" />
+          </div>
+          <PageToggleRow v-model="settings.hideDoneRows" label="隐藏已解决/已忽略" />
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
 
     <el-dialog v-model="checkupOpen" title="数据结构体检报告" width="640px" align-center>

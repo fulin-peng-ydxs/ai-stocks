@@ -8,7 +8,8 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "scaffold-page": "node scripts/scaffold-page.mjs"
   },
   "dependencies": {
     "axios": "^1.7.2",

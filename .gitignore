@@ -36,3 +36,4 @@ config/secrets.yaml
 
 # 后端运行时日志与 PID（start.sh 产物）
 logs/
+/**/screenshots*/**

@@ -17,11 +17,34 @@ import { useStockSet } from '@/stores/stockSet'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import CandleChart from '@/components/CandleChart.vue'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const route = useRoute()
 const router = useRouter()
 const code = ref(String(route.params.code))
 const settingsOpen = ref(false)
+
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const detailLayout = getPageLayout('stock-detail')
+const {
+  effective: detailEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  sourceOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(detailLayout)
+
+// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 const detailDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
   showTradeCard: true,
@@ -435,7 +458,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="v-page">
+  <LayoutHost :layout="detailEffective">
+    <template #action>
     <div class="page-head">
       <div class="title">
         <el-button text @click="router.push('/stocks?restore=1')">‹ 返回</el-button>
@@ -500,8 +524,9 @@ onBeforeUnmount(() => {
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>
+    </template>
 
-    <div class="v-scroll">
+    <template #main>
     <!-- 通用集合导航条 -->
     <div v-if="settings.showNav && stockSet.has" class="nav-bar">
       <span class="nav-label">
@@ -618,43 +643,53 @@ onBeforeUnmount(() => {
         </div>
       </el-card>
     </template>
-    </div>
+    </template>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="个股详情" :dirty="isDirty" @reset="reset">
-      <PageSettingSection title="图表设置" desc="结构参考同花顺，但颜色跟随当前主题。">
-        <div class="setting-item">
-          <div class="setting-label">复权模式</div>
-          <PageSegmented v-model="settings.adjustMode" :options="[
-            { label: '不复权', value: '' },
-            { label: '前复权', value: 'qfq' },
-            { label: '后复权', value: 'hfq' },
-          ]" />
-        </div>
-      </PageSettingSection>
+    <template #overlays>
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="个股详情"
+      :dirty="isDirty || layoutDirty"
+      page-key="stock-detail"
+      :config="drawerConfig"
+      @reset="reset(); resetLayout()"
+    >
+      <template #business>
+        <PageSettingSection title="图表设置" desc="结构参考同花顺，但颜色跟随当前主题。">
+          <div class="setting-item">
+            <div class="setting-label">复权模式</div>
+            <PageSegmented v-model="settings.adjustMode" :options="[
+              { label: '不复权', value: '' },
+              { label: '前复权', value: 'qfq' },
+              { label: '后复权', value: 'hfq' },
+            ]" />
+          </div>
+        </PageSettingSection>
 
-      <KlineSettingSection />
+        <KlineSettingSection />
 
-      <PageSettingSection title="指标快照">
-        <PageToggleRow v-model="settings.indicators.ma20" label="MA20" />
-        <PageToggleRow v-model="settings.indicators.ma60" label="MA60" />
-        <PageToggleRow v-model="settings.indicators.dist_to_high_2y" label="距两年高(比)" />
-        <PageToggleRow v-model="settings.indicators.is_high_2y" label="两年新高" />
-        <PageToggleRow v-model="settings.indicators.is_bull_arrange" label="多头排列" />
-        <PageToggleRow v-model="settings.indicators.ma20_up" label="MA20 向上" />
-        <PageToggleRow v-model="settings.indicators.is_platform_breakout" label="平台突破" />
-        <PageToggleRow v-model="settings.indicators.is_vol_breakout" label="放量突破" />
-      </PageSettingSection>
+        <PageSettingSection title="指标快照">
+          <PageToggleRow v-model="settings.indicators.ma20" label="MA20" />
+          <PageToggleRow v-model="settings.indicators.ma60" label="MA60" />
+          <PageToggleRow v-model="settings.indicators.dist_to_high_2y" label="距两年高(比)" />
+          <PageToggleRow v-model="settings.indicators.is_high_2y" label="两年新高" />
+          <PageToggleRow v-model="settings.indicators.is_bull_arrange" label="多头排列" />
+          <PageToggleRow v-model="settings.indicators.ma20_up" label="MA20 向上" />
+          <PageToggleRow v-model="settings.indicators.is_platform_breakout" label="平台突破" />
+          <PageToggleRow v-model="settings.indicators.is_vol_breakout" label="放量突破" />
+        </PageSettingSection>
 
-      <PageSettingSection title="辅助模块">
-        <PageToggleRow v-model="settings.showNav" label="显示集合导航条" />
-        <PageToggleRow v-model="settings.showTradeCard" label="显示买卖信号评估卡" />
-      </PageSettingSection>
+        <PageSettingSection title="辅助模块">
+          <PageToggleRow v-model="settings.showNav" label="显示集合导航条" />
+          <PageToggleRow v-model="settings.showTradeCard" label="显示买卖信号评估卡" />
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>
-.v-scroll { padding-right: 2px; }
 .page-head {
   display: flex;
   justify-content: space-between;

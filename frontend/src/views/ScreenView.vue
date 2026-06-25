@@ -14,7 +14,6 @@ import {
 } from '@/api/screening'
 import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
 import HelpTip from '@/components/HelpTip.vue'
-import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -22,17 +21,45 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { downloadCsv } from '@/utils/csv'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const router = useRouter()
 const settingsOpen = ref(false)
+// 排除 ST、AST 预览属业务态偏好，保留 usePageSettings；结果排序与列显隐迁入组件配置层（plan.md §13.3）。
 const screenDefaults = {
   excludeSt: true,
-  resultSort: 'score' as 'score' | 'code',
   astExpanded: false,
-  compact: false,
-  columns: { code: true, name: true, score: true, grade: true, st: true },
 }
 const { settings, isDirty, reset } = usePageSettings('screen', screenDefaults)
+
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const screenLayout = getPageLayout('screen')
+const {
+  effective: screenEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  sourceOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(screenLayout)
+
+// 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+
+// 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留排序/渲染要读的 getter。
+const resultSort = computed<'score' | 'code'>(() => (componentValueOf('result', 'defaultSort') as 'score' | 'code') ?? 'score')
+const hiddenColumns = computed<string[]>(() => (componentValueOf('result', 'hiddenColumns') as string[]) ?? [])
+function colVisible(key: string): boolean {
+  return !hiddenColumns.value.includes(key)
+}
 
 // ── 指标注册表（融合：可视化条件直接从注册表取指标，支持动态传参）──
 const registry = ref<IndicatorDef[]>([])
@@ -218,7 +245,7 @@ const gradeTag: Record<string, '' | 'success' | 'warning' | 'info'> = {
 }
 const displayHits = computed(() => {
   const list = [...(result.value?.hits ?? [])]
-  if (settings.resultSort === 'code') list.sort((a, b) => a.code.localeCompare(b.code))
+  if (resultSort.value === 'code') list.sort((a, b) => a.code.localeCompare(b.code))
   else list.sort((a, b) => (b.total_score ?? 0) - (a.total_score ?? 0))
   return list
 })
@@ -314,7 +341,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="v-page">
+  <LayoutHost :layout="screenEffective">
+    <template #action>
+    <div class="lh-action">
     <div class="page-head">
       <div class="page-head-actions" style="width: 100%; justify-content: space-between;">
         <h2 class="title-row">
@@ -325,7 +354,7 @@ onMounted(async () => {
             <p style="margin:0">本页一套构建器即可：每条条件可选<b>注册表指标</b>（含动态参数）或手写<b>表达式</b>，用 且/或 组合。命中结果用榜单同款评分打分并按分排序，方便判断质量；可「排除 ST」、存为方案。</p>
           </HelpTip>
         </h2>
-        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+        <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
 
@@ -440,8 +469,11 @@ onMounted(async () => {
         <span class="run-hint">含表达式/带参指标需全市场逐股求值，约十几秒</span>
       </div>
     </el-card>
+    </div>
+    </template>
 
-    <el-card shadow="never" class="v-grow result-card" v-loading="loading">
+    <template #main>
+    <el-card shadow="never" class="result-card" v-loading="loading">
       <template #header>
         <span v-if="result">
           命中 <strong class="cnt">{{ result.count }}</strong> 只 · 交易日 {{ result.date }} ·
@@ -457,22 +489,21 @@ onMounted(async () => {
         height="100%"
         @row-click="(r: ScreenHit) => router.push(`/stocks/${r.code}`)"
         class="clickable"
-        :class="{ 'page-table-compact': settings.compact }"
       >
         <el-table-column label="#" type="index" width="56" />
-        <el-table-column v-if="settings.columns.code" label="代码" prop="code" width="120" sortable />
-        <el-table-column v-if="settings.columns.name" label="名称" min-width="140" sortable :sort-by="(r:any)=>r.name || ''">
+        <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="120" sortable />
+        <el-table-column v-if="colVisible('name')" label="名称" min-width="140" sortable :sort-by="(r:any)=>r.name || ''">
           <template #default="{ row }">
             <span>{{ row.name || '—' }}</span>
-            <el-tag v-if="settings.columns.st && row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
+            <el-tag v-if="colVisible('st') && row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.score" label="综合分" prop="total_score" width="110" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
+        <el-table-column v-if="colVisible('score')" label="综合分" prop="total_score" width="110" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
           <template #default="{ row }">
             <strong class="score">{{ row.total_score ?? '—' }}</strong>
           </template>
         </el-table-column>
-        <el-table-column v-if="settings.columns.grade" label="评级" width="130">
+        <el-table-column v-if="colVisible('grade')" label="评级" width="130">
           <template #default="{ row }">
             <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" effect="light">{{ row.grade }}</el-tag>
             <span v-else class="muted">—</span>
@@ -482,7 +513,9 @@ onMounted(async () => {
       <el-empty v-else-if="result" description="无命中" />
       <el-empty v-else description="运行后在这里展示筛选结果" />
     </el-card>
+    </template>
 
+    <template #overlays>
     <!-- 历史版本 -->
     <el-dialog v-model="verVisible" :title="`历史版本 · ${loadedProfile?.name || ''}`" width="560px">
       <el-empty v-if="!versions.length" description="暂无历史版本" />
@@ -509,35 +542,26 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="策略筛选" :dirty="isDirty" @reset="reset">
-      <PageSettingSection title="默认行为">
-        <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
-        <div class="setting-item">
-          <div class="setting-label">结果默认排序</div>
-          <PageSegmented v-model="settings.resultSort" :options="[
-            { label: '综合分', value: 'score' },
-            { label: '代码', value: 'code' },
-          ]" />
-        </div>
-        <PageToggleRow v-model="settings.astExpanded" label="展开 AST 预览" />
-      </PageSettingSection>
-
-      <PageSettingSection title="结果表格">
-        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
-        <PageToggleRow v-model="settings.columns.code" label="显示代码列" />
-        <PageToggleRow v-model="settings.columns.name" label="显示名称列" />
-        <PageToggleRow v-model="settings.columns.score" label="显示综合分" />
-        <PageToggleRow v-model="settings.columns.grade" label="显示评级" />
-        <PageToggleRow v-model="settings.columns.st" label="显示 ST 标记" />
-      </PageSettingSection>
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="策略筛选"
+      :dirty="isDirty || layoutDirty"
+      page-key="screen"
+      :config="drawerConfig"
+      @reset="reset(); resetLayout()"
+    >
+      <template #business>
+        <PageSettingSection title="默认行为">
+          <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
+          <PageToggleRow v-model="settings.astExpanded" label="展开 AST 预览" />
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>
-.page-head {
-  margin-bottom: 14px;
-}
 .page-head h2 {
   margin: 0;
   font-size: 20px;
@@ -546,9 +570,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
 }
-.cond-card {
-  margin-bottom: 16px;
-}
+/* 间距由 .lh-action（操作区）与 .v-page（操作区↔主区）统一提供，组件本身不再加外边距 */
 /* 条件行区限高内滚：操作区(构建器)不会随条件增多无限增高、挤压下方结果区 */
 .b-conds {
   max-height: 220px;

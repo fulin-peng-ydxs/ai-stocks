@@ -26,23 +26,61 @@ import { usePageSettings } from '@/composables/usePageSettings'
 import { useStockSet, type StockListState } from '@/stores/stockSet'
 import { useTradeDates } from '@/composables/useTradeDates'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const router = useRouter()
 const route = useRoute()
 const stockSet = useStockSet()
 const { dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
+// 默认视图/排除 ST 属业务态偏好，保留 usePageSettings；
+// 普通列表的默认排序、每页条数、列显隐迁入组件配置层 table slot（plan.md §13.3）。
+// 分组视图为另一套列集，P7 已建模为独立可寻址 groupTable slot 并迁入组件配置层（见下 groupColVisible）。
 const stocksDefaults = {
   defaultView: 'group' as 'list' | 'group',
-  sortBy: 'pct_chg',
-  sortOrder: 'asc' as 'asc' | 'desc',
-  size: DEFAULT_PAGE_SIZE,
   excludeSt: true,
-  compact: false,
-  columns: { code: true, name: true, price: true, pct: true, groups: true, industry: true, board: true, status: true },
-  groupColumns: { code: true, name: true, price: true, pct: true, addDate: true, ret: true, lastDate: true },
 }
 const { settings, isDirty, reset } = usePageSettings('stocks', stocksDefaults)
+
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const stocksLayout = getPageLayout('stocks')
+const {
+  effective: stocksEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  sourceOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(stocksLayout)
+
+// 设置抽屉的「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+
+// 普通列表表格的组件配置（slot 'table'）：抽屉写值由 ComponentAutoSettings 自动渲染；
+// 这里只保留页面渲染/查询要读的派生值（默认排序、每页条数、列显隐 getter），写值统一经组件配置层。
+const DEFAULT_TABLE_SORT = 'pct_chg:asc'
+const defaultSortRaw = computed<string>(() => (componentValueOf('table', 'defaultSort') as string) || DEFAULT_TABLE_SORT)
+const defaultSortBy = computed<string>(() => defaultSortRaw.value.split(':')[0] || 'pct_chg')
+const defaultSortOrder = computed<'asc' | 'desc'>(() => (defaultSortRaw.value.split(':')[1] as 'asc' | 'desc') || 'asc')
+const defaultSize = computed<number>(() => (componentValueOf('table', 'pageSize') as number) ?? DEFAULT_PAGE_SIZE)
+const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
+function colVisible(key: string): boolean {
+  return !hiddenColumns.value.includes(key)
+}
+
+// 分组视图表的列显隐（slot 'groupTable'）：另一套列集，单一事实源走组件配置层，页面只读 getter。
+const groupHidden = computed<string[]>(() => (componentValueOf('groupTable', 'hiddenColumns') as string[]) ?? [])
+function groupColVisible(key: string): boolean {
+  return !groupHidden.value.includes(key)
+}
 
 // ── 查询条件（普通查询）──
 const loading = ref(false)
@@ -50,10 +88,10 @@ const q = ref('')
 const board = ref('')
 const excludeSt = ref(Boolean(settings.excludeSt))        // 默认排除 ST
 const tradeDate = ref('')          // 交易日期（默认最新，展示当日涨跌幅）
-const sortBy = ref(String(settings.sortBy))      // 服务端排序字段（默认涨跌幅）
-const sortOrder = ref<'asc' | 'desc'>(settings.sortOrder)  // 默认正序
+const sortBy = ref(defaultSortBy.value)      // 服务端排序字段（默认涨跌幅，初值取组件配置默认排序）
+const sortOrder = ref<'asc' | 'desc'>(defaultSortOrder.value)  // 默认正序
 const page = ref(1)
-const size = ref(Number(settings.size))
+const size = ref(defaultSize.value)
 const total = ref(0)
 const rows = ref<StockBasic[]>([])
 
@@ -69,17 +107,17 @@ watch(() => settings.excludeSt, (value) => {
   excludeSt.value = Boolean(value)
   search()
 })
-watch(() => settings.sortBy, (value) => {
+watch(defaultSortBy, (value) => {
   if (inGroupMode.value) return
   sortBy.value = String(value)
   search()
 })
-watch(() => settings.sortOrder, (value) => {
+watch(defaultSortOrder, (value) => {
   if (inGroupMode.value) return
   sortOrder.value = value
   search()
 })
-watch(() => settings.size, (value) => {
+watch(defaultSize, (value) => {
   if (inGroupMode.value) return
   size.value = Number(value)
   search()
@@ -438,9 +476,9 @@ onMounted(async () => {
   }
   const dg = defaultGroup.value
   excludeSt.value = Boolean(settings.excludeSt)
-  sortBy.value = String(settings.sortBy)
-  sortOrder.value = settings.sortOrder
-  size.value = Number(settings.size)
+  sortBy.value = defaultSortBy.value
+  sortOrder.value = defaultSortOrder.value
+  size.value = defaultSize.value
   // 交易日默认直接选中最新交易日（而非留空靠占位提示）
   await ensureLoaded()
   restoringListState = true
@@ -455,7 +493,9 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="v-page">
+  <LayoutHost :layout="stocksEffective">
+    <template #action>
+    <div class="lh-action">
     <div class="page-head">
       <h2>个股查询</h2>
       <div class="page-head-actions">
@@ -467,7 +507,7 @@ onMounted(async () => {
             </span>
           </el-option>
         </el-select>
-        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+        <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
 
@@ -520,15 +560,17 @@ onMounted(async () => {
         </div>
       </div>
     </el-card>
+    </div>
+    </template>
 
-    <el-card shadow="never" class="v-grow">
+    <template #main>
+    <el-card shadow="never">
       <!-- 分组视图 -->
       <template v-if="inGroupMode">
         <el-table :data="groupRows" v-loading="groupLoading" row-key="code"
           height="100%"
           class="clickable" @row-click="(r: GroupMember) => enterDetail(r.code)"
-          @sort-change="onGroupSortChange"
-          :class="{ 'page-table-compact': settings.compact }">
+          @sort-change="onGroupSortChange">
           <el-table-column width="46">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
@@ -537,23 +579,23 @@ onMounted(async () => {
               <span @click.stop><el-checkbox :model-value="inCart(row.code)" @change="() => toggle(row)" /></span>
             </template>
           </el-table-column>
-          <el-table-column v-if="settings.groupColumns.code" label="代码" prop="code" width="120" sortable="custom" />
-          <el-table-column v-if="settings.groupColumns.name" label="名称" prop="name" min-width="120" sortable="custom">
+          <el-table-column v-if="groupColVisible('code')" label="代码" prop="code" width="120" sortable="custom" />
+          <el-table-column v-if="groupColVisible('name')" label="名称" prop="name" min-width="120" sortable="custom">
             <template #default="{ row }">{{ row.name || '—' }}</template>
           </el-table-column>
-          <el-table-column v-if="settings.groupColumns.price" label="股价" prop="price" width="100" sortable="custom">
+          <el-table-column v-if="groupColVisible('price')" label="股价" prop="price" width="100" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPrice(row.price) }}</b></template>
           </el-table-column>
-          <el-table-column v-if="settings.groupColumns.pct" label="涨跌幅" prop="pct_chg" width="110" sortable="custom">
+          <el-table-column v-if="groupColVisible('pct')" label="涨跌幅" prop="pct_chg" width="110" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</b></template>
           </el-table-column>
-          <el-table-column v-if="settings.groupColumns.ret" label="截止涨幅" prop="ret" width="120" sortable="custom">
+          <el-table-column v-if="groupColVisible('ret')" label="截止涨幅" prop="ret" width="120" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.ret)">{{ fmtPctRatio(row.ret) }}</b></template>
           </el-table-column>
-          <el-table-column v-if="settings.groupColumns.lastDate" label="截至当前" prop="last_date" width="120" sortable="custom">
+          <el-table-column v-if="groupColVisible('lastDate')" label="截至当前" prop="last_date" width="120" sortable="custom">
             <template #default="{ row }">{{ row.last_date || '—' }}</template>
           </el-table-column>
-          <el-table-column v-if="settings.groupColumns.addDate" label="加入日期" prop="add_date" width="120" sortable="custom">
+          <el-table-column v-if="groupColVisible('addDate')" label="加入日期" prop="add_date" width="120" sortable="custom">
             <template #default="{ row }">{{ row.add_date || '—' }}</template>
           </el-table-column>
         </el-table>
@@ -570,8 +612,7 @@ onMounted(async () => {
         <el-table :data="rows" v-loading="loading" row-key="code"
           height="100%"
           class="clickable" @row-click="(r: StockBasic) => enterDetail(r.code)"
-          :default-sort="{ prop: 'pct_chg', order: 'ascending' }" @sort-change="onSortChange"
-          :class="{ 'page-table-compact': settings.compact }">
+          :default-sort="{ prop: 'pct_chg', order: 'ascending' }" @sort-change="onSortChange">
           <el-table-column width="46">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
@@ -580,20 +621,20 @@ onMounted(async () => {
               <span @click.stop><el-checkbox :model-value="inCart(row.code)" @change="() => toggle(row)" /></span>
             </template>
           </el-table-column>
-          <el-table-column v-if="settings.columns.code" label="代码" prop="code" width="116" sortable="custom" />
-          <el-table-column v-if="settings.columns.name" label="名称" prop="name" min-width="130" sortable="custom">
+          <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="116" sortable="custom" />
+          <el-table-column v-if="colVisible('name')" label="名称" prop="name" min-width="130" sortable="custom">
             <template #default="{ row }">
               <span>{{ row.name || '—' }}</span>
               <el-tag v-if="row.is_st" type="danger" size="small" effect="plain" style="margin-left:6px">ST</el-tag>
             </template>
           </el-table-column>
-          <el-table-column v-if="settings.columns.price" label="股价" prop="close" width="100" sortable="custom">
+          <el-table-column v-if="colVisible('price')" label="股价" prop="close" width="100" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPrice(row.close) }}</b></template>
           </el-table-column>
-          <el-table-column v-if="settings.columns.pct" label="涨跌幅" prop="pct_chg" width="120" sortable="custom">
+          <el-table-column v-if="colVisible('pct')" label="涨跌幅" prop="pct_chg" width="120" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</b></template>
           </el-table-column>
-          <el-table-column v-if="settings.columns.groups" label="所属分组" min-width="150">
+          <el-table-column v-if="colVisible('groups')" label="所属分组" min-width="150">
             <template #default="{ row }">
               <span v-if="row.groups?.length" class="tag-line">
                 <el-tag
@@ -610,14 +651,14 @@ onMounted(async () => {
               <span v-else class="muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="settings.columns.industry" label="行业" prop="industry" sortable="custom">
+          <el-table-column v-if="colVisible('industry')" label="行业" prop="industry" sortable="custom">
             <template #default="{ row }">
               <el-tag v-if="row.industry" size="small" effect="plain" class="box-tag industry-tag">{{ row.industry }}</el-tag>
               <span v-else class="muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="settings.columns.board" label="板块" prop="board" width="100" />
-          <el-table-column v-if="settings.columns.status" label="状态" width="84">
+          <el-table-column v-if="colVisible('board')" label="板块" prop="board" width="100" />
+          <el-table-column v-if="colVisible('status')" label="状态" width="84">
             <template #default="{ row }">
               <el-tag v-if="row.delist_date" type="info" effect="plain" size="small">退市</el-tag>
               <el-tag v-else :type="row.is_st ? 'danger' : 'success'" effect="plain" size="small">
@@ -634,8 +675,10 @@ onMounted(async () => {
         </div>
       </template>
     </el-card>
+    </template>
 
-    <!-- 操作区：列表后面（非固定）。选择跨分页/跨搜索累积 -->
+    <template #footer>
+    <!-- 多选购物车条：固定底部（footer 区），选择跨分页/跨搜索累积 -->
     <el-card v-if="cart.length" shadow="never" class="cart-card">
       <div class="cart-row">
         <div class="cart-info">
@@ -660,7 +703,9 @@ onMounted(async () => {
         </div>
       </div>
     </el-card>
+    </template>
 
+    <template #overlays>
     <!-- 存为新分组 -->
     <el-dialog v-model="createVisible" title="存为新分组" width="460px">
       <el-form label-width="80px">
@@ -723,66 +768,29 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="个股查询" :dirty="isDirty" @reset="reset">
-      <PageSettingSection title="默认查询">
-        <div class="setting-item">
-          <div class="setting-label">默认视图</div>
-          <PageSegmented v-model="settings.defaultView" :options="[
-            { label: '普通查询', value: 'list' },
-            { label: '默认分组', value: 'group' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">默认排序字段</div>
-          <PageSegmented v-model="settings.sortBy" :options="[
-            { label: '涨跌幅', value: 'pct_chg' },
-            { label: '代码', value: 'code' },
-            { label: '名称', value: 'name' },
-            { label: '行业', value: 'industry' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">默认排序方向</div>
-          <PageSegmented v-model="settings.sortOrder" :options="[
-            { label: '升序', value: 'asc' },
-            { label: '降序', value: 'desc' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">每页条数</div>
-          <PageSegmented v-model="settings.size" :options="[
-            { label: '20', value: 20 },
-            { label: '50', value: 50 },
-            { label: '100', value: 100 },
-            { label: '200', value: 200 },
-          ]" />
-        </div>
-        <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
-      </PageSettingSection>
-
-      <PageSettingSection title="普通查询列表">
-        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
-        <PageToggleRow v-model="settings.columns.code" label="显示代码列" />
-        <PageToggleRow v-model="settings.columns.name" label="显示名称列" />
-        <PageToggleRow v-model="settings.columns.price" label="显示股价" />
-        <PageToggleRow v-model="settings.columns.pct" label="显示涨跌幅" />
-        <PageToggleRow v-model="settings.columns.groups" label="显示所属分组" />
-        <PageToggleRow v-model="settings.columns.industry" label="显示行业" />
-        <PageToggleRow v-model="settings.columns.board" label="显示板块" />
-        <PageToggleRow v-model="settings.columns.status" label="显示状态" />
-      </PageSettingSection>
-
-      <PageSettingSection title="分组视图">
-        <PageToggleRow v-model="settings.groupColumns.code" label="显示代码列" />
-        <PageToggleRow v-model="settings.groupColumns.name" label="显示名称列" />
-        <PageToggleRow v-model="settings.groupColumns.price" label="显示股价" />
-        <PageToggleRow v-model="settings.groupColumns.pct" label="显示涨跌幅" />
-        <PageToggleRow v-model="settings.groupColumns.addDate" label="显示加入日期" />
-        <PageToggleRow v-model="settings.groupColumns.ret" label="显示截止涨幅" />
-        <PageToggleRow v-model="settings.groupColumns.lastDate" label="显示截至日期" />
-      </PageSettingSection>
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="个股查询"
+      :dirty="isDirty || layoutDirty"
+      page-key="stocks"
+      :config="drawerConfig"
+      @reset="reset(); resetLayout()"
+    >
+      <template #business>
+        <PageSettingSection title="默认查询">
+          <div class="setting-item">
+            <div class="setting-label">默认视图</div>
+            <PageSegmented v-model="settings.defaultView" :options="[
+              { label: '普通查询', value: 'list' },
+              { label: '默认分组', value: 'group' },
+            ]" />
+          </div>
+          <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>
@@ -790,7 +798,6 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
   gap: 12px;
   flex-wrap: wrap;
 }
@@ -808,7 +815,7 @@ onMounted(async () => {
   color: var(--page-settings-text-subtle);
 }
 .filter-card {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 .filter-row {
   display: flex;
@@ -829,7 +836,7 @@ onMounted(async () => {
   flex: 0 0 auto;
 }
 .group-banner {
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 .gb-row {
   display: flex;
@@ -926,7 +933,6 @@ onMounted(async () => {
   min-height: 240px;
 }
 .cart-card {
-  margin-top: 14px;
   border: 1px solid var(--el-color-primary-light-7);
   flex: 0 0 auto;
 }

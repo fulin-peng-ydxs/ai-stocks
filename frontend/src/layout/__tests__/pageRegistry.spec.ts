@@ -1,0 +1,126 @@
+/**
+ * 页面注册表完整性（P0/P1）——保证 pageRegistry 作为单一事实源始终自洽：
+ * 每个登记布局都过校验器、pageKey 自洽、无重复、editable 路径合法、getPageLayout 返回深拷贝。
+ */
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { PAGE_REGISTRY, getPageEntry, getPageLayout, listComponentUsage, listManagedPages } from '../pageRegistry'
+import { validateLayout } from '../validator'
+import { COMPONENT_CATALOG } from '../components'
+import { getComponentFieldDef } from '../componentConfig'
+import type { ComponentKind } from '../schema'
+
+const RESPONSIVE_PROFILES = new Set(['single-column', 'safe-reflow', 'mixed-panel'])
+const DESIGN_MD = readFileSync(new URL('../../../../DESIGN.md', import.meta.url), 'utf-8')
+const DESIGN_PAGE_SECTION = DESIGN_MD.split('## 9. 已迁移页面登记')[1]?.split('## 10.')[0] ?? ''
+
+describe('页面注册表完整性', () => {
+  it('注册表非空且与 listManagedPages 一致', () => {
+    expect(PAGE_REGISTRY.length).toBeGreaterThan(0)
+    expect(listManagedPages()).toEqual(PAGE_REGISTRY)
+  })
+
+  it('pageKey 唯一且与各自布局自洽', () => {
+    const keys = PAGE_REGISTRY.map((e) => e.pageKey)
+    expect(new Set(keys).size).toBe(keys.length)
+    for (const entry of PAGE_REGISTRY) {
+      expect(entry.layout.pageKey).toBe(entry.pageKey)
+      expect(entry.layout.archetype).toBe(entry.archetype)
+      expect(RESPONSIVE_PROFILES.has(entry.responsiveProfile)).toBe(true)
+    }
+  })
+
+  it('每个登记布局都通过校验器（无 error 级问题）', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const errors = validateLayout(entry.layout).filter((i) => i.level === 'error')
+      expect(errors, `${entry.pageKey} 布局违规: ${errors.map((e) => e.message).join('; ')}`).toEqual([])
+    }
+  })
+
+  it('editable 旋钮 path 必须指向 density 或真实存在的 slot 字段', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const slotIds = new Set(entry.layout.slots.map((s) => s.id))
+      for (const knob of entry.layout.editable) {
+        if (knob.path === 'density') continue
+        const parts = knob.path.split('.')
+        expect(parts[0], `${entry.pageKey} 非法旋钮路径 ${knob.path}`).toBe('slots')
+        expect(slotIds.has(parts[1]), `${entry.pageKey} 旋钮 ${knob.path} 指向不存在的 slot`).toBe(true)
+      }
+    }
+  })
+
+  it('getPageLayout 返回深拷贝，改写不污染注册表', () => {
+    const entry = PAGE_REGISTRY[0]
+    const a = getPageLayout(entry.pageKey)
+    a.density = 'compact'
+    a.slots[0].order = 999
+    const b = getPageLayout(entry.pageKey)
+    expect(b.density).toBe(entry.layout.density)
+    expect(b.slots[0].order).toBe(entry.layout.slots[0].order)
+  })
+
+  it('getPageEntry 未登记页返回 undefined，getPageLayout 抛错', () => {
+    expect(getPageEntry('not-a-page')).toBeUndefined()
+    expect(() => getPageLayout('not-a-page')).toThrow()
+  })
+
+  it('每个 registry 页面都已登记到 DESIGN.md §9', () => {
+    for (const entry of PAGE_REGISTRY) {
+      expect(DESIGN_PAGE_SECTION, `${entry.pageKey}(${entry.label}) 未出现在 DESIGN.md §9`).toContain(entry.label)
+    }
+  })
+
+  it('每个 registry 页面都有 settings-drawer overlay slot', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const slot = entry.layout.slots.find((s) => s.id === 'settings')
+      expect(slot, `${entry.pageKey} 缺少 settings overlay slot`).toBeTruthy()
+      expect(slot?.component).toBe('settings-drawer')
+      expect(slot?.region).toBe('overlay')
+    }
+  })
+})
+
+// P4「系统组件」工作区依赖：组件消费关系查询 + 组件配置登记一致性。
+describe('组件消费关系与配置一致性（P4）', () => {
+  it('listComponentUsage 命中真实消费页面，未消费组件返回空', () => {
+    const tableUsers = listComponentUsage('data-table').map((u) => u.pageKey)
+    expect(tableUsers).toEqual(expect.arrayContaining(['board', 'screen', 'stocks', 'data-quality']))
+    expect(listComponentUsage('tabs').map((u) => u.pageKey)).toContain('config')
+    // 目录中存在但无页面消费的组件（如 kanban）应返回空数组而非报错。
+    expect(listComponentUsage('kanban')).toEqual([])
+  })
+
+  it('listComponentUsage 对目录里每个组件种类都可安全调用', () => {
+    for (const kind of Object.keys(COMPONENT_CATALOG) as ComponentKind[]) {
+      const usage = listComponentUsage(kind)
+      for (const u of usage) {
+        const entry = getPageEntry(u.pageKey)
+        expect(entry, `${kind} 消费页 ${u.pageKey} 未登记`).toBeTruthy()
+        expect(entry!.layout.slots.some((s) => s.id === u.slotId && s.component === kind)).toBe(true)
+      }
+    }
+  })
+
+  it('consumedComponentFields 登记必须指向真实 slot 且字段已在 componentConfig 登记', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const consumed = entry.consumedComponentFields
+      if (!consumed) {
+        // 未声明消费字段的页面不应标 supportsComponentConfig（避免配置中心渲染空块）。
+        if (entry.supportsComponentConfig) {
+          expect.fail(`${entry.pageKey} 标记 supportsComponentConfig 但无 consumedComponentFields`)
+        }
+        continue
+      }
+      for (const [slotId, fields] of Object.entries(consumed)) {
+        const slot = entry.layout.slots.find((s) => s.id === slotId)
+        expect(slot, `${entry.pageKey} consumed slot ${slotId} 不存在`).toBeTruthy()
+        for (const field of fields) {
+          expect(
+            getComponentFieldDef(slot!.component, field),
+            `${entry.pageKey}.${slotId}.${field} 未在 componentConfig 登记`,
+          ).toBeTruthy()
+        }
+      }
+    }
+  })
+})

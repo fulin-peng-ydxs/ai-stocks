@@ -1,7 +1,7 @@
 /**
  * 可配置布局系统 — Schema 类型定义（M1）。
  *
- * 把 `ai-agent/前端布局自适应规范.md` 的「页面原型 / 组件最低尺寸 / 滚动归属 / 重排多列」
+ * 把布局规范的「页面原型 / 组件最低尺寸 / 滚动归属 / 重排多列」（原 ai-agent 规范稿，已代码化退场）
  * 抽象成机器可读的声明式描述符。每个页面用一份 PageLayout 声明其布局，
  * 由校验器（validator.ts）保证不越规、由渲染器（M2）按描述产出 .v-page/.v-grow/.v-scroll 契约。
  *
@@ -38,31 +38,155 @@ export type ScrollOwnership =
   | 'body-xy' // 纵向 + 横向内滚（宽表，优先冻结列）
   | 'region' //  作为成长区整体滚动（兜底阶梯第 3 级）
 
-/** 第一层外壳的区域角色（规范 §1：固定操作区 + 填满剩余的主内容区）。 */
-export type RegionRole = 'action' | 'main'
+/**
+ * 第一层外壳的区域角色（规范 §1：固定操作区 + 填满剩余的主内容区）。
+ * `overlay` 为浮层区（drawer/dialog/设置抽屉等）：进入统一可寻址模型供配置/系统组件消费，
+ * 但不参与 LayoutHost 的 action/main 主流渲染（由页面自行用 #overlays/#footer 渲染）。
+ */
+export type RegionRole = 'action' | 'main' | 'overlay'
 
 /** 信息密度档位（L2 可调）。 */
 export type Density = 'compact' | 'standard' | 'comfortable'
 
+export type LayoutPresetKey = 'professional' | 'government' | 'technology' | 'finance' | 'high-contrast'
+
+export interface StyleTokenConfig {
+  primary: string
+  success: string
+  warning: string
+  danger: string
+  pageBg: string
+  surfaceBg: string
+  surfaceHover: string
+  border: string
+  borderStrong: string
+  text: string
+  textStrong: string
+  textMuted: string
+  activeBg: string
+  submenuBg: string
+  cardRadius: number
+  controlRadius: number
+  shadow: string
+  pageGap: number
+  cardPadding: number
+  tableCellPaddingY: number
+}
+
+export interface PresetComponentDefaults {
+  density: Density
+  tableSize: Density
+  filterDefaultExpanded: boolean
+  drawerSize: 'sm' | 'md' | 'lg'
+}
+
+export interface PresetResponsiveDefaults {
+  pageGap: number
+  reflowBreakpoint: number
+}
+
+/** 主题模式：与 useTheme 的 html.dark 同源。预设 token 按模式提供两套（M9）。 */
+export type ThemeMode = 'light' | 'dark'
+
+/** 预设双模式 token：白天/夜间各一套完整 StyleTokenConfig，applyPreset 按当前 isDark 取用。 */
+export type PresetTokens = Record<ThemeMode, StyleTokenConfig>
+
+export interface LayoutPreset {
+  key: LayoutPresetKey
+  name: string
+  description: string
+  tokens: PresetTokens
+  componentDefaults: PresetComponentDefaults
+  responsiveDefaults: PresetResponsiveDefaults
+}
+
 /** 常见业务组件种类（规范 §3 目录的键）。最低尺寸/滚动/可否成主/可否重排见 components.ts。 */
 export type ComponentKind =
+  | 'page-shell' //     页面外壳
+  | 'section' //        内容分区
+  | 'split-pane' //     分栏/分割面板
+  | 'slot-group' //     组件分组
   | 'data-table' //     数据表格（分页列表）
   | 'wide-table' //     宽表格（列多，横向内滚 + 冻结列）
   | 'filter-bar' //     筛选/搜索栏
+  | 'search-box' //      关键词搜索
+  | 'advanced-filter' // 高级筛选
+  | 'toolbar' //        工具栏
   | 'batch-bar' //      批量操作栏
+  | 'simple-list' //     简单列表
+  | 'description-list' // 描述列表
+  | 'tree-table' //      树表
+  | 'pagination' //      分页器
+  | 'column-settings' // 列设置
+  | 'sort-control' //    排序控件
+  | 'export-button' //   导出按钮
   | 'form' //           表单（创建/编辑）
+  | 'form-section' //    表单分区
+  | 'field-grid' //      字段网格
+  | 'inline-editor' //   行内编辑
+  | 'loading-state' //   加载态
+  | 'empty-state' //     空态
+  | 'error-state' //     错误态
+  | 'skeleton' //        骨架屏
   | 'kpi-grid' //       KPI/指标卡片网格
+  | 'metric-card' //     指标卡
+  | 'stat-strip' //      指标条
   | 'chart' //          图表（折线等）
   | 'mini-chart' //     迷你图
+  | 'chart-grid' //      图表网格
+  | 'trend-panel' //     趋势面板
   | 'master-detail' //  主从（列表+详情）组合
   | 'tree-nav' //       树形导航/目录
   | 'tabs' //           标签页
   | 'collapse' //       折叠面板
   | 'steps' //          步骤向导
   | 'kanban' //         看板
+  | 'detail-panel' //   详情面板
   | 'drawer' //         抽屉/弹窗
+  | 'dialog' //         弹窗
+  | 'settings-drawer' // 页面设置抽屉（受控 overlay，承载用户级偏好）
+  | 'side-panel' //     侧边面板
   | 'detail' //         详情内容
   | 'timeline' //       时间线/Feed
+  | 'anchor-nav' //     锚点导航
+  | 'breadcrumb' //     面包屑
+
+export type ComponentCategory =
+  | 'structure'
+  | 'query'
+  | 'display'
+  | 'table-addon'
+  | 'form'
+  | 'feedback'
+  | 'analytics'
+  | 'overlay'
+  | 'complex'
+  | 'navigation'
+
+export type ComponentState = 'loading' | 'empty' | 'error' | 'ready'
+
+export interface ComponentStateStrategy {
+  /** 状态切换时是否保留稳定占位，避免布局跳变。 */
+  reserveSpace: boolean
+  /** 状态盒子最小高度；显式声明时用于校验稳定占位。 */
+  minH?: number
+}
+
+export interface ComponentActionConfig {
+  key: string
+  label: string
+  placement?: 'primary' | 'toolbar' | 'row' | 'footer'
+  permission?: string
+}
+
+export interface ComponentDataBinding {
+  source?: string
+  valueKey?: string
+  labelKey?: string
+  rowKey?: string
+}
+
+export type ComponentInstanceConfig = Record<string, unknown>
 
 /**
  * 组件槽：主内容区/操作区里的一个组件占位。
@@ -71,7 +195,11 @@ export type ComponentKind =
 export interface SlotSpec {
   id: string
   component: ComponentKind
+  label?: string
   region: RegionRole
+  visible?: boolean
+  permission?: string
+  styleTokens?: Record<string, string | number | boolean>
   /** 业务最低宽（px）。缺省取组件目录；显式值不得低于目录下限。 */
   minW?: number
   /** 业务最低高（px）。缺省取组件目录；显式值不得低于目录下限。 */
@@ -83,8 +211,25 @@ export interface SlotSpec {
   scroll?: ScrollOwnership
   /** 是否为吃富余空间的「主表/主图」（同一主内容区至多一个；组件须 canGrowMain）。 */
   growMain?: boolean
+  /** 是否可参与多列重排；缺省取组件目录默认，仅允许收紧，不允许放松目录红线。 */
+  reflowable?: boolean
+  /** 常见状态的稳定占位策略。 */
+  states?: Partial<Record<ComponentState, ComponentStateStrategy>>
+  /** 数据绑定提示，供后续配置中心和脚手架使用。 */
+  dataBinding?: ComponentDataBinding
+  /** 操作声明，供后续权限和配置中心使用。 */
+  actions?: ComponentActionConfig[]
+  /** 组件专属受控配置，按 component 类型由 componentSchemas.ts 校验。 */
+  config?: ComponentInstanceConfig
   /** 同区内排序（升序）。 */
   order?: number
+  /**
+   * 嵌套归属（P5）：声明本 slot 嵌套在另一个 slot（如 section/tabs 内承载的表/图）内部。
+   * 仅用于使「非顶层组件」进入可寻址模型（寻址仍为 slots.<id>.config.<field>，复用现有合并/校验/后端归属）；
+   * 带 parentId 的 slot 不参与 LayoutHost 的顶层 action/main 流式渲染，由父组件自行渲染。
+   * 仅支持一层嵌套：parentId 必须指向一个不带 parentId 的顶层 slot。
+   */
+  parentId?: string
 }
 
 /** 单个响应式断点：视口宽 ≥ minWidth 时主内容区按 columns 列排布。 */

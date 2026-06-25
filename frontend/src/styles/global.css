@@ -15,6 +15,11 @@ body {
 }
 
 :root {
+  --layout-card-radius: 4px;
+  --layout-control-radius: 6px;
+  --layout-page-gap: 12px;
+  --layout-card-padding: 16px;
+  --layout-table-cell-padding-y: 10px;
   --chrome-bg: #f5f7fb;
   --chrome-bg-soft: #ffffff;
   --chrome-bg-soft-hover: #edf3ff;
@@ -66,7 +71,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  gap: 12px;
+  gap: var(--layout-page-gap);
 }
 .v-page > * { flex: 0 0 auto; min-height: 0; }
 .v-grow { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
@@ -198,4 +203,51 @@ html.dark {
    var(--el-fill-color-light)，会遮蔽 html.dark 根级覆盖，故必须在 .el-table 作用域覆盖。 */
 html.dark .el-table {
   --el-table-row-hover-bg-color: #33456a;
+}
+
+html[data-layout-preset] .el-card {
+  border-radius: var(--layout-card-radius);
+  background-color: var(--el-bg-color);
+  border-color: var(--chrome-border);
+  color: var(--chrome-text);
+}
+html[data-layout-preset] .el-card__body {
+  padding: var(--layout-card-padding);
+}
+html[data-layout-preset] .el-table {
+  --el-table-bg-color: var(--el-bg-color);
+  --el-table-tr-bg-color: var(--el-bg-color);
+  --el-table-header-bg-color: var(--el-bg-color);
+  --el-table-row-hover-bg-color: var(--chrome-bg-soft-hover);
+  --el-table-border-color: var(--chrome-border);
+  --el-table-border: 1px solid var(--chrome-border);
+  --el-table-text-color: var(--chrome-text);
+  --el-table-header-text-color: var(--chrome-text-strong);
+  background-color: var(--el-bg-color);
+  color: var(--chrome-text);
+}
+html[data-layout-preset] .el-button,
+html[data-layout-preset] .el-input__wrapper,
+html[data-layout-preset] .el-select__wrapper {
+  border-radius: var(--layout-control-radius);
+}
+html[data-layout-preset] .el-input__wrapper,
+html[data-layout-preset] .el-select__wrapper {
+  background-color: var(--chrome-bg-soft);
+  box-shadow: 0 0 0 1px var(--chrome-border) inset;
+}
+html[data-layout-preset] .el-input__inner,
+html[data-layout-preset] .el-select__placeholder,
+html[data-layout-preset] .el-select__selected-item {
+  color: var(--chrome-text);
+}
+html[data-layout-preset] .el-table__cell {
+  padding-top: var(--layout-table-cell-padding-y);
+  padding-bottom: var(--layout-table-cell-padding-y);
+}
+html[data-layout-preset='high-contrast'] .el-button,
+html[data-layout-preset='high-contrast'] .el-card,
+html[data-layout-preset='high-contrast'] .el-input__wrapper,
+html[data-layout-preset='high-contrast'] .el-select__wrapper {
+  border-color: var(--chrome-border-strong);
 }

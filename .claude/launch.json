@@ -4,7 +4,7 @@
     {
       "name": "ai-stocks-verify",
       "runtimeExecutable": "/Users/pengshuaifeng/.nvm/versions/node/v18.20.8/bin/node",
-      "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "preview", "frontend", "--port", "5181", "--strictPort"],
+      "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "frontend", "--port", "5181", "--strictPort"],
       "autoPort": false,
       "port": 5181
     }

@@ -13,6 +13,7 @@
  * 三处复用：开发期单测（本目录 __tests__）、运行期用户改配置、CI 构建。
  */
 import { COMPONENT_CATALOG, getComponentMeta } from './components'
+import { validateComponentConfig } from './componentSchemas'
 import { ARCHETYPES, type EditableKnob, type PageLayout, type SlotSpec } from './schema'
 
 /** 多列重排时列间距（px），与 global.css `.v-page` 的 gap 对齐，用于估算拆列后单列净宽。 */
@@ -26,7 +27,17 @@ export interface ValidationIssue {
 }
 
 /** slot 上允许被 editable 白名单指向的字段（防止 path 指向 id/component 等结构性字段）。 */
-const SLOT_EDITABLE_FIELDS = new Set(['minW', 'minH', 'idealW', 'idealH', 'scroll', 'growMain', 'order'])
+const SLOT_EDITABLE_FIELDS = new Set([
+  'minW',
+  'minH',
+  'idealW',
+  'idealH',
+  'scroll',
+  'growMain',
+  'reflowable',
+  'visible',
+  'order',
+])
 
 function effectiveMinW(slot: SlotSpec): number {
   return slot.minW ?? COMPONENT_CATALOG[slot.component]?.minW ?? 0
@@ -75,10 +86,39 @@ export function validateLayout(layout: PageLayout): ValidationIssue[] {
     if (slot.growMain && slot.region === 'action') {
       push('error', 'slot.growMain.inAction', `${slot.id} 在操作区不能 growMain`, slot.id)
     }
+
+    // 5b. 页面可收紧组件重排能力，但不能把目录中不可重排的组件放宽为可重排。
+    if (slot.reflowable === true && !meta.reflowable) {
+      push('error', 'slot.reflowable.unsupported', `${meta.label}(${slot.id}) 不能声明为可重排`, slot.id)
+    }
+
+    // 5c. 组件专属配置必须在登记 schema 内，且类型合法。
+    for (const issue of validateComponentConfig(slot.component, slot.config)) {
+      push('error', issue.code, `${slot.id}: ${issue.message}`, slot.id)
+    }
+
+    // 5d. 状态盒子必须有稳定占位策略；显式 states 不允许破坏占位稳定性。
+    validateStateStrategy(slot, meta, push)
   }
 
-  const mainSlots = layout.slots.filter((s) => s.region === 'main')
-  const actionSlots = layout.slots.filter((s) => s.region === 'action')
+  // 顶层布局流只统计未嵌套的 slot；嵌套(parentId)与 overlay 区不进入 action/main 流式渲染与对应红线。
+  const mainSlots = layout.slots.filter((s) => s.region === 'main' && !s.parentId)
+  const actionSlots = layout.slots.filter((s) => s.region === 'action' && !s.parentId)
+
+  // 12. 嵌套归属合法：parentId 必须指向存在的顶层 slot（仅一层嵌套），不得自引用。
+  for (const slot of layout.slots) {
+    if (slot.parentId == null) continue
+    if (slot.parentId === slot.id) {
+      push('error', 'slot.parent.self', `${slot.id} 的 parentId 不能指向自身`, slot.id)
+      continue
+    }
+    const parent = layout.slots.find((s) => s.id === slot.parentId)
+    if (!parent) {
+      push('error', 'slot.parent.missing', `${slot.id} 的 parentId 指向不存在的 slot: ${slot.parentId}`, slot.id)
+    } else if (parent.parentId != null) {
+      push('error', 'slot.parent.nested', `${slot.id} 的父 slot ${parent.id} 本身已嵌套，仅支持一层嵌套`, slot.id)
+    }
+  }
 
   // 5b. 主内容区至多一个 growMain（规范 §1：富余空间交给一个主表/主图）
   const growCount = mainSlots.filter((s) => s.growMain).length
@@ -86,10 +126,10 @@ export function validateLayout(layout: PageLayout): ValidationIssue[] {
     push('error', 'growMain.multiple', `主内容区出现 ${growCount} 个 growMain，至多允许 1 个`)
   }
 
-  // 6. 滚动轴唯一（规范 §6）：同一 region 内至多一个「整区滚动」(scroll=region)
+  // 6. 滚动轴唯一（规范 §6）：同一 region 内至多一个「整区滚动」(scroll=region)。仅看顶层 slot，嵌套滚动由父组件自理。
   for (const region of ['action', 'main'] as const) {
     const regionScroll = layout.slots.filter(
-      (s) => s.region === region && (s.scroll ?? COMPONENT_CATALOG[s.component]?.defaultScroll) === 'region',
+      (s) => s.region === region && !s.parentId && (s.scroll ?? COMPONENT_CATALOG[s.component]?.defaultScroll) === 'region',
     )
     if (regionScroll.length > 1) {
       push('error', 'scroll.region.multiple', `${region} 区出现 ${regionScroll.length} 个整区滚动，主滚动轴必须唯一`)
@@ -149,7 +189,10 @@ function validateResponsive(
   if (!allowReflow) return
 
   // 9a. 重排条件 3：参与重排的主内容区组件必须无强阅读顺序（reflowable）
-  const nonReflowable = mainSlots.filter((s) => !COMPONENT_CATALOG[s.component]?.reflowable)
+  const nonReflowable = mainSlots.filter((s) => {
+    const meta = COMPONENT_CATALOG[s.component]
+    return !(s.reflowable ?? meta?.reflowable)
+  })
   for (const s of nonReflowable) {
     push('error', 'reflow.nonReflowable', `${COMPONENT_CATALOG[s.component]?.label}(${s.id}) 有强阅读顺序/为大表，不可参与重排多列`, s.id)
   }
@@ -170,6 +213,32 @@ function validateResponsive(
         'reflow.belowMinWidth',
         `断点 ${bp.minWidth}px 拆 ${bp.columns} 列后单列净宽约 ${Math.floor(colW)}px，低于组件最低宽 ${maxMinW}px`,
       )
+    }
+  }
+}
+
+function validateStateStrategy(
+  slot: SlotSpec,
+  meta: NonNullable<ReturnType<typeof getComponentMeta>>,
+  push: (level: ValidationIssue['level'], code: string, message: string, slotId?: string) => void,
+): void {
+  if (meta.category === 'feedback') {
+    const reserveSpace = slot.config?.reserveSpace
+    const minH = slot.config?.minH
+    if (reserveSpace !== true) {
+      push('error', 'component.state.reserveSpace.required', `${meta.label}(${slot.id}) 必须声明 reserveSpace=true`, slot.id)
+    }
+    if (typeof minH !== 'number' || !Number.isInteger(minH) || minH < meta.minH) {
+      push('error', 'component.state.minH.required', `${meta.label}(${slot.id}) 必须声明不低于 ${meta.minH}px 的 minH`, slot.id)
+    }
+  }
+
+  for (const [state, strategy] of Object.entries(slot.states ?? {})) {
+    if (!strategy?.reserveSpace) {
+      push('error', 'slot.state.unstable', `${slot.id}.${state} 状态必须 reserveSpace=true`, slot.id)
+    }
+    if (strategy.minH != null && strategy.minH < meta.minH) {
+      push('error', 'slot.state.minH.below', `${slot.id}.${state} 状态占位高度 ${strategy.minH} 低于 ${meta.label} 下限 ${meta.minH}`, slot.id)
     }
   }
 }

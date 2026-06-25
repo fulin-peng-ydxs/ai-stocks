@@ -89,7 +89,9 @@ class IngestionService:
         # 让未来交易日提前入表，避免调度「非交易日」判断把"日历还没采到这天"误当"闭市"。
         cal_end = max(end, date(end.year, 12, 31))
         if ctx:
-            ctx.log(f"子任务：交易日历采集开始（{start}~{cal_end}，源 {self.src.name}）")
+            ctx.log(f"子任务：交易日历采集开始（{start}~{cal_end}，源 {self.src.name}；"
+                    f"日历是「已知的未来」故按固定窗口回看补缺口、终点延至年底，"
+                    f"与日线按已入库最新日+1 增量不同口径）")
             ctx.flush()
         df = self.src.get_trade_calendar(start, cal_end)
         n = self.repo.upsert_trade_calendar(df)

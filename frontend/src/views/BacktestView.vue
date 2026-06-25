@@ -22,6 +22,9 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTradeDates } from '@/composables/useTradeDates'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const PARAMS_KEY = 'ai-stocks-backtest-params' // 表单参数持久化
 const settingsOpen = ref(false)
@@ -30,12 +33,37 @@ const backtestDefaults = {
   topN: 10,
   initCap: 1_000_000,
   autoLoadHistory: true,
-  tradeSort: 'entry' as 'entry' | 'return' | 'hold',
   robustExpanded: false,
-  compact: false,
-  tradeColumns: { ret: true, hold: true, reason: true, grade: true, rank: true },
 }
 const { settings, isDirty, reset } = usePageSettings('backtest', backtestDefaults)
+
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const backtestLayout = getPageLayout('backtest')
+const {
+  effective: backtestEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  sourceOf,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+} = useRemoteLayoutConfig(backtestLayout)
+
+// 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+
+// 逐笔表排序/列显隐（组件配置层 trades slot）：抽屉写值由 ComponentAutoSettings 自动渲染；页面只读 getter。
+type TradeSort = 'entry' | 'return' | 'hold'
+const tradeSort = computed<TradeSort>(() => (componentValueOf('trades', 'defaultSort') as TradeSort) ?? 'entry')
+const tradeHidden = computed<string[]>(() => (componentValueOf('trades', 'hiddenColumns') as string[]) ?? [])
+function tradeColVisible(key: string): boolean {
+  return !tradeHidden.value.includes(key)
+}
 
 const kind = ref<'strategy' | 'score_check'>(settings.kind)
 const dateStart = ref('2024-01-01')
@@ -74,8 +102,8 @@ const gradeTag: Record<string, '' | 'success' | 'warning' | 'info'> = {
 const robustPanels = ref<string[]>(settings.robustExpanded ? ['robust'] : [])
 const tradeRows = computed(() => {
   const list = [...(strat.value?.trades ?? [])]
-  if (settings.tradeSort === 'return') list.sort((a, b) => b.return_pct - a.return_pct)
-  else if (settings.tradeSort === 'hold') list.sort((a, b) => b.hold_days - a.hold_days)
+  if (tradeSort.value === 'return') list.sort((a, b) => b.return_pct - a.return_pct)
+  else if (tradeSort.value === 'hold') list.sort((a, b) => b.hold_days - a.hold_days)
   else list.sort((a, b) => b.entry_date.localeCompare(a.entry_date))
   return list
 })
@@ -661,7 +689,8 @@ async function openTradeChart(row: TradeRow) {
 </script>
 
 <template>
-  <div class="v-page">
+  <LayoutHost :layout="backtestEffective">
+    <template #action>
     <div class="page-head">
       <h2 class="title-row">
         回测
@@ -688,8 +717,10 @@ async function openTradeChart(row: TradeRow) {
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>
+    </template>
 
-    <div class="v-grow backtest-body">
+    <template #main>
+    <div class="backtest-body">
     <el-card shadow="never" class="form-card">
       <div class="form-row">
         <el-radio-group v-model="kind">
@@ -938,20 +969,19 @@ async function openTradeChart(row: TradeRow) {
         </div>
         <div class="trade-table-wrap">
         <el-table :data="tradeRows" size="small" height="100%" class="clickable"
-                  :class="{ 'page-table-compact': settings.compact }"
                   @row-click="(r:any) => openTradeChart(r)">
           <el-table-column label="代码" prop="code" width="110" />
           <el-table-column label="买入" prop="entry_date" width="110" sortable :sort-by="(r:any)=>r.entry_date" />
           <el-table-column label="买价" width="90"><template #default="{ row }">{{ num(row.entry_price) }}</template></el-table-column>
           <el-table-column label="卖出" prop="exit_date" width="110" sortable :sort-by="(r:any)=>r.exit_date" />
           <el-table-column label="卖价" width="90"><template #default="{ row }">{{ num(row.exit_price) }}</template></el-table-column>
-          <el-table-column v-if="settings.tradeColumns.ret" label="收益" width="100" sortable :sort-by="(r:any)=>r.return_pct">
+          <el-table-column v-if="tradeColVisible('ret')" label="收益" width="100" sortable :sort-by="(r:any)=>r.return_pct">
             <template #default="{ row }">
               <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="settings.tradeColumns.hold" label="持有(日)" prop="hold_days" width="90" sortable :sort-by="(r:any)=>r.hold_days" />
-          <el-table-column v-if="settings.tradeColumns.reason" label="卖出原因" min-width="150">
+          <el-table-column v-if="tradeColVisible('hold')" label="持有(日)" prop="hold_days" width="90" sortable :sort-by="(r:any)=>r.hold_days" />
+          <el-table-column v-if="tradeColVisible('reason')" label="卖出原因" min-width="150">
             <template #default="{ row }">
               <template v-if="sellTags(row).length">
                 <el-tag v-for="t in sellTags(row)" :key="t" type="warning" size="small" effect="light" class="sell-tag">{{ t }}</el-tag>
@@ -959,14 +989,14 @@ async function openTradeChart(row: TradeRow) {
               <span v-else>{{ row.exit_reason }}</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="settings.tradeColumns.grade" label="买入档" width="110">
+          <el-table-column v-if="tradeColVisible('grade')" label="买入档" width="110">
             <template #default="{ row }">
               <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" size="small" effect="light">{{ row.grade }}</el-tag>
               <span v-else-if="row.entry_score != null" class="muted" title="综合分未达「观察」档阈值，但因候选池内排名靠前而买入">无评级·{{ row.entry_score.toFixed(0) }}分</span>
               <span v-else class="muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column v-if="settings.tradeColumns.rank" label="榜单排名" width="90">
+          <el-table-column v-if="tradeColVisible('rank')" label="榜单排名" width="90">
             <template #default="{ row }">{{ row.entry_rank ? '#' + row.entry_rank : '—' }}</template>
           </el-table-column>
         </el-table>
@@ -976,7 +1006,9 @@ async function openTradeChart(row: TradeRow) {
       <el-empty v-if="!loading && !strat && !sig" description="设置参数后点「运行回测」" />
     </div>
     </div>
+    </template>
 
+    <template #overlays>
     <!-- 交易明细 → 内嵌 K 线（买卖点标注，蓝▲买/橙▼卖），不跳转 -->
     <el-dialog v-model="chartDlg" :title="`${dlgName || ''} ${dlgCode}　交易回放`" width="90%" top="5vh">
       <div v-loading="dlgLoading">
@@ -1077,56 +1109,50 @@ async function openTradeChart(row: TradeRow) {
       </div>
     </el-dialog>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="策略回测" :dirty="isDirty" @reset="reset">
-      <PageSettingSection title="默认参数">
-        <div class="setting-item">
-          <div class="setting-label">默认模式</div>
-          <PageSegmented v-model="settings.kind" :options="[
-            { label: '策略回测', value: 'strategy' },
-            { label: '评分验证', value: 'score_check' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">Top N</div>
-          <PageSegmented v-model="settings.topN" :options="[
-            { label: '5', value: 5 },
-            { label: '10', value: 10 },
-            { label: '20', value: 20 },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">初始资金</div>
-          <PageSegmented v-model="settings.initCap" :options="[
-            { label: '50万', value: 500000 },
-            { label: '100万', value: 1000000 },
-            { label: '300万', value: 3000000 },
-          ]" />
-        </div>
-        <PageToggleRow v-model="settings.autoLoadHistory" label="自动加载最近历史回测" />
-        <PageToggleRow v-model="settings.robustExpanded" label="默认展开稳健性测试" />
-      </PageSettingSection>
-      <PageSettingSection title="交易明细">
-        <div class="setting-item">
-          <div class="setting-label">默认排序</div>
-          <PageSegmented v-model="settings.tradeSort" :options="[
-            { label: '买入日', value: 'entry' },
-            { label: '收益率', value: 'return' },
-            { label: '持有日', value: 'hold' },
-          ]" />
-        </div>
-        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
-        <PageToggleRow v-model="settings.tradeColumns.ret" label="显示收益" />
-        <PageToggleRow v-model="settings.tradeColumns.hold" label="显示持有日" />
-        <PageToggleRow v-model="settings.tradeColumns.reason" label="显示卖出原因" />
-        <PageToggleRow v-model="settings.tradeColumns.grade" label="显示买入档" />
-        <PageToggleRow v-model="settings.tradeColumns.rank" label="显示榜单排名" />
-      </PageSettingSection>
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="策略回测"
+      :dirty="isDirty || layoutDirty"
+      page-key="backtest"
+      :config="drawerConfig"
+      @reset="reset(); resetLayout()"
+    >
+      <template #business>
+        <PageSettingSection title="默认参数">
+          <div class="setting-item">
+            <div class="setting-label">默认模式</div>
+            <PageSegmented v-model="settings.kind" :options="[
+              { label: '策略回测', value: 'strategy' },
+              { label: '评分验证', value: 'score_check' },
+            ]" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">Top N</div>
+            <PageSegmented v-model="settings.topN" :options="[
+              { label: '5', value: 5 },
+              { label: '10', value: 10 },
+              { label: '20', value: 20 },
+            ]" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">初始资金</div>
+            <PageSegmented v-model="settings.initCap" :options="[
+              { label: '50万', value: 500000 },
+              { label: '100万', value: 1000000 },
+              { label: '300万', value: 3000000 },
+            ]" />
+          </div>
+          <PageToggleRow v-model="settings.autoLoadHistory" label="自动加载最近历史回测" />
+          <PageToggleRow v-model="settings.robustExpanded" label="默认展开稳健性测试" />
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>
-.page-head { margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; }
 .page-head h2 { margin: 0; font-size: 20px; }
 .setting-item { display: flex; flex-direction: column; gap: 8px; }
 .setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
@@ -1164,8 +1190,9 @@ async function openTradeChart(row: TradeRow) {
   border: 1px solid var(--el-color-info-light-7);
 }
 .backtest-body {
+  flex: 1 1 auto;          /* 填满 LayoutHost 的 .v-grow */
   min-height: 0;
-  overflow: hidden;
+  overflow: hidden;        /* 自身不滚：固定表单卡 + 内部 .results 区滚动 */
   display: flex;
   flex-direction: column;
 }

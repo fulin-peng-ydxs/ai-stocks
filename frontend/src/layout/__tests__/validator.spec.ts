@@ -3,7 +3,7 @@
  * 这样 `vue-tsc -b` 对 spec 的类型检查无需额外全局类型即可通过。
  */
 import { describe, expect, it } from 'vitest'
-import { ARCHETYPES, createLayout, type PageLayout } from '../index'
+import { ARCHETYPES, COMPONENT_CATALOG, createLayout, type ComponentKind, type PageLayout } from '../index'
 import { coerceEditableValue, LayoutConfigError, validateLayout } from '../validator'
 
 const errorsOf = (layout: PageLayout) => validateLayout(layout).filter((i) => i.level === 'error')
@@ -29,6 +29,89 @@ describe('组件最低尺寸下限（规范 §3）', () => {
     const layout = createLayout('list', 'p')
     layout.slots.find((s) => s.id === 'table')!.minH = 500
     expect(errorsOf(layout)).toEqual([])
+  })
+})
+
+describe('组件能力目录（M1）', () => {
+  const requiredKinds: ComponentKind[] = [
+    'page-shell', 'section', 'split-pane', 'slot-group',
+    'filter-bar', 'search-box', 'advanced-filter', 'toolbar', 'batch-bar',
+    'data-table', 'wide-table', 'simple-list', 'description-list', 'tree-table',
+    'pagination', 'column-settings', 'sort-control', 'export-button',
+    'form', 'form-section', 'field-grid', 'inline-editor',
+    'loading-state', 'empty-state', 'error-state', 'skeleton',
+    'kpi-grid', 'metric-card', 'stat-strip', 'chart', 'mini-chart', 'chart-grid', 'trend-panel',
+    'detail-panel', 'detail', 'drawer', 'dialog', 'settings-drawer', 'side-panel',
+    'master-detail', 'tabs', 'steps', 'collapse', 'kanban', 'timeline',
+    'tree-nav', 'anchor-nav', 'breadcrumb',
+  ]
+
+  it('需求文档列出的首批组件均有能力元信息', () => {
+    for (const kind of requiredKinds) {
+      const meta = COMPONENT_CATALOG[kind]
+      expect(meta, kind).toBeTruthy()
+      expect(meta.label).toBeTruthy()
+      expect(meta.minW).toBeGreaterThan(0)
+      expect(meta.minH).toBeGreaterThan(0)
+      expect(meta.configCapabilities.length).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('组件专属配置 schema', () => {
+  it('表格合法专属配置通过', () => {
+    const layout = createLayout('list', 'p')
+    layout.slots.find((s) => s.id === 'table')!.config = {
+      pagination: true,
+      pageSize: 50,
+      hiddenColumns: ['amount'],
+      rowClick: 'open-detail',
+    }
+    expect(errorsOf(layout)).toEqual([])
+  })
+
+  it('表格非法专属配置类型被拒绝', () => {
+    const layout = createLayout('list', 'p')
+    layout.slots.find((s) => s.id === 'table')!.config = {
+      pageSize: 50.5,
+      rowClick: 'teleport',
+    }
+    expect(codesOf(layout)).toContain('component.config.type')
+  })
+
+  it('未知专属配置 key 被拒绝', () => {
+    const layout = createLayout('list', 'p')
+    layout.slots.find((s) => s.id === 'table')!.config = { freeCss: '.x{}' }
+    expect(codesOf(layout)).toContain('component.config.unknownKey')
+  })
+})
+
+describe('状态占位策略', () => {
+  it('状态反馈组件必须声明稳定占位', () => {
+    const layout = createLayout('dashboard', 'p')
+    layout.slots = [{ id: 'empty', component: 'empty-state', region: 'main', order: 1 }]
+    layout.responsive = { allowReflow: false, breakpoints: [{ minWidth: 0, columns: 1 }] }
+    expect(codesOf(layout)).toContain('component.state.reserveSpace.required')
+    expect(codesOf(layout)).toContain('component.state.minH.required')
+  })
+
+  it('状态反馈组件声明稳定占位后通过', () => {
+    const layout = createLayout('dashboard', 'p')
+    layout.slots = [{
+      id: 'empty',
+      component: 'empty-state',
+      region: 'main',
+      order: 1,
+      config: { reserveSpace: true, minH: 120 },
+    }]
+    layout.responsive = { allowReflow: false, breakpoints: [{ minWidth: 0, columns: 1 }] }
+    expect(errorsOf(layout)).toEqual([])
+  })
+
+  it('显式状态策略不能取消稳定占位', () => {
+    const layout = createLayout('list', 'p')
+    layout.slots.find((s) => s.id === 'table')!.states = { empty: { reserveSpace: false } }
+    expect(codesOf(layout)).toContain('slot.state.unstable')
   })
 })
 
@@ -118,5 +201,60 @@ describe('coerceEditableValue 取值域守门（L2 可改不能乱改）', () =>
   })
   it('int 合法值规范化', () => {
     expect(coerceEditableValue(intKnob, 500)).toBe(500)
+  })
+})
+
+describe('overlay 与嵌套 slot 可寻址模型（P5）', () => {
+  // 基线：workbench 顶层 toolbar(action) + body(section,main)。
+  const base = (): PageLayout => ({
+    pageKey: 'p5',
+    archetype: 'workbench',
+    hasActionRegion: true,
+    density: 'standard',
+    responsive: { allowReflow: false, breakpoints: [{ minWidth: 0, columns: 1 }] },
+    editable: [],
+    slots: [
+      { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
+      { id: 'body', component: 'section', region: 'main', order: 1 },
+    ],
+  })
+
+  it('嵌套 data-table（parentId=body）合规，不影响顶层主区', () => {
+    const layout = base()
+    layout.slots.push({ id: 'trades', component: 'data-table', region: 'main', parentId: 'body', order: 2 })
+    expect(errorsOf(layout)).toEqual([])
+  })
+
+  it('overlay 抽屉 slot 合规，不计入 action/main 红线', () => {
+    const layout = base()
+    layout.slots.push({ id: 'settings', component: 'drawer', region: 'overlay', order: 1 })
+    expect(errorsOf(layout)).toEqual([])
+  })
+
+  it('parentId 指向不存在的 slot → error', () => {
+    const layout = base()
+    layout.slots.push({ id: 'trades', component: 'data-table', region: 'main', parentId: 'ghost' })
+    expect(codesOf(layout)).toContain('slot.parent.missing')
+  })
+
+  it('parentId 自引用 → error', () => {
+    const layout = base()
+    layout.slots.push({ id: 'self', component: 'data-table', region: 'main', parentId: 'self' })
+    expect(codesOf(layout)).toContain('slot.parent.self')
+  })
+
+  it('仅支持一层嵌套：父 slot 本身已嵌套 → error', () => {
+    const layout = base()
+    layout.slots.push({ id: 'mid', component: 'data-table', region: 'main', parentId: 'body' })
+    layout.slots.push({ id: 'deep', component: 'data-table', region: 'main', parentId: 'mid' })
+    expect(codesOf(layout)).toContain('slot.parent.nested')
+  })
+
+  it('嵌套 growMain 不计入顶层主区 growMain 上限', () => {
+    const layout = base()
+    // 顶层主表 + 嵌套主表：嵌套的不应触发 growMain.multiple。
+    layout.slots[1] = { id: 'body', component: 'data-table', region: 'main', growMain: true, order: 1 }
+    layout.slots.push({ id: 'inner', component: 'data-table', region: 'main', parentId: 'body', growMain: true })
+    expect(codesOf(layout)).not.toContain('growMain.multiple')
   })
 })

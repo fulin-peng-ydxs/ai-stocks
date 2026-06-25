@@ -2,13 +2,16 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
+import { useLayoutPreset, type LayoutPresetKey } from '@/layout'
 
 const { isDark } = useTheme()
+const { activePresetKey, activePreset, options: presetOptions, setLayoutPreset } = useLayoutPreset()
 const route = useRoute()
 const userDrawerVisible = ref(false)
 // 子路由（如 /stocks/600000.SH）高亮其父菜单；数据管理高亮到具体子页
 const activeMenu = computed(() => {
-  if (route.path.startsWith('/config')) return '/config'
+  if (route.path.startsWith('/system/layout')) return route.path
+  if (route.path.startsWith('/system/config')) return '/system/config'
   if (route.path.startsWith('/screen')) return '/screen'
   if (route.path.startsWith('/backtest')) return '/backtest'
   if (route.path.startsWith('/stocks')) return '/stocks'
@@ -44,7 +47,7 @@ const activeMenu = computed(() => {
           <div class="brand-title">复盘啦</div>
         </div>
       </div>
-      <el-menu :default-active="activeMenu" :default-openeds="['quotes', 'data', 'system']" router class="menu">
+      <el-menu :default-active="activeMenu" :default-openeds="['quotes', 'data', 'system', 'layout']" router class="menu">
         <el-sub-menu index="quotes">
           <template #title>
             <span class="data-parent" @click.stop="$router.push('/stocks')">📈 最新行情</span>
@@ -66,9 +69,17 @@ const activeMenu = computed(() => {
         </el-sub-menu>
         <el-sub-menu index="system">
           <template #title>
-            <span class="data-parent" @click.stop="$router.push('/config')">⚙️ 系统管理</span>
+            <span class="data-parent" @click.stop="$router.push('/system/config')">⚙️ 系统管理</span>
           </template>
-          <el-menu-item index="/config">配置管理</el-menu-item>
+          <el-menu-item index="/system/config">配置管理</el-menu-item>
+          <el-sub-menu index="layout">
+            <template #title>
+              <span class="data-parent" @click.stop="$router.push('/system/layout/presets')">🎨 布局配置</span>
+            </template>
+            <el-menu-item index="/system/layout/presets">预设管理</el-menu-item>
+            <el-menu-item index="/system/layout/pages">页面布局</el-menu-item>
+            <el-menu-item index="/system/layout/components">系统组件</el-menu-item>
+          </el-sub-menu>
         </el-sub-menu>
       </el-menu>
       <div class="aside-foot">
@@ -117,6 +128,28 @@ const activeMenu = computed(() => {
             </div>
             <span class="drawer-action-value">{{ isDark ? '夜间' : '白天' }}</span>
           </button>
+
+          <div class="drawer-section">
+            <div class="drawer-section-head">
+              <div>
+                <div class="drawer-action-title">布局风格</div>
+                <div class="drawer-action-sub">{{ activePreset.description }}</div>
+              </div>
+              <span class="drawer-action-value">{{ activePreset.name }}</span>
+            </div>
+            <el-select
+              class="preset-select"
+              :model-value="activePresetKey"
+              @update:model-value="(value: LayoutPresetKey) => setLayoutPreset(value)"
+            >
+              <el-option
+                v-for="option in presetOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </div>
         </div>
       </div>
     </el-drawer>
@@ -196,6 +229,10 @@ const activeMenu = computed(() => {
 .menu :deep(.el-sub-menu .el-menu-item) {
   min-width: 0;
   padding-left: 44px !important;
+}
+/* 三级（孙）菜单项再缩进一档，体现 系统管理 → 布局配置 → 工作区 的层级 */
+.menu :deep(.el-sub-menu .el-sub-menu .el-menu-item) {
+  padding-left: 60px !important;
 }
 :global(html:not(.dark)) .menu :deep(.el-menu-item.is-active) {
   box-shadow: inset 0 0 0 1px rgba(64, 158, 255, 0.12);
@@ -386,6 +423,21 @@ const activeMenu = computed(() => {
   background: var(--page-settings-seg-hover-bg);
   border-color: var(--page-settings-border);
 }
+.drawer-section {
+  border: 1px solid var(--page-settings-section-border);
+  background: var(--page-settings-section-bg);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.drawer-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
 .drawer-action-title {
   font-size: 14px;
   font-weight: 600;
@@ -400,6 +452,9 @@ const activeMenu = computed(() => {
   font-size: 13px;
   color: var(--page-settings-text-subtle);
   white-space: nowrap;
+}
+.preset-select {
+  width: 100%;
 }
 .main {
   background: var(--el-bg-color-page);

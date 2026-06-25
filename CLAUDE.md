@@ -78,7 +78,7 @@ CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main
 - **注释**：优先用清晰命名与结构表意；复杂业务规则、状态流转、权限边界、兼容逻辑、性能取舍、异常兜底、外部系统约束必须注释；禁止复述代码的低价值注释。
 - **性能与资源**：考虑数据量 / 调用频率 / 事务范围 / 查询复杂度 / 缓存 / 资源释放；避免 N+1、大对象一次性加载、重复远程调用、无限增长集合、阻塞式长任务、资源泄漏。
 - **DDL/SQL 变更说明**：涉及 DuckDB 结构 / 初始化 / 迁移时，须写明文件路径、用途、执行时机、影响范围、回滚方式或不可回滚原因（默认路径 `./agent-works/{feature-slug}/{sql-purpose}.sql`）；不得只写"需要执行 SQL"。
-- **UI 一致性**：涉及页面 / 组件 / 样式 / 布局 / 表格 / 列表 / 弹窗 / 抽屉改动，除常规校验外须对照根目录 `DESIGN.md` 做一致性核查（`DESIGN.md` 尚待建立，见 [agent-works/configurable-layout-system/plan.md](agent-works/configurable-layout-system/plan.md)）；与已有规范冲突视为未通过；未覆盖的场景先补齐规范或经用户确认，不临时自创口径。
+- **前端变更**：涉及页面 / 组件 / 样式 / 布局 / 表格 / 列表 / 弹窗 / 抽屉时，以 [DESIGN.md](DESIGN.md) 和 [page-template.md](agent-works/configurable-layout-system/page-template.md) 为前端规范入口；计划必须说明是否触发页面设计闭环和维护矩阵。
 
 
 ## 开发契约（不可破坏）
@@ -94,13 +94,3 @@ CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main
 - **分层职责**：`api/` 只做参数校验与响应包装，业务逻辑放 `services/` 与领域引擎；一切读写经 `storage` 点时安全仓库；长耗时操作走 `async_task` 异步任务底座 + 进度。
 - **配置即时生效**：阈值/权重/参数集中在 [config/settings.yaml](config/settings.yaml)，Web 表单改的进 `app_config` 覆盖层；**改参不写进代码**。
 - **写库全局互斥**：采集/补数/修复/重算同一时间只能跑一个；遇 409 说明已有写任务在执行。
-
-## 前端布局与交互契约
-
-地图见 [DESIGN.md](DESIGN.md)「布局系统」章（原型清单 / 新建页 7 步 / 组件目录 / 落地坑）；原理稿 [ai-agent/前端布局自适应规范.md](ai-agent/前端布局自适应规范.md)（待全部页面迁完后退场）：
-
-- **新页面走可配置布局系统**：新建/改造页面用 `<LayoutHost>` + `PageLayout` schema（`frontend/src/layout/`），声明原型与具名插槽，**不手写 `.v-page`/`.v-grow`/视口高度**；按 DESIGN.md §2 七步选定原型（关键方案先确认）并在 §7 登记。约束由 `layout/validator.ts` 机制性强制（开发期 `assertLayout` + `npm test`），不靠记忆。存量页未迁前仍遵守下列契约。
-- **禁止整页滚动**：两层自适应模型（内部滚动→满足条件才重排多列→整区滚动兜底），遵守 `v-page` / `v-grow` / `v-scroll` 契约。
-- **列表交互**：分页/排序走**服务端**，筛选变更**自动触发**，多选**跨页累积**。
-- **弹出提示限制在页内**：tooltip / 弹出提示不得溢出到左侧菜单，只在内容区显示。
-- **不加冗余按钮**：能点页面现有元素（如版本号 `vN`）触发的操作，就不要单独加按钮。

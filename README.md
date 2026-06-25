@@ -34,7 +34,7 @@
 - [4. 技术栈](#4-技术栈)
 - [5. 服务与脚本操作](#5-服务与脚本操作)
 - [6. 开发契约（不可破坏）](#6-开发契约不可破坏)
-- [7. 开发历程与关联文档](#7-开发历程与关联文档)
+- [7. 当前文档入口](#7-当前文档入口)
 
 ---
 
@@ -44,7 +44,7 @@
 
 ```
 ┌─────────────────────────── 浏览器 (Vue3 SPA) ───────────────────────────┐
-│  榜单 / 筛选 / 回测 / 个股 / 配置管理 / 数据管理                          │
+│  榜单 / 筛选 / 回测 / 个股 / 盘感训练 / 系统管理(配置·布局) / 数据管理     │
 └───────────────────────────────┬─────────────────────────────────────────┘
                                  │ REST  /api/**
 ┌───────────────────────────────▼─────────────────────────────────────────┐
@@ -67,7 +67,7 @@
 
 ## 2. 功能模块与技术文档
 
-系统按"数据先可靠、方案可配置、结果可验证"组织成六个业务模块。README 负责说明**从哪里进、做什么、和谁关联**；每个模块的详细说明书放在 [`agent-works/architecture/`](agent-works/architecture/)。
+系统按"数据先可靠、方案可配置、结果可验证"组织成下列业务模块。README 负责说明**从哪里进、做什么、和谁关联**；每个模块的详细说明书放在 [`agent-works/architecture/`](agent-works/architecture/)。
 
 | 模块 | 页面入口 | 主要 API | 你在这里完成什么 | 详细说明书 |
 |------|----------|----------|------|----------|
@@ -75,10 +75,12 @@
 | 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存 + 版本回看 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率 | [backtest.md](agent-works/architecture/backtest.md) |
 | 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 列表（服务端排序/分页，含退市股）；详情（K 线 + 指标快照 + 当前买卖方案信号）；股票分组篮子 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
-| ⚙️ **配置管理** | `ConfigView` | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 三大定义：技术指标（注册表）/ 买卖方案（买入+卖出+兜底）/ 评分规则（阈值打分+动态权重） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
+| ⚙️ **配置管理** | `ConfigView`（`/system/config`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 三大定义：技术指标（注册表）/ 买卖方案（买入+卖出+兜底）/ 评分规则（阈值打分+动态权重） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
+| 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) · [plan.md](agent-works/layout-config-productization/plan.md) |
 | 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线 + T+1 真实撮合买卖；一局产出评分/评级/资金曲线；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
+> **配置管理**与**布局配置**同属顶层「⚙️ 系统管理」菜单（路由 `/system/*`）。布局配置建立在 `frontend/src/layout/` 布局底座之上（页面外壳 `LayoutHost` + 布局 schema + 组件目录 + 校验器 + 契约测试），把"风格/布局/组件字段"做成可配置、可分层、可追踪来源的产品能力，使页面"由构造即合规"。
 > 横切的基础设施（点时安全仓库、异步任务底座、定时调度、配置生效、服务部署、前端布局规范）见 [platform.md](agent-works/architecture/platform.md)。
 
 ### 2.1 模块关系图
@@ -118,12 +120,12 @@ flowchart LR
 backend/
   api/            REST 路由（薄层）：board / stocks / screen / backtest / config
                   / indicators / score_profiles / trade_profiles / stock_groups
-                  / data_tasks / data_admin / health / training
+                  / data_tasks / data_admin / health / training / layout
   services/       编排层：ingest（入库）· screen_score（筛选打分）· backtest
                   · pipeline（一键日常 DailyPipeline）· async_task（异步任务底座）
                   · data_report / data_verify / data_sources · training（盘感训练）
   datasource/     数据源适配（akshare / baostock；限流·重试·超时·兜底·溯源）
-  storage/        DuckDB 连接 / DDL / 点时安全仓库 / 配置覆盖层 / 数据目录
+  storage/        DuckDB 连接 / DDL / 点时安全仓库 / 配置覆盖层 / 布局配置(layout_config) / 数据目录
   dataquality/    入库清洗 + 四层质检（checker）
   indicators/     指标引擎（后向算子 / param_hash / 动态计算）
   screening/      条件 AST + 表达式 DSL 沙箱 + 筛选引擎
@@ -138,12 +140,18 @@ backend/
   tests/          后端单测（pytest）
 
 frontend/         Vue3 + TS + Element Plus + ECharts，构建产物 frontend/dist 由后端托管
+  src/layout/     可配置布局底座：页面外壳 LayoutHost / 布局 schema / 组件目录 / 校验器 / 契约测试
+  src/views/layout/  布局配置工作台：预设管理 / 页面布局 / 系统组件
 agent-works/architecture/ 各模块技术文档（核心技术 / 业务架构 / 业务流程 / 风险事项）
 agent-works/market-sense-training/ 盘感训练模块需求 / 开发计划 / 开发留痕 / DDL 归档
+agent-works/configurable-layout-system/ 布局系统底座需求 / 新页面开发模板 page-template.md
+agent-works/layout-config-productization/ 布局配置产品化需求 / 开发计划 / 字段策略 DDL
 config/           settings.yaml —— 所有阈值/权重/参数（改参不改码）
 data/             ai_stocks.duckdb（DuckDB 数据文件）+ exports（导出）
 agent-works/initialization/ 需求 / 系统设计 / 任务清单 / 演进过程文档
-ai-agent/         前端布局自适应规范等通用规范文档（见 §7）
+DESIGN.md         前端设计与布局规范（地图/索引；强制规则在 frontend/src/layout 代码）
+agent-works/configurable-layout-system/page-template.md
+                  新页面开发模板与页面设计闭环清单
 start.sh          后端启停脚本（dev/prod，见 §5.1）
 ```
 
@@ -325,17 +333,14 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 
 ---
 
-## 7. 开发历程与关联文档
-
-系统由"趋势龙头选股与回测底座"起步，逐步收敛为当前"统一基座 + 配置化 + 闭环化"的形态；数据管理模块经历了从基础采集到"四层质检 + 修复闭环 + 逐只补市值"的完善。以下 [`agent-works/initialization/`](agent-works/initialization/) 下文档记录了需求、设计与各阶段演进过程，**作为历史与设计依据保留**（当前系统实况以 §2 各模块技术文档为准）：
+## 7. 当前文档入口
 
 | 文档 | 内容 |
 |------|------|
-| 《需求文档 — 趋势龙头选股与回测系统》 | 初始业务需求 |
-| 《系统设计文档(SDD) — 趋势龙头选股与回测系统》 | 总体架构与正确性约定设计 |
-| 《任务清单 — 趋势龙头选股与回测系统》 | 里程碑任务分解 |
-| 《重构 — 需求设计任务》 | 统一基座 / 配置化 / 废观察池等关键决策与模块明细 |
-| 《数据管理模块完善 — 需求设计任务》 | 数据管理重构（异步任务底座 / 评分快照 / 四层质检）需求 |
-| [《前端布局自适应规范》](ai-agent/前端布局自适应规范.md) | 布局两层自适应 + 列表交互标准（前端开发契约） |
+| [`agent-works/architecture/`](agent-works/architecture/) | 各业务模块当前技术说明、业务流程和风险边界 |
+| [CLAUDE.md](CLAUDE.md) | AI 协作红线：语言、文档归档、方案确认、复用约束、开发契约入口 |
+| [AGENTS.md](AGENTS.md) | Codex/Agent 工作入口与仓库级约束 |
+| [DESIGN.md — 前端设计与布局规范](DESIGN.md) | 前端布局事实源与页面开发契约：可配置布局系统、页面设计闭环、组件/布局维护矩阵、设置抽屉规范；强制规则归 `frontend/src/layout` + 契约测试 |
+| [page-template.md — 新页面开发模板](agent-works/configurable-layout-system/page-template.md) | AI/开发者新建或改造页面时复制使用的页面设计块、维护矩阵、7 个原型骨架和验收清单 |
 
-> 说明：`agent-works/initialization/` 为过程性设计文档，可能与最新实现存在差异；模块当前实况请以 [`agent-works/architecture/`](agent-works/architecture/) 下技术文档为准。
+规范类文档只表达当前事实和操作入口。其他过程性材料不能覆盖上述当前事实源。

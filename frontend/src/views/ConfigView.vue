@@ -28,16 +28,42 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { getSettingsView, saveSettings, type SettingGroup } from '@/api/data'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const settingsOpen = ref(false)
+// 默认 Tab 迁入组件配置层（tabs.defaultActive，用户层可记忆）；技术指标排序/预览展开属业务态保留（plan.md §13.3）。
 const configDefaults = {
-  tab: 'score' as 'score' | 'tech' | 'trade' | 'system',
-  compact: false,
   techSort: 'catOrder' as 'catOrder' | 'name_cn' | 'srcLabel',
   previewExpanded: true,
 }
 const { settings, isDirty, reset } = usePageSettings('config', configDefaults)
-const tab = ref<'score' | 'tech' | 'trade' | 'system'>(settings.tab)
+
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const configLayout = getPageLayout('config')
+const {
+  effective: configEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  sourceOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(configLayout)
+
+// 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+
+type ConfigTab = 'score' | 'tech' | 'trade' | 'system'
+// 默认 Tab 由 ComponentAutoSettings 自动渲染写值；页面只读 getter 同步当前 tab。
+const defaultTab = computed<ConfigTab>(() => (componentValueOf('tabs', 'defaultActive') as ConfigTab) ?? 'score')
+const tab = ref<ConfigTab>(defaultTab.value)
 
 // ── 系统设置（FR-DM-12：真实参数 Web 可编辑，写 app_config 覆盖层）──
 const sysGroups = ref<SettingGroup[]>([])
@@ -74,7 +100,7 @@ async function saveSystem() {
   } catch { /* 拦截器弹错（含校验失败 400） */ } finally { sysSaving.value = false }
 }
 function onTab(name: unknown) { if (name === 'system' && !sysGroups.value.length) loadSystem() }
-watch(() => settings.tab, (value) => { tab.value = value })
+watch(defaultTab, (value) => { tab.value = value })
 
 // ── 技术指标注册表（含内置 + 自定义）──
 const registry = ref<IndicatorDef[]>([])
@@ -553,7 +579,7 @@ async function previewSide(side: 'buy' | 'sell') {
 }
 
 onMounted(async () => {
-  tab.value = settings.tab
+  tab.value = defaultTab.value
   try {
     await reloadRegistry()
   } catch (e) { console.error('[config] reloadRegistry 失败', e) }
@@ -571,14 +597,18 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="config v-page">
+  <LayoutHost :layout="configEffective">
+    <template #action>
     <div class="page-head">
       <h2 class="page-title">配置管理</h2>
       <div class="page-head-actions">
-        <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+        <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
-    <div class="v-grow config-body">
+    </template>
+
+    <template #main>
+    <div class="config-body">
     <el-tabs v-model="tab" class="tabs" @tab-change="onTab">
       <!-- ============ 评分规则 ============ -->
       <el-tab-pane label="评分规则" name="score">
@@ -717,7 +747,7 @@ onMounted(async () => {
               <el-button :loading="running" type="success" plain @click="tryRun">▶ 用当前配置试算</el-button>
             </div>
             <div v-if="settings.previewExpanded && runRows.length" class="run-table-wrap">
-            <el-table :data="runRows" size="small" border height="100%" class="run-table" :class="{ 'page-table-compact': settings.compact }">
+            <el-table :data="runRows" size="small" border height="100%" class="run-table">
               <el-table-column label="#" width="46">
                 <template #default="{ row }">{{ row.rank }}</template>
               </el-table-column>
@@ -768,8 +798,8 @@ onMounted(async () => {
             <el-button type="primary" plain size="small" @click="openNewDef">＋ 新建自定义指标</el-button>
           </div>
         </div>
-        <div class="v-grow tech-table-wrap">
-        <el-table :data="techRows" size="small" border height="100%" :class="{ 'page-table-compact': settings.compact }"
+        <div class="tech-table-wrap">
+        <el-table :data="techRows" size="small" border height="100%"
                   :default-sort="{ prop: 'catOrder', order: 'ascending' }">
           <el-table-column prop="name_cn" label="名称" width="130" sortable />
           <el-table-column prop="key" label="标识" width="120" />
@@ -1043,7 +1073,9 @@ onMounted(async () => {
       </el-tab-pane>
     </el-tabs>
     </div>
+    </template>
 
+    <template #overlays>
     <!-- 评分方案历史版本 -->
     <el-dialog v-model="sVerVisible" :title="`历史版本 · ${editName || ''}`" width="560px">
       <el-empty v-if="!sVersions.length" description="暂无历史版本" />
@@ -1075,30 +1107,30 @@ onMounted(async () => {
       </div>
     </el-dialog>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="配置管理" :dirty="isDirty" @reset="reset">
-      <PageSettingSection title="界面默认项">
-        <div class="setting-item">
-          <div class="setting-label">默认 Tab</div>
-          <PageSegmented v-model="settings.tab" :options="[
-            { label: '评分', value: 'score' },
-            { label: '指标', value: 'tech' },
-            { label: '买卖', value: 'trade' },
-            { label: '系统', value: 'system' },
-          ]" />
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">技术指标排序</div>
-          <PageSegmented v-model="settings.techSort" :options="[
-            { label: '分类', value: 'catOrder' },
-            { label: '名称', value: 'name_cn' },
-            { label: '来源', value: 'srcLabel' },
-          ]" />
-        </div>
-        <PageToggleRow v-model="settings.previewExpanded" label="默认显示试算结果区" />
-        <PageToggleRow v-model="settings.compact" label="紧凑表格" />
-      </PageSettingSection>
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="配置管理"
+      :dirty="isDirty || layoutDirty"
+      page-key="config"
+      :config="drawerConfig"
+      @reset="reset(); resetLayout()"
+    >
+      <template #business>
+        <PageSettingSection title="界面默认项">
+          <div class="setting-item">
+            <div class="setting-label">技术指标排序</div>
+            <PageSegmented v-model="settings.techSort" :options="[
+              { label: '分类', value: 'catOrder' },
+              { label: '名称', value: 'name_cn' },
+              { label: '来源', value: 'srcLabel' },
+            ]" />
+          </div>
+          <PageToggleRow v-model="settings.previewExpanded" label="默认显示试算结果区" />
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>
@@ -1113,8 +1145,9 @@ onMounted(async () => {
 .sys-group { margin-bottom: 14px; }
 .sys-default { font-size: 12px; color: var(--el-text-color-secondary); margin-left: 12px; }
 .ov-tag { margin-left: 6px; }
-.page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.page-head { display: flex; justify-content: space-between; align-items: center; }
 .config-body {
+  flex: 1 1 auto;   /* 填满 LayoutHost 的 .v-grow；Tabs 以 height:100% 取其确定高度 */
   min-height: 0;
 }
 .tabs {
@@ -1329,8 +1362,16 @@ onMounted(async () => {
 .tech-pane {
   gap: 12px;
 }
+/* 原依赖全局 .v-grow，迁移后改为页面内自带成长样式（表体内滚、表头吸顶） */
 .tech-table-wrap {
+  flex: 1 1 auto;
   min-height: 360px;
+  display: flex;
+  flex-direction: column;
+}
+.tech-table-wrap .el-table {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .expr {
   font-family: var(--el-font-family-mono, monospace);

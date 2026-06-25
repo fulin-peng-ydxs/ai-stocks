@@ -14,11 +14,34 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const router = useRouter()
 const settingsOpen = ref(false)
 const scheduleDefaults = { sourceMode: 'all' as 'all' | 'primary', timeMode: 'full' as 'full' | 'hm' }
 const { settings, isDirty, reset } = usePageSettings('data-schedule', scheduleDefaults)
+
+// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
+const scheduleLayout = getPageLayout('data-schedule')
+const {
+  effective: scheduleEffective,
+  knobs: layoutKnobs,
+  setKnob,
+  valueOf,
+  sourceOf,
+  isDirty: layoutDirty,
+  resetAll: resetLayout,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  layerValuesOf,
+  componentLayerValuesOf,
+} = useRemoteLayoutConfig(scheduleLayout)
+
+// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
 const loading = ref(false)
 const jobs = ref<ScheduledJob[]>([])
@@ -176,7 +199,8 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 </script>
 
 <template>
-  <div class="v-page">
+  <LayoutHost :layout="scheduleEffective">
+    <template #action>
     <div class="page-head">
       <h2>
         任务调度
@@ -193,8 +217,10 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>
+    </template>
 
-    <div class="v-grow schedule-body">
+    <template #main>
+    <div class="schedule-body">
       <!-- ① 定时任务列表 -->
       <el-card shadow="never" class="blk jobs-card">
         <template #header>
@@ -254,7 +280,9 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         <div v-if="!displaySources.length" class="empty">点「测试连通」检查 AKShare / BaoStock 可达性</div>
       </el-card>
     </div>
+    </template>
 
+    <template #overlays>
     <!-- 新建/编辑对话框 -->
     <el-dialog v-model="dlg" :title="dlgTitle" width="520px">
       <el-form label-width="92px">
@@ -318,34 +346,45 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
       </template>
     </el-dialog>
 
-    <PageSettingsDrawer v-model="settingsOpen" title="任务调度" :dirty="isDirty" @reset="reset">
-      <PageSettingSection title="显示">
-        <div class="setting-item">
-          <div class="setting-label">时间显示</div>
-          <PageSegmented v-model="settings.timeMode" :options="[
-            { label: '完整时间', value: 'full' },
-            { label: '仅时分', value: 'hm' },
-          ]" />
-        </div>
-      </PageSettingSection>
-      <PageSettingSection title="数据源视图">
-        <div class="setting-item">
-          <div class="setting-label">显示范围</div>
-          <PageSegmented v-model="settings.sourceMode" :options="[
-            { label: '全部源', value: 'all' },
-            { label: '只主源', value: 'primary' },
-          ]" />
-        </div>
-      </PageSettingSection>
+    <PageSettingsDrawer
+      v-model="settingsOpen"
+      title="任务调度"
+      :dirty="isDirty || layoutDirty"
+      page-key="data-schedule"
+      :config="drawerConfig"
+      @reset="reset(); resetLayout()"
+    >
+      <template #business>
+        <PageSettingSection title="显示">
+          <div class="setting-item">
+            <div class="setting-label">时间显示</div>
+            <PageSegmented v-model="settings.timeMode" :options="[
+              { label: '完整时间', value: 'full' },
+              { label: '仅时分', value: 'hm' },
+            ]" />
+          </div>
+        </PageSettingSection>
+        <PageSettingSection title="数据源视图">
+          <div class="setting-item">
+            <div class="setting-label">显示范围</div>
+            <PageSegmented v-model="settings.sourceMode" :options="[
+              { label: '全部源', value: 'all' },
+              { label: '只主源', value: 'primary' },
+            ]" />
+          </div>
+        </PageSettingSection>
+      </template>
     </PageSettingsDrawer>
-  </div>
+    </template>
+  </LayoutHost>
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .page-head h2 { margin: 0; font-size: 20px; }
 .page-head-actions { display: flex; gap: 8px; align-items: center; }
-.schedule-body { overflow: auto; min-height: 0; display: flex; flex-direction: column; }
+/* 填满 LayoutHost 的 .v-grow；放不下时整区内滚（兜底阶梯第 3 级） */
+.schedule-body { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
 .jobs-card { margin-bottom: 16px; }
 .jobs-card :deep(.el-card__body) { flex: 1 1 auto; min-height: 0; }
 .jobs-tbl { width: 100%; }
