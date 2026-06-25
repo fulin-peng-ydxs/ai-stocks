@@ -17,7 +17,9 @@ const props = withDefaults(
     defaultOpen?: boolean
     modelValue?: boolean
   }>(),
-  { level: 1, collapsible: true, defaultOpen: true },
+  // modelValue 显式给 undefined 默认值：避免 Vue 对未受控的 Boolean prop 强制转成 false
+  // （否则 isOpen() 的 `modelValue ?? localOpen` 会被 false 短路，导致非受控子组永远折叠且点不开）。
+  { level: 1, collapsible: true, defaultOpen: true, modelValue: undefined },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]

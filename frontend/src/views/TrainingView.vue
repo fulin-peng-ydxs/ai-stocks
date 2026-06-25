@@ -100,7 +100,9 @@ const feeOn = computed(() => !!view.value?.fee_enabled)
 const isAmount = computed(() => cfg.orderMode === 'amount')
 
 const pricePerHand = computed(() => (round.value ? round.value.cur_close * round.value.lot_size : 0))
-const buyRate = computed(() => (feeOn.value ? 0.0015 : 0)) // 滑点+佣金+过户费 近似（仅用于前端预判）
+// 买入总费率预判：滑点0.2%+佣金万2.5+过户≈0.226%，取略保守 0.25% 估「全仓上限」，
+// 保证前端估出的手数后端按收盘价精确成交时必定买得起（买入 T+0 即时成交，无缩手数兜底）。
+const buyRate = computed(() => (feeOn.value ? 0.0025 : 0))
 const perHandCost = computed(() => pricePerHand.value * (1 + buyRate.value))
 const cash = computed(() => round.value?.cash ?? 0)
 const posHands = computed(() => round.value?.pos_hands ?? 0)
@@ -271,11 +273,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             🎮 盘感训练
             <HelpTip title="盘感训练是什么？" :width="440">
               <p><b>针对个股的买卖手感训练</b>：系统在你指定的历史区间里随机抽一只个股、随机一个起点，<b>盲测</b>（隐藏股名/代码/真实日期）下逐日揭示 K 线，你负责买卖。</p>
-              <p style="margin:6px 0 2px">买卖按 <b>T+1 开盘价</b>成交，套用涨跌停买不到/卖不出、停牌顺延等真实约束；可选计入交易成本。</p>
+              <p style="margin:6px 0 2px"><b>买入当日按收盘价成交（T+0）</b>，<b>卖出次日开盘价成交（T+1）</b>；套用收盘/开盘涨跌停买不到、跌停卖不出、停牌顺延等真实约束；可选计入交易成本。</p>
               <p style="margin:6px 0 0">一局可练单只或多只（每只一个回合），结束后揭晓身份、给出收益/胜率/回撤与综合评级，并沉淀到训练历史与成长曲线。</p>
             </HelpTip>
           </h2>
-          <span class="sub">盲测 · 逐日揭示 · T+1 买卖 · 回溯思路与成长</span>
+          <span class="sub">盲测 · 逐日揭示 · 买 T+0 / 卖 T+1 · 回溯思路与成长</span>
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -372,7 +374,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             🎮 盘感训练 · 进行中
             <HelpTip title="训练规则" :width="380">
               <p><b>盲测</b>：隐藏个股身份与真实日期，横轴用相对日（D±n）。</p>
-              <p style="margin:6px 0 0"><b>T+1</b>：下单后次日开盘成交；开盘涨停买不到、跌停卖不出、停牌顺延。窗口末日仍持仓将按收盘价强制清算。</p>
+              <p style="margin:6px 0 0"><b>买 T+0</b>：买入当日按收盘价即时成交（收盘封涨停买不到）。<b>卖 T+1</b>：卖出登记后次日开盘成交（开盘跌停卖不出、停牌顺延）。窗口末日仍持仓将按收盘价强制清算。</p>
             </HelpTip>
           </h2>
           <span class="sub">回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中</span>

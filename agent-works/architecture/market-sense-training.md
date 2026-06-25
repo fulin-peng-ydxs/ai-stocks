@@ -1,8 +1,8 @@
 # 盘感训练
 
-> 面向人的手动交易训练模块：盲测随机个股、逐日揭示 K 线、T+1 真实撮合买卖，事后以历史结果对照思路，并跨局沉淀评分 / 收益 / 胜率成长曲线。它训练的是"人"而非"策略"——验证盘感正确性、回溯决策思路、量化成长轨迹。
+> 面向人的手动交易训练模块：盲测随机个股、逐日揭示 K 线、真实撮合买卖（买 T+0 收盘价 / 卖 T+1 开盘价），事后以历史结果对照思路，并跨局沉淀评分 / 收益 / 胜率成长曲线。它训练的是"人"而非"策略"——验证盘感正确性、回溯决策思路、量化成长轨迹。
 
-<span style="color:#2563eb">●</span> 盲测防作弊　<span style="color:#7c3aed">●</span> T+1 撮合　<span style="color:#16a34a">●</span> 评分与成长　<span style="color:#dc2626">●</span> 点时安全
+<span style="color:#2563eb">●</span> 盲测防作弊　<span style="color:#7c3aed">●</span> 买 T+0 / 卖 T+1 撮合　<span style="color:#16a34a">●</span> 评分与成长　<span style="color:#dc2626">●</span> 点时安全
 
 ---
 
@@ -10,7 +10,12 @@
 
 **回合固定复权基准（关键设计）**。训练撮合与回测不同：回测用 hfq（后复权单调无需 rebase），训练需要在进行中实时展示价格且 K 线不能跳变。解决方案：每回合在开局时取 `start_date` 当日 `adj_factor_clean` 固定为 `base_factor`（`training_service.py`），回合内所有 OHLC 均按 `raw_price × (factor / base_factor)` 缩放——即以 start_date 为基准的前复权。好处：① 价格绝对值在回合内稳定，无跳变；② 用原始价判涨跌停，不受复权干扰；③ 回合结束后回看与训练时所见价位一致。
 
-**T+1 意图模型（防未来 + 贴近真实）**。用户在看到 cursor 日行情后提交买/卖意图（手数+理由），service 只做校验（资金/持仓/T+1 锁定）后将意图序列化为 JSON 存入 `training_round.pending`，**不立即成交**。揭示下一日（`reveal`）时调 `_settle_pending`：取 next_date 的原始行情，用**原始价**调 `broker.can_buy_at_open` / `can_sell_at_open` 判断是否可成交（涨停买不到 / 跌停卖不出 / 停牌未成交），通过后按前复权展示价计算费用、更新 cash/pos，插 `training_trade`（`training_service.py:418`）。这样天然防未来函数：成交价取"揭示那一刻"才知道的 next_date 开盘价，完全无法预知。
+**买 T+0 / 卖 T+1 撮合模型（贴近真实 + 防未来）**。区分买卖时点，匹配 A 股交易制度（当日可买、当日买入次日才可卖）：
+
+- **买入 T+0（`_execute_buy_now`）**：用户在 cursor 日（含当日收盘）尾盘决策买入，**当日即按收盘价即时成交**。用**原始收盘价**调 `broker.can_buy_at_open` 判收盘是否封涨停（封板买不到），通过后按前复权展示价计费、更新 cash/pos，插 `training_trade`（决策日=成交日=cursor_date）。成交价是已发生的当日收盘价，非未来函数。
+- **卖出 T+1（`place_intent` → `_settle_pending`）**：当日提交卖出意图（手数+理由），序列化为 JSON 存入 `training_round.pending`，**不立即成交**。揭示下一日（`reveal`）时调 `_settle_pending`：取 next_date 原始行情，用**原始价**调 `broker.can_sell_at_open` 判可成交（开盘跌停卖不出 / 停牌顺延），通过后按前复权展示价计费、插 `training_trade`。成交价取"揭示那一刻"才知道的次日开盘价，无法预知；当日买入的仓位最早次日开盘卖出，天然满足 T+1。
+
+`_settle_pending` 仍保留 buy 分支，仅兼容历史遗留的 buy pending（按次日开盘价结算），新会话买入不再走此路径（`training_service.py`）。
 
 **盲测脱敏（双层保护）**。① 服务层：`_bars_for_view(reveal_dates=False)`（`training_service.py:118`）将 `date` 字段替换为相对日标签 `D±N`，response 中不含 `code`/`name`/真实日期；`get_view`（running 态）固定走脱敏路径，仅 `get_detail`（completed 态）才展示真实身份。② API 层：`reveal` 接受 `cursor_idx` 乐观校验——前端已知的游标与服务端不符则拒绝，防多标签页并发推进导致状态错乱（`training_service.py:400`）。
 
@@ -39,12 +44,14 @@ create_session()
   → get_view()  ← 返回首回合盲测视图
 
 ──── 回合内循环 ────
-place_intent()
-  → training_round.pending = {side, hands, reason}
-  → 乐观校验资金/持仓/T+1锁
+place_intent(buy)                       place_intent(sell)
+  → _execute_buy_now()                    → training_round.pending = {sell, hands, reason}
+    ← 当日收盘价即时成交（T+0）            → 校验持仓
+    → training_trade (INSERT)
+    → training_round (UPDATE cash/pos)
 
 reveal()
-  → _settle_pending()  ← next_date 开盘价成交/失败
+  → _settle_pending()  ← next_date 开盘价结算 pending 卖出（T+1）/失败
     → training_trade (INSERT)
     → training_round (UPDATE cash/pos)
   → cursor_date 前移, cursor_idx+1
@@ -99,8 +106,8 @@ _settle_session()
 
 - **K 线区**：蜡烛图 + 成交量 + MA，横轴为相对日（D±N），买卖点以 ▲/▼ 标注。DataZoom 可拖动查看历史上下文。
 - **账户面板**：实时显示可用现金、持仓手数 / 成本 / 浮盈亏、总资产、当前进度（第 X 日 / 共 Y 日）。
-- **下单**：选手数（或按金额自动换算）→ 点「买」或「卖」，提交意图；支持快捷手数/金额预设（在设置抽屉配置）；点「撤单」可撤回尚未成交的 pending 意图。
-- **推进**：点「下一日」（或按 `→`）揭示次日 K 线并结算上一意图；成交失败（涨停/跌停/停牌）会弹提示，账户不变。键盘快捷键：`B` = 买、`S` = 卖、`→` = 下一日。
+- **下单**：选手数（或按金额自动换算）→ 点「买」或「卖」；支持快捷手数/金额预设（在设置抽屉配置）。**买入当日按收盘价即时成交（T+0）**，立即反映到账户与成交明细；**卖出登记为 pending（T+1）**，次日开盘成交，点「撤单」可撤回尚未成交的卖出意图。
+- **推进**：点「下一日」（或按 `→`）揭示次日 K 线并结算 pending 卖出；成交失败（开盘跌停/停牌）会弹提示，账户不变。键盘快捷键：`B` = 买、`S` = 卖、`→` = 下一日。
 - **结算**：到达窗口末日后点「结算回合」，强制清算持仓；multi 模式自动切入下一回合。
 
 ### 结算详情
@@ -124,7 +131,7 @@ _settle_session()
 | 依赖项 | 用途 | 是否修改 |
 |--------|------|----------|
 | `MarketRepository.get_universe_asof` | 随机抽样候选池（防幸存者偏差） | 未修改 |
-| `broker.can_buy_at_open` / `can_sell_at_open` | T+1 开盘可成交性判定 | 未修改 |
+| `broker.can_buy_at_open` / `can_sell_at_open` | 涨跌停可成交性判定（买入复用判收盘封涨停，卖出判次日开盘跌停） | 未修改 |
 | `config.backtest.cost` | 佣金/印花/过户费/滑点费率 | 未修改 |
 | `CandleChart.vue` | K 线图（含 markers 买卖标注） | 未修改 |
 | `EquityChart.vue` | 资金曲线（结算详情） | 未修改 |

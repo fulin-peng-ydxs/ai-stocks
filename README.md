@@ -76,7 +76,7 @@
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率 | [backtest.md](agent-works/architecture/backtest.md) |
 | 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 列表（服务端排序/分页，含退市股）；详情（K 线 + 指标快照 + 当前买卖方案信号）；股票分组篮子 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
 | ⚙️ **配置管理** | `ConfigView`（`/system/config`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 三大定义：技术指标（注册表）/ 买卖方案（买入+卖出+兜底）/ 评分规则（阈值打分+动态权重） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
-| 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) · [plan.md](agent-works/layout-config-productization/plan.md) |
+| 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) |
 | 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线 + T+1 真实撮合买卖；一局产出评分/评级/资金曲线；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 

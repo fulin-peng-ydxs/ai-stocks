@@ -1,10 +1,11 @@
 """盘感训练服务（agent-works/market-sense-training/）。
 
-手动交易训练：盲测 + 逐日揭示 + T+1 真实撮合。
+手动交易训练：盲测 + 逐日揭示 + 真实撮合（买 T+0 / 卖 T+1）。
 - 一局 session = N 个回合 round；每回合 = 一只随机股 + 区间内随机起点 + 连续 window_days 个交易日窗口。
 - 回合内独立资金账户（初始资金相同），按手分批买卖。
-- T+1：用户在 cursor 日（看到的最后一根 K）下单 → 登记 pending → 揭示下一日时按该日开盘价成交。
-- 真实约束：开盘涨停买不到 / 跌停卖不出（按原始价四舍五入到分判定，复用 broker）。
+- 买入 T+0：用户在 cursor 日（看到的最后一根 K，含当日收盘）尾盘决策买入，按当日收盘价即时成交。
+- 卖出 T+1：当日登记 pending → 揭示下一日时按次日开盘价成交（当日买入的仓位最早次日才能卖，天然满足 T+1）。
+- 真实约束：收盘封涨停买不到 / 次日开盘涨跌停买不到卖不出（按原始价四舍五入到分判定，复用 broker）。
 - 价格口径：回合内统一以 start_date 的 adj_factor_clean 为基准做前复权（base_factor 固定），
   显示与记账价位一致，且只用 <= start_date 的因子（点时安全、不引未来）。
 - 防作弊：running 态接口绝不返回未揭示的未来 K 线，也不返回真实 code/name/真实日期。
@@ -345,7 +346,7 @@ class TrainingService:
         return out
 
     # ════════════════════════════════════════════════════════════
-    # 下单意图（T+1 pending）
+    # 下单：买入 T+0 即时成交 / 卖出 T+1 登记 pending
     # ════════════════════════════════════════════════════════════
     def place_intent(self, sid: str, side: str, hands: int, reason: str = "") -> dict:
         s = self._session_row(sid)
@@ -362,22 +363,50 @@ class TrainingService:
             raise ValueError("当前回合不可操作")
         if rnd["cursor_idx"] >= rnd["window_days"] - 1:
             raise ValueError("已到窗口末日，无法再下单，请结算回合")
-        # 校验（用 cursor 日收盘价作决策价估算）
-        srow = self._raw_bar(rnd["code"], rnd["cursor_date"])
-        disp_close = self._disp_price(srow["close"], srow["f"], rnd["base_factor"]) if srow else 0.0
         if side == "buy":
-            est = disp_close * (1 + self._slip(bool(s["fee_enabled"]))) * hands * self.lot
-            est += self._buy_fee(est, bool(s["fee_enabled"]))
-            if est > rnd["cash"] + 1e-6:
-                raise ValueError("可用资金不足以买入该手数")
-        else:
-            if hands * self.lot > rnd["pos_shares"]:
-                raise ValueError("卖出手数超过持仓")
+            # T+0：买入当日按收盘价即时成交（尾盘决策买入），不进入 pending
+            msg = self._execute_buy_now(s, rnd, hands, reason)
+            if msg:
+                raise ValueError(msg)
+            return self.get_view(sid)
+        # T+1：卖出登记意图，揭示下一日时按次日开盘价成交
+        if hands * self.lot > rnd["pos_shares"]:
+            raise ValueError("卖出手数超过持仓")
         pending = {"side": side, "hands": hands, "reason": reason or ""}
         self.c.execute(
             "UPDATE training_round SET pending = ? WHERE session_id = ? AND seq = ?",
             [json.dumps(pending, ensure_ascii=False), sid, cur])
         return self.get_view(sid)
+
+    def _execute_buy_now(self, s: dict, rnd: dict, hands: int, reason: str) -> str | None:
+        """T+0 买入：以当日（cursor）收盘价即时成交。返回失败文案或 None（成功）。"""
+        sid, cur = s["id"], int(rnd["seq"])
+        fee_on = bool(s["fee_enabled"])
+        srow = self._raw_bar(rnd["code"], rnd["cursor_date"])
+        if not srow or srow["close"] is None:
+            return "当日停牌，买入未成交"
+        pct = rnd["price_limit_pct"]
+        raw_close, raw_pre = srow["close"], srow["pre_close"]
+        # 收盘封涨停则买不到（按原始价四舍五入到分判定，复用 broker 涨停口径）
+        if raw_pre and not can_buy_at_open(raw_close, raw_pre, pct):
+            return "收盘封涨停，买入未成交"
+        price = self._disp_price(raw_close, srow["f"], rnd["base_factor"]) * (1 + self._slip(fee_on))
+        shares = hands * self.lot
+        gross = price * shares
+        fee = self._buy_fee(gross, fee_on)
+        total = gross + fee
+        if total > rnd["cash"] + 1e-6:
+            return "可用资金不足以买入该手数"
+        new_shares = rnd["pos_shares"] + shares
+        new_cost = rnd["pos_cost"] + total
+        self.c.execute(
+            "UPDATE training_round SET cash = ?, pos_shares = ?, pos_cost = ?, pos_avg_price = ? "
+            "WHERE session_id = ? AND seq = ?",
+            [rnd["cash"] - total, new_shares, new_cost, new_cost / new_shares, sid, cur])
+        # 当日成交：决策日 = 成交日 = cursor_date，相对日 = cursor_idx
+        self._insert_trade(sid, cur, "buy", rnd["cursor_date"], rnd["cursor_date"], rnd["cursor_idx"],
+                           price, hands, shares, gross, fee, None, None, reason, False)
+        return None
 
     def cancel_intent(self, sid: str) -> dict:
         s = self._session_row(sid)
@@ -416,7 +445,11 @@ class TrainingService:
         return view
 
     def _settle_pending(self, s: dict, rnd: dict, fill_date: date) -> str | None:
-        """以 fill_date 开盘价结算上一日 pending 意图（T+1）。返回提示文案或 None。"""
+        """以 fill_date 开盘价结算 pending 卖出意图（T+1）。返回提示文案或 None。
+
+        买入已在下单当日即时成交（见 _execute_buy_now），正常不再走此处；
+        下面的 buy 分支仅兼容历史遗留的 buy pending（按次日开盘价结算）。
+        """
         pending = rnd["pending"]
         if not pending:
             return None

@@ -1,24 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref } from 'vue'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
 import { useLayoutPreset, type LayoutPresetKey } from '@/layout'
+import SideMenu from '@/components/SideMenu.vue'
 
 const { isDark } = useTheme()
 const { activePresetKey, activePreset, options: presetOptions, setLayoutPreset } = useLayoutPreset()
-const route = useRoute()
 const userDrawerVisible = ref(false)
-// 子路由（如 /stocks/600000.SH）高亮其父菜单；数据管理高亮到具体子页
-const activeMenu = computed(() => {
-  if (route.path.startsWith('/system/layout')) return route.path
-  if (route.path.startsWith('/system/config')) return '/system/config'
-  if (route.path.startsWith('/screen')) return '/screen'
-  if (route.path.startsWith('/backtest')) return '/backtest'
-  if (route.path.startsWith('/stocks')) return '/stocks'
-  if (route.path === '/data') return '/data/overview'
-  if (route.path.startsWith('/data/')) return route.path
-  return '/board'
-})
 </script>
 
 <template>
@@ -47,41 +35,7 @@ const activeMenu = computed(() => {
           <div class="brand-title">复盘啦</div>
         </div>
       </div>
-      <el-menu :default-active="activeMenu" :default-openeds="['quotes', 'data', 'system', 'layout']" router class="menu">
-        <el-sub-menu index="quotes">
-          <template #title>
-            <span class="data-parent" @click.stop="$router.push('/stocks')">📈 最新行情</span>
-          </template>
-          <el-menu-item index="/stocks">个股行情</el-menu-item>
-          <el-menu-item index="/board">每日榜单</el-menu-item>
-        </el-sub-menu>
-        <el-menu-item index="/screen">🧮 策略筛选</el-menu-item>
-        <el-menu-item index="/backtest">🧪 策略回测</el-menu-item>
-        <el-menu-item index="/training">🎮 盘感训练</el-menu-item>
-        <el-sub-menu index="data">
-          <template #title>
-            <span class="data-parent" @click.stop="$router.push('/data/overview')">🗄️ 数据管理</span>
-          </template>
-          <el-menu-item index="/data/overview">数据概览</el-menu-item>
-          <el-menu-item index="/data/quality">数据质量</el-menu-item>
-          <el-menu-item index="/data/ingest">数据采集</el-menu-item>
-          <el-menu-item index="/data/schedule">任务调度</el-menu-item>
-        </el-sub-menu>
-        <el-sub-menu index="system">
-          <template #title>
-            <span class="data-parent" @click.stop="$router.push('/system/config')">⚙️ 系统管理</span>
-          </template>
-          <el-menu-item index="/system/config">配置管理</el-menu-item>
-          <el-sub-menu index="layout">
-            <template #title>
-              <span class="data-parent" @click.stop="$router.push('/system/layout/presets')">🎨 布局配置</span>
-            </template>
-            <el-menu-item index="/system/layout/presets">预设管理</el-menu-item>
-            <el-menu-item index="/system/layout/pages">页面布局</el-menu-item>
-            <el-menu-item index="/system/layout/components">系统组件</el-menu-item>
-          </el-sub-menu>
-        </el-sub-menu>
-      </el-menu>
+      <SideMenu />
       <div class="aside-foot">
         <div class="foot-note">本地 EOD · 仅供研究</div>
       </div>
@@ -193,49 +147,6 @@ const activeMenu = computed(() => {
   letter-spacing: 0.5px;
   transform: skewX(-10deg);
   transform-origin: left center;
-}
-.menu {
-  flex: 1;
-  border-right: none;
-  background: transparent;
-  padding-top: 8px;
-}
-.menu :deep(.el-menu-item) {
-  color: var(--chrome-text);
-}
-.menu :deep(.el-menu-item.is-active) {
-  background: var(--chrome-active-bg);
-  color: var(--chrome-text-strong);
-  border-left: 3px solid #409eff;
-  font-weight: 600;
-}
-.menu :deep(.el-menu-item:hover) {
-  background: var(--chrome-bg-soft);
-}
-.menu :deep(.el-sub-menu__title) {
-  color: var(--chrome-text);
-}
-.data-parent {
-  display: inline-block;
-  width: 100%;
-}
-.menu :deep(.el-sub-menu__title:hover) {
-  background: var(--chrome-bg-soft);
-  color: var(--chrome-text-strong);
-}
-.menu :deep(.el-sub-menu .el-menu) {
-  background: var(--chrome-submenu-bg);
-}
-.menu :deep(.el-sub-menu .el-menu-item) {
-  min-width: 0;
-  padding-left: 44px !important;
-}
-/* 三级（孙）菜单项再缩进一档，体现 系统管理 → 布局配置 → 工作区 的层级 */
-.menu :deep(.el-sub-menu .el-sub-menu .el-menu-item) {
-  padding-left: 60px !important;
-}
-:global(html:not(.dark)) .menu :deep(.el-menu-item.is-active) {
-  box-shadow: inset 0 0 0 1px rgba(64, 158, 255, 0.12);
 }
 .aside-foot {
   padding: 10px 18px 12px;

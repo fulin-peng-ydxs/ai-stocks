@@ -13,17 +13,36 @@
 
 ## 构建、测试与开发命令
 
+服务起停一律走脚本，**禁止裸 `nohup` 或写 `/tmp`**：
+
 ```bash
-pip install -r requirements.txt
-cd frontend && npm install
-./start.sh              # 启动后端开发服务，监听 127.0.0.1:8000
-./start-web.sh          # 启动前端 Vite，访问 http://localhost:5173
-pytest                  # 运行后端测试
-cd frontend && npm test # 运行前端 Vitest
-cd frontend && npm run build
+./start.sh                 # 后端 dev，127.0.0.1:8000 热重载（默认）
+./start.sh prod            # 后端绑 0.0.0.0:8000 托管 frontend/dist
+./start.sh stop|restart|status|logs
+./start-web.sh             # 前端 5173，Vite HMR（首次自动 npm install）
+
+# 测试（先停掉占用 DuckDB 的服务，否则单文件被锁）
+python -m pytest backend/tests/ -q
+python -m pytest backend/tests/test_xxx.py::test_name -q   # 单测
+
+cd frontend && npm run build && cd ..   # 生产产物进 frontend/dist（vue-tsc 类型检查 + vite build）
+
+# 数据准备（首次按序，依赖不可反）
+python -m backend.cli backfill              # 全市场近 5 年日线回填（断点续跑）
+python -m backend.cli delisted --enrich     # 退市股历史 + 上市/退市日（防幸存者）
+python -m backend.cli valuation             # 总市值 / 总股本（--fill-gaps 回补缺口）
+python -m backend.cli rebuild-price-factors # 重建清洗复权因子 / pre_close / 涨跌停（不联网）
+python -m backend.cli verify-data           # 只读体检 PASS/FAIL
+python -m backend.cli daily                 # 一键日常：增量更新→质检→（可选）体检
 ```
 
-生产/集成模式先执行 `frontend` 构建，再运行 `./start.sh prod`，由后端托管 `frontend/dist`。
+CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main.py](backend/main.py)。
+
+### 端口约定（重要）
+
+- 日常开发：前端 **5173**（唯一对外入口），后端 **8000** 仅本机，由 Vite 代理 `/api` 回 `127.0.0.1:8000`。
+- 开发期改前端**不要** `npm run build`（那是无 HMR 的生产产物）；但**每次修改 `frontend/src` 后需 `npm run build`** 以保证生产产物同步。
+- 自动化验证（AI 截图/交互核查）走**专用端口 5181**（`.claude/launch.json` 配置的 preview），**禁止抢占用户日常的 5173**。
 
 ## 编码风格与命名约定
 
