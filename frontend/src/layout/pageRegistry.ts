@@ -115,7 +115,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '榜单列表', order: 1 },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '榜单列表', order: 1, config: { defaultSort: 'score' } },
       ],
       editable: [densityKnob()],
     },
@@ -152,7 +152,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'builder', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'result', component: 'data-table', region: 'main', growMain: true, label: '结果列表', order: 1 },
+        { id: 'result', component: 'data-table', region: 'main', growMain: true, label: '结果列表', order: 1, config: { defaultSort: 'score' } },
       ],
       editable: [densityKnob()],
     },
@@ -205,7 +205,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'filter', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '普通查询列表', order: 1 },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '普通查询列表', order: 1, config: { defaultSort: 'pct_chg:asc' } },
         // 分组视图表：与 table 互斥渲染（按 defaultView 模式），建模为 table 的可寻址子槽，承载独立列集，不进主流渲染。
         { id: 'groupTable', component: 'data-table', region: 'main', parentId: 'table', label: '分组视图', order: 2 },
       ],
@@ -248,7 +248,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '问题列表', order: 1 },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '问题列表', order: 1, config: { defaultSort: 'time' } },
       ],
       editable: [densityKnob()],
     },
@@ -290,7 +290,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', order: 1 },
         // 逐笔成交表：嵌套在 body 分区内，进入统一可寻址模型（slots.trades.config.*），P7 已接入页面消费（排序/列显隐）。
-        { id: 'trades', component: 'data-table', region: 'main', parentId: 'body', label: '逐笔成交', order: 2 },
+        { id: 'trades', component: 'data-table', region: 'main', parentId: 'body', label: '逐笔成交', order: 2, config: { defaultSort: 'entry' } },
       ],
       editable: [densityKnob()],
     },

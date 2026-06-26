@@ -54,7 +54,8 @@ export interface ComponentFieldDef {
  * 登记 + 后端 COMPONENT_CONFIG_FIELD_RULES 同步。其余结构性 config 仍由 componentSchemas.ts 宽松校验。
  *
  * 注：page 专属枚举/数组字段（defaultSort/hiddenColumns/defaultActive）的取值集合随页面而异，
- * 由各页设置抽屉用页面自带的枚举控件安全编辑（用户层）；配置中心不对其做自由文本编辑（见 ComponentSettingsSection）。
+ * 由共享渲染器 ComponentAutoSettings 用页面 componentMeta 提供的安全枚举控件编辑（设置抽屉=user 层、
+ * 页面布局编辑器=page 层），不做自由文本编辑。
  */
 export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldDef[]>> = {
   'data-table': [

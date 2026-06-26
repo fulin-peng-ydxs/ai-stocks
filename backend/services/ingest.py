@@ -352,6 +352,8 @@ class IngestionService:
 
         def _fail(code: str, e: Exception) -> None:
             log.warning("%s 估值入库失败: %s", code, e)
+            if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查（warn 级，不刷屏进度行）
+                ctx.log(f"{code} 历史总市值补采失败（{start}~{end}，源 {val_src.name}）：{e}", "warn")
             self.repo.log_update("daily_metrics", val_src.name, start, end, 0, "failed", f"{code}: {e}")
 
         if concurrency <= 1:  # 串行（默认，最稳）
@@ -461,6 +463,8 @@ class IngestionService:
                     rows += _one(code, src); ok += 1
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
+                    if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
+                        ctx.log(f"{code} 最新日总市值补采失败（{trade_date}）：{e}", "warn")
                 done_latest.add(code)
                 if i % 20 == 0 or i == n:
                     log.info("补最新日市值进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
@@ -507,6 +511,8 @@ class IngestionService:
                             rows += fut.result(); ok += 1
                         except Exception as e:  # noqa: BLE001
                             fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
+                            if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
+                                ctx.log(f"{code} 最新日总市值补采失败（{trade_date}）：{e}", "warn")
                         done_latest.add(code)
                         if i % 20 == 0 or i == n:
                             log.info("补最新日市值进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
@@ -563,6 +569,8 @@ class IngestionService:
                     rows += _one(item, self._source_for("valuation")); ok += 1
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
+                    if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
+                        ctx.log(f"{item[0]} 总市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
                 done_gap_codes.add(item[0])
                 if i % 20 == 0 or i == n:
                     log.info("市值回补进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
@@ -609,6 +617,8 @@ class IngestionService:
                             rows += fut.result(); ok += 1
                         except Exception as e:  # noqa: BLE001
                             fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
+                            if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
+                                ctx.log(f"{item[0]} 总市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
                         done_gap_codes.add(item[0])
                         if i % 20 == 0 or i == n:
                             log.info("市值回补进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)

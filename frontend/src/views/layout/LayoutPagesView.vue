@@ -16,11 +16,13 @@ import {
   getEffectiveLayoutConfig,
   getLayoutPageConfig,
   getLayoutUserConfig,
+  listFieldPolicies,
   listLayoutPresets,
   resetLayoutConfig,
   saveLayoutPageConfig,
   saveLayoutUserConfig,
   validateLayoutConfig,
+  type ComponentConfigLayer,
   type EffectiveLayoutConfig,
   type LayoutOverlayValue,
   type LayoutOverlayValues,
@@ -29,14 +31,13 @@ import {
   type LayoutUserConfig,
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
-import ComponentSettingsSection from '@/layout/components/ComponentSettingsSection.vue'
+import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 import LayoutPagePreview from '@/layout/components/LayoutPagePreview.vue'
 import {
   listManagedPages,
   getPageEntry,
   getPageLayout,
   getComponentFieldDef,
-  isLayerAllowed,
   componentConfigPath,
   isComponentConfigPath,
   responsiveProfileLabel,
@@ -81,6 +82,23 @@ function getPageComponentValue(slotId: string, field: string): unknown {
 }
 function setPageComponentValue(slotId: string, field: string, value: unknown): void {
   setPageKnob(componentConfigPath(slotId, field), value)
+}
+
+// 系统组件「可覆盖范围」开放策略（layout_field_policy）：键 `${kind}.${field}` → 当前生效层集合。
+// 挂载后拉一次；编辑器的可编辑判定与只读诊断都以此为准，与后端 _enforce_field_policy 同源，
+// 避免出现「前端可改、保存时后端才报越权」的脱节。
+const fieldPolicyMap = ref<Map<string, ComponentConfigLayer[]>>(new Map())
+async function reloadFieldPolicies() {
+  const { policies } = await listFieldPolicies()
+  fieldPolicyMap.value = new Map(policies.map((p) => [`${p.componentKind}.${p.field}`, p.allowedLayers]))
+}
+/** 某 (组件种类, 字段) 当前开放的层集合；无策略记录时回退代码最大集 def.layers。 */
+function componentAllowedLayers(kind: string, field: string): ComponentConfigLayer[] | undefined {
+  return fieldPolicyMap.value.get(`${kind}.${field}`)
+}
+/** 字段是否允许在指定层覆盖（策略优先，回退 def.layers）。 */
+function policyAllows(kind: string, def: ComponentFieldDef, layer: ComponentConfigLayer): boolean {
+  return (fieldPolicyMap.value.get(`${kind}.${def.key}`) ?? def.layers).includes(layer)
 }
 
 interface ComponentDiagnosticRow {
@@ -138,7 +156,7 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
         })
         continue
       }
-      if (!isLayerAllowed(def, 'page')) {
+      if (!policyAllows(slot.component, def, 'page')) {
         rows.push({
           slotId,
           slot: slot.label || slot.id,
@@ -147,7 +165,7 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
           fieldLabel: def.label,
           status: 'blocked',
           statusLabel: '不可页面层覆盖',
-          detail: '系统组件的可覆盖范围未包含 page 层。',
+          detail: '「系统组件」已将该字段的可覆盖范围收紧，不含 page 层；此处不开放编辑，保存也会被后端拒绝。',
         })
         continue
       }
@@ -189,12 +207,13 @@ function diagnosticTagType(status: ComponentDiagnosticRow['status']): 'success' 
 const focusedSlotSpec = computed<SlotSpec | null>(() =>
   focusedSlot.value ? (selectedPage.value.layout.slots.find((s) => s.id === focusedSlot.value) ?? null) : null,
 )
-const focusedComponentSlots = computed<SlotSpec[]>(() => (focusedSlotSpec.value ? [focusedSlotSpec.value] : []))
-const focusedComponentFields = computed<Record<string, string[]>>(() => {
-  const slot = focusedSlotSpec.value
-  if (!slot) return {}
-  return { [slot.id]: selectedPage.value.consumedComponentFields?.[slot.id] ?? [] }
-})
+// 聚焦单个 slot：仅把该 slot 交给共享渲染器（page 层）。
+const focusedSlotIds = computed<string[]>(() => (focusedSlot.value ? [focusedSlot.value] : []))
+// 把页面草稿访问器包装成共享渲染器期望的「组件配置访问器」形状（page 层写值经页面草稿）。
+const pageComponentConfig = {
+  componentValueOf: getPageComponentValue,
+  setComponentKnob: setPageComponentValue,
+}
 const focusedDiagnosticRows = computed(() =>
   focusedSlot.value ? componentDiagnosticRows.value.filter((row) => row.slotId === focusedSlot.value) : [],
 )
@@ -385,6 +404,7 @@ watch(selectedPageKey, async () => {
 })
 
 onMounted(async () => {
+  await reloadFieldPolicies()
   await reloadPresets()
   await loadPageConfig()
 })
@@ -511,24 +531,26 @@ onMounted(async () => {
                   />
                 </el-form>
 
-                <!-- 组件特性配置（页面层）：按页面 slots × 受控字段动态渲染，复用 ComponentSettingsSection。 -->
+                <!-- 组件特性配置（页面层）：复用与设置抽屉同一渲染器 ComponentAutoSettings（page 层、聚焦单 slot、按策略门控、可清除）。 -->
                 <template v-if="selectedPage.supportsComponentConfig">
                   <div class="cc-block-title">组件特性配置（页面默认）</div>
                   <div class="section-subtitle">点击左侧预览里的某个 slot 后，这里只展示该 slot 的页面层默认值。个人偏好仍在各页面设置抽屉里调整。</div>
-                  <div v-if="focusedSlotSpec" class="focused-slot-card">
-                    <div class="diag-main">{{ focusedSlotSpec.label || focusedSlotSpec.id }}</div>
-                    <div class="muted">{{ focusedSlotSpec.id }} · {{ focusedSlotSpec.component }} · {{ focusedSlotSpec.region }}</div>
+                  <!-- 受约束宽度容器：还原共享渲染器在窄抽屉里的密度，避免分段控件在宽面板被拉爆/溢出。 -->
+                  <div v-if="focusedSlotSpec" class="cc-cfg-host">
+                    <div class="focused-slot-card">
+                      <div class="diag-main">{{ focusedSlotSpec.label || focusedSlotSpec.id }}</div>
+                      <div class="muted">{{ focusedSlotSpec.id }} · {{ focusedSlotSpec.component }} · {{ focusedSlotSpec.region }}</div>
+                    </div>
+                    <ComponentAutoSettings
+                      :page-key="selectedPageKey"
+                      :config="pageComponentConfig"
+                      layer="page"
+                      :slot-ids="focusedSlotIds"
+                      :allowed-layers-of="componentAllowedLayers"
+                      :show-slot-title="false"
+                      clearable
+                    />
                   </div>
-                  <ComponentSettingsSection
-                    v-if="focusedSlotSpec"
-                    :slots="focusedComponentSlots"
-                    layer="page"
-                    :fields="focusedComponentFields"
-                    :meta="selectedPage.componentMeta"
-                    :get-value="getPageComponentValue"
-                    :set-value="setPageComponentValue"
-                    :highlight-slot="focusedSlot"
-                  />
                   <el-empty
                     v-else
                     description="点击左侧预览中的一个组件后，在这里编辑它的页面默认配置"
@@ -788,6 +810,10 @@ onMounted(async () => {
 }
 .diagnostic-table {
   margin-top: 10px;
+}
+.cc-cfg-host {
+  /* 共享组件按 ~360px 抽屉密度设计；宽面板里约束宽度，分段控件不被拉爆、内容不溢出。 */
+  max-width: 460px;
 }
 .focused-slot-card {
   margin-top: 10px;

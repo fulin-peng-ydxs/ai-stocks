@@ -78,7 +78,7 @@ function toggle() {
   background: var(--page-settings-seg-hover-bg);
 }
 .sg-l1 > .sg-head .sg-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--page-settings-text);
 }
@@ -95,13 +95,14 @@ function toggle() {
   padding-top: 12px;
   border-top: 1px solid var(--page-settings-section-border);
 }
+/* 深层标题作为"高于内容"的小标题：字号随层级递减但不低于正文(13px)，颜色加强以锚定其下控件。 */
 .sg-l2 > .sg-head .sg-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--page-settings-text-subtle);
+  color: var(--page-settings-text);
 }
 .sg-l3 > .sg-head .sg-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: .04em;
   text-transform: uppercase;

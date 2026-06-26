@@ -17,6 +17,7 @@ const chartType = ['line', 'bar', 'area', 'pie', 'scatter', 'candlestick']
 const tableShape: ConfigShape = {
   pagination: 'bool',
   pageSize: 'int',
+  defaultSort: 'string',
   columns: 'string[]',
   columnOrder: 'string[]',
   hiddenColumns: 'string[]',
