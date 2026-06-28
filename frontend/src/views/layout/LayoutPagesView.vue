@@ -533,7 +533,7 @@ onMounted(async () => {
 
                 <!-- 组件特性配置（页面层）：复用与设置抽屉同一渲染器 ComponentAutoSettings（page 层、聚焦单 slot、按策略门控、可清除）。 -->
                 <template v-if="selectedPage.supportsComponentConfig">
-                  <div class="cc-block-title">组件特性配置（页面默认）</div>
+                  <div class="cc-block-title">组件特性配置</div>
                   <div class="section-subtitle">点击左侧预览里的某个 slot 后，这里只展示该 slot 的页面层默认值。个人偏好仍在各页面设置抽屉里调整。</div>
                   <!-- 受约束宽度容器：还原共享渲染器在窄抽屉里的密度，避免分段控件在宽面板被拉爆/溢出。 -->
                   <div v-if="focusedSlotSpec" class="cc-cfg-host">
@@ -812,8 +812,8 @@ onMounted(async () => {
   margin-top: 10px;
 }
 .cc-cfg-host {
-  /* 共享组件按 ~360px 抽屉密度设计；宽面板里约束宽度，分段控件不被拉爆、内容不溢出。 */
-  max-width: 460px;
+  /* 与同卡片内的「默认预设/信息密度」等控件一致填满面板内容宽，避免窄一截、不对齐的空盒子观感。 */
+  width: 100%;
 }
 .focused-slot-card {
   margin-top: 10px;
