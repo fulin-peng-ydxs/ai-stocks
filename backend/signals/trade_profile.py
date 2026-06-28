@@ -19,6 +19,8 @@ import pandas as pd
 from backend.common.logging import get_logger
 from backend.scoring.score_profile import resolve_indicator
 from backend.storage.duckdb_client import get_client
+from backend.storage.pg_client import get_pg_client
+from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
 
 log = get_logger("signals.trade_profile")
 
@@ -128,14 +130,30 @@ DEFAULT_TRADE_PROFILES: list[dict] = [
 
 
 class TradeProfileRepo:
-    def __init__(self, client=None):
-        self.c = client or get_client()
-        from backend.storage.ddl import init_db
-        init_db(self.c)
+    """买卖方案存取（trade_profile，用户资产→PG）。
+
+    方案/版本走 PG（self.pg，%s + 归属过滤）；指标定义 indicator_def 仍在 DuckDB，
+    经 IndicatorDefRepo(self.mkt) 读取。第一位保留为 market 以兼容历史 Repo(c) 调用。
+    """
+
+    def __init__(self, market=None, pg=None, *, tenant_id: str | None = None,
+                 owner_user_id: str | None = None):
+        self.mkt = market or get_client()
+        self.pg = pg or get_pg_client()
+        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
+        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+
+    @property
+    def _own(self) -> str:
+        return "tenant_id=%s AND owner_user_id=%s"
+
+    @property
+    def _op(self) -> list:
+        return [self.tenant_id, self.owner_user_id]
 
     def _known(self) -> set[str]:
         from backend.indicators.definition import IndicatorDefRepo
-        return {d["key"] for d in IndicatorDefRepo(self.c).list()}
+        return {d["key"] for d in IndicatorDefRepo(self.mkt).list()}
 
     def save(self, pid: str, name: str, buy_tree: dict, sell_tree: dict | None,
              backstop: dict | None = None, is_preset: bool = False) -> int:
@@ -144,51 +162,58 @@ class TradeProfileRepo:
         bj = json.dumps(buy_tree, ensure_ascii=False)
         sj = json.dumps(sell_tree, ensure_ascii=False)
         kj = json.dumps(backstop or {}, ensure_ascii=False)
-        cur = self.c.query_df(
-            "SELECT version, name, buy_tree, sell_tree, backstop FROM trade_profile WHERE id=?", [pid])
+        cur = self.pg.query_df(
+            f"SELECT version, name, buy_tree, sell_tree, backstop, created_at FROM trade_profile "
+            f"WHERE id=%s AND {self._own}", [pid, *self._op])
         now = datetime.now()
         if not cur.empty:
             o = cur.iloc[0]
             if o["name"] == name and o["buy_tree"] == bj and o["sell_tree"] == sj and o["backstop"] == kj:
                 return int(o["version"])
             version = int(o["version"]) + 1
-            created = self.c.query_df("SELECT created_at FROM trade_profile WHERE id=?", [pid]).iloc[0]["created_at"]
+            created = o["created_at"]
         else:
             version, created = 1, now
-        self.c.execute(
-            "INSERT INTO trade_profile (id,name,version,buy_tree,sell_tree,backstop,is_preset,created_at,updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO UPDATE SET "
+        self.pg.execute(
+            "INSERT INTO trade_profile "
+            "(id,tenant_id,owner_user_id,name,version,buy_tree,sell_tree,backstop,is_preset,created_at,updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
             "name=EXCLUDED.name, version=EXCLUDED.version, buy_tree=EXCLUDED.buy_tree, "
             "sell_tree=EXCLUDED.sell_tree, backstop=EXCLUDED.backstop, is_preset=EXCLUDED.is_preset, "
             "updated_at=EXCLUDED.updated_at",
-            [pid, name, version, bj, sj, kj, is_preset, created, now])
-        self.c.execute(
-            "INSERT INTO trade_profile_version (id,version,name,buy_tree,sell_tree,backstop,saved_at) "
-            "VALUES (?,?,?,?,?,?,?) ON CONFLICT (id,version) DO UPDATE SET "
+            [pid, self.tenant_id, self.owner_user_id, name, version, bj, sj, kj, is_preset, created, now])
+        self.pg.execute(
+            "INSERT INTO trade_profile_version "
+            "(id,tenant_id,owner_user_id,version,name,buy_tree,sell_tree,backstop,saved_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id,version) DO UPDATE SET "
             "name=EXCLUDED.name, buy_tree=EXCLUDED.buy_tree, sell_tree=EXCLUDED.sell_tree, "
             "backstop=EXCLUDED.backstop, saved_at=EXCLUDED.saved_at",
-            [pid, version, name, bj, sj, kj, now])
+            [pid, self.tenant_id, self.owner_user_id, version, name, bj, sj, kj, now])
         return version
 
     def get(self, pid: str) -> dict | None:
-        df = self.c.query_df("SELECT * FROM trade_profile WHERE id=?", [pid])
+        df = self.pg.query_df(
+            f"SELECT * FROM trade_profile WHERE id=%s AND {self._own}", [pid, *self._op])
         if df.empty:
             return None
         r = df.iloc[0].to_dict()
+        r.pop("tenant_id", None)
+        r.pop("owner_user_id", None)
         r["buy_tree"] = json.loads(r["buy_tree"]) if r.get("buy_tree") else {}
         r["sell_tree"] = json.loads(r["sell_tree"]) if r.get("sell_tree") else {}
         r["backstop"] = json.loads(r["backstop"]) if r.get("backstop") else {}
         return r
 
     def list(self) -> list[dict]:
-        df = self.c.query_df(
-            "SELECT id, name, version, is_preset FROM trade_profile ORDER BY is_preset DESC, id")
+        df = self.pg.query_df(
+            f"SELECT id, name, version, is_preset FROM trade_profile WHERE {self._own} "
+            f"ORDER BY is_preset DESC, id", self._op)
         return df.to_dict("records")
 
     def versions(self, pid: str) -> list[dict]:
-        df = self.c.query_df(
-            "SELECT version,name,buy_tree,sell_tree,backstop,saved_at FROM trade_profile_version "
-            "WHERE id=? ORDER BY version DESC", [pid])
+        df = self.pg.query_df(
+            f"SELECT version,name,buy_tree,sell_tree,backstop,saved_at FROM trade_profile_version "
+            f"WHERE id=%s AND {self._own} ORDER BY version DESC", [pid, *self._op])
         out = []
         for r in df.to_dict("records"):
             r["buy_tree"] = json.loads(r["buy_tree"]) if r.get("buy_tree") else {}
@@ -199,8 +224,10 @@ class TradeProfileRepo:
         return out
 
     def delete(self, pid: str) -> None:
-        self.c.execute("DELETE FROM trade_profile WHERE id=?", [pid])
-        self.c.execute("DELETE FROM trade_profile_version WHERE id=?", [pid])
+        self.pg.execute(
+            f"DELETE FROM trade_profile WHERE id=%s AND {self._own}", [pid, *self._op])
+        self.pg.execute(
+            f"DELETE FROM trade_profile_version WHERE id=%s AND {self._own}", [pid, *self._op])
 
     def seed_defaults(self) -> int:
         for p in DEFAULT_TRADE_PROFILES:

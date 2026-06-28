@@ -12,8 +12,7 @@ from backend.signals.trade_profile import (
     eval_conditions,
     validate_trade_profile,
 )
-from backend.storage.ddl import init_db
-from backend.storage.duckdb_client import DuckDBClient
+from backend.tests.conftest import TEST_OWNER, TEST_TENANT
 
 
 def _snap():
@@ -66,23 +65,21 @@ def test_validate_rules():
                                sell, None, known)                        # 未知指标
 
 
-def test_repo_crud_version():
-    with DuckDBClient(db_path=":memory:") as c:
-        init_db(c)
-        IndicatorDefRepo(c).seed_builtins()                              # 提供 known 指标
-        repo = TradeProfileRepo(c)
-        buy = {"op": "AND", "children": [{"indicator": "bull_arrange", "cmp": "==", "value": True}]}
-        sell = {"op": "OR", "children": [{"indicator": "ma_bias", "params": {"n": 20}, "cmp": "<", "value": 0}]}
-        v1 = repo.save("t1", "方案一", buy, sell, {"stop_loss": 0.08})
-        assert v1 == 1
-        assert repo.save("t1", "方案一", buy, sell, {"stop_loss": 0.08}) == 1   # 不变不增版本
-        buy2 = {"op": "AND", "children": [
-            {"indicator": "bull_arrange", "cmp": "==", "value": True},
-            {"indicator": "is_vol_breakout", "cmp": "==", "value": True}]}
-        assert repo.save("t1", "方案一", buy2, sell, {"stop_loss": 0.08}) == 2  # 买入变 → +1
-        got = repo.get("t1")
-        assert got["version"] == 2 and len(got["buy_tree"]["children"]) == 2
-        assert got["backstop"]["stop_loss"] == 0.08
-        assert len(repo.versions("t1")) == 2
-        repo.delete("t1")
-        assert repo.get("t1") is None
+def test_repo_crud_version(market, pg):
+    IndicatorDefRepo(market).seed_builtins()                          # 提供 known 指标（DuckDB）
+    repo = TradeProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    buy = {"op": "AND", "children": [{"indicator": "bull_arrange", "cmp": "==", "value": True}]}
+    sell = {"op": "OR", "children": [{"indicator": "ma_bias", "params": {"n": 20}, "cmp": "<", "value": 0}]}
+    v1 = repo.save("t1", "方案一", buy, sell, {"stop_loss": 0.08})
+    assert v1 == 1
+    assert repo.save("t1", "方案一", buy, sell, {"stop_loss": 0.08}) == 1   # 不变不增版本
+    buy2 = {"op": "AND", "children": [
+        {"indicator": "bull_arrange", "cmp": "==", "value": True},
+        {"indicator": "is_vol_breakout", "cmp": "==", "value": True}]}
+    assert repo.save("t1", "方案一", buy2, sell, {"stop_loss": 0.08}) == 2  # 买入变 → +1
+    got = repo.get("t1")
+    assert got["version"] == 2 and len(got["buy_tree"]["children"]) == 2
+    assert got["backstop"]["stop_loss"] == 0.08
+    assert len(repo.versions("t1")) == 2
+    repo.delete("t1")
+    assert repo.get("t1") is None

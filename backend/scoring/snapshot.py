@@ -16,6 +16,8 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import get_client
+from backend.storage.pg_client import get_pg_client
+from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
 
 log = get_logger("scoring.snapshot")
 
@@ -55,14 +57,29 @@ def score_day(c, run_date: date, profile: dict) -> pd.DataFrame:
 
 
 class ScoreSnapshotRepo:
-    def __init__(self, client=None):
-        self.c = client or get_client()
-        from backend.storage.ddl import init_db
-        init_db(self.c)
+    """评分快照惰性物化（用户资产→PG；计算读行情→DuckDB）。
+
+    - 快照明细/元数据走 PG（self.pg，%s + 归属过滤），批量写用 AssetRepository。
+    - score_day 计算读行情/指标走 DuckDB（self.mkt）。
+    - 失效标记（mark_stale_*）是**全局**的：行情变更影响所有归属者，不按归属过滤。
+    第一位保留为 market 以兼容历史 ScoreSnapshotRepo(c) 调用。
+    """
+
+    def __init__(self, market=None, pg=None, *, tenant_id: str | None = None,
+                 owner_user_id: str | None = None):
+        self.mkt = market or get_client()
+        self.pg = pg or get_pg_client()
+        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
+        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+
+    @property
+    def _op(self) -> list:
+        return [self.tenant_id, self.owner_user_id]
 
     def _profile(self, profile_id: str) -> dict | None:
         from backend.scoring.score_profile import ScoreProfileRepo
-        return ScoreProfileRepo(self.c).get(profile_id)
+        return ScoreProfileRepo(market=self.mkt, pg=self.pg, tenant_id=self.tenant_id,
+                                owner_user_id=self.owner_user_id).get(profile_id)
 
     def get_board(self, run_date: date, profile_id: str, top: int | None = None,
                   profile: dict | None = None) -> pd.DataFrame:
@@ -75,53 +92,60 @@ class ScoreSnapshotRepo:
             return pd.DataFrame(columns=_COLS)
         version = int(prof.get("version") or 1)
         if self._fresh(run_date, profile_id, version):
-            rows = self.c.query_df(
+            rows = self.pg.query_df(
                 "SELECT code, total_score, grade, rank, sub_scores FROM score_snapshot "
-                "WHERE trade_date=? AND profile_id=? AND profile_version=? ORDER BY rank",
-                [run_date, profile_id, version])
+                "WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
+                "AND tenant_id=%s AND owner_user_id=%s ORDER BY rank",
+                [run_date, profile_id, version, *self._op])
         else:
             rows = self._materialize(run_date, profile_id, version, prof)
         return rows.head(top) if top else rows
 
     def _fresh(self, run_date: date, profile_id: str, version: int) -> bool:
-        m = self.c.query_df(
-            "SELECT stale FROM score_snapshot_meta WHERE trade_date=? AND profile_id=? AND profile_version=?",
-            [run_date, profile_id, version])
+        m = self.pg.query_df(
+            "SELECT stale FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
+            "AND profile_version=%s AND tenant_id=%s AND owner_user_id=%s",
+            [run_date, profile_id, version, *self._op])
         return (not m.empty) and (not bool(m.iloc[0]["stale"]))
 
     def _materialize(self, run_date: date, profile_id: str, version: int, profile: dict) -> pd.DataFrame:
         """重算该日该方案 → 覆盖 score_snapshot 明细 + 刷新 meta(stale=false)。"""
-        from backend.storage.repository import MarketRepository
-        df = score_day(self.c, run_date, profile)
-        self.c.execute(
-            "DELETE FROM score_snapshot WHERE trade_date=? AND profile_id=? AND profile_version=?",
-            [run_date, profile_id, version])
+        from backend.storage.asset_repository import AssetRepository
+        df = score_day(self.mkt, run_date, profile)
+        self.pg.execute(
+            "DELETE FROM score_snapshot WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
+            "AND tenant_id=%s AND owner_user_id=%s",
+            [run_date, profile_id, version, *self._op])
         if not df.empty:
             rows = df.copy()
             rows.insert(0, "trade_date", run_date)
             rows.insert(1, "profile_id", profile_id)
             rows.insert(2, "profile_version", version)
-            MarketRepository(self.c).upsert("score_snapshot", rows)
-        self.c.execute(
-            "DELETE FROM score_snapshot_meta WHERE trade_date=? AND profile_id=? AND profile_version=?",
-            [run_date, profile_id, version])
-        self.c.execute(
-            "INSERT INTO score_snapshot_meta (trade_date, profile_id, profile_version, computed_at, stale, n_codes) "
-            "VALUES (?,?,?,?,?,?)",
-            [run_date, profile_id, version, datetime.now(), False, int(len(df))])
+            AssetRepository(self.pg, tenant_id=self.tenant_id,
+                            owner_user_id=self.owner_user_id).upsert("score_snapshot", rows)
+        self.pg.execute(
+            "DELETE FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
+            "AND tenant_id=%s AND owner_user_id=%s",
+            [run_date, profile_id, version, *self._op])
+        self.pg.execute(
+            "INSERT INTO score_snapshot_meta "
+            "(trade_date, profile_id, profile_version, tenant_id, owner_user_id, computed_at, stale, n_codes) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            [run_date, profile_id, version, self.tenant_id, self.owner_user_id,
+             datetime.now(), False, int(len(df))])
         log.info("评分快照物化 %s/%s v%d → %d 只", run_date, profile_id, version, len(df))
         return df
 
-    # ── 失效（惰性标记，不重算）──
+    # ── 失效（惰性标记，不重算）；行情共享 → 全局失效，不按归属过滤 ──
     def mark_stale_dates(self, trade_dates: list[date]) -> int:
-        """触发器1：行情数据变更后，把这些交易日的**所有方案版本**快照标记失效。返回受影响行数。"""
+        """触发器1：行情数据变更后，把这些交易日的**所有方案版本/所有归属者**快照标记失效。"""
         dates = [d for d in trade_dates if d is not None]
         if not dates:
             return 0
-        ph = ",".join("?" * len(dates))
-        before = self.c.query_df(
-            f"SELECT count(*) n FROM score_snapshot_meta WHERE trade_date IN ({ph}) AND stale=false", dates)
-        self.c.execute(
+        ph = ",".join(["%s"] * len(dates))
+        before = self.pg.query_df(
+            f"SELECT count(*) AS n FROM score_snapshot_meta WHERE trade_date IN ({ph}) AND stale=false", dates)
+        self.pg.execute(
             f"UPDATE score_snapshot_meta SET stale=true WHERE trade_date IN ({ph})", dates)
         n = int(before.iloc[0]["n"]) if not before.empty else 0
         if n:
@@ -130,15 +154,15 @@ class ScoreSnapshotRepo:
 
     def mark_stale_all(self) -> int:
         """触发器1（粗粒度）：数据全量变更（补数/重算）后标记全部快照失效。返回受影响行数。"""
-        before = self.c.query_df("SELECT count(*) n FROM score_snapshot_meta WHERE stale=false")
-        self.c.execute("UPDATE score_snapshot_meta SET stale=true")
+        before = self.pg.query_df("SELECT count(*) AS n FROM score_snapshot_meta WHERE stale=false")
+        self.pg.execute("UPDATE score_snapshot_meta SET stale=true")
         n = int(before.iloc[0]["n"]) if not before.empty else 0
         if n:
             log.info("评分快照全部标记失效：%d 个交易日×方案 → stale", n)
         return n
 
     def stats(self) -> dict:
-        df = self.c.query_df(
+        df = self.pg.query_df(
             "SELECT count(*) AS metas, sum(CASE WHEN stale THEN 1 ELSE 0 END) AS stale_n, "
             "sum(n_codes) AS rows FROM score_snapshot_meta")
         r = df.iloc[0]

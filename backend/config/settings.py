@@ -141,6 +141,37 @@ class ServerConfig(BaseModel):
     log_level: str = "info"
 
 
+class PostgresConfig(BaseModel):
+    """PostgreSQL 资产/权限/审计/字典库（多租户混合持久层，stage1）。
+
+    非敏感连接参数放 YAML；**密码不入 YAML、不入码**，运行时从环境变量读取：
+    - AI_STOCKS_PG_DSN：整串覆盖（优先级最高，便于多环境/容器）
+    - AI_STOCKS_PG_PASSWORD：仅覆盖密码
+    见 Settings.pg_conninfo()。
+    """
+
+    host: str = "127.0.0.1"
+    port: int = 5432
+    database: str = "ai_stocks"
+    user: str = "ai_stocks"
+    pool_min: int = 1          # 连接池下限
+    pool_max: int = 10         # 连接池上限（与线程池并发匹配）
+
+
+class RedisConfig(BaseModel):
+    """Redis 短状态库（限流/验证码/token 黑名单/perm_ver，stage1 仅建底座）。
+
+    密码从环境变量读取：
+    - AI_STOCKS_REDIS_URL：整串覆盖（优先级最高）
+    - AI_STOCKS_REDIS_PASSWORD：仅覆盖密码
+    见 Settings.redis_url()。
+    """
+
+    host: str = "127.0.0.1"
+    port: int = 6379
+    db: int = 0
+
+
 class Settings(BaseModel):
     """全局配置根模型。"""
 
@@ -153,10 +184,45 @@ class Settings(BaseModel):
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)
     scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    postgres: PostgresConfig = Field(default_factory=PostgresConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
 
     # ── 派生：绝对路径辅助 ──
     def duckdb_path(self) -> Path:
         return _resolve(self.paths.duckdb_file)
+
+    # ── 派生：外部存储连接（密码走环境变量，不入库不入码）──
+    def pg_conninfo(self) -> str:
+        """组装 psycopg 连接串（keyword/value）。
+
+        优先级：AI_STOCKS_PG_DSN（整串） > YAML 参数 + AI_STOCKS_PG_PASSWORD（密码）。
+        """
+        dsn = os.environ.get("AI_STOCKS_PG_DSN")
+        if dsn:
+            return dsn
+        p = self.postgres
+        # connect_timeout 上界 libpq 建连耗时，避免 PG 不可达时长时间挂起（启动自检/测试 skip 更干脆）
+        parts = [
+            f"host={p.host}",
+            f"port={p.port}",
+            f"dbname={p.database}",
+            f"user={p.user}",
+            "connect_timeout=10",
+        ]
+        pwd = os.environ.get("AI_STOCKS_PG_PASSWORD", "")
+        if pwd:
+            parts.append(f"password={pwd}")
+        return " ".join(parts)
+
+    def redis_url(self) -> str:
+        """组装 redis URL。优先级：AI_STOCKS_REDIS_URL > YAML 参数 + AI_STOCKS_REDIS_PASSWORD。"""
+        url = os.environ.get("AI_STOCKS_REDIS_URL")
+        if url:
+            return url
+        r = self.redis
+        pwd = os.environ.get("AI_STOCKS_REDIS_PASSWORD", "")
+        auth = f":{pwd}@" if pwd else ""
+        return f"redis://{auth}{r.host}:{r.port}/{r.db}"
 
     def export_path(self) -> Path:
         return _resolve(self.paths.export_dir)

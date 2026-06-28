@@ -6,14 +6,14 @@ from fastapi import APIRouter
 
 from backend.api.response import ApiResponse, ok
 from backend.config import get_settings
-from backend.storage import get_client
+from backend.storage import get_client, get_pg_client, get_redis_client
 
 router = APIRouter(prefix="/api", tags=["health"])
 
 
 @router.get("/health", response_model=ApiResponse)
 def health() -> ApiResponse:
-    """返回服务健康状态 + DuckDB 连通性 + 配置摘要。"""
+    """返回服务健康状态 + 三类存储连通性 + 配置摘要（混合持久层：DuckDB+PG+Redis）。"""
     s = get_settings()
     duckdb_ok = False
     duckdb_detail = ""
@@ -25,11 +25,31 @@ def health() -> ApiResponse:
     except Exception as e:  # noqa: BLE001
         duckdb_detail = str(e)
 
+    pg_ok = False
+    pg_detail = ""
+    try:
+        pg_ok = get_pg_client().ping()
+        pg_detail = f"postgres @ {s.postgres.host}:{s.postgres.port}/{s.postgres.database}"
+    except Exception as e:  # noqa: BLE001
+        pg_detail = str(e)
+
+    redis_ok = False
+    redis_detail = ""
+    try:
+        redis_ok = get_redis_client().ping()
+        redis_detail = f"redis @ {s.redis.host}:{s.redis.port}/{s.redis.db}"
+    except Exception as e:  # noqa: BLE001
+        redis_detail = str(e)
+
     return ok(
         {
             "status": "up",
             "duckdb_ok": duckdb_ok,
             "duckdb": duckdb_detail,
+            "pg_ok": pg_ok,
+            "postgres": pg_detail,
+            "redis_ok": redis_ok,
+            "redis": redis_detail,
             "history_years": s.datasource.history_years,
             "benchmark_main": s.backtest.benchmark_main,
             "top_n": s.scoring.top_n,

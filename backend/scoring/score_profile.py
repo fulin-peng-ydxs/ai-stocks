@@ -20,6 +20,8 @@ import pandas as pd
 from backend.common.logging import get_logger
 from backend.config import get_settings
 from backend.storage.duckdb_client import get_client
+from backend.storage.pg_client import get_pg_client
+from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
 
 log = get_logger("scoring.score_profile")
 
@@ -168,63 +170,86 @@ def validate_profile(items: list[dict], known_keys: set[str] | None = None) -> N
 
 
 class ScoreProfileRepo:
-    def __init__(self, client=None):
-        self.c = client or get_client()
-        from backend.storage.ddl import init_db
-        init_db(self.c)
+    """评分方案存取（score_profile，用户资产→PG）。
+
+    混合持久层：方案/版本走 PG（self.pg，%s + 归属过滤）；指标定义 indicator_def 仍在
+    DuckDB，经 IndicatorDefRepo(self.mkt) 读取。第一位保留为 market 以兼容历史 Repo(c) 调用。
+    """
+
+    def __init__(self, market=None, pg=None, *, tenant_id: str | None = None,
+                 owner_user_id: str | None = None):
+        self.mkt = market or get_client()           # 行情/指标定义库（DuckDB）
+        self.pg = pg or get_pg_client()             # 资产库（PG）
+        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
+        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+
+    @property
+    def _own(self) -> str:
+        return "tenant_id=%s AND owner_user_id=%s"
+
+    @property
+    def _op(self) -> list:
+        return [self.tenant_id, self.owner_user_id]
 
     def save(self, pid: str, name: str, items: list[dict],
              grade_thresholds: dict | None = None, is_preset: bool = False) -> int:
         from backend.indicators.definition import IndicatorDefRepo
-        known = {d["key"] for d in IndicatorDefRepo(self.c).list()}
+        known = {d["key"] for d in IndicatorDefRepo(self.mkt).list()}
         validate_profile(items, known_keys=known)
         items_json = json.dumps(items, ensure_ascii=False)
         gt_json = json.dumps(grade_thresholds or {}, ensure_ascii=False)
-        cur = self.c.query_df(
-            "SELECT version, name, items, grade_thresholds FROM score_profile WHERE id=?", [pid])
+        cur = self.pg.query_df(
+            f"SELECT version, name, items, grade_thresholds, created_at FROM score_profile "
+            f"WHERE id=%s AND {self._own}", [pid, *self._op])
         now = datetime.now()
         if not cur.empty:
             old = cur.iloc[0]
             if old["name"] == name and old["items"] == items_json and old["grade_thresholds"] == gt_json:
                 return int(old["version"])
             version = int(old["version"]) + 1
-            created = self.c.query_df(
-                "SELECT created_at FROM score_profile WHERE id=?", [pid]).iloc[0]["created_at"]
+            created = old["created_at"]
         else:
             version, created = 1, now
-        self.c.execute(
-            "INSERT INTO score_profile (id,name,version,items,grade_thresholds,is_preset,created_at,updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (id) DO UPDATE SET "
+        self.pg.execute(
+            "INSERT INTO score_profile "
+            "(id,tenant_id,owner_user_id,name,version,items,grade_thresholds,is_preset,created_at,updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
             "name=EXCLUDED.name, version=EXCLUDED.version, items=EXCLUDED.items, "
             "grade_thresholds=EXCLUDED.grade_thresholds, is_preset=EXCLUDED.is_preset, updated_at=EXCLUDED.updated_at",
-            [pid, name, version, items_json, gt_json, is_preset, created, now],
+            [pid, self.tenant_id, self.owner_user_id, name, version, items_json, gt_json,
+             is_preset, created, now],
         )
-        self.c.execute(
-            "INSERT INTO score_profile_version (id,version,name,items,grade_thresholds,saved_at) "
-            "VALUES (?,?,?,?,?,?) ON CONFLICT (id,version) DO UPDATE SET "
+        self.pg.execute(
+            "INSERT INTO score_profile_version "
+            "(id,tenant_id,owner_user_id,version,name,items,grade_thresholds,saved_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id,version) DO UPDATE SET "
             "name=EXCLUDED.name, items=EXCLUDED.items, grade_thresholds=EXCLUDED.grade_thresholds, saved_at=EXCLUDED.saved_at",
-            [pid, version, name, items_json, gt_json, now],
+            [pid, self.tenant_id, self.owner_user_id, version, name, items_json, gt_json, now],
         )
         return version
 
     def get(self, pid: str) -> dict | None:
-        df = self.c.query_df("SELECT * FROM score_profile WHERE id=?", [pid])
+        df = self.pg.query_df(
+            f"SELECT * FROM score_profile WHERE id=%s AND {self._own}", [pid, *self._op])
         if df.empty:
             return None
         r = df.iloc[0].to_dict()
+        r.pop("tenant_id", None)
+        r.pop("owner_user_id", None)
         r["items"] = json.loads(r["items"]) if r.get("items") else []
         r["grade_thresholds"] = json.loads(r["grade_thresholds"]) if r.get("grade_thresholds") else {}
         return r
 
     def list(self) -> list[dict]:
-        df = self.c.query_df(
-            "SELECT id, name, version, is_preset FROM score_profile ORDER BY is_preset DESC, id")
+        df = self.pg.query_df(
+            f"SELECT id, name, version, is_preset FROM score_profile WHERE {self._own} "
+            f"ORDER BY is_preset DESC, id", self._op)
         return df.to_dict("records")
 
     def versions(self, pid: str) -> list[dict]:
-        df = self.c.query_df(
-            "SELECT version, name, items, grade_thresholds, saved_at FROM score_profile_version "
-            "WHERE id=? ORDER BY version DESC", [pid])
+        df = self.pg.query_df(
+            f"SELECT version, name, items, grade_thresholds, saved_at FROM score_profile_version "
+            f"WHERE id=%s AND {self._own} ORDER BY version DESC", [pid, *self._op])
         out = []
         for r in df.to_dict("records"):
             r["items"] = json.loads(r["items"])
@@ -234,8 +259,10 @@ class ScoreProfileRepo:
         return out
 
     def delete(self, pid: str) -> None:
-        self.c.execute("DELETE FROM score_profile WHERE id=?", [pid])
-        self.c.execute("DELETE FROM score_profile_version WHERE id=?", [pid])
+        self.pg.execute(
+            f"DELETE FROM score_profile WHERE id=%s AND {self._own}", [pid, *self._op])
+        self.pg.execute(
+            f"DELETE FROM score_profile_version WHERE id=%s AND {self._own}", [pid, *self._op])
 
     def seed_defaults(self) -> int:
         for p in DEFAULT_SCORE_PROFILES:

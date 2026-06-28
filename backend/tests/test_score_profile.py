@@ -11,8 +11,7 @@ from backend.scoring.score_profile import (
     resolve_indicator,
     score_one,
 )
-from backend.storage.ddl import init_db
-from backend.storage.duckdb_client import DuckDBClient
+from backend.tests.conftest import TEST_OWNER, TEST_TENANT
 
 
 def _snap():
@@ -90,31 +89,41 @@ def test_resolver_dynamic_param_and_errors():
         resolve_indicator("不存在指标", {}, snap)
 
 
-def test_repo_save_get_version_delete():
-    with DuckDBClient(db_path=":memory:") as c:
-        init_db(c)
-        repo = ScoreProfileRepo(c)
-        items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
-        v1 = repo.save("p1", "方案一", items)
-        assert v1 == 1
-        # 内容不变 → 版本不增
-        assert repo.save("p1", "方案一", items) == 1
-        # 实质变更 → +1
-        items2 = items + [{"indicator": "is_bull_arrange", "weight": 0.5, "scoring": {"type": "bool"}}]
-        assert repo.save("p1", "方案一", items2) == 2
-        got = repo.get("p1")
-        assert got["version"] == 2 and len(got["items"]) == 2
-        assert len(repo.versions("p1")) == 2
-        repo.delete("p1")
-        assert repo.get("p1") is None
+def test_repo_save_get_version_delete(market, pg):
+    repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    v1 = repo.save("p1", "方案一", items)
+    assert v1 == 1
+    # 内容不变 → 版本不增
+    assert repo.save("p1", "方案一", items) == 1
+    # 实质变更 → +1
+    items2 = items + [{"indicator": "is_bull_arrange", "weight": 0.5, "scoring": {"type": "bool"}}]
+    assert repo.save("p1", "方案一", items2) == 2
+    got = repo.get("p1")
+    assert got["version"] == 2 and len(got["items"]) == 2
+    assert len(repo.versions("p1")) == 2
+    repo.delete("p1")
+    assert repo.get("p1") is None
 
 
-def test_repo_validate_rejects_bad_profile():
-    with DuckDBClient(db_path=":memory:") as c:
-        init_db(c)
-        repo = ScoreProfileRepo(c)
-        with pytest.raises(ValueError):
-            repo.save("bad", "空", [])                                  # 无指标项
-        with pytest.raises(ValueError):
-            repo.save("bad", "零权重", [{"indicator": "rs_pct", "weight": 0,
-                                       "scoring": {"type": "bool"}}])
+def test_repo_validate_rejects_bad_profile(market, pg):
+    repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    with pytest.raises(ValueError):
+        repo.save("bad", "空", [])                                  # 无指标项
+    with pytest.raises(ValueError):
+        repo.save("bad", "零权重", [{"indicator": "rs_pct", "weight": 0,
+                                   "scoring": {"type": "bool"}}])
+
+
+def test_repo_isolation_by_owner(market, pg):
+    """不同归属者互不可见（多租户隔离 R9）。"""
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    mine = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    mine.save("p_iso", "我的", items)
+    other = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id="pytest_other")
+    try:
+        assert other.get("p_iso") is None
+        assert all(x["id"] != "p_iso" for x in other.list())
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", ["pytest_other"])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", ["pytest_other"])

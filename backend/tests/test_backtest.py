@@ -304,20 +304,50 @@ def test_engine_no_same_day_sell_then_rebuy():
             assert b["entry_date"] > a["exit_date"], "卖出当日不应重新买回"
 
 
-def test_backtest_service_delete_run():
-    """删除历史回测：清掉 run + trade/equity/metrics，幂等返回是否存在。"""
+def test_backtest_service_delete_run(market, pg):
+    """删除历史回测：清掉 run + trade/equity/metrics，幂等返回是否存在。回测表在 PG。"""
+    from datetime import date as _date
+
     from backend.services.backtest_service import BacktestService
-    with DuckDBClient(db_path=":memory:") as c:
-        svc = BacktestService(c)
-        c.execute("INSERT INTO backtest_run (id, kind, status) VALUES ('r1','strategy','done')")
-        c.execute("INSERT INTO backtest_trade (run_id, seq, code) VALUES ('r1', 1, 'X.SH')")
-        c.execute("INSERT INTO backtest_equity (run_id, trade_date, equity) VALUES ('r1', DATE '2024-01-02', 1.0)")
-        c.execute("INSERT INTO backtest_metrics (run_id, total_return) VALUES ('r1', 0.1)")
-        assert svc.delete_run("r1") is True
-        assert c.query_df("SELECT 1 FROM backtest_run WHERE id='r1'").empty
-        assert c.query_df("SELECT 1 FROM backtest_trade WHERE run_id='r1'").empty
-        assert c.query_df("SELECT 1 FROM backtest_metrics WHERE run_id='r1'").empty
-        assert svc.delete_run("nope") is False  # 不存在 → False
+    from backend.tests.conftest import TEST_OWNER, TEST_TENANT
+    svc = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    own = [TEST_TENANT, TEST_OWNER]
+    pg.execute("INSERT INTO backtest_run (id,tenant_id,owner_user_id,kind,status) VALUES (%s,%s,%s,'strategy','done')", ["r1", *own])
+    pg.execute("INSERT INTO backtest_trade (run_id,tenant_id,owner_user_id,seq,code) VALUES (%s,%s,%s,1,'X.SH')", ["r1", *own])
+    pg.execute("INSERT INTO backtest_equity (run_id,tenant_id,owner_user_id,trade_date,equity) VALUES (%s,%s,%s,%s,1.0)", ["r1", *own, _date(2024, 1, 2)])
+    pg.execute("INSERT INTO backtest_metrics (run_id,tenant_id,owner_user_id,total_return) VALUES (%s,%s,%s,0.1)", ["r1", *own])
+    assert svc.delete_run("r1") is True
+    assert pg.query_df("SELECT 1 FROM backtest_run WHERE id='r1' AND owner_user_id=%s", [TEST_OWNER]).empty
+    assert pg.query_df("SELECT 1 FROM backtest_trade WHERE run_id='r1' AND owner_user_id=%s", [TEST_OWNER]).empty
+    assert pg.query_df("SELECT 1 FROM backtest_metrics WHERE run_id='r1' AND owner_user_id=%s", [TEST_OWNER]).empty
+    assert svc.delete_run("nope") is False  # 不存在 → False
+
+
+def test_backtest_service_list_get_run(market, pg):
+    """读路径：list_runs 的 run⋈screen_profile⋈metrics JOIN（全在 PG）+ get_run 归属过滤。"""
+    from datetime import date as _date
+
+    from backend.services.backtest_service import BacktestService
+    from backend.tests.conftest import TEST_OWNER, TEST_TENANT
+    svc = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    own = [TEST_TENANT, TEST_OWNER]
+    pg.execute("INSERT INTO screen_profile (id,tenant_id,owner_user_id,name,version) VALUES (%s,%s,%s,'趋势龙头',1)", ["sp1", *own])
+    pg.execute(
+        "INSERT INTO backtest_run (id,tenant_id,owner_user_id,kind,profile_id,date_start,date_end,status,created_at) "
+        "VALUES (%s,%s,%s,'strategy','sp1',%s,%s,'done',now())", ["r9", *own, _date(2024, 1, 2), _date(2024, 1, 15)])
+    pg.execute("INSERT INTO backtest_metrics (run_id,tenant_id,owner_user_id,total_return) VALUES (%s,%s,%s,0.25)", ["r9", *own])
+
+    runs = svc.list_runs(kind="strategy")
+    mine = [r for r in runs if r["id"] == "r9"]
+    assert mine and mine[0]["profile_name"] == "趋势龙头"   # PG 内 JOIN 取到方案名
+    assert float(mine[0]["total_return"]) == 0.25
+
+    got = svc.get_run("r9")
+    assert got and got["run"]["kind"] == "strategy"
+    assert "tenant_id" not in got["run"]                    # 内部归属字段不外泄
+    # 跨归属不可见
+    other = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id="pytest_other")
+    assert other.get_run("r9") is None
 
 
 # ── 绩效指标 ──────────────────────────────────────────────────

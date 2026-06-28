@@ -26,5 +26,9 @@ baostock>=0.8.8
 # 调度
 APScheduler>=3.10
 
+# 混合持久层（多租户）：PG 资产/权限/审计/字典库 + Redis 短状态库
+psycopg[binary,pool]>=3.1
+redis>=5.0
+
 # 测试
 pytest>=8.0

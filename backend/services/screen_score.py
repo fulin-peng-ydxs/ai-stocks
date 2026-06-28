@@ -24,13 +24,21 @@ log = get_logger("services.screen_score")
 
 
 class ScreenScoreService:
-    def __init__(self, client=None):
+    def __init__(self, client=None, *, tenant_id: str | None = None,
+                 owner_user_id: str | None = None):
         self.c = client or get_client()
+        from backend.storage.asset_repository import AssetRepository
         from backend.storage.ddl import init_db
+        from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
         init_db(self.c)
-        self.repo = MarketRepository(self.c)
+        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
+        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+        self.repo = MarketRepository(self.c)                 # 行情库（DuckDB）
+        self.assets = AssetRepository(tenant_id=self.tenant_id,
+                                      owner_user_id=self.owner_user_id)  # 结果库（PG）
         self.engine = ScreenEngine(self.c)
-        self.profiles = ProfileRepo(self.c)
+        self.profiles = ProfileRepo(market=self.c, tenant_id=self.tenant_id,
+                                    owner_user_id=self.owner_user_id)
         self.model = ScoreModel()
         self.s = get_settings()
 
@@ -47,7 +55,7 @@ class ScreenScoreService:
                 "hit": True, "matched": json.dumps({"profile": prof["name"]}, ensure_ascii=False),
                 "snapshot": None,
             })
-            self.repo.upsert("screen_result", rows)
+            self.assets.upsert("screen_result", rows)
         log.info("方案[%s] %s 命中 %d 只", prof["name"], run_date, len(hits))
         return hits
 
@@ -240,12 +248,13 @@ class ScreenScoreService:
                 "risk_flags": [json.dumps(_merged_risk(c), ensure_ascii=False)
                                for c in scored["code"]],
             })
-            # 整日全量替换：先清当日旧榜单，避免被排除/退榜的股票残留旧行
-            self.c.execute(
-                "DELETE FROM score_result WHERE trade_date = ? AND model_id = ?",
-                [run_date, model_id],
+            # 整日全量替换：先清当日旧榜单，避免被排除/退榜的股票残留旧行（按归属，PG）
+            self.assets.pg.execute(
+                "DELETE FROM score_result WHERE trade_date=%s AND model_id=%s "
+                "AND tenant_id=%s AND owner_user_id=%s",
+                [run_date, model_id, self.tenant_id, self.owner_user_id],
             )
-            self.repo.upsert("score_result", rows)
+            self.assets.upsert("score_result", rows)
         log.info("%s 打分排序 %d 只（已排除 ST），Top%d 已出", run_date, len(scored), top_n)
         return scored.head(top_n)
 

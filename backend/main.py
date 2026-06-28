@@ -99,6 +99,23 @@ def create_app() -> FastAPI:
             return FileResponse(str(index_file))  # 其余一律回退到 SPA 入口
         log.info("前端静态资源已挂载（含 SPA 回退）: %s", dist)
 
+    # ── 启动：混合持久层连通性自检（stage1 R1）──
+    # 行情 DuckDB + 资产 PostgreSQL + 短状态 Redis 三类存储任一不通即明确启动失败，
+    # 避免运行期才暴露连接问题（密码不进异常信息，见各 client）。
+    @app.on_event("startup")
+    def _check_storages() -> None:
+        from backend.storage import get_pg_client, get_redis_client
+
+        if not get_pg_client().ping():
+            raise RuntimeError("PostgreSQL 连通性自检失败：ping 未返回预期结果")
+        if not get_redis_client().ping():
+            raise RuntimeError("Redis 连通性自检失败：ping 未返回 PONG")
+        # 幂等建 PG 资产/骨架表 + seed 默认租户/管理员（一次性，避免每次构造仓库重建）
+        from backend.storage.pg_ddl import init_pg_db
+
+        init_pg_db()
+        log.info("混合持久层自检通过：DuckDB + PostgreSQL + Redis 均连通，PG 资产表已就绪")
+
     # ── 启动：任务 reconcile（FR-DM-10）+ 定时调度（按 scheduler.enabled）──
     @app.on_event("startup")
     def _reconcile_tasks() -> None:

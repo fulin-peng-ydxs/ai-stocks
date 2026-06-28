@@ -66,7 +66,7 @@ def list_stocks(q: str | None = None, board: str | None = None,
         f"WHERE {where} ORDER BY {order_clause} LIMIT {int(size)} OFFSET {int((page-1)*size)}",
         [td, *params])
     rows = df.to_dict("records")
-    groups_by_code = StockGroupRepo(c).groups_for_codes([r["code"] for r in rows])
+    groups_by_code = StockGroupRepo(market=c).groups_for_codes([r["code"] for r in rows])
     for r in rows:
         r["list_date"] = str(r["list_date"]) if r.get("list_date") is not None and not pd.isna(r["list_date"]) else None
         r["delist_date"] = str(r["delist_date"]) if r.get("delist_date") is not None and not pd.isna(r["delist_date"]) else None

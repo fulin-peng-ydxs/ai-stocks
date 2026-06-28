@@ -5,6 +5,12 @@
   - strategy：完整事件驱动策略回测（BacktestEngine）——资金曲线+绩效，并附带同区间分层分析。
 
 落库：backtest_run（任务）/backtest_equity（曲线）/backtest_trade（逐笔）/backtest_metrics（绩效+分层JSON）。
+
+混合持久层（stage1·T2）：
+- 回测结果四表 + 方案三表均为**用户资产**，全部在 PG（self.pg，%s + 归属过滤；批量写 self.assets）。
+  list_runs 的「run⋈三方案⋈metrics」JOIN 全在 PG 内，无跨库。
+- 计算引擎（BacktestEngine/SignalAnalyzer/IndicatorEngine）读行情走 DuckDB（self.c）。
+- 归属：auth 未落地前默认 default/admin；第一位参保留为 market(DuckDB) 兼容历史调用。
 """
 
 from __future__ import annotations
@@ -18,18 +24,29 @@ from backend.backtest.engine import BacktestEngine
 from backend.backtest.metrics import compute_metrics
 from backend.backtest.signal import SignalAnalyzer
 from backend.common.logging import get_logger
+from backend.storage.asset_repository import AssetRepository
 from backend.storage.duckdb_client import get_client
-from backend.storage.repository import MarketRepository
+from backend.storage.pg_client import get_pg_client
+from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
 
 log = get_logger("services.backtest")
 
 
 class BacktestService:
-    def __init__(self, client=None):
-        self.c = client or get_client()
+    def __init__(self, client=None, *, tenant_id: str | None = None,
+                 owner_user_id: str | None = None):
+        self.c = client or get_client()                  # 行情库（DuckDB），喂计算引擎
         from backend.storage.ddl import init_db
         init_db(self.c)
-        self.repo = MarketRepository(self.c)
+        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
+        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+        self.pg = get_pg_client()                        # 资产库（PG）
+        self.assets = AssetRepository(self.pg, tenant_id=self.tenant_id,
+                                      owner_user_id=self.owner_user_id)
+
+    @property
+    def _op(self) -> list:
+        return [self.tenant_id, self.owner_user_id]
 
     def _new_id(self, kind: str) -> str:
         return f"bt_{kind}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -38,13 +55,17 @@ class BacktestService:
                      detail: str = "", finished: bool = False,
                      versions: dict | None = None, signature: str | None = None) -> None:
         v = versions or {}
-        self.c.execute("DELETE FROM backtest_run WHERE id = ?", [run_id])
-        self.c.execute(
-            "INSERT INTO backtest_run (id, kind, profile_id, model_id, score_profile_id, trade_profile_id, "
-            "score_profile_version, profile_version, trade_profile_version, signature, "
-            "date_start, date_end, params, status, detail, created_at, finished_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            [run_id, kind, params.get("profile_id"), params.get("model_id", "default"),
+        self.pg.execute(
+            "DELETE FROM backtest_run WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [run_id, *self._op])
+        self.pg.execute(
+            "INSERT INTO backtest_run (id, tenant_id, owner_user_id, kind, profile_id, model_id, "
+            "score_profile_id, trade_profile_id, score_profile_version, profile_version, "
+            "trade_profile_version, signature, date_start, date_end, params, status, detail, "
+            "created_at, finished_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            [run_id, self.tenant_id, self.owner_user_id, kind, params.get("profile_id"),
+             params.get("model_id", "default"),
              params.get("score_profile_id"), params.get("trade_profile_id"),
              v.get("score_profile_version"), v.get("profile_version"), v.get("trade_profile_version"), signature,
              date.fromisoformat(params["date_start"]) if isinstance(params["date_start"], str) else params["date_start"],
@@ -59,13 +80,15 @@ class BacktestService:
                  "stop_loss", "rebalance_days", "industry_max_pct", "benchmark", "horizons", "thresholds"]
 
     def _resolve_versions(self, params: dict) -> dict:
-        """运行时解析各引用方案的当前版本（命名展示 + 签名用）。"""
+        """运行时解析各引用方案的当前版本（命名展示 + 签名用）。方案在 PG。"""
         out: dict = {}
         for pid_key, tbl, vk in (("score_profile_id", "score_profile", "score_profile_version"),
                                  ("profile_id", "screen_profile", "profile_version"),
                                  ("trade_profile_id", "trade_profile", "trade_profile_version")):
             if params.get(pid_key):
-                df = self.c.query_df(f"SELECT version FROM {tbl} WHERE id=?", [params[pid_key]])
+                df = self.pg.query_df(
+                    f"SELECT version FROM {tbl} WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+                    [params[pid_key], *self._op])
                 out[vk] = int(df.iloc[0]["version"]) if not df.empty else None
         return out
 
@@ -82,9 +105,10 @@ class BacktestService:
 
     def find_duplicate(self, signature: str) -> dict | None:
         """同签名且已完成的历史记录（覆盖语义下至多一条）。"""
-        df = self.c.query_df(
+        df = self.pg.query_df(
             "SELECT id, kind, date_start, date_end, created_at FROM backtest_run "
-            "WHERE signature = ? AND status = 'done' ORDER BY created_at DESC LIMIT 1", [signature])
+            "WHERE signature=%s AND status='done' AND tenant_id=%s AND owner_user_id=%s "
+            "ORDER BY created_at DESC LIMIT 1", [signature, *self._op])
         if df.empty:
             return None
         r = df.iloc[0]
@@ -102,7 +126,9 @@ class BacktestService:
         """覆盖语义：删除同签名旧记录（含曲线/逐笔/绩效），保证每个条件组合历史唯一。"""
         if not signature:
             return
-        old = self.c.query_df("SELECT id FROM backtest_run WHERE signature = ?", [signature])
+        old = self.pg.query_df(
+            "SELECT id FROM backtest_run WHERE signature=%s AND tenant_id=%s AND owner_user_id=%s",
+            [signature, *self._op])
         for rid in old["id"].tolist():
             self.delete_run(rid)
 
@@ -110,7 +136,8 @@ class BacktestService:
         if not params.get("score_profile_id"):
             return None
         from backend.scoring.score_profile import ScoreProfileRepo
-        return ScoreProfileRepo(self.c).get(params["score_profile_id"])
+        return ScoreProfileRepo(market=self.c, pg=self.pg, tenant_id=self.tenant_id,
+                                owner_user_id=self.owner_user_id).get(params["score_profile_id"])
 
     # ── 评分验证（信号质量分析）──
     def run_signal(self, params: dict, persist: bool = True) -> dict:
@@ -130,7 +157,7 @@ class BacktestService:
             )
             res["run_id"] = run_id
             if persist:
-                self.repo.upsert("backtest_metrics", pd.DataFrame([{
+                self.assets.upsert("backtest_metrics", pd.DataFrame([{
                     "run_id": run_id, "hit_rate_by_grade": json.dumps(res, ensure_ascii=False),
                 }]))
                 self._persist_run(run_id, "score_check", params, "done", finished=True,
@@ -189,42 +216,51 @@ class BacktestService:
 
     def _persist(self, run_id: str, eq: pd.DataFrame, trades: list[dict],
                  metrics: dict, layers: dict) -> None:
-        self.c.execute("DELETE FROM backtest_equity WHERE run_id = ?", [run_id])
-        self.c.execute("DELETE FROM backtest_trade WHERE run_id = ?", [run_id])
+        self.pg.execute(
+            "DELETE FROM backtest_equity WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [run_id, *self._op])
+        self.pg.execute(
+            "DELETE FROM backtest_trade WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [run_id, *self._op])
         eq2 = eq.copy()
         eq2.insert(0, "run_id", run_id)
-        self.repo.upsert("backtest_equity", eq2)
+        self.assets.upsert("backtest_equity", eq2)
         if trades:
             td = pd.DataFrame(trades)
             td.insert(0, "run_id", run_id)
-            self.repo.upsert("backtest_trade", td)
+            self.assets.upsert("backtest_trade", td)
         row = {"run_id": run_id, **{k: v for k, v in metrics.items()},
                "hit_rate_by_grade": json.dumps(layers, ensure_ascii=False), "extra": None}
-        self.repo.upsert("backtest_metrics", pd.DataFrame([row]))
+        self.assets.upsert("backtest_metrics", pd.DataFrame([row]))
 
     def delete_run(self, run_id: str) -> bool:
         """删除某次回测的全部数据（run + equity + trade + metrics）。"""
-        exists = self.c.query_df("SELECT 1 FROM backtest_run WHERE id = ?", [run_id])
-        self.c.execute("DELETE FROM backtest_trade WHERE run_id = ?", [run_id])
-        self.c.execute("DELETE FROM backtest_equity WHERE run_id = ?", [run_id])
-        self.c.execute("DELETE FROM backtest_metrics WHERE run_id = ?", [run_id])
-        self.c.execute("DELETE FROM backtest_run WHERE id = ?", [run_id])
+        exists = self.pg.query_df(
+            "SELECT 1 FROM backtest_run WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [run_id, *self._op])
+        for t in ("backtest_trade", "backtest_equity", "backtest_metrics", "backtest_run"):
+            self.pg.execute(
+                f"DELETE FROM {t} WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s"
+                if t != "backtest_run" else
+                f"DELETE FROM {t} WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+                [run_id, *self._op])
         return not exists.empty
 
     # ── 读取 ──
     def list_runs(self, limit: int | None = None, kind: str | None = None) -> list[dict]:
         """历史记录。kind 给定则只列该类（strategy / score_check），策略与评分验证不混展；
-        limit=None 则全列（不截断），同签名因覆盖语义本就只留一条。"""
-        where, args = "", []
+        limit=None 则全列（不截断），同签名因覆盖语义本就只留一条。run⋈三方案⋈metrics 全在 PG。"""
+        where = "WHERE r.tenant_id=%s AND r.owner_user_id=%s "
+        args: list = [*self._op]
         if kind == "score_check":
-            where = "WHERE r.kind IN ('score_check','signal') "  # 兼容旧 signal 值
+            where += "AND r.kind IN ('score_check','signal') "  # 兼容旧 signal 值
         elif kind == "strategy":
-            where = "WHERE r.kind = 'strategy' "
+            where += "AND r.kind = 'strategy' "
         tail = ""
         if limit is not None:
-            tail = "LIMIT ?"
+            tail = "LIMIT %s"
             args = [*args, limit]
-        df = self.c.query_df(
+        df = self.pg.query_df(
             "SELECT r.id, r.kind, r.profile_id, p.name AS profile_name, r.profile_version, "
             "       r.trade_profile_id, tp.name AS trade_profile_name, r.trade_profile_version, "
             "       r.score_profile_id, sp.name AS score_profile_name, r.score_profile_version, "
@@ -239,13 +275,26 @@ class BacktestService:
         return df.to_dict("records")
 
     def get_run(self, run_id: str) -> dict | None:
-        run = self.c.query_df("SELECT * FROM backtest_run WHERE id = ?", [run_id])
+        run = self.pg.query_df(
+            "SELECT * FROM backtest_run WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [run_id, *self._op])
         if run.empty:
             return None
-        m = self.c.query_df("SELECT * FROM backtest_metrics WHERE run_id = ?", [run_id])
-        eq = self.c.query_df("SELECT * FROM backtest_equity WHERE run_id = ? ORDER BY trade_date", [run_id])
-        td = self.c.query_df("SELECT * FROM backtest_trade WHERE run_id = ? ORDER BY seq", [run_id])
+        m = self.pg.query_df(
+            "SELECT * FROM backtest_metrics WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [run_id, *self._op])
+        eq = self.pg.query_df(
+            "SELECT * FROM backtest_equity WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s "
+            "ORDER BY trade_date", [run_id, *self._op])
+        td = self.pg.query_df(
+            "SELECT * FROM backtest_trade WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s "
+            "ORDER BY seq", [run_id, *self._op])
         metrics = m.iloc[0].to_dict() if not m.empty else {}
+        for _k in ("tenant_id", "owner_user_id"):
+            metrics.pop(_k, None)
         layers = json.loads(metrics.pop("hit_rate_by_grade")) if metrics.get("hit_rate_by_grade") else None
-        return {"run": run.iloc[0].to_dict(), "metrics": metrics, "layers": layers,
+        run_d = run.iloc[0].to_dict()
+        for _k in ("tenant_id", "owner_user_id"):
+            run_d.pop(_k, None)
+        return {"run": run_d, "metrics": metrics, "layers": layers,
                 "equity": eq.to_dict("records"), "trades": td.to_dict("records")}

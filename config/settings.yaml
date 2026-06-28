@@ -109,3 +109,21 @@ server:
   host: "0.0.0.0"          # 0.0.0.0=对外(局域网可访问); 仅本机请改回 127.0.0.1
   port: 8000
   log_level: "info"
+
+# ── PostgreSQL 资产/权限/审计/字典库（多租户混合持久层，stage1）──
+# 行情仍在 DuckDB；用户私有资产与平台元数据在 PG。
+# 密码不写此处：整串走环境变量 AI_STOCKS_PG_DSN，或仅密码走 AI_STOCKS_PG_PASSWORD。
+postgres:
+  host: "127.0.0.1"
+  port: 5432
+  database: "ai_stocks"
+  user: "ai_stocks"
+  pool_min: 1               # 连接池下限
+  pool_max: 10              # 连接池上限（与 FastAPI 线程池并发匹配）
+
+# ── Redis 短状态库（限流/验证码/token黑名单/perm_ver；stage1 仅建底座）──
+# 密码不写此处：整串走环境变量 AI_STOCKS_REDIS_URL，或仅密码走 AI_STOCKS_REDIS_PASSWORD。
+redis:
+  host: "127.0.0.1"
+  port: 6379
+  db: 0
