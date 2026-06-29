@@ -1,6 +1,6 @@
 # 复盘啦 · A股趋势龙头选股 / 打分 / 回测系统
 
-本地单用户、**EOD（收盘后）** 的 A 股趋势龙头研究系统，面向每天收盘后做复盘、筛选、验证和跟踪的个人研究场景。它不是一个只给出"黑盒推荐"的工具，而是把数据、条件、评分、买卖规则和历史验证串成一条能检查、能复盘、能迭代的工作流。
+**EOD（收盘后）** 的 A 股趋势龙头研究系统，面向每天收盘后做复盘、筛选、验证和跟踪的研究场景（正从本地单用户向公网多租户 SaaS 演进）。它不是一个只给出"黑盒推荐"的工具，而是把数据、条件、评分、买卖规则和历史验证串成一条能检查、能复盘、能迭代的工作流。
 
 系统希望解决三个实际问题：
 
@@ -40,7 +40,7 @@
 
 ## 1. 架构总览
 
-单进程全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`），数据落在嵌入式 DuckDB 单文件。无外部数据库 / 中间件依赖。
+全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**（多租户混合持久层 stage1 已落地）：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户私有资产 + 平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作短状态库。详见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)（认证/RBAC 属阶段二/三，建设中）。
 
 ```
 ┌─────────────────────────── 浏览器 (Vue3 SPA) ───────────────────────────┐
@@ -54,11 +54,12 @@
 │  screening · scoring · signals · backtest · indicators   领域引擎         │
 │  datasource      数据源适配（akshare / baostock，限流·重试·超时·兜底）    │
 │  dataquality     入库清洗 + 四层质检 + 修复闭环                           │
-│  storage         DuckDB 连接 / DDL / 点时安全仓库（防未来·防幸存者总闸门）│
+│  storage         双库访问层：行情 DuckDB(点时安全·防未来/幸存者) + 资产 PG │
 │  scheduler       APScheduler 定时调度（任务可在「数据管理」页配置）        │
 └───────────────────────────────┬─────────────────────────────────────────┘
                                  │
-                        data/ai_stocks.duckdb （嵌入式列存）
+        行情 data/ai_stocks.duckdb (嵌入式列存,只读分析)  ·  资产 PostgreSQL
+        (用户私有方案/分组/回测/训练/快照/配置,按 tenant+owner 隔离)  ·  Redis(短状态)
 ```
 
 **核心数据流（每日收盘后）**：增量更新日线（含逐只补总市值）→ 入库清洗 + 四层质检 → 动态算指标 → 按默认评分方案出榜单。
@@ -159,7 +160,8 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 
 ## 4. 技术栈
 
-- **后端**：Python 3.11+（本机 3.12）/ FastAPI / Uvicorn / DuckDB（嵌入式列存）/ pandas + numpy / APScheduler / pydantic-settings
+- **后端**：Python 3.11+（本机 3.12）/ FastAPI / Uvicorn / pandas + numpy / APScheduler / pydantic-settings
+- **持久层**：DuckDB（行情，嵌入式列存）+ PostgreSQL ≥14（用户资产/平台配置，psycopg3 同步）+ Redis ≥6（短状态）；后端启动期三库连通性自检
 - **前端**：Vue 3 + TypeScript + Element Plus + ECharts + Pinia + Vue Router + Vite
 - **数据源**：AKShare（新浪 / 东财系）+ baostock（退市股历史、复权因子兜底）
 - 依赖清单见 [`requirements.txt`](requirements.txt) / [`pyproject.toml`](pyproject.toml)
@@ -174,6 +176,8 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 |------|----------|----------|----------|
 | 开发模式 | 日常开发、前端热更新、调试 API | 前端 `http://localhost:5173` | 前端 Vite + 后端 FastAPI 两个进程 |
 | 生产/集成模式 | 单端口访问、演示、局域网访问 | 后端 `http://<机器IP>:8000` | 后端托管 `frontend/dist` |
+
+> **前置依赖（混合持久层 stage1 起）**：后端启动前 **PostgreSQL 与 Redis 须先运行**（启动期三库连通性自检，任一不通即失败）。本机开发：`brew services start postgresql@16 redis`，并建 PG 库/角色 `ai_stocks`（localhost `trust` 免密；公网部署改 pg_hba 走密码并设 `AI_STOCKS_PG_PASSWORD`）。连接参数见 `config/settings.yaml` 的 `postgres`/`redis` 段。存量从旧 DuckDB 升级：`python -m backend.cli migrate-rbac`（先 dry-run，再 `--apply`）。
 
 ### 5.1 开发模式启动（前后端联动）
 

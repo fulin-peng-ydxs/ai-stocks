@@ -1,6 +1,8 @@
 # 平台与基础设施
 
-> 横切所有业务模块的地基：单进程全栈（FastAPI + DuckDB）、点时安全仓库总闸门、异步任务底座、定时调度、配置覆盖层与前端布局/交互标准。
+> 横切所有业务模块的地基：FastAPI 全栈、点时安全仓库总闸门、异步任务底座、定时调度、配置覆盖层与前端布局/交互标准。
+
+> ⚠️ **持久层已升级为混合架构（多租户混合持久层 stage1）**：本文「核心技术」多处仍按旧的「单进程 + 纯 DuckDB + 无外部依赖」表述，**以代码与 [CLAUDE.md](../../CLAUDE.md)「架构与分层 · 双库访问层」为准**。现状：行情/参考数据留 DuckDB（只读分析），用户私有资产 + 平台配置（含 `app_config`）迁 **PostgreSQL**（`backend/storage/pg_client.py` + `asset_repository.py`，按 `tenant_id`+`owner_user_id` 隔离），Redis 作短状态库；下文 DuckDB 机制（连接锁 / temp_view / 点时安全仓库 / 防未来 / 防幸存者）对**行情库**仍成立，`app_config` 覆盖层改读 PG。详见 [agent-works/multi-tenant-rbac/](../multi-tenant-rbac/)。
 
 <span style="color:#2563eb">●</span> 服务运行　<span style="color:#7c3aed">●</span> 任务调度　<span style="color:#16a34a">●</span> 配置生效　<span style="color:#dc2626">●</span> 平台约束
 

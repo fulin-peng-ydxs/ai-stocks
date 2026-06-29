@@ -14,6 +14,10 @@
 #   - nohup 脱离会话：AI 跑别的命令 / 终端关闭 / 对话结束都不会误杀（解决"老挂"）。
 #   - dev 模式 --reload：源码改动自动热更，无需手动重启。
 #   - 防重复启动：已在跑则直接退出，避免端口抢占。
+#
+# 前置依赖（多租户混合持久层 stage1 起）：PostgreSQL 与 Redis 须先运行，否则后端启动期
+#   三库连通性自检失败、进程退出。本机：brew services start postgresql@16 redis。
+#   连接参数见 config/settings.yaml(postgres/redis)，密码走环境变量 AI_STOCKS_PG_PASSWORD。
 # ───────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 

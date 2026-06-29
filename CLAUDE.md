@@ -6,7 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-「复盘啦」——本地单用户、**EOD（收盘后）** 的 A 股趋势龙头研究系统。单进程全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`），数据落在嵌入式 DuckDB 单文件（`data/ai_stocks.duckdb`），无外部数据库 / 中间件依赖。
+「复盘啦」——**EOD（收盘后）** 的 A 股趋势龙头研究系统，正从本地单用户向**公网多租户 SaaS** 演进。全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。
+
+**持久层已改为混合架构（阶段一已落地，见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)）**：
+- **行情/参考数据**（全市场近 5 年只读 reference）留**嵌入式 DuckDB 单文件**（`data/ai_stocks.duckdb`），分析查询的列存底座。
+- **用户私有资产**（方案/分组/回测/训练/评分快照/布局偏好等）+ **平台配置/权限元数据**落 **PostgreSQL**（并发写、多实例、按 `tenant_id`+`owner_user_id` 隔离）。
+- **Redis** 作短状态库（限流/验证码/token 黑名单/权限版本号，阶段二起消费）。
+
+> 认证与 RBAC（登录/角色/菜单/租户管理）属**阶段二/三**，尚未建设；当前所有资产归属默认 `default` 租户 / `admin` 用户。
 
 数据源为公开免费接口（AKShare / baostock），覆盖近 5 年、主板 / 创业板 / 科创板（不含北交所）。
 
@@ -16,11 +23,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Python `>=3.11`**（本机 3.12）；`ruff` target 为 `py311`，新语法不要超过 3.11。
 - **后端核心**：FastAPI `>=0.110`、uvicorn[standard] `>=0.29`、watchfiles `>=0.21`（`serve --reload` 依赖，须显式安装）、pydantic `>=2.6`（v2，**禁用 v1 写法**）、pydantic-settings `>=2.2`、DuckDB `>=0.10`、pandas `>=2.2`、numpy `>=1.26`、akshare `>=1.13`、baostock `>=0.8.8`、APScheduler `>=3.10`。
+- **持久层中间件**（混合持久层 stage1 起）：**PostgreSQL `>=14`**（资产/权限/审计/字典库）、**Redis `>=6`**（短状态库）；驱动 `psycopg[binary,pool] >=3.1`（**同步**，匹配现有线程池模型，禁 async 化）、`redis >=5.0`。连接走 `config/settings.yaml` 的 `postgres`/`redis` 段，**密码走环境变量**（`AI_STOCKS_PG_PASSWORD` / `AI_STOCKS_PG_DSN` / `AI_STOCKS_REDIS_URL`），不入库不入码。
 - **Node**：Vite `^5` 要求 Node `^18.0.0 || >=20.0.0`（建议 20 LTS）；`package.json` 未声明 `engines`/`.nvmrc`，但低于此版本 `vue-tsc`/`vite build` 会失败。
 - **前端**：Vite `^5`、Vue `^3.4`、TypeScript `^5.4`、Element Plus `^2.7`、ECharts `^5.5`、Pinia `^2.1`、vue-router `^4.3`、vue-tsc `^2`、axios `^1.7`。`package.json` 标注 `"type": "module"`（ESM）。
 - **测试 / Lint**：pytest `>=8.0`、ruff `>=0.4`（line-length 100）。
 
 ## 常用命令
+
+**前置：PostgreSQL 与 Redis 须先运行**（后端启动期 `_check_storages` 三库连通性自检，任一不通即启动失败）。本机开发用 Homebrew：`brew services start postgresql@16 redis`；PG 库/角色 `ai_stocks`（localhost `trust` 免密；公网部署改 pg_hba 走密码 + 设 `AI_STOCKS_PG_PASSWORD`）。
 
 服务起停一律走脚本，**禁止裸 `nohup` 或写 `/tmp`**：
 
@@ -43,6 +53,10 @@ python -m backend.cli valuation             # 总市值 / 总股本（--fill-gap
 python -m backend.cli rebuild-price-factors # 重建清洗复权因子 / pre_close / 涨跌停（不联网）
 python -m backend.cli verify-data           # 只读体检 PASS/FAIL
 python -m backend.cli daily                 # 一键日常：增量更新→质检→（可选）体检
+
+# 多租户混合持久层（stage1）
+python -m backend.cli migrate-rbac          # 存量资产 DuckDB→PG 一次性迁移：默认 dry-run 预演
+python -m backend.cli migrate-rbac --apply  # 实迁（先停占用 DuckDB 的服务；DuckDB 原表保留兜底）
 ```
 
 CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main.py](backend/main.py)。
@@ -55,7 +69,15 @@ CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main
 
 ## 架构与分层
 
-请求路径：浏览器(Vue3 SPA) → REST `/api/**` → FastAPI 路由(`backend/api/`，薄层) → 编排层(`backend/services/`) + 领域引擎 → `storage` 点时安全仓库 → DuckDB。
+请求路径：浏览器(Vue3 SPA) → REST `/api/**` → FastAPI 路由(`backend/api/`，薄层) → 编排层(`backend/services/`) + 领域引擎 → `storage` 仓库层 → 行情 DuckDB + 资产 PostgreSQL（+ Redis 短状态）。
+
+**双库访问层（混合持久层 stage1）**——`storage/` 下分工：
+- 行情只读：`duckdb_client.py` + `repository.py`（`MarketRepository`，占位符 `?`）。
+- 资产读写：`pg_client.py`（psycopg3 同步连接池，占位符 `%s`）+ `asset_repository.py`（通用批量 upsert，自动注 `tenant_id`/`owner_user_id`）+ 各域仓库（`screening/profile.py`、`scoring/`、`signals/`、`backtest_service.py`、`training_service.py`、`stock_group.py`、`layout_config.py` 用户层、`app_config.py`）。
+- 短状态：`redis_client.py`。
+- 建表：DuckDB 走 `ddl.py::init_db`；PG 走 `pg_ddl.py::init_pg_db`（启动期幂等执行 + seed 默认租户/管理员）。
+- **铁律：禁跨库 JOIN**。需行情+资产联合时，先各取再按 code 内存合并（结果集保持 top-N/单日小集合，如榜单 = PG 评分 ⊕ DuckDB 名称）。
+- 各资产仓库构造**第一位参仍为 market(DuckDB) client**（兼容历史 `Repo(c)` 调用），PG client 内部经 `get_pg_client()` 获取。归属上下文 auth 未落地前默认 `default`/`admin`。
 
 领域引擎（`backend/` 下各包）：
 - `indicators/` 指标引擎——**唯一原子定义**，动态计算 + 单次运行内存缓存，不落预计算表。
@@ -65,7 +87,7 @@ CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main
 - `backtest/` 前向收益 / 信号质量 / 撮合 Broker / 事件驱动引擎 / 绩效。
 - `datasource/` 数据源适配（限流·重试·超时·兜底·溯源）；`dataquality/` 入库清洗 + 四层质检；`scheduler/` APScheduler 定时调度。
 
-模块依赖链：数据管理→DuckDB→指标引擎←配置管理；指标引擎→筛选/榜单→回测；数据全部经 `storage` 点时安全仓库读写。
+模块依赖链：数据管理→DuckDB(行情)→指标引擎←配置管理；指标引擎→筛选/榜单→回测；行情读经 `storage` 点时安全仓库(DuckDB)，用户资产读写经资产仓库(PG)。
 
 ## AI 协作约束（通用红线）
 
@@ -91,6 +113,7 @@ CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main
 - **复权一致**：前向收益与回测记账统一**后复权(hfq)**，可成交性判定用**原始价**。源因子 `adj_factor` 用于 K 线前复权，`pre_close` 走独立清洗因子；复权查询统一走 `COALESCE(adj_factor_clean, adj_factor)`，清洗因子**不可写回** `adj_factor`。
 - **base rate**：分层命中率必减同期全市场无条件命中率得超额，并附样本量。
 - **统一基座**：技术指标是唯一原子定义，买卖/评分/筛选全部引用它组合，**不在下游硬编码字段**。
-- **分层职责**：`api/` 只做参数校验与响应包装，业务逻辑放 `services/` 与领域引擎；一切读写经 `storage` 点时安全仓库；长耗时操作走 `async_task` 异步任务底座 + 进度。
-- **配置即时生效**：阈值/权重/参数集中在 [config/settings.yaml](config/settings.yaml)，Web 表单改的进 `app_config` 覆盖层；**改参不写进代码**。
-- **写库全局互斥**：采集/补数/修复/重算同一时间只能跑一个；遇 409 说明已有写任务在执行。
+- **分层职责**：`api/` 只做参数校验与响应包装，业务逻辑放 `services/` 与领域引擎；行情读经点时安全仓库(DuckDB)、用户资产读写经资产仓库(PG)，**禁跨库 JOIN**（详见「架构与分层 · 双库访问层」）；长耗时操作走 `async_task` 异步任务底座 + 进度。
+- **资产归属与隔离**：用户私有资产表（PG）一律带 `tenant_id`+`owner_user_id`，读写按归属过滤、写入自动注归属；行情等全市场只读 reference（DuckDB）不带归属、全局共享；**禁止前端传归属字段越权**（归属一律取自上下文/默认）。
+- **配置即时生效**：阈值/权重/参数集中在 [config/settings.yaml](config/settings.yaml)，Web 表单改的进 `app_config` 覆盖层（**平台级，已迁 PG**，`get_effective_settings` 合并）；**改参不写进代码**。
+- **写库互斥仅限 DuckDB**：全市场采集/补数/修复/重算同一时间只能跑一个（DuckDB 单写进程，遇 409 说明已有写任务）；用户资产并发写在 PG，不受该互斥限制（这正是混合持久层的目的）。
