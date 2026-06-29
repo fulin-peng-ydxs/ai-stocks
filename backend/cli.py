@@ -190,6 +190,28 @@ def cmd_seed_presets(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_migrate_rbac(args: argparse.Namespace) -> int:
+    """存量资产 DuckDB→PG 迁移（stage1·T3）。默认 dry-run；--apply 实迁。"""
+    from backend.services.migrate_rbac import migrate_rbac
+
+    dry = not getattr(args, "apply", False)
+    report = migrate_rbac(dry_run=dry)
+    print(f"=== 存量迁移 {'DRY-RUN（仅预演，未写入）' if dry else 'APPLY（已写入 PG）'} ===")
+    print(f"{'表':<24}{'DuckDB源':>10}{'已迁':>8}{'PG(default)后':>14}")
+    ok = True
+    for t, r in report.items():
+        after = r.get("pg_after", "-")
+        flag = "" if dry or after in ("-", r["duck"]) else "  ⚠不一致"
+        if flag:
+            ok = False
+        print(f"{t:<24}{r['duck']:>10}{r['migrated']:>8}{str(after):>14}{flag}")
+    if dry:
+        print("\n预演完成。确认无误后加 --apply 实际迁移。")
+    else:
+        print(f"\n迁移{'完成，行数核对一致 ✅' if ok else '完成，但存在行数不一致 ⚠ 请核查'}")
+    return 0 if ok else 1
+
+
 def cmd_screen(args: argparse.Namespace) -> int:
     from datetime import date
 
@@ -486,6 +508,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_purge.add_argument("--apply", action="store_true",
                          help="确认执行（默认仅 dry-run 预览，不改数据）")
     p_purge.set_defaults(func=cmd_purge_suspension_bars)
+
+    p_mig = sub.add_parser(
+        "migrate-rbac",
+        help="存量资产 DuckDB→PG 迁移（多租户 stage1·T3）：默认 dry-run 预演，--apply 实迁")
+    p_mig.add_argument("--apply", action="store_true",
+                       help="确认执行实际迁移（默认仅预演，不写入 PG）")
+    p_mig.set_defaults(func=cmd_migrate_rbac)
     return parser
 
 
