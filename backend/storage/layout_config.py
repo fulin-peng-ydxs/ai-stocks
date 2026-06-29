@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import DuckDBClient, get_client
+from backend.storage.pg_client import get_pg_client
+from backend.storage.pg_ddl import DEFAULT_TENANT_ID
 
 log = get_logger("storage.layout_config")
 
@@ -524,11 +526,19 @@ def _row_to_preset(row: Any) -> dict[str, Any]:
 
 
 class LayoutConfigRepo:
-    def __init__(self, client: DuckDBClient | None = None):
+    """可配置布局持久化（混合持久层 stage1·T2）。
+
+    预设层/页面层/字段策略属平台配置，留 DuckDB（self.c）；用户层 layout_user_config
+    属用户资产，落 PG（self.pg），按 user_id 隔离（user_id 即归属，owner_user_id 同步写入）。
+    """
+
+    def __init__(self, client: DuckDBClient | None = None, *, tenant_id: str | None = None):
         self.c = client or get_client()
         from backend.storage.ddl import init_db
 
         init_db(self.c)
+        self.pg = get_pg_client()
+        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
         self.seed_builtin_presets()
 
     def seed_builtin_presets(self) -> int:
@@ -689,8 +699,8 @@ class LayoutConfigRepo:
         _validate_key("page_key", page_key)
         if not user_id:
             raise LayoutConfigValidationError("user_id 不能为空")
-        df = self.c.query_df(
-            "SELECT * FROM layout_user_config WHERE user_id=? AND page_key=?", [user_id, page_key]
+        df = self.pg.query_df(
+            "SELECT * FROM layout_user_config WHERE user_id=%s AND page_key=%s", [user_id, page_key]
         )
         if df.empty:
             return {
@@ -723,12 +733,15 @@ class LayoutConfigRepo:
         cfg = normalize_override(config, schema_version, layer="user")
         _enforce_component_ownership(cfg["values"], layout)
         self._enforce_field_policy(cfg["values"], layout, "user")
-        self.c.execute(
-            "INSERT INTO layout_user_config (user_id, page_key, config, schema_version, updated_at) "
-            "VALUES (?,?,?,?,?) "
+        # user_id 即归属键；owner_user_id 同步写入以对齐隔离模型，tenant_id 取仓库租户
+        self.pg.execute(
+            "INSERT INTO layout_user_config "
+            "(user_id, tenant_id, owner_user_id, page_key, config, schema_version, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (user_id, page_key) DO UPDATE SET "
             "config=EXCLUDED.config, schema_version=EXCLUDED.schema_version, updated_at=EXCLUDED.updated_at",
-            [user_id, page_key, _json_dump(cfg["values"]), cfg["schemaVersion"], datetime.now()],
+            [user_id, self.tenant_id, user_id, page_key, _json_dump(cfg["values"]),
+             cfg["schemaVersion"], datetime.now()],
         )
         return self.get_user_config(page_key, user_id)
 
@@ -910,7 +923,7 @@ class LayoutConfigRepo:
                 values = dict(cfg["config"]["values"])
                 values.pop(path, None)
                 return self.set_user_config(page_key, {"values": values}, user_id)
-            self.c.execute("DELETE FROM layout_user_config WHERE user_id=? AND page_key=?", [user_id, page_key])
+            self.pg.execute("DELETE FROM layout_user_config WHERE user_id=%s AND page_key=%s", [user_id, page_key])
             return self.get_user_config(page_key, user_id)
         raise LayoutConfigValidationError(f"reset scope 非法: {scope}")
 

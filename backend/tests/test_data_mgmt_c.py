@@ -147,13 +147,13 @@ def test_scan_quality_keeps_resolved(client):
 
 
 # ── 系统设置去调度开关，但 scheduler.* 仍可写（DM-D14）──
-def test_settings_view_excludes_scheduler(client):
+def test_settings_view_excludes_scheduler(client, app_cfg):
     from backend.api.data_admin import get_settings_view
-    from backend.storage.app_config import WHITELIST, AppConfigRepo
+    from backend.storage.app_config import WHITELIST
     keys = [g["key"] for g in get_settings_view().data["groups"]]
     assert "scheduler" not in keys and "datasource" in keys
     assert "scheduler.enabled" in WHITELIST          # 仍是白名单（调度页读写）
-    assert AppConfigRepo(client).set_many({"scheduler.daily_cron_hour": 9}) == 1
+    assert app_cfg.set_many({"scheduler.daily_cron_hour": 9}) == 1   # 平台配置写 PG
 
 
 # ── 数据总览 hub：环节统计 + 风险摘要（DM-D12）──

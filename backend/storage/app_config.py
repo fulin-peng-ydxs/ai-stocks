@@ -13,7 +13,7 @@ import json
 from datetime import datetime
 
 from backend.common.logging import get_logger
-from backend.storage.duckdb_client import DuckDBClient, get_client
+from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.app_config")
 
@@ -96,14 +96,18 @@ def _coerce(field: dict, value):
 
 
 class AppConfigRepo:
-    def __init__(self, client: DuckDBClient | None = None):
-        self.c = client or get_client()
-        from backend.storage.ddl import init_db
-        init_db(self.c)
+    """平台级配置覆盖层（多租户混合持久层 stage1·T2）。
+
+    app_config 是平台全局配置（仅系统管理员可改、无归属列），落 PG，多实例一致。
+    PG 不可用时由上层 get_effective_settings 的 try/except 回落 settings.yaml 基线。
+    """
+
+    def __init__(self, pg: PostgresClient | None = None):
+        self.pg = pg or get_pg_client()
 
     def get_overrides(self) -> dict[str, object]:
         """返回 {点分路径: 值}（仅白名单内、可解析的项）。"""
-        df = self.c.query_df("SELECT key, value FROM app_config")
+        df = self.pg.query_df("SELECT key, value FROM app_config")
         out: dict[str, object] = {}
         for _, r in df.iterrows():
             key = r["key"]
@@ -129,8 +133,8 @@ class AppConfigRepo:
         self._check_cross_field(normalized)
         now = datetime.now()
         for path, value in normalized.items():
-            self.c.execute(
-                "INSERT INTO app_config (key, value, updated_at) VALUES (?,?,?) "
+            self.pg.execute(
+                "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
                 "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
                 [path, json.dumps(value, ensure_ascii=False), now])
         log.info("配置覆盖写入 %d 项: %s", len(normalized), list(normalized))
@@ -146,7 +150,7 @@ class AppConfigRepo:
 
     def reset(self, path: str) -> None:
         """删除某项覆盖，回落到 settings.yaml 默认。"""
-        self.c.execute("DELETE FROM app_config WHERE key=?", [path])
+        self.pg.execute("DELETE FROM app_config WHERE key=%s", [path])
 
 
 def apply_overrides(base: dict, overrides: dict[str, object]) -> dict:

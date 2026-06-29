@@ -50,3 +50,16 @@ def market():
     init_db(c)
     yield c
     c.close()
+
+
+@pytest.fixture()
+def app_cfg(pg):
+    """平台配置仓库（PG，无归属）。app_config 是全局表，测试前快照、测试后还原，避免污染真实配置。"""
+    from backend.storage.app_config import AppConfigRepo
+
+    snap = pg.query_df("SELECT key, value, updated_at FROM app_config")
+    yield AppConfigRepo(pg)
+    pg.execute("DELETE FROM app_config")
+    for _, r in snap.iterrows():
+        pg.execute("INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s)",
+                   [r["key"], r["value"], r["updated_at"]])

@@ -23,16 +23,12 @@ from backend.storage.duckdb_client import DuckDBClient
 
 # ── 配置覆盖层 ──────────────────────────────────────────────
 
-def test_app_config_override_roundtrip():
-    with DuckDBClient(db_path=":memory:") as c:
-        init_db(c)
-        repo = AppConfigRepo(c)
-        assert repo.get_overrides() == {}
-        n = repo.set_many({"datasource.update_concurrency": 4, "backtest.top_n": 30})
-        assert n == 2
-        ov = repo.get_overrides()
-        assert ov["datasource.update_concurrency"] == 4
-        assert ov["backtest.top_n"] == 30
+def test_app_config_override_roundtrip(app_cfg):
+    n = app_cfg.set_many({"datasource.update_concurrency": 4, "backtest.top_n": 30})
+    assert n == 2
+    ov = app_cfg.get_overrides()
+    assert ov["datasource.update_concurrency"] == 4
+    assert ov["backtest.top_n"] == 30
 
 
 def test_app_config_rejects_non_whitelist():
@@ -59,14 +55,11 @@ def test_app_config_range_and_type_validation():
         assert repo.get_overrides() == {}
 
 
-def test_app_config_cross_field_mv_bounds():
-    with DuckDBClient(db_path=":memory:") as c:
-        init_db(c)
-        repo = AppConfigRepo(c)
-        with pytest.raises(ConfigValidationError):
-            repo.set_many({"universe.float_mv_min": 1e10, "universe.float_mv_max": 5e9})
-        # 合法
-        assert repo.set_many({"universe.float_mv_min": 5e9, "universe.float_mv_max": 4e10}) == 2
+def test_app_config_cross_field_mv_bounds(app_cfg):
+    with pytest.raises(ConfigValidationError):
+        app_cfg.set_many({"universe.float_mv_min": 1e10, "universe.float_mv_max": 5e9})
+    # 合法
+    assert app_cfg.set_many({"universe.float_mv_min": 5e9, "universe.float_mv_max": 4e10}) == 2
 
 
 def test_apply_overrides_deep_merge():
@@ -82,19 +75,12 @@ def test_apply_overrides_deep_merge():
     assert merged["scheduler"]["enabled"] is True              # 新建分支
 
 
-def test_effective_settings_override_first(monkeypatch, tmp_path):
-    """get_effective_settings 覆盖层优先于 settings.yaml。"""
-    # 用临时库承载 app_config，并让 get_client 指向它
-    import backend.storage.duckdb_client as dc
-    client = DuckDBClient(db_path=str(tmp_path / "t.duckdb"))
-    init_db(client)
-    monkeypatch.setattr(dc, "_client", client)
-    AppConfigRepo(client).set_many({"backtest.top_n": 7})
-
+def test_effective_settings_override_first(app_cfg):
+    """get_effective_settings 覆盖层(PG)优先于 settings.yaml。"""
+    app_cfg.set_many({"backtest.top_n": 7})
     from backend.config import get_effective_settings
     s = get_effective_settings()
     assert s.backtest.top_n == 7
-    client.close()
 
 
 # ── 数据字典 / 维度注册表 ──────────────────────────────────

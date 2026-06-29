@@ -23,6 +23,8 @@ from backend.backtest.broker import can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
 from backend.config import get_settings
 from backend.storage.duckdb_client import get_client
+from backend.storage.pg_client import get_pg_client
+from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
 
 log = get_logger("services.training")
 
@@ -48,13 +50,29 @@ def _grade_of(score: float) -> str:
 
 
 class TrainingService:
-    def __init__(self, client=None):
+    """盘感训练服务（混合持久层 stage1·T2）。
+
+    训练 session/round/trade 属用户资产（→PG，self.pg）；行情读走 DuckDB（self.c）。
+    归属：training_session 按 tenant_id+owner_user_id 过滤(所有权闸门)；round/trade 经
+    session 已鉴权，按 session_id 过滤。auth 未落地前默认 default/admin。
+    第一位参保留为 market(DuckDB) 兼容历史 TrainingService(c) 调用。
+    """
+
+    def __init__(self, client=None, *, tenant_id: str | None = None,
+                 owner_user_id: str | None = None):
         self.c = client or get_client()
         from backend.storage.ddl import init_db
         init_db(self.c)
+        self.pg = get_pg_client()
+        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
+        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
         bt = get_settings().backtest
         self.cost = bt.cost
         self.lot = bt.lot_size
+
+    @property
+    def _op(self) -> list:
+        return [self.tenant_id, self.owner_user_id]
 
     # ════════════════════════════════════════════════════════════
     # 费用
@@ -230,20 +248,22 @@ class TrainingService:
 
         sid = "train_" + _now().strftime("%Y%m%d%H%M%S%f")
         now = _now()
-        self.c.execute(
-            "INSERT INTO training_session (id,user_id,mode,range_start,range_end,n_rounds,"
+        self.pg.execute(
+            "INSERT INTO training_session (id,tenant_id,owner_user_id,mode,range_start,range_end,n_rounds,"
             "window_days,initial_capital,filters,fee_enabled,status,cur_round,created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            [sid, None, mode, range_start, range_end, n_rounds, window_days, initial_capital,
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            [sid, self.tenant_id, self.owner_user_id, mode, range_start, range_end, n_rounds,
+             window_days, initial_capital,
              json.dumps(filters, ensure_ascii=False), fee_enabled, "running", 0, now],
         )
         for seq, rd in enumerate(rounds):
-            self.c.execute(
-                "INSERT INTO training_round (session_id,seq,code,start_date,end_date,window_days,"
-                "base_factor,price_limit_pct,cursor_date,cursor_idx,status,cash,pos_shares,pos_cost,"
-                "pos_avg_price,pending,realized_pnl) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                [sid, seq, rd["code"], rd["start_date"], rd["end_date"], window_days,
+            self.pg.execute(
+                "INSERT INTO training_round (session_id,tenant_id,owner_user_id,seq,code,start_date,"
+                "end_date,window_days,base_factor,price_limit_pct,cursor_date,cursor_idx,status,cash,"
+                "pos_shares,pos_cost,pos_avg_price,pending,realized_pnl) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                [sid, self.tenant_id, self.owner_user_id, seq, rd["code"], rd["start_date"],
+                 rd["end_date"], window_days,
                  rd["base_factor"], rd["price_limit_pct"], rd["start_date"], 0,
                  "running" if seq == 0 else "pending", initial_capital, 0, 0.0, 0.0, None, 0.0],
             )
@@ -264,17 +284,20 @@ class TrainingService:
     # 读取与视图
     # ════════════════════════════════════════════════════════════
     def _session_row(self, sid: str) -> dict | None:
-        df = self.c.query_df("SELECT * FROM training_session WHERE id = ?", [sid])
+        # 所有权闸门：训练存取统一先过此处的归属过滤，下游 round/trade 按 session_id 即可
+        df = self.pg.query_df(
+            "SELECT * FROM training_session WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [sid, *self._op])
         return None if df.empty else df.iloc[0].to_dict()
 
     def _round_rows(self, sid: str) -> list[dict]:
-        df = self.c.query_df(
-            "SELECT * FROM training_round WHERE session_id = ? ORDER BY seq", [sid])
+        df = self.pg.query_df(
+            "SELECT * FROM training_round WHERE session_id=%s ORDER BY seq", [sid])
         return [r.to_dict() for _, r in df.iterrows()]
 
     def _round_trades(self, sid: str, seq: int) -> list[dict]:
-        df = self.c.query_df(
-            "SELECT * FROM training_trade WHERE session_id = ? AND round_seq = ? ORDER BY seq",
+        df = self.pg.query_df(
+            "SELECT * FROM training_trade WHERE session_id=%s AND round_seq=%s ORDER BY seq",
             [sid, seq])
         return [r.to_dict() for _, r in df.iterrows()]
 
@@ -373,8 +396,8 @@ class TrainingService:
         if hands * self.lot > rnd["pos_shares"]:
             raise ValueError("卖出手数超过持仓")
         pending = {"side": side, "hands": hands, "reason": reason or ""}
-        self.c.execute(
-            "UPDATE training_round SET pending = ? WHERE session_id = ? AND seq = ?",
+        self.pg.execute(
+            "UPDATE training_round SET pending=%s WHERE session_id=%s AND seq=%s",
             [json.dumps(pending, ensure_ascii=False), sid, cur])
         return self.get_view(sid)
 
@@ -399,9 +422,9 @@ class TrainingService:
             return "可用资金不足以买入该手数"
         new_shares = rnd["pos_shares"] + shares
         new_cost = rnd["pos_cost"] + total
-        self.c.execute(
-            "UPDATE training_round SET cash = ?, pos_shares = ?, pos_cost = ?, pos_avg_price = ? "
-            "WHERE session_id = ? AND seq = ?",
+        self.pg.execute(
+            "UPDATE training_round SET cash=%s, pos_shares=%s, pos_cost=%s, pos_avg_price=%s "
+            "WHERE session_id=%s AND seq=%s",
             [rnd["cash"] - total, new_shares, new_cost, new_cost / new_shares, sid, cur])
         # 当日成交：决策日 = 成交日 = cursor_date，相对日 = cursor_idx
         self._insert_trade(sid, cur, "buy", rnd["cursor_date"], rnd["cursor_date"], rnd["cursor_idx"],
@@ -413,8 +436,8 @@ class TrainingService:
         if not s:
             raise ValueError("训练不存在")
         cur = int(s["cur_round"])
-        self.c.execute(
-            "UPDATE training_round SET pending = NULL WHERE session_id = ? AND seq = ?", [sid, cur])
+        self.pg.execute(
+            "UPDATE training_round SET pending=NULL WHERE session_id=%s AND seq=%s", [sid, cur])
         return self.get_view(sid)
 
     # ════════════════════════════════════════════════════════════
@@ -437,8 +460,8 @@ class TrainingService:
             raise ValueError("无更多行情，请结算回合")
         fill_msg = self._settle_pending(s, rnd, next_date)
         new_idx = rnd["cursor_idx"] + 1
-        self.c.execute(
-            "UPDATE training_round SET cursor_date = ?, cursor_idx = ? WHERE session_id = ? AND seq = ?",
+        self.pg.execute(
+            "UPDATE training_round SET cursor_date=%s, cursor_idx=%s WHERE session_id=%s AND seq=%s",
             [next_date, new_idx, sid, cur])
         view = self.get_view(sid)
         view["fill_msg"] = fill_msg
@@ -455,8 +478,8 @@ class TrainingService:
             return None
         sid, cur = s["id"], int(rnd["seq"])
         fee_on = bool(s["fee_enabled"])
-        self.c.execute(
-            "UPDATE training_round SET pending = NULL WHERE session_id = ? AND seq = ?", [sid, cur])
+        self.pg.execute(
+            "UPDATE training_round SET pending=NULL WHERE session_id=%s AND seq=%s", [sid, cur])
         frow = self._raw_bar(rnd["code"], fill_date)
         if not frow:
             return "次日停牌，订单未成交"
@@ -484,9 +507,9 @@ class TrainingService:
                 return "次日开盘价超出可用资金，买入未成交"
             new_shares = rnd["pos_shares"] + shares
             new_cost = rnd["pos_cost"] + total
-            self.c.execute(
-                "UPDATE training_round SET cash = ?, pos_shares = ?, pos_cost = ?, pos_avg_price = ? "
-                "WHERE session_id = ? AND seq = ?",
+            self.pg.execute(
+                "UPDATE training_round SET cash=%s, pos_shares=%s, pos_cost=%s, pos_avg_price=%s "
+                "WHERE session_id=%s AND seq=%s",
                 [rnd["cash"] - total, new_shares, new_cost, new_cost / new_shares, sid, cur])
             self._insert_trade(sid, cur, "buy", rnd["cursor_date"], fill_date, rnd["cursor_idx"] + 1,
                                price, hands, shares, gross, fee, None, None, reason, False)
@@ -506,9 +529,9 @@ class TrainingService:
             ret = pnl / cost_portion if cost_portion else 0.0
             rem_shares = rnd["pos_shares"] - shares
             rem_cost = rnd["pos_cost"] - cost_portion
-            self.c.execute(
-                "UPDATE training_round SET cash = ?, pos_shares = ?, pos_cost = ?, pos_avg_price = ?, "
-                "realized_pnl = ? WHERE session_id = ? AND seq = ?",
+            self.pg.execute(
+                "UPDATE training_round SET cash=%s, pos_shares=%s, pos_cost=%s, pos_avg_price=%s, "
+                "realized_pnl=%s WHERE session_id=%s AND seq=%s",
                 [rnd["cash"] + proceeds, rem_shares, rem_cost,
                  (rem_cost / rem_shares) if rem_shares else 0.0,
                  rnd["realized_pnl"] + pnl, sid, cur])
@@ -518,14 +541,15 @@ class TrainingService:
 
     def _insert_trade(self, sid, cur, side, decide_date, fill_date, rel_day, price, hands,
                       shares, amount, fee, pnl, ret, reason, auto_close):
-        seq = self.c.query_df(
+        seq = self.pg.query_df(
             "SELECT COALESCE(max(seq), -1) + 1 AS n FROM training_trade "
-            "WHERE session_id = ? AND round_seq = ?", [sid, cur]).iloc[0]["n"]
-        self.c.execute(
-            "INSERT INTO training_trade (session_id,round_seq,seq,side,decide_date,fill_date,rel_day,"
-            "price,hands,shares,amount,fee,pnl,return_pct,reason,auto_close) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            [sid, cur, int(seq), side, decide_date, fill_date, int(rel_day), float(price), int(hands),
+            "WHERE session_id=%s AND round_seq=%s", [sid, cur]).iloc[0]["n"]
+        self.pg.execute(
+            "INSERT INTO training_trade (session_id,tenant_id,owner_user_id,round_seq,seq,side,"
+            "decide_date,fill_date,rel_day,price,hands,shares,amount,fee,pnl,return_pct,reason,auto_close) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            [sid, self.tenant_id, self.owner_user_id, cur, int(seq), side, decide_date, fill_date,
+             int(rel_day), float(price), int(hands),
              int(shares), float(amount), float(fee), pnl, ret, reason, auto_close])
 
     # ════════════════════════════════════════════════════════════
@@ -561,16 +585,16 @@ class TrainingService:
         final_equity = cash
         round_return = final_equity / init_cap - 1 if init_cap else 0.0
         bench = self._benchmark_return(rnd)
-        self.c.execute(
-            "UPDATE training_round SET status='done', cash=?, pos_shares=0, pos_cost=0, "
-            "pos_avg_price=0, realized_pnl=?, round_return=?, benchmark_return=?, final_equity=? "
-            "WHERE session_id=? AND seq=?",
+        self.pg.execute(
+            "UPDATE training_round SET status='done', cash=%s, pos_shares=0, pos_cost=0, "
+            "pos_avg_price=0, realized_pnl=%s, round_return=%s, benchmark_return=%s, final_equity=%s "
+            "WHERE session_id=%s AND seq=%s",
             [cash, realized, round_return, bench, final_equity, sid, cur])
         # 推进或整局结算
         if cur + 1 < int(s["n_rounds"]):
-            self.c.execute("UPDATE training_session SET cur_round=? WHERE id=?", [cur + 1, sid])
-            self.c.execute(
-                "UPDATE training_round SET status='running' WHERE session_id=? AND seq=?", [sid, cur + 1])
+            self.pg.execute("UPDATE training_session SET cur_round=%s WHERE id=%s", [cur + 1, sid])
+            self.pg.execute(
+                "UPDATE training_round SET status='running' WHERE session_id=%s AND seq=%s", [sid, cur + 1])
             return self.get_view(sid)
         self._settle_session(sid)
         return self.get_detail(sid)
@@ -629,13 +653,13 @@ class TrainingService:
         total_return = sum(rets) / len(rets) if rets else 0.0
         bench_avg = sum(benches) / len(benches) if benches else 0.0
         # 胜率/笔数（按卖出笔）
-        sells = self.c.query_df(
-            "SELECT pnl FROM training_trade WHERE session_id=? AND side='sell'", [sid])
+        sells = self.pg.query_df(
+            "SELECT pnl FROM training_trade WHERE session_id=%s AND side='sell'", [sid])
         n_sells = len(sells)
         wins = int((sells["pnl"] > 0).sum()) if n_sells else 0
         win_rate = wins / n_sells if n_sells else 0.0
-        n_trades = self.c.query_df(
-            "SELECT count(*) AS n FROM training_trade WHERE session_id=?", [sid]).iloc[0]["n"]
+        n_trades = self.pg.query_df(
+            "SELECT count(*) AS n FROM training_trade WHERE session_id=%s", [sid]).iloc[0]["n"]
         worst_dd = 0.0
         for r in rounds:
             worst_dd = min(worst_dd, self._max_drawdown(self._round_equity_curve(sid, r, init_cap)))
@@ -648,9 +672,9 @@ class TrainingService:
         win_s = win_rate * 100
         score = round(0.40 * excess_s + 0.25 * abs_s + 0.20 * dd_s + 0.15 * win_s, 1)
         grade = _grade_of(score)
-        self.c.execute(
-            "UPDATE training_session SET status='completed', cur_round=?, total_return=?, score=?, "
-            "grade=?, win_rate=?, max_drawdown=?, n_trades=?, completed_at=? WHERE id=?",
+        self.pg.execute(
+            "UPDATE training_session SET status='completed', cur_round=%s, total_return=%s, score=%s, "
+            "grade=%s, win_rate=%s, max_drawdown=%s, n_trades=%s, completed_at=%s WHERE id=%s",
             [int(s["n_rounds"]) - 1, total_return, score, grade, win_rate, worst_dd,
              int(n_trades), _now(), sid])
         log.info("盘感训练结算 %s score=%.1f grade=%s ret=%.4f", sid, score, grade, total_return)
@@ -661,7 +685,9 @@ class TrainingService:
     def update_review(self, sid: str, note: str) -> None:
         if not self._session_row(sid):
             raise ValueError("训练不存在")
-        self.c.execute("UPDATE training_session SET review_note=? WHERE id=?", [note or "", sid])
+        self.pg.execute(
+            "UPDATE training_session SET review_note=%s WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [note or "", sid, *self._op])
 
     def get_detail(self, sid: str) -> dict:
         """完整详情（completed 揭晓真实身份；running 复用脱敏视图的字段）。"""
@@ -725,20 +751,21 @@ class TrainingService:
 
     def list_sessions(self, page: int = 1, size: int = 20, status: str | None = None,
                       sort_by: str = "created_at", sort_order: str = "desc") -> dict:
-        where, params = [], []
+        where = ["tenant_id=%s", "owner_user_id=%s"]
+        params: list = [*self._op]
         if status:
-            where.append("status = ?")
+            where.append("status = %s")
             params.append(status)
-        wsql = ("WHERE " + " AND ".join(where)) if where else ""
-        total = self.c.query_df(
+        wsql = "WHERE " + " AND ".join(where)
+        total = self.pg.query_df(
             f"SELECT count(*) AS n FROM training_session {wsql}", params).iloc[0]["n"]
         allow = {"created_at", "completed_at", "total_return", "score", "win_rate"}
         sb = sort_by if sort_by in allow else "created_at"
         so = "ASC" if sort_order.lower() == "asc" else "DESC"
-        df = self.c.query_df(
+        df = self.pg.query_df(
             f"SELECT id,mode,n_rounds,window_days,status,total_return,score,grade,win_rate,"
             f"max_drawdown,n_trades,created_at,completed_at FROM training_session {wsql} "
-            f"ORDER BY {sb} {so} NULLS LAST LIMIT ? OFFSET ?",
+            f"ORDER BY {sb} {so} NULLS LAST LIMIT %s OFFSET %s",
             params + [size, (page - 1) * size])
         rows = []
         for _, r in df.iterrows():
@@ -757,9 +784,10 @@ class TrainingService:
         return {"total": int(total), "page": page, "size": size, "list": rows}
 
     def growth(self) -> list[dict]:
-        df = self.c.query_df(
+        df = self.pg.query_df(
             "SELECT id,score,total_return,win_rate,grade,completed_at FROM training_session "
-            "WHERE status='completed' ORDER BY completed_at ASC")
+            "WHERE status='completed' AND tenant_id=%s AND owner_user_id=%s ORDER BY completed_at ASC",
+            self._op)
         out = []
         for _, r in df.iterrows():
             out.append({
@@ -772,8 +800,15 @@ class TrainingService:
         return out
 
     def delete(self, sid: str) -> None:
-        for t in ("training_trade", "training_round", "training_session"):
-            self.c.execute(f"DELETE FROM {t} WHERE {'id' if t == 'training_session' else 'session_id'} = ?", [sid])
+        if not self._session_row(sid):   # 归属闸门：非本人 session 不删
+            return
+        self.pg.execute("DELETE FROM training_trade WHERE session_id=%s", [sid])
+        self.pg.execute("DELETE FROM training_round WHERE session_id=%s", [sid])
+        self.pg.execute(
+            "DELETE FROM training_session WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [sid, *self._op])
 
     def abort(self, sid: str) -> None:
-        self.c.execute("UPDATE training_session SET status='aborted' WHERE id=? AND status='running'", [sid])
+        self.pg.execute(
+            "UPDATE training_session SET status='aborted' "
+            "WHERE id=%s AND status='running' AND tenant_id=%s AND owner_user_id=%s", [sid, *self._op])
