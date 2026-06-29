@@ -209,15 +209,16 @@ def cmd_seed_presets(args: argparse.Namespace) -> int:
 
 
 def cmd_migrate_rbac(args: argparse.Namespace) -> int:
-    """存量资产 DuckDB→PG 迁移（stage1·T3）。默认 dry-run；--apply 实迁。"""
+    """存量资产 DuckDB→PG 迁移（stage1·T3）。默认 dry-run；--apply 实迁；--recreate 重建旧 schema。"""
     from backend.services.migrate_rbac import migrate_rbac
 
     dry = not getattr(args, "apply", False)
-    report = migrate_rbac(dry_run=dry)
+    report = migrate_rbac(dry_run=dry, recreate=getattr(args, "recreate", False))
+    glob = report.pop("_global", {}).get("problems", [])   # 全局问题(主键失配/外键孤儿)单列
     print(f"=== 存量迁移 {'DRY-RUN（仅预演，未写入）' if dry else 'APPLY（已写入 PG）'} ===")
     print(f"{'表':<24}{'DuckDB源':>10}{'已迁':>8}{'PG(default)后':>14}")
-    ok = True
-    all_problems: list[str] = []
+    ok = not glob
+    all_problems: list[str] = list(glob)
     for t, r in report.items():
         after = r.get("pg_after", "-")
         probs = r.get("problems") or []
@@ -236,7 +237,7 @@ def cmd_migrate_rbac(args: argparse.Namespace) -> int:
     if dry:
         print(f"\n预演{'通过，可加 --apply 实际迁移。' if ok else '发现问题（见上），修复后再迁。'}")
     else:
-        print(f"\n迁移{'完成，字段映射/行数/归属非空 全部核对一致 ✅' if ok else '完成但存在问题 ⚠ 请核查'}")
+        print(f"\n迁移{'完成，字段映射/行数/归属非空/外键完整 全部核对一致 ✅' if ok else '完成但存在问题 ⚠ 请核查'}")
     return 0 if ok else 1
 
 
@@ -542,6 +543,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="存量资产 DuckDB→PG 迁移（多租户 stage1·T3）：默认 dry-run 预演，--apply 实迁")
     p_mig.add_argument("--apply", action="store_true",
                        help="确认执行实际迁移（默认仅预演，不写入 PG）")
+    p_mig.add_argument("--recreate", action="store_true",
+                       help="DROP+重建资产表后再迁（从旧单主键 schema 升级用；破坏性，配合 --apply）")
     p_mig.set_defaults(func=cmd_migrate_rbac)
     return parser
 

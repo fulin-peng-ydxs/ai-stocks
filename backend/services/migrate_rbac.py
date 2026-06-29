@@ -33,13 +33,25 @@ from backend.storage.pg_ddl import (
     DEFAULT_OWNER_USER_ID,
     DEFAULT_TENANT_ID,
     _ASSET_TABLES,
+    asset_pk_mismatches,
     init_pg_db,
+    recreate_asset_tables,
 )
 
 log = get_logger("services.migrate_rbac")
 
 _TABLES: list[str] = list(_ASSET_TABLES.keys())
 _LEGACY_LAYOUT_USER = "local"   # 旧单用户布局身份键 → 重映射为 admin
+
+# 外键/孤儿完整性关系（child.ckey → parent.pkey）：迁移前后校验无孤儿（T3 要求）
+_FK: list[tuple[str, str, str, str]] = [
+    ("stock_group_member", "group_id", "stock_group", "id"),
+    ("backtest_trade", "run_id", "backtest_run", "id"),
+    ("backtest_equity", "run_id", "backtest_run", "id"),
+    ("backtest_metrics", "run_id", "backtest_run", "id"),
+    ("training_round", "session_id", "training_session", "id"),
+    ("training_trade", "session_id", "training_session", "id"),
+]
 
 
 def _to_pg_rows(df: pd.DataFrame) -> list[tuple]:
@@ -105,19 +117,57 @@ def _load_table(pg, table: str, df: pd.DataFrame) -> int:
             return cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(df)
 
 
-def migrate_rbac(dry_run: bool = True) -> dict:
-    """执行/预演存量迁移。返回 {table: {duck, migrated, pg_after, problems}}。"""
+def _orphans_duck(duck, child: str, ckey: str, parent: str, pkey: str) -> int:
+    """DuckDB 源侧孤儿数（child 的外键在 parent 中无匹配）。"""
+    df = duck.query_df(
+        f"SELECT count(*) AS n FROM {child} c "
+        f"WHERE c.{ckey} IS NOT NULL AND NOT EXISTS "
+        f"(SELECT 1 FROM {parent} p WHERE p.{pkey}=c.{ckey})")
+    return int(df.iloc[0]["n"])
+
+
+def _orphans_pg(pg, child: str, ckey: str, parent: str, pkey: str) -> int:
+    """PG 侧孤儿数（default 租户内，含归属匹配）。"""
+    df = pg.query_df(
+        f"SELECT count(*) AS n FROM {child} c WHERE c.tenant_id=%s AND c.{ckey} IS NOT NULL "
+        f"AND NOT EXISTS (SELECT 1 FROM {parent} p WHERE p.tenant_id=c.tenant_id "
+        f"AND p.owner_user_id=c.owner_user_id AND p.{pkey}=c.{ckey})", [DEFAULT_TENANT_ID])
+    return int(df.iloc[0]["n"])
+
+
+def migrate_rbac(dry_run: bool = True, recreate: bool = False) -> dict:
+    """执行/预演存量迁移。返回 {table: {duck, migrated, pg_after, problems}}，外加 _global 项。
+
+    recreate=True：先 DROP+重建资产表（从旧单主键 schema 升级用），再载入。
+    """
     duck: DuckDBClient = get_client()
     pg = get_pg_client()
+    if recreate and not dry_run:
+        recreate_asset_tables(pg)
     init_pg_db(pg)  # 确保 PG 表存在（复合主键含归属列）
     report: dict[str, dict] = {}
+    glob: list[str] = []
+
+    # 旧 schema 升级检测：已存在但主键非复合 → 需 --recreate（否则 ON CONFLICT 会失配报错）
+    mism = asset_pk_mismatches(pg)
+    if mism:
+        glob.append(f"主键非复合(旧 schema)的表 {mism}；用 migrate-rbac --recreate --apply 重建后再迁")
+
+    # 源侧外键/孤儿完整性（dry-run 即校验，迁前暴露脏数据）
+    for child, ckey, parent, pkey in _FK:
+        try:
+            n = _orphans_duck(duck, child, ckey, parent, pkey)
+        except StorageError:
+            n = 0
+        if n:
+            glob.append(f"源孤儿：{child}.{ckey} 有 {n} 行在 {parent}.{pkey} 无匹配")
 
     for table in _TABLES:
         src = duck.query_df(f"SELECT * FROM {table}")
         tdf = _transform(table, src)
         problems = _validate_mapping(pg, table, tdf)
         migrated = 0
-        if not dry_run and not problems:
+        if not dry_run and not problems and not mism:   # 主键失配时不载入，先 --recreate
             migrated = _load_table(pg, table, tdf)
         report[table] = {"duck": len(src), "migrated": migrated, "problems": problems}
 
@@ -149,8 +199,17 @@ def migrate_rbac(dry_run: bool = True) -> dict:
                 report[table].setdefault("problems", []).append(f"{table}: 迁后归属空值 {n_null} 行")
         report["app_config"]["pg_after"] = int(
             pg.query_df("SELECT count(*) AS n FROM app_config").iloc[0]["n"])
+        # 迁后外键/孤儿完整性（PG 侧，含归属匹配）
+        for child, ckey, parent, pkey in _FK:
+            try:
+                n = _orphans_pg(pg, child, ckey, parent, pkey)
+            except StorageError:
+                n = 0
+            if n:
+                glob.append(f"迁后孤儿：{child}.{ckey} 有 {n} 行在 {parent} 无同归属匹配")
 
+    report["_global"] = {"problems": glob}
     mode = "DRY-RUN" if dry_run else "MIGRATE"
-    log.info("[%s] 存量迁移 %d 表，源合计 %d 行",
-             mode, len(report), sum(r["duck"] for r in report.values()))
+    log.info("[%s] 存量迁移 %d 表，源合计 %d 行，全局问题 %d",
+             mode, len(_TABLES), sum(r["duck"] for r in report.values() if "duck" in r), len(glob))
     return report

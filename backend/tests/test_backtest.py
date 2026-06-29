@@ -350,6 +350,29 @@ def test_backtest_service_list_get_run(market, pg):
     assert other.get_run("r9") is None
 
 
+def test_list_runs_join_no_cross_owner(market, pg):
+    """回归(P0)：list_runs 的 run⋈profile⋈metrics JOIN 必须带归属，否则同 id 会串其他 owner。"""
+    from datetime import date as _date
+
+    from backend.services.backtest_service import BacktestService
+    from backend.tests.conftest import TEST_OWNER, TEST_TENANT
+    # A、B 各有同 id 的 profile 与 run（复合主键下可并存）
+    for owner, pname, ret in ((TEST_OWNER, "A策略", 0.1), ("pytest_other", "B策略", 0.9)):
+        pg.execute("INSERT INTO screen_profile (id,tenant_id,owner_user_id,name,version) VALUES ('PP',%s,%s,%s,1)", [TEST_TENANT, owner, pname])
+        pg.execute("INSERT INTO backtest_run (id,tenant_id,owner_user_id,kind,profile_id,status,created_at) VALUES ('RR',%s,%s,'strategy','PP','done',now())", [TEST_TENANT, owner])
+        pg.execute("INSERT INTO backtest_metrics (run_id,tenant_id,owner_user_id,total_return) VALUES ('RR',%s,%s,%s)", [TEST_TENANT, owner, ret])
+    try:
+        runs = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER).list_runs()
+        mine = [r for r in runs if r["id"] == "RR"]
+        assert len(mine) == 1                              # 不是 4 行笛卡尔积
+        assert mine[0]["profile_name"] == "A策略"          # 不串 B 的 profile
+        assert float(mine[0]["total_return"]) == 0.1       # 不串 B 的 metrics
+    finally:
+        for owner in (TEST_OWNER, "pytest_other"):
+            for t in ("screen_profile", "backtest_run", "backtest_metrics"):
+                pg.execute(f"DELETE FROM {t} WHERE owner_user_id=%s", [owner])
+
+
 # ── 绩效指标 ──────────────────────────────────────────────────
 def test_metrics_basic_signs():
     idx = pd.date_range("2024-01-01", periods=10, freq="D")

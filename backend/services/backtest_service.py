@@ -265,11 +265,16 @@ class BacktestService:
             "       r.trade_profile_id, tp.name AS trade_profile_name, r.trade_profile_version, "
             "       r.score_profile_id, sp.name AS score_profile_name, r.score_profile_version, "
             "       r.date_start, r.date_end, r.status, r.created_at, m.total_return "
+            # JOIN 必须带归属：复合主键下同一业务 id 可属不同 owner，只按 id JOIN 会串其他 owner 的行
             "FROM backtest_run r "
             "LEFT JOIN screen_profile p ON p.id = r.profile_id "
+            "  AND p.tenant_id = r.tenant_id AND p.owner_user_id = r.owner_user_id "
             "LEFT JOIN trade_profile tp ON tp.id = r.trade_profile_id "
+            "  AND tp.tenant_id = r.tenant_id AND tp.owner_user_id = r.owner_user_id "
             "LEFT JOIN score_profile sp ON sp.id = r.score_profile_id "
+            "  AND sp.tenant_id = r.tenant_id AND sp.owner_user_id = r.owner_user_id "
             "LEFT JOIN backtest_metrics m ON m.run_id = r.id "
+            "  AND m.tenant_id = r.tenant_id AND m.owner_user_id = r.owner_user_id "
             f"{where}"
             f"ORDER BY r.created_at DESC {tail}", args)
         return df.to_dict("records")

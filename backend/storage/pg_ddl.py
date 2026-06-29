@@ -516,6 +516,40 @@ def seed_default_tenant(client: PostgresClient | None = None) -> None:
     )
 
 
+def asset_pk_mismatches(client: PostgresClient | None = None) -> list[str]:
+    """返回**已存在但主键与期望复合主键不一致**的资产表（旧单主键 schema 升级检测）。
+
+    用于从早期 stage1（单列主键）升级：CREATE TABLE IF NOT EXISTS 不会改既有表主键，
+    需经 recreate_asset_tables 重建。表不存在的不算（init 会建对）。
+    """
+    client = client or get_pg_client()
+    existing = set(list_pg_tables(client))
+    bad: list[str] = []
+    for t, expected in ASSET_PK.items():
+        if t not in existing:
+            continue
+        df = client.query_df(
+            "SELECT a.attname FROM pg_index i "
+            "JOIN pg_attribute a ON a.attrelid=i.indrelid AND a.attnum=ANY(i.indkey) "
+            "WHERE i.indrelid=%s::regclass AND i.indisprimary", [t])
+        actual = set(df["attname"].tolist()) if not df.empty else set()
+        if actual and actual != set(expected):
+            bad.append(t)
+    return bad
+
+
+def recreate_asset_tables(client: PostgresClient | None = None) -> list[str]:
+    """DROP + 重建全部资产表（从旧 schema 升级用；数据由 migrate-rbac 从 DuckDB 重载）。
+
+    **破坏性**：会清空 PG 侧资产表。仅在确认数据源在 DuckDB（可重迁）时使用。
+    """
+    client = client or get_pg_client()
+    for t in _ASSET_TABLES:
+        client.execute(f"DROP TABLE IF EXISTS {t} CASCADE")
+    log.warning("已 DROP %d 张资产表，准备按复合主键重建", len(_ASSET_TABLES))
+    return init_pg_db(client)
+
+
 def list_pg_tables(client: PostgresClient | None = None) -> list[str]:
     """列出 PG public schema 下所有表名。"""
     client = client or get_pg_client()

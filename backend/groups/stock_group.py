@@ -185,7 +185,8 @@ class StockGroupRepo:
         self.ensure_default_group()
         df = self.pg.query_df(
             "SELECT g.id, g.name, g.group_date, g.description, g.color, g.is_default, "
-            "       (SELECT count(*) FROM stock_group_member m WHERE m.group_id=g.id) AS member_count, "
+            "       (SELECT count(*) FROM stock_group_member m WHERE m.group_id=g.id "
+            "          AND m.tenant_id=g.tenant_id AND m.owner_user_id=g.owner_user_id) AS member_count, "
             "       g.updated_at "
             f"FROM stock_group g WHERE {self._own_where} "
             "ORDER BY g.is_default DESC, g.updated_at DESC", self._own_params)
@@ -263,6 +264,7 @@ class StockGroupRepo:
         df = self.pg.query_df(
             f"SELECT m.code, g.id, g.name, g.color, g.is_default "
             f"FROM stock_group_member m JOIN stock_group g ON g.id=m.group_id "
+            f"  AND g.tenant_id=m.tenant_id AND g.owner_user_id=m.owner_user_id "
             f"WHERE g.tenant_id=%s AND g.owner_user_id=%s "
             f"AND m.code IN ({ph}) ORDER BY g.is_default DESC, g.updated_at DESC",
             [*self._own_params, *codes],
