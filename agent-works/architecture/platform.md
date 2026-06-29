@@ -8,7 +8,7 @@
 
 ## 核心技术
 
-- **单进程全栈**：后端 FastAPI（`backend/main.py:40` `create_app`）装配全部业务路由 + 静态托管 + 启动钩子；CLI（`backend/cli.py`）提供 `serve/health/backfill/update/daily/backtest` 等子命令，`serve` 内部即 `uvicorn.run("backend.main:app")`（`backend/cli.py:42`）。无独立进程、无消息队列、无外部数据库——数据、任务、调度、配置全在同一 Python 进程里。
+- **FastAPI 全栈**：后端 FastAPI（`backend/main.py:40` `create_app`）装配全部业务路由 + 静态托管 + 启动钩子（含三库连通性自检 `_check_storages`）；CLI（`backend/cli.py`）提供 `serve/health/backfill/update/daily/backtest/migrate-rbac` 等子命令，`serve` 内部即 `uvicorn.run("backend.main:app")`。**持久层**：行情 DuckDB + 资产 PostgreSQL + 短状态 Redis（混合持久层 stage1）；行情/任务/调度仍在本进程 + DuckDB，用户资产/平台配置在 PG，Redis 承载限流/会话短状态（阶段二起）。
 - **DuckDB 单文件嵌入式库**：`backend/storage/duckdb_client.py` 封装单文件连接。连接惰性创建、模块级单例 `get_client()`（`:121`）。DuckDB 连接非线程安全，FastAPI 同步端点跑在线程池会并发触碰同一连接，故用一把可重入锁 `RLock`（`:43`）串行化所有 `execute/query_df`；本地查询毫秒级，串行无感。SQL 出错即把 `_conn` 置空，下次访问自动重建（`:64`/`:73`）。幂等写入靠进程内唯一名临时视图 `temp_view()`（`:91`）+ `INSERT ... SELECT`，离开作用域自动注销，避免固定视图名在共享连接下被并发覆盖。
 - **点时安全仓库（总闸门）**：`backend/storage/repository.py` 的 `MarketRepository`。一是 `upsert()`（`:47`）按主键 `_PK`（`:22`）做 `ON CONFLICT DO UPDATE` 幂等写，重复运行不产生重复行。二是**防未来函数/防幸存者偏差总闸门**（`:103` 起）：`get_bars()`（`:108`）只返回 `trade_date <= end_date` 的行，复权用去抖因子列 `adj_factor_clean`（为空 `COALESCE` 回落 `adj_factor`），qfq 按 end_date 当日因子点时归一；`get_universe_asof()`（`:182`）以"当日有行情"为存活判据组装点时股票池，含当时存活后来退市的票，并叠加 ST/次新/停牌/一字板/流通市值/板块过滤。
 - **异步任务底座**：`backend/services/async_task.py`。`TASK_TYPES`（`:28`）为 10 个原子任务类型；`WRITE_TASK_TYPES`（`:31`）为写库类型，全局只允许一个写任务在跑（单写者互斥）。`AsyncTaskService.create()`（`:164`）写 `async_task` 行后起守护线程跑处理器；`TaskContext`（`:58`）提供进度 `progress()`、节流批量实时日志 `log()`/`flush()`、断点 `set_checkpoint()`、协作式取消检查 `check_cancel()`。`_HANDLERS`（`:624`）按类型分派到各业务服务。

@@ -74,15 +74,33 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def cmd_health(_: argparse.Namespace) -> int:
+    """混合持久层三库连通性自检（行情 DuckDB + 资产 PG + 短状态 Redis）。"""
     s = get_settings()
     log.info("配置加载成功：history_years=%s, db=%s", s.datasource.history_years, s.duckdb_path())
-    from backend.storage import get_client
+    from backend.storage import get_client, get_pg_client, get_redis_client
 
-    client = get_client()
-    version = client.query_df("SELECT version() AS v").iloc[0]["v"]
-    log.info("DuckDB 连通：%s @ %s", version, client.db_path)
-    print("OK: 配置与 DuckDB 自检通过")
-    return 0
+    results: list[tuple[str, bool, str]] = []
+    try:
+        v = get_client().query_df("SELECT version() AS v").iloc[0]["v"]
+        results.append(("DuckDB(行情)", True, f"{v}"))
+    except Exception as e:  # noqa: BLE001
+        results.append(("DuckDB(行情)", False, str(e)))
+    try:
+        ok = get_pg_client().ping()
+        results.append(("PostgreSQL(资产)", ok, f"{s.postgres.host}:{s.postgres.port}/{s.postgres.database}"))
+    except Exception as e:  # noqa: BLE001
+        results.append(("PostgreSQL(资产)", False, str(e)))
+    try:
+        ok = get_redis_client().ping()
+        results.append(("Redis(短状态)", ok, f"{s.redis.host}:{s.redis.port}/{s.redis.db}"))
+    except Exception as e:  # noqa: BLE001
+        results.append(("Redis(短状态)", False, str(e)))
+
+    all_ok = all(ok for _, ok, _ in results)
+    for name, ok, detail in results:
+        print(f"  [{'OK ' if ok else 'FAIL'}] {name}: {detail}")
+    print("三库自检通过 ✅" if all_ok else "三库自检存在失败 ❌")
+    return 0 if all_ok else 1
 
 
 def _todo(name: str):
@@ -199,16 +217,26 @@ def cmd_migrate_rbac(args: argparse.Namespace) -> int:
     print(f"=== 存量迁移 {'DRY-RUN（仅预演，未写入）' if dry else 'APPLY（已写入 PG）'} ===")
     print(f"{'表':<24}{'DuckDB源':>10}{'已迁':>8}{'PG(default)后':>14}")
     ok = True
+    all_problems: list[str] = []
     for t, r in report.items():
         after = r.get("pg_after", "-")
-        flag = "" if dry or after in ("-", r["duck"]) else "  ⚠不一致"
-        if flag:
+        probs = r.get("problems") or []
+        all_problems += probs
+        # app_config 平台表走 DO NOTHING 合并语义，行数可不等于源（UI 可后置改），不按行数判错
+        count_bad = (not dry and t != "app_config" and after not in ("-", r["duck"]))
+        bad = bool(probs) or count_bad
+        if bad:
             ok = False
+        flag = "  ⚠" + ("/".join(["映射" if probs else "", "行数不一致" if count_bad else ""]).strip("/")) if bad else ""
         print(f"{t:<24}{r['duck']:>10}{r['migrated']:>8}{str(after):>14}{flag}")
+    if all_problems:
+        print("\n校验问题：")
+        for p in all_problems:
+            print(f"  - {p}")
     if dry:
-        print("\n预演完成。确认无误后加 --apply 实际迁移。")
+        print(f"\n预演{'通过，可加 --apply 实际迁移。' if ok else '发现问题（见上），修复后再迁。'}")
     else:
-        print(f"\n迁移{'完成，行数核对一致 ✅' if ok else '完成，但存在行数不一致 ⚠ 请核查'}")
+        print(f"\n迁移{'完成，字段映射/行数/归属非空 全部核对一致 ✅' if ok else '完成但存在问题 ⚠ 请核查'}")
     return 0 if ok else 1
 
 

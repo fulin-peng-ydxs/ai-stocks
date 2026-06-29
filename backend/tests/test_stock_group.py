@@ -147,3 +147,22 @@ def test_isolation_by_owner(repo):
     finally:
         for t in ("stock_group_member", "stock_group"):
             repo.pg.execute(f"DELETE FROM {t} WHERE owner_user_id=%s", ["pytest_other_owner"])
+
+
+def test_same_group_id_different_owner_no_clobber(repo):
+    """回归(P0)：两个 owner 用同一 group id 互不覆盖（复合主键 + ON CONFLICT 含归属）。"""
+    other = StockGroupRepo(pg=repo.pg, market=repo.mkt, tenant_id=_T_TENANT,
+                           owner_user_id="pytest_other_owner")
+    try:
+        # 直接以相同 id 写两行（绕过 _new_id，模拟 id 碰撞/预设场景）
+        for r, owner, name in ((repo, _T_OWNER, "我的组"), (other, "pytest_other_owner", "他的组")):
+            r.pg.execute(
+                "INSERT INTO stock_group (id,tenant_id,owner_user_id,name,is_default) "
+                "VALUES ('DUPG',%s,%s,%s,false) "
+                "ON CONFLICT (tenant_id, owner_user_id, id) DO UPDATE SET name=EXCLUDED.name",
+                [_T_TENANT, owner, name])
+        assert repo.get("DUPG")["name"] == "我的组"
+        assert other.get("DUPG")["name"] == "他的组"
+        assert len(repo.pg.query_df("SELECT 1 FROM stock_group WHERE id='DUPG'")) == 2
+    finally:
+        repo.pg.execute("DELETE FROM stock_group WHERE id='DUPG'")

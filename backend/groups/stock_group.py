@@ -74,7 +74,8 @@ class StockGroupRepo:
             self.pg.execute(
                 "INSERT INTO stock_group "
                 "(id,tenant_id,owner_user_id,name,group_date,description,color,is_default,created_at,updated_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO NOTHING",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (tenant_id, owner_user_id, id) DO NOTHING",
                 [gid, self.tenant_id, self.owner_user_id, DEFAULT_GROUP_NAME,
                  self._latest_trade_date(), "默认自选分组", DEFAULT_GROUP_COLOR, True, now, now],
             )
@@ -152,7 +153,8 @@ class StockGroupRepo:
             # 已存在则不覆盖其加入日期（保留首次加入基准）
             self.pg.execute(
                 "INSERT INTO stock_group_member (group_id,tenant_id,owner_user_id,code,add_date,note) "
-                "VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (group_id,code) DO NOTHING",
+                "VALUES (%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (tenant_id, owner_user_id, group_id, code) DO NOTHING",
                 [gid, self.tenant_id, self.owner_user_id, code, ad, ""])
             n += 1
         self.pg.execute(

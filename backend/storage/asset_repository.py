@@ -15,20 +15,15 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
-from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
+from backend.storage.pg_ddl import (
+    ASSET_PK,
+    DEFAULT_OWNER_USER_ID,
+    DEFAULT_TENANT_ID,
+)
 
 log = get_logger("storage.asset_repository")
 
-# 资产结果/快照/回测表主键（ON CONFLICT 用）
-ASSET_PK: dict[str, list[str]] = {
-    "screen_result": ["run_date", "profile_id", "code"],
-    "score_result": ["trade_date", "model_id", "code"],
-    "score_snapshot": ["trade_date", "profile_id", "profile_version", "code"],
-    "backtest_trade": ["run_id", "seq"],
-    "backtest_equity": ["run_id", "trade_date"],
-    "backtest_metrics": ["run_id"],
-}
-
+# 主键统一以 pg_ddl.ASSET_PK 为准（复合主键含归属列，保证 ON CONFLICT 按归属命中）
 _OWNER_COLS = ("tenant_id", "owner_user_id")
 
 

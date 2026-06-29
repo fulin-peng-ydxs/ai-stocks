@@ -15,12 +15,14 @@ from typing import Any, Literal
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import get_pg_client
-from backend.storage.pg_ddl import DEFAULT_TENANT_ID
+from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
 
 log = get_logger("storage.layout_config")
 
+# 布局用户层身份键：对齐多租户归属模型，默认=平台管理员（原值 "local"，stage1 起统一）。
+# 存量 "local" 偏好由 migrate-rbac 重映射为 admin（见 migrate_rbac._transform）。
+DEFAULT_USER_ID = DEFAULT_OWNER_USER_ID  # "admin"
 LAYOUT_CONFIG_SCHEMA_VERSION = 1
-DEFAULT_USER_ID = "local"
 
 Density = Literal["compact", "standard", "comfortable"]
 ScrollOwnership = Literal["none", "body-y", "body-xy", "region"]

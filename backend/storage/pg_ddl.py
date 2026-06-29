@@ -5,12 +5,13 @@
 - 行情/参考数据（stock_basic/daily_bar/daily_metrics/index_bar/...）与运维/质检/调度
   （async_task/task_log/scheduled_job/data_*）**仍在 DuckDB**，不在此处。
 
-归属与隔离（R9）：
-- 资产表统一加 tenant_id + owner_user_id（默认 'default'/'admin'，供存量迁移与单测落点），
-  并建 (tenant_id, owner_user_id) 索引；读写按上下文过滤由资产仓库层负责。
-- app_config 为**平台级**配置（仅系统管理员），不加归属列；租户级配置留后续阶段。
-- sys_tenant/sys_user 为**最小骨架**，仅够承载归属与登录落点；完整用户/角色/租户管理表
-  在阶段三补全（additive）。
+归属与隔离（R9，**物理底座**）：
+- 资产表统一加 tenant_id + owner_user_id，且**主键以归属列打头**（复合主键
+  `(tenant_id, owner_user_id, <业务键>)`）：不同 owner 用同一业务 id 不会互相覆盖/串改，
+  ON CONFLICT 也按归属命中各自的行。这是隔离的物理保证，不能只靠查询层 WHERE。
+- app_config 为**平台级**配置（仅系统管理员、无归属列）。
+- layout_user_config 的 user_id 即用户身份，主键 (user_id, page_key) 已天然隔离。
+- sys_tenant/sys_user 为**最小骨架**，完整 RBAC 表在阶段三补全。
 
 类型映射（DuckDB→PG）：VARCHAR→TEXT，DOUBLE→DOUBLE PRECISION，TINYINT→SMALLINT，
 其余 BIGINT/INTEGER/BOOLEAN/DATE/TIMESTAMP 同名。
@@ -29,7 +30,7 @@ log = get_logger("storage.pg_ddl")
 DEFAULT_TENANT_ID = "default"
 DEFAULT_OWNER_USER_ID = "admin"
 
-# 资产表统一归属列（每张资产表都带，便于按租户/用户直接过滤，避免隔离查询跨表 JOIN）
+# 资产表统一归属列（紧跟业务键之后；与复合主键配合）
 _OWN = (
     "    tenant_id      TEXT NOT NULL DEFAULT 'default',\n"
     "    owner_user_id  TEXT NOT NULL DEFAULT 'admin',\n"
@@ -68,14 +69,15 @@ CREATE TABLE IF NOT EXISTS sys_user (
 
 DDL_SCREEN_PROFILE = f"""
 CREATE TABLE IF NOT EXISTS screen_profile (
-    id          TEXT PRIMARY KEY,
+    id          TEXT,
 {_OWN}    name        TEXT,
     version     INTEGER,
     expression  TEXT,
     params      TEXT,
     is_preset   BOOLEAN,
     created_at  TIMESTAMP,
-    updated_at  TIMESTAMP
+    updated_at  TIMESTAMP,
+    PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
 
@@ -86,20 +88,21 @@ CREATE TABLE IF NOT EXISTS screen_profile_version (
     name        TEXT,
     expression  TEXT,
     saved_at    TIMESTAMP,
-    PRIMARY KEY (id, version)
+    PRIMARY KEY (tenant_id, owner_user_id, id, version)
 );
 """
 
 DDL_SCORE_PROFILE = f"""
 CREATE TABLE IF NOT EXISTS score_profile (
-    id               TEXT PRIMARY KEY,
+    id               TEXT,
 {_OWN}    name             TEXT,
     version          INTEGER,
     items            TEXT,
     grade_thresholds TEXT,
     is_preset        BOOLEAN,
     created_at       TIMESTAMP,
-    updated_at       TIMESTAMP
+    updated_at       TIMESTAMP,
+    PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
 
@@ -111,13 +114,13 @@ CREATE TABLE IF NOT EXISTS score_profile_version (
     items            TEXT,
     grade_thresholds TEXT,
     saved_at         TIMESTAMP,
-    PRIMARY KEY (id, version)
+    PRIMARY KEY (tenant_id, owner_user_id, id, version)
 );
 """
 
 DDL_TRADE_PROFILE = f"""
 CREATE TABLE IF NOT EXISTS trade_profile (
-    id          TEXT PRIMARY KEY,
+    id          TEXT,
 {_OWN}    name        TEXT,
     version     INTEGER,
     buy_tree    TEXT,
@@ -125,7 +128,8 @@ CREATE TABLE IF NOT EXISTS trade_profile (
     backstop    TEXT,
     is_preset   BOOLEAN,
     created_at  TIMESTAMP,
-    updated_at  TIMESTAMP
+    updated_at  TIMESTAMP,
+    PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
 
@@ -138,7 +142,7 @@ CREATE TABLE IF NOT EXISTS trade_profile_version (
     sell_tree   TEXT,
     backstop    TEXT,
     saved_at    TIMESTAMP,
-    PRIMARY KEY (id, version)
+    PRIMARY KEY (tenant_id, owner_user_id, id, version)
 );
 """
 
@@ -153,7 +157,7 @@ CREATE TABLE IF NOT EXISTS screen_result (
     hit         BOOLEAN,
     matched     TEXT,
     snapshot    TEXT,
-    PRIMARY KEY (run_date, profile_id, code)
+    PRIMARY KEY (tenant_id, owner_user_id, run_date, profile_id, code)
 );
 """
 
@@ -168,7 +172,7 @@ CREATE TABLE IF NOT EXISTS score_result (
     grade       TEXT,
     buy_point   TEXT,
     risk_flags  TEXT,
-    PRIMARY KEY (trade_date, model_id, code)
+    PRIMARY KEY (tenant_id, owner_user_id, trade_date, model_id, code)
 );
 """
 
@@ -177,14 +181,15 @@ CREATE TABLE IF NOT EXISTS score_result (
 
 DDL_STOCK_GROUP = f"""
 CREATE TABLE IF NOT EXISTS stock_group (
-    id          TEXT PRIMARY KEY,
+    id          TEXT,
 {_OWN}    name        TEXT,
     group_date  DATE,
     description TEXT,
     color       TEXT,
     is_default  BOOLEAN,
     created_at  TIMESTAMP,
-    updated_at  TIMESTAMP
+    updated_at  TIMESTAMP,
+    PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
 
@@ -194,7 +199,7 @@ CREATE TABLE IF NOT EXISTS stock_group_member (
 {_OWN}    code        TEXT,
     add_date    DATE,
     note        TEXT,
-    PRIMARY KEY (group_id, code)
+    PRIMARY KEY (tenant_id, owner_user_id, group_id, code)
 );
 """
 
@@ -203,7 +208,7 @@ CREATE TABLE IF NOT EXISTS stock_group_member (
 
 DDL_BACKTEST_RUN = f"""
 CREATE TABLE IF NOT EXISTS backtest_run (
-    id          TEXT PRIMARY KEY,
+    id          TEXT,
 {_OWN}    kind        TEXT,
     profile_id  TEXT,
     model_id    TEXT,
@@ -219,7 +224,8 @@ CREATE TABLE IF NOT EXISTS backtest_run (
     status      TEXT,
     detail      TEXT,
     created_at  TIMESTAMP,
-    finished_at TIMESTAMP
+    finished_at TIMESTAMP,
+    PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
 
@@ -243,7 +249,7 @@ CREATE TABLE IF NOT EXISTS backtest_trade (
     entry_rank    INTEGER,
     entry_pick_rank INTEGER,
     entry_pool    INTEGER,
-    PRIMARY KEY (run_id, seq)
+    PRIMARY KEY (tenant_id, owner_user_id, run_id, seq)
 );
 """
 
@@ -257,13 +263,13 @@ CREATE TABLE IF NOT EXISTS backtest_equity (
     n_positions      INTEGER,
     drawdown         DOUBLE PRECISION,
     benchmark_equity DOUBLE PRECISION,
-    PRIMARY KEY (run_id, trade_date)
+    PRIMARY KEY (tenant_id, owner_user_id, run_id, trade_date)
 );
 """
 
 DDL_BACKTEST_METRICS = f"""
 CREATE TABLE IF NOT EXISTS backtest_metrics (
-    run_id          TEXT PRIMARY KEY,
+    run_id          TEXT,
 {_OWN}    total_return    DOUBLE PRECISION,
     annual_return   DOUBLE PRECISION,
     max_drawdown    DOUBLE PRECISION,
@@ -279,7 +285,8 @@ CREATE TABLE IF NOT EXISTS backtest_metrics (
     benchmark_return DOUBLE PRECISION,
     excess_return   DOUBLE PRECISION,
     hit_rate_by_grade TEXT,
-    extra           TEXT
+    extra           TEXT,
+    PRIMARY KEY (tenant_id, owner_user_id, run_id)
 );
 """
 
@@ -296,7 +303,7 @@ CREATE TABLE IF NOT EXISTS score_snapshot (
     grade           TEXT,
     rank            INTEGER,
     sub_scores      TEXT,
-    PRIMARY KEY (trade_date, profile_id, profile_version, code)
+    PRIMARY KEY (tenant_id, owner_user_id, trade_date, profile_id, profile_version, code)
 );
 """
 
@@ -308,7 +315,7 @@ CREATE TABLE IF NOT EXISTS score_snapshot_meta (
     computed_at     TIMESTAMP,
     stale           BOOLEAN,
     n_codes         INTEGER,
-    PRIMARY KEY (trade_date, profile_id, profile_version)
+    PRIMARY KEY (tenant_id, owner_user_id, trade_date, profile_id, profile_version)
 );
 """
 
@@ -317,7 +324,7 @@ CREATE TABLE IF NOT EXISTS score_snapshot_meta (
 
 DDL_TRAINING_SESSION = f"""
 CREATE TABLE IF NOT EXISTS training_session (
-    id              TEXT PRIMARY KEY,
+    id              TEXT,
 {_OWN}    mode            TEXT,
     range_start     DATE,
     range_end       DATE,
@@ -336,7 +343,8 @@ CREATE TABLE IF NOT EXISTS training_session (
     n_trades        INTEGER,
     review_note     TEXT,
     created_at      TIMESTAMP,
-    completed_at    TIMESTAMP
+    completed_at    TIMESTAMP,
+    PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
 
@@ -362,7 +370,7 @@ CREATE TABLE IF NOT EXISTS training_round (
     round_return    DOUBLE PRECISION,
     benchmark_return DOUBLE PRECISION,
     final_equity    DOUBLE PRECISION,
-    PRIMARY KEY (session_id, seq)
+    PRIMARY KEY (tenant_id, owner_user_id, session_id, seq)
 );
 """
 
@@ -384,12 +392,12 @@ CREATE TABLE IF NOT EXISTS training_trade (
     return_pct      DOUBLE PRECISION,
     reason          TEXT,
     auto_close      BOOLEAN,
-    PRIMARY KEY (session_id, round_seq, seq)
+    PRIMARY KEY (tenant_id, owner_user_id, session_id, round_seq, seq)
 );
 """
 
 
-# ── 布局用户层（用户资产；user_id 即归属）──────────────────────────
+# ── 布局用户层（用户资产；user_id 即身份，天然隔离）────────────────
 
 DDL_LAYOUT_USER_CONFIG = f"""
 CREATE TABLE IF NOT EXISTS layout_user_config (
@@ -414,7 +422,31 @@ CREATE TABLE IF NOT EXISTS app_config (
 """
 
 
-# 带归属列、需建 (tenant_id, owner_user_id) 索引的资产表
+# 归属表 → 复合主键（含归属列）。asset_repository / 各仓库 ON CONFLICT 必须与此一致。
+ASSET_PK: dict[str, list[str]] = {
+    "screen_profile": ["tenant_id", "owner_user_id", "id"],
+    "screen_profile_version": ["tenant_id", "owner_user_id", "id", "version"],
+    "score_profile": ["tenant_id", "owner_user_id", "id"],
+    "score_profile_version": ["tenant_id", "owner_user_id", "id", "version"],
+    "trade_profile": ["tenant_id", "owner_user_id", "id"],
+    "trade_profile_version": ["tenant_id", "owner_user_id", "id", "version"],
+    "screen_result": ["tenant_id", "owner_user_id", "run_date", "profile_id", "code"],
+    "score_result": ["tenant_id", "owner_user_id", "trade_date", "model_id", "code"],
+    "stock_group": ["tenant_id", "owner_user_id", "id"],
+    "stock_group_member": ["tenant_id", "owner_user_id", "group_id", "code"],
+    "backtest_run": ["tenant_id", "owner_user_id", "id"],
+    "backtest_trade": ["tenant_id", "owner_user_id", "run_id", "seq"],
+    "backtest_equity": ["tenant_id", "owner_user_id", "run_id", "trade_date"],
+    "backtest_metrics": ["tenant_id", "owner_user_id", "run_id"],
+    "score_snapshot": ["tenant_id", "owner_user_id", "trade_date", "profile_id", "profile_version", "code"],
+    "score_snapshot_meta": ["tenant_id", "owner_user_id", "trade_date", "profile_id", "profile_version"],
+    "training_session": ["tenant_id", "owner_user_id", "id"],
+    "training_round": ["tenant_id", "owner_user_id", "session_id", "seq"],
+    "training_trade": ["tenant_id", "owner_user_id", "session_id", "round_seq", "seq"],
+    "layout_user_config": ["user_id", "page_key"],
+}
+
+# 表 DDL（建表用）
 _ASSET_TABLES: dict[str, str] = {
     "screen_profile": DDL_SCREEN_PROFILE,
     "screen_profile_version": DDL_SCREEN_PROFILE_VERSION,
@@ -457,11 +489,10 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         client.execute(sql)
         created.append(name)
         log.debug("PG 表已就绪: %s", name)
-    for name in _ASSET_TABLES:
-        client.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_{name}_owner "
-            f"ON {name} (tenant_id, owner_user_id)"
-        )
+    # layout 主键以 user_id 打头，补归属索引便于按 owner 统计；其余表复合主键已覆盖归属查询
+    client.execute(
+        "CREATE INDEX IF NOT EXISTS idx_layout_user_config_owner "
+        "ON layout_user_config (tenant_id, owner_user_id)")
     seed_default_tenant(client)
     return created
 

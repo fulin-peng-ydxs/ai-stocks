@@ -58,7 +58,8 @@ class ProfileRepo:
         self.pg.execute(
             "INSERT INTO screen_profile "
             "(id,tenant_id,owner_user_id,name,version,expression,params,is_preset,created_at,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (tenant_id, owner_user_id, id) DO UPDATE SET "
             "name=EXCLUDED.name, version=EXCLUDED.version, expression=EXCLUDED.expression, "
             "params=EXCLUDED.params, is_preset=EXCLUDED.is_preset, updated_at=EXCLUDED.updated_at",
             [pid, self.tenant_id, self.owner_user_id, name, version, expr_json,
@@ -68,7 +69,8 @@ class ProfileRepo:
         self.pg.execute(
             "INSERT INTO screen_profile_version "
             "(id,tenant_id,owner_user_id,version,name,expression,saved_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id,version) DO UPDATE SET "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (tenant_id, owner_user_id, id, version) DO UPDATE SET "
             "name=EXCLUDED.name, expression=EXCLUDED.expression, saved_at=EXCLUDED.saved_at",
             [pid, self.tenant_id, self.owner_user_id, version, name, expr_json, now],
         )

@@ -213,7 +213,8 @@ class ScoreProfileRepo:
         self.pg.execute(
             "INSERT INTO score_profile "
             "(id,tenant_id,owner_user_id,name,version,items,grade_thresholds,is_preset,created_at,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (tenant_id, owner_user_id, id) DO UPDATE SET "
             "name=EXCLUDED.name, version=EXCLUDED.version, items=EXCLUDED.items, "
             "grade_thresholds=EXCLUDED.grade_thresholds, is_preset=EXCLUDED.is_preset, updated_at=EXCLUDED.updated_at",
             [pid, self.tenant_id, self.owner_user_id, name, version, items_json, gt_json,
@@ -222,7 +223,8 @@ class ScoreProfileRepo:
         self.pg.execute(
             "INSERT INTO score_profile_version "
             "(id,tenant_id,owner_user_id,version,name,items,grade_thresholds,saved_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id,version) DO UPDATE SET "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (tenant_id, owner_user_id, id, version) DO UPDATE SET "
             "name=EXCLUDED.name, items=EXCLUDED.items, grade_thresholds=EXCLUDED.grade_thresholds, saved_at=EXCLUDED.saved_at",
             [pid, self.tenant_id, self.owner_user_id, version, name, items_json, gt_json, now],
         )

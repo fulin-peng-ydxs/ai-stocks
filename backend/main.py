@@ -104,8 +104,13 @@ def create_app() -> FastAPI:
     # 避免运行期才暴露连接问题（密码不进异常信息，见各 client）。
     @app.on_event("startup")
     def _check_storages() -> None:
-        from backend.storage import get_pg_client, get_redis_client
+        from backend.storage import get_client, get_pg_client, get_redis_client
 
+        # 行情 DuckDB（只读分析）
+        try:
+            get_client().query_df("SELECT 1 AS ok")
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(f"DuckDB 连通性自检失败：{e}") from e
         if not get_pg_client().ping():
             raise RuntimeError("PostgreSQL 连通性自检失败：ping 未返回预期结果")
         if not get_redis_client().ping():

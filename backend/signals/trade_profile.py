@@ -177,7 +177,8 @@ class TradeProfileRepo:
         self.pg.execute(
             "INSERT INTO trade_profile "
             "(id,tenant_id,owner_user_id,name,version,buy_tree,sell_tree,backstop,is_preset,created_at,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (tenant_id, owner_user_id, id) DO UPDATE SET "
             "name=EXCLUDED.name, version=EXCLUDED.version, buy_tree=EXCLUDED.buy_tree, "
             "sell_tree=EXCLUDED.sell_tree, backstop=EXCLUDED.backstop, is_preset=EXCLUDED.is_preset, "
             "updated_at=EXCLUDED.updated_at",
@@ -185,7 +186,8 @@ class TradeProfileRepo:
         self.pg.execute(
             "INSERT INTO trade_profile_version "
             "(id,tenant_id,owner_user_id,version,name,buy_tree,sell_tree,backstop,saved_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (id,version) DO UPDATE SET "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (tenant_id, owner_user_id, id, version) DO UPDATE SET "
             "name=EXCLUDED.name, buy_tree=EXCLUDED.buy_tree, sell_tree=EXCLUDED.sell_tree, "
             "backstop=EXCLUDED.backstop, saved_at=EXCLUDED.saved_at",
             [pid, self.tenant_id, self.owner_user_id, version, name, bj, sj, kj, now])

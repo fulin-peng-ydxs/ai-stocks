@@ -24,7 +24,12 @@ screen_profile(+version) / score_profile(+version) / trade_profile(+version) / s
 - `app_config`：平台表无归属，`ON CONFLICT DO NOTHING` 载入（不清空、不覆盖）。
 
 ## 执行口径（幂等·可重跑）
-每个归属表：先 `DELETE WHERE tenant_id='default'`（清掉历史迁移/测试残留），再整表载入 → 与 DuckDB 精确镜像。完成后自动核对「PG default 租户行数 == DuckDB 源行数」。
+每个归属表：先 `DELETE WHERE tenant_id='default'`（清掉历史迁移/测试残留），再整表载入 → 与 DuckDB 精确镜像。
+
+**校验（可复跑，T3/T4）**：
+- dry-run：逐表「源列经归属变换后 ⊆ PG 目标列」字段映射校验 + 归属列齐备，不写；有问题不放行。
+- apply：用实际写入行数(rowcount)统计，迁后三重核对——**字段映射 / PG default 租户行数 == DuckDB 源行数 / 归属列非空**，任一不符 CLI 退出码非 0。
+- 隔离物理底座：PG 归属表为**复合主键 `(tenant_id, owner_user_id, <业务键>)`**，不同 owner 同业务 id 不互相覆盖（回归用例 `test_*_same_id_different_owner_no_clobber` 守护）。
 
 ## 影响范围
 - 仅写 PG 资产表；DuckDB 不改。
@@ -36,4 +41,6 @@ screen_profile(+version) / score_profile(+version) / trade_profile(+version) / s
 - **不可逆点**：上线后用户在 PG 产生新数据（新建方案/回测/训练等）后，无法再简单回退到迁移前状态。
 
 ## 本次执行结果（dev 环境，2026-06-28）
-源合计 ~6.98 万行，20 资产表迁移后行数**逐表精确一致**；app_config 源 0 行（清理冒烟残留后对齐）。重启后应用各域（方案/分组/回测/训练/榜单）实时可见，跨库榜单（PG 快照 + DuckDB 名称内存合并）验证通过。
+源合计 ~6.98 万行，20 资产表迁移后**字段映射通过 / 行数逐表精确一致 / 归属列无空值**；app_config 平台表走合并语义、按 UI 后置可改不按行数判错。重启后应用各域（方案/分组/回测/训练/榜单）实时可见，跨库榜单（PG 快照 + DuckDB 名称内存合并）验证通过。
+
+**T4 回归口径**：①迁移一致性 = 上述 migrate-rbac 三重核对（可复跑）。②「迁移前后结果一致」= 行情计算底座（DuckDB + pandas）**完全未变**、方案/快照为精确行级镜像，故选股/回测/榜单输入不变、输出一致；榜单实测读出迁移后真实数据。③性能：重计算仍在 DuckDB，PG 仅承担方案读 + 结果写，计算热路径无新增 I/O，未单独压测（无显著退化预期）。

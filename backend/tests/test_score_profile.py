@@ -127,3 +127,21 @@ def test_repo_isolation_by_owner(market, pg):
     finally:
         pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", ["pytest_other"])
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", ["pytest_other"])
+
+
+def test_same_id_different_owner_no_clobber(market, pg):
+    """回归(P0)：两个 owner 用同一 id 互不覆盖、各读各的（复合主键隔离）。"""
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    A = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    B = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id="pytest_other")
+    try:
+        A.save("DUP", "A的方案", items)
+        B.save("DUP", "B的方案", items)          # 同 id 不同 owner
+        assert A.get("DUP")["name"] == "A的方案"  # A 未被 B 覆盖
+        assert B.get("DUP")["name"] == "B的方案"  # B 读到自己的
+        rows = pg.query_df("SELECT owner_user_id FROM score_profile WHERE id='DUP'")
+        assert len(rows) == 2                     # 两行并存，非一行被覆盖
+    finally:
+        for o in (TEST_OWNER, "pytest_other"):
+            pg.execute("DELETE FROM score_profile WHERE id='DUP' AND owner_user_id=%s", [o])
+            pg.execute("DELETE FROM score_profile_version WHERE id='DUP' AND owner_user_id=%s", [o])
