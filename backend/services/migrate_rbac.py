@@ -43,14 +43,16 @@ log = get_logger("services.migrate_rbac")
 _TABLES: list[str] = list(_ASSET_TABLES.keys())
 _LEGACY_LAYOUT_USER = "local"   # 旧单用户布局身份键 → 重映射为 admin
 
-# 外键/孤儿完整性关系（child.ckey → parent.pkey）：迁移前后校验无孤儿（T3 要求）
-_FK: list[tuple[str, str, str, str]] = [
-    ("stock_group_member", "group_id", "stock_group", "id"),
-    ("backtest_trade", "run_id", "backtest_run", "id"),
-    ("backtest_equity", "run_id", "backtest_run", "id"),
-    ("backtest_metrics", "run_id", "backtest_run", "id"),
-    ("training_round", "session_id", "training_session", "id"),
-    ("training_trade", "session_id", "training_session", "id"),
+# 外键/孤儿完整性关系（child →[(child列,parent列)...] parent）：迁移前后校验无孤儿（T3 要求）
+_FK: list[tuple[str, str, list[tuple[str, str]]]] = [
+    ("stock_group_member", "stock_group", [("group_id", "id")]),
+    ("backtest_trade", "backtest_run", [("run_id", "id")]),
+    ("backtest_equity", "backtest_run", [("run_id", "id")]),
+    ("backtest_metrics", "backtest_run", [("run_id", "id")]),
+    ("training_round", "training_session", [("session_id", "id")]),
+    ("training_trade", "training_session", [("session_id", "id")]),
+    # 深一层父子：trade 必须挂在真实存在的 round 上（session_id + 回合序号）
+    ("training_trade", "training_round", [("session_id", "session_id"), ("round_seq", "seq")]),
 ]
 
 
@@ -117,21 +119,24 @@ def _load_table(pg, table: str, df: pd.DataFrame) -> int:
             return cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(df)
 
 
-def _orphans_duck(duck, child: str, ckey: str, parent: str, pkey: str) -> int:
-    """DuckDB 源侧孤儿数（child 的外键在 parent 中无匹配）。"""
+def _orphans_duck(duck, child: str, parent: str, pairs: list[tuple[str, str]]) -> int:
+    """DuckDB 源侧孤儿数（child 的外键组在 parent 中无匹配）。"""
+    join = " AND ".join(f"p.{pk}=c.{ck}" for ck, pk in pairs)
+    notnull = " AND ".join(f"c.{ck} IS NOT NULL" for ck, _ in pairs)
     df = duck.query_df(
-        f"SELECT count(*) AS n FROM {child} c "
-        f"WHERE c.{ckey} IS NOT NULL AND NOT EXISTS "
-        f"(SELECT 1 FROM {parent} p WHERE p.{pkey}=c.{ckey})")
+        f"SELECT count(*) AS n FROM {child} c WHERE {notnull} "
+        f"AND NOT EXISTS (SELECT 1 FROM {parent} p WHERE {join})")
     return int(df.iloc[0]["n"])
 
 
-def _orphans_pg(pg, child: str, ckey: str, parent: str, pkey: str) -> int:
+def _orphans_pg(pg, child: str, parent: str, pairs: list[tuple[str, str]]) -> int:
     """PG 侧孤儿数（default 租户内，含归属匹配）。"""
+    join = " AND ".join(f"p.{pk}=c.{ck}" for ck, pk in pairs)
+    notnull = " AND ".join(f"c.{ck} IS NOT NULL" for ck, _ in pairs)
     df = pg.query_df(
-        f"SELECT count(*) AS n FROM {child} c WHERE c.tenant_id=%s AND c.{ckey} IS NOT NULL "
+        f"SELECT count(*) AS n FROM {child} c WHERE c.tenant_id=%s AND {notnull} "
         f"AND NOT EXISTS (SELECT 1 FROM {parent} p WHERE p.tenant_id=c.tenant_id "
-        f"AND p.owner_user_id=c.owner_user_id AND p.{pkey}=c.{ckey})", [DEFAULT_TENANT_ID])
+        f"AND p.owner_user_id=c.owner_user_id AND {join})", [DEFAULT_TENANT_ID])
     return int(df.iloc[0]["n"])
 
 
@@ -154,13 +159,14 @@ def migrate_rbac(dry_run: bool = True, recreate: bool = False) -> dict:
         glob.append(f"主键非复合(旧 schema)的表 {mism}；用 migrate-rbac --recreate --apply 重建后再迁")
 
     # 源侧外键/孤儿完整性（dry-run 即校验，迁前暴露脏数据）
-    for child, ckey, parent, pkey in _FK:
+    for child, parent, pairs in _FK:
         try:
-            n = _orphans_duck(duck, child, ckey, parent, pkey)
+            n = _orphans_duck(duck, child, parent, pairs)
         except StorageError:
             n = 0
         if n:
-            glob.append(f"源孤儿：{child}.{ckey} 有 {n} 行在 {parent}.{pkey} 无匹配")
+            cols = "+".join(ck for ck, _ in pairs)
+            glob.append(f"源孤儿：{child}.({cols}) 有 {n} 行在 {parent} 无匹配")
 
     for table in _TABLES:
         src = duck.query_df(f"SELECT * FROM {table}")
@@ -200,13 +206,14 @@ def migrate_rbac(dry_run: bool = True, recreate: bool = False) -> dict:
         report["app_config"]["pg_after"] = int(
             pg.query_df("SELECT count(*) AS n FROM app_config").iloc[0]["n"])
         # 迁后外键/孤儿完整性（PG 侧，含归属匹配）
-        for child, ckey, parent, pkey in _FK:
+        for child, parent, pairs in _FK:
             try:
-                n = _orphans_pg(pg, child, ckey, parent, pkey)
+                n = _orphans_pg(pg, child, parent, pairs)
             except StorageError:
                 n = 0
             if n:
-                glob.append(f"迁后孤儿：{child}.{ckey} 有 {n} 行在 {parent} 无同归属匹配")
+                cols = "+".join(ck for ck, _ in pairs)
+                glob.append(f"迁后孤儿：{child}.({cols}) 有 {n} 行在 {parent} 无同归属匹配")
 
     report["_global"] = {"problems": glob}
     mode = "DRY-RUN" if dry_run else "MIGRATE"

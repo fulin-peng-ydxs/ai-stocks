@@ -68,7 +68,7 @@ def upsert_profile(body: ProfileIn) -> ApiResponse:
 
 @router.delete("/profiles/{pid}", response_model=ApiResponse)
 def delete_profile(pid: str) -> ApiResponse:
-    get_client().execute("DELETE FROM screen_profile WHERE id = ?", [pid])
+    ProfileRepo().delete(pid)   # 走 PG 资产仓库（按归属删方案 + 版本历史）
     return ok(msg="已删除")
 
 

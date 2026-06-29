@@ -106,6 +106,13 @@ class ProfileRepo:
             f"ORDER BY is_preset DESC, id", self._op)
         return df.to_dict("records")
 
+    def delete(self, pid: str) -> None:
+        """删除方案及其版本历史（PG，按归属）。"""
+        self.pg.execute(
+            f"DELETE FROM screen_profile WHERE id=%s AND {self._own}", [pid, *self._op])
+        self.pg.execute(
+            f"DELETE FROM screen_profile_version WHERE id=%s AND {self._own}", [pid, *self._op])
+
     def seed_presets(self) -> int:
         """把内置预设方案写入（幂等）。"""
         n = 0

@@ -61,3 +61,34 @@ def test_delete_and_abort_owner_scoped(market, pg):
     other.delete("ts_keep")
     assert svc._session_row("ts_keep") is not None
     pg.execute("DELETE FROM training_session WHERE owner_user_id=%s", ["pytest_other"])
+
+
+def test_same_session_id_different_owner_no_crossread(market, pg):
+    """回归(P0)：同 session_id 不同 owner，round/trade 读写互不串（归属过滤，非靠 session 唯一）。"""
+    own = "pytest_other"
+
+    def _clean_ss():   # training_session 按 id，round/trade 按 session_id
+        for o in (TEST_OWNER, own):
+            pg.execute("DELETE FROM training_round WHERE session_id='SS' AND owner_user_id=%s", [o])
+            pg.execute("DELETE FROM training_trade WHERE session_id='SS' AND owner_user_id=%s", [o])
+            pg.execute("DELETE FROM training_session WHERE id='SS' AND owner_user_id=%s", [o])
+
+    _clean_ss()   # 前置清理，避免上次失败残留导致主键冲突
+    for o in (TEST_OWNER, own):
+        _mk_session(pg, "SS", owner=o, status="running")
+        pg.execute(
+            "INSERT INTO training_round (session_id,tenant_id,owner_user_id,seq,code,window_days,"
+            "cursor_idx,status,cash,pos_shares,pos_cost,pos_avg_price,realized_pnl,pending) "
+            "VALUES ('SS',%s,%s,0,'X',5,0,'running',100000,0,0,0,0,NULL)", [TEST_TENANT, o])
+    A = TrainingService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    try:
+        assert len(A._round_rows("SS")) == 1          # 只读到自己的回合，不是 2
+        # A 改自己的 pending，不应影响他人
+        A.pg.execute("UPDATE training_round SET pending='MINE' WHERE session_id='SS' AND seq=0 "
+                     "AND tenant_id=%s AND owner_user_id=%s", [TEST_TENANT, TEST_OWNER])
+        other_pending = pg.query_df(
+            "SELECT pending FROM training_round WHERE session_id='SS' AND owner_user_id=%s", [own]
+        ).iloc[0]["pending"]
+        assert other_pending is None                  # 他人的 pending 未被串改
+    finally:
+        _clean_ss()
