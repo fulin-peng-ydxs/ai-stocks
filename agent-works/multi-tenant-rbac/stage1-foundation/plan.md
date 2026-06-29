@@ -177,3 +177,21 @@
 - 本阶段建的 `sys_tenant`/`sys_user` 最小骨架，阶段三补全为完整用户/角色/租户管理（additive ALTER + 新表）。
 - 本阶段 seed 的 default 租户/admin，阶段二登录后成为首个真实平台管理员账号。
 - Redis 连接本阶段仅建底座，阶段二起承载限流/验证码/token 黑名单/perm_ver。
+
+---
+
+## 8. 实际落地校准（stage1 已完成 · 2026-06）
+
+> 计划 vs 实际：以下为开发/评审过程中相对本计划的调整，后续 AI 以此为准。
+
+**状态：阶段一 T1–T4 + 文档治理全部完成**，分支 `feat/multi-tenant-rbac-stage1` 共 7 个提交（均**未推送**）：
+`1732df5`(T1+8域) → `4929c62`(T2收尾3域) → `6365edc`(T3迁移) → `5ab3e49`(文档治理) → `8ad0b86`(评审一轮) → `15e4e10`(评审二轮) → `01ebed9`(评审三轮)。全量 **215 passed**；`migrate-rbac --recreate --apply` 字段映射/行数/归属非空/外键完整全绿。
+
+与计划的差异：
+- **迁移说明文档落 `.md` 非 `.sql`**：实际为 [migrate-assets-to-pg.md](migrate-assets-to-pg.md)（迁移逻辑在 `backend/services/migrate_rbac.py` 编排，非纯 SQL 脚本），§2.2/§4 中的 `migrate-assets-to-pg.sql` 以此为准。另补 [deploy-reverse-proxy.md](deploy-reverse-proxy.md)（Caddy/Nginx TLS 模板）。
+- **复合主键是评审才补的关键修正**：T2.1 初版资产表为单 `id` 主键，一轮评审复现「同 id 不同 owner 互相覆盖」P0 后改为复合主键 `(tenant_id, owner_user_id, 业务键)`；旧库升级走 `migrate-rbac --recreate`（`asset_pk_mismatches` 检测 + `recreate_asset_tables`）。
+- **隔离需贯穿读侧**：二轮评审复现多表 JOIN/相关子查询只按业务 id 关联会跨 owner 串数据（backtest `list_runs` 四 JOIN、stock_group 成员计数、groups_for_codes）；三轮复现 training round/trade/`max(seq)`/删除未带归属。教训已沉淀进 [CLAUDE.md](../../../CLAUDE.md)「资产归属与隔离」三条铁律。
+- **实际测试文件**（非计划中的 `test_pg_client.py/test_dual_store.py/test_migrate_rbac.py`）：`conftest.py`（pg/market/app_cfg 夹具，TEST_TENANT/TEST_OWNER 按 owner 清理）+ 各域 `test_score_profile.py`/`test_stock_group.py`/`test_backtest.py`/`test_training_service.py`/`test_trade_profile.py`/`test_screen_profile_repo.py`，每个含跨 owner 隔离回归用例。
+- **11 域全迁 PG**（计划 §1.1 未逐一列举）：stock_group / screen_profile(+version) / score_profile / trade_profile / score_snapshot(+meta) / screen_result / score_result / backtest_*(run/trade/equity/metrics) / training_*(session/round/trade) / layout_user_config / app_config。
+
+里程碑 6 项全部达成，可进入**阶段二（认证与鉴权内核）**。

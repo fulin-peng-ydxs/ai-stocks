@@ -57,6 +57,7 @@ python -m backend.cli daily                 # 一键日常：增量更新→质�
 # 多租户混合持久层（stage1）
 python -m backend.cli migrate-rbac          # 存量资产 DuckDB→PG 一次性迁移：默认 dry-run 预演
 python -m backend.cli migrate-rbac --apply  # 实迁（先停占用 DuckDB 的服务；DuckDB 原表保留兜底）
+python -m backend.cli migrate-rbac --recreate --apply  # 旧单主键 schema 升级：DROP+重建资产表(复合主键)再迁
 ```
 
 CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main.py](backend/main.py)。
@@ -114,6 +115,6 @@ CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main
 - **base rate**：分层命中率必减同期全市场无条件命中率得超额，并附样本量。
 - **统一基座**：技术指标是唯一原子定义，买卖/评分/筛选全部引用它组合，**不在下游硬编码字段**。
 - **分层职责**：`api/` 只做参数校验与响应包装，业务逻辑放 `services/` 与领域引擎；行情读经点时安全仓库(DuckDB)、用户资产读写经资产仓库(PG)，**禁跨库 JOIN**（详见「架构与分层 · 双库访问层」）；长耗时操作走 `async_task` 异步任务底座 + 进度。
-- **资产归属与隔离**：用户私有资产表（PG）一律带 `tenant_id`+`owner_user_id`，读写按归属过滤、写入自动注归属；行情等全市场只读 reference（DuckDB）不带归属、全局共享；**禁止前端传归属字段越权**（归属一律取自上下文/默认）。
+- **资产归属与隔离**：用户私有资产表（PG）一律带 `tenant_id`+`owner_user_id`，读写按归属过滤、写入自动注归属；行情等全市场只读 reference（DuckDB）不带归属、全局共享；**禁止前端传归属字段越权**（归属一律取自上下文/默认）。隔离落地三条铁律（stage1 三轮评审血泪，违反即跨租户串数据）：①**物理主键须复合** `(tenant_id, owner_user_id, 业务键)`，单 `id` 主键会被他人同 id 覆盖；`ON CONFLICT` 必须命中复合键。②**读侧每一个跨资产表 JOIN / 相关子查询都必须带** `AND a.tenant_id=b.tenant_id AND a.owner_user_id=b.owner_user_id`——只按业务 id 关联会产生跨 owner 笛卡尔串数据（只补写侧 PK 不够）。③删除/更新/`max(seq)` 等**每条**资产 SQL 都要带归属过滤，别依赖业务键“看起来唯一”。平台表（`indicator_def`/`app_config`/layout preset·page·policy/`sys_*`）用自然键、不带归属。`mark_stale_*`/`stats()` 等行情变更触发的全局失效是**有意不带归属**（影响所有租户）。
 - **配置即时生效**：阈值/权重/参数集中在 [config/settings.yaml](config/settings.yaml)，Web 表单改的进 `app_config` 覆盖层（**平台级，已迁 PG**，`get_effective_settings` 合并）；**改参不写进代码**。
 - **写库互斥仅限 DuckDB**：全市场采集/补数/修复/重算同一时间只能跑一个（DuckDB 单写进程，遇 409 说明已有写任务）；用户资产并发写在 PG，不受该互斥限制（这正是混合持久层的目的）。
