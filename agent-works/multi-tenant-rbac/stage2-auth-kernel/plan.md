@@ -296,9 +296,9 @@
 - 完成标准：R20 骨架闭环 + §4.7 菜单兼容口径落地。
 
 ### 6.8 任务 T8：登录/注册页（科技风 + 黑白主题）
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。落地：`views/LoginView.vue` 按视觉原型 [../prototypes/login.html](../prototypes/login.html) 全量重做——分栏壳（左科技风品牌视觉 网格+脉冲+标语 / 右认证卡）、登录/注册 Tab、账密+密码显隐、确认密码（注册）、邮箱验证码+60s 倒计时（注册且 `require_email_code`）、图形验证码（`login_captcha_enabled` 且本地已失败后显隐，点图刷新）、第三方 4 入口置灰+title、右上主题切换复用 `useTheme`。**黑白双主题坑**：`:global(html.dark) .login-shell` 组合选择器在 scoped CSS 下不生效（`:global` 段落断作用域链）；改为自身类绑定 `:class="{'is-dark':isDark}"` + `.login-shell.is-dark{...深色 token}`，完全 scoped 可靠命中。公开配置挂载时 `getPublicConfig()` 拉取，失败保守默认（要邮箱码/不强制图形码）。App.vue（T7 已就绪）按 `route.meta.fullscreen` 只渲染 `<router-view>`。未新增 `usePublicAuthConfig.ts`（逻辑内联进 LoginView 足够，避免过度抽象）。验证：preview 5181 截图核验 light/dark 两套 + 登录/注册切换 + 第三方置灰 + 窄屏退化（品牌收顶条单列）均达标；控制台无告警；`npx vitest run src` 85 passed（含 `layout-contract.spec.ts` 绿，未踩 vh/布局类红线）；`npm run build`（vue-tsc + 产物同步）通过。
 - 依赖：T7,T4
-- 涉及文件/模块：`frontend/src/views/LoginView.vue`、`frontend/src/composables/usePublicAuthConfig.ts`、[frontend/src/App.vue](../../../frontend/src/App.vue)（按 `route.meta.fullscreen` 决定是否套主框架）、登录页样式（CSS 变量 light/dark）
+- 涉及文件/模块：`frontend/src/views/LoginView.vue`、[frontend/src/App.vue](../../../frontend/src/App.vue)（按 `route.meta.fullscreen` 决定是否套主框架，T7 已改）、登录页样式（CSS 变量 light/dark 双 token）
 - 目标：按视觉原型 [../prototypes/login.html](../prototypes/login.html) 实现登录页与全部页面功能点（§4.3.1），并满足 §4.6 页面设计闭环。
 - 操作：分栏壳（左视觉 / 右认证卡）；登录/注册 Tab；表单校验；图形验证码（开关/失败触发显隐）；邮箱码发送倒计时；第三方占位置灰 + tooltip；右上主题切换复用 `useTheme`；科技风视觉（CSS 变量 + 纯 CSS/SVG 网格脉冲，light/dark 各一套 token）；App.vue 改为 `route.meta.fullscreen` 时只渲染 `<router-view>`（不套 SideMenu/顶栏）。**契约硬约束（§4.6）：全屏用 `position:fixed;inset:0` 或 `height:100%` 继承链，禁 `vh/dvh` 高度、禁手写 `.v-page/.v-grow/.v-scroll`，类名用 `.login-*`，确保过 `layout-contract.spec.ts`。**
 - 产出：LoginView + 公共配置 composable + App 壳条件渲染。
