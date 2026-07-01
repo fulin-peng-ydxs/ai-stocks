@@ -196,7 +196,7 @@
 | R16 | 注册防滥用开关化 | 登录链路读开关(默认邮箱码开/图形码关，对齐需求)、图形验证码、邮箱码 gen/verify | T6,T8 | 待开始 | 部分覆盖 | 可视化开关页留阶段五 R19；**邮件投递 dev 日志=开发态降级，生产放量前须接 SMTP** |
 | P1 登录页 | 7.1 登录/注册页 | LoginView 科技风+黑白主题，承接原型 prototypes/login.html，过 layout-contract 契约 | T8 | 待开始 | 一致 | 原型已在需求 7.1 敲定 |
 | P2 顶栏用户区 | 7.2 顶栏用户区 | App.vue 用户下拉+退出 | T9 | 待开始 | 一致 | |
-| —（技术依赖） | sys_user 扩展+seed 密码 | T1 数据层 | T1 | 待开始 | 超范围(必要技术依赖) | 无对应业务 R 编号，为 R4/R5 落地前置，理由：JWT 需 perm_ver/role/可校验密码 |
+| —（技术依赖） | sys_user 扩展+seed 密码 | T1 数据层 | T1 | **已完成** | 超范围(必要技术依赖) | 无对应业务 R 编号，为 R4/R5 落地前置，理由：JWT 需 perm_ver/role/可校验密码 |
 | —（技术依赖） | 认证异常 401/403/429 契约 | exceptions 扩展+handler 改造 | T4 | 待开始 | 超范围(必要技术依赖) | R4/R7/R15 要求真实 HTTP 码 |
 
 ---
@@ -206,7 +206,7 @@
 > 顺序按依赖：T1 数据层 → T2 安全原语 → T3 Redis 短状态 → T4 认证服务+接口 → T5 鉴权中间件+上下文+角色守卫 → T6 安全加固 → T7 前端登录态 → T8 登录页 → T9 顶栏 → T10 测试+文档。
 
 ### 6.1 任务 T1：数据层 — sys_user/sys_tenant 扩展 + seed 密码
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。落地：`backend/auth/{__init__,constants,security}.py` 新增；`pg_ddl.py` DDL_SYS_USER 加 role_code/perm_ver/last_login_at、`init_pg_db` 幂等 ALTER + email 部分唯一索引、`seed_default_tenant` 提升 admin 为 system 并补初始密码（env `AI_STOCKS_ADMIN_PASSWORD` 或随机+告警，幂等不覆盖已设密码）；`requirements.txt`/`pyproject.toml` 加 bcrypt/PyJWT；SQL 留痕 [auth-schema.sql](auth-schema.sql)。验证：init_pg_db 冒烟（列/索引/admin=system/密码往返均 OK）+ 全量 **215 passed** 无回归。
 - 依赖：阶段一（PG 已就绪）
 - 涉及文件/模块：[backend/storage/pg_ddl.py](../../../backend/storage/pg_ddl.py)、`backend/auth/constants.py`(新)、迁移 SQL（§7）
 - 目标：`sys_user` 具备认证所需字段并能 seed 可登录的管理员。

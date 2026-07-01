@@ -21,6 +21,11 @@
 
 from __future__ import annotations
 
+import os
+import secrets
+
+from backend.auth.constants import ROLE_SYSTEM
+from backend.auth.security import hash_password
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -57,7 +62,10 @@ CREATE TABLE IF NOT EXISTS sys_user (
     account       TEXT NOT NULL,
     email         TEXT,
     password_hash TEXT,
+    role_code     TEXT NOT NULL DEFAULT 'normal',   -- system | tenant_admin | normal（阶段三迁 sys_role）
+    perm_ver      INTEGER NOT NULL DEFAULT 0,        -- 权限版本号：权限/状态变更自增，旧 token 失效
     status        TEXT NOT NULL DEFAULT 'active',   -- active | disabled | locked
+    last_login_at TIMESTAMP,
     created_at    TIMESTAMP DEFAULT now(),
     updated_at    TIMESTAMP,
     UNIQUE (account)
@@ -493,27 +501,79 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     client.execute(
         "CREATE INDEX IF NOT EXISTS idx_layout_user_config_owner "
         "ON layout_user_config (tenant_id, owner_user_id)")
+    # sys_user 认证列升级（既有库 CREATE TABLE IF NOT EXISTS 不会补列，需幂等 ALTER；stage2·T1）
+    client.execute("ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS role_code TEXT NOT NULL DEFAULT 'normal'")
+    client.execute("ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS perm_ver INTEGER NOT NULL DEFAULT 0")
+    client.execute("ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP")
+    # email 部分唯一：允许多个 NULL（未填邮箱），非空则全局唯一
+    client.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_user_email "
+        "ON sys_user (email) WHERE email IS NOT NULL")
     seed_default_tenant(client)
     return created
 
 
+def _resolve_admin_password() -> tuple[str, bool]:
+    """取管理员初始密码：优先环境变量 AI_STOCKS_ADMIN_PASSWORD，缺失则随机生成。
+
+    返回 (密码明文, 是否随机生成)。密钥不入码——只读环境变量；随机值仅首次 seed 时落哈希。
+    """
+    pwd = os.environ.get("AI_STOCKS_ADMIN_PASSWORD")
+    if pwd:
+        return pwd, False
+    return secrets.token_urlsafe(12), True
+
+
 def seed_default_tenant(client: PostgresClient | None = None) -> None:
-    """幂等 seed 默认租户 + 平台管理员（存量迁移与单测的归属落点）。"""
+    """幂等 seed 默认租户 + 平台管理员（存量迁移与单测的归属落点）。
+
+    管理员 admin 为平台系统管理员（role_code=system），并补可登录的初始密码哈希（stage2·T1）：
+    - 新建：直接带 system 角色 + 初始密码哈希。
+    - 既有（stage1 seed 的无密码 admin）：提升为 system、补 password_hash（仅当为空，不覆盖已设密码）。
+    密码取 AI_STOCKS_ADMIN_PASSWORD，缺失则随机生成并**告警打印一次**（仅开发态，提示尽快改密/设环境变量）。
+    """
     client = client or get_pg_client()
     client.execute(
         "INSERT INTO sys_tenant (id, name, status) VALUES (%s, %s, 'active') "
         "ON CONFLICT (id) DO NOTHING",
         [DEFAULT_TENANT_ID, "默认租户"],
     )
-    client.execute(
-        "INSERT INTO sys_user (id, tenant_id, account, status) "
-        "VALUES (%s, %s, %s, 'active') ON CONFLICT (id) DO NOTHING",
-        [DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID, DEFAULT_OWNER_USER_ID],
-    )
+    # admin 现状：password_hash 是否为空 + 当前角色（既有库经上面 ALTER 后 role_code 默认 'normal'）
+    df = client.query_df(
+        "SELECT (password_hash IS NULL) AS no_pwd, role_code FROM sys_user WHERE id=%s",
+        [DEFAULT_OWNER_USER_ID])
+    if df.empty:
+        pwd, generated = _resolve_admin_password()
+        client.execute(
+            "INSERT INTO sys_user (id, tenant_id, account, role_code, password_hash, status) "
+            "VALUES (%s, %s, %s, %s, %s, 'active') ON CONFLICT (id) DO NOTHING",
+            [DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID, DEFAULT_OWNER_USER_ID,
+             ROLE_SYSTEM, hash_password(pwd)],
+        )
+        _warn_generated_admin_pwd(pwd, generated)
+    else:
+        if df.iloc[0]["role_code"] != ROLE_SYSTEM:
+            client.execute(
+                "UPDATE sys_user SET role_code=%s WHERE id=%s",
+                [ROLE_SYSTEM, DEFAULT_OWNER_USER_ID])
+        if bool(df.iloc[0]["no_pwd"]):
+            pwd, generated = _resolve_admin_password()
+            client.execute(
+                "UPDATE sys_user SET password_hash=%s WHERE id=%s AND password_hash IS NULL",
+                [hash_password(pwd), DEFAULT_OWNER_USER_ID])
+            _warn_generated_admin_pwd(pwd, generated)
     client.execute(
         "UPDATE sys_tenant SET admin_user_id=%s WHERE id=%s AND admin_user_id IS NULL",
         [DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID],
     )
+
+
+def _warn_generated_admin_pwd(pwd: str, generated: bool) -> None:
+    """随机生成管理员密码时告警打印一次（开发态），便于首次登录；设了环境变量则静默。"""
+    if generated:
+        log.warning(
+            "未设置 AI_STOCKS_ADMIN_PASSWORD，已为管理员 admin 生成随机初始密码：%s "
+            "（仅本次显示，请尽快登录改密或改用环境变量；生产部署务必显式设置）", pwd)
 
 
 def asset_pk_mismatches(client: PostgresClient | None = None) -> list[str]:
