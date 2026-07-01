@@ -1,6 +1,14 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { getAccessToken } from '@/api/authToken'
 
 const routes: RouteRecordRaw[] = [
+  // 登录/注册页（stage2·T7）：全屏独立壳（meta.fullscreen）+ 公开（meta.public，免登录）
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/LoginView.vue'),
+    meta: { title: '登录', public: true, fullscreen: true },
+  },
   { path: '/', redirect: '/board' },
   {
     path: '/board',
@@ -98,6 +106,20 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+// 全局登录守卫（stage2·T7）：公开路由放行；未登录访问受控路由跳登录（带 redirect）；
+// 已登录再进登录页则回首页。仅用 token 存在性（骨架级）；接口级/按钮级权限留阶段三。
+router.beforeEach((to) => {
+  const loggedIn = !!getAccessToken()
+  if (to.meta.public) {
+    if (to.path === '/login' && loggedIn) return { path: '/' }
+    return true
+  }
+  if (!loggedIn) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+  return true
 })
 
 export default router

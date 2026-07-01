@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
 import { useLayoutPreset, type LayoutPresetKey } from '@/layout'
 import SideMenu from '@/components/SideMenu.vue'
@@ -7,10 +8,14 @@ import SideMenu from '@/components/SideMenu.vue'
 const { isDark } = useTheme()
 const { activePresetKey, activePreset, options: presetOptions, setLayoutPreset } = useLayoutPreset()
 const userDrawerVisible = ref(false)
+// 全屏独立壳（stage2·T7）：登录页等 meta.fullscreen 路由脱离主框架（侧栏/顶栏）单独渲染
+const route = useRoute()
+const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
 </script>
 
 <template>
-  <el-container class="app">
+  <router-view v-if="isFullscreen" />
+  <el-container v-else class="app">
     <el-aside width="208px" class="aside">
       <div class="brand">
         <span class="brand-logo" aria-hidden="true">

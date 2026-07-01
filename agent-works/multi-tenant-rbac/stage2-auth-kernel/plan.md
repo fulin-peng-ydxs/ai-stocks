@@ -284,7 +284,7 @@
 - 完成标准：R15 基础项可观察生效；R16 开关默认值与需求一致。
 
 ### 6.7 任务 T7：前端 auth store + http 拦截 + 路由守卫
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。落地：`api/authToken.ts`（localStorage 事实源，解耦 client↔store↔api 循环）；`stores/auth.ts`（token/user/tenant/role，login/register/fetchMe/logout/clearLocal，state 从 localStorage 自 hydrate=等价 loadFromStorage）；`api/auth.ts`（login/register/refresh/logout/me/captcha/send-email-code/public-config 封装）；`api/client.ts`（请求拦截注 `Authorization`；响应按 HTTP 分流：401 清态跳 `/login`?redirect、403 无权、429 限流、503 依赖不可用）；`router`（加 `/login` meta.public/fullscreen + 全局守卫：公开放行/未登录跳登录带 redirect/已登录进登录页回首页）；`App.vue`（`route.meta.fullscreen` 时脱离主框架单独渲染）；`views/LoginView.vue`（**最小可用骨架**打通登录闭环，科技风+黑白 UI 留 T8 按原型重做）。SideMenu 不改（静态 menuConfig，§4.7）。验证：`npm run build`（vue-tsc 类型检查 + 产物同步 frontend/dist）通过；浏览器可视/交互验证随 T8 登录页 UI 一并做（preview 5181）。
 - 依赖：T4（接口契约）
 - 涉及文件/模块：`frontend/src/stores/auth.ts`、`frontend/src/api/auth.ts`、[frontend/src/api/client.ts](../../../frontend/src/api/client.ts)、[frontend/src/router/index.ts](../../../frontend/src/router/index.ts)、[frontend/src/main.ts](../../../frontend/src/main.ts)
 - 目标：登录态闭环骨架。
