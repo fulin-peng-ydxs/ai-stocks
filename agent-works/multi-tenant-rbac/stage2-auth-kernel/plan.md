@@ -230,7 +230,7 @@
 - 完成标准：单测全过。
 
 ### 6.3 任务 T3：Redis 短状态消费
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。落地：`backend/auth/session_store.py`——token 黑名单 `revoke_jti`/`is_jti_revoked`、perm_ver 缓存 `cache/get_cached/invalidate`、登录失败 `record_login_failure`/`login_failure_count`/`clear` + 锁定 `lock_account`/`is_locked`/`lock_remaining`、图形验证码 `save/take_captcha`（一次性消费）、邮箱码 `save/verify_email_code`、限流 `rate_limit_ok`（固定窗口）；键均带 TTL；**鉴权关键（黑名单/perm_ver）Redis 故障异常上抛=fail-closed，限流 fail-open+告警**（setex 改现代 `set(ex=)`）。conftest 加 `redis_cli` 夹具。验证：test_auth_session_store(6) 全过（黑名单/perm_ver 缓存/失败计数+锁定/验证码一次性/邮箱码/限流窗口），全量 **235 passed**。
 - 依赖：T2
 - 涉及文件/模块：`backend/auth/session_store.py`、[backend/storage/redis_client.py](../../../backend/storage/redis_client.py)
 - 目标：黑名单/perm_ver 缓存/登录失败计数+锁定/验证码/限流令牌桶。

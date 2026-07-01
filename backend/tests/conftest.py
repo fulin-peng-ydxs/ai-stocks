@@ -53,6 +53,23 @@ def market():
 
 
 @pytest.fixture()
+def redis_cli():
+    """Redis 客户端（认证短状态测试用）；Redis 不可用则 skip。
+
+    测试用 uuid 化的 account/jti/email/cid，键均带 TTL 自动过期，不污染真实数据。
+    """
+    from backend.storage.redis_client import get_redis_client
+
+    c = get_redis_client()
+    try:
+        if not c.ping():
+            pytest.skip("Redis 未就绪")
+    except StorageError:
+        pytest.skip("Redis 未就绪")
+    return c
+
+
+@pytest.fixture()
 def app_cfg(pg):
     """平台配置仓库（PG，无归属）。app_config 是全局表，测试前快照、测试后还原，避免污染真实配置。"""
     from backend.storage.app_config import AppConfigRepo
