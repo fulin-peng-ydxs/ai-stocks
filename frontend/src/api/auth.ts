@@ -25,6 +25,7 @@ export interface MeResult {
 export interface PublicAuthConfig {
   require_email_code: boolean
   login_captcha_enabled: boolean
+  captcha_after_fails: number
 }
 
 export interface CaptchaResult {

@@ -189,10 +189,15 @@ class AuthService:
         log.warning("【开发态·邮箱验证码】%s -> %s（生产须接 SMTP 投递，勿公网放量）", email, code)
 
     def public_config(self) -> dict:
-        """登录页公开配置（无需 token）：告诉前端是否要邮箱码/图形码。"""
+        """登录页公开配置（无需 token）：告诉前端是否要邮箱码/图形码 + 图形码触发阈值。
+
+        下发 captcha_after_fails 让前端 UI 的图形码显示时机与后端 login() 的强制阈值一致
+        （否则前端不知阈值只能失败一次即显示，与「失败达阈值后出现」的口径偏差）。
+        """
         return {
             "require_email_code": self.cfg.require_email_code,
             "login_captcha_enabled": self.cfg.login_captcha_enabled,
+            "captcha_after_fails": self.cfg.captcha_after_fails,
         }
 
 

@@ -130,6 +130,8 @@ def test_public_config(auth_env):
     cfg = AuthService().public_config()
     assert cfg["require_email_code"] is True
     assert cfg["login_captcha_enabled"] is False
+    # 图形码触发阈值须下发，供前端 UI 显示时机与后端 login() 强制阈值对齐（Codex 再审整改）
+    assert isinstance(cfg["captcha_after_fails"], int) and cfg["captcha_after_fails"] >= 1
 
 
 def test_captcha_issue(auth_env):

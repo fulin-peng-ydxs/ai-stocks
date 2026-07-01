@@ -17,8 +17,9 @@ const { isDark } = useTheme()
 type Mode = 'login' | 'register'
 const mode = ref<Mode>('login')
 
-// 公开配置（无需 token）：是否要邮箱验证码 / 是否启用图形验证码。挂载时拉取，失败用保守默认。
-const cfg = reactive({ requireEmailCode: true, loginCaptchaEnabled: false })
+// 公开配置（无需 token）：是否要邮箱验证码 / 是否启用图形验证码 / 图形码触发阈值。
+// 挂载时拉取，失败用保守默认；captchaAfterFails 与后端 login() 强制阈值一致，保证 UI 显示时机对齐。
+const cfg = reactive({ requireEmailCode: true, loginCaptchaEnabled: false, captchaAfterFails: 3 })
 
 const form = reactive({
   account: '',
@@ -31,7 +32,7 @@ const form = reactive({
 const showPwd = ref(false)
 const loading = ref(false)
 
-// 图形验证码：仅当后端启用且本地已发生登录失败时出现（原型「登录失败达阈值后出现」）。
+// 图形验证码：后端启用且本地累计失败达阈值（captcha_after_fails）后出现，与后端强制时机一致。
 const captchaId = ref('')
 const captchaSvg = ref('')
 const needCaptcha = ref(false)
@@ -46,6 +47,7 @@ onMounted(async () => {
     const c = await getPublicConfig()
     cfg.requireEmailCode = c.require_email_code
     cfg.loginCaptchaEnabled = c.login_captcha_enabled
+    cfg.captchaAfterFails = c.captcha_after_fails
   } catch {
     // 公开配置拉取失败不阻断登录：保守保留默认（要邮箱码、不强制图形码）
   }
@@ -84,10 +86,10 @@ async function onLogin() {
     const redirect = (route.query.redirect as string) || '/'
     router.replace(redirect)
   } catch {
-    // 登录失败：错误提示由拦截器统一弹出；累计失败，达阈值+后端启用则显示图形验证码
+    // 登录失败：错误提示由拦截器统一弹出；累计失败达阈值(captchaAfterFails)且后端启用才显示图形码
     loginFails.value += 1
     form.captchaCode = ''
-    if (cfg.loginCaptchaEnabled) await refreshCaptcha()
+    if (cfg.loginCaptchaEnabled && loginFails.value >= cfg.captchaAfterFails) await refreshCaptcha()
   } finally {
     loading.value = false
   }
