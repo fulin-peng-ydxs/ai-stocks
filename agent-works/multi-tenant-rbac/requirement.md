@@ -620,12 +620,13 @@
 - **产物/留痕**：迁移说明 [stage1-foundation/migrate-assets-to-pg.md](stage1-foundation/migrate-assets-to-pg.md)、反代/TLS 模板 [stage1-foundation/deploy-reverse-proxy.md](stage1-foundation/deploy-reverse-proxy.md)；代码见 `backend/storage/{pg_client,redis_client,pg_ddl,asset_repository}.py`、`backend/services/migrate_rbac.py`、CLI `migrate-rbac`。
 - **落地结论**：11 域资产全迁 PG（复合主键 `(tenant_id,owner_user_id,业务键)`）；行情留 DuckDB；`app_config` 迁 PG 平台层；经三轮代码评审整改（写侧 PK → 读侧 JOIN 归属 → 训练逐语句归属），全量 215 passed，`migrate-rbac --recreate --apply` 字段/行数/归属/外键全绿。隔离铁律已沉淀进 [CLAUDE.md](../../CLAUDE.md)「资产归属与隔离」。
 
-**阶段二：认证与鉴权内核** — 📋 **计划已就绪，待开发**
+**阶段二：认证与鉴权内核** — ✅ **完成**（T1–T10 全落地，分支 `feat/multi-tenant-rbac-stage2`）
 - 覆盖需求：R4、R7、R15（基础部分）、R20（登录态与守卫骨架）；并入 R5、R6、R16（基础）
 - 目标：登录/注册（R5 并入）、JWT、鉴权中间件、上下文注入、前端登录态。
 - 依赖原因：是 RBAC 与隔离的运行时前提。
-- 里程碑：可登录、受控接口需 token、未登录跳登录页。
-- **开发文档**：[stage2-auth-kernel/plan.md](stage2-auth-kernel/plan.md)（T1–T10）。
+- 里程碑：可登录、受控接口需 token、未登录跳登录页。**均达成**。
+- **落地结论**：后端 `backend/auth/*`（JWT/bcrypt/Redis 短状态/纯 ASGI 中间件默认 deny/上下文不回落/`require_system` 角色守卫）+ `auth_service`/`api·auth`(9 端点)/`user_repository`；前端登录态骨架（authToken/store/拦截器/守卫/顶栏用户区+退出）+ 登录页（科技风·黑白双主题，承接原型）。经**两轮 Codex 评审整改**（指标写守卫/context 不回落/layout 归属/Redis fail-closed/jwt 启动校验 等，均复现后修）。全量 **266 passed** + 前端 vitest 85 passed（含 layout-contract）+ `npm run build` 通过。认证九条铁律已沉淀进 [CLAUDE.md](../../CLAUDE.md)「认证与鉴权」。
+- **开发文档**：[stage2-auth-kernel/plan.md](stage2-auth-kernel/plan.md)（T1–T10，各任务落地/评审留痕在内）。
 - **页面原型**：登录/注册页 [prototypes/login.html](prototypes/login.html)（科技风 · 黑白双主题，对应需求 7.1）。
 
 **阶段三：RBAC 与租户管理（权限主体）**

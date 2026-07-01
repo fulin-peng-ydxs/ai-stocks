@@ -186,16 +186,16 @@
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R4 | 账密登录+JWT+登出黑名单+/me | jwt_tokens/security/session_store/auth_service/api·auth | T2,T3,T4 | 待开始 | 一致 | |
+| R4 | 账密登录+JWT+登出黑名单+/me | jwt_tokens/security/session_store/auth_service/api·auth | T2,T3,T4 | **已完成** | 一致 | |
 | R7 | 鉴权中间件(机制性默认deny)+上下文注入+白名单 | auth/middleware(中间件式拦截+注上下文)·context·deps，main 挂载，仓库取上下文(请求链不回落) | T5 | **已完成** | 一致 | 默认deny用中间件机制+路由扫描测试兜底 |
 | R8（最小切片） | 系统级/全市场写接口 `require_role("system")` 粗粒度守卫 | auth/deps.require_system + data_admin/tasks整router+indicators/config/layout平台写端点 | T5 | **已完成** | 部分覆盖 | 仅角色tier守卫(关注册越权窗口)；resource code细粒度留阶段三 |
-| R15 | 密码哈希/失败锁定/限流/安全头/验证码 | security 哈希、session_store 计数·令牌桶(鉴权关键fail-closed)、middleware 头、图形验证码 | T2,T3,T6 | 待开始 | 部分覆盖 | CSRF/XSS 靠参数化+安全头+SPA，行为风控(R27)不做 |
-| R20 | auth store+http 拦截+路由守卫+菜单/按钮 | stores/auth、client 拦截、router 守卫、App 顶栏；/me 菜单/功能码空、SideMenu 静态(§4.7) | T7,T9 | 待开始 | 部分覆盖 | `v-permission` 按钮级+后端菜单(R8/R12)留阶段三；本阶段登录态/守卫骨架+菜单兼容策略 |
-| R5 | 自助注册+自动建租户+绑租管 | auth_service.register（用户+租户+role_code='tenant_admin' 事务）、user_repository | T4,T8 | 待开始 | 一致 | 最小角色模型（role_code）；越权窗口由 R8 最小切片闭合 |
-| R6 | 第三方入口占位 | LoginView 置灰按钮+tooltip，后端 oauth 占位路由 | T4,T8 | 待开始 | 一致 | |
-| R16 | 注册防滥用开关化 | 登录链路读开关(默认邮箱码开/图形码关，对齐需求)、图形验证码、邮箱码 gen/verify | T6,T8 | 待开始 | 部分覆盖 | 可视化开关页留阶段五 R19；**邮件投递 dev 日志=开发态降级，生产放量前须接 SMTP** |
-| P1 登录页 | 7.1 登录/注册页 | LoginView 科技风+黑白主题，承接原型 prototypes/login.html，过 layout-contract 契约 | T8 | 待开始 | 一致 | 原型已在需求 7.1 敲定 |
-| P2 顶栏用户区 | 7.2 顶栏用户区 | App.vue 用户下拉+退出 | T9 | 待开始 | 一致 | |
+| R15 | 密码哈希/失败锁定/限流/安全头/验证码 | security 哈希、session_store 计数·令牌桶(鉴权关键fail-closed)、middleware 头、图形验证码 | T2,T3,T6 | **已完成** | 部分覆盖 | CSRF/XSS 靠参数化+安全头+SPA，行为风控(R27)不做 |
+| R20 | auth store+http 拦截+路由守卫+菜单/按钮 | stores/auth、client 拦截、router 守卫、App 顶栏；/me 菜单/功能码空、SideMenu 静态(§4.7) | T7,T9 | **已完成** | 部分覆盖 | `v-permission` 按钮级+后端菜单(R8/R12)留阶段三；本阶段登录态/守卫骨架+菜单兼容策略 |
+| R5 | 自助注册+自动建租户+绑租管 | auth_service.register（用户+租户+role_code='tenant_admin' 事务）、user_repository | T4,T8 | **已完成** | 一致 | 最小角色模型（role_code）；越权窗口由 R8 最小切片闭合 |
+| R6 | 第三方入口占位 | LoginView 置灰按钮+tooltip，后端 oauth 占位路由 | T4,T8 | **已完成** | 一致 | |
+| R16 | 注册防滥用开关化 | 登录链路读开关(默认邮箱码开/图形码关，对齐需求)、图形验证码、邮箱码 gen/verify | T6,T8 | **已完成** | 部分覆盖 | 可视化开关页留阶段五 R19；**邮件投递 dev 日志=开发态降级，生产放量前须接 SMTP** |
+| P1 登录页 | 7.1 登录/注册页 | LoginView 科技风+黑白主题，承接原型 prototypes/login.html，过 layout-contract 契约 | T8 | **已完成** | 一致 | 原型已在需求 7.1 敲定 |
+| P2 顶栏用户区 | 7.2 顶栏用户区 | App.vue 用户下拉+退出 | T9 | **已完成** | 一致 | |
 | —（技术依赖） | sys_user 扩展+seed 密码 | T1 数据层 | T1 | **已完成** | 超范围(必要技术依赖) | 无对应业务 R 编号，为 R4/R5 落地前置，理由：JWT 需 perm_ver/role/可校验密码 |
 | —（技术依赖） | 认证异常 401/403/429 契约 | exceptions 扩展(T2)+handler 改造(T4) | T4 | **已完成** | 超范围(必要技术依赖) | R4/R7/R15 要求真实 HTTP 码 |
 
@@ -320,7 +320,7 @@
 - 完成标准：7.2 验收通过。
 
 ### 6.10 任务 T10：测试 + 文档治理 + 页面闭环收尾
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。落地：①测试——路由扫描（`test_all_controlled_get_routes_require_token`）、角色守卫（`test_system_route_forbidden_for_tenant_admin`/`_allows_system_role`）、fail-closed 503（`test_redis_failure_fails_closed_503`）、白名单/无 token 401/上下文隔离/layout 归属取上下文/安全头/全局限流 429 等在 T5/T6 已随功能建齐（`test_auth_middleware.py` 13 项），本任务确认全绿未新增缺口。②质量门槛——全量 `python -m pytest backend/tests/` **266 passed**（阶段一 215 + 阶段二新增）；前端 `npx vitest run src` **85 passed**（含 `layout-contract.spec.ts` 绿，登录页非 registry 不入 `pageRegistry.spec.ts`）；`npm run build`（vue-tsc）通过。③文档治理——[CLAUDE.md](../../../CLAUDE.md) 项目概述更新阶段二已落地 + 「开发契约」新增「认证与鉴权」九条铁律（默认 deny/纯 ASGI 中间件/白名单/归属不回落/角色守卫/Redis fail-closed vs 限流 fail-open/异常 HTTP 码/Redis 键前缀/环境变量/邮箱码 dev 降级/登录页全屏壳非 registry）；项目记忆 `multi-tenant-rbac-pivot` 更新为阶段二完成。④页面闭环——登录页 §4.6 七项满足（全屏壳、无整页滚动、light/dark 双主题、窄屏退化、未误入 registry/DESIGN §9、`router`+`App.vue` 已同步、契约测试绿）。
 - 依赖：T1–T9
 - 涉及文件/模块：`backend/tests/test_auth_*.py`、前端 `pageRegistry.spec.ts`/`layout-contract.spec.ts`、[CLAUDE.md](../../../CLAUDE.md)、本目录文档
 - 目标：质量门槛 + 契约文档同步 + 页面维护闭环收尾（DESIGN §7.4）。
