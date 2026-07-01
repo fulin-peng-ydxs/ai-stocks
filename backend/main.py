@@ -13,11 +13,13 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.auth.deps import require_system
+from backend.auth.middleware import AuthMiddleware
 from backend.api.auth import router as auth_router
 from backend.api.backtest import router as backtest_router
 from backend.api.board import router as board_router
@@ -46,6 +48,11 @@ def create_app() -> FastAPI:
         description="本地 EOD 选股 + 打分 + 回测（FastAPI + Vue + DuckDB）",
         version="0.1.0",
     )
+
+    # 鉴权中间件（stage2·T5）：机制性默认 deny + 上下文注入。
+    # 先加 Auth（内层）再加 CORS（外层）——保证 CORS 最外层，鉴权拒绝的响应也带 CORS 头，
+    # 且预检 OPTIONS 由 CORS 先处理（Auth 内部也已放行 OPTIONS/白名单）。
+    app.add_middleware(AuthMiddleware)
 
     # 开发期允许本地前端跨域（生产期同源托管）
     app.add_middleware(
@@ -78,8 +85,9 @@ def create_app() -> FastAPI:
     app.include_router(score_profiles_router)
     app.include_router(trade_profiles_router)
     app.include_router(stock_groups_router)
-    app.include_router(data_tasks_router)
-    app.include_router(data_admin_router)
+    # 系统级 / 全市场写路由：叠加 require_system 角色守卫（R8 最小切片，闭合注册越权窗口）
+    app.include_router(data_tasks_router, dependencies=[Depends(require_system)])
+    app.include_router(data_admin_router, dependencies=[Depends(require_system)])
     app.include_router(training_router)
 
     # ── 前端静态托管（M4：frontend/dist 存在时生效）──

@@ -27,7 +27,7 @@ from backend.common.logging import get_logger
 from backend.storage.asset_repository import AssetRepository
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
-from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
+from backend.auth.context import get_current_owner
 
 log = get_logger("services.backtest")
 
@@ -38,8 +38,9 @@ class BacktestService:
         self.c = client or get_client()                  # 行情库（DuckDB），喂计算引擎
         from backend.storage.ddl import init_db
         init_db(self.c)
-        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
-        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+        _ctx_t, _ctx_o = get_current_owner()
+        self.tenant_id = tenant_id or _ctx_t
+        self.owner_user_id = owner_user_id or _ctx_o
         self.pg = get_pg_client()                        # 资产库（PG）
         self.assets = AssetRepository(self.pg, tenant_id=self.tenant_id,
                                       owner_user_id=self.owner_user_id)

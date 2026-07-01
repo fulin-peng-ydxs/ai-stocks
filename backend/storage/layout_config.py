@@ -15,7 +15,8 @@ from typing import Any, Literal
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import get_pg_client
-from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
+from backend.auth.context import get_current_owner
+from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID
 
 log = get_logger("storage.layout_config")
 
@@ -540,7 +541,7 @@ class LayoutConfigRepo:
 
         init_db(self.c)
         self.pg = get_pg_client()
-        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
+        self.tenant_id = tenant_id or get_current_owner()[0]
         self.seed_builtin_presets()
 
     def seed_builtin_presets(self) -> int:

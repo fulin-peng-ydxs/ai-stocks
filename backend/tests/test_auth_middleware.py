@@ -1,0 +1,96 @@
+"""鉴权中间件 + 角色守卫 + 上下文隔离测试（多租户 RBAC stage2·T5）。
+
+用 create_app()+TestClient（不进 lifespan）。真实 PG/Redis + JWT 密钥。
+覆盖：白名单放行 / 非白名单默认 deny(401) / 系统级接口角色守卫(403) / 路由扫描机制 /
+上下文归属隔离（tenant_admin 看不到 admin 的预设方案）。
+"""
+
+from __future__ import annotations
+
+import uuid
+
+import pytest
+from fastapi.testclient import TestClient
+
+_SECRET = "unit-test-jwt-secret-0123456789-abcdefghij"
+
+
+@pytest.fixture()
+def client(monkeypatch, pg, redis_cli):
+    monkeypatch.setenv("AI_STOCKS_JWT_SECRET", _SECRET)
+    from backend.main import create_app
+    return TestClient(create_app())
+
+
+@pytest.fixture()
+def tadmin(pg):
+    """临时租户管理员（独立租户），用于验证角色守卫与归属隔离；teardown 清理。"""
+    uid = "pytest_ta_" + uuid.uuid4().hex[:8]
+    tid = "pytest_tt_" + uuid.uuid4().hex[:8]
+    pg.execute("INSERT INTO sys_tenant (id,name,status) VALUES (%s,'t','active')", [tid])
+    pg.execute(
+        "INSERT INTO sys_user (id,tenant_id,account,role_code,perm_ver,status) "
+        "VALUES (%s,%s,%s,'tenant_admin',0,'active')", [uid, tid, uid])
+    yield uid, tid
+    pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+    pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
+
+
+def _access(user_id, tenant_id, role, perm_ver=0):
+    from backend.auth.jwt_tokens import issue_access
+    return issue_access(user_id, tenant_id, role, perm_ver)
+
+
+def _auth(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_whitelist_public_no_token(client):
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/auth/public-config").status_code == 200
+
+
+def test_controlled_route_without_token_401(client):
+    resp = client.get("/api/profiles")
+    assert resp.status_code == 401 and resp.json()["code"] == 4010
+
+
+def test_invalid_token_401(client):
+    resp = client.get("/api/profiles", headers=_auth("garbage.token.xxx"))
+    assert resp.status_code == 401
+
+
+def test_system_route_forbidden_for_tenant_admin(client, tadmin):
+    uid, tid = tadmin
+    resp = client.get("/api/data/overview", headers=_auth(_access(uid, tid, "tenant_admin")))
+    assert resp.status_code == 403 and resp.json()["code"] == 4030
+
+
+def test_system_route_allows_system_role(client, pg):
+    pv = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
+    resp = client.get("/api/data/overview", headers=_auth(_access("admin", "default", "system", pv)))
+    assert resp.status_code not in (401, 403)   # 通过鉴权+角色守卫（业务是否 200 不在本测范围）
+
+
+def test_context_isolation_tenant_admin_sees_no_admin_presets(client, tadmin):
+    # admin 归属下有内置预设方案；租户管理员在独立租户应看不到（上下文归属隔离）
+    uid, tid = tadmin
+    resp = client.get("/api/profiles", headers=_auth(_access(uid, tid, "tenant_admin")))
+    assert resp.status_code == 200
+    assert resp.json()["data"] == []   # 各自归属，互不可见
+
+
+def test_all_controlled_get_routes_require_token(client):
+    """机制性默认 deny：扫描所有静态 GET /api 路由，白名单外无一漏挂鉴权。"""
+    from backend.auth.middleware import is_public
+
+    checked = 0
+    for route in client.app.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", None) or set()
+        if not path.startswith("/api/") or is_public(path) or "{" in path:
+            continue
+        if "GET" in methods:
+            assert client.get(path).status_code == 401, f"{path} 未被鉴权拦截"
+            checked += 1
+    assert checked > 0

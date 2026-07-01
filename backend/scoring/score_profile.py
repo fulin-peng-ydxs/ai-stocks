@@ -21,7 +21,7 @@ from backend.common.logging import get_logger
 from backend.config import get_settings
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
-from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
+from backend.auth.context import get_current_owner
 
 log = get_logger("scoring.score_profile")
 
@@ -180,8 +180,9 @@ class ScoreProfileRepo:
                  owner_user_id: str | None = None):
         self.mkt = market or get_client()           # 行情/指标定义库（DuckDB）
         self.pg = pg or get_pg_client()             # 资产库（PG）
-        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
-        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+        _ctx_t, _ctx_o = get_current_owner()
+        self.tenant_id = tenant_id or _ctx_t
+        self.owner_user_id = owner_user_id or _ctx_o
 
     @property
     def _own(self) -> str:

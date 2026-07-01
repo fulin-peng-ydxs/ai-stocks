@@ -9,9 +9,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from backend.api.response import ApiResponse, ok
+from backend.auth.deps import require_system
 from backend.config import get_settings, reload_settings
 from backend.config.settings import _config_path
 
@@ -24,7 +25,7 @@ def get_config() -> ApiResponse:
     return ok({"path": str(_config_path()), "config": s.model_dump()})
 
 
-@router.post("/config/reload", response_model=ApiResponse)
+@router.post("/config/reload", response_model=ApiResponse, dependencies=[Depends(require_system)])
 def reload_config() -> ApiResponse:
     s = reload_settings()
     return ok({"path": str(_config_path()), "config": s.model_dump()},

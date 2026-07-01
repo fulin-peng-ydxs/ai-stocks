@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.deps import require_system
 from backend.storage.layout_config import (
     DEFAULT_USER_ID,
     LAYOUT_CONFIG_SCHEMA_VERSION,
@@ -76,7 +77,7 @@ def list_presets(include_disabled: bool = False) -> ApiResponse:
     )
 
 
-@router.post("/presets", response_model=ApiResponse)
+@router.post("/presets", response_model=ApiResponse, dependencies=[Depends(require_system)])
 def save_preset(body: PresetBody) -> ApiResponse:
     try:
         preset = LayoutConfigRepo().upsert_preset(
@@ -93,7 +94,7 @@ def save_preset(body: PresetBody) -> ApiResponse:
     return ok(preset, msg="布局预设已保存")
 
 
-@router.delete("/presets/{preset_key}", response_model=ApiResponse)
+@router.delete("/presets/{preset_key}", response_model=ApiResponse, dependencies=[Depends(require_system)])
 def delete_preset(preset_key: str) -> ApiResponse:
     try:
         LayoutConfigRepo().delete_preset(preset_key)
@@ -110,7 +111,7 @@ def get_page_config(page_key: str) -> ApiResponse:
         return err(400, str(e))
 
 
-@router.post("/pages/{page_key}", response_model=ApiResponse)
+@router.post("/pages/{page_key}", response_model=ApiResponse, dependencies=[Depends(require_system)])
 def save_page_config(page_key: str, body: PageConfigBody) -> ApiResponse:
     try:
         data = LayoutConfigRepo().set_page_config(
@@ -188,7 +189,7 @@ def list_field_policies() -> ApiResponse:
     )
 
 
-@router.post("/field-policies", response_model=ApiResponse)
+@router.post("/field-policies", response_model=ApiResponse, dependencies=[Depends(require_system)])
 def save_field_policy(body: FieldPolicyBody) -> ApiResponse:
     """收紧 / 放开某字段的开放层级；空数组视为重置回代码最大集。只能在代码最大集内收放。"""
     try:

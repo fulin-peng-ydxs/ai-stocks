@@ -29,10 +29,11 @@ class ScreenScoreService:
         self.c = client or get_client()
         from backend.storage.asset_repository import AssetRepository
         from backend.storage.ddl import init_db
-        from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
+        from backend.auth.context import get_current_owner
         init_db(self.c)
-        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
-        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+        _ctx_t, _ctx_o = get_current_owner()
+        self.tenant_id = tenant_id or _ctx_t
+        self.owner_user_id = owner_user_id or _ctx_o
         self.repo = MarketRepository(self.c)                 # 行情库（DuckDB）
         self.assets = AssetRepository(tenant_id=self.tenant_id,
                                       owner_user_id=self.owner_user_id)  # 结果库（PG）

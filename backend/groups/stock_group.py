@@ -23,7 +23,7 @@ import pandas as pd
 from backend.common.logging import get_logger
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
-from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
+from backend.auth.context import get_current_owner
 
 log = get_logger("groups.stock_group")
 
@@ -36,8 +36,9 @@ class StockGroupRepo:
                  owner_user_id: str | None = None):
         self.pg = pg or get_pg_client()              # 资产库（PG）
         self.mkt = market or get_client()            # 行情库（DuckDB，只读）
-        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
-        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+        _ctx_t, _ctx_o = get_current_owner()
+        self.tenant_id = tenant_id or _ctx_t
+        self.owner_user_id = owner_user_id or _ctx_o
         self.ensure_default_group()
 
     # 归属过滤公共条件（PG 占位符 %s）

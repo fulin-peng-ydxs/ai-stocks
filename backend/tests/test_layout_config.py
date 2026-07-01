@@ -22,6 +22,22 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(dc, "_client", None)
 
 
+@pytest.fixture(autouse=True)
+def _jwt_secret(monkeypatch):
+    # stage2·T5：/api/layout/* 现受鉴权中间件保护，HTTP 用例需带 token
+    monkeypatch.setenv("AI_STOCKS_JWT_SECRET", "unit-test-jwt-secret-0123456789-abcdefghij")
+
+
+def _sys_headers() -> dict:
+    """系统管理员(admin) access token 头，用于经鉴权中间件调 /api/layout/* 平台端点。"""
+    from backend.auth.jwt_tokens import issue_access
+    from backend.storage.pg_client import get_pg_client
+
+    pv = int(get_pg_client().query_df(
+        "SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
+    return {"Authorization": "Bearer " + issue_access("admin", "default", "system", pv)}
+
+
 def test_layout_tables_created(client):
     tables = set(list_tables(client))
     assert {"layout_preset", "layout_page_config", "layout_user_config"} <= tables
@@ -131,6 +147,7 @@ def test_validate_api_rejects_misplaced_component_field(client):
             "config": {"values": {"slots.toolbar.config.pageSize": 50}},
             "layout": {"slots": [{"id": "toolbar", "component": "toolbar"}]},
         },
+        headers=_sys_headers(),
     )
     body = resp.json()
     assert body["data"]["valid"] is False
@@ -207,6 +224,7 @@ def test_validate_api_reports_layout_component_errors(client):
             "config": {"values": {"density": "compact"}},
             "layout": {"slots": [{"id": "main", "component": "unknown-widget"}]},
         },
+        headers=_sys_headers(),
     )
     body = resp.json()
     assert body["code"] == 0
@@ -300,12 +318,13 @@ def test_field_policy_reset_restores_max(client):
 def test_field_policy_api_roundtrip(client):
     """P10：开放策略 API 列表 / 保存 / 越界拒绝。"""
     api = TestClient(app)
-    listed = api.get("/api/layout/field-policies").json()["data"]["policies"]
+    listed = api.get("/api/layout/field-policies", headers=_sys_headers()).json()["data"]["policies"]
     assert any(p["componentKind"] == "data-table" and p["field"] == "pageSize" for p in listed)
 
     ok_resp = api.post(
         "/api/layout/field-policies",
         json={"componentKind": "data-table", "field": "pageSize", "allowedLayers": ["page"]},
+        headers=_sys_headers(),
     ).json()
     assert ok_resp["code"] == 0
     assert ok_resp["data"]["allowedLayers"] == ["page"]
@@ -313,6 +332,7 @@ def test_field_policy_api_roundtrip(client):
     bad = api.post(
         "/api/layout/field-policies",
         json={"componentKind": "data-table", "field": "defaultSort", "allowedLayers": ["preset"]},
+        headers=_sys_headers(),
     ).json()
     assert bad["code"] == 400
 
@@ -322,16 +342,18 @@ def test_layout_api_page_user_effective_roundtrip(client):
     r1 = api.post(
         "/api/layout/pages/board",
         json={"presetKey": "finance", "config": {"values": {"slots.table.minH": 420}}},
+        headers=_sys_headers(),
     ).json()
     assert r1["code"] == 0
 
     r2 = api.post(
         "/api/layout/users/board",
         json={"userId": "u1", "config": {"values": {"density": "comfortable"}}},
+        headers=_sys_headers(),
     ).json()
     assert r2["code"] == 0
 
-    data = api.get("/api/layout/effective/board?userId=u1").json()["data"]
+    data = api.get("/api/layout/effective/board?userId=u1", headers=_sys_headers()).json()["data"]
     assert data["values"]["density"] == "comfortable"
     assert data["source"]["density"] == "user"
     assert data["values"]["slots.table.minH"] == 420

@@ -15,11 +15,8 @@ import pandas as pd
 
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
-from backend.storage.pg_ddl import (
-    ASSET_PK,
-    DEFAULT_OWNER_USER_ID,
-    DEFAULT_TENANT_ID,
-)
+from backend.auth.context import get_current_owner
+from backend.storage.pg_ddl import ASSET_PK
 
 log = get_logger("storage.asset_repository")
 
@@ -31,8 +28,9 @@ class AssetRepository:
     def __init__(self, pg: PostgresClient | None = None, *, tenant_id: str | None = None,
                  owner_user_id: str | None = None):
         self.pg = pg or get_pg_client()
-        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
-        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+        _ctx_t, _ctx_o = get_current_owner()
+        self.tenant_id = tenant_id or _ctx_t
+        self.owner_user_id = owner_user_id or _ctx_o
 
     def upsert(self, table: str, df: pd.DataFrame, *, add_owner: bool = True) -> int:
         """把 df 幂等写入资产表（PG）。自动补归属列；按表主键 ON CONFLICT。返回写入行数。

@@ -7,7 +7,26 @@ from fastapi.testclient import TestClient
 
 from backend.main import app
 
-client = TestClient(app)
+
+def _sys_headers() -> dict:
+    """系统管理员(admin) token 头：stage2·T5 起 /api/** 受鉴权中间件保护，冒烟测试需带 token。
+
+    JWT 密钥由 conftest 设默认；admin perm_ver 取自真实 PG。PG/密钥不可用则返回空头，
+    由下方 _real_db_ready() 探测到 401 后整组跳过（视为库/依赖不可用）。
+    """
+    try:
+        from backend.auth.jwt_tokens import issue_access
+        from backend.storage.pg_client import get_pg_client
+
+        pv = int(get_pg_client().query_df(
+            "SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
+        return {"Authorization": "Bearer " + issue_access("admin", "default", "system", pv)}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+# 认证 client：默认带 system token（TestClient 支持默认头），所有冒烟调用自动携带
+client = TestClient(app, headers=_sys_headers())
 
 
 def _real_db_ready() -> bool:

@@ -20,7 +20,7 @@ from backend.common.logging import get_logger
 from backend.scoring.score_profile import resolve_indicator
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
-from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
+from backend.auth.context import get_current_owner
 
 log = get_logger("signals.trade_profile")
 
@@ -140,8 +140,9 @@ class TradeProfileRepo:
                  owner_user_id: str | None = None):
         self.mkt = market or get_client()
         self.pg = pg or get_pg_client()
-        self.tenant_id = tenant_id or DEFAULT_TENANT_ID
-        self.owner_user_id = owner_user_id or DEFAULT_OWNER_USER_ID
+        _ctx_t, _ctx_o = get_current_owner()
+        self.tenant_id = tenant_id or _ctx_t
+        self.owner_user_id = owner_user_id or _ctx_o
 
     @property
     def _own(self) -> str:

@@ -187,8 +187,8 @@
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
 | R4 | 账密登录+JWT+登出黑名单+/me | jwt_tokens/security/session_store/auth_service/api·auth | T2,T3,T4 | 待开始 | 一致 | |
-| R7 | 鉴权中间件(机制性默认deny)+上下文注入+白名单 | auth/middleware(中间件式拦截+注上下文)·context·deps，main 挂载，仓库取上下文(请求链不回落) | T5 | 待开始 | 一致 | 默认deny用中间件机制+路由扫描测试兜底 |
-| R8（最小切片） | 系统级/全市场写接口 `require_role("system")` 粗粒度守卫 | auth/deps.require_role + 系统级路由叠加 | T5 | 待开始 | 部分覆盖 | 仅角色tier守卫(关注册越权窗口)；resource code细粒度留阶段三 |
+| R7 | 鉴权中间件(机制性默认deny)+上下文注入+白名单 | auth/middleware(中间件式拦截+注上下文)·context·deps，main 挂载，仓库取上下文(请求链不回落) | T5 | **已完成** | 一致 | 默认deny用中间件机制+路由扫描测试兜底 |
+| R8（最小切片） | 系统级/全市场写接口 `require_role("system")` 粗粒度守卫 | auth/deps.require_system + data_admin/tasks整router+indicators/config/layout平台写端点 | T5 | **已完成** | 部分覆盖 | 仅角色tier守卫(关注册越权窗口)；resource code细粒度留阶段三 |
 | R15 | 密码哈希/失败锁定/限流/安全头/验证码 | security 哈希、session_store 计数·令牌桶(鉴权关键fail-closed)、middleware 头、图形验证码 | T2,T3,T6 | 待开始 | 部分覆盖 | CSRF/XSS 靠参数化+安全头+SPA，行为风控(R27)不做 |
 | R20 | auth store+http 拦截+路由守卫+菜单/按钮 | stores/auth、client 拦截、router 守卫、App 顶栏；/me 菜单/功能码空、SideMenu 静态(§4.7) | T7,T9 | 待开始 | 部分覆盖 | `v-permission` 按钮级+后端菜单(R8/R12)留阶段三；本阶段登录态/守卫骨架+菜单兼容策略 |
 | R5 | 自助注册+自动建租户+绑租管 | auth_service.register（用户+租户+role_code='tenant_admin' 事务）、user_repository | T4,T8 | 待开始 | 一致 | 最小角色模型（role_code）；越权窗口由 R8 最小切片闭合 |
@@ -254,7 +254,7 @@
 - 完成标准：全部接口契约符合 §4.2/§6.4。
 
 ### 6.5 任务 T5：鉴权中间件（机制性默认 deny）+ 上下文 + 角色守卫
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。落地：`auth/context.py`（ContextVar + `get_current_owner()` 无上下文回落 default/admin + `system_context()`）；`auth/middleware.py`（**纯 ASGI 中间件**，白名单外强制有效 token→注上下文，缺/无效 401、Redis/存储不可用 503 fail-closed；OPTIONS/白名单放行）；`auth/deps.py::require_system`（非 system 403）；`main` 挂 AuthMiddleware（CORS 外层）+ data_admin/data_tasks 整 router 门禁 + indicators/config/layout 平台写端点门禁；**10 个资产仓库归属默认改 `get_current_owner()`**（向后兼容：无上下文=default/admin，认证请求=token 归属）。验证：test_auth_middleware(7)——白名单放行/无 token 401/坏 token 401/tenant_admin 访系统级 403/system 通过/**上下文隔离(tenant_admin 看不到 admin 预设)**/路由扫描机制；修复被中间件影响的既有 test_api（补 system token，揭示原 skip 实为 401 掩盖）+ test_layout_config（平台端点补 token）；conftest 设测试 JWT 密钥。全量 **254 passed**（0 skip）。
 - 依赖：T4
 - 涉及文件/模块：`backend/auth/middleware.py`、`backend/auth/context.py`、`backend/auth/deps.py`、[backend/main.py](../../../backend/main.py)、资产仓库归属取值入口（[asset_repository.py](../../../backend/storage/asset_repository.py) 及各域仓库 `__init__` 默认）、系统级路由文件（`api/data_admin.py`/`data_tasks.py`/`indicators.py`/`config.py`/`layout.py`）
 - 目标：机制性默认 deny + 上下文可被仓库读取 + 系统级接口角色守卫 + 请求链缺上下文不回落 admin。

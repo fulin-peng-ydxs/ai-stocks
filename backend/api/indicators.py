@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.deps import require_system
 from backend.indicators.definition import IndicatorDefRepo
 
 router = APIRouter(prefix="/api", tags=["indicators"])
@@ -38,7 +39,7 @@ def indicators_registry(include_disabled: bool = True) -> ApiResponse:
     return ok({"count": len(items), "items": items})
 
 
-@router.post("/indicators/def", response_model=ApiResponse)
+@router.post("/indicators/def", response_model=ApiResponse, dependencies=[Depends(require_system)])
 def save_indicator_def(body: IndicatorDefBody) -> ApiResponse:
     try:
         IndicatorDefRepo().save_custom(
@@ -63,7 +64,7 @@ def set_indicator_categories(key: str, body: CategoriesBody) -> ApiResponse:
     return ok({"key": key, "categories": body.categories})
 
 
-@router.delete("/indicators/def/{key}", response_model=ApiResponse)
+@router.delete("/indicators/def/{key}", response_model=ApiResponse, dependencies=[Depends(require_system)])
 def delete_indicator_def(key: str) -> ApiResponse:
     try:
         IndicatorDefRepo().delete(key)
