@@ -197,7 +197,7 @@
 | P1 登录页 | 7.1 登录/注册页 | LoginView 科技风+黑白主题，承接原型 prototypes/login.html，过 layout-contract 契约 | T8 | 待开始 | 一致 | 原型已在需求 7.1 敲定 |
 | P2 顶栏用户区 | 7.2 顶栏用户区 | App.vue 用户下拉+退出 | T9 | 待开始 | 一致 | |
 | —（技术依赖） | sys_user 扩展+seed 密码 | T1 数据层 | T1 | **已完成** | 超范围(必要技术依赖) | 无对应业务 R 编号，为 R4/R5 落地前置，理由：JWT 需 perm_ver/role/可校验密码 |
-| —（技术依赖） | 认证异常 401/403/429 契约 | exceptions 扩展+handler 改造 | T4 | 待开始 | 超范围(必要技术依赖) | R4/R7/R15 要求真实 HTTP 码 |
+| —（技术依赖） | 认证异常 401/403/429 契约 | exceptions 扩展(T2)+handler 改造(T4) | T4 | **已完成** | 超范围(必要技术依赖) | R4/R7/R15 要求真实 HTTP 码 |
 
 ---
 
@@ -242,7 +242,7 @@
 - 完成标准：单测全过；键均有 TTL。
 
 ### 6.4 任务 T4：认证服务 + 接口 + 异常契约
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。落地：`user_repository`（account/email/id 查、update_last_login、bump_perm_ver via RETURNING、register_tenant_and_admin 事务=建租户+租管+回填）；`auth_service`（login 验密+失败计数+锁定+限流+可选图形码 / refresh 轮换+黑名单+perm_ver 校验 / logout 拉黑 jti / register 强度+邮箱码+唯一性+自动登录 / claims_from_bearer / me[§4.7 空菜单] / issue_captcha[SVG] / send_email_code[dev日志] / public_config）；`api/auth.py` 9 端点；`main` 注册路由 + **exception_handler 改按 `http_status` 出码**（业务仍 200，认证类 401/403/429）；AuthConfig 补登录/注册安全阈值 + settings.yaml。验证：test_auth_service(8)+test_auth_api(4) 全过（注册建租管/登录成败/锁定/刷新轮换/登出吊销/HTTP 401 映射/oauth 占位），全量 **247 passed**。
 - 依赖：T1,T2,T3
 - 涉及文件/模块：`backend/services/auth_service.py`、`backend/storage/user_repository.py`、`backend/api/auth.py`、[backend/common/exceptions.py](../../../backend/common/exceptions.py)、[backend/main.py](../../../backend/main.py)
 - 目标：`/api/auth/login|logout|refresh|register|me|captcha|send-email-code|public-config|oauth/{provider}(占位)` 可用。

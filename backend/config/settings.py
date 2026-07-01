@@ -186,6 +186,23 @@ class AuthConfig(BaseModel):
     refresh_ttl_days: int = 14      # refresh token 有效期（天）
     min_password_len: int = 8       # 密码最小长度（注册/改密强度校验）
 
+    # 登录失败与锁定（R15）
+    max_login_fail: int = 5         # 窗口内失败达此数即锁定
+    fail_window_min: int = 15       # 失败计数窗口（分钟）
+    lock_minutes: int = 15          # 锁定时长（分钟）
+
+    # 防滥用开关（R16；默认对齐需求：邮箱码开、图形码关）
+    require_email_code: bool = True     # 注册需邮箱验证码
+    login_captcha_enabled: bool = False  # 登录失败达阈值后要求图形验证码
+    captcha_after_fails: int = 3        # 触发图形验证码的失败次数
+    email_code_ttl_min: int = 10        # 邮箱验证码有效期（分钟）
+    captcha_ttl_min: int = 5            # 图形验证码有效期（分钟）
+
+    # 限流（R15；按 IP 维度，令牌桶/固定窗口）
+    login_rate_per_min: int = 10        # 单 IP 每分钟登录尝试上限
+    register_rate_per_hour: int = 5     # 单 IP 每小时注册上限
+    email_code_rate_per_hour: int = 5   # 单邮箱每小时验证码发送上限
+
 
 class Settings(BaseModel):
     """全局配置根模型。"""

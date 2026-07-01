@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from backend.api.auth import router as auth_router
 from backend.api.backtest import router as backtest_router
 from backend.api.board import router as board_router
 from backend.api.config import router as config_router
@@ -57,13 +58,16 @@ def create_app() -> FastAPI:
     # ── 业务异常统一处理 ──
     @app.exception_handler(AIStocksError)
     async def _handle_biz_error(_: Request, exc: AIStocksError) -> JSONResponse:
+        # 业务异常默认 HTTP 200 + 软失败 code；认证/鉴权/限流类用真实 401/403/429（exc.http_status）
         log.warning("业务异常 code=%s msg=%s", exc.code, exc.msg)
         return JSONResponse(
-            status_code=200, content={"code": exc.code, "msg": exc.msg, "data": None}
+            status_code=getattr(exc, "http_status", 200),
+            content={"code": exc.code, "msg": exc.msg, "data": None},
         )
 
     # ── 路由注册 ──
     app.include_router(health_router)
+    app.include_router(auth_router)
     app.include_router(profiles_router)
     app.include_router(board_router)
     app.include_router(stocks_router)

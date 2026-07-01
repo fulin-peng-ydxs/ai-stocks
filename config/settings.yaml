@@ -133,6 +133,20 @@ redis:
 # 管理员初始密码走 AI_STOCKS_ADMIN_PASSWORD（缺失则随机生成并日志告警一次）。
 auth:
   algorithm: "HS256"
-  access_ttl_min: 60         # access token 有效期（分钟）
-  refresh_ttl_days: 14       # refresh token 有效期（天）
-  min_password_len: 8        # 注册/改密密码最小长度
+  access_ttl_min: 60           # access token 有效期（分钟）
+  refresh_ttl_days: 14         # refresh token 有效期（天）
+  min_password_len: 8          # 注册/改密密码最小长度
+  # 登录失败与锁定（R15）
+  max_login_fail: 5
+  fail_window_min: 15
+  lock_minutes: 15
+  # 防滥用开关（R16；默认邮箱码开、图形码关，可视化开关页留阶段五）
+  require_email_code: true
+  login_captcha_enabled: false
+  captcha_after_fails: 3
+  email_code_ttl_min: 10
+  captcha_ttl_min: 5
+  # 限流（R15；按 IP/邮箱维度）
+  login_rate_per_min: 10
+  register_rate_per_hour: 5
+  email_code_rate_per_hour: 5
