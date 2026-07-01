@@ -3,6 +3,8 @@
 > 横切所有业务模块的地基：FastAPI 全栈、点时安全仓库总闸门、异步任务底座、定时调度、配置覆盖层与前端布局/交互标准。
 
 > ⚠️ **持久层已升级为混合架构（多租户混合持久层 stage1）**：本文「核心技术」多处仍按旧的「单进程 + 纯 DuckDB + 无外部依赖」表述，**以代码与 [CLAUDE.md](../../CLAUDE.md)「架构与分层 · 双库访问层」为准**。现状：行情/参考数据留 DuckDB（只读分析），用户私有资产 + 平台配置（含 `app_config`）迁 **PostgreSQL**（`backend/storage/pg_client.py` + `asset_repository.py`，按 `tenant_id`+`owner_user_id` 隔离），Redis 作短状态库；下文 DuckDB 机制（连接锁 / temp_view / 点时安全仓库 / 防未来 / 防幸存者）对**行情库**仍成立，`app_config` 覆盖层改读 PG。详见 [agent-works/multi-tenant-rbac/](../multi-tenant-rbac/)。
+>
+> ⚠️ **认证与鉴权内核已落地（多租户 RBAC 阶段二）**：本文下述「无鉴权 / 单用户假设」表述**已过时**。现状：纯 ASGI `AuthMiddleware` 机制性默认 deny（白名单仅 `/api/health` + `/api/auth/*`，其余 `/api` 无有效 token 一律 401），JWT 登录/注册/登出/刷新，系统管理页专属接口挂 `require_system()` 角色守卫，归属取自请求上下文（`get_current_owner()`）。启动须设 `AI_STOCKS_JWT_SECRET`（缺失即失败）。契约详见 [CLAUDE.md](../../CLAUDE.md)「认证与鉴权」与 [stage2-auth-kernel/plan.md](../multi-tenant-rbac/stage2-auth-kernel/plan.md)。
 
 <span style="color:#2563eb">●</span> 服务运行　<span style="color:#7c3aed">●</span> 任务调度　<span style="color:#16a34a">●</span> 配置生效　<span style="color:#dc2626">●</span> 平台约束
 
@@ -29,7 +31,7 @@
 
 - **被上层共用的能力**：点时闸门被选股/打分/回测/个股查询统一调用，保证全系统同一套"防未来/防幸存者"口径；异步任务底座被数据采集/补数/重算/质检/修复/基础信息刷新复用同一套执行/日志/续跑/取消语义；定时调度只是任务底座的触发器（到点→`create` 一条 `async_task`），与手动任务同一执行通道；配置覆盖层被数据源限流/并发、股票池过滤、回测成本、TopN 等读取点共用。
 
-- **网络模型**：对外只暴露前端入口端口（dev 期前端 5173，经 Vite 代理到后端 8000；prod 期后端 8000 同源托管 `frontend/dist`）。后端 dev 绑 `127.0.0.1` 仅本机，CORS 仅放行 `localhost:5173/127.0.0.1:5173`（`backend/main.py:48`）。无鉴权、无多租户——本机单用户假设。
+- **网络模型**：对外只暴露前端入口端口（dev 期前端 5173，经 Vite 代理到后端 8000；prod 期后端 8000 同源托管 `frontend/dist`）。后端 dev 绑 `127.0.0.1` 仅本机，CORS 仅放行 `localhost:5173/127.0.0.1:5173`（`backend/main.py:48`）。~~无鉴权、无多租户——本机单用户假设~~ → **已过时**：阶段二起有 JWT 鉴权 + 中间件默认 deny + 归属上下文（见文首认证声明）。
 
 - **前端壳与路由**：`App.vue` 固定左侧菜单 + 顶栏 + `router-view` 内容区；菜单含个股查询/每日榜单/策略筛选/策略回测/配置管理/数据管理（含数据概览/质量/采集/任务调度四子页）。路由表 `frontend/src/router/index.ts` 懒加载各视图，`/` 重定向 `/board`，已下线页用重定向兜旧链接。`stockSet.ts` 这类 Pinia store 用 localStorage 持久化"当前集合"，支撑列表→详情的上一个/下一个跨页导航。
 
@@ -46,7 +48,7 @@
 | 自动化验证 | `npm run dev -- --port 5181 --strictPort` | `5181` | AI 截图/交互核查专用，不占用日常 5173 |
 | 生产/集成 | `npm run build` 后 `./start.sh prod` | `0.0.0.0:8000` | 后端托管 `frontend/dist` |
 
-开发期浏览器访问 `5173`，生产/集成期访问 `8000`。不要把无鉴权的 `prod` 端口暴露到公网。
+开发期浏览器访问 `5173`，生产/集成期访问 `8000`。阶段二已加登录鉴权，但邮箱码仍走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议把 `prod` 端口直接暴露公网。
 
 自动化验证（AI 用 preview 做截图/交互核查）走**独立端口 5181**，与日常 5173 并存、互不干扰，同样由 Vite 代理 `/api` 回 8000。Claude Code 的 preview 工具配置在 `.claude/launch.json`；它只服务 AI 验证，与日常开发的 `start.sh`/`start-web.sh` 无关。
 preview 工具只能托管自己启动的进程，故验证一律用 `ai-stocks-verify`，不要去抢占或杀掉用户手动起的 5173。
@@ -133,7 +135,7 @@ flowchart LR
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
 | <span style="color:#dc2626">●</span> 高 | DuckDB 单写锁 + 写任务单例 | 长写任务期间其它写请求被 409 拦下；不具备并发吞吐能力 | 接受本地单用户定位；写任务排队靠人工错峰 |
-| <span style="color:#dc2626">●</span> 高 | 单用户 / 无鉴权 | 暴露端口者可读写库与触发任务 | dev 仅本机访问；prod 不直接暴露公网 |
+| <span style="color:#dc2626">●</span> 高 | 公网放量前的鉴权完备性 | 阶段二已有 JWT + 默认 deny + 角色守卫；但邮箱码 dev 日志投递、细粒度 RBAC 待阶段三 | 公网放量前接 SMTP + 完成阶段三；dev 仅本机、prod 暂不直接暴露公网 |
 | <span style="color:#f59e0b">●</span> 中 | 本机绑定与进程内状态 | 多进程/多副本下任务互斥、取消、reconcile 会失效 | 仅按单机单进程部署 |
 | <span style="color:#f59e0b">●</span> 中 | 服务重启打断在跑任务 | running/pending 会被标为 interrupted，需续跑 | 重启前确认任务完成；中断后从任务页续跑 |
 | <span style="color:#f59e0b">●</span> 中 | 配置覆盖层与连接初始化成环 | 漏用 `get_effective_settings()` 会读不到 Web 覆盖值 | 新增运行期配置读取时明确用有效配置 |
