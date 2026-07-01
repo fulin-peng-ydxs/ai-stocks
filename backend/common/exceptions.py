@@ -85,3 +85,13 @@ class RateLimitError(AIStocksError):
 
     code = 4290
     http_status = 429
+
+
+class ServiceUnavailableError(AIStocksError):
+    """鉴权关键依赖（Redis 黑名单/perm_ver 等）不可用 → fail-closed 503。
+
+    与 StorageError（软失败 200）区分：认证链路的存储故障必须让请求失败，不静默放行。
+    """
+
+    code = 5030
+    http_status = 503

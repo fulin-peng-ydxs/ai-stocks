@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.context import get_current_owner
 from backend.auth.deps import require_system
 from backend.storage.layout_config import (
     DEFAULT_USER_ID,
@@ -127,7 +128,9 @@ def save_page_config(page_key: str, body: PageConfigBody) -> ApiResponse:
 
 
 @router.get("/users/{page_key}", response_model=ApiResponse)
-def get_user_config(page_key: str, user_id: str = Query(DEFAULT_USER_ID, alias="userId")) -> ApiResponse:
+def get_user_config(page_key: str) -> ApiResponse:
+    # 用户级布局按当前登录用户隔离；忽略前端传入 userId（防越权读他人配置，评审 P1）
+    user_id = get_current_owner()[1]
     try:
         return ok(LayoutConfigRepo().get_user_config(page_key, user_id))
     except LayoutConfigValidationError as e:
@@ -136,11 +139,12 @@ def get_user_config(page_key: str, user_id: str = Query(DEFAULT_USER_ID, alias="
 
 @router.post("/users/{page_key}", response_model=ApiResponse)
 def save_user_config(page_key: str, body: UserConfigBody) -> ApiResponse:
+    # 归属取自上下文，不信任 body.userId（防越权写他人配置）
     try:
         data = LayoutConfigRepo().set_user_config(
             page_key=page_key,
             config=body.config,
-            user_id=body.userId,
+            user_id=get_current_owner()[1],
             schema_version=body.schemaVersion,
             layout=body.layout,
         )
@@ -168,11 +172,13 @@ def validate_layout_config(body: ValidateBody) -> ApiResponse:
 def reset_layout_config(body: ResetBody) -> ApiResponse:
     if body.scope == "page":
         require_system()   # 页面级布局是平台配置，删除/重置仅系统管理员（用户级 scope 不限）
+    # 用户级重置归属取自上下文，不信任 body.userId（防越权重置他人配置）
+    user_id = get_current_owner()[1]
     try:
         data = LayoutConfigRepo().reset(
             scope=body.scope,
             page_key=body.pageKey,
-            user_id=body.userId,
+            user_id=user_id,
             path=body.path,
         )
     except LayoutConfigValidationError as e:
@@ -206,10 +212,9 @@ def save_field_policy(body: FieldPolicyBody) -> ApiResponse:
 
 
 @router.get("/effective/{page_key}", response_model=ApiResponse)
-def get_effective_config(
-    page_key: str,
-    user_id: str = Query(DEFAULT_USER_ID, alias="userId"),
-) -> ApiResponse:
+def get_effective_config(page_key: str) -> ApiResponse:
+    # 生效配置的用户层按当前登录用户，不信任前端 userId（防越权读他人配置）
+    user_id = get_current_owner()[1]
     try:
         return ok(LayoutConfigRepo().effective_config(page_key, user_id))
     except LayoutConfigValidationError as e:

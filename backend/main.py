@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import redis
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -70,6 +71,16 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=getattr(exc, "http_status", 200),
             content={"code": exc.code, "msg": exc.msg, "data": None},
+        )
+
+    # 鉴权关键依赖 Redis 故障兜底：任何逃逸到路由层的 redis 错误 → fail-closed 503（非 500）。
+    # 正常路径 session_store 已翻译为 ServiceUnavailableError(由上方 handler 出 503)；此为防御性兜底。
+    @app.exception_handler(redis.RedisError)
+    async def _handle_redis_error(_: Request, exc: redis.RedisError) -> JSONResponse:
+        log.warning("Redis 依赖不可用，fail-closed 503: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={"code": 5030, "msg": "服务暂时不可用（依赖 Redis），请稍后重试", "data": None},
         )
 
     # ── 路由注册 ──

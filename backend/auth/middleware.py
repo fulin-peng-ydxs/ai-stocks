@@ -23,7 +23,7 @@ from backend.auth.context import (
     reset_context,
     set_context,
 )
-from backend.common.exceptions import AuthError, StorageError
+from backend.common.exceptions import AuthError, ServiceUnavailableError, StorageError
 from backend.common.logging import get_logger
 from backend.services.auth_service import AuthService
 
@@ -65,7 +65,7 @@ class AuthMiddleware:
                 claims = AuthService().claims_from_bearer(authorization)
             except AuthError as e:
                 return await self._deny(scope, receive, send, e.http_status, e.code, e.msg)
-            except (StorageError, redis.RedisError):
+            except (ServiceUnavailableError, StorageError, redis.RedisError):
                 # 鉴权关键依赖（Redis 黑名单/perm_ver、PG）不可用 → fail-closed 503（保吊销/失效语义）
                 log.warning("鉴权链存储不可用，fail-closed 拒绝 path=%s", scope.get("path"))
                 return await self._deny(

@@ -158,8 +158,18 @@ class AuthService:
         user = self.repo.get_by_id(user_id)
         if user is None:
             raise AuthError("用户不存在")
-        # 兼容策略（plan §4.7）：本阶段菜单/功能码为空，前端仍用静态 menuConfig
-        return {**self._public_user(user), "menus": [], "permissions": []}
+        # 固定响应契约（plan §4.7；供 T7 auth store 对接）：{user, tenant, role, menus, permissions}
+        # 本阶段 menus/permissions 为空（前端仍用静态 menuConfig），阶段三填充。
+        return {
+            "user": {
+                "id": user["id"], "account": user["account"],
+                "email": user.get("email"), "status": user["status"],
+            },
+            "tenant": {"id": user["tenant_id"]},
+            "role": user["role_code"],
+            "menus": [],
+            "permissions": [],
+        }
 
     # ── 验证码 / 邮箱码 / 公开配置 ──
     def issue_captcha(self) -> dict:

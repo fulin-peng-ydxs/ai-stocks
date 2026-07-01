@@ -47,3 +47,33 @@ def test_oauth_placeholder_is_soft_business_error(client):
     resp = client.get("/api/auth/oauth/wechat")
     assert resp.status_code == 200
     assert resp.json()["code"] == 4000
+
+
+def _admin_token():
+    from backend.auth.jwt_tokens import issue_access
+    from backend.storage.pg_client import get_pg_client
+    pv = int(get_pg_client().query_df(
+        "SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
+    return issue_access("admin", "default", "system", pv)
+
+
+def test_me_contract_shape(client):
+    # 评审 P2 回归：/me 固定契约 {user, tenant, role, menus, permissions}
+    resp = client.get("/api/auth/me", headers={"Authorization": "Bearer " + _admin_token()})
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert set(data) >= {"user", "tenant", "role", "menus", "permissions"}
+    assert {"id", "account"} <= set(data["user"])
+    assert "id" in data["tenant"]
+    assert data["role"] == "system"
+
+
+def test_me_redis_down_returns_503(client, monkeypatch):
+    # 评审 P1 回归：白名单 auth 路径(/me) Redis 故障也须 fail-closed 503（非 500）
+    import redis as _redis
+
+    from backend.auth import session_store as ss
+    monkeypatch.setattr(ss, "is_jti_revoked",
+                        lambda *_a, **_k: (_ for _ in ()).throw(_redis.ConnectionError("down")))
+    resp = client.get("/api/auth/me", headers={"Authorization": "Bearer " + _admin_token()})
+    assert resp.status_code == 503

@@ -109,6 +109,25 @@ def test_redis_failure_fails_closed_503(client, pg, monkeypatch):
     assert resp.status_code == 503
 
 
+def test_layout_user_config_owner_from_context_not_request(client, pg, tadmin):
+    # 评审 P1 回归：用户级 layout 归属取自上下文，前端传 userId=admin 被忽略（不越权写 admin 名下）
+    uid, tid = tadmin
+    pk = "iso" + uuid.uuid4().hex[:6]
+    try:
+        r = client.post(
+            f"/api/layout/users/{pk}",
+            json={"userId": "admin", "config": {"values": {"density": "comfortable"}}},
+            headers=_auth(_access(uid, tid, "tenant_admin")))
+        assert r.status_code == 200
+        # 写入了当前用户(uid)名下，而非被伪造的 admin
+        assert not pg.query_df(
+            "SELECT 1 FROM layout_user_config WHERE user_id=%s AND page_key=%s", [uid, pk]).empty
+        assert pg.query_df(
+            "SELECT 1 FROM layout_user_config WHERE user_id='admin' AND page_key=%s", [pk]).empty
+    finally:
+        pg.execute("DELETE FROM layout_user_config WHERE page_key=%s", [pk])
+
+
 def test_all_controlled_get_routes_require_token(client):
     """机制性默认 deny：扫描所有静态 GET /api 路由，白名单外无一漏挂鉴权。"""
     from backend.auth.middleware import is_public

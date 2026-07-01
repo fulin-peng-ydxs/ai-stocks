@@ -76,7 +76,9 @@ def test_me_and_claims(auth_env):
     claims = svc.claims_from_bearer("Bearer " + out["access_token"])
     assert claims["role"] == "tenant_admin"
     me = svc.me(claims["sub"])
-    assert me["account"] == acc
+    # 固定契约：{user, tenant, role, menus, permissions}
+    assert me["user"]["account"] == acc
+    assert me["tenant"]["id"] and me["role"] == "tenant_admin"
     assert me["menus"] == [] and me["permissions"] == []   # §4.7 兼容策略
 
 
