@@ -13,9 +13,16 @@
 
 from __future__ import annotations
 
+import redis
 from starlette.responses import JSONResponse
 
-from backend.auth.context import AuthContext, reset_context, set_context
+from backend.auth.context import (
+    AuthContext,
+    enter_request,
+    exit_request,
+    reset_context,
+    set_context,
+)
 from backend.common.exceptions import AuthError, StorageError
 from backend.common.logging import get_logger
 from backend.services.auth_service import AuthService
@@ -39,32 +46,39 @@ class AuthMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if (scope["type"] != "http"
-                or scope.get("method") == "OPTIONS"
-                or is_public(scope.get("path", ""))):
+        if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        authorization = None
-        for k, v in scope.get("headers", []):
-            if k == b"authorization":
-                authorization = v.decode("latin-1")
-                break
-
+        # 标记"在请求链内"：使受控端点若因 bug/白名单误配缺上下文取归属时报错而非静默回落 admin（评审 P0）
+        req_token = enter_request()
         try:
-            claims = AuthService().claims_from_bearer(authorization)
-        except AuthError as e:
-            return await self._deny(scope, receive, send, e.http_status, e.code, e.msg)
-        except StorageError:
-            log.warning("鉴权链 Redis/存储不可用，fail-closed 拒绝 path=%s", scope.get("path"))
-            return await self._deny(
-                scope, receive, send, 503, 5003, "服务暂时不可用（鉴权依赖），请稍后重试")
+            if scope.get("method") == "OPTIONS" or is_public(scope.get("path", "")):
+                return await self.app(scope, receive, send)
 
-        token = set_context(AuthContext(
-            user_id=claims["sub"], tenant_id=claims["tenant_id"], role=claims["role"]))
-        try:
-            await self.app(scope, receive, send)
+            authorization = None
+            for k, v in scope.get("headers", []):
+                if k == b"authorization":
+                    authorization = v.decode("latin-1")
+                    break
+
+            try:
+                claims = AuthService().claims_from_bearer(authorization)
+            except AuthError as e:
+                return await self._deny(scope, receive, send, e.http_status, e.code, e.msg)
+            except (StorageError, redis.RedisError):
+                # 鉴权关键依赖（Redis 黑名单/perm_ver、PG）不可用 → fail-closed 503（保吊销/失效语义）
+                log.warning("鉴权链存储不可用，fail-closed 拒绝 path=%s", scope.get("path"))
+                return await self._deny(
+                    scope, receive, send, 503, 5003, "服务暂时不可用（鉴权依赖），请稍后重试")
+
+            token = set_context(AuthContext(
+                user_id=claims["sub"], tenant_id=claims["tenant_id"], role=claims["role"]))
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                reset_context(token)
         finally:
-            reset_context(token)
+            exit_request(req_token)
 
     @staticmethod
     async def _deny(scope, receive, send, status: int, code: int, msg: str):

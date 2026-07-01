@@ -131,7 +131,9 @@ def create_app() -> FastAPI:
         from backend.storage.pg_ddl import init_pg_db
 
         init_pg_db()
-        log.info("混合持久层自检通过：DuckDB + PostgreSQL + Redis 均连通，PG 资产表已就绪")
+        # 认证密钥自检（stage2·T2）：JWT 签名密钥无弱默认，缺失即启动失败（不留到首个请求才 500）
+        get_settings().jwt_secret()
+        log.info("混合持久层自检通过：DuckDB + PostgreSQL + Redis 均连通，PG 资产表已就绪，JWT 密钥已配置")
 
     # ── 启动：任务 reconcile（FR-DM-10）+ 定时调度（按 scheduler.enabled）──
     @app.on_event("startup")

@@ -80,6 +80,35 @@ def test_context_isolation_tenant_admin_sees_no_admin_presets(client, tadmin):
     assert resp.json()["data"] == []   # 各自归属，互不可见
 
 
+def test_indicator_patch_writes_forbidden_for_tenant_admin(client, tadmin):
+    # 评审 P0-1 回归：指标启停/分类修改是全局元数据写，非 system 一律 403
+    uid, tid = tadmin
+    h = _auth(_access(uid, tid, "tenant_admin"))
+    r1 = client.patch("/api/indicators/def/MA/enabled", json={"enabled": False}, headers=h)
+    r2 = client.patch("/api/indicators/def/MA/categories", json={"categories": ["x"]}, headers=h)
+    assert r1.status_code == 403 and r2.status_code == 403
+
+
+def test_layout_page_reset_forbidden_for_tenant_admin(client, tadmin):
+    # 评审 P1-3 回归：页面级布局重置是平台写，非 system 403（用户级 scope 不在此限）
+    uid, tid = tadmin
+    resp = client.post("/api/layout/reset", json={"scope": "page", "pageKey": "board"},
+                       headers=_auth(_access(uid, tid, "tenant_admin")))
+    assert resp.status_code == 403
+
+
+def test_redis_failure_fails_closed_503(client, pg, monkeypatch):
+    # 评审 P1-4 回归：鉴权关键 Redis 故障 → fail-closed 503（非未处理 500）
+    import redis as _redis
+
+    from backend.auth import session_store as ss
+    monkeypatch.setattr(ss, "is_jti_revoked",
+                        lambda *_a, **_k: (_ for _ in ()).throw(_redis.ConnectionError("down")))
+    pv = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
+    resp = client.get("/api/profiles", headers=_auth(_access("admin", "default", "system", pv)))
+    assert resp.status_code == 503
+
+
 def test_all_controlled_get_routes_require_token(client):
     """机制性默认 deny：扫描所有静态 GET /api 路由，白名单外无一漏挂鉴权。"""
     from backend.auth.middleware import is_public

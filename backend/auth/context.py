@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator
 
+from backend.common.exceptions import AuthError
 from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
 
 
@@ -27,6 +28,9 @@ class AuthContext:
 
 _ctx: contextvars.ContextVar[AuthContext | None] = contextvars.ContextVar(
     "auth_ctx", default=None)
+# 由鉴权中间件对每个 HTTP 请求置 True：标记"当前在请求链内"，用于区分请求路径与 CLI/后台/测试。
+_in_request: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "auth_in_request", default=False)
 
 
 def set_context(ctx: AuthContext) -> contextvars.Token:
@@ -37,16 +41,31 @@ def reset_context(token: contextvars.Token) -> None:
     _ctx.reset(token)
 
 
+def enter_request() -> contextvars.Token:
+    return _in_request.set(True)
+
+
+def exit_request(token: contextvars.Token) -> None:
+    _in_request.reset(token)
+
+
 def get_current_context() -> AuthContext | None:
     return _ctx.get()
 
 
 def get_current_owner() -> tuple[str, str]:
-    """返回 (tenant_id, owner_user_id)；无上下文回落 (default, admin)。"""
+    """返回 (tenant_id, owner_user_id)。
+
+    - 有认证上下文 → token 归属（tenant_id + user_id）。
+    - **请求链内却无上下文 → 报错**（防中间件注入失败/白名单误配/调用路径错误被静默掩盖成 admin，评审 P0）。
+    - 非请求路径（CLI/后台/迁移/测试，无中间件）→ 回落默认 default/admin。
+    """
     ctx = _ctx.get()
-    if ctx is None:
-        return DEFAULT_TENANT_ID, DEFAULT_OWNER_USER_ID
-    return ctx.tenant_id, ctx.user_id
+    if ctx is not None:
+        return ctx.tenant_id, ctx.user_id
+    if _in_request.get():
+        raise AuthError("请求缺少认证上下文")
+    return DEFAULT_TENANT_ID, DEFAULT_OWNER_USER_ID
 
 
 def get_current_role() -> str | None:

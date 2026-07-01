@@ -51,13 +51,15 @@ def save_indicator_def(body: IndicatorDefBody) -> ApiResponse:
     return ok({"key": body.key, "msg": "已保存"})
 
 
-@router.patch("/indicators/def/{key}/enabled", response_model=ApiResponse)
+@router.patch("/indicators/def/{key}/enabled", response_model=ApiResponse,
+              dependencies=[Depends(require_system)])
 def set_indicator_enabled(key: str, body: EnabledBody) -> ApiResponse:
     IndicatorDefRepo().set_enabled(key, body.enabled)
     return ok({"key": key, "enabled": body.enabled})
 
 
-@router.patch("/indicators/def/{key}/categories", response_model=ApiResponse)
+@router.patch("/indicators/def/{key}/categories", response_model=ApiResponse,
+              dependencies=[Depends(require_system)])
 def set_indicator_categories(key: str, body: CategoriesBody) -> ApiResponse:
     """设置指标的分类标签（多分类,可自定义；内置指标也可改）。"""
     IndicatorDefRepo().set_categories(key, body.categories)

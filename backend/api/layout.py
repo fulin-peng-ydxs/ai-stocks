@@ -166,6 +166,8 @@ def validate_layout_config(body: ValidateBody) -> ApiResponse:
 
 @router.post("/reset", response_model=ApiResponse)
 def reset_layout_config(body: ResetBody) -> ApiResponse:
+    if body.scope == "page":
+        require_system()   # 页面级布局是平台配置，删除/重置仅系统管理员（用户级 scope 不限）
     try:
         data = LayoutConfigRepo().reset(
             scope=body.scope,
