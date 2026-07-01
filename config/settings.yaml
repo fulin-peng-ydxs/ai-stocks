@@ -150,3 +150,4 @@ auth:
   login_rate_per_min: 10
   register_rate_per_hour: 5
   email_code_rate_per_hour: 5
+  api_rate_per_min: 600            # 全局 /api 单 IP 每分钟上限（应用层 backstop；反代做主限流）

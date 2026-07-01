@@ -272,7 +272,7 @@
 - 完成标准：默认 deny 为机制（中间件+路由扫描测试）、角色守卫闭合越权窗口、存量功能带对应角色 token 照常。
 
 ### 6.6 任务 T6：安全加固（限流/锁定/验证码/安全头）
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。T4 已落地的（登录失败计数+锁定、图形/邮箱验证码 gen/verify、auth 端点 IP/账号限流、R16 默认值邮箱开/图形关、邮箱码 dev 投递）沿用；**T6 净新增**：`SecurityMiddleware`（纯 ASGI，置 CORS 内层/Auth 外层）——①**安全响应头**（x-content-type-options:nosniff、x-frame-options:SAMEORIGIN、referrer-policy；HSTS/CSP 留反代层）覆盖所有响应；②**全局 /api per-IP 限流 backstop**（`api_rate_per_min`=600，固定窗口，超限 429，Redis 故障 fail-open）。验证：test 安全头存在/全局限流 429/**图形验证码闭环（开关开启后失败达阈值需码，无码拒绝、正确码放行）**，全量 **266 passed**。
 - 依赖：T3,T4
 - 涉及文件/模块：`backend/auth/middleware.py`、`backend/services/auth_service.py`、[backend/main.py](../../../backend/main.py)
 - 目标：限流中间件 + 安全响应头 + 登录失败锁定 + 图形验证码闭环 + 邮箱码（dev 投递）。

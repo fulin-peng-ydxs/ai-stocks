@@ -128,6 +128,22 @@ def test_layout_user_config_owner_from_context_not_request(client, pg, tadmin):
         pg.execute("DELETE FROM layout_user_config WHERE page_key=%s", [pk])
 
 
+def test_security_headers_present(client):
+    # T6：安全响应头（对所有响应，含白名单）
+    resp = client.get("/api/health")
+    assert resp.headers.get("x-content-type-options") == "nosniff"
+    assert resp.headers.get("x-frame-options") == "SAMEORIGIN"
+    assert "referrer-policy" in resp.headers
+
+
+def test_global_rate_limit_returns_429(client, monkeypatch):
+    # T6：全局 /api 限流超限 → 429（monkeypatch rate_limit_ok 令 api 域超限；不影响其它域）
+    from backend.auth import session_store as ss
+    monkeypatch.setattr(ss, "rate_limit_ok", lambda scope, *a, **k: scope != "api")
+    resp = client.get("/api/health")
+    assert resp.status_code == 429 and resp.json()["code"] == 4290
+
+
 def test_all_controlled_get_routes_require_token(client):
     """机制性默认 deny：扫描所有静态 GET /api 路由，白名单外无一漏挂鉴权。"""
     from backend.auth.middleware import is_public

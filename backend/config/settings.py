@@ -202,6 +202,7 @@ class AuthConfig(BaseModel):
     login_rate_per_min: int = 10        # 单 IP 每分钟登录尝试上限
     register_rate_per_hour: int = 5     # 单 IP 每小时注册上限
     email_code_rate_per_hour: int = 5   # 单邮箱每小时验证码发送上限
+    api_rate_per_min: int = 600         # 单 IP 每分钟全局 /api 请求上限（应用层粗粒度backstop；反代做主限流）
 
 
 class Settings(BaseModel):

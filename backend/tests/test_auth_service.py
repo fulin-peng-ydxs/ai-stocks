@@ -109,6 +109,23 @@ def test_lockout_after_max_fail(auth_env):
     ss.clear_login_failures(acc)
 
 
+def test_login_captcha_required_after_fails_when_enabled(auth_env):
+    # T6：开关开启后，登录失败达阈值需图形验证码（闭环：无码拒绝、正确码放行）
+    svc = AuthService()
+    svc.cfg = svc.cfg.model_copy(update={
+        "login_captcha_enabled": True, "captcha_after_fails": 1, "max_login_fail": 99})
+    ip = _ip()
+    acc, _ = _register(svc, auth_env, ip=ip)
+    with pytest.raises(AuthError):                 # 失败一次 → 触发验证码要求
+        svc.login(acc, "WrongPass1", ip=ip)
+    with pytest.raises(AuthError):                 # 需验证码却不带 → 拒绝
+        svc.login(acc, "GoodPass1", ip=ip)
+    cid = uuid.uuid4().hex                          # 备好一个已知验证码
+    ss.save_captcha(cid, "AB12", 300)
+    out = svc.login(acc, "GoodPass1", ip=ip, captcha_id=cid, captcha_code="AB12")
+    assert out["access_token"]
+
+
 def test_public_config(auth_env):
     cfg = AuthService().public_config()
     assert cfg["require_email_code"] is True

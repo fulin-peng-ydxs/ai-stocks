@@ -16,6 +16,7 @@ from __future__ import annotations
 import redis
 from starlette.responses import JSONResponse
 
+from backend.auth import session_store as ss
 from backend.auth.context import (
     AuthContext,
     enter_request,
@@ -25,6 +26,7 @@ from backend.auth.context import (
 )
 from backend.common.exceptions import AuthError, ServiceUnavailableError, StorageError
 from backend.common.logging import get_logger
+from backend.config import get_settings
 from backend.services.auth_service import AuthService
 
 log = get_logger("auth.middleware")
@@ -32,11 +34,60 @@ log = get_logger("auth.middleware")
 # 公开前缀：健康检查 + 认证端点（登录/注册/刷新/验证码/公开配置/oauth 占位；me/logout 自校验 token）
 _WHITELIST_PREFIXES = ("/api/health", "/api/auth/")
 
+# 安全响应头（R15；HSTS/CSP 留反代层，见 deploy-reverse-proxy.md，避免开发态 HTTP/内联脚本被误伤）
+_SECURITY_HEADERS = [
+    (b"x-content-type-options", b"nosniff"),
+    (b"x-frame-options", b"SAMEORIGIN"),
+    (b"referrer-policy", b"strict-origin-when-cross-origin"),
+]
+
 
 def is_public(path: str) -> bool:
     if not path.startswith("/api/"):
         return True   # 非 API（SPA 静态 / 文档）不在鉴权范围
     return any(path.startswith(p) for p in _WHITELIST_PREFIXES)
+
+
+def _scope_ip(scope) -> str:
+    """取客户端 IP：反代后优先 X-Forwarded-For 首段，否则连接地址。"""
+    for k, v in scope.get("headers", []):
+        if k == b"x-forwarded-for":
+            return v.decode("latin-1").split(",")[0].strip()
+    client = scope.get("client")
+    return client[0] if client else "unknown"
+
+
+class SecurityMiddleware:
+    """安全加固中间件（stage2·T6）：全局 per-IP 限流（backstop）+ 安全响应头。
+
+    - 限流：对 /api/** 按 IP 固定窗口计数，超限 429；Redis 故障 fail-open（rate_limit_ok 内部处理）。
+      应用层粗粒度 backstop，主限流由反代承担（deploy-reverse-proxy.md）。
+    - 安全头：所有响应追加 nosniff / X-Frame-Options / Referrer-Policy。
+    置于 CORS 内层、Auth 外层：限流在鉴权前拦（早卸载），头对所有响应（含 401/403/429）生效。
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        path = scope.get("path", "")
+        if path.startswith("/api/") and scope.get("method") != "OPTIONS":
+            limit = get_settings().auth.api_rate_per_min
+            if not ss.rate_limit_ok("api", _scope_ip(scope), limit, 60):
+                resp = JSONResponse(
+                    {"code": 4290, "msg": "请求过于频繁，请稍后再试", "data": None},
+                    status_code=429, headers={k.decode(): v.decode() for k, v in _SECURITY_HEADERS})
+                return await resp(scope, receive, send)
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                message["headers"] = list(message.get("headers", [])) + _SECURITY_HEADERS
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
 
 
 class AuthMiddleware:

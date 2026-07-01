@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.auth.deps import require_system
-from backend.auth.middleware import AuthMiddleware
+from backend.auth.middleware import AuthMiddleware, SecurityMiddleware
 from backend.api.auth import router as auth_router
 from backend.api.backtest import router as backtest_router
 from backend.api.board import router as board_router
@@ -50,10 +50,12 @@ def create_app() -> FastAPI:
         version="0.1.0",
     )
 
-    # 鉴权中间件（stage2·T5）：机制性默认 deny + 上下文注入。
-    # 先加 Auth（内层）再加 CORS（外层）——保证 CORS 最外层，鉴权拒绝的响应也带 CORS 头，
-    # 且预检 OPTIONS 由 CORS 先处理（Auth 内部也已放行 OPTIONS/白名单）。
+    # 中间件顺序（add 越晚越外层）：Auth(内) → Security(中) → CORS(外)。
+    # Auth：机制性默认 deny + 上下文注入（T5）。
+    # Security：全局限流 backstop + 安全响应头（T6），在鉴权前拦、头覆盖所有响应。
+    # CORS：最外层，保证拒绝响应也带 CORS 头，预检 OPTIONS 先处理。
     app.add_middleware(AuthMiddleware)
+    app.add_middleware(SecurityMiddleware)
 
     # 开发期允许本地前端跨域（生产期同源托管）
     app.add_middleware(
