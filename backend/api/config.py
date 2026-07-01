@@ -19,7 +19,8 @@ from backend.config.settings import _config_path
 router = APIRouter(prefix="/api", tags=["config"])
 
 
-@router.get("/config", response_model=ApiResponse)
+# 平台配置全量读：仅系统管理员（配置管理菜单 system-only；避免向普通租户泄露平台参数）。
+@router.get("/config", response_model=ApiResponse, dependencies=[Depends(require_system)])
 def get_config() -> ApiResponse:
     s = get_settings()
     return ok({"path": str(_config_path()), "config": s.model_dump()})

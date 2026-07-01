@@ -187,8 +187,8 @@ function onSubmit() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
           </svg>
-          <input v-model="form.account" type="text" placeholder="账号 / 邮箱" autocomplete="username"
-                 @keyup.enter="onSubmit" />
+          <input v-model="form.account" type="text" :placeholder="mode === 'register' ? '账号' : '账号 / 邮箱'"
+                 autocomplete="username" @keyup.enter="onSubmit" />
         </label>
 
         <!-- 密码 -->
@@ -212,6 +212,15 @@ function onSubmit() {
             <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
           </svg>
           <input v-model="form.confirm" type="password" placeholder="确认密码" autocomplete="new-password"
+                 @keyup.enter="onSubmit" />
+        </label>
+
+        <!-- 邮箱（仅注册）：注册需账号/邮箱/密码/邮箱码；邮箱既作找回/通知，又是邮箱码接收地址 -->
+        <label v-if="mode === 'register'" class="login-field">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
+          </svg>
+          <input v-model="form.email" type="email" placeholder="邮箱" autocomplete="email"
                  @keyup.enter="onSubmit" />
         </label>
 

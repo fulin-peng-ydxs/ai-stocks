@@ -186,7 +186,9 @@ def reset_layout_config(body: ResetBody) -> ApiResponse:
     return ok(data, msg="布局配置已重置")
 
 
-@router.get("/field-policies", response_model=ApiResponse)
+# 字段开放策略列表：仅布局配置管理页（系统组件工作区，system-only）消费；
+# 页面渲染走 /effective（普通用户依赖），故此读接口限 system，与 POST 守卫对齐。
+@router.get("/field-policies", response_model=ApiResponse, dependencies=[Depends(require_system)])
 def list_field_policies() -> ApiResponse:
     """组件字段开放策略：每个受控 (组件, 字段) 的代码最大集 + 当前生效集 + 是否被覆盖。"""
     return ok(

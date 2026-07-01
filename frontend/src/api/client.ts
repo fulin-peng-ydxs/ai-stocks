@@ -48,7 +48,13 @@ http.interceptors.response.use(
     const status = error?.response?.status
     const msg = error?.response?.data?.msg
     if (status === 401) {
-      redirectToLogin()
+      // 已在登录页时的 401 是登录动作本身失败（账密错/图形码错/锁定），此处弹后端提示；
+      // 其余页面的 401 是会话失效，清态跳登录（redirectToLogin 内已判重不重复跳）。
+      if (window.location.pathname === '/login') {
+        ElMessage.error(msg || '账号或密码错误')
+      } else {
+        redirectToLogin()
+      }
       return Promise.reject(error)
     }
     if (status === 403) {

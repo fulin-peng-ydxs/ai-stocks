@@ -89,6 +89,39 @@ def test_indicator_patch_writes_forbidden_for_tenant_admin(client, tadmin):
     assert r1.status_code == 403 and r2.status_code == 403
 
 
+# Codex 二阶段复核 P1 回归：数据管理/配置/布局管理页专属读接口只要求登录、未要求 system，
+# tenant_admin 可越权读平台数据。以下逐一断言非 system → 403（新堵的守卫）。
+_SYSTEM_ONLY_READS = [
+    ("GET", "/api/config"),               # 平台配置全量
+    ("GET", "/api/data/status"),          # 数据管理概览
+    ("GET", "/api/data/update-logs"),     # 采集日志
+    ("GET", "/api/layout/field-policies"),  # 字段开放策略（布局配置管理页）
+]
+
+
+@pytest.mark.parametrize("method,path", _SYSTEM_ONLY_READS)
+def test_system_only_reads_forbidden_for_tenant_admin(client, tadmin, method, path):
+    uid, tid = tadmin
+    h = _auth(_access(uid, tid, "tenant_admin"))
+    resp = client.request(method, path, headers=h)
+    assert resp.status_code == 403 and resp.json()["code"] == 4030, f"{path} 未挡住 tenant_admin"
+
+
+# 反向守卫：普通用户页面渲染依赖的共享读接口**不得**被误 gate 成 system-only（防过度收紧回归）。
+_USER_SHARED_READS = [
+    "/api/data/trade-dates",          # 全站日期选择器
+    "/api/layout/presets",            # 布局预设（App 顶栏选择器）
+    "/api/layout/effective/board",    # 页面布局生效配置
+]
+
+
+@pytest.mark.parametrize("path", _USER_SHARED_READS)
+def test_user_shared_reads_not_forbidden_for_tenant_admin(client, tadmin, path):
+    uid, tid = tadmin
+    resp = client.get(path, headers=_auth(_access(uid, tid, "tenant_admin")))
+    assert resp.status_code != 403, f"{path} 被误 gate，普通用户页面将不可用"
+
+
 def test_layout_page_reset_forbidden_for_tenant_admin(client, tadmin):
     # 评审 P1-3 回归：页面级布局重置是平台写，非 system 403（用户级 scope 不在此限）
     uid, tid = tadmin
