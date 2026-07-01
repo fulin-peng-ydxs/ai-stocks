@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
 import { useLayoutPreset, type LayoutPresetKey } from '@/layout'
+import { useAuthStore } from '@/stores/auth'
 import SideMenu from '@/components/SideMenu.vue'
 
 const { isDark } = useTheme()
@@ -10,7 +11,42 @@ const { activePresetKey, activePreset, options: presetOptions, setLayoutPreset }
 const userDrawerVisible = ref(false)
 // 全屏独立壳（stage2·T7）：登录页等 meta.fullscreen 路由脱离主框架（侧栏/顶栏）单独渲染
 const route = useRoute()
+const router = useRouter()
 const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
+
+// 顶栏用户区（stage2·T9）：身份来自 auth store（登录态从 localStorage 自 hydrate）
+const auth = useAuthStore()
+const displayName = computed(() => auth.displayName || '未登录')
+const avatarText = computed(() => displayName.value.slice(0, 1).toUpperCase())
+const ROLE_LABEL: Record<string, string> = {
+  system: '系统管理员',
+  tenant_admin: '租户管理员',
+  normal: '普通用户',
+}
+const roleLabel = computed(() => ROLE_LABEL[auth.role] ?? auth.role ?? '')
+const tenantLabel = computed(() => (auth.tenantId ? `租户 ${auth.tenantId}` : ''))
+const userSubline = computed(() => [roleLabel.value, tenantLabel.value].filter(Boolean).join(' · '))
+const loggingOut = ref(false)
+
+// 挂载即拉 /me 刷新身份并校验会话：token 失效由 http 拦截器统一 401→跳登录
+onMounted(() => {
+  if (!isFullscreen.value && auth.isLoggedIn) {
+    auth.fetchMe().catch(() => {
+      /* 失败(401 等)已由拦截器处理，此处静默 */
+    })
+  }
+})
+
+async function onLogout() {
+  loggingOut.value = true
+  try {
+    await auth.logout()
+  } finally {
+    loggingOut.value = false
+    userDrawerVisible.value = false
+    router.push('/login')
+  }
+}
 </script>
 
 <template>
@@ -51,8 +87,8 @@ const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
         <div class="topbar-slot" />
         <div class="topbar-actions">
           <button class="user-entry" type="button" @click="userDrawerVisible = true">
-            <span class="user-avatar">本</span>
-            <span class="user-name">hello，彭帅疯！</span>
+            <span class="user-avatar">{{ avatarText }}</span>
+            <span class="user-name">hello，{{ displayName }}！</span>
           </button>
         </div>
       </el-header>
@@ -73,10 +109,10 @@ const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
 
         <div class="drawer-body">
           <div class="drawer-user-card">
-            <span class="drawer-avatar">彭</span>
+            <span class="drawer-avatar">{{ avatarText }}</span>
             <div>
-              <div class="drawer-user-name">彭帅疯</div>
-              <div class="drawer-user-sub">本地单用户工作区</div>
+              <div class="drawer-user-name">{{ displayName }}</div>
+              <div class="drawer-user-sub">{{ userSubline || '登录态' }}</div>
             </div>
           </div>
 
@@ -109,6 +145,10 @@ const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
               />
             </el-select>
           </div>
+
+          <button class="drawer-logout" type="button" :disabled="loggingOut" @click="onLogout">
+            {{ loggingOut ? '退出中…' : '退出登录' }}
+          </button>
         </div>
       </div>
     </el-drawer>
@@ -371,6 +411,27 @@ const isFullscreen = computed(() => Boolean(route.meta.fullscreen))
 }
 .preset-select {
   width: 100%;
+}
+/* 退出登录（stage2·T9）：抽屉底部危险操作，红色描边区分常规项 */
+.drawer-logout {
+  margin-top: auto;
+  border: 1px solid var(--el-color-danger);
+  background: transparent;
+  color: var(--el-color-danger);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.drawer-logout:hover {
+  background: var(--el-color-danger);
+  color: #fff;
+}
+.drawer-logout:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .main {
   background: var(--el-bg-color-page);

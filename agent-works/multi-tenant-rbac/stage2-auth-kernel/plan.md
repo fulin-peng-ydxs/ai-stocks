@@ -308,7 +308,7 @@
 - 完成标准：7.1 全部功能点验收通过；黑白双主题与科技风达标；满足 §4.6 页面设计闭环（含前端契约）。
 
 ### 6.9 任务 T9：顶栏用户区 + 退出
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。落地：`App.vue` 顶栏/用户抽屉的硬编码身份（原 `hello，彭帅疯！`/`彭帅疯`/`本地单用户工作区`）全部接 auth store——`displayName`=account、头像取首字母、副行 `roleLabel(system→系统管理员/tenant_admin→租户管理员/normal→普通用户) · 租户 {tenantId}`；抽屉底部加红色描边「退出登录」按钮，`onLogout()`→`auth.logout()`（接口失败也强制 `clearLocal`）→跳 `/login`；挂载即 `fetchMe()` 刷新身份并校验会话（token 失效由拦截器统一 401→跳登录，失败静默）。验证：preview 5181 注入登录态截图——顶栏 `hello，admin！`+头像 `A`、抽屉「admin / 系统管理员 · 租户 default」、退出按钮均正确；点退出后 localStorage 清空且跳 `/login`（后端黑名单致旧 token 401 由 T4 单测覆盖）；`npm run build` 通过。
 - 依赖：T7
 - 涉及文件/模块：[frontend/src/App.vue](../../../frontend/src/App.vue)
 - 目标：顶栏显示身份 + 退出。
