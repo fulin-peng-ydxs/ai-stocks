@@ -20,6 +20,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
+from backend.common.exceptions import ConfigError
+
 # 项目根目录 = 本文件上溯三级（backend/config/settings.py -> 项目根）
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "settings.yaml"
@@ -172,6 +174,19 @@ class RedisConfig(BaseModel):
     db: int = 0
 
 
+class AuthConfig(BaseModel):
+    """认证与鉴权（多租户 RBAC stage2）。
+
+    非敏感参数放 YAML；**JWT 签名密钥不入 YAML、不入码**，运行时从环境变量读取：
+    - AI_STOCKS_JWT_SECRET：HS256 签名密钥（缺失即报错，无弱默认）。见 Settings.jwt_secret()。
+    """
+
+    algorithm: str = "HS256"
+    access_ttl_min: int = 60        # access token 有效期（分钟）
+    refresh_ttl_days: int = 14      # refresh token 有效期（天）
+    min_password_len: int = 8       # 密码最小长度（注册/改密强度校验）
+
+
 class Settings(BaseModel):
     """全局配置根模型。"""
 
@@ -186,6 +201,7 @@ class Settings(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     postgres: PostgresConfig = Field(default_factory=PostgresConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
     # ── 派生：绝对路径辅助 ──
     def duckdb_path(self) -> Path:
@@ -223,6 +239,18 @@ class Settings(BaseModel):
         pwd = os.environ.get("AI_STOCKS_REDIS_PASSWORD", "")
         auth = f":{pwd}@" if pwd else ""
         return f"redis://{auth}{r.host}:{r.port}/{r.db}"
+
+    def jwt_secret(self) -> str:
+        """JWT 签名密钥，仅从环境变量 AI_STOCKS_JWT_SECRET 读取。
+
+        **无弱默认**：缺失即抛 ConfigError（避免用可预测密钥签发可伪造 token）。
+        惰性调用（签发/校验 token 时），不影响不涉认证的启动/测试。
+        """
+        secret = os.environ.get("AI_STOCKS_JWT_SECRET")
+        if not secret:
+            raise ConfigError(
+                "缺少环境变量 AI_STOCKS_JWT_SECRET：JWT 签名密钥必须显式配置，无弱默认")
+        return secret
 
     def export_path(self) -> Path:
         return _resolve(self.paths.export_dir)

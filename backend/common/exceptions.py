@@ -7,9 +7,14 @@ from __future__ import annotations
 
 
 class AIStocksError(Exception):
-    """系统基础异常。"""
+    """系统基础异常。
+
+    http_status：响应 HTTP 状态码。业务异常默认 200（配合 {code,msg,data} 软失败口径）；
+    认证/鉴权/限流类（stage2）用真实 401/403/429，由 API 层异常处理器按此出码。
+    """
 
     code: int = 5000
+    http_status: int = 200
 
     def __init__(self, msg: str = "", *, code: int | None = None):
         super().__init__(msg)
@@ -58,3 +63,25 @@ class ValidationError(AIStocksError):
     """入参校验错误。"""
 
     code = 4000
+
+
+# ── 认证与鉴权（多租户 RBAC stage2；映射真实 HTTP 状态码）──
+class AuthError(AIStocksError):
+    """认证失败：未登录 / token 缺失·无效·过期·被吊销 / perm_ver 失配。"""
+
+    code = 4010
+    http_status = 401
+
+
+class ForbiddenError(AIStocksError):
+    """已认证但无权限：角色不足（如非 system 访问系统级接口）/ 资源无授权。"""
+
+    code = 4030
+    http_status = 403
+
+
+class RateLimitError(AIStocksError):
+    """触发限流（按 IP/账号/接口维度）。"""
+
+    code = 4290
+    http_status = 429

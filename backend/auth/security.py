@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import bcrypt
 
+from backend.common.exceptions import ValidationError
+
 # bcrypt 单次哈希仅取前 72 字节；显式截断，避免不同 bcrypt 版本对超长密码的静默/抛错差异
 _BCRYPT_MAX_BYTES = 72
 
@@ -27,3 +29,15 @@ def verify_password(plain: str, hashed: str | None) -> bool:
         return bcrypt.checkpw(pw, hashed.encode("ascii"))
     except (ValueError, TypeError):
         return False
+
+
+def check_strength(password: str, min_len: int = 8) -> None:
+    """密码强度校验（注册/改密用），不达标抛 ValidationError（映射业务错误）。
+
+    规则：长度 ≥ min_len，且同时包含字母与数字。策略参数（min_len）由 auth 配置传入，
+    可经系统设置调整（R16 之外的基础项）。
+    """
+    if len(password) < min_len:
+        raise ValidationError(f"密码至少 {min_len} 位")
+    if not (any(c.isalpha() for c in password) and any(c.isdigit() for c in password)):
+        raise ValidationError("密码需同时包含字母和数字")

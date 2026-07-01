@@ -218,7 +218,7 @@
 - 完成标准：admin 可被 T4 登录校验通过。
 
 ### 6.2 任务 T2：安全原语 — 密码哈希 + JWT
-- 状态：待开始
+- 状态：**已完成**（commit 待提交）。落地：`security.check_strength`（长度+字母数字）；`jwt_tokens.issue_access/issue_refresh/decode`（claims sub/tenant_id/role/perm_ver/typ/jti/iat/exp，HS256，typ 门禁）；`settings.AuthConfig`（algorithm/access_ttl_min=60/refresh_ttl_days=14/min_password_len=8）+ `jwt_secret()` 走 `AI_STOCKS_JWT_SECRET`（无弱默认，缺失抛 ConfigError）；`settings.yaml` 加 auth 段；`exceptions` 加 `AuthError(401)/ForbiddenError(403)/RateLimitError(429)` + base `http_status`（提前落地，jwt.decode 需 AuthError；handler 映射仍 T4）。验证：新增 test_auth_security(6)+test_auth_jwt(8) 全过（往返/错误密码/强度/过期/篡改/伪造密钥/类型门禁/缺密钥 ConfigError），全量 **229 passed**。
 - 依赖：T1
 - 涉及文件/模块：`backend/auth/security.py`、`backend/auth/jwt_tokens.py`、[backend/config/settings.py](../../../backend/config/settings.py)、[config/settings.yaml](../../../config/settings.yaml)、[requirements.txt](../../../requirements.txt)/[pyproject.toml](../../../pyproject.toml)
 - 目标：可哈希/校验密码、签发/校验 JWT。
