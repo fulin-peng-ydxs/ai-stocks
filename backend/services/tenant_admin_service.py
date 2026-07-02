@@ -72,12 +72,14 @@ class TenantAdminService:
         cur = self._load(tenant_id)
         if tenant_id == DEFAULT_TENANT_ID and status != "active":
             raise ForbiddenError("默认租户不可停用")
-        self.tenants.set_status(tenant_id, status)
-        if status != "active":   # 停用即时踢下线：该租户在线用户 token 下次请求失效
+        # 停用即时踢下线：先失效该租户在线用户（清 Redis→bump PG，fail-closed）再写 status，
+        # Redis 不可用即中止、状态不落库（P1）。bump_users_of_tenant 按租户成员统计，成员不因状态变更而变。
+        if status != "active":
             n = perm_resolver.bump_users_of_tenant(tenant_id)
             log.info("租户管理：停用租户 %s，%d 个用户 token 失效（新登录亦被拒）", tenant_id, n)
         else:
             log.info("租户管理：租户 %s 状态 → %s", tenant_id, status)
+        self.tenants.set_status(tenant_id, status)
         return self.tenants.get(tenant_id)  # type: ignore[return-value]
 
     # ── 删除 ──

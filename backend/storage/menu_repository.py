@@ -71,6 +71,12 @@ class MenuRepository:
             "SELECT count(*) AS n FROM sys_menu WHERE parent_id = %s", [menu_id])
         return int(df.iloc[0]["n"])
 
+    def resource_count(self, menu_id: str) -> int:
+        """归属该菜单的功能点数（sys_resource.menu_id 为 ON DELETE RESTRICT，删前须查，避免库错）。"""
+        df = self.pg.query_df(
+            "SELECT count(*) AS n FROM sys_resource WHERE menu_id = %s", [menu_id])
+        return int(df.iloc[0]["n"])
+
     def is_descendant(self, node_id: str, maybe_ancestor_id: str) -> bool:
         """maybe_ancestor_id 是否为 node_id 的祖先（含自身）——防移动成环。自下而上走父链。"""
         cur: str | None = node_id

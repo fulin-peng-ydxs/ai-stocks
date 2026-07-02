@@ -22,6 +22,7 @@ from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationE
 from backend.common.logging import get_logger
 from backend.config import get_settings
 from backend.storage.role_repository import RoleRepository
+from backend.storage.tenant_repository import TenantRepository
 from backend.storage.user_repository import UserRepository
 
 log = get_logger("services.user_admin")
@@ -30,9 +31,11 @@ _VALID_STATUS = {"active", "disabled", "locked"}
 
 
 class UserAdminService:
-    def __init__(self, users: UserRepository | None = None, roles: RoleRepository | None = None):
+    def __init__(self, users: UserRepository | None = None, roles: RoleRepository | None = None,
+                 tenants: TenantRepository | None = None):
         self.users = users or UserRepository()
         self.roles = roles or RoleRepository()
+        self.tenants = tenants or TenantRepository()
         self.cfg = get_settings().auth
 
     # ── 列表 ──
@@ -52,6 +55,7 @@ class UserAdminService:
         self._check_status(status)
         check_strength(password, self.cfg.min_password_len)
         target_tenant = self._scope_tenant_for_write(ctx, tenant_id)
+        self._ensure_tenant_writable(target_tenant)   # P2-b：目标租户须存在且启用（防孤儿用户）
         role_code = self._validate_roles(ctx, role_ids)
 
         if self.users.get_by_account(account):
@@ -79,9 +83,10 @@ class UserAdminService:
         if (removing_admin or disabling) and self._is_last_tenant_admin(target):
             raise ValidationError("该用户是本租户最后一个管理员，不能取消其管理员角色或停用")
 
+        # 先失效（清 Redis→bump PG，fail-closed）再写业务：Redis 不可用即中止，业务不落库（P1）
+        perm_resolver.bump_and_invalidate([user_id])
         self.users.update_user(
             user_id, email=email, status=status, role_ids=role_ids, role_code=role_code)
-        perm_resolver.bump_and_invalidate([user_id])   # 角色/状态变更 → 即时失效
         log.info("用户管理：编辑用户 %s roles=%s status=%s", user_id, role_ids, status)
         return self.users.get_admin_view(user_id)  # type: ignore[return-value]
 
@@ -94,8 +99,8 @@ class UserAdminService:
         if status != "active" and ROLE_TENANT_ADMIN in (target["roles"] or []) \
                 and self._is_last_tenant_admin(target):
             raise ValidationError("该用户是本租户最后一个管理员，不能停用")
+        perm_resolver.bump_and_invalidate([user_id])   # 先失效再写（fail-closed，见 P1）
         self.users.set_status(user_id, status)
-        perm_resolver.bump_and_invalidate([user_id])   # 停用即时失效：下次请求 401，重登被 status 拒
         log.info("用户管理：用户 %s 状态 → %s", user_id, status)
         return self.users.get_admin_view(user_id)  # type: ignore[return-value]
 
@@ -103,8 +108,8 @@ class UserAdminService:
     def reset_password(self, ctx: AuthContext, user_id: str, new_password: str) -> None:
         self._load_in_scope(ctx, user_id)
         check_strength(new_password, self.cfg.min_password_len)
+        perm_resolver.bump_and_invalidate([user_id])   # 先失效再写（fail-closed，见 P1）
         self.users.reset_password(user_id, hash_password(new_password))
-        perm_resolver.bump_and_invalidate([user_id])   # 管理员改密 → 强制该用户旧会话失效重登
         log.info("用户管理：重置用户 %s 密码", user_id)
 
     # ── 删除 ──
@@ -159,10 +164,21 @@ class UserAdminService:
         codes = [r["code"] for r in found]
         return ROLE_TENANT_ADMIN if ROLE_TENANT_ADMIN in codes else codes[0]
 
+    def _ensure_tenant_writable(self, tenant_id: str) -> None:
+        """建用户前校验目标租户存在且启用（P2-b：sys_user.tenant_id 无 FK，服务层硬校验防孤儿）。"""
+        t = self.tenants.get(tenant_id)
+        if t is None:
+            raise ValidationError("目标租户不存在")
+        if t["status"] != "active":
+            raise ValidationError("目标租户已停用，不能在其下新建用户")
+
     def _is_last_tenant_admin(self, target: dict) -> bool:
-        """目标是否本租户唯一 tenant_admin（排除自身后再无其他）。"""
+        """目标是否本租户唯一**可用(active)** tenant_admin（排除自身后再无其他 active 管理员）。
+
+        P1-b：按 active 统计——否则留一个 disabled 管理员就能停用唯一在用管理员，导致租户 0 可登录管理员。
+        """
         others = self.users.count_tenant_admins(
-            target["tenant_id"], exclude_user_id=target["id"])
+            target["tenant_id"], exclude_user_id=target["id"], active_only=True)
         return others == 0
 
     @staticmethod

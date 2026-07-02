@@ -429,10 +429,10 @@
 
 **阶段三完成 = 同时满足**（对齐 §12 阶段三里程碑「多账号交叉验证隔离与授权即时生效」；前缀标当前达成度）：
 1. ✅ **已达成**（T1）：6 张 RBAC 表（FK/索引）+ seed 就绪；存量平滑迁 sys_user_role；role_code 兼容保留。
-2. ✅ **已达成**（T2/T3/T4）：瘦令牌 + 服务端权限解析 + Redis 缓存 + **全触发点** perm_ver 失效（强制重登）；`require_perm(精确码)` 用于 user 接口、`require_system` 硬守 role/menu/resource/tenant 接口（守卫机制就绪，role/menu/resource/tenant 接口本体待 T6–T9 挂载）。
-3. ◻ **部分**（T5 用户接口+register 已落；角色/菜单+功能/租户接口 T6–T9、4 前端页 T11–T14 待做）：用户/角色/菜单+功能/租户 4 套接口 + 4 前端页（承接原型、过契约、双主题、**三档视口达标**、settings-drawer、去勾选列、全选/清空/还原）。
-4. ◻ **待做**（T10/T15）：`v-permission` 按钮级 + SideMenu 消费后端菜单(**fail-closed**、EP 图标) + /me 填充（/me 数据已就绪 T3，菜单树细化待 T10）+ 路由守卫按菜单。
+2. ✅ **已达成**（T2/T3/T4）：瘦令牌 + 服务端权限解析 + Redis 缓存 + **全触发点** perm_ver 失效（强制重登，**先清 Redis→再 bump PG、业务写入前调用**的 fail-closed 顺序，Codex P1 整改）；`require_perm(精确码)` 用于 user 接口、`require_system` 硬守 role/menu/resource/tenant 接口——**接口本体 T6–T9 已挂载**。
+3. ◻ **部分**（**后端 4 套接口 T5–T9 全落地**；4 前端页 T11–T14 待做）：用户/角色/菜单+功能/租户 4 套接口已完成（含内置保护、级联/引用校验、租户存在校验 P2-b、最后 active 管理员保护 P1-b、菜单删除 resource 引用前置校验 P2-a）；4 前端页（承接原型、过契约、双主题、**三档视口达标**、settings-drawer、去勾选列、全选/清空/还原）待做。
+4. ◻ **部分**（**/me 菜单树 T10 已落**；`v-permission`/SideMenu/路由守卫 T15 待做）：/me 返回「授权∩可见性」双过滤菜单树 + 功能码列表（含菜单移动跨可见域即时失效 P2-c）；前端 `v-permission` 按钮级 + SideMenu 消费后端菜单(**fail-closed**、EP 图标) + 路由守卫按菜单待做。
 5. ◻ **部分**（T5 用户管理隔离已达；完整交叉验证待 T16）：**多账号交叉验证**——tenant_admin 限本租户、跨租户不可见/不可改、system-only 接口非 system 403；授权变更后相关用户重登即生效。
-6. ◻ **待做**（T17）：全量 `pytest` 绿（当前 318 passed）+ `npm run build` + 前端契约绿；CLAUDE.md 同步 RBAC 契约；requirement §12 阶段三标完成。
+6. ◻ **待做**（T17）：全量 `pytest` 绿（当前 **386 passed**）+ `npm run build` + 前端契约绿；CLAUDE.md 同步 RBAC 契约；requirement §12 阶段三标完成。
 
 达成后进入**阶段四（存量 13 路由全量接 resource code + 隔离，R21）**，再阶段五（审计/字典/配置拆页/开关页 R16–R19）。

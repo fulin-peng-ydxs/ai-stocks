@@ -199,6 +199,56 @@ def test_last_tenant_admin_cannot_be_disabled(client, env):
     assert r.json()["code"] == 4000   # 最后一个管理员保护
 
 
+def test_last_active_admin_protected_despite_disabled_admin(client, env):
+    # P1-b：租户内另有一个 disabled 管理员时，仍不能停用唯一 active 管理员（否则 0 可登录管理员）
+    tid = env.mk_tenant()
+    env.mk_user(tid, ROLE_TENANT_ADMIN, status="disabled")   # 存在但不可用
+    active_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    r = client.post(f"/api/users/{active_admin}/status", json={"status": "disabled"},
+                    headers=env.sys_headers())
+    assert r.json()["code"] == 4000   # 按 active 统计 → 仍是最后一个可用管理员
+    assert env.pg.query_df("SELECT status FROM sys_user WHERE id=%s",
+                           [active_admin]).iloc[0]["status"] == "active"   # 未被改
+
+
+def test_create_in_nonexistent_tenant_rejected(client, env):
+    # P2-b：system 指定不存在的租户 → 拒（防孤儿用户）
+    r = client.post("/api/users", json={
+        "account": "orphan_" + uuid.uuid4().hex[:6], "password": "GoodPass1",
+        "roleIds": [ROLE_NORMAL], "tenantId": "ghost_tenant"}, headers=env.sys_headers())
+    assert r.json()["code"] == 4000
+
+
+def test_create_in_disabled_tenant_rejected(client, env):
+    # P2-b：目标租户已停用 → 拒（新建用户也登录不了，破坏关联租户闭环）
+    tid = env.mk_tenant()
+    env.pg.execute("UPDATE sys_tenant SET status='disabled' WHERE id=%s", [tid])
+    r = client.post("/api/users", json={
+        "account": "u_" + uuid.uuid4().hex[:6], "password": "GoodPass1",
+        "roleIds": [ROLE_NORMAL], "tenantId": tid}, headers=env.sys_headers())
+    assert r.json()["code"] == 4000
+
+
+def test_bump_redis_failure_aborts_business(client, env, monkeypatch):
+    # P1：失效走 fail-closed，且在业务写入之前——Redis 清缓存失败 → 503 且用户状态不变（不 fail-open）
+    from backend.auth import session_store
+    from backend.common.exceptions import ServiceUnavailableError
+    tid = env.mk_tenant()
+    env.mk_user(tid, ROLE_TENANT_ADMIN)             # 排除最后管理员干扰
+    target = env.mk_user(tid, ROLE_NORMAL)
+
+    def boom(_uid):
+        raise ServiceUnavailableError("Redis down")
+    monkeypatch.setattr(session_store, "clear_perms", boom)
+
+    r = client.post(f"/api/users/{target}/status", json={"status": "disabled"},
+                    headers=env.sys_headers())
+    assert r.status_code == 503
+    # 关键：业务未提交——目标仍 active，旧 token 不会因"DB 已改+缓存未清"而 fail-open
+    assert env.pg.query_df("SELECT status FROM sys_user WHERE id=%s",
+                           [target]).iloc[0]["status"] == "active"
+
+
 # ── 编辑 / 重置 / 删除 ──
 
 def test_update_roles_and_status(client, env):

@@ -94,9 +94,10 @@ class RoleAdminService:
         # system-only 码不可授予非 system 角色
         if set(resource_ids) & self.roles.system_only_resource_ids():
             raise ForbiddenError("包含仅系统管理员可用的功能，不能授予该角色")
-        self.roles.set_grants(role_id, menu_ids=menu_ids, resource_ids=resource_ids)
-        # 授权即时生效：拥有该角色的用户 perm_ver+1 + 清缓存 → 下次请求 401 重登拿新权限
+        # 先失效（清 Redis→bump PG，fail-closed）再写授权：Redis 不可用即中止，授权不落库（P1）。
+        # bump_users_of_roles 按角色成员统计，成员不因授权变更而变，故先 bump 结果一致。
         n = perm_resolver.bump_users_of_roles([role_id])
+        self.roles.set_grants(role_id, menu_ids=menu_ids, resource_ids=resource_ids)
         log.info("角色管理：角色 %s 授权更新 menus=%d resources=%d，%d 个用户失效",
                  role_id, len(menu_ids), len(resource_ids), n)
         return self.roles.get_grants(role_id)

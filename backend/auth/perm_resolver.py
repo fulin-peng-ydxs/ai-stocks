@@ -8,6 +8,12 @@
 失效编排（bump_*）：任何改变用户有效权限的操作 → 相关用户 perm_ver+1(PG) + 清 perms/pv 缓存。
 因 stage2「token.perm_ver ≠ 当前 → 401 重登」，受影响用户下次请求 401、重登后拿新权限
 （= R11「perm_ver 自增、即时生效」口径）。PG 耦合在本模块（session_store 保持纯 Redis）。
+
+**调用契约（Codex P1 整改）：bump_* 必须在业务写入之**前**调用。** 内部顺序为「先清 Redis
+缓存(fail-closed)→再自增 PG perm_ver」：Redis 不可用则在改动任何持久状态前即抛 503，调用方业务
+写入随之中止，绝不出现「DB 已改但 Redis 清理失败、旧 auth:pv 残留继续放行旧 token」的 fail-open。
+即便 Redis 清成功、PG 自增失败，缓存已清 → 下次请求回查 PG 重解析，仍不 fail-open。
+（残留：清缓存与业务提交之间的极窄并发窗口内，别的请求可能回填旧值，由缓存 TTL 兜底收敛。）
 """
 
 from __future__ import annotations
@@ -63,19 +69,22 @@ def resolve(user_id: str, client: PostgresClient | None = None) -> dict:
 # ── 失效编排 ──────────────────────────────────────────────────────────────────
 
 def bump_and_invalidate(user_ids: Iterable[str], client: PostgresClient | None = None) -> int:
-    """相关用户 perm_ver+1(PG) + 清 perms/pv 缓存。返回受影响用户数。
+    """相关用户 **先清 perms/pv 缓存(Redis)→再 perm_ver+1(PG)**。返回受影响用户数。
 
-    缓存清理走 session_store（_critical fail-closed）：Redis 不可用则抛 503——此时中间件同样
-    fail-closed（读不到 pv/perms），全站拒绝，语义一致；调用方（写接口）拿到 503 可重试。
+    顺序刻意为「Redis 优先、PG 其后」（Codex P1 整改）：
+    - 缓存清理走 session_store（_critical fail-closed）：Redis 不可用则抛 503，此时 **PG perm_ver 尚未
+      自增**；因调用方在业务写入前调用本函数，业务写入也随之中止 → 无任何持久状态被改，不产生 fail-open。
+    - Redis 清成功后再自增 PG（权威）；即便自增失败，缓存已清，下次请求回查 PG 重解析，仍不 fail-open。
     """
     uids = [u for u in dict.fromkeys(user_ids) if u]   # 去重去空、保序
     if not uids:
         return 0
     client = client or get_pg_client()
-    client.execute("UPDATE sys_user SET perm_ver = perm_ver + 1 WHERE id = ANY(%s)", [uids])
-    for uid in uids:
+    for uid in uids:               # ① 先清缓存（fail-closed）：Redis 不可用即抛，尚未动 PG
         session_store.clear_perms(uid)
         session_store.invalidate_perm_ver(uid)
+    # ② 缓存清理成功后再自增 PG perm_ver（权威）
+    client.execute("UPDATE sys_user SET perm_ver = perm_ver + 1 WHERE id = ANY(%s)", [uids])
     log.info("perm bump: %d 个用户权限失效（下次请求需重登）", len(uids))
     return len(uids)
 

@@ -76,13 +76,15 @@ class ResourceAdminService:
             raise ValidationError("功能码已存在，且不可复用")
         if not menu_id or self.menus.get(menu_id) is None:
             raise ValidationError("归属菜单不存在")
-        self.resources.update(resource_id, menu_id=menu_id, code=code, name=name,
-                              type=type, api_method=api_method, api_path=api_path)
-        if code_changed:   # 有效权限码变更 → 引用该功能的角色的用户失效
+        # 改 code = 有效权限码变 → 先失效（清 Redis→bump PG，fail-closed）再写：Redis 不可用即中止，
+        # 功能点不落库（P1）。bump_users_of_resource 按引用该功能的角色成员统计，成员不因本次编辑而变。
+        if code_changed:
             n = perm_resolver.bump_users_of_resource(resource_id)
             log.info("功能管理：功能 %s code %s→%s，%d 个用户失效", resource_id, cur["code"], code, n)
         else:
             log.info("功能管理：编辑功能 %s name=%s", resource_id, name)
+        self.resources.update(resource_id, menu_id=menu_id, code=code, name=name,
+                              type=type, api_method=api_method, api_path=api_path)
         return self.resources.get(resource_id)  # type: ignore[return-value]
 
     # ── 删除 ──

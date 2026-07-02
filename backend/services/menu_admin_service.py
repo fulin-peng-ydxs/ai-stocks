@@ -78,15 +78,19 @@ class MenuAdminService:
                     raise ValidationError("上级菜单不存在")
                 if self.menus.is_descendant(parent_id, menu_id):
                     raise ValidationError("不能移动到自身的子节点下")
-        self.menus.update(menu_id, title=title, type=type, route_path=route_path,
-                          icon=icon, visible=visible, parent_id=parent_id)
-        # 可见性变更 → 失效（登录可见性收紧/放开影响谁能看到该菜单）
-        if visible != cur["visible"]:
+        # 可见性变更（收紧/放开）或移动父节点（可能跨系统专属分支，改变非 system 用户可见菜单）→ 失效。
+        # 先失效（清 Redis→bump PG，fail-closed）再写：Redis 不可用即中止，菜单不落库（P1）。
+        # bump_users_of_menu 按引用该菜单的角色成员统计，成员不因本次编辑而变，故先 bump 结果一致。
+        vis_changed = visible != cur["visible"]
+        moved = parent_id != cur["parent_id"]   # P2-c：移动跨可见域会改变非 system 用户可见菜单
+        if vis_changed or moved:
             n = perm_resolver.bump_users_of_menu(menu_id)
-            log.info("菜单管理：菜单 %s 可见性 %s→%s，%d 个用户失效",
-                     menu_id, cur["visible"], visible, n)
+            log.info("菜单管理：菜单 %s 变更(vis:%s→%s move:%s)，%d 个用户失效",
+                     menu_id, cur["visible"], visible, moved, n)
         else:
             log.info("菜单管理：编辑菜单 %s title=%s", menu_id, title)
+        self.menus.update(menu_id, title=title, type=type, route_path=route_path,
+                          icon=icon, visible=visible, parent_id=parent_id)
         return self.menus.get(menu_id)  # type: ignore[return-value]
 
     # ── 删除 ──
@@ -96,27 +100,40 @@ class MenuAdminService:
             raise ForbiddenError("内置菜单不可删除")
         if self.menus.child_count(menu_id) > 0:
             raise ValidationError("该菜单存在子节点，请先删除子节点")
+        # P2-a：sys_resource.menu_id 为 RESTRICT，菜单下有功能点直接删会退化为库错，须先查并给业务提示
+        if self.menus.resource_count(menu_id) > 0:
+            raise ValidationError("该菜单下存在功能点，请先删除功能点")
         # 先 bump（删除后 role_menu 经 CASCADE 清空，届时查不到引用用户）
         n = perm_resolver.bump_users_of_menu(menu_id)
         self.menus.delete(menu_id)
         log.info("菜单管理：删除菜单 %s(%s)，%d 个用户失效", menu_id, cur["code"], n)
 
-    # ── 排序 / 移动（sort/parent，不改权限成员 → 不 bump）──
+    # ── 排序 / 移动 ──
     def reorder(self, items: list[dict]) -> list[dict]:
+        """批量排序/移动。纯排序不 bump；含移动(parent 变更)的节点 → bump（P2-c：跨可见域改变可见菜单）。"""
+        moved: list[str] = []
         for it in items:
             mid = it.get("id")
-            if not mid or self.menus.get(mid) is None:
+            if not mid:
                 raise ValidationError("包含不存在的菜单节点")
-            pid = it.get("parentId")
-            if pid:
-                if pid == mid:
-                    raise ValidationError("上级菜单不能是自身")
-                if self.menus.get(pid) is None:
-                    raise ValidationError("上级菜单不存在")
-                if self.menus.is_descendant(pid, mid):
-                    raise ValidationError("不能移动到自身的子节点下")
+            node = self.menus.get(mid)
+            if node is None:
+                raise ValidationError("包含不存在的菜单节点")
+            if "parentId" in it and it["parentId"] != node["parent_id"]:
+                pid = it["parentId"]
+                if pid:                                  # 移到某父下（None=移到根，无需下列校验）
+                    if pid == mid:
+                        raise ValidationError("上级菜单不能是自身")
+                    if self.menus.get(pid) is None:
+                        raise ValidationError("上级菜单不存在")
+                    if self.menus.is_descendant(pid, mid):
+                        raise ValidationError("不能移动到自身的子节点下")
+                moved.append(mid)
+        # 先失效被移动节点（fail-closed）再写：Redis 不可用即中止，排序不落库（P1）
+        for mid in moved:
+            perm_resolver.bump_users_of_menu(mid)
         self.menus.reorder(items)
-        log.info("菜单管理：排序更新 %d 项", len(items))
+        log.info("菜单管理：排序更新 %d 项（其中移动 %d 项已失效）", len(items), len(moved))
         return self.menus.tree()
 
     # ── 内部 ──

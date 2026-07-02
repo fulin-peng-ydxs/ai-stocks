@@ -41,7 +41,7 @@ def _perm_ver(pg, uid):
 def env(pg):
     """临时租户/用户/角色/菜单工厂 + teardown 清理；还原 admin perm_ver 防污染。"""
     admin_pv0 = _perm_ver(pg, "admin")
-    made = {"user": [], "tenant": [], "role": [], "menu": []}
+    made = {"user": [], "tenant": [], "role": [], "menu": [], "res": []}
 
     def mk_tenant():
         tid = "tt_" + uuid.uuid4().hex[:8]
@@ -66,16 +66,25 @@ def env(pg):
         made["role"].append(rid)
         return rid
 
-    def mk_menu(*, visible="login", parent_id=None):
+    def mk_menu(*, visible="login", parent_id=None, is_group=False):
         """直接落一个自定义菜单（绕过 API，供 bump/删除用例准备数据）。"""
         mid = "mm_" + uuid.uuid4().hex[:8]
         code = "m_" + uuid.uuid4().hex[:6]
         pg.execute(
             "INSERT INTO sys_menu (id,parent_id,code,title,type,route_path,visible,sort,is_builtin) "
-            "VALUES (%s,%s,%s,%s,'leaf',%s,%s,10,FALSE)",
-            [mid, parent_id, code, code, "/" + code, visible])
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,10,FALSE)",
+            [mid, parent_id, code, code, "group" if is_group else "leaf",
+             None if is_group else "/" + code, visible])
         made["menu"].append(mid)
         return mid
+
+    def mk_resource(menu_id):
+        """在指定菜单下落一个功能点（供菜单删除引用校验用例）。返回 resource id。"""
+        rid = "res_" + uuid.uuid4().hex[:8]
+        pg.execute("INSERT INTO sys_resource (id,menu_id,code,name,type,sort,is_builtin) "
+                   "VALUES (%s,%s,%s,%s,'api',10,FALSE)", [rid, menu_id, "cap:" + rid, rid])
+        made["res"].append(rid)
+        return rid
 
     def grant_menu(role_id, menu_id):
         pg.execute("INSERT INTO sys_role_menu (role_id,menu_id) VALUES (%s,%s) "
@@ -87,7 +96,8 @@ def env(pg):
 
     from types import SimpleNamespace
     yield SimpleNamespace(mk_tenant=mk_tenant, mk_user=mk_user, mk_role=mk_role,
-                          mk_menu=mk_menu, grant_menu=grant_menu, sys_headers=sys_headers, pg=pg)
+                          mk_menu=mk_menu, mk_resource=mk_resource, grant_menu=grant_menu,
+                          sys_headers=sys_headers, pg=pg)
 
     for uid in made["user"]:
         pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
@@ -96,6 +106,8 @@ def env(pg):
         pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
     for rid in made["role"]:
         pg.execute("DELETE FROM sys_role WHERE id=%s", [rid])
+    for rid in made["res"]:              # 先删功能点，解除 menu_id RESTRICT
+        pg.execute("DELETE FROM sys_resource WHERE id=%s", [rid])
     for mid in reversed(made["menu"]):   # 反序：先删子后删父，避开 parent_id FK RESTRICT
         pg.execute("DELETE FROM sys_menu WHERE id=%s", [mid])
     pg.execute("UPDATE sys_user SET perm_ver=%s WHERE id='admin'", [admin_pv0])   # 还原，防污染
@@ -270,3 +282,60 @@ def test_title_only_edit_does_not_bump(client, env):
         "title": "仅改名", "type": "leaf", "routePath": route, "visible": "login"},
         headers=env.sys_headers())
     assert _perm_ver(env.pg, holder) == v0   # 纯展示编辑不失效
+
+
+# ── P2-a：菜单删除须先查功能点引用（RESTRICT 前置校验）──
+
+def test_delete_menu_with_resources_rejected(client, env):
+    mid = env.mk_menu()
+    env.mk_resource(mid)   # 菜单下挂功能点
+    r = client.delete(f"/api/menus/{mid}", headers=env.sys_headers())
+    assert r.json()["code"] == 4000   # 应用层业务提示，而非 RESTRICT 库错/500
+    assert not env.pg.query_df("SELECT 1 FROM sys_menu WHERE id=%s", [mid]).empty   # 未被删
+
+
+# ── P2-c：移动（parent 变更，可能跨可见域）→ 引用用户失效；纯排序不失效 ──
+
+def test_reorder_move_bumps_referencing_users(client, env):
+    parent = env.mk_menu(is_group=True)          # 先建父（teardown 反序删子在前）
+    leaf = env.mk_menu()
+    rid = env.mk_role()
+    env.grant_menu(rid, leaf)
+    tid = env.mk_tenant()
+    holder = env.mk_user(tid, "normal")
+    env.pg.execute("INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)", [holder, rid])
+    v0 = _perm_ver(env.pg, holder)
+    r = client.post("/api/menus/reorder", json={"items": [
+        {"id": leaf, "sort": 10, "parentId": parent}]}, headers=env.sys_headers())
+    assert r.status_code == 200
+    assert _perm_ver(env.pg, holder) == v0 + 1   # 移动 → 引用用户失效
+
+
+def test_reorder_sort_only_no_bump(client, env):
+    leaf = env.mk_menu()
+    rid = env.mk_role()
+    env.grant_menu(rid, leaf)
+    tid = env.mk_tenant()
+    holder = env.mk_user(tid, "normal")
+    env.pg.execute("INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)", [holder, rid])
+    v0 = _perm_ver(env.pg, holder)
+    client.post("/api/menus/reorder", json={"items": [{"id": leaf, "sort": 77}]},
+                headers=env.sys_headers())
+    assert _perm_ver(env.pg, holder) == v0   # 纯排序不失效
+
+
+def test_update_move_parent_bumps(client, env):
+    parent = env.mk_menu(is_group=True)
+    leaf = env.mk_menu()
+    rid = env.mk_role()
+    env.grant_menu(rid, leaf)
+    tid = env.mk_tenant()
+    holder = env.mk_user(tid, "normal")
+    env.pg.execute("INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)", [holder, rid])
+    v0 = _perm_ver(env.pg, holder)
+    route = env.pg.query_df("SELECT route_path FROM sys_menu WHERE id=%s", [leaf]).iloc[0]["route_path"]
+    r = client.put(f"/api/menus/{leaf}", json={
+        "title": "移动到分组", "type": "leaf", "routePath": route, "visible": "login",
+        "parentId": parent}, headers=env.sys_headers())
+    assert r.status_code == 200
+    assert _perm_ver(env.pg, holder) == v0 + 1   # update 改 parent 也失效
