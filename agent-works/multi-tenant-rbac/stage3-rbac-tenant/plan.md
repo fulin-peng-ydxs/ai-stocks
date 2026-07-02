@@ -154,17 +154,36 @@
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 待开始 | 部分覆盖 | **存量13路由=阶段四R21**；本阶段=机制+新接口 |
-| R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 待开始 | **部分覆盖** | R9 端到端资产隔离非本阶段新做；本阶段补平台管理表域过滤 + 交叉验证（Codex P1 整改，不写"一致"） |
+| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)已完成；角色/菜单/功能/租户接口守卫(T6–T9)、按钮级 v-permission(T15)待做 |
+| R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 进行中 | **部分覆盖** | 用户管理域过滤(T5,system 全局/tenant_admin 本租户/跨租户 404)已落地；租户管理域过滤(T9)+多账号交叉核查(T16)待做；R9 端到端资产隔离非本阶段新做 |
 | R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 进行中 | 一致 | 后端(T5)完成:多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
 | R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 待开始 | 一致 | 租管仅分配不自建；system-only 码禁勾选 |
 | R12 | 菜单管理(树CRUD+排序+图标) | menu API+repo + 菜单页 + IconPicker + SideMenu 改造 | T7,T13,T15 | 待开始 | 一致 | icon 存 EP 图标名；menuConfig 降兜底(fail-closed) |
 | R13 | 功能管理(资源登记) | resource API+repo + 功能子表 | T8,T13 | 待开始 | 一致 | 与 R8/R11 闭环 |
 | R14 | 租户管理(CRUD+管理员+启停) | tenant API+repo + 租户页(去勾选列) | T9,T14 | 待开始 | 一致 | 默认租户保护；停用即时踢下线(bump 该租户全部用户，非仅拦新登录) |
 | R5 | 注册绑租管角色 | register 改写 sys_user_role(保留自动登录) | T5 | 已完成 | 一致 | register_tenant_and_admin 同事务绑 tenant_admin |
-| —(技术依赖) | 权限数据模型+seed+迁移 | 6 表 + FK/索引 + seed + role_code 迁移 | T1 | 待开始 | 超范围(必要依赖) | R8-R14 底座 |
-| —(技术依赖) | 瘦令牌+解析缓存+失效+上下文 | perm_resolver + Redis 缓存 + bump 全触发点 + JWT/context | T2,T3 | 待开始 | 超范围(必要依赖) | 多角色运行时前提 |
-| —(技术依赖) | /me 填充 + 前端权限底座 | /me menus+perms + v-permission + SideMenu(fail-closed) + 守卫 | T10,T15 | 待开始 | 超范围(必要依赖) | R8 按钮级/R12 菜单渲染前提 |
+| —(技术依赖) | 权限数据模型+seed+迁移 | 6 表 + FK/索引 + seed + role_code 迁移 | T1 | 已完成 | 超范围(必要依赖) | R8-R14 底座；对开发 PG 实跑校验+10 单测 |
+| —(技术依赖) | 瘦令牌+解析缓存+失效+上下文 | perm_resolver + Redis 缓存 + bump 全触发点 + JWT/context | T2,T3 | 已完成 | 超范围(必要依赖) | 多角色运行时前提；require_perm/require_system 守卫(T4)一并落地 |
+| —(技术依赖) | /me 填充 + 前端权限底座 | /me menus+perms + v-permission + SideMenu(fail-closed) + 守卫 | T10,T15 | 进行中 | 超范围(必要依赖) | /me 已填 roles/menus/permissions(T3)；v-permission/SideMenu/守卫(T15)、/me 菜单树细化(T10)待做 |
+
+### 5.1 实施进度快照（滚动更新，反映真实落地）
+
+> 内核四件套（T1–T4）+ 用户管理后端（T5）已落地并各自单测通过；测试基线由 273 → **318 passed**。
+> 服务起停由用户在本机终端操作（JWT 密钥仅在其终端环境变量）。
+
+| 任务 | 状态 | 提交 | 实际落地要点 | 新增/改动关键文件 | 测试 |
+| --- | --- | --- | --- | --- | --- |
+| T1 权限数据模型+seed | 已完成 | `d05ef60` | 6 表(FK RESTRICT/CASCADE+反查索引)；seed 4 内置角色/22 菜单(EP 图标名)/24 功能码/默认授权(仅首次)；存量按 role_code 补 user_role；对开发 PG 实跑+幂等复跑校验 | `pg_ddl.py`、`constants.py`、`rbac-schema.sql` | +10 |
+| T2 权限解析+缓存+失效 | 已完成 | `67a5e52` | `perm_resolver.resolve`(多角色并集/system 全量)；`bump_and_invalidate`+`bump_users_of_roles/of_menu/of_resource/of_tenant`(菜单/资源变更额外 bump 全部 system 用户)；session_store 加纯 Redis perms 缓存(fail-closed) | `perm_resolver.py`(新)、`session_store.py` | +11 |
+| T3 瘦令牌+上下文/中间件 | 已完成 | `f115106` | 令牌去 role claim；`AuthContext`→roles/is_system/menus/resources；中间件 `load_perms` 注入(503 fail-closed)；`me()` 填 roles/menus/permissions；`require_system` 判 is_system | `jwt_tokens.py`、`context.py`、`middleware.py`、`deps.py`、`auth_service.py` | 回归绿 |
+| T4 require_perm 守卫 | 已完成 | `75fb1db` | `require_perm(code)` 工厂依赖(system 恒过/精确匹配不通配/无上下文 401)；守卫分工:管理接口 require_system、用户接口 require_perm | `deps.py` | +8 |
+| T5 用户管理 API+编排 | 已完成 | `e0ff648` | 6 端点逐挂精确码；`UserAdminService`(域范围/可分配校验/自身与最后管理员保护/bump)；`role_repository` 只读(assignable 分流)提前落地；register 绑 sys_user_role | `api/users.py`、`services/user_admin_service.py`、`role_repository.py`(新)、`user_repository.py` | +16 |
+| T6–T17 | 待开始 | — | 角色/菜单/功能/租户接口 + 4 前端页 + v-permission/SideMenu + 隔离核查 + 文档收尾 | — | — |
+
+**与计划的偏差/微调（已在对应任务段与 §4.2 记录）**：
+- bump 失效编排放 `perm_resolver`（非计划所写的 session_store）——因 bump 需查 PG，而 session_store 铁律「不耦合 PG」。
+- `role_repository.py` 只读部分在 T5 提前建（计划列在 T6）——用户管理可分配校验与 T6 的 assignable 端点共用同一分流逻辑，避免重复；T6 只扩 CRUD/授权。
+- 菜单/资源结构变更额外 bump 全部 system 用户（计划触发点全集的补强，因超管解析为全量视图）。
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -427,12 +446,12 @@
 
 ## 11. 里程碑与验收
 
-**阶段三完成 = 同时满足**（对齐 §12 阶段三里程碑「多账号交叉验证隔离与授权即时生效」）：
-1. 6 张 RBAC 表（FK/索引）+ seed 就绪；存量平滑迁 sys_user_role；role_code 兼容保留。
-2. 瘦令牌 + 服务端权限解析 + Redis 缓存 + **全触发点** perm_ver 失效（强制重登）；`require_perm(精确码)` 用于 user 接口、`require_system` 硬守 role/menu/resource/tenant 接口。
-3. 用户/角色/菜单+功能/租户 4 套接口 + 4 前端页（承接原型、过契约、双主题、**三档视口达标**、settings-drawer、去勾选列、全选/清空/还原）。
-4. `v-permission` 按钮级 + SideMenu 消费后端菜单(**fail-closed**、EP 图标) + /me 填充 + 路由守卫按菜单。
-5. **多账号交叉验证**：tenant_admin 限本租户、跨租户不可见/不可改、system-only 接口非 system 403；授权变更后相关用户重登即生效。
-6. 全量 `pytest` 绿 + `npm run build` + 前端契约绿；CLAUDE.md 同步 RBAC 契约；requirement §12 阶段三标完成。
+**阶段三完成 = 同时满足**（对齐 §12 阶段三里程碑「多账号交叉验证隔离与授权即时生效」；前缀标当前达成度）：
+1. ✅ **已达成**（T1）：6 张 RBAC 表（FK/索引）+ seed 就绪；存量平滑迁 sys_user_role；role_code 兼容保留。
+2. ✅ **已达成**（T2/T3/T4）：瘦令牌 + 服务端权限解析 + Redis 缓存 + **全触发点** perm_ver 失效（强制重登）；`require_perm(精确码)` 用于 user 接口、`require_system` 硬守 role/menu/resource/tenant 接口（守卫机制就绪，role/menu/resource/tenant 接口本体待 T6–T9 挂载）。
+3. ◻ **部分**（T5 用户接口+register 已落；角色/菜单+功能/租户接口 T6–T9、4 前端页 T11–T14 待做）：用户/角色/菜单+功能/租户 4 套接口 + 4 前端页（承接原型、过契约、双主题、**三档视口达标**、settings-drawer、去勾选列、全选/清空/还原）。
+4. ◻ **待做**（T10/T15）：`v-permission` 按钮级 + SideMenu 消费后端菜单(**fail-closed**、EP 图标) + /me 填充（/me 数据已就绪 T3，菜单树细化待 T10）+ 路由守卫按菜单。
+5. ◻ **部分**（T5 用户管理隔离已达；完整交叉验证待 T16）：**多账号交叉验证**——tenant_admin 限本租户、跨租户不可见/不可改、system-only 接口非 system 403；授权变更后相关用户重登即生效。
+6. ◻ **待做**（T17）：全量 `pytest` 绿（当前 318 passed）+ `npm run build` + 前端契约绿；CLAUDE.md 同步 RBAC 契约；requirement §12 阶段三标完成。
 
 达成后进入**阶段四（存量 13 路由全量接 resource code + 隔离，R21）**，再阶段五（审计/字典/配置拆页/开关页 R16–R19）。
