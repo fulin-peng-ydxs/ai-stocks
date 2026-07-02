@@ -24,7 +24,12 @@ from __future__ import annotations
 import os
 import secrets
 
-from backend.auth.constants import ROLE_SYSTEM
+from backend.auth.constants import (
+    ROLE_NORMAL,
+    ROLE_PAID,
+    ROLE_SYSTEM,
+    ROLE_TENANT_ADMIN,
+)
 from backend.auth.security import hash_password
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
@@ -69,6 +74,94 @@ CREATE TABLE IF NOT EXISTS sys_user (
     created_at    TIMESTAMP DEFAULT now(),
     updated_at    TIMESTAMP,
     UNIQUE (account)
+);
+"""
+
+
+# ── RBAC 平台表（阶段三；自然键、不带 tenant/owner 归属，与「平台表用自然键」一致）──
+# 角色/菜单/资源三主体 + 用户-角色 / 角色-菜单 / 角色-资源三关联；关联表复合主键 +
+# FK 删除策略（RESTRICT=有引用禁删由应用层先提示影响面；CASCADE=授权关系随主体消亡自动清）。
+
+DDL_SYS_ROLE = """
+CREATE TABLE IF NOT EXISTS sys_role (
+    id          TEXT PRIMARY KEY,
+    code        TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'custom',   -- system|tenant_admin|normal|paid（内置预设）| custom（自建）
+    is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,   -- 内置角色不可删
+    is_locked   BOOLEAN NOT NULL DEFAULT FALSE,   -- 权限锁定（system 超管：全授权且不可改）
+    description TEXT,
+    created_at  TIMESTAMP DEFAULT now(),
+    updated_at  TIMESTAMP,
+    UNIQUE (code)
+);
+"""
+
+DDL_SYS_MENU = """
+CREATE TABLE IF NOT EXISTS sys_menu (
+    id          TEXT PRIMARY KEY,
+    parent_id   TEXT,
+    code        TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    type        TEXT NOT NULL DEFAULT 'leaf',      -- group（分组，仅展开）| leaf（叶子，可导航）
+    route_path  TEXT,                              -- 叶子的前端路由；分组为 NULL
+    icon        TEXT,                              -- Element Plus 图标名（如 TrendCharts）；无则 NULL
+    sort        INTEGER NOT NULL DEFAULT 0,
+    visible     TEXT NOT NULL DEFAULT 'login',     -- login（登录可见）| system（仅系统管理员）
+    is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMP DEFAULT now(),
+    updated_at  TIMESTAMP,
+    UNIQUE (code),
+    FOREIGN KEY (parent_id) REFERENCES sys_menu (id) ON DELETE RESTRICT
+);
+"""
+
+DDL_SYS_RESOURCE = """
+CREATE TABLE IF NOT EXISTS sys_resource (
+    id          TEXT PRIMARY KEY,
+    menu_id     TEXT NOT NULL,
+    code        TEXT NOT NULL,                     -- 精确权限码（如 user:list）；全局唯一
+    name        TEXT NOT NULL,
+    type        TEXT NOT NULL DEFAULT 'api',       -- button（按钮级）| api（接口级）
+    api_method  TEXT,                              -- 绑定接口方法（api 类型）
+    api_path    TEXT,                              -- 绑定接口路径（api 类型）
+    sort        INTEGER NOT NULL DEFAULT 0,
+    is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMP DEFAULT now(),
+    updated_at  TIMESTAMP,
+    UNIQUE (code),
+    FOREIGN KEY (menu_id) REFERENCES sys_menu (id) ON DELETE RESTRICT
+);
+"""
+
+DDL_SYS_USER_ROLE = """
+CREATE TABLE IF NOT EXISTS sys_user_role (
+    user_id     TEXT NOT NULL,
+    role_id     TEXT NOT NULL,
+    created_at  TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (user_id, role_id),
+    FOREIGN KEY (user_id) REFERENCES sys_user (id) ON DELETE CASCADE,
+    FOREIGN KEY (role_id) REFERENCES sys_role (id) ON DELETE RESTRICT
+);
+"""
+
+DDL_SYS_ROLE_MENU = """
+CREATE TABLE IF NOT EXISTS sys_role_menu (
+    role_id     TEXT NOT NULL,
+    menu_id     TEXT NOT NULL,
+    PRIMARY KEY (role_id, menu_id),
+    FOREIGN KEY (role_id) REFERENCES sys_role (id) ON DELETE CASCADE,
+    FOREIGN KEY (menu_id) REFERENCES sys_menu (id) ON DELETE CASCADE
+);
+"""
+
+DDL_SYS_ROLE_RESOURCE = """
+CREATE TABLE IF NOT EXISTS sys_role_resource (
+    role_id     TEXT NOT NULL,
+    resource_id TEXT NOT NULL,
+    PRIMARY KEY (role_id, resource_id),
+    FOREIGN KEY (role_id) REFERENCES sys_role (id) ON DELETE CASCADE,
+    FOREIGN KEY (resource_id) REFERENCES sys_resource (id) ON DELETE CASCADE
 );
 """
 
@@ -485,6 +578,110 @@ _OTHER_TABLES: dict[str, str] = {
     "app_config": DDL_APP_CONFIG,
 }
 
+# RBAC 平台表（建表顺序遵守 FK：先主体 role/menu，再 resource(引 menu)，最后三关联表）。
+# 依赖 sys_user 已建（在 _OTHER_TABLES），故在主循环之后单独建。
+_RBAC_TABLES: dict[str, str] = {
+    "sys_role": DDL_SYS_ROLE,
+    "sys_menu": DDL_SYS_MENU,
+    "sys_resource": DDL_SYS_RESOURCE,
+    "sys_user_role": DDL_SYS_USER_ROLE,
+    "sys_role_menu": DDL_SYS_ROLE_MENU,
+    "sys_role_resource": DDL_SYS_ROLE_RESOURCE,
+}
+
+# RBAC 二级索引（复合主键已覆盖主查询方向；这里补反向查询：按 role/menu/resource 反查引用）
+_RBAC_INDEXES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_sys_menu_parent_sort ON sys_menu (parent_id, sort)",
+    "CREATE INDEX IF NOT EXISTS idx_sys_resource_menu ON sys_resource (menu_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sys_user_role_role ON sys_user_role (role_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sys_role_menu_menu ON sys_role_menu (menu_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sys_role_resource_resource ON sys_role_resource (resource_id)",
+)
+
+
+# ── RBAC seed 数据（内置角色 / 菜单树 / 功能点 / 默认授权；均可在角色管理页调整）──
+# 内置角色：id=code（稳定自然键，seed 幂等）。(code, name, kind, is_locked, description)
+_SEED_ROLES: tuple[tuple[str, str, str, bool, str], ...] = (
+    (ROLE_SYSTEM, "系统管理员", "system", True,
+     "平台超级管理员：拥有全部菜单与功能权限（锁定不可改）"),
+    (ROLE_TENANT_ADMIN, "租户管理员", "tenant_admin", False,
+     "本租户管理员：管理本租户用户，使用全部业务功能"),
+    (ROLE_NORMAL, "普通用户", "normal", False,
+     "普通用户：使用行情/筛选/回测/训练等业务功能"),
+    (ROLE_PAID, "付费用户", "paid", False,
+     "付费用户（预留，阶段三无创建入口/配额）"),
+)
+
+# 菜单树 seed：承接前端 menuConfig（emoji→Element Plus 图标名），新增「系统管理→权限管理」子组。
+# 每项 (code, title, icon(EP名|None), visible, children)；有 children→group（route_path=None），否则→leaf(route_path=code)。
+# visible=system 仅系统管理员可见；「系统管理/权限管理」分组与「用户管理」用 login，
+# 因租户管理员（非 system）经授权也要能进用户管理，其上级分组不能被 system-only 挡死。
+_SEED_MENU_TREE: list = [
+    ("quotes", "最新行情", "TrendCharts", "login", [
+        ("/stocks", "个股行情", None, "login", []),
+        ("/board", "每日榜单", None, "login", []),
+    ]),
+    ("/screen", "策略筛选", "Filter", "login", []),
+    ("/backtest", "策略回测", "DataLine", "login", []),
+    ("/training", "盘感训练", "Aim", "login", []),
+    ("data", "数据管理", "FolderOpened", "system", [
+        ("/data/overview", "数据概览", None, "system", []),
+        ("/data/quality", "数据质量", None, "system", []),
+        ("/data/ingest", "数据采集", None, "system", []),
+        ("/data/schedule", "任务调度", None, "system", []),
+    ]),
+    ("system", "系统管理", "Setting", "login", [
+        ("/system/config", "配置管理", None, "system", []),
+        ("layout", "布局配置", "Brush", "system", [
+            ("/system/layout/presets", "预设管理", None, "system", []),
+            ("/system/layout/pages", "页面布局", None, "system", []),
+            ("/system/layout/components", "系统组件", None, "system", []),
+        ]),
+        ("permission", "权限管理", "Lock", "login", [
+            ("/system/users", "用户管理", None, "login", []),
+            ("/system/roles", "角色管理", None, "system", []),
+            ("/system/menus", "菜单与功能", None, "system", []),
+            ("/system/tenants", "租户管理", None, "system", []),
+        ]),
+    ]),
+]
+
+# 功能点/资源 seed：精确权限码（§4.3）。(menu_code, code, name, type, method, path)；id=code（全局唯一）。
+_SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
+    ("/system/users", "user:list", "查看用户", "api", "GET", "/api/users"),
+    ("/system/users", "user:create", "新建用户", "api", "POST", "/api/users"),
+    ("/system/users", "user:update", "编辑用户", "api", "PUT", "/api/users/{id}"),
+    ("/system/users", "user:disable", "启停/锁定用户", "api", "POST", "/api/users/{id}/status"),
+    ("/system/users", "user:reset-password", "重置密码", "api", "POST", "/api/users/{id}/reset-password"),
+    ("/system/users", "user:delete", "删除用户", "api", "DELETE", "/api/users/{id}"),
+    ("/system/roles", "role:list", "查看角色", "api", "GET", "/api/roles"),
+    ("/system/roles", "role:create", "新建角色", "api", "POST", "/api/roles"),
+    ("/system/roles", "role:update", "编辑角色", "api", "PUT", "/api/roles/{id}"),
+    ("/system/roles", "role:delete", "删除角色", "api", "DELETE", "/api/roles/{id}"),
+    ("/system/roles", "role:assign-perm", "配置角色权限", "api", "PUT", "/api/roles/{id}/perms"),
+    ("/system/menus", "menu:list", "查看菜单", "api", "GET", "/api/menus"),
+    ("/system/menus", "menu:create", "新建菜单节点", "api", "POST", "/api/menus"),
+    ("/system/menus", "menu:update", "编辑菜单节点", "api", "PUT", "/api/menus/{id}"),
+    ("/system/menus", "menu:delete", "删除菜单节点", "api", "DELETE", "/api/menus/{id}"),
+    ("/system/menus", "menu:reorder", "菜单排序", "api", "POST", "/api/menus/reorder"),
+    ("/system/menus", "resource:list", "查看功能点", "api", "GET", "/api/resources"),
+    ("/system/menus", "resource:create", "新建功能点", "api", "POST", "/api/resources"),
+    ("/system/menus", "resource:update", "编辑功能点", "api", "PUT", "/api/resources/{id}"),
+    ("/system/menus", "resource:delete", "删除功能点", "api", "DELETE", "/api/resources/{id}"),
+    ("/system/tenants", "tenant:list", "查看租户", "api", "GET", "/api/tenants"),
+    ("/system/tenants", "tenant:create", "新建租户", "api", "POST", "/api/tenants"),
+    ("/system/tenants", "tenant:update", "编辑租户", "api", "PUT", "/api/tenants/{id}"),
+    ("/system/tenants", "tenant:disable", "启停租户", "api", "POST", "/api/tenants/{id}/status"),
+)
+
+# 默认授权：业务页所有登录用户可用；用户管理授予租户管理员（管本租户用户）；system 由 resolver 判全量。
+_BUSINESS_MENU_CODES: tuple[str, ...] = (
+    "quotes", "/stocks", "/board", "/screen", "/backtest", "/training")
+_TENANT_ADMIN_EXTRA_MENUS: tuple[str, ...] = ("system", "permission", "/system/users")
+_USER_RESOURCE_CODES: tuple[str, ...] = (
+    "user:list", "user:create", "user:update",
+    "user:disable", "user:reset-password", "user:delete")
+
 
 def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     """幂等建全部 PG 资产/骨架表 + (tenant_id, owner_user_id) 索引，并 seed 默认租户/管理员。
@@ -497,6 +694,13 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         client.execute(sql)
         created.append(name)
         log.debug("PG 表已就绪: %s", name)
+    # RBAC 平台表（阶段三）：sys_user 已在上面建好，此处按 FK 顺序建 6 表
+    for name, sql in _RBAC_TABLES.items():
+        client.execute(sql)
+        created.append(name)
+        log.debug("PG RBAC 表已就绪: %s", name)
+    for idx_sql in _RBAC_INDEXES:
+        client.execute(idx_sql)
     # layout 主键以 user_id 打头，补归属索引便于按 owner 统计；其余表复合主键已覆盖归属查询
     client.execute(
         "CREATE INDEX IF NOT EXISTS idx_layout_user_config_owner "
@@ -509,7 +713,8 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     client.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_user_email "
         "ON sys_user (email) WHERE email IS NOT NULL")
-    seed_default_tenant(client)
+    seed_default_tenant(client)   # 先补 admin=system 的 role_code，供 seed_rbac 建 user_role 用
+    seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 存量用户按 role_code 补 user_role
     return created
 
 
@@ -574,6 +779,88 @@ def _warn_generated_admin_pwd(pwd: str, generated: bool) -> None:
         log.warning(
             "未设置 AI_STOCKS_ADMIN_PASSWORD，已为管理员 admin 生成随机初始密码：%s "
             "（仅本次显示，请尽快登录改密或改用环境变量；生产部署务必显式设置）", pwd)
+
+
+def _flatten_menu_tree(tree: list, parent_code: str | None = None) -> list[dict]:
+    """把嵌套菜单树展平为插入行（父在子前，保证 FK parent_id 可满足）。
+
+    sort 按同级序号 *10（留改序空间）；有 children 记 group（route_path=None），否则 leaf(route_path=code)。
+    """
+    rows: list[dict] = []
+    for i, (code, title, icon, visible, children) in enumerate(tree, start=1):
+        is_group = bool(children)
+        rows.append({
+            "code": code, "parent_code": parent_code, "title": title,
+            "type": "group" if is_group else "leaf",
+            "route_path": None if is_group else code,
+            "icon": icon, "sort": i * 10, "visible": visible,
+        })
+        if children:
+            rows.extend(_flatten_menu_tree(children, code))
+    return rows
+
+
+def seed_rbac(client: PostgresClient | None = None) -> None:
+    """幂等 seed 内置角色 / 菜单树 / 功能点 / 默认授权，并按 role_code 为存量用户补 sys_user_role。
+
+    幂等策略：主体（角色/菜单/资源）ON CONFLICT (id) DO NOTHING；默认授权仅在该角色**尚无任何
+    role_menu** 时首次写入（避免覆盖管理员后续在角色页的手工调整）；user_role 追加式 ON CONFLICT DO NOTHING。
+    system 角色 seed 全量授权仅供角色页展示（全选+锁定）；运行时 system 由 perm_resolver 判全量兜底。
+    """
+    client = client or get_pg_client()
+    # 1) 内置角色（id=code）
+    for code, name, kind, is_locked, desc in _SEED_ROLES:
+        client.execute(
+            "INSERT INTO sys_role (id, code, name, kind, is_builtin, is_locked, description) "
+            "VALUES (%s, %s, %s, %s, TRUE, %s, %s) ON CONFLICT (id) DO NOTHING",
+            [code, code, name, kind, is_locked, desc])
+    # 2) 菜单树（父在子前）
+    menu_rows = _flatten_menu_tree(_SEED_MENU_TREE)
+    for m in menu_rows:
+        client.execute(
+            "INSERT INTO sys_menu (id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
+            [m["code"], m["parent_code"], m["code"], m["title"], m["type"],
+             m["route_path"], m["icon"], m["sort"], m["visible"]])
+    # 3) 功能点/资源（id=code）
+    for i, (menu_code, code, name, rtype, method, path) in enumerate(_SEED_RESOURCES, start=1):
+        client.execute(
+            "INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
+            [code, menu_code, code, name, rtype, method, path, i * 10])
+    # 4) 默认授权（仅首次）
+    _seed_role_grants(client, [m["code"] for m in menu_rows])
+    # 5) 存量用户 → sys_user_role（按 role_code JOIN 已存在的内置角色）
+    client.execute(
+        "INSERT INTO sys_user_role (user_id, role_id) "
+        "SELECT u.id, r.id FROM sys_user u JOIN sys_role r ON r.code = u.role_code "
+        "ON CONFLICT (user_id, role_id) DO NOTHING")
+
+
+def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None:
+    """为内置角色写默认菜单/功能授权（仅当该角色尚无 role_menu，避免覆盖后续手工调整）。"""
+    all_resource_codes = [r[1] for r in _SEED_RESOURCES]
+    business = list(_BUSINESS_MENU_CODES)
+    # (role_id, 菜单码集, 资源码集)
+    grants: list[tuple[str, list[str], list[str]]] = [
+        (ROLE_SYSTEM, all_menu_codes, all_resource_codes),
+        (ROLE_TENANT_ADMIN, business + list(_TENANT_ADMIN_EXTRA_MENUS), list(_USER_RESOURCE_CODES)),
+        (ROLE_NORMAL, business, []),
+        (ROLE_PAID, business, []),   # 付费角色预留：暂同普通用户业务页，后续可在角色页调整
+    ]
+    for role_id, menu_codes, resource_codes in grants:
+        df = client.query_df(
+            "SELECT 1 FROM sys_role_menu WHERE role_id=%s LIMIT 1", [role_id])
+        if not df.empty:
+            continue   # 已配置过 → 不覆盖
+        for mid in menu_codes:
+            client.execute(
+                "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING", [role_id, mid])
+        for rid in resource_codes:
+            client.execute(
+                "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING", [role_id, rid])
 
 
 def asset_pk_mismatches(client: PostgresClient | None = None) -> list[str]:

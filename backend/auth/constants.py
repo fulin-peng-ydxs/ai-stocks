@@ -11,5 +11,10 @@ from __future__ import annotations
 ROLE_SYSTEM = "system"               # 平台系统管理员：可访问全市场写/平台配置类系统级接口
 ROLE_TENANT_ADMIN = "tenant_admin"   # 租户管理员：自助注册用户默认角色，限本租户
 ROLE_NORMAL = "normal"               # 普通用户：阶段三用户管理页才创建
+ROLE_PAID = "paid"                   # 付费用户（阶段三预留：仅 seed 内置角色，无创建入口/配额）
 
-BUILTIN_ROLES: tuple[str, ...] = (ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL)
+# 内置系统预设角色（kind 同名）；自定义角色 kind='custom'、is_builtin=false
+BUILTIN_ROLES: tuple[str, ...] = (ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID)
+
+# 可分配给用户的系统预设角色（排除 system 超管；tenant_admin 用户管理页只在此集合内选）
+ASSIGNABLE_PRESET_ROLES: tuple[str, ...] = (ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID)

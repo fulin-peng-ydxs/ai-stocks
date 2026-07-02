@@ -171,16 +171,16 @@
 > 顺序：内核（T1→T2→T3→T4）→ 后端 API（T5–T9）→ T10 /me → 前端（T11–T15）→ T16 隔离核查 → T17 测试+文档。
 
 ### 6.1 任务 T1：权限数据模型 + seed + role_code 迁移
-- 状态：待开始
+- 状态：已完成
 - 依赖：无
-- 涉及文件/模块：`backend/storage/pg_ddl.py`、`stage3-rbac-tenant/rbac-schema.sql`(产出)
+- 涉及文件/模块：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`(补 ROLE_PAID/ASSIGNABLE_PRESET_ROLES)、`stage3-rbac-tenant/rbac-schema.sql`(产出)、`backend/tests/test_rbac_schema.py`(产出)
 - 目标：建 6 张 RBAC 表（含 FK/索引，§4.1）+ seed 内置角色/菜单树/功能点 + 存量补 sys_user_role。
-- 操作：`init_pg_db` 幂等建 6 表（复合主键 + FK 删除策略 + 索引）；`seed_rbac`：3 内置角色(+paid)、菜单树(menuConfig+权限管理子组、emoji→EP 图标名)、精确功能码、system 全授权+is_locked、存量用户按 role_code 补 sys_user_role。
-- 产出：6 表 DDL + seed 逻辑 + `rbac-schema.sql` 留痕。
+- 操作：`init_pg_db` 幂等建 6 表（复合主键 + FK 删除策略 + 索引）；`seed_rbac`：4 内置角色(system/tenant_admin/normal/paid)、菜单树(menuConfig+权限管理子组、emoji→EP 图标名)、24 精确功能码、system 全授权+is_locked、tenant_admin=业务+用户管理+user:*、normal/paid=业务页、存量用户按 role_code 补 sys_user_role。
+- 产出：6 表 DDL + seed 逻辑 + `rbac-schema.sql` 留痕 + 10 个 T1 单测。
 - 影响范围：仅新增平台表；不动资产表/行情 DuckDB/`role_code`。
-- 边界与异常：幂等（IF NOT EXISTS + ON CONFLICT DO NOTHING）；seed 不覆盖既有授权；FK RESTRICT/CASCADE 按 §4.1。
-- 验证方式：`init_pg_db` 无错；`cli health` 通过；PG 查 6 表 + FK + 索引存在、内置角色/菜单/功能点行数符合、存量用户各有 sys_user_role。
-- 完成标准：表+FK+索引+seed 就绪，admin=system 全授权，存量平滑迁移。
+- 边界与异常：幂等（IF NOT EXISTS + ON CONFLICT DO NOTHING）；默认授权仅角色首次无授权时写、不覆盖后续手工调整；FK RESTRICT/CASCADE 按 §4.1。
+- 验证方式：`init_pg_db` 无错（对开发 PG 实跑）；PG 查 6 表 + FK 删除策略(RESTRICT/CASCADE) + 5 索引存在、4 内置角色/22 菜单/24 功能点行数符合、各角色授权域符合、存量 admin=system；幂等复跑行数不变。
+- 完成标准：表+FK+索引+seed 就绪，admin=system 全授权，存量平滑迁移。**（已达成：全量 pytest 283 passed = 273 基线 + 10 T1 用例）**
 
 ### 6.2 任务 T2：权限解析 + Redis 缓存 + 失效全触发点
 - 状态：待开始
