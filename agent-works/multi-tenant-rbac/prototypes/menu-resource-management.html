@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>菜单与功能管理 原型 · 复盘啦（阶段三 R12+R13）</title>
+<!--
+  页面原型：菜单与功能管理（P·R12 菜单 + R13 功能，合页 master-detail）。自包含静态 HTML，全可交互。
+  作用：需求「7.6 菜单与功能管理」视觉/交互事实源 + 前端 MenuResourceView.vue 参照。
+  图标体系：Element Plus Icons（@element-plus/icons-vue）。菜单表 icon 存图标名（如 TrendCharts），
+           页面用「图标选择器」从图标库选，不手填字符。本原型以内联 SVG 近似展示同名图标。
+  交互：点树节点切换右栏、图标选择器、类型/可见性下拉、增/删功能点行、切主题、显隐原型批注——均可点。
+  说明规范（DESIGN §3/§6）：页面只留面向用户的短标签 + HelpTip「?」；实现细节（表名等）收进琥珀原型批注，勿带入页面。
+  可见性：仅系统管理员。
+-->
+<style>
+  :root { --pg-page-bg:#f5f7fa; --pg-card-bg:#ffffff; --pg-text:#1f2937; --pg-text-reg:#4b5563; --pg-text-sub:#8a94a6; --pg-border:#e4e7ed; --pg-border-light:#ebeef5; --pg-primary:#409eff; --pg-primary-bg:#ecf5ff; --pg-danger:#dc2626; --pg-success:#2f9e44; --pg-warning:#d97706; --pg-info:#8a94a6; --pg-fill:#f5f7fa; --pg-hover:#f2f6fc; --pg-th-bg:#fafafa; --pg-sel:#ecf5ff; --pg-guide:#dce3ec; --anno-bg:#fff8ec; --anno-border:#e8a33d; --anno-text:#8a5a12; }
+  html[data-theme="dark"] { --pg-page-bg:#000000; --pg-card-bg:#0c0e12; --pg-text:#d2d8e0; --pg-text-reg:#a3abb8; --pg-text-sub:#5a6371; --pg-border:#2e3644; --pg-border-light:#232a34; --pg-primary:#409eff; --pg-primary-bg:#18222f; --pg-danger:#f56c6c; --pg-success:#67c23a; --pg-warning:#e0a83e; --pg-info:#5a6371; --pg-fill:#14181f; --pg-hover:#141b25; --pg-th-bg:#14181f; --pg-sel:#18222f; --pg-guide:#2b3444; --anno-bg:#241d10; --anno-border:#8a6a2a; --anno-text:#d8b471; }
+  * { box-sizing:border-box; } html,body { height:100%; margin:0; }
+  body { font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif; background:var(--pg-page-bg); color:var(--pg-text); font-size:14px; display:flex; flex-direction:column; height:100%; transition:background .2s,color .2s; }
+  .anno-off .anno { display:none !important; }
+  .anno-bar { display:flex; align-items:center; gap:12px; padding:8px 24px; background:var(--anno-bg); border-bottom:1px dashed var(--anno-border); color:var(--anno-text); font-size:12px; flex:none; }
+  .anno-bar b { font-weight:700; } .anno-bar .legend { display:inline-flex; align-items:center; gap:5px; }
+  .swatch { width:12px; height:12px; border-radius:3px; display:inline-block; } .sw-help { background:var(--pg-primary); } .sw-anno { background:var(--anno-border); }
+  .anno-bar .toggle { margin-left:auto; cursor:pointer; border:1px solid var(--anno-border); border-radius:4px; padding:2px 8px; }
+  .anno { border-left:3px solid var(--anno-border); background:var(--anno-bg); color:var(--anno-text); font-size:12px; line-height:1.6; padding:6px 10px; border-radius:0 5px 5px 0; margin:8px 16px; }
+  .anno .k { font-weight:700; }
+  .help { position:relative; display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:6px; border-radius:50%; background:#c0c4cc; color:#fff; font-size:11px; font-weight:700; cursor:help; vertical-align:middle; }
+  .help:hover { background:var(--pg-primary); }
+  .help .pop { display:none; position:absolute; top:22px; left:0; width:300px; background:var(--pg-card-bg); color:var(--pg-text-reg); border:1px solid var(--pg-border); border-radius:6px; box-shadow:0 8px 28px rgba(0,0,0,.18); padding:10px 12px; font-size:12.5px; line-height:1.7; font-weight:400; z-index:60; text-align:left; }
+  .help:hover .pop { display:block; }
+  .page-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 24px 10px; flex:none; }
+  .page-head .titles { display:flex; align-items:center; gap:6px; } .page-head h2 { margin:0; font-size:20px; font-weight:700; }
+  .head-actions { display:flex; align-items:center; gap:10px; }
+  .btn { height:32px; padding:0 14px; border-radius:5px; font-size:13px; cursor:pointer; border:1px solid transparent; display:inline-flex; align-items:center; gap:5px; }
+  .btn-primary { background:var(--pg-primary); color:#fff; } .btn-default { background:var(--pg-card-bg); color:var(--pg-text-reg); border-color:var(--pg-border); }
+  .btn-sm { height:28px; padding:0 10px; font-size:12px; }
+  .theme-toggle { width:32px; height:32px; border-radius:5px; border:1px solid var(--pg-border); background:var(--pg-card-bg); color:var(--pg-text-sub); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+  /* master-detail：窄视口横向滚动（体内），不把右栏压垮 */
+  .split { flex:1 1 auto; min-height:0; display:flex; gap:16px; padding:0 24px 16px; overflow-x:auto; }
+  .col { border:1px solid var(--pg-border); border-radius:8px; background:var(--pg-card-bg); display:flex; flex-direction:column; min-height:0; }
+  .col-left { width:300px; flex:none; } .col-right { flex:1 1 auto; min-width:480px; }
+  .col-head { padding:11px 14px; border-bottom:1px solid var(--pg-border-light); font-weight:600; display:flex; align-items:center; justify-content:space-between; }
+  .col-head .mini { font-size:12px; color:var(--pg-text-sub); font-weight:400; }
+  .col-body { flex:1 1 auto; min-height:0; overflow:auto; }
+  /* 图标 SVG */
+  .mi { width:16px; height:16px; vertical-align:-3px; }
+  /* 菜单树 */
+  .treewrap { padding:8px; }
+  .tnode { display:flex; align-items:center; gap:7px; padding:7px 8px; border-radius:6px; font-size:13px; cursor:pointer; }
+  .tnode:hover { background:var(--pg-hover); } .tnode.active { background:var(--pg-sel); }
+  .tnode .caret { width:12px; color:var(--pg-text-sub); font-size:11px; } .tnode .ico { width:18px; text-align:center; color:var(--pg-text-reg); display:inline-flex; justify-content:center; }
+  .tnode.group { font-weight:600; } .tnode .grab { margin-left:auto; color:var(--pg-text-sub); cursor:grab; font-size:12px; }
+  .tchild { margin-left:16px; border-left:2px solid var(--pg-guide); padding-left:6px; }
+  .tag { display:inline-flex; align-items:center; height:19px; padding:0 6px; border-radius:4px; font-size:11px; border:1px solid transparent; }
+  .tag-group { color:var(--pg-info); background:var(--pg-fill); border-color:var(--pg-border); }
+  .tag-leaf { color:var(--pg-primary); background:var(--pg-primary-bg); border-color:color-mix(in srgb,var(--pg-primary) 25%,transparent); }
+  /* 右栏 */
+  .detail-bar { padding:12px 16px; border-bottom:1px solid var(--pg-border-light); display:flex; align-items:center; justify-content:space-between; }
+  .detail-bar .mname { font-size:15px; font-weight:700; display:flex; align-items:center; }
+  .section { padding:14px 16px; border-bottom:1px solid var(--pg-border-light); }
+  .section h4 { margin:0 0 12px; font-size:13px; color:var(--pg-text-sub); font-weight:600; display:flex; align-items:center; }
+  .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px 20px; }
+  .form-row { display:flex; align-items:center; gap:10px; position:relative; }
+  .form-row label { width:64px; text-align:right; color:var(--pg-text-reg); font-size:13px; flex:none; }
+  .inp { flex:1; height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; outline:none; }
+  .selbox { flex:1; height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
+  .selbox .cv { color:var(--pg-text-sub); font-size:11px; }
+  /* 图标选择器 */
+  .iconpick { flex:1; height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 8px; font-size:13px; display:flex; align-items:center; gap:8px; cursor:pointer; }
+  .iconpick .cur { display:inline-flex; align-items:center; gap:6px; } .iconpick .nm { font-family:ui-monospace,Menlo,monospace; font-size:12px; color:var(--pg-text-reg); }
+  .iconpick .chev { margin-left:auto; color:var(--pg-text-sub); }
+  .pop-panel { position:absolute; z-index:70; top:36px; left:74px; width:280px; background:var(--pg-card-bg); border:1px solid var(--pg-border); border-radius:8px; box-shadow:0 10px 32px rgba(0,0,0,.2); padding:10px; display:none; }
+  .pop-panel.show { display:block; }
+  .pop-panel .search { width:100%; height:30px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 9px; font-size:12px; outline:none; margin-bottom:8px; }
+  .icon-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; max-height:180px; overflow:auto; }
+  .icon-cell { aspect-ratio:1; border:1px solid var(--pg-border-light); border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; color:var(--pg-text-reg); }
+  .icon-cell:hover { background:var(--pg-hover); border-color:var(--pg-primary); }
+  .icon-cell.on { background:var(--pg-primary-bg); border-color:var(--pg-primary); color:var(--pg-primary); }
+  .icon-cell .cap { font-size:9px; color:var(--pg-text-sub); transform:scale(.9); white-space:nowrap; }
+  /* 下拉 */
+  .dd-menu { position:absolute; z-index:70; top:36px; background:var(--pg-card-bg); border:1px solid var(--pg-border); border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.16); padding:5px; min-width:180px; display:none; }
+  .dd-menu.show { display:block; } .dd-menu .opt { padding:7px 10px; border-radius:5px; font-size:13px; cursor:pointer; } .dd-menu .opt:hover { background:var(--pg-hover); } .dd-menu .opt.on { color:var(--pg-primary); background:var(--pg-primary-bg); }
+  .func-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  /* 功能点表：窄栏内体内横滚，列不被压 */
+  .tbl-scroll { overflow-x:auto; border:1px solid var(--pg-border); border-radius:6px; }
+  table { width:100%; min-width:600px; border-collapse:collapse; font-size:13px; }
+  .tbl-scroll table { border:none; }
+  thead th { background:var(--pg-th-bg); color:var(--pg-text-reg); font-weight:600; text-align:left; padding:8px 12px; border-bottom:1px solid var(--pg-border); white-space:nowrap; }
+  tbody td { padding:8px 12px; border-bottom:1px solid var(--pg-border-light); color:var(--pg-text-reg); }
+  tbody tr:last-child td { border-bottom:none; }
+  .ftag { display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:4px; font-size:11px; }
+  .ftag.btn { color:var(--pg-warning); background:color-mix(in srgb,var(--pg-warning) 12%,transparent); border:1px solid color-mix(in srgb,var(--pg-warning) 30%,transparent); }
+  .ftag.api { color:var(--pg-success); background:color-mix(in srgb,var(--pg-success) 12%,transparent); border:1px solid color-mix(in srgb,var(--pg-success) 30%,transparent); }
+  .code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  .link { color:var(--pg-primary); cursor:pointer; margin-right:10px; font-size:13px; } .link.danger { color:var(--pg-danger); }
+  .detail-foot { border-top:1px solid var(--pg-border-light); padding:12px 16px; display:flex; align-items:center; justify-content:flex-end; gap:10px; }
+  /* toast */
+  #toast { position:fixed; left:50%; bottom:32px; transform:translateX(-50%); background:var(--pg-text); color:var(--pg-card-bg); font-size:13px; padding:8px 16px; border-radius:6px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:99; }
+  #toast.show { opacity:.92; }
+</style>
+</head>
+<body>
+  <div class="anno-bar">
+    <b>原型说明</b>
+    <span class="legend"><span class="swatch sw-help"></span>蓝色「?」= 页面真帮助（HelpTip，可交付）</span>
+    <span class="legend"><span class="swatch sw-anno"></span>琥珀块 = 原型批注（评审用，<b>开发勿带入页面</b>）</span>
+    <span class="toggle" id="annoToggle">隐藏原型批注</span>
+  </div>
+
+  <div class="page-head">
+    <div class="titles"><h2>菜单与功能管理</h2>
+      <span class="help">?<span class="pop">左侧菜单树可增删、拖拽排序；选中节点后在右侧维护其属性与功能点。功能点是角色授权的最小资源单位。</span></span>
+    </div>
+    <div class="head-actions">
+      <button class="btn btn-primary" onclick="toast('新增菜单节点（原型示意）')">＋ 新增菜单节点</button>
+      <button class="theme-toggle" id="themeToggle" title="切换黑/白主题"><svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg></button>
+    </div>
+  </div>
+
+  <div class="split">
+    <div class="col col-left">
+      <div class="col-head">菜单树 <span class="mini">可拖拽排序</span></div>
+      <div class="col-body"><div class="treewrap" id="tree"></div></div>
+    </div>
+
+    <div class="col col-right">
+      <div class="detail-bar">
+        <div class="mname" id="mname">每日榜单
+          <span class="help">?<span class="pop">路由须与前端已注册路由对应（非法路由会告警）；分组节点不导航、无需路由。删除有子节点的分组会级联确认。</span></span>
+        </div>
+        <div class="head-actions"><button class="btn btn-default btn-sm" onclick="toast('新增子节点（原型示意）')">＋ 新增子节点</button><button class="btn btn-default btn-sm" style="color:var(--pg-danger)" onclick="toast('删除节点：将级联确认（原型示意）')">删除节点</button></div>
+      </div>
+      <div class="col-body">
+        <div class="section">
+          <h4>菜单属性</h4>
+          <div class="form-grid">
+            <div class="form-row"><label>标题</label><input class="inp" id="f-title" value="每日榜单" /></div>
+            <div class="form-row"><label>类型</label>
+              <div class="selbox" onclick="toggleDD('dd-type',this)"><span id="v-type">叶子（可导航）</span><span class="cv">▾</span></div>
+              <div class="dd-menu" id="dd-type"><div class="opt on" onclick="pickDD('dd-type','v-type','叶子（可导航）')">叶子（可导航）</div><div class="opt" onclick="pickDD('dd-type','v-type','分组（不导航）')">分组（不导航）</div></div>
+            </div>
+            <div class="form-row"><label>路由</label><input class="inp code" id="f-route" value="/board" /></div>
+            <div class="form-row"><label>图标</label>
+              <div class="iconpick" id="iconpick" onclick="toggleIconPanel()"><span class="cur" id="iconCur"></span><span class="chev">▾</span></div>
+              <div class="pop-panel" id="iconPanel">
+                <input class="search" id="iconSearch" placeholder="搜索图标名（Element Plus Icons）" oninput="renderIconGrid(this.value)" />
+                <div class="icon-grid" id="iconGrid"></div>
+              </div>
+            </div>
+            <div class="form-row"><label>排序</label><input class="inp" type="number" value="20" /></div>
+            <div class="form-row"><label>可见性</label>
+              <div class="selbox" onclick="toggleDD('dd-vis',this)"><span id="v-vis">登录可见</span><span class="cv">▾</span></div>
+              <div class="dd-menu" id="dd-vis"><div class="opt on" onclick="pickDD('dd-vis','v-vis','登录可见')">登录可见</div><div class="opt" onclick="pickDD('dd-vis','v-vis','仅系统管理员')">仅系统管理员</div></div>
+            </div>
+          </div>
+          <div class="anno"><span class="k">◆ 原型说明：</span>图标采用 Element Plus Icons 图标库，icon 字段存图标名（如 TrendCharts）。菜单树后端数据化后成为唯一源，SideMenu 消费它 + 按角色权限过滤，前端 menuConfig 降为兜底默认。</div>
+        </div>
+        <div class="section" style="border-bottom:none">
+          <div class="func-head">
+            <h4 style="margin:0">功能点（供角色授权）
+              <span class="help">?<span class="pop">功能码全局唯一、稳定不可复用（与后端接口权限码对账）；「按钮」类为前端动作，「接口」类绑定后端接口路径；删除被角色引用的功能点会提示影响范围。</span></span>
+            </h4>
+            <button class="btn btn-default btn-sm" onclick="addFunc()">＋ 新增功能点</button>
+          </div>
+          <div class="tbl-scroll">
+          <table>
+            <thead><tr><th style="width:190px">功能码</th><th style="min-width:120px">名称</th><th style="width:80px">类型</th><th style="min-width:200px">绑定接口</th><th style="width:90px">操作</th></tr></thead>
+            <tbody id="funcBody">
+              <tr><td class="code">board:view</td><td>查看榜单</td><td><span class="ftag api">接口</span></td><td class="code">GET /api/board</td><td><span class="link" onclick="toast('编辑功能点（原型示意）')">编辑</span><span class="link danger" onclick="delRow(this)">删</span></td></tr>
+              <tr><td class="code">board:export</td><td>导出 CSV</td><td><span class="ftag btn">按钮</span></td><td class="code">GET /api/board/export</td><td><span class="link" onclick="toast('编辑功能点（原型示意）')">编辑</span><span class="link danger" onclick="delRow(this)">删</span></td></tr>
+              <tr><td class="code">board:profile-switch</td><td>切换评分规则</td><td><span class="ftag btn">按钮</span></td><td style="color:var(--pg-text-sub)">— 纯前端动作</td><td><span class="link" onclick="toast('编辑功能点（原型示意）')">编辑</span><span class="link danger" onclick="delRow(this)">删</span></td></tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+      <div class="detail-foot"><button class="btn btn-default" onclick="toast('已还原')">还原</button><button class="btn btn-primary" onclick="toast('已保存（原型示意）')">保存</button></div>
+    </div>
+  </div>
+  <div id="toast"></div>
+
+<script>
+  // ── Element Plus Icons 近似 SVG（stroke 线性；名称对齐 EP 常用图标） ──
+  var P = {
+    TrendCharts:'<path d="M3 20h18M6 16l4-5 4 3 5-8"/>',
+    Histogram:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+    DataAnalysis:'<path d="M4 20h16M8 20v-6M12 20V8M16 20v-9"/><circle cx="8" cy="12" r="1.3"/><circle cx="12" cy="6" r="1.3"/><circle cx="16" cy="9" r="1.3"/>',
+    Monitor:'<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M9 20h6M12 16v4"/>',
+    Setting:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+    Lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    Key:'<circle cx="8" cy="15" r="3"/><path d="M10 13l8-8M15 5l3 3M13 7l2 2"/>',
+    User:'<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>',
+    UserFilled:'<circle cx="9" cy="8" r="3.2"/><circle cx="16" cy="9" r="2.6"/><path d="M3 19c0-3.3 3-5 6-5s6 1.7 6 5M15 19c0-2 .8-3.4 2.2-4.2 2 .3 3.8 1.7 3.8 4.2"/>',
+    OfficeBuilding:'<rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2M10 21v-3h4v3"/>',
+    Menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',
+    Grid:'<rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/>',
+    Files:'<path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/>',
+    Coin:'<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
+    Search:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
+    Tickets:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 6v12M12 10h5M12 14h5"/>'
+  };
+  var ICON_NAMES = Object.keys(P);
+  function svg(name){ return '<svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(P[name]||P.Menu)+'</svg>'; }
+
+  // ── 菜单树数据（icon = EP 图标名） ──
+  var TREE = [
+    {name:'最新行情',icon:'TrendCharts',group:true,children:[
+      {name:'个股行情',icon:'Monitor',route:'/stocks',type:'叶子（可导航）'},
+      {name:'每日榜单',icon:'Histogram',route:'/board',type:'叶子（可导航）'}]},
+    {name:'策略筛选',icon:'DataAnalysis',route:'/screen',type:'叶子（可导航）'},
+    {name:'策略回测',icon:'Tickets',route:'/backtest',type:'叶子（可导航）'},
+    {name:'系统管理',icon:'Setting',group:true,children:[
+      {name:'配置管理',icon:'Files',route:'/system/config',type:'叶子（可导航）'},
+      {name:'权限管理',icon:'Lock',group:true,children:[
+        {name:'用户管理',icon:'User',route:'/system/users',type:'叶子（可导航）'},
+        {name:'角色管理',icon:'UserFilled',route:'/system/roles',type:'叶子（可导航）'},
+        {name:'菜单与功能',icon:'Menu',route:'/system/menus',type:'叶子（可导航）'},
+        {name:'租户管理',icon:'OfficeBuilding',route:'/system/tenants',type:'叶子（可导航）'}]}]}
+  ];
+  var current = {name:'每日榜单',icon:'Histogram',route:'/board',type:'叶子（可导航）'};
+
+  function renderTree(){
+    var html='';
+    function walk(nodes,depth){
+      nodes.forEach(function(n){
+        var pad = depth>0 ? '' : '';
+        if(n.group){
+          html+='<div class="tnode group"><span class="caret">▾</span><span class="ico">'+svg(n.icon)+'</span>'+n.name+' <span class="tag tag-group">分组</span><span class="grab" title="拖拽排序">⠿</span></div>';
+          if(n.children){ html+='<div class="tchild">'; walk(n.children,depth+1); html+='</div>'; }
+        } else {
+          var act = n.name===current.name?' active':'';
+          html+='<div class="tnode'+act+'" data-name="'+n.name+'" data-route="'+n.route+'" data-type="'+n.type+'" data-icon="'+n.icon+'"><span class="ico">'+svg(n.icon)+'</span>'+n.name+(act?' <span class="tag tag-leaf">叶子</span>':'')+'<span class="grab" title="拖拽排序">⠿</span></div>';
+        }
+      });
+    }
+    walk(TREE,0);
+    document.getElementById('tree').innerHTML=html;
+  }
+  function selectNode(el){
+    document.querySelectorAll('.tnode').forEach(x=>{x.classList.remove('active');var t=x.querySelector('.tag-leaf');if(t)t.remove();});
+    el.classList.add('active');
+    current={name:el.dataset.name,icon:el.dataset.icon,route:el.dataset.route,type:el.dataset.type};
+    document.getElementById('mname').firstChild.textContent=current.name+' ';
+    document.getElementById('f-title').value=current.name;
+    document.getElementById('f-route').value=current.route;
+    document.getElementById('v-type').textContent=current.type;
+    setIcon(current.icon);
+  }
+  // 图标当前值 + 选择器
+  function setIcon(name){ current.icon=name; document.getElementById('iconCur').innerHTML=svg(name)+'<span class="nm">'+name+'</span>'; }
+  function toggleIconPanel(){ var p=document.getElementById('iconPanel'); p.classList.toggle('show'); if(p.classList.contains('show')){renderIconGrid('');document.getElementById('iconSearch').focus();} }
+  function renderIconGrid(q){
+    q=(q||'').toLowerCase();
+    var html='';
+    ICON_NAMES.filter(n=>n.toLowerCase().includes(q)).forEach(function(n){
+      html+='<div class="icon-cell'+(n===current.icon?' on':'')+'" onclick="chooseIcon(\''+n+'\')" title="'+n+'">'+svg(n)+'<span class="cap">'+n+'</span></div>';
+    });
+    document.getElementById('iconGrid').innerHTML=html||'<div style="grid-column:1/-1;color:var(--pg-text-sub);font-size:12px;text-align:center;padding:12px">无匹配图标</div>';
+  }
+  function chooseIcon(n){ setIcon(n); document.getElementById('iconPanel').classList.remove('show'); toast('已选图标 '+n); }
+  // 下拉
+  function toggleDD(id,anchor){ closeAllDD(id); document.getElementById(id).classList.toggle('show'); }
+  function pickDD(id,valId,val){ document.getElementById(valId).textContent=val; var m=document.getElementById(id); m.querySelectorAll('.opt').forEach(o=>o.classList.toggle('on',o.textContent===val)); m.classList.remove('show'); }
+  function closeAllDD(except){ document.querySelectorAll('.dd-menu').forEach(m=>{if(m.id!==except)m.classList.remove('show');}); }
+  // 功能点增删
+  function addFunc(){ var tb=document.getElementById('funcBody'); var tr=document.createElement('tr'); tr.innerHTML='<td><input class="inp code" style="height:26px" placeholder="menu:action"></td><td><input class="inp" style="height:26px" placeholder="名称"></td><td><span class="ftag btn">按钮</span></td><td><input class="inp code" style="height:26px" placeholder="GET /api/..."></td><td><span class="link" onclick="toast(\'编辑（原型示意）\')">编辑</span><span class="link danger" onclick="delRow(this)">删</span></td>'; tb.appendChild(tr); toast('已新增一行功能点'); }
+  function delRow(x){ x.closest('tr').remove(); toast('已删除'); }
+  // toast
+  var tt; function toast(m){ var e=document.getElementById('toast'); e.textContent=m; e.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>e.classList.remove('show'),1600); }
+  // 主题 / 批注
+  var sun='<path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/><circle cx="12" cy="12" r="4"/>';
+  var moon='<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>';
+  function icon(){var d=document.documentElement.getAttribute('data-theme')==='dark';document.getElementById('themeIcon').innerHTML=d?sun:moon;}
+  document.getElementById('themeToggle').onclick=function(){var d=document.documentElement.getAttribute('data-theme')==='dark';document.documentElement.setAttribute('data-theme',d?'light':'dark');icon();};
+  document.getElementById('annoToggle').onclick=function(){var off=document.body.classList.toggle('anno-off');this.textContent=off?'显示原型批注':'隐藏原型批注';};
+  // 树点击（分组展开、叶子选中）
+  document.getElementById('tree').onclick=function(e){var n=e.target.closest('.tnode');if(!n)return;if(n.classList.contains('group'))return;selectNode(n);};
+  // 点空白关下拉/图标面板
+  document.addEventListener('click',function(e){ if(!e.target.closest('.selbox')&&!e.target.closest('.dd-menu'))closeAllDD(''); if(!e.target.closest('.iconpick')&&!e.target.closest('.pop-panel'))document.getElementById('iconPanel').classList.remove('show'); });
+  // init
+  renderTree(); setIcon(current.icon); icon();
+</script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>租户管理 原型 · 复盘啦（阶段三 R14）</title>
+<!--
+  页面原型：租户管理（P·R14）。自包含静态 HTML，全可交互；右上切黑白主题。
+  作用：需求「7.7 租户管理」视觉/交互事实源 + 前端 TenantManageView.vue 参照。
+  交互：状态筛选/搜索/查询、分页、行内启停·删除(状态实时变)、编辑弹窗、切主题、显隐批注——均可点。
+  说明规范（DESIGN §3/§6）：页面只留短标签 + HelpTip「?」；实现细节收进琥珀原型批注，勿带入页面。
+  可见性：仅系统管理员。「查看用户」跳「用户管理」并按该租户过滤。
+-->
+<style>
+  :root { --pg-page-bg:#f5f7fa; --pg-card-bg:#ffffff; --pg-text:#1f2937; --pg-text-reg:#4b5563; --pg-text-sub:#8a94a6; --pg-border:#e4e7ed; --pg-border-light:#ebeef5; --pg-primary:#409eff; --pg-primary-bg:#ecf5ff; --pg-danger:#dc2626; --pg-success:#2f9e44; --pg-warning:#d97706; --pg-info:#8a94a6; --pg-fill:#f5f7fa; --pg-hover:#f2f6fc; --pg-th-bg:#fafafa; --anno-bg:#fff8ec; --anno-border:#e8a33d; --anno-text:#8a5a12; }
+  html[data-theme="dark"] { --pg-page-bg:#000000; --pg-card-bg:#0c0e12; --pg-text:#d2d8e0; --pg-text-reg:#a3abb8; --pg-text-sub:#5a6371; --pg-border:#2e3644; --pg-border-light:#232a34; --pg-primary:#409eff; --pg-primary-bg:#18222f; --pg-danger:#f56c6c; --pg-success:#67c23a; --pg-warning:#e0a83e; --pg-info:#5a6371; --pg-fill:#14181f; --pg-hover:#141b25; --pg-th-bg:#14181f; --anno-bg:#241d10; --anno-border:#8a6a2a; --anno-text:#d8b471; }
+  * { box-sizing:border-box; } html,body { height:100%; margin:0; }
+  body { font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif; background:var(--pg-page-bg); color:var(--pg-text); font-size:14px; display:flex; flex-direction:column; height:100%; transition:background .2s,color .2s; }
+  .anno-off .anno { display:none !important; }
+  .anno-bar { display:flex; align-items:center; gap:12px; padding:8px 24px; background:var(--anno-bg); border-bottom:1px dashed var(--anno-border); color:var(--anno-text); font-size:12px; flex:none; }
+  .anno-bar b { font-weight:700; } .anno-bar .legend { display:inline-flex; align-items:center; gap:5px; }
+  .swatch { width:12px; height:12px; border-radius:3px; display:inline-block; } .sw-help { background:var(--pg-primary); } .sw-anno { background:var(--anno-border); }
+  .anno-bar .toggle { margin-left:auto; cursor:pointer; border:1px solid var(--anno-border); border-radius:4px; padding:2px 8px; }
+  .anno { border-left:3px solid var(--anno-border); background:var(--anno-bg); color:var(--anno-text); font-size:12px; line-height:1.6; padding:6px 10px; border-radius:0 5px 5px 0; margin:8px 0; }
+  .anno .k { font-weight:700; }
+  .help { position:relative; display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:6px; border-radius:50%; background:#c0c4cc; color:#fff; font-size:11px; font-weight:700; cursor:help; vertical-align:middle; }
+  .help:hover { background:var(--pg-primary); }
+  .help .pop { display:none; position:absolute; top:22px; left:0; width:280px; background:var(--pg-card-bg); color:var(--pg-text-reg); border:1px solid var(--pg-border); border-radius:6px; box-shadow:0 8px 28px rgba(0,0,0,.18); padding:10px 12px; font-size:12.5px; line-height:1.7; font-weight:400; z-index:60; text-align:left; }
+  .help:hover .pop { display:block; }
+  .page-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 24px 10px; flex:none; }
+  .page-head .titles { display:flex; align-items:center; gap:6px; } .page-head h2 { margin:0; font-size:20px; font-weight:700; }
+  .head-actions { display:flex; align-items:center; gap:10px; }
+  .toolbar { display:flex; align-items:center; gap:10px; padding:0 24px 12px; flex:none; }
+  .selbox { position:relative; height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+  .selbox .cv { color:var(--pg-text-sub); }
+  .search { height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; min-width:220px; outline:none; } .search::placeholder { color:var(--pg-text-sub); }
+  .dd-menu { position:absolute; z-index:70; top:36px; left:0; background:var(--pg-card-bg); border:1px solid var(--pg-border); border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.16); padding:5px; min-width:140px; display:none; }
+  .dd-menu.show { display:block; } .dd-menu .opt { padding:7px 10px; border-radius:5px; font-size:13px; cursor:pointer; } .dd-menu .opt:hover { background:var(--pg-hover); } .dd-menu .opt.on { color:var(--pg-primary); background:var(--pg-primary-bg); }
+  .btn { height:32px; padding:0 14px; border-radius:5px; font-size:13px; cursor:pointer; border:1px solid transparent; display:inline-flex; align-items:center; gap:5px; }
+  .btn-primary { background:var(--pg-primary); color:#fff; } .btn-default { background:var(--pg-card-bg); color:var(--pg-text-reg); border-color:var(--pg-border); }
+  .theme-toggle { width:32px; height:32px; border-radius:5px; border:1px solid var(--pg-border); background:var(--pg-card-bg); color:var(--pg-text-sub); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+  .main { flex:1 1 auto; min-height:0; padding:0 24px 8px; display:flex; flex-direction:column; }
+  .table-wrap { flex:1 1 auto; min-height:0; border:1px solid var(--pg-border); border-radius:6px; overflow:auto; background:var(--pg-card-bg); }
+  /* 宽表：窄视口下体内横滚（DESIGN §8），列不被压成竖排 */
+  table { width:100%; min-width:980px; border-collapse:collapse; font-size:13px; }
+  thead th { position:sticky; top:0; background:var(--pg-th-bg); color:var(--pg-text-reg); font-weight:600; text-align:left; padding:9px 12px; border-bottom:1px solid var(--pg-border); white-space:nowrap; }
+  tbody td { padding:9px 12px; border-bottom:1px solid var(--pg-border-light); color:var(--pg-text-reg); }
+  tbody tr:hover { background:var(--pg-hover); }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  .tag { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:4px; font-size:12px; border:1px solid transparent; }
+  .tag-success { color:var(--pg-success); background:color-mix(in srgb,var(--pg-success) 12%,transparent); border-color:color-mix(in srgb,var(--pg-success) 30%,transparent); }
+  .tag-danger  { color:var(--pg-danger);  background:color-mix(in srgb,var(--pg-danger) 12%,transparent);  border-color:color-mix(in srgb,var(--pg-danger) 30%,transparent); }
+  .tag-info    { color:var(--pg-info);    background:var(--pg-fill); border-color:var(--pg-border); }
+  .link { color:var(--pg-primary); cursor:pointer; margin-right:10px; font-size:13px; } .link.danger { color:var(--pg-danger); } .link.muted { color:var(--pg-text-sub); cursor:not-allowed; }
+  .pager { display:flex; align-items:center; justify-content:flex-end; gap:6px; padding:10px 2px 4px; font-size:13px; color:var(--pg-text-sub); flex:none; }
+  .pager .pg { min-width:28px; height:28px; padding:0 6px; border:1px solid var(--pg-border); border-radius:4px; background:var(--pg-card-bg); color:var(--pg-text-reg); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+  .pager .pg.active { background:var(--pg-primary); color:#fff; border-color:var(--pg-primary); }
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:flex-start; justify-content:center; padding-top:90px; z-index:80; }
+  .overlay.show { display:flex; }
+  .dialog { width:min(460px,92vw); background:var(--pg-card-bg); border:1px solid var(--pg-border); border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  .dialog-head { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--pg-border-light); font-weight:600; }
+  .dialog-close { cursor:pointer; color:var(--pg-text-sub); border:none; background:none; font-size:15px; }
+  .dialog-body { padding:18px; max-height:calc(100vh - 220px); overflow:auto; }
+  .form-row { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .form-row label { width:76px; text-align:right; color:var(--pg-text-reg); font-size:13px; flex:none; white-space:nowrap; }
+  .inp { flex:1; height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; outline:none; display:flex; align-items:center; }
+  .inp.ph { color:var(--pg-text-sub); } input.inp { padding:0 10px; }
+  .seg { display:inline-flex; border:1px solid var(--pg-border); border-radius:5px; overflow:hidden; }
+  .seg span { padding:6px 14px; font-size:12px; color:var(--pg-text-reg); cursor:pointer; } .seg span.on { background:var(--pg-primary); color:#fff; }
+  .dialog-foot { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--pg-border-light); }
+  #toast { position:fixed; left:50%; bottom:32px; transform:translateX(-50%); background:var(--pg-text); color:var(--pg-card-bg); font-size:13px; padding:8px 16px; border-radius:6px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:99; } #toast.show { opacity:.92; }
+</style>
+</head>
+<body>
+  <div class="anno-bar">
+    <b>原型说明</b>
+    <span class="legend"><span class="swatch sw-help"></span>蓝色「?」= 页面真帮助（HelpTip，可交付）</span>
+    <span class="legend"><span class="swatch sw-anno"></span>琥珀块 = 原型批注（评审用，<b>开发勿带入页面</b>）</span>
+    <span class="toggle" id="annoToggle">隐藏原型批注</span>
+  </div>
+
+  <div class="page-head">
+    <div class="titles"><h2>租户管理</h2>
+      <span class="help">?<span class="pop">租户增删改、指定管理员、启停。默认租户不可删；停用后其下用户不可登录；删除有用户的租户须先迁移或清理。</span></span>
+    </div>
+    <div class="head-actions">
+      <button class="btn btn-primary" onclick="openDialog('新建租户')">＋ 新建租户</button>
+      <button class="theme-toggle" id="themeToggle" title="切换黑/白主题"><svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg></button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="selbox" onclick="toggleDD('dd-status')"><span id="v-status">状态：全部</span><span class="cv">▾</span>
+      <div class="dd-menu" id="dd-status"><div class="opt on" onclick="pickDD('dd-status','v-status','状态：全部')">全部</div><div class="opt" onclick="pickDD('dd-status','v-status','状态：启用')">启用</div><div class="opt" onclick="pickDD('dd-status','v-status','状态：已停用')">已停用</div></div>
+    </div>
+    <input class="search" placeholder="🔍 搜索租户名" />
+    <button class="btn btn-default" onclick="toast('已按条件查询（原型示意）')">查询</button>
+  </div>
+
+  <div class="main">
+    <div class="anno"><span class="k">◆ 原型说明：</span>与 R5 自助注册（注册首人自动建租户 + 成为租户管理员）、R9 数据隔离联动。「查看用户」跳「用户管理」并按该租户过滤；内置默认租户删除按钮置灰。</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th style="width:180px">租户名</th><th style="width:140px">租户 ID</th><th style="width:92px">状态</th><th style="width:150px">租户管理员</th><th style="width:80px">用户数</th><th style="width:140px">创建时间</th><th style="width:230px">操作</th></tr></thead>
+        <tbody id="tbody">
+          <tr data-builtin="1"><td>默认租户 <span class="tag tag-info">内置</span></td><td class="mono">default</td><td class="st"><span class="tag tag-success">启用</span></td><td>admin</td><td>3</td><td>2026-05-01 10:00</td><td class="ops"></td></tr>
+          <tr><td>企业 A</td><td class="mono">tt_a1b2c3</td><td class="st"><span class="tag tag-success">启用</span></td><td>tenant_a_admin</td><td>12</td><td>2026-06-10 14:22</td><td class="ops"></td></tr>
+          <tr><td>企业 B</td><td class="mono">tt_d4e5f6</td><td class="st"><span class="tag tag-danger">已停用</span></td><td>b_admin</td><td>5</td><td>2026-06-18 09:40</td><td class="ops"></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pager" id="pager">
+      <span>共 24 条</span><span class="pg" data-nav="-1">‹</span><span class="pg active">1</span><span class="pg">2</span><span class="pg" data-nav="1">›</span>
+      <div class="selbox" style="height:28px" onclick="toggleDD('dd-size')"><span id="v-size">20 条/页</span><span class="cv">▾</span>
+        <div class="dd-menu" id="dd-size" style="top:-96px"><div class="opt on" onclick="pickDD('dd-size','v-size','20 条/页')">20 条/页</div><div class="opt" onclick="pickDD('dd-size','v-size','50 条/页')">50 条/页</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="dialog">
+      <div class="dialog-head"><span id="dlgTitle">编辑租户</span><button class="dialog-close" onclick="closeDialog()">✕</button></div>
+      <div class="dialog-body">
+        <div class="form-row"><label>租户名</label><input class="inp" value="企业 A" /></div>
+        <div class="form-row"><label>租户 ID</label><div class="inp ph">tt_a1b2c3（系统生成，不可改）</div></div>
+        <div class="form-row"><label>租户管理员</label><div class="inp ph">tenant_a_admin ▾（从该租户用户中指定）</div></div>
+        <div class="form-row"><label>状态</label><span class="seg"><span class="on">启用</span><span>停用</span></span></div>
+        <div class="anno"><span class="k">◆ 原型说明：</span>停用后该租户下所有用户不可登录（下次校验即失效）。</div>
+      </div>
+      <div class="dialog-foot"><button class="btn btn-default" onclick="closeDialog()">取消</button><button class="btn btn-primary" onclick="closeDialog();toast('已保存（原型示意）')">保存</button></div>
+    </div>
+  </div>
+  <div id="toast"></div>
+
+<script>
+  function renderOps(){
+    document.querySelectorAll('#tbody tr').forEach(function(tr){
+      var st=tr.querySelector('.st').textContent.trim(), builtin=tr.dataset.builtin==='1';
+      var ops='<span class="link" onclick="openDialog(\'编辑租户\')">编辑</span><span class="link" onclick="toast(\'跳用户管理并按该租户过滤（原型示意）\')">查看用户</span>';
+      if(st==='启用') ops+= builtin? '<span class="link muted" title="内置租户不可删">删除</span>' : '<span class="link danger" onclick="toggleStatus(this,\'已停用\')">停用</span>';
+      else ops+='<span class="link" onclick="toggleStatus(this,\'启用\')">启用</span>';
+      tr.querySelector('.ops').innerHTML=ops;
+    });
+  }
+  function toggleStatus(el,to){var tr=el.closest('tr');var cls=to==='启用'?'tag-success':'tag-danger';tr.querySelector('.st').innerHTML='<span class="tag '+cls+'">'+to+'</span>';renderOps();toast('状态已改为「'+to+'」');}
+  function toggleDD(id){closeAllDD(id);document.getElementById(id).classList.toggle('show');}
+  function pickDD(id,valId,val){document.getElementById(valId).textContent=val;var m=document.getElementById(id);m.querySelectorAll('.opt').forEach(o=>o.classList.toggle('on',o.textContent.trim()===val.split('：').pop()));m.classList.remove('show');toast('已筛选：'+val);}
+  function closeAllDD(except){document.querySelectorAll('.dd-menu').forEach(m=>{if(m.id!==except)m.classList.remove('show');});}
+  document.getElementById('pager').onclick=function(e){var p=e.target.closest('.pg');if(!p)return;var nav=p.dataset.nav;var cur=document.querySelector('#pager .pg.active');if(nav){var pages=[...document.querySelectorAll('#pager .pg')].filter(x=>/^\d+$/.test(x.textContent));var i=pages.indexOf(cur)+(+nav);if(i<0||i>=pages.length)return;cur.classList.remove('active');pages[i].classList.add('active');}else if(/^\d+$/.test(p.textContent)){document.querySelectorAll('#pager .pg').forEach(x=>x.classList.remove('active'));p.classList.add('active');}};
+  function openDialog(t){document.getElementById('dlgTitle').textContent=t;document.getElementById('overlay').classList.add('show');}
+  function closeDialog(){document.getElementById('overlay').classList.remove('show');}
+  var tt; function toast(m){var e=document.getElementById('toast');e.textContent=m;e.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('show'),1600);}
+  var sun='<path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/><circle cx="12" cy="12" r="4"/>';
+  var moon='<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>';
+  function icon(){var d=document.documentElement.getAttribute('data-theme')==='dark';document.getElementById('themeIcon').innerHTML=d?sun:moon;}
+  document.getElementById('themeToggle').onclick=function(){var d=document.documentElement.getAttribute('data-theme')==='dark';document.documentElement.setAttribute('data-theme',d?'light':'dark');icon();};
+  document.getElementById('annoToggle').onclick=function(){var off=document.body.classList.toggle('anno-off');this.textContent=off?'显示原型批注':'隐藏原型批注';};
+  document.addEventListener('click',function(e){if(!e.target.closest('.selbox'))closeAllDD('');});
+  renderOps(); icon();
+</script>
+</body>
+</html>

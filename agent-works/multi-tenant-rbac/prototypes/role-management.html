@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>角色管理 原型 · 复盘啦（阶段三 R11）</title>
+<!--
+  页面原型：角色管理（P·R11）。自包含静态 HTML，可交互；右上切黑白主题。
+  作用：需求「7.5 角色管理」视觉/交互事实源 + 前端 RoleManageView.vue 参照。
+  形态：master-detail——左角色列表 / 右「菜单→功能」三级权限树（分组→菜单→功能点，三态勾选）。
+  可交互：切角色、展开/折叠、勾选(父子联动+半选)、全选/清空、切主题、显隐原型批注。
+  说明规范（DESIGN §3/§6）：页面真帮助走 HelpTip「?」蓝色气泡；给评审看的原型批注为琥珀虚线块、可隐藏，勿带入实际页面。
+  可见性：仅系统管理员（租户管理员本期仅分配不自建，R11 遗留项 5）。
+-->
+<style>
+  :root {
+    --pg-page-bg:#f5f7fa; --pg-card-bg:#ffffff; --pg-text:#1f2937; --pg-text-reg:#4b5563;
+    --pg-text-sub:#8a94a6; --pg-border:#e4e7ed; --pg-border-light:#ebeef5; --pg-primary:#409eff;
+    --pg-primary-bg:#ecf5ff; --pg-danger:#dc2626; --pg-success:#2f9e44; --pg-warning:#d97706;
+    --pg-info:#8a94a6; --pg-fill:#f5f7fa; --pg-hover:#f2f6fc; --pg-sel:#ecf5ff; --pg-guide:#dce3ec;
+    --anno-bg:#fff8ec; --anno-border:#e8a33d; --anno-text:#8a5a12;
+  }
+  html[data-theme="dark"] {
+    --pg-page-bg:#000000; --pg-card-bg:#0c0e12; --pg-text:#d2d8e0; --pg-text-reg:#a3abb8;
+    --pg-text-sub:#5a6371; --pg-border:#2e3644; --pg-border-light:#232a34; --pg-primary:#409eff;
+    --pg-primary-bg:#18222f; --pg-danger:#f56c6c; --pg-success:#67c23a; --pg-warning:#e0a83e;
+    --pg-info:#5a6371; --pg-fill:#14181f; --pg-hover:#141b25; --pg-sel:#18222f; --pg-guide:#2b3444;
+    --anno-bg:#241d10; --anno-border:#8a6a2a; --anno-text:#d8b471;
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; }
+  body { font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif; background:var(--pg-page-bg); color:var(--pg-text); font-size:14px; display:flex; flex-direction:column; height:100%; transition:background .2s,color .2s; }
+  .anno-off .anno { display:none !important; }
+  /* 原型批注条（顶部图例） */
+  .anno-bar { display:flex; align-items:center; gap:12px; padding:8px 24px; background:var(--anno-bg); border-bottom:1px dashed var(--anno-border); color:var(--anno-text); font-size:12px; flex:none; }
+  .anno-bar b { font-weight:700; }
+  .anno-bar .legend { display:inline-flex; align-items:center; gap:5px; }
+  .swatch { width:12px; height:12px; border-radius:3px; display:inline-block; }
+  .sw-help { background:var(--pg-primary); }
+  .sw-anno { background:var(--anno-border); }
+  .anno-bar .toggle { margin-left:auto; cursor:pointer; border:1px solid var(--anno-border); border-radius:4px; padding:2px 8px; }
+  /* 原型批注块 */
+  .anno { border-left:3px solid var(--anno-border); background:var(--anno-bg); color:var(--anno-text); font-size:12px; line-height:1.6; padding:6px 10px; border-radius:0 5px 5px 0; margin:8px 0; }
+  .anno .k { font-weight:700; }
+  /* HelpTip「?」（页面真帮助，可交付） */
+  .help { position:relative; display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:6px; border-radius:50%; background:#c0c4cc; color:#fff; font-size:11px; font-weight:700; cursor:help; vertical-align:middle; }
+  .help:hover { background:var(--pg-primary); }
+  .help .pop { display:none; position:absolute; top:22px; left:0; width:300px; background:var(--pg-card-bg); color:var(--pg-text-reg); border:1px solid var(--pg-border); border-radius:6px; box-shadow:0 8px 28px rgba(0,0,0,.18); padding:10px 12px; font-size:12.5px; line-height:1.7; font-weight:400; z-index:30; text-align:left; }
+  .help:hover .pop { display:block; }
+  /* 页头/按钮 */
+  .page-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 24px 10px; flex:none; }
+  .page-head .titles { display:flex; align-items:center; gap:6px; }
+  .page-head h2 { margin:0; font-size:20px; font-weight:700; }
+  .head-actions { display:flex; align-items:center; gap:10px; }
+  .btn { height:32px; padding:0 14px; border-radius:5px; font-size:13px; cursor:pointer; border:1px solid transparent; display:inline-flex; align-items:center; gap:5px; }
+  .btn-primary { background:var(--pg-primary); color:#fff; }
+  .btn-default { background:var(--pg-card-bg); color:var(--pg-text-reg); border-color:var(--pg-border); }
+  .btn-sm { height:28px; padding:0 10px; font-size:12px; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .theme-toggle { width:32px; height:32px; border-radius:5px; border:1px solid var(--pg-border); background:var(--pg-card-bg); color:var(--pg-text-sub); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+  /* master-detail */
+  /* master-detail：窄视口横向滚动（体内），不把右栏压垮（DESIGN §8 桌面 1100+ 为主，更窄优雅退化） */
+  .split { flex:1 1 auto; min-height:0; display:flex; gap:16px; padding:0 24px 16px; overflow-x:auto; }
+  .col { border:1px solid var(--pg-border); border-radius:8px; background:var(--pg-card-bg); display:flex; flex-direction:column; min-height:0; }
+  .col-left { width:288px; flex:none; }
+  .col-right { flex:1 1 auto; min-width:460px; }
+  .col-head { padding:11px 14px; border-bottom:1px solid var(--pg-border-light); font-weight:600; display:flex; align-items:center; justify-content:space-between; }
+  .col-head .mini { font-size:12px; color:var(--pg-text-sub); font-weight:400; }
+  .col-body { flex:1 1 auto; min-height:0; overflow:auto; padding:8px; }
+  /* 角色列表 */
+  .role { padding:10px 12px; border-radius:7px; cursor:pointer; margin-bottom:4px; border:1px solid transparent; }
+  .role:hover { background:var(--pg-hover); }
+  .role.active { background:var(--pg-sel); border-color:color-mix(in srgb,var(--pg-primary) 35%,transparent); }
+  .role .name { font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .role .desc { font-size:12px; color:var(--pg-text-sub); margin-top:3px; }
+  .tag { display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:4px; font-size:11px; border:1px solid transparent; white-space:nowrap; }
+  .tag-lock { color:var(--pg-warning); background:color-mix(in srgb,var(--pg-warning) 14%,transparent); border-color:color-mix(in srgb,var(--pg-warning) 34%,transparent); }
+  .tag-builtin { color:var(--pg-info); background:var(--pg-fill); border-color:var(--pg-border); }
+  .tag-paid { color:var(--pg-primary); background:var(--pg-primary-bg); border-color:color-mix(in srgb,var(--pg-primary) 25%,transparent); }
+  /* 右栏详情条 */
+  .detail-bar { padding:12px 16px; border-bottom:1px solid var(--pg-border-light); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .detail-bar .rname { font-size:15px; font-weight:700; display:flex; align-items:center; }
+  .detail-bar .rmeta { font-size:12px; color:var(--pg-text-sub); margin-top:2px; }
+  .lock-note { font-size:12px; color:var(--pg-warning); }
+  /* ── 重构后的三级权限树 ── */
+  .tree { padding:10px 14px 4px; }
+  .tw-hint { font-size:12px; color:var(--pg-text-sub); padding:0 2px 8px; display:flex; align-items:center; gap:8px; }
+  .legend-chip { display:inline-flex; align-items:center; gap:4px; }
+  .dot { width:9px; height:9px; border-radius:2px; display:inline-block; }
+  .dot-g { background:var(--pg-primary); } .dot-m { background:var(--pg-success); } .dot-f { background:var(--pg-warning); }
+  /* 分组节点（一级） */
+  .grp { border:1px solid var(--pg-border-light); border-radius:8px; margin-bottom:10px; overflow:hidden; }
+  .grp-head { display:flex; align-items:center; gap:9px; padding:10px 12px; background:var(--pg-fill); cursor:pointer; font-weight:600; }
+  .grp-head .caret { width:14px; color:var(--pg-text-sub); transition:transform .15s; }
+  .grp.collapsed .caret { transform:rotate(-90deg); }
+  .grp.collapsed .grp-body { display:none; }
+  .grp-head .gcount { margin-left:auto; font-size:11px; color:var(--pg-text-sub); background:var(--pg-card-bg); border:1px solid var(--pg-border); border-radius:10px; padding:1px 8px; }
+  .grp-body { padding:4px 0 6px; }
+  /* 菜单节点（二级，带缩进引导线） */
+  .menu { margin-left:20px; border-left:2px solid var(--pg-guide); padding-left:12px; }
+  .menu-row { display:flex; align-items:center; gap:9px; padding:7px 10px 7px 0; }
+  .menu-row .mlabel { font-size:13px; display:flex; align-items:center; gap:6px; }
+  .menu-row .mlabel .ico { color:var(--pg-success); font-size:11px; }
+  /* 功能点（三级，chips 面板） */
+  .funcs { margin:2px 0 6px 26px; display:flex; flex-wrap:wrap; gap:8px 16px; padding:8px 12px; background:var(--pg-fill); border:1px dashed var(--pg-border); border-radius:6px; }
+  .funcs.empty { display:none; }
+  .func { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--pg-text-reg); }
+  .func .ftype { font-size:10px; color:var(--pg-text-sub); border:1px solid var(--pg-border); border-radius:3px; padding:0 4px; }
+  .func .ftype.api { color:var(--pg-success); border-color:color-mix(in srgb,var(--pg-success) 40%,transparent); }
+  .func .ftype.btn { color:var(--pg-warning); border-color:color-mix(in srgb,var(--pg-warning) 40%,transparent); }
+  /* 自绘三态复选框 */
+  .cb { width:16px; height:16px; border:1.5px solid var(--pg-border); border-radius:4px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; flex:none; background:var(--pg-card-bg); color:#fff; font-size:11px; }
+  .cb.on { background:var(--pg-primary); border-color:var(--pg-primary); }
+  .cb.half { background:var(--pg-primary); border-color:var(--pg-primary); }
+  .cb.half::after { content:""; width:8px; height:2px; background:#fff; border-radius:1px; }
+  .cb.on::after { content:"✓"; }
+  .cb.disabled { background:var(--pg-fill); border-color:var(--pg-border); cursor:not-allowed; color:var(--pg-border); }
+  .disabled-row { opacity:.55; }
+  .detail-foot { border-top:1px solid var(--pg-border-light); padding:12px 16px; display:flex; align-items:center; justify-content:space-between; }
+  .dirty { font-size:12px; color:var(--pg-warning); }
+  .dirty.hidden { visibility:hidden; }
+  /* 弹窗（新建/重命名角色） */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:flex-start; justify-content:center; padding-top:120px; z-index:40; }
+  .overlay.show { display:flex; }
+  .dialog { width:min(420px,92vw); background:var(--pg-card-bg); border:1px solid var(--pg-border); border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+  .dialog-head { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--pg-border-light); font-weight:600; }
+  .dialog-close { cursor:pointer; color:var(--pg-text-sub); border:none; background:none; font-size:15px; }
+  .dialog-body { padding:18px; max-height:calc(100vh - 220px); overflow:auto; }
+  .form-row { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .form-row:last-child { margin-bottom:0; }
+  .form-row label { width:64px; text-align:right; color:var(--pg-text-reg); font-size:13px; flex:none; white-space:nowrap; }
+  .inp { flex:1; height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; outline:none; }
+  .inp::placeholder { color:var(--pg-text-sub); }
+  .dialog-foot { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--pg-border-light); }
+  #toast { position:fixed; left:50%; bottom:32px; transform:translateX(-50%); background:var(--pg-text); color:var(--pg-card-bg); font-size:13px; padding:8px 16px; border-radius:6px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:99; } #toast.show { opacity:.92; }
+</style>
+</head>
+<body>
+  <div class="anno-bar">
+    <b>原型说明</b>
+    <span class="legend"><span class="swatch sw-help"></span>蓝色「?」= 页面真帮助（HelpTip，可交付）</span>
+    <span class="legend"><span class="swatch sw-anno"></span>琥珀块 = 原型批注（评审用，<b>开发勿带入页面</b>）</span>
+    <span class="toggle" id="annoToggle">隐藏原型批注</span>
+  </div>
+
+  <div class="page-head">
+    <div class="titles"><h2>角色管理</h2>
+      <span class="help">?<span class="pop">角色勾选菜单与功能点后保存，拥有该角色的用户权限即时生效（无权按钮消失 / 接口返回 403）。内置系统管理员为超管，权限锁定不可改。</span></span>
+    </div>
+    <div class="head-actions">
+      <button class="btn btn-primary" onclick="openDialog('新建角色')">＋ 新建角色</button>
+      <button class="theme-toggle" id="themeToggle" title="切换黑/白主题"><svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg></button>
+    </div>
+  </div>
+
+  <div class="split">
+    <!-- 左：角色列表（可点切换） -->
+    <div class="col col-left">
+      <div class="col-head">角色 <span class="mini">5</span></div>
+      <div class="col-body" id="roleList">
+        <div class="role" data-role="系统管理员" data-meta="角色码 system · 超管，权限锁定" data-lock="1"><div class="name">系统管理员 <span class="tag tag-lock">超管·锁定</span></div><div class="desc">平台全局最高权限，内置不可删/权限锁定</div></div>
+        <div class="role active" data-role="租户管理员" data-meta="角色码 tenant_admin · 关联用户 12 名"><div class="name">租户管理员 <span class="tag tag-builtin">内置</span></div><div class="desc">本租户内用户/审计管理</div></div>
+        <div class="role" data-role="普通用户" data-meta="角色码 normal · 关联用户 143 名"><div class="name">普通用户 <span class="tag tag-builtin">内置</span></div><div class="desc">本租户业务功能，默认注册角色</div></div>
+        <div class="role" data-role="付费会员" data-meta="角色码 paid · 付费类型预留"><div class="name">付费会员 <span class="tag tag-paid">付费·预留</span></div><div class="desc">付费角色类型预留，本阶段不做创建入口</div></div>
+        <div class="role" data-role="数据分析员" data-meta="角色码 analyst · 自定义 · 关联用户 4 名"><div class="name">数据分析员 <span class="tag tag-builtin">自定义</span></div><div class="desc">系统管理员自建角色示例</div></div>
+      </div>
+    </div>
+
+    <!-- 右：权限树 -->
+    <div class="col col-right">
+      <div class="detail-bar">
+        <div>
+          <div class="rname" id="rname">租户管理员
+            <span class="help">?<span class="pop">左侧切换角色查看/编辑其权限。超管角色权限树置灰不可改。付费/自定义角色可自由勾选。</span></span>
+          </div>
+          <div class="rmeta" id="rmeta">角色码 tenant_admin · 关联用户 12 名</div>
+        </div>
+        <div class="head-actions">
+          <button class="btn btn-default btn-sm" onclick="openDialog('重命名角色')">重命名</button>
+          <button class="btn btn-default btn-sm" onclick="setAll(true)">全选</button>
+          <button class="btn btn-default btn-sm" onclick="setAll(false)">清空</button>
+        </div>
+      </div>
+      <div class="col-body">
+        <div class="tree" id="tree">
+          <div class="tw-hint">
+            <span class="legend-chip"><span class="dot dot-g"></span>分组</span>
+            <span class="legend-chip"><span class="dot dot-m"></span>菜单</span>
+            <span class="legend-chip"><span class="dot dot-f"></span>功能点(按钮/接口)</span>
+            <span style="margin-left:auto">勾选父级级联子级，子级部分选中父级显半选</span>
+          </div>
+
+          <!-- 分组：最新行情 -->
+          <div class="grp" data-grp>
+            <div class="grp-head" onclick="toggleGrp(this)">
+              <span class="caret">▾</span>
+              <span class="cb on" data-cb="grp" onclick="event.stopPropagation();clickCb(this)"></span>
+              <span>📈 最新行情</span>
+              <span class="gcount">分组</span>
+            </div>
+            <div class="grp-body">
+              <div class="menu">
+                <div class="menu-row">
+                  <span class="cb on" data-cb="menu" onclick="clickCb(this)"></span>
+                  <span class="mlabel"><span class="ico">●</span>每日榜单</span>
+                </div>
+                <div class="funcs">
+                  <span class="func"><span class="cb on" data-cb="func" onclick="clickCb(this)"></span>查看榜单 <span class="ftype api">接口</span></span>
+                  <span class="func"><span class="cb on" data-cb="func" onclick="clickCb(this)"></span>导出 CSV <span class="ftype btn">按钮</span></span>
+                  <span class="func"><span class="cb on" data-cb="func" onclick="clickCb(this)"></span>切换评分规则 <span class="ftype btn">按钮</span></span>
+                </div>
+                <div class="menu-row">
+                  <span class="cb on" data-cb="menu" onclick="clickCb(this)"></span>
+                  <span class="mlabel"><span class="ico">●</span>个股行情</span>
+                </div>
+                <div class="funcs">
+                  <span class="func"><span class="cb on" data-cb="func" onclick="clickCb(this)"></span>查看个股 <span class="ftype api">接口</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 分组：策略 -->
+          <div class="grp" data-grp>
+            <div class="grp-head" onclick="toggleGrp(this)">
+              <span class="caret">▾</span>
+              <span class="cb half" data-cb="grp" onclick="event.stopPropagation();clickCb(this)"></span>
+              <span>🧮 策略中心</span>
+              <span class="gcount">分组</span>
+            </div>
+            <div class="grp-body">
+              <div class="menu">
+                <div class="menu-row">
+                  <span class="cb on" data-cb="menu" onclick="clickCb(this)"></span>
+                  <span class="mlabel"><span class="ico">●</span>策略筛选</span>
+                </div>
+                <div class="funcs">
+                  <span class="func"><span class="cb on" data-cb="func" onclick="clickCb(this)"></span>运行筛选 <span class="ftype api">接口</span></span>
+                  <span class="func"><span class="cb on" data-cb="func" onclick="clickCb(this)"></span>保存方案 <span class="ftype btn">按钮</span></span>
+                  <span class="func"><span class="cb" data-cb="func" onclick="clickCb(this)"></span>删除方案 <span class="ftype btn">按钮</span></span>
+                </div>
+                <div class="menu-row">
+                  <span class="cb" data-cb="menu" onclick="clickCb(this)"></span>
+                  <span class="mlabel"><span class="ico">●</span>策略回测</span>
+                </div>
+                <div class="funcs">
+                  <span class="func"><span class="cb" data-cb="func" onclick="clickCb(this)"></span>运行回测 <span class="ftype api">接口</span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 分组：系统管理（仅系统管理员，置灰） -->
+          <div class="grp collapsed disabled-row" data-grp data-locked>
+            <div class="grp-head" onclick="toggleGrp(this)">
+              <span class="caret">▾</span>
+              <span class="cb disabled" data-cb="grp"></span>
+              <span>⚙️ 系统管理</span>
+              <span class="tag tag-lock" style="margin-left:auto">仅系统管理员</span>
+            </div>
+            <div class="grp-body">
+              <div class="menu">
+                <div class="menu-row"><span class="cb disabled" data-cb="menu"></span><span class="mlabel"><span class="ico">●</span>权限管理 / 数据管理 / 配置管理</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="anno"><span class="k">◆ 原型说明：</span>权限树数据来自 R12 菜单 + R13 功能点（此处消费、非在此维护）；「系统管理」组仅 system 角色可授权，其它角色置灰。保存写 sys_role_menu / sys_role_resource 关联并 bump 相关用户 perm_ver。</div>
+      </div>
+      <div class="detail-foot">
+        <span class="dirty hidden" id="dirty">● 有未保存修改</span>
+        <div class="head-actions"><button class="btn btn-default" onclick="resetDirty()">还原</button><button class="btn btn-primary" onclick="saveRole()">保存并刷新权限</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- 弹窗 -->
+  <div class="overlay" id="overlay">
+    <div class="dialog">
+      <div class="dialog-head"><span id="dlgTitle">新建角色</span><button class="dialog-close" onclick="closeDialog()">✕</button></div>
+      <div class="dialog-body">
+        <div class="form-row"><label>角色名</label><input class="inp" placeholder="如：数据分析员" /></div>
+        <div class="form-row"><label>角色码</label><input class="inp" placeholder="如：analyst（全局唯一，创建后不可改）" /></div>
+        <div class="form-row"><label>描述</label><input class="inp" placeholder="可选" /></div>
+      </div>
+      <div class="dialog-foot"><button class="btn btn-default" onclick="closeDialog()">取消</button><button class="btn btn-primary" onclick="closeDialog()">保存</button></div>
+    </div>
+  </div>
+
+<script>
+  // 主题
+  var sun='<path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/><circle cx="12" cy="12" r="4"/>';
+  var moon='<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>';
+  function icon(){var d=document.documentElement.getAttribute('data-theme')==='dark';document.getElementById('themeIcon').innerHTML=d?sun:moon;}
+  document.getElementById('themeToggle').onclick=function(){var d=document.documentElement.getAttribute('data-theme')==='dark';document.documentElement.setAttribute('data-theme',d?'light':'dark');icon();};icon();
+  // 原型批注显隐
+  document.getElementById('annoToggle').onclick=function(){var off=document.body.classList.toggle('anno-off');this.textContent=off?'显示原型批注':'隐藏原型批注';};
+  // 角色切换
+  document.getElementById('roleList').onclick=function(e){var r=e.target.closest('.role');if(!r)return;document.querySelectorAll('.role').forEach(x=>x.classList.remove('active'));r.classList.add('active');document.getElementById('rname').firstChild.textContent=r.dataset.role+' ';document.getElementById('rmeta').textContent=r.dataset.meta;};
+  // 分组折叠
+  function toggleGrp(h){h.parentElement.classList.toggle('collapsed');}
+  // 三态复选框：func 自身切换；menu 联动其 funcs；grp 联动全组；上溯回算半选
+  function markDirty(){document.getElementById('dirty').classList.remove('hidden');}
+  function setCb(el,state){ // state: true / false / 'half'
+    el.classList.remove('on','half');
+    if(state==='half')el.classList.add('half'); else if(state)el.classList.add('on');
+  }
+  function isOn(el){return el.classList.contains('on');}
+  function clickCb(el){
+    if(el.classList.contains('disabled'))return;
+    var kind=el.dataset.cb, target=!isOn(el)&&!el.classList.contains('half');
+    if(kind==='func'){ setCb(el,target); reMenu(el.closest('.menu')); }
+    else if(kind==='menu'){ var mr=el.closest('.menu-row'); setCb(el,target); var fs=mr.nextElementSibling; if(fs&&fs.classList.contains('funcs'))fs.querySelectorAll('[data-cb=func]').forEach(f=>setCb(f,target)); reGrp(el.closest('.grp')); }
+    else if(kind==='grp'){ var g=el.closest('.grp'); setCb(el,target); g.querySelectorAll('[data-cb=menu],[data-cb=func]').forEach(c=>{if(!c.classList.contains('disabled'))setCb(c,target);}); }
+    markDirty();
+  }
+  function reMenu(menu){ // 回算该 menu 下每个 menu-row 的态 + 上溯 grp
+    menu.querySelectorAll('.menu-row').forEach(function(mr){
+      var mcb=mr.querySelector('[data-cb=menu]'); var fs=mr.nextElementSibling;
+      if(fs&&fs.classList.contains('funcs')){var fcbs=[...fs.querySelectorAll('[data-cb=func]')];var on=fcbs.filter(isOn).length;setCb(mcb, on===0?false: on===fcbs.length?true:'half');}
+    });
+    reGrp(menu.closest('.grp'));
+  }
+  function reGrp(g){ var cbs=[...g.querySelectorAll('[data-cb=menu],[data-cb=func]')].filter(c=>!c.classList.contains('disabled'));var on=cbs.filter(isOn).length;var half=cbs.some(c=>c.classList.contains('half'));var gcb=g.querySelector('[data-cb=grp]');if(gcb&&!gcb.classList.contains('disabled'))setCb(gcb, on===0&&!half?false: on===cbs.length?true:'half'); }
+  function setAll(v){ document.querySelectorAll('.grp:not([data-locked])').forEach(function(g){g.querySelectorAll('[data-cb]').forEach(c=>{if(!c.classList.contains('disabled'))setCb(c,v);});}); markDirty(); }
+  function resetDirty(){document.getElementById('dirty').classList.add('hidden');toast('已还原');}
+  function saveRole(){document.getElementById('dirty').classList.add('hidden');toast('已保存并刷新该角色用户权限（原型示意）');}
+  var tt; function toast(m){var e=document.getElementById('toast');e.textContent=m;e.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('show'),1600);}
+  // 弹窗
+  function openDialog(t){document.getElementById('dlgTitle').textContent=t;document.getElementById('overlay').classList.add('show');}
+  function closeDialog(){document.getElementById('overlay').classList.remove('show');}
+</script>
+</body>
+</html>
