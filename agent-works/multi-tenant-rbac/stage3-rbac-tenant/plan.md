@@ -154,10 +154,10 @@
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)已完成；角色/菜单/功能/租户接口守卫(T6–T9)、按钮级 v-permission(T15)待做 |
+| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6·CRUD/授权 require_system·assignable require_perm)已完成；菜单/功能/租户接口守卫(T7–T9)、按钮级 v-permission(T15)待做 |
 | R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 进行中 | **部分覆盖** | 用户管理域过滤(T5,system 全局/tenant_admin 本租户/跨租户 404)已落地；租户管理域过滤(T9)+多账号交叉核查(T16)待做；R9 端到端资产隔离非本阶段新做 |
 | R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 进行中 | 一致 | 后端(T5)完成:多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
-| R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 待开始 | 一致 | 租管仅分配不自建；system-only 码禁勾选 |
+| R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 进行中 | 一致 | 后端(T6)完成：角色 CRUD/授权(全删重插+bump)/内置保护/超管锁定/system-only 码禁授/assignable 分流；`GET /api/roles/{id}/perms` 供前端权限树回显。角色页(T12·全选/清空/还原+树)待做 |
 | R12 | 菜单管理(树CRUD+排序+图标) | menu API+repo + 菜单页 + IconPicker + SideMenu 改造 | T7,T13,T15 | 待开始 | 一致 | icon 存 EP 图标名；menuConfig 降兜底(fail-closed) |
 | R13 | 功能管理(资源登记) | resource API+repo + 功能子表 | T8,T13 | 待开始 | 一致 | 与 R8/R11 闭环 |
 | R14 | 租户管理(CRUD+管理员+启停) | tenant API+repo + 租户页(去勾选列) | T9,T14 | 待开始 | 一致 | 默认租户保护；停用即时踢下线(bump 该租户全部用户，非仅拦新登录) |
@@ -231,16 +231,16 @@
 - 完成标准：R10 功能点全通过 + 隔离回归。**（已达成：16 个 T5 用例全通过；全量 318 passed）**
 
 ### 6.6 任务 T6：角色管理 API + 仓库（R11）
-- 状态：待开始
+- 状态：已完成
 - 依赖：T4
-- 涉及文件/模块：`backend/api/roles.py`(新)、`backend/storage/role_repository.py`(新)
+- 涉及文件/模块：`backend/api/roles.py`(新)、`backend/services/role_admin_service.py`(**新增**，编排/守卫/失效，沿用 user_admin_service 分层，api 保持薄层)、`backend/storage/role_repository.py`(T5 只读部分之上扩 CRUD/授权/内置·成员·system-only 检测)、`backend/main.py`(注册 roles_router)、`backend/tests/test_rbac_roles.py`(产出，15 用例)
 - 目标：角色 CRUD + 授权（全选/清空/还原）+ 内置保护 + 授权 bump。
-- 操作：`GET/POST/PUT/DELETE /api/roles`、`PUT /api/roles/{id}/perms`（写 role_menu/role_resource + `bump_users_of_roles([id])`）——均挂 **require_system**；内置不可删、超管 is_locked 不可改、system-only 码拒绝授予。**另加 `GET /api/roles/assignable`（挂 `require_perm("user:list")`，非 require_system）**（Codex P1 + 二轮复核）：**按调用者角色分流**——① `ctx.is_system`：返回**除 system 超管外的全部可分配角色**（系统预设 tenant_admin/normal/paid **＋系统管理员自建的 custom 角色**），承接 R11「新建角色可被用户分配」；② tenant_admin：**仅系统预设可分配角色**（is_builtin 且 kind∈{tenant_admin,normal,paid}），**不含 system 超管、不含任何 custom**（自建角色仅 system 可分配）。供用户管理页角色下拉，闭合 R10/R11 分配链路。
-- 产出：角色接口(含 assignable 只读) + 仓库 + bump 联动。
-- 影响范围：新 router/repo；assignable 供 T5/T11 用户页消费。
-- 边界与异常：名/code 唯一；删被 sys_user_role 引用角色 RESTRICT 阻止 + 应用层提示；超管锁定；assignable 分流——system 得含自建 custom、tenant_admin 严格过滤到系统预设（不含 system/custom）。
-- 验证方式：接口测试——CRUD、授权保存(全选/清空)、内置保护、授权后关联用户 perm_ver 自增(下次 401)、system-only 码不可授；**assignable 两条分流用例：① system 调用可见系统管理员自建的 custom 角色；② tenant_admin 调用不含任何 custom、不含 system，仅系统预设**。
-- 完成标准：R11 功能点全通过。
+- 操作：`GET/POST/PUT/DELETE /api/roles`、`GET/PUT /api/roles/{id}/perms`（写 role_menu/role_resource 单事务全删重插 + `bump_users_of_roles([id])`）——均挂 **require_system**；内置不可删、超管 is_locked 不可改/不可授、system-only 码拒绝授予、code 撞内置/重复拒。**另加 `GET /api/roles/assignable`（挂 `require_perm("user:list")`，非 require_system）**（Codex P1 + 二轮复核）：**按调用者角色分流**——① `ctx.is_system`：返回**除 system 超管外的全部可分配角色**（系统预设 tenant_admin/normal/paid **＋系统管理员自建的 custom 角色**），承接 R11「新建角色可被用户分配」；② tenant_admin：**仅系统预设可分配角色**（is_builtin 且 kind∈{tenant_admin,normal,paid}），**不含 system 超管、不含任何 custom**（自建角色仅 system 可分配）。供用户管理页角色下拉，闭合 R10/R11 分配链路。
+- 产出：角色接口(含 assignable 只读 + get/set perms) + 仓库 CRUD/授权 + service 编排 + bump 联动。
+- 影响范围：新 router/service/repo；assignable 供 T5/T11 用户页消费；`GET /api/roles/{id}/perms` 供 T12 权限树回显。
+- 边界与异常：名/code 唯一（撞内置码亦拒）；删被 sys_user_role 引用角色——应用层先查 member_count 给友好提示（避免 FK RESTRICT 直接抛库错 500）；超管锁定名称/描述与授权均拒；system-only 码（归属 visible='system' 菜单的功能，如 role:*/menu:*/tenant:*）不可授非 system 角色；set_grants 前校验 menu/resource id 存在性（非法 id 直接 ValidationError 而非 FK 抛错）。
+- 验证方式：接口测试——CRUD、授权保存(全选/清空)、内置保护(删内置 403/改超管 403/超管授权 403)、授权后关联用户 perm_ver 自增(下次 401)、system-only 码不可授(403)、删有成员角色拒(4000)、撞内置/重复 code 拒(4000)；**assignable 两条分流用例：① system 调用可见系统管理员自建的 custom 角色；② tenant_admin 调用不含任何 custom、不含 system，仅系统预设**。
+- 完成标准：R11 后端功能点全通过。**已达成**：15 个 T6 用例全通过；全量 **333 passed**（318→333）。前端角色管理页（T12）待做。
 
 ### 6.7 任务 T7：菜单管理 API + 仓库（R12，含变更 bump）
 - 状态：待开始

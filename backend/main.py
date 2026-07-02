@@ -37,6 +37,7 @@ from backend.api.data_tasks import router as data_tasks_router
 from backend.api.data_admin import router as data_admin_router
 from backend.api.training import router as training_router
 from backend.api.users import router as users_router
+from backend.api.roles import router as roles_router
 from backend.common.exceptions import AIStocksError
 from backend.common.logging import get_logger
 from backend.config import PROJECT_ROOT, get_settings
@@ -105,6 +106,8 @@ def create_app() -> FastAPI:
     app.include_router(training_router)
     # 用户管理（stage3·R10）：逐端点已挂 require_perm 精确码，不整 router gate（tenant_admin 经授权可用）
     app.include_router(users_router)
+    # 角色管理（stage3·R11）：逐端点已挂守卫（CRUD/授权 require_system，assignable require_perm），不整 router gate
+    app.include_router(roles_router)
 
     # ── 前端静态托管（M4：frontend/dist 存在时生效）──
     # 关键：SPA 前端路由（/board、/stocks/xxx）在客户端，刷新/深链接需回退到
