@@ -154,11 +154,11 @@
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6·CRUD/授权 require_system·assignable require_perm)已完成；菜单/功能/租户接口守卫(T7–T9)、按钮级 v-permission(T15)待做 |
+| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6)+菜单接口守卫(T7·整 router require_system)已完成；功能/租户接口守卫(T8–T9)、按钮级 v-permission(T15)待做 |
 | R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 进行中 | **部分覆盖** | 用户管理域过滤(T5,system 全局/tenant_admin 本租户/跨租户 404)已落地；租户管理域过滤(T9)+多账号交叉核查(T16)待做；R9 端到端资产隔离非本阶段新做 |
 | R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 进行中 | 一致 | 后端(T5)完成:多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
 | R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 进行中 | 一致 | 后端(T6)完成：角色 CRUD/授权(全删重插+bump)/内置保护/超管锁定/system-only 码禁授/assignable 分流；`GET /api/roles/{id}/perms` 供前端权限树回显。角色页(T12·全选/清空/还原+树)待做 |
-| R12 | 菜单管理(树CRUD+排序+图标) | menu API+repo + 菜单页 + IconPicker + SideMenu 改造 | T7,T13,T15 | 待开始 | 一致 | icon 存 EP 图标名；menuConfig 降兜底(fail-closed) |
+| R12 | 菜单管理(树CRUD+排序+图标) | menu API+repo + 菜单页 + IconPicker + SideMenu 改造 | T7,T13,T15 | 进行中 | 一致 | 后端(T7)完成：菜单树 CRUD/排序/图标名/内置保护/防成环/删除·可见性变更 bump；`{menu_id:path}` 兼容含斜杠内置 id。前端菜单页/IconPicker/SideMenu 改造(T13/T15)待做 |
 | R13 | 功能管理(资源登记) | resource API+repo + 功能子表 | T8,T13 | 待开始 | 一致 | 与 R8/R11 闭环 |
 | R14 | 租户管理(CRUD+管理员+启停) | tenant API+repo + 租户页(去勾选列) | T9,T14 | 待开始 | 一致 | 默认租户保护；停用即时踢下线(bump 该租户全部用户，非仅拦新登录) |
 | R5 | 注册绑租管角色 | register 改写 sys_user_role(保留自动登录) | T5 | 已完成 | 一致 | register_tenant_and_admin 同事务绑 tenant_admin |
@@ -243,16 +243,16 @@
 - 完成标准：R11 后端功能点全通过。**已达成**：15 个 T6 用例全通过；全量 **333 passed**（318→333）。前端角色管理页（T12）待做。
 
 ### 6.7 任务 T7：菜单管理 API + 仓库（R12，含变更 bump）
-- 状态：待开始
+- 状态：已完成
 - 依赖：T4,T2
-- 涉及文件/模块：`backend/api/menus.py`(新)、`backend/storage/menu_repository.py`(新)
+- 涉及文件/模块：`backend/api/menus.py`(新)、`backend/services/menu_admin_service.py`(**新增**，编排/校验/失效，沿用 admin service 分层)、`backend/storage/menu_repository.py`(新)、`backend/main.py`(注册 menus_router，整 router 挂 require_system)、`backend/tests/test_rbac_menus.py`(产出，15 用例)
 - 目标：菜单树 CRUD + 排序 + 图标名 + **变更缓存失效**（Codex P1）。
-- 操作：`GET /api/menus`(树)、`POST/PUT/DELETE`、`/reorder`；均挂 **require_system**；icon 存 EP 图标名；**删除/可见性变更 → `bump_users_of_menu(menu_id)`**（查引用该菜单的角色→用户）；删有子节点 RESTRICT + 应用层级联确认。
-- 产出：菜单接口 + 仓库 + bump 联动。
-- 影响范围：新 router/repo。
-- 边界与异常：route_path 唯一且匹前端路由(非法告警)；删有子节点/被引用提示影响。
-- 验证方式：接口测试——树 CRUD、排序、唯一、级联保护、**删除/改可见性后引用用户 perm_ver 自增**。
-- 完成标准：R12 功能点全通过 + 缓存失效验证。
+- 操作：`GET /api/menus`(树)、`POST/PUT/DELETE`、`/reorder`；均挂 **require_system**；icon 存 EP 图标名；**删除/可见性变更 → `bump_users_of_menu(menu_id)`**（查引用该菜单的角色→用户 ∪ 全部 system 用户）；删有子节点 RESTRICT + 应用层级联确认（先查 child_count 给提示，避免 FK 抛库错）。删除**先 bump 再删**（删后 role_menu CASCADE 清空则查不到引用用户）。
+- 产出：菜单接口 + 仓库 + service 编排 + bump 联动。
+- 影响范围：新 router/service/repo。
+- 边界与异常：route_path 唯一（非空叶子间）；leaf 须有 route、group 强制 route=None；code 全局唯一且建后不可改；**内置菜单不可删**（对应已发布前端页面/路由，可改标题/图标/可见性）；移动节点防成环（目标父不得为自身或子孙）；**新建为加性变更不 bump**（新节点无引用，system 按缓存 TTL 自然刷新，避免每次加菜单强制管理员重登；纯展示编辑/排序同理不 bump——对齐 plan §6.7「仅删除/可见性变更失效」口径）。**关键：`{menu_id:path}` 路径转换器**——内置 seed id=code 含斜杠（`/screen`/`/system/users`），普通 str 段无法匹配（404/405），:path 可捕获且不与 `/menus/reorder`(POST) 冲突。
+- 验证方式：接口测试——树 CRUD、排序、唯一(code/route)、级联保护、内置保护(删内置 403)、移动防成环、**删除/改可见性后引用用户 perm_ver 自增**、纯改名不 bump。
+- 完成标准：R12 功能点全通过 + 缓存失效验证。**已达成**：15 个 T7 用例全通过；全量 **348 passed**（333→348）。前端菜单&功能页（T13）待做。
 
 ### 6.8 任务 T8：功能管理 API + 仓库（R13，含变更 bump）
 - 状态：待开始
