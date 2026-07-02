@@ -166,25 +166,6 @@
 | —(技术依赖) | 瘦令牌+解析缓存+失效+上下文 | perm_resolver + Redis 缓存 + bump 全触发点 + JWT/context | T2,T3 | 已完成 | 超范围(必要依赖) | 多角色运行时前提；require_perm/require_system 守卫(T4)一并落地 |
 | —(技术依赖) | /me 填充 + 前端权限底座 | /me menus+perms + v-permission + SideMenu(fail-closed) + 守卫 | T10,T15 | 进行中 | 超范围(必要依赖) | /me 已填 roles/menus/permissions(T3)；v-permission/SideMenu/守卫(T15)、/me 菜单树细化(T10)待做 |
 
-### 5.1 实施进度快照（滚动更新，反映真实落地）
-
-> 内核四件套（T1–T4）+ 用户管理后端（T5）已落地并各自单测通过；测试基线由 273 → **318 passed**。
-> 服务起停由用户在本机终端操作（JWT 密钥仅在其终端环境变量）。
-
-| 任务 | 状态 | 提交 | 实际落地要点 | 新增/改动关键文件 | 测试 |
-| --- | --- | --- | --- | --- | --- |
-| T1 权限数据模型+seed | 已完成 | `d05ef60` | 6 表(FK RESTRICT/CASCADE+反查索引)；seed 4 内置角色/22 菜单(EP 图标名)/24 功能码/默认授权(仅首次)；存量按 role_code 补 user_role；对开发 PG 实跑+幂等复跑校验 | `pg_ddl.py`、`constants.py`、`rbac-schema.sql` | +10 |
-| T2 权限解析+缓存+失效 | 已完成 | `67a5e52` | `perm_resolver.resolve`(多角色并集/system 全量)；`bump_and_invalidate`+`bump_users_of_roles/of_menu/of_resource/of_tenant`(菜单/资源变更额外 bump 全部 system 用户)；session_store 加纯 Redis perms 缓存(fail-closed) | `perm_resolver.py`(新)、`session_store.py` | +11 |
-| T3 瘦令牌+上下文/中间件 | 已完成 | `f115106` | 令牌去 role claim；`AuthContext`→roles/is_system/menus/resources；中间件 `load_perms` 注入(503 fail-closed)；`me()` 填 roles/menus/permissions；`require_system` 判 is_system | `jwt_tokens.py`、`context.py`、`middleware.py`、`deps.py`、`auth_service.py` | 回归绿 |
-| T4 require_perm 守卫 | 已完成 | `75fb1db` | `require_perm(code)` 工厂依赖(system 恒过/精确匹配不通配/无上下文 401)；守卫分工:管理接口 require_system、用户接口 require_perm | `deps.py` | +8 |
-| T5 用户管理 API+编排 | 已完成 | `e0ff648` | 6 端点逐挂精确码；`UserAdminService`(域范围/可分配校验/自身与最后管理员保护/bump)；`role_repository` 只读(assignable 分流)提前落地；register 绑 sys_user_role | `api/users.py`、`services/user_admin_service.py`、`role_repository.py`(新)、`user_repository.py` | +16 |
-| T6–T17 | 待开始 | — | 角色/菜单/功能/租户接口 + 4 前端页 + v-permission/SideMenu + 隔离核查 + 文档收尾 | — | — |
-
-**与计划的偏差/微调（已在对应任务段与 §4.2 记录）**：
-- bump 失效编排放 `perm_resolver`（非计划所写的 session_store）——因 bump 需查 PG，而 session_store 铁律「不耦合 PG」。
-- `role_repository.py` 只读部分在 T5 提前建（计划列在 T6）——用户管理可分配校验与 T6 的 assignable 端点共用同一分流逻辑，避免重复；T6 只扩 CRUD/授权。
-- 菜单/资源结构变更额外 bump 全部 system 用户（计划触发点全集的补强，因超管解析为全量视图）。
-
 ## 6. 详细实施步骤与进度追踪
 
 > 顺序：内核（T1→T2→T3→T4）→ 后端 API（T5–T9）→ T10 /me → 前端（T11–T15）→ T16 隔离核查 → T17 测试+文档。
