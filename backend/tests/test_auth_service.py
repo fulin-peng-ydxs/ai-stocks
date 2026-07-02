@@ -34,6 +34,15 @@ def _ip() -> str:
     return f"ip_{uuid.uuid4().hex[:10]}"   # 每次唯一，隔离限流键
 
 
+def _all_indexes(tree: list) -> set[str]:
+    """递归收集菜单树全部节点 index（分组 code + 叶子 route_path）。"""
+    out: set[str] = set()
+    for n in tree:
+        out.add(n["index"])
+        out |= _all_indexes(n.get("children", []))
+    return out
+
+
 def _register(svc, accounts, ip):
     acc = f"pytest_auth_{uuid.uuid4().hex[:10]}"
     email = f"{acc}@ex.com"
@@ -76,12 +85,16 @@ def test_me_and_claims(auth_env):
     claims = svc.claims_from_bearer("Bearer " + out["access_token"])
     assert "role" not in claims   # 瘦令牌：角色不入 token
     me = svc.me(claims["sub"])
-    # 固定契约：{user, tenant, role(兼容单码), roles, menus, permissions}
+    # 固定契约：{user, tenant, role(兼容单码), roles, menus(树), permissions(码)}
     assert me["user"]["account"] == acc
     assert me["tenant"]["id"] and me["role"] == "tenant_admin"
     # T5：注册即绑 sys_user_role(tenant_admin)，故解析出租管的菜单/功能（非空）
     assert "tenant_admin" in me["roles"]
-    assert "/screen" in me["menus"] and "user:list" in me["permissions"]
+    # T10：menus 为双过滤后的菜单树（MenuNode 形状）；tenant_admin 能见 /screen，permissions 含 user:list
+    leaf_indexes = _all_indexes(me["menus"])
+    assert "/screen" in leaf_indexes and "user:list" in me["permissions"]
+    # 系统专属分支对 tenant_admin 隐藏：不含数据管理、角色/租户管理
+    assert "data" not in leaf_indexes and "/system/roles" not in leaf_indexes
 
 
 def test_refresh_rotation_and_logout_revoke(auth_env):

@@ -26,6 +26,7 @@ from backend.auth.security import check_strength, hash_password, verify_password
 from backend.common.exceptions import AuthError, RateLimitError, ValidationError
 from backend.common.logging import get_logger
 from backend.config import get_settings
+from backend.storage.menu_repository import MenuRepository
 from backend.storage.tenant_repository import TenantRepository
 from backend.storage.user_repository import UserRepository
 
@@ -36,9 +37,11 @@ _CAPTCHA_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 去掉易混 O0I1L
 
 class AuthService:
     def __init__(self, repo: UserRepository | None = None,
-                 tenants: TenantRepository | None = None):
+                 tenants: TenantRepository | None = None,
+                 menus: MenuRepository | None = None):
         self.repo = repo or UserRepository()
         self.tenants = tenants or TenantRepository()
+        self.menus = menus or MenuRepository()
         self.cfg = get_settings().auth
 
     def _ensure_tenant_active(self, tenant_id: str) -> None:
@@ -180,8 +183,10 @@ class AuthService:
         user = self.repo.get_by_id(user_id)
         if user is None:
             raise AuthError("用户不存在")
-        # 固定响应契约：{user, tenant, role(兼容单码), roles(多角色), menus(码), permissions(功能码)}。
-        # menus/permissions 由 perm_resolver 解析填充（T10 再把 menus 细化为过滤后的菜单树供 SideMenu）。
+        # 固定响应契约：{user, tenant, role(兼容单码), roles(多角色), menus(过滤后菜单树), permissions(功能码)}。
+        # menus 为按「角色授权 ∩ 可见性」双过滤后的嵌套树（T10），节点形状对齐前端 MenuNode
+        # {index,title,icon,children}（叶子 index=route_path、分组 index=code），供 SideMenu 直接渲染；
+        # permissions 为扁平功能码列表，供按钮级 v-permission 控制。
         perms = self.load_perms(user_id)
         return {
             "user": {
@@ -191,9 +196,45 @@ class AuthService:
             "tenant": {"id": user["tenant_id"]},
             "role": user["role_code"],
             "roles": perms["roles"],
-            "menus": perms["menus"],
+            "menus": self._visible_menu_tree(perms),
             "permissions": perms["resources"],
         }
+
+    def _visible_menu_tree(self, perms: dict) -> list[dict]:
+        """按「角色授权 ∩ 可见性」双过滤构建菜单树（system 全量）。
+
+        规则：① 非 system 用户，visible='system' 的节点及其整棵子树隐藏（系统专属分支）；
+        ② 叶子仅当 system 或其 code 在授权集内才保留；③ 分组仅当仍有存活子节点才保留（剪空组）——
+        故授权某叶子会自动带出其祖先分组，无需单独授权分组。
+        """
+        is_system = perms["is_system"]
+        granted = set(perms["menus"])
+
+        def walk(nodes: list[dict]) -> list[dict]:
+            out: list[dict] = []
+            for n in nodes:
+                if not is_system and n["visible"] == "system":
+                    continue                          # 系统专属分支对非 system 整体隐藏
+                kids = walk(n.get("children", []))
+                if n["type"] == "group":
+                    if kids:                          # 剪掉过滤后为空的分组
+                        out.append(self._menu_node(n, kids))
+                elif is_system or n["code"] in granted:
+                    out.append(self._menu_node(n, []))
+            return out
+
+        return walk(self.menus.tree())
+
+    @staticmethod
+    def _menu_node(n: dict, kids: list[dict]) -> dict:
+        """映射为前端 MenuNode：叶子 index=route_path、分组 index=code；icon 为 EP 图标名。"""
+        node: dict = {
+            "index": n["route_path"] if n["type"] == "leaf" else n["code"],
+            "title": n["title"], "icon": n["icon"],
+        }
+        if kids:
+            node["children"] = kids
+        return node
 
     # ── 验证码 / 邮箱码 / 公开配置 ──
     def issue_captcha(self) -> dict:

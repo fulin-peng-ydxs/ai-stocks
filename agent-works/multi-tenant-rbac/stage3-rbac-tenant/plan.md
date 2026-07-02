@@ -164,7 +164,7 @@
 | R5 | 注册绑租管角色 | register 改写 sys_user_role(保留自动登录) | T5 | 已完成 | 一致 | register_tenant_and_admin 同事务绑 tenant_admin |
 | —(技术依赖) | 权限数据模型+seed+迁移 | 6 表 + FK/索引 + seed + role_code 迁移 | T1 | 已完成 | 超范围(必要依赖) | R8-R14 底座；对开发 PG 实跑校验+10 单测 |
 | —(技术依赖) | 瘦令牌+解析缓存+失效+上下文 | perm_resolver + Redis 缓存 + bump 全触发点 + JWT/context | T2,T3 | 已完成 | 超范围(必要依赖) | 多角色运行时前提；require_perm/require_system 守卫(T4)一并落地 |
-| —(技术依赖) | /me 填充 + 前端权限底座 | /me menus+perms + v-permission + SideMenu(fail-closed) + 守卫 | T10,T15 | 进行中 | 超范围(必要依赖) | /me 已填 roles/menus/permissions(T3)；v-permission/SideMenu/守卫(T15)、/me 菜单树细化(T10)待做 |
+| —(技术依赖) | /me 填充 + 前端权限底座 | /me menus+perms + v-permission + SideMenu(fail-closed) + 守卫 | T10,T15 | 进行中 | 超范围(必要依赖) | /me 菜单树细化(T10)完成：menus 为「授权∩可见性」双过滤的 MenuNode 树、permissions 功能码列表；v-permission/SideMenu/守卫(T15)待做 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -279,16 +279,16 @@
 - 完成标准：R14 功能点全通过 + 停用即时失效验证。**已达成**：12 个 T9 用例全通过；全量 **373 passed**（361→373）。前端租户管理页（T14）待做。
 
 ### 6.10 任务 T10：/me 填充 + 权限消费
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2,T7,T8
-- 涉及文件/模块：`backend/services/auth_service.py`
+- 涉及文件/模块：`backend/services/auth_service.py`（`me()` + `_visible_menu_tree`/`_menu_node`）、`backend/tests/test_rbac_me.py`(产出，5 用例)、`backend/tests/test_auth_service.py`(既有 me 断言改树形)
 - 目标：/me 返回按权限过滤的菜单树 + 功能码列表。
-- 操作：`me()` 调 perm_resolver + menu_repository 返回 `menus`(按 ctx.perms + 可见性双过滤的树) + `permissions`(码列表)；role→roles/主角色。
-- 产出：/me 富返回。
-- 影响范围：auth_service。
-- 边界与异常：菜单可见性(login/system)+角色授权双过滤；system 全量。
-- 验证方式：接口测试——system 全菜单、tenant_admin 过滤后菜单、permissions 准确。
-- 完成标准：前端可据 /me 渲染菜单 + 控按钮。
+- 操作：`me()` 调 perm_resolver(load_perms) + menu_repository.tree() 返回 `menus`(按「角色授权 ∩ 可见性」双过滤的嵌套树) + `permissions`(功能码列表)；role→roles/主角色。菜单节点映射为前端 **MenuNode 形状** `{index,title,icon,children}`（叶子 index=route_path、分组 index=code，icon=EP 图标名），SideMenu 可直接渲染。
+- 产出：/me 富返回（菜单树 + 功能码）。
+- 影响范围：auth_service（新增 MenuRepository 依赖）。
+- 边界与异常：**双过滤**——① 非 system，visible='system' 节点及整棵子树隐藏；② 叶子仅当 system 或 code∈授权集保留；③ 分组仅当有存活子节点保留（**剪空组**，故授权叶子自动带出祖先分组）；system 全量（含系统专属分支）。
+- 验证方式：接口/服务测试——system 全菜单(含 data/角色/租户管理)、tenant_admin 过滤后菜单(业务 + 系统>权限>用户管理，无 data/config/角色/租户，权限组仅剩用户管理)、normal 仅业务(系统组整体剪除)、permissions 准确(system 含 role:*/tenant:*、tenant_admin 仅 user:*、normal 空)、MenuNode 形状(分组有 children/叶子无、icon 为 EP 名)。
+- 完成标准：前端可据 /me 渲染菜单 + 控按钮。**已达成**：5 个 T10 用例 + 既有 me 断言改树形全通过；全量 **378 passed**（373→378）。前端 SideMenu/v-permission 消费(T15)待做。
 
 ### 6.11 任务 T11：前端 用户管理页（P4）
 - 状态：待开始
