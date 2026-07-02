@@ -86,7 +86,7 @@
 | 域 | 接口 → 精确码 | 守卫 |
 | --- | --- | --- |
 | 用户 | `user:list` `user:create` `user:update` `user:disable`(启停锁定) `user:reset-password` `user:delete` | **`require_perm(code)`**（tenant_admin 可获授权，system 恒过） |
-| 用户·可分配角色（只读） | `GET /api/roles/assignable`（供用户管理页角色下拉） | **`require_perm("user:list")`**（进用户管理即可读；Codex P1 整改，避免 tenant_admin 断链） |
+| 用户·可分配角色（只读） | `GET /api/roles/assignable`（供用户管理页角色下拉，**按调用者角色分流**：system 得全部可分配含自建 custom、tenant_admin 仅系统预设） | **`require_perm("user:list")`**（进用户管理即可读；Codex P1 整改，避免 tenant_admin 断链） |
 | 角色 | `role:list` `role:create` `role:update` `role:delete` `role:assign-perm` | **`require_system`**（系统专属，见下） |
 | 菜单 | `menu:list` `menu:create` `menu:update` `menu:delete` `menu:reorder` | **`require_system`** |
 | 功能 | `resource:list` `resource:create` `resource:update` `resource:delete` | **`require_system`** |
@@ -127,7 +127,7 @@
 | 页面功能点 | 需求 | 交互要点 | 技术实现 | 组件/模块 | 数据/API | 状态与异常 | 任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 列表查询/筛选/分页 | R10 | 租户(system)/角色/状态筛选 + 搜索 + 分页 | LayoutHost list；el-table 体内滚/横滚；服务端分页 | UserManageView、el-table、el-pagination | `GET /api/users`(域过滤) → `user:list` | loading/空/错误重试；租管仅本租户 | T5,T11 |
-| 新建/编辑(多角色) | R10 | 账号/邮箱/多角色/租户/状态 | dialog 自适应；角色 el-select multiple | 编辑弹窗 | `POST/PUT /api/users`→`user:create/update`、**`GET /api/roles/assignable`**(非 require_system 的 `/api/roles`，防 tenant_admin 断链) | 账号/邮箱唯一；租管不跨租户/仅系统预设可分配角色 | T5,T11 |
+| 新建/编辑(多角色) | R10 | 账号/邮箱/多角色/租户/状态 | dialog 自适应；角色 el-select multiple | 编辑弹窗 | `POST/PUT /api/users`→`user:create/update`、**`GET /api/roles/assignable`**(非 require_system 的 `/api/roles`，防 tenant_admin 断链；system 得含自建 custom、tenant_admin 仅系统预设) | 账号/邮箱唯一；租管不跨租户/仅系统预设可分配角色，system 可分配自建 custom | T5,T11 |
 | 启停/锁定/重置/删除 | R10 | 行操作随状态变 | 行操作调接口刷新；重置密码弹窗 | 行操作、重置弹窗 | `POST /api/users/{id}/status`→`user:disable`、`/reset-password`→`user:reset-password`、`DELETE`→`user:delete` | 禁用即时失效(bump+黑名单)；删自身/最后管理员阻止 | T5,T11 |
 
 ### 4.8 页面 P5 技术实现：角色管理（承接 [role-management.html](../prototypes/role-management.html)）
@@ -155,7 +155,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 待开始 | 部分覆盖 | **存量13路由=阶段四R21**；本阶段=机制+新接口 |
 | R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 待开始 | **部分覆盖** | R9 端到端资产隔离非本阶段新做；本阶段补平台管理表域过滤 + 交叉验证（Codex P1 整改，不写"一致"） |
-| R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 待开始 | 一致 | 多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路 |
+| R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 待开始 | 一致 | 多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
 | R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 待开始 | 一致 | 租管仅分配不自建；system-only 码禁勾选 |
 | R12 | 菜单管理(树CRUD+排序+图标) | menu API+repo + 菜单页 + IconPicker + SideMenu 改造 | T7,T13,T15 | 待开始 | 一致 | icon 存 EP 图标名；menuConfig 降兜底(fail-closed) |
 | R13 | 功能管理(资源登记) | resource API+repo + 功能子表 | T8,T13 | 待开始 | 一致 | 与 R8/R11 闭环 |
@@ -234,11 +234,11 @@
 - 依赖：T4
 - 涉及文件/模块：`backend/api/roles.py`(新)、`backend/storage/role_repository.py`(新)
 - 目标：角色 CRUD + 授权（全选/清空/还原）+ 内置保护 + 授权 bump。
-- 操作：`GET/POST/PUT/DELETE /api/roles`、`PUT /api/roles/{id}/perms`（写 role_menu/role_resource + `bump_users_of_roles([id])`）——均挂 **require_system**；内置不可删、超管 is_locked 不可改、system-only 码拒绝授予。**另加 `GET /api/roles/assignable`（挂 `require_perm("user:list")`，非 require_system）**（Codex P1）：返回**可分配的系统预设角色**（is_builtin 且 kind∈{tenant_admin,normal,paid}，**过滤 system 超管 + 自定义不可授角色**），供用户管理页角色下拉；tenant_admin 亦可读，闭合 R10 分配角色链路。
+- 操作：`GET/POST/PUT/DELETE /api/roles`、`PUT /api/roles/{id}/perms`（写 role_menu/role_resource + `bump_users_of_roles([id])`）——均挂 **require_system**；内置不可删、超管 is_locked 不可改、system-only 码拒绝授予。**另加 `GET /api/roles/assignable`（挂 `require_perm("user:list")`，非 require_system）**（Codex P1 + 二轮复核）：**按调用者角色分流**——① `ctx.is_system`：返回**除 system 超管外的全部可分配角色**（系统预设 tenant_admin/normal/paid **＋系统管理员自建的 custom 角色**），承接 R11「新建角色可被用户分配」；② tenant_admin：**仅系统预设可分配角色**（is_builtin 且 kind∈{tenant_admin,normal,paid}），**不含 system 超管、不含任何 custom**（自建角色仅 system 可分配）。供用户管理页角色下拉，闭合 R10/R11 分配链路。
 - 产出：角色接口(含 assignable 只读) + 仓库 + bump 联动。
 - 影响范围：新 router/repo；assignable 供 T5/T11 用户页消费。
-- 边界与异常：名/code 唯一；删被 sys_user_role 引用角色 RESTRICT 阻止 + 应用层提示；超管锁定；assignable 严格过滤不可授角色。
-- 验证方式：接口测试——CRUD、授权保存(全选/清空)、内置保护、授权后关联用户 perm_ver 自增(下次 401)、system-only 码不可授；**assignable：tenant_admin 可读且只返回可分配预设角色、不含 system**。
+- 边界与异常：名/code 唯一；删被 sys_user_role 引用角色 RESTRICT 阻止 + 应用层提示；超管锁定；assignable 分流——system 得含自建 custom、tenant_admin 严格过滤到系统预设（不含 system/custom）。
+- 验证方式：接口测试——CRUD、授权保存(全选/清空)、内置保护、授权后关联用户 perm_ver 自增(下次 401)、system-only 码不可授；**assignable 两条分流用例：① system 调用可见系统管理员自建的 custom 角色；② tenant_admin 调用不含任何 custom、不含 system，仅系统预设**。
 - 完成标准：R11 功能点全通过。
 
 ### 6.7 任务 T7：菜单管理 API + 仓库（R12，含变更 bump）
@@ -385,7 +385,7 @@
 ## 8. 测试与验证计划
 
 - **单元测试**：perm_resolver 多角色并集/system 全量；瘦令牌无 role claim；require_perm/require_system(system过/授权过/无权403/无token401/system-only非system403)；**bump 全触发点**（角色授权/菜单删改/资源删改/用户角色变更/**租户停用**→关联用户 perm_ver 自增 + 缓存清）；Redis 故障 fail-closed。
-- **接口测试**：用户 CRUD/多角色/启停即时失效/唯一/精确码；**`roles/assignable`：tenant_admin 可读、只返回可分配预设角色(不含 system)**；角色 CRUD/授权(全选清空)/内置保护/system-only 码不可授；菜单树 CRUD/排序/唯一/级联/删改后 bump；功能 CRUD/唯一/引用提示/改删后 bump；租户 CRUD/启停/默认保护/**停用后该租户用户新登录被拒 + 已登录旧 token 下次请求 401/403**；/me 按角色过滤。
+- **接口测试**：用户 CRUD/多角色/启停即时失效/唯一/精确码；**`roles/assignable` 分流：system 调用含系统管理员自建 custom 角色、tenant_admin 调用不含 custom 与 system(仅系统预设)**；角色 CRUD/授权(全选清空)/内置保护/system-only 码不可授；菜单树 CRUD/排序/唯一/级联/删改后 bump；功能 CRUD/唯一/引用提示/改删后 bump；租户 CRUD/启停/默认保护/**停用后该租户用户新登录被拒 + 已登录旧 token 下次请求 401/403**；/me 按角色过滤。
 - **页面/交互测试**：4 页 preview 5181 双主题 + 交互；承接原型区域/入口/状态/退化。**视口验收 1100×620 / 1366×768 / 1440×900**（page-template 官方三档）——master-detail 在 1100×620 右栏内滚 + 窄栏体内横滚，无整页滚/无溢出。
 - **权限与数据范围测试**：多账号交叉——tenant_admin A 看不到/改不到 tenant B；跨租户分配被拒；system-only 接口非 system→403；按钮/菜单按角色显隐；**菜单拉取失败不 fail-open**。
 - **回归测试**：全量 `pytest`（273 基线 + 新增）；stage2 鉴权用例 role→is_system 后绿；`npm run build`；前端 `layout-contract`/`pageRegistry` 绿。
