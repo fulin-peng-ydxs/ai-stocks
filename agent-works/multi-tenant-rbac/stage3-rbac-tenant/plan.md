@@ -124,6 +124,7 @@
 
 ### 4.7 页面 P4 技术实现：用户管理（承接 [user-management.html](../prototypes/user-management.html)）
 > 原型已**去掉勾选列**（本阶段不做批量，避免假交互）；行操作按状态显隐。
+
 | 页面功能点 | 需求 | 交互要点 | 技术实现 | 组件/模块 | 数据/API | 状态与异常 | 任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 列表查询/筛选/分页 | R10 | 租户(system)/角色/状态筛选 + 搜索 + 分页 | LayoutHost list；el-table 体内滚/横滚；服务端分页 | UserManageView、el-table、el-pagination | `GET /api/users`(域过滤) → `user:list` | loading/空/错误重试；租管仅本租户 | T5,T11 |
