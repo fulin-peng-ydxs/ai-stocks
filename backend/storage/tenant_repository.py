@@ -1,0 +1,95 @@
+"""租户仓库（sys_tenant，PG，占位符 %s）——多租户 RBAC stage3·T9（R14）。
+
+租户为平台级实体（自身无 tenant_id 归属），承载多租户隔离的顶层单元。status=active|disabled；
+admin_user_id 指定该租户管理员（须属本租户）。列表附 user_count / admin_account 供管理页展示。
+停用踢下线（bump_users_of_tenant）由 service 编排。
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from backend.common.logging import get_logger
+from backend.storage.pg_client import PostgresClient, get_pg_client
+
+log = get_logger("storage.tenant_repository")
+
+_TENANT_COLS = "id, name, status, admin_user_id, created_at"
+
+
+class TenantRepository:
+    def __init__(self, pg: PostgresClient | None = None):
+        self.pg = pg or get_pg_client()
+
+    @staticmethod
+    def _row(r: dict) -> dict:
+        return {
+            "id": r["id"], "name": r["name"], "status": r["status"],
+            "admin_user_id": r.get("admin_user_id"),
+        }
+
+    def list_all(self, *, q: str | None, status: str | None, page: int, size: int) -> dict:
+        """租户分页列表（附用户数 + 管理员账号）。返回 {items, total}。"""
+        conds: list[str] = []
+        params: list = []
+        if status:
+            conds.append("t.status = %s")
+            params.append(status)
+        if q:
+            conds.append("(t.id ILIKE %s OR t.name ILIKE %s)")
+            like = f"%{q}%"
+            params += [like, like]
+        where = ("WHERE " + " AND ".join(conds)) if conds else ""
+
+        total = int(self.pg.query_df(
+            f"SELECT count(*) n FROM sys_tenant t {where}", params).iloc[0]["n"])
+        page = max(1, page)
+        size = max(1, min(size, 200))
+        rows = self.pg.query_df(
+            f"SELECT t.id, t.name, t.status, t.admin_user_id, t.created_at, "
+            "(SELECT count(*) FROM sys_user u WHERE u.tenant_id = t.id) AS user_count, "
+            "(SELECT account FROM sys_user a WHERE a.id = t.admin_user_id) AS admin_account "
+            f"FROM sys_tenant t {where} "
+            "ORDER BY t.created_at DESC NULLS LAST, t.id LIMIT %s OFFSET %s",
+            params + [size, (page - 1) * size])
+        items = []
+        for _, r in rows.iterrows():
+            row = self._row(r.to_dict())
+            row["user_count"] = int(r["user_count"])
+            row["admin_account"] = r["admin_account"] if r["admin_account"] is not None else None
+            items.append(row)
+        return {"items": items, "total": total}
+
+    def get(self, tenant_id: str) -> dict | None:
+        df = self.pg.query_df(f"SELECT {_TENANT_COLS} FROM sys_tenant WHERE id = %s", [tenant_id])
+        return self._row(df.iloc[0].to_dict()) if not df.empty else None
+
+    def get_by_name(self, name: str) -> dict | None:
+        df = self.pg.query_df(f"SELECT {_TENANT_COLS} FROM sys_tenant WHERE name = %s", [name])
+        return self._row(df.iloc[0].to_dict()) if not df.empty else None
+
+    def user_count(self, tenant_id: str) -> int:
+        df = self.pg.query_df(
+            "SELECT count(*) AS n FROM sys_user WHERE tenant_id = %s", [tenant_id])
+        return int(df.iloc[0]["n"])
+
+    def create(self, *, name: str, status: str) -> str:
+        tenant_id = "tenant_" + uuid.uuid4().hex[:12]
+        self.pg.execute(
+            "INSERT INTO sys_tenant (id, name, status, created_at) VALUES (%s, %s, %s, %s)",
+            [tenant_id, name, status, datetime.now()])
+        return tenant_id
+
+    def update(self, tenant_id: str, *, name: str, admin_user_id: str | None) -> None:
+        self.pg.execute(
+            "UPDATE sys_tenant SET name=%s, admin_user_id=%s, updated_at=%s WHERE id=%s",
+            [name, admin_user_id, datetime.now(), tenant_id])
+
+    def set_status(self, tenant_id: str, status: str) -> None:
+        self.pg.execute(
+            "UPDATE sys_tenant SET status=%s, updated_at=%s WHERE id=%s",
+            [status, datetime.now(), tenant_id])
+
+    def delete(self, tenant_id: str) -> None:
+        self.pg.execute("DELETE FROM sys_tenant WHERE id = %s", [tenant_id])

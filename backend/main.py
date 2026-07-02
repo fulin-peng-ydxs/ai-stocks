@@ -40,6 +40,7 @@ from backend.api.users import router as users_router
 from backend.api.roles import router as roles_router
 from backend.api.menus import router as menus_router
 from backend.api.resources import router as resources_router
+from backend.api.tenants import router as tenants_router
 from backend.common.exceptions import AIStocksError
 from backend.common.logging import get_logger
 from backend.config import PROJECT_ROOT, get_settings
@@ -114,6 +115,8 @@ def create_app() -> FastAPI:
     app.include_router(menus_router)
     # 功能点管理（stage3·R13）：整 router 挂 require_system
     app.include_router(resources_router)
+    # 租户管理（stage3·R14）：整 router 挂 require_system
+    app.include_router(tenants_router)
 
     # ── 前端静态托管（M4：frontend/dist 存在时生效）──
     # 关键：SPA 前端路由（/board、/stocks/xxx）在客户端，刷新/深链接需回退到

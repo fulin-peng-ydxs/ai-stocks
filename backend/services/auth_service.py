@@ -26,6 +26,7 @@ from backend.auth.security import check_strength, hash_password, verify_password
 from backend.common.exceptions import AuthError, RateLimitError, ValidationError
 from backend.common.logging import get_logger
 from backend.config import get_settings
+from backend.storage.tenant_repository import TenantRepository
 from backend.storage.user_repository import UserRepository
 
 log = get_logger("services.auth")
@@ -34,9 +35,17 @@ _CAPTCHA_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 去掉易混 O0I1L
 
 
 class AuthService:
-    def __init__(self, repo: UserRepository | None = None):
+    def __init__(self, repo: UserRepository | None = None,
+                 tenants: TenantRepository | None = None):
         self.repo = repo or UserRepository()
+        self.tenants = tenants or TenantRepository()
         self.cfg = get_settings().auth
+
+    def _ensure_tenant_active(self, tenant_id: str) -> None:
+        """租户停用即拒绝登录/刷新（T9·R14）：停用后新登录被拒，配合 bump 使在线 token 也失效。"""
+        t = self.tenants.get(tenant_id)
+        if t is not None and t["status"] != "active":
+            raise AuthError("所属租户已停用，请联系平台管理员")
 
     # ── 内部辅助 ──
     @staticmethod
@@ -89,6 +98,7 @@ class AuthService:
             raise AuthError("账号或密码错误")   # 不区分账号是否存在，防枚举
         if user["status"] != "active":
             raise AuthError("账号已被禁用或锁定，请联系管理员")
+        self._ensure_tenant_active(user["tenant_id"])   # 租户停用即拒登录（R14）
 
         ss.clear_login_failures(account)
         self.repo.update_last_login(user["id"])
@@ -118,6 +128,7 @@ class AuthService:
         user = self.repo.get_by_id(c["sub"])
         if user is None or user["status"] != "active":
             raise AuthError("账号不可用，请重新登录")
+        self._ensure_tenant_active(user["tenant_id"])   # 租户停用即拒刷新（R14）
         if int(user["perm_ver"]) != int(c["perm_ver"]):
             raise AuthError("权限已变更，请重新登录")
         ss.revoke_jti(c["jti"], self._remaining(c))   # 轮换：旧 refresh 作废

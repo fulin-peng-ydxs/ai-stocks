@@ -1,0 +1,61 @@
+"""租户管理 API（多租户 RBAC stage3·T9，R14）。
+
+薄层：参数校验 + 响应包装；守卫/业务规则/停用踢下线编排在 services.tenant_admin_service。
+租户是平台级实体，管理入口仅系统管理员——全部端点挂 require_system。
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+from backend.api.response import ApiResponse, ok
+from backend.auth.deps import require_system
+from backend.services.tenant_admin_service import TenantAdminService
+
+router = APIRouter(prefix="/api", tags=["tenants"], dependencies=[Depends(require_system)])
+
+
+class TenantCreate(BaseModel):
+    name: str
+    status: str = "active"
+
+
+class TenantUpdate(BaseModel):
+    name: str
+    adminUserId: str | None = None
+
+
+class StatusBody(BaseModel):
+    status: str                       # active | disabled
+
+
+@router.get("/tenants", response_model=ApiResponse)
+def list_tenants(q: str | None = None, status: str | None = None,
+                 page: int = 1, size: int = 20) -> ApiResponse:
+    return ok(TenantAdminService().list_tenants(q=q, status=status, page=page, size=size))
+
+
+@router.post("/tenants", response_model=ApiResponse)
+def create_tenant(body: TenantCreate) -> ApiResponse:
+    t = TenantAdminService().create_tenant(name=body.name, status=body.status)
+    return ok(t, msg="已创建")
+
+
+@router.put("/tenants/{tenant_id}", response_model=ApiResponse)
+def update_tenant(tenant_id: str, body: TenantUpdate) -> ApiResponse:
+    t = TenantAdminService().update_tenant(
+        tenant_id, name=body.name, admin_user_id=body.adminUserId)
+    return ok(t, msg="已保存")
+
+
+@router.post("/tenants/{tenant_id}/status", response_model=ApiResponse)
+def set_status(tenant_id: str, body: StatusBody) -> ApiResponse:
+    t = TenantAdminService().set_status(tenant_id, body.status)
+    return ok(t, msg="已更新")
+
+
+@router.delete("/tenants/{tenant_id}", response_model=ApiResponse)
+def delete_tenant(tenant_id: str) -> ApiResponse:
+    TenantAdminService().delete_tenant(tenant_id)
+    return ok(msg="已删除")

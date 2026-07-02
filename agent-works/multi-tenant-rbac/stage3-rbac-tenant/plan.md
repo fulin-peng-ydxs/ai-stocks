@@ -154,13 +154,13 @@
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6)+菜单接口守卫(T7)+功能接口守卫(T8·整 router require_system)已完成；租户接口守卫(T9)、按钮级 v-permission(T15)待做 |
+| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6)+菜单接口守卫(T7)+功能接口守卫(T8)+租户接口守卫(T9·整 router require_system)已完成；按钮级 v-permission(T15)待做（后端接口守卫 T5–T9 全落地）|
 | R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 进行中 | **部分覆盖** | 用户管理域过滤(T5,system 全局/tenant_admin 本租户/跨租户 404)已落地；租户管理域过滤(T9)+多账号交叉核查(T16)待做；R9 端到端资产隔离非本阶段新做 |
 | R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 进行中 | 一致 | 后端(T5)完成:多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
 | R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 进行中 | 一致 | 后端(T6)完成：角色 CRUD/授权(全删重插+bump)/内置保护/超管锁定/system-only 码禁授/assignable 分流；`GET /api/roles/{id}/perms` 供前端权限树回显。角色页(T12·全选/清空/还原+树)待做 |
 | R12 | 菜单管理(树CRUD+排序+图标) | menu API+repo + 菜单页 + IconPicker + SideMenu 改造 | T7,T13,T15 | 进行中 | 一致 | 后端(T7)完成：菜单树 CRUD/排序/图标名/内置保护/防成环/删除·可见性变更 bump；`{menu_id:path}` 兼容含斜杠内置 id。前端菜单页/IconPicker/SideMenu 改造(T13/T15)待做 |
 | R13 | 功能管理(资源登记) | resource API+repo + 功能子表 | T8,T13 | 进行中 | 一致 | 后端(T8)完成：功能点 CRUD/唯一不可复用/内置保护(不可删·码不可改)/删除·改码 bump/role_count 引用统计。前端功能子表(T13)待做 |
-| R14 | 租户管理(CRUD+管理员+启停) | tenant API+repo + 租户页(去勾选列) | T9,T14 | 待开始 | 一致 | 默认租户保护；停用即时踢下线(bump 该租户全部用户，非仅拦新登录) |
+| R14 | 租户管理(CRUD+管理员+启停) | tenant API+repo + 租户页(去勾选列) | T9,T14 | 进行中 | 一致 | 后端(T9)完成：租户 CRUD/名称唯一/指定管理员归属校验/默认租户保护/停用即时踢下线(bump 该租户全部用户 + 登录·刷新 status 校验)。前端租户页(T14)待做 |
 | R5 | 注册绑租管角色 | register 改写 sys_user_role(保留自动登录) | T5 | 已完成 | 一致 | register_tenant_and_admin 同事务绑 tenant_admin |
 | —(技术依赖) | 权限数据模型+seed+迁移 | 6 表 + FK/索引 + seed + role_code 迁移 | T1 | 已完成 | 超范围(必要依赖) | R8-R14 底座；对开发 PG 实跑校验+10 单测 |
 | —(技术依赖) | 瘦令牌+解析缓存+失效+上下文 | perm_resolver + Redis 缓存 + bump 全触发点 + JWT/context | T2,T3 | 已完成 | 超范围(必要依赖) | 多角色运行时前提；require_perm/require_system 守卫(T4)一并落地 |
@@ -267,16 +267,16 @@
 - 完成标准：R13 功能点全通过 + 缓存失效验证。**已达成**：13 个 T8 用例全通过；全量 **361 passed**（348→361）。前端菜单&功能页功能子表（T13）待做。
 
 ### 6.9 任务 T9：租户管理 API + 仓库（R14）
-- 状态：待开始
+- 状态：已完成
 - 依赖：T4,T5
-- 涉及文件/模块：`backend/api/tenants.py`(新)、`backend/storage/tenant_repository.py`(新)
+- 涉及文件/模块：`backend/api/tenants.py`(新)、`backend/services/tenant_admin_service.py`(**新增**，编排/校验/停用踢下线)、`backend/storage/tenant_repository.py`(新)、`backend/services/auth_service.py`(login/refresh 加 `_ensure_tenant_active` 租户 status 校验)、`backend/main.py`(注册 tenants_router，整 router 挂 require_system)、`backend/tests/test_rbac_tenants.py`(产出，12 用例)
 - 目标：租户 CRUD + 指定管理员 + 启停（**停用即时踢下线**）。
-- 操作：`GET/POST/PUT /api/tenants`、`/status`；挂 **require_system**；指定管理员须属该租户；停用 → ①登录校验租户 status 拒绝 + ②**`bump_users_of_tenant(tenant_id)` 使该租户全部在线用户 token 失效**（Codex P2：不止拦新登录，已登录 token 下次请求 401→重登被 status 拒）。
-- 产出：租户接口 + 仓库 + 停用踢下线联动。
-- 影响范围：新 router/repo；登录链路加租户 status 校验；停用调 bump。
-- 边界与异常：默认/平台租户不可删；删有用户租户阻止；停用后该租户用户**新登录被拒 + 已登录 token 失效**。
-- 验证方式：接口测试——CRUD、启停、默认保护、停用后该租户用户**新登录被拒**、**已登录旧 token 下次请求 401/403**。
-- 完成标准：R14 功能点全通过 + 停用即时失效验证。
+- 操作：`GET/POST/PUT/DELETE /api/tenants`、`/status`；挂 **require_system**；指定管理员须属该租户；停用 → ①登录/刷新校验租户 status 拒绝（auth_service `_ensure_tenant_active`）+ ②**`bump_users_of_tenant(tenant_id)` 使该租户全部在线用户 token 失效**（Codex P2：不止拦新登录，已登录 token 下次请求 401→重登被 status 拒）。
+- 产出：租户接口 + 仓库 + service 编排 + 停用踢下线联动 + 登录链路 status 校验。
+- 影响范围：新 router/service/repo；auth_service login/refresh 加租户 status 校验；停用调 bump。
+- 边界与异常：租户名全局唯一；指定管理员须属该租户（跨租户拒）；**默认租户(id=default)不可删、不可停用**（防平台管理员自锁）；删有用户租户阻止（先迁走/删用户）；停用后该租户用户**新登录被拒 + 已登录 token 失效**。
+- 验证方式：接口测试——CRUD、名称唯一、指定管理员归属校验、默认保护(删/停 403)、删有用户租户拒、停用后该租户用户 perm_ver 自增、**已登录旧 token 下次请求 401**（在线踢下线）、**停用后新登录被 AuthService 拒**。
+- 完成标准：R14 功能点全通过 + 停用即时失效验证。**已达成**：12 个 T9 用例全通过；全量 **373 passed**（361→373）。前端租户管理页（T14）待做。
 
 ### 6.10 任务 T10：/me 填充 + 权限消费
 - 状态：待开始
