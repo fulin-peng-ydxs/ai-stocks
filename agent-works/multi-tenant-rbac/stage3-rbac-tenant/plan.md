@@ -156,12 +156,12 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 待开始 | 部分覆盖 | **存量13路由=阶段四R21**；本阶段=机制+新接口 |
 | R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 待开始 | **部分覆盖** | R9 端到端资产隔离非本阶段新做；本阶段补平台管理表域过滤 + 交叉验证（Codex P1 整改，不写"一致"） |
-| R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 待开始 | 一致 | 多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
+| R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 进行中 | 一致 | 后端(T5)完成:多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
 | R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 待开始 | 一致 | 租管仅分配不自建；system-only 码禁勾选 |
 | R12 | 菜单管理(树CRUD+排序+图标) | menu API+repo + 菜单页 + IconPicker + SideMenu 改造 | T7,T13,T15 | 待开始 | 一致 | icon 存 EP 图标名；menuConfig 降兜底(fail-closed) |
 | R13 | 功能管理(资源登记) | resource API+repo + 功能子表 | T8,T13 | 待开始 | 一致 | 与 R8/R11 闭环 |
 | R14 | 租户管理(CRUD+管理员+启停) | tenant API+repo + 租户页(去勾选列) | T9,T14 | 待开始 | 一致 | 默认租户保护；停用即时踢下线(bump 该租户全部用户，非仅拦新登录) |
-| R5 | 注册绑租管角色 | register 改写 sys_user_role(保留自动登录) | T5 | 待开始 | 一致 | 阶段二已建租户 |
+| R5 | 注册绑租管角色 | register 改写 sys_user_role(保留自动登录) | T5 | 已完成 | 一致 | register_tenant_and_admin 同事务绑 tenant_admin |
 | —(技术依赖) | 权限数据模型+seed+迁移 | 6 表 + FK/索引 + seed + role_code 迁移 | T1 | 待开始 | 超范围(必要依赖) | R8-R14 底座 |
 | —(技术依赖) | 瘦令牌+解析缓存+失效+上下文 | perm_resolver + Redis 缓存 + bump 全触发点 + JWT/context | T2,T3 | 待开始 | 超范围(必要依赖) | 多角色运行时前提 |
 | —(技术依赖) | /me 填充 + 前端权限底座 | /me menus+perms + v-permission + SideMenu(fail-closed) + 守卫 | T10,T15 | 待开始 | 超范围(必要依赖) | R8 按钮级/R12 菜单渲染前提 |
@@ -219,16 +219,16 @@
 - 完成标准：两守卫可用且有单测。**（已达成：8 个 T4 用例全通过）**
 
 ### 6.5 任务 T5：用户管理 API + 仓库（R10）
-- 状态：待开始
+- 状态：已完成
 - 依赖：T4
-- 涉及文件/模块：`backend/api/users.py`(新)、`backend/storage/user_repository.py`(扩)、`main.py`
+- 涉及文件/模块：`backend/api/users.py`(新)、`backend/services/user_admin_service.py`(新)、`backend/storage/user_repository.py`(扩)、`backend/storage/role_repository.py`(**新，只读部分提前落地供可分配校验；T6 扩 CRUD**)、`main.py`、`services/auth_service`(register 经 repo 走 user_role)、`backend/tests/test_rbac_users.py`(产出)
 - 目标：用户 CRUD/启停锁定/重置/多角色/租户，按域过滤，精确码守卫。
-- 操作：按 §4.3 精确码挂 `require_perm`；`GET /api/users`(域过滤)、`POST/PUT`、`/status`(bump+黑名单)、`/reset-password`、多角色写 sys_user_role（改 → bump 该用户）；register 改走 sys_user_role；tenant_admin 校验不跨租户/仅预设角色。
-- 产出：用户管理接口 + 仓库多角色/域过滤方法。
-- 影响范围：新 router；user_repository 扩展。
-- 边界与异常：账号/邮箱唯一；删自身/最后管理员阻止；禁用即时失效。
-- 验证方式：接口测试——CRUD、多角色、域隔离、启停即时失效、唯一冲突、精确码 403。
-- 完成标准：R10 功能点全通过 + 隔离回归。
+- 操作：按 §4.3 精确码挂 `require_perm`（list/create/update/disable/reset-password/delete）；`GET /api/users`(域过滤)、`POST/PUT`、`/status`、`/reset-password`、`DELETE`；编排在 UserAdminService（域范围/可分配校验/自身与最后管理员保护/bump 失效）；多角色写 sys_user_role（新建/编辑/改角色/停用/删除/重置 → `bump_and_invalidate` 即时失效）；`register_tenant_and_admin` 同事务写 sys_user_role(tenant_admin)；tenant_admin 恒本租户（跨租户目标 404）/仅 `RoleRepository.assignable(调用者)` 可分配。
+- 产出：用户管理接口 + service 编排 + 仓库多角色/域过滤方法 + role_repository 只读 + 16 接口测试。
+- 影响范围：新 router/service/role_repository；user_repository 扩展；register 绑角色（故 /me 对注册用户返回非空菜单，同步改 test_auth_service 断言）。
+- 边界与异常：账号/邮箱唯一（业务软失败 200+4000）；跨租户目标 404；删/停自身阻止；最后 tenant_admin 不可停用/删除/降级；停用/删除/改角色 bump（下次请求 401，停用者重登被 status 拒）。
+- 验证方式：接口测试——精确码 403、域隔离、多角色 CRUD、唯一冲突、启停 perm_ver bump、自身与最后管理员保护、tenant_admin 不可授 system。
+- 完成标准：R10 功能点全通过 + 隔离回归。**（已达成：16 个 T5 用例全通过；全量 318 passed）**
 
 ### 6.6 任务 T6：角色管理 API + 仓库（R11）
 - 状态：待开始

@@ -79,9 +79,9 @@ def test_me_and_claims(auth_env):
     # 固定契约：{user, tenant, role(兼容单码), roles, menus, permissions}
     assert me["user"]["account"] == acc
     assert me["tenant"]["id"] and me["role"] == "tenant_admin"
-    assert "roles" in me and "menus" in me and "permissions" in me
-    # 注：此测注册用户尚无 sys_user_role（T5 才补），故解析出的 menus/permissions 暂为空
-    assert me["menus"] == [] and me["permissions"] == []
+    # T5：注册即绑 sys_user_role(tenant_admin)，故解析出租管的菜单/功能（非空）
+    assert "tenant_admin" in me["roles"]
+    assert "/screen" in me["menus"] and "user:list" in me["permissions"]
 
 
 def test_refresh_rotation_and_logout_revoke(auth_env):

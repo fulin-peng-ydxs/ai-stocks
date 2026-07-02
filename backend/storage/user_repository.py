@@ -49,10 +49,11 @@ class UserRepository:
 
     def register_tenant_and_admin(
         self, account: str, email: str | None, password_hash: str) -> dict:
-        """自助注册（R5）：一个事务内建租户 + 建用户（tenant_admin）+ 回填租户管理员。
+        """自助注册（R5）：一个事务内建租户 + 建用户（tenant_admin）+ 回填租户管理员 + 绑角色。
 
         唯一性由 sys_user(account) 唯一约束 + email 部分唯一索引兜底（并发安全）；
         调用方应先做友好预检（见 auth_service.register）。返回新用户 dict。
+        stage3：同事务写 sys_user_role(tenant_admin)，使新注册用户权限解析即生效（不只靠 role_code）。
         """
         tenant_id = uuid.uuid4().hex
         user_id = uuid.uuid4().hex
@@ -70,5 +71,136 @@ class UserRepository:
                     [user_id, tenant_id, account, email, password_hash, ROLE_TENANT_ADMIN, now])
                 cur.execute(
                     "UPDATE sys_tenant SET admin_user_id=%s WHERE id=%s", [user_id, tenant_id])
+                # 内置 tenant_admin 角色 id=code；绑关联表使 perm_resolver 解析到租管权限
+                cur.execute(
+                    "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s) "
+                    "ON CONFLICT DO NOTHING", [user_id, ROLE_TENANT_ADMIN])
         log.info("自助注册：新租户 %s + 租户管理员 %s(%s)", tenant_id, user_id, account)
         return self.get_by_id(user_id)  # type: ignore[return-value]
+
+    # ── 用户管理（R10，stage3·T5）：域过滤列表 / 多角色 CRUD / 状态 / 重置密码 ──
+
+    @staticmethod
+    def _row_to_admin_view(r: dict) -> dict:
+        """管理列表/详情视图（无 password_hash）。roles=角色码集；日期转 iso。"""
+        def _iso(v):
+            return v.isoformat() if v is not None and hasattr(v, "isoformat") else v
+        roles = list(r.get("roles") or [])
+        return {
+            "id": r["id"], "tenant_id": r["tenant_id"], "account": r["account"],
+            "email": r.get("email"), "role_code": r["role_code"], "roles": roles,
+            "status": r["status"], "perm_ver": int(r["perm_ver"]),
+            "last_login_at": _iso(r.get("last_login_at")), "created_at": _iso(r.get("created_at")),
+        }
+
+    def list_users(self, *, tenant_id: str | None = None, role: str | None = None,
+                   status: str | None = None, q: str | None = None,
+                   page: int = 1, size: int = 20) -> dict:
+        """域过滤 + 条件筛选 + 分页。tenant_id=None 表示不限租户（system 全局）。
+
+        返回 {items, total}。role 按角色码 EXISTS 过滤；q 模糊匹配账号/邮箱。
+        """
+        conds: list[str] = []
+        params: list = []
+        if tenant_id is not None:
+            conds.append("u.tenant_id=%s")
+            params.append(tenant_id)
+        if status:
+            conds.append("u.status=%s")
+            params.append(status)
+        if role:
+            conds.append(
+                "EXISTS (SELECT 1 FROM sys_user_role ur2 JOIN sys_role r2 ON r2.id=ur2.role_id "
+                "WHERE ur2.user_id=u.id AND r2.code=%s)")
+            params.append(role)
+        if q:
+            conds.append("(u.account ILIKE %s OR u.email ILIKE %s)")
+            like = f"%{q}%"
+            params += [like, like]
+        where = ("WHERE " + " AND ".join(conds)) if conds else ""
+
+        total = int(self.pg.query_df(
+            f"SELECT count(*) n FROM sys_user u {where}", params).iloc[0]["n"])
+        page = max(1, page)
+        size = max(1, min(size, 200))
+        rows = self.pg.query_df(
+            f"SELECT u.id, u.tenant_id, u.account, u.email, u.role_code, u.status, u.perm_ver, "
+            f"u.last_login_at, u.created_at, "
+            f"COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{{}}') AS roles "
+            f"FROM sys_user u "
+            f"LEFT JOIN sys_user_role ur ON ur.user_id=u.id "
+            f"LEFT JOIN sys_role r ON r.id=ur.role_id {where} "
+            f"GROUP BY u.id ORDER BY u.created_at DESC NULLS LAST LIMIT %s OFFSET %s",
+            params + [size, (page - 1) * size])
+        items = [self._row_to_admin_view(r.to_dict()) for _, r in rows.iterrows()]
+        return {"items": items, "total": total}
+
+    def get_admin_view(self, user_id: str) -> dict | None:
+        """单用户管理视图（含角色码集）。"""
+        df = self.pg.query_df(
+            "SELECT u.id, u.tenant_id, u.account, u.email, u.role_code, u.status, u.perm_ver, "
+            "u.last_login_at, u.created_at, "
+            "COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles "
+            "FROM sys_user u LEFT JOIN sys_user_role ur ON ur.user_id=u.id "
+            "LEFT JOIN sys_role r ON r.id=ur.role_id WHERE u.id=%s GROUP BY u.id", [user_id])
+        return self._row_to_admin_view(df.iloc[0].to_dict()) if not df.empty else None
+
+    def create_user(self, *, account: str, email: str | None, password_hash: str,
+                    tenant_id: str, role_ids: list[str], role_code: str,
+                    status: str = "active") -> str:
+        """建用户 + 绑多角色（单事务）。唯一性由 DB 约束兜底。返回 user_id。"""
+        user_id = uuid.uuid4().hex
+        now = datetime.now()
+        with self.pg.transaction() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO sys_user "
+                "(id, tenant_id, account, email, password_hash, role_code, status, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                [user_id, tenant_id, account, email, password_hash, role_code, status, now])
+            for rid in dict.fromkeys(role_ids):
+                cur.execute(
+                    "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s)", [user_id, rid])
+        return user_id
+
+    def update_user(self, user_id: str, *, email: str | None, status: str,
+                    role_ids: list[str], role_code: str) -> None:
+        """更新用户资料 + 重建角色关联（单事务：全删后重插，避免残留）。"""
+        now = datetime.now()
+        with self.pg.transaction() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE sys_user SET email=%s, status=%s, role_code=%s, updated_at=%s WHERE id=%s",
+                [email, status, role_code, now, user_id])
+            cur.execute("DELETE FROM sys_user_role WHERE user_id=%s", [user_id])
+            for rid in dict.fromkeys(role_ids):
+                cur.execute(
+                    "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s)", [user_id, rid])
+
+    def set_status(self, user_id: str, status: str) -> None:
+        self.pg.execute(
+            "UPDATE sys_user SET status=%s, updated_at=%s WHERE id=%s",
+            [status, datetime.now(), user_id])
+
+    def reset_password(self, user_id: str, password_hash: str) -> None:
+        self.pg.execute(
+            "UPDATE sys_user SET password_hash=%s, updated_at=%s WHERE id=%s",
+            [password_hash, datetime.now(), user_id])
+
+    def delete_user(self, user_id: str) -> None:
+        """删用户（sys_user_role 经 FK CASCADE 自动清）。"""
+        self.pg.execute("DELETE FROM sys_user WHERE id=%s", [user_id])
+
+    def count_tenant_admins(self, tenant_id: str, *, exclude_user_id: str | None = None,
+                            active_only: bool = False) -> int:
+        """统计租户内拥有 tenant_admin 角色的用户数（用于"最后一个管理员"保护）。"""
+        conds = ["u.tenant_id=%s", "r.code=%s"]
+        params: list = [tenant_id, ROLE_TENANT_ADMIN]
+        if exclude_user_id:
+            conds.append("u.id<>%s")
+            params.append(exclude_user_id)
+        if active_only:
+            conds.append("u.status='active'")
+        df = self.pg.query_df(
+            "SELECT count(DISTINCT u.id) n FROM sys_user u "
+            "JOIN sys_user_role ur ON ur.user_id=u.id JOIN sys_role r ON r.id=ur.role_id "
+            f"WHERE {' AND '.join(conds)}", params)
+        return int(df.iloc[0]["n"])
