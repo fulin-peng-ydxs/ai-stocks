@@ -207,16 +207,16 @@
 - 完成标准：瘦令牌链路通，stage2 鉴权回归绿。**（已达成：全量 294 passed；修正 T2 测试 bump 波及真实 admin perm_ver 的隔离问题——sandbox teardown 还原 admin perm_ver）**
 
 ### 6.4 任务 T4：require_perm 守卫 + require_system 兼容 + 系统级硬守卫
-- 状态：待开始
+- 状态：已完成
 - 依赖：T3
-- 涉及文件/模块：`backend/auth/deps.py`
+- 涉及文件/模块：`backend/auth/deps.py`、`backend/tests/test_rbac_deps.py`(产出)
 - 目标：resource-code 精确依赖 + system-only 硬守卫（Codex P0/P1）。
-- 操作：`require_perm(code)`（system 恒过；否则 code∉ctx.perms.resources→403）；`require_system` 改判 is_system；约定 role/menu/resource/tenant 接口用 require_system、user 接口用 require_perm。
-- 产出：require_perm + 兼容 require_system。
-- 影响范围：deps；新管理接口按 §4.3 挂守卫。
-- 边界与异常：无上下文→401；非 system 无码→403；system-only 码不可授予非 system（seed 标记 + 角色页禁勾选）。
-- 验证方式：单测——system 过、授权 user 码过、无授权 403、无 token 401；system-only 接口非 system→403。
-- 完成标准：两守卫可用且有单测。
+- 操作：`require_perm(code)` 工厂依赖（system 恒过；否则 code∉ctx.resources **精确匹配**→403，不用通配符）；`require_system` 已在 T3 改判 is_system；约定 role/menu/resource/tenant 接口用 require_system、user 接口用 require_perm。
+- 产出：require_perm + 兼容 require_system + 8 单测。
+- 影响范围：deps；新管理接口 T5+ 按 §4.3 挂守卫（本任务只建机制未接路由）。
+- 边界与异常：无上下文→401；非 system 无码→403；精确匹配（`user:list` 不放行 `user:list-all`）；system-only 码不可授予非 system（seed 标记 + 角色页禁勾选，落 T6/前端）。
+- 验证方式：单测——system 过、授权 user 码过、无授权 403、无 token 401、精确匹配不通配。
+- 完成标准：两守卫可用且有单测。**（已达成：8 个 T4 用例全通过）**
 
 ### 6.5 任务 T5：用户管理 API + 仓库（R10）
 - 状态：待开始
