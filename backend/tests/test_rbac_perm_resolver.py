@@ -25,8 +25,13 @@ def _perm_ver(pg, uid: str) -> int:
 
 @pytest.fixture()
 def sandbox(pg):
-    """临时 RBAC 数据工厂 + teardown 清理（顺序遵守 FK：先删用户/角色触发级联，再删资源/菜单）。"""
+    """临时 RBAC 数据工厂 + teardown 清理（顺序遵守 FK：先删用户/角色触发级联，再删资源/菜单）。
+
+    菜单/资源类 bump 会连带失效**全部 system 用户**（含真实 admin，生产语义正确）；为不污染
+    admin perm_ver / 其它测试预铸 token，teardown 还原 admin 的 perm_ver 到用例前快照。
+    """
     made = {"user": [], "role": [], "menu": [], "resource": [], "tenant": []}
+    admin_pv0 = _perm_ver(pg, "admin")
 
     def mk_role(name="role", kind="custom"):
         rid = "t_role_" + uuid.uuid4().hex[:8]
@@ -88,6 +93,7 @@ def sandbox(pg):
         pg.execute("DELETE FROM sys_menu WHERE id=%s", [mid])
     for tid in made["tenant"]:
         pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
+    pg.execute("UPDATE sys_user SET perm_ver=%s WHERE id='admin'", [admin_pv0])   # 还原，防污染
 
 
 # ── 解析 ──────────────────────────────────────────────────────────────────────

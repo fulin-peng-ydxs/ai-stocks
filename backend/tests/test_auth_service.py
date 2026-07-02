@@ -74,12 +74,14 @@ def test_me_and_claims(auth_env):
     acc, _ = _register(svc, auth_env, ip=ip)
     out = svc.login(acc, "GoodPass1", ip=ip)
     claims = svc.claims_from_bearer("Bearer " + out["access_token"])
-    assert claims["role"] == "tenant_admin"
+    assert "role" not in claims   # 瘦令牌：角色不入 token
     me = svc.me(claims["sub"])
-    # 固定契约：{user, tenant, role, menus, permissions}
+    # 固定契约：{user, tenant, role(兼容单码), roles, menus, permissions}
     assert me["user"]["account"] == acc
     assert me["tenant"]["id"] and me["role"] == "tenant_admin"
-    assert me["menus"] == [] and me["permissions"] == []   # §4.7 兼容策略
+    assert "roles" in me and "menus" in me and "permissions" in me
+    # 注：此测注册用户尚无 sys_user_role（T5 才补），故解析出的 menus/permissions 暂为空
+    assert me["menus"] == [] and me["permissions"] == []
 
 
 def test_refresh_rotation_and_logout_revoke(auth_env):

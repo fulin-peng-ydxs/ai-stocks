@@ -195,16 +195,16 @@
 - 完成标准：解析/缓存/全触发点失效可用且有单测。**（已达成：11 个 T2 用例全通过）**
 
 ### 6.3 任务 T3：JWT 瘦令牌 + 上下文/中间件改造
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2
-- 涉及文件/模块：`jwt_tokens.py`、`context.py`、`middleware.py`、`services/auth_service.py`
+- 涉及文件/模块：`jwt_tokens.py`、`context.py`、`middleware.py`、`deps.py`、`services/auth_service.py`、多测试文件调用点
 - 目标：令牌去 role；上下文携带 roles+is_system+perms；中间件按缓存注权限。
-- 操作：`_issue` 去 role；`AuthContext`→roles/is_system/perms；`AuthMiddleware` 校验后从缓存/实时解析注上下文；签发处不传 role；`system_context()` 设 is_system+全量。
-- 产出：瘦令牌 + 富上下文 + 中间件注权限。
-- 影响范围：**令牌契约变更（旧 token 失效需重登，发布注意点）**；`ctx.role`→`ctx.roles/is_system` 全量改引用点。
-- 边界与异常：CLI/后台经 system_context 全权；请求链缺上下文抛错延续。
-- 验证方式：单测——令牌无 role claim；中间件注 perms；system 恒 is_system。stage2 中间件回归（role→is_system 断言）。
-- 完成标准：瘦令牌链路通，stage2 鉴权回归绿。
+- 操作：`_issue`/`issue_access`/`issue_refresh` 去 role 参数与 claim；`AuthContext`→`roles/is_system/menus/resources`（frozenset）；`AuthMiddleware` 校验 token 后 `svc.load_perms(user_id)`（缓存优先/实时解析回填，503 纳入 fail-closed）注上下文；`system_context()` 设 `is_system=True`；`deps.require_system` 改判 `ctx.is_system`；`context.get_current_role`→`get_current_roles`+`is_current_system`；`auth_service.me()` 用 load_perms 填 roles/menus/permissions（`role` 兼容保留）。
+- 产出：瘦令牌 + 富上下文 + 中间件注权限 + load_perms。
+- 影响范围：**令牌契约变更（旧 token 失效需重登，发布注意点）**；`ctx.role`→`ctx.is_system/roles` 全量改引用点（deps/middleware/context/多测试 `issue_access` 去 role 参数）。
+- 边界与异常：CLI/后台经 system_context 全权；请求链缺上下文抛错延续；load_perms 缓存故障 fail-closed 503。
+- 验证方式：单测——令牌无 role claim；中间件注 perms（admin=system 恒过、tadmin 无 user_role→非 system 恒 403）；stage2 中间件回归绿。
+- 完成标准：瘦令牌链路通，stage2 鉴权回归绿。**（已达成：全量 294 passed；修正 T2 测试 bump 波及真实 admin perm_ver 的隔离问题——sandbox teardown 还原 admin perm_ver）**
 
 ### 6.4 任务 T4：require_perm 守卫 + require_system 兼容 + 系统级硬守卫
 - 状态：待开始

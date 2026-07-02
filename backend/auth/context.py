@@ -21,9 +21,17 @@ from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
 
 @dataclass(frozen=True)
 class AuthContext:
+    """请求认证上下文（stage3 瘦令牌）：身份 + 解析后的有效权限。
+
+    role 单列已去除；改为 roles(多角色) + is_system(超管短路) + menus/resources(权限码集)。
+    权限由中间件经 perm_resolver 解析（缓存优先）后注入，供 require_perm/require_system 判定。
+    """
     user_id: str        # 作 owner_user_id（资产归属键）
     tenant_id: str
-    role: str
+    roles: tuple[str, ...] = ()
+    is_system: bool = False
+    menus: frozenset[str] = frozenset()
+    resources: frozenset[str] = frozenset()
 
 
 _ctx: contextvars.ContextVar[AuthContext | None] = contextvars.ContextVar(
@@ -68,18 +76,25 @@ def get_current_owner() -> tuple[str, str]:
     return DEFAULT_TENANT_ID, DEFAULT_OWNER_USER_ID
 
 
-def get_current_role() -> str | None:
+def get_current_roles() -> tuple[str, ...]:
     ctx = _ctx.get()
-    return ctx.role if ctx else None
+    return ctx.roles if ctx else ()
+
+
+def is_current_system() -> bool:
+    """当前上下文是否 system（无上下文=False）。"""
+    ctx = _ctx.get()
+    return bool(ctx and ctx.is_system)
 
 
 @contextmanager
 def system_context() -> Iterator[None]:
-    """显式系统上下文（CLI/后台/迁移用）：归属 default/admin、role=system。"""
+    """显式系统上下文（CLI/后台/迁移用）：归属 default/admin、is_system=True（全权）。"""
     from backend.auth.constants import ROLE_SYSTEM
 
     token = _ctx.set(AuthContext(
-        user_id=DEFAULT_OWNER_USER_ID, tenant_id=DEFAULT_TENANT_ID, role=ROLE_SYSTEM))
+        user_id=DEFAULT_OWNER_USER_ID, tenant_id=DEFAULT_TENANT_ID,
+        roles=(ROLE_SYSTEM,), is_system=True))
     try:
         yield
     finally:

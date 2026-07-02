@@ -6,15 +6,17 @@
 
 from __future__ import annotations
 
-from backend.auth.constants import ROLE_SYSTEM
 from backend.auth.context import get_current_context
 from backend.common.exceptions import AuthError, ForbiddenError
 
 
 def require_system() -> None:
-    """系统管理员守卫：非 system 角色拒绝。用作系统级路由/端点的 FastAPI 依赖。"""
+    """系统管理员守卫：非 system 拒绝。用作系统级路由/端点的 FastAPI 依赖。
+
+    stage3：判 ctx.is_system（由 perm_resolver 解析，system 角色 → True）。require_perm 见下（T4）。
+    """
     ctx = get_current_context()
     if ctx is None:
         raise AuthError("未登录")
-    if ctx.role != ROLE_SYSTEM:
+    if not ctx.is_system:
         raise ForbiddenError("需要系统管理员权限")

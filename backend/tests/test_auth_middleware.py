@@ -36,9 +36,10 @@ def tadmin(pg):
     pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
 
 
-def _access(user_id, tenant_id, role, perm_ver=0):
+def _access(user_id, tenant_id, perm_ver=0):
+    # 瘦令牌：角色不入 token，由中间件按 user_id 解析（tadmin 无 sys_user_role→非 system）
     from backend.auth.jwt_tokens import issue_access
-    return issue_access(user_id, tenant_id, role, perm_ver)
+    return issue_access(user_id, tenant_id, perm_ver)
 
 
 def _auth(token):
@@ -62,20 +63,20 @@ def test_invalid_token_401(client):
 
 def test_system_route_forbidden_for_tenant_admin(client, tadmin):
     uid, tid = tadmin
-    resp = client.get("/api/data/overview", headers=_auth(_access(uid, tid, "tenant_admin")))
+    resp = client.get("/api/data/overview", headers=_auth(_access(uid, tid)))
     assert resp.status_code == 403 and resp.json()["code"] == 4030
 
 
 def test_system_route_allows_system_role(client, pg):
     pv = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
-    resp = client.get("/api/data/overview", headers=_auth(_access("admin", "default", "system", pv)))
+    resp = client.get("/api/data/overview", headers=_auth(_access("admin", "default", pv)))
     assert resp.status_code not in (401, 403)   # 通过鉴权+角色守卫（业务是否 200 不在本测范围）
 
 
 def test_context_isolation_tenant_admin_sees_no_admin_presets(client, tadmin):
     # admin 归属下有内置预设方案；租户管理员在独立租户应看不到（上下文归属隔离）
     uid, tid = tadmin
-    resp = client.get("/api/profiles", headers=_auth(_access(uid, tid, "tenant_admin")))
+    resp = client.get("/api/profiles", headers=_auth(_access(uid, tid)))
     assert resp.status_code == 200
     assert resp.json()["data"] == []   # 各自归属，互不可见
 
@@ -83,7 +84,7 @@ def test_context_isolation_tenant_admin_sees_no_admin_presets(client, tadmin):
 def test_indicator_patch_writes_forbidden_for_tenant_admin(client, tadmin):
     # 评审 P0-1 回归：指标启停/分类修改是全局元数据写，非 system 一律 403
     uid, tid = tadmin
-    h = _auth(_access(uid, tid, "tenant_admin"))
+    h = _auth(_access(uid, tid))
     r1 = client.patch("/api/indicators/def/MA/enabled", json={"enabled": False}, headers=h)
     r2 = client.patch("/api/indicators/def/MA/categories", json={"categories": ["x"]}, headers=h)
     assert r1.status_code == 403 and r2.status_code == 403
@@ -102,7 +103,7 @@ _SYSTEM_ONLY_READS = [
 @pytest.mark.parametrize("method,path", _SYSTEM_ONLY_READS)
 def test_system_only_reads_forbidden_for_tenant_admin(client, tadmin, method, path):
     uid, tid = tadmin
-    h = _auth(_access(uid, tid, "tenant_admin"))
+    h = _auth(_access(uid, tid))
     resp = client.request(method, path, headers=h)
     assert resp.status_code == 403 and resp.json()["code"] == 4030, f"{path} 未挡住 tenant_admin"
 
@@ -118,7 +119,7 @@ _USER_SHARED_READS = [
 @pytest.mark.parametrize("path", _USER_SHARED_READS)
 def test_user_shared_reads_not_forbidden_for_tenant_admin(client, tadmin, path):
     uid, tid = tadmin
-    resp = client.get(path, headers=_auth(_access(uid, tid, "tenant_admin")))
+    resp = client.get(path, headers=_auth(_access(uid, tid)))
     assert resp.status_code != 403, f"{path} 被误 gate，普通用户页面将不可用"
 
 
@@ -126,7 +127,7 @@ def test_layout_page_reset_forbidden_for_tenant_admin(client, tadmin):
     # 评审 P1-3 回归：页面级布局重置是平台写，非 system 403（用户级 scope 不在此限）
     uid, tid = tadmin
     resp = client.post("/api/layout/reset", json={"scope": "page", "pageKey": "board"},
-                       headers=_auth(_access(uid, tid, "tenant_admin")))
+                       headers=_auth(_access(uid, tid)))
     assert resp.status_code == 403
 
 
@@ -138,7 +139,7 @@ def test_redis_failure_fails_closed_503(client, pg, monkeypatch):
     monkeypatch.setattr(ss, "is_jti_revoked",
                         lambda *_a, **_k: (_ for _ in ()).throw(_redis.ConnectionError("down")))
     pv = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
-    resp = client.get("/api/profiles", headers=_auth(_access("admin", "default", "system", pv)))
+    resp = client.get("/api/profiles", headers=_auth(_access("admin", "default", pv)))
     assert resp.status_code == 503
 
 
@@ -150,7 +151,7 @@ def test_layout_user_config_owner_from_context_not_request(client, pg, tadmin):
         r = client.post(
             f"/api/layout/users/{pk}",
             json={"userId": "admin", "config": {"values": {"density": "comfortable"}}},
-            headers=_auth(_access(uid, tid, "tenant_admin")))
+            headers=_auth(_access(uid, tid)))
         assert r.status_code == 200
         # 写入了当前用户(uid)名下，而非被伪造的 admin
         assert not pg.query_df(

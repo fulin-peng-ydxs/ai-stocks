@@ -14,7 +14,7 @@ import secrets
 import time
 import uuid
 
-from backend.auth import session_store as ss
+from backend.auth import perm_resolver, session_store as ss
 from backend.auth.jwt_tokens import (
     TOKEN_ACCESS,
     TOKEN_REFRESH,
@@ -50,10 +50,21 @@ class AuthService:
     def _tokens_and_user(self, u: dict) -> dict:
         ss.cache_perm_ver(u["id"], int(u["perm_ver"]))
         return {
-            "access_token": issue_access(u["id"], u["tenant_id"], u["role_code"], int(u["perm_ver"])),
-            "refresh_token": issue_refresh(u["id"], u["tenant_id"], u["role_code"], int(u["perm_ver"])),
+            "access_token": issue_access(u["id"], u["tenant_id"], int(u["perm_ver"])),
+            "refresh_token": issue_refresh(u["id"], u["tenant_id"], int(u["perm_ver"])),
             "user": self._public_user(u),
         }
+
+    def load_perms(self, user_id: str) -> dict:
+        """取有效权限（缓存优先，缺失实时解析并回填）。供中间件注入上下文 + /me 消费。
+
+        缓存故障 → session_store 抛 503（fail-closed，与中间件一致）。
+        """
+        perms = ss.get_cached_perms(user_id)
+        if perms is None:
+            perms = perm_resolver.resolve(user_id)
+            ss.cache_perms(user_id, perms, self.cfg.access_ttl_min * 60)
+        return perms
 
     @staticmethod
     def _remaining(claims: dict) -> int:
@@ -158,8 +169,9 @@ class AuthService:
         user = self.repo.get_by_id(user_id)
         if user is None:
             raise AuthError("用户不存在")
-        # 固定响应契约（plan §4.7；供 T7 auth store 对接）：{user, tenant, role, menus, permissions}
-        # 本阶段 menus/permissions 为空（前端仍用静态 menuConfig），阶段三填充。
+        # 固定响应契约：{user, tenant, role(兼容单码), roles(多角色), menus(码), permissions(功能码)}。
+        # menus/permissions 由 perm_resolver 解析填充（T10 再把 menus 细化为过滤后的菜单树供 SideMenu）。
+        perms = self.load_perms(user_id)
         return {
             "user": {
                 "id": user["id"], "account": user["account"],
@@ -167,8 +179,9 @@ class AuthService:
             },
             "tenant": {"id": user["tenant_id"]},
             "role": user["role_code"],
-            "menus": [],
-            "permissions": [],
+            "roles": perms["roles"],
+            "menus": perms["menus"],
+            "permissions": perms["resources"],
         }
 
     # ── 验证码 / 邮箱码 / 公开配置 ──

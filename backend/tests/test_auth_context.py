@@ -35,7 +35,7 @@ def test_in_request_without_context_raises():
 
 def test_context_owner_used_when_set():
     rt = enter_request()
-    ct = set_context(AuthContext(user_id="u9", tenant_id="t9", role="tenant_admin"))
+    ct = set_context(AuthContext(user_id="u9", tenant_id="t9", roles=("tenant_admin",)))
     try:
         assert get_current_owner() == ("t9", "u9")
     finally:

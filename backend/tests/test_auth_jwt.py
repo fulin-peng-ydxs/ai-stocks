@@ -27,15 +27,15 @@ def jwt_secret(monkeypatch):
 
 
 def test_issue_and_decode_access(jwt_secret):
-    tok = issue_access("u1", "t1", "system", 3)
+    tok = issue_access("u1", "t1", 3)
     c = decode(tok, expect_typ=TOKEN_ACCESS)
     assert c["sub"] == "u1" and c["tenant_id"] == "t1"
-    assert c["role"] == "system" and c["perm_ver"] == 3
+    assert "role" not in c and c["perm_ver"] == 3   # 瘦令牌：无 role claim
     assert c["typ"] == TOKEN_ACCESS and c["jti"]
 
 
 def test_refresh_type_gate(jwt_secret):
-    rt = issue_refresh("u1", "t1", "normal", 0)
+    rt = issue_refresh("u1", "t1", 0)
     assert decode(rt, expect_typ=TOKEN_REFRESH)["typ"] == TOKEN_REFRESH
     # refresh 不能当 access 用
     with pytest.raises(AuthError):
@@ -43,7 +43,7 @@ def test_refresh_type_gate(jwt_secret):
 
 
 def test_tampered_token_rejected(jwt_secret):
-    tok = issue_access("u1", "t1", "normal", 0)
+    tok = issue_access("u1", "t1", 0)
     tampered = tok[:-3] + ("abc" if tok[-3:] != "abc" else "xyz")
     with pytest.raises(AuthError):
         decode(tampered)
@@ -71,4 +71,4 @@ def test_missing_secret_is_config_error(monkeypatch):
     monkeypatch.delenv("AI_STOCKS_JWT_SECRET", raising=False)
     # 无弱默认：缺密钥属服务配置错误（非客户端 401）
     with pytest.raises(ConfigError):
-        issue_access("u1", "t1", "normal", 0)
+        issue_access("u1", "t1", 0)

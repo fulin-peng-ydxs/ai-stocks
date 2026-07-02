@@ -54,7 +54,7 @@ def _admin_token():
     from backend.storage.pg_client import get_pg_client
     pv = int(get_pg_client().query_df(
         "SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
-    return issue_access("admin", "default", "system", pv)
+    return issue_access("admin", "default", pv)
 
 
 def test_me_contract_shape(client):

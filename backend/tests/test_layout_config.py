@@ -35,7 +35,7 @@ def _sys_headers() -> dict:
 
     pv = int(get_pg_client().query_df(
         "SELECT perm_ver FROM sys_user WHERE id='admin'").iloc[0]["perm_ver"])
-    return {"Authorization": "Bearer " + issue_access("admin", "default", "system", pv)}
+    return {"Authorization": "Bearer " + issue_access("admin", "default", pv)}
 
 
 def test_layout_tables_created(client):

@@ -112,18 +112,23 @@ class AuthMiddleware:
                     authorization = v.decode("latin-1")
                     break
 
+            svc = AuthService()
             try:
-                claims = AuthService().claims_from_bearer(authorization)
+                claims = svc.claims_from_bearer(authorization)
+                # 瘦令牌：角色/权限不在 token，按 user_id 解析（缓存优先）后注入上下文
+                perms = svc.load_perms(claims["sub"])
             except AuthError as e:
                 return await self._deny(scope, receive, send, e.http_status, e.code, e.msg)
             except (ServiceUnavailableError, StorageError, redis.RedisError):
-                # 鉴权关键依赖（Redis 黑名单/perm_ver、PG）不可用 → fail-closed 503（保吊销/失效语义）
+                # 鉴权关键依赖（Redis 黑名单/perm_ver/perms 缓存、PG）不可用 → fail-closed 503
                 log.warning("鉴权链存储不可用，fail-closed 拒绝 path=%s", scope.get("path"))
                 return await self._deny(
                     scope, receive, send, 503, 5003, "服务暂时不可用（鉴权依赖），请稍后重试")
 
             token = set_context(AuthContext(
-                user_id=claims["sub"], tenant_id=claims["tenant_id"], role=claims["role"]))
+                user_id=claims["sub"], tenant_id=claims["tenant_id"],
+                roles=tuple(perms["roles"]), is_system=bool(perms["is_system"]),
+                menus=frozenset(perms["menus"]), resources=frozenset(perms["resources"])))
             try:
                 await self.app(scope, receive, send)
             finally:
