@@ -14,6 +14,7 @@ perm_ver 权威在 PG（sys_user.perm_ver）；本模块只做缓存 get/set/inv
 
 from __future__ import annotations
 
+import json
 from functools import wraps
 
 import redis
@@ -50,6 +51,7 @@ def _bl(jti: str) -> str: return f"auth:bl:{jti}"
 def _pv(user_id: str) -> str: return f"auth:pv:{user_id}"
 def _fail(account: str) -> str: return f"auth:fail:{account}"
 def _lock(account: str) -> str: return f"auth:lock:{account}"
+def _perms(user_id: str) -> str: return f"auth:perms:{user_id}"
 def _captcha(cid: str) -> str: return f"auth:captcha:{cid}"
 def _emailcode(email: str) -> str: return f"auth:emailcode:{email}"
 def _rl(scope: str, key: str) -> str: return f"rl:{scope}:{key}"
@@ -86,6 +88,25 @@ def get_cached_perm_ver(user_id: str) -> int | None:
 @_critical
 def invalidate_perm_ver(user_id: str) -> None:
     _r().delete(_pv(user_id))
+
+
+# ── 有效权限缓存（stage3：解析结果 roles/is_system/menus/resources/perm_ver）──
+# 纯缓存读写；解析(回查 PG)与失效编排(bump)在 perm_resolver.py（避免本层耦合 PG，同 perm_ver）。
+@_critical
+def cache_perms(user_id: str, perms: dict, ttl_seconds: int = 3600) -> None:
+    _r().set(_perms(user_id), json.dumps(perms), ex=ttl_seconds)
+
+
+@_critical
+def get_cached_perms(user_id: str) -> dict | None:
+    """读缓存的有效权限；未命中返回 None（由上层实时解析回填）。故障时异常上抛(fail-closed)。"""
+    v = _r().get(_perms(user_id))
+    return json.loads(v) if v is not None else None
+
+
+@_critical
+def clear_perms(user_id: str) -> None:
+    _r().delete(_perms(user_id))
 
 
 # ── 登录失败计数 + 账号锁定 ──

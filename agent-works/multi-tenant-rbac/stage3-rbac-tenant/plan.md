@@ -77,7 +77,7 @@
   - **菜单删除 / 可见性变更 / 资源码删除或改**（影响 /me 菜单与权限集合）→ 查引用该菜单/资源的角色 → 再查这些角色的用户 → bump；
   - 用户禁用/锁定 → bump + token 黑名单。
   - **租户停用 → 该租户全部用户 bump**（Codex P2 整改）：停用后其用户下次请求因 perm_ver 失配 401 → 重登时被租户 status 校验拒绝，闭合"已登录 token 仍可访问"缺口。
-  - 统一封装 `bump_users_of_roles(role_ids)` / `bump_users_of_menu(menu_id)` / `bump_users_of_resource(resource_id)` / `bump_users_of_tenant(tenant_id)` 供各仓库调用。
+  - 统一封装 `bump_users_of_roles(role_ids)` / `bump_users_of_menu(menu_id)` / `bump_users_of_resource(resource_id)` / `bump_users_of_tenant(tenant_id)` 供各仓库调用（**实现在 `perm_resolver.py`**，因需查 PG 找受影响用户；session_store 保持纯 Redis）。菜单/资源结构变更额外 bump 全部 system 用户（超管解析为全量视图，结构变更也影响其 /me）。
 - **上下文改造**：`AuthContext` 由单 `role` → `roles:[]` + `is_system` + `perms`(menus/resources set)；`system_context()` 设 is_system + 全量 perms。`get_current_owner()` 不变。
 
 ### 4.3 鉴权守卫与权限码（精确码，Codex P0 整改）
@@ -183,16 +183,16 @@
 - 完成标准：表+FK+索引+seed 就绪，admin=system 全授权，存量平滑迁移。**（已达成：全量 pytest 283 passed = 273 基线 + 10 T1 用例）**
 
 ### 6.2 任务 T2：权限解析 + Redis 缓存 + 失效全触发点
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1
-- 涉及文件/模块：`backend/auth/perm_resolver.py`(新)、`backend/auth/session_store.py`
+- 涉及文件/模块：`backend/auth/perm_resolver.py`(新)、`backend/auth/session_store.py`、`backend/tests/test_rbac_perm_resolver.py`(产出)
 - 目标：多角色权限解析 + 按 perm_ver 缓存 + **全触发点失效**（Codex P1）。
-- 操作：`resolve(user_id)`（§4.2）；session_store 加 `cache_perms/get_cached_perms/clear_perms`（`_critical` fail-closed）+ `bump_and_invalidate`；封装 `bump_users_of_roles/of_menu/of_resource`（供 T6/T7/T8 调用）。
-- 产出：解析器 + 缓存读写/失效 + 三个 bump 封装。
-- 影响范围：新增模块 + session_store 扩展。
-- 边界与异常：Redis 故障 fail-closed(503)；缓存缺失实时解析回写；system 全量。
-- 验证方式：单测——多角色并集；菜单/资源/角色变更后正确 bump 到关联用户；bump 后缓存清空重解析；Redis 故障抛 ServiceUnavailableError。
-- 完成标准：解析/缓存/全触发点失效可用且有单测。
+- 操作：`resolve(user_id)`（§4.2）；session_store 加 `cache_perms/get_cached_perms/clear_perms`（`_critical` fail-closed，**纯 Redis**）；**bump 编排放 perm_resolver（非 session_store）**——`bump_and_invalidate(user_ids)`(PG perm_ver+1 + 清 perms/pv 缓存) + `bump_users_of_roles/of_menu/of_resource/of_tenant`（供 T6/T7/T9 调用）。**微调理由**：bump 需查 PG 找受影响用户，而 session_store docstring 明确「不耦合 PG」，故 PG 耦合的失效编排归 perm_resolver，session_store 只留纯缓存读写。
+- 产出：解析器 + 失效编排(4 个 bump) + session_store 缓存三方法 + 11 个单测。
+- 影响范围：新增模块 + session_store 加缓存方法（additive）。
+- 边界与异常：Redis 故障 fail-closed(503)；缓存缺失实时解析回写（回填编排在 T3 中间件）；system 全量；菜单/资源结构变更额外 bump 全部 system 用户（超管看全量）。
+- 验证方式：单测——多角色并集/system 全量/无角色空；菜单·资源·角色·租户变更后正确 bump 到关联用户(含 system)；bump 后 perm_ver+1 且缓存清；Redis 故障抛 ServiceUnavailableError。
+- 完成标准：解析/缓存/全触发点失效可用且有单测。**（已达成：11 个 T2 用例全通过）**
 
 ### 6.3 任务 T3：JWT 瘦令牌 + 上下文/中间件改造
 - 状态：待开始
