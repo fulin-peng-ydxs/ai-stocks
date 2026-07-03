@@ -8,10 +8,10 @@
 - **指定管理员须属该租户**：admin_user_id 指向的用户 tenant_id 必须等于本租户。
 - **默认/平台租户保护**：default 租户不可删、不可停用（否则平台管理员自锁）。
 - **删除前置**：仍有用户的租户不可删（先迁走/删用户）。
-- **停用即时踢下线（Codex P2 + 三轮 P1）**：停用 → 失效"夹住"业务写入——affected(租户成员)写前算定 →
-  `pre_invalidate`(仅清 Redis,fail-closed) → 写 status → `bump_and_invalidate`(perm_ver++ +双删)。
-  ①业务提交后登录/刷新即被 `_ensure_tenant_active` 拒；②写后 bump 使全部**在线** token perm_ver 失配 →
-  401 → 重登再被 status 拒。perm_ver 后置保证窗口内 login 不签发可越过停用的令牌。
+- **停用即时踢下线（Codex P2 + 五轮 P1，原子化）**：停用 → affected(租户成员)写前算定 → **写 status +
+  成员 `bump_perm_ver` 同一 PG 事务原子提交** → 提交后 `clear_perms_cache` best-effort。三重保障：①登录/
+  刷新被 `_ensure_tenant_active` 拒；②`claims_from_bearer` 每请求实时校验租户 status（不依赖 bump/Redis）；
+  ③成员 perm_ver 原子自增使全部**在线** token 失配 → 401。
 """
 
 from __future__ import annotations
@@ -74,14 +74,15 @@ class TenantAdminService:
         cur = self._load(tenant_id)
         if tenant_id == DEFAULT_TENANT_ID and status != "active":
             raise ForbiddenError("默认租户不可停用")
-        # 停用即时踢下线：失效"夹住"业务写入（Codex 三轮 P1）——affected 写前算定（成员不因状态变更而变）
-        # → 写前门禁清 Redis(fail-closed) → 写 status → 写后 perm_ver++。停用在业务提交后即经 login/
-        # refresh 的 _ensure_tenant_active 拒新登录；perm_ver 后置作废窗口内可能签发的旧 token。
+        # 停用即时踢下线：affected 写前算定（成员不因状态变更而变）；停用 + 成员 perm_ver 自增**同事务
+        # 原子提交**（Codex 五轮 P1）→ 提交后 best-effort 清缓存。停用另由 login/refresh 及每请求的
+        # claims_from_bearer 实时校验租户 status 即时拒绝（三重保障）。
         if status != "active":
             affected = perm_resolver.affected_users_of_tenant(tenant_id)
-            perm_resolver.pre_invalidate(affected)
-            self.tenants.set_status(tenant_id, status)
-            perm_resolver.bump_and_invalidate(affected)
+            with self.tenants.pg.transaction() as conn:
+                self.tenants.set_status(tenant_id, status, conn=conn)
+                perm_resolver.bump_perm_ver(affected, conn)
+            perm_resolver.clear_perms_cache(affected)
             log.info("租户管理：停用租户 %s，%d 个用户 token 失效（新登录亦被拒）", tenant_id, len(affected))
         else:
             self.tenants.set_status(tenant_id, status)

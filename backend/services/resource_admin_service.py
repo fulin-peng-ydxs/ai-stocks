@@ -8,11 +8,10 @@
 - **唯一不可复用**：code 全局唯一（撞现有拒）。
 - **内置保护**：is_builtin 功能码与端点 require_perm 硬绑，**不可删、code 不可改**（可改 name/type/接口元数据）。
 - **归属菜单存在**：menu_id 必须指向已存在菜单。
-- **缓存失效（Codex 三轮 P1）**：**删除、改 code → 失效"夹住"业务写入**——写前 `pre_invalidate(affected)`
-  （仅清 Redis，fail-closed 门禁）→ 写库 → 写后 `bump_and_invalidate(affected)`（perm_ver++ + 双删），
-  保证 perm_ver 自增晚于业务提交。affected = 引用该功能角色的用户 ∪ 全部 system 用户，**删除前算定**（删后
-  role_resource CASCADE 清空即查不到引用用户）。改 code = 有效权限码变，故失效；改 name/type/接口元数据/
-  移动菜单不影响权限码，不失效；新建为加性变更（无引用）不失效——system 按缓存 TTL 自然刷新（plan §6.8）。
+- **缓存失效（Codex 五轮 P1，原子化）**：**删除、改 code → 功能点写入(conn) + `bump_perm_ver` 同一 PG
+  事务原子提交** → 提交后 `clear_perms_cache` best-effort。affected = 引用该功能角色的用户 ∪ 全部 system
+  用户，**删除前算定**（删后 role_resource CASCADE 清空即查不到引用用户）。改 code = 有效权限码变，故失效；
+  改 name/type/接口元数据/移动菜单不影响权限码，不失效；新建为加性变更（无引用）不失效（plan §6.8）。
 """
 
 from __future__ import annotations
@@ -77,15 +76,16 @@ class ResourceAdminService:
             raise ValidationError("功能码已存在，且不可复用")
         if not menu_id or self.menus.get(menu_id) is None:
             raise ValidationError("归属菜单不存在")
-        # 改 code = 有效权限码变 → 失效"夹住"业务写入（Codex 三轮 P1）：affected 写前算定（成员不因本次
-        # 编辑而变）→ 写前门禁清 Redis(fail-closed) → 写 → 写后 perm_ver++，使 perm_ver 自增晚于业务提交。
+        # 改 code = 有效权限码变 → 需失效。affected 写前算定（成员不因本次编辑而变）；功能点写入 +（如需）
+        # perm_ver 自增**同事务原子提交**（Codex 五轮 P1）→ 提交后 best-effort 清缓存。
         affected = perm_resolver.affected_users_of_resource(resource_id) if code_changed else []
+        with self.resources.pg.transaction() as conn:
+            self.resources.update(resource_id, menu_id=menu_id, code=code, name=name,
+                                  type=type, api_method=api_method, api_path=api_path, conn=conn)
+            if affected:
+                perm_resolver.bump_perm_ver(affected, conn)
         if affected:
-            perm_resolver.pre_invalidate(affected)
-        self.resources.update(resource_id, menu_id=menu_id, code=code, name=name,
-                              type=type, api_method=api_method, api_path=api_path)
-        if affected:
-            perm_resolver.bump_and_invalidate(affected)
+            perm_resolver.clear_perms_cache(affected)
             log.info("功能管理：功能 %s code %s→%s，%d 个用户失效",
                      resource_id, cur["code"], code, len(affected))
         else:
@@ -97,12 +97,13 @@ class ResourceAdminService:
         cur = self._load(resource_id)
         if cur["is_builtin"]:
             raise ForbiddenError("内置功能点不可删除")
-        # 失效夹住业务写入（Codex 三轮 P1）：affected 删除前算定（删后 role_resource CASCADE 清空即查
-        # 不到引用用户）→ 写前门禁清 Redis → 删除 → 写后 perm_ver++。
+        # affected 删除前算定（删后 role_resource CASCADE 清空即查不到引用用户）；删除 + perm_ver 自增
+        # **同事务原子提交**（Codex 五轮 P1）→ 提交后 best-effort 清缓存。
         affected = perm_resolver.affected_users_of_resource(resource_id)
-        perm_resolver.pre_invalidate(affected)
-        self.resources.delete(resource_id)
-        perm_resolver.bump_and_invalidate(affected)
+        with self.resources.pg.transaction() as conn:
+            self.resources.delete(resource_id, conn=conn)
+            perm_resolver.bump_perm_ver(affected, conn)
+        perm_resolver.clear_perms_cache(affected)
         log.info("功能管理：删除功能点 %s(%s)，%d 个用户失效", resource_id, cur["code"], len(affected))
 
     # ── 内部 ──

@@ -86,10 +86,11 @@ class TenantRepository:
             "UPDATE sys_tenant SET name=%s, admin_user_id=%s, updated_at=%s WHERE id=%s",
             [name, admin_user_id, datetime.now(), tenant_id])
 
-    def set_status(self, tenant_id: str, status: str) -> None:
-        self.pg.execute(
-            "UPDATE sys_tenant SET status=%s, updated_at=%s WHERE id=%s",
-            [status, datetime.now(), tenant_id])
+    def set_status(self, tenant_id: str, status: str, *, conn=None) -> None:
+        """启停租户。conn 非空则并入调用方事务（停用与该租户成员 perm_ver 自增原子提交）。"""
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute("UPDATE sys_tenant SET status=%s, updated_at=%s WHERE id=%s",
+                        [status, datetime.now(), tenant_id])
 
     def delete(self, tenant_id: str) -> None:
         self.pg.execute("DELETE FROM sys_tenant WHERE id = %s", [tenant_id])

@@ -117,9 +117,10 @@ class RoleRepository:
             "resource_ids": r["resource_id"].tolist() if not r.empty else [],
         }
 
-    def set_grants(self, role_id: str, *, menu_ids: list[str], resource_ids: list[str]) -> None:
-        """替换角色授权（单事务：全删后重插，避免残留）。存在性由调用方先校验、FK 兜底。"""
-        with self.pg.transaction() as conn, conn.cursor() as cur:
+    def set_grants(self, role_id: str, *, menu_ids: list[str], resource_ids: list[str],
+                   conn=None) -> None:
+        """替换角色授权（全删后重插，避免残留）。conn 非空则并入调用方事务（与 bump 原子）。存在性调用方先校验。"""
+        with self.pg.cursor_in(conn) as cur:
             cur.execute("DELETE FROM sys_role_menu WHERE role_id = %s", [role_id])
             cur.execute("DELETE FROM sys_role_resource WHERE role_id = %s", [role_id])
             for mid in dict.fromkeys(menu_ids):

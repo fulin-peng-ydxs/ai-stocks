@@ -229,29 +229,30 @@ def test_create_in_disabled_tenant_rejected(client, env):
     assert r.json()["code"] == 4000
 
 
-def test_perm_ver_bumped_after_business_write(client, env, monkeypatch):
-    # Codex 三轮 P1：perm_ver 自增必须**晚于**业务写入提交——否则 bump 与业务写入之间的窗口里，并发
-    # login 会读到"新 perm_ver + 停用前 status"，铸造出能越过停用、存活整个 access-token TTL 的令牌。
-    # 在业务写入(set_status)时刻抓取当时 PG 的 perm_ver，断言仍是旧值（证明 bump 尚未发生）。
+def test_business_write_and_bump_commit_atomically(client, env, monkeypatch):
+    # Codex 五轮 P1：业务写入 + perm_ver 自增在同一 PG 事务。事务提交前，另一连接(env.pg)看不到任何变化
+    # （status 仍旧、perm_ver 仍旧）；提交后两者一起可见——即无"业务已变、版本未进/版本已进、业务未变"窗口。
     from backend.storage.user_repository import UserRepository
     tid = env.mk_tenant()
     env.mk_user(tid, ROLE_TENANT_ADMIN)             # 排除最后管理员干扰
     target = env.mk_user(tid, ROLE_NORMAL)
     v0 = _perm_ver(env.pg, target)
 
-    seen: dict[str, int] = {}
+    seen: dict[str, object] = {}
     orig = UserRepository.set_status
 
-    def spy(self, user_id, status):
-        seen["pv_at_write"] = _perm_ver(env.pg, user_id)   # 业务写入时刻的 perm_ver
-        return orig(self, user_id, status)
+    def spy(self, user_id, status, *, conn=None):
+        # 在事务内、业务 UPDATE 之后立即用独立连接读取：应仍看不到提交（status/perm_ver 都还是旧值）
+        row = env.pg.query_df("SELECT status, perm_ver FROM sys_user WHERE id=%s", [user_id]).iloc[0]
+        seen["status"], seen["pv"] = row["status"], int(row["perm_ver"])
+        return orig(self, user_id, status, conn=conn)
     monkeypatch.setattr(UserRepository, "set_status", spy)
 
     r = client.post(f"/api/users/{target}/status", json={"status": "disabled"},
                     headers=env.sys_headers())
     assert r.status_code == 200
-    assert seen["pv_at_write"] == v0             # 写入停用时 perm_ver 未自增（bump 后置，杜绝铸造窗口）
-    assert _perm_ver(env.pg, target) == v0 + 1   # 操作完成后才自增
+    assert seen["status"] == "active" and seen["pv"] == v0   # 事务内对外不可见（原子性）
+    assert _perm_ver(env.pg, target) == v0 + 1               # 提交后 perm_ver 与业务一起前进
 
 
 def test_stale_redis_perm_ver_cannot_bypass_authoritative_pg(client, env):
@@ -281,13 +282,17 @@ def test_stale_redis_perm_ver_cannot_bypass_authoritative_pg(client, env):
     assert client.get("/api/users", headers=old).status_code == 401
 
 
-def test_bump_redis_failure_aborts_business(client, env, monkeypatch):
-    # P1：失效走 fail-closed，且在业务写入之前——Redis 清缓存失败 → 503 且用户状态不变（不 fail-open）
+def test_redis_clear_failure_does_not_block_authoritative_invalidation(client, env, monkeypatch):
+    # Codex 五轮 P1：业务写入 + perm_ver 自增在**同一 PG 事务**原子提交，Redis 清缓存为 best-effort。
+    # 故"写后 Redis 清理失败"不再阻断权威失效：状态照常提交、perm_ver 照常自增、旧 token 照常 401。
+    # （对比旧实现：先清 Redis、清失败即 503 且 PG 不 bump → 业务已落库却没失效，是 fail-open。）
     from backend.auth import session_store
     from backend.common.exceptions import ServiceUnavailableError
     tid = env.mk_tenant()
     env.mk_user(tid, ROLE_TENANT_ADMIN)             # 排除最后管理员干扰
     target = env.mk_user(tid, ROLE_NORMAL)
+    v0 = _perm_ver(env.pg, target)
+    old = _tok(target, tid, v0)
 
     def boom(_uid):
         raise ServiceUnavailableError("Redis down")
@@ -295,10 +300,33 @@ def test_bump_redis_failure_aborts_business(client, env, monkeypatch):
 
     r = client.post(f"/api/users/{target}/status", json={"status": "disabled"},
                     headers=env.sys_headers())
-    assert r.status_code == 503
-    # 关键：业务未提交——目标仍 active，旧 token 不会因"DB 已改+缓存未清"而 fail-open
+    assert r.status_code == 200                     # best-effort 清理失败不影响操作成功
     assert env.pg.query_df("SELECT status FROM sys_user WHERE id=%s",
-                           [target]).iloc[0]["status"] == "active"
+                           [target]).iloc[0]["status"] == "disabled"   # 业务已原子提交
+    assert _perm_ver(env.pg, target) == v0 + 1      # 权威 perm_ver 已前进（不被 Redis 阻断）
+    assert client.get("/api/users", headers=old).status_code == 401   # 旧 token 被 PG 权威闸门拒
+
+
+def test_tenant_disable_invalidates_online_token_even_if_redis_fails(client, env, monkeypatch):
+    # Codex 五轮 P1（租户覆盖）：停用 + 成员 perm_ver 自增同事务原子提交；Redis 清理失败也不影响——
+    # 停租用户在线 token 被拒（perm_ver 失配 + 租户 status 实时校验双保险）。
+    from backend.auth import session_store
+    from backend.auth.constants import ROLE_NORMAL as _NORMAL
+    from backend.common.exceptions import ServiceUnavailableError
+    tid = env.mk_tenant()
+    member = env.mk_user(tid, _NORMAL)
+    old = _tok(member, tid, 0)
+    assert client.get("/api/users", headers=old).status_code == 403   # 基线：token 有效
+
+    def boom(_uid):
+        raise ServiceUnavailableError("Redis down")
+    monkeypatch.setattr(session_store, "clear_perms", boom)
+
+    r = client.post(f"/api/tenants/{tid}/status", json={"status": "disabled"},
+                    headers=env.sys_headers())
+    assert r.status_code == 200
+    assert _perm_ver(env.pg, member) == 1                             # 成员 perm_ver 原子自增
+    assert client.get("/api/users", headers=old).status_code == 401   # 停租在线 token 被拒
 
 
 # ── 编辑 / 重置 / 删除 ──

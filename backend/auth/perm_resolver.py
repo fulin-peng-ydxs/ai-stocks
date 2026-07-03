@@ -12,29 +12,29 @@
 `load_perms` 按权威 perm_ver 校验新鲜度。Redis 清缓存退化为"减少重解析"的优化，不再是正确性关键。
 PG 耦合在本模块（session_store 保持纯 Redis）。
 
-**调用契约（Codex 三轮 P1 整改）：失效必须"夹住"业务写入——`perm_ver` 自增恒晚于业务写入提交。**
-每个改权限/状态的服务操作按三步走：
-- ① 业务写入**前** `pre_invalidate(affected)`：仅清 Redis 缓存（fail-closed），Redis 不可用即抛 503、
-  业务写入随之中止（不落库）。
-- ② 业务写入（停用/删除/改授权）。
-- ③ 业务写入**后** `bump_and_invalidate(affected)`：自增 PG perm_ver + 延迟双删缓存。
-为何 bump 必须在业务写入**之后**（推翻旧"必须在之前"契约，Codex 三轮 P1）：旧顺序 bump 早于业务写入，
-在 bump 与业务写入之间的窗口里，并发 `login`/`refresh` 会读到**已自增**的 perm_ver 却搭配**停用前/授权前**
-的业务态，从而签发一枚"新 perm_ver + 旧业务态"的**有效**令牌——它能越过随后的停用、或绑定旧授权，且因
-perm_ver 与当前一致、缓存命中路径不复查 status，可存活整个 access-token TTL（全 TTL fail-open）。改为
-bump 后置后：窗口内 `login` 要么读到旧 perm_ver（签发"旧态一致"令牌，提交后即被 ③ 判失配拒绝）、要么在
-停用提交后被 `login`/`refresh` 的 status/存在性校验即时拒——不可能再签发"新 perm_ver + 旧态"令牌。
-**affected 用户集须在业务写入前一次性算定（`affected_users_of_*`）**，避免删除的级联（role_menu/
-role_resource/sys_user_role CASCADE）在写入后使集合缩水、漏掉本应失效的用户。
-（bump_and_invalidate 内部"清→自增→再清"延迟双删的理由见其 docstring。）
+**调用契约（Codex 五轮 P1 整改，原子化）：业务写入与 `perm_ver` 自增在**同一 PG 事务**里原子提交。**
+每个改权限/状态的服务操作三步走：
+- ① `affected = affected_users_of_*(...)`：业务写入**前**一次性算定受影响用户（读），避免删除的级联
+  （role_menu/role_resource/sys_user_role CASCADE）在写入后使集合缩水、漏掉本应失效的用户。
+- ② 在一个 PG 事务内：`repo.业务写入(..., conn=conn)` + `bump_perm_ver(affected, conn)` → **原子提交**。
+  权威失效（PG perm_ver 自增）与业务写入同生共死：要么都提交、要么都回滚，中间无"业务已变、版本未进"
+  或"版本已进、业务未变"的窗口，也**不被 Redis 可用性左右**。
+- ③ 提交后 `clear_perms_cache(affected)`：best-effort 清 Redis perms 缓存（纯优化，失败仅告警——权威在
+  PG，鉴权闸门每请求以 PG perm_ver + status 为准，`load_perms` 再按 perm_ver 校验缓存新鲜度自愈）。
+历史教训（前四轮都栽在非原子上）：把失效拆成"清 Redis / bump PG / 业务写入"多个独立步骤，任何两步之间
+都有并发窗口或某步失败即脱钩——要么旧 token 蒙混（fail-open）、要么 Redis 故障挡住 PG 权威失效。原子化
+一次性消除该类窗口。`bump_and_invalidate`（清→bump→best-effort）保留给测试/无需同事务的一次性场景。
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
+import redis
+
 from backend.auth import session_store
 from backend.auth.constants import ROLE_SYSTEM
+from backend.common.exceptions import ServiceUnavailableError, StorageError
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -81,51 +81,59 @@ def resolve(user_id: str, client: PostgresClient | None = None) -> dict:
 
 # ── 失效编排 ──────────────────────────────────────────────────────────────────
 
-def bump_and_invalidate(user_ids: Iterable[str], client: PostgresClient | None = None) -> int:
-    """相关用户 **清 perms 缓存(Redis)→perm_ver+1(PG)→再清一次缓存**（延迟双删）。返回受影响用户数。
+def bump_perm_ver(user_ids: Iterable[str], conn) -> int:
+    """在给定 PG 连接（调用方事务）内自增 perm_ver。**仅 PG、不碰 Redis**——供与业务写入**同事务原子提交**。
 
-    **调用位置（Codex 三轮 P1）：在业务写入之**后**调用**（见模块 docstring：写前 `pre_invalidate`
-    做 fail-closed 门禁 → 业务写入 → 写后本函数自增 perm_ver）。故本函数自身不承担"Redis 挂即中止业务"
-    的门禁职责（那是写前 pre_invalidate 的事）。
-    顺序「Redis 首清 → PG 自增 → Redis 二次清理」：
-    - ② PG 自增是**权威**失效——鉴权闸门每请求以 PG perm_ver 为准（claims_from_bearer，Codex 四轮 P1），
-      故只要此自增提交，旧 token 下次请求必因 perm_ver 失配被拒，**与 Redis 是否清成功无关**（Redis 清理
-      失败/并发回填旧 perm_ver 都不再造成 fail-open）。
-    - ①③ 两次清 perms 缓存：抹掉自增前后并发回填的旧 perms 内容，减少"新令牌读到旧权限内容"的窗口；
-      即便清理失败，load_perms 也会按权威 perm_ver 校验缓存新鲜度、拒采信陈旧 perms（双保险）。
+    权威失效：鉴权闸门每请求以 PG perm_ver 为准（`claims_from_bearer`），故此自增一旦随业务写入同事务
+    提交，旧 token 下次请求即因 perm_ver 失配被拒，与 Redis 可用性无关；若事务回滚则一并回滚、业务亦不落库。
+    返回受影响用户数（去重去空后）。
+    """
+    uids = [u for u in dict.fromkeys(user_ids) if u]
+    if not uids:
+        return 0
+    conn.execute("UPDATE sys_user SET perm_ver = perm_ver + 1 WHERE id = ANY(%s)", [uids])
+    return len(uids)
+
+
+def clear_perms_cache(user_ids: Iterable[str]) -> None:
+    """业务+bump 提交后 **best-effort** 清 Redis perms 缓存（纯优化）。
+
+    失败仅告警、不抛——权威在 PG：闸门每请求校验 PG perm_ver + status，`load_perms` 再按 perm_ver 校验
+    缓存新鲜度、拒采信陈旧内容。故 Redis 清理失败绝不影响正确性（区别于旧实现"清失败即 fail-open/挡住失效"）。
+    """
+    try:
+        _clear_user_caches(user_ids)
+    except (ServiceUnavailableError, StorageError, redis.RedisError) as e:
+        log.warning("清 perms 缓存失败（best-effort，PG perm_ver 已权威失效，不影响正确性）: %s", e)
+
+
+def bump_and_invalidate(user_ids: Iterable[str], client: PostgresClient | None = None) -> int:
+    """一次性失效（非同事务路径）：**先自增 PG perm_ver（权威）再 best-effort 清 Redis**。返回受影响用户数。
+
+    PG 自增优先且**不被 Redis 阻断**（Codex 五轮 P1）：先 bump PG（权威失效落定），再 best-effort 清缓存。
+    供测试与"无业务写入需同事务"的场景；改状态/授权的写入路径请走 `bump_perm_ver(conn)` 与业务写入同事务
+    （见模块 docstring 调用契约），以消除跨事务窗口。
     """
     uids = [u for u in dict.fromkeys(user_ids) if u]   # 去重去空、保序
     if not uids:
         return 0
     client = client or get_pg_client()
-    _clear_user_caches(uids)       # ① 首清（fail-closed）：Redis 不可用即抛，尚未动 PG
-    # ② 缓存清理成功后再自增 PG perm_ver（权威）
     client.execute("UPDATE sys_user SET perm_ver = perm_ver + 1 WHERE id = ANY(%s)", [uids])
-    _clear_user_caches(uids)       # ③ 二次清理：抹掉①与②窗口内并发回填的旧值（关闭回填竞态）
+    clear_perms_cache(uids)
     log.info("perm bump: %d 个用户权限失效（下次请求需重登）", len(uids))
     return len(uids)
 
 
-def pre_invalidate(user_ids: Iterable[str]) -> None:
-    """业务写入**前**的失效门禁（Codex 三轮 P1）：仅清 Redis 缓存，**不动 PG perm_ver**。
-
-    fail-closed：Redis 不可用即抛 503（_critical），调用方业务写入随之中止、不落库。与业务写入后的
-    `bump_and_invalidate(同一 affected 集)` 配对，保证 perm_ver 自增晚于业务写入提交（见模块 docstring
-    调用契约）。清空的缓存被后续请求即时回填时，业务态与 perm_ver 都还是旧值、回填值一致，无害。
-    """
-    _clear_user_caches(user_ids)
-
-
 def _clear_user_caches(uids: Iterable[str]) -> None:
-    """清若干用户的有效权限缓存 + perm_ver 缓存（_critical fail-closed，Redis 不可用即抛 503）。"""
+    """清若干用户的有效权限缓存（+ 历史 perm_ver 缓存键，已不再读取，清之无害）。_critical：Redis 故障抛 503。"""
     for uid in uids:
         session_store.clear_perms(uid)
         session_store.invalidate_perm_ver(uid)
 
 
-# ── affected 用户集计算（业务写入前算定，供 pre_invalidate + 写后 bump_and_invalidate 共用）──
+# ── affected 用户集计算（业务写入前算定，供同事务 bump_perm_ver + 提交后 clear_perms_cache 共用）──
 # 删除类操作的级联（role_menu/role_resource/sys_user_role CASCADE）会在写入后使集合缩水，故必须在
-# 业务写入**前**算定并复用同一集合，否则写后重算会漏掉被级联摘除关联的用户（Codex 三轮 P1）。
+# 业务写入**前**算定并复用同一集合，否则重算会漏掉被级联摘除关联的用户（Codex 三轮 P1）。
 
 def affected_users_of_roles(role_ids: Iterable[str],
                             client: PostgresClient | None = None) -> list[str]:
@@ -180,8 +188,8 @@ def affected_users_of_tenant(tenant_id: str, client: PostgresClient | None = Non
     return df["id"].tolist() if not df.empty else []
 
 
-# ── 一次性失效（compute+bump 合体；供无"业务写入需夹住"场景/测试直用。改状态/授权的写入路径请改用
-#    pre_invalidate(写前) + bump_and_invalidate(写后) 夹住业务写入，见模块 docstring 调用契约）──
+# ── 一次性失效（compute+bump 合体；供测试/无需同事务的场景直用。改状态/授权的写入路径请改用同事务
+#    bump_perm_ver(conn) + 提交后 clear_perms_cache，见模块 docstring 调用契约）──
 
 def bump_users_of_roles(role_ids: Iterable[str], client: PostgresClient | None = None) -> int:
     """角色授权/删除变更 → 拥有这些角色的全部用户失效（一次性）。"""

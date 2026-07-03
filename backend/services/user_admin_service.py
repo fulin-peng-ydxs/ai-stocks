@@ -8,10 +8,9 @@ api/users.py 只做参数校验与响应包装。
 - **可分配角色**：只能分配 RoleRepository.assignable(调用者)——防 tenant_admin 越权授 system/自建角色。
 - **自身保护**：不能停用/删除自己。
 - **最后管理员保护**：不能停用/删除/降级掉租户内最后一个 tenant_admin。
-- **失效即时生效（Codex 三轮 P1）**：改角色/停用/删除/重置密码 → 失效"夹住"业务写入——写前
-  `pre_invalidate([uid])`（仅清 Redis，fail-closed 门禁）→ 写库 → 写后 `bump_and_invalidate([uid])`
-  （perm_ver++ + 双删）。perm_ver 自增晚于业务提交：停用/删除者业务提交后即经 login/refresh 的
-  status/存在性校验拒绝，写后 bump 再作废窗口内可能签发的旧 token（杜绝"新 perm_ver+旧态"长效令牌）。
+- **失效即时生效（Codex 五轮 P1，原子化）**：改角色/停用/重置密码 → **业务写入(conn) + `bump_perm_ver`
+  在同一 PG 事务原子提交** → 提交后 `clear_perms_cache` best-effort。停用/删除者另由 `claims_from_bearer`
+  每请求实时校验 status/存在性即时拒绝（不依赖 Redis）。删除无需 bump（get_by_id→None 即拒）。
 """
 
 from __future__ import annotations
@@ -85,12 +84,12 @@ class UserAdminService:
         if (removing_admin or disabling) and self._is_last_tenant_admin(target):
             raise ValidationError("该用户是本租户最后一个管理员，不能取消其管理员角色或停用")
 
-        # 失效"夹住"业务写入（Codex 三轮 P1）：写前仅清 Redis(fail-closed 门禁)、写后才 perm_ver++，
-        # 使 perm_ver 自增晚于业务提交，杜绝窗口内 login/refresh 铸造"新 perm_ver+旧态"的长效令牌。
-        perm_resolver.pre_invalidate([user_id])
-        self.users.update_user(
-            user_id, email=email, status=status, role_ids=role_ids, role_code=role_code)
-        perm_resolver.bump_and_invalidate([user_id])
+        # 业务写入 + perm_ver 自增**同事务原子提交**（Codex 五轮 P1）→ 提交后 best-effort 清缓存。
+        with self.users.pg.transaction() as conn:
+            self.users.update_user(user_id, email=email, status=status, role_ids=role_ids,
+                                   role_code=role_code, conn=conn)
+            perm_resolver.bump_perm_ver([user_id], conn)
+        perm_resolver.clear_perms_cache([user_id])
         log.info("用户管理：编辑用户 %s roles=%s status=%s", user_id, role_ids, status)
         return self.users.get_admin_view(user_id)  # type: ignore[return-value]
 
@@ -103,11 +102,12 @@ class UserAdminService:
         if status != "active" and ROLE_TENANT_ADMIN in (target["roles"] or []) \
                 and self._is_last_tenant_admin(target):
             raise ValidationError("该用户是本租户最后一个管理员，不能停用")
-        # 失效夹住业务写入（Codex 三轮 P1）：写前门禁清 Redis → 写停用 → 写后 perm_ver++；
-        # 停用在业务提交后即经 login/refresh 的 status 校验生效，perm_ver 后置作废窗口内旧 token。
-        perm_resolver.pre_invalidate([user_id])
-        self.users.set_status(user_id, status)
-        perm_resolver.bump_and_invalidate([user_id])
+        # 停用/启用 + perm_ver 自增同事务原子提交（Codex 五轮 P1）；停用另由 claims_from_bearer 每请求
+        # 实时校验 status 即时生效（双保险）。提交后 best-effort 清缓存。
+        with self.users.pg.transaction() as conn:
+            self.users.set_status(user_id, status, conn=conn)
+            perm_resolver.bump_perm_ver([user_id], conn)
+        perm_resolver.clear_perms_cache([user_id])
         log.info("用户管理：用户 %s 状态 → %s", user_id, status)
         return self.users.get_admin_view(user_id)  # type: ignore[return-value]
 
@@ -115,9 +115,11 @@ class UserAdminService:
     def reset_password(self, ctx: AuthContext, user_id: str, new_password: str) -> None:
         self._load_in_scope(ctx, user_id)
         check_strength(new_password, self.cfg.min_password_len)
-        perm_resolver.pre_invalidate([user_id])        # 写前门禁（fail-closed，见 P1 契约）
-        self.users.reset_password(user_id, hash_password(new_password))
-        perm_resolver.bump_and_invalidate([user_id])   # 写后 perm_ver++，作废旧会话
+        # 改密 + perm_ver 自增同事务原子提交（Codex 五轮 P1），作废旧会话；提交后 best-effort 清缓存。
+        with self.users.pg.transaction() as conn:
+            self.users.reset_password(user_id, hash_password(new_password), conn=conn)
+            perm_resolver.bump_perm_ver([user_id], conn)
+        perm_resolver.clear_perms_cache([user_id])
         log.info("用户管理：重置用户 %s 密码", user_id)
 
     # ── 删除 ──
@@ -127,11 +129,10 @@ class UserAdminService:
             raise ValidationError("不能删除自己")
         if ROLE_TENANT_ADMIN in (target["roles"] or []) and self._is_last_tenant_admin(target):
             raise ValidationError("该用户是本租户最后一个管理员，不能删除")
-        # 写前门禁清缓存 → 删除 → 写后再清（bump 命中 0 行仅兜底清缓存）：删后旧 token 凭
-        # get_by_id→None 被 claims_from_bearer 拒；窗口内 login 读到用户仍在但缓存已清，删后即 401。
-        perm_resolver.pre_invalidate([user_id])
+        # 删除后旧 token 凭 claims_from_bearer 的 get_by_id→None 即被拒（每请求实时校验），无需 bump；
+        # 提交后 best-effort 清缓存兜底。
         self.users.delete_user(user_id)
-        perm_resolver.bump_and_invalidate([user_id])
+        perm_resolver.clear_perms_cache([user_id])
         log.info("用户管理：删除用户 %s", user_id)
 
     # ── 可分配角色（供前端下拉；endpoint 在 T6 挂 require_perm(user:list)）──

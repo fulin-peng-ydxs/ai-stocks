@@ -79,12 +79,15 @@ class ResourceRepository:
         return resource_id
 
     def update(self, resource_id: str, *, menu_id: str, code: str, name: str, type: str,
-               api_method: str | None, api_path: str | None) -> None:
-        self.pg.execute(
-            "UPDATE sys_resource SET menu_id=%s, code=%s, name=%s, type=%s, "
-            "api_method=%s, api_path=%s, updated_at=%s WHERE id=%s",
-            [menu_id, code, name, type, api_method, api_path, datetime.now(), resource_id])
+               api_method: str | None, api_path: str | None, conn=None) -> None:
+        """编辑功能点。conn 非空则并入调用方事务（与 bump 原子）。"""
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute(
+                "UPDATE sys_resource SET menu_id=%s, code=%s, name=%s, type=%s, "
+                "api_method=%s, api_path=%s, updated_at=%s WHERE id=%s",
+                [menu_id, code, name, type, api_method, api_path, datetime.now(), resource_id])
 
-    def delete(self, resource_id: str) -> None:
-        """删功能点（sys_role_resource 经 FK CASCADE 自动清授权）。"""
-        self.pg.execute("DELETE FROM sys_resource WHERE id = %s", [resource_id])
+    def delete(self, resource_id: str, *, conn=None) -> None:
+        """删功能点（sys_role_resource 经 FK CASCADE 自动清授权）。conn 非空则并入调用方事务。"""
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute("DELETE FROM sys_resource WHERE id = %s", [resource_id])

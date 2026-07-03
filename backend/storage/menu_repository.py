@@ -108,20 +108,22 @@ class MenuRepository:
         return menu_id
 
     def update(self, menu_id: str, *, title: str, type: str, route_path: str | None,
-               icon: str | None, visible: str, parent_id: str | None) -> None:
-        """编辑菜单（code 不可改）。parent_id 变更即移动节点（成环由 service 先校验）。"""
-        self.pg.execute(
-            "UPDATE sys_menu SET title=%s, type=%s, route_path=%s, icon=%s, visible=%s, "
-            "parent_id=%s, updated_at=%s WHERE id=%s",
-            [title, type, route_path, icon, visible, parent_id, datetime.now(), menu_id])
+               icon: str | None, visible: str, parent_id: str | None, conn=None) -> None:
+        """编辑菜单（code 不可改）。parent_id 变更即移动节点。conn 非空则并入调用方事务（与 bump 原子）。"""
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute(
+                "UPDATE sys_menu SET title=%s, type=%s, route_path=%s, icon=%s, visible=%s, "
+                "parent_id=%s, updated_at=%s WHERE id=%s",
+                [title, type, route_path, icon, visible, parent_id, datetime.now(), menu_id])
 
-    def delete(self, menu_id: str) -> None:
+    def delete(self, menu_id: str, *, conn=None) -> None:
         """删菜单（sys_role_menu 经 FK CASCADE 自动清；有子节点时 DB RESTRICT，service 先查 child_count）。"""
-        self.pg.execute("DELETE FROM sys_menu WHERE id = %s", [menu_id])
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute("DELETE FROM sys_menu WHERE id = %s", [menu_id])
 
-    def reorder(self, items: list[dict]) -> None:
-        """批量改排序（可含 parentId 移动），单事务。items=[{id, sort, parentId?}]。"""
-        with self.pg.transaction() as conn, conn.cursor() as cur:
+    def reorder(self, items: list[dict], *, conn=None) -> None:
+        """批量改排序（可含 parentId 移动）。conn 非空则并入调用方事务。items=[{id, sort, parentId?}]。"""
+        with self.pg.cursor_in(conn) as cur:
             for it in items:
                 if "parentId" in it:
                     cur.execute(

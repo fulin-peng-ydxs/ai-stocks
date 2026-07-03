@@ -181,6 +181,11 @@ class AuthService:
         user = self.repo.get_by_id(claims["sub"])   # 权威态：每请求查 PG（不采信可能陈旧的 auth:pv）
         if user is None or user["status"] != "active":
             raise AuthError("账号不可用")
+        # 租户 status 亦每请求实时校验（Codex 五轮）：停租不再仅依赖 perm_ver bump 成功——即便 bump 因
+        # 任何原因未前进，停租用户的在线 token 也被此处即时拒绝。
+        tenant = self.tenants.get(user["tenant_id"])
+        if tenant is not None and tenant["status"] != "active":
+            raise AuthError("所属租户已停用，请联系平台管理员")
         if int(claims["perm_ver"]) != int(user["perm_ver"]):
             raise AuthError("权限已变更，请重新登录")
         return claims

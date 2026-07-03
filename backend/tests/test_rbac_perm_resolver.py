@@ -208,6 +208,27 @@ def test_bump_users_of_menu_includes_system(pg, redis_cli, sandbox):
     assert _perm_ver(pg, u_sys) == v_sys + 1
 
 
+def test_bump_perm_ver_atomic_rolls_back_with_business(pg, redis_cli, sandbox):
+    # Codex 五轮 P1：bump_perm_ver 在调用方事务内自增，与业务写入同生共死——事务回滚则 perm_ver 不前进，
+    # 提交则前进。杜绝"业务已提交但 perm_ver 未进"（fail-open）或"perm_ver 已进但业务未提交"的脱钩。
+    from backend.storage.pg_client import get_pg_client
+    uid = sandbox.mk_user()
+    pg.execute("UPDATE sys_user SET perm_ver=0 WHERE id=%s", [uid])
+    client = get_pg_client()
+
+    # 事务内 bump 后抛错 → 整体回滚
+    with pytest.raises(Exception):
+        with client.transaction() as conn:
+            perm_resolver.bump_perm_ver([uid], conn)
+            conn.execute("SELECT 1/0")          # 模拟业务写入失败
+    assert _perm_ver(pg, uid) == 0              # 回滚：perm_ver 未前进
+
+    # 正常提交 → 前进
+    with client.transaction() as conn:
+        perm_resolver.bump_perm_ver([uid], conn)
+    assert _perm_ver(pg, uid) == 1
+
+
 def test_bump_users_of_menu_covers_subtree(pg, redis_cli, sandbox):
     """移动/隐藏父分组 → 只授到子孙叶子的用户也被 bump（Codex 第二轮 P2-c：按「当前节点+子树」汇总）。
 
@@ -224,8 +245,8 @@ def test_bump_users_of_menu_covers_subtree(pg, redis_cli, sandbox):
     assert _perm_ver(pg, u) == v + 1           # 子树用户也被 bump
 
 
-def test_bump_second_clear_closes_backfill_race(pg, redis_cli, sandbox, monkeypatch):
-    """延迟双删：模拟①清缓存后、②自增 PG 期间并发请求回填了旧值，③二次清理须抹掉（Codex 第二轮 P1）。"""
+def test_bump_clears_backfill_after_pg_advance(pg, redis_cli, sandbox, monkeypatch):
+    """bump_and_invalidate 先自增 PG 再清缓存：模拟 PG 自增期间并发回填旧值，随后的清理须抹掉它。"""
     from backend.storage.pg_client import get_pg_client
 
     uid = sandbox.mk_user()
@@ -242,7 +263,7 @@ def test_bump_second_clear_closes_backfill_race(pg, redis_cli, sandbox, monkeypa
 
     monkeypatch.setattr(client, "execute", execute_with_backfill)
     perm_resolver.bump_and_invalidate([uid], client)
-    # ③ 二次清理抹掉窗口内回填的旧值 → 下次读必回查已自增 PG（旧 token 失配 401）
+    # 自增后的清理抹掉窗口内回填的旧值（且即便清理失败，load_perms 也会按权威 perm_ver 拒采信）
     assert session_store.get_cached_perms(uid) is None
     assert session_store.get_cached_perm_ver(uid) is None
     assert _perm_ver(pg, uid) == 6

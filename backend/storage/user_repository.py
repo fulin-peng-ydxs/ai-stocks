@@ -163,10 +163,10 @@ class UserRepository:
         return user_id
 
     def update_user(self, user_id: str, *, email: str | None, status: str,
-                    role_ids: list[str], role_code: str) -> None:
-        """更新用户资料 + 重建角色关联（单事务：全删后重插，避免残留）。"""
+                    role_ids: list[str], role_code: str, conn=None) -> None:
+        """更新用户资料 + 重建角色关联（全删后重插，避免残留）。conn 非空则并入调用方事务（与 bump 原子）。"""
         now = datetime.now()
-        with self.pg.transaction() as conn, conn.cursor() as cur:
+        with self.pg.cursor_in(conn) as cur:
             cur.execute(
                 "UPDATE sys_user SET email=%s, status=%s, role_code=%s, updated_at=%s WHERE id=%s",
                 [email, status, role_code, now, user_id])
@@ -175,19 +175,20 @@ class UserRepository:
                 cur.execute(
                     "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s)", [user_id, rid])
 
-    def set_status(self, user_id: str, status: str) -> None:
-        self.pg.execute(
-            "UPDATE sys_user SET status=%s, updated_at=%s WHERE id=%s",
-            [status, datetime.now(), user_id])
+    def set_status(self, user_id: str, status: str, *, conn=None) -> None:
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute("UPDATE sys_user SET status=%s, updated_at=%s WHERE id=%s",
+                        [status, datetime.now(), user_id])
 
-    def reset_password(self, user_id: str, password_hash: str) -> None:
-        self.pg.execute(
-            "UPDATE sys_user SET password_hash=%s, updated_at=%s WHERE id=%s",
-            [password_hash, datetime.now(), user_id])
+    def reset_password(self, user_id: str, password_hash: str, *, conn=None) -> None:
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute("UPDATE sys_user SET password_hash=%s, updated_at=%s WHERE id=%s",
+                        [password_hash, datetime.now(), user_id])
 
-    def delete_user(self, user_id: str) -> None:
-        """删用户（sys_user_role 经 FK CASCADE 自动清）。"""
-        self.pg.execute("DELETE FROM sys_user WHERE id=%s", [user_id])
+    def delete_user(self, user_id: str, *, conn=None) -> None:
+        """删用户（sys_user_role 经 FK CASCADE 自动清）。conn 非空则并入调用方事务。"""
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute("DELETE FROM sys_user WHERE id=%s", [user_id])
 
     def count_tenant_admins(self, tenant_id: str, *, exclude_user_id: str | None = None,
                             active_only: bool = False) -> int:

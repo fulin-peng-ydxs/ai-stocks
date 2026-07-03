@@ -100,6 +100,21 @@ class PostgresClient:
         except Exception as e:  # noqa: BLE001
             raise StorageError(f"事务执行失败: {e}") from e
 
+    @contextmanager
+    def cursor_in(self, conn: psycopg.Connection | None = None) -> Iterator[psycopg.Cursor]:
+        """产出游标：conn 非空则并入调用方事务（不另开），否则自建事务自动提交。
+
+        供仓库写方法可选并入外部事务——让"业务写入 + perm_ver 自增"能在**同一 PG 事务**里原子提交
+        （多租户 RBAC：权威失效与业务同生共死，不被 Redis 或跨事务窗口拖成 fail-open）。
+        用法：`with self.pg.cursor_in(conn) as cur: cur.execute(...); cur.execute(...)`
+        """
+        if conn is not None:
+            with conn.cursor() as cur:
+                yield cur
+        else:
+            with self.transaction() as own, own.cursor() as cur:
+                yield cur
+
     def ping(self) -> bool:
         """连通性自检（启动期调用）。"""
         df = self.query_df("SELECT 1 AS ok")
