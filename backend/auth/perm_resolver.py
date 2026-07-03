@@ -9,11 +9,14 @@
 因 stage2「token.perm_ver ≠ 当前 → 401 重登」，受影响用户下次请求 401、重登后拿新权限
 （= R11「perm_ver 自增、即时生效」口径）。PG 耦合在本模块（session_store 保持纯 Redis）。
 
-**调用契约（Codex P1 整改）：bump_* 必须在业务写入之**前**调用。** 内部顺序为「先清 Redis
-缓存(fail-closed)→再自增 PG perm_ver」：Redis 不可用则在改动任何持久状态前即抛 503，调用方业务
-写入随之中止，绝不出现「DB 已改但 Redis 清理失败、旧 auth:pv 残留继续放行旧 token」的 fail-open。
-即便 Redis 清成功、PG 自增失败，缓存已清 → 下次请求回查 PG 重解析，仍不 fail-open。
-（残留：清缓存与业务提交之间的极窄并发窗口内，别的请求可能回填旧值，由缓存 TTL 兜底收敛。）
+**调用契约（Codex P1 整改）：bump_* 必须在业务写入之**前**调用。** 内部顺序为「清 Redis 缓存
+(fail-closed)→自增 PG perm_ver→**再清一次 Redis 缓存**」（延迟双删）：
+- 首清 fail-closed：Redis 不可用则在改动任何持久状态前即抛 503，调用方业务写入随之中止，绝不出现
+  「DB 已改但 Redis 清理失败、旧 auth:pv 残留继续放行旧 token」的 fail-open。
+- 自增 PG（权威）后**再清一次**：关闭「首清与自增之间的并发窗口」——该窗口内别的请求可能因缓存 miss
+  回查到**尚未自增**的旧 perm_ver 并回填 Redis；二次清理抹掉此回填，使下一次读必回查已自增的 PG →
+  旧 token perm_ver 失配 → 401（Codex 第二轮 P1）。即便自增后二次清理失败（503），业务写入仍中止、
+  仅 perm_ver 已+1（over-invalidate，用户被迫重登，非 fail-open），且极窄残留由缓存 TTL 收敛。
 """
 
 from __future__ import annotations
@@ -69,24 +72,32 @@ def resolve(user_id: str, client: PostgresClient | None = None) -> dict:
 # ── 失效编排 ──────────────────────────────────────────────────────────────────
 
 def bump_and_invalidate(user_ids: Iterable[str], client: PostgresClient | None = None) -> int:
-    """相关用户 **先清 perms/pv 缓存(Redis)→再 perm_ver+1(PG)**。返回受影响用户数。
+    """相关用户 **清 perms/pv 缓存(Redis)→perm_ver+1(PG)→再清一次缓存**（延迟双删）。返回受影响用户数。
 
-    顺序刻意为「Redis 优先、PG 其后」（Codex P1 整改）：
-    - 缓存清理走 session_store（_critical fail-closed）：Redis 不可用则抛 503，此时 **PG perm_ver 尚未
+    顺序刻意为「Redis 首清 → PG 自增 → Redis 二次清理」（Codex 两轮 P1 整改）：
+    - ① 首清走 session_store（_critical fail-closed）：Redis 不可用则抛 503，此时 **PG perm_ver 尚未
       自增**；因调用方在业务写入前调用本函数，业务写入也随之中止 → 无任何持久状态被改，不产生 fail-open。
-    - Redis 清成功后再自增 PG（权威）；即便自增失败，缓存已清，下次请求回查 PG 重解析，仍不 fail-open。
+    - ② Redis 清成功后再自增 PG（权威）。
+    - ③ 自增后**再清一次**：关闭①与②之间的并发回填窗口——该窗口内并发请求可能因缓存 miss 回查到尚未
+      自增的旧 perm_ver 并回填 Redis，二次清理抹掉它，使下次读必回查已自增的 PG → 旧 token 401。
     """
     uids = [u for u in dict.fromkeys(user_ids) if u]   # 去重去空、保序
     if not uids:
         return 0
     client = client or get_pg_client()
-    for uid in uids:               # ① 先清缓存（fail-closed）：Redis 不可用即抛，尚未动 PG
-        session_store.clear_perms(uid)
-        session_store.invalidate_perm_ver(uid)
+    _clear_user_caches(uids)       # ① 首清（fail-closed）：Redis 不可用即抛，尚未动 PG
     # ② 缓存清理成功后再自增 PG perm_ver（权威）
     client.execute("UPDATE sys_user SET perm_ver = perm_ver + 1 WHERE id = ANY(%s)", [uids])
+    _clear_user_caches(uids)       # ③ 二次清理：抹掉①与②窗口内并发回填的旧值（关闭回填竞态）
     log.info("perm bump: %d 个用户权限失效（下次请求需重登）", len(uids))
     return len(uids)
+
+
+def _clear_user_caches(uids: Iterable[str]) -> None:
+    """清若干用户的有效权限缓存 + perm_ver 缓存（_critical fail-closed，Redis 不可用即抛 503）。"""
+    for uid in uids:
+        session_store.clear_perms(uid)
+        session_store.invalidate_perm_ver(uid)
 
 
 def bump_users_of_roles(role_ids: Iterable[str], client: PostgresClient | None = None) -> int:
@@ -101,11 +112,22 @@ def bump_users_of_roles(role_ids: Iterable[str], client: PostgresClient | None =
 
 
 def bump_users_of_menu(menu_id: str, client: PostgresClient | None = None) -> int:
-    """菜单删除/可见性变更 → 引用它的角色的用户 ∪ 全部 system 用户（超管看全量菜单，结构变更也影响）。"""
+    """菜单删除/可见性变更/移动 → 引用「该菜单**及其全部子孙**」的角色的用户 ∪ 全部 system 用户。
+
+    子树纳入（Codex 第二轮 P2-c）：`/me` 可见性由**祖先链**决定（父分组 visible=system 或被移动跨可见域
+    → 整棵子树对非 system 用户隐藏）。角色可能只授到**子孙叶子**、未授父节点，只 bump 当前节点会漏掉
+    这些用户、其缓存菜单残留到 TTL。故用递归 CTE 收「当前节点 + 全部后代」被引用的角色用户一并失效。
+    （叶子无后代时 CTE 只返回自身，等价旧行为；删除仅发生在无子节点菜单上，子树亦仅自身。）
+    """
     client = client or get_pg_client()
     df = client.query_df(
+        "WITH RECURSIVE sub AS ("
+        "  SELECT id FROM sys_menu WHERE id = %s "
+        "  UNION ALL "
+        "  SELECT m.id FROM sys_menu m JOIN sub ON m.parent_id = sub.id) "
         "SELECT DISTINCT ur.user_id FROM sys_role_menu rm "
-        "JOIN sys_user_role ur ON ur.role_id = rm.role_id WHERE rm.menu_id = %s", [menu_id])
+        "JOIN sub ON sub.id = rm.menu_id "
+        "JOIN sys_user_role ur ON ur.role_id = rm.role_id", [menu_id])
     uids = set(df["user_id"].tolist()) if not df.empty else set()
     uids |= set(_system_user_ids(client))
     return bump_and_invalidate(uids, client)

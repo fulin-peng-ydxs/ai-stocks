@@ -41,11 +41,13 @@ def sandbox(pg):
         made["role"].append(rid)
         return rid
 
-    def mk_menu():
+    def mk_menu(*, parent_id=None, is_group=False):
         mid = "t_menu_" + uuid.uuid4().hex[:8]
         pg.execute(
-            "INSERT INTO sys_menu (id, code, title, type, route_path) VALUES (%s,%s,%s,'leaf',%s)",
-            [mid, mid, mid, "/" + mid])
+            "INSERT INTO sys_menu (id, parent_id, code, title, type, route_path) "
+            "VALUES (%s,%s,%s,%s,%s,%s)",
+            [mid, parent_id, mid, mid, "group" if is_group else "leaf",
+             None if is_group else "/" + mid])
         made["menu"].append(mid)
         return mid
 
@@ -89,7 +91,7 @@ def sandbox(pg):
         pg.execute("DELETE FROM sys_role WHERE id=%s", [rid])       # 级联 role_menu/role_resource
     for cid in made["resource"]:
         pg.execute("DELETE FROM sys_resource WHERE id=%s", [cid])
-    for mid in made["menu"]:
+    for mid in reversed(made["menu"]):   # 反序：先删子后删父，避开 parent_id FK RESTRICT
         pg.execute("DELETE FROM sys_menu WHERE id=%s", [mid])
     for tid in made["tenant"]:
         pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
@@ -204,6 +206,46 @@ def test_bump_users_of_menu_includes_system(pg, redis_cli, sandbox):
     perm_resolver.bump_users_of_menu(m)
     assert _perm_ver(pg, u_norm) == v_norm + 1
     assert _perm_ver(pg, u_sys) == v_sys + 1
+
+
+def test_bump_users_of_menu_covers_subtree(pg, redis_cli, sandbox):
+    """移动/隐藏父分组 → 只授到子孙叶子的用户也被 bump（Codex 第二轮 P2-c：按「当前节点+子树」汇总）。
+
+    构造：父分组 ⊃ 子叶子；角色**只授子叶子、未授父分组**。对父节点 bump 时，旧实现只查直接引用父
+    节点的角色 → 漏掉该用户；修复后经递归 CTE 覆盖子树，用户被正确失效。
+    """
+    parent = sandbox.mk_menu(is_group=True)
+    child = sandbox.mk_menu(parent_id=parent)
+    r = sandbox.mk_role("R")
+    sandbox.grant_menu(r, child)               # 只授子叶子
+    u = sandbox.mk_user(role_ids=[r])
+    v = _perm_ver(pg, u)
+    perm_resolver.bump_users_of_menu(parent)   # 对父分组失效
+    assert _perm_ver(pg, u) == v + 1           # 子树用户也被 bump
+
+
+def test_bump_second_clear_closes_backfill_race(pg, redis_cli, sandbox, monkeypatch):
+    """延迟双删：模拟①清缓存后、②自增 PG 期间并发请求回填了旧值，③二次清理须抹掉（Codex 第二轮 P1）。"""
+    from backend.storage.pg_client import get_pg_client
+
+    uid = sandbox.mk_user()
+    pg.execute("UPDATE sys_user SET perm_ver=5 WHERE id=%s", [uid])
+    client = get_pg_client()
+    orig_execute = client.execute
+
+    def execute_with_backfill(sql, params=None):
+        result = orig_execute(sql, params)
+        # 模拟并发读在 PG 自增窗口内回查到旧 perm_ver 并回填 Redis
+        session_store.cache_perms(uid, {"stale": True})
+        session_store.cache_perm_ver(uid, 5)
+        return result
+
+    monkeypatch.setattr(client, "execute", execute_with_backfill)
+    perm_resolver.bump_and_invalidate([uid], client)
+    # ③ 二次清理抹掉窗口内回填的旧值 → 下次读必回查已自增 PG（旧 token 失配 401）
+    assert session_store.get_cached_perms(uid) is None
+    assert session_store.get_cached_perm_ver(uid) is None
+    assert _perm_ver(pg, uid) == 6
 
 
 def test_bump_users_of_resource(pg, redis_cli, sandbox):
