@@ -630,11 +630,11 @@
 - **开发文档**：[stage2-auth-kernel/plan.md](stage2-auth-kernel/plan.md)（T1–T10，各任务落地/评审留痕在内）。
 - **页面原型**：登录/注册页 [prototypes/login.html](prototypes/login.html)（科技风 · 黑白双主题，对应需求 7.1）。
 
-**阶段三：RBAC 与租户管理（权限主体）**
-- 覆盖需求：R5、R8、R9、R10、R11、R12、R13、R14
+**阶段三：RBAC 与租户管理（权限主体）** — ✅ **完成**（T1–T17 全落地，分支 `feat/multi-tenant-rbac-stage3`，过 Codex 多轮复审）
+- 覆盖需求：R5、R8（机制+新管理接口，存量 13 路由精确码属阶段四 R21）、R9、R10、R11、R12、R13、R14
 - 目标：用户/角色/菜单/功能/租户全套管理 + 接口级/按钮级校验 + 数据隔离。
 - 依赖原因：依赖阶段一数据层与阶段二认证。
-- 里程碑：多账号交叉验证隔离与授权即时生效。
+- 里程碑：多账号交叉验证隔离与授权即时生效。**达成**——后端全量 `pytest` 398 passed（含跨租户 404/越权 403/bump 全触发点/system 全授权不变式）、前端 `build` 绿 + `vitest` 118 passed（含权限指令/SideMenu fail-closed/管理页 error+retry 回归）、4 页 preview 双主题×三档视口自验。落地要点：瘦令牌 + PG 权威 perm_ver 闸门 + 授权变更同事务原子 bump 强制重登；require_perm 精确码（user 接口）/require_system 硬守卫（role/menu/resource/tenant 接口）二分；前端 v-permission + SideMenu/路由守卫 fail-closed。
 - **页面原型**（4 个新增管理页，已就绪，见 §7.4–7.7）：用户管理 [prototypes/user-management.html](prototypes/user-management.html)、角色管理 [prototypes/role-management.html](prototypes/role-management.html)（master-detail 权限树）、菜单与功能管理 [prototypes/menu-resource-management.html](prototypes/menu-resource-management.html)（R12+R13 合页 master-detail）、租户管理 [prototypes/tenant-management.html](prototypes/tenant-management.html)。均复用 Element Plus 视觉 + 黑白双主题；归入「系统管理 → 权限管理」子组（`/system/users|roles|menus|tenants`）。R8 按钮级/接口级为横切、R9 隔离为后端，不单独出原型。**视口/响应式（对齐 DESIGN §8）**：1440×900 为验收视口无溢出；宽表在窄视口**体内横滚**（列不压成竖排），master-detail 窄视口右栏保底宽 + 体内横滚，弹窗宽度自适应 `min(px, 92vw)`、正文 max-height 内滚、标签不换行。原型均在 560/700/1440 三档核验过。
 
 **阶段四：存量功能全量接入**

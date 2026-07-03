@@ -180,7 +180,7 @@
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6)+菜单接口守卫(T7)+功能接口守卫(T8)+租户接口守卫(T9·整 router require_system)已完成；**按钮级 v-permission 指令 + 路由守卫菜单校验(T15)已完成**——Codex 复审整改后 **v-permission 已真正落到 4 个管理页模板**（原用本地 can()，现模板走 `v-permission`、脚本逻辑走共用 `utils/permission.hasPermission`，口径统一）；守卫补 fail-closed 修复（`resolveMenuGuard`）+ 指令/SideMenu/守卫组件测。剩存量13业务路由精确 resource code 接入=阶段四 R21 |
+| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 已完成（本阶段范围） | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6)+菜单接口守卫(T7)+功能接口守卫(T8)+租户接口守卫(T9·整 router require_system)已完成；**按钮级 v-permission 指令 + 路由守卫菜单校验(T15)已完成**——Codex 复审整改后 **v-permission 已真正落到 4 个管理页模板**（原用本地 can()，现模板走 `v-permission`、脚本逻辑走共用 `utils/permission.hasPermission`，口径统一）；守卫补 fail-closed 修复（`resolveMenuGuard`）+ 指令/SideMenu/守卫组件测。剩存量13业务路由精确 resource code 接入=阶段四 R21 |
 | R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 已完成 | 一致 | 用户管理域过滤(T5,system 全局/tenant_admin 本租户/跨租户 404)+租户管理 require_system(T9) 已落地；**多账号交叉核查(T16)完成**：补 4 例锁死用户变更全动词跨租户 404 + 越权提角色 403，资产隔离回归 398 passed 绿。存量业务接口精确码=阶段四 R21 |
 | R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 进行中 | 一致 | 后端(T5)完成:多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
 | R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 进行中 | 一致 | 后端(T6)完成：角色 CRUD/授权(全删重插+bump)/内置保护/超管锁定/system-only 码禁授/assignable 分流；`GET /api/roles/{id}/perms` 供前端权限树回显。角色页(T12·全选/清空/还原+三态树)已完成 |
@@ -419,7 +419,7 @@
   - **环境注意**：后端测试须先 `./start.sh stop` 释放 DuckDB 写锁（layout save 触发 DuckDB DDL init 会与运行中 dev 后端争锁 → 5003），跑完再 `./start.sh` 重启（已复位，PID 79624 health=200）。
 
 ### 6.17 任务 T17：测试 + 文档治理 + 页面闭环收尾
-- 状态：待开始
+- 状态：已完成（后端 pytest 398 / 前端 build+vitest 118 全绿；CLAUDE.md RBAC 铁律 + 阶段状态、requirement §12、DESIGN §9 均已回填）
 - 依赖：T1–T16
 - 涉及文件/模块：`backend/tests/test_rbac_*.py`、前端契约测试、`CLAUDE.md`、本目录文档、`../requirement.md`、`DESIGN.md §9`
 - 目标：质量门槛 + 契约文档同步 + 闭环收尾。
@@ -486,9 +486,11 @@
 **阶段三完成 = 同时满足**（对齐 §12 阶段三里程碑「多账号交叉验证隔离与授权即时生效」；前缀标当前达成度）：
 1. ✅ **已达成**（T1）：6 张 RBAC 表（FK/索引）+ seed 就绪；存量平滑迁 sys_user_role；role_code 兼容保留。
 2. ✅ **已达成**（T2/T3/T4）：瘦令牌 + 服务端权限解析 + **PG 权威 perm_ver/status 闸门** + Redis perms 缓存 + **全触发点** perm_ver 失效（强制重登）。五轮 Codex P1 整改收敛为**原子化**：① **业务写入 + `bump_perm_ver` 在同一 PG 事务原子提交**（`affected` 写前算定防级联缩水；`clear_perms_cache` 提交后 best-effort），要么都提交要么都回滚，无"业务已变/版本未进"或"版本已进/业务未变"窗口，**且不被 Redis 可用性左右**；② **鉴权闸门 `claims_from_bearer` 每请求以 PG 的 perm_ver + 用户 status + 租户 status 为权威**、不信任 Redis `auth:pv`——`load_perms` 再按权威 perm_ver 校验 perms 缓存新鲜度拒采信陈旧内容，黑名单仍走 Redis fail-closed。故 **Redis 清理失败不阻断权威失效、也不造成 fail-open**（旧实现"先清 Redis 清失败即不 bump"的脱钩已消除）。`require_perm(精确码)` 用于 user 接口、`require_system` 硬守 role/menu/resource/tenant 接口——**接口本体 T6–T9 已挂载**。
-3. ◻ **部分**（**后端 4 套接口 T5–T9 全落地**；4 前端页 T11–T14 待做）：用户/角色/菜单+功能/租户 4 套接口已完成（含内置保护、级联/引用校验、租户存在校验 P2-b、最后 active 管理员保护 P1-b、菜单删除 resource 引用前置校验 P2-a）；4 前端页（承接原型、过契约、双主题、**三档视口达标**、settings-drawer、去勾选列、全选/清空/还原）待做。
-4. ◻ **部分**（**/me 菜单树 T10 已落**；`v-permission`/SideMenu/路由守卫 T15 待做）：/me 返回「授权∩可见性」双过滤菜单树 + 功能码列表（含菜单移动跨可见域即时失效 P2-c，**按「当前节点+子树」递归 CTE 汇总失效**——修 Codex 二轮 P2-c：父分组变更须连带只授到子孙叶子的用户）；前端 `v-permission` 按钮级 + SideMenu 消费后端菜单(**fail-closed**、EP 图标) + 路由守卫按菜单待做。
-5. ◻ **部分**（T5 用户管理隔离已达；完整交叉验证待 T16）：**多账号交叉验证**——tenant_admin 限本租户、跨租户不可见/不可改、system-only 接口非 system 403；授权变更后相关用户重登即生效。
-6. ◻ **待做**（T17）：全量 `pytest` 绿（当前 **394 passed**；392 基线 + T11 验证补 2 条回归）+ `npm run build` + 前端契约绿；CLAUDE.md 同步 RBAC 契约；requirement §12 阶段三标完成。
+3. ✅ **已达成**（后端 4 套接口 T5–T9 + 4 前端页 T11–T14）：用户/角色/菜单+功能/租户 4 套接口（含内置保护、级联/引用校验、租户存在校验 P2-b、最后 active 管理员保护 P1-b、菜单删除 resource 引用前置校验 P2-a）；4 前端页承接原型、过契约、双主题、**三档视口达标**、settings-drawer、去勾选列、全选/清空/还原。Codex 复审后角色页右侧由 el-tree 重建为定制三级权限树 `PermissionTree.vue`、菜单页功能点改表内联增删改。
+4. ✅ **已达成**（/me 菜单树 T10 + 前端权限消费 T15）：/me 返回「授权∩可见性」双过滤菜单树 + 功能码列表（含菜单移动跨可见域即时失效 P2-c，**按「当前节点+子树」递归 CTE 汇总失效**）；前端 `v-permission` 按钮级（真正落到 4 页模板，脚本走共用 `hasPermission`）+ SideMenu 消费后端菜单(**fail-closed**、EP 图标) + 路由守卫 `resolveMenuGuard`(**fail-closed**，未授权漏斗首个授权菜单/`SAFE_HOME`)。
+5. ✅ **已达成**（T16 多账号交叉核查）：**多账号交叉验证**——tenant_admin 限本租户、跨租户不可见/不可改（404）、system-only 接口非 system 403、越权提角色 403；授权变更后相关用户重登即生效。补 4 例锁死用户变更全动词跨租户隔离。
+6. ✅ **已达成**（T17）：全量 `pytest` **398 passed**（先 `./start.sh stop` 释放 DuckDB 锁）+ `npm run build` 绿 + 前端 `vitest` **118 passed**（含 `layout-contract`/`pageRegistry`/权限指令/SideMenu fail-closed/管理页 error+retry 回归）；CLAUDE.md 补细粒度 RBAC 铁律 6 条 + 阶段状态；requirement §12 阶段三标完成；DESIGN §9 登记 4 页 + IconPicker。
+
+**阶段三 Codex 复审全闭合**（守卫 fail-closed / v-permission 落地 / 页面状态 error+retry 闭环 / 角色页原型重建 / 菜单内联 / el-checkbox / tenant:delete seed / 两处 error 路径正式回归测试）。保留两个「口径待定」（非缺陷，Codex 二轮认可技术成立，用户判定继续）：①设置抽屉三段按内容条件渲染（全站既有范式，非每页强制显式三段）；②`master-detail`→`list`+section、`menu-manage` 命名系基于 `LayoutHost` 框架事实的有据修订。
 
 达成后进入**阶段四（存量 13 路由全量接 resource code + 隔离，R21）**，再阶段五（审计/字典/配置拆页/开关页 R16–R19）。
