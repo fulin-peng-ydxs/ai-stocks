@@ -114,13 +114,22 @@ function onFormChange() {
 
 const resources = ref<Resource[]>([])
 const resLoading = ref(false)
+const resError = ref(false)
 async function loadResources(menuId: string) {
   resLoading.value = true
+  resError.value = false
   try {
     resources.value = await listResources(menuId)
+  } catch {
+    // 功能点列表加载失败给明确错误态 + 重试入口（error+retry 闭环，勿静默结束 loading）
+    resources.value = []
+    resError.value = true
   } finally {
     resLoading.value = false
   }
+}
+function retryResources() {
+  if (activeId.value) loadResources(activeId.value)
 }
 
 async function selectMenu(id: string) {
@@ -493,7 +502,13 @@ onMounted(() => { loadTree() })
                           <el-button link size="small" @click="cancelRes">取消</el-button>
                         </td>
                       </tr>
-                      <tr v-if="!resources.length && editingId !== NEW_ROW">
+                      <tr v-if="resError">
+                        <td colspan="5" class="mr-empty">
+                          功能点加载失败
+                          <el-button link type="primary" size="small" @click="retryResources">重试</el-button>
+                        </td>
+                      </tr>
+                      <tr v-else-if="!resources.length && editingId !== NEW_ROW">
                         <td colspan="5" class="mr-empty">该菜单暂无功能点</td>
                       </tr>
                     </tbody>

@@ -236,13 +236,13 @@ async function removeRole() {
 async function loadAll() {
   loadError.value = false
   try {
+    // 权限树（菜单+资源）与角色列表任一加载失败都进错误态，保证 error+retry 闭环
     const [menus, resources] = await Promise.all([listMenus(), listResources()])
     buildTree(menus, resources)
+    await loadRoles()
   } catch {
     loadError.value = true
-    return
   }
-  await loadRoles()
 }
 onMounted(loadAll)
 </script>
