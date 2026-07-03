@@ -60,20 +60,25 @@ class AuthService:
         }
 
     def _tokens_and_user(self, u: dict) -> dict:
-        ss.cache_perm_ver(u["id"], int(u["perm_ver"]))
+        # 不再预热 auth:pv 缓存：perm_ver 已改为每请求以 PG 为权威校验（claims_from_bearer），
+        # 缓存该值会成为陈旧来源（Codex 四轮 P1）。
         return {
             "access_token": issue_access(u["id"], u["tenant_id"], int(u["perm_ver"])),
             "refresh_token": issue_refresh(u["id"], u["tenant_id"], int(u["perm_ver"])),
             "user": self._public_user(u),
         }
 
-    def load_perms(self, user_id: str) -> dict:
-        """取有效权限（缓存优先，缺失实时解析并回填）。供中间件注入上下文 + /me 消费。
+    def load_perms(self, user_id: str, *, perm_ver: int | None = None) -> dict:
+        """取有效权限（缓存优先，缺失/过期实时解析并回填）。供中间件注入上下文 + /me 消费。
 
+        **缓存按 perm_ver 校验（Codex 四轮 P1 整改）**：传入权威 perm_ver 时，仅当缓存内 perm_ver 与之
+        一致才采信，否则重解析回填——防"失效后 perms 缓存清理失败或并发回填旧值"导致新令牌读到旧权限
+        内容（menus/resources）。resolve() 返回的 dict 已含 perm_ver，作为缓存新鲜度标记。
         缓存故障 → session_store 抛 503（fail-closed，与中间件一致）。
         """
         perms = ss.get_cached_perms(user_id)
-        if perms is None:
+        stale = perm_ver is not None and (perms is None or int(perms.get("perm_ver", -1)) != int(perm_ver))
+        if perms is None or stale:
             perms = perm_resolver.resolve(user_id)
             ss.cache_perms(user_id, perms, self.cfg.access_ttl_min * 60)
         return perms
@@ -159,23 +164,24 @@ class AuthService:
 
     # ── 当前身份 ──
     def claims_from_bearer(self, authorization: str | None) -> dict:
-        """从 Authorization 头解出并校验 access token（含黑名单 + perm_ver）。
+        """从 Authorization 头解出并校验 access token（签名/过期/黑名单/账号状态/perm_ver）。
 
-        本阶段供 /me 使用；T5 起由鉴权中间件统一执行并注入上下文。
+        **perm_ver 与账号状态以 PG 为权威、每请求实时校验（Codex 四轮 P1 整改）**：不再信任 Redis 缓存的
+        `auth:pv`。否则"权限失效后 Redis 清理失败或并发回填了旧值"会让旧 token 命中陈旧 perm_ver、绕过
+        DB 状态检查存活到 TTL（stale-Redis fail-open）。改为每请求读 PG 单行（主键查询，开销极小），
+        换取"停用/改权 → 下次请求即拒"的强一致。黑名单仍走 Redis(_critical)：Redis 不可用即 503
+        fail-closed（token 吊销语义不可失），故 Redis 宕机不会因本改动而 fail-open。
+        供 /me 与鉴权中间件共用（中间件据此注入上下文）。
         """
         if not authorization or not authorization.startswith("Bearer "):
             raise AuthError("未登录")
         claims = decode(authorization[7:], expect_typ=TOKEN_ACCESS)
-        if ss.is_jti_revoked(claims["jti"]):
+        if ss.is_jti_revoked(claims["jti"]):   # 黑名单 fail-closed（Redis 挂 → 503）
             raise AuthError("登录已失效，请重新登录")
-        current = ss.get_cached_perm_ver(claims["sub"])
-        if current is None:
-            user = self.repo.get_by_id(claims["sub"])
-            if user is None or user["status"] != "active":
-                raise AuthError("账号不可用")
-            current = int(user["perm_ver"])
-            ss.cache_perm_ver(claims["sub"], current)
-        if int(claims["perm_ver"]) != int(current):
+        user = self.repo.get_by_id(claims["sub"])   # 权威态：每请求查 PG（不采信可能陈旧的 auth:pv）
+        if user is None or user["status"] != "active":
+            raise AuthError("账号不可用")
+        if int(claims["perm_ver"]) != int(user["perm_ver"]):
             raise AuthError("权限已变更，请重新登录")
         return claims
 
@@ -187,7 +193,7 @@ class AuthService:
         # menus 为按「角色授权 ∩ 可见性」双过滤后的嵌套树（T10），节点形状对齐前端 MenuNode
         # {index,title,icon,children}（叶子 index=route_path、分组 index=code），供 SideMenu 直接渲染；
         # permissions 为扁平功能码列表，供按钮级 v-permission 控制。
-        perms = self.load_perms(user_id)
+        perms = self.load_perms(user_id, perm_ver=int(user["perm_ver"]))   # 按权威 perm_ver 校验缓存
         return {
             "user": {
                 "id": user["id"], "account": user["account"],

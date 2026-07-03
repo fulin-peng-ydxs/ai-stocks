@@ -5,9 +5,12 @@
 - 其余角色 → 各自 role_menu / role_resource 的并集。
 权威在 PG；Redis 缓存 `auth:perms:{user_id}` 的读写由中间件(T3)编排，本模块提供 resolve() 供回填。
 
-失效编排（bump_*）：任何改变用户有效权限的操作 → 相关用户 perm_ver+1(PG) + 清 perms/pv 缓存。
-因 stage2「token.perm_ver ≠ 当前 → 401 重登」，受影响用户下次请求 401、重登后拿新权限
-（= R11「perm_ver 自增、即时生效」口径）。PG 耦合在本模块（session_store 保持纯 Redis）。
+失效编排（bump_*）：任何改变用户有效权限的操作 → 相关用户 perm_ver+1(PG) + 清 perms 缓存。
+因「token.perm_ver ≠ 当前 → 401 重登」，受影响用户下次请求 401、重登后拿新权限（= R11「即时生效」）。
+**权威源在 PG（Codex 四轮 P1）**：鉴权闸门 `claims_from_bearer` 每请求以 PG 的 perm_ver + status 为准、
+**不信任 Redis 缓存的 auth:pv**——故 Redis 清理失败/并发回填旧值都不会造成 fail-open；perms 缓存也由
+`load_perms` 按权威 perm_ver 校验新鲜度。Redis 清缓存退化为"减少重解析"的优化，不再是正确性关键。
+PG 耦合在本模块（session_store 保持纯 Redis）。
 
 **调用契约（Codex 三轮 P1 整改）：失效必须"夹住"业务写入——`perm_ver` 自增恒晚于业务写入提交。**
 每个改权限/状态的服务操作按三步走：
@@ -79,14 +82,17 @@ def resolve(user_id: str, client: PostgresClient | None = None) -> dict:
 # ── 失效编排 ──────────────────────────────────────────────────────────────────
 
 def bump_and_invalidate(user_ids: Iterable[str], client: PostgresClient | None = None) -> int:
-    """相关用户 **清 perms/pv 缓存(Redis)→perm_ver+1(PG)→再清一次缓存**（延迟双删）。返回受影响用户数。
+    """相关用户 **清 perms 缓存(Redis)→perm_ver+1(PG)→再清一次缓存**（延迟双删）。返回受影响用户数。
 
-    顺序刻意为「Redis 首清 → PG 自增 → Redis 二次清理」（Codex 两轮 P1 整改）：
-    - ① 首清走 session_store（_critical fail-closed）：Redis 不可用则抛 503，此时 **PG perm_ver 尚未
-      自增**；因调用方在业务写入前调用本函数，业务写入也随之中止 → 无任何持久状态被改，不产生 fail-open。
-    - ② Redis 清成功后再自增 PG（权威）。
-    - ③ 自增后**再清一次**：关闭①与②之间的并发回填窗口——该窗口内并发请求可能因缓存 miss 回查到尚未
-      自增的旧 perm_ver 并回填 Redis，二次清理抹掉它，使下次读必回查已自增的 PG → 旧 token 401。
+    **调用位置（Codex 三轮 P1）：在业务写入之**后**调用**（见模块 docstring：写前 `pre_invalidate`
+    做 fail-closed 门禁 → 业务写入 → 写后本函数自增 perm_ver）。故本函数自身不承担"Redis 挂即中止业务"
+    的门禁职责（那是写前 pre_invalidate 的事）。
+    顺序「Redis 首清 → PG 自增 → Redis 二次清理」：
+    - ② PG 自增是**权威**失效——鉴权闸门每请求以 PG perm_ver 为准（claims_from_bearer，Codex 四轮 P1），
+      故只要此自增提交，旧 token 下次请求必因 perm_ver 失配被拒，**与 Redis 是否清成功无关**（Redis 清理
+      失败/并发回填旧 perm_ver 都不再造成 fail-open）。
+    - ①③ 两次清 perms 缓存：抹掉自增前后并发回填的旧 perms 内容，减少"新令牌读到旧权限内容"的窗口；
+      即便清理失败，load_perms 也会按权威 perm_ver 校验缓存新鲜度、拒采信陈旧 perms（双保险）。
     """
     uids = [u for u in dict.fromkeys(user_ids) if u]   # 去重去空、保序
     if not uids:

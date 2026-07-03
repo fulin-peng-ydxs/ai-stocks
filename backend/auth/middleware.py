@@ -115,8 +115,10 @@ class AuthMiddleware:
             svc = AuthService()
             try:
                 claims = svc.claims_from_bearer(authorization)
-                # 瘦令牌：角色/权限不在 token，按 user_id 解析（缓存优先）后注入上下文
-                perms = svc.load_perms(claims["sub"])
+                # 瘦令牌：角色/权限不在 token，按 user_id 解析后注入上下文。传入权威 perm_ver
+                # （claims 已与 PG 一致，见 claims_from_bearer）令 load_perms 按其校验缓存新鲜度，
+                # 防陈旧 perms 内容被采信（Codex 四轮 P1）。
+                perms = svc.load_perms(claims["sub"], perm_ver=int(claims["perm_ver"]))
             except AuthError as e:
                 return await self._deny(scope, receive, send, e.http_status, e.code, e.msg)
             except (ServiceUnavailableError, StorageError, redis.RedisError):

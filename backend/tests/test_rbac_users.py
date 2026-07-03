@@ -254,6 +254,33 @@ def test_perm_ver_bumped_after_business_write(client, env, monkeypatch):
     assert _perm_ver(env.pg, target) == v0 + 1   # 操作完成后才自增
 
 
+def test_stale_redis_perm_ver_cannot_bypass_authoritative_pg(client, env):
+    # Codex 四轮 P1：即便"权限失效后 Redis 清理失败 + 并发回填了旧 perm_ver/perms"，旧 token 也必须被拒——
+    # 鉴权闸门以 PG 为权威、每请求校验 perm_ver（不信任陈旧 auth:pv）。此处显式注入陈旧 Redis 缓存模拟该竞态。
+    from backend.auth import session_store
+    from backend.auth.constants import ROLE_NORMAL as _NORMAL
+    tid = env.mk_tenant()
+    env.mk_user(tid, ROLE_TENANT_ADMIN)          # 排除最后管理员干扰
+    target = env.mk_user(tid, _NORMAL)
+    old = _tok(target, tid, 0)                   # 旧 token：perm_ver=0
+
+    # 基线：token 有效（无 user:list 权限得 403 而非 401 → 证明 token 本身能过鉴权闸门）
+    assert client.get("/api/users", headers=old).status_code == 403
+
+    # 触发权限变更：PG perm_ver 自增到 1（业务已提交）
+    r = client.put(f"/api/users/{target}", json={"roleIds": [_NORMAL], "status": "active"},
+                   headers=env.sys_headers())
+    assert r.status_code == 200 and _perm_ver(env.pg, target) == 1
+
+    # 模拟"写后清理失败 + 并发回填"：Redis 残留旧 perm_ver=0 / 旧 perms
+    session_store.cache_perm_ver(target, 0)
+    session_store.cache_perms(target, {"roles": [_NORMAL], "is_system": False,
+                                       "menus": [], "resources": [], "perm_ver": 0})
+
+    # 旧 token 再次请求：必须 401（PG perm_ver=1 ≠ token 0），不因陈旧 Redis auth:pv 而 fail-open
+    assert client.get("/api/users", headers=old).status_code == 401
+
+
 def test_bump_redis_failure_aborts_business(client, env, monkeypatch):
     # P1：失效走 fail-closed，且在业务写入之前——Redis 清缓存失败 → 503 且用户状态不变（不 fail-open）
     from backend.auth import session_store
