@@ -1,33 +1,64 @@
 <script setup lang="ts">
+// 侧边导航（多租户 RBAC stage3·T15）：消费后端数据化菜单 auth.menus（按角色授权 ∩ 可见性双过滤）。
+// fail-closed：登录态未就绪显加载中、失败显错误+重试，**不回退静态全量菜单**（避免露越权入口；原 menuConfig.ts 已删）。
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { Loading } from '@element-plus/icons-vue'
 import SideMenuItem from './SideMenuItem.vue'
-import { menuConfig, findOpenPath } from './menuConfig'
+import { useAuthStore } from '@/stores/auth'
+import type { MenuTreeNode } from '@/utils/permission'
 
 const route = useRoute()
+const auth = useAuthStore()
 
-// 子路由（如 /stocks/600000.SH）高亮其父菜单；数据管理高亮到具体子页
+const menus = computed<MenuTreeNode[]>(() => auth.menus)
+
+// 子路由（如 /stocks/600000.SH、/data/*、/system/layout/*）高亮到最近的授权叶子。
+// 从菜单叶子路径中取「当前路径精确匹配或作为前缀」里最长的一个，避免硬编码路由前缀。
 const activeMenu = computed(() => {
-  if (route.path.startsWith('/system/layout')) return route.path
-  if (route.path.startsWith('/system/config')) return '/system/config'
-  if (route.path.startsWith('/screen')) return '/screen'
-  if (route.path.startsWith('/backtest')) return '/backtest'
-  if (route.path.startsWith('/stocks')) return '/stocks'
-  if (route.path === '/data') return '/data/overview'
-  if (route.path.startsWith('/data/')) return route.path
-  return '/board'
+  const leaves = auth.menuRoutePaths
+  let best = ''
+  for (const p of leaves) {
+    if (route.path === p || route.path.startsWith(p + '/')) {
+      if (p.length > best.length) best = p
+    }
+  }
+  return best || route.path
 })
 
-// 默认折叠，只展开当前路由所在的分组（初始挂载时计算一次，之后由 el-menu 维护展开态）
-const defaultOpeneds = computed(() => findOpenPath(activeMenu.value))
+// 默认只展开当前路由所在的分组链（初次挂载算一次，之后由 el-menu 维护）。
+function findOpenTrail(nodes: MenuTreeNode[], target: string, trail: string[] = []): string[] {
+  for (const n of nodes) {
+    if (n.children?.length) {
+      const found = findOpenTrail(n.children, target, [...trail, n.index])
+      if (found.length) return found
+    } else if (n.index === target) {
+      return trail
+    }
+  }
+  return []
+}
+const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.value))
 </script>
 
 <template>
-  <!-- el-menu 在持久化外壳内只挂载一次：default-openeds 仅增量追加、不会收起旧组，
-       故用 unique-opened（同级只展开一个）实现「默认折叠、只展开当前路由所在组」 -->
-  <el-menu :default-active="activeMenu" :default-openeds="defaultOpeneds" unique-opened router class="menu">
-    <SideMenuItem v-for="node in menuConfig" :key="node.index" :node="node" />
+  <!-- 就绪：按后端菜单渲染 -->
+  <el-menu v-if="auth.menusStatus === 'ready' && menus.length" :default-active="activeMenu"
+           :default-openeds="defaultOpeneds" unique-opened router class="menu">
+    <SideMenuItem v-for="node in menus" :key="node.index" :node="node" />
   </el-menu>
+
+  <!-- 加载中 -->
+  <div v-else-if="auth.menusStatus === 'loading' || auth.menusStatus === 'idle'" class="menu-hint">
+    <el-icon class="is-loading"><Loading /></el-icon>
+    <span>菜单加载中…</span>
+  </div>
+
+  <!-- 加载失败（fail-closed：不显示任何菜单，提供重试） -->
+  <div v-else class="menu-hint error">
+    <span>菜单加载失败</span>
+    <el-button size="small" text type="primary" @click="auth.retryMe()">重试</el-button>
+  </div>
 </template>
 
 <style scoped>
@@ -36,6 +67,19 @@ const defaultOpeneds = computed(() => findOpenPath(activeMenu.value))
   border-right: none;
   background: transparent;
   padding-top: 8px;
+}
+.menu-hint {
+  flex: 1;
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--chrome-text-muted);
+  font-size: 13px;
+}
+.menu-hint.error {
+  color: var(--el-color-danger);
 }
 .menu :deep(.el-menu-item) {
   color: var(--chrome-text);

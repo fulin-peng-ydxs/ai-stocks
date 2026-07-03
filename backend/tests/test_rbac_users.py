@@ -114,6 +114,50 @@ def test_tenant_admin_cannot_touch_other_tenant_user(client, env):
     assert r.json()["code"] == 4004   # 跨租户视为不存在（业务软失败 200 + code）
 
 
+# ── T16 多账号交叉核查：租户管理员对他租户用户的**每个变更动作**都被 _load_in_scope 拦成 404 ──
+# （status 已由上例覆盖；此处锁 update/reset-password/delete 三个动词，防未来重构漏挂域闸门）
+
+def test_tenant_admin_cannot_update_other_tenant_user(client, env):
+    tid = env.mk_tenant()
+    ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    other = env.mk_tenant()
+    victim = env.mk_user(other, ROLE_NORMAL)
+    r = client.put(f"/api/users/{victim}", json={"roleIds": [ROLE_NORMAL], "status": "active"},
+                   headers=_tok(ta, tid))
+    assert r.json()["code"] == 4004   # 跨租户编辑视为不存在
+    assert env.pg.query_df("SELECT status FROM sys_user WHERE id=%s", [victim]).iloc[0]["status"] == "active"
+
+
+def test_tenant_admin_cannot_reset_other_tenant_user(client, env):
+    tid = env.mk_tenant()
+    ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    other = env.mk_tenant()
+    victim = env.mk_user(other, ROLE_NORMAL)
+    r = client.post(f"/api/users/{victim}/reset-password", json={"password": "GoodPass1"},
+                    headers=_tok(ta, tid))
+    assert r.json()["code"] == 4004   # 跨租户重置密码视为不存在
+
+
+def test_tenant_admin_cannot_delete_other_tenant_user(client, env):
+    tid = env.mk_tenant()
+    ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    other = env.mk_tenant()
+    victim = env.mk_user(other, ROLE_NORMAL)
+    r = client.delete(f"/api/users/{victim}", headers=_tok(ta, tid))
+    assert r.json()["code"] == 4004   # 跨租户删除视为不存在
+    assert not env.pg.query_df("SELECT 1 FROM sys_user WHERE id=%s", [victim]).empty   # 未被删
+
+
+def test_tenant_admin_cannot_escalate_role_via_update(client, env):
+    """租户管理员编辑本租户用户时不能把角色越权提升为 system（走 _validate_roles → 403）。"""
+    tid = env.mk_tenant()
+    ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    member = env.mk_user(tid, ROLE_NORMAL)
+    r = client.put(f"/api/users/{member}", json={"roleIds": ["system"], "status": "active"},
+                   headers=_tok(ta, tid))
+    assert r.status_code == 403   # 不可分配 system 超管
+
+
 # ── 新建 / 多角色 / 唯一 ──
 
 def test_system_create_and_list(client, env):
@@ -209,6 +253,33 @@ def test_last_active_admin_protected_despite_disabled_admin(client, env):
     assert r.json()["code"] == 4000   # 按 active 统计 → 仍是最后一个可用管理员
     assert env.pg.query_df("SELECT status FROM sys_user WHERE id=%s",
                            [active_admin]).iloc[0]["status"] == "active"   # 未被改
+
+
+def test_disable_normal_user_not_blocked_when_tenant_has_no_admin(client, env):
+    # 回归（T11 验证发现）：编辑弹窗(update_user)停用**普通用户**不应被"最后管理员保护"误拦。
+    # 该租户无任何 active tenant_admin 时，早期 disabling 分支漏 target_is_admin 前置会误拦普通用户；
+    # 修复后与行内 set_status 口径一致——保护仅针对 tenant_admin 目标。
+    tid = env.mk_tenant()
+    normal = env.mk_user(tid, ROLE_NORMAL)   # 该租户无任何 tenant_admin
+    r = client.put(f"/api/users/{normal}",
+                   json={"email": None, "roleIds": [ROLE_NORMAL], "status": "disabled"},
+                   headers=env.sys_headers())
+    assert r.json()["code"] == 0
+    assert env.pg.query_df("SELECT status FROM sys_user WHERE id=%s",
+                           [normal]).iloc[0]["status"] == "disabled"
+
+
+def test_list_null_last_login_not_serialized_as_nat(client, env):
+    # 回归（T11 验证发现）：混合结果集里 SQL NULL 的 last_login_at 会被 pandas 提升为 NaT（列 dtype
+    # =datetime64），早期 _iso 直接 isoformat() 输出字符串 'NaT' 泄漏前端。断言 null → JSON null。
+    tid = env.mk_tenant()
+    logged = env.mk_user(tid, ROLE_NORMAL)     # 有登录时间
+    never = env.mk_user(tid, ROLE_NORMAL)      # 从未登录（null）
+    env.pg.execute("UPDATE sys_user SET last_login_at=now() WHERE id=%s", [logged])
+    r = client.get(f"/api/users?tenant_id={tid}", headers=env.sys_headers())
+    items = {i["account"]: i for i in r.json()["data"]["items"]}
+    assert items[never]["last_login_at"] is None       # 不是 'NaT'
+    assert items[logged]["last_login_at"] is not None
 
 
 def test_create_in_nonexistent_tenant_rejected(client, env):

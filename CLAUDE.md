@@ -30,7 +30,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 常用命令
 
-**前置：PostgreSQL 与 Redis 须先运行**（后端启动期 `_check_storages` 三库连通性自检，任一不通即启动失败）。本机开发用 Homebrew：`brew services start postgresql@16 redis`；PG 库/角色 `ai_stocks`（localhost `trust` 免密；公网部署改 pg_hba 走密码 + 设 `AI_STOCKS_PG_PASSWORD`）。**阶段二起还须设 `AI_STOCKS_JWT_SECRET`**（JWT 签名密钥，无弱默认，`_check_storages` 会校验，缺失即 `ConfigError` 启动失败）——本机开发可 `export AI_STOCKS_JWT_SECRET=<任意足够长随机串>` 或写进 shell profile；首部署建议一并设 `AI_STOCKS_ADMIN_PASSWORD`（否则 admin 初始密码随机生成、仅告警打印一次，见「认证与鉴权」⑦）。
+**前置：PostgreSQL 与 Redis 须先运行**（后端启动期 `_check_storages` 三库连通性自检，任一不通即启动失败）。本机开发用 Homebrew：`brew services start postgresql@16 redis`；PG 库/角色 `ai_stocks`（localhost `trust` 免密；公网部署改 pg_hba 走密码 + 设 `AI_STOCKS_PG_PASSWORD`）。**阶段二起还须设 `AI_STOCKS_JWT_SECRET`**（JWT 签名密钥，无弱默认，`_check_storages` 会校验，缺失即 `ConfigError` 启动失败）——本机开发优先复制 `.env.local.example` 为 `.env.local` 后填写，`start.sh` 会自动加载；本地开发约定账号为 `admin` / `Admin@12345`。首部署和任何共享/生产环境必须显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发口令（否则未设置时 admin 初始密码随机生成、仅告警打印一次，见「认证与鉴权」⑦）。
 
 服务起停一律走脚本，**禁止裸 `nohup` 或写 `/tmp`**：
 

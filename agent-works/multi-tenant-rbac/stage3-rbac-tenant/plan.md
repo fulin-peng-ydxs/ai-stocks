@@ -154,13 +154,13 @@
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6)+菜单接口守卫(T7)+功能接口守卫(T8)+租户接口守卫(T9·整 router require_system)已完成；按钮级 v-permission(T15)待做（后端接口守卫 T5–T9 全落地）|
-| R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 进行中 | **部分覆盖** | 用户管理域过滤(T5,system 全局/tenant_admin 本租户/跨租户 404)已落地；租户管理域过滤(T9)+多账号交叉核查(T16)待做；R9 端到端资产隔离非本阶段新做 |
+| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6)+菜单接口守卫(T7)+功能接口守卫(T8)+租户接口守卫(T9·整 router require_system)已完成；**按钮级 v-permission 指令 + 路由守卫菜单校验(T15)已完成**（指令+守卫+纯逻辑单测，normal 用户越权路由重定向自验）。剩存量13业务路由的精确 resource code 接入=阶段四 R21 |
+| R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 已完成 | 一致 | 用户管理域过滤(T5,system 全局/tenant_admin 本租户/跨租户 404)+租户管理 require_system(T9) 已落地；**多账号交叉核查(T16)完成**：补 4 例锁死用户变更全动词跨租户 404 + 越权提角色 403，资产隔离回归 398 passed 绿。存量业务接口精确码=阶段四 R21 |
 | R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 进行中 | 一致 | 后端(T5)完成:多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
-| R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 进行中 | 一致 | 后端(T6)完成：角色 CRUD/授权(全删重插+bump)/内置保护/超管锁定/system-only 码禁授/assignable 分流；`GET /api/roles/{id}/perms` 供前端权限树回显。角色页(T12·全选/清空/还原+树)待做 |
-| R12 | 菜单管理(树CRUD+排序+图标) | menu API+repo + 菜单页 + IconPicker + SideMenu 改造 | T7,T13,T15 | 进行中 | 一致 | 后端(T7)完成：菜单树 CRUD/排序/图标名/内置保护/防成环/删除·可见性变更 bump；`{menu_id:path}` 兼容含斜杠内置 id。前端菜单页/IconPicker/SideMenu 改造(T13/T15)待做 |
-| R13 | 功能管理(资源登记) | resource API+repo + 功能子表 | T8,T13 | 进行中 | 一致 | 后端(T8)完成：功能点 CRUD/唯一不可复用/内置保护(不可删·码不可改)/删除·改码 bump/role_count 引用统计。前端功能子表(T13)待做 |
-| R14 | 租户管理(CRUD+管理员+启停) | tenant API+repo + 租户页(去勾选列) | T9,T14 | 进行中 | 一致 | 后端(T9)完成：租户 CRUD/名称唯一/指定管理员归属校验/默认租户保护/停用即时踢下线(bump 该租户全部用户 + 登录·刷新 status 校验)。前端租户页(T14)待做 |
+| R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 进行中 | 一致 | 后端(T6)完成：角色 CRUD/授权(全删重插+bump)/内置保护/超管锁定/system-only 码禁授/assignable 分流；`GET /api/roles/{id}/perms` 供前端权限树回显。角色页(T12·全选/清空/还原+三态树)已完成 |
+| R12 | 菜单管理(树CRUD+排序+图标) | menu API+repo + 菜单页 + IconPicker + SideMenu 改造 | T7,T13,T15 | 已完成 | 一致 | 后端(T7)完成：菜单树 CRUD/排序/图标名/内置保护/防成环/删除·可见性变更 bump；`{menu_id:path}` 兼容含斜杠内置 id。**前端菜单页 + IconPicker(T13)已完成**（树 draggable+属性表单+图标选择器）；**SideMenu 消费后端菜单(T15)已完成**（后端数据化渲染 + EP 图标 + fail-closed，menuConfig 已删；normal 用户菜单仅业务页自验） |
+| R13 | 功能管理(资源登记) | resource API+repo + 功能子表 | T8,T13 | 已完成 | 一致 | 后端(T8)完成：功能点 CRUD/唯一不可复用/内置保护(不可删·码不可改)/删除·改码 bump/role_count 引用统计。**前端功能子表(T13)已完成**（按 menu 拉取、类型 tag、内置禁改删、增删改弹窗，自验闭环） |
+| R14 | 租户管理(CRUD+管理员+启停) | tenant API+repo + 租户页(去勾选列) | T9,T14 | 已完成 | 一致 | 后端(T9)完成：租户 CRUD/名称唯一/指定管理员归属校验/默认租户保护/停用即时踢下线(bump 该租户全部用户 + 登录·刷新 status 校验)。**前端租户页(T14)已完成**（列表/筛选/建·停·启·编辑·删全生命周期 + 查看用户带过滤跳转 + default 保护 + row-key 修 fixed 列标签错位，自验闭环） |
 | R5 | 注册绑租管角色 | register 改写 sys_user_role(保留自动登录) | T5 | 已完成 | 一致 | register_tenant_and_admin 同事务绑 tenant_admin |
 | —(技术依赖) | 权限数据模型+seed+迁移 | 6 表 + FK/索引 + seed + role_code 迁移 | T1 | 已完成 | 超范围(必要依赖) | R8-R14 底座；对开发 PG 实跑校验+10 单测 |
 | —(技术依赖) | 瘦令牌+解析缓存+失效+上下文 | perm_resolver + Redis 缓存 + bump 全触发点 + JWT/context | T2,T3 | 已完成 | 超范围(必要依赖) | 多角色运行时前提；require_perm/require_system 守卫(T4)一并落地 |
@@ -291,7 +291,8 @@
 - 完成标准：前端可据 /me 渲染菜单 + 控按钮。**已达成**：5 个 T10 用例 + 既有 me 断言改树形全通过；全量 **378 passed**（373→378）。前端 SideMenu/v-permission 消费(T15)待做。
 
 ### 6.11 任务 T11：前端 用户管理页（P4）
-- 状态：待开始
+- 状态：已完成（页面/api/登记落地；vue-tsc + build 绿；pageRegistry/layout-contract 契约绿；**preview 5181 双主题 + 三档视口(1440×900/1366×768/1100×620)交互闭环已验**：新建(多角色+指定租户)/编辑回填(账号禁用·租户锁定·角色回填)/改状态/行内启停解锁/锁定→删除/重置弹窗，无整页横纵溢出、无控制台错误）
+- 验证中发现并修复 2 个 T5 后端缺陷（均补回归测试，见 test_rbac_users）：①`update_user` 的"最后管理员保护"漏 `target_is_admin` 前置——租户内无 active tenant_admin 时（如默认租户 admin 为 system 角色）编辑弹窗停用**普通用户**被误拦，与行内 `set_status` 口径统一后修复；②`_row_to_admin_view._iso` 在**混合结果集**里把 SQL NULL 的 `last_login_at` 序列化成字符串 `'NaT'` 泄漏前端（pandas 列 dtype 提升为 datetime64），`pd.isna` 兜住 → null。
 - 依赖：T5,T10
 - 涉及文件/模块：`frontend/src/views/system/UserManageView.vue`(新)、`api/user.ts`(新)、`router`、`pageRegistry.ts`、`DESIGN.md §9`
 - 目标：承接 [user-management.html](../prototypes/user-management.html)（§4.7），**去勾选列**，含 settings-drawer。
@@ -303,7 +304,8 @@
 - 完成标准：7.4 功能点验收 + §4.6 页面闭环（含 settings-drawer + 状态 + 三档视口）。
 
 ### 6.12 任务 T12：前端 角色管理页（P5）
-- 状态：待开始
+- 状态：已完成（RoleManageView + api/role.ts + api/menu.ts(只读，T13 扩展) + 登记；vue-tsc/build 绿；pageRegistry/layout-contract 契约绿；**preview 5181 双主题 + 1440/1100 视口交互闭环已验**：master-detail 三级三态权限树、级联勾选、全选/清空/还原、脏检测、新建/重命名/删除角色、保存往返(API 核验 menu-only 授权 `/screen` 正确落库)、超管锁定整树只读+按钮禁用、system 可见子树(数据/配置/布局/角色/菜单/租户)对可编辑角色置灰而用户管理可授——与后端 `system_only_resource_ids`(按 `menu.visible='system'`)口径一致；无整页溢出、无控制台错误）
+- 关键实现：权限树 node-key 用 `m:`/`r:` 前缀区分菜单/功能点；保存收集 menuIds=选中∪半选的菜单、resourceIds=选中功能点；回显走叶子(功能点 + 无子菜单)由 el-tree 级联回算三态；置灰口径复用后端 `menu.visible='system'`，与 set_grants 的 system-only 硬拒一致（无"前端可勾但后端拒"错位）。
 - 依赖：T6,T7,T8,T10
 - 涉及文件/模块：`frontend/src/views/system/RoleManageView.vue`(新)、`api/role.ts`(新)、路由/registry/DESIGN
 - 目标：承接 [role-management.html](../prototypes/role-management.html)（master-detail + el-tree 三态 + **全选/清空/还原必做**，§4.8）。
@@ -315,7 +317,7 @@
 - 完成标准：7.5 功能点验收（含全选/清空/还原）+ 页面闭环。
 
 ### 6.13 任务 T13：前端 菜单与功能页（P6，含 IconPicker）
-- 状态：待开始
+- 状态：已完成（build 绿 + 前端 85 tests 全绿；preview 5181 双主题×窄视口自验闭环）
 - 依赖：T7,T8,T10
 - 涉及文件/模块：`frontend/src/views/system/MenuResourceView.vue`(新)、`components/IconPicker.vue`(新)、`api/menu.ts`(新)、路由/registry/DESIGN、维护矩阵登记
 - 目标：承接 [menu-resource-management.html](../prototypes/menu-resource-management.html)（§4.9）。
@@ -325,9 +327,15 @@
 - 边界与异常：route_path 唯一校验；图标名渲染；loading/空/错误/无权。
 - 验证方式：preview 双主题 + 图标选择/搜索 + 树增删排序 + 功能增删；**三档视口**；契约绿；build。
 - 完成标准：7.6 功能点验收 + 页面闭环 + 维护矩阵登记。
+- 落地留痕：
+  - `api/menu.ts` 扩展 CRUD：`createMenu/updateMenu/deleteMenu/reorderMenus` + `createResource/updateResource/deleteResource`。
+  - **坑修正（自验实测，与后端注释相反）**：含斜杠内置 id（`/board`、`/system/menus`）在 `updateMenu/deleteMenu` **必须 `encodeURIComponent(id)`**。后端注释称"前端 `/menus/${id}` 天然形成路径、勿编码"——但浏览器/fetch 会把 `/menus//board` 的双斜杠规范化、丢掉前导斜杠 → 后端收 `board` 报「菜单不存在」（实测 200+错误 msg）。编码为 `%2Fboard` 后 `{menu_id:path}` 解码回 `/board` 才命中（实测「已保存」）；对 uuid 自定义 id 编码恒等，两者皆安全。已改 `encodeURIComponent` 并重测内置 /board 改图标→保存→清除还原全通。
+  - `components/IconPicker.vue`：`import * as` 消费 `@element-plus/icons-vue`（293 图标），可搜索网格 + 清除 + `<component :is>` 按名渲染；`v-model` 存图标名。DESIGN §9 已登记复用组件。
+  - `MenuResourceView.vue`：LayoutHost list + master-detail——左 `el-tree` draggable（`allow-drop` 限 inner 仅落分组、`allow-drag` 门控 `menu:reorder`；`node-drop` 全量重算 sort/parentId 提交）+ 右 菜单属性表单（IconPicker + 分组隐藏路由 + 排序只读“拖拽树调整”）+ 功能点 `el-table`（类型 tag/绑定接口/内置禁改删）；#overlays 挂 新建菜单/功能点弹窗 + settings-drawer。按钮 gating 走 `can(menu:*/resource:*)`（system 恒真，页 require_system）。
+  - 自验（preview 5181 admin/system）：分组 vs 叶子属性回填正确（分组隐路由/有“新增子节点”、内置不可删）；功能子表按 menu 拉取、类型 tag、内置禁改删；IconPicker 搜索“Trend”精确命中 TrendCharts + 选中回填 + 脏标 + 还原；**自建菜单全生命周期**（创建入树自动选中→加功能点→删功能点→删菜单，API 复核 200「已删除」清理干净）；reorder no-op 契约 22 节点 200「排序已保存」；22 树项 `draggable=true`；深/浅双主题一致（全 `--el-*` 变量）；1100×620 无整页横向溢出；无控制台错误。
 
 ### 6.14 任务 T14：前端 租户管理页（P7）
-- 状态：待开始
+- 状态：已完成（build 绿 + 前端 85 tests 全绿；preview 5181 双主题×三档视口自验闭环）
 - 依赖：T9,T10
 - 涉及文件/模块：`frontend/src/views/system/TenantManageView.vue`(新)、`api/tenant.ts`(新)、路由/registry/DESIGN
 - 目标：承接 [tenant-management.html](../prototypes/tenant-management.html)（§4.10），去勾选列。
@@ -337,9 +345,15 @@
 - 边界与异常：loading/空/错误/无权；停用二次确认。
 - 验证方式：preview 双主题 + 启停 + 跳转带过滤；**三档视口**；契约绿；build。
 - 完成标准：7.7 功能点验收 + 页面闭环。
+- 落地留痕：
+  - `api/tenant.ts` 扩展写接口 `createTenant/updateTenant/setTenantStatus/deleteTenant`（租户 id 无斜杠，路径无需编码）。
+  - `TenantManageView.vue`：LayoutHost list（filter-bar + data-table + 分页 + 编辑弹窗 + settings-drawer），与 user-manage 同构。列：租户名(default 带「内置」tag、fixed-left)/租户 ID/状态 tag/管理员/用户数/创建时间；组件段可显隐 id·admin·userCount·created 列。行操作：编辑、查看用户（跳 `/system/users?tenant=<id>`）、启用/停用（**停用二次确认**，default 不显停用）、删除（default 不显、有用户禁用）。状态经 `setTenantStatus` 独立端点走行操作（不塞进编辑弹窗，对齐后端 update 仅收 name+adminUserId）；编辑弹窗按 `listUsers({tenant_id})` 填「指定管理员」下拉。
+  - **配套改 `UserManageView`**：`onMounted` 读 `route.query.tenant`，system 身份预置租户筛选（tenant_admin 忽略防越权）——支撑租户页「查看用户」带过滤跳转。
+  - **坑修正**：`el-table` 加 `row-key="id"`。新增/重排数据时 **fixed-left 列内的按行 v-if（如「内置」tag）会 DOM 复用错位**（实测新建租户后「内置」错标到新行，重载才正常）；`row-key` 稳定行标识后修复，启停/改名/删除等 reload 操作后标签均不错位（已复验）。
+  - 自验（preview 5181 admin/system）：**全生命周期**建→停(二次确认)→启→编辑改名→删（0 用户可删）全通、toast 正确；default 租户仅「编辑/查看用户」（无停用删除，受保护）；「查看用户」跳转 `?tenant=default` 且用户页租户筛选预置「默认租户」、列表按租户过滤；深/浅双主题；1440/1366/1100 三档无整页横向溢出；无控制台错误；DB 复核仅剩默认租户。
 
 ### 6.15 任务 T15：前端权限消费底座（v-permission + SideMenu fail-closed + 守卫）
-- 状态：待开始
+- 状态：已完成（build 绿 + 前端 100 tests 全绿含 15 新增 permission 单测；preview 5181 system+normal 双身份自验闭环）
 - 依赖：T10
 - 涉及文件/模块：`frontend/src/directives/permission.ts`(新)、`components/SideMenu.vue`、`components/menuConfig.ts`、`stores/auth.ts`、`router/index.ts`、`main.ts`
 - 目标：按钮级指令 + 菜单后端化(fail-closed) + 路由守卫增强（Codex P2）。
@@ -349,9 +363,18 @@
 - 边界与异常：/me 失败→错误/空态 + 重试（**不 fail-open**）；无权路由→回首页。
 - 验证方式：组件测——指令无码移除元素；SideMenu 按 menus 渲染；拉取失败不露全量菜单；无权路由拦截。preview 验证。
 - 完成标准：按钮/菜单按权限显隐，system 全见，拉取失败 fail-closed。
+- 落地留痕：
+  - `utils/permission.ts`(新)：无 DOM 纯逻辑 `collectMenuPaths/firstMenuPath/isRouteAllowed/hasPermission`，供指令/守卫/store/SideMenu 共用，node 环境可单测（`utils/__tests__/permission.spec.ts` 15 例：叶子收集、system 恒过、前缀匹配、`/stocksXYZ` 不误命中 `/stocks`、allowed 空 fail-closed、多码取并）。
+  - `directives/permission.ts`(新) + `main.ts` 注册 `app.directive('permission')`：`v-permission="'code'|['a','b']"`，无权 mounted 时移除元素（system 恒过）。会话内权限稳定（变更走 perm_ver→401→重登整页重载），故 mounted 判定即可。
+  - `stores/auth.ts`：`menus` 强类型 `MenuTreeNode[]`、新增 `menusStatus(idle|loading|ready|error)` + `ensureLoaded()`（模块级 `inflightMe` 去重，守卫每次导航 + App 挂载并发只发一次 /me）+ `retryMe()`；getter `isSystem/menuRoutePaths/firstMenuPath`。`fetchMe` 失败置 error 并抛出（fail-closed）。
+  - `SideMenu.vue`：改由 `auth.menus` 渲染（`status==='ready'&&menus.length` 才出 el-menu；loading 显「加载中」；error 显「加载失败+重试」）；`activeMenu`/展开链据授权叶子动态算（不再硬编码前缀）。`SideMenuItem.vue`：icon 按 EP 图标名取组件渲染（非图标名回退文本）。
+  - **`components/menuConfig.ts` 已删除**：fail-closed 不回退静态全量菜单，该文件无消费者即死代码（原是 SideMenu 唯一引用）；删后结构上杜绝 fail-open。
+  - `router/index.ts`：`beforeEach` 改 async——已登录先 `await auth.ensureLoaded()`（fail-closed；401 由拦截器清态、守卫复查 token 跳登录），再 `isRouteAllowed(to.path, menuRoutePaths, isSystem)`；无权重定向到 `firstMenuPath`（无安全落点则放行、交后端接口守卫兜底，避免重定向死循环）。
+  - `App.vue`：`onMounted` 改调 `ensureLoaded()`（与守卫共用去重）。
+  - 自验（preview 5181）：**system**——SideMenu 全量 22 项含旧 menuConfig 没有的「权限管理」子组（用户/角色/菜单与功能/租户），分组渲染 EP 图标（无 emoji），board 数据正常、导航不阻断。**normal**（临时建 testnormal 验后删）——菜单仅业务页（最新行情/策略筛选/策略回测/盘感训练，无数据管理·系统管理系统子树）；守卫拦截 `/system/users`→`/stocks`、`/data/quality`→`/stocks`，放行 `/screen` 与子路由 `/stocks/600000.SH`。无控制台错误；DB 清理无残留。
 
 ### 6.16 任务 T16：数据隔离全量透传核查（R9）
-- 状态：待开始
+- 状态：已完成（+4 跨租户回归用例；全量后端 398 passed 绿）
 - 依赖：T5,T6,T9
 - 涉及文件/模块：新管理仓库 + 测试
 - 目标：确认平台管理查询/写入按角色域隔离；资产隔离回归；无跨租户泄漏。
@@ -361,6 +384,13 @@
 - 边界与异常：跨租户读/写/分配均被拒。
 - 验证方式：多账号交叉——tenant_admin A 看不到/改不到 tenant B 用户；跨租户分配被拒；资产隔离回归绿。
 - 完成标准：R9 里程碑"多账号交叉验证隔离"达成（平台管理表新增 + 资产回归）。
+- 核查结论 + 留痕：
+  - **平台管理域隔离（既有已覆盖 + 本次补全动词）**：用户管理所有变更动词经同一 `_load_in_scope`（非 system 且 target.tenant_id≠ctx.tenant_id → 404），角色分配经 `_validate_roles`（仅 `assignable(is_system)` 集合内，tenant_admin 不含 system/custom）。原仅 `status` 有跨租户用例——**本次补 `test_rbac_users.py` 4 例**锁死其余动词：`cannot_update_other_tenant_user`(PUT→4004 且未改)、`cannot_reset_other_tenant_user`(reset→4004)、`cannot_delete_other_tenant_user`(DELETE→4004 且未删)、`cannot_escalate_role_via_update`(本租户用户 PUT roleIds=['system']→403)。防未来重构漏挂域闸门。
+  - **租户管理**：整 router `require_system`，`test_rbac_tenants.py::test_list_forbidden_for_tenant_admin` 已证 tenant_admin 完全够不到 → 无跨租户面。
+  - **可分配角色分流**：`test_rbac_roles.py` 已覆盖 system 含 custom / tenant_admin 仅预设 / 授权 system-only 码被拒。
+  - **资产隔离回归**：全量后端 **398 passed**（含阶段一/二资产复合主键 + layout owner-from-context 归属用例），无回归。
+  - **数据订正**：修复 T15 编码诊断误把 `/board` `parent_id` 置 NULL（一次 `%2Fboard` 探针带 `parentId:null` 落库）——已 `UPDATE sys_menu SET parent_id='quotes',sort=20 WHERE id='/board'` 复原，`test_tree_for_system` 恢复绿。
+  - **环境注意**：后端测试须先 `./start.sh stop` 释放 DuckDB 写锁（layout save 触发 DuckDB DDL init 会与运行中 dev 后端争锁 → 5003），跑完再 `./start.sh` 重启（已复位，PID 79624 health=200）。
 
 ### 6.17 任务 T17：测试 + 文档治理 + 页面闭环收尾
 - 状态：待开始
@@ -433,6 +463,6 @@
 3. ◻ **部分**（**后端 4 套接口 T5–T9 全落地**；4 前端页 T11–T14 待做）：用户/角色/菜单+功能/租户 4 套接口已完成（含内置保护、级联/引用校验、租户存在校验 P2-b、最后 active 管理员保护 P1-b、菜单删除 resource 引用前置校验 P2-a）；4 前端页（承接原型、过契约、双主题、**三档视口达标**、settings-drawer、去勾选列、全选/清空/还原）待做。
 4. ◻ **部分**（**/me 菜单树 T10 已落**；`v-permission`/SideMenu/路由守卫 T15 待做）：/me 返回「授权∩可见性」双过滤菜单树 + 功能码列表（含菜单移动跨可见域即时失效 P2-c，**按「当前节点+子树」递归 CTE 汇总失效**——修 Codex 二轮 P2-c：父分组变更须连带只授到子孙叶子的用户）；前端 `v-permission` 按钮级 + SideMenu 消费后端菜单(**fail-closed**、EP 图标) + 路由守卫按菜单待做。
 5. ◻ **部分**（T5 用户管理隔离已达；完整交叉验证待 T16）：**多账号交叉验证**——tenant_admin 限本租户、跨租户不可见/不可改、system-only 接口非 system 403；授权变更后相关用户重登即生效。
-6. ◻ **待做**（T17）：全量 `pytest` 绿（当前 **392 passed**）+ `npm run build` + 前端契约绿；CLAUDE.md 同步 RBAC 契约；requirement §12 阶段三标完成。
+6. ◻ **待做**（T17）：全量 `pytest` 绿（当前 **394 passed**；392 基线 + T11 验证补 2 条回归）+ `npm run build` + 前端契约绿；CLAUDE.md 同步 RBAC 契约；requirement §12 阶段三标完成。
 
 达成后进入**阶段四（存量 13 路由全量接 resource code + 隔离，R21）**，再阶段五（审计/字典/配置拆页/开关页 R16–R19）。

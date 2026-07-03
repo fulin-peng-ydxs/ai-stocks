@@ -177,13 +177,16 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 | 开发模式 | 日常开发、前端热更新、调试 API | 前端 `http://localhost:5173` | 前端 Vite + 后端 FastAPI 两个进程 |
 | 生产/集成模式 | 单端口访问、演示、局域网访问 | 后端 `http://<机器IP>:8000` | 后端托管 `frontend/dist` |
 
-> **前置依赖（混合持久层 stage1 起）**：后端启动前 **PostgreSQL 与 Redis 须先运行**（启动期三库连通性自检，任一不通即失败）。本机开发：`brew services start postgresql@16 redis`，并建 PG 库/角色 `ai_stocks`（localhost `trust` 免密；公网部署改 pg_hba 走密码并设 `AI_STOCKS_PG_PASSWORD`）。连接参数见 `config/settings.yaml` 的 `postgres`/`redis` 段。存量从旧 DuckDB 升级：`python -m backend.cli migrate-rbac`（先 dry-run，再 `--apply`）。
+> **前置依赖（混合持久层 stage1 起）**：后端启动前 **PostgreSQL 与 Redis 须先运行**（启动期三库连通性自检，任一不通即失败）。本机开发：`brew services start postgresql@16 redis`，并建 PG 库/角色 `ai_stocks`（localhost `trust` 免密；公网部署改 pg_hba 走密码并设 `AI_STOCKS_PG_PASSWORD`）。连接参数见 `config/settings.yaml` 的 `postgres`/`redis` 段；本机敏感环境变量写入 `.env.local`（参考 `.env.local.example`，已忽略 Git）。存量从旧 DuckDB 升级：`python -m backend.cli migrate-rbac`（先 dry-run，再 `--apply`）。
 
 ### 5.1 开发模式启动（前后端联动）
 
 后端与前端是**两个独立进程**，各自热更、互不重启。前端经 Vite 代理把 `/api` 转发到后端，调试时**访问前端端口**。
 
 ```bash
+cp .env.local.example .env.local
+# 编辑 .env.local，至少填写 AI_STOCKS_JWT_SECRET；可用 openssl rand -hex 32 生成
+# 本地开发约定账号：admin / Admin@12345；生产或共享环境必须改 AI_STOCKS_ADMIN_PASSWORD
 ./start.sh                      # 后端 8000，热重载（= python -m backend.cli serve --reload，nohup 脱离会话）
 ./start-web.sh                  # 前端 5173，HMR（nohup 脱离会话，首次先 npm install）
 ```
@@ -214,7 +217,7 @@ cd frontend && npm run build && cd ..   # 产物进 frontend/dist
 ./start.sh prod                         # 后端绑 0.0.0.0:8000 托管 dist
 ```
 
-生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权内核（阶段二：JWT 登录/注册 + 中间件默认 deny，非白名单接口须 token），启动前须设 `AI_STOCKS_JWT_SECRET`（缺失即启动失败）。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
+生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权内核（阶段二：JWT 登录/注册 + 中间件默认 deny，非白名单接口须 token），启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
 
 ### 5.3 首次准备数据（依赖有序）
 

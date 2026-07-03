@@ -10,6 +10,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+import pandas as pd
+
 from backend.auth.constants import ROLE_TENANT_ADMIN
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
@@ -80,7 +82,11 @@ class UserRepository:
     def _row_to_admin_view(r: dict) -> dict:
         """管理列表/详情视图（无 password_hash）。roles=角色码集；日期转 iso。"""
         def _iso(v):
-            return v.isoformat() if v is not None and hasattr(v, "isoformat") else v
+            # 混合结果集里 SQL NULL 时间会被 pandas 提升为 NaT（列 dtype=datetime64），
+            # 直接 isoformat() 会得到字符串 'NaT' 泄漏到前端；pd.isna 统一兜住 NaT/NA/None → null。
+            if v is None or pd.isna(v):
+                return None
+            return v.isoformat() if hasattr(v, "isoformat") else v
         roles = list(r.get("roles") or [])
         return {
             "id": r["id"], "tenant_id": r["tenant_id"], "account": r["account"],

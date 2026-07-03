@@ -1,0 +1,446 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
+import HelpTip from '@/components/HelpTip.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
+import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
+import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { usePageSettings } from '@/composables/usePageSettings'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useAuthStore } from '@/stores/auth'
+import {
+  listUsers, createUser, updateUser, setUserStatus, resetUserPassword, deleteUser,
+  listAssignableRoles, type AdminUser, type AssignableRole,
+} from '@/api/user'
+import { listTenants, type Tenant } from '@/api/tenant'
+
+const auth = useAuthStore()
+const route = useRoute()
+// 身份分流：仅系统管理员可跨租户（切租户筛选 + 新建时指定归属租户）；租户管理员限本租户，不展示租户维度。
+const isSystem = computed(() => auth.role === 'system')
+// 按钮级权限（T15 全局 v-permission 落地前的本页消费口径）：system 恒过，其余按 /me 下发的 permissions。
+function can(code: string): boolean {
+  return isSystem.value || auth.permissions.includes(code)
+}
+
+// ── 业务偏好（settings-drawer 业务段）：默认状态筛选 ──
+const { settings, isDirty, reset } = usePageSettings('user-manage', {
+  defaultStatus: 'all' as 'all' | 'active',
+})
+
+// ── 布局/组件配置（settings-drawer 布局 + 组件段，按 pageRegistry.componentMeta 自动渲染）──
+const userLayout = getPageLayout('user-manage')
+const {
+  effective, knobs: layoutKnobs, setKnob, valueOf, sourceOf,
+  isDirty: layoutDirty, resetAll: resetLayout,
+  componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf,
+} = useRemoteLayoutConfig(userLayout)
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const settingsOpen = ref(false)
+
+const defaultSort = computed<'created' | 'lastLogin' | 'account'>(
+  () => (componentValueOf('table', 'defaultSort') as 'created' | 'lastLogin' | 'account') ?? 'created')
+const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
+function colVisible(key: string): boolean {
+  return !hiddenColumns.value.includes(key)
+}
+
+// ── 角色/租户字典（用于列表展示映射 + 表单下拉）──
+const ROLE_LABEL_FALLBACK: Record<string, string> = {
+  system: '系统管理员', tenant_admin: '租户管理员', normal: '普通用户', paid: '付费会员',
+}
+const assignableRoles = ref<AssignableRole[]>([])
+const roleNameMap = computed<Record<string, string>>(() => {
+  const m: Record<string, string> = {}
+  for (const r of assignableRoles.value) m[r.code] = r.name
+  return m
+})
+function roleName(code: string): string {
+  return roleNameMap.value[code] ?? ROLE_LABEL_FALLBACK[code] ?? code
+}
+function roleTagType(code: string): 'primary' | 'warning' | 'info' {
+  if (code === 'system' || code === 'tenant_admin') return 'primary'
+  if (code === 'paid') return 'warning'
+  return 'info'
+}
+
+const tenants = ref<Tenant[]>([])
+const tenantNameMap = computed<Record<string, string>>(() => {
+  const m: Record<string, string> = {}
+  for (const t of tenants.value) m[t.id] = t.name
+  return m
+})
+function tenantName(id: string): string {
+  return tenantNameMap.value[id] ?? id
+}
+
+// ── 列表 ──
+const loading = ref(false)
+const list = ref<AdminUser[]>([])
+const total = ref(0)
+const page = ref(1)
+const size = ref(DEFAULT_PAGE_SIZE)
+const filters = ref<{ tenant: string; role: string; status: string; q: string }>(
+  { tenant: '', role: '', status: '', q: '' })
+
+const STATUS_TAG: Record<string, { type: 'success' | 'danger' | 'warning'; label: string }> = {
+  active: { type: 'success', label: '启用' },
+  disabled: { type: 'danger', label: '已禁用' },
+  locked: { type: 'warning', label: '已锁定' },
+}
+
+// 客户端对当前页排序（列表服务端分页，排序仅影响当前页，与数据质量页口径一致）。
+const displayList = computed(() => {
+  const rows = [...list.value]
+  if (defaultSort.value === 'lastLogin') {
+    rows.sort((a, b) => (b.last_login_at ?? '').localeCompare(a.last_login_at ?? ''))
+  } else if (defaultSort.value === 'account') {
+    rows.sort((a, b) => a.account.localeCompare(b.account))
+  }
+  return rows
+})
+
+async function load() {
+  loading.value = true
+  try {
+    const res = await listUsers({
+      tenant_id: isSystem.value && filters.value.tenant ? filters.value.tenant : undefined,
+      role: filters.value.role || undefined,
+      status: filters.value.status || undefined,
+      q: filters.value.q.trim() || undefined,
+      page: page.value, size: size.value,
+    })
+    list.value = res.items
+    total.value = res.total
+  } finally {
+    loading.value = false
+  }
+}
+
+// 下拉筛选变更自动查询（列表交互标准）；搜索框回车/清空触发。
+watch(() => [filters.value.tenant, filters.value.role, filters.value.status],
+  () => { page.value = 1; load() })
+function search() { page.value = 1; load() }
+
+// ── 新建 / 编辑弹窗 ──
+const dialogVisible = ref(false)
+const editing = ref<AdminUser | null>(null)
+const saving = ref(false)
+const form = ref<{
+  account: string; email: string; roleIds: string[]; status: string; tenantId: string; password: string
+}>({ account: '', email: '', roleIds: [], status: 'active', tenantId: '', password: '' })
+
+const isEdit = computed(() => editing.value !== null)
+// 角色 id→code 反查（编辑回填时把用户 roles 的 code 映射回可分配角色 id）。
+const roleIdByCode = computed<Record<string, string>>(() => {
+  const m: Record<string, string> = {}
+  for (const r of assignableRoles.value) m[r.code] = r.id
+  return m
+})
+
+function openCreate() {
+  editing.value = null
+  form.value = {
+    account: '', email: '', roleIds: [], status: 'active',
+    tenantId: isSystem.value ? (auth.tenantId || '') : '', password: '',
+  }
+  dialogVisible.value = true
+}
+function openEdit(row: AdminUser) {
+  editing.value = row
+  form.value = {
+    account: row.account,
+    email: row.email ?? '',
+    // 仅回填仍在可分配集合内的角色（system 超管角色不可分配、不参与编辑）。
+    roleIds: (row.roles || []).map((c) => roleIdByCode.value[c]).filter(Boolean),
+    status: row.status,
+    tenantId: row.tenant_id,
+    password: '',
+  }
+  dialogVisible.value = true
+}
+async function save() {
+  if (!form.value.roleIds.length) { ElMessage.warning('请至少选择一个角色'); return }
+  saving.value = true
+  try {
+    if (isEdit.value && editing.value) {
+      await updateUser(editing.value.id, {
+        email: form.value.email.trim() || null,
+        roleIds: form.value.roleIds,
+        status: form.value.status,
+      })
+      ElMessage.success('已保存')
+    } else {
+      if (!form.value.account.trim()) { ElMessage.warning('请填写账号'); return }
+      if (!form.value.password) { ElMessage.warning('请填写初始密码'); return }
+      await createUser({
+        account: form.value.account.trim(),
+        password: form.value.password,
+        email: form.value.email.trim() || null,
+        roleIds: form.value.roleIds,
+        status: form.value.status,
+        tenantId: isSystem.value ? (form.value.tenantId || null) : null,
+      })
+      ElMessage.success('已创建')
+    }
+    dialogVisible.value = false
+    await load()
+  } catch { /* 业务校验/唯一性错误由拦截器弹出 */ } finally { saving.value = false }
+}
+
+// ── 重置密码弹窗 ──
+const resetVisible = ref(false)
+const resetTarget = ref<AdminUser | null>(null)
+const resetForm = ref<{ pwd: string; confirm: string }>({ pwd: '', confirm: '' })
+const resetting = ref(false)
+function openReset(row: AdminUser) {
+  resetTarget.value = row
+  resetForm.value = { pwd: '', confirm: '' }
+  resetVisible.value = true
+}
+async function confirmReset() {
+  if (!resetTarget.value) return
+  if (!resetForm.value.pwd) { ElMessage.warning('请填写新密码'); return }
+  if (resetForm.value.pwd !== resetForm.value.confirm) { ElMessage.warning('两次输入的密码不一致'); return }
+  resetting.value = true
+  try {
+    await resetUserPassword(resetTarget.value.id, resetForm.value.pwd)
+    ElMessage.success('密码已重置，该用户需重新登录')
+    resetVisible.value = false
+  } catch { /* 强度不足等由拦截器弹出 */ } finally { resetting.value = false }
+}
+
+// ── 行内启停 / 删除 ──
+async function changeStatus(row: AdminUser, status: string, verb: string) {
+  try {
+    if (status !== 'active') {
+      await ElMessageBox.confirm(`确认${verb}用户「${row.account}」？${verb}后该用户将立即无法访问。`,
+        verb, { type: 'warning' })
+    }
+    await setUserStatus(row.id, status)
+    ElMessage.success(`已${verb}`)
+    await load()
+  } catch (e) { if (e === 'cancel') return /* 其余错误由拦截器弹出 */ }
+}
+async function removeUser(row: AdminUser) {
+  try {
+    await ElMessageBox.confirm(`确认删除用户「${row.account}」？该操作不可恢复。`, '删除用户',
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+    await deleteUser(row.id)
+    ElMessage.success('已删除')
+    await load()
+  } catch (e) { if (e === 'cancel') return }
+}
+
+onMounted(async () => {
+  filters.value.status = settings.defaultStatus === 'active' ? 'active' : ''
+  // 租户管理页「查看用户」跳转带 ?tenant=<id>：system 预置租户筛选（tenant_admin 无越权、忽略）。
+  const qTenant = route.query.tenant
+  if (isSystem.value && typeof qTenant === 'string' && qTenant) filters.value.tenant = qTenant
+  try {
+    assignableRoles.value = await listAssignableRoles()
+    if (isSystem.value) tenants.value = (await listTenants({ size: 200 })).items
+  } catch { /* 下拉字典失败不阻塞列表；拦截器已提示 */ }
+  await load()
+})
+watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'active' ? 'active' : '' })
+</script>
+
+<template>
+  <LayoutHost :layout="effective">
+    <template #action>
+      <div class="lh-action">
+        <div class="page-head">
+          <h2>
+            用户管理
+            <HelpTip title="用户管理说明" :width="420">
+              系统管理员可跨租户查看与管理；租户管理员仅限本租户。<br /><br />
+              一个用户可挂<b>多个角色</b>，权限取并集；租户管理员只能分配系统预设角色。<br /><br />
+              <b>禁用 / 锁定 / 重置密码</b>保存后，该用户下次校验即失效，需重新登录。
+            </HelpTip>
+          </h2>
+          <div class="page-head-actions">
+            <el-button v-if="can('user:create')" type="primary" @click="openCreate">＋ 新建用户</el-button>
+            <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <el-select v-if="isSystem" v-model="filters.tenant" placeholder="租户：全部" clearable
+                     style="width: 180px">
+            <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+          <el-select v-model="filters.role" placeholder="角色：全部" clearable style="width: 170px">
+            <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
+          </el-select>
+          <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
+            <el-option label="启用" value="active" />
+            <el-option label="已禁用" value="disabled" />
+            <el-option label="已锁定" value="locked" />
+          </el-select>
+          <el-input v-model="filters.q" placeholder="搜索账号 / 邮箱" clearable style="width: 220px"
+                    @keyup.enter="search" @clear="search" />
+          <el-button @click="search">查询</el-button>
+        </div>
+      </div>
+    </template>
+
+    <template #main>
+      <el-card shadow="never">
+        <el-table :data="displayList" size="small" height="100%" v-loading="loading">
+          <el-table-column label="账号" prop="account" width="150" fixed="left" />
+          <el-table-column v-if="colVisible('email')" label="邮箱" prop="email" min-width="180"
+                           show-overflow-tooltip>
+            <template #default="{ row }">{{ row.email || '—' }}</template>
+          </el-table-column>
+          <el-table-column v-if="colVisible('roles')" label="角色" min-width="180">
+            <template #default="{ row }">
+              <el-tag v-for="c in row.roles" :key="c" :type="roleTagType(c)" size="small"
+                      effect="plain" class="role-tag">{{ roleName(c) }}</el-tag>
+              <span v-if="!row.roles?.length" class="muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="isSystem && colVisible('tenant')" label="租户" width="140"
+                           show-overflow-tooltip>
+            <template #default="{ row }">{{ tenantName(row.tenant_id) }}</template>
+          </el-table-column>
+          <el-table-column v-if="colVisible('status')" label="状态" width="92">
+            <template #default="{ row }">
+              <el-tag :type="STATUS_TAG[row.status]?.type ?? 'info'" size="small" effect="plain">
+                {{ STATUS_TAG[row.status]?.label ?? row.status }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="colVisible('lastLogin')" label="最后登录" width="160">
+            <template #default="{ row }">{{ (row.last_login_at || '—').slice(0, 19).replace('T', ' ') }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="220" fixed="right">
+            <template #default="{ row }">
+              <el-button v-if="can('user:update')" type="primary" size="small" link
+                         @click="openEdit(row)">编辑</el-button>
+              <el-button v-if="can('user:reset-password')" type="primary" size="small" link
+                         @click="openReset(row)">重置密码</el-button>
+              <el-button v-if="can('user:disable') && row.status === 'active'" type="danger" size="small"
+                         link @click="changeStatus(row, 'disabled', '禁用')">禁用</el-button>
+              <el-button v-if="can('user:disable') && row.status === 'disabled'" type="success" size="small"
+                         link @click="changeStatus(row, 'active', '启用')">启用</el-button>
+              <el-button v-if="can('user:disable') && row.status === 'locked'" type="success" size="small"
+                         link @click="changeStatus(row, 'active', '解锁')">解锁</el-button>
+              <el-button v-if="can('user:delete') && row.status === 'locked'" type="danger" size="small"
+                         link @click="removeUser(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="pager">
+          <el-pagination layout="total, sizes, prev, pager, next" :total="total" background
+                         :current-page="page" :page-size="size" :page-sizes="PAGE_SIZE_OPTIONS"
+                         @current-change="(p: number) => { page = p; load() }"
+                         @size-change="(s: number) => { size = s; page = 1; load() }" />
+        </div>
+      </el-card>
+    </template>
+
+    <template #overlays>
+      <!-- 新建 / 编辑用户 -->
+      <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新建用户'" width="520px">
+        <el-form label-width="76px">
+          <el-form-item label="账号">
+            <el-input v-model="form.account" :disabled="isEdit" placeholder="账号唯一，创建后不可改" />
+          </el-form-item>
+          <el-form-item v-if="!isEdit" label="初始密码">
+            <el-input v-model="form.password" type="password" show-password
+                      placeholder="≥8 位，含字母与数字" />
+          </el-form-item>
+          <el-form-item label="邮箱">
+            <el-input v-model="form.email" placeholder="选填" />
+          </el-form-item>
+          <el-form-item label="角色">
+            <el-select v-model="form.roleIds" multiple placeholder="可多选，权限取并集"
+                       style="width: 100%">
+              <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="租户">
+            <el-select v-if="isSystem && !isEdit" v-model="form.tenantId" placeholder="归属租户"
+                       style="width: 100%">
+              <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
+            </el-select>
+            <span v-else class="locked-field">
+              {{ tenantName(form.tenantId) }}<span class="muted">（{{ isEdit ? '归属不可改' : '限本租户' }}）</span>
+            </span>
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-radio-group v-model="form.status">
+              <el-radio-button value="active">启用</el-radio-button>
+              <el-radio-button value="disabled">禁用</el-radio-button>
+              <el-radio-button value="locked">锁定</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- 重置密码 -->
+      <el-dialog v-model="resetVisible" title="重置密码" width="420px">
+        <el-form label-width="76px">
+          <el-form-item label="账号">
+            <span>{{ resetTarget?.account }}</span>
+          </el-form-item>
+          <el-form-item label="新密码">
+            <el-input v-model="resetForm.pwd" type="password" show-password
+                      placeholder="≥8 位，含字母与数字" />
+          </el-form-item>
+          <el-form-item label="确认">
+            <el-input v-model="resetForm.confirm" type="password" show-password placeholder="再次输入" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="resetVisible = false">取消</el-button>
+          <el-button type="primary" :loading="resetting" @click="confirmReset">重置</el-button>
+        </template>
+      </el-dialog>
+
+      <PageSettingsDrawer
+        v-model="settingsOpen"
+        title="用户管理"
+        :dirty="isDirty || layoutDirty"
+        page-key="user-manage"
+        :config="drawerConfig"
+        @reset="reset(); resetLayout()"
+      >
+        <template #business>
+          <PageSettingSection title="默认筛选">
+            <div class="setting-item">
+              <div class="setting-label">状态筛选</div>
+              <PageSegmented v-model="settings.defaultStatus" :options="[
+                { label: '全部', value: 'all' },
+                { label: '仅启用', value: 'active' },
+              ]" />
+            </div>
+          </PageSettingSection>
+        </template>
+      </PageSettingsDrawer>
+    </template>
+  </LayoutHost>
+</template>
+
+<style scoped>
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.page-head h2 { margin: 0; font-size: 20px; }
+.page-head-actions { display: flex; align-items: center; gap: 10px; }
+.filter-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.role-tag { margin-right: 4px; }
+.muted { color: var(--el-text-color-secondary); }
+.locked-field { color: var(--el-text-color-regular); }
+.pager { display: flex; justify-content: flex-end; margin-top: 12px; }
+.setting-item { display: flex; flex-direction: column; gap: 8px; }
+.setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
+</style>

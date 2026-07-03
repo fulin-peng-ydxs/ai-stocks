@@ -28,11 +28,11 @@ const tenantLabel = computed(() => (auth.tenantId ? `租户 ${auth.tenantId}` : 
 const userSubline = computed(() => [roleLabel.value, tenantLabel.value].filter(Boolean).join(' · '))
 const loggingOut = ref(false)
 
-// 挂载即拉 /me 刷新身份并校验会话：token 失效由 http 拦截器统一 401→跳登录
+// 挂载即确保 /me 就绪（刷新身份 + 填充菜单/权限，与路由守卫共用去重）：token 失效由 http 拦截器统一 401→跳登录
 onMounted(() => {
   if (!isFullscreen.value && auth.isLoggedIn) {
-    auth.fetchMe().catch(() => {
-      /* 失败(401 等)已由拦截器处理，此处静默 */
+    auth.ensureLoaded().catch(() => {
+      /* 失败(401 等)已由拦截器处理；菜单加载失败由 SideMenu 显错误态 + 重试 */
     })
   }
 })

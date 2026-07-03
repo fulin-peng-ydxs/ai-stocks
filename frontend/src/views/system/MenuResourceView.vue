@@ -1,0 +1,584 @@
+<script setup lang="ts">
+// 菜单与功能管理页（多租户 RBAC stage3·T13，R12+R13）。承接 menu-resource-management.html。
+// master-detail：左 el-tree(draggable) 菜单树 + 右 菜单属性表单(含 IconPicker) + 功能点子表。
+// 菜单是平台级全局唯一源，SideMenu 消费它 + 按角色权限过滤（T15）；功能点是角色授权最小资源单位。
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
+import type { Component } from 'vue'
+import * as EpIcons from '@element-plus/icons-vue'
+import HelpTip from '@/components/HelpTip.vue'
+import IconPicker from '@/components/IconPicker.vue'
+import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
+import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { getPageLayout } from '@/layout'
+import { usePageSettings } from '@/composables/usePageSettings'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useAuthStore } from '@/stores/auth'
+import {
+  listMenus, createMenu, updateMenu, deleteMenu, reorderMenus,
+  listResources, createResource, updateResource, deleteResource,
+  type MenuNode, type Resource,
+} from '@/api/menu'
+
+const auth = useAuthStore()
+function can(code: string): boolean {
+  return auth.role === 'system' || auth.permissions.includes(code)
+}
+
+// icon 名 → 组件（与 IconPicker/SideMenu 同一图标体系）
+const iconMap = EpIcons as unknown as Record<string, Component>
+function iconComp(name: string | null): Component | null {
+  return name ? (iconMap[name] ?? null) : null
+}
+
+// ── 布局/设置抽屉（本页无业务旋钮，抽屉仅布局段）──
+const menuLayout = getPageLayout('menu-manage')
+const {
+  effective, knobs: layoutKnobs, setKnob, valueOf, sourceOf,
+  isDirty: layoutDirty, resetAll: resetLayout,
+  componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf,
+} = useRemoteLayoutConfig(menuLayout)
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const { reset: resetBiz } = usePageSettings('menu-manage', {})
+const settingsOpen = ref(false)
+
+// ── 菜单树 ──
+const tree = ref<MenuNode[]>([])
+const treeRef = ref<InstanceType<typeof ElTree>>()
+const treeLoading = ref(false)
+const activeId = ref<string>('')
+
+/** 在嵌套树中按 id 找节点。 */
+function findNode(nodes: MenuNode[], id: string): MenuNode | null {
+  for (const n of nodes) {
+    if (n.id === id) return n
+    const hit = n.children?.length ? findNode(n.children, id) : null
+    if (hit) return hit
+  }
+  return null
+}
+const activeMenu = computed<MenuNode | null>(() => (activeId.value ? findNode(tree.value, activeId.value) : null))
+
+async function loadTree(keepActive = false) {
+  treeLoading.value = true
+  try {
+    tree.value = await listMenus()
+    if (keepActive && activeId.value && findNode(tree.value, activeId.value)) {
+      loadForm()
+    } else if (tree.value.length) {
+      selectMenu(tree.value[0].id)
+    } else {
+      activeId.value = ''
+    }
+  } finally {
+    treeLoading.value = false
+  }
+}
+
+// ── 右栏：菜单属性表单 + 脏检测 ──
+interface MenuForm {
+  title: string
+  type: string
+  routePath: string
+  icon: string | null
+  visible: string
+  sort: number
+  parentId: string | null // 保存属性时原样回传（移动只经拖拽，不在此改）
+}
+const form = ref<MenuForm>({ title: '', type: 'leaf', routePath: '', icon: null, visible: 'login', sort: 0, parentId: null })
+let originalForm = ''
+const formDirty = ref(false)
+
+function formFingerprint(f: MenuForm): string {
+  return JSON.stringify([f.title, f.type, f.routePath, f.icon, f.visible])
+}
+function loadForm() {
+  const m = activeMenu.value
+  if (!m) return
+  form.value = {
+    title: m.title, type: m.type, routePath: m.route_path ?? '',
+    icon: m.icon, visible: m.visible, sort: m.sort, parentId: m.parent_id,
+  }
+  originalForm = formFingerprint(form.value)
+  formDirty.value = false
+}
+function onFormChange() {
+  formDirty.value = formFingerprint(form.value) !== originalForm
+}
+
+const resources = ref<Resource[]>([])
+const resLoading = ref(false)
+async function loadResources(menuId: string) {
+  resLoading.value = true
+  try {
+    resources.value = await listResources(menuId)
+  } finally {
+    resLoading.value = false
+  }
+}
+
+async function selectMenu(id: string) {
+  activeId.value = id
+  loadForm()
+  await loadResources(id)
+}
+
+const savingForm = ref(false)
+async function saveForm() {
+  const m = activeMenu.value
+  if (!m || !can('menu:update')) return
+  if (!form.value.title.trim()) { ElMessage.warning('请填写菜单标题'); return }
+  savingForm.value = true
+  try {
+    await updateMenu(m.id, {
+      title: form.value.title.trim(),
+      type: form.value.type,
+      routePath: form.value.type === 'group' ? null : (form.value.routePath.trim() || null),
+      icon: form.value.icon,
+      visible: form.value.visible,
+      parentId: form.value.parentId, // 不在属性表单里移动，原样回传保持位置
+    })
+    ElMessage.success('已保存')
+    await loadTree(true)
+  } catch { /* 唯一/内置/成环等由拦截器弹出 */ } finally { savingForm.value = false }
+}
+function resetForm() {
+  loadForm()
+}
+
+// ── 菜单 新建（root / child）/ 删除 ──
+const menuDialog = ref(false)
+const menuCreateForm = ref<{ code: string; title: string; type: string; routePath: string; icon: string | null; visible: string; parentId: string | null; parentTitle: string }>(
+  { code: '', title: '', type: 'leaf', routePath: '', icon: null, visible: 'login', parentId: null, parentTitle: '（根节点）' },
+)
+const menuSaving = ref(false)
+
+function openCreateRoot() {
+  menuCreateForm.value = { code: '', title: '', type: 'group', routePath: '', icon: null, visible: 'login', parentId: null, parentTitle: '（根节点）' }
+  menuDialog.value = true
+}
+function openCreateChild() {
+  const p = activeMenu.value
+  if (!p) return
+  // 子节点默认继承父可见域（在 system 分组下新建默认 system），避免误建成登录可见的越权入口
+  menuCreateForm.value = { code: '', title: '', type: 'leaf', routePath: '', icon: null, visible: p.visible, parentId: p.id, parentTitle: p.title }
+  menuDialog.value = true
+}
+async function saveCreateMenu() {
+  const f = menuCreateForm.value
+  if (!f.code.trim()) { ElMessage.warning('请填写菜单标识 code'); return }
+  if (!f.title.trim()) { ElMessage.warning('请填写菜单标题'); return }
+  menuSaving.value = true
+  try {
+    const m = await createMenu({
+      parentId: f.parentId,
+      code: f.code.trim(),
+      title: f.title.trim(),
+      type: f.type,
+      routePath: f.type === 'group' ? null : (f.routePath.trim() || null),
+      icon: f.icon,
+      visible: f.visible,
+    })
+    ElMessage.success('已创建')
+    menuDialog.value = false
+    await loadTree()
+    if (m?.id) selectMenu(m.id)
+  } catch { /* 唯一/上级不存在等由拦截器弹出 */ } finally { menuSaving.value = false }
+}
+async function removeMenu() {
+  const m = activeMenu.value
+  if (!m) return
+  try {
+    await ElMessageBox.confirm(`确认删除菜单「${m.title}」？删除后拥有该菜单的角色将失去入口。`, '删除菜单',
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+    await deleteMenu(m.id)
+    ElMessage.success('已删除')
+    activeId.value = ''
+    await loadTree()
+  } catch (e) { if (e === 'cancel') return /* 内置/有子节点/有功能点由拦截器弹出 */ }
+}
+
+// ── 拖拽排序 / 移动 ──
+function allowDrag(): boolean {
+  return can('menu:reorder')
+}
+// 只有分组可作为容器（inner）；叶子不能有子节点
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function allowDrop(_draggingNode: any, dropNode: any, type: string): boolean {
+  if (type === 'inner') return (dropNode.data as MenuNode).type === 'group'
+  return true
+}
+/** 拖拽落定后：el-tree 已就地改动树结构，据当前结构重算全量 sort/parentId 并提交。 */
+function collectReorder(): Array<{ id: string; sort: number; parentId: string | null }> {
+  const items: Array<{ id: string; sort: number; parentId: string | null }> = []
+  const walk = (nodes: MenuNode[], parentId: string | null) => {
+    nodes.forEach((n, i) => {
+      items.push({ id: n.id, sort: (i + 1) * 10, parentId })
+      if (n.children?.length) walk(n.children, n.id)
+    })
+  }
+  walk(tree.value, null)
+  return items
+}
+async function onNodeDrop() {
+  try {
+    await reorderMenus(collectReorder())
+    ElMessage.success('菜单顺序已保存')
+    await loadTree(true)
+  } catch {
+    await loadTree(true) // 失败回滚到服务端真值
+  }
+}
+
+// ── 功能点：新建 / 编辑 / 删除 ──
+const resDialog = ref(false)
+const resMode = ref<'create' | 'edit'>('create')
+const resEditId = ref<string>('')
+const resForm = ref<{ code: string; name: string; type: string; apiMethod: string; apiPath: string }>(
+  { code: '', name: '', type: 'api', apiMethod: 'GET', apiPath: '' },
+)
+const resSaving = ref(false)
+
+function bindingText(r: Resource): string {
+  return r.api_path ? `${r.api_method || ''} ${r.api_path}`.trim() : '— 纯前端动作'
+}
+function openCreateRes() {
+  if (!activeMenu.value) return
+  resMode.value = 'create'
+  resEditId.value = ''
+  resForm.value = { code: '', name: '', type: 'api', apiMethod: 'GET', apiPath: '' }
+  resDialog.value = true
+}
+function openEditRes(r: Resource) {
+  resMode.value = 'edit'
+  resEditId.value = r.id
+  resForm.value = { code: r.code, name: r.name, type: r.type, apiMethod: r.api_method ?? 'GET', apiPath: r.api_path ?? '' }
+  resDialog.value = true
+}
+async function saveRes() {
+  const m = activeMenu.value
+  if (!m) return
+  const f = resForm.value
+  if (!f.code.trim()) { ElMessage.warning('请填写功能码'); return }
+  if (!f.name.trim()) { ElMessage.warning('请填写功能名称'); return }
+  resSaving.value = true
+  try {
+    const body = {
+      menuId: m.id, code: f.code.trim(), name: f.name.trim(), type: f.type,
+      apiMethod: f.type === 'api' ? f.apiMethod : null,
+      apiPath: f.apiPath.trim() || null,
+    }
+    if (resMode.value === 'create') await createResource(body)
+    else await updateResource(resEditId.value, body)
+    ElMessage.success(resMode.value === 'create' ? '已创建' : '已保存')
+    resDialog.value = false
+    await loadResources(m.id)
+  } catch { /* 唯一/内置由拦截器弹出 */ } finally { resSaving.value = false }
+}
+async function removeRes(r: Resource) {
+  const m = activeMenu.value
+  if (!m) return
+  try {
+    await ElMessageBox.confirm(`确认删除功能点「${r.name}」（${r.code}）？被角色引用时将同时解除授权。`, '删除功能点',
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' })
+    await deleteResource(r.id)
+    ElMessage.success('已删除')
+    await loadResources(m.id)
+  } catch (e) { if (e === 'cancel') return /* 内置由拦截器弹出 */ }
+}
+
+onMounted(() => { loadTree() })
+</script>
+
+<template>
+  <LayoutHost :layout="effective">
+    <template #action>
+      <div class="lh-action">
+        <div class="page-head">
+          <h2>
+            菜单与功能
+            <HelpTip title="菜单与功能管理说明" :width="440">
+              左侧菜单树可新增 / 拖拽排序 / 删除；选中节点后在右侧维护其属性与功能点。<br /><br />
+              菜单 icon 存 Element Plus 图标名，从图标选择器中选；分组不导航、无需路由。<br /><br />
+              功能点是角色授权的最小资源单位；「接口」类绑定后端接口路径，「按钮」类为前端动作。<br /><br />
+              「仅系统管理员」可见的菜单不会授予普通角色。
+            </HelpTip>
+          </h2>
+          <div class="page-head-actions">
+            <el-button v-if="can('menu:create')" type="primary" @click="openCreateRoot">＋ 新增菜单节点</el-button>
+            <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template #main>
+      <div class="mr-split">
+        <!-- 左：菜单树 -->
+        <div class="mr-col mr-left">
+          <div class="mr-col-head">菜单树 <span class="mini">可拖拽排序</span></div>
+          <div class="mr-col-body" v-loading="treeLoading">
+            <el-tree
+              ref="treeRef"
+              :data="tree"
+              node-key="id"
+              :props="{ label: 'title', children: 'children' }"
+              default-expand-all
+              highlight-current
+              :expand-on-click-node="false"
+              :draggable="can('menu:reorder')"
+              :allow-drag="allowDrag"
+              :allow-drop="allowDrop"
+              @node-click="(d: MenuNode) => selectMenu(d.id)"
+              @node-drop="onNodeDrop"
+            >
+              <template #default="{ data }">
+                <span class="mr-tnode">
+                  <el-icon v-if="iconComp(data.icon)" class="mr-ticon"><component :is="iconComp(data.icon)" /></el-icon>
+                  <span class="mr-tlabel">{{ data.title }}</span>
+                  <el-tag size="small" effect="plain" :type="data.type === 'group' ? 'info' : 'primary'" class="mr-ttag">
+                    {{ data.type === 'group' ? '分组' : '菜单' }}
+                  </el-tag>
+                  <el-tag v-if="data.visible === 'system'" size="small" effect="plain" type="warning" class="mr-ttag">系统</el-tag>
+                </span>
+              </template>
+            </el-tree>
+            <el-empty v-if="!treeLoading && !tree.length" description="暂无菜单" :image-size="72" />
+          </div>
+        </div>
+
+        <!-- 右：属性 + 功能点 -->
+        <div class="mr-col mr-right">
+          <template v-if="activeMenu">
+            <div class="mr-detail-bar">
+              <div class="mr-detail-title">
+                <div class="mname">
+                  <el-icon v-if="iconComp(activeMenu.icon)" class="mr-ticon"><component :is="iconComp(activeMenu.icon)" /></el-icon>
+                  {{ activeMenu.title }}
+                </div>
+                <div class="mmeta">
+                  标识 {{ activeMenu.code }}
+                  <span v-if="activeMenu.is_builtin" class="builtin-note"> · 内置菜单（对应已发布页面，不可删除）</span>
+                </div>
+              </div>
+              <div class="page-head-actions">
+                <el-button v-if="can('menu:create') && activeMenu.type === 'group'" size="small" @click="openCreateChild">＋ 新增子节点</el-button>
+                <el-button v-if="can('menu:delete')" size="small" type="danger" plain :disabled="activeMenu.is_builtin" @click="removeMenu">删除节点</el-button>
+              </div>
+            </div>
+
+            <div class="mr-col-body">
+              <!-- 菜单属性 -->
+              <div class="mr-section">
+                <h4>菜单属性</h4>
+                <div class="mr-form-grid">
+                  <div class="mr-field"><label>标题</label>
+                    <el-input v-model="form.title" size="small" :disabled="!can('menu:update')" @input="onFormChange" />
+                  </div>
+                  <div class="mr-field"><label>类型</label>
+                    <el-select v-model="form.type" size="small" :disabled="!can('menu:update')" @change="onFormChange">
+                      <el-option label="叶子（可导航）" value="leaf" />
+                      <el-option label="分组（不导航）" value="group" />
+                    </el-select>
+                  </div>
+                  <div class="mr-field"><label>路由</label>
+                    <el-input v-model="form.routePath" size="small" placeholder="如 /board" class="mono"
+                              :disabled="form.type === 'group' || !can('menu:update')" @input="onFormChange" />
+                  </div>
+                  <div class="mr-field"><label>图标</label>
+                    <IconPicker v-model="form.icon" :disabled="!can('menu:update')" @update:model-value="onFormChange" />
+                  </div>
+                  <div class="mr-field"><label>排序</label>
+                    <el-input :model-value="form.sort" size="small" disabled>
+                      <template #suffix><span class="hint">拖拽树调整</span></template>
+                    </el-input>
+                  </div>
+                  <div class="mr-field"><label>可见性</label>
+                    <el-select v-model="form.visible" size="small" :disabled="!can('menu:update')" @change="onFormChange">
+                      <el-option label="登录可见" value="login" />
+                      <el-option label="仅系统管理员" value="system" />
+                    </el-select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 功能点 -->
+              <div class="mr-section" style="border-bottom: none">
+                <div class="mr-func-head">
+                  <h4 style="margin: 0">功能点（供角色授权）
+                    <HelpTip title="功能点说明" :width="360">
+                      功能码全局唯一、稳定不可复用（与后端接口权限码对账）；<br />
+                      「接口」类绑定后端接口路径，「按钮」类为前端动作；<br />
+                      内置功能点不可改不可删；删除被角色引用的功能点会同时解除授权。
+                    </HelpTip>
+                  </h4>
+                  <el-button v-if="can('resource:create')" size="small" @click="openCreateRes">＋ 新增功能点</el-button>
+                </div>
+                <el-table :data="resources" v-loading="resLoading" size="small" class="mr-func-table"
+                          :empty-text="'该菜单暂无功能点'" border>
+                  <el-table-column prop="code" label="功能码" min-width="190">
+                    <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>
+                  </el-table-column>
+                  <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
+                  <el-table-column label="类型" width="84">
+                    <template #default="{ row }">
+                      <el-tag size="small" effect="plain" :type="row.type === 'api' ? 'success' : 'warning'">
+                        {{ row.type === 'api' ? '接口' : '按钮' }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="绑定接口" min-width="220">
+                    <template #default="{ row }">
+                      <span class="mono" :class="{ dim: !row.api_path }">{{ bindingText(row) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="120" fixed="right">
+                    <template #default="{ row }">
+                      <el-button v-if="can('resource:update')" link type="primary" size="small"
+                                 :disabled="row.is_builtin" @click="openEditRes(row)">编辑</el-button>
+                      <el-button v-if="can('resource:delete')" link type="danger" size="small"
+                                 :disabled="row.is_builtin" @click="removeRes(row)">删</el-button>
+                      <span v-if="row.is_builtin" class="builtin-tag">内置</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
+
+            <div class="mr-detail-foot">
+              <span class="dirty" :class="{ hidden: !formDirty }">● 菜单属性有未保存修改</span>
+              <div class="page-head-actions">
+                <el-button :disabled="!formDirty" @click="resetForm">还原</el-button>
+                <el-button type="primary" :loading="savingForm" :disabled="!formDirty || !can('menu:update')" @click="saveForm">保存</el-button>
+              </div>
+            </div>
+          </template>
+          <el-empty v-else description="请选择左侧菜单节点" :image-size="72" />
+        </div>
+      </div>
+    </template>
+
+    <template #overlays>
+      <!-- 新建菜单 -->
+      <el-dialog v-model="menuDialog" title="新增菜单节点" width="480px">
+        <el-form label-width="72px">
+          <el-form-item label="上级">
+            <el-input :model-value="menuCreateForm.parentTitle" disabled />
+          </el-form-item>
+          <el-form-item label="标识">
+            <el-input v-model="menuCreateForm.code" class="mono" placeholder="全局唯一，创建后不可改（如 board）" />
+          </el-form-item>
+          <el-form-item label="标题">
+            <el-input v-model="menuCreateForm.title" placeholder="如：每日榜单" />
+          </el-form-item>
+          <el-form-item label="类型">
+            <el-select v-model="menuCreateForm.type">
+              <el-option label="叶子（可导航）" value="leaf" />
+              <el-option label="分组（不导航）" value="group" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="路由" v-if="menuCreateForm.type !== 'group'">
+            <el-input v-model="menuCreateForm.routePath" class="mono" placeholder="如 /board（须与前端已注册路由对应）" />
+          </el-form-item>
+          <el-form-item label="图标">
+            <IconPicker v-model="menuCreateForm.icon" />
+          </el-form-item>
+          <el-form-item label="可见性">
+            <el-select v-model="menuCreateForm.visible">
+              <el-option label="登录可见" value="login" />
+              <el-option label="仅系统管理员" value="system" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="menuDialog = false">取消</el-button>
+          <el-button type="primary" :loading="menuSaving" @click="saveCreateMenu">创建</el-button>
+        </template>
+      </el-dialog>
+
+      <!-- 功能点 新建/编辑 -->
+      <el-dialog v-model="resDialog" :title="resMode === 'create' ? '新增功能点' : '编辑功能点'" width="480px">
+        <el-form label-width="72px">
+          <el-form-item label="功能码">
+            <el-input v-model="resForm.code" class="mono" placeholder="menu:action（全局唯一）" />
+          </el-form-item>
+          <el-form-item label="名称">
+            <el-input v-model="resForm.name" placeholder="如：导出 CSV" />
+          </el-form-item>
+          <el-form-item label="类型">
+            <el-select v-model="resForm.type">
+              <el-option label="接口（绑定后端接口）" value="api" />
+              <el-option label="按钮（前端动作）" value="button" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="接口方法" v-if="resForm.type === 'api'">
+            <el-select v-model="resForm.apiMethod">
+              <el-option label="GET" value="GET" />
+              <el-option label="POST" value="POST" />
+              <el-option label="PUT" value="PUT" />
+              <el-option label="DELETE" value="DELETE" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="接口路径">
+            <el-input v-model="resForm.apiPath" class="mono" placeholder="如 /api/board（按钮类可留空）" />
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button @click="resDialog = false">取消</el-button>
+          <el-button type="primary" :loading="resSaving" @click="saveRes">保存</el-button>
+        </template>
+      </el-dialog>
+
+      <PageSettingsDrawer
+        v-model="settingsOpen"
+        title="菜单与功能"
+        :dirty="layoutDirty"
+        page-key="menu-manage"
+        :config="drawerConfig"
+        @reset="resetBiz(); resetLayout()"
+      />
+    </template>
+  </LayoutHost>
+</template>
+
+<style scoped>
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.page-head h2 { margin: 0; font-size: 20px; }
+.page-head-actions { display: flex; align-items: center; gap: 10px; }
+/* master-detail：窄视口体内横滚，右栏不被压垮 */
+.mr-split { height: 100%; display: flex; gap: 16px; min-height: 0; overflow-x: auto; }
+.mr-col { border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay);
+  display: flex; flex-direction: column; min-height: 0; }
+.mr-left { width: 300px; flex: none; }
+.mr-right { flex: 1 1 auto; min-width: 480px; }
+.mr-col-head { padding: 11px 14px; border-bottom: 1px solid var(--el-border-color-lighter); font-weight: 600;
+  display: flex; align-items: center; gap: 8px; }
+.mr-col-head .mini { font-size: 12px; color: var(--el-text-color-secondary); font-weight: 400; }
+.mr-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px; }
+.mr-tnode { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.mr-ticon { color: var(--el-text-color-regular); }
+.mr-tlabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mr-ttag { transform: scale(0.9); flex: none; }
+.mr-detail-bar { padding: 12px 16px; border-bottom: 1px solid var(--el-border-color-lighter);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mr-detail-title .mname { font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+.mr-detail-title .mmeta { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
+.builtin-note { color: var(--el-color-warning); }
+.mr-section { padding: 14px 16px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.mr-section h4 { margin: 0 0 12px; font-size: 13px; color: var(--el-text-color-secondary); font-weight: 600;
+  display: inline-flex; align-items: center; }
+.mr-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 20px; }
+.mr-field { display: flex; align-items: center; gap: 10px; }
+.mr-field label { width: 54px; text-align: right; color: var(--el-text-color-regular); font-size: 13px; flex: none; }
+.mr-field :deep(.el-select), .mr-field :deep(.el-input) { flex: 1; }
+.mono :deep(input), .mono { font-family: ui-monospace, Menlo, monospace; }
+.hint { font-size: 11px; color: var(--el-text-color-placeholder); }
+.mr-func-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.mr-func-table :deep(.dim) { color: var(--el-text-color-placeholder); }
+.builtin-tag { font-size: 11px; color: var(--el-text-color-secondary); margin-left: 4px; }
+.mr-detail-foot { border-top: 1px solid var(--el-border-color-lighter); padding: 12px 16px;
+  display: flex; align-items: center; justify-content: space-between; }
+.dirty { font-size: 12px; color: var(--el-color-warning); }
+.dirty.hidden { visibility: hidden; }
+</style>

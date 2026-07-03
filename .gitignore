@@ -31,10 +31,15 @@ frontend/*.tsbuildinfo
 # OS
 .DS_Store
 
-# 密钥（如 Tushare token 等，禁止入库）
+# 密钥（如 JWT secret、Tushare token 等，禁止入库）
 .env
+.env.local
+.env.*.local
+!.env.example
+!.env.local.example
 config/secrets.yaml
 
 # 后端运行时日志与 PID（start.sh 产物）
 logs/
-/**/screenshots*/**
+# AI 验证截图目录（任意含 screenshot(s) 的目录名，如 screenshots/、page-test-screenshots/）
+**/*screenshot*/

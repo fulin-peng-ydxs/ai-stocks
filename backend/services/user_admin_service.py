@@ -77,11 +77,14 @@ class UserAdminService:
         self._check_status(status)
         role_code = self._validate_roles(ctx, role_ids)
 
-        # 最后管理员保护：若从最后一个 tenant_admin 上摘掉该角色 / 停用，均阻止
-        removing_admin = (ROLE_TENANT_ADMIN in (target["roles"] or [])
-                          and ROLE_TENANT_ADMIN not in self._role_codes(role_ids))
+        # 最后管理员保护：仅当目标**本身是 tenant_admin** 时，摘其管理员角色或停用它、且租户内已无
+        # 其他 active 管理员才阻止。普通用户的停用与此无关——早期 disabling 分支漏了 target_is_admin
+        # 前置，会在"租户无 active 管理员"（如默认租户 admin 为 system 角色）时误拦普通用户停用；
+        # 与 set_status 的判定口径保持一致。
+        target_is_admin = ROLE_TENANT_ADMIN in (target["roles"] or [])
+        removing_admin = target_is_admin and ROLE_TENANT_ADMIN not in self._role_codes(role_ids)
         disabling = status != "active" and target["status"] == "active"
-        if (removing_admin or disabling) and self._is_last_tenant_admin(target):
+        if (removing_admin or (disabling and target_is_admin)) and self._is_last_tenant_admin(target):
             raise ValidationError("该用户是本租户最后一个管理员，不能取消其管理员角色或停用")
 
         # 业务写入 + perm_ver 自增**同事务原子提交**（Codex 五轮 P1）→ 提交后 best-effort 清缓存。

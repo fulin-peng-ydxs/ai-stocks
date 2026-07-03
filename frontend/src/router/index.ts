@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { getAccessToken } from '@/api/authToken'
+import { useAuthStore } from '@/stores/auth'
+import { isRouteAllowed } from '@/utils/permission'
 
 const routes: RouteRecordRaw[] = [
   // 登录/注册页（stage2·T7）：全屏独立壳（meta.fullscreen）+ 公开（meta.public，免登录）
@@ -23,6 +25,31 @@ const routes: RouteRecordRaw[] = [
     name: 'config',
     component: () => import('@/views/ConfigView.vue'),
     meta: { title: '配置管理' },
+  },
+  // 系统管理 › 权限管理（阶段三 RBAC）：用户管理页（P4）。按钮走 v-permission，菜单/守卫按后端权限（T15）。
+  {
+    path: '/system/users',
+    name: 'user-manage',
+    component: () => import('@/views/system/UserManageView.vue'),
+    meta: { title: '用户管理' },
+  },
+  {
+    path: '/system/roles',
+    name: 'role-manage',
+    component: () => import('@/views/system/RoleManageView.vue'),
+    meta: { title: '角色管理' },
+  },
+  {
+    path: '/system/menus',
+    name: 'menu-manage',
+    component: () => import('@/views/system/MenuResourceView.vue'),
+    meta: { title: '菜单与功能' },
+  },
+  {
+    path: '/system/tenants',
+    name: 'tenant-manage',
+    component: () => import('@/views/system/TenantManageView.vue'),
+    meta: { title: '租户管理' },
   },
   { path: '/system/layout', redirect: '/system/layout/presets' },
   {
@@ -108,9 +135,12 @@ const router = createRouter({
   routes,
 })
 
-// 全局登录守卫（stage2·T7）：公开路由放行；未登录访问受控路由跳登录（带 redirect）；
-// 已登录再进登录页则回首页。仅用 token 存在性（骨架级）；接口级/按钮级权限留阶段三。
-router.beforeEach((to) => {
+// 全局守卫（stage2·T7 骨架 + stage3·T15 菜单权限）：
+// ① 公开路由放行（已登录再进登录页回首页）；② 未登录访问受控路由跳登录（带 redirect）；
+// ③ 已登录先确保 /me 就绪（fail-closed：菜单/权限加载后再放行），再按授权菜单校验目标路由——
+//    system 恒过；非 system 命中授权叶子（或其子路由）放行，否则重定向到首个授权页（无安全落点则放行、
+//    交由后端接口级守卫兜底，避免重定向死循环）。
+router.beforeEach(async (to) => {
   const loggedIn = !!getAccessToken()
   if (to.meta.public) {
     if (to.path === '/login' && loggedIn) return { path: '/' }
@@ -118,6 +148,16 @@ router.beforeEach((to) => {
   }
   if (!loggedIn) {
     return { path: '/login', query: { redirect: to.fullPath } }
+  }
+  const auth = useAuthStore()
+  // 确保菜单/权限已加载；401 由 http 拦截器统一清态处理，其余瞬时错误吞掉不阻断。
+  try { await auth.ensureLoaded() } catch { /* 401 已由拦截器处理；瞬时错误交由页面/接口兜底 */ }
+  // ensureLoaded 期间若发生 401 清态，token 已失效 → 跳登录。
+  if (!getAccessToken()) return { path: '/login', query: { redirect: to.fullPath } }
+  // 菜单权限校验（system 恒过；未就绪时 menuRoutePaths 为空 → 无安全落点 → 放行避免死循环）。
+  if (!isRouteAllowed(to.path, auth.menuRoutePaths, auth.isSystem)) {
+    const landing = auth.firstMenuPath
+    if (landing && landing !== to.path) return { path: landing }
   }
   return true
 })

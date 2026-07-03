@@ -351,6 +351,124 @@ const REGISTRY: PageRegistryEntry[] = [
     },
   },
   {
+    pageKey: 'user-manage',
+    label: '用户管理',
+    path: '/system/users',
+    archetype: 'list',
+    responsiveProfile: 'single-column',
+    supportsComponentConfig: true,
+    consumedComponentFields: { table: ['defaultSort', 'hiddenColumns'] },
+    componentMeta: {
+      table: {
+        columns: [
+          { key: 'email', label: '邮箱列' },
+          { key: 'roles', label: '角色列' },
+          { key: 'tenant', label: '租户列' },
+          { key: 'status', label: '状态列' },
+          { key: 'lastLogin', label: '最后登录列' },
+        ],
+        sortFields: [
+          { key: 'created', label: '创建时间' },
+          { key: 'lastLogin', label: '最后登录' },
+          { key: 'account', label: '账号' },
+        ],
+        sortHasDirection: false,
+      },
+    },
+    layout: {
+      pageKey: 'user-manage',
+      archetype: 'list',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '用户列表', order: 1, config: { defaultSort: 'created' } },
+      ],
+      editable: [densityKnob()],
+    },
+  },
+  {
+    pageKey: 'role-manage',
+    label: '角色管理',
+    path: '/system/roles',
+    archetype: 'list',
+    responsiveProfile: 'single-column',
+    supportsComponentConfig: false,
+    layout: {
+      pageKey: 'role-manage',
+      archetype: 'list',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'head', component: 'toolbar', region: 'action', order: 1 },
+        { id: 'content', component: 'section', region: 'main', minH: 360, label: '角色权限工作台', order: 1 },
+      ],
+      editable: [densityKnob()],
+    },
+  },
+  {
+    // 租户管理（P7·R14）：list（筛选工具栏 + 数据表 + 分页 + 编辑弹窗）。与 user-manage 同构。
+    pageKey: 'tenant-manage',
+    label: '租户管理',
+    path: '/system/tenants',
+    archetype: 'list',
+    responsiveProfile: 'single-column',
+    supportsComponentConfig: true,
+    consumedComponentFields: { table: ['defaultSort', 'hiddenColumns'] },
+    componentMeta: {
+      table: {
+        columns: [
+          { key: 'id', label: '租户 ID 列' },
+          { key: 'admin', label: '管理员列' },
+          { key: 'userCount', label: '用户数列' },
+          { key: 'created', label: '创建时间列' },
+        ],
+        sortFields: [
+          { key: 'created', label: '创建时间' },
+          { key: 'name', label: '租户名' },
+          { key: 'userCount', label: '用户数' },
+        ],
+        sortHasDirection: false,
+      },
+    },
+    layout: {
+      pageKey: 'tenant-manage',
+      archetype: 'list',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '租户列表', order: 1, config: { defaultSort: 'created' } },
+      ],
+      editable: [densityKnob()],
+    },
+  },
+  {
+    // 菜单与功能管理（P6·R12+R13）：master-detail（左菜单树 draggable + 右属性表单 + 功能子表）。
+    // 与 role-manage 同构——section 承载工作台内部主从布局，无 growMain（section 不能吃富余空间）。
+    pageKey: 'menu-manage',
+    label: '菜单与功能',
+    path: '/system/menus',
+    archetype: 'list',
+    responsiveProfile: 'single-column',
+    supportsComponentConfig: false,
+    layout: {
+      pageKey: 'menu-manage',
+      archetype: 'list',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'head', component: 'toolbar', region: 'action', order: 1 },
+        { id: 'content', component: 'section', region: 'main', minH: 360, label: '菜单与功能工作台', order: 1 },
+      ],
+      editable: [densityKnob()],
+    },
+  },
+  {
     pageKey: 'stock-detail',
     label: '个股详情',
     path: '/stocks/:code',

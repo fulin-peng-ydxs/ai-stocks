@@ -11,13 +11,13 @@
 #   ./start.sh logs       跟踪日志（Ctrl-C 退出跟踪，不影响服务）
 #
 # 设计要点：
-#   - nohup 脱离会话：AI 跑别的命令 / 终端关闭 / 对话结束都不会误杀（解决"老挂"）。
+#   - 独立 session 脱离会话：AI 跑别的命令 / 终端关闭 / 对话结束都不会误杀（解决"老挂"）。
 #   - dev 模式 --reload：源码改动自动热更，无需手动重启。
 #   - 防重复启动：已在跑则直接退出，避免端口抢占。
 #
 # 前置依赖（多租户混合持久层 stage1 起）：PostgreSQL 与 Redis 须先运行，否则后端启动期
 #   三库连通性自检失败、进程退出。本机：brew services start postgresql@16 redis。
-#   连接参数见 config/settings.yaml(postgres/redis)，密码走环境变量 AI_STOCKS_PG_PASSWORD。
+#   连接参数见 config/settings.yaml(postgres/redis)，密码/密钥可写入 .env.local（已忽略 Git）。
 # ───────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -30,6 +30,15 @@ PID_FILE="$LOG_DIR/backend.pid"
 PROC_PATTERN="backend.cli serve"
 
 mkdir -p "$LOG_DIR"
+
+# 本机敏感环境变量入口：文件已被 .gitignore 忽略，可放 JWT secret、PG/Redis 密码等。
+# 示例见 .env.local.example；文件内变量可写 export KEY=... 或 KEY=...。
+if [[ -f ".env.local" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source ".env.local"
+  set +a
+fi
 
 # 是否有存活的后端进程；有则回显 PID
 running_pid() {
@@ -54,8 +63,27 @@ start() {
   fi
 
   echo "🚀 启动后端（$mode 模式）…"
-  nohup "$PY" -m backend.cli "${args[@]}" > "$LOG_FILE" 2>&1 < /dev/null &
-  disown 2>/dev/null || true
+  "$PY" - "$PY" "${args[@]}" "$LOG_FILE" <<'PY'
+import os
+import subprocess
+import sys
+
+py = sys.argv[1]
+log_file = sys.argv[-1]
+cli_args = sys.argv[2:-1]
+
+log = open(log_file, "ab", buffering=0)
+proc = subprocess.Popen(
+    [py, "-m", "backend.cli", *cli_args],
+    cwd=os.getcwd(),
+    env=os.environ.copy(),
+    stdin=subprocess.DEVNULL,
+    stdout=log,
+    stderr=subprocess.STDOUT,
+    start_new_session=True,
+    close_fds=True,
+)
+PY
 
   # 等待健康检查通过（最多 ~15s）
   local i

@@ -8,6 +8,7 @@ import './styles/global.css'
 
 import App from './App.vue'
 import router from './router'
+import { permission } from './directives/permission'
 import { initTheme } from './composables/useTheme'
 import { initLayoutPreset, setPresetOverrides } from './layout'
 import { listLayoutPresets } from './api/layout'
@@ -32,4 +33,5 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
+app.directive('permission', permission) // 全局 v-permission 按钮级权限指令（T15）
 app.mount('#app')
