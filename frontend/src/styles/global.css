@@ -31,6 +31,9 @@ body {
   --chrome-text-muted: #8a96a8;
   --chrome-submenu-bg: #eef4fb;
   --chrome-active-bg: linear-gradient(90deg, #dce9ff 0%, #edf4ff 100%);
+  --chrome-menu-icon-active-bg: rgba(64, 158, 255, 0.14);
+  --chrome-menu-icon-active-border: rgba(64, 158, 255, 0.26);
+  --chrome-menu-icon-active-color: #409eff;
   --drawer-bg: #f7f9fc;
   --drawer-card-bg: #ffffff;
   --drawer-border: #d9e2ef;
@@ -134,6 +137,9 @@ html.dark {
   --chrome-text-muted: #5a6371;
   --chrome-submenu-bg: #050709;
   --chrome-active-bg: #202a3d;
+  --chrome-menu-icon-active-bg: rgba(64, 158, 255, 0.22);
+  --chrome-menu-icon-active-border: rgba(64, 158, 255, 0.42);
+  --chrome-menu-icon-active-color: #409eff;
   --drawer-bg: #050709;
   --drawer-card-bg: #0e131c;
   --drawer-border: #1a2230;

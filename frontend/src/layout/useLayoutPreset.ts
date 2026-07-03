@@ -18,6 +18,16 @@ function setCssVar(tokens: StyleTokenConfig, key: keyof StyleTokenConfig, cssNam
   document.documentElement.style.setProperty(cssName, `${tokens[key]}${unit}`)
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return hex
+  const n = parseInt(m[1], 16)
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 /** 内置 token（按模式）叠加后端覆盖：颜色/阴影取 `tokens.<mode>.*`，形态/密度取 `tokens.shared.*`。 */
 function mergeTokens(base: StyleTokenConfig, ov: Record<string, string | number>, mode: 'light' | 'dark'): StyleTokenConfig {
   const m = { ...base } as Record<string, string | number>
@@ -66,6 +76,9 @@ function applyPreset(key: LayoutPresetKey) {
   root.style.setProperty('--chrome-text-muted', t.textMuted)
   root.style.setProperty('--chrome-submenu-bg', t.submenuBg)
   root.style.setProperty('--chrome-active-bg', t.activeBg)
+  root.style.setProperty('--chrome-menu-icon-active-bg', hexToRgba(t.primary, mode === 'dark' ? 0.22 : 0.14))
+  root.style.setProperty('--chrome-menu-icon-active-border', hexToRgba(t.primary, mode === 'dark' ? 0.42 : 0.26))
+  root.style.setProperty('--chrome-menu-icon-active-color', t.primary)
   root.style.setProperty('--drawer-bg', t.pageBg)
   root.style.setProperty('--drawer-card-bg', t.surfaceBg)
   root.style.setProperty('--drawer-border', t.border)

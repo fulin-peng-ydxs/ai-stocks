@@ -38,4 +38,15 @@ const iconComp = computed<Component | null>(() =>
   gap: 6px;
   min-width: 0;
 }
+.menu-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
 </style>

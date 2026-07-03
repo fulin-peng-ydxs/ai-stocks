@@ -87,8 +87,14 @@ const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.valu
 .menu :deep(.el-menu-item.is-active) {
   background: var(--chrome-active-bg);
   color: var(--chrome-text-strong);
-  border-left: 3px solid #409eff;
+  border-left: 3px solid var(--el-color-primary);
   font-weight: 600;
+}
+.menu :deep(.el-menu-item.is-active .menu-icon),
+.menu :deep(.el-sub-menu.is-active > .el-sub-menu__title .menu-icon) {
+  background: var(--chrome-menu-icon-active-bg);
+  border-color: var(--chrome-menu-icon-active-border);
+  color: var(--chrome-menu-icon-active-color);
 }
 .menu :deep(.el-menu-item:hover) {
   background: var(--chrome-bg-soft);

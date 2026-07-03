@@ -42,7 +42,7 @@ function clear() {
 <template>
   <el-popover
     v-model:visible="visible"
-    :width="300"
+    :width="420"
     trigger="click"
     placement="bottom-start"
     :disabled="disabled"
@@ -102,13 +102,17 @@ function clear() {
 .ip-panel { display: flex; flex-direction: column; gap: 8px; }
 .ip-actions { display: flex; align-items: center; justify-content: space-between; }
 .ip-count { font-size: 12px; color: var(--el-text-color-secondary); }
-.ip-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; max-height: 200px; overflow: auto; }
-.ip-cell { aspect-ratio: 1; border: 1px solid var(--el-border-color-lighter); border-radius: 6px;
+.ip-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-height: 320px; overflow: auto; }
+.ip-cell { height: 58px; min-width: 0; border: 1px solid var(--el-border-color-lighter); border-radius: 6px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   cursor: pointer; color: var(--el-text-color-regular); overflow: hidden; }
 .ip-cell:hover { background: var(--el-fill-color-light); border-color: var(--el-color-primary); }
 .ip-cell.on { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary); color: var(--el-color-primary); }
-.ip-cap { font-size: 9px; color: var(--el-text-color-secondary); transform: scale(0.82);
-  white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.ip-cap { display: block; width: 100%; padding: 0 4px; font-size: 10px; line-height: 14px;
+  color: var(--el-text-color-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ip-empty { grid-column: 1 / -1; text-align: center; padding: 16px; font-size: 12px; color: var(--el-text-color-secondary); }
+
+:global(.icon-picker-pop) {
+  max-width: calc(100vw - 32px);
+}
 </style>
