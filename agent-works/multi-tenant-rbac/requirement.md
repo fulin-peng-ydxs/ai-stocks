@@ -636,6 +636,14 @@
 - 依赖原因：依赖阶段一数据层与阶段二认证。
 - 里程碑：多账号交叉验证隔离与授权即时生效。**达成**——后端全量 `pytest` 398 passed（含跨租户 404/越权 403/bump 全触发点/system 全授权不变式）、前端 `build` 绿 + `vitest` 118 passed（含权限指令/SideMenu fail-closed/管理页 error+retry 回归）、4 页 preview 双主题×三档视口自验。落地要点：瘦令牌 + PG 权威 perm_ver 闸门 + 授权变更同事务原子 bump 强制重登；require_perm 精确码（user 接口）/require_system 硬守卫（role/menu/resource/tenant 接口）二分；前端 v-permission + SideMenu/路由守卫 fail-closed。
 - **页面原型**（4 个新增管理页，已就绪，见 §7.4–7.7）：用户管理 [prototypes/user-management.html](prototypes/user-management.html)、角色管理 [prototypes/role-management.html](prototypes/role-management.html)（master-detail 权限树）、菜单与功能管理 [prototypes/menu-resource-management.html](prototypes/menu-resource-management.html)（R12+R13 合页 master-detail）、租户管理 [prototypes/tenant-management.html](prototypes/tenant-management.html)。均复用 Element Plus 视觉 + 黑白双主题；归入「系统管理 → 权限管理」子组（`/system/users|roles|menus|tenants`）。R8 按钮级/接口级为横切、R9 隔离为后端，不单独出原型。**视口/响应式（对齐 DESIGN §8）**：1440×900 为验收视口无溢出；宽表在窄视口**体内横滚**（列不压成竖排），master-detail 窄视口右栏保底宽 + 体内横滚，弹窗宽度自适应 `min(px, 92vw)`、正文 max-height 内滚、标签不换行。原型均在 560/700/1440 三档核验过。
+- **开发产物索引**（阶段三实际落地，路径相对本文件所在 `agent-works/multi-tenant-rbac/`）：
+  - **开发计划 + 全程留痕 + Codex 三轮复审整改清单**：[stage3-rbac-tenant/plan.md](stage3-rbac-tenant/plan.md)（§4.6 实现口径修订、§4.6.1 复审整改清单、§6 T1–T17 任务与状态、§11 里程碑达成）。
+  - **DDL 留痕**：[stage3-rbac-tenant/rbac-schema.sql](stage3-rbac-tenant/rbac-schema.sql)（六表复合主键 + FK/索引 + seed，人读兜底；实际随 `init_pg_db()` 启动幂等执行）。
+  - **页面原型**：`prototypes/{user,role,menu-resource,tenant}-management.html`（4 页，见上）；`stage3-rbac-tenant/page-test-screenshots/`（preview 5181 双主题×三档视口验收截图）。
+  - **后端实现**（源码事实源）：`backend/auth/`（perm_resolver 多角色并集 + 瘦令牌 + require_perm/require_system 守卫）、`backend/api/{users,roles,menus,resources,tenants}.py`（4 套管理接口）、`backend/storage/pg_ddl.py`（六表 + `_SEED_RESOURCES`/`_SEED_MENUS` + `_seed_role_grants`）、各域仓库；测试 `backend/tests/test_rbac_{users,roles,menus,resources,tenants}.py` + `test_auth_middleware.py`。
+  - **前端实现**：`frontend/src/views/system/{UserManage,RoleManage,MenuResource,TenantManage}View.vue` + `PermissionTree.vue`、`components/SideMenu.vue`（fail-closed）、`directives/permission.ts`（v-permission）、`utils/permission.ts`（hasPermission/resolveMenuGuard）、`api/{user,role,menu,tenant}.ts`；测试 `views/system/__tests__/manage-error-states.spec.ts`、`directives/__tests__/permission.spec.ts`、`components/__tests__/SideMenu.spec.ts`。
+  - **文档治理回写**（T17）：`CLAUDE.md`（补「细粒度 RBAC（阶段三内核）」铁律 6 条 + 阶段状态）、`DESIGN.md §9`（4 管理页 + IconPicker 登记）、本文件 §12（本段）、项目记忆 `multi-tenant-rbac-pivot.md`。
+  - **验收基线**：后端 `pytest` 398 passed / 前端 `npm run build` 绿 + `vitest` 118 passed。commit 序列 `7aaddb3`（T11–T16）→ `d313c1b`/`99bca3a`/`ce3b863`（Codex 三轮整改）→ `626fc42`（T17 文档治理）。
 
 **阶段四：存量功能全量接入**
 - 覆盖需求：R21（及 R20 全量按钮/路由接入）

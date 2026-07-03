@@ -40,7 +40,7 @@
 
 ## 1. 架构总览
 
-全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**（多租户混合持久层 stage1 已落地）：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户私有资产 + 平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作短状态库。详见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)（**认证与鉴权内核阶段二已落地**：JWT 登录/注册/登出 + 中间件默认 deny + `system` 角色守卫 + 前端登录态/登录页；细粒度 RBAC/租户管理属阶段三，建设中）。
+全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**（多租户混合持久层 stage1 已落地）：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户私有资产 + 平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作短状态库。详见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)（**认证与鉴权内核阶段二 + 细粒度 RBAC/租户管理阶段三均已落地**：JWT 登录/注册/登出 + 中间件默认 deny；角色/菜单/资源数据化 + 接口级 `require_perm` + 按钮级 `v-permission` + 4 个系统管理页 + 数据隔离全量透传；存量业务路由精确权限码接入属阶段四）。
 
 ```
 ┌─────────────────────────── 浏览器 (Vue3 SPA) ───────────────────────────┐
@@ -217,7 +217,7 @@ cd frontend && npm run build && cd ..   # 产物进 frontend/dist
 ./start.sh prod                         # 后端绑 0.0.0.0:8000 托管 dist
 ```
 
-生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权内核（阶段二：JWT 登录/注册 + 中间件默认 deny，非白名单接口须 token），启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
+生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权内核 + 细粒度 RBAC（阶段二 JWT 登录/注册 + 中间件默认 deny，非白名单接口须 token；阶段三接口级 `require_perm`/`require_system` + 按钮级权限 + 4 个系统管理页），启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
 
 ### 5.3 首次准备数据（依赖有序）
 

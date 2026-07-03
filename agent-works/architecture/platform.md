@@ -4,7 +4,7 @@
 
 > ⚠️ **持久层已升级为混合架构（多租户混合持久层 stage1）**：本文「核心技术」多处仍按旧的「单进程 + 纯 DuckDB + 无外部依赖」表述，**以代码与 [CLAUDE.md](../../CLAUDE.md)「架构与分层 · 双库访问层」为准**。现状：行情/参考数据留 DuckDB（只读分析），用户私有资产 + 平台配置（含 `app_config`）迁 **PostgreSQL**（`backend/storage/pg_client.py` + `asset_repository.py`，按 `tenant_id`+`owner_user_id` 隔离），Redis 作短状态库；下文 DuckDB 机制（连接锁 / temp_view / 点时安全仓库 / 防未来 / 防幸存者）对**行情库**仍成立，`app_config` 覆盖层改读 PG。详见 [agent-works/multi-tenant-rbac/](../multi-tenant-rbac/)。
 >
-> ⚠️ **认证与鉴权内核已落地（多租户 RBAC 阶段二）**：本文下述「无鉴权 / 单用户假设」表述**已过时**。现状：纯 ASGI `AuthMiddleware` 机制性默认 deny（白名单仅 `/api/health` + `/api/auth/*`，其余 `/api` 无有效 token 一律 401），JWT 登录/注册/登出/刷新，系统管理页专属接口挂 `require_system()` 角色守卫，归属取自请求上下文（`get_current_owner()`）。启动须设 `AI_STOCKS_JWT_SECRET`（缺失即失败）。契约详见 [CLAUDE.md](../../CLAUDE.md)「认证与鉴权」与 [stage2-auth-kernel/plan.md](../multi-tenant-rbac/stage2-auth-kernel/plan.md)。
+> ⚠️ **认证与鉴权内核（阶段二）+ 细粒度 RBAC/租户管理（阶段三）均已落地**：本文下述「无鉴权 / 单用户假设」表述**已过时**。现状：纯 ASGI `AuthMiddleware` 机制性默认 deny（白名单仅 `/api/health` + `/api/auth/*`，其余 `/api` 无有效 token 一律 401），JWT 登录/注册/登出/刷新，归属取自请求上下文（`get_current_owner()`）。**阶段三**：角色/菜单/资源数据化（PG 六表）+ 瘦令牌（每请求以 PG perm_ver 为权威）+ 接口级 `require_perm(精确码)`（user 接口）/`require_system`（role/menu/resource/tenant 接口）+ 按钮级 `v-permission` + SideMenu/路由守卫 fail-closed + 4 个系统管理页。启动须设 `AI_STOCKS_JWT_SECRET`（缺失即失败）。契约详见 [CLAUDE.md](../../CLAUDE.md)「认证与鉴权」「细粒度 RBAC」与 [stage2-auth-kernel/plan.md](../multi-tenant-rbac/stage2-auth-kernel/plan.md)、[stage3-rbac-tenant/plan.md](../multi-tenant-rbac/stage3-rbac-tenant/plan.md)。存量 13 业务路由精确权限码接入属阶段四（R21）。
 
 <span style="color:#2563eb">●</span> 服务运行　<span style="color:#7c3aed">●</span> 任务调度　<span style="color:#16a34a">●</span> 配置生效　<span style="color:#dc2626">●</span> 平台约束
 
@@ -135,7 +135,7 @@ flowchart LR
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
 | <span style="color:#dc2626">●</span> 高 | DuckDB 单写锁 + 写任务单例 | 长写任务期间其它写请求被 409 拦下；不具备并发吞吐能力 | 接受本地单用户定位；写任务排队靠人工错峰 |
-| <span style="color:#dc2626">●</span> 高 | 公网放量前的鉴权完备性 | 阶段二已有 JWT + 默认 deny + 角色守卫；但邮箱码 dev 日志投递、细粒度 RBAC 待阶段三 | 公网放量前接 SMTP + 完成阶段三；dev 仅本机、prod 暂不直接暴露公网 |
+| <span style="color:#dc2626">●</span> 高 | 公网放量前的鉴权完备性 | 阶段二 JWT + 默认 deny + 阶段三细粒度 RBAC/租户管理均已落地；但邮箱码仍 dev 日志投递、存量 13 业务路由精确权限码待阶段四（R21） | 公网放量前接 SMTP + 完成阶段四存量路由接入；dev 仅本机、prod 暂不直接暴露公网 |
 | <span style="color:#f59e0b">●</span> 中 | 本机绑定与进程内状态 | 多进程/多副本下任务互斥、取消、reconcile 会失效 | 仅按单机单进程部署 |
 | <span style="color:#f59e0b">●</span> 中 | 服务重启打断在跑任务 | running/pending 会被标为 interrupted，需续跑 | 重启前确认任务完成；中断后从任务页续跑 |
 | <span style="color:#f59e0b">●</span> 中 | 配置覆盖层与连接初始化成环 | 漏用 `get_effective_settings()` 会读不到 Web 覆盖值 | 新增运行期配置读取时明确用有效配置 |
