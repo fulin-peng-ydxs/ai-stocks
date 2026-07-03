@@ -40,12 +40,8 @@ class UserRepository:
         self.pg.execute(
             "UPDATE sys_user SET last_login_at=%s WHERE id=%s", [datetime.now(), user_id])
 
-    def bump_perm_ver(self, user_id: str) -> int:
-        """权限/状态变更后自增 perm_ver 并返回新值（旧 token 随即失效）。"""
-        df = self.pg.query_df(
-            "UPDATE sys_user SET perm_ver=perm_ver+1, updated_at=%s WHERE id=%s RETURNING perm_ver",
-            [datetime.now(), user_id])
-        return int(df.iloc[0]["perm_ver"]) if not df.empty else 0
+    # 注：perm_ver 自增统一走 perm_resolver.bump_perm_ver(user_ids, conn)——与业务写入同一 PG 事务原子
+    # 提交（多租户 RBAC 铁律，Codex 五轮 P1）。此处不再提供独立 autocommit 的自增方法，避免绕开该事务契约。
 
     def register_tenant_and_admin(
         self, account: str, email: str | None, password_hash: str) -> dict:
