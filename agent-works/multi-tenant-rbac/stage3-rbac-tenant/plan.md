@@ -142,6 +142,7 @@
 **Codex 二轮复审整改（2026-07-03，error+retry 闭环补漏）**——一轮"页面状态闭环"仅覆盖首屏主数据，遗漏两处次级加载失败：
 - **角色页 `loadAll()` 漏 role 列表失败态**：原实现只有菜单/资源 `Promise.all` 在 `try`，`await loadRoles()` 在 `catch` 之外——`listRoles()` 失败不进 `loadError`、不显错误态。已将 `loadRoles()` 移入同一 `try`，任一加载失败均进 `el-result` 错误态 + 重试。（`loadRoles` 本身 try/**finally** 无 catch，异常正常上抛被 `loadAll` 捕获。）
 - **菜单页 `loadResources()` 无失败态**：菜单树有 `treeError`，但右栏功能点列表加载失败仅结束 `resLoading`、无恢复入口。补 `resError` 态 + `retryResources()`，表内以"功能点加载失败 + 重试"行呈现（与"暂无功能点"空态互斥）。preview 拦截 `/resources` 请求强制失败复验：错误行+重试出现；恢复后切节点回正常空/数据态。
+- **两处失败路径已沉淀为正式回归测试**（防长期回退）：`views/system/__tests__/manage-error-states.spec.ts`（jsdom，4 例）——① 菜单/资源成功但 `listRoles` 失败→角色页进错误态（精确复现"loadRoles 曾在 catch 外"）；② `listResources` 失败→菜单页显"功能点加载失败+重试"；③④ 重试后接口恢复→错误态消失。mock `@/api/*` + 布局组合式（其 onMounted 发 `/layout` 请求，jsdom 无 server 会挂起），stub `LayoutHost` 渲染各插槽使 `#main` 错误态可见。前端测试 114→**118**。
 - **口径复核（非缺陷，维持既有决策）**：①**设置抽屉三段**——`PageSettingsDrawer` 按内容条件渲染（布局恒在、组件设置有 `hasComponentConfig` 时、业务选项有 `$slots.business` 时），此为全站既有页统一范式；"每页强制显式三段"会与既有页不一致且产生空段，故维持"固定顺序、按内容渲染"（DESIGN §设置抽屉）。②**archetype/pageKey 修订**——`master-detail` 在 `LayoutHost` 多主槽下按纵向 scroll 渲染、不并排（全库无并排页），`list`+内部 `section` 才是既有主从范式；`menu-resource`→`menu-manage` 对齐 `*-manage` 命名。均为基于框架事实的有据修订（§4.6），非降级实现。
 
 - **弹窗/抽屉规范（DESIGN §4/§9）**：所有弹窗、settings-drawer 一律放 `#overlays` 插槽；dialog 短表单、自适应 `min(px,92vw)`、正文 max-height 内滚；**registry 页必须有 `settings-drawer` overlay**（`pageRegistry.spec.ts` 强制），三段"布局/组件设置/业务选项"，用 `PageSettingsDrawer`。
