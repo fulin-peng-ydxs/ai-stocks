@@ -229,6 +229,31 @@ def test_create_in_disabled_tenant_rejected(client, env):
     assert r.json()["code"] == 4000
 
 
+def test_perm_ver_bumped_after_business_write(client, env, monkeypatch):
+    # Codex 三轮 P1：perm_ver 自增必须**晚于**业务写入提交——否则 bump 与业务写入之间的窗口里，并发
+    # login 会读到"新 perm_ver + 停用前 status"，铸造出能越过停用、存活整个 access-token TTL 的令牌。
+    # 在业务写入(set_status)时刻抓取当时 PG 的 perm_ver，断言仍是旧值（证明 bump 尚未发生）。
+    from backend.storage.user_repository import UserRepository
+    tid = env.mk_tenant()
+    env.mk_user(tid, ROLE_TENANT_ADMIN)             # 排除最后管理员干扰
+    target = env.mk_user(tid, ROLE_NORMAL)
+    v0 = _perm_ver(env.pg, target)
+
+    seen: dict[str, int] = {}
+    orig = UserRepository.set_status
+
+    def spy(self, user_id, status):
+        seen["pv_at_write"] = _perm_ver(env.pg, user_id)   # 业务写入时刻的 perm_ver
+        return orig(self, user_id, status)
+    monkeypatch.setattr(UserRepository, "set_status", spy)
+
+    r = client.post(f"/api/users/{target}/status", json={"status": "disabled"},
+                    headers=env.sys_headers())
+    assert r.status_code == 200
+    assert seen["pv_at_write"] == v0             # 写入停用时 perm_ver 未自增（bump 后置，杜绝铸造窗口）
+    assert _perm_ver(env.pg, target) == v0 + 1   # 操作完成后才自增
+
+
 def test_bump_redis_failure_aborts_business(client, env, monkeypatch):
     # P1：失效走 fail-closed，且在业务写入之前——Redis 清缓存失败 → 503 且用户状态不变（不 fail-open）
     from backend.auth import session_store

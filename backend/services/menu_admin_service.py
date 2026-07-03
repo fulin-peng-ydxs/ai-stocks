@@ -9,10 +9,12 @@
 - **内置保护**：is_builtin 菜单对应已发布前端页面/路由，不可删除（可改标题/图标/可见性）。
 - **级联保护**：有子节点的菜单不可直接删（先删子节点，避免 FK RESTRICT 抛库错）。
 - **防成环**：移动节点（改 parent）时目标父不得是自身或自身子孙。
-- **缓存失效（Codex P1）**：**删除、可见性变更 → bump_users_of_menu**（引用该菜单角色的用户 ∪ 全部
-  system 用户，下次请求 401 重登拿新视图）。新建为**加性变更**（新节点尚无引用），不立即 bump——
-  system 用户按缓存 TTL 自然刷新即可见，避免每次加菜单就强制管理员重登（对齐 plan §6.7 口径：仅
-  删除/可见性变更失效）；纯展示编辑（标题/图标/路由/排序，可见性未变）与排序同理不 bump。
+- **缓存失效（Codex 三轮 P1）**：**删除、可见性变更、移动跨可见域 → 失效"夹住"业务写入**——写前
+  `pre_invalidate(affected)`（仅清 Redis，fail-closed 门禁）→ 写库 → 写后 `bump_and_invalidate(affected)`
+  （perm_ver++ + 双删），保证 perm_ver 自增晚于业务提交，杜绝窗口内 login 铸造"新 perm_ver+旧态"令牌。
+  affected = 引用「该菜单**及其子孙**」角色的用户 ∪ 全部 system 用户，**删除前算定**（删后 role_menu
+  CASCADE 清空即查不到引用用户）。新建为**加性变更**（新节点尚无引用），不失效——system 用户按缓存 TTL
+  自然刷新（对齐 plan §6.7：仅删除/可见性/移动失效）；纯展示编辑（标题/图标/路由，可见性未变）与纯排序不失效。
 """
 
 from __future__ import annotations
@@ -79,18 +81,21 @@ class MenuAdminService:
                 if self.menus.is_descendant(parent_id, menu_id):
                     raise ValidationError("不能移动到自身的子节点下")
         # 可见性变更（收紧/放开）或移动父节点（可能跨系统专属分支，改变非 system 用户可见菜单）→ 失效。
-        # 先失效（清 Redis→bump PG，fail-closed）再写：Redis 不可用即中止，菜单不落库（P1）。
-        # bump_users_of_menu 按引用该菜单的角色成员统计，成员不因本次编辑而变，故先 bump 结果一致。
         vis_changed = visible != cur["visible"]
         moved = parent_id != cur["parent_id"]   # P2-c：移动跨可见域会改变非 system 用户可见菜单
-        if vis_changed or moved:
-            n = perm_resolver.bump_users_of_menu(menu_id)
-            log.info("菜单管理：菜单 %s 变更(vis:%s→%s move:%s)，%d 个用户失效",
-                     menu_id, cur["visible"], visible, moved, n)
-        else:
-            log.info("菜单管理：编辑菜单 %s title=%s", menu_id, title)
+        # 失效"夹住"业务写入（Codex 三轮 P1）：affected 含子树、写前算定（移动不改自身子树集）→ 写前
+        # 门禁清 Redis(fail-closed) → 写 → 写后 perm_ver++，使 perm_ver 自增晚于业务提交。
+        affected = perm_resolver.affected_users_of_menu(menu_id) if (vis_changed or moved) else []
+        if affected:
+            perm_resolver.pre_invalidate(affected)
         self.menus.update(menu_id, title=title, type=type, route_path=route_path,
                           icon=icon, visible=visible, parent_id=parent_id)
+        if affected:
+            perm_resolver.bump_and_invalidate(affected)
+            log.info("菜单管理：菜单 %s 变更(vis:%s→%s move:%s)，%d 个用户失效",
+                     menu_id, cur["visible"], visible, moved, len(affected))
+        else:
+            log.info("菜单管理：编辑菜单 %s title=%s", menu_id, title)
         return self.menus.get(menu_id)  # type: ignore[return-value]
 
     # ── 删除 ──
@@ -103,10 +108,13 @@ class MenuAdminService:
         # P2-a：sys_resource.menu_id 为 RESTRICT，菜单下有功能点直接删会退化为库错，须先查并给业务提示
         if self.menus.resource_count(menu_id) > 0:
             raise ValidationError("该菜单下存在功能点，请先删除功能点")
-        # 先 bump（删除后 role_menu 经 CASCADE 清空，届时查不到引用用户）
-        n = perm_resolver.bump_users_of_menu(menu_id)
+        # 失效夹住业务写入（Codex 三轮 P1）：affected 删除前算定（删后 role_menu CASCADE 清空即查不到
+        # 引用用户）→ 写前门禁清 Redis → 删除 → 写后 perm_ver++。
+        affected = perm_resolver.affected_users_of_menu(menu_id)
+        perm_resolver.pre_invalidate(affected)
         self.menus.delete(menu_id)
-        log.info("菜单管理：删除菜单 %s(%s)，%d 个用户失效", menu_id, cur["code"], n)
+        perm_resolver.bump_and_invalidate(affected)
+        log.info("菜单管理：删除菜单 %s(%s)，%d 个用户失效", menu_id, cur["code"], len(affected))
 
     # ── 排序 / 移动 ──
     def reorder(self, items: list[dict]) -> list[dict]:
@@ -129,10 +137,17 @@ class MenuAdminService:
                     if self.menus.is_descendant(pid, mid):
                         raise ValidationError("不能移动到自身的子节点下")
                 moved.append(mid)
-        # 先失效被移动节点（fail-closed）再写：Redis 不可用即中止，排序不落库（P1）
+        # 失效夹住业务写入（Codex 三轮 P1）：被移动节点的 affected（各含子树）写前一次性算定 → 门禁清
+        # Redis → 排序落库 → 写后 perm_ver++。纯排序(无 parent 变更)不影响可见性、不失效。
+        affected: set[str] = set()
         for mid in moved:
-            perm_resolver.bump_users_of_menu(mid)
+            affected.update(perm_resolver.affected_users_of_menu(mid))
+        affected_list = list(affected)
+        if affected_list:
+            perm_resolver.pre_invalidate(affected_list)
         self.menus.reorder(items)
+        if affected_list:
+            perm_resolver.bump_and_invalidate(affected_list)
         log.info("菜单管理：排序更新 %d 项（其中移动 %d 项已失效）", len(items), len(moved))
         return self.menus.tree()
 

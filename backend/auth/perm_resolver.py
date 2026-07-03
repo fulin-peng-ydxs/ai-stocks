@@ -9,14 +9,21 @@
 因 stage2「token.perm_ver ≠ 当前 → 401 重登」，受影响用户下次请求 401、重登后拿新权限
 （= R11「perm_ver 自增、即时生效」口径）。PG 耦合在本模块（session_store 保持纯 Redis）。
 
-**调用契约（Codex P1 整改）：bump_* 必须在业务写入之**前**调用。** 内部顺序为「清 Redis 缓存
-(fail-closed)→自增 PG perm_ver→**再清一次 Redis 缓存**」（延迟双删）：
-- 首清 fail-closed：Redis 不可用则在改动任何持久状态前即抛 503，调用方业务写入随之中止，绝不出现
-  「DB 已改但 Redis 清理失败、旧 auth:pv 残留继续放行旧 token」的 fail-open。
-- 自增 PG（权威）后**再清一次**：关闭「首清与自增之间的并发窗口」——该窗口内别的请求可能因缓存 miss
-  回查到**尚未自增**的旧 perm_ver 并回填 Redis；二次清理抹掉此回填，使下一次读必回查已自增的 PG →
-  旧 token perm_ver 失配 → 401（Codex 第二轮 P1）。即便自增后二次清理失败（503），业务写入仍中止、
-  仅 perm_ver 已+1（over-invalidate，用户被迫重登，非 fail-open），且极窄残留由缓存 TTL 收敛。
+**调用契约（Codex 三轮 P1 整改）：失效必须"夹住"业务写入——`perm_ver` 自增恒晚于业务写入提交。**
+每个改权限/状态的服务操作按三步走：
+- ① 业务写入**前** `pre_invalidate(affected)`：仅清 Redis 缓存（fail-closed），Redis 不可用即抛 503、
+  业务写入随之中止（不落库）。
+- ② 业务写入（停用/删除/改授权）。
+- ③ 业务写入**后** `bump_and_invalidate(affected)`：自增 PG perm_ver + 延迟双删缓存。
+为何 bump 必须在业务写入**之后**（推翻旧"必须在之前"契约，Codex 三轮 P1）：旧顺序 bump 早于业务写入，
+在 bump 与业务写入之间的窗口里，并发 `login`/`refresh` 会读到**已自增**的 perm_ver 却搭配**停用前/授权前**
+的业务态，从而签发一枚"新 perm_ver + 旧业务态"的**有效**令牌——它能越过随后的停用、或绑定旧授权，且因
+perm_ver 与当前一致、缓存命中路径不复查 status，可存活整个 access-token TTL（全 TTL fail-open）。改为
+bump 后置后：窗口内 `login` 要么读到旧 perm_ver（签发"旧态一致"令牌，提交后即被 ③ 判失配拒绝）、要么在
+停用提交后被 `login`/`refresh` 的 status/存在性校验即时拒——不可能再签发"新 perm_ver + 旧态"令牌。
+**affected 用户集须在业务写入前一次性算定（`affected_users_of_*`）**，避免删除的级联（role_menu/
+role_resource/sys_user_role CASCADE）在写入后使集合缩水、漏掉本应失效的用户。
+（bump_and_invalidate 内部"清→自增→再清"延迟双删的理由见其 docstring。）
 """
 
 from __future__ import annotations
@@ -93,6 +100,16 @@ def bump_and_invalidate(user_ids: Iterable[str], client: PostgresClient | None =
     return len(uids)
 
 
+def pre_invalidate(user_ids: Iterable[str]) -> None:
+    """业务写入**前**的失效门禁（Codex 三轮 P1）：仅清 Redis 缓存，**不动 PG perm_ver**。
+
+    fail-closed：Redis 不可用即抛 503（_critical），调用方业务写入随之中止、不落库。与业务写入后的
+    `bump_and_invalidate(同一 affected 集)` 配对，保证 perm_ver 自增晚于业务写入提交（见模块 docstring
+    调用契约）。清空的缓存被后续请求即时回填时，业务态与 perm_ver 都还是旧值、回填值一致，无害。
+    """
+    _clear_user_caches(user_ids)
+
+
 def _clear_user_caches(uids: Iterable[str]) -> None:
     """清若干用户的有效权限缓存 + perm_ver 缓存（_critical fail-closed，Redis 不可用即抛 503）。"""
     for uid in uids:
@@ -100,23 +117,28 @@ def _clear_user_caches(uids: Iterable[str]) -> None:
         session_store.invalidate_perm_ver(uid)
 
 
-def bump_users_of_roles(role_ids: Iterable[str], client: PostgresClient | None = None) -> int:
-    """角色授权/删除变更 → 拥有这些角色的全部用户失效。"""
+# ── affected 用户集计算（业务写入前算定，供 pre_invalidate + 写后 bump_and_invalidate 共用）──
+# 删除类操作的级联（role_menu/role_resource/sys_user_role CASCADE）会在写入后使集合缩水，故必须在
+# 业务写入**前**算定并复用同一集合，否则写后重算会漏掉被级联摘除关联的用户（Codex 三轮 P1）。
+
+def affected_users_of_roles(role_ids: Iterable[str],
+                            client: PostgresClient | None = None) -> list[str]:
+    """拥有这些角色的全部用户。"""
     rids = [r for r in dict.fromkeys(role_ids) if r]
     if not rids:
-        return 0
+        return []
     client = client or get_pg_client()
     df = client.query_df(
         "SELECT DISTINCT user_id FROM sys_user_role WHERE role_id = ANY(%s)", [rids])
-    return bump_and_invalidate(df["user_id"].tolist() if not df.empty else [], client)
+    return df["user_id"].tolist() if not df.empty else []
 
 
-def bump_users_of_menu(menu_id: str, client: PostgresClient | None = None) -> int:
-    """菜单删除/可见性变更/移动 → 引用「该菜单**及其全部子孙**」的角色的用户 ∪ 全部 system 用户。
+def affected_users_of_menu(menu_id: str, client: PostgresClient | None = None) -> list[str]:
+    """引用「该菜单**及其全部子孙**」的角色的用户 ∪ 全部 system 用户。
 
     子树纳入（Codex 第二轮 P2-c）：`/me` 可见性由**祖先链**决定（父分组 visible=system 或被移动跨可见域
-    → 整棵子树对非 system 用户隐藏）。角色可能只授到**子孙叶子**、未授父节点，只 bump 当前节点会漏掉
-    这些用户、其缓存菜单残留到 TTL。故用递归 CTE 收「当前节点 + 全部后代」被引用的角色用户一并失效。
+    → 整棵子树对非 system 用户隐藏）。角色可能只授到**子孙叶子**、未授父节点，只算当前节点会漏掉这些
+    用户、其缓存菜单残留到 TTL。故用递归 CTE 收「当前节点 + 全部后代」被引用的角色用户。
     （叶子无后代时 CTE 只返回自身，等价旧行为；删除仅发生在无子节点菜单上，子树亦仅自身。）
     """
     client = client or get_pg_client()
@@ -130,25 +152,53 @@ def bump_users_of_menu(menu_id: str, client: PostgresClient | None = None) -> in
         "JOIN sys_user_role ur ON ur.role_id = rm.role_id", [menu_id])
     uids = set(df["user_id"].tolist()) if not df.empty else set()
     uids |= set(_system_user_ids(client))
-    return bump_and_invalidate(uids, client)
+    return list(uids)
 
 
-def bump_users_of_resource(resource_id: str, client: PostgresClient | None = None) -> int:
-    """功能点删除/改绑 → 引用它的角色的用户 ∪ 全部 system 用户。"""
+def affected_users_of_resource(resource_id: str,
+                               client: PostgresClient | None = None) -> list[str]:
+    """引用该功能点的角色的用户 ∪ 全部 system 用户。"""
     client = client or get_pg_client()
     df = client.query_df(
         "SELECT DISTINCT ur.user_id FROM sys_role_resource rr "
         "JOIN sys_user_role ur ON ur.role_id = rr.role_id WHERE rr.resource_id = %s", [resource_id])
     uids = set(df["user_id"].tolist()) if not df.empty else set()
     uids |= set(_system_user_ids(client))
-    return bump_and_invalidate(uids, client)
+    return list(uids)
+
+
+def affected_users_of_tenant(tenant_id: str, client: PostgresClient | None = None) -> list[str]:
+    """该租户全部用户。"""
+    client = client or get_pg_client()
+    df = client.query_df("SELECT id FROM sys_user WHERE tenant_id = %s", [tenant_id])
+    return df["id"].tolist() if not df.empty else []
+
+
+# ── 一次性失效（compute+bump 合体；供无"业务写入需夹住"场景/测试直用。改状态/授权的写入路径请改用
+#    pre_invalidate(写前) + bump_and_invalidate(写后) 夹住业务写入，见模块 docstring 调用契约）──
+
+def bump_users_of_roles(role_ids: Iterable[str], client: PostgresClient | None = None) -> int:
+    """角色授权/删除变更 → 拥有这些角色的全部用户失效（一次性）。"""
+    client = client or get_pg_client()
+    return bump_and_invalidate(affected_users_of_roles(role_ids, client), client)
+
+
+def bump_users_of_menu(menu_id: str, client: PostgresClient | None = None) -> int:
+    """菜单删除/可见性变更/移动 → 引用该菜单及其子孙的角色用户 ∪ system 用户失效（一次性）。"""
+    client = client or get_pg_client()
+    return bump_and_invalidate(affected_users_of_menu(menu_id, client), client)
+
+
+def bump_users_of_resource(resource_id: str, client: PostgresClient | None = None) -> int:
+    """功能点删除/改绑 → 引用它的角色用户 ∪ system 用户失效（一次性）。"""
+    client = client or get_pg_client()
+    return bump_and_invalidate(affected_users_of_resource(resource_id, client), client)
 
 
 def bump_users_of_tenant(tenant_id: str, client: PostgresClient | None = None) -> int:
-    """租户停用 → 该租户全部用户失效（下次请求 401，重登被 status 校验拒绝）。"""
+    """租户停用 → 该租户全部用户失效（一次性）。"""
     client = client or get_pg_client()
-    df = client.query_df("SELECT id FROM sys_user WHERE tenant_id = %s", [tenant_id])
-    return bump_and_invalidate(df["id"].tolist() if not df.empty else [], client)
+    return bump_and_invalidate(affected_users_of_tenant(tenant_id, client), client)
 
 
 def _system_user_ids(client: PostgresClient) -> list[str]:

@@ -9,7 +9,9 @@
 - **唯一**：角色 code 全局唯一，且不得撞内置码。
 - **删除前置**：角色下仍有用户时不可删（避免 FK RESTRICT 直接抛库错，给友好提示）。
 - **system-only 码不可授**：require_system 硬守卫的功能码不能授予非 system 角色（授了也不生效，防误导）。
-- **授权即时生效**：改授权 → bump_users_of_roles（拥有该角色的用户 perm_ver+1 + 清缓存）→ 下次请求重登拿新权限。
+- **授权即时生效（Codex 三轮 P1）**：改授权 → 失效"夹住"业务写入——affected(该角色成员)写前算定 →
+  `pre_invalidate`(仅清 Redis,fail-closed) → 写授权 → `bump_and_invalidate`(perm_ver++ +双删)。perm_ver
+  后置保证窗口内 login 不签发"新 perm_ver+旧授权"令牌；下次请求重登拿新权限。
 
 角色为平台级全局表（无 tenant_id），管理入口仅 system（api 层挂 require_system）；assignable 例外，供
 用户管理页下拉，挂 require_perm(user:list)（tenant_admin 经授权可读），分流逻辑在 RoleRepository。
@@ -94,10 +96,13 @@ class RoleAdminService:
         # system-only 码不可授予非 system 角色
         if set(resource_ids) & self.roles.system_only_resource_ids():
             raise ForbiddenError("包含仅系统管理员可用的功能，不能授予该角色")
-        # 先失效（清 Redis→bump PG，fail-closed）再写授权：Redis 不可用即中止，授权不落库（P1）。
-        # bump_users_of_roles 按角色成员统计，成员不因授权变更而变，故先 bump 结果一致。
-        n = perm_resolver.bump_users_of_roles([role_id])
+        # 失效"夹住"业务写入（Codex 三轮 P1）：affected 写前算定（成员不因授权变更而变）→ 写前门禁清
+        # Redis(fail-closed) → 写授权 → 写后 perm_ver++。perm_ver 后置使窗口内 login 不会签发"新
+        # perm_ver+旧授权"令牌；写后 bump 令其失配重登拿新授权。
+        affected = perm_resolver.affected_users_of_roles([role_id])
+        perm_resolver.pre_invalidate(affected)
         self.roles.set_grants(role_id, menu_ids=menu_ids, resource_ids=resource_ids)
+        n = perm_resolver.bump_and_invalidate(affected)
         log.info("角色管理：角色 %s 授权更新 menus=%d resources=%d，%d 个用户失效",
                  role_id, len(menu_ids), len(resource_ids), n)
         return self.roles.get_grants(role_id)
