@@ -672,6 +672,7 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/system/tenants", "tenant:create", "新建租户", "api", "POST", "/api/tenants"),
     ("/system/tenants", "tenant:update", "编辑租户", "api", "PUT", "/api/tenants/{id}"),
     ("/system/tenants", "tenant:disable", "启停租户", "api", "POST", "/api/tenants/{id}/status"),
+    ("/system/tenants", "tenant:delete", "删除租户", "api", "DELETE", "/api/tenants/{id}"),
 )
 
 # 默认授权：业务页所有登录用户可用；用户管理授予租户管理员（管本租户用户）；system 由 resolver 判全量。
@@ -849,10 +850,14 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
         (ROLE_PAID, business, []),   # 付费角色预留：暂同普通用户业务页，后续可在角色页调整
     ]
     for role_id, menu_codes, resource_codes in grants:
-        df = client.query_df(
-            "SELECT 1 FROM sys_role_menu WHERE role_id=%s LIMIT 1", [role_id])
-        if not df.empty:
-            continue   # 已配置过 → 不覆盖
+        # system 角色：锁定、不可手工编辑，始终**幂等补齐全量**——保证新增菜单/功能点即时纳入其全授权
+        # （否则存量库新增资源后 system 出现授权缺口，角色页无法全选+锁定；见 test_system_role_full_grants）。
+        # 其它内置角色：仅首次写默认授权，避免覆盖管理员在角色页的后续手工调整。
+        if role_id != ROLE_SYSTEM:
+            df = client.query_df(
+                "SELECT 1 FROM sys_role_menu WHERE role_id=%s LIMIT 1", [role_id])
+            if not df.empty:
+                continue   # 已配置过 → 不覆盖
         for mid in menu_codes:
             client.execute(
                 "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "

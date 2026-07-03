@@ -1,25 +1,24 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
+import { computed, onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
+import PermissionTree, { type PermNode } from './PermissionTree.vue'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/utils/permission'
 import {
   listRoles, createRole, updateRole, deleteRole, getRoleGrants, setRoleGrants, type Role,
 } from '@/api/role'
 import { listMenus, listResources, type MenuNode, type Resource } from '@/api/menu'
 
 const auth = useAuthStore()
-function can(code: string): boolean {
-  return auth.role === 'system' || auth.permissions.includes(code)
-}
 
-// ── 布局/设置抽屉（本页无业务旋钮，抽屉仅布局+组件段）──
+// ── 布局/设置抽屉（本页无业务旋钮，抽屉仅布局段）──
 const roleLayout = getPageLayout('role-manage')
 const {
   effective, knobs: layoutKnobs, setKnob, valueOf, sourceOf,
@@ -35,6 +34,7 @@ const roles = ref<Role[]>([])
 const activeId = ref<string>('')
 const activeRole = computed<Role | null>(() => roles.value.find((r) => r.id === activeId.value) ?? null)
 const rolesLoading = ref(false)
+const loadError = ref(false)   // 权限树/角色初次加载失败 → 页内错误态 + 重试
 
 function roleTag(r: Role): { text: string; type: 'warning' | 'info' | 'primary' } {
   if (r.is_locked) return { text: '超管·锁定', type: 'warning' }
@@ -55,17 +55,9 @@ async function loadRoles(keepActive = false) {
   }
 }
 
-// ── 权限树：菜单(分组/叶子) + 功能点，组装成三级三态树 ──
-interface TreeNode {
-  key: string
-  label: string
-  kind: 'menu' | 'resource'
-  nodeType: string // menu: group/leaf；resource: button/api
-  sysLocked: boolean // system 可见菜单子树：非 system 角色不可授（后端 system-only 码硬拒，前端置灰）
-  children?: TreeNode[]
-}
-const treeData = ref<TreeNode[]>([])
-const allCheckableLeafKeys = ref<string[]>([]) // 非置灰的叶子（功能点 + 无子菜单），供“全选”
+// ── 权限树：菜单(分组/叶子) + 功能点，组装成三级树（渲染交 PermissionTree）──
+const treeData = ref<PermNode[]>([])
+const allCheckableLeafKeys = ref<string[]>([]) // 非置灰的原子叶子（功能点 + 无子菜单），供“全选”
 const leafMenuKeysNoChildren = ref<Set<string>>(new Set()) // 无任何子节点的菜单（授权回显走叶子）
 
 function buildTree(menus: MenuNode[], resources: Resource[]) {
@@ -77,23 +69,19 @@ function buildTree(menus: MenuNode[], resources: Resource[]) {
   const leaves: string[] = []
   const noChild = new Set<string>()
 
-  const walk = (m: MenuNode, parentLocked: boolean): TreeNode => {
+  const walk = (m: MenuNode, parentLocked: boolean): PermNode => {
     const locked = parentLocked || m.visible === 'system'
-    const children: TreeNode[] = []
+    const children: PermNode[] = []
     for (const c of m.children || []) children.push(walk(c, locked))
     for (const res of resByMenu.get(m.id) || []) {
       const key = `r:${res.id}`
-      const node: TreeNode = {
-        key, label: res.name, kind: 'resource',
-        nodeType: res.type, sysLocked: locked,
-      }
-      children.push(node)
+      children.push({ key, label: res.name, kind: 'resource', nodeType: res.type, sysLocked: locked })
       if (!locked) leaves.push(key)
     }
     const key = `m:${m.id}`
     if (!children.length) {
       noChild.add(key)
-      if (!locked) leaves.push(key) // 无子菜单本身即可勾选的叶子
+      if (!locked) leaves.push(key) // 无子菜单本身即可勾选的原子叶子
     }
     return { key, label: m.title, kind: 'menu', nodeType: m.type, sysLocked: locked,
              children: children.length ? children : undefined }
@@ -104,27 +92,47 @@ function buildTree(menus: MenuNode[], resources: Resource[]) {
   leafMenuKeysNoChildren.value = noChild
 }
 
-const treeRef = ref<InstanceType<typeof ElTree>>()
-const treeProps = {
-  label: 'label', children: 'children',
-  // 超管锁定 → 整树只读；system 可见菜单子树 → 任何可编辑角色都不可授（后端亦硬拒）
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  disabled: (data: any) => treeReadonly.value || Boolean((data as TreeNode).sysLocked),
+// ── 三态勾选：以「原子叶子集合 checked」派生分组/菜单态，级联 = 批量增删原子叶子 ──
+const checked = ref<Set<string>>(new Set())
+const treeReadonly = computed(
+  () => !!activeRole.value?.is_locked || !hasPermission(auth.role, auth.permissions, 'role:assign-perm'))
+
+/** 节点下所有可勾选原子叶子（功能点 + 无子菜单）；system 锁定子树排除。 */
+function atomicLeaves(node: PermNode): string[] {
+  if (!node.children?.length) return node.sysLocked ? [] : [node.key]
+  return node.children.flatMap(atomicLeaves)
 }
-const treeReadonly = computed(() => !!activeRole.value?.is_locked || !can('role:assign-perm'))
+function stateOf(node: PermNode): 'on' | 'half' | 'off' {
+  const leaves = atomicLeaves(node)
+  if (!leaves.length) return 'off'
+  let on = 0
+  for (const k of leaves) if (checked.value.has(k)) on++
+  return on === 0 ? 'off' : on === leaves.length ? 'on' : 'half'
+}
+function toggle(node: PermNode) {
+  if (treeReadonly.value || node.sysLocked) return
+  const leaves = atomicLeaves(node)
+  if (!leaves.length) return
+  const turnOn = stateOf(node) !== 'on'
+  const next = new Set(checked.value)
+  for (const k of leaves) turnOn ? next.add(k) : next.delete(k)
+  checked.value = next
+  onCheck()
+}
+
+function allNodes(nodes: PermNode[]): PermNode[] {
+  return nodes.flatMap((n) => [n, ...(n.children ? allNodes(n.children) : [])])
+}
 
 // ── 授权回显 / 收集 / 脏检测 ──
-let originalKey = '' // 载入时的规范化授权指纹，用于脏检测与“还原”
+let originalKey = ''
 const dirty = ref(false)
 
-/** 从树勾选态收集授权：menuIds=选中∪半选的菜单；resourceIds=选中的功能点。 */
+/** menuIds=选中∪半选的菜单（含无子被勾的叶子菜单）；resourceIds=选中的功能点。 */
 function gatherGrants(): { menuIds: string[]; resourceIds: string[] } {
-  const t = treeRef.value
-  if (!t) return { menuIds: [], resourceIds: [] }
-  const checked = t.getCheckedKeys(false) as string[]
-  const half = t.getHalfCheckedKeys() as string[]
-  const menuIds = [...checked, ...half].filter((k) => k.startsWith('m:')).map((k) => k.slice(2))
-  const resourceIds = checked.filter((k) => k.startsWith('r:')).map((k) => k.slice(2))
+  const nodes = allNodes(treeData.value)
+  const menuIds = nodes.filter((n) => n.kind === 'menu' && stateOf(n) !== 'off').map((n) => n.key.slice(2))
+  const resourceIds = [...checked.value].filter((k) => k.startsWith('r:')).map((k) => k.slice(2))
   return { menuIds, resourceIds }
 }
 function grantsFingerprint(g: { menuIds: string[]; resourceIds: string[] }): string {
@@ -134,14 +142,12 @@ function grantsFingerprint(g: { menuIds: string[]; resourceIds: string[] }): str
 async function selectRole(id: string) {
   activeId.value = id
   const grants = await getRoleGrants(id)
-  await nextTick()
-  // 回显走叶子：功能点 id + 无子菜单 id；其余菜单/分组由 el-tree 级联回算半选/全选。
+  // 回显走原子叶子：功能点 id + 无子菜单 id；其余分组/菜单由 stateOf 级联回算半选/全选。
   const leaves = [
     ...grants.resource_ids.map((r) => `r:${r}`),
     ...grants.menu_ids.filter((m) => leafMenuKeysNoChildren.value.has(`m:${m}`)).map((m) => `m:${m}`),
-  ]
-  treeRef.value?.setCheckedKeys(leaves, false)
-  await nextTick()
+  ].filter((k) => allCheckableLeafKeys.value.includes(k)) // 排除 system 锁定叶子
+  checked.value = new Set(leaves)
   originalKey = grantsFingerprint(gatherGrants())
   dirty.value = false
 }
@@ -151,12 +157,12 @@ function onCheck() {
 }
 function setAll(v: boolean) {
   if (treeReadonly.value) return
-  treeRef.value?.setCheckedKeys(v ? allCheckableLeafKeys.value : [], false)
+  checked.value = v ? new Set(allCheckableLeafKeys.value) : new Set()
   onCheck()
 }
 function resetGrants() {
   if (!activeId.value) return
-  selectRole(activeId.value) // 重新拉取回显 = 还原到已保存态
+  selectRole(activeId.value)
   ElMessage.info('已还原到已保存的权限')
 }
 
@@ -227,13 +233,18 @@ async function removeRole() {
   } catch (e) { if (e === 'cancel') return /* 被引用/内置等由拦截器弹出 */ }
 }
 
-onMounted(async () => {
+async function loadAll() {
+  loadError.value = false
   try {
     const [menus, resources] = await Promise.all([listMenus(), listResources()])
     buildTree(menus, resources)
-  } catch { /* 拦截器已提示 */ }
+  } catch {
+    loadError.value = true
+    return
+  }
   await loadRoles()
-})
+}
+onMounted(loadAll)
 </script>
 
 <template>
@@ -250,7 +261,7 @@ onMounted(async () => {
             </HelpTip>
           </h2>
           <div class="page-head-actions">
-            <el-button v-if="can('role:create')" type="primary" @click="openCreate">＋ 新建角色</el-button>
+            <el-button v-permission="'role:create'" type="primary" @click="openCreate">＋ 新建角色</el-button>
             <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
           </div>
         </div>
@@ -258,7 +269,10 @@ onMounted(async () => {
     </template>
 
     <template #main>
-      <div class="rm-split">
+      <el-result v-if="loadError" icon="warning" title="权限树加载失败" sub-title="请检查网络或稍后重试" class="rm-error">
+        <template #extra><el-button type="primary" @click="loadAll">重试</el-button></template>
+      </el-result>
+      <div v-else class="rm-split">
         <!-- 左：角色列表 -->
         <div class="rm-col rm-left">
           <div class="rm-col-head">角色 <span class="mini">{{ roles.length }}</span></div>
@@ -288,8 +302,8 @@ onMounted(async () => {
               </div>
             </div>
             <div class="page-head-actions" v-if="activeRole">
-              <el-button v-if="can('role:update') && !activeRole.is_locked" size="small" @click="openRename">重命名</el-button>
-              <el-button v-if="can('role:delete') && !activeRole.is_builtin" size="small" type="danger" plain
+              <el-button v-if="!activeRole.is_locked" v-permission="'role:update'" size="small" @click="openRename">重命名</el-button>
+              <el-button v-if="!activeRole.is_builtin" v-permission="'role:delete'" size="small" type="danger" plain
                          @click="removeRole">删除</el-button>
               <el-button size="small" :disabled="treeReadonly" @click="setAll(true)">全选</el-button>
               <el-button size="small" :disabled="treeReadonly" @click="setAll(false)">清空</el-button>
@@ -297,22 +311,18 @@ onMounted(async () => {
           </div>
 
           <div class="rm-col-body">
-            <el-tree v-if="activeRole" ref="treeRef" :data="treeData" :props="treeProps" node-key="key"
-                     show-checkbox default-expand-all :check-strictly="false" @check="onCheck">
-              <template #default="{ data }">
-                <span class="tree-node" :class="{ locked: treeReadonly || data.sysLocked }">
-                  <span class="tn-label">{{ data.label }}</span>
-                  <el-tag v-if="data.kind === 'menu'" size="small" effect="plain"
-                          :type="data.nodeType === 'group' ? 'primary' : 'success'" class="tn-tag">
-                    {{ data.nodeType === 'group' ? '分组' : '菜单' }}
-                  </el-tag>
-                  <el-tag v-else size="small" effect="plain"
-                          :type="data.nodeType === 'api' ? 'success' : 'warning'" class="tn-tag">
-                    {{ data.nodeType === 'api' ? '接口' : '按钮' }}
-                  </el-tag>
-                </span>
-              </template>
-            </el-tree>
+            <template v-if="activeRole">
+              <div class="rm-legend">
+                <span class="lg"><i class="dot g" />分组</span>
+                <span class="lg"><i class="dot m" />菜单</span>
+                <span class="lg"><i class="dot f" />功能点(按钮/接口)</span>
+                <span class="lg-hint">勾选父级级联子级，子级部分选中父级显半选</span>
+              </div>
+              <PermissionTree
+                v-for="node in treeData" :key="node.key"
+                :node="node" :state-of="stateOf" :toggle="toggle" :readonly="treeReadonly"
+              />
+            </template>
             <el-empty v-else description="请选择左侧角色" :image-size="72" />
           </div>
 
@@ -363,6 +373,7 @@ onMounted(async () => {
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
 .page-head h2 { margin: 0; font-size: 20px; }
 .page-head-actions { display: flex; align-items: center; gap: 10px; }
+.rm-error { height: 100%; }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
 .rm-split { height: 100%; display: flex; gap: 16px; min-height: 0; overflow-x: auto; }
 .rm-col { border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay);
@@ -372,7 +383,7 @@ onMounted(async () => {
 .rm-col-head { padding: 11px 14px; border-bottom: 1px solid var(--el-border-color-lighter); font-weight: 600;
   display: flex; align-items: center; gap: 8px; }
 .rm-col-head .mini { font-size: 12px; color: var(--el-text-color-secondary); font-weight: 400; }
-.rm-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px; }
+.rm-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px; }
 .role { padding: 10px 12px; border-radius: 7px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
 .role:hover { background: var(--el-fill-color-light); }
 .role.active { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-5); }
@@ -383,11 +394,16 @@ onMounted(async () => {
 .rm-detail-title .rname { font-size: 15px; font-weight: 700; }
 .rm-detail-title .rmeta { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
 .lock-note { color: var(--el-color-warning); }
+/* 图例 */
+.rm-legend { display: flex; align-items: center; gap: 14px; padding: 0 2px 10px; font-size: 12px; color: var(--el-text-color-secondary); }
+.rm-legend .lg { display: inline-flex; align-items: center; gap: 5px; }
+.rm-legend .dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.rm-legend .dot.g { background: var(--el-color-primary); }
+.rm-legend .dot.m { background: var(--el-color-success); }
+.rm-legend .dot.f { background: var(--el-color-warning); }
+.rm-legend .lg-hint { margin-left: auto; }
 .rm-detail-foot { border-top: 1px solid var(--el-border-color-lighter); padding: 12px 16px;
   display: flex; align-items: center; justify-content: space-between; }
 .dirty { font-size: 12px; color: var(--el-color-warning); }
 .dirty.hidden { visibility: hidden; }
-.tree-node { display: inline-flex; align-items: center; gap: 8px; }
-.tree-node.locked { opacity: 0.55; }
-.tn-tag { transform: scale(0.9); }
 </style>

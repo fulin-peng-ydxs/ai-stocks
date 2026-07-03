@@ -23,10 +23,7 @@ const DEFAULT_TENANT_ID = 'default'
 
 const auth = useAuthStore()
 const router = useRouter()
-// 页级已由 require_system 守卫；按钮口径仍走 can()（system 恒过），delete 无独立 code → 以 system 身份为准。
-function can(code: string): boolean {
-  return auth.role === 'system' || auth.permissions.includes(code)
-}
+// 页级由 require_system 守卫；按钮级统一走全局 v-permission 指令（含 tenant:delete，已 seed 功能码）。
 const isSystem = computed(() => auth.role === 'system')
 
 // ── 业务偏好（settings-drawer 业务段）：默认状态筛选 ──
@@ -53,6 +50,7 @@ function colVisible(key: string): boolean {
 
 // ── 列表 ──
 const loading = ref(false)
+const loadError = ref(false)   // 列表加载失败 → 页内错误态 + 重试
 const list = ref<Tenant[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -77,6 +75,7 @@ const displayList = computed(() => {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     const res = await listTenants({
       status: filters.value.status || undefined,
@@ -85,6 +84,8 @@ async function load() {
     })
     list.value = res.items
     total.value = res.total
+  } catch {
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -194,7 +195,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             </HelpTip>
           </h2>
           <div class="page-head-actions">
-            <el-button v-if="can('tenant:create')" type="primary" @click="openCreate">＋ 新建租户</el-button>
+            <el-button v-permission="'tenant:create'" type="primary" @click="openCreate">＋ 新建租户</el-button>
             <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
           </div>
         </div>
@@ -213,6 +214,10 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 
     <template #main>
       <el-card shadow="never">
+        <el-result v-if="loadError" icon="warning" title="租户列表加载失败" sub-title="请检查网络或稍后重试">
+          <template #extra><el-button type="primary" @click="load">重试</el-button></template>
+        </el-result>
+        <template v-else>
         <!-- row-key：稳定行标识，避免新增/重排时 fixed 列单元格 v-if（如「内置」标签）DOM 复用错位 -->
         <el-table :data="displayList" row-key="id" size="small" height="100%" v-loading="loading">
           <el-table-column label="租户名" prop="name" min-width="180" fixed="left" show-overflow-tooltip>
@@ -242,14 +247,14 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-table-column>
           <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
-              <el-button v-if="can('tenant:update')" type="primary" size="small" link
+              <el-button v-permission="'tenant:update'" type="primary" size="small" link
                          @click="openEdit(row)">编辑</el-button>
               <el-button type="primary" size="small" link @click="viewUsers(row)">查看用户</el-button>
-              <el-button v-if="can('tenant:disable') && row.status === 'active' && row.id !== DEFAULT_TENANT_ID"
+              <el-button v-if="row.status === 'active' && row.id !== DEFAULT_TENANT_ID" v-permission="'tenant:disable'"
                          type="danger" size="small" link @click="changeStatus(row, 'disabled', '停用')">停用</el-button>
-              <el-button v-if="can('tenant:disable') && row.status === 'disabled'"
+              <el-button v-if="row.status === 'disabled'" v-permission="'tenant:disable'"
                          type="success" size="small" link @click="changeStatus(row, 'active', '启用')">启用</el-button>
-              <el-button v-if="isSystem && row.id !== DEFAULT_TENANT_ID" type="danger" size="small" link
+              <el-button v-if="row.id !== DEFAULT_TENANT_ID" v-permission="'tenant:delete'" type="danger" size="small" link
                          :disabled="(row.user_count ?? 0) > 0"
                          :title="(row.user_count ?? 0) > 0 ? '该租户仍有用户，不可删除' : ''"
                          @click="removeTenant(row)">删除</el-button>
@@ -262,6 +267,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
                          @current-change="(p: number) => { page = p; load() }"
                          @size-change="(s: number) => { size = s; page = 1; load() }" />
         </div>
+        </template>
       </el-card>
     </template>
 

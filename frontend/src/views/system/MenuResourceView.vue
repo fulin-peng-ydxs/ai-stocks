@@ -20,11 +20,12 @@ import {
   listResources, createResource, updateResource, deleteResource,
   type MenuNode, type Resource,
 } from '@/api/menu'
+import { hasPermission } from '@/utils/permission'
 
 const auth = useAuthStore()
-function can(code: string): boolean {
-  return auth.role === 'system' || auth.permissions.includes(code)
-}
+// 按钮显隐走全局 v-permission；脚本逻辑/表单禁用用共用 hasPermission（system 恒过），口径统一。
+const canMenuUpdate = computed(() => hasPermission(auth.role, auth.permissions, 'menu:update'))
+const canMenuReorder = computed(() => hasPermission(auth.role, auth.permissions, 'menu:reorder'))
 
 // icon 名 → 组件（与 IconPicker/SideMenu 同一图标体系）
 const iconMap = EpIcons as unknown as Record<string, Component>
@@ -47,6 +48,7 @@ const settingsOpen = ref(false)
 const tree = ref<MenuNode[]>([])
 const treeRef = ref<InstanceType<typeof ElTree>>()
 const treeLoading = ref(false)
+const treeError = ref(false)   // 菜单树加载失败 → 页内错误态 + 重试
 const activeId = ref<string>('')
 
 /** 在嵌套树中按 id 找节点。 */
@@ -62,6 +64,7 @@ const activeMenu = computed<MenuNode | null>(() => (activeId.value ? findNode(tr
 
 async function loadTree(keepActive = false) {
   treeLoading.value = true
+  treeError.value = false
   try {
     tree.value = await listMenus()
     if (keepActive && activeId.value && findNode(tree.value, activeId.value)) {
@@ -71,6 +74,8 @@ async function loadTree(keepActive = false) {
     } else {
       activeId.value = ''
     }
+  } catch {
+    treeError.value = true
   } finally {
     treeLoading.value = false
   }
@@ -127,7 +132,7 @@ async function selectMenu(id: string) {
 const savingForm = ref(false)
 async function saveForm() {
   const m = activeMenu.value
-  if (!m || !can('menu:update')) return
+  if (!m || !canMenuUpdate.value) return
   if (!form.value.title.trim()) { ElMessage.warning('请填写菜单标题'); return }
   savingForm.value = true
   try {
@@ -201,7 +206,7 @@ async function removeMenu() {
 
 // ── 拖拽排序 / 移动 ──
 function allowDrag(): boolean {
-  return can('menu:reorder')
+  return canMenuReorder.value
 }
 // 只有分组可作为容器（inner）；叶子不能有子节点
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -231,11 +236,11 @@ async function onNodeDrop() {
   }
 }
 
-// ── 功能点：新建 / 编辑 / 删除 ──
-const resDialog = ref(false)
-const resMode = ref<'create' | 'edit'>('create')
-const resEditId = ref<string>('')
-const resForm = ref<{ code: string; name: string; type: string; apiMethod: string; apiPath: string }>(
+// ── 功能点：表内联增删改（承接原型，无编辑 dialog）──
+// editingId：'' 无编辑；'__new__' 新增行；否则为在编辑的功能点 id。同一时刻只一行处于编辑态。
+const NEW_ROW = '__new__'
+const editingId = ref<string>('')
+const resDraft = ref<{ code: string; name: string; type: string; apiMethod: string; apiPath: string }>(
   { code: '', name: '', type: 'api', apiMethod: 'GET', apiPath: '' },
 )
 const resSaving = ref(false)
@@ -243,23 +248,22 @@ const resSaving = ref(false)
 function bindingText(r: Resource): string {
   return r.api_path ? `${r.api_method || ''} ${r.api_path}`.trim() : '— 纯前端动作'
 }
-function openCreateRes() {
+function startCreateRes() {
   if (!activeMenu.value) return
-  resMode.value = 'create'
-  resEditId.value = ''
-  resForm.value = { code: '', name: '', type: 'api', apiMethod: 'GET', apiPath: '' }
-  resDialog.value = true
+  resDraft.value = { code: '', name: '', type: 'api', apiMethod: 'GET', apiPath: '' }
+  editingId.value = NEW_ROW
 }
-function openEditRes(r: Resource) {
-  resMode.value = 'edit'
-  resEditId.value = r.id
-  resForm.value = { code: r.code, name: r.name, type: r.type, apiMethod: r.api_method ?? 'GET', apiPath: r.api_path ?? '' }
-  resDialog.value = true
+function startEditRes(r: Resource) {
+  resDraft.value = { code: r.code, name: r.name, type: r.type, apiMethod: r.api_method ?? 'GET', apiPath: r.api_path ?? '' }
+  editingId.value = r.id
 }
-async function saveRes() {
+function cancelRes() {
+  editingId.value = ''
+}
+async function saveResRow() {
   const m = activeMenu.value
   if (!m) return
-  const f = resForm.value
+  const f = resDraft.value
   if (!f.code.trim()) { ElMessage.warning('请填写功能码'); return }
   if (!f.name.trim()) { ElMessage.warning('请填写功能名称'); return }
   resSaving.value = true
@@ -269,10 +273,11 @@ async function saveRes() {
       apiMethod: f.type === 'api' ? f.apiMethod : null,
       apiPath: f.apiPath.trim() || null,
     }
-    if (resMode.value === 'create') await createResource(body)
-    else await updateResource(resEditId.value, body)
-    ElMessage.success(resMode.value === 'create' ? '已创建' : '已保存')
-    resDialog.value = false
+    const creating = editingId.value === NEW_ROW
+    if (creating) await createResource(body)
+    else await updateResource(editingId.value, body)
+    ElMessage.success(creating ? '已创建' : '已保存')
+    editingId.value = ''
     await loadResources(m.id)
   } catch { /* 唯一/内置由拦截器弹出 */ } finally { resSaving.value = false }
 }
@@ -306,7 +311,7 @@ onMounted(() => { loadTree() })
             </HelpTip>
           </h2>
           <div class="page-head-actions">
-            <el-button v-if="can('menu:create')" type="primary" @click="openCreateRoot">＋ 新增菜单节点</el-button>
+            <el-button v-permission="'menu:create'" type="primary" @click="openCreateRoot">＋ 新增菜单节点</el-button>
             <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
           </div>
         </div>
@@ -319,7 +324,11 @@ onMounted(() => { loadTree() })
         <div class="mr-col mr-left">
           <div class="mr-col-head">菜单树 <span class="mini">可拖拽排序</span></div>
           <div class="mr-col-body" v-loading="treeLoading">
+            <el-result v-if="treeError" icon="warning" title="菜单加载失败" sub-title="请重试">
+              <template #extra><el-button type="primary" size="small" @click="loadTree()">重试</el-button></template>
+            </el-result>
             <el-tree
+              v-else
               ref="treeRef"
               :data="tree"
               node-key="id"
@@ -327,7 +336,7 @@ onMounted(() => { loadTree() })
               default-expand-all
               highlight-current
               :expand-on-click-node="false"
-              :draggable="can('menu:reorder')"
+              :draggable="canMenuReorder"
               :allow-drag="allowDrag"
               :allow-drop="allowDrop"
               @node-click="(d: MenuNode) => selectMenu(d.id)"
@@ -363,8 +372,8 @@ onMounted(() => { loadTree() })
                 </div>
               </div>
               <div class="page-head-actions">
-                <el-button v-if="can('menu:create') && activeMenu.type === 'group'" size="small" @click="openCreateChild">＋ 新增子节点</el-button>
-                <el-button v-if="can('menu:delete')" size="small" type="danger" plain :disabled="activeMenu.is_builtin" @click="removeMenu">删除节点</el-button>
+                <el-button v-if="activeMenu.type === 'group'" v-permission="'menu:create'" size="small" @click="openCreateChild">＋ 新增子节点</el-button>
+                <el-button v-permission="'menu:delete'" size="small" type="danger" plain :disabled="activeMenu.is_builtin" @click="removeMenu">删除节点</el-button>
               </div>
             </div>
 
@@ -374,20 +383,20 @@ onMounted(() => { loadTree() })
                 <h4>菜单属性</h4>
                 <div class="mr-form-grid">
                   <div class="mr-field"><label>标题</label>
-                    <el-input v-model="form.title" size="small" :disabled="!can('menu:update')" @input="onFormChange" />
+                    <el-input v-model="form.title" size="small" :disabled="!canMenuUpdate" @input="onFormChange" />
                   </div>
                   <div class="mr-field"><label>类型</label>
-                    <el-select v-model="form.type" size="small" :disabled="!can('menu:update')" @change="onFormChange">
+                    <el-select v-model="form.type" size="small" :disabled="!canMenuUpdate" @change="onFormChange">
                       <el-option label="叶子（可导航）" value="leaf" />
                       <el-option label="分组（不导航）" value="group" />
                     </el-select>
                   </div>
                   <div class="mr-field"><label>路由</label>
                     <el-input v-model="form.routePath" size="small" placeholder="如 /board" class="mono"
-                              :disabled="form.type === 'group' || !can('menu:update')" @input="onFormChange" />
+                              :disabled="form.type === 'group' || !canMenuUpdate" @input="onFormChange" />
                   </div>
                   <div class="mr-field"><label>图标</label>
-                    <IconPicker v-model="form.icon" :disabled="!can('menu:update')" @update:model-value="onFormChange" />
+                    <IconPicker v-model="form.icon" :disabled="!canMenuUpdate" @update:model-value="onFormChange" />
                   </div>
                   <div class="mr-field"><label>排序</label>
                     <el-input :model-value="form.sort" size="small" disabled>
@@ -395,7 +404,7 @@ onMounted(() => { loadTree() })
                     </el-input>
                   </div>
                   <div class="mr-field"><label>可见性</label>
-                    <el-select v-model="form.visible" size="small" :disabled="!can('menu:update')" @change="onFormChange">
+                    <el-select v-model="form.visible" size="small" :disabled="!canMenuUpdate" @change="onFormChange">
                       <el-option label="登录可见" value="login" />
                       <el-option label="仅系统管理员" value="system" />
                     </el-select>
@@ -413,36 +422,83 @@ onMounted(() => { loadTree() })
                       内置功能点不可改不可删；删除被角色引用的功能点会同时解除授权。
                     </HelpTip>
                   </h4>
-                  <el-button v-if="can('resource:create')" size="small" @click="openCreateRes">＋ 新增功能点</el-button>
+                  <el-button v-permission="'resource:create'" size="small" :disabled="editingId === NEW_ROW"
+                             @click="startCreateRes">＋ 新增功能点</el-button>
                 </div>
-                <el-table :data="resources" v-loading="resLoading" size="small" class="mr-func-table"
-                          :empty-text="'该菜单暂无功能点'" border>
-                  <el-table-column prop="code" label="功能码" min-width="190">
-                    <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>
-                  </el-table-column>
-                  <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
-                  <el-table-column label="类型" width="84">
-                    <template #default="{ row }">
-                      <el-tag size="small" effect="plain" :type="row.type === 'api' ? 'success' : 'warning'">
-                        {{ row.type === 'api' ? '接口' : '按钮' }}
-                      </el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="绑定接口" min-width="220">
-                    <template #default="{ row }">
-                      <span class="mono" :class="{ dim: !row.api_path }">{{ bindingText(row) }}</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="操作" width="120" fixed="right">
-                    <template #default="{ row }">
-                      <el-button v-if="can('resource:update')" link type="primary" size="small"
-                                 :disabled="row.is_builtin" @click="openEditRes(row)">编辑</el-button>
-                      <el-button v-if="can('resource:delete')" link type="danger" size="small"
-                                 :disabled="row.is_builtin" @click="removeRes(row)">删</el-button>
-                      <span v-if="row.is_builtin" class="builtin-tag">内置</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
+                <!-- 表内联增删改（承接原型，无编辑 dialog）；窄栏体内横滚 -->
+                <div class="mr-tbl-scroll" v-loading="resLoading">
+                  <table class="mr-ftable">
+                    <thead>
+                      <tr><th style="min-width: 190px">功能码</th><th style="min-width: 120px">名称</th>
+                        <th style="width: 92px">类型</th><th style="min-width: 220px">绑定接口</th><th style="width: 116px">操作</th></tr>
+                    </thead>
+                    <tbody>
+                      <template v-for="r in resources" :key="r.id">
+                        <!-- 编辑态：内联输入 -->
+                        <tr v-if="editingId === r.id" class="mr-edit-row">
+                          <td><el-input v-model="resDraft.code" size="small" class="mono" placeholder="menu:action" /></td>
+                          <td><el-input v-model="resDraft.name" size="small" placeholder="名称" /></td>
+                          <td>
+                            <el-select v-model="resDraft.type" size="small">
+                              <el-option label="接口" value="api" /><el-option label="按钮" value="button" />
+                            </el-select>
+                          </td>
+                          <td>
+                            <div class="mr-bind">
+                              <el-select v-if="resDraft.type === 'api'" v-model="resDraft.apiMethod" size="small" style="width: 92px">
+                                <el-option v-for="mth in ['GET','POST','PUT','DELETE']" :key="mth" :label="mth" :value="mth" />
+                              </el-select>
+                              <el-input v-model="resDraft.apiPath" size="small" class="mono" placeholder="/api/…（按钮可空）" />
+                            </div>
+                          </td>
+                          <td>
+                            <el-button link type="primary" size="small" :loading="resSaving" @click="saveResRow">保存</el-button>
+                            <el-button link size="small" @click="cancelRes">取消</el-button>
+                          </td>
+                        </tr>
+                        <!-- 展示态 -->
+                        <tr v-else>
+                          <td class="mono">{{ r.code }}</td>
+                          <td>{{ r.name }}</td>
+                          <td><el-tag size="small" effect="plain" :type="r.type === 'api' ? 'success' : 'warning'">{{ r.type === 'api' ? '接口' : '按钮' }}</el-tag></td>
+                          <td class="mono" :class="{ dim: !r.api_path }">{{ bindingText(r) }}</td>
+                          <td>
+                            <el-button v-permission="'resource:update'" link type="primary" size="small"
+                                       :disabled="r.is_builtin || editingId !== ''" @click="startEditRes(r)">编辑</el-button>
+                            <el-button v-permission="'resource:delete'" link type="danger" size="small"
+                                       :disabled="r.is_builtin" @click="removeRes(r)">删</el-button>
+                            <span v-if="r.is_builtin" class="builtin-tag">内置</span>
+                          </td>
+                        </tr>
+                      </template>
+                      <!-- 新增行 -->
+                      <tr v-if="editingId === NEW_ROW" class="mr-edit-row">
+                        <td><el-input v-model="resDraft.code" size="small" class="mono" placeholder="menu:action（全局唯一）" /></td>
+                        <td><el-input v-model="resDraft.name" size="small" placeholder="名称" /></td>
+                        <td>
+                          <el-select v-model="resDraft.type" size="small">
+                            <el-option label="接口" value="api" /><el-option label="按钮" value="button" />
+                          </el-select>
+                        </td>
+                        <td>
+                          <div class="mr-bind">
+                            <el-select v-if="resDraft.type === 'api'" v-model="resDraft.apiMethod" size="small" style="width: 92px">
+                              <el-option v-for="mth in ['GET','POST','PUT','DELETE']" :key="mth" :label="mth" :value="mth" />
+                            </el-select>
+                            <el-input v-model="resDraft.apiPath" size="small" class="mono" placeholder="/api/…（按钮可空）" />
+                          </div>
+                        </td>
+                        <td>
+                          <el-button link type="primary" size="small" :loading="resSaving" @click="saveResRow">保存</el-button>
+                          <el-button link size="small" @click="cancelRes">取消</el-button>
+                        </td>
+                      </tr>
+                      <tr v-if="!resources.length && editingId !== NEW_ROW">
+                        <td colspan="5" class="mr-empty">该菜单暂无功能点</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
 
@@ -450,7 +506,7 @@ onMounted(() => { loadTree() })
               <span class="dirty" :class="{ hidden: !formDirty }">● 菜单属性有未保存修改</span>
               <div class="page-head-actions">
                 <el-button :disabled="!formDirty" @click="resetForm">还原</el-button>
-                <el-button type="primary" :loading="savingForm" :disabled="!formDirty || !can('menu:update')" @click="saveForm">保存</el-button>
+                <el-button type="primary" :loading="savingForm" :disabled="!formDirty || !canMenuUpdate" @click="saveForm">保存</el-button>
               </div>
             </div>
           </template>
@@ -497,39 +553,7 @@ onMounted(() => { loadTree() })
         </template>
       </el-dialog>
 
-      <!-- 功能点 新建/编辑 -->
-      <el-dialog v-model="resDialog" :title="resMode === 'create' ? '新增功能点' : '编辑功能点'" width="480px">
-        <el-form label-width="72px">
-          <el-form-item label="功能码">
-            <el-input v-model="resForm.code" class="mono" placeholder="menu:action（全局唯一）" />
-          </el-form-item>
-          <el-form-item label="名称">
-            <el-input v-model="resForm.name" placeholder="如：导出 CSV" />
-          </el-form-item>
-          <el-form-item label="类型">
-            <el-select v-model="resForm.type">
-              <el-option label="接口（绑定后端接口）" value="api" />
-              <el-option label="按钮（前端动作）" value="button" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="接口方法" v-if="resForm.type === 'api'">
-            <el-select v-model="resForm.apiMethod">
-              <el-option label="GET" value="GET" />
-              <el-option label="POST" value="POST" />
-              <el-option label="PUT" value="PUT" />
-              <el-option label="DELETE" value="DELETE" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="接口路径">
-            <el-input v-model="resForm.apiPath" class="mono" placeholder="如 /api/board（按钮类可留空）" />
-          </el-form-item>
-        </el-form>
-        <template #footer>
-          <el-button @click="resDialog = false">取消</el-button>
-          <el-button type="primary" :loading="resSaving" @click="saveRes">保存</el-button>
-        </template>
-      </el-dialog>
-
+      <!-- 功能点无编辑 dialog：增删改一律表内联（见右栏功能点表） -->
       <PageSettingsDrawer
         v-model="settingsOpen"
         title="菜单与功能"
@@ -575,7 +599,17 @@ onMounted(() => { loadTree() })
 .mono :deep(input), .mono { font-family: ui-monospace, Menlo, monospace; }
 .hint { font-size: 11px; color: var(--el-text-color-placeholder); }
 .mr-func-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.mr-func-table :deep(.dim) { color: var(--el-text-color-placeholder); }
+/* 功能点内联表：窄栏体内横滚，列不被压 */
+.mr-tbl-scroll { overflow-x: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+.mr-ftable { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px; }
+.mr-ftable thead th { background: var(--el-fill-color-light); color: var(--el-text-color-regular); font-weight: 600;
+  text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--el-border-color-lighter); white-space: nowrap; }
+.mr-ftable tbody td { padding: 7px 12px; border-bottom: 1px solid var(--el-border-color-lighter); color: var(--el-text-color-regular); vertical-align: middle; }
+.mr-ftable tbody tr:last-child td { border-bottom: none; }
+.mr-ftable .dim { color: var(--el-text-color-placeholder); }
+.mr-ftable .mr-empty { text-align: center; color: var(--el-text-color-secondary); padding: 18px; }
+.mr-edit-row td { background: var(--el-fill-color-lighter); }
+.mr-bind { display: flex; gap: 6px; }
 .builtin-tag { font-size: 11px; color: var(--el-text-color-secondary); margin-left: 4px; }
 .mr-detail-foot { border-top: 1px solid var(--el-border-color-lighter); padding: 12px 16px;
   display: flex; align-items: center; justify-content: space-between; }

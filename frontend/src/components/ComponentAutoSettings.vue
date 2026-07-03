@@ -363,7 +363,7 @@ function setSort(slotId: string, field: string, order: string): void {
           :model-value="listVal(s.slotId, 'defaultCollapsed')"
           @update:model-value="(v: string[]) => config.setComponentKnob(s.slotId, 'defaultCollapsed', v)"
         >
-          <el-checkbox v-for="opt in DRAWER_SECTION_OPTIONS" :key="opt.value" :label="opt.value">
+          <el-checkbox v-for="opt in DRAWER_SECTION_OPTIONS" :key="opt.value" :value="opt.value">
             {{ opt.label }}
           </el-checkbox>
         </el-checkbox-group>

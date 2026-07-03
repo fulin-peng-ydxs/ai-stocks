@@ -23,10 +23,7 @@ const auth = useAuthStore()
 const route = useRoute()
 // 身份分流：仅系统管理员可跨租户（切租户筛选 + 新建时指定归属租户）；租户管理员限本租户，不展示租户维度。
 const isSystem = computed(() => auth.role === 'system')
-// 按钮级权限（T15 全局 v-permission 落地前的本页消费口径）：system 恒过，其余按 /me 下发的 permissions。
-function can(code: string): boolean {
-  return isSystem.value || auth.permissions.includes(code)
-}
+// 按钮级权限一律走全局 v-permission 指令（消费 auth.permissions，system 恒过）；本页不再自定义 can()。
 
 // ── 业务偏好（settings-drawer 业务段）：默认状态筛选 ──
 const { settings, isDirty, reset } = usePageSettings('user-manage', {
@@ -81,6 +78,7 @@ function tenantName(id: string): string {
 
 // ── 列表 ──
 const loading = ref(false)
+const loadError = ref(false)   // 列表加载失败 → 页内错误态 + 重试（不只依赖全局 toast）
 const list = ref<AdminUser[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -107,6 +105,7 @@ const displayList = computed(() => {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     const res = await listUsers({
       tenant_id: isSystem.value && filters.value.tenant ? filters.value.tenant : undefined,
@@ -117,6 +116,8 @@ async function load() {
     })
     list.value = res.items
     total.value = res.total
+  } catch {
+    loadError.value = true   // 拦截器已弹全局提示；页内保留错误态可重试
   } finally {
     loading.value = false
   }
@@ -265,7 +266,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             </HelpTip>
           </h2>
           <div class="page-head-actions">
-            <el-button v-if="can('user:create')" type="primary" @click="openCreate">＋ 新建用户</el-button>
+            <el-button v-permission="'user:create'" type="primary" @click="openCreate">＋ 新建用户</el-button>
             <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
           </div>
         </div>
@@ -292,6 +293,10 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 
     <template #main>
       <el-card shadow="never">
+        <el-result v-if="loadError" icon="warning" title="用户列表加载失败" sub-title="请检查网络或稍后重试">
+          <template #extra><el-button type="primary" @click="load">重试</el-button></template>
+        </el-result>
+        <template v-else>
         <el-table :data="displayList" size="small" height="100%" v-loading="loading">
           <el-table-column label="账号" prop="account" width="150" fixed="left" />
           <el-table-column v-if="colVisible('email')" label="邮箱" prop="email" min-width="180"
@@ -321,17 +326,17 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-table-column>
           <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">
-              <el-button v-if="can('user:update')" type="primary" size="small" link
+              <el-button v-permission="'user:update'" type="primary" size="small" link
                          @click="openEdit(row)">编辑</el-button>
-              <el-button v-if="can('user:reset-password')" type="primary" size="small" link
+              <el-button v-permission="'user:reset-password'" type="primary" size="small" link
                          @click="openReset(row)">重置密码</el-button>
-              <el-button v-if="can('user:disable') && row.status === 'active'" type="danger" size="small"
+              <el-button v-if="row.status === 'active'" v-permission="'user:disable'" type="danger" size="small"
                          link @click="changeStatus(row, 'disabled', '禁用')">禁用</el-button>
-              <el-button v-if="can('user:disable') && row.status === 'disabled'" type="success" size="small"
+              <el-button v-if="row.status === 'disabled'" v-permission="'user:disable'" type="success" size="small"
                          link @click="changeStatus(row, 'active', '启用')">启用</el-button>
-              <el-button v-if="can('user:disable') && row.status === 'locked'" type="success" size="small"
+              <el-button v-if="row.status === 'locked'" v-permission="'user:disable'" type="success" size="small"
                          link @click="changeStatus(row, 'active', '解锁')">解锁</el-button>
-              <el-button v-if="can('user:delete') && row.status === 'locked'" type="danger" size="small"
+              <el-button v-if="row.status === 'locked'" v-permission="'user:delete'" type="danger" size="small"
                          link @click="removeUser(row)">删除</el-button>
             </template>
           </el-table-column>
@@ -342,6 +347,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
                          @current-change="(p: number) => { page = p; load() }"
                          @size-change="(s: number) => { size = s; page = 1; load() }" />
         </div>
+        </template>
       </el-card>
     </template>
 

@@ -43,3 +43,22 @@ export function hasPermission(role: string, permissions: string[], codes: string
   const list = Array.isArray(codes) ? codes : [codes]
   return list.some((c) => permissions.includes(c))
 }
+
+/** 未授权时的安全首页（所有登录用户可达的落点，避免 fail-open 到被请求的未授权页）。 */
+export const SAFE_HOME = '/board'
+
+/**
+ * 已登录、非公开路由的菜单授权决策（守卫核心；纯函数，可单测）。
+ * - system 或命中授权叶子 → 放行(true)。
+ * - 否则**fail-closed**：漏斗到安全落点（首个授权菜单，无则 SAFE_HOME）；已在落点则放行，避免死循环。
+ * 关键：菜单未加载/加载失败（menuRoutePaths 为空）时，非 system **绝不**放行到被请求的未授权页——
+ * 要么重定向到 SAFE_HOME，要么（当请求的就是 SAFE_HOME）落到首页壳（SideMenu 显错误/空态+重试）。
+ */
+export function resolveMenuGuard(
+  path: string,
+  opts: { isSystem: boolean; menuRoutePaths: string[]; firstMenuPath: string; safeHome?: string },
+): true | { path: string } {
+  if (isRouteAllowed(path, opts.menuRoutePaths, opts.isSystem)) return true
+  const landing = opts.firstMenuPath || opts.safeHome || SAFE_HOME
+  return path === landing ? true : { path: landing }
+}

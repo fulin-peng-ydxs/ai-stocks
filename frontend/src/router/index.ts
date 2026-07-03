@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { getAccessToken } from '@/api/authToken'
 import { useAuthStore } from '@/stores/auth'
-import { isRouteAllowed } from '@/utils/permission'
+import { resolveMenuGuard } from '@/utils/permission'
 
 const routes: RouteRecordRaw[] = [
   // 登录/注册页（stage2·T7）：全屏独立壳（meta.fullscreen）+ 公开（meta.public，免登录）
@@ -150,16 +150,17 @@ router.beforeEach(async (to) => {
     return { path: '/login', query: { redirect: to.fullPath } }
   }
   const auth = useAuthStore()
-  // 确保菜单/权限已加载；401 由 http 拦截器统一清态处理，其余瞬时错误吞掉不阻断。
-  try { await auth.ensureLoaded() } catch { /* 401 已由拦截器处理；瞬时错误交由页面/接口兜底 */ }
+  // 确保菜单/权限已加载；401 由 http 拦截器统一清态处理，其余瞬时错误吞掉不阻断（下面走 fail-closed 决策）。
+  try { await auth.ensureLoaded() } catch { /* 401 已由拦截器处理；瞬时错误由菜单空触发 fail-closed */ }
   // ensureLoaded 期间若发生 401 清态，token 已失效 → 跳登录。
   if (!getAccessToken()) return { path: '/login', query: { redirect: to.fullPath } }
-  // 菜单权限校验（system 恒过；未就绪时 menuRoutePaths 为空 → 无安全落点 → 放行避免死循环）。
-  if (!isRouteAllowed(to.path, auth.menuRoutePaths, auth.isSystem)) {
-    const landing = auth.firstMenuPath
-    if (landing && landing !== to.path) return { path: landing }
-  }
-  return true
+  // 菜单授权决策（fail-closed）：system 恒过；未授权（含 /me 失败致菜单空）→ 漏斗到安全落点，
+  // 绝不放行到被请求的未授权页壳；已在落点则渲染首页壳（SideMenu 显错误/空态+重试）。
+  return resolveMenuGuard(to.path, {
+    isSystem: auth.isSystem,
+    menuRoutePaths: auth.menuRoutePaths,
+    firstMenuPath: auth.firstMenuPath,
+  })
 })
 
 export default router

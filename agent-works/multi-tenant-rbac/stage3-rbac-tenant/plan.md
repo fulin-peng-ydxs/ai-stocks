@@ -115,9 +115,29 @@
 | 页面 | pageKey | archetype | #action | #main（growMain / 滚动归属） | #overlays | 状态 |
 | --- | --- | --- | --- | --- | --- | --- |
 | P4 用户管理 | `user-manage` | list | 工具栏(筛选/搜索/查询/新建) | `data-table`(growMain，表体内滚，宽表体内横滚) | 编辑 dialog + 重置密码 dialog + **settings-drawer** | loading/empty/error/no-perm |
-| P5 角色管理 | `role-manage` | master-detail | 页头 + 新建角色 | 左角色列表 + 右权限树（growMain=右树内滚；窄屏体内横滚） | 新建/重命名 dialog + **settings-drawer** | loading/empty(无角色)/error/no-perm |
-| P6 菜单与功能 | `menu-resource` | master-detail | 页头 + 新增菜单节点 | 左菜单树 + 右属性/功能表（growMain=右侧内滚；功能表体内横滚） | **settings-drawer**（本页表单内联，无编辑 dialog） | loading/empty/error/no-perm |
+| P5 角色管理 | `role-manage` | list | 页头 + 新建角色 | 左角色列表 + 右权限树（`section` 内主从：右树内滚；窄屏体内横滚） | 新建/重命名 dialog + **settings-drawer** | loading/empty(无角色)/error/no-perm |
+| P6 菜单与功能 | `menu-manage` | list | 页头 + 新增菜单节点 | 左菜单树 + 右属性/功能表（`section` 内主从：右侧内滚；功能表体内横滚） | 新增菜单节点 dialog + **settings-drawer** | loading/empty/error/no-perm |
 | P7 租户管理 | `tenant-manage` | list | 工具栏(筛选/搜索/查询/新建) | `data-table`(growMain，体内滚/横滚) | 编辑 dialog + **settings-drawer** | loading/empty/error/no-perm |
+
+> **实现口径修订（Codex 复审整改，2026-07-03）**——与计划初稿差异及原因，已同步实现/文档：
+> - **archetype：P5/P6 由 `master-detail` 改记为 `list`（含内部 `section` 主从）。** 经核代码：布局系统虽有 `master-detail` 原型，但 `LayoutHost` 对多 `main` slot 在 `allowReflow=false` 时按**纵向 scroll** 渲染、并不产出左右并排；全库无任一页面使用该 archetype。主从视觉一律以 `list`（或 workbench）+ 页面内 `section` flex 分栏实现（与既有 `LayoutPagesView` 等一致）。故此处是**修订计划贴合实现与框架事实**，非让 DESIGN 迁就实现。
+> - **pageKey：P6 由 `menu-resource` 改为 `menu-manage`**，与同组 `user-manage`/`role-manage`/`tenant-manage` 的 `*-manage` 命名一致（初稿 `menu-resource` 为孤例）。
+> - **P6 #overlays 增「新增菜单节点」dialog（初稿写"无编辑 dialog"）**：菜单**属性编辑**与**功能点增删改**均已按原型**表内联**（无 dialog）；仅**新建菜单节点**保留轻量 dialog——新节点需先录入不可变自然键 `code`+类型才能入树，原型对"新增菜单节点"仅留 toast 桩、无内联设计，dialog 是创建（非编辑）场景的合理承载。属"创建用 dialog、编辑走内联"的明确取舍。
+> - **P7 编辑弹窗状态段 → 行内启停**：原型编辑弹窗含"启用/停用"段；实现改为编辑弹窗只管名称/指定管理员，**启停走行内动作**（对齐后端 `update_tenant` 仅收 name+adminUserId、`set_status` 为独立端点且停用需"踢下线"二次确认）。属接口拆分驱动的取舍，已在此标注。
+
+### 4.6.1 Codex 复审整改清单（2026-07-03，全部已改 + 复验）
+- **P1 路由守卫 fail-open**（阻塞）：原 `beforeEach` 在 `/me` 失败、菜单空时会 `return true` 放行到未授权页壳。抽纯函数 `utils/permission.resolveMenuGuard` 改 **fail-closed**：未授权一律漏斗到首个授权菜单，无安全落点则回 `SAFE_HOME=/board`（已在落点才放行，防死循环），**绝不放行被请求的未授权页**。新增 6 例守卫单测（含"菜单空非 system 不 fail-open→重定向 SAFE_HOME"）。
+- **P2 v-permission 落地**：4 个管理页按钮由本地 `can()` 改走全局 `v-permission` 指令（脚本内 disabled/分支逻辑走共用 `hasPermission`），删除各页重复 `can()`，口径归一。
+- **P2 页面状态闭环**：4 页列表/主数据加载补 `error` 态 + 重试入口（`el-result`），不再只靠全局 toast；no-perm 由路由守卫（页级）+ v-permission（按钮级）覆盖。
+- **P2 组件级自动化测试**：新增 `directives/__tests__/permission.spec.ts`（指令无码移除元素）、`components/__tests__/SideMenu.spec.ts`（ready 按 menus 渲染 / error 显错误+重试且不露菜单 / loading）；`vitest.config` 加 `@vitejs/plugin-vue` + 逐文件 `jsdom` 环境。前端测试 100→**114**。
+- **P2 registry/DESIGN 一致性**：见 §4.6 修订块（archetype/pageKey/overlays 已同步计划与实现）；DESIGN §设置抽屉澄清"三段按内容条件渲染"。
+- **P3 el-checkbox `:label`→`:value`**（`ComponentAutoSettings.vue`，EP3.0 弃用）。
+- **P3 `tenant:delete` 功能码**：`pg_ddl._SEED_RESOURCES` 补齐（4 个租户动作全资源化），前端删除按钮改 `v-permission="'tenant:delete'"`；顺带修 `_seed_role_grants` 让 **system 角色幂等补齐全量授权**（原仅首次授权，存量库新增资源会致 system 授权缺口 / `test_system_role_full_grants` 失败）。
+- **原型一致性 P2 · 角色页右侧**：由默认 `el-tree` **重建为定制三级权限树** `PermissionTree.vue`（分组卡片 + 菜单行 + 功能点 chip 面板 + 图例 + 三态级联），承接 `role-management.html`。勾选态以「原子叶子集合」派生分组/菜单三态，`sysLocked` 子树置灰不可授。UI 全选→保存 API 复验：只授登录可见菜单/资源、**零 system 锁定项泄漏**。
+- **原型一致性 · 菜单页功能点**：由 dialog 改**表内联增删改**（承接原型 + 计划"表单内联"）。
+- **交付卫生**：`.gitignore` 由 `/**/screenshots*/**` 放宽为 `**/*screenshot*/`，覆盖 `page-test-screenshots/`。
+- **全量回归**：后端 `pytest` **398 passed**（先 `./start.sh stop` 释放 DuckDB 锁）；前端 `build` 绿 + `vitest` 114 passed；四页 preview 双主题 × 三档视口自验，无控制台错误。
+- **数据订正**：修复此前 T15 编码诊断误置 `/board` `parent_id=NULL`（已复原到 `quotes`）。
 
 - **弹窗/抽屉规范（DESIGN §4/§9）**：所有弹窗、settings-drawer 一律放 `#overlays` 插槽；dialog 短表单、自适应 `min(px,92vw)`、正文 max-height 内滚；**registry 页必须有 `settings-drawer` overlay**（`pageRegistry.spec.ts` 强制），三段"布局/组件设置/业务选项"，用 `PageSettingsDrawer`。
 - **组件/布局维护矩阵（page-template 要求）**：本阶段**不新增布局 archetype**（复用既有 list/master-detail）。**新增组件**：`IconPicker.vue`（EP 图标选择器，P6 用）——须登记维护矩阵：组件种类=图标选择器、消费字段=菜单 icon(图标名)、可配置旋钮=无（纯选择器）、样板接入=菜单与功能页；**settings-drawer 可编辑旋钮**：各页表格列显隐/密度（走 `ComponentAutoSettings` 既有渲染器，page/user 层），不新写第二套设置表单。
@@ -154,7 +174,7 @@
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6)+菜单接口守卫(T7)+功能接口守卫(T8)+租户接口守卫(T9·整 router require_system)已完成；**按钮级 v-permission 指令 + 路由守卫菜单校验(T15)已完成**（指令+守卫+纯逻辑单测，normal 用户越权路由重定向自验）。剩存量13业务路由的精确 resource code 接入=阶段四 R21 |
+| R8 | 接口级+按钮级 RBAC | require_perm 精确码机制 + v-permission + 新管理接口接入 | T2,T3,T4,T15 | 进行中 | 部分覆盖 | **存量13路由=阶段四R21**；机制(T2/T3/T4)+用户管理接口接入(T5)+角色接口守卫(T6)+菜单接口守卫(T7)+功能接口守卫(T8)+租户接口守卫(T9·整 router require_system)已完成；**按钮级 v-permission 指令 + 路由守卫菜单校验(T15)已完成**——Codex 复审整改后 **v-permission 已真正落到 4 个管理页模板**（原用本地 can()，现模板走 `v-permission`、脚本逻辑走共用 `utils/permission.hasPermission`，口径统一）；守卫补 fail-closed 修复（`resolveMenuGuard`）+ 指令/SideMenu/守卫组件测。剩存量13业务路由精确 resource code 接入=阶段四 R21 |
 | R9 | 私有资产 tenant_id+owner_user_id 读写自动过滤 | ①资产隔离(阶段一/二已完成)本阶段**回归复核**；②平台管理表(用户/租户)本阶段**新增**域过滤；③存量业务接口=阶段四 | T16(+T5,T9) | 已完成 | 一致 | 用户管理域过滤(T5,system 全局/tenant_admin 本租户/跨租户 404)+租户管理 require_system(T9) 已落地；**多账号交叉核查(T16)完成**：补 4 例锁死用户变更全动词跨租户 404 + 越权提角色 403，资产隔离回归 398 passed 绿。存量业务接口精确码=阶段四 R21 |
 | R10 | 用户管理(CRUD/启停/重置/多角色/租户) | user API+repo + 用户管理页(去勾选列) + roles/assignable 供角色下拉 | T5,T6,T11 | 进行中 | 一致 | 后端(T5)完成:多角色落 sys_user_role；可分配角色走 `roles/assignable`(require_perm user:list)，闭合 tenant_admin 分配链路；system 调用得含自建 custom、tenant_admin 仅系统预设（承接 R11「新建角色可被用户分配」） |
 | R11 | 角色管理(CRUD+授权+内置+全选/清空/还原) | role API+repo + 角色页(权限树+全选/清空/还原必做) | T6,T12 | 进行中 | 一致 | 后端(T6)完成：角色 CRUD/授权(全删重插+bump)/内置保护/超管锁定/system-only 码禁授/assignable 分流；`GET /api/roles/{id}/perms` 供前端权限树回显。角色页(T12·全选/清空/还原+三态树)已完成 |
