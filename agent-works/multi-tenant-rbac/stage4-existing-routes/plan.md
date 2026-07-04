@@ -539,7 +539,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 ### 6.10 任务 T9：前端权限测试与构建验证
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T6,T7
 - 涉及文件/模块：
   - `frontend/src/directives/__tests__/permission.spec.ts`
@@ -561,7 +561,11 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - `cd frontend && npm run build`
   - `cd frontend && npm test`
 - 完成标准：前端构建和 Vitest 通过。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成。
+  - **新增 [permission-tree.spec.ts](../../../frontend/src/views/system/__tests__/permission-tree.spec.ts)（5 用例）**：mount `PermissionTree`，断言 `baseline_locked` 功能点即便 `stateOf=off` 也恒勾选(is-checked)+置灰(is-disabled)+显「基线」标签、`toggle` 不触发（不可反选）；普通功能点随 `stateOf` 且可编辑；`sysLocked` 置灰且不勾选；`readonly` 全置灰。补上此前缺失的角色权限树 baseline 组件级覆盖。
+  - **新增 [stage4-permissions.spec.ts](../../../frontend/src/views/__tests__/stage4-permissions.spec.ts)（7 用例）**：业务/数据/布局三层**代表性工具栏 harness**（真实 `v-permission` 指令 + auth store + 真实按钮行），验证混合工具栏「无权仅移除对应写按钮、保留非受控基础操作(取消/刷新)、不留空白工具栏」及 system 恒全显。不整体 mount 业务 SFC（依赖 LayoutHost/composable/API，重且脆），逐码契约由 stage4-button-permission.spec.ts（T6，56 用例）覆盖。
+  - **既有覆盖**：`utils/permission.spec.ts`（21，多码判断 + system 恒过 + 守卫 fail-closed）、`directives/permission.spec.ts`（5）、`SideMenu.spec.ts`（3）、`manage-error-states.spec.ts`（4）、`stage4-button-permission.spec.ts`（56）。
+  - **验证**：`npm run build`（vue-tsc 类型检查 + vite build）通过；`npm test` 全量前端 **186 passed**（174 + 新增 12）。
 
 ### 6.11 任务 T10：文档治理和阶段状态回写
 
