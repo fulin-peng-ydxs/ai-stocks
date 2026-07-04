@@ -63,6 +63,10 @@ export const useAuthStore = defineStore('auth', {
       }
       this.tenant = { id: data.user.tenant_id }
       this.role = data.user.role
+      this.menus = []
+      this.permissions = []
+      this.menusStatus = 'idle'
+      inflightMe = null
       this._persist()
     },
 
@@ -72,12 +76,24 @@ export const useAuthStore = defineStore('auth', {
         account, password, captcha_id: opts.captchaId, captcha_code: opts.captchaCode,
       })
       this._applyLogin(data)
+      try {
+        await this.fetchMe()
+      } catch (e) {
+        this.clearLocal()
+        throw e
+      }
       return data
     },
 
     async register(payload: { account: string; password: string; email?: string; email_code?: string }) {
       const data = await authApi.register(payload)
       this._applyLogin(data)   // 注册后自动登录
+      try {
+        await this.fetchMe()
+      } catch (e) {
+        this.clearLocal()
+        throw e
+      }
       return data
     },
 

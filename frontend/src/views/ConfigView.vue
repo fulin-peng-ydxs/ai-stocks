@@ -689,6 +689,11 @@ async function previewSide(side: 'buy' | 'sell') {
 onMounted(async () => {
   tab.value = forcedTab.value || defaultTab.value
   try {
+    await auth.ensureLoaded()
+  } catch {
+    // /me 失败时后续接口会按权限 fail-closed，并由拦截器提示。
+  }
+  try {
     await reloadRegistry()
   } catch (e) { console.error('[config] reloadRegistry 失败', e) }
   if (!forcedTab.value || forcedTab.value === 'score') {
@@ -696,7 +701,7 @@ onMounted(async () => {
       await loadProfiles()
       if (profiles.value.length) await selectProfile(profiles.value[0].profile_ref || profiles.value[0].id)
       else newProfile()
-    } catch (e) { console.error('[config] 评分方案初始化失败', e); newProfile() }
+    } catch (e) { console.error('[config] 评分方案初始化失败', e) }
   }
   if (!forcedTab.value || forcedTab.value === 'trade') {
     try {
