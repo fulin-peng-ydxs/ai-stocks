@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm
 from backend.scoring.score_profile import ScoreProfileRepo
 from backend.storage import get_client
@@ -23,23 +24,40 @@ class ScoreProfileBody(BaseModel):
     grade_thresholds: dict | None = None
 
 
+class ScoreProfileVisibilityBody(BaseModel):
+    visibility: str
+
+
+class ScoreProfileCopyBody(BaseModel):
+    id: str
+    name: str | None = None
+
+
+def _has_perm(code: str) -> bool:
+    ctx = get_current_context()
+    if ctx is None:
+        return False
+    return ctx.is_system or code in ctx.resources
+
+
 @router.get("/score-profiles", response_model=ApiResponse,
             dependencies=[Depends(require_perm("score-profile:view"))])
 def list_score_profiles() -> ApiResponse:
-    return ok(ScoreProfileRepo().list())
+    return ok(ScoreProfileRepo().list_visible())
 
 
 @router.get("/score-profiles/{pid}", response_model=ApiResponse,
             dependencies=[Depends(require_perm("score-profile:view"))])
 def get_score_profile(pid: str) -> ApiResponse:
-    p = ScoreProfileRepo().get(pid)
+    p = ScoreProfileRepo().get_visible(pid)
     return ok(p) if p else err(404, "方案不存在")
 
 
 @router.get("/score-profiles/{pid}/versions", response_model=ApiResponse,
             dependencies=[Depends(require_perm("score-profile:view"))])
 def score_profile_versions(pid: str) -> ApiResponse:
-    return ok({"id": pid, "versions": ScoreProfileRepo().versions(pid)})
+    data = ScoreProfileRepo().versions_visible(pid)
+    return ok(data) if data else err(404, "方案不存在")
 
 
 @router.post("/score-profiles", response_model=ApiResponse,
@@ -55,8 +73,42 @@ def save_score_profile(body: ScoreProfileBody) -> ApiResponse:
 @router.delete("/score-profiles/{pid}", response_model=ApiResponse,
                dependencies=[Depends(require_perm("score-profile:delete"))])
 def delete_score_profile(pid: str) -> ApiResponse:
-    ScoreProfileRepo().delete(pid)
+    repo = ScoreProfileRepo()
+    p = repo.get_visible(pid, include_owner=True)
+    if not p:
+        return err(404, "方案不存在")
+    if p.get("readonly"):
+        return err(403, "只能删除自己的评分方案")
+    repo.delete(p["id"])
     return ok({"msg": "已删除"})
+
+
+@router.post("/score-profiles/{pid}/visibility", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("score-profile:view"))])
+def set_score_profile_visibility(pid: str, body: ScoreProfileVisibilityBody) -> ApiResponse:
+    visibility = body.visibility
+    if visibility == "tenant" and not _has_perm("score-profile:publish-tenant"):
+        return err(403, "无权公开到租户")
+    if visibility == "public" and not _has_perm("score-profile:publish-public"):
+        return err(403, "无权公开到全体用户")
+    repo = ScoreProfileRepo()
+    try:
+        p = repo.set_visibility(pid, visibility, published_by=get_current_context().user_id)  # type: ignore[union-attr]
+    except ValueError as e:
+        return err(400, str(e))
+    except PermissionError as e:
+        return err(403, str(e))
+    return ok(p) if p else err(404, "方案不存在")
+
+
+@router.post("/score-profiles/{pid}/copy", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("score-profile:save"))])
+def copy_score_profile(pid: str, body: ScoreProfileCopyBody) -> ApiResponse:
+    try:
+        version = ScoreProfileRepo().copy_visible(pid, body.id, body.name)
+    except ValueError as e:
+        return err(404, str(e))
+    return ok({"id": body.id, "version": version, "msg": "已复制"})
 
 
 @router.post("/score-profiles/run", response_model=ApiResponse,
@@ -79,10 +131,14 @@ def run_score_profile(body: dict) -> ApiResponse:
     top = int(body.get("top", 50))
 
     if body.get("profile_id"):
-        prof = repo.get(body["profile_id"])
+        prof = repo.get_visible(body["profile_id"], include_owner=True)
         if not prof:
             return err(404, "方案不存在")
-        board = ScoreSnapshotRepo(c).get_board(run_date, body["profile_id"], top=top, profile=prof)
+        board = ScoreSnapshotRepo(
+            c,
+            tenant_id=prof["tenant_id"],
+            owner_user_id=prof["owner_user_id"],
+        ).get_board(run_date, prof["id"], top=top, profile=prof)
     else:
         # 未保存方案：实时打分（不入快照，无版本键）
         prof = {"items": body.get("items", []), "grade_thresholds": body.get("grade_thresholds")}

@@ -90,11 +90,19 @@ def test_tenant_admin_me_filtered(svc, env):
     ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
     me = svc.me(ta)
     idx = _indexes(me["menus"])
-    # 业务全含 + 系统>权限>用户管理可达
+    # 业务全含 + 系统>配置管理/权限管理可达
     assert {"quotes", "/stocks", "/screen", "/backtest", "/training"} <= idx
-    assert {"system", "permission", "/system/users"} <= idx
-    # 系统专属分支隐藏：数据管理、配置、角色/菜单/租户管理均不可见
-    assert "data" not in idx and "/system/config" not in idx
+    assert {
+        "system",
+        "/system/config",
+        "/system/config/score",
+        "/system/config/trade",
+        "permission",
+        "/system/users",
+    } <= idx
+    # 系统专属分支隐藏：数据管理、技术指标、系统设置、角色/菜单/租户管理均不可见
+    assert "data" not in idx
+    assert {"/system/config/tech", "/system/config/system"} & idx == set()
     assert {"/system/roles", "/system/menus", "/system/tenants"} & idx == set()
     # 功能码：含 user:*，不含系统专属码
     assert "user:list" in me["permissions"] and "user:delete" in me["permissions"]
@@ -119,8 +127,9 @@ def test_normal_me_business_only(svc, env):
     me = svc.me(nu)
     idx = _indexes(me["menus"])
     assert {"quotes", "/stocks", "/board", "/screen", "/backtest", "/training"} <= idx
-    # 系统分组整体不可见（无任何被授权子节点 → 空组剪除）
-    assert "system" not in idx and "permission" not in idx and "data" not in idx
+    assert {"system", "/system/config", "/system/config/score", "/system/config/trade"} <= idx
+    assert "permission" not in idx and "data" not in idx
+    assert {"/system/config/tech", "/system/config/system"} & idx == set()
     # stage4·R21：baseline 基线共享读对非 system 业务用户**强制注入**（与 role_resource 授权无关，恒有）
     perms = set(me["permissions"])
     assert {"layout:view", "trade-calendar:view", "indicator:registry"} <= perms

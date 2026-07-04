@@ -36,6 +36,9 @@ SHARED_RESOURCE_CODES: tuple[str, ...] = (
 # 不含 baseline（那是强制注入、非授权）与 system-only（挂 visible='system' 菜单，非 system 授不了）。
 BUSINESS_RESOURCE_CODES: tuple[str, ...] = (
     "board:view", "board:compute", "score:run", "layout:user-config",
+    "score-profile:view", "score-profile:save", "score-profile:delete",
+    "score-profile:publish-tenant",
+    "trade-profile:view", "trade-profile:save", "trade-profile:delete", "trade-profile:preview",
     "screen-profile:view", "screen-profile:save", "screen-profile:delete", "screen:run",
     "stocks:view", "stocks:trade-eval",
     "stock-group:view", "stock-group:create", "stock-group:update", "stock-group:delete",

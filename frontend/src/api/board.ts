@@ -73,17 +73,26 @@ export function computeBoard(
   })
 }
 
-// ── 公共榜单（C1 平台公共榜单特例）──
-// 榜单页对全体登录用户共享同一份公共预设方案 + 已物化公共评分（board:view 守卫，读 PUBLIC_BOARD_OWNER）。
-// 有意区别于 /score-profiles（score-profile:view，system-only + 按调用者归属，供配置页/个人试算）。
+// ── 可见方案榜单（board:view）──
+// 方案来自“自己的 + 同租户公开 + 全体公开 + 平台内置预设”，榜单快照写入方案 owner 的共享缓存槽。
 export function listBoardProfiles(): Promise<ScoreProfileSummary[]> {
   return http.get('/board/profiles')
 }
 export function runBoardProfile(body: {
-  profile_id: string
+  profile_ref?: string
+  profile_id?: string
   run_date?: string
   top?: number
-}): Promise<{ run_date: string; top: number; count: number; list: ScoreRunRow[] }> {
+  force?: boolean
+}): Promise<{
+  run_date: string
+  top: number
+  count: number
+  profile_ref?: string
+  profile_version?: number
+  cache_status?: 'cached' | 'materialized'
+  list: ScoreRunRow[]
+}> {
   return http.post('/board/run', body)
 }
 

@@ -209,8 +209,12 @@ CREATE TABLE IF NOT EXISTS score_profile (
     items            TEXT,
     grade_thresholds TEXT,
     is_preset        BOOLEAN,
+    visibility       TEXT NOT NULL DEFAULT 'private',
+    published_at     TIMESTAMP,
+    published_by     TEXT,
     created_at       TIMESTAMP,
     updated_at       TIMESTAMP,
+    CHECK (visibility IN ('private', 'tenant', 'public')),
     PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
@@ -639,7 +643,12 @@ _SEED_MENU_TREE: list = [
         ("/data/schedule", "任务调度", None, "system", []),
     ]),
     ("system", "系统管理", "Setting", "login", [
-        ("/system/config", "配置管理", None, "system", []),
+        ("/system/config", "配置管理", "Files", "login", [
+            ("/system/config/score", "评分规则", None, "login", []),
+            ("/system/config/trade", "买卖指标", None, "login", []),
+            ("/system/config/tech", "技术指标", None, "system", []),
+            ("/system/config/system", "系统设置", None, "system", []),
+        ]),
         ("layout", "布局配置", "Brush", "system", [
             ("/system/layout/presets", "预设管理", None, "system", []),
             ("/system/layout/pages", "页面布局", None, "system", []),
@@ -689,7 +698,7 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     # B) 每日榜单（/board，login）
     ("/board", "board:view",         "查看每日榜单",     "api", "GET",  "/api/scores/top"),
     ("/board", "board:compute",      "榜单即时计算",     "api", "GET",  "/api/board/compute"),
-    ("/board", "score:run",          "评分方案打分",     "api", "POST", "/api/score-profiles/run"),
+    ("/system/config/score", "score:run", "评分方案打分", "api", "POST", "/api/score-profiles/run"),
     ("/board", "layout:user-config", "保存个人页面偏好", "api", "POST", "/api/layout/users/{page_key}"),
     # B) 策略筛选（/screen，login）
     ("/screen", "screen-profile:view",   "查看筛选方案", "api", "GET",    "/api/profiles"),
@@ -715,17 +724,19 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/training", "training:trade",  "训练过程操作", "api", "POST",   "/api/training/sessions/{sid}/trade"),
     ("/training", "training:review", "保存训练复盘", "api", "PATCH",  "/api/training/sessions/{sid}/review"),
     ("/training", "training:delete", "删除训练",     "api", "DELETE", "/api/training/sessions/{sid}"),
-    # C) 配置管理（/system/config，visible=system → system_only；含评分/买卖方案 API，阶段五拆页后移菜单开放）
-    ("/system/config", "score-profile:view",    "查看评分方案",     "api", "GET",    "/api/score-profiles"),
-    ("/system/config", "score-profile:save",    "保存评分方案",     "api", "POST",   "/api/score-profiles"),
-    ("/system/config", "score-profile:delete",  "删除评分方案",     "api", "DELETE", "/api/score-profiles/{pid}"),
-    ("/system/config", "trade-profile:view",    "查看买卖方案",     "api", "GET",    "/api/trade-profiles"),
-    ("/system/config", "trade-profile:save",    "保存买卖方案",     "api", "POST",   "/api/trade-profiles"),
-    ("/system/config", "trade-profile:delete",  "删除买卖方案",     "api", "DELETE", "/api/trade-profiles/{pid}"),
-    ("/system/config", "trade-profile:preview", "买卖条件试算",     "api", "POST",   "/api/trade-profiles/preview"),
-    ("/system/config", "config:view",           "查看系统配置",     "api", "GET",    "/api/config"),
-    ("/system/config", "config:reload",         "重载系统配置",     "api", "POST",   "/api/config/reload"),
-    ("/system/config", "indicator:def-manage",  "技术指标定义维护", "api", "POST",   "/api/indicators/def"),
+    # C) 配置管理拆页：评分/买卖为业务可授权，技术指标/系统设置仍 system-only
+    ("/system/config/score", "score-profile:view",           "查看评分方案",       "api", "GET",    "/api/score-profiles"),
+    ("/system/config/score", "score-profile:save",           "保存评分方案",       "api", "POST",   "/api/score-profiles"),
+    ("/system/config/score", "score-profile:delete",         "删除评分方案",       "api", "DELETE", "/api/score-profiles/{pid}"),
+    ("/system/config/score", "score-profile:publish-tenant", "租户内公开评分方案", "api", "POST",   "/api/score-profiles/{pid}/visibility"),
+    ("/system/config/score", "score-profile:publish-public", "全体公开评分方案",   "api", "POST",   "/api/score-profiles/{pid}/visibility"),
+    ("/system/config/trade", "trade-profile:view",    "查看买卖方案",     "api", "GET",    "/api/trade-profiles"),
+    ("/system/config/trade", "trade-profile:save",    "保存买卖方案",     "api", "POST",   "/api/trade-profiles"),
+    ("/system/config/trade", "trade-profile:delete",  "删除买卖方案",     "api", "DELETE", "/api/trade-profiles/{pid}"),
+    ("/system/config/trade", "trade-profile:preview", "买卖条件试算",     "api", "POST",   "/api/trade-profiles/preview"),
+    ("/system/config/system", "config:view",           "查看系统配置",     "api", "GET",    "/api/config"),
+    ("/system/config/system", "config:reload",         "重载系统配置",     "api", "POST",   "/api/config/reload"),
+    ("/system/config/tech", "indicator:def-manage",  "技术指标定义维护", "api", "POST",   "/api/indicators/def"),
     # C) 布局平台配置（system-only）
     ("/system/layout/presets",    "layout:preset-manage", "布局预设管理", "api", "POST", "/api/layout/presets"),
     ("/system/layout/pages",      "layout:page-manage",   "页面布局管理", "api", "POST", "/api/layout/pages/{page_key}"),
@@ -743,7 +754,8 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
 
 # 默认授权：业务页所有登录用户可用；用户管理授予租户管理员（管本租户用户）；system 由 resolver 判全量。
 _BUSINESS_MENU_CODES: tuple[str, ...] = (
-    "quotes", "/stocks", "/board", "/screen", "/backtest", "/training")
+    "quotes", "/stocks", "/board", "/screen", "/backtest", "/training",
+    "system", "/system/config", "/system/config/score", "/system/config/trade")
 _TENANT_ADMIN_EXTRA_MENUS: tuple[str, ...] = ("system", "permission", "/system/users")
 _USER_RESOURCE_CODES: tuple[str, ...] = (
     "user:list", "user:create", "user:update",
@@ -768,6 +780,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         log.debug("PG RBAC 表已就绪: %s", name)
     for idx_sql in _RBAC_INDEXES:
         client.execute(idx_sql)
+    _upgrade_score_profile_visibility(client)
     # layout 主键以 user_id 打头，补归属索引便于按 owner 统计；其余表复合主键已覆盖归属查询
     client.execute(
         "CREATE INDEX IF NOT EXISTS idx_layout_user_config_owner "
@@ -783,6 +796,33 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     seed_default_tenant(client)   # 先补 admin=system 的 role_code，供 seed_rbac 建 user_role 用
     seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 存量用户按 role_code 补 user_role
     return created
+
+
+def _upgrade_score_profile_visibility(client: PostgresClient) -> None:
+    """补齐评分方案公开能力字段并回填平台预设可见性。"""
+    client.execute(
+        "ALTER TABLE score_profile "
+        "ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'private'")
+    client.execute("ALTER TABLE score_profile ADD COLUMN IF NOT EXISTS published_at TIMESTAMP")
+    client.execute("ALTER TABLE score_profile ADD COLUMN IF NOT EXISTS published_by TEXT")
+    client.execute(
+        "DO $$ BEGIN "
+        "IF NOT EXISTS ("
+        "SELECT 1 FROM pg_constraint WHERE conname='score_profile_visibility_check'"
+        ") THEN "
+        "ALTER TABLE score_profile ADD CONSTRAINT score_profile_visibility_check "
+        "CHECK (visibility IN ('private', 'tenant', 'public')); "
+        "END IF; END $$;")
+    client.execute(
+        "UPDATE score_profile SET visibility='public', "
+        "published_at=COALESCE(published_at, updated_at, created_at, now()), "
+        "published_by=COALESCE(published_by, %s) "
+        "WHERE tenant_id=%s AND owner_user_id=%s AND is_preset IS TRUE",
+        [DEFAULT_OWNER_USER_ID, *PUBLIC_BOARD_OWNER],
+    )
+    client.execute(
+        "CREATE INDEX IF NOT EXISTS idx_score_profile_visibility "
+        "ON score_profile (visibility, tenant_id, owner_user_id)")
 
 
 def _resolve_admin_password() -> tuple[str, bool]:
@@ -895,8 +935,19 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
             "INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
             [code, menu_code, code, name, rtype, method, path, i * 10])
+        if (
+            code == "score:run"
+            or code.startswith("score-profile:")
+            or code.startswith("trade-profile:")
+            or code in {"config:view", "config:reload", "indicator:def-manage"}
+        ):
+            client.execute(
+                "UPDATE sys_resource SET menu_id=%s, name=%s, type=%s, api_method=%s, "
+                "api_path=%s, is_builtin=TRUE WHERE id=%s",
+                [menu_code, name, rtype, method, path, code])
     # 4) 默认授权（仅首次）
     _seed_role_grants(client, [m["code"] for m in menu_rows])
+    _backfill_config_split_builtin_grants(client)
     # 5) 存量用户 → sys_user_role（按 role_code JOIN 已存在的内置角色）
     client.execute(
         "INSERT INTO sys_user_role (user_id, role_id) "
@@ -937,6 +988,40 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
             client.execute(
                 "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
                 "ON CONFLICT DO NOTHING", [role_id, rid])
+
+
+def _backfill_config_split_builtin_grants(client: PostgresClient) -> None:
+    """配置管理拆页存量回填：评分/买卖给业务角色，系统子页保持 system-only。"""
+    client.execute("DELETE FROM sys_role_menu WHERE menu_id=%s", ["/score-profiles"])
+    client.execute("DELETE FROM sys_menu WHERE id=%s", ["/score-profiles"])
+    client.execute(
+        "UPDATE sys_menu SET parent_id=%s, title=%s, type=%s, route_path=NULL, icon=%s, "
+        "visible=%s, is_builtin=TRUE WHERE id=%s",
+        ["system", "配置管理", "group", "Files", "login", "/system/config"],
+    )
+    for role_id in (ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID):
+        for mid in ("system", "/system/config", "/system/config/score", "/system/config/trade"):
+            client.execute(
+                "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING",
+                [role_id, mid],
+            )
+        for rid in (
+            "score:run",
+            "score-profile:view",
+            "score-profile:save",
+            "score-profile:delete",
+            "score-profile:publish-tenant",
+            "trade-profile:view",
+            "trade-profile:save",
+            "trade-profile:delete",
+            "trade-profile:preview",
+        ):
+            client.execute(
+                "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING",
+                [role_id, rid],
+            )
 
 
 def asset_pk_mismatches(client: PostgresClient | None = None) -> list[str]:

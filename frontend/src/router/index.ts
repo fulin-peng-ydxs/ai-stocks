@@ -18,13 +18,36 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/BoardView.vue'),
     meta: { title: '每日榜单' },
   },
+  { path: '/score-profiles', redirect: '/system/config/score' },
   // 系统管理父菜单（P9 IA 归位）：系统配置 + 布局配置（三孙工作区）统一收入 /system/* 下。
   // 旧路由 /config、/layout-config/* 直接废弃、不做重定向（单用户本地、无外部书签）。
   {
     path: '/system/config',
-    name: 'config',
+    redirect: '/system/config/score',
+  },
+  {
+    path: '/system/config/score',
+    name: 'config-score',
     component: () => import('@/views/ConfigView.vue'),
-    meta: { title: '配置管理' },
+    meta: { title: '评分规则', configTab: 'score' },
+  },
+  {
+    path: '/system/config/trade',
+    name: 'config-trade',
+    component: () => import('@/views/ConfigView.vue'),
+    meta: { title: '买卖指标', configTab: 'trade' },
+  },
+  {
+    path: '/system/config/tech',
+    name: 'config-tech',
+    component: () => import('@/views/ConfigView.vue'),
+    meta: { title: '技术指标', configTab: 'tech' },
+  },
+  {
+    path: '/system/config/system',
+    name: 'config-system',
+    component: () => import('@/views/ConfigView.vue'),
+    meta: { title: '系统设置', configTab: 'system' },
   },
   // 系统管理 › 权限管理（阶段三 RBAC）：用户管理页（P4）。按钮走 v-permission，菜单/守卫按后端权限（T15）。
   {

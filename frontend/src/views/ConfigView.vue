@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import {
+  copyScoreProfile,
   deleteIndicatorDef,
   deleteScoreProfile,
   getIndicatorRegistry,
@@ -11,6 +14,7 @@ import {
   runScoreProfile,
   saveIndicatorDef,
   saveScoreProfile,
+  setScoreProfileVisibility,
   setIndicatorCategories,
   setIndicatorEnabled,
   type IndicatorDef,
@@ -31,8 +35,22 @@ import { getSettingsView, saveSettings, type SettingGroup } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/utils/permission'
 
 const settingsOpen = ref(false)
+const route = useRoute()
+const auth = useAuthStore()
+type ConfigTab = 'score' | 'tech' | 'trade' | 'system'
+const forcedTab = computed<ConfigTab | null>(() => (route.meta.configTab as ConfigTab | undefined) ?? null)
+const singleTab = computed(() => !!forcedTab.value)
+const pageTitle = computed(() => {
+  if (forcedTab.value === 'score') return '评分规则'
+  if (forcedTab.value === 'trade') return '买卖指标'
+  if (forcedTab.value === 'tech') return '技术指标'
+  if (forcedTab.value === 'system') return '系统设置'
+  return '配置管理'
+})
 // 默认 Tab 迁入组件配置层（tabs.defaultActive，用户层可记忆）；技术指标排序/预览展开属业务态保留（plan.md §13.3）。
 const configDefaults = {
   techSort: 'catOrder' as 'catOrder' | 'name_cn' | 'srcLabel',
@@ -60,10 +78,9 @@ const {
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
-type ConfigTab = 'score' | 'tech' | 'trade' | 'system'
 // 默认 Tab 由 ComponentAutoSettings 自动渲染写值；页面只读 getter 同步当前 tab。
 const defaultTab = computed<ConfigTab>(() => (componentValueOf('tabs', 'defaultActive') as ConfigTab) ?? 'score')
-const tab = ref<ConfigTab>(defaultTab.value)
+const tab = ref<ConfigTab>(forcedTab.value || defaultTab.value)
 
 // ── 系统设置（FR-DM-12：真实参数 Web 可编辑，写 app_config 覆盖层）──
 const sysGroups = ref<SettingGroup[]>([])
@@ -99,8 +116,15 @@ async function saveSystem() {
     await loadSystem()
   } catch { /* 拦截器弹错（含校验失败 400） */ } finally { sysSaving.value = false }
 }
-function onTab(name: unknown) { if (name === 'system' && !sysGroups.value.length) loadSystem() }
-watch(defaultTab, (value) => { tab.value = value })
+function onTab(name: unknown) {
+  if (forcedTab.value) {
+    tab.value = forcedTab.value
+    return
+  }
+  if (name === 'system' && !sysGroups.value.length) loadSystem()
+}
+watch(defaultTab, (value) => { tab.value = forcedTab.value || value })
+watch(forcedTab, (value) => { if (value) tab.value = value })
 
 // ── 技术指标注册表（含内置 + 自定义）──
 const registry = ref<IndicatorDef[]>([])
@@ -208,13 +232,36 @@ async function submitNewDef() {
 
 // ── 评分方案 ──
 const profiles = ref<ScoreProfileSummary[]>([])
+const curRef = ref<string>('')
 const curId = ref<string>('')
 const curVersion = ref<number | null>(null)
 const editId = ref('')
 const editName = ref('')
 const items = ref<ScoreItem[]>([])
 const saving = ref(false)
+const visibilitySaving = ref(false)
 const isNew = ref(false)
+const profileReadonly = ref(false)
+const profileVisibility = ref<'private' | 'tenant' | 'public'>('private')
+const canPublishTenant = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'score-profile:publish-tenant'),
+)
+const canPublishPublic = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'score-profile:publish-public'),
+)
+const canEditProfileVisibility = computed(() =>
+  !!curRef.value && !isNew.value && !profileReadonly.value && (canPublishTenant.value || canPublishPublic.value),
+)
+const profileVisibilityLabel = computed(() => {
+  if (profileVisibility.value === 'tenant') return '租户公开'
+  if (profileVisibility.value === 'public') return '全体公开'
+  return '私有'
+})
+const profileVisibilityTagType = computed(() => {
+  if (profileVisibility.value === 'tenant') return 'success'
+  if (profileVisibility.value === 'public') return 'warning'
+  return 'info'
+})
 
 const weightSum = computed(() =>
   Math.round(items.value.reduce((s, it) => s + (it.weight || 0), 0) * 100),
@@ -224,14 +271,17 @@ async function loadProfiles() {
   profiles.value = await listScoreProfiles()
 }
 
-async function selectProfile(pid: string) {
-  const p = await getScoreProfile(pid)
+async function selectProfile(profileKey: string) {
+  const p = await getScoreProfile(profileKey)
+  curRef.value = p.profile_ref || profileKey
   curId.value = p.id
   curVersion.value = p.version
   editId.value = p.id
   editName.value = p.name
   items.value = JSON.parse(JSON.stringify(p.items))
   items.value.forEach(ensureParams)
+  profileReadonly.value = !!p.readonly
+  profileVisibility.value = p.visibility || 'private'
   isNew.value = false
 }
 
@@ -239,8 +289,8 @@ async function selectProfile(pid: string) {
 const sVerVisible = ref(false)
 const sVersions = ref<ScoreProfileVersion[]>([])
 async function openScoreVersions() {
-  if (!curId.value) return
-  sVersions.value = (await getScoreProfileVersions(curId.value)).versions
+  if (!curRef.value) return
+  sVersions.value = (await getScoreProfileVersions(curRef.value)).versions
   sVerVisible.value = true
 }
 function restoreScoreVersion(v: ScoreProfileVersion) {
@@ -260,11 +310,14 @@ function ensureParams(item: ScoreItem) {
 }
 
 function newProfile() {
+  curRef.value = ''
   curId.value = ''
   curVersion.value = null
   editId.value = ''
   editName.value = ''
   items.value = []
+  profileReadonly.value = false
+  profileVisibility.value = 'private'
   isNew.value = true
 }
 
@@ -345,6 +398,10 @@ function removeBand(item: ScoreItem, i: number) {
 }
 
 async function save() {
+  if (profileReadonly.value) {
+    ElMessage.warning('公开方案为只读，请先复制为自己的方案')
+    return
+  }
   if (!editId.value || !editName.value) {
     ElMessage.warning('请填写方案 ID 和名称')
     return
@@ -365,18 +422,57 @@ async function save() {
     isNew.value = false
     curId.value = editId.value
     await loadProfiles()
+    const saved = profiles.value.find((p) => p.id === editId.value && p.source === 'mine')
+    if (saved) curRef.value = saved.profile_ref || saved.id
   } finally {
     saving.value = false
   }
 }
 
 async function remove() {
-  if (!curId.value) return
+  if (!curRef.value || profileReadonly.value) return
   await ElMessageBox.confirm(`确认删除方案「${editName.value}」？`, '提示', { type: 'warning' })
-  await deleteScoreProfile(curId.value)
+  await deleteScoreProfile(curRef.value)
   ElMessage.success('已删除')
   newProfile()
   await loadProfiles()
+}
+
+async function publishScoreProfile(visibility: 'private' | 'tenant' | 'public') {
+  if (!curRef.value || profileReadonly.value || visibilitySaving.value) return
+  if (visibility === profileVisibility.value) return
+  if (visibility === 'tenant' && !canPublishTenant.value) {
+    ElMessage.warning('无权公开到租户')
+    return
+  }
+  if (visibility === 'public' && !canPublishPublic.value) {
+    ElMessage.warning('无权公开到全体用户')
+    return
+  }
+  visibilitySaving.value = true
+  try {
+    const p = await setScoreProfileVisibility(curRef.value, visibility)
+    profileVisibility.value = p.visibility || visibility
+    ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
+    await loadProfiles()
+  } finally {
+    visibilitySaving.value = false
+  }
+}
+
+function onProfileVisibilityCommand(command: string | number | object) {
+  if (command !== 'private' && command !== 'tenant' && command !== 'public') return
+  publishScoreProfile(command)
+}
+
+async function copyCurrentScoreProfile() {
+  if (!curRef.value) return
+  const id = `${curId.value || 'score'}_copy`
+  await copyScoreProfile(curRef.value, { id, name: `${editName.value || '评分方案'} 副本` })
+  ElMessage.success('已复制为我的方案')
+  await loadProfiles()
+  const copied = profiles.value.find((p) => p.id === id && p.source === 'mine')
+  if (copied) await selectProfile(copied.profile_ref || copied.id)
 }
 
 // ── 试算 ──
@@ -579,20 +675,27 @@ async function previewSide(side: 'buy' | 'sell') {
 }
 
 onMounted(async () => {
-  tab.value = defaultTab.value
+  tab.value = forcedTab.value || defaultTab.value
   try {
     await reloadRegistry()
   } catch (e) { console.error('[config] reloadRegistry 失败', e) }
-  try {
-    await loadProfiles()
-    if (profiles.value.length) await selectProfile(profiles.value[0].id)
-    else newProfile()
-  } catch (e) { console.error('[config] 评分方案初始化失败', e); newProfile() }
-  try {
-    await loadTradeProfiles()
-    if (tProfiles.value.length) await selectTradeProfile(tProfiles.value[0].id)
-    else newTradeProfile()
-  } catch (e) { console.error('[config] 买卖方案初始化失败', e); newTradeProfile() }
+  if (!forcedTab.value || forcedTab.value === 'score') {
+    try {
+      await loadProfiles()
+      if (profiles.value.length) await selectProfile(profiles.value[0].profile_ref || profiles.value[0].id)
+      else newProfile()
+    } catch (e) { console.error('[config] 评分方案初始化失败', e); newProfile() }
+  }
+  if (!forcedTab.value || forcedTab.value === 'trade') {
+    try {
+      await loadTradeProfiles()
+      if (tProfiles.value.length) await selectTradeProfile(tProfiles.value[0].id)
+      else newTradeProfile()
+    } catch (e) { console.error('[config] 买卖方案初始化失败', e); newTradeProfile() }
+  }
+  if (forcedTab.value === 'system') {
+    try { await loadSystem() } catch (e) { console.error('[config] 系统设置初始化失败', e) }
+  }
 })
 </script>
 
@@ -600,7 +703,7 @@ onMounted(async () => {
   <LayoutHost :layout="configEffective">
     <template #action>
     <div class="page-head">
-      <h2 class="page-title">配置管理</h2>
+      <h2 class="page-title">{{ pageTitle }}</h2>
       <div class="page-head-actions">
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
@@ -611,7 +714,7 @@ onMounted(async () => {
     <div class="config-body">
     <el-tabs v-model="tab" class="tabs" @tab-change="onTab">
       <!-- ============ 评分规则 ============ -->
-      <el-tab-pane label="评分规则" name="score">
+      <el-tab-pane v-if="!forcedTab || forcedTab === 'score'" label="评分规则" name="score">
         <div class="score-layout pane-fill">
           <!-- 方案列表 -->
           <aside class="prof-list">
@@ -621,12 +724,15 @@ onMounted(async () => {
             <ul>
               <li
                 v-for="p in profiles"
-                :key="p.id"
-                :class="{ active: p.id === curId }"
-                @click="selectProfile(p.id)"
+                :key="p.profile_ref || p.id"
+                :class="{ active: (p.profile_ref || p.id) === curRef }"
+                @click="selectProfile(p.profile_ref || p.id)"
               >
                 <span>{{ p.name }}</span>
                 <el-tag v-if="p.is_preset" size="small" type="info">预设</el-tag>
+                <el-tag v-else-if="p.source === 'mine'" size="small" type="primary" effect="plain">我的</el-tag>
+                <el-tag v-else-if="p.source === 'tenant'" size="small" type="success" effect="plain">租户公开</el-tag>
+                <el-tag v-else-if="p.source === 'public'" size="small" type="warning" effect="plain">全体公开</el-tag>
               </li>
             </ul>
           </aside>
@@ -635,12 +741,46 @@ onMounted(async () => {
           <section class="editor editor-score">
             <div class="ed-head">
               <el-input v-model="editId" :disabled="!isNew" placeholder="方案ID(英文)" style="width: 180px" />
-              <el-input v-model="editName" placeholder="方案名称" style="width: 200px" />
+              <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
               <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openScoreVersions">v{{ curVersion }}</span>
+              <el-dropdown
+                v-if="canEditProfileVisibility"
+                trigger="click"
+                :hide-on-click="true"
+                @command="onProfileVisibilityCommand"
+              >
+                <el-tag
+                  class="visibility-trigger"
+                  :type="profileVisibilityTagType"
+                  size="small"
+                  effect="plain"
+                >
+                  {{ profileVisibilityLabel }}
+                  <el-icon class="visibility-arrow"><ArrowDown /></el-icon>
+                </el-tag>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="private" :disabled="profileVisibility === 'private' || visibilitySaving">
+                      私有
+                    </el-dropdown-item>
+                    <el-dropdown-item command="tenant" :disabled="profileVisibility === 'tenant' || !canPublishTenant || visibilitySaving">
+                      租户公开
+                    </el-dropdown-item>
+                    <el-dropdown-item command="public" :disabled="profileVisibility === 'public' || !canPublishPublic || visibilitySaving">
+                      全体公开
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-tag v-else-if="!isNew" :type="profileVisibilityTagType" size="small" effect="plain">
+                {{ profileVisibilityLabel }}
+              </el-tag>
+              <el-tag v-if="profileReadonly" size="small" type="info" effect="plain">只读</el-tag>
               <span class="wsum" :class="{ bad: weightSum !== 100 }">权重合计 {{ weightSum }}%</span>
               <div class="spacer" />
-              <el-button v-permission="'score-profile:save'" :loading="saving" type="primary" @click="save">保存</el-button>
-              <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew" type="danger" plain @click="remove">删除</el-button>
+              <el-button v-if="profileReadonly" v-permission="'score-profile:save'" plain @click="copyCurrentScoreProfile">复制为我的方案</el-button>
+              <el-button v-permission="'score-profile:save'" :disabled="profileReadonly" :loading="saving" type="primary" @click="save">保存</el-button>
+              <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
             </div>
 
             <p class="hint">
@@ -651,7 +791,7 @@ onMounted(async () => {
             <el-table :data="items" size="small" border class="item-table">
               <el-table-column label="指标" width="186">
                 <template #default="{ row }">
-                  <el-select v-model="row.indicator" size="small" filterable @change="onIndicatorChange(row)">
+                  <el-select v-model="row.indicator" size="small" filterable :disabled="profileReadonly" @change="onIndicatorChange(row)">
                     <el-option v-for="d in scorable" :key="d.key" :label="d.name_cn" :value="d.key" />
                   </el-select>
                   <!-- 动态参数（如 连续上涨N天 的 N）-->
@@ -662,6 +802,7 @@ onMounted(async () => {
                         v-model="row.params![p.name]"
                         size="small"
                         :controls="false"
+                        :disabled="profileReadonly"
                         :min="p.min ?? undefined"
                         :max="p.max ?? undefined"
                         style="width: 64px"
@@ -679,13 +820,13 @@ onMounted(async () => {
                       size="small"
                       @change="(v: string) => onScoringTypeChange(row, v)"
                     >
-                      <el-radio-button value="bool" :disabled="defOf(row.indicator)?.dtype === 'number'">
+                      <el-radio-button value="bool" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'number'">
                         布尔
                       </el-radio-button>
-                      <el-radio-button value="linear" :disabled="defOf(row.indicator)?.dtype === 'bool'">
+                      <el-radio-button value="linear" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
                         线性
                       </el-radio-button>
-                      <el-radio-button value="band" :disabled="defOf(row.indicator)?.dtype === 'bool'">
+                      <el-radio-button value="band" :disabled="profileReadonly || defOf(row.indicator)?.dtype === 'bool'">
                         分段
                       </el-radio-button>
                     </el-radio-group>
@@ -695,22 +836,22 @@ onMounted(async () => {
                     <!-- linear -->
                     <div v-else-if="row.scoring.type === 'linear'" class="linear-row">
                       <span>0分→</span>
-                      <el-input-number v-model="row.scoring.min" size="small" :controls="false" style="width: 78px" />
+                      <el-input-number v-model="row.scoring.min" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
                       <span>100分→</span>
-                      <el-input-number v-model="row.scoring.max" size="small" :controls="false" style="width: 78px" />
+                      <el-input-number v-model="row.scoring.max" size="small" :controls="false" :disabled="profileReadonly" style="width: 78px" />
                     </div>
                     <!-- band -->
                     <div v-else class="band-box">
                       <div v-for="(b, bi) in row.scoring.bands" :key="bi" class="band-row">
-                        <el-input-number v-model="b[0]" size="small" :controls="false" style="width: 64px" />
+                        <el-input-number v-model="b[0]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
                         <span>~</span>
-                        <el-input-number v-model="b[1]" size="small" :controls="false" style="width: 64px" />
+                        <el-input-number v-model="b[1]" size="small" :controls="false" :disabled="profileReadonly" style="width: 64px" />
                         <span>→</span>
-                        <el-input-number v-model="b[2]" size="small" :controls="false" :min="0" :max="100" style="width: 64px" />
+                        <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" style="width: 64px" />
                         <span>分</span>
-                        <el-button link type="danger" @click="removeBand(row, bi)">✕</el-button>
+                        <el-button link type="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">✕</el-button>
                       </div>
-                      <el-button link type="primary" size="small" @click="addBand(row)">＋ 段</el-button>
+                      <el-button link type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">＋ 段</el-button>
                     </div>
                   </div>
                 </template>
@@ -723,6 +864,7 @@ onMounted(async () => {
                       :model-value="Math.round(row.weight * 100)"
                       :min="0"
                       :max="100"
+                      :disabled="profileReadonly"
                       @input="(v: number) => onWeightChange($index, v)"
                     />
                     <span class="wval">{{ Math.round(row.weight * 100) }}%</span>
@@ -732,12 +874,12 @@ onMounted(async () => {
 
               <el-table-column width="50">
                 <template #default="{ $index }">
-                  <el-button link type="danger" @click="removeItem($index)">删</el-button>
+                  <el-button link type="danger" :disabled="profileReadonly" @click="removeItem($index)">删</el-button>
                 </template>
               </el-table-column>
             </el-table>
 
-            <el-button size="small" plain style="margin-top: 8px" @click="addItem">＋ 添加指标</el-button>
+            <el-button size="small" plain style="margin-top: 8px" :disabled="profileReadonly" @click="addItem">＋ 添加指标</el-button>
 
             <!-- 试算 -->
             <div class="run-head">
@@ -771,9 +913,9 @@ onMounted(async () => {
                       v-for="k in subKeys"
                       :key="k"
                       class="subchip score"
-                      :class="scoreLevel(row.sub_scores[k])"
+                      :class="scoreLevel(row.sub_scores?.[k])"
                     >
-                      <i>{{ nameOf(k) }}</i><b>{{ Math.round(row.sub_scores[k] ?? 0) }}</b>
+                      <i>{{ nameOf(k) }}</i><b>{{ Math.round(row.sub_scores?.[k] ?? 0) }}</b>
                     </span>
                   </div>
                 </template>
@@ -785,7 +927,7 @@ onMounted(async () => {
       </el-tab-pane>
 
       <!-- ============ 技术指标 ============ -->
-      <el-tab-pane label="技术指标" name="tech">
+      <el-tab-pane v-if="!forcedTab || forcedTab === 'tech'" label="技术指标" name="tech">
         <div class="pane-fill tech-pane">
         <div class="tech-head">
           <p class="hint" style="margin: 0">
@@ -918,7 +1060,7 @@ onMounted(async () => {
       </el-tab-pane>
 
       <!-- ============ 买卖指标 ============ -->
-      <el-tab-pane label="买卖指标" name="trade">
+      <el-tab-pane v-if="!forcedTab || forcedTab === 'trade'" label="买卖指标" name="trade">
         <div class="score-layout">
           <aside class="prof-list">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newTradeProfile">
@@ -1046,7 +1188,7 @@ onMounted(async () => {
       </el-tab-pane>
 
       <!-- ============ 系统设置（FR-DM-12）============ -->
-      <el-tab-pane label="系统设置" name="system">
+      <el-tab-pane v-if="!forcedTab || forcedTab === 'system'" label="系统设置" name="system">
         <div class="sys-wrap" v-loading="sysLoading">
           <div class="sys-head">
             <span class="sys-tip">数据源 / 股票池 / 回测成本 / 选股数量等运行参数，改后即时生效。</span>
@@ -1247,6 +1389,15 @@ onMounted(async () => {
 }
 .ver-badge:hover {
   background: var(--el-color-primary-light-7);
+}
+.visibility-trigger {
+  cursor: pointer;
+  user-select: none;
+}
+.visibility-arrow {
+  margin-left: 4px;
+  font-size: 11px;
+  vertical-align: -1px;
 }
 .ver-item {
   border: 1px solid var(--el-border-color-lighter);

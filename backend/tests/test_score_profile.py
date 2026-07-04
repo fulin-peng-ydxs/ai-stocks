@@ -11,6 +11,7 @@ from backend.scoring.score_profile import (
     resolve_indicator,
     score_one,
 )
+from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 from backend.tests.conftest import TEST_OWNER, TEST_TENANT
 
 
@@ -145,3 +146,77 @@ def test_same_id_different_owner_no_clobber(market, pg):
         for o in (TEST_OWNER, "pytest_other"):
             pg.execute("DELETE FROM score_profile WHERE id='DUP' AND owner_user_id=%s", [o])
             pg.execute("DELETE FROM score_profile_version WHERE id='DUP' AND owner_user_id=%s", [o])
+
+
+def test_visible_profiles_include_public_and_tenant_scoped(market, pg):
+    """R28：可见列表=自己的 + 全体公开 + 同租户公开；他人私有和异租户租户公开不可见。"""
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    mine = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    same = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id="pytest_same")
+    other_tenant = ScoreProfileRepo(market=market, pg=pg, tenant_id="pytest_other_tenant", owner_user_id="pytest_cross")
+    try:
+        mine.save("mine_vis", "我的方案", items)
+        same.save("same_private", "同租户私有", items)
+        same.save("same_tenant", "同租户公开", items)
+        same.set_visibility("same_tenant", "tenant", published_by="pytest_same")
+        other_tenant.save("cross_tenant", "异租户内公开", items)
+        other_tenant.set_visibility("cross_tenant", "tenant", published_by="pytest_cross")
+        other_tenant.save("global_public", "全体公开", items)
+        other_tenant.set_visibility("global_public", "public", published_by="pytest_cross")
+
+        rows = mine.list_visible()
+        ids = {r["id"] for r in rows}
+        assert {"mine_vis", "same_tenant", "global_public"} <= ids
+        assert "same_private" not in ids
+        assert "cross_tenant" not in ids
+
+        pub = next(r for r in rows if r["id"] == "global_public")
+        assert pub["readonly"] is True and pub["source"] == "public"
+        assert mine.get_visible(pub["profile_ref"])["name"] == "全体公开"
+    finally:
+        for owner in (TEST_OWNER, "pytest_same", "pytest_cross"):
+            pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
+            pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
+
+
+def test_visibility_owner_only_and_copy_visible(market, pg):
+    """公开方案只能 owner 调整；非 owner 可只读引用并复制成自己的私有方案。"""
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    owner = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id="pytest_pub_owner")
+    viewer = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    try:
+        owner.save("pub_copy_src", "可复制公开方案", items)
+        src = owner.set_visibility("pub_copy_src", "tenant", published_by="pytest_pub_owner")
+        assert src and src["visibility"] == "tenant"
+
+        with pytest.raises(PermissionError):
+            viewer.set_visibility(src["profile_ref"], "private", published_by=TEST_OWNER)
+
+        assert viewer.copy_visible(src["profile_ref"], "copied_profile", "我的副本") == 1
+        copied = viewer.get("copied_profile")
+        assert copied["name"] == "我的副本"
+        assert copied["visibility"] == "private"
+    finally:
+        for owner_id in ("pytest_pub_owner", TEST_OWNER):
+            pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner_id])
+            pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner_id])
+
+
+def test_public_board_owner_preset_is_visible_as_readonly_preset(market, pg):
+    """平台 PUBLIC_BOARD_OWNER 预设初始化为 public，普通 owner 通过 visible list 只读引用。"""
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    ptid, pown = PUBLIC_BOARD_OWNER
+    preset_repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=ptid, owner_user_id=pown)
+    viewer = ScoreProfileRepo(market=market, pg=pg, tenant_id="pytest_view_tenant", owner_user_id="pytest_viewer")
+    try:
+        preset_repo.save("pytest_public_preset", "平台公开预设", items, is_preset=True)
+        rows = viewer.list_visible()
+        preset = next(r for r in rows if r["id"] == "pytest_public_preset")
+        assert preset["visibility"] == "public"
+        assert preset["source"] == "preset"
+        assert preset["readonly"] is True
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                   [ptid, pown, "pytest_public_preset"])
+        pg.execute("DELETE FROM score_profile_version WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                   [ptid, pown, "pytest_public_preset"])

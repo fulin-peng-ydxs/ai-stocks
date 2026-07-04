@@ -110,7 +110,8 @@ def test_tenant_admin_grants_scope(pg):
     assert "system" in menus and "permission" in menus  # 上级分组可达
     assert "/system/roles" not in menus
     assert "/system/tenants" not in menus
-    assert "/system/config" not in menus
+    assert {"/system/config", "/system/config/score", "/system/config/trade"} <= menus
+    assert "/system/config/tech" not in menus and "/system/config/system" not in menus
 
     resources = set(pg.query_df(
         "SELECT resource_id FROM sys_role_resource WHERE role_id=%s",
@@ -123,10 +124,24 @@ def test_normal_role_business_only(pg):
     menus = set(pg.query_df(
         "SELECT menu_id FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])["menu_id"])
     assert "/screen" in menus and "/backtest" in menus
-    assert "system" not in menus and "/system/users" not in menus
-    resources = pg.query_df(
-        "SELECT count(*) n FROM sys_role_resource WHERE role_id=%s", [ROLE_NORMAL])
-    assert int(resources.iloc[0]["n"]) == 0
+    assert {"system", "/system/config", "/system/config/score", "/system/config/trade"} <= menus
+    assert "/system/users" not in menus
+    assert "/system/config/tech" not in menus and "/system/config/system" not in menus
+    resources = set(pg.query_df(
+        "SELECT resource_id FROM sys_role_resource WHERE role_id=%s", [ROLE_NORMAL])["resource_id"])
+    assert {
+        "score-profile:view",
+        "score-profile:save",
+        "score-profile:delete",
+        "score-profile:publish-tenant",
+        "trade-profile:view",
+        "trade-profile:save",
+        "trade-profile:delete",
+        "trade-profile:preview",
+    } <= resources
+    assert "score-profile:publish-public" not in resources
+    assert not any(c.startswith("user:") or c.startswith("role:") or c.startswith("tenant:")
+                   for c in resources)
 
 
 def test_fk_delete_actions(pg):

@@ -128,9 +128,15 @@ def public_preset(pg):
     for pid, is_preset in [(preset_id, True), (priv_id, False)]:
         pg.execute(
             "INSERT INTO score_profile (id,tenant_id,owner_user_id,name,version,items,"
-            "grade_thresholds,is_preset,created_at,updated_at) "
-            "VALUES (%s,%s,%s,%s,1,'[]','{}',%s,now(),now()) ON CONFLICT DO NOTHING",
-            [pid, ptid, pown, pid, is_preset])
+            "grade_thresholds,is_preset,visibility,published_at,published_by,created_at,updated_at) "
+            "VALUES (%s,%s,%s,%s,1,%s,'{}',%s,%s,now(),%s,now(),now()) ON CONFLICT DO NOTHING",
+            [
+                pid, ptid, pown, pid,
+                '[{"indicator":"rs_pct","weight":1.0,"scoring":{"type":"linear","min":0,"max":100}}]',
+                is_preset,
+                "public" if is_preset else "private",
+                pown if is_preset else None,
+            ])
     yield preset_id, priv_id
     pg.execute("DELETE FROM score_snapshot WHERE profile_id IN (%s,%s)", [preset_id, priv_id])
     pg.execute("DELETE FROM score_snapshot_meta WHERE profile_id IN (%s,%s)", [preset_id, priv_id])
@@ -187,7 +193,7 @@ def test_board_run_requires_view_and_rejects_non_preset(client, pg, public_prese
 
 
 def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
-    """/board/run 是 board:view 只读入口：读 fresh 公共快照，不走普通用户惰性物化写入。"""
+    """/board/run 对 fresh 快照直接读取，不重复物化。"""
     preset_id, _priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
     uid, tid, rid = _mk_user(pg, codes=["board:view"])
@@ -214,46 +220,65 @@ def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
         _rm_user(pg, uid, tid, rid)
 
 
-def test_board_run_without_date_uses_latest_fresh_public_snapshot(client, pg, public_preset):
-    """不传 run_date 时取该公共预设最新 fresh 快照日，而不是行情最新日或 stale 日期。"""
+def test_board_run_without_date_uses_latest_market_date_and_materializes(
+    client, pg, public_preset, monkeypatch
+):
+    """不传 run_date 时取行情最新日；该日缺 fresh 快照则按 visible 方案物化。"""
     preset_id, _priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
     uid, tid, rid = _mk_user(pg, codes=["board:view"])
     fresh_date = "2099-01-01"
-    stale_date = "2099-01-02"
+    target = date(2099, 1, 3)
+
+    def fake_score_day(_c, run_date, _profile):
+        assert run_date == target
+        return pd.DataFrame([{
+            "code": "T3B_LATEST.SZ",
+            "total_score": 98.0,
+            "grade": "主升浪核心",
+            "rank": 1,
+            "sub_scores": "{}",
+        }])
+
+    monkeypatch.setattr("backend.api.board.latest_market_date", lambda _c: target)
+    monkeypatch.setattr("backend.scoring.snapshot.score_day", fake_score_day)
     try:
-        for d, stale, code in [
-            (fresh_date, False, "T3B_FRESH.SZ"),
-            (stale_date, True, "T3B_STALE.SZ"),
-        ]:
-            pg.execute(
-                "INSERT INTO score_snapshot_meta "
-                "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
-                "VALUES (%s,%s,1,%s,%s,%s,%s,1)",
-                [d, preset_id, ptid, pown, datetime.now(), stale])
-            pg.execute(
-                "INSERT INTO score_snapshot "
-                "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
-                "VALUES (%s,%s,1,%s,%s,%s,91.5,'A',1,'{}')",
-                [d, preset_id, ptid, pown, code])
+        pg.execute(
+            "INSERT INTO score_snapshot_meta "
+            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
+            "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
+            [fresh_date, preset_id, ptid, pown, datetime.now()])
 
         r = client.post("/api/board/run",
                         json={"profile_id": preset_id, "top": 10},
                         headers=_auth(uid, tid))
         assert r.status_code == 200
         data = r.json()["data"]
-        assert data["run_date"] == fresh_date
+        assert data["run_date"] == str(target)
+        assert data["cache_status"] == "materialized"
         assert data["count"] == 1
-        assert data["list"][0]["code"] == "T3B_FRESH.SZ"
+        assert data["list"][0]["code"] == "T3B_LATEST.SZ"
     finally:
         _rm_user(pg, uid, tid, rid)
 
 
-def test_board_run_does_not_materialize_stale_snapshot_with_view_only(client, pg, public_preset):
-    """stale/缺失公共快照不能由 board:view 用户触发删除重写；生产链路归评分维护/CLI。"""
+def test_board_run_materializes_stale_snapshot_with_view(client, pg, public_preset, monkeypatch):
+    """visible 方案 stale/缺失快照可由 board:view 触发受控物化，写回方案 owner 槽。"""
     preset_id, _priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
     uid, tid, rid = _mk_user(pg, codes=["board:view"])
+
+    def fake_score_day(_c, run_date, _profile):
+        assert run_date == date.fromisoformat(_PUB_DATE)
+        return pd.DataFrame([{
+            "code": "T3B_REFRESH.SZ",
+            "total_score": 97.0,
+            "grade": "主升浪核心",
+            "rank": 1,
+            "sub_scores": "{}",
+        }])
+
+    monkeypatch.setattr("backend.scoring.snapshot.score_day", fake_score_day)
     try:
         pg.execute(
             "INSERT INTO score_snapshot_meta "
@@ -270,7 +295,10 @@ def test_board_run_does_not_materialize_stale_snapshot_with_view_only(client, pg
                         json={"profile_id": preset_id, "run_date": _PUB_DATE, "top": 10},
                         headers=_auth(uid, tid))
         assert r.status_code == 200
-        assert r.json()["data"]["count"] == 0
+        data = r.json()["data"]
+        assert data["count"] == 1
+        assert data["cache_status"] == "materialized"
+        assert data["list"][0]["code"] == "T3B_REFRESH.SZ"
 
         meta = pg.query_df(
             "SELECT stale, n_codes FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
@@ -280,8 +308,9 @@ def test_board_run_does_not_materialize_stale_snapshot_with_view_only(client, pg
             "SELECT code FROM score_snapshot WHERE trade_date=%s AND profile_id=%s "
             "AND profile_version=1 AND tenant_id=%s AND owner_user_id=%s",
             [_PUB_DATE, preset_id, ptid, pown])
-        assert bool(meta.iloc[0]["stale"]) is True
-        assert rows["code"].tolist() == ["T3B_STALE.SZ"]
+        assert bool(meta.iloc[0]["stale"]) is False
+        assert int(meta.iloc[0]["n_codes"]) == 1
+        assert rows["code"].tolist() == ["T3B_REFRESH.SZ"]
     finally:
         _rm_user(pg, uid, tid, rid)
 

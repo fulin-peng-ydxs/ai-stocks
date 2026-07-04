@@ -9,12 +9,9 @@ import pandas as pd
 from fastapi import APIRouter, Depends, Query
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm
-from backend.services.public_board import (
-    get_public_board_profile,
-    list_public_board_profiles,
-    resolve_public_board_run_date,
-)
+from backend.services.public_board import get_public_board_profile, latest_market_date
 from backend.storage import get_client, get_pg_client
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
@@ -142,50 +139,70 @@ def board_compute(date_: str = Query(..., alias="date"), top: int = 50,
 @router.get("/board/profiles", response_model=ApiResponse,
             dependencies=[Depends(require_perm("board:view"))])
 def board_profiles() -> ApiResponse:
-    """公共榜单可选的**预设评分方案**列表（C1 平台公共榜单特例）。
+    """榜单可选评分方案列表：自己的 + 同租户公开 + 全体公开 + 平台内置预设。"""
+    from backend.scoring.score_profile import ScoreProfileRepo
 
-    有意读 PUBLIC_BOARD_OWNER（default/admin 平台槽）的**预设**方案（is_preset=true），全员登录用户看
-    同一份、与当前用户归属无关——普通用户没有自建方案也能选公共预设看榜单（补齐 C1 公共榜单闭环：
-    此前榜单页误用 /score-profiles（score-profile:view，system-only + 按调用者归属）导致普通用户空/403）。
-    方案的增删改仍归 /system/config（score-profile:*，system-only），此处**只读、只暴露预设**。
-    """
-    return ok(list_public_board_profiles(get_client(), get_pg_client()))
+    return ok(ScoreProfileRepo(get_client(), get_pg_client()).list_visible())
 
 
 @router.post("/board/run", response_model=ApiResponse,
              dependencies=[Depends(require_perm("board:view"))])
 def board_run(body: dict) -> ApiResponse:
-    """读取**公共预设方案**已物化的某交易日全市场评分榜，返回 Top N（含分项达标分）。
+    """按可见评分方案读取榜单；快照缺失或 stale 时物化到方案 owner 的共享缓存槽。
 
-    C1 平台公共榜单特例：方案与评分快照均归 PUBLIC_BOARD_OWNER、全员共享一份（不按当前用户过滤，
-    亦不写调用者个人快照）。此接口是 board:view 只读入口：只读已存在且未 stale 的公共快照，缺失/失效
-    返回空榜，不触发惰性物化；公共榜单生产由评分维护任务或 public-board CLI 负责。只接受公共**预设**
-    方案 id——个人自建方案的实时试算走 /score-profiles/run（score:run，写调用者个人归属），二者归属与
-    快照缓存天然分开、互不污染。
-    body: {profile_id, run_date?, top?}
+    body: {profile_ref | profile_id, run_date?, top?, force?}
     """
+    from backend.scoring.score_profile import ScoreProfileRepo
     from backend.scoring.snapshot import ScoreSnapshotRepo
 
     c = get_client()
     pg = get_pg_client()
-    pid = body.get("profile_id")
-    prof = get_public_board_profile(pid, c, pg)
+    repo = ScoreProfileRepo(c, pg)
+    ref_or_id = body.get("profile_ref") or body.get("profile_id")
+    prof = repo.get_visible(ref_or_id, include_owner=True) if ref_or_id else None
+    # 兼容旧前端：只传 profile_id 时仍可命中平台内置预设。
+    if not prof and body.get("profile_id"):
+        preset = get_public_board_profile(body.get("profile_id"), c, pg)
+        if preset:
+            prof = {
+                **preset,
+                "tenant_id": PUBLIC_BOARD_OWNER[0],
+                "owner_user_id": PUBLIC_BOARD_OWNER[1],
+            }
     if not prof:
         return err(404, "方案不存在")
-    run_date = resolve_public_board_run_date(
-        profile_id=pid,
-        profile_version=int(prof.get("version") or 1),
-        requested=body.get("run_date"),
-        market=c,
-        pg=pg,
-    )
+    run_date = date.fromisoformat(body["run_date"]) if body.get("run_date") else latest_market_date(c)
     top = int(body.get("top", 50))
     if run_date is None:
         return ok({"run_date": "", "top": top, "count": 0, "list": []})
-    board = ScoreSnapshotRepo(c, pg, tenant_id=_OWN[0], owner_user_id=_OWN[1]).get_board_cached(
-        run_date, pid, top=top, profile=prof)
+    pid = prof["id"]
+    version = int(prof.get("version") or 1)
+    snapshot_repo = ScoreSnapshotRepo(
+        c,
+        pg,
+        tenant_id=prof["tenant_id"],
+        owner_user_id=prof["owner_user_id"],
+    )
+    force = bool(body.get("force"))
+    ctx = get_current_context()
+    if force and not (ctx and (ctx.is_system or "board:compute" in ctx.resources)):
+        return err(403, "强制刷新需要 board:compute 权限")
+    was_fresh = snapshot_repo._fresh(run_date, pid, version)  # noqa: SLF001
+    if force:
+        pg.execute(
+            "UPDATE score_snapshot_meta SET stale=true WHERE trade_date=%s AND profile_id=%s "
+            "AND profile_version=%s AND tenant_id=%s AND owner_user_id=%s",
+            [run_date, pid, version, prof["tenant_id"], prof["owner_user_id"]],
+        )
+    board = snapshot_repo.get_board(run_date, pid, top=top, profile=prof)
     if board.empty:
-        return ok({"run_date": str(run_date), "top": top, "count": 0, "list": []})
+        return ok({
+            "run_date": str(run_date),
+            "top": top,
+            "count": 0,
+            "cache_status": "cached" if was_fresh and not force else "materialized",
+            "list": [],
+        })
     codes = board["code"].tolist()
     names = c.query_df(
         f"SELECT code, name FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes)
@@ -204,7 +221,15 @@ def board_run(body: dict) -> ApiResponse:
         "total_score": float(r["total_score"]), "grade": r["grade"],
         "sub_scores": _subs(r.get("sub_scores")),
     } for _, r in board.iterrows()]
-    return ok({"run_date": str(run_date), "top": top, "count": len(rows), "list": rows})
+    return ok({
+        "run_date": str(run_date),
+        "top": top,
+        "count": len(rows),
+        "profile_ref": prof.get("profile_ref") or repo.make_ref(prof["tenant_id"], prof["owner_user_id"], pid),
+        "profile_version": version,
+        "cache_status": "cached" if was_fresh and not force else "materialized",
+        "list": rows,
+    })
 
 
 @router.get("/scores", response_model=ApiResponse,

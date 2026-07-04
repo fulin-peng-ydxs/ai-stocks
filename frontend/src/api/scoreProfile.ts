@@ -64,19 +64,29 @@ export interface ScoreItem {
 }
 
 export interface ScoreProfile {
+  profile_ref?: string
   id: string
   name: string
   version: number
   is_preset: boolean
+  visibility?: 'private' | 'tenant' | 'public'
+  source?: 'mine' | 'tenant' | 'public' | 'preset'
+  readonly?: boolean
+  owner_label?: string
   items: ScoreItem[]
   grade_thresholds: Record<string, number>
 }
 
 export interface ScoreProfileSummary {
+  profile_ref?: string
   id: string
   name: string
   version: number
   is_preset: boolean
+  visibility?: 'private' | 'tenant' | 'public'
+  source?: 'mine' | 'tenant' | 'public' | 'preset'
+  readonly?: boolean
+  owner_label?: string
 }
 
 export interface ScoreRunRow {
@@ -105,6 +115,15 @@ export function saveScoreProfile(body: {
 export function deleteScoreProfile(pid: string): Promise<{ msg: string }> {
   return http.delete(`/score-profiles/${pid}`)
 }
+export function setScoreProfileVisibility(
+  pid: string,
+  visibility: 'private' | 'tenant' | 'public',
+): Promise<ScoreProfile> {
+  return http.post(`/score-profiles/${pid}/visibility`, { visibility })
+}
+export function copyScoreProfile(pid: string, body: { id: string; name?: string }): Promise<{ id: string; version: number }> {
+  return http.post(`/score-profiles/${pid}/copy`, body)
+}
 
 // 方案历史版本（回看/载入）
 export interface ScoreProfileVersion {
@@ -114,7 +133,7 @@ export interface ScoreProfileVersion {
   grade_thresholds: Record<string, number>
   saved_at: string
 }
-export function getScoreProfileVersions(pid: string): Promise<{ id: string; versions: ScoreProfileVersion[] }> {
+export function getScoreProfileVersions(pid: string): Promise<{ id: string; profile_ref?: string; versions: ScoreProfileVersion[] }> {
   return http.get(`/score-profiles/${pid}/versions`)
 }
 export function runScoreProfile(body: {
@@ -123,6 +142,6 @@ export function runScoreProfile(body: {
   grade_thresholds?: Record<string, number>
   run_date?: string
   top?: number
-}): Promise<{ run_date: string; top: number; count: number; list: ScoreRunRow[] }> {
+}): Promise<{ run_date: string; top: number; count: number; cache_status?: string; list: ScoreRunRow[] }> {
   return http.post('/score-profiles/run', body)
 }

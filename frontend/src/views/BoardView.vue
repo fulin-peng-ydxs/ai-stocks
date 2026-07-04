@@ -7,8 +7,6 @@ import {
   type ScoreProfileSummary,
   type ScoreRunRow,
 } from '@/api/scoreProfile'
-// 榜单页走**公共榜单**端点（board:view，读 PUBLIC_BOARD_OWNER 公共预设方案 + 公共评分，全员同一份），
-// 不再用 /score-profiles（score-profile:view 属 system-only + 按调用者归属，普通用户会 403/空）。
 import { listBoardProfiles, runBoardProfile } from '@/api/board'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -72,8 +70,25 @@ function colVisible(key: string): boolean {
 
 // 评分规则方案
 const profiles = ref<ScoreProfileSummary[]>([])
-const profileId = ref('')
-const curProfile = computed(() => profiles.value.find((p) => p.id === profileId.value))
+const profileRef = ref('')
+function profileKey(p: ScoreProfileSummary): string {
+  return p.profile_ref || p.id
+}
+const curProfile = computed(() => profiles.value.find((p) => profileKey(p) === profileRef.value))
+const cacheStatus = ref('')
+function sourceLabel(p: ScoreProfileSummary): string {
+  if (p.source === 'mine') return '我的'
+  if (p.source === 'tenant') return '租户公开'
+  if (p.source === 'public') return '全体公开'
+  if (p.source === 'preset') return '内置'
+  return p.visibility || ''
+}
+function sourceTagType(p: ScoreProfileSummary): 'primary' | 'success' | 'warning' | 'info' {
+  if (p.source === 'mine') return 'primary'
+  if (p.source === 'tenant') return 'success'
+  if (p.source === 'public') return 'warning'
+  return 'info'
+}
 
 // 指标注册表：用于把指标 key 映射成中文名（分项达标分徽章）
 const registry = ref<IndicatorDef[]>([])
@@ -81,7 +96,7 @@ function nameOf(key: string): string {
   return registry.value.find((d) => d.key === key)?.name_cn || key
 }
 // 分项 key 顺序 = 本次结果第一行 sub_scores 的键序
-const subKeys = computed(() => (rows.value[0] ? Object.keys(rows.value[0].sub_scores) : []))
+const subKeys = computed(() => (rows.value[0] ? Object.keys(rows.value[0].sub_scores || {}) : []))
 const displayRows = computed(() => {
   const list = [...rows.value]
   if (sortBy.value === 'rank') list.sort((a, b) => a.rank - b.rank)
@@ -95,12 +110,12 @@ const displaySubKeys = computed(() => {
 })
 
 watch(runDate, () => {
-  if (!profileId.value || syncingRunDate.value) return
+  if (!profileRef.value || syncingRunDate.value) return
   load()
 })
 watch(() => settings.topN, (value) => {
   topN.value = Number(value)
-  if (profileId.value) load()
+  if (profileRef.value) load()
 })
 
 function scoreLevel(v: number | undefined): string {
@@ -112,16 +127,18 @@ function gradeType(g: string): string {
 }
 
 async function load() {
-  if (!profileId.value) return
+  if (!profileRef.value) return
   loading.value = true
   error.value = ''
   try {
+    const selected = curProfile.value
     const res = await runBoardProfile({
-      profile_id: profileId.value,
+      ...(selected?.profile_ref ? { profile_ref: selected.profile_ref } : { profile_id: selected?.id || profileRef.value }),
       run_date: runDate.value || undefined,
       top: topN.value,
     })
     rows.value = res.list
+    cacheStatus.value = res.cache_status || ''
     syncingRunDate.value = true
     runDate.value = res.run_date
     syncingRunDate.value = false
@@ -152,7 +169,7 @@ onMounted(async () => {
     registry.value = (await getIndicatorRegistry(true)).items
     profiles.value = await listBoardProfiles()
     if (profiles.value.length) {
-      profileId.value = profiles.value[0].id
+      profileRef.value = profileKey(profiles.value[0])
       await load()
     }
   } catch (e) {
@@ -171,20 +188,26 @@ onMounted(async () => {
           每日榜单
           <HelpTip title="榜单是怎么排出来的？" :width="420">
             <p><b>不是筛选，是打分排序</b>：选一个<b>评分规则方案</b>，对全市场（仅排除 ST）每只股票按规则打分，按综合分降序取 Top N。</p>
-            <p style="margin:6px 0 2px">榜单使用平台公共预设评分规则：每条规则 = 技术指标 + 权重 + 达标打分方式（布尔/分段/线性），权重自动归一到 100%。预设维护和试算入口仅面向 system/admin。</p>
+            <p style="margin:6px 0 2px">榜单使用你可见的评分规则方案：自己的方案、租户公开方案、全体公开方案或平台内置预设。每条规则 = 技术指标 + 权重 + 达标打分方式（布尔/分段/线性），权重自动归一到 100%。</p>
             <p style="margin:6px 0 0;color:#e6a23c"><b>⚠️ 注意</b>：全市场排序、不设硬门槛，行情差时前排也是"矮个里的高个"，<b>要看分数高低而非排名</b>。</p>
           </HelpTip>
         </h2>
         <span class="sub">
           <template v-if="runDate">交易日 {{ runDate }} · 已排除 ST</template>
           <template v-if="curProfile"> · 规则「{{ curProfile.name }}」 v{{ curProfile.version }}</template>
+          <template v-if="cacheStatus"> · {{ cacheStatus === 'cached' ? '已缓存' : '已更新' }}</template>
         </span>
       </div>
       <div class="page-head-actions">
         <div class="ops">
           <span class="lbl">评分规则</span>
-          <el-select v-model="profileId" style="width: 180px" @change="load">
-            <el-option v-for="p in profiles" :key="p.id" :value="p.id" :label="p.name" />
+          <el-select v-model="profileRef" style="width: 220px" @change="load">
+            <el-option v-for="p in profiles" :key="profileKey(p)" :value="profileKey(p)" :label="p.name">
+              <div class="profile-option">
+                <span>{{ p.name }}</span>
+                <el-tag size="small" :type="sourceTagType(p)" effect="plain">{{ sourceLabel(p) }}</el-tag>
+              </div>
+            </el-option>
           </el-select>
           <TradeDatePicker v-model="runDate" clearable />
           <span class="lbl">Top</span>
@@ -238,9 +261,9 @@ onMounted(async () => {
                 v-for="k in displaySubKeys"
                 :key="k"
                 class="subchip score"
-                :class="scoreLevel(row.sub_scores[k])"
+                :class="scoreLevel(row.sub_scores?.[k])"
               >
-                <i>{{ nameOf(k) }}</i><b>{{ Math.round(row.sub_scores[k] ?? 0) }}</b>
+                <i>{{ nameOf(k) }}</i><b>{{ Math.round(row.sub_scores?.[k] ?? 0) }}</b>
               </span>
             </div>
           </template>
@@ -313,6 +336,12 @@ onMounted(async () => {
 .ops .lbl {
   color: #606266;
   font-size: 13px;
+}
+.profile-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .score {
   color: #f56c6c;
