@@ -7,7 +7,7 @@
 
 1. 读 [DESIGN.md](../../DESIGN.md) §1~§8（三层模型、7 步、原型清单、组件目录、主区策略、预设、组件特性缺口、落地坑）。
 2. 读 `frontend/src/layout/archetypes.ts`（原型预设）和 `frontend/src/layout/components.ts`（组件能力目录）。
-3. 守 [CLAUDE.md](../../CLAUDE.md)「关键方案先确认」：原型与组件清单选定后，先给用户推荐 + 理由再开发。
+3. 守 [AGENTS.md](../../AGENTS.md) 的协作约束：原型与组件清单选定后，先给用户推荐 + 理由再开发。
 
 ## 1. 固定七步
 

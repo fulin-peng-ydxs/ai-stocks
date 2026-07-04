@@ -345,8 +345,8 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | 文档 | 内容 |
 |------|------|
 | [`agent-works/architecture/`](agent-works/architecture/) | 各业务模块当前技术说明、业务流程和风险边界 |
-| [CLAUDE.md](CLAUDE.md) | AI 协作红线：语言、文档归档、方案确认、复用约束、开发契约入口 |
-| [AGENTS.md](AGENTS.md) | Codex/Agent 工作入口与仓库级约束 |
+| [AGENTS.md](AGENTS.md) | AI 协作入口与仓库级稳定约束 |
+| [CLAUDE.md](CLAUDE.md) | Claude Code 薄入口，指向 AGENTS 与 Claude 项目记忆 |
 | [DESIGN.md — 前端设计与布局规范](DESIGN.md) | 前端布局事实源与页面开发契约：可配置布局系统、页面设计闭环、组件/布局维护矩阵、设置抽屉规范；强制规则归 `frontend/src/layout` + 契约测试 |
 | [page-template.md — 新页面开发模板](agent-works/configurable-layout-system/page-template.md) | AI/开发者新建或改造页面时复制使用的页面设计块、维护矩阵、7 个原型骨架和验收清单 |
 

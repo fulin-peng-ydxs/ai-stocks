@@ -1,65 +1,89 @@
 # Repository Guidelines
 
-## 项目结构与模块组织
+## 文档职责
 
-本仓库是 A 股趋势龙头研究系统，采用 FastAPI + Vue + DuckDB + PostgreSQL + Redis。行情/参考数据留 DuckDB 只读分析，用户资产、权限元数据和平台配置落 PostgreSQL，Redis 用于短状态。后端代码位于 `backend/`：`api/` 放 REST 路由，`services/` 放业务编排，`storage/` 管理 DuckDB/PG 访问与 DDL，`indicators/`、`screening/`、`scoring/`、`backtest/` 放核心领域逻辑，测试位于 `backend/tests/`。前端位于 `frontend/`，核心目录包括 `src/views/`、`src/components/`、`src/api/`、`src/layout/`、`src/stores/`。配置在 `config/settings.yaml`，运行数据在 `data/`，日志在 `logs/`，设计和业务留痕文档在 `DESIGN.md` 与 `agent-works/`。
+- `AGENTS.md` 是本仓库 AI 协作的项目级入口，只保留当前有效、会影响执行的稳定规则。
+- `CLAUDE.md` 只作为 Claude Code 薄入口，避免复制本文件内容；仓库事实以代码、`README.md`、`DESIGN.md` 和 `agent-works/architecture/` 为准。
+- 功能需求、计划、开发留痕、业务核查和 SQL 归档放入 `agent-works/{feature-slug}/`；同一功能复用同一目录。
+- 前端页面规范以 `DESIGN.md` 和 `agent-works/configurable-layout-system/page-template.md` 为入口，不在本文件重复细则。
 
-## 版本要求
+## 项目概览
 
-- Python：`>=3.11`，本机常用 3.12；依赖以 `pyproject.toml` 和 `requirements.txt` 为准。
-- Node.js：建议使用 20 LTS；前端锁文件为 npm lockfile v3，使用 npm 安装。
-- 主要后端版本：FastAPI `>=0.110`、DuckDB `>=0.10`、PostgreSQL `>=14`、Redis `>=6`、pandas `>=2.2`、pytest `>=8.0`。
-- 主要前端版本：Vue `^3.4`、Vite `^5.2`、TypeScript `^5.4`、Vitest `^1.6`、Element Plus `^2.7`。
+「复盘啦」是 EOD A 股趋势龙头研究系统，栈为 FastAPI + Vue 3 + DuckDB + PostgreSQL + Redis。行情/参考数据在 DuckDB 只读分析；用户资产、权限元数据和平台配置在 PostgreSQL；Redis 存短状态。数据源为公开免费接口（AKShare / baostock），覆盖近 5 年主板、创业板、科创板，不含北交所。
 
-## 构建、测试与开发命令
+## 代码结构
 
-服务起停一律走脚本，**禁止裸 `nohup` 或写 `/tmp`**：
+- 后端：`backend/api/` 放 REST 路由，`backend/services/` 放业务编排，`backend/storage/` 管理 DuckDB/PG/Redis 与 DDL，`backend/indicators/`、`screening/`、`scoring/`、`backtest/` 放领域逻辑，测试在 `backend/tests/`。
+- 前端：`frontend/src/views/`、`components/`、`api/`、`layout/`、`stores/`。
+- 配置与运行数据：`config/settings.yaml`、`data/`、`logs/`。
+- 架构文档：`agent-works/architecture/`；前端设计规范：`DESIGN.md`。
+
+## 核心契约
+
+- 防未来函数：指标和均线后向计算；选股只用 `<=T` 数据；回测 T 日选股、T+1 开盘成交；平台突破用 `shift(1)`。
+- 防幸存者偏差：股票池按点时构造，包含当时存活但后来退市的股票。
+- 撮合口径：涨跌停价按板块/ST 计算，开盘封死不可成交，停牌顺延，退市强平，计佣金/印花/过户/方向性滑点。
+- 复权口径：前向收益与回测记账用后复权，成交性判定用原始价；复权查询统一 `COALESCE(adj_factor_clean, adj_factor)`，清洗因子不得写回 `adj_factor`。
+- 评分与验证：分层命中率必须扣同期全市场 base rate 并附样本量；技术指标是唯一原子定义，下游只组合引用，不硬编码字段。
+- 双库边界：禁止跨库 JOIN。行情读 DuckDB，资产读写 PG；需要联合时在服务层分别取数后内存合并，并控制结果集规模。
+- 资产隔离：用户私有 PG 表必须带 `tenant_id + owner_user_id`；复合主键、`ON CONFLICT`、JOIN/子查询、UPDATE/DELETE/`max(seq)` 都必须带归属条件。归属取请求上下文，禁止信任前端传入。
+- 鉴权边界：`AuthMiddleware` 默认 deny；白名单仅健康检查和认证接口。新增业务端点必须同步 `require_perm`/`require_system_perm`、`sys_resource` seed、SQL 留痕和路由扫描测试。
+- RBAC 口径：JWT 不携带角色/权限，权限以 PG 的用户/租户状态与 `perm_ver` 为准；授权变更与 `perm_ver` 自增必须同一 PG 事务提交。`layout:view`、`trade-calendar:view`、`indicator:registry` 是登录基线共享读，有角色的非 system 用户强制注入，无角色 fail-closed。
+- 评分方案可见性：`score_profile.visibility` 为 `private|tenant|public`；前端透传 opaque `profile_ref`，榜单、回测和评分服务必须解析同一口径；非 owner 公开方案只读，可复制为自己的 private。
+- 长任务：采集、修复、重算等写库任务走 `async_task`；DuckDB 写任务同一时间只允许一个，PG 资产写不受该互斥限制。
+- 配置：策略参数优先来自 `config/settings.yaml` 或 `app_config` 覆盖层，不把临时研究参数写死进代码。
+
+## 运行命令
+
+服务起停一律走脚本；人工和 AI 不直接裸跑 `nohup`，不把临时日志写到 `/tmp`。
 
 ```bash
-./start.sh                 # 后端 dev，127.0.0.1:8000 热重载（默认）
-./start.sh prod            # 后端绑 0.0.0.0:8000 托管 frontend/dist
+./start.sh                 # 后端 dev，127.0.0.1:8000 热重载
+./start.sh prod            # 后端 prod，0.0.0.0:8000，托管 frontend/dist
 ./start.sh stop|restart|status|logs
-./start-web.sh             # 前端 5173，Vite HMR（首次自动 npm install）
+./start-web.sh             # 前端 5173，Vite HMR，首次自动 npm install
 
-# 测试（先停掉占用 DuckDB 的服务，否则单文件被锁）
 python -m pytest backend/tests/ -q
-python -m pytest backend/tests/test_xxx.py::test_name -q   # 单测
+python -m pytest backend/tests/test_xxx.py::test_name -q
 
-cd frontend && npm run build && cd ..   # 生产产物进 frontend/dist（vue-tsc 类型检查 + vite build）
+cd frontend && npm run build && cd ..
 
-# 数据准备（首次按序，依赖不可反）
-python -m backend.cli backfill              # 全市场近 5 年日线回填（断点续跑）
-python -m backend.cli delisted --enrich     # 退市股历史 + 上市/退市日（防幸存者）
-python -m backend.cli valuation             # 总市值 / 总股本（--fill-gaps 回补缺口）
-python -m backend.cli rebuild-price-factors # 重建清洗复权因子 / pre_close / 涨跌停（不联网）
-python -m backend.cli verify-data           # 只读体检 PASS/FAIL
-python -m backend.cli daily                 # 一键日常：增量更新→质检→（可选）体检
+python -m backend.cli backfill
+python -m backend.cli delisted --enrich
+python -m backend.cli valuation
+python -m backend.cli rebuild-price-factors
+python -m backend.cli verify-data
+python -m backend.cli daily
 ```
 
-CLI 入口为 [backend/cli.py](backend/cli.py)，FastAPI 装配在 [backend/main.py](backend/main.py)。
+CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。跑后端测试前先停掉可能占用 DuckDB 的服务。
 
-### 端口约定（重要）
+## 端口与构建
 
-- 日常开发：前端 **5173**（唯一对外入口），后端 **8000** 仅本机，由 Vite 代理 `/api` 回 `127.0.0.1:8000`。
-- 开发期改前端**不要** `npm run build`（那是无 HMR 的生产产物）；但**每次修改 `frontend/src` 后需 `npm run build`** 以保证生产产物同步。
-- 自动化验证（AI 截图/交互核查）走**专用端口 5181**（`.claude/launch.json` 配置的 preview），**禁止抢占用户日常的 5173**。
+- 日常开发入口：前端 `5173`，后端 `8000` 仅本机，由 Vite 代理 `/api`。
+- 自动化截图/交互验证用专用端口 `5181`，禁止抢占用户日常的 `5173`。
+- 前端开发预览使用 HMR，不用 `npm run build` 代替开发服务器；但只要改过 `frontend/src`，交付前必须运行 `npm run build`，确保 `frontend/dist` 与源码同步。
 
-## 编码风格与命名约定
+## 环境与版本
 
-后端遵循 Python 3.11+ 类型标注习惯，Ruff 配置为 `line-length = 100`、`target-version = py311`。路由层保持薄封装，复杂业务放入 `services/` 或领域模块。测试文件使用 `test_*.py`。前端使用 Vue 3 Composition API 与 TypeScript，组件文件采用 PascalCase，例如 `StockDetailView.vue`；API 封装放在 `frontend/src/api/*.ts`，布局相关逻辑放在 `frontend/src/layout/`。
+- Python `>=3.11`，本机常用 3.12；Ruff `line-length = 100`、`target-version = py311`。
+- Node.js 建议 20 LTS；前端锁文件为 npm lockfile v3。
+- 后端关键版本：FastAPI `>=0.110`、DuckDB `>=0.10`、PostgreSQL `>=14`、Redis `>=6`、pandas `>=2.2`、pytest `>=8.0`。
+- 前端关键版本：Vue `^3.4`、Vite `^5.2`、TypeScript `^5.4`、Vitest `^1.6`、Element Plus `^2.7`。
+- 本地开发需先启动 PostgreSQL 与 Redis；生产/集成必须设置 `AI_STOCKS_JWT_SECRET`、管理员初始密码和 PG/Redis 连接密钥。
 
-## 测试指南
+## 编码与测试
 
-后端测试框架为 pytest，默认扫描 `backend/tests/test_*.py`。新增后端业务逻辑时，优先补充领域或服务层单测；涉及数据口径、防未来函数、DDL、回测撮合时必须覆盖边界条件。前端测试使用 Vitest，当前重点在 `frontend/src/layout/__tests__/`；新增布局、校验或配置合并逻辑时同步补充 `*.spec.ts`。
+- 路由层保持薄封装，复杂业务放 `services/` 或领域模块；测试文件使用 `test_*.py`。
+- 前端使用 Vue 3 Composition API + TypeScript，组件 PascalCase；API 封装在 `frontend/src/api/*.ts`，布局逻辑在 `frontend/src/layout/`。
+- 新增后端领域逻辑优先补服务/领域单测；涉及数据口径、防未来函数、DDL、回测撮合、权限和资产隔离时必须覆盖边界。
+- 新增布局、校验、配置合并或权限消费逻辑时，同步补充 Vitest。
+- 涉及页面、组件、样式、表格、弹窗、抽屉时，计划必须说明是否触发页面设计闭环和组件/布局维护矩阵。
 
-## 前端页面与布局治理
+## 协作与提交
 
-前端页面、组件、布局、表格、弹窗、抽屉改动以 `DESIGN.md` 为规范事实源，以 `agent-works/configurable-layout-system/page-template.md` 为计划模板。`AGENTS.md` 只保留入口要求，不重复前端细则；计划需说明是否触发页面设计闭环和组件/布局维护矩阵。
-
-## 提交与 Pull Request 要求
-
-Git 历史采用中文语义化风格，例如 `Agent 新增(基础功能): ...`、`Agent 更新(数据管理): ...`。提交信息应说明变更类型、影响模块和核心结果。PR 需包含变更摘要、测试结果、关联需求或问题；涉及 UI 的改动附截图，涉及数据结构或配置的改动说明迁移与兼容性。
-
-## 安全与配置提示
-
-不要提交 `data/` 中的本地数据库、`logs/` 日志或个人环境配置。`prod` 会绑定 `0.0.0.0:8000`，生产/集成部署必须设置 `AI_STOCKS_JWT_SECRET`、管理员初始密码和 PG/Redis 连接密钥；即使已有登录鉴权，也不应绕过反向代理、TLS、限流和运维访问控制直接裸露公网。调整策略参数优先修改 `config/settings.yaml` 或页面配置，避免把临时研究参数写死在代码中。
+- 除命令、代码、日志和原文外，面向用户输出使用简体中文。
+- 改代码前先读同类实现并优先复用；偏离既有分层、命名、返回结构、异常、日志或配置方式时说明理由。
+- 技术方案、交互设计或关键业务规则不确定时，先给推荐方案与理由让用户确认。
+- 不在用户未要求时提交或推送；提交信息使用中文语义化风格，例如 `Agent 新增(基础功能): ...`。
+- 不提交 `data/` 本地数据库、`logs/`、个人环境配置或密钥。`prod` 绑定 `0.0.0.0:8000`，公网部署必须配合反向代理、TLS、限流和运维访问控制。
