@@ -466,7 +466,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 ### 6.8 任务 T7：菜单、路由守卫和默认落点回归
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2,T6
 - 涉及文件/模块：
   - `backend/services/auth_service.py`
@@ -487,9 +487,13 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 边界与异常：`/me` 失败时继续 fail-closed，不回退静态全量菜单。
 - 验证方式：扩展 `test_rbac_me.py`、`SideMenu.spec.ts`、`utils/permission.spec.ts`、`RoleManageView` 相关权限树测试。
 - 完成标准：不同角色菜单和首个落点符合预期；无权直达被导向安全落点。
-- 实际落地情况：待实施。
-
-### 6.9 任务 T8：后端权限与隔离测试
+- 实际落地情况：已完成。
+  - **代码复核（无需改动，机制在 T2 已建、T3~T6 未破坏）**：
+    - `perm_resolver.resolve`：有角色的非 system 用户在 `role_resource` 并集后**强制并入** `SHARED_RESOURCE_CODES`（dedup 保序）；`is_system` 全量；**无角色分支 `menus,resources=[],[]` 不注入 baseline**（fail-closed）——正确。
+    - `auth_service.me`：`permissions = perms["resources"]`（含注入的 baseline）；`_visible_menu_tree` 按「授权 ∩ 可见性」双过滤 + 空分组剪除 + 非 system 隐藏 `visible='system'` 整棵子树——正确。
+    - `pg_ddl` seed：业务菜单（quotes/stocks/board/screen/backtest/training）`visible='login'`，数据/配置/布局/角色·菜单·租户 `visible='system'`；`_seed_role_grants` 给 normal/paid=业务菜单+`BUSINESS_RESOURCE_CODES`，tenant_admin 另加 `permission/系统/用户管理菜单`+`_USER_RESOURCE_CODES`，system 幂等全量；baseline 不入授权行——与 resolver 注入配套、与 resource-codes.sql 一致。
+  - **前端（已覆盖，无需新增）**：`utils/permission.spec.ts`（21 用例）覆盖 `isRouteAllowed`/`resolveMenuGuard`/`firstMenuPath` 的 fail-closed、SAFE_HOME 回落、首个授权落点、不放行被请求未授权页、不自跳死循环；`SideMenu.spec.ts`（3）消费后端菜单不静态兜底；`directives/permission` + `stage4-button-permission`（T6）覆盖按钮级。
+  - **新增测试**：[test_stage4_menu_guard.py](../../../backend/tests/test_stage4_menu_guard.py)（5 用例）——① 自定义角色只授业务码 → resolve 强制注入 3 baseline；② 运行时不可反选（role_resource 全空 → 仍注入 baseline）；③ 无角色用户 fail-closed（空 menus/resources、baseline 也不注入）；④ 自定义角色授业务菜单 `/backtest` → `/me` 菜单树可导航且 system-only 分支隐藏；⑤ `ResourceRepository.list_all` baseline 码标 `baseline_locked=True`、业务/系统码为 False（前端权限树恒勾选+置灰的数据契约）。全量后端 **436 passed**。
 
 - 状态：待开始
 - 依赖：T3a,T4,T5,T7；榜单权限和归属样例依赖 T3b/C1
