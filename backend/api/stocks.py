@@ -9,7 +9,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, Query
 
 from backend.api.response import ApiResponse, ok
-from backend.auth.deps import require_perm, require_system
+from backend.auth.deps import require_perm, require_system_perm
 from backend.groups.stock_group import StockGroupRepo
 from backend.storage import get_client
 from backend.storage.repository import MarketRepository
@@ -224,7 +224,8 @@ def stock_indicators(code: str, lookback: int = 60) -> ApiResponse:
 
 # 数据管理页专属读接口：仅平台系统管理员可见（需求 §7 数据管理菜单 system-only；R8 守卫）。
 # 注：/data/trade-dates 是全站日期选择器共享读，普通用户页面依赖，**不在此守卫内**。
-@router.get("/data/status", response_model=ApiResponse, dependencies=[Depends(require_system)])
+@router.get("/data/status", response_model=ApiResponse,
+            dependencies=[Depends(require_system_perm("data-status:view"))])
 def data_status() -> ApiResponse:
     c = get_client()
     span = c.query_df(
@@ -244,7 +245,8 @@ def data_status() -> ApiResponse:
     })
 
 
-@router.get("/data/update-logs", response_model=ApiResponse, dependencies=[Depends(require_system)])
+@router.get("/data/update-logs", response_model=ApiResponse,
+            dependencies=[Depends(require_system_perm("data-status:view"))])
 def update_logs(page: int = 1, size: int = 10, status: str | None = None,
                 table_name: str | None = None, sort: str = "time", order: str = "desc") -> ApiResponse:
     """采集日志（M2.9.5 服务端分页/排序/筛选）。sort ∈ {time,table,status}，order ∈ {asc,desc}。"""

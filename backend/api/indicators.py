@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
-from backend.auth.deps import require_perm, require_system
+from backend.auth.deps import require_perm, require_system_perm
 from backend.indicators.definition import IndicatorDefRepo
 
 router = APIRouter(prefix="/api", tags=["indicators"])
@@ -40,7 +40,8 @@ def indicators_registry(include_disabled: bool = True) -> ApiResponse:
     return ok({"count": len(items), "items": items})
 
 
-@router.post("/indicators/def", response_model=ApiResponse, dependencies=[Depends(require_system)])
+@router.post("/indicators/def", response_model=ApiResponse,
+             dependencies=[Depends(require_system_perm("indicator:def-manage"))])
 def save_indicator_def(body: IndicatorDefBody) -> ApiResponse:
     try:
         IndicatorDefRepo().save_custom(
@@ -53,21 +54,22 @@ def save_indicator_def(body: IndicatorDefBody) -> ApiResponse:
 
 
 @router.patch("/indicators/def/{key}/enabled", response_model=ApiResponse,
-              dependencies=[Depends(require_system)])
+              dependencies=[Depends(require_system_perm("indicator:def-manage"))])
 def set_indicator_enabled(key: str, body: EnabledBody) -> ApiResponse:
     IndicatorDefRepo().set_enabled(key, body.enabled)
     return ok({"key": key, "enabled": body.enabled})
 
 
 @router.patch("/indicators/def/{key}/categories", response_model=ApiResponse,
-              dependencies=[Depends(require_system)])
+              dependencies=[Depends(require_system_perm("indicator:def-manage"))])
 def set_indicator_categories(key: str, body: CategoriesBody) -> ApiResponse:
     """设置指标的分类标签（多分类,可自定义；内置指标也可改）。"""
     IndicatorDefRepo().set_categories(key, body.categories)
     return ok({"key": key, "categories": body.categories})
 
 
-@router.delete("/indicators/def/{key}", response_model=ApiResponse, dependencies=[Depends(require_system)])
+@router.delete("/indicators/def/{key}", response_model=ApiResponse,
+               dependencies=[Depends(require_system_perm("indicator:def-manage"))])
 def delete_indicator_def(key: str) -> ApiResponse:
     try:
         IndicatorDefRepo().delete(key)

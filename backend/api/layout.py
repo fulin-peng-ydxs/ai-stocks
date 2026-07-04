@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_owner
-from backend.auth.deps import require_perm, require_system
+from backend.auth.deps import require_perm, require_system, require_system_perm
 from backend.storage.layout_config import (
     DEFAULT_USER_ID,
     LAYOUT_CONFIG_SCHEMA_VERSION,
@@ -79,7 +79,8 @@ def list_presets(include_disabled: bool = False) -> ApiResponse:
     )
 
 
-@router.post("/presets", response_model=ApiResponse, dependencies=[Depends(require_system)])
+@router.post("/presets", response_model=ApiResponse,
+             dependencies=[Depends(require_system_perm("layout:preset-manage"))])
 def save_preset(body: PresetBody) -> ApiResponse:
     try:
         preset = LayoutConfigRepo().upsert_preset(
@@ -96,7 +97,8 @@ def save_preset(body: PresetBody) -> ApiResponse:
     return ok(preset, msg="布局预设已保存")
 
 
-@router.delete("/presets/{preset_key}", response_model=ApiResponse, dependencies=[Depends(require_system)])
+@router.delete("/presets/{preset_key}", response_model=ApiResponse,
+               dependencies=[Depends(require_system_perm("layout:preset-manage"))])
 def delete_preset(preset_key: str) -> ApiResponse:
     try:
         LayoutConfigRepo().delete_preset(preset_key)
@@ -114,7 +116,8 @@ def get_page_config(page_key: str) -> ApiResponse:
         return err(400, str(e))
 
 
-@router.post("/pages/{page_key}", response_model=ApiResponse, dependencies=[Depends(require_system)])
+@router.post("/pages/{page_key}", response_model=ApiResponse,
+             dependencies=[Depends(require_system_perm("layout:page-manage"))])
 def save_page_config(page_key: str, body: PageConfigBody) -> ApiResponse:
     try:
         data = LayoutConfigRepo().set_page_config(
@@ -157,7 +160,10 @@ def save_user_config(page_key: str, body: UserConfigBody) -> ApiResponse:
     return ok(data, msg="用户布局配置已保存")
 
 
-@router.post("/validate", response_model=ApiResponse)
+# 布局校验仅系统页面布局工作台（LayoutPagesView，system-only）消费；stage4·T5 补守卫（此前裸露）。
+# 归 layout:page-manage：与页面布局保存同工作区、同权限边界。
+@router.post("/validate", response_model=ApiResponse,
+             dependencies=[Depends(require_system_perm("layout:page-manage"))])
 def validate_layout_config(body: ValidateBody) -> ApiResponse:
     errors: list[str] = []
     normalized: dict[str, Any] = {}
@@ -196,7 +202,8 @@ def reset_layout_config(body: ResetBody) -> ApiResponse:
 
 # 字段开放策略列表：仅布局配置管理页（系统组件工作区，system-only）消费；
 # 页面渲染走 /effective（普通用户依赖），故此读接口限 system，与 POST 守卫对齐。
-@router.get("/field-policies", response_model=ApiResponse, dependencies=[Depends(require_system)])
+@router.get("/field-policies", response_model=ApiResponse,
+            dependencies=[Depends(require_system_perm("layout:field-policy"))])
 def list_field_policies() -> ApiResponse:
     """组件字段开放策略：每个受控 (组件, 字段) 的代码最大集 + 当前生效集 + 是否被覆盖。"""
     return ok(
@@ -207,7 +214,8 @@ def list_field_policies() -> ApiResponse:
     )
 
 
-@router.post("/field-policies", response_model=ApiResponse, dependencies=[Depends(require_system)])
+@router.post("/field-policies", response_model=ApiResponse,
+             dependencies=[Depends(require_system_perm("layout:field-policy"))])
 def save_field_policy(body: FieldPolicyBody) -> ApiResponse:
     """收紧 / 放开某字段的开放层级；空数组视为重置回代码最大集。只能在代码最大集内收放。"""
     try:

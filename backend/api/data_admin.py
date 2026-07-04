@@ -6,17 +6,27 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.deps import require_system_perm
 from backend.storage.duckdb_client import get_client
 
 router = APIRouter(prefix="/api/data", tags=["data-admin"])
 
+# stage4·T5：整 router 在 main.py 挂 require_system 硬守卫（system-only 数据管理）；此处每端点叠加精确码
+# 供路由扫描（T8）与审计识别，运行时仍由 system 兜底。按功能域拆码（概览/质量看/质量处置/调度/数据源/设置）。
+_OVERVIEW = [Depends(require_system_perm("data:overview"))]         # 概览/总览/目录/维度/溯源/单股质量（只读汇总）
+_QUALITY_VIEW = [Depends(require_system_perm("data-quality:view"))]  # 质检问题列表
+_QUALITY_FIX = [Depends(require_system_perm("data-quality:fix"))]    # 质量处置（修复/复位/忽略/恢复/标记退市）
+_SCHEDULE = [Depends(require_system_perm("data-schedule:manage"))]   # 定时任务 CRUD / 启停 / 立即触发
+_SOURCE = [Depends(require_system_perm("data-source:test"))]         # 数据源状态 / 连通测试
+_SETTINGS = [Depends(require_system_perm("data-settings:manage"))]   # 系统设置读写
+
 
 # ── 概览（FR-DM-1）─────────────────────────────────────────
-@router.get("/overview", response_model=ApiResponse)
+@router.get("/overview", response_model=ApiResponse, dependencies=_OVERVIEW)
 def overview() -> ApiResponse:
     from backend.services.data_report import DataIntegrityReport
     rep = DataIntegrityReport()
@@ -42,7 +52,7 @@ def overview() -> ApiResponse:
 
 
 # ── 数据总览首页（FR-DM-13，DM-D12）─────────────────────────
-@router.get("/hub", response_model=ApiResponse)
+@router.get("/hub", response_model=ApiResponse, dependencies=_OVERVIEW)
 def hub() -> ApiResponse:
     """数据总览：闭环各环节实时统计 + 风险摘要（服务端算好风险列表，前端直接渲染）。"""
     from datetime import date
@@ -136,13 +146,13 @@ def _latest_board_date(c):
         return None
 
 
-@router.get("/catalog", response_model=ApiResponse)
+@router.get("/catalog", response_model=ApiResponse, dependencies=_OVERVIEW)
 def catalog() -> ApiResponse:
     from backend.storage.catalog import build_catalog
     return ok({"tables": build_catalog()})
 
 
-@router.get("/dimensions", response_model=ApiResponse)
+@router.get("/dimensions", response_model=ApiResponse, dependencies=_OVERVIEW)
 def dimensions() -> ApiResponse:
     import json
     df = get_client().query_df(
@@ -157,7 +167,7 @@ def dimensions() -> ApiResponse:
     return ok({"dimensions": rows})
 
 
-@router.get("/provenance", response_model=ApiResponse)
+@router.get("/provenance", response_model=ApiResponse, dependencies=_OVERVIEW)
 def provenance(code: str | None = None, page: int = 1, size: int = 50) -> ApiResponse:
     """数据来源溯源（审计）：列出用了非默认源（如 baostock 兜底）的取数事件。
 
@@ -190,7 +200,7 @@ def provenance(code: str | None = None, page: int = 1, size: int = 50) -> ApiRes
     return ok({"total": total, "page": page, "size": size, "list": rows})
 
 
-@router.get("/stock-quality", response_model=ApiResponse)
+@router.get("/stock-quality", response_model=ApiResponse, dependencies=_OVERVIEW)
 def stock_quality(codes: str | None = None, keyword: str | None = None,
                   page: int = 1, size: int = 50) -> ApiResponse:
     from backend.services.data_report import DataIntegrityReport
@@ -200,7 +210,7 @@ def stock_quality(codes: str | None = None, keyword: str | None = None,
 
 
 # ── 质量修复（FR-DM-4）─────────────────────────────────────
-@router.get("/quality", response_model=ApiResponse)
+@router.get("/quality", response_model=ApiResponse, dependencies=_QUALITY_VIEW)
 def quality(issue_type: str | None = None, severity: str | None = None,
             status: str | None = None, code: str | None = None,
             page: int = 1, size: int = 50) -> ApiResponse:
@@ -261,7 +271,7 @@ class FixIn(BaseModel):
     trade_date: str | None = None
 
 
-@router.post("/quality/{issue_id}/fix", response_model=ApiResponse)
+@router.post("/quality/{issue_id}/fix", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_fix(issue_id: int) -> ApiResponse:
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
     row = get_client().query_df(
@@ -278,7 +288,7 @@ def quality_fix(issue_id: int) -> ApiResponse:
     return ok({"task_id": tid})
 
 
-@router.post("/quality/fix-batch", response_model=ApiResponse)
+@router.post("/quality/fix-batch", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_fix_batch(body: dict) -> ApiResponse:
     """批量恢复：一个 fix 任务内顺序恢复所有 issue_ids（单写者模型，逐条写实时日志 + 复检）。"""
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
@@ -292,7 +302,7 @@ def quality_fix_batch(body: dict) -> ApiResponse:
     return ok({"task_id": tid})
 
 
-@router.post("/quality/recover-batch", response_model=ApiResponse)
+@router.post("/quality/recover-batch", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_recover_batch(body: dict) -> ApiResponse:
     """按当前筛选一键恢复：取匹配的「待处理(open/fixing)」问题，建一个 fix 任务顺序恢复+复检。
 
@@ -333,7 +343,7 @@ def quality_recover_batch(body: dict) -> ApiResponse:
     return ok({"task_id": tid, "count": len(ids)})
 
 
-@router.post("/quality/{issue_id}/reset", response_model=ApiResponse)
+@router.post("/quality/{issue_id}/reset", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_reset(issue_id: int) -> ApiResponse:
     """手动复位「修复中」→「未处理」（DM 修复中闭环）：当绑定的修复任务已失败/中断/卡死，
     用户可一键解套，让该问题重新可被恢复。仅对 fixing 状态生效，并解除任务绑定。"""
@@ -347,7 +357,7 @@ def quality_reset(issue_id: int) -> ApiResponse:
     return ok({"id": issue_id, "status": "open"})
 
 
-@router.post("/quality/{issue_id}/ignore", response_model=ApiResponse)
+@router.post("/quality/{issue_id}/ignore", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_ignore(issue_id: int) -> ApiResponse:
     """标记为正常/忽略（DM-D22）：不可恢复或真实极端值（如新股首日大涨）人工确认正常，
     置 status='ignored'。质检幂等重扫不会再翻回 open（DELETE 只清 open）。"""
@@ -365,7 +375,7 @@ class MarkDelistedIn(BaseModel):
     delist_date: str               # YYYY-MM-DD：人工指定的退市日
 
 
-@router.post("/quality/{issue_id}/mark-delisted", response_model=ApiResponse)
+@router.post("/quality/{issue_id}/mark-delisted", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_mark_delisted(issue_id: int, body: MarkDelistedIn) -> ApiResponse:
     """标记退市（应对数据源退市识别不准导致的持续缺口/滞后）：把人工指定的退市日写入
     stock_basic.delist_date，并把该股所有未处理的缺口/滞后问题置为已解决——退市后无后续行情属正常，
@@ -408,7 +418,7 @@ class ScheduledJobIn(BaseModel):
     enabled: bool = True
 
 
-@router.get("/schedules", response_model=ApiResponse)
+@router.get("/schedules", response_model=ApiResponse, dependencies=_SCHEDULE)
 def schedules_list() -> ApiResponse:
     """定时任务列表（含频率人话、下次触发、最近触发）+ 可调度类型/频率枚举，前端建表单用。"""
     from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES, ScheduledJobService
@@ -416,7 +426,7 @@ def schedules_list() -> ApiResponse:
                "task_types": list(SCHEDULABLE_TASK_TYPES)})
 
 
-@router.post("/schedules", response_model=ApiResponse)
+@router.post("/schedules", response_model=ApiResponse, dependencies=_SCHEDULE)
 def schedules_create(body: ScheduledJobIn) -> ApiResponse:
     from backend.scheduler.scheduler import ScheduledJobService
     try:
@@ -429,7 +439,7 @@ def schedules_create(body: ScheduledJobIn) -> ApiResponse:
     return ok(job, msg="定时任务已创建")
 
 
-@router.put("/schedules/{job_id}", response_model=ApiResponse)
+@router.put("/schedules/{job_id}", response_model=ApiResponse, dependencies=_SCHEDULE)
 def schedules_update(job_id: str, body: ScheduledJobIn) -> ApiResponse:
     from backend.scheduler.scheduler import ScheduledJobService
     try:
@@ -442,7 +452,7 @@ def schedules_update(job_id: str, body: ScheduledJobIn) -> ApiResponse:
     return ok(job, msg="定时任务已更新")
 
 
-@router.post("/schedules/{job_id}/enabled", response_model=ApiResponse)
+@router.post("/schedules/{job_id}/enabled", response_model=ApiResponse, dependencies=_SCHEDULE)
 def schedules_set_enabled(job_id: str, enabled: bool) -> ApiResponse:
     from backend.scheduler.scheduler import ScheduledJobService
     try:
@@ -452,14 +462,14 @@ def schedules_set_enabled(job_id: str, enabled: bool) -> ApiResponse:
     return ok(job, msg="已启用" if enabled else "已停用")
 
 
-@router.delete("/schedules/{job_id}", response_model=ApiResponse)
+@router.delete("/schedules/{job_id}", response_model=ApiResponse, dependencies=_SCHEDULE)
 def schedules_delete(job_id: str) -> ApiResponse:
     from backend.scheduler.scheduler import ScheduledJobService
     ScheduledJobService().delete(job_id)
     return ok({"id": job_id}, msg="定时任务已删除")
 
 
-@router.post("/schedules/{job_id}/run", response_model=ApiResponse)
+@router.post("/schedules/{job_id}/run", response_model=ApiResponse, dependencies=_SCHEDULE)
 def schedules_run_now(job_id: str) -> ApiResponse:
     """立即触发一次（不判交易日）；已有写任务在跑则 409。"""
     from backend.scheduler.scheduler import ScheduledJobService
@@ -475,20 +485,20 @@ def schedules_run_now(job_id: str) -> ApiResponse:
 
 
 # ── 数据源状态（FR-DM-5）───────────────────────────────────
-@router.get("/sources", response_model=ApiResponse)
+@router.get("/sources", response_model=ApiResponse, dependencies=_SOURCE)
 def sources(ping: bool = False) -> ApiResponse:
     from backend.services.data_sources import source_status
     return ok(source_status(do_ping=ping))
 
 
-@router.post("/sources/test", response_model=ApiResponse)
+@router.post("/sources/test", response_model=ApiResponse, dependencies=_SOURCE)
 def sources_test() -> ApiResponse:
     from backend.services.data_sources import source_status
     return ok(source_status(do_ping=True), msg="连通测试完成")
 
 
 # ── 系统设置（FR-DM-12 / DM-D2/D3）─────────────────────────
-@router.get("/settings", response_model=ApiResponse)
+@router.get("/settings", response_model=ApiResponse, dependencies=_SETTINGS)
 def get_settings_view() -> ApiResponse:
     """分组配置表单：每字段含 当前值 / 默认值 / 是否已覆盖。"""
     from backend.config import get_effective_settings
@@ -521,7 +531,7 @@ def get_settings_view() -> ApiResponse:
     return ok({"groups": groups})
 
 
-@router.post("/settings", response_model=ApiResponse)
+@router.post("/settings", response_model=ApiResponse, dependencies=_SETTINGS)
 def save_settings(body: dict) -> ApiResponse:
     """保存覆盖值（写 app_config 即时生效）。body={updates:{path:value}} 或直接 {path:value}。"""
     from backend.storage.app_config import AppConfigRepo, ConfigValidationError

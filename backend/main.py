@@ -103,7 +103,8 @@ def create_app() -> FastAPI:
     app.include_router(score_profiles_router)
     app.include_router(trade_profiles_router)
     app.include_router(stock_groups_router)
-    # 系统级 / 全市场写路由：叠加 require_system 角色守卫（R8 最小切片，闭合注册越权窗口）
+    # 系统级 / 全市场写路由：整 router 挂 require_system 硬守卫（R8 最小切片，闭合注册越权窗口）。
+    # stage4·T5：端点内已逐一叠加 require_system_perm 精确码（供路由扫描/审计识别），此处硬守卫保留作兜底。
     app.include_router(data_tasks_router, dependencies=[Depends(require_system)])
     app.include_router(data_admin_router, dependencies=[Depends(require_system)])
     app.include_router(training_router)

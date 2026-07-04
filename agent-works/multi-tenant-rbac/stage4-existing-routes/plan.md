@@ -380,7 +380,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 ### 6.6 任务 T5：system-only 路由叠加精确码并保持硬守卫
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2
 - 涉及文件/模块：
   - `backend/api/config.py`
@@ -403,7 +403,17 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - 复用并扩展 `test_system_route_forbidden_for_tenant_admin`。
   - 对每类 system-only 端点抽样断言 tenant_admin 403、system 非 401/403。
 - 完成标准：system-only 端点既有精确码，又不放宽角色边界。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成。
+  - **`require_system_perm(code)` 接入**（运行时 = `require_system()` 硬守卫 + 挂 `resource_code`/`require_system_perm=True` 供 T8 扫描）：
+    - `config.py`：`GET /api/config`→`config:view`；`POST /api/config/reload`→`config:reload`。
+    - `indicators.py`：写操作 `POST /def`、`PATCH /def/{key}/enabled`、`PATCH /def/{key}/categories`、`DELETE /def/{key}` 全归 `indicator:def-manage`；`GET /registry` 保持业务读码 `require_perm("indicator:registry")` 不变。
+    - `layout.py`：`POST/DELETE /presets`→`layout:preset-manage`；`POST /pages/{page_key}`→`layout:page-manage`；`GET/POST /field-policies`→`layout:field-policy`；**`POST /validate` 补挂 `layout:page-manage`（此前裸露端点，本次堵上）**。page-scope `/reset` 仍走 T4 的动态 scope 自守卫（`require_system()`），未改。
+    - `stocks.py`：`GET /api/data/status`、`GET /api/data/update-logs`→`data-status:view`。
+    - `data_admin.py`：按功能域拆码——概览/总览/目录/维度/溯源/单股质量=`data:overview`；`GET /quality`=`data-quality:view`；质量处置 6 端点(fix/fix-batch/recover-batch/reset/ignore/mark-delisted)=`data-quality:fix`；调度 CRUD/启停/触发=`data-schedule:manage`；数据源=`data-source:test`；系统设置读写=`data-settings:manage`。
+    - `data_tasks.py`：全部端点=`data-task:manage`。
+  - **`main.py`**：`data_tasks`/`data_admin` 两 router 保留 include 时的 `require_system` 硬守卫（兜底），端点内叠加精确码只作扫描/审计元数据（补注释说明）。
+  - **score/trade profile 有意不改**：`score-profile:*`/`trade-profile:*` 归 `/system/config`（visible='system'），本阶段经菜单可见性自动进 `system_only_resource_ids` → 事实上 system-only，但仍以 `require_perm(code)` 接入（保留阶段五拆页开放的迁移路径），不改 `require_system_perm`（见 §6.3 决议与本节边界）。
+  - **测试**：新增 [test_stage4_systemonly.py](../../../backend/tests/test_stage4_systemonly.py)（25 用例）——12 类 system-only 端点参数化断言「非 system 403 / system 非 401·403」+ **硬守卫不降级铁律**（直插授权行把 `config:view` 授自定义角色，非 system 仍 403，证明 `require_system_perm` ≠ `require_perm`）。全量后端 **431 passed**。
 
 ### 6.7 任务 T6：前端按钮级权限接入
 

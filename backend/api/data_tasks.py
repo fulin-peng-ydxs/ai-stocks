@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.deps import require_system_perm
 from backend.services.async_task import (
     TASK_TYPES,
     TASK_CAPABILITIES,
@@ -22,13 +23,17 @@ from backend.services.async_task import (
 
 router = APIRouter(prefix="/api/data", tags=["data-tasks"])
 
+# stage4·T5：整 router 在 main.py 挂 require_system 硬守卫（system-only 数据管理）；
+# 此处每端点叠加精确码 data-task:manage 供路由扫描（T8）与审计识别，运行时仍由 system 兜底。
+_TASK_GUARD = [Depends(require_system_perm("data-task:manage"))]
+
 
 class TaskIn(BaseModel):
     task_type: str                 # update|backfill|ingest_date|ingest_codes|recompute|verify|checkup|fix
     params: dict | None = None
 
 
-@router.post("/tasks", response_model=ApiResponse)
+@router.post("/tasks", response_model=ApiResponse, dependencies=_TASK_GUARD)
 def create_task(body: TaskIn) -> ApiResponse:
     if body.task_type not in TASK_TYPES:
         return err(400, f"未知任务类型: {body.task_type}（可选 {list(TASK_TYPES)}）")
@@ -42,7 +47,7 @@ def create_task(body: TaskIn) -> ApiResponse:
     return ok({"task_id": tid})
 
 
-@router.get("/tasks/{task_id}", response_model=ApiResponse)
+@router.get("/tasks/{task_id}", response_model=ApiResponse, dependencies=_TASK_GUARD)
 def get_task(task_id: str) -> ApiResponse:
     t = AsyncTaskService().get(task_id)
     if not t:
@@ -50,7 +55,7 @@ def get_task(task_id: str) -> ApiResponse:
     return ok(t)
 
 
-@router.get("/tasks/{task_id}/logs", response_model=ApiResponse)
+@router.get("/tasks/{task_id}/logs", response_model=ApiResponse, dependencies=_TASK_GUARD)
 def get_task_logs(task_id: str, after_seq: int = 0) -> ApiResponse:
     svc = AsyncTaskService()
     if not svc.get(task_id):
@@ -58,7 +63,7 @@ def get_task_logs(task_id: str, after_seq: int = 0) -> ApiResponse:
     return ok({"logs": svc.get_logs(task_id, after_seq)})
 
 
-@router.post("/tasks/{task_id}/resume", response_model=ApiResponse)
+@router.post("/tasks/{task_id}/resume", response_model=ApiResponse, dependencies=_TASK_GUARD)
 def resume_task(task_id: str) -> ApiResponse:
     try:
         AsyncTaskService().resume(task_id)
@@ -69,7 +74,7 @@ def resume_task(task_id: str) -> ApiResponse:
     return ok({"task_id": task_id})
 
 
-@router.post("/tasks/{task_id}/cancel", response_model=ApiResponse)
+@router.post("/tasks/{task_id}/cancel", response_model=ApiResponse, dependencies=_TASK_GUARD)
 def cancel_task(task_id: str) -> ApiResponse:
     """请求终止运行中/排队中的任务（协作式：到下一个检查点停下，标记为可续跑）。"""
     svc = AsyncTaskService()
@@ -83,7 +88,7 @@ def cancel_task(task_id: str) -> ApiResponse:
     return ok({"task_id": task_id, "cancelling": True})
 
 
-@router.get("/tasks", response_model=ApiResponse)
+@router.get("/tasks", response_model=ApiResponse, dependencies=_TASK_GUARD)
 def list_tasks(limit: int = 20, status: str | None = None, task_type: str | None = None,
                page: int | None = None, size: int | None = None,
                sort: str = "time", order: str = "desc") -> ApiResponse:
