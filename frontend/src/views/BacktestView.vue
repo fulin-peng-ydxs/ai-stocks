@@ -84,6 +84,12 @@ function scoreProfileKey(p: ScoreProfileSummary): string {
   return p.profile_ref || p.id
 }
 
+function normalizeScoreProfileKey(value?: string | null): string {
+  if (!value) return ''
+  const matched = scoreProfiles.value.find((p) => scoreProfileKey(p) === value || p.id === value)
+  return matched ? scoreProfileKey(matched) : value
+}
+
 // —— 卖出规则 ——（跌破均线为基准退出，止盈/止损/到期为可选叠加触发）
 const SELL_MA_OPTIONS = [5, 10, 20, 30, 60]
 const sellMa = ref(20)
@@ -284,7 +290,7 @@ async function loadRun(id: string) {
       if (p.date_start) dateStart.value = ymd(p.date_start)
       if (p.date_end) dateEnd.value = ymd(p.date_end)
       profileId.value = p.profile_id || ''
-      scoreProfileId.value = p.score_profile_id || ''
+      scoreProfileId.value = normalizeScoreProfileKey(p.score_profile_id)
       tradeProfileId.value = p.trade_profile_id || ''
       if (p.top_n) topN.value = p.top_n
       if (p.initial_capital) initCap.value = p.initial_capital
@@ -366,7 +372,10 @@ onMounted(async () => {
   initCap.value = Number(settings.initCap)
   robustPanels.value = settings.robustExpanded ? ['robust'] : []
   try { profiles.value = await listProfiles() } catch { /* ignore */ }
-  try { scoreProfiles.value = await listScoreProfiles() } catch { /* ignore */ }
+  try {
+    scoreProfiles.value = await listScoreProfiles()
+    scoreProfileId.value = normalizeScoreProfileKey(scoreProfileId.value)
+  } catch { /* ignore */ }
   try { tradeProfiles.value = await listTradeProfiles() } catch { /* ignore */ }
   await loadHistory()
   // 默认载入最近一次回测结果，避免空屏、不用反复重跑
