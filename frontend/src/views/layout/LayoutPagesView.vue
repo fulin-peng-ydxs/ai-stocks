@@ -587,8 +587,8 @@ onMounted(async () => {
                 />
 
                 <div class="button-row cc-save-row">
-                  <el-button type="primary" :loading="pageSaving" @click="savePageConfig">保存页面配置</el-button>
-                  <el-button @click="resetPageConfig">重置页面配置</el-button>
+                  <el-button v-permission="'layout:page-manage'" type="primary" :loading="pageSaving" @click="savePageConfig">保存页面配置</el-button>
+                  <el-button v-permission="'layout:page-manage'" @click="resetPageConfig">重置页面配置</el-button>
                 </div>
               </section>
             </div>
@@ -618,7 +618,7 @@ onMounted(async () => {
                 <input class="file-input" type="file" accept="application/json,.json" @change="onImportFile" />
                 <el-input v-model="importText" type="textarea" :rows="16" spellcheck="false" placeholder="粘贴导出的页面/用户配置 JSON" />
                 <div class="button-row">
-                  <el-button type="primary" :loading="importSaving" @click="importConfig">校验并导入</el-button>
+                  <el-button v-permission="'layout:page-manage'" type="primary" :loading="importSaving" @click="importConfig">校验并导入</el-button>
                 </div>
               </section>
             </div>
@@ -632,8 +632,8 @@ onMounted(async () => {
               </div>
               <div class="toolbar-actions">
                 <el-input v-model="selectedUserId" class="user-input" placeholder="userId" />
-                <el-button type="primary" :loading="reportLoading" @click="runValidationReport">重新校验</el-button>
-                <el-button @click="resetUserConfig">重置用户覆盖</el-button>
+                <el-button v-permission="'layout:page-manage'" type="primary" :loading="reportLoading" @click="runValidationReport">重新校验</el-button>
+                <el-button v-permission="'layout:page-manage'" @click="resetUserConfig">重置用户覆盖</el-button>
               </div>
             </div>
 

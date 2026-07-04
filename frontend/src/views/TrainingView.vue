@@ -314,7 +314,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             </div>
           </div>
           <div class="cfg-actions">
-            <el-button type="primary" size="large" :loading="loading" @click="start">开始训练</el-button>
+            <el-button v-permission="'training:start'" type="primary" size="large" :loading="loading" @click="start">开始训练</el-button>
             <span class="cfg-hint">回合数、连续交易日、初始资金等默认值可在右上角
               <b class="hl" @click="settingsOpen = true">设置</b> 中调整</span>
           </div>
@@ -354,7 +354,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <template #default="{ row }">{{ row.completed_at?.slice(0, 16) ?? '--' }}</template>
             </el-table-column>
             <el-table-column label="" width="60">
-              <template #default="{ row }"><el-button link type="danger" size="small" @click.stop="removeSession(row.id)">删除</el-button></template>
+              <template #default="{ row }"><el-button v-permission="'training:delete'" link type="danger" size="small" @click.stop="removeSession(row.id)">删除</el-button></template>
             </el-table-column>
           </el-table>
           <el-pagination v-if="history.total > history.size" small layout="prev, pager, next"
@@ -395,7 +395,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           <CandleChart :bars="displayBars" :warmup-bars="warmupBars" :markers="round.markers" :zoom-start="0" :zoom-end="100" />
         </div>
 
-        <div class="action-panel">
+        <div v-permission="'training:trade'" class="action-panel">
           <div class="acct">
             <div class="acct-item"><label>可用资金（可买上限）</label><b class="lim">{{ money(round.cash) }}</b></div>
             <div class="acct-item"><label>持仓（可卖上限）</label><b class="lim">{{ round.pos_hands }} 手</b><span class="muted">@{{ round.pos_avg_price.toFixed(2) }}</span></div>
@@ -522,7 +522,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <el-card shadow="never" class="review-card">
           <template #header><span class="card-title">整局复盘</span></template>
           <el-input v-model="reviewNote" type="textarea" :rows="4" placeholder="记录本局思路、复盘总结、改进点……" />
-          <div class="review-actions"><el-button type="primary" @click="persistReview">保存复盘</el-button></div>
+          <div class="review-actions"><el-button v-permission="'training:review'" type="primary" @click="persistReview">保存复盘</el-button></div>
         </el-card>
     </div>
     </template>

@@ -639,8 +639,8 @@ onMounted(async () => {
               <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openScoreVersions">v{{ curVersion }}</span>
               <span class="wsum" :class="{ bad: weightSum !== 100 }">权重合计 {{ weightSum }}%</span>
               <div class="spacer" />
-              <el-button :loading="saving" type="primary" @click="save">保存</el-button>
-              <el-button v-if="curId && !isNew" type="danger" plain @click="remove">删除</el-button>
+              <el-button v-permission="'score-profile:save'" :loading="saving" type="primary" @click="save">保存</el-button>
+              <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew" type="danger" plain @click="remove">删除</el-button>
             </div>
 
             <p class="hint">
@@ -744,7 +744,7 @@ onMounted(async () => {
               <span class="run-title">试算榜单</span>
               <el-tag v-if="runRows.length" type="info" size="small" round>共 {{ runRows.length }} 只</el-tag>
               <TradeDatePicker v-model="runDate" />
-              <el-button :loading="running" type="success" plain @click="tryRun">▶ 用当前配置试算</el-button>
+              <el-button v-permission="'score:run'" :loading="running" type="success" plain @click="tryRun">▶ 用当前配置试算</el-button>
             </div>
             <div v-if="settings.previewExpanded && runRows.length" class="run-table-wrap">
             <el-table :data="runRows" size="small" border height="100%" class="run-table">
@@ -795,7 +795,7 @@ onMounted(async () => {
           </p>
           <div class="tech-actions">
             <el-input v-model="techSearch" placeholder="搜索名称/标识/说明/分类" clearable size="small" style="width: 220px" />
-            <el-button type="primary" plain size="small" @click="openNewDef">＋ 新建自定义指标</el-button>
+            <el-button v-permission="'indicator:def-manage'" type="primary" plain size="small" @click="openNewDef">＋ 新建自定义指标</el-button>
           </div>
         </div>
         <div class="tech-table-wrap">
@@ -845,12 +845,12 @@ onMounted(async () => {
           </el-table-column>
           <el-table-column label="启用" width="64">
             <template #default="{ row }">
-              <el-switch :model-value="row.enabled" size="small" @change="toggleEnabled(row)" />
+              <el-switch v-permission="'indicator:def-manage'" :model-value="row.enabled" size="small" @change="toggleEnabled(row)" />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="60">
             <template #default="{ row }">
-              <el-button v-if="!row.is_builtin" link type="danger" @click="removeDef(row)">删</el-button>
+              <el-button v-permission="'indicator:def-manage'" v-if="!row.is_builtin" link type="danger" @click="removeDef(row)">删</el-button>
               <span v-else>—</span>
             </template>
           </el-table-column>
@@ -911,7 +911,7 @@ onMounted(async () => {
           </el-form>
           <template #footer>
             <el-button @click="defDialog = false">取消</el-button>
-            <el-button type="primary" @click="submitNewDef">保存</el-button>
+            <el-button v-permission="'indicator:def-manage'" type="primary" @click="submitNewDef">保存</el-button>
           </template>
         </el-dialog>
         </div>
@@ -939,8 +939,8 @@ onMounted(async () => {
               <el-input v-model="tEditName" placeholder="方案名称" style="width: 190px" />
               <span v-if="tCurVersion && !tIsNew" class="ver-badge" title="点击查看历史版本" @click="openTradeVersions">v{{ tCurVersion }}</span>
               <div class="spacer" />
-              <el-button :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
-              <el-button v-if="tCurId && !tIsNew" type="danger" plain @click="removeTrade">删除</el-button>
+              <el-button v-permission="'trade-profile:save'" :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
+              <el-button v-permission="'trade-profile:delete'" v-if="tCurId && !tIsNew" type="danger" plain @click="removeTrade">删除</el-button>
             </div>
             <p class="hint">买入/卖出各是一组技术指标条件(且/或)。卖出以指标命中为主,止盈/止损/最大持仓为可选兜底,先到先卖。</p>
 
@@ -952,7 +952,7 @@ onMounted(async () => {
                   <el-radio-button value="AND">且(全满足)</el-radio-button>
                   <el-radio-button value="OR">或(任一)</el-radio-button>
                 </el-radio-group>
-                <el-button size="small" :loading="previewing === 'buy'" @click="previewSide('buy')">▶ 试算</el-button>
+                <el-button v-permission="'trade-profile:preview'" size="small" :loading="previewing === 'buy'" @click="previewSide('buy')">▶ 试算</el-button>
                 <el-tag v-if="previewHit.buy !== null" type="success" size="small" round>今日命中 {{ previewHit.buy }} 只</el-tag>
               </div>
               <div v-for="(c, i) in buyConds" :key="'b' + i" class="cond-row">
@@ -996,7 +996,7 @@ onMounted(async () => {
                   <el-radio-button value="AND">且(全满足)</el-radio-button>
                   <el-radio-button value="OR">或(任一)</el-radio-button>
                 </el-radio-group>
-                <el-button size="small" :loading="previewing === 'sell'" @click="previewSide('sell')">▶ 试算</el-button>
+                <el-button v-permission="'trade-profile:preview'" size="small" :loading="previewing === 'sell'" @click="previewSide('sell')">▶ 试算</el-button>
                 <el-tag v-if="previewHit.sell !== null" type="warning" size="small" round>今日命中 {{ previewHit.sell }} 只</el-tag>
               </div>
               <div v-for="(c, i) in sellConds" :key="'s' + i" class="cond-row">
@@ -1050,7 +1050,7 @@ onMounted(async () => {
         <div class="sys-wrap" v-loading="sysLoading">
           <div class="sys-head">
             <span class="sys-tip">数据源 / 股票池 / 回测成本 / 选股数量等运行参数，改后即时生效。</span>
-            <el-button type="primary" :loading="sysSaving" :disabled="!sysDirty" @click="saveSystem">保存并生效</el-button>
+            <el-button v-permission="'data-settings:manage'" type="primary" :loading="sysSaving" :disabled="!sysDirty" @click="saveSystem">保存并生效</el-button>
           </div>
           <el-card v-for="g in sysGroups" :key="g.key" shadow="never" class="sys-group" :header="g.label">
             <el-form label-width="160px">

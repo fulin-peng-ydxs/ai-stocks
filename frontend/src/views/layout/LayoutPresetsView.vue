@@ -274,7 +274,7 @@ onMounted(reloadPresets)
         <div class="toolbar-actions">
           <el-button @click="importExportVisible = true">导入导出</el-button>
           <el-button @click="reloadPresets">刷新</el-button>
-          <el-button type="primary" @click="openNewPreset">新增预设</el-button>
+          <el-button v-permission="'layout:preset-manage'" type="primary" @click="openNewPreset">新增预设</el-button>
         </div>
       </div>
     </template>
@@ -312,8 +312,8 @@ onMounted(reloadPresets)
           <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
               <el-button size="small" @click="openEditPreset(row)">{{ row.is_builtin ? '查看' : '编辑' }}</el-button>
-              <el-button size="small" @click="togglePreset(row)">{{ row.enabled ? '停用' : '启用' }}</el-button>
-              <el-button size="small" :type="row.is_builtin ? 'info' : 'danger'" :disabled="row.is_builtin" @click="removePreset(row)">删除</el-button>
+              <el-button v-permission="'layout:preset-manage'" size="small" @click="togglePreset(row)">{{ row.enabled ? '停用' : '启用' }}</el-button>
+              <el-button v-permission="'layout:preset-manage'" size="small" :type="row.is_builtin ? 'info' : 'danger'" :disabled="row.is_builtin" @click="removePreset(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -406,7 +406,7 @@ onMounted(reloadPresets)
         </el-form>
         <template #footer>
           <el-button @click="presetDialog = false">取消</el-button>
-          <el-button type="primary" :loading="presetSaving" @click="submitPreset">保存</el-button>
+          <el-button v-permission="'layout:preset-manage'" type="primary" :loading="presetSaving" @click="submitPreset">保存</el-button>
         </template>
       </el-dialog>
 
@@ -426,7 +426,7 @@ onMounted(reloadPresets)
             <input class="file-input" type="file" accept="application/json,.json" @change="onImportFile" />
             <el-input v-model="importText" type="textarea" :rows="10" spellcheck="false" placeholder="粘贴导出的 JSON" />
             <div class="button-row">
-              <el-button type="primary" :loading="importSaving" @click="importPresets">校验并导入</el-button>
+              <el-button v-permission="'layout:preset-manage'" type="primary" :loading="importSaving" @click="importPresets">校验并导入</el-button>
             </div>
           </section>
         </div>

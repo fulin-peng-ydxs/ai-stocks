@@ -453,7 +453,7 @@ onMounted(async () => {
         <div class="b-actions">
           <el-button size="small" @click="addIndRow">＋ 指标条件</el-button>
           <el-button size="small" @click="addExprRow">＋ 表达式条件</el-button>
-          <el-button text type="primary" size="small" @click="openSave">＋ 保存为方案</el-button>
+          <el-button v-permission="'screen-profile:save'" text type="primary" size="small" @click="openSave">＋ 保存为方案</el-button>
         </div>
         <div class="dsl-help">
           表达式算子：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C 收 O 开 H 高 L 低 V 量 TURN 换手。
@@ -465,7 +465,7 @@ onMounted(async () => {
       <!-- 运行栏 -->
       <div class="run-bar">
         <TradeDatePicker v-model="runDate" placeholder="最新交易日" clearable style="width: 160px" />
-        <el-button type="primary" :loading="loading" @click="run">运行筛选</el-button>
+        <el-button v-permission="'screen:run'" type="primary" :loading="loading" @click="run">运行筛选</el-button>
         <span class="run-hint">含表达式/带参指标需全市场逐股求值，约十几秒</span>
       </div>
     </el-card>
@@ -538,7 +538,7 @@ onMounted(async () => {
       <pre class="ast" style="margin-top: 12px">{{ JSON.stringify(buildAst(), null, 2) }}</pre>
       <template #footer>
         <el-button @click="saveVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="doSave">保存</el-button>
+        <el-button v-permission="'screen-profile:save'" type="primary" :loading="saving" @click="doSave">保存</el-button>
       </template>
     </el-dialog>
 

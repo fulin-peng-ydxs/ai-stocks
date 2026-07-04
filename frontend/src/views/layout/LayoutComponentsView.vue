@@ -350,6 +350,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               <el-table-column label="允许覆盖范围" min-width="200">
                 <template #default="{ row }">
                   <el-checkbox-group
+                    v-permission="'layout:field-policy'"
                     :model-value="row.allowedLayers"
                     @change="(v: ComponentConfigLayer[]) => onLayersChange(row.key, v)"
                   >
@@ -364,7 +365,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               </el-table-column>
               <el-table-column label="" width="96" align="right">
                 <template #default="{ row }">
-                  <el-button v-if="row.overridden" size="small" text type="primary" @click="resetField(row.key)">恢复默认</el-button>
+                  <el-button v-permission="'layout:field-policy'" v-if="row.overridden" size="small" text type="primary" @click="resetField(row.key)">恢复默认</el-button>
                   <span v-else class="muted">默认</span>
                 </template>
               </el-table-column>

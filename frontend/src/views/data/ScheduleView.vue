@@ -212,7 +212,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         </HelpTip>
       </h2>
       <div class="page-head-actions">
-        <el-button type="primary" @click="openCreate">新建定时任务</el-button>
+        <el-button v-permission="'data-schedule:manage'" type="primary" @click="openCreate">新建定时任务</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -242,7 +242,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </el-table-column>
           <el-table-column label="启用" width="80" align="center">
             <template #default="{ row }">
-              <el-switch :model-value="row.enabled" :loading="togglingId === row.id" @change="toggleEnabled(row)" />
+              <el-switch v-permission="'data-schedule:manage'" :model-value="row.enabled" :loading="togglingId === row.id" @change="toggleEnabled(row)" />
             </template>
           </el-table-column>
           <el-table-column label="下次触发" width="160">
@@ -253,9 +253,9 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
-              <el-button type="primary" link size="small" @click="runNow(row)">立即执行</el-button>
-              <el-button link size="small" @click="openEdit(row)">编辑</el-button>
-              <el-button type="danger" link size="small" @click="remove(row)">删除</el-button>
+              <el-button v-permission="'data-schedule:manage'" type="primary" link size="small" @click="runNow(row)">立即执行</el-button>
+              <el-button v-permission="'data-schedule:manage'" link size="small" @click="openEdit(row)">编辑</el-button>
+              <el-button v-permission="'data-schedule:manage'" type="danger" link size="small" @click="remove(row)">删除</el-button>
             </template>
           </el-table-column>
           <template #empty><span class="empty">暂无定时任务，点右上「新建定时任务」添加</span></template>
@@ -266,7 +266,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
       <el-card shadow="never" class="blk">
         <template #header>
           <div class="blk-head"><span>数据源健康</span>
-            <el-button size="small" type="primary" plain :loading="pinging" @click="loadSources(true)">测试连通</el-button></div>
+            <el-button v-permission="'data-source:test'" size="small" type="primary" plain :loading="pinging" @click="loadSources(true)">测试连通</el-button></div>
         </template>
         <div v-for="s in displaySources" :key="s.source" class="src">
           <span class="dot" :class="s.up === true ? 'up' : s.up === false ? 'down' : 'unknown'" />
@@ -342,7 +342,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
       </el-form>
       <template #footer>
         <el-button @click="dlg = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+        <el-button v-permission="'data-schedule:manage'" type="primary" :loading="saving" @click="save">保存</el-button>
       </template>
     </el-dialog>
 

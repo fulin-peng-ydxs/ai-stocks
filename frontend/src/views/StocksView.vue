@@ -556,7 +556,7 @@ onMounted(async () => {
             @clear="groupSearch"
           />
           <el-button size="small" :loading="groupLoading" @click="groupSearch">查询</el-button>
-          <el-button size="small" type="danger" plain :disabled="groupDetail.is_default" @click="doDeleteGroup">删除分组</el-button>
+          <el-button v-permission="'stock-group:delete'" size="small" type="danger" plain :disabled="groupDetail.is_default" @click="doDeleteGroup">删除分组</el-button>
         </div>
       </div>
     </el-card>
@@ -693,11 +693,11 @@ onMounted(async () => {
         <div class="cart-ops">
           <el-button size="small" type="primary" @click="viewCartOneByOne">逐个查看</el-button>
           <template v-if="inGroupMode">
-            <el-button size="small" type="danger" plain @click="removeFromGroup">从本组移出</el-button>
+            <el-button v-permission="'stock-group:member-update'" size="small" type="danger" plain @click="removeFromGroup">从本组移出</el-button>
           </template>
           <template v-else>
-            <el-button size="small" @click="openCreate">存为新分组</el-button>
-            <el-button size="small" @click="openAddTo">加入已有分组</el-button>
+            <el-button v-permission="'stock-group:create'" size="small" @click="openCreate">存为新分组</el-button>
+            <el-button v-permission="'stock-group:member-update'" size="small" @click="openAddTo">加入已有分组</el-button>
           </template>
           <el-button size="small" text @click="cart = []">清空</el-button>
         </div>
@@ -727,7 +727,7 @@ onMounted(async () => {
       <div class="f-codes">将加入 {{ cartCodes.length }} 只：{{ cart.slice(0, 8).map(c => c.name || c.code).join('、') }}{{ cart.length > 8 ? ' …' : '' }}</div>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="doCreate">创建</el-button>
+        <el-button v-permission="'stock-group:create'" type="primary" :loading="creating" @click="doCreate">创建</el-button>
       </template>
     </el-dialog>
 
@@ -747,7 +747,7 @@ onMounted(async () => {
       <div class="f-codes">将加入 {{ cartCodes.length }} 只（已在组内的保留原加入日期）</div>
       <template #footer>
         <el-button @click="addVisible = false">取消</el-button>
-        <el-button type="primary" :loading="adding" @click="doAddTo">加入</el-button>
+        <el-button v-permission="'stock-group:member-update'" type="primary" :loading="adding" @click="doAddTo">加入</el-button>
       </template>
     </el-dialog>
 
@@ -764,7 +764,7 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
-        <el-button type="primary" @click="doEdit">保存</el-button>
+        <el-button v-permission="'stock-group:update'" type="primary" @click="doEdit">保存</el-button>
       </template>
     </el-dialog>
 

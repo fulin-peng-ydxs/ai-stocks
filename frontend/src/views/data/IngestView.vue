@@ -402,20 +402,20 @@ onMounted(async () => {
           <div class="act">
             <div class="act-t">增量更新</div>
             <div class="act-d">拉取至最新交易日</div>
-            <el-button type="primary" plain size="small" :disabled="writeRunning" @click="submit('update')">执行</el-button>
-            <el-button text size="small" @click="openOptions('ingest_codes')">指定股票…</el-button>
+            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning" @click="submit('update')">执行</el-button>
+            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('ingest_codes')">指定股票…</el-button>
           </div>
           <div class="act">
             <div class="act-t">历史补数</div>
             <div class="act-d">回补缺失历史（可能较久）</div>
-            <el-button type="primary" plain size="small" :disabled="writeRunning"
+            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
                        @click="submit('backfill', undefined, '历史补数耗时可能较长，确认开始？')">执行</el-button>
-            <el-button text size="small" @click="openOptions('backfill')">更多选项…</el-button>
+            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('backfill')">更多选项…</el-button>
           </div>
           <div class="act">
             <div class="act-t">指定日期采集</div>
             <div class="act-d">补单日 / 区间行情，可选指定股票（重采缺口即走这里）</div>
-            <el-button type="primary" plain size="small" :disabled="writeRunning" @click="openOptions('ingest_date')">设置并执行</el-button>
+            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning" @click="openOptions('ingest_date')">设置并执行</el-button>
           </div>
         </div>
       </el-card>
@@ -433,7 +433,7 @@ onMounted(async () => {
               </HelpTip>
             </div>
             <div class="act-d">把所有已缓存评分标记为需重算（一般无需手动，数据变更已自动处理）</div>
-            <el-button plain size="small" @click="submit('recompute')">执行</el-button>
+            <el-button v-permission="'data-task:manage'" plain size="small" @click="submit('recompute')">执行</el-button>
           </div>
         </div>
       </el-card>
@@ -604,7 +604,7 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="optDlg = false">取消</el-button>
-        <el-button type="primary" @click="submitOptions">执行</el-button>
+        <el-button v-permission="'data-task:manage'" type="primary" @click="submitOptions">执行</el-button>
       </template>
     </el-dialog>
 

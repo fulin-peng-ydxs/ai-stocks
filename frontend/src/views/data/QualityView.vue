@@ -267,12 +267,12 @@ onMounted(() => {
         </HelpTip>
       </h2>
       <div class="page-head-actions">
-        <el-button type="warning" plain :loading="batching" :disabled="!canBatch"
+        <el-button v-permission="'data-quality:fix'" type="warning" plain :loading="batching" :disabled="!canBatch"
                    :title="canBatch ? '' : '请先选择类型/严重度/代码再批量恢复'" @click="batchRecover">
           一键恢复
         </el-button>
-        <el-button type="primary" plain @click="runVerify">立即质检</el-button>
-        <el-button type="success" plain :loading="checkupRunning" @click="runCheckup">结构体检</el-button>
+        <el-button v-permission="'data-task:manage'" type="primary" plain @click="runVerify">立即质检</el-button>
+        <el-button v-permission="'data-task:manage'" type="success" plain :loading="checkupRunning" @click="runCheckup">结构体检</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
@@ -338,18 +338,18 @@ onMounted(() => {
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 'open' || row.status === 'fixing'">
-              <el-button type="primary" size="small" link
+              <el-button v-permission="'data-quality:fix'" type="primary" size="small" link
                          :loading="busyId === row.id" :disabled="busyId !== null"
                          @click="fixOne(row)">
                 {{ row.status === 'fixing' && busyId !== row.id ? '处理中…'
                    : (RECOVER_ACTION_LABEL[row.issue_type] ?? '恢复') }}
               </el-button>
               <!-- 修复中且非本页正在处理 → 可能是孤儿状态（任务失败/中断/卡死），允许手动复位解套 -->
-              <el-button v-if="row.status === 'fixing' && busyId !== row.id" type="warning" size="small" link
+              <el-button v-permission="'data-quality:fix'" v-if="row.status === 'fixing' && busyId !== row.id" type="warning" size="small" link
                          @click="resetOne(row)">复位</el-button>
-              <el-button v-if="GAP_TYPES.includes(row.issue_type)" type="warning" size="small" link
+              <el-button v-permission="'data-quality:fix'" v-if="GAP_TYPES.includes(row.issue_type)" type="warning" size="small" link
                          :disabled="busyId !== null" @click="openDelist(row)">标记退市</el-button>
-              <el-button type="info" size="small" link :disabled="busyId !== null"
+              <el-button v-permission="'data-quality:fix'" type="info" size="small" link :disabled="busyId !== null"
                          @click="ignoreOne(row)">标记正常</el-button>
             </template>
             <span v-else class="muted">—</span>
@@ -383,7 +383,7 @@ onMounted(() => {
       </el-form>
       <template #footer>
         <el-button @click="delistDlg = false">取消</el-button>
-        <el-button type="warning" :loading="delisting" @click="confirmDelist">确认标记退市</el-button>
+        <el-button v-permission="'data-quality:fix'" type="warning" :loading="delisting" @click="confirmDelist">确认标记退市</el-button>
       </template>
     </el-dialog>
 

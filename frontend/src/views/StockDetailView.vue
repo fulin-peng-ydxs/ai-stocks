@@ -470,6 +470,7 @@ onBeforeUnmount(() => {
           {{ fmtPct(latestPct) }}
         </span>
         <el-select
+          v-permission="'stock-group:member-update'"
           v-model="selectedGroupIds"
           multiple
           filterable

@@ -417,7 +417,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 ### 6.7 任务 T6：前端按钮级权限接入
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2,T3a,T4,T5；BoardView 榜单按钮权限接入依赖 T3b/C1
 - 涉及文件/模块：
   - `frontend/src/views/BoardView.vue`
@@ -446,7 +446,23 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - `cd frontend && npm test -- permission SideMenu` 或项目实际 vitest 命令。
   - 新增关键页面按钮权限单测或轻量组件测试。
 - 完成标准：无权用户不可见或不可用对应按钮；直调接口仍由后端 403。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成。
+  - **业务页（自定义角色可能仅持读码，v-permission 真实生效）**：
+    - `ScreenView`：保存为方案/弹窗保存→`screen-profile:save`；运行筛选→`screen:run`。
+    - `BacktestView`：运行回测→`backtest:run`；稳健性运行→`backtest:robust`；删除历史→`backtest:delete`。
+    - `TrainingView`：开始训练→`training:start`；删除会话→`training:delete`；保存复盘→`training:review`；**交易操作区整块（买/卖/撤单/下一日/结算）用 `training:trade` 门控整个 `.action-panel`**（避免逐按钮门控留下孤立「买入/卖出」标签，符合「不留空白操作列」）。
+    - `StocksView`：删除分组→`stock-group:delete`；存为新分组/弹窗创建→`stock-group:create`；加入已有/移出/弹窗加入→`stock-group:member-update`；编辑分组弹窗保存→`stock-group:update`。
+    - `StockDetailView`：所属分组多选（`@change` 增删成员）→`stock-group:member-update`。
+    - `BoardView`：**不单独挂按钮码**——「刷新」即页面主加载（调 `runScoreProfile`=score:run，隐藏会破坏页面），`board:view`/`score:run` 对所有业务角色默认授权，按「页面加载依赖页面可见性」原则（plan 操作项）由菜单门控治理；导出 CSV 为本地操作不加码。
+  - **系统页（menu `visible='system'`+路由守卫 fail-closed，仅 system 可达 → v-permission 对 system 恒 no-op，接入作前向兼容 + 可追溯，后端 `require_system`/`require_system_perm` 才是硬边界）**：
+    - `ConfigView`：评分方案存/删/试算→`score-profile:save`/`delete`/`score:run`；指标启停/新建/删除/弹窗保存→`indicator:def-manage`；买卖方案存/删/试算→`trade-profile:save`/`delete`/`preview`；系统设置保存→`data-settings:manage`。
+    - `data/IngestView`：采集/补数/重算/指定执行/弹窗执行→`data-task:manage`。
+    - `data/QualityView`：一键恢复/单条恢复/复位/标记退市/标记正常→`data-quality:fix`；立即质检/结构体检→`data-task:manage`。
+    - `data/ScheduleView`：新建/编辑/删除/立即执行/启停/弹窗保存→`data-schedule:manage`；测试连通→`data-source:test`。
+    - `data/OverviewView`：纯只读，无写按钮，不接入。
+    - `layout/LayoutPresetsView`→`layout:preset-manage`；`layout/LayoutPagesView`→`layout:page-manage`；`layout/LayoutComponentsView`→`layout:field-policy`。
+  - **测试**：新增 [stage4-button-permission.spec.ts](../../../frontend/src/directives/__tests__/stage4-button-permission.spec.ts)（56 用例，数据驱动锁定各页按钮码在「持码保留/缺码移除/system 恒保留」的表现）；`npm run build`（vue-tsc + vite）通过；全量前端 vitest **174 passed**。
+  - 边界遵循：多 API 按钮取最严格写码；仅隐藏按钮不足以防护 → 后端 T3~T5 精确码硬兜底已在位；导出/清空/导航等本地操作不加码。
 
 ### 6.8 任务 T7：菜单、路由守卫和默认落点回归
 

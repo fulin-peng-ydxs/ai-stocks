@@ -712,7 +712,7 @@ async function openTradeChart(row: TradeRow) {
               <span class="opt-range">{{ o.range }} <b :style="{ color: o.color }">{{ o.retTxt }}</b></span>
             </el-option>
           </el-select>
-          <el-button :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
+          <el-button v-permission="'backtest:delete'" :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -808,7 +808,7 @@ async function openTradeChart(row: TradeRow) {
 
       <!-- 运行按钮 + 紧贴其下的执行说明。dirty=蓝可点；出结果/载入历史后置灰；改参恢复 -->
       <div class="run-row">
-        <el-button :type="dirty ? 'primary' : 'info'" size="large" :loading="loading"
+        <el-button v-permission="'backtest:run'" :type="dirty ? 'primary' : 'info'" size="large" :loading="loading"
                    :disabled="!dirty" @click="run">
           {{ dirty ? '运行回测' : '已是最新结果' }}
         </el-button>
@@ -870,7 +870,7 @@ async function openTradeChart(row: TradeRow) {
                   <span class="lbl">样本切分日</span>
                   <TradeDatePicker v-model="robustSplit" placeholder="区间内某交易日" style="width: 160px" />
                 </template>
-                <el-button type="primary" plain size="small" :loading="robustLoading" @click="runRobustTest">运行</el-button>
+                <el-button v-permission="'backtest:robust'" type="primary" plain size="small" :loading="robustLoading" @click="runRobustTest">运行</el-button>
                 <span class="tip-inline">逐组完整回测，较慢</span>
               </div>
 
