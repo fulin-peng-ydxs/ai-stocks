@@ -4,7 +4,7 @@
 
 - 需求文档：[../requirement.md](../requirement.md)
 - 功能目标：进入多租户 RBAC 阶段四，把现有 13 个存量业务 API 路由和对应既有页面纳入阶段三已经落地的权限体系，逐一补齐 `resource code`、后端权限依赖、前端按钮级 `v-permission`、数据隔离回归和全量验证。
-- 当前计划状态：待实施稿（非“已完成”）。**C1 已确认（2026-07-04）**：每日榜单采用**平台公共榜单特例**——预设评分方案归 default/admin、`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；个人自建方案结果仍纯私有、经 `POST /api/board/compute`（`persist=False`）即时查看，不进公共榜单；公共榜单生产者维持现状（调度“评分维护”/CLI 以 default/admin 归属产出预设方案结果）。T3b 已解锁，无剩余阻塞确认项。
+- 当前计划状态：**已完成（2026-07-04）**。T1~T10 全部落地，测试基线：后端 **449 passed**、前端 **186 passed**、`npm run build`（vue-tsc + vite）通过。**C1 已确认（2026-07-04）**：每日榜单采用**平台公共榜单特例**——预设评分方案归 default/admin、`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；个人自建方案结果仍纯私有、经 `POST /api/board/compute`（`persist=False`）即时查看，不进公共榜单；公共榜单生产者维持现状（调度“评分维护”/CLI 以 default/admin 归属产出预设方案结果）。T3b 已解锁，无剩余阻塞确认项。
 - **明确划出阶段四之外（另立独立需求后排）**：通用「资产可见性 / 用户自助公开」模型（方案私有 / 同租户共享 / 全体公开 + 加载 = 自己的 + 公开的）、以及新用户注册时的预设方案分发（当前新用户方案列表为空、且看不到 admin 的），都会改动 R9 隔离读语义、需 publish 权限与 UI、需定公开资产改删边界，不纳入阶段四。决议依据见 [c1-board-ownership-options.md](c1-board-ownership-options.md)。
 - 本次不做：
   - 不新增页面，不生成新的 HTML 原型。阶段四只在既有页面做权限接入、按钮显隐/禁用和接口守卫，不涉及新增页面、布局重排或复杂交互重构。
@@ -192,10 +192,10 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级 + 按钮级 RBAC 权限校验 | 阶段四补齐存量业务接口 `resource code`、后端 `require_perm/require_system_perm`、前端 `v-permission` | T1,T2,T3a,T3b,T4,T5,T6,T8,T9 | 进行中 | 一致 | T1 资源码矩阵已固化（48 码，见 resource-codes.sql）；C1 已确认（公共榜单特例），`board.py` 权限接入随 T3b 正常推进 |
-| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 进行中 | 一致 | C1 已落地：`PUBLIC_BOARD_OWNER` 公共读 + CLAUDE.md 铁律 + 公共读专项测试（与私有隔离用例分开）；profiles/groups/backtest/training/layout 归属均沿用 get_current_owner（T4 已复核）；跨账号隔离样例留 T8；通用可见性/公开模型不在阶段四 |
-| R20 | 前端登录态与权限渲染 | 既有页面写操作、敏感操作和系统级操作补按钮权限；菜单/路由守卫保持 fail-closed | T6,T9 | 待开始 | 一致 | 不新增页面，不重排布局 |
-| R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、基线码、默认授权、测试扫描和全量回归；榜单按 C1 公共特例接入 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 进行中 | 一致 | T1 已核对 91 端点全映射（发现 `layout/validate` 裸露端点，纳入 T5）；C1 已确认，全量接口无阻塞；通用资产共享/公开为阶段四外独立需求 |
+| R8 | 接口级 + 按钮级 RBAC 权限校验 | 阶段四补齐存量业务接口 `resource code`、后端 `require_perm/require_system_perm`、前端 `v-permission` | T1,T2,T3a,T3b,T4,T5,T6,T8,T9 | 已完成 | 一致 | 48 码固化(resource-codes.sql/pg_ddl seed)；后端逐端点接入，路由扫描证零裸露/零漏码(test_stage4_resource_codes)；前端按钮级 v-permission 全接入(stage4-button-permission 56 用例) |
+| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 已完成 | 一致 | C1 已落地：`PUBLIC_BOARD_OWNER` 公共读 + CLAUDE.md 铁律 + 公共读专项测试；各资产接口沿用 get_current_owner(T4 复核)；跨账号隔离样例落 test_stage4_resource_codes；通用可见性/公开模型不在阶段四 |
+| R20 | 前端登录态与权限渲染 | 既有页面写操作、敏感操作和系统级操作补按钮权限；菜单/路由守卫保持 fail-closed | T6,T9 | 已完成 | 一致 | 业务页 v-permission 真实生效 + 系统页前向兼容接入；菜单/路由守卫 fail-closed 由 utils/permission.spec(21) 覆盖；不新增页面、不重排布局 |
+| R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、基线码、默认授权、测试扫描和全量回归；榜单按 C1 公共特例接入 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 已完成 | 一致 | 91 端点全映射(含补 `layout/validate` 裸露端点)；路由扫描证全接入；baseline 强制注入 + 不可反选 + fail-closed 全测；通用资产共享/公开为阶段四外独立需求 R28 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -569,7 +569,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 ### 6.11 任务 T10：文档治理和阶段状态回写
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T8,T9
 - 涉及文件/模块：
   - `agent-works/multi-tenant-rbac/requirement.md`
@@ -588,7 +588,13 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 边界与异常：只沉淀稳定事实，不写临时调试过程。
 - 验证方式：文档链接和路径可达；计划映射表状态与任务状态一致。
 - 完成标准：阶段四状态、测试基线、剩余范围清晰可追踪。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成。
+  - **本计划**：§1 头部状态置「已完成（2026-07-04）」+ 测试基线；§5 映射表 R8/R9/R20/R21 全置「已完成/一致」；§6 T1~T10 全「已完成」+ 各「实际落地情况」回写（含 T8 小节标题修复 `c132d80`）。
+  - **总需求 [requirement.md](../requirement.md) §12**：阶段四段落标 ✅ 完成——覆盖需求、达成要点、里程碑、验收基线（后端 449 / 前端 186）、开发产物索引、R28 划出、DESIGN 无变更。
+  - **[CLAUDE.md](../../../CLAUDE.md)**：「架构与分层」认证鉴权段后补「存量业务路由全量接入（阶段四已落地）」稳定规则——`require_perm`/`require_system_perm` 二分、baseline 强制注入 + 无角色 fail-closed、`/layout/reset` 动态 scope、score/trade profile 有意留 `require_perm`、路由扫描不变式、新增端点须双写 seed。
+  - **[README.md](../../../README.md)**：架构段 + 生产入口段更新为「阶段四已落地」（逐端点精确码 + 基线共享读 + 路由扫描零裸露/零漏码）。
+  - **DESIGN.md 无变更**：阶段四不新增页面/不重排布局，DESIGN §9 页面登记无需新增（已在 requirement §12 明示）。
+  - **只沉淀稳定事实**：临时调试/中间态不入文档；文档相对链接与路径均可达。
 
 ## 7. 数据库与 SQL 计划
 

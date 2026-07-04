@@ -648,11 +648,15 @@
   - **文档治理回写**（T17）：`CLAUDE.md`（补「细粒度 RBAC（阶段三内核）」铁律 6 条 + 阶段状态）、`DESIGN.md §9`（4 管理页 + IconPicker 登记）、本文件 §12（本段）、项目记忆 `multi-tenant-rbac-pivot.md`。
   - **验收基线**：后端 `pytest` 398 passed / 前端 `npm run build` 绿 + `vitest` 118 passed。commit 序列 `7aaddb3`（T11–T16）→ `d313c1b`/`99bca3a`/`ce3b863`（Codex 三轮整改）→ `626fc42`（T17 文档治理）。
 
-**阶段四：存量功能全量接入**
-- 覆盖需求：R21（及 R20 全量按钮/路由接入）
-- 目标：现有 13 路由与页面逐一接鉴权 + resource code + 隔离。
+**阶段四：存量功能全量接入** — ✅ **完成**（T1–T10 全落地，分支 `codex/multi-tenant-rbac-stage4`）
+- 覆盖需求：R8（存量接口精确码）、R9（存量资产隔离复核 + 公共榜单 C1）、R20（全量按钮/路由接入）、R21（13 路由全量接入）
+- 目标：现有 13 路由与页面逐一接鉴权 + resource code + 隔离。**达成**——48 资源码固化(resource-codes.sql/pg_ddl seed)；后端逐端点 `require_perm`(可授权业务)/`require_system_perm`(system-only 硬守卫)接入，补 `layout/validate` 裸露端点；baseline 三码(layout:view/trade-calendar:view/indicator:registry)由 `perm_resolver` 对有角色非 system 用户强制注入、角色页置灰不可反选、无角色 fail-closed；`POST /layout/reset` 动态 scope 自守卫；每日榜单按 C1 平台公共只读特例、个人方案仍私有；前端业务页 v-permission 真实生效 + 系统页前向兼容接入。
 - 依赖原因：依赖阶段三权限模型稳定。
-- 里程碑：全量回归，未改造接口默认 deny 不漏。
+- 里程碑：全量回归，未改造接口默认 deny 不漏。**达成**——路由扫描证「所有非白名单 /api 端点有守卫、13 模块每端点有精确码、唯一豁免动态 scope /layout/reset」；跨账号隔离 + baseline 共享读/不可反选 + system-only tenant_admin 403 + 硬守卫不降级全测。
+- **验收基线**：后端 `pytest` **449 passed**、前端 `npm run build`(vue-tsc+vite)绿 + `vitest` **186 passed**。
+- **开发产物索引**（相对 `agent-works/multi-tenant-rbac/`）：计划+全程留痕 [stage4-existing-routes/plan.md](stage4-existing-routes/plan.md)（§6 T1–T10 + §5 需求映射）；资源码矩阵/回填 SQL [stage4-existing-routes/resource-codes.sql](stage4-existing-routes/resource-codes.sql)；C1 决议 [stage4-existing-routes/c1-board-ownership-options.md](stage4-existing-routes/c1-board-ownership-options.md)。后端测试 `backend/tests/test_stage4_{resource_codes,systemonly,board,layout,menu_guard}.py`；前端测试 `frontend/src/{directives,views}/**/{stage4-button-permission,permission-tree,stage4-permissions}.spec.ts`。
+- **明确划出**：通用「资产可见性/自助公开」模型 = **R28**（独立后排，不在阶段四）。
+- **DESIGN.md 无变更**：阶段四不新增页面、不重排布局，DESIGN §9 页面登记无需新增。
 
 **阶段五：平台能力新增与重构**
 - 覆盖需求：R16、R17、R18、R19
