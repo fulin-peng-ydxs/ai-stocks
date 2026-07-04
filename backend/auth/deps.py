@@ -3,7 +3,12 @@
 - `require_system`：系统管理页专属接口（角色/菜单/功能/租户管理 + 平台写）——非 system 一律 403。
 - `require_perm(code)`：接口级细粒度授权（用户管理等可授权给 tenant_admin 的接口）——system 恒过，
   否则精确码 ∉ 上下文 resources → 403。**精确匹配、不用通配符**（Codex P0 整改）。
+- `require_system_perm(code)`（stage4·R21）：system-only 端点在 `require_system` 硬守卫外**挂精确资源码
+  元数据**，供路由扫描（T8）与审计识别，运行时仍由 system 硬守卫兜底（非 system 一律 403，不因资源码授权放行）。
 未认证（无上下文）一律 401。
+
+**扫描契约（stage4·T8）**：`require_perm` / `require_system_perm` 返回的依赖函数均带 `resource_code` 属性；
+路由扫描据此判定「该端点已接精确码」。`require_system_perm` 另带 `require_system_perm=True` 标记其为 system-only。
 """
 
 from __future__ import annotations
@@ -41,4 +46,21 @@ def require_perm(code: str) -> Callable[[], None]:
         if code not in ctx.resources:
             raise ForbiddenError("无权访问该功能")
 
+    _dep.resource_code = code   # type: ignore[attr-defined]  # 供 T8 路由扫描识别
+    return _dep
+
+
+def require_system_perm(code: str) -> Callable[[], None]:
+    """system-only 端点守卫 + 精确资源码元数据（stage4·R21）。
+
+    运行时 = `require_system()`（非 system 一律 403，**不因资源码被授权而放行**——system-only 边界不降级）。
+    `resource_code` 属性供 T8 路由扫描识别；`require_system_perm=True` 标记其为 system-only（区别于可授权的
+    `require_perm`）。system-only 资源码经其归属菜单 `visible='system'` 由 `system_only_resource_ids()` 拦截，
+    不会被误授予非 system 角色。
+    """
+    def _dep() -> None:
+        require_system()
+
+    _dep.resource_code = code               # type: ignore[attr-defined]
+    _dep.require_system_perm = True         # type: ignore[attr-defined]
     return _dep

@@ -121,7 +121,13 @@ def test_normal_me_business_only(svc, env):
     assert {"quotes", "/stocks", "/board", "/screen", "/backtest", "/training"} <= idx
     # 系统分组整体不可见（无任何被授权子节点 → 空组剪除）
     assert "system" not in idx and "permission" not in idx and "data" not in idx
-    assert me["permissions"] == []   # normal 默认无功能码
+    # stage4·R21：baseline 基线共享读对非 system 业务用户**强制注入**（与 role_resource 授权无关，恒有）
+    perms = set(me["permissions"])
+    assert {"layout:view", "trade-calendar:view", "indicator:registry"} <= perms
+    # 不含用户管理/系统专属码（system-only 挂 visible='system' 菜单，不授非 system）
+    assert "user:list" not in perms and "role:create" not in perms and "config:view" not in perms
+    # 注：normal 研究业务功能码（board:*/screen:*/backtest:* 等）默认授权走 seed（新库）/ 回填 SQL（既有库），
+    # 授权→/me 生效链路由 test_stage4_resource_codes 的显式授权用例覆盖（本持久库 normal 为 stage3 存量态）。
 
 
 # ── MenuNode 形状 ──

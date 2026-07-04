@@ -30,6 +30,7 @@ export interface Resource {
   sort: number
   is_builtin: boolean
   role_count?: number
+  baseline_locked?: boolean // 登录基线共享读码：角色页恒勾选+置灰不可反选（stage4·R21）
 }
 
 export function listMenus(): Promise<MenuNode[]> {

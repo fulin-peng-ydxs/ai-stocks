@@ -10,7 +10,8 @@ export interface PermNode {
   label: string
   kind: 'menu' | 'resource'
   nodeType: string // menu: group/leaf；resource: button/api
-  sysLocked: boolean // system 可见子树：非 system 角色不可授（后端硬拒，前端置灰）
+  sysLocked: boolean // system 可见子树：非 system 角色不可授（后端硬拒，前端置灰=off）
+  baselineLocked?: boolean // 登录基线共享读：所有角色恒有、置灰=on 不可反选（与 sysLocked 相反语义，stage4·R21）
   children?: PermNode[]
 }
 
@@ -52,14 +53,16 @@ const isGroup = computed(() => props.node.nodeType === 'group')
       />
       <!-- 分组直挂功能点（少见）：chip 面板 -->
       <div v-if="childResources.length" class="pt-funcs">
-        <span v-for="r in childResources" :key="r.key" class="pt-func" :class="{ locked: r.sysLocked }">
+        <span v-for="r in childResources" :key="r.key" class="pt-func"
+              :class="{ locked: r.sysLocked, baseline: r.baselineLocked }">
           <el-checkbox
-            :model-value="stateOf(r) === 'on'"
-            :disabled="readonly || r.sysLocked"
+            :model-value="r.baselineLocked || stateOf(r) === 'on'"
+            :disabled="readonly || r.sysLocked || r.baselineLocked"
             @change="toggle(r)"
           />
           <span class="pt-fname">{{ r.label }}</span>
           <span class="pt-ftype" :class="r.nodeType">{{ r.nodeType === 'api' ? '接口' : '按钮' }}</span>
+          <span v-if="r.baselineLocked" class="pt-baseline">基线</span>
         </span>
       </div>
     </div>
@@ -77,14 +80,16 @@ const isGroup = computed(() => props.node.nodeType === 'group')
       <span class="pt-mlabel"><span class="pt-ico">●</span>{{ node.label }}</span>
     </div>
     <div v-if="childResources.length" class="pt-funcs">
-      <span v-for="r in childResources" :key="r.key" class="pt-func" :class="{ locked: r.sysLocked }">
+      <span v-for="r in childResources" :key="r.key" class="pt-func"
+            :class="{ locked: r.sysLocked, baseline: r.baselineLocked }">
         <el-checkbox
-          :model-value="stateOf(r) === 'on'"
-          :disabled="readonly || r.sysLocked"
+          :model-value="r.baselineLocked || stateOf(r) === 'on'"
+          :disabled="readonly || r.sysLocked || r.baselineLocked"
           @change="toggle(r)"
         />
         <span class="pt-fname">{{ r.label }}</span>
         <span class="pt-ftype" :class="r.nodeType">{{ r.nodeType === 'api' ? '接口' : '按钮' }}</span>
+        <span v-if="r.baselineLocked" class="pt-baseline">基线</span>
       </span>
     </div>
   </div>
@@ -116,6 +121,9 @@ const isGroup = computed(() => props.node.nodeType === 'group')
   background: var(--el-fill-color-light); border: 1px dashed var(--el-border-color); border-radius: 6px; }
 .pt-func { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--el-text-color-regular); }
 .pt-func.locked { opacity: 0.6; }
+.pt-func.baseline { opacity: 0.85; }
+.pt-baseline { font-size: 10px; color: var(--el-color-primary);
+  border: 1px solid color-mix(in srgb, var(--el-color-primary) 40%, transparent); border-radius: 3px; padding: 0 4px; }
 .pt-fname { user-select: none; }
 .pt-ftype { font-size: 10px; color: var(--el-text-color-secondary); border: 1px solid var(--el-border-color);
   border-radius: 3px; padding: 0 4px; }

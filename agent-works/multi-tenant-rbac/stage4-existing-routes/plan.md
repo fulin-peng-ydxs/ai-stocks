@@ -103,8 +103,8 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | --- | --- | --- | --- | --- |
 | `board.py` | `board:view` | `GET /api/scores/top`、`GET /api/scores` | `/board` | 登录且有每日榜单权限 |
 | `board.py` | `board:compute` | `GET /api/board/compute` | `/board` | 登录且有榜单计算权限 |
-| `layout.py` | `layout:view` | `GET /api/layout/presets`、`GET /api/layout/pages/{page_key}`、`GET /api/layout/effective/{page_key}` | 全站共享读 | `baseline_locked`，所有登录业务角色恒可用，不能 system-only，不能在角色页反选 |
-| `stocks.py` | `trade-calendar:view` | `GET /api/data/trade-dates` | 全站共享读 | `baseline_locked`，所有登录业务角色恒可用，不能挂 `stocks:view`，不能在角色页反选 |
+| `layout.py` | `layout:view` | `GET /api/layout/presets`、`GET /api/layout/pages/{page_key}`、`GET /api/layout/effective/{page_key}` | 全站共享读（FK 锚点 `/board`，login） | `baseline_locked`，所有登录业务角色恒可用，不能 system-only，不能在角色页反选 |
+| `stocks.py` | `trade-calendar:view` | `GET /api/data/trade-dates` | 全站共享读（FK 锚点 `/board`，login） | `baseline_locked`，所有登录业务角色恒可用，不能挂 `stocks:view`，不能在角色页反选 |
 | `stocks.py` | `stocks:view` | `GET /api/stocks`、`/stocks/{code}/bars`、`/signal`、`/indicators` | `/stocks` | 登录且有个股行情权限 |
 | `stocks.py` | `stocks:trade-eval` | `GET /api/stocks/{code}/trade-eval` | `/stocks` | 登录且有买卖评估权限 |
 | `profiles.py` | `screen-profile:view` | `GET /api/profiles*` | `/screen` | 用户资产读 |
@@ -135,9 +135,9 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | `training.py` | `training:delete` | `DELETE /api/training/sessions/{sid}` | `/training` | 删除训练 |
 | `layout.py` | `layout:user-config` | `GET/POST /api/layout/users/{page_key}`、`POST /api/layout/reset` user scope | 业务页 settings drawer | 用户级偏好读写，所有登录业务角色默认可用 |
 | `layout.py` | `layout:preset-manage` | `POST/DELETE /api/layout/presets*` | `/system/layout/presets` | `require_system_perm` |
-| `layout.py` | `layout:page-manage` | `POST /api/layout/pages/{page_key}`、page scope reset、validate/import 类页面配置操作 | `/system/layout/pages` | `require_system_perm` |
+| `layout.py` | `layout:page-manage` | `POST /api/layout/pages/{page_key}`、`POST /api/layout/validate`（仅系统页面布局工作台消费，现无守卫，T5 补）、page scope reset | `/system/layout/pages` | `require_system_perm` |
 | `layout.py` | `layout:field-policy` | `GET/POST /api/layout/field-policies` | `/system/layout/components` | `require_system_perm` |
-| `indicators.py` | `indicator:registry` | `GET /api/indicators/registry` | 研究基础共享读 | `baseline_locked`，Board/Screen/Config 跨页指标目录读，所有登录研究业务角色恒可用，不能绑定配置页，不能在角色页反选；写仍 system-only |
+| `indicators.py` | `indicator:registry` | `GET /api/indicators/registry` | 研究基础共享读（FK 锚点 `/screen`，login） | `baseline_locked`，Board/Screen/Config 跨页指标目录读，所有登录研究业务角色恒可用，不能绑定配置页，不能在角色页反选；写仍 system-only |
 | `indicators.py` | `indicator:def-manage` | `POST/PATCH/DELETE /api/indicators/def*` | `/system/config` | `require_system_perm` |
 | `config.py` | `config:view` | `GET /api/config` | `/system/config` | `require_system_perm` |
 | `config.py` | `config:reload` | `POST /api/config/reload` | `/system/config` | `require_system_perm` |
@@ -192,16 +192,16 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级 + 按钮级 RBAC 权限校验 | 阶段四补齐存量业务接口 `resource code`、后端 `require_perm/require_system_perm`、前端 `v-permission` | T1,T2,T3a,T3b,T4,T5,T6,T8,T9 | 待开始 | 一致 | C1 已确认（公共榜单特例），`board.py` 权限接入随 T3b 正常推进 |
+| R8 | 接口级 + 按钮级 RBAC 权限校验 | 阶段四补齐存量业务接口 `resource code`、后端 `require_perm/require_system_perm`、前端 `v-permission` | T1,T2,T3a,T3b,T4,T5,T6,T8,T9 | 进行中 | 一致 | T1 资源码矩阵已固化（48 码，见 resource-codes.sql）；C1 已确认（公共榜单特例），`board.py` 权限接入随 T3b 正常推进 |
 | R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 待开始 | 一致 | C1 已确认；公共榜单读“有意全局”须显式声明，与私有资产隔离用例分开。通用可见性/公开模型不在阶段四 |
 | R20 | 前端登录态与权限渲染 | 既有页面写操作、敏感操作和系统级操作补按钮权限；菜单/路由守卫保持 fail-closed | T6,T9 | 待开始 | 一致 | 不新增页面，不重排布局 |
-| R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、基线码、默认授权、测试扫描和全量回归；榜单按 C1 公共特例接入 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 待开始 | 一致 | C1 已确认，全量接口无阻塞；通用资产共享/公开为阶段四外独立需求 |
+| R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、基线码、默认授权、测试扫描和全量回归；榜单按 C1 公共特例接入 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 进行中 | 一致 | T1 已核对 91 端点全映射（发现 `layout/validate` 裸露端点，纳入 T5）；C1 已确认，全量接口无阻塞；通用资产共享/公开为阶段四外独立需求 |
 
 ## 6. 详细实施步骤与进度追踪
 
 ### 6.1 任务 T1：固化阶段四资源码矩阵
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：阶段三 RBAC 机制已稳定
 - 涉及文件/模块：
   - `agent-works/multi-tenant-rbac/stage4-existing-routes/plan.md`
@@ -219,11 +219,17 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 边界与异常：如果发现某端点无法稳定归类，必须在本计划 §10.3 追加待确认项后再继续接入该端点。
 - 验证方式：人工核对 + 后续 T8 路由扫描测试。
 - 完成标准：13 个路由模块的所有非白名单端点均有明确资源码或明确 system-only 码。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-04）。
+  - 逐一核对 13 模块共 **91 个端点**（`grep '@router.<verb>'`），全部映射到 **48 个资源码 + 1 个动态 scope 自守卫端点**（`POST /api/layout/reset`），无遗漏。产出 [resource-codes.sql](resource-codes.sql)：A 类 baseline 基线共享读 3、B 类可授权业务码 24、C 类 system-only 21。
+  - 相对 §4.3 初稿的两处**具体化落定**（不改业务边界）：
+    1. **`POST /api/layout/validate` 现无任何守卫**（`layout.py:156`，纯校验、不落库不涉归属），经查仅被系统页面布局工作台 `LayoutPagesView.vue` 消费 → 归 `layout:page-manage`（system-only），T5 补 `require_system_perm`。这是本次核对发现的既有裸露端点。
+    2. baseline 三码 + `layout:user-config` 无天然业务菜单，而 `sys_resource.menu_id` 为 `NOT NULL + FK` 且不得挂 `visible='system'` 菜单（否则被 `system_only_resource_ids` 误判、非 system 授不了）。经确认 `menu_id` 只影响角色页分组渲染与 system-only 判定、**不影响 baseline 的运行时强制注入**，故锚定现有 login 叶子（零菜单树改动）：`layout:view`/`trade-calendar:view`/`layout:user-config`→`/board`，`indicator:registry`→`/screen`。
+  - **score-profile:\* / trade-profile:\* 归 `/system/config`（visible='system'）**：本阶段配置页仍 system-only，这些码经菜单可见性自动进 `system_only_resource_ids`，非 system 授权被拦截 → 事实上 system-only；阶段五拆页后移菜单即开放，故 T3a 仍以 `require_perm(code)` 接入（保留迁移路径），不用 `require_system_perm`。
+  - SQL 含既有库一次性回填：资源落行 + normal/paid/tenant_admin 业务默认授权 + system 全量补齐 + 全部非 system 用户 `perm_ver` bump，整脚本单事务。
 
 ### 6.2 任务 T2：补齐资源 seed、基线码、默认授权与权限依赖元数据
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1
 - 涉及文件/模块：
   - `backend/storage/pg_ddl.py`
@@ -253,7 +259,16 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - `python -m pytest backend/tests/test_rbac_schema.py backend/tests/test_rbac_roles.py -q`
   - 新增 seed/backfill 测试。
 - 完成标准：阶段四资源码可在 PG 中幂等存在；system 全量；normal/paid/tenant_admin 有业务默认码；非 system 不能拿 system-only 码。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-04）。
+  - `backend/auth/constants.py`：新增 `SHARED_RESOURCE_CODES`（3 baseline）+ `BUSINESS_RESOURCE_CODES`（24），零依赖、供 pg_ddl/perm_resolver/repository 共用。
+  - `backend/storage/pg_ddl.py`：`_SEED_RESOURCES` 追加 48 阶段四资源码（与 resource-codes.sql 一致）；`_seed_role_grants` 给 normal/paid = `BUSINESS_RESOURCE_CODES`、tenant_admin = 用户管理码 + 业务码；system 全量补齐不变。
+  - `backend/auth/deps.py`：`require_perm` 返回依赖挂 `resource_code` 元数据；新增 `require_system_perm(code)`（运行时 = require_system 硬守卫 + 挂 `resource_code`/`require_system_perm=True` 供 T8 扫描）。
+  - `backend/auth/perm_resolver.py`：`resolve()` 对**非 system 且有角色**用户强制并入 baseline（运行时权威）；无角色仍 fail-closed。
+  - `backend/storage/resource_repository.py`：DTO 增 `baseline_locked`（code ∈ SHARED_RESOURCE_CODES）。
+  - `backend/storage/role_repository.py`：新增 `baseline_resource_ids()`（取交集防未 seed）。
+  - 前端 `menu.ts`/`PermissionTree.vue`/`RoleManageView.vue`：Resource 增 `baseline_locked`；角色树 baseline 节点恒勾选 + 置灰 + 「基线」标签 + 排除出可勾选/全选/gather 集（`baselineLocked` 与 `sysLocked` 相反语义）。
+  - **关键设计决定（相对 §4.4 初稿的收敛）**：baseline **不持久化进 `sys_role_resource` 授权**，改由 `perm_resolver.resolve` 运行时强制注入作为**单一权威**——比"保存时并入持久化"更强（前端漏传/直调都无法绕过），且保持 `set/get_grants` 幂等、不污染 grants 表、不破坏既有 `test_rbac_roles` 授权回显用例；角色页据 `baseline_locked` 标记展示锁定态，不当作可授权项。故未改 `role_admin_service.set_grants` 的持久化逻辑（原“保存时强制并入”降级为注释说明）。
+  - 验证：后端 `test_rbac_{me,perm_resolver,roles,resources,menus,deps,schema}` **84 passed**；前端 `npm run build` 通过 + `permission/SideMenu/manage-error-states/layout` **118 passed**。同步更新 `test_rbac_me.py::test_normal_me_business_only` 断言为「baseline 恒注入 + 不含 system-only 码」（持久测试库 normal 为 stage3 存量态，业务码默认授权走新库 seed / 既有库回填 SQL，其授权→/me 链路留 T8 显式授权用例）。
 
 ### 6.3 任务 T3a：非榜单业务共享读与用户资产基础接口接入
 

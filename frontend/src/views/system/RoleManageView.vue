@@ -75,8 +75,10 @@ function buildTree(menus: MenuNode[], resources: Resource[]) {
     for (const c of m.children || []) children.push(walk(c, locked))
     for (const res of resByMenu.get(m.id) || []) {
       const key = `r:${res.id}`
-      children.push({ key, label: res.name, kind: 'resource', nodeType: res.type, sysLocked: locked })
-      if (!locked) leaves.push(key)
+      const baselineLocked = !!res.baseline_locked
+      children.push({ key, label: res.name, kind: 'resource', nodeType: res.type, sysLocked: locked, baselineLocked })
+      // baseline 恒勾选、不可反选：排除出可勾选/全选原子叶子集（后端强制注入+保存并入，前端不当作授权项）
+      if (!locked && !baselineLocked) leaves.push(key)
     }
     const key = `m:${m.id}`
     if (!children.length) {
@@ -99,7 +101,7 @@ const treeReadonly = computed(
 
 /** 节点下所有可勾选原子叶子（功能点 + 无子菜单）；system 锁定子树排除。 */
 function atomicLeaves(node: PermNode): string[] {
-  if (!node.children?.length) return node.sysLocked ? [] : [node.key]
+  if (!node.children?.length) return (node.sysLocked || node.baselineLocked) ? [] : [node.key]
   return node.children.flatMap(atomicLeaves)
 }
 function stateOf(node: PermNode): 'on' | 'half' | 'off' {
@@ -110,7 +112,7 @@ function stateOf(node: PermNode): 'on' | 'half' | 'off' {
   return on === 0 ? 'off' : on === leaves.length ? 'on' : 'half'
 }
 function toggle(node: PermNode) {
-  if (treeReadonly.value || node.sysLocked) return
+  if (treeReadonly.value || node.sysLocked || node.baselineLocked) return
   const leaves = atomicLeaves(node)
   if (!leaves.length) return
   const turnOn = stateOf(node) !== 'on'

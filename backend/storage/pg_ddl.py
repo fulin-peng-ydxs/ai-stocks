@@ -25,6 +25,7 @@ import os
 import secrets
 
 from backend.auth.constants import (
+    BUSINESS_RESOURCE_CODES,
     ROLE_NORMAL,
     ROLE_PAID,
     ROLE_SYSTEM,
@@ -673,6 +674,64 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/system/tenants", "tenant:update", "编辑租户", "api", "PUT", "/api/tenants/{id}"),
     ("/system/tenants", "tenant:disable", "启停租户", "api", "POST", "/api/tenants/{id}/status"),
     ("/system/tenants", "tenant:delete", "删除租户", "api", "DELETE", "/api/tenants/{id}"),
+    # ── 阶段四：13 存量业务路由资源码（stage4·R21，与 stage4-existing-routes/resource-codes.sql 一致）──
+    # A) baseline 登录基线共享读（挂 login 叶子作 FK 锚点；运行时由 perm_resolver 强制注入，见 SHARED_RESOURCE_CODES）
+    ("/board",  "layout:view",         "布局生效配置读（全站基线）", "api", "GET", "/api/layout/effective/{page_key}"),
+    ("/board",  "trade-calendar:view", "交易日历读（全站基线）",     "api", "GET", "/api/data/trade-dates"),
+    ("/screen", "indicator:registry",  "指标目录读（研究基线）",     "api", "GET", "/api/indicators/registry"),
+    # B) 每日榜单（/board，login）
+    ("/board", "board:view",         "查看每日榜单",     "api", "GET",  "/api/scores/top"),
+    ("/board", "board:compute",      "榜单即时计算",     "api", "GET",  "/api/board/compute"),
+    ("/board", "score:run",          "评分方案打分",     "api", "POST", "/api/score-profiles/run"),
+    ("/board", "layout:user-config", "保存个人页面偏好", "api", "POST", "/api/layout/users/{page_key}"),
+    # B) 策略筛选（/screen，login）
+    ("/screen", "screen-profile:view",   "查看筛选方案", "api", "GET",    "/api/profiles"),
+    ("/screen", "screen-profile:save",   "保存筛选方案", "api", "POST",   "/api/profiles"),
+    ("/screen", "screen-profile:delete", "删除筛选方案", "api", "DELETE", "/api/profiles/{pid}"),
+    ("/screen", "screen:run",            "运行策略筛选", "api", "POST",   "/api/screen/run"),
+    # B) 个股行情 + 自选分组（/stocks，login）
+    ("/stocks", "stocks:view",               "查看个股行情", "api", "GET",    "/api/stocks"),
+    ("/stocks", "stocks:trade-eval",         "个股买卖评估", "api", "GET",    "/api/stocks/{code}/trade-eval"),
+    ("/stocks", "stock-group:view",          "查看自选分组", "api", "GET",    "/api/stock-groups"),
+    ("/stocks", "stock-group:create",        "新建自选分组", "api", "POST",   "/api/stock-groups"),
+    ("/stocks", "stock-group:update",        "编辑自选分组", "api", "PATCH",  "/api/stock-groups/{gid}"),
+    ("/stocks", "stock-group:delete",        "删除自选分组", "api", "DELETE", "/api/stock-groups/{gid}"),
+    ("/stocks", "stock-group:member-update", "维护分组成员", "api", "POST",   "/api/stock-groups/{gid}/members"),
+    # B) 策略回测（/backtest，login）
+    ("/backtest", "backtest:view",   "查看回测记录", "api", "GET",    "/api/backtest/runs"),
+    ("/backtest", "backtest:run",    "运行回测",     "api", "POST",   "/api/backtest/run"),
+    ("/backtest", "backtest:robust", "稳健性测试",   "api", "POST",   "/api/backtest/robust"),
+    ("/backtest", "backtest:delete", "删除回测记录", "api", "DELETE", "/api/backtest/runs/{run_id}"),
+    # B) 盘感训练（/training，login）
+    ("/training", "training:view",   "查看训练记录", "api", "GET",    "/api/training/sessions"),
+    ("/training", "training:start",  "创建训练",     "api", "POST",   "/api/training/sessions"),
+    ("/training", "training:trade",  "训练过程操作", "api", "POST",   "/api/training/sessions/{sid}/trade"),
+    ("/training", "training:review", "保存训练复盘", "api", "PATCH",  "/api/training/sessions/{sid}/review"),
+    ("/training", "training:delete", "删除训练",     "api", "DELETE", "/api/training/sessions/{sid}"),
+    # C) 配置管理（/system/config，visible=system → system_only；含评分/买卖方案 API，阶段五拆页后移菜单开放）
+    ("/system/config", "score-profile:view",    "查看评分方案",     "api", "GET",    "/api/score-profiles"),
+    ("/system/config", "score-profile:save",    "保存评分方案",     "api", "POST",   "/api/score-profiles"),
+    ("/system/config", "score-profile:delete",  "删除评分方案",     "api", "DELETE", "/api/score-profiles/{pid}"),
+    ("/system/config", "trade-profile:view",    "查看买卖方案",     "api", "GET",    "/api/trade-profiles"),
+    ("/system/config", "trade-profile:save",    "保存买卖方案",     "api", "POST",   "/api/trade-profiles"),
+    ("/system/config", "trade-profile:delete",  "删除买卖方案",     "api", "DELETE", "/api/trade-profiles/{pid}"),
+    ("/system/config", "trade-profile:preview", "买卖条件试算",     "api", "POST",   "/api/trade-profiles/preview"),
+    ("/system/config", "config:view",           "查看系统配置",     "api", "GET",    "/api/config"),
+    ("/system/config", "config:reload",         "重载系统配置",     "api", "POST",   "/api/config/reload"),
+    ("/system/config", "indicator:def-manage",  "技术指标定义维护", "api", "POST",   "/api/indicators/def"),
+    # C) 布局平台配置（system-only）
+    ("/system/layout/presets",    "layout:preset-manage", "布局预设管理", "api", "POST", "/api/layout/presets"),
+    ("/system/layout/pages",      "layout:page-manage",   "页面布局管理", "api", "POST", "/api/layout/pages/{page_key}"),
+    ("/system/layout/components", "layout:field-policy",  "组件字段策略", "api", "POST", "/api/layout/field-policies"),
+    # C) 数据管理（system-only；整 router 另挂 require_system，此处补精确码供扫描/审计）
+    ("/data/overview", "data:overview",        "数据概览",         "api", "GET",  "/api/data/overview"),
+    ("/data/overview", "data-status:view",     "数据状态/更新日志", "api", "GET",  "/api/data/status"),
+    ("/data/quality",  "data-quality:view",    "数据质量查看",     "api", "GET",  "/api/data/quality"),
+    ("/data/quality",  "data-quality:fix",     "数据质量处置",     "api", "POST", "/api/data/quality/fix-batch"),
+    ("/data/schedule", "data-schedule:manage", "任务调度管理",     "api", "POST", "/api/data/schedules"),
+    ("/data/schedule", "data-source:test",     "数据源测试",       "api", "POST", "/api/data/sources/test"),
+    ("/data/schedule", "data-settings:manage", "数据设置保存",     "api", "POST", "/api/data/settings"),
+    ("/data/ingest",   "data-task:manage",     "采集任务管理",     "api", "POST", "/api/data/tasks"),
 )
 
 # 默认授权：业务页所有登录用户可用；用户管理授予租户管理员（管本租户用户）；system 由 resolver 判全量。
@@ -843,11 +902,16 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
     all_resource_codes = [r[1] for r in _SEED_RESOURCES]
     business = list(_BUSINESS_MENU_CODES)
     # (role_id, 菜单码集, 资源码集)
+    # 阶段四（R21）：normal/paid/tenant_admin 默认授研究业务功能码（BUSINESS_RESOURCE_CODES）；
+    # tenant_admin 另含用户管理码。baseline（SHARED_RESOURCE_CODES）不入授权（由 resolve 强制注入）；
+    # system-only 码不授非 system（挂 visible='system' 菜单，system_only_resource_ids 拦截）。
+    biz_res = list(BUSINESS_RESOURCE_CODES)
     grants: list[tuple[str, list[str], list[str]]] = [
         (ROLE_SYSTEM, all_menu_codes, all_resource_codes),
-        (ROLE_TENANT_ADMIN, business + list(_TENANT_ADMIN_EXTRA_MENUS), list(_USER_RESOURCE_CODES)),
-        (ROLE_NORMAL, business, []),
-        (ROLE_PAID, business, []),   # 付费角色预留：暂同普通用户业务页，后续可在角色页调整
+        (ROLE_TENANT_ADMIN, business + list(_TENANT_ADMIN_EXTRA_MENUS),
+         list(_USER_RESOURCE_CODES) + biz_res),
+        (ROLE_NORMAL, business, biz_res),
+        (ROLE_PAID, business, biz_res),   # 付费角色预留：暂同普通用户业务页，后续可在角色页调整
     ]
     for role_id, menu_codes, resource_codes in grants:
         # system 角色：锁定、不可手工编辑，始终**幂等补齐全量**——保证新增菜单/功能点即时纳入其全授权
