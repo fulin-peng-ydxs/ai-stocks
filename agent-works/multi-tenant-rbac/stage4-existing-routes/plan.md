@@ -101,8 +101,8 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 | 路由模块/分类 | 资源码 | 端点范围 | 菜单归属 | 权限策略 |
 | --- | --- | --- | --- | --- |
-| `board.py` | `board:view` | `GET /api/scores/top`、`GET /api/scores` | `/board` | 登录且有每日榜单权限 |
-| `board.py` | `board:compute` | `GET /api/board/compute` | `/board` | 登录且有榜单计算权限 |
+| `board.py` | `board:view` | `GET /api/scores/top`、`GET /api/scores` | `/board` | 守卫「固定模型公共榜单」只读接口。**注(自审 F1)：这两个接口当前前端未接入**（`board.ts` 的 `getScoresTop`/`getScores` 无调用方）——榜单页实际主加载走 `POST /api/score-profiles/run`（`score:run`，见下行）。`board:view` 为真实有效但闲置的预留码（供 API 消费方/未来简版榜单），非假定义 |
+| `board.py` | `board:compute` | `GET /api/board/compute` | `/board` | 守卫「即时算榜单」接口。**注：当前由回测页 `BacktestView.vue`（`computeBoard`）消费**，非每日榜单页 |
 | `layout.py` | `layout:view` | `GET /api/layout/presets`、`GET /api/layout/pages/{page_key}`、`GET /api/layout/effective/{page_key}` | 全站共享读（FK 锚点 `/board`，login） | `baseline_locked`，所有登录业务角色恒可用，不能 system-only，不能在角色页反选 |
 | `stocks.py` | `trade-calendar:view` | `GET /api/data/trade-dates` | 全站共享读（FK 锚点 `/board`，login） | `baseline_locked`，所有登录业务角色恒可用，不能挂 `stocks:view`，不能在角色页反选 |
 | `stocks.py` | `stocks:view` | `GET /api/stocks`、`/stocks/{code}/bars`、`/signal`、`/indicators` | `/stocks` | 登录且有个股行情权限 |
@@ -114,7 +114,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | `score_profiles.py` | `score-profile:view` | `GET /api/score-profiles*` | `/system/config` | 阶段四仍归现配置页；阶段五拆页后迁移菜单 |
 | `score_profiles.py` | `score-profile:save` | `POST /api/score-profiles` | `/system/config` | 用户资产写，前端页面暂 system-only |
 | `score_profiles.py` | `score-profile:delete` | `DELETE /api/score-profiles/{pid}` | `/system/config` | 用户资产删 |
-| `score_profiles.py` | `score:run` | `POST /api/score-profiles/run` | `/board` | 打分执行；C1 若确认公共榜单，需同步明确其写入 `score_snapshot` 的归属和公共结果生产链路 |
+| `score_profiles.py` | `score:run` | `POST /api/score-profiles/run` | `/board` | 打分执行。**注(自审 F1)：这是「每日榜单页」运行时的真实主加载码**——`BoardView.vue` 打开即调 `runScoreProfile`（按用户所选评分方案实时打分）。故配置「榜单」自定义角色时**必须含 `score:run`**，仅授 `board:view` 打不开页面。C1 已确认公共榜单归属与生产链路 |
 | `trade_profiles.py` | `trade-profile:view` | `GET /api/trade-profiles*` | `/system/config` | 用户资产读 |
 | `trade_profiles.py` | `trade-profile:save` | `POST /api/trade-profiles` | `/system/config` | 用户资产写 |
 | `trade_profiles.py` | `trade-profile:delete` | `DELETE /api/trade-profiles/{pid}` | `/system/config` | 用户资产删 |
@@ -179,7 +179,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 每日榜单刷新/计算/导出 | R20/R21 | 有菜单权限才可进入，计算接口有权限才可调用 | 页面结构不变，接口按 `board:view`、`board:compute` 守卫；导出 CSV 为本地操作，不单独加码 | `BoardView.vue` | `board.py` | 401 跳登录，403 提示无权或隐藏触发入口 | T3b,T6 |
+| 每日榜单刷新/计算/导出 | R20/R21 | 有菜单权限才可进入，计算接口有权限才可调用 | 页面结构不变。**修正(自审 F1)：`BoardView.vue` 主加载实际走 `POST /score-profiles/run`（`score:run`），非 `board:view`**——`board:view`(/scores/top·/scores) 前端当前未接入、`board:compute`(/board/compute) 由回测页消费；导出 CSV 为本地操作不加码。**运行时依赖：榜单页 = `score:run` + 菜单权限** | `BoardView.vue` | `board.py`、`score_profiles.py` | 401 跳登录，403 提示无权或隐藏触发入口 | T3b,T6 |
 | 策略筛选方案维护与运行 | R20/R21 | 查询、编辑条件、保存方案、运行筛选、恢复版本 | 保存/删除/运行按钮加 `v-permission`，后端用 `screen-profile:*`、`screen:run` | `ScreenView.vue` | `profiles.py` | 无权按钮移除；后端 403 兜底 | T3a,T6 |
 | 回测运行、稳健性、历史删除 | R20/R21 | 可运行回测、查看历史、删除历史 | 运行/稳健性/删除按钮按 `backtest:*` 控制，历史读按 `backtest:view` | `BacktestView.vue` | `backtest.py` | loading 和现有错误态保留；403 统一提示 | T4,T6 |
 | 盘感训练全过程 | R20/R21 | 开始训练、买卖、撤单、结算、复盘、删除 | 过程按钮按 `training:start/trade/review/delete` 控制 | `TrainingView.vue` | `training.py` | 无权时不展示交易动作；直调接口 403 | T4,T6 |

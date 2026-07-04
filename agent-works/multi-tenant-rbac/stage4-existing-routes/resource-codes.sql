@@ -50,6 +50,9 @@ INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, s
   ('indicator:registry',   '/screen', 'indicator:registry',   '指标目录读（研究基线）',       'api', 'GET',    '/api/indicators/registry',         10, TRUE),
 
   -- ── B) 每日榜单（/board，login）──
+  --   注(自审 F1)：榜单页 BoardView 运行时主加载走 score:run(POST /score-profiles/run，按用户方案实时打分)；
+  --   board:view(/scores/top·/scores) 前端当前未接入(闲置预留码，非假定义)、board:compute 由回测页消费。
+  --   配置「榜单」自定义角色须含 score:run，仅授 board:view 打不开页面。
   ('board:view',           '/board',  'board:view',           '查看每日榜单',   'api', 'GET',  '/api/scores/top',      30, TRUE),
   ('board:compute',        '/board',  'board:compute',        '榜单即时计算',   'api', 'GET',  '/api/board/compute',   40, TRUE),
   ('score:run',            '/board',  'score:run',            '评分方案打分',   'api', 'POST', '/api/score-profiles/run', 50, TRUE),
