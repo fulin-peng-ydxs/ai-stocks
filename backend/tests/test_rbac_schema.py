@@ -16,6 +16,7 @@ from backend.auth.constants import (
     ROLE_TENANT_ADMIN,
 )
 from backend.storage.pg_ddl import (
+    _STAGE4_BUSINESS_GRANTS_MARKER,
     _SEED_MENU_TREE,
     _SEED_RESOURCES,
     _USER_RESOURCE_CODES,
@@ -133,15 +134,60 @@ def test_normal_role_business_only(pg):
         "score-profile:view",
         "score-profile:save",
         "score-profile:delete",
-        "score-profile:publish-tenant",
         "trade-profile:view",
         "trade-profile:save",
         "trade-profile:delete",
         "trade-profile:preview",
     } <= resources
+    assert "score-profile:publish-tenant" not in resources
     assert "score-profile:publish-public" not in resources
     assert not any(c.startswith("user:") or c.startswith("role:") or c.startswith("tenant:")
                    for c in resources)
+
+
+def test_tenant_admin_has_tenant_publish_by_default(pg):
+    resources = set(pg.query_df(
+        "SELECT resource_id FROM sys_role_resource WHERE role_id=%s",
+        [ROLE_TENANT_ADMIN])["resource_id"])
+    assert "score-profile:publish-tenant" in resources
+    assert "score-profile:publish-public" not in resources
+
+
+def test_stage4_business_grants_backfilled_for_existing_builtin_roles(pg):
+    uid = "stage4_backfill_user"
+    pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+    pg.execute(
+        "INSERT INTO sys_user (id, tenant_id, account, role_code, perm_ver, status) "
+        "VALUES (%s, 'pytest', %s, %s, 0, 'active')",
+        [uid, uid, ROLE_NORMAL],
+    )
+    pg.execute(
+        "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        [uid, ROLE_NORMAL],
+    )
+    try:
+        # 模拟旧库：normal 已经有菜单，所以 _seed_role_grants 会跳过；阶段四新增授权缺失。
+        pg.execute("DELETE FROM app_config WHERE key=%s", [_STAGE4_BUSINESS_GRANTS_MARKER])
+        pg.execute(
+            "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id IN (%s, %s)",
+            [ROLE_NORMAL, "board:view", "score-profile:publish-tenant"],
+        )
+        pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s AND menu_id=%s", [ROLE_NORMAL, "/board"])
+
+        seed_rbac(pg)
+
+        menus = set(pg.query_df(
+            "SELECT menu_id FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])["menu_id"])
+        resources = set(pg.query_df(
+            "SELECT resource_id FROM sys_role_resource WHERE role_id=%s", [ROLE_NORMAL])["resource_id"])
+        perm_ver = int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert "/board" in menus
+        assert "board:view" in resources
+        assert "score-profile:publish-tenant" not in resources
+        assert perm_ver == 1
+    finally:
+        pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
 
 
 def test_fk_delete_actions(pg):

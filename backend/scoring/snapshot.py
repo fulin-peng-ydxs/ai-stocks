@@ -94,13 +94,9 @@ class ScoreSnapshotRepo:
             return pd.DataFrame(columns=_COLS)
         version = int(prof.get("version") or 1)
         if self._fresh(run_date, profile_id, version):
-            rows = self.pg.query_df(
-                "SELECT code, total_score, grade, rank, sub_scores FROM score_snapshot "
-                "WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
-                "AND tenant_id=%s AND owner_user_id=%s ORDER BY rank",
-                [run_date, profile_id, version, *self._op])
+            rows = self._read_board(run_date, profile_id, version)
         else:
-            rows = self._materialize(run_date, profile_id, version, prof)
+            rows = self._materialize_locked(run_date, profile_id, version, prof)
         return rows.head(top) if top else rows
 
     def get_board_cached(self, run_date: date, profile_id: str, top: int | None = None,
@@ -119,6 +115,22 @@ class ScoreSnapshotRepo:
             [run_date, profile_id, version, *self._op])
         return rows.head(top) if top else rows
 
+    def _read_board(self, run_date: date, profile_id: str, version: int) -> pd.DataFrame:
+        return self.pg.query_df(
+            "SELECT code, total_score, grade, rank, sub_scores FROM score_snapshot "
+            "WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
+            "AND tenant_id=%s AND owner_user_id=%s ORDER BY rank",
+            [run_date, profile_id, version, *self._op])
+
+    def _read_board_cur(self, cur, run_date: date, profile_id: str, version: int) -> pd.DataFrame:
+        cur.execute(
+            "SELECT code, total_score, grade, rank, sub_scores FROM score_snapshot "
+            "WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
+            "AND tenant_id=%s AND owner_user_id=%s ORDER BY rank",
+            [run_date, profile_id, version, *self._op])
+        cols = [d.name if hasattr(d, "name") else d[0] for d in cur.description]
+        return pd.DataFrame(cur.fetchall(), columns=cols)
+
     def _fresh(self, run_date: date, profile_id: str, version: int) -> bool:
         m = self.pg.query_df(
             "SELECT stale FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
@@ -126,33 +138,68 @@ class ScoreSnapshotRepo:
             [run_date, profile_id, version, *self._op])
         return (not m.empty) and (not bool(m.iloc[0]["stale"]))
 
-    def _materialize(self, run_date: date, profile_id: str, version: int, profile: dict) -> pd.DataFrame:
-        """重算该日该方案 → 覆盖 score_snapshot 明细 + 刷新 meta(stale=false)。"""
-        from backend.storage.asset_repository import AssetRepository
-        df = score_day(self.mkt, run_date, profile)
-        self.pg.execute(
+    def _fresh_cur(self, cur, run_date: date, profile_id: str, version: int) -> bool:
+        cur.execute(
+            "SELECT stale FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
+            "AND profile_version=%s AND tenant_id=%s AND owner_user_id=%s",
+            [run_date, profile_id, version, *self._op])
+        row = cur.fetchone()
+        return row is not None and not bool(row[0])
+
+    def _materialize_locked(self, run_date: date, profile_id: str, version: int, profile: dict) -> pd.DataFrame:
+        """锁内重算该日该方案 → 覆盖 score_snapshot 明细 + upsert meta(stale=false)。"""
+        lock_scope = f"{self.tenant_id}:{self.owner_user_id}"
+        lock_key = f"{run_date}:{profile_id}:{version}"
+        with self.pg.transaction() as conn, conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))", [lock_scope, lock_key])
+            # 等锁后再查一次：其它请求可能已经完成同一快照物化。
+            if self._fresh_cur(cur, run_date, profile_id, version):
+                return self._read_board_cur(cur, run_date, profile_id, version)
+
+            df = score_day(self.mkt, run_date, profile)
+            self._replace_snapshot_cur(cur, run_date, profile_id, version, df)
+            log.info("评分快照物化 %s/%s v%d → %d 只", run_date, profile_id, version, len(df))
+            return df
+
+    def _replace_snapshot_cur(self, cur, run_date: date, profile_id: str, version: int, df: pd.DataFrame) -> None:
+        cur.execute(
             "DELETE FROM score_snapshot WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
             "AND tenant_id=%s AND owner_user_id=%s",
             [run_date, profile_id, version, *self._op])
         if not df.empty:
-            rows = df.copy()
-            rows.insert(0, "trade_date", run_date)
-            rows.insert(1, "profile_id", profile_id)
-            rows.insert(2, "profile_version", version)
-            AssetRepository(self.pg, tenant_id=self.tenant_id,
-                            owner_user_id=self.owner_user_id).upsert("score_snapshot", rows)
-        self.pg.execute(
-            "DELETE FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
-            "AND tenant_id=%s AND owner_user_id=%s",
-            [run_date, profile_id, version, *self._op])
-        self.pg.execute(
+            rows = [
+                (
+                    run_date,
+                    self.tenant_id,
+                    self.owner_user_id,
+                    profile_id,
+                    version,
+                    r.code,
+                    float(r.total_score),
+                    str(r.grade),
+                    int(r.rank),
+                    r.sub_scores,
+                )
+                for r in df.itertuples(index=False)
+            ]
+            cur.executemany(
+                "INSERT INTO score_snapshot "
+                "(trade_date, tenant_id, owner_user_id, profile_id, profile_version, code, "
+                "total_score, grade, rank, sub_scores) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (tenant_id, owner_user_id, trade_date, profile_id, profile_version, code) "
+                "DO UPDATE SET total_score=EXCLUDED.total_score, grade=EXCLUDED.grade, "
+                "rank=EXCLUDED.rank, sub_scores=EXCLUDED.sub_scores",
+                rows,
+            )
+        cur.execute(
             "INSERT INTO score_snapshot_meta "
             "(trade_date, profile_id, profile_version, tenant_id, owner_user_id, computed_at, stale, n_codes) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (tenant_id, owner_user_id, trade_date, profile_id, profile_version) "
+            "DO UPDATE SET computed_at=EXCLUDED.computed_at, stale=EXCLUDED.stale, n_codes=EXCLUDED.n_codes",
             [run_date, profile_id, version, self.tenant_id, self.owner_user_id,
              datetime.now(), False, int(len(df))])
-        log.info("评分快照物化 %s/%s v%d → %d 只", run_date, profile_id, version, len(df))
-        return df
 
     # ── 失效（惰性标记，不重算）；行情共享 → 全局失效，不按归属过滤 ──
     def mark_stale_dates(self, trade_dates: list[date]) -> int:

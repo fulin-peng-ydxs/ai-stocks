@@ -181,7 +181,7 @@
 | R28-3 | 用户可自助公开自己的方案，公开范围受权限控制 | publish/unpublish API、资源码、前端按钮 | T2,T4,T9 | 已完成 | 一致 | 全体公开默认 system，租户公开按角色授权 |
 | R28-4 | 公开资产默认只读引用，不能被他人改删 | readonly 字段、保存/删除 owner 校验、复制为我的方案 | T3,T4,T9,T11 | 已完成 | 一致 | 非 owner 只读，允许复制 |
 | R28-5 | 公开方案快照归属明确 | 快照写方案 owner 槽，`profile_ref` 定位 owner | T3,T5,T6 | 已完成 | 一致 | 避免按 viewer 重复计算 |
-| R28-6 | 查询方案日期结果时 fresh 返回，缺失/stale 重算 | `/board/run` 读穿透物化、并发锁、cache 状态 | T5,T6,T11 | 已完成 | 基本一致 | 已实现读穿透与 cache 状态；PG advisory lock 未单独落地 |
+| R28-6 | 查询方案日期结果时 fresh 返回，缺失/stale 重算 | `/board/run` 读穿透物化、并发锁、cache 状态 | T5,T6,T11 | 已完成 | 一致 | 已实现读穿透、cache 状态和 PG advisory lock |
 | R28-7 | 新用户默认可见公开预设 | 平台预设作为 `visibility=public/source=preset` 纳入 visible list | T1,T3,T5,T11 | 已完成 | 一致 | 不做复制分发，只做可见引用 |
 | R20/R21 延续 | 前端权限渲染和存量榜单页权限闭环不退化 | 菜单 seed、路由、v-permission、阶段四测试回归 | T2,T7,T8,T11 | 已完成 | 一致 | 保持 Stage4 `debug_board_only` 可用 |
 
@@ -349,7 +349,7 @@
   - 非可见方案 404/403。
   - `force=true` 无 `board:compute` 返回 403。
 - 完成标准：榜单页不再因为最新行情日未预生产而空榜，且不写调用者个人槽污染公开方案。
-- 实际落地情况：已完成；`/board/run` 支持 `profile_ref`，默认日期取行情最新日，fresh 直接返回，缺失/stale 物化到方案 owner 槽，`force=true` 要求 `board:compute`。未单独实现 PG advisory lock。
+- 实际落地情况：已完成；`/board/run` 支持 `profile_ref`，默认日期取行情最新日，fresh 直接返回，缺失/stale 在 PG advisory xact lock 内二次检查并物化到方案 owner 槽，meta 采用 upsert，`force=true` 要求 `board:compute`。
 
 ### 6.7 任务 T7：生产任务与 CLI 语义统一
 
@@ -517,10 +517,10 @@
   - 具体完成情况：后端 API/仓储测试已覆盖；RBAC 菜单与路由扫描专项通过。
 - 回归测试：
   - 计划：复跑 Stage4 路由扫描、menu guard、board、权限指令、前端 build。
-  - 具体完成情况：后端公开方案/榜单/RBAC 相关专项 73 passed；配置拆页后 RBAC seed 专项 42 passed；前端 build 通过；前端权限/布局 Vitest 96 passed。
+  - 具体完成情况：后端公开方案/榜单/RBAC 相关专项 73 passed；配置拆页后 RBAC seed 专项 42 passed；复审整改后后端阶段四关联专项 60 passed；前端 build 通过；前端权限/布局 Vitest 155 passed。
 - 异常与边界测试：
   - 计划：无效 `profile_ref`、跨租户 tenant-only、公开方案被 owner 删除、版本更新后旧快照、并发双请求物化、`force=true` 无权限。
-  - 具体完成情况：覆盖跨租户 tenant-only 与无 publish 权限；无效 ref、并发双请求、公开方案删除后的前端恢复未单独覆盖。
+  - 具体完成情况：覆盖跨租户 tenant-only、无 publish 权限、复制目标冲突、回测页 `profile_ref`、`/board/compute` `profile_ref`、并发双请求物化；无效 ref、公开方案删除后的前端恢复未单独覆盖。
 - 图示与原型一致性验证：本需求无原型文件；BoardView 保持现有 list 布局，评分方案管理复用 ConfigView 评分 tab 布局。若新增独立评分方案页，必须同步 `pageRegistry` 和 `DESIGN.md §9`，并检查 1440x900、700、560 三档视口不溢出。
 - 配置闭环验证：`visibility` 展示、保存、读取、消费、取消公开、非法值拒绝、历史数据默认值和平台预设兼容均需覆盖。
 - 需求映射验证：以 §5 表为准，所有 R28 子项必须有任务、测试和状态。

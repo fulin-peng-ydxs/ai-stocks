@@ -80,11 +80,26 @@ class BacktestService:
                  "top_n", "initial_capital", "sell_ma_period", "max_hold_days", "take_profit",
                  "stop_loss", "rebalance_days", "industry_max_pct", "benchmark", "horizons", "thresholds"]
 
+    def _visible_score_profile(self, profile_ref_or_id: str | None) -> dict | None:
+        if not profile_ref_or_id:
+            return None
+        from backend.scoring.score_profile import ScoreProfileRepo
+
+        return ScoreProfileRepo(market=self.c, pg=self.pg, tenant_id=self.tenant_id,
+                                owner_user_id=self.owner_user_id).get_visible(
+                                    profile_ref_or_id,
+                                    include_owner=True,
+                                )
+
     def _resolve_versions(self, params: dict) -> dict:
         """运行时解析各引用方案的当前版本（命名展示 + 签名用）。方案在 PG。"""
         out: dict = {}
-        for pid_key, tbl, vk in (("score_profile_id", "score_profile", "score_profile_version"),
-                                 ("profile_id", "screen_profile", "profile_version"),
+        score_profile = self._visible_score_profile(params.get("score_profile_id"))
+        if score_profile:
+            out["score_profile_version"] = int(score_profile["version"])
+        elif params.get("score_profile_id"):
+            out["score_profile_version"] = None
+        for pid_key, tbl, vk in (("profile_id", "screen_profile", "profile_version"),
                                  ("trade_profile_id", "trade_profile", "trade_profile_version")):
             if params.get(pid_key):
                 df = self.pg.query_df(
@@ -136,9 +151,7 @@ class BacktestService:
     def _load_score_profile(self, params: dict) -> dict | None:
         if not params.get("score_profile_id"):
             return None
-        from backend.scoring.score_profile import ScoreProfileRepo
-        return ScoreProfileRepo(market=self.c, pg=self.pg, tenant_id=self.tenant_id,
-                                owner_user_id=self.owner_user_id).get(params["score_profile_id"])
+        return self._visible_score_profile(params["score_profile_id"])
 
     # ── 评分验证（信号质量分析）──
     def run_signal(self, params: dict, persist: bool = True) -> dict:
@@ -278,7 +291,14 @@ class BacktestService:
             "  AND m.tenant_id = r.tenant_id AND m.owner_user_id = r.owner_user_id "
             f"{where}"
             f"ORDER BY r.created_at DESC {tail}", args)
-        return df.to_dict("records")
+        rows = df.to_dict("records")
+        for row in rows:
+            if row.get("score_profile_id") and not row.get("score_profile_name"):
+                prof = self._visible_score_profile(row["score_profile_id"])
+                if prof:
+                    row["score_profile_name"] = prof["name"]
+                    row["score_profile_version"] = int(prof["version"])
+        return rows
 
     def get_run(self, run_id: str) -> dict | None:
         run = self.pg.query_df(

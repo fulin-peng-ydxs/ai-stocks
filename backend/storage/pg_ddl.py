@@ -760,6 +760,8 @@ _TENANT_ADMIN_EXTRA_MENUS: tuple[str, ...] = ("system", "permission", "/system/u
 _USER_RESOURCE_CODES: tuple[str, ...] = (
     "user:list", "user:create", "user:update",
     "user:disable", "user:reset-password", "user:delete")
+_TENANT_ADMIN_EXTRA_RESOURCE_CODES: tuple[str, ...] = ("score-profile:publish-tenant",)
+_STAGE4_BUSINESS_GRANTS_MARKER = "migration.stage4_business_grants_v2"
 
 
 def init_pg_db(client: PostgresClient | None = None) -> list[str]:
@@ -945,9 +947,10 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
                 "UPDATE sys_resource SET menu_id=%s, name=%s, type=%s, api_method=%s, "
                 "api_path=%s, is_builtin=TRUE WHERE id=%s",
                 [menu_code, name, rtype, method, path, code])
-    # 4) 默认授权（仅首次）
+    # 4) 默认授权（首次 seed + 存量库一次性回填）
     _seed_role_grants(client, [m["code"] for m in menu_rows])
     _backfill_config_split_builtin_grants(client)
+    _backfill_stage4_builtin_business_grants(client)
     # 5) 存量用户 → sys_user_role（按 role_code JOIN 已存在的内置角色）
     client.execute(
         "INSERT INTO sys_user_role (user_id, role_id) "
@@ -960,14 +963,14 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
     all_resource_codes = [r[1] for r in _SEED_RESOURCES]
     business = list(_BUSINESS_MENU_CODES)
     # (role_id, 菜单码集, 资源码集)
-    # 阶段四（R21）：normal/paid/tenant_admin 默认授研究业务功能码（BUSINESS_RESOURCE_CODES）；
-    # tenant_admin 另含用户管理码。baseline（SHARED_RESOURCE_CODES）不入授权（由 resolve 强制注入）；
+    # 阶段四（R21/R28）：normal/paid/tenant_admin 默认授研究业务功能码（BUSINESS_RESOURCE_CODES）；
+    # tenant_admin 另含用户管理码和租户公开评分方案码。baseline（SHARED_RESOURCE_CODES）不入授权（由 resolve 强制注入）；
     # system-only 码不授非 system（挂 visible='system' 菜单，system_only_resource_ids 拦截）。
     biz_res = list(BUSINESS_RESOURCE_CODES)
     grants: list[tuple[str, list[str], list[str]]] = [
         (ROLE_SYSTEM, all_menu_codes, all_resource_codes),
         (ROLE_TENANT_ADMIN, business + list(_TENANT_ADMIN_EXTRA_MENUS),
-         list(_USER_RESOURCE_CODES) + biz_res),
+         list(_USER_RESOURCE_CODES) + list(_TENANT_ADMIN_EXTRA_RESOURCE_CODES) + biz_res),
         (ROLE_NORMAL, business, biz_res),
         (ROLE_PAID, business, biz_res),   # 付费角色预留：暂同普通用户业务页，后续可在角色页调整
     ]
@@ -991,7 +994,7 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
 
 
 def _backfill_config_split_builtin_grants(client: PostgresClient) -> None:
-    """配置管理拆页存量回填：评分/买卖给业务角色，系统子页保持 system-only。"""
+    """配置管理拆页结构回填：菜单结构更新，授权由一次性迁移函数处理。"""
     client.execute("DELETE FROM sys_role_menu WHERE menu_id=%s", ["/score-profiles"])
     client.execute("DELETE FROM sys_menu WHERE id=%s", ["/score-profiles"])
     client.execute(
@@ -999,29 +1002,66 @@ def _backfill_config_split_builtin_grants(client: PostgresClient) -> None:
         "visible=%s, is_builtin=TRUE WHERE id=%s",
         ["system", "配置管理", "group", "Files", "login", "/system/config"],
     )
-    for role_id in (ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID):
-        for mid in ("system", "/system/config", "/system/config/score", "/system/config/trade"):
-            client.execute(
-                "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
-                "ON CONFLICT DO NOTHING",
-                [role_id, mid],
+def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:
+    """一次性补齐阶段四内置业务角色授权，并修正 R28 默认 publish 边界。
+
+    不能依赖 _seed_role_grants 的“角色已有任意 role_menu 即跳过”策略，否则既有库拿不到
+    阶段四新增业务码；也不能每次启动都重加，否则会覆盖管理员后续手工调整。用 app_config
+    迁移标记保证只执行一次，执行后 bump 受影响用户 perm_ver。
+    """
+    marker = client.query_df("SELECT 1 FROM app_config WHERE key=%s", [_STAGE4_BUSINESS_GRANTS_MARKER])
+    if not marker.empty:
+        return
+
+    business_menus = list(_BUSINESS_MENU_CODES)
+    business_resources = list(BUSINESS_RESOURCE_CODES)
+    changed = 0
+
+    with client.transaction() as conn, conn.cursor() as cur:
+        for role_id in (ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID):
+            menus = business_menus + (list(_TENANT_ADMIN_EXTRA_MENUS) if role_id == ROLE_TENANT_ADMIN else [])
+            resources = (
+                business_resources
+                + (
+                    list(_USER_RESOURCE_CODES) + list(_TENANT_ADMIN_EXTRA_RESOURCE_CODES)
+                    if role_id == ROLE_TENANT_ADMIN
+                    else []
+                )
             )
-        for rid in (
-            "score:run",
-            "score-profile:view",
-            "score-profile:save",
-            "score-profile:delete",
-            "score-profile:publish-tenant",
-            "trade-profile:view",
-            "trade-profile:save",
-            "trade-profile:delete",
-            "trade-profile:preview",
-        ):
-            client.execute(
-                "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
-                "ON CONFLICT DO NOTHING",
-                [role_id, rid],
+            for mid in menus:
+                cur.execute(
+                    "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
+                    "ON CONFLICT DO NOTHING",
+                    [role_id, mid],
+                )
+                changed += max(cur.rowcount, 0)
+            for rid in resources:
+                cur.execute(
+                    "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                    "ON CONFLICT DO NOTHING",
+                    [role_id, rid],
+                )
+                changed += max(cur.rowcount, 0)
+
+        cur.execute(
+            "DELETE FROM sys_role_resource "
+            "WHERE role_id IN (%s, %s) AND resource_id=%s",
+            [ROLE_NORMAL, ROLE_PAID, "score-profile:publish-tenant"],
+        )
+        changed += max(cur.rowcount, 0)
+
+        if changed:
+            cur.execute(
+                "UPDATE sys_user u SET perm_ver=perm_ver+1 "
+                "WHERE EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id "
+                "AND ur.role_id IN (%s, %s, %s))",
+                [ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID],
             )
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
+            [_STAGE4_BUSINESS_GRANTS_MARKER, '{"applied":true}'],
+        )
 
 
 def asset_pk_mismatches(client: PostgresClient | None = None) -> list[str]:

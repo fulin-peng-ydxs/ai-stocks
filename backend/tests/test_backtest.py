@@ -185,6 +185,31 @@ def test_strategy_with_trade_and_score_profile():
         assert reasons <= {"卖出信号", "止损", "止盈", "到期", "区间末强平", "停牌/退市强平", "顺延"}
 
 
+def test_backtest_engine_accepts_visible_score_profile_ref(market, pg):
+    """回测引擎运行时支持他人公开评分方案 profile_ref，不再按当前 owner 私有 id 读取。"""
+    from backend.auth.context import AuthContext, reset_context, set_context
+    from backend.scoring.score_profile import ScoreProfileRepo
+    from backend.tests.conftest import TEST_OWNER, TEST_TENANT
+
+    owner = "pytest_public_score_owner"
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    src_repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=owner)
+    src_repo.save("bt_public_score", "公开回测评分", items)
+    src = src_repo.set_visibility("bt_public_score", "tenant", published_by=owner)
+    token = set_context(AuthContext(user_id=TEST_OWNER, tenant_id=TEST_TENANT))
+    try:
+        out = BacktestEngine(market).run({
+            "date_start": "2024-01-02",
+            "date_end": "2024-01-03",
+            "score_profile_id": src["profile_ref"],
+        })
+        assert out.get("error") != f"评分方案不存在: {src['profile_ref']}"
+    finally:
+        reset_context(token)
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
+
+
 def test_engine_buy_deferred_on_limit_up_open():
     """信号次日开盘即涨停 → 当日买不到，顺延到下一可买日。"""
     with DuckDBClient(db_path=":memory:") as c:
@@ -348,6 +373,37 @@ def test_backtest_service_list_get_run(market, pg):
     # 跨归属不可见
     other = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id="pytest_other")
     assert other.get_run("r9") is None
+
+
+def test_backtest_service_resolves_visible_score_profile_ref(market, pg):
+    """服务层版本解析和历史列表展示支持跨 owner 可见评分方案 profile_ref。"""
+    from backend.scoring.score_profile import ScoreProfileRepo
+    from backend.services.backtest_service import BacktestService
+    from backend.tests.conftest import TEST_OWNER, TEST_TENANT
+
+    owner = "pytest_public_score_owner"
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    src_repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=owner)
+    src_repo.save("bt_public_score", "公开回测评分", items)
+    src = src_repo.set_visibility("bt_public_score", "tenant", published_by=owner)
+    svc = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    try:
+        params = {
+            "date_start": "2024-01-02",
+            "date_end": "2024-01-03",
+            "score_profile_id": src["profile_ref"],
+        }
+        versions = svc._resolve_versions(params)  # noqa: SLF001
+        assert versions["score_profile_version"] == 1
+        assert svc._load_score_profile(params)["name"] == "公开回测评分"  # noqa: SLF001
+
+        svc._persist_run("r_score_ref", "strategy", params, "done", finished=True, versions=versions)  # noqa: SLF001
+        mine = [r for r in svc.list_runs(kind="strategy") if r["id"] == "r_score_ref"]
+        assert mine and mine[0]["score_profile_name"] == "公开回测评分"
+        assert mine[0]["score_profile_version"] == 1
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
 
 
 def test_list_runs_join_no_cross_owner(market, pg):

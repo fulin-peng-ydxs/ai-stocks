@@ -65,11 +65,11 @@ export interface BoardRow {
 export function computeBoard(
   date: string,
   top = 50,
-  scoreProfileId?: string,
+  scoreProfileRefOrId?: string,
 ): Promise<{ date: string; top: number; list: BoardRow[] }> {
-  // scoreProfileId：与回测所选评分方案一致才能让名次对上 entry_rank（空=旧固定模型）
+  // 评分方案引用：与回测所选评分方案一致才能让名次对上 entry_rank（空=旧固定模型）
   return http.get('/board/compute', {
-    params: { date, top, ...(scoreProfileId ? { score_profile_id: scoreProfileId } : {}) },
+    params: { date, top, ...(scoreProfileRefOrId ? { score_profile_id: scoreProfileRefOrId } : {}) },
   })
 }
 

@@ -107,7 +107,8 @@ def copy_score_profile(pid: str, body: ScoreProfileCopyBody) -> ApiResponse:
     try:
         version = ScoreProfileRepo().copy_visible(pid, body.id, body.name)
     except ValueError as e:
-        return err(404, str(e))
+        msg = str(e)
+        return err(409 if "已存在" in msg else 404, msg)
     return ok({"id": body.id, "version": version, "msg": "已复制"})
 
 

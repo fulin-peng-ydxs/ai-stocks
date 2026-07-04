@@ -117,6 +117,12 @@ def test_score_profile_tenant_visibility_and_copy(client, pg):
             headers=_auth(viewer, tid),
         )
         assert copied.status_code == 200 and copied.json()["data"]["version"] == 1
+        duplicated = client.post(
+            f"/api/score-profiles/{shared['profile_ref']}/copy",
+            json={"id": copy_id, "name": "覆盖副本"},
+            headers=_auth(viewer, tid),
+        )
+        assert duplicated.status_code == 200 and duplicated.json()["code"] == 409
 
         out = client.get("/api/score-profiles", headers=_auth(outsider, otid))
         assert pid not in {r["id"] for r in out.json()["data"]}

@@ -465,9 +465,21 @@ function onProfileVisibilityCommand(command: string | number | object) {
   publishScoreProfile(command)
 }
 
+function nextCopyProfileId(base: string): string {
+  const root = (base || 'score').replace(/[^\w-]/g, '_') || 'score'
+  const mineIds = new Set(profiles.value.filter((p) => p.source === 'mine').map((p) => p.id))
+  let id = `${root}_copy`
+  let seq = 2
+  while (mineIds.has(id)) {
+    id = `${root}_copy_${seq}`
+    seq += 1
+  }
+  return id
+}
+
 async function copyCurrentScoreProfile() {
   if (!curRef.value) return
-  const id = `${curId.value || 'score'}_copy`
+  const id = nextCopyProfileId(curId.value)
   await copyScoreProfile(curRef.value, { id, name: `${editName.value || '评分方案'} 副本` })
   ElMessage.success('已复制为我的方案')
   await loadProfiles()

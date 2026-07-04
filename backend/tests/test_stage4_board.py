@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
+from threading import Barrier, Lock
 
 import pandas as pd
 import pytest
@@ -116,6 +118,41 @@ def test_board_compute_allowed_with_code(client, pg):
         r = client.get(f"/api/board/compute?date={_PUB_DATE}&top=5", headers=_auth(uid, tid))
         assert r.status_code not in (401, 403)
     finally:
+        _rm_user(pg, uid, tid, rid)
+
+
+def test_board_compute_accepts_visible_score_profile_ref(client, pg, market, monkeypatch):
+    """/board/compute 支持可见评分方案 profile_ref，供回测明细榜单按同一方案看排名。"""
+    from backend.scoring.score_profile import ScoreProfileRepo
+
+    uid, tid, rid = _mk_user(pg, codes=["board:compute"])
+    owner = "s4_profile_owner_" + uuid.uuid4().hex[:6]
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=tid, owner_user_id=owner)
+    repo.save("compute_shared", "公开计算评分", items)
+    shared = repo.set_visibility("compute_shared", "tenant", published_by=owner)
+
+    def fake_score_day(_c, _run_date, _profile):
+        return pd.DataFrame([{
+            "code": "T3B_COMPUTE.SZ",
+            "total_score": 95.0,
+            "grade": "主升浪核心",
+            "rank": 1,
+            "sub_scores": "{}",
+        }])
+
+    monkeypatch.setattr("backend.scoring.snapshot.score_day", fake_score_day)
+    try:
+        r = client.get(
+            "/api/board/compute",
+            params={"date": _PUB_DATE, "top": 5, "score_profile_id": shared["profile_ref"]},
+            headers=_auth(uid, tid),
+        )
+        assert r.status_code == 200
+        assert r.json()["data"]["list"][0]["code"] == "T3B_COMPUTE.SZ"
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
         _rm_user(pg, uid, tid, rid)
 
 
@@ -313,6 +350,63 @@ def test_board_run_materializes_stale_snapshot_with_view(client, pg, public_pres
         assert rows["code"].tolist() == ["T3B_REFRESH.SZ"]
     finally:
         _rm_user(pg, uid, tid, rid)
+
+
+def test_board_run_materialize_uses_advisory_lock(pg, public_preset, monkeypatch):
+    """同一 owner/profile/version/date 并发物化时只计算一次，第二个请求等锁后读 fresh。"""
+    from backend.scoring.snapshot import ScoreSnapshotRepo
+
+    preset_id, _priv_id = public_preset
+    ptid, pown = PUBLIC_BOARD_OWNER
+    target = date.fromisoformat(_PUB_DATE)
+    calls = 0
+    calls_lock = Lock()
+    barrier = Barrier(2)
+    prof = {
+        "id": preset_id,
+        "version": 1,
+        "items": [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}],
+        "grade_thresholds": {},
+    }
+
+    def fake_score_day(_c, run_date, _profile):
+        nonlocal calls
+        assert run_date == target
+        with calls_lock:
+            calls += 1
+        return pd.DataFrame([{
+            "code": "T3B_LOCK.SZ",
+            "total_score": 99.0,
+            "grade": "主升浪核心",
+            "rank": 1,
+            "sub_scores": "{}",
+        }])
+
+    def worker():
+        barrier.wait(timeout=5)
+        repo = ScoreSnapshotRepo(pg=pg, tenant_id=ptid, owner_user_id=pown)
+        return repo.get_board(target, preset_id, top=10, profile=prof)["code"].tolist()
+
+    monkeypatch.setattr("backend.scoring.snapshot.score_day", fake_score_day)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = [f.result(timeout=10) for f in [pool.submit(worker), pool.submit(worker)]]
+
+    assert results == [["T3B_LOCK.SZ"], ["T3B_LOCK.SZ"]]
+    assert calls == 1
+    meta = pg.query_df(
+        "SELECT count(*) AS n, bool_or(stale) AS stale FROM score_snapshot_meta "
+        "WHERE trade_date=%s AND profile_id=%s AND profile_version=1 "
+        "AND tenant_id=%s AND owner_user_id=%s",
+        [target, preset_id, ptid, pown],
+    )
+    rows = pg.query_df(
+        "SELECT code FROM score_snapshot WHERE trade_date=%s AND profile_id=%s "
+        "AND profile_version=1 AND tenant_id=%s AND owner_user_id=%s",
+        [target, preset_id, ptid, pown],
+    )
+    assert int(meta.iloc[0]["n"]) == 1
+    assert bool(meta.iloc[0]["stale"]) is False
+    assert rows["code"].tolist() == ["T3B_LOCK.SZ"]
 
 
 def test_recompute_produces_public_board_and_restores_view(client, pg, public_preset, monkeypatch):

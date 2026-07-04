@@ -254,7 +254,7 @@ class BacktestEngine:
                 max_hold = bs["max_hold_days"]
         if params.get("score_profile_id"):
             from backend.scoring.score_profile import ScoreProfileRepo
-            score_profile = ScoreProfileRepo(self.c).get(params["score_profile_id"])
+            score_profile = ScoreProfileRepo(self.c).get_visible(params["score_profile_id"])
             if not score_profile:
                 return {"error": f"评分方案不存在: {params['score_profile_id']}"}
         use_profiles = bool(buy_tree or sell_tree or score_profile)

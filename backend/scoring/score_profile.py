@@ -401,6 +401,8 @@ class ScoreProfileRepo:
         src = self.get_visible(profile_ref_or_id, include_owner=True)
         if not src:
             raise ValueError("方案不存在")
+        if self.get(new_id):
+            raise ValueError("目标方案已存在，请改名后再复制")
         return self.save(new_id, new_name or f"{src['name']} 副本", src["items"], src["grade_thresholds"])
 
     def versions(self, pid: str) -> list[dict]:

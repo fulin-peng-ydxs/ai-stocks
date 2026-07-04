@@ -37,7 +37,6 @@ SHARED_RESOURCE_CODES: tuple[str, ...] = (
 BUSINESS_RESOURCE_CODES: tuple[str, ...] = (
     "board:view", "board:compute", "score:run", "layout:user-config",
     "score-profile:view", "score-profile:save", "score-profile:delete",
-    "score-profile:publish-tenant",
     "trade-profile:view", "trade-profile:save", "trade-profile:delete", "trade-profile:preview",
     "screen-profile:view", "screen-profile:save", "screen-profile:delete", "screen:run",
     "stocks:view", "stocks:trade-eval",

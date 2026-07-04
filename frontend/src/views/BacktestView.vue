@@ -80,6 +80,10 @@ const scoreProfiles = ref<ScoreProfileSummary[]>([])
 const tradeProfiles = ref<TradeProfileSummary[]>([])
 const useTradeProfile = computed(() => !!tradeProfileId.value)
 
+function scoreProfileKey(p: ScoreProfileSummary): string {
+  return p.profile_ref || p.id
+}
+
 // —— 卖出规则 ——（跌破均线为基准退出，止盈/止损/到期为可选叠加触发）
 const SELL_MA_OPTIONS = [5, 10, 20, 30, 60]
 const sellMa = ref(20)
@@ -737,7 +741,7 @@ async function openTradeChart(row: TradeRow) {
           </HelpTip>
         </span>
         <el-select v-model="scoreProfileId" clearable placeholder="旧固定模型" style="width: 150px">
-          <el-option v-for="p in scoreProfiles" :key="p.id" :value="p.id" :label="p.name" />
+          <el-option v-for="p in scoreProfiles" :key="scoreProfileKey(p)" :value="scoreProfileKey(p)" :label="p.name" />
         </el-select>
         <template v-if="kind === 'strategy'">
           <span class="lbl">选股方案

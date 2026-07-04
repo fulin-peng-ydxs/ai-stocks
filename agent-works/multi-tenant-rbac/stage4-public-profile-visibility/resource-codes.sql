@@ -69,7 +69,7 @@ CROSS JOIN (
 WHERE r.id IN ('tenant_admin', 'normal', 'paid')
 ON CONFLICT DO NOTHING;
 
--- 默认业务角色只补 tenant 级发布；全体公开、技术指标、系统设置仍由 system 全量权限覆盖。
+-- 评分/买卖业务码默认给业务角色；租户公开默认仅给 tenant_admin，normal/paid 需单独授权。
 INSERT INTO sys_role_resource (role_id, resource_id)
 SELECT r.id, x.resource_id
 FROM sys_role r
@@ -79,7 +79,6 @@ CROSS JOIN (
     ('score-profile:view'),
     ('score-profile:save'),
     ('score-profile:delete'),
-    ('score-profile:publish-tenant'),
     ('trade-profile:view'),
     ('trade-profile:save'),
     ('trade-profile:delete'),
@@ -87,6 +86,14 @@ CROSS JOIN (
 ) AS x(resource_id)
 WHERE r.id IN ('tenant_admin', 'normal', 'paid')
 ON CONFLICT DO NOTHING;
+
+INSERT INTO sys_role_resource (role_id, resource_id)
+VALUES ('tenant_admin', 'score-profile:publish-tenant')
+ON CONFLICT DO NOTHING;
+
+DELETE FROM sys_role_resource
+WHERE role_id IN ('normal', 'paid')
+  AND resource_id = 'score-profile:publish-tenant';
 
 -- 授权/菜单口径变更后让既有在线 token 失效，避免继续使用旧权限快照。
 UPDATE sys_user u

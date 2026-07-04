@@ -79,7 +79,7 @@ def scores_top(
     return ok({"trade_date": str(d), "top": top, "list": _query_scores(d, model_id, top)})
 
 
-def _board_by_profile(c, run_date: date, top: int, profile_id: str) -> ApiResponse:
+def _board_by_profile(c, run_date: date, top: int, profile_ref_or_id: str) -> ApiResponse:
     """用评分方案对某日全市场打分排序（与回测 _decision_data 同口径）。
 
     走评分快照层（§10.1）：命中且未失效→用缓存；否则惰性重算落库。
@@ -87,10 +87,14 @@ def _board_by_profile(c, run_date: date, top: int, profile_id: str) -> ApiRespon
     from backend.scoring.score_profile import ScoreProfileRepo
     from backend.scoring.snapshot import ScoreSnapshotRepo
 
-    prof = ScoreProfileRepo(c).get(profile_id)
+    prof = ScoreProfileRepo(c).get_visible(profile_ref_or_id, include_owner=True)
     if not prof:
         return ok({"date": str(run_date), "top": top, "list": []})
-    board = ScoreSnapshotRepo(c).get_board(run_date, profile_id, top=top, profile=prof)
+    board = ScoreSnapshotRepo(
+        c,
+        tenant_id=prof["tenant_id"],
+        owner_user_id=prof["owner_user_id"],
+    ).get_board(run_date, prof["id"], top=top, profile=prof)
     if board.empty:
         return ok({"date": str(run_date), "top": top, "list": []})
     codes = board["code"].tolist()

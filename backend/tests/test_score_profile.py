@@ -196,6 +196,9 @@ def test_visibility_owner_only_and_copy_visible(market, pg):
         copied = viewer.get("copied_profile")
         assert copied["name"] == "我的副本"
         assert copied["visibility"] == "private"
+        with pytest.raises(ValueError, match="已存在"):
+            viewer.copy_visible(src["profile_ref"], "copied_profile", "覆盖副本")
+        assert viewer.get("copied_profile")["name"] == "我的副本"
     finally:
         for owner_id in ("pytest_pub_owner", TEST_OWNER):
             pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner_id])
