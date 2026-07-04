@@ -40,7 +40,9 @@
 
 ## 1. 架构总览
 
-全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**（多租户混合持久层 stage1 已落地）：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户私有资产 + 平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作短状态库。详见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)（**认证与鉴权内核阶段二 + 细粒度 RBAC/租户管理阶段三 + 存量业务路由全量接入阶段四均已落地**：JWT 登录/注册/登出 + 中间件默认 deny；角色/菜单/资源数据化 + 接口级 `require_perm`/`require_system_perm` + 按钮级 `v-permission` + 4 个系统管理页 + 数据隔离全量透传；13 个存量业务路由逐端点接精确权限码 + 基线共享读强制注入 + 路由扫描证零裸露/零漏码；评分方案支持 `private/tenant/public` 可见性，榜单消费可见方案并在缺失或 stale 时受控物化快照）。
+全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户资产、系统菜单、角色权限、平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作 token 黑名单、权限缓存、验证码和限流等短状态库。
+
+认证与授权以后端为事实源：`AuthMiddleware` 对非白名单 `/api/**` 默认拒绝，JWT 只承载身份和权限版本，`/api/auth/me` 返回用户、租户、角色、授权菜单树和功能码；接口用 `require_perm` / `require_system` / `require_system_perm` 做精确授权，前端侧栏、路由守卫和按钮级 `v-permission` 只消费后端结果。多租户数据归属由请求上下文注入到仓库和服务层，前端不决定资产归属。技术架构见 [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md)，需求与落地记录见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)。
 
 ```
 ┌─────────────────────────── 浏览器 (Vue3 SPA) ───────────────────────────┐
@@ -50,16 +52,17 @@
 ┌───────────────────────────────▼─────────────────────────────────────────┐
 │  FastAPI (backend/api)         路由层：薄，只做参数校验与响应包装         │
 ├───────────────────────────────────────────────────────────────────────── ┤
-│  services        编排层：入库 / 筛选打分 / 回测 / 一键日常 / 异步任务     │
+│  auth            JWT / AuthContext / 菜单与功能码解析 / 权限版本失效      │
+│  services        编排层：入库 / 筛选打分 / 回测 / 系统管理 / 异步任务      │
 │  screening · scoring · signals · backtest · indicators   领域引擎         │
 │  datasource      数据源适配（akshare / baostock，限流·重试·超时·兜底）    │
 │  dataquality     入库清洗 + 四层质检 + 修复闭环                           │
-│  storage         双库访问层：行情 DuckDB(点时安全·防未来/幸存者) + 资产 PG │
+│  storage         双库访问层：行情 DuckDB(点时安全) + 资产/RBAC/配置 PG    │
 │  scheduler       APScheduler 定时调度（任务可在「数据管理」页配置）        │
 └───────────────────────────────┬─────────────────────────────────────────┘
                                  │
-        行情 data/ai_stocks.duckdb (嵌入式列存,只读分析)  ·  资产 PostgreSQL
-        (用户私有方案/分组/回测/训练/快照/配置,按 tenant+owner 隔离)  ·  Redis(短状态)
+        行情 data/ai_stocks.duckdb (嵌入式列存,只读分析)  ·  PostgreSQL
+        (sys_* 权限表 + 用户方案/分组/回测/训练/快照/配置)  ·  Redis(短状态)
 ```
 
 **核心数据流（每日收盘后）**：增量更新日线（含逐只补总市值）→ 入库清洗 + 四层质检 → 动态算指标 → 按默认评分方案出榜单。
@@ -68,9 +71,9 @@
 
 ## 2. 功能模块与技术文档
 
-系统按"数据先可靠、方案可配置、结果可验证"组织成下列业务模块。README 负责说明**从哪里进、做什么、和谁关联**；每个模块的详细说明书放在 [`agent-works/architecture/`](agent-works/architecture/)。
+系统按"数据先可靠、方案可配置、结果可验证"组织成下列业务模块。README 负责说明**从哪里进、做什么、和谁关联**；详细文档优先看 [`agent-works/architecture/`](agent-works/architecture/) 与对应功能目录。
 
-| 模块 | 页面入口 | 主要 API | 你在这里完成什么 | 详细说明书 |
+| 模块 | 页面入口 | 主要 API | 你在这里完成什么 | 详细文档 |
 |------|----------|----------|------|----------|
 | 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按用户可见**评分方案**全市场排序（自己的方案、租户公开、全体公开、平台内置预设；0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存 + 版本回看 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
@@ -78,10 +81,11 @@
 | 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 列表（服务端排序/分页，含退市股）；详情（K 线 + 指标快照 + 当前买卖方案信号）；股票分组篮子 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
 | ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底）/ 技术指标（注册表）/ 系统设置 | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) |
+| 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
 | 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线 + T+1 真实撮合买卖；一局产出评分/评级/资金曲线；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
-> **配置管理**与**布局配置**同属顶层「⚙️ 系统管理」菜单（路由 `/system/*`）。配置管理父菜单下，评分规则与买卖指标是业务可授权子页，技术指标与系统设置仍为 system-only。布局配置建立在 `frontend/src/layout/` 布局底座之上（页面外壳 `LayoutHost` + 布局 schema + 组件目录 + 校验器 + 契约测试），把"风格/布局/组件字段"做成可配置、可分层、可追踪来源的产品能力，使页面"由构造即合规"。
+> `/system/*` 是系统管理域，包含配置管理、布局配置、用户、角色、菜单/功能点和租户。评分规则与买卖指标是业务可授权子页；技术指标、系统设置、角色、菜单/功能点、租户和全局布局配置保持 system-only；用户管理可按 `user:*` 功能码授权给租户管理员，但服务层仍把非 system 用户限制在本租户。
 > 横切的基础设施（点时安全仓库、异步任务底座、定时调度、配置生效、服务部署、前端布局规范）见 [platform.md](agent-works/architecture/platform.md)。
 
 ### 2.1 模块关系图
@@ -99,6 +103,10 @@ flowchart LR
   DB --> STK["个股与分组\nK线 / 信号 / 股票篮子"]
   CFG --> STK
   DB --> TRN["盘感训练\n盲测 / T+1撮合 / 评分成长"]
+  RBAC["系统菜单 / 权限 / 租户\n登录 / /me / 菜单树 / 功能码 / 归属上下文"] -. 控制入口与资产归属 .-> CFG
+  RBAC -. 控制入口与资产归属 .-> SCR
+  RBAC -. 控制入口与资产归属 .-> BRD
+  RBAC -. 控制入口与资产归属 .-> BT
 ```
 
 ### 2.2 常用工作流
@@ -119,14 +127,18 @@ flowchart LR
 
 ```
 backend/
-  api/            REST 路由（薄层）：board / stocks / screen / backtest / config
+  auth/           登录鉴权与授权上下文：JWT / AuthMiddleware / require_perm / perm_ver / 菜单资源解析
+  api/            REST 路由（薄层）：auth / users / roles / menus / resources / tenants
+                  / board / stocks / screen / backtest / config
                   / indicators / score_profiles / trade_profiles / stock_groups
                   / data_tasks / data_admin / health / training / layout
   services/       编排层：ingest（入库）· screen_score（筛选打分）· backtest
                   · pipeline（一键日常 DailyPipeline）· async_task（异步任务底座）
+                  · auth_service / user_admin / role_admin / menu_admin / tenant_admin
                   · data_report / data_verify / data_sources · training（盘感训练）
   datasource/     数据源适配（akshare / baostock；限流·重试·超时·兜底·溯源）
-  storage/        DuckDB 连接 / DDL / 点时安全仓库 / 配置覆盖层 / 布局配置(layout_config) / 数据目录
+  storage/        DuckDB 连接 / DDL / 点时安全仓库 / PG DDL / RBAC 仓库 / 资产归属仓库
+                  / 配置覆盖层 / 布局配置(layout_config) / 数据目录
   dataquality/    入库清洗 + 四层质检（checker）
   indicators/     指标引擎（后向算子 / param_hash / 动态计算）
   screening/      条件 AST + 表达式 DSL 沙箱 + 筛选引擎
@@ -141,6 +153,10 @@ backend/
   tests/          后端单测（pytest）
 
 frontend/         Vue3 + TS + Element Plus + ECharts，构建产物 frontend/dist 由后端托管
+  src/stores/auth.ts      登录态、/me 菜单树、功能码与租户信息
+  src/utils/permission.ts 路由与按钮权限纯逻辑
+  src/directives/permission.ts  v-permission 按钮级授权
+  src/views/system/       用户 / 角色 / 菜单功能点 / 租户管理页
   src/layout/     可配置布局底座：页面外壳 LayoutHost / 布局 schema / 组件目录 / 校验器 / 契约测试
   src/views/layout/  布局配置工作台：预设管理 / 页面布局 / 系统组件
 agent-works/architecture/ 各模块技术文档（核心技术 / 业务架构 / 业务流程 / 风险事项）
@@ -177,7 +193,7 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 | 开发模式 | 日常开发、前端热更新、调试 API | 前端 `http://localhost:5173` | 前端 Vite + 后端 FastAPI 两个进程 |
 | 生产/集成模式 | 单端口访问、演示、局域网访问 | 后端 `http://<机器IP>:8000` | 后端托管 `frontend/dist` |
 
-> **前置依赖（混合持久层 stage1 起）**：后端启动前 **PostgreSQL 与 Redis 须先运行**（启动期三库连通性自检，任一不通即失败）。本机开发：`brew services start postgresql@16 redis`，并建 PG 库/角色 `ai_stocks`（localhost `trust` 免密；公网部署改 pg_hba 走密码并设 `AI_STOCKS_PG_PASSWORD`）。连接参数见 `config/settings.yaml` 的 `postgres`/`redis` 段；本机敏感环境变量写入 `.env.local`（参考 `.env.local.example`，已忽略 Git）。存量从旧 DuckDB 升级：`python -m backend.cli migrate-rbac`（先 dry-run，再 `--apply`）。
+> **前置依赖**：后端启动前 **PostgreSQL 与 Redis 须先运行**（启动期三库连通性自检，任一不通即失败）。本机开发：`brew services start postgresql@16 redis`，并建 PG 库/角色 `ai_stocks`（localhost `trust` 免密；公网部署改 pg_hba 走密码并设 `AI_STOCKS_PG_PASSWORD`）。连接参数见 `config/settings.yaml` 的 `postgres`/`redis` 段；本机敏感环境变量写入 `.env.local`（参考 `.env.local.example`，已忽略 Git）。存量从旧 DuckDB 升级：`python -m backend.cli migrate-rbac`（先 dry-run，再 `--apply`）。
 
 ### 5.1 开发模式启动（前后端联动）
 
@@ -217,7 +233,7 @@ cd frontend && npm run build && cd ..   # 产物进 frontend/dist
 ./start.sh prod                         # 后端绑 0.0.0.0:8000 托管 dist
 ```
 
-生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权内核 + 细粒度 RBAC（阶段二 JWT 登录/注册 + 中间件默认 deny，非白名单接口须 token；阶段三接口级 `require_perm`/`require_system` + 按钮级权限 + 4 个系统管理页；阶段四存量 13 业务路由逐端点接精确权限码 + 基线共享读强制注入 + 评分方案公开可见性与配置拆页），启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
+生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权、细粒度 RBAC、系统菜单、租户管理、存量业务路由资源码、基线共享读和评分方案可见性；启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
 
 ### 5.3 首次准备数据（依赖有序）
 
@@ -337,6 +353,8 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 - **统一基座**：技术指标是唯一原子定义，买卖/评分/筛选全部引用它组合，不在下游硬编码字段。
 - **分层职责**：`api/` 只做参数校验与响应包装，业务逻辑放 `services/` 与领域引擎；一切读写经 `storage` 点时安全仓库；长耗时操作走 `async_task` 异步任务底座 + 进度。
 - **配置即时生效**：阈值/权重/参数集中在 [`config/settings.yaml`](config/settings.yaml)，Web 表单改的进 `app_config` 覆盖层；改参不写进代码。
+- **权限默认拒绝**：新增受控 `/api/**` 先过 `AuthMiddleware`，再挂精确 `require_perm` 或 system 守卫；不要只靠前端菜单、按钮或隐藏路由做安全控制。
+- **租户归属不可前端决定**：用户资产读写必须从请求上下文取 `tenant_id` 和 `owner_user_id`，除明确 system 管理接口外，不接受前端传入归属字段决定数据范围。
 
 ---
 
@@ -347,6 +365,8 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | [`agent-works/architecture/`](agent-works/architecture/) | 各业务模块当前技术说明、业务流程和风险边界 |
 | [AGENTS.md](AGENTS.md) | AI 协作入口与仓库级稳定约束 |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 薄入口，指向 AGENTS 与 Claude 项目记忆 |
+| [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) | 登录鉴权、系统菜单、细粒度权限、多租户资产隔离和评分方案可见性的当前技术架构 |
+| [multi-tenant-rbac](agent-works/multi-tenant-rbac/) | 系统菜单、权限、多租户相关需求与落地记录 |
 | [DESIGN.md — 前端设计与布局规范](DESIGN.md) | 前端布局事实源与页面开发契约：可配置布局系统、页面设计闭环、组件/布局维护矩阵、设置抽屉规范；强制规则归 `frontend/src/layout` + 契约测试 |
 | [page-template.md — 新页面开发模板](agent-works/configurable-layout-system/page-template.md) | AI/开发者新建或改造页面时复制使用的页面设计块、维护矩阵、7 个原型骨架和验收清单 |
 

@@ -7,9 +7,10 @@
 
 1. 读 [DESIGN.md](../../DESIGN.md) §1~§8（三层模型、7 步、原型清单、组件目录、主区策略、预设、组件特性缺口、落地坑）。
 2. 读 `frontend/src/layout/archetypes.ts`（原型预设）和 `frontend/src/layout/components.ts`（组件能力目录）。
-3. 守 [AGENTS.md](../../AGENTS.md) 的协作约束：原型与组件清单选定后，先给用户推荐 + 理由再开发。
+3. 涉及新增可导航页面、系统页、API 动作或按钮权限时，读 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 的“新页面接入菜单和权限”。
+4. 守 [AGENTS.md](../../AGENTS.md) 的协作约束：原型与组件清单选定后，先给用户推荐 + 理由再开发。
 
-## 1. 固定七步
+## 1. 固定流程
 
 1. 判断业务页面类型 → 按 §2 决策选一个**原型**。
 2. 把推荐原型 + 理由告诉用户，确认后开发。
@@ -18,6 +19,7 @@
 5. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
 6. `npm run build`（含 vue-tsc 类型检查；改 `frontend/src` 后必构建）。
 7. 在 DESIGN.md 的 `page-registry` 区块补一行，并填写下方 §8 登记块。
+8. 新页面如需要出现在侧栏或有受控 API / 按钮动作，同步菜单 seed、功能点 seed、后端守卫、`v-permission`、默认角色授权决策，并按 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 验收。
 
 ## 2. 开发计划页面设计块（复制到计划里）
 
@@ -71,6 +73,7 @@
 - 后端 layout_config 字段规则：
 - componentPreview：
 - DESIGN.md `page-registry` 区块：
+- RBAC 菜单/功能点：路由、`_SEED_MENU_TREE`、`_SEED_RESOURCES`、接口守卫、`v-permission`、默认授权决策：
 - 测试：
 
 ### 验收
@@ -86,7 +89,7 @@
 
 | 变更类型 | 必须同步维护 | 必须验证 |
 |---|---|---|
-| 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、build、关键视口 |
+| 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段表 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
