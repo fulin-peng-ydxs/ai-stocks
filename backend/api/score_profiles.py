@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.deps import require_perm
 from backend.scoring.score_profile import ScoreProfileRepo
 from backend.storage import get_client
 
@@ -22,23 +23,27 @@ class ScoreProfileBody(BaseModel):
     grade_thresholds: dict | None = None
 
 
-@router.get("/score-profiles", response_model=ApiResponse)
+@router.get("/score-profiles", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("score-profile:view"))])
 def list_score_profiles() -> ApiResponse:
     return ok(ScoreProfileRepo().list())
 
 
-@router.get("/score-profiles/{pid}", response_model=ApiResponse)
+@router.get("/score-profiles/{pid}", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("score-profile:view"))])
 def get_score_profile(pid: str) -> ApiResponse:
     p = ScoreProfileRepo().get(pid)
     return ok(p) if p else err(404, "方案不存在")
 
 
-@router.get("/score-profiles/{pid}/versions", response_model=ApiResponse)
+@router.get("/score-profiles/{pid}/versions", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("score-profile:view"))])
 def score_profile_versions(pid: str) -> ApiResponse:
     return ok({"id": pid, "versions": ScoreProfileRepo().versions(pid)})
 
 
-@router.post("/score-profiles", response_model=ApiResponse)
+@router.post("/score-profiles", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("score-profile:save"))])
 def save_score_profile(body: ScoreProfileBody) -> ApiResponse:
     try:
         v = ScoreProfileRepo().save(body.id, body.name, body.items, body.grade_thresholds)
@@ -47,13 +52,15 @@ def save_score_profile(body: ScoreProfileBody) -> ApiResponse:
     return ok({"id": body.id, "version": v, "msg": "已保存"})
 
 
-@router.delete("/score-profiles/{pid}", response_model=ApiResponse)
+@router.delete("/score-profiles/{pid}", response_model=ApiResponse,
+               dependencies=[Depends(require_perm("score-profile:delete"))])
 def delete_score_profile(pid: str) -> ApiResponse:
     ScoreProfileRepo().delete(pid)
     return ok({"msg": "已删除"})
 
 
-@router.post("/score-profiles/run", response_model=ApiResponse)
+@router.post("/score-profiles/run", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("score:run"))])
 def run_score_profile(body: dict) -> ApiResponse:
     """按评分方案对某交易日全市场（排除 ST）打分排序，返回 Top N。
 

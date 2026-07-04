@@ -24,20 +24,32 @@ def client(monkeypatch, pg, redis_cli):
 
 @pytest.fixture()
 def tadmin(pg):
-    """临时租户管理员（独立租户），用于验证角色守卫与归属隔离；teardown 清理。"""
+    """临时租户管理员（独立租户），用于验证角色守卫与归属隔离；teardown 清理。
+
+    stage4：显式挂 `sys_user_role(tenant_admin)`（非 system by kind），使 perm_resolver 能注入 baseline
+    共享读并解析业务授权——这是 stage4 的真实模型（用户经关联表持角色，而非仅 sys_user.role_code）。
+    并幂等补齐 tenant_admin 角色的业务功能码授权（对齐 seed/回填 SQL 意图；持久测试库该内置角色为
+    stage3 存量态、缺业务码，此处一次性并入，ON CONFLICT 幂等、与 stage4 目标态一致）。
+    """
+    from backend.auth.constants import BUSINESS_RESOURCE_CODES
     uid = "pytest_ta_" + uuid.uuid4().hex[:8]
     tid = "pytest_tt_" + uuid.uuid4().hex[:8]
     pg.execute("INSERT INTO sys_tenant (id,name,status) VALUES (%s,'t','active')", [tid])
     pg.execute(
         "INSERT INTO sys_user (id,tenant_id,account,role_code,perm_ver,status) "
         "VALUES (%s,%s,%s,'tenant_admin',0,'active')", [uid, tid, uid])
+    pg.execute("INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,'tenant_admin') "
+               "ON CONFLICT DO NOTHING", [uid])
+    pg.execute("INSERT INTO sys_role_resource (role_id, resource_id) "
+               "SELECT 'tenant_admin', id FROM sys_resource WHERE id = ANY(%s) ON CONFLICT DO NOTHING",
+               [list(BUSINESS_RESOURCE_CODES)])
     yield uid, tid
-    pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+    pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])   # CASCADE 清 sys_user_role
     pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
 
 
 def _access(user_id, tenant_id, perm_ver=0):
-    # 瘦令牌：角色不入 token，由中间件按 user_id 解析（tadmin 无 sys_user_role→非 system）
+    # 瘦令牌：角色不入 token，由中间件按 user_id 解析（tadmin 经 sys_user_role 持 tenant_admin，非 system by kind）
     from backend.auth.jwt_tokens import issue_access
     return issue_access(user_id, tenant_id, perm_ver)
 

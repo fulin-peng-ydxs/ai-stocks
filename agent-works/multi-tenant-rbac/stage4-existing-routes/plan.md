@@ -272,7 +272,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 ### 6.3 任务 T3a：非榜单业务共享读与用户资产基础接口接入
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2
 - 涉及文件/模块：
   - `backend/api/stocks.py`
@@ -296,7 +296,17 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - 新增拥有业务码用户访问样例接口 200 或进入业务层错误而非 401/403。
   - 跨用户 profile/group 读写隔离测试。
 - 完成标准：上述模块非白名单接口均被 T8 扫描识别为已接资源码。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-04）。
+  - 逐端点挂 `dependencies=[Depends(require_perm("code"))]`（沿用 users.py 惯例）：
+    - `stocks.py`：`/stocks`·`/{code}/bars`·`/signal`·`/indicators` → `stocks:view`；`/{code}/trade-eval` → `stocks:trade-eval`；`/data/trade-dates` → `trade-calendar:view`（baseline）。（`/data/status`·`/data/update-logs` 属 system-only，留 T5）
+    - `profiles.py`：GET×3 → `screen-profile:view`；POST → `screen-profile:save`；DELETE → `screen-profile:delete`；`/screen/run` → `screen:run`。
+    - `score_profiles.py`：GET×3 → `score-profile:view`；POST → `score-profile:save`；DELETE → `score-profile:delete`；`/run` → `score:run`。
+    - `trade_profiles.py`：GET×3 → `trade-profile:view`；POST → `trade-profile:save`；DELETE → `trade-profile:delete`；`/preview` → `trade-profile:preview`。
+    - `stock_groups.py`：GET×2 → `stock-group:view`；POST → `create`；PATCH → `update`；DELETE → `delete`；members POST/DELETE/PATCH → `stock-group:member-update`。
+    - `indicators.py`：`/indicators/registry` → `indicator:registry`（baseline）；写端点仍 system-only（T5）。
+  - 前端归属越权核查：上述端点 body 模型（ProfileIn/ScoreProfileBody/TradeProfileBody/GroupCreate/GroupMeta/MembersBody）均**不含 tenant/owner 字段**，仓库经 `get_current_owner()` 取归属，无前端覆盖路径。
+  - 测试基建适配：`test_auth_middleware.py::tadmin` fixture 原为「有 role_code 但无 sys_user_role」的 stage3 捷径（fail-closed），stage4 改为显式挂 `sys_user_role(tenant_admin)` + 幂等补 tenant_admin 业务码授权（对齐 seed/回填意图；非 system by kind 不变，故全部 system-only「forbidden」断言仍成立）。
+  - 验证：**全量后端 398 passed**（含 test_auth_middleware/test_api 及各仓库隔离用例）。
 
 ### 6.4 任务 T3b：每日榜单接口接入（公共榜单特例，C1 已确认）
 

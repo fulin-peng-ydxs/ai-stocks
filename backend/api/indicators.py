@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
-from backend.auth.deps import require_system
+from backend.auth.deps import require_perm, require_system
 from backend.indicators.definition import IndicatorDefRepo
 
 router = APIRouter(prefix="/api", tags=["indicators"])
@@ -32,7 +32,8 @@ class CategoriesBody(BaseModel):
     categories: list[str]
 
 
-@router.get("/indicators/registry", response_model=ApiResponse)
+@router.get("/indicators/registry", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("indicator:registry"))])
 def indicators_registry(include_disabled: bool = True) -> ApiResponse:
     """技术指标目录（内置 + 自定义）。include_disabled=false 只返回启用项（供选择列表）。"""
     items = IndicatorDefRepo().list(include_disabled=include_disabled)

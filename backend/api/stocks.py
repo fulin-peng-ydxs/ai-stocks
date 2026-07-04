@@ -9,7 +9,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, Query
 
 from backend.api.response import ApiResponse, ok
-from backend.auth.deps import require_system
+from backend.auth.deps import require_perm, require_system
 from backend.groups.stock_group import StockGroupRepo
 from backend.storage import get_client
 from backend.storage.repository import MarketRepository
@@ -22,7 +22,8 @@ _STOCK_SORT_COLS = {"pct_chg": "pct_chg", "close": "b.close", "name": "sb.name",
                     "industry": "sb.industry", "code": "sb.code"}
 
 
-@router.get("/stocks", response_model=ApiResponse)
+@router.get("/stocks", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("stocks:view"))])
 def list_stocks(q: str | None = None, board: str | None = None,
                 exclude_st: bool = False, trade_date: str | None = None,
                 sort_by: str = "pct_chg", sort_order: str = "asc",
@@ -78,7 +79,8 @@ def list_stocks(q: str | None = None, board: str | None = None,
     return ok({"total": total, "page": page, "size": size, "trade_date": str(td), "list": rows})
 
 
-@router.get("/stocks/{code}/bars", response_model=ApiResponse)
+@router.get("/stocks/{code}/bars", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("stocks:view"))])
 def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
                end: str | None = None) -> ApiResponse:
     c = get_client()
@@ -105,7 +107,8 @@ def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
     return ok({"code": code, "name": name, "adjust": adjust, "bars": out})
 
 
-@router.get("/stocks/{code}/signal", response_model=ApiResponse)
+@router.get("/stocks/{code}/signal", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("stocks:view"))])
 def stock_signal(code: str, date_: str | None = Query(None, alias="date")) -> ApiResponse:
     """个股当日买点 + 技术风险标签（按需计算，T-M6-3）。"""
     from backend.services.screen_score import ScreenScoreService
@@ -156,7 +159,8 @@ def _describe_tree(tree: dict, snap: pd.DataFrame, name_map: dict) -> dict:
     return {"op": op, "conds": conds}
 
 
-@router.get("/stocks/{code}/trade-eval", response_model=ApiResponse)
+@router.get("/stocks/{code}/trade-eval", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("stocks:trade-eval"))])
 def stock_trade_eval(code: str, profile_id: str,
                      date_: str | None = Query(None, alias="date")) -> ApiResponse:
     """个股×买卖指标方案：当日买/卖条件是否触发 + 各条件成立明细（v2.0 替代固定买点引擎）。
@@ -201,7 +205,8 @@ def stock_trade_eval(code: str, profile_id: str,
     })
 
 
-@router.get("/stocks/{code}/indicators", response_model=ApiResponse)
+@router.get("/stocks/{code}/indicators", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("stocks:view"))])
 def stock_indicators(code: str, lookback: int = 60) -> ApiResponse:
     from backend.indicators.engine import IndicatorEngine
     c = get_client()
@@ -267,7 +272,8 @@ def update_logs(page: int = 1, size: int = 10, status: str | None = None,
     return ok({"list": rows, "total": total, "page": page, "size": size, "tables": tables})
 
 
-@router.get("/data/trade-dates", response_model=ApiResponse)
+@router.get("/data/trade-dates", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("trade-calendar:view"))])
 def trade_dates() -> ApiResponse:
     """已有行情的全部交易日（升序），供前端日历只允许选真实交易日。"""
     c = get_client()

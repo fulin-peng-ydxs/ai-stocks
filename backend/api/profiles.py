@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, ok
+from backend.auth.deps import require_perm
 from backend.common.exceptions import NotFoundError, ValidationError
 from backend.screening.condition import ConditionError, validate_ast
 from backend.screening.profile import ProfileRepo
@@ -37,12 +38,14 @@ def _latest_date() -> date:
     return pd.Timestamp(d).date()
 
 
-@router.get("/profiles", response_model=ApiResponse)
+@router.get("/profiles", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("screen-profile:view"))])
 def list_profiles() -> ApiResponse:
     return ok(ProfileRepo().list())
 
 
-@router.get("/profiles/{pid}", response_model=ApiResponse)
+@router.get("/profiles/{pid}", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("screen-profile:view"))])
 def get_profile(pid: str) -> ApiResponse:
     p = ProfileRepo().get(pid)
     if not p:
@@ -50,13 +53,15 @@ def get_profile(pid: str) -> ApiResponse:
     return ok(p)
 
 
-@router.get("/profiles/{pid}/versions", response_model=ApiResponse)
+@router.get("/profiles/{pid}/versions", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("screen-profile:view"))])
 def profile_versions(pid: str) -> ApiResponse:
     """方案历史版本（T-M6-7，回看/恢复对比）。"""
     return ok({"id": pid, "versions": ProfileRepo().versions(pid)})
 
 
-@router.post("/profiles", response_model=ApiResponse)
+@router.post("/profiles", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("screen-profile:save"))])
 def upsert_profile(body: ProfileIn) -> ApiResponse:
     try:
         validate_ast(body.expression)
@@ -66,13 +71,15 @@ def upsert_profile(body: ProfileIn) -> ApiResponse:
     return ok({"id": body.id, "version": version}, msg="已保存")
 
 
-@router.delete("/profiles/{pid}", response_model=ApiResponse)
+@router.delete("/profiles/{pid}", response_model=ApiResponse,
+               dependencies=[Depends(require_perm("screen-profile:delete"))])
 def delete_profile(pid: str) -> ApiResponse:
     ProfileRepo().delete(pid)   # 走 PG 资产仓库（按归属删方案 + 版本历史）
     return ok(msg="已删除")
 
 
-@router.post("/screen/run", response_model=ApiResponse)
+@router.post("/screen/run", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("screen:run"))])
 def run_screen(body: ScreenRunIn) -> ApiResponse:
     run_date = date.fromisoformat(body.run_date) if body.run_date else _latest_date()
     if not body.profile_id and not body.expression:

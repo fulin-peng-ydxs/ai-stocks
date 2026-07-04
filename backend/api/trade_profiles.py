@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.deps import require_perm
 from backend.signals.trade_profile import (
     TradeProfileRepo,
     collect_indicators,
@@ -27,23 +28,27 @@ class TradeProfileBody(BaseModel):
     backstop: dict | None = None
 
 
-@router.get("/trade-profiles", response_model=ApiResponse)
+@router.get("/trade-profiles", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("trade-profile:view"))])
 def list_trade_profiles() -> ApiResponse:
     return ok(TradeProfileRepo().list())
 
 
-@router.get("/trade-profiles/{pid}", response_model=ApiResponse)
+@router.get("/trade-profiles/{pid}", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("trade-profile:view"))])
 def get_trade_profile(pid: str) -> ApiResponse:
     p = TradeProfileRepo().get(pid)
     return ok(p) if p else err(404, "方案不存在")
 
 
-@router.get("/trade-profiles/{pid}/versions", response_model=ApiResponse)
+@router.get("/trade-profiles/{pid}/versions", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("trade-profile:view"))])
 def trade_profile_versions(pid: str) -> ApiResponse:
     return ok({"id": pid, "versions": TradeProfileRepo().versions(pid)})
 
 
-@router.post("/trade-profiles", response_model=ApiResponse)
+@router.post("/trade-profiles", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("trade-profile:save"))])
 def save_trade_profile(body: TradeProfileBody) -> ApiResponse:
     try:
         v = TradeProfileRepo().save(body.id, body.name, body.buy_tree, body.sell_tree, body.backstop)
@@ -52,13 +57,15 @@ def save_trade_profile(body: TradeProfileBody) -> ApiResponse:
     return ok({"id": body.id, "version": v, "msg": "已保存"})
 
 
-@router.delete("/trade-profiles/{pid}", response_model=ApiResponse)
+@router.delete("/trade-profiles/{pid}", response_model=ApiResponse,
+               dependencies=[Depends(require_perm("trade-profile:delete"))])
 def delete_trade_profile(pid: str) -> ApiResponse:
     TradeProfileRepo().delete(pid)
     return ok({"msg": "已删除"})
 
 
-@router.post("/trade-profiles/preview", response_model=ApiResponse)
+@router.post("/trade-profiles/preview", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("trade-profile:preview"))])
 def preview_conditions(body: dict) -> ApiResponse:
     """对某交易日全市场(排除 ST)试算一棵条件树的命中 → 命中数 + 样例。
 
