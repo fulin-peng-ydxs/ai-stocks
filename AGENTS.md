@@ -2,13 +2,13 @@
 
 ## 项目结构与模块组织
 
-本仓库是本地单用户的 A 股趋势龙头研究系统，采用 FastAPI + Vue + DuckDB。后端代码位于 `backend/`：`api/` 放 REST 路由，`services/` 放业务编排，`storage/` 管理 DuckDB 与 DDL，`indicators/`、`screening/`、`scoring/`、`backtest/` 放核心领域逻辑，测试位于 `backend/tests/`。前端位于 `frontend/`，核心目录包括 `src/views/`、`src/components/`、`src/api/`、`src/layout/`、`src/stores/`。配置在 `config/settings.yaml`，运行数据在 `data/`，日志在 `logs/`，设计和业务留痕文档在 `DESIGN.md` 与 `agent-works/`。
+本仓库是 A 股趋势龙头研究系统，采用 FastAPI + Vue + DuckDB + PostgreSQL + Redis。行情/参考数据留 DuckDB 只读分析，用户资产、权限元数据和平台配置落 PostgreSQL，Redis 用于短状态。后端代码位于 `backend/`：`api/` 放 REST 路由，`services/` 放业务编排，`storage/` 管理 DuckDB/PG 访问与 DDL，`indicators/`、`screening/`、`scoring/`、`backtest/` 放核心领域逻辑，测试位于 `backend/tests/`。前端位于 `frontend/`，核心目录包括 `src/views/`、`src/components/`、`src/api/`、`src/layout/`、`src/stores/`。配置在 `config/settings.yaml`，运行数据在 `data/`，日志在 `logs/`，设计和业务留痕文档在 `DESIGN.md` 与 `agent-works/`。
 
 ## 版本要求
 
 - Python：`>=3.11`，本机常用 3.12；依赖以 `pyproject.toml` 和 `requirements.txt` 为准。
 - Node.js：建议使用 20 LTS；前端锁文件为 npm lockfile v3，使用 npm 安装。
-- 主要后端版本：FastAPI `>=0.110`、DuckDB `>=0.10`、pandas `>=2.2`、pytest `>=8.0`。
+- 主要后端版本：FastAPI `>=0.110`、DuckDB `>=0.10`、PostgreSQL `>=14`、Redis `>=6`、pandas `>=2.2`、pytest `>=8.0`。
 - 主要前端版本：Vue `^3.4`、Vite `^5.2`、TypeScript `^5.4`、Vitest `^1.6`、Element Plus `^2.7`。
 
 ## 构建、测试与开发命令
@@ -62,4 +62,4 @@ Git 历史采用中文语义化风格，例如 `Agent 新增(基础功能): ...`
 
 ## 安全与配置提示
 
-不要提交 `data/` 中的本地数据库、`logs/` 日志或个人环境配置。`prod` 会绑定 `0.0.0.0:8000`，系统无登录鉴权，不应直接暴露到公网。调整策略参数优先修改 `config/settings.yaml` 或页面配置，避免把临时研究参数写死在代码中。
+不要提交 `data/` 中的本地数据库、`logs/` 日志或个人环境配置。`prod` 会绑定 `0.0.0.0:8000`，生产/集成部署必须设置 `AI_STOCKS_JWT_SECRET`、管理员初始密码和 PG/Redis 连接密钥；即使已有登录鉴权，也不应绕过反向代理、TLS、限流和运维访问控制直接裸露公网。调整策略参数优先修改 `config/settings.yaml` 或页面配置，避免把临时研究参数写死在代码中。

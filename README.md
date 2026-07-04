@@ -1,6 +1,6 @@
 # 复盘啦 · A股趋势龙头选股 / 打分 / 回测系统
 
-**EOD（收盘后）** 的 A 股趋势龙头研究系统，面向每天收盘后做复盘、筛选、验证和跟踪的研究场景（正从本地单用户向公网多租户 SaaS 演进）。它不是一个只给出"黑盒推荐"的工具，而是把数据、条件、评分、买卖规则和历史验证串成一条能检查、能复盘、能迭代的工作流。
+**EOD（收盘后）** 的 A 股趋势龙头研究系统，面向每天收盘后做复盘、筛选、验证和跟踪的研究场景；系统已具备多租户 RBAC、账号登录和用户资产隔离能力，正持续向公网 SaaS 形态演进。它不是一个只给出"黑盒推荐"的工具，而是把数据、条件、评分、买卖规则和历史验证串成一条能检查、能复盘、能迭代的工作流。
 
 系统希望解决三个实际问题：
 
@@ -40,7 +40,7 @@
 
 ## 1. 架构总览
 
-全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**（多租户混合持久层 stage1 已落地）：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户私有资产 + 平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作短状态库。详见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)（**认证与鉴权内核阶段二 + 细粒度 RBAC/租户管理阶段三 + 存量业务路由全量接入阶段四均已落地**：JWT 登录/注册/登出 + 中间件默认 deny；角色/菜单/资源数据化 + 接口级 `require_perm`/`require_system_perm` + 按钮级 `v-permission` + 4 个系统管理页 + 数据隔离全量透传；13 个存量业务路由逐端点接精确权限码 + 基线共享读强制注入 + 路由扫描证零裸露/零漏码）。
+全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**（多租户混合持久层 stage1 已落地）：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户私有资产 + 平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作短状态库。详见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)（**认证与鉴权内核阶段二 + 细粒度 RBAC/租户管理阶段三 + 存量业务路由全量接入阶段四均已落地**：JWT 登录/注册/登出 + 中间件默认 deny；角色/菜单/资源数据化 + 接口级 `require_perm`/`require_system_perm` + 按钮级 `v-permission` + 4 个系统管理页 + 数据隔离全量透传；13 个存量业务路由逐端点接精确权限码 + 基线共享读强制注入 + 路由扫描证零裸露/零漏码；评分方案支持 `private/tenant/public` 可见性，榜单消费可见方案并在缺失或 stale 时受控物化快照）。
 
 ```
 ┌─────────────────────────── 浏览器 (Vue3 SPA) ───────────────────────────┐
@@ -72,16 +72,16 @@
 
 | 模块 | 页面入口 | 主要 API | 你在这里完成什么 | 详细说明书 |
 |------|----------|----------|------|----------|
-| 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按选定**评分方案**全市场排序（0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
+| 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按用户可见**评分方案**全市场排序（自己的方案、租户公开、全体公开、平台内置预设；0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存 + 版本回看 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率 | [backtest.md](agent-works/architecture/backtest.md) |
 | 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 列表（服务端排序/分页，含退市股）；详情（K 线 + 指标快照 + 当前买卖方案信号）；股票分组篮子 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
-| ⚙️ **配置管理** | `ConfigView`（`/system/config`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 三大定义：技术指标（注册表）/ 买卖方案（买入+卖出+兜底）/ 评分规则（阈值打分+动态权重） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
+| ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底）/ 技术指标（注册表）/ 系统设置 | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) |
 | 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线 + T+1 真实撮合买卖；一局产出评分/评级/资金曲线；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
-> **配置管理**与**布局配置**同属顶层「⚙️ 系统管理」菜单（路由 `/system/*`）。布局配置建立在 `frontend/src/layout/` 布局底座之上（页面外壳 `LayoutHost` + 布局 schema + 组件目录 + 校验器 + 契约测试），把"风格/布局/组件字段"做成可配置、可分层、可追踪来源的产品能力，使页面"由构造即合规"。
+> **配置管理**与**布局配置**同属顶层「⚙️ 系统管理」菜单（路由 `/system/*`）。配置管理父菜单下，评分规则与买卖指标是业务可授权子页，技术指标与系统设置仍为 system-only。布局配置建立在 `frontend/src/layout/` 布局底座之上（页面外壳 `LayoutHost` + 布局 schema + 组件目录 + 校验器 + 契约测试），把"风格/布局/组件字段"做成可配置、可分层、可追踪来源的产品能力，使页面"由构造即合规"。
 > 横切的基础设施（点时安全仓库、异步任务底座、定时调度、配置生效、服务部署、前端布局规范）见 [platform.md](agent-works/architecture/platform.md)。
 
 ### 2.1 模块关系图
@@ -90,7 +90,7 @@
 flowchart LR
   DM["数据管理\n采集 / 补数 / 质检 / 修复"] --> DB[("DuckDB\n行情 / 基础信息 / 市值 / 日历")]
   DB --> IND["指标引擎\n动态计算"]
-  CFG["配置管理\n指标 / 评分 / 买卖方案"] --> IND
+  CFG["配置管理\n评分 / 买卖 / 技术指标 / 系统设置"] --> IND
   IND --> SCR["策略筛选\n条件树命中"]
   IND --> BRD["每日榜单\n评分排序"]
   SCR --> BT["回测验证\n策略回测"]
@@ -107,8 +107,8 @@ flowchart LR
 |------|----------|------|
 | 首次搭建本地库 | `backfill` → `delisted --enrich` → `valuation` → `rebuild-price-factors` → `verify-data` | 近 5 年行情、退市股、总市值、复权口径与体检报告齐全 |
 | 每天收盘后更新 | 数据管理 → 同步补数 → 一键日常，或 `python -m backend.cli daily` | 最新行情入库、总市值补齐、质检台账更新 |
-| 发现榜单异常 | 数据管理 → 概览/质量定位缺口 → 修复 → 回榜单重新打开对应日期 | 评分快照会被标记失效，下次打开自动重算 |
-| 新建选股思路 | 配置管理建指标/评分/买卖方案 → 策略筛选试条件 → 每日榜单看排序 | 得到可保存、可版本回看的一组方案 |
+| 发现榜单异常 | 数据管理 → 概览/质量定位缺口 → 修复 → 回榜单重新打开对应日期 | 评分快照会被标记失效，下次打开按可见方案自动重算 |
+| 新建选股思路 | 配置管理 → 评分规则/买卖指标建方案 → 策略筛选试条件 → 每日榜单看排序 | 得到可保存、可版本回看、可按权限公开的评分方案 |
 | 验证策略能否交易 | 策略筛选 + 评分方案 + 买卖方案 → 回测验证 | 净值、回撤、逐笔成交、卖出原因、分层命中率 |
 | 跟踪一批股票 | 个股查询跨页勾选 → 存为分组 → 详情页连续翻看 | 分组篮子、组内涨幅、K线与买卖信号联动 |
 | 练盘感 / 验手感 | 盘感训练 → 配置窗口/资金 → 盲测随机股逐日买卖 → 结算看评级与成长曲线 | 成交明细、资金曲线、评分、身份揭晓、跨局成长轨迹 |
@@ -217,7 +217,7 @@ cd frontend && npm run build && cd ..   # 产物进 frontend/dist
 ./start.sh prod                         # 后端绑 0.0.0.0:8000 托管 dist
 ```
 
-生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权内核 + 细粒度 RBAC（阶段二 JWT 登录/注册 + 中间件默认 deny，非白名单接口须 token；阶段三接口级 `require_perm`/`require_system` + 按钮级权限 + 4 个系统管理页；阶段四存量 13 业务路由逐端点接精确权限码 + 基线共享读强制注入），启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
+生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权内核 + 细粒度 RBAC（阶段二 JWT 登录/注册 + 中间件默认 deny，非白名单接口须 token；阶段三接口级 `require_perm`/`require_system` + 按钮级权限 + 4 个系统管理页；阶段四存量 13 业务路由逐端点接精确权限码 + 基线共享读强制注入 + 评分方案公开可见性与配置拆页），启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
 
 ### 5.3 首次准备数据（依赖有序）
 

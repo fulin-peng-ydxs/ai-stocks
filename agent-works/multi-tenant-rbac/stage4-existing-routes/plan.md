@@ -3,12 +3,12 @@
 ## 1. 需求来源与目标
 
 - 需求文档：[../requirement.md](../requirement.md)
-- 功能目标：进入多租户 RBAC 阶段四，把现有 13 个存量业务 API 路由和对应既有页面纳入阶段三已经落地的权限体系，逐一补齐 `resource code`、后端权限依赖、前端按钮级 `v-permission`、数据隔离回归和全量验证。
+- 功能目标：进入多租户 RBAC 阶段四 A，把现有 13 个存量业务 API 路由和对应既有页面纳入阶段三已经落地的权限体系，逐一补齐 `resource code`、后端权限依赖、前端按钮级 `v-permission`、数据隔离回归和全量验证。
 - 当前计划状态：**已完成（2026-07-04）**。T1~T10 全部落地，测试基线：后端 **449 passed**、前端 **186 passed**、`npm run build`（vue-tsc + vite）通过。**C1 已确认（2026-07-04）**：每日榜单采用**平台公共榜单特例**——预设评分方案归 default/admin、`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；个人自建方案结果仍纯私有、经 `POST /api/board/compute`（`persist=False`）即时查看，不进公共榜单；公共榜单生产由调度“评分维护”(recompute) 或 `python -m backend.cli public-board` 以 default/admin 归属显式产出预设方案结果。T3b 已解锁，无剩余阻塞确认项。
-- **明确划出阶段四之外（另立独立需求后排）**：通用「资产可见性 / 用户自助公开」模型（方案私有 / 同租户共享 / 全体公开 + 加载 = 自己的 + 公开的）、以及新用户注册时的预设方案分发（当前新用户方案列表为空、且看不到 admin 的），都会改动 R9 隔离读语义、需 publish 权限与 UI、需定公开资产改删边界，不纳入阶段四。决议依据见 [c1-board-ownership-options.md](c1-board-ownership-options.md)。
+- 后续承接：本计划完成时仅明确划出通用「资产可见性 / 用户自助公开」模型；随后用户确认原需求后，阶段四 B 已先落地**评分方案**公开能力与可见榜单语义，见 [../stage4-public-profile-visibility/plan.md](../stage4-public-profile-visibility/plan.md)。筛选方案、买卖方案、回测记录等其他资产公开仍未纳入本计划。
 - 本次不做：
   - 不新增页面，不生成新的 HTML 原型。阶段四只在既有页面做权限接入、按钮显隐/禁用和接口守卫，不涉及新增页面、布局重排或复杂交互重构。
-  - 不做阶段五能力：审计页、数据字典页、注册防滥用开关页、配置管理 4 子页面拆分。
+  - 本计划不做阶段五能力：审计页、数据字典页、注册防滥用开关页、配置管理 4 子页面拆分。配置管理拆页已在后续阶段四 B 为评分方案公开能力前移落地。
   - 不改变阶段三已落地的用户/角色/菜单/功能/租户管理页和原型。
   - 不把 system-only 能力错误开放给租户管理员或普通用户。
 - 计划输出目录：`agent-works/multi-tenant-rbac/stage4-existing-routes/`
@@ -64,8 +64,8 @@
 - 不生成 `prototypes/*.html`。
 - 不拆 `ConfigView.vue` 的 4 个 tab；配置管理父子菜单重构留阶段五 `R19/R16`。
 - 不新增审计表、字典表或审计页面；阶段四只让资源码体系为阶段五审计打基础。
-- 不做通用「资产可见性 / 用户自助公开」模型（私有 / 同租户 / 全体公开 + 加载 = 自己 + 公开）。C1 已确认仅落**公共榜单特例**（预设方案归 default/admin、公共榜单全员共享一份），不引入通用 `visibility` 列、publish 开关/UI 或公开资产改删边界。个人自建方案仍纯私有。通用共享模型另立独立需求后排。
-- 不处理新用户注册的预设方案分发（当前新用户方案列表为空）；该项随通用公开模型一并解决，不在阶段四。
+- 本计划不做通用「资产可见性 / 用户自助公开」模型（私有 / 同租户 / 全体公开 + 加载 = 自己 + 公开）。C1 当时仅落**公共榜单特例**（预设方案归 default/admin、公共榜单全员共享一份），不引入通用 `visibility` 列、publish 开关/UI 或公开资产改删边界。该历史边界已由阶段四 B 在**评分方案**范围内承接；其他资产仍未覆盖。
+- 本计划不处理新用户注册的预设方案分发；阶段四 B 已通过平台内置 public 预设解决评分方案“默认可见”，不做复制分发。
 - 不做 token 静默刷新、审计保留期清理、字段级审计对比。
 
 ## 4. 技术方案
@@ -111,12 +111,12 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | `profiles.py` | `screen-profile:save` | `POST /api/profiles` | `/screen` | 用户资产写 |
 | `profiles.py` | `screen-profile:delete` | `DELETE /api/profiles/{pid}` | `/screen` | 用户资产删 |
 | `profiles.py` | `screen:run` | `POST /api/screen/run` | `/screen` | 策略筛选执行 |
-| `score_profiles.py` | `score-profile:view` | `GET /api/score-profiles*` | `/system/config` | 阶段四仍归现配置页；阶段五拆页后迁移菜单 |
-| `score_profiles.py` | `score-profile:save` | `POST /api/score-profiles` | `/system/config` | 用户资产写，前端页面暂 system-only |
+| `score_profiles.py` | `score-profile:view` | `GET /api/score-profiles*` | `/system/config` | 阶段四 A 仍归现配置页；阶段四 B 已迁至 `/system/config/score` |
+| `score_profiles.py` | `score-profile:save` | `POST /api/score-profiles` | `/system/config` | 用户资产写；阶段四 A 前端页面暂 system-only，阶段四 B 已开放评分规则子页 |
 | `score_profiles.py` | `score-profile:delete` | `DELETE /api/score-profiles/{pid}` | `/system/config` | 用户资产删 |
 | `score_profiles.py` | `score:run` | `POST /api/score-profiles/run` | `/board`（业务码，锚 login 菜单方可授普通用户；勿改挂 system-only 菜单否则被 `system_only_resource_ids` 误判） | 打分执行（写调用者**私有**归属）。**Codex 复审 P1 后**：现只服务**配置页个人试算 / 个人 compute**，**不再是榜单页主加载**（榜单页已改走 `board:view` 的 `/board/run`） |
-| `trade_profiles.py` | `trade-profile:view` | `GET /api/trade-profiles*` | `/system/config` | 用户资产读 |
-| `trade_profiles.py` | `trade-profile:save` | `POST /api/trade-profiles` | `/system/config` | 用户资产写 |
+| `trade_profiles.py` | `trade-profile:view` | `GET /api/trade-profiles*` | `/system/config` | 用户资产读；阶段四 B 已迁至 `/system/config/trade` |
+| `trade_profiles.py` | `trade-profile:save` | `POST /api/trade-profiles` | `/system/config` | 用户资产写；阶段四 B 已开放买卖指标子页 |
 | `trade_profiles.py` | `trade-profile:delete` | `DELETE /api/trade-profiles/{pid}` | `/system/config` | 用户资产删 |
 | `trade_profiles.py` | `trade-profile:preview` | `POST /api/trade-profiles/preview` | `/system/config` | 买卖条件试算 |
 | `stock_groups.py` | `stock-group:view` | `GET /api/stock-groups*` | `/stocks` | 用户资产读 |
@@ -184,7 +184,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | 回测运行、稳健性、历史删除 | R20/R21 | 可运行回测、查看历史、删除历史 | 运行/稳健性/删除按钮按 `backtest:*` 控制，历史读按 `backtest:view` | `BacktestView.vue` | `backtest.py` | loading 和现有错误态保留；403 统一提示 | T4,T6 |
 | 盘感训练全过程 | R20/R21 | 开始训练、买卖、撤单、结算、复盘、删除 | 过程按钮按 `training:start/trade/review/delete` 控制 | `TrainingView.vue` | `training.py` | 无权时不展示交易动作；直调接口 403 | T4,T6 |
 | 个股行情和分组维护 | R20/R21 | 查询个股、详情页、加入/移出分组、新建/编辑/删除分组 | 行情读 `stocks:view`，交易评估 `stocks:trade-eval`，分组按钮按 `stock-group:*` | `StocksView.vue`、`StockDetailView.vue` | `stocks.py`、`stock_groups.py` | 分组越权查无结果或 403；按钮无权移除 | T3a,T6,T8 |
-| 配置管理现有单页 | R20/R21 | 当前仍是 system-only 单页，内部含评分/技术/买卖/系统设置 | 阶段四不拆页；系统级按钮保留 `require_system_perm`；用户资产配置 API 先补码，页面开放留阶段五 | `ConfigView.vue` | `config.py`、`indicators.py`、`score_profiles.py`、`trade_profiles.py` | 普通用户目前无菜单入口；直达由路由守卫拦截 | T3a,T5,T6 |
+| 配置管理现有单页 | R20/R21 | 阶段四 A 时仍是 system-only 单页，内部含评分/技术/买卖/系统设置 | 本计划不拆页；系统级按钮保留 `require_system_perm`；用户资产配置 API 先补码。阶段四 B 已前移配置管理拆页 | `ConfigView.vue` | `config.py`、`indicators.py`、`score_profiles.py`、`trade_profiles.py` | 阶段四 A 普通用户无菜单入口；阶段四 B 评分/买卖子页按菜单授权开放 | T3a,T5,T6 |
 | 数据概览/质量/采集/调度 | R20/R21 | 系统管理员管理全市场数据和任务 | 全部 system-only；按钮按 `data:*`、`data-quality:*`、`data-task:*`、`data-schedule:*` 控制 | `data/*.vue` | `data_admin.py`、`data_tasks.py`、`stocks.py` data endpoints | 非 system 403，不显示菜单和操作按钮 | T5,T6 |
 | 布局配置工作台和用户设置抽屉 | R20/R21 | 普通用户可保存自己的页面偏好，system 可管 preset/page/policy | 用户层 `layout:user-config`；平台层 `layout:*manage` 继续 system-only | `PageSettingsDrawer.vue`、`layout/*.vue`、各业务页设置入口 | `layout.py` | 用户层不能伪造 userId；page/preset scope 非 system 403 | T4,T5,T6,T8 |
 
@@ -193,9 +193,9 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
 | R8 | 接口级 + 按钮级 RBAC 权限校验 | 阶段四补齐存量业务接口 `resource code`、后端 `require_perm/require_system_perm`、前端 `v-permission` | T1,T2,T3a,T3b,T4,T5,T6,T8,T9 | 已完成 | 一致 | 48 码固化(resource-codes.sql/pg_ddl seed)；后端逐端点接入，路由扫描证零裸露/零漏码(test_stage4_resource_codes)；前端按钮级 v-permission 全接入(stage4-button-permission 56 用例) |
-| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 已完成 | 一致 | C1 已落地：`PUBLIC_BOARD_OWNER` 公共读 + CLAUDE.md 铁律 + 公共读专项测试；各资产接口沿用 get_current_owner(T4 复核)；跨账号隔离样例落 test_stage4_resource_codes；通用可见性/公开模型不在阶段四 |
+| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 已完成 | 一致 | C1 已落地：`PUBLIC_BOARD_OWNER` 公共读 + CLAUDE.md 铁律 + 公共读专项测试；各资产接口沿用 get_current_owner(T4 复核)；跨账号隔离样例落 test_stage4_resource_codes；评分方案公开模型由阶段四 B 承接 |
 | R20 | 前端登录态与权限渲染 | 既有页面写操作、敏感操作和系统级操作补按钮权限；菜单/路由守卫保持 fail-closed | T6,T9 | 已完成 | 一致 | 业务页 v-permission 真实生效 + 系统页前向兼容接入；菜单/路由守卫 fail-closed 由 utils/permission.spec(21) 覆盖；不新增页面、不重排布局 |
-| R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、基线码、默认授权、测试扫描和全量回归；榜单按 C1 公共特例接入 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 已完成 | 一致 | 91 端点全映射(含补 `layout/validate` 裸露端点)；路由扫描证全接入；baseline 强制注入 + 不可反选 + fail-closed 全测；通用资产共享/公开为阶段四外独立需求 R28 |
+| R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、基线码、默认授权、测试扫描和全量回归；榜单按 C1 公共特例接入 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 已完成 | 一致 | 91 端点全映射(含补 `layout/validate` 裸露端点)；路由扫描证全接入；baseline 强制注入 + 不可反选 + fail-closed 全测；通用评分方案公开为阶段四 B R28 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -224,7 +224,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - 相对 §4.3 初稿的两处**具体化落定**（不改业务边界）：
     1. **`POST /api/layout/validate` 现无任何守卫**（`layout.py:156`，纯校验、不落库不涉归属），经查仅被系统页面布局工作台 `LayoutPagesView.vue` 消费 → 归 `layout:page-manage`（system-only），T5 补 `require_system_perm`。这是本次核对发现的既有裸露端点。
     2. baseline 三码 + `layout:user-config` 无天然业务菜单，而 `sys_resource.menu_id` 为 `NOT NULL + FK` 且不得挂 `visible='system'` 菜单（否则被 `system_only_resource_ids` 误判、非 system 授不了）。经确认 `menu_id` 只影响角色页分组渲染与 system-only 判定、**不影响 baseline 的运行时强制注入**，故锚定现有 login 叶子（零菜单树改动）：`layout:view`/`trade-calendar:view`/`layout:user-config`→`/board`，`indicator:registry`→`/screen`。
-  - **score-profile:\* / trade-profile:\* 归 `/system/config`（visible='system'）**：本阶段配置页仍 system-only，这些码经菜单可见性自动进 `system_only_resource_ids`，非 system 授权被拦截 → 事实上 system-only；阶段五拆页后移菜单即开放，故 T3a 仍以 `require_perm(code)` 接入（保留迁移路径），不用 `require_system_perm`。
+  - **score-profile:\* / trade-profile:\* 在阶段四 A 归 `/system/config`（visible='system'）**：本计划配置页仍 system-only，这些码经菜单可见性自动进 `system_only_resource_ids`，非 system 授权被拦截 → 事实上 system-only；阶段四 B 已随配置拆页迁至业务可授权子页，故 T3a 仍以 `require_perm(code)` 接入（保留迁移路径），不用 `require_system_perm`。
   - SQL 含既有库一次性回填：资源落行 + normal/paid/tenant_admin 业务默认授权 + system 全量补齐 + 全部非 system 用户 `perm_ver` bump，整脚本单事务。
 
 ### 6.2 任务 T2：补齐资源 seed、基线码、默认授权与权限依赖元数据
@@ -290,7 +290,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - 确认各仓库不接受前端 tenant/owner 覆盖。
 - 产出：业务读写接口精确权限码接入。
 - 影响范围：`/screen`、`/stocks`、`/system/config` 内评分/买卖相关接口。
-- 边界与异常：ConfigView 阶段四仍 system-only，评分/买卖配置 API 先有码，普通用户页面入口留阶段五拆页后开放。
+- 边界与异常：ConfigView 在阶段四 A 仍 system-only，评分/买卖配置 API 先有码；普通用户页面入口已由阶段四 B 配置拆页开放。
 - 验证方式：
   - 新增无权限用户访问样例接口 403。
   - 新增拥有业务码用户访问样例接口 200 或进入业务层错误而非 401/403。
@@ -324,7 +324,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - `board.py` 读侧**保留平台公共归属**（现 `DEFAULT_TENANT_ID/DEFAULT_OWNER_USER_ID`），但把它从“stage1 未落 auth 的临时默认”改写为**显式的平台公共榜单归属常量**（命名与注释体现“有意全局、非用户私有”），并在 `CLAUDE.md`「资产归属与隔离」补一条：`score_result`/`score_snapshot` 公共榜单读**有意不带归属**（与 `indicator_def`/`mark_stale_*` 同类先例并列），防后续按私有资产铁律误加归属过滤。
   - 公共榜单生产者明确为调度“评分维护”(recompute) 或 `python -m backend.cli public-board`，以 default/admin（= 平台公共归属）产出预设方案的 `score_snapshot`；`/board/run` 只读 fresh 快照，不承担生产。
   - `score:run`（`POST /api/score-profiles/run`）仍写**调用者个人归属**（属 T3a 的用户资产写，不在本任务），不进公共榜单；个人打分结果经 `POST /api/board/compute`（`persist=False`）即时查看。
-  - **不做**通用可见性/公开列、不做新用户预设分发（阶段四外）。
+  - **本计划不做**通用可见性/公开列、不做新用户预设分发；评分方案公开已由阶段四 B 承接。
 - 产出：每日榜单接口权限接入 + 公共榜单归属口径显式固化 + CLAUDE.md 铁律。
 - 影响范围：`/board` 读侧、公共榜单归属常量、`score_snapshot` 公共读、评分维护生产动作；不改 `score:run` 归属。
 - 边界与异常：公共榜单读与私有资产隔离用例**必须分开**——公共读断言“全员同一份、有意不带 owner 过滤”，不可套用 profiles/groups 的跨账号不可见断言。
@@ -412,7 +412,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
     - `data_admin.py`：按功能域拆码——概览/总览/目录/维度/溯源/单股质量=`data:overview`；`GET /quality`=`data-quality:view`；质量处置 6 端点(fix/fix-batch/recover-batch/reset/ignore/mark-delisted)=`data-quality:fix`；调度 CRUD/启停/触发=`data-schedule:manage`；数据源=`data-source:test`；系统设置读写=`data-settings:manage`。
     - `data_tasks.py`：全部端点=`data-task:manage`。
   - **`main.py`**：`data_tasks`/`data_admin` 两 router 保留 include 时的 `require_system` 硬守卫（兜底），端点内叠加精确码只作扫描/审计元数据（补注释说明）。
-  - **score/trade profile 有意不改**：`score-profile:*`/`trade-profile:*` 归 `/system/config`（visible='system'），本阶段经菜单可见性自动进 `system_only_resource_ids` → 事实上 system-only，但仍以 `require_perm(code)` 接入（保留阶段五拆页开放的迁移路径），不改 `require_system_perm`（见 §6.3 决议与本节边界）。
+  - **score/trade profile 在本计划有意不改**：`score-profile:*`/`trade-profile:*` 归 `/system/config`（visible='system'），阶段四 A 经菜单可见性自动进 `system_only_resource_ids` → 事实上 system-only，但仍以 `require_perm(code)` 接入（保留后续拆页开放的迁移路径），不改 `require_system_perm`（见 §6.3 决议与本节边界）。阶段四 B 已实际完成该迁移。
   - **测试**：新增 [test_stage4_systemonly.py](../../../backend/tests/test_stage4_systemonly.py)（25 用例）——12 类 system-only 端点参数化断言「非 system 403 / system 非 401·403」+ **硬守卫不降级铁律**（直插授权行把 `config:view` 授自定义角色，非 system 仍 403，证明 `require_system_perm` ≠ `require_perm`）。全量后端 **431 passed**。
 
 ### 6.7 任务 T6：前端按钮级权限接入
@@ -681,14 +681,14 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 阶段三 RBAC、瘦令牌、`perm_ver` 强制重登、菜单 fail-closed 均保持现状。
 - 阶段四默认给 normal/paid/tenant_admin 授予研究业务功能码；system 继续全量。
 - 租户管理员默认可用研究业务功能和用户管理，但不可用数据管理、任务调度、系统配置、布局平台配置、菜单/角色/租户/资源管理。
-- 当前配置管理单页保持 system-only，普通用户评分规则/买卖指标独立入口留阶段五拆页后开放。
+- 阶段四 A 时配置管理单页保持 system-only；阶段四 B 已开放普通用户评分规则/买卖指标独立入口。
 - 行情/参考数据仍为全局共享只读，不做 tenant/owner 过滤。
 
 ### 10.3 阻塞确认项（已清零）
 
 | 编号 | 确认项 | 结论（2026-07-04 用户拍板） | 落地方式 |
 | --- | --- | --- | --- |
-| C1 | 每日榜单结果归属：平台公共榜单，还是每个用户/租户私有榜单；公共则由谁生产 | **✅ 已确认：平台公共榜单特例。** 预设评分方案归 default/admin；`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；生产者为调度“评分维护”(recompute) 或 `python -m backend.cli public-board`，以 default/admin 归属显式产出公共预设 `score_snapshot`。个人自建方案结果仍纯私有、经 `POST /api/board/compute` 即时看，不进公共榜单。**通用「资产可见性/自助公开」模型（私有/同租户/全体 + 加载=自己+公开）与新用户预设分发不在阶段四，另立独立需求后排。** | 见 T3b（§6.4）：`board.py` 公共归属显式定性 + CLAUDE.md「有意不带归属」铁律 + 公共读专项测试。决议依据 [c1-board-ownership-options.md](c1-board-ownership-options.md) |
+| C1 | 每日榜单结果归属：平台公共榜单，还是每个用户/租户私有榜单；公共则由谁生产 | **✅ 阶段四 A 已确认：平台公共榜单特例。** 预设评分方案归 default/admin；`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；生产者为调度“评分维护”(recompute) 或 `python -m backend.cli public-board`，以 default/admin 归属显式产出公共预设 `score_snapshot`。个人自建方案结果仍纯私有、经 `POST /api/board/compute` 即时看，不进公共榜单。阶段四 B 已把评分方案纳入 `private/tenant/public` 可见模型，并让榜单按可见方案读穿透物化；其他资产仍未公开化。 | 见 T3b（§6.4）：`board.py` 公共归属显式定性 + CLAUDE.md「有意不带归属」铁律 + 公共读专项测试。阶段四 B 见 [../stage4-public-profile-visibility/plan.md](../stage4-public-profile-visibility/plan.md)。决议依据 [c1-board-ownership-options.md](c1-board-ownership-options.md) |
 
 > C1 已确认，阶段四无剩余编码前阻塞项，可全量进入 T1–T10。
 

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-「复盘啦」——**EOD（收盘后）** 的 A 股趋势龙头研究系统，正从本地单用户向**公网多租户 SaaS** 演进。全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。
+「复盘啦」——**EOD（收盘后）** 的 A 股趋势龙头研究系统，已具备多租户 RBAC、账号登录和用户资产隔离能力，正持续向**公网多租户 SaaS** 形态演进。全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。
 
 **持久层已改为混合架构（阶段一已落地，见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)）**：
 - **行情/参考数据**（全市场近 5 年只读 reference）留**嵌入式 DuckDB 单文件**（`data/ai_stocks.duckdb`），分析查询的列存底座。

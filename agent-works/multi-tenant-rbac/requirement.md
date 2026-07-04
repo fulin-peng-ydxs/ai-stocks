@@ -8,7 +8,7 @@
 ## 1. 背景与目标
 
 ### 1.1 背景
-「复盘啦」当前是**本地单用户、EOD（收盘后）** 的 A 股趋势龙头研究系统，单进程全栈（FastAPI + Vue3 + 嵌入式 DuckDB 单文件），**无认证、无用户概念、无外部数据库/中间件依赖**（见 [CLAUDE.md](../../CLAUDE.md)）。所有研究资产（筛选/评分/交易方案、自选分组、回测、训练、布局偏好、配置覆盖）全局唯一、无归属。
+立项时「复盘啦」是**本地单用户、EOD（收盘后）** 的 A 股趋势龙头研究系统，单进程全栈（FastAPI + Vue3 + 嵌入式 DuckDB 单文件），**无认证、无用户概念、无外部数据库/中间件依赖**。阶段一至阶段四已将其演进为混合持久层、多租户 RBAC、账号登录和用户资产隔离并存的系统。
 
 ### 1.2 目标
 将系统升级为**公网 SaaS 对外**的**多租户 + RBAC + 账号登录**平台：
@@ -101,7 +101,7 @@
 | R16 | 注册防滥用做成开关（落「系统设置」子页面，配置化） | 【已确认】非阻塞项 1 升级 | 邮箱码/图形码/人机校验开关即时生效，缺值回落默认 |
 | R17 | 日志审计（接口/任务/安全事件统一采集 + 可观测查询页） | 【已确认】新需求 | 被授权操作/任务/安全事件可在审计页按条件检索 |
 | R18 | 数据字典（字典类型 + 字典项；首批权限体系枚举 + 少量稳定业务枚举） | 【已确认】新需求 | 字典项增删停用后下拉/校验即时反映；缺失回落代码默认 |
-| R19 | 配置管理拆父子菜单（评分规则/技术指标/买卖指标/系统设置 独立子页面） | 【已确认】新需求 | 单页多 tab 拆为父菜单 + 4 子页面，子页面按角色可见 |
+| R19 | 配置管理拆父子菜单（评分规则/技术指标/买卖指标/系统设置 独立子页面） | 【已确认】新需求；阶段四 R28 已前移落地 | 父菜单 + 4 子页面已按角色可见，注册防滥用开关仍属后续系统设置能力 |
 | R20 | 前端登录态与权限渲染（auth store + http token 注入 + 路由守卫 + v-permission 指令） | 闭环主链路 | 未登录跳登录页，菜单/路由/按钮按权限码动态渲染 |
 | R21 | 全部存量功能/接口接入用户体系（鉴权 + 数据过滤逐一覆盖） | 用户诉求 5 | 现有 13 个 API 路由与对应页面全部纳入鉴权与隔离 |
 
@@ -112,7 +112,7 @@
 | R22 | token 静默刷新（无感续期，避免操作中断） | 体验增强 | R4 完成后、有空切入即可纳入 |
 | R23 | 审计日志保留期自动清理任务（默认 90 天可配） | 【已确认】审计细则 | R17 落地后纳入，避免审计表无限增长 |
 | R24 | 操作审计字段级变更对比（who changed what from→to） | 增强可观测 | R17 基础事件稳定后纳入 |
-| R28 | 资产可见性与自助公开（评分/筛选/买卖/回测等方案：私有 / 同租户共享 / 全体公开 + 加载=自己的∪公开的） | 用户诉求（阶段四 C1 延伸）、遗留项 2 升级 | R8/R9 稳定后独立立项；改 R9 隔离读语义、需 publish 权限与 UI，**不在阶段四** |
+| R28 | 资产可见性与自助公开（评分/筛选/买卖/回测等方案：私有 / 同租户共享 / 全体公开 + 加载=自己的∪公开的） | 用户诉求（阶段四 C1 延伸）、遗留项 2 升级 | 评分方案公开能力已在阶段四 R28 分支落地；筛选/买卖/回测等其他资产公开仍后续独立扩展 |
 
 ### 4.3 暂不实现
 
@@ -124,7 +124,7 @@
 
 > R26「预留扩展位」指：角色表预留 `role_type`（system/tenant_admin/normal/paid）与可空 `plan_code`/`quota` 字段，不实现其消费逻辑。
 >
-> R28「资产可见性与自助公开」指：用户资产（评分/筛选/买卖方案、回测等）在个人私有基础上增加可见性维度（private / tenant / public），读侧从「仅本人」放宽为「本人 ∪ 公开 [∪ 同租户]」，用户可自助把自己的方案公开到同租户或全体。需明确：**谁可公开**（公开到全体一般限系统管理员、公开到租户由租户管理员）、**公开资产能否被他人改/删**（默认只读引用）、**公开方案的快照归属**、以及**新用户默认可见的公开预设分发**（当前新用户方案列表为空）。该能力**改动 R9 隔离读语义，须独立设计闭环，不在阶段四**——阶段四仅落「公共榜单特例」（预设方案归 default/admin、公共榜单全员共享一份），见 [stage4-existing-routes/c1-board-ownership-options.md](stage4-existing-routes/c1-board-ownership-options.md)。
+> R28「资产可见性与自助公开」指：用户资产（评分/筛选/买卖方案、回测等）在个人私有基础上增加可见性维度（private / tenant / public），读侧从「仅本人」放宽为「本人 ∪ 公开 [∪ 同租户]」，用户可自助把自己的方案公开到同租户或全体。阶段四 R28 已先落地**评分方案**：公开到租户由 `score-profile:publish-tenant` 控制，公开到全体由 `score-profile:publish-public` 控制；非 owner 公开方案只读，可复制为自己的 private；公开方案快照写方案 owner 槽；新用户可见平台内置 public 预设。筛选方案、买卖方案、回测记录等其他资产的公开能力仍后续独立扩展。
 
 ---
 
@@ -271,12 +271,12 @@
 - **对现有功能的影响**：渐进改造，现有硬编码枚举逐步引用字典；本期不强制全量替换。
 
 ### R19 配置管理拆父子菜单（新需求）
-- **功能描述**：将 [ConfigView.vue](../../frontend/src/views/ConfigView.vue) 单页 4 tab 拆为「配置管理」父菜单 + 4 个独立子页面（独立路由 `/system/config/{score|tech|trade|system}`），各 tab 内容拆为子视图组件复用现有逻辑。
+- **功能描述**：将 [ConfigView.vue](../../frontend/src/views/ConfigView.vue) 单页 4 tab 拆为「配置管理」父菜单 + 4 个独立子页面（独立路由 `/system/config/{score|trade|tech|system}`），阶段四 R28 已前移落地为复用同一 ConfigView 的单 tab 模式。
 - **子页面权限差异**【已确认】：评分规则、买卖指标 → 用户资产级（普通用户可见可编辑自己的）；技术指标（`indicator_def`）、系统设置（`app_config` 平台参数）→ 仅系统管理员。
 - **操作流程**：父菜单展开 → 进入对应子页面 → 各自独立加载与保存。
 - **校验规则**：子页面可见性由角色-菜单映射控制（R11/R12）；保留现有配置保存口径（评分/买卖=资产；技术指标/系统设置=平台）。
 - **异常情况**：无权子页面不在菜单出现，直达 URL 被路由守卫拦截。
-- **对现有功能的影响**：ConfigView 拆分；路由新增子路由；菜单树新增父子节点；注册防滥用开关（R16）落「系统设置」子页面。
+- **对现有功能的影响**：路由新增子路由；菜单树新增父子节点；`/system/config` 重定向到 `/system/config/score`；注册防滥用开关（R16）仍待后续落「系统设置」子页面。
 
 ### R20 前端登录态与权限渲染
 - **功能描述**：新增 Pinia `auth` store（token/用户/租户/角色/菜单/功能码）；`http.ts` 拦截器注入 Authorization + 处理 401/403；路由守卫拦未登录与无权路由；`v-permission` 指令控按钮。
@@ -518,8 +518,8 @@
 - 对应需求编号：R19、R16
 - 页面类型：更新（[ConfigView.vue](../../frontend/src/views/ConfigView.vue) 单页 4 tab → 父菜单 + 4 子页面）
 - 页面入口：系统管理 → 配置管理（父）→ 评分规则 / 技术指标 / 买卖指标 / 系统设置
-- 原型文件：**原型延后至阶段五**（R19/R16 属阶段五）；属布局重排的更新页，届时出变更区域原型 `prototypes/config-restructure.html`。
-- 页面布局：变更区域=拆分；保留区域=各 tab 原有内容逻辑迁入对应子视图，不改其内部交互
+- 原型文件：无新增 HTML 原型；阶段四 R28 前移落地时复用现有 ConfigView 布局和 `LayoutHost`，通过路由 meta 固定单 tab。
+- 页面布局：变更区域=菜单/路由拆分；保留区域=各 tab 原有内容逻辑留在 ConfigView，不改其内部主体布局
   ```
   系统管理
   └ 配置管理(父)
@@ -528,7 +528,7 @@
      ├ 买卖指标   (/system/config/trade)  ← 用户资产级
      └ 系统设置   (/system/config/system) ← 仅系统管理员(含注册防滥用开关)
   ```
-- 数据来源：沿用现有配置接口；系统设置子页新增注册防滥用开关读写 `app_config` 平台级
+- 数据来源：沿用现有配置接口；系统设置子页的注册防滥用开关读写 `app_config` 平台级仍属 R16 后续实现
 - 权限与可见性：子页面按角色-菜单映射控制（评分/买卖对普通用户开放，技术指标/系统设置仅系统管理员）
 #### 7.10.1 功能点：4 子页面拆分与路由
 - 状态变化：各子页面独立加载/保存，互不影响
@@ -648,7 +648,7 @@
   - **文档治理回写**（T17）：`CLAUDE.md`（补「细粒度 RBAC（阶段三内核）」铁律 6 条 + 阶段状态）、`DESIGN.md §9`（4 管理页 + IconPicker 登记）、本文件 §12（本段）、项目记忆 `multi-tenant-rbac-pivot.md`。
   - **验收基线**：后端 `pytest` 398 passed / 前端 `npm run build` 绿 + `vitest` 118 passed。commit 序列 `7aaddb3`（T11–T16）→ `d313c1b`/`99bca3a`/`ce3b863`（Codex 三轮整改）→ `626fc42`（T17 文档治理）。
 
-**阶段四：存量功能全量接入** — ✅ **完成**（T1–T10 全落地，分支 `codex/multi-tenant-rbac-stage4`）
+**阶段四 A：存量功能全量接入** — ✅ **完成**（T1–T10 全落地，分支 `codex/multi-tenant-rbac-stage4`）
 - 覆盖需求：R8（存量接口精确码）、R9（存量资产隔离复核 + 公共榜单 C1）、R20（全量按钮/路由接入）、R21（13 路由全量接入）
 - 目标：现有 13 路由与页面逐一接鉴权 + resource code + 隔离。**达成**——48 资源码固化(resource-codes.sql/pg_ddl seed)；后端逐端点 `require_perm`(可授权业务)/`require_system_perm`(system-only 硬守卫)接入，补 `layout/validate` 裸露端点；baseline 三码(layout:view/trade-calendar:view/indicator:registry)由 `perm_resolver` 对有角色非 system 用户强制注入、角色页置灰不可反选、无角色 fail-closed；`POST /layout/reset` 动态 scope 自守卫；每日榜单按 C1 平台公共只读特例、个人方案仍私有；前端业务页 v-permission 真实生效 + 系统页前向兼容接入。
 - 依赖原因：依赖阶段三权限模型稳定。
@@ -658,11 +658,19 @@
 - **Codex 二次复审整改（2026-07-04）**：外部复审推翻首轮"仅文档小瑕"结论，查出并已整改 3 实缺陷——**P1（严重）**：每日榜单页对**所有非 system 用户不可用**（三重断链：`BoardView` 主加载调 `listScoreProfiles`→`/score-profiles` 需 `score-profile:view`=system-only 且不在业务码集→403；即便放权，`ScoreProfileRepo.list()` 按调用者归属过滤、普通用户无自建方案、预设归 `PUBLIC_BOARD_OWNER`→空；run 同理 404）。`/board` 又是 `SAFE_HOME`，等于普通用户主页白屏。**修**：`board.py` 新增 `GET /api/board/profiles` + `POST /api/board/run`（均 `board:view`，读公共预设方案+公共评分、只暴露 `is_preset`、全员共享一份），`BoardView` 改接——补齐 C1 公共榜单闭环，配「榜单」角色只需 `board:view`。**P2（中）**：业务页 onMounted 次级列表读（Screen `screen-profile:view`、Stocks/StockDetail `stock-group:view`）未按自身 view 码门控，部分授权自定义角色进页被次级加载 403 卡住主体。**修**：加 `hasPermission` 守卫优雅降级（Backtest 早已 try/catch 降级、Training 用自身 `training:view`）。**P3（低）**：文档漂移——`role_repository.baseline_resource_ids()` 死代码 + `constants.py`/其 docstring 谎称"set_grants 保存时并入 baseline"（实际唯一权威是 `perm_resolver.resolve` 运行时注入），`resource-codes.sql` "+38 行"与文末"48"矛盾。**修**：删死代码、订正注释、"+38"→"+48"。回归：后端 **452 passed**、前端 **186 passed** + build 绿。教训：自审不能只验"端点有码"，须实建普通用户角色跑真实页面加载链路。仍留 1 低风险项：score/trade profile 有意用 `require_perm`（非硬守卫，靠 system-only 菜单拦截授权，阶段五拆页迁移路径）。
 - **开发产物索引**（相对 `agent-works/multi-tenant-rbac/`）：计划+全程留痕 [stage4-existing-routes/plan.md](stage4-existing-routes/plan.md)（§6 T1–T10 + §5 需求映射 + §4.3 资源码矩阵含 F1 注）；资源码矩阵/既有库回填 SQL [stage4-existing-routes/resource-codes.sql](stage4-existing-routes/resource-codes.sql)；C1 决议依据 [stage4-existing-routes/c1-board-ownership-options.md](stage4-existing-routes/c1-board-ownership-options.md)。后端测试 `backend/tests/test_stage4_{resource_codes,systemonly,board,layout,menu_guard}.py`；前端测试 `frontend/src/{directives,views}/**/{stage4-button-permission,permission-tree,stage4-permissions}.spec.ts`；权限依赖元数据/守卫 `backend/auth/deps.py`（`require_perm`/`require_system_perm`）、`backend/auth/perm_resolver.py`（baseline 强制注入）、`backend/auth/constants.py`（`SHARED_/BUSINESS_RESOURCE_CODES`）。
 - **文档治理回写（T10 + 自审 + Codex 复审整改增量）**：`CLAUDE.md`（补「存量业务路由全量接入（阶段四已落地）」铁律 + 榜单页 `board:view` 闭环[复审 P1]+ 次级加载降级[复审 P2]）、`README.md`（架构段+生产入口段标阶段四已落地）、[agent-works/architecture/platform.md](../architecture/platform.md)（认证声明 + 风险表更新为阶段四已落地）、`plan.md`（§4.3 矩阵 board/score:run 行 + §6.6 边界随复审更新）、`resource-codes.sql`（board 块注释随复审更新、"+48"）、本文件 §12（本段）、项目记忆 `multi-tenant-rbac-pivot.md`/`MEMORY.md`（榜单页条 + 复审整改条）。`DESIGN.md` 无变更（阶段四不新增页面、不重排布局，§9 页面登记无需新增）。
-- **明确划出**：通用「资产可见性/自助公开」模型 = **R28**（独立后排，不在阶段四）。
+- **后续承接**：本阶段只保留公共榜单特例作为 R21 基线；评分方案通用公开能力已由阶段四 B（R28）承接。
+
+**阶段四 B：评分方案公开能力与配置拆页前移** — ✅ **完成**（分支 `codex/stage4-public-profile-visibility`，提交 `d8bf27a`）
+- 覆盖需求：R28（评分方案可见性与自助公开）、R19（配置管理拆父子菜单前移落地）、R20/R21 延续（榜单页与配置页权限闭环）。
+- 目标：把阶段四 A 的“平台公共榜单特例”收敛进通用可见评分方案模型。**达成**——`score_profile.visibility=private|tenant|public`；`GET /api/score-profiles` 与 `GET /api/board/profiles` 返回自己的、同租户公开、全体公开和平台内置预设；前端用 opaque `profile_ref` 定位真实 owner；非 owner 公开方案只读并可复制为自己的 private；`POST /api/board/run` 按可见方案、日期、版本读取 fresh 快照，缺失或 stale 时由 `board:view` 触发受控物化，结果写方案 owner 的 `score_snapshot` 槽；`force=true` 才要求 `board:compute`。
+- 配置管理拆页：`/system/config` 改为父菜单，`/system/config/score` 评分规则和 `/system/config/trade` 买卖指标为业务可授权子页，`/system/config/tech` 技术指标和 `/system/config/system` 系统设置仍 system-only；`/score-profiles` 仅兼容重定向到 `/system/config/score`，不作为菜单入口。评分方案公开范围由当前状态标签下拉设置，不再平铺“租户公开/全体公开”按钮。
+- **验收基线**：阶段四 B 开发中执行后端公开方案/榜单/RBAC 专项 **73 passed**；配置拆页后 RBAC seed 专项 **42 passed**；前端 `npm run build` 通过；前端权限相关测试 **96 passed**；后端 `/api/health=200`。
+- **开发产物索引**（相对 `agent-works/multi-tenant-rbac/`）：计划和实施记录 [stage4-public-profile-visibility/plan.md](stage4-public-profile-visibility/plan.md)；评分方案 DDL/兼容迁移 SQL [stage4-public-profile-visibility/score-profile-visibility.sql](stage4-public-profile-visibility/score-profile-visibility.sql)；配置拆页和资源码回填 SQL [stage4-public-profile-visibility/resource-codes.sql](stage4-public-profile-visibility/resource-codes.sql)。核心实现：`backend/scoring/score_profile.py`、`backend/api/score_profiles.py`、`backend/api/board.py`、`backend/storage/pg_ddl.py`、`frontend/src/views/BoardView.vue`、`frontend/src/views/ConfigView.vue`、`frontend/src/router/index.ts`。测试：`backend/tests/test_score_profile_visibility_api.py`、`backend/tests/test_score_profile.py`、`backend/tests/test_stage4_board.py`、`backend/tests/test_rbac_{schema,menus,me}.py`。
+- **仍未覆盖**：筛选方案、买卖方案、回测记录等其他资产的公开能力；公开审批流、公开市场、收藏/搜索/运营推荐；审计/数据字典/注册防滥用开关页。
 
 **阶段五：平台能力新增与重构**
-- 覆盖需求：R16、R17、R18、R19
-- 目标：注册防滥用开关、日志审计、数据字典、配置管理拆父子菜单。
+- 覆盖需求：R16、R17、R18，以及 R19 中尚未实现的注册防滥用开关落页细节。
+- 目标：注册防滥用开关、日志审计、数据字典。
 - 依赖原因：审计/字典依赖用户与权限上下文；配置重构依赖菜单数据化。
 - 里程碑：审计可检索、字典即时生效、配置子页面按角色可见。
 
@@ -672,7 +680,7 @@
 - 里程碑：长操作不被 token 过期打断、审计表可控增长。
 
 **独立需求（排期待定，非上述任一阶段的既定内容）**
-- R28 资产可见性与自助公开：依赖 R8/R9 稳定，改动 R9 隔离读语义、需 publish 权限与 UI，须独立设计闭环。阶段四仅落「公共榜单特例」(见 stage4 C1 决议)，通用能力待商业/协作需求明确后单独立项（建议不早于阶段五）。
+- R28 其他资产公开能力：评分方案已完成；筛选方案、买卖方案、回测记录等其他资产是否支持 `private/tenant/public` 仍待独立设计和排期。
 
 > 文档治理收尾（贯穿/收口）：同步改写 CLAUDE.md、README、architecture、start.sh/部署脚本（定位与依赖变更），避免后续 AI 按旧契约行事。
 
@@ -683,7 +691,7 @@
 | 项 | 影响 | 当前默认（已采纳建议/推断） |
 | --- | --- | --- |
 | 1. 配置管理 IA | 普通用户会在「系统管理→配置管理」下看到评分规则/买卖指标两子页 | 【已确认】保留在配置管理下，靠角色控子页面可见，最省改动 |
-| 2. 资产共享粒度 | 是否支持「租户内共享资产」还是纯个人私有 | 【已确认→R28】本期个人私有；通用「可见性/自助公开（私有/同租户/全体 + 加载=自己∪公开）」升级为独立需求 R28，R8/R9 稳定后另排，不在阶段四 |
+| 2. 资产共享粒度 | 是否支持「租户内共享资产」还是纯个人私有 | 【已确认→R28】评分方案已支持 `private/tenant/public`；筛选方案、买卖方案、回测记录等其他资产仍按个人私有，后续独立评估 |
 | 3. 审计保留期/范围 | 审计表增长与隐私 | 【已确认】保留 90 天可配、仅记摘要不记请求/响应体、租管看本租户 |
 | 4. `data_dimension_registry` 是否并入数据字典 | 字典接入边界 | 【待定】本期不并入，维持现状，后续评估 |
 | 5. 租户管理员能否自建角色 | 角色管理权限边界 | 【已确认】本期仅分配系统管理员预设角色，不可自建 |
