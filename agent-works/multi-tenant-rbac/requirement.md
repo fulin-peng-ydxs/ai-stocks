@@ -654,9 +654,10 @@
 - 依赖原因：依赖阶段三权限模型稳定。
 - 里程碑：全量回归，未改造接口默认 deny 不漏。**达成**——路由扫描证「所有非白名单 /api 端点有守卫、13 模块每端点有精确码、唯一豁免动态 scope /layout/reset」；跨账号隔离 + baseline 共享读/不可反选 + system-only tenant_admin 403 + 硬守卫不降级全测。
 - **验收基线**：后端 `pytest` **449 passed**、前端 `npm run build`(vue-tsc+vite)绿 + `vitest` **186 passed**。
-- **开发产物索引**（相对 `agent-works/multi-tenant-rbac/`）：计划+全程留痕 [stage4-existing-routes/plan.md](stage4-existing-routes/plan.md)（§6 T1–T10 + §5 需求映射）；资源码矩阵/回填 SQL [stage4-existing-routes/resource-codes.sql](stage4-existing-routes/resource-codes.sql)；C1 决议 [stage4-existing-routes/c1-board-ownership-options.md](stage4-existing-routes/c1-board-ownership-options.md)。后端测试 `backend/tests/test_stage4_{resource_codes,systemonly,board,layout,menu_guard}.py`；前端测试 `frontend/src/{directives,views}/**/{stage4-button-permission,permission-tree,stage4-permissions}.spec.ts`。
+- **开发自审查（2026-07-04）**：结论——机制正确、无安全漏洞、无性能回归（`load_perms` 缓存优先、resolve 仅 miss 时跑；54 个 API 码全部已 seed 无「全员 403」隐患；路由扫描证零裸露/零漏码）。**1 个中等文档偏离 F1（已修文档）**：每日榜单页 `BoardView` 运行时主加载走 `score:run`(POST /score-profiles/run)，而非矩阵表述的 `board:view`——`board:view`(/scores/top·/scores) 前端当前未接入（真实有效但闲置的预留码，非假定义）、`board:compute` 由回测页消费；配自定义「榜单」角色须含 `score:run`。2 个低风险项（已记录）：页面↔码跨依赖未逐一文档化；score/trade profile 有意用 `require_perm`（非硬守卫，靠 system-only 菜单拦截授权，阶段五拆页迁移路径）。详见 plan §4.3 F1 注 + §6.6 边界。
+- **开发产物索引**（相对 `agent-works/multi-tenant-rbac/`）：计划+全程留痕 [stage4-existing-routes/plan.md](stage4-existing-routes/plan.md)（§6 T1–T10 + §5 需求映射 + §4.3 资源码矩阵含 F1 注）；资源码矩阵/既有库回填 SQL [stage4-existing-routes/resource-codes.sql](stage4-existing-routes/resource-codes.sql)；C1 决议依据 [stage4-existing-routes/c1-board-ownership-options.md](stage4-existing-routes/c1-board-ownership-options.md)。后端测试 `backend/tests/test_stage4_{resource_codes,systemonly,board,layout,menu_guard}.py`；前端测试 `frontend/src/{directives,views}/**/{stage4-button-permission,permission-tree,stage4-permissions}.spec.ts`；权限依赖元数据/守卫 `backend/auth/deps.py`（`require_perm`/`require_system_perm`）、`backend/auth/perm_resolver.py`（baseline 强制注入）、`backend/auth/constants.py`（`SHARED_/BUSINESS_RESOURCE_CODES`）。
+- **文档治理回写（T10 + 自审 F1 增量）**：`CLAUDE.md`（补「存量业务路由全量接入（阶段四已落地）」铁律 + 榜单页 F1 坑）、`README.md`（架构段+生产入口段标阶段四已落地）、[agent-works/architecture/platform.md](../architecture/platform.md)（认证声明 + 风险表更新为阶段四已落地）、本文件 §12（本段）、项目记忆 `multi-tenant-rbac-pivot.md`/`MEMORY.md`。`DESIGN.md` 无变更（阶段四不新增页面、不重排布局，§9 页面登记无需新增）。
 - **明确划出**：通用「资产可见性/自助公开」模型 = **R28**（独立后排，不在阶段四）。
-- **DESIGN.md 无变更**：阶段四不新增页面、不重排布局，DESIGN §9 页面登记无需新增。
 
 **阶段五：平台能力新增与重构**
 - 覆盖需求：R16、R17、R18、R19
