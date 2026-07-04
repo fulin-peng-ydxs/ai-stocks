@@ -4,7 +4,8 @@
 
 - 需求文档：[../requirement.md](../requirement.md)
 - 功能目标：进入多租户 RBAC 阶段四，把现有 13 个存量业务 API 路由和对应既有页面纳入阶段三已经落地的权限体系，逐一补齐 `resource code`、后端权限依赖、前端按钮级 `v-permission`、数据隔离回归和全量验证。
-- 当前计划状态：阻塞整改稿，不能标记为“计划通过”。存在 1 个编码前阻塞确认项（C1：每日榜单结果归属口径）。在 C1 未确认前，不进入涉及 `board.py` 与 R9 榜单验收口径的 T3b 编码；T1/T2/T3a/T4/T5 可推进不改变榜单归属口径的接入，但不得顺手修改 `board.py` 数据归属。C1 确认后必须回写 §5、§6 和 §10，再进入 T3b。
+- 当前计划状态：待实施稿（非“已完成”）。**C1 已确认（2026-07-04）**：每日榜单采用**平台公共榜单特例**——预设评分方案归 default/admin、`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；个人自建方案结果仍纯私有、经 `POST /api/board/compute`（`persist=False`）即时查看，不进公共榜单；公共榜单生产者维持现状（调度“评分维护”/CLI 以 default/admin 归属产出预设方案结果）。T3b 已解锁，无剩余阻塞确认项。
+- **明确划出阶段四之外（另立独立需求后排）**：通用「资产可见性 / 用户自助公开」模型（方案私有 / 同租户共享 / 全体公开 + 加载 = 自己的 + 公开的）、以及新用户注册时的预设方案分发（当前新用户方案列表为空、且看不到 admin 的），都会改动 R9 隔离读语义、需 publish 权限与 UI、需定公开资产改删边界，不纳入阶段四。决议依据见 [c1-board-ownership-options.md](c1-board-ownership-options.md)。
 - 本次不做：
   - 不新增页面，不生成新的 HTML 原型。阶段四只在既有页面做权限接入、按钮显隐/禁用和接口守卫，不涉及新增页面、布局重排或复杂交互重构。
   - 不做阶段五能力：审计页、数据字典页、注册防滥用开关页、配置管理 4 子页面拆分。
@@ -63,7 +64,8 @@
 - 不生成 `prototypes/*.html`。
 - 不拆 `ConfigView.vue` 的 4 个 tab；配置管理父子菜单重构留阶段五 `R19/R16`。
 - 不新增审计表、字典表或审计页面；阶段四只让资源码体系为阶段五审计打基础。
-- 除 C1 若确认“每日榜单”为平台公共只读资产外，不改变资产共享策略。本阶段继续按“个人私有 + 租户管理员只管理本租户用户”执行，不做租户内共享资产。
+- 不做通用「资产可见性 / 用户自助公开」模型（私有 / 同租户 / 全体公开 + 加载 = 自己 + 公开）。C1 已确认仅落**公共榜单特例**（预设方案归 default/admin、公共榜单全员共享一份），不引入通用 `visibility` 列、publish 开关/UI 或公开资产改删边界。个人自建方案仍纯私有。通用共享模型另立独立需求后排。
+- 不处理新用户注册的预设方案分发（当前新用户方案列表为空）；该项随通用公开模型一并解决，不在阶段四。
 - 不做 token 静默刷新、审计保留期清理、字段级审计对比。
 
 ## 4. 技术方案
@@ -76,7 +78,7 @@
 - system-only 不降级：数据管理、任务调度、技术指标写、系统配置、布局平台配置继续由 `require_system` 硬守。资源码只用于登记、页面按钮、测试扫描和后续审计，不作为允许非 system 访问的依据。
 - 用户资产类可授权：筛选方案、评分方案、买卖指标方案、自选分组、回测记录、盘感训练、用户级布局配置使用 `require_perm(code)`，normal/paid/tenant_admin 可通过角色授权获得。
 - 共享只读类仍要有码：行情列表、个股详情、每日榜单、指标注册表、交易日期、布局生效配置等虽然不加归属过滤，也要通过资源码控制是否可用。
-- 全站基础共享读必须独立成码，不能挂到某个业务页面码或 system-only 码上：布局预设/页面配置/生效配置、交易日历这类端点被多个页面或应用启动链路消费，必须给所有登录业务角色默认授权。
+- 全站/研究基础共享读必须独立成登录基线码，不能挂到某个业务页面码或 system-only 码上：布局预设/页面配置/生效配置、交易日历、指标目录这类端点被多个页面或应用启动链路消费，必须对所有登录业务角色恒可用，并在角色页置灰不可反选。
 - 数据隔离复核：凡写入或读取用户资产的接口，服务或仓库必须从 `get_current_owner()` 获取归属，不接受前端传入归属覆盖。
 
 ### 4.2 后端权限依赖方案
@@ -85,6 +87,8 @@
 
 - 保留 `require_perm(code)` 语义，并为返回的依赖函数挂可测试元数据，例如 `resource_code = code`。
 - 新增组合依赖 `require_system_perm(code)`，内部先执行 `require_system()`，并挂 `resource_code = code`。用于 system-only 端点，保证路由扫描能看到精确码，但运行时仍由 system 硬守卫兜底。
+- 新增登录基线码机制 `baseline_locked`：`_SHARED_RESOURCE_CODES` 中的 `layout:view`、`trade-calendar:view`、`indicator:registry` 不再只是默认授权，而是所有已认证业务用户的最小可用资源集。权限解析时把基线码强制注入非 system 用户的 `resources`；system 用户仍走全量资源。
+- 角色授权页保留基线码展示，但与 system-only 锁定相反：基线码始终勾选、置灰且不可取消。后端保存授权时必须强制并入基线资源，不能因前端直调或管理员反选导致业务角色丢失这些码。
 - 路由扫描测试只允许四类 API：
   - 白名单：`/api/health`、`/api/auth/*`。
   - 已接精确码：依赖中有 `resource_code`。
@@ -99,8 +103,8 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | --- | --- | --- | --- | --- |
 | `board.py` | `board:view` | `GET /api/scores/top`、`GET /api/scores` | `/board` | 登录且有每日榜单权限 |
 | `board.py` | `board:compute` | `GET /api/board/compute` | `/board` | 登录且有榜单计算权限 |
-| `shared.py` | `layout:view` | `GET /api/layout/presets`、`GET /api/layout/pages/{page_key}`、`GET /api/layout/effective/{page_key}` | 登录基础设施资源 | 全站布局渲染共享读，所有登录业务角色默认授权，不能 system-only |
-| `shared.py` | `trade-calendar:view` | `GET /api/data/trade-dates` | 登录基础设施资源 | 全站日期选择器共享读，所有登录业务角色默认授权，不能挂 `stocks:view` |
+| `layout.py` | `layout:view` | `GET /api/layout/presets`、`GET /api/layout/pages/{page_key}`、`GET /api/layout/effective/{page_key}` | 全站共享读 | `baseline_locked`，所有登录业务角色恒可用，不能 system-only，不能在角色页反选 |
+| `stocks.py` | `trade-calendar:view` | `GET /api/data/trade-dates` | 全站共享读 | `baseline_locked`，所有登录业务角色恒可用，不能挂 `stocks:view`，不能在角色页反选 |
 | `stocks.py` | `stocks:view` | `GET /api/stocks`、`/stocks/{code}/bars`、`/signal`、`/indicators` | `/stocks` | 登录且有个股行情权限 |
 | `stocks.py` | `stocks:trade-eval` | `GET /api/stocks/{code}/trade-eval` | `/stocks` | 登录且有买卖评估权限 |
 | `profiles.py` | `screen-profile:view` | `GET /api/profiles*` | `/screen` | 用户资产读 |
@@ -110,7 +114,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | `score_profiles.py` | `score-profile:view` | `GET /api/score-profiles*` | `/system/config` | 阶段四仍归现配置页；阶段五拆页后迁移菜单 |
 | `score_profiles.py` | `score-profile:save` | `POST /api/score-profiles` | `/system/config` | 用户资产写，前端页面暂 system-only |
 | `score_profiles.py` | `score-profile:delete` | `DELETE /api/score-profiles/{pid}` | `/system/config` | 用户资产删 |
-| `score_profiles.py` | `score:run` | `POST /api/score-profiles/run` | `/board` | 打分执行 |
+| `score_profiles.py` | `score:run` | `POST /api/score-profiles/run` | `/board` | 打分执行；C1 若确认公共榜单，需同步明确其写入 `score_snapshot` 的归属和公共结果生产链路 |
 | `trade_profiles.py` | `trade-profile:view` | `GET /api/trade-profiles*` | `/system/config` | 用户资产读 |
 | `trade_profiles.py` | `trade-profile:save` | `POST /api/trade-profiles` | `/system/config` | 用户资产写 |
 | `trade_profiles.py` | `trade-profile:delete` | `DELETE /api/trade-profiles/{pid}` | `/system/config` | 用户资产删 |
@@ -133,7 +137,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | `layout.py` | `layout:preset-manage` | `POST/DELETE /api/layout/presets*` | `/system/layout/presets` | `require_system_perm` |
 | `layout.py` | `layout:page-manage` | `POST /api/layout/pages/{page_key}`、page scope reset、validate/import 类页面配置操作 | `/system/layout/pages` | `require_system_perm` |
 | `layout.py` | `layout:field-policy` | `GET/POST /api/layout/field-policies` | `/system/layout/components` | `require_system_perm` |
-| `indicators.py` | `indicator:registry` | `GET /api/indicators/registry` | `/system/config` | 登录可读，写仍 system-only |
+| `indicators.py` | `indicator:registry` | `GET /api/indicators/registry` | 研究基础共享读 | `baseline_locked`，Board/Screen/Config 跨页指标目录读，所有登录研究业务角色恒可用，不能绑定配置页，不能在角色页反选；写仍 system-only |
 | `indicators.py` | `indicator:def-manage` | `POST/PATCH/DELETE /api/indicators/def*` | `/system/config` | `require_system_perm` |
 | `config.py` | `config:view` | `GET /api/config` | `/system/config` | `require_system_perm` |
 | `config.py` | `config:reload` | `POST /api/config/reload` | `/system/config` | `require_system_perm` |
@@ -146,19 +150,25 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | `data_tasks.py` | `data-task:manage` | `POST/GET /api/data/tasks*`、resume/cancel/logs/list | `/data/ingest` | `require_system_perm` |
 | `stocks.py` | `data-status:view` | `GET /api/data/status`、`/data/update-logs` | `/data/overview` | `require_system_perm` |
 
-### 4.4 初始化数据与默认授权
+### 4.4 初始化数据、基线码与默认授权
 
 - `backend/storage/pg_ddl.py`
   - 扩展 `_SEED_RESOURCES`，追加阶段四资源码。
-  - 新增 `_SHARED_RESOURCE_CODES`，包含 `layout:view`、`trade-calendar:view` 等所有登录用户必须具备的基础读码。
+  - 新增 `_SHARED_RESOURCE_CODES`，包含 `layout:view`、`trade-calendar:view`、`indicator:registry` 等所有登录业务角色必须具备且不可移除的 `baseline_locked` 基础读码。
   - 新增 `_BUSINESS_RESOURCE_CODES`，包含 normal/paid/tenant_admin 默认可用的业务资源码。
   - system 角色继续幂等补齐全量菜单和全量资源。
   - 非 system 内置角色不改变既有“管理员手工调整不被启动覆盖”的原则。
+- `backend/auth/perm_resolver.py`、`backend/services/auth_service.py`
+  - 解析 `/me` 和后端权限上下文时，对非 system 已认证业务用户强制并入 `_SHARED_RESOURCE_CODES`；无角色用户仍 fail-closed。
+  - 基线码变化属于有效权限变化，既有库启用或调整基线码后必须对受影响业务用户 bump `perm_ver` 或清 perms 缓存。
+- `backend/storage/role_repository.py`、`frontend/src/views/system/RoleManageView.vue`
+  - 新增基线资源 ID 查询和 `baseline_locked` 元数据，角色授权读回显时始终包含基线码。
+  - 保存授权时后端强制并入基线资源；前端权限树把基线码渲染为勾选置灰，不纳入可取消叶子集合。
 - `agent-works/multi-tenant-rbac/stage4-existing-routes/resource-codes.sql`
-  - 作为阶段四资源码与默认授权的一次性执行/审阅脚本。
+  - 作为阶段四资源码、基线码与默认授权的一次性执行/审阅脚本。
   - 仅对阶段四新增资源码执行 `INSERT ... ON CONFLICT DO NOTHING`。
   - 对 normal/paid/tenant_admin 的默认业务资源执行一次性 `INSERT ... ON CONFLICT DO NOTHING`，不作为每次启动自动重置。
-  - 回填授权时必须同步对受影响角色下的用户执行 `perm_ver` 自增；建议通过迁移 CLI 在同一 PG 事务内完成 `sys_role_resource` 写入与 `sys_user.perm_ver` bump，提交后 best-effort 清理 Redis `auth:perms:*` 缓存。若使用纯 SQL，必须在 SQL 中包含 affected users 的 `UPDATE sys_user SET perm_ver = perm_ver + 1 ...`，并在发布步骤中强制相关用户重新登录。
+  - 回填授权或启用基线码时必须同步对受影响用户执行 `perm_ver` 自增；建议通过迁移 CLI 在同一 PG 事务内完成 `sys_role_resource` 写入、基线码启用与 `sys_user.perm_ver` bump，提交后 best-effort 清理 Redis `auth:perms:*` 缓存。若使用纯 SQL，必须在 SQL 中包含 affected users 的 `UPDATE sys_user SET perm_ver = perm_ver + 1 ...`，并在发布步骤中强制相关用户重新登录。
   - system-only 资源挂在 `visible='system'` 菜单下，`RoleRepository.system_only_resource_ids()` 会阻止授予非 system 角色。
 
 ### 4.5 页面技术实现
@@ -182,10 +192,10 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R8 | 接口级 + 按钮级 RBAC 权限校验 | 阶段四补齐存量业务接口 `resource code`、后端 `require_perm/require_system_perm`、前端 `v-permission` | T1,T2,T3a,T3b,T4,T5,T6,T8,T9 | 阻塞 | 待确认 | 大部分接口可推进；`board.py` 权限接入受 C1 影响 |
-| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单结果归属需先确认公共/私有口径 | T3a,T3b,T4,T8 | 阻塞 | 待确认 | C1 未确认前，`board.py` 与 R9 榜单验收口径不能编码 |
+| R8 | 接口级 + 按钮级 RBAC 权限校验 | 阶段四补齐存量业务接口 `resource code`、后端 `require_perm/require_system_perm`、前端 `v-permission` | T1,T2,T3a,T3b,T4,T5,T6,T8,T9 | 待开始 | 一致 | C1 已确认（公共榜单特例），`board.py` 权限接入随 T3b 正常推进 |
+| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 待开始 | 一致 | C1 已确认；公共榜单读“有意全局”须显式声明，与私有资产隔离用例分开。通用可见性/公开模型不在阶段四 |
 | R20 | 前端登录态与权限渲染 | 既有页面写操作、敏感操作和系统级操作补按钮权限；菜单/路由守卫保持 fail-closed | T6,T9 | 待开始 | 一致 | 不新增页面，不重排布局 |
-| R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、默认授权、测试扫描和全量回归；其中榜单归属部分受 C1 阻塞 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 阻塞 | 待确认 | 非榜单接口可按 T3a/T4/T5 推进；T3b 中 `board.py` 需先确认 C1 |
+| R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、基线码、默认授权、测试扫描和全量回归；榜单按 C1 公共特例接入 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 待开始 | 一致 | C1 已确认，全量接口无阻塞；通用资产共享/公开为阶段四外独立需求 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -201,9 +211,9 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 操作：
   - 逐个核对 `backend/api/backtest.py`、`board.py`、`config.py`、`indicators.py`、`layout.py`、`profiles.py`、`score_profiles.py`、`trade_profiles.py`、`stock_groups.py`、`stocks.py`、`data_tasks.py`、`data_admin.py`、`training.py`。
   - 把每个端点归为共享只读、用户资产、system-only 三类。
-  - 单独核对全站基础共享读端点：`GET /api/layout/presets`、`GET /api/layout/pages/{page_key}`、`GET /api/layout/effective/{page_key}`、`GET /api/data/trade-dates` 必须有登录业务角色默认可用的共享读码。
+  - 单独核对全站/研究基础共享读端点：`GET /api/layout/presets`、`GET /api/layout/pages/{page_key}`、`GET /api/layout/effective/{page_key}`、`GET /api/data/trade-dates`、`GET /api/indicators/registry` 必须有登录业务角色恒可用且不可反选的 `baseline_locked` 共享读码。
   - 登记动态 scope 自守卫端点清单，初始仅 `POST /api/layout/reset`；扫描测试必须要求它有 scope 分支测试。
-  - 输出 `resource-codes.sql`，记录新增 `sys_resource`、归属菜单、默认授权目标角色和是否 system-only。
+  - 输出 `resource-codes.sql`，记录新增 `sys_resource`、归属菜单、是否 `baseline_locked`、默认授权目标角色和是否 system-only。
 - 产出：阶段四资源码矩阵和 SQL 计划文件。
 - 影响范围：权限 seed、角色授权页、前端按钮权限、后续审计资源码。
 - 边界与异常：如果发现某端点无法稳定归类，必须在本计划 §10.3 追加待确认项后再继续接入该端点。
@@ -211,27 +221,33 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 完成标准：13 个路由模块的所有非白名单端点均有明确资源码或明确 system-only 码。
 - 实际落地情况：待实施。
 
-### 6.2 任务 T2：补齐资源 seed、默认授权与权限依赖元数据
+### 6.2 任务 T2：补齐资源 seed、基线码、默认授权与权限依赖元数据
 
 - 状态：待开始
 - 依赖：T1
 - 涉及文件/模块：
   - `backend/storage/pg_ddl.py`
   - `backend/auth/deps.py`
+  - `backend/auth/perm_resolver.py`
+  - `backend/services/auth_service.py`
   - `backend/storage/role_repository.py`
+  - `frontend/src/views/system/RoleManageView.vue`
   - `agent-works/multi-tenant-rbac/stage4-existing-routes/resource-codes.sql`
-- 目标：让新装库和既有库都能获得阶段四资源码，且 role 授权页与后端守卫口径一致。
+- 目标：让新装库和既有库都能获得阶段四资源码、基线共享读码和默认业务授权，且 role 授权页与后端守卫口径一致。
 - 操作：
   - 扩展 `_SEED_RESOURCES`，追加阶段四资源码。
-  - 增加 `_SHARED_RESOURCE_CODES`，用于所有登录业务角色默认持有的全站基础共享读码。
+  - 增加 `_SHARED_RESOURCE_CODES`，用于所有登录业务角色强制持有且不可反选的全站/研究基础共享读码。
   - 增加 `_BUSINESS_RESOURCE_CODES`，用于 normal/paid/tenant_admin 默认业务授权的一次性回填。
+  - 权限解析时把 `_SHARED_RESOURCE_CODES` 注入所有非 system 已认证业务用户的 `resources`；无角色用户仍 fail-closed。
+  - 角色授权读写时把基线码作为 `baseline_locked` 资源处理：回显勾选、前端置灰、保存时后端强制并入。
   - 确保 system 角色启动幂等补齐全量资源。
   - 新增或调整 `require_system_perm(code)`，system-only 端点保留硬守卫并挂资源码元数据。
   - 给 `require_perm` 返回函数挂 `resource_code`，供 T8 扫描。
-- 产出：资源 seed、默认授权机制、权限依赖元数据。
-- 影响范围：新装数据库、既有数据库升级、角色管理页可勾选资源树。
+- 产出：资源 seed、基线共享读机制、默认授权机制、权限依赖元数据。
+- 影响范围：新装数据库、既有数据库升级、角色管理页可勾选资源树、`/me` 权限集合。
 - 边界与异常：
   - 不在每次启动时强制恢复 normal/paid 的业务资源授权，避免覆盖管理员后续手工调整。
+  - `_SHARED_RESOURCE_CODES` 不属于可被管理员移除的业务授权，不适用“手工调整不覆盖”原则；这是业务用户运行应用的基线能力。
   - system-only 资源必须挂在 `visible='system'` 菜单下，防止非 system 角色被误授。
 - 验证方式：
   - `python -m pytest backend/tests/test_rbac_schema.py backend/tests/test_rbac_roles.py -q`
@@ -249,10 +265,12 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - `backend/api/score_profiles.py`
   - `backend/api/trade_profiles.py`
   - `backend/api/stock_groups.py`
-- 目标：个股行情、交易日历、策略筛选、评分方案、买卖方案、自选分组逐端点接入精确 `require_perm`。
+  - `backend/api/indicators.py`
+- 目标：个股行情、交易日历、指标目录、策略筛选、评分方案、买卖方案、自选分组逐端点接入精确 `require_perm`。
 - 操作：
-  - 给非榜单共享读接口挂 `stocks:view`、`stocks:trade-eval` 等读码。
+  - 给非榜单共享读接口挂 `stocks:view`、`stocks:trade-eval`、`indicator:registry` 等读码。
   - 给全站基础共享读接口 `GET /api/data/trade-dates` 挂 `trade-calendar:view`，确保不依赖 `/stocks` 菜单授权。
+  - 给跨页指标目录 `GET /api/indicators/registry` 挂 `indicator:registry`，确保有筛选/榜单但无配置页的自定义角色仍能加载指标选择器。
   - 给用户资产 CRUD 挂 `screen-profile:*`、`score-profile:*`、`trade-profile:*`、`stock-group:*`。
   - 确认各仓库不接受前端 tenant/owner 覆盖。
 - 产出：业务读写接口精确权限码接入。
@@ -265,28 +283,31 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 完成标准：上述模块非白名单接口均被 T8 扫描识别为已接资源码。
 - 实际落地情况：待实施。
 
-### 6.4 任务 T3b：每日榜单归属确认与接口接入
+### 6.4 任务 T3b：每日榜单接口接入（公共榜单特例，C1 已确认）
 
-- 状态：阻塞
-- 依赖：T2；阻塞确认 C1（每日榜单结果归属口径）
+- 状态：待开始
+- 依赖：T2（C1 已确认=平台公共榜单特例，无阻塞）
 - 涉及文件/模块：
   - `backend/api/board.py`
-  - `backend/scoring/*`
-  - `backend/storage/pg_ddl.py`
+  - `backend/scoring/*`（`ScoreSnapshotRepo` 读侧归属）
+  - `backend/storage/pg_ddl.py`（公共归属常量口径）
+  - `CLAUDE.md`（补“公共榜单读有意不带归属”铁律）
   - `backend/tests/test_stage4_resource_codes.py`（新增或扩展）
-- 目标：在确认榜单是平台公共还是用户/租户私有后，再接入 `board:view`、`board:compute` 并修正归属读取。
-- 操作：
-  - 给 `GET /api/scores/top`、`GET /api/scores` 挂 `board:view`，给 `GET /api/board/compute` 挂 `board:compute`。
-  - C1 确认后再处理 `board.py` 中 `DEFAULT_TENANT_ID/DEFAULT_OWNER_USER_ID` 的使用：如果榜单结果为个人资产，改为当前归属并补“新用户空榜单/惰性算分”处理；如果榜单为平台公共结果，则显式把榜单定义为全局只读数据并补公共读测试。
-  - 同步调整 R9/R21 验收样例，避免公共榜单与用户资产隔离口径混用。
-- 产出：每日榜单接口权限接入和归属口径落地。
-- 影响范围：`/board`、榜单计算、`score_result` 可见范围、普通用户首页榜单内容。
-- 边界与异常：C1 未确认前不得按“顺手改当前用户”或“沿用 admin 结果”擅自编码。
+- 目标：把每日榜单接入 `board:view`/`board:compute`，并将 `board.py` 的 `default/admin` 读取**显式定性为平台公共只读**（有意不带用户归属），而非用户私有资产读。
+- 操作（C1 = 公共榜单特例，口径已定）：
+  - 给 `GET /api/scores/top`、`GET /api/scores` 挂 `board:view`，`GET /api/board/compute` 挂 `board:compute`。
+  - `board.py` 读侧**保留平台公共归属**（现 `DEFAULT_TENANT_ID/DEFAULT_OWNER_USER_ID`），但把它从“stage1 未落 auth 的临时默认”改写为**显式的平台公共榜单归属常量**（命名与注释体现“有意全局、非用户私有”），并在 `CLAUDE.md`「资产归属与隔离」补一条：`score_result`/`score_snapshot` 公共榜单读**有意不带归属**（与 `indicator_def`/`mark_stale_*` 同类先例并列），防后续按私有资产铁律误加归属过滤。
+  - 生产者维持现状：调度“评分维护”/CLI 以 default/admin（= 平台公共归属）产出预设方案的 `score_result`/`score_snapshot`。本任务不改生产链路，只固化“预设方案归 default/admin”这一约定。
+  - `score:run`（`POST /api/score-profiles/run`）仍写**调用者个人归属**（属 T3a 的用户资产写，不在本任务），不进公共榜单；个人打分结果经 `POST /api/board/compute`（`persist=False`）即时查看。
+  - **不做**通用可见性/公开列、不做新用户预设分发（阶段四外）。
+- 产出：每日榜单接口权限接入 + 公共榜单归属口径显式固化 + CLAUDE.md 铁律。
+- 影响范围：`/board` 读侧、公共榜单归属常量、`score_snapshot` 公共读；不改 `score:run` 归属、不改生产调度。
+- 边界与异常：公共榜单读与私有资产隔离用例**必须分开**——公共读断言“全员同一份、有意不带 owner 过滤”，不可套用 profiles/groups 的跨账号不可见断言。
 - 验证方式：
-  - 无 `board:view` 用户访问榜单 403。
-  - 有 `board:view` 用户可按确认后的公共或私有口径看到正确结果。
-  - `board:compute` 与 `board:view` 分离测试。
-- 完成标准：C1 已确认，`board.py` 无未解释的默认归属读取，R9/R21 验收口径与实现一致。
+  - 无 `board:view` 的登录用户访问榜单 403；有 `board:view` 用户看到同一份公共榜单。
+  - 两个不同租户/用户读 `GET /api/scores/top` 得到**同一份**平台公共结果（公共读专项，区别于私有资产跨账号隔离用例）。
+  - `board:compute` 与 `board:view` 权限分离测试。
+- 完成标准：榜单接口有码；`board.py` 公共归属显式命名+注释、CLAUDE.md 铁律落地；公共读测试与私有隔离测试口径不混用。
 - 实际落地情况：待实施。
 
 ### 6.5 任务 T4：回测、训练和用户级布局配置接入
@@ -392,13 +413,14 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 操作：
   - 复核 `/me` 返回的 menus/resources 与角色授权一致。
   - normal/paid 默认菜单和资源能进入 `/board`、`/stocks`、`/screen`、`/backtest`、`/training`。
-  - 所有登录业务角色默认具备 `layout:view`、`trade-calendar:view`，自定义“有回测无个股”的角色也能加载交易日历。
+  - 所有登录业务角色强制具备 `layout:view`、`trade-calendar:view`、`indicator:registry`，自定义角色即使未显式授权或在角色页尝试反选，也能加载全站布局、交易日历和指标目录。
+  - 角色权限树中 `baseline_locked` 资源始终勾选且不可取消；保存授权后再次读取仍包含基线码。
   - tenant_admin 默认能进入业务页和用户管理页，不可见 system-only 菜单。
   - system 可见全量菜单和全量资源。
 - 产出：菜单与路由守卫回归。
 - 影响范围：登录后导航、刷新、直达 URL。
 - 边界与异常：`/me` 失败时继续 fail-closed，不回退静态全量菜单。
-- 验证方式：扩展 `test_rbac_me.py`、`SideMenu.spec.ts`、`utils/permission.spec.ts`。
+- 验证方式：扩展 `test_rbac_me.py`、`SideMenu.spec.ts`、`utils/permission.spec.ts`、`RoleManageView` 相关权限树测试。
 - 完成标准：不同角色菜单和首个落点符合预期；无权直达被导向安全落点。
 - 实际落地情况：待实施。
 
@@ -419,6 +441,8 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - 新增路由扫描：13 个存量模块所有非白名单 API 必须有资源码依赖、`require_system_perm` 或登记过的动态 scope 自守卫端点。
   - 动态 scope 自守卫端点专项测试：`POST /api/layout/reset` 的 user scope 有 `layout:user-config` 可用，page scope 非 system 403、system 通过。
   - 新增权限样例：无权限用户访问业务写接口返回 403；有资源码用户可进入业务层。
+  - 新增基线共享读样例：自定义角色未授 `stocks:view` 仍可访问 `GET /api/data/trade-dates`；未授配置页仍可访问 `GET /api/indicators/registry`；未授布局管理仍可访问 `GET /api/layout/presets`、`GET /api/layout/pages/{page_key}`、`GET /api/layout/effective/{page_key}`。
+  - 新增基线不可反选样例：角色授权保存时遗漏或移除 `_SHARED_RESOURCE_CODES`，后端仍强制并入，`/me.permissions` 仍包含这些码。
   - 新增 system-only 样例：tenant_admin 访问数据管理、指标写、布局平台配置仍 403。
   - 新增跨账号样例：profile/group/backtest/training/layout user config 不能互读互删。
   - 保留已有默认 deny、Redis fail-closed、安全头和限流测试。
@@ -441,10 +465,12 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - `frontend/src/directives/__tests__/permission.spec.ts`
   - `frontend/src/utils/__tests__/permission.spec.ts`
   - `frontend/src/components/__tests__/SideMenu.spec.ts`
+  - `frontend/src/views/system/__tests__/*.spec.ts`
   - 可新增 `frontend/src/views/__tests__/stage4-permissions.spec.ts`
 - 目标：验证按钮权限、菜单权限和构建产物。
 - 操作：
   - 扩展权限工具测试，覆盖新增权限码多码判断和 system 恒过。
+  - 扩展角色管理页测试，覆盖 `baseline_locked` 资源勾选置灰、不可反选和保存后仍回显。
   - 对关键页面操作按钮做轻量 mount 测试，至少覆盖数据页、业务页、布局页各一个样板。
   - 确认无权限时按钮被移除或禁用，有权限时渲染。
   - 构建生产产物，满足项目要求。
@@ -485,8 +511,8 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - SQL 文件路径：`agent-works/multi-tenant-rbac/stage4-existing-routes/resource-codes.sql`
 - 用途：
   - 人读留痕阶段四新增 `sys_resource` 清单。
-  - 既有数据库一次性回填阶段四资源码和内置角色默认业务授权。
-  - 回填默认授权后，同事务 bump 受影响用户 `perm_ver`，让旧 token 失效，避免 Redis perms 缓存继续按旧权限集服务。
+  - 既有数据库一次性回填阶段四资源码、基线码和内置角色默认业务授权。
+  - 回填默认授权或启用基线码后，同事务 bump 受影响用户 `perm_ver`，让旧 token 失效，避免 Redis perms 缓存继续按旧权限集服务。
   - 与 `backend/storage/pg_ddl.py` seed 互为校验依据。
 - 执行时机：
   - 开发期：T2 完成后在测试 PG 上执行或由新增迁移/CLI 包装执行。
@@ -494,6 +520,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 影响范围：
   - `sys_resource`
   - `sys_role_resource`
+  - 权限解析中的 `_SHARED_RESOURCE_CODES` 基线注入
   - 不改资产表结构，不改行情 DuckDB 表。
 - 回滚方式或不可回滚原因：
   - 资源码回滚需同步回滚代码中对应 `require_perm`，否则接口会因资源码缺失导致非 system 用户无法授权。
@@ -504,7 +531,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 ## 8. 测试与验证计划
 
 - 单元测试：
-  - 计划：补 `require_perm` 元数据、`require_system_perm`、权限工具函数、资源 seed 和默认授权测试。
+  - 计划：补 `require_perm` 元数据、`require_system_perm`、权限工具函数、资源 seed、`baseline_locked` 和默认授权测试。
   - 具体完成情况：待验证。
 - 接口测试：
   - 计划：新增阶段四路由扫描测试；对每类业务接口抽样验证 401/403/允许访问。
@@ -535,7 +562,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - 确认 `resource-codes.sql` 与 `pg_ddl.py` seed 一致。
 - 发布步骤：
   - 停服务：`./start.sh stop`。
-  - 应用数据库资源码回填脚本或对应 CLI。该步骤必须在同一 PG 事务内写入默认授权并 bump 受影响用户 `perm_ver`，提交后 best-effort 清 Redis perms 缓存；若无法清缓存，也必须通过 PG `perm_ver` 让旧 token 401 并要求相关用户重新登录。
+  - 应用数据库资源码回填脚本或对应 CLI。该步骤必须在同一 PG 事务内写入默认授权、启用基线码并 bump 受影响用户 `perm_ver`，提交后 best-effort 清 Redis perms 缓存；若无法清缓存，也必须通过 PG `perm_ver` 让旧 token 401 并要求相关用户重新登录。
   - 部署代码。
   - 启动服务：`./start.sh` 或生产脚本。
   - 用 system、tenant_admin、normal 三类账号抽样验证菜单、按钮和接口。
@@ -554,7 +581,9 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 资源码粒度过细会增加角色授权复杂度，过粗会削弱按钮级控制。T1 必须把同一业务动作归并清楚。
 - system-only 端点如果只改成 `require_perm`，会把数据管理/调度/系统配置误授权给非 system。必须使用 `require_system_perm` 或等价硬守卫组合。
 - 既有数据库的 non-system 内置角色不会被 `_seed_role_grants()` 自动覆盖。必须用一次性 SQL 或迁移命令补默认业务资源，否则普通用户会有菜单但无按钮/接口权限。
+- `_SHARED_RESOURCE_CODES` 如果只做默认授权而不做 `baseline_locked`，自定义角色反选后仍会造成全站布局、交易日历或指标目录 403。必须由后端权限解析和角色授权保存共同保证不可移除。
 - `board.py` 仍有默认归属读取，可能导致多用户看到 admin 榜单结果。C1 必须先确认公共/私有口径，随后 T3b 才能修正实现并落测试。
+- `score:run` 当前通过 `ScoreSnapshotRepo` 写入调用者归属下的 `score_snapshot/score_snapshot_meta`。如果 C1 确认为平台公共榜单，必须同步确定公共结果生产者和写入归属，避免只改读侧后公共榜单没有生产来源。
 - 前端按钮多、页面多，容易漏掉脚本调用路径。T6 后必须靠 T8/T9 扫描和测试兜底。
 
 ### 10.2 假设
@@ -565,11 +594,13 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 当前配置管理单页保持 system-only，普通用户评分规则/买卖指标独立入口留阶段五拆页后开放。
 - 行情/参考数据仍为全局共享只读，不做 tenant/owner 过滤。
 
-### 10.3 阻塞确认项
+### 10.3 阻塞确认项（已清零）
 
-| 编号 | 确认项 | 默认不得擅自采用的原因 | 影响 | 阻塞范围 |
-| --- | --- | --- | --- | --- |
-| C1 | 每日榜单结果归属：平台公共榜单，还是每个用户/租户私有榜单 | `board.py` 当前固定读取 `default/admin` 的 `score_result`，但 `score_result` 在阶段一被定义为用户资产；选择公共或私有会改变 R9 数据可见范围、普通用户首页是否有榜单、以及 R21 验收标准 | 影响 `GET /api/scores/top`、`GET /api/scores`、`GET /api/board/compute` 的归属过滤、默认数据来源、空状态和测试预期 | 阻塞 T3b 中 `board.py` 编码、R9/R21 验收口径 |
+| 编号 | 确认项 | 结论（2026-07-04 用户拍板） | 落地方式 |
+| --- | --- | --- | --- |
+| C1 | 每日榜单结果归属：平台公共榜单，还是每个用户/租户私有榜单；公共则由谁生产 | **✅ 已确认：平台公共榜单特例。** 预设评分方案归 default/admin；`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；生产者维持调度“评分维护”/CLI 以 default/admin 产出。个人自建方案结果仍纯私有、经 `POST /api/board/compute` 即时看，不进公共榜单。**通用「资产可见性/自助公开」模型（私有/同租户/全体 + 加载=自己+公开）与新用户预设分发不在阶段四，另立独立需求后排。** | 见 T3b（§6.4）：`board.py` 公共归属显式定性 + CLAUDE.md「有意不带归属」铁律 + 公共读专项测试。决议依据 [c1-board-ownership-options.md](c1-board-ownership-options.md) |
+
+> C1 已确认，阶段四无剩余编码前阻塞项，可全量进入 T1–T10。
 
 ### 10.4 非阻塞待确认项
 
