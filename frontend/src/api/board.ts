@@ -1,5 +1,6 @@
 // 榜单/评分 API（对应 backend/api/board.py）
 import http from './client'
+import type { ScoreProfileSummary, ScoreRunRow } from './scoreProfile'
 
 export interface SubScores {
   position: number
@@ -70,6 +71,20 @@ export function computeBoard(
   return http.get('/board/compute', {
     params: { date, top, ...(scoreProfileId ? { score_profile_id: scoreProfileId } : {}) },
   })
+}
+
+// ── 公共榜单（C1 平台公共榜单特例）──
+// 榜单页对全体登录用户共享同一份公共预设方案 + 公共评分（board:view 守卫，读 PUBLIC_BOARD_OWNER）。
+// 有意区别于 /score-profiles（score-profile:view，system-only + 按调用者归属，供配置页/个人试算）。
+export function listBoardProfiles(): Promise<ScoreProfileSummary[]> {
+  return http.get('/board/profiles')
+}
+export function runBoardProfile(body: {
+  profile_id: string
+  run_date?: string
+  top?: number
+}): Promise<{ run_date: string; top: number; count: number; list: ScoreRunRow[] }> {
+  return http.post('/board/run', body)
 }
 
 // 评分维度展示配置：key 对应 sub_scores 字段，max=该维度满分（=权重），color=分段条颜色

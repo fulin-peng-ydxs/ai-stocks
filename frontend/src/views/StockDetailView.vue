@@ -14,6 +14,8 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import { useStockSet } from '@/stores/stockSet'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/utils/permission'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import CandleChart from '@/components/CandleChart.vue'
@@ -261,7 +263,11 @@ function tagStyle(color?: string) {
   const c = color || '#909399'
   return { color: c, borderColor: c, backgroundColor: `${c}14` }
 }
+const auth = useAuthStore()
 async function loadGroups() {
+  // 次级加载按自身 view 码优雅降级：无 stock-group:view 的部分授权角色不拉分组、也不因此 403 卡住详情页主体
+  // （K 线/指标/交易评估仍可用）。默认业务角色含该码不受影响。与 StocksView.reloadGroups 同口径。
+  if (!hasPermission(auth.role, auth.permissions, 'stock-group:view')) return
   groups.value = await listGroups()
 }
 async function loadStockGroups() {

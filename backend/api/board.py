@@ -8,7 +8,7 @@ from datetime import date
 import pandas as pd
 from fastapi import APIRouter, Depends, Query
 
-from backend.api.response import ApiResponse, ok
+from backend.api.response import ApiResponse, err, ok
 from backend.auth.deps import require_perm
 from backend.storage import get_client, get_pg_client
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
@@ -132,6 +132,72 @@ def board_compute(date_: str = Query(..., alias="date"), top: int = 50,
         "total_score": round(float(r["total_score"]), 2), "grade": str(r["grade"]),
     } for _, r in board.iterrows()]
     return ok({"date": date_, "top": top, "list": rows})
+
+
+@router.get("/board/profiles", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("board:view"))])
+def board_profiles() -> ApiResponse:
+    """公共榜单可选的**预设评分方案**列表（C1 平台公共榜单特例）。
+
+    有意读 PUBLIC_BOARD_OWNER（default/admin 平台槽）的**预设**方案（is_preset=true），全员登录用户看
+    同一份、与当前用户归属无关——普通用户没有自建方案也能选公共预设看榜单（补齐 C1 公共榜单闭环：
+    此前榜单页误用 /score-profiles（score-profile:view，system-only + 按调用者归属）导致普通用户空/403）。
+    方案的增删改仍归 /system/config（score-profile:*，system-only），此处**只读、只暴露预设**。
+    """
+    from backend.scoring.score_profile import ScoreProfileRepo
+    repo = ScoreProfileRepo(get_client(), get_pg_client(),
+                            tenant_id=_OWN[0], owner_user_id=_OWN[1])
+    return ok([p for p in repo.list() if p.get("is_preset")])
+
+
+@router.post("/board/run", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("board:view"))])
+def board_run(body: dict) -> ApiResponse:
+    """按**公共预设方案**对某交易日全市场（排除 ST）打分排序，返回 Top N（含分项达标分）。
+
+    C1 平台公共榜单特例：方案与评分快照均归 PUBLIC_BOARD_OWNER、全员共享一份（不按当前用户过滤，
+    亦不写调用者个人快照）。只接受公共**预设**方案 id——个人自建方案的实时试算走 /score-profiles/run
+    （score:run，写调用者个人归属），二者归属与快照缓存天然分开、互不污染。
+    body: {profile_id, run_date?, top?}
+    """
+    import json
+
+    from backend.scoring.score_profile import ScoreProfileRepo
+    from backend.scoring.snapshot import ScoreSnapshotRepo
+
+    c = get_client()
+    pg = get_pg_client()
+    pid = body.get("profile_id")
+    prof = (ScoreProfileRepo(c, pg, tenant_id=_OWN[0], owner_user_id=_OWN[1]).get(pid)
+            if pid else None)
+    if not prof or not prof.get("is_preset"):
+        return err(404, "方案不存在")
+    run_date = (date.fromisoformat(body["run_date"]) if body.get("run_date")
+                else pd.Timestamp(c.query_df("SELECT max(trade_date) d FROM daily_bar").iloc[0]["d"]).date())
+    top = int(body.get("top", 50))
+    board = ScoreSnapshotRepo(c, pg, tenant_id=_OWN[0], owner_user_id=_OWN[1]).get_board(
+        run_date, pid, top=top, profile=prof)
+    if board.empty:
+        return ok({"run_date": str(run_date), "top": top, "count": 0, "list": []})
+    codes = board["code"].tolist()
+    names = c.query_df(
+        f"SELECT code, name FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes)
+    nm = dict(zip(names["code"], names["name"]))
+
+    def _subs(v) -> dict:
+        if isinstance(v, dict):
+            return v
+        try:
+            return json.loads(v) if v else {}
+        except (ValueError, TypeError):
+            return {}
+
+    rows = [{
+        "rank": int(r["rank"]), "code": r["code"], "name": nm.get(r["code"]),
+        "total_score": float(r["total_score"]), "grade": r["grade"],
+        "sub_scores": _subs(r.get("sub_scores")),
+    } for _, r in board.iterrows()]
+    return ok({"run_date": str(run_date), "top": top, "count": len(rows), "list": rows})
 
 
 @router.get("/scores", response_model=ApiResponse,

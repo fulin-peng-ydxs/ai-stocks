@@ -24,6 +24,8 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useStockSet, type StockListState } from '@/stores/stockSet'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/utils/permission'
 import { useTradeDates } from '@/composables/useTradeDates'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -173,7 +175,11 @@ const groupSortOrder = ref<'asc' | 'desc'>('asc')
 const groupTotal = computed(() => groupDetail.value?.members.total ?? 0)
 let restoringListState = false
 
+const auth = useAuthStore()
 async function reloadGroups() {
+  // 次级加载按自身 view 码优雅降级：无 stock-group:view 的部分授权角色（如只授 stocks:view）
+  // 不拉分组列表、也不因此 403 卡住个股行情主体。默认业务角色含该码不受影响。
+  if (!hasPermission(auth.role, auth.permissions, 'stock-group:view')) return
   groups.value = await listGroups()
 }
 const defaultGroup = computed(() => groups.value.find((g) => g.is_default))

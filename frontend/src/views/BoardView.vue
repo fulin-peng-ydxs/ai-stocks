@@ -3,12 +3,13 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getIndicatorRegistry,
-  listScoreProfiles,
-  runScoreProfile,
   type IndicatorDef,
   type ScoreProfileSummary,
   type ScoreRunRow,
 } from '@/api/scoreProfile'
+// 榜单页走**公共榜单**端点（board:view，读 PUBLIC_BOARD_OWNER 公共预设方案 + 公共评分，全员同一份），
+// 不再用 /score-profiles（score-profile:view 属 system-only + 按调用者归属，普通用户会 403/空）。
+import { listBoardProfiles, runBoardProfile } from '@/api/board'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -115,7 +116,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await runScoreProfile({
+    const res = await runBoardProfile({
       profile_id: profileId.value,
       run_date: runDate.value || undefined,
       top: topN.value,
@@ -149,7 +150,7 @@ function exportCsv() {
 onMounted(async () => {
   try {
     registry.value = (await getIndicatorRegistry(true)).items
-    profiles.value = await listScoreProfiles()
+    profiles.value = await listBoardProfiles()
     if (profiles.value.length) {
       profileId.value = profiles.value[0].id
       await load()

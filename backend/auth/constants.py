@@ -21,9 +21,11 @@ ASSIGNABLE_PRESET_ROLES: tuple[str, ...] = (ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE
 
 # ── 阶段四资源码基线（stage4·R21，见 stage4-existing-routes/resource-codes.sql）────────────────
 # baseline 登录基线共享读码（baseline_locked）：全站/研究基础共享读端点被多个页面或应用启动链路消费，
-# **所有已认证非 system 业务用户（有 ≥1 角色）恒可用、角色页不可反选**——由 perm_resolver.resolve 对非
-# system 用户强制并入（运行时权威），set_grants 保存时再强制并入（防线），二者互为兜底。无角色用户仍
-# fail-closed（不注入）。挂 login 菜单锚点（不可挂 visible='system'，否则被 system_only_resource_ids 误判）。
+# **所有已认证非 system 业务用户（有 ≥1 角色）恒可用、角色页不可反选**——**唯一权威**由
+# perm_resolver.resolve 对非 system 用户运行时强制并入（见 perm_resolver.resolve）；**不落 role_resource
+# 授权行、set_grants 有意不持久化 baseline**（保持 grants 表=显式授权、set/get 幂等，且无法被前端漏传/
+# 直调绕过）。无角色用户仍 fail-closed（不注入）。挂 login 菜单锚点（不可挂 visible='system'，否则被
+# system_only_resource_ids 误判）。
 SHARED_RESOURCE_CODES: tuple[str, ...] = (
     "layout:view",           # GET /api/layout/presets|pages/{k}|effective/{k}（全站布局生效读）
     "trade-calendar:view",   # GET /api/data/trade-dates（全站交易日历）

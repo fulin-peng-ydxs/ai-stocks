@@ -115,3 +115,68 @@ def test_board_compute_allowed_with_code(client, pg):
         assert r.status_code not in (401, 403)
     finally:
         _rm_user(pg, uid, tid, rid)
+
+
+@pytest.fixture()
+def public_preset(pg):
+    """在 PUBLIC_BOARD_OWNER 下写一条**预设**方案 + 一条**非预设**方案；用后清理。"""
+    ptid, pown = PUBLIC_BOARD_OWNER
+    preset_id = "t3b_preset_" + uuid.uuid4().hex[:6]
+    priv_id = "t3b_priv_" + uuid.uuid4().hex[:6]
+    for pid, is_preset in [(preset_id, True), (priv_id, False)]:
+        pg.execute(
+            "INSERT INTO score_profile (id,tenant_id,owner_user_id,name,version,items,"
+            "grade_thresholds,is_preset,created_at,updated_at) "
+            "VALUES (%s,%s,%s,%s,1,'[]','{}',%s,now(),now()) ON CONFLICT DO NOTHING",
+            [pid, ptid, pown, pid, is_preset])
+    yield preset_id, priv_id
+    pg.execute("DELETE FROM score_profile WHERE id IN (%s,%s)", [preset_id, priv_id])
+
+
+def test_board_profiles_requires_board_view(client, pg):
+    """无 board:view → /board/profiles 403（榜单页方案列表也走 board:view，非 system-only 的 score-profile:view）。"""
+    uid, tid, rid = _mk_user(pg, codes=[])   # 仅 baseline，无 board:view
+    try:
+        r = client.get("/api/board/profiles", headers=_auth(uid, tid))
+        assert r.status_code == 403 and r.json()["code"] == 4030
+    finally:
+        _rm_user(pg, uid, tid, rid)
+
+
+def test_board_profiles_shared_and_preset_only(client, pg, public_preset):
+    """P1 回归（Codex 复审）：两个不同租户的**非 system**用户读 /board/profiles → 都看到同一份公共
+    **预设**方案、且**非预设**方案不外泄（is_preset 过滤）。补齐 C1——普通用户无自建方案也能选公共预设看榜单
+    （此前榜单页误用 /score-profiles=score-profile:view system-only + 按调用者归属 → 普通用户 403/空）。"""
+    preset_id, priv_id = public_preset
+    ua, ta, ra = _mk_user(pg, codes=["board:view"])
+    ub, tb, rb = _mk_user(pg, codes=["board:view"])
+    assert ta != tb
+    try:
+        qa = client.get("/api/board/profiles", headers=_auth(ua, ta))
+        qb = client.get("/api/board/profiles", headers=_auth(ub, tb))
+        assert qa.status_code == 200 and qb.status_code == 200
+        ids_a = {p["id"] for p in qa.json()["data"]}
+        ids_b = {p["id"] for p in qb.json()["data"]}
+        assert preset_id in ids_a and preset_id in ids_b   # 公共预设全员可见、同一份
+        assert priv_id not in ids_a and priv_id not in ids_b   # 非预设（含 admin 私有）不外泄
+    finally:
+        _rm_user(pg, ua, ta, ra)
+        _rm_user(pg, ub, tb, rb)
+
+
+def test_board_run_requires_view_and_rejects_non_preset(client, pg, public_preset):
+    """/board/run 走 board:view；非预设/未知方案 → 404（不能借公共 run 跑私有/任意方案）。"""
+    preset_id, priv_id = public_preset
+    u0, t0, r0 = _mk_user(pg, codes=[])              # 无 board:view
+    u1, t1, r1 = _mk_user(pg, codes=["board:view"])  # 有 board:view
+    try:
+        assert client.post("/api/board/run", json={"profile_id": preset_id},
+                           headers=_auth(u0, t0)).status_code == 403
+        # 非预设方案 → 404（err() 业务码走 HTTP 200 包 code=404）
+        r = client.post("/api/board/run", json={"profile_id": priv_id}, headers=_auth(u1, t1))
+        assert r.status_code == 200 and r.json()["code"] == 404
+        r2 = client.post("/api/board/run", json={"profile_id": "nope"}, headers=_auth(u1, t1))
+        assert r2.json()["code"] == 404
+    finally:
+        _rm_user(pg, u0, t0, r0)
+        _rm_user(pg, u1, t1, r1)

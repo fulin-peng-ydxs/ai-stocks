@@ -21,7 +21,7 @@
 --     trade-calendar:view / indicator:registry）由 perm_resolver 对非 system 用户**强制注入**，
 --     本脚本只负责 sys_resource 落行 + perm_ver bump；不写 baseline 的 sys_role_resource 授权行。
 --
--- 影响范围：sys_resource（+38 行）、sys_role_resource（业务/ system 授权）、sys_user.perm_ver。
+-- 影响范围：sys_resource（+48 行，见文末合计）、sys_role_resource（业务/ system 授权）、sys_user.perm_ver。
 --   不改资产表结构，不改行情 DuckDB。
 --
 -- 回滚：删除本脚本新增资源码（sys_role_resource 随 FK ON DELETE CASCADE 清理）需**同步回滚代码**
@@ -50,9 +50,12 @@ INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, s
   ('indicator:registry',   '/screen', 'indicator:registry',   '指标目录读（研究基线）',       'api', 'GET',    '/api/indicators/registry',         10, TRUE),
 
   -- ── B) 每日榜单（/board，login）──
-  --   注(自审 F1)：榜单页 BoardView 运行时主加载走 score:run(POST /score-profiles/run，按用户方案实时打分)；
-  --   board:view(/scores/top·/scores) 前端当前未接入(闲置预留码，非假定义)、board:compute 由回测页消费。
-  --   配置「榜单」自定义角色须含 score:run，仅授 board:view 打不开页面。
+  --   Codex 复审 P1 已修(替代原自审 F1)：榜单页 BoardView 现主加载走 board:view——
+  --   GET /api/board/profiles(公共预设方案列表) + POST /api/board/run(公共预设打分)，读 PUBLIC_BOARD_OWNER
+  --   公共预设+公共评分、全员共享一份(补齐 C1 闭环，普通用户无自建方案也能看榜单)。配「榜单」角色只需 board:view。
+  --   score:run(POST /score-profiles/run) 现只服务配置页个人试算/compute(写调用者私有归属)、非榜单页主加载；
+  --   但 score:run 仍是业务码、菜单锚保持 /board(login) 方可授普通用户，勿挂 system-only 菜单。
+  --   board:compute 由回测页消费；/scores/top·/scores(board:view) 为前端暂未接入的固定模型公共榜单预留码。
   ('board:view',           '/board',  'board:view',           '查看每日榜单',   'api', 'GET',  '/api/scores/top',      30, TRUE),
   ('board:compute',        '/board',  'board:compute',        '榜单即时计算',   'api', 'GET',  '/api/board/compute',   40, TRUE),
   ('score:run',            '/board',  'score:run',            '评分方案打分',   'api', 'POST', '/api/score-profiles/run', 50, TRUE),

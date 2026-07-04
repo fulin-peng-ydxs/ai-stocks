@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from backend.auth.constants import ASSIGNABLE_PRESET_ROLES, ROLE_SYSTEM, SHARED_RESOURCE_CODES
+from backend.auth.constants import ASSIGNABLE_PRESET_ROLES, ROLE_SYSTEM
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -150,11 +150,3 @@ class RoleRepository:
             "SELECT r.id FROM sys_resource r JOIN sys_menu m ON m.id = r.menu_id "
             "WHERE m.visible = 'system'")
         return set(df["id"].tolist()) if not df.empty else set()
-
-    def baseline_resource_ids(self) -> list[str]:
-        """baseline_locked 基线共享读码中**已存在于 sys_resource** 的 id（=code，全局唯一）。
-
-        供角色授权保存时强制并入（set_grants 防线，与 perm_resolver.resolve 运行时注入互为兜底）。
-        取交集以防某基线码尚未 seed（新旧库过渡期），避免写入不存在的 resource_id 触发 FK 库错。
-        """
-        return sorted(self.existing_resource_ids(list(SHARED_RESOURCE_CODES)))

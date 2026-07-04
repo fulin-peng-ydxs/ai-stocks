@@ -13,6 +13,8 @@ import {
   type ScreenHit,
 } from '@/api/screening'
 import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/utils/permission'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -208,7 +210,11 @@ function parseAst(ast: Record<string, unknown>): { op: 'AND' | 'OR'; rows: Row[]
 const profiles = ref<Profile[]>([])
 const loadId = ref('')
 const loadedProfile = ref<Profile | null>(null)
+const auth = useAuthStore()
 async function loadProfiles() {
+  // 次级加载按自身 view 码优雅降级：无 screen-profile:view 的部分授权角色（如只授 screen:run）
+  // 不拉方案列表、也不因此 403 卡住页面主体（筛选构建/运行仍可用）。默认业务角色含该码不受影响。
+  if (!hasPermission(auth.role, auth.permissions, 'screen-profile:view')) return
   profiles.value = await listProfiles()
 }
 watch(loadId, async (id) => {
