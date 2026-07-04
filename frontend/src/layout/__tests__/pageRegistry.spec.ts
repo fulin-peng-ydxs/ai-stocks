@@ -85,7 +85,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
   it('listComponentUsage 命中真实消费页面，未消费组件返回空', () => {
     const tableUsers = listComponentUsage('data-table').map((u) => u.pageKey)
     expect(tableUsers).toEqual(expect.arrayContaining(['board', 'screen', 'stocks', 'data-quality']))
-    expect(listComponentUsage('tabs').map((u) => u.pageKey)).toContain('config')
+    expect(listComponentUsage('tabs').map((u) => u.pageKey)).not.toContain('config')
     // 目录中存在但无页面消费的组件（如 kanban）应返回空数组而非报错。
     expect(listComponentUsage('kanban')).toEqual([])
   })

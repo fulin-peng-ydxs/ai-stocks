@@ -43,7 +43,7 @@ const route = useRoute()
 const auth = useAuthStore()
 type ConfigTab = 'score' | 'tech' | 'trade' | 'system'
 const forcedTab = computed<ConfigTab | null>(() => (route.meta.configTab as ConfigTab | undefined) ?? null)
-const singleTab = computed(() => !!forcedTab.value)
+const activeTab = computed<ConfigTab>(() => forcedTab.value || 'score')
 const pageTitle = computed(() => {
   if (forcedTab.value === 'score') return '评分规则'
   if (forcedTab.value === 'trade') return '买卖指标'
@@ -51,7 +51,7 @@ const pageTitle = computed(() => {
   if (forcedTab.value === 'system') return '系统设置'
   return '配置管理'
 })
-// 默认 Tab 迁入组件配置层（tabs.defaultActive，用户层可记忆）；技术指标排序/预览展开属业务态保留（plan.md §13.3）。
+// 技术指标排序/预览展开属业务态保留（plan.md §13.3）。
 const configDefaults = {
   techSort: 'catOrder' as 'catOrder' | 'name_cn' | 'srcLabel',
   previewExpanded: true,
@@ -75,12 +75,8 @@ const {
   componentLayerValuesOf,
 } = useRemoteLayoutConfig(configLayout)
 
-// 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
+// 抽屉由 PageSettingsDrawer 按布局旋钮渲染；本页不再暴露 tabs 组件配置。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
-
-// 默认 Tab 由 ComponentAutoSettings 自动渲染写值；页面只读 getter 同步当前 tab。
-const defaultTab = computed<ConfigTab>(() => (componentValueOf('tabs', 'defaultActive') as ConfigTab) ?? 'score')
-const tab = ref<ConfigTab>(forcedTab.value || defaultTab.value)
 
 // ── 系统设置（FR-DM-12：真实参数 Web 可编辑，写 app_config 覆盖层）──
 const sysGroups = ref<SettingGroup[]>([])
@@ -116,16 +112,6 @@ async function saveSystem() {
     await loadSystem()
   } catch { /* 拦截器弹错（含校验失败 400） */ } finally { sysSaving.value = false }
 }
-function onTab(name: unknown) {
-  if (forcedTab.value) {
-    tab.value = forcedTab.value
-    return
-  }
-  if (name === 'system' && !sysGroups.value.length) loadSystem()
-}
-watch(defaultTab, (value) => { tab.value = forcedTab.value || value })
-watch(forcedTab, (value) => { if (value) tab.value = value })
-
 // ── 技术指标注册表（含内置 + 自定义）──
 const registry = ref<IndicatorDef[]>([])
 // 可作为评分项的指标（启用项）
@@ -165,7 +151,7 @@ const techRows = computed(() => {
       ...d,
       categories: cats,
       catOrder: cats.length ? (idx === -1 ? 900 : idx) : 999, // 按主分类的角度顺序排序
-      srcLabel: d.is_builtin ? '内置' : '自定义',
+      srcLabel: d.is_builtin ? '系统内置' : '自定义',
       hasParams: (d.params?.length ?? 0) > 0,
       typeLabel: d.dtype === 'bool' ? '布尔' : '数值',
     }
@@ -232,6 +218,8 @@ async function submitNewDef() {
 
 // ── 评分方案 ──
 const profiles = ref<ScoreProfileSummary[]>([])
+const profilesLoading = ref(false)
+const profilesError = ref(false)
 const curRef = ref<string>('')
 const curId = ref<string>('')
 const curVersion = ref<number | null>(null)
@@ -268,7 +256,16 @@ const weightSum = computed(() =>
 )
 
 async function loadProfiles() {
-  profiles.value = await listScoreProfiles()
+  profilesLoading.value = true
+  profilesError.value = false
+  try {
+    profiles.value = await listScoreProfiles()
+  } catch (e) {
+    profilesError.value = true
+    throw e
+  } finally {
+    profilesLoading.value = false
+  }
 }
 
 async function selectProfile(profileKey: string) {
@@ -537,6 +534,8 @@ import {
 } from '@/api/tradeProfile'
 
 const tProfiles = ref<TradeProfileSummary[]>([])
+const tProfilesLoading = ref(false)
+const tProfilesError = ref(false)
 const tCurId = ref('')
 const tCurVersion = ref<number | null>(null)
 const tEditId = ref('')
@@ -554,7 +553,16 @@ const NUM_CMP = [
 ]
 
 async function loadTradeProfiles() {
-  tProfiles.value = await listTradeProfiles()
+  tProfilesLoading.value = true
+  tProfilesError.value = false
+  try {
+    tProfiles.value = await listTradeProfiles()
+  } catch (e) {
+    tProfilesError.value = true
+    throw e
+  } finally {
+    tProfilesLoading.value = false
+  }
 }
 function condListOf(side: 'buy' | 'sell') {
   return side === 'buy' ? buyConds : sellConds
@@ -686,34 +694,87 @@ async function previewSide(side: 'buy' | 'sell') {
   } finally { previewing.value = '' }
 }
 
-onMounted(async () => {
-  tab.value = forcedTab.value || defaultTab.value
+const pageReady = ref(false)
+const pageInitError = ref(false)
+const baseReady = ref(false)
+let initSeq = 0
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+async function withInitialRetry<T>(task: () => Promise<T>): Promise<T> {
   try {
+    return await task()
+  } catch (first) {
     await auth.ensureLoaded()
-  } catch {
-    // /me 失败时后续接口会按权限 fail-closed，并由拦截器提示。
+    await sleep(250)
+    try {
+      return await task()
+    } catch {
+      throw first
+    }
   }
+}
+
+async function initScorePage() {
+  await withInitialRetry(async () => {
+    await loadProfiles()
+    if (profiles.value.length) await selectProfile(profiles.value[0].profile_ref || profiles.value[0].id)
+    else newProfile()
+  })
+}
+
+async function initTradePage() {
+  await withInitialRetry(async () => {
+    await loadTradeProfiles()
+    if (tProfiles.value.length) await selectTradeProfile(tProfiles.value[0].id)
+    else newTradeProfile()
+  })
+}
+
+async function retryScoreProfiles() {
   try {
-    await reloadRegistry()
-  } catch (e) { console.error('[config] reloadRegistry 失败', e) }
-  if (!forcedTab.value || forcedTab.value === 'score') {
-    try {
-      await loadProfiles()
-      if (profiles.value.length) await selectProfile(profiles.value[0].profile_ref || profiles.value[0].id)
-      else newProfile()
-    } catch (e) { console.error('[config] 评分方案初始化失败', e) }
+    await initScorePage()
+  } catch (e) {
+    console.error('[config] 评分方案重试失败', e)
   }
-  if (!forcedTab.value || forcedTab.value === 'trade') {
-    try {
-      await loadTradeProfiles()
-      if (tProfiles.value.length) await selectTradeProfile(tProfiles.value[0].id)
-      else newTradeProfile()
-    } catch (e) { console.error('[config] 买卖方案初始化失败', e); newTradeProfile() }
+}
+
+async function retryTradeProfiles() {
+  try {
+    await initTradePage()
+  } catch (e) {
+    console.error('[config] 买卖方案重试失败', e)
   }
-  if (forcedTab.value === 'system') {
-    try { await loadSystem() } catch (e) { console.error('[config] 系统设置初始化失败', e) }
+}
+
+async function ensureBaseReady() {
+  if (baseReady.value) return
+  await auth.ensureLoaded()
+  await withInitialRetry(reloadRegistry)
+  baseReady.value = true
+}
+
+async function initActivePage(tab: ConfigTab = activeTab.value) {
+  const seq = ++initSeq
+  pageReady.value = false
+  pageInitError.value = false
+  try {
+    await ensureBaseReady()
+    if (seq !== initSeq) return
+    if (tab === 'score') await initScorePage()
+    else if (tab === 'trade') await initTradePage()
+    else if (tab === 'system') await withInitialRetry(loadSystem)
+    if (seq === initSeq) pageReady.value = true
+  } catch (e) {
+    if (seq === initSeq) pageInitError.value = true
+    console.error(`[config] ${tab} 初始化失败`, e)
   }
-})
+}
+
+onMounted(() => { initActivePage() })
+watch(activeTab, (tab) => { initActivePage(tab) })
 </script>
 
 <template>
@@ -729,15 +790,32 @@ onMounted(async () => {
 
     <template #main>
     <div class="config-body">
-    <el-tabs v-model="tab" class="tabs" @tab-change="onTab">
+    <el-result
+      v-if="pageInitError"
+      icon="warning"
+      title="配置数据加载失败"
+      sub-title="权限、菜单或指标目录尚未就绪，请重试"
+      class="config-error"
+    >
+      <template #extra>
+        <el-button type="primary" @click="initActivePage()">重试</el-button>
+      </template>
+    </el-result>
+    <div v-else-if="!pageReady" class="config-loading">正在加载配置数据…</div>
+    <template v-else>
       <!-- ============ 评分规则 ============ -->
-      <el-tab-pane v-if="!forcedTab || forcedTab === 'score'" label="评分规则" name="score">
+      <template v-if="activeTab === 'score'">
         <div class="score-layout pane-fill">
           <!-- 方案列表 -->
-          <aside class="prof-list">
+          <aside class="prof-list" v-loading="profilesLoading">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
               ＋ 新建方案
             </el-button>
+            <el-result v-if="profilesError" icon="warning" title="方案加载失败" class="profile-error">
+              <template #extra>
+                <el-button type="primary" size="small" @click="retryScoreProfiles">重试</el-button>
+              </template>
+            </el-result>
             <ul>
               <li
                 v-for="p in profiles"
@@ -746,7 +824,7 @@ onMounted(async () => {
                 @click="selectProfile(p.profile_ref || p.id)"
               >
                 <span>{{ p.name }}</span>
-                <el-tag v-if="p.is_preset" size="small" type="info">预设</el-tag>
+                <el-tag v-if="p.is_preset" size="small" type="info">系统内置</el-tag>
                 <el-tag v-else-if="p.source === 'mine'" size="small" type="primary" effect="plain">我的</el-tag>
                 <el-tag v-else-if="p.source === 'tenant'" size="small" type="success" effect="plain">租户公开</el-tag>
                 <el-tag v-else-if="p.source === 'public'" size="small" type="warning" effect="plain">全体公开</el-tag>
@@ -941,14 +1019,14 @@ onMounted(async () => {
             </div>
           </section>
         </div>
-      </el-tab-pane>
+      </template>
 
       <!-- ============ 技术指标 ============ -->
-      <el-tab-pane v-if="!forcedTab || forcedTab === 'tech'" label="技术指标" name="tech">
+      <template v-else-if="activeTab === 'tech'">
         <div class="pane-fill tech-pane">
         <div class="tech-head">
           <p class="hint" style="margin: 0">
-            技术指标定义（动态实时计算,无指标值表）。内置不可删仅可启停;自定义=一段带参数的表达式,
+            技术指标定义（动态实时计算,无指标值表）。系统内置不可删仅可启停;自定义=一段带参数的表达式,
             供评分/筛选/买卖引用。表达式函数:MA/HHV/LLV/REF/COUNT/SUM/ABS,变量:C/O/H/L/V/TURN。
             分类可多选/自定义命名（直接输入新名回车即可）。
           </p>
@@ -994,7 +1072,7 @@ onMounted(async () => {
           <el-table-column label="计算 / 表达式" min-width="170">
             <template #default="{ row }">
               <code v-if="row.expression" class="expr">{{ row.expression }}</code>
-              <span v-else class="tip">内置·代码向量化计算（无 DSL 表达式）</span>
+              <span v-else class="tip">系统内置·代码向量化计算（无 DSL 表达式）</span>
             </template>
           </el-table-column>
           <el-table-column label="说明 / 用法" min-width="280">
@@ -1074,20 +1152,25 @@ onMounted(async () => {
           </template>
         </el-dialog>
         </div>
-      </el-tab-pane>
+      </template>
 
       <!-- ============ 买卖指标 ============ -->
-      <el-tab-pane v-if="!forcedTab || forcedTab === 'trade'" label="买卖指标" name="trade">
-        <div class="score-layout">
-          <aside class="prof-list">
+      <template v-else-if="activeTab === 'trade'">
+        <div class="score-layout pane-fill">
+          <aside class="prof-list" v-loading="tProfilesLoading">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newTradeProfile">
               ＋ 新建方案
             </el-button>
+            <el-result v-if="tProfilesError" icon="warning" title="方案加载失败" class="profile-error">
+              <template #extra>
+                <el-button type="primary" size="small" @click="retryTradeProfiles">重试</el-button>
+              </template>
+            </el-result>
             <ul>
               <li v-for="p in tProfiles" :key="p.id" :class="{ active: p.id === tCurId }"
                   @click="selectTradeProfile(p.id)">
                 <span>{{ p.name }}</span>
-                <el-tag v-if="p.is_preset" size="small" type="info">预设</el-tag>
+                <el-tag v-if="p.is_preset" size="small" type="info">系统内置</el-tag>
               </li>
             </ul>
           </aside>
@@ -1202,10 +1285,10 @@ onMounted(async () => {
             </div>
           </section>
         </div>
-      </el-tab-pane>
+      </template>
 
       <!-- ============ 系统设置（FR-DM-12）============ -->
-      <el-tab-pane v-if="!forcedTab || forcedTab === 'system'" label="系统设置" name="system">
+      <template v-else-if="activeTab === 'system'">
         <div class="sys-wrap" v-loading="sysLoading">
           <div class="sys-head">
             <span class="sys-tip">数据源 / 股票池 / 回测成本 / 选股数量等运行参数，改后即时生效。</span>
@@ -1229,15 +1312,15 @@ onMounted(async () => {
             </el-form>
           </el-card>
         </div>
-      </el-tab-pane>
-    </el-tabs>
+      </template>
+    </template>
     </div>
     </template>
 
     <template #overlays>
     <!-- 评分方案历史版本 -->
     <el-dialog v-model="sVerVisible" :title="`历史版本 · ${editName || ''}`" width="560px">
-      <el-empty v-if="!sVersions.length" description="暂无历史版本" />
+      <el-empty v-if="!sVersions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
       <div v-for="v in sVersions" :key="v.version" class="ver-item">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
@@ -1252,7 +1335,7 @@ onMounted(async () => {
 
     <!-- 买卖方案历史版本 -->
     <el-dialog v-model="tVerVisible" :title="`历史版本 · ${tEditName || ''}`" width="560px">
-      <el-empty v-if="!tVersions.length" description="暂无历史版本" />
+      <el-empty v-if="!tVersions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
       <div v-for="v in tVersions" :key="v.version" class="ver-item">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
@@ -1268,7 +1351,7 @@ onMounted(async () => {
 
     <PageSettingsDrawer
       v-model="settingsOpen"
-      title="配置管理"
+      :title="pageTitle"
       :dirty="isDirty || layoutDirty"
       page-key="config"
       :config="drawerConfig"
@@ -1306,33 +1389,33 @@ onMounted(async () => {
 .ov-tag { margin-left: 6px; }
 .page-head { display: flex; justify-content: space-between; align-items: center; }
 .config-body {
-  flex: 1 1 auto;   /* 填满 LayoutHost 的 .v-grow；Tabs 以 height:100% 取其确定高度 */
+  flex: 1 1 auto;   /* 填满 LayoutHost 的 .v-grow，页面内容在本区域内滚动 */
   min-height: 0;
-}
-.tabs {
   height: 100%;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-}
-.tabs :deep(.el-tabs__header) {
-  flex: 0 0 auto;
-  margin-bottom: 12px;
-}
-.tabs :deep(.el-tabs__content) {
-  flex: 1 1 auto;
-  min-height: 0;
   overflow: auto;
-}
-/* pane 钉死为内容区高度（而非 min-height），让 .v-grow 表格能拿到确定高度做表体内滚；
-   表单类 tab 内容超高时仍由 .el-tabs__content(overflow:auto) 兜底滚动，单一滚动轴 */
-.tabs :deep(.el-tab-pane) {
-  height: 100%;
 }
 .pane-fill {
   height: 100%;
   display: flex;
-  flex-direction: column;
+}
+.config-error {
+  height: 100%;
+}
+.config-loading {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--el-text-color-secondary);
+  font-size: 14px;
+}
+.profile-error {
+  padding: 12px 0;
+}
+.profile-error :deep(.el-result__title p) {
+  font-size: 13px;
 }
 .setting-item { display: flex; flex-direction: column; gap: 8px; }
 .setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
@@ -1348,7 +1431,7 @@ onMounted(async () => {
 .score-layout {
   display: flex;
   gap: 16px;
-  min-height: 0;  /* 评分 tab 下作为成长列容器，需可被钳定，editor 的 flex:1 才能正确分高 */
+  min-height: 0;  /* 评分/买卖工作区作为成长列容器，需可被钳定，editor 的 flex:1 才能正确分高 */
 }
 .prof-list {
   width: 190px;
@@ -1520,6 +1603,7 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 12px;
+  flex: none;
 }
 .tech-actions {
   display: flex;
@@ -1528,7 +1612,9 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 .tech-pane {
+  flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 /* 原依赖全局 .v-grow，迁移后改为页面内自带成长样式（表体内滚、表头吸顶） */
 .tech-table-wrap {

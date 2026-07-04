@@ -258,7 +258,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
               <el-button v-permission="'data-schedule:manage'" type="danger" link size="small" @click="remove(row)">删除</el-button>
             </template>
           </el-table-column>
-          <template #empty><span class="empty">暂无定时任务，点右上「新建定时任务」添加</span></template>
+          <template #empty>暂无定时任务，点右上「新建定时任务」添加</template>
         </el-table>
       </el-card>
 
@@ -277,7 +277,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <span class="src-state">{{ s.up === true ? '连通' : s.up === false ? '不可达' : '未测试' }}</span>
           <span class="src-meta">最近成功 {{ fmtTime(s.last_success_at) }} · 超时 {{ s.timeout_sec }}s</span>
         </div>
-        <div v-if="!displaySources.length" class="empty">点「测试连通」检查 AKShare / BaoStock 可达性</div>
+        <div v-if="!displaySources.length" class="app-empty-inline">点「测试连通」检查 AKShare / BaoStock 可达性</div>
       </el-card>
     </div>
     </template>
@@ -397,11 +397,10 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .src { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .src:last-child { border-bottom: none; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.dot.up { background: #67c23a; box-shadow: 0 0 0 3px rgba(103,194,58,.18); }
-.dot.down { background: #f56c6c; box-shadow: 0 0 0 3px rgba(245,108,108,.18); }
-.dot.unknown { background: #c0c4cc; }
+.dot.up { background: var(--el-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-success) 18%, transparent); }
+.dot.down { background: var(--app-danger-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-danger-text) 18%, transparent); }
+.dot.unknown { background: var(--app-placeholder-text); }
 .src-name { font-weight: 600; min-width: 78px; }
 .src-state { font-size: 13px; }
 .src-meta { font-size: 12px; color: var(--el-text-color-secondary); margin-left: auto; }
-.empty { color: var(--el-text-color-secondary); font-size: 13px; padding: 10px 0; }
 </style>

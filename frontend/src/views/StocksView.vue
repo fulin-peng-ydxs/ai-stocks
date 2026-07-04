@@ -886,7 +886,7 @@ onMounted(async () => {
 }
 .gb-edit-icon {
   font-size: 13px;
-  color: #c0c4cc;
+  color: var(--app-placeholder-text);
   margin-left: 2px;
 }
 .gb-name-edit:hover .gb-edit-icon {
@@ -918,7 +918,7 @@ onMounted(async () => {
 }
 .gb-hint,
 .f-hint {
-  color: #909399;
+  color: var(--app-muted-text);
   font-size: 12px;
 }
 .gb-ops {
@@ -927,7 +927,7 @@ onMounted(async () => {
   gap: 8px;
 }
 .gb-desc {
-  color: #909399;
+  color: var(--app-muted-text);
   font-size: 12px;
   max-width: 320px;
   overflow: hidden;
@@ -935,13 +935,13 @@ onMounted(async () => {
   white-space: nowrap;
 }
 .up {
-  color: #f56c6c;
+  color: var(--market-up-color);
 }
 .down {
-  color: #2e9e5b;
+  color: var(--market-down-color);
 }
 .muted {
-  color: #c0c4cc;
+  color: var(--app-placeholder-text);
 }
 .pager {
   margin-top: 12px;
@@ -978,7 +978,7 @@ onMounted(async () => {
   padding-top: 2px;
 }
 .cart-n b {
-  color: #f56c6c;
+  color: var(--market-up-color);
   font-size: 16px;
 }
 .chips {
@@ -992,7 +992,7 @@ onMounted(async () => {
   cursor: default;
 }
 .more {
-  color: #909399;
+  color: var(--app-muted-text);
   font-size: 12px;
   align-self: center;
 }

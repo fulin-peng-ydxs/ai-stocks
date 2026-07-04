@@ -188,8 +188,8 @@ onMounted(async () => {
           每日榜单
           <HelpTip title="榜单是怎么排出来的？" :width="420">
             <p><b>不是筛选，是打分排序</b>：选一个<b>评分规则方案</b>，对全市场（仅排除 ST）每只股票按规则打分，按综合分降序取 Top N。</p>
-            <p style="margin:6px 0 2px">榜单使用你可见的评分规则方案：自己的方案、租户公开方案、全体公开方案或平台内置预设。每条规则 = 技术指标 + 权重 + 达标打分方式（布尔/分段/线性），权重自动归一到 100%。</p>
-            <p style="margin:6px 0 0;color:#e6a23c"><b>⚠️ 注意</b>：全市场排序、不设硬门槛，行情差时前排也是"矮个里的高个"，<b>要看分数高低而非排名</b>。</p>
+            <p style="margin:6px 0 2px">榜单使用你可见的评分规则方案：自己的方案、租户公开方案、全体公开方案或系统内置方案。每条规则 = 技术指标 + 权重 + 达标打分方式（布尔/分段/线性），权重自动归一到 100%。</p>
+            <p style="margin:6px 0 0;color:var(--app-warning-text)"><b>⚠️ 注意</b>：全市场排序、不设硬门槛，行情差时前排也是"矮个里的高个"，<b>要看分数高低而非排名</b>。</p>
           </HelpTip>
         </h2>
         <span class="sub">
@@ -324,7 +324,7 @@ onMounted(async () => {
   align-items: center;
 }
 .sub {
-  color: #909399;
+  color: var(--app-muted-text);
   font-size: 13px;
 }
 .ops {
@@ -344,11 +344,11 @@ onMounted(async () => {
   gap: 8px;
 }
 .score {
-  color: #f56c6c;
+  color: var(--app-danger-text);
   font-size: 15px;
 }
 .muted {
-  color: #c0c4cc;
+  color: var(--app-placeholder-text);
 }
 .clickable :deep(.el-table__row) {
   cursor: pointer;
@@ -377,16 +377,16 @@ onMounted(async () => {
   font-variant-numeric: tabular-nums;
 }
 .subchip.score.hi {
-  background: rgba(82, 196, 26, 0.14);
+  background: var(--score-high-bg);
 }
 .subchip.score.hi b {
-  color: #52c41a;
+  color: var(--score-high-text);
 }
 .subchip.score.mid {
-  background: rgba(250, 173, 20, 0.16);
+  background: var(--score-mid-bg);
 }
 .subchip.score.mid b {
-  color: #d48806;
+  color: var(--score-mid-text);
 }
 .subchip.score.lo {
   background: var(--el-fill-color);

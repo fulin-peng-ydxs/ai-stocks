@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
-import { useLayoutPreset, type LayoutPresetKey } from '@/layout'
+import { setPresetOverrides, useLayoutPreset, type LayoutPresetKey } from '@/layout'
+import { listLayoutPresets } from '@/api/layout'
 import { useAuthStore } from '@/stores/auth'
 import SideMenu from '@/components/SideMenu.vue'
 
@@ -27,15 +28,37 @@ const roleLabel = computed(() => ROLE_LABEL[auth.role] ?? auth.role ?? '')
 const tenantLabel = computed(() => (auth.tenantId ? `租户 ${auth.tenantId}` : ''))
 const userSubline = computed(() => [roleLabel.value, tenantLabel.value].filter(Boolean).join(' · '))
 const loggingOut = ref(false)
+const shellReady = computed(() => !auth.isLoggedIn || auth.menusStatus === 'ready')
+let shellBootstrapping = false
+let presetOverridesLoaded = false
 
-// 挂载即确保 /me 就绪（刷新身份 + 填充菜单/权限，与路由守卫共用去重）：token 失效由 http 拦截器统一 401→跳登录
-onMounted(() => {
-  if (!isFullscreen.value && auth.isLoggedIn) {
-    auth.ensureLoaded().catch(() => {
-      /* 失败(401 等)已由拦截器处理；菜单加载失败由 SideMenu 显错误态 + 重试 */
-    })
+async function loadPresetOverridesAfterAuth() {
+  if (presetOverridesLoaded) return
+  const { presets } = await listLayoutPresets()
+  const map: Record<string, Record<string, string | number>> = {}
+  for (const p of presets) {
+    const values = p.config?.values
+    if (values && Object.keys(values).length) map[p.key] = values as Record<string, string | number>
   }
-})
+  if (Object.keys(map).length) setPresetOverrides(map)
+  presetOverridesLoaded = true
+}
+
+async function bootstrapAuthenticatedShell() {
+  if (shellBootstrapping || isFullscreen.value || !auth.isLoggedIn) return
+  shellBootstrapping = true
+  try {
+    await auth.ensureLoaded()
+    await loadPresetOverridesAfterAuth()
+  } catch {
+    /* 失败(401 等)已由拦截器处理；菜单加载失败由 SideMenu 显错误态 + 重试 */
+  } finally {
+    shellBootstrapping = false
+  }
+}
+
+// 非全屏受控页渲染前后都以 /me 为身份事实源；登录页不再发受控布局接口，避免首登旧 401 清新 token。
+watch(() => [isFullscreen.value, auth.isLoggedIn, auth.menusStatus], bootstrapAuthenticatedShell, { immediate: true })
 
 async function onLogout() {
   loggingOut.value = true
@@ -50,7 +73,7 @@ async function onLogout() {
 </script>
 
 <template>
-  <router-view v-if="isFullscreen" />
+  <router-view v-if="isFullscreen" :key="route.path" />
   <el-container v-else class="app">
     <el-aside width="208px" class="aside">
       <div class="brand">
@@ -94,8 +117,17 @@ async function onLogout() {
       </el-header>
 
       <el-main class="main">
-        <router-view v-slot="{ Component }">
-          <component :is="Component" />
+        <div v-if="!shellReady" class="shell-gate">
+          <template v-if="auth.menusStatus === 'error'">
+            <div class="shell-gate-title">权限与菜单加载失败</div>
+            <el-button type="primary" @click="auth.retryMe()">重试</el-button>
+          </template>
+          <template v-else>
+            <div class="shell-gate-title">正在加载权限与菜单…</div>
+          </template>
+        </div>
+        <router-view v-else v-slot="{ Component }">
+          <component :is="Component" :key="route.path" />
         </router-view>
       </el-main>
     </el-container>
@@ -444,5 +476,17 @@ async function onLogout() {
 .main > * {
   flex: 1 1 auto;
   min-height: 0;
+}
+.shell-gate {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--el-text-color-secondary);
+}
+.shell-gate-title {
+  font-size: 14px;
 }
 </style>

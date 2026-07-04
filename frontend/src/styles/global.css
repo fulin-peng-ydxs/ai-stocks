@@ -61,6 +61,20 @@ body {
   --page-settings-tip-border: #cfd6e1;
   --page-settings-footer-btn-bg: #f0f3f8;
   --page-settings-footer-btn-hover-bg: #e7ecf3;
+  --app-empty-text: #8a96a8;
+  --app-empty-icon-opacity: 0.72;
+  --app-warning-text: #e6a23c;
+  --app-danger-text: #f56c6c;
+  --app-muted-text: #909399;
+  --app-placeholder-text: #c0c4cc;
+  --market-up-color: #ef4d4d;
+  --market-down-color: #22b573;
+  --score-high-bg: rgba(82, 196, 26, 0.14);
+  --score-high-text: #52c41a;
+  --score-mid-bg: rgba(250, 173, 20, 0.16);
+  --score-mid-text: #d48806;
+  --perm-group-color: #64748b;
+  --perm-feature-color: var(--el-color-warning);
 }
 
 /* ── 全站自适应布局契约（禁止整页滚动；内容超高 → 成长区内部滚动）──
@@ -89,6 +103,60 @@ body {
 .v-grow.el-card > .el-card__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 /* 成长区里的表格占满；其后的分页等保持自身高 */
 .v-grow .el-table { flex: 1 1 auto; min-height: 0; }
+
+/* 全站空态规范：
+   - 列表/表格空态统一为「居中图标 + 场景文案」。
+   - 文案可以按业务不同保留差异，但视觉层级、尺寸、间距一致。
+   - 未显式写 empty slot 的 el-table 也自动套用同一套图标与文字样式。 */
+.app-empty {
+  width: 100%;
+  margin: auto;
+  padding: 32px 0;
+}
+.app-empty--compact {
+  padding: 18px 0;
+}
+.app-empty--tiny {
+  padding: 10px 0;
+}
+.app-empty .el-empty__description,
+.el-empty__description {
+  margin-top: 8px;
+}
+.app-empty .el-empty__description p,
+.el-empty__description p {
+  margin: 0;
+  color: var(--app-empty-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.app-empty-inline {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-empty-text);
+  font-size: 13px;
+  text-align: center;
+}
+.el-table__empty-block {
+  min-height: 180px;
+}
+.el-table__empty-text {
+  width: 100%;
+  color: var(--app-empty-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.el-table__empty-text::before {
+  content: "";
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 10px;
+  opacity: var(--app-empty-icon-opacity);
+  background: url("data:image/svg+xml,%3Csvg width='96' height='96' viewBox='0 0 96 96' xmlns='http://www.w3.org/2000/svg'%3E%3Cellipse cx='48' cy='79' rx='32' ry='5' fill='%23eef2f7'/%3E%3Cpath d='M29 38h38l9 14-9 13H29L20 52l9-14Z' fill='%23f4f7fb'/%3E%3Cpath d='M29 38h38v36H29V38Z' fill='%23edf1f7'/%3E%3Cpath d='M29 38 48 48l19-10v36H29V38Z' fill='%23e4e9f1'/%3E%3Cpath d='M20 52h28l-8 15H13l7-15Zm56 0H48l8 15h27l-7-15Z' fill='%23f8fafc'/%3E%3Cpath d='M29 38 40 20l36 18-9 14-38-14Z' fill='%23e8edf5'/%3E%3Cpath d='M40 20 56 32l20 6-36-18Z' fill='%23dce3ee'/%3E%3C/svg%3E") center / contain no-repeat;
+}
 
 /* 交易日历高亮（回测页日期选择器，popper 挂在 body 故用全局样式 + popper-class 限定）：
    交易日=醒目蓝色高亮块，非交易日=明显弱化，一眼区分可选与不可选 */
@@ -167,6 +235,20 @@ html.dark {
   --page-settings-tip-border: #4d5664;
   --page-settings-footer-btn-bg: rgba(112, 120, 133, 0.22);
   --page-settings-footer-btn-hover-bg: rgba(128, 137, 151, 0.34);
+  --app-empty-text: #8c96a8;
+  --app-empty-icon-opacity: 0.55;
+  --app-warning-text: #e6a23c;
+  --app-danger-text: #ff7b7b;
+  --app-muted-text: #8c96a8;
+  --app-placeholder-text: #687386;
+  --market-up-color: #ff6b6b;
+  --market-down-color: #45c486;
+  --score-high-bg: rgba(82, 196, 26, 0.18);
+  --score-high-text: #7bdc5b;
+  --score-mid-bg: rgba(250, 173, 20, 0.2);
+  --score-mid-text: #f0b84a;
+  --perm-group-color: #94a3b8;
+  --perm-feature-color: var(--el-color-warning);
 }
 
 .page-head-actions {

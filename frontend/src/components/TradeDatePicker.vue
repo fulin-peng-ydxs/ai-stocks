@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // 全站统一的交易日日期选择器：中文格式 + 只能选真实交易日 + 交易日高亮（trade-cal 样式见 global.css）
+import { onMounted } from 'vue'
 import { useTradeDates } from '@/composables/useTradeDates'
 
 defineProps<{
@@ -9,7 +10,8 @@ defineProps<{
 }>()
 const emit = defineEmits<{ 'update:modelValue': [v: string | null] }>()
 
-const { disabledTradeDate } = useTradeDates()
+const { disabledTradeDate, ensureLoaded } = useTradeDates()
+onMounted(() => { ensureLoaded() })
 </script>
 
 <template>

@@ -634,7 +634,7 @@ onBeforeUnmount(() => {
           </div>
         </template>
         <div v-loading="tradeLoading">
-          <el-empty v-if="!tradeEval" description="选择买卖方案以评估当日信号" :image-size="60" />
+          <el-empty v-if="!tradeEval" class="app-empty app-empty--compact" description="选择买卖方案以评估当日信号" />
           <div v-else class="trade-body">
             <div class="signal-row">
               <el-tag :type="tradeEval.buy_signal ? 'danger' : 'info'" effect="dark" size="large">
@@ -656,7 +656,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="cond-col">
                 <div class="cond-title">卖出条件（{{ tradeEval.sell.op === 'AND' ? '需全部满足' : '满足任一' }}）</div>
-                <el-empty v-if="!tradeEval.sell.conds.length" description="无卖出条件" :image-size="40" />
+                <el-empty v-if="!tradeEval.sell.conds.length" class="app-empty app-empty--tiny" description="无卖出条件" />
                 <div v-for="(cc, i) in tradeEval.sell.conds" :key="i" class="cond-line">
                   <el-tag :type="cc.met ? 'success' : 'info'" size="small" effect="plain">
                     {{ cc.met ? '✓' : '✗' }}

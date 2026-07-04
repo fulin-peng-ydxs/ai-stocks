@@ -362,7 +362,7 @@ onMounted(() => { loadTree() })
                 </span>
               </template>
             </el-tree>
-            <el-empty v-if="!treeLoading && !tree.length" description="暂无菜单" :image-size="72" />
+            <el-empty v-if="!treeLoading && !tree.length" class="app-empty app-empty--compact" description="暂无菜单" />
           </div>
         </div>
 
@@ -377,7 +377,7 @@ onMounted(() => { loadTree() })
                 </div>
                 <div class="mmeta">
                   标识 {{ activeMenu.code }}
-                  <span v-if="activeMenu.is_builtin" class="builtin-note"> · 内置菜单（对应已发布页面，不可删除）</span>
+                  <span v-if="activeMenu.is_builtin" class="builtin-note"> · 系统内置菜单（对应已发布页面，不可删除）</span>
                 </div>
               </div>
               <div class="page-head-actions">
@@ -428,7 +428,7 @@ onMounted(() => { loadTree() })
                     <HelpTip title="功能点说明" :width="360">
                       功能码全局唯一、稳定不可复用（与后端接口权限码对账）；<br />
                       「接口」类绑定后端接口路径，「按钮」类为前端动作；<br />
-                      内置功能点不可改不可删；删除被角色引用的功能点会同时解除授权。
+                      系统内置功能点不可改不可删；删除被角色引用的功能点会同时解除授权。
                     </HelpTip>
                   </h4>
                   <el-button v-permission="'resource:create'" size="small" :disabled="editingId === NEW_ROW"
@@ -476,7 +476,7 @@ onMounted(() => { loadTree() })
                                        :disabled="r.is_builtin || editingId !== ''" @click="startEditRes(r)">编辑</el-button>
                             <el-button v-permission="'resource:delete'" link type="danger" size="small"
                                        :disabled="r.is_builtin" @click="removeRes(r)">删</el-button>
-                            <span v-if="r.is_builtin" class="builtin-tag">内置</span>
+                            <span v-if="r.is_builtin" class="builtin-tag">系统内置</span>
                           </td>
                         </tr>
                       </template>
@@ -504,7 +504,7 @@ onMounted(() => { loadTree() })
                       </tr>
                       <tr v-if="resError">
                         <td colspan="5" class="mr-empty">
-                          功能点加载失败
+                          <span>功能点加载失败</span>
                           <el-button link type="primary" size="small" @click="retryResources">重试</el-button>
                         </td>
                       </tr>
@@ -525,7 +525,7 @@ onMounted(() => { loadTree() })
               </div>
             </div>
           </template>
-          <el-empty v-else description="请选择左侧菜单节点" :image-size="72" />
+          <el-empty v-else class="app-empty app-empty--compact" description="请选择左侧菜单节点" />
         </div>
       </div>
     </template>
@@ -622,7 +622,15 @@ onMounted(() => { loadTree() })
 .mr-ftable tbody td { padding: 7px 12px; border-bottom: 1px solid var(--el-border-color-lighter); color: var(--el-text-color-regular); vertical-align: middle; }
 .mr-ftable tbody tr:last-child td { border-bottom: none; }
 .mr-ftable .dim { color: var(--el-text-color-placeholder); }
-.mr-ftable .mr-empty { text-align: center; color: var(--el-text-color-secondary); padding: 18px; }
+.mr-ftable .mr-empty {
+  text-align: center;
+  color: var(--app-empty-text);
+  padding: 18px;
+  font-size: 13px;
+}
+.mr-ftable .mr-empty > span {
+  margin-right: 6px;
+}
 .mr-edit-row td { background: var(--el-fill-color-lighter); }
 .mr-bind { display: flex; gap: 6px; }
 .builtin-tag { font-size: 11px; color: var(--el-text-color-secondary); margin-left: 4px; }

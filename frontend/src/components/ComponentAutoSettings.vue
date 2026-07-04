@@ -370,7 +370,7 @@ function setSort(slotId: string, field: string, order: string): void {
       </div>
     </SettingsGroup>
   </div>
-  <el-empty v-else description="该页暂无可配置的组件" :image-size="48" />
+  <el-empty v-else class="app-empty app-empty--compact" description="该页暂无可配置的组件" />
 </template>
 
 <style scoped>

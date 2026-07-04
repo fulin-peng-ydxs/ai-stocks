@@ -27,7 +27,7 @@ const effState = computed<ComponentState>(() => {
     <div v-if="effState === 'loading'" class="cp-state">
       <el-skeleton :rows="3" animated />
     </div>
-    <el-empty v-else-if="effState === 'empty'" description="暂无数据" :image-size="48" />
+    <el-empty v-else-if="effState === 'empty'" class="app-empty app-empty--compact" description="暂无数据" />
     <div v-else-if="effState === 'error'" class="cp-state cp-error">
       <span class="cp-error-icon">⚠</span>
       <span>加载失败</span>

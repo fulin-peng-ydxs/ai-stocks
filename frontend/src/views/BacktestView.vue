@@ -188,7 +188,7 @@ const runOptions = computed(() =>
     return {
       id: r.id, label: `${who}·${year}`,
       range: `${(r.date_start || '').slice(0, 10)} ~ ${(r.date_end || '').slice(0, 10)}`,
-      color: ret == null ? '' : ret >= 0 ? '#ef4d4d' : '#22b573',
+      color: ret == null ? '' : ret >= 0 ? 'var(--market-up-color)' : 'var(--market-down-color)',
       retTxt: ret == null ? '' : (ret >= 0 ? '+' : '') + (ret * 100).toFixed(1) + '%',
     }
   }),
@@ -713,7 +713,7 @@ async function openTradeChart(row: TradeRow) {
             <li><b>策略回测</b>：逐日「先卖后买」事件驱动撮合——T 日选股、<b>T+1 开盘成交</b>，跌破 MA 卖出；含交易成本、涨跌停/停牌不可成交、退市强平。算真实资金曲线。</li>
             <li><b>信号质量</b>：纯统计「分越高，N 日内摸到 X% 涨幅的概率是否越高」，并<b>减去全市场基线(base rate)</b>得超额——这才是评分的真实能力。</li>
           </ul>
-          <p style="margin:6px 0 0;color:#e6a23c"><b>⚠️ 防坑</b>：① 用未来 N 日是「评估」非未来函数；② 短区间「年化/卡玛」会被放大，只看长周期；③ 样本量小(n小)的分档不可信。</p>
+          <p style="margin:6px 0 0;color:var(--app-warning-text)"><b>⚠️ 防坑</b>：① 用未来 N 日是「评估」非未来函数；② 短区间「年化/卡玛」会被放大，只看长周期；③ 样本量小(n小)的分档不可信。</p>
         </HelpTip>
       </h2>
       <div class="page-head-actions">
@@ -797,7 +797,7 @@ async function openTradeChart(row: TradeRow) {
         <span class="lbl strong">卖出规则
           <HelpTip title="什么时候卖出" :width="360">
             <p><b>跌破均线</b>为基准退出（必选）；<b>止盈/止损/到期</b>为可选叠加——任一触发即在次日开盘卖出。</p>
-            <p style="margin:6px 0 0;color:#909399">想用指标组合做买卖？上方选一个「买卖方案」即可接管。</p>
+            <p style="margin:6px 0 0;color:var(--app-muted-text)">想用指标组合做买卖？上方选一个「买卖方案」即可接管。</p>
           </HelpTip>
         </span>
         <span class="lbl">跌破</span>
@@ -1016,7 +1016,7 @@ async function openTradeChart(row: TradeRow) {
         </div>
       </el-card>
 
-      <el-empty v-if="!loading && !strat && !sig" description="设置参数后点「运行回测」" />
+      <el-empty v-if="!loading && !strat && !sig" class="app-empty" description="设置参数后点「运行回测」" />
     </div>
     </div>
     </template>
@@ -1273,15 +1273,15 @@ async function openTradeChart(row: TradeRow) {
 .m-label { font-size: 12px; color: var(--el-text-color-secondary); }
 .m-hint { margin-left: 3px; cursor: help; }
 .m-val { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 4px; }
-.metric.good .m-val { color: #ef4d4d; }
-.metric.bad .m-val { color: #22b573; }
+.metric.good .m-val { color: var(--market-up-color); }
+.metric.bad .m-val { color: var(--market-down-color); }
 .hit { font-weight: 600; font-variant-numeric: tabular-nums; }
-.excess { display: block; font-size: 11px; color: #22b573; }
-.excess.pos { color: #ef4d4d; }
-.unreliable { display: block; font-size: 10px; color: #e6a23c; }
+.excess { display: block; font-size: 11px; color: var(--market-down-color); }
+.excess.pos { color: var(--market-up-color); }
+.unreliable { display: block; font-size: 10px; color: var(--app-warning-text); }
 .base { color: var(--el-text-color-secondary); }
 .legend-line { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 8px; }
-.up { color: #ef4d4d; } .down { color: #22b573; }
+.up { color: var(--market-up-color); } .down { color: var(--market-down-color); }
 .muted { color: var(--el-text-color-placeholder); }
 .clickable :deep(.el-table__row) { cursor: pointer; }
 </style>

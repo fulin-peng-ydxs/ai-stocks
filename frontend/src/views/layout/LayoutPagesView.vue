@@ -455,7 +455,7 @@ onMounted(async () => {
               </el-descriptions>
               <el-collapse class="source-collapse">
                 <el-collapse-item title="页面默认布局字段" name="editable">
-                  <el-table :data="selectedPage.layout.editable" max-height="140" size="small">
+                  <el-table v-if="selectedPage.layout.editable.length" :data="selectedPage.layout.editable" max-height="140" size="small">
                     <el-table-column prop="label" label="字段" min-width="110" />
                     <el-table-column prop="path" label="路径" min-width="150" />
                     <el-table-column prop="type" label="类型" width="80" />
@@ -465,7 +465,7 @@ onMounted(async () => {
                       </template>
                     </el-table-column>
                   </el-table>
-                  <el-empty v-if="!selectedPage.layout.editable.length" description="该页无页面默认布局字段" :image-size="40" />
+                  <el-empty v-if="!selectedPage.layout.editable.length" class="app-empty app-empty--tiny" description="该页无页面默认布局字段" />
                 </el-collapse-item>
               </el-collapse>
             </section>
@@ -526,8 +526,8 @@ onMounted(async () => {
                   </el-form-item>
                   <el-empty
                     v-if="!selectedPage.layout.editable.length"
+                    class="app-empty app-empty--compact"
                     description="该页面未开放页面级布局旋钮"
-                    :image-size="56"
                   />
                 </el-form>
 
@@ -553,14 +553,14 @@ onMounted(async () => {
                   </div>
                   <el-empty
                     v-else
+                    class="app-empty app-empty--compact"
                     description="点击左侧预览中的一个组件后，在这里编辑它的页面默认配置"
-                    :image-size="48"
                   />
                 </template>
 
                 <div class="cc-block-title">只读诊断</div>
                 <div class="section-subtitle">只显示当前点击 slot 的消费、可覆盖范围和安全枚举诊断；不可编辑字段只在这里解释原因。</div>
-                <el-table :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table">
+                <el-table v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table">
                   <el-table-column label="slot / 组件" min-width="140">
                     <template #default="{ row }">
                       <div class="diag-main">{{ row.slot }}</div>
@@ -582,8 +582,8 @@ onMounted(async () => {
                 </el-table>
                 <el-empty
                   v-if="!focusedDiagnosticRows.length"
+                  class="app-empty app-empty--compact"
                   :description="focusedSlotSpec ? '当前 slot 暂无组件字段消费诊断' : '点击左侧预览中的一个组件后查看诊断'"
-                  :image-size="44"
                 />
 
                 <div class="button-row cc-save-row">

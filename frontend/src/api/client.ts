@@ -32,6 +32,15 @@ function redirectToLogin() {
   window.location.assign(`/login?redirect=${redirect}`)
 }
 
+function requestBearerToken(error: unknown): string {
+  const headers = (error as any)?.config?.headers
+  const raw = typeof headers?.get === 'function'
+    ? headers.get('Authorization')
+    : headers?.Authorization || headers?.authorization || ''
+  const value = String(raw || '')
+  return value.startsWith('Bearer ') ? value.slice(7) : ''
+}
+
 // 响应拦截：业务 code !== 0 统一提示并抛错；成功直接返回 data
 http.interceptors.response.use(
   (resp) => {
@@ -53,6 +62,11 @@ http.interceptors.response.use(
       if (window.location.pathname === '/login') {
         ElMessage.error(msg || '账号或密码错误')
       } else {
+        const currentToken = getAccessToken()
+        const failedToken = requestBearerToken(error)
+        if (currentToken && failedToken !== currentToken) {
+          return Promise.reject(error)
+        }
         redirectToLogin()
       }
       return Promise.reject(error)

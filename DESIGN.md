@@ -123,6 +123,13 @@ Key Characteristics：
 
 金融涨跌色遵循当前项目口径：上涨/正收益多用红色，下跌/负收益多用绿色；不要套用海外红跌绿涨习惯。
 
+语义 token 规则：
+
+- 权限树颜色使用 `--perm-group-color`、`--perm-feature-color`；菜单点使用 Element Plus 成功色，不在页面内写死色值。
+- 金融涨跌使用 `--market-up-color` / `--market-down-color`，不要在页面里直接写红绿 hex。
+- 分项评分徽章使用 `--score-high-*` / `--score-mid-*`，低分使用弱底色和占位文字色。
+- 页面提示、弱文本、占位文本优先使用 `--app-warning-text`、`--app-muted-text`、`--app-placeholder-text`；确属 Element Plus 标准状态时可直接用 `var(--el-color-*)`。
+
 预设规则：
 
 - `professional`：默认后台风，适合绝大多数管理和研究页面。
@@ -179,6 +186,18 @@ Key Characteristics：
 - 列宽按信息类型分配：编号、状态、日期、操作列稳定窄列；名称、标题、描述、备注更宽；数字列保持易比较。
 - 操作列优先单行可见；操作过多时用分组、下拉、详情入口或抽屉，不用多行按钮堆叠。
 - 宽表通过表体横向滚动承载，不让整页横向滚动。
+
+### 空状态
+
+空状态的视觉事实源在 `frontend/src/styles/global.css`，后续新页面必须复用同一套类名和全局表格空态，不允许临时手写不同图标、不同字号或不同位置。
+
+- `el-table` 无数据时默认使用全局表格空态：居中图标 + 当前表格文案。新页面优先使用表格默认空态或 `<template #empty>` 只提供业务文案，不再自绘图标和布局。
+- 非表格的大区域空态使用 `<el-empty class="app-empty" description="..." />`。
+- 小面板、抽屉、弹窗内空态使用 `<el-empty class="app-empty app-empty--compact" description="..." />`。
+- 很小的内嵌区域使用 `<el-empty class="app-empty app-empty--tiny" description="..." />`。
+- 不适合放图标的原生小表格、日志区、选择器下拉空态使用 `class="app-empty-inline"`。
+- 文案按业务场景保留差异，例如“运行后在这里展示筛选结果”“暂无历史版本”“请选择左侧角色”；统一的是图标、字号、颜色、间距和居中方式。
+- 避免同一区域出现两套空态：若表格后面还需要自定义 `el-empty`，必须用 `v-if` 在有数据时才渲染表格，无数据时只渲染一套统一空态。
 
 ### 卡片、面板与分区
 
@@ -346,7 +365,6 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `data-table` | `defaultSort` | page/user | board、screen、data-quality、stocks、backtest |
 | `data-table` | `hiddenColumns` | page/user | board、screen、data-quality、stocks、backtest |
 | `data-table` | `pageSize` | preset/page/user | stocks 普通列表 |
-| `tabs` | `defaultActive` | page/user | config |
 | `settings-drawer` | `size`、`bodyScroll`、`defaultCollapsed` | preset/page/user | 全部 registry 页面 |
 | `settings-drawer` | `collapsibleSections` | preset/page | 全部 registry 页面 |
 
@@ -397,7 +415,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` |
 | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `StockDetailView`（个股详情） | `detail` | `density` | action:`toolbar` / main:`detail` |
-| `ConfigView`（配置管理） | `workbench` | `density` | action:`toolbar` / main:`tabs` |
+| `ConfigView`（配置管理） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `UserManageView`（用户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `RoleManageView`（角色管理） | `list` | `density` | action:`toolbar` / main:`section`（master-detail + 权限树） |
 | `MenuResourceView`（菜单与功能） | `list` | `density` | action:`toolbar` / main:`section`（master-detail：菜单树 draggable + 属性表单 + 功能子表；复用 `IconPicker`） |

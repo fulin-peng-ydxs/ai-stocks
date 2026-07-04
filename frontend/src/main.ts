@@ -10,24 +10,10 @@ import App from './App.vue'
 import router from './router'
 import { permission } from './directives/permission'
 import { initTheme } from './composables/useTheme'
-import { initLayoutPreset, setPresetOverrides } from './layout'
-import { listLayoutPresets } from './api/layout'
+import { initLayoutPreset } from './layout'
 
 initTheme() // 挂载前确定主题，避免闪烁
 initLayoutPreset() // 挂载前应用内置预设 token（首屏不闪烁）
-
-// P11：挂载后异步拉取后端预设配置覆盖，注入后重刷外观——让"预设管理页编辑"真正驱动运行时。
-// 失败（离线/接口异常）静默回落内置预设，不阻塞首屏。
-listLayoutPresets()
-  .then(({ presets }) => {
-    const map: Record<string, Record<string, string | number>> = {}
-    for (const p of presets) {
-      const values = p.config?.values
-      if (values && Object.keys(values).length) map[p.key] = values as Record<string, string | number>
-    }
-    if (Object.keys(map).length) setPresetOverrides(map)
-  })
-  .catch(() => { /* 离线：仅用内置预设 */ })
 
 const app = createApp(App)
 app.use(createPinia())

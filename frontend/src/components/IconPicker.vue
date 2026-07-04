@@ -81,7 +81,7 @@ function clear() {
           <el-icon :size="18"><component :is="iconMap[name]" /></el-icon>
           <span class="ip-cap">{{ name }}</span>
         </div>
-        <div v-if="!filtered.length" class="ip-empty">无匹配图标</div>
+        <div v-if="!filtered.length" class="app-empty-inline ip-empty">无匹配图标</div>
       </div>
     </div>
   </el-popover>
@@ -110,7 +110,7 @@ function clear() {
 .ip-cell.on { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary); color: var(--el-color-primary); }
 .ip-cap { display: block; width: 100%; padding: 0 4px; font-size: 10px; line-height: 14px;
   color: var(--el-text-color-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ip-empty { grid-column: 1 / -1; text-align: center; padding: 16px; font-size: 12px; color: var(--el-text-color-secondary); }
+.ip-empty { grid-column: 1 / -1; min-height: 72px; }
 
 :global(.icon-picker-pop) {
   max-width: calc(100vw - 32px);

@@ -84,7 +84,7 @@ async function onLogin() {
       captchaCode: needCaptcha.value ? form.captchaCode.trim() : undefined,
     })
     const redirect = (route.query.redirect as string) || '/'
-    router.replace(redirect)
+    await router.replace(redirect)
   } catch {
     // 登录失败：错误提示由拦截器统一弹出；累计失败达阈值(captchaAfterFails)且后端启用才显示图形码
     loginFails.value += 1
@@ -116,7 +116,7 @@ async function onRegister() {
       email: form.email.trim() || undefined,
       email_code: form.emailCode.trim() || undefined,
     })
-    router.replace('/') // 注册后已自动登录
+    await router.replace('/') // 注册后已自动登录
   } catch {
     // 错误提示由拦截器统一弹出
   } finally {

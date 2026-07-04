@@ -223,7 +223,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           <el-table-column label="租户名" prop="name" min-width="180" fixed="left" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.name }}
-              <el-tag v-if="row.id === DEFAULT_TENANT_ID" type="info" size="small" effect="plain" class="builtin-tag">内置</el-tag>
+              <el-tag v-if="row.id === DEFAULT_TENANT_ID" type="info" size="small" effect="plain" class="builtin-tag">系统内置</el-tag>
             </template>
           </el-table-column>
           <el-table-column v-if="colVisible('id')" label="租户 ID" prop="id" width="150">

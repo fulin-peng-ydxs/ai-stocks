@@ -49,6 +49,5 @@ function prevTradeDate(ymd: string): string {
 }
 
 export function useTradeDates() {
-  ensureLoaded()
   return { tradeDateSet, dataMin, dataMax, disabledTradeDate, prevTradeDate, ensureLoaded }
 }

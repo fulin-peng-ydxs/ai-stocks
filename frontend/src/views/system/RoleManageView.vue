@@ -33,13 +33,16 @@ const settingsOpen = ref(false)
 const roles = ref<Role[]>([])
 const activeId = ref<string>('')
 const activeRole = computed<Role | null>(() => roles.value.find((r) => r.id === activeId.value) ?? null)
+const activeIsSystemRole = computed(
+  () => activeRole.value?.code === 'system' || activeRole.value?.kind === 'system' || !!activeRole.value?.is_locked,
+)
 const rolesLoading = ref(false)
 const loadError = ref(false)   // 权限树/角色初次加载失败 → 页内错误态 + 重试
 
 function roleTag(r: Role): { text: string; type: 'warning' | 'info' | 'primary' } {
   if (r.is_locked) return { text: '超管·锁定', type: 'warning' }
   if (r.kind === 'paid') return { text: '付费·预留', type: 'primary' }
-  if (r.is_builtin) return { text: '内置', type: 'info' }
+  if (r.is_builtin) return { text: '系统内置', type: 'info' }
   return { text: '自定义', type: 'info' }
 }
 
@@ -105,6 +108,7 @@ function atomicLeaves(node: PermNode): string[] {
   return node.children.flatMap(atomicLeaves)
 }
 function stateOf(node: PermNode): 'on' | 'half' | 'off' {
+  if (activeIsSystemRole.value) return 'on'
   const leaves = atomicLeaves(node)
   if (!leaves.length) return 'off'
   let on = 0
@@ -258,8 +262,9 @@ onMounted(loadAll)
             角色管理
             <HelpTip title="角色管理说明" :width="440">
               角色勾选菜单与功能点后保存，拥有该角色的用户权限即时生效（无权按钮消失 / 接口 403）。<br /><br />
-              勾选父级级联子级，子级部分选中父级显半选。<br /><br />
-              系统管理员为超管，权限锁定不可改；「系统管理」类菜单仅超管可用，其它角色置灰。
+              青灰色左边线代表分组，绿色圆点代表菜单，橙色菱形代表功能点；功能点上的「接口 / 按钮」只表示权限触发方式。<br /><br />
+              「基线」是登录后的共享读权限，后端自动拥有、不可取消，也不作为角色授权保存。<br /><br />
+              系统管理员角色拥有全部菜单与功能点，页面仅展示已拥有且锁定；「仅系统管理员」资源不能授予其它角色。
             </HelpTip>
           </h2>
           <div class="page-head-actions">
@@ -287,7 +292,7 @@ onMounted(loadAll)
               </div>
               <div class="role-desc">角色码 {{ r.code }}<span v-if="r.member_count != null"> · 关联用户 {{ r.member_count }} 名</span></div>
             </div>
-            <el-empty v-if="!rolesLoading && !roles.length" description="暂无角色" :image-size="72" />
+            <el-empty v-if="!rolesLoading && !roles.length" class="app-empty app-empty--compact" description="暂无角色" />
           </div>
         </div>
 
@@ -299,7 +304,7 @@ onMounted(loadAll)
               <div class="rmeta">
                 <template v-if="activeRole">
                   角色码 {{ activeRole.code }}<span v-if="activeRole.member_count != null"> · 关联用户 {{ activeRole.member_count }} 名</span>
-                  <span v-if="activeRole.is_locked" class="lock-note"> · 超管权限锁定，不可编辑</span>
+                  <span v-if="activeIsSystemRole" class="lock-note"> · 全量权限锁定，不可编辑</span>
                 </template>
               </div>
             </div>
@@ -315,9 +320,11 @@ onMounted(loadAll)
           <div class="rm-col-body">
             <template v-if="activeRole">
               <div class="rm-legend">
-                <span class="lg"><i class="dot g" />分组</span>
+                <span class="lg"><i class="mark group" />分组</span>
                 <span class="lg"><i class="dot m" />菜单</span>
-                <span class="lg"><i class="dot f" />功能点(按钮/接口)</span>
+                <span class="lg"><i class="diamond func" />功能点(按钮/接口)</span>
+                <span class="lg"><span class="sample-base">基线</span>自动拥有</span>
+                <span class="lg"><span class="sample-lock">仅系统管理员</span>系统专属</span>
                 <span class="lg-hint">勾选父级级联子级，子级部分选中父级显半选</span>
               </div>
               <PermissionTree
@@ -325,7 +332,7 @@ onMounted(loadAll)
                 :node="node" :state-of="stateOf" :toggle="toggle" :readonly="treeReadonly"
               />
             </template>
-            <el-empty v-else description="请选择左侧角色" :image-size="72" />
+            <el-empty v-else class="app-empty app-empty--compact" description="请选择左侧角色" />
           </div>
 
           <div class="rm-detail-foot" v-if="activeRole">
@@ -397,13 +404,19 @@ onMounted(loadAll)
 .rm-detail-title .rmeta { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
 .lock-note { color: var(--el-color-warning); }
 /* 图例 */
-.rm-legend { display: flex; align-items: center; gap: 14px; padding: 0 2px 10px; font-size: 12px; color: var(--el-text-color-secondary); }
+.rm-legend { display: flex; align-items: center; gap: 14px; padding: 0 2px 10px; font-size: 12px; color: var(--el-text-color-secondary); flex-wrap: wrap; }
 .rm-legend .lg { display: inline-flex; align-items: center; gap: 5px; }
-.rm-legend .dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
-.rm-legend .dot.g { background: var(--el-color-primary); }
+.rm-legend .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 .rm-legend .dot.m { background: var(--el-color-success); }
-.rm-legend .dot.f { background: var(--el-color-warning); }
 .rm-legend .lg-hint { margin-left: auto; }
+.mark { width: 4px; height: 14px; border-radius: 2px; display: inline-block; }
+.mark.group { background: var(--perm-group-color); }
+.diamond { width: 9px; height: 9px; border-radius: 2px; display: inline-block; transform: rotate(45deg); }
+.diamond.func { background: var(--perm-feature-color); }
+.sample-base { font-size: 10px; color: var(--el-color-primary);
+  border: 1px solid color-mix(in srgb, var(--el-color-primary) 40%, transparent); border-radius: 3px; padding: 0 4px; }
+.sample-lock { font-size: 10px; color: var(--el-color-warning);
+  border: 1px solid color-mix(in srgb, var(--el-color-warning) 40%, transparent); border-radius: 3px; padding: 0 4px; }
 .rm-detail-foot { border-top: 1px solid var(--el-border-color-lighter); padding: 12px 16px;
   display: flex; align-items: center; justify-content: space-between; }
 .dirty { font-size: 12px; color: var(--el-color-warning); }

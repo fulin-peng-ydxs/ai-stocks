@@ -306,7 +306,7 @@ onMounted(reloadPresets)
           </el-table-column>
           <el-table-column label="类型" width="100">
             <template #default="{ row }">
-              <el-tag :type="row.is_builtin ? 'warning' : 'primary'" effect="plain">{{ row.is_builtin ? '内置' : '自定义' }}</el-tag>
+              <el-tag :type="row.is_builtin ? 'warning' : 'primary'" effect="plain">{{ row.is_builtin ? '系统内置' : '自定义' }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="230" fixed="right">

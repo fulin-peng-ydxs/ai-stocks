@@ -325,18 +325,7 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/system/config',
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
-    supportsComponentConfig: true,
-    consumedComponentFields: { tabs: ['defaultActive'] },
-    componentMeta: {
-      tabs: {
-        tabs: [
-          { key: 'score', label: '评分规则' },
-          { key: 'tech', label: '技术指标' },
-          { key: 'trade', label: '买卖指标' },
-          { key: 'system', label: '系统设置' },
-        ],
-      },
-    },
+    supportsComponentConfig: false,
     layout: {
       pageKey: 'config',
       archetype: 'workbench',
@@ -345,7 +334,8 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'tabs', component: 'tabs', region: 'main', label: '主标签页', order: 1 },
+        { id: 'body', component: 'section', region: 'main', label: '配置内容', order: 1 },
+        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
       editable: [densityKnob()],
     },

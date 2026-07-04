@@ -516,15 +516,15 @@ onMounted(async () => {
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-else-if="result" description="无命中" />
-      <el-empty v-else description="运行后在这里展示筛选结果" />
+      <el-empty v-else-if="result" class="app-empty" description="无命中" />
+      <el-empty v-else class="app-empty" description="运行后在这里展示筛选结果" />
     </el-card>
     </template>
 
     <template #overlays>
     <!-- 历史版本 -->
     <el-dialog v-model="verVisible" :title="`历史版本 · ${loadedProfile?.name || ''}`" width="560px">
-      <el-empty v-if="!versions.length" description="暂无历史版本" />
+      <el-empty v-if="!versions.length" class="app-empty app-empty--compact" description="暂无历史版本" />
       <div v-for="v in versions" :key="v.version" class="ver-item">
         <div class="ver-head">
           <b>v{{ v.version }}</b>
@@ -595,7 +595,7 @@ onMounted(async () => {
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .hint {
-  color: #909399;
+  color: var(--app-muted-text);
   font-size: 12px;
 }
 .b-group {
@@ -627,7 +627,7 @@ onMounted(async () => {
 }
 .dsl-help {
   margin-top: 10px;
-  color: #909399;
+  color: var(--app-muted-text);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -674,7 +674,7 @@ onMounted(async () => {
   border-top: 1px solid #ebeef5;
 }
 .run-hint {
-  color: #c0c4cc;
+  color: var(--app-placeholder-text);
   font-size: 12px;
 }
 .setting-item {
@@ -687,14 +687,14 @@ onMounted(async () => {
   color: var(--page-settings-text-subtle);
 }
 .cnt {
-  color: #f56c6c;
+  color: var(--app-danger-text);
   font-size: 16px;
 }
 .score {
-  color: #f56c6c;
+  color: var(--app-danger-text);
 }
 .muted {
-  color: #c0c4cc;
+  color: var(--app-placeholder-text);
 }
 .clickable :deep(.el-table__row) {
   cursor: pointer;

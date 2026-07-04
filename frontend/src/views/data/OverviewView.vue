@@ -110,7 +110,7 @@ function tableQuality(row: any): { type: string; text: string } {
 
 const scoreColor = computed(() => {
   const s = ov.value?.quality.score ?? 0
-  return s >= 90 ? '#2ea043' : s >= 70 ? '#d29922' : '#d92626'
+  return s >= 90 ? 'var(--el-color-success)' : s >= 70 ? 'var(--app-warning-text)' : 'var(--app-danger-text)'
 })
 
 // 逐股四层列（DM-D15）：每列即一层，hover 出具体结果，点击进对应解决页。
@@ -327,7 +327,7 @@ onMounted(load)
                     <el-table-column label="类型" prop="type" width="100" />
                     <el-table-column label="说明" prop="desc" show-overflow-tooltip />
                   </el-table>
-                  <el-empty v-else description="规划中维度，本期暂无物理表与字段" :image-size="50" />
+                  <el-empty v-else class="app-empty app-empty--tiny" description="规划中维度，本期暂无物理表与字段" />
                 </div>
               </template>
             </el-table-column>
@@ -531,8 +531,8 @@ onMounted(load)
       color: var(--el-text-color-secondary); cursor: help; }
 .stat-val { font-size: 17px; font-weight: 700; color: var(--el-text-color-primary); margin-top: 6px; white-space: nowrap; }
 .stat-val .sub { font-size: 14px; font-weight: 400; color: var(--el-text-color-secondary); }
-.stat-val.warn { color: #e6a23c; }
-.stat-val.danger { color: #f56c6c; }
+.stat-val.warn { color: var(--app-warning-text); }
+.stat-val.danger { color: var(--app-danger-text); }
 .stat-foot { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 4px; }
 .scan-time { font-size: 12px; color: var(--el-text-color-regular); margin: -4px 0 14px; }
 .scan-time .hint { color: var(--el-text-color-secondary); margin-left: 6px; }
@@ -549,6 +549,6 @@ onMounted(load)
 .clk-tag { cursor: pointer; }
 .clk-tag:hover { filter: brightness(0.95); text-decoration: underline; }
 .sq-bar { display: flex; gap: 10px; margin-bottom: 12px; }
-.txt-warn { color: #e6a23c; font-weight: 600; }
+.txt-warn { color: var(--app-warning-text); font-weight: 600; }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 </style>

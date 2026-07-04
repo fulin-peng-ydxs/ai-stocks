@@ -44,6 +44,11 @@
 | main |  |  |  |  |  |  |
 | overlay | settings | settings-drawer | 否 |  | 否 | 页面设置 |
 
+### 空状态设计
+- 表格空态：使用全局 `el-table` 空态；如需业务文案只写 `<template #empty>` 文案，不自绘图标。
+- 非表格空态：按容器大小使用 `app-empty` / `app-empty--compact` / `app-empty--tiny` / `app-empty-inline`。
+- 重复检查：同一区域不能同时渲染表格默认空态和额外 `el-empty`。
+
 ### 配置设计
 | 类型 | 字段 | 层级 | 落点 | 说明 |
 |---|---|---|---|---|
@@ -155,6 +160,7 @@ const { effective, knobs: layoutKnobs, valueOf, sourceOf, setKnob } = useLayoutC
 - 不得使用未登记组件种类——`validateLayout` 拦截。
 - 不得把页面业务结构放进用户级配置；不得把不可重排的大表放进多列重排——`validateLayout` 拦截。
 - 列表交互：分页/排序走服务端、筛选变更自动触发、多选跨页累积（见 [DESIGN.md](../../DESIGN.md) 交互规则）。
+- 空状态：表格走全局空态；非表格使用 `app-empty*` 统一类名，不新增页面私有空态样式。
 
 ## 8. 页面登记块（填好贴进 DESIGN.md §9 表格）
 

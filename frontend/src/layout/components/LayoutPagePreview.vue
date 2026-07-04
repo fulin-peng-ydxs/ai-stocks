@@ -202,7 +202,7 @@ function parentLabel(s: SlotSpec): string | null {
               </span>
             </button>
           </template>
-          <el-empty v-else description="该页无浮层/嵌套对象" :image-size="40" />
+          <el-empty v-else class="app-empty app-empty--tiny" description="该页无浮层/嵌套对象" />
         </div>
 
         <div v-if="focusedSlot" class="side-block">

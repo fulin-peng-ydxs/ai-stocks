@@ -60,6 +60,7 @@ const isGroup = computed(() => props.node.nodeType === 'group')
             :disabled="readonly || r.sysLocked || r.baselineLocked"
             @change="toggle(r)"
           />
+          <span class="pt-ficon" aria-hidden="true" />
           <span class="pt-fname">{{ r.label }}</span>
           <span class="pt-ftype" :class="r.nodeType">{{ r.nodeType === 'api' ? '接口' : '按钮' }}</span>
           <span v-if="r.baselineLocked" class="pt-baseline">基线</span>
@@ -86,10 +87,11 @@ const isGroup = computed(() => props.node.nodeType === 'group')
           :model-value="r.baselineLocked || stateOf(r) === 'on'"
           :disabled="readonly || r.sysLocked || r.baselineLocked"
           @change="toggle(r)"
-        />
-        <span class="pt-fname">{{ r.label }}</span>
-        <span class="pt-ftype" :class="r.nodeType">{{ r.nodeType === 'api' ? '接口' : '按钮' }}</span>
-        <span v-if="r.baselineLocked" class="pt-baseline">基线</span>
+          />
+          <span class="pt-ficon" aria-hidden="true" />
+          <span class="pt-fname">{{ r.label }}</span>
+          <span class="pt-ftype" :class="r.nodeType">{{ r.nodeType === 'api' ? '接口' : '按钮' }}</span>
+          <span v-if="r.baselineLocked" class="pt-baseline">基线</span>
       </span>
     </div>
   </div>
@@ -97,7 +99,8 @@ const isGroup = computed(() => props.node.nodeType === 'group')
 
 <style scoped>
 /* 分组卡片（一级） */
-.pt-grp { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+.pt-grp { border: 1px solid var(--el-border-color-lighter); border-left: 4px solid var(--perm-group-color);
+  border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
 .pt-grp.locked { opacity: 0.6; }
 .pt-grp-head { display: flex; align-items: center; gap: 9px; padding: 9px 12px; background: var(--el-fill-color-light);
   cursor: pointer; font-weight: 600; font-size: 13px; }
@@ -115,13 +118,15 @@ const isGroup = computed(() => props.node.nodeType === 'group')
 .pt-menu { margin-left: 8px; border-left: 2px solid var(--el-border-color-lighter); padding-left: 12px; }
 .pt-menu-row { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
 .pt-mlabel { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
-.pt-ico { color: var(--el-color-success); font-size: 10px; }
+.pt-ico { color: var(--el-color-success); font-size: 14px; line-height: 1; }
 /* 功能点 chip 面板（三级） */
 .pt-funcs { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px; margin: 2px 0 8px 20px;
   background: var(--el-fill-color-light); border: 1px dashed var(--el-border-color); border-radius: 6px; }
 .pt-func { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--el-text-color-regular); }
 .pt-func.locked { opacity: 0.6; }
 .pt-func.baseline { opacity: 0.85; }
+.pt-ficon { width: 8px; height: 8px; border-radius: 2px; background: var(--perm-feature-color); transform: rotate(45deg);
+  flex: none; margin-left: 1px; }
 .pt-baseline { font-size: 10px; color: var(--el-color-primary);
   border: 1px solid color-mix(in srgb, var(--el-color-primary) 40%, transparent); border-radius: 3px; padding: 0 4px; }
 .pt-fname { user-select: none; }

@@ -623,7 +623,7 @@ onMounted(async () => {
           <span class="lt">{{ (l.ts || '').slice(11, 19) }}</span>
           <span class="lm">{{ l.message }}</span>
         </div>
-        <div v-if="!logs.length" class="log-empty">暂无日志…</div>
+        <div v-if="!logs.length" class="app-empty-inline">暂无日志…</div>
       </div>
     </el-drawer>
 
@@ -736,12 +736,11 @@ onMounted(async () => {
 .lm-phase { font-size: 12px; color: var(--el-color-warning); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-body { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--el-fill-color-darker); border-radius: 6px; padding: 10px; font-family: var(--el-font-family-mono, monospace); font-size: 12px; }
 .log-line { display: flex; gap: 10px; padding: 1px 0; }
-.log-line.warn { color: #e6a23c; }
-.log-line.error { color: #f56c6c; }
+.log-line.warn { color: var(--app-warning-text); }
+.log-line.error { color: var(--app-danger-text); }
 .lt { color: var(--el-text-color-secondary); flex-shrink: 0; }
-.log-empty { color: var(--el-text-color-secondary); text-align: center; padding: 20px; }
 :deep(.row-fail) { background: var(--el-color-danger-light-9); }
-.fail-detail { color: #f56c6c; }
+.fail-detail { color: var(--app-danger-text); }
 @media (max-width: 1280px) {
   .ingest-bottom {
     grid-template-columns: 1fr;
