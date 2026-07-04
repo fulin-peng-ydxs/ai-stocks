@@ -495,7 +495,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - **前端（已覆盖，无需新增）**：`utils/permission.spec.ts`（21 用例）覆盖 `isRouteAllowed`/`resolveMenuGuard`/`firstMenuPath` 的 fail-closed、SAFE_HOME 回落、首个授权落点、不放行被请求未授权页、不自跳死循环；`SideMenu.spec.ts`（3）消费后端菜单不静态兜底；`directives/permission` + `stage4-button-permission`（T6）覆盖按钮级。
   - **新增测试**：[test_stage4_menu_guard.py](../../../backend/tests/test_stage4_menu_guard.py)（5 用例）——① 自定义角色只授业务码 → resolve 强制注入 3 baseline；② 运行时不可反选（role_resource 全空 → 仍注入 baseline）；③ 无角色用户 fail-closed（空 menus/resources、baseline 也不注入）；④ 自定义角色授业务菜单 `/backtest` → `/me` 菜单树可导航且 system-only 分支隐藏；⑤ `ResourceRepository.list_all` baseline 码标 `baseline_locked=True`、业务/系统码为 False（前端权限树恒勾选+置灰的数据契约）。全量后端 **436 passed**。
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T3a,T4,T5,T7；榜单权限和归属样例依赖 T3b/C1
 - 涉及文件/模块：
   - `backend/tests/test_stage4_resource_codes.py`（新增）
@@ -524,7 +524,16 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - `python -m pytest backend/tests/test_auth_middleware.py backend/tests/test_rbac_deps.py -q`
   - `python -m pytest backend/tests/ -q`
 - 完成标准：新增测试和全量后端测试通过。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成。
+  - **新增 [test_stage4_resource_codes.py](../../../backend/tests/test_stage4_resource_codes.py)（13 用例）**：
+    - **路由扫描（centerpiece）**：① `test_no_unguarded_api_route`——遍历 `app.routes`，所有非白名单 /api 端点都有守卫（精确 `resource_code` 依赖 或 `require_system` 硬守卫），无裸露端点；② `test_stage4_business_routes_have_precise_code`——13 个 stage4 前缀模块每个端点都挂精确资源码（`require_perm`/`require_system_perm`），唯一豁免 `POST /api/layout/reset`（动态 scope 自守卫，白名单登记）。读依赖 `route.dependant.dependencies[].call` 的 `resource_code` 属性 / `require_system` 身份。
+    - **基线共享读（HTTP 端到端）**：自定义角色 `role_resource` 为空 → `GET /data/trade-dates`·`/indicators/registry`·`/layout/presets`·`/layout/pages/board`·`/layout/effective/board` 均非 401/403（baseline 经中间件注入生效）；对比 `GET /stocks`（非基线 `stocks:view`）无码 → 403（证明放行来自 baseline 而非全放行）。
+    - **基线不可反选（/me HTTP）**：自定义角色只授 `backtest:view` → `GET /api/auth/me` 的 `permissions` 仍强制含基线三码。
+    - **权限样例**：无码 `POST /profiles`→403；持 `screen-profile:save`→过守卫进业务层（非 401/403）。
+    - **动态 scope**：`POST /layout/reset` system 的 page/user 两 scope 均通过。
+    - **跨账号隔离**：用户级布局配置 A 写 B 读 → B 拿不到 A 的值（归属取自上下文，市场数据无关的干净样例；profile/group/backtest/training 隔离机制同为 `get_current_owner`+复合主键，stage1 已测）。
+  - **复用既有覆盖**（不重复造）：system-only tenant_admin 403 + 硬守卫不降级（test_stage4_systemonly）、榜单公共读/私有隔离（test_stage4_board）、reset 非 system 403 + 用户级读写（test_stage4_layout）、baseline resolve 注入/fail-closed/baseline_locked 契约（test_stage4_menu_guard）、默认 deny/Redis fail-closed/安全头/限流（test_auth_middleware，保留）。
+  - 验证：`test_stage4_resource_codes.py` **13 passed**；全量后端 **449 passed**（436 + 13）。
 
 ### 6.10 任务 T9：前端权限测试与构建验证
 
