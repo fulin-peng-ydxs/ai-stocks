@@ -88,7 +88,7 @@ def hub() -> ApiResponse:
                    "latest_trade_date": qm["latest_trade_date"]},
         "quality": {"open": int(sum(by_sev.values())), "by_severity": by_sev,
                     "score": qm["score"], "days_since_scan": days_since_scan},
-        "score": {"latest_board_date": _latest_board_date(c)},
+        "score": {"latest_board_date": _latest_board_date()},
     }
 
     # 风险摘要（已算好级别/文案/下钻链接）
@@ -100,13 +100,13 @@ def hub() -> ApiResponse:
     if by_sev.get("high", 0) > 0:
         risk.append({"level": "danger", "text": f"{by_sev['high']} 项高危质量问题待处理",
                      "link": "/data/quality?severity=high"})
-    # 榜单新鲜度：快照已物化到的最新日 < 数据最新日 → 尚未对最新数据算榜单（按需物化，打开即补）。
-    # bd 为 None 表示从未物化过任何榜单快照。两种情况都只是"未算"，info 级提示，打开榜单页即按需算并缓存。
+    # 榜单新鲜度：公共预设快照已生产到的最新日 < 数据最新日 → 尚未对最新数据生产公共榜单。
+    # bd 为 None 表示从未生产过任何公共预设快照。两种情况都只是"未算"，info 级提示，不由普通榜单页补算。
     bd, dd = stages["score"]["latest_board_date"], qm["latest_trade_date"]
     if dd and (bd is None or str(bd) < str(dd)):
         tip = "尚未生成榜单快照" if bd is None else f"榜单快照最新到 {bd}，数据已到 {dd}"
         risk.append({"level": "info",
-                     "text": f"{tip}——榜单按需实时计算并缓存，打开「每日榜单」(选最新交易日)即自动算到最新",
+                     "text": f"{tip}——需运行「评分维护」任务或公共榜单 CLI 生产最新公共榜单快照",
                      "link": "/board"})
     if days_since_scan is None:
         risk.append({"level": "warning", "text": "尚未做过数据质检", "link": "/data/quality"})
@@ -130,18 +130,17 @@ def hub() -> ApiResponse:
     })
 
 
-def _latest_board_date(c):
-    """榜单最新日 = 评分快照中"已物化且未失效"的最新交易日（路线B：与榜单页同口径）。
+def _latest_board_date():
+    """榜单最新日 = PG 公共预设快照中"已物化且未失效"的最新交易日。
 
-    v2.0 起榜单走快照层惰性物化（score_snapshot_meta），榜单页访问某日即物化该日并置 stale=false。
-    故此处取 max(trade_date where stale=false) 才与用户实际看到的榜单一致；旧版读 score_result
-    （遗留固定模型，仅每日流程预跑时才更新）会与榜单页脱节，导致"明明有最新榜单却报旧"的误判。
+    榜单页读 PG 的 PUBLIC_BOARD_OWNER 公共预设快照，且只读 stale=false；这里复用同一口径。
+    旧 DuckDB score_snapshot_meta 已不是榜单页事实源，会把数据总览报旧。
     """
     try:
-        import pandas as pd
-        t = c.query_df(
-            "SELECT max(trade_date) AS t FROM score_snapshot_meta WHERE stale=false").iloc[0]["t"]
-        return None if t is None or str(t) == "NaT" else str(pd.Timestamp(t).date())
+        from backend.services.public_board import latest_fresh_public_board_date
+
+        t = latest_fresh_public_board_date()
+        return None if t is None else str(t)
     except Exception:  # noqa: BLE001
         return None
 

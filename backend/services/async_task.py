@@ -10,7 +10,7 @@ M2.8-B 增强：
 - **并发互斥**（FR-DM-11）：同类写任务（update/backfill/ingest_*/fix）不允许并发，创建即 409。
 - **数据修复**（FR-DM-4）：fix 任务定向重拉单条质检问题对应股票/日期，回写 issue 状态。
 
-数据变更类任务完成后，**惰性标记**评分快照失效（不重算，§10.1）。
+数据变更类任务完成后标记评分快照失效；评分维护任务会显式生产 PUBLIC_BOARD_OWNER 公共榜单。
 """
 
 from __future__ import annotations
@@ -411,6 +411,16 @@ def _mark_snapshots_stale() -> int:
     return ScoreSnapshotRepo(get_client()).mark_stale_all()
 
 
+def _produce_public_board_snapshots(params: dict) -> dict:
+    from backend.services.public_board import produce_public_board_snapshots
+
+    profile_ids = params.get("profile_ids")
+    if isinstance(profile_ids, str):
+        profile_ids = [x.strip() for x in profile_ids.split(",") if x.strip()]
+    run_date = params.get("run_date") or params.get("date")
+    return produce_public_board_snapshots(run_date=run_date, profile_ids=profile_ids)
+
+
 def _concurrency(params: dict) -> int | None:
     """从 params 读「采集并发数」并钳到 1~16；缺省返回 None（落回全局默认并发）。
 
@@ -503,12 +513,26 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
 
 
 def _h_recompute(params: dict, ctx: TaskContext) -> dict:
-    ctx.log("▶ 刷新评分缓存：把已物化的评分快照标记为需重算（不立即重算，下次打开榜单/方案时按需算）")
-    ctx.progress(0.5, "刷新评分缓存…")
+    ctx.log("▶ 评分维护：刷新评分缓存，并生产最新交易日公共榜单快照")
+    ctx.progress(0.25, "刷新评分缓存…")
     stale = _mark_snapshots_stale()
-    ctx.log(f"■ 完成：{stale} 项评分快照已标记为需重算")
-    return {"message": f"已刷新评分缓存：{stale} 项评分标记为需重算，下次打开榜单/方案时自动重新计算",
-            "snapshots_marked_stale": stale}
+    ctx.log(f"阶段 1/2：{stale} 项评分快照已标记为需重算")
+    ctx.progress(0.75, "生产公共榜单快照…")
+    public_board = _produce_public_board_snapshots(params)
+    ctx.log(
+        "阶段 2/2：公共榜单生产完成，"
+        f"交易日 {public_board.get('run_date') or '-'}，"
+        f"方案 {public_board.get('profile_count', 0)} 个，"
+        f"明细 {public_board.get('total_rows', 0)} 行"
+    )
+    return {
+        "message": (
+            f"评分维护完成：{stale} 项评分标记为需重算；"
+            f"公共榜单已生产到 {public_board.get('run_date') or '-'}"
+        ),
+        "snapshots_marked_stale": stale,
+        "public_board": public_board,
+    }
 
 
 def _h_rebuild_price_factors(params: dict, ctx: TaskContext) -> dict:

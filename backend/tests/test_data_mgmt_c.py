@@ -173,6 +173,10 @@ def test_hub_stages_and_risk(client):
 def test_task_carries_trigger_source(client, monkeypatch):
     """定时/手动触发的任务都走同一套；trigger_source/job_name 落库供任务中心区分展示。"""
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(
+        "backend.services.async_task._produce_public_board_snapshots",
+        lambda _params: {"run_date": "2024-01-05", "profile_count": 0, "total_rows": 0, "profiles": []},
+    )
     svc = AsyncTaskService(client)
     tid = svc.create("recompute", trigger_source="scheduled", job_id="job_x", job_name="盘后刷新")
     t = _wait(svc, tid)
@@ -393,14 +397,14 @@ def test_three_views_consistent(client):
 
 # ── 每日自动任务默认含质检步（DM-D14）──
 def test_daily_pipeline_includes_quality_step(client):
-    """v2.0 精简后每日流程 = 更新（含补市值）→ 数据质检；评分/筛选改运行时按需，不再是流程步骤。"""
+    """v2.0 精简后每日流程 = 更新（含补市值）→ 数据质检；公共榜单由评分维护/CLI 生产。"""
     from backend.services.pipeline import DailyPipeline
     client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) "
                    "VALUES ('A.SH', DATE '2024-01-03', 10.0, 9.9)")
     res = DailyPipeline(client).run(skip_update=True)
     names = [s["step"] for s in res["steps"]]
     assert "数据质检" in names
-    # 评分榜单/预设筛选已不再作为每日流程步骤（改运行时按需计算 + 快照缓存）
+    # 评分榜单/预设筛选已不再作为每日流程步骤；公共榜单生产由评分维护/CLI 承担。
     assert "打分榜单+买点风险" not in names and "预设筛选" not in names
 
 

@@ -1,9 +1,10 @@
 """评分快照层（SDD §10.1，M2.6）——按 日期+方案+版本 惰性物化全市场评分榜。
 
-统一各入口（每日榜单 / 试运行 / 回测排名 / 评分验证）的打分口径，避免重复实时计算。
+统一各入口（生产任务 / 试运行 / 回测排名 / 评分验证）的打分口径，避免重复实时计算。
 - 惰性物化：首次请求某 (日期, 方案, 版本) → 整天打分一次落 score_snapshot + 写 meta(stale=false)。
 - 惰性失效（关键）：行情数据变更只把 score_snapshot_meta 标 stale=true（便宜），**不立即重算**；
   下次 get 时若 meta 缺失或 stale → 当场重算覆盖、meta 置 false 再返回，否则直接用缓存。
+- 只读入口可调用 get_board_cached：只读 fresh 快照，缺失/失效返回空表，不触发物化。
 - 口径与回测 `_decision_data` 一致：wide_snapshot 单日 + 排除 ST + ScoreProfileModel（表达式型指标补列）。
 """
 
@@ -102,6 +103,22 @@ class ScoreSnapshotRepo:
             rows = self._materialize(run_date, profile_id, version, prof)
         return rows.head(top) if top else rows
 
+    def get_board_cached(self, run_date: date, profile_id: str, top: int | None = None,
+                         profile: dict | None = None) -> pd.DataFrame:
+        """只读取已物化且未失效的评分榜；缺失/失效时返回空表，不触发重算写库。"""
+        prof = profile or self._profile(profile_id)
+        if not prof:
+            return pd.DataFrame(columns=_COLS)
+        version = int(prof.get("version") or 1)
+        if not self._fresh(run_date, profile_id, version):
+            return pd.DataFrame(columns=_COLS)
+        rows = self.pg.query_df(
+            "SELECT code, total_score, grade, rank, sub_scores FROM score_snapshot "
+            "WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
+            "AND tenant_id=%s AND owner_user_id=%s ORDER BY rank",
+            [run_date, profile_id, version, *self._op])
+        return rows.head(top) if top else rows
+
     def _fresh(self, run_date: date, profile_id: str, version: int) -> bool:
         m = self.pg.query_df(
             "SELECT stale FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
@@ -150,7 +167,7 @@ class ScoreSnapshotRepo:
             f"UPDATE score_snapshot_meta SET stale=true WHERE trade_date IN ({ph})", dates)
         n = int(before.iloc[0]["n"]) if not before.empty else 0
         if n:
-            log.info("评分快照标记失效：%d 个交易日×方案 → stale（待下次读取重算）", n)
+            log.info("评分快照标记失效：%d 个交易日×方案 → stale（待生产/读取重算）", n)
         return n
 
     def mark_stale_all(self) -> int:
@@ -159,7 +176,7 @@ class ScoreSnapshotRepo:
         self.pg.execute("UPDATE score_snapshot_meta SET stale=true")
         n = int(before.iloc[0]["n"]) if not before.empty else 0
         if n:
-            log.info("评分快照全部标记失效：%d 个交易日×方案 → stale", n)
+            log.info("评分快照全部标记失效：%d 个交易日×方案 → stale（待生产/读取重算）", n)
         return n
 
     def stats(self) -> dict:

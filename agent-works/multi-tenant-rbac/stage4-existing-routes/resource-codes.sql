@@ -50,9 +50,9 @@ INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, s
   ('indicator:registry',   '/screen', 'indicator:registry',   '指标目录读（研究基线）',       'api', 'GET',    '/api/indicators/registry',         10, TRUE),
 
   -- ── B) 每日榜单（/board，login）──
-  --   Codex 复审 P1 已修(替代原自审 F1)：榜单页 BoardView 现主加载走 board:view——
-  --   GET /api/board/profiles(公共预设方案列表) + POST /api/board/run(公共预设打分)，读 PUBLIC_BOARD_OWNER
-  --   公共预设+公共评分、全员共享一份(补齐 C1 闭环，普通用户无自建方案也能看榜单)。配「榜单」角色只需 board:view。
+  --   榜单页 BoardView 主加载走 board:view：
+  --   GET /api/board/profiles(公共预设方案列表) + POST /api/board/run(只读已物化且未失效的公共评分快照)，
+  --   读 PUBLIC_BOARD_OWNER 公共预设+公共评分、全员共享一份；缺失/失效不由 board:view 触发物化。
   --   score:run(POST /score-profiles/run) 现只服务配置页个人试算/compute(写调用者私有归属)、非榜单页主加载；
   --   但 score:run 仍是业务码、菜单锚保持 /board(login) 方可授普通用户，勿挂 system-only 菜单。
   --   board:compute 由回测页消费；/scores/top·/scores(board:view) 为前端暂未接入的固定模型公共榜单预留码。

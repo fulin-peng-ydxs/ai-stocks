@@ -6,8 +6,9 @@
 M2.9（DM-D14）：每日自动任务默认含"数据质检"步（quality=True，扫 abnormal_change/adj_jump 写台账），
 使数据质量随每日流程自动监控，不再只靠手动体检。verify 仍为可选的结构/契约交叉校验。
 
-v2.0 精简：评分榜单/预设筛选改为运行时按需计算 + 快照惰性物化（访问即算并缓存），不再在本流程
-预跑落库（移除原步骤4打分榜单、步骤5预设筛选）；补市值并入 update()，不再单列步骤。
+v2.0 精简：评分榜单/预设筛选不在每日流程预跑；公共榜单由评分维护任务或
+`python -m backend.cli public-board` 以 PUBLIC_BOARD_OWNER 归属显式生产。
+补市值并入 update()，不再单列步骤。
 
 用法：DailyPipeline().run(skip_update=False, quality=True, verify=False)
 CLI： python -m backend.cli daily [--skip-update] [--verify]
@@ -38,8 +39,9 @@ class DailyPipeline:
             codes: list[str] | None = None, ctx=None) -> dict:
         """每日流程（v2.0 精简版）：更新行情（含补市值）→ 数据质检 →（可选）数据体检。
 
-        评分榜单/预设筛选已改为运行时按需计算 + 快照惰性物化（榜单页/筛选页访问即算并缓存），
-        不再在本流程预跑落库——故移除原步骤4（打分榜单）、步骤5（预设筛选）。
+        评分榜单/预设筛选不在本流程预跑；榜单页只读已生产的公共 fresh 快照。
+        最新公共榜单由评分维护任务或 public-board CLI 生产——故移除原步骤4（打分榜单）、
+        步骤5（预设筛选）。
         补市值已并入 IngestionService.update()，不再单列步骤。
         """
         steps: list[dict] = []
@@ -88,7 +90,7 @@ class DailyPipeline:
                 return DataIntegrityReport(self.c).scan_quality_issues()
             step("数据质检", _quality)
 
-        # 评分榜单 / 预设筛选已改为运行时按需计算（快照惰性物化），不再在此预跑——见类 docstring。
+        # 评分榜单 / 预设筛选不在此预跑；公共榜单生产见评分维护任务与 public-board CLI。
 
         # 3. 可选：数据体检（不联网交叉验证）
         if verify:

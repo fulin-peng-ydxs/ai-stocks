@@ -6,6 +6,7 @@
     python -m backend.cli backfill       全量回填数据（M1 实现）
     python -m backend.cli update         增量更新数据（M1 实现）
     python -m backend.cli daily          一键日常流程（M7 实现）
+    python -m backend.cli public-board   生产公共预设榜单快照
     python -m backend.cli backtest       运行回测（M5 实现）
 
 M0 阶段仅 serve / health 可用，其余为占位（后续里程碑补全）。
@@ -279,6 +280,21 @@ def cmd_rank(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_public_board(args: argparse.Namespace) -> int:
+    from datetime import date
+
+    from backend.services.public_board import produce_public_board_snapshots
+
+    run_date = date.fromisoformat(args.date) if args.date else None
+    profile_ids = [x.strip() for x in args.profile_ids.split(",") if x.strip()] if args.profile_ids else None
+    res = produce_public_board_snapshots(run_date=run_date, profile_ids=profile_ids)
+    print(f"=== 公共榜单生产 @ {res.get('run_date') or '-'} ===")
+    print(f"方案数: {res.get('profile_count', 0)}，明细行: {res.get('total_rows', 0)}")
+    for p in res.get("profiles", []):
+        print(f"  - {p['profile_id']} v{p['version']}: {p['rows']} 行")
+    return 0
+
+
 def cmd_indicators(args: argparse.Namespace) -> int:
     # v2.0：指标已改为动态实时计算（无 indicator 落库表），不再需要预计算步骤。
     print("v2.0：技术指标已动态实时计算，无需预计算落库；此命令已无操作。")
@@ -428,8 +444,37 @@ def cmd_purge_suspension_bars(args: argparse.Namespace) -> int:
     # 3) 删 daily_bar 停牌日行
     c.execute(f"DELETE FROM daily_bar WHERE {cond}")
     print(f"已完成：记入 stock_suspension 并从 daily_bar/daily_metrics 删除 {n} 行停牌日数据。")
-    print("建议随后在应用「任务中心」跑一次『刷新评分缓存』(recompute)，让受影响榜单/方案下次自动重算；"
-          "若关心指标，可对受影响股重算指标。")
+    print("建议随后在应用「任务中心」跑一次『评分维护』(recompute)，或执行 public-board CLI "
+          "生产最新公共榜单；若关心指标，可对受影响股重算指标。")
+    return 0
+
+
+def cmd_dev_users(args: argparse.Namespace) -> int:
+    """创建/查看本地 RBAC 调试用户。"""
+    from backend.devtools.rbac_test_users import ensure_debug_users, list_debug_users
+
+    if getattr(args, "list", False) and not getattr(args, "ensure", False):
+        rows = list_debug_users()
+        if not rows:
+            print("未找到 RBAC 调试用户；执行 python -m backend.cli dev-users 创建。")
+            return 0
+        print("=== RBAC 调试用户 ===")
+        for r in rows:
+            print(f"{r['account']:<24} tenant={r['tenant_id']:<14} "
+                  f"role_code={r['role_code']:<13} status={r['status']:<8} "
+                  f"roles={','.join(r['roles'])}")
+        return 0
+
+    res = ensure_debug_users(reset_password=not getattr(args, "keep_password", False))
+    print(f"RBAC 调试用户已创建/校准：tenant={res['tenant_id']}")
+    print(f"密码来源：{res['password_source']}"
+          f"{'，本次统一密码=' + res['password'] if res['password_source'] == 'local-default' else ''}")
+    print("账号：")
+    for account in res["users"]:
+        print(f"  - {account}")
+    if getattr(args, "list", False):
+        print("")
+        return cmd_dev_users(argparse.Namespace(list=True, ensure=False))
     return 0
 
 
@@ -502,6 +547,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_rk.add_argument("--top", type=int, default=20, help="Top N")
     p_rk.set_defaults(func=cmd_rank)
 
+    p_pb = sub.add_parser("public-board", help="生产 PUBLIC_BOARD_OWNER 公共预设榜单快照")
+    p_pb.add_argument("--date", help="交易日 YYYY-MM-DD（默认行情最新日）")
+    p_pb.add_argument("--profile-ids", help="逗号分隔公共预设方案 id（默认全部公共预设）")
+    p_pb.set_defaults(func=cmd_public_board)
+
     p_rb = sub.add_parser("robust", help="稳健性测试（M7）：参数敏感性 / 样本内外")
     p_rb.add_argument("--start", required=True, help="开始日 YYYY-MM-DD")
     p_rb.add_argument("--end", required=True, help="结束日 YYYY-MM-DD")
@@ -537,6 +587,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_purge.add_argument("--apply", action="store_true",
                          help="确认执行（默认仅 dry-run 预览，不改数据）")
     p_purge.set_defaults(func=cmd_purge_suspension_bars)
+
+    p_dev = sub.add_parser("dev-users", help="创建/查看本地 RBAC 调试用户（仅开发/测试库）")
+    p_dev.add_argument("--ensure", action="store_true",
+                       help="创建/校准调试用户（默认动作；可与 --list 组合）")
+    p_dev.add_argument("--list", action="store_true", help="列出当前调试用户")
+    p_dev.add_argument("--keep-password", action="store_true",
+                       help="保留已有密码；仅为缺密码用户填充默认密码")
+    p_dev.set_defaults(func=cmd_dev_users)
 
     p_mig = sub.add_parser(
         "migrate-rbac",

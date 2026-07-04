@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date, datetime
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -130,6 +132,8 @@ def public_preset(pg):
             "VALUES (%s,%s,%s,%s,1,'[]','{}',%s,now(),now()) ON CONFLICT DO NOTHING",
             [pid, ptid, pown, pid, is_preset])
     yield preset_id, priv_id
+    pg.execute("DELETE FROM score_snapshot WHERE profile_id IN (%s,%s)", [preset_id, priv_id])
+    pg.execute("DELETE FROM score_snapshot_meta WHERE profile_id IN (%s,%s)", [preset_id, priv_id])
     pg.execute("DELETE FROM score_profile WHERE id IN (%s,%s)", [preset_id, priv_id])
 
 
@@ -180,3 +184,197 @@ def test_board_run_requires_view_and_rejects_non_preset(client, pg, public_prese
     finally:
         _rm_user(pg, u0, t0, r0)
         _rm_user(pg, u1, t1, r1)
+
+
+def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
+    """/board/run 是 board:view 只读入口：读 fresh 公共快照，不走普通用户惰性物化写入。"""
+    preset_id, _priv_id = public_preset
+    ptid, pown = PUBLIC_BOARD_OWNER
+    uid, tid, rid = _mk_user(pg, codes=["board:view"])
+    try:
+        pg.execute(
+            "INSERT INTO score_snapshot_meta "
+            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
+            "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
+            [_PUB_DATE, preset_id, ptid, pown, datetime.now()])
+        pg.execute(
+            "INSERT INTO score_snapshot "
+            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
+            "VALUES (%s,%s,1,%s,%s,'T3B001.SZ',91.5,'A',1,'{}')",
+            [_PUB_DATE, preset_id, ptid, pown])
+
+        r = client.post("/api/board/run",
+                        json={"profile_id": preset_id, "run_date": _PUB_DATE, "top": 10},
+                        headers=_auth(uid, tid))
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert data["count"] == 1
+        assert data["list"][0]["code"] == "T3B001.SZ"
+    finally:
+        _rm_user(pg, uid, tid, rid)
+
+
+def test_board_run_without_date_uses_latest_fresh_public_snapshot(client, pg, public_preset):
+    """不传 run_date 时取该公共预设最新 fresh 快照日，而不是行情最新日或 stale 日期。"""
+    preset_id, _priv_id = public_preset
+    ptid, pown = PUBLIC_BOARD_OWNER
+    uid, tid, rid = _mk_user(pg, codes=["board:view"])
+    fresh_date = "2099-01-01"
+    stale_date = "2099-01-02"
+    try:
+        for d, stale, code in [
+            (fresh_date, False, "T3B_FRESH.SZ"),
+            (stale_date, True, "T3B_STALE.SZ"),
+        ]:
+            pg.execute(
+                "INSERT INTO score_snapshot_meta "
+                "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
+                "VALUES (%s,%s,1,%s,%s,%s,%s,1)",
+                [d, preset_id, ptid, pown, datetime.now(), stale])
+            pg.execute(
+                "INSERT INTO score_snapshot "
+                "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
+                "VALUES (%s,%s,1,%s,%s,%s,91.5,'A',1,'{}')",
+                [d, preset_id, ptid, pown, code])
+
+        r = client.post("/api/board/run",
+                        json={"profile_id": preset_id, "top": 10},
+                        headers=_auth(uid, tid))
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert data["run_date"] == fresh_date
+        assert data["count"] == 1
+        assert data["list"][0]["code"] == "T3B_FRESH.SZ"
+    finally:
+        _rm_user(pg, uid, tid, rid)
+
+
+def test_board_run_does_not_materialize_stale_snapshot_with_view_only(client, pg, public_preset):
+    """stale/缺失公共快照不能由 board:view 用户触发删除重写；生产链路归评分维护/CLI。"""
+    preset_id, _priv_id = public_preset
+    ptid, pown = PUBLIC_BOARD_OWNER
+    uid, tid, rid = _mk_user(pg, codes=["board:view"])
+    try:
+        pg.execute(
+            "INSERT INTO score_snapshot_meta "
+            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
+            "VALUES (%s,%s,1,%s,%s,%s,TRUE,1)",
+            [_PUB_DATE, preset_id, ptid, pown, datetime.now()])
+        pg.execute(
+            "INSERT INTO score_snapshot "
+            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
+            "VALUES (%s,%s,1,%s,%s,'T3B_STALE.SZ',77.0,'B',1,'{}')",
+            [_PUB_DATE, preset_id, ptid, pown])
+
+        r = client.post("/api/board/run",
+                        json={"profile_id": preset_id, "run_date": _PUB_DATE, "top": 10},
+                        headers=_auth(uid, tid))
+        assert r.status_code == 200
+        assert r.json()["data"]["count"] == 0
+
+        meta = pg.query_df(
+            "SELECT stale, n_codes FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
+            "AND profile_version=1 AND tenant_id=%s AND owner_user_id=%s",
+            [_PUB_DATE, preset_id, ptid, pown])
+        rows = pg.query_df(
+            "SELECT code FROM score_snapshot WHERE trade_date=%s AND profile_id=%s "
+            "AND profile_version=1 AND tenant_id=%s AND owner_user_id=%s",
+            [_PUB_DATE, preset_id, ptid, pown])
+        assert bool(meta.iloc[0]["stale"]) is True
+        assert rows["code"].tolist() == ["T3B_STALE.SZ"]
+    finally:
+        _rm_user(pg, uid, tid, rid)
+
+
+def test_recompute_produces_public_board_and_restores_view(client, pg, public_preset, monkeypatch):
+    """评分维护生产 PUBLIC_BOARD_OWNER 公共预设快照；stale 后 /board/run 恢复可读数据。"""
+    from backend.services import async_task
+
+    preset_id, _priv_id = public_preset
+    ptid, pown = PUBLIC_BOARD_OWNER
+    uid, tid, rid = _mk_user(pg, codes=["board:view"])
+    target = date(2099, 1, 3)
+
+    class Ctx:
+        def log(self, *_args, **_kwargs): ...
+        def progress(self, *_args, **_kwargs): ...
+
+    def mark_only_this_profile():
+        pg.execute(
+            "UPDATE score_snapshot_meta SET stale=true WHERE trade_date=%s AND profile_id=%s "
+            "AND profile_version=1 AND tenant_id=%s AND owner_user_id=%s",
+            [target, preset_id, ptid, pown])
+        return 1
+
+    def fake_score_day(_c, run_date, _profile):
+        assert run_date == target
+        return pd.DataFrame([{
+            "code": "T3B_NEW.SZ",
+            "total_score": 96.0,
+            "grade": "主升浪核心",
+            "rank": 1,
+            "sub_scores": "{}",
+        }])
+
+    monkeypatch.setattr(async_task, "_mark_snapshots_stale", mark_only_this_profile)
+    monkeypatch.setattr("backend.scoring.snapshot.score_day", fake_score_day)
+
+    try:
+        pg.execute(
+            "INSERT INTO score_snapshot_meta "
+            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
+            "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
+            [target, preset_id, ptid, pown, datetime.now()])
+        pg.execute(
+            "INSERT INTO score_snapshot "
+            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
+            "VALUES (%s,%s,1,%s,%s,'T3B_OLD.SZ',70.0,'B',1,'{}')",
+            [target, preset_id, ptid, pown])
+
+        res = async_task._h_recompute(
+            {"run_date": str(target), "profile_ids": [preset_id]}, Ctx())
+        assert res["public_board"]["run_date"] == str(target)
+        assert res["public_board"]["profile_count"] == 1
+        assert res["public_board"]["total_rows"] == 1
+
+        meta = pg.query_df(
+            "SELECT stale, n_codes FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
+            "AND profile_version=1 AND tenant_id=%s AND owner_user_id=%s",
+            [target, preset_id, ptid, pown])
+        rows = pg.query_df(
+            "SELECT code FROM score_snapshot WHERE trade_date=%s AND profile_id=%s "
+            "AND profile_version=1 AND tenant_id=%s AND owner_user_id=%s",
+            [target, preset_id, ptid, pown])
+        assert bool(meta.iloc[0]["stale"]) is False
+        assert int(meta.iloc[0]["n_codes"]) == 1
+        assert rows["code"].tolist() == ["T3B_NEW.SZ"]
+
+        r = client.post("/api/board/run",
+                        json={"profile_id": preset_id, "run_date": str(target), "top": 10},
+                        headers=_auth(uid, tid))
+        assert r.status_code == 200
+        data = r.json()["data"]
+        assert data["count"] == 1
+        assert data["list"][0]["code"] == "T3B_NEW.SZ"
+    finally:
+        _rm_user(pg, uid, tid, rid)
+
+
+def test_data_admin_latest_board_date_reads_pg_public_preset(pg, public_preset):
+    """数据总览榜单新鲜度读取 PG 公共预设 fresh 快照，不读 DuckDB 旧口径/非预设。"""
+    from backend.api.data_admin import _latest_board_date
+
+    preset_id, priv_id = public_preset
+    ptid, pown = PUBLIC_BOARD_OWNER
+    pg.execute(
+        "INSERT INTO score_snapshot_meta "
+        "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
+        "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
+        ["2099-01-04", preset_id, ptid, pown, datetime.now()])
+    pg.execute(
+        "INSERT INTO score_snapshot_meta "
+        "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
+        "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
+        ["2099-01-05", priv_id, ptid, pown, datetime.now()])
+
+    assert _latest_board_date() == "2099-01-04"

@@ -378,7 +378,7 @@ onMounted(async () => {
       <h2>
         数据采集
         <HelpTip title="这页能做什么？" :width="420">
-          手动触发数据采集 / 补数 / 刷新评分，后台异步执行：可离开页面，回来在「任务中心」点开看实时日志、
+          手动触发数据采集 / 补数 / 评分维护，后台异步执行：可离开页面，回来在「任务中心」点开看实时日志、
           断点续跑。定时任务触发的执行也会出现在任务中心（标注「定时·任务名」），同样可看每一步日志。
         </HelpTip>
       </h2>
@@ -426,13 +426,13 @@ onMounted(async () => {
           <span class="hint">数据质检入口在「数据质量」页。</span></div></template>
         <div class="act-grid">
           <div class="act">
-            <div class="act-t">刷新评分缓存
+            <div class="act-t">生产公共榜单
               <HelpTip title="什么时候需要？" :width="360">
-                榜单/方案的评分会被缓存以秒级打开；采集、补数、修复后系统已自动让相关评分过期。
-                仅当你怀疑评分未跟上数据时，手动点此把全部评分标记为「需重算」，下次打开自动重新计算。
+                榜单页只读取已生产的公共快照；采集、补数、修复后相关评分会过期。
+                手动执行会刷新评分缓存，并按最新交易日生产平台公共预设榜单。
               </HelpTip>
             </div>
-            <div class="act-d">把所有已缓存评分标记为需重算（一般无需手动，数据变更已自动处理）</div>
+            <div class="act-d">刷新评分缓存，并生成最新交易日公共预设榜单快照</div>
             <el-button v-permission="'data-task:manage'" plain size="small" @click="submit('recompute')">执行</el-button>
           </div>
         </div>

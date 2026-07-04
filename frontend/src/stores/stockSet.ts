@@ -136,6 +136,20 @@ export const useStockSet = defineStore('stockSet', {
       this.total = total
       this._persist()
     },
+    clearGroupContext() {
+      const hasGroupContext = this.source === 'group' || this.groupId || this.query?.kind === 'group'
+      if (!hasGroupContext) return false
+      this.source = ''
+      this.label = ''
+      this.groupId = ''
+      this.items = []
+      this.query = null
+      this.total = 0
+      this.loadedPages = []
+      this.pageSize = 20
+      this._persist()
+      return true
+    },
     clear() {
       this.source = ''
       this.label = ''

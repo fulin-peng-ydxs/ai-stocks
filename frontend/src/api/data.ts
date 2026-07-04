@@ -335,7 +335,7 @@ export function getUpdateLogs(params: {
 export const TASK_LABEL: Record<TaskType, string> = {
   update: '增量更新', backfill: '历史补数', ingest_date: '指定日期采集',
   ingest_codes: '指定股票采集', rebuild_price_factors: '重算价格因子',
-  recompute: '刷新评分缓存', verify: '数据质检',
+  recompute: '评分维护', verify: '数据质检',
   checkup: '结构体检', fix: '问题修复', enrich_basic: '退市标记刷新',
 }
 export const STATUS_LABEL: Record<TaskStatus, string> = {

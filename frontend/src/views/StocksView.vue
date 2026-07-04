@@ -176,10 +176,16 @@ const groupTotal = computed(() => groupDetail.value?.members.total ?? 0)
 let restoringListState = false
 
 const auth = useAuthStore()
+const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
 async function reloadGroups() {
   // 次级加载按自身 view 码优雅降级：无 stock-group:view 的部分授权角色（如只授 stocks:view）
   // 不拉分组列表、也不因此 403 卡住个股行情主体。默认业务角色含该码不受影响。
-  if (!hasPermission(auth.role, auth.permissions, 'stock-group:view')) return
+  if (!canViewGroups.value) {
+    groups.value = []
+    groupDetail.value = null
+    if (activeGid.value) activeGid.value = ''
+    return
+  }
   groups.value = await listGroups()
 }
 const defaultGroup = computed(() => groups.value.find((g) => g.is_default))
@@ -191,13 +197,17 @@ watch(activeGid, async (gid) => {
     await load()
     return
   }
+  if (!canViewGroups.value) {
+    activeGid.value = ''
+    return
+  }
   await loadGroupDetail()
 })
 watch(() => settings.defaultView, async (value) => {
   if (restoringListState) return
   if (value === 'group') {
     const dg = defaultGroup.value
-    if (dg && dg.member_count > 0 && activeGid.value !== dg.id) activeGid.value = dg.id
+    if (canViewGroups.value && dg && dg.member_count > 0 && activeGid.value !== dg.id) activeGid.value = dg.id
   } else if (activeGid.value) {
     activeGid.value = ''
   } else {
@@ -206,6 +216,11 @@ watch(() => settings.defaultView, async (value) => {
 })
 async function loadGroupDetail() {
   if (!activeGid.value) return
+  if (!canViewGroups.value) {
+    groupDetail.value = null
+    activeGid.value = ''
+    return
+  }
   groupLoading.value = true
   try {
     groupDetail.value = await getGroup(activeGid.value, {
@@ -456,6 +471,7 @@ async function doDeleteGroup() {
 }
 
 onMounted(async () => {
+  await auth.ensureLoaded().catch(() => undefined)
   await reloadGroups()
   const restore = route.query.restore === '1' ? stockSet.listState : null
   if (restore) {
@@ -473,9 +489,9 @@ onMounted(async () => {
     groupQ.value = restore.groupQ
     groupSortBy.value = restore.groupSortBy
     groupSortOrder.value = restore.groupSortOrder
-    activeGid.value = restore.mode === 'group' ? restore.activeGid : ''
+    activeGid.value = restore.mode === 'group' && canViewGroups.value ? restore.activeGid : ''
     restoringListState = false
-    if (restore.mode === 'group' && activeGid.value) await loadGroupDetail()
+    if (activeGid.value) await loadGroupDetail()
     else await load()
     router.replace('/stocks')
     return
@@ -490,7 +506,7 @@ onMounted(async () => {
   restoringListState = true
   tradeDate.value = dataMax.value || ''
   restoringListState = false
-  if (settings.defaultView === 'group' && dg && dg.member_count > 0) {
+  if (canViewGroups.value && settings.defaultView === 'group' && dg && dg.member_count > 0) {
     activeGid.value = dg.id
   } else {
     await load()
@@ -505,7 +521,7 @@ onMounted(async () => {
     <div class="page-head">
       <h2>个股查询</h2>
       <div class="page-head-actions">
-        <el-select v-model="activeGid" placeholder="查看分组" clearable filterable style="width: 220px">
+        <el-select v-if="canViewGroups" v-model="activeGid" placeholder="查看分组" clearable filterable style="width: 220px">
           <el-option v-for="g in groups" :key="g.id" :value="g.id" :label="`${g.name}（${g.member_count}）`">
             <span class="group-option">
               <span class="color-dot" :style="{ backgroundColor: g.color }" />

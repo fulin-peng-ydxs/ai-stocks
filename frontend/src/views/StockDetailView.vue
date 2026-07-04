@@ -66,6 +66,8 @@ const { settings, isDirty, reset } = usePageSettings('stock-detail', detailDefau
 
 // ── 通用导航：当前集合（分组成员 / 列表勾选 / 查询结果）上一个·下一个·直选 ──
 const stockSet = useStockSet()
+const auth = useAuthStore()
+const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
 const setIndex = computed(() => stockSet.indexOf(code.value))
 const inSet = computed(() => setIndex.value >= 0)
 const prevCode = computed(() => stockSet.neighbor(code.value, -1))
@@ -77,11 +79,20 @@ const collectionTotal = computed(() => stockSet.total || stockSet.items.length)
 const collectionTotalPages = computed(() => Math.max(1, Math.ceil(collectionTotal.value / Math.max(stockSet.pageSize || 20, 1))))
 const minLoadedPage = computed(() => stockSet.loadedPages.length ? Math.min(...stockSet.loadedPages) : 1)
 const maxLoadedPage = computed(() => stockSet.loadedPages.length ? Math.max(...stockSet.loadedPages) : 1)
-const canLoadPrev = computed(() => !!stockSet.query && minLoadedPage.value > 1)
-const canLoadNext = computed(() => !!stockSet.query && maxLoadedPage.value < collectionTotalPages.value)
+const canUseCollectionQuery = computed(() => !stockSet.query || stockSet.query.kind !== 'group' || canViewGroups.value)
+const canLoadPrev = computed(() => !!stockSet.query && canUseCollectionQuery.value && minLoadedPage.value > 1)
+const canLoadNext = computed(() => !!stockSet.query && canUseCollectionQuery.value && maxLoadedPage.value < collectionTotalPages.value)
 const setLoading = ref(false)
+function clearUnauthorizedGroupSet() {
+  if (canViewGroups.value) return
+  stockSet.clearGroupContext()
+}
 async function loadSetPage(page: number) {
   if (!stockSet.query || stockSet.loadedPages.includes(page)) return
+  if (stockSet.query.kind === 'group' && !canViewGroups.value) {
+    stockSet.clearGroupContext()
+    return
+  }
   setLoading.value = true
   try {
     if (stockSet.query.kind === 'group') {
@@ -237,6 +248,8 @@ watch(() => settings.adjustMode, (value) => {
 })
 
 onMounted(async () => {
+  await auth.ensureLoaded().catch(() => undefined)
+  clearUnauthorizedGroupSet()
   try {
     tradeProfiles.value = await listTradeProfiles()
     if (tradeProfiles.value.length) tradeId.value = tradeProfiles.value[0].id
@@ -263,14 +276,21 @@ function tagStyle(color?: string) {
   const c = color || '#909399'
   return { color: c, borderColor: c, backgroundColor: `${c}14` }
 }
-const auth = useAuthStore()
 async function loadGroups() {
   // 次级加载按自身 view 码优雅降级：无 stock-group:view 的部分授权角色不拉分组、也不因此 403 卡住详情页主体
   // （K 线/指标/交易评估仍可用）。默认业务角色含该码不受影响。与 StocksView.reloadGroups 同口径。
-  if (!hasPermission(auth.role, auth.permissions, 'stock-group:view')) return
+  if (!canViewGroups.value) {
+    groups.value = []
+    return
+  }
   groups.value = await listGroups()
 }
 async function loadStockGroups() {
+  if (!canViewGroups.value) {
+    stockGroups.value = []
+    selectedGroupIds.value = []
+    return
+  }
   const data = await listStocks({ q: code.value, page: 1, size: 1 })
   stockGroups.value = data.list.find((r) => r.code === code.value)?.groups ?? []
   syncingGroupSelect = true
@@ -279,6 +299,7 @@ async function loadStockGroups() {
 }
 async function onGroupsChange(value: unknown) {
   if (syncingGroupSelect) return
+  if (!canViewGroups.value) return
   const nextIds = Array.isArray(value) ? value.map(String) : []
   const prev = new Set(stockGroups.value.map((g) => g.id))
   const next = new Set(nextIds)
@@ -335,6 +356,10 @@ function mergeItems(base: { code: string; name?: string | null }[], incoming: { 
 async function fetchDropdownPage(page: number, keyword: string) {
   if (stockSet.query) {
     if (stockSet.query.kind === 'group') {
+      if (!canViewGroups.value) {
+        stockSet.clearGroupContext()
+        return { total: 0, items: [] }
+      }
       const data = await getGroup(stockSet.query.groupId, {
         ...stockSet.query.params,
         q: keyword || stockSet.query.params.q,
@@ -476,6 +501,7 @@ onBeforeUnmount(() => {
           {{ fmtPct(latestPct) }}
         </span>
         <el-select
+          v-if="canViewGroups"
           v-permission="'stock-group:member-update'"
           v-model="selectedGroupIds"
           multiple

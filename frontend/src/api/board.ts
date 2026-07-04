@@ -74,7 +74,7 @@ export function computeBoard(
 }
 
 // ── 公共榜单（C1 平台公共榜单特例）──
-// 榜单页对全体登录用户共享同一份公共预设方案 + 公共评分（board:view 守卫，读 PUBLIC_BOARD_OWNER）。
+// 榜单页对全体登录用户共享同一份公共预设方案 + 已物化公共评分（board:view 守卫，读 PUBLIC_BOARD_OWNER）。
 // 有意区别于 /score-profiles（score-profile:view，system-only + 按调用者归属，供配置页/个人试算）。
 export function listBoardProfiles(): Promise<ScoreProfileSummary[]> {
   return http.get('/board/profiles')

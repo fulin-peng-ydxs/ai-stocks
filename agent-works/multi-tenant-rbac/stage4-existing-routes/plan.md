@@ -4,7 +4,7 @@
 
 - 需求文档：[../requirement.md](../requirement.md)
 - 功能目标：进入多租户 RBAC 阶段四，把现有 13 个存量业务 API 路由和对应既有页面纳入阶段三已经落地的权限体系，逐一补齐 `resource code`、后端权限依赖、前端按钮级 `v-permission`、数据隔离回归和全量验证。
-- 当前计划状态：**已完成（2026-07-04）**。T1~T10 全部落地，测试基线：后端 **449 passed**、前端 **186 passed**、`npm run build`（vue-tsc + vite）通过。**C1 已确认（2026-07-04）**：每日榜单采用**平台公共榜单特例**——预设评分方案归 default/admin、`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；个人自建方案结果仍纯私有、经 `POST /api/board/compute`（`persist=False`）即时查看，不进公共榜单；公共榜单生产者维持现状（调度“评分维护”/CLI 以 default/admin 归属产出预设方案结果）。T3b 已解锁，无剩余阻塞确认项。
+- 当前计划状态：**已完成（2026-07-04）**。T1~T10 全部落地，测试基线：后端 **449 passed**、前端 **186 passed**、`npm run build`（vue-tsc + vite）通过。**C1 已确认（2026-07-04）**：每日榜单采用**平台公共榜单特例**——预设评分方案归 default/admin、`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；个人自建方案结果仍纯私有、经 `POST /api/board/compute`（`persist=False`）即时查看，不进公共榜单；公共榜单生产由调度“评分维护”(recompute) 或 `python -m backend.cli public-board` 以 default/admin 归属显式产出预设方案结果。T3b 已解锁，无剩余阻塞确认项。
 - **明确划出阶段四之外（另立独立需求后排）**：通用「资产可见性 / 用户自助公开」模型（方案私有 / 同租户共享 / 全体公开 + 加载 = 自己的 + 公开的）、以及新用户注册时的预设方案分发（当前新用户方案列表为空、且看不到 admin 的），都会改动 R9 隔离读语义、需 publish 权限与 UI、需定公开资产改删边界，不纳入阶段四。决议依据见 [c1-board-ownership-options.md](c1-board-ownership-options.md)。
 - 本次不做：
   - 不新增页面，不生成新的 HTML 原型。阶段四只在既有页面做权限接入、按钮显隐/禁用和接口守卫，不涉及新增页面、布局重排或复杂交互重构。
@@ -101,7 +101,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 | 路由模块/分类 | 资源码 | 端点范围 | 菜单归属 | 权限策略 |
 | --- | --- | --- | --- | --- |
-| `board.py` | `board:view` | `GET /api/board/profiles`、`POST /api/board/run`、`GET /api/scores/top`、`GET /api/scores` | `/board` | 守卫公共榜单读。**Codex 复审 P1 已修（替代原自审 F1）**：新增 `GET /api/board/profiles`（公共预设方案列表）+ `POST /api/board/run`（公共预设打分），读 `PUBLIC_BOARD_OWNER` 公共预设+公共评分、全员共享一份——`BoardView.vue` 现主加载走这两个（`board:view`），**配「榜单」角色只需 `board:view`**。`/scores/top`·`/scores` 为固定模型公共榜单只读、前端暂未接入的预留码 |
+| `board.py` | `board:view` | `GET /api/board/profiles`、`POST /api/board/run`、`GET /api/scores/top`、`GET /api/scores` | `/board` | 守卫公共榜单读。`GET /api/board/profiles` 只读公共预设方案列表；`POST /api/board/run` 只读 `PUBLIC_BOARD_OWNER` 已物化且未失效的公共评分快照，缺失/失效返回空榜，不触发惰性物化写库；不传 `run_date` 时取该公共预设当前版本最新 fresh 快照日；全员共享一份。`BoardView.vue` 主加载走这两个（`board:view`），**配「榜单」角色只需 `board:view`**。`/scores/top`·`/scores` 为固定模型公共榜单只读、前端暂未接入的预留码 |
 | `board.py` | `board:compute` | `GET /api/board/compute` | `/board` | 守卫「即时算榜单」接口。**注：当前由回测页 `BacktestView.vue`（`computeBoard`）消费**，非每日榜单页 |
 | `layout.py` | `layout:view` | `GET /api/layout/presets`、`GET /api/layout/pages/{page_key}`、`GET /api/layout/effective/{page_key}` | 全站共享读（FK 锚点 `/board`，login） | `baseline_locked`，所有登录业务角色恒可用，不能 system-only，不能在角色页反选 |
 | `stocks.py` | `trade-calendar:view` | `GET /api/data/trade-dates` | 全站共享读（FK 锚点 `/board`，login） | `baseline_locked`，所有登录业务角色恒可用，不能挂 `stocks:view`，不能在角色页反选 |
@@ -179,7 +179,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 每日榜单刷新/计算/导出 | R20/R21 | 有菜单权限才可进入，计算接口有权限才可调用 | 页面结构不变。**Codex 复审 P1 已修（替代原自审 F1）：`BoardView.vue` 主加载走 `board:view`** 的 `GET /api/board/profiles`（公共预设列表）+ `POST /api/board/run`（公共预设打分，读 `PUBLIC_BOARD_OWNER`、全员同一份），补齐 C1 闭环——普通用户无自建方案也能看榜单；导出 CSV 为本地操作不加码。**运行时依赖：榜单页 = `board:view` + 菜单权限**（此前误用 `score-profile:view`→普通用户 403/空） | `BoardView.vue` | `board.py` | 401 跳登录，403 提示无权或隐藏触发入口 | T3b,T6 |
+| 每日榜单刷新/计算/导出 | R20/R21 | 有菜单权限才可进入，计算接口有权限才可调用 | 页面结构不变。`BoardView.vue` 主加载走 `board:view` 的 `GET /api/board/profiles`（公共预设列表）+ `POST /api/board/run`（只读 `PUBLIC_BOARD_OWNER` 已物化且未失效的公共评分快照、全员同一份；默认取最新 fresh 公共快照日），补齐 C1 闭环——普通用户无自建方案也能看已生产的公共榜单；导出 CSV 为本地操作不加码。**运行时依赖：榜单页 = `board:view` + 菜单权限**（此前误用 `score-profile:view`→普通用户 403/空） | `BoardView.vue` | `board.py` | 401 跳登录，403 提示无权或隐藏触发入口 | T3b,T6 |
 | 策略筛选方案维护与运行 | R20/R21 | 查询、编辑条件、保存方案、运行筛选、恢复版本 | 保存/删除/运行按钮加 `v-permission`，后端用 `screen-profile:*`、`screen:run` | `ScreenView.vue` | `profiles.py` | 无权按钮移除；后端 403 兜底 | T3a,T6 |
 | 回测运行、稳健性、历史删除 | R20/R21 | 可运行回测、查看历史、删除历史 | 运行/稳健性/删除按钮按 `backtest:*` 控制，历史读按 `backtest:view` | `BacktestView.vue` | `backtest.py` | loading 和现有错误态保留；403 统一提示 | T4,T6 |
 | 盘感训练全过程 | R20/R21 | 开始训练、买卖、撤单、结算、复盘、删除 | 过程按钮按 `training:start/trade/review/delete` 控制 | `TrainingView.vue` | `training.py` | 无权时不展示交易动作；直调接口 403 | T4,T6 |
@@ -265,7 +265,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - `backend/auth/deps.py`：`require_perm` 返回依赖挂 `resource_code` 元数据；新增 `require_system_perm(code)`（运行时 = require_system 硬守卫 + 挂 `resource_code`/`require_system_perm=True` 供 T8 扫描）。
   - `backend/auth/perm_resolver.py`：`resolve()` 对**非 system 且有角色**用户强制并入 baseline（运行时权威）；无角色仍 fail-closed。
   - `backend/storage/resource_repository.py`：DTO 增 `baseline_locked`（code ∈ SHARED_RESOURCE_CODES）。
-  - `backend/storage/role_repository.py`：新增 `baseline_resource_ids()`（取交集防未 seed）。
+  - `backend/storage/role_repository.py`：授权读写保持只处理持久化授权；baseline 不经 repository 持久化，由 `perm_resolver.resolve` 运行时注入。
   - 前端 `menu.ts`/`PermissionTree.vue`/`RoleManageView.vue`：Resource 增 `baseline_locked`；角色树 baseline 节点恒勾选 + 置灰 + 「基线」标签 + 排除出可勾选/全选/gather 集（`baselineLocked` 与 `sysLocked` 相反语义）。
   - **关键设计决定（相对 §4.4 初稿的收敛）**：baseline **不持久化进 `sys_role_resource` 授权**，改由 `perm_resolver.resolve` 运行时强制注入作为**单一权威**——比"保存时并入持久化"更强（前端漏传/直调都无法绕过），且保持 `set/get_grants` 幂等、不污染 grants 表、不破坏既有 `test_rbac_roles` 授权回显用例；角色页据 `baseline_locked` 标记展示锁定态，不当作可授权项。故未改 `role_admin_service.set_grants` 的持久化逻辑（原“保存时强制并入”降级为注释说明）。
   - 验证：后端 `test_rbac_{me,perm_resolver,roles,resources,menus,deps,schema}` **84 passed**；前端 `npm run build` 通过 + `permission/SideMenu/manage-error-states/layout` **118 passed**。同步更新 `test_rbac_me.py::test_normal_me_business_only` 断言为「baseline 恒注入 + 不含 system-only 码」（持久测试库 normal 为 stage3 存量态，业务码默认授权走新库 seed / 既有库回填 SQL，其授权→/me 链路留 T8 显式授权用例）。
@@ -322,11 +322,11 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 操作（C1 = 公共榜单特例，口径已定）：
   - 给 `GET /api/scores/top`、`GET /api/scores` 挂 `board:view`，`GET /api/board/compute` 挂 `board:compute`。
   - `board.py` 读侧**保留平台公共归属**（现 `DEFAULT_TENANT_ID/DEFAULT_OWNER_USER_ID`），但把它从“stage1 未落 auth 的临时默认”改写为**显式的平台公共榜单归属常量**（命名与注释体现“有意全局、非用户私有”），并在 `CLAUDE.md`「资产归属与隔离」补一条：`score_result`/`score_snapshot` 公共榜单读**有意不带归属**（与 `indicator_def`/`mark_stale_*` 同类先例并列），防后续按私有资产铁律误加归属过滤。
-  - 生产者维持现状：调度“评分维护”/CLI 以 default/admin（= 平台公共归属）产出预设方案的 `score_result`/`score_snapshot`。本任务不改生产链路，只固化“预设方案归 default/admin”这一约定。
+  - 公共榜单生产者明确为调度“评分维护”(recompute) 或 `python -m backend.cli public-board`，以 default/admin（= 平台公共归属）产出预设方案的 `score_snapshot`；`/board/run` 只读 fresh 快照，不承担生产。
   - `score:run`（`POST /api/score-profiles/run`）仍写**调用者个人归属**（属 T3a 的用户资产写，不在本任务），不进公共榜单；个人打分结果经 `POST /api/board/compute`（`persist=False`）即时查看。
   - **不做**通用可见性/公开列、不做新用户预设分发（阶段四外）。
 - 产出：每日榜单接口权限接入 + 公共榜单归属口径显式固化 + CLAUDE.md 铁律。
-- 影响范围：`/board` 读侧、公共榜单归属常量、`score_snapshot` 公共读；不改 `score:run` 归属、不改生产调度。
+- 影响范围：`/board` 读侧、公共榜单归属常量、`score_snapshot` 公共读、评分维护生产动作；不改 `score:run` 归属。
 - 边界与异常：公共榜单读与私有资产隔离用例**必须分开**——公共读断言“全员同一份、有意不带 owner 过滤”，不可套用 profiles/groups 的跨账号不可见断言。
 - 验证方式：
   - 无 `board:view` 的登录用户访问榜单 403；有 `board:view` 用户看到同一份公共榜单。
@@ -337,9 +337,9 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - `board.py`：`/scores/top`·`/scores` → `board:view`；`/board/compute` → `board:compute`。
   - `_OWN` 从"stage1 未落 auth 的临时默认"改写为显式公共归属：新增 `pg_ddl.PUBLIC_BOARD_OWNER=(default,admin)` 常量（含"有意全局、勿纠正为 get_current_owner"注释），`board.py` 由其派生 `_OWN` 并注释公共读语义。
   - `CLAUDE.md`「资产归属与隔离」补铁律：`score_result` 公共读有意固定 `PUBLIC_BOARD_OWNER`、全员共享一份、禁"纠正"为按当前用户过滤；个人自建方案仍私有（`/board/compute`+`ScoreSnapshotRepo` 按调用者归属，`score:run` 写个人 `score_snapshot`）；通用可见性模型属阶段四外 R28。
-  - 核对 `ScoreSnapshotRepo`（`backend/scoring/snapshot.py:72`）读写侧走 `get_current_owner()` = 调用者私有快照缓存，与公共 `score_result` 读**天然分开**，无需改动（个人 compute 结果不外泄、公共榜单不被个人污染）。
-  - 生产链路未改：调度"评分维护"/CLI 仍以 default/admin 产出预设方案 `score_result`（即公共槽）。
-  - 新增 `backend/tests/test_stage4_board.py`（4 用例，**passed**）：无 `board:view`→403；**公共读专项**（两不同租户读同一 model_id 得同一份公共榜单，区别于私有跨账号隔离用例）；`board:view`/`board:compute` 权限分离（有 view 无 compute→403、有 compute→非 401/403）。
+  - `services/public_board.py` 集中公共榜单口径：列公共预设、查最新 fresh 公共快照日、以 PUBLIC_BOARD_OWNER 物化公共预设快照。
+  - 生产链路已明确：调度"评分维护"(recompute) 标记 stale 后生产最新交易日公共预设 `score_snapshot`；CLI `python -m backend.cli public-board` 可手动生产指定日期/方案。`/board/run` 不传日期时取该公共预设当前版本最新 fresh 快照日，不再盲取行情最新日。
+  - `backend/tests/test_stage4_board.py`（12 用例）：无 `board:view`→403；**公共读专项**（两不同租户读同一 model_id 得同一份公共榜单，区别于私有跨账号隔离用例）；`board:view`/`board:compute` 权限分离；`/board/profiles` 公共预设只读；`/board/run` 只读 fresh 公共快照且 stale/缺失不触发物化写库；不传 `run_date` 默认取最新 fresh 公共快照日；评分维护生产 stale 后的公共榜单；数据总览使用 PG 公共预设 fresh 快照口径。
   - 回归：`test_stage4_board + test_api + test_auth_middleware` **33 passed**（test_api 以 admin/system token 读 `/api/scores/top` 不受影响）。
 
 ### 6.5 任务 T4：回测、训练和用户级布局配置接入
@@ -453,7 +453,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
     - `TrainingView`：开始训练→`training:start`；删除会话→`training:delete`；保存复盘→`training:review`；**交易操作区整块（买/卖/撤单/下一日/结算）用 `training:trade` 门控整个 `.action-panel`**（避免逐按钮门控留下孤立「买入/卖出」标签，符合「不留空白操作列」）。
     - `StocksView`：删除分组→`stock-group:delete`；存为新分组/弹窗创建→`stock-group:create`；加入已有/移出/弹窗加入→`stock-group:member-update`；编辑分组弹窗保存→`stock-group:update`。
     - `StockDetailView`：所属分组多选（`@change` 增删成员）→`stock-group:member-update`。
-    - `BoardView`：**不单独挂按钮码**——「刷新」即页面主加载（**Codex 复审 P1 后**调 `runBoardProfile`=`POST /api/board/run`、`listBoardProfiles`=`GET /api/board/profiles`，均 `board:view`，读公共预设+公共评分；隐藏会破坏页面），`board:view` 对所有业务角色默认授权，按「页面加载依赖页面可见性」原则由菜单门控治理；导出 CSV 为本地操作不加码。
+    - `BoardView`：**不单独挂按钮码**——「刷新」即页面主加载（调 `runBoardProfile`=`POST /api/board/run`、`listBoardProfiles`=`GET /api/board/profiles`，均 `board:view`，只读公共预设+已物化公共评分快照；隐藏会破坏页面），`board:view` 对所有业务角色默认授权，按「页面加载依赖页面可见性」原则由菜单门控治理；导出 CSV 为本地操作不加码。
   - **系统页（menu `visible='system'`+路由守卫 fail-closed，仅 system 可达 → v-permission 对 system 恒 no-op，接入作前向兼容 + 可追溯，后端 `require_system`/`require_system_perm` 才是硬边界）**：
     - `ConfigView`：评分方案存/删/试算→`score-profile:save`/`delete`/`score:run`；指标启停/新建/删除/弹窗保存→`indicator:def-manage`；买卖方案存/删/试算→`trade-profile:save`/`delete`/`preview`；系统设置保存→`data-settings:manage`。
     - `data/IngestView`：采集/补数/重算/指定执行/弹窗执行→`data-task:manage`。
@@ -688,7 +688,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 | 编号 | 确认项 | 结论（2026-07-04 用户拍板） | 落地方式 |
 | --- | --- | --- | --- |
-| C1 | 每日榜单结果归属：平台公共榜单，还是每个用户/租户私有榜单；公共则由谁生产 | **✅ 已确认：平台公共榜单特例。** 预设评分方案归 default/admin；`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；生产者维持调度“评分维护”/CLI 以 default/admin 产出。个人自建方案结果仍纯私有、经 `POST /api/board/compute` 即时看，不进公共榜单。**通用「资产可见性/自助公开」模型（私有/同租户/全体 + 加载=自己+公开）与新用户预设分发不在阶段四，另立独立需求后排。** | 见 T3b（§6.4）：`board.py` 公共归属显式定性 + CLAUDE.md「有意不带归属」铁律 + 公共读专项测试。决议依据 [c1-board-ownership-options.md](c1-board-ownership-options.md) |
+| C1 | 每日榜单结果归属：平台公共榜单，还是每个用户/租户私有榜单；公共则由谁生产 | **✅ 已确认：平台公共榜单特例。** 预设评分方案归 default/admin；`score_result`/`score_snapshot` 按平台公共归属读、全员共享一份；生产者为调度“评分维护”(recompute) 或 `python -m backend.cli public-board`，以 default/admin 归属显式产出公共预设 `score_snapshot`。个人自建方案结果仍纯私有、经 `POST /api/board/compute` 即时看，不进公共榜单。**通用「资产可见性/自助公开」模型（私有/同租户/全体 + 加载=自己+公开）与新用户预设分发不在阶段四，另立独立需求后排。** | 见 T3b（§6.4）：`board.py` 公共归属显式定性 + CLAUDE.md「有意不带归属」铁律 + 公共读专项测试。决议依据 [c1-board-ownership-options.md](c1-board-ownership-options.md) |
 
 > C1 已确认，阶段四无剩余编码前阻塞项，可全量进入 T1–T10。
 

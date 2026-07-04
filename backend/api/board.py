@@ -10,6 +10,11 @@ from fastapi import APIRouter, Depends, Query
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.deps import require_perm
+from backend.services.public_board import (
+    get_public_board_profile,
+    list_public_board_profiles,
+    resolve_public_board_run_date,
+)
 from backend.storage import get_client, get_pg_client
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
@@ -144,38 +149,40 @@ def board_profiles() -> ApiResponse:
     此前榜单页误用 /score-profiles（score-profile:view，system-only + 按调用者归属）导致普通用户空/403）。
     方案的增删改仍归 /system/config（score-profile:*，system-only），此处**只读、只暴露预设**。
     """
-    from backend.scoring.score_profile import ScoreProfileRepo
-    repo = ScoreProfileRepo(get_client(), get_pg_client(),
-                            tenant_id=_OWN[0], owner_user_id=_OWN[1])
-    return ok([p for p in repo.list() if p.get("is_preset")])
+    return ok(list_public_board_profiles(get_client(), get_pg_client()))
 
 
 @router.post("/board/run", response_model=ApiResponse,
              dependencies=[Depends(require_perm("board:view"))])
 def board_run(body: dict) -> ApiResponse:
-    """按**公共预设方案**对某交易日全市场（排除 ST）打分排序，返回 Top N（含分项达标分）。
+    """读取**公共预设方案**已物化的某交易日全市场评分榜，返回 Top N（含分项达标分）。
 
     C1 平台公共榜单特例：方案与评分快照均归 PUBLIC_BOARD_OWNER、全员共享一份（不按当前用户过滤，
-    亦不写调用者个人快照）。只接受公共**预设**方案 id——个人自建方案的实时试算走 /score-profiles/run
-    （score:run，写调用者个人归属），二者归属与快照缓存天然分开、互不污染。
+    亦不写调用者个人快照）。此接口是 board:view 只读入口：只读已存在且未 stale 的公共快照，缺失/失效
+    返回空榜，不触发惰性物化；公共榜单生产由评分维护任务或 public-board CLI 负责。只接受公共**预设**
+    方案 id——个人自建方案的实时试算走 /score-profiles/run（score:run，写调用者个人归属），二者归属与
+    快照缓存天然分开、互不污染。
     body: {profile_id, run_date?, top?}
     """
-    import json
-
-    from backend.scoring.score_profile import ScoreProfileRepo
     from backend.scoring.snapshot import ScoreSnapshotRepo
 
     c = get_client()
     pg = get_pg_client()
     pid = body.get("profile_id")
-    prof = (ScoreProfileRepo(c, pg, tenant_id=_OWN[0], owner_user_id=_OWN[1]).get(pid)
-            if pid else None)
-    if not prof or not prof.get("is_preset"):
+    prof = get_public_board_profile(pid, c, pg)
+    if not prof:
         return err(404, "方案不存在")
-    run_date = (date.fromisoformat(body["run_date"]) if body.get("run_date")
-                else pd.Timestamp(c.query_df("SELECT max(trade_date) d FROM daily_bar").iloc[0]["d"]).date())
+    run_date = resolve_public_board_run_date(
+        profile_id=pid,
+        profile_version=int(prof.get("version") or 1),
+        requested=body.get("run_date"),
+        market=c,
+        pg=pg,
+    )
     top = int(body.get("top", 50))
-    board = ScoreSnapshotRepo(c, pg, tenant_id=_OWN[0], owner_user_id=_OWN[1]).get_board(
+    if run_date is None:
+        return ok({"run_date": "", "top": top, "count": 0, "list": []})
+    board = ScoreSnapshotRepo(c, pg, tenant_id=_OWN[0], owner_user_id=_OWN[1]).get_board_cached(
         run_date, pid, top=top, profile=prof)
     if board.empty:
         return ok({"run_date": str(run_date), "top": top, "count": 0, "list": []})
