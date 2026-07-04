@@ -193,7 +193,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
 | R8 | 接口级 + 按钮级 RBAC 权限校验 | 阶段四补齐存量业务接口 `resource code`、后端 `require_perm/require_system_perm`、前端 `v-permission` | T1,T2,T3a,T3b,T4,T5,T6,T8,T9 | 进行中 | 一致 | T1 资源码矩阵已固化（48 码，见 resource-codes.sql）；C1 已确认（公共榜单特例），`board.py` 权限接入随 T3b 正常推进 |
-| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 进行中 | 一致 | C1 已落地：`PUBLIC_BOARD_OWNER` 公共读 + CLAUDE.md 铁律 + 公共读专项测试（与私有隔离用例分开）；profiles/groups 归属沿用 get_current_owner。backtest/training/layout 复核留 T4；通用可见性/公开模型不在阶段四 |
+| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 进行中 | 一致 | C1 已落地：`PUBLIC_BOARD_OWNER` 公共读 + CLAUDE.md 铁律 + 公共读专项测试（与私有隔离用例分开）；profiles/groups/backtest/training/layout 归属均沿用 get_current_owner（T4 已复核）；跨账号隔离样例留 T8；通用可见性/公开模型不在阶段四 |
 | R20 | 前端登录态与权限渲染 | 既有页面写操作、敏感操作和系统级操作补按钮权限；菜单/路由守卫保持 fail-closed | T6,T9 | 待开始 | 一致 | 不新增页面，不重排布局 |
 | R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、基线码、默认授权、测试扫描和全量回归；榜单按 C1 公共特例接入 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 进行中 | 一致 | T1 已核对 91 端点全映射（发现 `layout/validate` 裸露端点，纳入 T5）；C1 已确认，全量接口无阻塞；通用资产共享/公开为阶段四外独立需求 |
 
@@ -344,7 +344,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 ### 6.5 任务 T4：回测、训练和用户级布局配置接入
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2（不依赖 C1；只消费 T2 已固化的共享资源码和权限依赖）
 - 涉及文件/模块：
   - `backend/api/backtest.py`
@@ -369,7 +369,14 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - 非 system 不能重置 page scope 布局。
   - 有 `layout:user-config` 的普通用户可保存自己的页面偏好。
 - 完成标准：回测、训练、用户设置抽屉不出现权限遗漏或越权。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-04）。
+  - `backtest.py`：`/run`·`/prepare` → `backtest:run`；`/robust` → `backtest:robust`；`/runs`·`/runs/{id}` → `backtest:view`；DELETE `/runs/{id}` → `backtest:delete`。
+  - `training.py`：`POST /sessions` → `training:start`；`/sessions`·`/growth`·`/sessions/{sid}` GET → `training:view`；reveal/trade/cancel/settle-round → `training:trade`；PATCH review → `training:review`；DELETE → `training:delete`。
+  - `layout.py`：`GET /presets`·`/pages/{k}`·`/effective/{k}` → `layout:view`（baseline）；`GET/POST /users/{k}` → `layout:user-config`（保留 `get_current_owner()` 忽略前端 userId 的隔离）。
+  - `POST /layout/reset` 动态 scope 自守卫（DYNAMIC_SCOPE_GUARDED_ROUTES 唯一成员）：page → `require_system()`；user → `require_perm("layout:user-config")()`（复用精确码依赖逻辑）。`ResetBody.scope` 仅 `page|user`（无 preset）。
+  - R9 归属复核：`BacktestService`/`TrainingService`/`LayoutConfigRepo` 均经 `get_current_owner()` 取归属（backtest_service.py:41 等），删除/查询 SQL 带 `tenant_id/owner_user_id` 过滤；请求体（BacktestRunIn/StartBody/TradeBody/UserConfigBody…）**不含 owner/tenant 字段**，无前端覆盖路径。
+  - 新增 `backend/tests/test_stage4_layout.py`（4 用例，**passed**）：reset page scope 非 system→403；reset user scope 无 `layout:user-config`→403 / 有→过；`GET /users` 无码→403 / 有码→过。
+  - 回归：**全量后端 402 passed**（含 test_auth_middleware 的 `layout/presets`·`effective` 共享读「不误 gate」反向用例、page reset forbidden 用例）。
 
 ### 6.6 任务 T5：system-only 路由叠加精确码并保持硬守卫
 

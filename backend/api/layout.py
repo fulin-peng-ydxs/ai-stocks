@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_owner
-from backend.auth.deps import require_system
+from backend.auth.deps import require_perm, require_system
 from backend.storage.layout_config import (
     DEFAULT_USER_ID,
     LAYOUT_CONFIG_SCHEMA_VERSION,
@@ -68,7 +68,8 @@ class FieldPolicyBody(BaseModel):
     allowedLayers: list[str] = Field(default_factory=list)
 
 
-@router.get("/presets", response_model=ApiResponse)
+@router.get("/presets", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("layout:view"))])
 def list_presets(include_disabled: bool = False) -> ApiResponse:
     return ok(
         {
@@ -104,7 +105,8 @@ def delete_preset(preset_key: str) -> ApiResponse:
     return ok({"key": preset_key}, msg="布局预设已删除")
 
 
-@router.get("/pages/{page_key}", response_model=ApiResponse)
+@router.get("/pages/{page_key}", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("layout:view"))])
 def get_page_config(page_key: str) -> ApiResponse:
     try:
         return ok(LayoutConfigRepo().get_page_config(page_key))
@@ -127,7 +129,8 @@ def save_page_config(page_key: str, body: PageConfigBody) -> ApiResponse:
     return ok(data, msg="页面布局配置已保存")
 
 
-@router.get("/users/{page_key}", response_model=ApiResponse)
+@router.get("/users/{page_key}", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("layout:user-config"))])
 def get_user_config(page_key: str) -> ApiResponse:
     # 用户级布局按当前登录用户隔离；忽略前端传入 userId（防越权读他人配置，评审 P1）
     user_id = get_current_owner()[1]
@@ -137,7 +140,8 @@ def get_user_config(page_key: str) -> ApiResponse:
         return err(400, str(e))
 
 
-@router.post("/users/{page_key}", response_model=ApiResponse)
+@router.post("/users/{page_key}", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("layout:user-config"))])
 def save_user_config(page_key: str, body: UserConfigBody) -> ApiResponse:
     # 归属取自上下文，不信任 body.userId（防越权写他人配置）
     try:
@@ -170,8 +174,12 @@ def validate_layout_config(body: ValidateBody) -> ApiResponse:
 
 @router.post("/reset", response_model=ApiResponse)
 def reset_layout_config(body: ResetBody) -> ApiResponse:
+    # 动态 scope 自守卫（stage4·R21，DYNAMIC_SCOPE_GUARDED_ROUTES 唯一成员）：按 payload scope 分流守卫——
+    # page（平台页面布局）仅系统管理员；user（个人偏好）需 layout:user-config。函数体内守卫，故路由扫描白名单登记。
     if body.scope == "page":
-        require_system()   # 页面级布局是平台配置，删除/重置仅系统管理员（用户级 scope 不限）
+        require_system()
+    else:
+        require_perm("layout:user-config")()   # 复用精确码依赖逻辑（system 恒过 / 无码 403 / 未登录 401）
     # 用户级重置归属取自上下文，不信任 body.userId（防越权重置他人配置）
     user_id = get_current_owner()[1]
     try:
@@ -213,7 +221,8 @@ def save_field_policy(body: FieldPolicyBody) -> ApiResponse:
     return ok(data, msg="组件字段开放策略已保存")
 
 
-@router.get("/effective/{page_key}", response_model=ApiResponse)
+@router.get("/effective/{page_key}", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("layout:view"))])
 def get_effective_config(page_key: str) -> ApiResponse:
     # 生效配置的用户层按当前登录用户，不信任前端 userId（防越权读他人配置）
     user_id = get_current_owner()[1]

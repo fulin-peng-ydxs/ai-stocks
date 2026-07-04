@@ -6,10 +6,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.deps import require_perm
 from backend.services.training_service import TrainingService
 
 router = APIRouter(prefix="/api/training", tags=["training"])
@@ -40,7 +41,8 @@ class ReviewBody(BaseModel):
     note: str = ""
 
 
-@router.post("/sessions", response_model=ApiResponse)
+@router.post("/sessions", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("training:start"))])
 def start_session(body: StartBody) -> ApiResponse:
     try:
         view = TrainingService().create_session(body.model_dump())
@@ -49,18 +51,21 @@ def start_session(body: StartBody) -> ApiResponse:
     return ok(view)
 
 
-@router.get("/sessions", response_model=ApiResponse)
+@router.get("/sessions", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("training:view"))])
 def list_sessions(page: int = 1, size: int = 20, status: str | None = None,
                   sort_by: str = "created_at", sort_order: str = "desc") -> ApiResponse:
     return ok(TrainingService().list_sessions(page, size, status, sort_by, sort_order))
 
 
-@router.get("/growth", response_model=ApiResponse)
+@router.get("/growth", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("training:view"))])
 def growth() -> ApiResponse:
     return ok(TrainingService().growth())
 
 
-@router.get("/sessions/{sid}", response_model=ApiResponse)
+@router.get("/sessions/{sid}", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("training:view"))])
 def get_session(sid: str) -> ApiResponse:
     try:
         return ok(TrainingService().get_view(sid))
@@ -68,13 +73,15 @@ def get_session(sid: str) -> ApiResponse:
         return err(404, str(e))
 
 
-@router.delete("/sessions/{sid}", response_model=ApiResponse)
+@router.delete("/sessions/{sid}", response_model=ApiResponse,
+               dependencies=[Depends(require_perm("training:delete"))])
 def delete_session(sid: str) -> ApiResponse:
     TrainingService().delete(sid)
     return ok({"msg": "已删除"})
 
 
-@router.post("/sessions/{sid}/reveal", response_model=ApiResponse)
+@router.post("/sessions/{sid}/reveal", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("training:trade"))])
 def reveal(sid: str, body: RevealBody) -> ApiResponse:
     try:
         return ok(TrainingService().reveal(sid, body.cursor_idx))
@@ -82,7 +89,8 @@ def reveal(sid: str, body: RevealBody) -> ApiResponse:
         return err(400, str(e))
 
 
-@router.post("/sessions/{sid}/trade", response_model=ApiResponse)
+@router.post("/sessions/{sid}/trade", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("training:trade"))])
 def trade(sid: str, body: TradeBody) -> ApiResponse:
     try:
         return ok(TrainingService().place_intent(sid, body.side, body.hands, body.reason))
@@ -90,7 +98,8 @@ def trade(sid: str, body: TradeBody) -> ApiResponse:
         return err(400, str(e))
 
 
-@router.post("/sessions/{sid}/cancel", response_model=ApiResponse)
+@router.post("/sessions/{sid}/cancel", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("training:trade"))])
 def cancel(sid: str) -> ApiResponse:
     try:
         return ok(TrainingService().cancel_intent(sid))
@@ -98,7 +107,8 @@ def cancel(sid: str) -> ApiResponse:
         return err(400, str(e))
 
 
-@router.post("/sessions/{sid}/settle-round", response_model=ApiResponse)
+@router.post("/sessions/{sid}/settle-round", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("training:trade"))])
 def settle_round(sid: str) -> ApiResponse:
     try:
         return ok(TrainingService().settle_round(sid))
@@ -106,7 +116,8 @@ def settle_round(sid: str) -> ApiResponse:
         return err(400, str(e))
 
 
-@router.patch("/sessions/{sid}/review", response_model=ApiResponse)
+@router.patch("/sessions/{sid}/review", response_model=ApiResponse,
+              dependencies=[Depends(require_perm("training:review"))])
 def review(sid: str, body: ReviewBody) -> ApiResponse:
     try:
         TrainingService().update_review(sid, body.note)

@@ -11,10 +11,11 @@ MVP 说明：本地单用户、DuckDB 单写锁，回测同步执行（区间数
 from __future__ import annotations
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, ok
+from backend.auth.deps import require_perm
 from backend.services.backtest_service import BacktestService
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
@@ -50,7 +51,8 @@ class BacktestRunIn(BaseModel):
     thresholds: list[float] | None = None
 
 
-@router.post("/run", response_model=ApiResponse)
+@router.post("/run", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("backtest:run"))])
 def run_backtest(body: BacktestRunIn) -> ApiResponse:
     params = {k: v for k, v in body.model_dump().items() if v is not None and k != "kind"}
     svc = BacktestService()
@@ -62,7 +64,8 @@ def run_backtest(body: BacktestRunIn) -> ApiResponse:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
-@router.post("/prepare", response_model=ApiResponse)
+@router.post("/prepare", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("backtest:run"))])
 def prepare_backtest(body: BacktestRunIn) -> ApiResponse:
     """运行前查重：返回签名 + 同条件已完成历史（前端据此弹框：加载历史 / 重新回测覆盖）。"""
     params = {k: v for k, v in body.model_dump().items() if v is not None and k != "kind"}
@@ -84,7 +87,8 @@ class RobustIn(BaseModel):
     split_date: str | None = None         # in_out_sample：切分日
 
 
-@router.post("/robust", response_model=ApiResponse)
+@router.post("/robust", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("backtest:robust"))])
 def robust(body: RobustIn) -> ApiResponse:
     """稳健性测试（即跑即看，不落历史）：参数敏感性扫描 / 样本内外切分。"""
     from backend.backtest.robustness import RobustnessAnalyzer
@@ -103,7 +107,8 @@ def robust(body: RobustIn) -> ApiResponse:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
-@router.get("/runs", response_model=ApiResponse)
+@router.get("/runs", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("backtest:view"))])
 def list_runs(limit: int | None = None, kind: str | None = None) -> ApiResponse:
     runs = BacktestService().list_runs(limit, kind=kind)
 
@@ -125,7 +130,8 @@ def list_runs(limit: int | None = None, kind: str | None = None) -> ApiResponse:
     return ok({"runs": runs})
 
 
-@router.get("/runs/{run_id}", response_model=ApiResponse)
+@router.get("/runs/{run_id}", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("backtest:view"))])
 def get_run(run_id: str) -> ApiResponse:
     res = BacktestService().get_run(run_id)
     if res is None:
@@ -145,7 +151,8 @@ def get_run(run_id: str) -> ApiResponse:
     return ok(res)
 
 
-@router.delete("/runs/{run_id}", response_model=ApiResponse)
+@router.delete("/runs/{run_id}", response_model=ApiResponse,
+               dependencies=[Depends(require_perm("backtest:delete"))])
 def delete_run(run_id: str) -> ApiResponse:
     found = BacktestService().delete_run(run_id)
     if not found:
