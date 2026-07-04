@@ -6,16 +6,19 @@ import json
 from datetime import date
 
 import pandas as pd
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from backend.api.response import ApiResponse, ok
+from backend.auth.deps import require_perm
 from backend.storage import get_client, get_pg_client
-from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID, DEFAULT_TENANT_ID
+from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
 router = APIRouter(prefix="/api", tags=["scores"])
 
-# 评分结果 score_result 属用户资产（→PG）；stage1 auth 未落地，按默认归属读取。
-_OWN = [DEFAULT_TENANT_ID, DEFAULT_OWNER_USER_ID]
+# 每日榜单 score_result 的**公共读**：有意固定平台公共归属（PUBLIC_BOARD_OWNER=default/admin 平台槽），
+# 全员登录用户看同一份、不按当前用户过滤（stage4·C1 平台公共榜单特例；铁律见 pg_ddl.PUBLIC_BOARD_OWNER
+# 与 CLAUDE.md「资产归属与隔离」）。非 stage1 遗留默认，勿"纠正"为 get_current_owner()。
+_OWN = list(PUBLIC_BOARD_OWNER)
 
 
 def _resolve_date(d: str | None, c) -> date:
@@ -62,7 +65,8 @@ def _query_scores(trade_date: date, model_id: str, limit: int | None) -> list[di
     return rows
 
 
-@router.get("/scores/top", response_model=ApiResponse)
+@router.get("/scores/top", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("board:view"))])
 def scores_top(
     date_: str | None = Query(None, alias="date"),
     model_id: str = "default",
@@ -98,7 +102,8 @@ def _board_by_profile(c, run_date: date, top: int, profile_id: str) -> ApiRespon
     return ok({"date": str(run_date), "top": top, "list": rows})
 
 
-@router.get("/board/compute", response_model=ApiResponse)
+@router.get("/board/compute", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("board:compute"))])
 def board_compute(date_: str = Query(..., alias="date"), top: int = 50,
                   score_profile_id: str | None = None) -> ApiResponse:
     """按需计算某交易日的每日榜单 Top N（不落库），供回测"查看买入当日榜单"。
@@ -129,7 +134,8 @@ def board_compute(date_: str = Query(..., alias="date"), top: int = 50,
     return ok({"date": date_, "top": top, "list": rows})
 
 
-@router.get("/scores", response_model=ApiResponse)
+@router.get("/scores", response_model=ApiResponse,
+            dependencies=[Depends(require_perm("board:view"))])
 def scores(
     date_: str | None = Query(None, alias="date"),
     model_id: str = "default",

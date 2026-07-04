@@ -41,6 +41,12 @@ log = get_logger("storage.pg_ddl")
 DEFAULT_TENANT_ID = "default"
 DEFAULT_OWNER_USER_ID = "admin"
 
+# 平台公共榜单归属（stage4·C1 已确认）：每日榜单 score_result 的公共读**有意固定**此归属（default/admin
+# 平台槽），全员登录用户共享同一份、**不按当前用户过滤**——生产者维持调度"评分维护"/CLI 以此归属产出
+# 预设方案结果。属"有意全局"（与 indicator_def / mark_stale_* 同类先例），**禁止**后续按私有资产隔离铁律
+# "纠正"为 get_current_owner()。个人自建方案结果仍纯私有（走 /board/compute + ScoreSnapshotRepo 按调用者归属）。
+PUBLIC_BOARD_OWNER = (DEFAULT_TENANT_ID, DEFAULT_OWNER_USER_ID)
+
 # 资产表统一归属列（紧跟业务键之后；与复合主键配合）
 _OWN = (
     "    tenant_id      TEXT NOT NULL DEFAULT 'default',\n"

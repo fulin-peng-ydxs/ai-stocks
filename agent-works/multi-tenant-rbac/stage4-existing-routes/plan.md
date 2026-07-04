@@ -193,7 +193,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
 | R8 | 接口级 + 按钮级 RBAC 权限校验 | 阶段四补齐存量业务接口 `resource code`、后端 `require_perm/require_system_perm`、前端 `v-permission` | T1,T2,T3a,T3b,T4,T5,T6,T8,T9 | 进行中 | 一致 | T1 资源码矩阵已固化（48 码，见 resource-codes.sql）；C1 已确认（公共榜单特例），`board.py` 权限接入随 T3b 正常推进 |
-| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 待开始 | 一致 | C1 已确认；公共榜单读“有意全局”须显式声明，与私有资产隔离用例分开。通用可见性/公开模型不在阶段四 |
+| R9 | 数据归属与租户隔离 | 复核 profiles/groups/backtest/training/layout 等资产接口均按 `get_current_owner()` 隔离；每日榜单按 C1 定为平台公共只读、有意不带用户归属，个人自建方案结果仍私有 | T3a,T3b,T4,T8 | 进行中 | 一致 | C1 已落地：`PUBLIC_BOARD_OWNER` 公共读 + CLAUDE.md 铁律 + 公共读专项测试（与私有隔离用例分开）；profiles/groups 归属沿用 get_current_owner。backtest/training/layout 复核留 T4；通用可见性/公开模型不在阶段四 |
 | R20 | 前端登录态与权限渲染 | 既有页面写操作、敏感操作和系统级操作补按钮权限；菜单/路由守卫保持 fail-closed | T6,T9 | 待开始 | 一致 | 不新增页面，不重排布局 |
 | R21 | 全部存量功能/接口接入用户体系 | 13 个存量路由逐一补资源码、守卫、基线码、默认授权、测试扫描和全量回归；榜单按 C1 公共特例接入 | T1,T2,T3a,T3b,T4,T5,T6,T7,T8,T9,T10 | 进行中 | 一致 | T1 已核对 91 端点全映射（发现 `layout/validate` 裸露端点，纳入 T5）；C1 已确认，全量接口无阻塞；通用资产共享/公开为阶段四外独立需求 |
 
@@ -310,7 +310,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 
 ### 6.4 任务 T3b：每日榜单接口接入（公共榜单特例，C1 已确认）
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2（C1 已确认=平台公共榜单特例，无阻塞）
 - 涉及文件/模块：
   - `backend/api/board.py`
@@ -333,7 +333,14 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - 两个不同租户/用户读 `GET /api/scores/top` 得到**同一份**平台公共结果（公共读专项，区别于私有资产跨账号隔离用例）。
   - `board:compute` 与 `board:view` 权限分离测试。
 - 完成标准：榜单接口有码；`board.py` 公共归属显式命名+注释、CLAUDE.md 铁律落地；公共读测试与私有隔离测试口径不混用。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-04）。
+  - `board.py`：`/scores/top`·`/scores` → `board:view`；`/board/compute` → `board:compute`。
+  - `_OWN` 从"stage1 未落 auth 的临时默认"改写为显式公共归属：新增 `pg_ddl.PUBLIC_BOARD_OWNER=(default,admin)` 常量（含"有意全局、勿纠正为 get_current_owner"注释），`board.py` 由其派生 `_OWN` 并注释公共读语义。
+  - `CLAUDE.md`「资产归属与隔离」补铁律：`score_result` 公共读有意固定 `PUBLIC_BOARD_OWNER`、全员共享一份、禁"纠正"为按当前用户过滤；个人自建方案仍私有（`/board/compute`+`ScoreSnapshotRepo` 按调用者归属，`score:run` 写个人 `score_snapshot`）；通用可见性模型属阶段四外 R28。
+  - 核对 `ScoreSnapshotRepo`（`backend/scoring/snapshot.py:72`）读写侧走 `get_current_owner()` = 调用者私有快照缓存，与公共 `score_result` 读**天然分开**，无需改动（个人 compute 结果不外泄、公共榜单不被个人污染）。
+  - 生产链路未改：调度"评分维护"/CLI 仍以 default/admin 产出预设方案 `score_result`（即公共槽）。
+  - 新增 `backend/tests/test_stage4_board.py`（4 用例，**passed**）：无 `board:view`→403；**公共读专项**（两不同租户读同一 model_id 得同一份公共榜单，区别于私有跨账号隔离用例）；`board:view`/`board:compute` 权限分离（有 view 无 compute→403、有 compute→非 401/403）。
+  - 回归：`test_stage4_board + test_api + test_auth_middleware` **33 passed**（test_api 以 admin/system token 读 `/api/scores/top` 不受影响）。
 
 ### 6.5 任务 T4：回测、训练和用户级布局配置接入
 
