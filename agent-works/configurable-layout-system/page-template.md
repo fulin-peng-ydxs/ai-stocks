@@ -17,7 +17,7 @@
 4. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。
 5. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
 6. `npm run build`（含 vue-tsc 类型检查；改 `frontend/src` 后必构建）。
-7. 在 DESIGN.md §9「已迁移页面登记」补一行，并填写下方 §6 登记块。
+7. 在 DESIGN.md 的 `page-registry` 区块补一行，并填写下方 §8 登记块。
 
 ## 2. 开发计划页面设计块（复制到计划里）
 
@@ -70,7 +70,7 @@
 - componentSchemas：
 - 后端 layout_config 字段规则：
 - componentPreview：
-- DESIGN.md §9：
+- DESIGN.md `page-registry` 区块：
 - 测试：
 
 ### 验收
@@ -86,7 +86,7 @@
 
 | 变更类型 | 必须同步维护 | 必须验证 |
 |---|---|---|
-| 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、`DESIGN.md §9` | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、build、关键视口 |
+| 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、build、关键视口 |
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段表 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
@@ -162,17 +162,17 @@ const { effective, knobs: layoutKnobs, valueOf, sourceOf, setKnob } = useLayoutC
 - 列表交互：分页/排序走服务端、筛选变更自动触发、多选跨页累积（见 [DESIGN.md](../../DESIGN.md) 交互规则）。
 - 空状态：表格走全局空态；非表格使用 `app-empty*` 统一类名，不新增页面私有空态样式。
 
-## 8. 页面登记块（填好贴进 DESIGN.md §9 表格）
+## 8. 页面登记块（填好贴进 DESIGN.md `page-registry` 表格）
 
 ```text
-| 页面 | 原型 | 组件清单 | 可编辑旋钮(L2) | 已验证视口 | 备注 |
-| <PageView>（中文名） | <archetype> | <region>:<kind>… | <path> … | 1100×620 / 桌面 | … |
+| 页面 | 原型 | 可编辑旋钮 | 组件清单 |
+| `<PageView>`（中文名） | `<archetype>` | `density` | action:`toolbar` / main:`section` |
 ```
 
 填写示例：
 
 ```text
-| BoardView（每日榜单） | list | action:filter-bar / main:data-table(growMain) | density | 1100×620 / 1440 | L3「紧凑表格」已收敛进 L2 密度 |
+| `BoardView`（每日榜单） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 ```
 
 ## 9. 7 个原型可复制骨架

@@ -203,6 +203,8 @@ function designRow({ viewName, label, archetype, slots }) {
   return `| \`${viewName}\`（${label}，pageKey \`${slots.pageKey ?? ''}\`） | \`${archetype}\` | \`density\` 信息密度 | 组件清单：${components}；由 scaffold-page 生成骨架，需补业务内容并完成视口验证 |`
 }
 
+const DESIGN_REGISTRY_END = '<!-- page-registry:end -->'
+
 function insertBefore(text, marker, insert) {
   const index = text.indexOf(marker)
   if (index < 0) throw new Error(`Marker not found: ${marker}`)
@@ -237,7 +239,7 @@ function main() {
     `create ${files.view}`,
     `insert registry entry into ${files.registry}`,
     `insert route ${route} into ${files.router}`,
-    `insert DESIGN.md §9 row`,
+    `insert DESIGN.md page registry row`,
     `optional backend endpoint: create one under backend/api/ when this page needs server data`,
   ]
   if (args['dry-run']) {
@@ -258,7 +260,7 @@ function main() {
   )
   writeFileSync(
     files.design,
-    insertBefore(readFileSync(files.design, 'utf-8'), '\n> **存量页面迁移', `${designRow({ viewName, label, archetype, slots })}\n`),
+    insertBefore(readFileSync(files.design, 'utf-8'), DESIGN_REGISTRY_END, `${designRow({ viewName, label, archetype, slots })}\n`),
     'utf-8',
   )
   console.log(plan.join('\n'))

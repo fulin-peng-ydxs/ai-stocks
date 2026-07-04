@@ -13,7 +13,7 @@ const VIEWS_DIR = resolve(process.cwd(), 'src/views')
 
 /**
  * 存量未迁移、仍手写 `.v-page/.v-grow/.v-scroll` 契约的页面白名单（相对 src/views）。
- * 迁移到 LayoutHost 后必须从这里移除并在 DESIGN.md §8 登记——本测试会反向校验，
+ * 迁移到 LayoutHost 后必须从这里移除并在 DESIGN.md 页面登记区块登记——本测试会反向校验，
  * 已不再手写布局类却仍留在名单里也会失败，迫使名单与实际迁移进度同步。
  */
 const LEGACY_HANDWRITTEN = new Set<string>([
@@ -75,6 +75,6 @@ describe('布局契约守卫（M6）', () => {
       const exists = files.includes(full)
       if (!exists || !HANDWRITTEN_LAYOUT.test(readFileSync(full, 'utf8'))) stale.push(legacy)
     }
-    expect(stale, `这些页面已不再手写布局类，请从 LEGACY_HANDWRITTEN 移除并在 DESIGN.md §8 登记：\n${stale.join('\n')}`).toEqual([])
+    expect(stale, `这些页面已不再手写布局类，请从 LEGACY_HANDWRITTEN 移除并在 DESIGN.md 页面登记区块登记：\n${stale.join('\n')}`).toEqual([])
   })
 })

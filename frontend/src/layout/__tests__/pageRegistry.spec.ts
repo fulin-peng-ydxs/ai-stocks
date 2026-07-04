@@ -12,7 +12,9 @@ import type { ComponentKind } from '../schema'
 
 const RESPONSIVE_PROFILES = new Set(['single-column', 'safe-reflow', 'mixed-panel'])
 const DESIGN_MD = readFileSync(new URL('../../../../DESIGN.md', import.meta.url), 'utf-8')
-const DESIGN_PAGE_SECTION = DESIGN_MD.split('## 9. 已迁移页面登记')[1]?.split('## 10.')[0] ?? ''
+const DESIGN_PAGE_SECTION = DESIGN_MD.match(
+  /<!-- page-registry:start -->([\s\S]*?)<!-- page-registry:end -->/,
+)?.[1] ?? ''
 
 describe('页面注册表完整性', () => {
   it('注册表非空且与 listManagedPages 一致', () => {
@@ -64,9 +66,9 @@ describe('页面注册表完整性', () => {
     expect(() => getPageLayout('not-a-page')).toThrow()
   })
 
-  it('每个 registry 页面都已登记到 DESIGN.md §9', () => {
+  it('每个 registry 页面都已登记到 DESIGN.md 页面登记区块', () => {
     for (const entry of PAGE_REGISTRY) {
-      expect(DESIGN_PAGE_SECTION, `${entry.pageKey}(${entry.label}) 未出现在 DESIGN.md §9`).toContain(entry.label)
+      expect(DESIGN_PAGE_SECTION, `${entry.pageKey}(${entry.label}) 未出现在 DESIGN.md 页面登记区块`).toContain(entry.label)
     }
   })
 
