@@ -628,7 +628,7 @@ onBeforeUnmount(() => {
             <span>买卖信号评估</span>
             <el-select v-model="tradeId" size="small" style="width: 220px" @change="() => evalTrade()">
               <el-option v-for="p in tradeProfiles" :key="p.id" :value="p.id"
-                :label="p.name + (p.is_preset ? '（预设）' : '')" />
+                :label="p.name + (p.is_preset ? '（系统内置）' : '')" />
             </el-select>
             <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
           </div>

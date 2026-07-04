@@ -4,13 +4,12 @@ T5 落**只读**部分（按 id 取角色、可分配角色集）；T6 扩展角
 （role_menu/role_resource 全删重插）+ 内置/成员/ system-only 检测（bump 由 service 编排）。
 
 可分配规则（Codex 三轮评审结论）：
-- 调用者是 system：返回**除 system 超管外的全部**可分配角色（内置预设 + 系统管理员自建 custom）；
-- 调用者是 tenant_admin：**仅内置预设**可分配角色（tenant_admin/normal/paid），不含 system、不含 custom。
+- 调用者是 system：返回**除 system 超管外的全部**可分配角色（系统内置 + 系统管理员自建 custom）；
+- 调用者是 tenant_admin：**仅系统内置**可分配角色（tenant_admin/normal/paid），不含 system、不含 custom。
 """
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 
 from backend.auth.constants import ASSIGNABLE_PRESET_ROLES, ROLE_SYSTEM
@@ -55,7 +54,7 @@ class RoleRepository:
                 "WHERE code <> %s AND kind <> 'system' ORDER BY is_builtin DESC, kind, name",
                 [ROLE_SYSTEM])
         else:
-            # 仅内置预设可分配角色（不含 system、不含 custom）
+            # 仅系统内置角色可分配（不含 system、不含 custom）
             df = self.pg.query_df(
                 f"SELECT {_ROLE_COLS} FROM sys_role "
                 "WHERE is_builtin = TRUE AND kind = ANY(%s) ORDER BY kind, name",
@@ -86,7 +85,7 @@ class RoleRepository:
 
     def create(self, *, code: str, name: str, description: str | None) -> str:
         """新建自定义角色（kind=custom、is_builtin=false）。唯一性由 UNIQUE(code) 兜底。返回 id。"""
-        role_id = uuid.uuid4().hex
+        role_id = code
         self.pg.execute(
             "INSERT INTO sys_role (id, code, name, kind, is_builtin, is_locked, description, created_at) "
             "VALUES (%s, %s, %s, 'custom', FALSE, FALSE, %s, %s)",

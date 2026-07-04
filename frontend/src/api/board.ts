@@ -74,7 +74,7 @@ export function computeBoard(
 }
 
 // ── 可见方案榜单（board:view）──
-// 方案来自“自己的 + 同租户公开 + 全体公开 + 平台内置预设”，榜单快照写入方案 owner 的共享缓存槽。
+// 方案来自“自己的 + 同租户公开 + 全体公开 + 平台系统内置方案”，榜单快照写入方案 owner 的共享缓存槽。
 export function listBoardProfiles(): Promise<ScoreProfileSummary[]> {
   return http.get('/board/profiles')
 }

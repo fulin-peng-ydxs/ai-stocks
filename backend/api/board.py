@@ -143,7 +143,7 @@ def board_compute(date_: str = Query(..., alias="date"), top: int = 50,
 @router.get("/board/profiles", response_model=ApiResponse,
             dependencies=[Depends(require_perm("board:view"))])
 def board_profiles() -> ApiResponse:
-    """榜单可选评分方案列表：自己的 + 同租户公开 + 全体公开 + 平台内置预设。"""
+    """榜单可选评分方案列表：自己的 + 同租户公开 + 全体公开 + 平台系统内置方案。"""
     from backend.scoring.score_profile import ScoreProfileRepo
 
     return ok(ScoreProfileRepo(get_client(), get_pg_client()).list_visible())
@@ -164,7 +164,7 @@ def board_run(body: dict) -> ApiResponse:
     repo = ScoreProfileRepo(c, pg)
     ref_or_id = body.get("profile_ref") or body.get("profile_id")
     prof = repo.get_visible(ref_or_id, include_owner=True) if ref_or_id else None
-    # 兼容旧前端：只传 profile_id 时仍可命中平台内置预设。
+    # 兼容旧前端：只传 profile_id 时仍可命中平台系统内置方案。
     if not prof and body.get("profile_id"):
         preset = get_public_board_profile(body.get("profile_id"), c, pg)
         if preset:

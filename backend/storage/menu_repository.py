@@ -7,7 +7,6 @@ icon 存 Element Plus 图标名；visible=login（登录可见）/ system（仅�
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 
 from backend.common.logging import get_logger
@@ -98,7 +97,7 @@ class MenuRepository:
     def create(self, *, parent_id: str | None, code: str, title: str, type: str,
                route_path: str | None, icon: str | None, visible: str,
                sort: int | None) -> str:
-        menu_id = uuid.uuid4().hex
+        menu_id = code
         self.pg.execute(
             "INSERT INTO sys_menu "
             "(id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin, created_at) "

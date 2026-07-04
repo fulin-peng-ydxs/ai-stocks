@@ -142,11 +142,12 @@ def test_assignable_tenant_admin_preset_only(client, env):
 # ── CRUD ──
 
 def test_create_update_delete_custom_role(client, env):
-    code = "role_" + uuid.uuid4().hex[:6]
-    r = client.post("/api/roles", json={"code": code, "name": "自定义A", "description": "d"},
+    r = client.post("/api/roles", json={"name": "Custom Analyst", "description": "d"},
                     headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
     rid = r.json()["data"]["id"]
+    assert rid == "role_custom_analyst"
+    assert r.json()["data"]["code"] == rid
     # 编辑
     r2 = client.put(f"/api/roles/{rid}", json={"name": "自定义B", "description": "d2"},
                     headers=env.sys_headers())
@@ -155,6 +156,17 @@ def test_create_update_delete_custom_role(client, env):
     r3 = client.delete(f"/api/roles/{rid}", headers=env.sys_headers())
     assert r3.status_code == 200 and r3.json()["code"] == 0
     assert env.pg.query_df("SELECT 1 FROM sys_role WHERE id=%s", [rid]).empty
+
+
+def test_create_role_auto_code_deduplicates(client, env):
+    body = {"name": "数据分析员"}
+    r1 = client.post("/api/roles", json=body, headers=env.sys_headers()).json()["data"]
+    r2 = client.post("/api/roles", json=body, headers=env.sys_headers()).json()["data"]
+    try:
+        assert r1["id"] == "role_data_analyst"
+        assert r2["id"] == "role_data_analyst_2"
+    finally:
+        env.pg.execute("DELETE FROM sys_role WHERE id IN (%s,%s)", [r1["id"], r2["id"]])
 
 
 def test_create_duplicate_code_rejected(client, env):

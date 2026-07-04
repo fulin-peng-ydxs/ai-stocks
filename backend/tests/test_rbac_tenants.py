@@ -90,16 +90,25 @@ def test_list_forbidden_for_tenant_admin(client, env):
 # ── CRUD / 唯一 ──
 
 def test_create_list_update(client, env):
-    name = "租户_" + uuid.uuid4().hex[:6]
+    name = "tenant demo " + uuid.uuid4().hex[:6]
     r = client.post("/api/tenants", json={"name": name}, headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
     tid = r.json()["data"]["id"]
+    assert tid == name.replace(" ", "_")
+    assert r.json()["data"]["created_at"]
     # 列表能查到
     lst = client.get(f"/api/tenants?q={name}", headers=env.sys_headers()).json()["data"]
-    assert any(t["id"] == tid for t in lst["items"])
+    listed = next(t for t in lst["items"] if t["id"] == tid)
+    assert listed["created_at"]
     # 改名
     r2 = client.put(f"/api/tenants/{tid}", json={"name": name + "_改"}, headers=env.sys_headers())
     assert r2.json()["data"]["name"] == name + "_改"
+
+
+def test_create_tenant_known_chinese_terms(client, env):
+    r = client.post("/api/tenants", json={"name": "数据中心"}, headers=env.sys_headers())
+    assert r.status_code == 200 and r.json()["code"] == 0
+    assert r.json()["data"]["id"] == "tenant_data_center"
 
 
 def test_create_duplicate_name_rejected(client, env):

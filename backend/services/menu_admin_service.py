@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 from backend.auth import perm_resolver
+from backend.common.ids import prefixed_readable_id
 from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationError
 from backend.common.logging import get_logger
 from backend.storage.menu_repository import MenuRepository
@@ -38,17 +39,17 @@ class MenuAdminService:
         return self.menus.tree()
 
     # ── 新建 ──
-    def create_menu(self, *, parent_id: str | None, code: str, title: str, type: str,
+    def create_menu(self, *, parent_id: str | None, code: str | None, title: str, type: str,
                     route_path: str | None, icon: str | None, visible: str,
                     sort: int | None) -> dict:
         code = (code or "").strip()
         title = (title or "").strip()
         self._check_type(type)
         self._check_visible(visible)
-        if not code:
-            raise ValidationError("请填写菜单标识 code")
         if not title:
             raise ValidationError("请填写菜单标题")
+        if not code:
+            code = self._make_menu_code(title)
         if self.menus.get_by_code(code):
             raise ValidationError("菜单标识已存在")
         route_path = self._normalize_route(type, route_path, exclude_id=None)
@@ -180,3 +181,12 @@ class MenuAdminService:
     def _check_visible(visible: str) -> None:
         if visible not in _VALID_VISIBLE:
             raise ValidationError(f"无效的可见性：{visible}")
+
+    def _make_menu_code(self, title: str) -> str:
+        base = prefixed_readable_id(title, prefix="menu_")
+        code = base
+        seq = 2
+        while self.menus.get(code) or self.menus.get_by_code(code):
+            code = f"{base}_{seq}"
+            seq += 1
+        return code

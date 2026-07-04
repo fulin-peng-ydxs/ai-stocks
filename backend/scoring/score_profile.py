@@ -19,6 +19,7 @@ from datetime import datetime
 
 import pandas as pd
 
+from backend.common.ids import prefixed_readable_id
 from backend.common.logging import get_logger
 from backend.config import get_settings
 from backend.storage.duckdb_client import get_client
@@ -237,10 +238,10 @@ class ScoreProfileRepo:
         return visibility == VISIBILITY_TENANT and r["tenant_id"] == self.tenant_id
 
     def _source(self, r: dict) -> str:
+        if bool(r.get("is_preset")):
+            return "preset"
         if self._is_owner(r["tenant_id"], r["owner_user_id"]):
             return "mine"
-        if (r["tenant_id"], r["owner_user_id"]) == PUBLIC_BOARD_OWNER and bool(r.get("is_preset")):
-            return "preset"
         return r.get("visibility") or VISIBILITY_PRIVATE
 
     def _decorate_summary(self, r: dict) -> dict:
@@ -279,9 +280,22 @@ class ScoreProfileRepo:
             out["owner_user_id"] = r["owner_user_id"]
         return out
 
-    def save(self, pid: str, name: str, items: list[dict],
+    def _make_id(self, name: str) -> str:
+        base = prefixed_readable_id(name, prefix="score_")
+        pid = base
+        seq = 2
+        while self.get(pid):
+            pid = f"{base}_{seq}"
+            seq += 1
+        return pid
+
+    def save(self, pid: str | None, name: str, items: list[dict],
              grade_thresholds: dict | None = None, is_preset: bool = False) -> int:
         from backend.indicators.definition import IndicatorDefRepo
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("请填写方案名称")
+        pid = (pid or "").strip() or self._make_id(name)
         known = {d["key"] for d in IndicatorDefRepo(self.mkt).list()}
         validate_profile(items, known_keys=known)
         items_json = json.dumps(items, ensure_ascii=False)
@@ -324,6 +338,13 @@ class ScoreProfileRepo:
             [pid, self.tenant_id, self.owner_user_id, version, name, items_json, gt_json, now],
         )
         return version
+
+    def save_with_id(self, pid: str | None, name: str, items: list[dict],
+                     grade_thresholds: dict | None = None, is_preset: bool = False) -> tuple[str, int]:
+        name = (name or "").strip()
+        pid = (pid or "").strip() or self._make_id(name)
+        version = self.save(pid, name, items, grade_thresholds, is_preset=is_preset)
+        return pid, version
 
     def get(self, pid: str) -> dict | None:
         df = self.pg.query_df(

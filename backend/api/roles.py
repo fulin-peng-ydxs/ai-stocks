@@ -27,7 +27,7 @@ def _ctx():
 
 
 class RoleCreate(BaseModel):
-    code: str
+    code: str | None = None
     name: str
     description: str | None = None
 

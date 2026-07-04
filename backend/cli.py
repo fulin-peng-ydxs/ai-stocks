@@ -205,7 +205,7 @@ def cmd_seed_presets(args: argparse.Namespace) -> int:
     from backend.screening.profile import ProfileRepo
 
     n = ProfileRepo().seed_presets()
-    print(f"内置预设方案入库: {n} 个")
+    print(f"系统内置筛选方案入库: {n} 个")
     return 0
 
 
@@ -535,7 +535,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ind.add_argument("--incremental", action="store_true", help="增量：只算新增交易日（params 不变时用，省时）")
     p_ind.set_defaults(func=cmd_indicators)
 
-    sub.add_parser("seed-presets", help="内置预设筛选方案入库（M3）").set_defaults(func=cmd_seed_presets)
+    sub.add_parser("seed-presets", help="系统内置筛选方案入库（M3）").set_defaults(func=cmd_seed_presets)
 
     p_scr = sub.add_parser("screen", help="对某交易日运行筛选方案（M3）")
     p_scr.add_argument("profile", help="方案 id，如 preset_trend_leader")

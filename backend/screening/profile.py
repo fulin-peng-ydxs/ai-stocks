@@ -1,9 +1,9 @@
-"""筛选方案存取（screen_profile 表）——保存/读取/列出/版本化 + 预设入库。
+"""筛选方案存取（screen_profile 表）——保存/读取/列出/版本化 + 系统内置方案入库。
 
 混合持久层（stage1·T2）：方案与版本属**用户资产**，落 PostgreSQL（self.pg，占位符 %s），
 按 tenant_id+owner_user_id 隔离。本仓库不读行情。
 归属上下文：auth 落地前统一默认租户/管理员；之后由请求上下文注入。
-预设（is_preset）跨用户共享语义留阶段三决策，stage1 单一归属者下按归属者存取即可。
+系统内置方案（is_preset）跨用户共享语义留阶段三决策，stage1 单一归属者下按归属者存取即可。
 """
 
 from __future__ import annotations
@@ -115,10 +115,10 @@ class ProfileRepo:
             f"DELETE FROM screen_profile_version WHERE id=%s AND {self._own}", [pid, *self._op])
 
     def seed_presets(self) -> int:
-        """把内置预设方案写入（幂等）。"""
+        """把系统内置方案写入（幂等）。"""
         n = 0
         for p in PRESET_PROFILES:
             self.save(p["id"], p["name"], p["expression"], is_preset=True)
             n += 1
-        log.info("内置预设方案入库 %d 个", n)
+        log.info("系统内置筛选方案入库 %d 个", n)
         return n

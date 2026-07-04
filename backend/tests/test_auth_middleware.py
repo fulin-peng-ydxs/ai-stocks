@@ -86,7 +86,7 @@ def test_system_route_allows_system_role(client, pg):
 
 
 def test_context_isolation_tenant_admin_sees_no_admin_presets(client, tadmin):
-    # admin 归属下有内置预设方案；租户管理员在独立租户应看不到（上下文归属隔离）
+    # admin 归属下有系统内置方案；租户管理员在独立租户应看不到（上下文归属隔离）
     uid, tid = tadmin
     resp = client.get("/api/profiles", headers=_auth(_access(uid, tid)))
     assert resp.status_code == 200

@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from backend.common.ids import prefixed_readable_id
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -27,6 +28,7 @@ class TenantRepository:
         return {
             "id": r["id"], "name": r["name"], "status": r["status"],
             "admin_user_id": r.get("admin_user_id"),
+            "created_at": str(r["created_at"]) if r.get("created_at") is not None else None,
         }
 
     def list_all(self, *, q: str | None, status: str | None, page: int, size: int) -> dict:
@@ -69,13 +71,24 @@ class TenantRepository:
         df = self.pg.query_df(f"SELECT {_TENANT_COLS} FROM sys_tenant WHERE name = %s", [name])
         return self._row(df.iloc[0].to_dict()) if not df.empty else None
 
+    def exists(self, tenant_id: str) -> bool:
+        df = self.pg.query_df("SELECT 1 FROM sys_tenant WHERE id = %s", [tenant_id])
+        return not df.empty
+
     def user_count(self, tenant_id: str) -> int:
         df = self.pg.query_df(
             "SELECT count(*) AS n FROM sys_user WHERE tenant_id = %s", [tenant_id])
         return int(df.iloc[0]["n"])
 
     def create(self, *, name: str, status: str) -> str:
-        tenant_id = "tenant_" + uuid.uuid4().hex[:12]
+        base = prefixed_readable_id(name, prefix="tenant_")
+        tenant_id = base
+        seq = 2
+        while self.exists(tenant_id):
+            tenant_id = f"{base}_{seq}"
+            seq += 1
+        if len(tenant_id) > 80:
+            tenant_id = "tenant_" + uuid.uuid4().hex[:12]
         self.pg.execute(
             "INSERT INTO sys_tenant (id, name, status, created_at) VALUES (%s, %s, %s, %s)",
             [tenant_id, name, status, datetime.now()])

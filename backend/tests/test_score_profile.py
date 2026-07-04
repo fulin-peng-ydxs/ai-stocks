@@ -107,6 +107,21 @@ def test_repo_save_get_version_delete(market, pg):
     assert repo.get("p1") is None
 
 
+def test_repo_save_with_id_generates_from_name(market, pg):
+    repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    pid, v1 = repo.save_with_id(None, "趋势评分", items)
+    try:
+        assert pid == "score_trend_score"
+        assert v1 == 1
+        assert repo.get(pid)["name"] == "趋势评分"
+        pid2, _ = repo.save_with_id(None, "趋势评分", items)
+        assert pid2 == "score_trend_score_2"
+    finally:
+        repo.delete(pid)
+        repo.delete("score_trend_score_2")
+
+
 def test_repo_validate_rejects_bad_profile(market, pg):
     repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
     with pytest.raises(ValueError):
@@ -177,6 +192,22 @@ def test_visible_profiles_include_public_and_tenant_scoped(market, pg):
         for owner in (TEST_OWNER, "pytest_same", "pytest_cross"):
             pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
             pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
+
+
+def test_own_preset_source_takes_priority_over_mine(market, pg):
+    """系统内置方案即便位于当前 owner 归属下，也应优先标记为 preset 而非 mine。"""
+    repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    try:
+        repo.save("own_builtin_default", "默认趋势分", items, is_preset=True)
+        row = next(r for r in repo.list_visible() if r["id"] == "own_builtin_default")
+        assert row["is_preset"] is True
+        assert row["source"] == "preset"
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+                   ["own_builtin_default", TEST_TENANT, TEST_OWNER])
+        pg.execute("DELETE FROM score_profile_version WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+                   ["own_builtin_default", TEST_TENANT, TEST_OWNER])
 
 
 def test_visibility_owner_only_and_copy_visible(market, pg):

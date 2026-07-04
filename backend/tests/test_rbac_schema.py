@@ -53,7 +53,7 @@ def test_builtin_roles_seeded(pg):
     assert all(bool(r["is_builtin"]) for r in by_code.values())
     assert bool(by_code[ROLE_SYSTEM]["is_locked"]) is True
     assert bool(by_code[ROLE_TENANT_ADMIN]["is_locked"]) is False
-    # kind 与 code 同名（内置预设）
+    # kind 与 code 同名（系统内置）
     for code in (ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID):
         assert by_code[code]["kind"] == code
 

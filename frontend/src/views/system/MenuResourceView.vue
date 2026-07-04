@@ -172,8 +172,8 @@ function openCreateRoot() {
   menuCreateForm.value = { code: '', title: '', type: 'group', routePath: '', icon: null, visible: 'login', parentId: null, parentTitle: '（根节点）' }
   menuDialog.value = true
 }
-function openCreateChild() {
-  const p = activeMenu.value
+function openCreateChild(node?: MenuNode) {
+  const p = node ?? activeMenu.value
   if (!p) return
   // 子节点默认继承父可见域（在 system 分组下新建默认 system），避免误建成登录可见的越权入口
   menuCreateForm.value = { code: '', title: '', type: 'leaf', routePath: '', icon: null, visible: p.visible, parentId: p.id, parentTitle: p.title }
@@ -181,13 +181,11 @@ function openCreateChild() {
 }
 async function saveCreateMenu() {
   const f = menuCreateForm.value
-  if (!f.code.trim()) { ElMessage.warning('请填写菜单标识 code'); return }
   if (!f.title.trim()) { ElMessage.warning('请填写菜单标题'); return }
   menuSaving.value = true
   try {
     const m = await createMenu({
       parentId: f.parentId,
-      code: f.code.trim(),
       title: f.title.trim(),
       type: f.type,
       routePath: f.type === 'group' ? null : (f.routePath.trim() || null),
@@ -320,7 +318,6 @@ onMounted(() => { loadTree() })
             </HelpTip>
           </h2>
           <div class="page-head-actions">
-            <el-button v-permission="'menu:create'" type="primary" @click="openCreateRoot">＋ 新增菜单节点</el-button>
             <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
           </div>
         </div>
@@ -331,7 +328,21 @@ onMounted(() => { loadTree() })
       <div class="mr-split">
         <!-- 左：菜单树 -->
         <div class="mr-col mr-left">
-          <div class="mr-col-head">菜单树 <span class="mini">可拖拽排序</span></div>
+          <div class="mr-col-head">
+            <span>菜单树</span>
+            <span class="mini">可拖拽排序</span>
+            <div class="mr-head-spacer" />
+            <el-button
+              v-permission="'menu:create'"
+              size="small"
+              text
+              class="mr-root-add"
+              title="新增根节点"
+              @click="openCreateRoot"
+            >
+              +
+            </el-button>
+          </div>
           <div class="mr-col-body" v-loading="treeLoading">
             <el-result v-if="treeError" icon="warning" title="菜单加载失败" sub-title="请重试">
               <template #extra><el-button type="primary" size="small" @click="loadTree()">重试</el-button></template>
@@ -359,6 +370,17 @@ onMounted(() => { loadTree() })
                     {{ data.type === 'group' ? '分组' : '菜单' }}
                   </el-tag>
                   <el-tag v-if="data.visible === 'system'" size="small" effect="plain" type="warning" class="mr-ttag">系统</el-tag>
+                  <el-button
+                    v-if="data.type === 'group'"
+                    v-permission="'menu:create'"
+                    class="mr-node-add"
+                    size="small"
+                    text
+                    title="新增子节点"
+                    @click.stop="openCreateChild(data)"
+                  >
+                    +
+                  </el-button>
                 </span>
               </template>
             </el-tree>
@@ -381,7 +403,6 @@ onMounted(() => { loadTree() })
                 </div>
               </div>
               <div class="page-head-actions">
-                <el-button v-if="activeMenu.type === 'group'" v-permission="'menu:create'" size="small" @click="openCreateChild">＋ 新增子节点</el-button>
                 <el-button v-permission="'menu:delete'" size="small" type="danger" plain :disabled="activeMenu.is_builtin" @click="removeMenu">删除节点</el-button>
               </div>
             </div>
@@ -537,9 +558,6 @@ onMounted(() => { loadTree() })
           <el-form-item label="上级">
             <el-input :model-value="menuCreateForm.parentTitle" disabled />
           </el-form-item>
-          <el-form-item label="标识">
-            <el-input v-model="menuCreateForm.code" class="mono" placeholder="全局唯一，创建后不可改（如 board）" />
-          </el-form-item>
           <el-form-item label="标题">
             <el-input v-model="menuCreateForm.title" placeholder="如：每日榜单" />
           </el-form-item>
@@ -594,11 +612,35 @@ onMounted(() => { loadTree() })
 .mr-col-head { padding: 11px 14px; border-bottom: 1px solid var(--el-border-color-lighter); font-weight: 600;
   display: flex; align-items: center; gap: 8px; }
 .mr-col-head .mini { font-size: 12px; color: var(--el-text-color-secondary); font-weight: 400; }
+.mr-head-spacer { flex: 1; }
+.mr-root-add {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 700;
+}
 .mr-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px; }
-.mr-tnode { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.mr-tnode { display: inline-flex; align-items: center; gap: 7px; min-width: 0; width: 100%; }
 .mr-ticon { color: var(--el-text-color-regular); }
 .mr-tlabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-ttag { transform: scale(0.9); flex: none; }
+.mr-node-add {
+  margin-left: auto;
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 700;
+  opacity: 0;
+}
+.mr-tnode:hover .mr-node-add {
+  opacity: 1;
+}
 .mr-detail-bar { padding: 12px 16px; border-bottom: 1px solid var(--el-border-color-lighter);
   display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mr-detail-title .mname { font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }

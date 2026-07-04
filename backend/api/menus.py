@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api", tags=["menus"], dependencies=[Depends(require_
 
 class MenuCreate(BaseModel):
     parentId: str | None = None
-    code: str
+    code: str | None = None
     title: str
     type: str = "leaf"                # group | leaf
     routePath: str | None = None

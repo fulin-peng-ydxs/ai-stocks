@@ -16,6 +16,7 @@ from datetime import datetime
 
 import pandas as pd
 
+from backend.common.ids import prefixed_readable_id
 from backend.common.logging import get_logger
 from backend.scoring.score_profile import resolve_indicator
 from backend.storage.duckdb_client import get_client
@@ -156,8 +157,21 @@ class TradeProfileRepo:
         from backend.indicators.definition import IndicatorDefRepo
         return {d["key"] for d in IndicatorDefRepo(self.mkt).list()}
 
-    def save(self, pid: str, name: str, buy_tree: dict, sell_tree: dict | None,
+    def _make_id(self, name: str) -> str:
+        base = prefixed_readable_id(name, prefix="trade_")
+        pid = base
+        seq = 2
+        while self.get(pid):
+            pid = f"{base}_{seq}"
+            seq += 1
+        return pid
+
+    def save(self, pid: str | None, name: str, buy_tree: dict, sell_tree: dict | None,
              backstop: dict | None = None, is_preset: bool = False) -> int:
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("请填写方案名称")
+        pid = (pid or "").strip() or self._make_id(name)
         sell_tree = sell_tree or {}
         validate_trade_profile(buy_tree, sell_tree, backstop, known=self._known())
         bj = json.dumps(buy_tree, ensure_ascii=False)
@@ -193,6 +207,13 @@ class TradeProfileRepo:
             "backstop=EXCLUDED.backstop, saved_at=EXCLUDED.saved_at",
             [pid, self.tenant_id, self.owner_user_id, version, name, bj, sj, kj, now])
         return version
+
+    def save_with_id(self, pid: str | None, name: str, buy_tree: dict, sell_tree: dict | None,
+                     backstop: dict | None = None, is_preset: bool = False) -> tuple[str, int]:
+        name = (name or "").strip()
+        pid = (pid or "").strip() or self._make_id(name)
+        version = self.save(pid, name, buy_tree, sell_tree, backstop, is_preset=is_preset)
+        return pid, version
 
     def get(self, pid: str) -> dict | None:
         df = self.pg.query_df(

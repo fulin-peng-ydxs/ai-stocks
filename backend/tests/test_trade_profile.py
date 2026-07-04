@@ -83,3 +83,20 @@ def test_repo_crud_version(market, pg):
     assert len(repo.versions("t1")) == 2
     repo.delete("t1")
     assert repo.get("t1") is None
+
+
+def test_repo_save_with_id_generates_from_name(market, pg):
+    IndicatorDefRepo(market).seed_builtins()
+    repo = TradeProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    buy = {"op": "AND", "children": [{"indicator": "bull_arrange", "cmp": "==", "value": True}]}
+    sell = {"op": "OR", "children": [{"indicator": "ma_bias", "params": {"n": 20}, "cmp": "<", "value": 0}]}
+    pid, v1 = repo.save_with_id(None, "趋势买卖", buy, sell, {"stop_loss": 0.08})
+    try:
+        assert pid == "trade_trend_trade"
+        assert v1 == 1
+        assert repo.get(pid)["name"] == "趋势买卖"
+        pid2, _ = repo.save_with_id(None, "趋势买卖", buy, sell, {"stop_loss": 0.08})
+        assert pid2 == "trade_trend_trade_2"
+    finally:
+        repo.delete(pid)
+        repo.delete("trade_trend_trade_2")

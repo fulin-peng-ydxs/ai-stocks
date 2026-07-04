@@ -206,7 +206,7 @@ function parseAst(ast: Record<string, unknown>): { op: 'AND' | 'OR'; rows: Row[]
   return single ? { op: 'AND', rows: [single] } : null
 }
 
-// ── 已存/预设方案：载入到构建器 ──
+// ── 已存/系统内置方案：载入到构建器 ──
 const profiles = ref<Profile[]>([])
 const loadId = ref('')
 const loadedProfile = ref<Profile | null>(null)
@@ -365,14 +365,14 @@ onMounted(async () => {
     </div>
 
     <el-card shadow="never" class="cond-card">
-      <!-- 载入已存/预设方案 -->
+      <!-- 载入已存/系统内置方案 -->
       <div class="load-row">
         <span class="hint">载入方案</span>
-        <el-select v-model="loadId" placeholder="选预设/已存方案（可选）" clearable filterable style="width: 250px">
+        <el-select v-model="loadId" placeholder="选系统内置/我的方案（可选）" clearable filterable style="width: 250px">
           <el-option
             v-for="p in profiles"
             :key="p.id"
-            :label="p.name + (p.is_preset ? '（预设）' : '（自定义）')"
+            :label="p.name + (p.is_preset ? '（系统内置）' : '（我的方案）')"
             :value="p.id"
           />
         </el-select>

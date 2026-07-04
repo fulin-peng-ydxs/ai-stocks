@@ -23,7 +23,7 @@ export function listRoles(): Promise<Role[]> {
   return http.get('/roles')
 }
 
-export function createRole(payload: { code: string; name: string; description?: string | null }): Promise<Role> {
+export function createRole(payload: { code?: string | null; name: string; description?: string | null }): Promise<Role> {
   return http.post('/roles', payload)
 }
 

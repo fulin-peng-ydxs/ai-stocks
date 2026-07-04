@@ -169,7 +169,7 @@ def test_score_model_normalizes_to_100():
 
 
 def test_preset_profiles_valid():
-    """内置预设方案 AST 全部合法（含 col+expr 混合）。"""
+    """系统内置筛选方案 AST 全部合法（含 col+expr 混合）。"""
     from backend.screening.condition import validate_ast
     from backend.screening.presets import PRESET_PROFILES
 

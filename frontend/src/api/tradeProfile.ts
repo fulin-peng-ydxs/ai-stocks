@@ -39,7 +39,7 @@ export function getTradeProfile(pid: string): Promise<TradeProfile> {
   return http.get(`/trade-profiles/${pid}`)
 }
 export function saveTradeProfile(body: {
-  id: string
+  id?: string | null
   name: string
   buy_tree: CondTree
   sell_tree?: CondTree | null

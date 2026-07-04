@@ -105,7 +105,7 @@ export function getScoreProfile(pid: string): Promise<ScoreProfile> {
   return http.get(`/score-profiles/${pid}`)
 }
 export function saveScoreProfile(body: {
-  id: string
+  id?: string | null
   name: string
   items: ScoreItem[]
   grade_thresholds?: Record<string, number>

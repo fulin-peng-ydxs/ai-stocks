@@ -77,13 +77,14 @@ function profileKey(p: ScoreProfileSummary): string {
 const curProfile = computed(() => profiles.value.find((p) => profileKey(p) === profileRef.value))
 const cacheStatus = ref('')
 function sourceLabel(p: ScoreProfileSummary): string {
+  if (p.is_preset || p.source === 'preset') return '系统内置'
   if (p.source === 'mine') return '我的'
   if (p.source === 'tenant') return '租户公开'
   if (p.source === 'public') return '全体公开'
-  if (p.source === 'preset') return '内置'
   return p.visibility || ''
 }
 function sourceTagType(p: ScoreProfileSummary): 'primary' | 'success' | 'warning' | 'info' {
+  if (p.is_preset || p.source === 'preset') return 'info'
   if (p.source === 'mine') return 'primary'
   if (p.source === 'tenant') return 'success'
   if (p.source === 'public') return 'warning'

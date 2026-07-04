@@ -199,7 +199,7 @@ CREATE TABLE IF NOT EXISTS screen_profile (
     version     INTEGER,            -- 版本号（改方案 +1）
     expression  VARCHAR,            -- 条件 AST（JSON 字符串，含 col/expr 叶子）
     params      VARCHAR,            -- 参数覆盖（JSON）
-    is_preset   BOOLEAN,            -- 是否内置预设
+    is_preset   BOOLEAN,            -- 是否系统内置
     created_at  TIMESTAMP,
     updated_at  TIMESTAMP
 );

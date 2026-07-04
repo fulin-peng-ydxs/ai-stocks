@@ -147,22 +147,38 @@ def test_tree_for_system(client, env):
 # ── CRUD / 唯一 ──
 
 def test_create_leaf_and_group(client, env):
-    code = "grp_" + uuid.uuid4().hex[:6]
     r = client.post("/api/menus", json={
-        "code": code, "title": "临时分组", "type": "group", "visible": "system"},
+        "title": "Temp Group", "type": "group", "visible": "system"},
         headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
     gid = r.json()["data"]["id"]
+    assert gid == "menu_temp_group"
+    assert r.json()["data"]["code"] == gid
     assert r.json()["data"]["route_path"] is None   # group 无路由
     try:
-        leaf_code = "leaf_" + uuid.uuid4().hex[:6]
         r2 = client.post("/api/menus", json={
-            "parentId": gid, "code": leaf_code, "title": "临时叶子", "type": "leaf",
-            "routePath": "/" + leaf_code, "icon": "Setting"}, headers=env.sys_headers())
+            "parentId": gid, "title": "Temp Leaf", "type": "leaf",
+            "routePath": "/temp-leaf-" + uuid.uuid4().hex[:6], "icon": "Setting"}, headers=env.sys_headers())
         assert r2.json()["data"]["parent_id"] == gid and r2.json()["data"]["icon"] == "Setting"
+        assert r2.json()["data"]["id"] == "menu_temp_leaf"
         client.delete(f"/api/menus/{r2.json()['data']['id']}", headers=env.sys_headers())
     finally:
         client.delete(f"/api/menus/{gid}", headers=env.sys_headers())
+
+
+def test_create_menu_auto_code_deduplicates(client, env):
+    r1 = client.post("/api/menus", json={
+        "title": "报表中心", "type": "group", "visible": "system"},
+        headers=env.sys_headers()).json()["data"]
+    r2 = client.post("/api/menus", json={
+        "title": "报表中心", "type": "group", "visible": "system"},
+        headers=env.sys_headers()).json()["data"]
+    try:
+        assert r1["id"] == "menu_report_center"
+        assert r2["id"] == "menu_report_center_2"
+    finally:
+        client.delete(f"/api/menus/{r2['id']}", headers=env.sys_headers())
+        client.delete(f"/api/menus/{r1['id']}", headers=env.sys_headers())
 
 
 def test_create_duplicate_code_rejected(client, env):

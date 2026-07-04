@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api", tags=["trade-profiles"])
 
 
 class TradeProfileBody(BaseModel):
-    id: str
+    id: str | None = None
     name: str
     buy_tree: dict
     sell_tree: dict | None = None
@@ -51,10 +51,11 @@ def trade_profile_versions(pid: str) -> ApiResponse:
              dependencies=[Depends(require_perm("trade-profile:save"))])
 def save_trade_profile(body: TradeProfileBody) -> ApiResponse:
     try:
-        v = TradeProfileRepo().save(body.id, body.name, body.buy_tree, body.sell_tree, body.backstop)
+        pid, v = TradeProfileRepo().save_with_id(
+            body.id, body.name, body.buy_tree, body.sell_tree, body.backstop)
     except ValueError as e:
         return err(400, str(e))
-    return ok({"id": body.id, "version": v, "msg": "已保存"})
+    return ok({"id": pid, "version": v, "msg": "已保存"})
 
 
 @router.delete("/trade-profiles/{pid}", response_model=ApiResponse,

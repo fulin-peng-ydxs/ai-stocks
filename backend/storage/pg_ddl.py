@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS sys_role (
     id          TEXT PRIMARY KEY,
     code        TEXT NOT NULL,
     name        TEXT NOT NULL,
-    kind        TEXT NOT NULL DEFAULT 'custom',   -- system|tenant_admin|normal|paid（内置预设）| custom（自建）
+    kind        TEXT NOT NULL DEFAULT 'custom',   -- system|tenant_admin|normal|paid（系统内置）| custom（自建）
     is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,   -- 内置角色不可删
     is_locked   BOOLEAN NOT NULL DEFAULT FALSE,   -- 权限锁定（system 超管：全授权且不可改）
     description TEXT,

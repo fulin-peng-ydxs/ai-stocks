@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api", tags=["score-profiles"])
 
 
 class ScoreProfileBody(BaseModel):
-    id: str
+    id: str | None = None
     name: str
     items: list[dict]
     grade_thresholds: dict | None = None
@@ -64,10 +64,10 @@ def score_profile_versions(pid: str) -> ApiResponse:
              dependencies=[Depends(require_perm("score-profile:save"))])
 def save_score_profile(body: ScoreProfileBody) -> ApiResponse:
     try:
-        v = ScoreProfileRepo().save(body.id, body.name, body.items, body.grade_thresholds)
+        pid, v = ScoreProfileRepo().save_with_id(body.id, body.name, body.items, body.grade_thresholds)
     except ValueError as e:
         return err(400, str(e))
-    return ok({"id": body.id, "version": v, "msg": "已保存"})
+    return ok({"id": pid, "version": v, "msg": "已保存"})
 
 
 @router.delete("/score-profiles/{pid}", response_model=ApiResponse,

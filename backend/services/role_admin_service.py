@@ -22,6 +22,7 @@ from __future__ import annotations
 from backend.auth import perm_resolver
 from backend.auth.constants import BUILTIN_ROLES
 from backend.auth.context import AuthContext
+from backend.common.ids import prefixed_readable_id
 from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationError
 from backend.common.logging import get_logger
 from backend.storage.role_repository import RoleRepository
@@ -42,13 +43,13 @@ class RoleAdminService:
         return self.roles.assignable(is_system=ctx.is_system)
 
     # ── 新建 ──
-    def create_role(self, *, code: str, name: str, description: str | None) -> dict:
+    def create_role(self, *, code: str | None, name: str, description: str | None) -> dict:
         code = (code or "").strip()
         name = (name or "").strip()
-        if not code:
-            raise ValidationError("请填写角色标识 code")
         if not name:
             raise ValidationError("请填写角色名称")
+        if not code:
+            code = self._make_role_code(name)
         if code in BUILTIN_ROLES or self.roles.get_by_code(code):
             raise ValidationError("角色标识已存在")
         rid = self.roles.create(code=code, name=name, description=description)
@@ -116,3 +117,12 @@ class RoleAdminService:
         if role is None:
             raise NotFoundError("角色不存在")
         return role
+
+    def _make_role_code(self, name: str) -> str:
+        base = prefixed_readable_id(name, prefix="role_")
+        code = base
+        seq = 2
+        while code in BUILTIN_ROLES or self.roles.get_by_code(code) or self.roles.get(code):
+            code = f"{base}_{seq}"
+            seq += 1
+        return code

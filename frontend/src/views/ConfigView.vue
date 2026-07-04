@@ -399,8 +399,8 @@ async function save() {
     ElMessage.warning('公开方案为只读，请先复制为自己的方案')
     return
   }
-  if (!editId.value || !editName.value) {
-    ElMessage.warning('请填写方案 ID 和名称')
+  if (!editName.value) {
+    ElMessage.warning('请填写方案名称')
     return
   }
   if (!items.value.length) {
@@ -413,13 +413,18 @@ async function save() {
   }
   saving.value = true
   try {
-    const r = await saveScoreProfile({ id: editId.value, name: editName.value, items: items.value })
+    const r = await saveScoreProfile({
+      id: editId.value || null,
+      name: editName.value,
+      items: items.value,
+    })
     curVersion.value = r.version
     ElMessage.success(`已保存（v${r.version}）`)
     isNew.value = false
-    curId.value = editId.value
+    editId.value = r.id
+    curId.value = r.id
     await loadProfiles()
-    const saved = profiles.value.find((p) => p.id === editId.value && p.source === 'mine')
+    const saved = profiles.value.find((p) => p.id === r.id && p.source === 'mine')
     if (saved) curRef.value = saved.profile_ref || saved.id
   } finally {
     saving.value = false
@@ -653,7 +658,7 @@ function restoreTradeVersion(v: TradeProfileVersion) {
   ElMessage.success(`已载入 v${v.version} 到编辑器，确认后点「保存」生成新版本`)
 }
 async function saveTrade() {
-  if (!tEditId.value || !tEditName.value) { ElMessage.warning('请填写方案 ID 和名称'); return }
+  if (!tEditName.value) { ElMessage.warning('请填写方案名称'); return }
   if (!buyConds.value.length) { ElMessage.warning('请至少配置一个买入条件'); return }
   const bs = {
     take_profit: backstop.value.tp != null ? backstop.value.tp / 100 : null,
@@ -663,13 +668,17 @@ async function saveTrade() {
   tSaving.value = true
   try {
     const r = await saveTradeProfile({
-      id: tEditId.value, name: tEditName.value,
+      id: tEditId.value || null,
+      name: tEditName.value,
       buy_tree: toTree(buyLogic.value, buyConds.value),
       sell_tree: toTree(sellLogic.value, sellConds.value),
       backstop: bs,
     })
     tCurVersion.value = r.version
-    ElMessage.success(`已保存（v${r.version}）`); tIsNew.value = false; tCurId.value = tEditId.value
+    ElMessage.success(`已保存（v${r.version}）`)
+    tIsNew.value = false
+    tEditId.value = r.id
+    tCurId.value = r.id
     await loadTradeProfiles()
   } catch { /* 拦截器已提示 */ } finally { tSaving.value = false }
 }
@@ -835,8 +844,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <!-- 编辑器 -->
           <section class="editor editor-score">
             <div class="ed-head">
-              <el-input v-model="editId" :disabled="!isNew" placeholder="方案ID(英文)" style="width: 180px" />
               <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
+              <span v-if="editId && !isNew" class="id-badge mono">{{ editId }}</span>
               <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openScoreVersions">v{{ curVersion }}</span>
               <el-dropdown
                 v-if="canEditProfileVisibility"
@@ -1177,8 +1186,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
           <section class="editor">
             <div class="ed-head">
-              <el-input v-model="tEditId" :disabled="!tIsNew" placeholder="方案ID(英文)" style="width: 170px" />
               <el-input v-model="tEditName" placeholder="方案名称" style="width: 190px" />
+              <span v-if="tEditId && !tIsNew" class="id-badge mono">{{ tEditId }}</span>
               <span v-if="tCurVersion && !tIsNew" class="ver-badge" title="点击查看历史版本" @click="openTradeVersions">v{{ tCurVersion }}</span>
               <div class="spacer" />
               <el-button v-permission="'trade-profile:save'" :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
@@ -1489,6 +1498,21 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .ver-badge:hover {
   background: var(--el-color-primary-light-7);
+}
+.id-badge {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 12px;
+}
+.mono {
+  font-family: var(--el-font-family-mono, monospace);
 }
 .visibility-trigger {
   cursor: pointer;

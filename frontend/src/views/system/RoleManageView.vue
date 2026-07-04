@@ -40,9 +40,8 @@ const rolesLoading = ref(false)
 const loadError = ref(false)   // 权限树/角色初次加载失败 → 页内错误态 + 重试
 
 function roleTag(r: Role): { text: string; type: 'warning' | 'info' | 'primary' } {
-  if (r.is_locked) return { text: '超管·锁定', type: 'warning' }
-  if (r.kind === 'paid') return { text: '付费·预留', type: 'primary' }
   if (r.is_builtin) return { text: '系统内置', type: 'info' }
+  if (r.kind === 'paid') return { text: '付费', type: 'primary' }
   return { text: '自定义', type: 'info' }
 }
 
@@ -208,9 +207,8 @@ async function saveRole() {
   roleSaving.value = true
   try {
     if (dialogMode.value === 'create') {
-      if (!roleForm.value.code.trim()) { ElMessage.warning('请填写角色标识 code'); return }
       const r = await createRole({
-        code: roleForm.value.code.trim(), name: roleForm.value.name.trim(),
+        name: roleForm.value.name.trim(),
         description: roleForm.value.description.trim() || null,
       })
       ElMessage.success('已创建')
@@ -352,9 +350,9 @@ onMounted(loadAll)
           <el-form-item label="角色名">
             <el-input v-model="roleForm.name" placeholder="如：数据分析员" />
           </el-form-item>
-          <el-form-item label="角色码">
+          <el-form-item v-if="dialogMode === 'rename'" label="角色码">
             <el-input v-model="roleForm.code" :disabled="dialogMode === 'rename'"
-                      placeholder="如：analyst（全局唯一，创建后不可改）" />
+                      placeholder="系统生成，创建后不可改" />
           </el-form-item>
           <el-form-item label="描述">
             <el-input v-model="roleForm.description" placeholder="可选" />
