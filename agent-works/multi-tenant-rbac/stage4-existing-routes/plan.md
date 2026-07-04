@@ -495,6 +495,8 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - **前端（已覆盖，无需新增）**：`utils/permission.spec.ts`（21 用例）覆盖 `isRouteAllowed`/`resolveMenuGuard`/`firstMenuPath` 的 fail-closed、SAFE_HOME 回落、首个授权落点、不放行被请求未授权页、不自跳死循环；`SideMenu.spec.ts`（3）消费后端菜单不静态兜底；`directives/permission` + `stage4-button-permission`（T6）覆盖按钮级。
   - **新增测试**：[test_stage4_menu_guard.py](../../../backend/tests/test_stage4_menu_guard.py)（5 用例）——① 自定义角色只授业务码 → resolve 强制注入 3 baseline；② 运行时不可反选（role_resource 全空 → 仍注入 baseline）；③ 无角色用户 fail-closed（空 menus/resources、baseline 也不注入）；④ 自定义角色授业务菜单 `/backtest` → `/me` 菜单树可导航且 system-only 分支隐藏；⑤ `ResourceRepository.list_all` baseline 码标 `baseline_locked=True`、业务/系统码为 False（前端权限树恒勾选+置灰的数据契约）。全量后端 **436 passed**。
 
+### 6.9 任务 T8：后端权限与隔离测试
+
 - 状态：已完成
 - 依赖：T3a,T4,T5,T7；榜单权限和归属样例依赖 T3b/C1
 - 涉及文件/模块：
