@@ -25,7 +25,7 @@ from backend.auth.jwt_tokens import (
 from backend.auth.security import check_strength, hash_password, verify_password
 from backend.common.exceptions import AuthError, RateLimitError, ValidationError
 from backend.common.logging import get_logger
-from backend.config import get_settings
+from backend.config import get_effective_settings
 from backend.storage.menu_repository import MenuRepository
 from backend.storage.tenant_repository import TenantRepository
 from backend.storage.user_repository import UserRepository
@@ -42,7 +42,7 @@ class AuthService:
         self.repo = repo or UserRepository()
         self.tenants = tenants or TenantRepository()
         self.menus = menus or MenuRepository()
-        self.cfg = get_settings().auth
+        self.cfg = get_effective_settings().auth
 
     def _ensure_tenant_active(self, tenant_id: str) -> None:
         """租户停用即拒绝登录/刷新（T9·R14）：停用后新登录被拒，配合 bump 使在线 token 也失效。"""

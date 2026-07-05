@@ -30,6 +30,7 @@ SHARED_RESOURCE_CODES: tuple[str, ...] = (
     "layout:view",           # GET /api/layout/presets|pages/{k}|effective/{k}（全站布局生效读）
     "trade-calendar:view",   # GET /api/data/trade-dates（全站交易日历）
     "indicator:registry",    # GET /api/indicators/registry（Board/Screen/Config 跨页指标目录读）
+    "dict:read",             # GET /api/dict/items/public（登录基线字典消费读；管理页仍 system-only）
 )
 
 # 可授权业务码：normal/paid/tenant_admin 默认授予的研究业务功能码（seed 首次写入 + 既有库一次性回填）。

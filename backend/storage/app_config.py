@@ -46,6 +46,17 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "backtest.top_n", "label": "回测 TopN", "type": "int", "min": 1, "max": 500},
         {"path": "scoring.top_n", "label": "榜单 TopN", "type": "int", "min": 1, "max": 500},
     ]},
+    {"key": "auth", "label": "认证与防滥用", "fields": [
+        {"path": "auth.require_email_code", "label": "注册需邮箱验证码", "type": "bool"},
+        {"path": "auth.login_captcha_enabled", "label": "登录图形验证码", "type": "bool"},
+        {"path": "auth.captcha_after_fails", "label": "图形验证码触发失败次数", "type": "int", "min": 1, "max": 10},
+        {"path": "auth.login_rate_per_min", "label": "登录限流(次/分钟)", "type": "int", "min": 1, "max": 120},
+        {"path": "auth.register_rate_per_hour", "label": "注册限流(次/小时)", "type": "int", "min": 1, "max": 120},
+        {"path": "auth.email_code_rate_per_hour", "label": "邮箱验证码限流(次/小时)", "type": "int", "min": 1, "max": 120},
+    ]},
+    {"key": "audit", "label": "审计设置", "fields": [
+        {"path": "audit.retention_days", "label": "审计默认查询窗口(天)", "type": "int", "min": 7, "max": 365},
+    ]},
     # 定时调度（遗留）：调度系统重构后改用 scheduled_job 表 + 「任务调度」页，旧的单一每日配置
     # 已不再作为运行态。这些白名单项仅供启动时一次性迁移读取旧值（读后即删，见 scheduler._migrate_legacy_config），
     # 不在表单渲染（hidden_in_form）。迁移消费完即从 app_config 删除，正常运行期不会再出现。

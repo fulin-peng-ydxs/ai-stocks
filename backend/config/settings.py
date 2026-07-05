@@ -205,6 +205,12 @@ class AuthConfig(BaseModel):
     api_rate_per_min: int = 600         # 单 IP 每分钟全局 /api 请求上限（应用层粗粒度backstop；反代做主限流）
 
 
+class AuditConfig(BaseModel):
+    """审计日志配置。"""
+
+    retention_days: int = 90            # 默认查询窗口/保留期提示；自动清理留后续阶段
+
+
 class Settings(BaseModel):
     """全局配置根模型。"""
 
@@ -220,6 +226,7 @@ class Settings(BaseModel):
     postgres: PostgresConfig = Field(default_factory=PostgresConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    audit: AuditConfig = Field(default_factory=AuditConfig)
 
     # ── 派生：绝对路径辅助 ──
     def duckdb_path(self) -> Path:

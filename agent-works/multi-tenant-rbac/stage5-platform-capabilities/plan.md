@@ -584,7 +584,7 @@ Slot 与组件设计：
 
 ### 6.1 任务 T1：数据库、菜单、资源码和 SQL 留痕
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：阶段四 RBAC seed 和 `pg_ddl.py` 现有迁移标记机制。
 - 涉及文件/模块：
   - `backend/storage/pg_ddl.py`
@@ -613,11 +613,11 @@ Slot 与组件设计：
   - 菜单/资源 seed 测试。
   - tenant_admin 回填和 `perm_ver` bump 测试。
 - 完成标准：新库和已有库都能得到一致 seed；重复启动幂等；资源码扫描不报缺失。
-- 实际落地情况：待实施。
+- 实际落地情况：已落地 `audit_log`、`dict_type`、`dict_item` 表和索引；已新增 `/system/audit`、`/system/dicts` 菜单和 `audit:view`、`dict:read`、`dict:view`、`dict:type-manage`、`dict:item-manage` 资源码；`dict:read` 已加入登录基线共享读并锚定 `/board`；tenant_admin 审计入口回填与阶段五迁移标记已实现；已生成两份 SQL 留痕并补 T1 专项测试。
 
 ### 6.2 任务 T2：R16/R17 运行时配置模型
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1 的 app_config seed 约定；现有 `CONFIG_GROUPS`。
 - 涉及文件/模块：
   - `backend/storage/app_config.py`
@@ -639,7 +639,7 @@ Slot 与组件设计：
   - 配置保存接口测试。
   - 非法值和缺值回退测试。
 - 完成标准：新增字段可查询、可保存、可被服务读取，并且没有未消费配置项。
-- 实际落地情况：待实施。
+- 实际落地情况：已新增 `AuditConfig.retention_days` 和 `auth`/`audit` 配置白名单；`auth.require_email_code`、`auth.login_captcha_enabled`、`auth.captcha_after_fails`、认证限流字段和 `audit.retention_days` 已支持系统设置查询/保存、类型与范围校验；`AuthService` 已改为读取 `get_effective_settings().auth`，`public-config` 和登录/注册/邮箱码限流链路可消费 app_config 覆盖值；已补 T2 专项测试。
 
 ### 6.3 任务 T3：认证链路消费有效配置
 

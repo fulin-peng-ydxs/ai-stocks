@@ -535,6 +535,63 @@ CREATE TABLE IF NOT EXISTS app_config (
 """
 
 
+# ── 阶段五平台能力：审计日志 + 数据字典（平台级，无 owner 归属）──────────────
+
+DDL_AUDIT_LOG = """
+CREATE TABLE IF NOT EXISTS audit_log (
+    id             TEXT PRIMARY KEY,
+    event_time     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    tenant_id      TEXT,
+    actor_user_id  TEXT,
+    actor_account  TEXT,
+    event_category TEXT NOT NULL,
+    event_type     TEXT NOT NULL,
+    resource_code  TEXT,
+    action         TEXT,
+    target_type    TEXT,
+    target_id      TEXT,
+    target_label   TEXT,
+    result         TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    ip             TEXT,
+    method         TEXT,
+    path           TEXT,
+    duration_ms    INTEGER,
+    error_summary  TEXT,
+    context        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+DDL_DICT_TYPE = """
+CREATE TABLE IF NOT EXISTS dict_type (
+    id         TEXT PRIMARY KEY,
+    code       TEXT NOT NULL UNIQUE,
+    name       TEXT NOT NULL,
+    enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+    sort       INTEGER NOT NULL DEFAULT 100,
+    remark     TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+DDL_DICT_ITEM = """
+CREATE TABLE IF NOT EXISTS dict_item (
+    id         TEXT PRIMARY KEY,
+    type_code  TEXT NOT NULL REFERENCES dict_type(code) ON DELETE RESTRICT,
+    code       TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+    sort       INTEGER NOT NULL DEFAULT 100,
+    remark     TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (type_code, code)
+);
+"""
+
+
 # 归属表 → 复合主键（含归属列）。asset_repository / 各仓库 ON CONFLICT 必须与此一致。
 ASSET_PK: dict[str, list[str]] = {
     "screen_profile": ["tenant_id", "owner_user_id", "id"],
@@ -588,6 +645,9 @@ _OTHER_TABLES: dict[str, str] = {
     "sys_tenant": DDL_SYS_TENANT,
     "sys_user": DDL_SYS_USER,
     "app_config": DDL_APP_CONFIG,
+    "audit_log": DDL_AUDIT_LOG,
+    "dict_type": DDL_DICT_TYPE,
+    "dict_item": DDL_DICT_ITEM,
 }
 
 # RBAC 平台表（建表顺序遵守 FK：先主体 role/menu，再 resource(引 menu)，最后三关联表）。
@@ -608,6 +668,17 @@ _RBAC_INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_sys_user_role_role ON sys_user_role (role_id)",
     "CREATE INDEX IF NOT EXISTS idx_sys_role_menu_menu ON sys_role_menu (menu_id)",
     "CREATE INDEX IF NOT EXISTS idx_sys_role_resource_resource ON sys_role_resource (resource_id)",
+)
+
+_STAGE5_INDEXES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_event_time ON audit_log (event_time DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_tenant_time ON audit_log (tenant_id, event_time DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_category_time ON audit_log (event_category, event_time DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_type_time ON audit_log (event_type, event_time DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_resource_time ON audit_log (resource_code, event_time DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_result_time ON audit_log (result, event_time DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_dict_type_enabled_sort ON dict_type (enabled, sort, code)",
+    "CREATE INDEX IF NOT EXISTS idx_dict_item_type_enabled_sort ON dict_item (type_code, enabled, sort, code)",
 )
 
 
@@ -660,6 +731,8 @@ _SEED_MENU_TREE: list = [
             ("/system/menus", "菜单与功能", None, "system", []),
             ("/system/tenants", "租户管理", None, "system", []),
         ]),
+        ("/system/audit", "审计日志", None, "login", []),
+        ("/system/dicts", "数据字典", None, "system", []),
     ]),
 ]
 
@@ -750,18 +823,60 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/data/schedule", "data-source:test",     "数据源测试",       "api", "POST", "/api/data/sources/test"),
     ("/data/schedule", "data-settings:manage", "数据设置保存",     "api", "POST", "/api/data/settings"),
     ("/data/ingest",   "data-task:manage",     "采集任务管理",     "api", "POST", "/api/data/tasks"),
+    # ── 阶段五：平台能力（审计 + 字典）──
+    ("/system/audit", "audit:view", "查看审计日志", "api", "GET", "/api/audit"),
+    ("/board", "dict:read", "字典消费读（全站基线）", "api", "GET", "/api/dict/items/public"),
+    ("/system/dicts", "dict:view", "查看数据字典", "api", "GET", "/api/dict/types"),
+    ("/system/dicts", "dict:type-manage", "维护字典类型", "api", "POST", "/api/dict/types"),
+    ("/system/dicts", "dict:item-manage", "维护字典项", "api", "POST", "/api/dict/items"),
 )
 
 # 默认授权：业务页所有登录用户可用；用户管理授予租户管理员（管本租户用户）；system 由 resolver 判全量。
 _BUSINESS_MENU_CODES: tuple[str, ...] = (
     "quotes", "/stocks", "/board", "/screen", "/backtest", "/training",
     "system", "/system/config", "/system/config/score", "/system/config/trade")
-_TENANT_ADMIN_EXTRA_MENUS: tuple[str, ...] = ("system", "permission", "/system/users")
+_TENANT_ADMIN_EXTRA_MENUS: tuple[str, ...] = (
+    "system", "permission", "/system/users", "/system/audit")
 _USER_RESOURCE_CODES: tuple[str, ...] = (
     "user:list", "user:create", "user:update",
     "user:disable", "user:reset-password", "user:delete")
-_TENANT_ADMIN_EXTRA_RESOURCE_CODES: tuple[str, ...] = ("score-profile:publish-tenant",)
+_TENANT_ADMIN_EXTRA_RESOURCE_CODES: tuple[str, ...] = (
+    "score-profile:publish-tenant", "audit:view")
 _STAGE4_BUSINESS_GRANTS_MARKER = "migration.stage4_business_grants_v2"
+_STAGE5_PLATFORM_CAPABILITIES_MARKER = "migration.stage5_platform_capabilities_v1"
+
+_STAGE5_APP_CONFIG_DEFAULTS: tuple[tuple[str, str], ...] = (
+    ("auth.require_email_code", "true"),
+    ("auth.login_captcha_enabled", "false"),
+    ("auth.captcha_after_fails", "3"),
+    ("audit.retention_days", "90"),
+)
+
+_SEED_DICT_TYPES: tuple[tuple[str, str, int, str], ...] = (
+    ("role_type", "角色类型", 10, "系统内置角色类型"),
+    ("user_status", "用户状态", 20, "用户账号状态"),
+    ("audit_event_type", "审计事件类型", 30, "审计日志事件分类"),
+    ("audit_result", "审计结果", 40, "审计日志处理结果"),
+)
+
+_SEED_DICT_ITEMS: tuple[tuple[str, str, str, int], ...] = (
+    ("role_type", ROLE_SYSTEM, "系统管理员", 10),
+    ("role_type", ROLE_TENANT_ADMIN, "租户管理员", 20),
+    ("role_type", ROLE_NORMAL, "普通用户", 30),
+    ("role_type", ROLE_PAID, "付费用户", 40),
+    ("user_status", "active", "启用", 10),
+    ("user_status", "disabled", "停用", 20),
+    ("user_status", "locked", "锁定", 30),
+    ("audit_event_type", "api", "接口", 10),
+    ("audit_event_type", "task", "任务", 20),
+    ("audit_event_type", "security", "安全", 30),
+    ("audit_event_type", "rbac", "权限", 40),
+    ("audit_event_type", "config", "配置", 50),
+    ("audit_event_type", "dict", "字典", 60),
+    ("audit_result", "success", "成功", 10),
+    ("audit_result", "failed", "失败", 20),
+    ("audit_result", "denied", "拒绝", 30),
+)
 
 
 def init_pg_db(client: PostgresClient | None = None) -> list[str]:
@@ -782,6 +897,8 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         log.debug("PG RBAC 表已就绪: %s", name)
     for idx_sql in _RBAC_INDEXES:
         client.execute(idx_sql)
+    for idx_sql in _STAGE5_INDEXES:
+        client.execute(idx_sql)
     _upgrade_score_profile_visibility(client)
     # layout 主键以 user_id 打头，补归属索引便于按 owner 统计；其余表复合主键已覆盖归属查询
     client.execute(
@@ -797,6 +914,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         "ON sys_user (email) WHERE email IS NOT NULL")
     seed_default_tenant(client)   # 先补 admin=system 的 role_code，供 seed_rbac 建 user_role 用
     seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 存量用户按 role_code 补 user_role
+    seed_stage5_platform_capabilities(client)
     return created
 
 
@@ -1061,6 +1179,72 @@ def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
             "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
             [_STAGE4_BUSINESS_GRANTS_MARKER, '{"applied":true}'],
+        )
+
+
+def seed_stage5_platform_capabilities(client: PostgresClient | None = None) -> None:
+    """阶段五平台能力 seed：默认配置、首批字典、既有库 tenant_admin 审计授权回填。
+
+    `dict:read` 是登录基线共享读码，运行时由 `perm_resolver.resolve` 注入，不落
+    role_resource 授权行；迁移标记首次落地时 bump 非 system 有角色用户，让旧 token/perms
+    快照失效后重新解析到新增 baseline。
+    """
+    client = client or get_pg_client()
+    for key, value in _STAGE5_APP_CONFIG_DEFAULTS:
+        client.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (key) DO NOTHING",
+            [key, value],
+        )
+    for code, name, sort, remark in _SEED_DICT_TYPES:
+        client.execute(
+            "INSERT INTO dict_type (id, code, name, sort, remark) "
+            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (code) DO NOTHING",
+            [code, code, name, sort, remark],
+        )
+    for type_code, code, label, sort in _SEED_DICT_ITEMS:
+        item_id = f"{type_code}:{code}"
+        client.execute(
+            "INSERT INTO dict_item (id, type_code, code, label, sort) "
+            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (type_code, code) DO NOTHING",
+            [item_id, type_code, code, label, sort],
+        )
+    _backfill_stage5_platform_grants(client)
+
+
+def _backfill_stage5_platform_grants(client: PostgresClient) -> None:
+    """既有库阶段五权限回填：tenant_admin 审计入口 + 新 baseline 权限快照失效。"""
+    marker = client.query_df(
+        "SELECT 1 FROM app_config WHERE key=%s", [_STAGE5_PLATFORM_CAPABILITIES_MARKER])
+    if not marker.empty:
+        return
+
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING",
+            [ROLE_TENANT_ADMIN, "/system/audit"],
+        )
+        cur.execute(
+            "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING",
+            [ROLE_TENANT_ADMIN, "audit:view"],
+        )
+        cur.execute(
+            "UPDATE sys_user u SET perm_ver=perm_ver+1 "
+            "WHERE EXISTS ("
+            "  SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id = ur.role_id "
+            "  WHERE ur.user_id = u.id AND r.code <> %s"
+            ") AND NOT EXISTS ("
+            "  SELECT 1 FROM sys_user_role sur JOIN sys_role sr ON sr.id = sur.role_id "
+            "  WHERE sur.user_id = u.id AND (sr.code = %s OR sr.kind = 'system')"
+            ")",
+            [ROLE_SYSTEM, ROLE_SYSTEM],
+        )
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
+            [_STAGE5_PLATFORM_CAPABILITIES_MARKER, '{"applied":true}'],
         )
 
 
