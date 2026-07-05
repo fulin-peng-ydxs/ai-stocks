@@ -380,7 +380,16 @@ class DataIntegrityReport:
             after_listing_window = listed_seq.isna() | (listed_seq.astype("float64") > 5)
         delist_date = pd.to_datetime(df.get("delist_date"), errors="coerce")
         before_delist = delist_date.isna() | (trade_date < delist_date)
-        return after_listing_window & before_delist
+        name = df.get("name")
+        gap_days = df.get("gap_days")
+        if name is None or gap_days is None:
+            retire_entry = pd.Series(False, index=df.index)
+        else:
+            retire_entry = (
+                name.astype(str).str.contains("退", na=False)
+                & (pd.to_numeric(gap_days, errors="coerce").fillna(0) > 10)
+            )
+        return after_listing_window & before_delist & ~retire_entry
 
     # ── 市场级四层质检（写 data_quality_issue，DM-D20 统一口径）──
     def scan_quality_issues(self, gap_window_days: int = GAP_WINDOW_DAYS) -> dict:
@@ -412,7 +421,10 @@ class DataIntegrityReport:
                 SELECT b.code, b.trade_date, b.pre_close,
                        abs(b.close / b.pre_close - 1) AS chg,
                        COALESCE(sb.price_limit_pct, 0.10) AS lim,
+                       sb.name,
                        sb.delist_date,
+                       b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                           AS gap_days,
                        CASE
                            WHEN sb.list_date IS NOT NULL
                                 AND min(b.trade_date) OVER (PARTITION BY b.code)
@@ -507,7 +519,10 @@ class DataIntegrityReport:
                 SELECT *
                 FROM (
                     SELECT b.trade_date, b.close, b.pre_close, COALESCE(sb.price_limit_pct,0.10) lim,
+                           sb.name,
                            sb.delist_date,
+                           b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                               AS gap_days,
                            CASE
                                WHEN sb.list_date IS NOT NULL
                                     AND min(b.trade_date) OVER (PARTITION BY b.code)
@@ -531,6 +546,7 @@ class DataIntegrityReport:
             df = self.c.query_df(
                 """
                 SELECT b.trade_date, b.close, COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor,
+                       sb.name,
                        sb.delist_date,
                        CASE
                            WHEN sb.list_date IS NOT NULL
@@ -549,6 +565,7 @@ class DataIntegrityReport:
             ratio = (qfq / qfq.shift(1) - 1).abs()
             prev_date = pd.to_datetime(df["trade_date"]).shift(1)
             gap_days = (pd.to_datetime(df["trade_date"]) - prev_date).dt.days
+            df = df.assign(gap_days=gap_days)
             actionable = (ratio > 0.5) & self._active_l3_mask(df) & (gap_days.fillna(0) <= 30)
             return not bool(actionable.any())
         return True
@@ -564,6 +581,7 @@ class DataIntegrityReport:
             """
             SELECT b.code, b.trade_date, b.close,
                    COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor,
+                   sb.name,
                    sb.delist_date,
                    CASE
                        WHEN sb.list_date IS NOT NULL
@@ -587,6 +605,7 @@ class DataIntegrityReport:
             ratio = (qfq / qfq.shift(1) - 1).abs()
             prev_date = pd.to_datetime(g["trade_date"]).shift(1)
             gap_days = (pd.to_datetime(g["trade_date"]) - prev_date).dt.days
+            g = g.assign(gap_days=gap_days)
             actionable = (ratio > threshold) & self._active_l3_mask(g) & (gap_days.fillna(0) <= 30)
             bad = g[actionable]
             if not bad.empty:
