@@ -906,7 +906,7 @@ Slot 与组件设计：
 
 ### 6.11 任务 T11：权限扫描和菜单授权测试
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1、T4、T6、T7。
 - 涉及文件/模块：
   - `backend/tests/test_stage5_resource_codes.py`
@@ -930,7 +930,13 @@ Slot 与组件设计：
   - `python -m pytest backend/tests/test_stage5_resource_codes.py -q`
   - `python -m pytest backend/tests/test_stage4_menu_guard.py -q`
 - 完成标准：新增 API 无裸露端点，默认角色授权符合需求。
-- 实际落地情况：待实施。
+- 实际落地情况：已新增 `backend/tests/test_stage5_resource_codes.py`，集中覆盖阶段五 `/api/audit`、`/api/dict`
+  路由精确资源码扫描、`require_system_perm` system-only 元数据、tenant_admin 审计菜单和 `audit:view`、normal/paid
+  默认无审计和字典管理入口但具备 `dict:read`、字典管理接口 system-only、无角色用户 `dict:read` fail-closed、
+  `dict:read` 挂 `/board` 且 `visible=login`、`SHARED_RESOURCE_CODES` 与 `baseline_locked` 契约，以及
+  `/system/audit`、`/system/dicts` 菜单路径与前端 router/pageRegistry 对齐。已按约束先停后台服务再验证，
+  `python -m pytest backend/tests/test_stage5_resource_codes.py backend/tests/test_stage4_menu_guard.py -q` 通过
+  `10 passed`，仅有 FastAPI `on_event` 既有弃用警告；验证完成后已重启后端服务。
 
 ### 6.12 任务 T12：后端业务测试
 
