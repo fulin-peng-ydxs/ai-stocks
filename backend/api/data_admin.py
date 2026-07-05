@@ -6,10 +6,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
+from backend.auth.context import get_current_context
 from backend.auth.deps import require_system_perm
 from backend.storage.duckdb_client import get_client
 
@@ -23,6 +24,13 @@ _QUALITY_FIX = [Depends(require_system_perm("data-quality:fix"))]    # 质量处
 _SCHEDULE = [Depends(require_system_perm("data-schedule:manage"))]   # 定时任务 CRUD / 启停 / 立即触发
 _SOURCE = [Depends(require_system_perm("data-source:test"))]         # 数据源状态 / 连通测试
 _SETTINGS = [Depends(require_system_perm("data-settings:manage"))]   # 系统设置读写
+
+
+def _client_ip(request: Request) -> str | None:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else None
 
 
 # ── 概览（FR-DM-1）─────────────────────────────────────────
@@ -531,7 +539,7 @@ def get_settings_view() -> ApiResponse:
 
 
 @router.post("/settings", response_model=ApiResponse, dependencies=_SETTINGS)
-def save_settings(body: dict) -> ApiResponse:
+def save_settings(body: dict, request: Request) -> ApiResponse:
     """保存覆盖值（写 app_config 即时生效）。body={updates:{path:value}} 或直接 {path:value}。"""
     from backend.storage.app_config import AppConfigRepo, ConfigValidationError
     updates = body.get("updates", body)
@@ -539,4 +547,37 @@ def save_settings(body: dict) -> ApiResponse:
         n = AppConfigRepo().set_many(updates)
     except ConfigValidationError as e:
         return err(400, str(e))
+    _record_settings_audit(updates, n, request)
     return ok({"saved": n}, msg="配置已保存并生效")
+
+
+def _record_settings_audit(updates: dict, saved_count: int, request: Request) -> None:
+    """系统设置保存审计：只记录 key 和数量，不记录配置值。"""
+    if not updates:
+        return
+    try:
+        from backend.storage.audit_repository import AuditRepository
+
+        ctx = get_current_context()
+        keys = sorted(str(k) for k in updates)
+        AuditRepository().record(
+            event_category="config",
+            event_type="config",
+            action="update",
+            resource_code="data-settings:manage",
+            target_type="app_config",
+            target_id=",".join(keys),
+            target_label="系统设置",
+            result="success",
+            status="completed",
+            tenant_id=ctx.tenant_id if ctx else None,
+            actor_user_id=ctx.user_id if ctx else None,
+            ip=_client_ip(request),
+            method=request.method,
+            path=request.url.path,
+            context={"config_keys": keys, "affected_count": saved_count},
+        )
+    except Exception as e:  # noqa: BLE001
+        from backend.common.logging import get_logger
+
+        get_logger("api.data_admin").warning("系统设置审计写入失败，已降级忽略: %s", e)

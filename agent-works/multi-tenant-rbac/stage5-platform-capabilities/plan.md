@@ -656,7 +656,7 @@ Slot 与组件设计：
 
 ### 6.3 任务 T3：认证链路消费有效配置
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2。
 - 涉及文件/模块：
   - `backend/services/auth_service.py`
@@ -681,7 +681,10 @@ Slot 与组件设计：
   - 开启 `login_captcha_enabled` 和设置 `captcha_after_fails` 后登录按阈值要求验证码。
   - `/api/auth/public-config` 返回有效值。
 - 完成标准：配置展示、保存、读取、消费、回退全链路可验证。
-- 实际落地情况：待实施。
+- 实际落地情况：已确认认证服务读取 `get_effective_settings().auth`，`/api/auth/public-config`、登录图形验证码阈值、
+  注册邮箱验证码开关和认证限流均消费运行时覆盖配置；已新增 best-effort 审计写入仓库，系统设置保存成功后记录
+  `config` 审计事件，仅记录配置 key、影响数量、路由、操作者和上下文摘要，不记录配置值；审计写入失败不影响配置保存。
+  已补 `backend/tests/test_stage5_auth_config.py`，覆盖公开配置即时生效、注册链路消费、配置保存审计和审计降级。
 
 ### 6.4 任务 T4：审计查询后端闭环
 
