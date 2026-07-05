@@ -940,7 +940,7 @@ Slot 与组件设计：
 
 ### 6.12 任务 T12：后端业务测试
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2、T3、T4、T5、T6、T11。
 - 涉及文件/模块：
   - `backend/tests/test_stage5_auth_config.py`
@@ -964,7 +964,15 @@ Slot 与组件设计：
   - `python -m pytest backend/tests/test_stage5_dicts.py -q`
   - `python -m pytest backend/tests/test_stage5_resource_codes.py -q`
 - 完成标准：阶段五后端专项测试通过，并不破坏阶段四权限基线。
-- 实际落地情况：待实施。
+- 实际落地情况：T2/T3/T4/T5/T6/T11 已分别补齐阶段五后端专项测试：
+  `test_stage5_auth_config.py` 覆盖认证配置读取、公开配置、注册链路消费、配置保存审计和审计写失败降级；
+  `test_stage5_audit.py` 覆盖审计查询、摘要、详情脱敏、租户管理员范围收口、非法时间校验，并在本任务补充
+  `audit.retention_days` 默认查询窗口测试，证明不传 `start_time/end_time` 时窗口外记录被排除；
+  `test_stage5_audit_collection.py` 覆盖 API、认证拒绝、登录失败、任务、调度和 RBAC 管理审计采集；
+  `test_stage5_dicts.py` 覆盖字典 CRUD、唯一性、code 不可变、禁删有明细类型、禁用项过滤、共享只读和兜底；
+  `test_stage5_resource_codes.py` 覆盖阶段五新增接口和菜单授权闭环。已按约束先停后台服务再运行
+  `python -m pytest backend/tests/test_stage5_config_t2.py backend/tests/test_stage5_auth_config.py backend/tests/test_stage5_audit.py backend/tests/test_stage5_audit_collection.py backend/tests/test_stage5_dicts.py backend/tests/test_stage5_resource_codes.py -q`
+  通过 `33 passed`，仅有 FastAPI `on_event` 既有弃用警告；验证完成后已重启后端服务。
 
 ### 6.13 任务 T13：前端测试、构建和视口验证
 

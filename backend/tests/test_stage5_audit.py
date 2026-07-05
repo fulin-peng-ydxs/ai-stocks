@@ -57,6 +57,7 @@ def _clear_stage5_audit(pg) -> None:
 def test_stage5_audit_system_can_query_summary_and_detail(client, pg):
     _clear_stage5_audit(pg)
     repo = AuditRepository(pg)
+    target_id = f"stage5_query_{uuid.uuid4().hex[:8]}"
     audit_id = repo.record(
         event_category="config",
         event_type="config",
@@ -68,7 +69,7 @@ def test_stage5_audit_system_can_query_summary_and_detail(client, pg):
         actor_account="admin",
         resource_code="data-settings:manage",
         target_type="stage5_test",
-        target_id="system",
+        target_id=target_id,
         target_label="系统设置",
         context={
             "request_id": "req-1",
@@ -84,7 +85,7 @@ def test_stage5_audit_system_can_query_summary_and_detail(client, pg):
     resp = client.get(
         "/api/audit",
         headers=_admin_headers(pg),
-        params={"target_keyword": "system", "page": 1, "page_size": 10},
+        params={"target_keyword": target_id, "page": 1, "page_size": 10},
     )
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -100,7 +101,7 @@ def test_stage5_audit_system_can_query_summary_and_detail(client, pg):
     summary = client.get(
         "/api/audit/summary",
         headers=_admin_headers(pg),
-        params={"target_keyword": "system"},
+        params={"target_keyword": target_id},
     )
     assert summary.status_code == 200
     assert summary.json()["data"]["total"] == 1
@@ -174,3 +175,41 @@ def test_stage5_audit_tenant_admin_is_scoped_to_own_tenant(client, pg):
         assert other_detail.json()["code"] == 4004
     finally:
         _cleanup_user(pg, tenant_admin)
+
+
+def test_stage5_audit_default_retention_window_filters_old_records(client, pg, app_cfg):
+    _clear_stage5_audit(pg)
+    app_cfg.set_many({"audit.retention_days": 7})
+    recent_id = "stage5_retention_recent"
+    old_id = "stage5_retention_old"
+    try:
+        pg.execute(
+            """
+            INSERT INTO audit_log (
+                id, event_time, tenant_id, actor_user_id, actor_account,
+                event_category, event_type, resource_code, action, target_type,
+                target_id, target_label, result, status, context
+            ) VALUES (
+                %s, now() - interval '1 day', 'default', 'admin', 'admin',
+                'config', 'config', 'data-settings:manage', 'update', 'stage5_test',
+                %s, 'retention-default recent', 'success', 'completed', '{}'::jsonb
+            ), (
+                %s, now() - interval '8 days', 'default', 'admin', 'admin',
+                'config', 'config', 'data-settings:manage', 'update', 'stage5_test',
+                %s, 'retention-default old', 'success', 'completed', '{}'::jsonb
+            )
+            """,
+            [recent_id, recent_id, old_id, old_id],
+        )
+
+        resp = client.get(
+            "/api/audit",
+            headers=_admin_headers(pg),
+            params={"target_keyword": "retention-default", "page": 1, "page_size": 10},
+        )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["total"] == 1
+        assert [row["id"] for row in data["list"]] == [recent_id]
+    finally:
+        _clear_stage5_audit(pg)
