@@ -1,128 +1,139 @@
-# 第五阶段开发计划：平台能力闭环
+# 开发计划
 
 ## 1. 需求来源与目标
 
-### 1.1 需求来源
-
 - 需求文档：`agent-works/multi-tenant-rbac/requirement.md`
-- 页面原型：
+- 原型文件：
   - `agent-works/multi-tenant-rbac/prototypes/data-dictionary.html`
   - `agent-works/multi-tenant-rbac/prototypes/audit-log.html`
-- 当前阶段分支：`codex/multi-tenant-rbac-stage5`
-- 当前阶段输出目录：`agent-works/multi-tenant-rbac/stage5-platform-capabilities/`
+- 设计规范：
+  - `DESIGN.md`
+  - `agent-works/configurable-layout-system/page-template.md`
+  - `agent-works/architecture/system-rbac-tenant.md`
+- 功能目标：进入第五阶段，补齐平台能力闭环，包括 R16 注册防滥用配置、R17 日志审计、R18 数据字典，以及 R19 已拆页后的系统设置剩余接入。
+- 本次不做：
+  - 不做 R22 token 静默刷新。
+  - 不做 R23 审计日志自动清理任务；但 R17 已确认的“保留 90 天可配”口径本阶段要保留为配置项、默认查询窗口和页面提示，后续 R23 清理任务复用该配置。
+  - 不做 R24 字段级 from/to 变更对比。
+  - 不做 R25 第三方登录真实对接。
+  - 不做 R26 付费计费与配额消费。
+  - 不做 R27 行情行为指纹、滑块挑战、第三方人机校验平台等高强度风控。
+  - 不做 R28 中评分方案之外的其他资产公开能力。
+  - 不把 `data_dimension_registry` 并入数据字典。
+- 计划输出目录：`agent-works/multi-tenant-rbac/stage5-platform-capabilities/`
 
-### 1.2 本阶段目标
+### 1.1 本次口径修订
 
-第五阶段进入平台能力补齐，目标是把多租户 RBAC 后续依赖的“配置防滥用、审计可追溯、枚举可治理”做成可上线闭环：
-
-- R16：在已有系统配置页补齐注册防滥用开关，使登录、注册、验证码链路读取运行时配置。
-- R17：新增日志审计能力，覆盖 API、安全、任务、配置和关键管理行为，支持系统管理员全局查看、租户管理员查看本租户。
-- R18：新增数据字典能力，支持系统管理员维护平台级枚举类型和枚举项，业务消费端具备默认值兜底。
-- R19 剩余部分：将 R16 相关开关接入已有 `/system/config/system`，不新增单独配置页。
-- 同步前端路由、菜单、权限种子、接口封装、页面布局、空态、错误态和测试。
-
-### 1.3 本阶段不做
-
-- 不实现审计日志导出，页面只保留禁用入口或不展示导出操作。
-- 不实现审计日志自动归档、保留周期、冷存储或批量清理策略，该内容归入后续运维能力。
-- 不实现 R24 字段级变更差异审计，只记录操作摘要、目标、结果和脱敏上下文。
-- 不实现 `data_dimension_registry`，该项按需求文档遗留确认项延后。
-- 不把字典服务改造成通用配置中心，首批只覆盖稳定枚举和页面展示所需枚举。
+- R16 “人机校验”本阶段不引入第三方挑战产品，按现有认证链路落为“登录人机校验（图形验证码）”：`auth.login_captcha_enabled` 控制开关，`auth.captcha_after_fails` 控制触发阈值。若后续要滑块、行为验证码或外部验证码服务，归 R27 或独立安全增强。
+- R17 “保留 90 天可配”不等于本阶段自动删除历史数据。本阶段实现 `audit.retention_days` 的配置、读取、默认查询窗口和页面展示；R23 再实现定时清理任务。
+- R18 字典类型删除采用服务层禁删有明细类型，数据库外键使用 `ON DELETE RESTRICT` 或默认限制，不使用 `ON DELETE CASCADE`。
+- 原型中的琥珀批注和“原型演示”按钮只作为评审说明，正式页面不渲染这些批注按钮。
 
 ## 2. 当前项目依据
 
-### 2.1 后端现状
+### 2.1 后端依据
 
 - `backend/config/settings.py`
-  - `AuthConfig` 已有 `require_email_code`、`login_captcha_enabled`、`captcha_after_fails`、验证码 TTL 和基础限流配置。
-  - `get_effective_settings()` 已支持从 PostgreSQL `app_config` 合并运行时配置。
+  - `AuthConfig` 已有 `require_email_code`、`login_captcha_enabled`、`captcha_after_fails`、验证码 TTL、登录/注册/邮箱码/API 限流字段。
+  - `get_effective_settings()` 已支持从 PostgreSQL `app_config` 合并有效配置。
 - `backend/services/auth_service.py`
-  - 当前初始化使用 `get_settings().auth`，只能读静态 YAML。
-  - 登录已包含图形验证码失败次数判断；注册已包含邮箱验证码开关；公共配置接口已返回验证码相关配置。
-  - 本阶段要把这些读取切到有效配置，确保系统配置保存后实际生效。
+  - 当前认证服务使用 `get_settings().auth`，只能读静态配置。
+  - 登录、注册、发送邮箱验证码、公配置接口已有 R16 所需消费点，但需要切到有效配置。
 - `backend/storage/app_config.py`
-  - `CONFIG_GROUPS` 控制系统设置白名单和前端分组渲染。
-  - 当前已有数据源、股票池、成本、TopN、隐藏调度配置组。
-  - 本阶段要新增认证/防滥用配置组，并继续复用 `/api/data/settings`。
+  - `CONFIG_GROUPS` 是系统设置白名单和前端动态渲染事实源。
+  - 本阶段需要新增认证/防滥用配置组和审计保留期配置组。
 - `backend/api/data_admin.py`
-  - `/api/data/settings` 已由 `data-settings:manage` 保护，适合作为 R16 配置落点。
+  - `/api/data/settings` 已使用 `require_system_perm("data-settings:manage")`，可复用为系统设置保存入口。
 - `backend/storage/pg_ddl.py`
-  - 当前集中维护 PostgreSQL 表结构、菜单种子、资源种子和阶段补丁标记。
-  - 本阶段要新增审计表、字典表、菜单、资源码和租户管理员审计授权补丁。
+  - 集中维护 PostgreSQL DDL、菜单 seed、资源 seed、阶段迁移标记和内置角色授权回填。
+  - 本阶段要新增 `audit_log`、`dict_type`、`dict_item`、菜单 `/system/audit`、`/system/dicts`、资源码和 tenant_admin 审计授权回填。
 - `backend/auth/deps.py`
-  - 已有 `require_perm`、`require_system_perm`，并暴露资源码元数据，可继续用于路由扫描。
+  - 已有 `require_perm(code)` 与 `require_system_perm(code)`；资源码元数据可被路由扫描和审计上下文复用。
 - `backend/auth/middleware.py`
-  - `AuthMiddleware` 默认拒绝未鉴权业务端点。
-  - `SecurityMiddleware` 已做 API 速率限制，本阶段需要补审计记录。
+  - `AuthMiddleware` 对非白名单 `/api/**` 默认拒绝。
+  - `SecurityMiddleware` 已有 API 速率限制，本阶段需要记录 429 安全审计。
 - `backend/services/async_task.py`、`backend/scheduler/scheduler.py`
-  - 已有异步任务和调度任务状态流转，本阶段在关键状态变化处补审计事件。
+  - 已有异步任务、调度任务状态流转，本阶段接入任务审计。
 
-### 2.2 前端现状
+### 2.2 前端依据
 
 - `frontend/src/router/index.ts`
-  - 已有系统设置拆分路由和系统管理路由，待新增日志审计、数据字典路由。
-- `frontend/src/views/ConfigView.vue`
-  - 已支持 `/system/config/system` 通过后端配置组动态渲染表单。
-  - 本阶段只需补认证/防滥用配置项展示文案和保存体验，不新增页面。
-- `frontend/src/views/system/UserManageView.vue`
-  - 可作为系统管理页表格、筛选、分页、错误态、弹窗编辑和权限按钮参考。
+  - 已有静态路由表和系统设置拆分路由，新增页面必须在这里登记。
 - `frontend/src/layout/pageRegistry.ts`
-  - 页面布局注册集中维护，本阶段要新增日志审计和数据字典页面布局项。
+  - 是页面布局系统单一事实源，新增业务页面必须登记 `pageKey`、`archetype`、slots、可编辑旋钮和组件配置消费。
+- `frontend/src/layout/archetypes.ts`
+  - 已有 `list` 与 `master-detail` 原型，可直接承接日志审计页和数据字典页，不需要新增布局原型。
+- `frontend/src/layout/components.ts`
+  - 已有 `toolbar`、`filter-bar`、`kpi-grid`、`data-table`、`wide-table`、`simple-list`、`detail`、`description-list` 等组件种类，本阶段不新增组件种类。
+- `frontend/src/views/ConfigView.vue`
+  - 已支持 `/system/config/{score|trade|tech|system}`，系统设置页可通过后端配置组动态渲染字段。
+- `frontend/src/views/system/UserManageView.vue`
+  - 可作为系统管理页筛选、表格、分页、错误态、重试、`el-dialog` 编辑、按钮权限控制参考。
 - `frontend/src/api/data.ts`
-  - 已有系统设置接口封装。
-  - 本阶段新增 `audit.ts`、`dict.ts`，保持 API 模块边界清晰。
+  - 已有系统设置接口封装，本阶段新增审计和字典 API 封装。
 
-### 2.3 既有约束
+### 2.3 权限和页面接入依据
 
-- 新业务端点必须有 `require_perm` 或 `require_system_perm`，并同步 `sys_resource` 种子和路由扫描测试。
-- 新页面必须同步路由、菜单种子、功能点种子、按钮 `v-permission`、默认角色授权决策。
-- 用户私有数据需要租户和用户归属条件；本阶段审计查询按租户隔离，数据字典为平台级系统配置，不归属个人。
-- 禁止跨库 JOIN；审计和字典均落 PostgreSQL，不与 DuckDB 直接 JOIN。
+- 新页面不会因为新增 Vue 文件自动入侧栏，必须同步：
+  - `frontend/src/router/index.ts`
+  - `backend/storage/pg_ddl.py` 的 `_SEED_MENU_TREE`
+  - `backend/storage/pg_ddl.py` 的 `_SEED_RESOURCES`
+  - 后端接口守卫
+  - 前端按钮 `v-permission`
+  - 默认角色授权决策和已有库回填
+- `/system/audit` 属租户管理员可见页面，上级菜单不能是 system-only；服务层必须按租户范围收口。
+- `/system/dicts` 属 system-only 页面，菜单 `visible=system`，接口使用 system 守卫。
+- 新业务页面必须走 `<LayoutHost>`，不得手写视口高度和并行布局外壳。
 
 ## 3. 实施范围
 
-### 3.1 需求映射
+### 3.1 必须实现
 
-| 需求 | 本阶段处理方式 | 验收点 |
-| --- | --- | --- |
-| R16 注册防滥用配置 | 在 `app_config` 白名单新增认证配置组，登录/注册/公共配置读取有效配置 | 系统管理员可保存开关，注册和登录链路即时按配置执行 |
-| R17 日志审计 | 新增 PG 审计表、审计服务、查询 API、前端审计页和关键链路埋点 | 系统管理员看全局，租户管理员只看本租户；写审计失败不阻塞主流程 |
-| R18 数据字典 | 新增字典类型/字典项表、服务、API、前端维护页和默认字典种子 | 系统管理员可维护字典；消费者缺失或异常时回退默认枚举 |
-| R19 系统配置剩余 | 在已有 `/system/config/system` 页面接入 R16 配置项 | 不新增配置页，继续复用已有保存权限 |
-| R23/R24/R25 后续能力 | 本阶段只保留扩展点，不实现完整运维策略和字段级差异 | 计划和代码边界清晰，无伪实现 |
+| 需求编号 | 需求内容 | 本阶段开发内容 | 对应任务 | 完成标志 |
+| --- | --- | --- | --- | --- |
+| R16 | 注册防滥用开关化 | 新增认证/防滥用配置组，认证链路读取有效配置；“人机校验”落为登录图形验证码开关和失败阈值 | T2、T3、T10、T12、T13 | 系统管理员保存后登录/注册链路按新配置生效，非法/缺值回退默认 |
+| R17 | 日志审计 | 新增审计表、服务、API、审计采集、审计查询页；保留期默认 90 天可配但不自动清理 | T1、T2、T4、T5、T7、T8、T11、T12、T13 | API/任务/安全/配置/字典/RBAC 事件可查；系统管理员全局，租户管理员本租户 |
+| R18 | 数据字典 | 新增字典表、默认字典、服务、API、前端维护页、消费端默认值兜底和缓存失效 | T1、T6、T7、T9、T11、T12、T13 | 字典类型/项可维护；停用后新下拉不展示；异常时回退代码默认枚举 |
+| R19 | 配置管理已拆页后的系统设置剩余项 | 在 `/system/config/system` 接入 R16 开关和 R17 保留期配置，不新增配置页 | T2、T3、T10、T13 | 系统设置页可展示、保存、读取并消费新增配置项 |
+| 页面规范 | 新页面页面设计闭环 | 日志审计和数据字典补页面定位、原型承接、slot、配置层级、维护清单和关键视口验收 | T7、T8、T9、T13 | `pageRegistry`、路由、DESIGN 登记、视口验收和布局契约测试完整 |
 
-### 3.2 页面范围
+### 3.2 可选增强
 
-- 新增页面：`/system/audit`，页面名称“日志审计”。
-- 新增页面：`/system/dicts`，页面名称“数据字典”。
-- 修改页面：`/system/config/system`，增加注册防滥用配置分组。
+| 需求编号/增强编号 | 增强内容 | 需求阶段处理状态 | 开发状态 | 对应任务 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| R22 | token 静默刷新 | 阶段六体验增强 | 跳过 | - | 本阶段只消费既有登录态，不改 token 刷新策略 |
+| R23 | 审计日志保留期自动清理任务 | 阶段六体验增强 | 跳过 | - | 自动删除任务跳过；R17 已确认的 `audit.retention_days=90` 配置和默认查询窗口纳入 T2/T4/T8 |
+| R24 | 操作审计字段级变更对比 | 阶段六体验增强 | 跳过 | - | 本阶段只记录操作摘要、目标、结果和脱敏上下文，不记录 from/to 字段级差异 |
+| R28 | 其他资产公开能力 | 独立需求，评分方案已在阶段四 B 完成 | 跳过 | - | 本阶段不扩展筛选方案、买卖方案、回测记录等公开能力 |
 
-### 3.3 接口范围
+### 3.3 暂不实现
 
-- 新增审计接口：
-  - `GET /api/audit`：分页查询审计日志。
-  - `GET /api/audit/summary`：按筛选条件返回统计卡片数据。
-  - `GET /api/audit/{id}`：查询单条审计详情。
-- 新增数据字典接口：
-  - `GET /api/dict/types`：查询字典类型。
-  - `POST /api/dict/types`：新增字典类型。
-  - `PUT /api/dict/types/{code}`：修改字典类型。
-  - `DELETE /api/dict/types/{code}`：删除未被使用或无明细的字典类型。
-  - `GET /api/dict/items`：按类型查询字典项。
-  - `POST /api/dict/items`：新增字典项。
-  - `PUT /api/dict/items/{type_code}/{code}`：修改字典项。
-  - `DELETE /api/dict/items/{type_code}/{code}`：删除字典项。
-- 复用配置接口：
-  - `GET /api/data/settings`
-  - `POST /api/data/settings`
+| 需求编号 | 需求项 | 开发状态 | 不做原因 | 后续触发条件 |
+| --- | --- | --- | --- | --- |
+| R25 | 第三方登录真实对接 | 跳过 | 本阶段不对接外部 OAuth 或短信服务 | 获取平台资质并单独立项 |
+| R26 | 付费角色计费与配额 | 跳过 | 本阶段只沿用已有角色类型，不做商业化消费 | 商业化启动 |
+| R27 | 高强度行情防爬 | 跳过 | 本阶段只保留现有接口限流、验证码和审计，不接行为风控 | 出现实际批量爬取或引入风控平台 |
+| 遗留项 4 | `data_dimension_registry` 并入数据字典 | 跳过 | 需求明确本期不并入 | 后续重新评估数据维度和枚举边界 |
 
 ## 4. 技术方案
 
-### 4.1 数据库与种子
+### 4.1 整体实现思路
 
-#### 4.1.1 新增审计表
+第五阶段按“平台表结构和权限 seed → 运行时配置 → 审计基础服务 → 数据字典基础服务 → 审计埋点 → 前端页面 → 测试与发布”推进。
 
-在 `backend/storage/pg_ddl.py` 增加 PostgreSQL 表结构：
+模块边界：
+
+- 审计和字典均落 PostgreSQL，不与 DuckDB 做跨库 JOIN。
+- 审计写入使用 best-effort 服务，任何写入异常只落应用日志，不阻断主业务。
+- 字典消费使用稳定 code，label 只用于展示；字典缺失或服务异常时回退代码内置默认枚举。
+- R16/R17 配置继续使用 `app_config` 平台级配置，由 `CONFIG_GROUPS` 统一白名单、校验和前端渲染。
+- 新页面走 `LayoutHost` 和 `pageRegistry`，不新增布局原型、不新增组件种类、不新增未消费的“假配置”。
+
+### 4.2 数据模型
+
+#### 4.2.1 `audit_log`
+
+建议字段：
 
 ```sql
 CREATE TABLE IF NOT EXISTS audit_log (
@@ -159,13 +170,25 @@ CREATE TABLE IF NOT EXISTS audit_log (
 - `audit_log(resource_code, event_time DESC)`
 - `audit_log(result, event_time DESC)`
 
-审计上下文只允许存脱敏字段，例如 `request_id`、`permission_code`、`task_id`、`job_id`、`action`、`affected_count`、`rate_limit_rule`、`config_key`。禁止保存原始请求体、响应体、密码、Token、验证码、身份证、邮箱验证码明文等敏感内容。
+保留期配置：
 
-#### 4.1.2 新增字典表
+- `app_config` 新增 `audit.retention_days`，默认 `90`，范围建议 `7..365`。
+- 本阶段消费方式：审计查询默认时间窗口为最近 `retention_days`；页面展示当前保留期配置；后续 R23 自动清理任务复用同一配置。
+- 本阶段不删除历史数据。
+
+上下文白名单：
+
+- 允许：`request_id`、`permission_code`、`task_id`、`job_id`、`action`、`affected_count`、`rate_limit_rule`、`config_key`、`route`、`profile_ref`、`data_scope` 等脱敏摘要。
+- 禁止：原始请求体、响应体、密码、Token、验证码、邮箱验证码、密钥、连接串、个人敏感明文。
+
+#### 4.2.2 `dict_type` / `dict_item`
+
+建议字段：
 
 ```sql
 CREATE TABLE IF NOT EXISTS dict_type (
-    code TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     sort INTEGER NOT NULL DEFAULT 100,
@@ -175,7 +198,8 @@ CREATE TABLE IF NOT EXISTS dict_type (
 );
 
 CREATE TABLE IF NOT EXISTS dict_item (
-    type_code TEXT NOT NULL REFERENCES dict_type(code) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY,
+    type_code TEXT NOT NULL REFERENCES dict_type(code) ON DELETE RESTRICT,
     code TEXT NOT NULL,
     label TEXT NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -183,336 +207,819 @@ CREATE TABLE IF NOT EXISTS dict_item (
     remark TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (type_code, code)
+    UNIQUE (type_code, code)
 );
 ```
 
 索引：
 
-- `dict_item(type_code, enabled, sort, code)`
 - `dict_type(enabled, sort, code)`
+- `dict_item(type_code, enabled, sort, code)`
 
-首批默认字典类型：
+删除策略：
 
-- `role_type`：角色类型。
-- `user_status`：用户状态。
-- `audit_event_type`：审计事件类型。
-- `audit_result`：审计结果。
-- 可补入当前页面已经稳定使用且不会造成业务语义漂移的枚举。
+- 服务层阻止删除仍有字典项的类型。
+- 数据库外键使用 `ON DELETE RESTRICT` 或默认限制，避免与服务层禁删口径冲突。
 
-#### 4.1.3 菜单与资源码
+首批默认字典：
+
+- `role_type`：`system`、`tenant_admin`、`normal`、`paid`
+- `user_status`：`active`、`disabled`、`locked`
+- `audit_event_type`：`api`、`task`、`security`、`rbac`、`config`、`dict`
+- `audit_result`：`success`、`failed`、`denied`
+- 少量稳定业务枚举可在实现时按现有代码确认后加入，但不得改变业务判断。
+
+### 4.3 接口契约
+
+#### 4.3.1 审计接口
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/audit` | `require_perm("audit:view")` | 分页查询审计日志 |
+| GET | `/api/audit/summary` | `require_perm("audit:view")` | 当前筛选范围摘要指标 |
+| GET | `/api/audit/{id}` | `require_perm("audit:view")` | 单条只读详情 |
+
+查询参数：
+
+- `page`、`page_size`
+- `start_time`、`end_time`
+- `event_category`、`event_type`
+- `result`、`status`
+- `resource_code`
+- `actor_keyword`
+- `target_keyword`
+- `tenant_id`：仅系统管理员可用；租户管理员传入时忽略或拒绝，服务层强制当前租户范围。
+
+响应要求：
+
+- 沿用项目 `{code,msg,data}` 包装。
+- 列表返回分页元数据。
+- 详情返回结构化字段和脱敏 `context`。
+- 不提供创建、修改、删除接口。
+
+#### 4.3.2 数据字典接口
+
+| 方法 | 路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/dict/types` | `require_system_perm("dict:view")` | 查询字典类型 |
+| POST | `/api/dict/types` | `require_system_perm("dict:type-manage")` | 新增字典类型 |
+| PUT | `/api/dict/types/{code}` | `require_system_perm("dict:type-manage")` | 修改字典类型 |
+| DELETE | `/api/dict/types/{code}` | `require_system_perm("dict:type-manage")` | 删除无明细类型 |
+| GET | `/api/dict/items` | `require_system_perm("dict:view")` | 管理端按类型查询字典项 |
+| GET | `/api/dict/items/public` | `require_perm("dict:read")` | 消费端查询启用项，失败回退默认枚举 |
+| POST | `/api/dict/items` | `require_system_perm("dict:item-manage")` | 新增字典项 |
+| PUT | `/api/dict/items/{type_code}/{code}` | `require_system_perm("dict:item-manage")` | 修改字典项 |
+| DELETE | `/api/dict/items/{type_code}/{code}` | `require_system_perm("dict:item-manage")` | 删除字典项 |
+
+说明：
+
+- 管理端 `/system/dicts` 仅系统管理员可见。
+- `dict:read` 不对应菜单入口，是登录基线共享读能力，用于业务页面、审计页筛选项和后续下拉消费；无论采用接口还是服务调用，都必须有默认枚举兜底。
+- 类型 code 和字典项 code 创建后不可修改；`PUT` 请求体不接受 code 变更，服务端以路径 code 定位并拒绝试图改 code 的请求。
+
+### 4.4 权限策略
 
 新增资源码：
 
-- `audit:view`：查看审计日志。
-- `dict:view`：查看数据字典。
-- `dict:type-manage`：维护字典类型。
-- `dict:item-manage`：维护字典项。
+- `audit:view`
+- `dict:read`
+- `dict:view`
+- `dict:type-manage`
+- `dict:item-manage`
 
 菜单策略：
 
-- `/system/audit`：登录可见菜单，默认授予系统管理员和租户管理员。
-- `/system/dicts`：系统管理员菜单，默认只授予系统管理员。
+- `/system/audit`
+  - 菜单可见性：`login`
+  - 默认授权：system 全量；tenant_admin 一次性回填菜单和 `audit:view`
+  - 服务层范围：system 全局；tenant_admin 当前租户
+- `/system/dicts`
+  - 菜单可见性：`system`
+  - 默认授权：system 全量
+  - 服务层范围：平台级，不按租户分表
+- `dict:read`
+  - 不对应菜单入口，作为登录用户共享只读资源。
+  - 默认按登录基线共享读注入给有角色的非 system 用户；无角色仍 fail-closed。
+  - seed 到 `sys_resource` 时 `menu_id` 挂 `/board` 这类 `visible=login` 的既有叶子菜单锚点，推荐沿用 `/board`；不得挂 `/system/dicts` 或任何 `visible=system` 菜单，避免被 system-only 资源判定逻辑误收口。
 
-种子补丁：
+权限回填：
 
-- 在 `pg_ddl.py` 增加阶段五迁移标记，例如 `migration.stage5_platform_capabilities_v1`。
-- 回填新增菜单、资源码和租户管理员 `audit:view` 授权。
-- 授权变更与 `perm_ver` 自增保持同一 PG 事务。
+- 新增阶段五迁移标记，例如 `migration.stage5_platform_capabilities_v1`。
+- 对已有 tenant_admin 回填审计菜单和 `audit:view` 时，同事务自增对应用户 `perm_ver`。
+- normal、paid 不默认获得审计或字典管理权限，但有角色用户可获得 `dict:read` 共享只读能力。
 
-SQL 留痕：
+### 4.5 审计采集方案
 
-- 新增 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/stage5-platform-capabilities.sql`。
-- 新增 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/resource-codes.sql`。
+API 事件：
 
-### 4.2 R16 注册防滥用配置
+- 通过请求完成钩子或轻量中间件记录 `/api/**` 的方法、路径、状态码、耗时、资源码、租户、操作者、结果。
+- `/api/audit/**` 做递归保护，避免审计查询自身造成无限写入。
+- `require_perm` / `require_system_perm` 在请求上下文中写入 `permission_code`，供审计事件使用。
 
-#### 4.2.1 后端配置组
+安全事件：
 
-在 `backend/storage/app_config.py` 的 `CONFIG_GROUPS` 新增认证/防滥用配置组：
+- 登录成功、登录失败、禁用/锁定用户登录、验证码失败、注册失败、邮箱码限流、429 限流、403 越权、登出 token 吊销。
+- 安全事件只记录必要账号标识和风险规则，不记录密码、验证码或 token。
 
-- `auth.require_email_code`：注册是否必须邮箱验证码，默认 `true`。
-- `auth.login_captcha_enabled`：是否启用登录图形验证码，默认 `false`。
-- `auth.captcha_after_fails`：失败多少次后要求验证码，默认 `3`。
+任务事件：
 
-可视实际已有字段一并纳入：
+- `AsyncTaskService.create()` 记录任务创建。
+- 任务成功、失败、中断、取消、恢复记录状态事件。
+- 调度任务触发、跳过、失败记录 `job_id`、`task_id`、状态和错误摘要。
 
-- `auth.login_rate_per_min`
-- `auth.register_rate_per_hour`
-- `auth.email_code_rate_per_hour`
+管理行为：
 
-这些字段只作为防滥用阈值，不扩展成完整风控系统。
+- 系统设置保存。
+- 数据字典类型/项新增、修改、删除、启停。
+- 用户、角色、菜单、资源、租户等 RBAC 关键管理操作。
 
-#### 4.2.2 生效链路
+字段差异：
 
-- 将 `AuthService` 中认证配置读取从 `get_settings().auth` 调整为有效配置读取。
-- `public_config()` 返回有效配置，保证登录/注册页面与服务端校验一致。
-- `login()`、`register()`、`send_email_code()` 使用同一口径的有效配置。
-- 如果配置缺失、类型错误或 PG 不可用，回退 `settings.yaml` 默认配置。
+- 本阶段不做 from/to 字段级对比；只记录目标、操作、结果、摘要和脱敏上下文。
 
-#### 4.2.3 配置审计
+### 4.6 配置闭环方案
 
-- `POST /api/data/settings` 保存认证相关配置时记录 `config` 类审计事件。
-- 审计上下文只记录配置 key、是否成功、影响数量，不记录敏感配置值。
-- 审计写入失败只写应用日志，不影响配置保存。
+R16 配置：
 
-### 4.3 R17 日志审计
+| 配置项 | 默认值 | 谁定义 | 谁保存 | 谁读取 | 谁消费 | 回退 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `auth.require_email_code` | `true` | 系统管理员 | `app_config` | `AuthService`、`public_config` | 注册、发送邮箱码 | 静态默认值 |
+| `auth.login_captcha_enabled` | `false` | 系统管理员 | `app_config` | `AuthService`、`public_config` | 登录失败后图形验证码挑战 | 静态默认值 |
+| `auth.captcha_after_fails` | `3` | 系统管理员 | `app_config` | `AuthService`、`public_config` | 登录失败阈值 | 静态默认值 |
+| `auth.login_rate_per_min` | 现有默认 | 系统管理员 | `app_config` | 认证/限流服务 | 登录限流 | 静态默认值 |
+| `auth.register_rate_per_hour` | 现有默认 | 系统管理员 | `app_config` | 认证/限流服务 | 注册限流 | 静态默认值 |
+| `auth.email_code_rate_per_hour` | 现有默认 | 系统管理员 | `app_config` | 认证/限流服务 | 邮箱码发送限流 | 静态默认值 |
+
+R17 配置：
+
+| 配置项 | 默认值 | 谁定义 | 谁保存 | 谁读取 | 谁消费 | 回退 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `audit.retention_days` | `90` | 系统管理员 | `app_config` | `AuditService`、审计页 | 默认查询窗口、页面保留期提示、后续清理任务 | `90` |
+
+注意：
+
+- 配置保存必须记录审计，但审计写失败不影响配置保存。
+- 配置项不得只保存不消费；`audit.retention_days` 本阶段至少被查询默认时间窗口和页面提示消费。
+
+### 4.7 页面 P8 技术实现：数据字典
+
+- 原型文件：`agent-works/multi-tenant-rbac/prototypes/data-dictionary.html`
+- 对应需求：R18
+- 路由：`/system/dicts`
+- 页面组件：`frontend/src/views/system/DataDictionaryView.vue`
+- API：`frontend/src/api/dict.ts`
+
+#### 4.7.1 前端页面设计闭环
+
+页面定位：
 
-#### 4.3.1 后端模块
+- 页面类型：系统管理 master-detail 维护页。
+- 用户主流程：系统管理员进入页面 → 左侧选择字典类型 → 右侧维护字典项 → 保存后刷新并使字典缓存失效。
+- 是否新页面：是。
+- 是否改造已有页面：否。
 
-新增模块：
+布局选型：
 
-- `backend/storage/audit_repository.py`
-- `backend/services/audit_service.py`
-- `backend/api/audit.py`
-
-服务职责：
-
-- 提供 `record_event()`、`record_api_event()`、`record_security_event()`、`record_task_event()`、`record_config_event()` 等窄入口。
-- 内部统一做字段裁剪、上下文脱敏、异常吞吐和日志降级。
-- 查询时统一执行权限范围过滤。
-
-查询规则：
-
-- 系统管理员：可按租户、事件类型、结果、资源、时间、关键字筛选全局日志。
-- 租户管理员：只能查看 `tenant_id = 当前租户` 的日志，不允许通过参数越权查看其他租户。
-- 普通用户和付费用户：默认不授予审计菜单与资源码。
-
-#### 4.3.2 API 审计
-
-实现轻量审计中间件或请求结束钩子：
-
-- 覆盖业务 `/api/**` 请求。
-- 记录方法、路径、状态码、耗时、资源码、租户、操作者、结果。
-- 对 `/api/audit/**` 做递归保护，避免查询日志产生无限审计写入。
-- 请求体和响应体不入库。
-
-资源码来源：
-
-- 在 `require_perm`、`require_system_perm` 鉴权依赖中写入当前请求审计上下文。
-- 请求完成后由审计记录读取该资源码。
-- 对公开认证接口和中间件拒绝类事件，由调用点显式写入事件类型。
-
-#### 4.3.3 安全事件审计
-
-需要记录：
-
-- 登录成功。
-- 登录失败。
-- 账号锁定或禁用导致登录失败。
-- 验证码失败。
-- 邮箱验证码发送频率限制命中。
-- 注册失败。
-- Token 刷新失败或登出撤销。
-- 403 权限拒绝。
-- 429 速率限制命中。
-
-安全事件中邮箱、手机号、账号等标识只保留必要展示值；验证码、Token、密码永不记录。
-
-#### 4.3.4 任务事件审计
-
-在以下位置补审计：
-
-- `AsyncTaskService.create()`：任务创建。
-- 任务状态变更为成功、失败、中断、取消、恢复时。
-- 调度任务触发、跳过、失败时。
-
-上下文字段：
-
-- `task_id`
-- `job_id`
-- `task_type`
-- `status`
-- `duration_ms`
-- `error_summary`
-
-#### 4.3.5 管理行为审计
-
-在以下高价值服务补显式审计：
-
-- 系统配置保存。
-- 数据字典类型/字典项新增、修改、删除、启停。
-- 用户、角色、菜单、租户等 RBAC 管理操作。
-
-字段级差异不在本阶段实现，只记录目标和结果。
-
-### 4.4 R18 数据字典
-
-#### 4.4.1 后端模块
-
-新增模块：
-
-- `backend/storage/dict_repository.py`
-- `backend/services/dict_service.py`
-- `backend/api/dicts.py`
-
-服务规则：
-
-- 类型编码和字典项编码只允许稳定 code 格式，例如小写字母、数字、下划线、短横线。
-- 同一类型下 item code 唯一。
-- 类型禁用后，默认查询仍可返回类型元数据，但业务消费只使用启用项。
-- 删除类型前校验是否存在字典项；若选择级联删除必须在弹窗中明确提示，本阶段优先限制删除。
-- 字典变更后记录审计事件。
-
-兜底规则：
-
-- 服务端提供内置默认字典常量。
-- 查询字典失败、字典类型缺失或启用项为空时，消费者回退默认常量。
-- 前端字典缓存查询失败时不阻断页面主流程，使用本地默认显示。
-
-#### 4.4.2 首批消费者
-
-优先接入不会改变业务判断的展示型枚举：
-
-- 用户状态展示。
-- 角色类型展示。
-- 审计事件类型展示。
-- 审计结果展示。
-
-业务判断仍使用后端稳定 code，不依赖字典 label。
-
-### 4.5 前端实现
-
-#### 4.5.1 API 封装
-
-新增：
-
-- `frontend/src/api/audit.ts`
-- `frontend/src/api/dict.ts`
-
-要求：
-
-- 类型定义与后端响应一致。
-- 查询参数显式建模，不在组件内拼散乱对象。
-- 错误处理交给页面状态，不在 API 层吞异常。
-
-#### 4.5.2 路由与页面注册
-
-修改：
-
-- `frontend/src/router/index.ts`
-- `frontend/src/layout/pageRegistry.ts`
-
-新增路由：
-
-- `/system/audit`：`AuditLogView.vue`
-- `/system/dicts`：`DataDictionaryView.vue`
-
-页面布局：
-
-- 使用 `LayoutHost` 接入页面布局系统。
-- 注册稳定页面 key，支持后续布局配置。
-- 页面结构参考原型，不把原型批注按钮带入正式业务交互。
-
-#### 4.5.3 日志审计页
-
-新增 `frontend/src/views/system/AuditLogView.vue`。
-
-布局：
-
-- 顶部统计区：总事件、失败事件、拒绝事件、平均耗时等。
-- 筛选区：时间范围、事件类型、结果、租户、操作者、资源码、关键字。
-- 主表格：时间、事件、操作者、租户、资源、目标、结果、耗时、IP、操作。
-- 详情区域：只读详情抽屉或详情面板，重点优化排版，采用分组描述、时间线和脱敏上下文结构化展示。
-
-交互：
-
-- 查询、重置、刷新。
-- 自动刷新可作为明确开关，默认关闭。
-- 导出不实现；如展示入口必须禁用并有简短提示。
-- 空态和错误态必须是页面状态，不混入业务数据。
-
-权限：
-
-- 页面进入依赖菜单和 `audit:view`。
-- 无写操作按钮。
-
-#### 4.5.4 数据字典页
-
-新增 `frontend/src/views/system/DataDictionaryView.vue`。
-
-布局：
-
-- 左侧字典类型列表：搜索、启用状态、排序、新建、编辑。
-- 右侧字典项表格：按当前类型展示 code、label、sort、enabled、remark、actions。
-- 新增/编辑统一使用居中弹窗，禁止使用抽屉编辑。
-- 删除使用确认弹窗，明确影响范围。
-
-交互：
-
-- 类型切换自动加载字典项。
-- 新增/编辑类型。
-- 新增/编辑/删除/启停字典项。
-- 保存后刷新当前类型和字典项，清理前端字典缓存。
-- 空态和错误态明确区分页面真实状态和原型说明。
-
-权限：
-
-- `dict:view`：查看。
-- `dict:type-manage`：类型新增、编辑、删除、启停。
-- `dict:item-manage`：字典项新增、编辑、删除、启停。
-
-#### 4.5.5 系统配置页
-
-修改 `frontend/src/views/ConfigView.vue`：
-
-- `/system/config/system` 展示认证/防滥用配置组。
-- 优化系统设置页说明文案，避免只描述数据源、股票池等旧配置。
-- 保存成功后提示配置已更新，并依赖后端有效配置即时生效。
-
-### 4.6 测试方案
-
-#### 4.6.1 后端测试
-
-新增或扩展：
-
-- `backend/tests/test_stage5_auth_config.py`
-  - `app_config` 覆盖 `require_email_code` 后注册链路按有效配置执行。
-  - `login_captcha_enabled`、`captcha_after_fails` 对登录验证码要求生效。
-  - `public-config` 返回有效配置。
-- `backend/tests/test_stage5_audit.py`
-  - 审计事件可写入、分页查询、详情查询。
-  - 系统管理员可查全局。
-  - 租户管理员只能查本租户。
-  - 审计写入异常不阻断主流程。
-  - 上下文不保存密码、Token、验证码等敏感字段。
-- `backend/tests/test_stage5_dicts.py`
-  - 字典类型和字典项 CRUD。
-  - 重复 code 拒绝。
-  - 禁用项不进入业务启用项查询。
-  - 字典缺失或异常时回退默认值。
-- `backend/tests/test_stage5_resource_codes.py`
-  - 新增路由均有精确权限依赖。
-  - `audit:view` 授予租户管理员。
-  - 字典管理资源只授予系统管理员。
-  - 新增菜单和资源码种子完整。
-- 扩展现有菜单守卫测试：
-  - 租户管理员可看到日志审计菜单。
-  - 普通用户/付费用户默认看不到日志审计和数据字典。
-
-#### 4.6.2 前端测试
-
-新增或扩展 Vitest：
-
-- 审计页：
-  - 初始加载、筛选、重置、刷新。
-  - 空态、错误态、重试。
-  - 详情展示为只读，事件上下文结构化展示。
-- 数据字典页：
-  - 类型列表和字典项联动。
-  - 新增/编辑使用 `el-dialog`，不使用抽屉。
-  - 权限按钮按 `v-permission` 控制。
-  - 空态、错误态、重试。
-- 系统配置页：
-  - 后端返回认证配置组时能正确渲染布尔、数字输入。
-  - 保存认证配置调用已有保存接口。
-- 路由和页面注册：
-  - 新页面路由可解析。
-  - 页面布局 key 注册完整。
-
-#### 4.6.3 构建与验证命令
-
-后端：
+- 选用原型：`master-detail`
+- 选择理由：字典类型是主范围，字典项是从属明细；左列表和右表格都需要各自内滚。
+- 是否需要新增布局原型：否，复用 `frontend/src/layout/archetypes.ts` 的 `master-detail`。
+
+Slot 与组件设计：
+
+| 区域 | slotId | 组件种类 | 是否 growMain | 滚动归属 | 是否可重排 | 说明 |
+| --- | --- | --- | --- | --- | --- | --- |
+| action | `toolbar` | `toolbar` | 否 | none | 否 | 标题、新建类型、刷新、页面设置入口 |
+| main | `typeList` | `simple-list` | 否 | body-y | 否 | 左侧字典类型搜索、类型列表、启停状态、项数量 |
+| main | `itemTable` | `data-table` | 是 | body-xy | 否 | 右侧字典项筛选、表格和分页；表体内滚 |
+| overlay | `typeDialog` | `form` | 否 | body-y | 否 | 新建/编辑字典类型，使用 `el-dialog` |
+| overlay | `itemDialog` | `form` | 否 | body-y | 否 | 新建/编辑字典项，使用 `el-dialog` |
+| overlay | `deleteConfirm` | `dialog` | 否 | none | 否 | 删除确认 |
+| overlay | `settings` | `settings-drawer` | 否 | body-y | 否 | 页面设置抽屉 |
+
+配置设计：
+
+| 类型 | 字段 | 层级 | 落点 | 说明 |
+| --- | --- | --- | --- | --- |
+| 布局旋钮 | `density` | page/user | `pageRegistry.editable` | 信息密度 |
+| 组件设置 | `itemTable.hiddenColumns` | preset/page/user | `pageRegistry.componentMeta` | 字典项列显隐 |
+| 组件设置 | `itemTable.pageSize` | page/user | 页面业务态或组件配置 | 分页大小 |
+| 页面记忆 | `selectedTypeCode`、`itemStatusFilter` | user/local | `usePageSettings` 或页面状态 | 记住最近类型和筛选 |
+
+复用与新增判断：
+
+- 复用已有布局：`master-detail`
+- 复用已有组件：`LayoutHost`、`PageSettingsDrawer`、`LayoutSettingsSection`、`el-table`、`el-dialog`、`el-pagination`、`el-switch`
+- 是否新增组件种类：否
+- 是否新增组件配置字段：优先复用 `hiddenColumns`、`pageSize`，如现有字段不支持则不新增假配置
+- 是否新增页面专属业务态：是，当前类型、类型搜索词、字典项筛选、弹窗模式、保存 loading
+
+维护清单：
+
+- pageRegistry：新增 `pageKey="data-dictionary"`，路径 `/system/dicts`，原型 `master-detail`
+- COMPONENT_CATALOG：不新增
+- COMPONENT_FIELD_DEFS：不新增，除非实现时确认已有字段无法承载并同步消费
+- componentSchemas：不新增
+- 后端 layout_config 字段规则：不新增
+- componentPreview：不新增
+- DESIGN.md `page-registry` 区块：新增数据字典登记
+- RBAC 菜单/功能点：`_SEED_MENU_TREE`、`_SEED_RESOURCES`、接口守卫、`v-permission`、system 默认授权
+- 测试：页面路由、pageRegistry、权限按钮、空/加载/错误、弹窗保存、构建和视口验证
+
+验收：
+
+- `cd frontend && npm test`
+- `cd frontend && npm run build`
+- 视口验证：`1100x620`、`1366x768`、`1440x900`
+- 检查无整页滚动、无视口高度硬编码、左右栏各自内滚、弹窗不溢出、设置抽屉分段正常
+
+#### 4.7.2 原型功能点承接表
+
+| 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 新建类型 | R18 | 顶部主命令打开类型表单 | `el-dialog` 表单，code 格式校验，保存后刷新类型列表 | `DataDictionaryView.vue` | `POST /api/dict/types` | 保存中、保存失败、重复 code | T6、T9、T13 |
+| 刷新 | R18 | 重新加载类型和当前字典项 | 调用类型和项查询并保留当前选中类型 | `DataDictionaryView.vue` | `GET /api/dict/types`、`GET /api/dict/items` | loading、服务异常重试 | T9、T13 |
+| 类型搜索 | R18 | 左侧按名称/code 过滤 | 前端本地过滤或服务端关键字查询，按数据量实现 | `typeList` slot | `GET /api/dict/types` | 无匹配类型 | T9、T13 |
+| 类型选择 | R18 | 切换左侧类型刷新右侧标题、筛选和表格 | `selectedTypeCode` 驱动项查询 | `typeList`、`itemTable` | `GET /api/dict/items?type_code=` | 当前类型被禁用或删除后回到首个可用类型 | T9 |
+| 编辑类型 | R18 | 右侧操作打开类型编辑弹窗 | `el-dialog`，code 创建后不可改，编辑态禁用 code 输入 | `typeDialog` | `PUT /api/dict/types/{code}` | 保存失败、权限不足、试图改 code 被拒绝 | T6、T9 |
+| 新建/编辑字典项 | R18 | 当前类型下新增或编辑 item | `el-dialog` 表单，创建态填写 code，编辑态禁用 type_code/code，只允许改 label、sort、enabled、remark | `itemDialog` | `POST /api/dict/items`、`PUT /api/dict/items/{type_code}/{code}` | 当前类型缺失、重复 item code、试图改 code 被拒绝 | T6、T9、T13 |
+| 状态筛选 | R18 | 全部/启用/停用 | 查询参数或本地过滤 | `filter-bar` | `GET /api/dict/items` | 无结果 | T9 |
+| 字典项查询 | R18 | 按 code/label 搜索 | 服务端分页查询 | `filter-bar` | `GET /api/dict/items` | 查询 loading、服务异常 | T6、T9 |
+| 字典项表格 | R18 | 展示 code、名称、排序、启用、备注、操作 | `el-table`，表体横向/纵向内滚 | `itemTable` | `GET /api/dict/items` | 空表格、列宽稳定、分页 | T9、T13 |
+| 启停字典项 | R18 | switch 切换启用状态 | 调 update 接口，成功后刷新并失效缓存 | `el-switch` | `PUT /api/dict/items/{type_code}/{code}` | 保存失败回滚开关 | T6、T9 |
+| 删除字典项 | R18 | 点击删除后确认 | `ElMessageBox.confirm` | `deleteConfirm` | `DELETE /api/dict/items/{type_code}/{code}` | 被引用时阻止或给出明确错误 | T6、T9 |
+| 分页 | R18 | 右侧表格分页 | 服务端分页 | `el-pagination` | `GET /api/dict/items` | 页码越界回退最后一页 | T6、T9 |
+| 无数据 | R18 | 无类型/无字典项提示新建 | 表格 empty slot 和列表空态 | `app-empty`/表格空态 | - | 不重复渲染多个空态 | T9、T13 |
+| 加载失败 | R18 | 显示重试 | 页面错误态 | `el-result` 或统一错误块 | - | 重试恢复，不影响其他页 | T9、T13 |
+| 权限不足 | R18 | 非系统管理员不可进入/不可操作 | 菜单不显示，直达路由守卫，按钮 `v-permission` | router、RBAC、directives | `/api/dict/*` | 后端 403 为准 | T1、T7、T11、T13 |
+
+### 4.8 页面 P9 技术实现：日志审计
+
+- 原型文件：`agent-works/multi-tenant-rbac/prototypes/audit-log.html`
+- 对应需求：R17
+- 路由：`/system/audit`
+- 页面组件：`frontend/src/views/system/AuditLogView.vue`
+- API：`frontend/src/api/audit.ts`
+
+#### 4.8.1 前端页面设计闭环
+
+页面定位：
+
+- 页面类型：系统管理 list 可观测查询页。
+- 用户主流程：进入日志审计 → 查看摘要 → 设置筛选条件 → 查询列表 → 打开单条详情抽屉排障。
+- 是否新页面：是。
+- 是否改造已有页面：否。
+
+布局选型：
+
+- 选用原型：`list`
+- 选择理由：筛选和工具栏控制一张主审计宽表，详情通过只读抽屉承接。
+- 是否需要新增布局原型：否，复用 `frontend/src/layout/archetypes.ts` 的 `list`。
+
+Slot 与组件设计：
+
+| 区域 | slotId | 组件种类 | 是否 growMain | 滚动归属 | 是否可重排 | 说明 |
+| --- | --- | --- | --- | --- | --- | --- |
+| action | `toolbar` | `toolbar` | 否 | none | 否 | 标题、自动刷新、刷新、禁用导出、页面设置 |
+| action | `summary` | `kpi-grid` | 否 | none | 是 | 今日事件、失败/拒绝、安全事件、租户范围 |
+| action | `filters` | `filter-bar` | 否 | none | 否 | 时间、事件类型、结果、状态、资源码、关键词 |
+| main | `auditTable` | `wide-table` | 是 | body-xy | 否 | 审计宽表和分页，表体横向/纵向内滚 |
+| overlay | `detailDrawer` | `detail` | 否 | body-y | 否 | 只读详情抽屉 |
+| overlay | `settings` | `settings-drawer` | 否 | body-y | 否 | 页面设置抽屉 |
+
+配置设计：
+
+| 类型 | 字段 | 层级 | 落点 | 说明 |
+| --- | --- | --- | --- | --- |
+| 布局旋钮 | `density` | page/user | `pageRegistry.editable` | 信息密度 |
+| 组件设置 | `auditTable.hiddenColumns` | preset/page/user | `pageRegistry.componentMeta` | 审计表列显隐 |
+| 组件设置 | `auditTable.pageSize` | page/user | 页面业务态或组件配置 | 分页大小 |
+| 页面记忆 | `autoRefreshEnabled`、`filters` | user/local | `usePageSettings` 或页面状态 | 记住筛选和自动刷新开关 |
+
+复用与新增判断：
+
+- 复用已有布局：`list`
+- 复用已有组件：`LayoutHost`、`PageSettingsDrawer`、`LayoutSettingsSection`、`el-table`、`el-drawer`、`el-pagination`、`el-date-picker`
+- 是否新增组件种类：否
+- 是否新增组件配置字段：优先复用 `hiddenColumns`、`pageSize`
+- 是否新增页面专属业务态：是，筛选条件、自动刷新开关、详情抽屉、当前详情
+
+维护清单：
+
+- pageRegistry：新增 `pageKey="audit-log"`，路径 `/system/audit`，原型 `list`
+- COMPONENT_CATALOG：不新增
+- COMPONENT_FIELD_DEFS：不新增，除非实现时确认已有字段无法承载并同步消费
+- componentSchemas：不新增
+- 后端 layout_config 字段规则：不新增
+- componentPreview：不新增
+- DESIGN.md `page-registry` 区块：新增日志审计登记
+- RBAC 菜单/功能点：`_SEED_MENU_TREE`、`_SEED_RESOURCES`、接口守卫、tenant_admin 默认回填、system 全量
+- 测试：路由、pageRegistry、租户范围、空/加载/错误、详情抽屉、自动刷新、构建和视口验证
+
+验收：
+
+- `cd frontend && npm test`
+- `cd frontend && npm run build`
+- 视口验证：`1100x620`、`1366x768`、`1440x900`
+- 检查无整页滚动、无视口高度硬编码、摘要/筛选不挤压主表、宽表体内横滚、详情抽屉排版清晰
+
+#### 4.8.2 原型功能点承接表
+
+| 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 自动刷新 | R17 | 开关控制列表定时刷新，不改变筛选 | `setInterval` + 离开页面清理；默认关闭 | `AuditLogView.vue` | `GET /api/audit` | 接口失败时关闭本次 loading，不循环弹错 | T8、T13 |
+| 手动刷新 | R17 | 保留筛选条件重新加载 | 重新请求 summary/list | `toolbar` | `GET /api/audit`、`GET /api/audit/summary` | loading、失败重试 | T8 |
+| 导出入口禁用 | R17/R23 | 原型有禁用导出，本阶段不实现 | 禁用按钮或不渲染；如渲染则提示后续能力 | `toolbar` | - | 不产生 API 调用 | T8 |
+| 摘要指标 | R17 | 今日事件、失败/拒绝、安全事件、租户范围 | KPI grid；跟随筛选或默认范围 | `summary` slot | `GET /api/audit/summary` | summary 失败不阻塞主表，可显示占位 | T4、T8 |
+| 时间范围筛选 | R17 | 默认最近 retention_days 或近 N 天 | `el-date-picker`，服务端校验范围 | `filters` | `GET /api/audit` | 开始晚于结束时报错 | T4、T8 |
+| 事件类型筛选 | R17/R18 | 接口/任务/安全/权限/配置/字典 | 选项来自字典，失败回退内置枚举 | `filters`、`dictService` | `/api/dict/items/public` 或内置 | 字典异常回退默认 | T6、T8 |
+| 结果/状态筛选 | R17/R18 | 成功/失败/拒绝，完成/处理中/异常 | 选项来自字典或内置默认 | `filters` | `GET /api/audit` | 无结果空态 | T6、T8 |
+| 关键词筛选 | R17 | 处理人/资源码/目标对象 | 服务端 LIKE/ILIKE 或参数化查询 | `filters` | `GET /api/audit` | 特殊字符参数化，不拼 SQL | T4、T8 |
+| 审计宽表 | R17 | 时间、处理人、事件、资源、目标、结果、状态、IP、耗时、错误摘要、操作 | `el-table`，横向内滚，长文本省略 | `auditTable` | `GET /api/audit` | loading、无记录、服务异常、分页 | T4、T8、T13 |
+| 分页 | R17 | 服务端分页 | `el-pagination` | `auditTable` | `GET /api/audit` | 页码越界回退 | T4、T8 |
+| 详情抽屉 | R17 | 行点击/详情打开只读详情 | `el-drawer`；执行信息、资源信息、错误摘要、事件上下文分组 | `detailDrawer` | `GET /api/audit/{id}` | 详情加载失败可重试，敏感字段不展示 | T4、T8、T13 |
+| 无记录 | R17 | 当前筛选无数据 | 表格 empty slot + 重置筛选 | `auditTable` | - | 不重复空态 | T8 |
+| 加载失败 | R17 | 显示重试，已发生事件继续服务端写入 | 错误块 + 重试 | `auditTable` | - | 不清空旧筛选 | T8、T13 |
+| 权限不足 | R17 | 普通/付费默认不可见；租管只能看本租户 | 菜单授权 + 后端范围过滤 | router、RBAC、AuditService | `/api/audit/*` | 直达无权路由被拦，接口 403 | T1、T4、T7、T11、T12 |
+| 低高度退化 | R17 | 1100x620 下仍可用 | action 区固定，主表 grow，表体内滚；抽屉 body 内滚 | LayoutHost | - | 无整页滚动，无按钮重叠 | T8、T13 |
+
+### 4.9 页面 P10 技术实现：系统设置注册防滥用配置
+
+- 原型文件：无新增 HTML 原型；需求文档已说明复用阶段四落地的 `/system/config/system`。
+- 对应需求：R16、R19
+- 页面组件：`frontend/src/views/ConfigView.vue`
+- API：`frontend/src/api/data.ts`
+
+| 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 展示认证/防滥用配置组 | R16/R19 | 系统管理员进入系统设置看到邮箱码、登录图形码、失败阈值、限流阈值 | 后端 `CONFIG_GROUPS` 返回字段，前端通用配置表单渲染 bool/int | `ConfigView.vue` | `GET /api/data/settings` | 缺字段回退默认说明 | T2、T10 |
+| 保存认证配置 | R16/R19 | 修改后保存，登录/注册链路即时消费 | 复用已有保存接口，后端校验白名单和范围 | `ConfigView.vue`、`data_admin.py` | `POST /api/data/settings` | 保存失败提示，旧值不丢 | T2、T3、T10 |
+| 展示审计保留期 | R17 | 展示 `audit.retention_days`，说明本阶段用于默认查询窗口 | 作为系统设置字段渲染 | `ConfigView.vue` | `GET /api/data/settings` | 非法值回退 90 | T2、T10 |
+| 权限控制 | R16/R17/R19 | 仅系统管理员可编辑系统设置 | 菜单 system-only + `data-settings:manage` 按钮权限 | RBAC、`v-permission` | `/api/data/settings` | 接口 403 为准 | T1、T10、T11 |
+
+页面设计闭环判断：
+
+- 该页面为既有页面的字段级扩展，不新增主要区域、不重排布局、不新增弹窗/抽屉。
+- 本阶段仍需要验证系统设置页在 `1100x620`、`1366x768`、`1440x900` 下新增字段不挤压、不溢出。
+
+## 5. 需求与开发内容映射和开发状态
+
+| 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 必须实现 | R16 | 邮箱码/图形码/人机校验开关即时生效，缺值回落默认 | `app_config` 配置组、认证服务有效配置读取、系统设置页渲染、配置审计 | T2、T3、T10、T12、T13 | 待开始 | 一致 | 人机校验按现有图形验证码挑战落地，不接外部挑战 |
+| 必须实现 | R17 | API/任务/安全事件采集，可观测查询页，只读不可改，保留 90 天可配 | 审计表、审计服务、查询 API、采集钩子、审计页、`audit.retention_days` 配置和默认查询窗口 | T1、T2、T4、T5、T7、T8、T11、T12、T13 | 待开始 | 一致 | 自动清理任务不在 R17 基础能力内，归 R23 |
+| 必须实现 | R18 | 字典类型/项、首批权限枚举、下拉/校验消费、缺失回退默认 | 字典表、默认枚举、服务/API、前端维护页、缓存失效、消费兜底 | T1、T6、T7、T9、T11、T12、T13 | 待开始 | 一致 | `data_dimension_registry` 不并入 |
+| 必须实现 | R19 | 配置管理已拆父子菜单，注册防滥用开关落系统设置 | 在 `/system/config/system` 接入 R16 和审计保留期配置 | T2、T3、T10、T13 | 待开始 | 一致 | 不新增配置页原型 |
+| 项目约束 | DESIGN/page-template | 新页面必须页面设计闭环、slot、配置层级、维护清单、关键视口验收 | P8/P9 技术实现章节、pageRegistry/DESIGN 登记、视口验证 | T7、T8、T9、T13 | 待开始 | 一致 | 不新增布局原型和组件种类 |
+| 项目约束 | system-rbac-tenant | 新页面必须同步路由、菜单、资源、守卫、按钮权限、默认授权 | 审计和字典菜单/资源 seed、接口守卫、租管审计回填、权限测试 | T1、T4、T6、T7、T11、T12、T13 | 待开始 | 一致 | 审计页面对 tenant_admin 可见，字典 system-only |
+| 可选增强 | R22 | token 静默刷新 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 阶段六体验增强 |
+| 可选增强 | R23 | 审计日志保留期自动清理任务 | 暂不实现自动清理；保留期配置纳入 R17 口径 | - | 跳过 | 部分覆盖 | 缺口是定时清理任务，后续复用 `audit.retention_days` |
+| 可选增强 | R24 | 字段级变更对比 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 本阶段只做操作摘要和脱敏上下文 |
+| 可选增强 | R28 | 评分方案之外的其他资产公开 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 独立需求，不属于阶段五 |
+| 暂不实现 | R25 | 第三方登录真实对接 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 仍保持阶段二置灰入口 |
+| 暂不实现 | R26 | 付费计费与配额 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 只保留已有 role_type 预留 |
+| 暂不实现 | R27 | 高强度行情防爬 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 本阶段不接行为风控平台 |
+| 暂不实现 | 遗留项 4 | `data_dimension_registry` 是否并入字典 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 需求明确本期不并入 |
+
+## 6. 详细实施步骤与进度追踪
+
+### 6.1 任务 T1：数据库、菜单、资源码和 SQL 留痕
+
+- 状态：待开始
+- 依赖：阶段四 RBAC seed 和 `pg_ddl.py` 现有迁移标记机制。
+- 涉及文件/模块：
+  - `backend/storage/pg_ddl.py`
+  - `backend/auth/constants.py`
+  - `agent-works/multi-tenant-rbac/stage5-platform-capabilities/stage5-platform-capabilities.sql`
+  - `agent-works/multi-tenant-rbac/stage5-platform-capabilities/resource-codes.sql`
+- 目标：落地平台能力所需表、索引、菜单、资源码、默认授权和可重复执行 SQL 留痕。
+- 操作：
+  - 新增 `audit_log`、`dict_type`、`dict_item` 表和索引。
+  - 新增 `/system/audit`、`/system/dicts` 菜单。
+  - 新增 `audit:view`、`dict:read`、`dict:view`、`dict:type-manage`、`dict:item-manage` 资源码。
+  - 将 `dict:read` 作为登录基线共享读注入给有角色的非 system 用户。
+  - 将 `dict:read` 加入 `SHARED_RESOURCE_CODES`，`sys_resource.menu_id` 锚定 `/board` 这种 `visible=login` 叶子菜单，不挂 `/system/dicts`。
+  - 新增 `migration.stage5_platform_capabilities_v1` 迁移标记。
+  - 回填 tenant_admin 审计菜单和 `audit:view`，同事务 bump 受影响用户 `perm_ver`。
+  - 字典外键使用限制删除，不使用 cascade。
+- 产出：后端 DDL/seed 实现和两份 SQL 留痕文件。
+- 影响范围：PG schema、内置菜单、内置资源、已有 tenant_admin 授权和会话失效。
+- 边界与异常：
+  - 重复执行不得重复插入或重复授权。
+  - system 角色仍自动拥有全部新增资源。
+  - normal/paid 不默认获得审计或字典管理权限。
+  - 无角色用户不获得 `dict:read`。
+- 验证方式：
+  - 后端 DDL 初始化测试。
+  - 菜单/资源 seed 测试。
+  - tenant_admin 回填和 `perm_ver` bump 测试。
+- 完成标准：新库和已有库都能得到一致 seed；重复启动幂等；资源码扫描不报缺失。
+- 实际落地情况：待实施。
+
+### 6.2 任务 T2：R16/R17 运行时配置模型
+
+- 状态：待开始
+- 依赖：T1 的 app_config seed 约定；现有 `CONFIG_GROUPS`。
+- 涉及文件/模块：
+  - `backend/storage/app_config.py`
+  - `backend/config/settings.py`
+  - `backend/api/data_admin.py`
+  - 可能新增/扩展配置校验测试
+- 目标：把认证防滥用和审计保留期纳入系统设置配置模型。
+- 操作：
+  - 在 `CONFIG_GROUPS` 增加认证/防滥用配置项。
+  - 增加 `audit.retention_days`，默认 `90`，范围建议 `7..365`。
+  - 校验 bool/int 类型、范围和缺省值。
+  - 保存时保留旧配置兼容，未知 key 仍拒绝。
+- 产出：后端配置白名单和校验规则。
+- 影响范围：`GET/POST /api/data/settings`、系统设置页动态字段。
+- 边界与异常：
+  - 非法值拒绝保存或回退默认，不能写入破坏认证链路的值。
+  - `audit.retention_days` 不触发数据删除。
+- 验证方式：
+  - 配置保存接口测试。
+  - 非法值和缺值回退测试。
+- 完成标准：新增字段可查询、可保存、可被服务读取，并且没有未消费配置项。
+- 实际落地情况：待实施。
+
+### 6.3 任务 T3：认证链路消费有效配置
+
+- 状态：待开始
+- 依赖：T2。
+- 涉及文件/模块：
+  - `backend/services/auth_service.py`
+  - `backend/api/auth.py`
+  - `backend/auth/middleware.py`
+  - `backend/api/data_admin.py`
+- 目标：让 R16 配置实际影响登录、注册、验证码和公共配置接口。
+- 操作：
+  - 将认证服务配置读取切到 `get_effective_settings().auth` 或封装运行时配置读取器。
+  - `public_config()` 返回有效配置。
+  - 登录图形验证码和失败阈值按有效配置执行。
+  - 注册邮箱验证码按有效配置执行。
+  - 保存认证配置时记录 config 审计事件。
+- 产出：认证链路配置闭环。
+- 影响范围：登录、注册、邮箱验证码、公共配置、限流。
+- 边界与异常：
+  - PG/app_config 不可用时回退静态默认值。
+  - 人机校验不接第三方服务，页面文案明确为“登录图形验证码”。
+  - 审计写失败不影响配置保存。
+- 验证方式：
+  - 关闭 `require_email_code` 后注册不要求邮箱码。
+  - 开启 `login_captcha_enabled` 和设置 `captcha_after_fails` 后登录按阈值要求验证码。
+  - `/api/auth/public-config` 返回有效值。
+- 完成标准：配置展示、保存、读取、消费、回退全链路可验证。
+- 实际落地情况：待实施。
+
+### 6.4 任务 T4：审计查询后端闭环
+
+- 状态：待开始
+- 依赖：T1、T2。
+- 涉及文件/模块：
+  - `backend/storage/audit_repository.py`
+  - `backend/services/audit_service.py`
+  - `backend/api/audit.py`
+  - `backend/main.py`
+- 目标：提供审计写入、分页查询、摘要指标和详情查询能力。
+- 操作：
+  - 实现审计 repository。
+  - 实现 `AuditService.record_*` 和查询服务。
+  - 查询时按系统管理员/租户管理员做范围收口。
+  - 默认查询窗口读取 `audit.retention_days`。
+  - 实现 `/api/audit`、`/api/audit/summary`、`/api/audit/{id}`。
+- 产出：审计基础服务和只读 API。
+- 影响范围：新增审计 API、权限扫描、系统管理路由。
+- 边界与异常：
+  - 租户管理员不得通过参数越权查看其他租户。
+  - 审计上下文必须白名单脱敏。
+  - 审计 API 本身避免递归写入。
+- 验证方式：
+  - 系统管理员全局查询测试。
+  - 租户管理员本租户查询测试。
+  - 详情敏感字段过滤测试。
+- 完成标准：审计页所需列表、摘要、详情数据契约稳定。
+- 实际落地情况：待实施。
+
+### 6.5 任务 T5：审计采集接入
+
+- 状态：待开始
+- 依赖：T4。
+- 涉及文件/模块：
+  - `backend/auth/deps.py`
+  - `backend/auth/middleware.py`
+  - `backend/services/auth_service.py`
+  - `backend/services/async_task.py`
+  - `backend/scheduler/scheduler.py`
+  - 相关 RBAC 管理服务
+- 目标：覆盖 API、安全、任务、配置、字典、RBAC 高价值事件。
+- 操作：
+  - 在权限依赖中写入当前请求资源码上下文。
+  - 请求结束记录 API 事件。
+  - 登录/注册/验证码/限流/403/token 吊销记录安全事件。
+  - 异步任务和调度任务状态变化记录任务事件。
+  - 配置、字典、RBAC 管理操作记录管理事件。
+- 产出：审计事件采集闭环。
+- 影响范围：横切所有 `/api/**` 请求和关键服务。
+- 边界与异常：
+  - 审计写入必须 best-effort。
+  - 不记录请求体、响应体、密码、token、验证码。
+  - 高频 API 事件要避免同步阻塞。
+- 验证方式：
+  - 成功、失败、403、429、任务完成/失败均能查到审计。
+  - 模拟审计写入异常主接口仍成功。
+- 完成标准：R17 三类事件和关键管理事件可观察。
+- 实际落地情况：待实施。
+
+### 6.6 任务 T6：数据字典后端闭环
+
+- 状态：待开始
+- 依赖：T1、T4。
+- 涉及文件/模块：
+  - `backend/storage/dict_repository.py`
+  - `backend/services/dict_service.py`
+  - `backend/api/dicts.py`
+  - `backend/main.py`
+- 目标：实现字典类型、字典项、默认枚举、消费兜底和缓存失效。
+- 操作：
+  - 实现字典 CRUD。
+  - 实现 code 格式、唯一性、启停校验。
+  - 类型 code 和字典项 code 创建后不可修改；`PUT /api/dict/types/{code}` 与 `PUT /api/dict/items/{type_code}/{code}` 的请求体不接受 code/type_code 变更。
+  - 实现默认字典种子和 `get_enabled_items(type_code)`。
+  - 字典缺失/异常时回退内置枚举。
+  - 字典变更后记录审计并返回可让前端失效缓存的版本或时间戳。
+- 产出：字典后端服务和 API。
+- 影响范围：系统管理字典页、审计页枚举展示、后续下拉消费。
+- 边界与异常：
+  - 停用项不用于新数据，但历史值显示不丢 label。
+  - 删除有明细的类型要阻止。
+  - 编辑类型或字典项时 code 字段后端拒绝变更，前端编辑弹窗禁用 code 输入。
+  - 不把 `indicator_def` 和 `data_dimension_registry` 混入本期。
+- 验证方式：
+  - CRUD、重复 code、code 不可修改、禁用项、缺失回退、服务异常回退测试。
+- 完成标准：R18 后端能力可被页面和消费端稳定使用。
+- 实际落地情况：待实施。
+
+### 6.7 任务 T7：前端基础接入、路由、布局登记和 API 封装
+
+- 状态：待开始
+- 依赖：T1、T4、T6。
+- 涉及文件/模块：
+  - `frontend/src/router/index.ts`
+  - `frontend/src/layout/pageRegistry.ts`
+  - `frontend/src/api/audit.ts`
+  - `frontend/src/api/dict.ts`
+  - `DESIGN.md`
+- 目标：为两张新页面建立前端可导航、可配置、可测试的基础。
+- 操作：
+  - 新增 `/system/audit`、`/system/dicts` 静态路由。
+  - 新增 `audit-log`、`data-dictionary` 页面 registry。
+  - 新增审计和字典 API 类型封装。
+  - 在 DESIGN page-registry 区块登记两张页面。
+  - 确认菜单 seed path 与前端 route path 一致。
+- 产出：前端基础接入代码。
+- 影响范围：路由守卫、侧边菜单、页面布局配置。
+- 边界与异常：
+  - 不新增布局原型。
+  - 不新增页面不消费的组件配置字段。
+- 验证方式：
+  - pageRegistry 测试。
+  - router 解析测试。
+  - layout-contract 测试。
+- 完成标准：两张页面能被路由和布局系统识别。
+- 实际落地情况：待实施。
+
+### 6.8 任务 T8：日志审计前端页面
+
+- 状态：待开始
+- 依赖：T4、T7。
+- 涉及文件/模块：
+  - `frontend/src/views/system/AuditLogView.vue`
+  - `frontend/src/views/system/__tests__/AuditLogView.spec.ts`
+- 目标：按原型实现日志审计只读可观测页。
+- 操作：
+  - 实现标题工具区、自动刷新、刷新、禁用导出、摘要指标。
+  - 实现筛选栏、服务端分页、审计宽表。
+  - 实现只读详情抽屉，分组展示执行信息、资源信息、错误摘要、脱敏上下文。
+  - 实现 loading、无记录、服务异常、权限不足、低高度退化。
+  - 租户管理员页面不展示跨租户切换入口。
+- 产出：`AuditLogView.vue` 和页面测试。
+- 影响范围：系统管理日志审计页面。
+- 边界与异常：
+  - 不实现导出。
+  - 不展示原型批注或原型演示按钮。
+  - 自动刷新离开页面必须清理定时器。
+- 验证方式：
+  - 页面单测覆盖筛选、刷新、空态、错误态、详情抽屉。
+  - 视口 `1100x620`、`1366x768`、`1440x900` 截图/交互验证。
+- 完成标准：页面功能点承接表全部可观察，排版无重叠。
+- 实际落地情况：待实施。
+
+### 6.9 任务 T9：数据字典前端页面
+
+- 状态：待开始
+- 依赖：T6、T7。
+- 涉及文件/模块：
+  - `frontend/src/views/system/DataDictionaryView.vue`
+  - `frontend/src/views/system/__tests__/DataDictionaryView.spec.ts`
+- 目标：按原型实现数据字典 master-detail 维护页。
+- 操作：
+  - 实现类型搜索、类型列表、类型选择。
+  - 实现字典项状态筛选、搜索、查询、分页和表格。
+  - 新建/编辑类型和字典项统一用 `el-dialog`。
+  - 实现启停、删除确认、保存失败回滚、缓存失效。
+  - 实现 loading、无数据、查询无结果、服务异常、权限不足、低高度退化。
+- 产出：`DataDictionaryView.vue` 和页面测试。
+- 影响范围：系统管理数据字典页面。
+- 边界与异常：
+  - 禁止使用抽屉做编辑。
+  - 不展示原型批注或原型演示按钮。
+  - 同一区域不能重复渲染多个空态。
+- 验证方式：
+  - 页面单测覆盖主从联动、弹窗、保存失败、空/错/重试和权限按钮。
+  - 视口 `1100x620`、`1366x768`、`1440x900` 截图/交互验证。
+- 完成标准：页面功能点承接表全部可观察，弹窗编辑符合用户管理页交互。
+- 实际落地情况：待实施。
+
+### 6.10 任务 T10：系统设置页接入 R16/R17 配置
+
+- 状态：待开始
+- 依赖：T2、T3。
+- 涉及文件/模块：
+  - `frontend/src/views/ConfigView.vue`
+  - `frontend/src/api/data.ts`
+  - 相关前端测试
+- 目标：在 `/system/config/system` 展示并保存认证防滥用配置和审计保留期配置。
+- 操作：
+  - 优化系统设置页说明文案，覆盖认证和审计配置。
+  - 确认 bool/int 字段渲染正确。
+  - 保存成功后提示配置已更新。
+  - 保存失败保留旧值和错误提示。
+- 产出：系统设置页字段接入。
+- 影响范围：系统设置页面。
+- 边界与异常：
+  - 不新增页面。
+  - 不改变评分/技术/买卖配置子页。
+- 验证方式：
+  - 前端单测覆盖新增配置组渲染和保存。
+  - 关键视口验证新增字段不溢出。
+- 完成标准：R16/R17 配置能展示、保存、读取、消费。
+- 实际落地情况：待实施。
+
+### 6.11 任务 T11：权限扫描和菜单授权测试
+
+- 状态：待开始
+- 依赖：T1、T4、T6、T7。
+- 涉及文件/模块：
+  - `backend/tests/test_stage5_resource_codes.py`
+  - `backend/tests/test_stage4_menu_guard.py`
+  - 相关 RBAC 测试
+- 目标：确保新增页面、接口、按钮权限没有断链。
+- 操作：
+  - 扩展路由扫描测试，覆盖 `/api/audit` 和 `/api/dict`。
+  - 测试 tenant_admin 拥有审计菜单和 `audit:view`。
+  - 测试 normal/paid 默认无审计和字典管理菜单，但具备 `dict:read` 共享只读能力。
+  - 测试字典菜单和接口 system-only。
+  - 测试无角色用户不获得 `dict:read`。
+  - 测试 `dict:read` 挂 `visible=login` 菜单锚点、加入 `SHARED_RESOURCE_CODES`、角色页 baseline_locked 不可反选。
+  - 测试菜单 path 与前端 route path 对齐。
+- 产出：权限和菜单守卫测试。
+- 影响范围：RBAC seed、路由扫描。
+- 边界与异常：
+  - `require_system_perm` 既要 system 守卫又要保留资源码元数据。
+  - tenant_admin 审计范围由服务层兜底，不靠前端隐藏。
+- 验证方式：
+  - `python -m pytest backend/tests/test_stage5_resource_codes.py -q`
+  - `python -m pytest backend/tests/test_stage4_menu_guard.py -q`
+- 完成标准：新增 API 无裸露端点，默认角色授权符合需求。
+- 实际落地情况：待实施。
+
+### 6.12 任务 T12：后端业务测试
+
+- 状态：待开始
+- 依赖：T2、T3、T4、T5、T6、T11。
+- 涉及文件/模块：
+  - `backend/tests/test_stage5_auth_config.py`
+  - `backend/tests/test_stage5_audit.py`
+  - `backend/tests/test_stage5_dicts.py`
+  - 相关既有测试
+- 目标：覆盖 R16/R17/R18 后端闭环。
+- 操作：
+  - 补认证配置有效读取测试。
+  - 补审计写入、查询、范围、脱敏、降级测试。
+  - 补字典 CRUD、唯一性、禁用、兜底测试。
+  - 补审计保留期配置默认查询窗口测试。
+- 产出：后端阶段五测试。
+- 影响范围：后端 CI/本地测试基线。
+- 边界与异常：
+  - 测试不得依赖真实敏感数据。
+  - 审计降级测试要模拟写失败。
+- 验证方式：
+  - `python -m pytest backend/tests/test_stage5_auth_config.py -q`
+  - `python -m pytest backend/tests/test_stage5_audit.py -q`
+  - `python -m pytest backend/tests/test_stage5_dicts.py -q`
+  - `python -m pytest backend/tests/test_stage5_resource_codes.py -q`
+- 完成标准：阶段五后端专项测试通过，并不破坏阶段四权限基线。
+- 实际落地情况：待实施。
+
+### 6.13 任务 T13：前端测试、构建和视口验证
+
+- 状态：待开始
+- 依赖：T7、T8、T9、T10。
+- 涉及文件/模块：
+  - `frontend/src/views/system/__tests__/AuditLogView.spec.ts`
+  - `frontend/src/views/system/__tests__/DataDictionaryView.spec.ts`
+  - 相关 pageRegistry/router/layout 测试
+- 目标：验证页面、权限按钮、布局契约和构建。
+- 操作：
+  - 补审计页和字典页 Vitest。
+  - 补系统设置新增配置组测试。
+  - 跑前端测试和 build。
+  - 使用专用端口 `5181` 做 `1100x620`、`1366x768`、`1440x900` 视口验证。
+- 产出：前端测试结果和视口验证结论。
+- 影响范围：前端页面和布局系统。
+- 边界与异常：
+  - 改过 `frontend/src` 后必须 `npm run build`。
+  - 不抢占用户日常 `5173`。
+  - 宽表靠表体内滚，不通过整页滚动兜底。
+- 验证方式：
+  - `cd frontend && npm run test -- --run`
+  - `cd frontend && npm run build`
+  - 浏览器截图/交互验证三档视口。
+- 完成标准：测试和 build 通过，页面无重叠、无视口高度硬编码、无布局契约失败。
+- 实际落地情况：待实施。
+
+### 6.14 任务 T14：开发留痕、业务核查和计划状态回写
+
+- 状态：待开始
+- 依赖：T12、T13。
+- 涉及文件/模块：
+  - `agent-works/multi-tenant-rbac/stage5-platform-capabilities/development-trace.md`
+  - `agent-works/multi-tenant-rbac/stage5-platform-capabilities/business-audit.md`
+  - 本 `plan.md`
+- 目标：完成阶段五文档闭环和真实状态回写。
+- 操作：
+  - 记录实际落地文件、接口、表、资源码、页面和测试结果。
+  - 按业务链路核查 R16/R17/R18/R19 是否闭环。
+  - 更新本计划任务状态、实际落地情况、测试具体完成情况和遗留缺口。
+- 产出：开发留痕、业务核查和更新后的计划。
+- 影响范围：agent-works 文档。
+- 边界与异常：
+  - 只记录真实已落地事实，不提前把任务批量标为完成。
+  - 如测试未跑或失败，必须写原因和风险。
+- 验证方式：
+  - 文档自查。
+  - Git diff 复核。
+- 完成标准：开发过程、验证结果和业务闭环可追踪。
+- 实际落地情况：待实施。
+
+## 7. 数据库与 SQL 计划
+
+| SQL 文件路径 | 用途 | 执行时机 | 影响范围 | 回滚方式或不可回滚原因 |
+| --- | --- | --- | --- | --- |
+| `agent-works/multi-tenant-rbac/stage5-platform-capabilities/stage5-platform-capabilities.sql` | 记录 `audit_log`、`dict_type`、`dict_item`、索引、默认字典、`app_config` 新增配置项 | 开发实现时同步生成；生产发布前随 `init_pg_db()` 幂等逻辑或人工迁移执行 | 新增 PG 表、索引、默认枚举和配置 key | 未产生业务数据前可 drop 新表并删除 config key；产生审计/字典数据后 drop 会丢历史，回滚应优先保留表并下线入口 |
+| `agent-works/multi-tenant-rbac/stage5-platform-capabilities/resource-codes.sql` | 记录新增菜单、资源码、角色授权、tenant_admin 审计回填、`perm_ver` bump | 表结构就绪后、应用发布前执行；也由启动 seed 幂等保障 | `sys_menu`、`sys_resource`、`sys_role_menu`、`sys_role_resource`、用户 `perm_ver` | 可删除新增菜单/资源和授权关系；`perm_ver` 自增不可有意义回退，但只会要求用户重新登录，属于可接受副作用 |
+
+SQL 约束：
+
+- 所有 seed 使用 `ON CONFLICT` 或等效幂等逻辑。
+- 字典项外键不得使用 `ON DELETE CASCADE`。
+- 新增配置项必须有默认值和校验范围。
+- 审计表只新增，不改写既有业务表。
+- 回滚前必须确认是否已有审计日志或用户维护的字典项；已有数据时不建议 drop 表。
+
+## 8. 测试与验证计划
+
+- 单元测试：
+  - 计划：覆盖配置读取、字典服务、审计服务脱敏和回退。
+  - 具体完成情况：待验证。
+- 接口测试：
+  - 计划：覆盖 `/api/audit`、`/api/dict/*`、`/api/data/settings`、`/api/auth/public-config`。
+  - 具体完成情况：待验证。
+- 页面/交互测试：
+  - 计划：审计页筛选/分页/详情/自动刷新/错误重试；字典页主从联动/弹窗/启停/删除/缓存失效；系统设置页新增配置。
+  - 具体完成情况：待验证。
+- 权限与数据范围测试：
+  - 计划：system 全局审计和字典；tenant_admin 仅本租户审计；normal/paid 默认无审计和字典；后端接口 403 为准。
+  - 具体完成情况：待验证。
+- 回归测试：
+  - 计划：阶段四资源码扫描、菜单守卫、登录基线共享读、ConfigView 既有 score/trade/tech/system 子页不回归。
+  - 具体完成情况：待验证。
+- 异常与边界测试：
+  - 计划：审计写失败不阻断主链路；PG/app_config 缺失回退默认；字典服务异常回退默认枚举；非法配置拒绝或回退；页码越界处理。
+  - 具体完成情况：待验证。
+- 图示与原型一致性验证：
+  - 计划：核对 `data-dictionary.html` 的新建类型、刷新、类型搜索、编辑类型、新建字典项、状态筛选、查询、分页、弹窗、无数据、加载失败；核对 `audit-log.html` 的自动刷新、刷新、禁用导出、摘要指标、筛选、查询/重置、分页、详情抽屉、无记录、加载失败。
+  - 具体完成情况：待验证。
+- 配置闭环验证：
+  - 计划：验证配置项能展示、保存、读取、实际影响认证链路、非法值回退、`audit.retention_days` 被审计默认查询窗口消费。
+  - 具体完成情况：待验证。
+- 需求映射验证：
+  - 计划：逐项检查 R16/R17/R18/R19 是否有任务、状态、验证方式；R22/R23/R24/R25/R26/R27/R28 是否标跳过和原因。
+  - 具体完成情况：待验证。
+- 页面功能点验证：
+  - 计划：逐项检查 4.7.2、4.8.2、4.9 功能点是否有技术实现、任务编号、状态处理和异常处理。
+  - 具体完成情况：待验证。
+
+建议命令：
 
 ```bash
 python -m pytest backend/tests/test_stage5_auth_config.py -q
@@ -520,310 +1027,88 @@ python -m pytest backend/tests/test_stage5_audit.py -q
 python -m pytest backend/tests/test_stage5_dicts.py -q
 python -m pytest backend/tests/test_stage5_resource_codes.py -q
 python -m pytest backend/tests/test_stage4_menu_guard.py -q
-```
 
-前端：
-
-```bash
 cd frontend && npm run test -- --run
 cd frontend && npm run build
 ```
 
 页面验证：
 
-- 使用专用端口 `5181` 做页面截图/交互验证。
-- 验证 `/system/audit` 和 `/system/dicts` 在桌面宽度下无重叠、表格可用、弹窗正常。
-- 验证移动或窄屏下筛选区、表格、详情区不挤压错位。
-
-## 5. 执行任务拆分
-
-### T1. 数据库、菜单、资源码和 SQL 留痕
-
-状态：待开始
-
-改动文件：
-
-- `backend/storage/pg_ddl.py`
-- `backend/auth/constants.py`
-- `agent-works/multi-tenant-rbac/stage5-platform-capabilities/stage5-platform-capabilities.sql`
-- `agent-works/multi-tenant-rbac/stage5-platform-capabilities/resource-codes.sql`
-
-任务：
-
-- 新增 `audit_log`、`dict_type`、`dict_item` 表结构和索引。
-- 新增菜单 `/system/audit`、`/system/dicts`。
-- 新增资源码 `audit:view`、`dict:view`、`dict:type-manage`、`dict:item-manage`。
-- 系统管理员默认拥有全部新增资源。
-- 租户管理员默认拥有 `audit:view` 和审计菜单。
-- 新增阶段五迁移标记和回填逻辑。
-- 输出 SQL 留痕文件。
-
-验收：
-
-- 初始化或迁移后表、菜单、资源码存在。
-- 重复执行初始化不报错、不重复授权。
-- 租户管理员 `perm_ver` 在授权回填时同步更新。
-
-### T2. R16 运行时认证配置
-
-状态：待开始
-
-改动文件：
-
-- `backend/storage/app_config.py`
-- `backend/services/auth_service.py`
-- `backend/api/auth.py`
-- `backend/api/data_admin.py`
-- `frontend/src/views/ConfigView.vue`
-
-任务：
-
-- 增加认证/防滥用配置组。
-- 登录、注册、验证码、公共配置读取有效配置。
-- 配置保存后记录配置审计。
-- 系统配置页展示新增配置组并保持通用表单体验。
-
-验收：
-
-- 关闭 `require_email_code` 后注册不再要求邮箱验证码。
-- 开启 `login_captcha_enabled` 后登录按失败次数要求验证码。
-- `/api/auth/public-config` 返回与系统配置一致的有效值。
-- 配置异常时回退默认值，不导致认证接口 500。
-
-### T3. 审计后端查询闭环
-
-状态：待开始
-
-改动文件：
-
-- `backend/storage/audit_repository.py`
-- `backend/services/audit_service.py`
-- `backend/api/audit.py`
-- `backend/main.py`
-
-任务：
-
-- 实现审计写入、查询、汇总、详情。
-- 实现系统管理员全局范围和租户管理员租户范围。
-- 审计服务统一脱敏、裁剪上下文。
-- 审计写入失败降级到应用日志。
-
-验收：
-
-- 审计查询支持分页和筛选。
-- 租户管理员无法通过参数查询其他租户日志。
-- 审计上下文没有敏感明文。
-- 审计写入异常不影响主业务响应。
-
-### T4. 审计埋点接入
-
-状态：待开始
-
-改动文件：
-
-- `backend/auth/deps.py`
-- `backend/auth/middleware.py`
-- `backend/services/auth_service.py`
-- `backend/services/async_task.py`
-- `backend/scheduler/scheduler.py`
-- 相关 RBAC 管理服务文件
-
-任务：
-
-- 鉴权依赖写入当前请求资源码上下文。
-- API 请求完成后记录方法、路径、状态码、耗时、资源码、结果。
-- 登录、注册、验证码、限流、403、Token 撤销记录安全事件。
-- 异步任务和调度任务状态变化记录任务事件。
-- 配置、字典、RBAC 高价值管理操作记录管理事件。
-
-验收：
-
-- 成功、失败、拒绝、限流均有可查询审计记录。
-- 审计 API 本身不会造成递归写入。
-- 主链路不因审计服务异常失败。
-
-### T5. 数据字典后端闭环
-
-状态：待开始
-
-改动文件：
-
-- `backend/storage/dict_repository.py`
-- `backend/services/dict_service.py`
-- `backend/api/dicts.py`
-- `backend/main.py`
-
-任务：
-
-- 实现字典类型和字典项 CRUD。
-- 实现默认字典种子和启用项查询。
-- 实现字典缺失/异常兜底。
-- 变更时记录审计事件。
-
-验收：
-
-- code 唯一性和格式校验生效。
-- 禁用项不作为业务启用项返回。
-- 删除有明细的类型被阻止或有明确确认策略。
-- 字典服务异常时消费者能回退默认枚举。
-
-### T6. 前端路由、API 和页面注册
-
-状态：待开始
-
-改动文件：
-
-- `frontend/src/router/index.ts`
-- `frontend/src/layout/pageRegistry.ts`
-- `frontend/src/api/audit.ts`
-- `frontend/src/api/dict.ts`
-
-任务：
-
-- 新增审计和字典 API 类型封装。
-- 新增 `/system/audit`、`/system/dicts` 路由。
-- 新增页面布局注册项。
-- 确认菜单 path 与前端 route path 一致。
-
-验收：
-
-- 路由可解析。
-- 页面布局系统能识别新增页面。
-- API 类型与后端响应契约一致。
-
-### T7. 日志审计前端页面
-
-状态：待开始
-
-改动文件：
-
-- `frontend/src/views/system/AuditLogView.vue`
-- 可能新增局部组件或测试文件
-
-任务：
-
-- 按原型实现统计、筛选、表格和详情。
-- 优化详情排版，事件基础信息、目标、执行结果、事件上下文分组展示。
-- 实现空态、错误态、重试。
-- 自动刷新作为明确开关，默认关闭。
-- 导出入口不实现或保持禁用。
-
-验收：
-
-- 页面只读，无误导性编辑操作。
-- 详情展示直观，脱敏上下文可读。
-- 窄屏和桌面下无明显重叠。
-
-### T8. 数据字典前端页面
-
-状态：待开始
-
-改动文件：
-
-- `frontend/src/views/system/DataDictionaryView.vue`
-- 可能新增局部组件或测试文件
-
-任务：
-
-- 按原型实现左类型、右字典项的主从布局。
-- 新增/编辑类型和字典项均使用 `el-dialog`。
-- 实现搜索、启停、排序、删除确认。
-- 保存后刷新当前数据并清理字典缓存。
-- 实现空态、错误态、重试。
-
-验收：
-
-- 无抽屉编辑交互。
-- 操作按钮带对应 `v-permission`。
-- 删除和禁用有明确反馈。
-
-### T9. 自动化测试与权限扫描
-
-状态：待开始
-
-改动文件：
-
-- `backend/tests/test_stage5_auth_config.py`
-- `backend/tests/test_stage5_audit.py`
-- `backend/tests/test_stage5_dicts.py`
-- `backend/tests/test_stage5_resource_codes.py`
-- `frontend/src/views/system/__tests__/AuditLogView.spec.ts`
-- `frontend/src/views/system/__tests__/DataDictionaryView.spec.ts`
-- 相关既有测试文件
-
-任务：
-
-- 覆盖 R16、R17、R18 后端行为。
-- 覆盖新增路由权限和菜单授权。
-- 覆盖前端页面主路径、错误态、空态和权限按钮。
-- 确保阶段四既有权限测试不回归。
-
-验收：
-
-- 后端新增测试通过。
-- 前端 Vitest 通过。
-- `npm run build` 通过。
-
-### T10. 开发留痕与业务闭环核查
-
-状态：待开始
-
-改动文件：
-
-- `agent-works/multi-tenant-rbac/development-trace.md` 或同功能目录内留痕文件
-- `agent-works/multi-tenant-rbac/business-audit.md` 或同功能目录内核查文件
-
-任务：
-
-- 开发完成后更新本阶段开发留痕。
-- 按多租户 RBAC 业务链路核查审计、字典、配置是否闭环。
-- 记录未实现项和后续阶段风险。
-
-验收：
-
-- 文档能说明本阶段改了什么、为什么、如何验证。
-- 风险项与需求文档遗留确认项一致。
-
-## 6. 实施顺序
-
-1. T1：先落数据库、菜单、资源码和 SQL 留痕，保证后续接口有权限基础。
-2. T2：接入 R16 运行时认证配置，复用已有配置页。
-3. T3：实现审计后端查询闭环。
-4. T5：实现数据字典后端闭环。
-5. T4：在认证、鉴权、任务、配置、字典、RBAC 操作中补审计埋点。
-6. T6：补前端 API、路由和页面布局注册。
-7. T7：实现日志审计页。
-8. T8：实现数据字典页。
-9. T9：补测试并跑后端、前端验证。
-10. T10：输出开发留痕和业务闭环核查。
-
-说明：T3 和 T5 可并行开发，但 T4 依赖 T3 的审计服务稳定；T7/T8 依赖 T6 和对应后端接口契约。
-
-## 7. 风险与处理
+- 使用专用端口 `5181`，不占用日常 `5173`。
+- 验证视口：`1100x620`、`1366x768`、`1440x900`。
+- 验证内容：无整页滚动、无硬编码视口高度、无文本重叠、宽表体内滚、弹窗/抽屉 body 内滚、页面设置抽屉可打开。
+
+## 9. 发布与回滚
+
+- 发布前检查：
+  - PG 备份完成。
+  - 新 DDL/seed 在测试库幂等通过。
+  - 新资源码和菜单 seed 与前端路由一致。
+  - tenant_admin 审计授权回填影响范围已确认。
+  - 后端阶段五测试通过。
+  - 前端测试和 build 通过。
+  - 三档视口验证通过。
+- 发布步骤：
+  1. 合并后端 DDL/seed 和服务代码。
+  2. 在发布前或应用启动时执行幂等 PG 初始化。
+  3. 发布后端，确认 `/api/health`、配置、审计、字典接口可用。
+  4. 发布前端构建产物。
+  5. 用 system 管理员验证系统设置、数据字典、日志审计。
+  6. 用 tenant_admin 验证只看到本租户审计。
+  7. 用 normal/paid 验证默认不可见审计和字典。
+- 配置或环境变量：
+  - 本阶段不新增必需环境变量。
+  - 新增 `app_config` 平台配置：认证防滥用字段、`audit.retention_days`。
+- 回滚方案：
+  - 前端回滚：还原前端产物，侧栏不再展示新页面入口。
+  - 后端回滚：回退 API 和服务代码；保留新增表不影响旧代码。
+  - 权限回滚：删除新增菜单/资源和授权关系；已 bump 的 `perm_ver` 不回退，用户重新登录即可。
+  - 数据回滚：已有审计日志和字典项不建议删除；如必须删除，需先备份并确认业务接受历史不可恢复。
+
+## 10. 风险、假设与待确认项
+
+### 10.1 风险
 
 | 风险 | 影响 | 处理 |
 | --- | --- | --- |
-| 审计量增长快 | PG 表增长、查询变慢 | 本阶段加索引、分页和筛选；保留后续归档/清理扩展点 |
-| 审计写入影响主链路 | 登录、配置、任务等核心操作失败 | 审计服务内部吞异常并写应用日志，主链路不回滚 |
-| 审计记录泄露敏感信息 | 安全风险 | 统一上下文白名单，禁止原始请求体和敏感字段入库 |
-| 租户管理员审计越权 | 可看到其他租户操作 | 查询服务强制追加当前租户条件，系统管理员才允许全局 |
-| 字典 label 被误用于业务判断 | 业务逻辑漂移 | 业务判断只使用稳定 code，字典只负责展示和管理 |
-| 认证配置运行时读取增加 PG 依赖 | 登录链路受 PG 波动影响 | 读取失败回退静态默认值；只在认证入口读取有效配置 |
-| 新菜单和资源码漏 seed | 页面不可见或接口 403 | 路由扫描测试、菜单守卫测试和 SQL 留痕同时覆盖 |
+| 审计表增长快 | 查询变慢、PG 存储增长 | 本阶段加索引、分页、默认 retention 查询窗口；R23 再做自动清理 |
+| 审计写入拖慢主链路 | 登录/接口/任务延迟 | 审计服务 best-effort，失败降级应用日志，不阻断主流程 |
+| 审计泄露敏感信息 | 安全风险 | 上下文白名单，禁止原始 body、密码、token、验证码入库 |
+| 租户管理员审计越权 | 可见其他租户操作 | 服务层强制 tenant_id 范围，不信任前端参数 |
+| 字典 label 被用于业务判断 | 业务语义漂移 | 业务判断只使用稳定 code，label 仅展示 |
+| 字典表删除策略冲突 | 误删字典项 | 数据库限制删除，服务层禁删有明细类型 |
+| 认证配置运行时读取依赖 PG | 登录链路受 PG 波动影响 | 读取失败回退静态默认值 |
+| 页面布局不符合规范 | 页面可用性差或测试失败 | 按 page-template 补 slot、维护清单、关键视口验收 |
+| 新资源码漏 seed 或漏守卫 | 页面不可见或接口裸露 | 路由扫描、菜单守卫和资源码测试覆盖 |
 
-## 8. 验收清单
+### 10.2 假设
 
-- [ ] 系统管理员可以在 `/system/config/system` 修改注册防滥用配置。
-- [ ] 登录、注册、验证码接口按系统配置即时生效。
-- [ ] 审计日志能记录 API、安全、任务、配置、字典和关键 RBAC 操作。
-- [ ] 审计写入失败不会阻塞业务接口。
-- [ ] 系统管理员可查看全局审计。
-- [ ] 租户管理员只能查看本租户审计。
-- [ ] 数据字典类型和字典项可维护，且使用弹窗编辑。
-- [ ] 字典服务异常或字典项缺失时业务展示有默认值兜底。
-- [ ] 新增页面路由、菜单、资源码、按钮权限、默认授权决策完整。
-- [ ] 空态、错误态、重试态在审计页和字典页可见且不混入原型说明。
-- [ ] 后端阶段五测试通过。
-- [ ] 前端 Vitest 和 `npm run build` 通过。
-- [ ] SQL 留痕、开发留痕和业务闭环核查完成。
+- R16 “人机校验”本阶段等同于登录失败后的图形验证码挑战，不接第三方滑块或行为验证码。
+- R17 保留期配置本阶段用于默认查询窗口和页面展示，不执行自动删除。
+- 数据字典首批消费以权限体系和审计展示枚举为主，不强制迁移全量业务枚举。
+- 审计 API 递归保护允许跳过 `/api/audit/**` 的 API 事件，或用内部标记防止重复写入；实现时选择不造成无限写入的方案。
+- 当前阶段不需要数据库 MCP 直接读取线上结构；以代码 DDL 和需求文档为依据。
 
+### 10.3 待确认项
+
+| 待确认项 | 是否阻塞 | 当前处理 | 触发时机 |
+| --- | --- | --- | --- |
+| 是否需要独立第三方人机校验服务 | 否 | 本阶段不做，按图形验证码挑战落地 | 用户明确要求滑块/行为验证码时 |
+| 少量稳定业务枚举具体名单 | 否 | 先做权限体系枚举和审计枚举，其他枚举实现时按现有代码确认后少量纳入 | T6 实施前后 |
+| 审计 API 是否记录自身查询事件 | 否 | 默认做递归保护，避免无限写入 | T4/T5 实现时 |
+| 审计保留期配置是否在系统设置页展示为独立分组 | 否 | 推荐放“审计设置”分组，字段为 `audit.retention_days` | T2/T10 实施时 |
+
+## 11. 整改后自审结果
+
+| 审查项 | 结果 | 说明 |
+| --- | --- | --- |
+| auto-plan-dev 固定结构 | 通过 | 已补 1-10 章，并保留第 5 章“需求与开发内容映射和开发状态” |
+| 需求到任务可追踪 | 通过 | R16/R17/R18/R19、页面规范和 RBAC 约束均映射到任务、状态、偏差判断 |
+| 可选/后续项完整映射 | 通过 | R22/R23/R24/R25/R26/R27/R28 均标注跳过、原因和阶段 |
+| R23 口径 | 通过 | 自动清理跳过，但 R17 的 90 天可配纳入配置、默认查询窗口和页面提示 |
+| R16 人机校验口径 | 通过 | 明确本阶段等同图形验证码挑战，不接第三方挑战 |
+| 页面设计闭环 | 通过 | P8/P9 已补页面定位、原型选择、slot、配置层级、维护清单和三档视口验收 |
+| 原型功能点承接 | 通过 | P8/P9 原型操作入口、状态、弹窗/抽屉、分页、权限、低高度退化均映射到任务 |
+| SQL 执行和回滚 | 通过 | 已补 SQL 路径、用途、执行时机、影响范围和回滚口径 |
+| dict 删除策略冲突 | 通过 | 已改为 `ON DELETE RESTRICT`/默认限制，并由服务层禁删有明细类型 |
+| 测试验证计划 | 通过 | 已补后端、前端、权限、异常、原型一致性、配置闭环和需求映射验证 |
