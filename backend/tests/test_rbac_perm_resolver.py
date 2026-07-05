@@ -27,8 +27,8 @@ def _perm_ver(pg, uid: str) -> int:
 def sandbox(pg):
     """临时 RBAC 数据工厂 + teardown 清理（顺序遵守 FK：先删用户/角色触发级联，再删资源/菜单）。
 
-    菜单/资源类 bump 会连带失效**全部 system 用户**（含真实 admin，生产语义正确）；为不污染
-    admin perm_ver / 其它测试预铸 token，teardown 还原 admin 的 perm_ver 到用例前快照。
+    资源类 bump 会连带失效**全部 system 用户**（含真实 admin）；为不污染 admin perm_ver /
+    其它测试预铸 token，teardown 还原 admin 的 perm_ver 到用例前快照。
     """
     made = {"user": [], "role": [], "menu": [], "resource": [], "tenant": []}
     admin_pv0 = _perm_ver(pg, "admin")
@@ -193,8 +193,8 @@ def test_bump_users_of_roles(pg, redis_cli, sandbox):
     assert _perm_ver(pg, u2) == v2 + 1
 
 
-def test_bump_users_of_menu_includes_system(pg, redis_cli, sandbox):
-    """菜单变更 → 引用它的角色的用户 + 全部 system 用户（超管看全量，结构变更也影响）。"""
+def test_bump_users_of_menu_excludes_system(pg, redis_cli, sandbox):
+    """菜单变更 → 引用它的非 system 角色用户失效；system 用户不因维护菜单被踢下线。"""
     m = sandbox.mk_menu()
     r = sandbox.mk_role("R")
     sandbox.grant_menu(r, m)
@@ -205,7 +205,7 @@ def test_bump_users_of_menu_includes_system(pg, redis_cli, sandbox):
 
     perm_resolver.bump_users_of_menu(m)
     assert _perm_ver(pg, u_norm) == v_norm + 1
-    assert _perm_ver(pg, u_sys) == v_sys + 1
+    assert _perm_ver(pg, u_sys) == v_sys
 
 
 def test_bump_perm_ver_atomic_rolls_back_with_business(pg, redis_cli, sandbox):

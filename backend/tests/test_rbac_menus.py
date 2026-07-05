@@ -3,8 +3,8 @@
 覆盖 §6.7：require_system 守卫(403) / 树读取 / CRUD / code·route 唯一 / 内置保护(不可删) /
 级联保护(有子节点不可删) / 移动防成环 / 排序 / **删除·可见性变更 → 引用用户 perm_ver 自增**。
 
-真实 PG + Redis + create_app()。菜单/资源类 bump 连带失效全部 system 用户（含真实 admin，生产
-语义正确）；为不污染 admin perm_ver / 其它测试预铸 token，env teardown 还原 admin perm_ver 到快照。
+真实 PG + Redis + create_app()。菜单变更只失效受影响的非 system 角色用户；为不污染 admin
+perm_ver / 其它测试预铸 token，env teardown 还原 admin perm_ver 到快照。
 所有临时角色/用户/菜单 uuid 化并清理。
 """
 
@@ -283,6 +283,17 @@ def test_visibility_change_bumps_referencing_users(client, env):
         headers=env.sys_headers())
     assert r.status_code == 200
     assert _perm_ver(env.pg, holder) == v0 + 1   # 可见性变更 → 引用用户失效
+
+
+def test_visibility_change_does_not_bump_system_admin(client, env):
+    mid = env.mk_menu(visible="login")
+    route = env.pg.query_df("SELECT route_path FROM sys_menu WHERE id=%s", [mid]).iloc[0]["route_path"]
+    admin_v0 = _perm_ver(env.pg, "admin")
+    r = client.put(f"/api/menus/{mid}", json={
+        "title": "系统可见", "type": "leaf", "routePath": route, "visible": "system"},
+        headers=env.sys_headers())
+    assert r.status_code == 200
+    assert _perm_ver(env.pg, "admin") == admin_v0   # system 维护菜单不应被旧 token 踢下线
 
 
 def test_title_only_edit_does_not_bump(client, env):

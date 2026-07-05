@@ -89,15 +89,48 @@ interface MenuForm {
   icon: string | null
   visible: string
   sort: number
-  parentId: string | null // 保存属性时原样回传（移动只经拖拽，不在此改）
+  parentId: string | null
 }
 const form = ref<MenuForm>({ title: '', type: 'leaf', routePath: '', icon: null, visible: 'login', sort: 0, parentId: null })
 let originalForm = ''
 const formDirty = ref(false)
 
 function formFingerprint(f: MenuForm): string {
-  return JSON.stringify([f.title, f.type, f.routePath, f.icon, f.visible])
+  return JSON.stringify([f.title, f.type, f.routePath, f.icon, f.visible, f.parentId])
 }
+
+interface ParentOption {
+  id: string | null
+  title: string
+  disabled?: boolean
+}
+
+function collectGroupOptions(nodes: MenuNode[], currentId: string | null = null, level = 0): ParentOption[] {
+  const options: ParentOption[] = []
+  for (const n of nodes) {
+    if (n.type === 'group') {
+      const isCurrent = currentId === n.id
+      const disabled = isCurrent || Boolean(currentId && findNode(n.children ?? [], currentId))
+      options.push({
+        id: n.id,
+        title: `${'　'.repeat(level)}${n.title}`,
+        disabled,
+      })
+      options.push(...collectGroupOptions(n.children ?? [], currentId, level + 1))
+    }
+  }
+  return options
+}
+
+const parentOptions = computed<ParentOption[]>(() => [
+  { id: null, title: '（根节点）' },
+  ...collectGroupOptions(tree.value, activeId.value || null),
+])
+
+const createParentOptions = computed<ParentOption[]>(() => [
+  { id: null, title: '（根节点）' },
+  ...collectGroupOptions(tree.value),
+])
 function loadForm() {
   const m = activeMenu.value
   if (!m) return
@@ -151,7 +184,7 @@ async function saveForm() {
       routePath: form.value.type === 'group' ? null : (form.value.routePath.trim() || null),
       icon: form.value.icon,
       visible: form.value.visible,
-      parentId: form.value.parentId, // 不在属性表单里移动，原样回传保持位置
+      parentId: form.value.parentId,
     })
     ElMessage.success('已保存')
     await loadTree(true)
@@ -163,20 +196,20 @@ function resetForm() {
 
 // ── 菜单 新建（root / child）/ 删除 ──
 const menuDialog = ref(false)
-const menuCreateForm = ref<{ code: string; title: string; type: string; routePath: string; icon: string | null; visible: string; parentId: string | null; parentTitle: string }>(
-  { code: '', title: '', type: 'leaf', routePath: '', icon: null, visible: 'login', parentId: null, parentTitle: '（根节点）' },
+const menuCreateForm = ref<{ code: string; title: string; type: string; routePath: string; icon: string | null; visible: string; parentId: string | null }>(
+  { code: '', title: '', type: 'leaf', routePath: '', icon: null, visible: 'login', parentId: null },
 )
 const menuSaving = ref(false)
 
 function openCreateRoot() {
-  menuCreateForm.value = { code: '', title: '', type: 'group', routePath: '', icon: null, visible: 'login', parentId: null, parentTitle: '（根节点）' }
+  menuCreateForm.value = { code: '', title: '', type: 'group', routePath: '', icon: null, visible: 'login', parentId: null }
   menuDialog.value = true
 }
 function openCreateChild(node?: MenuNode) {
   const p = node ?? activeMenu.value
   if (!p) return
   // 子节点默认继承父可见域（在 system 分组下新建默认 system），避免误建成登录可见的越权入口
-  menuCreateForm.value = { code: '', title: '', type: 'leaf', routePath: '', icon: null, visible: p.visible, parentId: p.id, parentTitle: p.title }
+  menuCreateForm.value = { code: '', title: '', type: 'leaf', routePath: '', icon: null, visible: p.visible, parentId: p.id }
   menuDialog.value = true
 }
 async function saveCreateMenu() {
@@ -421,6 +454,17 @@ onMounted(() => { loadTree() })
                       <el-option label="分组（不导航）" value="group" />
                     </el-select>
                   </div>
+                  <div class="mr-field"><label>上级</label>
+                    <el-select v-model="form.parentId" size="small" :disabled="!canMenuUpdate" @change="onFormChange">
+                      <el-option
+                        v-for="opt in parentOptions"
+                        :key="opt.id ?? '__root__'"
+                        :label="opt.title"
+                        :value="opt.id"
+                        :disabled="opt.disabled"
+                      />
+                    </el-select>
+                  </div>
                   <div class="mr-field"><label>路由</label>
                     <el-input v-model="form.routePath" size="small" placeholder="如 /board" class="mono"
                               :disabled="form.type === 'group' || !canMenuUpdate" @input="onFormChange" />
@@ -556,7 +600,14 @@ onMounted(() => { loadTree() })
       <el-dialog v-model="menuDialog" title="新增菜单节点" width="480px">
         <el-form label-width="72px">
           <el-form-item label="上级">
-            <el-input :model-value="menuCreateForm.parentTitle" disabled />
+            <el-select v-model="menuCreateForm.parentId" filterable>
+              <el-option
+                v-for="opt in createParentOptions"
+                :key="opt.id ?? '__root__'"
+                :label="opt.title"
+                :value="opt.id"
+              />
+            </el-select>
           </el-form-item>
           <el-form-item label="标题">
             <el-input v-model="menuCreateForm.title" placeholder="如：每日榜单" />

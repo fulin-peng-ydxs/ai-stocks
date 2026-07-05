@@ -151,12 +151,15 @@ def affected_users_of_roles(role_ids: Iterable[str],
 
 
 def affected_users_of_menu(menu_id: str, client: PostgresClient | None = None) -> list[str]:
-    """引用「该菜单**及其全部子孙**」的角色的用户 ∪ 全部 system 用户。
+    """引用「该菜单**及其全部子孙**」的非 system 角色用户。
 
     子树纳入（Codex 第二轮 P2-c）：`/me` 可见性由**祖先链**决定（父分组 visible=system 或被移动跨可见域
     → 整棵子树对非 system 用户隐藏）。角色可能只授到**子孙叶子**、未授父节点，只算当前节点会漏掉这些
     用户、其缓存菜单残留到 TTL。故用递归 CTE 收「当前节点 + 全部后代」被引用的角色用户。
     （叶子无后代时 CTE 只返回自身，等价旧行为；删除仅发生在无子节点菜单上，子树亦仅自身。）
+
+    system 用户拥有全量菜单，菜单可见性或层级变化不会改变其安全边界；不 bump system 用户的
+    perm_ver，避免系统管理员维护菜单后被旧 token 失配踢回登录页。
     """
     client = client or get_pg_client()
     df = client.query_df(
@@ -166,10 +169,12 @@ def affected_users_of_menu(menu_id: str, client: PostgresClient | None = None) -
         "  SELECT m.id FROM sys_menu m JOIN sub ON m.parent_id = sub.id) "
         "SELECT DISTINCT ur.user_id FROM sys_role_menu rm "
         "JOIN sub ON sub.id = rm.menu_id "
-        "JOIN sys_user_role ur ON ur.role_id = rm.role_id", [menu_id])
-    uids = set(df["user_id"].tolist()) if not df.empty else set()
-    uids |= set(_system_user_ids(client))
-    return list(uids)
+        "JOIN sys_user_role ur ON ur.role_id = rm.role_id "
+        "WHERE NOT EXISTS ("
+        "  SELECT 1 FROM sys_user_role sur JOIN sys_role sr ON sr.id = sur.role_id "
+        "  WHERE sur.user_id = ur.user_id AND (sr.code = %s OR sr.kind = 'system'))",
+        [menu_id, ROLE_SYSTEM])
+    return df["user_id"].tolist() if not df.empty else []
 
 
 def affected_users_of_resource(resource_id: str,
@@ -201,7 +206,7 @@ def bump_users_of_roles(role_ids: Iterable[str], client: PostgresClient | None =
 
 
 def bump_users_of_menu(menu_id: str, client: PostgresClient | None = None) -> int:
-    """菜单删除/可见性变更/移动 → 引用该菜单及其子孙的角色用户 ∪ system 用户失效（一次性）。"""
+    """菜单删除/可见性变更/移动 → 引用该菜单及其子孙的非 system 角色用户失效（一次性）。"""
     client = client or get_pg_client()
     return bump_and_invalidate(affected_users_of_menu(menu_id, client), client)
 

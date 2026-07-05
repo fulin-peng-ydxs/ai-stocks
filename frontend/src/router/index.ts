@@ -1,7 +1,10 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { h } from 'vue'
 import { getAccessToken } from '@/api/authToken'
 import { useAuthStore } from '@/stores/auth'
 import { resolveMenuGuard } from '@/utils/permission'
+
+const HomeRedirect = { name: 'HomeRedirect', setup: () => () => h('div') }
 
 const routes: RouteRecordRaw[] = [
   // 登录/注册页（stage2·T7）：全屏独立壳（meta.fullscreen）+ 公开（meta.public，免登录）
@@ -11,7 +14,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/LoginView.vue'),
     meta: { title: '登录', public: true, fullscreen: true },
   },
-  { path: '/', redirect: '/board' },
+  { path: '/', name: 'home', component: HomeRedirect },
   {
     path: '/board',
     name: 'board',
@@ -149,8 +152,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/data/ScheduleView.vue'),
     meta: { title: '任务调度' },
   },
-  // 兜底：未匹配路径（含已废弃的 /config、/layout-config/* 旧链接与误输）回首页，避免空白页。
-  { path: '/:pathMatch(.*)*', redirect: '/board' },
+  // 兜底：未匹配路径（含已废弃的 /config、/layout-config/* 旧链接与误输）回动态首页，避免空白页。
+  { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
 const router = createRouter({
@@ -159,7 +162,7 @@ const router = createRouter({
 })
 
 // 全局守卫（stage2·T7 骨架 + stage3·T15 菜单权限）：
-// ① 公开路由放行（已登录再进登录页回首页）；② 未登录访问受控路由跳登录（带 redirect）；
+// ① 公开路由放行（已登录再进登录页回动态首页）；② 未登录访问受控路由跳登录（带 redirect）；
 // ③ 已登录先确保 /me 就绪（fail-closed：菜单/权限加载后再放行），再按授权菜单校验目标路由——
 //    system 恒过；非 system 命中授权叶子（或其子路由）放行，否则重定向到首个授权页（无安全落点则放行、
 //    交由后端接口级守卫兜底，避免重定向死循环）。
@@ -177,6 +180,8 @@ router.beforeEach(async (to) => {
   try { await auth.ensureLoaded() } catch { /* 401 已由拦截器处理；瞬时错误由菜单空触发 fail-closed */ }
   // ensureLoaded 期间若发生 401 清态，token 已失效 → 跳登录。
   if (!getAccessToken()) return { path: '/login', query: { redirect: to.fullPath } }
+  // 动态首页：按 /me 下发菜单树的第一个可导航叶子落点；菜单空时保守落到 SAFE_HOME(/board)。
+  if (to.path === '/') return { path: auth.firstMenuPath || '/board' }
   // 菜单授权决策（fail-closed）：system 恒过；未授权（含 /me 失败致菜单空）→ 漏斗到安全落点，
   // 绝不放行到被请求的未授权页壳；已在落点则渲染首页壳（SideMenu 显错误/空态+重试）。
   return resolveMenuGuard(to.path, {
