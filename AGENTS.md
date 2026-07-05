@@ -57,12 +57,13 @@ python -m backend.cli verify-data
 python -m backend.cli daily
 ```
 
-CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。跑后端测试前先判断是否会访问项目
-`data/ai_stocks.duckdb`：只要测试会启动 FastAPI、触发 DuckDB 初始化、访问行情/数据管理/布局接口、异步任务、
-数据采集、质检、回测或任何可能拿 DuckDB 文件锁的链路，就必须先执行 `./start.sh status` 确认后台状态，再用
-`./start.sh stop` 停掉后端；测试通过或结束后，按测试前状态用 `./start.sh` 或 `./start.sh prod` 重启，并用
-`./start.sh status` 确认 `/api/health=200`。禁止在后台服务仍持有 DuckDB 锁时硬跑相关测试；不得直接裸杀进程，
-除非脚本停服失败且用户明确同意。
+CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
+
+跑后端测试前先判断是否会访问项目`data/ai_stocks.duckdb`：
+只要测试会启动 FastAPI、触发 DuckDB 初始化、访问行情/数据管理/布局接口、异步任务、数据采集、质检、回测或任何可能拿 DuckDB 文件锁的链路，就必须先执行 `./start.sh status` 确认后台状态，再用`./start.sh stop` 停掉后端；
+
+测试通过或结束后，按测试前状态用 `./start.sh` 重启，并用
+`./start.sh status` 确认 `/api/health=200`。禁止在后台服务仍持有 DuckDB 锁时硬跑相关测试；不得直接裸杀进程，除非脚本停服失败且用户明确同意。
 
 ## 端口与构建
 
