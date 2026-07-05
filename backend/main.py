@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.auth.deps import require_system
+from backend.api.audit import router as audit_router
 from backend.auth.middleware import AuthMiddleware, SecurityMiddleware
 from backend.api.auth import router as auth_router
 from backend.api.backtest import router as backtest_router
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     # stage4·T5：端点内已逐一叠加 require_system_perm 精确码（供路由扫描/审计识别），此处硬守卫保留作兜底。
     app.include_router(data_tasks_router, dependencies=[Depends(require_system)])
     app.include_router(data_admin_router, dependencies=[Depends(require_system)])
+    app.include_router(audit_router)
     app.include_router(training_router)
     # 用户管理（stage3·R10）：逐端点已挂 require_perm 精确码，不整 router gate（tenant_admin 经授权可用）
     app.include_router(users_router)

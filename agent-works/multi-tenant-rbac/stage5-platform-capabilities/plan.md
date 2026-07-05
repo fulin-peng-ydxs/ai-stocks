@@ -688,7 +688,7 @@ Slot 与组件设计：
 
 ### 6.4 任务 T4：审计查询后端闭环
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1、T2。
 - 涉及文件/模块：
   - `backend/storage/audit_repository.py`
@@ -713,7 +713,11 @@ Slot 与组件设计：
   - 租户管理员本租户查询测试。
   - 详情敏感字段过滤测试。
 - 完成标准：审计页所需列表、摘要、详情数据契约稳定。
-- 实际落地情况：待实施。
+- 实际落地情况：已扩展 `AuditRepository` 的分页查询、摘要统计和详情读取；已新增 `AuditService`，统一处理
+  system 全局/tenant_admin 本租户范围收口、`audit.retention_days` 默认查询窗口和审计上下文白名单脱敏；已新增
+  `/api/audit`、`/api/audit/summary`、`/api/audit/{id}` 只读接口并挂 `audit:view`；已在 `backend/main.py` 注册
+  审计路由。已补 `backend/tests/test_stage5_audit.py`，覆盖系统管理员全局查询、摘要、详情脱敏、租户管理员越权收口
+  和跨租户详情不可见。
 
 ### 6.5 任务 T5：审计采集接入
 
