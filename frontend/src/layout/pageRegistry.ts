@@ -82,6 +82,30 @@ function singleColumn() {
   return { allowReflow: false, breakpoints: [{ minWidth: 0, columns: 1 }] }
 }
 
+function configEntry(pageKey: string, label: string, path: string): PageRegistryEntry {
+  return {
+    pageKey,
+    label,
+    path,
+    archetype: 'workbench',
+    responsiveProfile: 'mixed-panel',
+    supportsComponentConfig: false,
+    layout: {
+      pageKey,
+      archetype: 'workbench',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
+        { id: 'body', component: 'section', region: 'main', label, order: 1 },
+        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
+      ],
+      editable: [densityKnob()],
+    },
+  }
+}
+
 const REGISTRY: PageRegistryEntry[] = [
   {
     pageKey: 'board',
@@ -319,27 +343,10 @@ const REGISTRY: PageRegistryEntry[] = [
       editable: [densityKnob()],
     },
   },
-  {
-    pageKey: 'config',
-    label: '配置管理',
-    path: '/system/config',
-    archetype: 'workbench',
-    responsiveProfile: 'mixed-panel',
-    supportsComponentConfig: false,
-    layout: {
-      pageKey: 'config',
-      archetype: 'workbench',
-      hasActionRegion: true,
-      density: 'standard',
-      responsive: singleColumn(),
-      slots: [
-        { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'body', component: 'section', region: 'main', label: '配置内容', order: 1 },
-        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
-      ],
-      editable: [densityKnob()],
-    },
-  },
+  configEntry('config-score', '评分规则', '/system/config/score'),
+  configEntry('config-trade', '买卖指标', '/system/config/trade'),
+  configEntry('config-tech', '技术指标', '/system/config/tech'),
+  configEntry('config-system', '系统设置', '/system/config/system'),
   {
     pageKey: 'user-manage',
     label: '用户管理',

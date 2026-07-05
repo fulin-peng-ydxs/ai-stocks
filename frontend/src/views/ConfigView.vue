@@ -44,6 +44,10 @@ const auth = useAuthStore()
 type ConfigTab = 'score' | 'tech' | 'trade' | 'system'
 const forcedTab = computed<ConfigTab | null>(() => (route.meta.configTab as ConfigTab | undefined) ?? null)
 const activeTab = computed<ConfigTab>(() => forcedTab.value || 'score')
+function configPageKeyOf(tab: ConfigTab): string {
+  return `config-${tab}`
+}
+const configPageKey = configPageKeyOf(activeTab.value)
 const pageTitle = computed(() => {
   if (forcedTab.value === 'score') return '评分规则'
   if (forcedTab.value === 'trade') return '买卖指标'
@@ -56,10 +60,10 @@ const configDefaults = {
   techSort: 'catOrder' as 'catOrder' | 'name_cn' | 'srcLabel',
   previewExpanded: true,
 }
-const { settings, isDirty, reset } = usePageSettings('config', configDefaults)
+const { settings, isDirty, reset } = usePageSettings(configPageKey, configDefaults)
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
-const configLayout = getPageLayout('config')
+const configLayout = getPageLayout(configPageKey)
 const {
   effective: configEffective,
   knobs: layoutKnobs,
@@ -1362,7 +1366,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       v-model="settingsOpen"
       :title="pageTitle"
       :dirty="isDirty || layoutDirty"
-      page-key="config"
+      :page-key="configPageKey"
       :config="drawerConfig"
       @reset="reset(); resetLayout()"
     >

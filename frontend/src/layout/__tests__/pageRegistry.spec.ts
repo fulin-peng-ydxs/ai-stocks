@@ -66,6 +66,13 @@ describe('页面注册表完整性', () => {
     expect(() => getPageLayout('not-a-page')).toThrow()
   })
 
+  it('配置管理拆页后只登记四个子页面，不保留旧 config 页', () => {
+    expect(getPageEntry('config')).toBeUndefined()
+    expect(() => getPageLayout('config')).toThrow()
+    expect(PAGE_REGISTRY.filter((entry) => entry.path.startsWith('/system/config/')).map((entry) => entry.pageKey).sort())
+      .toEqual(['config-score', 'config-system', 'config-tech', 'config-trade'])
+  })
+
   it('每个 registry 页面都已登记到 DESIGN.md 页面登记区块', () => {
     for (const entry of PAGE_REGISTRY) {
       expect(DESIGN_PAGE_SECTION, `${entry.pageKey}(${entry.label}) 未出现在 DESIGN.md 页面登记区块`).toContain(entry.label)
@@ -87,7 +94,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
   it('listComponentUsage 命中真实消费页面，未消费组件返回空', () => {
     const tableUsers = listComponentUsage('data-table').map((u) => u.pageKey)
     expect(tableUsers).toEqual(expect.arrayContaining(['board', 'screen', 'stocks', 'data-quality']))
-    expect(listComponentUsage('tabs').map((u) => u.pageKey)).not.toContain('config')
+    expect(listComponentUsage('tabs').map((u) => u.pageKey)).not.toContain('config-score')
     // 目录中存在但无页面消费的组件（如 kanban）应返回空数组而非报错。
     expect(listComponentUsage('kanban')).toEqual([])
   })

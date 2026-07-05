@@ -435,7 +435,10 @@ npm run build
 | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` |
 | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `StockDetailView`（个股详情） | `detail` | `density` | action:`toolbar` / main:`detail` |
-| `ConfigView`（配置管理） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `ConfigView`（买卖指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `ConfigView`（技术指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `ConfigView`（系统设置） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `UserManageView`（用户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `RoleManageView`（角色管理） | `list` | `density` | action:`toolbar` / main:`section` |
 | `MenuResourceView`（菜单与功能） | `list` | `density` | action:`toolbar` / main:`section` |
