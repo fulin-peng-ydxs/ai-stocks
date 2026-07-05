@@ -30,6 +30,7 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
+import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { getSettingsView, saveSettings, type SettingGroup } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -84,18 +85,27 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, component
 
 // ── 系统设置（FR-DM-12：真实参数 Web 可编辑，写 app_config 覆盖层）──
 const sysGroups = ref<SettingGroup[]>([])
-const sysDraft = ref<Record<string, any>>({})
+const sysDraft = ref<Record<string, unknown>>({})
 const sysLoading = ref(false)
 const sysSaving = ref(false)
+const sysSaveError = ref(false)
+const canManageSystemSettings = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'data-settings:manage'),
+)
 async function loadSystem() {
+  if (!canManageSystemSettings.value) return
   sysLoading.value = true
+  sysSaveError.value = false
   try {
     const { groups } = await getSettingsView()
     sysGroups.value = groups
-    const d: Record<string, any> = {}
+    const d: Record<string, unknown> = {}
     groups.forEach((g) => g.fields.forEach((f) => { d[f.path] = f.value }))
     sysDraft.value = d
   } finally { sysLoading.value = false }
+}
+function updateSystemField(path: string, value: unknown) {
+  sysDraft.value = { ...sysDraft.value, [path]: value }
 }
 const sysDirty = computed(() => {
   for (const g of sysGroups.value) for (const f of g.fields) {
@@ -103,18 +113,45 @@ const sysDirty = computed(() => {
   }
   return false
 })
+function systemFieldInvalid(field: SettingGroup['fields'][number], value: unknown): boolean {
+  if (field.type === 'bool') return typeof value !== 'boolean'
+  if (field.type === 'enum') return !(field.options ?? []).includes(String(value))
+  const n = Number(value)
+  if (!Number.isFinite(n)) return true
+  if (field.type === 'int' && !Number.isInteger(n)) return true
+  if (field.min != null && n < field.min) return true
+  if (field.max != null && n > field.max) return true
+  return false
+}
+const sysInvalidPaths = computed(() => {
+  const invalid: string[] = []
+  for (const group of sysGroups.value) {
+    for (const field of group.fields) {
+      if (systemFieldInvalid(field, sysDraft.value[field.path])) invalid.push(field.path)
+    }
+  }
+  return invalid
+})
 async function saveSystem() {
-  const updates: Record<string, any> = {}
+  if (!canManageSystemSettings.value) return
+  if (sysInvalidPaths.value.length) {
+    ElMessage.warning('请修正超出范围的配置项')
+    return
+  }
+  const updates: Record<string, unknown> = {}
   for (const g of sysGroups.value) for (const f of g.fields) {
     if (sysDraft.value[f.path] !== f.value) updates[f.path] = sysDraft.value[f.path]
   }
   if (!Object.keys(updates).length) { ElMessage.info('无修改'); return }
   sysSaving.value = true
+  sysSaveError.value = false
   try {
     await saveSettings(updates)
-    ElMessage.success('配置已保存并生效')
+    ElMessage.success('配置已更新')
     await loadSystem()
-  } catch { /* 拦截器弹错（含校验失败 400） */ } finally { sysSaving.value = false }
+  } catch {
+    sysSaveError.value = true
+  } finally { sysSaving.value = false }
 }
 // ── 技术指标注册表（含内置 + 自定义）──
 const registry = ref<IndicatorDef[]>([])
@@ -774,11 +811,17 @@ async function initActivePage(tab: ConfigTab = activeTab.value) {
   pageReady.value = false
   pageInitError.value = false
   try {
+    if (tab === 'system') {
+      await auth.ensureLoaded()
+      if (seq !== initSeq) return
+      if (canManageSystemSettings.value) await withInitialRetry(loadSystem)
+      if (seq === initSeq) pageReady.value = true
+      return
+    }
     await ensureBaseReady()
     if (seq !== initSeq) return
     if (tab === 'score') await initScorePage()
     else if (tab === 'trade') await initTradePage()
-    else if (tab === 'system') await withInitialRetry(loadSystem)
     if (seq === initSeq) pageReady.value = true
   } catch (e) {
     if (seq === initSeq) pageInitError.value = true
@@ -1302,28 +1345,62 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
       <!-- ============ 系统设置（FR-DM-12）============ -->
       <template v-else-if="activeTab === 'system'">
-        <div class="sys-wrap" v-loading="sysLoading">
+        <el-result
+          v-if="!canManageSystemSettings"
+          icon="warning"
+          title="无权限维护系统设置"
+          sub-title="系统设置仅系统管理员可编辑"
+          class="config-error"
+        />
+        <div v-else class="sys-wrap" v-loading="sysLoading">
           <div class="sys-head">
-            <span class="sys-tip">数据源 / 股票池 / 回测成本 / 选股数量等运行参数，改后即时生效。</span>
-            <el-button v-permission="'data-settings:manage'" type="primary" :loading="sysSaving" :disabled="!sysDirty" @click="saveSystem">保存并生效</el-button>
+            <div class="sys-summary">
+              <strong>运行配置</strong>
+              <span>保存后即时影响数据源、股票池、回测、榜单、认证和审计查询窗口。</span>
+            </div>
+            <div class="sys-actions">
+              <el-alert
+                v-if="sysSaveError"
+                type="error"
+                title="保存失败，已保留当前编辑值"
+                :closable="false"
+                show-icon
+              />
+              <el-alert
+                v-else-if="sysInvalidPaths.length"
+                type="warning"
+                title="存在超出允许范围的配置项"
+                :closable="false"
+                show-icon
+              />
+              <el-button
+                v-permission="'data-settings:manage'"
+                type="primary"
+                :loading="sysSaving"
+                :disabled="!sysDirty || !!sysInvalidPaths.length"
+                @click="saveSystem"
+              >
+                保存并生效
+              </el-button>
+            </div>
           </div>
-          <el-card v-for="g in sysGroups" :key="g.key" shadow="never" class="sys-group" :header="g.label">
-            <el-form label-width="160px">
-              <el-form-item v-for="f in g.fields" :key="f.path">
-                <template #label>
-                  {{ f.label }}
-                  <el-tag v-if="f.overridden" size="small" type="warning" effect="plain" class="ov-tag">已覆盖</el-tag>
-                </template>
-                <el-switch v-if="f.type === 'bool'" v-model="sysDraft[f.path]" />
-                <el-select v-else-if="f.type === 'enum'" v-model="sysDraft[f.path]" style="width: 200px">
-                  <el-option v-for="opt in f.options ?? []" :key="opt" :label="opt" :value="opt" />
-                </el-select>
-                <el-input-number v-else v-model="sysDraft[f.path]" :min="f.min" :max="f.max"
-                                 :step="f.type === 'number' ? 0.0001 : 1" :controls="f.type === 'int'" style="width: 200px" />
-                <span class="sys-default">默认 {{ f.default }}</span>
-              </el-form-item>
-            </el-form>
-          </el-card>
+
+          <el-empty
+            v-if="!sysLoading && !sysGroups.length"
+            class="app-empty"
+            description="暂无可维护配置"
+          />
+          <div v-else class="sys-grid">
+            <ConfigGroupForm
+              v-for="group in sysGroups"
+              :key="group.key"
+              :group="group"
+              :model-value="sysDraft"
+              :disabled="sysSaving"
+              :invalid-paths="sysInvalidPaths"
+              @update-field="updateSystemField"
+            />
+          </div>
         </div>
       </template>
     </template>
@@ -1389,17 +1466,58 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 </template>
 
 <style scoped>
-.sys-wrap { max-width: 760px; }
+.sys-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 .sys-head {
-  display: flex; align-items: center; gap: 16px;
-  position: sticky; top: 0; z-index: 2;  /* 保存并生效 按钮随内容滚动时保持吸顶可见 */
-  padding: 4px 0 14px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0 12px;
   background: var(--el-bg-color-page);
 }
-.sys-tip { font-size: 12px; color: var(--el-text-color-secondary); flex: 1; }
-.sys-group { margin-bottom: 14px; }
-.sys-default { font-size: 12px; color: var(--el-text-color-secondary); margin-left: 12px; }
-.ov-tag { margin-left: 6px; }
+.sys-summary {
+  min-width: 0;
+}
+.sys-summary strong,
+.sys-summary span {
+  display: block;
+}
+.sys-summary strong {
+  font-size: 16px;
+  line-height: 1.4;
+}
+.sys-summary span {
+  margin-top: 3px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.sys-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sys-actions :deep(.el-alert) {
+  width: 260px;
+  padding: 4px 8px;
+}
+.sys-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 14px;
+  min-width: 0;
+}
 .page-head { display: flex; justify-content: space-between; align-items: center; }
 .config-body {
   flex: 1 1 auto;   /* 填满 LayoutHost 的 .v-grow，页面内容在本区域内滚动 */
@@ -1767,5 +1885,20 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .subchip.score.lo b {
   color: var(--el-text-color-secondary);
+}
+@media (max-width: 980px) {
+  .sys-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sys-actions {
+    justify-content: flex-start;
+  }
+  .sys-actions :deep(.el-alert) {
+    width: 100%;
+  }
+  .sys-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
