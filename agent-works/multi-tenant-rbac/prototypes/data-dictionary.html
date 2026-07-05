@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>数据字典 原型 · 复盘啦（阶段五 R18）</title>
+<!--
+  页面原型：数据字典（P8·R18）。自包含静态 HTML，全可交互；右上切黑白主题。
+  作用：需求「7.8 数据字典」视觉/交互事实源 + 后续 DictView.vue 参照。
+  交互：字典类型选择/新建/编辑/启停、字典项增删改/启停/排序、搜索、弹窗、无数据/服务异常状态、切主题、显隐批注。
+  说明规范：页面只留面向用户的短标签 + HelpTip；实现细节收进琥珀原型批注，勿带入正式页面。
+  可见性：仅系统管理员维护。消费端缺失或异常时回落代码默认枚举。
+-->
+<style>
+  :root { --pg-page-bg:#f5f7fa; --pg-card-bg:#ffffff; --pg-text:#1f2937; --pg-text-reg:#4b5563; --pg-text-sub:#8a94a6; --pg-border:#e4e7ed; --pg-border-light:#ebeef5; --pg-primary:#409eff; --pg-primary-bg:#ecf5ff; --pg-danger:#dc2626; --pg-success:#2f9e44; --pg-warning:#d97706; --pg-info:#8a94a6; --pg-fill:#f5f7fa; --pg-hover:#f2f6fc; --pg-th-bg:#fafafa; --pg-sel:#ecf5ff; --pg-guide:#dce3ec; --anno-bg:#fff8ec; --anno-border:#e8a33d; --anno-text:#8a5a12; }
+  html[data-theme="dark"] { --pg-page-bg:#000000; --pg-card-bg:#0c0e12; --pg-text:#d2d8e0; --pg-text-reg:#a3abb8; --pg-text-sub:#5a6371; --pg-border:#2e3644; --pg-border-light:#232a34; --pg-primary:#409eff; --pg-primary-bg:#18222f; --pg-danger:#f56c6c; --pg-success:#67c23a; --pg-warning:#e0a83e; --pg-info:#5a6371; --pg-fill:#14181f; --pg-hover:#141b25; --pg-th-bg:#14181f; --pg-sel:#18222f; --pg-guide:#2b3444; --anno-bg:#241d10; --anno-border:#8a6a2a; --anno-text:#d8b471; }
+  * { box-sizing:border-box; } html,body { height:100%; margin:0; }
+  body { font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif; background:var(--pg-page-bg); color:var(--pg-text); font-size:14px; display:flex; flex-direction:column; height:100%; transition:background .2s,color .2s; }
+  .anno-off .anno { display:none !important; }
+  .anno-bar { display:flex; align-items:center; gap:12px; padding:8px 24px; background:var(--anno-bg); border-bottom:1px dashed var(--anno-border); color:var(--anno-text); font-size:12px; flex:none; }
+  .anno-bar b { font-weight:700; } .anno-bar .legend { display:inline-flex; align-items:center; gap:5px; }
+  .swatch { width:12px; height:12px; border-radius:3px; display:inline-block; } .sw-help { background:var(--pg-primary); } .sw-anno { background:var(--anno-border); }
+  .anno-bar .toggle { margin-left:auto; cursor:pointer; border:1px solid var(--anno-border); border-radius:4px; padding:2px 8px; }
+  .anno { border-left:3px solid var(--anno-border); background:var(--anno-bg); color:var(--anno-text); font-size:12px; line-height:1.6; padding:6px 10px; border-radius:0 5px 5px 0; margin:8px 16px; }
+  .anno .k { font-weight:700; }
+  .anno-actions { display:inline-flex; align-items:center; gap:6px; margin-left:8px; flex-wrap:wrap; vertical-align:middle; }
+  .anno-actions .btn { height:24px; padding:0 8px; font-size:12px; border-color:var(--anno-border); color:var(--anno-text); background:var(--anno-bg); }
+  .help { position:relative; display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:6px; border-radius:50%; background:#c0c4cc; color:#fff; font-size:11px; font-weight:700; cursor:help; vertical-align:middle; }
+  .help:hover { background:var(--pg-primary); }
+  .help .pop { display:none; position:absolute; top:22px; left:0; width:300px; background:var(--pg-card-bg); color:var(--pg-text-reg); border:1px solid var(--pg-border); border-radius:6px; box-shadow:0 8px 28px rgba(0,0,0,.18); padding:10px 12px; font-size:12.5px; line-height:1.7; font-weight:400; z-index:60; text-align:left; }
+  .help:hover .pop { display:block; }
+  .page-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 24px 10px; flex:none; }
+  .page-head .titles { display:flex; align-items:center; gap:6px; } .page-head h2 { margin:0; font-size:20px; font-weight:700; }
+  .head-actions { display:flex; align-items:center; gap:10px; }
+  .btn { height:32px; padding:0 14px; border-radius:5px; font-size:13px; cursor:pointer; border:1px solid transparent; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+  .btn-primary { background:var(--pg-primary); color:#fff; } .btn-default { background:var(--pg-card-bg); color:var(--pg-text-reg); border-color:var(--pg-border); }
+  .btn-sm { height:28px; padding:0 10px; font-size:12px; }
+  .theme-toggle { width:32px; height:32px; border-radius:5px; border:1px solid var(--pg-border); background:var(--pg-card-bg); color:var(--pg-text-sub); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+  .split { flex:1 1 auto; min-height:0; display:flex; gap:16px; padding:0 24px 16px; overflow-x:auto; }
+  .panel { border:1px solid var(--pg-border); border-radius:8px; background:var(--pg-card-bg); display:flex; flex-direction:column; min-height:0; }
+  .left { width:320px; flex:none; } .right { flex:1 1 auto; min-width:620px; }
+  .panel-head { padding:11px 14px; border-bottom:1px solid var(--pg-border-light); display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .panel-title { font-weight:600; display:flex; align-items:center; } .mini { color:var(--pg-text-sub); font-size:12px; font-weight:400; }
+  .panel-body { flex:1 1 auto; min-height:0; overflow:auto; }
+  .type-toolbar { display:flex; gap:8px; padding:10px; border-bottom:1px solid var(--pg-border-light); }
+  .search { height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; min-width:0; outline:none; }
+  .type-toolbar .search { flex:1; }
+  .type-list { padding:8px; }
+  .type-row { display:flex; align-items:center; gap:8px; padding:9px 8px; border-radius:6px; cursor:pointer; }
+  .type-row:hover { background:var(--pg-hover); } .type-row.active { background:var(--pg-sel); }
+  .type-meta { min-width:0; flex:1; } .type-name { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .type-code { font-size:12px; color:var(--pg-text-sub); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tag { display:inline-flex; align-items:center; height:21px; padding:0 7px; border-radius:4px; font-size:11px; border:1px solid transparent; white-space:nowrap; }
+  .tag-success { color:var(--pg-success); background:color-mix(in srgb,var(--pg-success) 12%,transparent); border-color:color-mix(in srgb,var(--pg-success) 30%,transparent); }
+  .tag-info { color:var(--pg-info); background:var(--pg-fill); border-color:var(--pg-border); }
+  .tag-warning { color:var(--pg-warning); background:color-mix(in srgb,var(--pg-warning) 12%,transparent); border-color:color-mix(in srgb,var(--pg-warning) 30%,transparent); }
+  .tag-danger { color:var(--pg-danger); background:color-mix(in srgb,var(--pg-danger) 12%,transparent); border-color:color-mix(in srgb,var(--pg-danger) 30%,transparent); }
+  .detail-bar { padding:12px 16px; border-bottom:1px solid var(--pg-border-light); display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .detail-name { font-size:15px; font-weight:700; display:flex; align-items:center; min-width:0; }
+  .filters { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--pg-border-light); flex-wrap:wrap; }
+  .selbox { position:relative; height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; display:inline-flex; align-items:center; gap:6px; cursor:pointer; }
+  .selbox .cv { color:var(--pg-text-sub); }
+  .dd-menu { position:absolute; z-index:70; top:36px; left:0; background:var(--pg-card-bg); border:1px solid var(--pg-border); border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.16); padding:5px; min-width:150px; display:none; }
+  .dd-menu.show { display:block; } .dd-menu .opt { padding:7px 10px; border-radius:5px; font-size:13px; cursor:pointer; } .dd-menu .opt:hover { background:var(--pg-hover); } .dd-menu .opt.on { color:var(--pg-primary); background:var(--pg-primary-bg); }
+  .table-wrap { flex:1 1 auto; min-height:0; overflow:auto; }
+  table { width:100%; min-width:760px; border-collapse:collapse; font-size:13px; }
+  thead th { position:sticky; top:0; z-index:1; background:var(--pg-th-bg); color:var(--pg-text-reg); font-weight:600; text-align:left; padding:9px 12px; border-bottom:1px solid var(--pg-border); white-space:nowrap; }
+  tbody td { padding:9px 12px; border-bottom:1px solid var(--pg-border-light); color:var(--pg-text-reg); vertical-align:middle; }
+  tbody tr:hover { background:var(--pg-hover); }
+  .code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  .link { color:var(--pg-primary); cursor:pointer; margin-right:10px; font-size:13px; white-space:nowrap; } .link.danger { color:var(--pg-danger); }
+  .switch { width:34px; height:18px; border-radius:12px; background:var(--pg-border); position:relative; display:inline-block; cursor:pointer; vertical-align:middle; }
+  .switch::after { content:""; width:14px; height:14px; border-radius:50%; background:#fff; position:absolute; top:2px; left:2px; transition:left .18s; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+  .switch.on { background:var(--pg-primary); } .switch.on::after { left:18px; }
+  .pager { display:flex; align-items:center; justify-content:flex-end; gap:6px; padding:10px 16px; font-size:13px; color:var(--pg-text-sub); border-top:1px solid var(--pg-border-light); flex:none; }
+  .pager .pg { min-width:28px; height:28px; padding:0 6px; border:1px solid var(--pg-border); border-radius:4px; background:var(--pg-card-bg); color:var(--pg-text-reg); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+  .pager .pg.active { background:var(--pg-primary); color:#fff; border-color:var(--pg-primary); }
+  .state { padding:34px 16px; text-align:center; color:var(--pg-text-sub); }
+  .state b { display:block; margin-bottom:8px; color:var(--pg-text-reg); }
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:flex-start; justify-content:center; padding-top:70px; z-index:80; }
+  .overlay.show { display:flex; }
+  .dialog { width:min(520px,92vw); max-height:calc(100vh - 140px); background:var(--pg-card-bg); border:1px solid var(--pg-border); border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,.25); display:flex; flex-direction:column; }
+  .dialog-head { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--pg-border-light); font-weight:600; }
+  .dialog-close { cursor:pointer; color:var(--pg-text-sub); border:none; background:none; font-size:15px; }
+  .dialog-body { padding:18px; flex:1 1 auto; overflow:auto; }
+  .form-row { display:flex; align-items:flex-start; gap:12px; margin-bottom:14px; }
+  .form-row label { width:82px; text-align:right; color:var(--pg-text-reg); font-size:13px; flex:none; padding-top:7px; white-space:nowrap; }
+  .inp { flex:1; min-height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; outline:none; min-width:0; }
+  textarea.inp { padding:8px 10px; min-height:70px; resize:vertical; }
+  .hint { font-size:12px; color:var(--pg-text-sub); margin:-8px 0 12px 94px; line-height:1.6; }
+  .dialog-foot { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--pg-border-light); }
+  #toast { position:fixed; left:50%; bottom:32px; transform:translateX(-50%); background:var(--pg-text); color:var(--pg-card-bg); font-size:13px; padding:8px 16px; border-radius:6px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:99; }
+  #toast.show { opacity:.92; }
+  @media (max-width:700px) { .page-head,.filters { align-items:flex-start; } .page-head { flex-direction:column; } .head-actions { width:100%; justify-content:flex-start; flex-wrap:wrap; } .anno-bar { flex-wrap:wrap; } }
+</style>
+</head>
+<body>
+  <div class="anno-bar">
+    <b>原型说明</b>
+    <span class="legend"><span class="swatch sw-help"></span>蓝色「?」= 页面真帮助（可交付）</span>
+    <span class="legend"><span class="swatch sw-anno"></span>琥珀块 = 原型批注（评审用，开发勿带入页面）</span>
+    <span class="toggle" id="annoToggle">隐藏原型批注</span>
+  </div>
+
+  <div class="page-head">
+    <div class="titles"><h2>数据字典</h2>
+      <span class="help">?<span class="pop">维护系统枚举与稳定业务枚举。左侧选择字典类型，右侧维护字典项；停用字典项后，相关下拉不再展示该选项。</span></span>
+    </div>
+    <div class="head-actions">
+      <button class="btn btn-primary" onclick="openDialog('type','新建字典类型')">＋ 新建类型</button>
+      <button class="btn btn-default" onclick="renderTypes();renderItems();toast('已刷新字典列表')">刷新</button>
+      <button class="theme-toggle" id="themeToggle" title="切换黑/白主题"><svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg></button>
+    </div>
+  </div>
+
+  <div class="split">
+    <section class="panel left">
+      <div class="panel-head">
+        <span class="panel-title">字典类型</span>
+        <span class="mini">6 类</span>
+      </div>
+      <div class="type-toolbar">
+        <input class="search" id="typeSearch" placeholder="搜索类型 / code" oninput="renderTypes()" />
+      </div>
+      <div class="panel-body">
+        <div class="type-list" id="typeList"></div>
+        <div class="anno"><span class="k">◆ 原型说明：</span>类型 code 稳定不可复用；首批纳入角色类型、用户状态、事件类型、审计结果等权限体系枚举。</div>
+      </div>
+    </section>
+
+    <section class="panel right">
+      <div class="detail-bar">
+        <div class="detail-name" id="currentTitle">用户状态
+          <span class="help">?<span class="pop">同一字典类型下 item code 唯一。排序值越小越靠前；禁用项保留历史展示，但不再进入新增/编辑下拉。</span></span>
+        </div>
+        <div class="head-actions">
+          <button class="btn btn-default btn-sm" onclick="openDialog('type','编辑字典类型')">编辑类型</button>
+          <button class="btn btn-primary btn-sm" onclick="openDialog('item','新建字典项')">＋ 新建字典项</button>
+        </div>
+      </div>
+      <div class="filters">
+        <div class="selbox" onclick="toggleDD('dd-status')"><span id="v-status">状态：全部</span><span class="cv">▾</span>
+          <div class="dd-menu" id="dd-status"><div class="opt on" onclick="pickDD('dd-status','v-status','状态：全部')">全部</div><div class="opt" onclick="pickDD('dd-status','v-status','状态：启用')">启用</div><div class="opt" onclick="pickDD('dd-status','v-status','状态：停用')">停用</div></div>
+        </div>
+        <input class="search" id="itemSearch" placeholder="搜索字典项 code / label" oninput="renderItems()" style="min-width:240px" />
+        <button class="btn btn-default" onclick="renderItems();toast('已按条件查询')">查询</button>
+      </div>
+      <div class="anno"><span class="k">◆ 原型说明：</span>字典服务异常时，业务消费端回落代码默认枚举；管理端显示错误和重试，不阻塞其他系统管理页。<span class="anno-actions"><button class="btn btn-default btn-sm" onclick="showEmpty()">原型演示：无数据</button><button class="btn btn-default btn-sm" onclick="showError()">原型演示：加载失败</button></span></div>
+      <div class="table-wrap" id="tableWrap">
+        <table>
+          <thead><tr><th style="width:160px">code</th><th style="min-width:160px">名称</th><th style="width:90px">排序</th><th style="width:90px">启用</th><th style="min-width:220px">备注</th><th style="width:130px">操作</th></tr></thead>
+          <tbody id="itemBody"></tbody>
+        </table>
+      </div>
+      <div class="pager" id="pager"><span>共 <b id="total">0</b> 条</span><span class="pg">‹</span><span class="pg active">1</span><span class="pg">2</span><span class="pg">›</span></div>
+    </section>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="dialog">
+      <div class="dialog-head"><span id="dialogTitle">编辑</span><button class="dialog-close" onclick="closeDialog()">✕</button></div>
+      <div class="dialog-body" id="dialogBody"></div>
+      <div class="dialog-foot"><button class="btn btn-default" onclick="closeDialog()">取消</button><button class="btn btn-primary" onclick="saveDialog()">保存</button></div>
+    </div>
+  </div>
+  <div id="toast"></div>
+
+<script>
+  var dictTypes = [
+    {code:'user_status', name:'用户状态', enabled:true, count:4, remark:'账号生命周期状态'},
+    {code:'role_type', name:'角色类型', enabled:true, count:4, remark:'系统/租管/普通/付费'},
+    {code:'event_type', name:'事件类型', enabled:true, count:5, remark:'审计事件分类'},
+    {code:'audit_result', name:'审计结果', enabled:true, count:3, remark:'成功/失败/拒绝'},
+    {code:'visibility', name:'资产可见性', enabled:true, count:3, remark:'私有/租户/全体公开'},
+    {code:'risk_level', name:'风险等级', enabled:false, count:3, remark:'后续业务枚举'}
+  ];
+  var items = {
+    user_status:[
+      {code:'active', label:'启用', sort:10, enabled:true, remark:'可登录、可访问授权功能'},
+      {code:'disabled', label:'已禁用', sort:20, enabled:true, remark:'管理员停用，不允许登录'},
+      {code:'locked', label:'已锁定', sort:30, enabled:true, remark:'登录失败达到阈值或管理员锁定'},
+      {code:'pending', label:'待激活', sort:40, enabled:false, remark:'预留注册审批，不进入本期流程'}
+    ],
+    role_type:[
+      {code:'system', label:'系统管理员', sort:10, enabled:true, remark:'平台全局管理'},
+      {code:'tenant_admin', label:'租户管理员', sort:20, enabled:true, remark:'管理本租户用户'},
+      {code:'normal', label:'普通用户', sort:30, enabled:true, remark:'默认研究用户'},
+      {code:'paid', label:'付费用户', sort:40, enabled:true, remark:'套餐扩展预留'}
+    ],
+    event_type:[
+      {code:'api', label:'接口事件', sort:10, enabled:true, remark:'API 请求与结果'},
+      {code:'task', label:'任务事件', sort:20, enabled:true, remark:'异步任务与调度'},
+      {code:'security', label:'安全事件', sort:30, enabled:true, remark:'登录、限流、越权'},
+      {code:'rbac', label:'权限变更', sort:40, enabled:true, remark:'角色、菜单、资源授权'},
+      {code:'config', label:'配置变更', sort:50, enabled:true, remark:'系统设置保存'}
+    ],
+    audit_result:[
+      {code:'success', label:'成功', sort:10, enabled:true, remark:'操作成功完成'},
+      {code:'failed', label:'失败', sort:20, enabled:true, remark:'业务处理失败'},
+      {code:'denied', label:'拒绝', sort:30, enabled:true, remark:'权限不足或限流拒绝'}
+    ],
+    visibility:[
+      {code:'private', label:'私有', sort:10, enabled:true, remark:'仅 owner 可用'},
+      {code:'tenant', label:'租户公开', sort:20, enabled:true, remark:'同租户可见'},
+      {code:'public', label:'全体公开', sort:30, enabled:true, remark:'平台内所有用户可见'}
+    ],
+    risk_level:[
+      {code:'high', label:'高', sort:10, enabled:false, remark:'暂未消费'},
+      {code:'mid', label:'中', sort:20, enabled:false, remark:'暂未消费'},
+      {code:'low', label:'低', sort:30, enabled:false, remark:'暂未消费'}
+    ]
+  };
+  var current = 'user_status';
+  function renderTypes(){
+    var q=(document.getElementById('typeSearch').value||'').toLowerCase();
+    var html='';
+    dictTypes.filter(t => (t.code+t.name).toLowerCase().includes(q)).forEach(function(t){
+      html += '<div class="type-row '+(t.code===current?'active':'')+'" onclick="selectType(\''+t.code+'\')">'
+        + '<div class="type-meta"><div class="type-name">'+t.name+'</div><div class="type-code">'+t.code+'</div></div>'
+        + '<span class="tag '+(t.enabled?'tag-success':'tag-info')+'">'+(t.enabled?'启用':'停用')+'</span>'
+        + '<span class="mini">'+t.count+'</span></div>';
+    });
+    document.getElementById('typeList').innerHTML = html || '<div class="state"><b>无匹配类型</b>调整关键词后重试</div>';
+  }
+  function selectType(code){ current=code; var t=dictTypes.find(x=>x.code===code); document.getElementById('currentTitle').firstChild.textContent=t.name+' '; document.getElementById('itemSearch').value=''; renderTypes(); renderItems(); }
+  function renderItems(){
+    var q=(document.getElementById('itemSearch').value||'').toLowerCase();
+    var status=document.getElementById('v-status').textContent;
+    var rows=(items[current]||[]).filter(r => (r.code+r.label+r.remark).toLowerCase().includes(q));
+    if(status.includes('启用')) rows=rows.filter(r=>r.enabled);
+    if(status.includes('停用')) rows=rows.filter(r=>!r.enabled);
+    var html=rows.map(function(r){
+      return '<tr><td class="code">'+r.code+'</td><td>'+r.label+'</td><td>'+r.sort+'</td><td><span class="switch '+(r.enabled?'on':'')+'" onclick="toggleEnabled(\''+r.code+'\')"></span></td><td>'+r.remark+'</td><td><span class="link" onclick="openDialog(\'item\',\'编辑字典项\',\''+r.code+'\')">编辑</span><span class="link danger" onclick="deleteItem(\''+r.code+'\')">删除</span></td></tr>';
+    }).join('');
+    document.getElementById('tableWrap').innerHTML = '<table><thead><tr><th style="width:160px">code</th><th style="min-width:160px">名称</th><th style="width:90px">排序</th><th style="width:90px">启用</th><th style="min-width:220px">备注</th><th style="width:130px">操作</th></tr></thead><tbody id="itemBody">'+html+'</tbody></table>';
+    document.getElementById('total').textContent=rows.length;
+    if(!rows.length) showEmpty(false);
+  }
+  function showEmpty(note){ document.getElementById('tableWrap').innerHTML='<div class="state"><b>暂无字典项</b>当前类型还没有可展示的字典项。<br><br><button class="btn btn-primary" onclick="openDialog(\'item\',\'新建字典项\')">＋ 新建字典项</button></div>'; document.getElementById('total').textContent='0'; if(note!==false)toast('暂无可展示数据'); }
+  function showError(){ document.getElementById('tableWrap').innerHTML='<div class="state"><b>字典服务暂不可用</b>请稍后重试；业务消费端会回落默认枚举。<br><br><button class="btn btn-default" onclick="renderItems()">重试</button></div>'; toast('加载失败，请重试'); }
+  function toggleEnabled(code){ var r=(items[current]||[]).find(x=>x.code===code); if(r){r.enabled=!r.enabled; renderItems(); toast((r.enabled?'已启用 ':'已停用 ')+r.label);} }
+  function deleteItem(code){ items[current]=(items[current]||[]).filter(x=>x.code!==code); renderItems(); toast('已删除字典项'); }
+  function openDialog(kind,title,code){
+    document.getElementById('dialogTitle').textContent=title;
+    if(kind==='type'){
+      var t=dictTypes.find(x=>x.code===current) || {code:'', name:'', enabled:true, remark:''};
+      document.getElementById('dialogBody').innerHTML='<div class="form-row"><label>类型 code</label><input class="inp code" value="'+(title.includes('新建')?'':t.code)+'" placeholder="如 user_status" /></div><div class="hint">创建后稳定不可复用，建议使用小写英文和下划线</div><div class="form-row"><label>类型名称</label><input class="inp" value="'+(title.includes('新建')?'':t.name)+'" placeholder="如 用户状态" /></div><div class="form-row"><label>启用</label><span class="switch '+(t.enabled?'on':'')+'" onclick="this.classList.toggle(\'on\')"></span></div><div class="form-row"><label>备注</label><textarea class="inp">'+(title.includes('新建')?'':t.remark)+'</textarea></div>';
+    } else {
+      var r=(items[current]||[]).find(x=>x.code===code) || {code:'', label:'', sort:10, enabled:true, remark:''};
+      document.getElementById('dialogBody').innerHTML='<div class="form-row"><label>item code</label><input class="inp code" value="'+r.code+'" placeholder="如 active" /></div><div class="form-row"><label>名称</label><input class="inp" value="'+r.label+'" placeholder="如 启用" /></div><div class="form-row"><label>排序</label><input class="inp" type="number" value="'+r.sort+'" /></div><div class="form-row"><label>启用</label><span class="switch '+(r.enabled?'on':'')+'" onclick="this.classList.toggle(\'on\')"></span></div><div class="form-row"><label>备注</label><textarea class="inp">'+r.remark+'</textarea></div><div class="anno"><span class="k">◆ 原型说明：</span>保存后系统自动使字典缓存失效；业务下拉下次加载即看到变更。</div>';
+    }
+    document.getElementById('overlay').classList.add('show');
+  }
+  function closeDialog(){ document.getElementById('overlay').classList.remove('show'); }
+  function saveDialog(){ closeDialog(); renderTypes(); renderItems(); toast('已保存并刷新列表'); }
+  function toggleDD(id){ closeAllDD(id); document.getElementById(id).classList.toggle('show'); }
+  function pickDD(id,valId,val){ document.getElementById(valId).textContent=val; document.getElementById(id).classList.remove('show'); renderItems(); }
+  function closeAllDD(except){ document.querySelectorAll('.dd-menu').forEach(m=>{if(m.id!==except)m.classList.remove('show');}); }
+  function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window.__toast); window.__toast=setTimeout(()=>t.classList.remove('show'),1700); }
+  document.getElementById('themeToggle').onclick=function(){ var h=document.documentElement; var dark=h.getAttribute('data-theme')==='dark'; h.setAttribute('data-theme',dark?'light':'dark'); document.getElementById('themeIcon').innerHTML=dark?'<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>':'<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>'; };
+  document.getElementById('annoToggle').onclick=function(){ document.body.classList.toggle('anno-off'); this.textContent=document.body.classList.contains('anno-off')?'显示原型批注':'隐藏原型批注'; };
+  document.addEventListener('click',function(e){ if(!e.target.closest('.selbox')) closeAllDD(); });
+  renderTypes(); renderItems();
+</script>
+</body>
+</html>

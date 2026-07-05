@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>日志审计 原型 · 复盘啦（阶段五 R17）</title>
+<!--
+  页面原型：日志审计（P9·R17）。自包含静态 HTML，全可交互；右上切黑白主题。
+  作用：需求「7.9 日志审计」视觉/交互事实源 + 后续 AuditLogView.vue 参照。
+  交互：筛选、分页、行详情抽屉、自动刷新开关、导出禁用提示、加载/无记录/服务异常状态、切主题、显隐批注。
+  说明规范：页面只留面向用户的短标签 + HelpTip；字段采集范围、保留期等实现说明收进琥珀原型批注。
+  可见性：系统管理员看全局；租户管理员只看本租户。
+-->
+<style>
+  :root { --pg-page-bg:#f5f7fa; --pg-card-bg:#ffffff; --pg-text:#1f2937; --pg-text-reg:#4b5563; --pg-text-sub:#8a94a6; --pg-border:#e4e7ed; --pg-border-light:#ebeef5; --pg-primary:#409eff; --pg-primary-bg:#ecf5ff; --pg-danger:#dc2626; --pg-success:#2f9e44; --pg-warning:#d97706; --pg-info:#8a94a6; --pg-fill:#f5f7fa; --pg-hover:#f2f6fc; --pg-th-bg:#fafafa; --anno-bg:#fff8ec; --anno-border:#e8a33d; --anno-text:#8a5a12; }
+  html[data-theme="dark"] { --pg-page-bg:#000000; --pg-card-bg:#0c0e12; --pg-text:#d2d8e0; --pg-text-reg:#a3abb8; --pg-text-sub:#5a6371; --pg-border:#2e3644; --pg-border-light:#232a34; --pg-primary:#409eff; --pg-primary-bg:#18222f; --pg-danger:#f56c6c; --pg-success:#67c23a; --pg-warning:#e0a83e; --pg-info:#5a6371; --pg-fill:#14181f; --pg-hover:#141b25; --pg-th-bg:#14181f; --anno-bg:#241d10; --anno-border:#8a6a2a; --anno-text:#d8b471; }
+  * { box-sizing:border-box; } html,body { height:100%; margin:0; }
+  body { font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif; background:var(--pg-page-bg); color:var(--pg-text); font-size:14px; display:flex; flex-direction:column; height:100%; transition:background .2s,color .2s; }
+  .anno-off .anno { display:none !important; }
+  .anno-bar { display:flex; align-items:center; gap:12px; padding:8px 24px; background:var(--anno-bg); border-bottom:1px dashed var(--anno-border); color:var(--anno-text); font-size:12px; flex:none; }
+  .anno-bar b { font-weight:700; } .anno-bar .legend { display:inline-flex; align-items:center; gap:5px; }
+  .swatch { width:12px; height:12px; border-radius:3px; display:inline-block; } .sw-help { background:var(--pg-primary); } .sw-anno { background:var(--anno-border); }
+  .anno-bar .toggle { margin-left:auto; cursor:pointer; border:1px solid var(--anno-border); border-radius:4px; padding:2px 8px; }
+  .anno { border-left:3px solid var(--anno-border); background:var(--anno-bg); color:var(--anno-text); font-size:12px; line-height:1.6; padding:6px 10px; border-radius:0 5px 5px 0; margin:8px 24px; flex:none; }
+  .anno .k { font-weight:700; }
+  .anno-actions { display:inline-flex; align-items:center; gap:6px; margin-left:8px; flex-wrap:wrap; vertical-align:middle; }
+  .anno-actions .btn { height:24px; padding:0 8px; font-size:12px; border-color:var(--anno-border); color:var(--anno-text); background:var(--anno-bg); }
+  .help { position:relative; display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:6px; border-radius:50%; background:#c0c4cc; color:#fff; font-size:11px; font-weight:700; cursor:help; vertical-align:middle; }
+  .help:hover { background:var(--pg-primary); }
+  .help .pop { display:none; position:absolute; top:22px; left:0; width:310px; background:var(--pg-card-bg); color:var(--pg-text-reg); border:1px solid var(--pg-border); border-radius:6px; box-shadow:0 8px 28px rgba(0,0,0,.18); padding:10px 12px; font-size:12.5px; line-height:1.7; font-weight:400; z-index:60; text-align:left; }
+  .help:hover .pop { display:block; }
+  .page-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 24px 10px; flex:none; }
+  .page-head .titles { display:flex; align-items:center; gap:6px; } .page-head h2 { margin:0; font-size:20px; font-weight:700; }
+  .head-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .btn { height:32px; padding:0 14px; border-radius:5px; font-size:13px; cursor:pointer; border:1px solid transparent; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+  .btn-primary { background:var(--pg-primary); color:#fff; } .btn-default { background:var(--pg-card-bg); color:var(--pg-text-reg); border-color:var(--pg-border); }
+  .btn-disabled { background:var(--pg-fill); color:var(--pg-text-sub); border-color:var(--pg-border); cursor:not-allowed; }
+  .btn-sm { height:28px; padding:0 10px; font-size:12px; }
+  .theme-toggle { width:32px; height:32px; border-radius:5px; border:1px solid var(--pg-border); background:var(--pg-card-bg); color:var(--pg-text-sub); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+  .summary { display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:12px; padding:0 24px 12px; flex:none; }
+  .metric { border:1px solid var(--pg-border); border-radius:8px; background:var(--pg-card-bg); padding:11px 12px; min-width:0; }
+  .metric .label { color:var(--pg-text-sub); font-size:12px; } .metric .val { margin-top:4px; font-size:20px; font-weight:700; } .metric .sub { margin-top:2px; color:var(--pg-text-sub); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .filters { display:flex; align-items:center; gap:10px; padding:0 24px 12px; flex-wrap:wrap; flex:none; }
+  .field { position:relative; }
+  .selbox,.input { height:32px; border:1px solid var(--pg-border); border-radius:5px; background:var(--pg-card-bg); color:var(--pg-text); padding:0 10px; font-size:13px; display:inline-flex; align-items:center; gap:6px; min-width:120px; }
+  .selbox { cursor:pointer; } .selbox .cv { color:var(--pg-text-sub); }
+  .input { outline:none; min-width:190px; }
+  .dd-menu { position:absolute; z-index:70; top:36px; left:0; background:var(--pg-card-bg); border:1px solid var(--pg-border); border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.16); padding:5px; min-width:160px; display:none; }
+  .dd-menu.show { display:block; } .dd-menu .opt { padding:7px 10px; border-radius:5px; font-size:13px; cursor:pointer; } .dd-menu .opt:hover { background:var(--pg-hover); } .dd-menu .opt.on { color:var(--pg-primary); background:var(--pg-primary-bg); }
+  .switch-line { display:inline-flex; align-items:center; gap:7px; color:var(--pg-text-reg); font-size:13px; }
+  .switch { width:34px; height:18px; border-radius:12px; background:var(--pg-border); position:relative; display:inline-block; cursor:pointer; vertical-align:middle; }
+  .switch::after { content:""; width:14px; height:14px; border-radius:50%; background:#fff; position:absolute; top:2px; left:2px; transition:left .18s; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+  .switch.on { background:var(--pg-primary); } .switch.on::after { left:18px; }
+  .main { flex:1 1 auto; min-height:0; padding:0 24px 8px; display:flex; flex-direction:column; }
+  .table-wrap { flex:1 1 auto; min-height:0; border:1px solid var(--pg-border); border-radius:6px; overflow:auto; background:var(--pg-card-bg); }
+  table { width:100%; min-width:1180px; border-collapse:collapse; font-size:13px; }
+  thead th { position:sticky; top:0; background:var(--pg-th-bg); color:var(--pg-text-reg); font-weight:600; text-align:left; padding:9px 12px; border-bottom:1px solid var(--pg-border); white-space:nowrap; z-index:1; }
+  tbody td { padding:9px 12px; border-bottom:1px solid var(--pg-border-light); color:var(--pg-text-reg); vertical-align:middle; }
+  tbody tr:hover { background:var(--pg-hover); }
+  .tag { display:inline-flex; align-items:center; height:21px; padding:0 7px; border-radius:4px; font-size:11px; border:1px solid transparent; white-space:nowrap; }
+  .tag-success { color:var(--pg-success); background:color-mix(in srgb,var(--pg-success) 12%,transparent); border-color:color-mix(in srgb,var(--pg-success) 30%,transparent); }
+  .tag-info { color:var(--pg-info); background:var(--pg-fill); border-color:var(--pg-border); }
+  .tag-warning { color:var(--pg-warning); background:color-mix(in srgb,var(--pg-warning) 12%,transparent); border-color:color-mix(in srgb,var(--pg-warning) 30%,transparent); }
+  .tag-danger { color:var(--pg-danger); background:color-mix(in srgb,var(--pg-danger) 12%,transparent); border-color:color-mix(in srgb,var(--pg-danger) 30%,transparent); }
+  .code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  .link { color:var(--pg-primary); cursor:pointer; margin-right:10px; font-size:13px; white-space:nowrap; }
+  .ellipsis { max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pager { display:flex; align-items:center; justify-content:flex-end; gap:6px; padding:10px 2px 4px; font-size:13px; color:var(--pg-text-sub); flex:none; }
+  .pager .pg { min-width:28px; height:28px; padding:0 6px; border:1px solid var(--pg-border); border-radius:4px; background:var(--pg-card-bg); color:var(--pg-text-reg); display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
+  .pager .pg.active { background:var(--pg-primary); color:#fff; border-color:var(--pg-primary); }
+  .state { padding:46px 16px; text-align:center; color:var(--pg-text-sub); }
+  .state b { display:block; margin-bottom:8px; color:var(--pg-text-reg); }
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:stretch; justify-content:flex-end; z-index:80; }
+  .overlay.show { display:flex; }
+  .drawer { width:min(520px,94vw); height:100%; background:var(--pg-card-bg); border-left:1px solid var(--pg-border); box-shadow:-10px 0 32px rgba(0,0,0,.22); display:flex; flex-direction:column; }
+  .drawer-head { display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--pg-border-light); font-weight:600; }
+  .drawer-close { cursor:pointer; color:var(--pg-text-sub); border:none; background:none; font-size:15px; }
+  .drawer-body { padding:16px 18px; flex:1 1 auto; overflow:auto; }
+  .detail-hero { border:1px solid var(--pg-border); border-radius:8px; background:var(--pg-fill); padding:14px; margin-bottom:12px; }
+  .detail-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .detail-title { min-width:0; }
+  .detail-title b { display:block; color:var(--pg-text); font-size:16px; line-height:1.4; overflow-wrap:anywhere; }
+  .detail-title span { display:block; margin-top:4px; color:var(--pg-text-sub); font-size:12px; }
+  .detail-badges { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; flex:none; }
+  .detail-summary { margin-top:12px; color:var(--pg-text-reg); line-height:1.7; font-size:13px; }
+  .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+  .detail-card { border:1px solid var(--pg-border); border-radius:8px; background:var(--pg-card-bg); padding:12px; min-width:0; }
+  .detail-card h4 { margin:0 0 10px; color:var(--pg-text); font-size:13px; font-weight:650; }
+  .info-row { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-top:1px solid var(--pg-border-light); font-size:13px; }
+  .info-row:first-of-type { border-top:none; }
+  .info-row .label { color:var(--pg-text-sub); white-space:nowrap; }
+  .info-row .value { color:var(--pg-text-reg); text-align:right; min-width:0; overflow-wrap:anywhere; }
+  .detail-section { border:1px solid var(--pg-border); border-radius:8px; background:var(--pg-card-bg); padding:12px; margin-bottom:12px; }
+  .detail-section h4 { margin:0 0 8px; color:var(--pg-text); font-size:13px; font-weight:650; }
+  .detail-section p { margin:0; color:var(--pg-text-reg); line-height:1.7; font-size:13px; }
+  .detail-section .muted { color:var(--pg-text-sub); }
+  .json { border:1px solid var(--pg-border-light); border-radius:6px; background:var(--pg-fill); padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; line-height:1.6; white-space:pre-wrap; color:var(--pg-text-reg); overflow:auto; }
+  .drawer-foot { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--pg-border-light); }
+  #toast { position:fixed; left:50%; bottom:32px; transform:translateX(-50%); background:var(--pg-text); color:var(--pg-card-bg); font-size:13px; padding:8px 16px; border-radius:6px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:99; }
+  #toast.show { opacity:.92; }
+  @media (max-width:820px) { .summary { grid-template-columns:repeat(2,minmax(150px,1fr)); } .detail-grid { grid-template-columns:1fr; } .page-head { align-items:flex-start; flex-direction:column; } .anno-bar { flex-wrap:wrap; } }
+</style>
+</head>
+<body>
+  <div class="anno-bar">
+    <b>原型说明</b>
+    <span class="legend"><span class="swatch sw-help"></span>蓝色「?」= 页面真帮助（可交付）</span>
+    <span class="legend"><span class="swatch sw-anno"></span>琥珀块 = 原型批注（评审用，开发勿带入页面）</span>
+    <span class="toggle" id="annoToggle">隐藏原型批注</span>
+  </div>
+
+  <div class="page-head">
+    <div class="titles"><h2>日志审计</h2>
+      <span class="help">?<span class="pop">记录接口、任务、安全和权限变更事件。系统管理员可看全局，租户管理员只看本租户事件。</span></span>
+    </div>
+    <div class="head-actions">
+      <span class="switch-line"><span class="switch" id="autoSwitch" onclick="toggleAuto()"></span>自动刷新</span>
+      <button class="btn btn-default" onclick="reload()">刷新</button>
+      <button class="btn btn-disabled" onclick="toast('导出能力后续建议，本阶段只做查询与详情')">导出</button>
+      <button class="theme-toggle" id="themeToggle" title="切换黑/白主题"><svg id="themeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg></button>
+    </div>
+  </div>
+
+  <section class="summary">
+    <div class="metric"><div class="label">今日事件</div><div class="val">1,286</div><div class="sub">较昨日 +8.4%</div></div>
+    <div class="metric"><div class="label">失败 / 拒绝</div><div class="val" style="color:var(--pg-warning)">37</div><div class="sub">含越权 403、限流 429</div></div>
+    <div class="metric"><div class="label">安全事件</div><div class="val" style="color:var(--pg-danger)">12</div><div class="sub">登录失败与账号锁定</div></div>
+    <div class="metric"><div class="label">租户范围</div><div class="val">全局</div><div class="sub">租管态自动限定本租户</div></div>
+  </section>
+
+  <section class="filters">
+    <div class="field"><div class="input">2026-07-05 00:00 → 2026-07-05 23:59</div></div>
+    <div class="field"><div class="selbox" onclick="toggleDD('dd-type')"><span id="v-type">事件：全部</span><span class="cv">▾</span></div>
+      <div class="dd-menu" id="dd-type"><div class="opt on" onclick="pickDD('dd-type','v-type','事件：全部')">全部</div><div class="opt" onclick="pickDD('dd-type','v-type','事件：接口')">接口</div><div class="opt" onclick="pickDD('dd-type','v-type','事件：任务')">任务</div><div class="opt" onclick="pickDD('dd-type','v-type','事件：安全')">安全</div><div class="opt" onclick="pickDD('dd-type','v-type','事件：权限')">权限</div></div>
+    </div>
+    <div class="field"><div class="selbox" onclick="toggleDD('dd-result')"><span id="v-result">结果：全部</span><span class="cv">▾</span></div>
+      <div class="dd-menu" id="dd-result"><div class="opt on" onclick="pickDD('dd-result','v-result','结果：全部')">全部</div><div class="opt" onclick="pickDD('dd-result','v-result','结果：成功')">成功</div><div class="opt" onclick="pickDD('dd-result','v-result','结果：失败')">失败</div><div class="opt" onclick="pickDD('dd-result','v-result','结果：拒绝')">拒绝</div></div>
+    </div>
+    <div class="field"><div class="selbox" onclick="toggleDD('dd-status')"><span id="v-status">状态：全部</span><span class="cv">▾</span></div>
+      <div class="dd-menu" id="dd-status"><div class="opt on" onclick="pickDD('dd-status','v-status','状态：全部')">全部</div><div class="opt" onclick="pickDD('dd-status','v-status','状态：完成')">完成</div><div class="opt" onclick="pickDD('dd-status','v-status','状态：处理中')">处理中</div><div class="opt" onclick="pickDD('dd-status','v-status','状态：异常')">异常</div></div>
+    </div>
+    <input class="input" id="keyword" placeholder="处理人 / 资源码 / 目标对象" oninput="renderRows()" />
+    <button class="btn btn-primary" onclick="renderRows();toast('已按条件查询')">查询</button>
+    <button class="btn btn-default" onclick="resetFilter()">重置</button>
+  </section>
+  <div class="anno"><span class="k">◆ 原型说明：</span>审计默认只记录摘要，不保存请求/响应体；保留 90 天可配。详情抽屉展示事件上下文（脱敏），用于排障和追踪。<span class="anno-actions"><button class="btn btn-default btn-sm" onclick="showEmpty()">原型演示：无记录</button><button class="btn btn-default btn-sm" onclick="showError()">原型演示：加载失败</button></span></div>
+
+  <main class="main">
+    <div class="table-wrap" id="tableWrap"></div>
+    <div class="pager" id="pager"><span>共 <b id="total">0</b> 条</span><span class="pg">‹</span><span class="pg active">1</span><span class="pg">2</span><span class="pg">3</span><span class="pg">›</span></div>
+  </main>
+
+  <div class="overlay" id="overlay">
+    <aside class="drawer">
+      <div class="drawer-head"><span>审计详情</span><button class="drawer-close" onclick="closeDrawer()">✕</button></div>
+      <div class="drawer-body" id="drawerBody"></div>
+      <div class="drawer-foot"><button class="btn btn-default" onclick="closeDrawer()">关闭</button></div>
+    </aside>
+  </div>
+  <div id="toast"></div>
+
+<script>
+  var rows = [
+    {time:'2026-07-05 14:21:30', actor:'admin', tenant:'平台', type:'权限', resource:'role:assign-perm', target:'角色：普通用户', result:'成功', status:'完成', ip:'10.0.0.12', cost:'42ms', err:'', summary:'移除 score-profile:publish-public，相关用户 perm_ver 已自增', ctx:{request_id:'req_20260705142130_01', permission_code:'score-profile:publish-public', action:'revoke_permission', affected_users:8, perm_ver_changed:true}},
+    {time:'2026-07-05 14:19:05', actor:'zhang_analyst', tenant:'企业 A', type:'接口', resource:'board:view', target:'每日榜单', result:'成功', status:'完成', ip:'203.0.113.18', cost:'128ms', err:'', summary:'读取公开评分方案并返回榜单快照', ctx:{request_id:'req_20260705141905_02', route:'/api/boards/daily', profile_ref:'public:trend-leader', page_size:50, data_scope:'tenant_visible'}},
+    {time:'2026-07-05 14:16:44', actor:'li_paid', tenant:'企业 A', type:'安全', resource:'auth:login', target:'账号 li_paid', result:'拒绝', status:'异常', ip:'203.0.113.44', cost:'18ms', err:'账号已禁用', summary:'禁用用户尝试登录被拒绝', ctx:{request_id:'req_20260705141644_03', login_result:'disabled_user', risk_rule:'account_status_check', lock_remaining_sec:0}},
+    {time:'2026-07-05 14:12:11', actor:'scheduler', tenant:'平台', type:'任务', resource:'data-task:manage', target:'daily job', result:'成功', status:'完成', ip:'127.0.0.1', cost:'13.6s', err:'', summary:'每日任务完成，质检无高危问题', ctx:{task_id:'task_20260705_daily', job_name:'daily', affected_tables:['stock_daily','indicator_snapshot'], quality_level:'pass'}},
+    {time:'2026-07-05 14:09:33', actor:'tenant_admin_a', tenant:'企业 A', type:'接口', resource:'tenant:update', target:'租户：企业 B', result:'拒绝', status:'异常', ip:'203.0.113.22', cost:'16ms', err:'权限不足', summary:'租管尝试跨租户操作，后端 403', ctx:{request_id:'req_20260705140933_05', denied_reason:'cross_tenant_access', current_tenant:'企业 A', target_tenant:'企业 B'}},
+    {time:'2026-07-05 14:03:27', actor:'admin', tenant:'平台', type:'配置', resource:'data-settings:manage', target:'系统设置', result:'成功', status:'完成', ip:'10.0.0.12', cost:'61ms', err:'', summary:'保存 auth.require_email_code=false', ctx:{request_id:'req_20260705140327_06', config_key:'auth.require_email_code', old_value:'true', new_value:'false'}}
+  ];
+  function typeTag(t){ return t==='安全'?'tag-danger':t==='任务'?'tag-info':t==='权限'?'tag-warning':'tag-success'; }
+  function resultTag(t){ return t==='成功'?'tag-success':t==='失败'?'tag-warning':t==='拒绝'?'tag-danger':'tag-info'; }
+  function statusTag(t){ return t==='完成'?'tag-success':t==='处理中'?'tag-warning':t==='异常'?'tag-danger':'tag-info'; }
+  function renderRows(){
+    var q=(document.getElementById('keyword').value||'').toLowerCase();
+    var type=document.getElementById('v-type').textContent.replace('事件：','');
+    var result=document.getElementById('v-result').textContent.replace('结果：','');
+    var status=document.getElementById('v-status').textContent.replace('状态：','');
+    var data=rows.filter(r => (r.actor+r.resource+r.target+r.summary).toLowerCase().includes(q));
+    if(type!=='全部') data=data.filter(r=>r.type===type);
+    if(result!=='全部') data=data.filter(r=>r.result===result);
+    if(status!=='全部') data=data.filter(r=>r.status===status);
+    if(!data.length){ showEmpty(false); return; }
+    var html='<table><thead><tr><th style="width:160px">时间</th><th style="width:130px">处理人</th><th style="width:90px">事件类型</th><th style="width:170px">资源/接口</th><th style="min-width:180px">目标对象</th><th style="width:90px">结果</th><th style="width:90px">状态</th><th style="width:120px">IP</th><th style="width:90px">耗时</th><th style="min-width:200px">错误摘要</th><th style="width:80px">操作</th></tr></thead><tbody>';
+    data.forEach(function(r,i){
+      html+='<tr onclick="openDrawer('+i+')"><td>'+r.time+'</td><td>'+r.actor+'</td><td><span class="tag '+typeTag(r.type)+'">'+r.type+'</span></td><td class="code">'+r.resource+'</td><td class="ellipsis">'+r.target+'</td><td><span class="tag '+resultTag(r.result)+'">'+r.result+'</span></td><td><span class="tag '+statusTag(r.status)+'">'+r.status+'</span></td><td>'+r.ip+'</td><td>'+r.cost+'</td><td class="ellipsis">'+(r.err||'—')+'</td><td><span class="link" onclick="event.stopPropagation();openDrawer('+i+')">详情</span></td></tr>';
+    });
+    html+='</tbody></table>';
+    document.getElementById('tableWrap').innerHTML=html;
+    document.getElementById('total').textContent=data.length;
+  }
+  function showEmpty(note){ document.getElementById('tableWrap').innerHTML='<div class="state"><b>暂无审计记录</b>当前筛选条件下没有记录。<br><br><button class="btn btn-default" onclick="resetFilter()">重置筛选</button></div>'; document.getElementById('total').textContent='0'; if(note!==false)toast('暂无匹配记录'); }
+  function showError(){ document.getElementById('tableWrap').innerHTML='<div class="state"><b>审计服务暂不可用</b>请稍后重试，已发生事件仍会在服务端继续写入。<br><br><button class="btn btn-default" onclick="renderRows()">重试</button></div>'; toast('加载失败，请重试'); }
+  function resetFilter(){ document.getElementById('v-type').textContent='事件：全部'; document.getElementById('v-result').textContent='结果：全部'; document.getElementById('v-status').textContent='状态：全部'; document.getElementById('keyword').value=''; renderRows(); toast('已重置'); }
+  function reload(){ document.getElementById('tableWrap').innerHTML='<div class="state"><b>加载中...</b>正在读取最近审计记录</div>'; setTimeout(function(){ renderRows(); toast('已刷新'); },500); }
+  function openDrawer(i){
+    var r=rows[i];
+    var detail = JSON.stringify(r.ctx || {}, null, 2);
+    document.getElementById('drawerBody').innerHTML='<div class="detail-hero"><div class="detail-top"><div class="detail-title"><b>'+r.target+'</b><span>'+r.time+' · '+r.actor+'</span></div><div class="detail-badges"><span class="tag '+typeTag(r.type)+'">'+r.type+'</span><span class="tag '+resultTag(r.result)+'">'+r.result+'</span><span class="tag '+statusTag(r.status)+'">'+r.status+'</span></div></div><div class="detail-summary">'+r.summary+'</div></div><div class="detail-grid"><section class="detail-card"><h4>执行信息</h4><div class="info-row"><span class="label">处理人</span><span class="value">'+r.actor+'</span></div><div class="info-row"><span class="label">租户</span><span class="value">'+r.tenant+'</span></div><div class="info-row"><span class="label">来源 IP</span><span class="value">'+r.ip+'</span></div><div class="info-row"><span class="label">耗时</span><span class="value">'+r.cost+'</span></div></section><section class="detail-card"><h4>资源信息</h4><div class="info-row"><span class="label">资源码</span><span class="value code">'+r.resource+'</span></div><div class="info-row"><span class="label">目标对象</span><span class="value">'+r.target+'</span></div><div class="info-row"><span class="label">事件结果</span><span class="value">'+r.result+'</span></div><div class="info-row"><span class="label">事件状态</span><span class="value">'+r.status+'</span></div></section></div><section class="detail-section"><h4>错误摘要</h4><p class="'+(r.err?'':'muted')+'">'+(r.err||'无错误摘要')+'</p></section><section class="detail-section"><h4>事件上下文（脱敏）</h4><div class="json">'+detail+'</div></section><div class="anno"><span class="k">◆ 原型说明：</span>事件上下文用于追踪请求、权限、任务或配置变更原因；只展示脱敏摘要，不展示原始请求体、响应体、密码、token、验证码等敏感内容。</div>';
+    document.getElementById('overlay').classList.add('show');
+  }
+  function closeDrawer(){ document.getElementById('overlay').classList.remove('show'); }
+  function toggleAuto(){ var s=document.getElementById('autoSwitch'); s.classList.toggle('on'); toast(s.classList.contains('on')?'已开启自动刷新':'已关闭自动刷新'); }
+  function toggleDD(id){ closeAllDD(id); document.getElementById(id).classList.toggle('show'); }
+  function pickDD(id,valId,val){ document.getElementById(valId).textContent=val; document.getElementById(id).classList.remove('show'); renderRows(); }
+  function closeAllDD(except){ document.querySelectorAll('.dd-menu').forEach(m=>{if(m.id!==except)m.classList.remove('show');}); }
+  function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window.__toast); window.__toast=setTimeout(()=>t.classList.remove('show'),1700); }
+  document.getElementById('themeToggle').onclick=function(){ var h=document.documentElement; var dark=h.getAttribute('data-theme')==='dark'; h.setAttribute('data-theme',dark?'light':'dark'); document.getElementById('themeIcon').innerHTML=dark?'<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/>':'<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>'; };
+  document.getElementById('annoToggle').onclick=function(){ document.body.classList.toggle('anno-off'); this.textContent=document.body.classList.contains('anno-off')?'显示原型批注':'隐藏原型批注'; };
+  document.addEventListener('click',function(e){ if(!e.target.closest('.selbox')) closeAllDD(); });
+  renderRows();
+</script>
+</body>
+</html>
