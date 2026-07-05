@@ -44,7 +44,7 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
     <header class="config-group-head">
       <div>
         <h3>{{ group.label }}</h3>
-        <span>{{ group.fields.length }} 项</span>
+        <span>{{ group.desc || `${group.fields.length} 项` }}</span>
       </div>
     </header>
 
@@ -72,6 +72,9 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
             v-else-if="field.type === 'enum'"
             :model-value="String(valueOf(field.path) ?? '')"
             :disabled="disabled"
+            fit-input-width
+            popper-class="config-select-popper"
+            placeholder="请选择"
             @update:model-value="(value: string) => setValue(field.path, value)"
           >
             <el-option v-for="opt in field.options ?? []" :key="opt" :label="opt" :value="opt" />
@@ -89,6 +92,7 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
         </div>
 
         <div class="field-meta">
+          <span v-if="field.desc" class="field-desc">{{ field.desc }}</span>
           <span>默认 {{ defaultLabel(field.default) }}</span>
           <span v-if="rangeLabel(field)">范围 {{ rangeLabel(field) }}</span>
           <span v-if="isInvalid(field.path)" class="field-error">超出允许范围</span>
@@ -119,6 +123,7 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
   margin-top: 3px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+  line-height: 1.5;
 }
 .config-group-form {
   display: grid;
@@ -132,19 +137,28 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
   gap: 6px;
   min-width: 0;
 }
+.field-control {
+  width: 100%;
+  min-width: 0;
+}
 .field-control :deep(.el-select),
 .field-control :deep(.el-input-number) {
   width: 100%;
 }
 .field-meta {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 5px 8px;
   min-height: 18px;
-  margin-top: 5px;
+  margin-top: 7px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
+  line-height: 1.45;
+}
+.field-desc {
+  flex-basis: 100%;
+  color: var(--el-text-color-regular);
 }
 .field-error {
   color: var(--el-color-danger);
@@ -152,5 +166,8 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
 .is-invalid :deep(.el-input-number .el-input__wrapper),
 .is-invalid :deep(.el-select .el-select__wrapper) {
   box-shadow: 0 0 0 1px var(--el-color-danger) inset;
+}
+:global(.config-select-popper .el-select-dropdown__item) {
+  padding-inline: 14px;
 }
 </style>

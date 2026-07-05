@@ -47,6 +47,8 @@ const props = withDefaults(
     highlightSlot?: string | null
     /** 可选：每个字段提供「不覆盖（清除）」入口（page 层编辑器用，清除即不在本层覆盖）。 */
     clearable?: boolean
+    /** 页面没有业务设置 slot 时，隐藏设置抽屉的业务折叠段选项。 */
+    drawerBusinessVisible?: boolean
   }>(),
   { layer: 'user', collapsibleSlot: true, showSlotTitle: true, clearable: false },
 )
@@ -120,6 +122,11 @@ const DRAWER_SIZE_OPTIONS = [
   { label: '中', value: 'md' },
   { label: '大', value: 'lg' },
 ]
+const visibleDrawerSectionOptions = computed(() =>
+  props.drawerBusinessVisible === false
+    ? DRAWER_SECTION_OPTIONS.filter((option) => option.value !== 'business')
+    : DRAWER_SECTION_OPTIONS,
+)
 
 function listVal(slotId: string, field: string): string[] {
   const v = props.config.componentValueOf(slotId, field)
@@ -363,7 +370,7 @@ function setSort(slotId: string, field: string, order: string): void {
           :model-value="listVal(s.slotId, 'defaultCollapsed')"
           @update:model-value="(v: string[]) => config.setComponentKnob(s.slotId, 'defaultCollapsed', v)"
         >
-          <el-checkbox v-for="opt in DRAWER_SECTION_OPTIONS" :key="opt.value" :value="opt.value">
+          <el-checkbox v-for="opt in visibleDrawerSectionOptions" :key="opt.value" :value="opt.value">
             {{ opt.label }}
           </el-checkbox>
         </el-checkbox-group>

@@ -24,7 +24,7 @@
 
 ### 1.1 本次口径修订
 
-- R16 “人机校验”本阶段不引入第三方挑战产品，按现有认证链路落为“登录人机校验（图形验证码）”：`auth.login_captcha_enabled` 控制开关，`auth.captcha_after_fails` 控制触发阈值。若后续要滑块、行为验证码或外部验证码服务，归 R27 或独立安全增强。
+- R16 “人机校验”本阶段不引入第三方挑战产品，按现有认证链路落为“登录人机校验（图形验证码）”：`auth.login_captcha_enabled` 控制登录页展示和已提交验证码校验，`auth.captcha_after_fails` 控制登录失败后后端强制要求验证码的兜底阈值。若后续要滑块、行为验证码或外部验证码服务，归 R27 或独立安全增强。
 - R17 “保留 90 天可配”不等于本阶段自动删除历史数据。本阶段实现 `audit.retention_days` 的配置、读取、默认查询窗口和页面展示；R23 再实现定时清理任务。
 - R18 字典类型删除采用服务层禁删有明细类型，数据库外键使用 `ON DELETE RESTRICT` 或默认限制，不使用 `ON DELETE CASCADE`。
 - 原型中的琥珀批注和“原型演示”按钮只作为评审说明，正式页面不渲染这些批注按钮。
@@ -91,7 +91,7 @@
 
 | 需求编号 | 需求内容 | 本阶段开发内容 | 对应任务 | 完成标志 |
 | --- | --- | --- | --- | --- |
-| R16 | 注册防滥用开关化 | 新增认证/防滥用配置组，认证链路读取有效配置；“人机校验”落为登录图形验证码开关和失败阈值 | T2、T3、T10、T12、T13 | 系统管理员保存后登录/注册链路按新配置生效，非法/缺值回退默认 |
+| R16 | 注册防滥用开关化 | 新增认证/防滥用配置组，认证链路读取有效配置；“人机校验”落为登录图形验证码开关和后端强制阈值 | T2、T3、T10、T12、T13 | 系统管理员保存后登录/注册链路按新配置生效，非法/缺值回退默认 |
 | R17 | 日志审计 | 新增审计表、服务、API、审计采集、审计查询页；保留期默认 90 天可配但不自动清理 | T1、T2、T4、T5、T7、T8、T11、T12、T13 | API/任务/安全/配置/字典/RBAC 事件可查；系统管理员全局，租户管理员本租户 |
 | R18 | 数据字典 | 新增字典表、默认字典、服务、API、前端维护页、消费端默认值兜底和缓存失效 | T1、T6、T7、T9、T11、T12、T13 | 字典类型/项可维护；停用后新下拉不展示；异常时回退代码默认枚举 |
 | R19 | 配置管理已拆页后的系统设置剩余项 | 在 `/system/config/system` 接入 R16 开关和 R17 保留期配置，不新增配置页 | T2、T3、T10、T13 | 系统设置页可展示、保存、读取并消费新增配置项 |
@@ -227,6 +227,7 @@ CREATE TABLE IF NOT EXISTS dict_item (
 - `user_status`：`active`、`disabled`、`locked`
 - `audit_event_type`：`api`、`task`、`security`、`rbac`、`config`、`dict`
 - `audit_result`：`success`、`failed`、`denied`
+- `audit_status`：`completed`、`running`、`failed`、`blocked`、`skipped`
 - 少量稳定业务枚举可在实现时按现有代码确认后加入，但不得改变业务判断。
 
 ### 4.3 接口契约
@@ -344,8 +345,8 @@ R16 配置：
 | 配置项 | 默认值 | 谁定义 | 谁保存 | 谁读取 | 谁消费 | 回退 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `auth.require_email_code` | `true` | 系统管理员 | `app_config` | `AuthService`、`public_config` | 注册、发送邮箱码 | 静态默认值 |
-| `auth.login_captcha_enabled` | `false` | 系统管理员 | `app_config` | `AuthService`、`public_config` | 登录失败后图形验证码挑战 | 静态默认值 |
-| `auth.captcha_after_fails` | `3` | 系统管理员 | `app_config` | `AuthService`、`public_config` | 登录失败阈值 | 静态默认值 |
+| `auth.login_captcha_enabled` | `false` | 系统管理员 | `app_config` | `AuthService`、`public_config` | 登录页图形验证码展示和已提交验证码校验 | 静态默认值 |
+| `auth.captcha_after_fails` | `3` | 系统管理员 | `app_config` | `AuthService`、`public_config` | 登录失败后端强制验证码阈值 | 静态默认值 |
 | `auth.login_rate_per_min` | 现有默认 | 系统管理员 | `app_config` | 认证/限流服务 | 登录限流 | 静态默认值 |
 | `auth.register_rate_per_hour` | 现有默认 | 系统管理员 | `app_config` | 认证/限流服务 | 注册限流 | 静态默认值 |
 | `auth.email_code_rate_per_hour` | 现有默认 | 系统管理员 | `app_config` | 认证/限流服务 | 邮箱码发送限流 | 静态默认值 |
@@ -578,10 +579,10 @@ Slot 与组件设计：
 
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须实现 | R16 | 邮箱码开关、登录图形验证码开关和触发阈值即时生效，缺值回落默认 | `app_config` 配置组、认证服务有效配置读取、系统设置页渲染、配置审计 | T2、T3、T10、T12、T13 | 已完成 | 一致 | 已覆盖配置白名单、公开配置、注册链路消费、系统设置页动态渲染、保存失败/权限态和前端视口验证；不接第三方人机挑战 |
-| 必须实现 | R17 | API/任务/安全事件采集，可观测查询页，只读不可改，保留 90 天可配 | 审计表、审计服务、查询 API、采集钩子、审计页、`audit.retention_days` 配置和默认查询窗口 | T1、T2、T4、T5、T7、T8、T11、T12、T13 | 已完成 | 一致 | 已覆盖审计表、服务、API、采集、页面、tenant_admin 范围收口、默认查询窗口和三档视口；自动清理归 R23 |
-| 必须实现 | R18 | 字典类型/项、首批权限枚举、下拉/校验消费、缺失回退默认 | 字典表、默认枚举、服务/API、前端维护页、消费兜底 | T1、T6、T7、T9、T11、T12、T13 | 已完成 | 一致 | 已覆盖字典表、system-only 管理、`dict:read` 登录基线共享读、code 不可变、维护页和三档视口 |
-| 必须实现 | R19 | 配置管理已拆父子菜单，注册防滥用开关落系统设置 | 在 `/system/config/system` 接入 R16 和审计保留期配置 | T2、T3、T10、T13 | 已完成 | 一致 | 系统设置页已改为配置组并排工作区，动态消费 `/api/data/settings`，无权限不请求接口 |
+| 必须实现 | R16 | 邮箱码开关、登录图形验证码开关和后端强制阈值即时生效，缺值回落默认 | `app_config` 配置组、认证服务有效配置读取、系统设置页渲染、配置审计 | T2、T3、T10、T12、T13 | 已完成 | 一致 | 已覆盖配置白名单、公开配置、注册/登录链路消费、系统设置页动态渲染、保存失败/权限态和前端视口验证；不接第三方人机挑战 |
+| 必须实现 | R17 | API/任务/安全事件采集，可观测查询页，只读不可改，保留 90 天可配 | 审计表、审计服务、查询 API、采集钩子、审计页、`audit.retention_days` 配置和默认查询窗口 | T1、T2、T4、T5、T7、T8、T11、T12、T13 | 已完成 | 一致 | 已覆盖审计表、服务、API、采集、页面、tenant_admin 范围收口、默认查询窗口、目标对象中文说明和三档视口；自动清理归 R23 |
+| 必须实现 | R18 | 字典类型/项、首批权限枚举、下拉/校验消费、缺失回退默认 | 字典表、默认枚举、服务/API、前端维护页、消费兜底 | T1、T6、T7、T9、T11、T12、T13 | 已完成 | 一致 | 已覆盖字典表、system-only 管理、`dict:read` 登录基线共享读、code 不可变、维护页和三档视口；审计页消费 `audit_event_type`/`audit_result`/`audit_status` |
+| 必须实现 | R19 | 配置管理已拆父子菜单，注册防滥用开关落系统设置 | 在 `/system/config/system` 接入 R16 和审计保留期配置 | T2、T3、T10、T13 | 已完成 | 一致 | 系统设置页已改为配置组并排工作区，动态消费 `/api/data/settings`，配置组和字段展示说明，无权限不请求接口 |
 | 项目约束 | DESIGN/page-template | 新页面必须页面设计闭环、slot、配置层级、维护清单、关键视口验收 | P8/P9 技术实现章节、pageRegistry/DESIGN 登记、视口验证 | T7、T8、T9、T13 | 已完成 | 一致 | 日志审计、数据字典、系统设置均完成三档视口和页面设置抽屉验证 |
 | 项目约束 | system-rbac-tenant | 新页面必须同步路由、菜单、资源、守卫、按钮权限、默认授权 | 审计和字典菜单/资源 seed、接口守卫、租管审计回填、权限测试 | T1、T4、T6、T7、T11、T12、T13 | 已完成 | 一致 | 路由、菜单、资源码、守卫、默认授权、`dict:read` baseline 和无角色 fail-closed 均已测试覆盖 |
 | 可选增强 | R22 | token 静默刷新 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 阶段六体验增强 |
@@ -667,7 +668,7 @@ Slot 与组件设计：
 - 操作：
   - 将认证服务配置读取切到 `get_effective_settings().auth` 或封装运行时配置读取器。
   - `public_config()` 返回有效配置。
-  - 登录图形验证码和失败阈值按有效配置执行。
+  - 登录图形验证码展示、已提交验证码校验和失败阈值兜底按有效配置执行。
   - 注册邮箱验证码按有效配置执行。
   - 保存认证配置时记录 config 审计事件。
 - 产出：认证链路配置闭环。
@@ -678,11 +679,11 @@ Slot 与组件设计：
   - 审计写失败不影响配置保存。
 - 验证方式：
   - 关闭 `require_email_code` 后注册不要求邮箱码。
-  - 开启 `login_captcha_enabled` 和设置 `captcha_after_fails` 后登录按阈值要求验证码。
+  - 开启 `login_captcha_enabled` 后登录页展示并校验图形验证码；达到 `captcha_after_fails` 后端强制要求验证码。
   - `/api/auth/public-config` 返回有效值。
 - 完成标准：配置展示、保存、读取、消费、回退全链路可验证。
-- 实际落地情况：已确认认证服务读取 `get_effective_settings().auth`，`/api/auth/public-config`、登录图形验证码阈值、
-  注册邮箱验证码开关和认证限流均消费运行时覆盖配置；已新增 best-effort 审计写入仓库，系统设置保存成功后记录
+- 实际落地情况：已确认认证服务读取 `get_effective_settings().auth`，`/api/auth/public-config`、登录图形验证码展示、
+  已提交验证码校验、失败阈值兜底、注册邮箱验证码开关和认证限流均消费运行时覆盖配置；已新增 best-effort 审计写入仓库，系统设置保存成功后记录
   `config` 审计事件，仅记录配置 key、影响数量、路由、操作者和上下文摘要，不记录配置值；审计写入失败不影响配置保存。
   已补 `backend/tests/test_stage5_auth_config.py`，覆盖公开配置即时生效、注册链路消费、配置保存审计和审计降级。
 
@@ -844,7 +845,7 @@ Slot 与组件设计：
   - 页面单测覆盖筛选、刷新、空态、错误态、详情抽屉。
   - 视口 `1100x620`、`1366x768`、`1440x900` 截图/交互验证。
 - 完成标准：页面功能点承接表全部可观察，排版无重叠。
-- 实际落地情况：已按 `audit-log.html` 承接日志审计页面，完成标题工具区、自动刷新、手动刷新、禁用导出入口、摘要指标、筛选栏、服务端分页、审计宽表、只读详情抽屉、loading、无记录、服务异常、权限不足、低高度退化和租户管理员不展示租户过滤入口。事件类型和结果选项优先消费 `/api/dict/items/public`，失败回退内置枚举；默认时间不强制前端传参，由后端 `audit.retention_days=90` 默认窗口收口，页面摘要提示“默认最近 90 天”。审计表 `auditTable` 已接入 `wide-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，并同步前端 `componentConfig` 与后端 `layout_config` 字段白名单，避免设置保存被拒。已补 `AuditLogView.spec.ts` 覆盖加载、查询、空态、错误重试、详情抽屉、权限态、租户管理员无跨租户入口和自动刷新清理。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t8-audit-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出、无关键区域重叠，详情抽屉和页面设置抽屉已验证。
+- 实际落地情况：已按 `audit-log.html` 承接日志审计页面，完成标题工具区、自动刷新、手动刷新、禁用导出入口、摘要指标、筛选栏、服务端分页、审计宽表、只读详情抽屉、loading、无记录、服务异常、权限不足、低高度退化和租户管理员不展示租户过滤入口。事件类型、结果和状态选项优先消费 `/api/dict/items/public`，失败回退内置枚举；下拉选择后即时查询。目标对象展示由审计对象和 `sys_resource.name` 中文说明组成。默认时间不强制前端传参，由后端 `audit.retention_days=90` 默认窗口收口，页面摘要提示“默认最近 90 天”。审计表 `auditTable` 已接入 `wide-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，并同步前端 `componentConfig` 与后端 `layout_config` 字段白名单，避免设置保存被拒。已补 `AuditLogView.spec.ts` 覆盖加载、查询、空态、错误重试、详情抽屉、权限态、租户管理员无跨租户入口和自动刷新清理。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t8-audit-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出、无关键区域重叠，详情抽屉和页面设置抽屉已验证。
 
 ### 6.9 任务 T9：数据字典前端页面
 
@@ -870,7 +871,7 @@ Slot 与组件设计：
   - 页面单测覆盖主从联动、弹窗、保存失败、空/错/重试和权限按钮。
   - 视口 `1100x620`、`1366x768`、`1440x900` 截图/交互验证。
 - 完成标准：页面功能点承接表全部可观察，弹窗编辑符合用户管理页交互。
-- 实际落地情况：已按 `data-dictionary.html` 承接数据字典 master-detail 维护页，完成标题工具区、新建类型、刷新、类型搜索、类型列表、类型选择、字典项状态筛选、关键字查询、服务端分页、字典项表格、新建/编辑类型弹窗、新建/编辑字典项弹窗、启停、删除确认、loading、空态、错误重试和权限不足状态。编辑类型弹窗禁用类型 code，编辑字典项弹窗禁用 type_code 和 item code；保存时不向 PUT 请求提交不可变 code 字段。`itemTable` 已登记 `data-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，默认隐藏备注和更新时间列，保证低宽度下常用操作列不被遮挡；备注和更新时间可通过设置抽屉列显隐打开。已同步 `DESIGN.md`，补 `DataDictionaryView.spec.ts` 覆盖主从加载、类型切换、筛选透传、新建/编辑 code 不可变、错误重试和 system-only 权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t9-dict-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；已验证新建类型弹窗、编辑类型 code 禁用、设置抽屉“字典项表/每页条数/列显隐”可见。
+- 实际落地情况：已按 `data-dictionary.html` 承接数据字典 master-detail 维护页，完成标题工具区、新建类型、刷新、类型搜索、类型列表、类型选择、字典项状态筛选、关键字查询、服务端分页、每页条数选择、字典项表格、新建/编辑类型弹窗、新建/编辑字典项弹窗、启停、删除确认、loading、空态、错误重试和权限不足状态。编辑类型弹窗禁用类型 code，编辑字典项弹窗禁用 type_code 和 item code；保存时不向 PUT 请求提交不可变 code 字段。`itemTable` 已登记 `data-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，默认隐藏备注和更新时间列，保证低宽度下常用操作列不被遮挡；备注和更新时间可通过设置抽屉列显隐打开。已同步 `DESIGN.md`，补 `DataDictionaryView.spec.ts` 覆盖主从加载、类型切换、筛选透传、新建/编辑 code 不可变、错误重试和 system-only 权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t9-dict-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；已验证新建类型弹窗、编辑类型 code 禁用、设置抽屉“字典项表/每页条数/列显隐”可见。
 
 ### 6.10 任务 T10：系统设置页接入 R16/R17 配置和布局复用整改
 
@@ -902,7 +903,7 @@ Slot 与组件设计：
   - 运行 `npm run build`。
   - 关键视口 `1100x620`、`1366x768`、`1440x900` 验证新增字段不溢出、不遮挡，桌面端并排、窄屏单列。
 - 完成标准：R16/R17 配置能展示、保存、读取、消费。
-- 实际落地情况：已新增 `frontend/src/components/config/ConfigGroupForm.vue`，按 `/api/data/settings` 返回的 `CONFIG_GROUPS` 动态渲染 bool、enum、int、number 字段、默认值、覆盖标记和范围信息；`ConfigView.vue` 的 `/system/config/system` 已改为配置组并排工作区，不再使用旧单列 `el-card` 堆叠。system 页初始化已从指标注册表依赖中拆出，只加载登录态和系统设置接口；无 `data-settings:manage` 权限时显示权限态且不请求设置接口。保存逻辑只提交差量字段，保存成功提示“配置已更新”，保存失败保留当前编辑值并展示错误态；空配置显示空态。已补 `ConfigView.system.spec.ts` 覆盖动态渲染、system 页不加载指标注册表、差量保存、保存失败保留值、越界数值钳定保存、空态和权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t10-config-system-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；桌面端配置组已并排展示，系统设置抽屉可打开。
+- 实际落地情况：已新增 `frontend/src/components/config/ConfigGroupForm.vue`，按 `/api/data/settings` 返回的 `CONFIG_GROUPS` 动态渲染 bool、enum、int、number 字段、默认值、覆盖标记、范围信息、配置组说明和字段说明；`ConfigView.vue` 的 `/system/config/system` 已改为配置组并排工作区，不再使用旧单列 `el-card` 堆叠。system 页初始化已从指标注册表依赖中拆出，只加载登录态和系统设置接口；无 `data-settings:manage` 权限时显示权限态且不请求设置接口。保存逻辑只提交差量字段，保存成功提示“配置已更新”，保存失败保留当前编辑值并展示错误态；空配置显示空态。已补 `ConfigView.system.spec.ts` 覆盖动态渲染、system 页不加载指标注册表、差量保存、保存失败保留值、越界数值钳定保存、空态和权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t10-config-system-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；桌面端配置组已并排展示，系统设置抽屉可打开。
 
 ### 6.11 任务 T11：权限扫描和菜单授权测试
 
@@ -1003,14 +1004,17 @@ Slot 与组件设计：
   `AuditLogView.spec.ts` 覆盖审计页加载、筛选透传、空态、错误重试、详情抽屉、权限态、租户管理员范围提示和自动刷新清理；
   `DataDictionaryView.spec.ts` 覆盖字典页类型/明细加载、类型切换、筛选透传、新建/编辑 code 不可变、错误重试和 system-only 权限态；
   `ConfigView.system.spec.ts` 覆盖系统设置动态配置组、差量保存、失败保留、范围钳定、空态和权限态；
-  pageRegistry/router/layout-contract 测试覆盖阶段五页面登记、静态路由和 DESIGN 布局红线。已运行
-  `cd frontend && npm run test -- --run`，结果 `21 passed` 测试文件、`212 passed` 用例；输出中仅有既有
-  Element Plus `ElOption value=null` 测试警告。已运行 `cd frontend && npm run build` 通过，输出仅有第三方
+  pageRegistry/router/layout-contract 测试覆盖阶段五页面登记、静态路由和 DESIGN 布局红线。阶段五初版已运行
+  `cd frontend && npm run test -- --run`，结果 `21 passed` 测试文件、`212 passed` 用例；缺陷整改复测已运行
+  `cd frontend && npm run test -- --run src/components/__tests__/ComponentAutoSettings.spec.ts src/views/__tests__/ConfigView.system.spec.ts src/views/system/__tests__/AuditLogView.spec.ts src/views/system/__tests__/DataDictionaryView.spec.ts src/views/__tests__/LoginView.captcha.spec.ts`，
+  结果 `5 passed` 测试文件、`25 passed` 用例。已运行 `cd frontend && npm run build` 通过，输出仅有第三方
   Rollup 注释警告和既有大 chunk 提示。浏览器验证使用专用端口 `5181`，登录 `admin` 后检查
   `/system/audit`、`/system/dicts`、`/system/config/system` 在 `1100x620`、`1366x768`、`1440x900`
   三档视口均无整页横向溢出、无可见运行错误、页面高度由应用容器承接；并在 `1366x768` 验证三页页面设置抽屉
-  均可打开。截图保存在被 Git 忽略的
-  `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t13/*.png`；验证后已停止 `5181` 预览服务。
+  均可打开。缺陷整改复测补充验证审计状态下拉即时查询、目标中文说明、公共分页、字典分页、系统设置下拉宽度、
+  系统页抽屉不展示业务选项；登录图形验证码开启即展示、提交即校验由 `LoginView.captcha.spec.ts` 和
+  `test_stage5_auth_config.py` 覆盖。截图保存在被 Git 忽略的
+  `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t13/*.png`；验证后停止 `5181` 预览服务。
 
 ### 6.14 任务 T14：总需求文档回写、业务核查和计划状态回写
 
@@ -1152,7 +1156,7 @@ cd frontend && npm run build
 
 ### 10.2 假设
 
-- R16 “人机校验”本阶段等同于登录失败后的图形验证码挑战，不接第三方滑块或行为验证码。
+- R16 “人机校验”本阶段等同于登录图形验证码挑战，不接第三方滑块或行为验证码。
 - R17 保留期配置本阶段用于默认查询窗口和页面展示，不执行自动删除。
 - 数据字典首批消费以权限体系和审计展示枚举为主，不强制迁移全量业务枚举。
 - 审计 API 递归保护允许跳过 `/api/audit/**` 的 API 事件，或用内部标记防止重复写入；实现时选择不造成无限写入的方案。

@@ -30,6 +30,19 @@ _CONTEXT_ALLOW_KEYS = {
     "job_name",
 }
 _SENSITIVE_TOKENS = ("password", "token", "secret", "captcha", "credential")
+_TARGET_TYPE_LABELS = {
+    "api": "接口",
+    "async_task": "异步任务",
+    "scheduled_job": "调度任务",
+    "sys_user": "用户",
+    "sys_role": "角色",
+    "sys_menu": "菜单",
+    "sys_resource": "功能点",
+    "sys_tenant": "租户",
+    "app_config": "系统设置",
+    "dict_type": "字典类型",
+    "dict_item": "字典项",
+}
 
 
 class AuditService:
@@ -270,7 +283,22 @@ class AuditService:
         out = dict(row)
         context = row.get("context") if isinstance(row.get("context"), dict) else {}
         out["context"] = cls._sanitize_context(context)
+        out["target_description"] = cls._target_description(row)
         return out
+
+    @staticmethod
+    def _target_description(row: dict[str, Any]) -> str | None:
+        parts: list[str] = []
+        resource_name = row.get("resource_name")
+        if resource_name:
+            parts.append(str(resource_name))
+        target_type = row.get("target_type")
+        target_type_label = _TARGET_TYPE_LABELS.get(str(target_type)) if target_type else None
+        if target_type_label and target_type_label not in parts:
+            parts.append(target_type_label)
+        if not parts and row.get("resource_code"):
+            parts.append(str(row["resource_code"]))
+        return " · ".join(parts) if parts else None
 
     @classmethod
     def _sanitize_context(cls, context: dict[str, Any]) -> dict[str, Any]:

@@ -857,6 +857,7 @@ _SEED_DICT_TYPES: tuple[tuple[str, str, int, str], ...] = (
     ("user_status", "用户状态", 20, "用户账号状态"),
     ("audit_event_type", "审计事件类型", 30, "审计日志事件分类"),
     ("audit_result", "审计结果", 40, "审计日志处理结果"),
+    ("audit_status", "审计状态", 50, "审计日志处理状态"),
 )
 
 _SEED_DICT_ITEMS: tuple[tuple[str, str, str, int], ...] = (
@@ -876,6 +877,11 @@ _SEED_DICT_ITEMS: tuple[tuple[str, str, str, int], ...] = (
     ("audit_result", "success", "成功", 10),
     ("audit_result", "failed", "失败", 20),
     ("audit_result", "denied", "拒绝", 30),
+    ("audit_status", "completed", "完成", 10),
+    ("audit_status", "running", "处理中", 20),
+    ("audit_status", "failed", "异常", 30),
+    ("audit_status", "blocked", "已阻断", 40),
+    ("audit_status", "skipped", "已跳过", 50),
 )
 
 

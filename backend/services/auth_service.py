@@ -114,9 +114,16 @@ class AuthService:
                 error_summary="账号已锁定",
             )
             raise AuthError(f"账号已锁定，请 {ss.lock_remaining(account) // 60 + 1} 分钟后重试")
-        # 失败达阈值后要求图形验证码（开关控制，默认关）
-        if (self.cfg.login_captcha_enabled
-                and ss.login_failure_count(account) >= self.cfg.captcha_after_fails):
+        # 图形验证码开关开启后：前端展示并提交时立即校验；失败达阈值后强制要求。
+        captcha_submitted = bool(captcha_id or captcha_code)
+        captcha_required = (
+            self.cfg.login_captcha_enabled
+            and (
+                captcha_submitted
+                or ss.login_failure_count(account) >= self.cfg.captcha_after_fails
+            )
+        )
+        if captcha_required:
             if not (captcha_id and captcha_code and ss.take_captcha(captcha_id, captcha_code)):
                 self._record_security(
                     event_type="captcha",
@@ -428,10 +435,10 @@ class AuthService:
         log.warning("【开发态·邮箱验证码】%s -> %s（生产须接 SMTP 投递，勿公网放量）", email, code)
 
     def public_config(self) -> dict:
-        """登录页公开配置（无需 token）：告诉前端是否要邮箱码/图形码 + 图形码触发阈值。
+        """登录页公开配置（无需 token）：告诉前端是否要邮箱码/图形码 + 图形码强制阈值。
 
-        下发 captcha_after_fails 让前端 UI 的图形码显示时机与后端 login() 的强制阈值一致
-        （否则前端不知阈值只能失败一次即显示，与「失败达阈值后出现」的口径偏差）。
+        前端在 login_captcha_enabled 开启后直接展示图形码；captcha_after_fails 仍作为
+        后端强制要求图形码的失败次数兜底。
         """
         return {
             "require_email_code": self.cfg.require_email_code,

@@ -237,6 +237,7 @@ export function testSources(): Promise<{ sources: SourceStatus[] }> {
 export interface SettingField {
   path: string
   label: string
+  desc?: string
   type: 'int' | 'number' | 'bool' | 'enum'
   value: any
   default: any
@@ -245,7 +246,7 @@ export interface SettingField {
   min?: number
   max?: number
 }
-export interface SettingGroup { key: string; label: string; fields: SettingField[] }
+export interface SettingGroup { key: string; label: string; desc?: string; fields: SettingField[] }
 export function getSettingsView(): Promise<{ groups: SettingGroup[] }> {
   return http.get('/data/settings')
 }

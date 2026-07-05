@@ -18,9 +18,10 @@ _SECRET = "unit-test-jwt-secret-0123456789-abcdefghij"
 
 
 @pytest.fixture()
-def auth_env(monkeypatch, pg, redis_cli):
+def auth_env(monkeypatch, pg, redis_cli, app_cfg):
     """设 JWT 密钥 + 提供账号回收表；teardown 清理 sys_user/sys_tenant。"""
     monkeypatch.setenv("AI_STOCKS_JWT_SECRET", _SECRET)
+    pg.execute("DELETE FROM app_config WHERE key LIKE %s", ["auth.%"])
     accounts: list[str] = []
     yield accounts
     for acc in accounts:
@@ -125,7 +126,7 @@ def test_lockout_after_max_fail(auth_env):
 
 
 def test_login_captcha_required_after_fails_when_enabled(auth_env):
-    # T6：开关开启后，登录失败达阈值需图形验证码（闭环：无码拒绝、正确码放行）
+    # T6：开关开启后，登录失败达阈值需图形验证码（闭环：无码拒绝、正确码放行）。
     svc = AuthService()
     svc.cfg = svc.cfg.model_copy(update={
         "login_captcha_enabled": True, "captcha_after_fails": 1, "max_login_fail": 99})
@@ -145,7 +146,7 @@ def test_public_config(auth_env):
     cfg = AuthService().public_config()
     assert cfg["require_email_code"] is True
     assert cfg["login_captcha_enabled"] is False
-    # 图形码触发阈值须下发，供前端 UI 显示时机与后端 login() 强制阈值对齐（Codex 再审整改）
+    # 图形码强制阈值须下发，供后端达到阈值后强制要求验证码。
     assert isinstance(cfg["captcha_after_fails"], int) and cfg["captcha_after_fails"] >= 1
 
 

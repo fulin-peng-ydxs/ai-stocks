@@ -137,6 +137,7 @@ const stubs = {
   },
   PageSettingsDrawer: true,
   PageSettingsTrigger: true,
+  AppPagination: true,
   HelpTip: { template: '<span><slot/></span>' },
   ElTable: ElTableStub,
   ElTableColumn: ElTableColumnStub,

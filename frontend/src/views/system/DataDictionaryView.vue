@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import AppPagination from '@/components/AppPagination.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -222,6 +223,17 @@ async function searchTypes() {
 async function searchItems() {
   itemPage.value = 1
   await loadItems()
+}
+
+function pageChanged(value: number) {
+  itemPage.value = value
+  void loadItems()
+}
+
+function pageSizeChanged(value: number) {
+  setComponentKnob('itemTable', 'pageSize', value)
+  itemPage.value = 1
+  void loadItems()
 }
 
 async function refreshAll() {
@@ -514,13 +526,12 @@ onMounted(loadAll)
               </template>
             </el-table>
             <div class="dict-pager">
-              <el-pagination
-                v-model:current-page="itemPage"
+              <AppPagination
+                :current-page="itemPage"
                 :page-size="pageSize"
                 :total="itemTotal"
-                layout="total, prev, pager, next"
-                background
-                @current-change="loadItems"
+                @current-change="pageChanged"
+                @size-change="pageSizeChanged"
               />
             </div>
           </div>

@@ -92,11 +92,26 @@ def test_stage5_audit_system_can_query_summary_and_detail(client, pg):
     assert data["total"] == 1
     assert data["page_size"] == 10
     assert data["list"][0]["id"] == audit_id
+    assert data["list"][0]["resource_name"] == "数据设置保存"
+    assert data["list"][0]["target_description"] == "数据设置保存"
     assert data["list"][0]["context"] == {
         "request_id": "req-1",
         "permission_code": "data-settings:manage",
         "data_scope": {"tenant": "default"},
     }
+
+    by_resource_name = client.get(
+        "/api/audit",
+        headers=_admin_headers(pg),
+        params={
+            "target_keyword": "数据设置保存",
+            "resource_code": "data-settings:manage",
+            "page": 1,
+            "page_size": 100,
+        },
+    )
+    assert by_resource_name.status_code == 200
+    assert audit_id in {row["id"] for row in by_resource_name.json()["data"]["list"]}
 
     summary = client.get(
         "/api/audit/summary",

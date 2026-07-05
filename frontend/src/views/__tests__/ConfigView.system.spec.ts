@@ -82,7 +82,7 @@ const groups: SettingGroup[] = [
       },
       {
         path: 'auth.captcha_after_fails',
-        label: '图形验证码触发失败次数',
+        label: '图形验证码强制失败次数',
         type: 'int',
         value: 3,
         default: 3,
@@ -205,7 +205,7 @@ describe('ConfigView system tab', () => {
         fields: [
           {
             path: 'auth.captcha_after_fails',
-            label: '图形验证码触发失败次数',
+            label: '图形验证码强制失败次数',
             type: 'int',
             value: 99,
             default: 3,

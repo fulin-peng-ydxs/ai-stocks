@@ -12,9 +12,11 @@ export interface AuditLog {
   actor_user_id?: string | null
   actor_account?: string | null
   resource_code?: string | null
+  resource_name?: string | null
   target_type?: string | null
   target_id?: string | null
   target_label?: string | null
+  target_description?: string | null
   ip?: string | null
   method?: string | null
   path?: string | null

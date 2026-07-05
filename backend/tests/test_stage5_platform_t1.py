@@ -20,7 +20,7 @@ from backend.storage.pg_ddl import (
 from backend.storage.resource_repository import ResourceRepository
 
 
-def test_stage5_tables_indexes_and_defaults_seeded(pg):
+def test_stage5_tables_indexes_and_defaults_seeded(pg, app_cfg):
     tables = pg.query_df(
         "SELECT table_name FROM information_schema.tables "
         "WHERE table_schema='public' AND table_name = ANY(%s)",
@@ -53,14 +53,17 @@ def test_stage5_tables_indexes_and_defaults_seeded(pg):
         "idx_dict_item_type_enabled_sort",
     }
 
+    config_keys = [
+        "auth.require_email_code",
+        "auth.login_captcha_enabled",
+        "auth.captcha_after_fails",
+        "audit.retention_days",
+    ]
+    pg.execute("DELETE FROM app_config WHERE key = ANY(%s)", [config_keys])
+    seed_stage5_platform_capabilities(pg)
     cfg = dict(pg.query_df(
         "SELECT key, value FROM app_config WHERE key = ANY(%s)",
-        [[
-            "auth.require_email_code",
-            "auth.login_captcha_enabled",
-            "auth.captcha_after_fails",
-            "audit.retention_days",
-        ]],
+        [config_keys],
     ).itertuples(index=False, name=None))
     assert cfg["auth.require_email_code"] == "true"
     assert cfg["auth.login_captcha_enabled"] == "false"
@@ -263,4 +266,3 @@ def test_stage5_backfill_marker_bumps_once_and_restores_tenant_admin_audit(pg):
     finally:
         pg.execute("DELETE FROM sys_user WHERE id=ANY(%s)", [[normal_uid, tenant_uid]])
         pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
-

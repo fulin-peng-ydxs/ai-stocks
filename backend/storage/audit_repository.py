@@ -101,15 +101,19 @@ class AuditRepository:
     ) -> dict:
         where, params = self._where(filters)
         total = int(self.pg.query_df(
-            f"SELECT count(*) AS n FROM audit_log {where}", params
+            "SELECT count(*) AS n "
+            "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
+            f"{where}",
+            params,
         ).iloc[0]["n"])
         rows = self.pg.query_df(
-            "SELECT id, event_time, tenant_id, actor_user_id, actor_account, "
-            "event_category, event_type, resource_code, action, target_type, target_id, "
-            "target_label, result, status, ip, method, path, duration_ms, error_summary, "
-            "context, created_at "
-            f"FROM audit_log {where} "
-            "ORDER BY event_time DESC, created_at DESC LIMIT %s OFFSET %s",
+            "SELECT a.id, a.event_time, a.tenant_id, a.actor_user_id, a.actor_account, "
+            "a.event_category, a.event_type, a.resource_code, sr.name AS resource_name, "
+            "a.action, a.target_type, a.target_id, a.target_label, a.result, a.status, "
+            "a.ip, a.method, a.path, a.duration_ms, a.error_summary, a.context, a.created_at "
+            "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
+            f"{where} "
+            "ORDER BY a.event_time DESC, a.created_at DESC LIMIT %s OFFSET %s",
             params + [page_size, (page - 1) * page_size],
         )
         return {
@@ -122,12 +126,15 @@ class AuditRepository:
     def summary(self, *, filters: dict[str, Any]) -> dict:
         where, params = self._where(filters)
         total = int(self.pg.query_df(
-            f"SELECT count(*) AS n FROM audit_log {where}", params
+            "SELECT count(*) AS n "
+            "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
+            f"{where}",
+            params,
         ).iloc[0]["n"])
-        by_category = self._counts("event_category", where, params)
-        by_type = self._counts("event_type", where, params)
-        by_result = self._counts("result", where, params)
-        by_status = self._counts("status", where, params)
+        by_category = self._counts("a.event_category", where, params)
+        by_type = self._counts("a.event_type", where, params)
+        by_result = self._counts("a.result", where, params)
+        by_status = self._counts("a.status", where, params)
         return {
             "total": total,
             "success": by_result.get("success", 0),
@@ -139,16 +146,18 @@ class AuditRepository:
         }
 
     def get(self, audit_id: str, *, tenant_id: str | None = None) -> dict | None:
-        conds = ["id=%s"]
+        conds = ["a.id=%s"]
         params: list[Any] = [audit_id]
         if tenant_id is not None:
-            conds.append("tenant_id=%s")
+            conds.append("a.tenant_id=%s")
             params.append(tenant_id)
         df = self.pg.query_df(
-            "SELECT id, event_time, tenant_id, actor_user_id, actor_account, "
-            "event_category, event_type, resource_code, action, target_type, target_id, "
-            "target_label, result, status, ip, method, path, duration_ms, error_summary, "
-            "context, created_at FROM audit_log WHERE " + " AND ".join(conds),
+            "SELECT a.id, a.event_time, a.tenant_id, a.actor_user_id, a.actor_account, "
+            "a.event_category, a.event_type, a.resource_code, sr.name AS resource_name, "
+            "a.action, a.target_type, a.target_id, a.target_label, a.result, a.status, "
+            "a.ip, a.method, a.path, a.duration_ms, a.error_summary, a.context, a.created_at "
+            "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
+            "WHERE " + " AND ".join(conds),
             params,
         )
         if df.empty:
@@ -157,7 +166,9 @@ class AuditRepository:
 
     def _counts(self, column: str, where: str, params: list[Any]) -> dict[str, int]:
         df = self.pg.query_df(
-            f"SELECT {column} AS k, count(*) AS n FROM audit_log {where} "
+            f"SELECT {column} AS k, count(*) AS n "
+            "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
+            f"{where} "
             f"GROUP BY {column} ORDER BY n DESC",
             params,
         )
@@ -167,33 +178,36 @@ class AuditRepository:
     def _where(filters: dict[str, Any]) -> tuple[str, list[Any]]:
         conds: list[str] = []
         params: list[Any] = []
-        exact_cols = [
-            "tenant_id",
-            "event_category",
-            "event_type",
-            "result",
-            "status",
-            "resource_code",
-        ]
-        for col in exact_cols:
-            val = filters.get(col)
+        exact_cols = {
+            "tenant_id": "a.tenant_id",
+            "event_category": "a.event_category",
+            "event_type": "a.event_type",
+            "result": "a.result",
+            "status": "a.status",
+            "resource_code": "a.resource_code",
+        }
+        for key, col in exact_cols.items():
+            val = filters.get(key)
             if val:
                 conds.append(f"{col}=%s")
                 params.append(val)
         if filters.get("start_time"):
-            conds.append("event_time >= %s")
+            conds.append("a.event_time >= %s")
             params.append(filters["start_time"])
         if filters.get("end_time"):
-            conds.append("event_time <= %s")
+            conds.append("a.event_time <= %s")
             params.append(filters["end_time"])
         if filters.get("actor_keyword"):
             like = f"%{filters['actor_keyword']}%"
-            conds.append("(actor_user_id ILIKE %s OR actor_account ILIKE %s)")
+            conds.append("(a.actor_user_id ILIKE %s OR a.actor_account ILIKE %s)")
             params += [like, like]
         if filters.get("target_keyword"):
             like = f"%{filters['target_keyword']}%"
-            conds.append("(target_id ILIKE %s OR target_label ILIKE %s)")
-            params += [like, like]
+            conds.append(
+                "(a.target_id ILIKE %s OR a.target_label ILIKE %s OR a.path ILIKE %s "
+                "OR a.resource_code ILIKE %s OR sr.name ILIKE %s)"
+            )
+            params += [like, like, like, like, like]
         return (("WHERE " + " AND ".join(conds)) if conds else ""), params
 
     @staticmethod

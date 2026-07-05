@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useSlots } from 'vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
 import { getPageEntry } from '@/layout/pageRegistry'
@@ -27,17 +27,20 @@ const props = defineProps<{
   /** 传入则自动渲染「布局」+「组件设置」段（pageKey 用于查 registry 的组件元数据）。 */
   pageKey?: string
   config?: DrawerConfig
+  businessVisible?: boolean
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   reset: []
 }>()
+const slots = useSlots()
 
 const hasLayoutKnobs = computed(() => !!props.config?.knobs?.length)
 const hasComponentConfig = computed(
   () => !!props.pageKey && !!getPageEntry(props.pageKey)?.consumedComponentFields,
 )
+const hasBusinessSlot = computed(() => props.businessVisible !== false && !!slots.business)
 
 type SectionKey = 'layout' | 'components' | 'business'
 const SECTION_KEYS: SectionKey[] = ['layout', 'components', 'business']
@@ -121,11 +124,15 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
             :model-value="sectionOpen('components')"
             @update:model-value="(open) => setSectionOpen('components', open)"
           >
-            <ComponentAutoSettings :page-key="pageKey!" :config="config" />
+            <ComponentAutoSettings
+              :page-key="pageKey!"
+              :config="config"
+              :drawer-business-visible="hasBusinessSlot"
+            />
           </SettingsGroup>
 
           <SettingsGroup
-            v-if="$slots.business"
+            v-if="hasBusinessSlot"
             title="业务选项"
             badge="页面记忆"
             :level="1"
@@ -149,7 +156,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
           >
             <slot name="components" />
           </SettingsGroup>
-          <SettingsGroup v-if="$slots.business" title="业务选项" badge="页面记忆" :level="1">
+          <SettingsGroup v-if="hasBusinessSlot" title="业务选项" badge="页面记忆" :level="1">
             <slot name="business" />
           </SettingsGroup>
           <slot />

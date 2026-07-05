@@ -534,7 +534,12 @@ def get_settings_view() -> ApiResponse:
                            "value": _dig(eff, f["path"]),
                            "default": _dig(default, f["path"]),
                            "overridden": f["path"] in overrides})
-        groups.append({"key": g["key"], "label": g["label"], "fields": fields})
+        groups.append({
+            "key": g["key"],
+            "label": g["label"],
+            "desc": g.get("desc"),
+            "fields": fields,
+        })
     return ok({"groups": groups})
 
 

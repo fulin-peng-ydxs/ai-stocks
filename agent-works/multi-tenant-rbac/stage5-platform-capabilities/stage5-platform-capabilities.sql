@@ -97,7 +97,8 @@ INSERT INTO dict_type (id, code, name, sort, remark) VALUES
   ('role_type', 'role_type', '角色类型', 10, '系统内置角色类型'),
   ('user_status', 'user_status', '用户状态', 20, '用户账号状态'),
   ('audit_event_type', 'audit_event_type', '审计事件类型', 30, '审计日志事件分类'),
-  ('audit_result', 'audit_result', '审计结果', 40, '审计日志处理结果')
+  ('audit_result', 'audit_result', '审计结果', 40, '审计日志处理结果'),
+  ('audit_status', 'audit_status', '审计状态', 50, '审计日志处理状态')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO dict_item (id, type_code, code, label, sort) VALUES
@@ -116,8 +117,12 @@ INSERT INTO dict_item (id, type_code, code, label, sort) VALUES
   ('audit_event_type:dict', 'audit_event_type', 'dict', '字典', 60),
   ('audit_result:success', 'audit_result', 'success', '成功', 10),
   ('audit_result:failed', 'audit_result', 'failed', '失败', 20),
-  ('audit_result:denied', 'audit_result', 'denied', '拒绝', 30)
+  ('audit_result:denied', 'audit_result', 'denied', '拒绝', 30),
+  ('audit_status:completed', 'audit_status', 'completed', '完成', 10),
+  ('audit_status:running', 'audit_status', 'running', '处理中', 20),
+  ('audit_status:failed', 'audit_status', 'failed', '异常', 30),
+  ('audit_status:blocked', 'audit_status', 'blocked', '已阻断', 40),
+  ('audit_status:skipped', 'audit_status', 'skipped', '已跳过', 50)
 ON CONFLICT (type_code, code) DO NOTHING;
 
 COMMIT;
-

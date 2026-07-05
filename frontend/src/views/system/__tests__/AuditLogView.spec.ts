@@ -57,9 +57,11 @@ const row = {
   actor_user_id: 'u1',
   actor_account: 'admin',
   resource_code: 'audit:view',
+  resource_name: '查看审计日志',
   target_type: 'role',
   target_id: 'role1',
   target_label: '角色：管理员',
+  target_description: '查看审计日志 · 角色',
   ip: '127.0.0.1',
   method: 'POST',
   path: '/api/roles/role1/grants',
@@ -72,6 +74,7 @@ function mockHappyApis() {
   ;(dictApi.getPublicDictItems as ReturnType<typeof vi.fn>)
     .mockResolvedValueOnce({ items: [{ code: 'rbac', label: '权限' }], fallback: false, version: 'v1', type_code: 'audit_event_type' })
     .mockResolvedValueOnce({ items: [{ code: 'success', label: '成功' }], fallback: false, version: 'v1', type_code: 'audit_result' })
+    .mockResolvedValueOnce({ items: [{ code: 'completed', label: '完成' }], fallback: false, version: 'v1', type_code: 'audit_status' })
   ;(auditApi.listAuditLogs as ReturnType<typeof vi.fn>).mockResolvedValue({
     list: [row],
     total: 1,
@@ -125,6 +128,8 @@ describe('AuditLogView', () => {
     expect(wrapper.text()).toContain('审计日志')
     expect(wrapper.text()).toContain('范围事件')
     expect(wrapper.text()).toContain('角色：管理员')
+    expect(wrapper.text()).toContain('查看审计日志 · 角色')
+    expect(dictApi.getPublicDictItems).toHaveBeenCalledWith('audit_status')
     expect(auditApi.listAuditLogs).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 50 }))
   })
 

@@ -17,8 +17,8 @@ const { isDark } = useTheme()
 type Mode = 'login' | 'register'
 const mode = ref<Mode>('login')
 
-// 公开配置（无需 token）：是否要邮箱验证码 / 是否启用图形验证码 / 图形码触发阈值。
-// 挂载时拉取，失败用保守默认；captchaAfterFails 与后端 login() 强制阈值一致，保证 UI 显示时机对齐。
+// 公开配置（无需 token）：是否要邮箱验证码 / 是否启用图形验证码 / 图形码强制阈值。
+// 挂载时拉取，失败用保守默认；开关开启即展示图形码，阈值仍作为后端强制校验兜底。
 const cfg = reactive({ requireEmailCode: true, loginCaptchaEnabled: false, captchaAfterFails: 3 })
 
 const form = reactive({
@@ -32,7 +32,7 @@ const form = reactive({
 const showPwd = ref(false)
 const loading = ref(false)
 
-// 图形验证码：后端启用且本地累计失败达阈值（captcha_after_fails）后出现，与后端强制时机一致。
+// 图形验证码：后端启用即在登录页展示；登录失败后刷新，避免复用已消费的验证码。
 const captchaId = ref('')
 const captchaSvg = ref('')
 const needCaptcha = ref(false)
@@ -42,19 +42,34 @@ const loginFails = ref(0)
 const emailCountdown = ref(0)
 let emailTimer: ReturnType<typeof setInterval> | undefined
 
-onMounted(async () => {
+async function loadPublicConfig(syncCaptcha = true) {
   try {
     const c = await getPublicConfig()
     cfg.requireEmailCode = c.require_email_code
     cfg.loginCaptchaEnabled = c.login_captcha_enabled
     cfg.captchaAfterFails = c.captcha_after_fails
+    if (!cfg.loginCaptchaEnabled) {
+      needCaptcha.value = false
+      captchaId.value = ''
+      captchaSvg.value = ''
+      form.captchaCode = ''
+    } else if (syncCaptcha && mode.value === 'login' && !needCaptcha.value) {
+      await refreshCaptcha()
+    }
   } catch {
     // 公开配置拉取失败不阻断登录：保守保留默认（要邮箱码、不强制图形码）
   }
+}
+
+onMounted(async () => {
+  await loadPublicConfig()
 })
 
 function setMode(m: Mode) {
   mode.value = m
+  if (m === 'login' && cfg.loginCaptchaEnabled && !needCaptcha.value) {
+    void refreshCaptcha()
+  }
 }
 
 async function refreshCaptcha() {
@@ -69,6 +84,7 @@ async function refreshCaptcha() {
 }
 
 async function onLogin() {
+  await loadPublicConfig()
   if (!form.account || !form.password) {
     ElMessage.warning('请输入账号和密码')
     return
@@ -85,11 +101,18 @@ async function onLogin() {
     })
     const redirect = (route.query.redirect as string) || '/'
     await router.replace(redirect)
-  } catch {
+  } catch (error) {
     // 登录失败：错误提示由拦截器统一弹出；累计失败达阈值(captchaAfterFails)且后端启用才显示图形码
-    loginFails.value += 1
+    const msg = String((error as { response?: { data?: { msg?: string } } })?.response?.data?.msg ?? '')
     form.captchaCode = ''
-    if (cfg.loginCaptchaEnabled && loginFails.value >= cfg.captchaAfterFails) await refreshCaptcha()
+    if (msg.includes('图形验证码')) {
+      await refreshCaptcha()
+      return
+    }
+    loginFails.value += 1
+    if (needCaptcha.value || (cfg.loginCaptchaEnabled && loginFails.value >= cfg.captchaAfterFails)) {
+      await refreshCaptcha()
+    }
   } finally {
     loading.value = false
   }
@@ -237,7 +260,7 @@ function onSubmit() {
           </span>
         </label>
 
-        <!-- 图形验证码（仅登录，后端启用且已失败后出现） -->
+        <!-- 图形验证码（仅登录，后端启用后出现） -->
         <template v-if="mode === 'login' && needCaptcha">
           <div class="login-captcha-row">
             <label class="login-field dashed">

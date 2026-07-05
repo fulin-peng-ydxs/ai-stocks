@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import AppPagination from '@/components/AppPagination.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -38,6 +39,8 @@ const STATUS_OPTIONS: OptionItem[] = [
   { value: 'completed', label: '完成' },
   { value: 'running', label: '处理中' },
   { value: 'failed', label: '异常' },
+  { value: 'blocked', label: '已阻断' },
+  { value: 'skipped', label: '已跳过' },
 ]
 
 const auth = useAuthStore()
@@ -103,6 +106,7 @@ const detailError = ref(false)
 const activeDetail = ref<AuditLog | null>(null)
 const eventOptions = ref<OptionItem[]>(FALLBACK_EVENT_CATEGORIES)
 const resultOptions = ref<OptionItem[]>(FALLBACK_RESULTS)
+const statusOptions = ref<OptionItem[]>(STATUS_OPTIONS)
 
 const pageSize = computed(() => {
   const raw = componentValueOf('auditTable', 'pageSize')
@@ -143,7 +147,7 @@ function resultLabel(value: string | null | undefined): string {
 }
 
 function statusLabel(value: string | null | undefined): string {
-  return labelOf(STATUS_OPTIONS, value)
+  return labelOf(statusOptions.value, value)
 }
 
 function formatTime(value: string | null | undefined): string {
@@ -159,6 +163,10 @@ function formatDuration(value: number | null | undefined): string {
 
 function targetText(row: AuditLog): string {
   return row.target_label || row.target_id || row.target_type || '-'
+}
+
+function targetDescription(row: AuditLog): string {
+  return row.target_description || row.resource_name || row.resource_code || row.path || ''
 }
 
 function actorText(row: AuditLog): string {
@@ -246,6 +254,21 @@ async function search() {
   await loadAll()
 }
 
+function filterChanged() {
+  void search()
+}
+
+function pageChanged(value: number) {
+  page.value = value
+  void loadAll()
+}
+
+function pageSizeChanged(value: number) {
+  setComponentKnob('auditTable', 'pageSize', value)
+  page.value = 1
+  void loadAll()
+}
+
 async function refresh(silent = false) {
   await loadAll(silent)
   if (!silent && !loadError.value && !permissionError.value) ElMessage.success('已刷新')
@@ -283,21 +306,24 @@ async function openDetail(row: AuditLog) {
 }
 
 async function loadDictOptions() {
-  try {
-    const [events, results] = await Promise.all([
-      getPublicDictItems('audit_event_type'),
-      getPublicDictItems('audit_result'),
-    ])
-    if (events.items.length) {
-      eventOptions.value = events.items.map((item) => ({ value: item.code, label: item.label }))
+  const load = async (typeCode: string, fallback: OptionItem[]) => {
+    try {
+      const data = await getPublicDictItems(typeCode)
+      return data.items.length
+        ? data.items.map((item) => ({ value: item.code, label: item.label }))
+        : fallback
+    } catch {
+      return fallback
     }
-    if (results.items.length) {
-      resultOptions.value = results.items.map((item) => ({ value: item.code, label: item.label }))
-    }
-  } catch {
-    eventOptions.value = FALLBACK_EVENT_CATEGORIES
-    resultOptions.value = FALLBACK_RESULTS
   }
+  const [events, results, statuses] = await Promise.all([
+    load('audit_event_type', FALLBACK_EVENT_CATEGORIES),
+    load('audit_result', FALLBACK_RESULTS),
+    load('audit_status', STATUS_OPTIONS),
+  ])
+  eventOptions.value = events
+  resultOptions.value = results
+  statusOptions.value = statuses
 }
 
 function startTimer() {
@@ -387,14 +413,14 @@ onBeforeUnmount(stopTimer)
           range-separator="至"
           class="audit-date"
         />
-        <el-select v-model="filters.event_category" clearable placeholder="事件类型" class="w120">
+        <el-select v-model="filters.event_category" clearable filterable placeholder="事件类型" class="w120" @change="filterChanged">
           <el-option v-for="item in eventOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-select v-model="filters.result" clearable placeholder="结果" class="w110">
+        <el-select v-model="filters.result" clearable filterable placeholder="结果" class="w110" @change="filterChanged">
           <el-option v-for="item in resultOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-select v-model="filters.status" clearable placeholder="状态" class="w110">
-          <el-option v-for="item in STATUS_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+        <el-select v-model="filters.status" clearable filterable placeholder="状态" class="w110" @change="filterChanged">
+          <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
         <el-input v-model="filters.resource_code" clearable placeholder="资源码" class="w160" />
         <el-input v-model="filters.actor_keyword" clearable placeholder="处理人" class="w140" />
@@ -437,12 +463,17 @@ onBeforeUnmount(stopTimer)
             <template #default="{ row }"><span class="mono">{{ row.resource_code || '-' }}</span></template>
           </el-table-column>
           <el-table-column v-if="colVisible('target')" label="目标对象" min-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ targetText(row) }}</template>
+            <template #default="{ row }">
+              <span class="target-cell">
+                <b>{{ targetText(row) }}</b>
+                <em v-if="targetDescription(row)">{{ targetDescription(row) }}</em>
+              </span>
+            </template>
           </el-table-column>
           <el-table-column v-if="colVisible('result')" label="结果" width="86">
             <template #default="{ row }"><el-tag :type="tagType(row.result)" effect="plain">{{ resultLabel(row.result) }}</el-tag></template>
           </el-table-column>
-          <el-table-column v-if="colVisible('status')" label="状态" width="86">
+          <el-table-column v-if="colVisible('status')" label="状态" width="96">
             <template #default="{ row }"><el-tag :type="tagType(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag></template>
           </el-table-column>
           <el-table-column v-if="colVisible('ip')" label="IP" prop="ip" width="132" show-overflow-tooltip />
@@ -464,13 +495,12 @@ onBeforeUnmount(stopTimer)
           </template>
         </el-table>
         <div class="audit-pager">
-          <el-pagination
-            v-model:current-page="page"
+          <AppPagination
+            :current-page="page"
             :page-size="pageSize"
             :total="total"
-            layout="total, prev, pager, next"
-            background
-            @current-change="loadAll()"
+            @current-change="pageChanged"
+            @size-change="pageSizeChanged"
           />
         </div>
       </div>
@@ -484,6 +514,7 @@ onBeforeUnmount(stopTimer)
             <section class="detail-hero">
               <div class="detail-title">
                 <b>{{ targetText(activeDetail) }}</b>
+                <em v-if="targetDescription(activeDetail)">{{ targetDescription(activeDetail) }}</em>
                 <span>{{ formatTime(activeDetail.event_time) }} · {{ actorText(activeDetail) }}</span>
               </div>
               <div class="detail-tags">
@@ -505,6 +536,7 @@ onBeforeUnmount(stopTimer)
                 <h4>资源信息</h4>
                 <div class="info-row"><span>资源码</span><b class="mono">{{ activeDetail.resource_code || '-' }}</b></div>
                 <div class="info-row"><span>事件类型</span><b>{{ activeDetail.event_type }}</b></div>
+                <div class="info-row"><span>中文说明</span><b>{{ targetDescription(activeDetail) || '-' }}</b></div>
                 <div class="info-row"><span>请求方法</span><b>{{ activeDetail.method || '-' }}</b></div>
                 <div class="info-row"><span>请求路径</span><b>{{ activeDetail.path || '-' }}</b></div>
               </section>
@@ -637,6 +669,28 @@ onBeforeUnmount(stopTimer)
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
 }
+.target-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.target-cell b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.target-cell em,
+.detail-title em {
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .detail-body {
   min-height: 320px;
 }
@@ -662,6 +716,11 @@ onBeforeUnmount(stopTimer)
   display: block;
   overflow-wrap: anywhere;
   font-size: 16px;
+}
+.detail-title em {
+  display: block;
+  margin-top: 3px;
+  white-space: normal;
 }
 .detail-title span {
   display: block;
@@ -709,6 +768,8 @@ onBeforeUnmount(stopTimer)
 .detail-section p {
   margin: 0;
   color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.7;
 }
 .detail-section p.muted {
   color: var(--el-text-color-secondary);

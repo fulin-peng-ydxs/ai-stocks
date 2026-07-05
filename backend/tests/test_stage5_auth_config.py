@@ -79,6 +79,31 @@ def test_stage5_auth_settings_are_consumed_by_public_config_and_register(
         _cleanup_account(pg, account)
 
 
+def test_stage5_login_captcha_submitted_before_threshold_is_validated(client, pg, app_cfg):
+    save = client.post(
+        "/api/data/settings",
+        headers=_admin_headers(pg),
+        json={"updates": {
+            "auth.login_captcha_enabled": True,
+            "auth.captcha_after_fails": 3,
+        }},
+    )
+    assert save.status_code == 200
+
+    resp = client.post(
+        "/api/auth/login",
+        json={
+            "account": f"captcha_{uuid.uuid4().hex[:8]}",
+            "password": "WrongPass1",
+            "captcha_id": "missing",
+            "captcha_code": "wrong",
+        },
+    )
+    assert resp.status_code == 401
+    assert resp.json()["code"] == 4010
+    assert "图形验证码" in resp.json()["msg"]
+
+
 def test_stage5_settings_save_records_sanitized_config_audit(client, pg, app_cfg):
     pg.execute(
         "DELETE FROM audit_log WHERE event_category='config' AND action='update' "

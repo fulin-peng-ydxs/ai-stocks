@@ -193,7 +193,7 @@ class AuthConfig(BaseModel):
 
     # 防滥用开关（R16；默认对齐需求：邮箱码开、图形码关）
     require_email_code: bool = True     # 注册需邮箱验证码
-    login_captcha_enabled: bool = False  # 登录失败达阈值后要求图形验证码
+    login_captcha_enabled: bool = False  # 登录页图形验证码开关
     captcha_after_fails: int = 3        # 触发图形验证码的失败次数
     email_code_ttl_min: int = 10        # 邮箱验证码有效期（分钟）
     captcha_ttl_min: int = 5            # 图形验证码有效期（分钟）

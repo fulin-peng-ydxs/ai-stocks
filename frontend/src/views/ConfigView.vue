@@ -1355,7 +1355,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div v-else class="sys-wrap" v-loading="sysLoading">
           <div class="sys-head">
             <div class="sys-summary">
-              <strong>运行配置</strong>
+              <strong>平台配置</strong>
               <span>保存后即时影响数据源、股票池、回测、榜单、认证和审计查询窗口。</span>
             </div>
             <div class="sys-actions">
@@ -1445,12 +1445,13 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       :dirty="isDirty || layoutDirty"
       :page-key="configPageKey"
       :config="drawerConfig"
+      :business-visible="activeTab === 'tech'"
       @reset="reset(); resetLayout()"
     >
       <template #business>
         <PageSettingSection title="界面默认项">
           <div class="setting-item">
-            <div class="setting-label">技术指标排序</div>
+            <div class="setting-label">技术指标列表排序</div>
             <PageSegmented v-model="settings.techSort" :options="[
               { label: '分类', value: 'catOrder' },
               { label: '名称', value: 'name_cn' },

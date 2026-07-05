@@ -181,3 +181,13 @@ def test_stage5_dict_fallback_builtin_when_repo_fails():
     data = DictService(BrokenRepo()).get_enabled_items("audit_result")  # type: ignore[arg-type]
     assert data["fallback"] is True
     assert [item["code"] for item in data["items"]] == ["success", "failed", "denied"]
+
+    status_data = DictService(BrokenRepo()).get_enabled_items("audit_status")  # type: ignore[arg-type]
+    assert status_data["fallback"] is True
+    assert [item["code"] for item in status_data["items"]] == [
+        "completed",
+        "running",
+        "failed",
+        "blocked",
+        "skipped",
+    ]
