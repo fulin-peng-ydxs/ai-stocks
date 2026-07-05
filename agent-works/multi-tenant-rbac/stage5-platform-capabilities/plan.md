@@ -976,7 +976,7 @@ Slot 与组件设计：
 
 ### 6.13 任务 T13：前端测试、构建和视口验证
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T7、T8、T9、T10。
 - 涉及文件/模块：
   - `frontend/src/views/system/__tests__/AuditLogView.spec.ts`
@@ -999,7 +999,18 @@ Slot 与组件设计：
   - `cd frontend && npm run build`
   - 浏览器截图/交互验证三档视口。
 - 完成标准：测试和 build 通过，页面无重叠、无视口高度硬编码、无布局契约失败。
-- 实际落地情况：待实施。
+- 实际落地情况：前端专项测试已在前序页面任务中补齐并完成本任务集中验证：
+  `AuditLogView.spec.ts` 覆盖审计页加载、筛选透传、空态、错误重试、详情抽屉、权限态、租户管理员范围提示和自动刷新清理；
+  `DataDictionaryView.spec.ts` 覆盖字典页类型/明细加载、类型切换、筛选透传、新建/编辑 code 不可变、错误重试和 system-only 权限态；
+  `ConfigView.system.spec.ts` 覆盖系统设置动态配置组、差量保存、失败保留、范围钳定、空态和权限态；
+  pageRegistry/router/layout-contract 测试覆盖阶段五页面登记、静态路由和 DESIGN 布局红线。已运行
+  `cd frontend && npm run test -- --run`，结果 `21 passed` 测试文件、`212 passed` 用例；输出中仅有既有
+  Element Plus `ElOption value=null` 测试警告。已运行 `cd frontend && npm run build` 通过，输出仅有第三方
+  Rollup 注释警告和既有大 chunk 提示。浏览器验证使用专用端口 `5181`，登录 `admin` 后检查
+  `/system/audit`、`/system/dicts`、`/system/config/system` 在 `1100x620`、`1366x768`、`1440x900`
+  三档视口均无整页横向溢出、无可见运行错误、页面高度由应用容器承接；并在 `1366x768` 验证三页页面设置抽屉
+  均可打开。截图保存在被 Git 忽略的
+  `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t13/*.png`；验证后已停止 `5181` 预览服务。
 
 ### 6.14 任务 T14：开发留痕、业务核查和计划状态回写
 
