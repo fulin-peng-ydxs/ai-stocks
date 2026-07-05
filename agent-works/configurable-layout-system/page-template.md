@@ -5,7 +5,7 @@
 
 ## 0. 开工前必读
 
-1. 读 [DESIGN.md](../../DESIGN.md) §1~§8（三层模型、7 步、原型清单、组件目录、主区策略、预设、组件特性缺口、落地坑）。
+1. 读 [DESIGN.md](../../DESIGN.md) §1~§8（三层模型、7 步、原型清单、真实复用组件清单、组件目录、主区策略、预设、组件特性缺口、落地坑）。
 2. 读 `frontend/src/layout/archetypes.ts`（原型预设）和 `frontend/src/layout/components.ts`（组件能力目录）。
 3. 涉及新增可导航页面、系统页、API 动作或按钮权限时，读 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 的“新页面接入菜单和权限”。
 4. 守 [AGENTS.md](../../AGENTS.md) 的协作约束：原型与组件清单选定后，先给用户推荐 + 理由再开发。
@@ -14,12 +14,14 @@
 
 1. 判断业务页面类型 → 按 §2 决策选一个**原型**。
 2. 把推荐原型 + 理由告诉用户，确认后开发。
-3. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
-4. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。
-5. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
-6. `npm run build`（含 vue-tsc 类型检查；改 `frontend/src` 后必构建）。
-7. 在 DESIGN.md 的 `page-registry` 区块补一行，并填写下方 §8 登记块。
-8. 新页面如需要出现在侧栏或有受控 API / 按钮动作，同步菜单 seed、功能点 seed、后端守卫、`v-permission`、默认角色授权决策，并按 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 验收。
+3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；确需新增时先判断是“普通真实组件”还是“需要进入布局配置的系统组件种类”。
+4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
+5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。
+6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；若新增系统组件种类或配置字段，同步 `COMPONENT_CATALOG`、schema、后端规则、pageRegistry 消费和配置中心验证。
+7. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
+8. `npm run build`（含 vue-tsc 类型检查；改 `frontend/src` 后必构建）。
+9. 在 DESIGN.md 的 `page-registry` 区块补一行，并填写下方 §8 登记块。
+10. 新页面如需要出现在侧栏或有受控 API / 按钮动作，同步菜单 seed、功能点 seed、后端守卫、`v-permission`、默认角色授权决策，并按 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 验收。
 
 ## 2. 开发计划页面设计块（复制到计划里）
 
@@ -61,6 +63,9 @@
 ### 复用与新增判断
 - 复用已有布局：
 - 复用已有组件：
+- 复用/新增真实组件：
+- 真实组件是否进入 DESIGN.md 清单：
+- 是否关联系统组件种类：
 - 是否新增组件种类：
 - 是否新增组件配置字段：
 - 是否新增页面专属业务态：
@@ -72,6 +77,7 @@
 - componentSchemas：
 - 后端 layout_config 字段规则：
 - componentPreview：
+- DESIGN.md 真实复用组件清单：
 - DESIGN.md `page-registry` 区块：
 - RBAC 菜单/功能点：路由、`_SEED_MENU_TREE`、`_SEED_RESOURCES`、接口守卫、`v-permission`、默认授权决策：
 - 测试：
@@ -94,9 +100,11 @@
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段表 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
 | 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑 | `pageRegistry.spec.ts`、页面交互验证 |
+| 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 
 新增可配置能力必须同时具备三个事实源：组件能力事实源（`COMPONENT_CATALOG`）、字段配置事实源（`COMPONENT_FIELD_DEFS`）、页面消费事实源（`pageRegistry.consumedComponentFields` / `componentMeta`）。禁止新增页面不读取的“假配置”；禁止绕过 `LayoutHost`、绕过 `pageRegistry` 或另建并行配置体系。
+新增真实复用组件不等于必须新增系统组件种类；只有当该组件需要被布局配置、系统组件页、页面设置抽屉或页面布局编辑器识别和调参时，才进入系统组件种类和组件配置字段闭环。
 
 ## 4. 原型决策
 
@@ -163,6 +171,7 @@ const { effective, knobs: layoutKnobs, valueOf, sourceOf, setKnob } = useLayoutC
 - 不得使用未登记组件种类——`validateLayout` 拦截。
 - 不得把页面业务结构放进用户级配置；不得把不可重排的大表放进多列重排——`validateLayout` 拦截。
 - 列表交互：分页/排序走服务端、筛选变更自动触发、多选跨页累积（见 [DESIGN.md](../../DESIGN.md) 交互规则）。
+- 真实组件：已有真实复用组件能覆盖的控件行为，不得继续在页面内复制手写；新增真实复用组件必须补 DESIGN 清单和消费测试。
 - 空状态：表格走全局空态；非表格使用 `app-empty*` 统一类名，不新增页面私有空态样式。
 
 ## 8. 页面登记块（填好贴进 DESIGN.md `page-registry` 表格）

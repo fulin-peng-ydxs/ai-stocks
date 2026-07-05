@@ -165,6 +165,34 @@ Key Characteristics：
 
 组件样式基于 Element Plus 和项目 token，不另建并行组件库。新增组件先判断能否复用 Element Plus、项目已有基础组件和 `frontend/src/layout/components.ts` 中的组件能力目录。
 
+### 组件资产分层
+
+项目内“组件”分两层治理，不能混用：
+
+- **真实复用组件**：位于 `frontend/src/components/**` 或 `frontend/src/layout/components/**` 的 Vue 运行时组件，负责真实渲染和交互，例如 `PageSettingsDrawer.vue`、`ComponentAutoSettings.vue`、`AppPagination.vue`、`AppFilterSelect.vue`。
+- **系统组件种类**：位于 `frontend/src/layout/components.ts`、`componentConfig.ts`、`componentSchemas.ts` 的布局/配置元数据，例如 `data-table`、`wide-table`、`tabs`、`settings-drawer`；它让页面布局、系统组件页、页面设置抽屉和配置中心识别组件能力，但不必然对应一个同名 Vue 组件。
+
+关系规则：
+
+- 页面外壳、slot、滚动归属、可配置字段必须走系统组件种类和 `pageRegistry`。
+- 真实 UI 行为优先复用真实复用组件；当同类控件在两个及以上页面出现，或承载全局交互规则时，必须登记到下方“真实复用组件清单”。
+- 真实组件只有需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器时，才新增或关联系统组件种类。
+- 禁止只在 `COMPONENT_CATALOG` 登记但页面不读取的“假配置”；也禁止已有真实复用组件时继续在页面内复制同类控件行为。
+
+核心真实复用组件清单：
+
+| 真实组件 | 路径 | 用途 | 系统组件关系 | 使用规则 |
+|---|---|---|---|---|
+| `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；读取 `size`、`bodyScroll`、`collapsibleSections`、`defaultCollapsed` | registry 页面统一使用，禁止页面另写第二套设置抽屉 |
+| `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 消费 `pageRegistry.consumedComponentFields`、`componentMeta` 和 `COMPONENT_FIELD_DEFS` | 设置抽屉 user 层与页面布局编辑器 page 层共用 |
+| `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉和配置面板的分组容器 | 无直接系统组件种类 | 抽屉/设置面板分组优先复用 |
+| `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用 |
+| `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用 |
+| `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚优先复用 |
+| `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；筛选下拉优先复用 |
+| `ConfigGroupForm` | `frontend/src/components/config/ConfigGroupForm.vue` | 系统设置配置组表单 | 无直接系统组件种类 | 动态配置组字段渲染优先复用 |
+| `HelpTip` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpHint.vue` | 页面说明和短提示 | 无直接系统组件种类 | 说明性长文收进提示组件，不在页面堆长文 |
+
 ### 应用外壳
 
 - 侧栏宽度固定为 `208px`，顶栏高度 `67px`，主工作区 padding 为 `20px 24px`。
@@ -361,6 +389,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
 | 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑 | `pageRegistry.spec.ts`、页面交互验证 |
+| 新真实复用组件 | 本文件“真实复用组件清单”、组件文件、至少一个消费页面；如进入布局配置再同步系统组件种类和字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 
 ## 8. Responsive Behavior
