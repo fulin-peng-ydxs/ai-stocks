@@ -7,8 +7,11 @@ from typing import Any
 
 from backend.auth.context import AuthContext
 from backend.common.exceptions import AuthError, NotFoundError, ValidationError
+from backend.common.logging import get_logger
 from backend.config import get_effective_settings
 from backend.storage.audit_repository import AuditRepository
+
+log = get_logger("services.audit")
 
 _CONTEXT_ALLOW_KEYS = {
     "request_id",
@@ -56,6 +59,117 @@ class AuditService:
         if row is None:
             raise NotFoundError("审计日志不存在")
         return self._sanitize_row(row)
+
+    def record_api_event(
+        self,
+        *,
+        tenant_id: str | None,
+        actor_user_id: str | None,
+        resource_code: str | None,
+        method: str,
+        path: str,
+        status_code: int,
+        duration_ms: int | None = None,
+        ip: str | None = None,
+    ) -> None:
+        try:
+            self.repo.record(
+                event_category="api",
+                event_type="api",
+                action="request",
+                result="success" if status_code < 400 else "failed",
+                status="completed" if status_code < 400 else "failed",
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                resource_code=resource_code,
+                target_type="api",
+                target_id=f"{method} {path}",
+                target_label=path,
+                ip=ip,
+                method=method,
+                path=path,
+                duration_ms=duration_ms,
+                error_summary=None if status_code < 400 else f"HTTP {status_code}",
+                context={"route": path, "permission_code": resource_code}
+                if resource_code else {"route": path},
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("API 审计写入失败，已降级忽略: %s", e)
+
+    def record_security_event(
+        self,
+        *,
+        event_type: str,
+        action: str,
+        result: str,
+        status: str,
+        tenant_id: str | None = None,
+        actor_user_id: str | None = None,
+        actor_account: str | None = None,
+        resource_code: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        target_label: str | None = None,
+        ip: str | None = None,
+        method: str | None = None,
+        path: str | None = None,
+        error_summary: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        try:
+            self.repo.record(
+                event_category="security",
+                event_type=event_type,
+                action=action,
+                result=result,
+                status=status,
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                actor_account=actor_account,
+                resource_code=resource_code,
+                target_type=target_type,
+                target_id=target_id,
+                target_label=target_label,
+                ip=ip,
+                method=method,
+                path=path,
+                error_summary=error_summary,
+                context=context or {},
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("安全审计写入失败，已降级忽略: %s", e)
+
+    def record_task_event(
+        self,
+        *,
+        action: str,
+        result: str,
+        status: str,
+        task_id: str,
+        task_type: str | None = None,
+        job_id: str | None = None,
+        job_name: str | None = None,
+        error_summary: str | None = None,
+    ) -> None:
+        try:
+            self.repo.record(
+                event_category="task",
+                event_type="task",
+                action=action,
+                result=result,
+                status=status,
+                target_type="async_task",
+                target_id=task_id,
+                target_label=job_name or task_type or task_id,
+                error_summary=error_summary,
+                context={
+                    "task_id": task_id,
+                    "job_id": job_id,
+                    "action": action,
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("任务审计写入失败，已降级忽略: %s", e)
 
     def _scoped_filters(self, ctx: AuthContext | None, filters: dict[str, Any]) -> dict[str, Any]:
         if ctx is None:

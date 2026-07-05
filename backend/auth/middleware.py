@@ -13,20 +13,25 @@
 
 from __future__ import annotations
 
+import time
+
 import redis
 from starlette.responses import JSONResponse
 
 from backend.auth import session_store as ss
 from backend.auth.context import (
     AuthContext,
+    clear_current_resource_code,
     enter_request,
     exit_request,
+    get_current_resource_code,
     reset_context,
     set_context,
 )
 from backend.common.exceptions import AuthError, ServiceUnavailableError, StorageError
 from backend.common.logging import get_logger
 from backend.config import get_settings
+from backend.services.audit_service import AuditService
 from backend.services.auth_service import AuthService
 
 log = get_logger("auth.middleware")
@@ -77,6 +82,17 @@ class SecurityMiddleware:
         if path.startswith("/api/") and scope.get("method") != "OPTIONS":
             limit = get_settings().auth.api_rate_per_min
             if not ss.rate_limit_ok("api", _scope_ip(scope), limit, 60):
+                AuditService().record_security_event(
+                    event_type="rate_limit",
+                    action="api_rate_limit",
+                    result="failed",
+                    status="blocked",
+                    ip=_scope_ip(scope),
+                    method=scope.get("method"),
+                    path=path,
+                    error_summary="请求过于频繁",
+                    context={"route": path, "rate_limit_rule": f"{limit}/min"},
+                )
                 resp = JSONResponse(
                     {"code": 4290, "msg": "请求过于频繁，请稍后再试", "data": None},
                     status_code=429, headers={k.decode(): v.decode() for k, v in _SECURITY_HEADERS})
@@ -100,10 +116,12 @@ class AuthMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
+        path = scope.get("path", "")
+        method = scope.get("method", "")
         # 标记"在请求链内"：使受控端点若因 bug/白名单误配缺上下文取归属时报错而非静默回落 admin（评审 P0）
         req_token = enter_request()
         try:
-            if scope.get("method") == "OPTIONS" or is_public(scope.get("path", "")):
+            if method == "OPTIONS" or is_public(path):
                 return await self.app(scope, receive, send)
 
             authorization = None
@@ -120,10 +138,12 @@ class AuthMiddleware:
                 # 防陈旧 perms 内容被采信（Codex 四轮 P1）。
                 perms = svc.load_perms(claims["sub"], perm_ver=int(claims["perm_ver"]))
             except AuthError as e:
+                self._record_auth_reject(scope, e.http_status, e.msg)
                 return await self._deny(scope, receive, send, e.http_status, e.code, e.msg)
             except (ServiceUnavailableError, StorageError, redis.RedisError):
                 # 鉴权关键依赖（Redis 黑名单/perm_ver/perms 缓存、PG）不可用 → fail-closed 503
                 log.warning("鉴权链存储不可用，fail-closed 拒绝 path=%s", scope.get("path"))
+                self._record_auth_reject(scope, 503, "鉴权依赖不可用")
                 return await self._deny(
                     scope, receive, send, 503, 5003, "服务暂时不可用（鉴权依赖），请稍后重试")
 
@@ -131,9 +151,26 @@ class AuthMiddleware:
                 user_id=claims["sub"], tenant_id=claims["tenant_id"],
                 roles=tuple(perms["roles"]), is_system=bool(perms["is_system"]),
                 menus=frozenset(perms["menus"]), resources=frozenset(perms["resources"])))
+            started = time.monotonic()
+            status_code: int | None = None
+
+            async def send_wrapper(message):
+                nonlocal status_code
+                if message["type"] == "http.response.start":
+                    status_code = int(message.get("status", 200))
+                await send(message)
+
             try:
-                await self.app(scope, receive, send)
+                await self.app(scope, receive, send_wrapper)
             finally:
+                self._record_request_end(
+                    scope,
+                    tenant_id=claims.get("tenant_id"),
+                    actor_user_id=claims.get("sub"),
+                    status_code=status_code or 500,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
+                clear_current_resource_code()
                 reset_context(token)
         finally:
             exit_request(req_token)
@@ -142,3 +179,72 @@ class AuthMiddleware:
     async def _deny(scope, receive, send, status: int, code: int, msg: str):
         resp = JSONResponse({"code": code, "msg": msg, "data": None}, status_code=status)
         await resp(scope, receive, send)
+
+    @staticmethod
+    def _record_request_end(
+        scope,
+        *,
+        tenant_id: str | None,
+        actor_user_id: str | None,
+        status_code: int,
+        duration_ms: int,
+    ) -> None:
+        path = scope.get("path", "")
+        if path.startswith("/api/audit"):
+            return
+        method = scope.get("method", "")
+        state = scope.get("state") or {}
+        resource_code = getattr(state, "resource_code", None)
+        if resource_code is None and isinstance(state, dict):
+            resource_code = state.get("resource_code")
+        resource_code = resource_code or get_current_resource_code()
+        audit = AuditService()
+        audit.record_api_event(
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            resource_code=resource_code,
+            method=method,
+            path=path,
+            status_code=status_code,
+            duration_ms=duration_ms,
+            ip=_scope_ip(scope),
+        )
+        if status_code == 403:
+            audit.record_security_event(
+                event_type="forbidden",
+                action="permission_denied",
+                result="failed",
+                status="blocked",
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                resource_code=resource_code,
+                target_type="api",
+                target_id=f"{method} {path}",
+                target_label=path,
+                ip=_scope_ip(scope),
+                method=method,
+                path=path,
+                error_summary="无权访问该功能",
+                context={
+                    "route": path,
+                    "permission_code": resource_code,
+                } if resource_code else {"route": path},
+            )
+
+    @staticmethod
+    def _record_auth_reject(scope, status_code: int, message: str) -> None:
+        path = scope.get("path", "")
+        if path.startswith("/api/audit"):
+            return
+        event_type = "auth_required" if status_code == 401 else "auth_dependency"
+        AuditService().record_security_event(
+            event_type=event_type,
+            action="authenticate",
+            result="failed",
+            status="blocked",
+            ip=_scope_ip(scope),
+            method=scope.get("method"),
+            path=path,
+            error_summary=message,
+            context={"route": path},
+        )

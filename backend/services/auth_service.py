@@ -26,6 +26,7 @@ from backend.auth.security import check_strength, hash_password, verify_password
 from backend.common.exceptions import AuthError, RateLimitError, ValidationError
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
+from backend.services.audit_service import AuditService
 from backend.storage.menu_repository import MenuRepository
 from backend.storage.tenant_repository import TenantRepository
 from backend.storage.user_repository import UserRepository
@@ -91,25 +92,83 @@ class AuthService:
     def login(self, account: str, password: str, *, ip: str = "unknown",
               captcha_id: str | None = None, captcha_code: str | None = None) -> dict:
         if not ss.rate_limit_ok("login", ip, self.cfg.login_rate_per_min, 60):
+            self._record_security(
+                event_type="rate_limit",
+                action="login",
+                result="failed",
+                status="blocked",
+                actor_account=account,
+                ip=ip,
+                error_summary="登录尝试过于频繁",
+                context={"rate_limit_rule": f"{self.cfg.login_rate_per_min}/min"},
+            )
             raise RateLimitError("登录尝试过于频繁，请稍后再试")
         if ss.is_locked(account):
+            self._record_security(
+                event_type="login",
+                action="login",
+                result="failed",
+                status="blocked",
+                actor_account=account,
+                ip=ip,
+                error_summary="账号已锁定",
+            )
             raise AuthError(f"账号已锁定，请 {ss.lock_remaining(account) // 60 + 1} 分钟后重试")
         # 失败达阈值后要求图形验证码（开关控制，默认关）
         if (self.cfg.login_captcha_enabled
                 and ss.login_failure_count(account) >= self.cfg.captcha_after_fails):
             if not (captcha_id and captcha_code and ss.take_captcha(captcha_id, captcha_code)):
+                self._record_security(
+                    event_type="captcha",
+                    action="login_captcha_verify",
+                    result="failed",
+                    status="blocked",
+                    actor_account=account,
+                    ip=ip,
+                    error_summary="登录图形验证码错误或缺失",
+                )
                 raise AuthError("请输入正确的图形验证码")
 
         user = self.repo.get_by_account(account)
         if user is None or not verify_password(password, user.get("password_hash")):
             self._note_failure(account)
+            self._record_security(
+                event_type="login",
+                action="login",
+                result="failed",
+                status="failed",
+                actor_account=account,
+                ip=ip,
+                error_summary="账号或密码错误",
+            )
             raise AuthError("账号或密码错误")   # 不区分账号是否存在，防枚举
         if user["status"] != "active":
+            self._record_security(
+                event_type="login",
+                action="login",
+                result="failed",
+                status="blocked",
+                tenant_id=user["tenant_id"],
+                actor_user_id=user["id"],
+                actor_account=account,
+                ip=ip,
+                error_summary="账号状态不可用",
+            )
             raise AuthError("账号已被禁用或锁定，请联系管理员")
         self._ensure_tenant_active(user["tenant_id"])   # 租户停用即拒登录（R14）
 
         ss.clear_login_failures(account)
         self.repo.update_last_login(user["id"])
+        self._record_security(
+            event_type="login",
+            action="login",
+            result="success",
+            status="completed",
+            tenant_id=user["tenant_id"],
+            actor_user_id=user["id"],
+            actor_account=account,
+            ip=ip,
+        )
         return self._tokens_and_user(user)
 
     def _note_failure(self, account: str) -> None:
@@ -120,32 +179,93 @@ class AuthService:
 
     def logout(self, access_token: str | None, refresh_token: str | None = None) -> None:
         """登出：把 access/refresh 的 jti 拉黑（剩余寿命内失效）。已过期/无效则跳过。"""
+        revoked = 0
+        tenant_id = actor_user_id = None
         for tok, typ in ((access_token, TOKEN_ACCESS), (refresh_token, TOKEN_REFRESH)):
             if not tok:
                 continue
             try:
                 c = decode(tok, expect_typ=typ)
                 ss.revoke_jti(c["jti"], self._remaining(c))
+                revoked += 1
+                tenant_id = tenant_id or c.get("tenant_id")
+                actor_user_id = actor_user_id or c.get("sub")
             except AuthError:
                 pass
+        if revoked:
+            self._record_security(
+                event_type="token",
+                action="logout_revoke",
+                result="success",
+                status="completed",
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                context={"affected_count": revoked},
+            )
 
     def refresh(self, refresh_token: str) -> dict:
         c = decode(refresh_token, expect_typ=TOKEN_REFRESH)
         if ss.is_jti_revoked(c["jti"]):
+            self._record_security(
+                event_type="token",
+                action="refresh",
+                result="failed",
+                status="blocked",
+                tenant_id=c.get("tenant_id"),
+                actor_user_id=c.get("sub"),
+                error_summary="refresh token 已吊销",
+            )
             raise AuthError("登录已失效，请重新登录")
         user = self.repo.get_by_id(c["sub"])
         if user is None or user["status"] != "active":
+            self._record_security(
+                event_type="token",
+                action="refresh",
+                result="failed",
+                status="blocked",
+                tenant_id=c.get("tenant_id"),
+                actor_user_id=c.get("sub"),
+                error_summary="账号不可用",
+            )
             raise AuthError("账号不可用，请重新登录")
         self._ensure_tenant_active(user["tenant_id"])   # 租户停用即拒刷新（R14）
         if int(user["perm_ver"]) != int(c["perm_ver"]):
+            self._record_security(
+                event_type="token",
+                action="refresh",
+                result="failed",
+                status="blocked",
+                tenant_id=user["tenant_id"],
+                actor_user_id=user["id"],
+                error_summary="权限版本已变更",
+            )
             raise AuthError("权限已变更，请重新登录")
         ss.revoke_jti(c["jti"], self._remaining(c))   # 轮换：旧 refresh 作废
+        self._record_security(
+            event_type="token",
+            action="refresh_rotate",
+            result="success",
+            status="completed",
+            tenant_id=user["tenant_id"],
+            actor_user_id=user["id"],
+            context={"affected_count": 1},
+        )
         return self._tokens_and_user(user)
 
     # ── 注册 ──
     def register(self, account: str, password: str, *, email: str | None = None,
                  email_code: str | None = None, ip: str = "unknown") -> dict:
         if not ss.rate_limit_ok("register", ip, self.cfg.register_rate_per_hour, 3600):
+            self._record_security(
+                event_type="rate_limit",
+                action="register",
+                result="failed",
+                status="blocked",
+                actor_account=account,
+                ip=ip,
+                error_summary="注册过于频繁",
+                context={"rate_limit_rule": f"{self.cfg.register_rate_per_hour}/hour"},
+            )
             raise RateLimitError("注册过于频繁，请稍后再试")
         if not account or not account.strip():
             raise ValidationError("请填写账号")
@@ -154,12 +274,31 @@ class AuthService:
             if not email:
                 raise ValidationError("请填写邮箱")
             if not (email_code and ss.verify_email_code(email, email_code)):
+                self._record_security(
+                    event_type="email_code",
+                    action="register_email_code_verify",
+                    result="failed",
+                    status="blocked",
+                    actor_account=account,
+                    ip=ip,
+                    error_summary="邮箱验证码错误或已过期",
+                )
                 raise ValidationError("邮箱验证码错误或已过期")
         if self.repo.get_by_account(account):
             raise ValidationError("账号已存在")
         if email and self.repo.get_by_email(email):
             raise ValidationError("邮箱已被注册")
         user = self.repo.register_tenant_and_admin(account, email, hash_password(password))
+        self._record_security(
+            event_type="register",
+            action="register",
+            result="success",
+            status="completed",
+            tenant_id=user["tenant_id"],
+            actor_user_id=user["id"],
+            actor_account=account,
+            ip=ip,
+        )
         return self._tokens_and_user(user)   # 自动登录
 
     # ── 当前身份 ──
@@ -252,15 +391,39 @@ class AuthService:
         code = "".join(secrets.choice(_CAPTCHA_ALPHABET) for _ in range(4))
         cid = uuid.uuid4().hex
         ss.save_captcha(cid, code, self.cfg.captcha_ttl_min * 60)
+        self._record_security(
+            event_type="captcha",
+            action="issue_captcha",
+            result="success",
+            status="completed",
+            target_type="captcha",
+        )
         return {"captcha_id": cid, "svg": _render_captcha_svg(code)}
 
     def send_email_code(self, email: str, *, ip: str = "unknown") -> None:
         if not email:
             raise ValidationError("请填写邮箱")
         if not ss.rate_limit_ok("emailcode", email, self.cfg.email_code_rate_per_hour, 3600):
+            self._record_security(
+                event_type="rate_limit",
+                action="send_email_code",
+                result="failed",
+                status="blocked",
+                ip=ip,
+                error_summary="验证码发送过于频繁",
+                context={"rate_limit_rule": f"{self.cfg.email_code_rate_per_hour}/hour"},
+            )
             raise RateLimitError("验证码发送过于频繁，请稍后再试")
         code = f"{secrets.randbelow(1_000_000):06d}"
         ss.save_email_code(email, code, self.cfg.email_code_ttl_min * 60)
+        self._record_security(
+            event_type="email_code",
+            action="send_email_code",
+            result="success",
+            status="completed",
+            ip=ip,
+            target_type="email_code",
+        )
         # dev 投递：生产须接真实 SMTP（plan §9）；此处仅日志，不回传前端
         log.warning("【开发态·邮箱验证码】%s -> %s（生产须接 SMTP 投递，勿公网放量）", email, code)
 
@@ -275,6 +438,39 @@ class AuthService:
             "login_captcha_enabled": self.cfg.login_captcha_enabled,
             "captcha_after_fails": self.cfg.captcha_after_fails,
         }
+
+    @staticmethod
+    def _record_security(
+        *,
+        event_type: str,
+        action: str,
+        result: str,
+        status: str,
+        tenant_id: str | None = None,
+        actor_user_id: str | None = None,
+        actor_account: str | None = None,
+        target_type: str | None = None,
+        target_id: str | None = None,
+        target_label: str | None = None,
+        ip: str | None = None,
+        error_summary: str | None = None,
+        context: dict | None = None,
+    ) -> None:
+        AuditService().record_security_event(
+            event_type=event_type,
+            action=action,
+            result=result,
+            status=status,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            actor_account=actor_account,
+            target_type=target_type,
+            target_id=target_id,
+            target_label=target_label,
+            ip=ip,
+            error_summary=error_summary,
+            context=context,
+        )
 
 
 def _render_captcha_svg(code: str) -> str:

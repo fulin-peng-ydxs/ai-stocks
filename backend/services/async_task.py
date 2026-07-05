@@ -235,6 +235,15 @@ class AsyncTaskService:
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             [tid, task_type, json.dumps(params, ensure_ascii=False, default=str),
              "pending", 0.0, "已排队", None, trigger_source, job_id, job_name, now, now])
+        self._audit_task(
+            action="create",
+            result="success",
+            status="pending",
+            task_id=tid,
+            task_type=task_type,
+            job_id=job_id,
+            job_name=job_name,
+        )
         threading.Thread(target=self._run, args=(tid, task_type, params, None), daemon=True).start()
         return tid
 
@@ -256,6 +265,15 @@ class AsyncTaskService:
         params = t.get("params") or {}
         checkpoint = (t.get("result") or {}).get("checkpoint") if isinstance(t.get("result"), dict) else None
         self._set(tid, status="pending", progress=0.0, message="续跑排队…")
+        self._audit_task(
+            action="resume",
+            result="success",
+            status="pending",
+            task_id=tid,
+            task_type=task_type,
+            job_id=t.get("job_id"),
+            job_name=t.get("job_name"),
+        )
         threading.Thread(target=self._run, args=(tid, task_type, params, checkpoint), daemon=True).start()
         return tid
 
@@ -264,6 +282,13 @@ class AsyncTaskService:
             _CANCELLED.discard(tid)
         ctx = TaskContext(self, tid, checkpoint)
         self._set(tid, status="running", progress=0.05, message="开始…")
+        self._audit_task(
+            action="start",
+            result="success",
+            status="running",
+            task_id=tid,
+            task_type=task_type,
+        )
         ctx.log(f"▶ 任务启动：{task_type}，参数 {json.dumps(params, ensure_ascii=False, default=str)}")
         if checkpoint:
             done = checkpoint.get("done")
@@ -279,17 +304,40 @@ class AsyncTaskService:
             self._set(tid, status="done", progress=1.0,
                       message=result.get("message", "完成"),
                       result=json.dumps(result, ensure_ascii=False, default=str))
+            self._audit_task(
+                action="finish",
+                result="success",
+                status="done",
+                task_id=tid,
+                task_type=task_type,
+            )
         except TaskCancelled:
             ctx.log("⏹ 任务已被用户终止（已完成的部分已入库，可续跑）", "warn")
             self._release_fixing(tid)
             ctx.flush()
             self._set(tid, status="interrupted", message="已终止（可续跑）")
+            self._audit_task(
+                action="interrupt",
+                result="failed",
+                status="interrupted",
+                task_id=tid,
+                task_type=task_type,
+                error_summary="任务被用户终止",
+            )
         except Exception as e:  # noqa: BLE001
             log.exception("异步任务失败 %s", tid)
             ctx.log(f"任务失败: {e}", "error")
             self._release_fixing(tid)
             ctx.flush()
             self._set(tid, status="failed", progress=1.0, message=str(e))
+            self._audit_task(
+                action="finish",
+                result="failed",
+                status="failed",
+                task_id=tid,
+                task_type=task_type,
+                error_summary=str(e),
+            )
         finally:
             with _CANCEL_LOCK:
                 _CANCELLED.discard(tid)
@@ -347,8 +395,43 @@ class AsyncTaskService:
             return False
         with _CANCEL_LOCK:
             _CANCELLED.add(tid)
+        self._audit_task(
+            action="cancel",
+            result="success",
+            status="pending",
+            task_id=tid,
+            task_type=t["task_type"],
+        )
         self._set(tid, message=f"终止中…（{cap.get('cancel_message') or '到下一个检查点停下'}）")
         return True
+
+    @staticmethod
+    def _audit_task(
+        *,
+        action: str,
+        result: str,
+        status: str,
+        task_id: str,
+        task_type: str | None = None,
+        job_id: str | None = None,
+        job_name: str | None = None,
+        error_summary: str | None = None,
+    ) -> None:
+        try:
+            from backend.services.audit_service import AuditService
+
+            AuditService().record_task_event(
+                action=action,
+                result=result,
+                status=status,
+                task_id=task_id,
+                task_type=task_type,
+                job_id=job_id,
+                job_name=job_name,
+                error_summary=error_summary,
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("任务审计写入失败，已降级忽略: %s", e)
 
     _SORT_COLS = {"time": "created_at", "type": "task_type", "status": "status"}
 

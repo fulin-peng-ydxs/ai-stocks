@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from backend.auth.context import get_current_context
+from fastapi import Request
+
+from backend.auth.context import get_current_context, set_current_resource_code
 from backend.common.exceptions import AuthError, ForbiddenError
 
 
@@ -37,7 +39,10 @@ def require_perm(code: str) -> Callable[[], None]:
     system 恒过；否则 code 必须在上下文解析出的 resources 集合内（精确匹配），不在 → 403。
     未认证 → 401。同一 code 复用同一依赖对象（FastAPI 按 code 缓存）。
     """
-    def _dep() -> None:
+    def _dep(request: Request = None) -> None:
+        set_current_resource_code(code)
+        if request is not None:
+            request.state.resource_code = code
         ctx = get_current_context()
         if ctx is None:
             raise AuthError("未登录")
@@ -58,7 +63,10 @@ def require_system_perm(code: str) -> Callable[[], None]:
     `require_perm`）。system-only 资源码经其归属菜单 `visible='system'` 由 `system_only_resource_ids()` 拦截，
     不会被误授予非 system 角色。
     """
-    def _dep() -> None:
+    def _dep(request: Request = None) -> None:
+        set_current_resource_code(code)
+        if request is not None:
+            request.state.resource_code = code
         require_system()
 
     _dep.resource_code = code               # type: ignore[attr-defined]

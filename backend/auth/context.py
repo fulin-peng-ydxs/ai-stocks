@@ -39,6 +39,8 @@ _ctx: contextvars.ContextVar[AuthContext | None] = contextvars.ContextVar(
 # 由鉴权中间件对每个 HTTP 请求置 True：标记"当前在请求链内"，用于区分请求路径与 CLI/后台/测试。
 _in_request: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "auth_in_request", default=False)
+_resource_code: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "auth_resource_code", default=None)
 
 
 def set_context(ctx: AuthContext) -> contextvars.Token:
@@ -59,6 +61,18 @@ def exit_request(token: contextvars.Token) -> None:
 
 def get_current_context() -> AuthContext | None:
     return _ctx.get()
+
+
+def set_current_resource_code(code: str | None) -> None:
+    _resource_code.set(code)
+
+
+def get_current_resource_code() -> str | None:
+    return _resource_code.get()
+
+
+def clear_current_resource_code() -> None:
+    _resource_code.set(None)
 
 
 def get_current_owner() -> tuple[str, str]:
