@@ -30,7 +30,12 @@ def test_limit_prices_rounding():
     up, down = limit_prices(10.0, 0.10)
     assert up == 11.0 and down == 9.0
     up2, _ = limit_prices(9.99, 0.20)  # 科创/创业
-    assert up2 == round(9.99 * 1.2, 2) == 11.99
+    assert up2 == 11.99
+
+
+def test_limit_prices_rounding_half_up_boundary():
+    up, down = limit_prices(1.005, 0.0)
+    assert up == 1.01 and down == 1.01
 
 
 def test_can_buy_blocked_when_open_at_limit_up():
@@ -43,6 +48,21 @@ def test_can_buy_blocked_when_open_at_limit_up():
 def test_can_sell_blocked_when_open_at_limit_down():
     assert can_sell_at_open(9.0, 10.0, 0.10) is False   # 开盘即跌停 → 不可卖
     assert can_sell_at_open(9.5, 10.0, 0.10) is True
+
+
+def test_engine_load_prices_switches_main_board_st_limit_on_20260706():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        days = [date(2026, 7, 3), date(2026, 7, 6)]
+        _seed_one_stock(
+            c,
+            "STX.SH",
+            [(days[0], 10, 10, 10, 10, 10), (days[1], 10, 10, 10, 10, 10)],
+            name="*ST测试",
+        )
+        rows = BacktestEngine(c)._load_prices(days[0], days[1], ma_period=1)
+        assert rows[("STX.SH", pd.Timestamp(days[0]))].pct == 0.05
+        assert rows[("STX.SH", pd.Timestamp(days[1]))].pct == 0.10
 
 
 # ── Broker 记账（整手 + 成本，方向性）──────────────────────────

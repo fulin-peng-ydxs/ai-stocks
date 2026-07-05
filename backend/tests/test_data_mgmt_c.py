@@ -126,7 +126,12 @@ def test_catalog_freshness(client):
 def test_scan_quality_idempotent(client):
     client.execute("INSERT INTO stock_basic (code, name, price_limit_pct) VALUES ('C.SH','丙', 0.10)")
     client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) "
-                   "VALUES ('C.SH', DATE '2024-01-03', 20.0, 10.0)")   # +100% → 异常涨跌
+                   "VALUES ('C.SH', DATE '2024-01-02', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-03', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-04', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-05', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-08', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-09', 20.0, 10.0)")   # 第 6 个交易日 +100% → 异常涨跌
     rep = DataIntegrityReport(client)
     rep.scan_quality_issues()
     n1 = int(client.query_df("SELECT count(*) AS n FROM data_quality_issue "
@@ -144,6 +149,40 @@ def test_scan_quality_keeps_resolved(client):
     DataIntegrityReport(client).scan_quality_issues()
     kept = client.query_df("SELECT status FROM data_quality_issue WHERE id=99")
     assert len(kept) == 1 and kept.iloc[0]["status"] == "resolved"
+
+
+def test_scan_quality_skips_listing_but_keeps_delisted_history(client):
+    """只豁免真实上市初期；退市股退市前的正常交易阶段仍要扫描。"""
+    client.execute(
+        "INSERT INTO stock_basic (code, name, price_limit_pct, list_date, delist_date) VALUES "
+        "('NEW.SH','新股',0.10,DATE '2024-01-02',NULL), "
+        "('OLD.SH','退市样本',0.10,DATE '2020-01-02',DATE '2024-02-01')"
+    )
+    client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) VALUES "
+                   "('NEW.SH', DATE '2024-01-02', 20.0, 10.0),"   # 首 5 个交易日内，跳过
+                   "('OLD.SH', DATE '2024-01-02', 20.0, 10.0)")   # 退市前历史异常，保留
+    rep = DataIntegrityReport(client)
+    rep.scan_quality_issues()
+    issues = client.query_df(
+        "SELECT code FROM data_quality_issue WHERE issue_type='abnormal_change'"
+    )
+    assert issues["code"].tolist() == ["OLD.SH"]
+
+
+def test_scan_quality_old_stock_window_start_not_listing(client):
+    """近 5 年窗口开头不能误当成老股票上市初期。"""
+    client.execute(
+        "INSERT INTO stock_basic (code, name, price_limit_pct, list_date) VALUES "
+        "('OLDWIN.SH','老股',0.10,DATE '2010-01-02')"
+    )
+    client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) VALUES "
+                   "('OLDWIN.SH', DATE '2024-01-02', 20.0, 10.0)")
+    rep = DataIntegrityReport(client)
+    rep.scan_quality_issues()
+    n = int(client.query_df(
+        "SELECT count(*) AS n FROM data_quality_issue WHERE issue_type='abnormal_change'"
+    ).iloc[0]["n"])
+    assert n == 1
 
 
 # ── 系统设置去调度开关，但 scheduler.* 仍可写（DM-D14）──
@@ -328,7 +367,12 @@ def test_recheck_keeps_open_if_unfixed(client, monkeypatch):
     rep = DataIntegrityReport(client)
     client.execute("INSERT INTO stock_basic (code, name, price_limit_pct) VALUES ('C.SH','丙', 0.10)")
     client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) "
-                   "VALUES ('C.SH', DATE '2024-01-03', 20.0, 10.0)")   # +100% 异常
+                   "VALUES ('C.SH', DATE '2024-01-02', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-03', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-04', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-05', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-08', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-09', 20.0, 10.0)")   # 第 6 个交易日 +100% 异常
     rep.scan_quality_issues()
     iid = int(client.query_df(
         "SELECT id FROM data_quality_issue WHERE issue_type='abnormal_change'").iloc[0]["id"])
@@ -349,7 +393,12 @@ def test_fix_failure_resets_fixing_and_reports_not_ok(client, monkeypatch):
     rep = DataIntegrityReport(client)
     client.execute("INSERT INTO stock_basic (code, name, price_limit_pct) VALUES ('C.SH','丙', 0.10)")
     client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) "
-                   "VALUES ('C.SH', DATE '2024-01-03', 20.0, 10.0)")   # +100% 异常
+                   "VALUES ('C.SH', DATE '2024-01-02', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-03', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-04', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-05', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-08', 10.0, 10.0),"
+                   "('C.SH', DATE '2024-01-09', 20.0, 10.0)")   # 第 6 个交易日 +100% 异常
     rep.scan_quality_issues()
     iid = int(client.query_df(
         "SELECT id FROM data_quality_issue WHERE issue_type='abnormal_change'").iloc[0]["id"])

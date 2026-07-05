@@ -181,6 +181,13 @@ function rowClass({ row }: { row: QualityIssue }): string {
   return row.status === 'resolved' || row.status === 'ignored' ? 'row-done' : ''
 }
 
+function toggleIssueType(issueType: string) {
+  const selected = filters.value.issue_type
+  filters.value.issue_type = selected.includes(issueType)
+    ? selected.filter((t) => t !== issueType)
+    : [...selected, issueType]
+}
+
 async function runVerify() {
   try {
     const { task_id } = await createTask('verify')
@@ -294,7 +301,21 @@ onMounted(() => {
       <el-input v-model="filters.code" placeholder="股票代码或名称" clearable style="width: 180px"
                 @keyup.enter="() => { page = 1; load() }" @clear="() => { page = 1; load() }" />
       <div class="summary">
-        <el-tag v-for="s in data?.summary ?? []" :key="s.issue_type" size="small" type="warning" effect="plain" class="sm-tag">
+        <el-tag
+          v-for="s in data?.summary ?? []"
+          :key="s.issue_type"
+          size="small"
+          type="warning"
+          :effect="filters.issue_type.includes(s.issue_type) ? 'dark' : 'plain'"
+          class="sm-tag"
+          :class="{ active: filters.issue_type.includes(s.issue_type) }"
+          tabindex="0"
+          role="checkbox"
+          :aria-checked="filters.issue_type.includes(s.issue_type)"
+          @click="toggleIssueType(s.issue_type)"
+          @keydown.enter.prevent="toggleIssueType(s.issue_type)"
+          @keydown.space.prevent="toggleIssueType(s.issue_type)"
+        >
           {{ ISSUE_TYPE_LABEL[s.issue_type] ?? s.issue_type }}: {{ s.n }}
         </el-tag>
       </div>
@@ -452,7 +473,14 @@ onMounted(() => {
 .layer-tag { font-family: var(--el-font-family-mono, monospace); font-size: 12px; color: var(--el-text-color-secondary); }
 .filter-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
 .summary { margin-left: auto; }
-.sm-tag { margin-left: 6px; }
+.sm-tag { margin-left: 6px; cursor: pointer; user-select: none; }
+.sm-tag:focus-visible {
+  outline: 2px solid var(--el-color-warning-light-3);
+  outline-offset: 2px;
+}
+.sm-tag.active {
+  box-shadow: 0 0 0 1px var(--el-color-warning-light-3);
+}
 .muted { color: var(--el-text-color-secondary); }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 :deep(.row-done) { opacity: 0.55; }

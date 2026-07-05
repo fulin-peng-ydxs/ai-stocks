@@ -5,7 +5,7 @@
 - 回合内独立资金账户（初始资金相同），按手分批买卖。
 - 买入 T+0：用户在 cursor 日（看到的最后一根 K，含当日收盘）尾盘决策买入，按当日收盘价即时成交。
 - 卖出 T+1：当日登记 pending → 揭示下一日时按次日开盘价成交（当日买入的仓位最早次日才能卖，天然满足 T+1）。
-- 真实约束：收盘封涨停买不到 / 次日开盘涨跌停买不到卖不出（按原始价四舍五入到分判定，复用 broker）。
+- 真实约束：收盘封涨停买不到 / 次日开盘涨跌停买不到卖不出（按原始价 half-up 到分判定，复用 broker）。
 - 价格口径：回合内统一以 start_date 的 adj_factor_clean 为基准做前复权（base_factor 固定），
   显示与记账价位一致，且只用 <= start_date 的因子（点时安全、不引未来）。
 - 防作弊：running 态接口绝不返回未揭示的未来 K 线，也不返回真实 code/name/真实日期。
@@ -22,6 +22,7 @@ import pandas as pd
 from backend.backtest.broker import can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
 from backend.config import get_settings
+from backend.market_rules import price_limit_pct_for
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
 from backend.auth.context import get_current_owner
@@ -281,6 +282,11 @@ class TrainingService:
             return 0.10
         return float(df.iloc[0]["price_limit_pct"])
 
+    def _effective_price_limit_pct(self, code: str, trade_date: date, board_pct: float) -> float:
+        df = self.c.query_df("SELECT name FROM stock_basic WHERE code = ?", [code])
+        name = "" if df.empty or pd.isna(df.iloc[0]["name"]) else str(df.iloc[0]["name"])
+        return price_limit_pct_for(board_pct, "ST" in name.upper(), trade_date)
+
     # ════════════════════════════════════════════════════════════
     # 读取与视图
     # ════════════════════════════════════════════════════════════
@@ -412,9 +418,11 @@ class TrainingService:
         srow = self._raw_bar(rnd["code"], rnd["cursor_date"])
         if not srow or srow["close"] is None:
             return "当日停牌，买入未成交"
-        pct = rnd["price_limit_pct"]
+        pct = self._effective_price_limit_pct(
+            rnd["code"], rnd["cursor_date"], rnd["price_limit_pct"]
+        )
         raw_close, raw_pre = srow["close"], srow["pre_close"]
-        # 收盘封涨停则买不到（按原始价四舍五入到分判定，复用 broker 涨停口径）
+        # 收盘封涨停则买不到（按原始价 half-up 到分判定，复用 broker 涨停口径）
         if raw_pre and not can_buy_at_open(raw_close, raw_pre, pct):
             return "收盘封涨停，买入未成交"
         price = self._disp_price(raw_close, srow["f"], rnd["base_factor"]) * (1 + self._slip(fee_on))
@@ -490,7 +498,9 @@ class TrainingService:
         frow = self._raw_bar(rnd["code"], fill_date)
         if not frow:
             return "次日停牌，订单未成交"
-        pct = rnd["price_limit_pct"]
+        pct = self._effective_price_limit_pct(
+            rnd["code"], fill_date, rnd["price_limit_pct"]
+        )
         raw_open, raw_pre = frow["open"], frow["pre_close"]
         side, hands = pending["side"], int(pending["hands"])
         reason = pending.get("reason", "")

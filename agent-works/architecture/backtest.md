@@ -9,7 +9,7 @@
 **事件驱动引擎（逐日先卖后买）**。`backend/backtest/engine.py:223` `BacktestEngine.run` 按交易日逐日循环：执行日 `D` 成交的是信号日 `D-1` 做出的决策——`engine.py:315` `sig = days[i-1]`，`T` 日选股/卖出判定、`T+1` 开盘成交。每日四步：①评估并执行卖出（`engine.py:319`）②选股+买入（`engine.py:377`）③估值（`engine.py:428`）④记账资金曲线。卖出在买入之前，先释放仓位再填新仓。
 
 **撮合 Broker 与成本模型**。`backend/backtest/broker.py` 是防撮合失真的核心：
-- 可成交性按板块/ST 涨跌停判定。`limit_prices`（`broker.py:20`）按 `round(pre_close×(1±pct), 2)` 算涨跌停价；`can_buy_at_open`（`broker.py:27`）要求开盘价严格低于涨停价（开盘即封涨停买不到），`can_sell_at_open`（`broker.py:33`）要求开盘价严格高于跌停价（封死跌停卖不出）。`pct` 取板块值（主板 0.10 / 科创创业 0.20），ST 强制 0.05（`engine.py:64-66`）。
+- 可成交性按传入的 `pct` 判定。`limit_prices`（`broker.py:20`）用 `Decimal(..., ROUND_HALF_UP)` 按 `pre_close×(1±pct)` 取到分算涨跌停价；`can_buy_at_open`（`broker.py:27`）要求开盘价严格低于涨停价（开盘即封涨停买不到），`can_sell_at_open`（`broker.py:33`）要求开盘价严格高于跌停价（封死跌停卖不出）。`pct` 在 `engine._load_prices` 中按交易日生成：普通票取 `stock_basic.price_limit_pct`（主板 0.10 / 科创创业 0.20）；当前名称含 `ST` 的主板票在 2026-07-06 前取 0.05、2026-07-06 起取 0.10，创业板/科创板 ST 仍取 0.20。注意这是“当前名称 ST”近似，不是历史点时 ST；且策略候选池/评分截面默认已排除 ST，只有持仓顺延、显式包含或历史数据遗留时才会实际用到 ST 撮合。
 - 停牌（执行日无 bar）不可成交，触发卖出但封死/停牌 → 加入 `pending_sells` 顺延到下一可交易日（`engine.py:354-356`）。
 - 整手取整：买入按 100 股整手 floor，现金不足时逐步缩减 `lot_size`（`broker.py:99-109`）。
 - 方向性滑点：买入价上浮 `×(1+slippage)`、卖出价下浮 `×(1-slippage)`（`broker.py:95`/`broker.py:134`）。
@@ -146,6 +146,7 @@ flowchart LR
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
 | <span style="color:#dc2626">●</span> 高 | 回测 API 仍为同步执行（`backend/api/backtest.py:7`） | 长区间/大 universe 下 HTTP 可能超时，并发回测会受 DuckDB 单写锁影响 | 长区间先缩小样本验证；后续应改异步任务 + 进度轮询 |
+| <span style="color:#dc2626">●</span> 高 | ST 点时状态缺失 | 回测按当前名称含 ST 近似套用交易日规则（主板 ST 2026-07-06 前 5%、之后 10%），但候选池/评分默认排除当前 ST；无法还原“历史当日是否 ST”，历史 ST/摘帽阶段可能偏差 | 后续建设 `stock_st_status(code, trade_date, is_st)` 并统一候选池、涨跌停、回测撮合读取点时状态 |
 | <span style="color:#f59e0b">●</span> 中 | 同一指标 key 在评分项+买卖树中只取首次参数（`engine.py:100`） | 多参数同 key 方案可能静默取错参数 | 同一方案内避免同 key 多参数混用，必要时拆自定义指标 |
 | <span style="color:#f59e0b">●</span> 中 | `HitPrecomputer` 不适合绝对价比较 expr（`precompute.py:10`） | 如 `C>50` 这类条件可能得到错误命中 | 表达式预计算前增加运行期校验；当前用约定规避 |
 | <span style="color:#f59e0b">●</span> 中 | 开盘可成交性只近似涨跌停，不建模盘中流动性 | 大额或冷门股可能高估可成交规模 | 对冷门股策略降低仓位假设，后续加入成交量约束 |

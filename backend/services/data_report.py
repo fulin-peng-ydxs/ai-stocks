@@ -369,6 +369,19 @@ class DataIntegrityReport:
                 f"FROM {v}")
         return len(df)
 
+    @staticmethod
+    def _active_l3_mask(df: pd.DataFrame) -> pd.Series:
+        """Rows that should be actionable for L3 quality checks."""
+        trade_date = pd.to_datetime(df["trade_date"])
+        listed_seq = df.get("listing_trade_seq")
+        if listed_seq is None:
+            after_listing_window = pd.Series(True, index=df.index)
+        else:
+            after_listing_window = listed_seq.isna() | (listed_seq.astype("float64") > 5)
+        delist_date = pd.to_datetime(df.get("delist_date"), errors="coerce")
+        before_delist = delist_date.isna() | (trade_date < delist_date)
+        return after_listing_window & before_delist
+
     # ── 市场级四层质检（写 data_quality_issue，DM-D20 统一口径）──
     def scan_quality_issues(self, gap_window_days: int = GAP_WINDOW_DAYS) -> dict:
         """四层统一质检：L2 字段契约 / L3 正确性 / L4 覆盖鲜活，写 data_quality_issue。
@@ -394,12 +407,25 @@ class DataIntegrityReport:
         # L3：异常涨跌幅（向量化，关联板块上限）
         df = self.c.query_df(
             """
-            SELECT b.code, b.trade_date, abs(b.close / b.pre_close - 1) AS chg,
-                   COALESCE(sb.price_limit_pct, 0.10) AS lim
-            FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
-            WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
+            SELECT *
+            FROM (
+                SELECT b.code, b.trade_date, b.pre_close,
+                       abs(b.close / b.pre_close - 1) AS chg,
+                       COALESCE(sb.price_limit_pct, 0.10) AS lim,
+                       sb.delist_date,
+                       CASE
+                           WHEN sb.list_date IS NOT NULL
+                                AND min(b.trade_date) OVER (PARTITION BY b.code)
+                                    <= sb.list_date + INTERVAL 30 DAY
+                           THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                           ELSE NULL
+                       END AS listing_trade_seq
+                FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
+                WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
+            ) t
             """)
-        bad = df[df["chg"] > df["lim"] + 0.005]
+        df = df[self._active_l3_mask(df)]
+        bad = df[df["chg"] > df["lim"] + (0.011 / df["pre_close"]).clip(lower=0.005)]
         ab_rows = [
             {"code": r["code"], "trade_date": r["trade_date"], "issue_type": "abnormal_change",
              "detail": f"涨跌幅 {r['chg']*100:.1f}% 超上限 {r['lim']*100:.0f}%"}
@@ -477,22 +503,54 @@ class DataIntegrityReport:
             if trade_date is None:
                 return False
             df = self.c.query_df(
-                "SELECT b.close, b.pre_close, COALESCE(sb.price_limit_pct,0.10) lim "
-                "FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code "
-                "WHERE b.code=? AND b.trade_date=? AND b.pre_close>0", [code, trade_date])
+                """
+                SELECT *
+                FROM (
+                    SELECT b.trade_date, b.close, b.pre_close, COALESCE(sb.price_limit_pct,0.10) lim,
+                           sb.delist_date,
+                           CASE
+                               WHEN sb.list_date IS NOT NULL
+                                    AND min(b.trade_date) OVER (PARTITION BY b.code)
+                                        <= sb.list_date + INTERVAL 30 DAY
+                               THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                               ELSE NULL
+                           END AS listing_trade_seq
+                    FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code
+                    WHERE b.code=? AND b.pre_close>0
+                ) t
+                WHERE trade_date=?
+                """, [code, trade_date])
             if df.empty:
                 return True  # 行已不在（被清洗）→ 不再是异常
             r = df.iloc[0]
-            return abs(r["close"] / r["pre_close"] - 1) <= r["lim"] + 0.005
+            if not bool(self._active_l3_mask(df).iloc[0]):
+                return True
+            tolerance = max(0.005, 0.011 / float(r["pre_close"]))
+            return abs(r["close"] / r["pre_close"] - 1) <= r["lim"] + tolerance
         if issue_type == "adj_jump":
             df = self.c.query_df(
-                "SELECT close, COALESCE(adj_factor_clean, adj_factor) AS adj_factor "
-                "FROM daily_bar WHERE code=? AND close>0 ORDER BY trade_date", [code])
+                """
+                SELECT b.trade_date, b.close, COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor,
+                       sb.delist_date,
+                       CASE
+                           WHEN sb.list_date IS NOT NULL
+                                AND min(b.trade_date) OVER (PARTITION BY b.code)
+                                    <= sb.list_date + INTERVAL 30 DAY
+                           THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                           ELSE NULL
+                       END AS listing_trade_seq
+                FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code=b.code
+                WHERE b.code=? AND b.close>0 ORDER BY b.trade_date
+                """, [code])
             if len(df) < 2:
                 return True
             af = df["adj_factor"].fillna(1.0)
             qfq = df["close"] * af / (af.iloc[-1] or 1.0)
-            return bool((qfq / qfq.shift(1) - 1).abs().max() <= 0.5)
+            ratio = (qfq / qfq.shift(1) - 1).abs()
+            prev_date = pd.to_datetime(df["trade_date"]).shift(1)
+            gap_days = (pd.to_datetime(df["trade_date"]) - prev_date).dt.days
+            actionable = (ratio > 0.5) & self._active_l3_mask(df) & (gap_days.fillna(0) <= 30)
+            return not bool(actionable.any())
         return True
 
     def _scan_adj_jump(self, threshold: float = 0.5, ignored_exact: set | None = None) -> int:
@@ -503,9 +561,21 @@ class DataIntegrityReport:
         缺失/停牌缺口属正常现象，由 coverage() 汇总，不在此逐条记 issue（避免淹没真异常）。
         """
         df = self.c.query_df(
-            "SELECT code, trade_date, close, "
-            "       COALESCE(adj_factor_clean, adj_factor) AS adj_factor FROM daily_bar "
-            "WHERE close > 0 ORDER BY code, trade_date"
+            """
+            SELECT b.code, b.trade_date, b.close,
+                   COALESCE(b.adj_factor_clean, b.adj_factor) AS adj_factor,
+                   sb.delist_date,
+                   CASE
+                       WHEN sb.list_date IS NOT NULL
+                            AND min(b.trade_date) OVER (PARTITION BY b.code)
+                                <= sb.list_date + INTERVAL 30 DAY
+                       THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                       ELSE NULL
+                   END AS listing_trade_seq
+            FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
+            WHERE b.close > 0
+            ORDER BY b.code, b.trade_date
+            """
         )
         if df.empty:
             return 0
@@ -515,10 +585,13 @@ class DataIntegrityReport:
             base = af.iloc[-1] if len(af) else 1.0
             qfq = g["close"] * af / base
             ratio = (qfq / qfq.shift(1) - 1).abs()
-            bad = g[ratio > threshold]
+            prev_date = pd.to_datetime(g["trade_date"]).shift(1)
+            gap_days = (pd.to_datetime(g["trade_date"]) - prev_date).dt.days
+            actionable = (ratio > threshold) & self._active_l3_mask(g) & (gap_days.fillna(0) <= 30)
+            bad = g[actionable]
             if not bad.empty:
                 parts.append(pd.DataFrame({"code": bad["code"], "trade_date": bad["trade_date"],
-                                           "ratio": ratio[ratio > threshold]}))
+                                           "ratio": ratio[actionable]}))
         if not parts:
             return 0
         allbad = pd.concat(parts, ignore_index=True)

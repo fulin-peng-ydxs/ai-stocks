@@ -24,6 +24,7 @@ import pandas as pd
 from backend.backtest.broker import Broker, can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
 from backend.config import get_settings
+from backend.market_rules import price_limit_pct_for
 from backend.scoring.model import ScoreModel
 from backend.storage.duckdb_client import get_client
 
@@ -60,10 +61,16 @@ class BacktestEngine:
         af = bars["adj_factor"].fillna(1.0)
         bars["open_hfq"] = bars["open"] * af
         bars["close_hfq"] = bars["close"] * af
-        # ST → 0.05；否则板块 price_limit_pct（缺省 0.10）
+        # ST 涨跌幅按交易日规则切换：主板 ST 2026-07-06 起 5%→10%，创业/科创 ST 仍为 20%。
         is_st = bars["name"].fillna("").str.contains("ST")
-        bars["pct"] = bars["price_limit_pct"].fillna(0.10)
-        bars.loc[is_st, "pct"] = self.s.price_limit.st
+        bars["pct"] = [
+            price_limit_pct_for(
+                None if pd.isna(t.price_limit_pct) else float(t.price_limit_pct),
+                bool(st),
+                t.trade_date,
+            )
+            for t, st in zip(bars.itertuples(index=False), is_st, strict=True)
+        ]
         # below_ma：close_hfq < MA(close_hfq, ma_period)（后向、点时安全、基准一致）
         bars["ma"] = bars.groupby("code")["close_hfq"].transform(
             lambda x: x.rolling(ma_period, min_periods=ma_period).mean()

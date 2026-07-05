@@ -620,7 +620,7 @@ M28_TABLES: dict[str, str] = {
 # + 区间内随机起点 + 连续 window_days 个交易日窗口。回合内独立资金账户。
 # 价格口径（防失真）：回合内统一以 start_date 的 adj_factor_clean 为基准（base_factor）做前复权，
 # 整段窗口固定基准 → 显示与记账价位一致、且只用 <= start_date 的因子（不引未来）。
-# 涨跌停判定用**原始价**（pre_close/open 四舍五入到分），与 broker.can_buy/sell_at_open 口径一致。
+# 涨跌停判定用**原始价**（pre_close/open 按 half-up 到分），与 broker.can_buy/sell_at_open 口径一致。
 DDL_TRAINING_SESSION = """
 CREATE TABLE IF NOT EXISTS training_session (
     id              VARCHAR PRIMARY KEY,   -- train_YYYYMMDDHHMMSSffffff
@@ -657,7 +657,7 @@ CREATE TABLE IF NOT EXISTS training_round (
     end_date        DATE,                  -- 窗口末交易日（预计算）
     window_days     INTEGER,
     base_factor     DOUBLE,                -- start_date 的 adj_factor_clean（回合内固定复权基准）
-    price_limit_pct DOUBLE,                -- 板块涨跌幅限制（0.10/0.20/0.05）
+    price_limit_pct DOUBLE,                -- 板块涨跌幅限制（0.10/0.20；ST 按交易日规则另算）
     cursor_date     DATE,                  -- 当前已揭示到的真实交易日
     cursor_idx      INTEGER,               -- 当前相对第几天（0-based）
     status          VARCHAR,               -- pending | running | done

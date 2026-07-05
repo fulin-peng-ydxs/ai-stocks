@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 
 from backend.dataquality.checker import QualityChecker, add_markers, limit_pct_for
+from backend.market_rules import price_limit_pct_for, round_price_to_cent
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
@@ -18,7 +19,13 @@ def _bar(open_, high, low, close, pre_close):
 def test_limit_pct_st_override():
     assert limit_pct_for(0.10, is_st=False) == 0.10
     assert limit_pct_for(0.20, is_st=False) == 0.20
-    assert limit_pct_for(0.10, is_st=True) == 0.05  # ST 一律 5%
+    assert price_limit_pct_for(0.10, is_st=True, trade_date="2026-07-03") == 0.05
+    assert price_limit_pct_for(0.10, is_st=True, trade_date="2026-07-06") == 0.10
+    assert price_limit_pct_for(0.20, is_st=True, trade_date="2026-07-06") == 0.20
+
+
+def test_round_price_to_cent_uses_half_up():
+    assert round_price_to_cent(1.005) == 1.01
 
 
 def test_limit_up_main_board():
@@ -149,6 +156,40 @@ def test_dejitter_keeps_debang_exright_reference_price():
 
     assert abs(pc.iloc[2] - 32.00) < 1e-9
     assert round(float(pct.iloc[2]), 2) == 2.19
+
+
+def test_dejitter_fills_missing_factor_and_keeps_real_reference_change():
+    """源端单日因子缺失时沿用上一段；下一日真实参考价变化仍可识别。"""
+    import pandas as pd
+
+    from backend.datasource.akshare_source import compute_pre_close, dejitter_adj_factor
+
+    close = pd.Series([69.78, 69.78, 51.25, 56.38])
+    raw_factor = pd.Series([2.399828, float("nan"), 3.482732, 3.482618])
+    clean = dejitter_adj_factor(raw_factor, close)
+    pc = compute_pre_close(close, clean)
+
+    assert abs(clean.iloc[1] - clean.iloc[0]) < 1e-9
+    assert clean.iloc[2] != clean.iloc[1]
+    assert abs(pc.iloc[1] - 69.78) < 1e-9
+    assert abs(pc.iloc[2] - 48.08) < 0.01
+
+
+def test_dejitter_ignores_source_factor_reset_when_raw_price_continuous():
+    """源端后复权因子突然重置为 1，但原始价连续时，不应误判为除权。"""
+    import pandas as pd
+
+    from backend.datasource.akshare_source import compute_pre_close, dejitter_adj_factor
+
+    close = pd.Series([7.59, 7.44, 7.67])
+    raw_factor = pd.Series([2.578393, 1.0, 1.0])
+    clean = dejitter_adj_factor(raw_factor, close)
+    pc = compute_pre_close(close, clean)
+
+    assert abs(clean.iloc[1] - clean.iloc[0]) < 1e-9
+    assert abs(clean.iloc[2] - clean.iloc[0]) < 1e-9
+    assert abs(pc.iloc[1] - 7.59) < 1e-9
+    assert abs(pc.iloc[2] - 7.44) < 1e-9
 
 
 def test_get_daily_bar_anchors_window_first_day():

@@ -2,7 +2,7 @@
 
 两类能力：
 1. 标记计算 add_markers()：给日线补 limit_status/is_one_word/is_st —— 回测可否成交的前提。
-   涨跌停价按板块/ST 计算（主板±10%、科创创业±20%、ST±5%），A股按 2 位小数取整。
+   涨跌停价按板块计算（主板±10%、科创创业±20%），A股按 half-up 到分取整。
 2. 质检规则：缺失检测、异常涨跌幅、复权跳变 → 写 data_quality_issue（人工复核）。
 
 注意：停牌在本数据口径下表现为"日历有该交易日但该股无行情行"，
@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.market_rules import price_limit_pct_for, round_price_to_cent
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("dataquality.checker")
@@ -25,8 +26,8 @@ _EPS = 1e-4  # 涨跌停价比较容差（已 2 位小数取整）
 
 
 def limit_pct_for(board_limit_pct: float, is_st: bool) -> float:
-    """有效涨跌幅限制：ST 一律 ±5%，否则按板块。"""
-    return 0.05 if is_st else board_limit_pct
+    """有效涨跌幅限制（未知日期按 2026-07-06 前历史 ST 口径）。"""
+    return price_limit_pct_for(board_limit_pct, is_st)
 
 
 def add_markers(
@@ -35,8 +36,8 @@ def add_markers(
     """为日线 df 计算 limit_status / is_one_word / is_st 列（不改原 df）。
 
     df 需含 close、open、high、low、pre_close。
-    - limit_up_price = round(pre_close*(1+pct), 2)；close>=该价 → 涨停(1)。
-    - limit_down_price = round(pre_close*(1-pct), 2)；close<=该价 → 跌停(-1)。
+    - limit_up_price = half_up(pre_close*(1+pct), 2)；close>=该价 → 涨停(1)。
+    - limit_down_price = half_up(pre_close*(1-pct), 2)；close<=该价 → 跌停(-1)。
     - is_one_word：开=高=低=收 且 触及涨/跌停（一字板）。
 
     ⚠️ ST 时变局限（需求 §14.1 / SDD §6.2）：免费源只给"当前"ST 状态，
@@ -48,8 +49,8 @@ def add_markers(
     out = df.copy()
     pct = board_limit_pct  # 仅按板块；不倒灌当前 ST 状态（见上）
     pre = out["pre_close"]
-    limit_up = (pre * (1 + pct)).round(2)
-    limit_down = (pre * (1 - pct)).round(2)
+    limit_up = (pre * (1 + pct)).map(round_price_to_cent)
+    limit_down = (pre * (1 - pct)).map(round_price_to_cent)
 
     is_up = out["close"] >= (limit_up - _EPS)
     is_down = out["close"] <= (limit_down + _EPS)

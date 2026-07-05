@@ -162,7 +162,10 @@ def dejitter_adj_factor(adj_factor: pd.Series, close: pd.Series | None = None) -
     for i in range(1, len(f)):
         prev = out[i - 1]
         cur = f[i]
-        if not (prev > 0) or cur != cur:
+        if not (prev > 0):
+            continue
+        if cur != cur:
+            out[i] = prev
             continue
         if c is None:
             if abs(cur / prev - 1.0) <= 1e-8:
@@ -174,12 +177,20 @@ def dejitter_adj_factor(adj_factor: pd.Series, close: pd.Series | None = None) -
             continue
         raw_prev = f[i - 1]
         if not (raw_prev > 0):
+            raw_prev = prev
+        if not (raw_prev > 0):
             out[i] = prev
             continue
         implied_ref = prev_close * raw_prev / cur
         if implied_ref == implied_ref and abs(implied_ref - prev_close) < _MIN_REF_PRICE_DIFF:
             out[i] = prev  # 非除权日：沿用前值，消除四舍五入噪声
         else:
+            cur_close = c[i]
+            if (cur_close == cur_close and cur_close > 0
+                    and abs(implied_ref / prev_close - 1.0) > 0.5
+                    and abs(cur_close / prev_close - 1.0) <= 0.3):
+                out[i] = prev  # 源端因子断层/重置：原始价未随参考价跳变，不当作除权。
+                continue
             ref_price = round(float(implied_ref), 2)
             out[i] = prev_close * prev / ref_price if ref_price > 0 else cur
     return pd.Series(out, index=adj_factor.index)

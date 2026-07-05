@@ -204,7 +204,7 @@ class ScreenScoreService:
         if snap.empty:
             log.warning("%s 无截面数据", run_date)
             return pd.DataFrame()
-        # ST 不参与趋势龙头榜单（5% 涨跌停、退市风险，与"龙头"语义冲突）。
+        # ST 不参与趋势龙头榜单（风险警示/退市风险，与"龙头"语义冲突）。
         # 注：daily_bar.is_st 历史标记不可靠（入库未按名称推导），故以 stock_basic
         # 当前名称含 "ST" 为准（点时 ST 时间线免费源缺，T-M3-11 另案处理）。
         st_codes = set(

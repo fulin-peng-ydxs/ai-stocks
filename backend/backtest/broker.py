@@ -3,7 +3,7 @@
 成交约束（比"一字板"更精确）：
   - 买入：仅当 T+1 **开盘价 < 当日涨停价** 才可成交（开盘即封涨停就买不到）。
   - 卖出：仅当 T+1 **开盘价 > 当日跌停价** 才可成交，否则顺延。
-  - 涨跌停价按板块/ST：limit = round(pre_close × (1 ± pct), 2)，pct=主板0.10/科创创业0.20/ST0.05。
+  - 涨跌停价按板块/ST：limit = Decimal half-up(pre_close × (1 ± pct), 2)。
   - 停牌（当日无 bar）→ 不可交易。
 交易规则：买入按 **100 股整手**取整（floor），余资金留存；方向性滑点（买入价上浮、卖出价下浮）；
   成本=佣金双边(率/最低)+印花税(仅卖)+过户费。
@@ -15,13 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from backend.config import CostConfig, get_settings
-
-
-def limit_prices(pre_close: float, pct: float) -> tuple[float, float]:
-    """涨停价、跌停价（按 A 股规则四舍五入到分）。"""
-    up = round(pre_close * (1 + pct), 2)
-    down = round(pre_close * (1 - pct), 2)
-    return up, down
+from backend.market_rules import limit_prices
 
 
 def can_buy_at_open(open_px: float, pre_close: float, pct: float) -> bool:

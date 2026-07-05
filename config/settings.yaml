@@ -34,11 +34,11 @@ universe:
   float_mv_min: 5.0e9                      # 流通市值下限 50 亿
   float_mv_max: 4.0e10                     # 流通市值上限 400 亿
 
-# ── 涨跌停限制（按板块/ST，回测撮合用）──
+# ── 涨跌停限制（按板块；ST 历史切换规则在 backend.market_rules）──
 price_limit:
   main_board: 0.10        # 主板 ±10%
   star_gem: 0.20          # 科创/创业 ±20%
-  st: 0.05                # ST ±5%
+  st: 0.05                # 历史主板 ST 旧口径：2026-07-06 前 ±5%；之后按市场规则切到主板 ±10%
 
 # ── 指标参数（默认且可配，需求第 6 章）──
 indicators:

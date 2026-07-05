@@ -13,6 +13,7 @@
 ### 入库清洗与复权口径（`backend/dataquality/checker.py`、`storage/repository.py`）
 - **L1 入库闸门** `sanitize_bars`：收盘价空/≤0 的行直接丢弃（记 `null_close`）；开高低缺失/≤0 用收盘价回填（记 `ohl_repaired`）；零成交量补 0。坏行入库即拦截/标记，不进下游。
 - **复权口径分离**（关键正确性约定）：源因子 `adj_factor` 仅用于 K 线前复权；`pre_close`（涨跌停判定基准）走**独立清洗因子**；去抖列 `adj_factor_clean` 是复权查询的统一口径（`COALESCE(adj_factor_clean, adj_factor)`）。`rebuild-price-factors` 全序列重算这三者，不联网、不改源 `adj_factor`。
+- **涨跌停与 ST 标记口径**：`daily_bar.limit_status` / `is_one_word` 由 `add_markers` 用原始 `pre_close` 按 A 股分位价格计算，涨停价 = `Decimal(pre_close × (1 + pct), ROUND_HALF_UP)` 到分，跌停价同理；当前入库标记的 `pct` 只用板块限制（主板 10%、创业板/科创板 20%），不把“当前名称含 ST”倒灌为历史 5%，避免把股票非 ST 历史阶段的 5%~10% 正常涨跌误标为涨跌停。`daily_bar.is_st` 仍按当前名称含 `ST` 写入，供默认股票池过滤；它不是点时 ST 时间线。回测撮合另按交易日规则处理 ST 比例：主板 ST 2026-07-06 前 5%、之后 10%，创业板/科创板 ST 20%。
 
 ### 市值口径（`daily_metrics` 表，仅 `code, trade_date, float_mv, total_mv` 四列）
 - **流通市值 `float_mv`**：新浪日线自带时变流通股本 `outstanding_share`→`float_share`，日线入库时同步算 `float_mv = close × float_share`（[ingest.py:228](../../backend/services/ingest.py)）。随行情天然齐全、永远当前。

@@ -29,6 +29,16 @@ def test_session_owner_gate(market, pg):
     assert other._session_row("ts1") is None
 
 
+def test_training_effective_price_limit_switches_main_board_st(market, pg):
+    market.execute(
+        "INSERT INTO stock_basic (code, name, price_limit_pct) VALUES "
+        "('STX.SH','*ST测试',0.10)"
+    )
+    svc = TrainingService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    assert svc._effective_price_limit_pct("STX.SH", date(2026, 7, 3), 0.10) == 0.05
+    assert svc._effective_price_limit_pct("STX.SH", date(2026, 7, 6), 0.10) == 0.10
+
+
 def test_list_and_growth_owner_filter(market, pg):
     _mk_session(pg, "ts_done", status="completed")
     _mk_session(pg, "ts_run", status="running")

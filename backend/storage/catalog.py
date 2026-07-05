@@ -37,7 +37,7 @@ TABLE_CATALOG: dict[str, dict] = {
             {"name": "float_share", "type": "BIGINT", "name_cn": "流通股本", "desc": "最新值"},
             {"name": "industry", "type": "VARCHAR", "name_cn": "行业", "desc": "所属行业（行业集中度约束用）"},
             {"name": "concept", "type": "VARCHAR", "name_cn": "概念", "desc": "概念标签（JSON）"},
-            {"name": "price_limit_pct", "type": "DOUBLE", "name_cn": "涨跌幅限制", "desc": "0.10 / 0.20 / 0.05(ST)"},
+            {"name": "price_limit_pct", "type": "DOUBLE", "name_cn": "涨跌幅限制", "desc": "板块涨跌幅限制：主板 0.10 / 创业板与科创板 0.20；ST 按交易日规则另算"},
         ],
     },
     "daily_bar": {

@@ -147,6 +147,7 @@ flowchart LR
 
 - **跑一次筛选**：前端用条件行拼 AST → `POST /screen/run`（profile_id 或临时 expression）→ `validate_ast` → `ScreenEngine.run_ast` 出命中 → `screen_scored` 对命中票 `ScoreModel` 打分、排/标 ST、按综合分降序返回。`run_profile` 路径会把命中落 `screen_result`（支持任意历史交易日点时回溯）。
 - **出每日榜单**：前端选方案/日期/TopN → `POST /score-profiles/run`（或 `/board/compute?score_profile_id`）→ 已保存方案走 `get_board`（命中即用缓存，未命中/失效惰性物化）；未保存的 inline items 无版本键，`score_day` 实时算不入库。
+- **ST 排除口径**：每日榜单强制排除当前名称含 `ST` 的股票；筛选页默认 `exclude_st=true`（前端默认值与后端默认值一致），可关闭后结果只标记 `is_st`。该口径不是点时 ST，历史回溯存在当前名称偏差，风险见下表。
 - **评分快照生成与失效**：
   - 生成：首次请求某 `(日期,方案,版本)` 触发 `_materialize` → 落 `score_snapshot` 明细 + meta(stale=false)。
   - 失效：数据任务（`async_task.py`）变更行情后只标 stale——`_h_update`/`_h_backfill` 调 `mark_stale_all`，`_h_ingest_date` 按受影响日期调 `mark_stale_dates`；不立即重算。
