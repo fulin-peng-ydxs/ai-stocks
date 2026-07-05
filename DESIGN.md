@@ -446,6 +446,8 @@ npm run build
 | `LayoutPresetsView`（预设管理） | `list` | 暂无 | action:`toolbar` / main:`section` |
 | `LayoutPagesView`（页面布局） | `list` | 暂无 | action:`toolbar` / main:`section` |
 | `LayoutComponentsView`（系统组件） | `list` | 暂无 | action:`toolbar` / main:`section` |
+| `AuditLogView`（审计日志） | `list` | `density` | action:`toolbar` / main:`kpi-grid` / main:`filter-bar` / main:`wide-table` / overlay:`detail` |
+| `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / overlay:`form` / overlay:`dialog` |
 <!-- page-registry:end -->
 
 全部 registry 页面必须有 `settings-drawer` overlay slot。组件字段事实源在 `COMPONENT_FIELD_DEFS`、`pageRegistry.consumedComponentFields` 和 `componentMeta`，不要在本表重复维护字段细节。

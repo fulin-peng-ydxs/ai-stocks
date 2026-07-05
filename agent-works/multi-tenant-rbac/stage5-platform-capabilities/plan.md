@@ -787,13 +787,16 @@ Slot 与组件设计：
 
 ### 6.7 任务 T7：前端基础接入、路由、布局登记和 API 封装
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1、T4、T6。
 - 涉及文件/模块：
   - `frontend/src/router/index.ts`
   - `frontend/src/layout/pageRegistry.ts`
   - `frontend/src/api/audit.ts`
   - `frontend/src/api/dict.ts`
+  - `frontend/src/views/system/AuditLogView.vue`
+  - `frontend/src/views/system/DataDictionaryView.vue`
+  - `frontend/src/router/__tests__/stage5-routes.spec.ts`
   - `DESIGN.md`
 - 目标：为两张新页面建立前端可导航、可配置、可测试的基础。
 - 操作：
@@ -812,7 +815,7 @@ Slot 与组件设计：
   - router 解析测试。
   - layout-contract 测试。
 - 完成标准：两张页面能被路由和布局系统识别。
-- 实际落地情况：待实施。
+- 实际落地情况：已新增 `/system/audit`、`/system/dicts` 静态路由，路由名分别为 `audit-log`、`data-dictionary`，与 T1 菜单 seed 路径保持一致；已在 `pageRegistry` 登记审计日志 `list` 页和数据字典 `master-detail` 页，并同步 `DESIGN.md` page-registry 区块。已新增 `frontend/src/api/audit.ts`、`frontend/src/api/dict.ts`，按后端 `/api/audit`、`/api/dict` 实际字段封装类型和调用函数。为保证路由构建可用，已新增两张最小 LayoutHost 壳页面，仅承接页面标题、设置抽屉和基础 slot 区域；审计表格、筛选、详情抽屉、字典 CRUD 等业务功能仍归 T8/T9，未在 T7 提前实现。已补 router 解析测试和 pageRegistry 专项断言，并通过 `npm run test -- --run src/layout/__tests__/pageRegistry.spec.ts src/layout/__tests__/layout-contract.spec.ts src/router/__tests__/stage5-routes.spec.ts`。
 
 ### 6.8 任务 T8：日志审计前端页面
 

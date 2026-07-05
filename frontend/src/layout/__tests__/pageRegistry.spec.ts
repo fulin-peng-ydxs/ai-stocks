@@ -73,6 +73,20 @@ describe('页面注册表完整性', () => {
       .toEqual(['config-score', 'config-system', 'config-tech', 'config-trade'])
   })
 
+  it('阶段五平台能力页已登记到布局系统', () => {
+    expect(getPageEntry('audit-log')?.path).toBe('/system/audit')
+    expect(getPageEntry('audit-log')?.archetype).toBe('list')
+    expect(getPageLayout('audit-log').slots.map((slot) => slot.id)).toEqual(
+      expect.arrayContaining(['toolbar', 'summary', 'filters', 'auditTable']),
+    )
+
+    expect(getPageEntry('data-dictionary')?.path).toBe('/system/dicts')
+    expect(getPageEntry('data-dictionary')?.archetype).toBe('master-detail')
+    expect(getPageLayout('data-dictionary').slots.map((slot) => slot.id)).toEqual(
+      expect.arrayContaining(['toolbar', 'workspace', 'typeDialog', 'itemDialog', 'deleteConfirm']),
+    )
+  })
+
   it('每个 registry 页面都已登记到 DESIGN.md 页面登记区块', () => {
     for (const entry of PAGE_REGISTRY) {
       expect(DESIGN_PAGE_SECTION, `${entry.pageKey}(${entry.label}) 未出现在 DESIGN.md 页面登记区块`).toContain(entry.label)

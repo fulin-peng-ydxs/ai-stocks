@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { createMemoryHistory, createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { h } from 'vue'
 import { getAccessToken } from '@/api/authToken'
 import { useAuthStore } from '@/stores/auth'
@@ -6,7 +6,7 @@ import { resolveMenuGuard } from '@/utils/permission'
 
 const HomeRedirect = { name: 'HomeRedirect', setup: () => () => h('div') }
 
-const routes: RouteRecordRaw[] = [
+export const routes: RouteRecordRaw[] = [
   // 登录/注册页（stage2·T7）：全屏独立壳（meta.fullscreen）+ 公开（meta.public，免登录）
   {
     path: '/login',
@@ -76,6 +76,18 @@ const routes: RouteRecordRaw[] = [
     name: 'tenant-manage',
     component: () => import('@/views/system/TenantManageView.vue'),
     meta: { title: '租户管理' },
+  },
+  {
+    path: '/system/audit',
+    name: 'audit-log',
+    component: () => import('@/views/system/AuditLogView.vue'),
+    meta: { title: '审计日志' },
+  },
+  {
+    path: '/system/dicts',
+    name: 'data-dictionary',
+    component: () => import('@/views/system/DataDictionaryView.vue'),
+    meta: { title: '数据字典' },
   },
   { path: '/system/layout', redirect: '/system/layout/presets' },
   {
@@ -157,7 +169,7 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: typeof window === 'undefined' ? createMemoryHistory() : createWebHistory(),
   routes,
 })
 
