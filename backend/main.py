@@ -36,6 +36,7 @@ from backend.api.stock_groups import router as stock_groups_router
 from backend.api.stocks import router as stocks_router
 from backend.api.data_tasks import router as data_tasks_router
 from backend.api.data_admin import router as data_admin_router
+from backend.api.dicts import router as dict_router
 from backend.api.training import router as training_router
 from backend.api.users import router as users_router
 from backend.api.roles import router as roles_router
@@ -109,6 +110,7 @@ def create_app() -> FastAPI:
     app.include_router(data_tasks_router, dependencies=[Depends(require_system)])
     app.include_router(data_admin_router, dependencies=[Depends(require_system)])
     app.include_router(audit_router)
+    app.include_router(dict_router)
     app.include_router(training_router)
     # 用户管理（stage3·R10）：逐端点已挂 require_perm 精确码，不整 router gate（tenant_admin 经授权可用）
     app.include_router(users_router)
