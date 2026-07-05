@@ -57,6 +57,7 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
 # 必须结合页面 layout 的 slot->component 映射做归属校验，才是真正的数据边界收口。
 COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
     "data-table": {"pageSize", "defaultSort", "hiddenColumns"},
+    "wide-table": {"pageSize", "hiddenColumns"},
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll", "collapsibleSections", "defaultCollapsed"},
 }

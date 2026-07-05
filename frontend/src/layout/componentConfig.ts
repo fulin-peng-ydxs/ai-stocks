@@ -63,6 +63,10 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
     { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], help: '字段:方向，如 score:desc（取值随页面而异）' },
     { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], help: '列 key 列表（随页面而异）' },
   ],
+  'wide-table': [
+    { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['preset', 'page', 'user'], min: 10, max: 500, default: 50, highFrequency: true },
+    { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], help: '列 key 列表（随页面而异）' },
+  ],
   tabs: [
     { key: 'defaultActive', label: '默认激活页', control: 'string', layers: ['page', 'user'], help: '激活的 tab name（随页面而异）' },
   ],
