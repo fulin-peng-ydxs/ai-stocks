@@ -511,7 +511,20 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/system/dicts',
     archetype: 'master-detail',
     responsiveProfile: 'mixed-panel',
-    supportsComponentConfig: false,
+    supportsComponentConfig: true,
+    consumedComponentFields: { itemTable: ['pageSize', 'hiddenColumns'] },
+    componentMeta: {
+      itemTable: {
+        columns: [
+          { key: 'code', label: 'code 列' },
+          { key: 'label', label: '名称列' },
+          { key: 'sort', label: '排序列' },
+          { key: 'enabled', label: '启用列' },
+          { key: 'remark', label: '备注列' },
+          { key: 'updated_at', label: '更新时间列' },
+        ],
+      },
+    },
     layout: {
       pageKey: 'data-dictionary',
       archetype: 'master-detail',
@@ -521,6 +534,8 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', label: '数据字典工作台', order: 1 },
+        { id: 'typeList', component: 'simple-list', region: 'main', parentId: 'workspace', label: '字典类型列表', order: 1 },
+        { id: 'itemTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '字典项表', order: 2, config: { pageSize: 50, hiddenColumns: ['remark', 'updated_at'] } },
         { id: 'typeDialog', component: 'form', region: 'overlay', label: '字典类型弹窗', order: 1 },
         { id: 'itemDialog', component: 'form', region: 'overlay', label: '字典项弹窗', order: 2 },
         { id: 'deleteConfirm', component: 'dialog', region: 'overlay', label: '删除确认', order: 3 },
