@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_system
 from backend.services.menu_admin_service import MenuAdminService
+from backend.services.rbac_audit import record_rbac_action
 
 router = APIRouter(prefix="/api", tags=["menus"], dependencies=[Depends(require_system)])
 
@@ -51,12 +52,28 @@ def create_menu(body: MenuCreate) -> ApiResponse:
     m = MenuAdminService().create_menu(
         parent_id=body.parentId, code=body.code, title=body.title, type=body.type,
         route_path=body.routePath, icon=body.icon, visible=body.visible, sort=body.sort)
+    record_rbac_action(
+        action="menu_create",
+        target_type="sys_menu",
+        target_id=m["id"],
+        target_label=m["title"],
+        resource_code="menu:create",
+    )
     return ok(m, msg="已创建")
 
 
 @router.post("/menus/reorder", response_model=ApiResponse)
 def reorder_menus(body: ReorderBody) -> ApiResponse:
-    return ok(MenuAdminService().reorder(body.items), msg="排序已保存")
+    tree = MenuAdminService().reorder(body.items)
+    record_rbac_action(
+        action="menu_reorder",
+        target_type="sys_menu",
+        target_id="reorder",
+        target_label="菜单排序",
+        resource_code="menu:reorder",
+        affected_count=len(body.items),
+    )
+    return ok(tree, msg="排序已保存")
 
 
 # menu_id 用 :path 转换器：内置菜单 seed id=code 含斜杠（如 /screen、/system/users），
@@ -67,10 +84,23 @@ def update_menu(menu_id: str, body: MenuUpdate) -> ApiResponse:
     m = MenuAdminService().update_menu(
         menu_id, title=body.title, type=body.type, route_path=body.routePath,
         icon=body.icon, visible=body.visible, parent_id=body.parentId)
+    record_rbac_action(
+        action="menu_update",
+        target_type="sys_menu",
+        target_id=menu_id,
+        target_label=m["title"],
+        resource_code="menu:update",
+    )
     return ok(m, msg="已保存")
 
 
 @router.delete("/menus/{menu_id:path}", response_model=ApiResponse)
 def delete_menu(menu_id: str) -> ApiResponse:
     MenuAdminService().delete_menu(menu_id)
+    record_rbac_action(
+        action="menu_delete",
+        target_type="sys_menu",
+        target_id=menu_id,
+        resource_code="menu:delete",
+    )
     return ok(msg="已删除")

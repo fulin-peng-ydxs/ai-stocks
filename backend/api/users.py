@@ -14,6 +14,7 @@ from backend.api.response import ApiResponse, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm
 from backend.common.exceptions import AuthError
+from backend.services.rbac_audit import record_rbac_action
 from backend.services.user_admin_service import UserAdminService
 
 router = APIRouter(prefix="/api", tags=["users"])
@@ -61,17 +62,33 @@ def list_users(tenant_id: str | None = None, role: str | None = None,
 @router.post("/users", response_model=ApiResponse,
              dependencies=[Depends(require_perm("user:create"))])
 def create_user(body: UserCreate) -> ApiResponse:
+    ctx = _ctx()
     u = UserAdminService().create_user(
-        _ctx(), account=body.account, password=body.password, email=body.email,
+        ctx, account=body.account, password=body.password, email=body.email,
         role_ids=body.roleIds, status=body.status, tenant_id=body.tenantId)
+    record_rbac_action(
+        action="user_create",
+        target_type="sys_user",
+        target_id=u["id"],
+        target_label=u["account"],
+        resource_code="user:create",
+    )
     return ok(u, msg="已创建")
 
 
 @router.put("/users/{user_id}", response_model=ApiResponse,
             dependencies=[Depends(require_perm("user:update"))])
 def update_user(user_id: str, body: UserUpdate) -> ApiResponse:
+    ctx = _ctx()
     u = UserAdminService().update_user(
-        _ctx(), user_id, email=body.email, role_ids=body.roleIds, status=body.status)
+        ctx, user_id, email=body.email, role_ids=body.roleIds, status=body.status)
+    record_rbac_action(
+        action="user_update",
+        target_type="sys_user",
+        target_id=user_id,
+        target_label=u["account"],
+        resource_code="user:update",
+    )
     return ok(u, msg="已保存")
 
 
@@ -79,6 +96,13 @@ def update_user(user_id: str, body: UserUpdate) -> ApiResponse:
              dependencies=[Depends(require_perm("user:disable"))])
 def set_status(user_id: str, body: StatusBody) -> ApiResponse:
     u = UserAdminService().set_status(_ctx(), user_id, body.status)
+    record_rbac_action(
+        action="user_status",
+        target_type="sys_user",
+        target_id=user_id,
+        target_label=u["account"],
+        resource_code="user:disable",
+    )
     return ok(u, msg="已更新")
 
 
@@ -86,6 +110,12 @@ def set_status(user_id: str, body: StatusBody) -> ApiResponse:
              dependencies=[Depends(require_perm("user:reset-password"))])
 def reset_password(user_id: str, body: ResetPwdBody) -> ApiResponse:
     UserAdminService().reset_password(_ctx(), user_id, body.password)
+    record_rbac_action(
+        action="user_reset_password",
+        target_type="sys_user",
+        target_id=user_id,
+        resource_code="user:reset-password",
+    )
     return ok(msg="密码已重置")
 
 
@@ -93,4 +123,10 @@ def reset_password(user_id: str, body: ResetPwdBody) -> ApiResponse:
                dependencies=[Depends(require_perm("user:delete"))])
 def delete_user(user_id: str) -> ApiResponse:
     UserAdminService().delete_user(_ctx(), user_id)
+    record_rbac_action(
+        action="user_delete",
+        target_type="sys_user",
+        target_id=user_id,
+        resource_code="user:delete",
+    )
     return ok(msg="已删除")

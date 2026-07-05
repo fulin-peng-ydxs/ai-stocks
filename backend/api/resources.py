@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_system
+from backend.services.rbac_audit import record_rbac_action
 from backend.services.resource_admin_service import ResourceAdminService
 
 router = APIRouter(prefix="/api", tags=["resources"], dependencies=[Depends(require_system)])
@@ -46,6 +47,13 @@ def create_resource(body: ResourceCreate) -> ApiResponse:
     r = ResourceAdminService().create_resource(
         menu_id=body.menuId, code=body.code, name=body.name, type=body.type,
         api_method=body.apiMethod, api_path=body.apiPath, sort=body.sort)
+    record_rbac_action(
+        action="resource_create",
+        target_type="sys_resource",
+        target_id=r["id"],
+        target_label=r["name"],
+        resource_code="resource:create",
+    )
     return ok(r, msg="已创建")
 
 
@@ -54,10 +62,23 @@ def update_resource(resource_id: str, body: ResourceUpdate) -> ApiResponse:
     r = ResourceAdminService().update_resource(
         resource_id, menu_id=body.menuId, code=body.code, name=body.name, type=body.type,
         api_method=body.apiMethod, api_path=body.apiPath)
+    record_rbac_action(
+        action="resource_update",
+        target_type="sys_resource",
+        target_id=resource_id,
+        target_label=r["name"],
+        resource_code="resource:update",
+    )
     return ok(r, msg="已保存")
 
 
 @router.delete("/resources/{resource_id}", response_model=ApiResponse)
 def delete_resource(resource_id: str) -> ApiResponse:
     ResourceAdminService().delete_resource(resource_id)
+    record_rbac_action(
+        action="resource_delete",
+        target_type="sys_resource",
+        target_id=resource_id,
+        resource_code="resource:delete",
+    )
     return ok(msg="已删除")

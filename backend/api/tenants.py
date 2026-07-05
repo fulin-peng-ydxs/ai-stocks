@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_system
+from backend.services.rbac_audit import record_rbac_action
 from backend.services.tenant_admin_service import TenantAdminService
 
 router = APIRouter(prefix="/api", tags=["tenants"], dependencies=[Depends(require_system)])
@@ -39,6 +40,13 @@ def list_tenants(q: str | None = None, status: str | None = None,
 @router.post("/tenants", response_model=ApiResponse)
 def create_tenant(body: TenantCreate) -> ApiResponse:
     t = TenantAdminService().create_tenant(name=body.name, status=body.status)
+    record_rbac_action(
+        action="tenant_create",
+        target_type="sys_tenant",
+        target_id=t["id"],
+        target_label=t["name"],
+        resource_code="tenant:create",
+    )
     return ok(t, msg="已创建")
 
 
@@ -46,16 +54,36 @@ def create_tenant(body: TenantCreate) -> ApiResponse:
 def update_tenant(tenant_id: str, body: TenantUpdate) -> ApiResponse:
     t = TenantAdminService().update_tenant(
         tenant_id, name=body.name, admin_user_id=body.adminUserId)
+    record_rbac_action(
+        action="tenant_update",
+        target_type="sys_tenant",
+        target_id=tenant_id,
+        target_label=t["name"],
+        resource_code="tenant:update",
+    )
     return ok(t, msg="已保存")
 
 
 @router.post("/tenants/{tenant_id}/status", response_model=ApiResponse)
 def set_status(tenant_id: str, body: StatusBody) -> ApiResponse:
     t = TenantAdminService().set_status(tenant_id, body.status)
+    record_rbac_action(
+        action="tenant_status",
+        target_type="sys_tenant",
+        target_id=tenant_id,
+        target_label=t["name"],
+        resource_code="tenant:disable",
+    )
     return ok(t, msg="已更新")
 
 
 @router.delete("/tenants/{tenant_id}", response_model=ApiResponse)
 def delete_tenant(tenant_id: str) -> ApiResponse:
     TenantAdminService().delete_tenant(tenant_id)
+    record_rbac_action(
+        action="tenant_delete",
+        target_type="sys_tenant",
+        target_id=tenant_id,
+        resource_code="tenant:delete",
+    )
     return ok(msg="已删除")

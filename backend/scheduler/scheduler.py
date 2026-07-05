@@ -140,6 +140,7 @@ def next_run_time(job_id: str) -> str | None:
 def _fire_job(job_id: str) -> None:
     """APScheduler 到点回调：读最新 job 定义 → 交易日判断 → 创建 async 任务。"""
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
+    from backend.services.audit_service import AuditService
 
     svc = ScheduledJobService()
     job = svc.get(job_id)
@@ -148,16 +149,52 @@ def _fire_job(job_id: str) -> None:
     name = job["name"]
     if job["trading_day_only"] and not _is_trading_day(date.today()):
         log.info("[scheduler] 定时任务「%s」%s 非交易日，跳过", name, date.today())
+        AuditService().record_scheduler_event(
+            action="skip",
+            result="denied",
+            status="skipped",
+            job_id=job_id,
+            job_name=name,
+            task_type=job.get("task_type"),
+            error_summary="非交易日跳过",
+        )
         return
     try:
         tid = AsyncTaskService().create(job["task_type"], job.get("params") or {},
                                         trigger_source="scheduled", job_id=job_id, job_name=name)
         svc.set_last_run(job_id, tid)
+        AuditService().record_scheduler_event(
+            action="trigger",
+            result="success",
+            status="completed",
+            job_id=job_id,
+            job_name=name,
+            task_type=job.get("task_type"),
+            task_id=tid,
+        )
         log.info("[scheduler] 定时任务「%s」已触发: %s", name, tid)
     except ConcurrentTaskError as e:
         log.warning("[scheduler] 定时任务「%s」跳过：已有写任务在运行（%s）", name, e.task_type)
+        AuditService().record_scheduler_event(
+            action="skip",
+            result="denied",
+            status="skipped",
+            job_id=job_id,
+            job_name=name,
+            task_type=job.get("task_type"),
+            error_summary=f"已有写任务在运行：{e.task_type}（{e.running_id}）",
+        )
     except Exception as e:  # noqa: BLE001
         log.error("[scheduler] 定时任务「%s」触发异常: %s", name, e)
+        AuditService().record_scheduler_event(
+            action="trigger",
+            result="failed",
+            status="failed",
+            job_id=job_id,
+            job_name=name,
+            task_type=job.get("task_type"),
+            error_summary=str(e),
+        )
 
 
 # ── 启动 / 停止 ──────────────────────────────────────────────────────────

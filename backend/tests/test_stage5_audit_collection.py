@@ -141,3 +141,86 @@ def test_stage5_task_status_change_records_task_audit(pg):
     assert row["result"] == "success"
     assert row["status"] == "done"
     assert row["target_type"] == "async_task"
+
+
+def test_stage5_scheduler_skip_and_failure_record_task_audit(pg, monkeypatch):
+    pg.execute(
+        "DELETE FROM audit_log WHERE target_id IN (%s,%s)",
+        ["stage5_job_skip", "stage5_job_fail"],
+    )
+
+    from backend.scheduler import scheduler
+
+    class FakeJobService:
+        def get(self, job_id):
+            return {
+                "id": job_id,
+                "name": "阶段五调度审计",
+                "enabled": True,
+                "trading_day_only": job_id == "stage5_job_skip",
+                "task_type": "update",
+                "params": {},
+            }
+
+        def set_last_run(self, job_id, tid):  # noqa: ARG002
+            raise AssertionError("skip/failure path should not set last run")
+
+    class FailingTaskService:
+        def create(self, *args, **kwargs):  # noqa: ARG002
+            raise RuntimeError("scheduler down")
+
+    monkeypatch.setattr(scheduler, "ScheduledJobService", FakeJobService)
+    monkeypatch.setattr(scheduler, "_is_trading_day", lambda d: False)  # noqa: ARG005
+    scheduler._fire_job("stage5_job_skip")
+
+    import backend.services.async_task as async_task_module
+
+    monkeypatch.setattr(scheduler, "_is_trading_day", lambda d: True)  # noqa: ARG005
+    monkeypatch.setattr(async_task_module, "AsyncTaskService", FailingTaskService)
+    scheduler._fire_job("stage5_job_fail")
+
+    rows = pg.query_df(
+        "SELECT event_category, event_type, action, result, status, target_id, error_summary "
+        "FROM audit_log WHERE target_id IN (%s,%s) ORDER BY target_id, event_time",
+        ["stage5_job_fail", "stage5_job_skip"],
+    )
+    by_target = {r["target_id"]: r for _, r in rows.iterrows()}
+    assert by_target["stage5_job_skip"]["event_category"] == "task"
+    assert by_target["stage5_job_skip"]["event_type"] == "scheduler"
+    assert by_target["stage5_job_skip"]["action"] == "skip"
+    assert by_target["stage5_job_skip"]["status"] == "skipped"
+    assert by_target["stage5_job_fail"]["event_type"] == "scheduler"
+    assert by_target["stage5_job_fail"]["action"] == "trigger"
+    assert by_target["stage5_job_fail"]["result"] == "failed"
+    assert by_target["stage5_job_fail"]["status"] == "failed"
+
+
+def test_stage5_rbac_management_records_domain_audit(client, pg):
+    code = f"stage5_rbac_{uuid.uuid4().hex[:8]}"
+    pg.execute("DELETE FROM audit_log WHERE target_id=%s", [code])
+    try:
+        resp = client.post(
+            "/api/roles",
+            headers=_admin_headers(pg),
+            json={"code": code, "name": "阶段五RBAC审计"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["code"] == 0
+
+        rows = pg.query_df(
+            "SELECT event_category, event_type, action, resource_code, target_type, "
+            "target_id, actor_user_id, tenant_id, context "
+            "FROM audit_log WHERE target_id=%s AND event_category='rbac' "
+            "ORDER BY event_time DESC LIMIT 1",
+            [code],
+        )
+        assert len(rows) == 1
+        row = rows.iloc[0]
+        assert row["event_type"] == "rbac"
+        assert row["action"] == "role_create"
+        assert row["resource_code"] == "role:create"
+        assert row["target_type"] == "sys_role"
+        assert row["actor_user_id"] == "admin"
+        assert row["tenant_id"] == "default"
+    finally:
+        pg.execute("DELETE FROM sys_role WHERE id=%s", [code])

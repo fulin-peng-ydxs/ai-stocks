@@ -14,6 +14,7 @@ from backend.api.response import ApiResponse, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm, require_system
 from backend.common.exceptions import AuthError
+from backend.services.rbac_audit import record_rbac_action
 from backend.services.role_admin_service import RoleAdminService
 
 router = APIRouter(prefix="/api", tags=["roles"])
@@ -60,6 +61,13 @@ def list_roles() -> ApiResponse:
 def create_role(body: RoleCreate) -> ApiResponse:
     r = RoleAdminService().create_role(
         code=body.code, name=body.name, description=body.description)
+    record_rbac_action(
+        action="role_create",
+        target_type="sys_role",
+        target_id=r["id"],
+        target_label=r["name"],
+        resource_code="role:create",
+    )
     return ok(r, msg="已创建")
 
 
@@ -67,6 +75,13 @@ def create_role(body: RoleCreate) -> ApiResponse:
             dependencies=[Depends(require_system)])
 def update_role(role_id: str, body: RoleUpdate) -> ApiResponse:
     r = RoleAdminService().update_role(role_id, name=body.name, description=body.description)
+    record_rbac_action(
+        action="role_update",
+        target_type="sys_role",
+        target_id=role_id,
+        target_label=r["name"],
+        resource_code="role:update",
+    )
     return ok(r, msg="已保存")
 
 
@@ -74,6 +89,12 @@ def update_role(role_id: str, body: RoleUpdate) -> ApiResponse:
                dependencies=[Depends(require_system)])
 def delete_role(role_id: str) -> ApiResponse:
     RoleAdminService().delete_role(role_id)
+    record_rbac_action(
+        action="role_delete",
+        target_type="sys_role",
+        target_id=role_id,
+        resource_code="role:delete",
+    )
     return ok(msg="已删除")
 
 
@@ -88,4 +109,11 @@ def get_role_perms(role_id: str) -> ApiResponse:
 def set_role_perms(role_id: str, body: GrantsBody) -> ApiResponse:
     grants = RoleAdminService().set_grants(
         role_id, menu_ids=body.menuIds, resource_ids=body.resourceIds)
+    record_rbac_action(
+        action="role_set_perms",
+        target_type="sys_role",
+        target_id=role_id,
+        resource_code="role:assign-perm",
+        affected_count=len(body.menuIds) + len(body.resourceIds),
+    )
     return ok(grants, msg="权限已保存")

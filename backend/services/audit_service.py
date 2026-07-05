@@ -26,6 +26,8 @@ _CONTEXT_ALLOW_KEYS = {
     "route",
     "profile_ref",
     "data_scope",
+    "task_type",
+    "job_name",
 }
 _SENSITIVE_TOKENS = ("password", "token", "secret", "captcha", "credential")
 
@@ -170,6 +172,72 @@ class AuditService:
             )
         except Exception as e:  # noqa: BLE001
             log.warning("任务审计写入失败，已降级忽略: %s", e)
+
+    def record_scheduler_event(
+        self,
+        *,
+        action: str,
+        result: str,
+        status: str,
+        job_id: str,
+        job_name: str | None = None,
+        task_type: str | None = None,
+        task_id: str | None = None,
+        error_summary: str | None = None,
+    ) -> None:
+        try:
+            self.repo.record(
+                event_category="task",
+                event_type="scheduler",
+                action=action,
+                result=result,
+                status=status,
+                target_type="scheduled_job",
+                target_id=job_id,
+                target_label=job_name or job_id,
+                error_summary=error_summary,
+                context={
+                    "job_id": job_id,
+                    "task_id": task_id,
+                    "task_type": task_type,
+                    "job_name": job_name,
+                    "action": action,
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("调度审计写入失败，已降级忽略: %s", e)
+
+    def record_rbac_event(
+        self,
+        *,
+        action: str,
+        target_type: str,
+        target_id: str,
+        target_label: str | None = None,
+        resource_code: str | None = None,
+        tenant_id: str | None = None,
+        actor_user_id: str | None = None,
+        result: str = "success",
+        status: str = "completed",
+        affected_count: int = 1,
+    ) -> None:
+        try:
+            self.repo.record(
+                event_category="rbac",
+                event_type="rbac",
+                action=action,
+                result=result,
+                status=status,
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                resource_code=resource_code,
+                target_type=target_type,
+                target_id=target_id,
+                target_label=target_label,
+                context={"action": action, "affected_count": affected_count},
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("RBAC 审计写入失败，已降级忽略: %s", e)
 
     def _scoped_filters(self, ctx: AuthContext | None, filters: dict[str, Any]) -> dict[str, Any]:
         if ctx is None:
