@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import { getAuditDetail, getAuditSummary, listAuditLogs, type AuditLog, type AuditQuery, type AuditSummary } from '@/api/audit'
 import { getPublicDictItems } from '@/api/dict'
+import { listTenants } from '@/api/tenant'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getPageLayout } from '@/layout'
@@ -76,13 +78,13 @@ const { settings, isDirty: bizDirty, reset: resetBiz } = usePageSettings(pageKey
   filters: {
     start_time: '',
     end_time: '',
-    event_category: '',
-    result: '',
-    status: '',
+    event_category: [] as string[],
+    result: [] as string[],
+    status: [] as string[],
     resource_code: '',
     actor_keyword: '',
     target_keyword: '',
-    tenant_id: '',
+    tenant_id: [] as string[],
   },
 })
 const settingsOpen = ref(false)
@@ -107,6 +109,7 @@ const activeDetail = ref<AuditLog | null>(null)
 const eventOptions = ref<OptionItem[]>(FALLBACK_EVENT_CATEGORIES)
 const resultOptions = ref<OptionItem[]>(FALLBACK_RESULTS)
 const statusOptions = ref<OptionItem[]>(STATUS_OPTIONS)
+const tenantOptions = ref<OptionItem[]>([])
 
 const pageSize = computed(() => {
   const raw = componentValueOf('auditTable', 'pageSize')
@@ -178,19 +181,25 @@ function compactFilter(value: string | null | undefined): string | undefined {
   return text ? text : undefined
 }
 
+function compactList(value: string[] | string | null | undefined): string[] | undefined {
+  const list = Array.isArray(value) ? value : value ? [value] : []
+  const out = list.map((item) => String(item).trim()).filter(Boolean)
+  return out.length ? out : undefined
+}
+
 function buildQuery(): AuditQuery {
   return {
     page: page.value,
     page_size: pageSize.value,
     start_time: compactFilter(filters.start_time),
     end_time: compactFilter(filters.end_time),
-    event_category: compactFilter(filters.event_category),
-    result: compactFilter(filters.result),
-    status: compactFilter(filters.status),
+    event_category: compactList(filters.event_category),
+    result: compactList(filters.result),
+    status: compactList(filters.status),
     resource_code: compactFilter(filters.resource_code),
     actor_keyword: compactFilter(filters.actor_keyword),
     target_keyword: compactFilter(filters.target_keyword),
-    tenant_id: auth.isSystem ? compactFilter(filters.tenant_id) : undefined,
+    tenant_id: auth.isSystem ? compactList(filters.tenant_id) : undefined,
   }
 }
 
@@ -279,13 +288,13 @@ async function resetFilters() {
   Object.assign(filters, {
     start_time: '',
     end_time: '',
-    event_category: '',
-    result: '',
-    status: '',
+    event_category: [],
+    result: [],
+    status: [],
     resource_code: '',
     actor_keyword: '',
     target_keyword: '',
-    tenant_id: '',
+    tenant_id: [],
   })
   page.value = 1
   await loadAll()
@@ -326,6 +335,22 @@ async function loadDictOptions() {
   statusOptions.value = statuses
 }
 
+async function loadTenantOptions() {
+  if (!auth.isSystem) {
+    tenantOptions.value = []
+    return
+  }
+  try {
+    const data = await listTenants({ page: 1, size: 200 })
+    tenantOptions.value = data.items.map((tenant) => ({
+      value: tenant.id,
+      label: `${tenant.name}（${tenant.id}）`,
+    }))
+  } catch {
+    tenantOptions.value = []
+  }
+}
+
 function startTimer() {
   stopTimer()
   if (!settings.autoRefreshEnabled) return
@@ -348,7 +373,7 @@ watch(pageSize, () => {
 })
 
 onMounted(async () => {
-  await loadDictOptions()
+  await Promise.all([loadDictOptions(), loadTenantOptions()])
   await loadAll()
   startTimer()
 })
@@ -413,19 +438,38 @@ onBeforeUnmount(stopTimer)
           range-separator="至"
           class="audit-date"
         />
-        <el-select v-model="filters.event_category" clearable filterable placeholder="事件类型" class="w120" @change="filterChanged">
-          <el-option v-for="item in eventOptions" :key="item.value" :label="item.label" :value="item.value" />
-        </el-select>
-        <el-select v-model="filters.result" clearable filterable placeholder="结果" class="w110" @change="filterChanged">
-          <el-option v-for="item in resultOptions" :key="item.value" :label="item.label" :value="item.value" />
-        </el-select>
-        <el-select v-model="filters.status" clearable filterable placeholder="状态" class="w110" @change="filterChanged">
-          <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
-        </el-select>
+        <AppFilterSelect
+          v-model="filters.event_category"
+          :options="eventOptions"
+          placeholder="事件类型"
+          class="w140"
+          @change="filterChanged"
+        />
+        <AppFilterSelect
+          v-model="filters.result"
+          :options="resultOptions"
+          placeholder="结果"
+          class="w120"
+          @change="filterChanged"
+        />
+        <AppFilterSelect
+          v-model="filters.status"
+          :options="statusOptions"
+          placeholder="状态"
+          class="w120"
+          @change="filterChanged"
+        />
         <el-input v-model="filters.resource_code" clearable placeholder="资源码" class="w160" />
         <el-input v-model="filters.actor_keyword" clearable placeholder="处理人" class="w140" />
         <el-input v-model="filters.target_keyword" clearable placeholder="目标对象" class="w160" />
-        <el-input v-if="auth.isSystem" v-model="filters.tenant_id" clearable placeholder="租户 ID" class="w160" />
+        <AppFilterSelect
+          v-if="auth.isSystem"
+          v-model="filters.tenant_id"
+          :options="tenantOptions"
+          placeholder="租户"
+          class="w180"
+          @change="filterChanged"
+        />
         <el-button type="primary" @click="search">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
       </div>
@@ -638,6 +682,7 @@ onBeforeUnmount(stopTimer)
 .w120 { width: 120px; }
 .w140 { width: 140px; }
 .w160 { width: 160px; }
+.w180 { width: 180px; }
 .audit-state {
   height: 100%;
 }

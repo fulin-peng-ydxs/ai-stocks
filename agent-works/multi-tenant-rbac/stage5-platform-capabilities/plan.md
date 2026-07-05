@@ -845,7 +845,7 @@ Slot 与组件设计：
   - 页面单测覆盖筛选、刷新、空态、错误态、详情抽屉。
   - 视口 `1100x620`、`1366x768`、`1440x900` 截图/交互验证。
 - 完成标准：页面功能点承接表全部可观察，排版无重叠。
-- 实际落地情况：已按 `audit-log.html` 承接日志审计页面，完成标题工具区、自动刷新、手动刷新、禁用导出入口、摘要指标、筛选栏、服务端分页、审计宽表、只读详情抽屉、loading、无记录、服务异常、权限不足、低高度退化和租户管理员不展示租户过滤入口。事件类型、结果和状态选项优先消费 `/api/dict/items/public`，失败回退内置枚举；下拉选择后即时查询。目标对象展示由审计对象和 `sys_resource.name` 中文说明组成。默认时间不强制前端传参，由后端 `audit.retention_days=90` 默认窗口收口，页面摘要提示“默认最近 90 天”。审计表 `auditTable` 已接入 `wide-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，并同步前端 `componentConfig` 与后端 `layout_config` 字段白名单，避免设置保存被拒。已补 `AuditLogView.spec.ts` 覆盖加载、查询、空态、错误重试、详情抽屉、权限态、租户管理员无跨租户入口和自动刷新清理。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t8-audit-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出、无关键区域重叠，详情抽屉和页面设置抽屉已验证。
+- 实际落地情况：已按 `audit-log.html` 承接日志审计页面，完成标题工具区、自动刷新、手动刷新、禁用导出入口、摘要指标、筛选栏、服务端分页、审计宽表、只读详情抽屉、loading、无记录、服务异常、权限不足、低高度退化和租户管理员不展示租户过滤入口。事件类型、结果和状态选项优先消费 `/api/dict/items/public`，失败回退内置枚举；筛选下拉已沉淀为 `AppFilterSelect`，默认多选、可搜索、可清空，选择后即时查询；系统管理员租户筛选改为 `/api/tenants` 下拉并支持多选，租户管理员无跨租户入口。后端 `/api/audit` 列表和摘要支持重复 query 参数多值筛选，租户管理员范围仍由服务层强制覆盖。目标对象展示由审计对象和 `sys_resource.name` 中文说明组成。默认时间不强制前端传参，由后端 `audit.retention_days=90` 默认窗口收口，页面摘要提示“默认最近 90 天”。审计表 `auditTable` 已接入 `wide-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，并同步前端 `componentConfig` 与后端 `layout_config` 字段白名单，避免设置保存被拒。已补 `AuditLogView.spec.ts` 覆盖加载、查询、筛选多选即时查询、租户下拉、空态、错误重试、详情抽屉、权限态、租户管理员无跨租户入口和自动刷新清理；已补 `test_stage5_audit.py` 覆盖多值筛选。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t8-audit-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出、无关键区域重叠，详情抽屉和页面设置抽屉已验证；本轮下拉多选整改以单测、后端接口测试和构建复验为准。
 
 ### 6.9 任务 T9：数据字典前端页面
 
@@ -903,7 +903,7 @@ Slot 与组件设计：
   - 运行 `npm run build`。
   - 关键视口 `1100x620`、`1366x768`、`1440x900` 验证新增字段不溢出、不遮挡，桌面端并排、窄屏单列。
 - 完成标准：R16/R17 配置能展示、保存、读取、消费。
-- 实际落地情况：已新增 `frontend/src/components/config/ConfigGroupForm.vue`，按 `/api/data/settings` 返回的 `CONFIG_GROUPS` 动态渲染 bool、enum、int、number 字段、默认值、覆盖标记、范围信息、配置组说明和字段说明；`ConfigView.vue` 的 `/system/config/system` 已改为配置组并排工作区，不再使用旧单列 `el-card` 堆叠。system 页初始化已从指标注册表依赖中拆出，只加载登录态和系统设置接口；无 `data-settings:manage` 权限时显示权限态且不请求设置接口。保存逻辑只提交差量字段，保存成功提示“配置已更新”，保存失败保留当前编辑值并展示错误态；空配置显示空态。已补 `ConfigView.system.spec.ts` 覆盖动态渲染、system 页不加载指标注册表、差量保存、保存失败保留值、越界数值钳定保存、空态和权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t10-config-system-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；桌面端配置组已并排展示，系统设置抽屉可打开。
+- 实际落地情况：已新增 `frontend/src/components/config/ConfigGroupForm.vue`，按 `/api/data/settings` 返回的 `CONFIG_GROUPS` 动态渲染 bool、enum、int、number 字段、默认值、覆盖标记、范围信息、配置组说明和字段说明；`ConfigView.vue` 的 `/system/config/system` 已从平铺工作区调整为分类 Tab，认证与审计在同一组，数据采集、股票池与回测分别归类，页面不展示“平台配置”标题。system 页初始化已从指标注册表依赖中拆出，只加载登录态和系统设置接口；无 `data-settings:manage` 权限时显示权限态且不请求设置接口。保存逻辑只提交差量字段，保存成功提示“配置已更新”，保存失败保留当前编辑值并展示错误态；空配置显示空态。已补 `ConfigView.system.spec.ts` 覆盖动态渲染、分类 Tab、system 页不加载指标注册表、差量保存、保存失败保留值、越界数值钳定保存、空态和权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t10-config-system-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；桌面端配置组已并排展示，系统设置抽屉可打开；本轮 Tab 分类整改以单测和构建复验为准。
 
 ### 6.11 任务 T11：权限扫描和菜单授权测试
 
@@ -1001,20 +1001,24 @@ Slot 与组件设计：
   - 浏览器截图/交互验证三档视口。
 - 完成标准：测试和 build 通过，页面无重叠、无视口高度硬编码、无布局契约失败。
 - 实际落地情况：前端专项测试已在前序页面任务中补齐并完成本任务集中验证：
-  `AuditLogView.spec.ts` 覆盖审计页加载、筛选透传、空态、错误重试、详情抽屉、权限态、租户管理员范围提示和自动刷新清理；
+  `AuditLogView.spec.ts` 覆盖审计页加载、筛选透传、多选筛选即时查询、系统管理员租户下拉、空态、错误重试、详情抽屉、权限态、租户管理员范围提示和自动刷新清理；
   `DataDictionaryView.spec.ts` 覆盖字典页类型/明细加载、类型切换、筛选透传、新建/编辑 code 不可变、错误重试和 system-only 权限态；
-  `ConfigView.system.spec.ts` 覆盖系统设置动态配置组、差量保存、失败保留、范围钳定、空态和权限态；
+  `ConfigView.system.spec.ts` 覆盖系统设置动态配置组、分类 Tab、差量保存、失败保留、范围钳定、空态和权限态；
   pageRegistry/router/layout-contract 测试覆盖阶段五页面登记、静态路由和 DESIGN 布局红线。阶段五初版已运行
   `cd frontend && npm run test -- --run`，结果 `21 passed` 测试文件、`212 passed` 用例；缺陷整改复测已运行
   `cd frontend && npm run test -- --run src/components/__tests__/ComponentAutoSettings.spec.ts src/views/__tests__/ConfigView.system.spec.ts src/views/system/__tests__/AuditLogView.spec.ts src/views/system/__tests__/DataDictionaryView.spec.ts src/views/__tests__/LoginView.captcha.spec.ts`，
-  结果 `5 passed` 测试文件、`25 passed` 用例。已运行 `cd frontend && npm run build` 通过，输出仅有第三方
-  Rollup 注释警告和既有大 chunk 提示。浏览器验证使用专用端口 `5181`，登录 `admin` 后检查
+  结果 `5 passed` 测试文件、`25 passed` 用例。下拉多选和系统配置 Tab 整改后已运行
+  `cd frontend && npm run test -- --run src/views/system/__tests__/AuditLogView.spec.ts src/views/__tests__/ConfigView.system.spec.ts`，
+  结果 `2 passed` 测试文件、`15 passed` 用例；已运行 `python -m pytest backend/tests/test_stage5_audit.py -q`，
+  结果 `4 passed` 用例；已运行 `cd frontend && npm run build` 通过，输出仅有第三方 Rollup 注释警告和既有大 chunk 提示。
+  浏览器验证使用专用端口 `5181`，登录 `admin` 后检查
   `/system/audit`、`/system/dicts`、`/system/config/system` 在 `1100x620`、`1366x768`、`1440x900`
   三档视口均无整页横向溢出、无可见运行错误、页面高度由应用容器承接；并在 `1366x768` 验证三页页面设置抽屉
   均可打开。缺陷整改复测补充验证审计状态下拉即时查询、目标中文说明、公共分页、字典分页、系统设置下拉宽度、
   系统页抽屉不展示业务选项；登录图形验证码开启即展示、提交即校验由 `LoginView.captcha.spec.ts` 和
   `test_stage5_auth_config.py` 覆盖。截图保存在被 Git 忽略的
   `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t13/*.png`；验证后停止 `5181` 预览服务。
+  本轮浏览器复验到达登录页时遇到已开启的图形验证码，未绕过或代填验证码，因此未新增浏览器截图。
 
 ### 6.14 任务 T14：总需求文档回写、业务核查和计划状态回写
 
@@ -1069,7 +1073,7 @@ SQL 约束：
   - 具体完成情况：已覆盖 `/api/audit`、`/api/dict/types`、`/api/dict/items`、`/api/dict/items/public`、`/api/data/settings`、`/api/auth/public-config`；页面 API 封装已在 T7 完成并被 T8/T9/T10 页面消费。
 - 页面/交互测试：
   - 计划：审计页筛选/分页/详情/自动刷新/错误重试；字典页主从联动/弹窗/启停/删除/缓存失效；系统设置页新增配置。
-  - 具体完成情况：日志审计页已完成筛选/分页/详情/自动刷新/错误重试和三档视口验证；数据字典页已完成主从联动、弹窗、筛选、启停、删除确认、错误重试、权限态和三档视口验证；系统设置页已完成新增配置组动态渲染、并排布局、保存失败、空态、权限态和三档视口验证。
+  - 具体完成情况：日志审计页已完成筛选/分页/详情/自动刷新/错误重试和三档视口验证，本轮补多选筛选、租户下拉和选择即时查询测试；数据字典页已完成主从联动、弹窗、筛选、启停、删除确认、错误重试、权限态和三档视口验证；系统设置页已完成新增配置组动态渲染、分类 Tab、保存失败、空态、权限态和三档视口验证。
 - 权限与数据范围测试：
   - 计划：system 全局审计和字典；tenant_admin 仅本租户审计；normal/paid 默认无审计和字典；后端接口 403 为准。
   - 具体完成情况：已覆盖 system 全局审计查询、tenant_admin 本租户审计收口、字典管理 system-only、`dict:read` 登录基线共享读、normal/paid 默认无审计/字典管理授权和无角色 fail-closed。

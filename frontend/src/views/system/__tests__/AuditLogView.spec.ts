@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import { ref, type Component } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AuditLogView from '@/views/system/AuditLogView.vue'
 
 vi.mock('@/api/audit', () => ({
@@ -14,6 +15,9 @@ vi.mock('@/api/audit', () => ({
 }))
 vi.mock('@/api/dict', () => ({
   getPublicDictItems: vi.fn(),
+}))
+vi.mock('@/api/tenant', () => ({
+  listTenants: vi.fn(),
 }))
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
   useRemoteLayoutConfig: () => ({
@@ -34,6 +38,7 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
 
 import * as auditApi from '@/api/audit'
 import * as dictApi from '@/api/dict'
+import * as tenantApi from '@/api/tenant'
 
 const stubs = {
   LayoutHost: {
@@ -91,6 +96,10 @@ function mockHappyApis() {
     by_status: { completed: 1 },
   })
   ;(auditApi.getAuditDetail as ReturnType<typeof vi.fn>).mockResolvedValue(row)
+  ;(tenantApi.listTenants as ReturnType<typeof vi.fn>).mockResolvedValue({
+    items: [{ id: 'tenant-a', name: '租户A', status: 'active' }],
+    total: 1,
+  })
 }
 
 async function mountView(role = 'system') {
@@ -130,6 +139,7 @@ describe('AuditLogView', () => {
     expect(wrapper.text()).toContain('角色：管理员')
     expect(wrapper.text()).toContain('查看审计日志 · 角色')
     expect(dictApi.getPublicDictItems).toHaveBeenCalledWith('audit_status')
+    expect(tenantApi.listTenants).toHaveBeenCalledWith({ page: 1, size: 200 })
     expect(auditApi.listAuditLogs).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 50 }))
   })
 
@@ -142,6 +152,30 @@ describe('AuditLogView', () => {
     await flushPromises()
     expect(auditApi.listAuditLogs).toHaveBeenLastCalledWith(expect.objectContaining({ actor_keyword: 'admin' }))
     expect(auditApi.getAuditSummary).toHaveBeenLastCalledWith(expect.objectContaining({ actor_keyword: 'admin' }))
+  })
+
+  it('筛选下拉默认支持多选并在选择后即时查询', async () => {
+    const wrapper = await mountView()
+    const selects = wrapper.findAllComponents(AppFilterSelect)
+    const eventSelect = selects.find((node) => node.props('placeholder') === '事件类型')
+    const tenantSelect = selects.find((node) => node.props('placeholder') === '租户')
+    expect(eventSelect).toBeTruthy()
+    expect(tenantSelect).toBeTruthy()
+
+    eventSelect!.vm.$emit('update:modelValue', ['rbac', 'security'])
+    eventSelect!.vm.$emit('change', ['rbac', 'security'])
+    await flushPromises()
+    expect(auditApi.listAuditLogs).toHaveBeenLastCalledWith(expect.objectContaining({
+      event_category: ['rbac', 'security'],
+    }))
+
+    tenantSelect!.vm.$emit('update:modelValue', ['tenant-a'])
+    tenantSelect!.vm.$emit('change', ['tenant-a'])
+    await flushPromises()
+    expect(auditApi.listAuditLogs).toHaveBeenLastCalledWith(expect.objectContaining({
+      event_category: ['rbac', 'security'],
+      tenant_id: ['tenant-a'],
+    }))
   })
 
   it('空列表显示空态并可重置筛选', async () => {
@@ -185,6 +219,7 @@ describe('AuditLogView', () => {
   it('租户管理员不展示跨租户过滤入口', async () => {
     const wrapper = await mountView('tenant_admin')
     expect(wrapper.find('input[placeholder="租户 ID"]').exists()).toBe(false)
+    expect(tenantApi.listTenants).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('已强制限定本租户')
   })
 
@@ -197,13 +232,13 @@ describe('AuditLogView', () => {
         filters: {
           start_time: '',
           end_time: '',
-          event_category: '',
-          result: '',
-          status: '',
+          event_category: [],
+          result: [],
+          status: [],
           resource_code: '',
           actor_keyword: '',
           target_keyword: '',
-          tenant_id: '',
+          tenant_id: [],
         },
       }),
     )

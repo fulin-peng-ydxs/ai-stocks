@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.context import get_current_context
@@ -26,14 +26,14 @@ def list_audit_logs(
     page_size: int = 50,
     start_time: str | None = None,
     end_time: str | None = None,
-    event_category: str | None = None,
-    event_type: str | None = None,
-    result: str | None = None,
-    status: str | None = None,
+    event_category: list[str] | None = Query(default=None),
+    event_type: list[str] | None = Query(default=None),
+    result: list[str] | None = Query(default=None),
+    status: list[str] | None = Query(default=None),
     resource_code: str | None = None,
     actor_keyword: str | None = None,
     target_keyword: str | None = None,
-    tenant_id: str | None = None,
+    tenant_id: list[str] | None = Query(default=None),
 ) -> ApiResponse:
     return ok(AuditService().list_logs(
         _ctx(),
@@ -60,14 +60,14 @@ def list_audit_logs(
 def audit_summary(
     start_time: str | None = None,
     end_time: str | None = None,
-    event_category: str | None = None,
-    event_type: str | None = None,
-    result: str | None = None,
-    status: str | None = None,
+    event_category: list[str] | None = Query(default=None),
+    event_type: list[str] | None = Query(default=None),
+    result: list[str] | None = Query(default=None),
+    status: list[str] | None = Query(default=None),
     resource_code: str | None = None,
     actor_keyword: str | None = None,
     target_keyword: str | None = None,
-    tenant_id: str | None = None,
+    tenant_id: list[str] | None = Query(default=None),
 ) -> ApiResponse:
     return ok(AuditService().summary(
         _ctx(),

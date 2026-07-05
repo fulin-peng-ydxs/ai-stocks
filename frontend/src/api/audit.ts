@@ -32,14 +32,14 @@ export interface AuditQuery {
   page_size?: number
   start_time?: string | null
   end_time?: string | null
-  event_category?: string | null
-  event_type?: string | null
-  result?: string | null
-  status?: string | null
+  event_category?: string | string[] | null
+  event_type?: string | string[] | null
+  result?: string | string[] | null
+  status?: string | string[] | null
   resource_code?: string | null
   actor_keyword?: string | null
   target_keyword?: string | null
-  tenant_id?: string | null
+  tenant_id?: string | string[] | null
 }
 
 export interface AuditListResult {
@@ -60,12 +60,28 @@ export interface AuditSummary {
   by_status: Record<string, number>
 }
 
+function toAuditParams(query: AuditQuery): URLSearchParams {
+  const params = new URLSearchParams()
+  Object.entries(query).forEach(([key, raw]) => {
+    if (raw == null || raw === '') return
+    if (Array.isArray(raw)) {
+      raw.forEach((item) => {
+        const value = String(item).trim()
+        if (value) params.append(key, value)
+      })
+      return
+    }
+    params.append(key, String(raw))
+  })
+  return params
+}
+
 export function listAuditLogs(query: AuditQuery = {}): Promise<AuditListResult> {
-  return http.get('/audit', { params: query })
+  return http.get('/audit', { params: toAuditParams(query) })
 }
 
 export function getAuditSummary(query: Omit<AuditQuery, 'page' | 'page_size'> = {}): Promise<AuditSummary> {
-  return http.get('/audit/summary', { params: query })
+  return http.get('/audit/summary', { params: toAuditParams(query) })
 }
 
 export function getAuditDetail(id: string): Promise<AuditLog> {

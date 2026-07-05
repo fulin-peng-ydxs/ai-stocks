@@ -188,9 +188,13 @@ class AuditRepository:
         }
         for key, col in exact_cols.items():
             val = filters.get(key)
-            if val:
+            values = AuditRepository._exact_values(val)
+            if len(values) == 1:
                 conds.append(f"{col}=%s")
-                params.append(val)
+                params.append(values[0])
+            elif values:
+                conds.append(f"{col} IN ({', '.join(['%s'] * len(values))})")
+                params.extend(values)
         if filters.get("start_time"):
             conds.append("a.event_time >= %s")
             params.append(filters["start_time"])
@@ -209,6 +213,15 @@ class AuditRepository:
             )
             params += [like, like, like, like, like]
         return (("WHERE " + " AND ".join(conds)) if conds else ""), params
+
+    @staticmethod
+    def _exact_values(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, set)):
+            return [text for item in value if (text := str(item).strip())]
+        text = str(value).strip()
+        return [text] if text else []
 
     @staticmethod
     def _row(row: dict[str, Any]) -> dict[str, Any]:

@@ -192,6 +192,63 @@ def test_stage5_audit_tenant_admin_is_scoped_to_own_tenant(client, pg):
         _cleanup_user(pg, tenant_admin)
 
 
+def test_stage5_audit_supports_multi_value_filters(client, pg):
+    _clear_stage5_audit(pg)
+    repo = AuditRepository(pg)
+    first_id = repo.record(
+        event_category="api",
+        event_type="api",
+        action="request",
+        result="success",
+        status="completed",
+        tenant_id="default",
+        actor_user_id="admin",
+        actor_account="admin",
+        resource_code="audit:view",
+        target_type="stage5_test",
+        target_id="stage5_multi_filter_a",
+        target_label="multi filter A",
+        context={"route": "/api/audit"},
+    )
+    second_id = repo.record(
+        event_category="security",
+        event_type="login",
+        action="login",
+        result="failed",
+        status="failed",
+        tenant_id="other_tenant",
+        actor_user_id="u2",
+        actor_account="other",
+        resource_code="auth:login",
+        target_type="stage5_test",
+        target_id="stage5_multi_filter_b",
+        target_label="multi filter B",
+        context={"route": "/api/auth/login"},
+    )
+    assert first_id and second_id
+
+    params = [
+        ("target_keyword", "stage5_multi_filter"),
+        ("event_category", "api"),
+        ("event_category", "security"),
+        ("result", "success"),
+        ("result", "failed"),
+        ("tenant_id", "default"),
+        ("tenant_id", "other_tenant"),
+    ]
+    resp = client.get("/api/audit", headers=_admin_headers(pg), params=params)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["total"] == 2
+    assert {row["id"] for row in data["list"]} == {first_id, second_id}
+
+    summary = client.get("/api/audit/summary", headers=_admin_headers(pg), params=params)
+    assert summary.status_code == 200
+    assert summary.json()["data"]["total"] == 2
+    assert summary.json()["data"]["by_category"]["api"] == 1
+    assert summary.json()["data"]["by_category"]["security"] == 1
+
+
 def test_stage5_audit_default_retention_window_filters_old_records(client, pg, app_cfg):
     _clear_stage5_audit(pg)
     app_cfg.set_many({"audit.retention_days": 7})

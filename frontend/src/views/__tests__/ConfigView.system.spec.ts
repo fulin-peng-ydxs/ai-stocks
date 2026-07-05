@@ -69,6 +69,36 @@ import * as scoreApi from '@/api/scoreProfile'
 
 const groups: SettingGroup[] = [
   {
+    key: 'datasource',
+    label: '数据源',
+    fields: [
+      {
+        path: 'datasource.concurrent_jobs',
+        label: '并发采集任务数',
+        type: 'int',
+        value: 2,
+        default: 2,
+        overridden: false,
+        min: 1,
+        max: 10,
+      },
+    ],
+  },
+  {
+    key: 'universe',
+    label: '股票池',
+    fields: [
+      {
+        path: 'universe.include_main_board',
+        label: '包含主板',
+        type: 'bool',
+        value: true,
+        default: true,
+        overridden: false,
+      },
+    ],
+  },
+  {
     key: 'auth',
     label: '认证与防滥用',
     fields: [
@@ -166,6 +196,10 @@ describe('ConfigView system tab', () => {
   it('按设置接口动态渲染认证和审计配置，且不加载指标注册表', async () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('系统设置')
+    expect(wrapper.text()).toContain('认证与审计')
+    expect(wrapper.text()).toContain('数据采集')
+    expect(wrapper.text()).toContain('股票池与回测')
+    expect(wrapper.text()).not.toContain('平台配置')
     expect(wrapper.text()).toContain('认证与防滥用')
     expect(wrapper.text()).toContain('注册需邮箱验证码')
     expect(wrapper.text()).toContain('审计设置')

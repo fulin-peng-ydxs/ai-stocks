@@ -89,6 +89,17 @@ const sysDraft = ref<Record<string, unknown>>({})
 const sysLoading = ref(false)
 const sysSaving = ref(false)
 const sysSaveError = ref(false)
+const activeSysTab = ref('security')
+interface SystemGroupTab {
+  key: string
+  label: string
+  groups: SettingGroup[]
+}
+const SYSTEM_GROUP_TABS = [
+  { key: 'security', label: '认证与审计', groupKeys: ['auth', 'audit'] },
+  { key: 'data', label: '数据采集', groupKeys: ['datasource'] },
+  { key: 'strategy', label: '股票池与回测', groupKeys: ['universe', 'cost', 'topn'] },
+]
 const canManageSystemSettings = computed(() =>
   hasPermission(auth.role, auth.permissions, 'data-settings:manage'),
 )
@@ -132,6 +143,18 @@ const sysInvalidPaths = computed(() => {
   }
   return invalid
 })
+const sysTabs = computed<SystemGroupTab[]>(() => {
+  const groupsByKey = new Map(sysGroups.value.map((group) => [group.key, group]))
+  const tabs = SYSTEM_GROUP_TABS.map((tab) => ({
+    key: tab.key,
+    label: tab.label,
+    groups: tab.groupKeys.map((key) => groupsByKey.get(key)).filter((group): group is SettingGroup => !!group),
+  })).filter((tab) => tab.groups.length)
+  const used = new Set(SYSTEM_GROUP_TABS.flatMap((tab) => tab.groupKeys))
+  const extra = sysGroups.value.filter((group) => !used.has(group.key))
+  if (extra.length) tabs.push({ key: 'other', label: '其他', groups: extra })
+  return tabs
+})
 async function saveSystem() {
   if (!canManageSystemSettings.value) return
   if (sysInvalidPaths.value.length) {
@@ -153,6 +176,11 @@ async function saveSystem() {
     sysSaveError.value = true
   } finally { sysSaving.value = false }
 }
+watch(() => sysTabs.value.map((tab) => tab.key).join('|'), () => {
+  if (!sysTabs.value.some((tab) => tab.key === activeSysTab.value)) {
+    activeSysTab.value = sysTabs.value[0]?.key || 'security'
+  }
+})
 // ── 技术指标注册表（含内置 + 自定义）──
 const registry = ref<IndicatorDef[]>([])
 // 可作为评分项的指标（启用项）
@@ -1355,7 +1383,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div v-else class="sys-wrap" v-loading="sysLoading">
           <div class="sys-head">
             <div class="sys-summary">
-              <strong>平台配置</strong>
               <span>保存后即时影响数据源、股票池、回测、榜单、认证和审计查询窗口。</span>
             </div>
             <div class="sys-actions">
@@ -1390,17 +1417,26 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             class="app-empty"
             description="暂无可维护配置"
           />
-          <div v-else class="sys-grid">
-            <ConfigGroupForm
-              v-for="group in sysGroups"
-              :key="group.key"
-              :group="group"
-              :model-value="sysDraft"
-              :disabled="sysSaving"
-              :invalid-paths="sysInvalidPaths"
-              @update-field="updateSystemField"
-            />
-          </div>
+          <el-tabs v-else v-model="activeSysTab" class="sys-tabs">
+            <el-tab-pane
+              v-for="tab in sysTabs"
+              :key="tab.key"
+              :name="tab.key"
+              :label="tab.label"
+            >
+              <div class="sys-grid">
+                <ConfigGroupForm
+                  v-for="group in tab.groups"
+                  :key="group.key"
+                  :group="group"
+                  :model-value="sysDraft"
+                  :disabled="sysSaving"
+                  :invalid-paths="sysInvalidPaths"
+                  @update-field="updateSystemField"
+                />
+              </div>
+            </el-tab-pane>
+          </el-tabs>
         </div>
       </template>
     </template>
@@ -1512,6 +1548,12 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .sys-actions :deep(.el-alert) {
   width: 260px;
   padding: 4px 8px;
+}
+.sys-tabs {
+  min-width: 0;
+}
+.sys-tabs :deep(.el-tabs__content) {
+  overflow: visible;
 }
 .sys-grid {
   display: grid;
