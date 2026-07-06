@@ -2,6 +2,13 @@
 
 > 仅用于本地开发/测试库的浏览器调试与权限验收。生产或共享公网环境禁止创建这些账号。
 
+## AI 使用指引
+
+- 页面或接口验收前，先执行 `python -m backend.cli dev-users --list` 查看固定调试账号；账号缺失、角色漂移或权限异常时，执行 `python -m backend.cli dev-users` 重新校准。
+- 按测试场景选择最小权限账号：系统页用 system，租户管理用 tenant_admin，普通业务链路用 normal/paid，权限边界用 board_only、stocks_only、stocks_group、backtest_view。
+- 不把固定调试账号作为 pytest 依赖；自动化后端用例继续在用例内创建临时用户。
+- 不在生产、共享公网或不确定环境创建或使用这些账号，不把测试密码写入需求、计划、提交信息或测试结论。
+
 ## 维护命令
 
 ```bash

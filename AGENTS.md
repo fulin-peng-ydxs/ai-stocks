@@ -65,6 +65,14 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 测试通过或结束后，按测试前状态用 `./start.sh` 重启，并用
 `./start.sh status` 确认 `/api/health=200`。禁止在后台服务仍持有 DuckDB 锁时硬跑相关测试；不得直接裸杀进程，除非脚本停服失败且用户明确同意。
 
+## 测试用户
+
+- 页面或接口权限验收需要固定调试账号时，先读 `agent-works/multi-tenant-rbac/test-users.md`，不要凭记忆猜账号、角色、权限或密码。
+- 本地/测试库用 `python -m backend.cli dev-users` 幂等创建或校准调试账号，`python -m backend.cli dev-users --list` 查看当前账号，`--keep-password` 用于保留已有密码。
+- 调试账号密码优先来自 `AI_STOCKS_TEST_USER_PASSWORD`，本地默认密码只允许用于开发测试；生产、共享公网或不确定环境禁止创建或使用这批账号。
+- 页面和接口测试按场景选择最小权限账号验证，不要默认用系统管理员账号覆盖权限态、空权限态或 fail-closed 场景。
+- pytest 继续使用用例内临时用户，不依赖固定调试账号。
+
 ## 端口与构建
 
 - 日常开发入口：前端 `5173`，后端 `8000` 仅本机，由 Vite 代理 `/api`。
