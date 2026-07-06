@@ -55,6 +55,9 @@ function toggle() {
       <span v-if="title" class="sg-title">{{ title }}</span>
       <HelpHint v-if="hint" :text="hint" @click.stop />
       <span v-if="badge" class="sg-badge">{{ badge }}</span>
+      <span v-if="$slots.actions" class="sg-actions" @click.stop>
+        <slot name="actions" />
+      </span>
     </div>
     <div v-show="isOpen() || !foldable()" class="sg-body"><slot /></div>
   </section>
@@ -157,6 +160,12 @@ function toggle() {
   color: var(--page-settings-text-subtle);
   border: 1px solid var(--page-settings-border);
   background: var(--page-settings-bg);
+}
+.sg-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .sg-body {
   display: flex;

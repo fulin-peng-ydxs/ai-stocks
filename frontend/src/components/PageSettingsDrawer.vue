@@ -190,12 +190,12 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
 :global(.page-settings-drawer .el-drawer__body) {
   padding: 14px;
   display: flex;
-  /* 顶端对齐：卡片按内容取高、不被拉满，折叠后不留大片空白（footer 紧跟内容）。 */
-  align-items: flex-start;
+  align-items: stretch;
+  min-height: 0;
 }
 .ps-card {
-  /* 内容高度，最高占满抽屉；内容超高时由 ps-body 内部滚动，footer 始终紧跟内容。 */
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -243,7 +243,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
   color: var(--page-settings-text);
 }
 .ps-body {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 14px 16px;

@@ -121,8 +121,6 @@ const hiddenColumns = computed<string[]>(() => {
 })
 const drawerDirty = computed(() => layoutDirty.value || bizDirty.value)
 const canViewAudit = computed(() => auth.isSystem || auth.permissions.includes('audit:view') || auth.menusStatus !== 'ready')
-const scopeText = computed(() => (auth.isSystem ? '全局' : auth.tenant?.id || '本租户'))
-
 let refreshTimer: number | undefined
 
 function colVisible(key: string): boolean {
@@ -344,7 +342,7 @@ async function loadTenantOptions() {
     const data = await listTenants({ page: 1, size: 200 })
     tenantOptions.value = data.items.map((tenant) => ({
       value: tenant.id,
-      label: `${tenant.name}（${tenant.id}）`,
+      label: tenant.name,
     }))
   } catch {
     tenantOptions.value = []
@@ -418,11 +416,6 @@ onBeforeUnmount(stopTimer)
           <span>安全事件</span>
           <b class="danger">{{ summary?.by_category?.security ?? 0 }}</b>
           <em>登录失败、账号锁定等</em>
-        </div>
-        <div class="metric">
-          <span>租户范围</span>
-          <b>{{ scopeText }}</b>
-          <em>{{ auth.isSystem ? '可按租户过滤' : '已强制限定本租户' }}</em>
         </div>
       </div>
     </template>

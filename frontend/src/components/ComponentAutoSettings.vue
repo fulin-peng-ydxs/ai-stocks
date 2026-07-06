@@ -315,8 +315,7 @@ function setSort(slotId: string, field: string, order: string): void {
         title="列显隐"
         :level="showSlotTitle ? 3 : 2"
       >
-        <div class="ca-label-row">
-          <span class="ca-label">当前隐藏列</span>
+        <template #actions>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, 'hiddenColumns')"
@@ -325,10 +324,11 @@ function setSort(slotId: string, field: string, order: string): void {
             />
             <button v-if="clearable && isOverridden(s.slotId, 'hiddenColumns')" type="button" class="ca-clear" @click="clearField(s.slotId, 'hiddenColumns')">不覆盖</button>
           </span>
-        </div>
+        </template>
         <PageToggleRow
           v-for="c in s.meta.columns"
           :key="c.key"
+          size="sm"
           :label="`显示${c.label}`"
           :model-value="colVisible(s.slotId, c.key)"
           @update:model-value="(v) => setColVisible(s.slotId, c.key, v)"

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-defineProps<{
+withDefaults(defineProps<{
   label: string
   modelValue: boolean
   tip?: string
-}>()
+  size?: 'md' | 'sm'
+}>(), { size: 'md' })
 
 defineEmits<{
   'update:modelValue': [value: boolean]
@@ -11,7 +12,7 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="page-toggle-row">
+  <div class="page-toggle-row" :class="`is-${size}`">
     <div class="ptr-left">
       <span class="ptr-label">{{ label }}</span>
       <el-tooltip v-if="tip" :content="tip" placement="top">
@@ -37,6 +38,9 @@ defineEmits<{
   justify-content: space-between;
   gap: 12px;
 }
+.page-toggle-row.is-sm {
+  min-height: 34px;
+}
 .ptr-left {
   min-width: 0;
   display: inline-flex;
@@ -46,6 +50,10 @@ defineEmits<{
 .ptr-label {
   font-size: 14px;
   color: var(--page-settings-text);
+}
+.page-toggle-row.is-sm .ptr-label {
+  font-size: 13px;
+  color: var(--page-settings-text-subtle);
 }
 .ptr-tip {
   width: 18px;
