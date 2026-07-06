@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>日志审计 原型 · 复盘啦（阶段五 R17）</title>
+<title>日志审计 原型 · 复盘啦（阶段五 R17 / 阶段六 R24）</title>
 <!--
-  页面原型：日志审计（P9·R17）。自包含静态 HTML，全可交互；右上切黑白主题。
+  页面原型：日志审计（P9·R17，阶段六补 R24 字段级变更对比）。自包含静态 HTML，全可交互；右上切黑白主题。
   作用：需求「7.9 日志审计」视觉/交互事实源 + 后续 AuditLogView.vue 参照。
-  交互：筛选、分页、行详情抽屉、自动刷新开关、导出禁用提示、加载/无记录/服务异常状态、切主题、显隐批注。
+  交互：筛选、分页、行详情抽屉、字段变更表、自动刷新开关、导出禁用提示、加载/无记录/服务异常状态、切主题、显隐批注。
   说明规范：页面只留面向用户的短标签 + HelpTip；字段采集范围、保留期等实现说明收进琥珀原型批注。
   可见性：系统管理员看全局；租户管理员只看本租户。
 -->
@@ -95,6 +95,13 @@
   .detail-section p { margin:0; color:var(--pg-text-reg); line-height:1.7; font-size:13px; }
   .detail-section .muted { color:var(--pg-text-sub); }
   .json { border:1px solid var(--pg-border-light); border-radius:6px; background:var(--pg-fill); padding:10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; line-height:1.6; white-space:pre-wrap; color:var(--pg-text-reg); overflow:auto; }
+  .change-table { overflow:auto; border:1px solid var(--pg-border-light); border-radius:6px; background:var(--pg-card-bg); }
+  .change-table table { min-width:480px; width:100%; table-layout:fixed; border-collapse:collapse; font-size:12px; }
+  .change-table th { position:static; padding:8px 10px; background:var(--pg-th-bg); color:var(--pg-text-sub); border-bottom:1px solid var(--pg-border-light); font-weight:600; text-align:left; white-space:nowrap; }
+  .change-table td { padding:9px 10px; border-bottom:1px solid var(--pg-border-light); color:var(--pg-text-reg); vertical-align:top; overflow-wrap:anywhere; }
+  .change-table tbody tr:last-child td { border-bottom:none; }
+  .change-table .value-before { color:var(--pg-danger); }
+  .change-table .value-after { color:var(--pg-success); }
   .drawer-foot { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--pg-border-light); }
   #toast { position:fixed; left:50%; bottom:32px; transform:translateX(-50%); background:var(--pg-text); color:var(--pg-card-bg); font-size:13px; padding:8px 16px; border-radius:6px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:99; }
   #toast.show { opacity:.92; }
@@ -143,7 +150,7 @@
     <button class="btn btn-primary" onclick="renderRows();toast('已按条件查询')">查询</button>
     <button class="btn btn-default" onclick="resetFilter()">重置</button>
   </section>
-  <div class="anno"><span class="k">◆ 原型说明：</span>审计默认只记录摘要，不保存请求/响应体；保留 90 天可配。详情抽屉展示事件上下文（脱敏），用于排障和追踪。<span class="anno-actions"><button class="btn btn-default btn-sm" onclick="showEmpty()">原型演示：无记录</button><button class="btn btn-default btn-sm" onclick="showError()">原型演示：加载失败</button></span></div>
+  <div class="anno"><span class="k">◆ 原型说明：</span>审计默认只记录摘要，不保存请求/响应体；保留 90 天可配。阶段六 R24 在详情抽屉新增字段变更表，只展示脱敏后的字段名、变更前、变更后。<span class="anno-actions"><button class="btn btn-default btn-sm" onclick="showEmpty()">原型演示：无记录</button><button class="btn btn-default btn-sm" onclick="showError()">原型演示：加载失败</button></span></div>
 
   <main class="main">
     <div class="table-wrap" id="tableWrap"></div>
@@ -161,16 +168,25 @@
 
 <script>
   var rows = [
-    {time:'2026-07-05 14:21:30', actor:'admin', tenant:'平台', type:'权限', resource:'role:assign-perm', target:'角色：普通用户', result:'成功', status:'完成', ip:'10.0.0.12', cost:'42ms', err:'', summary:'移除 score-profile:publish-public，相关用户 perm_ver 已自增', ctx:{request_id:'req_20260705142130_01', permission_code:'score-profile:publish-public', action:'revoke_permission', affected_users:8, perm_ver_changed:true}},
+    {time:'2026-07-05 14:21:30', actor:'admin', tenant:'平台', type:'权限', resource:'role:assign-perm', target:'角色：普通用户', result:'成功', status:'完成', ip:'10.0.0.12', cost:'42ms', err:'', summary:'移除 score-profile:publish-public，相关用户 perm_ver 已自增', changes:[{field:'角色权限', before:'score-profile:publish-tenant, score-profile:publish-public', after:'score-profile:publish-tenant'}, {field:'perm_ver 影响用户', before:'0', after:'8'}], ctx:{request_id:'req_20260705142130_01', permission_code:'score-profile:publish-public', action:'revoke_permission', affected_users:8, perm_ver_changed:true}},
     {time:'2026-07-05 14:19:05', actor:'zhang_analyst', tenant:'企业 A', type:'接口', resource:'board:view', target:'每日榜单', result:'成功', status:'完成', ip:'203.0.113.18', cost:'128ms', err:'', summary:'读取公开评分方案并返回榜单快照', ctx:{request_id:'req_20260705141905_02', route:'/api/boards/daily', profile_ref:'public:trend-leader', page_size:50, data_scope:'tenant_visible'}},
     {time:'2026-07-05 14:16:44', actor:'li_paid', tenant:'企业 A', type:'安全', resource:'auth:login', target:'账号 li_paid', result:'拒绝', status:'异常', ip:'203.0.113.44', cost:'18ms', err:'账号已禁用', summary:'禁用用户尝试登录被拒绝', ctx:{request_id:'req_20260705141644_03', login_result:'disabled_user', risk_rule:'account_status_check', lock_remaining_sec:0}},
     {time:'2026-07-05 14:12:11', actor:'scheduler', tenant:'平台', type:'任务', resource:'data-task:manage', target:'daily job', result:'成功', status:'完成', ip:'127.0.0.1', cost:'13.6s', err:'', summary:'每日任务完成，质检无高危问题', ctx:{task_id:'task_20260705_daily', job_name:'daily', affected_tables:['stock_daily','indicator_snapshot'], quality_level:'pass'}},
     {time:'2026-07-05 14:09:33', actor:'tenant_admin_a', tenant:'企业 A', type:'接口', resource:'tenant:update', target:'租户：企业 B', result:'拒绝', status:'异常', ip:'203.0.113.22', cost:'16ms', err:'权限不足', summary:'租管尝试跨租户操作，后端 403', ctx:{request_id:'req_20260705140933_05', denied_reason:'cross_tenant_access', current_tenant:'企业 A', target_tenant:'企业 B'}},
-    {time:'2026-07-05 14:03:27', actor:'admin', tenant:'平台', type:'配置', resource:'data-settings:manage', target:'系统设置', result:'成功', status:'完成', ip:'10.0.0.12', cost:'61ms', err:'', summary:'保存 auth.require_email_code=false', ctx:{request_id:'req_20260705140327_06', config_key:'auth.require_email_code', old_value:'true', new_value:'false'}}
+    {time:'2026-07-05 14:03:27', actor:'admin', tenant:'平台', type:'配置', resource:'data-settings:manage', target:'系统设置', result:'成功', status:'完成', ip:'10.0.0.12', cost:'61ms', err:'', summary:'保存 auth.require_email_code=false', changes:[{field:'auth.require_email_code', before:'true', after:'false'}], ctx:{request_id:'req_20260705140327_06', config_key:'auth.require_email_code', old_value:'true', new_value:'false'}}
   ];
   function typeTag(t){ return t==='安全'?'tag-danger':t==='任务'?'tag-info':t==='权限'?'tag-warning':'tag-success'; }
   function resultTag(t){ return t==='成功'?'tag-success':t==='失败'?'tag-warning':t==='拒绝'?'tag-danger':'tag-info'; }
   function statusTag(t){ return t==='完成'?'tag-success':t==='处理中'?'tag-warning':t==='异常'?'tag-danger':'tag-info'; }
+  function displayValue(v){ if(Array.isArray(v)) return v.join(', '); return v===undefined||v===null||v===''?'—':String(v); }
+  function esc(v){ return displayValue(v).replace(/[&<>"']/g,function(ch){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]; }); }
+  function changeSection(r){
+    var changes=Array.isArray(r.changes)?r.changes:[];
+    if(!changes.length) return '<section class="detail-section"><h4>字段变更</h4><p class="muted">无字段级变更</p></section>';
+    var html='<section class="detail-section"><h4>字段变更</h4><div class="change-table"><table><thead><tr><th style="width:34%">字段</th><th style="width:33%">变更前</th><th style="width:33%">变更后</th></tr></thead><tbody>';
+    changes.forEach(function(c){ html+='<tr><td class="code">'+esc(c.field)+'</td><td class="value-before">'+esc(c.before)+'</td><td class="value-after">'+esc(c.after)+'</td></tr>'; });
+    return html+'</tbody></table></div></section>';
+  }
   function renderRows(){
     var q=(document.getElementById('keyword').value||'').toLowerCase();
     var type=document.getElementById('v-type').textContent.replace('事件：','');
@@ -182,8 +198,9 @@
     if(status!=='全部') data=data.filter(r=>r.status===status);
     if(!data.length){ showEmpty(false); return; }
     var html='<table><thead><tr><th style="width:160px">时间</th><th style="width:130px">处理人</th><th style="width:90px">事件类型</th><th style="width:170px">资源/接口</th><th style="min-width:180px">目标对象</th><th style="width:90px">结果</th><th style="width:90px">状态</th><th style="width:120px">IP</th><th style="width:90px">耗时</th><th style="min-width:200px">错误摘要</th><th style="width:80px">操作</th></tr></thead><tbody>';
-    data.forEach(function(r,i){
-      html+='<tr onclick="openDrawer('+i+')"><td>'+r.time+'</td><td>'+r.actor+'</td><td><span class="tag '+typeTag(r.type)+'">'+r.type+'</span></td><td class="code">'+r.resource+'</td><td class="ellipsis">'+r.target+'</td><td><span class="tag '+resultTag(r.result)+'">'+r.result+'</span></td><td><span class="tag '+statusTag(r.status)+'">'+r.status+'</span></td><td>'+r.ip+'</td><td>'+r.cost+'</td><td class="ellipsis">'+(r.err||'—')+'</td><td><span class="link" onclick="event.stopPropagation();openDrawer('+i+')">详情</span></td></tr>';
+    data.forEach(function(r){
+      var rowIndex=rows.indexOf(r);
+      html+='<tr onclick="openDrawer('+rowIndex+')"><td>'+r.time+'</td><td>'+r.actor+'</td><td><span class="tag '+typeTag(r.type)+'">'+r.type+'</span></td><td class="code">'+r.resource+'</td><td class="ellipsis">'+r.target+'</td><td><span class="tag '+resultTag(r.result)+'">'+r.result+'</span></td><td><span class="tag '+statusTag(r.status)+'">'+r.status+'</span></td><td>'+r.ip+'</td><td>'+r.cost+'</td><td class="ellipsis">'+(r.err||'—')+'</td><td><span class="link" onclick="event.stopPropagation();openDrawer('+rowIndex+')">详情</span></td></tr>';
     });
     html+='</tbody></table>';
     document.getElementById('tableWrap').innerHTML=html;
@@ -195,8 +212,8 @@
   function reload(){ document.getElementById('tableWrap').innerHTML='<div class="state"><b>加载中...</b>正在读取最近审计记录</div>'; setTimeout(function(){ renderRows(); toast('已刷新'); },500); }
   function openDrawer(i){
     var r=rows[i];
-    var detail = JSON.stringify(r.ctx || {}, null, 2);
-    document.getElementById('drawerBody').innerHTML='<div class="detail-hero"><div class="detail-top"><div class="detail-title"><b>'+r.target+'</b><span>'+r.time+' · '+r.actor+'</span></div><div class="detail-badges"><span class="tag '+typeTag(r.type)+'">'+r.type+'</span><span class="tag '+resultTag(r.result)+'">'+r.result+'</span><span class="tag '+statusTag(r.status)+'">'+r.status+'</span></div></div><div class="detail-summary">'+r.summary+'</div></div><div class="detail-grid"><section class="detail-card"><h4>执行信息</h4><div class="info-row"><span class="label">处理人</span><span class="value">'+r.actor+'</span></div><div class="info-row"><span class="label">租户</span><span class="value">'+r.tenant+'</span></div><div class="info-row"><span class="label">来源 IP</span><span class="value">'+r.ip+'</span></div><div class="info-row"><span class="label">耗时</span><span class="value">'+r.cost+'</span></div></section><section class="detail-card"><h4>资源信息</h4><div class="info-row"><span class="label">资源码</span><span class="value code">'+r.resource+'</span></div><div class="info-row"><span class="label">目标对象</span><span class="value">'+r.target+'</span></div><div class="info-row"><span class="label">事件结果</span><span class="value">'+r.result+'</span></div><div class="info-row"><span class="label">事件状态</span><span class="value">'+r.status+'</span></div></section></div><section class="detail-section"><h4>错误摘要</h4><p class="'+(r.err?'':'muted')+'">'+(r.err||'无错误摘要')+'</p></section><section class="detail-section"><h4>事件上下文（脱敏）</h4><div class="json">'+detail+'</div></section><div class="anno"><span class="k">◆ 原型说明：</span>事件上下文用于追踪请求、权限、任务或配置变更原因；只展示脱敏摘要，不展示原始请求体、响应体、密码、token、验证码等敏感内容。</div>';
+    var detail = esc(JSON.stringify(r.ctx || {}, null, 2));
+    document.getElementById('drawerBody').innerHTML='<div class="detail-hero"><div class="detail-top"><div class="detail-title"><b>'+esc(r.target)+'</b><span>'+esc(r.time)+' · '+esc(r.actor)+'</span></div><div class="detail-badges"><span class="tag '+typeTag(r.type)+'">'+esc(r.type)+'</span><span class="tag '+resultTag(r.result)+'">'+esc(r.result)+'</span><span class="tag '+statusTag(r.status)+'">'+esc(r.status)+'</span></div></div><div class="detail-summary">'+esc(r.summary)+'</div></div><div class="detail-grid"><section class="detail-card"><h4>执行信息</h4><div class="info-row"><span class="label">处理人</span><span class="value">'+esc(r.actor)+'</span></div><div class="info-row"><span class="label">租户</span><span class="value">'+esc(r.tenant)+'</span></div><div class="info-row"><span class="label">来源 IP</span><span class="value">'+esc(r.ip)+'</span></div><div class="info-row"><span class="label">耗时</span><span class="value">'+esc(r.cost)+'</span></div></section><section class="detail-card"><h4>资源信息</h4><div class="info-row"><span class="label">资源码</span><span class="value code">'+esc(r.resource)+'</span></div><div class="info-row"><span class="label">目标对象</span><span class="value">'+esc(r.target)+'</span></div><div class="info-row"><span class="label">事件结果</span><span class="value">'+esc(r.result)+'</span></div><div class="info-row"><span class="label">事件状态</span><span class="value">'+esc(r.status)+'</span></div></section></div>'+changeSection(r)+'<section class="detail-section"><h4>错误摘要</h4><p class="'+(r.err?'':'muted')+'">'+esc(r.err||'无错误摘要')+'</p></section><section class="detail-section"><h4>事件上下文（脱敏）</h4><div class="json">'+detail+'</div></section><div class="anno"><span class="k">◆ 原型说明：</span>字段变更表只用于关键配置、权限和管理操作的 from/to 可观测；事件上下文继续用于追踪请求、权限、任务或配置原因，且只展示脱敏摘要。</div>';
     document.getElementById('overlay').classList.add('show');
   }
   function closeDrawer(){ document.getElementById('overlay').classList.remove('show'); }
