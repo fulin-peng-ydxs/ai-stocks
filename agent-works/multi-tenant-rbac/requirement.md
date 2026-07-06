@@ -268,7 +268,7 @@
 - **异常情况**：审计写失败**降级**（落本地日志兜底），绝不阻断主业务；审计写入异步，避免拖慢请求。
 - **权限与数据范围**：系统管理员看全局；租户管理员看本租户（13 章确认）。
 - **对现有功能的影响**：现有功能靠中间件/钩子自动纳入，不逐接口手写埋点。【风险】审计表高频增长 → 需保留期清理 + 索引/分区。
-- **阶段五落地事实**：已新增 `audit_log` 索引、`/api/audit` 查询/摘要/详情、审计页 `/system/audit`、`audit:view` 资源码和 tenant_admin 默认授权；审计列表和详情会展示由 `sys_resource.name` 派生的中文说明；审计筛选下拉已沉淀为 `AppFilterSelect`，默认多选、可搜索、可清空、选择即查询，系统管理员租户筛选改为 `/api/tenants` 下拉，租户管理员不展示跨租户入口且服务层强制本租户；已覆盖 API、安全、任务、调度、RBAC、配置和字典维护事件。
+- **阶段五落地事实**：已新增 `audit_log` 索引、`/api/audit` 查询/摘要/详情、审计页 `/system/audit`、`audit:view` 资源码和 tenant_admin 默认授权；审计列表和详情会展示由 `sys_resource.name` 派生的中文说明；审计筛选下拉已沉淀为 `AppFilterSelect`，默认多选、可搜索、可清空、最多展示 3 个选中标签且溢出提前折叠，选择即查询，系统管理员租户筛选改为 `/api/tenants` 下拉，租户管理员不展示跨租户入口且服务层强制本租户；已覆盖 API、安全、任务、调度、RBAC、配置和字典维护事件。
 
 ### R18 数据字典（新需求）
 - **功能描述**：以「字典类型 + 字典项（code/label/排序/启用/备注）」统一管理枚举；后端校验枚举合法性引用字典，前端下拉/标签渲染消费字典。
@@ -279,7 +279,7 @@
 - **异常情况**：缺失字典 → 回落默认；前端字典缓存（启动拉取 + 变更失效，13 章确认）。
 - **权限与数据范围**：系统管理员维护，全系统登录用户通过 `dict:read` 消费启用项；无角色用户 fail-closed，不获得 `dict:read`。
 - **对现有功能的影响**：渐进改造，现有硬编码枚举逐步引用字典；本期不强制全量替换。
-- **阶段五落地事实**：已新增 `dict_type`、`dict_item`、`/api/dict/types`、`/api/dict/items`、`/api/dict/items/public` 和 `/system/dicts`；管理端接口使用 system-only 守卫，`dict:read` 加入登录基线共享读并锚定 `/board`；类型 code、字典项 type/code 创建后不可变，编辑弹窗禁用对应字段，PUT 不提交不可变字段；审计页已消费审计事件类型、审计结果和审计状态字典，角色类型/用户状态仍按渐进迁移处理。
+- **阶段五落地事实**：已新增 `dict_type`、`dict_item`、`/api/dict/types`、`/api/dict/items`、`/api/dict/items/public` 和 `/system/dicts`；管理端接口使用 system-only 守卫，`dict:read` 加入登录基线共享读并锚定 `/board`；类型 code、字典项 type/code 创建后不可变，编辑弹窗禁用对应字段，PUT 不提交不可变字段；数据字典右侧状态筛选复用 `AppFilterSelect`，默认多选，单选启用/停用时传 `enabled=true/false`，双选等价于不过滤；审计页已消费审计事件类型、审计结果和审计状态字典，角色类型/用户状态仍按渐进迁移处理。
 
 ### R19 配置管理拆父子菜单（新需求）
 - **功能描述**：将 [ConfigView.vue](../../frontend/src/views/ConfigView.vue) 单页 4 tab 拆为「配置管理」父菜单 + 4 个独立子页面（独立路由 `/system/config/{score|trade|tech|system}`），阶段四 R28 已前移落地为复用同一 ConfigView 的单 tab 模式。
@@ -698,7 +698,7 @@
 - **页面原型**：数据字典 [prototypes/data-dictionary.html](prototypes/data-dictionary.html)、日志审计 [prototypes/audit-log.html](prototypes/audit-log.html)。系统设置注册防滥用开关复用阶段四已落地的 `/system/config/system` 页面，不单独新增原型。
 - **开发计划与 SQL 归档**：[stage5-platform-capabilities/plan.md](stage5-platform-capabilities/plan.md)、[stage5-platform-capabilities/stage5-platform-capabilities.sql](stage5-platform-capabilities/stage5-platform-capabilities.sql)、[stage5-platform-capabilities/resource-codes.sql](stage5-platform-capabilities/resource-codes.sql)。
 - **后端实现索引**：`backend/storage/pg_ddl.py`（`audit_log`/`dict_type`/`dict_item`、阶段五 seed、`dict:read` baseline）、`backend/services/audit_service.py`、`backend/storage/audit_repository.py`、`backend/services/dict_service.py`、`backend/storage/dict_repository.py`、`backend/api/audit.py`、`backend/api/dicts.py`、`backend/storage/app_config.py`、`backend/api/data_admin.py`、`backend/services/auth_service.py`。
-- **前端实现索引**：`frontend/src/views/system/AuditLogView.vue`、`frontend/src/views/system/DataDictionaryView.vue`、`frontend/src/views/ConfigView.vue`、`frontend/src/components/config/ConfigGroupForm.vue`、`frontend/src/api/{audit,dict,data}.ts`、`frontend/src/router/index.ts`、`frontend/src/layout/pageRegistry.ts`。
+- **前端实现索引**：`frontend/src/views/system/AuditLogView.vue`、`frontend/src/views/system/DataDictionaryView.vue`、`frontend/src/views/ConfigView.vue`、`frontend/src/components/AppFilterSelect.vue`、`frontend/src/components/config/ConfigGroupForm.vue`、`frontend/src/api/{audit,dict,data}.ts`、`frontend/src/router/index.ts`、`frontend/src/layout/pageRegistry.ts`。
 - **验收基线**：阶段五初版后端专项 `33 passed`（`test_stage5_config_t2.py`、`test_stage5_auth_config.py`、`test_stage5_audit.py`、`test_stage5_audit_collection.py`、`test_stage5_dicts.py`、`test_stage5_resource_codes.py`），前端全量 `npm run test -- --run` 为 `21 passed` 测试文件、`212 passed` 用例，`npm run build` 通过。缺陷整改复测：后端认证/审计/字典/DDL 专项 `23 passed`，前端审计/字典/系统设置/登录验证码专项 `25 passed`，`npm run build` 通过；`/system/audit`、`/system/dicts`、`/system/config/system` 在 5181 预览下完成分页、筛选、目标中文说明、系统设置下拉宽度和页面设置抽屉复核；登录图形验证码开启即展示、提交即校验由单测和后端 API 回归覆盖。
 - **范围边界回写**：R23 自动清理任务未纳入阶段五；阶段五只实现 `audit.retention_days=90` 配置、后端默认查询窗口和页面提示。R24 字段级 from→to、R22 静默刷新、R25/R26/R27 仍按后续建议或暂不实现处理。
 

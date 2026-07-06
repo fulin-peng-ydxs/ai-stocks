@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -57,8 +58,22 @@ const { settings, isDirty: bizDirty, reset: resetBiz } = usePageSettings(pageKey
   selectedTypeCode: '',
   typeKeyword: '',
   itemKeyword: '',
-  itemEnabled: '',
+  itemEnabled: [] as string[],
 })
+
+function migrateItemEnabledSetting() {
+  try {
+    const raw = localStorage.getItem(`ai-stocks:page-settings:${pageKey}`)
+    const saved = raw ? JSON.parse(raw) as { itemEnabled?: unknown } : null
+    if (typeof saved?.itemEnabled === 'string') {
+      settings.itemEnabled = saved.itemEnabled ? [saved.itemEnabled] : []
+    }
+  } catch {
+    /* ignore stale page setting */
+  }
+}
+
+migrateItemEnabledSetting()
 
 const settingsOpen = ref(false)
 const typeRows = ref<DictType[]>([])
@@ -92,6 +107,10 @@ const itemForm = reactive({
   sort: 100,
   remark: '',
 })
+const itemEnabledOptions = [
+  { value: 'true', label: '启用' },
+  { value: 'false', label: '停用' },
+]
 
 const drawerDirty = computed(() => layoutDirty.value || bizDirty.value)
 const canManageDict = computed(() => auth.isSystem)
@@ -110,8 +129,11 @@ function colVisible(key: string): boolean {
 }
 
 function enabledParam(value: unknown): boolean | null {
-  if (value === 'true') return true
-  if (value === 'false') return false
+  const values = (Array.isArray(value) ? value : [value]).map(String).filter(Boolean)
+  const uniqueValues = Array.from(new Set(values))
+  if (uniqueValues.length !== 1) return null
+  if (uniqueValues[0] === 'true') return true
+  if (uniqueValues[0] === 'false') return false
   return null
 }
 
@@ -209,7 +231,7 @@ async function selectType(code: string) {
   if (settings.selectedTypeCode === code) return
   settings.selectedTypeCode = code
   settings.itemKeyword = ''
-  settings.itemEnabled = ''
+  settings.itemEnabled = []
   itemPage.value = 1
   await loadItems()
 }
@@ -481,10 +503,13 @@ onMounted(loadAll)
           </header>
 
           <div class="dict-item-filters">
-            <el-select v-model="settings.itemEnabled" clearable placeholder="状态" class="w110" @change="searchItems">
-              <el-option label="启用" value="true" />
-              <el-option label="停用" value="false" />
-            </el-select>
+            <AppFilterSelect
+              v-model="settings.itemEnabled"
+              :options="itemEnabledOptions"
+              placeholder="状态"
+              class="w110"
+              @change="searchItems"
+            />
             <el-input v-model="settings.itemKeyword" clearable placeholder="搜索字典项 code / 名称" class="w240" @keyup.enter="searchItems" />
             <el-button @click="searchItems">查询</el-button>
           </div>

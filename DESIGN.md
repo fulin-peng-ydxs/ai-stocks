@@ -189,7 +189,7 @@ Key Characteristics：
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用 |
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用 |
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚优先复用 |
-| `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；筛选下拉优先复用 |
+| `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；默认最多展示 3 个选中标签，溢出时提前折叠；筛选下拉优先复用 |
 | `ConfigGroupForm` | `frontend/src/components/config/ConfigGroupForm.vue` | 系统设置配置组表单 | 无直接系统组件种类 | 动态配置组字段渲染优先复用 |
 | `HelpTip` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpHint.vue` | 页面说明和短提示 | 无直接系统组件种类 | 说明性长文收进提示组件，不在页面堆长文 |
 
@@ -336,7 +336,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 主数据区优先占据可用空间，表格表体内滚，分页和关键操作稳定展示。
 - 所有滚动祖先保持 `min-height: 0`。
 - 列表页分页/排序走服务端；筛选变更自动触发；多选跨分页/搜索累积。
-- 列表页筛选下拉优先复用 `AppFilterSelect`；默认多选、可搜索、可清空，选择变更即向页面发出筛选事件，页面负责触发服务端查询。
+- 列表页筛选下拉优先复用 `AppFilterSelect`；默认多选、可搜索、可清空，最多展示 3 个选中标签并在溢出时提前折叠，选择变更即向页面发出筛选事件，页面负责触发服务端查询。
 - 说明性/描述性文字只要不是极短标签或必要操作指引/实时状态说明，收进 `HelpTip` / `HelpHint`。
 - 新增可配置能力必须同时具备组件能力事实源、字段配置事实源、页面消费事实源。
 

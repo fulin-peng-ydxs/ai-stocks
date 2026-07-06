@@ -443,7 +443,7 @@ Slot 与组件设计：
 | 类型选择 | R18 | 切换左侧类型刷新右侧标题、筛选和表格 | `selectedTypeCode` 驱动项查询 | `typeList`、`itemTable` | `GET /api/dict/items?type_code=` | 当前类型被禁用或删除后回到首个可用类型 | T9 |
 | 编辑类型 | R18 | 右侧操作打开类型编辑弹窗 | `el-dialog`，code 创建后不可改，编辑态禁用 code 输入 | `typeDialog` | `PUT /api/dict/types/{code}` | 保存失败、权限不足、试图改 code 被拒绝 | T6、T9 |
 | 新建/编辑字典项 | R18 | 当前类型下新增或编辑 item | `el-dialog` 表单，创建态填写 code，编辑态禁用 type_code/code，只允许改 label、sort、enabled、remark | `itemDialog` | `POST /api/dict/items`、`PUT /api/dict/items/{type_code}/{code}` | 当前类型缺失、重复 item code、试图改 code 被拒绝 | T6、T9、T13 |
-| 状态筛选 | R18 | 全部/启用/停用 | 查询参数或本地过滤 | `filter-bar` | `GET /api/dict/items` | 无结果 | T9 |
+| 状态筛选 | R18 | 全部/启用/停用 | 复用 `AppFilterSelect`，默认多选；单选启用/停用时传 `enabled=true/false`，双选等价于不过滤 | `filter-bar` | `GET /api/dict/items` | 无结果 | T9 |
 | 字典项查询 | R18 | 按 code/label 搜索 | 服务端分页查询 | `filter-bar` | `GET /api/dict/items` | 查询 loading、服务异常 | T6、T9 |
 | 字典项表格 | R18 | 展示 code、名称、排序、启用、备注、操作 | `el-table`，表体横向/纵向内滚 | `itemTable` | `GET /api/dict/items` | 空表格、列宽稳定、分页 | T9、T13 |
 | 启停字典项 | R18 | switch 切换启用状态 | 调 update 接口，成功后刷新并失效缓存 | `el-switch` | `PUT /api/dict/items/{type_code}/{code}` | 保存失败回滚开关 | T6、T9 |
@@ -532,8 +532,8 @@ Slot 与组件设计：
 | 导出入口禁用 | R17/R23 | 原型有禁用导出，本阶段不实现 | 禁用按钮或不渲染；如渲染则提示后续能力 | `toolbar` | - | 不产生 API 调用 | T8 |
 | 摘要指标 | R17 | 今日事件、失败/拒绝、安全事件、租户范围 | KPI grid；跟随筛选或默认范围 | `summary` slot | `GET /api/audit/summary` | summary 失败不阻塞主表，可显示占位 | T4、T8 |
 | 时间范围筛选 | R17 | 默认最近 retention_days 或近 N 天 | `el-date-picker`，服务端校验范围 | `filters` | `GET /api/audit` | 开始晚于结束时报错 | T4、T8 |
-| 事件类型筛选 | R17/R18 | 接口/任务/安全/权限/配置/字典 | 选项来自字典，失败回退内置枚举 | `filters`、`dictService` | `/api/dict/items/public` 或内置 | 字典异常回退默认 | T6、T8 |
-| 结果/状态筛选 | R17/R18 | 成功/失败/拒绝，完成/处理中/异常 | 选项来自字典或内置默认 | `filters` | `GET /api/audit` | 无结果空态 | T6、T8 |
+| 事件类型筛选 | R17/R18 | 接口/任务/安全/权限/配置/字典 | 复用 `AppFilterSelect`，选项来自字典，失败回退内置枚举 | `filters`、`dictService` | `/api/dict/items/public` 或内置 | 字典异常回退默认 | T6、T8 |
+| 结果/状态筛选 | R17/R18 | 成功/失败/拒绝，完成/处理中/异常 | 复用 `AppFilterSelect`，选项来自字典或内置默认 | `filters` | `GET /api/audit` | 无结果空态 | T6、T8 |
 | 关键词筛选 | R17 | 处理人/资源码/目标对象 | 服务端 LIKE/ILIKE 或参数化查询 | `filters` | `GET /api/audit` | 特殊字符参数化，不拼 SQL | T4、T8 |
 | 审计宽表 | R17 | 时间、处理人、事件、资源、目标、结果、状态、IP、耗时、错误摘要、操作 | `el-table`，横向内滚，长文本省略 | `auditTable` | `GET /api/audit` | loading、无记录、服务异常、分页 | T4、T8、T13 |
 | 分页 | R17 | 服务端分页 | `el-pagination` | `auditTable` | `GET /api/audit` | 页码越界回退 | T4、T8 |
@@ -845,7 +845,7 @@ Slot 与组件设计：
   - 页面单测覆盖筛选、刷新、空态、错误态、详情抽屉。
   - 视口 `1100x620`、`1366x768`、`1440x900` 截图/交互验证。
 - 完成标准：页面功能点承接表全部可观察，排版无重叠。
-- 实际落地情况：已按 `audit-log.html` 承接日志审计页面，完成标题工具区、自动刷新、手动刷新、禁用导出入口、摘要指标、筛选栏、服务端分页、审计宽表、只读详情抽屉、loading、无记录、服务异常、权限不足、低高度退化和租户管理员不展示租户过滤入口。事件类型、结果和状态选项优先消费 `/api/dict/items/public`，失败回退内置枚举；筛选下拉已沉淀为 `AppFilterSelect`，默认多选、可搜索、可清空，选择后即时查询；系统管理员租户筛选改为 `/api/tenants` 下拉并支持多选，租户管理员无跨租户入口。后端 `/api/audit` 列表和摘要支持重复 query 参数多值筛选，租户管理员范围仍由服务层强制覆盖。目标对象展示由审计对象和 `sys_resource.name` 中文说明组成。默认时间不强制前端传参，由后端 `audit.retention_days=90` 默认窗口收口，页面摘要提示“默认最近 90 天”。审计表 `auditTable` 已接入 `wide-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，并同步前端 `componentConfig` 与后端 `layout_config` 字段白名单，避免设置保存被拒。已补 `AuditLogView.spec.ts` 覆盖加载、查询、筛选多选即时查询、租户下拉、空态、错误重试、详情抽屉、权限态、租户管理员无跨租户入口和自动刷新清理；已补 `test_stage5_audit.py` 覆盖多值筛选。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t8-audit-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出、无关键区域重叠，详情抽屉和页面设置抽屉已验证；本轮下拉多选整改以单测、后端接口测试和构建复验为准。
+- 实际落地情况：已按 `audit-log.html` 承接日志审计页面，完成标题工具区、自动刷新、手动刷新、禁用导出入口、摘要指标、筛选栏、服务端分页、审计宽表、只读详情抽屉、loading、无记录、服务异常、权限不足、低高度退化和租户管理员不展示租户过滤入口。事件类型、结果和状态选项优先消费 `/api/dict/items/public`，失败回退内置枚举；筛选下拉已沉淀为 `AppFilterSelect`，默认多选、可搜索、可清空，最多展示 3 个选中标签且溢出提前折叠，选择后即时查询；系统管理员租户筛选改为 `/api/tenants` 下拉并支持多选，租户管理员无跨租户入口。后端 `/api/audit` 列表和摘要支持重复 query 参数多值筛选，租户管理员范围仍由服务层强制覆盖。目标对象展示由审计对象和 `sys_resource.name` 中文说明组成。默认时间不强制前端传参，由后端 `audit.retention_days=90` 默认窗口收口，页面摘要提示“默认最近 90 天”。审计表 `auditTable` 已接入 `wide-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，并同步前端 `componentConfig` 与后端 `layout_config` 字段白名单，避免设置保存被拒。已补 `AuditLogView.spec.ts` 覆盖加载、查询、筛选多选即时查询、租户下拉、空态、错误重试、详情抽屉、权限态、租户管理员无跨租户入口和自动刷新清理；已补 `test_stage5_audit.py` 覆盖多值筛选。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t8-audit-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出、无关键区域重叠，详情抽屉和页面设置抽屉已验证；本轮下拉多选整改以单测、后端接口测试和构建复验为准。
 
 ### 6.9 任务 T9：数据字典前端页面
 
@@ -871,7 +871,7 @@ Slot 与组件设计：
   - 页面单测覆盖主从联动、弹窗、保存失败、空/错/重试和权限按钮。
   - 视口 `1100x620`、`1366x768`、`1440x900` 截图/交互验证。
 - 完成标准：页面功能点承接表全部可观察，弹窗编辑符合用户管理页交互。
-- 实际落地情况：已按 `data-dictionary.html` 承接数据字典 master-detail 维护页，完成标题工具区、新建类型、刷新、类型搜索、类型列表、类型选择、字典项状态筛选、关键字查询、服务端分页、每页条数选择、字典项表格、新建/编辑类型弹窗、新建/编辑字典项弹窗、启停、删除确认、loading、空态、错误重试和权限不足状态。编辑类型弹窗禁用类型 code，编辑字典项弹窗禁用 type_code 和 item code；保存时不向 PUT 请求提交不可变 code 字段。`itemTable` 已登记 `data-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，默认隐藏备注和更新时间列，保证低宽度下常用操作列不被遮挡；备注和更新时间可通过设置抽屉列显隐打开。已同步 `DESIGN.md`，补 `DataDictionaryView.spec.ts` 覆盖主从加载、类型切换、筛选透传、新建/编辑 code 不可变、错误重试和 system-only 权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t9-dict-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；已验证新建类型弹窗、编辑类型 code 禁用、设置抽屉“字典项表/每页条数/列显隐”可见。
+- 实际落地情况：已按 `data-dictionary.html` 承接数据字典 master-detail 维护页，完成标题工具区、新建类型、刷新、类型搜索、类型列表、类型选择、字典项状态筛选、关键字查询、服务端分页、每页条数选择、字典项表格、新建/编辑类型弹窗、新建/编辑字典项弹窗、启停、删除确认、loading、空态、错误重试和权限不足状态。字典项状态筛选已接入 `AppFilterSelect`，默认多选，单选启用/停用时传 `enabled=true/false`，双选等价于不过滤，并兼容旧本地单选记忆值。编辑类型弹窗禁用类型 code，编辑字典项弹窗禁用 type_code 和 item code；保存时不向 PUT 请求提交不可变 code 字段。`itemTable` 已登记 `data-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，默认隐藏备注和更新时间列，保证低宽度下常用操作列不被遮挡；备注和更新时间可通过设置抽屉列显隐打开。已同步 `DESIGN.md`，补 `DataDictionaryView.spec.ts` 覆盖主从加载、类型切换、筛选透传、新建/编辑 code 不可变、错误重试和 system-only 权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t9-dict-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；已验证新建类型弹窗、编辑类型 code 禁用、设置抽屉“字典项表/每页条数/列显隐”可见。
 
 ### 6.10 任务 T10：系统设置页接入 R16/R17 配置和布局复用整改
 
