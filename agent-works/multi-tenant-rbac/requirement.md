@@ -279,7 +279,7 @@
 - **异常情况**：缺失字典 → 回落默认；前端字典缓存（启动拉取 + 变更失效，13 章确认）。
 - **权限与数据范围**：系统管理员维护，全系统登录用户通过 `dict:read` 消费启用项；无角色用户 fail-closed，不获得 `dict:read`。
 - **对现有功能的影响**：渐进改造，现有硬编码枚举逐步引用字典；本期不强制全量替换。
-- **阶段五落地事实**：已新增 `dict_type`、`dict_item`、`/api/dict/types`、`/api/dict/items`、`/api/dict/items/public` 和 `/system/dicts`；管理端接口使用 system-only 守卫，`dict:read` 加入登录基线共享读并锚定 `/board`；类型 code、字典项 type/code 创建后不可变，编辑弹窗禁用对应字段，PUT 不提交不可变字段；数据字典右侧状态筛选复用 `AppFilterSelect`，默认多选，单选启用/停用时传 `enabled=true/false`，双选等价于不过滤；审计页已消费审计事件类型、审计结果和审计状态字典，角色类型/用户状态仍按渐进迁移处理。
+- **阶段五落地事实**：已新增 `dict_type`、`dict_item`、`/api/dict/types`、`/api/dict/items`、`/api/dict/items/public` 和 `/system/dicts`；管理端接口使用 system-only 守卫，`dict:read` 加入登录基线共享读并锚定 `/board`；类型 code、字典项 type/code 创建后不可变，编辑弹窗禁用对应字段，PUT 不提交不可变字段；数据字典右侧状态筛选复用 `AppFilterSelect` 的单选模式，选择启用/停用时传 `enabled=true/false`；审计页已消费审计事件类型、审计结果和审计状态字典，角色类型/用户状态仍按渐进迁移处理。
 
 ### R19 配置管理拆父子菜单（新需求）
 - **功能描述**：将 [ConfigView.vue](../../frontend/src/views/ConfigView.vue) 单页 4 tab 拆为「配置管理」父菜单 + 4 个独立子页面（独立路由 `/system/config/{score|trade|tech|system}`），阶段四 R28 已前移落地为复用同一 ConfigView 的单 tab 模式。

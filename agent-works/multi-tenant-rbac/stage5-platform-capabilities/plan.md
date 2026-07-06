@@ -443,7 +443,7 @@ Slot 与组件设计：
 | 类型选择 | R18 | 切换左侧类型刷新右侧标题、筛选和表格 | `selectedTypeCode` 驱动项查询 | `typeList`、`itemTable` | `GET /api/dict/items?type_code=` | 当前类型被禁用或删除后回到首个可用类型 | T9 |
 | 编辑类型 | R18 | 右侧操作打开类型编辑弹窗 | `el-dialog`，code 创建后不可改，编辑态禁用 code 输入 | `typeDialog` | `PUT /api/dict/types/{code}` | 保存失败、权限不足、试图改 code 被拒绝 | T6、T9 |
 | 新建/编辑字典项 | R18 | 当前类型下新增或编辑 item | `el-dialog` 表单，创建态填写 code，编辑态禁用 type_code/code，只允许改 label、sort、enabled、remark | `itemDialog` | `POST /api/dict/items`、`PUT /api/dict/items/{type_code}/{code}` | 当前类型缺失、重复 item code、试图改 code 被拒绝 | T6、T9、T13 |
-| 状态筛选 | R18 | 全部/启用/停用 | 复用 `AppFilterSelect`，默认多选；单选启用/停用时传 `enabled=true/false`，双选等价于不过滤 | `filter-bar` | `GET /api/dict/items` | 无结果 | T9 |
+| 状态筛选 | R18 | 全部/启用/停用 | 复用 `AppFilterSelect` 的单选模式，选择启用/停用时传 `enabled=true/false` | `filter-bar` | `GET /api/dict/items` | 无结果 | T9 |
 | 字典项查询 | R18 | 按 code/label 搜索 | 服务端分页查询 | `filter-bar` | `GET /api/dict/items` | 查询 loading、服务异常 | T6、T9 |
 | 字典项表格 | R18 | 展示 code、名称、排序、启用、备注、操作 | `el-table`，表体横向/纵向内滚 | `itemTable` | `GET /api/dict/items` | 空表格、列宽稳定、分页 | T9、T13 |
 | 启停字典项 | R18 | switch 切换启用状态 | 调 update 接口，成功后刷新并失效缓存 | `el-switch` | `PUT /api/dict/items/{type_code}/{code}` | 保存失败回滚开关 | T6、T9 |
@@ -871,7 +871,7 @@ Slot 与组件设计：
   - 页面单测覆盖主从联动、弹窗、保存失败、空/错/重试和权限按钮。
   - 视口 `1100x620`、`1366x768`、`1440x900` 截图/交互验证。
 - 完成标准：页面功能点承接表全部可观察，弹窗编辑符合用户管理页交互。
-- 实际落地情况：已按 `data-dictionary.html` 承接数据字典 master-detail 维护页，完成标题工具区、新建类型、刷新、类型搜索、类型列表、类型选择、字典项状态筛选、关键字查询、服务端分页、每页条数选择、字典项表格、新建/编辑类型弹窗、新建/编辑字典项弹窗、启停、删除确认、loading、空态、错误重试和权限不足状态。字典项状态筛选已接入 `AppFilterSelect`，默认多选，单选启用/停用时传 `enabled=true/false`，双选等价于不过滤，并兼容旧本地单选记忆值。编辑类型弹窗禁用类型 code，编辑字典项弹窗禁用 type_code 和 item code；保存时不向 PUT 请求提交不可变 code 字段。`itemTable` 已登记 `data-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，默认隐藏备注和更新时间列，保证低宽度下常用操作列不被遮挡；备注和更新时间可通过设置抽屉列显隐打开。已同步 `DESIGN.md`，补 `DataDictionaryView.spec.ts` 覆盖主从加载、类型切换、筛选透传、新建/编辑 code 不可变、错误重试和 system-only 权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t9-dict-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；已验证新建类型弹窗、编辑类型 code 禁用、设置抽屉“字典项表/每页条数/列显隐”可见。
+- 实际落地情况：已按 `data-dictionary.html` 承接数据字典 master-detail 维护页，完成标题工具区、新建类型、刷新、类型搜索、类型列表、类型选择、字典项状态筛选、关键字查询、服务端分页、每页条数选择、字典项表格、新建/编辑类型弹窗、新建/编辑字典项弹窗、启停、删除确认、loading、空态、错误重试和权限不足状态。字典项状态筛选已接入 `AppFilterSelect` 的单选模式，选择启用/停用时传 `enabled=true/false`，并兼容曾短暂写入的数组型本地记忆值。编辑类型弹窗禁用类型 code，编辑字典项弹窗禁用 type_code 和 item code；保存时不向 PUT 请求提交不可变 code 字段。`itemTable` 已登记 `data-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，默认隐藏备注和更新时间列，保证低宽度下常用操作列不被遮挡；备注和更新时间可通过设置抽屉列显隐打开。已同步 `DESIGN.md`，补 `DataDictionaryView.spec.ts` 覆盖主从加载、类型切换、筛选透传、新建/编辑 code 不可变、错误重试和 system-only 权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t9-dict-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；已验证新建类型弹窗、编辑类型 code 禁用、设置抽屉“字典项表/每页条数/列显隐”可见。
 
 ### 6.10 任务 T10：系统设置页接入 R16/R17 配置和布局复用整改
 

@@ -58,19 +58,12 @@ const { settings, isDirty: bizDirty, reset: resetBiz } = usePageSettings(pageKey
   selectedTypeCode: '',
   typeKeyword: '',
   itemKeyword: '',
-  itemEnabled: [] as string[],
+  itemEnabled: '',
 })
 
 function migrateItemEnabledSetting() {
-  try {
-    const raw = localStorage.getItem(`ai-stocks:page-settings:${pageKey}`)
-    const saved = raw ? JSON.parse(raw) as { itemEnabled?: unknown } : null
-    if (typeof saved?.itemEnabled === 'string') {
-      settings.itemEnabled = saved.itemEnabled ? [saved.itemEnabled] : []
-    }
-  } catch {
-    /* ignore stale page setting */
-  }
+  const raw = settings.itemEnabled as unknown
+  if (Array.isArray(raw)) settings.itemEnabled = raw.length === 1 ? String(raw[0] ?? '') : ''
 }
 
 migrateItemEnabledSetting()
@@ -129,11 +122,8 @@ function colVisible(key: string): boolean {
 }
 
 function enabledParam(value: unknown): boolean | null {
-  const values = (Array.isArray(value) ? value : [value]).map(String).filter(Boolean)
-  const uniqueValues = Array.from(new Set(values))
-  if (uniqueValues.length !== 1) return null
-  if (uniqueValues[0] === 'true') return true
-  if (uniqueValues[0] === 'false') return false
+  if (value === 'true') return true
+  if (value === 'false') return false
   return null
 }
 
@@ -231,7 +221,7 @@ async function selectType(code: string) {
   if (settings.selectedTypeCode === code) return
   settings.selectedTypeCode = code
   settings.itemKeyword = ''
-  settings.itemEnabled = []
+  settings.itemEnabled = ''
   itemPage.value = 1
   await loadItems()
 }
@@ -506,6 +496,7 @@ onMounted(loadAll)
             <AppFilterSelect
               v-model="settings.itemEnabled"
               :options="itemEnabledOptions"
+              :multiple="false"
               placeholder="状态"
               class="w110"
               @change="searchItems"

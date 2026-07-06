@@ -250,19 +250,20 @@ describe('DataDictionaryView', () => {
     }))
   })
 
-  it('字典项状态筛选复用 AppFilterSelect 且双选等价于不过滤', async () => {
+  it('字典项状态筛选复用 AppFilterSelect 且保持单选业务语义', async () => {
     const wrapper = await mountView()
     const selects = wrapper.findAllComponents(AppFilterSelect)
     expect(selects).toHaveLength(1)
     expect(selects[0].props('placeholder')).toBe('状态')
+    expect(selects[0].props('multiple')).toBe(false)
     expect(selects[0].props('maxCollapseTags')).toBe(3)
 
-    selects[0].vm.$emit('update:modelValue', ['true', 'false'])
-    selects[0].vm.$emit('change', ['true', 'false'])
+    selects[0].vm.$emit('update:modelValue', 'false')
+    selects[0].vm.$emit('change', 'false')
     await flushPromises()
 
     expect(dictApi.listDictItems).toHaveBeenLastCalledWith(expect.objectContaining({
-      enabled: null,
+      enabled: false,
     }))
   })
 

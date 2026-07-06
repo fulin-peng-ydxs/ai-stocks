@@ -44,7 +44,7 @@ const ElOptionStub = defineComponent({
   },
 })
 
-function mountSelect(modelValue: string[]) {
+function mountSelect(modelValue: string[] | string, props: Record<string, unknown> = {}) {
   return mount(AppFilterSelect, {
     props: {
       modelValue,
@@ -53,6 +53,7 @@ function mountSelect(modelValue: string[]) {
         { value: 'b', label: '选项 B' },
         { value: 'c', label: '选项 C' },
       ],
+      ...props,
     },
     global: {
       stubs: {
@@ -126,5 +127,14 @@ describe('AppFilterSelect', () => {
     await nextTick()
 
     expect(wrapper.find('.el-select').attributes('data-max-collapse-tags')).toBe('1')
+  })
+
+  it('业务单选场景可关闭多选和标签折叠', async () => {
+    const wrapper = mountSelect('a', { multiple: false })
+    await flushPromises()
+    const select = wrapper.find('.el-select')
+    expect(select.attributes('data-multiple')).toBe('false')
+    expect(select.attributes('data-collapse-tags')).toBe('false')
+    expect(select.attributes('data-collapse-tags-tooltip')).toBe('false')
   })
 })
