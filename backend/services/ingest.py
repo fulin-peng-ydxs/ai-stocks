@@ -283,10 +283,13 @@ class IngestionService:
             self._record_issues(code, df[df["_ohl_repaired"]]["trade_date"], "ohl_repaired",
                                 "开高低缺失，已用收盘价回填（不标一字板）")
             df = df.drop(columns=["_ohl_repaired"])
+        # 源行情覆盖后，派生清洗因子必须重新计算；否则源 adj_factor 被修正时，
+        # 旧 adj_factor_clean 可能继续污染复权价。
+        df["adj_factor_clean"] = None
         bar_cols = [
             "code", "trade_date", "open", "high", "low", "close",
             "pre_close", "volume", "amount", "adj_factor", "turnover_rate",
-            "is_st", "is_suspended", "limit_status", "is_one_word",
+            "adj_factor_clean", "is_st", "is_suspended", "limit_status", "is_one_word",
         ]
         n = self.repo.upsert_daily_bar(df[bar_cols])
         # 衍生指标：流通市值 = 收盘 × 当日流通股本（新浪日线自带 float_share）
@@ -1547,8 +1550,28 @@ class IngestionService:
         anchor_date = None
         if not full:
             a = self.repo.c.query_df(
-                "SELECT max(trade_date) AS d FROM daily_bar "
-                "WHERE code=? AND adj_factor_clean IS NOT NULL", [code]
+                """
+                WITH first_dirty AS (
+                    SELECT min(trade_date) AS d
+                    FROM daily_bar
+                    WHERE code=? AND adj_factor_clean IS NULL
+                )
+                SELECT
+                    CASE
+                        WHEN (SELECT d FROM first_dirty) IS NOT NULL THEN (
+                            SELECT max(trade_date)
+                            FROM daily_bar
+                            WHERE code=? AND adj_factor_clean IS NOT NULL
+                              AND trade_date < (SELECT d FROM first_dirty)
+                        )
+                        ELSE (
+                            SELECT max(trade_date)
+                            FROM daily_bar
+                            WHERE code=? AND adj_factor_clean IS NOT NULL
+                        )
+                    END AS d
+                """,
+                [code, code, code],
             ).iloc[0]["d"]
             anchor_date = None if pd.isna(a) else pd.Timestamp(a).date()
 

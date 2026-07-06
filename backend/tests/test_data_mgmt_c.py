@@ -823,3 +823,46 @@ def test_clean_factor_incremental_refresh_carries_forward(client):
     qfq = repo.get_bars("603045.SH", end_date=date(2026, 6, 15), adjust="qfq")
     q = qfq.set_index(qfq["trade_date"].astype(str))["close"]
     assert abs(q["2026-06-15"] / q["2026-06-12"] - 73.50 / _FD_CLOSE[4]) < 1e-9
+
+
+def test_daily_refetch_invalidates_stale_clean_factor(client, monkeypatch):
+    """源日线被覆盖修正时，旧 adj_factor_clean 必须清空并从前一干净锚点重算。"""
+    from backend.services.ingest import IngestionService
+    from backend.storage.repository import MarketRepository
+
+    _seed_fd(
+        client,
+        dates=[date(2026, 7, 3), date(2026, 7, 6)],
+        close=[9.55, 9.28],
+        af=[1.994764, 1.994612],
+    )
+    client.execute(
+        "UPDATE daily_bar SET adj_factor_clean = CASE "
+        "WHEN trade_date=DATE '2026-07-03' THEN 1.994744 ELSE 3.976995 END "
+        "WHERE code='603045.SH'"
+    )
+
+    fresh = pd.DataFrame([{
+        "code": "603045.SH", "trade_date": date(2026, 7, 6),
+        "open": 9.60, "high": 9.76, "low": 9.23, "close": 9.28,
+        "pre_close": 9.55, "volume": 1000, "amount": 1e5,
+        "adj_factor": 1.994612, "turnover_rate": 1.0,
+    }])
+    svc = IngestionService()
+    monkeypatch.setattr(
+        svc, "_fetch_daily_with_fallback", lambda *a, **k: (fresh, svc.s.datasource.primary)
+    )
+
+    svc.ingest_one_daily("603045.SH", date(2026, 7, 6), date(2026, 7, 6))
+    svc._refresh_clean_factors(["603045.SH"])
+
+    rows = client.query_df(
+        "SELECT trade_date, adj_factor_clean, pre_close FROM daily_bar "
+        "WHERE code='603045.SH' ORDER BY trade_date"
+    )
+    assert rows["adj_factor_clean"].tolist() == [1.994744, 1.994744]
+    assert abs(rows.iloc[1]["pre_close"] - 9.55) < 1e-9
+
+    qfq = MarketRepository(client).get_bars("603045.SH", end_date=date(2026, 7, 6), adjust="qfq")
+    q = qfq.set_index(qfq["trade_date"].astype(str))["close"]
+    assert abs(q["2026-07-06"] / q["2026-07-03"] - 9.28 / 9.55) < 1e-9
