@@ -9,7 +9,7 @@
   - 阶段六前已更新日志审计原型：[../prototypes/audit-log.html](../prototypes/audit-log.html)，详情抽屉新增 R24 字段变更表。
   - 页面设计闭环依据：[../../configurable-layout-system/page-template.md](../../configurable-layout-system/page-template.md) 与 [../../../DESIGN.md](../../../DESIGN.md)。
 - 功能目标：进入第六阶段，补齐体验增强项，并把原先独立排期的 R28 其他资产公开能力纳入本阶段。
-- 当前计划状态：进行中（T1、T2 已完成，T3-T12 未开始）。
+- 当前计划状态：进行中（T1、T2、T3 已完成，T4-T12 未开始）。
 - 计划输出目录：`agent-works/multi-tenant-rbac/stage6-experience-asset-visibility/`。
 - 本阶段纳入：
   - R22：token 静默刷新，避免长操作中 access token 过期直接打断。
@@ -365,7 +365,7 @@
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 必须实现 | R22 | token 静默刷新 | 前端单飞 refresh + 重放原请求 + 失败回登录 | T2 | 已完成 | 一致 | 已补前端 client 静默刷新和专项测试 |
-| 必须实现 | R23 | 审计日志保留期自动清理 | 清理服务、CLI、复用 APScheduler 调度、测试和审计事件 | T3 | 待开始 | 一致 | 复用阶段五 `audit.retention_days` 与现有 scheduler |
+| 必须实现 | R23 | 审计日志保留期自动清理 | 清理服务、CLI、复用 APScheduler 调度、测试和审计事件 | T3 | 已完成 | 一致 | 复用阶段五 `audit.retention_days` 与现有 scheduler |
 | 必须实现 | R24 | 字段级 from/to | `audit_log.changes`、采集 helper、审计页展示 | T4,T10 | 待开始 | 一致 | 原型已先更新 |
 | 必须实现 | R28-8 | 筛选方案公开 | `screen_profile` visible + API + ScreenView 接入 | T5,T6,T9,T11 | 待开始 | 一致 | 方案类资产复制为 private |
 | 必须实现 | R28-9 | 买卖方案公开 | `trade_profile` visible + API + ConfigView trade 接入 | T5,T7,T9,T11 | 待开始 | 一致 | 回测引用公开买卖方案时结果归 viewer |
@@ -425,7 +425,7 @@
 
 ### 6.3 任务 T3：R23 审计自动清理
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1
 - 涉及文件/模块：
   - `backend/storage/audit_repository.py`
@@ -445,7 +445,7 @@
 - 边界与异常：删除不可逆；保留期小于等于 0 或配置异常时必须 fail-safe 不清理；调度失败不影响应用启动。
 - 验证方式：插入窗口内/外记录，执行清理后仅窗口外被删；重复执行幂等；scheduler 注册不创建第二个 APScheduler。
 - 完成标准：清理任务幂等，重复执行不会误删保留期内记录。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成；`AuditRepository.delete_before(cutoff)` 按 `event_time < cutoff` 删除并返回影响行数；`AuditService.cleanup_expired()` 读取 `audit.retention_days`、计算 cutoff、记录 `audit_cleanup` 任务审计事件，并对保留期非法、配置读取异常、删除异常做 fail-safe 降级不阻断主业务；CLI 已新增 `python -m backend.cli audit-cleanup` 人工入口；`backend/scheduler/scheduler.py` 已通过 `register_platform_jobs()` 在现有 APScheduler 单例注册 `platform.audit_cleanup` 每日 `03:30` 清理任务，由既有 `backend/main.py` startup/shutdown 管理。验证：`python -m pytest backend/tests/test_stage6_audit_cleanup.py -q` 通过（3 passed），覆盖窗口外删除、窗口内保留、重复执行幂等、非法保留期不删除、平台 job 重复注册不创建第二个 scheduler。
 
 ### 6.4 任务 T4：R24 审计字段变更模型
 
@@ -677,7 +677,7 @@
 
 - 单元测试：
   - 计划：asset ref 编解码、source/readonly 判断、visibility 合法值校验；AuditService changes 脱敏和清理 cutoff。
-  - 具体完成情况：待验证。
+  - 具体完成情况：T3 已验证 AuditService 清理 cutoff、非法保留期 fail-safe 和重复执行幂等：`python -m pytest backend/tests/test_stage6_audit_cleanup.py -q` 通过（3 passed）。asset ref 与 changes 脱敏待 T4/T5 验证。
 - 接口测试：
   - 计划：screen/trade/backtest visible list/detail/versions/publish/copy/delete；refresh 单飞和失败回登录。
   - 具体完成情况：R22 前端请求层已验证 refresh 单飞、成功重放和失败清态：`cd frontend && npm run test -- src/api/__tests__/client-refresh.spec.ts` 通过（2 tests）。screen/trade/backtest visible 接口待 T6/T7/T8/T11 实现后验证。
@@ -695,16 +695,16 @@
   - 具体完成情况：待验证。
 - 异常与边界测试：
   - 计划：refresh 递归保护、重复写请求只重放一次、审计保留期非法值 fail-safe、running/failed 回测禁止公开、回测从表按 run 真实 owner 读取。
-  - 具体完成情况：R22 已覆盖 refresh 请求不走 `http` 拦截器、401 原请求只设置一次 `_retry`、并发 refresh 单飞；其余审计/回测边界待 T3/T8/T11 验证。
+  - 具体完成情况：R22 已覆盖 refresh 请求不走 `http` 拦截器、401 原请求只设置一次 `_retry`、并发 refresh 单飞；T3 已覆盖审计保留期非法值 fail-safe 不删除和清理重复执行幂等；回测边界待 T8/T11 验证。
 - 图示与原型一致性验证：
   - 计划：`AuditLogView` 实现必须匹配 `prototypes/audit-log.html` 的详情抽屉顺序、字段变更空态、列头和长值换行；其他页面为既有页面局部增强，不新增原型。
   - 具体完成情况：待验证。
 - 配置闭环验证：
   - 计划：本阶段不新增系统配置；R23 只消费既有 `audit.retention_days`；若新增配置项必须补“谁定义、谁渲染、谁保存、谁读取、谁消费、谁校验、如何回退”。
-  - 具体完成情况：待验证。
+  - 具体完成情况：T3 未新增系统配置；清理服务只消费阶段五既有 `audit.retention_days`，配置读取异常或非法值时 fail-safe 跳过清理。
 - 需求映射验证：
   - 计划：检查 §3.1、§3.2、§5、§6 任务编号一致，状态值仅使用 `待开始/进行中/已完成/阻塞/跳过`。
-  - 具体完成情况：T1/T2 已回写 §5 和 §6：R22 行标为已完成，R20/R21 延续行标为进行中，T1/T2 标为已完成；T3-T12 仍保持待开始，未连续开发后续任务。
+  - 具体完成情况：T1/T2/T3 已回写 §5 和 §6：R22、R23 行标为已完成，R20/R21 延续行标为进行中，T1/T2/T3 标为已完成；T4-T12 仍保持待开始，未连续开发后续任务。
 - 页面功能点验证：
   - 计划：验证 §4.10 每个页面功能点都有技术实现、任务编号、交互状态和异常处理验证。
   - 具体完成情况：待验证。

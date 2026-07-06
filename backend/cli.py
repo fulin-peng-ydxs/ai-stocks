@@ -104,6 +104,23 @@ def cmd_health(_: argparse.Namespace) -> int:
     return 0 if all_ok else 1
 
 
+def cmd_audit_cleanup(_: argparse.Namespace) -> int:
+    """人工触发审计日志保留期清理。"""
+    from backend.services.audit_service import AuditService
+
+    result = AuditService().cleanup_expired()
+    print(
+        "审计日志清理结果："
+        f"ok={result.get('ok')} "
+        f"skipped={result.get('skipped')} "
+        f"retention_days={result.get('retention_days')} "
+        f"cutoff={result.get('cutoff')} "
+        f"affected_count={result.get('affected_count')} "
+        f"reason={result.get('reason')}"
+    )
+    return 0 if result.get("ok") else 1
+
+
 def _todo(name: str):
     def _run(_: argparse.Namespace) -> int:
         log.warning("命令 '%s' 尚未实现（见任务清单对应里程碑）", name)
@@ -595,6 +612,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_dev.add_argument("--keep-password", action="store_true",
                        help="保留已有密码；仅为缺密码用户填充默认密码")
     p_dev.set_defaults(func=cmd_dev_users)
+
+    sub.add_parser("audit-cleanup", help="按 audit.retention_days 清理超保留期审计日志").set_defaults(
+        func=cmd_audit_cleanup
+    )
 
     p_mig = sub.add_parser(
         "migrate-rbac",

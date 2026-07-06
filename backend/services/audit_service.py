@@ -28,6 +28,10 @@ _CONTEXT_ALLOW_KEYS = {
     "data_scope",
     "task_type",
     "job_name",
+    "retention_days",
+    "cutoff",
+    "skipped",
+    "reason",
 }
 _SENSITIVE_TOKENS = ("password", "token", "secret", "captcha", "credential")
 _TARGET_TYPE_LABELS = {
@@ -85,6 +89,89 @@ class AuditService:
         if row is None:
             raise NotFoundError("审计日志不存在")
         return self._sanitize_row(row)
+
+    def cleanup_expired(self, *, now: datetime | None = None) -> dict[str, Any]:
+        """清理超出审计保留期的历史日志。
+
+        清理任务是平台维护动作，不能影响主业务启动；因此本方法捕获异常并返回结果。
+        """
+        try:
+            retention_days = int(get_effective_settings().audit.retention_days)
+        except Exception as e:  # noqa: BLE001
+            result = {
+                "ok": False,
+                "skipped": True,
+                "reason": "invalid_retention_config",
+                "retention_days": None,
+                "affected_count": 0,
+                "cutoff": None,
+                "error": str(e),
+            }
+            self._record_cleanup_event(result=result, status="skipped", error_summary=str(e))
+            log.warning("审计日志清理跳过：保留期配置读取失败: %s", e)
+            return result
+        if retention_days <= 0:
+            result = {
+                "ok": True,
+                "skipped": True,
+                "reason": "invalid_retention_days",
+                "retention_days": retention_days,
+                "affected_count": 0,
+                "cutoff": None,
+            }
+            self._record_cleanup_event(result=result, status="skipped")
+            log.warning("审计日志清理跳过：保留期配置非法 retention_days=%s", retention_days)
+            return result
+
+        base = now or datetime.now(timezone.utc)
+        cutoff = base - timedelta(days=retention_days)
+        result = {
+            "ok": True,
+            "skipped": False,
+            "reason": None,
+            "retention_days": retention_days,
+            "affected_count": 0,
+            "cutoff": cutoff.isoformat(),
+        }
+        try:
+            affected = self.repo.delete_before(cutoff)
+            result["affected_count"] = affected
+            self._record_cleanup_event(result=result, status="completed")
+            log.info("审计日志清理完成：cutoff=%s affected=%s", cutoff.isoformat(), affected)
+            return result
+        except Exception as e:  # noqa: BLE001
+            failed = dict(result)
+            failed.update({"ok": False, "reason": "cleanup_failed", "error": str(e)})
+            self._record_cleanup_event(result=failed, status="failed", error_summary=str(e))
+            log.warning("审计日志清理失败，已降级忽略: %s", e)
+            return failed
+
+    def _record_cleanup_event(
+        self,
+        *,
+        result: dict[str, Any],
+        status: str,
+        error_summary: str | None = None,
+    ) -> None:
+        self.repo.record(
+            event_category="task",
+            event_type="audit_cleanup",
+            action="cleanup_expired",
+            result="success" if status in {"completed", "skipped"} else "failed",
+            status=status,
+            target_type="audit_log",
+            target_id="audit_log",
+            target_label="审计日志保留期清理",
+            error_summary=error_summary,
+            context={
+                "action": "cleanup_expired",
+                "retention_days": result.get("retention_days"),
+                "cutoff": result.get("cutoff"),
+                "affected_count": result.get("affected_count", 0),
+                "skipped": bool(result.get("skipped")),
+                "reason": result.get("reason"),
+            },
+        )
 
     def record_api_event(
         self,

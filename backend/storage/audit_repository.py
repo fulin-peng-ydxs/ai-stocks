@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
@@ -213,6 +214,11 @@ class AuditRepository:
         if df.empty:
             return None
         return self._row(df.iloc[0].to_dict())
+
+    def delete_before(self, cutoff: datetime) -> int:
+        """删除保留期外审计日志，返回受影响行数。"""
+        affected = self.pg.execute("DELETE FROM audit_log WHERE event_time < %s", [cutoff])
+        return max(0, int(affected))
 
     @staticmethod
     def _from_clause(*, include_resource: bool) -> str:

@@ -117,7 +117,7 @@
 | 需求编号 | 需求项 | 来源/依据 | 纳入条件 | 处理状态 |
 | --- | --- | --- | --- | --- |
 | R22 | token 静默刷新（无感续期，避免操作中断） | 体验增强 | R4 完成后、有空切入即可纳入 | 阶段六计划 |
-| R23 | 审计日志保留期自动清理任务（默认 90 天可配） | 【已确认】审计细则 | R17 落地后纳入，避免审计表无限增长；阶段五已实现 `audit.retention_days=90` 配置、默认查询窗口和页面提示，**未实现自动清理任务** | 阶段六计划 |
+| R23 | 审计日志保留期自动清理任务（默认 90 天可配） | 【已确认】审计细则 | R17 落地后纳入，避免审计表无限增长；阶段五已实现 `audit.retention_days=90` 配置、默认查询窗口和页面提示；阶段六 T3 已实现自动清理服务、CLI 和 APScheduler 每日任务 | 阶段六 T3 已完成 |
 | R24 | 操作审计字段级变更对比（who changed what from→to） | 增强可观测 | R17 基础事件稳定后纳入 | 阶段六计划 |
 | R28 | 资产可见性与自助公开（评分/筛选/买卖/回测等方案：私有 / 同租户共享 / 全体公开 + 加载=自己的∪公开的） | 用户诉求（阶段四 C1 延伸）、遗留项 2 升级 | 评分方案公开能力已在阶段四 R28 分支落地；筛选方案、买卖方案和回测记录公开能力纳入阶段六 | 阶段六计划 |
 
@@ -264,7 +264,7 @@
 - **核心字段**【已确认】：时间、处理人、事件类型/分类、资源/接口码、目标对象、目标中文说明、事件结果、事件状态、租户、IP、耗时、错误摘要。
 - **事件上下文（脱敏）**：按事件类型补充用于排障和追踪的结构化摘要，例如 `request_id`、`permission_code`、`task_id`、`action`、`affected_count`、`rate_limit_rule`、`config_key` 等；不记录原始请求体、响应体、密码、token、验证码或其他敏感明文。
 - **操作流程**：后端统一中间件（接口）+ 任务钩子（任务）+ 安全事件埋点 → best-effort 写 PG 审计表 → 审计页按 时间/处理人/类型/结果/状态/资源/租户 筛选 + 分页查看；类型、结果、状态和租户筛选支持多选，下拉选择后即时查询。
-- **校验规则**：审计只读不可改（防篡改）；**不记录请求/响应体**，仅摘要（13 章确认）；`audit.retention_days` 默认 90 天可配，并作为未显式传时间范围时的默认查询窗口，摘要接口回传实际值供页面提示；自动清理任务仍属 R23 后续建议。
+- **校验规则**：审计只读不可改（防篡改）；**不记录请求/响应体**，仅摘要（13 章确认）；`audit.retention_days` 默认 90 天可配，并作为未显式传时间范围时的默认查询窗口，摘要接口回传实际值供页面提示；阶段六 T3 自动清理任务复用该配置，超期删除写入 `audit_cleanup` 任务审计事件，配置非法或清理失败时 fail-safe 不阻断主业务。
 - **异常情况**：审计写失败**降级**（落本地日志兜底），绝不阻断主业务；审计写入异步，避免拖慢请求。
 - **权限与数据范围**：系统管理员看全局；租户管理员看本租户（13 章确认）。
 - **对现有功能的影响**：现有功能靠中间件/钩子自动纳入，不逐接口手写埋点。【风险】审计表高频增长 → 需保留期清理 + 索引/分区。
@@ -627,7 +627,7 @@
 | R20 | 未登录跳登录；菜单/路由/按钮按权限码渲染 | 页面测试 |
 | R21 | 现有 13 路由与页面全部接鉴权+隔离；未改造接口默认 deny | 全量回归 |
 | R22 | token 临期静默续期，操作不中断 | 体验测试（建议） |
-| R23 | 超保留期审计自动清理；阶段五已先落 `audit.retention_days` 配置和默认查询窗口 | 定时任务核查（建议）；配置消费已由阶段五后端/页面测试覆盖 |
+| R23 | 超保留期审计自动清理；阶段五已先落 `audit.retention_days` 配置和默认查询窗口 | `backend/tests/test_stage6_audit_cleanup.py`；配置消费已由阶段五后端/页面测试覆盖 |
 | R24 | 关键变更可见 from→to | 审计核查（建议） |
 | R28 | 筛选方案、买卖方案、回测记录支持 `private/tenant/public`；公开资产只读可见，owner 可发布/收回，方案类资产可复制为自己的 private，公开回测可复用参数重跑且不可改删 owner 记录 | 阶段六 visible API、权限与跨租户测试、页面交互测试、阶段四评分方案公开回归 |
 
@@ -708,7 +708,7 @@
 - 目标：静默刷新、审计保留期清理、字段级变更对比，并以阶段四 B 的评分方案公开模型为基线扩展其他资产可见性。
 - 里程碑：长操作不被 token 过期打断；审计表可控增长；关键变更可见 from/to；筛选/买卖/回测公开资产只读可见、owner 可发布/收回、方案类资产可复制为自己的 private。
 - **开发计划**：[stage6-experience-asset-visibility/plan.md](stage6-experience-asset-visibility/plan.md)。
-- **当前进度**：T1 已完成 DDL/资源码规划、幂等迁移入口、SQL 留痕和 T1 专项测试；T2 已完成 token 静默刷新；T3-T12 尚未开始。
+- **当前进度**：T1 已完成 DDL/资源码规划、幂等迁移入口、SQL 留痕和 T1 专项测试；T2 已完成 token 静默刷新；T3 已完成审计日志保留期自动清理服务、CLI、APScheduler 注册和专项测试；T4-T12 尚未开始。
 - **开发产物索引（T1-T2）**：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/tests/test_rbac_schema.py`、`frontend/src/api/client.ts`、`frontend/src/api/authToken.ts`、`frontend/src/api/__tests__/client-refresh.spec.ts`、[stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql](stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql)、[stage6-experience-asset-visibility/resource-codes.sql](stage6-experience-asset-visibility/resource-codes.sql)。
 - **范围边界**：本阶段不做公开市场、审批流、收藏、搜索广场、运营推荐、计费联动；不扩展自选股分组、盘感训练记录、布局配置、系统配置、字典或数据任务为公开资产。
 
