@@ -14,6 +14,7 @@ import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
+import { useTableSort } from '@/composables/useTableSort'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -81,10 +82,34 @@ const amountPresets = computed(() => parseList(cfg.amountWanPresetStr).map((w) =
 
 // ── 历史 & 成长 ──
 const history = reactive({ list: [] as SessionRow[], total: 0, page: 1, size: 10, sort_by: 'created_at', sort_order: 'desc' })
+const HISTORY_SORT_FIELDS = ['created_at', 'completed_at', 'score', 'total_return', 'win_rate'] as const
+const {
+  sortBy: historySortBy,
+  sortOrder: historySortOrder,
+  elementDefaultSort: historyDefaultSort,
+  onSortChange: onHistorySortChange,
+} = useTableSort<(typeof HISTORY_SORT_FIELDS)[number]>({
+  slotId: 'history',
+  defaultSort: 'created_at:desc',
+  componentValueOf,
+  setComponentKnob,
+  allowedFields: HISTORY_SORT_FIELDS,
+  onChanged: () => {
+    history.page = 1
+    void loadHistory()
+  },
+})
 const growthData = ref<GrowthPoint[]>([])
 
 async function loadHistory() {
-  const r = await listSessions({ page: history.page, size: history.size, sort_by: history.sort_by, sort_order: history.sort_order })
+  history.sort_by = historySortBy.value
+  history.sort_order = historySortOrder.value
+  const r = await listSessions({
+    page: history.page,
+    size: history.size,
+    sort_by: historySortBy.value,
+    sort_order: historySortOrder.value,
+  })
   history.list = r.list
   history.total = r.total
 }
@@ -327,7 +352,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
         <el-card shadow="never" class="hist-card">
           <template #header><span class="card-title">训练历史</span><span class="card-sub">共 {{ history.total }} 局，点行回看</span></template>
-          <el-table :data="history.list" size="small" height="100%" class="hist-table"
+          <el-table
+            :data="history.list"
+            size="small"
+            height="100%"
+            class="hist-table"
+            :default-sort="historyDefaultSort"
+            @sort-change="onHistorySortChange"
                     @row-click="(r:SessionRow)=>openSession(r.id)">
             <el-table-column label="模式" width="90">
               <template #default="{ row }">{{ modeText(row.mode) }}·{{ row.n_rounds }}</template>
@@ -338,19 +369,19 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
                 <span v-else class="muted">进行中</span>
               </template>
             </el-table-column>
-            <el-table-column label="评分" width="70">
+            <el-table-column label="评分" prop="score" width="70" sortable="custom">
               <template #default="{ row }">{{ row.score != null ? row.score.toFixed(1) : '--' }}</template>
             </el-table-column>
-            <el-table-column label="收益" width="90">
+            <el-table-column label="收益" prop="total_return" width="90" sortable="custom">
               <template #default="{ row }"><span :class="(row.total_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(row.total_return) }}</span></template>
             </el-table-column>
-            <el-table-column label="胜率" width="80">
+            <el-table-column label="胜率" prop="win_rate" width="80" sortable="custom">
               <template #default="{ row }">{{ row.win_rate != null ? (row.win_rate * 100).toFixed(0) + '%' : '--' }}</template>
             </el-table-column>
-            <el-table-column label="开始时间" min-width="140">
+            <el-table-column label="开始时间" prop="created_at" min-width="140" sortable="custom">
               <template #default="{ row }">{{ row.created_at?.slice(0, 16) }}</template>
             </el-table-column>
-            <el-table-column label="结束时间" min-width="140">
+            <el-table-column label="结束时间" prop="completed_at" min-width="140" sortable="custom">
               <template #default="{ row }">{{ row.completed_at?.slice(0, 16) ?? '--' }}</template>
             </el-table-column>
             <el-table-column label="" width="60">

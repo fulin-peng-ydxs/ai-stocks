@@ -112,6 +112,8 @@ def list_items(
     enabled: bool | None = None,
     page: int = 1,
     size: int = 50,
+    sort_by: str = "sort",
+    sort_order: str = "asc",
 ) -> ApiResponse:
     return ok(DictService().list_items(
         type_code=type_code,
@@ -119,6 +121,8 @@ def list_items(
         enabled=enabled,
         page=page,
         size=size,
+        sort_by=sort_by,
+        sort_order=sort_order,
     ))
 
 

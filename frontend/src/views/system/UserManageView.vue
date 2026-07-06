@@ -12,6 +12,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useTableSort } from '@/composables/useTableSort'
 import { useAuthStore } from '@/stores/auth'
 import {
   listUsers, createUser, updateUser, setUserStatus, resetUserPassword, deleteUser,
@@ -40,8 +41,6 @@ const {
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 const settingsOpen = ref(false)
 
-const defaultSort = computed<'created' | 'lastLogin' | 'account'>(
-  () => (componentValueOf('table', 'defaultSort') as 'created' | 'lastLogin' | 'account') ?? 'created')
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
@@ -85,23 +84,24 @@ const page = ref(1)
 const size = ref(DEFAULT_PAGE_SIZE)
 const filters = ref<{ tenant: string; role: string; status: string; q: string }>(
   { tenant: '', role: '', status: '', q: '' })
+const USER_SORT_FIELDS = ['created', 'lastLogin', 'account'] as const
+const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof USER_SORT_FIELDS)[number]>({
+  slotId: 'table',
+  defaultSort: 'created:desc',
+  componentValueOf,
+  setComponentKnob,
+  allowedFields: USER_SORT_FIELDS,
+  onChanged: () => {
+    page.value = 1
+    void load()
+  },
+})
 
 const STATUS_TAG: Record<string, { type: 'success' | 'danger' | 'warning'; label: string }> = {
   active: { type: 'success', label: '启用' },
   disabled: { type: 'danger', label: '已禁用' },
   locked: { type: 'warning', label: '已锁定' },
 }
-
-// 客户端对当前页排序（列表服务端分页，排序仅影响当前页，与数据质量页口径一致）。
-const displayList = computed(() => {
-  const rows = [...list.value]
-  if (defaultSort.value === 'lastLogin') {
-    rows.sort((a, b) => (b.last_login_at ?? '').localeCompare(a.last_login_at ?? ''))
-  } else if (defaultSort.value === 'account') {
-    rows.sort((a, b) => a.account.localeCompare(b.account))
-  }
-  return rows
-})
 
 async function load() {
   loading.value = true
@@ -113,6 +113,8 @@ async function load() {
       status: filters.value.status || undefined,
       q: filters.value.q.trim() || undefined,
       page: page.value, size: size.value,
+      sort_by: sortBy.value,
+      sort_order: sortOrder.value,
     })
     list.value = res.items
     total.value = res.total
@@ -127,6 +129,10 @@ async function load() {
 watch(() => [filters.value.tenant, filters.value.role, filters.value.status],
   () => { page.value = 1; load() })
 function search() { page.value = 1; load() }
+
+function fmtTime(v?: string | null): string {
+  return (v || '—').slice(0, 19).replace('T', ' ')
+}
 
 // ── 新建 / 编辑弹窗 ──
 const dialogVisible = ref(false)
@@ -297,8 +303,15 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           <template #extra><el-button type="primary" @click="load">重试</el-button></template>
         </el-result>
         <template v-else>
-        <el-table :data="displayList" size="small" height="100%" v-loading="loading">
-          <el-table-column label="账号" prop="account" width="150" fixed="left" />
+        <el-table
+          :data="list"
+          size="small"
+          height="100%"
+          v-loading="loading"
+          :default-sort="elementDefaultSort"
+          @sort-change="onSortChange"
+        >
+          <el-table-column label="账号" prop="account" width="150" fixed="left" sortable="custom" />
           <el-table-column v-if="colVisible('email')" label="邮箱" prop="email" min-width="180"
                            show-overflow-tooltip>
             <template #default="{ row }">{{ row.email || '—' }}</template>
@@ -321,8 +334,11 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column v-if="colVisible('lastLogin')" label="最后登录" width="160">
-            <template #default="{ row }">{{ (row.last_login_at || '—').slice(0, 19).replace('T', ' ') }}</template>
+          <el-table-column v-if="colVisible('lastLogin')" label="最后登录" prop="lastLogin" width="160" sortable="custom">
+            <template #default="{ row }">{{ fmtTime(row.last_login_at) }}</template>
+          </el-table-column>
+          <el-table-column v-if="colVisible('created')" label="创建时间" prop="created" width="160" sortable="custom">
+            <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">

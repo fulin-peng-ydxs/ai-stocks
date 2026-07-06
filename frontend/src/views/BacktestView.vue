@@ -58,11 +58,29 @@ const {
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
 // 逐笔表排序/列显隐（组件配置层 trades slot）：抽屉写值由 ComponentAutoSettings 自动渲染；页面只读 getter。
-type TradeSort = 'entry' | 'return' | 'hold'
-const tradeSort = computed<TradeSort>(() => (componentValueOf('trades', 'defaultSort') as TradeSort) ?? 'entry')
+type TradeSort = 'entry' | 'exit' | 'return' | 'hold'
+const TRADE_SORT_PROPS: Record<string, TradeSort> = {
+  entry_date: 'entry',
+  exit_date: 'exit',
+  return_pct: 'return',
+  hold_days: 'hold',
+}
+const tradeSort = computed<TradeSort>(() => {
+  const raw = componentValueOf('trades', 'defaultSort')
+  return raw === 'exit' || raw === 'return' || raw === 'hold' ? raw : 'entry'
+})
+const tradeDefaultSort = computed(() => {
+  if (tradeSort.value === 'exit') return { prop: 'exit_date', order: 'descending' }
+  if (tradeSort.value === 'return') return { prop: 'return_pct', order: 'descending' }
+  if (tradeSort.value === 'hold') return { prop: 'hold_days', order: 'descending' }
+  return { prop: 'entry_date', order: 'descending' }
+})
 const tradeHidden = computed<string[]>(() => (componentValueOf('trades', 'hiddenColumns') as string[]) ?? [])
 function tradeColVisible(key: string): boolean {
   return !tradeHidden.value.includes(key)
+}
+function onTradeSortChange({ prop }: { prop: string; order: string | null }): void {
+  setComponentKnob('trades', 'defaultSort', TRADE_SORT_PROPS[prop] ?? 'entry')
 }
 
 const kind = ref<'strategy' | 'score_check'>(settings.kind)
@@ -114,6 +132,7 @@ const tradeRows = computed(() => {
   const list = [...(strat.value?.trades ?? [])]
   if (tradeSort.value === 'return') list.sort((a, b) => b.return_pct - a.return_pct)
   else if (tradeSort.value === 'hold') list.sort((a, b) => b.hold_days - a.hold_days)
+  else if (tradeSort.value === 'exit') list.sort((a, b) => b.exit_date.localeCompare(a.exit_date))
   else list.sort((a, b) => b.entry_date.localeCompare(a.entry_date))
   return list
 })
@@ -982,13 +1001,14 @@ async function openTradeChart(row: TradeRow) {
         </div>
         <div class="trade-table-wrap">
         <el-table :data="tradeRows" size="small" height="100%" class="clickable"
+                  :default-sort="tradeDefaultSort" @sort-change="onTradeSortChange"
                   @row-click="(r:any) => openTradeChart(r)">
           <el-table-column label="代码" prop="code" width="110" />
           <el-table-column label="买入" prop="entry_date" width="110" sortable :sort-by="(r:any)=>r.entry_date" />
           <el-table-column label="买价" width="90"><template #default="{ row }">{{ num(row.entry_price) }}</template></el-table-column>
           <el-table-column label="卖出" prop="exit_date" width="110" sortable :sort-by="(r:any)=>r.exit_date" />
           <el-table-column label="卖价" width="90"><template #default="{ row }">{{ num(row.exit_price) }}</template></el-table-column>
-          <el-table-column v-if="tradeColVisible('ret')" label="收益" width="100" sortable :sort-by="(r:any)=>r.return_pct">
+          <el-table-column v-if="tradeColVisible('ret')" label="收益" prop="return_pct" width="100" sortable :sort-by="(r:any)=>r.return_pct">
             <template #default="{ row }">
               <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
             </template>

@@ -33,7 +33,7 @@ def list_stocks(q: str | None = None, board: str | None = None,
     board: 主板/创业板/科创板 / 'ST'(只看 ST) / '退市'(只看退市)；除 '退市' 外均排除已退市。
     exclude_st=true 且非 ST 板块 → 过滤名称含 ST 的股票。
     trade_date 默认最新交易日，LEFT JOIN 当日行情算涨跌幅 pct_chg。
-    sort_by ∈ {pct_chg,name,industry,code}，sort_order ∈ {asc,desc}；NULL（停牌）恒排末尾。
+    sort_by ∈ {pct_chg,close,name,industry,code}，sort_order ∈ {asc,desc}；NULL（停牌）恒排末尾。
     """
     c = get_client()
     td = (date.fromisoformat(trade_date) if trade_date else pd.Timestamp(

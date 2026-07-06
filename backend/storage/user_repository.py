@@ -19,6 +19,11 @@ from backend.storage.pg_client import PostgresClient, get_pg_client
 log = get_logger("storage.user_repository")
 
 _USER_COLS = "id, tenant_id, account, email, password_hash, role_code, perm_ver, status, last_login_at"
+_USER_SORT_COLS = {
+    "created": "u.created_at",
+    "lastLogin": "u.last_login_at",
+    "account": "lower(u.account)",
+}
 
 
 class UserRepository:
@@ -97,7 +102,8 @@ class UserRepository:
 
     def list_users(self, *, tenant_id: str | None = None, role: str | None = None,
                    status: str | None = None, q: str | None = None,
-                   page: int = 1, size: int = 20) -> dict:
+                   page: int = 1, size: int = 20,
+                   sort_by: str = "created", sort_order: str = "desc") -> dict:
         """域过滤 + 条件筛选 + 分页。tenant_id=None 表示不限租户（system 全局）。
 
         返回 {items, total}。role 按角色码 EXISTS 过滤；q 模糊匹配账号/邮箱。
@@ -125,6 +131,8 @@ class UserRepository:
             f"SELECT count(*) n FROM sys_user u {where}", params).iloc[0]["n"])
         page = max(1, page)
         size = max(1, min(size, 200))
+        sort_col = _USER_SORT_COLS.get(sort_by, "u.created_at")
+        direction = "ASC" if sort_order.lower() == "asc" else "DESC"
         rows = self.pg.query_df(
             f"SELECT u.id, u.tenant_id, u.account, u.email, u.role_code, u.status, u.perm_ver, "
             f"u.last_login_at, u.created_at, "
@@ -132,7 +140,8 @@ class UserRepository:
             f"FROM sys_user u "
             f"LEFT JOIN sys_user_role ur ON ur.user_id=u.id "
             f"LEFT JOIN sys_role r ON r.id=ur.role_id {where} "
-            f"GROUP BY u.id ORDER BY u.created_at DESC NULLS LAST LIMIT %s OFFSET %s",
+            f"GROUP BY u.id ORDER BY {sort_col} {direction} NULLS LAST, u.created_at DESC NULLS LAST, u.id "
+            f"LIMIT %s OFFSET %s",
             params + [size, (page - 1) * size])
         items = [self._row_to_admin_view(r.to_dict()) for _, r in rows.iterrows()]
         return {"items": items, "total": total}

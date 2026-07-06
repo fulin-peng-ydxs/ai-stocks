@@ -10,6 +10,14 @@ import pandas as pd
 
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
+_DICT_ITEM_SORT_COLS = {
+    "sort": "sort",
+    "code": "code",
+    "label": "label",
+    "enabled": "enabled",
+    "updated_at": "updated_at",
+}
+
 
 class DictRepository:
     def __init__(self, pg: PostgresClient | None = None):
@@ -107,6 +115,8 @@ class DictRepository:
         enabled: bool | None = None,
         page: int = 1,
         size: int = 50,
+        sort_by: str = "sort",
+        sort_order: str = "asc",
     ) -> dict:
         conds = ["type_code=%s"]
         params: list[Any] = [type_code]
@@ -123,9 +133,12 @@ class DictRepository:
         ).iloc[0]["n"])
         page = max(1, page)
         size = max(1, min(size, 500))
+        sort_col = _DICT_ITEM_SORT_COLS.get(sort_by, "sort")
+        direction = "ASC" if sort_order.lower() == "asc" else "DESC"
         rows = self.pg.query_df(
             f"SELECT id, type_code, code, label, enabled, sort, remark, created_at, updated_at "
-            f"FROM dict_item {where} ORDER BY sort, code LIMIT %s OFFSET %s",
+            f"FROM dict_item {where} ORDER BY {sort_col} {direction} NULLS LAST, sort ASC, code ASC "
+            "LIMIT %s OFFSET %s",
             params + [size, (page - 1) * size],
         )
         return {

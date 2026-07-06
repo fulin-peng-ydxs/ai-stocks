@@ -54,9 +54,11 @@ class ResetPwdBody(BaseModel):
             dependencies=[Depends(require_perm("user:list"))])
 def list_users(tenant_id: str | None = None, role: str | None = None,
                status: str | None = None, q: str | None = None,
-               page: int = 1, size: int = 20) -> ApiResponse:
+               page: int = 1, size: int = 20,
+               sort_by: str = "created", sort_order: str = "desc") -> ApiResponse:
     return ok(UserAdminService().list_users(
-        _ctx(), tenant_id=tenant_id, role=role, status=status, q=q, page=page, size=size))
+        _ctx(), tenant_id=tenant_id, role=role, status=status, q=q, page=page, size=size,
+        sort_by=sort_by, sort_order=sort_order))
 
 
 @router.post("/users", response_model=ApiResponse,

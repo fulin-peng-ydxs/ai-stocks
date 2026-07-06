@@ -35,8 +35,10 @@ class TenantAdminService:
         self.users = users or UserRepository()
 
     # ── 列表 ──
-    def list_tenants(self, *, q: str | None, status: str | None, page: int, size: int) -> dict:
-        return self.tenants.list_all(q=q, status=status, page=page, size=size)
+    def list_tenants(self, *, q: str | None, status: str | None, page: int, size: int,
+                     sort_by: str, sort_order: str) -> dict:
+        return self.tenants.list_all(
+            q=q, status=status, page=page, size=size, sort_by=sort_by, sort_order=sort_order)
 
     # ── 新建 ──
     def create_tenant(self, *, name: str, status: str) -> dict:

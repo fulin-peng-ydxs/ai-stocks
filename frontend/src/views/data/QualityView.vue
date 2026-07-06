@@ -20,6 +20,7 @@ import { usePageSettings } from '@/composables/usePageSettings'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useTableSort } from '@/composables/useTableSort'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,8 +53,7 @@ const {
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
-// 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留排序/渲染要读的 getter。
-const defaultSort = computed<'time' | 'severity'>(() => (componentValueOf('table', 'defaultSort') as 'time' | 'severity') ?? 'time')
+// 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留渲染要读的 getter。
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
@@ -65,6 +65,18 @@ const size = ref(DEFAULT_PAGE_SIZE)
 // 类型/严重度/状态多选；默认勾选「未处理 + 修复中」（待办两态），code 为模糊文本
 const filters = ref<{ issue_type: string[]; severity: string[]; status: string[]; code: string }>(
   { issue_type: [], severity: [], status: ['open', 'fixing'], code: '' })
+const QUALITY_SORT_FIELDS = ['time', 'severity'] as const
+const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof QUALITY_SORT_FIELDS)[number]>({
+  slotId: 'table',
+  defaultSort: 'time:desc',
+  componentValueOf,
+  setComponentKnob,
+  allowedFields: QUALITY_SORT_FIELDS,
+  onChanged: () => {
+    page.value = 1
+    void load()
+  },
+})
 
 const sevType: Record<string, 'danger' | 'warning' | 'info'> = { high: 'danger', mid: 'warning', low: 'info' }
 const statType: Record<string, 'info' | 'warning' | 'success'> = {
@@ -73,10 +85,6 @@ const statType: Record<string, 'info' | 'warning' | 'success'> = {
 const displayList = computed(() => {
   let list = [...(data.value?.list ?? [])]
   if (settings.hideDoneRows) list = list.filter((row) => row.status !== 'resolved' && row.status !== 'ignored')
-  if (defaultSort.value === 'severity') {
-    const order = { high: 0, mid: 1, low: 2 }
-    list.sort((a, b) => (order[a.severity as keyof typeof order] ?? 9) - (order[b.severity as keyof typeof order] ?? 9))
-  }
   return list
 })
 
@@ -98,6 +106,8 @@ async function load() {
       status: filters.value.status.join(',') || undefined,
       code: filters.value.code.trim() || undefined,
       page: page.value, size: size.value,
+      sort_by: sortBy.value,
+      sort_order: sortOrder.value,
     })
   } finally {
     loading.value = false
@@ -325,9 +335,16 @@ onMounted(() => {
 
     <template #main>
     <el-card shadow="never">
-      <el-table :data="displayList" size="small" height="100%" v-loading="loading"
-                :row-class-name="rowClass">
-        <el-table-column v-if="colVisible('severity')" label="严重度" width="90">
+      <el-table
+        :data="displayList"
+        size="small"
+        height="100%"
+        v-loading="loading"
+        :row-class-name="rowClass"
+        :default-sort="elementDefaultSort"
+        @sort-change="onSortChange"
+      >
+        <el-table-column v-if="colVisible('severity')" label="严重度" prop="severity" width="90" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="sevType[row.severity] ?? 'info'" size="small" effect="dark">{{ SEVERITY_LABEL[row.severity] ?? row.severity }}</el-tag>
           </template>
@@ -353,7 +370,7 @@ onMounted(() => {
             <el-tag :type="statType[row.status] ?? 'info'" size="small" effect="plain">{{ ISSUE_STATUS_LABEL[row.status] ?? row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column v-if="colVisible('detectedAt')" label="检出时间" width="160">
+        <el-table-column v-if="colVisible('detectedAt')" label="检出时间" prop="time" width="160" sortable="custom">
           <template #default="{ row }">{{ (row.detected_at || '').slice(0, 19) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">

@@ -44,8 +44,9 @@ export interface PageRegistryEntry {
    */
   consumedComponentFields?: Record<string, string[]>
   /**
-   * 组件配置自动渲染元数据（slotId -> 列/可排序字段），驱动设置抽屉「组件设置」段自动生成
-   * （列显隐开关、默认排序下拉），各页不再手写列开关。仅消费 hiddenColumns/defaultSort 的 slot 需登记。
+   * 组件配置自动渲染元数据（slotId -> 列/可交互排序字段），驱动设置抽屉「组件设置」段自动生成
+   * （列显隐开关、默认排序下拉），并作为页面列头排序能力的事实源。
+   * 登记 sortFields 的 slot 必须消费 defaultSort，页面表格也必须接入列头排序。
    */
   componentMeta?: Record<string, SlotConfigMeta>
 }
@@ -54,7 +55,7 @@ export interface PageRegistryEntry {
 export interface SlotConfigMeta {
   /** 可显隐的列（驱动 hiddenColumns 开关组；key 为列标识、label 为中文名）。 */
   columns?: { key: string; label: string }[]
-  /** 可作为默认排序的字段（驱动 defaultSort 下拉；key 可与列 key 不同，如 pct_chg）。 */
+  /** 可交互排序字段，同时作为 defaultSort 下拉候选；key 可与列 key 不同，如 pct_chg。 */
   sortFields?: { key: string; label: string }[]
   /**
    * defaultSort 是否含方向（升/降）。
@@ -127,6 +128,7 @@ const REGISTRY: PageRegistryEntry[] = [
         sortFields: [
           { key: 'score', label: '综合分' },
           { key: 'rank', label: '排名' },
+          { key: 'code', label: '代码' },
         ],
         sortHasDirection: false,
       },
@@ -164,6 +166,7 @@ const REGISTRY: PageRegistryEntry[] = [
         sortFields: [
           { key: 'score', label: '综合分' },
           { key: 'code', label: '代码' },
+          { key: 'name', label: '名称' },
         ],
         sortHasDirection: false,
       },
@@ -189,7 +192,7 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
     // table=列表视图主表；groupTable=分组视图表（另一套列集，P7 迁入组件配置层，单独可寻址）。
-    consumedComponentFields: { table: ['defaultSort', 'pageSize', 'hiddenColumns'], groupTable: ['hiddenColumns'] },
+    consumedComponentFields: { table: ['defaultSort', 'pageSize', 'hiddenColumns'], groupTable: ['defaultSort', 'hiddenColumns'] },
     componentMeta: {
       table: {
         columns: [
@@ -204,6 +207,7 @@ const REGISTRY: PageRegistryEntry[] = [
         ],
         sortFields: [
           { key: 'pct_chg', label: '涨跌幅' },
+          { key: 'close', label: '股价' },
           { key: 'code', label: '代码' },
           { key: 'name', label: '名称' },
           { key: 'industry', label: '行业' },
@@ -219,6 +223,15 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'ret', label: '截止涨幅' },
           { key: 'lastDate', label: '截至日期' },
         ],
+        sortFields: [
+          { key: 'add_date', label: '加入日期' },
+          { key: 'code', label: '代码' },
+          { key: 'name', label: '名称' },
+          { key: 'price', label: '股价' },
+          { key: 'pct_chg', label: '涨跌幅' },
+          { key: 'ret', label: '截止涨幅' },
+          { key: 'last_date', label: '截至日期' },
+        ],
       },
     },
     layout: {
@@ -231,7 +244,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'filter', component: 'filter-bar', region: 'action', order: 1 },
         { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '普通查询列表', order: 1, config: { defaultSort: 'pct_chg:asc' } },
         // 分组视图表：与 table 互斥渲染（按 defaultView 模式），建模为 table 的可寻址子槽，承载独立列集，不进主流渲染。
-        { id: 'groupTable', component: 'data-table', region: 'main', parentId: 'table', label: '分组视图', order: 2 },
+        { id: 'groupTable', component: 'data-table', region: 'main', parentId: 'table', label: '分组视图', order: 2, config: { defaultSort: 'add_date:asc' } },
       ],
       editable: [densityKnob()],
     },
@@ -261,7 +274,6 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'time', label: '检出时间' },
           { key: 'severity', label: '严重度' },
         ],
-        sortHasDirection: false,
       },
     },
     layout: {
@@ -272,7 +284,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '问题列表', order: 1, config: { defaultSort: 'time' } },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '问题列表', order: 1, config: { defaultSort: 'time:desc' } },
       ],
       editable: [densityKnob()],
     },
@@ -298,6 +310,7 @@ const REGISTRY: PageRegistryEntry[] = [
         ],
         sortFields: [
           { key: 'entry', label: '买入日' },
+          { key: 'exit', label: '卖出日' },
           { key: 'return', label: '收益率' },
           { key: 'hold', label: '持有日' },
         ],
@@ -325,9 +338,20 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/training',
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
-    // 训练参数全部为业务态（§13.3 保留）；唯一配置面是设置抽屉，P5 已建模为 overlay slot（可寻址、入系统组件消费视图），
-    // 抽屉组件字段消费与 settings-drawer 专属种类属 P6/P7，故 supportsComponentConfig 仍为 false。
-    supportsComponentConfig: false,
+    // 训练参数保留为业务态；训练历史表的排序进入组件配置层，与列头排序同源。
+    supportsComponentConfig: true,
+    consumedComponentFields: { history: ['defaultSort'] },
+    componentMeta: {
+      history: {
+        sortFields: [
+          { key: 'created_at', label: '开始时间' },
+          { key: 'completed_at', label: '结束时间' },
+          { key: 'score', label: '评分' },
+          { key: 'total_return', label: '收益' },
+          { key: 'win_rate', label: '胜率' },
+        ],
+      },
+    },
     layout: {
       pageKey: 'training',
       archetype: 'workbench',
@@ -337,6 +361,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', order: 1 },
+        { id: 'history', component: 'data-table', region: 'main', parentId: 'body', label: '训练历史', order: 2, config: { defaultSort: 'created_at:desc' } },
         // 设置抽屉：overlay 区，进入统一可寻址模型，不参与主流渲染（由页面自行渲染抽屉）。
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
@@ -363,13 +388,13 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'tenant', label: '租户列' },
           { key: 'status', label: '状态列' },
           { key: 'lastLogin', label: '最后登录列' },
+          { key: 'created', label: '创建时间列' },
         ],
         sortFields: [
           { key: 'created', label: '创建时间' },
           { key: 'lastLogin', label: '最后登录' },
           { key: 'account', label: '账号' },
         ],
-        sortHasDirection: false,
       },
     },
     layout: {
@@ -380,7 +405,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '用户列表', order: 1, config: { defaultSort: 'created' } },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '用户列表', order: 1, config: { defaultSort: 'created:desc' } },
       ],
       editable: [densityKnob()],
     },
@@ -427,7 +452,6 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'name', label: '租户名' },
           { key: 'userCount', label: '用户数' },
         ],
-        sortHasDirection: false,
       },
     },
     layout: {
@@ -438,7 +462,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '租户列表', order: 1, config: { defaultSort: 'created' } },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '租户列表', order: 1, config: { defaultSort: 'created:desc' } },
       ],
       editable: [densityKnob()],
     },
@@ -472,7 +496,7 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'list',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: { auditTable: ['pageSize', 'hiddenColumns'] },
+    consumedComponentFields: { auditTable: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       auditTable: {
         columns: [
@@ -487,6 +511,13 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'duration_ms', label: '耗时列' },
           { key: 'error_summary', label: '错误摘要列' },
         ],
+        sortFields: [
+          { key: 'event_time', label: '时间' },
+          { key: 'event_category', label: '事件类型' },
+          { key: 'result', label: '结果' },
+          { key: 'status', label: '状态' },
+          { key: 'duration_ms', label: '耗时' },
+        ],
       },
     },
     layout: {
@@ -499,7 +530,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'summary', component: 'kpi-grid', region: 'main', order: 1 },
         { id: 'filters', component: 'filter-bar', region: 'main', order: 2 },
-        { id: 'auditTable', component: 'wide-table', region: 'main', growMain: true, label: '审计日志表', order: 3, config: { pageSize: 50 } },
+        { id: 'auditTable', component: 'wide-table', region: 'main', growMain: true, label: '审计日志表', order: 3, config: { defaultSort: 'event_time:desc', pageSize: 50 } },
         { id: 'detailDrawer', component: 'detail', region: 'overlay', label: '审计详情抽屉', order: 1 },
       ],
       editable: [densityKnob()],
@@ -512,7 +543,7 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'master-detail',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: { itemTable: ['pageSize', 'hiddenColumns'] },
+    consumedComponentFields: { itemTable: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       itemTable: {
         columns: [
@@ -522,6 +553,13 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'enabled', label: '启用列' },
           { key: 'remark', label: '备注列' },
           { key: 'updated_at', label: '更新时间列' },
+        ],
+        sortFields: [
+          { key: 'sort', label: '排序' },
+          { key: 'code', label: 'code' },
+          { key: 'label', label: '名称' },
+          { key: 'enabled', label: '启用' },
+          { key: 'updated_at', label: '更新时间' },
         ],
       },
     },
@@ -535,7 +573,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', label: '数据字典工作台', order: 1 },
         { id: 'typeList', component: 'simple-list', region: 'main', parentId: 'workspace', label: '字典类型列表', order: 1 },
-        { id: 'itemTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '字典项表', order: 2, config: { pageSize: 50, hiddenColumns: ['remark', 'updated_at'] } },
+        { id: 'itemTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '字典项表', order: 2, config: { defaultSort: 'sort:asc', pageSize: 50, hiddenColumns: ['remark', 'updated_at'] } },
         { id: 'typeDialog', component: 'form', region: 'overlay', label: '字典类型弹窗', order: 1 },
         { id: 'itemDialog', component: 'form', region: 'overlay', label: '字典项弹窗', order: 2 },
         { id: 'deleteConfirm', component: 'dialog', region: 'overlay', label: '删除确认', order: 3 },
@@ -569,7 +607,24 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/data/ingest',
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
-    supportsComponentConfig: false,
+    supportsComponentConfig: true,
+    consumedComponentFields: { taskTable: ['defaultSort'], logTable: ['defaultSort'] },
+    componentMeta: {
+      taskTable: {
+        sortFields: [
+          { key: 'time', label: '截止时间' },
+          { key: 'type', label: '任务类型' },
+          { key: 'status', label: '任务状态' },
+        ],
+      },
+      logTable: {
+        sortFields: [
+          { key: 'time', label: '时间' },
+          { key: 'table', label: '目标表' },
+          { key: 'status', label: '结果' },
+        ],
+      },
+    },
     layout: {
       pageKey: 'data-ingest',
       archetype: 'workbench',
@@ -579,6 +634,8 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', order: 1 },
+        { id: 'taskTable', component: 'data-table', region: 'main', parentId: 'body', label: '任务中心', order: 2, config: { defaultSort: 'time:desc' } },
+        { id: 'logTable', component: 'data-table', region: 'main', parentId: 'body', label: '采集日志', order: 3, config: { defaultSort: 'time:desc' } },
       ],
       editable: [densityKnob()],
     },

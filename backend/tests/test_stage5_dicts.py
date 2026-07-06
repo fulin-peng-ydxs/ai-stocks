@@ -173,6 +173,40 @@ def test_stage5_dict_public_read_baseline_and_disabled_filter(client, pg):
         pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tenant_admin["tenant_id"]])
 
 
+def test_stage5_dict_items_support_sort_params(client, pg):
+    type_code = f"stage5_sort_{uuid.uuid4().hex[:8]}"
+    _cleanup_type(pg, type_code)
+    headers = _admin_headers(pg)
+    try:
+        client.post(
+            "/api/dict/types",
+            headers=headers,
+            json={"code": type_code, "name": "排序字典"},
+        )
+        for code, label, sort in [
+            ("alpha", "Alpha", 3),
+            ("beta", "Zeta", 1),
+            ("gamma", "Middle", 2),
+        ]:
+            client.post(
+                "/api/dict/items",
+                headers=headers,
+                json={"type_code": type_code, "code": code, "label": label, "sort": sort},
+            )
+
+        resp = client.get(
+            "/api/dict/items",
+            headers=headers,
+            params={"type_code": type_code, "sort_by": "label", "sort_order": "desc"},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert [item["label"] for item in data["list"]] == ["Zeta", "Middle", "Alpha"]
+    finally:
+        _cleanup_type(pg, type_code)
+
+
 def test_stage5_dict_fallback_builtin_when_repo_fails():
     class BrokenRepo:
         def get_type(self, type_code):  # noqa: ARG002

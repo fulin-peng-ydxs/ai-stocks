@@ -23,6 +23,8 @@ export function listTenants(query: {
   status?: string
   page?: number
   size?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
 } = {}): Promise<TenantListResult> {
   return http.get('/tenants', { params: query })
 }

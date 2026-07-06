@@ -20,6 +20,7 @@ import {
 } from '@/api/dict'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useTableSort } from '@/composables/useTableSort'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -112,6 +113,19 @@ const pageSize = computed(() => {
   const raw = componentValueOf('itemTable', 'pageSize')
   return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(10, Math.min(200, raw)) : 50
 })
+const DICT_ITEM_SORT_FIELDS = ['sort', 'code', 'label', 'enabled', 'updated_at'] as const
+const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof DICT_ITEM_SORT_FIELDS)[number]>({
+  slotId: 'itemTable',
+  defaultSort: 'sort:asc',
+  componentValueOf,
+  setComponentKnob,
+  allowedFields: DICT_ITEM_SORT_FIELDS,
+  defaultOrder: 'asc',
+  onChanged: () => {
+    itemPage.value = 1
+    void loadItems()
+  },
+})
 const hiddenColumns = computed<string[]>(() => {
   const raw = componentValueOf('itemTable', 'hiddenColumns')
   return Array.isArray(raw) ? raw.map(String) : []
@@ -194,6 +208,8 @@ async function loadItems() {
       enabled: enabledParam(settings.itemEnabled),
       page: itemPage.value,
       size: pageSize.value,
+      sort_by: sortBy.value,
+      sort_order: sortOrder.value,
     })
     itemRows.value = data.list
     itemTotal.value = data.total
@@ -509,13 +525,21 @@ onMounted(loadAll)
             <template #extra><el-button type="primary" @click="loadItems">重试</el-button></template>
           </el-result>
           <div v-else class="dict-table-wrap">
-            <el-table :data="itemRows" v-loading="itemLoading" height="100%" row-key="id" stripe>
-              <el-table-column v-if="colVisible('code')" label="code" prop="code" width="150" show-overflow-tooltip>
+            <el-table
+              :data="itemRows"
+              v-loading="itemLoading"
+              height="100%"
+              row-key="id"
+              stripe
+              :default-sort="elementDefaultSort"
+              @sort-change="onSortChange"
+            >
+              <el-table-column v-if="colVisible('code')" label="code" prop="code" width="150" show-overflow-tooltip sortable="custom">
                 <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>
               </el-table-column>
-              <el-table-column v-if="colVisible('label')" label="名称" prop="label" min-width="150" show-overflow-tooltip />
-              <el-table-column v-if="colVisible('sort')" label="排序" prop="sort" width="90" />
-              <el-table-column v-if="colVisible('enabled')" label="启用" width="110">
+              <el-table-column v-if="colVisible('label')" label="名称" prop="label" min-width="150" show-overflow-tooltip sortable="custom" />
+              <el-table-column v-if="colVisible('sort')" label="排序" prop="sort" width="90" sortable="custom" />
+              <el-table-column v-if="colVisible('enabled')" label="启用" prop="enabled" width="110" sortable="custom">
                 <template #default="{ row }">
                   <el-switch
                     v-model="row.enabled"
@@ -526,7 +550,7 @@ onMounted(loadAll)
                 </template>
               </el-table-column>
               <el-table-column v-if="colVisible('remark')" label="备注" prop="remark" min-width="220" show-overflow-tooltip />
-              <el-table-column v-if="colVisible('updated_at')" label="更新时间" width="170">
+              <el-table-column v-if="colVisible('updated_at')" label="更新时间" prop="updated_at" width="170" sortable="custom">
                 <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
               </el-table-column>
               <el-table-column label="操作" width="132" fixed="right">

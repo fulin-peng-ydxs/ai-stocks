@@ -212,6 +212,9 @@ Key Characteristics：
 - 表头保持稳定，分页、批量操作和关键筛选不被表体滚动带走。
 - 不使用隔行变色作为默认识别手段；当前全局样式会取消 stripe 背景。
 - 列宽按信息类型分配：编号、状态、日期、操作列稳定窄列；名称、标题、描述、备注更宽；数字列保持易比较。
+- `data-table` / `wide-table` 的稳定字段只要支持排序，就必须同时支持列头直接排序和设置抽屉默认排序；分页表优先服务端排序，纯本地完整数据表可用 Element Plus 本地排序。
+- `pageRegistry.componentMeta[slot].sortFields` 是可交互排序字段和默认排序候选的单一事实源；登记了 `sortFields` 的 slot 必须在 `consumedComponentFields` 消费 `defaultSort`，页面表格必须把对应列接入 `sortable` / `@sort-change`。
+- 操作列、展开列、按钮列、开关列、多值标签组合列、长说明/详情文本列默认不排序；若业务需要排序，必须明确映射到稳定字段并登记到 `sortFields`。
 - 操作列优先单行可见；操作过多时用分组、下拉、详情入口或抽屉，不用多行按钮堆叠。
 - 宽表通过表体横向滚动承载，不让整页横向滚动。
 
@@ -363,7 +366,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - `componentSchemas.ts` 接受该字段。
 - 后端 `layout_config.py` 同步字段规则和归属校验。
 - 消费页面在 `pageRegistry.consumedComponentFields` 登记。
-- 页面通过 `componentMeta` 提供安全枚举（列、排序字段、tabs 等）。
+- 页面通过 `componentMeta` 提供安全枚举（列、可交互排序字段、tabs 等）。
 - 页面实际读取并应用字段值。
 - 配置中心和设置抽屉可按层级渲染。
 - 测试覆盖合并、越权、类型和值域。
@@ -372,9 +375,10 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 | 组件 | 字段 | 层级 | 消费 |
 |---|---|---|---|
-| `data-table` | `defaultSort` | page/user | board、screen、data-quality、stocks、backtest |
-| `data-table` | `hiddenColumns` | page/user | board、screen、data-quality、stocks、backtest |
-| `data-table` | `pageSize` | preset/page/user | stocks 普通列表 |
+| `data-table` | `defaultSort` | page/user | board、screen、stocks、data-quality、data-ingest、backtest、training、user-manage、tenant-manage、data-dictionary |
+| `data-table` | `hiddenColumns` | page/user | board、screen、stocks、data-quality、backtest、user-manage、tenant-manage、data-dictionary |
+| `data-table` | `pageSize` | preset/page/user | stocks 普通列表、data-dictionary |
+| `wide-table` | `defaultSort`、`pageSize`、`hiddenColumns` | preset/page/user | audit-log |
 | `settings-drawer` | `size`、`bodyScroll`、`defaultCollapsed` | preset/page/user | 全部 registry 页面 |
 | `settings-drawer` | `collapsibleSections` | preset/page | 全部 registry 页面 |
 

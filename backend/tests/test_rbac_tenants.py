@@ -105,6 +105,15 @@ def test_create_list_update(client, env):
     assert r2.json()["data"]["name"] == name + "_改"
 
 
+def test_list_tenants_sort_by_name(client, env):
+    marker = uuid.uuid4().hex[:6]
+    for name in [f"sort {marker} c", f"sort {marker} a", f"sort {marker} b"]:
+        assert client.post("/api/tenants", json={"name": name}, headers=env.sys_headers()).json()["code"] == 0
+    r = client.get(f"/api/tenants?q=sort {marker}&sort_by=name&sort_order=asc", headers=env.sys_headers())
+    names = [tenant["name"] for tenant in r.json()["data"]["items"]]
+    assert names == sorted(names)
+
+
 def test_create_tenant_known_chinese_terms(client, env):
     r = client.post("/api/tenants", json={"name": "数据中心"}, headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0

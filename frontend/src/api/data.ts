@@ -138,6 +138,8 @@ export function getDataQuality(params?: {
   code?: string
   page?: number
   size?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
 }): Promise<DataQuality> {
   return http.get('/data/quality', { params })
 }

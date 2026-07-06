@@ -72,13 +72,25 @@ const DEFAULT_TABLE_SORT = 'pct_chg:asc'
 const defaultSortRaw = computed<string>(() => (componentValueOf('table', 'defaultSort') as string) || DEFAULT_TABLE_SORT)
 const defaultSortBy = computed<string>(() => defaultSortRaw.value.split(':')[0] || 'pct_chg')
 const defaultSortOrder = computed<'asc' | 'desc'>(() => (defaultSortRaw.value.split(':')[1] as 'asc' | 'desc') || 'asc')
+const tableElementDefaultSort = computed(() => ({
+  prop: defaultSortBy.value,
+  order: defaultSortOrder.value === 'desc' ? 'descending' : 'ascending',
+}))
 const defaultSize = computed<number>(() => (componentValueOf('table', 'pageSize') as number) ?? DEFAULT_PAGE_SIZE)
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
 
-// 分组视图表的列显隐（slot 'groupTable'）：另一套列集，单一事实源走组件配置层，页面只读 getter。
+// 分组视图表的排序/列显隐（slot 'groupTable'）：另一套列集，单一事实源走组件配置层，页面只读 getter。
+const DEFAULT_GROUP_SORT = 'add_date:asc'
+const groupDefaultSortRaw = computed<string>(() => (componentValueOf('groupTable', 'defaultSort') as string) || DEFAULT_GROUP_SORT)
+const groupDefaultSortBy = computed<string>(() => groupDefaultSortRaw.value.split(':')[0] || 'add_date')
+const groupDefaultSortOrder = computed<'asc' | 'desc'>(() => (groupDefaultSortRaw.value.split(':')[1] as 'asc' | 'desc') || 'asc')
+const groupElementDefaultSort = computed(() => ({
+  prop: groupDefaultSortBy.value,
+  order: groupDefaultSortOrder.value === 'desc' ? 'descending' : 'ascending',
+}))
 const groupHidden = computed<string[]>(() => (componentValueOf('groupTable', 'hiddenColumns') as string[]) ?? [])
 function groupColVisible(key: string): boolean {
   return !groupHidden.value.includes(key)
@@ -111,11 +123,13 @@ watch(() => settings.excludeSt, (value) => {
 })
 watch(defaultSortBy, (value) => {
   if (inGroupMode.value) return
+  if (sortBy.value === String(value)) return
   sortBy.value = String(value)
   search()
 })
 watch(defaultSortOrder, (value) => {
   if (inGroupMode.value) return
+  if (sortOrder.value === value) return
   sortOrder.value = value
   search()
 })
@@ -123,6 +137,18 @@ watch(defaultSize, (value) => {
   if (inGroupMode.value) return
   size.value = Number(value)
   search()
+})
+watch(groupDefaultSortBy, (value) => {
+  if (!inGroupMode.value) return
+  if (groupSortBy.value === String(value)) return
+  groupSortBy.value = String(value)
+  groupSearch()
+})
+watch(groupDefaultSortOrder, (value) => {
+  if (!inGroupMode.value) return
+  if (groupSortOrder.value === value) return
+  groupSortOrder.value = value
+  groupSearch()
 })
 
 async function load() {
@@ -153,9 +179,11 @@ function onSortChange({ prop, order }: { prop: string; order: string | null }) {
   if (!order) {            // 取消排序 → 回默认涨跌幅正序
     sortBy.value = 'pct_chg'
     sortOrder.value = 'asc'
+    setComponentKnob('table', 'defaultSort', DEFAULT_TABLE_SORT)
   } else {
     sortBy.value = prop
     sortOrder.value = order === 'descending' ? 'desc' : 'asc'
+    setComponentKnob('table', 'defaultSort', `${sortBy.value}:${sortOrder.value}`)
   }
   page.value = 1
   load()
@@ -170,8 +198,8 @@ const inGroupMode = computed(() => !!activeGid.value)
 const groupPage = ref(1)
 const groupSize = ref(DEFAULT_PAGE_SIZE)
 const groupQ = ref('')
-const groupSortBy = ref('add_date')
-const groupSortOrder = ref<'asc' | 'desc'>('asc')
+const groupSortBy = ref(groupDefaultSortBy.value)
+const groupSortOrder = ref<'asc' | 'desc'>(groupDefaultSortOrder.value)
 const groupTotal = computed(() => groupDetail.value?.members.total ?? 0)
 let restoringListState = false
 
@@ -243,9 +271,11 @@ function onGroupSortChange({ prop, order }: { prop: string; order: string | null
   if (!order) {
     groupSortBy.value = 'add_date'
     groupSortOrder.value = 'asc'
+    setComponentKnob('groupTable', 'defaultSort', DEFAULT_GROUP_SORT)
   } else {
     groupSortBy.value = prop
     groupSortOrder.value = order === 'descending' ? 'desc' : 'asc'
+    setComponentKnob('groupTable', 'defaultSort', `${groupSortBy.value}:${groupSortOrder.value}`)
   }
   groupPage.value = 1
   loadGroupDetail()
@@ -500,6 +530,8 @@ onMounted(async () => {
   excludeSt.value = Boolean(settings.excludeSt)
   sortBy.value = defaultSortBy.value
   sortOrder.value = defaultSortOrder.value
+  groupSortBy.value = groupDefaultSortBy.value
+  groupSortOrder.value = groupDefaultSortOrder.value
   size.value = defaultSize.value
   // 交易日默认直接选中最新交易日（而非留空靠占位提示）
   await ensureLoaded()
@@ -591,6 +623,7 @@ onMounted(async () => {
       <template v-if="inGroupMode">
         <el-table :data="groupRows" v-loading="groupLoading" row-key="code"
           height="100%"
+          :default-sort="groupElementDefaultSort"
           class="clickable" @row-click="(r: GroupMember) => enterDetail(r.code)"
           @sort-change="onGroupSortChange">
           <el-table-column width="46">
@@ -634,7 +667,7 @@ onMounted(async () => {
         <el-table :data="rows" v-loading="loading" row-key="code"
           height="100%"
           class="clickable" @row-click="(r: StockBasic) => enterDetail(r.code)"
-          :default-sort="{ prop: 'pct_chg', order: 'ascending' }" @sort-change="onSortChange">
+          :default-sort="tableElementDefaultSort" @sort-change="onSortChange">
           <el-table-column width="46">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />

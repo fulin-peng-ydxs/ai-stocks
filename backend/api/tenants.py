@@ -33,8 +33,10 @@ class StatusBody(BaseModel):
 
 @router.get("/tenants", response_model=ApiResponse)
 def list_tenants(q: str | None = None, status: str | None = None,
-                 page: int = 1, size: int = 20) -> ApiResponse:
-    return ok(TenantAdminService().list_tenants(q=q, status=status, page=page, size=size))
+                 page: int = 1, size: int = 20,
+                 sort_by: str = "created", sort_order: str = "desc") -> ApiResponse:
+    return ok(TenantAdminService().list_tenants(
+        q=q, status=status, page=page, size=size, sort_by=sort_by, sort_order=sort_order))
 
 
 @router.post("/tenants", response_model=ApiResponse)

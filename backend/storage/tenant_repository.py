@@ -17,6 +17,11 @@ from backend.storage.pg_client import PostgresClient, get_pg_client
 log = get_logger("storage.tenant_repository")
 
 _TENANT_COLS = "id, name, status, admin_user_id, created_at"
+_TENANT_SORT_COLS = {
+    "created": "t.created_at",
+    "name": "lower(t.name)",
+    "userCount": "user_count",
+}
 
 
 class TenantRepository:
@@ -31,7 +36,8 @@ class TenantRepository:
             "created_at": str(r["created_at"]) if r.get("created_at") is not None else None,
         }
 
-    def list_all(self, *, q: str | None, status: str | None, page: int, size: int) -> dict:
+    def list_all(self, *, q: str | None, status: str | None, page: int, size: int,
+                 sort_by: str = "created", sort_order: str = "desc") -> dict:
         """租户分页列表（附用户数 + 管理员账号）。返回 {items, total}。"""
         conds: list[str] = []
         params: list = []
@@ -48,12 +54,15 @@ class TenantRepository:
             f"SELECT count(*) n FROM sys_tenant t {where}", params).iloc[0]["n"])
         page = max(1, page)
         size = max(1, min(size, 200))
+        sort_col = _TENANT_SORT_COLS.get(sort_by, "t.created_at")
+        direction = "ASC" if sort_order.lower() == "asc" else "DESC"
         rows = self.pg.query_df(
             f"SELECT t.id, t.name, t.status, t.admin_user_id, t.created_at, "
             "(SELECT count(*) FROM sys_user u WHERE u.tenant_id = t.id) AS user_count, "
             "(SELECT account FROM sys_user a WHERE a.id = t.admin_user_id) AS admin_account "
             f"FROM sys_tenant t {where} "
-            "ORDER BY t.created_at DESC NULLS LAST, t.id LIMIT %s OFFSET %s",
+            f"ORDER BY {sort_col} {direction} NULLS LAST, t.created_at DESC NULLS LAST, t.id "
+            "LIMIT %s OFFSET %s",
             params + [size, (page - 1) * size])
         items = []
         for _, r in rows.iterrows():

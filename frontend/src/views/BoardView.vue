@@ -62,10 +62,23 @@ const { settings, isDirty, reset } = usePageSettings('board', boardDefaults)
 topN.value = Number(settings.topN)
 
 // 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留渲染/排序要读的 getter（写值经组件配置层）。
-const sortBy = computed<'score' | 'rank'>(() => (componentValueOf('table', 'defaultSort') as 'score' | 'rank') ?? 'score')
+type BoardSort = 'score' | 'rank' | 'code'
+const BOARD_SORT_PROPS: Record<string, BoardSort> = { total_score: 'score', rank: 'rank', code: 'code' }
+const sortBy = computed<BoardSort>(() => {
+  const raw = componentValueOf('table', 'defaultSort')
+  return raw === 'rank' || raw === 'code' ? raw : 'score'
+})
+const elementDefaultSort = computed(() => {
+  if (sortBy.value === 'rank') return { prop: 'rank', order: 'ascending' }
+  if (sortBy.value === 'code') return { prop: 'code', order: 'ascending' }
+  return { prop: 'total_score', order: 'descending' }
+})
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
+}
+function onTableSortChange({ prop }: { prop: string; order: string | null }): void {
+  setComponentKnob('table', 'defaultSort', BOARD_SORT_PROPS[prop] ?? 'score')
 }
 
 // 评分规则方案
@@ -101,6 +114,7 @@ const subKeys = computed(() => (rows.value[0] ? Object.keys(rows.value[0].sub_sc
 const displayRows = computed(() => {
   const list = [...rows.value]
   if (sortBy.value === 'rank') list.sort((a, b) => a.rank - b.rank)
+  else if (sortBy.value === 'code') list.sort((a, b) => a.code.localeCompare(b.code))
   else list.sort((a, b) => b.total_score - a.total_score)
   return list
 })
@@ -234,10 +248,12 @@ onMounted(async () => {
         :data="displayRows"
         v-loading="loading"
         height="100%"
+        :default-sort="elementDefaultSort"
+        @sort-change="onTableSortChange"
         @row-click="gotoStock"
         class="clickable"
       >
-        <el-table-column label="#" width="60" sortable :sort-by="(r:any)=>r.rank">
+        <el-table-column label="#" prop="rank" width="60" sortable :sort-by="(r:any)=>r.rank">
           <template #default="{ row }">{{ row.rank }}</template>
         </el-table-column>
         <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="110" sortable />

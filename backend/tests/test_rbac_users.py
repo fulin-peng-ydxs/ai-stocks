@@ -104,6 +104,16 @@ def test_tenant_admin_lists_own_tenant_only(client, env):
     assert {u["tenant_id"] for u in data["items"]} == {tid}   # 只见本租户
 
 
+def test_list_users_sort_by_account(client, env):
+    tid = env.mk_tenant()
+    ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    env.mk_user(tid, ROLE_NORMAL)
+    env.mk_user(tid, ROLE_NORMAL)
+    r = client.get("/api/users?sort_by=account&sort_order=asc", headers=_tok(ta, tid))
+    accounts = [u["account"] for u in r.json()["data"]["items"]]
+    assert accounts == sorted(accounts)
+
+
 def test_tenant_admin_cannot_touch_other_tenant_user(client, env):
     tid = env.mk_tenant()
     ta = env.mk_user(tid, ROLE_TENANT_ADMIN)

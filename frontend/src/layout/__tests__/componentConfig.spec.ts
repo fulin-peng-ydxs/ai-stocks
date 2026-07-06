@@ -44,7 +44,7 @@ describe('组件字段元数据', () => {
   it('字段定义只覆盖已消费字段，不预设无消费字段', () => {
     expect(Object.keys(COMPONENT_FIELD_DEFS).sort()).toEqual(['data-table', 'settings-drawer', 'tabs', 'wide-table'])
     expect((COMPONENT_FIELD_DEFS['data-table'] ?? []).map((d) => d.key).sort()).toEqual(['defaultSort', 'hiddenColumns', 'pageSize'])
-    expect((COMPONENT_FIELD_DEFS['wide-table'] ?? []).map((d) => d.key).sort()).toEqual(['hiddenColumns', 'pageSize'])
+    expect((COMPONENT_FIELD_DEFS['wide-table'] ?? []).map((d) => d.key).sort()).toEqual(['defaultSort', 'hiddenColumns', 'pageSize'])
     expect((COMPONENT_FIELD_DEFS['settings-drawer'] ?? []).map((d) => d.key).sort()).toEqual([
       'bodyScroll',
       'collapsibleSections',

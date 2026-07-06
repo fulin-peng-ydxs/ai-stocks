@@ -12,6 +12,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useTableSort } from '@/composables/useTableSort'
 import { useAuthStore } from '@/stores/auth'
 import {
   listTenants, createTenant, updateTenant, setTenantStatus, deleteTenant, type Tenant,
@@ -41,8 +42,6 @@ const {
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 const settingsOpen = ref(false)
 
-const defaultSort = computed<'created' | 'name' | 'userCount'>(
-  () => (componentValueOf('table', 'defaultSort') as 'created' | 'name' | 'userCount') ?? 'created')
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
@@ -56,22 +55,23 @@ const total = ref(0)
 const page = ref(1)
 const size = ref(DEFAULT_PAGE_SIZE)
 const filters = ref<{ status: string; q: string }>({ status: '', q: '' })
+const TENANT_SORT_FIELDS = ['created', 'name', 'userCount'] as const
+const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof TENANT_SORT_FIELDS)[number]>({
+  slotId: 'table',
+  defaultSort: 'created:desc',
+  componentValueOf,
+  setComponentKnob,
+  allowedFields: TENANT_SORT_FIELDS,
+  onChanged: () => {
+    page.value = 1
+    void load()
+  },
+})
 
 const STATUS_TAG: Record<string, { type: 'success' | 'danger'; label: string }> = {
   active: { type: 'success', label: '启用' },
   disabled: { type: 'danger', label: '已停用' },
 }
-
-// 服务端分页，排序仅影响当前页（与用户管理页口径一致）。
-const displayList = computed(() => {
-  const rows = [...list.value]
-  if (defaultSort.value === 'name') {
-    rows.sort((a, b) => a.name.localeCompare(b.name))
-  } else if (defaultSort.value === 'userCount') {
-    rows.sort((a, b) => (b.user_count ?? 0) - (a.user_count ?? 0))
-  }
-  return rows
-})
 
 async function load() {
   loading.value = true
@@ -81,6 +81,8 @@ async function load() {
       status: filters.value.status || undefined,
       q: filters.value.q.trim() || undefined,
       page: page.value, size: size.value,
+      sort_by: sortBy.value,
+      sort_order: sortOrder.value,
     })
     list.value = res.items
     total.value = res.total
@@ -219,8 +221,16 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
         </el-result>
         <template v-else>
         <!-- row-key：稳定行标识，避免新增/重排时 fixed 列单元格 v-if（如「内置」标签）DOM 复用错位 -->
-        <el-table :data="displayList" row-key="id" size="small" height="100%" v-loading="loading">
-          <el-table-column label="租户名" prop="name" min-width="180" fixed="left" show-overflow-tooltip>
+        <el-table
+          :data="list"
+          row-key="id"
+          size="small"
+          height="100%"
+          v-loading="loading"
+          :default-sort="elementDefaultSort"
+          @sort-change="onSortChange"
+        >
+          <el-table-column label="租户名" prop="name" min-width="180" fixed="left" show-overflow-tooltip sortable="custom">
             <template #default="{ row }">
               {{ row.name }}
               <el-tag v-if="row.id === DEFAULT_TENANT_ID" type="info" size="small" effect="plain" class="builtin-tag">系统内置</el-tag>
@@ -239,10 +249,10 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           <el-table-column v-if="colVisible('admin')" label="租户管理员" min-width="150" show-overflow-tooltip>
             <template #default="{ row }">{{ row.admin_account || '—' }}</template>
           </el-table-column>
-          <el-table-column v-if="colVisible('userCount')" label="用户数" width="90" align="right">
+          <el-table-column v-if="colVisible('userCount')" label="用户数" prop="userCount" width="90" align="right" sortable="custom">
             <template #default="{ row }">{{ row.user_count ?? 0 }}</template>
           </el-table-column>
-          <el-table-column v-if="colVisible('created')" label="创建时间" width="160">
+          <el-table-column v-if="colVisible('created')" label="创建时间" prop="created" width="160" sortable="custom">
             <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="230" fixed="right">

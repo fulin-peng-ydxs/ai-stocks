@@ -11,6 +11,7 @@ import { getPublicDictItems } from '@/api/dict'
 import { listTenants } from '@/api/tenant'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useTableSort } from '@/composables/useTableSort'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -115,6 +116,18 @@ const pageSize = computed(() => {
   const raw = componentValueOf('auditTable', 'pageSize')
   return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(10, Math.min(200, raw)) : 50
 })
+const AUDIT_SORT_FIELDS = ['event_time', 'event_category', 'result', 'status', 'duration_ms'] as const
+const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof AUDIT_SORT_FIELDS)[number]>({
+  slotId: 'auditTable',
+  defaultSort: 'event_time:desc',
+  componentValueOf,
+  setComponentKnob,
+  allowedFields: AUDIT_SORT_FIELDS,
+  onChanged: () => {
+    page.value = 1
+    void loadAll()
+  },
+})
 const hiddenColumns = computed<string[]>(() => {
   const raw = componentValueOf('auditTable', 'hiddenColumns')
   return Array.isArray(raw) ? raw.map(String) : []
@@ -198,6 +211,8 @@ function buildQuery(): AuditQuery {
     actor_keyword: compactFilter(filters.actor_keyword),
     target_keyword: compactFilter(filters.target_keyword),
     tenant_id: auth.isSystem ? compactList(filters.tenant_id) : undefined,
+    sort_by: sortBy.value,
+    sort_order: sortOrder.value,
   }
 }
 
@@ -208,7 +223,7 @@ function errorStatus(error: unknown): number | undefined {
 async function loadSummary(silent = false) {
   if (!silent) summaryLoading.value = true
   summaryError.value = false
-  const { page: _page, page_size: _size, ...query } = buildQuery()
+  const { page: _page, page_size: _size, sort_by: _sortBy, sort_order: _sortOrder, ...query } = buildQuery()
   try {
     summary.value = await getAuditSummary(query)
   } catch {
@@ -481,15 +496,17 @@ onBeforeUnmount(stopTimer)
           row-key="id"
           stripe
           class="audit-table"
+          :default-sort="elementDefaultSort"
+          @sort-change="onSortChange"
           @row-click="openDetail"
         >
-          <el-table-column v-if="colVisible('event_time')" label="时间" width="168">
+          <el-table-column v-if="colVisible('event_time')" label="时间" prop="event_time" width="168" sortable="custom">
             <template #default="{ row }">{{ formatTime(row.event_time) }}</template>
           </el-table-column>
           <el-table-column v-if="colVisible('actor')" label="处理人" width="132" show-overflow-tooltip>
             <template #default="{ row }">{{ actorText(row) }}</template>
           </el-table-column>
-          <el-table-column v-if="colVisible('event_category')" label="事件类型" width="100">
+          <el-table-column v-if="colVisible('event_category')" label="事件类型" prop="event_category" width="100" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="row.event_category === 'security' ? 'danger' : row.event_category === 'task' ? 'info' : 'success'" effect="plain">
                 {{ eventLabel(row) }}
@@ -507,14 +524,14 @@ onBeforeUnmount(stopTimer)
               </span>
             </template>
           </el-table-column>
-          <el-table-column v-if="colVisible('result')" label="结果" width="86">
+          <el-table-column v-if="colVisible('result')" label="结果" prop="result" width="86" sortable="custom">
             <template #default="{ row }"><el-tag :type="tagType(row.result)" effect="plain">{{ resultLabel(row.result) }}</el-tag></template>
           </el-table-column>
-          <el-table-column v-if="colVisible('status')" label="状态" width="96">
+          <el-table-column v-if="colVisible('status')" label="状态" prop="status" width="96" sortable="custom">
             <template #default="{ row }"><el-tag :type="tagType(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag></template>
           </el-table-column>
           <el-table-column v-if="colVisible('ip')" label="IP" prop="ip" width="132" show-overflow-tooltip />
-          <el-table-column v-if="colVisible('duration_ms')" label="耗时" width="84">
+          <el-table-column v-if="colVisible('duration_ms')" label="耗时" prop="duration_ms" width="84" sortable="custom">
             <template #default="{ row }">{{ formatDuration(row.duration_ms) }}</template>
           </el-table-column>
           <el-table-column v-if="colVisible('error_summary')" label="错误摘要" min-width="180" show-overflow-tooltip>

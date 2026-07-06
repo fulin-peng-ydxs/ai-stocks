@@ -34,11 +34,15 @@ def list_audit_logs(
     actor_keyword: str | None = None,
     target_keyword: str | None = None,
     tenant_id: list[str] | None = Query(default=None),
+    sort_by: str = "event_time",
+    sort_order: str = "desc",
 ) -> ApiResponse:
     return ok(AuditService().list_logs(
         _ctx(),
         page=page,
         page_size=page_size,
+        sort_by=sort_by,
+        sort_order=sort_order,
         start_time=start_time,
         end_time=end_time,
         event_category=event_category,

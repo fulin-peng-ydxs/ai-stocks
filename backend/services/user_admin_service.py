@@ -41,10 +41,12 @@ class UserAdminService:
 
     # ── 列表 ──
     def list_users(self, ctx: AuthContext, *, tenant_id: str | None, role: str | None,
-                   status: str | None, q: str | None, page: int, size: int) -> dict:
+                   status: str | None, q: str | None, page: int, size: int,
+                   sort_by: str, sort_order: str) -> dict:
         scope_tenant = self._scope_tenant(ctx, tenant_id)
         return self.users.list_users(
-            tenant_id=scope_tenant, role=role, status=status, q=q, page=page, size=size)
+            tenant_id=scope_tenant, role=role, status=status, q=q, page=page, size=size,
+            sort_by=sort_by, sort_order=sort_order)
 
     # ── 新建 ──
     def create_user(self, ctx: AuthContext, *, account: str, password: str,

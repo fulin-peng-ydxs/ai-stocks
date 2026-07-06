@@ -39,6 +39,8 @@ export interface UserListQuery {
   q?: string
   page?: number
   size?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
 }
 
 export function listUsers(query: UserListQuery = {}): Promise<UserListResult> {

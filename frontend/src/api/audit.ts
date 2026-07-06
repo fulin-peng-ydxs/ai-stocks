@@ -40,6 +40,8 @@ export interface AuditQuery {
   actor_keyword?: string | null
   target_keyword?: string | null
   tenant_id?: string | string[] | null
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
 }
 
 export interface AuditListResult {

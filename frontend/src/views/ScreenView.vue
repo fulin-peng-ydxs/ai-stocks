@@ -57,10 +57,23 @@ const {
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
 // 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留排序/渲染要读的 getter。
-const resultSort = computed<'score' | 'code'>(() => (componentValueOf('result', 'defaultSort') as 'score' | 'code') ?? 'score')
+type ResultSort = 'score' | 'code' | 'name'
+const RESULT_SORT_PROPS: Record<string, ResultSort> = { total_score: 'score', code: 'code', name: 'name' }
+const resultSort = computed<ResultSort>(() => {
+  const raw = componentValueOf('result', 'defaultSort')
+  return raw === 'code' || raw === 'name' ? raw : 'score'
+})
+const elementDefaultSort = computed(() => {
+  if (resultSort.value === 'code') return { prop: 'code', order: 'ascending' }
+  if (resultSort.value === 'name') return { prop: 'name', order: 'ascending' }
+  return { prop: 'total_score', order: 'descending' }
+})
 const hiddenColumns = computed<string[]>(() => (componentValueOf('result', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
+}
+function onResultSortChange({ prop }: { prop: string; order: string | null }): void {
+  setComponentKnob('result', 'defaultSort', RESULT_SORT_PROPS[prop] ?? 'score')
 }
 
 // ── 指标注册表（融合：可视化条件直接从注册表取指标，支持动态传参）──
@@ -252,6 +265,7 @@ const gradeTag: Record<string, '' | 'success' | 'warning' | 'info'> = {
 const displayHits = computed(() => {
   const list = [...(result.value?.hits ?? [])]
   if (resultSort.value === 'code') list.sort((a, b) => a.code.localeCompare(b.code))
+  else if (resultSort.value === 'name') list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   else list.sort((a, b) => (b.total_score ?? 0) - (a.total_score ?? 0))
   return list
 })
@@ -491,8 +505,10 @@ onMounted(async () => {
       <el-table
         v-if="result && result.hits.length"
         :data="displayHits"
+        :default-sort="elementDefaultSort"
         :row-class-name="rowClass"
         height="100%"
+        @sort-change="onResultSortChange"
         @row-click="(r: ScreenHit) => router.push(`/stocks/${r.code}`)"
         class="clickable"
       >

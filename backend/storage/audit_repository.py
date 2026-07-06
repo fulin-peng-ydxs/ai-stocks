@@ -16,6 +16,14 @@ from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.audit")
 
+_AUDIT_SORT_COLS = {
+    "event_time": "a.event_time",
+    "duration_ms": "a.duration_ms",
+    "result": "a.result",
+    "status": "a.status",
+    "event_category": "a.event_category",
+}
+
 
 class AuditRepository:
     """平台级审计日志仓库。"""
@@ -98,8 +106,12 @@ class AuditRepository:
         filters: dict[str, Any],
         page: int,
         page_size: int,
+        sort_by: str = "event_time",
+        sort_order: str = "desc",
     ) -> dict:
         where, params = self._where(filters)
+        sort_col = _AUDIT_SORT_COLS.get(sort_by, "a.event_time")
+        direction = "ASC" if sort_order.lower() == "asc" else "DESC"
         total = int(self.pg.query_df(
             "SELECT count(*) AS n "
             "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
@@ -113,7 +125,8 @@ class AuditRepository:
             "a.ip, a.method, a.path, a.duration_ms, a.error_summary, a.context, a.created_at "
             "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
             f"{where} "
-            "ORDER BY a.event_time DESC, a.created_at DESC LIMIT %s OFFSET %s",
+            f"ORDER BY {sort_col} {direction} NULLS LAST, a.event_time DESC, a.created_at DESC "
+            "LIMIT %s OFFSET %s",
             params + [page_size, (page - 1) * page_size],
         )
         return {

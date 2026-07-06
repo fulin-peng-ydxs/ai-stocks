@@ -220,7 +220,8 @@ def stock_quality(codes: str | None = None, keyword: str | None = None,
 @router.get("/quality", response_model=ApiResponse, dependencies=_QUALITY_VIEW)
 def quality(issue_type: str | None = None, severity: str | None = None,
             status: str | None = None, code: str | None = None,
-            page: int = 1, size: int = 50) -> ApiResponse:
+            page: int = 1, size: int = 50,
+            sort_by: str = "time", sort_order: str = "desc") -> ApiResponse:
     """质检问题列表（含 severity/status，服务端分页/筛选）。中文化由前端映射。
 
     issue_type/severity/status 支持逗号分隔多值（前端多选），按 IN 过滤；空串/缺省即不限。
@@ -255,11 +256,16 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         params += types
     where = " AND ".join(conds)
     total = int(c.query_df(f"SELECT count(*) AS n FROM data_quality_issue q WHERE {where}", params).iloc[0]["n"])
+    direction = "ASC" if sort_order.lower() == "asc" else "DESC"
+    sort_expr = {
+        "time": "q.detected_at",
+        "severity": "CASE q.severity WHEN 'high' THEN 0 WHEN 'mid' THEN 1 ELSE 2 END",
+    }.get(sort_by, "q.detected_at")
     df = c.query_df(
         f"SELECT q.id, q.code, sb.name AS name, q.trade_date, q.issue_type, q.severity, q.status, "
         f"q.detail, q.detected_at, q.resolved_at "
         f"FROM data_quality_issue q LEFT JOIN stock_basic sb ON sb.code = q.code WHERE {where} "
-        f"ORDER BY CASE q.severity WHEN 'high' THEN 0 WHEN 'mid' THEN 1 ELSE 2 END, q.detected_at DESC "
+        f"ORDER BY {sort_expr} {direction} NULLS LAST, q.detected_at DESC NULLS LAST, q.id "
         f"LIMIT {int(size)} OFFSET {int((page-1)*size)}", params)
     rows = df.to_dict("records")
     for r in rows:

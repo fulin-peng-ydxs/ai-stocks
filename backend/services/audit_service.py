@@ -55,12 +55,20 @@ class AuditService:
         *,
         page: int,
         page_size: int,
+        sort_by: str = "event_time",
+        sort_order: str = "desc",
         **filters,
     ) -> dict:
         scoped = self._scoped_filters(ctx, filters)
         page = max(1, page)
         page_size = max(1, min(page_size, 200))
-        data = self.repo.list_logs(filters=scoped, page=page, page_size=page_size)
+        data = self.repo.list_logs(
+            filters=scoped,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
         data["list"] = [self._sanitize_row(row) for row in data["list"]]
         data["size"] = data["page_size"]
         return data

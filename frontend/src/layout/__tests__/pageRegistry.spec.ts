@@ -15,6 +15,17 @@ const DESIGN_MD = readFileSync(new URL('../../../../DESIGN.md', import.meta.url)
 const DESIGN_PAGE_SECTION = DESIGN_MD.match(
   /<!-- page-registry:start -->([\s\S]*?)<!-- page-registry:end -->/,
 )?.[1] ?? ''
+const ROUTER_TS = readFileSync(new URL('../../router/index.ts', import.meta.url), 'utf-8')
+const ROUTE_COMPONENT_BY_NAME = new Map<string, string>()
+for (const match of ROUTER_TS.matchAll(/name:\s*'([^']+)'[^}]*component:\s*\(\)\s*=>\s*import\('@\/([^']+)'\)/g)) {
+  ROUTE_COMPONENT_BY_NAME.set(match[1], match[2])
+}
+
+function sourceForPage(pageKey: string): string {
+  const componentPath = ROUTE_COMPONENT_BY_NAME.get(pageKey)
+  if (!componentPath) return ''
+  return readFileSync(new URL(`../../${componentPath}`, import.meta.url), 'utf-8')
+}
 
 describe('页面注册表完整性', () => {
   it('注册表非空且与 listManagedPages 一致', () => {
@@ -142,6 +153,59 @@ describe('组件消费关系与配置一致性（P4）', () => {
             getComponentFieldDef(slot!.component, field),
             `${entry.pageKey}.${slotId}.${field} 未在 componentConfig 登记`,
           ).toBeTruthy()
+        }
+      }
+    }
+  })
+
+  it('可交互排序字段必须进入 defaultSort 配置闭环', () => {
+    for (const entry of PAGE_REGISTRY) {
+      for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {
+        if (!meta.sortFields?.length) continue
+
+        const consumed = entry.consumedComponentFields?.[slotId] ?? []
+        expect(
+          consumed,
+          `${entry.pageKey}.${slotId} 声明 sortFields 后必须消费 defaultSort，保证列头排序和设置抽屉默认排序同源`,
+        ).toContain('defaultSort')
+
+        const defaultSort = entry.layout.slots.find((slot) => slot.id === slotId)?.config?.defaultSort
+        if (defaultSort == null) continue
+        const defaultSortField = String(defaultSort).split(':')[0]
+        const sortKeys = meta.sortFields.map((field) => field.key)
+        expect(
+          sortKeys,
+          `${entry.pageKey}.${slotId} 默认排序 ${String(defaultSort)} 必须来自 componentMeta.sortFields`,
+        ).toContain(defaultSortField)
+      }
+    }
+  })
+
+  it('声明 sortFields 的页面源码必须接入列头排序并回写 defaultSort', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const sortableSlots = Object.entries(entry.componentMeta ?? {}).filter(([, meta]) => meta.sortFields?.length)
+      if (!sortableSlots.length) continue
+
+      const source = sourceForPage(entry.pageKey)
+      expect(source, `${entry.pageKey} 声明 sortFields 但无法从 router 定位 Vue 页面源码`).not.toBe('')
+      expect(source, `${entry.pageKey} 声明 sortFields 后页面必须接入 @sort-change`).toContain('@sort-change')
+
+      for (const [slotId, meta] of sortableSlots) {
+        const writesDefaultSort =
+          source.includes(`setComponentKnob('${slotId}', 'defaultSort'`) ||
+          source.includes(`setComponentKnob("${slotId}", "defaultSort"`) ||
+          (source.includes('useTableSort') && source.includes(`slotId: '${slotId}'`)) ||
+          (source.includes('useTableSort') && source.includes(`slotId: "${slotId}"`))
+        expect(
+          writesDefaultSort,
+          `${entry.pageKey}.${slotId} 声明 sortFields 后页面列头排序必须回写 slots.${slotId}.config.defaultSort`,
+        ).toBe(true)
+
+        for (const field of meta.sortFields ?? []) {
+          expect(
+            source,
+            `${entry.pageKey}.${slotId} sortFields.${field.key} 未在页面源码中出现，可能只是抽屉候选但表头不可操作`,
+          ).toContain(field.key)
         }
       }
     }

@@ -90,11 +90,19 @@ class DictService:
         enabled: bool | None,
         page: int,
         size: int,
+        sort_by: str = "sort",
+        sort_order: str = "asc",
     ) -> dict:
         type_code = self._norm_code(type_code, "类型 code")
         self._load_type(type_code)
         return self.repo.list_items(
-            type_code=type_code, q=q, enabled=enabled, page=page, size=size
+            type_code=type_code,
+            q=q,
+            enabled=enabled,
+            page=page,
+            size=size,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     def get_enabled_items(self, type_code: str) -> dict:

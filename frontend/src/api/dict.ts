@@ -45,6 +45,8 @@ export interface DictItemQuery {
   enabled?: boolean | null
   page?: number
   size?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
 }
 
 export interface DictTypeWrite {

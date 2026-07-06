@@ -140,6 +140,60 @@ def test_stage5_audit_system_can_query_summary_and_detail(client, pg):
     assert invalid.json()["code"] == 4000
 
 
+def test_stage5_audit_supports_sort_params(client, pg):
+    _clear_stage5_audit(pg)
+    repo = AuditRepository(pg)
+    marker = f"stage5_sort_{uuid.uuid4().hex[:8]}"
+    fast_id = repo.record(
+        event_category="api",
+        event_type="api",
+        action="query",
+        result="success",
+        status="completed",
+        tenant_id="default",
+        actor_user_id="admin",
+        actor_account="admin",
+        resource_code="audit:view",
+        target_type="stage5_test",
+        target_id=f"{marker}_fast",
+        target_label=marker,
+        duration_ms=12,
+        context={"route": "/api/audit"},
+    )
+    slow_id = repo.record(
+        event_category="api",
+        event_type="api",
+        action="query",
+        result="success",
+        status="completed",
+        tenant_id="default",
+        actor_user_id="admin",
+        actor_account="admin",
+        resource_code="audit:view",
+        target_type="stage5_test",
+        target_id=f"{marker}_slow",
+        target_label=marker,
+        duration_ms=88,
+        context={"route": "/api/audit"},
+    )
+
+    resp = client.get(
+        "/api/audit",
+        headers=_admin_headers(pg),
+        params={
+            "target_keyword": marker,
+            "sort_by": "duration_ms",
+            "sort_order": "asc",
+            "page": 1,
+            "page_size": 10,
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert [row["id"] for row in data["list"][:2]] == [fast_id, slow_id]
+
+
 def test_stage5_audit_tenant_admin_is_scoped_to_own_tenant(client, pg):
     _clear_stage5_audit(pg)
     tenant_admin = _new_tenant_admin(pg)

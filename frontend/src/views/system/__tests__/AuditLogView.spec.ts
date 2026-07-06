@@ -140,7 +140,12 @@ describe('AuditLogView', () => {
     expect(wrapper.text()).toContain('查看审计日志 · 角色')
     expect(dictApi.getPublicDictItems).toHaveBeenCalledWith('audit_status')
     expect(tenantApi.listTenants).toHaveBeenCalledWith({ page: 1, size: 200 })
-    expect(auditApi.listAuditLogs).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 50 }))
+    expect(auditApi.listAuditLogs).toHaveBeenCalledWith(expect.objectContaining({
+      page: 1,
+      page_size: 50,
+      sort_by: 'event_time',
+      sort_order: 'desc',
+    }))
   })
 
   it('查询时把筛选条件透传给审计列表和摘要', async () => {
@@ -220,7 +225,7 @@ describe('AuditLogView', () => {
     const wrapper = await mountView('tenant_admin')
     expect(wrapper.find('input[placeholder="租户 ID"]').exists()).toBe(false)
     expect(tenantApi.listTenants).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('已强制限定本租户')
+    expect(auditApi.listAuditLogs).toHaveBeenCalledWith(expect.not.objectContaining({ tenant_id: expect.anything() }))
   })
 
   it('自动刷新按间隔静默刷新，卸载后清理定时器', async () => {

@@ -16,6 +16,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useTableSort } from '@/composables/useTableSort'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -24,7 +25,6 @@ const route = useRoute()
 const settingsOpen = ref(false)
 const ingestDefaults = {
   taskStatus: 'active' as 'all' | 'active' | 'failed',
-  taskSort: 'time' as 'time' | 'status',
   logStatus: 'all' as 'all' | 'failed',
   autoScroll: true,
   defaultTaskType: 'ingest_date' as TaskType,
@@ -48,7 +48,7 @@ const {
   componentLayerValuesOf,
 } = useRemoteLayoutConfig(ingestLayout)
 
-// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+// 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 const loading = ref(false)
 const status = ref<DataStatus | null>(null)
@@ -59,7 +59,23 @@ const taskTotal = ref(0)
 const taskPage = ref(1)
 const taskSize = ref(DEFAULT_PAGE_SIZE)
 const taskFilter = ref<{ status: string; task_type: string }>({ status: '', task_type: '' })
-const taskSort = ref<{ sort: 'time' | 'type' | 'status'; order: 'asc' | 'desc' }>({ sort: 'time', order: 'desc' })
+const TASK_SORT_FIELDS = ['time', 'type', 'status'] as const
+const {
+  sortBy: taskSortBy,
+  sortOrder: taskSortOrder,
+  elementDefaultSort: taskDefaultSort,
+  onSortChange: onTaskSort,
+} = useTableSort<(typeof TASK_SORT_FIELDS)[number]>({
+  slotId: 'taskTable',
+  defaultSort: 'time:desc',
+  componentValueOf,
+  setComponentKnob,
+  allowedFields: TASK_SORT_FIELDS,
+  onChanged: () => {
+    taskPage.value = 1
+    void loadTasks()
+  },
+})
 
 // ── 采集日志：服务端分页 / 排序 / 筛选（M2.9.5）──
 const updateLogList = ref<UpdateLog[]>([])
@@ -68,7 +84,23 @@ const logPage = ref(1)
 const logSize = ref(DEFAULT_PAGE_SIZE)
 const logTables = ref<string[]>([])
 const logFilter = ref<{ status: string; table_name: string }>({ status: '', table_name: '' })
-const logSort = ref<{ sort: 'time' | 'table' | 'status'; order: 'asc' | 'desc' }>({ sort: 'time', order: 'desc' })
+const LOG_SORT_FIELDS = ['time', 'table', 'status'] as const
+const {
+  sortBy: logSortBy,
+  sortOrder: logSortOrder,
+  elementDefaultSort: logDefaultSort,
+  onSortChange: onLogSort,
+} = useTableSort<(typeof LOG_SORT_FIELDS)[number]>({
+  slotId: 'logTable',
+  defaultSort: 'time:desc',
+  componentValueOf,
+  setComponentKnob,
+  allowedFields: LOG_SORT_FIELDS,
+  onChanged: () => {
+    logPage.value = 1
+    void loadLogs()
+  },
+})
 const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
   'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
   'recompute', 'verify', 'checkup', 'fix', 'enrich_basic',
@@ -224,7 +256,7 @@ async function loadTasks() {
     const r = await listTasks({
       page: taskPage.value, size: taskSize.value,
       status: taskFilter.value.status || undefined, task_type: taskFilter.value.task_type || undefined,
-      sort: taskSort.value.sort, order: taskSort.value.order,
+      sort: taskSortBy.value, order: taskSortOrder.value,
     })
     tasks.value = r.tasks
     taskTotal.value = r.total ?? r.tasks.length
@@ -235,32 +267,18 @@ async function loadTasks() {
   if (after > 0) taskTimer = window.setTimeout(loadTasks, 2000)
 }
 const refreshTasks = loadTasks   // 兼容旧调用名
-function onTaskSort({ prop, order }: { prop: string; order: string | null }) {
-  if (!order) { taskSort.value = { sort: 'time', order: 'desc' } } else {
-    taskSort.value = { sort: prop as 'time' | 'type' | 'status', order: order === 'ascending' ? 'asc' : 'desc' }
-  }
-  taskPage.value = 1; loadTasks()
-}
-
 async function loadLogs() {
   try {
     const r = await getUpdateLogs({
       page: logPage.value, size: logSize.value,
       status: logFilter.value.status || undefined, table_name: logFilter.value.table_name || undefined,
-      sort: logSort.value.sort, order: logSort.value.order,
+      sort: logSortBy.value, order: logSortOrder.value,
     })
     updateLogList.value = r.list
     logTotal.value = r.total
     if (r.tables?.length) logTables.value = r.tables
   } catch { /**/ }
 }
-function onLogSort({ prop, order }: { prop: string; order: string | null }) {
-  if (!order) { logSort.value = { sort: 'time', order: 'desc' } } else {
-    logSort.value = { sort: prop as 'time' | 'table' | 'status', order: order === 'ascending' ? 'asc' : 'desc' }
-  }
-  logPage.value = 1; loadLogs()
-}
-
 async function load() {
   loading.value = true
   try { status.value = await getDataStatus() } finally { loading.value = false }
@@ -304,9 +322,6 @@ function applyTaskPrefs() {
     : settings.taskStatus === 'failed'
       ? 'failed'
       : ''
-  taskSort.value = settings.taskSort === 'status'
-    ? { sort: 'status', order: 'asc' }
-    : { sort: 'time', order: 'desc' }
   taskPage.value = 1
   loadTasks()
 }
@@ -316,7 +331,6 @@ function applyLogPrefs() {
   loadLogs()
 }
 watch(() => settings.taskStatus, () => { applyTaskPrefs() })
-watch(() => settings.taskSort, () => { applyTaskPrefs() })
 watch(() => settings.logStatus, () => { applyLogPrefs() })
 watch(() => settings.defaultTaskType, (value) => {
   if (!optDlg.value) optType.value = value
@@ -365,7 +379,6 @@ onMounted(async () => {
   if (settings.taskStatus === 'active') taskFilter.value.status = 'running'
   else if (settings.taskStatus === 'failed') taskFilter.value.status = 'failed'
   if (settings.logStatus === 'failed') logFilter.value.status = 'failed'
-  if (settings.taskSort === 'status') taskSort.value = { sort: 'status', order: 'asc' }
   await load()
   openFromQuery()
 })
@@ -458,8 +471,15 @@ onMounted(async () => {
           </div>
         </template>
         <div class="panel-table-wrap">
-          <el-table :data="tasks" size="small" height="100%" @row-click="(r: AsyncTask) => openLogs(r.id)"
-                    class="clk-tbl" @sort-change="onTaskSort">
+          <el-table
+            :data="tasks"
+            size="small"
+            height="100%"
+            :default-sort="taskDefaultSort"
+            class="clk-tbl"
+            @row-click="(r: AsyncTask) => openLogs(r.id)"
+            @sort-change="onTaskSort"
+          >
             <el-table-column label="任务ID" width="220" show-overflow-tooltip>
               <template #default="{ row }"><span class="task-id">{{ row.id }}</span></template>
             </el-table-column>
@@ -542,7 +562,14 @@ onMounted(async () => {
           </div>
         </template>
         <div class="panel-table-wrap">
-          <el-table :data="updateLogList" size="small" height="100%" :row-class-name="logRowClass" @sort-change="onLogSort">
+          <el-table
+            :data="updateLogList"
+            size="small"
+            height="100%"
+            :default-sort="logDefaultSort"
+            :row-class-name="logRowClass"
+            @sort-change="onLogSort"
+          >
             <el-table-column label="目标表" prop="table" width="130" sortable="custom">
               <template #default="{ row }">{{ row.table_name }}</template>
             </el-table-column>
@@ -643,13 +670,6 @@ onMounted(async () => {
               { label: '全部', value: 'all' },
               { label: '运行中', value: 'active' },
               { label: '失败项', value: 'failed' },
-            ]" />
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">默认排序</div>
-            <PageSegmented v-model="settings.taskSort" :options="[
-              { label: '时间', value: 'time' },
-              { label: '状态', value: 'status' },
             ]" />
           </div>
         </PageSettingSection>
