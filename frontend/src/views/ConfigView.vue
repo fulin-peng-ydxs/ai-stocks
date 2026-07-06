@@ -25,13 +25,13 @@ import {
   type ScoreRunRow,
 } from '@/api/scoreProfile'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
-import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useTableSort } from '@/composables/useTableSort'
 import { getSettingsView, saveSettings, type SettingGroup } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -56,9 +56,7 @@ const pageTitle = computed(() => {
   if (forcedTab.value === 'system') return '系统设置'
   return '配置管理'
 })
-// 技术指标排序/预览展开属业务态保留（plan.md §13.3）。
 const configDefaults = {
-  techSort: 'catOrder' as 'catOrder' | 'name_cn' | 'srcLabel',
   previewExpanded: true,
 }
 const { settings, isDirty, reset } = usePageSettings(configPageKey, configDefaults)
@@ -82,6 +80,21 @@ const {
 
 // 抽屉由 PageSettingsDrawer 按布局旋钮渲染；本页不再暴露 tabs 组件配置。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+
+const TECH_SORT_FIELDS = ['catOrder', 'name_cn', 'typeLabel', 'srcLabel', 'hasParams'] as const
+const {
+  sortBy: techSortBy,
+  sortOrder: techSortOrder,
+  elementDefaultSort: techDefaultSort,
+  onSortChange: onTechSortChange,
+} = useTableSort<(typeof TECH_SORT_FIELDS)[number]>({
+  slotId: 'techTable',
+  defaultSort: 'catOrder:asc',
+  componentValueOf,
+  setComponentKnob,
+  allowedFields: TECH_SORT_FIELDS,
+  defaultOrder: 'asc',
+})
 
 // ── 系统设置（FR-DM-12：真实参数 Web 可编辑，写 app_config 覆盖层）──
 const sysGroups = ref<SettingGroup[]>([])
@@ -228,9 +241,14 @@ const techRows = computed(() => {
   const filtered = !q ? rows : rows.filter((d) =>
     [d.name_cn, d.key, d.desc, ...(d.categories ?? [])].join(' ').toLowerCase().includes(q),
   )
-  if (settings.techSort === 'name_cn') filtered.sort((a, b) => a.name_cn.localeCompare(b.name_cn, 'zh'))
-  else if (settings.techSort === 'srcLabel') filtered.sort((a, b) => a.srcLabel.localeCompare(b.srcLabel, 'zh'))
-  else filtered.sort((a, b) => a.catOrder - b.catOrder)
+  const factor = techSortOrder.value === 'desc' ? -1 : 1
+  filtered.sort((a, b) => {
+    if (techSortBy.value === 'catOrder') return (a.catOrder - b.catOrder) * factor
+    if (techSortBy.value === 'hasParams') return (Number(a.hasParams) - Number(b.hasParams)) * factor
+    const av = String(a[techSortBy.value] ?? '')
+    const bv = String(b[techSortBy.value] ?? '')
+    return av.localeCompare(bv, 'zh') * factor
+  })
   return filtered
 })
 async function onCategoriesChange(key: string, cats: string[]) {
@@ -1121,10 +1139,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         </div>
         <div class="tech-table-wrap">
         <el-table :data="techRows" size="small" border height="100%"
-                  :default-sort="{ prop: 'catOrder', order: 'ascending' }">
-          <el-table-column prop="name_cn" label="名称" width="130" sortable />
+                  :default-sort="techDefaultSort" @sort-change="onTechSortChange">
+          <el-table-column prop="name_cn" label="名称" width="130" sortable="custom" />
           <el-table-column prop="key" label="标识" width="120" />
-          <el-table-column prop="catOrder" label="分类" width="280" sortable>
+          <el-table-column prop="catOrder" label="分类" width="280" sortable="custom">
             <template #default="{ row }">
               <el-select
                 :model-value="row.categories"
@@ -1137,15 +1155,15 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column prop="typeLabel" label="类型" width="74" sortable />
-          <el-table-column prop="srcLabel" label="来源" width="88" sortable>
+          <el-table-column prop="typeLabel" label="类型" width="74" sortable="custom" />
+          <el-table-column prop="srcLabel" label="来源" width="88" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="row.is_builtin ? 'info' : 'warning'" size="small" effect="plain">
                 {{ row.srcLabel }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="hasParams" label="有无参数" width="100" sortable>
+          <el-table-column prop="hasParams" label="有无参数" width="100" sortable="custom">
             <template #default="{ row }">
               <span v-if="!row.params.length" class="tip">无</span>
               <span v-else>
@@ -1486,14 +1504,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
     >
       <template #business>
         <PageSettingSection title="界面默认项">
-          <div class="setting-item">
-            <div class="setting-label">技术指标列表排序</div>
-            <PageSegmented v-model="settings.techSort" :options="[
-              { label: '分类', value: 'catOrder' },
-              { label: '名称', value: 'name_cn' },
-              { label: '来源', value: 'srcLabel' },
-            ]" />
-          </div>
           <PageToggleRow v-model="settings.previewExpanded" label="默认显示试算结果区" />
         </PageSettingSection>
       </template>

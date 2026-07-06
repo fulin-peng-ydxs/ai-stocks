@@ -370,7 +370,40 @@ const REGISTRY: PageRegistryEntry[] = [
   },
   configEntry('config-score', '评分规则', '/system/config/score'),
   configEntry('config-trade', '买卖指标', '/system/config/trade'),
-  configEntry('config-tech', '技术指标', '/system/config/tech'),
+  {
+    pageKey: 'config-tech',
+    label: '技术指标',
+    path: '/system/config/tech',
+    archetype: 'workbench',
+    responsiveProfile: 'mixed-panel',
+    supportsComponentConfig: true,
+    consumedComponentFields: { techTable: ['defaultSort'] },
+    componentMeta: {
+      techTable: {
+        sortFields: [
+          { key: 'catOrder', label: '分类' },
+          { key: 'name_cn', label: '名称' },
+          { key: 'typeLabel', label: '类型' },
+          { key: 'srcLabel', label: '来源' },
+          { key: 'hasParams', label: '有无参数' },
+        ],
+      },
+    },
+    layout: {
+      pageKey: 'config-tech',
+      archetype: 'workbench',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
+        { id: 'body', component: 'section', region: 'main', label: '技术指标', order: 1 },
+        { id: 'techTable', component: 'data-table', region: 'main', parentId: 'body', label: '技术指标表', order: 2, config: { defaultSort: 'catOrder:asc' } },
+        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
+      ],
+      editable: [densityKnob()],
+    },
+  },
   configEntry('config-system', '系统设置', '/system/config/system'),
   {
     pageKey: 'user-manage',

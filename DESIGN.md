@@ -375,7 +375,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 | 组件 | 字段 | 层级 | 消费 |
 |---|---|---|---|
-| `data-table` | `defaultSort` | page/user | board、screen、stocks、data-quality、data-ingest、backtest、training、user-manage、tenant-manage、data-dictionary |
+| `data-table` | `defaultSort` | page/user | board、screen、stocks、data-quality、data-ingest、backtest、training、config-tech、user-manage、tenant-manage、data-dictionary |
 | `data-table` | `hiddenColumns` | page/user | board、screen、stocks、data-quality、backtest、user-manage、tenant-manage、data-dictionary |
 | `data-table` | `pageSize` | preset/page/user | stocks 普通列表、data-dictionary |
 | `wide-table` | `defaultSort`、`pageSize`、`hiddenColumns` | preset/page/user | audit-log |
