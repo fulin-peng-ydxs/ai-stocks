@@ -122,6 +122,7 @@ const DRAWER_SIZE_OPTIONS = [
   { label: '中', value: 'md' },
   { label: '大', value: 'lg' },
 ]
+const SEGMENTED_OPTION_LIMIT = 3
 const visibleDrawerSectionOptions = computed(() =>
   props.drawerBusinessVisible === false
     ? DRAWER_SECTION_OPTIONS.filter((option) => option.value !== 'business')
@@ -202,10 +203,26 @@ function setSort(slotId: string, field: string, order: string): void {
             </span>
           </div>
           <PageSegmented
+            v-if="s.meta.sortFields.length <= SEGMENTED_OPTION_LIMIT"
             :model-value="sortField(s.slotId)"
             :options="s.meta.sortFields.map((f) => ({ label: f.label, value: f.key }))"
             @update:model-value="(v) => setSort(s.slotId, String(v), sortOrder(s.slotId))"
           />
+          <el-select
+            v-else
+            :model-value="sortField(s.slotId)"
+            class="ca-select"
+            size="small"
+            filterable
+            @update:model-value="(v: string) => setSort(s.slotId, String(v), sortOrder(s.slotId))"
+          >
+            <el-option
+              v-for="field in s.meta.sortFields"
+              :key="field.key"
+              :label="field.label"
+              :value="field.key"
+            />
+          </el-select>
           <div class="ca-label">默认排序方向</div>
           <PageSegmented
             :model-value="sortOrder(s.slotId)"
@@ -227,10 +244,26 @@ function setSort(slotId: string, field: string, order: string): void {
             </span>
           </div>
           <PageSegmented
+            v-if="s.meta.sortFields.length <= SEGMENTED_OPTION_LIMIT"
             :model-value="strVal(s.slotId, 'defaultSort')"
             :options="s.meta.sortFields.map((f) => ({ label: f.label, value: f.key }))"
             @update:model-value="(v) => config.setComponentKnob(s.slotId, 'defaultSort', String(v))"
           />
+          <el-select
+            v-else
+            :model-value="strVal(s.slotId, 'defaultSort')"
+            class="ca-select"
+            size="small"
+            filterable
+            @update:model-value="(v: string) => config.setComponentKnob(s.slotId, 'defaultSort', String(v))"
+          >
+            <el-option
+              v-for="field in s.meta.sortFields"
+              :key="field.key"
+              :label="field.label"
+              :value="field.key"
+            />
+          </el-select>
         </div>
       </template>
 
@@ -403,6 +436,24 @@ function setSort(slotId: string, field: string, order: string): void {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+.ca-select {
+  width: 100%;
+}
+.ca-select :deep(.el-select__wrapper) {
+  min-height: 34px;
+  border-radius: 10px;
+  background: var(--page-settings-seg-bg);
+  box-shadow: none;
+}
+.ca-select :deep(.el-select__wrapper:hover) {
+  background: var(--page-settings-seg-hover-bg);
+}
+.ca-select :deep(.el-select__placeholder),
+.ca-select :deep(.el-select__selected-item) {
+  color: var(--page-settings-text);
+  font-size: 13px;
+  font-weight: 600;
 }
 .ca-clear {
   border: none;
