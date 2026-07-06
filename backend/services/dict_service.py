@@ -72,7 +72,17 @@ class DictService:
             sort=sort,
             remark=remark,
         )
-        self._audit("type_update", "dict_type", code, row.get("name") or cur["name"])
+        self._audit(
+            "type_update",
+            "dict_type",
+            code,
+            row.get("name") or cur["name"],
+            changes=AuditService.build_changes(
+                cur,
+                row,
+                fields=("name", "enabled", "sort", "remark"),
+            ),
+        )
         return row
 
     def delete_type(self, code: str) -> None:
@@ -173,7 +183,7 @@ class DictService:
             raise ValidationError("字典项 type_code 创建后不可修改")
         if body_code is not None and body_code != code:
             raise ValidationError("字典项 code 创建后不可修改")
-        self._load_item(type_code, code)
+        cur = self._load_item(type_code, code)
         row = self.repo.update_item(
             type_code,
             code,
@@ -182,7 +192,17 @@ class DictService:
             sort=sort,
             remark=remark,
         )
-        self._audit("item_update", "dict_item", f"{type_code}:{code}", row["label"])
+        self._audit(
+            "item_update",
+            "dict_item",
+            f"{type_code}:{code}",
+            row["label"],
+            changes=AuditService.build_changes(
+                cur,
+                row,
+                fields=("label", "enabled", "sort", "remark"),
+            ),
+        )
         return row
 
     def delete_item(self, type_code: str, code: str) -> None:
@@ -222,7 +242,14 @@ class DictService:
         return text
 
     @staticmethod
-    def _audit(action: str, target_type: str, target_id: str, target_label: str | None) -> None:
+    def _audit(
+        action: str,
+        target_type: str,
+        target_id: str,
+        target_label: str | None,
+        *,
+        changes: list[dict[str, Any]] | None = None,
+    ) -> None:
         try:
             ctx = get_current_context()
             AuditService().repo.record(
@@ -240,6 +267,7 @@ class DictService:
                 target_id=target_id,
                 target_label=target_label,
                 context={"action": action, "affected_count": 1},
+                changes=changes,
             )
         except Exception:
             pass

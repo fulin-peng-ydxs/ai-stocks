@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_system
+from backend.services.audit_service import AuditService
 from backend.services.rbac_audit import record_rbac_action
 from backend.services.resource_admin_service import ResourceAdminService
 
@@ -59,7 +60,9 @@ def create_resource(body: ResourceCreate) -> ApiResponse:
 
 @router.put("/resources/{resource_id}", response_model=ApiResponse)
 def update_resource(resource_id: str, body: ResourceUpdate) -> ApiResponse:
-    r = ResourceAdminService().update_resource(
+    svc = ResourceAdminService()
+    before = svc.resources.get(resource_id)
+    r = svc.update_resource(
         resource_id, menu_id=body.menuId, code=body.code, name=body.name, type=body.type,
         api_method=body.apiMethod, api_path=body.apiPath)
     record_rbac_action(
@@ -68,6 +71,11 @@ def update_resource(resource_id: str, body: ResourceUpdate) -> ApiResponse:
         target_id=resource_id,
         target_label=r["name"],
         resource_code="resource:update",
+        changes=AuditService.build_changes(
+            before,
+            r,
+            fields=("menu_id", "code", "name", "type", "api_method", "api_path"),
+        ),
     )
     return ok(r, msg="已保存")
 

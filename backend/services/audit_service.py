@@ -34,6 +34,8 @@ _CONTEXT_ALLOW_KEYS = {
     "reason",
 }
 _SENSITIVE_TOKENS = ("password", "token", "secret", "captcha", "credential")
+_CHANGE_SENSITIVE_TOKENS = ("password", "token", "secret", "credential")
+_REDACTED_CHANGE_VALUE = "已变更"
 _TARGET_TYPE_LABELS = {
     "api": "接口",
     "async_task": "异步任务",
@@ -89,6 +91,31 @@ class AuditService:
         if row is None:
             raise NotFoundError("审计日志不存在")
         return self._sanitize_row(row)
+
+    @classmethod
+    def build_changes(
+        cls,
+        before: dict[str, Any] | None,
+        after: dict[str, Any] | None,
+        *,
+        fields: list[str] | tuple[str, ...] | None = None,
+    ) -> list[dict[str, Any]]:
+        """构造字段级 before/after 变更，跳过未变化字段并脱敏敏感字段。"""
+        before = before or {}
+        after = after or {}
+        keys = list(fields) if fields is not None else sorted(set(before) | set(after))
+        changes: list[dict[str, Any]] = []
+        for field in keys:
+            old = before.get(field)
+            new = after.get(field)
+            if cls._change_value_equal(old, new):
+                continue
+            changes.append({
+                "field": str(field),
+                "before": cls._sanitize_change_value(field, old),
+                "after": cls._sanitize_change_value(field, new),
+            })
+        return changes
 
     def cleanup_expired(self, *, now: datetime | None = None) -> dict[str, Any]:
         """清理超出审计保留期的历史日志。
@@ -228,6 +255,7 @@ class AuditService:
         path: str | None = None,
         error_summary: str | None = None,
         context: dict[str, Any] | None = None,
+        changes: list[dict[str, Any]] | None = None,
     ) -> None:
         try:
             self.repo.record(
@@ -248,6 +276,7 @@ class AuditService:
                 path=path,
                 error_summary=error_summary,
                 context=context or {},
+                changes=self._sanitize_changes(changes),
             )
         except Exception as e:  # noqa: BLE001
             log.warning("安全审计写入失败，已降级忽略: %s", e)
@@ -263,6 +292,7 @@ class AuditService:
         job_id: str | None = None,
         job_name: str | None = None,
         error_summary: str | None = None,
+        changes: list[dict[str, Any]] | None = None,
     ) -> None:
         try:
             self.repo.record(
@@ -280,6 +310,7 @@ class AuditService:
                     "job_id": job_id,
                     "action": action,
                 },
+                changes=self._sanitize_changes(changes),
             )
         except Exception as e:  # noqa: BLE001
             log.warning("任务审计写入失败，已降级忽略: %s", e)
@@ -295,6 +326,7 @@ class AuditService:
         task_type: str | None = None,
         task_id: str | None = None,
         error_summary: str | None = None,
+        changes: list[dict[str, Any]] | None = None,
     ) -> None:
         try:
             self.repo.record(
@@ -314,6 +346,7 @@ class AuditService:
                     "job_name": job_name,
                     "action": action,
                 },
+                changes=self._sanitize_changes(changes),
             )
         except Exception as e:  # noqa: BLE001
             log.warning("调度审计写入失败，已降级忽略: %s", e)
@@ -331,6 +364,7 @@ class AuditService:
         result: str = "success",
         status: str = "completed",
         affected_count: int = 1,
+        changes: list[dict[str, Any]] | None = None,
     ) -> None:
         try:
             self.repo.record(
@@ -346,6 +380,7 @@ class AuditService:
                 target_id=target_id,
                 target_label=target_label,
                 context={"action": action, "affected_count": affected_count},
+                changes=self._sanitize_changes(changes),
             )
         except Exception as e:  # noqa: BLE001
             log.warning("RBAC 审计写入失败，已降级忽略: %s", e)
@@ -381,6 +416,7 @@ class AuditService:
         out = dict(row)
         context = row.get("context") if isinstance(row.get("context"), dict) else {}
         out["context"] = cls._sanitize_context(context)
+        out["changes"] = cls._sanitize_changes(row.get("changes"))
         out["target_description"] = cls._target_description(row)
         return out
 
@@ -424,3 +460,51 @@ class AuditService:
         if isinstance(value, list):
             return [cls._sanitize_value(item) for item in value]
         return value
+
+    @classmethod
+    def _sanitize_changes(cls, changes: Any) -> list[dict[str, Any]]:
+        if not isinstance(changes, list):
+            return []
+        out: list[dict[str, Any]] = []
+        for item in changes:
+            if not isinstance(item, dict):
+                continue
+            field = str(item.get("field") or "").strip()
+            if not field:
+                continue
+            out.append({
+                "field": field,
+                "before": cls._sanitize_change_value(field, item.get("before")),
+                "after": cls._sanitize_change_value(field, item.get("after")),
+            })
+        return out
+
+    @classmethod
+    def _sanitize_change_value(cls, field: str, value: Any) -> Any:
+        lower = str(field).lower()
+        if any(token in lower for token in _CHANGE_SENSITIVE_TOKENS):
+            return _REDACTED_CHANGE_VALUE
+        if isinstance(value, dict):
+            clean = {}
+            for key, item in value.items():
+                clean[str(key)] = cls._sanitize_change_value(f"{field}.{key}", item)
+            return clean
+        if isinstance(value, list):
+            return [cls._sanitize_change_value(field, item) for item in value]
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return value
+
+    @staticmethod
+    def _change_value_equal(left: Any, right: Any) -> bool:
+        try:
+            if left == right:
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if left != left and right != right:  # noqa: PLR0124
+                return True
+        except Exception:  # noqa: BLE001
+            return False
+        return False

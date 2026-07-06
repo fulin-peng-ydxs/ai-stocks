@@ -53,6 +53,7 @@ class AuditRepository:
         duration_ms: int | None = None,
         error_summary: str | None = None,
         context: dict[str, Any] | None = None,
+        changes: list[dict[str, Any]] | None = None,
     ) -> str | None:
         """写入一条审计日志。
 
@@ -66,12 +67,12 @@ class AuditRepository:
                     id, tenant_id, actor_user_id, actor_account, event_category,
                     event_type, resource_code, action, target_type, target_id,
                     target_label, result, status, ip, method, path, duration_ms,
-                    error_summary, context
+                    error_summary, context, changes
                 ) VALUES (
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s::jsonb
+                    %s, %s::jsonb, %s::jsonb
                 )
                 """,
                 [
@@ -94,6 +95,7 @@ class AuditRepository:
                     duration_ms,
                     error_summary,
                     json.dumps(context or {}, ensure_ascii=False, default=str),
+                    json.dumps(changes or [], ensure_ascii=False, default=str),
                 ],
             )
             return audit_id
@@ -124,7 +126,8 @@ class AuditRepository:
             "SELECT a.id, a.event_time, a.tenant_id, a.actor_user_id, a.actor_account, "
             "a.event_category, a.event_type, a.resource_code, sr.name AS resource_name, "
             "a.action, a.target_type, a.target_id, a.target_label, a.result, a.status, "
-            "a.ip, a.method, a.path, a.duration_ms, a.error_summary, a.context, a.created_at "
+            "a.ip, a.method, a.path, a.duration_ms, a.error_summary, a.context, "
+            "a.changes, a.created_at "
             "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
             f"{where} "
             f"ORDER BY {sort_col} {direction} NULLS LAST, a.event_time DESC, a.created_at DESC "
@@ -206,7 +209,8 @@ class AuditRepository:
             "SELECT a.id, a.event_time, a.tenant_id, a.actor_user_id, a.actor_account, "
             "a.event_category, a.event_type, a.resource_code, sr.name AS resource_name, "
             "a.action, a.target_type, a.target_id, a.target_label, a.result, a.status, "
-            "a.ip, a.method, a.path, a.duration_ms, a.error_summary, a.context, a.created_at "
+            "a.ip, a.method, a.path, a.duration_ms, a.error_summary, a.context, "
+            "a.changes, a.created_at "
             "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
             "WHERE " + " AND ".join(conds),
             params,
@@ -301,7 +305,7 @@ class AuditRepository:
                 return value.isoformat()
             return value
 
-        out = {k: clean(v) for k, v in row.items() if k != "context"}
+        out = {k: clean(v) for k, v in row.items() if k not in {"context", "changes"}}
         ctx = row.get("context")
         if isinstance(ctx, str):
             try:
@@ -309,4 +313,11 @@ class AuditRepository:
             except ValueError:
                 ctx = {}
         out["context"] = ctx if isinstance(ctx, dict) else {}
+        changes = row.get("changes")
+        if isinstance(changes, str):
+            try:
+                changes = json.loads(changes)
+            except ValueError:
+                changes = []
+        out["changes"] = changes if isinstance(changes, list) else []
         return out

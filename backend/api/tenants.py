@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_system
+from backend.services.audit_service import AuditService
 from backend.services.rbac_audit import record_rbac_action
 from backend.services.tenant_admin_service import TenantAdminService
 
@@ -54,7 +55,9 @@ def create_tenant(body: TenantCreate) -> ApiResponse:
 
 @router.put("/tenants/{tenant_id}", response_model=ApiResponse)
 def update_tenant(tenant_id: str, body: TenantUpdate) -> ApiResponse:
-    t = TenantAdminService().update_tenant(
+    svc = TenantAdminService()
+    before = svc.tenants.get(tenant_id)
+    t = svc.update_tenant(
         tenant_id, name=body.name, admin_user_id=body.adminUserId)
     record_rbac_action(
         action="tenant_update",
@@ -62,19 +65,23 @@ def update_tenant(tenant_id: str, body: TenantUpdate) -> ApiResponse:
         target_id=tenant_id,
         target_label=t["name"],
         resource_code="tenant:update",
+        changes=AuditService.build_changes(before, t, fields=("name", "admin_user_id")),
     )
     return ok(t, msg="已保存")
 
 
 @router.post("/tenants/{tenant_id}/status", response_model=ApiResponse)
 def set_status(tenant_id: str, body: StatusBody) -> ApiResponse:
-    t = TenantAdminService().set_status(tenant_id, body.status)
+    svc = TenantAdminService()
+    before = svc.tenants.get(tenant_id)
+    t = svc.set_status(tenant_id, body.status)
     record_rbac_action(
         action="tenant_status",
         target_type="sys_tenant",
         target_id=tenant_id,
         target_label=t["name"],
         resource_code="tenant:disable",
+        changes=AuditService.build_changes(before, t, fields=("status",)),
     )
     return ok(t, msg="已更新")
 

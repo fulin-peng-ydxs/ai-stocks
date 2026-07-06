@@ -9,7 +9,7 @@
   - 阶段六前已更新日志审计原型：[../prototypes/audit-log.html](../prototypes/audit-log.html)，详情抽屉新增 R24 字段变更表。
   - 页面设计闭环依据：[../../configurable-layout-system/page-template.md](../../configurable-layout-system/page-template.md) 与 [../../../DESIGN.md](../../../DESIGN.md)。
 - 功能目标：进入第六阶段，补齐体验增强项，并把原先独立排期的 R28 其他资产公开能力纳入本阶段。
-- 当前计划状态：进行中（T1、T2、T3 已完成，T4-T12 未开始）。
+- 当前计划状态：进行中（T1、T2、T3、T4 已完成，T5-T12 未开始）。
 - 计划输出目录：`agent-works/multi-tenant-rbac/stage6-experience-asset-visibility/`。
 - 本阶段纳入：
   - R22：token 静默刷新，避免长操作中 access token 过期直接打断。
@@ -366,7 +366,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 必须实现 | R22 | token 静默刷新 | 前端单飞 refresh + 重放原请求 + 失败回登录 | T2 | 已完成 | 一致 | 已补前端 client 静默刷新和专项测试 |
 | 必须实现 | R23 | 审计日志保留期自动清理 | 清理服务、CLI、复用 APScheduler 调度、测试和审计事件 | T3 | 已完成 | 一致 | 复用阶段五 `audit.retention_days` 与现有 scheduler |
-| 必须实现 | R24 | 字段级 from/to | `audit_log.changes`、采集 helper、审计页展示 | T4,T10 | 待开始 | 一致 | 原型已先更新 |
+| 必须实现 | R24 | 字段级 from/to | `audit_log.changes`、采集 helper、审计页展示 | T4,T10 | 进行中 | 一致 | T4 后端字段模型已完成，T10 前端详情展示待开始 |
 | 必须实现 | R28-8 | 筛选方案公开 | `screen_profile` visible + API + ScreenView 接入 | T5,T6,T9,T11 | 待开始 | 一致 | 方案类资产复制为 private |
 | 必须实现 | R28-9 | 买卖方案公开 | `trade_profile` visible + API + ConfigView trade 接入 | T5,T7,T9,T11 | 待开始 | 一致 | 回测引用公开买卖方案时结果归 viewer |
 | 必须实现 | R28-10 | 回测记录公开 | `backtest_run` visible + API + BacktestView 接入 | T5,T8,T9,T11 | 待开始 | 一致 | 结果资产只读，可复用参数重跑 |
@@ -449,7 +449,7 @@
 
 ### 6.4 任务 T4：R24 审计字段变更模型
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1
 - 涉及文件/模块：
   - `backend/storage/pg_ddl.py`
@@ -467,7 +467,7 @@
 - 边界与异常：敏感字段不泄漏明文；无 changes 时返回空数组；旧记录兼容默认 `[]`。
 - 验证方式：系统设置/RBAC/公开状态变更写入 before/after；敏感 key 只显示“已变更”；旧记录详情返回空数组。
 - 完成标准：详情接口返回 `changes: [] | [{field,before,after}]`，敏感字段不泄漏明文。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成；`AuditRepository.record/list_logs/get` 已支持 `changes` 写入和返回，旧记录默认兼容 `[]`；`AuditService.build_changes()` 已提供字段级 before/after 构造、未变化字段跳过和敏感字段脱敏，`record_security/task/scheduler/rbac_event` 均可接收 `changes`；系统设置保存已记录有效配置值的 before/after，字典类型/字典项更新记录标签、启停、排序、备注变化，RBAC 角色、授权、用户、租户、菜单和功能点更新链路已接入可用 before/after；R28 公开状态变更将在 T6/T7/T8 具体发布接口实现时复用该 helper 写入 `visibility` 变化。验证：`python -m pytest backend/tests/test_stage6_audit_changes.py -q` 通过（5 passed）；阶段五回归 `python -m pytest backend/tests/test_stage5_auth_config.py::test_stage5_settings_save_records_sanitized_config_audit backend/tests/test_stage5_auth_config.py::test_stage5_settings_save_ignores_audit_write_failure -q` 通过（2 passed）；`python -m pytest backend/tests/test_stage5_dicts.py::test_stage5_dict_crud_code_immutable_delete_guard_and_audit backend/tests/test_stage5_audit_collection.py::test_stage5_rbac_management_records_domain_audit -q` 通过（2 passed）。
 
 ### 6.5 任务 T5：通用资产可见性 helper
 
@@ -677,7 +677,7 @@
 
 - 单元测试：
   - 计划：asset ref 编解码、source/readonly 判断、visibility 合法值校验；AuditService changes 脱敏和清理 cutoff。
-  - 具体完成情况：T3 已验证 AuditService 清理 cutoff、非法保留期 fail-safe 和重复执行幂等：`python -m pytest backend/tests/test_stage6_audit_cleanup.py -q` 通过（3 passed）。asset ref 与 changes 脱敏待 T4/T5 验证。
+  - 具体完成情况：T3 已验证 AuditService 清理 cutoff、非法保留期 fail-safe 和重复执行幂等：`python -m pytest backend/tests/test_stage6_audit_cleanup.py -q` 通过（3 passed）。T4 已验证 changes 脱敏、旧记录默认 `[]`、配置/字典/RBAC 写入 before/after：`python -m pytest backend/tests/test_stage6_audit_changes.py -q` 通过（5 passed）。asset ref 待 T5 验证。
 - 接口测试：
   - 计划：screen/trade/backtest visible list/detail/versions/publish/copy/delete；refresh 单飞和失败回登录。
   - 具体完成情况：R22 前端请求层已验证 refresh 单飞、成功重放和失败清态：`cd frontend && npm run test -- src/api/__tests__/client-refresh.spec.ts` 通过（2 tests）。screen/trade/backtest visible 接口待 T6/T7/T8/T11 实现后验证。
@@ -704,7 +704,7 @@
   - 具体完成情况：T3 未新增系统配置；清理服务只消费阶段五既有 `audit.retention_days`，配置读取异常或非法值时 fail-safe 跳过清理。
 - 需求映射验证：
   - 计划：检查 §3.1、§3.2、§5、§6 任务编号一致，状态值仅使用 `待开始/进行中/已完成/阻塞/跳过`。
-  - 具体完成情况：T1/T2/T3 已回写 §5 和 §6：R22、R23 行标为已完成，R20/R21 延续行标为进行中，T1/T2/T3 标为已完成；T4-T12 仍保持待开始，未连续开发后续任务。
+  - 具体完成情况：T1/T2/T3/T4 已回写 §5 和 §6：R22、R23 行标为已完成，R24 行因 T10 前端未做仍为进行中，R20/R21 延续行标为进行中，T1/T2/T3/T4 标为已完成；T5-T12 仍保持待开始，未连续开发后续任务。
 - 页面功能点验证：
   - 计划：验证 §4.10 每个页面功能点都有技术实现、任务编号、交互状态和异常处理验证。
   - 具体完成情况：待验证。

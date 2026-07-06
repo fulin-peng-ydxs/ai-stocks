@@ -118,7 +118,7 @@
 | --- | --- | --- | --- | --- |
 | R22 | token 静默刷新（无感续期，避免操作中断） | 体验增强 | R4 完成后、有空切入即可纳入 | 阶段六计划 |
 | R23 | 审计日志保留期自动清理任务（默认 90 天可配） | 【已确认】审计细则 | R17 落地后纳入，避免审计表无限增长；阶段五已实现 `audit.retention_days=90` 配置、默认查询窗口和页面提示；阶段六 T3 已实现自动清理服务、CLI 和 APScheduler 每日任务 | 阶段六 T3 已完成 |
-| R24 | 操作审计字段级变更对比（who changed what from→to） | 增强可观测 | R17 基础事件稳定后纳入 | 阶段六计划 |
+| R24 | 操作审计字段级变更对比（who changed what from→to） | 增强可观测 | R17 基础事件稳定后纳入；阶段六 T4 已完成后端 `changes` 模型、脱敏 helper 和配置/字典/RBAC 采集，T10 待完成审计详情页展示 | 阶段六进行中 |
 | R28 | 资产可见性与自助公开（评分/筛选/买卖/回测等方案：私有 / 同租户共享 / 全体公开 + 加载=自己的∪公开的） | 用户诉求（阶段四 C1 延伸）、遗留项 2 升级 | 评分方案公开能力已在阶段四 R28 分支落地；筛选方案、买卖方案和回测记录公开能力纳入阶段六 | 阶段六计划 |
 
 ### 4.3 暂不实现
@@ -597,7 +597,7 @@
 - **统一审计可观测**：接口/任务/安全三类事件一处采集，反扒与越权天然可观测，运营与安全排障受益（已纳入 R17）。
 - **数据字典治理**：枚举集中治理，降低前后端枚举漂移（已纳入 R18，渐进接入）。
 - **权限版本号即时失效**：相比纯长效 JWT，安全性显著提升（已纳入 R4）。
-- 【后续建议，不扩大本期范围】：审计字段级变更对比（R24）、SSO/第三方登录（R25）、付费配额（R26）、行情行为风控（R27）。
+- 【阶段六已纳入】：审计字段级变更对比（R24）。【后续建议，不扩大本期范围】：SSO/第三方登录（R25）、付费配额（R26）、行情行为风控（R27）。
 
 ---
 
@@ -628,7 +628,7 @@
 | R21 | 现有 13 路由与页面全部接鉴权+隔离；未改造接口默认 deny | 全量回归 |
 | R22 | token 临期静默续期，操作不中断 | 体验测试（建议） |
 | R23 | 超保留期审计自动清理；阶段五已先落 `audit.retention_days` 配置和默认查询窗口 | `backend/tests/test_stage6_audit_cleanup.py`；配置消费已由阶段五后端/页面测试覆盖 |
-| R24 | 关键变更可见 from→to | 审计核查（建议） |
+| R24 | 关键变更可见 from→to | `backend/tests/test_stage6_audit_changes.py`；T10 审计详情页展示测试待补 |
 | R28 | 筛选方案、买卖方案、回测记录支持 `private/tenant/public`；公开资产只读可见，owner 可发布/收回，方案类资产可复制为自己的 private，公开回测可复用参数重跑且不可改删 owner 记录 | 阶段六 visible API、权限与跨租户测试、页面交互测试、阶段四评分方案公开回归 |
 
 ---
@@ -708,7 +708,7 @@
 - 目标：静默刷新、审计保留期清理、字段级变更对比，并以阶段四 B 的评分方案公开模型为基线扩展其他资产可见性。
 - 里程碑：长操作不被 token 过期打断；审计表可控增长；关键变更可见 from/to；筛选/买卖/回测公开资产只读可见、owner 可发布/收回、方案类资产可复制为自己的 private。
 - **开发计划**：[stage6-experience-asset-visibility/plan.md](stage6-experience-asset-visibility/plan.md)。
-- **当前进度**：T1 已完成 DDL/资源码规划、幂等迁移入口、SQL 留痕和 T1 专项测试；T2 已完成 token 静默刷新；T3 已完成审计日志保留期自动清理服务、CLI、APScheduler 注册和专项测试；T4-T12 尚未开始。
+- **当前进度**：T1 已完成 DDL/资源码规划、幂等迁移入口、SQL 留痕和 T1 专项测试；T2 已完成 token 静默刷新；T3 已完成审计日志保留期自动清理服务、CLI、APScheduler 注册和专项测试；T4 已完成审计字段级 `changes` 后端模型、脱敏 helper 和配置/字典/RBAC 采集；T5-T12 尚未开始。
 - **开发产物索引（T1-T2）**：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/tests/test_rbac_schema.py`、`frontend/src/api/client.ts`、`frontend/src/api/authToken.ts`、`frontend/src/api/__tests__/client-refresh.spec.ts`、[stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql](stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql)、[stage6-experience-asset-visibility/resource-codes.sql](stage6-experience-asset-visibility/resource-codes.sql)。
 - **范围边界**：本阶段不做公开市场、审批流、收藏、搜索广场、运营推荐、计费联动；不扩展自选股分组、盘感训练记录、布局配置、系统配置、字典或数据任务为公开资产。
 

@@ -14,6 +14,7 @@ from backend.api.response import ApiResponse, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm, require_system
 from backend.common.exceptions import AuthError
+from backend.services.audit_service import AuditService
 from backend.services.rbac_audit import record_rbac_action
 from backend.services.role_admin_service import RoleAdminService
 
@@ -74,13 +75,16 @@ def create_role(body: RoleCreate) -> ApiResponse:
 @router.put("/roles/{role_id}", response_model=ApiResponse,
             dependencies=[Depends(require_system)])
 def update_role(role_id: str, body: RoleUpdate) -> ApiResponse:
-    r = RoleAdminService().update_role(role_id, name=body.name, description=body.description)
+    svc = RoleAdminService()
+    before = svc.roles.get(role_id)
+    r = svc.update_role(role_id, name=body.name, description=body.description)
     record_rbac_action(
         action="role_update",
         target_type="sys_role",
         target_id=role_id,
         target_label=r["name"],
         resource_code="role:update",
+        changes=AuditService.build_changes(before, r, fields=("name", "description")),
     )
     return ok(r, msg="已保存")
 
@@ -107,7 +111,9 @@ def get_role_perms(role_id: str) -> ApiResponse:
 @router.put("/roles/{role_id}/perms", response_model=ApiResponse,
             dependencies=[Depends(require_system)])
 def set_role_perms(role_id: str, body: GrantsBody) -> ApiResponse:
-    grants = RoleAdminService().set_grants(
+    svc = RoleAdminService()
+    before = svc.get_grants(role_id)
+    grants = svc.set_grants(
         role_id, menu_ids=body.menuIds, resource_ids=body.resourceIds)
     record_rbac_action(
         action="role_set_perms",
@@ -115,5 +121,10 @@ def set_role_perms(role_id: str, body: GrantsBody) -> ApiResponse:
         target_id=role_id,
         resource_code="role:assign-perm",
         affected_count=len(body.menuIds) + len(body.resourceIds),
+        changes=AuditService.build_changes(
+            before,
+            grants,
+            fields=("menu_ids", "resource_ids"),
+        ),
     )
     return ok(grants, msg="权限已保存")

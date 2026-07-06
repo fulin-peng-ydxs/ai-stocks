@@ -17,6 +17,7 @@ def record_rbac_action(
     target_label: str | None = None,
     resource_code: str | None = None,
     affected_count: int = 1,
+    changes: list[dict] | None = None,
 ) -> None:
     ctx = get_current_context()
     AuditService().record_rbac_event(
@@ -28,4 +29,5 @@ def record_rbac_action(
         tenant_id=ctx.tenant_id if ctx else None,
         actor_user_id=ctx.user_id if ctx else None,
         affected_count=affected_count,
+        changes=changes,
     )

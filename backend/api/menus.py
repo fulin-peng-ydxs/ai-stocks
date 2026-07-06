@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_system
+from backend.services.audit_service import AuditService
 from backend.services.menu_admin_service import MenuAdminService
 from backend.services.rbac_audit import record_rbac_action
 
@@ -81,7 +82,9 @@ def reorder_menus(body: ReorderBody) -> ApiResponse:
 # 且该前缀下无其它子资源）。前端 `/api/menus/${id}` 对含斜杠 id 天然形成路径。
 @router.put("/menus/{menu_id:path}", response_model=ApiResponse)
 def update_menu(menu_id: str, body: MenuUpdate) -> ApiResponse:
-    m = MenuAdminService().update_menu(
+    svc = MenuAdminService()
+    before = svc.menus.get(menu_id)
+    m = svc.update_menu(
         menu_id, title=body.title, type=body.type, route_path=body.routePath,
         icon=body.icon, visible=body.visible, parent_id=body.parentId)
     record_rbac_action(
@@ -90,6 +93,11 @@ def update_menu(menu_id: str, body: MenuUpdate) -> ApiResponse:
         target_id=menu_id,
         target_label=m["title"],
         resource_code="menu:update",
+        changes=AuditService.build_changes(
+            before,
+            m,
+            fields=("title", "type", "route_path", "icon", "visible", "parent_id"),
+        ),
     )
     return ok(m, msg="已保存")
 

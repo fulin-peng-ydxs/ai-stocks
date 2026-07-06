@@ -14,6 +14,7 @@ from backend.api.response import ApiResponse, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm
 from backend.common.exceptions import AuthError
+from backend.services.audit_service import AuditService
 from backend.services.rbac_audit import record_rbac_action
 from backend.services.user_admin_service import UserAdminService
 
@@ -82,7 +83,9 @@ def create_user(body: UserCreate) -> ApiResponse:
             dependencies=[Depends(require_perm("user:update"))])
 def update_user(user_id: str, body: UserUpdate) -> ApiResponse:
     ctx = _ctx()
-    u = UserAdminService().update_user(
+    svc = UserAdminService()
+    before = svc.users.get_admin_view(user_id)
+    u = svc.update_user(
         ctx, user_id, email=body.email, role_ids=body.roleIds, status=body.status)
     record_rbac_action(
         action="user_update",
@@ -90,6 +93,7 @@ def update_user(user_id: str, body: UserUpdate) -> ApiResponse:
         target_id=user_id,
         target_label=u["account"],
         resource_code="user:update",
+        changes=AuditService.build_changes(before, u, fields=("email", "status", "roles")),
     )
     return ok(u, msg="已保存")
 
@@ -97,13 +101,16 @@ def update_user(user_id: str, body: UserUpdate) -> ApiResponse:
 @router.post("/users/{user_id}/status", response_model=ApiResponse,
              dependencies=[Depends(require_perm("user:disable"))])
 def set_status(user_id: str, body: StatusBody) -> ApiResponse:
-    u = UserAdminService().set_status(_ctx(), user_id, body.status)
+    svc = UserAdminService()
+    before = svc.users.get_admin_view(user_id)
+    u = svc.set_status(_ctx(), user_id, body.status)
     record_rbac_action(
         action="user_status",
         target_type="sys_user",
         target_id=user_id,
         target_label=u["account"],
         resource_code="user:disable",
+        changes=AuditService.build_changes(before, u, fields=("status",)),
     )
     return ok(u, msg="已更新")
 
@@ -117,6 +124,11 @@ def reset_password(user_id: str, body: ResetPwdBody) -> ApiResponse:
         target_type="sys_user",
         target_id=user_id,
         resource_code="user:reset-password",
+        changes=AuditService.build_changes(
+            {"password": None},
+            {"password": "updated"},
+            fields=("password",),
+        ),
     )
     return ok(msg="密码已重置")
 

@@ -33,6 +33,15 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+def _dig_config_value(dump: dict, path: str):
+    node = dump
+    for part in path.split("."):
+        if not isinstance(node, dict):
+            return None
+        node = node.get(part)
+    return node
+
+
 # ── 概览（FR-DM-1）─────────────────────────────────────────
 @router.get("/overview", response_model=ApiResponse, dependencies=_OVERVIEW)
 def overview() -> ApiResponse:
@@ -518,14 +527,6 @@ def get_settings_view() -> ApiResponse:
     from backend.config.settings import Settings, _raw_yaml
     from backend.storage.app_config import CONFIG_GROUPS, AppConfigRepo, apply_overrides
 
-    def _dig(dump: dict, path: str):
-        node = dump
-        for p in path.split("."):
-            if not isinstance(node, dict):
-                return None
-            node = node.get(p)
-        return node
-
     eff = get_effective_settings().model_dump()
     default = Settings.model_validate(_raw_yaml()).model_dump()  # yaml 基线（不含覆盖）
     overrides = AppConfigRepo().get_overrides()
@@ -537,8 +538,8 @@ def get_settings_view() -> ApiResponse:
         for f in g["fields"]:
             fields.append({**{k: f[k] for k in f if k != "path"},
                            "path": f["path"],
-                           "value": _dig(eff, f["path"]),
-                           "default": _dig(default, f["path"]),
+                           "value": _dig_config_value(eff, f["path"]),
+                           "default": _dig_config_value(default, f["path"]),
                            "overridden": f["path"] in overrides})
         groups.append({
             "key": g["key"],
@@ -554,23 +555,43 @@ def save_settings(body: dict, request: Request) -> ApiResponse:
     """保存覆盖值（写 app_config 即时生效）。body={updates:{path:value}} 或直接 {path:value}。"""
     from backend.storage.app_config import AppConfigRepo, ConfigValidationError
     updates = body.get("updates", body)
+    keys = sorted(str(k) for k in updates)
+    repo = AppConfigRepo()
+    before = _effective_setting_values(keys)
     try:
-        n = AppConfigRepo().set_many(updates)
+        n = repo.set_many(updates)
     except ConfigValidationError as e:
         return err(400, str(e))
-    _record_settings_audit(updates, n, request)
+    after = _effective_setting_values(keys)
+    _record_settings_audit(updates, n, request, before=before, after=after)
     return ok({"saved": n}, msg="配置已保存并生效")
 
 
-def _record_settings_audit(updates: dict, saved_count: int, request: Request) -> None:
+def _effective_setting_values(keys: list[str]) -> dict:
+    from backend.config import get_effective_settings
+
+    data = get_effective_settings().model_dump()
+    return {key: _dig_config_value(data, key) for key in keys}
+
+
+def _record_settings_audit(
+    updates: dict,
+    saved_count: int,
+    request: Request,
+    *,
+    before: dict | None = None,
+    after: dict | None = None,
+) -> None:
     """系统设置保存审计：只记录 key 和数量，不记录配置值。"""
     if not updates:
         return
     try:
         from backend.storage.audit_repository import AuditRepository
+        from backend.services.audit_service import AuditService
 
         ctx = get_current_context()
         keys = sorted(str(k) for k in updates)
+        changes = AuditService.build_changes(before, after, fields=keys)
         AuditRepository().record(
             event_category="config",
             event_type="config",
@@ -587,6 +608,7 @@ def _record_settings_audit(updates: dict, saved_count: int, request: Request) ->
             method=request.method,
             path=request.url.path,
             context={"config_keys": keys, "affected_count": saved_count},
+            changes=changes,
         )
     except Exception as e:  # noqa: BLE001
         from backend.common.logging import get_logger
