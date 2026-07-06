@@ -49,7 +49,7 @@ CONFIG_GROUPS: list[dict] = [
     {"key": "auth", "label": "认证与防滥用", "desc": "控制注册校验、登录验证码和认证接口限流。", "fields": [
         {"path": "auth.require_email_code", "label": "注册需邮箱验证码", "type": "bool", "desc": "开启后自助注册必须提交邮箱验证码。"},
         {"path": "auth.login_captcha_enabled", "label": "登录图形验证码", "type": "bool", "desc": "开启后登录页展示并校验图形验证码。"},
-        {"path": "auth.captcha_after_fails", "label": "图形验证码强制失败次数", "type": "int", "min": 1, "max": 10, "desc": "同一账号连续失败达到该次数后，即使前端未展示也由后端强制要求图形验证码。"},
+        {"path": "auth.captcha_after_fails", "label": "图形验证码强制失败次数", "type": "int", "min": 1, "max": 10, "desc": "登录图形验证码开关开启时，同一账号连续失败达到该次数后，后端强制要求提交图形验证码。"},
         {"path": "auth.login_rate_per_min", "label": "登录限流(次/分钟)", "type": "int", "min": 1, "max": 120, "desc": "同一 IP 每分钟允许的登录请求数。"},
         {"path": "auth.register_rate_per_hour", "label": "注册限流(次/小时)", "type": "int", "min": 1, "max": 120, "desc": "同一 IP 每小时允许的注册请求数。"},
         {"path": "auth.email_code_rate_per_hour", "label": "邮箱验证码限流(次/小时)", "type": "int", "min": 1, "max": 120, "desc": "同一邮箱每小时允许发送验证码的次数。"},

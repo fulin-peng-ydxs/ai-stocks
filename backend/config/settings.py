@@ -208,7 +208,7 @@ class AuthConfig(BaseModel):
 class AuditConfig(BaseModel):
     """审计日志配置。"""
 
-    retention_days: int = 90            # 默认查询窗口/保留期提示；自动清理留后续阶段
+    retention_days: int = Field(default=90, ge=1)  # 默认查询窗口/保留期提示；自动清理留后续阶段
 
 
 class Settings(BaseModel):

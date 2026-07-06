@@ -74,7 +74,10 @@ class AuditService:
         return data
 
     def summary(self, ctx: AuthContext, **filters) -> dict:
-        return self.repo.summary(filters=self._scoped_filters(ctx, filters))
+        scoped = self._scoped_filters(ctx, filters)
+        data = self.repo.summary(filters=scoped)
+        data["retention_days"] = get_effective_settings().audit.retention_days
+        return data
 
     def detail(self, ctx: AuthContext, audit_id: str) -> dict:
         tenant_id = None if ctx.is_system else ctx.tenant_id

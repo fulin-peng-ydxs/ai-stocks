@@ -109,6 +109,8 @@ const itemEnabledOptions = [
 const drawerDirty = computed(() => layoutDirty.value || bizDirty.value)
 const canManageDict = computed(() => auth.isSystem)
 const activeType = computed(() => typeRows.value.find((row) => row.code === settings.selectedTypeCode) ?? null)
+let typeRequestSeq = 0
+let itemRequestSeq = 0
 const pageSize = computed(() => {
   const raw = componentValueOf('itemTable', 'pageSize')
   return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(10, Math.min(200, raw)) : 50
@@ -168,6 +170,7 @@ function normalizeTypeSelection() {
     settings.selectedTypeCode = ''
     itemRows.value = []
     itemTotal.value = 0
+    itemRequestSeq += 1
     return false
   }
   if (!typeRows.value.some((row) => row.code === settings.selectedTypeCode)) {
@@ -181,29 +184,38 @@ async function loadTypes(keepSelection = true) {
     permissionError.value = true
     return
   }
+  const seq = ++typeRequestSeq
   typeLoading.value = true
   typeError.value = false
   permissionError.value = false
   try {
     const data = await listDictTypes({ q: settings.typeKeyword || undefined, page: 1, size: 200 })
+    if (seq !== typeRequestSeq) return
     typeRows.value = data.list
     typeTotal.value = data.total
     if (!keepSelection) settings.selectedTypeCode = ''
     normalizeTypeSelection()
   } catch {
-    typeError.value = true
+    if (seq === typeRequestSeq) typeError.value = true
   } finally {
-    typeLoading.value = false
+    if (seq === typeRequestSeq) typeLoading.value = false
   }
 }
 
 async function loadItems() {
-  if (!settings.selectedTypeCode) return
+  const selectedTypeCode = settings.selectedTypeCode
+  if (!selectedTypeCode) {
+    itemRows.value = []
+    itemTotal.value = 0
+    itemRequestSeq += 1
+    return
+  }
+  const seq = ++itemRequestSeq
   itemLoading.value = true
   itemError.value = false
   try {
     const data = await listDictItems({
-      type_code: settings.selectedTypeCode,
+      type_code: selectedTypeCode,
       q: settings.itemKeyword || undefined,
       enabled: enabledParam(settings.itemEnabled),
       page: itemPage.value,
@@ -211,6 +223,7 @@ async function loadItems() {
       sort_by: sortBy.value,
       sort_order: sortOrder.value,
     })
+    if (seq !== itemRequestSeq || selectedTypeCode !== settings.selectedTypeCode) return
     itemRows.value = data.list
     itemTotal.value = data.total
     if (data.list.length === 0 && data.total > 0 && itemPage.value > 1) {
@@ -218,9 +231,9 @@ async function loadItems() {
       await loadItems()
     }
   } catch {
-    itemError.value = true
+    if (seq === itemRequestSeq) itemError.value = true
   } finally {
-    itemLoading.value = false
+    if (seq === itemRequestSeq) itemLoading.value = false
   }
 }
 
@@ -259,9 +272,9 @@ function pageChanged(value: number) {
 }
 
 function pageSizeChanged(value: number) {
+  if (value === pageSize.value) return
   setComponentKnob('itemTable', 'pageSize', value)
   itemPage.value = 1
-  void loadItems()
 }
 
 async function refreshAll() {
@@ -328,6 +341,8 @@ async function saveType() {
     await loadTypes(true)
     await loadItems()
     ElMessage.success('已保存')
+  } catch {
+    // 全局请求拦截器已展示后端错误，弹窗保留当前输入供修正。
   } finally {
     savingType.value = false
   }
@@ -361,6 +376,8 @@ async function saveItem() {
     await loadTypes(true)
     await loadItems()
     ElMessage.success('已保存')
+  } catch {
+    // 全局请求拦截器已展示后端错误，弹窗保留当前输入供修正。
   } finally {
     savingItem.value = false
   }

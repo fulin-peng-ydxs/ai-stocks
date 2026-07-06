@@ -122,6 +122,7 @@ def test_stage5_audit_system_can_query_summary_and_detail(client, pg):
     assert summary.json()["data"]["total"] == 1
     assert summary.json()["data"]["by_category"]["config"] == 1
     assert summary.json()["data"]["success"] == 1
+    assert summary.json()["data"]["retention_days"] >= 1
 
     detail = client.get(f"/api/audit/{audit_id}", headers=_admin_headers(pg))
     assert detail.status_code == 200
@@ -303,6 +304,51 @@ def test_stage5_audit_supports_multi_value_filters(client, pg):
     assert summary.json()["data"]["by_category"]["security"] == 1
 
 
+def test_stage5_audit_keyword_escapes_like_wildcards(client, pg):
+    _clear_stage5_audit(pg)
+    repo = AuditRepository(pg)
+    exact_id = repo.record(
+        event_category="api",
+        event_type="api",
+        action="request",
+        result="success",
+        status="completed",
+        tenant_id="default",
+        actor_user_id="admin",
+        actor_account="admin",
+        target_type="stage5_test",
+        target_id="stage5_like_a_b",
+        target_label="stage5 like exact",
+        context={"route": "/api/audit"},
+    )
+    wildcard_id = repo.record(
+        event_category="api",
+        event_type="api",
+        action="request",
+        result="success",
+        status="completed",
+        tenant_id="default",
+        actor_user_id="admin",
+        actor_account="admin",
+        target_type="stage5_test",
+        target_id="stage5_like_axb",
+        target_label="stage5 like wildcard",
+        context={"route": "/api/audit"},
+    )
+    assert exact_id and wildcard_id
+
+    resp = client.get(
+        "/api/audit",
+        headers=_admin_headers(pg),
+        params={"target_keyword": "like_a_b", "page": 1, "page_size": 10},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["total"] == 1
+    assert [row["id"] for row in data["list"]] == [exact_id]
+
+
 def test_stage5_audit_default_retention_window_filters_old_records(client, pg, app_cfg):
     _clear_stage5_audit(pg)
     app_cfg.set_many({"audit.retention_days": 7})
@@ -337,5 +383,14 @@ def test_stage5_audit_default_retention_window_filters_old_records(client, pg, a
         data = resp.json()["data"]
         assert data["total"] == 1
         assert [row["id"] for row in data["list"]] == [recent_id]
+
+        summary = client.get(
+            "/api/audit/summary",
+            headers=_admin_headers(pg),
+            params={"target_keyword": "retention-default"},
+        )
+        assert summary.status_code == 200
+        assert summary.json()["data"]["total"] == 1
+        assert summary.json()["data"]["retention_days"] == 7
     finally:
         _clear_stage5_audit(pg)

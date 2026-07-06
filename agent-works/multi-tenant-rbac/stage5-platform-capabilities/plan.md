@@ -718,7 +718,8 @@ Slot 与组件设计：
   system 全局/tenant_admin 本租户范围收口、`audit.retention_days` 默认查询窗口和审计上下文白名单脱敏；已新增
   `/api/audit`、`/api/audit/summary`、`/api/audit/{id}` 只读接口并挂 `audit:view`；已在 `backend/main.py` 注册
   审计路由。已补 `backend/tests/test_stage5_audit.py`，覆盖系统管理员全局查询、摘要、详情脱敏、租户管理员越权收口
-  和跨租户详情不可见。
+  和跨租户详情不可见；代码审查整改后摘要接口回传实际 `audit.retention_days`，目标/处理人关键词搜索已转义
+  `%`、`_`、`\`，避免 LIKE 通配符误匹配。
 
 ### 6.5 任务 T5：审计采集接入
 
@@ -755,6 +756,8 @@ Slot 与组件设计：
   安全事件，不记录密码、token、验证码或请求/响应体。异步任务服务已记录创建、启动、完成、中断、失败、续跑和取消请求
   的任务事件；调度任务触发、非交易日跳过、并发跳过和触发异常已记录 `scheduler` 任务审计；系统设置保存的配置审计已在 T3 落地。
   字典领域事件已随 T6 字典服务接入；用户、角色、菜单、资源、租户等 RBAC 管理成功操作已记录 `rbac` 领域审计。
+  代码审查整改后，认证中间件和安全中间件中的请求结束、认证拒绝和限流审计写入已通过
+  `anyio.to_thread.run_sync` 移出事件循环线程，保持 best-effort，不因 PG 往返阻塞整个 event loop。
   已补 `backend/tests/test_stage5_audit_collection.py`，覆盖 API、认证拒绝、审计递归跳过、登录失败、任务状态、调度跳过/失败和 RBAC 管理审计。
 
 ### 6.6 任务 T6：数据字典后端闭环
@@ -784,7 +787,7 @@ Slot 与组件设计：
 - 验证方式：
   - CRUD、重复 code、code 不可修改、禁用项、缺失回退、服务异常回退测试。
 - 完成标准：R18 后端能力可被页面和消费端稳定使用。
-- 实际落地情况：已新增 `DictRepository`、`DictService` 和 `/api/dict` 路由并在 `backend/main.py` 注册；已实现字典类型和字典项 CRUD、code 格式校验、唯一性校验、类型/字典项 code 创建后不可修改、禁删有明细类型、启用项消费接口和内置枚举兜底；`dict:read` 消费端只返回启用项，管理端接口保持 system-only；字典类型/项新增、修改、删除已接入 best-effort `dict` 审计事件。已补 `backend/tests/test_stage5_dicts.py`，覆盖 CRUD、重复 code、不可变 code、禁用项过滤、共享只读基线能力、缺失/异常兜底和审计写入。
+- 实际落地情况：已新增 `DictRepository`、`DictService` 和 `/api/dict` 路由并在 `backend/main.py` 注册；已实现字典类型和字典项 CRUD、code 格式校验、唯一性校验、类型/字典项 code 创建后不可修改、禁删有明细类型、启用项消费接口和内置枚举兜底；`dict:read` 消费端只返回启用项，管理端接口保持 system-only；字典类型/项新增、修改、删除已接入 best-effort `dict` 审计事件并记录当前请求 `tenant_id`、`actor_user_id`。代码审查整改后，`/api/dict/items/public` 区分“类型存在但全部停用”和“类型缺失/异常”：前者返回空列表且 `fallback=false`，后者回退内置枚举；非法 `type_code` 不再抛出管理端校验错误，而按消费端兜底返回。已补 `backend/tests/test_stage5_dicts.py`，覆盖 CRUD、重复 code、不可变 code、禁用项过滤、全部停用返回空、共享只读基线能力、缺失/异常兜底和审计写入。
 
 ### 6.7 任务 T7：前端基础接入、路由、布局登记和 API 封装
 
@@ -845,7 +848,7 @@ Slot 与组件设计：
   - 页面单测覆盖筛选、刷新、空态、错误态、详情抽屉。
   - 视口 `1100x620`、`1366x768`、`1440x900` 截图/交互验证。
 - 完成标准：页面功能点承接表全部可观察，排版无重叠。
-- 实际落地情况：已按 `audit-log.html` 承接日志审计页面，完成标题工具区、自动刷新、手动刷新、禁用导出入口、摘要指标、筛选栏、服务端分页、审计宽表、只读详情抽屉、loading、无记录、服务异常、权限不足、低高度退化和租户管理员不展示租户过滤入口。事件类型、结果和状态选项优先消费 `/api/dict/items/public`，失败回退内置枚举；筛选下拉已沉淀为 `AppFilterSelect`，默认多选、可搜索、可清空，最多展示 3 个选中标签且溢出提前折叠，选择后即时查询；系统管理员租户筛选改为 `/api/tenants` 下拉并支持多选，租户管理员无跨租户入口。后端 `/api/audit` 列表和摘要支持重复 query 参数多值筛选，租户管理员范围仍由服务层强制覆盖。目标对象展示由审计对象和 `sys_resource.name` 中文说明组成。默认时间不强制前端传参，由后端 `audit.retention_days=90` 默认窗口收口，页面摘要提示“默认最近 90 天”。审计表 `auditTable` 已接入 `wide-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，并同步前端 `componentConfig` 与后端 `layout_config` 字段白名单，避免设置保存被拒。已补 `AuditLogView.spec.ts` 覆盖加载、查询、筛选多选即时查询、租户下拉、空态、错误重试、详情抽屉、权限态、租户管理员无跨租户入口和自动刷新清理；已补 `test_stage5_audit.py` 覆盖多值筛选。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t8-audit-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出、无关键区域重叠，详情抽屉和页面设置抽屉已验证；本轮下拉多选整改以单测、后端接口测试和构建复验为准。
+- 实际落地情况：已按 `audit-log.html` 承接日志审计页面，完成标题工具区、自动刷新、手动刷新、禁用导出入口、摘要指标、筛选栏、服务端分页、审计宽表、只读详情抽屉、loading、无记录、服务异常、权限不足、低高度退化和租户管理员不展示租户过滤入口。事件类型、结果和状态选项优先消费 `/api/dict/items/public`，失败回退内置枚举；筛选下拉已沉淀为 `AppFilterSelect`，默认多选、可搜索、可清空，最多展示 3 个选中标签且溢出提前折叠，选择后即时查询；系统管理员租户筛选改为 `/api/tenants` 下拉并支持多选，租户管理员无跨租户入口。后端 `/api/audit` 列表和摘要支持重复 query 参数多值筛选，租户管理员范围仍由服务层强制覆盖。目标对象展示由审计对象和 `sys_resource.name` 中文说明组成。默认时间不强制前端传参，由后端 `audit.retention_days` 默认窗口收口，页面摘要提示使用 `/api/audit/summary` 回传的实际 `retention_days`。审计表 `auditTable` 已接入 `wide-table` 的 `pageSize` 和 `hiddenColumns` 组件配置，并同步前端 `componentConfig` 与后端 `layout_config` 字段白名单，避免设置保存被拒。已补 `AuditLogView.spec.ts` 覆盖加载、查询、筛选多选即时查询、租户下拉、接口保留期提示、空态、错误重试、详情抽屉、权限态、租户管理员无跨租户入口和自动刷新清理；已补 `test_stage5_audit.py` 覆盖多值筛选、LIKE 通配符转义和摘要保留期。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t8-audit-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出、无关键区域重叠，详情抽屉和页面设置抽屉已验证；本轮下拉多选整改以单测、后端接口测试和构建复验为准。
 
 ### 6.9 任务 T9：数据字典前端页面
 
@@ -967,10 +970,10 @@ Slot 与组件设计：
 - 完成标准：阶段五后端专项测试通过，并不破坏阶段四权限基线。
 - 实际落地情况：T2/T3/T4/T5/T6/T11 已分别补齐阶段五后端专项测试：
   `test_stage5_auth_config.py` 覆盖认证配置读取、公开配置、注册链路消费、配置保存审计和审计写失败降级；
-  `test_stage5_audit.py` 覆盖审计查询、摘要、详情脱敏、租户管理员范围收口、非法时间校验，并在本任务补充
-  `audit.retention_days` 默认查询窗口测试，证明不传 `start_time/end_time` 时窗口外记录被排除；
+  `test_stage5_audit.py` 覆盖审计查询、摘要、详情脱敏、租户管理员范围收口、非法时间校验、LIKE 通配符转义，并在本任务补充
+  `audit.retention_days` 默认查询窗口和摘要回传测试，证明不传 `start_time/end_time` 时窗口外记录被排除且页面可消费实际保留期；
   `test_stage5_audit_collection.py` 覆盖 API、认证拒绝、登录失败、任务、调度和 RBAC 管理审计采集；
-  `test_stage5_dicts.py` 覆盖字典 CRUD、唯一性、code 不可变、禁删有明细类型、禁用项过滤、共享只读和兜底；
+  `test_stage5_dicts.py` 覆盖字典 CRUD、唯一性、code 不可变、禁删有明细类型、禁用项过滤、全部停用返回空、共享只读、兜底和审计操作者；
   `test_stage5_resource_codes.py` 覆盖阶段五新增接口和菜单授权闭环。已按约束先停后台服务再运行
   `python -m pytest backend/tests/test_stage5_config_t2.py backend/tests/test_stage5_auth_config.py backend/tests/test_stage5_audit.py backend/tests/test_stage5_audit_collection.py backend/tests/test_stage5_dicts.py backend/tests/test_stage5_resource_codes.py -q`
   通过 `33 passed`，仅有 FastAPI `on_event` 既有弃用警告；验证完成后已重启后端服务。
@@ -1018,7 +1021,13 @@ Slot 与组件设计：
   系统页抽屉不展示业务选项；登录图形验证码开启即展示、提交即校验由 `LoginView.captcha.spec.ts` 和
   `test_stage5_auth_config.py` 覆盖。截图保存在被 Git 忽略的
   `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t13/*.png`；验证后停止 `5181` 预览服务。
-  本轮浏览器复验到达登录页时遇到已开启的图形验证码，未绕过或代填验证码，因此未新增浏览器截图。
+  代码审查整改复测已运行
+  `cd frontend && npm run test -- --run src/views/system/__tests__/AuditLogView.spec.ts src/views/system/__tests__/DataDictionaryView.spec.ts src/views/__tests__/ConfigView.system.spec.ts src/views/__tests__/LoginView.captcha.spec.ts src/components/__tests__/AppFilterSelect.spec.ts src/router/__tests__/stage5-routes.spec.ts`，
+  结果 `6 passed` 测试文件、`30 passed` 用例；已运行 `cd frontend && npm run build` 通过，输出仅有既有 Rollup 注释警告和大 chunk 提示。
+  本轮浏览器复验使用 `5181`，登录 `admin` 后重新检查 `/system/audit`、`/system/dicts`、`/system/config/system`
+  在 `1100x620`、`1366x768`、`1440x900` 三档视口均无整页横向溢出、无可见错误态、关键文本可见；
+  并在 `1366x768` 验证审计目标关键词查询、数据字典状态筛选和分页入口。截图保存在被 Git 忽略的
+  `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/review-20260706/*.png`。
 
 ### 6.14 任务 T14：总需求文档回写、业务核查和计划状态回写
 
@@ -1047,6 +1056,8 @@ Slot 与组件设计：
   页面交互、验收标准、阶段五建议开发顺序和 R23 边界；同步本计划 §5 需求映射为已完成/跳过最终状态。
   业务核查结论：R16/R17/R18/R19 均有对应任务、代码产物、权限/菜单/配置/SQL 归档和测试验证；
   R22/R23/R24/R25/R26/R27/R28 未被错误认领为阶段五完成，其中 R23 仅完成配置和默认查询窗口，自动清理仍后续。
+  代码审查整改后已同步本计划和总需求文档事实：审计写入线程化、摘要回传保留期、摘要查询收敛、LIKE 转义、
+  字典 public 全停用语义、字典审计操作者、配置纵深校验和前端竞态修复均已纳入验证结果。
 
 ## 7. 数据库与 SQL 计划
 
@@ -1067,13 +1078,13 @@ SQL 约束：
 
 - 单元测试：
   - 计划：覆盖配置读取、字典服务、审计服务脱敏和回退。
-  - 具体完成情况：T1-T6 后端专项已覆盖配置读取、认证配置消费、审计脱敏、审计采集、字典兜底；本轮验证 `backend/tests/test_stage5_*.py` 相关用例通过。
+  - 具体完成情况：T1-T6 后端专项已覆盖配置读取、认证配置消费、审计脱敏、审计采集、字典兜底；代码审查整改复测已运行 `python -m pytest backend/tests/test_stage5_config_t2.py backend/tests/test_stage5_auth_config.py backend/tests/test_stage5_audit.py backend/tests/test_stage5_audit_collection.py backend/tests/test_stage5_dicts.py backend/tests/test_stage5_resource_codes.py -q`，结果 `38 passed`，仅有 FastAPI `on_event` 既有弃用警告。
 - 接口测试：
   - 计划：覆盖 `/api/audit`、`/api/dict/*`、`/api/data/settings`、`/api/auth/public-config`。
-  - 具体完成情况：已覆盖 `/api/audit`、`/api/dict/types`、`/api/dict/items`、`/api/dict/items/public`、`/api/data/settings`、`/api/auth/public-config`；页面 API 封装已在 T7 完成并被 T8/T9/T10 页面消费。
+  - 具体完成情况：已覆盖 `/api/audit`、`/api/dict/types`、`/api/dict/items`、`/api/dict/items/public`、`/api/data/settings`、`/api/auth/public-config`；代码审查整改补充覆盖审计摘要 `retention_days`、LIKE 通配符转义、字典 public 全部停用返回空和非法 `type_code` 兜底；页面 API 封装已在 T7 完成并被 T8/T9/T10 页面消费。
 - 页面/交互测试：
   - 计划：审计页筛选/分页/详情/自动刷新/错误重试；字典页主从联动/弹窗/启停/删除/缓存失效；系统设置页新增配置。
-  - 具体完成情况：日志审计页已完成筛选/分页/详情/自动刷新/错误重试和三档视口验证，本轮补多选筛选、租户下拉和选择即时查询测试；数据字典页已完成主从联动、弹窗、筛选、启停、删除确认、错误重试、权限态和三档视口验证；系统设置页已完成新增配置组动态渲染、分类 Tab、保存失败、空态、权限态和三档视口验证。
+  - 具体完成情况：日志审计页已完成筛选/分页/详情/自动刷新/错误重试和三档视口验证，本轮补多选筛选、租户下拉、选择即时查询、请求竞态防护和接口保留期提示测试；数据字典页已完成主从联动、弹窗、筛选、启停、删除确认、错误重试、权限态和三档视口验证，本轮补请求竞态防护、pageSize 单路径加载和保存失败保留弹窗输入；系统设置页已完成新增配置组动态渲染、分类 Tab、保存失败、空态、权限态和三档视口验证。
 - 权限与数据范围测试：
   - 计划：system 全局审计和字典；tenant_admin 仅本租户审计；normal/paid 默认无审计和字典；后端接口 403 为准。
   - 具体完成情况：已覆盖 system 全局审计查询、tenant_admin 本租户审计收口、字典管理 system-only、`dict:read` 登录基线共享读、normal/paid 默认无审计/字典管理授权和无角色 fail-closed。
@@ -1082,13 +1093,13 @@ SQL 约束：
   - 具体完成情况：已跑阶段四菜单守卫和资源码回归；前端 `pageRegistry.spec.ts` 与 `npm run build` 通过。
 - 异常与边界测试：
   - 计划：审计写失败不阻断主链路；PG/app_config 缺失回退默认；字典服务异常回退默认枚举；非法配置拒绝或回退；页码越界处理。
-  - 具体完成情况：已覆盖配置审计写失败降级、非法配置拒绝、字典服务异常兜底、审计详情脱敏、租户越权不可见、重复 code/code 不可变和禁删有明细类型。
+  - 具体完成情况：已覆盖配置审计写失败降级、非法配置拒绝、`AuditConfig.retention_days` 纵深校验、字典服务异常兜底、字典全部停用不兜底、审计详情脱敏、租户越权不可见、重复 code/code 不可变和禁删有明细类型。
 - 图示与原型一致性验证：
   - 计划：核对 `data-dictionary.html` 的新建类型、刷新、类型搜索、编辑类型、新建字典项、状态筛选、查询、分页、弹窗、无数据、加载失败；核对 `audit-log.html` 的自动刷新、刷新、禁用导出、摘要指标、筛选、查询/重置、分页、详情抽屉、无记录、加载失败。
   - 具体完成情况：P9 日志审计页和 P8 数据字典页均已完成原型逐项承接和浏览器截图/交互验证；T13 已完成三页三档视口最终汇总验证。
 - 配置闭环验证：
   - 计划：验证配置项能展示、保存、读取、实际影响认证链路、非法值回退、`audit.retention_days` 被审计默认查询窗口消费。
-  - 具体完成情况：已验证配置项可经 `/api/data/settings` 展示/保存，`/api/auth/public-config` 和注册链路即时消费，非法值拒绝，`audit.retention_days` 被审计默认查询窗口消费。
+  - 具体完成情况：已验证配置项可经 `/api/data/settings` 展示/保存，`/api/auth/public-config` 和注册链路即时消费，非法值拒绝，`audit.retention_days` 被审计默认查询窗口和审计页摘要提示消费。
 - 需求映射验证：
   - 计划：逐项检查 R16/R17/R18/R19 是否有任务、状态、验证方式；R22/R23/R24/R25/R26/R27/R28 是否标跳过和原因。
   - 具体完成情况：已同步 R16/R17/R18/R19 为已完成；R22/R23/R24/R25/R26/R27/R28 仍按计划标记跳过并说明原因，未错误认领为阶段五完成。
@@ -1149,7 +1160,7 @@ cd frontend && npm run build
 | 风险 | 影响 | 处理 |
 | --- | --- | --- |
 | 审计表增长快 | 查询变慢、PG 存储增长 | 本阶段加索引、分页、默认 retention 查询窗口；R23 再做自动清理 |
-| 审计写入拖慢主链路 | 登录/接口/任务延迟 | 审计服务 best-effort，失败降级应用日志，不阻断主流程 |
+| 审计写入拖慢主链路 | 登录/接口/任务延迟 | 审计服务 best-effort，失败降级应用日志；认证中间件横切写入已移出事件循环线程 |
 | 审计泄露敏感信息 | 安全风险 | 上下文白名单，禁止原始 body、密码、token、验证码入库 |
 | 租户管理员审计越权 | 可见其他租户操作 | 服务层强制 tenant_id 范围，不信任前端参数 |
 | 字典 label 被用于业务判断 | 业务语义漂移 | 业务判断只使用稳定 code，label 仅展示 |
@@ -1164,6 +1175,7 @@ cd frontend && npm run build
 - R17 保留期配置本阶段用于默认查询窗口和页面展示，不执行自动删除。
 - 数据字典首批消费以权限体系和审计展示枚举为主，不强制迁移全量业务枚举。
 - 审计 API 递归保护允许跳过 `/api/audit/**` 的 API 事件，或用内部标记防止重复写入；实现时选择不造成无限写入的方案。
+- 任务/调度审计在本阶段按平台级事件处理，`tenant_id=NULL`，仅 system 全局审计可见；若后续需要 tenant_admin 查看本租户任务事件，需要在任务创建与调度触发链路补充租户归属。
 - 当前阶段不需要数据库 MCP 直接读取线上结构；以代码 DDL 和需求文档为依据。
 
 ### 10.3 待确认项

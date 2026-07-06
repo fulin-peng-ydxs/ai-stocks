@@ -109,12 +109,13 @@ class AuditRepository:
         sort_by: str = "event_time",
         sort_order: str = "desc",
     ) -> dict:
-        where, params = self._where(filters)
+        where, params, needs_resource_join = self._where(filters)
         sort_col = _AUDIT_SORT_COLS.get(sort_by, "a.event_time")
         direction = "ASC" if sort_order.lower() == "asc" else "DESC"
+        count_from = self._from_clause(include_resource=needs_resource_join)
         total = int(self.pg.query_df(
             "SELECT count(*) AS n "
-            "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
+            f"{count_from} "
             f"{where}",
             params,
         ).iloc[0]["n"])
@@ -137,17 +138,53 @@ class AuditRepository:
         }
 
     def summary(self, *, filters: dict[str, Any]) -> dict:
-        where, params = self._where(filters)
-        total = int(self.pg.query_df(
-            "SELECT count(*) AS n "
-            "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
-            f"{where}",
+        where, params, needs_resource_join = self._where(filters)
+        rows = self.pg.query_df(
+            """
+            SELECT
+                CASE
+                    WHEN GROUPING(a.event_category)=0 THEN 'event_category'
+                    WHEN GROUPING(a.event_type)=0 THEN 'event_type'
+                    WHEN GROUPING(a.result)=0 THEN 'result'
+                    WHEN GROUPING(a.status)=0 THEN 'status'
+                    ELSE 'total'
+                END AS bucket,
+                CASE
+                    WHEN GROUPING(a.event_category)=0 THEN a.event_category
+                    WHEN GROUPING(a.event_type)=0 THEN a.event_type
+                    WHEN GROUPING(a.result)=0 THEN a.result
+                    WHEN GROUPING(a.status)=0 THEN a.status
+                    ELSE NULL
+                END AS k,
+                count(*) AS n
+            """
+            f"{self._from_clause(include_resource=needs_resource_join)} "
+            f"{where} "
+            "GROUP BY GROUPING SETS ((), "
+            "(a.event_category), (a.event_type), (a.result), (a.status))",
             params,
-        ).iloc[0]["n"])
-        by_category = self._counts("a.event_category", where, params)
-        by_type = self._counts("a.event_type", where, params)
-        by_result = self._counts("a.result", where, params)
-        by_status = self._counts("a.status", where, params)
+        )
+        total = 0
+        by_category: dict[str, int] = {}
+        by_type: dict[str, int] = {}
+        by_result: dict[str, int] = {}
+        by_status: dict[str, int] = {}
+        bucket_map = {
+            "event_category": by_category,
+            "event_type": by_type,
+            "result": by_result,
+            "status": by_status,
+        }
+        for _, row in rows.iterrows():
+            bucket = str(row["bucket"])
+            count = int(row["n"])
+            if bucket == "total":
+                total = count
+                continue
+            key = row["k"]
+            if key is None or pd.isna(key):
+                continue
+            bucket_map[bucket][str(key)] = count
         return {
             "total": total,
             "success": by_result.get("success", 0),
@@ -177,20 +214,17 @@ class AuditRepository:
             return None
         return self._row(df.iloc[0].to_dict())
 
-    def _counts(self, column: str, where: str, params: list[Any]) -> dict[str, int]:
-        df = self.pg.query_df(
-            f"SELECT {column} AS k, count(*) AS n "
-            "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code "
-            f"{where} "
-            f"GROUP BY {column} ORDER BY n DESC",
-            params,
-        )
-        return {str(r["k"]): int(r["n"]) for _, r in df.iterrows() if r["k"] is not None}
+    @staticmethod
+    def _from_clause(*, include_resource: bool) -> str:
+        if include_resource:
+            return "FROM audit_log a LEFT JOIN sys_resource sr ON sr.code = a.resource_code"
+        return "FROM audit_log a"
 
     @staticmethod
-    def _where(filters: dict[str, Any]) -> tuple[str, list[Any]]:
+    def _where(filters: dict[str, Any]) -> tuple[str, list[Any], bool]:
         conds: list[str] = []
         params: list[Any] = []
+        needs_resource_join = False
         exact_cols = {
             "tenant_id": "a.tenant_id",
             "event_category": "a.event_category",
@@ -215,17 +249,24 @@ class AuditRepository:
             conds.append("a.event_time <= %s")
             params.append(filters["end_time"])
         if filters.get("actor_keyword"):
-            like = f"%{filters['actor_keyword']}%"
-            conds.append("(a.actor_user_id ILIKE %s OR a.actor_account ILIKE %s)")
+            like = f"%{AuditRepository._escape_like(filters['actor_keyword'])}%"
+            conds.append(
+                "(a.actor_user_id ILIKE %s ESCAPE '\\' "
+                "OR a.actor_account ILIKE %s ESCAPE '\\')"
+            )
             params += [like, like]
         if filters.get("target_keyword"):
-            like = f"%{filters['target_keyword']}%"
+            like = f"%{AuditRepository._escape_like(filters['target_keyword'])}%"
+            needs_resource_join = True
             conds.append(
-                "(a.target_id ILIKE %s OR a.target_label ILIKE %s OR a.path ILIKE %s "
-                "OR a.resource_code ILIKE %s OR sr.name ILIKE %s)"
+                "(a.target_id ILIKE %s ESCAPE '\\' "
+                "OR a.target_label ILIKE %s ESCAPE '\\' "
+                "OR a.path ILIKE %s ESCAPE '\\' "
+                "OR a.resource_code ILIKE %s ESCAPE '\\' "
+                "OR sr.name ILIKE %s ESCAPE '\\')"
             )
             params += [like, like, like, like, like]
-        return (("WHERE " + " AND ".join(conds)) if conds else ""), params
+        return (("WHERE " + " AND ".join(conds)) if conds else ""), params, needs_resource_join
 
     @staticmethod
     def _exact_values(value: Any) -> list[str]:
@@ -235,6 +276,10 @@ class AuditRepository:
             return [text for item in value if (text := str(item).strip())]
         text = str(value).strip()
         return [text] if text else []
+
+    @staticmethod
+    def _escape_like(value: Any) -> str:
+        return str(value).strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     @staticmethod
     def _row(row: dict[str, Any]) -> dict[str, Any]:

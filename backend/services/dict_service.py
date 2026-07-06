@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backend.auth.context import get_current_context
 from backend.common.exceptions import NotFoundError, ValidationError
 from backend.services.audit_service import AuditService
 from backend.storage.dict_repository import DictRepository
@@ -106,21 +107,21 @@ class DictService:
         )
 
     def get_enabled_items(self, type_code: str) -> dict:
-        type_code = self._norm_code(type_code, "类型 code")
+        raw_type_code = (type_code or "").strip()
         try:
+            type_code = self._norm_code(type_code, "类型 code")
             if self.repo.get_type(type_code):
                 data = self.repo.list_items(
                     type_code=type_code, enabled=True, page=1, size=500
                 )
-                if data["list"]:
-                    return {
-                        "type_code": type_code,
-                        "items": data["list"],
-                        "fallback": False,
-                        "version": self.repo.version(type_code),
-                    }
+                return {
+                    "type_code": type_code,
+                    "items": data["list"],
+                    "fallback": False,
+                    "version": self.repo.version(type_code),
+                }
         except Exception:  # noqa: BLE001
-            pass
+            type_code = raw_type_code
         return {
             "type_code": type_code,
             "items": [dict(item) for item in _FALLBACK_ITEMS.get(type_code, [])],
@@ -223,12 +224,15 @@ class DictService:
     @staticmethod
     def _audit(action: str, target_type: str, target_id: str, target_label: str | None) -> None:
         try:
+            ctx = get_current_context()
             AuditService().repo.record(
                 event_category="dict",
                 event_type="dict",
                 action=action,
                 result="success",
                 status="completed",
+                tenant_id=ctx.tenant_id if ctx else None,
+                actor_user_id=ctx.user_id if ctx else None,
                 resource_code=(
                     "dict:item-manage" if target_type == "dict_item" else "dict:type-manage"
                 ),

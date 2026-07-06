@@ -64,6 +64,11 @@ def test_stage5_config_validation_and_effective_settings(app_cfg):
     assert public_cfg["login_captcha_enabled"] is True
     assert public_cfg["captcha_after_fails"] == 2
 
+    from backend.config.settings import AuditConfig
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        AuditConfig(retention_days=0)
+
 
 @pytest.mark.parametrize("path,value", [
     ("auth.require_email_code", "false"),
@@ -95,6 +100,7 @@ def test_data_settings_api_exposes_and_saves_stage5_config(client, pg, app_cfg):
     }
     assert fields["auth.require_email_code"]["type"] == "bool"
     assert fields["auth.captcha_after_fails"]["min"] == 1
+    assert "登录图形验证码开关开启时" in fields["auth.captcha_after_fails"]["desc"]
     assert fields["audit.retention_days"]["min"] == 7
     assert fields["audit.retention_days"]["max"] == 365
 

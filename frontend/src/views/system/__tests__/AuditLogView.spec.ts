@@ -90,6 +90,7 @@ function mockHappyApis() {
     total: 1,
     success: 1,
     failed: 0,
+    retention_days: 90,
     by_category: { rbac: 1, security: 0 },
     by_type: { permission: 1 },
     by_result: { success: 1 },
@@ -136,6 +137,7 @@ describe('AuditLogView', () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('审计日志')
     expect(wrapper.text()).toContain('范围事件')
+    expect(wrapper.text()).toContain('默认最近 90 天')
     expect(wrapper.text()).toContain('角色：管理员')
     expect(wrapper.text()).toContain('查看审计日志 · 角色')
     expect(dictApi.getPublicDictItems).toHaveBeenCalledWith('audit_status')

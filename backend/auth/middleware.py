@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import time
 
+import anyio
 import redis
 from starlette.responses import JSONResponse
 
@@ -62,6 +63,18 @@ def _scope_ip(scope) -> str:
     return client[0] if client else "unknown"
 
 
+async def _run_audit_write(func, *args, **kwargs) -> None:
+    """Run best-effort audit writes outside the event loop thread."""
+    try:
+        await anyio.to_thread.run_sync(lambda: func(*args, **kwargs))
+    except Exception as e:  # noqa: BLE001
+        log.warning("审计后台写入失败，已降级忽略: %s", e)
+
+
+def _record_security_event(**kwargs) -> None:
+    AuditService().record_security_event(**kwargs)
+
+
 class SecurityMiddleware:
     """安全加固中间件（stage2·T6）：全局 per-IP 限流（backstop）+ 安全响应头。
 
@@ -82,7 +95,8 @@ class SecurityMiddleware:
         if path.startswith("/api/") and scope.get("method") != "OPTIONS":
             limit = get_settings().auth.api_rate_per_min
             if not ss.rate_limit_ok("api", _scope_ip(scope), limit, 60):
-                AuditService().record_security_event(
+                await _run_audit_write(
+                    _record_security_event,
                     event_type="rate_limit",
                     action="api_rate_limit",
                     result="failed",
@@ -138,12 +152,14 @@ class AuthMiddleware:
                 # 防陈旧 perms 内容被采信（Codex 四轮 P1）。
                 perms = svc.load_perms(claims["sub"], perm_ver=int(claims["perm_ver"]))
             except AuthError as e:
-                self._record_auth_reject(scope, e.http_status, e.msg)
+                await _run_audit_write(
+                    self._record_auth_reject, scope, e.http_status, e.msg)
                 return await self._deny(scope, receive, send, e.http_status, e.code, e.msg)
             except (ServiceUnavailableError, StorageError, redis.RedisError):
                 # 鉴权关键依赖（Redis 黑名单/perm_ver/perms 缓存、PG）不可用 → fail-closed 503
                 log.warning("鉴权链存储不可用，fail-closed 拒绝 path=%s", scope.get("path"))
-                self._record_auth_reject(scope, 503, "鉴权依赖不可用")
+                await _run_audit_write(
+                    self._record_auth_reject, scope, 503, "鉴权依赖不可用")
                 return await self._deny(
                     scope, receive, send, 503, 5003, "服务暂时不可用（鉴权依赖），请稍后重试")
 
@@ -163,7 +179,8 @@ class AuthMiddleware:
             try:
                 await self.app(scope, receive, send_wrapper)
             finally:
-                self._record_request_end(
+                await _run_audit_write(
+                    self._record_request_end,
                     scope,
                     tenant_id=claims.get("tenant_id"),
                     actor_user_id=claims.get("sub"),

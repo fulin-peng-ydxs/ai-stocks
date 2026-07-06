@@ -56,6 +56,7 @@ export interface AuditSummary {
   total: number
   success: number
   failed: number
+  retention_days?: number
   by_category: Record<string, number>
   by_type: Record<string, number>
   by_result: Record<string, number>

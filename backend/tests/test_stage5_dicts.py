@@ -119,11 +119,15 @@ def test_stage5_dict_crud_code_immutable_delete_guard_and_audit(client, pg):
     assert delete_type.json()["code"] == 0
 
     audits = pg.query_df(
-        "SELECT action FROM audit_log WHERE event_category='dict' "
+        "SELECT action, actor_user_id, tenant_id FROM audit_log WHERE event_category='dict' "
         "AND target_id LIKE %s ORDER BY event_time",
         [f"{type_code}%"],
-    )["action"].tolist()
-    assert {"type_create", "item_create", "item_delete", "type_delete"} <= set(audits)
+    )
+    assert {"type_create", "item_create", "item_delete", "type_delete"} <= set(
+        audits["action"].tolist()
+    )
+    assert set(audits["actor_user_id"].dropna()) == {"admin"}
+    assert set(audits["tenant_id"].dropna()) == {"default"}
 
 
 def test_stage5_dict_public_read_baseline_and_disabled_filter(client, pg):
@@ -167,6 +171,36 @@ def test_stage5_dict_public_read_baseline_and_disabled_filter(client, pg):
         data = public.json()["data"]
         assert data["fallback"] is False
         assert [item["code"] for item in data["items"]] == ["enabled_item"]
+
+        client.put(
+            f"/api/dict/items/{type_code}/enabled_item",
+            headers=headers,
+            json={
+                "label": "启用项",
+                "enabled": False,
+                "sort": 100,
+                "remark": None,
+            },
+        )
+        all_disabled = client.get(
+            "/api/dict/items/public",
+            headers={"Authorization": _token(pg, tenant_admin["id"], tenant_admin["tenant_id"])},
+            params={"type_code": type_code},
+        )
+        assert all_disabled.status_code == 200
+        disabled_data = all_disabled.json()["data"]
+        assert disabled_data["fallback"] is False
+        assert disabled_data["items"] == []
+
+        invalid_type = client.get(
+            "/api/dict/items/public",
+            headers={"Authorization": _token(pg, tenant_admin["id"], tenant_admin["tenant_id"])},
+            params={"type_code": "bad CODE"},
+        )
+        assert invalid_type.status_code == 200
+        invalid_data = invalid_type.json()["data"]
+        assert invalid_data["fallback"] is True
+        assert invalid_data["items"] == []
     finally:
         _cleanup_type(pg, type_code)
         pg.execute("DELETE FROM sys_user WHERE id=%s", [tenant_admin["id"]])
@@ -225,3 +259,7 @@ def test_stage5_dict_fallback_builtin_when_repo_fails():
         "blocked",
         "skipped",
     ]
+
+    invalid_data = DictService(BrokenRepo()).get_enabled_items("bad CODE")  # type: ignore[arg-type]
+    assert invalid_data["fallback"] is True
+    assert invalid_data["items"] == []

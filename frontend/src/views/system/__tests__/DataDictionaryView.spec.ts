@@ -293,6 +293,21 @@ describe('DataDictionaryView', () => {
     expect(updateBody).not.toHaveProperty('code')
   })
 
+  it('保存类型失败时保留弹窗和输入值', async () => {
+    ;(dictApi.createDictType as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('boom'))
+    const wrapper = await mountView()
+    await buttonByText(wrapper, '新建类型').trigger('click')
+    await flushPromises()
+    await wrapper.find('input[placeholder="如 user_status"]').setValue('tenant_state')
+    await wrapper.find('input[placeholder="如 用户状态"]').setValue('租户状态')
+    await buttonByText(wrapper, '保存').trigger('click')
+    await flushPromises()
+
+    expect(dictApi.createDictType).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('新建字典类型')
+    expect((wrapper.find('input[placeholder="如 user_status"]').element as HTMLInputElement).value).toBe('tenant_state')
+  })
+
   it('编辑字典项时禁用 type/code，保存不提交 type_code/code', async () => {
     const wrapper = await mountView()
     const edit = wrapper.findAll('button').find((node) => node.text() === '编辑')

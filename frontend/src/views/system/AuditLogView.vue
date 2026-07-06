@@ -17,7 +17,6 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const pageKey = 'audit-log'
-const RETENTION_DAYS = 90
 const AUTO_REFRESH_MS = 30_000
 
 interface OptionItem {
@@ -103,6 +102,12 @@ const loadError = ref(false)
 const permissionError = ref(false)
 const summaryError = ref(false)
 const summary = ref<AuditSummary | null>(null)
+const retentionHint = computed(() => {
+  const days = summary.value?.retention_days
+  return typeof days === 'number' && Number.isFinite(days)
+    ? `默认最近 ${days} 天`
+    : '默认窗口按系统设置'
+})
 const detailOpen = ref(false)
 const detailLoading = ref(false)
 const detailError = ref(false)
@@ -135,6 +140,10 @@ const hiddenColumns = computed<string[]>(() => {
 const drawerDirty = computed(() => layoutDirty.value || bizDirty.value)
 const canViewAudit = computed(() => auth.isSystem || auth.permissions.includes('audit:view') || auth.menusStatus !== 'ready')
 let refreshTimer: number | undefined
+let listRequestSeq = 0
+let summaryRequestSeq = 0
+let listLoadingSeq = 0
+let summaryLoadingSeq = 0
 
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
@@ -221,15 +230,21 @@ function errorStatus(error: unknown): number | undefined {
 }
 
 async function loadSummary(silent = false) {
-  if (!silent) summaryLoading.value = true
+  const seq = ++summaryRequestSeq
+  if (!silent) {
+    summaryLoading.value = true
+    summaryLoadingSeq = seq
+  }
   summaryError.value = false
   const { page: _page, page_size: _size, sort_by: _sortBy, sort_order: _sortOrder, ...query } = buildQuery()
   try {
-    summary.value = await getAuditSummary(query)
+    const data = await getAuditSummary(query)
+    if (seq !== summaryRequestSeq) return
+    summary.value = data
   } catch {
-    summaryError.value = true
+    if (seq === summaryRequestSeq) summaryError.value = true
   } finally {
-    if (!silent) summaryLoading.value = false
+    if (!silent && summaryLoadingSeq === seq) summaryLoading.value = false
   }
 }
 
@@ -238,11 +253,16 @@ async function loadList(silent = false) {
     permissionError.value = true
     return
   }
-  if (!silent) tableLoading.value = true
+  const seq = ++listRequestSeq
+  if (!silent) {
+    tableLoading.value = true
+    listLoadingSeq = seq
+  }
   loadError.value = false
   permissionError.value = false
   try {
     const data = await listAuditLogs(buildQuery())
+    if (seq !== listRequestSeq) return
     rows.value = data.list
     total.value = data.total
     if (data.list.length === 0 && page.value > 1) {
@@ -250,10 +270,12 @@ async function loadList(silent = false) {
       if (page.value > 1) await loadList(silent)
     }
   } catch (error) {
-    if (errorStatus(error) === 403) permissionError.value = true
-    else if (!silent) loadError.value = true
+    if (seq === listRequestSeq) {
+      if (errorStatus(error) === 403) permissionError.value = true
+      else if (!silent) loadError.value = true
+    }
   } finally {
-    if (!silent) tableLoading.value = false
+    if (!silent && listLoadingSeq === seq) tableLoading.value = false
   }
 }
 
@@ -286,9 +308,9 @@ function pageChanged(value: number) {
 }
 
 function pageSizeChanged(value: number) {
+  if (value === pageSize.value) return
   setComponentKnob('auditTable', 'pageSize', value)
   page.value = 1
-  void loadAll()
 }
 
 async function refresh(silent = false) {
@@ -420,7 +442,7 @@ onBeforeUnmount(stopTimer)
         <div class="metric">
           <span>范围事件</span>
           <b>{{ summary?.total ?? 0 }}</b>
-          <em>默认最近 {{ RETENTION_DAYS }} 天</em>
+          <em>{{ retentionHint }}</em>
         </div>
         <div class="metric">
           <span>失败 / 拒绝</span>
