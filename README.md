@@ -202,10 +202,19 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 ```bash
 cp .env.local.example .env.local
 # 编辑 .env.local，至少填写 AI_STOCKS_JWT_SECRET；可用 openssl rand -hex 32 生成
-# 本地开发约定账号：admin / Admin@12345；生产或共享环境必须改 AI_STOCKS_ADMIN_PASSWORD
+# 本地开发约定系统管理员：admin / Admin@12345；生产或共享环境必须改 AI_STOCKS_ADMIN_PASSWORD
 ./start.sh                      # 后端 8000，热重载（= python -m backend.cli serve --reload，nohup 脱离会话）
 ./start-web.sh                  # 前端 5173，HMR（nohup 脱离会话，首次先 npm install）
 ```
+
+本地账号分两类，避免权限测试混用：
+
+| 账号体系 | 用途 | 密码来源 | 维护方式 |
+|----------|------|----------|----------|
+| `admin` | `default` 租户平台系统管理员，用于初始化、系统级运维和最高权限验收 | `.env.local` 的 `AI_STOCKS_ADMIN_PASSWORD`；本地开发可用约定值，生产/共享环境必须改强密码 | 后端启动 seed/校准，缺失时随机生成并写启动日志 |
+| `debug_*` | RBAC 页面和接口权限验收账号，用于验证普通用户、租户管理员、最小权限、无权限等场景 | `.env.local` 的 `AI_STOCKS_TEST_USER_PASSWORD`；未设置时本地开发回落默认测试密码 | `python -m backend.cli dev-users` 创建/校准，`--list` 查看 |
+
+固定调试账号清单和使用规则见 [test-users.md](agent-works/multi-tenant-rbac/test-users.md)。页面或接口权限验收应按场景选择最小权限 `debug_*` 账号，不要默认用 `admin` 覆盖权限态、空权限态或 fail-closed 场景。
 
 两个脚本接口一致：`dev`(默认) / `stop` / `restart` / `status` / `logs`。后端日志 `logs/backend.log`，前端日志 `logs/frontend.log`。
 

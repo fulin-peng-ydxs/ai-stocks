@@ -6,8 +6,18 @@
 
 - 页面或接口验收前，先执行 `python -m backend.cli dev-users --list` 查看固定调试账号；账号缺失、角色漂移或权限异常时，执行 `python -m backend.cli dev-users` 重新校准。
 - 按测试场景选择最小权限账号：系统页用 system，租户管理用 tenant_admin，普通业务链路用 normal/paid，权限边界用 board_only、stocks_only、stocks_group、backtest_view。
+- `admin` 是 README 中的本地开发系统管理员账号，归属 `default` 租户，密码由 `.env.local` 的 `AI_STOCKS_ADMIN_PASSWORD` 控制；它不属于本清单的 `debug_*` 调试账号，不用于替代最小权限或无权限场景。
 - 不把固定调试账号作为 pytest 依赖；自动化后端用例继续在用例内创建临时用户。
 - 不在生产、共享公网或不确定环境创建或使用这些账号，不把测试密码写入需求、计划、提交信息或测试结论。
+
+## 与本地环境变量的关系
+
+| 账号体系 | 代表账号 | 环境变量 | 来源文件 | 用途 |
+| --- | --- | --- | --- | --- |
+| 平台系统管理员 | `admin` | `AI_STOCKS_ADMIN_PASSWORD` | `.env.local`，模板见 `.env.local.example` | 初始化、系统级运维、最高权限验收 |
+| RBAC 调试用户 | `debug_*` | `AI_STOCKS_TEST_USER_PASSWORD` | `.env.local`，模板见 `.env.local.example` | 页面和接口权限验收 |
+
+`.env.local` 是本机敏感配置文件，已被 Git 忽略；文档和提交只维护 `.env.local.example` 的变量说明，不记录真实密码。
 
 ## 维护命令
 
