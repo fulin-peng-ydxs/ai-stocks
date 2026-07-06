@@ -25,6 +25,8 @@ import os
 import secrets
 
 from backend.auth.constants import (
+    ASSET_PUBLIC_PUBLISH_RESOURCE_CODES,
+    ASSET_TENANT_PUBLISH_RESOURCE_CODES,
     BUSINESS_RESOURCE_CODES,
     ROLE_NORMAL,
     ROLE_PAID,
@@ -184,8 +186,12 @@ CREATE TABLE IF NOT EXISTS screen_profile (
     expression  TEXT,
     params      TEXT,
     is_preset   BOOLEAN,
+    visibility  TEXT NOT NULL DEFAULT 'private',
+    published_at TIMESTAMP,
+    published_by TEXT,
     created_at  TIMESTAMP,
     updated_at  TIMESTAMP,
+    CHECK (visibility IN ('private', 'tenant', 'public')),
     PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
@@ -240,8 +246,12 @@ CREATE TABLE IF NOT EXISTS trade_profile (
     sell_tree   TEXT,
     backstop    TEXT,
     is_preset   BOOLEAN,
+    visibility  TEXT NOT NULL DEFAULT 'private',
+    published_at TIMESTAMP,
+    published_by TEXT,
     created_at  TIMESTAMP,
     updated_at  TIMESTAMP,
+    CHECK (visibility IN ('private', 'tenant', 'public')),
     PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
@@ -336,8 +346,12 @@ CREATE TABLE IF NOT EXISTS backtest_run (
     params      TEXT,
     status      TEXT,
     detail      TEXT,
+    visibility  TEXT NOT NULL DEFAULT 'private',
+    published_at TIMESTAMP,
+    published_by TEXT,
     created_at  TIMESTAMP,
     finished_at TIMESTAMP,
+    CHECK (visibility IN ('private', 'tenant', 'public')),
     PRIMARY KEY (tenant_id, owner_user_id, id)
 );
 """
@@ -559,6 +573,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     duration_ms    INTEGER,
     error_summary  TEXT,
     context        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    changes        JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
@@ -681,6 +696,15 @@ _STAGE5_INDEXES: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_dict_item_type_enabled_sort ON dict_item (type_code, enabled, sort, code)",
 )
 
+_STAGE6_VISIBILITY_INDEXES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_screen_profile_visibility "
+    "ON screen_profile (visibility, tenant_id, owner_user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_trade_profile_visibility "
+    "ON trade_profile (visibility, tenant_id, owner_user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_backtest_run_visibility "
+    "ON backtest_run (visibility, tenant_id, owner_user_id)",
+)
+
 
 # ── RBAC seed 数据（内置角色 / 菜单树 / 功能点 / 默认授权；均可在角色管理页调整）──
 # 内置角色：id=code（稳定自然键，seed 幂等）。(code, name, kind, is_locked, description)
@@ -777,6 +801,8 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/screen", "screen-profile:view",   "查看筛选方案", "api", "GET",    "/api/profiles"),
     ("/screen", "screen-profile:save",   "保存筛选方案", "api", "POST",   "/api/profiles"),
     ("/screen", "screen-profile:delete", "删除筛选方案", "api", "DELETE", "/api/profiles/{pid}"),
+    ("/screen", "screen-profile:publish-tenant", "租户内公开筛选方案", "api", "POST", "/api/profiles/{pid}/visibility"),
+    ("/screen", "screen-profile:publish-public", "全体公开筛选方案",   "api", "POST", "/api/profiles/{pid}/visibility"),
     ("/screen", "screen:run",            "运行策略筛选", "api", "POST",   "/api/screen/run"),
     # B) 个股行情 + 自选分组（/stocks，login）
     ("/stocks", "stocks:view",               "查看个股行情", "api", "GET",    "/api/stocks"),
@@ -791,6 +817,8 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/backtest", "backtest:run",    "运行回测",     "api", "POST",   "/api/backtest/run"),
     ("/backtest", "backtest:robust", "稳健性测试",   "api", "POST",   "/api/backtest/robust"),
     ("/backtest", "backtest:delete", "删除回测记录", "api", "DELETE", "/api/backtest/runs/{run_id}"),
+    ("/backtest", "backtest:publish-tenant", "租户内公开回测记录", "api", "POST", "/api/backtest/runs/{run_id}/visibility"),
+    ("/backtest", "backtest:publish-public", "全体公开回测记录",   "api", "POST", "/api/backtest/runs/{run_id}/visibility"),
     # B) 盘感训练（/training，login）
     ("/training", "training:view",   "查看训练记录", "api", "GET",    "/api/training/sessions"),
     ("/training", "training:start",  "创建训练",     "api", "POST",   "/api/training/sessions"),
@@ -807,6 +835,8 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/system/config/trade", "trade-profile:save",    "保存买卖方案",     "api", "POST",   "/api/trade-profiles"),
     ("/system/config/trade", "trade-profile:delete",  "删除买卖方案",     "api", "DELETE", "/api/trade-profiles/{pid}"),
     ("/system/config/trade", "trade-profile:preview", "买卖条件试算",     "api", "POST",   "/api/trade-profiles/preview"),
+    ("/system/config/trade", "trade-profile:publish-tenant", "租户内公开买卖方案", "api", "POST", "/api/trade-profiles/{pid}/visibility"),
+    ("/system/config/trade", "trade-profile:publish-public", "全体公开买卖方案",   "api", "POST", "/api/trade-profiles/{pid}/visibility"),
     ("/system/config/system", "config:view",           "查看系统配置",     "api", "GET",    "/api/config"),
     ("/system/config/system", "config:reload",         "重载系统配置",     "api", "POST",   "/api/config/reload"),
     ("/system/config/tech", "indicator:def-manage",  "技术指标定义维护", "api", "POST",   "/api/indicators/def"),
@@ -841,9 +871,10 @@ _USER_RESOURCE_CODES: tuple[str, ...] = (
     "user:list", "user:create", "user:update",
     "user:disable", "user:reset-password", "user:delete")
 _TENANT_ADMIN_EXTRA_RESOURCE_CODES: tuple[str, ...] = (
-    "score-profile:publish-tenant", "audit:view")
+    "score-profile:publish-tenant", "audit:view", *ASSET_TENANT_PUBLISH_RESOURCE_CODES)
 _STAGE4_BUSINESS_GRANTS_MARKER = "migration.stage4_business_grants_v2"
 _STAGE5_PLATFORM_CAPABILITIES_MARKER = "migration.stage5_platform_capabilities_v1"
+_STAGE6_ASSET_VISIBILITY_MARKER = "migration.stage6_asset_visibility_v1"
 
 _STAGE5_APP_CONFIG_DEFAULTS: tuple[tuple[str, str], ...] = (
     ("auth.require_email_code", "true"),
@@ -906,6 +937,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     for idx_sql in _STAGE5_INDEXES:
         client.execute(idx_sql)
     _upgrade_score_profile_visibility(client)
+    _upgrade_stage6_asset_visibility(client)
     # layout 主键以 user_id 打头，补归属索引便于按 owner 统计；其余表复合主键已覆盖归属查询
     client.execute(
         "CREATE INDEX IF NOT EXISTS idx_layout_user_config_owner "
@@ -921,6 +953,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     seed_default_tenant(client)   # 先补 admin=system 的 role_code，供 seed_rbac 建 user_role 用
     seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 存量用户按 role_code 补 user_role
     seed_stage5_platform_capabilities(client)
+    seed_stage6_asset_visibility(client)
     return created
 
 
@@ -949,6 +982,36 @@ def _upgrade_score_profile_visibility(client: PostgresClient) -> None:
     client.execute(
         "CREATE INDEX IF NOT EXISTS idx_score_profile_visibility "
         "ON score_profile (visibility, tenant_id, owner_user_id)")
+
+
+def _add_visibility_columns(client: PostgresClient, table: str, constraint_name: str) -> None:
+    """为用户资产表补 private/tenant/public 可见性字段，兼容既有库。"""
+    client.execute(
+        f"ALTER TABLE {table} "
+        "ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'private'")
+    client.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS published_at TIMESTAMP")
+    client.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS published_by TEXT")
+    client.execute(
+        "DO $$ BEGIN "
+        "IF NOT EXISTS ("
+        f"SELECT 1 FROM pg_constraint WHERE conname='{constraint_name}'"
+        ") THEN "
+        f"ALTER TABLE {table} ADD CONSTRAINT {constraint_name} "
+        "CHECK (visibility IN ('private', 'tenant', 'public')); "
+        "END IF; END $$;",
+    )
+
+
+def _upgrade_stage6_asset_visibility(client: PostgresClient) -> None:
+    """补齐阶段六资产公开 DDL：筛选/买卖/回测可见性与审计字段变更。"""
+    _add_visibility_columns(client, "screen_profile", "screen_profile_visibility_check")
+    _add_visibility_columns(client, "trade_profile", "trade_profile_visibility_check")
+    _add_visibility_columns(client, "backtest_run", "backtest_run_visibility_check")
+    client.execute(
+        "ALTER TABLE audit_log "
+        "ADD COLUMN IF NOT EXISTS changes JSONB NOT NULL DEFAULT '[]'::jsonb")
+    for idx_sql in _STAGE6_VISIBILITY_INDEXES:
+        client.execute(idx_sql)
 
 
 def _resolve_admin_password() -> tuple[str, bool]:
@@ -1064,7 +1127,9 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
         if (
             code == "score:run"
             or code.startswith("score-profile:")
+            or code.startswith("screen-profile:")
             or code.startswith("trade-profile:")
+            or code.startswith("backtest:publish-")
             or code in {"config:view", "config:reload", "indicator:def-manage"}
         ):
             client.execute(
@@ -1251,6 +1316,54 @@ def _backfill_stage5_platform_grants(client: PostgresClient) -> None:
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
             "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
             [_STAGE5_PLATFORM_CAPABILITIES_MARKER, '{"applied":true}'],
+        )
+
+
+def seed_stage6_asset_visibility(client: PostgresClient | None = None) -> None:
+    """阶段六资产公开权限回填：tenant_admin 获得租户公开，public 仅 system。"""
+    client = client or get_pg_client()
+    marker = client.query_df(
+        "SELECT 1 FROM app_config WHERE key=%s", [_STAGE6_ASSET_VISIBILITY_MARKER])
+    if not marker.empty:
+        return
+
+    tenant_publish = list(ASSET_TENANT_PUBLISH_RESOURCE_CODES)
+    public_publish = list(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)
+    changed = 0
+    with client.transaction() as conn, conn.cursor() as cur:
+        for rid in tenant_publish:
+            cur.execute(
+                "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING",
+                [ROLE_TENANT_ADMIN, rid],
+            )
+            changed += max(cur.rowcount, 0)
+
+        cur.execute(
+            "DELETE FROM sys_role_resource "
+            "WHERE role_id IN (%s, %s) AND resource_id = ANY(%s)",
+            [ROLE_NORMAL, ROLE_PAID, tenant_publish + public_publish],
+        )
+        changed += max(cur.rowcount, 0)
+
+        cur.execute(
+            "DELETE FROM sys_role_resource "
+            "WHERE role_id=%s AND resource_id = ANY(%s)",
+            [ROLE_TENANT_ADMIN, public_publish],
+        )
+        changed += max(cur.rowcount, 0)
+
+        if changed:
+            cur.execute(
+                "UPDATE sys_user u SET perm_ver=perm_ver+1 "
+                "WHERE EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id "
+                "AND ur.role_id IN (%s, %s, %s))",
+                [ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID],
+            )
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
+            [_STAGE6_ASSET_VISIBILITY_MARKER, '{"applied":true}'],
         )
 
 

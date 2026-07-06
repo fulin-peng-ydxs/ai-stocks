@@ -9,7 +9,7 @@
   - 阶段六前已更新日志审计原型：[../prototypes/audit-log.html](../prototypes/audit-log.html)，详情抽屉新增 R24 字段变更表。
   - 页面设计闭环依据：[../../configurable-layout-system/page-template.md](../../configurable-layout-system/page-template.md) 与 [../../../DESIGN.md](../../../DESIGN.md)。
 - 功能目标：进入第六阶段，补齐体验增强项，并把原先独立排期的 R28 其他资产公开能力纳入本阶段。
-- 当前计划状态：待开始。
+- 当前计划状态：进行中（T1、T2 已完成，T3-T12 未开始）。
 - 计划输出目录：`agent-works/multi-tenant-rbac/stage6-experience-asset-visibility/`。
 - 本阶段纳入：
   - R22：token 静默刷新，避免长操作中 access token 过期直接打断。
@@ -364,13 +364,13 @@
 
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须实现 | R22 | token 静默刷新 | 前端单飞 refresh + 重放原请求 + 失败回登录 | T2 | 待开始 | 一致 | 后端 refresh 已存在，主要补前端 client |
+| 必须实现 | R22 | token 静默刷新 | 前端单飞 refresh + 重放原请求 + 失败回登录 | T2 | 已完成 | 一致 | 已补前端 client 静默刷新和专项测试 |
 | 必须实现 | R23 | 审计日志保留期自动清理 | 清理服务、CLI、复用 APScheduler 调度、测试和审计事件 | T3 | 待开始 | 一致 | 复用阶段五 `audit.retention_days` 与现有 scheduler |
 | 必须实现 | R24 | 字段级 from/to | `audit_log.changes`、采集 helper、审计页展示 | T4,T10 | 待开始 | 一致 | 原型已先更新 |
 | 必须实现 | R28-8 | 筛选方案公开 | `screen_profile` visible + API + ScreenView 接入 | T5,T6,T9,T11 | 待开始 | 一致 | 方案类资产复制为 private |
 | 必须实现 | R28-9 | 买卖方案公开 | `trade_profile` visible + API + ConfigView trade 接入 | T5,T7,T9,T11 | 待开始 | 一致 | 回测引用公开买卖方案时结果归 viewer |
 | 必须实现 | R28-10 | 回测记录公开 | `backtest_run` visible + API + BacktestView 接入 | T5,T8,T9,T11 | 待开始 | 一致 | 结果资产只读，可复用参数重跑 |
-| 必须实现 | R20/R21 延续 | 权限/按钮/接口闭环 | 新资源码、默认授权、扫描和页面权限测试 | T1,T11,T12 | 待开始 | 一致 | 防 fail-open |
+| 必须实现 | R20/R21 延续 | 权限/按钮/接口闭环 | 新资源码、默认授权、扫描和页面权限测试 | T1,T11,T12 | 进行中 | 一致 | T1 已完成 DDL/资源码/默认授权规划与测试，T11/T12 待后续阶段收口 |
 | 可选增强 | E1 | 公开资产来源/只读/范围标签统一 | 新增 `AssetVisibilityTag` 并接入三类 R28 资产和评分页回迁 | T9,T11,T12 | 待开始 | 一致 | 由原计划可选提升为必做 UI 资产闭环 |
 | 可选增强 | E2 | 回测历史来源筛选 | 回测历史增加“我的 / 租户公开 / 全体公开”筛选 | T8,T9,T11 | 待开始 | 一致 | 不新增公开广场，仅在历史区域内筛选 |
 | 可选增强 | E3 | 审计摘要展示清理任务最近执行结果 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 会改变审计页摘要信息架构，后续如需要先补原型 |
@@ -379,7 +379,7 @@
 
 ### 6.1 任务 T1：阶段六范围校准与 SQL/资源码规划
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：无
 - 涉及文件/模块：
   - `backend/storage/pg_ddl.py`
@@ -398,11 +398,11 @@
 - 边界与异常：新增字段必须默认 `private` 兼容历史数据；资源码回滚必须同步 bump 受影响用户 `perm_ver`。
 - 验证方式：资源码扫描测试覆盖新增接口；SQL diff 与 `pg_ddl.py` 保持一致；历史数据默认私有。
 - 完成标准：DDL/seed 计划和 §5 映射无遗漏，新增资源码不 fail-open。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成；`backend/storage/pg_ddl.py` 已补 `audit_log.changes`、`screen_profile/trade_profile/backtest_run.visibility/published_at/published_by`、合法值约束和可见性索引，并新增既有库幂等升级函数 `_upgrade_stage6_asset_visibility()`；`backend/auth/constants.py` 已新增阶段六 tenant/public publish 权限常量且未放入默认业务授权集合；`_SEED_RESOURCES` 已新增 6 个 publish 资源码，`seed_stage6_asset_visibility()` 用 `migration.stage6_asset_visibility_v1` 标记一次性回填 tenant_admin 的租户公开权限并清理 normal/paid 与 tenant_admin 的 public publish 误授权；已生成 SQL 留痕 `stage6-experience-asset-visibility.sql` 和 `resource-codes.sql`；`backend/tests/test_rbac_schema.py` 已补 T1 专项断言。验证：`python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_rbac_schema.py` 通过；`git diff --check` 通过；T1 相关 pytest `test_stage6_asset_visibility_schema_and_resources`、`test_stage6_asset_publish_grants_backfilled_for_tenant_admin`、`test_tenant_admin_has_tenant_publish_by_default`、`test_normal_role_business_only` 共 4 项通过。完整 `backend/tests/test_rbac_schema.py -q` 当前 12 passed、2 failed，失败点为本地既有库旧菜单 `menu_strategy_analysis` parent 残留与 system 旧菜单授权缺口，不属于本次 T1 新增 DDL/资源码断言。
 
 ### 6.2 任务 T2：R22 token 静默刷新
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T1
 - 涉及文件/模块：
   - `frontend/src/api/client.ts`
@@ -421,7 +421,7 @@
 - 边界与异常：refresh 请求不能递归进入自身；写请求只重放一次；refresh token 失效、账号禁用、租户禁用或 `perm_ver` 失配都必须清态。
 - 验证方式：mock 两个并发 401 只触发一次 refresh；refresh 成功重放请求；refresh 失败跳登录。
 - 完成标准：不会重复弹“会话失效”，不会 refresh 递归。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成；`frontend/src/api/authToken.ts` 已新增 `getRefreshToken()` 和 `updateTokens()`；`frontend/src/api/client.ts` 已实现 401 静默 refresh 单飞、`_retry` 重放保护、登录/注册/refresh 排除、低层 `fetch('/api/auth/refresh')` 避免 axios 拦截器递归、刷新失败清态跳登录；新增 `frontend/src/api/__tests__/client-refresh.spec.ts` 覆盖并发两个 401 只触发一次 refresh、刷新成功后用新 access token 重放原请求、刷新失败清理本地 auth。验证：`cd frontend && npm run test -- src/api/__tests__/client-refresh.spec.ts` 通过（2 tests）；`cd frontend && npm run build` 通过；`git diff --check` 通过。
 
 ### 6.3 任务 T3：R23 审计自动清理
 
@@ -680,7 +680,7 @@
   - 具体完成情况：待验证。
 - 接口测试：
   - 计划：screen/trade/backtest visible list/detail/versions/publish/copy/delete；refresh 单飞和失败回登录。
-  - 具体完成情况：待验证。
+  - 具体完成情况：R22 前端请求层已验证 refresh 单飞、成功重放和失败清态：`cd frontend && npm run test -- src/api/__tests__/client-refresh.spec.ts` 通过（2 tests）。screen/trade/backtest visible 接口待 T6/T7/T8/T11 实现后验证。
 - 页面/交互测试：
   - 计划：AuditLogView 字段变更；ScreenView 公开筛选方案只读/复制/发布；ConfigView trade 公开买卖方案只读/复制/发布；BacktestView 公开历史只读、来源筛选、删除隐藏、复用参数。
   - 具体完成情况：待验证。
@@ -689,13 +689,13 @@
   - 具体完成情况：待验证。
 - 权限与数据范围测试：
   - 计划：publish-tenant 默认 tenant_admin/system；publish-public 默认 system；无角色用户 fail-closed；跨租户 tenant 不可见，public 可见，private 不可见；非 owner 保存、删除、发布均 403。
-  - 具体完成情况：待验证。
+  - 具体完成情况：T1 已验证资源码和默认授权规划：`python -m pytest backend/tests/test_rbac_schema.py::test_stage6_asset_visibility_schema_and_resources backend/tests/test_rbac_schema.py::test_stage6_asset_publish_grants_backfilled_for_tenant_admin backend/tests/test_rbac_schema.py::test_tenant_admin_has_tenant_publish_by_default backend/tests/test_rbac_schema.py::test_normal_role_business_only -q` 通过（4 passed）。接口级 owner/非 owner 保存、删除、发布 403 待 T6/T7/T8/T11 实现后验证。
 - 回归测试：
   - 计划：阶段四评分方案公开能力专项；阶段五审计/字典/系统设置专项；全量前端 build。
   - 具体完成情况：待验证。
 - 异常与边界测试：
   - 计划：refresh 递归保护、重复写请求只重放一次、审计保留期非法值 fail-safe、running/failed 回测禁止公开、回测从表按 run 真实 owner 读取。
-  - 具体完成情况：待验证。
+  - 具体完成情况：R22 已覆盖 refresh 请求不走 `http` 拦截器、401 原请求只设置一次 `_retry`、并发 refresh 单飞；其余审计/回测边界待 T3/T8/T11 验证。
 - 图示与原型一致性验证：
   - 计划：`AuditLogView` 实现必须匹配 `prototypes/audit-log.html` 的详情抽屉顺序、字段变更空态、列头和长值换行；其他页面为既有页面局部增强，不新增原型。
   - 具体完成情况：待验证。
@@ -704,7 +704,7 @@
   - 具体完成情况：待验证。
 - 需求映射验证：
   - 计划：检查 §3.1、§3.2、§5、§6 任务编号一致，状态值仅使用 `待开始/进行中/已完成/阻塞/跳过`。
-  - 具体完成情况：待验证。
+  - 具体完成情况：T1/T2 已回写 §5 和 §6：R22 行标为已完成，R20/R21 延续行标为进行中，T1/T2 标为已完成；T3-T12 仍保持待开始，未连续开发后续任务。
 - 页面功能点验证：
   - 计划：验证 §4.10 每个页面功能点都有技术实现、任务编号、交互状态和异常处理验证。
   - 具体完成情况：待验证。

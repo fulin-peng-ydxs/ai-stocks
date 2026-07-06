@@ -703,11 +703,13 @@
 - **验收基线**：阶段五初版后端专项 `33 passed`（`test_stage5_config_t2.py`、`test_stage5_auth_config.py`、`test_stage5_audit.py`、`test_stage5_audit_collection.py`、`test_stage5_dicts.py`、`test_stage5_resource_codes.py`），前端全量 `npm run test -- --run` 为 `21 passed` 测试文件、`212 passed` 用例，`npm run build` 通过。缺陷整改复测：后端认证/审计/字典/DDL 专项 `38 passed`，前端审计/字典/系统设置/登录验证码/AppFilterSelect/阶段五路由专项 `30 passed`，`npm run build` 通过；`/system/audit`、`/system/dicts`、`/system/config/system` 在 5181 预览下完成三档视口截图、审计目标关键词查询、数据字典状态筛选、分页、目标中文说明、系统设置分类 Tab 和页面可见错误态复核；登录图形验证码开启即展示、提交即校验由单测和后端 API 回归覆盖。
 - **范围边界回写**：R23 自动清理任务未纳入阶段五；阶段五只实现 `audit.retention_days=90` 配置、后端默认查询窗口和页面提示。R24 字段级 from→to、R22 静默刷新、R25/R26/R27 仍按后续建议或暂不实现处理。
 
-**阶段六：体验增强 + 其他资产公开能力** — 🟡 **计划中**（分支 `codex/multi-tenant-rbac-stage6`）
+**阶段六：体验增强 + 其他资产公开能力** — 🟡 **进行中**（分支 `codex/multi-tenant-rbac-stage6`）
 - 覆盖需求：R22、R23、R24、R28（评分方案之外的筛选方案、买卖方案、回测记录）
 - 目标：静默刷新、审计保留期清理、字段级变更对比，并以阶段四 B 的评分方案公开模型为基线扩展其他资产可见性。
 - 里程碑：长操作不被 token 过期打断；审计表可控增长；关键变更可见 from/to；筛选/买卖/回测公开资产只读可见、owner 可发布/收回、方案类资产可复制为自己的 private。
 - **开发计划**：[stage6-experience-asset-visibility/plan.md](stage6-experience-asset-visibility/plan.md)。
+- **当前进度**：T1 已完成 DDL/资源码规划、幂等迁移入口、SQL 留痕和 T1 专项测试；T2 已完成 token 静默刷新；T3-T12 尚未开始。
+- **开发产物索引（T1-T2）**：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/tests/test_rbac_schema.py`、`frontend/src/api/client.ts`、`frontend/src/api/authToken.ts`、`frontend/src/api/__tests__/client-refresh.spec.ts`、[stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql](stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql)、[stage6-experience-asset-visibility/resource-codes.sql](stage6-experience-asset-visibility/resource-codes.sql)。
 - **范围边界**：本阶段不做公开市场、审批流、收藏、搜索广场、运营推荐、计费联动；不扩展自选股分组、盘感训练记录、布局配置、系统配置、字典或数据任务为公开资产。
 
 **独立需求（排期待定，非上述任一阶段的既定内容）**

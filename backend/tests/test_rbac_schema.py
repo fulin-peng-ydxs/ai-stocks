@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 from backend.auth.constants import (
+    ASSET_PUBLIC_PUBLISH_RESOURCE_CODES,
+    ASSET_TENANT_PUBLISH_RESOURCE_CODES,
     ROLE_NORMAL,
     ROLE_PAID,
     ROLE_SYSTEM,
@@ -17,11 +19,13 @@ from backend.auth.constants import (
 )
 from backend.storage.pg_ddl import (
     _STAGE4_BUSINESS_GRANTS_MARKER,
+    _STAGE6_ASSET_VISIBILITY_MARKER,
     _SEED_MENU_TREE,
     _SEED_RESOURCES,
     _USER_RESOURCE_CODES,
     _flatten_menu_tree,
     seed_rbac,
+    seed_stage6_asset_visibility,
 )
 
 RBAC_TABLES = (
@@ -141,6 +145,8 @@ def test_normal_role_business_only(pg):
     } <= resources
     assert "score-profile:publish-tenant" not in resources
     assert "score-profile:publish-public" not in resources
+    assert not set(ASSET_TENANT_PUBLISH_RESOURCE_CODES) & resources
+    assert not set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) & resources
     assert not any(c.startswith("user:") or c.startswith("role:") or c.startswith("tenant:")
                    for c in resources)
 
@@ -151,6 +157,80 @@ def test_tenant_admin_has_tenant_publish_by_default(pg):
         [ROLE_TENANT_ADMIN])["resource_id"])
     assert "score-profile:publish-tenant" in resources
     assert "score-profile:publish-public" not in resources
+    assert set(ASSET_TENANT_PUBLISH_RESOURCE_CODES) <= resources
+    assert not set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) & resources
+
+
+def test_stage6_asset_visibility_schema_and_resources(pg):
+    cols = pg.query_df(
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_name = ANY(%s) AND column_name = ANY(%s)",
+        [
+            ["audit_log", "screen_profile", "trade_profile", "backtest_run"],
+            ["changes", "visibility", "published_at", "published_by"],
+        ],
+    )
+    by_table = {
+        table: set(group["column_name"])
+        for table, group in cols.groupby("table_name")
+    }
+    assert by_table["audit_log"] >= {"changes"}
+    assert by_table["screen_profile"] >= {"visibility", "published_at", "published_by"}
+    assert by_table["trade_profile"] >= {"visibility", "published_at", "published_by"}
+    assert by_table["backtest_run"] >= {"visibility", "published_at", "published_by"}
+
+    constraints = set(pg.query_df(
+        "SELECT conname FROM pg_constraint WHERE conname = ANY(%s)",
+        [[
+            "screen_profile_visibility_check",
+            "trade_profile_visibility_check",
+            "backtest_run_visibility_check",
+        ]],
+    )["conname"])
+    assert {
+        "screen_profile_visibility_check",
+        "trade_profile_visibility_check",
+        "backtest_run_visibility_check",
+    } <= constraints
+
+    seeded = set(pg.query_df(
+        "SELECT id FROM sys_resource WHERE id = ANY(%s)",
+        [list(ASSET_TENANT_PUBLISH_RESOURCE_CODES + ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)],
+    )["id"])
+    assert set(ASSET_TENANT_PUBLISH_RESOURCE_CODES + ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) <= seeded
+
+
+def test_stage6_asset_publish_grants_backfilled_for_tenant_admin(pg):
+    uid = "stage6_backfill_tenant_admin"
+    pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+    pg.execute(
+        "INSERT INTO sys_user (id, tenant_id, account, role_code, perm_ver, status) "
+        "VALUES (%s, 'pytest', %s, %s, 0, 'active')",
+        [uid, uid, ROLE_TENANT_ADMIN],
+    )
+    pg.execute(
+        "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        [uid, ROLE_TENANT_ADMIN],
+    )
+    try:
+        pg.execute("DELETE FROM app_config WHERE key=%s", [_STAGE6_ASSET_VISIBILITY_MARKER])
+        pg.execute(
+            "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id = ANY(%s)",
+            [ROLE_TENANT_ADMIN, list(ASSET_TENANT_PUBLISH_RESOURCE_CODES)],
+        )
+
+        seed_stage6_asset_visibility(pg)
+
+        resources = set(pg.query_df(
+            "SELECT resource_id FROM sys_role_resource WHERE role_id=%s",
+            [ROLE_TENANT_ADMIN])["resource_id"])
+        perm_ver = int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert set(ASSET_TENANT_PUBLISH_RESOURCE_CODES) <= resources
+        assert not set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) & resources
+        assert perm_ver == 1
+    finally:
+        pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
 
 
 def test_stage4_business_grants_backfilled_for_existing_builtin_roles(pg):

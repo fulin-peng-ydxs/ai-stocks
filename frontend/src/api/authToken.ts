@@ -35,3 +35,12 @@ export function clearAuth(): void {
 export function getAccessToken(): string {
   return readAuth().accessToken
 }
+
+export function getRefreshToken(): string {
+  return readAuth().refreshToken
+}
+
+export function updateTokens(accessToken: string, refreshToken: string): void {
+  const snap = readAuth()
+  writeAuth({ ...snap, accessToken, refreshToken })
+}
