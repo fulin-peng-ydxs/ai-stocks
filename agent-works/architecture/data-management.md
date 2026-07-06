@@ -37,7 +37,7 @@
 |----|-----------|------|------|
 | L1 入库闸门 | `null_close` / `ohl_repaired` | 采集时即时记录 | 逐(code,日) |
 | L2 字段契约 | `mv_missing` | 整股从没采过 total_mv/float_mv | 整股 |
-| | `mv_gap` | 近 90 交易日逐日 total_mv 缺口 | code 聚合（detail 写区间）|
+| | `mv_gap` | 近 90 交易日逐日市值字段缺口（`total_mv`/`float_mv` 任一为空或缺行） | code 聚合（detail 写区间）|
 | L3 正确性 | `abnormal_change` | `\|涨跌\|>板块上限+0.5%` | 逐(code,日) |
 | | `adj_jump` | 相邻日前复权价跳变>50% | 逐(code,日) |
 | L4 覆盖鲜活 | `data_gap` / `stale` | 近 90 交易日内部缺口/尾部滞后（扣已确认停牌） | 整股 |
@@ -47,7 +47,7 @@
 - **`ignored` 豁免**：L3 按 (code,类型,日期) 精确豁免；L2/L4 按 (code,类型) 整股豁免。
 
 ### 数据体检（`backend/services/data_verify.py`，与质检互补）
-`DataVerifier` 做**结构/正确性/字段契约**逐行核查（孤儿行、键对齐、日历一致、OHLC 序、复权因子、整列字段缺失、在市股逐行市值无缺失），只读不写台账，结果以 PASS/FAIL 报告呈现（`run_structured`）。能查出质检盲区（如在市股逐行 total_mv 缺失）。可选联网交叉验证（实时重拉对比原价/前复权价），仅 CLI 用。
+`DataVerifier` 做**结构/正确性/字段契约**逐行核查（孤儿行、键对齐、日历一致、OHLC 序、复权因子、整列字段缺失、在市股逐行市值无缺失），只读不写台账，结果以 PASS/FAIL 报告呈现（`run_structured`）。可选联网交叉验证（实时重拉对比原价/前复权价），仅 CLI 用。
 
 ### 异步任务执行模型（终止 / 续跑 / 三类采集差异，[async_task.py](../../backend/services/async_task.py)、[ingest.py](../../backend/services/ingest.py)）
 
@@ -160,7 +160,7 @@
 | `null_close` | L1 入库闸门 | 收盘价为空或非法 | 单日/单股重采 | K线、指标、榜单、回测 |
 | `ohl_repaired` | L1 入库闸门 | 开高低异常被收盘价修补 | 核对后重采或忽略 | K线展示、涨跌停判断 |
 | `mv_missing` | L2 字段契约 | 整股从未采到市值 | 补市值 | 市值筛选、股票池过滤 |
-| `mv_gap` | L2 字段契约 | 近端逐日总市值缺口 | `valuation --fill-gaps` 或页面修复 | 市值条件与质量分 |
+| `mv_gap` | L2 字段契约 | 近端逐日市值字段缺口 | `valuation --fill-gaps` 或页面修复 | 市值条件与质量分 |
 | `abnormal_change` | L3 正确性 | 涨跌幅超过板块上限缓冲 | 重采或人工标记正常 | 回测撮合、涨跌停判断 |
 | `adj_jump` | L3 正确性 | 前复权价格跳变异常 | 重采整段并重算复权 | K线、收益率、指标 |
 | `data_gap` | L4 覆盖鲜活 | 近 90 交易日中间缺日 | 缺口收口/重采 | 指标连续性、筛选和回测 |
@@ -261,7 +261,7 @@ flowchart LR
 
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
-| <span style="color:#dc2626">●</span> 高 | `total_mv` 单数据源、无兜底 | 东财单只 `stock_value_em` 异常时，当日总市值会缺；流通市值不受影响 | 通过 `mv_gap` 质检可见并补修；后续寻找第二总市值源 |
+| <span style="color:#dc2626">●</span> 高 | `total_mv` 单数据源、无兜底 | 东财单只 `stock_value_em` 异常时，当日总市值会缺；流通市值主源来自日线、估值源兜底 | 通过 `mv_gap` 质检可见并补修；后续寻找第二总市值源 |
 | <span style="color:#f59e0b">●</span> 中 | 日常补 `total_mv` 约 5000 次/日单只请求 | 提高并发可提速，但会增加源端封禁风险 | 在配置里权衡限流/并发，优先稳定 |
 | <span style="color:#f59e0b">●</span> 中 | 缺口大时 `mv_gap` 台账量大 | 新交易日大面积未补/存量未回补时，质检会一次写入数千条 `mv_gap`（已去掉上限，与概览口径一致） | 跑 `valuation --fill-gaps` 或一键恢复后台账随之清零 |
 | <span style="color:#f59e0b">●</span> 中 | L3 既有问题存量 | 多为新股、退市整理期、复牌或粗粒度复权残留 | 人工核对后标记正常或重采，逐步收敛 |

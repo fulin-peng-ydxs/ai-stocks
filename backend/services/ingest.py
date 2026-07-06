@@ -311,7 +311,7 @@ class IngestionService:
     # ── 估值/市值（总市值/总股本，补 G2）──
     def ingest_valuation(self, codes: list[str] | None = None, years: int | None = None,
                          concurrency: int | None = None, ctx=None) -> dict:
-        """补每日总市值到 daily_metrics.total_mv，并把最新总/流通股本写入 stock_basic。
+        """补每日市值字段到 daily_metrics，并把最新总/流通股本写入 stock_basic。
 
         数据源 stock_value_em（东财市值接口，可用）。按在市股逐只拉取。
         concurrency（与 update 同款）：>1 时线程池并发拉取，每线程独立 DataSource，
@@ -326,9 +326,11 @@ class IngestionService:
         if codes:
             live = [c for c in live if c in codes]
         val_src = self._source_for("valuation")  # 校验能力可用（串行直接用，并发用线程局部源）
-        # 断点续跑：跳过已有 total_mv 的票
+        # 断点续跑：跳过已同时具备 total_mv 与 float_mv 的票；只缺流通市值的旧数据也要补。
         done = set(self.repo.c.query_df(
-            "SELECT DISTINCT code FROM daily_metrics WHERE total_mv IS NOT NULL"
+            "SELECT code FROM daily_metrics GROUP BY code "
+            "HAVING count(*) FILTER (WHERE total_mv IS NOT NULL) > 0 "
+            "   AND count(*) FILTER (WHERE float_mv IS NOT NULL) > 0"
         )["code"].tolist())
         pending = [c for c in live if c not in done]
         skip = len(live) - len(pending)
@@ -337,7 +339,7 @@ class IngestionService:
         n = len(pending)
         if ctx:
             ctx.set_phase("valuation_history", phase_total=n, phase_done=0, current_item=None)
-            ctx.log(f"子任务：历史总市值补采开始，目标 {len(live)} 只，跳过 {skip} 只，待补 {n} 只，区间 {start}~{end}")
+            ctx.log(f"子任务：历史市值字段补采开始，目标 {len(live)} 只，跳过 {skip} 只，待补 {n} 只，区间 {start}~{end}")
             ctx.flush()
 
         def _one(code: str, source) -> int:
@@ -347,16 +349,16 @@ class IngestionService:
             if ctx:
                 ctx.set_phase("valuation_history", phase_total=n, phase_done=i)
             if i % 20 == 0 or i == n:
-                log.info("估值进度 %d/%d（成功%d 失败%d 跳过%d，total_mv %d行）",
+                log.info("估值进度 %d/%d（成功%d 失败%d 跳过%d，写入 %d行）",
                          i, n, ok, fail, skip, rows)
                 if ctx:
-                    ctx.log(f"历史总市值补采进度 {i}/{n}：成功{ok} 失败{fail} 跳过{skip}，写入 {rows} 行")
+                    ctx.log(f"历史市值字段补采进度 {i}/{n}：成功{ok} 失败{fail} 跳过{skip}，写入 {rows} 行")
                     ctx.flush()
 
         def _fail(code: str, e: Exception) -> None:
             log.warning("%s 估值入库失败: %s", code, e)
             if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查（warn 级，不刷屏进度行）
-                ctx.log(f"{code} 历史总市值补采失败（{start}~{end}，源 {val_src.name}）：{e}", "warn")
+                ctx.log(f"{code} 历史市值字段补采失败（{start}~{end}，源 {val_src.name}）：{e}", "warn")
             self.repo.log_update("daily_metrics", val_src.name, start, end, 0, "failed", f"{code}: {e}")
 
         if concurrency <= 1:  # 串行（默认，最稳）
@@ -397,7 +399,7 @@ class IngestionService:
                     if not done_futs:
                         if ctx and now - last_heartbeat >= 10:
                             last_heartbeat = now
-                            ctx.log(f"历史总市值补采等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
+                            ctx.log(f"历史市值字段补采等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
                             ctx.flush()
                         continue
                     for fut in done_futs:
@@ -415,16 +417,16 @@ class IngestionService:
         result = {"target": len(live), "ok": ok, "skip": skip, "fail": fail, "total_mv_rows": rows}
         log.info("估值入库完成: %s", result)
         if ctx:
-            ctx.log(f"子任务：历史总市值补采完成，成功{ok} 跳过{skip} 失败{fail}，写入 {rows} 行")
+            ctx.log(f"子任务：历史市值字段补采完成，成功{ok} 跳过{skip} 失败{fail}，写入 {rows} 行")
         return result
 
     def ingest_valuation_latest(self, trade_date: date | None = None,
                                 codes: list[str] | None = None,
                                 concurrency: int | None = None, ctx=None) -> dict:
-        """补『最新交易日』的 total_mv：对当日仍缺 total_mv 的在市股，逐只调单只估值接口取最新市值。
+        """补『最新交易日』的市值：对当日仍缺 total_mv/float_mv 的在市股，逐只取最新市值。
 
         治 P1：ingest_valuation 整股跳过已有 total_mv 的票 → 已采票的新交易日永远补不到。
-        这里不靠它，直接对"当日有日线但 total_mv 仍空"的在市股逐只 _valuation_one(code, 当日, 当日)，
+        这里不靠它，直接对"当日有日线但市值字段不完整"的在市股逐只 _valuation_one(code, 当日, 当日)，
         用东财单只 stock_value_em 取真实总市值（准、稳，与 reconcile_gaps 收口同口径）。
         codes 给定时仅补这些票；concurrency 同 ingest_valuation（默认配置值，>1 并发提速）。
         """
@@ -433,11 +435,16 @@ class IngestionService:
             if r.empty or pd.isna(r.iloc[0]["d"]):
                 return {"trade_date": None, "ok": 0, "fail": 0, "total_mv_rows": 0}
             trade_date = pd.Timestamp(r.iloc[0]["d"]).date()
-        sql = ("SELECT m.code AS code FROM daily_metrics m JOIN stock_basic sb ON sb.code = m.code "
-               "WHERE m.trade_date = ? AND sb.delist_date IS NULL AND m.total_mv IS NULL")
+        sql = (
+            "SELECT b.code AS code FROM daily_bar b "
+            "JOIN stock_basic sb ON sb.code = b.code "
+            "LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date "
+            "WHERE b.trade_date = ? AND sb.delist_date IS NULL "
+            "AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL)"
+        )
         params: list = [trade_date]
         if codes:
-            sql += f" AND m.code IN ({','.join('?' * len(codes))})"
+            sql += f" AND b.code IN ({','.join('?' * len(codes))})"
             params += list(codes)
         pending = self.repo.c.query_df(sql, params)["code"].tolist()
         concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
@@ -445,11 +452,11 @@ class IngestionService:
         done_latest = set(ctx.checkpoint.get("valuation_latest_done_codes") or []) if (ctx and ctx.checkpoint) else set()
         pending = [c for c in pending if c not in done_latest]
         n = len(pending)
-        log.info("补最新日市值：%s 有 %d 只在市股缺 total_mv，逐只取最新市值", trade_date, n)
+        log.info("补最新日市值：%s 有 %d 只在市股缺市值字段，逐只取最新市值", trade_date, n)
         if ctx:
             ctx.set_phase("valuation_latest", phase_total=n, phase_done=0, current_item=None,
                           valuation_latest_done_codes=sorted(done_latest))
-            ctx.log(f"子任务：最新日总市值补采开始，交易日 {trade_date}，待补 {n} 只")
+            ctx.log(f"子任务：最新日市值补采开始，交易日 {trade_date}，待补 {n} 只")
             ctx.flush()
 
         def _one(code: str, source) -> int:
@@ -467,14 +474,14 @@ class IngestionService:
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
                     if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
-                        ctx.log(f"{code} 最新日总市值补采失败（{trade_date}）：{e}", "warn")
+                        ctx.log(f"{code} 最新日市值补采失败（{trade_date}）：{e}", "warn")
                 done_latest.add(code)
                 if i % 20 == 0 or i == n:
-                    log.info("补最新日市值进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
+                    log.info("补最新日市值进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                     if ctx:
                         ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
                                       valuation_latest_done_codes=sorted(done_latest))
-                        ctx.log(f"最新日总市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
+                        ctx.log(f"最新日市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
                         ctx.flush()
         else:
             import threading
@@ -501,7 +508,7 @@ class IngestionService:
                     if not done_futs:
                         if ctx and now - last_heartbeat >= 10:
                             last_heartbeat = now
-                            ctx.log(f"最新日总市值补采等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
+                            ctx.log(f"最新日市值补采等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
                             ctx.flush()
                         continue
                     for fut in done_futs:
@@ -515,33 +522,36 @@ class IngestionService:
                         except Exception as e:  # noqa: BLE001
                             fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
                             if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
-                                ctx.log(f"{code} 最新日总市值补采失败（{trade_date}）：{e}", "warn")
+                                ctx.log(f"{code} 最新日市值补采失败（{trade_date}）：{e}", "warn")
                         done_latest.add(code)
                         if i % 20 == 0 or i == n:
-                            log.info("补最新日市值进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
+                            log.info("补最新日市值进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                             if ctx:
                                 ctx.set_phase("valuation_latest", phase_total=n, phase_done=i, current_item=code,
                                               valuation_latest_done_codes=sorted(done_latest))
-                                ctx.log(f"最新日总市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
+                                ctx.log(f"最新日市值补采进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
                                 ctx.flush()
         result = {"trade_date": str(trade_date), "ok": ok, "fail": fail, "total_mv_rows": rows}
         log.info("补最新日市值完成: %s", result)
         if ctx:
-            ctx.log(f"子任务：最新日总市值补采完成，成功{ok} 失败{fail}，写入 {rows} 行")
+            ctx.log(f"子任务：最新日市值补采完成，成功{ok} 失败{fail}，写入 {rows} 行")
         return result
 
     def ingest_valuation_gaps(self, codes: list[str] | None = None,
                               concurrency: int | None = None, ctx=None) -> dict:
-        """一次性历史回补（WS2）：补所有『有 daily_bar 但 total_mv 为空』的在市股缺口。
+        """一次性历史回补（WS2）：补所有『有 daily_bar 但市值字段不完整』的在市股缺口。
 
-        与 ingest_valuation 的整股断点续跑互补——后者整股跳过已有 total_mv 的票，故它们的
-        历史缺失天（如 P1 遗留的存量缺口）补不到；这里逐(code,缺失区间)驱动 per-stock 回补。
+        与 ingest_valuation 的整股断点续跑互补——逐(code,缺失区间)驱动 per-stock 回补。
         一次性低并发跑一轮即可清干净；之后由 ingest_valuation_latest 每日维持不再产生新缺口。
         """
         gap = self.repo.c.query_df(
-            "SELECT m.code AS code, min(m.trade_date) AS lo, max(m.trade_date) AS hi, "
-            "count(*) AS n FROM daily_metrics m JOIN stock_basic sb ON sb.code = m.code "
-            "WHERE sb.delist_date IS NULL AND m.total_mv IS NULL GROUP BY m.code")
+            "SELECT b.code AS code, min(b.trade_date) AS lo, max(b.trade_date) AS hi, "
+            "count(*) AS n FROM daily_bar b "
+            "JOIN stock_basic sb ON sb.code = b.code "
+            "LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date "
+            "WHERE sb.delist_date IS NULL "
+            "AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL) "
+            "GROUP BY b.code")
         if codes:
             gap = gap[gap["code"].isin(set(codes))]
         pending = [(r["code"], pd.Timestamp(r["lo"]).date(), pd.Timestamp(r["hi"]).date())
@@ -551,11 +561,11 @@ class IngestionService:
         done_gap_codes = set(ctx.checkpoint.get("valuation_gap_done_codes") or []) if (ctx and ctx.checkpoint) else set()
         pending = [it for it in pending if it[0] not in done_gap_codes]
         n = len(pending)
-        log.info("市值缺口回补开始：%d 只在市股有 total_mv 缺口", n)
+        log.info("市值缺口回补开始：%d 只在市股有市值字段缺口", n)
         if ctx:
             ctx.set_phase("valuation_gap", phase_total=n, phase_done=0, current_item=None,
                           valuation_gap_done_codes=sorted(done_gap_codes))
-            ctx.log(f"子任务：总市值缺口回补开始，待补 {n} 只")
+            ctx.log(f"子任务：市值缺口回补开始，待补 {n} 只")
             ctx.flush()
 
         def _one(item, source) -> int:
@@ -573,14 +583,14 @@ class IngestionService:
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
                     if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
-                        ctx.log(f"{item[0]} 总市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
+                        ctx.log(f"{item[0]} 市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
                 done_gap_codes.add(item[0])
                 if i % 20 == 0 or i == n:
-                    log.info("市值回补进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
+                    log.info("市值回补进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                     if ctx:
                         ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=item[0],
                                       valuation_gap_done_codes=sorted(done_gap_codes))
-                        ctx.log(f"总市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
+                        ctx.log(f"市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
                         ctx.flush()
         else:
             import threading
@@ -607,7 +617,7 @@ class IngestionService:
                     if not done_futs:
                         if ctx and now - last_heartbeat >= 10:
                             last_heartbeat = now
-                            ctx.log(f"总市值缺口回补等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
+                            ctx.log(f"市值缺口回补等待中：已完成 {i}/{n}，在途 {len(pending_futs)}，外部接口返回后继续")
                             ctx.flush()
                         continue
                     for fut in done_futs:
@@ -621,19 +631,19 @@ class IngestionService:
                         except Exception as e:  # noqa: BLE001
                             fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
                             if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
-                                ctx.log(f"{item[0]} 总市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
+                                ctx.log(f"{item[0]} 市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
                         done_gap_codes.add(item[0])
                         if i % 20 == 0 or i == n:
-                            log.info("市值回补进度 %d/%d（成功%d 失败%d，total_mv %d行）", i, n, ok, fail, rows)
+                            log.info("市值回补进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                             if ctx:
                                 ctx.set_phase("valuation_gap", phase_total=n, phase_done=i, current_item=item[0],
                                               valuation_gap_done_codes=sorted(done_gap_codes))
-                                ctx.log(f"总市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
+                                ctx.log(f"市值缺口回补进度 {i}/{n}：成功{ok} 失败{fail}，写入 {rows} 行")
                                 ctx.flush()
         result = {"target": n, "ok": ok, "fail": fail, "total_mv_rows": rows}
         log.info("市值缺口回补完成: %s", result)
         if ctx:
-            ctx.log(f"子任务：总市值缺口回补完成，成功{ok} 失败{fail}，写入 {rows} 行")
+            ctx.log(f"子任务：市值缺口回补完成，成功{ok} 失败{fail}，写入 {rows} 行")
         return result
 
     def _record_issues(self, code: str, trade_dates, issue_type: str, detail: str) -> None:

@@ -91,12 +91,16 @@ class DataIntegrityReport:
         sig = self.c.query_df(
             "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
             "(SELECT count(*) FROM daily_bar) bars, "
+            "(SELECT count(*) FROM daily_metrics) metrics, "
             "(SELECT count(*) FROM data_quality_issue WHERE status='open') openi, "
             "(SELECT count(*) FROM stock_suspension) susp, "
-            "(SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL) mvnull").iloc[0]
-        # mvnull 纳入签名：L2 现依赖逐日 total_mv 缺口，补市值后（bars/issues 可能没变）须让缓存失效
+            "(SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL OR float_mv IS NULL) mvnull"
+        ).iloc[0]
+        # metrics/mvnull 纳入签名：L2 依赖逐日市值缺口，补市值后（bars/issues 可能没变）
+        # 须让缓存失效；metrics 变化覆盖 daily_metrics 整行缺失被补齐的场景。
         key = (id(self.c), str(sig["latest"]), int(sig["bars"]),
-               int(sig["openi"]), int(sig["susp"]), int(sig["mvnull"]), int(window_days))
+               int(sig["metrics"]), int(sig["openi"]), int(sig["susp"]),
+               int(sig["mvnull"]), int(window_days))
         if _FRAME_CACHE["key"] == key and _FRAME_CACHE["frame"] is not None:
             return _FRAME_CACHE["frame"], _FRAME_CACHE["latest"]
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
@@ -114,12 +118,34 @@ class DataIntegrityReport:
             "SELECT code, count(*) FILTER (WHERE total_mv IS NOT NULL) tmv, "
             "count(*) FILTER (WHERE float_mv IS NOT NULL) fmv FROM daily_metrics GROUP BY code")
         mv_map = {r["code"]: (int(r["tmv"]), int(r["fmv"])) for _, r in mv.iterrows()}
-        # 窗口内逐日 total_mv 缺口（L2 统一口径：与 mv_missing/data_gap/stale 同一份 frame、同一窗口）
+        # 窗口内逐日市值缺口（L2 统一口径：与 mv_missing/data_gap/stale 同一份 frame、同一窗口）。
+        # 以 daily_bar 为基准，daily_metrics 整行缺失、total_mv 缺失、float_mv 缺失都算近端缺口。
         mvgap = self.c.query_df(
-            "SELECT code, count(*) g, min(trade_date) lo, max(trade_date) hi "
-            "FROM daily_metrics WHERE trade_date >= ? AND total_mv IS NULL GROUP BY code", [win_lo])
-        mvgap_map = {r["code"]: (int(r["g"]), pd.Timestamp(r["lo"]).date(), pd.Timestamp(r["hi"]).date())
-                     for _, r in mvgap.iterrows()}
+            """
+            SELECT b.code,
+                   count(*) AS g,
+                   count(*) FILTER (WHERE m.code IS NULL OR m.total_mv IS NULL) AS total_g,
+                   count(*) FILTER (WHERE m.code IS NULL OR m.float_mv IS NULL) AS float_g,
+                   count(*) FILTER (
+                       WHERE m.code IS NULL OR (m.total_mv IS NULL AND m.float_mv IS NULL)
+                   ) AS both_g,
+                   min(b.trade_date) AS lo,
+                   max(b.trade_date) AS hi
+            FROM daily_bar b
+            JOIN stock_basic sb ON sb.code = b.code
+            LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
+            WHERE sb.delist_date IS NULL
+              AND b.trade_date >= ?
+              AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL)
+            GROUP BY b.code
+            """, [win_lo])
+        mvgap_map = {
+            r["code"]: (
+                int(r["g"]), int(r["total_g"]), int(r["float_g"]), int(r["both_g"]),
+                pd.Timestamp(r["lo"]).date(), pd.Timestamp(r["hi"]).date(),
+            )
+            for _, r in mvgap.iterrows()
+        }
         iss = self.c.query_df(
             "SELECT code, count(*) tot, "
             "count(*) FILTER (WHERE issue_type IN ('null_close','ohl_repaired')) l1, "
@@ -144,11 +170,26 @@ class DataIntegrityReport:
             tmv, fmv = mv_map.get(code, (0, 0))
             tot, l1, l3 = iss_map.get(code, (0, 0, 0))
             mv_ok = tmv > 0 and fmv > 0
-            mvg_days, mvg_lo, mvg_hi = mvgap_map.get(code, (0, None, None))
-            mv_detail = ("" if mv_ok and mvg_days == 0
-                         else "缺总市值与流通市值" if tmv == 0 and fmv == 0
-                         else "缺总市值" if tmv == 0 else "缺流通市值"
-                         if fmv == 0 else f"近端缺总市值 {mvg_days} 天（{mvg_lo}~{mvg_hi}）")
+            mvg_days, mvg_total, mvg_float, mvg_both, mvg_lo, mvg_hi = mvgap_map.get(
+                code, (0, 0, 0, 0, None, None)
+            )
+            if mv_ok and mvg_days == 0:
+                mv_detail = ""
+            elif tmv == 0 and fmv == 0:
+                mv_detail = "缺总市值与流通市值"
+            elif tmv == 0:
+                mv_detail = "缺总市值"
+            elif fmv == 0:
+                mv_detail = "缺流通市值"
+            else:
+                parts = []
+                if mvg_total:
+                    parts.append(f"总市值 {mvg_total} 天")
+                if mvg_float:
+                    parts.append(f"流通市值 {mvg_float} 天")
+                if mvg_both and mvg_both != mvg_total and mvg_both != mvg_float:
+                    parts.append(f"二者均缺 {mvg_both} 天")
+                mv_detail = f"近端缺{'、'.join(parts)}（{mvg_lo}~{mvg_hi}）"
             base = {"code": code, "name": name, "mv_ok": mv_ok, "mv_detail": mv_detail,
                     "mv_gap_days": mvg_days,
                     "mv_gap_lo": str(mvg_lo) if mvg_lo else None,
@@ -277,7 +318,7 @@ class DataIntegrityReport:
         if n == 0:
             return {"score": 100, "latest_trade_date": latest_s, "by_layer": empty_layers,
                     "gaps": {"stocks_with_gap": 0, "gap_days_total": 0, "latest_trade_date": latest_s}}
-        # L2 统一口径：整股有值（非"从没采过"）且近端无逐日 total_mv 缺口（与质检 mv_missing+mv_gap 一致）
+        # L2 统一口径：整股有值（非"从没采过"）且近端无逐日市值字段缺口（与质检 mv_missing+mv_gap 一致）
         l2_ok = df["mv_ok"] & (df["mv_gap_days"] == 0)
         ok = {
             "L1": df["l1_open"] == 0,
@@ -465,16 +506,16 @@ class DataIntegrityReport:
                              "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
                                        f"（自 {r['stale_lo']} 起）"})
                 l4_stale += 1
-        # L2 逐日总市值缺口：在市股「有日线但 total_mv 为空」的近端缺口，按 code 聚合一条
+        # L2 逐日市值缺口：在市股「有日线但市值字段为空/缺行」的近端缺口，按 code 聚合一条
         # （detail 写缺失区间）。直接读同一份 frame 的 mv_gap_days（与概览/逐股 L2 完全统一，
         # 同窗口同数据），命中多少写多少——与概览口径一致，台账不再静默。
         l2_gap = 0
         for _, r in frame.iterrows():
             code = r["code"]
-            if int(r["mv_gap_days"]) > 0 and (code, "mv_gap") not in ig_coarse:
+            if bool(r["mv_ok"]) and int(r["mv_gap_days"]) > 0 and (code, "mv_gap") not in ig_coarse:
                 rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
-                             "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天缺总市值"
-                                       f"（需补总市值）：{r['mv_gap_lo']}~{r['mv_gap_hi']}"})
+                             "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天市值字段缺口"
+                                       f"（需补市值）：{r['mv_detail']}"})
                 l2_gap += 1
         self._insert_issues(rows)
         return {"abnormal_change_rows": len(ab_rows), "adj_jump_rows": adj,
@@ -492,15 +533,17 @@ class DataIntegrityReport:
                 "count(*) FILTER (WHERE float_mv IS NOT NULL) f FROM daily_metrics WHERE code=?", [code]).iloc[0]
             return int(r["t"]) > 0 and int(r["f"]) > 0
         if issue_type == "mv_gap":
-            # L2 逐日缺口：近端窗口内不再有「有日线但 total_mv 为空」的天
+            # L2 逐日缺口：近端窗口内不再有「有日线但市值字段为空/缺行」的天
             n = self._scalar(
-                """SELECT count(*) FROM daily_metrics m
-                   JOIN stock_basic sb ON sb.code = m.code
-                   WHERE m.code = ? AND sb.delist_date IS NULL AND m.total_mv IS NULL
-                     AND m.trade_date >= (
+                """SELECT count(*) FROM daily_bar b
+                   JOIN stock_basic sb ON sb.code = b.code
+                   LEFT JOIN daily_metrics m ON m.code = b.code AND m.trade_date = b.trade_date
+                   WHERE b.code = ? AND sb.delist_date IS NULL
+                     AND (m.code IS NULL OR m.total_mv IS NULL OR m.float_mv IS NULL)
+                     AND b.trade_date >= (
                          SELECT min(trade_date) FROM (
                              SELECT trade_date FROM trade_calendar
-                             WHERE is_open AND trade_date <= (SELECT max(trade_date) FROM daily_metrics)
+                             WHERE is_open AND trade_date <= (SELECT max(trade_date) FROM daily_bar)
                              ORDER BY trade_date DESC LIMIT ?))""", [code, window_days])
             return int(n) == 0
         if issue_type in ("data_gap", "stale"):

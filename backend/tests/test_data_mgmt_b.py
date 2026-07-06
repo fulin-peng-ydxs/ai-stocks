@@ -138,8 +138,14 @@ def _seed_market(c):
     c.execute("INSERT INTO daily_bar (code, trade_date, close, is_suspended) "
               "SELECT code, trade_date, close, is_suspended FROM _b")
     c.unregister("_b")
-    # L2 字段契约（M2.9.3）：total_mv 与 float_mv 都须有
-    c.execute("INSERT INTO daily_metrics (code, trade_date, total_mv, float_mv) VALUES ('A.SH', DATE '2024-01-05', 1e10, 8e9)")
+    # L2 字段契约：A 的有行情日期均具备 total_mv 与 float_mv。
+    metrics = pd.DataFrame(
+        [{"code": "A.SH", "trade_date": date(2024, 1, d), "total_mv": 1e10, "float_mv": 8e9}
+         for d in (2, 3, 4, 5)]
+    )
+    c.register_df("_m", metrics)
+    c.execute("INSERT INTO daily_metrics SELECT code, trade_date, float_mv, total_mv FROM _m")
+    c.unregister("_m")
 
 
 def test_stock_quality_freshness(client):
@@ -154,15 +160,23 @@ def test_stock_quality_freshness(client):
 
 
 # ── 系统设置（FR-DM-12）──
+def _fake_request():
+    """save_settings 需 Request（仅用于审计取 IP/method/path）：造最小 ASGI scope。"""
+    from starlette.requests import Request
+    return Request({"type": "http", "method": "POST", "path": "/api/data/settings",
+                    "headers": [], "query_string": b"", "client": ("127.0.0.1", 0),
+                    "scheme": "http", "server": ("testserver", 80)})
+
+
 def test_settings_view_and_save(client):
     from backend.api.data_admin import get_settings_view, save_settings
     view = get_settings_view().data
     assert any(g["key"] == "datasource" for g in view["groups"])
     # 保存覆盖
-    resp = save_settings({"updates": {"backtest.top_n": 33}})
+    resp = save_settings({"updates": {"backtest.top_n": 33}}, _fake_request())
     assert resp.code == 0
     from backend.config import get_effective_settings
     assert get_effective_settings().backtest.top_n == 33
     # 非法值被拒
-    bad = save_settings({"updates": {"datasource.update_concurrency": 0}})
+    bad = save_settings({"updates": {"datasource.update_concurrency": 0}}, _fake_request())
     assert bad.code == 400

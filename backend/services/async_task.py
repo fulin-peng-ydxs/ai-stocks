@@ -656,7 +656,7 @@ def _h_checkup(params: dict, ctx: TaskContext) -> dict:
     """数据结构体检（DataVerifier）：本地 SQL 的结构/价格正确性/字段契约核查，返回结构化报告。
 
     与质检（_h_verify 写台账+修复闭环）互补：体检查结构合法性与整列/逐行缺失（含质检盲区的
-    在市股逐行 total_mv 缺失），只读、不写台账。cross=True 时附加联网交叉验证（默认关闭）。
+    在市股逐行市值字段缺失），只读、不写台账。cross=True 时附加联网交叉验证（默认关闭）。
     """
     from backend.services.data_verify import DataVerifier
     cross = bool(params.get("cross", False))
@@ -722,11 +722,11 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
         affected: list = []
         note = ""
         if issue_type == "mv_missing":
-            ctx.log(f"恢复(L2 字段契约)：拉取 {code} 估值，补总市值")
+            ctx.log(f"恢复(L2 字段契约)：拉取 {code} 估值，补市值字段")
             res = _call_with_ctx(ing.ingest_valuation, codes=[code], ctx=ctx)
             note = f"补市值 {res.get('total_mv_rows', 0)} 行"
         elif issue_type == "mv_gap":
-            ctx.log(f"恢复(L2 逐日缺口)：补 {code} 的 total_mv 缺失天")
+            ctx.log(f"恢复(L2 逐日缺口)：补 {code} 的市值字段缺失天")
             res = _call_with_ctx(ing.ingest_valuation_gaps, codes=[code], ctx=ctx)
             note = f"补市值缺口 {res.get('total_mv_rows', 0)} 行"
         elif issue_type in ("data_gap", "stale"):
@@ -778,7 +778,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     """质检问题定向恢复（FR-DM-4，DM-D22）：按问题类型分派恢复手段 → 复检 → 仅复检通过才置已解决。
 
     支持单条 `issue_id` 或批量 `issue_ids`（单写者模型下，批量在一个任务内顺序恢复，逐条写实时日志）。
-    - mv_missing(L2)        → ingest_valuation([code])（补市值，不是重拉行情）
+    - mv_missing(L2)        → ingest_valuation([code])（补市值字段，不是重拉行情）
     - data_gap/stale(L4)    → 反向重采缺口区间：补回的入库；源端仍无数据的确认为停牌写 stock_suspension（收敛）
     - null_close/abnormal   → 重采该单日；adj_jump → 重采该股整段 + 重算复权
     复检由 DataIntegrityReport.recheck_clean 判定：通过 → resolved；未通过 → 保持 open。

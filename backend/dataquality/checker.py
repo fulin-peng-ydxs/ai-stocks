@@ -123,8 +123,8 @@ SEVERITY_BY_TYPE: dict[str, str] = {
     "abnormal_change": "mid",
     "ohl_repaired": "low",
     "null_close": "mid",       # 收盘价空/非正被丢弃——原始数据缺损（M2.9 L1 入库闸门）
-    "mv_missing": "low",       # 总市值缺失——字段契约不全（M2.9.2 L2）
-    "mv_gap": "mid",           # 近端逐日总市值缺口（已采票新天补不到，WS4 P2）——逐日缺、code 聚合
+    "mv_missing": "low",       # 市值字段整股缺失——字段契约不全（M2.9.2 L2）
+    "mv_gap": "mid",           # 近端逐日市值字段缺口（total_mv/float_mv）——逐日缺、code 聚合
     "data_gap": "mid",         # 存续期缺口（疑似漏采，待重采反向确认）（M2.9.2 L4）
     "stale": "mid",            # 尾部鲜活滞后（最新<全局最新交易日）（M2.9.2 L4）
 }

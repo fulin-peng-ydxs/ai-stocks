@@ -57,8 +57,13 @@ def _seed(c):
               "SELECT code, trade_date, close, is_suspended FROM _b")
     c.unregister("_b")
     # A 四层全绿：L2 契约要求 total_mv 与 float_mv 都在
-    c.execute("INSERT INTO daily_metrics (code, trade_date, total_mv, float_mv) "
-              "VALUES ('A.SH', DATE '2024-01-05', 1e10, 8e9)")
+    metrics = pd.DataFrame(
+        [{"code": "A.SH", "trade_date": date(2024, 1, d), "total_mv": 1e10, "float_mv": 8e9}
+         for d in (2, 3, 4, 5)]
+    )
+    c.register_df("_m", metrics)
+    c.execute("INSERT INTO daily_metrics SELECT code, trade_date, float_mv, total_mv FROM _m")
+    c.unregister("_m")
 
 
 # ── 分层质量模型 + 全局评分（DM-D15）──
@@ -267,6 +272,34 @@ def test_scan_emits_four_layers(client):
     assert {"mv_missing", "data_gap"} <= types
 
 
+def test_scan_emits_mv_gap_for_recent_float_mv_gap(client):
+    """近端只缺 float_mv 也属于 L2 市值字段缺口，复用 mv_gap 台账与修复闭环。"""
+    cal = pd.DataFrame({"trade_date": [date(2024, 1, d) for d in (2, 3)], "is_open": True})
+    client.register_df("_cal_float_gap", cal)
+    client.execute("INSERT INTO trade_calendar SELECT trade_date, is_open FROM _cal_float_gap")
+    client.unregister("_cal_float_gap")
+    client.execute("INSERT INTO stock_basic (code, name, delist_date, list_date) "
+                   "VALUES ('A.SH','甲公司',NULL, DATE '2024-01-02')")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES "
+                   "('A.SH', DATE '2024-01-02', 10.0),"
+                   "('A.SH', DATE '2024-01-03', 11.0)")
+    client.execute("INSERT INTO daily_metrics (code, trade_date, total_mv, float_mv) VALUES "
+                   "('A.SH', DATE '2024-01-02', 1e10, 8e9),"
+                   "('A.SH', DATE '2024-01-03', 1.1e10, NULL)")
+
+    rep = DataIntegrityReport(client)
+    qm = rep.quality_model()
+    assert {l["layer"]: l for l in qm["by_layer"]}["L2"]["pass_stocks"] == 0
+    res = rep.scan_quality_issues()
+    assert res["mv_missing_rows"] == 0
+    assert res["mv_gap_rows"] == 1
+    issue = client.query_df(
+        "SELECT issue_type, detail FROM data_quality_issue WHERE code='A.SH' AND status='open'"
+    ).iloc[0]
+    assert issue["issue_type"] == "mv_gap"
+    assert "流通市值" in issue["detail"]
+
+
 def test_suspension_excluded_from_gap(client):
     """确认停牌后，缺口口径减去它（DM-D20）→ B 不再算缺口。"""
     rep = DataIntegrityReport(client)
@@ -356,6 +389,41 @@ def test_recover_mv_missing_via_valuation(client, monkeypatch):
         return {"total_mv_rows": 1}
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr(ingest.IngestionService, "ingest_valuation", _val, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    svc = AsyncTaskService(client)
+    _wait(svc, svc.create("fix", {"issue_id": iid}))
+    assert client.query_df("SELECT status FROM data_quality_issue WHERE id=?", [iid]).iloc[0]["status"] == "resolved"
+
+
+def test_recover_mv_gap_fills_float_mv_gap(client, monkeypatch):
+    """mv_gap 恢复走估值缺口补采；只缺 float_mv 时复检也必须能 resolved。"""
+    cal = pd.DataFrame({"trade_date": [date(2024, 1, d) for d in (2, 3)], "is_open": True})
+    client.register_df("_cal_float_fix", cal)
+    client.execute("INSERT INTO trade_calendar SELECT trade_date, is_open FROM _cal_float_fix")
+    client.unregister("_cal_float_fix")
+    client.execute("INSERT INTO stock_basic (code, name, delist_date, list_date) "
+                   "VALUES ('A.SH','甲公司',NULL, DATE '2024-01-02')")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES "
+                   "('A.SH', DATE '2024-01-02', 10.0),"
+                   "('A.SH', DATE '2024-01-03', 11.0)")
+    client.execute("INSERT INTO daily_metrics (code, trade_date, total_mv, float_mv) VALUES "
+                   "('A.SH', DATE '2024-01-02', 1e10, 8e9),"
+                   "('A.SH', DATE '2024-01-03', 1.1e10, NULL)")
+    rep = DataIntegrityReport(client)
+    rep.scan_quality_issues()
+    iid = int(client.query_df(
+        "SELECT id FROM data_quality_issue WHERE code='A.SH' AND issue_type='mv_gap'"
+    ).iloc[0]["id"])
+
+    from backend.services import ingest
+
+    def _fill_gap(self, codes=None, concurrency=None, ctx=None):
+        client.execute("UPDATE daily_metrics SET float_mv=9e9 "
+                       "WHERE code='A.SH' AND trade_date=DATE '2024-01-03'")
+        return {"total_mv_rows": 0}
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_valuation_gaps", _fill_gap, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     svc = AsyncTaskService(client)
     _wait(svc, svc.create("fix", {"issue_id": iid}))
@@ -610,12 +678,15 @@ def test_valuation_fills_missing_float_mv_only(client, monkeypatch):
     from backend.services import ingest
     from backend.storage.repository import MarketRepository
 
-    # A：已有 float_mv(新浪写)但缺 total_mv；B：完全缺市值(模拟 baostock 兜底票)
-    client.execute("INSERT INTO stock_basic (code, name) VALUES ('A.SH','甲'),('B.SH','乙')")
+    # A：已有 float_mv(新浪写)但缺 total_mv；B：完全缺市值；C：已有 total_mv 但缺 float_mv。
+    client.execute("INSERT INTO stock_basic (code, name) VALUES ('A.SH','甲'),('B.SH','乙'),('C.SH','丙')")
     client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) VALUES "
-                   "('A.SH', DATE '2026-06-12', 10.0, 9.9), ('B.SH', DATE '2026-06-12', 20.0, 19.9)")
+                   "('A.SH', DATE '2026-06-12', 10.0, 9.9),"
+                   "('B.SH', DATE '2026-06-12', 20.0, 19.9),"
+                   "('C.SH', DATE '2026-06-12', 30.0, 29.9)")
     client.execute("INSERT INTO daily_metrics (code, trade_date, float_mv, total_mv) "
-                   "VALUES ('A.SH', DATE '2026-06-12', 111.0, NULL)")
+                   "VALUES ('A.SH', DATE '2026-06-12', 111.0, NULL),"
+                   "('C.SH', DATE '2026-06-12', NULL, 777.0)")
 
     class _Val:
         name = "akshare"
@@ -637,8 +708,43 @@ def test_valuation_fills_missing_float_mv_only(client, monkeypatch):
     rows = client.query_df("SELECT code, total_mv, float_mv FROM daily_metrics ORDER BY code")
     a = rows[rows["code"] == "A.SH"].iloc[0]
     b = rows[rows["code"] == "B.SH"].iloc[0]
+    c = rows[rows["code"] == "C.SH"].iloc[0]
     assert a["total_mv"] == 999.0 and a["float_mv"] == 111.0   # total 补上，float 不被覆盖
     assert b["total_mv"] == 999.0 and b["float_mv"] == 888.0   # 兜底票 total/float 都补上
+    assert c["total_mv"] == 999.0 and c["float_mv"] == 888.0   # 只有 float 缺口也不能被整股跳过
+
+
+def test_valuation_latest_with_codes_fills_missing_metrics_row(client, monkeypatch):
+    """指定股票补最新日市值时，daily_metrics 整行缺失也应按 daily_bar 命中。"""
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.storage.repository import MarketRepository
+
+    client.execute("INSERT INTO stock_basic (code, name) VALUES ('B.SH','乙')")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) "
+                   "VALUES ('B.SH', DATE '2026-06-12', 20.0, 19.9)")
+
+    class _Val:
+        name = "akshare"
+        def supports(self, cap): return True
+        def get_valuation(self, code, start, end):
+            return pd.DataFrame({"code": [code], "trade_date": [date(2026, 6, 12)],
+                                 "total_mv": [999.0], "float_mv": [888.0],
+                                 "total_share": [100], "float_share": [80]})
+
+    def _init(self, source=None):
+        self.s = get_effective_settings()
+        self.c = client
+        self.repo = MarketRepository(client)
+        self.src = _Val()
+        self._bao = None
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    res = ingest.IngestionService().ingest_valuation_latest(codes=["B.SH"])
+
+    row = client.query_df("SELECT total_mv, float_mv FROM daily_metrics WHERE code='B.SH'").iloc[0]
+    assert res["total_mv_rows"] == 1
+    assert row["total_mv"] == 999.0 and row["float_mv"] == 888.0
 
 
 # ── 历史补数：仅有部分近期数据的股票(被兜底/中断补了近窗口)必须重补早期历史，不能误跳过 ──
