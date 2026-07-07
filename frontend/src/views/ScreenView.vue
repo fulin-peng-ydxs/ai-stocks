@@ -17,6 +17,8 @@ import {
 import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
+import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
+import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -241,22 +243,6 @@ const canEditProfileVisibility = computed(() =>
 function profileKey(p: Profile): string {
   return p.profile_ref || p.id
 }
-function profileSourceLabel(p: Profile): string {
-  if (p.is_preset) return '系统内置'
-  if (p.source === 'tenant') return '租户公开'
-  if (p.source === 'public') return '全体公开'
-  return '我的方案'
-}
-function profileVisibilityLabel(visibility: 'private' | 'tenant' | 'public' = profileVisibility.value): string {
-  if (visibility === 'tenant') return '租户公开'
-  if (visibility === 'public') return '全体公开'
-  return '私有'
-}
-function profileVisibilityTagType(visibility: 'private' | 'tenant' | 'public' = profileVisibility.value): 'info' | 'success' | 'warning' {
-  if (visibility === 'tenant') return 'success'
-  if (visibility === 'public') return 'warning'
-  return 'info'
-}
 async function loadProfiles() {
   // 次级加载按自身 view 码优雅降级：无 screen-profile:view 的部分授权角色（如只授 screen:run）
   // 不拉方案列表、也不因此 403 卡住页面主体（筛选构建/运行仍可用）。默认业务角色含该码不受影响。
@@ -379,10 +365,6 @@ async function publishProfile(visibility: 'private' | 'tenant' | 'public') {
     visibilitySaving.value = false
   }
 }
-function onProfileVisibilityCommand(command: string | number | object) {
-  if (command !== 'private' && command !== 'tenant' && command !== 'public') return
-  publishProfile(command)
-}
 function nextCopyProfileId(base: string): string {
   const root = (base || 'screen').replace(/[^\w-]/g, '_') || 'screen'
   const mineIds = new Set(profiles.value.filter((p) => p.source === 'mine').map((p) => p.id))
@@ -467,60 +449,30 @@ onMounted(async () => {
       <div class="load-row">
         <span class="hint">载入方案</span>
         <el-select v-model="loadId" placeholder="选系统内置/我的方案（可选）" clearable filterable style="width: 280px">
-          <el-option
-            v-for="p in profiles"
-            :key="profileKey(p)"
-            :label="`${p.name}（${profileSourceLabel(p)}）`"
-            :value="profileKey(p)"
-          >
+          <el-option v-for="p in profiles" :key="profileKey(p)" :label="p.name" :value="profileKey(p)">
             <span>{{ p.name }}</span>
-            <el-tag
-              size="small"
-              effect="plain"
-              :type="p.source === 'tenant' ? 'success' : p.source === 'public' ? 'warning' : 'info'"
+            <AssetVisibilityTag
+              mode="source"
+              :source="p.is_preset ? 'preset' : p.source"
+              :owner-label="p.owner_label"
+              label-mine="我的方案"
               style="margin-left: 8px"
-            >
-              {{ profileSourceLabel(p) }}
-            </el-tag>
+            />
           </el-option>
         </el-select>
         <span class="ver-link" v-if="loadedProfile" title="点击查看历史版本" @click="openVersions">v{{ loadedProfile.version }}</span>
-        <el-dropdown
-          v-if="canEditProfileVisibility"
-          trigger="click"
-          :hide-on-click="true"
-          @command="onProfileVisibilityCommand"
-        >
-          <el-tag class="visibility-trigger" :type="profileVisibilityTagType()" size="small" effect="plain">
-            {{ profileVisibilityLabel() }}
-          </el-tag>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="private" :disabled="profileVisibility === 'private' || visibilitySaving">
-                私有
-              </el-dropdown-item>
-              <el-dropdown-item command="tenant" :disabled="profileVisibility === 'tenant' || !canPublishTenant || visibilitySaving">
-                租户公开
-              </el-dropdown-item>
-              <el-dropdown-item command="public" :disabled="profileVisibility === 'public' || !canPublishPublic || visibilitySaving">
-                全体公开
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <el-tag v-else-if="loadedProfile" :type="profileVisibilityTagType()" size="small" effect="plain">
-          {{ profileVisibilityLabel() }}
-        </el-tag>
-        <el-tag v-if="profileReadonly" size="small" type="info" effect="plain">只读</el-tag>
-        <el-button
-          v-if="profileReadonly"
-          v-permission="'screen-profile:save'"
-          plain
-          size="small"
-          @click="copyCurrentProfile"
-        >
-          复制为我的方案
-        </el-button>
+        <AssetVisibilityActions
+          v-if="loadedProfile"
+          :visibility="profileVisibility"
+          :readonly="profileReadonly"
+          :can-publish-tenant="canPublishTenant"
+          :can-publish-public="canPublishPublic"
+          :saving="visibilitySaving"
+          :copy-visible="profileReadonly"
+          copy-permission="screen-profile:save"
+          @publish="publishProfile"
+          @copy="copyCurrentProfile"
+        />
         <el-button text size="small" @click="clearAll">清空</el-button>
       </div>
 
@@ -801,9 +753,6 @@ onMounted(async () => {
 }
 .ver-link:hover {
   background: var(--el-color-primary-light-7);
-}
-.visibility-trigger {
-  cursor: pointer;
 }
 .readonly-builder {
   opacity: 0.82;

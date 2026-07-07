@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
 import { computeBoard, type BoardRow } from '@/api/board'
 import {
   runBacktest, prepareBacktest, listRuns, getRun, deleteRun, runRobust, setRunVisibility,
@@ -21,6 +20,8 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
+import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
+import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTradeDates } from '@/composables/useTradeDates'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -217,30 +218,6 @@ const canPublishTenant = computed(() =>
 const canPublishPublic = computed(() =>
   hasPermission(auth.role, auth.permissions, 'backtest:publish-public'),
 )
-const canEditRunVisibility = computed(() =>
-  !!selectedRunSummary.value
-  && !selectedRunReadonly.value
-  && (canPublishTenant.value || canPublishPublic.value),
-)
-
-function visibilityLabel(visibility: Visibility = selectedRunSummary.value?.visibility || 'private'): string {
-  if (visibility === 'tenant') return '租户公开'
-  if (visibility === 'public') return '全体公开'
-  return '私有'
-}
-
-function visibilityTagType(visibility: Visibility = selectedRunSummary.value?.visibility || 'private'): 'info' | 'success' | 'warning' {
-  if (visibility === 'tenant') return 'success'
-  if (visibility === 'public') return 'warning'
-  return 'info'
-}
-
-function runSourceLabel(r?: RunSummary): string {
-  if (!r?.source || r.source === 'mine') return '我的'
-  if (r.source === 'tenant') return '租户公开'
-  return '全体公开'
-}
-
 // 卖出原因命中的具体指标（卖树部分命中时）：解析 exit_detail(JSON 数组)；全命中/非卖树返回空
 function sellTags(row: TradeRow): string[] {
   if (!row.exit_detail) return []
@@ -276,8 +253,7 @@ const runOptions = computed(() =>
       color: ret == null ? '' : ret >= 0 ? 'var(--market-up-color)' : 'var(--market-down-color)',
       retTxt: ret == null ? '' : (ret >= 0 ? '+' : '') + (ret * 100).toFixed(1) + '%',
       source: r.source,
-      sourceLabel: runSourceLabel(r),
-      sourceType: r.source === 'tenant' ? 'success' : r.source === 'public' ? 'warning' : 'primary',
+      ownerLabel: r.owner_label,
     }
   }),
 )
@@ -460,10 +436,6 @@ async function publishRunVisibility(visibility: Visibility) {
   } finally {
     runVisibilitySaving.value = false
   }
-}
-
-function onRunVisibilityCommand(command: string | number | object) {
-  if (typeof command === 'string') publishRunVisibility(command as Visibility)
 }
 
 async function reuseCurrentRunParams() {
@@ -882,55 +854,28 @@ async function openTradeChart(row: TradeRow) {
           <el-select v-model="selectedRun" style="width: 340px" @change="loadRun(selectedRun)" size="default">
             <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
               <span :style="{ color: o.color, fontWeight: 600 }">{{ o.label }}</span>
-              <el-tag
-                size="small"
-                effect="plain"
-                :type="o.sourceType"
+              <AssetVisibilityTag
+                mode="source"
+                :source="o.source"
+                :owner-label="o.ownerLabel"
                 style="margin-left: 8px"
-              >
-                {{ o.sourceLabel }}
-              </el-tag>
+              />
               <span class="opt-range">{{ o.range }} <b :style="{ color: o.color }">{{ o.retTxt }}</b></span>
             </el-option>
           </el-select>
-          <el-dropdown
-            v-if="canEditRunVisibility"
-            trigger="click"
-            :hide-on-click="true"
-            @command="onRunVisibilityCommand"
-          >
-            <el-tag
-              class="visibility-trigger"
-              :type="visibilityTagType()"
-              size="small"
-              effect="plain"
-            >
-              {{ visibilityLabel() }}
-              <el-icon class="visibility-arrow"><ArrowDown /></el-icon>
-            </el-tag>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="private" :disabled="selectedRunSummary?.visibility === 'private' || runVisibilitySaving">
-                  私有
-                </el-dropdown-item>
-                <el-dropdown-item command="tenant" :disabled="selectedRunSummary?.visibility === 'tenant' || !canPublishTenant || runVisibilitySaving">
-                  租户公开
-                </el-dropdown-item>
-                <el-dropdown-item command="public" :disabled="selectedRunSummary?.visibility === 'public' || !canPublishPublic || runVisibilitySaving">
-                  全体公开
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <el-tag
-            v-else-if="selectedRunSummary"
-            :type="visibilityTagType(selectedRunSummary.visibility || 'private')"
-            size="small"
-            effect="plain"
-          >
-            {{ visibilityLabel(selectedRunSummary.visibility || 'private') }}
-          </el-tag>
-          <el-button :disabled="!selectedRun" @click="reuseCurrentRunParams" title="复用当前选中历史回测参数">复用参数</el-button>
+          <AssetVisibilityActions
+            :show-visibility="!!selectedRunSummary"
+            :visibility="selectedRunSummary?.visibility || 'private'"
+            :readonly="selectedRunReadonly"
+            :can-publish-tenant="canPublishTenant"
+            :can-publish-public="canPublishPublic"
+            :saving="runVisibilitySaving"
+            :reuse-visible="true"
+            reuse-permission="backtest:run"
+            :reuse-disabled="!selectedRun"
+            @publish="publishRunVisibility"
+            @reuse="reuseCurrentRunParams"
+          />
           <el-button v-permission="'backtest:delete'" v-if="!selectedRunReadonly" :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
           <span v-if="!runHistory.length && historySource !== 'all'" class="hist-empty">无公开记录</span>
         </div>
@@ -1391,8 +1336,6 @@ async function openTradeChart(row: TradeRow) {
 .hist { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .opt-range { float: right; color: var(--el-text-color-secondary); font-size: 12px; margin-left: 18px; }
 .hist-empty { color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
-.visibility-trigger { cursor: pointer; user-select: none; }
-.visibility-arrow { margin-left: 4px; font-size: 11px; vertical-align: -1px; }
 .dlg-legend { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; font-size: 12px; }
 .dlg-legend .lg.buy { color: #3b82f6; font-weight: 600; }
 .dlg-legend .lg.sell { color: #f5a623; font-weight: 600; }

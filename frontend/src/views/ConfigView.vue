@@ -2,7 +2,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
 import {
   copyScoreProfile,
   deleteIndicatorDef,
@@ -24,6 +23,8 @@ import {
   type ScoreProfileVersion,
   type ScoreRunRow,
 } from '@/api/scoreProfile'
+import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
+import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -327,17 +328,6 @@ const canPublishPublic = computed(() =>
 const canEditProfileVisibility = computed(() =>
   !!curRef.value && !isNew.value && !profileReadonly.value && (canPublishTenant.value || canPublishPublic.value),
 )
-const profileVisibilityLabel = computed(() => {
-  if (profileVisibility.value === 'tenant') return '租户公开'
-  if (profileVisibility.value === 'public') return '全体公开'
-  return '私有'
-})
-const profileVisibilityTagType = computed(() => {
-  if (profileVisibility.value === 'tenant') return 'success'
-  if (profileVisibility.value === 'public') return 'warning'
-  return 'info'
-})
-
 const weightSum = computed(() =>
   Math.round(items.value.reduce((s, it) => s + (it.weight || 0), 0) * 100),
 )
@@ -549,11 +539,6 @@ async function publishScoreProfile(visibility: 'private' | 'tenant' | 'public') 
   }
 }
 
-function onProfileVisibilityCommand(command: string | number | object) {
-  if (command !== 'private' && command !== 'tenant' && command !== 'public') return
-  publishScoreProfile(command)
-}
-
 function nextCopyProfileId(base: string): string {
   const root = (base || 'score').replace(/[^\w-]/g, '_') || 'score'
   const mineIds = new Set(profiles.value.filter((p) => p.source === 'mine').map((p) => p.id))
@@ -661,23 +646,6 @@ const canEditTradeVisibility = computed(() =>
 function tradeProfileKey(p: TradeProfileSummary): string {
   return p.profile_ref || p.id
 }
-function tradeVisibilityLabel(visibility: 'private' | 'tenant' | 'public' = tVisibility.value): string {
-  if (visibility === 'tenant') return '租户公开'
-  if (visibility === 'public') return '全体公开'
-  return '私有'
-}
-function tradeVisibilityTagType(visibility: 'private' | 'tenant' | 'public' = tVisibility.value): 'info' | 'success' | 'warning' {
-  if (visibility === 'tenant') return 'success'
-  if (visibility === 'public') return 'warning'
-  return 'info'
-}
-function tradeSourceLabel(p: TradeProfileSummary): string {
-  if (p.is_preset) return '系统内置'
-  if (p.source === 'tenant') return '租户公开'
-  if (p.source === 'public') return '全体公开'
-  return '我的'
-}
-
 async function loadTradeProfiles() {
   tProfilesLoading.value = true
   tProfilesError.value = false
@@ -839,10 +807,6 @@ async function publishTradeProfile(visibility: 'private' | 'tenant' | 'public') 
   } finally {
     tVisibilitySaving.value = false
   }
-}
-function onTradeVisibilityCommand(command: string | number | object) {
-  if (command !== 'private' && command !== 'tenant' && command !== 'public') return
-  publishTradeProfile(command)
 }
 function nextCopyTradeId(base: string): string {
   const root = (base || 'trade').replace(/[^\w-]/g, '_') || 'trade'
@@ -1015,10 +979,11 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 @click="selectProfile(p.profile_ref || p.id)"
               >
                 <span>{{ p.name }}</span>
-                <el-tag v-if="p.is_preset" size="small" type="info">系统内置</el-tag>
-                <el-tag v-else-if="p.source === 'mine'" size="small" type="primary" effect="plain">我的</el-tag>
-                <el-tag v-else-if="p.source === 'tenant'" size="small" type="success" effect="plain">租户公开</el-tag>
-                <el-tag v-else-if="p.source === 'public'" size="small" type="warning" effect="plain">全体公开</el-tag>
+                <AssetVisibilityTag
+                  mode="source"
+                  :source="p.is_preset ? 'preset' : p.source"
+                  :owner-label="p.owner_label"
+                />
               </li>
             </ul>
           </aside>
@@ -1029,42 +994,20 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
               <span v-if="editId && !isNew" class="id-badge mono">{{ editId }}</span>
               <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openScoreVersions">v{{ curVersion }}</span>
-              <el-dropdown
-                v-if="canEditProfileVisibility"
-                trigger="click"
-                :hide-on-click="true"
-                @command="onProfileVisibilityCommand"
-              >
-                <el-tag
-                  class="visibility-trigger"
-                  :type="profileVisibilityTagType"
-                  size="small"
-                  effect="plain"
-                >
-                  {{ profileVisibilityLabel }}
-                  <el-icon class="visibility-arrow"><ArrowDown /></el-icon>
-                </el-tag>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="private" :disabled="profileVisibility === 'private' || visibilitySaving">
-                      私有
-                    </el-dropdown-item>
-                    <el-dropdown-item command="tenant" :disabled="profileVisibility === 'tenant' || !canPublishTenant || visibilitySaving">
-                      租户公开
-                    </el-dropdown-item>
-                    <el-dropdown-item command="public" :disabled="profileVisibility === 'public' || !canPublishPublic || visibilitySaving">
-                      全体公开
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <el-tag v-else-if="!isNew" :type="profileVisibilityTagType" size="small" effect="plain">
-                {{ profileVisibilityLabel }}
-              </el-tag>
-              <el-tag v-if="profileReadonly" size="small" type="info" effect="plain">只读</el-tag>
+              <AssetVisibilityActions
+                v-if="!isNew"
+                :visibility="profileVisibility"
+                :readonly="profileReadonly"
+                :can-publish-tenant="canPublishTenant"
+                :can-publish-public="canPublishPublic"
+                :saving="visibilitySaving"
+                :copy-visible="profileReadonly"
+                copy-permission="score-profile:save"
+                @publish="publishScoreProfile"
+                @copy="copyCurrentScoreProfile"
+              />
               <span class="wsum" :class="{ bad: weightSum !== 100 }">权重合计 {{ weightSum }}%</span>
               <div class="spacer" />
-              <el-button v-if="profileReadonly" v-permission="'score-profile:save'" plain @click="copyCurrentScoreProfile">复制为我的方案</el-button>
               <el-button v-permission="'score-profile:save'" :disabled="profileReadonly" :loading="saving" type="primary" @click="save">保存</el-button>
               <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
             </div>
@@ -1361,10 +1304,11 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <li v-for="p in tProfiles" :key="tradeProfileKey(p)" :class="{ active: tradeProfileKey(p) === tCurRef }"
                   @click="selectTradeProfile(tradeProfileKey(p))">
                 <span>{{ p.name }}</span>
-                <el-tag v-if="p.is_preset" size="small" type="info">系统内置</el-tag>
-                <el-tag v-else-if="p.source === 'mine'" size="small" type="primary" effect="plain">我的</el-tag>
-                <el-tag v-else-if="p.source === 'tenant'" size="small" type="success" effect="plain">租户公开</el-tag>
-                <el-tag v-else-if="p.source === 'public'" size="small" type="warning" effect="plain">全体公开</el-tag>
+                <AssetVisibilityTag
+                  mode="source"
+                  :source="p.is_preset ? 'preset' : p.source"
+                  :owner-label="p.owner_label"
+                />
               </li>
             </ul>
           </aside>
@@ -1374,41 +1318,19 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
               <span v-if="tEditId && !tIsNew" class="id-badge mono">{{ tEditId }}</span>
               <span v-if="tCurVersion && !tIsNew" class="ver-badge" title="点击查看历史版本" @click="openTradeVersions">v{{ tCurVersion }}</span>
-              <el-dropdown
-                v-if="canEditTradeVisibility"
-                trigger="click"
-                :hide-on-click="true"
-                @command="onTradeVisibilityCommand"
-              >
-                <el-tag
-                  class="visibility-trigger"
-                  :type="tradeVisibilityTagType()"
-                  size="small"
-                  effect="plain"
-                >
-                  {{ tradeVisibilityLabel() }}
-                  <el-icon class="visibility-arrow"><ArrowDown /></el-icon>
-                </el-tag>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="private" :disabled="tVisibility === 'private' || tVisibilitySaving">
-                      私有
-                    </el-dropdown-item>
-                    <el-dropdown-item command="tenant" :disabled="tVisibility === 'tenant' || !canTradePublishTenant || tVisibilitySaving">
-                      租户公开
-                    </el-dropdown-item>
-                    <el-dropdown-item command="public" :disabled="tVisibility === 'public' || !canTradePublishPublic || tVisibilitySaving">
-                      全体公开
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <el-tag v-else-if="!tIsNew" :type="tradeVisibilityTagType()" size="small" effect="plain">
-                {{ tradeVisibilityLabel() }}
-              </el-tag>
-              <el-tag v-if="tReadonly" size="small" type="info" effect="plain">只读</el-tag>
+              <AssetVisibilityActions
+                v-if="!tIsNew"
+                :visibility="tVisibility"
+                :readonly="tReadonly"
+                :can-publish-tenant="canTradePublishTenant"
+                :can-publish-public="canTradePublishPublic"
+                :saving="tVisibilitySaving"
+                :copy-visible="tReadonly"
+                copy-permission="trade-profile:save"
+                @publish="publishTradeProfile"
+                @copy="copyCurrentTradeProfile"
+              />
               <div class="spacer" />
-              <el-button v-if="tReadonly" v-permission="'trade-profile:save'" plain @click="copyCurrentTradeProfile">复制为我的方案</el-button>
               <el-button v-permission="'trade-profile:save'" :disabled="tReadonly" :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
               <el-button v-permission="'trade-profile:delete'" v-if="tCurId && !tIsNew && !tReadonly" type="danger" plain @click="removeTrade">删除</el-button>
             </div>
@@ -1814,15 +1736,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .mono {
   font-family: var(--el-font-family-mono, monospace);
-}
-.visibility-trigger {
-  cursor: pointer;
-  user-select: none;
-}
-.visibility-arrow {
-  margin-left: 4px;
-  font-size: 11px;
-  vertical-align: -1px;
 }
 .ver-item {
   border: 1px solid var(--el-border-color-lighter);
