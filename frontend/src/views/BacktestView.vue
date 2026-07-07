@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { computeBoard, type BoardRow } from '@/api/board'
 import {
-  runBacktest, prepareBacktest, listRuns, getRun, deleteRun, runRobust,
+  runBacktest, prepareBacktest, listRuns, getRun, deleteRun, runRobust, setRunVisibility,
   type StrategyResult, type Layers, type RunParams, type LayerCell,
   type TradeRow, type RunSummary, type ParamSweepResult, type InOutSampleResult,
 } from '@/api/backtest'
@@ -25,8 +26,13 @@ import { useTradeDates } from '@/composables/useTradeDates'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/utils/permission'
 
 const PARAMS_KEY = 'ai-stocks-backtest-params' // 表单参数持久化
+type Visibility = 'private' | 'tenant' | 'public'
+type HistorySource = 'all' | 'mine' | 'tenant' | 'public'
+const auth = useAuthStore()
 const settingsOpen = ref(false)
 const backtestDefaults = {
   kind: 'strategy' as 'strategy' | 'score_check',
@@ -157,6 +163,8 @@ const { dataMin, dataMax, prevTradeDate } = useTradeDates()
 // 历史回测（已落库，可重新载入，不必反复重跑）
 const runHistory = ref<RunSummary[]>([])
 const selectedRun = ref<string>('')
+const historySource = ref<HistorySource>('all')
+const runVisibilitySaving = ref(false)
 
 // 切换"策略/信号"标签 → 清空下方结果（避免显示与当前模式不符的旧结果）
 // loadingRun 期间由程序设置参数，不触发清空 / 不置脏
@@ -165,6 +173,12 @@ watch(kind, () => {
   if (loadingRun.value) return
   strat.value = null; sig.value = null; selectedRun.value = ''
   loadHistory()  // 历史按 kind 分别加载，策略与评分验证不混展
+})
+watch(historySource, () => {
+  selectedRun.value = ''
+  strat.value = null
+  sig.value = null
+  loadHistory()
 })
 
 // 运行按钮状态机：dirty=true 蓝色可点；出结果/载入历史后置 false（灰、不可点）；改任一参数恢复
@@ -187,6 +201,44 @@ function clearDirtySoon() {
 function nameVer(name?: string | null, ver?: number | null, fallback = ''): string {
   if (!name) return fallback
   return ver != null ? `${name}(v${ver})` : name
+}
+
+function runKey(r: RunSummary): string {
+  return r.run_ref || r.asset_ref || r.id
+}
+
+const selectedRunSummary = computed(() =>
+  runHistory.value.find((r) => runKey(r) === selectedRun.value || r.id === selectedRun.value),
+)
+const selectedRunReadonly = computed(() => !!selectedRunSummary.value?.readonly)
+const canPublishTenant = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'backtest:publish-tenant'),
+)
+const canPublishPublic = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'backtest:publish-public'),
+)
+const canEditRunVisibility = computed(() =>
+  !!selectedRunSummary.value
+  && !selectedRunReadonly.value
+  && (canPublishTenant.value || canPublishPublic.value),
+)
+
+function visibilityLabel(visibility: Visibility = selectedRunSummary.value?.visibility || 'private'): string {
+  if (visibility === 'tenant') return '租户公开'
+  if (visibility === 'public') return '全体公开'
+  return '私有'
+}
+
+function visibilityTagType(visibility: Visibility = selectedRunSummary.value?.visibility || 'private'): 'info' | 'success' | 'warning' {
+  if (visibility === 'tenant') return 'success'
+  if (visibility === 'public') return 'warning'
+  return 'info'
+}
+
+function runSourceLabel(r?: RunSummary): string {
+  if (!r?.source || r.source === 'mine') return '我的'
+  if (r.source === 'tenant') return '租户公开'
+  return '全体公开'
 }
 
 // 卖出原因命中的具体指标（卖树部分命中时）：解析 exit_detail(JSON 数组)；全命中/非卖树返回空
@@ -219,10 +271,13 @@ const runOptions = computed(() =>
     }
     const ret = r.total_return
     return {
-      id: r.id, label: `${who}·${year}`,
+      id: runKey(r), label: `${who}·${year}`,
       range: `${(r.date_start || '').slice(0, 10)} ~ ${(r.date_end || '').slice(0, 10)}`,
       color: ret == null ? '' : ret >= 0 ? 'var(--market-up-color)' : 'var(--market-down-color)',
       retTxt: ret == null ? '' : (ret >= 0 ? '+' : '') + (ret * 100).toFixed(1) + '%',
+      source: r.source,
+      sourceLabel: runSourceLabel(r),
+      sourceType: r.source === 'tenant' ? 'success' : r.source === 'public' ? 'warning' : 'primary',
     }
   }),
 )
@@ -296,7 +351,25 @@ function restoreParams() {
 }
 
 async function loadHistory() {
-  try { runHistory.value = (await listRuns(kind.value)).runs } catch { /* ignore */ }
+  try { runHistory.value = (await listRuns(kind.value, historySource.value)).runs } catch { /* ignore */ }
+}
+
+function applyRunParams(run: RunSummary) {
+  let p: any = {}
+  try { p = JSON.parse((run as any).params || '{}') } catch { /* ignore */ }
+  if (p.date_start) dateStart.value = ymd(p.date_start)
+  if (p.date_end) dateEnd.value = ymd(p.date_end)
+  profileId.value = p.profile_id || ''
+  scoreProfileId.value = normalizeScoreProfileKey(p.score_profile_id)
+  tradeProfileId.value = normalizeTradeProfileKey(p.trade_profile_id)
+  if (p.top_n) topN.value = p.top_n
+  if (p.initial_capital) initCap.value = p.initial_capital
+  if (p.sell_ma_period) sellMa.value = p.sell_ma_period
+  tpOn.value = p.take_profit != null; if (p.take_profit != null) takeProfit.value = Math.round(p.take_profit * 100)
+  slOn.value = p.stop_loss != null; if (p.stop_loss != null) stopLoss.value = Math.round(p.stop_loss * 100)
+  holdOn.value = p.max_hold_days != null; if (p.max_hold_days != null) maxHold.value = p.max_hold_days
+  industryOn.value = p.industry_max_pct != null; if (p.industry_max_pct != null) industryPct.value = Math.round(p.industry_max_pct * 100)
+  return p
 }
 
 // 从历史重新载入某次回测结果（不重跑）
@@ -315,26 +388,12 @@ async function loadRun(id: string) {
       sig.value = r.layers as Layers
     } else {
       kind.value = 'strategy'
-      let bench = '000905.SH'
       // 同步表单到该次回测的参数（方案/持仓/本金/卖出规则随之显示）
-      let p: any = {}
-      try { p = JSON.parse((r.run as any).params || '{}') } catch { /* ignore */ }
-      bench = p.benchmark || bench
-      if (p.date_start) dateStart.value = ymd(p.date_start)
-      if (p.date_end) dateEnd.value = ymd(p.date_end)
-      profileId.value = p.profile_id || ''
-      scoreProfileId.value = normalizeScoreProfileKey(p.score_profile_id)
-      tradeProfileId.value = normalizeTradeProfileKey(p.trade_profile_id)
-      if (p.top_n) topN.value = p.top_n
-      if (p.initial_capital) initCap.value = p.initial_capital
-      if (p.sell_ma_period) sellMa.value = p.sell_ma_period
-      tpOn.value = p.take_profit != null; if (p.take_profit != null) takeProfit.value = Math.round(p.take_profit * 100)
-      slOn.value = p.stop_loss != null; if (p.stop_loss != null) stopLoss.value = Math.round(p.stop_loss * 100)
-      holdOn.value = p.max_hold_days != null; if (p.max_hold_days != null) maxHold.value = p.max_hold_days
-      industryOn.value = p.industry_max_pct != null; if (p.industry_max_pct != null) industryPct.value = Math.round(p.industry_max_pct * 100)
+      const p = applyRunParams(r.run)
+      const bench = p.benchmark || '000905.SH'
       const initCapV = r.equity.length ? r.equity[0].equity : initCap.value
       strat.value = {
-        run_id: id, metrics: r.metrics as any, layers: r.layers as Layers,
+        run_id: r.run.run_ref || id, metrics: r.metrics as any, layers: r.layers as Layers,
         trades: r.trades as TradeRow[], equity: r.equity, benchmark_code: bench,
         initial_capital: initCapV,
       }
@@ -351,7 +410,11 @@ async function loadRun(id: string) {
 // 删除当前选中的历史回测
 async function removeCurrentRun() {
   if (!selectedRun.value) return
-  const cur = runHistory.value.find((r) => r.id === selectedRun.value)
+  const cur = selectedRunSummary.value
+  if (cur?.readonly) {
+    ElMessage.warning('公开回测记录为只读，不能删除')
+    return
+  }
   const desc = cur ? `${cur.kind === 'strategy' ? '策略' : '评分验证'} ${cur.date_start?.slice(0, 10)}~${cur.date_end?.slice(0, 10)}` : selectedRun.value
   try {
     await ElMessageBox.confirm(`确认删除这次回测记录？\n${desc}`, '删除历史回测', {
@@ -364,13 +427,68 @@ async function removeCurrentRun() {
     strat.value = null; sig.value = null
     await loadHistory()
     if (runHistory.value.length) {
-      selectedRun.value = runHistory.value[0].id
+      selectedRun.value = runKey(runHistory.value[0])
       await loadRun(selectedRun.value)
     } else {
       selectedRun.value = ''
     }
   } catch (e) {
     ElMessage.error((e as Error).message || '删除失败')
+  }
+}
+
+async function publishRunVisibility(visibility: Visibility) {
+  if (!selectedRun.value || selectedRunReadonly.value || runVisibilitySaving.value) return
+  if (visibility === selectedRunSummary.value?.visibility) return
+  if (visibility === 'tenant' && !canPublishTenant.value) {
+    ElMessage.warning('无权公开到租户')
+    return
+  }
+  if (visibility === 'public' && !canPublishPublic.value) {
+    ElMessage.warning('无权公开到全体用户')
+    return
+  }
+  runVisibilitySaving.value = true
+  try {
+    const updated = await setRunVisibility(selectedRun.value, visibility)
+    const idx = runHistory.value.findIndex((r) => r.id === updated.id || runKey(r) === selectedRun.value)
+    if (idx >= 0) runHistory.value[idx] = { ...runHistory.value[idx], ...updated }
+    ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
+    await loadHistory()
+  } catch (e) {
+    ElMessage.error((e as Error).message || '公开设置失败')
+  } finally {
+    runVisibilitySaving.value = false
+  }
+}
+
+function onRunVisibilityCommand(command: string | number | object) {
+  if (typeof command === 'string') publishRunVisibility(command as Visibility)
+}
+
+async function reuseCurrentRunParams() {
+  if (!selectedRun.value) return
+  loading.value = true
+  loadingRun.value = true
+  try {
+    const r = await getRun(selectedRun.value)
+    if (r.run.kind === 'signal' || r.run.kind === 'score_check') {
+      kind.value = 'score_check'
+    } else {
+      kind.value = 'strategy'
+      applyRunParams(r.run)
+    }
+    strat.value = null
+    sig.value = null
+    fromHistory.value = false
+    runTime.value = ''
+    nextTick(() => { dirty.value = true; loadingRun.value = false })
+    ElMessage.success('已复用参数')
+  } catch (e) {
+    ElMessage.error((e as Error).message || '复用参数失败')
+    loadingRun.value = false
+  } finally {
+    loading.value = false
   }
 }
 
@@ -416,7 +534,7 @@ onMounted(async () => {
   await loadHistory()
   // 默认载入最近一次回测结果，避免空屏、不用反复重跑
   if (settings.autoLoadHistory && runHistory.value.length) {
-    selectedRun.value = runHistory.value[0].id
+    selectedRun.value = runKey(runHistory.value[0])
     await loadRun(selectedRun.value)
   }
 })
@@ -753,15 +871,68 @@ async function openTradeChart(row: TradeRow) {
         </HelpTip>
       </h2>
       <div class="page-head-actions">
-        <div class="hist" v-if="runHistory.length">
+        <div class="hist">
           <span class="lbl">历史回测</span>
+          <el-select v-model="historySource" style="width: 112px" size="default">
+            <el-option value="all" label="全部" />
+            <el-option value="mine" label="我的" />
+            <el-option value="tenant" label="租户公开" />
+            <el-option value="public" label="全体公开" />
+          </el-select>
           <el-select v-model="selectedRun" style="width: 340px" @change="loadRun(selectedRun)" size="default">
             <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
               <span :style="{ color: o.color, fontWeight: 600 }">{{ o.label }}</span>
+              <el-tag
+                size="small"
+                effect="plain"
+                :type="o.sourceType"
+                style="margin-left: 8px"
+              >
+                {{ o.sourceLabel }}
+              </el-tag>
               <span class="opt-range">{{ o.range }} <b :style="{ color: o.color }">{{ o.retTxt }}</b></span>
             </el-option>
           </el-select>
-          <el-button v-permission="'backtest:delete'" :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
+          <el-dropdown
+            v-if="canEditRunVisibility"
+            trigger="click"
+            :hide-on-click="true"
+            @command="onRunVisibilityCommand"
+          >
+            <el-tag
+              class="visibility-trigger"
+              :type="visibilityTagType()"
+              size="small"
+              effect="plain"
+            >
+              {{ visibilityLabel() }}
+              <el-icon class="visibility-arrow"><ArrowDown /></el-icon>
+            </el-tag>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="private" :disabled="selectedRunSummary?.visibility === 'private' || runVisibilitySaving">
+                  私有
+                </el-dropdown-item>
+                <el-dropdown-item command="tenant" :disabled="selectedRunSummary?.visibility === 'tenant' || !canPublishTenant || runVisibilitySaving">
+                  租户公开
+                </el-dropdown-item>
+                <el-dropdown-item command="public" :disabled="selectedRunSummary?.visibility === 'public' || !canPublishPublic || runVisibilitySaving">
+                  全体公开
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-tag
+            v-else-if="selectedRunSummary"
+            :type="visibilityTagType(selectedRunSummary.visibility || 'private')"
+            size="small"
+            effect="plain"
+          >
+            {{ visibilityLabel(selectedRunSummary.visibility || 'private') }}
+          </el-tag>
+          <el-button :disabled="!selectedRun" @click="reuseCurrentRunParams" title="复用当前选中历史回测参数">复用参数</el-button>
+          <el-button v-permission="'backtest:delete'" v-if="!selectedRunReadonly" :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
+          <span v-if="!runHistory.length && historySource !== 'all'" class="hist-empty">无公开记录</span>
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -1217,8 +1388,11 @@ async function openTradeChart(row: TradeRow) {
 .page-head h2 { margin: 0; font-size: 20px; }
 .setting-item { display: flex; flex-direction: column; gap: 8px; }
 .setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
-.hist { display: flex; align-items: center; gap: 6px; }
+.hist { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .opt-range { float: right; color: var(--el-text-color-secondary); font-size: 12px; margin-left: 18px; }
+.hist-empty { color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
+.visibility-trigger { cursor: pointer; user-select: none; }
+.visibility-arrow { margin-left: 4px; font-size: 11px; vertical-align: -1px; }
 .dlg-legend { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; font-size: 12px; }
 .dlg-legend .lg.buy { color: #3b82f6; font-weight: 600; }
 .dlg-legend .lg.sell { color: #f5a623; font-weight: 600; }

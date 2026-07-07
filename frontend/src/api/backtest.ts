@@ -80,6 +80,8 @@ export interface StrategyResult {
 
 export interface RunSummary {
   id: string
+  run_ref?: string
+  asset_ref?: string
   kind: string
   profile_id: string | null
   profile_name: string | null
@@ -93,6 +95,12 @@ export interface RunSummary {
   date_start: string
   date_end: string
   status: string
+  visibility?: 'private' | 'tenant' | 'public'
+  source?: 'mine' | 'tenant' | 'public'
+  readonly?: boolean
+  owner_label?: string
+  published_at?: string | null
+  published_by?: string | null
   created_at: string
   total_return: number | null
 }
@@ -176,12 +184,24 @@ export function getTradeDates(): Promise<{
 }
 
 // 不传 limit 则全列（同签名因覆盖语义本就只留一条，不会膨胀）
-export function listRuns(kind?: string): Promise<{ runs: RunSummary[] }> {
-  return http.get('/backtest/runs', { params: { ...(kind ? { kind } : {}) } })
+export function listRuns(kind?: string, source?: string): Promise<{ runs: RunSummary[] }> {
+  return http.get('/backtest/runs', {
+    params: {
+      ...(kind ? { kind } : {}),
+      ...(source && source !== 'all' ? { source } : {}),
+    },
+  })
 }
 
 export function deleteRun(runId: string): Promise<{ deleted: string }> {
   return http.delete(`/backtest/runs/${runId}`)
+}
+
+export function setRunVisibility(
+  runId: string,
+  visibility: 'private' | 'tenant' | 'public',
+): Promise<RunSummary> {
+  return http.post(`/backtest/runs/${runId}/visibility`, { visibility })
 }
 
 export function getRun(runId: string): Promise<{

@@ -23,11 +23,21 @@ import pandas as pd
 from backend.backtest.engine import BacktestEngine
 from backend.backtest.metrics import compute_metrics
 from backend.backtest.signal import SignalAnalyzer
+from backend.auth.context import get_current_owner
 from backend.common.logging import get_logger
+from backend.services.asset_visibility import (
+    ASSET_BACKTEST_RUN,
+    VISIBILITY_PRIVATE,
+    decorate_asset_row,
+    is_asset_visible,
+    normalize_visibility,
+    resolve_asset_ref_or_legacy_id,
+    visible_params,
+    visible_sql,
+)
 from backend.storage.asset_repository import AssetRepository
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
-from backend.auth.context import get_current_owner
 
 log = get_logger("services.backtest")
 
@@ -168,6 +178,38 @@ class BacktestService:
             return None
         return self._visible_score_profile(params["score_profile_id"])
 
+    def _decorate_run_row(self, row: dict, *, include_owner: bool = False) -> dict:
+        out = decorate_asset_row(
+            row,
+            asset_type=ASSET_BACKTEST_RUN,
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+            include_owner=include_owner,
+        )
+        out["run_ref"] = out["asset_ref"]
+        return out
+
+    def _visible_run_row(self, run_ref_or_id: str, *, include_owner: bool = False) -> dict | None:
+        try:
+            ref = resolve_asset_ref_or_legacy_id(
+                run_ref_or_id,
+                asset_type=ASSET_BACKTEST_RUN,
+                tenant_id=self.tenant_id,
+                owner_user_id=self.owner_user_id,
+            )
+        except ValueError:
+            return None
+        df = self.pg.query_df(
+            "SELECT * FROM backtest_run WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [ref.asset_id, ref.tenant_id, ref.owner_user_id],
+        )
+        if df.empty:
+            return None
+        row = df.iloc[0].to_dict()
+        if not is_asset_visible(row, tenant_id=self.tenant_id, owner_user_id=self.owner_user_id):
+            return None
+        return self._decorate_run_row(row, include_owner=include_owner)
+
     # ── 评分验证（信号质量分析）──
     def run_signal(self, params: dict, persist: bool = True) -> dict:
         run_id = self._new_id("score_check")
@@ -269,36 +311,85 @@ class BacktestService:
 
     def delete_run(self, run_id: str) -> bool:
         """删除某次回测的全部数据（run + equity + trade + metrics）。"""
-        exists = self.pg.query_df(
-            "SELECT 1 FROM backtest_run WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
-            [run_id, *self._op])
+        run = self._visible_run_row(run_id, include_owner=True)
+        if run is None:
+            return False
+        if run.get("readonly"):
+            raise PermissionError("只能删除自己的回测记录")
         for t in ("backtest_trade", "backtest_equity", "backtest_metrics", "backtest_run"):
             self.pg.execute(
                 f"DELETE FROM {t} WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s"
                 if t != "backtest_run" else
                 f"DELETE FROM {t} WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
-                [run_id, *self._op])
-        return not exists.empty
+                [run["id"], run["tenant_id"], run["owner_user_id"]])
+        return True
+
+    def set_run_visibility(
+        self,
+        run_ref_or_id: str,
+        visibility: str,
+        published_by: str | None = None,
+    ) -> dict | None:
+        visibility = normalize_visibility(visibility)
+        run = self._visible_run_row(run_ref_or_id, include_owner=True)
+        if run is None:
+            return None
+        if run.get("readonly"):
+            raise PermissionError("只能修改自己的回测记录可见性")
+        if run.get("status") != "done" and visibility != VISIBILITY_PRIVATE:
+            raise ValueError("仅已完成回测记录可公开")
+        now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
+        affected = self.pg.execute(
+            "UPDATE backtest_run SET visibility=%s, published_at=%s, published_by=%s "
+            "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [
+                visibility,
+                now,
+                published_by if visibility != VISIBILITY_PRIVATE else None,
+                run["id"],
+                run["tenant_id"],
+                run["owner_user_id"],
+            ],
+        )
+        if affected == 0:
+            return None
+        return self._visible_run_row(run["run_ref"])
 
     # ── 读取 ──
-    def list_runs(self, limit: int | None = None, kind: str | None = None) -> list[dict]:
+    def list_runs(
+        self,
+        limit: int | None = None,
+        kind: str | None = None,
+        source: str | None = None,
+    ) -> list[dict]:
         """历史记录。kind 给定则只列该类（strategy / score_check），策略与评分验证不混展；
         limit=None 则全列（不截断），同签名因覆盖语义本就只留一条。run⋈三方案⋈metrics 全在 PG。"""
-        where = "WHERE r.tenant_id=%s AND r.owner_user_id=%s "
-        args: list = [*self._op]
+        where = f"WHERE {visible_sql('r')} "
+        args: list = visible_params(tenant_id=self.tenant_id, owner_user_id=self.owner_user_id)
         if kind == "score_check":
             where += "AND r.kind IN ('score_check','signal') "  # 兼容旧 signal 值
         elif kind == "strategy":
             where += "AND r.kind = 'strategy' "
+        if source == "mine":
+            where += "AND r.tenant_id=%s AND r.owner_user_id=%s "
+            args += [self.tenant_id, self.owner_user_id]
+        elif source == "tenant":
+            where += "AND r.visibility='tenant' AND NOT (r.tenant_id=%s AND r.owner_user_id=%s) "
+            args += [self.tenant_id, self.owner_user_id]
+        elif source == "public":
+            where += "AND r.visibility='public' AND NOT (r.tenant_id=%s AND r.owner_user_id=%s) "
+            args += [self.tenant_id, self.owner_user_id]
         tail = ""
         if limit is not None:
             tail = "LIMIT %s"
             args = [*args, limit]
         df = self.pg.query_df(
-            "SELECT r.id, r.kind, r.profile_id, p.name AS profile_name, r.profile_version, "
+            "SELECT r.id, r.tenant_id, r.owner_user_id, r.kind, r.profile_id, "
+            "       p.name AS profile_name, r.profile_version, "
             "       r.trade_profile_id, tp.name AS trade_profile_name, r.trade_profile_version, "
             "       r.score_profile_id, sp.name AS score_profile_name, r.score_profile_version, "
-            "       r.date_start, r.date_end, r.status, r.created_at, m.total_return "
+            "       r.date_start, r.date_end, r.status, r.visibility, r.published_at, r.published_by, "
+            "       r.created_at, m.total_return "
             # JOIN 必须带归属：复合主键下同一业务 id 可属不同 owner，只按 id JOIN 会串其他 owner 的行
             "FROM backtest_run r "
             "LEFT JOIN screen_profile p ON p.id = r.profile_id "
@@ -311,7 +402,7 @@ class BacktestService:
             "  AND m.tenant_id = r.tenant_id AND m.owner_user_id = r.owner_user_id "
             f"{where}"
             f"ORDER BY r.created_at DESC {tail}", args)
-        rows = df.to_dict("records")
+        rows = [self._decorate_run_row(r) for r in df.to_dict("records")]
         for row in rows:
             if row.get("score_profile_id") and not row.get("score_profile_name"):
                 prof = self._visible_score_profile(row["score_profile_id"])
@@ -326,25 +417,23 @@ class BacktestService:
         return rows
 
     def get_run(self, run_id: str) -> dict | None:
-        run = self.pg.query_df(
-            "SELECT * FROM backtest_run WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
-            [run_id, *self._op])
-        if run.empty:
+        run_d = self._visible_run_row(run_id, include_owner=True)
+        if run_d is None:
             return None
+        run_owner = [run_d["tenant_id"], run_d["owner_user_id"]]
         m = self.pg.query_df(
             "SELECT * FROM backtest_metrics WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s",
-            [run_id, *self._op])
+            [run_d["id"], *run_owner])
         eq = self.pg.query_df(
             "SELECT * FROM backtest_equity WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s "
-            "ORDER BY trade_date", [run_id, *self._op])
+            "ORDER BY trade_date", [run_d["id"], *run_owner])
         td = self.pg.query_df(
             "SELECT * FROM backtest_trade WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s "
-            "ORDER BY seq", [run_id, *self._op])
+            "ORDER BY seq", [run_d["id"], *run_owner])
         metrics = m.iloc[0].to_dict() if not m.empty else {}
         for _k in ("tenant_id", "owner_user_id"):
             metrics.pop(_k, None)
         layers = json.loads(metrics.pop("hit_rate_by_grade")) if metrics.get("hit_rate_by_grade") else None
-        run_d = run.iloc[0].to_dict()
         for _k in ("tenant_id", "owner_user_id"):
             run_d.pop(_k, None)
         return {"run": run_d, "metrics": metrics, "layers": layers,

@@ -14,8 +14,10 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.api.response import ApiResponse, ok
+from backend.api.response import ApiResponse, err, ok
+from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm
+from backend.services.audit_service import AuditService
 from backend.services.backtest_service import BacktestService
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
@@ -49,6 +51,17 @@ class BacktestRunIn(BaseModel):
     benchmark: str | None = None
     horizons: list[int] | None = None
     thresholds: list[float] | None = None
+
+
+class RunVisibilityBody(BaseModel):
+    visibility: str
+
+
+def _has_perm(code: str) -> bool:
+    ctx = get_current_context()
+    if ctx is None:
+        return False
+    return ctx.is_system or code in ctx.resources
 
 
 @router.post("/run", response_model=ApiResponse,
@@ -109,8 +122,14 @@ def robust(body: RobustIn) -> ApiResponse:
 
 @router.get("/runs", response_model=ApiResponse,
             dependencies=[Depends(require_perm("backtest:view"))])
-def list_runs(limit: int | None = None, kind: str | None = None) -> ApiResponse:
-    runs = BacktestService().list_runs(limit, kind=kind)
+def list_runs(
+    limit: int | None = None,
+    kind: str | None = None,
+    source: str | None = None,
+) -> ApiResponse:
+    if source not in (None, "mine", "tenant", "public"):
+        return err(400, "source 必须是 mine、tenant 或 public")
+    runs = BacktestService().list_runs(limit, kind=kind, source=source)
 
     def _nan_none(v):
         return None if v is None or (isinstance(v, float) and pd.isna(v)) else v
@@ -120,6 +139,8 @@ def list_runs(limit: int | None = None, kind: str | None = None) -> ApiResponse:
         r["date_end"] = _d(r.get("date_end"))
         if r.get("created_at") is not None:
             r["created_at"] = str(r["created_at"])
+        if r.get("published_at") is not None:
+            r["published_at"] = str(r["published_at"])
         tr = _nan_none(r.get("total_return"))
         r["total_return"] = float(tr) if tr is not None else None
         for k in ("profile_name", "trade_profile_name", "score_profile_name"):
@@ -128,6 +149,35 @@ def list_runs(limit: int | None = None, kind: str | None = None) -> ApiResponse:
             v = _nan_none(r.get(k))
             r[k] = int(v) if v is not None else None
     return ok({"runs": runs})
+
+
+@router.post("/runs/{run_id}/visibility", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("backtest:view"))])
+def set_run_visibility(run_id: str, body: RunVisibilityBody) -> ApiResponse:
+    visibility = body.visibility
+    if visibility == "tenant" and not _has_perm("backtest:publish-tenant"):
+        return err(403, "无权公开到租户")
+    if visibility == "public" and not _has_perm("backtest:publish-public"):
+        return err(403, "无权公开到全体用户")
+    svc = BacktestService()
+    before = svc._visible_run_row(run_id, include_owner=True)
+    if not before:
+        return err(404, "回测任务不存在")
+    ctx = get_current_context()
+    try:
+        after = svc.set_run_visibility(
+            run_id,
+            visibility,
+            published_by=ctx.user_id if ctx is not None else None,
+        )
+    except ValueError as e:
+        return err(400, str(e))
+    except PermissionError as e:
+        return err(403, str(e))
+    if not after:
+        return err(404, "回测任务不存在")
+    _record_visibility_audit(before, after)
+    return ok(after)
 
 
 @router.get("/runs/{run_id}", response_model=ApiResponse,
@@ -143,6 +193,8 @@ def get_run(run_id: str) -> ApiResponse:
     for k in ("created_at", "finished_at"):
         if run.get(k) is not None:
             run[k] = str(run[k])
+    if run.get("published_at") is not None:
+        run["published_at"] = str(run["published_at"])
     for row in res["equity"]:
         row["trade_date"] = _d(row.get("trade_date"))
     for t in res["trades"]:
@@ -154,7 +206,35 @@ def get_run(run_id: str) -> ApiResponse:
 @router.delete("/runs/{run_id}", response_model=ApiResponse,
                dependencies=[Depends(require_perm("backtest:delete"))])
 def delete_run(run_id: str) -> ApiResponse:
-    found = BacktestService().delete_run(run_id)
+    try:
+        found = BacktestService().delete_run(run_id)
+    except PermissionError as e:
+        return err(403, str(e))
     if not found:
         raise HTTPException(status_code=404, detail="回测任务不存在")
     return ok({"deleted": run_id})
+
+
+def _record_visibility_audit(before: dict, after: dict) -> None:
+    ctx = get_current_context()
+    if ctx is None:
+        return
+    visibility = after.get("visibility")
+    AuditService().record_security_event(
+        event_type="asset_visibility",
+        action="backtest_run_visibility",
+        result="success",
+        status="completed",
+        tenant_id=ctx.tenant_id,
+        actor_user_id=ctx.user_id,
+        resource_code=f"backtest:publish-{visibility}"
+        if visibility in {"tenant", "public"} else None,
+        target_type="backtest_run",
+        target_id=after.get("id"),
+        target_label=after.get("id"),
+        context={
+            "action": "backtest_run_visibility",
+            "profile_ref": after.get("run_ref"),
+        },
+        changes=AuditService.build_changes(before, after, fields=("visibility",)),
+    )

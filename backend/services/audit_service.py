@@ -48,6 +48,7 @@ _TARGET_TYPE_LABELS = {
     "app_config": "系统设置",
     "dict_type": "字典类型",
     "dict_item": "字典项",
+    "backtest_run": "回测记录",
 }
 
 
