@@ -709,7 +709,7 @@
 - 里程碑：长操作不被 token 过期打断；审计表可控增长；关键变更可见 from/to；筛选/买卖/回测公开资产只读可见、owner 可发布/收回、方案类资产可复制为自己的 private。
 - **开发计划**：[stage6-experience-asset-visibility/plan.md](stage6-experience-asset-visibility/plan.md)。
 - **当前进度**：T1 已完成 DDL/资源码规划、幂等迁移入口、SQL 留痕和 T1 专项测试；T2 已完成 token 静默刷新；T3 已完成审计日志保留期自动清理服务、CLI、APScheduler 注册和专项测试；T4 已完成审计字段级 `changes` 后端模型、脱敏 helper 和配置/字典/RBAC 采集；T5 已完成通用资产可见性 helper 和专项测试；T6-T12 尚未开始。
-- **开发产物索引（T1-T2）**：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/tests/test_rbac_schema.py`、`frontend/src/api/client.ts`、`frontend/src/api/authToken.ts`、`frontend/src/api/__tests__/client-refresh.spec.ts`、[stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql](stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql)、[stage6-experience-asset-visibility/resource-codes.sql](stage6-experience-asset-visibility/resource-codes.sql)。
+- **开发产物索引（T1-T5）**：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/tests/test_rbac_schema.py`、`frontend/src/api/client.ts`、`frontend/src/api/authToken.ts`、`frontend/src/api/__tests__/client-refresh.spec.ts`、`backend/storage/audit_repository.py`、`backend/services/audit_service.py`、`backend/cli.py`、`backend/scheduler/scheduler.py`、`backend/tests/test_stage6_audit_cleanup.py`、`backend/tests/test_stage6_audit_changes.py`、`backend/services/asset_visibility.py`、`backend/tests/test_stage6_asset_visibility.py`、[stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql](stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql)、[stage6-experience-asset-visibility/resource-codes.sql](stage6-experience-asset-visibility/resource-codes.sql)。
 - **范围边界**：本阶段不做公开市场、审批流、收藏、搜索广场、运营推荐、计费联动；不扩展自选股分组、盘感训练记录、布局配置、系统配置、字典或数据任务为公开资产。
 
 **独立需求（排期待定，非上述任一阶段的既定内容）**
@@ -724,7 +724,7 @@
 | 项 | 影响 | 当前默认（已采纳建议/推断） |
 | --- | --- | --- |
 | 1. 配置管理 IA | 普通用户会在「系统管理→配置管理」下看到评分规则/买卖指标两子页 | 【已确认】保留在配置管理下，靠角色控子页面可见，最省改动 |
-| 2. 资产共享粒度 | 是否支持「租户内共享资产」还是纯个人私有 | 【已确认→R28】评分方案已支持 `private/tenant/public`；筛选方案、买卖方案、回测记录等其他资产仍按个人私有，后续独立评估 |
+| 2. 资产共享粒度 | 是否支持「租户内共享资产」还是纯个人私有 | 【已确认→R28】评分方案已支持 `private/tenant/public`；筛选方案、买卖方案、回测记录已纳入阶段六，T5 已完成通用可见性 helper，T6-T8 待接入具体资产 API 与权限；评分/筛选/买卖/回测之外的资产仍后续独立评估 |
 | 3. 审计保留期/范围 | 审计表增长与隐私 | 【已确认】保留 90 天可配、仅记摘要不记请求/响应体、租管看本租户 |
 | 4. `data_dimension_registry` 是否并入数据字典 | 字典接入边界 | 【待定】本期不并入，维持现状，后续评估 |
 | 5. 租户管理员能否自建角色 | 角色管理权限边界 | 【已确认】本期仅分配系统管理员预设角色，不可自建 |
