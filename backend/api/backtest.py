@@ -16,8 +16,8 @@ from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
-from backend.auth.deps import require_perm
-from backend.services.audit_service import AuditService
+from backend.auth.deps import require_perm, require_visibility_perm
+from backend.services.asset_audit import record_asset_visibility_audit
 from backend.services.backtest_service import BacktestService
 
 router = APIRouter(prefix="/api/backtest", tags=["backtest"])
@@ -51,6 +51,7 @@ class BacktestRunIn(BaseModel):
     benchmark: str | None = None
     horizons: list[int] | None = None
     thresholds: list[float] | None = None
+    source_run_ref: str | None = None      # 复用公开历史参数重跑，仅用于留痕/审计，不参与回测撮合
 
 
 class RunVisibilityBody(BaseModel):
@@ -152,7 +153,11 @@ def list_runs(
 
 
 @router.post("/runs/{run_id}/visibility", response_model=ApiResponse,
-             dependencies=[Depends(require_perm("backtest:view"))])
+             dependencies=[Depends(require_visibility_perm(
+                 "backtest:view",
+                 "backtest:publish-tenant",
+                 "backtest:publish-public",
+             ))])
 def set_run_visibility(run_id: str, body: RunVisibilityBody) -> ApiResponse:
     visibility = body.visibility
     if visibility == "tenant" and not _has_perm("backtest:publish-tenant"):
@@ -176,7 +181,14 @@ def set_run_visibility(run_id: str, body: RunVisibilityBody) -> ApiResponse:
         return err(403, str(e))
     if not after:
         return err(404, "回测任务不存在")
-    _record_visibility_audit(before, after)
+    record_asset_visibility_audit(
+        before,
+        after,
+        action="backtest_run_visibility",
+        target_type="backtest_run",
+        ref_key="run_ref",
+        fallback_resource_prefix="backtest",
+    )
     return ok(after)
 
 
@@ -213,28 +225,3 @@ def delete_run(run_id: str) -> ApiResponse:
     if not found:
         raise HTTPException(status_code=404, detail="回测任务不存在")
     return ok({"deleted": run_id})
-
-
-def _record_visibility_audit(before: dict, after: dict) -> None:
-    ctx = get_current_context()
-    if ctx is None:
-        return
-    visibility = after.get("visibility")
-    AuditService().record_security_event(
-        event_type="asset_visibility",
-        action="backtest_run_visibility",
-        result="success",
-        status="completed",
-        tenant_id=ctx.tenant_id,
-        actor_user_id=ctx.user_id,
-        resource_code=f"backtest:publish-{visibility}"
-        if visibility in {"tenant", "public"} else None,
-        target_type="backtest_run",
-        target_id=after.get("id"),
-        target_label=after.get("id"),
-        context={
-            "action": "backtest_run_visibility",
-            "profile_ref": after.get("run_ref"),
-        },
-        changes=AuditService.build_changes(before, after, fields=("visibility",)),
-    )

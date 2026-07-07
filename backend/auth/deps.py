@@ -55,6 +55,48 @@ def require_perm(code: str) -> Callable[[], None]:
     return _dep
 
 
+def require_visibility_perm(
+    view_code: str,
+    publish_tenant_code: str,
+    publish_public_code: str,
+) -> Callable[..., None]:
+    """资产可见性切换守卫：按请求体 visibility 选择精确资源码。
+
+    依赖只守住查看基线并把实际资源码写入 request.state.resource_code，供 API 横切审计记录；
+    owner-only 和 publish 权限仍在接口函数内返回既有 ApiResponse 错误结构。
+    """
+    codes = frozenset({view_code, publish_tenant_code, publish_public_code})
+
+    async def _dep(request: Request = None) -> None:
+        visibility = None
+        if request is not None:
+            try:
+                body = await request.json()
+                if isinstance(body, dict):
+                    visibility = body.get("visibility")
+            except Exception:  # noqa: BLE001
+                visibility = None
+        code = (
+            publish_tenant_code if visibility == "tenant"
+            else publish_public_code if visibility == "public"
+            else view_code
+        )
+        set_current_resource_code(code)
+        if request is not None:
+            request.state.resource_code = code
+        ctx = get_current_context()
+        if ctx is None:
+            raise AuthError("未登录")
+        if ctx.is_system:
+            return
+        if view_code not in ctx.resources:
+            raise ForbiddenError("无权访问该功能")
+
+    _dep.resource_code = publish_tenant_code   # type: ignore[attr-defined]
+    _dep.resource_codes = codes                # type: ignore[attr-defined]
+    return _dep
+
+
 def require_system_perm(code: str) -> Callable[[], None]:
     """system-only 端点守卫 + 精确资源码元数据（stage4·R21）。
 

@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from backend.screening.presets import PRESET_PROFILES
 from backend.screening.profile import ProfileRepo
 from backend.services.screen_score import ScreenScoreService
+from backend.backtest.engine import BacktestEngine
+from backend.services.backtest_service import BacktestService
 
 _SECRET = "test-secret-screen-profile-visibility-0123456789abcdef"
 _EXPR = PRESET_PROFILES[0]["expression"]
@@ -137,6 +139,14 @@ def test_screen_profile_tenant_visibility_copy_and_owner_guards(client, pg):
             headers=_auth(viewer, tid),
         )
         assert copied.status_code == 200 and copied.json()["data"]["version"] == 1
+        audit = pg.query_df(
+            "SELECT action, resource_code, target_type, target_id FROM audit_log "
+            "WHERE tenant_id=%s AND actor_user_id=%s AND event_type='asset_copy' "
+            "AND action='screen_profile_copy' AND target_id=%s",
+            [tid, viewer, copy_id],
+        )
+        assert not audit.empty
+        assert audit.iloc[0]["resource_code"] == "screen-profile:save"
         copied_detail = client.get(f"/api/profiles/{copy_id}", headers=_auth(viewer, tid)).json()["data"]
         assert copied_detail["name"] == "我的筛选副本"
         assert copied_detail["visibility"] == "private"
@@ -197,6 +207,56 @@ def test_screen_run_visible_ref_persists_for_viewer_not_source_owner(pg, market)
         assert assets.rows.iloc[0]["profile_id"] == profile_id
         assert svc.assets is assets
         assert svc.owner_user_id == viewer
+    finally:
+        for owner_id in (owner, viewer):
+            pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [owner_id])
+            pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner_id])
+
+
+def test_backtest_resolves_visible_screen_profile_ref(pg, market, monkeypatch):
+    owner = "screen_bt_owner_" + uuid.uuid4().hex[:6]
+    viewer = "screen_bt_viewer_" + uuid.uuid4().hex[:6]
+    tenant = "screen_bt_tenant_" + uuid.uuid4().hex[:6]
+    profile_id = "screen_bt_" + uuid.uuid4().hex[:6]
+    try:
+        owner_repo = ProfileRepo(pg=pg, tenant_id=tenant, owner_user_id=owner)
+        owner_repo.save(profile_id, "可回测公开筛选", _EXPR)
+        shared = owner_repo.set_visibility(profile_id, "tenant", published_by=owner)
+
+        svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=viewer)
+        versions = svc._resolve_versions({"profile_id": shared["profile_ref"]})
+        assert versions["profile_version"] == 1
+
+        def fake_precompute(self, expression, d0, d1):  # noqa: ARG001
+            assert expression == _EXPR
+            return {}
+
+        days = [pd.Timestamp("2024-01-01"), pd.Timestamp("2024-01-02")]
+        monkeypatch.setattr(BacktestEngine, "_trading_days", lambda self, d0, d1: days)
+        monkeypatch.setattr(BacktestEngine, "_load_prices", lambda self, lo, hi, ma: {})
+        monkeypatch.setattr(
+            BacktestEngine,
+            "_load_scores",
+            lambda self, d0, d1: {
+                days[0]: pd.DataFrame(columns=["code", "grade", "total_score"]),
+            },
+        )
+        monkeypatch.setattr(
+            BacktestEngine,
+            "_benchmark",
+            lambda self, bench_code, ds: pd.Series([1.0, 1.0], index=days),
+        )
+        monkeypatch.setattr("backend.backtest.precompute.HitPrecomputer.precompute", fake_precompute)
+        out = BacktestEngine(
+            market,
+            tenant_id=tenant,
+            owner_user_id=viewer,
+        ).run({
+            "date_start": "2024-01-01",
+            "date_end": "2024-01-02",
+            "profile_id": shared["profile_ref"],
+        })
+        assert out.get("error") != f"方案不存在: {shared['profile_ref']}"
     finally:
         for owner_id in (owner, viewer):
             pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [owner_id])

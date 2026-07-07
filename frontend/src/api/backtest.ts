@@ -123,6 +123,7 @@ export interface RunParams {
   benchmark?: string
   horizons?: number[]
   thresholds?: number[]
+  source_run_ref?: string | null
 }
 
 // 稳健性测试（即跑即看）

@@ -35,6 +35,7 @@ from backend.services.asset_visibility import (
     visible_params,
     visible_sql,
 )
+from backend.services.asset_audit import record_backtest_reuse_audit
 from backend.storage.asset_repository import AssetRepository
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
@@ -112,6 +113,17 @@ class BacktestService:
                                     include_owner=True,
                                 )
 
+    def _visible_screen_profile(self, profile_ref_or_id: str | None) -> dict | None:
+        if not profile_ref_or_id:
+            return None
+        from backend.screening.profile import ProfileRepo
+
+        return ProfileRepo(market=self.c, pg=self.pg, tenant_id=self.tenant_id,
+                           owner_user_id=self.owner_user_id).get_visible(
+                               profile_ref_or_id,
+                               include_owner=True,
+                           )
+
     def _resolve_versions(self, params: dict) -> dict:
         """运行时解析各引用方案的当前版本（命名展示 + 签名用）。方案在 PG。"""
         out: dict = {}
@@ -125,12 +137,11 @@ class BacktestService:
             out["trade_profile_version"] = int(trade_profile["version"])
         elif params.get("trade_profile_id"):
             out["trade_profile_version"] = None
-        for pid_key, tbl, vk in (("profile_id", "screen_profile", "profile_version"),):
-            if params.get(pid_key):
-                df = self.pg.query_df(
-                    f"SELECT version FROM {tbl} WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
-                    [params[pid_key], *self._op])
-                out[vk] = int(df.iloc[0]["version"]) if not df.empty else None
+        screen_profile = self._visible_screen_profile(params.get("profile_id"))
+        if screen_profile:
+            out["profile_version"] = int(screen_profile["version"])
+        elif params.get("profile_id"):
+            out["profile_version"] = None
         return out
 
     def _signature(self, kind: str, params: dict, versions: dict) -> str:
@@ -283,6 +294,7 @@ class BacktestService:
                 self._persist(run_id, eq, out["trades"], metrics, layers)
                 self._persist_run(run_id, "strategy", params, "done", finished=True,
                                   versions=versions, signature=sig)
+                self._record_reuse_if_needed(params, run_id)
             return result
         except Exception as e:  # noqa: BLE001
             if persist:
@@ -404,6 +416,11 @@ class BacktestService:
             f"ORDER BY r.created_at DESC {tail}", args)
         rows = [self._decorate_run_row(r) for r in df.to_dict("records")]
         for row in rows:
+            if row.get("profile_id") and not row.get("profile_name"):
+                prof = self._visible_screen_profile(row["profile_id"])
+                if prof:
+                    row["profile_name"] = prof["name"]
+                    row["profile_version"] = int(prof["version"])
             if row.get("score_profile_id") and not row.get("score_profile_name"):
                 prof = self._visible_score_profile(row["score_profile_id"])
                 if prof:
@@ -415,6 +432,15 @@ class BacktestService:
                     row["trade_profile_name"] = prof["name"]
                     row["trade_profile_version"] = int(prof["version"])
         return rows
+
+    def _record_reuse_if_needed(self, params: dict, run_id: str) -> None:
+        source_run_ref = params.get("source_run_ref")
+        if not source_run_ref:
+            return
+        source_run = self._visible_run_row(str(source_run_ref), include_owner=True)
+        if source_run is None:
+            return
+        record_backtest_reuse_audit(source_run, run_id)
 
     def get_run(self, run_id: str) -> dict | None:
         run_d = self._visible_run_row(run_id, include_owner=True)

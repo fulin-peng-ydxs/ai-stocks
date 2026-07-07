@@ -6,6 +6,7 @@ from datetime import date, datetime
 import json
 import uuid
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -214,3 +215,111 @@ def test_backtest_run_visibility_list_detail_and_owner_guards(client, pg):
         _rm_user(pg, owner, tid, owner_role)
         _rm_user(pg, viewer, tid, viewer_role)
         _rm_user(pg, outsider, otid, outsider_role)
+
+
+def test_viewer_reuses_public_backtest_params_into_own_run(pg, market, monkeypatch):
+    from backend.auth.context import AuthContext, reset_context, set_context
+    from backend.screening.profile import ProfileRepo
+    from backend.services.backtest_service import BacktestService
+
+    tenant = "bt_reuse_tenant_" + uuid.uuid4().hex[:8]
+    owner = "bt_reuse_owner_" + uuid.uuid4().hex[:8]
+    viewer = "bt_reuse_viewer_" + uuid.uuid4().hex[:8]
+    source_run_id = "bt_reuse_src_" + uuid.uuid4().hex[:8]
+    profile_id = "bt_reuse_screen_" + uuid.uuid4().hex[:6]
+    try:
+        profile_repo = ProfileRepo(pg=pg, tenant_id=tenant, owner_user_id=owner)
+        profile_repo.save(
+            profile_id,
+            "公开回测筛选",
+            {"type": "col", "field": "rs_pct", "cmp": ">=", "value": 90},
+        )
+        shared_profile = profile_repo.set_visibility(profile_id, "tenant", published_by=owner)
+
+        _insert_run(pg, tenant=tenant, owner=owner, run_id=source_run_id)
+        owner_svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=owner)
+        source = owner_svc.set_run_visibility(source_run_id, "tenant", published_by=owner)
+        assert source is not None
+        source_ref = source["run_ref"]
+
+        eq = pd.DataFrame([
+            {
+                "trade_date": date(2024, 1, 1),
+                "equity": 1000000.0,
+                "cash": 1000000.0,
+                "position_value": 0.0,
+                "n_positions": 0,
+                "drawdown": 0.0,
+                "benchmark_equity": 1000000.0,
+            },
+            {
+                "trade_date": date(2024, 1, 2),
+                "equity": 1005000.0,
+                "cash": 1005000.0,
+                "position_value": 0.0,
+                "n_positions": 0,
+                "drawdown": 0.0,
+                "benchmark_equity": 1000000.0,
+            },
+        ])
+
+        def fake_run(self, params):  # noqa: ARG001
+            assert params["profile_id"] == shared_profile["profile_ref"]
+            return {
+                "equity": eq,
+                "trades": [],
+                "benchmark_code": "000905.SH",
+                "initial_capital": 1000000,
+            }
+
+        def fake_layers(self, *args, **kwargs):  # noqa: ARG001
+            return {
+                "horizons": [10],
+                "thresholds": [0.1],
+                "min_samples": 30,
+                "total_signals": 0,
+                "base_rate": {},
+                "by_grade": {},
+                "grades_order": [],
+            }
+
+        monkeypatch.setattr("backend.backtest.engine.BacktestEngine.run", fake_run)
+        monkeypatch.setattr("backend.backtest.signal.SignalAnalyzer.analyze", fake_layers)
+
+        token = set_context(AuthContext(user_id=viewer, tenant_id=tenant, resources={"backtest:run"}))
+        try:
+            viewer_svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=viewer)
+            result = viewer_svc.run_strategy({
+                "date_start": "2024-01-01",
+                "date_end": "2024-01-02",
+                "profile_id": shared_profile["profile_ref"],
+                "top_n": 5,
+                "initial_capital": 1000000,
+                "source_run_ref": source_ref,
+            })
+        finally:
+            reset_context(token)
+
+        row = pg.query_df(
+            "SELECT owner_user_id, params FROM backtest_run "
+            "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [result["run_id"], tenant, viewer],
+        )
+        assert not row.empty
+        params = json.loads(row.iloc[0]["params"])
+        assert params["profile_id"] == shared_profile["profile_ref"]
+        assert params["source_run_ref"] == source_ref
+
+        audit = pg.query_df(
+            "SELECT action, resource_code, target_type, target_id, context FROM audit_log "
+            "WHERE tenant_id=%s AND actor_user_id=%s AND event_type='asset_reuse' "
+            "AND action='backtest_run_reuse' AND target_id=%s",
+            [tenant, viewer, result["run_id"]],
+        )
+        assert not audit.empty
+        assert audit.iloc[0]["resource_code"] == "backtest:run"
+    finally:
+        _cleanup_runs(pg, owner, viewer)
+        for owner_id in (owner, viewer):
+            pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [owner_id])
+            pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner_id])

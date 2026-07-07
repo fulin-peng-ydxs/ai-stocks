@@ -307,7 +307,11 @@ class BacktestEngine:
         if profile_id:
             from backend.backtest.precompute import HitPrecomputer
             from backend.screening.profile import ProfileRepo
-            prof = ProfileRepo(self.c).get(profile_id)
+            prof = ProfileRepo(
+                self.c,
+                tenant_id=self.tenant_id,
+                owner_user_id=self.owner_user_id,
+            ).get_visible(profile_id, include_owner=True)
             if not prof:
                 return {"error": f"方案不存在: {profile_id}"}
             hits_by_day = HitPrecomputer(self.c).precompute(prof["expression"], d0, d1)

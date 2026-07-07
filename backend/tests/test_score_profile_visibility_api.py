@@ -100,6 +100,14 @@ def test_score_profile_tenant_visibility_and_copy(client, pg):
             headers=_auth(owner, tid),
         )
         assert pub.status_code == 200 and pub.json()["data"]["visibility"] == "tenant"
+        visibility_audit = pg.query_df(
+            "SELECT action, resource_code, target_type, target_id, changes FROM audit_log "
+            "WHERE tenant_id=%s AND actor_user_id=%s AND event_type='asset_visibility' "
+            "AND action='score_profile_visibility' AND target_id=%s",
+            [tid, owner, pid],
+        )
+        assert not visibility_audit.empty
+        assert visibility_audit.iloc[0]["resource_code"] == "score-profile:publish-tenant"
 
         listed = client.get("/api/score-profiles", headers=_auth(viewer, tid))
         rows = listed.json()["data"]
@@ -117,6 +125,14 @@ def test_score_profile_tenant_visibility_and_copy(client, pg):
             headers=_auth(viewer, tid),
         )
         assert copied.status_code == 200 and copied.json()["data"]["version"] == 1
+        copy_audit = pg.query_df(
+            "SELECT action, resource_code, target_type, target_id FROM audit_log "
+            "WHERE tenant_id=%s AND actor_user_id=%s AND event_type='asset_copy' "
+            "AND action='score_profile_copy' AND target_id=%s",
+            [tid, viewer, copy_id],
+        )
+        assert not copy_audit.empty
+        assert copy_audit.iloc[0]["resource_code"] == "score-profile:save"
         duplicated = client.post(
             f"/api/score-profiles/{shared['profile_ref']}/copy",
             json={"id": copy_id, "name": "覆盖副本"},

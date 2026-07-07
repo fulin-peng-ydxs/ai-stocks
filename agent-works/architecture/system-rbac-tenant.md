@@ -148,6 +148,8 @@ flowchart LR
 4. 前端页面入口挂在静态路由表，同时依赖 `/me` 菜单树显示；按钮用 `v-permission`。
 5. 如果产生用户资产，表结构和查询必须接入 `tenant_id + owner_user_id` 归属。
 
+同一 visibility 路由同时承载“收回/租户公开/全体公开”时，路由依赖使用 `require_visibility_perm(view, publish-tenant, publish-public)`：运行时按请求体 `visibility` 写入实际 `request.state.resource_code`，函数体继续做 owner-only 与 publish 权限校验；路由元数据暴露三类资源码，供扫描测试和 API 横切审计追踪，不把发布请求误记为普通 view。
+
 ### 新页面接入菜单和权限
 
 新增页面不会因为新增一个 Vue 文件就自动进入系统。当前是“代码登记 + 启动 seed + 角色授权”的可控接入模型：

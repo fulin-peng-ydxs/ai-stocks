@@ -129,9 +129,9 @@ flowchart LR
 ## 业务流程
 
 **跑一次策略回测**：
-1. 前端组织参数（区间/筛选+评分+买卖方案 id/TopN/本金/调仓周期/止盈止损/行业上限/基准）→ `POST /prepare` 查同条件历史；命中则提示「加载/覆盖」。
-2. `POST /run` → `run_strategy`：解析方案版本、算签名、purge 同签名旧记录、写 `running`。
-3. `BacktestEngine.run`：预载行情（向前缓冲 ma_period 个交易日算均线，`engine.py:266`）；构建逐日评分榜 + 买/卖树命中（`_decision_data`，`engine.py:176`）；可选筛选方案命中预计算（`HitPrecomputer`）。
+1. 前端组织参数（区间/筛选+评分+买卖方案 ref 或旧 id/TopN/本金/调仓周期/止盈止损/行业上限/基准）→ `POST /prepare` 查同条件历史；命中则提示「加载/覆盖」。公开资产必须优先传 `profile_ref`，避免跨 owner 复用退化为当前 owner 私有 id。
+2. `POST /run` → `run_strategy`：按可见性解析筛选/评分/买卖方案版本、算签名、purge 同签名旧记录、写 `running`。公开回测“复用参数”会额外传 `source_run_ref`，该字段只用于 params 留痕和 `asset_reuse` 审计，不参与签名。
+3. `BacktestEngine.run`：预载行情（向前缓冲 ma_period 个交易日算均线，`engine.py:266`）；构建逐日评分榜 + 买/卖树命中（`_decision_data`，`engine.py:176`）；可选筛选方案通过 `ProfileRepo.get_visible(..., include_owner=True)` 解析后交给 `HitPrecomputer` 做命中预计算。
 4. 逐日循环：信号日 `D-1` 评估卖出（卖树命中/止盈/止损/到期）→ 执行日 `D` 开盘撮合（涨跌停/停牌检查，不可成交则顺延）→ 选股（信号日截面按评分降序，过候选池+买树+行业上限）→ `D` 开盘买入（整手+滑点+费用）→ `D` 收盘估值记净值。
 5. 区间末对仍持仓者按最后可得价强平（`exit_reason=区间末强平/停牌·退市强平`，`engine.py:444`），不悬空。
 6. `compute_metrics` 算绩效 + 同区间 `SignalAnalyzer` 算分层 → 落 `backtest_equity`/`backtest_trade`/`backtest_metrics`，写 `done`。

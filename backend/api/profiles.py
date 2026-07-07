@@ -10,11 +10,11 @@ from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
-from backend.auth.deps import require_perm
+from backend.auth.deps import require_perm, require_visibility_perm
 from backend.common.exceptions import NotFoundError, ValidationError
 from backend.screening.condition import ConditionError, validate_ast
 from backend.screening.profile import ProfileRepo
-from backend.services.audit_service import AuditService
+from backend.services.asset_audit import record_asset_copy_audit, record_asset_visibility_audit
 from backend.services.screen_score import ScreenScoreService
 from backend.storage import get_client
 
@@ -106,7 +106,11 @@ def delete_profile(pid: str) -> ApiResponse:
 
 
 @router.post("/profiles/{pid}/visibility", response_model=ApiResponse,
-             dependencies=[Depends(require_perm("screen-profile:view"))])
+             dependencies=[Depends(require_visibility_perm(
+                 "screen-profile:view",
+                 "screen-profile:publish-tenant",
+                 "screen-profile:publish-public",
+             ))])
 def set_profile_visibility(pid: str, body: ProfileVisibilityBody) -> ApiResponse:
     visibility = body.visibility
     if visibility == "tenant" and not _has_perm("screen-profile:publish-tenant"):
@@ -125,18 +129,38 @@ def set_profile_visibility(pid: str, body: ProfileVisibilityBody) -> ApiResponse
         return err(403, str(e))
     if not p:
         raise NotFoundError(f"方案不存在: {pid}")
-    _record_visibility_audit(before, p)
+    record_asset_visibility_audit(
+        before,
+        p,
+        action="screen_profile_visibility",
+        target_type="screen_profile",
+        ref_key="profile_ref",
+        fallback_resource_prefix="screen-profile",
+    )
     return ok(p)
 
 
 @router.post("/profiles/{pid}/copy", response_model=ApiResponse,
              dependencies=[Depends(require_perm("screen-profile:save"))])
 def copy_profile(pid: str, body: ProfileCopyBody) -> ApiResponse:
+    repo = ProfileRepo()
+    source = repo.get_visible(pid, include_owner=True)
+    if not source:
+        return err(404, "方案不存在")
     try:
-        version = ProfileRepo().copy_visible(pid, body.id, body.name)
+        version = repo.copy_visible(pid, body.id, body.name)
     except ValueError as e:
         msg = str(e)
         return err(409 if "已存在" in msg else 404, msg)
+    copied = repo.get_visible(body.id, include_owner=True)
+    record_asset_copy_audit(
+        source,
+        copied,
+        action="screen_profile_copy",
+        target_type="screen_profile",
+        resource_code="screen-profile:save",
+        ref_key="profile_ref",
+    )
     return ok({"id": body.id, "version": version, "msg": "已复制"})
 
 
@@ -162,28 +186,3 @@ def run_screen(body: ScreenRunIn) -> ApiResponse:
         "exclude_st": body.exclude_st,
         "hits": hits,
     })
-
-
-def _record_visibility_audit(before: dict, after: dict) -> None:
-    ctx = get_current_context()
-    if ctx is None:
-        return
-    visibility = after.get("visibility")
-    AuditService().record_security_event(
-        event_type="asset_visibility",
-        action="screen_profile_visibility",
-        result="success",
-        status="completed",
-        tenant_id=ctx.tenant_id,
-        actor_user_id=ctx.user_id,
-        resource_code=f"screen-profile:publish-{visibility}"
-        if visibility in {"tenant", "public"} else None,
-        target_type="screen_profile",
-        target_id=after.get("id"),
-        target_label=after.get("name"),
-        context={
-            "action": "screen_profile_visibility",
-            "profile_ref": after.get("profile_ref"),
-        },
-        changes=AuditService.build_changes(before, after, fields=("visibility",)),
-    )

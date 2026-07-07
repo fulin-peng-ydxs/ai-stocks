@@ -25,6 +25,7 @@ _CONTEXT_ALLOW_KEYS = {
     "config_keys",
     "route",
     "profile_ref",
+    "source_run_ref",
     "data_scope",
     "task_type",
     "job_name",
@@ -48,6 +49,9 @@ _TARGET_TYPE_LABELS = {
     "app_config": "系统设置",
     "dict_type": "字典类型",
     "dict_item": "字典项",
+    "score_profile": "评分方案",
+    "screen_profile": "筛选方案",
+    "trade_profile": "买卖方案",
     "backtest_run": "回测记录",
 }
 

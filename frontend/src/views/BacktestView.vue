@@ -104,6 +104,17 @@ const profiles = ref<Profile[]>([])
 const scoreProfiles = ref<ScoreProfileSummary[]>([])
 const tradeProfiles = ref<TradeProfileSummary[]>([])
 const useTradeProfile = computed(() => !!tradeProfileId.value)
+const nextRunSourceRef = ref('')
+
+function screenProfileKey(p: Profile): string {
+  return p.profile_ref || p.id
+}
+
+function normalizeScreenProfileKey(value?: string | null): string {
+  if (!value) return ''
+  const matched = profiles.value.find((p) => screenProfileKey(p) === value || p.id === value)
+  return matched ? screenProfileKey(matched) : value
+}
 
 function scoreProfileKey(p: ScoreProfileSummary): string {
   return p.profile_ref || p.id
@@ -313,7 +324,7 @@ function restoreParams() {
     kind.value = (p.kind === 'signal' ? 'score_check' : p.kind) ?? kind.value
     dateStart.value = p.dateStart ?? dateStart.value
     dateEnd.value = p.dateEnd ?? dateEnd.value
-    profileId.value = p.profileId ?? profileId.value
+    profileId.value = normalizeScreenProfileKey(p.profileId ?? profileId.value)
     scoreProfileId.value = p.scoreProfileId ?? scoreProfileId.value
     tradeProfileId.value = normalizeTradeProfileKey(p.tradeProfileId ?? tradeProfileId.value)
     topN.value = p.topN ?? topN.value
@@ -335,7 +346,7 @@ function applyRunParams(run: RunSummary) {
   try { p = JSON.parse((run as any).params || '{}') } catch { /* ignore */ }
   if (p.date_start) dateStart.value = ymd(p.date_start)
   if (p.date_end) dateEnd.value = ymd(p.date_end)
-  profileId.value = p.profile_id || ''
+  profileId.value = normalizeScreenProfileKey(p.profile_id)
   scoreProfileId.value = normalizeScoreProfileKey(p.score_profile_id)
   tradeProfileId.value = normalizeTradeProfileKey(p.trade_profile_id)
   if (p.top_n) topN.value = p.top_n
@@ -353,6 +364,7 @@ async function loadRun(id: string) {
   if (!id) return
   loading.value = true
   loadingRun.value = true
+  nextRunSourceRef.value = ''
   strat.value = null; sig.value = null
   try {
     const r = await getRun(id)
@@ -449,6 +461,7 @@ async function reuseCurrentRunParams() {
     } else {
       kind.value = 'strategy'
       applyRunParams(r.run)
+      nextRunSourceRef.value = r.run.run_ref || selectedRun.value
     }
     strat.value = null
     sig.value = null
@@ -494,7 +507,10 @@ onMounted(async () => {
   topN.value = Number(settings.topN)
   initCap.value = Number(settings.initCap)
   robustPanels.value = settings.robustExpanded ? ['robust'] : []
-  try { profiles.value = await listProfiles() } catch { /* ignore */ }
+  try {
+    profiles.value = await listProfiles()
+    profileId.value = normalizeScreenProfileKey(profileId.value)
+  } catch { /* ignore */ }
   try {
     scoreProfiles.value = await listScoreProfiles()
     scoreProfileId.value = normalizeScoreProfileKey(scoreProfileId.value)
@@ -587,6 +603,7 @@ function buildBody(): RunParams {
       profile_id: profileId.value || null,
       trade_profile_id: tradeProfileId.value || null,
     })
+    if (nextRunSourceRef.value) body.source_run_ref = nextRunSourceRef.value
     if (industryOn.value) body.industry_max_pct = industryPct.value / 100
     if (!useTradeProfile.value) {
       // 买/卖/兜底来自买卖方案时不叠加手填卖出规则；否则用手填规则
@@ -647,6 +664,7 @@ async function doRun(body: RunParams) {
       if (rid) selectedRun.value = rid
     }
     await loadHistory() // 新结果进历史列表
+    nextRunSourceRef.value = ''
     dirty.value = false // 出结果 → 按钮置灰（参数未变时再点无意义）
   } catch (e) {
     ElMessage.error((e as Error).message || '回测失败')
@@ -919,7 +937,7 @@ async function openTradeChart(row: TradeRow) {
               </div>
             </template>
             <el-select v-model="profileId" clearable placeholder="全市场按评分" style="width: 160px">
-              <el-option v-for="p in profiles" :key="p.id" :value="p.id" :label="p.name" />
+              <el-option v-for="p in profiles" :key="screenProfileKey(p)" :value="screenProfileKey(p)" :label="p.name" />
             </el-select>
           </el-tooltip>
           <span class="lbl">持仓数

@@ -144,6 +144,14 @@ def test_trade_profile_tenant_visibility_copy_and_owner_guards(client, pg):
             headers=_auth(viewer, tid),
         )
         assert copied.status_code == 200 and copied.json()["data"]["version"] == 1
+        audit = pg.query_df(
+            "SELECT action, resource_code, target_type, target_id FROM audit_log "
+            "WHERE tenant_id=%s AND actor_user_id=%s AND event_type='asset_copy' "
+            "AND action='trade_profile_copy' AND target_id=%s",
+            [tid, viewer, copy_id],
+        )
+        assert not audit.empty
+        assert audit.iloc[0]["resource_code"] == "trade-profile:save"
         copied_detail = client.get(f"/api/trade-profiles/{copy_id}", headers=_auth(viewer, tid)).json()["data"]
         assert copied_detail["name"] == "我的买卖副本"
         assert copied_detail["visibility"] == "private"

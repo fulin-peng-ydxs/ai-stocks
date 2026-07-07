@@ -10,8 +10,9 @@ from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
-from backend.auth.deps import require_perm
+from backend.auth.deps import require_perm, require_visibility_perm
 from backend.scoring.score_profile import ScoreProfileRepo
+from backend.services.asset_audit import record_asset_copy_audit, record_asset_visibility_audit
 from backend.storage import get_client
 
 router = APIRouter(prefix="/api", tags=["score-profiles"])
@@ -84,7 +85,11 @@ def delete_score_profile(pid: str) -> ApiResponse:
 
 
 @router.post("/score-profiles/{pid}/visibility", response_model=ApiResponse,
-             dependencies=[Depends(require_perm("score-profile:view"))])
+             dependencies=[Depends(require_visibility_perm(
+                 "score-profile:view",
+                 "score-profile:publish-tenant",
+                 "score-profile:publish-public",
+             ))])
 def set_score_profile_visibility(pid: str, body: ScoreProfileVisibilityBody) -> ApiResponse:
     visibility = body.visibility
     if visibility == "tenant" and not _has_perm("score-profile:publish-tenant"):
@@ -92,23 +97,49 @@ def set_score_profile_visibility(pid: str, body: ScoreProfileVisibilityBody) -> 
     if visibility == "public" and not _has_perm("score-profile:publish-public"):
         return err(403, "无权公开到全体用户")
     repo = ScoreProfileRepo()
+    before = repo.get_visible(pid, include_owner=True)
+    if not before:
+        return err(404, "方案不存在")
     try:
         p = repo.set_visibility(pid, visibility, published_by=get_current_context().user_id)  # type: ignore[union-attr]
     except ValueError as e:
         return err(400, str(e))
     except PermissionError as e:
         return err(403, str(e))
-    return ok(p) if p else err(404, "方案不存在")
+    if not p:
+        return err(404, "方案不存在")
+    record_asset_visibility_audit(
+        before,
+        p,
+        action="score_profile_visibility",
+        target_type="score_profile",
+        ref_key="profile_ref",
+        fallback_resource_prefix="score-profile",
+    )
+    return ok(p)
 
 
 @router.post("/score-profiles/{pid}/copy", response_model=ApiResponse,
              dependencies=[Depends(require_perm("score-profile:save"))])
 def copy_score_profile(pid: str, body: ScoreProfileCopyBody) -> ApiResponse:
+    repo = ScoreProfileRepo()
+    source = repo.get_visible(pid, include_owner=True)
+    if not source:
+        return err(404, "方案不存在")
     try:
-        version = ScoreProfileRepo().copy_visible(pid, body.id, body.name)
+        version = repo.copy_visible(pid, body.id, body.name)
     except ValueError as e:
         msg = str(e)
         return err(409 if "已存在" in msg else 404, msg)
+    copied = repo.get_visible(body.id, include_owner=True)
+    record_asset_copy_audit(
+        source,
+        copied,
+        action="score_profile_copy",
+        target_type="score_profile",
+        resource_code="score-profile:save",
+        ref_key="profile_ref",
+    )
     return ok({"id": body.id, "version": version, "msg": "已复制"})
 
 
