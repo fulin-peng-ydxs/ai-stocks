@@ -91,6 +91,17 @@ class BacktestService:
                                     include_owner=True,
                                 )
 
+    def _visible_trade_profile(self, profile_ref_or_id: str | None) -> dict | None:
+        if not profile_ref_or_id:
+            return None
+        from backend.signals.trade_profile import TradeProfileRepo
+
+        return TradeProfileRepo(market=self.c, pg=self.pg, tenant_id=self.tenant_id,
+                                owner_user_id=self.owner_user_id).get_visible(
+                                    profile_ref_or_id,
+                                    include_owner=True,
+                                )
+
     def _resolve_versions(self, params: dict) -> dict:
         """运行时解析各引用方案的当前版本（命名展示 + 签名用）。方案在 PG。"""
         out: dict = {}
@@ -99,8 +110,12 @@ class BacktestService:
             out["score_profile_version"] = int(score_profile["version"])
         elif params.get("score_profile_id"):
             out["score_profile_version"] = None
-        for pid_key, tbl, vk in (("profile_id", "screen_profile", "profile_version"),
-                                 ("trade_profile_id", "trade_profile", "trade_profile_version")):
+        trade_profile = self._visible_trade_profile(params.get("trade_profile_id"))
+        if trade_profile:
+            out["trade_profile_version"] = int(trade_profile["version"])
+        elif params.get("trade_profile_id"):
+            out["trade_profile_version"] = None
+        for pid_key, tbl, vk in (("profile_id", "screen_profile", "profile_version"),):
             if params.get(pid_key):
                 df = self.pg.query_df(
                     f"SELECT version FROM {tbl} WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
@@ -195,7 +210,12 @@ class BacktestService:
             # 共享一个 IndicatorEngine：策略回测与分层分析复用同一区间快照缓存（性能：避免重算）
             from backend.indicators.engine import IndicatorEngine
             shared_ind = IndicatorEngine(self.c)
-            out = BacktestEngine(self.c, ind=shared_ind).run(params)
+            out = BacktestEngine(
+                self.c,
+                ind=shared_ind,
+                tenant_id=self.tenant_id,
+                owner_user_id=self.owner_user_id,
+            ).run(params)
             if "error" in out:
                 if persist:
                     self._persist_run(run_id, "strategy", params, "failed", detail=out["error"], finished=True,
@@ -298,6 +318,11 @@ class BacktestService:
                 if prof:
                     row["score_profile_name"] = prof["name"]
                     row["score_profile_version"] = int(prof["version"])
+            if row.get("trade_profile_id") and not row.get("trade_profile_name"):
+                prof = self._visible_trade_profile(row["trade_profile_id"])
+                if prof:
+                    row["trade_profile_name"] = prof["name"]
+                    row["trade_profile_version"] = int(prof["version"])
         return rows
 
     def get_run(self, run_id: str) -> dict | None:

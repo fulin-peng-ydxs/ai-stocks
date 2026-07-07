@@ -613,12 +613,14 @@ async function tryRun() {
 
 // ════════════ 买卖指标方案 ════════════
 import {
+  copyTradeProfile,
   deleteTradeProfile,
   getTradeProfile,
   getTradeProfileVersions,
   listTradeProfiles,
   previewConditions,
   saveTradeProfile,
+  setTradeProfileVisibility,
   type CondTree,
   type TradeCond,
   type TradeProfileSummary,
@@ -628,11 +630,15 @@ import {
 const tProfiles = ref<TradeProfileSummary[]>([])
 const tProfilesLoading = ref(false)
 const tProfilesError = ref(false)
+const tCurRef = ref('')
 const tCurId = ref('')
 const tCurVersion = ref<number | null>(null)
 const tEditId = ref('')
 const tEditName = ref('')
 const tIsNew = ref(false)
+const tReadonly = ref(false)
+const tVisibility = ref<'private' | 'tenant' | 'public'>('private')
+const tVisibilitySaving = ref(false)
 const buyLogic = ref<'AND' | 'OR'>('AND')
 const sellLogic = ref<'AND' | 'OR'>('OR')
 const buyConds = ref<TradeCond[]>([])
@@ -643,6 +649,34 @@ const NUM_CMP = [
   { v: '>=', t: '≥' }, { v: '<=', t: '≤' }, { v: '>', t: '>' },
   { v: '<', t: '<' }, { v: 'between', t: '区间' },
 ]
+const canTradePublishTenant = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'trade-profile:publish-tenant'),
+)
+const canTradePublishPublic = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'trade-profile:publish-public'),
+)
+const canEditTradeVisibility = computed(() =>
+  !!tCurRef.value && !tIsNew.value && !tReadonly.value && (canTradePublishTenant.value || canTradePublishPublic.value),
+)
+function tradeProfileKey(p: TradeProfileSummary): string {
+  return p.profile_ref || p.id
+}
+function tradeVisibilityLabel(visibility: 'private' | 'tenant' | 'public' = tVisibility.value): string {
+  if (visibility === 'tenant') return '租户公开'
+  if (visibility === 'public') return '全体公开'
+  return '私有'
+}
+function tradeVisibilityTagType(visibility: 'private' | 'tenant' | 'public' = tVisibility.value): 'info' | 'success' | 'warning' {
+  if (visibility === 'tenant') return 'success'
+  if (visibility === 'public') return 'warning'
+  return 'info'
+}
+function tradeSourceLabel(p: TradeProfileSummary): string {
+  if (p.is_preset) return '系统内置'
+  if (p.source === 'tenant') return '租户公开'
+  if (p.source === 'public') return '全体公开'
+  return '我的'
+}
 
 async function loadTradeProfiles() {
   tProfilesLoading.value = true
@@ -709,7 +743,10 @@ function fromTree(tree: CondTree | Record<string, never> | undefined): { logic: 
 
 async function selectTradeProfile(pid: string) {
   const p = await getTradeProfile(pid)
+  tCurRef.value = p.profile_ref || pid
   tCurId.value = p.id; tCurVersion.value = p.version; tEditId.value = p.id; tEditName.value = p.name; tIsNew.value = false
+  tReadonly.value = !!p.readonly
+  tVisibility.value = p.visibility || 'private'
   const b = fromTree(p.buy_tree); buyLogic.value = b.logic; buyConds.value = b.conds
   const s = fromTree(p.sell_tree); sellLogic.value = s.logic; sellConds.value = s.conds
   backstop.value = {
@@ -719,7 +756,10 @@ async function selectTradeProfile(pid: string) {
   }
 }
 function newTradeProfile() {
+  tCurRef.value = ''
   tCurId.value = ''; tCurVersion.value = null; tEditId.value = ''; tEditName.value = ''; tIsNew.value = true
+  tReadonly.value = false
+  tVisibility.value = 'private'
   buyLogic.value = 'AND'; buyConds.value = []
   sellLogic.value = 'OR'; sellConds.value = []
   backstop.value = { tp: null, sl: null, hold: null }
@@ -729,8 +769,8 @@ function newTradeProfile() {
 const tVerVisible = ref(false)
 const tVersions = ref<TradeProfileVersion[]>([])
 async function openTradeVersions() {
-  if (!tCurId.value) return
-  tVersions.value = (await getTradeProfileVersions(tCurId.value)).versions
+  if (!tCurRef.value) return
+  tVersions.value = (await getTradeProfileVersions(tCurRef.value)).versions
   tVerVisible.value = true
 }
 function restoreTradeVersion(v: TradeProfileVersion) {
@@ -745,6 +785,7 @@ function restoreTradeVersion(v: TradeProfileVersion) {
   ElMessage.success(`已载入 v${v.version} 到编辑器，确认后点「保存」生成新版本`)
 }
 async function saveTrade() {
+  if (tReadonly.value) { ElMessage.warning('公开方案为只读，请先复制为自己的方案'); return }
   if (!tEditName.value) { ElMessage.warning('请填写方案名称'); return }
   if (!buyConds.value.length) { ElMessage.warning('请至少配置一个买入条件'); return }
   const bs = {
@@ -767,13 +808,61 @@ async function saveTrade() {
     tEditId.value = r.id
     tCurId.value = r.id
     await loadTradeProfiles()
+    const saved = tProfiles.value.find((p) => p.id === r.id && p.source === 'mine')
+    tCurRef.value = saved ? tradeProfileKey(saved) : r.id
   } catch { /* 拦截器已提示 */ } finally { tSaving.value = false }
 }
 async function removeTrade() {
-  if (!tCurId.value) return
+  if (!tCurRef.value || tReadonly.value) return
   await ElMessageBox.confirm(`确认删除买卖方案「${tEditName.value}」？`, '提示', { type: 'warning' })
-  await deleteTradeProfile(tCurId.value)
+  await deleteTradeProfile(tCurRef.value)
   ElMessage.success('已删除'); newTradeProfile(); await loadTradeProfiles()
+}
+
+async function publishTradeProfile(visibility: 'private' | 'tenant' | 'public') {
+  if (!tCurRef.value || tReadonly.value || tVisibilitySaving.value) return
+  if (visibility === tVisibility.value) return
+  if (visibility === 'tenant' && !canTradePublishTenant.value) {
+    ElMessage.warning('无权公开到租户')
+    return
+  }
+  if (visibility === 'public' && !canTradePublishPublic.value) {
+    ElMessage.warning('无权公开到全体用户')
+    return
+  }
+  tVisibilitySaving.value = true
+  try {
+    const p = await setTradeProfileVisibility(tCurRef.value, visibility)
+    tVisibility.value = p.visibility || visibility
+    ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
+    await loadTradeProfiles()
+  } finally {
+    tVisibilitySaving.value = false
+  }
+}
+function onTradeVisibilityCommand(command: string | number | object) {
+  if (command !== 'private' && command !== 'tenant' && command !== 'public') return
+  publishTradeProfile(command)
+}
+function nextCopyTradeId(base: string): string {
+  const root = (base || 'trade').replace(/[^\w-]/g, '_') || 'trade'
+  const mineIds = new Set(tProfiles.value.filter((p) => p.source === 'mine').map((p) => p.id))
+  let id = `${root}_copy`
+  let seq = 2
+  while (mineIds.has(id)) {
+    id = `${root}_copy_${seq}`
+    seq += 1
+  }
+  return id
+}
+async function copyCurrentTradeProfile() {
+  if (!tCurRef.value) return
+  const id = nextCopyTradeId(tCurId.value)
+  await copyTradeProfile(tCurRef.value, { id, name: `${tEditName.value || '买卖方案'} 副本` })
+  ElMessage.success('已复制为我的方案')
+  await loadTradeProfiles()
+  const copied = tProfiles.value.find((p) => p.id === id && p.source === 'mine')
+  if (copied) await selectTradeProfile(tradeProfileKey(copied))
 }
 
 const previewHit = ref<{ buy: number | null; sell: number | null }>({ buy: null, sell: null })
@@ -1269,22 +1358,59 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </template>
             </el-result>
             <ul>
-              <li v-for="p in tProfiles" :key="p.id" :class="{ active: p.id === tCurId }"
-                  @click="selectTradeProfile(p.id)">
+              <li v-for="p in tProfiles" :key="tradeProfileKey(p)" :class="{ active: tradeProfileKey(p) === tCurRef }"
+                  @click="selectTradeProfile(tradeProfileKey(p))">
                 <span>{{ p.name }}</span>
                 <el-tag v-if="p.is_preset" size="small" type="info">系统内置</el-tag>
+                <el-tag v-else-if="p.source === 'mine'" size="small" type="primary" effect="plain">我的</el-tag>
+                <el-tag v-else-if="p.source === 'tenant'" size="small" type="success" effect="plain">租户公开</el-tag>
+                <el-tag v-else-if="p.source === 'public'" size="small" type="warning" effect="plain">全体公开</el-tag>
               </li>
             </ul>
           </aside>
 
           <section class="editor">
             <div class="ed-head">
-              <el-input v-model="tEditName" placeholder="方案名称" style="width: 190px" />
+              <el-input v-model="tEditName" :disabled="tReadonly" placeholder="方案名称" style="width: 190px" />
               <span v-if="tEditId && !tIsNew" class="id-badge mono">{{ tEditId }}</span>
               <span v-if="tCurVersion && !tIsNew" class="ver-badge" title="点击查看历史版本" @click="openTradeVersions">v{{ tCurVersion }}</span>
+              <el-dropdown
+                v-if="canEditTradeVisibility"
+                trigger="click"
+                :hide-on-click="true"
+                @command="onTradeVisibilityCommand"
+              >
+                <el-tag
+                  class="visibility-trigger"
+                  :type="tradeVisibilityTagType()"
+                  size="small"
+                  effect="plain"
+                >
+                  {{ tradeVisibilityLabel() }}
+                  <el-icon class="visibility-arrow"><ArrowDown /></el-icon>
+                </el-tag>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="private" :disabled="tVisibility === 'private' || tVisibilitySaving">
+                      私有
+                    </el-dropdown-item>
+                    <el-dropdown-item command="tenant" :disabled="tVisibility === 'tenant' || !canTradePublishTenant || tVisibilitySaving">
+                      租户公开
+                    </el-dropdown-item>
+                    <el-dropdown-item command="public" :disabled="tVisibility === 'public' || !canTradePublishPublic || tVisibilitySaving">
+                      全体公开
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-tag v-else-if="!tIsNew" :type="tradeVisibilityTagType()" size="small" effect="plain">
+                {{ tradeVisibilityLabel() }}
+              </el-tag>
+              <el-tag v-if="tReadonly" size="small" type="info" effect="plain">只读</el-tag>
               <div class="spacer" />
-              <el-button v-permission="'trade-profile:save'" :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
-              <el-button v-permission="'trade-profile:delete'" v-if="tCurId && !tIsNew" type="danger" plain @click="removeTrade">删除</el-button>
+              <el-button v-if="tReadonly" v-permission="'trade-profile:save'" plain @click="copyCurrentTradeProfile">复制为我的方案</el-button>
+              <el-button v-permission="'trade-profile:save'" :disabled="tReadonly" :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
+              <el-button v-permission="'trade-profile:delete'" v-if="tCurId && !tIsNew && !tReadonly" type="danger" plain @click="removeTrade">删除</el-button>
             </div>
             <p class="hint">买入/卖出各是一组技术指标条件(且/或)。卖出以指标命中为主,止盈/止损/最大持仓为可选兜底,先到先卖。</p>
 
@@ -1292,7 +1418,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <div class="cond-block">
               <div class="cond-head">
                 <span class="cond-title buy">买入条件</span>
-                <el-radio-group v-model="buyLogic" size="small">
+                <el-radio-group v-model="buyLogic" size="small" :disabled="tReadonly">
                   <el-radio-button value="AND">且(全满足)</el-radio-button>
                   <el-radio-button value="OR">或(任一)</el-radio-button>
                 </el-radio-group>
@@ -1300,43 +1426,43 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <el-tag v-if="previewHit.buy !== null" type="success" size="small" round>今日命中 {{ previewHit.buy }} 只</el-tag>
               </div>
               <div v-for="(c, i) in buyConds" :key="'b' + i" class="cond-row">
-                <el-select v-model="c.indicator" size="small" filterable style="width: 150px" @change="onCondIndicator(c)">
+                <el-select v-model="c.indicator" size="small" filterable style="width: 150px" :disabled="tReadonly" @change="onCondIndicator(c)">
                   <el-option v-for="d in scorable" :key="d.key" :label="d.name_cn" :value="d.key" />
                 </el-select>
                 <span v-for="p in defOf(c.indicator)?.params ?? []" :key="p.name" class="param-item">
                   <label>{{ p.label }}</label>
-                  <el-input-number v-model="c.params![p.name]" size="small" :controls="false" style="width: 58px" />
+                  <el-input-number v-model="c.params![p.name]" size="small" :disabled="tReadonly" :controls="false" style="width: 58px" />
                 </span>
                 <template v-if="defOf(c.indicator)?.dtype === 'bool'">
-                  <el-select :model-value="c.value" size="small" style="width: 96px" @change="(v: boolean) => (c.value = v)">
+                  <el-select :model-value="c.value" size="small" style="width: 96px" :disabled="tReadonly" @change="(v: boolean) => (c.value = v)">
                     <el-option :value="true" label="满足" />
                     <el-option :value="false" label="不满足" />
                   </el-select>
                 </template>
                 <template v-else>
-                  <el-select :model-value="c.cmp" size="small" style="width: 86px" @change="(v: string) => onCmpChange(c, v)">
+                  <el-select :model-value="c.cmp" size="small" style="width: 86px" :disabled="tReadonly" @change="(v: string) => onCmpChange(c, v)">
                     <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
                   </el-select>
                   <template v-if="c.cmp === 'between'">
-                    <el-input-number :model-value="(c.value as number[])[0]" size="small" :controls="false" style="width: 78px"
+                    <el-input-number :model-value="(c.value as number[])[0]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
                                      @update:model-value="(v: number) => (c.value = [v, (c.value as number[])[1]])" />
                     <span>~</span>
-                    <el-input-number :model-value="(c.value as number[])[1]" size="small" :controls="false" style="width: 78px"
+                    <el-input-number :model-value="(c.value as number[])[1]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
                                      @update:model-value="(v: number) => (c.value = [(c.value as number[])[0], v])" />
                   </template>
-                  <el-input-number v-else :model-value="(c.value as number)" size="small" :controls="false" style="width: 96px"
+                  <el-input-number v-else :model-value="(c.value as number)" size="small" :disabled="tReadonly" :controls="false" style="width: 96px"
                                    @update:model-value="(v: number) => (c.value = v)" />
                 </template>
-                <el-button link type="danger" @click="removeCond('buy', i)">删</el-button>
+                <el-button link type="danger" :disabled="tReadonly" @click="removeCond('buy', i)">删</el-button>
               </div>
-              <el-button size="small" plain @click="addCond('buy')">＋ 买入条件</el-button>
+              <el-button size="small" plain :disabled="tReadonly" @click="addCond('buy')">＋ 买入条件</el-button>
             </div>
 
             <!-- 卖出条件 -->
             <div class="cond-block">
               <div class="cond-head">
                 <span class="cond-title sell">卖出条件</span>
-                <el-radio-group v-model="sellLogic" size="small">
+                <el-radio-group v-model="sellLogic" size="small" :disabled="tReadonly">
                   <el-radio-button value="AND">且(全满足)</el-radio-button>
                   <el-radio-button value="OR">或(任一)</el-radio-button>
                 </el-radio-group>
@@ -1344,45 +1470,45 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <el-tag v-if="previewHit.sell !== null" type="warning" size="small" round>今日命中 {{ previewHit.sell }} 只</el-tag>
               </div>
               <div v-for="(c, i) in sellConds" :key="'s' + i" class="cond-row">
-                <el-select v-model="c.indicator" size="small" filterable style="width: 150px" @change="onCondIndicator(c)">
+                <el-select v-model="c.indicator" size="small" filterable style="width: 150px" :disabled="tReadonly" @change="onCondIndicator(c)">
                   <el-option v-for="d in scorable" :key="d.key" :label="d.name_cn" :value="d.key" />
                 </el-select>
                 <span v-for="p in defOf(c.indicator)?.params ?? []" :key="p.name" class="param-item">
                   <label>{{ p.label }}</label>
-                  <el-input-number v-model="c.params![p.name]" size="small" :controls="false" style="width: 58px" />
+                  <el-input-number v-model="c.params![p.name]" size="small" :disabled="tReadonly" :controls="false" style="width: 58px" />
                 </span>
                 <template v-if="defOf(c.indicator)?.dtype === 'bool'">
-                  <el-select :model-value="c.value" size="small" style="width: 96px" @change="(v: boolean) => (c.value = v)">
+                  <el-select :model-value="c.value" size="small" style="width: 96px" :disabled="tReadonly" @change="(v: boolean) => (c.value = v)">
                     <el-option :value="true" label="满足" />
                     <el-option :value="false" label="不满足" />
                   </el-select>
                 </template>
                 <template v-else>
-                  <el-select :model-value="c.cmp" size="small" style="width: 86px" @change="(v: string) => onCmpChange(c, v)">
+                  <el-select :model-value="c.cmp" size="small" style="width: 86px" :disabled="tReadonly" @change="(v: string) => onCmpChange(c, v)">
                     <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
                   </el-select>
                   <template v-if="c.cmp === 'between'">
-                    <el-input-number :model-value="(c.value as number[])[0]" size="small" :controls="false" style="width: 78px"
+                    <el-input-number :model-value="(c.value as number[])[0]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
                                      @update:model-value="(v: number) => (c.value = [v, (c.value as number[])[1]])" />
                     <span>~</span>
-                    <el-input-number :model-value="(c.value as number[])[1]" size="small" :controls="false" style="width: 78px"
+                    <el-input-number :model-value="(c.value as number[])[1]" size="small" :disabled="tReadonly" :controls="false" style="width: 78px"
                                      @update:model-value="(v: number) => (c.value = [(c.value as number[])[0], v])" />
                   </template>
-                  <el-input-number v-else :model-value="(c.value as number)" size="small" :controls="false" style="width: 96px"
+                  <el-input-number v-else :model-value="(c.value as number)" size="small" :disabled="tReadonly" :controls="false" style="width: 96px"
                                    @update:model-value="(v: number) => (c.value = v)" />
                 </template>
-                <el-button link type="danger" @click="removeCond('sell', i)">删</el-button>
+                <el-button link type="danger" :disabled="tReadonly" @click="removeCond('sell', i)">删</el-button>
               </div>
-              <el-button size="small" plain @click="addCond('sell')">＋ 卖出条件</el-button>
+              <el-button size="small" plain :disabled="tReadonly" @click="addCond('sell')">＋ 卖出条件</el-button>
             </div>
 
             <!-- 兜底 -->
             <div class="cond-block">
               <span class="cond-title">兜底(可选,卖出安全网)</span>
               <div class="backstop-row">
-                <span class="bs-item"><label>止盈</label><el-input-number v-model="backstop.tp" size="small" :controls="false" :min="0" style="width: 80px" /><i>%</i></span>
-                <span class="bs-item"><label>止损</label><el-input-number v-model="backstop.sl" size="small" :controls="false" :min="0" style="width: 80px" /><i>%</i></span>
-                <span class="bs-item"><label>最大持仓</label><el-input-number v-model="backstop.hold" size="small" :controls="false" :min="1" style="width: 80px" /><i>天</i></span>
+                <span class="bs-item"><label>止盈</label><el-input-number v-model="backstop.tp" size="small" :disabled="tReadonly" :controls="false" :min="0" style="width: 80px" /><i>%</i></span>
+                <span class="bs-item"><label>止损</label><el-input-number v-model="backstop.sl" size="small" :disabled="tReadonly" :controls="false" :min="0" style="width: 80px" /><i>%</i></span>
+                <span class="bs-item"><label>最大持仓</label><el-input-number v-model="backstop.hold" size="small" :disabled="tReadonly" :controls="false" :min="1" style="width: 80px" /><i>天</i></span>
               </div>
             </div>
           </section>

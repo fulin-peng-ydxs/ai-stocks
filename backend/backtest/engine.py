@@ -32,10 +32,20 @@ log = get_logger("backtest.engine")
 
 
 class BacktestEngine:
-    def __init__(self, client=None, model: ScoreModel | None = None, ind=None):
+    def __init__(
+        self,
+        client=None,
+        model: ScoreModel | None = None,
+        ind=None,
+        *,
+        tenant_id: str | None = None,
+        owner_user_id: str | None = None,
+    ):
         self.c = client or get_client()
         self.model = model or ScoreModel()
         self.s = get_settings()
+        self.tenant_id = tenant_id
+        self.owner_user_id = owner_user_id
         from backend.indicators.engine import IndicatorEngine
         # 可注入共享 IndicatorEngine：策略回测与分层分析复用同一实例 → 区间指标快照只算一遍
         self.ind = ind or IndicatorEngine(self.c)
@@ -248,7 +258,11 @@ class BacktestEngine:
         score_profile: dict | None = None
         if params.get("trade_profile_id"):
             from backend.signals.trade_profile import TradeProfileRepo
-            tp = TradeProfileRepo(self.c).get(params["trade_profile_id"])
+            tp = TradeProfileRepo(
+                self.c,
+                tenant_id=self.tenant_id,
+                owner_user_id=self.owner_user_id,
+            ).get_visible(params["trade_profile_id"])
             if not tp:
                 return {"error": f"买卖方案不存在: {params['trade_profile_id']}"}
             buy_tree, sell_tree = tp.get("buy_tree") or {}, tp.get("sell_tree") or {}

@@ -108,6 +108,20 @@ function normalizeScoreProfileKey(value?: string | null): string {
   return matched ? scoreProfileKey(matched) : value
 }
 
+function tradeProfileKey(p: TradeProfileSummary): string {
+  return p.profile_ref || p.id
+}
+
+function normalizeTradeProfileKey(value?: string | null): string {
+  if (!value) return ''
+  const matched = tradeProfiles.value.find((p) => tradeProfileKey(p) === value || p.id === value)
+  return matched ? tradeProfileKey(matched) : value
+}
+
+function tradeProfileName(value: string): string {
+  return tradeProfiles.value.find((p) => tradeProfileKey(p) === value || p.id === value)?.name || ''
+}
+
 // —— 卖出规则 ——（跌破均线为基准退出，止盈/止损/到期为可选叠加触发）
 const SELL_MA_OPTIONS = [5, 10, 20, 30, 60]
 const sellMa = ref(20)
@@ -270,7 +284,7 @@ function restoreParams() {
     dateEnd.value = p.dateEnd ?? dateEnd.value
     profileId.value = p.profileId ?? profileId.value
     scoreProfileId.value = p.scoreProfileId ?? scoreProfileId.value
-    tradeProfileId.value = p.tradeProfileId ?? tradeProfileId.value
+    tradeProfileId.value = normalizeTradeProfileKey(p.tradeProfileId ?? tradeProfileId.value)
     topN.value = p.topN ?? topN.value
     initCap.value = p.initCap ?? initCap.value
     sellMa.value = p.sellMa ?? sellMa.value
@@ -310,7 +324,7 @@ async function loadRun(id: string) {
       if (p.date_end) dateEnd.value = ymd(p.date_end)
       profileId.value = p.profile_id || ''
       scoreProfileId.value = normalizeScoreProfileKey(p.score_profile_id)
-      tradeProfileId.value = p.trade_profile_id || ''
+      tradeProfileId.value = normalizeTradeProfileKey(p.trade_profile_id)
       if (p.top_n) topN.value = p.top_n
       if (p.initial_capital) initCap.value = p.initial_capital
       if (p.sell_ma_period) sellMa.value = p.sell_ma_period
@@ -395,7 +409,10 @@ onMounted(async () => {
     scoreProfiles.value = await listScoreProfiles()
     scoreProfileId.value = normalizeScoreProfileKey(scoreProfileId.value)
   } catch { /* ignore */ }
-  try { tradeProfiles.value = await listTradeProfiles() } catch { /* ignore */ }
+  try {
+    tradeProfiles.value = await listTradeProfiles()
+    tradeProfileId.value = normalizeTradeProfileKey(tradeProfileId.value)
+  } catch { /* ignore */ }
   await loadHistory()
   // 默认载入最近一次回测结果，避免空屏、不用反复重跑
   if (settings.autoLoadHistory && runHistory.value.length) {
@@ -803,7 +820,18 @@ async function openTradeChart(row: TradeRow) {
             </HelpTip>
           </span>
           <el-select v-model="tradeProfileId" clearable placeholder="手填规则" style="width: 180px">
-            <el-option v-for="p in tradeProfiles" :key="p.id" :value="p.id" :label="p.name" />
+            <el-option v-for="p in tradeProfiles" :key="tradeProfileKey(p)" :value="tradeProfileKey(p)" :label="p.name">
+              <span>{{ p.name }}</span>
+              <el-tag
+                v-if="p.source && p.source !== 'mine'"
+                size="small"
+                effect="plain"
+                :type="p.source === 'tenant' ? 'success' : p.source === 'public' ? 'warning' : 'info'"
+                style="margin-left: 8px"
+              >
+                {{ p.source === 'tenant' ? '租户公开' : p.source === 'public' ? '全体公开' : '系统内置' }}
+              </el-tag>
+            </el-option>
           </el-select>
           <el-checkbox v-model="industryOn">行业上限</el-checkbox>
           <el-input-number v-model="industryPct" :disabled="!industryOn" :min="1" :max="100" controls-position="right" style="width: 92px" />
@@ -835,7 +863,7 @@ async function openTradeChart(row: TradeRow) {
       </div>
       <div v-else-if="kind === 'strategy'" class="form-row sell-row">
         <span class="lbl strong">卖出规则</span>
-        <span class="tip-inline">由买卖方案「{{ tradeProfiles.find(p => p.id === tradeProfileId)?.name }}」的卖出条件 + 兜底接管</span>
+        <span class="tip-inline">由买卖方案「{{ tradeProfileName(tradeProfileId) }}」的卖出条件 + 兜底接管</span>
       </div>
 
       <!-- 运行按钮 + 紧贴其下的执行说明。dirty=蓝可点；出结果/载入历史后置灰；改参恢复 -->
