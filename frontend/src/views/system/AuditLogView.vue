@@ -184,6 +184,17 @@ function formatDuration(value: number | null | undefined): string {
   return `${value}ms`
 }
 
+function formatChangeValue(value: unknown): string {
+  if (value == null || value === '') return '-'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
 function targetText(row: AuditLog): string {
   return row.target_label || row.target_id || row.target_type || '-'
 }
@@ -619,6 +630,29 @@ onBeforeUnmount(stopTimer)
             </div>
 
             <section class="detail-section">
+              <h4>字段变更</h4>
+              <p v-if="!activeDetail.changes?.length" class="muted">无字段级变更</p>
+              <div v-else class="change-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width: 34%">字段</th>
+                      <th style="width: 33%">变更前</th>
+                      <th style="width: 33%">变更后</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="change in activeDetail.changes" :key="change.field">
+                      <td class="change-field">{{ change.field }}</td>
+                      <td class="change-before">{{ formatChangeValue(change.before) }}</td>
+                      <td class="change-after">{{ formatChangeValue(change.after) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="detail-section">
               <h4>错误摘要</h4>
               <p :class="{ muted: !activeDetail.error_summary }">{{ activeDetail.error_summary || '无错误摘要' }}</p>
             </section>
@@ -850,6 +884,47 @@ onBeforeUnmount(stopTimer)
 }
 .detail-section p.muted {
   color: var(--el-text-color-secondary);
+}
+.change-table {
+  overflow-x: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
+.change-table table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.change-table th,
+.change-table td {
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  padding: 8px 10px;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.change-table th {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+}
+.change-table tr:last-child td {
+  border-bottom: none;
+}
+.change-field {
+  color: var(--el-color-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.change-before {
+  color: var(--el-text-color-secondary);
+}
+.change-after {
+  color: var(--el-text-color-primary);
 }
 .json {
   margin: 0;

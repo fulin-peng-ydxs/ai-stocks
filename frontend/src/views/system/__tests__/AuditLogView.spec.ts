@@ -212,8 +212,40 @@ describe('AuditLogView', () => {
     await detail!.trigger('click')
     await flushPromises()
     expect(auditApi.getAuditDetail).toHaveBeenCalledWith('a1')
+    expect(wrapper.text()).toContain('字段变更')
+    expect(wrapper.text()).toContain('无字段级变更')
     expect(wrapper.text()).toContain('事件上下文')
     expect(wrapper.text()).toContain('req1')
+  })
+
+  it('详情抽屉展示字段级 before/after 变更并处理长值换行', async () => {
+    ;(auditApi.getAuditDetail as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...row,
+      changes: [
+        { field: 'status', before: 'active', after: 'disabled' },
+        {
+          field: 'very.long.config.key',
+          before: 'before-value-that-is-long-enough-to-wrap-inside-the-drawer',
+          after: { enabled: false, reason: 'permission revoked' },
+        },
+      ],
+    })
+    const wrapper = await mountView()
+    const detail = wrapper.findAll('button').find((button) => button.text() === '详情')
+    expect(detail).toBeTruthy()
+    await detail!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('字段变更')
+    expect(wrapper.text()).toContain('字段')
+    expect(wrapper.text()).toContain('变更前')
+    expect(wrapper.text()).toContain('变更后')
+    expect(wrapper.text()).toContain('status')
+    expect(wrapper.text()).toContain('active')
+    expect(wrapper.text()).toContain('disabled')
+    expect(wrapper.text()).toContain('very.long.config.key')
+    expect(wrapper.text()).toContain('permission revoked')
+    expect(wrapper.find('.change-table').exists()).toBe(true)
   })
 
   it('无审计权限时不请求审计接口并显示权限态', async () => {

@@ -1,6 +1,12 @@
 // 审计日志 API（stage5·T7）：对应 backend/api/audit.py，只做类型封装和参数透传。
 import http from './client'
 
+export interface AuditChange {
+  field: string
+  before?: unknown
+  after?: unknown
+}
+
 export interface AuditLog {
   id: string
   event_category: string
@@ -23,6 +29,7 @@ export interface AuditLog {
   duration_ms?: number | null
   error_summary?: string | null
   context?: Record<string, unknown> | null
+  changes?: AuditChange[]
   event_time: string
   created_at: string
 }
