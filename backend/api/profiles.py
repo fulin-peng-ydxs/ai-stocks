@@ -8,11 +8,13 @@ import pandas as pd
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from backend.api.response import ApiResponse, ok
+from backend.api.response import ApiResponse, err, ok
+from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm
 from backend.common.exceptions import NotFoundError, ValidationError
 from backend.screening.condition import ConditionError, validate_ast
 from backend.screening.profile import ProfileRepo
+from backend.services.audit_service import AuditService
 from backend.services.screen_score import ScreenScoreService
 from backend.storage import get_client
 
@@ -24,6 +26,15 @@ class ProfileIn(BaseModel):
     name: str
     expression: dict
     params: dict | None = None
+
+
+class ProfileVisibilityBody(BaseModel):
+    visibility: str
+
+
+class ProfileCopyBody(BaseModel):
+    id: str
+    name: str | None = None
 
 
 class ScreenRunIn(BaseModel):
@@ -38,16 +49,23 @@ def _latest_date() -> date:
     return pd.Timestamp(d).date()
 
 
+def _has_perm(code: str) -> bool:
+    ctx = get_current_context()
+    if ctx is None:
+        return False
+    return ctx.is_system or code in ctx.resources
+
+
 @router.get("/profiles", response_model=ApiResponse,
             dependencies=[Depends(require_perm("screen-profile:view"))])
 def list_profiles() -> ApiResponse:
-    return ok(ProfileRepo().list())
+    return ok(ProfileRepo().list_visible())
 
 
 @router.get("/profiles/{pid}", response_model=ApiResponse,
             dependencies=[Depends(require_perm("screen-profile:view"))])
 def get_profile(pid: str) -> ApiResponse:
-    p = ProfileRepo().get(pid)
+    p = ProfileRepo().get_visible(pid)
     if not p:
         raise NotFoundError(f"方案不存在: {pid}")
     return ok(p)
@@ -57,7 +75,10 @@ def get_profile(pid: str) -> ApiResponse:
             dependencies=[Depends(require_perm("screen-profile:view"))])
 def profile_versions(pid: str) -> ApiResponse:
     """方案历史版本（T-M6-7，回看/恢复对比）。"""
-    return ok({"id": pid, "versions": ProfileRepo().versions(pid)})
+    data = ProfileRepo().versions_visible(pid)
+    if not data:
+        raise NotFoundError(f"方案不存在: {pid}")
+    return ok(data)
 
 
 @router.post("/profiles", response_model=ApiResponse,
@@ -74,8 +95,49 @@ def upsert_profile(body: ProfileIn) -> ApiResponse:
 @router.delete("/profiles/{pid}", response_model=ApiResponse,
                dependencies=[Depends(require_perm("screen-profile:delete"))])
 def delete_profile(pid: str) -> ApiResponse:
-    ProfileRepo().delete(pid)   # 走 PG 资产仓库（按归属删方案 + 版本历史）
+    repo = ProfileRepo()
+    p = repo.get_visible(pid, include_owner=True)
+    if not p:
+        raise NotFoundError(f"方案不存在: {pid}")
+    if p.get("readonly"):
+        return err(403, "只能删除自己的筛选方案")
+    repo.delete(p["id"])   # 走 PG 资产仓库（按归属删方案 + 版本历史）
     return ok(msg="已删除")
+
+
+@router.post("/profiles/{pid}/visibility", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("screen-profile:view"))])
+def set_profile_visibility(pid: str, body: ProfileVisibilityBody) -> ApiResponse:
+    visibility = body.visibility
+    if visibility == "tenant" and not _has_perm("screen-profile:publish-tenant"):
+        return err(403, "无权公开到租户")
+    if visibility == "public" and not _has_perm("screen-profile:publish-public"):
+        return err(403, "无权公开到全体用户")
+    repo = ProfileRepo()
+    before = repo.get_visible(pid, include_owner=True)
+    if not before:
+        raise NotFoundError(f"方案不存在: {pid}")
+    try:
+        p = repo.set_visibility(pid, visibility, published_by=get_current_context().user_id)  # type: ignore[union-attr]
+    except ValueError as e:
+        return err(400, str(e))
+    except PermissionError as e:
+        return err(403, str(e))
+    if not p:
+        raise NotFoundError(f"方案不存在: {pid}")
+    _record_visibility_audit(before, p)
+    return ok(p)
+
+
+@router.post("/profiles/{pid}/copy", response_model=ApiResponse,
+             dependencies=[Depends(require_perm("screen-profile:save"))])
+def copy_profile(pid: str, body: ProfileCopyBody) -> ApiResponse:
+    try:
+        version = ProfileRepo().copy_visible(pid, body.id, body.name)
+    except ValueError as e:
+        msg = str(e)
+        return err(409 if "已存在" in msg else 404, msg)
+    return ok({"id": body.id, "version": version, "msg": "已复制"})
 
 
 @router.post("/screen/run", response_model=ApiResponse,
@@ -100,3 +162,28 @@ def run_screen(body: ScreenRunIn) -> ApiResponse:
         "exclude_st": body.exclude_st,
         "hits": hits,
     })
+
+
+def _record_visibility_audit(before: dict, after: dict) -> None:
+    ctx = get_current_context()
+    if ctx is None:
+        return
+    visibility = after.get("visibility")
+    AuditService().record_security_event(
+        event_type="asset_visibility",
+        action="screen_profile_visibility",
+        result="success",
+        status="completed",
+        tenant_id=ctx.tenant_id,
+        actor_user_id=ctx.user_id,
+        resource_code=f"screen-profile:publish-{visibility}"
+        if visibility in {"tenant", "public"} else None,
+        target_type="screen_profile",
+        target_id=after.get("id"),
+        target_label=after.get("name"),
+        context={
+            "action": "screen_profile_visibility",
+            "profile_ref": after.get("profile_ref"),
+        },
+        changes=AuditService.build_changes(before, after, fields=("visibility",)),
+    )

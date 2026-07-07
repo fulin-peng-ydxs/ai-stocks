@@ -11,11 +11,21 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
+from backend.auth.context import get_current_owner
 from backend.common.logging import get_logger
 from backend.screening.condition import validate_ast
 from backend.screening.presets import PRESET_PROFILES
+from backend.services.asset_visibility import (
+    ASSET_SCREEN_PROFILE,
+    VISIBILITY_PRIVATE,
+    decorate_asset_row,
+    is_asset_visible,
+    normalize_visibility,
+    resolve_asset_ref_or_legacy_id,
+    visible_params,
+    visible_sql,
+)
 from backend.storage.pg_client import get_pg_client
-from backend.auth.context import get_current_owner
 
 log = get_logger("screening.profile")
 
@@ -36,6 +46,43 @@ class ProfileRepo:
     @property
     def _op(self) -> list:
         return [self.tenant_id, self.owner_user_id]
+
+    def _decorate_summary(self, r: dict) -> dict:
+        out = decorate_asset_row(
+            r,
+            asset_type=ASSET_SCREEN_PROFILE,
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+        )
+        out["profile_ref"] = out["asset_ref"]
+        return {
+            "id": out["id"],
+            "profile_ref": out["profile_ref"],
+            "asset_ref": out["asset_ref"],
+            "name": out["name"],
+            "version": int(out["version"]),
+            "is_preset": bool(out.get("is_preset")),
+            "visibility": out["visibility"],
+            "source": out["source"],
+            "readonly": out["readonly"],
+            "owner_label": out["owner_label"],
+        }
+
+    def _row_to_profile(self, r: dict, *, include_owner: bool = False) -> dict:
+        out = decorate_asset_row(
+            r,
+            asset_type=ASSET_SCREEN_PROFILE,
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+            include_owner=include_owner,
+        )
+        out["profile_ref"] = out["asset_ref"]
+        out["version"] = int(out["version"])
+        out["is_preset"] = bool(out.get("is_preset"))
+        out["expression"] = json.loads(out["expression"])
+        out["params"] = json.loads(out["params"]) if out.get("params") else {}
+        out["published_at"] = str(out["published_at"]) if out.get("published_at") else None
+        return out
 
     def save(self, pid: str, name: str, expression: dict, params: dict | None = None,
              is_preset: bool = False) -> int:
@@ -94,11 +141,9 @@ class ProfileRepo:
             f"SELECT * FROM screen_profile WHERE id=%s AND {self._own}", [pid, *self._op])
         if df.empty:
             return None
-        r = df.iloc[0].to_dict()
-        r.pop("tenant_id", None)
-        r.pop("owner_user_id", None)
-        r["expression"] = json.loads(r["expression"])
-        r["params"] = json.loads(r["params"]) if r.get("params") else {}
+        r = self._row_to_profile(df.iloc[0].to_dict())
+        for key in ("asset_ref", "profile_ref", "source", "readonly", "owner_label"):
+            r.pop(key, None)
         return r
 
     def list(self) -> list[dict]:
@@ -106,6 +151,104 @@ class ProfileRepo:
             f"SELECT id, name, version, is_preset FROM screen_profile WHERE {self._own} "
             f"ORDER BY is_preset DESC, id", self._op)
         return df.to_dict("records")
+
+    def list_visible(self) -> list[dict]:
+        df = self.pg.query_df(
+            "SELECT id, tenant_id, owner_user_id, name, version, is_preset, visibility "
+            "FROM screen_profile "
+            f"WHERE {visible_sql()} "
+            "ORDER BY "
+            "CASE WHEN tenant_id=%s AND owner_user_id=%s THEN 0 "
+            "WHEN is_preset IS TRUE THEN 1 "
+            "WHEN visibility='tenant' THEN 2 ELSE 3 END, is_preset DESC, name, id",
+            [
+                *visible_params(tenant_id=self.tenant_id, owner_user_id=self.owner_user_id),
+                self.tenant_id,
+                self.owner_user_id,
+            ],
+        )
+        return [self._decorate_summary(r) for r in df.to_dict("records")]
+
+    def get_visible(self, profile_ref_or_id: str, *, include_owner: bool = False) -> dict | None:
+        try:
+            ref = resolve_asset_ref_or_legacy_id(
+                profile_ref_or_id,
+                asset_type=ASSET_SCREEN_PROFILE,
+                tenant_id=self.tenant_id,
+                owner_user_id=self.owner_user_id,
+            )
+        except ValueError:
+            return None
+        df = self.pg.query_df(
+            "SELECT * FROM screen_profile WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [ref.tenant_id, ref.owner_user_id, ref.asset_id],
+        )
+        if df.empty:
+            return None
+        row = df.iloc[0].to_dict()
+        if not is_asset_visible(row, tenant_id=self.tenant_id, owner_user_id=self.owner_user_id):
+            return None
+        return self._row_to_profile(row, include_owner=include_owner)
+
+    def set_visibility(
+        self,
+        profile_ref_or_id: str,
+        visibility: str,
+        published_by: str | None = None,
+    ) -> dict | None:
+        visibility = normalize_visibility(visibility)
+        ref = resolve_asset_ref_or_legacy_id(
+            profile_ref_or_id,
+            asset_type=ASSET_SCREEN_PROFILE,
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+        )
+        if ref.tenant_id != self.tenant_id or ref.owner_user_id != self.owner_user_id:
+            raise PermissionError("只能修改自己的筛选方案可见性")
+        now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
+        affected = self.pg.execute(
+            "UPDATE screen_profile SET visibility=%s, published_at=%s, published_by=%s, updated_at=%s "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [
+                visibility,
+                now,
+                published_by if visibility != VISIBILITY_PRIVATE else None,
+                datetime.now(),
+                ref.tenant_id,
+                ref.owner_user_id,
+                ref.asset_id,
+            ],
+        )
+        if affected == 0:
+            return None
+        return self.get_visible(profile_ref_or_id)
+
+    def copy_visible(self, profile_ref_or_id: str, new_id: str, new_name: str | None = None) -> int:
+        new_id = (new_id or "").strip()
+        if not new_id:
+            raise ValueError("目标方案 id 不能为空")
+        src = self.get_visible(profile_ref_or_id, include_owner=True)
+        if not src:
+            raise ValueError("方案不存在")
+        if self.get(new_id):
+            raise ValueError("目标方案已存在，请改名后再复制")
+        return self.save(new_id, new_name or f"{src['name']} 副本", src["expression"], src["params"])
+
+    def versions_visible(self, profile_ref_or_id: str) -> dict | None:
+        prof = self.get_visible(profile_ref_or_id, include_owner=True)
+        if not prof:
+            return None
+        df = self.pg.query_df(
+            "SELECT version, name, expression, saved_at FROM screen_profile_version "
+            "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s ORDER BY version DESC",
+            [prof["id"], prof["tenant_id"], prof["owner_user_id"]],
+        )
+        out = []
+        for r in df.to_dict("records"):
+            r["expression"] = json.loads(r["expression"])
+            r["saved_at"] = str(r["saved_at"])
+            out.append(r)
+        return {"id": prof["id"], "profile_ref": prof["profile_ref"], "versions": out}
 
     def delete(self, pid: str) -> None:
         """删除方案及其版本历史（PG，按归属）。"""

@@ -3,11 +3,17 @@ import http from './client'
 
 export interface Profile {
   id: string
+  profile_ref?: string
+  asset_ref?: string
   name: string
-  expression: Record<string, unknown>
-  params: Record<string, unknown> | null
+  expression?: Record<string, unknown>
+  params?: Record<string, unknown> | null
   version: number
   is_preset: boolean
+  visibility?: 'private' | 'tenant' | 'public'
+  source?: 'mine' | 'tenant' | 'public' | 'preset'
+  readonly?: boolean
+  owner_label?: string
 }
 
 export interface ScreenHit {
@@ -53,6 +59,17 @@ export function saveProfile(body: {
   return http.post('/profiles', body)
 }
 
+export function setProfileVisibility(
+  pid: string,
+  visibility: 'private' | 'tenant' | 'public',
+): Promise<Profile> {
+  return http.post(`/profiles/${pid}/visibility`, { visibility })
+}
+
+export function copyProfile(pid: string, body: { id: string; name?: string }): Promise<{ id: string; version: number }> {
+  return http.post(`/profiles/${pid}/copy`, body)
+}
+
 // 方案历史版本（回看/恢复，T-M6-7）
 export interface ProfileVersion {
   version: number
@@ -60,6 +77,6 @@ export interface ProfileVersion {
   expression: Record<string, unknown>
   saved_at: string
 }
-export function getProfileVersions(pid: string): Promise<{ id: string; versions: ProfileVersion[] }> {
+export function getProfileVersions(pid: string): Promise<{ id: string; profile_ref?: string; versions: ProfileVersion[] }> {
   return http.get(`/profiles/${pid}/versions`)
 }

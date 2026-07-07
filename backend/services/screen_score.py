@@ -45,14 +45,14 @@ class ScreenScoreService:
 
     # ── 筛选并落库（支持任意历史交易日）──
     def run_profile(self, profile_id: str, run_date: date, persist: bool = True) -> list[str]:
-        prof = self.profiles.get(profile_id)
+        prof = self.profiles.get_visible(profile_id, include_owner=True)
         if not prof:
             raise ValueError(f"方案不存在: {profile_id}")
         res = self.engine.run_ast(prof["expression"], run_date)
         hits = res[res["hit"]]["code"].tolist()
         if persist and hits:
             rows = pd.DataFrame({
-                "run_date": run_date, "profile_id": profile_id, "code": hits,
+                "run_date": run_date, "profile_id": prof["id"], "code": hits,
                 "hit": True, "matched": json.dumps({"profile": prof["name"]}, ensure_ascii=False),
                 "snapshot": None,
             })

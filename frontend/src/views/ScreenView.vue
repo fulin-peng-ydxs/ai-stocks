@@ -3,11 +3,13 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
+  copyProfile,
   getProfile,
   getProfileVersions,
   listProfiles,
   runScreen,
   saveProfile,
+  setProfileVisibility,
   type Profile,
   type ProfileVersion,
   type ScreenHit,
@@ -224,6 +226,37 @@ const profiles = ref<Profile[]>([])
 const loadId = ref('')
 const loadedProfile = ref<Profile | null>(null)
 const auth = useAuthStore()
+const visibilitySaving = ref(false)
+const profileReadonly = computed(() => !!loadedProfile.value?.readonly)
+const profileVisibility = computed<'private' | 'tenant' | 'public'>(() => loadedProfile.value?.visibility || 'private')
+const canPublishTenant = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'screen-profile:publish-tenant'),
+)
+const canPublishPublic = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'screen-profile:publish-public'),
+)
+const canEditProfileVisibility = computed(() =>
+  !!loadedProfile.value && !profileReadonly.value && (canPublishTenant.value || canPublishPublic.value),
+)
+function profileKey(p: Profile): string {
+  return p.profile_ref || p.id
+}
+function profileSourceLabel(p: Profile): string {
+  if (p.is_preset) return '系统内置'
+  if (p.source === 'tenant') return '租户公开'
+  if (p.source === 'public') return '全体公开'
+  return '我的方案'
+}
+function profileVisibilityLabel(visibility: 'private' | 'tenant' | 'public' = profileVisibility.value): string {
+  if (visibility === 'tenant') return '租户公开'
+  if (visibility === 'public') return '全体公开'
+  return '私有'
+}
+function profileVisibilityTagType(visibility: 'private' | 'tenant' | 'public' = profileVisibility.value): 'info' | 'success' | 'warning' {
+  if (visibility === 'tenant') return 'success'
+  if (visibility === 'public') return 'warning'
+  return 'info'
+}
 async function loadProfiles() {
   // 次级加载按自身 view 码优雅降级：无 screen-profile:view 的部分授权角色（如只授 screen:run）
   // 不拉方案列表、也不因此 403 卡住页面主体（筛选构建/运行仍可用）。默认业务角色含该码不受影响。
@@ -237,13 +270,13 @@ watch(loadId, async (id) => {
   }
   const p = await getProfile(id)
   loadedProfile.value = p
-  const parsed = parseAst(p.expression)
+  const parsed = parseAst(p.expression || {})
   if (parsed) {
     groupOp.value = parsed.op
     rows.value = parsed.rows
     complexAst.value = null
   } else {
-    complexAst.value = p.expression // 嵌套结构：只读运行
+    complexAst.value = p.expression || {} // 嵌套结构：只读运行
     rows.value = []
   }
 })
@@ -280,7 +313,11 @@ async function run() {
   loading.value = true
   // 不清空 result：让旧结果留在 loading 遮罩下，避免闪回空态（结果区盒子保持不变）
   try {
-    const r = await runScreen({ expression: ast, run_date: runDate.value || undefined, exclude_st: excludeSt.value })
+    const r = await runScreen({
+      ...(profileReadonly.value && loadId.value ? { profile_id: loadId.value } : { expression: ast }),
+      run_date: runDate.value || undefined,
+      exclude_st: excludeSt.value,
+    })
     result.value = { date: r.run_date, count: r.count, hits: r.hits }
   } catch {
     /* client.ts 已统一弹错 */
@@ -293,9 +330,10 @@ async function run() {
 const saveVisible = ref(false)
 const saveName = ref('')
 const saving = ref(false)
-const canOverwrite = computed(() => !!loadedProfile.value && !loadedProfile.value.is_preset)
+const canOverwrite = computed(() => !!loadedProfile.value && !loadedProfile.value.is_preset && !profileReadonly.value)
 const overwrite = ref(false)
 function openSave() {
+  if (profileReadonly.value) return ElMessage.warning('公开方案为只读，请先复制为自己的方案')
   if (!buildAst()) return ElMessage.warning('请先添加条件')
   saveName.value = canOverwrite.value ? loadedProfile.value!.name : ''
   overwrite.value = canOverwrite.value
@@ -307,17 +345,63 @@ async function doSave() {
   if (!expr) return ElMessage.warning('条件为空')
   saving.value = true
   try {
-    const id = overwrite.value && canOverwrite.value ? loadId.value : 'custom_' + Date.now()
+    const id = overwrite.value && canOverwrite.value && loadedProfile.value ? loadedProfile.value.id : 'custom_' + Date.now()
     const r = await saveProfile({ id, name: saveName.value.trim(), expression: expr })
     ElMessage.success(`已保存（v${r.version}）`)
     saveVisible.value = false
     await loadProfiles()
-    loadId.value = id
+    const saved = profiles.value.find((p) => p.id === id && p.source === 'mine')
+    loadId.value = saved ? profileKey(saved) : id
   } catch {
     /* 统一弹错 */
   } finally {
     saving.value = false
   }
+}
+
+async function publishProfile(visibility: 'private' | 'tenant' | 'public') {
+  if (!loadId.value || profileReadonly.value || visibilitySaving.value) return
+  if (visibility === profileVisibility.value) return
+  if (visibility === 'tenant' && !canPublishTenant.value) {
+    ElMessage.warning('无权公开到租户')
+    return
+  }
+  if (visibility === 'public' && !canPublishPublic.value) {
+    ElMessage.warning('无权公开到全体用户')
+    return
+  }
+  visibilitySaving.value = true
+  try {
+    loadedProfile.value = await setProfileVisibility(loadId.value, visibility)
+    ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
+    await loadProfiles()
+  } finally {
+    visibilitySaving.value = false
+  }
+}
+function onProfileVisibilityCommand(command: string | number | object) {
+  if (command !== 'private' && command !== 'tenant' && command !== 'public') return
+  publishProfile(command)
+}
+function nextCopyProfileId(base: string): string {
+  const root = (base || 'screen').replace(/[^\w-]/g, '_') || 'screen'
+  const mineIds = new Set(profiles.value.filter((p) => p.source === 'mine').map((p) => p.id))
+  let id = `${root}_copy`
+  let seq = 2
+  while (mineIds.has(id)) {
+    id = `${root}_copy_${seq}`
+    seq += 1
+  }
+  return id
+}
+async function copyCurrentProfile() {
+  if (!loadId.value || !loadedProfile.value) return
+  const id = nextCopyProfileId(loadedProfile.value.id)
+  await copyProfile(loadId.value, { id, name: `${loadedProfile.value.name || '筛选方案'} 副本` })
+  ElMessage.success('已复制为我的方案')
+  await loadProfiles()
+  const copied = profiles.value.find((p) => p.id === id && p.source === 'mine')
+  if (copied) loadId.value = profileKey(copied)
 }
 
 // ── 历史版本 ──
@@ -382,15 +466,61 @@ onMounted(async () => {
       <!-- 载入已存/系统内置方案 -->
       <div class="load-row">
         <span class="hint">载入方案</span>
-        <el-select v-model="loadId" placeholder="选系统内置/我的方案（可选）" clearable filterable style="width: 250px">
+        <el-select v-model="loadId" placeholder="选系统内置/我的方案（可选）" clearable filterable style="width: 280px">
           <el-option
             v-for="p in profiles"
-            :key="p.id"
-            :label="p.name + (p.is_preset ? '（系统内置）' : '（我的方案）')"
-            :value="p.id"
-          />
+            :key="profileKey(p)"
+            :label="`${p.name}（${profileSourceLabel(p)}）`"
+            :value="profileKey(p)"
+          >
+            <span>{{ p.name }}</span>
+            <el-tag
+              size="small"
+              effect="plain"
+              :type="p.source === 'tenant' ? 'success' : p.source === 'public' ? 'warning' : 'info'"
+              style="margin-left: 8px"
+            >
+              {{ profileSourceLabel(p) }}
+            </el-tag>
+          </el-option>
         </el-select>
         <span class="ver-link" v-if="loadedProfile" title="点击查看历史版本" @click="openVersions">v{{ loadedProfile.version }}</span>
+        <el-dropdown
+          v-if="canEditProfileVisibility"
+          trigger="click"
+          :hide-on-click="true"
+          @command="onProfileVisibilityCommand"
+        >
+          <el-tag class="visibility-trigger" :type="profileVisibilityTagType()" size="small" effect="plain">
+            {{ profileVisibilityLabel() }}
+          </el-tag>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="private" :disabled="profileVisibility === 'private' || visibilitySaving">
+                私有
+              </el-dropdown-item>
+              <el-dropdown-item command="tenant" :disabled="profileVisibility === 'tenant' || !canPublishTenant || visibilitySaving">
+                租户公开
+              </el-dropdown-item>
+              <el-dropdown-item command="public" :disabled="profileVisibility === 'public' || !canPublishPublic || visibilitySaving">
+                全体公开
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-tag v-else-if="loadedProfile" :type="profileVisibilityTagType()" size="small" effect="plain">
+          {{ profileVisibilityLabel() }}
+        </el-tag>
+        <el-tag v-if="profileReadonly" size="small" type="info" effect="plain">只读</el-tag>
+        <el-button
+          v-if="profileReadonly"
+          v-permission="'screen-profile:save'"
+          plain
+          size="small"
+          @click="copyCurrentProfile"
+        >
+          复制为我的方案
+        </el-button>
         <el-button text size="small" @click="clearAll">清空</el-button>
       </div>
 
@@ -415,12 +545,12 @@ onMounted(async () => {
           </el-radio-group>
         </div>
 
-        <div class="b-conds">
+        <div class="b-conds" :class="{ 'readonly-builder': profileReadonly }">
         <div v-for="(c, i) in rows" :key="i" class="b-cond">
           <!-- 指标条件 -->
           <template v-if="c.kind === 'ind'">
             <el-tag size="small" type="success" effect="plain" class="kind-tag">指标</el-tag>
-            <el-select v-model="c.key" filterable size="small" style="width: 180px" @change="onIndKey(c)">
+            <el-select v-model="c.key" filterable size="small" style="width: 180px" :disabled="profileReadonly" @change="onIndKey(c)">
               <el-option v-for="d in enabledInds" :key="d.key" :value="d.key" :label="d.name_cn" />
             </el-select>
             <!-- 动态参数 -->
@@ -428,6 +558,7 @@ onMounted(async () => {
               <span class="param-lb">{{ p.label }}</span>
               <el-input-number
                 v-model="c.params[p.name]"
+                :disabled="profileReadonly"
                 :controls="false"
                 :min="p.min ?? undefined"
                 :max="p.max ?? undefined"
@@ -437,20 +568,20 @@ onMounted(async () => {
             </template>
             <!-- 布尔：成立/不成立 -->
             <template v-if="defOf(c.key)?.dtype === 'bool'">
-              <el-select v-model="c.boolVal" size="small" style="width: 104px">
+              <el-select v-model="c.boolVal" size="small" style="width: 104px" :disabled="profileReadonly">
                 <el-option :value="true" label="成立" />
                 <el-option :value="false" label="不成立" />
               </el-select>
             </template>
             <!-- 数值：比较符 + 阈值 -->
             <template v-else>
-              <el-select v-model="c.cmp" size="small" style="width: 84px">
+              <el-select v-model="c.cmp" size="small" style="width: 84px" :disabled="profileReadonly">
                 <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
               </el-select>
-              <el-input-number v-model="c.value" :controls="false" size="small" style="width: 86px" />
+              <el-input-number v-model="c.value" :disabled="profileReadonly" :controls="false" size="small" style="width: 86px" />
               <template v-if="c.cmp === 'between'">
                 <span>~</span>
-                <el-input-number v-model="c.value2" :controls="false" size="small" style="width: 86px" />
+                <el-input-number v-model="c.value2" :disabled="profileReadonly" :controls="false" size="small" style="width: 86px" />
               </template>
             </template>
           </template>
@@ -460,20 +591,21 @@ onMounted(async () => {
             <el-tag size="small" type="warning" effect="plain" class="kind-tag">表达式</el-tag>
             <el-input
               v-model="c.expr"
+              :disabled="profileReadonly"
               size="small"
               placeholder="如：COUNT(C > REF(C,1), 5) == 5"
               style="flex: 1; min-width: 260px"
             />
           </template>
 
-          <el-button text type="danger" size="small" @click="removeRow(i)">删除</el-button>
+          <el-button text type="danger" size="small" :disabled="profileReadonly" @click="removeRow(i)">删除</el-button>
         </div>
         </div>
 
         <div class="b-actions">
-          <el-button size="small" @click="addIndRow">＋ 指标条件</el-button>
-          <el-button size="small" @click="addExprRow">＋ 表达式条件</el-button>
-          <el-button v-permission="'screen-profile:save'" text type="primary" size="small" @click="openSave">＋ 保存为方案</el-button>
+          <el-button size="small" :disabled="profileReadonly" @click="addIndRow">＋ 指标条件</el-button>
+          <el-button size="small" :disabled="profileReadonly" @click="addExprRow">＋ 表达式条件</el-button>
+          <el-button v-permission="'screen-profile:save'" text type="primary" size="small" :disabled="profileReadonly" @click="openSave">＋ 保存为方案</el-button>
         </div>
         <div class="dsl-help">
           表达式算子：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C 收 O 开 H 高 L 低 V 量 TURN 换手。
@@ -669,6 +801,12 @@ onMounted(async () => {
 }
 .ver-link:hover {
   background: var(--el-color-primary-light-7);
+}
+.visibility-trigger {
+  cursor: pointer;
+}
+.readonly-builder {
+  opacity: 0.82;
 }
 .ver-item {
   border: 1px solid var(--el-border-color-lighter);
