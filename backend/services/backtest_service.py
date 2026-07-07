@@ -186,6 +186,18 @@ class BacktestService:
         for rid in old["id"].tolist():
             self.delete_run(rid)
 
+    def _purge_signature_except(self, signature: str | None, keep_run_id: str) -> None:
+        """发布规范化可能刷新签名；保留当前 run，清理等价旧记录。"""
+        if not signature:
+            return
+        old = self.pg.query_df(
+            "SELECT id FROM backtest_run "
+            "WHERE signature=%s AND tenant_id=%s AND owner_user_id=%s AND id<>%s",
+            [signature, *self._op, keep_run_id],
+        )
+        for rid in old["id"].tolist():
+            self.delete_run(rid)
+
     def _load_score_profile(self, params: dict) -> dict | None:
         if not params.get("score_profile_id"):
             return None
@@ -385,6 +397,8 @@ class BacktestService:
         )
         if affected == 0:
             return None
+        if normalized:
+            self._purge_signature_except(normalized.get("signature"), run["id"])
         return self._visible_run_row(run["run_ref"])
 
     # ── 读取 ──

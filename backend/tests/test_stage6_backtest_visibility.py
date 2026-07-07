@@ -404,6 +404,31 @@ def test_backtest_publish_requires_reusable_legacy_dependencies(pg, market):
         assert row.iloc[0]["visibility"] == "private"
 
         shared_profile = profile_repo.set_visibility(profile_id, "tenant", published_by=owner)
+        canonical_run_id = "bt_dep_canonical_" + uuid.uuid4().hex[:8]
+        canonical_params = {**params, "profile_id": shared_profile["profile_ref"]}
+        canonical_signature = svc._signature(
+            "strategy",
+            canonical_params,
+            {
+                "profile_version": int(shared_profile["version"]),
+                "score_profile_version": None,
+                "trade_profile_version": None,
+            },
+        )
+        _insert_run(pg, tenant=tenant, owner=owner, run_id=canonical_run_id, params=canonical_params)
+        pg.execute(
+            "UPDATE backtest_run SET profile_id=%s, profile_version=%s, signature=%s "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [
+                shared_profile["profile_ref"],
+                int(shared_profile["version"]),
+                canonical_signature,
+                tenant,
+                owner,
+                canonical_run_id,
+            ],
+        )
+
         published = svc.set_run_visibility(run_id, "tenant", published_by=owner)
         assert published is not None and published["visibility"] == "tenant"
         row = pg.query_df(
@@ -424,6 +449,18 @@ def test_backtest_publish_requires_reusable_legacy_dependencies(pg, market):
                 "trade_profile_version": None,
             },
         )
+        assert row.iloc[0]["signature"] == canonical_signature
+        duplicates = pg.query_df(
+            "SELECT id FROM backtest_run "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND signature=%s",
+            [tenant, owner, canonical_signature],
+        )
+        assert set(duplicates["id"].tolist()) == {run_id}
+        assert pg.query_df(
+            "SELECT 1 FROM backtest_metrics "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND run_id=%s",
+            [tenant, owner, canonical_run_id],
+        ).empty
 
         viewer_svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=viewer)
         visible_run = viewer_svc.get_run(published["run_ref"])
