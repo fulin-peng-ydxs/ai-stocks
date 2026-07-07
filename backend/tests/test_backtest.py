@@ -207,25 +207,28 @@ def test_strategy_with_trade_and_score_profile():
 
 def test_backtest_engine_accepts_visible_score_profile_ref(market, pg):
     """回测引擎运行时支持他人公开评分方案 profile_ref，不再按当前 owner 私有 id 读取。"""
-    from backend.auth.context import AuthContext, reset_context, set_context
+    from backend.auth.context import get_current_context
     from backend.scoring.score_profile import ScoreProfileRepo
     from backend.tests.conftest import TEST_OWNER, TEST_TENANT
 
+    assert get_current_context() is None
     owner = "pytest_public_score_owner"
     items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
     src_repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=owner)
     src_repo.save("bt_public_score", "公开回测评分", items)
     src = src_repo.set_visibility("bt_public_score", "tenant", published_by=owner)
-    token = set_context(AuthContext(user_id=TEST_OWNER, tenant_id=TEST_TENANT))
     try:
-        out = BacktestEngine(market).run({
+        out = BacktestEngine(
+            market,
+            tenant_id=TEST_TENANT,
+            owner_user_id=TEST_OWNER,
+        ).run({
             "date_start": "2024-01-02",
             "date_end": "2024-01-03",
             "score_profile_id": src["profile_ref"],
         })
         assert out.get("error") != f"评分方案不存在: {src['profile_ref']}"
     finally:
-        reset_context(token)
         pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
 

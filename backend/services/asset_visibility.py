@@ -41,7 +41,7 @@ def normalize_asset_type(asset_type: str) -> str:
 
 
 def normalize_visibility(visibility: str | None) -> str:
-    value = (visibility or VISIBILITY_PRIVATE).strip()
+    value = (visibility or VISIBILITY_PRIVATE).strip().lower()
     if value not in VISIBILITIES:
         raise ValueError("visibility 必须是 private、tenant 或 public")
     return value

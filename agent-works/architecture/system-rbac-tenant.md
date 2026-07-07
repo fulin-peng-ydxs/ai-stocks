@@ -59,7 +59,7 @@ RBAC 主数据落 PostgreSQL，核心表由 `backend/storage/pg_ddl.py` 创建�
 - 用户方案、分组、回测、训练、快照、布局用户覆盖等表以 `(tenant_id, owner_user_id, 业务键)` 为复合归属键。
 - `AssetRepository` 和各业务服务默认从请求上下文取归属；CLI、初始化和公共榜单这类非请求链路显式使用系统上下文或平台预设归属。
 - 评分方案、筛选方案、买卖方案和回测记录支持 `private / tenant / public` 可见性。榜单、筛选运行和回测通过 opaque ref 解析可见资产，不因为公开能力绕过资产主键归属。
-- 方案类公开资产对非 owner 只读，可复制为 viewer 自己的 private；公开回测记录只读可见，可复用参数重跑，新的运行结果仍归当前执行者。
+- 方案类公开资产对非 owner 只读，可复制为 viewer 自己的 private；公开回测记录只读可见，可复用参数重跑，新的运行结果仍归当前执行者；公开回测记录发布前需校验引用方案不低于目标公开范围，并把历史 legacy id 依赖写回真实 owner 的 opaque ref。
 - 其他资产类型如需开放租户可见或全局公开，应复用“显式可见性 + 引用解析 + 权限码”的模型，不直接放宽所有权查询。
 
 ## 业务架构
@@ -148,7 +148,7 @@ flowchart LR
 4. 前端页面入口挂在静态路由表，同时依赖 `/me` 菜单树显示；按钮用 `v-permission`。
 5. 如果产生用户资产，表结构和查询必须接入 `tenant_id + owner_user_id` 归属。
 
-同一 visibility 路由同时承载“收回/租户公开/全体公开”时，路由依赖使用 `require_visibility_perm(view, publish-tenant, publish-public)`：运行时按请求体 `visibility` 写入实际 `request.state.resource_code`，函数体继续做 owner-only 与 publish 权限校验；路由元数据暴露三类资源码，供扫描测试和 API 横切审计追踪，不把发布请求误记为普通 view。
+同一 visibility 路由同时承载“收回/租户公开/全体公开”时，路由依赖使用 `require_visibility_perm(view, publish-tenant, publish-public)`：运行时先对请求体 `visibility` 做统一 `strip/lower` 规范化，再按规范化后的值写入实际 `request.state.resource_code`，函数体继续做 owner-only 与 publish 权限校验；API body 与仓库落库也使用同一规范化 helper，非法值在请求校验阶段拒绝。路由元数据暴露三类资源码，供扫描测试和 API 横切审计追踪，不把发布请求误记为普通 view。
 
 ### 新页面接入菜单和权限
 

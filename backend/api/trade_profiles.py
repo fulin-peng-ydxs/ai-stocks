@@ -6,12 +6,13 @@ from datetime import date
 
 import pandas as pd
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm, require_visibility_perm
 from backend.services.asset_audit import record_asset_copy_audit, record_asset_visibility_audit
+from backend.services.asset_visibility import normalize_visibility
 from backend.signals.trade_profile import (
     TradeProfileRepo,
     collect_indicators,
@@ -32,6 +33,13 @@ class TradeProfileBody(BaseModel):
 
 class TradeProfileVisibilityBody(BaseModel):
     visibility: str
+
+    @field_validator("visibility", mode="before")
+    @classmethod
+    def _normalize_visibility(cls, value):
+        if value is None:
+            raise ValueError("visibility 必须是 private、tenant 或 public")
+        return normalize_visibility(str(value))
 
 
 class TradeProfileCopyBody(BaseModel):

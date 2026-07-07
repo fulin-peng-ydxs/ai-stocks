@@ -863,13 +863,19 @@ async function openTradeChart(row: TradeRow) {
       <div class="page-head-actions">
         <div class="hist">
           <span class="lbl">历史回测</span>
-          <el-select v-model="historySource" style="width: 112px" size="default">
+          <el-select v-model="historySource" class="history-source-select" style="width: 112px" size="default">
             <el-option value="all" label="全部" />
             <el-option value="mine" label="我的" />
             <el-option value="tenant" label="租户公开" />
             <el-option value="public" label="全体公开" />
           </el-select>
-          <el-select v-model="selectedRun" style="width: 340px" @change="loadRun(selectedRun)" size="default">
+          <el-select
+            v-model="selectedRun"
+            class="history-run-select"
+            style="width: 340px"
+            @change="loadRun(selectedRun)"
+            size="default"
+          >
             <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
               <span :style="{ color: o.color, fontWeight: 600 }">{{ o.label }}</span>
               <AssetVisibilityTag
@@ -1347,11 +1353,28 @@ async function openTradeChart(row: TradeRow) {
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-end; }
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
 .page-head h2 { margin: 0; font-size: 20px; }
+.page-head-actions { min-width: 0; max-width: 100%; }
 .setting-item { display: flex; flex-direction: column; gap: 8px; }
 .setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
-.hist { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.hist {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
+}
+.history-source-select { flex: 0 0 112px; }
+.history-run-select { flex: 1 1 260px; min-width: 0; max-width: 340px; }
 .opt-range { float: right; color: var(--el-text-color-secondary); font-size: 12px; margin-left: 18px; }
 .hist-empty { color: var(--el-text-color-secondary); font-size: 12px; white-space: nowrap; }
 .dlg-legend { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; font-size: 12px; }
@@ -1467,4 +1490,41 @@ async function openTradeChart(row: TradeRow) {
 .up { color: var(--market-up-color); } .down { color: var(--market-down-color); }
 .muted { color: var(--el-text-color-placeholder); }
 .clickable :deep(.el-table__row) { cursor: pointer; }
+
+@media (max-width: 720px) {
+  .page-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .page-head-actions,
+  .hist {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .hist .lbl {
+    margin-left: 0;
+  }
+  .history-source-select {
+    flex: 0 1 128px;
+    min-width: 104px;
+    max-width: 128px;
+  }
+  .history-run-select {
+    flex: 1 1 100%;
+    width: 100% !important;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .form-card :deep(.el-card__body) {
+    padding: 12px;
+  }
+  .form-row {
+    gap: 8px 6px;
+  }
+  .form-row .lbl {
+    margin-left: 0;
+  }
+}
 </style>

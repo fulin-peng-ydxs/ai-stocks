@@ -42,7 +42,7 @@
 
 全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户资产、系统菜单、角色权限、平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作 token 黑名单、权限缓存、验证码和限流等短状态库。
 
-认证与授权以后端为事实源：`AuthMiddleware` 对非白名单 `/api/**` 默认拒绝，JWT 只承载身份和权限版本，`/api/auth/me` 返回用户、租户、角色、授权菜单树和功能码；接口用 `require_perm` / `require_system` / `require_system_perm` 做精确授权，前端侧栏、路由守卫和按钮级 `v-permission` 只消费后端结果。多租户数据归属由请求上下文注入到仓库和服务层，前端不决定资产归属；评分、筛选、买卖方案和回测记录支持 `private / tenant / public` 可见性，公开资产只读可见，方案类资产可复制为自己的 private。技术架构见 [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md)，需求与落地记录见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)。
+认证与授权以后端为事实源：`AuthMiddleware` 对非白名单 `/api/**` 默认拒绝，JWT 只承载身份和权限版本，`/api/auth/me` 返回用户、租户、角色、授权菜单树和功能码；接口用 `require_perm` / `require_system` / `require_system_perm` 做精确授权，前端侧栏、路由守卫和按钮级 `v-permission` 只消费后端结果。多租户数据归属由请求上下文注入到仓库和服务层，前端不决定资产归属；评分、筛选、买卖方案和回测记录支持 `private / tenant / public` 可见性，公开资产只读可见，方案类资产可复制为自己的 private，公开回测记录可复用参数重跑且发布范围不能超过引用方案可见范围。技术架构见 [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md)，需求与落地记录见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)。
 
 ```
 ┌─────────────────────────── 浏览器 (Vue3 SPA) ───────────────────────────┐

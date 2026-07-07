@@ -61,8 +61,16 @@ def _rm_user(pg, uid: str, tid: str, rid: str) -> None:
     pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
 
 
-def _insert_run(pg, *, tenant: str, owner: str, run_id: str, status: str = "done") -> None:
-    params = {
+def _insert_run(
+    pg,
+    *,
+    tenant: str,
+    owner: str,
+    run_id: str,
+    status: str = "done",
+    params: dict | None = None,
+) -> None:
+    params = params or {
         "date_start": "2024-01-01",
         "date_end": "2024-01-31",
         "profile_id": None,
@@ -74,12 +82,16 @@ def _insert_run(pg, *, tenant: str, owner: str, run_id: str, status: str = "done
     now = datetime(2024, 2, 1, 9, 30)
     pg.execute(
         "INSERT INTO backtest_run ("
-        "id, tenant_id, owner_user_id, kind, date_start, date_end, params, status, "
-        "created_at, finished_at) VALUES (%s,%s,%s,'strategy',%s,%s,%s,%s,%s,%s)",
+        "id, tenant_id, owner_user_id, kind, profile_id, score_profile_id, trade_profile_id, "
+        "date_start, date_end, params, status, created_at, finished_at) "
+        "VALUES (%s,%s,%s,'strategy',%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         [
             run_id,
             tenant,
             owner,
+            params.get("profile_id"),
+            params.get("score_profile_id"),
+            params.get("trade_profile_id"),
             date(2024, 1, 1),
             date(2024, 1, 31),
             json.dumps(params),
@@ -146,9 +158,35 @@ def test_backtest_run_visibility_list_detail_and_owner_guards(client, pg):
     outsider, otid, outsider_role = _mk_user(pg, ["backtest:view"])
     run_id = "bt_vis_" + uuid.uuid4().hex[:8]
     failed_run_id = "bt_failed_" + uuid.uuid4().hex[:8]
+    viewer_run_id = "bt_no_publish_" + uuid.uuid4().hex[:8]
     try:
         _insert_run(pg, tenant=tenant, owner=owner, run_id=run_id)
         _insert_run(pg, tenant=tenant, owner=owner, run_id=failed_run_id, status="failed")
+        _insert_run(pg, tenant=tenant, owner=viewer, run_id=viewer_run_id)
+
+        bypass = client.post(
+            f"/api/backtest/runs/{viewer_run_id}/visibility",
+            json={"visibility": "tenant "},
+            headers=_auth(viewer, tid),
+        )
+        assert bypass.status_code == 200 and bypass.json()["code"] == 403
+        bypass_case = client.post(
+            f"/api/backtest/runs/{viewer_run_id}/visibility",
+            json={"visibility": "Tenant"},
+            headers=_auth(viewer, tid),
+        )
+        assert bypass_case.status_code == 200 and bypass_case.json()["code"] == 403
+        invalid = client.post(
+            f"/api/backtest/runs/{viewer_run_id}/visibility",
+            json={"visibility": "tenantx"},
+            headers=_auth(viewer, tid),
+        )
+        assert invalid.status_code == 422
+        row = pg.query_df(
+            "SELECT visibility FROM backtest_run WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tenant, viewer, viewer_run_id],
+        )
+        assert not row.empty and row.iloc[0]["visibility"] == "private"
 
         denied = client.post(
             f"/api/backtest/runs/{run_id}/visibility",
@@ -318,6 +356,84 @@ def test_viewer_reuses_public_backtest_params_into_own_run(pg, market, monkeypat
         )
         assert not audit.empty
         assert audit.iloc[0]["resource_code"] == "backtest:run"
+    finally:
+        _cleanup_runs(pg, owner, viewer)
+        for owner_id in (owner, viewer):
+            pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [owner_id])
+            pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner_id])
+
+
+def test_backtest_publish_requires_reusable_legacy_dependencies(pg, market):
+    from backend.screening.profile import ProfileRepo
+    from backend.services.backtest_service import BacktestService
+
+    tenant = "bt_dep_tenant_" + uuid.uuid4().hex[:8]
+    owner = "bt_dep_owner_" + uuid.uuid4().hex[:8]
+    viewer = "bt_dep_viewer_" + uuid.uuid4().hex[:8]
+    run_id = "bt_dep_run_" + uuid.uuid4().hex[:8]
+    profile_id = "bt_dep_screen_" + uuid.uuid4().hex[:6]
+    params = {
+        "date_start": "2024-01-01",
+        "date_end": "2024-01-31",
+        "profile_id": profile_id,
+        "top_n": 5,
+        "initial_capital": 1000000,
+    }
+    try:
+        profile_repo = ProfileRepo(pg=pg, tenant_id=tenant, owner_user_id=owner)
+        profile_repo.save(
+            profile_id,
+            "私有 legacy 筛选",
+            {"type": "col", "field": "rs_pct", "cmp": ">=", "value": 90},
+        )
+        viewer_profile_repo = ProfileRepo(pg=pg, tenant_id=tenant, owner_user_id=viewer)
+        viewer_profile_repo.save(
+            profile_id,
+            "viewer 私有同名筛选",
+            {"type": "col", "field": "pct_chg", "cmp": ">=", "value": 5},
+        )
+        _insert_run(pg, tenant=tenant, owner=owner, run_id=run_id, params=params)
+        svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=owner)
+
+        with pytest.raises(ValueError, match="筛选方案"):
+            svc.set_run_visibility(run_id, "tenant")
+        row = pg.query_df(
+            "SELECT visibility FROM backtest_run WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tenant, owner, run_id],
+        )
+        assert row.iloc[0]["visibility"] == "private"
+
+        shared_profile = profile_repo.set_visibility(profile_id, "tenant", published_by=owner)
+        published = svc.set_run_visibility(run_id, "tenant", published_by=owner)
+        assert published is not None and published["visibility"] == "tenant"
+        row = pg.query_df(
+            "SELECT profile_id, profile_version, params, signature FROM backtest_run "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tenant, owner, run_id],
+        )
+        stored_params = json.loads(row.iloc[0]["params"])
+        assert stored_params["profile_id"] == shared_profile["profile_ref"]
+        assert row.iloc[0]["profile_id"] == shared_profile["profile_ref"]
+        assert int(row.iloc[0]["profile_version"]) == int(shared_profile["version"])
+        assert row.iloc[0]["signature"] == svc._signature(
+            "strategy",
+            stored_params,
+            {
+                "profile_version": int(shared_profile["version"]),
+                "score_profile_version": None,
+                "trade_profile_version": None,
+            },
+        )
+
+        viewer_svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=viewer)
+        visible_run = viewer_svc.get_run(published["run_ref"])
+        visible_params = json.loads(visible_run["run"]["params"])
+        assert visible_params["profile_id"] == shared_profile["profile_ref"]
+        resolved_profile = viewer_svc._visible_screen_profile(visible_params["profile_id"])
+        assert resolved_profile["owner_user_id"] == owner
+
+        with pytest.raises(ValueError, match="公开到全体"):
+            svc.set_run_visibility(run_id, "public")
     finally:
         _cleanup_runs(pg, owner, viewer)
         for owner_id in (owner, viewer):

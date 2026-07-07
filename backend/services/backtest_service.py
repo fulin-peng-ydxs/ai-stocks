@@ -28,6 +28,8 @@ from backend.common.logging import get_logger
 from backend.services.asset_visibility import (
     ASSET_BACKTEST_RUN,
     VISIBILITY_PRIVATE,
+    VISIBILITY_PUBLIC,
+    VISIBILITY_TENANT,
     decorate_asset_row,
     is_asset_visible,
     normalize_visibility,
@@ -350,14 +352,32 @@ class BacktestService:
             raise PermissionError("只能修改自己的回测记录可见性")
         if run.get("status") != "done" and visibility != VISIBILITY_PRIVATE:
             raise ValueError("仅已完成回测记录可公开")
+        normalized = self._normalize_run_dependencies_for_visibility(run, visibility)
         now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
+        params = normalized["params"] if normalized else run.get("params")
+        params_json = (
+            json.dumps(params, ensure_ascii=False, default=str)
+            if isinstance(params, dict)
+            else params
+        )
         affected = self.pg.execute(
-            "UPDATE backtest_run SET visibility=%s, published_at=%s, published_by=%s "
+            "UPDATE backtest_run SET visibility=%s, published_at=%s, published_by=%s, "
+            "params=%s, profile_id=%s, score_profile_id=%s, trade_profile_id=%s, "
+            "profile_version=%s, score_profile_version=%s, trade_profile_version=%s, "
+            "signature=%s "
             "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
             [
                 visibility,
                 now,
                 published_by if visibility != VISIBILITY_PRIVATE else None,
+                params_json,
+                normalized["profile_id"] if normalized else run.get("profile_id"),
+                normalized["score_profile_id"] if normalized else run.get("score_profile_id"),
+                normalized["trade_profile_id"] if normalized else run.get("trade_profile_id"),
+                normalized["profile_version"] if normalized else run.get("profile_version"),
+                normalized["score_profile_version"] if normalized else run.get("score_profile_version"),
+                normalized["trade_profile_version"] if normalized else run.get("trade_profile_version"),
+                normalized["signature"] if normalized else run.get("signature"),
                 run["id"],
                 run["tenant_id"],
                 run["owner_user_id"],
@@ -441,6 +461,110 @@ class BacktestService:
         if source_run is None:
             return
         record_backtest_reuse_audit(source_run, run_id)
+
+    def _normalize_run_dependencies_for_visibility(
+        self,
+        run: dict,
+        visibility: str,
+    ) -> dict | None:
+        if visibility == VISIBILITY_PRIVATE:
+            return None
+        raw_params = run.get("params") or "{}"
+        if isinstance(raw_params, dict):
+            params = dict(raw_params)
+        else:
+            try:
+                params = json.loads(raw_params)
+            except (TypeError, ValueError):
+                raise ValueError("回测参数不可解析，不能公开") from None
+        dependencies = [
+            ("profile_id", "profile_version", "筛选方案", self._run_owner_screen_profile),
+            ("score_profile_id", "score_profile_version", "评分方案", self._run_owner_score_profile),
+            ("trade_profile_id", "trade_profile_version", "买卖方案", self._run_owner_trade_profile),
+        ]
+        normalized = {
+            "params": params,
+            "profile_id": run.get("profile_id"),
+            "score_profile_id": run.get("score_profile_id"),
+            "trade_profile_id": run.get("trade_profile_id"),
+            "profile_version": run.get("profile_version"),
+            "score_profile_version": run.get("score_profile_version"),
+            "trade_profile_version": run.get("trade_profile_version"),
+            "signature": run.get("signature"),
+        }
+        for key, version_key, label, resolver in dependencies:
+            ref_or_id = params.get(key) or run.get(key)
+            if not ref_or_id:
+                continue
+            dep = resolver(run, str(ref_or_id))
+            if dep is None:
+                raise ValueError(f"回测引用的{label}不可见，不能公开回测记录")
+            dep_visibility = normalize_visibility(dep.get("visibility"))
+            if visibility == VISIBILITY_TENANT:
+                allowed = dep_visibility == VISIBILITY_PUBLIC or (
+                    dep_visibility == VISIBILITY_TENANT
+                    and dep.get("tenant_id") == run.get("tenant_id")
+                )
+                if not allowed:
+                    raise ValueError(f"请先将回测引用的{label}公开到租户或全体")
+            elif visibility == VISIBILITY_PUBLIC and dep_visibility != VISIBILITY_PUBLIC:
+                raise ValueError(f"请先将回测引用的{label}公开到全体")
+            profile_ref = dep.get("profile_ref") or dep.get("asset_ref")
+            if not profile_ref:
+                raise ValueError(f"回测引用的{label}缺少公开引用，不能公开回测记录")
+            normalized["params"][key] = profile_ref
+            normalized[key] = profile_ref
+            if dep.get("version") is not None:
+                normalized[version_key] = int(dep["version"])
+        normalized["signature"] = self._signature(
+            str(run.get("kind") or "strategy"),
+            normalized["params"],
+            {
+                "profile_version": normalized["profile_version"],
+                "score_profile_version": normalized["score_profile_version"],
+                "trade_profile_version": normalized["trade_profile_version"],
+            },
+        )
+        return normalized
+
+    def _run_owner_screen_profile(self, run: dict, profile_ref_or_id: str) -> dict | None:
+        from backend.screening.profile import ProfileRepo
+
+        return ProfileRepo(
+            market=self.c,
+            pg=self.pg,
+            tenant_id=run["tenant_id"],
+            owner_user_id=run["owner_user_id"],
+        ).get_visible(
+            profile_ref_or_id,
+            include_owner=True,
+        )
+
+    def _run_owner_score_profile(self, run: dict, profile_ref_or_id: str) -> dict | None:
+        from backend.scoring.score_profile import ScoreProfileRepo
+
+        return ScoreProfileRepo(
+            market=self.c,
+            pg=self.pg,
+            tenant_id=run["tenant_id"],
+            owner_user_id=run["owner_user_id"],
+        ).get_visible(
+            profile_ref_or_id,
+            include_owner=True,
+        )
+
+    def _run_owner_trade_profile(self, run: dict, profile_ref_or_id: str) -> dict | None:
+        from backend.signals.trade_profile import TradeProfileRepo
+
+        return TradeProfileRepo(
+            market=self.c,
+            pg=self.pg,
+            tenant_id=run["tenant_id"],
+            owner_user_id=run["owner_user_id"],
+        ).get_visible(
+            profile_ref_or_id,
+            include_owner=True,
+        )
 
     def get_run(self, run_id: str) -> dict | None:
         run_d = self._visible_run_row(run_id, include_owner=True)

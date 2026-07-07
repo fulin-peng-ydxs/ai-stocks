@@ -245,6 +245,7 @@ async function onLogout() {
   display: flex;
   align-items: center;
   color: var(--chrome-text);
+  min-width: 0;
 }
 .topbar-slot {
   flex: 1;
@@ -255,6 +256,8 @@ async function onLogout() {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 .user-entry {
   border: 1px solid var(--chrome-border-strong);
@@ -268,6 +271,8 @@ async function onLogout() {
   gap: 8px;
   cursor: pointer;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  min-width: 0;
+  max-width: 100%;
 }
 .user-entry:hover {
   background: var(--chrome-bg-soft-hover);
@@ -296,6 +301,11 @@ async function onLogout() {
 .user-name {
   font-size: 13px;
   font-weight: 500;
+  min-width: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 :deep(.user-drawer) {
   --el-drawer-bg-color: transparent;
@@ -488,5 +498,18 @@ async function onLogout() {
 }
 .shell-gate-title {
   font-size: 14px;
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    padding: 0 10px;
+  }
+  .user-entry {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .user-name {
+    max-width: 72px;
+  }
 }
 </style>

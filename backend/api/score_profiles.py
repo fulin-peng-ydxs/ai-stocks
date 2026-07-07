@@ -6,13 +6,14 @@ from datetime import date
 
 import pandas as pd
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm, require_visibility_perm
 from backend.scoring.score_profile import ScoreProfileRepo
 from backend.services.asset_audit import record_asset_copy_audit, record_asset_visibility_audit
+from backend.services.asset_visibility import normalize_visibility
 from backend.storage import get_client
 
 router = APIRouter(prefix="/api", tags=["score-profiles"])
@@ -27,6 +28,13 @@ class ScoreProfileBody(BaseModel):
 
 class ScoreProfileVisibilityBody(BaseModel):
     visibility: str
+
+    @field_validator("visibility", mode="before")
+    @classmethod
+    def _normalize_visibility(cls, value):
+        if value is None:
+            raise ValueError("visibility 必须是 private、tenant 或 public")
+        return normalize_visibility(str(value))
 
 
 class ScoreProfileCopyBody(BaseModel):

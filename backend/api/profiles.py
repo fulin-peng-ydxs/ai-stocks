@@ -6,7 +6,7 @@ from datetime import date
 
 import pandas as pd
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
@@ -15,6 +15,7 @@ from backend.common.exceptions import NotFoundError, ValidationError
 from backend.screening.condition import ConditionError, validate_ast
 from backend.screening.profile import ProfileRepo
 from backend.services.asset_audit import record_asset_copy_audit, record_asset_visibility_audit
+from backend.services.asset_visibility import normalize_visibility
 from backend.services.screen_score import ScreenScoreService
 from backend.storage import get_client
 
@@ -30,6 +31,13 @@ class ProfileIn(BaseModel):
 
 class ProfileVisibilityBody(BaseModel):
     visibility: str
+
+    @field_validator("visibility", mode="before")
+    @classmethod
+    def _normalize_visibility(cls, value):
+        if value is None:
+            raise ValueError("visibility 必须是 private、tenant 或 public")
+        return normalize_visibility(str(value))
 
 
 class ProfileCopyBody(BaseModel):

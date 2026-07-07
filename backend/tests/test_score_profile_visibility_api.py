@@ -87,6 +87,37 @@ def test_score_profile_tenant_visibility_and_copy(client, pg):
         saved = client.post("/api/score-profiles", json=_profile_body(pid), headers=_auth(owner, tid))
         assert saved.status_code == 200 and saved.json()["code"] == 0
 
+        viewer_profile_id = "spv_no_publish_" + uuid.uuid4().hex[:6]
+        viewer_saved = client.post(
+            "/api/score-profiles",
+            json=_profile_body(viewer_profile_id),
+            headers=_auth(viewer, tid),
+        )
+        assert viewer_saved.status_code == 200 and viewer_saved.json()["code"] == 0
+        bypass = client.post(
+            f"/api/score-profiles/{viewer_profile_id}/visibility",
+            json={"visibility": "tenant "},
+            headers=_auth(viewer, tid),
+        )
+        assert bypass.status_code == 200 and bypass.json()["code"] == 403
+        bypass_case = client.post(
+            f"/api/score-profiles/{viewer_profile_id}/visibility",
+            json={"visibility": "Tenant"},
+            headers=_auth(viewer, tid),
+        )
+        assert bypass_case.status_code == 200 and bypass_case.json()["code"] == 403
+        invalid = client.post(
+            f"/api/score-profiles/{viewer_profile_id}/visibility",
+            json={"visibility": "tenantx"},
+            headers=_auth(viewer, tid),
+        )
+        assert invalid.status_code == 422
+        row = pg.query_df(
+            "SELECT visibility FROM score_profile WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tid, viewer, viewer_profile_id],
+        )
+        assert not row.empty and row.iloc[0]["visibility"] == "private"
+
         denied = client.post(
             f"/api/score-profiles/{pid}/visibility",
             json={"visibility": "public"},

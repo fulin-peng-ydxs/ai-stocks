@@ -19,6 +19,7 @@ from fastapi import Request
 
 from backend.auth.context import get_current_context, set_current_resource_code
 from backend.common.exceptions import AuthError, ForbiddenError
+from backend.services.asset_visibility import normalize_visibility
 
 
 def require_system() -> None:
@@ -73,7 +74,7 @@ def require_visibility_perm(
             try:
                 body = await request.json()
                 if isinstance(body, dict):
-                    visibility = body.get("visibility")
+                    visibility = normalize_visibility(body.get("visibility"))
             except Exception:  # noqa: BLE001
                 visibility = None
         code = (

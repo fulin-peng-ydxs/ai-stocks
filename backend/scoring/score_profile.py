@@ -26,6 +26,7 @@ from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
 from backend.auth.context import get_current_owner
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
+from backend.services.asset_visibility import normalize_visibility
 
 log = get_logger("scoring.score_profile")
 
@@ -399,8 +400,7 @@ class ScoreProfileRepo:
         return self._row_to_profile(row, include_owner=include_owner)
 
     def set_visibility(self, profile_ref_or_id: str, visibility: str, published_by: str | None = None) -> dict | None:
-        if visibility not in VISIBILITIES:
-            raise ValueError("visibility 必须是 private、tenant 或 public")
+        visibility = normalize_visibility(visibility)
         try:
             tenant_id, owner_user_id, pid = self.parse_ref(profile_ref_or_id)
         except ValueError:
