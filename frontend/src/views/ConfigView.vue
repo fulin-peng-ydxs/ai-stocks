@@ -877,7 +877,7 @@ async function initScorePage() {
 async function initTradePage() {
   await withInitialRetry(async () => {
     await loadTradeProfiles()
-    if (tProfiles.value.length) await selectTradeProfile(tProfiles.value[0].id)
+    if (tProfiles.value.length) await selectTradeProfile(tradeProfileKey(tProfiles.value[0]))
     else newTradeProfile()
   })
 }

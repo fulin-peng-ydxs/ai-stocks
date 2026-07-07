@@ -9,8 +9,12 @@ import ConfigView from '@/views/ConfigView.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import type { SettingGroup } from '@/api/data'
 
+const routeState = vi.hoisted(() => ({
+  meta: { configTab: 'system' },
+}))
+
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ meta: { configTab: 'system' } }),
+  useRoute: () => ({ meta: routeState.meta }),
 }))
 
 vi.mock('@/api/data', async (importOriginal) => {
@@ -39,12 +43,14 @@ vi.mock('@/api/scoreProfile', () => ({
 }))
 
 vi.mock('@/api/tradeProfile', () => ({
+  copyTradeProfile: vi.fn(),
   deleteTradeProfile: vi.fn(),
   getTradeProfile: vi.fn(),
   getTradeProfileVersions: vi.fn(),
   listTradeProfiles: vi.fn(),
   previewConditions: vi.fn(),
   saveTradeProfile: vi.fn(),
+  setTradeProfileVisibility: vi.fn(),
 }))
 
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
@@ -66,6 +72,7 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
 
 import * as dataApi from '@/api/data'
 import * as scoreApi from '@/api/scoreProfile'
+import * as tradeApi from '@/api/tradeProfile'
 
 const groups: SettingGroup[] = [
   {
@@ -187,9 +194,21 @@ function saveButton(wrapper: VueWrapper) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  routeState.meta.configTab = 'system'
   localStorage.clear()
   document.body.innerHTML = ''
   mockSettings()
+  ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
+    items: [
+      {
+        key: 'rs_pct',
+        name_cn: '相对强度',
+        dtype: 'number',
+        enabled: true,
+        params: [],
+      },
+    ],
+  })
 })
 
 describe('ConfigView system tab', () => {
@@ -269,5 +288,45 @@ describe('ConfigView system tab', () => {
     const wrapper = await mountView('tenant_admin')
     expect(wrapper.text()).toContain('无权限维护系统设置')
     expect(dataApi.getSettingsView).not.toHaveBeenCalled()
+  })
+})
+
+describe('ConfigView trade tab', () => {
+  it('初始化公开买卖方案时使用 profile_ref 拉详情', async () => {
+    routeState.meta.configTab = 'trade'
+    ;(tradeApi.listTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'ui6_trade_public',
+        profile_ref: 'asset:trade_profile:tenant-a:owner-a:ui6_trade_public',
+        name: 'UI6公开买卖方案',
+        version: 1,
+        is_preset: false,
+        visibility: 'tenant',
+        source: 'tenant',
+        readonly: true,
+      },
+    ])
+    ;(tradeApi.getTradeProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'ui6_trade_public',
+      profile_ref: 'asset:trade_profile:tenant-a:owner-a:ui6_trade_public',
+      name: 'UI6公开买卖方案',
+      version: 1,
+      is_preset: false,
+      visibility: 'tenant',
+      source: 'tenant',
+      readonly: true,
+      buy_tree: { op: 'AND', children: [] },
+      sell_tree: { op: 'OR', children: [] },
+      backstop: {},
+    })
+
+    const wrapper = await mountView('normal')
+
+    expect(tradeApi.getTradeProfile).toHaveBeenCalledWith(
+      'asset:trade_profile:tenant-a:owner-a:ui6_trade_public',
+    )
+    expect(tradeApi.getTradeProfile).not.toHaveBeenCalledWith('ui6_trade_public')
+    expect(wrapper.text()).toContain('UI6公开买卖方案')
+    expect(wrapper.text()).toContain('租户公开')
   })
 })
