@@ -9,7 +9,7 @@
   - 阶段六前已更新日志审计原型：[../prototypes/audit-log.html](../prototypes/audit-log.html)，详情抽屉新增 R24 字段变更表。
   - 页面设计闭环依据：[../../configurable-layout-system/page-template.md](../../configurable-layout-system/page-template.md) 与 [../../../DESIGN.md](../../../DESIGN.md)。
 - 功能目标：进入第六阶段，补齐体验增强项，并把原先独立排期的 R28 其他资产公开能力纳入本阶段。
-- 当前计划状态：进行中（T1、T2、T3、T4、T5、T6、T7、T8、T9、T10、T11 已完成，T12 未开始）。
+- 当前计划状态：已完成（T1-T12 全部完成）。
 - 计划输出目录：`agent-works/multi-tenant-rbac/stage6-experience-asset-visibility/`。
 - 本阶段纳入：
   - R22：token 静默刷新，避免长操作中 access token 过期直接打断。
@@ -109,7 +109,7 @@
 
 | 需求编号/增强编号 | 增强内容 | 需求阶段处理状态 | 开发状态 | 对应任务 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| E1 | 统一展示 `owner_label/source/readonly/visibility` 标签 | 原计划可选增强，整改后纳入必做 UI 交付 | 进行中 | T9,T11,T12 | T9 已完成三类 R28 资产与评分页统一组件消费，T11 已完成组件测试、build 和页面抽样；T12 需回写 DESIGN 组件清单 |
+| E1 | 统一展示 `owner_label/source/readonly/visibility` 标签 | 原计划可选增强，整改后纳入必做 UI 交付 | 已完成 | T9,T11,T12 | T9 已完成三类 R28 资产与评分页统一组件消费，T11 已完成组件测试、build 和页面抽样；T12 已回写 DESIGN 组件清单 |
 | E2 | 回测历史增加“我的 / 租户公开 / 全体公开”筛选 | 原计划可选增强，纳入本阶段 | 已完成 | T8,T9,T11 | T8/T9 已完成历史区域来源筛选、空态和统一复用动作；T11 已完成后端、前端和页面收口验证 |
 | E3 | 审计摘要中展示清理任务最近执行结果 | 后续建议 | 跳过 | - | R23 本阶段通过审计事件和 CLI/调度日志验证；摘要卡片会改变审计页信息架构，后续如需要再补原型和任务 |
 
@@ -286,8 +286,8 @@
 
 | 页面/区域 | 运行时复用组件 | 布局或配置组件种类 | 组件配置字段/页面注册 | 设计规范或组件清单更新 | 真实消费与验证 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 评分/筛选/买卖/回测公开状态标签 | 新增普通真实组件 `AssetVisibilityTag.vue` | 不涉及系统组件种类 | 不新增配置字段；不改 pageRegistry | 需要补 `DESIGN.md` 真实复用组件清单 | `ConfigView.vue` 评分页回迁、`ScreenView.vue`、`ConfigView.vue` 买卖 tab、`BacktestView.vue` 消费；前端测试和 build 验证 | T9,T11,T12 |
-| 方案/回测发布与复制动作 | 新增普通真实组件 `AssetVisibilityActions.vue`，通过 props 控制权限、readonly、loading 和可用命令 | 不涉及系统组件种类 | 不新增配置字段；不改 pageRegistry | 需要补 `DESIGN.md` 真实复用组件清单 | 三类 R28 资产接入；评分页可在不改变契约前提下回迁；用权限态测试验证 | T9,T11,T12 |
+| 评分/筛选/买卖/回测公开状态标签 | 新增普通真实组件 `AssetVisibilityTag.vue` | 不涉及系统组件种类 | 不新增配置字段；不改 pageRegistry | 已补 `DESIGN.md` 真实复用组件清单 | `ConfigView.vue` 评分页回迁、`ScreenView.vue`、`ConfigView.vue` 买卖 tab、`BacktestView.vue` 消费；前端测试和 build 验证 | T9,T11,T12 |
+| 方案/回测发布与复制动作 | 新增普通真实组件 `AssetVisibilityActions.vue`，通过 props 控制权限、readonly、loading 和可用命令 | 不涉及系统组件种类 | 不新增配置字段；不改 pageRegistry | 已补 `DESIGN.md` 真实复用组件清单 | 三类 R28 资产接入；评分页可在不改变契约前提下回迁；用权限态测试验证 | T9,T11,T12 |
 | 审计详情字段变更 | 复用 Element Plus 表格/描述组件，不新增真实复用组件 | 不涉及 | 不新增配置字段；不改 pageRegistry | 不需要新增组件清单 | `AuditLogView.vue` 详情抽屉真实消费；长值与空态验证 | T10,T11 |
 | 页面布局 | 复用既有页面布局和 `LayoutHost` 接入状态 | 不新增布局原型 | 不新增页面注册；既有页面继续使用原 pageKey | 不更新 page-registry，除非实现中实际新增页面或布局旋钮 | 三档视口验证无溢出；不新增 `vh` 硬编码 | T9,T10,T11 |
 
@@ -370,8 +370,8 @@
 | 必须实现 | R28-8 | 筛选方案公开 | `screen_profile` visible + API + ScreenView 接入 | T5,T6,T9,T11 | 已完成 | 一致 | T5/T6/T9 已完成业务与 UI 接入，T11 后端/前端/页面收口验证通过 |
 | 必须实现 | R28-9 | 买卖方案公开 | `trade_profile` visible + API + ConfigView trade 接入 | T5,T7,T9,T11 | 已完成 | 一致 | T5/T7/T9 已完成业务与 UI 接入，T11 后端/前端/页面收口验证通过 |
 | 必须实现 | R28-10 | 回测记录公开 | `backtest_run` visible + API + BacktestView 接入 | T5,T8,T9,T11 | 已完成 | 一致 | T5/T8/T9 已完成业务与 UI 接入，T11 后端/前端/页面收口验证通过 |
-| 必须实现 | R20/R21 延续 | 权限/按钮/接口闭环 | 新资源码、默认授权、扫描和页面权限测试 | T1,T11,T12 | 进行中 | 一致 | T1 已完成 DDL/资源码/默认授权规划与测试，T11 已完成后端/前端/页面权限收口验证；T12 待文档治理收口 |
-| 可选增强 | E1 | 公开资产来源/只读/范围标签统一 | 新增 `AssetVisibilityTag` 并接入三类 R28 资产和评分页回迁 | T9,T11,T12 | 进行中 | 一致 | T9 已完成真实组件和四页消费，T11 已完成测试和页面抽样；T12 待回写 DESIGN |
+| 必须实现 | R20/R21 延续 | 权限/按钮/接口闭环 | 新资源码、默认授权、扫描和页面权限测试 | T1,T11,T12 | 已完成 | 一致 | T1 已完成 DDL/资源码/默认授权规划与测试，T11 已完成后端/前端/页面权限收口验证；T12 已完成需求/README/架构文档回写 |
+| 可选增强 | E1 | 公开资产来源/只读/范围标签统一 | 新增 `AssetVisibilityTag` 并接入三类 R28 资产和评分页回迁 | T9,T11,T12 | 已完成 | 一致 | T9 已完成真实组件和四页消费，T11 已完成测试和页面抽样；T12 已回写 DESIGN |
 | 可选增强 | E2 | 回测历史来源筛选 | 回测历史增加“我的 / 租户公开 / 全体公开”筛选 | T8,T9,T11 | 已完成 | 一致 | T8/T9 已完成历史区域来源筛选、空态和统一复用动作，T11 收口测试通过 |
 | 可选增强 | E3 | 审计摘要展示清理任务最近执行结果 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 会改变审计页摘要信息架构，后续如需要先补原型 |
 
@@ -628,7 +628,7 @@
 
 ### 6.12 任务 T12：文档治理和阶段收尾
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T11
 - 涉及文件/模块：
   - `CLAUDE.md`
@@ -646,7 +646,7 @@
 - 边界与异常：只沉淀真实落地事实，不提前把未实现项写成已完成；如未更新 README 需说明原因。
 - 验证方式：`rg` 检查 R28 待定旧口径是否残留；DESIGN 组件清单存在真实消费页面；计划 §5/§6 状态一致。
 - 完成标准：需求、计划、代码事实和测试基线一致。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成；`agent-works/multi-tenant-rbac/requirement.md` 已把 R22/R24/R28 和阶段六状态更新为已完成，并明确 R28 已覆盖评分、筛选、买卖和回测，其他资产公开仍独立评估；`DESIGN.md` 已将 `AssetVisibilityTag/Actions` 登记到真实复用组件清单，说明不新增系统组件种类或组件配置字段；`README.md` 已把多租户公开资产能力从“评分方案可见性”扩展为评分/筛选/买卖/回测资产可见性，并更新策略筛选、回测验证、配置管理和文档入口说明；`agent-works/architecture/system-rbac-tenant.md`、`config-definitions.md`、`screening-and-board.md`、`backtest.md` 已同步公开资产、opaque ref、只读/复制/复用参数和真实 owner 读取口径。`CLAUDE.md` 保持不变，因为它是薄入口且已指向 AGENTS/README/architecture/DESIGN，没有承载本阶段会漂移的业务规则。验证：`rg` 已检查阶段六状态、R28 接入状态、DESIGN 组件登记和公开资产风险表等口径并完成清理；`git diff --check` 通过。
 
 ## 7. 数据库与 SQL 计划
 
@@ -686,7 +686,7 @@
   - 具体完成情况：T6 已在 5181 预览端口验证 `/screen` 下拉来源标签、公开范围标签、发布入口和只读复杂 AST 展示；桌面截图通过。T7 已在 5181 预览端口验证 `/system/config/trade` 买卖方案来源标签、公开范围标签、发布入口，以及 `/backtest` 买卖方案下拉可见公开方案。T8 已在 5181 预览端口用 `debug_backtest_view` 验证 `/backtest` 历史来源筛选、租户公开记录可见、选中只读公开记录后删除按钮隐藏、复用参数按钮可见、结果载入正常；截图：`screenshots/t8-backtest-history-desktop.png`、`screenshots/t8-backtest-history-readonly-selected.png`、`screenshots/t8-backtest-history-mobile.png`。T9 已在 5181 预览端口用 `debug_tenant_admin` 验证 `/system/config/score`、`/system/config/trade`、`/screen`、`/backtest` 的统一组件消费、复制/复用按钮权限态和横向溢出；临时验收数据已清理。T10 已在 5181 预览端口用 `debug_system` 验证 `/system/audit` 字段变更表、无字段级变更空态和长值换行；临时审计记录已清理。T11 在 5181 预览端口重新用 `debug_tenant_admin/debug_system` 写入临时 `t11_` 验收数据并完成交互验证：`/screen` 选中 T11 筛选方案后显示 `v1/租户公开`；`/system/config/score` 显示评分公开只读和复制入口；`/system/config/trade` 显示 T11 买卖方案 `v1/租户公开`；`/backtest` 历史区显示 T11 记录、租户公开标签、复用参数和结果载入；`/system/audit` 过滤 T11 记录后详情抽屉显示字段变更、列头、`visibility private -> tenant` 和长值换行。`1100x620 / 1366x768 / 1440x900` 抽样无新增横向溢出，临时数据已清理为 0。移动 390px 视口 T8 历史工具条高度 108px，未发现新增重叠；应用既有左侧导航固定宽度造成的整页横向溢出仍属存量布局风险。
 - 组件资产闭环测试：
   - 计划：验证 `AssetVisibilityTag/Actions` 真实消费、新增组件清单维护、评分页回迁、三类 R28 页面接入；本阶段不新增配置组件种类或字段。
-  - 具体完成情况：T9 已新增 `AssetVisibilityTag/Actions` 并接入 ScreenView、ConfigView 评分 tab、ConfigView 买卖 tab、BacktestView；`cd frontend && npm run test -- src/components/__tests__/AssetVisibility.spec.ts` 通过（4 tests），覆盖标签文案、owner/readonly 提示、复制/复用按钮权限态。T11 前端收口验证再次执行该组件测试并通过，页面抽样确认四个消费页均能渲染统一标签/动作组件。组件未进入 layout 组件种类或系统配置组件矩阵，DESIGN 组件清单回写留待 T12。
+  - 具体完成情况：T9 已新增 `AssetVisibilityTag/Actions` 并接入 ScreenView、ConfigView 评分 tab、ConfigView 买卖 tab、BacktestView；`cd frontend && npm run test -- src/components/__tests__/AssetVisibility.spec.ts` 通过（4 tests），覆盖标签文案、owner/readonly 提示、复制/复用按钮权限态。T11 前端收口验证再次执行该组件测试并通过，页面抽样确认四个消费页均能渲染统一标签/动作组件。T12 已把两个组件登记到 `DESIGN.md` 真实复用组件清单；组件未进入 layout 组件种类或系统配置组件矩阵。
 - 权限与数据范围测试：
   - 计划：publish-tenant 默认 tenant_admin/system；publish-public 默认 system；无角色用户 fail-closed；跨租户 tenant 不可见，public 可见，private 不可见；非 owner 保存、删除、发布均 403。
   - 具体完成情况：T1 已验证资源码和默认授权规划：`python -m pytest backend/tests/test_rbac_schema.py::test_stage6_asset_visibility_schema_and_resources backend/tests/test_rbac_schema.py::test_stage6_asset_publish_grants_backfilled_for_tenant_admin backend/tests/test_rbac_schema.py::test_tenant_admin_has_tenant_publish_by_default backend/tests/test_rbac_schema.py::test_normal_role_business_only -q` 通过（4 passed）。T6 已验证筛选方案跨租户 tenant 不可见、同租户 tenant 可见、非 owner 删除/发布 403、复制后归 viewer private。T7 已验证买卖方案跨租户 tenant 不可见、同租户 tenant 可见、非 owner 删除/发布 403、复制后归 viewer private。T8 已验证回测记录跨租户 tenant 不可见、同租户 tenant 可见、非 owner 删除/发布 403、无 public publish 权限拒绝、failed 记录禁止公开。
@@ -704,7 +704,10 @@
   - 具体完成情况：T3 未新增系统配置；清理服务只消费阶段五既有 `audit.retention_days`，配置读取异常或非法值时 fail-safe 跳过清理。
 - 需求映射验证：
   - 计划：检查 §3.1、§3.2、§5、§6 任务编号一致，状态值仅使用 `待开始/进行中/已完成/阻塞/跳过`。
-  - 具体完成情况：T1/T2/T3/T4/T5/T6/T7/T8/T9/T10/T11 已回写 §5 和 §6：R22、R23、R24、R28-8、R28-9、R28-10、E2 行标为已完成；R20/R21 延续因 T12 文档治理未做仍为进行中；E1 因 DESIGN 组件清单待 T12 回写仍为进行中；T12 保持待开始。
+  - 具体完成情况：T1-T12 已回写 §3.2、§5 和 §6：R22、R23、R24、R28-8、R28-9、R28-10、R20/R21 延续、E1、E2 均标为已完成；E3 保持跳过；状态值仅使用 `已完成/跳过`。
+- 文档事实源验证：
+  - 计划：检查 requirement、README、DESIGN、architecture 与阶段六代码事实一致，避免后续按旧 R28 待定状态继续开发。
+  - 具体完成情况：T12 已更新 requirement、README、DESIGN、system-rbac-tenant、config-definitions、screening-and-board、backtest 和本计划；`CLAUDE.md` 作为薄入口无业务事实需更新。`rg` 复核阶段六状态、R24 页面展示、R28 资产接入、DESIGN 组件登记和公开资产风险表等旧口径均已清理。
 - 页面功能点验证：
   - 计划：验证 §4.10 每个页面功能点都有技术实现、任务编号、交互状态和异常处理验证。
   - 具体完成情况：T11 已按 §4.10 抽样核对页面功能点：筛选方案公开状态展示/发布入口/只读与复制、买卖方案公开状态展示/发布/复制/只读、回测历史公开记录展示/来源筛选/复用参数、审计字段变更抽屉均有实现和验证记录；页面加载失败/无公开资产空态已在 T6-T10 任务记录中覆盖，T11 未发现新增缺口。

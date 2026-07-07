@@ -36,6 +36,7 @@
 - 版本递增逻辑（以 `ScoreProfileRepo.save` 为例，score_profile.py:176-208）：保存时比对当前主表的 name/items/grade_thresholds，**完全相同则返回原版本号不写新版**；有实质变更才 `version+1`，同时 upsert 主表与 version 表。`created_at` 在多次保存间保留。
 - JSON 字段统一以 VARCHAR 存 `json.dumps` 字符串，不依赖 DuckDB JSON 扩展。
 - `is_preset` 标记内置预设方案；`seed_defaults` 把默认方案（`DEFAULT_SCORE_PROFILES`/`DEFAULT_TRADE_PROFILES`）入库。
+- 评分方案、买卖方案和筛选方案均支持 `visibility=private|tenant|public`、`published_at`、`published_by`。API 返回 opaque `profile_ref`、`source`、`readonly`、`owner_label`，非 owner 公开方案只读，可复制为当前用户自己的 private。
 
 ### 4. 配置覆盖层与即时生效
 
@@ -88,8 +89,9 @@
 | 模块 | 文件 | 关键端点 |
 |------|------|---------|
 | 技术指标 | `backend/api/indicators.py` | `GET /api/indicators/registry`、`POST /api/indicators/def`、`PATCH .../enabled`、`PATCH .../categories`、`DELETE .../{key}` |
-| 评分方案 | `backend/api/score_profiles.py` | `GET/POST /api/score-profiles`、`GET .../{pid}`、`GET .../{pid}/versions`、`DELETE .../{pid}`、`POST /api/score-profiles/run`（试算榜单） |
-| 买卖方案 | `backend/api/trade_profiles.py` | `GET/POST /api/trade-profiles`、`GET .../{pid}/versions`、`DELETE .../{pid}`、`POST /api/trade-profiles/preview`（条件命中预览） |
+| 评分方案 | `backend/api/score_profiles.py` | `GET/POST /api/score-profiles`、`GET .../{pid}`、`GET .../{pid}/versions`、`DELETE .../{pid}`、`POST .../{pid}/visibility`、`POST .../{pid}/copy`、`POST /api/score-profiles/run`（试算榜单） |
+| 买卖方案 | `backend/api/trade_profiles.py` | `GET/POST /api/trade-profiles`、`GET .../{pid}`、`GET .../{pid}/versions`、`DELETE .../{pid}`、`POST .../{pid}/visibility`、`POST .../{pid}/copy`、`POST /api/trade-profiles/preview`（条件命中预览） |
+| 筛选方案 | `backend/api/profiles.py` | `GET/POST /api/profiles`、`GET .../{pid}`、`GET .../{pid}/versions`、`DELETE .../{pid}`、`POST .../{pid}/visibility`、`POST .../{pid}/copy`、`POST /api/screen/run` |
 | 配置生效 | `backend/api/config.py` | `GET /api/config`、`POST /api/config/reload` |
 
 - 评分试算 `/api/score-profiles/run`（score_profiles.py:56-107）：已保存方案走**评分快照层**（`ScoreSnapshotRepo.get_board`，命中即用/失效重算），未保存的 inline 方案当场 `score_day` 实时算不入库。
@@ -206,7 +208,7 @@ flowchart LR
 1. 前端编辑买/卖条件树（选指标 key + 参数 + 比较符 + 阈值）与可选兜底 → `POST /api/trade-profiles`。
 2. `TradeProfileRepo.save`（trade_profile.py:140-171）取已知指标 key 校验树合法性 → 比对是否实质变更 → 变更则 `version+1`，写主表 + version 表。
 3. 试算：`POST /api/trade-profiles/preview`（trade_profiles.py:61-96）对某交易日全市场（排除 ST）`wide_snapshot` + `attach_columns` + `eval_conditions`，返回命中数与样例。
-4. 回测引用 `trade_profile_id` + 运行时版本（`backtest_run` 记录版本与签名）做买/卖/兜底信号。
+4. 回测引用 `trade_profile_id`/opaque `profile_ref` + 运行时版本（`backtest_run` 记录版本与签名）做买/卖/兜底信号；公开买卖方案按可见性解析，不写入方案 owner 的运行结果。
 
 ### 配置评分方案
 

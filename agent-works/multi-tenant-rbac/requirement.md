@@ -116,10 +116,10 @@
 
 | 需求编号 | 需求项 | 来源/依据 | 纳入条件 | 处理状态 |
 | --- | --- | --- | --- | --- |
-| R22 | token 静默刷新（无感续期，避免操作中断） | 体验增强 | R4 完成后、有空切入即可纳入 | 阶段六计划 |
+| R22 | token 静默刷新（无感续期，避免操作中断） | 体验增强 | R4 完成后、有空切入即可纳入；阶段六 T2 已完成前端静默刷新单飞、原请求重放和失败清态 | 阶段六已完成 |
 | R23 | 审计日志保留期自动清理任务（默认 90 天可配） | 【已确认】审计细则 | R17 落地后纳入，避免审计表无限增长；阶段五已实现 `audit.retention_days=90` 配置、默认查询窗口和页面提示；阶段六 T3 已实现自动清理服务、CLI 和 APScheduler 每日任务 | 阶段六 T3 已完成 |
-| R24 | 操作审计字段级变更对比（who changed what from→to） | 增强可观测 | R17 基础事件稳定后纳入；阶段六 T4 已完成后端 `changes` 模型、脱敏 helper 和配置/字典/RBAC 采集，T10 待完成审计详情页展示 | 阶段六进行中 |
-| R28 | 资产可见性与自助公开（评分/筛选/买卖/回测等方案：私有 / 同租户共享 / 全体公开 + 加载=自己的∪公开的） | 用户诉求（阶段四 C1 延伸）、遗留项 2 升级 | 评分方案公开能力已在阶段四 R28 分支落地；筛选方案、买卖方案和回测记录公开能力纳入阶段六；阶段六 T5 已完成通用 asset ref/source/readonly/visible helper，T6-T8 待接入具体资产 API | 阶段六进行中 |
+| R24 | 操作审计字段级变更对比（who changed what from→to） | 增强可观测 | R17 基础事件稳定后纳入；阶段六 T4 已完成后端 `changes` 模型、脱敏 helper 和配置/字典/RBAC 采集，T10 已完成审计详情页字段变更表展示 | 阶段六已完成 |
+| R28 | 资产可见性与自助公开（评分/筛选/买卖/回测等方案：私有 / 同租户共享 / 全体公开 + 加载=自己的∪公开的） | 用户诉求（阶段四 C1 延伸）、遗留项 2 升级 | 评分方案公开能力已在阶段四 R28 分支落地；阶段六已补齐通用 asset ref/source/readonly/visible helper，并完成筛选方案、买卖方案和回测记录的可见列表/详情/发布/复制或复用能力 | 阶段六已完成 |
 
 ### 4.3 暂不实现
 
@@ -131,7 +131,7 @@
 
 > R26「预留扩展位」指：角色表预留 `role_type`（system/tenant_admin/normal/paid）与可空 `plan_code`/`quota` 字段，不实现其消费逻辑。
 >
-> R28「资产可见性与自助公开」指：用户资产（评分/筛选/买卖方案、回测等）在个人私有基础上增加可见性维度（private / tenant / public），读侧从「仅本人」放宽为「本人 ∪ 公开 [∪ 同租户]」，用户可自助把自己的方案公开到同租户或全体。阶段四 R28 已先落地**评分方案**：公开到租户由 `score-profile:publish-tenant` 控制，公开到全体由 `score-profile:publish-public` 控制；非 owner 公开方案只读，可复制为自己的 private；公开方案快照写方案 owner 槽；新用户可见平台内置 public 预设。阶段六计划继续扩展筛选方案、买卖方案和回测记录；公开市场、审批流、收藏/搜索/运营推荐仍不纳入。
+> R28「资产可见性与自助公开」指：用户资产（评分/筛选/买卖方案、回测等）在个人私有基础上增加可见性维度（private / tenant / public），读侧从「仅本人」放宽为「本人 ∪ 公开 [∪ 同租户]」，用户可自助把自己的方案公开到同租户或全体。阶段四 R28 已先落地**评分方案**：公开到租户由 `score-profile:publish-tenant` 控制，公开到全体由 `score-profile:publish-public` 控制；非 owner 公开方案只读，可复制为自己的 private；公开方案快照写方案 owner 槽；新用户可见平台内置 public 预设。阶段六已按同一模型扩展**筛选方案、买卖方案和回测记录**：方案类资产可复制为 viewer 的 private，回测记录只读可见且可复用参数重跑，运行结果仍归当前执行者。公开市场、审批流、收藏/搜索/运营推荐仍不纳入。
 
 ---
 
@@ -597,7 +597,7 @@
 - **统一审计可观测**：接口/任务/安全三类事件一处采集，反扒与越权天然可观测，运营与安全排障受益（已纳入 R17）。
 - **数据字典治理**：枚举集中治理，降低前后端枚举漂移（已纳入 R18，渐进接入）。
 - **权限版本号即时失效**：相比纯长效 JWT，安全性显著提升（已纳入 R4）。
-- 【阶段六已纳入】：审计字段级变更对比（R24）。【后续建议，不扩大本期范围】：SSO/第三方登录（R25）、付费配额（R26）、行情行为风控（R27）。
+- 【已完成】：审计字段级变更对比（R24）已在阶段六落地。【后续建议，不扩大本期范围】：SSO/第三方登录（R25）、付费配额（R26）、行情行为风控（R27）。
 
 ---
 
@@ -626,9 +626,9 @@
 | R19 | 配置 4 子页面功能完整；普通用户仅见评分规则/买卖指标；系统设置动态配置组可展示、保存和权限拦截 | 路由/pageRegistry/layout-contract 测试、`ConfigView.system.spec.ts`、`npm run build`、三档视口验证 |
 | R20 | 未登录跳登录；菜单/路由/按钮按权限码渲染 | 页面测试 |
 | R21 | 现有 13 路由与页面全部接鉴权+隔离；未改造接口默认 deny | 全量回归 |
-| R22 | token 临期静默续期，操作不中断 | 体验测试（建议） |
+| R22 | token 临期静默续期，操作不中断 | `frontend/src/api/__tests__/client-refresh.spec.ts` |
 | R23 | 超保留期审计自动清理；阶段五已先落 `audit.retention_days` 配置和默认查询窗口 | `backend/tests/test_stage6_audit_cleanup.py`；配置消费已由阶段五后端/页面测试覆盖 |
-| R24 | 关键变更可见 from→to | `backend/tests/test_stage6_audit_changes.py`；T10 审计详情页展示测试待补 |
+| R24 | 关键变更可见 from→to | `backend/tests/test_stage6_audit_changes.py`；`frontend/src/views/system/__tests__/AuditLogView.spec.ts`；5181 审计详情抽屉三档视口验证 |
 | R28 | 筛选方案、买卖方案、回测记录支持 `private/tenant/public`；公开资产只读可见，owner 可发布/收回，方案类资产可复制为自己的 private，公开回测可复用参数重跑且不可改删 owner 记录 | 阶段六 visible API、权限与跨租户测试、页面交互测试、阶段四评分方案公开回归 |
 
 ---
@@ -703,17 +703,18 @@
 - **验收基线**：阶段五初版后端专项 `33 passed`（`test_stage5_config_t2.py`、`test_stage5_auth_config.py`、`test_stage5_audit.py`、`test_stage5_audit_collection.py`、`test_stage5_dicts.py`、`test_stage5_resource_codes.py`），前端全量 `npm run test -- --run` 为 `21 passed` 测试文件、`212 passed` 用例，`npm run build` 通过。缺陷整改复测：后端认证/审计/字典/DDL 专项 `38 passed`，前端审计/字典/系统设置/登录验证码/AppFilterSelect/阶段五路由专项 `30 passed`，`npm run build` 通过；`/system/audit`、`/system/dicts`、`/system/config/system` 在 5181 预览下完成三档视口截图、审计目标关键词查询、数据字典状态筛选、分页、目标中文说明、系统设置分类 Tab 和页面可见错误态复核；登录图形验证码开启即展示、提交即校验由单测和后端 API 回归覆盖。
 - **范围边界回写**：R23 自动清理任务未纳入阶段五；阶段五只实现 `audit.retention_days=90` 配置、后端默认查询窗口和页面提示。R24 字段级 from→to、R22 静默刷新、R25/R26/R27 仍按后续建议或暂不实现处理。
 
-**阶段六：体验增强 + 其他资产公开能力** — 🟡 **进行中**（分支 `codex/multi-tenant-rbac-stage6`）
+**阶段六：体验增强 + 其他资产公开能力** — ✅ **完成**（分支 `codex/multi-tenant-rbac-stage6`）
 - 覆盖需求：R22、R23、R24、R28（评分方案之外的筛选方案、买卖方案、回测记录）
 - 目标：静默刷新、审计保留期清理、字段级变更对比，并以阶段四 B 的评分方案公开模型为基线扩展其他资产可见性。
 - 里程碑：长操作不被 token 过期打断；审计表可控增长；关键变更可见 from/to；筛选/买卖/回测公开资产只读可见、owner 可发布/收回、方案类资产可复制为自己的 private。
 - **开发计划**：[stage6-experience-asset-visibility/plan.md](stage6-experience-asset-visibility/plan.md)。
-- **当前进度**：T1 已完成 DDL/资源码规划、幂等迁移入口、SQL 留痕和 T1 专项测试；T2 已完成 token 静默刷新；T3 已完成审计日志保留期自动清理服务、CLI、APScheduler 注册和专项测试；T4 已完成审计字段级 `changes` 后端模型、脱敏 helper 和配置/字典/RBAC 采集；T5 已完成通用资产可见性 helper 和专项测试；T6 已完成筛选方案 visible API、发布/复制接口、`screen/run` 可见 ref 解析、筛选页来源/只读/发布入口接入和专项测试；T7 已完成买卖方案 visible API、发布/复制接口、回测可见 ref 解析、买卖指标页/回测页接入和专项测试；T8-T12 尚未开始。
-- **开发产物索引（T1-T7）**：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/tests/test_rbac_schema.py`、`frontend/src/api/client.ts`、`frontend/src/api/authToken.ts`、`frontend/src/api/__tests__/client-refresh.spec.ts`、`backend/storage/audit_repository.py`、`backend/services/audit_service.py`、`backend/cli.py`、`backend/scheduler/scheduler.py`、`backend/tests/test_stage6_audit_cleanup.py`、`backend/tests/test_stage6_audit_changes.py`、`backend/services/asset_visibility.py`、`backend/tests/test_stage6_asset_visibility.py`、`backend/screening/profile.py`、`backend/api/profiles.py`、`backend/services/screen_score.py`、`backend/tests/test_stage6_screen_profile_visibility.py`、`frontend/src/api/screening.ts`、`frontend/src/views/ScreenView.vue`、`backend/signals/trade_profile.py`、`backend/api/trade_profiles.py`、`backend/backtest/engine.py`、`backend/services/backtest_service.py`、`backend/tests/test_stage6_trade_profile_visibility.py`、`frontend/src/api/tradeProfile.ts`、`frontend/src/views/ConfigView.vue`、`frontend/src/views/BacktestView.vue`、[stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql](stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql)、[stage6-experience-asset-visibility/resource-codes.sql](stage6-experience-asset-visibility/resource-codes.sql)。
+- **落地结论**：T1-T12 已完成。T1 完成 DDL/资源码规划、幂等迁移入口、SQL 留痕和 T1 专项测试；T2 完成 token 静默刷新；T3 完成审计日志保留期自动清理服务、CLI、APScheduler 注册和专项测试；T4 完成审计字段级 `changes` 后端模型、脱敏 helper 和配置/字典/RBAC 采集；T5 完成通用资产可见性 helper 和专项测试；T6 完成筛选方案 visible API、发布/复制接口、`screen/run` 可见 ref 解析、筛选页来源/只读/发布入口接入和专项测试；T7 完成买卖方案 visible API、发布/复制接口、回测可见 ref 解析、买卖指标页/回测页接入和专项测试；T8 完成回测记录可见列表/详情/发布/复用参数和从表真实 owner 读取；T9 完成 `AssetVisibilityTag/Actions` 统一组件并回迁评分、筛选、买卖和回测页面；T10 完成审计详情字段变更表；T11 完成后端/前端/build/5181 页面收口验证；T12 完成需求、设计和项目入口文档治理。
+- **开发产物索引（T1-T12）**：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/tests/test_rbac_schema.py`、`frontend/src/api/client.ts`、`frontend/src/api/authToken.ts`、`frontend/src/api/__tests__/client-refresh.spec.ts`、`backend/storage/audit_repository.py`、`backend/services/audit_service.py`、`backend/cli.py`、`backend/scheduler/scheduler.py`、`backend/tests/test_stage6_audit_cleanup.py`、`backend/tests/test_stage6_audit_changes.py`、`backend/services/asset_visibility.py`、`backend/tests/test_stage6_asset_visibility.py`、`backend/screening/profile.py`、`backend/api/profiles.py`、`backend/services/screen_score.py`、`backend/tests/test_stage6_screen_profile_visibility.py`、`frontend/src/api/screening.ts`、`frontend/src/views/ScreenView.vue`、`backend/signals/trade_profile.py`、`backend/api/trade_profiles.py`、`backend/backtest/engine.py`、`backend/services/backtest_service.py`、`backend/api/backtest.py`、`backend/tests/test_stage6_trade_profile_visibility.py`、`backend/tests/test_stage6_backtest_visibility.py`、`frontend/src/api/tradeProfile.ts`、`frontend/src/api/backtest.ts`、`frontend/src/api/audit.ts`、`frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetVisibilityActions.vue`、`frontend/src/components/__tests__/AssetVisibility.spec.ts`、`frontend/src/views/ConfigView.vue`、`frontend/src/views/BacktestView.vue`、`frontend/src/views/system/AuditLogView.vue`、`frontend/src/views/system/__tests__/AuditLogView.spec.ts`、[stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql](stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql)、[stage6-experience-asset-visibility/resource-codes.sql](stage6-experience-asset-visibility/resource-codes.sql)。
+- **验收基线**：T11 合并后端验证集 **34 passed**（阶段六专项 + T1 权限资源 + 阶段四评分公开链路 + 阶段五审计/字典/系统设置回归）；前端专项 **16 passed**（client refresh、AssetVisibility 组件、AuditLogView 字段变更）；`npm run build` 通过；5181 预览用 `debug_tenant_admin/debug_system` 完成 `/screen`、`/system/config/score`、`/system/config/trade`、`/backtest`、`/system/audit` 在 `1100x620 / 1366x768 / 1440x900` 三档视口抽样，临时验收数据已清理为 0。
 - **范围边界**：本阶段不做公开市场、审批流、收藏、搜索广场、运营推荐、计费联动；不扩展自选股分组、盘感训练记录、布局配置、系统配置、字典或数据任务为公开资产。
 
 **独立需求（排期待定，非上述任一阶段的既定内容）**
-- R28 评分/筛选/买卖/回测之外的其他资产公开能力：是否支持 `private/tenant/public` 仍待独立设计和排期。
+- R28 已覆盖评分/筛选/买卖/回测；这些类型之外的其他资产公开能力（如自选股分组、盘感训练记录、布局配置、系统配置、字典或数据任务）是否支持 `private/tenant/public` 仍待独立设计和排期。
 
 > 文档治理收尾（贯穿/收口）：同步改写 CLAUDE.md、README、architecture、start.sh/部署脚本（定位与依赖变更），避免后续 AI 按旧契约行事。
 
@@ -724,7 +725,7 @@
 | 项 | 影响 | 当前默认（已采纳建议/推断） |
 | --- | --- | --- |
 | 1. 配置管理 IA | 普通用户会在「系统管理→配置管理」下看到评分规则/买卖指标两子页 | 【已确认】保留在配置管理下，靠角色控子页面可见，最省改动 |
-| 2. 资产共享粒度 | 是否支持「租户内共享资产」还是纯个人私有 | 【已确认→R28】评分方案已支持 `private/tenant/public`；筛选方案已在阶段六 T6 接入 `private/tenant/public`、只读和复制；买卖方案已在阶段六 T7 接入 `private/tenant/public`、只读、复制和回测引用；回测记录已纳入阶段六，T8 待接入具体资产 API 与权限；评分/筛选/买卖/回测之外的资产仍后续独立评估 |
+| 2. 资产共享粒度 | 是否支持「租户内共享资产」还是纯个人私有 | 【已确认→R28】评分方案已在阶段四 B 支持 `private/tenant/public`；筛选方案、买卖方案和回测记录已在阶段六支持 `private/tenant/public`、只读可见和 owner 发布/收回，方案类资产可复制为自己的 private，公开回测可复用参数重跑；评分/筛选/买卖/回测之外的资产仍后续独立评估 |
 | 3. 审计保留期/范围 | 审计表增长与隐私 | 【已确认】保留 90 天可配、仅记摘要不记请求/响应体、租管看本租户 |
 | 4. `data_dimension_registry` 是否并入数据字典 | 字典接入边界 | 【待定】本期不并入，维持现状，后续评估 |
 | 5. 租户管理员能否自建角色 | 角色管理权限边界 | 【已确认】本期仅分配系统管理员预设角色，不可自建 |

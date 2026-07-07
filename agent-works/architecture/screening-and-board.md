@@ -54,10 +54,11 @@
   - `score_result`（ddl.py:247）：固定模型每日榜单（含 buy_point/risk_flags）。
   - `score_snapshot` / `score_snapshot_meta`（ddl.py:453/467）：评分方案榜单明细 + 失效元数据。
 - **涉及 API**：
-  - 筛选方案 CRUD/版本/跑筛选：`backend/api/profiles.py`（`/profiles*`、`/screen/run`）。
+  - 筛选方案 CRUD/版本/发布/复制/跑筛选：`backend/api/profiles.py`（`/profiles*`、`/profiles/{ref}/visibility`、`/profiles/{ref}/copy`、`/screen/run`）。
   - 评分方案 CRUD/版本/试算：`backend/api/score_profiles.py`（`/score-profiles*`、`/score-profiles/run`）。
   - 榜单查询：`backend/api/board.py`（`/scores`、`/scores/top`、`/board/compute`）。
-- **前端**：`ScreenView.vue` 条件构建器（指标/表达式行 ↔ AST 互转、方案存取/版本恢复、命中列表导出）；`BoardView.vue` 选评分方案+日期+TopN 拉榜单（调 `/score-profiles/run`，展示综合分/评级/分项徽章）。
+- **可见性**：筛选方案和评分方案均支持 `private / tenant / public`。API 使用 opaque `profile_ref` 解析真实 owner；非 owner 公开方案只读，可复制为自己的 private；公开方案运行结果仍归当前执行者，不污染方案 owner 槽。
+- **前端**：`ScreenView.vue` 条件构建器（指标/表达式行 ↔ AST 互转、方案存取/版本恢复、公开范围标签/发布/复制、命中列表导出）；`BoardView.vue` 选评分方案+日期+TopN 拉榜单（调 `/score-profiles/run`，展示综合分/评级/分项徽章）。
 
 ## 页面使用说明书
 
@@ -103,6 +104,7 @@ flowchart LR
 | 指标条件 | 从指标注册表选择 key 和参数 | 适合可复用、可解释的条件 |
 | 表达式条件 | 输入 DSL，如 `MA(C,20)>REF(MA(C,20),5)` | 适合临时验证想法 |
 | 方案保存 | 保存为 `screen_profile` 并版本化 | 后续回测引用同一筛选方案 |
+| 方案公开 | owner 可发布到同租户或全体；非 owner 公开方案只读、可复制 | 复用成熟筛选思路但保持个人资产隔离 |
 | 命中列表 | 展示命中股票，并附固定模型评分 | 用于快速看候选池质量 |
 
 **筛选条件三种叶子**：

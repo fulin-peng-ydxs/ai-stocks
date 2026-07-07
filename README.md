@@ -42,7 +42,7 @@
 
 全栈：FastAPI 提供 REST 接口并在生产期托管前端构建产物（`frontend/dist`）。**持久层为混合架构**：行情/参考数据留嵌入式 DuckDB 单文件（只读分析），用户资产、系统菜单、角色权限、平台配置落 PostgreSQL（并发写、按 `tenant_id`+`owner_user_id` 隔离），Redis 作 token 黑名单、权限缓存、验证码和限流等短状态库。
 
-认证与授权以后端为事实源：`AuthMiddleware` 对非白名单 `/api/**` 默认拒绝，JWT 只承载身份和权限版本，`/api/auth/me` 返回用户、租户、角色、授权菜单树和功能码；接口用 `require_perm` / `require_system` / `require_system_perm` 做精确授权，前端侧栏、路由守卫和按钮级 `v-permission` 只消费后端结果。多租户数据归属由请求上下文注入到仓库和服务层，前端不决定资产归属。技术架构见 [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md)，需求与落地记录见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)。
+认证与授权以后端为事实源：`AuthMiddleware` 对非白名单 `/api/**` 默认拒绝，JWT 只承载身份和权限版本，`/api/auth/me` 返回用户、租户、角色、授权菜单树和功能码；接口用 `require_perm` / `require_system` / `require_system_perm` 做精确授权，前端侧栏、路由守卫和按钮级 `v-permission` 只消费后端结果。多租户数据归属由请求上下文注入到仓库和服务层，前端不决定资产归属；评分、筛选、买卖方案和回测记录支持 `private / tenant / public` 可见性，公开资产只读可见，方案类资产可复制为自己的 private。技术架构见 [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md)，需求与落地记录见 [agent-works/multi-tenant-rbac/](agent-works/multi-tenant-rbac/)。
 
 ```
 ┌─────────────────────────── 浏览器 (Vue3 SPA) ───────────────────────────┐
@@ -76,10 +76,10 @@
 | 模块 | 页面入口 | 主要 API | 你在这里完成什么 | 详细文档 |
 |------|----------|----------|------|----------|
 | 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按用户可见**评分方案**全市场排序（自己的方案、租户公开、全体公开、平台内置预设；0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
-| 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存 + 版本回看 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
-| 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率 | [backtest.md](agent-works/architecture/backtest.md) |
+| 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存、版本回看、按权限公开和复制 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
+| 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率；历史记录可按权限公开，公开记录可复用参数重跑 | [backtest.md](agent-works/architecture/backtest.md) |
 | 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 列表（服务端排序/分页，含退市股）；详情（K 线 + 指标快照 + 当前买卖方案信号）；股票分组篮子 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
-| ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底）/ 技术指标（注册表）/ 系统设置 | [config-definitions.md](agent-works/architecture/config-definitions.md) |
+| ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置 | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) |
 | 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
 | 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
@@ -242,7 +242,7 @@ cd frontend && npm run build && cd ..   # 产物进 frontend/dist
 ./start.sh prod                         # 后端绑 0.0.0.0:8000 托管 dist
 ```
 
-生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权、细粒度 RBAC、系统菜单、租户管理、存量业务路由资源码、基线共享读和评分方案可见性；启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
+生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权、细粒度 RBAC、系统菜单、租户管理、存量业务路由资源码、基线共享读和评分/筛选/买卖/回测资产可见性；启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
 
 ### 5.3 首次准备数据（依赖有序）
 
@@ -374,7 +374,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | [`agent-works/architecture/`](agent-works/architecture/) | 各业务模块当前技术说明、业务流程和风险边界 |
 | [AGENTS.md](AGENTS.md) | AI 协作入口与仓库级稳定约束 |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 薄入口，指向 AGENTS 与 Claude 项目记忆 |
-| [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) | 登录鉴权、系统菜单、细粒度权限、多租户资产隔离和评分方案可见性的当前技术架构 |
+| [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) | 登录鉴权、系统菜单、细粒度权限、多租户资产隔离和公开资产可见性的当前技术架构 |
 | [multi-tenant-rbac](agent-works/multi-tenant-rbac/) | 系统菜单、权限、多租户相关需求与落地记录 |
 | [DESIGN.md — 前端设计与布局规范](DESIGN.md) | 前端布局事实源与页面开发契约：可配置布局系统、页面设计闭环、组件/布局维护矩阵、设置抽屉规范；强制规则归 `frontend/src/layout` + 契约测试 |
 | [page-template.md — 新页面开发模板](agent-works/configurable-layout-system/page-template.md) | AI/开发者新建或改造页面时复制使用的页面设计块、维护矩阵、7 个原型骨架和验收清单 |
