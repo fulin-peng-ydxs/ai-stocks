@@ -9,7 +9,7 @@
   - 阶段六前已更新日志审计原型：[../prototypes/audit-log.html](../prototypes/audit-log.html)，详情抽屉新增 R24 字段变更表。
   - 页面设计闭环依据：[../../configurable-layout-system/page-template.md](../../configurable-layout-system/page-template.md) 与 [../../../DESIGN.md](../../../DESIGN.md)。
 - 功能目标：进入第六阶段，补齐体验增强项，并把原先独立排期的 R28 其他资产公开能力纳入本阶段。
-- 当前计划状态：进行中（T1、T2、T3、T4、T5、T6、T7、T8、T9、T10 已完成，T11-T12 未开始）。
+- 当前计划状态：进行中（T1、T2、T3、T4、T5、T6、T7、T8、T9、T10、T11 已完成，T12 未开始）。
 - 计划输出目录：`agent-works/multi-tenant-rbac/stage6-experience-asset-visibility/`。
 - 本阶段纳入：
   - R22：token 静默刷新，避免长操作中 access token 过期直接打断。
@@ -109,8 +109,8 @@
 
 | 需求编号/增强编号 | 增强内容 | 需求阶段处理状态 | 开发状态 | 对应任务 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| E1 | 统一展示 `owner_label/source/readonly/visibility` 标签 | 原计划可选增强，整改后纳入必做 UI 交付 | 待开始 | T9,T11 | 三类 R28 资产与评分页统一使用 `AssetVisibilityTag`，避免页面内复制标签逻辑 |
-| E2 | 回测历史增加“我的 / 租户公开 / 全体公开”筛选 | 原计划可选增强，纳入本阶段 | 进行中 | T8,T9,T11 | T8 已在回测历史区域提供来源筛选和空态；T9/T11 统一组件与收口测试待开始 |
+| E1 | 统一展示 `owner_label/source/readonly/visibility` 标签 | 原计划可选增强，整改后纳入必做 UI 交付 | 进行中 | T9,T11,T12 | T9 已完成三类 R28 资产与评分页统一组件消费，T11 已完成组件测试、build 和页面抽样；T12 需回写 DESIGN 组件清单 |
+| E2 | 回测历史增加“我的 / 租户公开 / 全体公开”筛选 | 原计划可选增强，纳入本阶段 | 已完成 | T8,T9,T11 | T8/T9 已完成历史区域来源筛选、空态和统一复用动作；T11 已完成后端、前端和页面收口验证 |
 | E3 | 审计摘要中展示清理任务最近执行结果 | 后续建议 | 跳过 | - | R23 本阶段通过审计事件和 CLI/调度日志验证；摘要卡片会改变审计页信息架构，后续如需要再补原型和任务 |
 
 ### 3.3 暂不实现
@@ -367,12 +367,12 @@
 | 必须实现 | R22 | token 静默刷新 | 前端单飞 refresh + 重放原请求 + 失败回登录 | T2 | 已完成 | 一致 | 已补前端 client 静默刷新和专项测试 |
 | 必须实现 | R23 | 审计日志保留期自动清理 | 清理服务、CLI、复用 APScheduler 调度、测试和审计事件 | T3 | 已完成 | 一致 | 复用阶段五 `audit.retention_days` 与现有 scheduler |
 | 必须实现 | R24 | 字段级 from/to | `audit_log.changes`、采集 helper、审计页展示 | T4,T10 | 已完成 | 一致 | T4 后端字段模型与 T10 前端详情字段变更表均已完成 |
-| 必须实现 | R28-8 | 筛选方案公开 | `screen_profile` visible + API + ScreenView 接入 | T5,T6,T9,T11 | 进行中 | 一致 | T5/T6/T9 已完成，T11 收口测试待开始 |
-| 必须实现 | R28-9 | 买卖方案公开 | `trade_profile` visible + API + ConfigView trade 接入 | T5,T7,T9,T11 | 进行中 | 一致 | T5/T7/T9 已完成，T11 收口测试待开始 |
-| 必须实现 | R28-10 | 回测记录公开 | `backtest_run` visible + API + BacktestView 接入 | T5,T8,T9,T11 | 进行中 | 一致 | T5/T8/T9 已完成，T11 收口测试待开始 |
-| 必须实现 | R20/R21 延续 | 权限/按钮/接口闭环 | 新资源码、默认授权、扫描和页面权限测试 | T1,T11,T12 | 进行中 | 一致 | T1 已完成 DDL/资源码/默认授权规划与测试，T11/T12 待后续阶段收口 |
-| 可选增强 | E1 | 公开资产来源/只读/范围标签统一 | 新增 `AssetVisibilityTag` 并接入三类 R28 资产和评分页回迁 | T9,T11,T12 | 进行中 | 一致 | T9 已完成真实组件和四页消费，T11/T12 收口待开始 |
-| 可选增强 | E2 | 回测历史来源筛选 | 回测历史增加“我的 / 租户公开 / 全体公开”筛选 | T8,T9,T11 | 进行中 | 一致 | T8/T9 已完成历史区域来源筛选、空态和统一复用动作，T11 收口测试待开始 |
+| 必须实现 | R28-8 | 筛选方案公开 | `screen_profile` visible + API + ScreenView 接入 | T5,T6,T9,T11 | 已完成 | 一致 | T5/T6/T9 已完成业务与 UI 接入，T11 后端/前端/页面收口验证通过 |
+| 必须实现 | R28-9 | 买卖方案公开 | `trade_profile` visible + API + ConfigView trade 接入 | T5,T7,T9,T11 | 已完成 | 一致 | T5/T7/T9 已完成业务与 UI 接入，T11 后端/前端/页面收口验证通过 |
+| 必须实现 | R28-10 | 回测记录公开 | `backtest_run` visible + API + BacktestView 接入 | T5,T8,T9,T11 | 已完成 | 一致 | T5/T8/T9 已完成业务与 UI 接入，T11 后端/前端/页面收口验证通过 |
+| 必须实现 | R20/R21 延续 | 权限/按钮/接口闭环 | 新资源码、默认授权、扫描和页面权限测试 | T1,T11,T12 | 进行中 | 一致 | T1 已完成 DDL/资源码/默认授权规划与测试，T11 已完成后端/前端/页面权限收口验证；T12 待文档治理收口 |
+| 可选增强 | E1 | 公开资产来源/只读/范围标签统一 | 新增 `AssetVisibilityTag` 并接入三类 R28 资产和评分页回迁 | T9,T11,T12 | 进行中 | 一致 | T9 已完成真实组件和四页消费，T11 已完成测试和页面抽样；T12 待回写 DESIGN |
+| 可选增强 | E2 | 回测历史来源筛选 | 回测历史增加“我的 / 租户公开 / 全体公开”筛选 | T8,T9,T11 | 已完成 | 一致 | T8/T9 已完成历史区域来源筛选、空态和统一复用动作，T11 收口测试通过 |
 | 可选增强 | E3 | 审计摘要展示清理任务最近执行结果 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 会改变审计页摘要信息架构，后续如需要先补原型 |
 
 ## 6. 详细实施步骤与进度追踪
@@ -607,7 +607,7 @@
 
 ### 6.11 任务 T11：测试、构建与页面验证
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2-T10
 - 涉及文件/模块：
   - `backend/tests/`
@@ -624,7 +624,7 @@
 - 边界与异常：涉及 DuckDB 的后端测试前按 AGENTS 要求检查并停止后端服务，测试后按原状态恢复；未执行的验证必须在计划中写原因。
 - 验证方式：专项 pytest、Vitest、`npm run build`、5181 三档视口验证。
 - 完成标准：专项测试通过，build 通过，页面无明显布局溢出。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成；按 AGENTS DuckDB 锁规则先确认后端运行中并通过 `./start.sh stop` 停止服务，后端测试完成后用 `./start.sh` 恢复且 `/api/health=200`。后端收口验证执行 `python -m pytest backend/tests/test_stage6_asset_visibility.py backend/tests/test_stage6_audit_cleanup.py backend/tests/test_stage6_audit_changes.py backend/tests/test_stage6_screen_profile_visibility.py backend/tests/test_stage6_trade_profile_visibility.py backend/tests/test_stage6_backtest_visibility.py backend/tests/test_rbac_schema.py::test_stage6_asset_visibility_schema_and_resources backend/tests/test_rbac_schema.py::test_stage6_asset_publish_grants_backfilled_for_tenant_admin backend/tests/test_rbac_schema.py::test_tenant_admin_has_tenant_publish_by_default backend/tests/test_rbac_schema.py::test_normal_role_business_only backend/tests/test_score_profile_visibility_api.py backend/tests/test_stage4_board.py::test_board_compute_accepts_visible_score_profile_ref backend/tests/test_backtest.py::test_backtest_engine_accepts_visible_score_profile_ref backend/tests/test_backtest.py::test_backtest_service_resolves_visible_score_profile_ref backend/tests/test_stage5_auth_config.py::test_stage5_settings_save_records_sanitized_config_audit backend/tests/test_stage5_auth_config.py::test_stage5_settings_save_ignores_audit_write_failure backend/tests/test_stage5_dicts.py::test_stage5_dict_crud_code_immutable_delete_guard_and_audit backend/tests/test_stage5_audit_collection.py::test_stage5_rbac_management_records_domain_audit -q` 通过（34 passed）。前端执行 `cd frontend && npm run test -- src/api/__tests__/client-refresh.spec.ts src/components/__tests__/AssetVisibility.spec.ts src/views/system/__tests__/AuditLogView.spec.ts` 通过（16 passed），`cd frontend && npm run build` 通过，仍只有既有 Rollup pure 注释和 chunk size 警告。页面验证使用 5181 专用端口和 `debug_tenant_admin/debug_system`，临时写入 `t11_` 筛选/买卖/回测/审计数据，验证 `/screen`、`/system/config/score`、`/system/config/trade`、`/backtest`、`/system/audit` 在 `1100x620 / 1366x768 / 1440x900` 下公开标签、下拉、回测历史、复用参数和审计字段变更抽屉可见且无新增横向溢出；临时数据已清理为 0，5181 预览已停止。
 
 ### 6.12 任务 T12：文档治理和阶段收尾
 
@@ -677,22 +677,22 @@
 
 - 单元测试：
   - 计划：asset ref 编解码、source/readonly 判断、visibility 合法值校验；AuditService changes 脱敏和清理 cutoff。
-  - 具体完成情况：T3 已验证 AuditService 清理 cutoff、非法保留期 fail-safe 和重复执行幂等：`python -m pytest backend/tests/test_stage6_audit_cleanup.py -q` 通过（3 passed）。T4 已验证 changes 脱敏、旧记录默认 `[]`、配置/字典/RBAC 写入 before/after：`python -m pytest backend/tests/test_stage6_audit_changes.py -q` 通过（5 passed）。T5 已验证 asset ref 编解码、source/readonly、visibility 合法值和可见性规则：`python -m pytest backend/tests/test_stage6_asset_visibility.py -q` 通过（9 passed）。
+  - 具体完成情况：T3 已验证 AuditService 清理 cutoff、非法保留期 fail-safe 和重复执行幂等：`python -m pytest backend/tests/test_stage6_audit_cleanup.py -q` 通过（3 passed）。T4 已验证 changes 脱敏、旧记录默认 `[]`、配置/字典/RBAC 写入 before/after：`python -m pytest backend/tests/test_stage6_audit_changes.py -q` 通过（5 passed）。T5 已验证 asset ref 编解码、source/readonly、visibility 合法值和可见性规则：`python -m pytest backend/tests/test_stage6_asset_visibility.py -q` 通过（9 passed）。T11 后端收口验证再次纳入上述三项并通过，合并后端验证集 34 passed。
 - 接口测试：
   - 计划：screen/trade/backtest visible list/detail/versions/publish/copy/delete；refresh 单飞和失败回登录。
-  - 具体完成情况：R22 前端请求层已验证 refresh 单飞、成功重放和失败清态：`cd frontend && npm run test -- src/api/__tests__/client-refresh.spec.ts` 通过（2 tests）。T6 已验证筛选方案 visible list/detail/versions/publish/copy/delete 权限边界：`python -m pytest backend/tests/test_stage6_screen_profile_visibility.py -q` 通过（2 passed）。T7 已验证买卖方案 visible list/detail/versions/publish/copy/delete 权限边界与回测 ref 解析：`python -m pytest backend/tests/test_stage6_trade_profile_visibility.py -q` 通过（2 passed）。T8 已验证 backtest_run visible list/detail/publish/delete 权限边界：`python -m pytest backend/tests/test_stage6_backtest_visibility.py -q` 通过（1 passed）。
+  - 具体完成情况：R22 前端请求层已验证 refresh 单飞、成功重放和失败清态：`cd frontend && npm run test -- src/api/__tests__/client-refresh.spec.ts` 通过（2 tests）。T6 已验证筛选方案 visible list/detail/versions/publish/copy/delete 权限边界：`python -m pytest backend/tests/test_stage6_screen_profile_visibility.py -q` 通过（2 passed）。T7 已验证买卖方案 visible list/detail/versions/publish/copy/delete 权限边界与回测 ref 解析：`python -m pytest backend/tests/test_stage6_trade_profile_visibility.py -q` 通过（2 passed）。T8 已验证 backtest_run visible list/detail/publish/delete 权限边界：`python -m pytest backend/tests/test_stage6_backtest_visibility.py -q` 通过（1 passed）。T11 后端收口验证再次纳入 R22/R28 接口、阶段四评分公开 API/榜单/回测链路、阶段五审计/字典/系统设置回归并通过（34 passed）。
 - 页面/交互测试：
   - 计划：AuditLogView 字段变更；ScreenView 公开筛选方案只读/复制/发布；ConfigView trade 公开买卖方案只读/复制/发布；BacktestView 公开历史只读、来源筛选、删除隐藏、复用参数。
-  - 具体完成情况：T6 已在 5181 预览端口验证 `/screen` 下拉来源标签、公开范围标签、发布入口和只读复杂 AST 展示；桌面截图通过。T7 已在 5181 预览端口验证 `/system/config/trade` 买卖方案来源标签、公开范围标签、发布入口，以及 `/backtest` 买卖方案下拉可见公开方案。T8 已在 5181 预览端口用 `debug_backtest_view` 验证 `/backtest` 历史来源筛选、租户公开记录可见、选中只读公开记录后删除按钮隐藏、复用参数按钮可见、结果载入正常；截图：`screenshots/t8-backtest-history-desktop.png`、`screenshots/t8-backtest-history-readonly-selected.png`、`screenshots/t8-backtest-history-mobile.png`。T9 已在 5181 预览端口用 `debug_tenant_admin` 验证 `/system/config/score`、`/system/config/trade`、`/screen`、`/backtest` 的统一组件消费、复制/复用按钮权限态和横向溢出；临时验收数据已清理。T10 已在 5181 预览端口用 `debug_system` 验证 `/system/audit` 字段变更表、无字段级变更空态和长值换行；临时审计记录已清理。移动 390px 视口 T8 历史工具条高度 108px，未发现新增重叠；应用既有左侧导航固定宽度造成的整页横向溢出仍属存量布局风险。
+  - 具体完成情况：T6 已在 5181 预览端口验证 `/screen` 下拉来源标签、公开范围标签、发布入口和只读复杂 AST 展示；桌面截图通过。T7 已在 5181 预览端口验证 `/system/config/trade` 买卖方案来源标签、公开范围标签、发布入口，以及 `/backtest` 买卖方案下拉可见公开方案。T8 已在 5181 预览端口用 `debug_backtest_view` 验证 `/backtest` 历史来源筛选、租户公开记录可见、选中只读公开记录后删除按钮隐藏、复用参数按钮可见、结果载入正常；截图：`screenshots/t8-backtest-history-desktop.png`、`screenshots/t8-backtest-history-readonly-selected.png`、`screenshots/t8-backtest-history-mobile.png`。T9 已在 5181 预览端口用 `debug_tenant_admin` 验证 `/system/config/score`、`/system/config/trade`、`/screen`、`/backtest` 的统一组件消费、复制/复用按钮权限态和横向溢出；临时验收数据已清理。T10 已在 5181 预览端口用 `debug_system` 验证 `/system/audit` 字段变更表、无字段级变更空态和长值换行；临时审计记录已清理。T11 在 5181 预览端口重新用 `debug_tenant_admin/debug_system` 写入临时 `t11_` 验收数据并完成交互验证：`/screen` 选中 T11 筛选方案后显示 `v1/租户公开`；`/system/config/score` 显示评分公开只读和复制入口；`/system/config/trade` 显示 T11 买卖方案 `v1/租户公开`；`/backtest` 历史区显示 T11 记录、租户公开标签、复用参数和结果载入；`/system/audit` 过滤 T11 记录后详情抽屉显示字段变更、列头、`visibility private -> tenant` 和长值换行。`1100x620 / 1366x768 / 1440x900` 抽样无新增横向溢出，临时数据已清理为 0。移动 390px 视口 T8 历史工具条高度 108px，未发现新增重叠；应用既有左侧导航固定宽度造成的整页横向溢出仍属存量布局风险。
 - 组件资产闭环测试：
   - 计划：验证 `AssetVisibilityTag/Actions` 真实消费、新增组件清单维护、评分页回迁、三类 R28 页面接入；本阶段不新增配置组件种类或字段。
-  - 具体完成情况：T9 已新增 `AssetVisibilityTag/Actions` 并接入 ScreenView、ConfigView 评分 tab、ConfigView 买卖 tab、BacktestView；`cd frontend && npm run test -- src/components/__tests__/AssetVisibility.spec.ts` 通过（4 tests），覆盖标签文案、owner/readonly 提示、复制/复用按钮权限态。组件未进入 layout 组件种类或系统配置组件矩阵。
+  - 具体完成情况：T9 已新增 `AssetVisibilityTag/Actions` 并接入 ScreenView、ConfigView 评分 tab、ConfigView 买卖 tab、BacktestView；`cd frontend && npm run test -- src/components/__tests__/AssetVisibility.spec.ts` 通过（4 tests），覆盖标签文案、owner/readonly 提示、复制/复用按钮权限态。T11 前端收口验证再次执行该组件测试并通过，页面抽样确认四个消费页均能渲染统一标签/动作组件。组件未进入 layout 组件种类或系统配置组件矩阵，DESIGN 组件清单回写留待 T12。
 - 权限与数据范围测试：
   - 计划：publish-tenant 默认 tenant_admin/system；publish-public 默认 system；无角色用户 fail-closed；跨租户 tenant 不可见，public 可见，private 不可见；非 owner 保存、删除、发布均 403。
   - 具体完成情况：T1 已验证资源码和默认授权规划：`python -m pytest backend/tests/test_rbac_schema.py::test_stage6_asset_visibility_schema_and_resources backend/tests/test_rbac_schema.py::test_stage6_asset_publish_grants_backfilled_for_tenant_admin backend/tests/test_rbac_schema.py::test_tenant_admin_has_tenant_publish_by_default backend/tests/test_rbac_schema.py::test_normal_role_business_only -q` 通过（4 passed）。T6 已验证筛选方案跨租户 tenant 不可见、同租户 tenant 可见、非 owner 删除/发布 403、复制后归 viewer private。T7 已验证买卖方案跨租户 tenant 不可见、同租户 tenant 可见、非 owner 删除/发布 403、复制后归 viewer private。T8 已验证回测记录跨租户 tenant 不可见、同租户 tenant 可见、非 owner 删除/发布 403、无 public publish 权限拒绝、failed 记录禁止公开。
 - 回归测试：
   - 计划：阶段四评分方案公开能力专项；阶段五审计/字典/系统设置专项；全量前端 build。
-  - 具体完成情况：T6/T7/T8/T9/T10 前端改动后 `cd frontend && npm run build` 均通过；T8 回归 `python -m pytest backend/tests/test_stage6_trade_profile_visibility.py backend/tests/test_stage6_asset_visibility.py -q` 通过（11 passed）；T10 审计页专项 `cd frontend && npm run test -- src/views/system/__tests__/AuditLogView.spec.ts` 通过（10 tests）；Rollup pure 注释和 chunk size 为既有构建警告。
+  - 具体完成情况：T6/T7/T8/T9/T10 前端改动后 `cd frontend && npm run build` 均通过；T8 回归 `python -m pytest backend/tests/test_stage6_trade_profile_visibility.py backend/tests/test_stage6_asset_visibility.py -q` 通过（11 passed）；T10 审计页专项 `cd frontend && npm run test -- src/views/system/__tests__/AuditLogView.spec.ts` 通过（10 tests）。T11 执行阶段六专项、阶段四评分公开链路和阶段五审计/字典/系统设置回归合并后端验证集，通过（34 passed）；执行 `cd frontend && npm run test -- src/api/__tests__/client-refresh.spec.ts src/components/__tests__/AssetVisibility.spec.ts src/views/system/__tests__/AuditLogView.spec.ts` 通过（16 passed）；执行 `cd frontend && npm run build` 通过。Rollup pure 注释和 chunk size 为既有构建警告。
 - 异常与边界测试：
   - 计划：refresh 递归保护、重复写请求只重放一次、审计保留期非法值 fail-safe、running/failed 回测禁止公开、回测从表按 run 真实 owner 读取。
   - 具体完成情况：R22 已覆盖 refresh 请求不走 `http` 拦截器、401 原请求只设置一次 `_retry`、并发 refresh 单飞；T3 已覆盖审计保留期非法值 fail-safe 不删除和清理重复执行幂等；T8 已覆盖 failed 回测禁止公开、公开详情从表按 run 真实 owner 读取、非 owner 不能删除/发布。
@@ -704,13 +704,13 @@
   - 具体完成情况：T3 未新增系统配置；清理服务只消费阶段五既有 `audit.retention_days`，配置读取异常或非法值时 fail-safe 跳过清理。
 - 需求映射验证：
   - 计划：检查 §3.1、§3.2、§5、§6 任务编号一致，状态值仅使用 `待开始/进行中/已完成/阻塞/跳过`。
-  - 具体完成情况：T1/T2/T3/T4/T5/T6/T7/T8/T9/T10 已回写 §5 和 §6：R22、R23、R24 行标为已完成，R28-8/R28-9/R28-10 因 T11 收口测试未做仍为进行中但 T5-T9 业务与 UI 接入已完成，R20/R21 延续行标为进行中；T11-T12 仍保持待开始。
+  - 具体完成情况：T1/T2/T3/T4/T5/T6/T7/T8/T9/T10/T11 已回写 §5 和 §6：R22、R23、R24、R28-8、R28-9、R28-10、E2 行标为已完成；R20/R21 延续因 T12 文档治理未做仍为进行中；E1 因 DESIGN 组件清单待 T12 回写仍为进行中；T12 保持待开始。
 - 页面功能点验证：
   - 计划：验证 §4.10 每个页面功能点都有技术实现、任务编号、交互状态和异常处理验证。
-  - 具体完成情况：待验证。
+  - 具体完成情况：T11 已按 §4.10 抽样核对页面功能点：筛选方案公开状态展示/发布入口/只读与复制、买卖方案公开状态展示/发布/复制/只读、回测历史公开记录展示/来源筛选/复用参数、审计字段变更抽屉均有实现和验证记录；页面加载失败/无公开资产空态已在 T6-T10 任务记录中覆盖，T11 未发现新增缺口。
 - 页面视口验证：
   - 计划：5181 预览端口，视口 `1100x620 / 1366x768 / 1440x900`，检查标签、下拉、抽屉、历史回测区域不溢出。
-  - 具体完成情况：T8 已用 1440x920 桌面和 390x844 移动视口验证 BacktestView 历史工具条、来源筛选、只读记录状态和结果载入；T9 已用 `1100x620 / 1366x768 / 1440x900` 抽样验证 `/system/config/score`、`/backtest` 无新增横向溢出，并用 1440x900 补验 `/screen` 下拉和 `/system/config/trade` 组件消费；T10 已用 `1100x620 / 1366x768 / 1440x900` 验证审计详情字段变更抽屉无横向溢出。
+  - 具体完成情况：T8 已用 1440x920 桌面和 390x844 移动视口验证 BacktestView 历史工具条、来源筛选、只读记录状态和结果载入；T9 已用 `1100x620 / 1366x768 / 1440x900` 抽样验证 `/system/config/score`、`/backtest` 无新增横向溢出，并用 1440x900 补验 `/screen` 下拉和 `/system/config/trade` 组件消费；T10 已用 `1100x620 / 1366x768 / 1440x900` 验证审计详情字段变更抽屉无横向溢出。T11 已用同三档视口补验 `/screen`、`/system/config/score`、`/system/config/trade`、`/backtest`、`/system/audit`，其中 1100 买卖页和 1440 评分页因首轮异步采样偏差做定向复核，最终均确认关键标签/动作可见且 `overflowX=0`；浏览器视口已 reset，5181 预览已停止。
 
 ## 9. 发布与回滚
 
