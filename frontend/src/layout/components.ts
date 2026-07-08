@@ -359,7 +359,7 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     defaultScroll: 'none',
     canGrowMain: false,
     reflowable: true,
-    configCapabilities: ['columns', 'cardDensity'],
+    configCapabilities: ['columns', 'autoFit', 'cardDensity'],
   }),
   'metric-card': meta('metric-card', {
     category: 'analytics',

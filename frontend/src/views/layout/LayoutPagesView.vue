@@ -12,6 +12,7 @@
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
 import {
   getEffectiveLayoutConfig,
   getLayoutPageConfig,
@@ -40,8 +41,11 @@ import {
   getComponentFieldDef,
   componentConfigPath,
   isComponentConfigPath,
+  resolveComponentConfig,
   responsiveProfileLabel,
   type ComponentFieldDef,
+  type ComponentFieldValue,
+  type ComponentConfigSource,
   type PageRegistryEntry,
   type SlotSpec,
   type SlotConfigMeta,
@@ -71,17 +75,59 @@ const pageConfig = ref<LayoutPageConfig | null>(null)
 // 页面配置表单值按页面 editable 白名单 + 组件配置路径动态承载（不硬编码字段）。
 const pageDraft = reactive<{ presetKey: string; values: LayoutOverlayValues }>({ presetKey: '', values: {} })
 const pageSaving = ref(false)
+const presetSyncing = ref(false)
 
 /** 设置/清除某个页面级旋钮草稿值；空值视为"不覆盖"。 */
 function setPageKnob(path: string, value: unknown): void {
   if (value === '' || value == null) delete pageDraft.values[path]
   else pageDraft.values[path] = value as LayoutOverlayValue
 }
-function getPageComponentValue(slotId: string, field: string): unknown {
+function getPageComponentOverride(slotId: string, field: string): unknown {
   return pageDraft.values[componentConfigPath(slotId, field)]
 }
 function setPageComponentValue(slotId: string, field: string, value: unknown): void {
   setPageKnob(componentConfigPath(slotId, field), value)
+}
+
+function componentPathValues(values: LayoutOverlayValues): Record<string, ComponentFieldValue> {
+  const out: Record<string, ComponentFieldValue> = {}
+  for (const [path, value] of Object.entries(values)) {
+    if (isComponentConfigPath(path)) out[path] = value as ComponentFieldValue
+  }
+  return out
+}
+
+const CFD_RE = /^componentFieldDefaults\.([^.]+)\.([^.]+)$/
+const pagePresetComponentValues = computed<Record<string, ComponentFieldValue>>(() => {
+  const preset = presets.value.find((p) => p.key === pageDraft.presetKey)
+  const raw = preset?.config.values ?? {}
+  const out: Record<string, ComponentFieldValue> = {}
+  for (const [path, value] of Object.entries(raw)) {
+    const match = CFD_RE.exec(path)
+    if (!match) continue
+    const [, kind, field] = match
+    for (const slot of selectedPage.value.layout.slots) {
+      if (slot.component === kind) out[componentConfigPath(slot.id, field)] = value as ComponentFieldValue
+    }
+  }
+  return out
+})
+
+const pageDefaultComponentResult = computed(() => resolveComponentConfig(selectedPage.value.layout, [
+  { layer: 'preset', overlay: { values: pagePresetComponentValues.value } },
+  { layer: 'page', overlay: { values: componentPathValues(pageDraft.values) } },
+]))
+
+function getPageComponentValue(slotId: string, field: string): unknown {
+  return pageDefaultComponentResult.value.configBySlot[slotId]?.[field]
+}
+
+function getPageComponentSource(slotId: string, field: string): ComponentConfigSource {
+  return pageDefaultComponentResult.value.source[componentConfigPath(slotId, field)] ?? 'default'
+}
+
+function getPageComponentLayerValues(slotId: string, field: string): Partial<Record<ComponentConfigSource, unknown>> {
+  return pageDefaultComponentResult.value.perLayerValues[componentConfigPath(slotId, field)] ?? {}
 }
 
 // 系统组件「可覆盖范围」开放策略（layout_field_policy）：键 `${kind}.${field}` → 当前生效层集合。
@@ -107,6 +153,9 @@ interface ComponentDiagnosticRow {
   component: string
   field: string
   fieldLabel: string
+  valueLabel: string
+  sourceLabel: string
+  layersLabel: string
   status: 'editable' | 'blocked' | 'missing-meta' | 'unknown'
   statusLabel: string
   detail: string
@@ -122,6 +171,30 @@ function canRenderPageComponentField(slotId: string, def: ComponentFieldDef): bo
   return false
 }
 
+function formatDiagnosticValue(value: unknown): string {
+  if (value === undefined) return '未设置'
+  if (value === null || value === '') return '不覆盖'
+  if (Array.isArray(value)) return value.length ? value.join(', ') : '空数组'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+function diagnosticValue(slot: SlotSpec, field: string): string {
+  return formatDiagnosticValue(getPageComponentValue(slot.id, field))
+}
+
+function diagnosticSource(slot: SlotSpec, field: string): string {
+  const source = getPageComponentSource(slot.id, field)
+  if (source === 'default') return '代码默认'
+  if (source === 'preset') return '页面预设'
+  if (source === 'page') return '页面覆盖'
+  return source
+}
+
+function diagnosticLayers(kind: string, def: ComponentFieldDef): string {
+  return (fieldPolicyMap.value.get(`${kind}.${def.key}`) ?? def.layers).join(' / ')
+}
+
 const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
   const consumed = selectedPage.value.consumedComponentFields ?? {}
   const slots = new Map(selectedPage.value.layout.slots.map((s) => [s.id, s]))
@@ -135,6 +208,9 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
         component: '—',
         field: fields.join(', '),
         fieldLabel: fields.join(', '),
+        valueLabel: '—',
+        sourceLabel: '—',
+        layersLabel: '—',
         status: 'unknown',
         statusLabel: 'slot 未登记',
         detail: 'pageRegistry.consumedComponentFields 指向了不存在的 slot。',
@@ -150,6 +226,9 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
           component: slot.component,
           field,
           fieldLabel: field,
+          valueLabel: '—',
+          sourceLabel: '—',
+          layersLabel: '—',
           status: 'unknown',
           statusLabel: '字段未登记',
           detail: '该字段未进入 COMPONENT_FIELD_DEFS，页面布局不会开放编辑。',
@@ -163,8 +242,11 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
           component: slot.component,
           field,
           fieldLabel: def.label,
+          valueLabel: diagnosticValue(slot, field),
+          sourceLabel: diagnosticSource(slot, field),
+          layersLabel: diagnosticLayers(slot.component, def),
           status: 'blocked',
-          statusLabel: '不可页面层覆盖',
+          statusLabel: '不可编辑',
           detail: '「系统组件」已将该字段的可覆盖范围收紧，不含 page 层；此处不开放编辑，保存也会被后端拒绝。',
         })
         continue
@@ -176,6 +258,9 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
           component: slot.component,
           field,
           fieldLabel: def.label,
+          valueLabel: diagnosticValue(slot, field),
+          sourceLabel: diagnosticSource(slot, field),
+          layersLabel: diagnosticLayers(slot.component, def),
           status: 'missing-meta',
           statusLabel: '缺少安全枚举',
           detail: '该字段需要页面提供列、排序字段或 tab 枚举；未提供时只做诊断展示。',
@@ -188,8 +273,11 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
         component: slot.component,
         field,
         fieldLabel: def.label,
+        valueLabel: diagnosticValue(slot, field),
+        sourceLabel: diagnosticSource(slot, field),
+        layersLabel: diagnosticLayers(slot.component, def),
         status: 'editable',
-        statusLabel: '页面层可编辑',
+        statusLabel: '可编辑',
         detail: '已消费、允许 page 层覆盖，且具备安全控件元数据。',
       })
     }
@@ -212,6 +300,9 @@ const focusedSlotIds = computed<string[]>(() => (focusedSlot.value ? [focusedSlo
 // 把页面草稿访问器包装成共享渲染器期望的「组件配置访问器」形状（page 层写值经页面草稿）。
 const pageComponentConfig = {
   componentValueOf: getPageComponentValue,
+  componentOverrideOf: getPageComponentOverride,
+  componentSourceOf: getPageComponentSource,
+  componentLayerValuesOf: getPageComponentLayerValues,
   setComponentKnob: setPageComponentValue,
 }
 const focusedDiagnosticRows = computed(() =>
@@ -229,9 +320,15 @@ const userConfig = ref<LayoutUserConfig | null>(null)
 const pageValidationErrors = ref<string[]>([])
 const userValidationErrors = ref<string[]>([])
 
-async function reloadPresets() {
-  const data = await listLayoutPresets(true)
-  presets.value = data.presets
+async function reloadPresets(notify = false) {
+  presetSyncing.value = true
+  try {
+    const data = await listLayoutPresets(true)
+    presets.value = data.presets
+    if (notify) ElMessage.success('预设已同步')
+  } finally {
+    presetSyncing.value = false
+  }
 }
 
 function pageDraftValues(): LayoutOverlayValues {
@@ -422,7 +519,6 @@ onMounted(async () => {
           <el-select v-model="selectedPageKey" class="page-select">
             <el-option v-for="page in managedPages" :key="page.pageKey" :label="page.label" :value="page.pageKey" />
           </el-select>
-          <el-button @click="reloadPresets">刷新预设</el-button>
         </div>
       </div>
     </template>
@@ -490,9 +586,20 @@ onMounted(async () => {
                 <div class="section-subtitle">{{ selectedPage.path }} · {{ selectedPage.pageKey }}</div>
                 <el-form label-position="top" class="config-form">
                   <el-form-item label="默认预设">
-                    <el-select v-model="pageDraft.presetKey" clearable>
-                      <el-option v-for="item in presetOptions" :key="item.value" :label="item.label" :value="item.value" />
-                    </el-select>
+                    <div class="preset-picker-row">
+                      <el-select v-model="pageDraft.presetKey" class="preset-select" clearable>
+                        <el-option v-for="item in presetOptions" :key="item.value" :label="item.label" :value="item.value" />
+                      </el-select>
+                      <el-tooltip content="同步预设管理里的最新可选项和组件默认值" placement="top">
+                        <el-button
+                          class="preset-sync-button"
+                          :icon="Refresh"
+                          :loading="presetSyncing"
+                          aria-label="同步预设"
+                          @click="reloadPresets(true)"
+                        />
+                      </el-tooltip>
+                    </div>
                   </el-form-item>
                   <!-- 页面级旋钮按本页 editable 白名单动态渲染（不再手写字段）。 -->
                   <el-form-item v-for="knob in selectedPage.layout.editable" :key="knob.path" :label="knob.label">
@@ -534,7 +641,7 @@ onMounted(async () => {
                 <!-- 组件特性配置（页面层）：复用与设置抽屉同一渲染器 ComponentAutoSettings（page 层、聚焦单 slot、按策略门控、可清除）。 -->
                 <template v-if="selectedPage.supportsComponentConfig">
                   <div class="cc-block-title">组件特性配置</div>
-                  <div class="section-subtitle">点击左侧预览里的某个 slot 后，这里只展示该 slot 的页面层默认值。个人偏好仍在各页面设置抽屉里调整。</div>
+                  <div class="section-subtitle">点击左侧预览里的某个 slot 后，这里展示代码默认、页面预设和页面覆盖合并后的页面默认值。个人偏好仍在各页面设置抽屉里调整。</div>
                   <!-- 受约束宽度容器：还原共享渲染器在窄抽屉里的密度，避免分段控件在宽面板被拉爆/溢出。 -->
                   <div v-if="focusedSlotSpec" class="cc-cfg-host">
                     <div class="focused-slot-card">
@@ -559,18 +666,23 @@ onMounted(async () => {
                 </template>
 
                 <div class="cc-block-title">只读诊断</div>
-                <div class="section-subtitle">只显示当前点击 slot 的消费、可覆盖范围和安全枚举诊断；不可编辑字段只在这里解释原因。</div>
+                <div class="section-subtitle">只显示当前点击 slot 的页面默认值、可覆盖范围和安全枚举诊断；不可编辑字段只在这里解释原因。</div>
                 <el-table v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table">
-                  <el-table-column label="slot / 组件" min-width="140">
-                    <template #default="{ row }">
-                      <div class="diag-main">{{ row.slot }}</div>
-                      <div class="muted">{{ row.slotId }} · {{ row.component }}</div>
-                    </template>
-                  </el-table-column>
                   <el-table-column label="字段" min-width="120">
                     <template #default="{ row }">
                       <div class="diag-main">{{ row.fieldLabel }}</div>
                       <div class="muted">{{ row.field }}</div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="页面默认值" min-width="120">
+                    <template #default="{ row }">
+                      <div class="diag-main">{{ row.valueLabel }}</div>
+                      <div class="muted">{{ row.sourceLabel }}</div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="可覆盖范围" min-width="120">
+                    <template #default="{ row }">
+                      <span class="muted">{{ row.layersLabel }}</span>
                     </template>
                   </el-table-column>
                   <el-table-column label="状态" width="130">
@@ -795,6 +907,19 @@ onMounted(async () => {
 }
 .config-form {
   margin-top: 14px;
+}
+.preset-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.preset-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.preset-sync-button {
+  flex: 0 0 32px;
 }
 .preview-host {
   margin-top: 12px;

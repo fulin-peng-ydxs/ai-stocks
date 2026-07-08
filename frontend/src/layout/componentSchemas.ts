@@ -125,7 +125,7 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
   'error-state': feedbackShape,
   skeleton: feedbackShape,
 
-  'kpi-grid': { columns: 'int', cardDensity: density },
+  'kpi-grid': { columns: 'int', autoFit: 'bool', cardDensity: density },
   'metric-card': { trend: 'bool', precision: 'int' },
   'stat-strip': { items: 'string[]', wrap: 'bool' },
   chart: chartShape,
