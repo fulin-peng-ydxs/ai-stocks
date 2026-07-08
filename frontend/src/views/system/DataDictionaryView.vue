@@ -77,6 +77,7 @@ const typeDialogMode = ref<'create' | 'edit'>('create')
 const itemDialogMode = ref<'create' | 'edit'>('create')
 const savingType = ref(false)
 const savingItem = ref(false)
+const togglingTypeCode = ref('')
 const typeForm = reactive({
   code: '',
   name: '',
@@ -386,6 +387,8 @@ async function removeItem(row: DictItem) {
 }
 
 async function toggleType(row: DictType, value: boolean) {
+  if (togglingTypeCode.value) return
+  togglingTypeCode.value = row.code
   try {
     await updateDictType(row.code, {
       name: row.name,
@@ -397,6 +400,8 @@ async function toggleType(row: DictType, value: boolean) {
     ElMessage.success(value ? '已启用类型' : '已停用类型')
   } catch {
     row.enabled = !value
+  } finally {
+    togglingTypeCode.value = ''
   }
 }
 
@@ -463,20 +468,31 @@ onBeforeUnmount(() => {
               <el-button v-permission="'dict:type-manage'" type="primary" @click="openCreateType">新建类型</el-button>
             </el-empty>
             <template v-else>
-              <button
+              <div
                 v-for="row in typeRows"
                 :key="row.code"
-                type="button"
+                role="button"
+                tabindex="0"
                 class="dict-type-row"
                 :class="{ active: row.code === settings.selectedTypeCode }"
                 @click="selectType(row.code)"
+                @keydown.enter.prevent="selectType(row.code)"
+                @keydown.space.prevent="selectType(row.code)"
               >
                 <span class="type-main">
                   <b>{{ row.name }}</b>
-                  <em>{{ row.code }}</em>
                 </span>
-                <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain" size="small">{{ row.enabled ? '启用' : '停用' }}</el-tag>
-              </button>
+                <button
+                  type="button"
+                  class="dict-type-status"
+                  :class="{ enabled: row.enabled, disabled: !row.enabled }"
+                  :aria-pressed="row.enabled"
+                  :disabled="togglingTypeCode === row.code"
+                  @click.stop="toggleType(row, !row.enabled)"
+                >
+                  {{ row.enabled ? '启用' : '停用' }}
+                </button>
+              </div>
             </template>
           </div>
         </section>
@@ -488,14 +504,6 @@ onBeforeUnmount(() => {
               <span>{{ activeType?.code || '请选择左侧字典类型' }}</span>
             </div>
             <div class="dict-actions">
-              <el-switch
-                v-if="activeType"
-                v-model="activeType.enabled"
-                v-permission="'dict:type-manage'"
-                size="small"
-                active-text="启用类型"
-                @change="(value: boolean) => activeType && toggleType(activeType, value)"
-              />
               <el-button v-if="activeType" v-permission="'dict:type-manage'" size="small" @click="openEditType()">编辑类型</el-button>
               <el-button v-if="activeType" v-permission="'dict:type-manage'" size="small" type="danger" plain @click="removeType()">删除类型</el-button>
               <el-button v-if="activeType" v-permission="'dict:item-manage'" size="small" type="primary" @click="openCreateItem">新建字典项</el-button>
@@ -699,7 +707,7 @@ onBeforeUnmount(() => {
 }
 .dict-type-row {
   width: 100%;
-  border: none;
+  border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   display: flex;
@@ -713,6 +721,11 @@ onBeforeUnmount(() => {
 .dict-type-row:hover {
   background: var(--el-fill-color-light);
 }
+.dict-type-row:focus-visible {
+  outline: none;
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 16%, transparent);
+}
 .dict-type-row.active {
   background: var(--el-color-primary-light-9);
 }
@@ -720,19 +733,39 @@ onBeforeUnmount(() => {
   flex: 1 1 auto;
   min-width: 0;
 }
-.type-main b,
-.type-main em {
+.type-main b {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.type-main em {
-  margin-top: 3px;
+.dict-type-status {
+  flex: none;
+  min-width: 42px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  background: var(--el-bg-color);
+  padding: 1px 7px;
   color: var(--el-text-color-secondary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  cursor: pointer;
   font-size: 12px;
-  font-style: normal;
+  line-height: 20px;
+}
+.dict-type-status.enabled {
+  border-color: color-mix(in srgb, var(--el-color-success) 42%, transparent);
+  color: var(--el-color-success);
+}
+.dict-type-status.disabled {
+  border-color: var(--el-border-color);
+  color: var(--el-text-color-secondary);
+}
+.dict-type-status:hover:not(:disabled) {
+  background: var(--el-fill-color-light);
+  border-color: currentColor;
+}
+.dict-type-status:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 .dict-current {
   flex: 1 1 150px;

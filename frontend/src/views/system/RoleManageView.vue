@@ -39,10 +39,18 @@ const activeIsSystemRole = computed(
 const rolesLoading = ref(false)
 const loadError = ref(false)   // 权限树/角色初次加载失败 → 页内错误态 + 重试
 
-function roleTag(r: Role): { text: string; type: 'warning' | 'info' | 'primary' } {
-  if (r.is_builtin) return { text: '系统内置', type: 'info' }
-  if (r.kind === 'paid') return { text: '付费', type: 'primary' }
-  return { text: '自定义', type: 'info' }
+const roleToneLabels = {
+  builtin: '系统内置',
+  paid: '付费角色',
+  custom: '自定义',
+} as const
+
+type RoleTone = keyof typeof roleToneLabels
+
+function roleTone(r: Role): RoleTone {
+  if (r.is_builtin) return 'builtin'
+  if (r.kind === 'paid') return 'paid'
+  return 'custom'
 }
 
 async function loadRoles(keepActive = false) {
@@ -260,7 +268,7 @@ onMounted(loadAll)
             角色管理
             <HelpTip title="角色管理说明" :width="440">
               角色勾选菜单与功能点后保存，拥有该角色的用户权限即时生效（无权按钮消失 / 接口 403）。<br /><br />
-              青灰色左边线代表分组，绿色圆点代表菜单，橙色菱形代表功能点；功能点上的「接口 / 按钮」只表示权限触发方式。<br /><br />
+              青灰色左边线代表分组，绿色圆点代表菜单，紫色菱形代表功能点；功能点上的「接口 / 按钮」只表示权限触发方式。<br /><br />
               「基线」是登录后的共享读权限，后端自动拥有、不可取消，也不作为角色授权保存。<br /><br />
               系统管理员角色拥有全部菜单与功能点，页面仅展示已拥有且锁定；「仅系统管理员」资源不能授予其它角色。
             </HelpTip>
@@ -280,15 +288,22 @@ onMounted(loadAll)
       <div v-else class="rm-split">
         <!-- 左：角色列表 -->
         <div class="rm-col rm-left">
-          <div class="rm-col-head">角色 <span class="mini">{{ roles.length }}</span></div>
+          <div class="rm-col-head">
+            <span class="rm-head-title">角色 <span class="mini">{{ roles.length }}</span></span>
+            <span class="role-tone-legend" aria-label="角色类型颜色说明">
+              <span class="role-tone-item"><i class="role-dot builtin" />系统内置</span>
+              <span class="role-tone-item"><i class="role-dot paid" />付费</span>
+              <span class="role-tone-item"><i class="role-dot custom" />自定义</span>
+            </span>
+          </div>
           <div class="rm-col-body" v-loading="rolesLoading">
             <div v-for="r in roles" :key="r.id" class="role" :class="{ active: r.id === activeId }"
                  @click="selectRole(r.id)">
               <div class="role-name">
                 {{ r.name }}
-                <el-tag :type="roleTag(r).type" size="small" effect="plain">{{ roleTag(r).text }}</el-tag>
+                <i class="role-dot" :class="roleTone(r)" :title="roleToneLabels[roleTone(r)]" />
               </div>
-              <div class="role-desc">角色码 {{ r.code }}<span v-if="r.member_count != null"> · 关联用户 {{ r.member_count }} 名</span></div>
+              <div v-if="r.member_count != null" class="role-desc">关联用户 {{ r.member_count }} 名</div>
             </div>
             <el-empty v-if="!rolesLoading && !roles.length" class="app-empty app-empty--compact" description="暂无角色" />
           </div>
@@ -388,8 +403,16 @@ onMounted(loadAll)
 .rm-left { width: 288px; flex: none; }
 .rm-right { flex: 1 1 auto; min-width: 460px; }
 .rm-col-head { padding: 11px 14px; border-bottom: 1px solid var(--el-border-color-lighter); font-weight: 600;
-  display: flex; align-items: center; gap: 8px; }
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rm-head-title { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .rm-col-head .mini { font-size: 12px; color: var(--el-text-color-secondary); font-weight: 400; }
+.role-tone-legend { display: inline-flex; align-items: center; gap: 8px; color: var(--el-text-color-secondary);
+  font-size: 11px; font-weight: 400; white-space: nowrap; }
+.role-tone-item { display: inline-flex; align-items: center; gap: 4px; }
+.role-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.role-dot.builtin { background: var(--el-text-color-secondary); }
+.role-dot.paid { background: var(--el-color-primary); }
+.role-dot.custom { background: var(--el-color-success); }
 .rm-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px; }
 .role { padding: 10px 12px; border-radius: 7px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
 .role:hover { background: var(--el-fill-color-light); }

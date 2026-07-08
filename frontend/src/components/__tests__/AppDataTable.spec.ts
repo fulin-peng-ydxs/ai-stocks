@@ -6,10 +6,10 @@ import AppDataTable from '@/components/AppDataTable.vue'
 
 const ElTableStub = defineComponent({
   name: 'ElTable',
-  props: ['data'],
+  props: ['data', 'border'],
   emits: ['sort-change', 'row-click'],
-  setup(_props, { slots, emit }) {
-    return () => h('div', { class: 'el-table' }, [
+  setup(props, { slots, emit }) {
+    return () => h('div', { class: 'el-table', 'data-border': String(props.border) }, [
       h('button', { class: 'sort-btn', onClick: () => emit('sort-change', { prop: 'code', order: 'ascending' }) }, 'sort'),
       h('button', { class: 'row-btn', onClick: () => emit('row-click', { code: '000001' }, null, new Event('click')) }, 'row'),
       slots.default?.(),
@@ -55,6 +55,7 @@ describe('AppDataTable', () => {
 
     expect(wrapper.classes()).toContain('app-data-table--wide-table')
     expect(wrapper.classes()).toContain('app-data-table--clickable')
+    expect(wrapper.find('.el-table').attributes('data-border')).toBe('true')
     expect(wrapper.find('.column-slot').text()).toBe('代码列')
     expect(wrapper.find('.empty-slot').text()).toBe('暂无数据')
 

@@ -74,7 +74,7 @@ body {
   --score-mid-bg: rgba(250, 173, 20, 0.16);
   --score-mid-text: #d48806;
   --perm-group-color: #64748b;
-  --perm-feature-color: var(--el-color-warning);
+  --perm-feature-color: #7c3aed;
 }
 
 /* ── 全站自适应布局契约（禁止整页滚动；内容超高 → 成长区内部滚动）──
@@ -248,7 +248,7 @@ html.dark {
   --score-mid-bg: rgba(250, 173, 20, 0.2);
   --score-mid-text: #f0b84a;
   --perm-group-color: #94a3b8;
-  --perm-feature-color: var(--el-color-warning);
+  --perm-feature-color: #a78bfa;
 }
 
 .page-head-actions {

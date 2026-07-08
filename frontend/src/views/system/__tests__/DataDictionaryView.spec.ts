@@ -194,6 +194,12 @@ function buttonByText(wrapper: VueWrapper, text: string) {
   return button!
 }
 
+function typeRowByText(wrapper: VueWrapper, text: string) {
+  const row = wrapper.findAll('.dict-type-row').find((node) => node.text().includes(text))
+  expect(row, `未找到字典类型：${text}`).toBeTruthy()
+  return row!
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
@@ -220,12 +226,25 @@ describe('DataDictionaryView', () => {
 
   it('切换左侧类型后按新类型加载字典项', async () => {
     const wrapper = await mountView()
-    const typeButton = wrapper.findAll('button').find((node) => node.text().includes('audit_result'))
-    expect(typeButton).toBeTruthy()
-    await typeButton!.trigger('click')
+    const typeRow = typeRowByText(wrapper, '审计结果')
+    expect(typeRow.text()).not.toContain('audit_result')
+    await typeRow.trigger('click')
     await flushPromises()
     expect(dictApi.listDictItems).toHaveBeenLastCalledWith(expect.objectContaining({
       type_code: 'audit_result',
+    }))
+  })
+
+  it('左侧类型状态点击直接开停，右侧不再渲染启用类型开关', async () => {
+    const wrapper = await mountView()
+    expect(wrapper.text()).not.toContain('启用类型')
+    const typeRow = typeRowByText(wrapper, '审计结果')
+    await typeRow.find('button.dict-type-status').trigger('click')
+    await flushPromises()
+    expect(dictApi.updateDictType).toHaveBeenLastCalledWith('audit_result', expect.objectContaining({
+      name: '审计结果',
+      enabled: false,
+      sort: 20,
     }))
   })
 
