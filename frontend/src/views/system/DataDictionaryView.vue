@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
-import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -59,16 +58,7 @@ const drawerConfig = {
 const { settings, isDirty: bizDirty, reset: resetBiz } = usePageSettings(pageKey, {
   selectedTypeCode: '',
   typeKeyword: '',
-  itemKeyword: '',
-  itemEnabled: '',
 })
-
-function migrateItemEnabledSetting() {
-  const raw = settings.itemEnabled as unknown
-  if (Array.isArray(raw)) settings.itemEnabled = raw.length === 1 ? String(raw[0] ?? '') : ''
-}
-
-migrateItemEnabledSetting()
 
 const settingsOpen = ref(false)
 const typeRows = ref<DictType[]>([])
@@ -102,16 +92,12 @@ const itemForm = reactive({
   sort: 100,
   remark: '',
 })
-const itemEnabledOptions = [
-  { value: 'true', label: '启用' },
-  { value: 'false', label: '停用' },
-]
-
 const drawerDirty = computed(() => layoutDirty.value || bizDirty.value)
 const canManageDict = computed(() => auth.isSystem)
 const activeType = computed(() => typeRows.value.find((row) => row.code === settings.selectedTypeCode) ?? null)
 let typeRequestSeq = 0
 let itemRequestSeq = 0
+let typeSearchTimer: ReturnType<typeof setTimeout> | null = null
 const pageSize = computed(() => {
   const raw = componentValueOf('itemTable', 'pageSize')
   return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(10, Math.min(200, raw)) : 50
@@ -136,12 +122,6 @@ const hiddenColumns = computed<string[]>(() => {
 
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
-}
-
-function enabledParam(value: unknown): boolean | null {
-  if (value === 'true') return true
-  if (value === 'false') return false
-  return null
 }
 
 function formatTime(value: string | null | undefined): string {
@@ -217,8 +197,6 @@ async function loadItems() {
   try {
     const data = await listDictItems({
       type_code: selectedTypeCode,
-      q: settings.itemKeyword || undefined,
-      enabled: enabledParam(settings.itemEnabled),
       page: itemPage.value,
       size: pageSize.value,
       sort_by: sortBy.value,
@@ -250,21 +228,23 @@ async function loadAll() {
 async function selectType(code: string) {
   if (settings.selectedTypeCode === code) return
   settings.selectedTypeCode = code
-  settings.itemKeyword = ''
-  settings.itemEnabled = ''
   itemPage.value = 1
   await loadItems()
 }
 
 async function searchTypes() {
+  if (typeSearchTimer) clearTimeout(typeSearchTimer)
+  typeSearchTimer = null
   await loadTypes(true)
   itemPage.value = 1
   if (settings.selectedTypeCode) await loadItems()
 }
 
-async function searchItems() {
-  itemPage.value = 1
-  await loadItems()
+function scheduleSearchTypes() {
+  if (typeSearchTimer) clearTimeout(typeSearchTimer)
+  typeSearchTimer = setTimeout(() => {
+    void searchTypes()
+  }, 300)
 }
 
 function pageChanged(value: number) {
@@ -276,11 +256,6 @@ function pageSizeChanged(value: number) {
   if (value === pageSize.value) return
   setComponentKnob('itemTable', 'pageSize', value)
   itemPage.value = 1
-}
-
-async function refreshAll() {
-  await loadAll()
-  if (!typeError.value && !itemError.value && !permissionError.value) ElMessage.success('已刷新')
 }
 
 function openCreateType() {
@@ -447,6 +422,9 @@ watch(pageSize, () => {
 })
 
 onMounted(loadAll)
+onBeforeUnmount(() => {
+  if (typeSearchTimer) clearTimeout(typeSearchTimer)
+})
 </script>
 
 <template>
@@ -461,7 +439,6 @@ onMounted(loadAll)
         </div>
         <div class="dict-actions">
           <el-button v-permission="'dict:type-manage'" type="primary" @click="openCreateType">新建类型</el-button>
-          <el-button :loading="typeLoading || itemLoading" @click="refreshAll">刷新</el-button>
           <PageSettingsTrigger :dirty="drawerDirty" @click="settingsOpen = true" />
         </div>
       </div>
@@ -476,8 +453,7 @@ onMounted(loadAll)
             <span class="muted">{{ typeTotal }} 类</span>
           </header>
           <AppControlRow class="dict-type-tools">
-            <el-input v-model="settings.typeKeyword" clearable placeholder="搜索类型 / code" @keyup.enter="searchTypes" />
-            <el-button @click="searchTypes">查询</el-button>
+            <el-input v-model="settings.typeKeyword" clearable placeholder="搜索类型 / code" @input="scheduleSearchTypes" @keyup.enter="searchTypes" @clear="searchTypes" />
           </AppControlRow>
           <div class="dict-type-list" v-loading="typeLoading">
             <el-result v-if="typeError" icon="warning" title="类型加载失败" sub-title="请稍后重试" class="compact-state">
@@ -525,19 +501,6 @@ onMounted(loadAll)
               <el-button v-if="activeType" v-permission="'dict:item-manage'" size="small" type="primary" @click="openCreateItem">新建字典项</el-button>
             </div>
           </header>
-
-          <AppControlRow class="dict-item-filters">
-            <AppFilterSelect
-              v-model="settings.itemEnabled"
-              :options="itemEnabledOptions"
-              :multiple="false"
-              placeholder="状态"
-              class="w110"
-              @change="searchItems"
-            />
-            <el-input v-model="settings.itemKeyword" clearable placeholder="搜索字典项 code / 名称" class="w240" @keyup.enter="searchItems" />
-            <el-button @click="searchItems">查询</el-button>
-          </AppControlRow>
 
           <el-result v-if="itemError" icon="warning" title="字典项加载失败" sub-title="请稍后重试，业务消费端会回落默认枚举" class="dict-state">
             <template #extra><el-button type="primary" @click="loadItems">重试</el-button></template>
@@ -709,7 +672,6 @@ onMounted(loadAll)
   align-items: center;
   gap: 10px;
 }
-.dict-item-filters,
 .dict-type-tools {
   flex: 0 0 auto;
 }
@@ -719,8 +681,10 @@ onMounted(loadAll)
   padding: 11px 14px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
-.dict-type-tools,
-.dict-item-filters {
+.dict-detail-bar {
+  flex-wrap: wrap;
+}
+.dict-type-tools {
   padding: 10px 12px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
@@ -771,7 +735,8 @@ onMounted(loadAll)
   font-style: normal;
 }
 .dict-current {
-  min-width: 0;
+  flex: 1 1 150px;
+  min-width: 140px;
 }
 .dict-current strong,
 .dict-current span {
@@ -787,9 +752,6 @@ onMounted(loadAll)
 }
 .w110 {
   width: 110px;
-}
-.w240 {
-  width: 240px;
 }
 .dict-table-wrap {
   flex: 1 1 auto;

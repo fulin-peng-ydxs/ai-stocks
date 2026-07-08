@@ -29,6 +29,7 @@ const VIEWPORT_HEIGHT =
 
 /** 模板里真正手写布局契约类（排除注释/文档里的 .v-page 提及）。 */
 const HANDWRITTEN_LAYOUT = /class="[^"]*\bv-(?:page|grow|scroll)\b/
+const QUERY_BUTTON = /<el-button\b([^>]*)>\s*查询\s*<\/el-button>/gs
 
 function vueFiles(dir: string): string[] {
   const out: string[] = []
@@ -76,5 +77,20 @@ describe('布局契约守卫（M6）', () => {
       if (!exists || !HANDWRITTEN_LAYOUT.test(readFileSync(full, 'utf8'))) stale.push(legacy)
     }
     expect(stale, `这些页面已不再手写布局类，请从 LEGACY_HANDWRITTEN 移除并在 DESIGN.md 页面登记区块登记：\n${stale.join('\n')}`).toEqual([])
+  })
+
+  it('查询按钮必须使用 primary 主命令语义', () => {
+    const offenders: string[] = []
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8')
+      for (const match of source.matchAll(QUERY_BUTTON)) {
+        const attrs = match[1] ?? ''
+        if (!/\btype\s*=\s*["']primary["']/.test(attrs)) {
+          const line = source.slice(0, match.index).split('\n').length
+          offenders.push(`${rel(file)}:${line}`)
+        }
+      }
+    }
+    expect(offenders, `查询是筛选栏主命令，应使用 <el-button type="primary">：\n${offenders.join('\n')}`).toEqual([])
   })
 })

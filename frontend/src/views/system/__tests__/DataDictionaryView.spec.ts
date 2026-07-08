@@ -4,7 +4,6 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import { computed, defineComponent, h, inject, provide, ref, type Component, type ComputedRef } from 'vue'
-import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import { useAuthStore } from '@/stores/auth'
 import DataDictionaryView from '@/views/system/DataDictionaryView.vue'
 
@@ -230,41 +229,36 @@ describe('DataDictionaryView', () => {
     }))
   })
 
-  it('查询字典项时透传关键字和启用状态', async () => {
+  it('左侧类型搜索透传关键字，右侧主列表不受旧筛选设置影响', async () => {
     localStorage.setItem(
       'ai-stocks:page-settings:data-dictionary',
       JSON.stringify({
         selectedTypeCode: '',
         typeKeyword: '',
-        itemKeyword: '',
+        itemKeyword: '旧字典项搜索',
         itemEnabled: 'false',
       }),
     )
     const wrapper = await mountView()
-    await wrapper.find('input[placeholder="搜索字典项 code / 名称"]').setValue('active')
-    await wrapper.find('.dict-item-filters button').trigger('click')
+    const typeKeyword = wrapper.find('input[placeholder="搜索类型 / code"]')
+    await typeKeyword.setValue('audit')
+    await typeKeyword.trigger('keyup.enter')
     await flushPromises()
-    expect(dictApi.listDictItems).toHaveBeenLastCalledWith(expect.objectContaining({
-      q: 'active',
-      enabled: false,
+    expect(dictApi.listDictTypes).toHaveBeenLastCalledWith(expect.objectContaining({
+      q: 'audit',
+    }))
+    expect(dictApi.listDictItems).toHaveBeenLastCalledWith(expect.not.objectContaining({
+      enabled: expect.anything(),
+    }))
+    expect(dictApi.listDictItems).toHaveBeenLastCalledWith(expect.not.objectContaining({
+      q: expect.anything(),
     }))
   })
 
-  it('字典项状态筛选复用 AppFilterSelect 且保持单选业务语义', async () => {
+  it('右侧主列表不再渲染搜索和状态筛选', async () => {
     const wrapper = await mountView()
-    const selects = wrapper.findAllComponents(AppFilterSelect)
-    expect(selects).toHaveLength(1)
-    expect(selects[0].props('placeholder')).toBe('状态')
-    expect(selects[0].props('multiple')).toBe(false)
-    expect(selects[0].props('maxCollapseTags')).toBe(3)
-
-    selects[0].vm.$emit('update:modelValue', 'false')
-    selects[0].vm.$emit('change', 'false')
-    await flushPromises()
-
-    expect(dictApi.listDictItems).toHaveBeenLastCalledWith(expect.objectContaining({
-      enabled: false,
-    }))
+    expect(wrapper.find('input[placeholder="搜索字典项 code / 名称"]').exists()).toBe(false)
+    expect(wrapper.find('.dict-inline-filters').exists()).toBe(false)
   })
 
   it('新建类型提交 code，编辑类型不提交 code', async () => {

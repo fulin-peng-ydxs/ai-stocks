@@ -294,7 +294,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-select>
           <el-input v-model="filters.q" placeholder="搜索账号 / 邮箱" clearable style="width: 220px"
                     @keyup.enter="search" @clear="search" />
-          <el-button @click="search">查询</el-button>
+          <el-button type="primary" @click="search">查询</el-button>
         </AppControlRow>
       </div>
     </template>

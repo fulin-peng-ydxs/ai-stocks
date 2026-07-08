@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -204,6 +204,7 @@ const groupSortBy = ref(groupDefaultSortBy.value)
 const groupSortOrder = ref<'asc' | 'desc'>(groupDefaultSortOrder.value)
 const groupTotal = computed(() => groupDetail.value?.members.total ?? 0)
 let restoringListState = false
+let groupSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 const auth = useAuthStore()
 const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
@@ -266,8 +267,16 @@ async function loadGroupDetail() {
 }
 const groupRows = computed<GroupMember[]>(() => groupDetail.value?.members.list ?? [])
 function groupSearch() {
+  if (groupSearchTimer) clearTimeout(groupSearchTimer)
+  groupSearchTimer = null
   groupPage.value = 1
   loadGroupDetail()
+}
+function scheduleGroupSearch() {
+  if (groupSearchTimer) clearTimeout(groupSearchTimer)
+  groupSearchTimer = setTimeout(() => {
+    groupSearch()
+  }, 300)
 }
 function onGroupSortChange({ prop, order }: { prop: string; order: string | null }) {
   if (!order) {
@@ -546,6 +555,9 @@ onMounted(async () => {
     await load()
   }
 })
+onBeforeUnmount(() => {
+  if (groupSearchTimer) clearTimeout(groupSearchTimer)
+})
 </script>
 
 <template>
@@ -608,10 +620,10 @@ onMounted(async () => {
             size="small"
             clearable
             style="width: 160px"
+            @input="scheduleGroupSearch"
             @keyup.enter="groupSearch"
             @clear="groupSearch"
           />
-          <el-button size="small" :loading="groupLoading" @click="groupSearch">查询</el-button>
           <el-button v-permission="'stock-group:delete'" size="small" type="danger" plain :disabled="groupDetail.is_default" @click="doDeleteGroup">删除分组</el-button>
         </div>
       </div>
