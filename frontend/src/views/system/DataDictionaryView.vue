@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -474,10 +475,10 @@ onMounted(loadAll)
             <strong>字典类型</strong>
             <span class="muted">{{ typeTotal }} 类</span>
           </header>
-          <div class="dict-type-tools">
+          <AppControlRow class="dict-type-tools">
             <el-input v-model="settings.typeKeyword" clearable placeholder="搜索类型 / code" @keyup.enter="searchTypes" />
             <el-button @click="searchTypes">查询</el-button>
-          </div>
+          </AppControlRow>
           <div class="dict-type-list" v-loading="typeLoading">
             <el-result v-if="typeError" icon="warning" title="类型加载失败" sub-title="请稍后重试" class="compact-state">
               <template #extra><el-button type="primary" @click="loadTypes(true)">重试</el-button></template>
@@ -525,7 +526,7 @@ onMounted(loadAll)
             </div>
           </header>
 
-          <div class="dict-item-filters">
+          <AppControlRow class="dict-item-filters">
             <AppFilterSelect
               v-model="settings.itemEnabled"
               :options="itemEnabledOptions"
@@ -536,7 +537,7 @@ onMounted(loadAll)
             />
             <el-input v-model="settings.itemKeyword" clearable placeholder="搜索字典项 code / 名称" class="w240" @keyup.enter="searchItems" />
             <el-button @click="searchItems">查询</el-button>
-          </div>
+          </AppControlRow>
 
           <el-result v-if="itemError" icon="warning" title="字典项加载失败" sub-title="请稍后重试，业务消费端会回落默认枚举" class="dict-state">
             <template #extra><el-button type="primary" @click="loadItems">重试</el-button></template>
@@ -708,13 +709,15 @@ onMounted(loadAll)
   min-width: 680px;
 }
 .dict-panel-head,
-.dict-detail-bar,
-.dict-item-filters,
-.dict-type-tools {
+.dict-detail-bar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.dict-item-filters,
+.dict-type-tools {
+  flex: 0 0 auto;
 }
 .dict-panel-head,
 .dict-detail-bar {

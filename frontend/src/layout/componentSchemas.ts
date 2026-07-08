@@ -39,6 +39,29 @@ const filterShape: ConfigShape = {
   remember: 'bool',
 }
 
+const controlRowShape: ConfigShape = {
+  controls: 'string[]',
+  wrap: 'bool',
+  fill: 'bool',
+  labelControlMode: ['inline', 'stacked'],
+  autoQuery: 'bool',
+  resetMode,
+  remember: 'bool',
+}
+
+const searchBoxShape: ConfigShape = {
+  placeholder: 'string',
+  autoQuery: 'bool',
+  remember: 'bool',
+}
+
+const advancedFilterShape: ConfigShape = {
+  fields: 'string[]',
+  defaultExpanded: 'bool',
+  resetMode,
+  remember: 'bool',
+}
+
 const formShape: ConfigShape = {
   columns: 'int',
   labelWidth: ['auto', 'compact', 'standard', 'wide'],
@@ -81,9 +104,9 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
   'simple-list': { itemDensity: density, rowClick },
   'description-list': { columns: 'int', labelWidth: formShape.labelWidth },
 
-  'filter-bar': filterShape,
-  'search-box': filterShape,
-  'advanced-filter': filterShape,
+  'filter-bar': controlRowShape,
+  'search-box': searchBoxShape,
+  'advanced-filter': advancedFilterShape,
   toolbar: { actions: 'string[]', wrap: 'bool' },
   'batch-bar': { actions: 'string[]', selectionRequired: 'bool' },
 

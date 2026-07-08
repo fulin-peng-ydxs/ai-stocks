@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Edit } from '@element-plus/icons-vue'
+import AppControlRow from '@/components/AppControlRow.vue'
 import { listStocks, type StockBasic, type StockListParams } from '@/api/stocks'
 import {
   addMembers,
@@ -567,7 +568,7 @@ onMounted(async () => {
 
     <!-- 搜索 / 筛选（置顶）-->
     <el-card v-if="!inGroupMode" shadow="never" class="filter-card">
-      <div class="filter-row">
+      <AppControlRow class="filter-row">
         <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable style="width: 180px" />
         <el-input v-model="q" placeholder="代码 / 名称" style="width: 220px" clearable @keyup.enter="search" @clear="search" />
         <el-select v-model="board" placeholder="全部板块" style="width: 130px" clearable @change="search">
@@ -578,7 +579,7 @@ onMounted(async () => {
           <el-option label="退市板块" value="退市" />
         </el-select>
         <el-button type="primary" :loading="loading" @click="search">查询</el-button>
-      </div>
+      </AppControlRow>
     </el-card>
 
     <!-- 分组横幅 -->
@@ -871,12 +872,6 @@ onMounted(async () => {
 }
 .filter-card {
   margin-bottom: 0;
-}
-.filter-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 .group-option,
 .gb-name {

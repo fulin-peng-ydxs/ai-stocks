@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -469,7 +470,7 @@ onBeforeUnmount(stopTimer)
     </template>
 
     <template #filters>
-      <div class="audit-filters">
+      <AppControlRow class="audit-filters">
         <el-date-picker
           v-model="dateRange"
           type="datetimerange"
@@ -513,7 +514,7 @@ onBeforeUnmount(stopTimer)
         />
         <el-button type="primary" @click="search">查询</el-button>
         <el-button @click="resetFilters">重置</el-button>
-      </div>
+      </AppControlRow>
     </template>
 
     <template #auditTable>
@@ -735,12 +736,6 @@ onBeforeUnmount(stopTimer)
 }
 .metric b.warn { color: var(--el-color-warning); }
 .metric b.danger { color: var(--el-color-danger); }
-.audit-filters {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
 .audit-date {
   width: 330px;
 }

@@ -190,6 +190,14 @@ Key Characteristics：
 - 真实组件只有需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器时，才新增或关联系统组件种类。
 - 禁止只在 `COMPONENT_CATALOG` 登记但页面不读取的“假配置”；也禁止已有真实复用组件时继续在页面内复制同类控件行为。
 
+系统组件页信息维护规则：
+
+- `LayoutComponentsView` 展示的组件名称、说明、最低尺寸、滚动归属、成长/重排能力和专属特性来自 `COMPONENT_CATALOG`；这些信息变化时必须优先更新 `frontend/src/layout/components.ts`，不要在页面内硬编码第二套说明。
+- `configCapabilities` 是英文能力 key 摘要，用于系统组件页展示组件具备的能力，不等同于“已开放 Web 配置字段”；不要为了展示把它本地化成另一套中文映射。
+- 组件 kind 的语义变化时，必须同步检查 `components.ts` 的 `label`、`description`、`configCapabilities`，`componentSchemas.ts` 的 config shape，`componentPreview.ts` 的预览归类，以及 `schema.ts` 中该 kind 的说明。
+- 只有真实可被页面设置、页面布局或预设消费的字段，才进入 `COMPONENT_FIELD_DEFS`、后端 `layout_config.py` 字段规则和 `pageRegistry.consumedComponentFields`；否则只能停留在 `componentSchemas.ts` 的结构校验或 `configCapabilities` 的能力摘要。
+- 改动系统组件信息后至少运行相关布局测试；涉及前端源码时同时运行构建。
+
 核心真实复用组件清单：
 
 | 真实组件 | 路径 | 用途 | 系统组件关系 | 使用规则 |
@@ -199,6 +207,7 @@ Key Characteristics：
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉和配置面板的分组容器 | 无直接系统组件种类 | 抽屉/设置面板分组优先复用 |
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用 |
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用 |
+| `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 多个输入、选择器、按钮组成的横向行优先使用 `AppControlRow`；存在“说明文字 + 控件”时必须用 `AppControlItem` 包裹，避免标签和控件被拆到不同行；只有明确需要均分或撑满时才传 `fill` 或让具体 `AppControlItem` 设置 `grow` |
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚优先复用 |
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`；默认最多展示 3 个选中标签，溢出时提前折叠；筛选下拉优先复用 |
 | `AssetVisibilityTag` / `AssetProfileLabel` / `AssetVisibilityActions` | `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue`、`frontend/src/components/AssetVisibilityActions.vue` | 公开资产来源、可见范围、只读状态、方案名称+版本+归属标签、发布/收回、复制为我的方案和复用参数动作 | 无直接系统组件种类 | 评分、筛选、买卖、回测等公开资产页面必须复用；方案选择/列表入口统一用 `AssetProfileLabel`，消费页包括 `BoardView`、`ScreenView`、`ConfigView` 评分 tab、`ConfigView` 买卖 tab、`BacktestView` |

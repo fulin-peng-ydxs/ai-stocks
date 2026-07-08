@@ -211,6 +211,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
     .filter(Boolean)
     .join(' · ') || '—'
 }
+
 </script>
 
 <template>

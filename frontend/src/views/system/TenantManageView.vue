@@ -5,6 +5,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
+import AppControlRow from '@/components/AppControlRow.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -202,7 +203,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </div>
         </div>
 
-        <div class="filter-bar">
+        <AppControlRow class="filter-bar">
           <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
             <el-option label="启用" value="active" />
             <el-option label="已停用" value="disabled" />
@@ -210,7 +211,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           <el-input v-model="filters.q" placeholder="搜索租户名 / ID" clearable style="width: 220px"
                     @keyup.enter="search" @clear="search" />
           <el-button @click="search">查询</el-button>
-        </div>
+        </AppControlRow>
       </div>
     </template>
 
@@ -325,7 +326,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
 .page-head h2 { margin: 0; font-size: 20px; }
 .page-head-actions { display: flex; align-items: center; gap: 10px; }
-.filter-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.filter-bar { margin-bottom: 12px; }
 .builtin-tag { margin-left: 4px; }
 .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
 .muted { color: var(--el-text-color-secondary); }

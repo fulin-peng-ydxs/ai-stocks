@@ -13,6 +13,8 @@ import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
 import { getBars, type Bar } from '@/api/stocks'
 import EquityChart from '@/components/EquityChart.vue'
 import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
+import AppControlItem from '@/components/AppControlItem.vue'
+import AppControlRow from '@/components/AppControlRow.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -899,104 +901,36 @@ async function openTradeChart(row: TradeRow) {
     <template #main>
     <div class="backtest-body">
     <el-card shadow="never" class="form-card">
-      <div class="form-row">
+      <AppControlRow class="form-row" dense>
         <el-radio-group v-model="kind">
           <el-radio-button value="strategy">策略回测</el-radio-button>
           <el-radio-button value="score_check">评分验证</el-radio-button>
         </el-radio-group>
-        <span class="lbl">区间</span>
-        <TradeDatePicker v-model="dateStart" placeholder="开始" style="width: 160px" />
-        <span>~</span>
-        <TradeDatePicker v-model="dateEnd" placeholder="结束" style="width: 160px" />
-        <span class="lbl">评分方案
-          <HelpTip title="评分方案" :width="340">
-            <p>策略回测里用于<b>候选超过持仓数时按分排序截断</b>；评分验证里用于<b>分档检验高分组是否更易涨</b>。去「配置管理 → 评分规则」定义。</p>
-          </HelpTip>
-        </span>
-        <el-select v-model="scoreProfileId" placeholder="请选择评分方案" no-data-text="暂无可用评分方案" style="width: 190px">
-          <template v-if="selectedScoreProfile" #label>
-            <AssetProfileLabel
-              :name="selectedScoreProfile.name"
-              :version="selectedScoreProfile.version"
-              :source="selectedScoreProfile.source"
-              :is-preset="selectedScoreProfile.is_preset"
-              :owner-label="selectedScoreProfile.owner_label"
-              :readonly="selectedScoreProfile.readonly"
-            />
+        <AppControlItem label="区间">
+          <TradeDatePicker v-model="dateStart" placeholder="开始" style="width: 160px" />
+        </AppControlItem>
+        <AppControlItem label="~">
+          <TradeDatePicker v-model="dateEnd" placeholder="结束" style="width: 160px" />
+        </AppControlItem>
+        <AppControlItem>
+          <template #label>
+            评分方案
+            <HelpTip title="评分方案" :width="340">
+              <p>策略回测里用于<b>候选超过持仓数时按分排序截断</b>；评分验证里用于<b>分档检验高分组是否更易涨</b>。去「配置管理 → 评分规则」定义。</p>
+            </HelpTip>
           </template>
-          <el-option v-for="p in scoreProfiles" :key="scoreProfileKey(p)" :value="scoreProfileKey(p)" :label="p.name">
-            <AssetProfileLabel
-              :name="p.name"
-              :version="p.version"
-              :source="p.source"
-              :is-preset="p.is_preset"
-              :owner-label="p.owner_label"
-              :readonly="p.readonly"
-            />
-          </el-option>
-        </el-select>
-        <template v-if="kind === 'strategy'">
-          <span class="lbl">选股方案
-            <HelpTip title="选股方案 = 自定义策略入口" :width="360">
-              <p>决定<b>每天从哪些股票里挑</b>：选某方案 → 只在该方案命中的股票里按评分排序取前 N 只；不选则使用全市场候选。</p>
-              <p style="margin:6px 0 0">想自定义策略？去<b>「策略筛选」页</b>写规则并「保存为方案」，这里就会出现可选。</p>
-            </HelpTip>
-          </span>
-          <!-- 悬浮显示方案具体选股条件 -->
-          <el-tooltip placement="bottom" :disabled="!profileDesc" effect="dark">
-            <template #content>
-              <div style="max-width:360px;line-height:1.6">
-                <b>方案说明：</b> <br>{{ profileDesc }}
-              </div>
-            </template>
-            <el-select v-model="profileId" clearable placeholder="请选择选股方案" no-data-text="暂无可用选股方案" style="width: 190px">
-              <template v-if="selectedScreenProfile" #label>
-                <AssetProfileLabel
-                  :name="selectedScreenProfile.name"
-                  :version="selectedScreenProfile.version"
-                  :source="selectedScreenProfile.source"
-                  :is-preset="selectedScreenProfile.is_preset"
-                  :owner-label="selectedScreenProfile.owner_label"
-                  :readonly="selectedScreenProfile.readonly"
-                />
-              </template>
-              <el-option v-for="p in profiles" :key="screenProfileKey(p)" :value="screenProfileKey(p)" :label="p.name">
-                <AssetProfileLabel
-                  :name="p.name"
-                  :version="p.version"
-                  :source="p.source"
-                  :is-preset="p.is_preset"
-                  :owner-label="p.owner_label"
-                  :readonly="p.readonly"
-                />
-              </el-option>
-            </el-select>
-          </el-tooltip>
-          <span class="lbl">持仓数
-            <HelpTip title="持仓数（Top N）" :width="300">
-              <p>同时最多持有几只：每个调仓日在候选里按综合分取<b>前 N 只</b>等权买入。</p>
-            </HelpTip>
-          </span>
-          <el-input-number v-model="topN" :min="1" :max="50" controls-position="right" style="width: 100px" />
-          <span class="lbl">本金</span>
-          <el-input-number v-model="initCap" :min="100000" :step="100000" controls-position="right" style="width: 140px" />
-          <span class="lbl">买卖方案
-            <HelpTip title="买卖方案 = 买/卖/兜底" :width="380">
-              <p>选某买卖方案 → 买入须<b>筛选命中且买入条件成立</b>，卖出走方案的<b>卖出条件 + 兜底(止盈/止损/最大持有)</b>。去「配置管理 → 买卖指标」定义。</p>
-            </HelpTip>
-          </span>
-          <el-select v-model="tradeProfileId" placeholder="请选择买卖方案" no-data-text="暂无可用买卖方案" style="width: 190px">
-            <template v-if="selectedTradeProfile" #label>
+          <el-select v-model="scoreProfileId" placeholder="请选择评分方案" no-data-text="暂无可用评分方案" style="width: 190px">
+            <template v-if="selectedScoreProfile" #label>
               <AssetProfileLabel
-                :name="selectedTradeProfile.name"
-                :version="selectedTradeProfile.version"
-                :source="selectedTradeProfile.source"
-                :is-preset="selectedTradeProfile.is_preset"
-                :owner-label="selectedTradeProfile.owner_label"
-                :readonly="selectedTradeProfile.readonly"
+                :name="selectedScoreProfile.name"
+                :version="selectedScoreProfile.version"
+                :source="selectedScoreProfile.source"
+                :is-preset="selectedScoreProfile.is_preset"
+                :owner-label="selectedScoreProfile.owner_label"
+                :readonly="selectedScoreProfile.readonly"
               />
             </template>
-            <el-option v-for="p in tradeProfiles" :key="tradeProfileKey(p)" :value="tradeProfileKey(p)" :label="p.name">
+            <el-option v-for="p in scoreProfiles" :key="scoreProfileKey(p)" :value="scoreProfileKey(p)" :label="p.name">
               <AssetProfileLabel
                 :name="p.name"
                 :version="p.version"
@@ -1007,16 +941,102 @@ async function openTradeChart(row: TradeRow) {
               />
             </el-option>
           </el-select>
-          <el-checkbox v-model="industryOn">行业上限</el-checkbox>
-          <el-input-number v-model="industryPct" :disabled="!industryOn" :min="1" :max="100" controls-position="right" style="width: 92px" />
-          <span class="unit" :class="{ off: !industryOn }">%</span>
+        </AppControlItem>
+        <template v-if="kind === 'strategy'">
+          <AppControlItem>
+            <template #label>
+              选股方案
+              <HelpTip title="选股方案 = 自定义策略入口" :width="360">
+                <p>决定<b>每天从哪些股票里挑</b>：选某方案 → 只在该方案命中的股票里按评分排序取前 N 只；不选则使用全市场候选。</p>
+                <p style="margin:6px 0 0">想自定义策略？去<b>「策略筛选」页</b>写规则并「保存为方案」，这里就会出现可选。</p>
+              </HelpTip>
+            </template>
+            <!-- 悬浮显示方案具体选股条件 -->
+            <el-tooltip placement="bottom" :disabled="!profileDesc" effect="dark">
+              <template #content>
+                <div style="max-width:360px;line-height:1.6">
+                  <b>方案说明：</b> <br>{{ profileDesc }}
+                </div>
+              </template>
+              <el-select v-model="profileId" clearable placeholder="请选择选股方案" no-data-text="暂无可用选股方案" style="width: 190px">
+                <template v-if="selectedScreenProfile" #label>
+                  <AssetProfileLabel
+                    :name="selectedScreenProfile.name"
+                    :version="selectedScreenProfile.version"
+                    :source="selectedScreenProfile.source"
+                    :is-preset="selectedScreenProfile.is_preset"
+                    :owner-label="selectedScreenProfile.owner_label"
+                    :readonly="selectedScreenProfile.readonly"
+                  />
+                </template>
+                <el-option v-for="p in profiles" :key="screenProfileKey(p)" :value="screenProfileKey(p)" :label="p.name">
+                  <AssetProfileLabel
+                    :name="p.name"
+                    :version="p.version"
+                    :source="p.source"
+                    :is-preset="p.is_preset"
+                    :owner-label="p.owner_label"
+                    :readonly="p.readonly"
+                  />
+                </el-option>
+              </el-select>
+            </el-tooltip>
+          </AppControlItem>
+          <AppControlItem>
+            <template #label>
+              持仓数
+              <HelpTip title="持仓数（Top N）" :width="300">
+                <p>同时最多持有几只：每个调仓日在候选里按综合分取<b>前 N 只</b>等权买入。</p>
+              </HelpTip>
+            </template>
+            <el-input-number v-model="topN" :min="1" :max="50" controls-position="right" style="width: 100px" />
+          </AppControlItem>
+          <AppControlItem label="本金">
+            <el-input-number v-model="initCap" :min="100000" :step="100000" controls-position="right" style="width: 140px" />
+          </AppControlItem>
+          <AppControlItem>
+            <template #label>
+              买卖方案
+              <HelpTip title="买卖方案 = 买/卖/兜底" :width="380">
+                <p>选某买卖方案 → 买入须<b>筛选命中且买入条件成立</b>，卖出走方案的<b>卖出条件 + 兜底(止盈/止损/最大持有)</b>。去「配置管理 → 买卖指标」定义。</p>
+              </HelpTip>
+            </template>
+            <el-select v-model="tradeProfileId" placeholder="请选择买卖方案" no-data-text="暂无可用买卖方案" style="width: 190px">
+              <template v-if="selectedTradeProfile" #label>
+                <AssetProfileLabel
+                  :name="selectedTradeProfile.name"
+                  :version="selectedTradeProfile.version"
+                  :source="selectedTradeProfile.source"
+                  :is-preset="selectedTradeProfile.is_preset"
+                  :owner-label="selectedTradeProfile.owner_label"
+                  :readonly="selectedTradeProfile.readonly"
+                />
+              </template>
+              <el-option v-for="p in tradeProfiles" :key="tradeProfileKey(p)" :value="tradeProfileKey(p)" :label="p.name">
+                <AssetProfileLabel
+                  :name="p.name"
+                  :version="p.version"
+                  :source="p.source"
+                  :is-preset="p.is_preset"
+                  :owner-label="p.owner_label"
+                  :readonly="p.readonly"
+                />
+              </el-option>
+            </el-select>
+          </AppControlItem>
+          <AppControlItem>
+            <el-checkbox v-model="industryOn">行业上限</el-checkbox>
+            <el-input-number v-model="industryPct" :disabled="!industryOn" :min="1" :max="100" controls-position="right" style="width: 92px" />
+            <span class="unit" :class="{ off: !industryOn }">%</span>
+          </AppControlItem>
         </template>
-      </div>
+      </AppControlRow>
 
-      <div v-if="kind === 'strategy' && tradeProfileId" class="form-row sell-row">
-        <span class="lbl strong">卖出规则</span>
-        <span class="tip-inline">由买卖方案「{{ tradeProfileName(tradeProfileId) }}」的卖出条件 + 兜底接管</span>
-      </div>
+      <AppControlRow v-if="kind === 'strategy' && tradeProfileId" class="form-row sell-row" dense>
+        <AppControlItem label="卖出规则">
+          <span class="tip-inline">由买卖方案「{{ tradeProfileName(tradeProfileId) }}」的卖出条件 + 兜底接管</span>
+        </AppControlItem>
+      </AppControlRow>
 
       <!-- 运行按钮 + 紧贴其下的执行说明。dirty=蓝可点；出结果/载入历史后置灰；改参恢复 -->
       <div class="run-row">
@@ -1065,26 +1085,29 @@ async function openTradeChart(row: TradeRow) {
                   </HelpTip>
                 </span>
               </template>
-              <div class="form-row" style="margin-bottom:10px">
+              <AppControlRow class="form-row robust-row" dense>
                 <el-radio-group v-model="robustMode" size="small">
                   <el-radio-button value="param_sweep">参数敏感性</el-radio-button>
                   <el-radio-button value="in_out_sample">样本内外</el-radio-button>
                 </el-radio-group>
                 <template v-if="robustMode === 'param_sweep'">
-                  <span class="lbl">扫描参数</span>
-                  <el-select v-model="robustParam" style="width: 170px" size="small">
-                    <el-option v-for="o in ROBUST_PARAM_OPTS" :key="o.v" :value="o.v" :label="o.t" />
-                  </el-select>
-                  <span class="lbl">取值</span>
-                  <el-input v-model="robustValuesText" size="small" style="width: 220px" placeholder="逗号分隔，如 5,10,15,20" />
+                  <AppControlItem label="扫描参数">
+                    <el-select v-model="robustParam" style="width: 170px" size="small">
+                      <el-option v-for="o in ROBUST_PARAM_OPTS" :key="o.v" :value="o.v" :label="o.t" />
+                    </el-select>
+                  </AppControlItem>
+                  <AppControlItem label="取值">
+                    <el-input v-model="robustValuesText" size="small" style="width: 220px" placeholder="逗号分隔，如 5,10,15,20" />
+                  </AppControlItem>
                 </template>
                 <template v-else>
-                  <span class="lbl">样本切分日</span>
-                  <TradeDatePicker v-model="robustSplit" placeholder="区间内某交易日" style="width: 160px" />
+                  <AppControlItem label="样本切分日">
+                    <TradeDatePicker v-model="robustSplit" placeholder="区间内某交易日" style="width: 160px" />
+                  </AppControlItem>
                 </template>
                 <el-button v-permission="'backtest:robust'" type="primary" plain size="small" :loading="robustLoading" @click="runRobustTest">运行</el-button>
                 <span class="tip-inline">逐组完整回测，较慢</span>
-              </div>
+              </AppControlRow>
 
               <!-- 参数敏感性结果 -->
               <el-table v-if="sweepRes" :data="sweepRes.rows" size="small" border>
@@ -1444,10 +1467,9 @@ async function openTradeChart(row: TradeRow) {
 .results-top {
   flex: 0 0 auto;  /* 绩效卡/资金曲线/稳健性/分层表：按内容取自然高 */
 }
-.form-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .lbl { color: var(--el-text-color-secondary); font-size: 13px; margin-left: 6px; display: inline-flex; align-items: center; gap: 2px; }
-.lbl.strong { color: var(--el-text-color-primary); font-weight: 600; }
 .sell-row { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--el-border-color); }
+.robust-row { margin-bottom: 10px; }
 .run-row { margin-top: 14px; }
 .unit { font-size: 12px; color: var(--el-text-color-secondary); margin-right: 4px; }
 .unit.off { opacity: 0.4; }

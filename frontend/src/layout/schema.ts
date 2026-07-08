@@ -108,7 +108,7 @@ export type ComponentKind =
   | 'slot-group' //     组件分组
   | 'data-table' //     数据表格（分页列表）
   | 'wide-table' //     宽表格（列多，横向内滚 + 冻结列）
-  | 'filter-bar' //     筛选/搜索栏
+  | 'filter-bar' //     控件行（筛选、搜索、参数、操作）
   | 'search-box' //      关键词搜索
   | 'advanced-filter' // 高级筛选
   | 'toolbar' //        工具栏

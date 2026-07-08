@@ -99,14 +99,14 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
 
   'filter-bar': meta('filter-bar', {
     category: 'query',
-    label: '筛选栏',
-    description: '承载筛选字段、查询和清空操作的固定操作区。',
+    label: '控件行',
+    description: '承载筛选、查询、参数和操作控件的固定控件区。',
     minW: 280,
     minH: 48,
     defaultScroll: 'none',
     canGrowMain: false,
     reflowable: false,
-    configCapabilities: ['fields', 'defaultExpanded', 'advanced', 'autoQuery', 'resetMode', 'remember'],
+    configCapabilities: ['controls', 'wrap', 'fillOptIn', 'groupedLabelControl', 'autoQuery', 'resetMode', 'remember'],
   }),
   'search-box': meta('search-box', {
     category: 'query',

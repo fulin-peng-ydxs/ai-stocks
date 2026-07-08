@@ -10,6 +10,7 @@ import {
   type DataQuality, type QualityIssue, type CheckupReport,
 } from '@/api/data'
 import { ElMessageBox } from 'element-plus'
+import AppControlRow from '@/components/AppControlRow.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -295,7 +296,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <div class="filter-bar">
+    <AppControlRow class="filter-bar">
       <el-select v-model="filters.status" placeholder="状态" multiple clearable collapse-tags
                  collapse-tags-tooltip :max-collapse-tags="3" style="width: 240px">
         <el-option v-for="(l, k) in ISSUE_STATUS_LABEL" :key="k" :label="l" :value="k" />
@@ -329,7 +330,7 @@ onMounted(() => {
           {{ ISSUE_TYPE_LABEL[s.issue_type] ?? s.issue_type }}: {{ s.n }}
         </el-tag>
       </div>
-    </div>
+    </AppControlRow>
     </div>
     </template>
 
@@ -488,7 +489,7 @@ onMounted(() => {
 .page-sub { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; }
 .qm { color: var(--el-color-primary); cursor: help; margin-left: 4px; }
 .layer-tag { font-family: var(--el-font-family-mono, monospace); font-size: 12px; color: var(--el-text-color-secondary); }
-.filter-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.filter-bar { margin-bottom: 12px; }
 .summary { margin-left: auto; }
 .sm-tag { margin-left: 6px; cursor: pointer; user-select: none; }
 .sm-tag:focus-visible {
