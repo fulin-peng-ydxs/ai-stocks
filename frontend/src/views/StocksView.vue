@@ -5,6 +5,7 @@ import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Edit } from '@element-plus/icons-vue'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import { listStocks, type StockBasic, type StockListParams } from '@/api/stocks'
 import {
   addMembers,
@@ -622,11 +623,14 @@ onMounted(async () => {
     <el-card shadow="never">
       <!-- 分组视图 -->
       <template v-if="inGroupMode">
-        <el-table :data="groupRows" v-loading="groupLoading" row-key="code"
-          height="100%"
+        <AppDataTable :data="groupRows" :loading="groupLoading" row-key="code"
           :default-sort="groupElementDefaultSort"
-          class="clickable" @row-click="(r: GroupMember) => enterDetail(r.code)"
-          @sort-change="onGroupSortChange">
+          clickable
+          :pagination="{ currentPage: groupPage, pageSize: groupSize, total: groupTotal, pageSizes: PAGE_SIZE_OPTIONS }"
+          @row-click="(r: GroupMember) => enterDetail(r.code)"
+          @sort-change="onGroupSortChange"
+          @page-change="(p:number)=>{ groupPage=p; loadGroupDetail() }"
+          @size-change="(s:number)=>{ groupSize=s; groupPage=1; loadGroupDetail() }">
           <el-table-column width="46">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
@@ -654,21 +658,19 @@ onMounted(async () => {
           <el-table-column v-if="groupColVisible('addDate')" label="加入日期" prop="add_date" width="120" sortable="custom">
             <template #default="{ row }">{{ row.add_date || '—' }}</template>
           </el-table-column>
-        </el-table>
-        <div class="pager">
-          <el-pagination layout="total, sizes, prev, pager, next" :total="groupTotal" :page-size="groupSize"
-            :page-sizes="PAGE_SIZE_OPTIONS" :current-page="groupPage"
-            @current-change="(p:number)=>{ groupPage=p; loadGroupDetail() }"
-            @size-change="(s:number)=>{ groupSize=s; groupPage=1; loadGroupDetail() }" />
-        </div>
+        </AppDataTable>
       </template>
 
       <!-- 普通查询 -->
       <template v-else>
-        <el-table :data="rows" v-loading="loading" row-key="code"
-          height="100%"
-          class="clickable" @row-click="(r: StockBasic) => enterDetail(r.code)"
-          :default-sort="tableElementDefaultSort" @sort-change="onSortChange">
+        <AppDataTable :data="rows" :loading="loading" row-key="code"
+          clickable
+          :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
+          @row-click="(r: StockBasic) => enterDetail(r.code)"
+          :default-sort="tableElementDefaultSort"
+          @sort-change="onSortChange"
+          @page-change="(p:number)=>{ page=p; load() }"
+          @size-change="(s:number)=>{ size=s; page=1; load() }">
           <el-table-column width="46">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
@@ -722,13 +724,7 @@ onMounted(async () => {
               </el-tag>
             </template>
           </el-table-column>
-        </el-table>
-        <div class="pager">
-          <el-pagination layout="total, sizes, prev, pager, next" :total="total" :page-size="size"
-            :page-sizes="PAGE_SIZE_OPTIONS" :current-page="page"
-            @current-change="(p:number)=>{ page=p; load() }"
-            @size-change="(s:number)=>{ size=s; page=1; load() }" />
-        </div>
+        </AppDataTable>
       </template>
     </el-card>
     </template>
@@ -970,14 +966,6 @@ onMounted(async () => {
 }
 .muted {
   color: var(--app-placeholder-text);
-}
-.pager {
-  margin-top: 12px;
-  display: flex;
-  justify-content: flex-end;
-}
-.clickable :deep(.el-table__row) {
-  cursor: pointer;
 }
 .v-grow .el-table {
   min-height: 240px;

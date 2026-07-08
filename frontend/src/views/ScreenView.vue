@@ -17,6 +17,7 @@ import {
 import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
+import AppDataTable from '@/components/AppDataTable.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -601,15 +602,14 @@ onMounted(async () => {
         <span v-else>筛选结果</span>
         <el-button v-if="result && result.hits.length" size="small" style="float:right" @click="exportCsv">导出 CSV</el-button>
       </template>
-      <el-table
+      <AppDataTable
         v-if="result && result.hits.length"
         :data="displayHits"
         :default-sort="elementDefaultSort"
         :row-class-name="rowClass"
-        height="100%"
+        clickable
         @sort-change="onResultSortChange"
         @row-click="(r: ScreenHit) => router.push(`/stocks/${r.code}`)"
-        class="clickable"
       >
         <el-table-column label="#" type="index" width="56" />
         <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="120" sortable />
@@ -630,7 +630,7 @@ onMounted(async () => {
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-      </el-table>
+      </AppDataTable>
       <el-empty v-else-if="result" class="app-empty" description="无命中" />
       <el-empty v-else class="app-empty" description="运行后在这里展示筛选结果" />
     </el-card>

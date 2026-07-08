@@ -25,6 +25,7 @@ import {
 } from '@/api/scoreProfile'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -1172,7 +1173,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </div>
         </div>
         <div class="tech-table-wrap">
-        <el-table :data="techRows" size="small" border height="100%"
+        <AppDataTable :data="techRows" size="small" border
                   :default-sort="techDefaultSort" @sort-change="onTechSortChange">
           <el-table-column prop="name_cn" label="名称" width="130" sortable="custom" />
           <el-table-column prop="key" label="标识" width="120" />
@@ -1227,7 +1228,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <span v-else>—</span>
             </template>
           </el-table-column>
-        </el-table>
+        </AppDataTable>
         </div>
 
         <!-- 新建自定义指标 -->

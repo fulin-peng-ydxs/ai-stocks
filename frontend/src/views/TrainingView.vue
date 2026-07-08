@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import CandleChart from '@/components/CandleChart.vue'
 import EquityChart from '@/components/EquityChart.vue'
 import GrowthChart from '@/components/GrowthChart.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -352,14 +353,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
         <el-card shadow="never" class="hist-card">
           <template #header><span class="card-title">训练历史</span><span class="card-sub">共 {{ history.total }} 局，点行回看</span></template>
-          <el-table
+          <AppDataTable
             :data="history.list"
             size="small"
-            height="100%"
-            class="hist-table"
+            table-class="hist-table"
+            clickable
             :default-sort="historyDefaultSort"
             @sort-change="onHistorySortChange"
-                    @row-click="(r:SessionRow)=>openSession(r.id)">
+            @row-click="(r:SessionRow)=>openSession(r.id)">
             <el-table-column label="模式" width="90">
               <template #default="{ row }">{{ modeText(row.mode) }}·{{ row.n_rounds }}</template>
             </el-table-column>
@@ -387,7 +388,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <el-table-column label="" width="60">
               <template #default="{ row }"><el-button v-permission="'training:delete'" link type="danger" size="small" @click.stop="removeSession(row.id)">删除</el-button></template>
             </el-table-column>
-          </el-table>
+          </AppDataTable>
           <el-pagination v-if="history.total > history.size" small layout="prev, pager, next"
             :total="history.total" :page-size="history.size" :current-page="history.page"
             @current-change="(p:number)=>{ history.page=p; loadHistory() }" class="pager" />

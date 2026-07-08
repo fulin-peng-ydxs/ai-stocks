@@ -15,6 +15,7 @@ import EquityChart from '@/components/EquityChart.vue'
 import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -1203,7 +1204,7 @@ async function openTradeChart(row: TradeRow) {
           <el-button size="small" class="export-btn" @click="exportTradesCsv">导出 CSV</el-button>
         </div>
         <div class="trade-table-wrap">
-        <el-table :data="tradeRows" size="small" height="100%" class="clickable"
+        <AppDataTable :data="tradeRows" size="small" clickable
                   :default-sort="tradeDefaultSort" @sort-change="onTradeSortChange"
                   @row-click="(r:any) => openTradeChart(r)">
           <el-table-column label="代码" prop="code" width="110" />
@@ -1235,7 +1236,7 @@ async function openTradeChart(row: TradeRow) {
           <el-table-column v-if="tradeColVisible('rank')" label="榜单排名" width="90">
             <template #default="{ row }">{{ row.entry_rank ? '#' + row.entry_rank : '—' }}</template>
           </el-table-column>
-        </el-table>
+        </AppDataTable>
         </div>
       </el-card>
 

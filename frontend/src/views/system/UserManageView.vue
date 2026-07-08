@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -304,13 +305,15 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           <template #extra><el-button type="primary" @click="load">重试</el-button></template>
         </el-result>
         <template v-else>
-        <el-table
+        <AppDataTable
           :data="list"
           size="small"
-          height="100%"
-          v-loading="loading"
+          :loading="loading"
           :default-sort="elementDefaultSort"
+          :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
           @sort-change="onSortChange"
+          @page-change="(p: number) => { page = p; load() }"
+          @size-change="(s: number) => { size = s; page = 1; load() }"
         >
           <el-table-column label="账号" prop="account" width="150" fixed="left" sortable="custom" />
           <el-table-column v-if="colVisible('email')" label="邮箱" prop="email" min-width="180"
@@ -357,13 +360,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
                          link @click="removeUser(row)">删除</el-button>
             </template>
           </el-table-column>
-        </el-table>
-        <div class="pager">
-          <el-pagination layout="total, sizes, prev, pager, next" :total="total" background
-                         :current-page="page" :page-size="size" :page-sizes="PAGE_SIZE_OPTIONS"
-                         @current-change="(p: number) => { page = p; load() }"
-                         @size-change="(s: number) => { size = s; page = 1; load() }" />
-        </div>
+        </AppDataTable>
         </template>
       </el-card>
     </template>
@@ -463,7 +460,6 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 .role-tag { margin-right: 4px; }
 .muted { color: var(--el-text-color-secondary); }
 .locked-field { color: var(--el-text-color-regular); }
-.pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 .setting-item { display: flex; flex-direction: column; gap: 8px; }
 .setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
 </style>

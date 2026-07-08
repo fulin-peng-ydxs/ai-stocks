@@ -2,8 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
-import AppPagination from '@/components/AppPagination.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -523,16 +523,20 @@ onBeforeUnmount(stopTimer)
         <template #extra><el-button type="primary" @click="loadAll()">重试</el-button></template>
       </el-result>
       <div v-else class="audit-table-wrap">
-        <el-table
+        <AppDataTable
           :data="rows"
-          v-loading="tableLoading"
-          height="100%"
+          kind="wide-table"
+          :loading="tableLoading"
           row-key="id"
           stripe
-          class="audit-table"
+          framed
+          clickable
           :default-sort="elementDefaultSort"
+          :pagination="{ currentPage: page, pageSize, total }"
           @sort-change="onSortChange"
           @row-click="openDetail"
+          @page-change="pageChanged"
+          @size-change="pageSizeChanged"
         >
           <el-table-column v-if="colVisible('event_time')" label="时间" prop="event_time" width="168" sortable="custom">
             <template #default="{ row }">{{ formatTime(row.event_time) }}</template>
@@ -540,7 +544,7 @@ onBeforeUnmount(stopTimer)
           <el-table-column v-if="colVisible('actor')" label="处理人" width="132" show-overflow-tooltip>
             <template #default="{ row }">{{ actorText(row) }}</template>
           </el-table-column>
-          <el-table-column v-if="colVisible('event_category')" label="事件类型" prop="event_category" width="100" sortable="custom">
+          <el-table-column v-if="colVisible('event_category')" label="事件类型" prop="event_category" width="112" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="row.event_category === 'security' ? 'danger' : row.event_category === 'task' ? 'info' : 'success'" effect="plain">
                 {{ eventLabel(row) }}
@@ -581,16 +585,7 @@ onBeforeUnmount(stopTimer)
               <el-button @click="resetFilters">重置筛选</el-button>
             </el-empty>
           </template>
-        </el-table>
-        <div class="audit-pager">
-          <AppPagination
-            :current-page="page"
-            :page-size="pageSize"
-            :total="total"
-            @current-change="pageChanged"
-            @size-change="pageSizeChanged"
-          />
-        </div>
+        </AppDataTable>
       </div>
     </template>
 
@@ -750,26 +745,6 @@ onBeforeUnmount(stopTimer)
 .audit-table-wrap {
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--el-bg-color-overlay);
-}
-.audit-table {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.audit-table :deep(.el-table__row) {
-  cursor: pointer;
-}
-.audit-pager {
-  flex: 0 0 auto;
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

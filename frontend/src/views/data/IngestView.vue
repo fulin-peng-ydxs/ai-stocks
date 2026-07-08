@@ -8,6 +8,7 @@ import {
   TASK_LABEL, STATUS_LABEL, ISSUE_TYPE_LABEL,
   type DataStatus, type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
 } from '@/api/data'
+import AppDataTable from '@/components/AppDataTable.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -471,14 +472,17 @@ onMounted(async () => {
           </div>
         </template>
         <div class="panel-table-wrap">
-          <el-table
+          <AppDataTable
             :data="tasks"
             size="small"
-            height="100%"
             :default-sort="taskDefaultSort"
-            class="clk-tbl"
+            table-class="clk-tbl"
+            clickable
+            :pagination="{ currentPage: taskPage, pageSize: taskSize, total: taskTotal, pageSizes: PAGE_SIZE_OPTIONS }"
             @row-click="(r: AsyncTask) => openLogs(r.id)"
             @sort-change="onTaskSort"
+            @page-change="(p: number) => { taskPage = p; loadTasks() }"
+            @size-change="(s: number) => { taskSize = s; taskPage = 1; loadTasks() }"
           >
             <el-table-column label="任务ID" width="220" show-overflow-tooltip>
               <template #default="{ row }"><span class="task-id">{{ row.id }}</span></template>
@@ -531,13 +535,7 @@ onMounted(async () => {
                 <el-button type="primary" size="small" link @click.stop="openLogs(row.id)">日志</el-button>
               </template>
             </el-table-column>
-          </el-table>
-        </div>
-        <div class="pager">
-          <el-pagination layout="total, sizes, prev, pager, next" :total="taskTotal" background
-                         :current-page="taskPage" :page-size="taskSize" :page-sizes="PAGE_SIZE_OPTIONS"
-                         @current-change="(p: number) => { taskPage = p; loadTasks() }"
-                         @size-change="(s: number) => { taskSize = s; taskPage = 1; loadTasks() }" />
+          </AppDataTable>
         </div>
       </el-card>
 
@@ -562,13 +560,15 @@ onMounted(async () => {
           </div>
         </template>
         <div class="panel-table-wrap">
-          <el-table
+          <AppDataTable
             :data="updateLogList"
             size="small"
-            height="100%"
             :default-sort="logDefaultSort"
             :row-class-name="logRowClass"
+            :pagination="{ currentPage: logPage, pageSize: logSize, total: logTotal, pageSizes: PAGE_SIZE_OPTIONS }"
             @sort-change="onLogSort"
+            @page-change="(p: number) => { logPage = p; loadLogs() }"
+            @size-change="(s: number) => { logSize = s; logPage = 1; loadLogs() }"
           >
             <el-table-column label="目标表" prop="table" width="130" sortable="custom">
               <template #default="{ row }">{{ row.table_name }}</template>
@@ -595,13 +595,7 @@ onMounted(async () => {
             <el-table-column label="时间" prop="time" width="160" sortable="custom">
               <template #default="{ row }">{{ (row.updated_at || '').slice(0, 19) }}</template>
             </el-table-column>
-          </el-table>
-        </div>
-        <div class="pager">
-          <el-pagination layout="total, sizes, prev, pager, next" :total="logTotal" background
-                         :current-page="logPage" :page-size="logSize" :page-sizes="PAGE_SIZE_OPTIONS"
-                         @current-change="(p: number) => { logPage = p; loadLogs() }"
-                         @size-change="(s: number) => { logSize = s; logPage = 1; loadLogs() }" />
+          </AppDataTable>
         </div>
       </el-card>
       </div>
@@ -744,12 +738,10 @@ onMounted(async () => {
 .blk-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .hint { font-size: 12px; color: var(--el-text-color-secondary); }
 .flt { display: flex; align-items: center; gap: 8px; }
-.pager { display: flex; justify-content: flex-end; margin-top: 10px; }
 .act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .act { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 12px 14px; }
 .act-t { font-weight: 600; }
 .act-d { font-size: 12px; color: var(--el-text-color-secondary); margin: 4px 0 10px; }
-.clk-tbl :deep(tbody tr) { cursor: pointer; }
 .task-id { font-family: var(--el-font-family-mono, monospace); font-size: 12px; color: var(--el-text-color-secondary); }
 .log-meta { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .lm-msg { font-size: 12px; color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

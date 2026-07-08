@@ -11,6 +11,7 @@ import {
 } from '@/api/data'
 import { ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -336,14 +337,16 @@ onMounted(() => {
 
     <template #main>
     <el-card shadow="never">
-      <el-table
+      <AppDataTable
         :data="displayList"
         size="small"
-        height="100%"
-        v-loading="loading"
+        :loading="loading"
         :row-class-name="rowClass"
         :default-sort="elementDefaultSort"
+        :pagination="{ currentPage: page, pageSize: size, total: data?.total ?? 0, pageSizes: PAGE_SIZE_OPTIONS }"
         @sort-change="onSortChange"
+        @page-change="(p: number) => { page = p; load() }"
+        @size-change="(s: number) => { size = s; page = 1; load() }"
       >
         <el-table-column v-if="colVisible('severity')" label="严重度" prop="severity" width="90" sortable="custom">
           <template #default="{ row }">
@@ -394,13 +397,7 @@ onMounted(() => {
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
-      </el-table>
-      <div class="pager">
-        <el-pagination layout="total, sizes, prev, pager, next" :total="data?.total ?? 0" background
-                       :current-page="page" :page-size="size" :page-sizes="PAGE_SIZE_OPTIONS"
-                       @current-change="(p: number) => { page = p; load() }"
-                       @size-change="(s: number) => { size = s; page = 1; load() }" />
-      </div>
+      </AppDataTable>
     </el-card>
     </template>
 
@@ -500,7 +497,6 @@ onMounted(() => {
   box-shadow: 0 0 0 1px var(--el-color-warning-light-3);
 }
 .muted { color: var(--el-text-color-secondary); }
-.pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 :deep(.row-done) { opacity: 0.55; }
 .checkup-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .checkup-score { font-size: 15px; font-weight: 600; }

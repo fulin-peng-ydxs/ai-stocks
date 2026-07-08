@@ -6,6 +6,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -222,14 +223,16 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
         </el-result>
         <template v-else>
         <!-- row-key：稳定行标识，避免新增/重排时 fixed 列单元格 v-if（如「内置」标签）DOM 复用错位 -->
-        <el-table
+        <AppDataTable
           :data="list"
           row-key="id"
           size="small"
-          height="100%"
-          v-loading="loading"
+          :loading="loading"
           :default-sort="elementDefaultSort"
+          :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
           @sort-change="onSortChange"
+          @page-change="(p: number) => { page = p; load() }"
+          @size-change="(s: number) => { size = s; page = 1; load() }"
         >
           <el-table-column label="租户名" prop="name" min-width="180" fixed="left" show-overflow-tooltip sortable="custom">
             <template #default="{ row }">
@@ -271,13 +274,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
                          @click="removeTenant(row)">删除</el-button>
             </template>
           </el-table-column>
-        </el-table>
-        <div class="pager">
-          <el-pagination layout="total, sizes, prev, pager, next" :total="total" background
-                         :current-page="page" :page-size="size" :page-sizes="PAGE_SIZE_OPTIONS"
-                         @current-change="(p: number) => { page = p; load() }"
-                         @size-change="(s: number) => { size = s; page = 1; load() }" />
-        </div>
+        </AppDataTable>
         </template>
       </el-card>
     </template>
@@ -331,5 +328,4 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
 .muted { color: var(--el-text-color-secondary); }
 .locked-field { color: var(--el-text-color-regular); }
-.pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 </style>

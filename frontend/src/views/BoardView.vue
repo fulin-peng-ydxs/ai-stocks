@@ -8,6 +8,7 @@ import {
   type ScoreRunRow,
 } from '@/api/scoreProfile'
 import { listBoardProfiles, runBoardProfile } from '@/api/board'
+import AppDataTable from '@/components/AppDataTable.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -245,14 +246,13 @@ onMounted(async () => {
 
     <template #main>
     <el-card shadow="never">
-      <el-table
+      <AppDataTable
         :data="displayRows"
-        v-loading="loading"
-        height="100%"
+        :loading="loading"
         :default-sort="elementDefaultSort"
+        clickable
         @sort-change="onTableSortChange"
         @row-click="gotoStock"
-        class="clickable"
       >
         <el-table-column label="#" prop="rank" width="60" sortable :sort-by="(r:any)=>r.rank">
           <template #default="{ row }">{{ row.rank }}</template>
@@ -286,7 +286,7 @@ onMounted(async () => {
             </div>
           </template>
         </el-table-column>
-      </el-table>
+      </AppDataTable>
     </el-card>
     </template>
 

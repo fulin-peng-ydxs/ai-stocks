@@ -2,8 +2,8 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
-import AppPagination from '@/components/AppPagination.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -543,14 +543,17 @@ onMounted(loadAll)
             <template #extra><el-button type="primary" @click="loadItems">重试</el-button></template>
           </el-result>
           <div v-else class="dict-table-wrap">
-            <el-table
+            <AppDataTable
               :data="itemRows"
-              v-loading="itemLoading"
-              height="100%"
+              :loading="itemLoading"
               row-key="id"
               stripe
+              framed
               :default-sort="elementDefaultSort"
+              :pagination="{ currentPage: itemPage, pageSize, total: itemTotal }"
               @sort-change="onSortChange"
+              @page-change="pageChanged"
+              @size-change="pageSizeChanged"
             >
               <el-table-column v-if="colVisible('code')" label="code" prop="code" width="150" show-overflow-tooltip sortable="custom">
                 <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>
@@ -582,16 +585,7 @@ onMounted(loadAll)
                   <el-button v-if="activeType" v-permission="'dict:item-manage'" type="primary" @click="openCreateItem">新建字典项</el-button>
                 </el-empty>
               </template>
-            </el-table>
-            <div class="dict-pager">
-              <AppPagination
-                :current-page="itemPage"
-                :page-size="pageSize"
-                :total="itemTotal"
-                @current-change="pageChanged"
-                @size-change="pageSizeChanged"
-              />
-            </div>
+            </AppDataTable>
           </div>
         </section>
       </div>
@@ -802,17 +796,6 @@ onMounted(loadAll)
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.dict-table-wrap :deep(.el-table) {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.dict-pager {
-  flex: 0 0 auto;
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 12px;
-  border-top: 1px solid var(--el-border-color-lighter);
 }
 .dict-state {
   height: 100%;
