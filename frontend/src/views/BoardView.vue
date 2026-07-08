@@ -15,6 +15,7 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
+import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { downloadCsv } from '@/utils/csv'
 import { ElMessage } from 'element-plus'
@@ -89,20 +90,6 @@ function profileKey(p: ScoreProfileSummary): string {
 }
 const curProfile = computed(() => profiles.value.find((p) => profileKey(p) === profileRef.value))
 const cacheStatus = ref('')
-function sourceLabel(p: ScoreProfileSummary): string {
-  if (p.is_preset || p.source === 'preset') return '系统内置'
-  if (p.source === 'mine') return '我的'
-  if (p.source === 'tenant') return '租户公开'
-  if (p.source === 'public') return '全体公开'
-  return p.visibility || ''
-}
-function sourceTagType(p: ScoreProfileSummary): 'primary' | 'success' | 'warning' | 'info' {
-  if (p.is_preset || p.source === 'preset') return 'info'
-  if (p.source === 'mine') return 'primary'
-  if (p.source === 'tenant') return 'success'
-  if (p.source === 'public') return 'warning'
-  return 'info'
-}
 
 // 指标注册表：用于把指标 key 映射成中文名（分项达标分徽章）
 const registry = ref<IndicatorDef[]>([])
@@ -217,11 +204,25 @@ onMounted(async () => {
         <div class="ops">
           <span class="lbl">评分规则</span>
           <el-select v-model="profileRef" style="width: 220px" @change="load">
+            <template v-if="curProfile" #label>
+              <AssetProfileLabel
+                :name="curProfile.name"
+                :version="curProfile.version"
+                :source="curProfile.source"
+                :is-preset="curProfile.is_preset"
+                :owner-label="curProfile.owner_label"
+                :readonly="curProfile.readonly"
+              />
+            </template>
             <el-option v-for="p in profiles" :key="profileKey(p)" :value="profileKey(p)" :label="p.name">
-              <div class="profile-option">
-                <span>{{ p.name }}</span>
-                <el-tag size="small" :type="sourceTagType(p)" effect="plain">{{ sourceLabel(p) }}</el-tag>
-              </div>
+              <AssetProfileLabel
+                :name="p.name"
+                :version="p.version"
+                :source="p.source"
+                :is-preset="p.is_preset"
+                :owner-label="p.owner_label"
+                :readonly="p.readonly"
+              />
             </el-option>
           </el-select>
           <TradeDatePicker v-model="runDate" clearable />
@@ -353,12 +354,6 @@ onMounted(async () => {
 .ops .lbl {
   color: #606266;
   font-size: 13px;
-}
-.profile-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
 .score {
   color: var(--app-danger-text);

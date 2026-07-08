@@ -165,6 +165,17 @@ Key Characteristics：
 
 组件样式基于 Element Plus 和项目 token，不另建并行组件库。新增组件先判断能否复用 Element Plus、项目已有基础组件和 `frontend/src/layout/components.ts` 中的组件能力目录。
 
+### 组件化复用约束
+
+前端通用 UI、交互逻辑、状态处理、数据展示模式或参数处理逻辑，只要在代码中第二次出现，就必须优先抽取为复用单元。
+
+- UI 结构和交互表现抽 Vue 组件。
+- 组合状态、表单联动、权限判断、布局计算抽 composable。
+- 纯数据转换、格式化、字段映射、参数归一化抽 util 或 API helper。
+- 表格列、筛选项、弹窗/抽屉结构、空态/加载/错误态、操作按钮组第二次出现时，也纳入复用判断。
+- 不抽取时必须有明确理由，例如领域语义不同、生命周期明显不同、抽象后反而增加调用复杂度。
+- 复用单元形成后，后续同类实现必须消费该组件、composable 或 helper，禁止继续复制同类代码。
+
 ### 组件资产分层
 
 项目内“组件”分两层治理，不能混用：
@@ -190,7 +201,7 @@ Key Characteristics：
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用 |
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚优先复用 |
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`；默认最多展示 3 个选中标签，溢出时提前折叠；筛选下拉优先复用 |
-| `AssetVisibilityTag` / `AssetVisibilityActions` | `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetVisibilityActions.vue` | 公开资产来源、可见范围、只读状态、发布/收回、复制为我的方案和复用参数动作 | 无直接系统组件种类 | 评分、筛选、买卖、回测等公开资产页面必须复用；消费页包括 `ScreenView`、`ConfigView` 评分 tab、`ConfigView` 买卖 tab、`BacktestView` |
+| `AssetVisibilityTag` / `AssetProfileLabel` / `AssetVisibilityActions` | `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue`、`frontend/src/components/AssetVisibilityActions.vue` | 公开资产来源、可见范围、只读状态、方案名称+版本+归属标签、发布/收回、复制为我的方案和复用参数动作 | 无直接系统组件种类 | 评分、筛选、买卖、回测等公开资产页面必须复用；方案选择/列表入口统一用 `AssetProfileLabel`，消费页包括 `BoardView`、`ScreenView`、`ConfigView` 评分 tab、`ConfigView` 买卖 tab、`BacktestView` |
 | `ConfigGroupForm` | `frontend/src/components/config/ConfigGroupForm.vue` | 系统设置配置组表单 | 无直接系统组件种类 | 动态配置组字段渲染优先复用 |
 | `HelpTip` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpHint.vue` | 页面说明和短提示 | 无直接系统组件种类 | 说明性长文收进提示组件，不在页面堆长文 |
 

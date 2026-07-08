@@ -31,7 +31,7 @@
 
 回测分两条路径（API `kind` 区分，见 `backend/api/backtest.py:33`）：
 
-**① 策略回测（`kind=strategy`）**——`BacktestEngine.run`。输入：筛选方案（候选池）+ 评分方案（排序）+ 买卖方案（买/卖/兜底）+ 本金/TopN/调仓周期/行业上限/基准。流程产出净值曲线、绩效、逐笔成交（含 `exit_reason` 与部分命中时的 `exit_detail` 命中指标标签）。买卖方案给定时用 `sell_tree`/`buy_tree` 条件树判定（`engine.py:332`/`engine.py:391`），未给定走旧式（评分=固定模型、卖出=跌破 MA + 止盈/止损/到期兜底，`engine.py:336`）。同时附带同区间的分层分析（`backtest_service.py:170`）。
+**① 策略回测（`kind=strategy`）**——`BacktestEngine.run`。输入：筛选方案（候选池）+ 评分方案（排序）+ 买卖方案（买/卖/兜底）+ 本金/TopN/调仓周期/行业上限/基准。流程产出净值曲线、绩效、逐笔成交（含 `exit_reason` 与部分命中时的 `exit_detail` 命中指标标签）。当前回测页要求新运行明确选择评分方案和买卖方案；后端仍保留未传买卖方案时的旧式信号兼容能力，用于读取旧历史或内部调用。同时附带同区间的分层分析（`backtest_service.py:170`）。
 
 **② 评分验证（`kind=score_check`，旧值 `signal` 兼容）**——`SignalAnalyzer.analyze`。输入：评分方案 + 持有期（horizons）+ 涨幅阈值（thresholds）。输出分层命中率与超额命中率，纯向量化、与卖出规则解耦，不涉及撮合/资金。
 
@@ -45,7 +45,7 @@
 - `backtest_equity`（`:392`）：逐日净值（equity/cash/position_value/n_positions/drawdown/benchmark_equity）。
 - `backtest_metrics`（`:407`）：一行一 run 的绩效（total/annual return、max_drawdown、sharpe/calmar/sortino、win_rate、profit_factor 等，`backend/backtest/metrics.py`）+ 分层命中率 JSON（`hit_rate_by_grade`）。
 
-**API**（`backend/api/backtest.py`）：`POST /run`（同步执行并落库）、`POST /prepare`（查重）、`POST /robust`（稳健性，不落历史）、`GET /runs`（按 kind 和 `source=mine|tenant|public` 列可见历史）、`GET /runs/{run_ref}`（详情）、`POST /runs/{run_ref}/visibility`（owner 发布/收回，仅 `done` 可公开，且公开范围不能超过引用方案可见范围）、`DELETE /runs/{run_ref}`（owner-only）。前端 `frontend/src/views/BacktestView.vue` 按 kind 分别加载历史、不混展，跑前先 `prepare` 弹框；历史区提供“我的/租户公开/全体公开”来源筛选，公开记录只读可载入详情，可复用参数回填后由 viewer 自己重新运行。
+**API**（`backend/api/backtest.py`）：`POST /run`（同步执行并落库）、`POST /prepare`（查重）、`POST /robust`（稳健性，不落历史）、`GET /runs`（按 kind 和 `source=mine|tenant|public` 列可见历史）、`GET /runs/{run_ref}`（详情）、`POST /runs/{run_ref}/visibility`（owner 发布/收回，仅 `done` 可公开，且公开范围不能超过引用方案可见范围）、`DELETE /runs/{run_ref}`（owner-only）。前端 `frontend/src/views/BacktestView.vue` 按 kind 分别加载历史、不混展，跑前先 `prepare` 弹框；评分/选股/买卖方案下拉统一展示名称、版本和归属标签，技术 ref/id 仅作为 value 传递；新运行要求选择评分方案，策略回测还要求选择买卖方案；历史区提供“我的/租户公开/全体公开”来源筛选，选中任一历史记录都会载入详情和参数；只有非 owner 只读公开记录显示“复用参数”入口，用于明确切换为 viewer 自己的重跑并记录复用审计。
 
 ## 页面使用说明书
 

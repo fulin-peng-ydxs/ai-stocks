@@ -88,7 +88,7 @@
 
 - 本阶段不新增路由，不新增可导航页面；改造既有 `ScreenView.vue`、`ConfigView.vue`、`BacktestView.vue`、`AuditLogView.vue`。
 - `SourceTag.vue` 是配置来源标签，不是资产可见性标签；不能直接复用为 `visibility/source/readonly` 资产标签。
-- 评分规则页已有公开能力样板，但可见性 tag 与发布入口仍在页面内；阶段六新增 `AssetVisibilityTag` 和 `AssetVisibilityActions` 作为普通真实复用组件，不进入布局配置组件种类。
+- 评分规则页已有公开能力样板，但可见性 tag 与发布入口仍在页面内；阶段六新增 `AssetVisibilityTag`、`AssetProfileLabel` 和 `AssetVisibilityActions` 作为普通真实复用组件，不进入布局配置组件种类。
 - 本阶段不新增系统布局组件种类，不新增 `COMPONENT_CATALOG` 或 `COMPONENT_FIELD_DEFS` 字段；若实现中发现需要配置化组件字段，必须先回到计划更新维护矩阵。
 
 ## 3. 实施范围
@@ -244,9 +244,11 @@
   - 删除 owner-only；非 owner 403。
   - 新增 `/runs/{run_ref}/visibility`。
 - `BacktestView.vue`：
+  - 评分/选股/买卖方案下拉统一展示名称、版本和来源/只读标签，技术 `profile_ref`/旧 id 仅作为选项 value 传递。
+  - 新运行要求选择评分方案；策略回测还要求选择买卖方案，不再在页面提供“旧固定模型”或手填卖出规则入口。
   - 历史回测下拉展示来源标签，并提供“我的 / 租户公开 / 全体公开”筛选。
   - 公开记录详情只读，删除按钮隐藏或禁用。
-  - 提供“复用参数”动作，将 run.params 回填到当前表单，用户点击运行后生成自己的记录。
+  - 选中历史记录会载入详情并同步表单参数；“复用参数”动作仅对非 owner 只读公开记录显示，用于明确切换为 viewer 自己的重跑并记录复用审计。
 
 ### 4.9 权限与审计闭环
 
@@ -272,21 +274,22 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | access token 过期后静默续期 | R22 | 用户长时间停留后继续操作，不被第一次 401 直接踢回登录 | `client.ts` 响应拦截单飞 refresh，成功后重放原请求 | `client.ts`、`authToken.ts`、`auth.ts` | `/api/auth/refresh` | refresh 加载不做整页遮罩；失败沿用登录态失效处理 | T2 |
 | 审计详情字段变更表 | R24 | 抽屉顺序为执行/资源信息 -> 字段变更 -> 错误摘要 -> 事件上下文 | `AuditLogView.vue` 详情抽屉新增字段变更 section | `AuditLogView.vue` | `GET /api/audit/logs/{id}` 返回 `changes` | loading 沿用详情加载；空态“无字段级变更”；长值换行 | T10 |
-| 筛选方案公开状态展示 | R28-8 | 方案下拉/编辑区显示来源、公开范围、只读 | 列表返回 visible profiles，页面使用资产标签组件展示 | `ScreenView.vue`、`AssetVisibilityTag` | `GET /api/profiles` | 列表加载失败保留错误提示；无公开资产时仅显示我的方案或空态 | T6,T9 |
+| 筛选方案公开状态展示 | R28-8 | 方案下拉/编辑区显示来源、公开范围、只读 | 列表返回 visible profiles，页面使用资产标签组件展示 | `ScreenView.vue`、`AssetProfileLabel`、`AssetVisibilityTag` | `GET /api/profiles` | 列表加载失败保留错误提示；无公开资产时仅显示我的方案或空态 | T6,T9 |
 | 筛选方案发布/收回 | R28-8 | owner 可设置私有/租户公开/全体公开 | 发布下拉走权限码，接口 owner-only | `ScreenView.vue`、`AssetVisibilityActions` | `POST /api/profiles/{ref}/visibility` | 无 publish 权限不渲染对应命令；保存中禁用重复点击 | T6,T9 |
 | 筛选公开方案只读与复制 | R28-8 | 非 owner 只读，可复制为我的 private | readonly 禁编辑，复制按钮使用 `screen-profile:save` | `ScreenView.vue` | `POST /api/profiles/{ref}/copy` | 复制失败展示接口错误；复制成功选中新副本 | T6,T9 |
-| 买卖方案公开状态展示 | R28-9 | 买卖指标页与评分页保持同口径公开标签 | 买卖 tab 接入 visible list/detail/version | `ConfigView.vue`、`AssetVisibilityTag` | `GET /api/trade-profiles` | 加载/错误沿用配置页模式；无公开资产时显示当前空态 | T7,T9 |
+| 买卖方案公开状态展示 | R28-9 | 买卖指标页与评分页保持同口径公开标签 | 买卖 tab 接入 visible list/detail/version | `ConfigView.vue`、`AssetProfileLabel`、`AssetVisibilityTag` | `GET /api/trade-profiles` | 加载/错误沿用配置页模式；无公开资产时显示当前空态 | T7,T9 |
 | 买卖方案发布/复制/只读 | R28-9 | owner 发布，viewer 复制后编辑 | 发布下拉、readonly 禁编辑、复制按钮权限为 `trade-profile:save` | `ConfigView.vue`、`AssetVisibilityActions` | visibility/copy 接口 | 无权限隐藏；非 owner 保存/删除后端仍 403 | T7,T9 |
+| 方案选择器/列表统一标签 | R28-8/R28-9/R28-10 | 评分/筛选/买卖方案入口均显示名称、版本和归属标签，不暴露技术 ref/id | `BoardView`、`ScreenView`、`ConfigView` 评分/买卖列表、`BacktestView` 三类方案下拉均使用 `AssetProfileLabel`；评分/买卖方案为新运行必选 | `AssetProfileLabel`、`BoardView.vue`、`ScreenView.vue`、`ConfigView.vue`、`BacktestView.vue` | `GET /api/board/profiles`、`GET /api/score-profiles`、`GET /api/profiles`、`GET /api/trade-profiles` | 无可用方案时显示空列表文案；运行时缺评分/买卖方案直接提示 | T8,T9 |
 | 回测历史公开记录展示 | R28-10 | 历史回测可看到我的、租户公开、全体公开 | run 列表返回 `run_ref/source/readonly/visibility/owner_label` | `BacktestView.vue`、`AssetVisibilityTag` | `GET /api/backtest/runs` | loading/error 沿用历史列表；无公开记录显示“无公开记录” | T8,T9 |
 | 回测历史来源筛选 | E2 | 用户可在我的/租户公开/全体公开之间筛选 | 列表筛选控件传 `source` 或前端按返回 source 过滤 | `BacktestView.vue` | `GET /api/backtest/runs?source=` | 筛选后为空显示对应空态，不影响运行表单 | T8,T9 |
 | 回测记录发布/收回 | R28-10 | owner 可公开已完成记录，非 owner 只读 | 详情/历史工具区接入发布下拉 | `BacktestView.vue`、`AssetVisibilityActions` | `POST /api/backtest/runs/{run_ref}/visibility` | running/failed 禁止公开并提示；无权限隐藏 | T8,T9 |
-| 公开回测复用参数重跑 | R28-10 | viewer 不复制结果，只把参数回填到表单再运行 | “复用参数”从 run params 回填，运行仍走当前用户 | `BacktestView.vue` | `GET /api/backtest/runs/{run_ref}`、`POST /api/backtest/run` | 回填失败提示；运行权限缺失时按钮隐藏或禁用 | T8,T9 |
+| 公开回测复用参数重跑 | R28-10 | viewer 不复制结果，只把参数回填到表单再运行 | 选中历史记录会载入详情和参数；“复用参数”仅对非 owner 只读公开记录显示，运行仍走当前用户 | `BacktestView.vue` | `GET /api/backtest/runs/{run_ref}`、`POST /api/backtest/run` | 回填失败提示；运行权限缺失时按钮隐藏或禁用；我的历史记录不展示复用入口 | T8,T9 |
 
 ### 4.11 组件资产闭环表
 
 | 页面/区域 | 运行时复用组件 | 布局或配置组件种类 | 组件配置字段/页面注册 | 设计规范或组件清单更新 | 真实消费与验证 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 评分/筛选/买卖/回测公开状态标签 | 新增普通真实组件 `AssetVisibilityTag.vue` | 不涉及系统组件种类 | 不新增配置字段；不改 pageRegistry | 已补 `DESIGN.md` 真实复用组件清单 | `ConfigView.vue` 评分页回迁、`ScreenView.vue`、`ConfigView.vue` 买卖 tab、`BacktestView.vue` 消费；前端测试和 build 验证 | T9,T11,T12 |
+| 评分/筛选/买卖/回测公开状态标签 | 新增普通真实组件 `AssetVisibilityTag.vue` 与方案展示组件 `AssetProfileLabel.vue` | 不涉及系统组件种类 | 不新增配置字段；不改 pageRegistry | 已补 `DESIGN.md` 真实复用组件清单 | `BoardView.vue`、`ScreenView.vue`、`ConfigView.vue` 评分页、`ConfigView.vue` 买卖 tab、`BacktestView.vue` 消费；前端测试和 build 验证 | T9,T11,T12 |
 | 方案/回测发布与复制动作 | 新增普通真实组件 `AssetVisibilityActions.vue`，通过 props 控制权限、readonly、loading 和可用命令 | 不涉及系统组件种类 | 不新增配置字段；不改 pageRegistry | 已补 `DESIGN.md` 真实复用组件清单 | 三类 R28 资产接入；评分页可在不改变契约前提下回迁；用权限态测试验证 | T9,T11,T12 |
 | 审计详情字段变更 | 复用 Element Plus 表格/描述组件，不新增真实复用组件 | 不涉及 | 不新增配置字段；不改 pageRegistry | 不需要新增组件清单 | `AuditLogView.vue` 详情抽屉真实消费；长值与空态验证 | T10,T11 |
 | 页面布局 | 复用既有页面布局和 `LayoutHost` 接入状态 | 不新增布局原型 | 不新增页面注册；既有页面继续使用原 pageKey | 不更新 page-registry，除非实现中实际新增页面或布局旋钮 | 三档视口验证无溢出；不新增 `vh` 硬编码 | T9,T10,T11 |
@@ -326,14 +329,14 @@
 | 类型 | 字段 | 层级 | 落点 | 说明 |
 | --- | --- | --- | --- | --- |
 | 布局旋钮 | 无新增 | - | - | 本阶段不新增布局设置 |
-| 组件设置 | 无新增 | - | - | `AssetVisibilityTag/Actions` 是普通真实组件，不进入配置组件目录 |
+| 组件设置 | 无新增 | - | - | `AssetVisibilityTag/ProfileLabel/Actions` 是普通真实组件，不进入配置组件目录 |
 | 页面记忆 | 回测历史来源筛选 | 页面业务态 | `BacktestView.vue` 当前会话或既有 page settings 能力 | 不新增后端配置字段；实现时若要持久化必须更新计划 |
 
 #### 复用与新增判断
 
 - 复用已有布局：复用四个既有页面布局和 Element Plus 组件。
 - 复用已有组件：可复用按钮、下拉、标签和抽屉基础组件；不复用 `SourceTag.vue` 作为资产标签。
-- 新增真实组件：新增 `AssetVisibilityTag.vue` 与 `AssetVisibilityActions.vue`。
+- 新增真实组件：新增 `AssetVisibilityTag.vue`、`AssetProfileLabel.vue` 与 `AssetVisibilityActions.vue`。
 - 真实组件是否进入 `DESIGN.md` 清单：是。
 - 是否关联系统组件种类：否。
 - 是否新增组件种类：否。
@@ -348,7 +351,7 @@
 - componentSchemas：不涉及。
 - 后端 layout_config 字段规则：不涉及。
 - componentPreview：不涉及。
-- DESIGN.md 真实复用组件清单：新增资产可见性标签和动作组件。
+- DESIGN.md 真实复用组件清单：新增资产可见性标签、方案展示标签和动作组件。
 - DESIGN.md `page-registry` 区块：不更新，除非实际新增页面。
 - RBAC 菜单/功能点：同步 `_SEED_RESOURCES`、`BUSINESS_RESOURCE_CODES`、默认授权、接口守卫、`v-permission` 和权限扫描测试。
 - 测试：组件消费页测试、权限态测试、`npm run build`、三档视口验证。
@@ -371,7 +374,7 @@
 | 必须实现 | R28-9 | 买卖方案公开 | `trade_profile` visible + API + ConfigView trade 接入 | T5,T7,T9,T11 | 已完成 | 一致 | T5/T7/T9 已完成业务与 UI 接入，T11 后端/前端/页面收口验证通过 |
 | 必须实现 | R28-10 | 回测记录公开 | `backtest_run` visible + API + BacktestView 接入 | T5,T8,T9,T11 | 已完成 | 一致 | T5/T8/T9 已完成业务与 UI 接入，T11 后端/前端/页面收口验证通过 |
 | 必须实现 | R20/R21 延续 | 权限/按钮/接口闭环 | 新资源码、默认授权、扫描和页面权限测试 | T1,T11,T12 | 已完成 | 一致 | T1 已完成 DDL/资源码/默认授权规划与测试，T11 已完成后端/前端/页面权限收口验证；T12 已完成需求/README/架构文档回写 |
-| 可选增强 | E1 | 公开资产来源/只读/范围标签统一 | 新增 `AssetVisibilityTag` 并接入三类 R28 资产和评分页回迁 | T9,T11,T12 | 已完成 | 一致 | T9 已完成真实组件和四页消费，T11 已完成测试和页面抽样；T12 已回写 DESIGN |
+| 可选增强 | E1 | 公开资产来源/只读/范围标签统一 | 新增 `AssetVisibilityTag`、`AssetProfileLabel` 并接入三类 R28 资产、评分页和榜单页回迁 | T9,T11,T12 | 已完成 | 一致 | T9 已完成真实组件和五页消费，T11 已完成测试和页面抽样；T12 已回写 DESIGN |
 | 可选增强 | E2 | 回测历史来源筛选 | 回测历史增加“我的 / 租户公开 / 全体公开”筛选 | T8,T9,T11 | 已完成 | 一致 | T8/T9 已完成历史区域来源筛选、空态和统一复用动作，T11 收口测试通过 |
 | 可选增强 | E3 | 审计摘要展示清理任务最近执行结果 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 会改变审计页摘要信息架构，后续如需要先补原型 |
 
@@ -552,13 +555,13 @@
   - 列表和详情支持 visible run；从表读取使用 run 的真实 owner。
   - 新增公开/收回接口，owner-only。
   - 删除保持 owner-only。
-  - 前端历史回测下拉展示来源；只读公开记录隐藏删除；增加来源筛选和“复用参数”。
+  - 前端方案下拉统一展示归属标签；历史回测下拉展示来源；只读公开记录隐藏删除；增加来源筛选和“复用参数”。
 - 产出：回测记录 visible API、publish 接口、run_ref、来源筛选、复用参数前端动作。
 - 影响范围：回测历史列表、回测详情、回测从表读取、回测权限。
 - 边界与异常：默认仅允许 `done` 记录公开；viewer 不能删除或覆盖 owner 记录；从表查询必须带 run 真实归属。
 - 验证方式：viewer 能查看公开回测详情但不能删除；source 筛选空态正确；复用参数后运行生成 viewer 自己的记录。
 - 完成标准：同租户/全体公开回测可读，删除和覆盖仍限 owner。
-- 实际落地情况：已完成；`backend/services/backtest_service.py` 已接入 T5 通用 `asset_visibility` helper，回测历史 `list_runs/get_run/delete_run` 均支持 opaque `run_ref` 和 visible 规则，列表返回 `run_ref/source/readonly/visibility/owner_label`，详情从 `backtest_metrics/equity/trade` 按 run 真实 `tenant_id + owner_user_id` 读取，非 owner 删除公开记录返回 403；新增 `set_run_visibility()`，仅 owner 可发布/收回，且仅 `done` 记录允许公开；发布到租户时校验回测参数引用的筛选/评分/买卖方案在同租户可见或全体公开，发布到全体时校验依赖方案也为全体公开，并把历史 params 与 `backtest_run` 三类 profile 列规范化为真实 owner 的 opaque `profile_ref`，避免 viewer 同名私有方案导致复用跑偏；`source_run_ref` 进入回测参数留痕但不参与签名，发布到租户/全体时会从公开 params 清除，避免跨租户或不可见 viewer 从公开详情拿到来源 run 标识；公开回测复用参数重跑写入当前 viewer 自己的 `backtest_run`，并记录 `asset_reuse` 审计。`backend/api/backtest.py` 已新增 `POST /api/backtest/runs/{run_id}/visibility`、`source` 查询参数、`source_run_ref` 入参和发布权限校验，发布/收回写入 `visibility` 字段级审计，删除接口补只读 403。`frontend/src/api/backtest.ts`、`frontend/src/views/BacktestView.vue` 已接入来源筛选、公开范围标签/下拉、公开记录只读删除隐藏、无公开记录空态和“复用参数”回填动作，复用后下一次运行会携带 `source_run_ref` 用于后端审计。验证：`python -m pytest backend/tests/test_stage6_backtest_visibility.py -q` 通过，覆盖无 public 权限拒绝、failed 记录禁止公开、同租户 viewer 来源筛选可见、跨租户 tenant 不可见、子表按真实 owner 读取、非 owner 删除/发布 403、viewer 复用公开回测参数后生成自己记录并写入 `asset_reuse` 审计、legacy id 发布写回 owner `profile_ref`、viewer 存在同名私有筛选方案时仍解析到 owner 公开依赖、公开发布清除 `source_run_ref` 且跨租户 viewer 详情不含不可见来源 ref；回归 `python -m pytest backend/tests/test_stage6_trade_profile_visibility.py backend/tests/test_stage6_asset_visibility.py -q` 通过（11 passed）；P1/P2 整改复测覆盖旧 id 私有依赖禁止发布、依赖公开后允许租户发布且写回 opaque ref、全体发布必须依赖全体公开，以及无 auth context 时引擎按显式 tenant/owner 解析公开评分方案；`cd frontend && npm run build` 通过。页面验证：5181 预览端口用 `debug_backtest_view` 验证 `/backtest` 历史来源筛选、租户公开记录选项、选中公开记录后删除按钮隐藏、复用参数按钮可见、结果载入正常；本轮补验 `debug_normal` 在 `/backtest` 的 `390x844` 与 `1440x900` 视口，`documentElement.scrollWidth === innerWidth` 且无溢出元素。
+- 实际落地情况：已完成；`backend/services/backtest_service.py` 已接入 T5 通用 `asset_visibility` helper，回测历史 `list_runs/get_run/delete_run` 均支持 opaque `run_ref` 和 visible 规则，列表返回 `run_ref/source/readonly/visibility/owner_label`，详情从 `backtest_metrics/equity/trade` 按 run 真实 `tenant_id + owner_user_id` 读取，非 owner 删除公开记录返回 403；新增 `set_run_visibility()`，仅 owner 可发布/收回，且仅 `done` 记录允许公开；发布到租户时校验回测参数引用的筛选/评分/买卖方案在同租户可见或全体公开，发布到全体时校验依赖方案也为全体公开，并把历史 params 与 `backtest_run` 三类 profile 列规范化为真实 owner 的 opaque `profile_ref`，避免 viewer 同名私有方案导致复用跑偏；`source_run_ref` 进入回测参数留痕但不参与签名，发布到租户/全体时会从公开 params 清除，避免跨租户或不可见 viewer 从公开详情拿到来源 run 标识；公开回测复用参数重跑写入当前 viewer 自己的 `backtest_run`，并记录 `asset_reuse` 审计。`backend/api/backtest.py` 已新增 `POST /api/backtest/runs/{run_id}/visibility`、`source` 查询参数、`source_run_ref` 入参和发布权限校验，发布/收回写入 `visibility` 字段级审计，删除接口补只读 403。`frontend/src/api/backtest.ts`、`frontend/src/views/BacktestView.vue` 已接入评分/选股/买卖方案下拉来源标签、来源筛选、公开范围标签/下拉、公开记录只读删除隐藏、无公开记录空态和“复用参数”动作；新运行要求选择评分方案，策略回测还要求选择买卖方案，不再在页面展示旧固定模型或手填卖出规则入口；选中任一历史记录都会载入详情和参数，“复用参数”仅对非 owner 只读公开记录显示，复用后下一次运行会携带 `source_run_ref` 用于后端审计。验证：`python -m pytest backend/tests/test_stage6_backtest_visibility.py -q` 通过，覆盖无 public 权限拒绝、failed 记录禁止公开、同租户 viewer 来源筛选可见、跨租户 tenant 不可见、子表按真实 owner 读取、非 owner 删除/发布 403、viewer 复用公开回测参数后生成自己记录并写入 `asset_reuse` 审计、legacy id 发布写回 owner `profile_ref`、viewer 存在同名私有筛选方案时仍解析到 owner 公开依赖、公开发布清除 `source_run_ref` 且跨租户 viewer 详情不含不可见来源 ref；回归 `python -m pytest backend/tests/test_stage6_trade_profile_visibility.py backend/tests/test_stage6_asset_visibility.py -q` 通过（11 passed）；P1/P2 整改复测覆盖旧 id 私有依赖禁止发布、依赖公开后允许租户发布且写回 opaque ref、全体发布必须依赖全体公开，以及无 auth context 时引擎按显式 tenant/owner 解析公开评分方案；`cd frontend && npm run build` 通过。页面验证：5181 预览端口用 `debug_backtest_view` 验证 `/backtest` 历史来源筛选、租户公开记录选项、选中公开记录后删除按钮隐藏、复用参数按钮可见、结果载入正常；本轮补验 `debug_normal` 在 `/backtest` 的 `390x844` 与 `1440x900` 视口，`documentElement.scrollWidth === innerWidth` 且无溢出元素。
 
 ### 6.9 任务 T9：前端公开资产 UI 统一
 
@@ -566,6 +569,7 @@
 - 依赖：T6,T7,T8
 - 涉及文件/模块：
   - `frontend/src/components/AssetVisibilityTag.vue`
+  - `frontend/src/components/AssetProfileLabel.vue`
   - `frontend/src/components/AssetVisibilityActions.vue`
   - `frontend/src/views/ScreenView.vue`
   - `frontend/src/views/ConfigView.vue`
@@ -574,16 +578,17 @@
 - 目标：三个页面公开状态展示一致，按钮不溢出，权限态明确。
 - 操作：
   - 新增 `AssetVisibilityTag` 展示 source/visibility/owner_label/readonly。
+  - 新增 `AssetProfileLabel` 统一展示方案名称、版本和归属标签。
   - 新增 `AssetVisibilityActions` 统一发布、收回、复制/复用入口的权限态和 loading 态。
   - 将评分页内联 visibility tag 回迁到组件，作为真实样板回归。
   - 公开下拉和复制按钮都走 `v-permission`；筛选复制为 `screen-profile:save`，买卖复制为 `trade-profile:save`，回测复用为 `backtest:run`。
   - 保持现有页面布局，不新增整页说明文字。
-- 产出：两个前端真实复用组件、四个页面消费点、权限态和空态实现。
-- 影响范围：评分规则、筛选方案、买卖指标、策略回测页面。
+- 产出：三个前端真实复用组件、五个页面消费点、权限态和空态实现。
+- 影响范围：每日榜单、评分规则、筛选方案、买卖指标、策略回测页面。
 - 边界与异常：组件不进入系统组件种类；无公开资产空态不能叠加表格空态；长 owner_label 不撑破按钮或列表。
 - 验证方式：组件测试或页面测试覆盖 mine/tenant/public/readonly；三档视口无按钮文本溢出，无整页横向滚动。
 - 完成标准：三类 R28 资产和评分页公开 UI 口径一致。
-- 实际落地情况：已完成；新增 `frontend/src/components/AssetVisibilityTag.vue` 与 `frontend/src/components/AssetVisibilityActions.vue`，统一 source/visibility/readonly 展示、发布下拉、复制为我的方案和复用参数按钮的权限态。`frontend/src/views/ScreenView.vue` 已将方案下拉来源标签、公开范围标签、只读标签和复制按钮回迁到组件；`frontend/src/views/ConfigView.vue` 已将评分方案与买卖方案列表来源标签、编辑头部发布/只读/复制动作回迁到组件；`frontend/src/views/BacktestView.vue` 已将历史来源标签、发布/只读和复用参数动作回迁到组件，其中复用参数统一走 `backtest:run` 权限。验证：`cd frontend && npm run test -- src/components/__tests__/AssetVisibility.spec.ts` 通过（4 tests），覆盖 source/owner/readonly 标签、公开范围标签、复制/复用权限态；`cd frontend && npm run build` 通过。页面验证：5181 预览端口用 `debug_tenant_admin` 在 `1100x620 / 1366x768 / 1440x900` 抽样验证 `/system/config/score`、`/backtest` 统一组件可见且无新增横向溢出；临时创建 `t9_screen_codex`、`t9_trade_codex` 后补验 `/screen` 方案下拉和 `/system/config/trade` 买卖方案列表/编辑头部组件消费，确认无横向溢出，临时数据已清理。
+- 实际落地情况：已完成；新增 `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue` 与 `frontend/src/components/AssetVisibilityActions.vue`，统一 source/visibility/readonly 展示、方案名称+版本+归属标签、发布下拉、复制为我的方案和复用参数按钮的权限态。`frontend/src/views/BoardView.vue` 评分方案下拉、`frontend/src/views/ScreenView.vue` 方案下拉、`frontend/src/views/ConfigView.vue` 评分/买卖方案列表、`frontend/src/views/BacktestView.vue` 评分/选股/买卖方案下拉均已回迁 `AssetProfileLabel`；`ScreenView.vue`、`ConfigView.vue` 和 `BacktestView.vue` 的公开范围、发布/只读/复制/复用动作继续复用 `AssetVisibilityActions`，其中复用参数统一走 `backtest:run` 权限。验证：`cd frontend && npm run test -- src/components/__tests__/AssetVisibility.spec.ts` 通过，覆盖 source/owner/readonly 标签、方案名称+版本+归属标签、公开范围标签、复制/复用权限态；`cd frontend && npm run build` 通过。页面验证：5181 预览端口用 `debug_tenant_admin` 在 `1100x620 / 1366x768 / 1440x900` 抽样验证 `/system/config/score`、`/backtest` 统一组件可见且无新增横向溢出；临时创建 `t9_screen_codex`、`t9_trade_codex` 后补验 `/screen` 方案下拉和 `/system/config/trade` 买卖方案列表/编辑头部组件消费，确认无横向溢出，临时数据已清理。
 
 ### 6.10 任务 T10：审计页字段变更展示
 
@@ -639,14 +644,14 @@
 - 目标：阶段六事实源回写，避免后续按旧 R28 待定状态开发。
 - 操作：
   - 回写 requirement 阶段六状态、R28 覆盖范围和未覆盖范围。
-  - 登记 `AssetVisibilityTag/Actions` 到 DESIGN 真实复用组件清单。
+  - 登记 `AssetVisibilityTag/ProfileLabel/Actions` 到 DESIGN 真实复用组件清单。
   - 更新计划实际落地情况和验证结果。
 - 产出：需求状态回写、设计组件清单更新、计划进度和验证结果更新。
 - 影响范围：AI 协作事实源、设计规范、阶段六交付记录。
 - 边界与异常：只沉淀真实落地事实，不提前把未实现项写成已完成；如未更新 README 需说明原因。
 - 验证方式：`rg` 检查 R28 待定旧口径是否残留；DESIGN 组件清单存在真实消费页面；计划 §5/§6 状态一致。
 - 完成标准：需求、计划、代码事实和测试基线一致。
-- 实际落地情况：已完成；`agent-works/multi-tenant-rbac/requirement.md` 已把 R22/R24/R28 和阶段六状态更新为已完成，并明确 R28 已覆盖评分、筛选、买卖和回测，其他资产公开仍独立评估；`DESIGN.md` 已将 `AssetVisibilityTag/Actions` 登记到真实复用组件清单，说明不新增系统组件种类或组件配置字段；`README.md` 已把多租户公开资产能力从“评分方案可见性”扩展为评分/筛选/买卖/回测资产可见性，并更新策略筛选、回测验证、配置管理和文档入口说明；`agent-works/architecture/system-rbac-tenant.md`、`config-definitions.md`、`screening-and-board.md`、`backtest.md` 已同步公开资产、opaque ref、只读/复制/复用参数和真实 owner 读取口径。`CLAUDE.md` 保持不变，因为它是薄入口且已指向 AGENTS/README/architecture/DESIGN，没有承载本阶段会漂移的业务规则。验证：`rg` 已检查阶段六状态、R28 接入状态、DESIGN 组件登记和公开资产风险表等口径并完成清理；`git diff --check` 通过。
+- 实际落地情况：已完成；`agent-works/multi-tenant-rbac/requirement.md` 已把 R22/R24/R28 和阶段六状态更新为已完成，并明确 R28 已覆盖评分、筛选、买卖和回测，其他资产公开仍独立评估；`DESIGN.md` 已将 `AssetVisibilityTag/ProfileLabel/Actions` 登记到真实复用组件清单，说明不新增系统组件种类或组件配置字段；`README.md` 已把多租户公开资产能力从“评分方案可见性”扩展为评分/筛选/买卖/回测资产可见性，并更新策略筛选、回测验证、配置管理和文档入口说明；`agent-works/architecture/system-rbac-tenant.md`、`config-definitions.md`、`screening-and-board.md`、`backtest.md` 已同步公开资产、opaque ref、只读/复制/复用参数和真实 owner 读取口径。`CLAUDE.md` 保持不变，因为它是薄入口且已指向 AGENTS/README/architecture/DESIGN，没有承载本阶段会漂移的业务规则。验证：`rg` 已检查阶段六状态、R28 接入状态、DESIGN 组件登记和公开资产风险表等口径并完成清理；`git diff --check` 通过。
 
 ## 7. 数据库与 SQL 计划
 
@@ -685,8 +690,8 @@
   - 计划：AuditLogView 字段变更；ScreenView 公开筛选方案只读/复制/发布；ConfigView trade 公开买卖方案只读/复制/发布；BacktestView 公开历史只读、来源筛选、删除隐藏、复用参数。
   - 具体完成情况：T6 已在 5181 预览端口验证 `/screen` 下拉来源标签、公开范围标签、发布入口和只读复杂 AST 展示；桌面截图通过。T7 已在 5181 预览端口验证 `/system/config/trade` 买卖方案来源标签、公开范围标签、发布入口，以及 `/backtest` 买卖方案下拉可见公开方案。T8 已在 5181 预览端口用 `debug_backtest_view` 验证 `/backtest` 历史来源筛选、租户公开记录可见、选中只读公开记录后删除按钮隐藏、复用参数按钮可见、结果载入正常；截图：`screenshots/t8-backtest-history-desktop.png`、`screenshots/t8-backtest-history-readonly-selected.png`、`screenshots/t8-backtest-history-mobile.png`。T9 已在 5181 预览端口用 `debug_tenant_admin` 验证 `/system/config/score`、`/system/config/trade`、`/screen`、`/backtest` 的统一组件消费、复制/复用按钮权限态和横向溢出；临时验收数据已清理。T10 已在 5181 预览端口用 `debug_system` 验证 `/system/audit` 字段变更表、无字段级变更空态和长值换行；临时审计记录已清理。T11 在 5181 预览端口重新用 `debug_tenant_admin/debug_system` 写入临时 `t11_` 验收数据并完成交互验证：`/screen` 选中 T11 筛选方案后显示 `v1/租户公开`；`/system/config/score` 显示评分公开只读和复制入口；`/system/config/trade` 显示 T11 买卖方案 `v1/租户公开`；`/backtest` 历史区显示 T11 记录、租户公开标签、复用参数和结果载入；`/system/audit` 过滤 T11 记录后详情抽屉显示字段变更、列头、`visibility private -> tenant` 和长值换行。`1100x620 / 1366x768 / 1440x900` 抽样无新增横向溢出，临时数据已清理为 0。P2 整改后用 `debug_normal` 在 5181 预览复测 `/backtest`：`390x844` 下 `scrollWidth=390/innerWidth=390`，`1440x900` 下 `scrollWidth=1440/innerWidth=1440`，无横向溢出元素。本轮 P1 整改后用 `debug_normal` 在 5181 预览复测 `/system/config/trade`：桌面宽度和 `390x844` 下公开买卖方案、租户公开、只读、复制入口均可见，无“配置数据加载失败 / 方案不存在”，`390x844` 下 `scrollWidth=390/innerWidth=390`。
 - 组件资产闭环测试：
-  - 计划：验证 `AssetVisibilityTag/Actions` 真实消费、新增组件清单维护、评分页回迁、三类 R28 页面接入；本阶段不新增配置组件种类或字段。
-  - 具体完成情况：T9 已新增 `AssetVisibilityTag/Actions` 并接入 ScreenView、ConfigView 评分 tab、ConfigView 买卖 tab、BacktestView；`cd frontend && npm run test -- src/components/__tests__/AssetVisibility.spec.ts` 通过（4 tests），覆盖标签文案、owner/readonly 提示、复制/复用按钮权限态。T11 前端收口验证再次执行该组件测试并通过，页面抽样确认四个消费页均能渲染统一标签/动作组件。T12 已把两个组件登记到 `DESIGN.md` 真实复用组件清单；组件未进入 layout 组件种类或系统配置组件矩阵。
+  - 计划：验证 `AssetVisibilityTag/ProfileLabel/Actions` 真实消费、新增组件清单维护、评分页回迁、三类 R28 页面接入；本阶段不新增配置组件种类或字段。
+  - 具体完成情况：T9 已新增 `AssetVisibilityTag/ProfileLabel/Actions` 并接入 BoardView、ScreenView、ConfigView 评分 tab、ConfigView 买卖 tab、BacktestView；`cd frontend && npm run test -- src/components/__tests__/AssetVisibility.spec.ts` 通过，覆盖标签文案、方案名称+版本+归属标签、owner/readonly 提示、复制/复用按钮权限态。T11 前端收口验证再次执行该组件测试并通过，页面抽样确认消费页均能渲染统一标签/动作组件。T12 已把三个组件登记到 `DESIGN.md` 真实复用组件清单；组件未进入 layout 组件种类或系统配置组件矩阵。
 - 权限与数据范围测试：
   - 计划：publish-tenant 默认 tenant_admin/system；publish-public 默认 system；无角色用户 fail-closed；跨租户 tenant 不可见，public 可见，private 不可见；非 owner 保存、删除、发布均 403。
 - 具体完成情况：T1 已验证资源码和默认授权规划：`python -m pytest backend/tests/test_rbac_schema.py::test_stage6_asset_visibility_schema_and_resources backend/tests/test_rbac_schema.py::test_stage6_asset_publish_grants_backfilled_for_tenant_admin backend/tests/test_rbac_schema.py::test_tenant_admin_has_tenant_publish_by_default backend/tests/test_rbac_schema.py::test_normal_role_business_only -q` 通过（4 passed）。T6 已验证筛选方案跨租户 tenant 不可见、同租户 tenant 可见、非 owner 删除/发布 403、复制后归 viewer private、回测链路可解析公开筛选 ref。T7 已验证买卖方案跨租户 tenant 不可见、同租户 tenant 可见、非 owner 删除/发布 403、复制后归 viewer private。T8 已验证回测记录跨租户 tenant 不可见、同租户 tenant 可见、非 owner 删除/发布 403、无 public publish 权限拒绝、failed 记录禁止公开、公开回测复用参数后生成 viewer 自己记录。P0 整改已验证仅有 view 权限、无 publish 权限的用户提交 `tenant ` 或 `Tenant` 会按规范化后的 `tenant` 进入发布权限判断并返回 403，非法 `tenantx` 返回 422，数据库仍保持 `private`。

@@ -67,7 +67,7 @@ export function computeBoard(
   top = 50,
   scoreProfileRefOrId?: string,
 ): Promise<{ date: string; top: number; list: BoardRow[] }> {
-  // 评分方案引用：与回测所选评分方案一致才能让名次对上 entry_rank（空=旧固定模型）
+  // 评分方案引用：与回测所选评分方案一致才能让名次对上 entry_rank。
   return http.get('/board/compute', {
     params: { date, top, ...(scoreProfileRefOrId ? { score_profile_id: scoreProfileRefOrId } : {}) },
   })

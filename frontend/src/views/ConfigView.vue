@@ -24,7 +24,7 @@ import {
   type ScoreRunRow,
 } from '@/api/scoreProfile'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
-import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
+import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -978,11 +978,13 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 :class="{ active: (p.profile_ref || p.id) === curRef }"
                 @click="selectProfile(p.profile_ref || p.id)"
               >
-                <span>{{ p.name }}</span>
-                <AssetVisibilityTag
-                  mode="source"
+                <AssetProfileLabel
+                  :name="p.name"
+                  :version="p.version"
                   :source="p.is_preset ? 'preset' : p.source"
+                  :is-preset="p.is_preset"
                   :owner-label="p.owner_label"
+                  :readonly="p.readonly"
                 />
               </li>
             </ul>
@@ -1303,11 +1305,13 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <ul>
               <li v-for="p in tProfiles" :key="tradeProfileKey(p)" :class="{ active: tradeProfileKey(p) === tCurRef }"
                   @click="selectTradeProfile(tradeProfileKey(p))">
-                <span>{{ p.name }}</span>
-                <AssetVisibilityTag
-                  mode="source"
+                <AssetProfileLabel
+                  :name="p.name"
+                  :version="p.version"
                   :source="p.is_preset ? 'preset' : p.source"
+                  :is-preset="p.is_preset"
                   :owner-label="p.owner_label"
+                  :readonly="p.readonly"
                 />
               </li>
             </ul>

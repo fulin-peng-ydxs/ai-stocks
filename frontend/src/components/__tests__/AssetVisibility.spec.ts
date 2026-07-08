@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
+import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
 import { permission } from '@/directives/permission'
 import { useAuthStore } from '@/stores/auth'
@@ -45,6 +46,26 @@ describe('AssetVisibilityTag', () => {
     })
     expect(w.text()).toContain('全体公开')
     expect(w.text()).toContain('只读')
+  })
+})
+
+describe('AssetProfileLabel', () => {
+  it('统一展示方案名称、版本和归属标签', () => {
+    const w = mount(AssetProfileLabel, {
+      props: {
+        name: '趋势评分',
+        version: 3,
+        source: 'tenant',
+        ownerLabel: 'owner_a',
+        readonly: true,
+      },
+      global: { plugins: [ElementPlus] },
+    })
+    expect(w.text()).toContain('趋势评分')
+    expect(w.text()).toContain('v3')
+    expect(w.text()).toContain('租户公开')
+    expect(w.find('.asset-visibility-tag').attributes('title')).toContain('owner_a')
+    expect(w.find('.asset-visibility-tag').attributes('title')).toContain('只读')
   })
 })
 

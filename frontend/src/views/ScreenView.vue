@@ -18,7 +18,7 @@ import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
-import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
+import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -243,6 +243,9 @@ const canEditProfileVisibility = computed(() =>
 function profileKey(p: Profile): string {
   return p.profile_ref || p.id
 }
+const selectedLoadProfile = computed(() =>
+  profiles.value.find((p) => profileKey(p) === loadId.value || p.id === loadId.value),
+)
 async function loadProfiles() {
   // 次级加载按自身 view 码优雅降级：无 screen-profile:view 的部分授权角色（如只授 screen:run）
   // 不拉方案列表、也不因此 403 卡住页面主体（筛选构建/运行仍可用）。默认业务角色含该码不受影响。
@@ -449,14 +452,26 @@ onMounted(async () => {
       <div class="load-row">
         <span class="hint">载入方案</span>
         <el-select v-model="loadId" placeholder="选系统内置/我的方案（可选）" clearable filterable style="width: 280px">
-          <el-option v-for="p in profiles" :key="profileKey(p)" :label="p.name" :value="profileKey(p)">
-            <span>{{ p.name }}</span>
-            <AssetVisibilityTag
-              mode="source"
-              :source="p.is_preset ? 'preset' : p.source"
-              :owner-label="p.owner_label"
+          <template v-if="selectedLoadProfile" #label>
+            <AssetProfileLabel
+              :name="selectedLoadProfile.name"
+              :version="selectedLoadProfile.version"
+              :source="selectedLoadProfile.is_preset ? 'preset' : selectedLoadProfile.source"
+              :is-preset="selectedLoadProfile.is_preset"
+              :owner-label="selectedLoadProfile.owner_label"
+              :readonly="selectedLoadProfile.readonly"
               label-mine="我的方案"
-              style="margin-left: 8px"
+            />
+          </template>
+          <el-option v-for="p in profiles" :key="profileKey(p)" :label="p.name" :value="profileKey(p)">
+            <AssetProfileLabel
+              :name="p.name"
+              :version="p.version"
+              :source="p.is_preset ? 'preset' : p.source"
+              :is-preset="p.is_preset"
+              :owner-label="p.owner_label"
+              :readonly="p.readonly"
+              label-mine="我的方案"
             />
           </el-option>
         </el-select>

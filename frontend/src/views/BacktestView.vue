@@ -22,6 +22,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
+import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTradeDates } from '@/composables/useTradeDates'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -93,9 +94,9 @@ function onTradeSortChange({ prop }: { prop: string; order: string | null }): vo
 const kind = ref<'strategy' | 'score_check'>(settings.kind)
 const dateStart = ref('2024-01-01')
 const dateEnd = ref('2024-12-31')
-const profileId = ref<string>('')      // 筛选方案（候选池），空=全市场
-const scoreProfileId = ref<string>('') // 评分方案（排序/验证），空=旧固定模型
-const tradeProfileId = ref<string>('') // 买卖方案（买/卖/兜底），空=旧式跌破MA+止盈止损
+const profileId = ref<string>('')      // 筛选方案（候选池），空=全市场候选
+const scoreProfileId = ref<string>('') // 评分方案（排序/验证）
+const tradeProfileId = ref<string>('') // 买卖方案（买/卖/兜底）
 const topN = ref(Number(settings.topN))
 const initCap = ref(Number(settings.initCap))
 const industryOn = ref(false)
@@ -103,7 +104,6 @@ const industryPct = ref(20)            // 单行业持仓上限 %
 const profiles = ref<Profile[]>([])
 const scoreProfiles = ref<ScoreProfileSummary[]>([])
 const tradeProfiles = ref<TradeProfileSummary[]>([])
-const useTradeProfile = computed(() => !!tradeProfileId.value)
 const nextRunSourceRef = ref('')
 
 function screenProfileKey(p: Profile): string {
@@ -115,6 +115,9 @@ function normalizeScreenProfileKey(value?: string | null): string {
   const matched = profiles.value.find((p) => screenProfileKey(p) === value || p.id === value)
   return matched ? screenProfileKey(matched) : value
 }
+const selectedScreenProfile = computed(() =>
+  profiles.value.find((p) => screenProfileKey(p) === profileId.value || p.id === profileId.value),
+)
 
 function scoreProfileKey(p: ScoreProfileSummary): string {
   return p.profile_ref || p.id
@@ -125,6 +128,9 @@ function normalizeScoreProfileKey(value?: string | null): string {
   const matched = scoreProfiles.value.find((p) => scoreProfileKey(p) === value || p.id === value)
   return matched ? scoreProfileKey(matched) : value
 }
+const selectedScoreProfile = computed(() =>
+  scoreProfiles.value.find((p) => scoreProfileKey(p) === scoreProfileId.value || p.id === scoreProfileId.value),
+)
 
 function tradeProfileKey(p: TradeProfileSummary): string {
   return p.profile_ref || p.id
@@ -135,20 +141,13 @@ function normalizeTradeProfileKey(value?: string | null): string {
   const matched = tradeProfiles.value.find((p) => tradeProfileKey(p) === value || p.id === value)
   return matched ? tradeProfileKey(matched) : value
 }
+const selectedTradeProfile = computed(() =>
+  tradeProfiles.value.find((p) => tradeProfileKey(p) === tradeProfileId.value || p.id === tradeProfileId.value),
+)
 
 function tradeProfileName(value: string): string {
   return tradeProfiles.value.find((p) => tradeProfileKey(p) === value || p.id === value)?.name || ''
 }
-
-// —— 卖出规则 ——（跌破均线为基准退出，止盈/止损/到期为可选叠加触发）
-const SELL_MA_OPTIONS = [5, 10, 20, 30, 60]
-const sellMa = ref(20)
-const tpOn = ref(false)
-const takeProfit = ref(30)   // %
-const slOn = ref(false)
-const stopLoss = ref(10)     // %
-const holdOn = ref(false)
-const maxHold = ref(20)      // 交易日
 
 const loading = ref(false)
 const strat = ref<StrategyResult | null>(null)
@@ -196,8 +195,7 @@ watch(historySource, () => {
 // 运行按钮状态机：dirty=true 蓝色可点；出结果/载入历史后置 false（灰、不可点）；改任一参数恢复
 const dirty = ref(true)
 watch(
-  [kind, dateStart, dateEnd, profileId, scoreProfileId, tradeProfileId, topN, initCap, sellMa,
-   tpOn, takeProfit, slOn, stopLoss, holdOn, maxHold, industryOn, industryPct],
+  [kind, dateStart, dateEnd, profileId, scoreProfileId, tradeProfileId, topN, initCap, industryOn, industryPct],
   () => { if (!loadingRun.value) dirty.value = true },
 )
 watch(() => settings.kind, (value) => { kind.value = value })
@@ -310,9 +308,7 @@ function saveParams() {
   const p = {
     kind: kind.value, dateStart: dateStart.value, dateEnd: dateEnd.value,
     profileId: profileId.value, scoreProfileId: scoreProfileId.value, tradeProfileId: tradeProfileId.value,
-    topN: topN.value, initCap: initCap.value, sellMa: sellMa.value,
-    tpOn: tpOn.value, takeProfit: takeProfit.value, slOn: slOn.value, stopLoss: stopLoss.value,
-    holdOn: holdOn.value, maxHold: maxHold.value, industryOn: industryOn.value, industryPct: industryPct.value,
+    topN: topN.value, initCap: initCap.value, industryOn: industryOn.value, industryPct: industryPct.value,
   }
   try { localStorage.setItem(PARAMS_KEY, JSON.stringify(p)) } catch { /* ignore */ }
 }
@@ -329,10 +325,6 @@ function restoreParams() {
     tradeProfileId.value = normalizeTradeProfileKey(p.tradeProfileId ?? tradeProfileId.value)
     topN.value = p.topN ?? topN.value
     initCap.value = p.initCap ?? initCap.value
-    sellMa.value = p.sellMa ?? sellMa.value
-    tpOn.value = !!p.tpOn; takeProfit.value = p.takeProfit ?? takeProfit.value
-    slOn.value = !!p.slOn; stopLoss.value = p.stopLoss ?? stopLoss.value
-    holdOn.value = !!p.holdOn; maxHold.value = p.maxHold ?? maxHold.value
     industryOn.value = !!p.industryOn; industryPct.value = p.industryPct ?? industryPct.value
   } catch { /* ignore */ }
 }
@@ -351,10 +343,6 @@ function applyRunParams(run: RunSummary) {
   tradeProfileId.value = normalizeTradeProfileKey(p.trade_profile_id)
   if (p.top_n) topN.value = p.top_n
   if (p.initial_capital) initCap.value = p.initial_capital
-  if (p.sell_ma_period) sellMa.value = p.sell_ma_period
-  tpOn.value = p.take_profit != null; if (p.take_profit != null) takeProfit.value = Math.round(p.take_profit * 100)
-  slOn.value = p.stop_loss != null; if (p.stop_loss != null) stopLoss.value = Math.round(p.stop_loss * 100)
-  holdOn.value = p.max_hold_days != null; if (p.max_hold_days != null) maxHold.value = p.max_hold_days
   industryOn.value = p.industry_max_pct != null; if (p.industry_max_pct != null) industryPct.value = Math.round(p.industry_max_pct * 100)
   return p
 }
@@ -540,17 +528,10 @@ function buildStrategyParams(): Record<string, unknown> {
   if (scoreProfileId.value) p.score_profile_id = scoreProfileId.value
   if (tradeProfileId.value) p.trade_profile_id = tradeProfileId.value
   if (industryOn.value) p.industry_max_pct = industryPct.value / 100
-  if (!useTradeProfile.value) {
-    p.sell_ma_period = sellMa.value
-    if (tpOn.value) p.take_profit = takeProfit.value / 100
-    if (slOn.value) p.stop_loss = stopLoss.value / 100
-    if (holdOn.value) p.max_hold_days = maxHold.value
-  }
   return p
 }
 const ROBUST_PARAM_OPTS = [
-  { v: 'top_n', t: '持仓数 TopN' }, { v: 'stop_loss', t: '止损 %' },
-  { v: 'take_profit', t: '止盈 %' }, { v: 'max_hold_days', t: '最大持有(交易日)' },
+  { v: 'top_n', t: '持仓数 TopN' },
   { v: 'rebalance_days', t: '调仓周期(交易日)' }, { v: 'industry_max_pct', t: '行业上限 %' },
 ]
 const robustMode = ref<'param_sweep' | 'in_out_sample'>('param_sweep')
@@ -562,12 +543,13 @@ const sweepRes = ref<ParamSweepResult | null>(null)
 const inOutRes = ref<InOutSampleResult | null>(null)
 
 function parseRobustValues(): number[] {
-  const pct = robustParam.value === 'stop_loss' || robustParam.value === 'take_profit' || robustParam.value === 'industry_max_pct'
+  const pct = robustParam.value === 'industry_max_pct'
   return robustValuesText.value.split(/[,，\s]+/).map((s) => Number(s)).filter((n) => !Number.isNaN(n))
     .map((n) => (pct ? n / 100 : n))
 }
 async function runRobustTest() {
   if (kind.value !== 'strategy') return
+  if (!validateRunSelection()) return
   robustLoading.value = true
   sweepRes.value = null; inOutRes.value = null
   try {
@@ -586,7 +568,7 @@ async function runRobustTest() {
   }
 }
 const robustIsPct = computed(() =>
-  ['stop_loss', 'take_profit', 'industry_max_pct'].includes(robustParam.value))
+  ['industry_max_pct'].includes(robustParam.value))
 function sweepValLabel(v: number): string {
   return robustIsPct.value ? (v * 100).toFixed(0) + '%' : String(v)
 }
@@ -605,19 +587,25 @@ function buildBody(): RunParams {
     })
     if (nextRunSourceRef.value) body.source_run_ref = nextRunSourceRef.value
     if (industryOn.value) body.industry_max_pct = industryPct.value / 100
-    if (!useTradeProfile.value) {
-      // 买/卖/兜底来自买卖方案时不叠加手填卖出规则；否则用手填规则
-      body.sell_ma_period = sellMa.value
-      if (tpOn.value) body.take_profit = takeProfit.value / 100
-      if (slOn.value) body.stop_loss = stopLoss.value / 100
-      if (holdOn.value) body.max_hold_days = maxHold.value
-    }
   }
   return body
 }
 
+function validateRunSelection(): boolean {
+  if (!scoreProfileId.value) {
+    ElMessage.warning('请选择评分方案')
+    return false
+  }
+  if (kind.value === 'strategy' && !tradeProfileId.value) {
+    ElMessage.warning('请选择买卖方案')
+    return false
+  }
+  return true
+}
+
 async function run() {
   if (!dateStart.value || !dateEnd.value) return ElMessage.warning('请选择回测区间')
+  if (!validateRunSelection()) return
   const body = buildBody()
   // 查重：同条件（含方案版本）已有历史记录 → 询问加载历史 / 重新回测（覆盖）
   try {
@@ -894,7 +882,7 @@ async function openTradeChart(row: TradeRow) {
             :can-publish-tenant="canPublishTenant"
             :can-publish-public="canPublishPublic"
             :saving="runVisibilitySaving"
-            :reuse-visible="true"
+            :reuse-visible="selectedRunReadonly"
             reuse-permission="backtest:run"
             :reuse-disabled="!selectedRun"
             @publish="publishRunVisibility"
@@ -922,16 +910,35 @@ async function openTradeChart(row: TradeRow) {
         <TradeDatePicker v-model="dateEnd" placeholder="结束" style="width: 160px" />
         <span class="lbl">评分方案
           <HelpTip title="评分方案" :width="340">
-            <p>策略回测里用于<b>候选超过持仓数时按分排序截断</b>；评分验证里用于<b>分档检验高分组是否更易涨</b>。留空=旧固定模型。去「配置管理 → 评分规则」定义。</p>
+            <p>策略回测里用于<b>候选超过持仓数时按分排序截断</b>；评分验证里用于<b>分档检验高分组是否更易涨</b>。去「配置管理 → 评分规则」定义。</p>
           </HelpTip>
         </span>
-        <el-select v-model="scoreProfileId" clearable placeholder="旧固定模型" style="width: 150px">
-          <el-option v-for="p in scoreProfiles" :key="scoreProfileKey(p)" :value="scoreProfileKey(p)" :label="p.name" />
+        <el-select v-model="scoreProfileId" placeholder="请选择评分方案" no-data-text="暂无可用评分方案" style="width: 190px">
+          <template v-if="selectedScoreProfile" #label>
+            <AssetProfileLabel
+              :name="selectedScoreProfile.name"
+              :version="selectedScoreProfile.version"
+              :source="selectedScoreProfile.source"
+              :is-preset="selectedScoreProfile.is_preset"
+              :owner-label="selectedScoreProfile.owner_label"
+              :readonly="selectedScoreProfile.readonly"
+            />
+          </template>
+          <el-option v-for="p in scoreProfiles" :key="scoreProfileKey(p)" :value="scoreProfileKey(p)" :label="p.name">
+            <AssetProfileLabel
+              :name="p.name"
+              :version="p.version"
+              :source="p.source"
+              :is-preset="p.is_preset"
+              :owner-label="p.owner_label"
+              :readonly="p.readonly"
+            />
+          </el-option>
         </el-select>
         <template v-if="kind === 'strategy'">
           <span class="lbl">选股方案
             <HelpTip title="选股方案 = 自定义策略入口" :width="360">
-              <p>决定<b>每天从哪些股票里挑</b>：选某方案 → 只在该方案命中的股票里按评分排序取前 N 只；留空 = 全市场按评分。</p>
+              <p>决定<b>每天从哪些股票里挑</b>：选某方案 → 只在该方案命中的股票里按评分排序取前 N 只；不选则使用全市场候选。</p>
               <p style="margin:6px 0 0">想自定义策略？去<b>「策略筛选」页</b>写规则并「保存为方案」，这里就会出现可选。</p>
             </HelpTip>
           </span>
@@ -942,8 +949,27 @@ async function openTradeChart(row: TradeRow) {
                 <b>方案说明：</b> <br>{{ profileDesc }}
               </div>
             </template>
-            <el-select v-model="profileId" clearable placeholder="全市场按评分" style="width: 160px">
-              <el-option v-for="p in profiles" :key="screenProfileKey(p)" :value="screenProfileKey(p)" :label="p.name" />
+            <el-select v-model="profileId" clearable placeholder="请选择选股方案" no-data-text="暂无可用选股方案" style="width: 190px">
+              <template v-if="selectedScreenProfile" #label>
+                <AssetProfileLabel
+                  :name="selectedScreenProfile.name"
+                  :version="selectedScreenProfile.version"
+                  :source="selectedScreenProfile.source"
+                  :is-preset="selectedScreenProfile.is_preset"
+                  :owner-label="selectedScreenProfile.owner_label"
+                  :readonly="selectedScreenProfile.readonly"
+                />
+              </template>
+              <el-option v-for="p in profiles" :key="screenProfileKey(p)" :value="screenProfileKey(p)" :label="p.name">
+                <AssetProfileLabel
+                  :name="p.name"
+                  :version="p.version"
+                  :source="p.source"
+                  :is-preset="p.is_preset"
+                  :owner-label="p.owner_label"
+                  :readonly="p.readonly"
+                />
+              </el-option>
             </el-select>
           </el-tooltip>
           <span class="lbl">持仓数
@@ -956,21 +982,29 @@ async function openTradeChart(row: TradeRow) {
           <el-input-number v-model="initCap" :min="100000" :step="100000" controls-position="right" style="width: 140px" />
           <span class="lbl">买卖方案
             <HelpTip title="买卖方案 = 买/卖/兜底" :width="380">
-              <p>选某买卖方案 → 买入须<b>筛选命中且买入条件成立</b>，卖出走方案的<b>卖出条件 + 兜底(止盈/止损/最大持有)</b>。留空 = 用下方手填的「跌破MA + 止盈止损到期」。去「配置管理 → 买卖指标」定义。</p>
+              <p>选某买卖方案 → 买入须<b>筛选命中且买入条件成立</b>，卖出走方案的<b>卖出条件 + 兜底(止盈/止损/最大持有)</b>。去「配置管理 → 买卖指标」定义。</p>
             </HelpTip>
           </span>
-          <el-select v-model="tradeProfileId" clearable placeholder="手填规则" style="width: 180px">
+          <el-select v-model="tradeProfileId" placeholder="请选择买卖方案" no-data-text="暂无可用买卖方案" style="width: 190px">
+            <template v-if="selectedTradeProfile" #label>
+              <AssetProfileLabel
+                :name="selectedTradeProfile.name"
+                :version="selectedTradeProfile.version"
+                :source="selectedTradeProfile.source"
+                :is-preset="selectedTradeProfile.is_preset"
+                :owner-label="selectedTradeProfile.owner_label"
+                :readonly="selectedTradeProfile.readonly"
+              />
+            </template>
             <el-option v-for="p in tradeProfiles" :key="tradeProfileKey(p)" :value="tradeProfileKey(p)" :label="p.name">
-              <span>{{ p.name }}</span>
-              <el-tag
-                v-if="p.source && p.source !== 'mine'"
-                size="small"
-                effect="plain"
-                :type="p.source === 'tenant' ? 'success' : p.source === 'public' ? 'warning' : 'info'"
-                style="margin-left: 8px"
-              >
-                {{ p.source === 'tenant' ? '租户公开' : p.source === 'public' ? '全体公开' : '系统内置' }}
-              </el-tag>
+              <AssetProfileLabel
+                :name="p.name"
+                :version="p.version"
+                :source="p.source"
+                :is-preset="p.is_preset"
+                :owner-label="p.owner_label"
+                :readonly="p.readonly"
+              />
             </el-option>
           </el-select>
           <el-checkbox v-model="industryOn">行业上限</el-checkbox>
@@ -979,29 +1013,7 @@ async function openTradeChart(row: TradeRow) {
         </template>
       </div>
 
-      <!-- 卖出规则：仅在「策略回测 且 未选买卖方案」时手填；选了买卖方案则由方案接管 -->
-      <div v-if="kind === 'strategy' && !useTradeProfile" class="form-row sell-row">
-        <span class="lbl strong">卖出规则
-          <HelpTip title="什么时候卖出" :width="360">
-            <p><b>跌破均线</b>为基准退出（必选）；<b>止盈/止损/到期</b>为可选叠加——任一触发即在次日开盘卖出。</p>
-            <p style="margin:6px 0 0;color:var(--app-muted-text)">想用指标组合做买卖？上方选一个「买卖方案」即可接管。</p>
-          </HelpTip>
-        </span>
-        <span class="lbl">跌破</span>
-        <el-select v-model="sellMa" style="width: 110px">
-          <el-option v-for="n in SELL_MA_OPTIONS" :key="n" :value="n" :label="`MA${n}`" />
-        </el-select>
-        <el-checkbox v-model="tpOn">止盈</el-checkbox>
-        <el-input-number v-model="takeProfit" :disabled="!tpOn" :min="1" :max="500" controls-position="right" style="width: 96px" />
-        <span class="unit" :class="{ off: !tpOn }">%</span>
-        <el-checkbox v-model="slOn">止损</el-checkbox>
-        <el-input-number v-model="stopLoss" :disabled="!slOn" :min="1" :max="99" controls-position="right" style="width: 96px" />
-        <span class="unit" :class="{ off: !slOn }">%</span>
-        <el-checkbox v-model="holdOn">到期</el-checkbox>
-        <el-input-number v-model="maxHold" :disabled="!holdOn" :min="1" :max="250" controls-position="right" style="width: 96px" />
-        <span class="unit" :class="{ off: !holdOn }">交易日</span>
-      </div>
-      <div v-else-if="kind === 'strategy'" class="form-row sell-row">
+      <div v-if="kind === 'strategy' && tradeProfileId" class="form-row sell-row">
         <span class="lbl strong">卖出规则</span>
         <span class="tip-inline">由买卖方案「{{ tradeProfileName(tradeProfileId) }}」的卖出条件 + 兜底接管</span>
       </div>
