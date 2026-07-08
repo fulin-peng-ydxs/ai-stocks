@@ -491,6 +491,7 @@ class BacktestService:
                 params = json.loads(raw_params)
             except (TypeError, ValueError):
                 raise ValueError("回测参数不可解析，不能公开") from None
+        params.pop("source_run_ref", None)
         dependencies = [
             ("profile_id", "profile_version", "筛选方案", self._run_owner_screen_profile),
             ("score_profile_id", "score_profile_version", "评分方案", self._run_owner_score_profile),

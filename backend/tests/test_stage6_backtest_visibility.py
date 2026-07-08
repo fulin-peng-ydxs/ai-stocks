@@ -363,6 +363,54 @@ def test_viewer_reuses_public_backtest_params_into_own_run(pg, market, monkeypat
             pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner_id])
 
 
+def test_public_backtest_publish_strips_source_run_ref_for_cross_tenant_viewer(pg, market):
+    from backend.services.asset_visibility import ASSET_BACKTEST_RUN, make_asset_ref
+    from backend.services.backtest_service import BacktestService
+
+    owner_tenant = "bt_src_owner_tenant_" + uuid.uuid4().hex[:8]
+    viewer_tenant = "bt_src_viewer_tenant_" + uuid.uuid4().hex[:8]
+    owner = "bt_src_owner_" + uuid.uuid4().hex[:8]
+    viewer = "bt_src_viewer_" + uuid.uuid4().hex[:8]
+    source_run_id = "bt_src_private_" + uuid.uuid4().hex[:8]
+    public_run_id = "bt_src_public_" + uuid.uuid4().hex[:8]
+    source_run_ref = make_asset_ref(
+        ASSET_BACKTEST_RUN,
+        owner_tenant,
+        owner,
+        source_run_id,
+    )
+    params = {
+        "date_start": "2024-01-01",
+        "date_end": "2024-01-31",
+        "top_n": 5,
+        "initial_capital": 1000000,
+        "source_run_ref": source_run_ref,
+    }
+    try:
+        _insert_run(pg, tenant=owner_tenant, owner=owner, run_id=source_run_id)
+        _insert_run(pg, tenant=owner_tenant, owner=owner, run_id=public_run_id, params=params)
+
+        owner_svc = BacktestService(client=market, tenant_id=owner_tenant, owner_user_id=owner)
+        published = owner_svc.set_run_visibility(public_run_id, "public", published_by=owner)
+        assert published is not None and published["visibility"] == "public"
+
+        stored = pg.query_df(
+            "SELECT params FROM backtest_run WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [owner_tenant, owner, public_run_id],
+        )
+        stored_params = json.loads(stored.iloc[0]["params"])
+        assert "source_run_ref" not in stored_params
+
+        viewer_svc = BacktestService(client=market, tenant_id=viewer_tenant, owner_user_id=viewer)
+        visible_run = viewer_svc.get_run(published["run_ref"])
+        assert visible_run is not None
+        visible_params = json.loads(visible_run["run"]["params"])
+        assert "source_run_ref" not in visible_params
+        assert source_run_ref not in json.dumps(visible_run, ensure_ascii=False, default=str)
+    finally:
+        _cleanup_runs(pg, owner, viewer)
+
+
 def test_backtest_publish_requires_reusable_legacy_dependencies(pg, market):
     from backend.screening.profile import ProfileRepo
     from backend.services.backtest_service import BacktestService

@@ -37,7 +37,7 @@
 
 两条路径都引用三类方案：筛选方案（`screen_profile`）、评分方案（`score_profile`）、买卖方案（`trade_profile`），运行时可接收 opaque `profile_ref` 并按 `private / tenant / public` 可见性解析真实 owner，解析各自 `version` 后参与去重签名（`backtest_service.py:61`）。使用他人公开方案运行时，结果仍写当前执行者归属。
 
-**编排服务** `backend/services/backtest_service.py` `BacktestService`：`run_strategy`/`run_signal` 跑回测算绩效+分层并落库；`prepare` 在运行前算签名（全条件指纹：日期+三方案及版本+所有数值参数，`backtest_service.py:57`）并查同条件已完成历史，供前端弹框选择「加载历史/重跑覆盖」；落库采用覆盖语义——同签名旧记录先 purge 保证每个条件组合历史唯一（`backtest_service.py:101`）。`backtest_run` 支持 `private / tenant / public` 可见性，公开记录对 viewer 只读；发布到租户前会校验参数引用的筛选/评分/买卖方案至少租户可见，发布到全体前会校验三类依赖均全体公开，并把历史 params 与 `backtest_run` 三类 profile 列从 legacy id 规范化为真实 owner 的 opaque `profile_ref`，同步刷新 signature 且清理同 owner 下其他等价签名记录，避免 viewer 复用时命中自己的同名私有方案，并保持同条件历史唯一；详情读取 `backtest_metrics/equity/trade` 时按 run 的真实 `tenant_id + owner_user_id` 查询，不用 viewer 归属猜测从表。
+**编排服务** `backend/services/backtest_service.py` `BacktestService`：`run_strategy`/`run_signal` 跑回测算绩效+分层并落库；`prepare` 在运行前算签名（全条件指纹：日期+三方案及版本+所有数值参数，`backtest_service.py:57`）并查同条件已完成历史，供前端弹框选择「加载历史/重跑覆盖」；落库采用覆盖语义——同签名旧记录先 purge 保证每个条件组合历史唯一（`backtest_service.py:101`）。`backtest_run` 支持 `private / tenant / public` 可见性，公开记录对 viewer 只读；发布到租户前会校验参数引用的筛选/评分/买卖方案至少租户可见，发布到全体前会校验三类依赖均全体公开，并把历史 params 与 `backtest_run` 三类 profile 列从 legacy id 规范化为真实 owner 的 opaque `profile_ref`，同步刷新 signature 且清理同 owner 下其他等价签名记录，同时从公开 params 清除仅供审计留痕的 `source_run_ref`，避免 viewer 复用时命中自己的同名私有方案，并保持同条件历史唯一且不泄漏不可见来源 run 标识；详情读取 `backtest_metrics/equity/trade` 时按 run 的真实 `tenant_id + owner_user_id` 查询，不用 viewer 归属猜测从表。
 
 **涉及表**（`backend/storage/ddl.py:344` 起）：
 - `backtest_run`（`:344`）：任务，含 kind/三方案 id 及 version/signature/区间/params(JSON)/status/visibility/published_at/published_by。
@@ -130,7 +130,7 @@ flowchart LR
 
 **跑一次策略回测**：
 1. 前端组织参数（区间/筛选+评分+买卖方案 ref 或旧 id/TopN/本金/调仓周期/止盈止损/行业上限/基准）→ `POST /prepare` 查同条件历史；命中则提示「加载/覆盖」。公开资产必须优先传 `profile_ref`，避免跨 owner 复用退化为当前 owner 私有 id。
-2. `POST /run` → `run_strategy`：按可见性解析筛选/评分/买卖方案版本、算签名、purge 同签名旧记录、写 `running`。公开回测“复用参数”会额外传 `source_run_ref`，该字段只用于 params 留痕和 `asset_reuse` 审计，不参与签名；发布公开 run 时，服务端会按 run 真实 owner 解析历史 params 里的 opaque ref 或 legacy id，阻断引用私有方案的公开发布，把可公开依赖写回为 owner opaque ref，并按规范化后的 signature 清理其他等价记录。
+2. `POST /run` → `run_strategy`：按可见性解析筛选/评分/买卖方案版本、算签名、purge 同签名旧记录、写 `running`。公开回测“复用参数”会额外传 `source_run_ref`，该字段只用于运行时 params 留痕和 `asset_reuse` 审计，不参与签名；发布公开 run 时，服务端会按 run 真实 owner 解析历史 params 里的 opaque ref 或 legacy id，阻断引用私有方案的公开发布，把可公开依赖写回为 owner opaque ref，清除 `source_run_ref`，并按规范化后的 signature 清理其他等价记录。
 3. `BacktestEngine.run`：预载行情（向前缓冲 ma_period 个交易日算均线，`engine.py:266`）；构建逐日评分榜 + 买/卖树命中（`_decision_data`，`engine.py:176`）；可选筛选方案通过 `ProfileRepo.get_visible(..., include_owner=True)` 解析后交给 `HitPrecomputer` 做命中预计算。
 4. 逐日循环：信号日 `D-1` 评估卖出（卖树命中/止盈/止损/到期）→ 执行日 `D` 开盘撮合（涨跌停/停牌检查，不可成交则顺延）→ 选股（信号日截面按评分降序，过候选池+买树+行业上限）→ `D` 开盘买入（整手+滑点+费用）→ `D` 收盘估值记净值。
 5. 区间末对仍持仓者按最后可得价强平（`exit_reason=区间末强平/停牌·退市强平`，`engine.py:444`），不悬空。
