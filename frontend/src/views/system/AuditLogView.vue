@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
@@ -474,15 +475,17 @@ onBeforeUnmount(stopTimer)
 
     <template #filters>
       <AppControlRow class="audit-filters">
-        <el-date-picker
-          v-model="dateRange"
-          type="datetimerange"
-          start-placeholder="开始时间"
-          end-placeholder="结束时间"
-          value-format="YYYY-MM-DDTHH:mm:ss"
-          range-separator="至"
-          class="audit-date"
-        />
+        <AppControlItem>
+          <el-date-picker
+            v-model="dateRange"
+            type="datetimerange"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            range-separator="至"
+            class="audit-date"
+          />
+        </AppControlItem>
         <AppFilterSelect
           v-model="filters.event_category"
           :options="eventOptions"
@@ -736,7 +739,8 @@ onBeforeUnmount(stopTimer)
 .metric b.warn { color: var(--el-color-warning); }
 .metric b.danger { color: var(--el-color-danger); }
 .audit-date {
-  width: 330px;
+  width: 300px;
+  max-width: 100%;
 }
 .w110 { width: 110px; }
 .w120 { width: 120px; }
@@ -916,9 +920,6 @@ onBeforeUnmount(stopTimer)
 @media (max-width: 980px) {
   .audit-summary {
     grid-template-columns: repeat(2, minmax(150px, 1fr));
-  }
-  .audit-date {
-    width: 100%;
   }
   .audit-head {
     flex-direction: column;
