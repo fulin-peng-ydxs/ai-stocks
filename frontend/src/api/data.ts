@@ -103,6 +103,7 @@ export interface DataStatus {
   latest_trade_date: string
   distinct_codes: number
   bar_rows: number
+  // 当前活跃质量问题：status in ('open', 'fixing')，与质量页默认筛选一致。
   quality_issues: number
   recent_updates: UpdateLog[]
 }

@@ -8,6 +8,7 @@ import { ElMessage } from 'element-plus'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
 import { useAuthStore } from '@/stores/auth'
 import { getCaptcha, getPublicConfig, sendEmailCode } from '@/api/auth'
+import BrandMark from '@/components/BrandMark.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -176,12 +177,7 @@ function onSubmit() {
     <!-- 左 · 品牌视觉区（科技风：动态网格 + 标语） -->
     <section class="login-brand">
       <div class="login-logo">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 18 L9 11 L13 14 L20 5" />
-          <circle cx="9" cy="11" r="1.4" fill="currentColor" />
-          <circle cx="13" cy="14" r="1.4" fill="currentColor" />
-        </svg>
-        复盘啦
+        <BrandMark variant="login" :tone="isDark ? 'dark' : 'light'" />
       </div>
       <div class="login-sys">EOD 趋势龙头研究系统</div>
       <div class="login-pulse" aria-hidden="true" />
@@ -367,10 +363,6 @@ function onSubmit() {
 .login-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--login-brand);
 }
 .login-sys {
   margin-top: 12px;

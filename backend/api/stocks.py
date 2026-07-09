@@ -230,7 +230,8 @@ def data_status() -> ApiResponse:
     c = get_client()
     span = c.query_df(
         "SELECT max(trade_date) AS latest, count(DISTINCT code) AS codes, count(*) AS rows FROM daily_bar").iloc[0]
-    issues = int(c.query_df("SELECT count(*) AS n FROM data_quality_issue").iloc[0]["n"])
+    issues = int(c.query_df(
+        "SELECT count(*) AS n FROM data_quality_issue WHERE status IN ('open', 'fixing')").iloc[0]["n"])
     last_updates = c.query_df(
         "SELECT table_name, source, status, row_count, date_start, date_end, detail, updated_at "
         "FROM data_update_log ORDER BY id DESC LIMIT 20").to_dict("records")
