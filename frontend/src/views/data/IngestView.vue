@@ -102,6 +102,9 @@ const {
     void loadLogs()
   },
 })
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
   'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
   'recompute', 'verify', 'checkup', 'fix', 'enrich_basic',
@@ -475,6 +478,7 @@ onMounted(async () => {
           <AppDataTable
             :data="tasks"
             size="small"
+            :border="tableBorder('taskTable')"
             :default-sort="taskDefaultSort"
             table-class="clk-tbl"
             clickable
@@ -563,6 +567,7 @@ onMounted(async () => {
           <AppDataTable
             :data="updateLogList"
             size="small"
+            :border="tableBorder('logTable')"
             :default-sort="logDefaultSort"
             :row-class-name="logRowClass"
             :pagination="{ currentPage: logPage, pageSize: logSize, total: logTotal, pageSizes: PAGE_SIZE_OPTIONS }"

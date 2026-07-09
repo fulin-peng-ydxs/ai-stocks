@@ -15,6 +15,7 @@ const size = ['sm', 'md', 'lg', 'xl', 'fullscreen']
 const chartType = ['line', 'bar', 'area', 'pie', 'scatter', 'candlestick']
 
 const tableShape: ConfigShape = {
+  border: 'bool',
   pagination: 'bool',
   pageSize: 'int',
   defaultSort: 'string',

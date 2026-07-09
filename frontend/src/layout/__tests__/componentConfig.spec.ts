@@ -43,8 +43,8 @@ describe('组件字段元数据', () => {
 
   it('字段定义只覆盖已消费字段，不预设无消费字段', () => {
     expect(Object.keys(COMPONENT_FIELD_DEFS).sort()).toEqual(['data-table', 'settings-drawer', 'tabs', 'wide-table'])
-    expect((COMPONENT_FIELD_DEFS['data-table'] ?? []).map((d) => d.key).sort()).toEqual(['defaultSort', 'hiddenColumns', 'pageSize'])
-    expect((COMPONENT_FIELD_DEFS['wide-table'] ?? []).map((d) => d.key).sort()).toEqual(['defaultSort', 'hiddenColumns', 'pageSize'])
+    expect((COMPONENT_FIELD_DEFS['data-table'] ?? []).map((d) => d.key).sort()).toEqual(['border', 'defaultSort', 'hiddenColumns', 'pageSize'])
+    expect((COMPONENT_FIELD_DEFS['wide-table'] ?? []).map((d) => d.key).sort()).toEqual(['border', 'defaultSort', 'hiddenColumns', 'pageSize'])
     expect((COMPONENT_FIELD_DEFS['settings-drawer'] ?? []).map((d) => d.key).sort()).toEqual([
       'bodyScroll',
       'collapsibleSections',
@@ -69,6 +69,10 @@ describe('组件字段元数据', () => {
     expect(isLayerAllowed(pageSize, 'preset')).toBe(true) // pageSize 已放开 preset 层（预设×组件默认）
     const ds = getComponentFieldDef('data-table', 'defaultSort')!
     expect(isLayerAllowed(ds, 'preset')).toBe(false) // defaultSort（页面专属枚举）仍仅 page/user
+    const border = getComponentFieldDef('data-table', 'border')!
+    expect(isLayerAllowed(border, 'page')).toBe(true)
+    expect(isLayerAllowed(border, 'user')).toBe(false)
+    expect(isLayerAllowed(border, 'preset')).toBe(false)
   })
 
   it('coerce 守门：类型/取值域', () => {
@@ -79,6 +83,9 @@ describe('组件字段元数据', () => {
     const hidden = getComponentFieldDef('data-table', 'hiddenColumns')!
     expect(coerceComponentValue(hidden, ['a', 'b'])).toEqual(['a', 'b'])
     expect(() => coerceComponentValue(hidden, [1, 2])).toThrow()
+    const border = getComponentFieldDef('data-table', 'border')!
+    expect(coerceComponentValue(border, false)).toBe(false)
+    expect(() => coerceComponentValue(border, 'false')).toThrow()
   })
 })
 
@@ -86,8 +93,10 @@ describe('组件配置分层合并', () => {
   it('default 取 slot.config 已登记字段', () => {
     const r = resolveComponentConfig(layout, [])
     expect(r.configBySlot.table.pageSize).toBe(20)
+    expect(r.configBySlot.table.border).toBe(false)
     expect(r.configBySlot.table.defaultSort).toBe('score:desc')
     expect(r.source['slots.table.config.pageSize']).toBe('default')
+    expect(r.source['slots.table.config.border']).toBe('default')
   })
 
   it('page/user 覆盖按优先级生效并标注来源', () => {
@@ -122,6 +131,18 @@ describe('组件配置分层合并', () => {
     ])
     expect(r.configBySlot.table.pageSize).toBe(50)
     expect(r.source['slots.table.config.pageSize']).toBe('preset')
+  })
+
+  it('border 仅 page 层覆盖生效，user/preset 越权丢弃', () => {
+    const r = resolveComponentConfig(layout, [
+      { layer: 'preset', overlay: { values: { 'slots.table.config.border': true } } },
+      { layer: 'page', overlay: { values: { 'slots.table.config.border': true } } },
+      { layer: 'user', overlay: { values: { 'slots.table.config.border': false } } },
+    ])
+    expect(r.configBySlot.table.border).toBe(true)
+    expect(r.source['slots.table.config.border']).toBe('page')
+    expect(r.dropped).toContainEqual({ layer: 'preset', path: 'slots.table.config.border', reason: 'layer.notAllowed' })
+    expect(r.dropped).toContainEqual({ layer: 'user', path: 'slots.table.config.border', reason: 'layer.notAllowed' })
   })
 
   it('越权层级被丢弃：defaultSort 仅 page/user，preset 覆盖无效', () => {

@@ -97,6 +97,9 @@ const {
   allowedFields: TECH_SORT_FIELDS,
   defaultOrder: 'asc',
 })
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 
 // ── 系统设置（FR-DM-12：真实参数 Web 可编辑，写 app_config 覆盖层）──
 const sysGroups = ref<SettingGroup[]>([])
@@ -1173,7 +1176,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </div>
         </div>
         <div class="tech-table-wrap">
-        <AppDataTable :data="techRows" size="small" border
+        <AppDataTable :data="techRows" size="small" :border="tableBorder('techTable')"
                   :default-sort="techDefaultSort" @sort-change="onTechSortChange">
           <el-table-column prop="name_cn" label="名称" width="130" sortable="custom" />
           <el-table-column prop="key" label="标识" width="120" />

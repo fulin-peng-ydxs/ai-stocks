@@ -149,6 +149,9 @@ let summaryLoadingSeq = 0
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 
 function tagType(value: string | null | undefined): 'success' | 'warning' | 'danger' | 'info' {
   if (value === 'success' || value === 'completed') return 'success'
@@ -528,6 +531,7 @@ onBeforeUnmount(stopTimer)
           kind="wide-table"
           :loading="tableLoading"
           row-key="id"
+          :border="tableBorder('auditTable')"
           stripe
           framed
           clickable

@@ -26,6 +26,17 @@ vi.mock('@/layout/pageRegistry', () => ({
         },
       }
     }
+    if (pageKey === 'border-demo') {
+      return {
+        layout: {
+          slots: [{ id: 'table', component: 'data-table', label: '列表' }],
+        },
+        consumedComponentFields: {
+          table: ['border'],
+        },
+        componentMeta: {},
+      }
+    }
     return {
       layout: {
         slots: [{ id: 'settings', component: 'settings-drawer', label: '设置抽屉' }],
@@ -39,7 +50,9 @@ vi.mock('@/layout/pageRegistry', () => ({
 }))
 
 vi.mock('@/layout/componentConfig', () => ({
-  getComponentFieldDef: () => ({ layers: ['user'] }),
+  getComponentFieldDef: (_kind: string, field: string) => (
+    field === 'border' ? { layers: ['page'] } : { layers: ['user'] }
+  ),
 }))
 
 function mountAuto(drawerBusinessVisible: boolean) {
@@ -98,6 +111,30 @@ function mountSortDemo() {
   })
 }
 
+function mountBorderDemo(layer: 'page' | 'user') {
+  return mount(ComponentAutoSettings as Component, {
+    props: {
+      pageKey: 'border-demo',
+      layer,
+      config: {
+        componentValueOf: vi.fn(() => true),
+        setComponentKnob: vi.fn(),
+      },
+    },
+    global: {
+      stubs: {
+        SettingsGroup: {
+          props: ['title'],
+          template: '<section><h3 v-if="title">{{ title }}</h3><slot /></section>',
+        },
+        SourceTag: true,
+        ElSwitch: true,
+        ElEmpty: true,
+      },
+    },
+  })
+}
+
 describe('ComponentAutoSettings', () => {
   it('无业务设置 slot 时隐藏设置抽屉的业务折叠段选项', () => {
     const wrapper = mountAuto(false)
@@ -117,5 +154,10 @@ describe('ComponentAutoSettings', () => {
     expect(wrapper.find('.select-stub').exists()).toBe(true)
     expect(wrapper.find('.segmented-stub').exists()).toBe(true) // 排序方向仍使用分段控件
     expect(wrapper.text()).toContain('更新时间')
+  })
+
+  it('表格边框是 page 层组件能力，不进入用户设置层', () => {
+    expect(mountBorderDemo('page').text()).toContain('显示表格边框')
+    expect(mountBorderDemo('user').text()).not.toContain('显示表格边框')
   })
 })

@@ -158,6 +158,25 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
+  it('data-table / wide-table 必须消费并真实接入 border 页面级配置', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const tableSlots = entry.layout.slots.filter((slot) => slot.component === 'data-table' || slot.component === 'wide-table')
+      if (!tableSlots.length) continue
+      const source = sourceForPage(entry.pageKey)
+      expect(source, `${entry.pageKey} 使用表格组件但无法从 router 定位 Vue 页面源码`).not.toBe('')
+      for (const slot of tableSlots) {
+        expect(
+          entry.consumedComponentFields?.[slot.id] ?? [],
+          `${entry.pageKey}.${slot.id} 表格 slot 必须消费 border 配置`,
+        ).toContain('border')
+        expect(
+          source.includes(`tableBorder('${slot.id}')`) || source.includes(`tableBorder("${slot.id}")`),
+          `${entry.pageKey}.${slot.id} 表格 slot 必须真实传入 :border="tableBorder('${slot.id}')"`,
+        ).toBe(true)
+      }
+    }
+  })
+
   it('可交互排序字段必须进入 defaultSort 配置闭环', () => {
     for (const entry of PAGE_REGISTRY) {
       for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {

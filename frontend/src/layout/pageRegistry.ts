@@ -779,6 +779,16 @@ const REGISTRY: PageRegistryEntry[] = [
 // settings-drawer slot（已显式声明者跳过，如 training），使「系统组件」页能正确显示 settings-drawer
 // 的消费关系（消除"暂无页面消费"的假象）。overlay slot 不进主流渲染，由各页自渲染抽屉，纯纳管/可寻址用途。
 for (const entry of REGISTRY) {
+  for (const slot of entry.layout.slots) {
+    if (slot.component !== 'data-table' && slot.component !== 'wide-table') continue
+    const fields = entry.consumedComponentFields?.[slot.id] ?? []
+    if (!fields.includes('border')) {
+      entry.consumedComponentFields = {
+        ...(entry.consumedComponentFields ?? {}),
+        [slot.id]: ['border', ...fields],
+      }
+    }
+  }
   if (!entry.layout.slots.some((s) => s.component === 'settings-drawer')) {
     const overlayCount = entry.layout.slots.filter((s) => s.region === 'overlay').length
     entry.layout.slots.push({

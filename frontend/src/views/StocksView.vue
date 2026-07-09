@@ -97,6 +97,9 @@ const groupHidden = computed<string[]>(() => (componentValueOf('groupTable', 'hi
 function groupColVisible(key: string): boolean {
   return !groupHidden.value.includes(key)
 }
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 
 // ── 查询条件（普通查询）──
 const loading = ref(false)
@@ -636,6 +639,7 @@ onBeforeUnmount(() => {
       <!-- 分组视图 -->
       <template v-if="inGroupMode">
         <AppDataTable :data="groupRows" :loading="groupLoading" row-key="code"
+          :border="tableBorder('groupTable')"
           :default-sort="groupElementDefaultSort"
           clickable
           :pagination="{ currentPage: groupPage, pageSize: groupSize, total: groupTotal, pageSizes: PAGE_SIZE_OPTIONS }"
@@ -676,6 +680,7 @@ onBeforeUnmount(() => {
       <!-- 普通查询 -->
       <template v-else>
         <AppDataTable :data="rows" :loading="loading" row-key="code"
+          :border="tableBorder('table')"
           clickable
           :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
           @row-click="(r: StockBasic) => enterDetail(r.code)"

@@ -60,6 +60,9 @@ const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hidde
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 const loading = ref(false)
 const data = ref<DataQuality | null>(null)
 const page = ref(1)
@@ -341,6 +344,7 @@ onMounted(() => {
         :data="displayList"
         size="small"
         :loading="loading"
+        :border="tableBorder('table')"
         :row-class-name="rowClass"
         :default-sort="elementDefaultSort"
         :pagination="{ currentPage: page, pageSize: size, total: data?.total ?? 0, pageSizes: PAGE_SIZE_OPTIONS }"

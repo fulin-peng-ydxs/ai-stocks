@@ -48,6 +48,9 @@ const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hidde
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 
 // ── 列表 ──
 const loading = ref(false)
@@ -228,6 +231,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           row-key="id"
           size="small"
           :loading="loading"
+          :border="tableBorder('table')"
           :default-sort="elementDefaultSort"
           :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
           @sort-change="onSortChange"

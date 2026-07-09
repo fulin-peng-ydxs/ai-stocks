@@ -42,6 +42,7 @@ COMPONENT_CONFIG_PATH_RE = re.compile(r"^slots\.([A-Za-z0-9:_-]{1,80})\.config\.
 # 不预设无消费的字段。首批字段均限 page/user 层（preset 层覆盖会被判越权）。按字段名建表（首批无冲突）。
 COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     # pageSize 放开 preset 层：预设可设某组件种类的默认分页大小（预设×组件默认，P11/D4）。
+    "border": {"type": "bool", "layers": {"page"}},
     "pageSize": {"type": "int", "layers": {"preset", "page", "user"}, "min": 10, "max": 500},
     "defaultSort": {"type": "str", "layers": {"page", "user"}},
     "hiddenColumns": {"type": "str_list", "layers": {"page", "user"}},
@@ -56,8 +57,8 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
 # 仅按字段名校验无法发现"字段挂错组件/挂错 slot"（如 toolbar.config.pageSize、data-table.config.defaultActive），
 # 必须结合页面 layout 的 slot->component 映射做归属校验，才是真正的数据边界收口。
 COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
-    "data-table": {"pageSize", "defaultSort", "hiddenColumns"},
-    "wide-table": {"pageSize", "defaultSort", "hiddenColumns"},
+    "data-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
+    "wide-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll", "collapsibleSections", "defaultCollapsed"},
 }

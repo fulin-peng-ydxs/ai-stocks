@@ -271,6 +271,25 @@ function setSort(slotId: string, field: string, order: string): void {
         </div>
       </template>
 
+      <div v-if="s.fields.includes('border')" class="ca-item">
+        <div class="ca-label-row">
+          <span class="ca-label">显示表格边框</span>
+          <span class="ca-actions">
+            <SourceTag
+              v-if="srcOf(s.slotId, 'border')"
+              :source="srcOf(s.slotId, 'border')!"
+              :values="srcValuesOf(s.slotId, 'border')"
+            />
+            <button v-if="clearable && isOverridden(s.slotId, 'border')" type="button" class="ca-clear" @click="clearField(s.slotId, 'border')">不覆盖</button>
+          </span>
+        </div>
+        <el-switch
+          :model-value="boolVal(s.slotId, 'border', false)"
+          inline-prompt
+          @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, 'border', v)"
+        />
+      </div>
+
       <div v-if="s.fields.includes('pageSize')" class="ca-item">
         <div class="ca-label-row">
           <span class="ca-label">每页条数</span>

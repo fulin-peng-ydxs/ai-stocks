@@ -90,6 +90,9 @@ const tradeHidden = computed<string[]>(() => (componentValueOf('trades', 'hidden
 function tradeColVisible(key: string): boolean {
   return !tradeHidden.value.includes(key)
 }
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 function onTradeSortChange({ prop }: { prop: string; order: string | null }): void {
   setComponentKnob('trades', 'defaultSort', TRADE_SORT_PROPS[prop] ?? 'entry')
 }
@@ -1205,6 +1208,7 @@ async function openTradeChart(row: TradeRow) {
         </div>
         <div class="trade-table-wrap">
         <AppDataTable :data="tradeRows" size="small" clickable
+                  :border="tableBorder('trades')"
                   :default-sort="tradeDefaultSort" @sort-change="onTradeSortChange"
                   @row-click="(r:any) => openTradeChart(r)">
           <el-table-column label="代码" prop="code" width="110" />

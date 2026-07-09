@@ -47,6 +47,9 @@ const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hidde
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 
 // ── 角色/租户字典（用于列表展示映射 + 表单下拉）──
 const ROLE_LABEL_FALLBACK: Record<string, string> = {
@@ -309,6 +312,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           :data="list"
           size="small"
           :loading="loading"
+          :border="tableBorder('table')"
           :default-sort="elementDefaultSort"
           :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
           @sort-change="onSortChange"

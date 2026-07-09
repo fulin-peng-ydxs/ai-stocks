@@ -97,6 +97,13 @@ def test_invalid_config_rejected(client):
     # 组件配置：越权层级（defaultSort 仅 page/user，preset 层覆盖被拒；pageSize 已放开 preset）
     with pytest.raises(LayoutConfigValidationError, match="不允许在 preset 层"):
         repo.upsert_preset("cc-bad", "越权预设", config={"values": {"slots.table.config.defaultSort": "x"}})
+    # 组件配置：表格边框只允许页面级统一配置，禁止预设/个人层覆盖
+    with pytest.raises(LayoutConfigValidationError, match="不允许在 preset 层"):
+        repo.upsert_preset(
+            "border-bad",
+            "越权边框",
+            config={"values": {"slots.table.config.border": False}},
+        )
     # 组件配置：取值域
     with pytest.raises(LayoutConfigValidationError, match="不能小于"):
         repo.set_page_config("board", {"values": {"slots.table.config.pageSize": 5}})
@@ -137,6 +144,24 @@ def test_component_config_ownership_boundary(client):
         "board", {"values": {"slots.table.config.pageSize": 50}}, layout=board_layout
     )
     assert saved["config"]["values"]["slots.table.config.pageSize"] == 50
+    # 合法：data-table 的 border 是页面级开关
+    saved = repo.set_page_config(
+        "board", {"values": {"slots.table.config.border": False}}, layout=board_layout
+    )
+    assert saved["config"]["values"]["slots.table.config.border"] is False
+    # 非法：border 不允许个人层覆盖
+    with pytest.raises(LayoutConfigValidationError, match="不允许在 user 层"):
+        repo.set_user_config(
+            "board",
+            {"values": {"slots.table.config.border": False}},
+            user_id="u1",
+            layout=board_layout,
+        )
+    # 非法：border 必须是布尔值
+    with pytest.raises(LayoutConfigValidationError, match="需为布尔值"):
+        repo.set_page_config(
+            "board", {"values": {"slots.table.config.border": "false"}}, layout=board_layout
+        )
 
 
 def test_validate_api_rejects_misplaced_component_field(client):

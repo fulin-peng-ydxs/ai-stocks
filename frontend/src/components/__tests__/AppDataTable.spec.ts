@@ -55,7 +55,7 @@ describe('AppDataTable', () => {
 
     expect(wrapper.classes()).toContain('app-data-table--wide-table')
     expect(wrapper.classes()).toContain('app-data-table--clickable')
-    expect(wrapper.find('.el-table').attributes('data-border')).toBe('true')
+    expect(wrapper.find('.el-table').attributes('data-border')).toBe('false')
     expect(wrapper.find('.column-slot').text()).toBe('代码列')
     expect(wrapper.find('.empty-slot').text()).toBe('暂无数据')
 

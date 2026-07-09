@@ -100,6 +100,9 @@ const {
     void loadHistory()
   },
 })
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 const growthData = ref<GrowthPoint[]>([])
 
 async function loadHistory() {
@@ -357,6 +360,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             :data="history.list"
             size="small"
             table-class="hist-table"
+            :border="tableBorder('history')"
             clickable
             :default-sort="historyDefaultSort"
             @sort-change="onHistorySortChange"

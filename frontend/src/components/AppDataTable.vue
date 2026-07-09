@@ -37,7 +37,7 @@ withDefaults(defineProps<{
   size: 'default',
   clickable: false,
   stripe: false,
-  border: true,
+  border: false,
   framed: false,
 })
 

@@ -77,6 +77,9 @@ const hiddenColumns = computed<string[]>(() => (componentValueOf('result', 'hidd
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 function onResultSortChange({ prop }: { prop: string; order: string | null }): void {
   setComponentKnob('result', 'defaultSort', RESULT_SORT_PROPS[prop] ?? 'score')
 }
@@ -605,6 +608,7 @@ onMounted(async () => {
       <AppDataTable
         v-if="result && result.hits.length"
         :data="displayHits"
+        :border="tableBorder('result')"
         :default-sort="elementDefaultSort"
         :row-class-name="rowClass"
         clickable
