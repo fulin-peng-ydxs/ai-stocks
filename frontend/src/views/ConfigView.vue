@@ -329,9 +329,6 @@ const canPublishTenant = computed(() =>
 const canPublishPublic = computed(() =>
   hasPermission(auth.role, auth.permissions, 'score-profile:publish-public'),
 )
-const canEditProfileVisibility = computed(() =>
-  !!curRef.value && !isNew.value && !profileReadonly.value && (canPublishTenant.value || canPublishPublic.value),
-)
 const weightSum = computed(() =>
   Math.round(items.value.reduce((s, it) => s + (it.weight || 0), 0) * 100),
 )
@@ -643,9 +640,6 @@ const canTradePublishTenant = computed(() =>
 )
 const canTradePublishPublic = computed(() =>
   hasPermission(auth.role, auth.permissions, 'trade-profile:publish-public'),
-)
-const canEditTradeVisibility = computed(() =>
-  !!tCurRef.value && !tIsNew.value && !tReadonly.value && (canTradePublishTenant.value || canTradePublishPublic.value),
 )
 function tradeProfileKey(p: TradeProfileSummary): string {
   return p.profile_ref || p.id

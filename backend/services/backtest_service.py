@@ -27,12 +27,15 @@ from backend.auth.context import get_current_owner
 from backend.common.logging import get_logger
 from backend.services.asset_visibility import (
     ASSET_BACKTEST_RUN,
+    ASSET_SCREEN_PROFILE,
+    ASSET_TRADE_PROFILE,
     VISIBILITY_PRIVATE,
     VISIBILITY_PUBLIC,
     VISIBILITY_TENANT,
     decorate_asset_row,
     is_asset_visible,
     normalize_visibility,
+    parse_asset_ref,
     resolve_asset_ref_or_legacy_id,
     visible_params,
     visible_sql,
@@ -125,6 +128,66 @@ class BacktestService:
                                profile_ref_or_id,
                                include_owner=True,
                            )
+
+    def _batch_profile_labels(
+        self,
+        refs: list[str],
+        *,
+        table: str,
+        ref_type: str,
+    ) -> dict[str, dict]:
+        parsed: list[tuple[str, str, str, str]] = []
+        for ref in refs:
+            try:
+                asset_ref = parse_asset_ref(ref, expected_type=ref_type)
+            except ValueError:
+                continue
+            parsed.append((ref, asset_ref.tenant_id, asset_ref.owner_user_id, asset_ref.asset_id))
+        return self._query_profile_labels(table, parsed)
+
+    def _batch_score_profile_labels(self, refs: list[str]) -> dict[str, dict]:
+        from backend.scoring.score_profile import ScoreProfileRepo
+
+        parsed: list[tuple[str, str, str, str]] = []
+        for ref in refs:
+            try:
+                tenant_id, owner_user_id, profile_id = ScoreProfileRepo.parse_ref(ref)
+            except ValueError:
+                continue
+            parsed.append((ref, tenant_id, owner_user_id, profile_id))
+        return self._query_profile_labels("score_profile", parsed)
+
+    def _query_profile_labels(
+        self,
+        table: str,
+        parsed: list[tuple[str, str, str, str]],
+    ) -> dict[str, dict]:
+        if not parsed:
+            return {}
+        if table not in {"screen_profile", "score_profile", "trade_profile"}:
+            raise ValueError("不支持的方案表")
+        clauses: list[str] = []
+        args: list[str] = []
+        ref_by_key: dict[tuple[str, str, str], str] = {}
+        for ref, tenant_id, owner_user_id, profile_id in parsed:
+            clauses.append("(tenant_id=%s AND owner_user_id=%s AND id=%s)")
+            args.extend([tenant_id, owner_user_id, profile_id])
+            ref_by_key[(tenant_id, owner_user_id, profile_id)] = ref
+        df = self.pg.query_df(
+            f"SELECT tenant_id, owner_user_id, id, name, version FROM {table} "
+            f"WHERE ({' OR '.join(clauses)}) AND {visible_sql()}",
+            [
+                *args,
+                *visible_params(tenant_id=self.tenant_id, owner_user_id=self.owner_user_id),
+            ],
+        )
+        out: dict[str, dict] = {}
+        for row in df.to_dict("records"):
+            key = (row["tenant_id"], row["owner_user_id"], row["id"])
+            ref = ref_by_key.get(key)
+            if ref:
+                out[ref] = {"name": row["name"], "version": int(row["version"])}
+        return out
 
     def _resolve_versions(self, params: dict) -> dict:
         """运行时解析各引用方案的当前版本（命名展示 + 签名用）。方案在 PG。"""
@@ -258,6 +321,7 @@ class BacktestService:
                 }]))
                 self._persist_run(run_id, "score_check", params, "done", finished=True,
                                   versions=versions, signature=sig)
+                self._record_reuse_if_needed(params, run_id)
             return res
         except Exception as e:  # noqa: BLE001
             if persist:
@@ -449,22 +513,47 @@ class BacktestService:
             f"{where}"
             f"ORDER BY r.created_at DESC {tail}", args)
         rows = [self._decorate_run_row(r) for r in df.to_dict("records")]
+        screen_labels = self._batch_profile_labels(
+            [
+                str(r["profile_id"])
+                for r in rows
+                if r.get("profile_id") and not r.get("profile_name")
+            ],
+            table="screen_profile",
+            ref_type=ASSET_SCREEN_PROFILE,
+        )
+        score_labels = self._batch_score_profile_labels(
+            [
+                str(r["score_profile_id"])
+                for r in rows
+                if r.get("score_profile_id") and not r.get("score_profile_name")
+            ],
+        )
+        trade_labels = self._batch_profile_labels(
+            [
+                str(r["trade_profile_id"])
+                for r in rows
+                if r.get("trade_profile_id") and not r.get("trade_profile_name")
+            ],
+            table="trade_profile",
+            ref_type=ASSET_TRADE_PROFILE,
+        )
         for row in rows:
             if row.get("profile_id") and not row.get("profile_name"):
-                prof = self._visible_screen_profile(row["profile_id"])
+                prof = screen_labels.get(str(row["profile_id"]))
                 if prof:
                     row["profile_name"] = prof["name"]
-                    row["profile_version"] = int(prof["version"])
+                    row["profile_version"] = prof["version"]
             if row.get("score_profile_id") and not row.get("score_profile_name"):
-                prof = self._visible_score_profile(row["score_profile_id"])
+                prof = score_labels.get(str(row["score_profile_id"]))
                 if prof:
                     row["score_profile_name"] = prof["name"]
-                    row["score_profile_version"] = int(prof["version"])
+                    row["score_profile_version"] = prof["version"]
             if row.get("trade_profile_id") and not row.get("trade_profile_name"):
-                prof = self._visible_trade_profile(row["trade_profile_id"])
+                prof = trade_labels.get(str(row["trade_profile_id"]))
                 if prof:
                     row["trade_profile_name"] = prof["name"]
-                    row["trade_profile_version"] = int(prof["version"])
+                    row["trade_profile_version"] = prof["version"]
         return rows
 
     def _record_reuse_if_needed(self, params: dict, run_id: str) -> None:

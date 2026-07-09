@@ -6,6 +6,7 @@
 import { defineStore } from 'pinia'
 import {
   clearAuth,
+  getRefreshToken,
   readAuth,
   writeAuth,
   type AuthSnapshot,
@@ -131,7 +132,7 @@ export const useAuthStore = defineStore('auth', {
 
     async logout() {
       try {
-        await authApi.logout(this.refreshToken || undefined)
+        await authApi.logout(getRefreshToken() || undefined)
       } catch {
         // 退出接口失败也强制前端清态（token 已本地失效即可）
       }

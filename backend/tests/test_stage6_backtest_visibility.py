@@ -363,6 +363,67 @@ def test_viewer_reuses_public_backtest_params_into_own_run(pg, market, monkeypat
             pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner_id])
 
 
+def test_viewer_reuses_public_score_check_params_records_audit(pg, market, monkeypatch):
+    from backend.auth.context import AuthContext, reset_context, set_context
+    from backend.services.backtest_service import BacktestService
+
+    tenant = "bt_reuse_signal_tenant_" + uuid.uuid4().hex[:8]
+    owner = "bt_reuse_signal_owner_" + uuid.uuid4().hex[:8]
+    viewer = "bt_reuse_signal_viewer_" + uuid.uuid4().hex[:8]
+    source_run_id = "bt_reuse_signal_src_" + uuid.uuid4().hex[:8]
+    try:
+        _insert_run(pg, tenant=tenant, owner=owner, run_id=source_run_id)
+        source = BacktestService(
+            client=market,
+            tenant_id=tenant,
+            owner_user_id=owner,
+        ).set_run_visibility(source_run_id, "tenant", published_by=owner)
+        assert source is not None
+
+        def fake_analyze(self, *args, **kwargs):  # noqa: ARG001
+            return {
+                "date_start": "2024-01-01",
+                "date_end": "2024-01-02",
+                "model_id": "default",
+                "horizons": [10],
+                "thresholds": [0.1],
+                "min_samples": 30,
+                "total_signals": 0,
+                "base_rate": {},
+                "by_grade": {},
+                "grades_order": [],
+            }
+
+        monkeypatch.setattr("backend.backtest.signal.SignalAnalyzer.analyze", fake_analyze)
+
+        token = set_context(AuthContext(user_id=viewer, tenant_id=tenant, resources={"backtest:run"}))
+        try:
+            result = BacktestService(
+                client=market,
+                tenant_id=tenant,
+                owner_user_id=viewer,
+            ).run_signal({
+                "date_start": "2024-01-01",
+                "date_end": "2024-01-02",
+                "horizons": [10],
+                "thresholds": [0.1],
+                "source_run_ref": source["run_ref"],
+            })
+        finally:
+            reset_context(token)
+
+        audit = pg.query_df(
+            "SELECT action, resource_code, target_type, target_id, context FROM audit_log "
+            "WHERE tenant_id=%s AND actor_user_id=%s AND event_type='asset_reuse' "
+            "AND action='backtest_run_reuse' AND target_id=%s",
+            [tenant, viewer, result["run_id"]],
+        )
+        assert not audit.empty
+        assert audit.iloc[0]["resource_code"] == "backtest:run"
+    finally:
+        _cleanup_runs(pg, owner, viewer)
+
+
 def test_public_backtest_publish_strips_source_run_ref_for_cross_tenant_viewer(pg, market):
     from backend.services.asset_visibility import ASSET_BACKTEST_RUN, make_asset_ref
     from backend.services.backtest_service import BacktestService
@@ -524,3 +585,100 @@ def test_backtest_publish_requires_reusable_legacy_dependencies(pg, market):
         for owner_id in (owner, viewer):
             pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [owner_id])
             pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner_id])
+
+
+def test_list_runs_batches_opaque_ref_profile_labels(pg, market, monkeypatch):
+    from backend.scoring.score_profile import ScoreProfileRepo
+    from backend.services.asset_visibility import ASSET_SCREEN_PROFILE, ASSET_TRADE_PROFILE, make_asset_ref
+    from backend.services.backtest_service import BacktestService
+
+    tenant = "bt_label_tenant_" + uuid.uuid4().hex[:8]
+    owner = "bt_label_owner_" + uuid.uuid4().hex[:8]
+    viewer = "bt_label_viewer_" + uuid.uuid4().hex[:8]
+    run_id = "bt_label_run_" + uuid.uuid4().hex[:8]
+    screen_id = "bt_label_screen_" + uuid.uuid4().hex[:6]
+    score_id = "bt_label_score_" + uuid.uuid4().hex[:6]
+    trade_id = "bt_label_trade_" + uuid.uuid4().hex[:6]
+    screen_ref = make_asset_ref(ASSET_SCREEN_PROFILE, tenant, owner, screen_id)
+    score_ref = ScoreProfileRepo.make_ref(tenant, owner, score_id)
+    trade_ref = make_asset_ref(ASSET_TRADE_PROFILE, tenant, owner, trade_id)
+    params = {
+        "date_start": "2024-01-01",
+        "date_end": "2024-01-31",
+        "profile_id": screen_ref,
+        "score_profile_id": score_ref,
+        "trade_profile_id": trade_ref,
+        "top_n": 5,
+        "initial_capital": 1000000,
+    }
+    try:
+        now = datetime(2024, 2, 1, 9, 30)
+        pg.execute(
+            "INSERT INTO screen_profile "
+            "(id,tenant_id,owner_user_id,name,version,expression,is_preset,visibility,created_at,updated_at) "
+            "VALUES (%s,%s,%s,%s,3,%s,FALSE,'tenant',%s,%s)",
+            [screen_id, tenant, owner, "批量筛选", json.dumps({"type": "all"}), now, now],
+        )
+        pg.execute(
+            "INSERT INTO score_profile "
+            "(id,tenant_id,owner_user_id,name,version,items,grade_thresholds,is_preset,visibility,created_at,updated_at) "
+            "VALUES (%s,%s,%s,%s,4,%s,%s,FALSE,'tenant',%s,%s)",
+            [
+                score_id,
+                tenant,
+                owner,
+                "批量评分",
+                json.dumps([]),
+                json.dumps({"watch": 80}),
+                now,
+                now,
+            ],
+        )
+        pg.execute(
+            "INSERT INTO trade_profile "
+            "(id,tenant_id,owner_user_id,name,version,buy_tree,sell_tree,backstop,is_preset,visibility,created_at,updated_at) "
+            "VALUES (%s,%s,%s,%s,5,%s,%s,%s,FALSE,'tenant',%s,%s)",
+            [
+                trade_id,
+                tenant,
+                owner,
+                "批量买卖",
+                json.dumps({"type": "all"}),
+                json.dumps({"type": "all"}),
+                json.dumps({}),
+                now,
+                now,
+            ],
+        )
+        _insert_run(pg, tenant=tenant, owner=owner, run_id=run_id, params=params)
+        pg.execute(
+            "UPDATE backtest_run SET visibility='tenant', profile_version=3, "
+            "score_profile_version=4, trade_profile_version=5 "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tenant, owner, run_id],
+        )
+
+        def fail_n_plus_one(*args, **kwargs):  # noqa: ARG001
+            raise AssertionError("list_runs must not resolve opaque profile labels row by row")
+
+        svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=viewer)
+        monkeypatch.setattr(svc, "_visible_screen_profile", fail_n_plus_one)
+        monkeypatch.setattr(svc, "_visible_score_profile", fail_n_plus_one)
+        monkeypatch.setattr(svc, "_visible_trade_profile", fail_n_plus_one)
+
+        rows = svc.list_runs(kind="strategy", source="tenant")
+        row = next(r for r in rows if r["id"] == run_id)
+        assert row["profile_name"] == "批量筛选"
+        assert row["profile_version"] == 3
+        assert row["score_profile_name"] == "批量评分"
+        assert row["score_profile_version"] == 4
+        assert row["trade_profile_name"] == "批量买卖"
+        assert row["trade_profile_version"] == 5
+    finally:
+        _cleanup_runs(pg, owner, viewer)
+        pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM trade_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM trade_profile_version WHERE owner_user_id=%s", [owner])

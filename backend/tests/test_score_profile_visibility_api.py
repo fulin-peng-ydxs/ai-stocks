@@ -180,3 +180,35 @@ def test_score_profile_tenant_visibility_and_copy(client, pg):
         _rm_user(pg, owner, tid, owner_role)
         _rm_user(pg, viewer, tid, viewer_role)
         _rm_user(pg, outsider, otid, outsider_role)
+
+
+def test_score_profile_public_owner_label_masks_cross_tenant_owner(client, pg):
+    owner, tid, owner_role = _mk_user(
+        pg,
+        ["score-profile:view", "score-profile:save", "score-profile:publish-public"],
+    )
+    outsider, otid, outsider_role = _mk_user(pg, ["score-profile:view"])
+    pid = "spv_public_" + uuid.uuid4().hex[:6]
+    try:
+        saved = client.post("/api/score-profiles", json=_profile_body(pid), headers=_auth(owner, tid))
+        assert saved.status_code == 200 and saved.json()["code"] == 0
+
+        pub = client.post(
+            f"/api/score-profiles/{pid}/visibility",
+            json={"visibility": "public"},
+            headers=_auth(owner, tid),
+        )
+        assert pub.status_code == 200 and pub.json()["data"]["visibility"] == "public"
+
+        listed = client.get("/api/score-profiles", headers=_auth(outsider, otid))
+        assert listed.status_code == 200 and listed.json()["code"] == 0
+        shared = next(r for r in listed.json()["data"] if r["id"] == pid)
+        assert shared["source"] == "public"
+        assert shared["readonly"] is True
+        assert shared["owner_label"] == "其他租户用户"
+        assert shared["owner_label"] != owner
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
+        _rm_user(pg, owner, tid, owner_role)
+        _rm_user(pg, outsider, otid, outsider_role)

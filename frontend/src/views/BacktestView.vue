@@ -227,6 +227,12 @@ const selectedRunSummary = computed(() =>
   runHistory.value.find((r) => runKey(r) === selectedRun.value || r.id === selectedRun.value),
 )
 const selectedRunReadonly = computed(() => !!selectedRunSummary.value?.readonly)
+const historyEmptyText = computed(() => {
+  if (historySource.value === 'mine') return '暂无回测记录'
+  if (historySource.value === 'tenant') return '暂无租户公开记录'
+  if (historySource.value === 'public') return '暂无全体公开记录'
+  return ''
+})
 const canPublishTenant = computed(() =>
   hasPermission(auth.role, auth.permissions, 'backtest:publish-tenant'),
 )
@@ -895,7 +901,7 @@ async function openTradeChart(row: TradeRow) {
             @reuse="reuseCurrentRunParams"
           />
           <el-button v-permission="'backtest:delete'" v-if="!selectedRunReadonly" :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
-          <span v-if="!runHistory.length && historySource !== 'all'" class="hist-empty">无公开记录</span>
+          <span v-if="!runHistory.length && historySource !== 'all'" class="hist-empty">{{ historyEmptyText }}</span>
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>

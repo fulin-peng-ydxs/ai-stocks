@@ -127,6 +127,14 @@ def asset_source(row: dict[str, Any], *, tenant_id: str, owner_user_id: str) -> 
     return normalize_visibility(row.get("visibility"))
 
 
+def owner_label(row: dict[str, Any], *, tenant_id: str, owner_user_id: str) -> str:
+    if is_asset_owner(row, tenant_id=tenant_id, owner_user_id=owner_user_id):
+        return "我"
+    if row.get("tenant_id") == tenant_id:
+        return str(row.get("owner_user_id") or "")
+    return "其他租户用户"
+
+
 def decorate_asset_row(
     row: dict[str, Any],
     *,
@@ -148,7 +156,7 @@ def decorate_asset_row(
     out["visibility"] = normalize_visibility(row.get("visibility"))
     out["source"] = asset_source(row, tenant_id=tenant_id, owner_user_id=owner_user_id)
     out["readonly"] = not own
-    out["owner_label"] = "我" if own else row.get("owner_user_id")
+    out["owner_label"] = owner_label(row, tenant_id=tenant_id, owner_user_id=owner_user_id)
     if not include_owner:
         out.pop("tenant_id", None)
         out.pop("owner_user_id", None)

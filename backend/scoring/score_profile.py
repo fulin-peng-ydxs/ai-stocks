@@ -26,7 +26,7 @@ from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
 from backend.auth.context import get_current_owner
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
-from backend.services.asset_visibility import normalize_visibility
+from backend.services.asset_visibility import normalize_visibility, owner_label
 
 log = get_logger("scoring.score_profile")
 
@@ -256,7 +256,11 @@ class ScoreProfileRepo:
             "visibility": r.get("visibility") or VISIBILITY_PRIVATE,
             "source": self._source(r),
             "readonly": not own,
-            "owner_label": "我" if own else r["owner_user_id"],
+            "owner_label": owner_label(
+                r,
+                tenant_id=self.tenant_id,
+                owner_user_id=self.owner_user_id,
+            ),
         }
 
     def _row_to_profile(self, r: dict, *, include_owner: bool = False) -> dict:
@@ -272,7 +276,11 @@ class ScoreProfileRepo:
             "visibility": r.get("visibility") or VISIBILITY_PRIVATE,
             "source": self._source(r),
             "readonly": not own,
-            "owner_label": "我" if own else r["owner_user_id"],
+            "owner_label": owner_label(
+                r,
+                tenant_id=self.tenant_id,
+                owner_user_id=self.owner_user_id,
+            ),
             "published_at": str(r["published_at"]) if r.get("published_at") else None,
             "published_by": r.get("published_by"),
         }

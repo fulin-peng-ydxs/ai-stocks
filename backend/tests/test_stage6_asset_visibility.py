@@ -116,6 +116,28 @@ def test_stage6_asset_decorate_row_outputs_source_readonly_and_ref():
     assert asset_source(preset, tenant_id="tenant_a", owner_user_id="owner_a") == "preset"
 
 
+def test_stage6_asset_owner_label_masks_cross_tenant_public_owner():
+    public_cross_tenant = {
+        "id": "bt_public_1",
+        "tenant_id": "tenant_b",
+        "owner_user_id": "owner_b",
+        "visibility": VISIBILITY_PUBLIC,
+        "is_preset": False,
+    }
+
+    out = decorate_asset_row(
+        public_cross_tenant,
+        asset_type=ASSET_BACKTEST_RUN,
+        tenant_id="tenant_a",
+        owner_user_id="owner_a",
+    )
+
+    assert out["source"] == VISIBILITY_PUBLIC
+    assert out["readonly"] is True
+    assert out["owner_label"] == "其他租户用户"
+    assert "owner_b" not in out.values()
+
+
 def test_stage6_asset_visible_sql_fragment_and_params():
     assert visible_sql("p") == (
         "((p.tenant_id=%s AND p.owner_user_id=%s) "

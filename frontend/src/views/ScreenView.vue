@@ -241,9 +241,6 @@ const canPublishTenant = computed(() =>
 const canPublishPublic = computed(() =>
   hasPermission(auth.role, auth.permissions, 'screen-profile:publish-public'),
 )
-const canEditProfileVisibility = computed(() =>
-  !!loadedProfile.value && !profileReadonly.value && (canPublishTenant.value || canPublishPublic.value),
-)
 function profileKey(p: Profile): string {
   return p.profile_ref || p.id
 }
