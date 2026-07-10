@@ -417,34 +417,15 @@ async function onLogout() {
           aria-label="外观"
           @click="appearanceDrawerVisible = true"
         >
-          <svg
-            v-if="isDark"
-            class="theme-mode-glyph"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
+          <svg class="skin-glyph" viewBox="0 0 24 24" aria-hidden="true">
             <path
-              class="theme-mode-glyph-fill"
-              d="M20.2 14.4A7.5 7.5 0 0 1 9.6 3.8 8.6 8.6 0 1 0 20.2 14.4Z"
+              class="skin-glyph-body"
+              d="M8.1 4.3 4.6 6.2 3.3 10.7l3.1 1.1.9-2.1v9.9h9.4V9.7l.9 2.1 3.1-1.1-1.3-4.5-3.5-1.9-2.1 1.5a3.2 3.2 0 0 1-3.6 0L8.1 4.3Z"
             />
-          </svg>
-          <svg
-            v-else
-            class="theme-mode-glyph"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <circle class="theme-mode-glyph-fill" cx="12" cy="12" r="5.2" />
-            <g class="theme-mode-glyph-line">
-              <path d="M12 2.8v2.3" />
-              <path d="M12 18.9v2.3" />
-              <path d="M2.8 12h2.3" />
-              <path d="M18.9 12h2.3" />
-              <path d="m5.5 5.5 1.6 1.6" />
-              <path d="m16.9 16.9 1.6 1.6" />
-              <path d="m18.5 5.5-1.6 1.6" />
-              <path d="m7.1 16.9-1.6 1.6" />
-            </g>
+            <path class="skin-glyph-neck" d="M9.4 4.9a3.5 3.5 0 0 0 5.2 0" />
+            <circle class="skin-glyph-swatch skin-glyph-swatch--primary" cx="9.2" cy="13.5" r="1.35" />
+            <circle class="skin-glyph-swatch skin-glyph-swatch--success" cx="12" cy="13.5" r="1.35" />
+            <circle class="skin-glyph-swatch skin-glyph-swatch--warning" cx="14.8" cy="13.5" r="1.35" />
           </svg>
         </button>
 
@@ -737,8 +718,9 @@ async function onLogout() {
 }
 .topbar-action--trade-date {
   height: 38px;
-  min-width: 0;
-  padding: 0 11px;
+  min-width: 174px;
+  margin-right: 8px;
+  padding: 0 14px;
   gap: 7px;
   border: 1px solid color-mix(in srgb, var(--chrome-border-strong) 72%, var(--shell-accent) 28%);
   border-radius: 9px;
@@ -760,11 +742,16 @@ async function onLogout() {
   font-size: 16px;
 }
 .topbar-action--icon {
-  width: 36px;
-  min-width: 36px;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
   padding: 0;
 }
+.topbar-action--icon > .el-icon {
+  font-size: 21px;
+}
 .topbar-action--appearance {
+  margin-left: -4px;
   border-radius: 50%;
   background: transparent;
   color: var(--chrome-text);
@@ -773,6 +760,36 @@ async function onLogout() {
 .topbar-action--appearance:hover {
   background: color-mix(in srgb, var(--chrome-bg-soft-hover) 58%, transparent);
   color: var(--chrome-text-strong);
+}
+.skin-glyph {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+.skin-glyph-body {
+  fill: color-mix(in srgb, currentColor 8%, transparent);
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linejoin: round;
+}
+.skin-glyph-neck {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.skin-glyph-swatch {
+  stroke: color-mix(in srgb, var(--chrome-bg) 78%, transparent);
+  stroke-width: 0.55;
+}
+.skin-glyph-swatch--primary {
+  fill: currentColor;
+}
+.skin-glyph-swatch--success {
+  fill: currentColor;
+}
+.skin-glyph-swatch--warning {
+  fill: currentColor;
 }
 .topbar-action-label {
   font-size: 13px;
@@ -788,6 +805,10 @@ async function onLogout() {
 }
 .topbar-action.is-success > .el-icon {
   color: var(--el-color-success);
+}
+.topbar-action--trade-date.is-success > .el-icon,
+.topbar-action--icon.is-success > .el-icon {
+  color: var(--chrome-text);
 }
 .topbar-action.is-warning > .el-icon {
   color: var(--el-color-warning);
@@ -1279,12 +1300,15 @@ async function onLogout() {
   border: 1px solid color-mix(in srgb, var(--page-settings-section-border) 68%, white 10%);
   border-radius: 0;
   background: transparent;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 42%, rgba(0, 0, 0, 0.1));
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  filter: saturate(1.18) brightness(1.04);
   transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .theme-option:hover .theme-option-preview {
@@ -1320,7 +1344,12 @@ async function onLogout() {
   min-width: 0;
   height: 48px;
   border-radius: 0;
-  box-shadow: none;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 46%, rgba(0, 0, 0, 0.14));
+  box-shadow:
+    inset 1px 0 rgba(255, 255, 255, 0.16),
+    inset -1px 0 rgba(0, 0, 0, 0.14);
+  filter: saturate(1.28) brightness(1.06);
   flex-shrink: 1;
 }
 .theme-option-slash:nth-child(2) {
