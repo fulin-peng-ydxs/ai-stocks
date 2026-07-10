@@ -1099,8 +1099,9 @@ def _flatten_menu_tree(tree: list, parent_code: str | None = None) -> list[dict]
 def seed_rbac(client: PostgresClient | None = None) -> None:
     """幂等 seed 内置角色 / 菜单树 / 功能点 / 默认授权，并按 role_code 为存量用户补 sys_user_role。
 
-    幂等策略：主体（角色/资源）ON CONFLICT (id) DO NOTHING；内置菜单会校准父级、类型与路由等结构字段，
-    避免旧库 IA 调整残留导致当前菜单树断链；默认授权仅在该角色**尚无任何 role_menu** 时首次写入
+    幂等策略：主体（角色/菜单/资源）ON CONFLICT (id) DO NOTHING。sys_menu 是运行期数据库事实源，
+    seed 只补缺失内置节点，不覆盖已有菜单的父级、类型、路由、标题、图标、排序或可见性，避免重启
+    抹掉「菜单与功能」页维护过的导航结构；默认授权仅在该角色**尚无任何 role_menu** 时首次写入
     （避免覆盖管理员后续在角色页的手工调整）；user_role 追加式 ON CONFLICT DO NOTHING。
     system 角色 seed 全量授权仅供角色页展示（全选+锁定）；运行时 system 由 perm_resolver 判全量兜底。
     """
@@ -1117,9 +1118,7 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
         client.execute(
             "INSERT INTO sys_menu (id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) "
-            "ON CONFLICT (id) DO UPDATE SET "
-            "parent_id=EXCLUDED.parent_id, type=EXCLUDED.type, route_path=EXCLUDED.route_path, "
-            "is_builtin=TRUE",
+            "ON CONFLICT (id) DO NOTHING",
             [m["code"], m["parent_code"], m["code"], m["title"], m["type"],
              m["route_path"], m["icon"], m["sort"], m["visible"]])
     # 3) 功能点/资源（id=code）
@@ -1190,7 +1189,10 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
 
 
 def _backfill_config_split_builtin_grants(client: PostgresClient) -> None:
-    """配置管理拆页结构回填：菜单结构更新，授权由一次性迁移函数处理。"""
+    """配置管理拆页结构回填：仅发现旧 `/score-profiles` 菜单时迁移，不重复覆盖 sys_menu。"""
+    legacy = client.query_df("SELECT 1 FROM sys_menu WHERE id=%s", ["/score-profiles"])
+    if legacy.empty:
+        return
     client.execute("DELETE FROM sys_role_menu WHERE menu_id=%s", ["/score-profiles"])
     client.execute("DELETE FROM sys_menu WHERE id=%s", ["/score-profiles"])
     client.execute(

@@ -66,19 +66,53 @@ def test_menu_tree_parent_linkage_and_type(pg):
     seeded = _flatten_menu_tree(_SEED_MENU_TREE)
     codes = [m["code"] for m in seeded]
     df = pg.query_df(
-        "SELECT id, parent_id, type, route_path FROM sys_menu WHERE code = ANY(%s)",
+        "SELECT id, parent_id FROM sys_menu WHERE code = ANY(%s)",
         [codes])
     assert len(df) == len(seeded)
-    ids = set(df["id"])
     for _, m in df.iterrows():
-        # 每个非根 parent_id 必须落在 seeded 菜单内（FK + 树完整）
+        # sys_menu 是运行期数据库事实源；内置节点可被放到自定义分组下，只校验父节点真实存在。
         if m["parent_id"] is not None:
-            assert m["parent_id"] in ids
-        # group 无 route_path；leaf 有且等于 id（code）
-        if m["type"] == "group":
-            assert m["route_path"] is None
-        else:
-            assert m["route_path"] == m["id"]
+            parent = pg.query_df("SELECT 1 FROM sys_menu WHERE id=%s", [m["parent_id"]])
+            assert not parent.empty
+
+
+def test_seed_rbac_does_not_overwrite_db_menu_customization(pg):
+    parent_id = "pytest_menu_parent"
+    original = pg.query_df(
+        "SELECT parent_id, title, icon, sort, visible FROM sys_menu WHERE id=%s", ["/screen"]
+    ).iloc[0].to_dict()
+    try:
+        pg.execute(
+            "INSERT INTO sys_menu "
+            "(id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
+            "VALUES (%s, NULL, %s, %s, 'group', NULL, %s, 999, 'login', FALSE) "
+            "ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title",
+            [parent_id, parent_id, "测试菜单分组", "Menu"],
+        )
+        pg.execute(
+            "UPDATE sys_menu SET parent_id=%s, title=%s, icon=NULL, sort=%s, visible=%s "
+            "WHERE id=%s",
+            [parent_id, "运行期筛选", 777, "login", "/screen"],
+        )
+        seed_rbac(pg)
+        row = pg.query_df(
+            "SELECT parent_id, title, icon, sort, visible FROM sys_menu WHERE id=%s", ["/screen"]
+        ).iloc[0]
+        assert row["parent_id"] == parent_id
+        assert row["title"] == "运行期筛选"
+        assert row["icon"] is None
+        assert int(row["sort"]) == 777
+        assert row["visible"] == "login"
+    finally:
+        pg.execute(
+            "UPDATE sys_menu SET parent_id=%s, title=%s, icon=%s, sort=%s, visible=%s "
+            "WHERE id=%s",
+            [
+                original["parent_id"], original["title"], original["icon"], int(original["sort"]),
+                original["visible"], "/screen",
+            ],
+        )
+        pg.execute("DELETE FROM sys_menu WHERE id=%s", [parent_id])
 
 
 def test_resources_seeded_and_bound_to_menu(pg):
