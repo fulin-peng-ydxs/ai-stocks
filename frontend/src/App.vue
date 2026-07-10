@@ -293,7 +293,7 @@ async function onLogout() {
         >
           <template #reference>
             <button
-              class="topbar-action topbar-action--wide"
+              class="topbar-action topbar-action--wide topbar-action--trade-date"
               :class="`is-${marketStatusTone}`"
               type="button"
               aria-label="交易数据状态"
@@ -353,7 +353,7 @@ async function onLogout() {
         </el-popover>
         <button
           v-else
-          class="topbar-action topbar-action--wide is-readonly"
+          class="topbar-action topbar-action--wide topbar-action--trade-date is-readonly"
           :class="`is-${marketStatusTone}`"
           type="button"
           aria-label="交易日状态（无详情权限）"
@@ -371,10 +371,13 @@ async function onLogout() {
           popper-class="topbar-popover"
         >
           <template #reference>
-            <button class="topbar-action" :class="`is-${taskTone}`" type="button" aria-label="任务中心">
+            <button
+              class="topbar-action topbar-action--icon"
+              :class="`is-${taskTone}`"
+              type="button"
+              aria-label="任务中心"
+            >
               <el-icon><Clock /></el-icon>
-              <span class="topbar-action-label">任务中心</span>
-              <span v-if="taskSignalText" class="topbar-action-value">{{ taskSignalText }}</span>
             </button>
           </template>
 
@@ -731,6 +734,30 @@ async function onLogout() {
 }
 .topbar-action--wide {
   min-width: 0;
+}
+.topbar-action--trade-date {
+  height: 38px;
+  min-width: 0;
+  padding: 0 11px;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--chrome-border-strong) 72%, var(--shell-accent) 28%);
+  border-radius: 9px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--chrome-bg-soft) 88%, white 12%), var(--chrome-bg-soft)),
+    color-mix(in srgb, var(--shell-accent-faint) 38%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
+    0 8px 20px color-mix(in srgb, var(--shell-accent) 10%, transparent);
+}
+.topbar-action--trade-date:hover,
+.topbar-action--trade-date.is-readonly:hover {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--chrome-bg-soft-hover) 86%, white 14%), var(--chrome-bg-soft-hover)),
+    color-mix(in srgb, var(--shell-accent-faint) 44%, transparent);
+  border-color: color-mix(in srgb, var(--shell-accent) 34%, var(--chrome-border-hover));
+}
+.topbar-action--trade-date .el-icon {
+  font-size: 16px;
 }
 .topbar-action--icon {
   width: 36px;
@@ -1166,13 +1193,14 @@ async function onLogout() {
   color: var(--page-settings-text-muted);
 }
 .theme-card {
-  border: 1px solid var(--page-settings-section-border);
-  background: var(--page-settings-section-bg);
+  border: 1px solid color-mix(in srgb, var(--page-settings-section-border) 46%, transparent);
+  background: color-mix(in srgb, var(--page-settings-bg) 74%, transparent);
   border-radius: 12px;
-  padding: 12px;
+  padding: 9px;
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 7px;
+  box-shadow: none;
 }
 .theme-card-head {
   display: flex;
@@ -1186,7 +1214,7 @@ async function onLogout() {
   color: var(--page-settings-text);
 }
 .theme-card-sub {
-  margin-top: 3px;
+  margin-top: 1px;
   font-size: 12px;
   color: var(--page-settings-text-muted);
 }
@@ -1194,7 +1222,7 @@ async function onLogout() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .theme-strip {
   min-width: 0;
@@ -1202,7 +1230,7 @@ async function onLogout() {
   gap: 10px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 2px 0 4px;
+  padding: 1px 0 2px;
   scroll-snap-type: x proximity;
   scrollbar-width: none;
 }
@@ -1212,9 +1240,9 @@ async function onLogout() {
 }
 .theme-scroll-rail {
   position: relative;
-  height: 4px;
+  height: 3px;
   border-radius: 999px;
-  background: var(--page-settings-bg);
+  background: color-mix(in srgb, var(--page-settings-bg) 72%, var(--page-settings-text-muted) 8%);
   overflow: hidden;
 }
 .theme-scroll-thumb {
@@ -1222,7 +1250,7 @@ async function onLogout() {
   top: 0;
   bottom: 0;
   border-radius: inherit;
-  background: var(--page-settings-seg-active-border);
+  background: color-mix(in srgb, var(--page-settings-accent) 72%, white 10%);
   transition: left 0.08s linear, width 0.15s ease;
 }
 .theme-option {
@@ -1234,7 +1262,7 @@ async function onLogout() {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   cursor: pointer;
   text-align: center;
   scroll-snap-align: start;
@@ -1247,8 +1275,8 @@ async function onLogout() {
   color: var(--page-settings-text);
 }
 .theme-option-preview {
-  height: 44px;
-  border: 1px solid var(--page-settings-section-border);
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--page-settings-section-border) 68%, white 10%);
   border-radius: 0;
   background: transparent;
   padding: 0;
@@ -1265,13 +1293,13 @@ async function onLogout() {
 .theme-option.is-active .theme-option-preview {
   border-color: var(--page-settings-accent);
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--page-settings-accent) 40%, transparent),
-    0 8px 18px color-mix(in srgb, var(--page-settings-accent) 18%, transparent);
+    0 0 0 2px color-mix(in srgb, var(--page-settings-accent) 34%, transparent),
+    0 6px 14px color-mix(in srgb, var(--page-settings-accent) 14%, transparent);
 }
 .theme-option-name {
   min-width: 0;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 15px;
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1279,7 +1307,7 @@ async function onLogout() {
 }
 .theme-option-slashes {
   width: 138px;
-  height: 56px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1290,21 +1318,21 @@ async function onLogout() {
 }
 .theme-option-slash {
   min-width: 0;
-  height: 56px;
+  height: 48px;
   border-radius: 0;
   box-shadow: none;
   flex-shrink: 1;
 }
 .theme-option-slash:nth-child(2) {
-  height: 56px;
+  height: 48px;
   transform: none;
 }
 .theme-option-slash:nth-child(3) {
-  height: 56px;
+  height: 48px;
   transform: none;
 }
 .theme-option-slash:nth-child(4) {
-  height: 56px;
+  height: 48px;
   transform: none;
 }
 /* 退出登录（stage2·T9）：抽屉底部危险操作，红色描边区分常规项 */
