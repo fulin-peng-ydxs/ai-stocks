@@ -1099,8 +1099,9 @@ def _flatten_menu_tree(tree: list, parent_code: str | None = None) -> list[dict]
 def seed_rbac(client: PostgresClient | None = None) -> None:
     """幂等 seed 内置角色 / 菜单树 / 功能点 / 默认授权，并按 role_code 为存量用户补 sys_user_role。
 
-    幂等策略：主体（角色/菜单/资源）ON CONFLICT (id) DO NOTHING；默认授权仅在该角色**尚无任何
-    role_menu** 时首次写入（避免覆盖管理员后续在角色页的手工调整）；user_role 追加式 ON CONFLICT DO NOTHING。
+    幂等策略：主体（角色/资源）ON CONFLICT (id) DO NOTHING；内置菜单会校准父级、类型与路由等结构字段，
+    避免旧库 IA 调整残留导致当前菜单树断链；默认授权仅在该角色**尚无任何 role_menu** 时首次写入
+    （避免覆盖管理员后续在角色页的手工调整）；user_role 追加式 ON CONFLICT DO NOTHING。
     system 角色 seed 全量授权仅供角色页展示（全选+锁定）；运行时 system 由 perm_resolver 判全量兜底。
     """
     client = client or get_pg_client()
@@ -1115,7 +1116,10 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
     for m in menu_rows:
         client.execute(
             "INSERT INTO sys_menu (id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) "
+            "ON CONFLICT (id) DO UPDATE SET "
+            "parent_id=EXCLUDED.parent_id, type=EXCLUDED.type, route_path=EXCLUDED.route_path, "
+            "is_builtin=TRUE",
             [m["code"], m["parent_code"], m["code"], m["title"], m["type"],
              m["route_path"], m["icon"], m["sort"], m["visible"]])
     # 3) 功能点/资源（id=code）
@@ -1166,6 +1170,9 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
     for role_id, menu_codes, resource_codes in grants:
         # system 角色：锁定、不可手工编辑，始终**幂等补齐全量**——保证新增菜单/功能点即时纳入其全授权
         # （否则存量库新增资源后 system 出现授权缺口，角色页无法全选+锁定；见 test_system_role_full_grants）。
+        if role_id == ROLE_SYSTEM:
+            menu_codes = client.query_df("SELECT id FROM sys_menu")["id"].tolist()
+            resource_codes = client.query_df("SELECT id FROM sys_resource")["id"].tolist()
         # 其它内置角色：仅首次写默认授权，避免覆盖管理员在角色页的后续手工调整。
         if role_id != ROLE_SYSTEM:
             df = client.query_df(
