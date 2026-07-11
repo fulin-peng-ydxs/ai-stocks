@@ -725,3 +725,61 @@ def test_revert_to_private_restores_profile_ref_columns(pg, market):
         _cleanup_runs(pg, owner)
         pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [owner])
         pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner])
+
+
+def test_bulk_downgrade_restores_backtest_profile_ref_columns(pg, market):
+    """用户/租户停用删除触发的批量下线,也必须按 private 语义还原回测引用列。"""
+    from backend.screening.profile import ProfileRepo
+    from backend.services.asset_visibility import downgrade_owner_assets_to_private
+    from backend.services.backtest_service import BacktestService
+
+    tenant = "bt_p4_bulk_t_" + uuid.uuid4().hex[:8]
+    owner = "bt_p4_bulk_o_" + uuid.uuid4().hex[:8]
+    run_id = "bt_p4_bulk_run_" + uuid.uuid4().hex[:8]
+    screen_id = "bt_p4_bulk_screen_" + uuid.uuid4().hex[:6]
+    params = {
+        "date_start": "2024-01-01", "date_end": "2024-01-31",
+        "profile_id": screen_id, "top_n": 5, "initial_capital": 1000000,
+    }
+    try:
+        repo = ProfileRepo(pg=pg, tenant_id=tenant, owner_user_id=owner)
+        repo.save(
+            screen_id,
+            "P4 批量筛选",
+            {"type": "col", "field": "rs_pct", "cmp": ">=", "value": 90},
+        )
+        repo.set_visibility(screen_id, "tenant", published_by=owner)
+        _insert_run(pg, tenant=tenant, owner=owner, run_id=run_id, params=params)
+        svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=owner)
+        published = svc.set_run_visibility(run_id, "tenant", published_by=owner)
+        assert published is not None and published["visibility"] == "tenant"
+        pub_row = pg.query_df(
+            "SELECT profile_id, signature FROM backtest_run "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tenant, owner, run_id],
+        ).iloc[0]
+        assert str(pub_row["profile_id"]).startswith("avr_")
+
+        with pg.transaction() as conn:
+            affected = downgrade_owner_assets_to_private(
+                conn, tenant_id=tenant, owner_user_id=owner)
+        assert affected >= 1
+
+        rev_row = pg.query_df(
+            "SELECT visibility, profile_id, params, signature FROM backtest_run "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tenant, owner, run_id],
+        ).iloc[0]
+        assert rev_row["visibility"] == "private"
+        assert rev_row["profile_id"] == screen_id
+        assert json.loads(rev_row["params"])["profile_id"] == screen_id
+        assert rev_row["signature"] != pub_row["signature"]
+        assert pg.query_df(
+            "SELECT visibility FROM screen_profile "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tenant, owner, screen_id],
+        ).iloc[0]["visibility"] == "private"
+    finally:
+        _cleanup_runs(pg, owner)
+        pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner])

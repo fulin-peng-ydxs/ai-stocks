@@ -155,7 +155,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 列表查询/筛选/分页 | R10 | 租户(system)/角色/状态筛选 + 搜索 + 分页 | LayoutHost list；el-table 体内滚/横滚；服务端分页 | UserManageView、el-table、el-pagination | `GET /api/users`(域过滤) → `user:list` | loading/空/错误重试；租管仅本租户 | T5,T11 |
 | 新建/编辑(多角色) | R10 | 账号/邮箱/多角色/租户/状态 | dialog 自适应；角色 el-select multiple | 编辑弹窗 | `POST/PUT /api/users`→`user:create/update`、**`GET /api/roles/assignable`**(非 require_system 的 `/api/roles`，防 tenant_admin 断链；system 得含自建 custom、tenant_admin 仅系统预设) | 账号/邮箱唯一；租管不跨租户/仅系统预设可分配角色，system 可分配自建 custom | T5,T11 |
-| 启停/锁定/重置/删除 | R10 | 行操作随状态变 | 行操作调接口刷新；重置密码弹窗 | 行操作、重置弹窗 | `POST /api/users/{id}/status`→`user:disable`、`/reset-password`→`user:reset-password`、`DELETE`→`user:delete` | 禁用即时失效(bump+黑名单)；删自身/最后管理员阻止 | T5,T11 |
+| 启停/锁定/重置/删除 | R10 | 行操作随状态变 | 行操作调接口刷新；重置密码弹窗 | 行操作、重置弹窗 | `POST /api/users/{id}/status`→`user:disable`、`/reset-password`→`user:reset-password`、`DELETE`→`user:delete` | 禁用即时失效(bump+黑名单)；删/禁自身阻止；最后租户管理员不做特殊保护 | T5,T11 |
 
 ### 4.8 页面 P5 技术实现：角色管理（承接 [role-management.html](../prototypes/role-management.html)）
 | 页面功能点 | 需求 | 交互要点 | 技术实现 | 组件/模块 | 数据/API | 状态与异常 | 任务 |
@@ -249,11 +249,11 @@
 - 依赖：T4
 - 涉及文件/模块：`backend/api/users.py`(新)、`backend/services/user_admin_service.py`(新)、`backend/storage/user_repository.py`(扩)、`backend/storage/role_repository.py`(**新，只读部分提前落地供可分配校验；T6 扩 CRUD**)、`main.py`、`services/auth_service`(register 经 repo 走 user_role)、`backend/tests/test_rbac_users.py`(产出)
 - 目标：用户 CRUD/启停锁定/重置/多角色/租户，按域过滤，精确码守卫。
-- 操作：按 §4.3 精确码挂 `require_perm`（list/create/update/disable/reset-password/delete）；`GET /api/users`(域过滤)、`POST/PUT`、`/status`、`/reset-password`、`DELETE`；编排在 UserAdminService（域范围/可分配校验/自身与最后管理员保护/bump 失效）；多角色写 sys_user_role（新建/编辑/改角色/停用/删除/重置 → `bump_and_invalidate` 即时失效）；`register_tenant_and_admin` 同事务写 sys_user_role(tenant_admin)；tenant_admin 恒本租户（跨租户目标 404）/仅 `RoleRepository.assignable(调用者)` 可分配。
+- 操作：按 §4.3 精确码挂 `require_perm`（list/create/update/disable/reset-password/delete）；`GET /api/users`(域过滤)、`POST/PUT`、`/status`、`/reset-password`、`DELETE`；编排在 UserAdminService（域范围/可分配校验/自身删禁保护/bump 失效）；多角色写 sys_user_role（新建/编辑/改角色/停用/删除/重置 → `bump_and_invalidate` 即时失效）；`register_tenant_and_admin` 同事务写 sys_user_role(tenant_admin)；tenant_admin 恒本租户（跨租户目标 404）/仅 `RoleRepository.assignable(调用者)` 可分配。
 - 产出：用户管理接口 + service 编排 + 仓库多角色/域过滤方法 + role_repository 只读 + 16 接口测试。
 - 影响范围：新 router/service/role_repository；user_repository 扩展；register 绑角色（故 /me 对注册用户返回非空菜单，同步改 test_auth_service 断言）。
-- 边界与异常：账号/邮箱唯一（业务软失败 200+4000）；跨租户目标 404；删/停自身阻止；最后 tenant_admin 不可停用/删除/降级；停用/删除/改角色 bump（下次请求 401，停用者重登被 status 拒）。
-- 验证方式：接口测试——精确码 403、域隔离、多角色 CRUD、唯一冲突、启停 perm_ver bump、自身与最后管理员保护、tenant_admin 不可授 system。
+- 边界与异常：账号/邮箱唯一（业务软失败 200+4000）；跨租户目标 404；删/禁自身阻止；最后 tenant_admin 可停用/删除/降级；停用/删除/改角色 bump（下次请求 401，停用者重登被 status 拒）。
+- 验证方式：接口测试——精确码 403、域隔离、多角色 CRUD、唯一冲突、启停 perm_ver bump、自身保护、最后 tenant_admin 可停用/降级、tenant_admin 不可授 system。
 - 完成标准：R10 功能点全通过 + 隔离回归。**（已达成：16 个 T5 用例全通过；全量 318 passed）**
 
 ### 6.6 任务 T6：角色管理 API + 仓库（R11）
@@ -318,7 +318,7 @@
 
 ### 6.11 任务 T11：前端 用户管理页（P4）
 - 状态：已完成（页面/api/登记落地；vue-tsc + build 绿；pageRegistry/layout-contract 契约绿；**preview 5181 双主题 + 三档视口(1440×900/1366×768/1100×620)交互闭环已验**：新建(多角色+指定租户)/编辑回填(账号禁用·租户锁定·角色回填)/改状态/行内启停解锁/锁定→删除/重置弹窗，无整页横纵溢出、无控制台错误）
-- 验证中发现并修复 2 个 T5 后端缺陷（均补回归测试，见 test_rbac_users）：①`update_user` 的"最后管理员保护"漏 `target_is_admin` 前置——租户内无 active tenant_admin 时（如默认租户 admin 为 system 角色）编辑弹窗停用**普通用户**被误拦，与行内 `set_status` 口径统一后修复；②`_row_to_admin_view._iso` 在**混合结果集**里把 SQL NULL 的 `last_login_at` 序列化成字符串 `'NaT'` 泄漏前端（pandas 列 dtype 提升为 datetime64），`pd.isna` 兜住 → null。
+- 验证中发现并修复 2 个 T5 后端缺陷（均补回归测试，见 test_rbac_users）：①历史租户管理员兜底口径已移除，当前仅保留删/禁自身保护，最后 tenant_admin 可停用/删除/降级；②`_row_to_admin_view._iso` 在**混合结果集**里把 SQL NULL 的 `last_login_at` 序列化成字符串 `'NaT'` 泄漏前端（pandas 列 dtype 提升为 datetime64），`pd.isna` 兜住 → null。
 - 依赖：T5,T10
 - 涉及文件/模块：`frontend/src/views/system/UserManageView.vue`(新)、`api/user.ts`(新)、`router`、`pageRegistry.ts`、`DESIGN.md §9`
 - 目标：承接 [user-management.html](../prototypes/user-management.html)（§4.7），**去勾选列**，含 settings-drawer。
@@ -486,7 +486,7 @@
 **阶段三完成 = 同时满足**（对齐 §12 阶段三里程碑「多账号交叉验证隔离与授权即时生效」；前缀标当前达成度）：
 1. ✅ **已达成**（T1）：6 张 RBAC 表（FK/索引）+ seed 就绪；存量平滑迁 sys_user_role；role_code 兼容保留。
 2. ✅ **已达成**（T2/T3/T4）：瘦令牌 + 服务端权限解析 + **PG 权威 perm_ver/status 闸门** + Redis perms 缓存 + **全触发点** perm_ver 失效（强制重登）。五轮 Codex P1 整改收敛为**原子化**：① **业务写入 + `bump_perm_ver` 在同一 PG 事务原子提交**（`affected` 写前算定防级联缩水；`clear_perms_cache` 提交后 best-effort），要么都提交要么都回滚，无"业务已变/版本未进"或"版本已进/业务未变"窗口，**且不被 Redis 可用性左右**；② **鉴权闸门 `claims_from_bearer` 每请求以 PG 的 perm_ver + 用户 status + 租户 status 为权威**、不信任 Redis `auth:pv`——`load_perms` 再按权威 perm_ver 校验 perms 缓存新鲜度拒采信陈旧内容，黑名单仍走 Redis fail-closed。故 **Redis 清理失败不阻断权威失效、也不造成 fail-open**（旧实现"先清 Redis 清失败即不 bump"的脱钩已消除）。`require_perm(精确码)` 用于 user 接口、`require_system` 硬守 role/menu/resource/tenant 接口——**接口本体 T6–T9 已挂载**。
-3. ✅ **已达成**（后端 4 套接口 T5–T9 + 4 前端页 T11–T14）：用户/角色/菜单+功能/租户 4 套接口（含内置保护、级联/引用校验、租户存在校验 P2-b、最后 active 管理员保护 P1-b、菜单删除 resource 引用前置校验 P2-a）；4 前端页承接原型、过契约、双主题、**三档视口达标**、settings-drawer、去勾选列、全选/清空/还原。Codex 复审后角色页右侧由 el-tree 重建为定制三级权限树 `PermissionTree.vue`、菜单页功能点改表内联增删改。
+3. ✅ **已达成**（后端 4 套接口 T5–T9 + 4 前端页 T11–T14）：用户/角色/菜单+功能/租户 4 套接口（含内置保护、级联/引用校验、租户存在校验 P2-b、删/禁自身保护、最后租户管理员可停用/删除/降级、菜单删除 resource 引用前置校验 P2-a）；4 前端页承接原型、过契约、双主题、**三档视口达标**、settings-drawer、去勾选列、全选/清空/还原。Codex 复审后角色页右侧由 el-tree 重建为定制三级权限树 `PermissionTree.vue`、菜单页功能点改表内联增删改。
 4. ✅ **已达成**（/me 菜单树 T10 + 前端权限消费 T15）：/me 返回「授权∩可见性」双过滤菜单树 + 功能码列表（含菜单移动跨可见域即时失效 P2-c，**按「当前节点+子树」递归 CTE 汇总失效**）；前端 `v-permission` 按钮级（真正落到 4 页模板，脚本走共用 `hasPermission`）+ SideMenu 消费后端菜单(**fail-closed**、EP 图标) + 路由守卫 `resolveMenuGuard`(**fail-closed**，未授权漏斗首个授权菜单/`SAFE_HOME`)。
 5. ✅ **已达成**（T16 多账号交叉核查）：**多账号交叉验证**——tenant_admin 限本租户、跨租户不可见/不可改（404）、system-only 接口非 system 403、越权提角色 403；授权变更后相关用户重登即生效。补 4 例锁死用户变更全动词跨租户隔离。
 6. ✅ **已达成**（T17）：全量 `pytest` **398 passed**（先 `./start.sh stop` 释放 DuckDB 锁）+ `npm run build` 绿 + 前端 `vitest` **118 passed**（含 `layout-contract`/`pageRegistry`/权限指令/SideMenu fail-closed/管理页 error+retry 回归）；CLAUDE.md 补细粒度 RBAC 铁律 6 条 + 阶段状态；requirement §12 阶段三标完成；DESIGN §9 登记 4 页 + IconPicker。

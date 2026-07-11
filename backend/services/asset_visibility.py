@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -241,12 +242,164 @@ def visible_params(*, tenant_id: str, owner_user_id: str) -> list[str]:
 
 
 # 四类公开资产表(评分/筛选/买卖方案 + 回测记录)
-ASSET_TABLES: tuple[str, ...] = (
+PROFILE_ASSET_TABLES: tuple[str, ...] = (
     "score_profile",
     "screen_profile",
     "trade_profile",
+)
+ASSET_TABLES: tuple[str, ...] = (
+    *PROFILE_ASSET_TABLES,
     "backtest_run",
 )
+
+BACKTEST_SIGNATURE_KEYS: tuple[str, ...] = (
+    "date_start",
+    "date_end",
+    "profile_id",
+    "score_profile_id",
+    "trade_profile_id",
+    "top_n",
+    "initial_capital",
+    "sell_ma_period",
+    "max_hold_days",
+    "take_profit",
+    "stop_loss",
+    "rebalance_days",
+    "industry_max_pct",
+    "benchmark",
+    "horizons",
+    "thresholds",
+)
+
+
+def backtest_signature(kind: str, params: dict, versions: dict) -> str:
+    """回测去重签名的纯数据算法,供手动收回和批量下线共用。"""
+    payload: dict = {"kind": "strategy" if kind == "strategy" else "score_check"}
+    for key in BACKTEST_SIGNATURE_KEYS:
+        val = params.get(key)
+        if val is not None:
+            payload[key] = str(val) if key in ("date_start", "date_end") else val
+    payload.update({key: versions.get(key) for key in sorted(versions)})
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha1(blob.encode("utf-8")).hexdigest()
+
+
+def bare_asset_id(ref_or_id: str) -> str:
+    """opaque ref → 原始裸 id;非 ref 原样返回。"""
+    try:
+        return parse_asset_ref(ref_or_id).asset_id
+    except ValueError:
+        return ref_or_id
+
+
+def restore_backtest_private_dependencies(run: dict) -> dict | None:
+    """回测收回 private 时还原方案引用列并重算 signature。
+
+    发布到 tenant/public 时会把方案引用改写为 opaque ref;收回为 private 后应恢复裸 id。
+    返回 None 表示没有 ref 需要还原。
+    """
+    raw_params = run.get("params") or "{}"
+    if isinstance(raw_params, dict):
+        params = dict(raw_params)
+    else:
+        try:
+            params = json.loads(raw_params)
+        except (TypeError, ValueError):
+            params = None
+    normalized = {
+        "params": raw_params if params is None else params,
+        "profile_id": run.get("profile_id"),
+        "score_profile_id": run.get("score_profile_id"),
+        "trade_profile_id": run.get("trade_profile_id"),
+        "profile_version": run.get("profile_version"),
+        "score_profile_version": run.get("score_profile_version"),
+        "trade_profile_version": run.get("trade_profile_version"),
+        "signature": run.get("signature"),
+    }
+    changed = False
+    for key in ("profile_id", "score_profile_id", "trade_profile_id"):
+        raw_val = (params.get(key) if isinstance(params, dict) else None) or run.get(key)
+        if not raw_val:
+            continue
+        bare = bare_asset_id(str(raw_val))
+        if bare != str(raw_val):
+            normalized[key] = bare
+            if isinstance(params, dict):
+                params[key] = bare
+            changed = True
+    if not changed:
+        return None
+    if isinstance(params, dict):
+        normalized["signature"] = backtest_signature(
+            str(run.get("kind") or "strategy"),
+            params,
+            {
+                "profile_version": normalized["profile_version"],
+                "score_profile_version": normalized["score_profile_version"],
+                "trade_profile_version": normalized["trade_profile_version"],
+            },
+        )
+    return normalized
+
+
+def _backtest_downgrade_where(owner_user_id: str | None) -> tuple[str, list]:
+    if owner_user_id is None:
+        return "tenant_id=%s AND visibility<>'private'", []
+    return "tenant_id=%s AND owner_user_id=%s AND visibility<>'private'", [owner_user_id]
+
+
+def _downgrade_backtest_runs_to_private(
+    conn,
+    *,
+    tenant_id: str,
+    owner_user_id: str | None,
+) -> int:
+    where, extra = _backtest_downgrade_where(owner_user_id)
+    params = [tenant_id, *extra]
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, tenant_id, owner_user_id, kind, params, profile_id, score_profile_id, "
+            "trade_profile_id, profile_version, score_profile_version, trade_profile_version, "
+            f"signature FROM backtest_run WHERE {where}",
+            params,
+        )
+        cols = [desc.name for desc in cur.description]
+        rows = [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
+        affected = 0
+        for run in rows:
+            normalized = restore_backtest_private_dependencies(run)
+            raw_params = normalized["params"] if normalized else run.get("params")
+            params_json = (
+                json.dumps(raw_params, ensure_ascii=False, default=str)
+                if isinstance(raw_params, dict)
+                else raw_params
+            )
+            cur.execute(
+                "UPDATE backtest_run SET visibility='private', "
+                "published_at=NULL, published_by=NULL, "
+                "params=%s, profile_id=%s, score_profile_id=%s, trade_profile_id=%s, "
+                "profile_version=%s, score_profile_version=%s, trade_profile_version=%s, "
+                "signature=%s WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                [
+                    params_json,
+                    normalized["profile_id"] if normalized else run.get("profile_id"),
+                    normalized["score_profile_id"] if normalized else run.get("score_profile_id"),
+                    normalized["trade_profile_id"] if normalized else run.get("trade_profile_id"),
+                    normalized["profile_version"] if normalized else run.get("profile_version"),
+                    normalized["score_profile_version"]
+                    if normalized
+                    else run.get("score_profile_version"),
+                    normalized["trade_profile_version"]
+                    if normalized
+                    else run.get("trade_profile_version"),
+                    normalized["signature"] if normalized else run.get("signature"),
+                    run["tenant_id"],
+                    run["owner_user_id"],
+                    run["id"],
+                ],
+            )
+            affected += max(cur.rowcount or 0, 0)
+    return affected
 
 
 def downgrade_owner_assets_to_private(
@@ -261,7 +414,7 @@ def downgrade_owner_assets_to_private(
     返回受影响行数。
     """
     affected = 0
-    for table in ASSET_TABLES:
+    for table in PROFILE_ASSET_TABLES:
         if owner_user_id is None:
             cur = conn.execute(
                 f"UPDATE {table} SET visibility='private', published_at=NULL, published_by=NULL "
@@ -275,4 +428,6 @@ def downgrade_owner_assets_to_private(
                 [tenant_id, owner_user_id],
             )
         affected += max(getattr(cur, "rowcount", 0) or 0, 0)
+    affected += _downgrade_backtest_runs_to_private(
+        conn, tenant_id=tenant_id, owner_user_id=owner_user_id)
     return affected

@@ -327,6 +327,30 @@ def test_system_admin_cannot_disable_self(client, env):
         "SELECT status FROM sys_user WHERE id='admin'").iloc[0]["status"] == "active"
 
 
+def test_cannot_disable_self_via_update_user(client, env):
+    tid = env.mk_tenant()
+    ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    r = client.put(
+        f"/api/users/{ta}",
+        json={"email": None, "roleIds": [ROLE_NORMAL], "status": "disabled"},
+        headers=_tok(ta, tid),
+    )
+    assert r.json()["code"] == 4000
+    assert env.pg.query_df(
+        "SELECT status FROM sys_user WHERE id=%s", [ta]).iloc[0]["status"] == "active"
+
+
+def test_system_admin_cannot_disable_self_via_update_user(client, env):
+    r = client.put(
+        "/api/users/admin",
+        json={"email": None, "roleIds": [ROLE_NORMAL], "status": "disabled"},
+        headers=env.sys_headers(),
+    )
+    assert r.json()["code"] == 4000
+    assert env.pg.query_df(
+        "SELECT status FROM sys_user WHERE id='admin'").iloc[0]["status"] == "active"
+
+
 def test_last_tenant_admin_can_be_disabled(client, env):
     tid = env.mk_tenant()
     only_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)

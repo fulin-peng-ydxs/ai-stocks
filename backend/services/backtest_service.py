@@ -29,14 +29,17 @@ from backend.services.asset_visibility import (
     ASSET_BACKTEST_RUN,
     ASSET_SCREEN_PROFILE,
     ASSET_TRADE_PROFILE,
+    BACKTEST_SIGNATURE_KEYS,
     VISIBILITY_PRIVATE,
     VISIBILITY_PUBLIC,
     VISIBILITY_TENANT,
+    backtest_signature,
     decorate_asset_row,
     is_asset_visible,
     normalize_visibility,
     parse_asset_ref,
     resolve_asset_ref_or_legacy_id,
+    restore_backtest_private_dependencies,
     visible_params,
     visible_sql,
 )
@@ -92,9 +95,7 @@ class BacktestService:
         )
 
     # ── 版本解析 + 去重签名（全条件一致则同一记录，唯一）──
-    _SIG_KEYS = ["date_start", "date_end", "profile_id", "score_profile_id", "trade_profile_id",
-                 "top_n", "initial_capital", "sell_ma_period", "max_hold_days", "take_profit",
-                 "stop_loss", "rebalance_days", "industry_max_pct", "benchmark", "horizons", "thresholds"]
+    _SIG_KEYS = list(BACKTEST_SIGNATURE_KEYS)
 
     def _visible_score_profile(self, profile_ref_or_id: str | None) -> dict | None:
         if not profile_ref_or_id:
@@ -210,15 +211,7 @@ class BacktestService:
         return out
 
     def _signature(self, kind: str, params: dict, versions: dict) -> str:
-        import hashlib
-        payload: dict = {"kind": "strategy" if kind == "strategy" else "score_check"}
-        for k in self._SIG_KEYS:
-            val = params.get(k)
-            if val is not None:
-                payload[k] = str(val) if k in ("date_start", "date_end") else val
-        payload.update({k: versions.get(k) for k in sorted(versions)})
-        blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-        return hashlib.sha1(blob.encode("utf-8")).hexdigest()
+        return backtest_signature(kind, params, versions)
 
     def find_duplicate(self, signature: str) -> dict | None:
         """同签名且已完成的历史记录（覆盖语义下至多一条）。"""
@@ -651,48 +644,7 @@ class BacktestService:
 
         返回 None 表示无 ref 需还原(走原值写回);否则返回与发布路径同构的 normalized。
         """
-        raw_params = run.get("params") or "{}"
-        if isinstance(raw_params, dict):
-            params = dict(raw_params)
-        else:
-            try:
-                params = json.loads(raw_params)
-            except (TypeError, ValueError):
-                params = None
-        normalized = {
-            "params": raw_params if params is None else params,
-            "profile_id": run.get("profile_id"),
-            "score_profile_id": run.get("score_profile_id"),
-            "trade_profile_id": run.get("trade_profile_id"),
-            "profile_version": run.get("profile_version"),
-            "score_profile_version": run.get("score_profile_version"),
-            "trade_profile_version": run.get("trade_profile_version"),
-            "signature": run.get("signature"),
-        }
-        changed = False
-        for key in ("profile_id", "score_profile_id", "trade_profile_id"):
-            raw_val = (params.get(key) if isinstance(params, dict) else None) or run.get(key)
-            if not raw_val:
-                continue
-            bare = self._bare_asset_id(str(raw_val))
-            if bare != str(raw_val):
-                normalized[key] = bare
-                if isinstance(params, dict):
-                    params[key] = bare
-                changed = True
-        if not changed:
-            return None
-        if isinstance(params, dict):
-            normalized["signature"] = self._signature(
-                str(run.get("kind") or "strategy"),
-                params,
-                {
-                    "profile_version": normalized["profile_version"],
-                    "score_profile_version": normalized["score_profile_version"],
-                    "trade_profile_version": normalized["trade_profile_version"],
-                },
-            )
-        return normalized
+        return restore_backtest_private_dependencies(run)
 
     def _run_owner_screen_profile(self, run: dict, profile_ref_or_id: str) -> dict | None:
         from backend.screening.profile import ProfileRepo

@@ -148,6 +148,7 @@ const form = ref<{
 }>({ account: '', email: '', roleIds: [], status: 'active', tenantId: '', password: '' })
 
 const isEdit = computed(() => editing.value !== null)
+const editingSelf = computed(() => editing.value ? isSelfUser(editing.value) : false)
 // 角色 id→code 反查（编辑回填时把用户 roles 的 code 映射回可分配角色 id）。
 const roleIdByCode = computed<Record<string, string>>(() => {
   const m: Record<string, string> = {}
@@ -402,7 +403,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             </span>
           </el-form-item>
           <el-form-item label="状态">
-            <el-radio-group v-model="form.status">
+            <el-radio-group v-model="form.status" :disabled="editingSelf">
               <el-radio-button value="active">启用</el-radio-button>
               <el-radio-button value="disabled">禁用</el-radio-button>
               <el-radio-button value="locked">锁定</el-radio-button>

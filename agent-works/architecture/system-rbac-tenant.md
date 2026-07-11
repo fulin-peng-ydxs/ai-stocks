@@ -104,6 +104,8 @@ flowchart LR
 | 重置密码 | `user:reset-password` |
 | 删除用户 | `user:delete` |
 
+用户状态变更存在两条入口：编辑弹窗的 `PUT /api/users/{id}` 和行内启停的 `POST /api/users/{id}/status`。两条入口都由服务层保护：任何用户不能通过更新、禁用、锁定或删除操作处理自己；system 管理员可以处理所有租户的其他用户；最后一个租户管理员不再作为特殊保护对象。
+
 ### 2. 角色管理
 
 角色管理维护“角色 → 菜单 / 功能点”的授权关系。内置角色承担系统默认能力，自定义角色用于后续细分业务职责。授权变更会让拥有该角色的用户会话失效，下次请求需要重新登录获取新权限。
@@ -115,6 +117,8 @@ flowchart LR
 ### 4. 租户管理
 
 租户是用户资产隔离的顶层单元。停用租户后，该租户用户不能继续登录或刷新会话，已有 token 也会在下一次鉴权时被拒绝。默认租户承载初始化管理员和平台预设资产，不应随意删除。
+
+租户删除入口只在 system-only 租户管理页出现。当前口径是：非 `default` 租户、未软删用户数为 0 时可删除，不要求租户必须先停用；后端仍会再次校验默认租户保护和用户数。
 
 ## 业务流程
 
@@ -139,6 +143,53 @@ flowchart LR
 2. 在同一 PG 事务中写业务变更并自增受影响用户 `perm_ver`。
 3. 提交后尽力清理 Redis 权限缓存。
 4. 受影响用户旧 token 在下一次请求时失效，重新登录后加载新权限。
+
+### 系统管理对象操作闭环
+
+#### 用户
+
+| 操作 | 入口与守卫 | 服务层规则 | 联动 |
+|------|------------|------------|------|
+| 查询 | `GET /api/users`，`require_perm("user:list")` | system 可全局查询并按租户过滤；非 system 固定本租户；软删用户不出现在列表 | 无写联动 |
+| 新增 | `POST /api/users`，`require_perm("user:create")` | system 可指定未软删且 active 的租户；非 system 固定本租户；账号和邮箱唯一口径包含软删行；角色必须来自当前调用者可分配集合 | 写 `sys_user` 与 `sys_user_role` |
+| 更新 | `PUT /api/users/{id}`，`require_perm("user:update")` | 目标必须在可管理域内；不能通过编辑接口变更自己的状态；角色必须可分配；用户归属租户不可改 | 更新资料、状态和角色关系，并在同一事务自增目标用户 `perm_ver` |
+| 禁用 / 锁定 / 启用 | `POST /api/users/{id}/status`，`require_perm("user:disable")` | 目标必须在可管理域内；不能变更自己的账号状态；最后一个租户管理员不做特殊保护 | 状态写入与目标用户 `perm_ver` 自增同事务；禁用/锁定时把该用户非 private 的评分、筛选、买卖方案和回测记录下线为 private，回测引用列恢复为裸 id |
+| 删除 | `DELETE /api/users/{id}`，`require_perm("user:delete")` | 目标必须在可管理域内；不能删除自己；system 可删除任意租户的其他用户；最后一个租户管理员不做特殊保护 | 逻辑删除 `sys_user.deleted_at`、清空 `sys_user_role`；该用户 token 因 `deleted_at` 实时拒绝；该用户非 private 资产下线为 private |
+| 重置密码 | `POST /api/users/{id}/reset-password`，`require_perm("user:reset-password")` | 目标必须在可管理域内；新密码按强度校验 | 写 password hash；审计记录重置动作 |
+
+#### 角色
+
+| 操作 | 入口与守卫 | 服务层规则 | 联动 |
+|------|------------|------------|------|
+| 查询 | `GET /api/roles`，`require_system`；`GET /api/roles/assignable`，`require_perm("user:list")` | 角色管理页 system-only；用户页角色下拉按调用者分流，system 不返回 system 超管角色，租户管理员只拿系统预设可分配角色 | 无写联动 |
+| 新增 | `POST /api/roles`，`require_system` | 只能创建 custom 角色；code 为空时按名称生成；code 不能撞内置或现有角色 | 写 `sys_role` |
+| 更新 | `PUT /api/roles/{id}`，`require_system` | system 超管锁定角色不可改；只改名称和描述，不改 code/kind | 写 `sys_role` |
+| 授权 | `PUT /api/roles/{id}/perms`，`require_system` | 锁定角色不可授权；菜单和功能点 id 必须存在；system-only 功能点不能授给非 system 角色；基线共享读码不持久化到角色授权 | 替换 `sys_role_menu` 和 `sys_role_resource`，并与该角色成员 `perm_ver` 自增同事务 |
+| 删除 | `DELETE /api/roles/{id}`，`require_system` | 内置角色不可删；仍有用户成员时不可删 | 删除 `sys_role`；`sys_role_menu` / `sys_role_resource` 由 FK cascade 清理；因无成员才允许删除，不需要踢用户 |
+
+#### 租户
+
+| 操作 | 入口与守卫 | 服务层规则 | 联动 |
+|------|------------|------------|------|
+| 查询 | `GET /api/tenants`，`require_system` | 只返回未软删租户；`user_count` 只统计未软删用户 | 无写联动 |
+| 新增 | `POST /api/tenants`，`require_system` | 名称全局唯一；创建时可选择 active 或 disabled | 写 `sys_tenant` |
+| 更新 | `PUT /api/tenants/{id}`，`require_system` | 名称全局唯一；`admin_user_id` 必须指向该租户内未软删用户 | 写租户名称和管理员关系 |
+| 停用 / 启用 | `POST /api/tenants/{id}/status`，`require_system` | `default` 租户不可停用；状态只能是 active/disabled | 停用时租户状态写入、租户内用户 `perm_ver` 自增和整租户非 private 资产下线同事务；启用只恢复租户状态，不自动重新公开资产 |
+| 删除 | `DELETE /api/tenants/{id}`，`require_system` | `default` 租户不可删；未软删用户数必须为 0；不要求先停用 | 逻辑删除 `sys_tenant.deleted_at`；整租户非 private 资产下线为 private；后续登录、刷新和请求鉴权把软删租户视为不存在 |
+
+#### 菜单与功能点
+
+| 操作 | 入口与守卫 | 服务层规则 | 联动 |
+|------|------------|------------|------|
+| 菜单查询 | `GET /api/menus`，`require_system` | 返回整棵平台菜单树，角色页和菜单页共用 | 无写联动 |
+| 菜单新增 | `POST /api/menus`，`require_system` | `type` 为 group/leaf；`visible` 为 login/system；code 全局唯一；leaf 必须有唯一 route；parent 必须存在 | 写 `sys_menu`；新节点尚无授权引用，不失效用户 |
+| 菜单更新 | `PUT /api/menus/{id}`，`require_system` | 标题必填；route 唯一；移动时目标父不能是自身或子孙 | 可见性变化或移动节点时，先计算引用该菜单及子树的用户，再与菜单写入和 `perm_ver` 自增同事务；纯标题、图标、route 展示修改不失效 |
+| 菜单排序 / 移动 | `POST /api/menus/reorder`，`require_system` | 每个节点必须存在；parent 变化同样做防成环校验 | 纯排序不失效；移动节点会按被移动子树计算受影响用户并自增 `perm_ver` |
+| 菜单删除 | `DELETE /api/menus/{id}`，`require_system` | 内置菜单不可删；有子节点不可删；菜单下还有功能点不可删 | 删除前计算引用该菜单及子树的用户；删除 `sys_menu`，`sys_role_menu` 级联清理，并与 `perm_ver` 自增同事务 |
+| 功能点查询 | `GET /api/resources`，`require_system` | 可按 `menu_id` 过滤；角色授权树和功能点子表共用 | 无写联动 |
+| 功能点新增 | `POST /api/resources`，`require_system` | code 全局唯一且不可复用；menu 必须存在；type 为 button/api | 写 `sys_resource`；新功能点尚无授权引用，不失效用户 |
+| 功能点更新 | `PUT /api/resources/{id}`，`require_system` | 内置功能点 code 不可改；code 变化不能撞现有功能点；menu 必须存在 | code 变化会先计算引用用户与 system 用户，再与功能点写入和 `perm_ver` 自增同事务；改名称、类型、API 元数据或移动菜单不失效 |
+| 功能点删除 | `DELETE /api/resources/{id}`，`require_system` | 内置功能点不可删 | 删除前计算引用用户与 system 用户；删除 `sys_resource`，`sys_role_resource` 级联清理，并与 `perm_ver` 自增同事务 |
 
 ### 新增受控功能
 

@@ -75,8 +75,10 @@ class UserAdminService:
     # ── 编辑（多角色 + 资料 + 状态）──
     def update_user(self, ctx: AuthContext, user_id: str, *, email: str | None,
                     role_ids: list[str], status: str) -> dict:
-        self._load_in_scope(ctx, user_id)
+        target = self._load_in_scope(ctx, user_id)
         self._check_status(status)
+        if user_id == ctx.user_id and status != target["status"]:
+            raise ValidationError("不能变更自己的账号状态")
         role_code = self._validate_roles(ctx, role_ids)
 
         # 业务写入 + perm_ver 自增**同事务原子提交**（Codex 五轮 P1）→ 提交后 best-effort 清缓存。
