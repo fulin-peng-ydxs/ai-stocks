@@ -109,7 +109,10 @@ def delete_profile(pid: str) -> ApiResponse:
         raise NotFoundError(f"方案不存在: {pid}")
     if p.get("readonly"):
         return err(403, "只能删除自己的筛选方案")
-    repo.delete(p["id"])   # 走 PG 资产仓库（按归属删方案 + 版本历史）
+    try:
+        repo.delete(p["id"])   # 走 PG 资产仓库（按归属删方案 + 版本历史）
+    except ValueError as e:
+        return err(409, str(e))
     return ok(msg="已删除")
 
 

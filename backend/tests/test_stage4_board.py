@@ -166,12 +166,14 @@ def public_preset(pg):
         pg.execute(
             "INSERT INTO score_profile (id,tenant_id,owner_user_id,name,version,items,"
             "grade_thresholds,is_preset,visibility,published_at,published_by,created_at,updated_at) "
-            "VALUES (%s,%s,%s,%s,1,%s,'{}',%s,%s,now(),%s,now(),now()) ON CONFLICT DO NOTHING",
+            "VALUES (%s,%s,%s,%s,1,%s,'{}',%s,%s,"
+            "CASE WHEN %s THEN now() ELSE NULL END,%s,now(),now()) ON CONFLICT DO NOTHING",
             [
                 pid, ptid, pown, pid,
                 '[{"indicator":"rs_pct","weight":1.0,"scoring":{"type":"linear","min":0,"max":100}}]',
                 is_preset,
                 "public" if is_preset else "private",
+                is_preset,  # published_at 仅公开预设有值,私有行保持 NULL(P6 一致性约束)
                 pown if is_preset else None,
             ])
     yield preset_id, priv_id

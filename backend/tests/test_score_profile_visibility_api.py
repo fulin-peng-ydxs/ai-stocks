@@ -212,3 +212,30 @@ def test_score_profile_public_owner_label_masks_cross_tenant_owner(client, pg):
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
         _rm_user(pg, owner, tid, owner_role)
         _rm_user(pg, outsider, otid, outsider_role)
+
+
+def test_delete_public_profile_returns_409_not_500(client, pg):
+    """P1 收口:删除仍公开的方案返回 409 业务提示,而非未捕获 ValueError→500。"""
+    owner, tid, owner_role = _mk_user(
+        pg, ["score-profile:view", "score-profile:save", "score-profile:publish-tenant", "score-profile:delete"])
+    pid = "spv_del409_" + uuid.uuid4().hex[:6]
+    try:
+        client.post("/api/score-profiles", json=_profile_body(pid), headers=_auth(owner, tid))
+        pub = client.post(
+            f"/api/score-profiles/{pid}/visibility",
+            json={"visibility": "tenant"}, headers=_auth(owner, tid))
+        assert pub.status_code == 200 and pub.json()["code"] == 0
+        # 公开态删除 → 409(非 500),提示先收回
+        blocked = client.delete(f"/api/score-profiles/{pid}", headers=_auth(owner, tid))
+        assert blocked.status_code == 200 and blocked.json()["code"] == 409
+        assert "收回为私有" in blocked.json()["msg"]
+        # 收回私有后可删
+        client.post(
+            f"/api/score-profiles/{pid}/visibility",
+            json={"visibility": "private"}, headers=_auth(owner, tid))
+        ok_del = client.delete(f"/api/score-profiles/{pid}", headers=_auth(owner, tid))
+        assert ok_del.status_code == 200 and ok_del.json()["code"] == 0
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
+        _rm_user(pg, owner, tid, owner_role)

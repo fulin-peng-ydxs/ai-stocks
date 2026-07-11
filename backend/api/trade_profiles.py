@@ -94,7 +94,10 @@ def delete_trade_profile(pid: str) -> ApiResponse:
         return err(404, "方案不存在")
     if p.get("readonly"):
         return err(403, "只能删除自己的买卖方案")
-    repo.delete(p["id"])
+    try:
+        repo.delete(p["id"])
+    except ValueError as e:
+        return err(409, str(e))
     return ok({"msg": "已删除"})
 
 

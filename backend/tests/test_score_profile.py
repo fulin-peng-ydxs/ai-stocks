@@ -279,3 +279,100 @@ def test_public_board_owner_preset_is_visible_as_readonly_preset(market, pg):
                    [ptid, pown, "pytest_public_preset"])
         pg.execute("DELETE FROM score_profile_version WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
                    [ptid, pown, "pytest_public_preset"])
+
+
+def test_delete_blocked_for_public_or_referenced_profile(market, pg):
+    """P1:公开态方案或被回测引用的方案不可直接删除,防悬空引用;清理后可删。"""
+    from datetime import date, datetime
+
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    try:
+        # 公开态不可删
+        repo.save("del_pub", "待删公开", items)
+        repo.set_visibility("del_pub", "tenant", published_by=TEST_OWNER)
+        with pytest.raises(ValueError, match="收回为私有"):
+            repo.delete("del_pub")
+        repo.set_visibility("del_pub", "private")
+
+        # 被回测引用(opaque ref 形态)不可删
+        repo.save("del_ref", "被引用", items)
+        ref = ScoreProfileRepo.make_ref(TEST_TENANT, TEST_OWNER, "del_ref")
+        pg.execute(
+            "INSERT INTO backtest_run (id,tenant_id,owner_user_id,kind,score_profile_id,"
+            "date_start,date_end,params,status,created_at,finished_at) "
+            "VALUES ('bt_del_ref',%s,%s,'strategy',%s,%s,%s,'{}','done',%s,%s)",
+            [TEST_TENANT, TEST_OWNER, ref, date(2024, 1, 1), date(2024, 1, 31),
+             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+        )
+        with pytest.raises(ValueError, match="被回测记录引用"):
+            repo.delete("del_ref")
+
+        # 解除引用后可删;无引用私有方案可删
+        pg.execute("DELETE FROM backtest_run WHERE id='bt_del_ref'")
+        repo.delete("del_ref")
+        assert repo.get("del_ref") is None
+        repo.delete("del_pub")
+        assert repo.get("del_pub") is None
+    finally:
+        pg.execute("DELETE FROM backtest_run WHERE id='bt_del_ref'")
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s AND id IN ('del_pub','del_ref')", [TEST_OWNER])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s AND id IN ('del_pub','del_ref')", [TEST_OWNER])
+
+
+def test_delete_not_blocked_by_other_owner_same_id_run(market, pg):
+    """P1 收口:引用检查按归属过滤,他人同名裸 id 的回测不应误挡本人删除自己的私有方案。"""
+    from datetime import date, datetime
+
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    mine = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    same_id = "shared_del_id"
+    try:
+        mine.save(same_id, "我的私有", items)  # 私有,无本人回测引用
+        # 另一 owner 有一条回测引用同名裸 id
+        pg.execute(
+            "INSERT INTO backtest_run (id,tenant_id,owner_user_id,kind,score_profile_id,"
+            "date_start,date_end,params,status,created_at,finished_at) "
+            "VALUES ('bt_other_owner',%s,'pytest_other','strategy',%s,%s,%s,'{}','done',%s,%s)",
+            [TEST_TENANT, same_id, date(2024, 1, 1), date(2024, 1, 31),
+             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+        )
+        mine.delete(same_id)  # 不应被他人回测误挡
+        assert mine.get(same_id) is None
+    finally:
+        pg.execute("DELETE FROM backtest_run WHERE id='bt_other_owner'")
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s AND id=%s", [TEST_OWNER, same_id])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s AND id=%s", [TEST_OWNER, same_id])
+
+
+def test_copy_visible_rejects_empty_id(market, pg):
+    """P7:score.copy_visible 空 new_id 报错,与 screen/trade 口径一致。"""
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    try:
+        repo.save("copy_src_empty", "源方案", items)
+        with pytest.raises(ValueError, match="不能为空"):
+            repo.copy_visible("copy_src_empty", "   ")
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s AND id='copy_src_empty'", [TEST_OWNER])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s AND id='copy_src_empty'", [TEST_OWNER])
+
+
+def test_downgrade_owner_assets_to_private(market, pg):
+    """P3:停用联动核心——批量把 owner 名下非私有资产降级 private 并清发布字段。"""
+    from backend.services.asset_visibility import downgrade_owner_assets_to_private
+
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id="pytest_dg")
+    try:
+        repo.save("dg_pub", "公开方案", items)
+        repo.set_visibility("dg_pub", "public", published_by="pytest_dg")
+        assert repo.get_visible("dg_pub")["visibility"] == "public"
+        with pg.transaction() as conn:
+            downgrade_owner_assets_to_private(conn, tenant_id=TEST_TENANT, owner_user_id="pytest_dg")
+        row = repo.get("dg_pub")
+        assert row["visibility"] == "private"
+        assert row["published_at"] is None and row.get("published_by") is None
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id='pytest_dg'")
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id='pytest_dg'")

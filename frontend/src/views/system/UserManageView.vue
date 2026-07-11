@@ -239,6 +239,9 @@ async function changeStatus(row: AdminUser, status: string, verb: string) {
     await load()
   } catch (e) { if (e === 'cancel') return /* 其余错误由拦截器弹出 */ }
 }
+function isSelfUser(row: AdminUser): boolean {
+  return row.id === auth.user?.id
+}
 async function removeUser(row: AdminUser) {
   try {
     await ElMessageBox.confirm(`确认删除用户「${row.account}」？该操作不可恢复。`, '删除用户',
@@ -355,13 +358,13 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
               <el-button v-permission="'user:reset-password'" type="primary" size="small" link
                          @click="openReset(row)">重置密码</el-button>
               <el-button v-if="row.status === 'active'" v-permission="'user:disable'" type="danger" size="small"
-                         link @click="changeStatus(row, 'disabled', '禁用')">禁用</el-button>
+                         link :disabled="isSelfUser(row)" @click="changeStatus(row, 'disabled', '禁用')">禁用</el-button>
               <el-button v-if="row.status === 'disabled'" v-permission="'user:disable'" type="success" size="small"
                          link @click="changeStatus(row, 'active', '启用')">启用</el-button>
               <el-button v-if="row.status === 'locked'" v-permission="'user:disable'" type="success" size="small"
                          link @click="changeStatus(row, 'active', '解锁')">解锁</el-button>
-              <el-button v-if="row.status === 'locked'" v-permission="'user:delete'" type="danger" size="small"
-                         link @click="removeUser(row)">删除</el-button>
+              <el-button v-permission="'user:delete'" type="danger" size="small"
+                         link :disabled="isSelfUser(row)" @click="removeUser(row)">删除</el-button>
             </template>
           </el-table-column>
         </AppDataTable>

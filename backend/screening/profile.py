@@ -20,6 +20,7 @@ from backend.services.asset_visibility import (
     VISIBILITY_PRIVATE,
     decorate_asset_row,
     is_asset_visible,
+    make_asset_ref,
     normalize_visibility,
     resolve_asset_ref_or_legacy_id,
     summarize_asset_row,
@@ -239,11 +240,28 @@ class ProfileRepo:
         return {"id": prof["id"], "profile_ref": prof["profile_ref"], "versions": out}
 
     def delete(self, pid: str) -> None:
-        """删除方案及其版本历史（PG，按归属）。"""
+        """删除方案及其版本历史（PG，按归属）。删除前拦截,防悬空引用(P1)。"""
+        self._assert_deletable(pid)
         self.pg.execute(
             f"DELETE FROM screen_profile WHERE id=%s AND {self._own}", [pid, *self._op])
         self.pg.execute(
             f"DELETE FROM screen_profile_version WHERE id=%s AND {self._own}", [pid, *self._op])
+
+    def _assert_deletable(self, pid: str) -> None:
+        cur = self.pg.query_df(
+            f"SELECT visibility FROM screen_profile WHERE id=%s AND {self._own}", [pid, *self._op])
+        if cur.empty:
+            return
+        if normalize_visibility(cur.iloc[0]["visibility"]) != VISIBILITY_PRIVATE:
+            raise ValueError("请先将方案收回为私有再删除")
+        # ref 全局唯一(编码 tenant/owner/id),裸 id 仅在本 owner 内唯一,须限归属避免误挡他人同名 id
+        ref = make_asset_ref(ASSET_SCREEN_PROFILE, self.tenant_id, self.owner_user_id, pid)
+        hit = self.pg.query_df(
+            "SELECT 1 FROM backtest_run WHERE profile_id=%s "
+            "OR (profile_id=%s AND tenant_id=%s AND owner_user_id=%s) LIMIT 1",
+            [ref, pid, self.tenant_id, self.owner_user_id])
+        if not hit.empty:
+            raise ValueError("该方案被回测记录引用，无法删除，请先删除相关回测")
 
     def seed_presets(self) -> int:
         """把系统内置方案写入（幂等）。"""

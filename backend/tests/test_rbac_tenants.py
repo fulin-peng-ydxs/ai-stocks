@@ -142,6 +142,23 @@ def test_assign_admin_must_belong_to_tenant(client, env):
     assert r2.status_code == 200 and r2.json()["data"]["admin_user_id"] == insider
 
 
+def test_soft_deleted_user_cannot_be_assigned_as_tenant_admin(client, env):
+    tid = env.mk_tenant()
+    deleted_user = env.mk_user(tid, ROLE_NORMAL)
+    r0 = client.delete(f"/api/users/{deleted_user}", headers=env.sys_headers())
+    assert r0.status_code == 200 and r0.json()["code"] == 0
+
+    r = client.put(
+        f"/api/tenants/{tid}",
+        json={"name": tid, "adminUserId": deleted_user},
+        headers=env.sys_headers(),
+    )
+    assert r.json()["code"] == 4000
+    assert env.pg.query_df(
+        "SELECT admin_user_id FROM sys_tenant WHERE id=%s", [tid]
+    ).iloc[0]["admin_user_id"] is None
+
+
 # ── 默认租户保护 / 删除前置 ──
 
 def test_default_tenant_cannot_be_deleted(client, env):
@@ -166,7 +183,9 @@ def test_delete_empty_tenant(client, env):
     tid = env.mk_tenant()
     r = client.delete(f"/api/tenants/{tid}", headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
-    assert env.pg.query_df("SELECT 1 FROM sys_tenant WHERE id=%s", [tid]).empty
+    # 逻辑删除:行保留并打 deleted_at 标记,而非物理消失
+    assert not env.pg.query_df(
+        "SELECT 1 FROM sys_tenant WHERE id=%s AND deleted_at IS NOT NULL", [tid]).empty
 
 
 # ── 停用即时踢下线（R14 + Codex P2）──

@@ -1,7 +1,7 @@
 """多租户 RBAC 阶段三 · T5：用户管理 API（R10）。
 
 覆盖 §6.5：精确码守卫(403) / 域隔离(system 全局、tenant_admin 本租户) / 多角色 CRUD /
-唯一冲突 / 启停即时失效(perm_ver bump) / 自身与最后管理员保护 / 可分配角色越权拦截。
+唯一冲突 / 启停即时失效(perm_ver bump) / 自身保护 / 可分配角色越权拦截。
 
 真实 PG + Redis + create_app()。所有临时租户/用户 uuid 化并 teardown 清理；acting token
 只用 admin(system) 或本用例新建的 tenant_admin，不触碰其它持久数据。
@@ -86,6 +86,82 @@ def test_list_allowed_for_tenant_admin(client, env):
     ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
     r = client.get("/api/users", headers=_tok(ta, tid))
     assert r.status_code == 200
+
+
+# ── 逻辑删除（软删）──
+
+def test_soft_deleted_user_excluded_and_token_rejected(client, env):
+    """软删用户后:不在列表、在线 token 被 claims_from_bearer 实时拒、行仍在(打标记)。"""
+    tid = env.mk_tenant()
+    normal = env.mk_user(tid, ROLE_NORMAL)
+    ntok = _tok(normal, tid)
+    # 删前:baseline 共享读可用
+    assert client.get("/api/data/trade-dates", headers=ntok).status_code == 200
+    # 软删
+    r = client.delete(f"/api/users/{normal}", headers=env.sys_headers())
+    assert r.status_code == 200 and r.json()["code"] == 0
+    # 行保留 + deleted_at 标记
+    assert not env.pg.query_df(
+        "SELECT 1 FROM sys_user WHERE id=%s AND deleted_at IS NOT NULL", [normal]).empty
+    # 不在管理列表
+    listed = client.get("/api/users", headers=env.sys_headers()).json()["data"]["items"]
+    assert normal not in {u["id"] for u in listed}
+    # 在线 token 被拒（每请求 claims_from_bearer 校验 deleted_at）
+    assert client.get("/api/data/trade-dates", headers=ntok).status_code == 401
+
+
+def test_soft_deleted_account_cannot_be_recreated(client, env):
+    """不允许重建:软删后同名 account 仍占用(查重命中已删行)。"""
+    from backend.storage.user_repository import UserRepository
+
+    tid = env.mk_tenant()
+    normal = env.mk_user(tid, ROLE_NORMAL)  # account == normal(=uid)
+    client.delete(f"/api/users/{normal}", headers=env.sys_headers())
+    # 查重口径看全量:已删账号名仍能查到 → 重建会被拦/撞唯一约束
+    assert UserRepository(env.pg).get_by_account(normal) is not None
+
+
+def test_system_user_can_delete_other_system_user(client, env):
+    """system 可删除其他 system 用户；唯一硬限制是不能删除自己。"""
+    from backend.auth.constants import ROLE_SYSTEM
+
+    actor = env.mk_user("default", ROLE_SYSTEM)
+    target = env.mk_user("default", ROLE_SYSTEM)
+    r = client.delete(f"/api/users/{target}", headers=_tok(actor, "default"))
+    assert r.status_code == 200 and r.json()["code"] == 0
+    assert not env.pg.query_df(
+        "SELECT 1 FROM sys_user WHERE id=%s AND deleted_at IS NOT NULL", [target]).empty
+
+
+def test_soft_delete_user_frees_tenant_deletion(client, env):
+    """软删租户内用户后 user_count=0,租户可删(软删)。"""
+    tid = env.mk_tenant()
+    u = env.mk_user(tid, ROLE_NORMAL)
+    client.delete(f"/api/users/{u}", headers=env.sys_headers())
+    r = client.delete(f"/api/tenants/{tid}", headers=env.sys_headers())
+    assert r.status_code == 200 and r.json()["code"] == 0
+    assert not env.pg.query_df(
+        "SELECT 1 FROM sys_tenant WHERE id=%s AND deleted_at IS NOT NULL", [tid]).empty
+
+
+def test_cannot_create_user_in_soft_deleted_tenant(client, env):
+    """软删租户视为不存在,system 也不能继续往隐藏租户下挂新用户。"""
+    tid = env.mk_tenant()
+    assert client.delete(
+        f"/api/tenants/{tid}", headers=env.sys_headers()).json()["code"] == 0
+    account = "soft_deleted_tenant_" + uuid.uuid4().hex[:8]
+    r = client.post(
+        "/api/users",
+        json={
+            "account": account,
+            "password": "GoodPass123",
+            "roleIds": [ROLE_NORMAL],
+            "tenantId": tid,
+        },
+        headers=env.sys_headers(),
+    )
+    assert r.json()["code"] == 4000
+    assert env.pg.query_df("SELECT 1 FROM sys_user WHERE account=%s", [account]).empty
 
 
 def test_list_requires_token(client):
@@ -223,11 +299,10 @@ def test_tenant_admin_create_forced_into_own_tenant(client, env):
     assert r.status_code == 200 and r.json()["data"]["tenant_id"] == tid
 
 
-# ── 启停即时失效 / 自身与最后管理员保护 ──
+# ── 启停即时失效 / 自身保护 ──
 
 def test_disable_bumps_perm_ver(client, env):
     tid = env.mk_tenant()
-    env.mk_user(tid, ROLE_TENANT_ADMIN)   # 保证不是最后一个管理员
     target = env.mk_user(tid, ROLE_NORMAL)
     v0 = _perm_ver(env.pg, target)
     r = client.post(f"/api/users/{target}/status", json={"status": "disabled"},
@@ -239,36 +314,41 @@ def test_disable_bumps_perm_ver(client, env):
 def test_cannot_disable_self(client, env):
     tid = env.mk_tenant()
     ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
-    env.mk_user(tid, ROLE_TENANT_ADMIN)   # 另有管理员，排除"最后管理员"干扰
     r = client.post(f"/api/users/{ta}/status", json={"status": "disabled"},
                     headers=_tok(ta, tid))
     assert r.json()["code"] == 4000   # 不能停用自己
 
 
-def test_last_tenant_admin_cannot_be_disabled(client, env):
+def test_system_admin_cannot_disable_self(client, env):
+    r = client.post("/api/users/admin/status", json={"status": "disabled"},
+                    headers=env.sys_headers())
+    assert r.json()["code"] == 4000
+    assert env.pg.query_df(
+        "SELECT status FROM sys_user WHERE id='admin'").iloc[0]["status"] == "active"
+
+
+def test_last_tenant_admin_can_be_disabled(client, env):
     tid = env.mk_tenant()
     only_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)
     r = client.post(f"/api/users/{only_admin}/status", json={"status": "disabled"},
                     headers=env.sys_headers())
-    assert r.json()["code"] == 4000   # 最后一个管理员保护
-
-
-def test_last_active_admin_protected_despite_disabled_admin(client, env):
-    # P1-b：租户内另有一个 disabled 管理员时，仍不能停用唯一 active 管理员（否则 0 可登录管理员）
-    tid = env.mk_tenant()
-    env.mk_user(tid, ROLE_TENANT_ADMIN, status="disabled")   # 存在但不可用
-    active_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)
-    r = client.post(f"/api/users/{active_admin}/status", json={"status": "disabled"},
-                    headers=env.sys_headers())
-    assert r.json()["code"] == 4000   # 按 active 统计 → 仍是最后一个可用管理员
+    assert r.status_code == 200 and r.json()["code"] == 0
     assert env.pg.query_df("SELECT status FROM sys_user WHERE id=%s",
-                           [active_admin]).iloc[0]["status"] == "active"   # 未被改
+                           [only_admin]).iloc[0]["status"] == "disabled"
+
+
+def test_last_tenant_admin_can_be_downgraded(client, env):
+    tid = env.mk_tenant()
+    only_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    r = client.put(f"/api/users/{only_admin}",
+                   json={"email": None, "roleIds": [ROLE_NORMAL], "status": "active"},
+                   headers=env.sys_headers())
+    assert r.status_code == 200 and r.json()["code"] == 0
+    assert r.json()["data"]["roles"] == [ROLE_NORMAL]
 
 
 def test_disable_normal_user_not_blocked_when_tenant_has_no_admin(client, env):
-    # 回归（T11 验证发现）：编辑弹窗(update_user)停用**普通用户**不应被"最后管理员保护"误拦。
-    # 该租户无任何 active tenant_admin 时，早期 disabling 分支漏 target_is_admin 前置会误拦普通用户；
-    # 修复后与行内 set_status 口径一致——保护仅针对 tenant_admin 目标。
+    # 租户是否还有 tenant_admin 不影响普通用户停用。
     tid = env.mk_tenant()
     normal = env.mk_user(tid, ROLE_NORMAL)   # 该租户无任何 tenant_admin
     r = client.put(f"/api/users/{normal}",
@@ -315,7 +395,6 @@ def test_business_write_and_bump_commit_atomically(client, env, monkeypatch):
     # （status 仍旧、perm_ver 仍旧）；提交后两者一起可见——即无"业务已变、版本未进/版本已进、业务未变"窗口。
     from backend.storage.user_repository import UserRepository
     tid = env.mk_tenant()
-    env.mk_user(tid, ROLE_TENANT_ADMIN)             # 排除最后管理员干扰
     target = env.mk_user(tid, ROLE_NORMAL)
     v0 = _perm_ver(env.pg, target)
 
@@ -342,7 +421,6 @@ def test_stale_redis_perm_ver_cannot_bypass_authoritative_pg(client, env):
     from backend.auth import session_store
     from backend.auth.constants import ROLE_NORMAL as _NORMAL
     tid = env.mk_tenant()
-    env.mk_user(tid, ROLE_TENANT_ADMIN)          # 排除最后管理员干扰
     target = env.mk_user(tid, _NORMAL)
     old = _tok(target, tid, 0)                   # 旧 token：perm_ver=0
 
@@ -370,7 +448,6 @@ def test_redis_clear_failure_does_not_block_authoritative_invalidation(client, e
     from backend.auth import session_store
     from backend.common.exceptions import ServiceUnavailableError
     tid = env.mk_tenant()
-    env.mk_user(tid, ROLE_TENANT_ADMIN)             # 排除最后管理员干扰
     target = env.mk_user(tid, ROLE_NORMAL)
     v0 = _perm_ver(env.pg, target)
     old = _tok(target, tid, v0)
@@ -438,4 +515,27 @@ def test_delete_user(client, env):
     target = env.mk_user(tid, ROLE_NORMAL)
     r = client.delete(f"/api/users/{target}", headers=env.sys_headers())
     assert r.status_code == 200 and r.json()["code"] == 0
-    assert env.pg.query_df("SELECT 1 FROM sys_user WHERE id=%s", [target]).empty
+    # 逻辑删除:行保留并打 deleted_at 标记,而非物理消失
+    assert not env.pg.query_df(
+        "SELECT 1 FROM sys_user WHERE id=%s AND deleted_at IS NOT NULL", [target]).empty
+
+
+def test_system_admin_can_delete_users_across_tenants(client, env):
+    """system 可删除任意租户非本人用户；删除仍是软删。"""
+    default_user = env.mk_user("default", ROLE_NORMAL)
+    tid = env.mk_tenant()
+    tenant_user = env.mk_user(tid, ROLE_NORMAL)
+    last_tenant_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)
+
+    for uid in (default_user, tenant_user, last_tenant_admin):
+        r = client.delete(f"/api/users/{uid}", headers=env.sys_headers())
+        assert r.status_code == 200 and r.json()["code"] == 0
+        assert not env.pg.query_df(
+            "SELECT 1 FROM sys_user WHERE id=%s AND deleted_at IS NOT NULL", [uid]).empty
+
+
+def test_system_admin_cannot_delete_self(client, env):
+    r = client.delete("/api/users/admin", headers=env.sys_headers())
+    assert r.json()["code"] == 4000
+    assert env.pg.query_df(
+        "SELECT 1 FROM sys_user WHERE id='admin' AND deleted_at IS NULL").shape[0] == 1

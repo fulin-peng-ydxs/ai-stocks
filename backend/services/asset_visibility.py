@@ -155,7 +155,8 @@ def owner_label(row: dict[str, Any], *, tenant_id: str, owner_user_id: str) -> s
     if is_asset_owner(row, tenant_id=tenant_id, owner_user_id=owner_user_id):
         return "我"
     if row.get("tenant_id") == tenant_id:
-        return str(row.get("owner_user_id") or "")
+        # 同租户他人:不回显内部 user_id,统一脱敏标签
+        return "同租户用户"
     return "其他租户用户"
 
 
@@ -237,3 +238,41 @@ def visible_sql(alias: str = "") -> str:
 
 def visible_params(*, tenant_id: str, owner_user_id: str) -> list[str]:
     return [tenant_id, owner_user_id, tenant_id]
+
+
+# 四类公开资产表(评分/筛选/买卖方案 + 回测记录)
+ASSET_TABLES: tuple[str, ...] = (
+    "score_profile",
+    "screen_profile",
+    "trade_profile",
+    "backtest_run",
+)
+
+
+def downgrade_owner_assets_to_private(
+    conn,
+    *,
+    tenant_id: str,
+    owner_user_id: str | None = None,
+) -> int:
+    """停用下线(P3):把指定用户/租户名下所有非私有资产降级为 private 并清发布字段。
+
+    `conn` 为调用方事务连接,与停用写入同事务原子提交;`owner_user_id` 为空时降级整租户。
+    返回受影响行数。
+    """
+    affected = 0
+    for table in ASSET_TABLES:
+        if owner_user_id is None:
+            cur = conn.execute(
+                f"UPDATE {table} SET visibility='private', published_at=NULL, published_by=NULL "
+                "WHERE tenant_id=%s AND visibility<>'private'",
+                [tenant_id],
+            )
+        else:
+            cur = conn.execute(
+                f"UPDATE {table} SET visibility='private', published_at=NULL, published_by=NULL "
+                "WHERE tenant_id=%s AND owner_user_id=%s AND visibility<>'private'",
+                [tenant_id, owner_user_id],
+            )
+        affected += max(getattr(cur, "rowcount", 0) or 0, 0)
+    return affected

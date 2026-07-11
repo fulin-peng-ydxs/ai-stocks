@@ -385,6 +385,9 @@ class ScoreProfileRepo:
         return self.get_visible(profile_ref_or_id)
 
     def copy_visible(self, profile_ref_or_id: str, new_id: str, new_name: str | None = None) -> int:
+        new_id = (new_id or "").strip()
+        if not new_id:
+            raise ValueError("目标方案 id 不能为空")
         src = self.get_visible(profile_ref_or_id, include_owner=True)
         if not src:
             raise ValueError("方案不存在")
@@ -422,10 +425,28 @@ class ScoreProfileRepo:
         return {"id": prof["id"], "profile_ref": prof["profile_ref"], "versions": out}
 
     def delete(self, pid: str) -> None:
+        self._assert_deletable(pid)
         self.pg.execute(
             f"DELETE FROM score_profile WHERE id=%s AND {self._own}", [pid, *self._op])
         self.pg.execute(
             f"DELETE FROM score_profile_version WHERE id=%s AND {self._own}", [pid, *self._op])
+
+    def _assert_deletable(self, pid: str) -> None:
+        """删除前拦截,防悬空引用(P1)。"""
+        cur = self.pg.query_df(
+            f"SELECT visibility FROM score_profile WHERE id=%s AND {self._own}", [pid, *self._op])
+        if cur.empty:
+            return
+        if normalize_visibility(cur.iloc[0]["visibility"]) != VISIBILITY_PRIVATE:
+            raise ValueError("请先将方案收回为私有再删除")
+        # ref 全局唯一(编码 tenant/owner/id),裸 id 仅在本 owner 内唯一,须限归属避免误挡他人同名 id
+        ref = make_asset_ref(ASSET_SCORE_PROFILE, self.tenant_id, self.owner_user_id, pid)
+        hit = self.pg.query_df(
+            "SELECT 1 FROM backtest_run WHERE score_profile_id=%s "
+            "OR (score_profile_id=%s AND tenant_id=%s AND owner_user_id=%s) LIMIT 1",
+            [ref, pid, self.tenant_id, self.owner_user_id])
+        if not hit.empty:
+            raise ValueError("该方案被回测记录引用，无法删除，请先删除相关回测")
 
     def seed_defaults(self) -> int:
         for p in DEFAULT_SCORE_PROFILES:

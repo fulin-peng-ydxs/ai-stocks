@@ -111,7 +111,7 @@ def test_stage6_asset_decorate_row_outputs_source_readonly_and_ref():
     assert parse_asset_ref(mine_out["asset_ref"], expected_type=ASSET_SCREEN_PROFILE).asset_id == "screen_1"
     assert tenant_out["source"] == VISIBILITY_TENANT
     assert tenant_out["readonly"] is True
-    assert tenant_out["owner_label"] == "owner_b"
+    assert tenant_out["owner_label"] == "同租户用户"  # 同租户他人脱敏,不回显内部 user_id(P5)
     assert tenant_out["tenant_id"] == "tenant_a"
     assert asset_source(preset, tenant_id="tenant_a", owner_user_id="owner_a") == "preset"
 

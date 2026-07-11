@@ -16,7 +16,7 @@ from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.tenant_repository")
 
-_TENANT_COLS = "id, name, status, admin_user_id, created_at"
+_TENANT_COLS = "id, name, status, admin_user_id, created_at, deleted_at"
 _TENANT_SORT_COLS = {
     "created": "t.created_at",
     "name": "lower(t.name)",
@@ -34,12 +34,13 @@ class TenantRepository:
             "id": r["id"], "name": r["name"], "status": r["status"],
             "admin_user_id": r.get("admin_user_id"),
             "created_at": str(r["created_at"]) if r.get("created_at") is not None else None,
+            "deleted_at": str(r["deleted_at"]) if r.get("deleted_at") is not None else None,
         }
 
     def list_all(self, *, q: str | None, status: str | None, page: int, size: int,
                  sort_by: str = "created", sort_order: str = "desc") -> dict:
         """租户分页列表（附用户数 + 管理员账号）。返回 {items, total}。"""
-        conds: list[str] = []
+        conds: list[str] = ["t.deleted_at IS NULL"]  # 逻辑删除:列表不含已删
         params: list = []
         if status:
             conds.append("t.status = %s")
@@ -58,7 +59,7 @@ class TenantRepository:
         direction = "ASC" if sort_order.lower() == "asc" else "DESC"
         rows = self.pg.query_df(
             f"SELECT t.id, t.name, t.status, t.admin_user_id, t.created_at, "
-            "(SELECT count(*) FROM sys_user u WHERE u.tenant_id = t.id) AS user_count, "
+            "(SELECT count(*) FROM sys_user u WHERE u.tenant_id = t.id AND u.deleted_at IS NULL) AS user_count, "
             "(SELECT account FROM sys_user a WHERE a.id = t.admin_user_id) AS admin_account "
             f"FROM sys_tenant t {where} "
             f"ORDER BY {sort_col} {direction} NULLS LAST, t.created_at DESC NULLS LAST, t.id "
@@ -85,8 +86,10 @@ class TenantRepository:
         return not df.empty
 
     def user_count(self, tenant_id: str) -> int:
+        # 逻辑删除:已软删用户不计数,否则会挡住租户删除
         df = self.pg.query_df(
-            "SELECT count(*) AS n FROM sys_user WHERE tenant_id = %s", [tenant_id])
+            "SELECT count(*) AS n FROM sys_user WHERE tenant_id = %s AND deleted_at IS NULL",
+            [tenant_id])
         return int(df.iloc[0]["n"])
 
     def create(self, *, name: str, status: str) -> str:
@@ -114,5 +117,9 @@ class TenantRepository:
             cur.execute("UPDATE sys_tenant SET status=%s, updated_at=%s WHERE id=%s",
                         [status, datetime.now(), tenant_id])
 
-    def delete(self, tenant_id: str) -> None:
-        self.pg.execute("DELETE FROM sys_tenant WHERE id = %s", [tenant_id])
+    def delete(self, tenant_id: str, *, conn=None) -> None:
+        """逻辑删除:打 deleted_at 标记（软删后不恢复,数据保留供审计）。"""
+        now = datetime.now()
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute("UPDATE sys_tenant SET deleted_at=%s, updated_at=%s WHERE id=%s",
+                        [now, now, tenant_id])

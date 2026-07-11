@@ -50,12 +50,14 @@ BUSINESS_RESOURCE_CODES: tuple[str, ...] = (
 # 阶段六资产公开权限码：tenant publish 默认给 tenant_admin/system，public publish 仅 system。
 # 不放入 BUSINESS_RESOURCE_CODES，避免 normal/paid 在默认业务授权中获得发布能力。
 ASSET_TENANT_PUBLISH_RESOURCE_CODES: tuple[str, ...] = (
+    "score-profile:publish-tenant",
     "screen-profile:publish-tenant",
     "trade-profile:publish-tenant",
     "backtest:publish-tenant",
 )
 
 ASSET_PUBLIC_PUBLISH_RESOURCE_CODES: tuple[str, ...] = (
+    "score-profile:publish-public",
     "screen-profile:publish-public",
     "trade-profile:publish-public",
     "backtest:publish-public",

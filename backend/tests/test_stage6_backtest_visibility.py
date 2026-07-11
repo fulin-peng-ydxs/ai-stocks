@@ -682,3 +682,46 @@ def test_list_runs_batches_opaque_ref_profile_labels(pg, market, monkeypatch):
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
         pg.execute("DELETE FROM trade_profile WHERE owner_user_id=%s", [owner])
         pg.execute("DELETE FROM trade_profile_version WHERE owner_user_id=%s", [owner])
+
+
+def test_revert_to_private_restores_profile_ref_columns(pg, market):
+    """P4:回测从公开收回私有时,方案引用列由 opaque ref 还原为原始裸 id,signature 随之重算。"""
+    from backend.screening.profile import ProfileRepo
+    from backend.services.backtest_service import BacktestService
+
+    tenant = "bt_p4_t_" + uuid.uuid4().hex[:8]
+    owner = "bt_p4_o_" + uuid.uuid4().hex[:8]
+    run_id = "bt_p4_run_" + uuid.uuid4().hex[:8]
+    screen_id = "bt_p4_screen_" + uuid.uuid4().hex[:6]
+    params = {
+        "date_start": "2024-01-01", "date_end": "2024-01-31",
+        "profile_id": screen_id, "top_n": 5, "initial_capital": 1000000,
+    }
+    try:
+        repo = ProfileRepo(pg=pg, tenant_id=tenant, owner_user_id=owner)
+        repo.save(screen_id, "P4 筛选", {"type": "col", "field": "rs_pct", "cmp": ">=", "value": 90})
+        repo.set_visibility(screen_id, "tenant", published_by=owner)
+        _insert_run(pg, tenant=tenant, owner=owner, run_id=run_id, params=params)
+        svc = BacktestService(client=market, tenant_id=tenant, owner_user_id=owner)
+
+        published = svc.set_run_visibility(run_id, "tenant", published_by=owner)
+        assert published is not None and published["visibility"] == "tenant"
+        pub_row = pg.query_df(
+            "SELECT profile_id, signature FROM backtest_run "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tenant, owner, run_id]).iloc[0]
+        assert str(pub_row["profile_id"]).startswith("avr_")  # 发布态:改写为 opaque ref
+
+        reverted = svc.set_run_visibility(run_id, "private")
+        assert reverted is not None and reverted["visibility"] == "private"
+        rev_row = pg.query_df(
+            "SELECT profile_id, params, signature FROM backtest_run "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [tenant, owner, run_id]).iloc[0]
+        assert rev_row["profile_id"] == screen_id  # 收回态:还原裸 id
+        assert json.loads(rev_row["params"])["profile_id"] == screen_id
+        assert rev_row["signature"] != pub_row["signature"]  # signature 随引用列还原而变化
+    finally:
+        _cleanup_runs(pg, owner)
+        pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [owner])
+        pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [owner])

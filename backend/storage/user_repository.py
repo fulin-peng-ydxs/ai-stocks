@@ -18,7 +18,7 @@ from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.user_repository")
 
-_USER_COLS = "id, tenant_id, account, email, password_hash, role_code, perm_ver, status, last_login_at"
+_USER_COLS = "id, tenant_id, account, email, password_hash, role_code, perm_ver, status, last_login_at, deleted_at"
 _USER_SORT_COLS = {
     "created": "u.created_at",
     "lastLogin": "u.last_login_at",
@@ -108,7 +108,7 @@ class UserRepository:
 
         返回 {items, total}。role 按角色码 EXISTS 过滤；q 模糊匹配账号/邮箱。
         """
-        conds: list[str] = []
+        conds: list[str] = ["u.deleted_at IS NULL"]  # 逻辑删除:列表不含已删
         params: list = []
         if tenant_id is not None:
             conds.append("u.tenant_id=%s")
@@ -153,7 +153,8 @@ class UserRepository:
             "u.last_login_at, u.created_at, "
             "COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles "
             "FROM sys_user u LEFT JOIN sys_user_role ur ON ur.user_id=u.id "
-            "LEFT JOIN sys_role r ON r.id=ur.role_id WHERE u.id=%s GROUP BY u.id", [user_id])
+            "LEFT JOIN sys_role r ON r.id=ur.role_id WHERE u.id=%s AND u.deleted_at IS NULL "
+            "GROUP BY u.id", [user_id])
         return self._row_to_admin_view(df.iloc[0].to_dict()) if not df.empty else None
 
     def create_user(self, *, account: str, email: str | None, password_hash: str,
@@ -197,22 +198,12 @@ class UserRepository:
                         [password_hash, datetime.now(), user_id])
 
     def delete_user(self, user_id: str, *, conn=None) -> None:
-        """删用户（sys_user_role 经 FK CASCADE 自动清）。conn 非空则并入调用方事务。"""
-        with self.pg.cursor_in(conn) as cur:
-            cur.execute("DELETE FROM sys_user WHERE id=%s", [user_id])
+        """逻辑删除:打 deleted_at 标记并清角色关联（软删后不恢复,清关联避免残留计入统计/权限）。
 
-    def count_tenant_admins(self, tenant_id: str, *, exclude_user_id: str | None = None,
-                            active_only: bool = False) -> int:
-        """统计租户内拥有 tenant_admin 角色的用户数（用于"最后一个管理员"保护）。"""
-        conds = ["u.tenant_id=%s", "r.code=%s"]
-        params: list = [tenant_id, ROLE_TENANT_ADMIN]
-        if exclude_user_id:
-            conds.append("u.id<>%s")
-            params.append(exclude_user_id)
-        if active_only:
-            conds.append("u.status='active'")
-        df = self.pg.query_df(
-            "SELECT count(DISTINCT u.id) n FROM sys_user u "
-            "JOIN sys_user_role ur ON ur.user_id=u.id JOIN sys_role r ON r.id=ur.role_id "
-            f"WHERE {' AND '.join(conds)}", params)
-        return int(df.iloc[0]["n"])
+        conn 非空则并入调用方事务。CASCADE 只在物理删触发,软删须显式清 sys_user_role。
+        """
+        now = datetime.now()
+        with self.pg.cursor_in(conn) as cur:
+            cur.execute("UPDATE sys_user SET deleted_at=%s, updated_at=%s WHERE id=%s",
+                        [now, now, user_id])
+            cur.execute("DELETE FROM sys_user_role WHERE user_id=%s", [user_id])

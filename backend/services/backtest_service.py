@@ -461,7 +461,8 @@ class BacktestService:
         )
         if affected == 0:
             return None
-        if normalized:
+        # 仅发布时按新签名清理等价旧记录;收回 private 不清理,避免误删同签名的另一条私有回测
+        if normalized and visibility != VISIBILITY_PRIVATE:
             self._purge_signature_except(normalized.get("signature"), run["id"])
         return self._visible_run_row(run["run_ref"])
 
@@ -489,6 +490,12 @@ class BacktestService:
         elif source == "public":
             where += "AND r.visibility='public' AND NOT (r.tenant_id=%s AND r.owner_user_id=%s) "
             args += [self.tenant_id, self.owner_user_id]
+        # 「我的」置顶,与方案 list_visible 口径一致;排序参数必须在 LIMIT 之前
+        order_by = (
+            "ORDER BY (CASE WHEN r.tenant_id=%s AND r.owner_user_id=%s THEN 0 ELSE 1 END), "
+            "r.created_at DESC "
+        )
+        args += [self.tenant_id, self.owner_user_id]
         tail = ""
         if limit is not None:
             tail = "LIMIT %s"
@@ -511,7 +518,7 @@ class BacktestService:
             "LEFT JOIN backtest_metrics m ON m.run_id = r.id "
             "  AND m.tenant_id = r.tenant_id AND m.owner_user_id = r.owner_user_id "
             f"{where}"
-            f"ORDER BY r.created_at DESC {tail}", args)
+            f"{order_by}{tail}", args)
         rows = [self._decorate_run_row(r) for r in df.to_dict("records")]
         screen_labels = self._batch_profile_labels(
             [
@@ -571,7 +578,8 @@ class BacktestService:
         visibility: str,
     ) -> dict | None:
         if visibility == VISIBILITY_PRIVATE:
-            return None
+            # 收回为私有:把发布时改写成 opaque ref 的方案引用列还原为原始裸 id
+            return self._restore_run_dependencies(run)
         raw_params = run.get("params") or "{}"
         if isinstance(raw_params, dict):
             params = dict(raw_params)
@@ -629,6 +637,61 @@ class BacktestService:
                 "trade_profile_version": normalized["trade_profile_version"],
             },
         )
+        return normalized
+
+    def _bare_asset_id(self, ref_or_id: str) -> str:
+        """opaque ref → 原始裸 id;非 ref 原样返回。"""
+        try:
+            return parse_asset_ref(ref_or_id).asset_id
+        except ValueError:
+            return ref_or_id
+
+    def _restore_run_dependencies(self, run: dict) -> dict | None:
+        """收回为 private 时还原方案引用列 + 重算 signature,消除发布态列语义污染(P4)。
+
+        返回 None 表示无 ref 需还原(走原值写回);否则返回与发布路径同构的 normalized。
+        """
+        raw_params = run.get("params") or "{}"
+        if isinstance(raw_params, dict):
+            params = dict(raw_params)
+        else:
+            try:
+                params = json.loads(raw_params)
+            except (TypeError, ValueError):
+                params = None
+        normalized = {
+            "params": raw_params if params is None else params,
+            "profile_id": run.get("profile_id"),
+            "score_profile_id": run.get("score_profile_id"),
+            "trade_profile_id": run.get("trade_profile_id"),
+            "profile_version": run.get("profile_version"),
+            "score_profile_version": run.get("score_profile_version"),
+            "trade_profile_version": run.get("trade_profile_version"),
+            "signature": run.get("signature"),
+        }
+        changed = False
+        for key in ("profile_id", "score_profile_id", "trade_profile_id"):
+            raw_val = (params.get(key) if isinstance(params, dict) else None) or run.get(key)
+            if not raw_val:
+                continue
+            bare = self._bare_asset_id(str(raw_val))
+            if bare != str(raw_val):
+                normalized[key] = bare
+                if isinstance(params, dict):
+                    params[key] = bare
+                changed = True
+        if not changed:
+            return None
+        if isinstance(params, dict):
+            normalized["signature"] = self._signature(
+                str(run.get("kind") or "strategy"),
+                params,
+                {
+                    "profile_version": normalized["profile_version"],
+                    "score_profile_version": normalized["score_profile_version"],
+                    "trade_profile_version": normalized["trade_profile_version"],
+                },
+            )
         return normalized
 
     def _run_owner_screen_profile(self, run: dict, profile_ref_or_id: str) -> dict | None:

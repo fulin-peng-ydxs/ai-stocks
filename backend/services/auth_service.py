@@ -48,7 +48,7 @@ class AuthService:
     def _ensure_tenant_active(self, tenant_id: str) -> None:
         """租户停用即拒绝登录/刷新（T9·R14）：停用后新登录被拒，配合 bump 使在线 token 也失效。"""
         t = self.tenants.get(tenant_id)
-        if t is not None and t["status"] != "active":
+        if t is not None and (t.get("deleted_at") is not None or t["status"] != "active"):
             raise AuthError("所属租户已停用，请联系平台管理员")
 
     # ── 内部辅助 ──
@@ -149,7 +149,7 @@ class AuthService:
                 error_summary="账号或密码错误",
             )
             raise AuthError("账号或密码错误")   # 不区分账号是否存在，防枚举
-        if user["status"] != "active":
+        if user.get("deleted_at") is not None or user["status"] != "active":
             self._record_security(
                 event_type="login",
                 action="login",
@@ -224,7 +224,7 @@ class AuthService:
             )
             raise AuthError("登录已失效，请重新登录")
         user = self.repo.get_by_id(c["sub"])
-        if user is None or user["status"] != "active":
+        if user is None or user.get("deleted_at") is not None or user["status"] != "active":
             self._record_security(
                 event_type="token",
                 action="refresh",
@@ -325,12 +325,12 @@ class AuthService:
         if ss.is_jti_revoked(claims["jti"]):   # 黑名单 fail-closed（Redis 挂 → 503）
             raise AuthError("登录已失效，请重新登录")
         user = self.repo.get_by_id(claims["sub"])   # 权威态：每请求查 PG（不采信可能陈旧的 auth:pv）
-        if user is None or user["status"] != "active":
+        if user is None or user.get("deleted_at") is not None or user["status"] != "active":
             raise AuthError("账号不可用")
         # 租户 status 亦每请求实时校验（Codex 五轮）：停租不再仅依赖 perm_ver bump 成功——即便 bump 因
         # 任何原因未前进，停租用户的在线 token 也被此处即时拒绝。
         tenant = self.tenants.get(user["tenant_id"])
-        if tenant is not None and tenant["status"] != "active":
+        if tenant is not None and (tenant.get("deleted_at") is not None or tenant["status"] != "active"):
             raise AuthError("所属租户已停用，请联系平台管理员")
         if int(claims["perm_ver"]) != int(user["perm_ver"]):
             raise AuthError("权限已变更，请重新登录")

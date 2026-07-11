@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS sys_tenant (
     status        TEXT NOT NULL DEFAULT 'active',   -- active | disabled
     admin_user_id TEXT,
     created_at    TIMESTAMP DEFAULT now(),
-    updated_at    TIMESTAMP
+    updated_at    TIMESTAMP,
+    deleted_at    TIMESTAMP                          -- 逻辑删除标记；非空=已删（与 status 正交）
 );
 """
 
@@ -83,6 +84,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
     last_login_at TIMESTAMP,
     created_at    TIMESTAMP DEFAULT now(),
     updated_at    TIMESTAMP,
+    deleted_at    TIMESTAMP,                         -- 逻辑删除标记；非空=已删（与 status 正交）
     UNIQUE (account)
 );
 """
@@ -871,7 +873,7 @@ _USER_RESOURCE_CODES: tuple[str, ...] = (
     "user:list", "user:create", "user:update",
     "user:disable", "user:reset-password", "user:delete")
 _TENANT_ADMIN_EXTRA_RESOURCE_CODES: tuple[str, ...] = (
-    "score-profile:publish-tenant", "audit:view", *ASSET_TENANT_PUBLISH_RESOURCE_CODES)
+    "audit:view", *ASSET_TENANT_PUBLISH_RESOURCE_CODES)
 _STAGE4_BUSINESS_GRANTS_MARKER = "migration.stage4_business_grants_v2"
 _STAGE5_PLATFORM_CAPABILITIES_MARKER = "migration.stage5_platform_capabilities_v1"
 _STAGE6_ASSET_VISIBILITY_MARKER = "migration.stage6_asset_visibility_v1"
@@ -946,6 +948,9 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     client.execute("ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS role_code TEXT NOT NULL DEFAULT 'normal'")
     client.execute("ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS perm_ver INTEGER NOT NULL DEFAULT 0")
     client.execute("ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMP")
+    # 逻辑删除列（既有库补列，幂等；与 status 正交）
+    client.execute("ALTER TABLE sys_user ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
+    client.execute("ALTER TABLE sys_tenant ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
     # email 部分唯一：允许多个 NULL（未填邮箱），非空则全局唯一
     client.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_user_email "
@@ -979,9 +984,31 @@ def _upgrade_score_profile_visibility(client: PostgresClient) -> None:
         "WHERE tenant_id=%s AND owner_user_id=%s AND is_preset IS TRUE",
         [DEFAULT_OWNER_USER_ID, *PUBLIC_BOARD_OWNER],
     )
+    _add_publish_consistency_check(client, "score_profile")
     client.execute(
         "CREATE INDEX IF NOT EXISTS idx_score_profile_visibility "
         "ON score_profile (visibility, tenant_id, owner_user_id)")
+
+
+def _add_publish_consistency_check(client: PostgresClient, table: str) -> None:
+    """加 DB 级发布字段一致性约束(P6):private 行不得带 published_at/published_by。
+
+    先清洗历史/旁路脏写,避免加约束失败;约束用 pg_constraint 存在性判定,幂等。
+    """
+    constraint_name = f"{table}_publish_consistency_check"
+    client.execute(
+        f"UPDATE {table} SET published_at=NULL, published_by=NULL "
+        "WHERE visibility='private' AND (published_at IS NOT NULL OR published_by IS NOT NULL)")
+    client.execute(
+        "DO $$ BEGIN "
+        "IF NOT EXISTS ("
+        f"SELECT 1 FROM pg_constraint WHERE conname='{constraint_name}'"
+        ") THEN "
+        f"ALTER TABLE {table} ADD CONSTRAINT {constraint_name} "
+        "CHECK ((visibility='private' AND published_at IS NULL AND published_by IS NULL) "
+        "OR visibility IN ('tenant', 'public')); "
+        "END IF; END $$;",
+    )
 
 
 def _add_visibility_columns(client: PostgresClient, table: str, constraint_name: str) -> None:
@@ -1000,6 +1027,7 @@ def _add_visibility_columns(client: PostgresClient, table: str, constraint_name:
         "CHECK (visibility IN ('private', 'tenant', 'public')); "
         "END IF; END $$;",
     )
+    _add_publish_consistency_check(client, table)
 
 
 def _upgrade_stage6_asset_visibility(client: PostgresClient) -> None:

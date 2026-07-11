@@ -7,7 +7,6 @@ api/users.py 只做参数校验与响应包装。
 - **域过滤**：system 全局（可指定租户）；tenant_admin 仅限本租户，跨租户目标视为不存在(404)。
 - **可分配角色**：只能分配 RoleRepository.assignable(调用者)——防 tenant_admin 越权授 system/自建角色。
 - **自身保护**：不能停用/删除自己。
-- **最后管理员保护**：不能停用/删除/降级掉租户内最后一个 tenant_admin。
 - **失效即时生效（Codex 五轮 P1，原子化）**：改角色/停用/重置密码 → **业务写入(conn) + `bump_perm_ver`
   在同一 PG 事务原子提交** → 提交后 `clear_perms_cache` best-effort。停用/删除者另由 `claims_from_bearer`
   每请求实时校验 status/存在性即时拒绝（不依赖 Redis）。删除无需 bump（get_by_id→None 即拒）。
@@ -22,6 +21,7 @@ from backend.auth.security import check_strength, hash_password
 from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationError
 from backend.common.logging import get_logger
 from backend.config import get_settings
+from backend.services.asset_visibility import downgrade_owner_assets_to_private
 from backend.storage.role_repository import RoleRepository
 from backend.storage.tenant_repository import TenantRepository
 from backend.storage.user_repository import UserRepository
@@ -75,19 +75,9 @@ class UserAdminService:
     # ── 编辑（多角色 + 资料 + 状态）──
     def update_user(self, ctx: AuthContext, user_id: str, *, email: str | None,
                     role_ids: list[str], status: str) -> dict:
-        target = self._load_in_scope(ctx, user_id)
+        self._load_in_scope(ctx, user_id)
         self._check_status(status)
         role_code = self._validate_roles(ctx, role_ids)
-
-        # 最后管理员保护：仅当目标**本身是 tenant_admin** 时，摘其管理员角色或停用它、且租户内已无
-        # 其他 active 管理员才阻止。普通用户的停用与此无关——早期 disabling 分支漏了 target_is_admin
-        # 前置，会在"租户无 active 管理员"（如默认租户 admin 为 system 角色）时误拦普通用户停用；
-        # 与 set_status 的判定口径保持一致。
-        target_is_admin = ROLE_TENANT_ADMIN in (target["roles"] or [])
-        removing_admin = target_is_admin and ROLE_TENANT_ADMIN not in self._role_codes(role_ids)
-        disabling = status != "active" and target["status"] == "active"
-        if (removing_admin or (disabling and target_is_admin)) and self._is_last_tenant_admin(target):
-            raise ValidationError("该用户是本租户最后一个管理员，不能取消其管理员角色或停用")
 
         # 业务写入 + perm_ver 自增**同事务原子提交**（Codex 五轮 P1）→ 提交后 best-effort 清缓存。
         with self.users.pg.transaction() as conn:
@@ -104,14 +94,14 @@ class UserAdminService:
         target = self._load_in_scope(ctx, user_id)
         if user_id == ctx.user_id:
             raise ValidationError("不能变更自己的账号状态")
-        if status != "active" and ROLE_TENANT_ADMIN in (target["roles"] or []) \
-                and self._is_last_tenant_admin(target):
-            raise ValidationError("该用户是本租户最后一个管理员，不能停用")
         # 停用/启用 + perm_ver 自增同事务原子提交（Codex 五轮 P1）；停用另由 claims_from_bearer 每请求
         # 实时校验 status 即时生效（双保险）。提交后 best-effort 清缓存。
         with self.users.pg.transaction() as conn:
             self.users.set_status(user_id, status, conn=conn)
             perm_resolver.bump_perm_ver([user_id], conn)
+            if status != "active":
+                downgrade_owner_assets_to_private(
+                    conn, tenant_id=target["tenant_id"], owner_user_id=user_id)
         perm_resolver.clear_perms_cache([user_id])
         log.info("用户管理：用户 %s 状态 → %s", user_id, status)
         return self.users.get_admin_view(user_id)  # type: ignore[return-value]
@@ -132,13 +122,13 @@ class UserAdminService:
         target = self._load_in_scope(ctx, user_id)
         if user_id == ctx.user_id:
             raise ValidationError("不能删除自己")
-        if ROLE_TENANT_ADMIN in (target["roles"] or []) and self._is_last_tenant_admin(target):
-            raise ValidationError("该用户是本租户最后一个管理员，不能删除")
-        # 删除后旧 token 凭 claims_from_bearer 的 get_by_id→None 即被拒（每请求实时校验），无需 bump；
-        # 提交后 best-effort 清缓存兜底。
-        self.users.delete_user(user_id)
+        # 逻辑删除 + 公开资产联动下线,同事务原子提交;删后旧 token 凭 claims_from_bearer 的 deleted_at 实时拒。
+        with self.users.pg.transaction() as conn:
+            self.users.delete_user(user_id, conn=conn)
+            downgrade_owner_assets_to_private(
+                conn, tenant_id=target["tenant_id"], owner_user_id=user_id)
         perm_resolver.clear_perms_cache([user_id])
-        log.info("用户管理：删除用户 %s", user_id)
+        log.info("用户管理：逻辑删除用户 %s", user_id)
 
     # ── 可分配角色（供前端下拉；endpoint 在 T6 挂 require_perm(user:list)）──
     def assignable_roles(self, ctx: AuthContext) -> list[dict]:
@@ -164,9 +154,6 @@ class UserAdminService:
             raise NotFoundError("用户不存在")
         return target
 
-    def _role_codes(self, role_ids: list[str]) -> set[str]:
-        return {r["code"] for r in self.roles.get_by_ids(role_ids)}
-
     def _validate_roles(self, ctx: AuthContext, role_ids: list[str]) -> str:
         """校验角色非空、存在、均在调用者可分配集合内；返回兼容 role_code（首选 tenant_admin）。"""
         role_ids = list(dict.fromkeys(role_ids or []))
@@ -184,19 +171,10 @@ class UserAdminService:
     def _ensure_tenant_writable(self, tenant_id: str) -> None:
         """建用户前校验目标租户存在且启用（P2-b：sys_user.tenant_id 无 FK，服务层硬校验防孤儿）。"""
         t = self.tenants.get(tenant_id)
-        if t is None:
+        if t is None or t.get("deleted_at") is not None:
             raise ValidationError("目标租户不存在")
         if t["status"] != "active":
             raise ValidationError("目标租户已停用，不能在其下新建用户")
-
-    def _is_last_tenant_admin(self, target: dict) -> bool:
-        """目标是否本租户唯一**可用(active)** tenant_admin（排除自身后再无其他 active 管理员）。
-
-        P1-b：按 active 统计——否则留一个 disabled 管理员就能停用唯一在用管理员，导致租户 0 可登录管理员。
-        """
-        others = self.users.count_tenant_admins(
-            target["tenant_id"], exclude_user_id=target["id"], active_only=True)
-        return others == 0
 
     @staticmethod
     def _check_status(status: str) -> None:

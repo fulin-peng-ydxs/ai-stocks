@@ -19,6 +19,7 @@ from __future__ import annotations
 from backend.auth import perm_resolver
 from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationError
 from backend.common.logging import get_logger
+from backend.services.asset_visibility import downgrade_owner_assets_to_private
 from backend.storage.pg_ddl import DEFAULT_TENANT_ID
 from backend.storage.tenant_repository import TenantRepository
 from backend.storage.user_repository import UserRepository
@@ -63,7 +64,7 @@ class TenantAdminService:
             raise ValidationError("租户名称已存在")
         admin_user_id = (admin_user_id or "").strip() or None
         if admin_user_id:
-            u = self.users.get_by_id(admin_user_id)
+            u = self.users.get_admin_view(admin_user_id)
             if u is None or u["tenant_id"] != tenant_id:
                 raise ValidationError("指定的管理员不属于该租户")
         self.tenants.update(tenant_id, name=name, admin_user_id=admin_user_id)
@@ -84,6 +85,7 @@ class TenantAdminService:
             with self.tenants.pg.transaction() as conn:
                 self.tenants.set_status(tenant_id, status, conn=conn)
                 perm_resolver.bump_perm_ver(affected, conn)
+                downgrade_owner_assets_to_private(conn, tenant_id=tenant_id)
             perm_resolver.clear_perms_cache(affected)
             log.info("租户管理：停用租户 %s，%d 个用户 token 失效（新登录亦被拒）", tenant_id, len(affected))
         else:
@@ -98,13 +100,16 @@ class TenantAdminService:
             raise ForbiddenError("默认租户不可删除")
         if self.tenants.user_count(tenant_id) > 0:
             raise ValidationError("该租户仍有用户，请先删除或迁移用户")
-        self.tenants.delete(tenant_id)
-        log.info("租户管理：删除租户 %s", tenant_id)
+        # 逻辑删除 + 公开资产联动下线,同事务原子提交
+        with self.tenants.pg.transaction() as conn:
+            self.tenants.delete(tenant_id, conn=conn)
+            downgrade_owner_assets_to_private(conn, tenant_id=tenant_id)
+        log.info("租户管理：逻辑删除租户 %s", tenant_id)
 
     # ── 内部 ──
     def _load(self, tenant_id: str) -> dict:
         t = self.tenants.get(tenant_id)
-        if t is None:
+        if t is None or t.get("deleted_at") is not None:  # 已逻辑删除视为不存在
             raise NotFoundError("租户不存在")
         return t
 
