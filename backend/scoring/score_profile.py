@@ -12,8 +12,6 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 import json
 from datetime import datetime
 
@@ -26,7 +24,16 @@ from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
 from backend.auth.context import get_current_owner
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
-from backend.services.asset_visibility import normalize_visibility, owner_label
+from backend.services.asset_visibility import (
+    ASSET_SCORE_PROFILE,
+    decorate_asset_row,
+    is_asset_visible,
+    make_asset_ref,
+    normalize_visibility,
+    parse_asset_ref,
+    resolve_asset_ref_or_legacy_id,
+    summarize_asset_row,
+)
 
 log = get_logger("scoring.score_profile")
 
@@ -34,7 +41,6 @@ VISIBILITY_PRIVATE = "private"
 VISIBILITY_TENANT = "tenant"
 VISIBILITY_PUBLIC = "public"
 VISIBILITIES = {VISIBILITY_PRIVATE, VISIBILITY_TENANT, VISIBILITY_PUBLIC}
-_PROFILE_REF_PREFIX = "spr_"
 
 # 指标 key（含别名）→ 快照列；ma/hhv 走带参解析
 _DIRECT_COLS = {
@@ -205,88 +211,35 @@ class ScoreProfileRepo:
 
     @staticmethod
     def make_ref(tenant_id: str, owner_user_id: str, profile_id: str) -> str:
-        payload = json.dumps([tenant_id, owner_user_id, profile_id], ensure_ascii=False, separators=(",", ":"))
-        token = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
-        return _PROFILE_REF_PREFIX + token
+        return make_asset_ref(ASSET_SCORE_PROFILE, tenant_id, owner_user_id, profile_id)
 
     @staticmethod
     def parse_ref(profile_ref: str) -> tuple[str, str, str]:
-        if not profile_ref.startswith(_PROFILE_REF_PREFIX):
-            raise ValueError("不是有效的评分方案引用")
-        raw = profile_ref[len(_PROFILE_REF_PREFIX):]
-        raw += "=" * (-len(raw) % 4)
-        try:
-            data = json.loads(base64.urlsafe_b64decode(raw.encode("ascii")).decode("utf-8"))
-        except (binascii.Error, UnicodeDecodeError, ValueError, TypeError) as e:
-            raise ValueError("不是有效的评分方案引用") from e
-        if (
-            not isinstance(data, list)
-            or len(data) != 3
-            or not all(isinstance(x, str) and x for x in data)
-        ):
-            raise ValueError("不是有效的评分方案引用")
-        return data[0], data[1], data[2]
-
-    def _is_owner(self, tenant_id: str, owner_user_id: str) -> bool:
-        return tenant_id == self.tenant_id and owner_user_id == self.owner_user_id
-
-    def _is_visible_row(self, r: dict) -> bool:
-        if self._is_owner(r["tenant_id"], r["owner_user_id"]):
-            return True
-        visibility = r.get("visibility") or VISIBILITY_PRIVATE
-        if visibility == VISIBILITY_PUBLIC:
-            return True
-        return visibility == VISIBILITY_TENANT and r["tenant_id"] == self.tenant_id
-
-    def _source(self, r: dict) -> str:
-        if bool(r.get("is_preset")):
-            return "preset"
-        if self._is_owner(r["tenant_id"], r["owner_user_id"]):
-            return "mine"
-        return r.get("visibility") or VISIBILITY_PRIVATE
+        ref = parse_asset_ref(profile_ref, expected_type=ASSET_SCORE_PROFILE)
+        return ref.tenant_id, ref.owner_user_id, ref.asset_id
 
     def _decorate_summary(self, r: dict) -> dict:
-        own = self._is_owner(r["tenant_id"], r["owner_user_id"])
-        return {
-            "profile_ref": self.make_ref(r["tenant_id"], r["owner_user_id"], r["id"]),
-            "id": r["id"],
-            "name": r["name"],
-            "version": int(r["version"]),
-            "is_preset": bool(r.get("is_preset")),
-            "visibility": r.get("visibility") or VISIBILITY_PRIVATE,
-            "source": self._source(r),
-            "readonly": not own,
-            "owner_label": owner_label(
-                r,
-                tenant_id=self.tenant_id,
-                owner_user_id=self.owner_user_id,
-            ),
-        }
+        return summarize_asset_row(
+            r,
+            asset_type=ASSET_SCORE_PROFILE,
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+        )
 
     def _row_to_profile(self, r: dict, *, include_owner: bool = False) -> dict:
-        own = self._is_owner(r["tenant_id"], r["owner_user_id"])
-        out = {
-            "profile_ref": self.make_ref(r["tenant_id"], r["owner_user_id"], r["id"]),
-            "id": r["id"],
-            "name": r["name"],
-            "version": int(r["version"]),
-            "items": json.loads(r["items"]) if r.get("items") else [],
-            "grade_thresholds": json.loads(r["grade_thresholds"]) if r.get("grade_thresholds") else {},
-            "is_preset": bool(r.get("is_preset")),
-            "visibility": r.get("visibility") or VISIBILITY_PRIVATE,
-            "source": self._source(r),
-            "readonly": not own,
-            "owner_label": owner_label(
-                r,
-                tenant_id=self.tenant_id,
-                owner_user_id=self.owner_user_id,
-            ),
-            "published_at": str(r["published_at"]) if r.get("published_at") else None,
-            "published_by": r.get("published_by"),
-        }
-        if include_owner:
-            out["tenant_id"] = r["tenant_id"]
-            out["owner_user_id"] = r["owner_user_id"]
+        out = decorate_asset_row(
+            r,
+            asset_type=ASSET_SCORE_PROFILE,
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+            include_owner=include_owner,
+            ref_key="profile_ref",
+        )
+        out["version"] = int(out["version"])
+        out["is_preset"] = bool(out.get("is_preset"))
+        out["items"] = json.loads(out["items"]) if out.get("items") else []
+        out["grade_thresholds"] = json.loads(out["grade_thresholds"]) if out.get("grade_thresholds") else {}
+        out["published_at"] = str(out["published_at"]) if out.get("published_at") else None
         return out
 
     def _make_id(self, name: str) -> str:
@@ -361,10 +314,8 @@ class ScoreProfileRepo:
         if df.empty:
             return None
         r = self._row_to_profile(df.iloc[0].to_dict())
-        r.pop("profile_ref", None)
-        r.pop("source", None)
-        r.pop("readonly", None)
-        r.pop("owner_label", None)
+        for key in ("asset_ref", "profile_ref", "source", "readonly", "owner_label"):
+            r.pop(key, None)
         return r
 
     def list(self) -> list[dict]:
@@ -393,27 +344,34 @@ class ScoreProfileRepo:
 
     def get_visible(self, profile_ref_or_id: str, *, include_owner: bool = False) -> dict | None:
         try:
-            tenant_id, owner_user_id, pid = self.parse_ref(profile_ref_or_id)
+            ref = resolve_asset_ref_or_legacy_id(
+                profile_ref_or_id,
+                asset_type=ASSET_SCORE_PROFILE,
+                tenant_id=self.tenant_id,
+                owner_user_id=self.owner_user_id,
+            )
         except ValueError:
-            tenant_id, owner_user_id, pid = self.tenant_id, self.owner_user_id, profile_ref_or_id
+            return None
         df = self.pg.query_df(
             "SELECT * FROM score_profile WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
-            [tenant_id, owner_user_id, pid],
+            [ref.tenant_id, ref.owner_user_id, ref.asset_id],
         )
         if df.empty:
             return None
         row = df.iloc[0].to_dict()
-        if not self._is_visible_row(row):
+        if not is_asset_visible(row, tenant_id=self.tenant_id, owner_user_id=self.owner_user_id):
             return None
         return self._row_to_profile(row, include_owner=include_owner)
 
     def set_visibility(self, profile_ref_or_id: str, visibility: str, published_by: str | None = None) -> dict | None:
         visibility = normalize_visibility(visibility)
-        try:
-            tenant_id, owner_user_id, pid = self.parse_ref(profile_ref_or_id)
-        except ValueError:
-            tenant_id, owner_user_id, pid = self.tenant_id, self.owner_user_id, profile_ref_or_id
-        if not self._is_owner(tenant_id, owner_user_id):
+        ref = resolve_asset_ref_or_legacy_id(
+            profile_ref_or_id,
+            asset_type=ASSET_SCORE_PROFILE,
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+        )
+        if ref.tenant_id != self.tenant_id or ref.owner_user_id != self.owner_user_id:
             raise PermissionError("只能修改自己的评分方案可见性")
         now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
         self.pg.execute(
@@ -421,10 +379,10 @@ class ScoreProfileRepo:
             "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
             [
                 visibility, now, published_by if visibility != VISIBILITY_PRIVATE else None,
-                datetime.now(), tenant_id, owner_user_id, pid,
+                datetime.now(), ref.tenant_id, ref.owner_user_id, ref.asset_id,
             ],
         )
-        return self.get_visible(self.make_ref(tenant_id, owner_user_id, pid))
+        return self.get_visible(profile_ref_or_id)
 
     def copy_visible(self, profile_ref_or_id: str, new_id: str, new_name: str | None = None) -> int:
         src = self.get_visible(profile_ref_or_id, include_owner=True)

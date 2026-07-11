@@ -194,6 +194,31 @@ def test_visible_profiles_include_public_and_tenant_scoped(market, pg):
             pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
 
 
+def test_profile_ref_uses_common_codec_and_accepts_legacy_prefix(market, pg):
+    """收敛后 profile_ref 走通用 avr_ 编码；部署过渡期旧 spr_ ref 仍能解析。"""
+    import base64
+    import json
+
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    try:
+        repo.save("ref_codec_src", "编码收敛方案", items)
+        row = next(r for r in repo.list_visible() if r["id"] == "ref_codec_src")
+        # 新 ref 统一为通用前缀
+        assert row["profile_ref"].startswith("avr_")
+        assert repo.get_visible(row["profile_ref"])["name"] == "编码收敛方案"
+
+        # 手工构造旧 spr_ 前缀 ref（3 元 payload，无 asset_type），应仍可解析
+        payload = json.dumps([TEST_TENANT, TEST_OWNER, "ref_codec_src"], ensure_ascii=False, separators=(",", ":"))
+        legacy_ref = "spr_" + base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+        assert repo.get_visible(legacy_ref)["name"] == "编码收敛方案"
+    finally:
+        pg.execute("DELETE FROM score_profile WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+                   ["ref_codec_src", TEST_TENANT, TEST_OWNER])
+        pg.execute("DELETE FROM score_profile_version WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+                   ["ref_codec_src", TEST_TENANT, TEST_OWNER])
+
+
 def test_own_preset_source_takes_priority_over_mine(market, pg):
     """系统内置方案即便位于当前 owner 归属下，也应优先标记为 preset 而非 mine。"""
     repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)

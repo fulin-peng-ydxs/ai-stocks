@@ -27,6 +27,7 @@ from backend.services.asset_visibility import (
     is_asset_visible,
     normalize_visibility,
     resolve_asset_ref_or_legacy_id,
+    summarize_asset_row,
     visible_params,
     visible_sql,
 )
@@ -177,25 +178,12 @@ class TradeProfileRepo:
         return pid
 
     def _decorate_summary(self, r: dict) -> dict:
-        out = decorate_asset_row(
+        return summarize_asset_row(
             r,
             asset_type=ASSET_TRADE_PROFILE,
             tenant_id=self.tenant_id,
             owner_user_id=self.owner_user_id,
         )
-        out["profile_ref"] = out["asset_ref"]
-        return {
-            "id": out["id"],
-            "profile_ref": out["profile_ref"],
-            "asset_ref": out["asset_ref"],
-            "name": out["name"],
-            "version": int(out["version"]),
-            "is_preset": bool(out.get("is_preset")),
-            "visibility": out["visibility"],
-            "source": out["source"],
-            "readonly": out["readonly"],
-            "owner_label": out["owner_label"],
-        }
 
     def _row_to_profile(self, r: dict, *, include_owner: bool = False) -> dict:
         out = decorate_asset_row(
@@ -204,8 +192,8 @@ class TradeProfileRepo:
             tenant_id=self.tenant_id,
             owner_user_id=self.owner_user_id,
             include_owner=include_owner,
+            ref_key="profile_ref",
         )
-        out["profile_ref"] = out["asset_ref"]
         out["version"] = int(out["version"])
         out["is_preset"] = bool(out.get("is_preset"))
         out["buy_tree"] = json.loads(out["buy_tree"]) if out.get("buy_tree") else {}
