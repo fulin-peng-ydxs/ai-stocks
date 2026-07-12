@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from datetime import datetime
 from typing import Any, Literal
 
@@ -197,36 +198,36 @@ COMPONENT_MIN_SIZE: dict[str, tuple[int, int]] = {
 
 BUILTIN_PRESETS: list[dict[str, Any]] = [
     {
-        "key": "professional",
-        "name": "专业后台",
-        "description": "均衡密度，适合日常管理和分析页面。",
+        "key": "daylight",
+        "name": "日曜",
+        "description": "冷银白与雾蓝构成的明亮研究空间，适合白天长时间阅读。",
         "config": {"density": "standard"},
     },
     {
-        "key": "government",
-        "name": "政务稳重",
-        "description": "更克制的页面间距和稳重配色预设。",
+        "key": "nocturne",
+        "name": "夜航",
+        "description": "深海蓝、冷青与铂金边界，适合低照度环境和夜间复盘。",
         "config": {"density": "standard"},
     },
     {
-        "key": "technology",
-        "name": "科技分析",
-        "description": "偏分析场景的紧凑布局预设。",
-        "config": {"density": "compact"},
-    },
-    {
-        "key": "finance",
-        "name": "金融数据",
-        "description": "高信息密度的行情和表格预设。",
-        "config": {"density": "compact"},
-    },
-    {
-        "key": "high-contrast",
-        "name": "高对比",
-        "description": "提高文本和边界对比度的可读性预设。",
+        "key": "balanced",
+        "name": "晨昏",
+        "description": "海军蓝与香槟金保持明暗平衡，兼顾日间专注与夜间沉浸。",
         "config": {"density": "standard"},
     },
 ]
+
+LEGACY_BUILTIN_PRESET_MAP = {
+    "professional": "balanced",
+    "government": "daylight",
+    "technology": "balanced",
+    "finance": "balanced",
+    "high-contrast": "nocturne",
+}
+
+_THREE_THEME_PRESET_MARKER = "migration.layout_presets_three_theme_v1"
+_PRESET_SEED_LOCK = threading.Lock()
+_PRESET_SEEDED_DATABASES: set[str] = set()
 
 
 class LayoutConfigValidationError(ValueError):
@@ -547,6 +548,28 @@ class LayoutConfigRepo:
         self.seed_builtin_presets()
 
     def seed_builtin_presets(self) -> int:
+        database_key = str(self.c.db_path.resolve())
+        with _PRESET_SEED_LOCK:
+            if database_key in _PRESET_SEEDED_DATABASES:
+                return 0
+            marker = self.c.query_df(
+                "SELECT 1 FROM app_config WHERE key=?",
+                [_THREE_THEME_PRESET_MARKER],
+            )
+            if not marker.empty:
+                _PRESET_SEEDED_DATABASES.add(database_key)
+                return 0
+            inserted = self._apply_builtin_preset_migration()
+            self.c.execute(
+                "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT (key) DO NOTHING",
+                [_THREE_THEME_PRESET_MARKER, '{"applied":true}', datetime.now()],
+            )
+            _PRESET_SEEDED_DATABASES.add(database_key)
+            return inserted
+
+    def _apply_builtin_preset_migration(self) -> int:
+        """一次性写入三套内置预设并迁移旧五套引用；由版本 marker 保证稳态零写。"""
         before = int(self.c.query_df("SELECT count(*) AS n FROM layout_preset").iloc[0]["n"])
         now = datetime.now()
         for preset in BUILTIN_PRESETS:
@@ -555,7 +578,9 @@ class LayoutConfigRepo:
                 "INSERT INTO layout_preset "
                 "(key, name, description, config, enabled, is_builtin, schema_version, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?) "
-                "ON CONFLICT (key) DO NOTHING",
+                "ON CONFLICT (key) DO UPDATE SET "
+                "name=EXCLUDED.name, description=EXCLUDED.description, enabled=TRUE, is_builtin=TRUE, "
+                "schema_version=EXCLUDED.schema_version, updated_at=EXCLUDED.updated_at",
                 [
                     preset["key"],
                     preset["name"],
@@ -568,8 +593,25 @@ class LayoutConfigRepo:
                     now,
                 ],
             )
+        # 旧五套内置预设收敛为三套视觉人格；页面引用先迁移，再删除旧内置行。
+        # 只清理 is_builtin=true，避免误删用户恰好使用旧 key 创建的自定义数据。
+        for legacy_key, target_key in LEGACY_BUILTIN_PRESET_MAP.items():
+            legacy = self.c.query_df(
+                "SELECT is_builtin FROM layout_preset WHERE key=?",
+                [legacy_key],
+            )
+            if legacy.empty or not bool(legacy.iloc[0]["is_builtin"]):
+                continue
+            self.c.execute(
+                "UPDATE layout_page_config SET preset_key=? WHERE preset_key=?",
+                [target_key, legacy_key],
+            )
+            self.c.execute(
+                "DELETE FROM layout_preset WHERE key=? AND is_builtin=true",
+                [legacy_key],
+            )
         after = int(self.c.query_df("SELECT count(*) AS n FROM layout_preset").iloc[0]["n"])
-        return after - before
+        return max(0, after - before)
 
     def list_presets(self, include_disabled: bool = False) -> list[dict[str, Any]]:
         sql = "SELECT * FROM layout_preset"

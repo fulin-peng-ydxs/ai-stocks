@@ -51,7 +51,7 @@ const presetsLayout = getPageLayout('layout-presets')
 const loading = ref(false)
 const loadError = ref('')
 const presets = ref<LayoutPresetRecord[]>([])
-const selectedPresetKey = ref('professional')
+const selectedPresetKey = ref('balanced')
 
 const presetDialog = ref(false)
 const presetSaving = ref(false)
@@ -142,7 +142,7 @@ async function reloadPresets() {
     const data = await listLayoutPresets(true)
     presets.value = data.presets
     if (!presets.value.some((p) => p.key === selectedPresetKey.value)) {
-      selectedPresetKey.value = presets.value[0]?.key ?? 'professional'
+      selectedPresetKey.value = presets.value[0]?.key ?? 'balanced'
     }
     // 同步运行时：让预设编辑/启停/导入即时驱动外观（P11 运行时打通）。
     const map: Record<string, Record<string, string | number>> = {}

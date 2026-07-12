@@ -2,10 +2,11 @@
 // 登录 / 注册页：金融科技视觉与明暗双主题，认证流程由公开配置动态控制。
 // 全屏独立壳（App.vue 按 meta.fullscreen 脱离主框架单独渲染），不套用布局 archetype、不走 LayoutHost。
 // 契约：用 position:fixed;inset:0 全屏（禁 vh 高度、禁手写 .v-page/.v-grow，过 layout-contract.spec.ts）。
-import { onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
+import { useLayoutPreset } from '@/layout'
 import { useAuthStore } from '@/stores/auth'
 import { getCaptcha, getPublicConfig, sendEmailCode } from '@/api/auth'
 import BrandMark from '@/components/BrandMark.vue'
@@ -14,6 +15,9 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const { isDark } = useTheme()
+const { activePresetKey, options: presetOptions, setLayoutPreset } = useLayoutPreset()
+const activePresetLabel = computed(() =>
+  presetOptions.value.find((option) => option.value === activePresetKey.value)?.label ?? '晨昏')
 
 type Mode = 'login' | 'register'
 const mode = ref<Mode>('login')
@@ -75,6 +79,12 @@ function setMode(m: Mode) {
   if (m === 'login' && cfg.loginCaptchaEnabled && !needCaptcha.value) {
     void refreshCaptcha()
   }
+}
+
+function cyclePreset() {
+  const current = presetOptions.value.findIndex((option) => option.value === activePresetKey.value)
+  const next = presetOptions.value[(current + 1) % presetOptions.value.length]
+  if (next) setLayoutPreset(next.value)
 }
 
 async function refreshCaptcha() {
@@ -177,7 +187,10 @@ function onSubmit() {
 </script>
 
 <template>
-  <div class="login-shell" :class="{ 'is-register': mode === 'register', 'is-dark': isDark }">
+  <div
+    class="login-shell"
+    :class="[`preset-${activePresetKey}`, { 'is-register': mode === 'register', 'is-dark': isDark }]"
+  >
     <section class="login-brand">
       <header class="login-brand-head">
         <div class="login-logo">
@@ -226,15 +239,20 @@ function onSubmit() {
     </section>
 
     <section class="login-auth">
-      <button class="login-theme" type="button" aria-label="切换主题" title="切换黑/白主题" @click="toggleTheme">
-        <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4" />
-          <circle cx="12" cy="12" r="4" />
-        </svg>
-        <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
-        </svg>
-      </button>
+      <div class="login-controls">
+        <button class="login-preset" type="button" :aria-label="`切换研究空间，当前${activePresetLabel}`" @click="cyclePreset">
+          <i /><span>{{ activePresetLabel }}</span>
+        </button>
+        <button class="login-theme" type="button" aria-label="切换主题" title="切换黑/白主题" @click="toggleTheme">
+          <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 4V2M12 22v-2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4" />
+            <circle cx="12" cy="12" r="4" />
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
+          </svg>
+        </button>
+      </div>
 
       <div class="login-card">
         <div class="login-card-kicker"><span>PRIVATE ACCESS</span><i>01</i></div>
@@ -359,6 +377,15 @@ function onSubmit() {
   --login-toggle-bg: rgba(255, 255, 255, 0.58);
   --login-divider: rgba(76, 99, 111, 0.18);
   --login-shadow: rgba(16, 35, 46, 0.16);
+  --login-panel-glow: rgba(39, 105, 126, 0.3);
+  --login-brand-text: #f1f5f6;
+  --login-brand-accent: #d2b579;
+  --login-brand-sub: rgba(195, 214, 220, 0.62);
+  --login-brand-muted: rgba(181, 204, 212, 0.42);
+  --login-track: #c5a466;
+  --login-track-glow: rgba(197, 164, 102, 0.22);
+  --login-logo-start: #d0ab68;
+  --login-logo-end: #9a7137;
 
   position: fixed;
   inset: 0;
@@ -388,14 +415,79 @@ function onSubmit() {
   --login-shadow: rgba(0, 0, 0, 0.38);
 }
 
+.login-shell.preset-daylight {
+  --login-page-bg: #edf3f5;
+  --login-panel-bg: #e7eff1;
+  --login-panel-deep: #d7e5e9;
+  --login-grid: rgba(50, 101, 120, 0.1);
+  --login-card-bg: rgba(251, 253, 253, 0.92);
+  --login-border-focus: #2c708d;
+  --login-accent: #397f99;
+  --login-accent-strong: #245f78;
+  --login-panel-glow: rgba(72, 137, 158, 0.18);
+  --login-brand-text: #163443;
+  --login-brand-accent: #2c708d;
+  --login-brand-sub: rgba(46, 77, 89, 0.68);
+  --login-brand-muted: rgba(54, 84, 96, 0.48);
+  --login-track: #3b86a0;
+  --login-track-glow: rgba(59, 134, 160, 0.2);
+  --login-logo-start: #4b91a8;
+  --login-logo-end: #286a84;
+}
+
+.login-shell.preset-daylight.is-dark {
+  --login-page-bg: #18252c;
+  --login-panel-bg: #1d3039;
+  --login-panel-deep: #12242d;
+  --login-card-bg: rgba(34, 50, 58, 0.92);
+  --login-card-edge: rgba(156, 184, 195, 0.2);
+  --login-border: #3c525c;
+  --login-input-bg: rgba(255, 255, 255, 0.035);
+  --login-text: #f5f9fa;
+  --login-text-sub: #d1dfe4;
+  --login-text-muted: #92a8b1;
+}
+
+.login-shell.preset-nocturne {
+  --login-page-bg: #e8eef1;
+  --login-panel-bg: #0a202c;
+  --login-panel-deep: #061620;
+  --login-card-bg: rgba(248, 250, 251, 0.92);
+  --login-border-focus: #227f9d;
+  --login-accent: #2c88a5;
+  --login-accent-strong: #17667f;
+  --login-panel-glow: rgba(41, 132, 159, 0.28);
+  --login-brand-accent: #83c6d8;
+  --login-track: #62bad2;
+  --login-track-glow: rgba(98, 186, 210, 0.22);
+  --login-logo-start: #69bed4;
+  --login-logo-end: #2d819b;
+}
+
+.login-shell.preset-nocturne.is-dark {
+  --login-page-bg: #071721;
+  --login-panel-bg: #071b25;
+  --login-panel-deep: #04131b;
+  --login-card-bg: rgba(13, 34, 46, 0.94);
+  --login-card-edge: rgba(132, 171, 187, 0.2);
+  --login-border: #294a58;
+  --login-border-focus: #62bad2;
+  --login-input-bg: rgba(255, 255, 255, 0.035);
+  --login-text: #f2f7f8;
+  --login-text-sub: #bfd0d7;
+  --login-text-muted: #8199a4;
+  --login-accent: #62bad2;
+  --login-accent-strong: #398ca7;
+}
+
 .login-brand {
   position: relative;
   min-width: 0;
   padding: 38px clamp(36px, 5vw, 76px) 34px;
   background:
-    radial-gradient(circle at 72% 46%, rgba(39, 105, 126, 0.3), transparent 28%),
+    radial-gradient(circle at 72% 46%, var(--login-panel-glow), transparent 28%),
     linear-gradient(142deg, var(--login-panel-bg), var(--login-panel-deep));
-  color: #dbe7eb;
+  color: var(--login-brand-text);
   overflow: hidden;
 }
 .login-brand::before {
@@ -415,7 +507,7 @@ function onSubmit() {
   right: 0;
   width: 1px;
   height: 100%;
-  background: linear-gradient(transparent, rgba(208, 176, 115, 0.48), transparent);
+  background: linear-gradient(transparent, color-mix(in srgb, var(--login-track) 48%, transparent), transparent);
 }
 .login-brand-head {
   position: relative;
@@ -427,17 +519,17 @@ function onSubmit() {
 .login-logo {
   display: flex;
   align-items: center;
-  --brand-word: #f1f5f6;
+  --brand-word: var(--login-brand-text);
   --brand-word-stroke: rgba(11, 28, 43, 0.28);
-  --brand-icon-start: #d0ab68;
-  --brand-icon-end: #9a7137;
-  --shell-accent-soft: rgba(198, 163, 98, 0.2);
+  --brand-icon-start: var(--login-logo-start);
+  --brand-icon-end: var(--login-logo-end);
+  --shell-accent-soft: color-mix(in srgb, var(--login-track) 20%, transparent);
 }
 .login-system-state {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: rgba(198, 218, 225, 0.52);
+  color: var(--login-brand-muted);
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 10px;
   letter-spacing: 0.14em;
@@ -467,12 +559,12 @@ function onSubmit() {
   inset: 8% 0 0;
   width: 100%;
   height: 78%;
-  color: #c5a466;
+  color: var(--login-track);
   overflow: visible;
 }
 .market-track-shadow {
   fill: none;
-  stroke: rgba(197, 164, 102, 0.22);
+  stroke: var(--login-track-glow);
   stroke-width: 14;
   filter: url(#track-glow);
 }
@@ -485,15 +577,15 @@ function onSubmit() {
   animation: track-flow 18s linear infinite;
 }
 .market-track-node {
-  fill: #e8d09d;
-  stroke: rgba(232, 208, 157, 0.22);
+  fill: color-mix(in srgb, var(--login-track) 68%, white 32%);
+  stroke: color-mix(in srgb, var(--login-track) 22%, transparent);
   stroke-width: 10;
 }
 .market-index {
   position: absolute;
   padding: 5px 8px;
-  border-left: 1px solid rgba(205, 176, 119, 0.45);
-  color: rgba(193, 215, 222, 0.46);
+  border-left: 1px solid color-mix(in srgb, var(--login-track) 45%, transparent);
+  color: var(--login-brand-muted);
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 9px;
   letter-spacing: 0.12em;
@@ -511,25 +603,25 @@ function onSubmit() {
   display: flex;
   align-items: center;
   gap: 15px;
-  color: #c5a466;
+  color: var(--login-track);
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 10px;
   letter-spacing: 0.18em;
 }
-.login-eyebrow i { width: 50px; height: 1px; background: rgba(197, 164, 102, 0.56); }
+.login-eyebrow i { width: 50px; height: 1px; background: color-mix(in srgb, var(--login-track) 56%, transparent); }
 .login-brand-copy h1 {
   margin: 18px 0 16px;
-  color: #f1f5f6;
+  color: var(--login-brand-text);
   font-family: 'Songti SC', STSong, 'SimSun', serif;
   font-size: clamp(42px, 4.5vw, 70px);
   font-weight: 600;
   letter-spacing: 0.02em;
   line-height: 1.18;
 }
-.login-brand-copy h1 em { color: #d2b579; font-style: normal; }
+.login-brand-copy h1 em { color: var(--login-brand-accent); font-style: normal; }
 .login-brand-copy p {
   margin: 0;
-  color: rgba(195, 214, 220, 0.62);
+  color: var(--login-brand-sub);
   font-size: 14px;
   letter-spacing: 0.06em;
 }
@@ -542,11 +634,11 @@ function onSubmit() {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: rgba(181, 204, 212, 0.42);
+  color: var(--login-brand-muted);
   font-size: 11px;
   letter-spacing: 0.12em;
 }
-.login-brandmeta i { width: 3px; height: 3px; border-radius: 50%; background: #a98851; }
+.login-brandmeta i { width: 3px; height: 3px; border-radius: 50%; background: var(--login-track); }
 
 .login-auth {
   position: relative;
@@ -560,11 +652,16 @@ function onSubmit() {
     radial-gradient(circle at 85% 0, rgba(182, 146, 84, 0.13), transparent 28%),
     var(--login-page-bg);
 }
-.login-theme {
+.login-controls {
   position: absolute;
   z-index: 2;
   top: 28px;
   right: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.login-theme {
   width: 38px;
   height: 38px;
   border-radius: 50%;
@@ -577,8 +674,31 @@ function onSubmit() {
   justify-content: center;
   transition: border-color 0.2s, color 0.2s, transform 0.2s;
 }
+.login-preset {
+  height: 38px;
+  padding: 0 13px;
+  border: 1px solid var(--login-border);
+  border-radius: 999px;
+  background: var(--login-toggle-bg);
+  color: var(--login-text-sub);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+.login-preset i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--login-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-accent) 13%, transparent);
+}
+.login-preset:hover { color: var(--login-text); border-color: var(--login-accent); }
 .login-theme:hover { color: var(--login-accent); border-color: var(--login-accent); transform: rotate(8deg); }
 .login-theme:focus-visible,
+.login-preset:focus-visible,
 .login-tab:focus-visible,
 .login-link:focus-visible,
 .login-primary:focus-visible { outline: 2px solid var(--login-accent); outline-offset: 3px; }
@@ -696,6 +816,16 @@ function onSubmit() {
 }
 .login-field input::placeholder {
   color: var(--login-text-muted);
+}
+.login-field input:-webkit-autofill,
+.login-field input:-webkit-autofill:hover,
+.login-field input:-webkit-autofill:focus,
+.login-field input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--login-text);
+  caret-color: var(--login-text);
+  -webkit-box-shadow: 0 0 0 1000px transparent inset;
+  -webkit-background-clip: text;
+  transition: background-color 9999s ease-out 0s;
 }
 .login-field .eye {
   cursor: pointer;
@@ -827,10 +957,13 @@ function onSubmit() {
     background: linear-gradient(rgba(4, 17, 27, 0.12), rgba(4, 17, 27, 0.5));
   }
   .login-card { max-width: 430px; }
-  .login-theme {
+  .login-controls {
     position: fixed;
     top: 26px;
     right: 24px;
+  }
+  .login-theme,
+  .login-preset {
     color: #d9e5e9;
     border-color: rgba(220, 232, 236, 0.25);
     background: rgba(7, 27, 39, 0.62);
@@ -846,7 +979,7 @@ function onSubmit() {
     border-radius: 16px;
   }
   .login-card-title h2 { font-size: 26px; }
-  .login-theme { top: 20px; right: 18px; }
+  .login-controls { top: 20px; right: 18px; }
 }
 
 @media (max-height: 720px) and (min-width: 981px) {

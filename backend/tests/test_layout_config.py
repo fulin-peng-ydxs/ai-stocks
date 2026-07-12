@@ -43,10 +43,11 @@ def test_layout_tables_created(client):
     assert {"layout_preset", "layout_page_config", "layout_user_config"} <= tables
 
 
-def test_builtin_presets_seed_and_custom_preset_roundtrip(client):
+def test_builtin_presets_seed_and_custom_preset_roundtrip(client, monkeypatch):
     repo = LayoutConfigRepo(client)
     keys = {p["key"] for p in repo.list_presets()}
-    assert {"professional", "government", "technology", "finance", "high-contrast"} <= keys
+    assert {"daylight", "nocturne", "balanced"} <= keys
+    assert not {"professional", "government", "technology", "finance", "high-contrast"} & keys
 
     saved = repo.upsert_preset(
         key="dense-lab",
@@ -55,6 +56,48 @@ def test_builtin_presets_seed_and_custom_preset_roundtrip(client):
     )
     assert saved["config"]["values"]["density"] == "compact"
     assert repo.get_preset("dense-lab")["name"] == "高密实验"
+
+    calls = {"execute": 0, "query": 0}
+    original_execute = client.execute
+    original_query = client.query_df
+
+    def count_execute(sql, params=None):
+        calls["execute"] += 1
+        return original_execute(sql, params)
+
+    def count_query(sql, params=None):
+        calls["query"] += 1
+        return original_query(sql, params)
+
+    monkeypatch.setattr(client, "execute", count_execute)
+    monkeypatch.setattr(client, "query_df", count_query)
+    assert repo.seed_builtin_presets() == 0
+    assert calls == {"execute": 0, "query": 0}
+
+
+def test_legacy_builtin_preset_reference_migrates_to_three_preset_system(client):
+    client.execute(
+        "INSERT INTO layout_preset "
+        "(key, name, description, config, enabled, is_builtin, schema_version, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        ["finance", "旧金融数据", "旧内置预设", '{"density":"compact"}', True, True, 1],
+    )
+    client.execute(
+        "INSERT INTO layout_page_config (page_key, preset_key, config, schema_version, updated_at) "
+        "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        ["board", "finance", "{}", 1],
+    )
+
+    repo = LayoutConfigRepo(client)
+
+    assert repo.get_page_config("board")["presetKey"] == "balanced"
+    assert repo.get_preset("finance") is None
+
+    repo.upsert_preset(key="finance", name="用户自定义 Finance", config={"values": {}})
+    repo.set_page_config("stocks", preset_key="finance", config={"values": {}})
+    repo.seed_builtin_presets()
+    assert repo.get_page_config("stocks")["presetKey"] == "finance"
+    assert repo.get_preset("finance")["is_builtin"] is False
 
 
 def test_preset_tokens_and_references(client):
@@ -76,13 +119,13 @@ def test_page_user_effective_config_priority(client):
     repo = LayoutConfigRepo(client)
     repo.set_page_config(
         "board",
-        preset_key="finance",
+        preset_key="balanced",
         config={"values": {"slots.table.minH": 360, "density": "standard"}},
     )
     repo.set_user_config("board", {"values": {"density": "comfortable"}}, user_id="u1")
 
     effective = repo.effective_config("board", user_id="u1")
-    assert effective["presetKey"] == "finance"
+    assert effective["presetKey"] == "balanced"
     assert effective["values"]["slots.table.minH"] == 360
     assert effective["values"]["density"] == "comfortable"
     assert effective["source"]["density"] == "user"
@@ -366,7 +409,7 @@ def test_layout_api_page_user_effective_roundtrip(client):
     api = TestClient(app)
     r1 = api.post(
         "/api/layout/pages/board",
-        json={"presetKey": "finance", "config": {"values": {"slots.table.minH": 420}}},
+        json={"presetKey": "balanced", "config": {"values": {"slots.table.minH": 420}}},
         headers=_sys_headers(),
     ).json()
     assert r1["code"] == 0

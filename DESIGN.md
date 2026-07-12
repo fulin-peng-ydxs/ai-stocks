@@ -93,19 +93,19 @@ components:
 
 ## 1. Visual Theme & Atmosphere
 
-复盘啦是高密度金融研究工作台，不是营销页或内容站。界面优先支持反复扫描、比较、筛选、回测和配置，视觉应当安静、克制、可读，避免装饰性布局占用业务空间。
+复盘啦是专业金融研究空间，不是传统后台、营销页或内容站。界面优先支持反复扫描、比较、筛选、回测和配置，视觉应当安静、克制、可读，并通过统一材质与清晰层级保持金融科技气质。
 
 Key Characteristics：
 
 - 信息密度偏高，但通过表格内滚、抽屉分段、字段收纳和提示悬浮保持可扫读。
-- 默认气质为中性蓝灰专业后台；金融数据场景允许红绿涨跌色和更紧凑密度。
+- 默认气质为冷静、均衡的金融科技研究终端；金融数据场景允许红绿涨跌色，但不以过度紧凑和控件堆叠表达专业。
 - 页面首屏直接呈现业务工具，不做大 hero、不做营销式空白、不做卡片堆叠式装饰。
 - 所有业务页面通过布局系统组织，页面结构由 schema 和测试约束，不依赖临时 CSS 猜高度。
 - 视觉预设可以改变 token、密度和受控组件默认策略，但不能改变页面业务结构。
 
 ## 2. Color Palette & Roles
 
-颜色以 Element Plus 变量、`global.css` 的 `--chrome-*` / `--page-settings-*` 变量和 `LAYOUT_PRESETS` 为事实源。默认预设为 `professional`，同时支持 `government`、`technology`、`finance`、`high-contrast`。
+颜色以 Element Plus 变量、`global.css` 的 `--chrome-*` / `--page-settings-*` 变量和 `LAYOUT_PRESETS` 为事实源。内置预设只保留 `daylight`、`nocturne`、`balanced` 三套，默认使用 `balanced`；三套预设必须同时覆盖登录页、应用外壳、业务内容区和外观选择预览。
 
 | 角色 | 默认值 | 使用规则 |
 |---|---:|---|
@@ -133,11 +133,11 @@ Key Characteristics：
 
 预设规则：
 
-- `professional`：默认后台风，适合绝大多数管理和研究页面。
-- `government`：更低圆角、更强边界，适合稳重场景。
-- `technology`：青蓝高亮，适合行情分析和图表工作台。
-- `finance`：更紧凑、更表格化，适合高频数据比较。
-- `high-contrast`：提高文字与边框对比，优先保证可访问性。
+- `daylight`（日曜）：冷银白与雾蓝，优先服务白天长时间阅读。
+- `nocturne`（夜航）：深海蓝、冷青与铂金边界，优先服务低照度夜间复盘；禁止使用纯黑大底。
+- `balanced`（晨昏）：海军蓝与香槟金保持明暗平衡，是默认研究空间。
+- 明暗模式与三套预设正交；每套仍需维护完整 `light` / `dark` token，并在切换时保持控件对比度。
+- 存量 `technology` / `finance` 页面引用升级时迁移到 `balanced`；其预设默认密度从 `compact` 回落为 `standard`，页面层或用户层已有 `density` 覆盖继续保留。
 - 新增或调整预设必须维护 `light`、`dark`、共享形态 token，并通过 `presets.spec.ts`。
 
 ## 3. Typography Rules
@@ -227,7 +227,8 @@ Key Characteristics：
 ### 按钮与输入
 
 - 主命令用 Element Plus `primary`，危险操作用 `danger`，普通工具用默认或 plain。
-- 输入框、选择器、按钮统一使用 `--layout-control-radius`，默认 4-6px。
+- 输入框、选择器、按钮统一使用 `--layout-control-radius`，不在页面内另写圆角体系。
+- 夜间模式的复选框、单选框、输入边界和表格行悬浮必须使用强边框或主色反馈；空框、选中、禁用三态均需肉眼可辨。
 - 图标按钮优先使用图标或现有组件，不要用冗长文字按钮替代明确符号。
 - 工具栏按钮应贴近其影响区域，避免页面右上角堆积所有操作。
 

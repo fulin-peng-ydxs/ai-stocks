@@ -187,12 +187,13 @@ body {
   opacity: 0.4;
 }
 /* 夜间：高亮块底色加深一点以保证对比 */
-html.dark .trade-cal .el-date-table td.available:not(.current):not(.today) .el-date-table-cell__text {
+html[data-layout-mode='dark'] .trade-cal .el-date-table td.available:not(.current):not(.today) .el-date-table-cell__text {
   background: rgba(64, 158, 255, 0.18);
   color: #79bbff;
 }
 
-/* 夜间：用柔和的深石板蓝替代 Element Plus 默认近纯黑，降低对比、减少刺眼 */
+/* html.dark 只负责主题初始化阶段的全局兜底；预设应用完成后的组件级夜间规则统一读取
+   data-layout-mode='dark'，确保它们跟随当前预设实际生效模式。 */
 html.dark {
   --el-bg-color-page: #000000; /* 页面底色：纯黑 */
   --el-bg-color: #0c0e12; /* 卡片/表格底色：近黑，保留层次 */
@@ -308,11 +309,10 @@ html.dark {
   background: transparent;
 }
 
-/* 暗色：行 hover 高亮。
-   注意 Element Plus 在 .el-table 上把 --el-table-row-hover-bg-color 重声明为
-   var(--el-fill-color-light)，会遮蔽 html.dark 根级覆盖，故必须在 .el-table 作用域覆盖。 */
-html.dark .el-table {
-  --el-table-row-hover-bg-color: #33456a;
+/* 暗色：行 hover 高亮。Element Plus 会在 .el-table 局部重声明 hover 变量，
+   因此按预设实际模式在组件作用域覆盖，而不是继续依赖 html.dark 根级兜底。 */
+html[data-layout-mode='dark'] .el-table {
+  --el-table-row-hover-bg-color: var(--chrome-bg-soft-hover);
 }
 
 html[data-layout-preset] .el-card {
@@ -320,6 +320,9 @@ html[data-layout-preset] .el-card {
   background-color: var(--el-bg-color);
   border-color: var(--chrome-border);
   color: var(--chrome-text);
+  box-shadow:
+    0 8px 24px color-mix(in srgb, var(--shell-surface-shadow) 54%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
 }
 html[data-layout-preset] .el-card__body {
   padding: var(--layout-card-padding);
@@ -327,7 +330,7 @@ html[data-layout-preset] .el-card__body {
 html[data-layout-preset] .el-table {
   --el-table-bg-color: var(--el-bg-color);
   --el-table-tr-bg-color: var(--el-bg-color);
-  --el-table-header-bg-color: var(--el-bg-color);
+  --el-table-header-bg-color: color-mix(in srgb, var(--chrome-bg-soft-hover) 52%, var(--el-bg-color));
   --el-table-row-hover-bg-color: var(--chrome-bg-soft-hover);
   --el-table-border-color: var(--chrome-border);
   --el-table-border: 1px solid var(--chrome-border);
@@ -345,6 +348,17 @@ html[data-layout-preset] .el-input__wrapper,
 html[data-layout-preset] .el-select__wrapper {
   background-color: var(--chrome-bg-soft);
   box-shadow: 0 0 0 1px var(--chrome-border) inset;
+  transition: box-shadow .18s ease, background-color .18s ease;
+}
+html[data-layout-preset] .el-input__wrapper:hover,
+html[data-layout-preset] .el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--chrome-border-strong) inset;
+}
+html[data-layout-preset] .el-input__wrapper.is-focus,
+html[data-layout-preset] .el-select__wrapper.is-focused {
+  box-shadow:
+    0 0 0 1px var(--el-color-primary) inset,
+    0 0 0 3px color-mix(in srgb, var(--el-color-primary) 12%, transparent);
 }
 html[data-layout-preset] .el-input__inner,
 html[data-layout-preset] .el-select__placeholder,
@@ -355,9 +369,44 @@ html[data-layout-preset] .el-table__cell {
   padding-top: var(--layout-table-cell-padding-y);
   padding-bottom: var(--layout-table-cell-padding-y);
 }
-html[data-layout-preset='high-contrast'] .el-button,
-html[data-layout-preset='high-contrast'] .el-card,
-html[data-layout-preset='high-contrast'] .el-input__wrapper,
-html[data-layout-preset='high-contrast'] .el-select__wrapper {
+
+/* 夜间控件同样读取预设实际模式；空框、选中框、禁用框都要有稳定边界。 */
+html[data-layout-mode='dark'] .el-checkbox__inner,
+html[data-layout-mode='dark'] .el-radio__inner {
+  background-color: color-mix(in srgb, var(--chrome-bg-soft) 76%, white 4%);
   border-color: var(--chrome-border-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 8%, transparent);
+}
+html[data-layout-mode='dark'] .el-checkbox__input:hover .el-checkbox__inner,
+html[data-layout-mode='dark'] .el-radio__input:hover .el-radio__inner,
+html[data-layout-mode='dark'] .el-checkbox__input.is-focus .el-checkbox__inner,
+html[data-layout-mode='dark'] .el-radio__input.is-focus .el-radio__inner {
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-primary) 16%, transparent);
+}
+html[data-layout-mode='dark'] .el-checkbox__input.is-checked .el-checkbox__inner,
+html[data-layout-mode='dark'] .el-checkbox__input.is-indeterminate .el-checkbox__inner,
+html[data-layout-mode='dark'] .el-radio__input.is-checked .el-radio__inner {
+  background-color: var(--el-color-primary);
+  border-color: color-mix(in srgb, var(--el-color-primary) 76%, white 24%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--el-color-primary) 18%, transparent);
+}
+html[data-layout-mode='dark'] .el-checkbox__inner::after {
+  border-color: var(--shell-control-mark);
+  border-width: 2px;
+}
+html[data-layout-mode='dark'] .el-radio__input.is-checked .el-radio__inner::after {
+  width: 6px;
+  height: 6px;
+  background-color: var(--shell-control-mark);
+}
+html[data-layout-mode='dark'] .el-checkbox__input.is-disabled .el-checkbox__inner,
+html[data-layout-mode='dark'] .el-radio__input.is-disabled .el-radio__inner {
+  background-color: var(--el-disabled-bg-color);
+  border-color: var(--chrome-border);
+  opacity: .72;
+}
+html[data-layout-mode='dark'] .el-checkbox__label,
+html[data-layout-mode='dark'] .el-radio__label {
+  color: var(--chrome-text);
 }

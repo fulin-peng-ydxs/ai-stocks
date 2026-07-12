@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Calendar, Clock, Refresh } from '@element-plus/icons-vue'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
@@ -47,10 +47,6 @@ const dataStatusFailed = ref(false)
 const shellTasks = ref<AsyncTask[]>([])
 const shellTasksFailed = ref(false)
 const shellStatusLoading = ref(false)
-const themeStripRef = ref<HTMLElement | null>(null)
-const themeScrollLeft = ref(0)
-const themeScrollClientWidth = ref(1)
-const themeScrollWidth = ref(1)
 const canReadDataStatus = computed(() => auth.isSystem || auth.permissions.includes('data-status:view'))
 const canReadTradeCalendar = computed(() => auth.isSystem || auth.permissions.includes('trade-calendar:view'))
 const canReadTasks = computed(() => auth.isSystem || auth.permissions.includes('data-task:manage'))
@@ -92,23 +88,13 @@ const taskSignalText = computed(() => {
   if (failedShellTasks.value.length > 0) return formatNumber(failedShellTasks.value.length)
   return ''
 })
-const activePresetIndex = computed(() =>
-  Math.max(0, presetOptions.value.findIndex((option) => option.value === activePresetKey.value)))
 const themeOptionsWithSwatches = computed(() =>
   presetOptions.value.map((option) => ({
     ...option,
     swatches: themeSwatchesFor(option.value),
+    preview: themePreviewFor(option.value),
   })),
 )
-const themeScrollThumbWidth = computed(() => {
-  if (themeScrollWidth.value <= themeScrollClientWidth.value) return 100
-  return Math.max(24, (themeScrollClientWidth.value / themeScrollWidth.value) * 100)
-})
-const themeScrollThumbLeft = computed(() => {
-  const maxScroll = themeScrollWidth.value - themeScrollClientWidth.value
-  if (maxScroll <= 0) return 0
-  return (themeScrollLeft.value / maxScroll) * (100 - themeScrollThumbWidth.value)
-})
 
 function formatNumber(value: number | null | undefined): string {
   return typeof value === 'number' ? numberFormatter.format(value) : '—'
@@ -140,14 +126,6 @@ function selectPreset(key: LayoutPresetKey) {
   setLayoutPreset(key)
 }
 
-function syncThemeScroll() {
-  const el = themeStripRef.value
-  if (!el) return
-  themeScrollLeft.value = el.scrollLeft
-  themeScrollClientWidth.value = Math.max(1, el.clientWidth)
-  themeScrollWidth.value = Math.max(1, el.scrollWidth)
-}
-
 function themeSwatchesFor(key: LayoutPresetKey) {
   const tokens = effectivePresetTokens(key, isDark.value ? 'dark' : 'light')
   return [
@@ -156,6 +134,21 @@ function themeSwatchesFor(key: LayoutPresetKey) {
     { key: 'warning', value: tokens.warning, weight: 18 },
     { key: 'danger', value: tokens.danger, weight: 12 },
   ]
+}
+
+function themePreviewFor(key: LayoutPresetKey) {
+  const t = effectivePresetTokens(key, isDark.value ? 'dark' : 'light')
+  return {
+    page: t.pageBg,
+    surface: t.surfaceBg,
+    border: t.borderStrong,
+    primary: t.primary,
+    text: t.textStrong,
+  }
+}
+
+function selectThemeMode(dark: boolean) {
+  if (isDark.value !== dark) toggleTheme()
 }
 
 function clearShellStatusTimer() {
@@ -257,11 +250,6 @@ watch(
   { immediate: true },
 )
 onUnmounted(clearShellStatusTimer)
-watch(appearanceDrawerVisible, async (visible) => {
-  if (!visible) return
-  await nextTick()
-  syncThemeScroll()
-})
 
 async function onLogout() {
   loggingOut.value = true
@@ -487,102 +475,67 @@ async function onLogout() {
     <el-drawer v-model="appearanceDrawerVisible" direction="rtl" size="440px" class="appearance-drawer">
       <div class="drawer-card">
         <header class="drawer-head drawer-head--appearance">
-          <div class="appearance-head-main">
-            <span class="drawer-title">外观</span>
-            <button
-              class="appearance-mode-icon"
-              type="button"
-              :aria-label="isDark ? '切换到白天模式' : '切换到夜间模式'"
-              @click="toggleTheme"
-            >
-              <svg
-                v-if="isDark"
-                class="theme-mode-glyph"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  class="theme-mode-glyph-fill"
-                  d="M20.2 14.4A7.5 7.5 0 0 1 9.6 3.8 8.6 8.6 0 1 0 20.2 14.4Z"
-                />
-              </svg>
-              <svg
-                v-else
-                class="theme-mode-glyph"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <circle class="theme-mode-glyph-fill" cx="12" cy="12" r="5.2" />
-                <g class="theme-mode-glyph-line">
-                  <path d="M12 2.8v2.3" />
-                  <path d="M12 18.9v2.3" />
-                  <path d="M2.8 12h2.3" />
-                  <path d="M18.9 12h2.3" />
-                  <path d="m5.5 5.5 1.6 1.6" />
-                  <path d="m16.9 16.9 1.6 1.6" />
-                  <path d="m18.5 5.5-1.6 1.6" />
-                  <path d="m7.1 16.9-1.6 1.6" />
-                </g>
-              </svg>
-            </button>
-            <span class="appearance-mode-copy">
-              <span class="appearance-mode-title">{{ isDark ? '夜间模式' : '白天模式' }}</span>
-              <span class="appearance-mode-sub">{{ isDark ? '点击图标切换到白天' : '点击图标切换到夜间' }}</span>
-            </span>
+          <div>
+            <div class="drawer-title">视觉环境</div>
+            <div class="drawer-subtitle">选择阅读光线与研究空间气质</div>
           </div>
           <button class="drawer-close" type="button" aria-label="关闭" @click="appearanceDrawerVisible = false">✕</button>
         </header>
 
         <div class="drawer-body">
+          <div class="appearance-mode-switch" aria-label="明暗模式">
+            <button type="button" :class="{ 'is-active': !isDark }" :aria-pressed="!isDark" @click="selectThemeMode(false)">
+              <span class="mode-orb mode-orb--day" />
+              <span><strong>白天</strong><small>清晰阅读</small></span>
+            </button>
+            <button type="button" :class="{ 'is-active': isDark }" :aria-pressed="isDark" @click="selectThemeMode(true)">
+              <span class="mode-orb mode-orb--night" />
+              <span><strong>夜间</strong><small>低照沉浸</small></span>
+            </button>
+          </div>
+
           <section class="theme-card">
             <div class="theme-card-head">
               <div>
-                <div class="theme-card-title">主题风格</div>
-                <div class="theme-card-sub">{{ activePresetIndex + 1 }} / {{ presetOptions.length }}</div>
+                <div class="theme-card-title">研究空间</div>
+                <div class="theme-card-sub">三套风格同时作用于登录页与工作台</div>
               </div>
             </div>
 
-            <div class="theme-carousel" aria-label="主题风格滑动选择">
-              <div ref="themeStripRef" class="theme-strip" @scroll="syncThemeScroll">
-                <button
-                  v-for="option in themeOptionsWithSwatches"
-                  :key="option.value"
-                  class="theme-option"
-                  :class="{ 'is-active': option.value === activePresetKey }"
-                  type="button"
-                  :aria-pressed="option.value === activePresetKey"
-                  @click="selectPreset(option.value)"
-                >
-                  <span
-                    class="theme-option-preview"
-                    :style="{ backgroundColor: option.swatches[0]?.value }"
-                    aria-hidden="true"
-                  >
-                    <span
-                      class="theme-option-slashes"
-                      :style="{ backgroundColor: option.swatches[0]?.value }"
-                    >
-                      <span
-                        v-for="swatch in option.swatches"
-                        :key="swatch.key"
-                        class="theme-option-slash"
-                        :style="{
-                          backgroundColor: swatch.value,
-                          flexGrow: swatch.weight,
-                          flexBasis: `${swatch.weight}%`,
-                        }"
-                      />
-                    </span>
-                  </span>
-                  <span class="theme-option-name">{{ option.label }}</span>
-                </button>
-              </div>
-              <div class="theme-scroll-rail" aria-hidden="true">
+            <div class="theme-list" aria-label="主题风格选择">
+              <button
+                v-for="option in themeOptionsWithSwatches"
+                :key="option.value"
+                class="theme-option"
+                :class="{ 'is-active': option.value === activePresetKey }"
+                type="button"
+                :aria-pressed="option.value === activePresetKey"
+                @click="selectPreset(option.value)"
+              >
                 <span
-                  class="theme-scroll-thumb"
-                  :style="{ width: `${themeScrollThumbWidth}%`, left: `${themeScrollThumbLeft}%` }"
-                />
-              </div>
+                  class="theme-option-preview"
+                  :style="{
+                    '--preview-page': option.preview.page,
+                    '--preview-surface': option.preview.surface,
+                    '--preview-border': option.preview.border,
+                    '--preview-primary': option.preview.primary,
+                    '--preview-text': option.preview.text,
+                  }"
+                  aria-hidden="true"
+                >
+                  <i class="preview-top" />
+                  <i class="preview-side" />
+                  <i class="preview-panel"><b /><b /><b /></i>
+                </span>
+                <span class="theme-option-copy">
+                  <strong>{{ option.label }}</strong>
+                  <small>{{ option.description }}</small>
+                  <span class="theme-option-swatches" aria-hidden="true">
+                    <i v-for="swatch in option.swatches" :key="swatch.key" :style="{ background: swatch.value }" />
+                  </span>
+                </span>
+                <span class="theme-option-check" aria-hidden="true">✓</span>
+              </button>
             </div>
           </section>
         </div>
@@ -595,13 +548,15 @@ async function onLogout() {
 .app {
   height: 100vh;
   flex-direction: column;
+  background: var(--el-bg-color-page);
 }
 .app-body {
   flex: 1 1 auto;
   min-height: 0;
 }
 .aside {
-  background: var(--chrome-bg);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--chrome-bg) 92%, var(--shell-accent) 8%), var(--chrome-bg));
   color: var(--chrome-text);
   display: flex;
   flex-direction: column;
@@ -609,7 +564,7 @@ async function onLogout() {
   min-height: 0;
 }
 .aside-foot {
-  padding: 10px 18px 12px;
+  padding: 12px 18px 14px;
   border-top: 1px solid var(--chrome-border);
 }
 .foot-note {
@@ -619,18 +574,19 @@ async function onLogout() {
 .workspace {
   min-width: 0;
   min-height: 0;
-  background: var(--el-bg-color-page);
+  background:
+    radial-gradient(720px 380px at 88% -8%, var(--shell-canvas-glow), transparent 72%),
+    linear-gradient(135deg, color-mix(in srgb, var(--el-bg-color-page) 96%, white 4%), var(--el-bg-color-page));
 }
 .topbar {
   height: 67px;
   padding: 0;
   background:
     radial-gradient(360px 96px at 62px -18px, var(--shell-accent-soft) 0%, transparent 74%),
-    radial-gradient(420px 90px at 205px 0, var(--shell-danger-line) 0%, transparent 76%),
     linear-gradient(
       90deg,
-      color-mix(in srgb, var(--chrome-bg) 82%, var(--shell-accent) 18%) 0%,
-      color-mix(in srgb, var(--chrome-bg) 94%, var(--shell-accent) 6%) 26%,
+      color-mix(in srgb, var(--chrome-bg) 88%, var(--shell-accent) 12%) 0%,
+      color-mix(in srgb, var(--chrome-bg) 97%, var(--shell-accent) 3%) 28%,
       var(--chrome-bg) 100%
     );
   border-bottom: 1px solid var(--chrome-border);
@@ -648,7 +604,7 @@ async function onLogout() {
   inset: 0;
   pointer-events: none;
   background: linear-gradient(90deg, transparent 0%, var(--shell-accent-faint) 12%, transparent 36%);
-  opacity: 0.48;
+  opacity: 0.3;
   mask-image: linear-gradient(90deg, #000 0%, #000 24%, transparent 58%);
 }
 .topbar-brand {
@@ -727,9 +683,7 @@ async function onLogout() {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--chrome-bg-soft) 88%, white 12%), var(--chrome-bg-soft)),
     color-mix(in srgb, var(--shell-accent-faint) 38%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
-    0 8px 20px color-mix(in srgb, var(--shell-accent) 10%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 20%, transparent);
 }
 .topbar-action--trade-date:hover,
 .topbar-action--trade-date.is-readonly:hover {
@@ -849,15 +803,15 @@ async function onLogout() {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ff6a63, #e11919);
-  color: #fff;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--shell-accent) 72%, white 28%), var(--shell-accent));
+  color: var(--shell-control-mark);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
   font-weight: 700;
   flex-shrink: 0;
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--el-color-danger) 24%, transparent);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--shell-accent) 20%, transparent);
 }
 :global(.topbar-popover) {
   --el-popover-padding: 0;
@@ -1088,17 +1042,16 @@ async function onLogout() {
 .drawer-head--appearance {
   gap: 12px;
 }
-.appearance-head-main {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .drawer-title {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--page-settings-text);
   flex: none;
+}
+.drawer-subtitle {
+  margin-top: 3px;
+  color: var(--page-settings-text-muted);
+  font-size: 12px;
 }
 .drawer-close {
   width: 28px;
@@ -1137,8 +1090,8 @@ async function onLogout() {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #ff6a63, #e11919);
-  color: #fff;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--shell-accent) 72%, white 28%), var(--shell-accent));
+  color: var(--shell-control-mark);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1156,70 +1109,64 @@ async function onLogout() {
   font-size: 12px;
   color: var(--page-settings-text-muted);
 }
-.appearance-mode-icon {
-  width: 30px;
-  height: 30px;
-  border: none;
-  border-radius: 50%;
+.appearance-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--page-settings-section-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--page-settings-section-bg) 72%, transparent);
+}
+.appearance-mode-switch button {
+  min-height: 58px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: transparent;
-  color: var(--page-settings-text);
-  padding: 0;
-  display: inline-flex;
+  color: var(--page-settings-text-muted);
+  display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 15px;
+  gap: 10px;
   cursor: pointer;
-  flex: none;
-  box-shadow: none;
-  transition: color 0.15s ease, transform 0.15s ease;
+  text-align: left;
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease;
 }
-.appearance-mode-icon:hover {
-  background: transparent;
+.appearance-mode-switch button:hover {
   color: var(--page-settings-text);
-  transform: scale(1.04);
+  background: color-mix(in srgb, var(--page-settings-bg) 68%, transparent);
 }
-.theme-mode-glyph {
+.appearance-mode-switch button.is-active {
+  color: var(--page-settings-text);
+  border-color: color-mix(in srgb, var(--page-settings-accent) 34%, var(--page-settings-border));
+  background: var(--page-settings-bg);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--page-settings-shadow) 46%, transparent);
+}
+.appearance-mode-switch button > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.appearance-mode-switch strong { font-size: 13px; line-height: 16px; }
+.appearance-mode-switch small { color: var(--page-settings-text-muted); font-size: 10px; line-height: 13px; }
+.mode-orb {
   width: 24px;
   height: 24px;
-  display: block;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--page-settings-border);
+  box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--page-settings-bg) 58%, transparent);
 }
-.theme-mode-glyph-fill {
-  fill: #facc15;
-  stroke: #111827;
-  stroke-width: 1.7;
-  stroke-linejoin: round;
-}
-.theme-mode-glyph-line {
-  fill: none;
-  stroke: #facc15;
-  stroke-width: 1.9;
-  stroke-linecap: round;
-}
-.appearance-mode-copy {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.appearance-mode-title {
-  font-size: 13px;
-  line-height: 16px;
-  font-weight: 700;
-  color: var(--page-settings-text);
-}
-.appearance-mode-sub {
-  font-size: 12px;
-  line-height: 15px;
-  color: var(--page-settings-text-muted);
-}
+.mode-orb--day { background: radial-gradient(circle at 38% 35%, #fff7d8 0 20%, #d8b76e 22% 48%, #9fc1ce 51% 100%); }
+.mode-orb--night { background: radial-gradient(circle at 60% 38%, #d8e7ed 0 16%, #617d8a 18% 40%, #0d2836 43% 100%); }
 .theme-card {
-  border: 1px solid color-mix(in srgb, var(--page-settings-section-border) 46%, transparent);
-  background: color-mix(in srgb, var(--page-settings-bg) 74%, transparent);
-  border-radius: 12px;
-  padding: 9px;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  padding: 4px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 12px;
   box-shadow: none;
 }
 .theme-card-head {
@@ -1229,7 +1176,7 @@ async function onLogout() {
   gap: 12px;
 }
 .theme-card-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--page-settings-text);
 }
@@ -1238,130 +1185,133 @@ async function onLogout() {
   font-size: 12px;
   color: var(--page-settings-text-muted);
 }
-.theme-carousel {
-  min-width: 0;
+.theme-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-.theme-strip {
-  min-width: 0;
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 1px 0 2px;
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
-}
-.theme-strip::-webkit-scrollbar {
-  display: none;
-  height: 0;
-}
-.theme-scroll-rail {
-  position: relative;
-  height: 3px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--page-settings-bg) 72%, var(--page-settings-text-muted) 8%);
-  overflow: hidden;
-}
-.theme-scroll-thumb {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border-radius: inherit;
-  background: color-mix(in srgb, var(--page-settings-accent) 72%, white 10%);
-  transition: left 0.08s linear, width 0.15s ease;
+  gap: 9px;
 }
 .theme-option {
-  flex: 0 0 96px;
-  min-width: 96px;
-  border: none;
-  background: transparent;
+  position: relative;
+  width: 100%;
+  min-height: 94px;
+  border: 1px solid var(--page-settings-section-border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
   color: var(--page-settings-text-muted);
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 12px;
   cursor: pointer;
-  text-align: center;
-  scroll-snap-align: start;
-  transition: color 0.15s ease;
+  text-align: left;
+  transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
 }
 .theme-option:hover {
   color: var(--page-settings-text);
+  border-color: var(--page-settings-border);
+  transform: translateY(-1px);
 }
 .theme-option.is-active {
   color: var(--page-settings-text);
+  border-color: color-mix(in srgb, var(--page-settings-accent) 62%, var(--page-settings-border));
+  background: color-mix(in srgb, var(--page-settings-accent) 7%, var(--page-settings-bg));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--page-settings-shadow) 44%, transparent);
 }
 .theme-option-preview {
-  height: 36px;
-  border: 1px solid color-mix(in srgb, var(--page-settings-section-border) 68%, white 10%);
-  border-radius: 0;
-  background: transparent;
-  background-image:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 42%, rgba(0, 0, 0, 0.1));
-  padding: 0;
+  position: relative;
+  width: 112px;
+  height: 72px;
+  border: 1px solid var(--preview-border);
+  border-radius: 8px;
+  background: var(--preview-page);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
+}
+.preview-top {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 13px;
+  background: var(--preview-surface);
+  border-bottom: 1px solid var(--preview-border);
+}
+.preview-top::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 4px;
+  width: 23px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--preview-primary);
+}
+.preview-side {
+  position: absolute;
+  left: 0;
+  top: 13px;
+  bottom: 0;
+  width: 25px;
+  background: var(--preview-surface);
+  border-right: 1px solid var(--preview-border);
+}
+.preview-side::before,
+.preview-side::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  width: 13px;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--preview-text) 38%, transparent);
+}
+.preview-side::before { top: 10px; }
+.preview-side::after { top: 20px; }
+.preview-panel {
+  position: absolute;
+  left: 33px;
+  right: 7px;
+  top: 22px;
+  bottom: 8px;
+  padding: 8px;
+  border: 1px solid var(--preview-border);
+  border-radius: 5px;
+  background: var(--preview-surface);
   display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.preview-panel b {
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--preview-text) 24%, transparent);
+}
+.preview-panel b:first-child { width: 46%; background: var(--preview-primary); opacity: .72; }
+.theme-option-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.theme-option-copy strong { color: var(--page-settings-text); font-size: 14px; }
+.theme-option-copy small { color: var(--page-settings-text-muted); font-size: 11px; line-height: 1.45; }
+.theme-option-swatches { display: flex; gap: 4px; margin-top: 2px; }
+.theme-option-swatches i { width: 16px; height: 3px; border-radius: 999px; }
+.theme-option-check {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--page-settings-section-border);
+  border-radius: 50%;
+  color: transparent;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
-  filter: saturate(1.18) brightness(1.04);
-  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  font-size: 11px;
+  font-weight: 800;
 }
-.theme-option:hover .theme-option-preview {
-  border-color: var(--page-settings-border);
-}
-.theme-option.is-active .theme-option-preview {
+.theme-option.is-active .theme-option-check {
   border-color: var(--page-settings-accent);
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--page-settings-accent) 34%, transparent),
-    0 6px 14px color-mix(in srgb, var(--page-settings-accent) 14%, transparent);
-}
-.theme-option-name {
-  min-width: 0;
-  font-size: 12px;
-  line-height: 15px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.theme-option-slashes {
-  width: 138px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  transform: skewX(-24deg);
-  margin-left: -16px;
-  margin-right: -16px;
-}
-.theme-option-slash {
-  min-width: 0;
-  height: 48px;
-  border-radius: 0;
-  background-image:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 46%, rgba(0, 0, 0, 0.14));
-  box-shadow:
-    inset 1px 0 rgba(255, 255, 255, 0.16),
-    inset -1px 0 rgba(0, 0, 0, 0.14);
-  filter: saturate(1.28) brightness(1.06);
-  flex-shrink: 1;
-}
-.theme-option-slash:nth-child(2) {
-  height: 48px;
-  transform: none;
-}
-.theme-option-slash:nth-child(3) {
-  height: 48px;
-  transform: none;
-}
-.theme-option-slash:nth-child(4) {
-  height: 48px;
-  transform: none;
+  background: var(--page-settings-accent);
+  color: var(--shell-control-mark);
 }
 /* 退出登录（stage2·T9）：抽屉底部危险操作，红色描边区分常规项 */
 .drawer-logout {
@@ -1385,7 +1335,7 @@ async function onLogout() {
   cursor: not-allowed;
 }
 .main {
-  background: var(--el-bg-color-page);
+  background: transparent;
   padding: 20px 24px;
   overflow: hidden;          /* 禁止整页滚动：超高内容由各页内部成长区自行滚动 */
   display: flex;

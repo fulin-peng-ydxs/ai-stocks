@@ -66,7 +66,7 @@ const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.valu
   flex: 1;
   border-right: none;
   background: transparent;
-  padding-top: 8px;
+  padding: 10px 10px 8px;
 }
 .menu-hint {
   flex: 1;
@@ -83,12 +83,15 @@ const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.valu
 }
 .menu :deep(.el-menu-item) {
   color: var(--chrome-text);
+  margin: 3px 0;
+  border-radius: var(--layout-control-radius);
 }
 .menu :deep(.el-menu-item.is-active) {
   background: var(--chrome-active-bg);
   color: var(--chrome-text-strong);
-  border-left: 3px solid var(--el-color-primary);
-  font-weight: 600;
+  border-left: 0;
+  font-weight: 650;
+  box-shadow: inset 3px 0 var(--el-color-primary);
 }
 .menu :deep(.el-menu-item.is-active .menu-icon),
 .menu :deep(.el-sub-menu.is-active > .el-sub-menu__title .menu-icon) {
@@ -101,6 +104,8 @@ const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.valu
 }
 .menu :deep(.el-sub-menu__title) {
   color: var(--chrome-text);
+  margin: 3px 0;
+  border-radius: var(--layout-control-radius);
 }
 .menu :deep(.el-sub-menu__title:hover) {
   background: var(--chrome-bg-soft);
@@ -118,6 +123,8 @@ const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.valu
   padding-left: 60px !important;
 }
 :global(html:not(.dark)) .menu :deep(.el-menu-item.is-active) {
-  box-shadow: inset 0 0 0 1px rgba(64, 158, 255, 0.12);
+  box-shadow:
+    inset 3px 0 var(--el-color-primary),
+    inset 0 0 0 1px color-mix(in srgb, var(--el-color-primary) 12%, transparent);
 }
 </style>

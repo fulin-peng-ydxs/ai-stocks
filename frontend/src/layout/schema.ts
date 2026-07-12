@@ -48,7 +48,7 @@ export type RegionRole = 'action' | 'main' | 'overlay'
 /** 信息密度档位（L2 可调）。 */
 export type Density = 'compact' | 'standard' | 'comfortable'
 
-export type LayoutPresetKey = 'professional' | 'government' | 'technology' | 'finance' | 'high-contrast'
+export type LayoutPresetKey = 'daylight' | 'nocturne' | 'balanced'
 
 export interface StyleTokenConfig {
   primary: string

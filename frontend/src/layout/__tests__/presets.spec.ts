@@ -14,13 +14,11 @@ function luminance(hex: string): number {
 }
 
 describe('布局风格预设（M2 / M9 双模式）', () => {
-  it('内置五套预设完整可用，light/dark 两套 token 均合法', () => {
+  it('内置三套金融科技预设完整可用，light/dark 两套 token 均合法', () => {
     expect(Object.keys(LAYOUT_PRESETS).sort()).toEqual([
-      'finance',
-      'government',
-      'high-contrast',
-      'professional',
-      'technology',
+      'balanced',
+      'daylight',
+      'nocturne',
     ])
     for (const preset of Object.values(LAYOUT_PRESETS)) {
       expect(validateLayoutPreset(preset), preset.key).toEqual([])
@@ -48,7 +46,7 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     }
   })
 
-  it('未知预设回落到默认专业后台', () => {
+  it('未知或旧预设回落到默认晨昏', () => {
     expect(getLayoutPreset('nope').key).toBe(DEFAULT_LAYOUT_PRESET)
   })
 

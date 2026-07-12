@@ -49,7 +49,7 @@ function applyPreset(key: LayoutPresetKey) {
   const t = mergeTokens(preset.tokens[mode], presetOverrides.value[preset.key] ?? {}, mode)
   root.dataset.layoutPreset = preset.key
   root.dataset.layoutMode = mode
-  root.classList.toggle('layout-high-contrast', preset.key === 'high-contrast')
+  const chromeBg = mode === 'dark' ? t.submenuBg : t.surfaceBg
 
   root.style.setProperty('--el-color-primary', t.primary)
   root.style.setProperty('--el-color-success', t.success)
@@ -58,14 +58,23 @@ function applyPreset(key: LayoutPresetKey) {
   root.style.setProperty('--el-bg-color-page', t.pageBg)
   root.style.setProperty('--el-bg-color', t.surfaceBg)
   root.style.setProperty('--el-bg-color-overlay', t.surfaceBg)
+  root.style.setProperty('--el-fill-color-blank', t.surfaceBg)
+  root.style.setProperty('--el-fill-color-light', t.surfaceHover)
+  root.style.setProperty('--el-fill-color-lighter', hexToRgba(t.border, mode === 'dark' ? 0.46 : 0.34))
+  root.style.setProperty('--el-fill-color-extra-light', hexToRgba(t.surfaceHover, mode === 'dark' ? 0.72 : 0.58))
+  root.style.setProperty('--el-disabled-bg-color', t.surfaceHover)
   root.style.setProperty('--el-border-color', t.border)
   root.style.setProperty('--el-border-color-light', t.border)
   root.style.setProperty('--el-border-color-lighter', t.border)
+  root.style.setProperty('--el-border-color-dark', t.borderStrong)
+  root.style.setProperty('--el-border-color-darker', t.borderStrong)
   root.style.setProperty('--el-text-color-primary', t.textStrong)
   root.style.setProperty('--el-text-color-regular', t.text)
   root.style.setProperty('--el-text-color-secondary', t.textMuted)
+  root.style.setProperty('--el-text-color-placeholder', t.textMuted)
+  root.style.setProperty('--el-text-color-disabled', t.textMuted)
 
-  root.style.setProperty('--chrome-bg', t.pageBg)
+  root.style.setProperty('--chrome-bg', chromeBg)
   root.style.setProperty('--chrome-bg-soft', t.surfaceBg)
   root.style.setProperty('--chrome-bg-soft-hover', t.surfaceHover)
   root.style.setProperty('--chrome-border', t.border)
@@ -85,6 +94,9 @@ function applyPreset(key: LayoutPresetKey) {
   root.style.setProperty('--shell-accent-faint', hexToRgba(t.primary, mode === 'dark' ? 0.14 : 0.07))
   root.style.setProperty('--shell-accent-line', hexToRgba(t.primary, mode === 'dark' ? 0.42 : 0.22))
   root.style.setProperty('--shell-danger-line', hexToRgba(t.danger, mode === 'dark' ? 0.18 : 0.10))
+  root.style.setProperty('--shell-canvas-glow', hexToRgba(t.primary, mode === 'dark' ? 0.12 : 0.08))
+  root.style.setProperty('--shell-surface-shadow', t.shadow)
+  root.style.setProperty('--shell-control-mark', mode === 'dark' ? '#f7fbfc' : '#ffffff')
   root.style.setProperty('--brand-icon-start', t.primary)
   root.style.setProperty('--brand-icon-end', t.danger)
   root.style.setProperty('--brand-signal', hexToRgba(t.danger, mode === 'dark' ? 0.58 : 0.42))
@@ -169,6 +181,10 @@ export function presetComponentDefaults(key: string): Record<string, Record<stri
 
 export function useLayoutPreset() {
   const activePreset = computed(() => getLayoutPreset(activePresetKey.value))
-  const options = computed(() => Object.values(LAYOUT_PRESETS).map((p) => ({ label: p.name, value: p.key })))
+  const options = computed(() => Object.values(LAYOUT_PRESETS).map((p) => ({
+    label: p.name,
+    value: p.key,
+    description: p.description,
+  })))
   return { activePresetKey, activePreset, options, setLayoutPreset }
 }
