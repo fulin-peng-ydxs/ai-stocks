@@ -5,6 +5,7 @@ import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -524,10 +525,22 @@ onBeforeUnmount(stopTimer)
     </template>
 
     <template #auditTable>
-      <el-result v-if="permissionError" icon="warning" title="无权限查看审计日志" sub-title="请联系系统管理员调整审计查看权限" class="audit-state" />
-      <el-result v-else-if="loadError" icon="warning" title="审计服务暂不可用" sub-title="请稍后重试，已发生事件仍会在服务端继续写入" class="audit-state">
-        <template #extra><el-button type="primary" @click="loadAll()">重试</el-button></template>
-      </el-result>
+      <AppStateBlock
+        v-if="permissionError"
+        state="permission"
+        title="无权限查看审计日志"
+        description="请联系系统管理员调整审计查看权限"
+        class="audit-state"
+      />
+      <AppStateBlock
+        v-else-if="loadError"
+        state="error"
+        title="审计服务暂不可用"
+        description="请稍后重试，已发生事件仍会在服务端继续写入"
+        class="audit-state"
+        retry
+        @retry="loadAll()"
+      />
       <div v-else class="audit-table-wrap">
         <AppDataTable
           :data="rows"
@@ -599,7 +612,13 @@ onBeforeUnmount(stopTimer)
     <template #overlays>
       <el-drawer v-model="detailOpen" title="审计详情" size="520px" class="audit-detail-drawer">
         <div v-loading="detailLoading" class="detail-body">
-          <el-result v-if="detailError" icon="warning" title="详情读取失败" sub-title="请关闭后重试" />
+          <AppStateBlock
+            v-if="detailError"
+            state="error"
+            title="详情读取失败"
+            description="请关闭后重试"
+            size="compact"
+          />
           <template v-else-if="activeDetail">
             <section class="detail-hero">
               <div class="detail-title">

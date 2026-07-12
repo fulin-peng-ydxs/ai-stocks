@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Edit } from '@element-plus/icons-vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import { listStocks, type StockBasic, type StockListParams } from '@/api/stocks'
 import {
   addMembers,
@@ -33,6 +34,7 @@ import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { getErrorMessage } from '@/utils/error'
 
 const router = useRouter()
 const route = useRoute()
@@ -103,6 +105,7 @@ function tableBorder(slotId: string): boolean {
 
 // ── 查询条件（普通查询）──
 const loading = ref(false)
+const loadError = ref('')
 const q = ref('')
 const board = ref('')
 const excludeSt = ref(Boolean(settings.excludeSt))        // 默认排除 ST
@@ -158,6 +161,7 @@ watch(groupDefaultSortOrder, (value) => {
 
 async function load() {
   loading.value = true
+  loadError.value = ''
   try {
     const data = await listStocks({
       q: q.value || undefined,
@@ -171,6 +175,8 @@ async function load() {
     })
     rows.value = data.list
     total.value = data.total
+  } catch (error) {
+    loadError.value = getErrorMessage(error, '个股列表加载失败')
   } finally {
     loading.value = false
   }
@@ -199,6 +205,8 @@ const groups = ref<GroupSummary[]>([])
 const activeGid = ref('')
 const groupDetail = ref<GroupDetail | null>(null)
 const groupLoading = ref(false)
+const groupError = ref('')
+const groupListError = ref('')
 const inGroupMode = computed(() => !!activeGid.value)
 const groupPage = ref(1)
 const groupSize = ref(DEFAULT_PAGE_SIZE)
@@ -214,13 +222,21 @@ const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 
 async function reloadGroups() {
   // 次级加载按自身 view 码优雅降级：无 stock-group:view 的部分授权角色（如只授 stocks:view）
   // 不拉分组列表、也不因此 403 卡住个股行情主体。默认业务角色含该码不受影响。
+  groupListError.value = ''
   if (!canViewGroups.value) {
     groups.value = []
     groupDetail.value = null
     if (activeGid.value) activeGid.value = ''
     return
   }
-  groups.value = await listGroups()
+  try {
+    groups.value = await listGroups()
+  } catch (error) {
+    groupListError.value = getErrorMessage(error, '分组列表加载失败')
+    groups.value = []
+    groupDetail.value = null
+    if (activeGid.value) activeGid.value = ''
+  }
 }
 const defaultGroup = computed(() => groups.value.find((g) => g.is_default))
 watch(activeGid, async (gid) => {
@@ -256,6 +272,7 @@ async function loadGroupDetail() {
     return
   }
   groupLoading.value = true
+  groupError.value = ''
   try {
     groupDetail.value = await getGroup(activeGid.value, {
       page: groupPage.value,
@@ -264,6 +281,8 @@ async function loadGroupDetail() {
       sort_by: groupSortBy.value,
       sort_order: groupSortOrder.value,
     })
+  } catch (error) {
+    groupError.value = getErrorMessage(error, '分组明细加载失败')
   } finally {
     groupLoading.value = false
   }
@@ -636,8 +655,35 @@ onBeforeUnmount(() => {
 
     <template #main>
     <el-card shadow="never">
+      <AppStateBlock
+        v-if="groupListError && !inGroupMode"
+        state="error"
+        size="compact"
+        title="分组列表加载失败"
+        :description="groupListError"
+        retry
+        @retry="reloadGroups"
+      />
       <!-- 分组视图 -->
       <template v-if="inGroupMode">
+        <AppStateBlock
+          v-if="groupError && !groupDetail"
+          state="error"
+          title="分组明细加载失败"
+          :description="groupError"
+          retry
+          @retry="loadGroupDetail"
+        />
+        <template v-else>
+        <AppStateBlock
+          v-if="groupError"
+          state="error"
+          size="compact"
+          title="分组明细刷新失败"
+          :description="groupError"
+          retry
+          @retry="loadGroupDetail"
+        />
         <AppDataTable :data="groupRows" :loading="groupLoading" row-key="code"
           :border="tableBorder('groupTable')"
           :default-sort="groupElementDefaultSort"
@@ -675,10 +721,29 @@ onBeforeUnmount(() => {
             <template #default="{ row }">{{ row.add_date || '—' }}</template>
           </el-table-column>
         </AppDataTable>
+        </template>
       </template>
 
       <!-- 普通查询 -->
       <template v-else>
+        <AppStateBlock
+          v-if="loadError && !rows.length"
+          state="error"
+          title="个股列表加载失败"
+          :description="loadError"
+          retry
+          @retry="load"
+        />
+        <template v-else>
+        <AppStateBlock
+          v-if="loadError"
+          state="error"
+          size="compact"
+          title="个股列表刷新失败"
+          :description="loadError"
+          retry
+          @retry="load"
+        />
         <AppDataTable :data="rows" :loading="loading" row-key="code"
           :border="tableBorder('table')"
           clickable
@@ -742,6 +807,7 @@ onBeforeUnmount(() => {
             </template>
           </el-table-column>
         </AppDataTable>
+        </template>
       </template>
     </el-card>
     </template>

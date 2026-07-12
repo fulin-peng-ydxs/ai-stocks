@@ -9,6 +9,7 @@ import {
 } from '@/api/scoreProfile'
 import { listBoardProfiles, runBoardProfile } from '@/api/board'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -243,13 +244,30 @@ onMounted(async () => {
       </div>
     </div>
 
-    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+    <AppStateBlock
+      v-if="error && rows.length"
+      state="error"
+      size="compact"
+      title="榜单刷新失败"
+      :description="error"
+      retry
+      @retry="load"
+    />
     </div>
     </template>
 
     <template #main>
     <el-card shadow="never">
+      <AppStateBlock
+        v-if="error && !rows.length"
+        state="error"
+        title="榜单加载失败"
+        :description="error"
+        retry
+        @retry="load"
+      />
       <AppDataTable
+        v-else
         :data="displayRows"
         :loading="loading"
         :border="tableBorder('table')"

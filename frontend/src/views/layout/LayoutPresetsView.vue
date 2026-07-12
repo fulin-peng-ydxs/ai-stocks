@@ -16,7 +16,9 @@ import {
   type LayoutPresetRecord,
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import { getLayoutPreset, getPageLayout, setPresetOverrides, type StyleTokenConfig, type ThemeMode } from '@/layout'
+import { getErrorMessage } from '@/utils/error'
 
 // 可编辑 token 清单（颜色按白天/夜间各一套；形态/密度明暗共用）。label 给编辑器展示用。
 const COLOR_KEYS: { key: keyof StyleTokenConfig; label: string }[] = [
@@ -47,6 +49,7 @@ const REFLOW_BREAKPOINTS = [1024, 1100, 1280]
 const presetsLayout = getPageLayout('layout-presets')
 
 const loading = ref(false)
+const loadError = ref('')
 const presets = ref<LayoutPresetRecord[]>([])
 const selectedPresetKey = ref('professional')
 
@@ -134,6 +137,7 @@ function presetFormValues(): LayoutOverlayValues {
 
 async function reloadPresets() {
   loading.value = true
+  loadError.value = ''
   try {
     const data = await listLayoutPresets(true)
     presets.value = data.presets
@@ -147,6 +151,8 @@ async function reloadPresets() {
       if (v && Object.keys(v).length) map[p.key] = v as Record<string, string | number>
     }
     setPresetOverrides(map)
+  } catch (error) {
+    loadError.value = getErrorMessage(error, '布局预设加载失败')
   } finally {
     loading.value = false
   }
@@ -282,6 +288,24 @@ onMounted(reloadPresets)
     <template #main>
       <section class="plain-panel">
         <!-- 整区滚动（section scroll=region），表格按内容自然成高随区域滚动，不写视口硬编码高度（DESIGN.md §7 红线）。 -->
+        <AppStateBlock
+          v-if="loadError && !presets.length"
+          state="error"
+          title="布局预设加载失败"
+          :description="loadError"
+          retry
+          @retry="reloadPresets"
+        />
+        <template v-else>
+        <AppStateBlock
+          v-if="loadError"
+          state="error"
+          size="compact"
+          title="布局预设刷新失败"
+          :description="loadError"
+          retry
+          @retry="reloadPresets"
+        />
         <el-table :data="presets" v-loading="loading" row-key="key">
           <el-table-column prop="name" label="名称" min-width="140">
             <template #default="{ row }">
@@ -317,6 +341,7 @@ onMounted(reloadPresets)
             </template>
           </el-table-column>
         </el-table>
+        </template>
       </section>
     </template>
 

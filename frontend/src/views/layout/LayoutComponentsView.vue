@@ -14,6 +14,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import LayoutComponentPreview from '@/layout/components/LayoutComponentPreview.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpHint from '@/components/HelpHint.vue'
 import {
   COMPONENT_CATALOG,
@@ -30,6 +31,7 @@ import {
   type ComponentConfigLayer,
   type FieldPolicyRecord,
 } from '@/api/layout'
+import { getErrorMessage } from '@/utils/error'
 
 const componentsLayout = getPageLayout('layout-components')
 
@@ -84,6 +86,7 @@ const ALL_LAYERS: ComponentConfigLayer[] = ['preset', 'page', 'user']
 
 // 可覆盖范围（后端 layout_field_policy）：键 `${kind}.${field}`。挂载后拉取，编辑即时刷新。
 const policyMap = ref<Map<string, FieldPolicyRecord>>(new Map())
+const policyError = ref('')
 
 function buildRow(meta: ComponentMeta): ComponentRow {
   const fieldDefs = getComponentFieldDefs(meta.kind)
@@ -109,12 +112,14 @@ function buildRow(meta: ComponentMeta): ComponentRow {
 }
 
 async function loadPolicies(): Promise<void> {
+  policyError.value = ''
   try {
     const { policies } = await listFieldPolicies()
     const map = new Map<string, FieldPolicyRecord>()
     for (const p of policies) map.set(`${p.componentKind}.${p.field}`, p)
     policyMap.value = map
-  } catch {
+  } catch (error) {
+    policyError.value = getErrorMessage(error, '组件字段策略加载失败')
     /* 离线 / 接口失败：保持代码默认展示，不阻塞页面 */
   }
 }
@@ -232,6 +237,15 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
 
     <template #main>
       <section class="plain-panel">
+        <AppStateBlock
+          v-if="policyError"
+          state="error"
+          size="compact"
+          title="组件字段策略加载失败"
+          :description="policyError"
+          retry
+          @retry="loadPolicies"
+        />
         <el-collapse v-model="activeNames">
           <el-collapse-item v-for="group in groups" :key="group.category" :name="group.category">
             <template #title>

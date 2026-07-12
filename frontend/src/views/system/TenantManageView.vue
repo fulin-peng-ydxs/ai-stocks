@@ -7,6 +7,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -221,9 +222,14 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 
     <template #main>
       <el-card shadow="never">
-        <el-result v-if="loadError" icon="warning" title="租户列表加载失败" sub-title="请检查网络或稍后重试">
-          <template #extra><el-button type="primary" @click="load">重试</el-button></template>
-        </el-result>
+        <AppStateBlock
+          v-if="loadError"
+          state="error"
+          title="租户列表加载失败"
+          description="请检查网络或稍后重试"
+          retry
+          @retry="load"
+        />
         <template v-else>
         <!-- row-key：稳定行标识，避免新增/重排时 fixed 列单元格 v-if（如「内置」标签）DOM 复用错位 -->
         <AppDataTable

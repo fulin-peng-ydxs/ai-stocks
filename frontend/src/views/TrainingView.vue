@@ -5,6 +5,7 @@ import CandleChart from '@/components/CandleChart.vue'
 import EquityChart from '@/components/EquityChart.vue'
 import GrowthChart from '@/components/GrowthChart.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -24,6 +25,7 @@ import {
   placeTrade, cancelIntent, settleRound, saveReview, deleteSession,
   type RunningView, type DetailView, type SessionRow, type GrowthPoint, type DetailRound,
 } from '@/api/training'
+import { getErrorMessage } from '@/utils/error'
 
 // ── 页面阶段：config(未开局) / running(训练中) / result(结算回看) ──
 const view = ref<(RunningView & Partial<DetailView>) | null>(null)
@@ -83,6 +85,7 @@ const amountPresets = computed(() => parseList(cfg.amountWanPresetStr).map((w) =
 
 // ── 历史 & 成长 ──
 const history = reactive({ list: [] as SessionRow[], total: 0, page: 1, size: 10, sort_by: 'created_at', sort_order: 'desc' })
+const historyError = ref('')
 const HISTORY_SORT_FIELDS = ['created_at', 'completed_at', 'score', 'total_return', 'win_rate'] as const
 const {
   sortBy: historySortBy,
@@ -104,21 +107,32 @@ function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
 const growthData = ref<GrowthPoint[]>([])
+const growthError = ref('')
 
 async function loadHistory() {
   history.sort_by = historySortBy.value
   history.sort_order = historySortOrder.value
-  const r = await listSessions({
-    page: history.page,
-    size: history.size,
-    sort_by: historySortBy.value,
-    sort_order: historySortOrder.value,
-  })
-  history.list = r.list
-  history.total = r.total
+  historyError.value = ''
+  try {
+    const r = await listSessions({
+      page: history.page,
+      size: history.size,
+      sort_by: historySortBy.value,
+      sort_order: historySortOrder.value,
+    })
+    history.list = r.list
+    history.total = r.total
+  } catch (error) {
+    historyError.value = getErrorMessage(error, '训练历史加载失败')
+  }
 }
 async function loadGrowth() {
-  growthData.value = await fetchGrowth()
+  growthError.value = ''
+  try {
+    growthData.value = await fetchGrowth()
+  } catch (error) {
+    growthError.value = getErrorMessage(error, '成长曲线加载失败')
+  }
 }
 
 // ── 下单面板 ──
@@ -349,13 +363,50 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
           </div>
         </el-card>
 
-        <el-card v-if="growthData.length" shadow="never" class="growth-card">
+        <el-card v-if="growthData.length || growthError" shadow="never" class="growth-card">
           <template #header><span class="card-title">成长曲线</span><span class="card-sub">历次评分 / 收益</span></template>
+          <AppStateBlock
+            v-if="growthError && !growthData.length"
+            state="error"
+            title="成长曲线加载失败"
+            :description="growthError"
+            retry
+            @retry="loadGrowth"
+          />
+          <template v-else>
+          <AppStateBlock
+            v-if="growthError"
+            state="error"
+            size="compact"
+            title="成长曲线刷新失败"
+            :description="growthError"
+            retry
+            @retry="loadGrowth"
+          />
           <GrowthChart :data="growthData" />
+          </template>
         </el-card>
 
         <el-card shadow="never" class="hist-card">
           <template #header><span class="card-title">训练历史</span><span class="card-sub">共 {{ history.total }} 局，点行回看</span></template>
+          <AppStateBlock
+            v-if="historyError && !history.list.length"
+            state="error"
+            title="训练历史加载失败"
+            :description="historyError"
+            retry
+            @retry="loadHistory"
+          />
+          <template v-else>
+          <AppStateBlock
+            v-if="historyError"
+            state="error"
+            size="compact"
+            title="训练历史刷新失败"
+            :description="historyError"
+            retry
+            @retry="loadHistory"
+          />
           <AppDataTable
             :data="history.list"
             size="small"
@@ -393,6 +444,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
               <template #default="{ row }"><el-button v-permission="'training:delete'" link type="danger" size="small" @click.stop="removeSession(row.id)">删除</el-button></template>
             </el-table-column>
           </AppDataTable>
+          </template>
           <el-pagination v-if="history.total > history.size" small layout="prev, pager, next"
             :total="history.total" :page-size="history.size" :current-page="history.page"
             @current-change="(p:number)=>{ history.page=p; loadHistory() }" class="pager" />

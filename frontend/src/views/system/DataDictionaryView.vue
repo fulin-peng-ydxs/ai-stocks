@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -453,7 +454,13 @@ onBeforeUnmount(() => {
     </template>
 
     <template #main>
-      <el-result v-if="permissionError" icon="warning" title="无权限维护数据字典" sub-title="数据字典管理仅系统管理员可用" class="dict-state" />
+      <AppStateBlock
+        v-if="permissionError"
+        state="permission"
+        title="无权限维护数据字典"
+        description="数据字典管理仅系统管理员可用"
+        class="dict-state"
+      />
       <div v-else class="dict-workspace">
         <section class="dict-panel dict-left">
           <header class="dict-panel-head">
@@ -464,9 +471,16 @@ onBeforeUnmount(() => {
             <el-input v-model="settings.typeKeyword" clearable placeholder="搜索类型 / code" @input="scheduleSearchTypes" @keyup.enter="searchTypes" @clear="searchTypes" />
           </AppControlRow>
           <div class="dict-type-list" v-loading="typeLoading">
-            <el-result v-if="typeError" icon="warning" title="类型加载失败" sub-title="请稍后重试" class="compact-state">
-              <template #extra><el-button type="primary" @click="loadTypes(true)">重试</el-button></template>
-            </el-result>
+            <AppStateBlock
+              v-if="typeError"
+              state="error"
+              size="compact"
+              title="类型加载失败"
+              description="请稍后重试"
+              class="compact-state"
+              retry
+              @retry="loadTypes(true)"
+            />
             <el-empty v-else-if="!typeRows.length" class="app-empty app-empty--compact" description="暂无字典类型">
               <el-button v-permission="'dict:type-manage'" type="primary" @click="openCreateType">新建类型</el-button>
             </el-empty>
@@ -513,9 +527,15 @@ onBeforeUnmount(() => {
             </div>
           </header>
 
-          <el-result v-if="itemError" icon="warning" title="字典项加载失败" sub-title="请稍后重试，业务消费端会回落默认枚举" class="dict-state">
-            <template #extra><el-button type="primary" @click="loadItems">重试</el-button></template>
-          </el-result>
+          <AppStateBlock
+            v-if="itemError"
+            state="error"
+            title="字典项加载失败"
+            description="请稍后重试，业务消费端会回落默认枚举"
+            class="dict-state"
+            retry
+            @retry="loadItems"
+          />
           <div v-else class="dict-table-wrap">
             <AppDataTable
               :data="itemRows"

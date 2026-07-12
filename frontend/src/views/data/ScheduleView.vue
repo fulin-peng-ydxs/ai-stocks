@@ -7,6 +7,7 @@ import {
   getSources, testSources, SOURCE_LABEL, TASK_LABEL,
   type ScheduledJob, type ScheduledJobInput, type SourceStatus, type TaskType, type FreqType,
 } from '@/api/data'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -17,6 +18,7 @@ import { usePageSettings } from '@/composables/usePageSettings'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { getErrorMessage } from '@/utils/error'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -44,12 +46,14 @@ const {
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
 const loading = ref(false)
+const loadError = ref('')
 const jobs = ref<ScheduledJob[]>([])
 const taskTypes = ref<TaskType[]>([])
 const togglingId = ref('')
 
 const sources = ref<SourceStatus[]>([])
 const pinging = ref(false)
+const sourceError = ref('')
 const displaySources = computed(() => settings.sourceMode === 'primary' ? sources.value.filter((s) => s.role === 'primary') : sources.value)
 
 const FREQ_OPTIONS: { label: string; value: FreqType }[] = [
@@ -187,15 +191,23 @@ async function runNow(j: ScheduledJob) {
 
 async function loadSources(ping = false) {
   pinging.value = ping
-  try { sources.value = (ping ? await testSources() : await getSources(false)).sources } finally { pinging.value = false }
+  sourceError.value = ''
+  try {
+    sources.value = (ping ? await testSources() : await getSources(false)).sources
+  } catch (error) {
+    sourceError.value = getErrorMessage(error, '数据源健康加载失败')
+  } finally { pinging.value = false }
 }
 
 async function load() {
   loading.value = true
+  loadError.value = ''
   try {
     const r = await listSchedules()
     jobs.value = r.jobs
     taskTypes.value = r.task_types
+  } catch (error) {
+    loadError.value = getErrorMessage(error, '定时任务加载失败')
   } finally { loading.value = false }
 }
 
@@ -231,7 +243,25 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <div class="blk-head"><span>定时任务</span>
             <span class="hint">到点自动创建对应任务；仅交易日的任务在非交易日跳过。</span></div>
         </template>
-        <el-table :data="jobs" size="small" class="jobs-tbl">
+        <AppStateBlock
+          v-if="loadError && !jobs.length"
+          state="error"
+          title="定时任务加载失败"
+          :description="loadError"
+          retry
+          @retry="load"
+        />
+        <template v-else>
+        <AppStateBlock
+          v-if="loadError"
+          state="error"
+          size="compact"
+          title="定时任务刷新失败"
+          :description="loadError"
+          retry
+          @retry="load"
+        />
+        <el-table :data="jobs" size="small" class="jobs-tbl" v-loading="loading">
           <el-table-column label="名称" prop="name" min-width="140" show-overflow-tooltip />
           <el-table-column label="任务类型" width="120">
             <template #default="{ row }">{{ TASK_LABEL[row.task_type as TaskType] ?? row.task_type }}</template>
@@ -264,6 +294,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </el-table-column>
           <template #empty>暂无定时任务，点右上「新建定时任务」添加</template>
         </el-table>
+        </template>
       </el-card>
 
       <!-- ② 数据源健康 -->
@@ -272,6 +303,24 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <div class="blk-head"><span>数据源健康</span>
             <el-button v-permission="'data-source:test'" size="small" type="primary" plain :loading="pinging" @click="loadSources(true)">测试连通</el-button></div>
         </template>
+        <AppStateBlock
+          v-if="sourceError && !displaySources.length"
+          state="error"
+          title="数据源健康加载失败"
+          :description="sourceError"
+          retry
+          @retry="loadSources(false)"
+        />
+        <template v-else>
+        <AppStateBlock
+          v-if="sourceError"
+          state="error"
+          size="compact"
+          title="数据源健康刷新失败"
+          :description="sourceError"
+          retry
+          @retry="loadSources(false)"
+        />
         <div v-for="s in displaySources" :key="s.source" class="src">
           <span class="dot" :class="s.up === true ? 'up' : s.up === false ? 'down' : 'unknown'" />
           <span class="src-name">{{ SOURCE_LABEL[s.source] ?? s.source }}</span>
@@ -282,6 +331,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <span class="src-meta">最近成功 {{ fmtTime(s.last_success_at) }} · 超时 {{ s.timeout_sec }}s</span>
         </div>
         <div v-if="!displaySources.length" class="app-empty-inline">点「测试连通」检查 AKShare / BaoStock 可达性</div>
+        </template>
       </el-card>
     </div>
     </template>

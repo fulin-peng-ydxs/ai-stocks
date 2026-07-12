@@ -12,6 +12,7 @@ import {
 import { ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -23,6 +24,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
+import { getErrorMessage } from '@/utils/error'
 
 const route = useRoute()
 const router = useRouter()
@@ -64,6 +66,7 @@ function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
 const loading = ref(false)
+const loadError = ref('')
 const data = ref<DataQuality | null>(null)
 const page = ref(1)
 const size = ref(DEFAULT_PAGE_SIZE)
@@ -104,6 +107,7 @@ function applyDefaultFilters() {
 
 async function load() {
   loading.value = true
+  loadError.value = ''
   try {
     data.value = await getDataQuality({
       issue_type: filters.value.issue_type.join(',') || undefined,
@@ -114,6 +118,8 @@ async function load() {
       sort_by: sortBy.value,
       sort_order: sortOrder.value,
     })
+  } catch (error) {
+    loadError.value = getErrorMessage(error, '数据质量加载失败')
   } finally {
     loading.value = false
   }
@@ -340,6 +346,24 @@ onMounted(() => {
 
     <template #main>
     <el-card shadow="never">
+      <AppStateBlock
+        v-if="loadError && !data"
+        state="error"
+        title="数据质量加载失败"
+        :description="loadError"
+        retry
+        @retry="load"
+      />
+      <template v-else>
+      <AppStateBlock
+        v-if="loadError"
+        state="error"
+        size="compact"
+        title="数据质量刷新失败"
+        :description="loadError"
+        retry
+        @retry="load"
+      />
       <AppDataTable
         :data="displayList"
         size="small"
@@ -402,6 +426,7 @@ onMounted(() => {
           </template>
         </el-table-column>
       </AppDataTable>
+      </template>
     </el-card>
     </template>
 

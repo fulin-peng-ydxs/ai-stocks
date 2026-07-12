@@ -1,0 +1,290 @@
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import ElementPlus from 'element-plus'
+import { reactive, ref, type Component } from 'vue'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+
+vi.mock('@/composables/useRemoteLayoutConfig', () => ({
+  useRemoteLayoutConfig: () => ({
+    effective: {},
+    knobs: [],
+    setKnob: vi.fn(),
+    valueOf: vi.fn(),
+    sourceOf: vi.fn(),
+    isDirty: ref(false),
+    resetAll: vi.fn(),
+    componentValueOf: vi.fn((_slot: string, field: string) => {
+      if (field === 'hiddenColumns') return []
+      if (field === 'pageSize') return 50
+      if (field === 'border') return false
+      return ''
+    }),
+    setComponentKnob: vi.fn(),
+    componentSourceOf: vi.fn(),
+    layerValuesOf: vi.fn(),
+    componentLayerValuesOf: vi.fn(),
+  }),
+}))
+
+vi.mock('@/composables/usePageSettings', () => ({
+  usePageSettings: (_key: string, defaults: Record<string, unknown>) => ({
+    settings: reactive(structuredClone(defaults)),
+    isDirty: ref(false),
+    reset: vi.fn(),
+  }),
+}))
+
+vi.mock('@/composables/useTradeDates', () => ({
+  useTradeDates: () => ({
+    dataMin: ref('2024-01-01'),
+    dataMax: ref('2024-12-31'),
+    ensureLoaded: vi.fn().mockResolvedValue(undefined),
+    prevTradeDate: vi.fn((value: string) => value),
+  }),
+}))
+
+vi.mock('@/composables/useKlinePrefs', () => ({
+  useKlinePrefs: () => ({ validDefault: ref(120) }),
+}))
+
+vi.mock('@/utils/csv', () => ({ downloadCsv: vi.fn() }))
+
+vi.mock('@/api/scoreProfile', () => ({
+  getIndicatorRegistry: vi.fn(),
+  listScoreProfiles: vi.fn(),
+}))
+vi.mock('@/api/board', () => ({
+  listBoardProfiles: vi.fn(),
+  runBoardProfile: vi.fn(),
+  computeBoard: vi.fn(),
+}))
+vi.mock('@/api/data', () => ({
+  getOverview: vi.fn(),
+  getCatalog: vi.fn(),
+  getDimensions: vi.fn(),
+  getStockQuality: vi.fn(),
+  getDataQuality: vi.fn(),
+  fixQualityIssue: vi.fn(),
+  ignoreQualityIssue: vi.fn(),
+  resetQualityIssue: vi.fn(),
+  recoverQualityBatch: vi.fn(),
+  markDelisted: vi.fn(),
+  createTask: vi.fn(),
+  getTask: vi.fn(),
+  LAYER_DESC: {},
+  ISSUE_TYPE_LABEL: { data_gap: '缺口' },
+  SEVERITY_LABEL: { high: '高' },
+  ISSUE_STATUS_LABEL: { open: '未处理', fixing: '修复中' },
+  ISSUE_LAYER: { data_gap: 'L4' },
+  LAYER_LABEL: { L4: '覆盖鲜活' },
+  RECOVER_ACTION_LABEL: { data_gap: '恢复' },
+}))
+vi.mock('@/api/screening', () => ({
+  copyProfile: vi.fn(),
+  getProfile: vi.fn(),
+  getProfileVersions: vi.fn(),
+  listProfiles: vi.fn(),
+  runScreen: vi.fn(),
+  saveProfile: vi.fn(),
+  setProfileVisibility: vi.fn(),
+}))
+vi.mock('@/api/backtest', () => ({
+  runBacktest: vi.fn(),
+  prepareBacktest: vi.fn(),
+  listRuns: vi.fn(),
+  getRun: vi.fn(),
+  deleteRun: vi.fn(),
+  runRobust: vi.fn(),
+  setRunVisibility: vi.fn(),
+}))
+vi.mock('@/api/tradeProfile', () => ({ listTradeProfiles: vi.fn() }))
+vi.mock('@/api/stocks', () => ({ getBars: vi.fn() }))
+vi.mock('@/api/training', () => ({
+  startSession: vi.fn(),
+  getSession: vi.fn(),
+  listSessions: vi.fn(),
+  growth: vi.fn(),
+  revealNext: vi.fn(),
+  placeTrade: vi.fn(),
+  cancelIntent: vi.fn(),
+  settleRound: vi.fn(),
+  saveReview: vi.fn(),
+  deleteSession: vi.fn(),
+}))
+
+import * as scoreApi from '@/api/scoreProfile'
+import * as boardApi from '@/api/board'
+import * as dataApi from '@/api/data'
+import * as screeningApi from '@/api/screening'
+import * as backtestApi from '@/api/backtest'
+import * as tradeApi from '@/api/tradeProfile'
+import * as trainingApi from '@/api/training'
+import BoardView from '@/views/BoardView.vue'
+import OverviewView from '@/views/data/OverviewView.vue'
+import QualityView from '@/views/data/QualityView.vue'
+import ScreenView from '@/views/ScreenView.vue'
+import BacktestView from '@/views/BacktestView.vue'
+import TrainingView from '@/views/TrainingView.vue'
+
+const router = createRouter({
+  history: createMemoryHistory(),
+  routes: [{ path: '/', component: { template: '<div />' } }],
+})
+
+const stubs = {
+  ElSelect: {
+    props: ['modelValue', 'multiple'],
+    emits: ['update:modelValue', 'change'],
+    template: `
+      <select
+        :multiple="multiple"
+        :value="modelValue"
+        @change="$emit('update:modelValue', $event.target.value); $emit('change', $event.target.value)"
+      >
+        <slot />
+      </select>
+    `,
+  },
+  ElOption: {
+    props: ['label', 'value'],
+    template: '<option :value="value">{{ label || value }}<slot /></option>',
+  },
+  ElTable: {
+    template: '<table><tbody><slot /></tbody><slot name="empty" /></table>',
+  },
+  ElTableColumn: true,
+  LayoutHost: {
+    template: '<div><slot name="action"/><slot name="summary"/><slot name="filters"/><slot name="main"/><slot name="footer"/><slot name="overlays"/></div>',
+  },
+  AppDataTable: { template: '<div class="app-data-table"><slot/><slot name="empty"/></div>' },
+  AppControlRow: { template: '<div><slot/></div>' },
+  AppControlItem: { template: '<label><slot name="label"/><slot/></label>' },
+  TradeDatePicker: { template: '<input />' },
+  PageSettingsDrawer: true,
+  PageSettingsTrigger: true,
+  PageSettingSection: { template: '<section><slot/></section>' },
+  PageSegmented: true,
+  PageToggleRow: true,
+  HelpTip: { template: '<span><slot/></span>' },
+  AssetProfileLabel: { template: '<span>{{ name }}</span>', props: ['name'] },
+  AssetVisibilityActions: true,
+  AssetVisibilityTag: true,
+  CandleChart: true,
+  EquityChart: true,
+  GrowthChart: true,
+  KlineRangeSelect: true,
+  KlineSettingSection: true,
+  teleport: true,
+}
+
+async function mountView(component: Component) {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const auth = useAuthStore()
+  auth.role = 'system'
+  auth.permissions = ['screen:run', 'screen-profile:view', 'backtest:run', 'training:start']
+  auth.menusStatus = 'ready'
+  await router.push('/')
+  await router.isReady()
+  const wrapper = mount(component, {
+    attachTo: document.body,
+    global: {
+      plugins: [pinia, router, ElementPlus],
+      stubs,
+      directives: { permission: {} },
+    },
+  })
+  await flushPromises()
+  await wrapper.vm.$nextTick()
+  return wrapper
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  localStorage.clear()
+  document.body.innerHTML = ''
+  ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({
+    items: [
+      { key: 'bull_arrange', name_cn: '多头排列', dtype: 'bool', enabled: true, params: [] },
+      { key: 'rs_pct', name_cn: '相对强度', dtype: 'number', enabled: true, params: [] },
+    ],
+  })
+  ;(scoreApi.listScoreProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+    { id: 'score1', name: '评分方案', version: 1, source: 'mine' },
+  ])
+  ;(boardApi.listBoardProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+    { id: 'board1', name: '榜单方案', version: 1, source: 'preset' },
+  ])
+  ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockResolvedValue({ tables: [] })
+  ;(dataApi.getDimensions as ReturnType<typeof vi.fn>).mockResolvedValue({ dimensions: [] })
+  ;(dataApi.getStockQuality as ReturnType<typeof vi.fn>).mockResolvedValue({ list: [], total: 0 })
+  ;(screeningApi.listProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
+  ;(backtestApi.prepareBacktest as ReturnType<typeof vi.fn>).mockResolvedValue({ duplicate: null })
+  ;(backtestApi.listRuns as ReturnType<typeof vi.fn>).mockResolvedValue({ runs: [] })
+  ;(tradeApi.listTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+    { id: 'trade1', name: '买卖方案', version: 1, source: 'mine' },
+  ])
+  ;(trainingApi.growth as ReturnType<typeof vi.fn>).mockResolvedValue([])
+})
+
+describe('代表性页面四态回归', () => {
+  it('榜单加载失败显示错误态且不显示表格空态', async () => {
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('board failed'))
+    const wrapper = await mountView(BoardView)
+    expect(wrapper.text()).toContain('榜单加载失败')
+    expect(wrapper.text()).toContain('board failed')
+  })
+
+  it('数据概览加载失败显示错误态', async () => {
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('overview failed'))
+    const wrapper = await mountView(OverviewView)
+    expect(wrapper.text()).toContain('数据概览加载失败')
+    expect(wrapper.text()).toContain('overview failed')
+  })
+
+  it('数据质量加载失败显示错误态', async () => {
+    ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('quality failed'))
+    const wrapper = await mountView(QualityView)
+    expect(wrapper.text()).toContain('数据质量加载失败')
+    expect(wrapper.text()).toContain('quality failed')
+  })
+
+  it('筛选运行失败落到结果区错误态', async () => {
+    ;(screeningApi.runScreen as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('screen failed'))
+    const wrapper = await mountView(ScreenView)
+    const run = wrapper.findAll('button').find((button) => button.text().includes('运行筛选'))
+    expect(run).toBeTruthy()
+    await run!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('筛选运行失败')
+    expect(wrapper.text()).toContain('screen failed')
+  })
+
+  it('回测运行失败落到结果区错误态', async () => {
+    localStorage.setItem('ai-stocks-backtest-params', JSON.stringify({
+      kind: 'strategy',
+      dateStart: '2024-01-01',
+      dateEnd: '2024-12-31',
+      scoreProfileId: 'score1',
+      tradeProfileId: 'trade1',
+    }))
+    ;(backtestApi.runBacktest as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('backtest failed'))
+    const wrapper = await mountView(BacktestView)
+    const run = wrapper.findAll('button').find((button) => button.text().includes('运行回测'))
+    expect(run).toBeTruthy()
+    await run!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('回测运行失败')
+    expect(wrapper.text()).toContain('backtest failed')
+  })
+
+  it('训练历史加载失败显示错误态', async () => {
+    ;(trainingApi.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('history failed'))
+    const wrapper = await mountView(TrainingView)
+    expect(wrapper.text()).toContain('训练历史加载失败')
+    expect(wrapper.text()).toContain('history failed')
+  })
+})

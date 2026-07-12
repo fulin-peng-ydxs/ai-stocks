@@ -18,6 +18,7 @@ import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -31,6 +32,7 @@ import { downloadCsv } from '@/utils/csv'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { getErrorMessage } from '@/utils/error'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -281,6 +283,7 @@ function clearAll() {
 const runDate = ref('')
 const excludeSt = ref(Boolean(settings.excludeSt))
 const loading = ref(false)
+const resultError = ref('')
 const result = ref<{ date: string; count: number; hits: ScreenHit[] } | null>(null)
 const gradeTag: Record<string, '' | 'success' | 'warning' | 'info'> = {
   主升浪核心: 'success', 龙头候选: 'warning', 观察: 'info',
@@ -301,6 +304,7 @@ async function run() {
   const ast = buildAst()
   if (!ast) return ElMessage.warning('请先添加条件')
   loading.value = true
+  resultError.value = ''
   // 不清空 result：让旧结果留在 loading 遮罩下，避免闪回空态（结果区盒子保持不变）
   try {
     const r = await runScreen({
@@ -309,8 +313,9 @@ async function run() {
       exclude_st: excludeSt.value,
     })
     result.value = { date: r.run_date, count: r.count, hits: r.hits }
-  } catch {
-    /* client.ts 已统一弹错 */
+  } catch (error) {
+    resultError.value = getErrorMessage(error, '筛选运行失败')
+    ElMessage.error(resultError.value)
   } finally {
     loading.value = false
   }
@@ -602,6 +607,24 @@ onMounted(async () => {
         <span v-else>筛选结果</span>
         <el-button v-if="result && result.hits.length" size="small" style="float:right" @click="exportCsv">导出 CSV</el-button>
       </template>
+      <AppStateBlock
+        v-if="resultError && !result"
+        state="error"
+        title="筛选运行失败"
+        :description="resultError"
+        retry
+        @retry="run"
+      />
+      <template v-else>
+      <AppStateBlock
+        v-if="resultError"
+        state="error"
+        size="compact"
+        title="筛选结果刷新失败"
+        :description="resultError"
+        retry
+        @retry="run"
+      />
       <AppDataTable
         v-if="result && result.hits.length"
         :data="displayHits"
@@ -634,6 +657,7 @@ onMounted(async () => {
       </AppDataTable>
       <el-empty v-else-if="result" class="app-empty" description="无命中" />
       <el-empty v-else class="app-empty" description="运行后在这里展示筛选结果" />
+      </template>
     </el-card>
     </template>
 

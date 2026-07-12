@@ -48,10 +48,20 @@
 | main |  |  |  |  |  |  |
 | overlay | settings | settings-drawer | 否 |  | 否 | 页面设置 |
 
-### 空状态设计
+### 四态反馈设计
+| 状态 | 页面 / 组件处理 | 图标与组件 | 文案 |
+|---|---|---|---|
+| ready / 价值态 |  | 表格 / KPI / 图表 / 详情 / 状态 tag | 范围、日期、数量、来源 |
+| loading / 加载态 |  | `v-loading` / `el-skeleton` / 按钮 `:loading` | 正在加载{对象}… / {动作}中… |
+| empty / 空态 |  | 全局 `el-table` 空态 / `el-empty.app-empty*` / `app-empty-inline` | 暂无{对象} / 请选择{对象} / 当前条件无命中 |
+| error / 异常态 |  | `el-result icon="warning"` / 表内错误行 / 重试按钮 | {对象}加载失败 / 无权限查看{对象} |
+
 - 表格空态：使用全局 `el-table` 空态；如需业务文案只写 `<template #empty>` 文案，不自绘图标。
 - 非表格空态：按容器大小使用 `app-empty` / `app-empty--compact` / `app-empty--tiny` / `app-empty-inline`。
-- 重复检查：同一区域不能同时渲染表格默认空态和额外 `el-empty`。
+- 加载态：首次加载不和空态同时出现；刷新时优先保留旧数据并覆盖 `v-loading`，避免闪回空态。
+- 异常态：接口失败不能只弹 toast；失败区域必须留下错误态和重试入口，403 / 无权限不能伪装为空态。
+- 价值态：有数据时必须呈现主体数据、摘要指标、当前过滤条件或来源说明之一。
+- 重复检查：同一区域不能同时渲染表格默认空态和额外 `el-empty`，四态之间必须互斥。
 
 ### 配置设计
 | 类型 | 字段 | 层级 | 落点 | 说明 |
@@ -172,7 +182,7 @@ const { effective, knobs: layoutKnobs, valueOf, sourceOf, setKnob } = useLayoutC
 - 不得把页面业务结构放进用户级配置；不得把不可重排的大表放进多列重排——`validateLayout` 拦截。
 - 列表交互：分页/排序走服务端、筛选变更自动触发、多选跨页累积（见 [DESIGN.md](../../DESIGN.md) 交互规则）。
 - 真实组件：已有真实复用组件能覆盖的控件行为，不得继续在页面内复制手写；新增真实复用组件必须补 DESIGN 清单和消费测试。
-- 空状态：表格走全局空态；非表格使用 `app-empty*` 统一类名，不新增页面私有空态样式。
+- 四态反馈：ready / loading / empty / error 互斥；表格走全局空态；非表格使用 `app-empty*` 统一类名；错误态必须可见且有重试或原因说明，不新增页面私有状态样式。
 
 ## 8. 页面登记块（填好贴进 DESIGN.md `page-registry` 表格）
 

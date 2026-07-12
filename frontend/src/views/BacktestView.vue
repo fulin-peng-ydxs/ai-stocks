@@ -16,6 +16,7 @@ import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -33,6 +34,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
+import { getErrorMessage } from '@/utils/error'
 
 const PARAMS_KEY = 'ai-stocks-backtest-params' // 表单参数持久化
 type Visibility = 'private' | 'tenant' | 'public'
@@ -156,6 +158,8 @@ function tradeProfileName(value: string): string {
 }
 
 const loading = ref(false)
+const resultError = ref('')
+const resultErrorContext = ref<'run' | 'history'>('run')
 const strat = ref<StrategyResult | null>(null)
 const sig = ref<Layers | null>(null)
 const runTime = ref('')          // 当前展示结果的回测运行时间（加载历史时显示；刚跑完为空）
@@ -179,6 +183,7 @@ const { dataMin, dataMax, prevTradeDate } = useTradeDates()
 
 // 历史回测（已落库，可重新载入，不必反复重跑）
 const runHistory = ref<RunSummary[]>([])
+const historyError = ref('')
 const selectedRun = ref<string>('')
 const historySource = ref<HistorySource>('all')
 const runVisibilitySaving = ref(false)
@@ -342,7 +347,12 @@ function restoreParams() {
 }
 
 async function loadHistory() {
-  try { runHistory.value = (await listRuns(kind.value, historySource.value)).runs } catch { /* ignore */ }
+  historyError.value = ''
+  try {
+    runHistory.value = (await listRuns(kind.value, historySource.value)).runs
+  } catch (error) {
+    historyError.value = getErrorMessage(error, '历史回测加载失败')
+  }
 }
 
 function applyRunParams(run: RunSummary) {
@@ -365,7 +375,7 @@ async function loadRun(id: string) {
   loading.value = true
   loadingRun.value = true
   nextRunSourceRef.value = ''
-  strat.value = null; sig.value = null
+  resultError.value = ''
   try {
     const r = await getRun(id)
     const ca = (r.run as { created_at?: string }).created_at
@@ -373,6 +383,7 @@ async function loadRun(id: string) {
     fromHistory.value = true
     if (r.run.kind === 'signal' || r.run.kind === 'score_check') {
       kind.value = 'score_check'
+      strat.value = null
       sig.value = r.layers as Layers
     } else {
       kind.value = 'strategy'
@@ -385,10 +396,13 @@ async function loadRun(id: string) {
         trades: r.trades as TradeRow[], equity: r.equity, benchmark_code: bench,
         initial_capital: initCapV,
       }
+      sig.value = null
     }
     clearDirtySoon()  // 载入成功 → 按钮置灰（loadingRun 保持到 nextTick，避免参数 watcher 误置脏）
   } catch (e) {
-    ElMessage.error((e as Error).message || '载入失败')
+    resultErrorContext.value = 'history'
+    resultError.value = getErrorMessage(e, '历史回测载入失败')
+    ElMessage.error(resultError.value)
     loadingRun.value = false
   } finally {
     loading.value = false
@@ -649,16 +663,18 @@ async function run() {
 async function doRun(body: RunParams) {
   saveParams()
   loading.value = true
-  strat.value = null
-  sig.value = null
   runTime.value = ''
   fromHistory.value = false
+  resultError.value = ''
+  resultErrorContext.value = 'run'
   try {
     if (body.kind === 'strategy') {
       strat.value = (await runBacktest(body)) as StrategyResult
+      sig.value = null
       if (strat.value?.run_id) selectedRun.value = strat.value.run_id
     } else {
       sig.value = (await runBacktest(body)) as Layers
+      strat.value = null
       // 评分验证也落库 → 用 run_id 选中历史
       const rid = (sig.value as unknown as { run_id?: string })?.run_id
       if (rid) selectedRun.value = rid
@@ -667,10 +683,20 @@ async function doRun(body: RunParams) {
     nextRunSourceRef.value = ''
     dirty.value = false // 出结果 → 按钮置灰（参数未变时再点无意义）
   } catch (e) {
-    ElMessage.error((e as Error).message || '回测失败')
+    resultErrorContext.value = 'run'
+    resultError.value = getErrorMessage(e, '回测失败')
+    ElMessage.error(resultError.value)
   } finally {
     loading.value = false
   }
+}
+
+function retryResult() {
+  if (resultErrorContext.value === 'history' && selectedRun.value) {
+    void loadRun(selectedRun.value)
+    return
+  }
+  void run()
 }
 
 // —— 展示辅助 ——
@@ -1062,6 +1088,33 @@ async function openTradeChart(row: TradeRow) {
     </el-card>
 
     <div v-loading="loading" class="results">
+      <AppStateBlock
+        v-if="historyError"
+        state="error"
+        size="compact"
+        title="历史回测加载失败"
+        :description="historyError"
+        retry
+        @retry="loadHistory"
+      />
+      <AppStateBlock
+        v-if="resultError && !strat && !sig"
+        state="error"
+        :title="resultErrorContext === 'history' ? '历史回测载入失败' : '回测运行失败'"
+        :description="resultError"
+        retry
+        @retry="retryResult"
+      />
+      <template v-else>
+      <AppStateBlock
+        v-if="resultError"
+        state="error"
+        size="compact"
+        :title="resultErrorContext === 'history' ? '历史回测载入失败' : '回测结果刷新失败'"
+        :description="resultError"
+        retry
+        @retry="retryResult"
+      />
       <div class="results-top">
       <!-- 加载历史时：显示这次回测的运行时间 -->
       <div v-if="fromHistory && runTime && (strat || sig)" class="run-time-banner">
@@ -1251,6 +1304,7 @@ async function openTradeChart(row: TradeRow) {
       </el-card>
 
       <el-empty v-if="!loading && !strat && !sig" class="app-empty" description="设置参数后点「运行回测」" />
+      </template>
     </div>
     </div>
     </template>

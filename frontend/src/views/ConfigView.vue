@@ -26,6 +26,7 @@ import {
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -967,18 +968,16 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
     <template #main>
     <div class="config-body">
-    <el-result
+    <AppStateBlock
       v-if="pageInitError"
-      icon="warning"
+      state="error"
       title="配置数据加载失败"
-      sub-title="权限、菜单或指标目录尚未就绪，请重试"
+      description="权限、菜单或指标目录尚未就绪，请重试"
       class="config-error"
-    >
-      <template #extra>
-        <el-button type="primary" @click="initActivePage()">重试</el-button>
-      </template>
-    </el-result>
-    <div v-else-if="!pageReady" class="config-loading">正在加载配置数据…</div>
+      retry
+      @retry="initActivePage()"
+    />
+    <AppStateBlock v-else-if="!pageReady" state="loading" title="正在加载配置数据…" class="config-error" />
     <template v-else>
       <!-- ============ 评分规则 ============ -->
       <template v-if="activeTab === 'score'">
@@ -988,11 +987,15 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
               ＋ 新建方案
             </el-button>
-            <el-result v-if="profilesError" icon="warning" title="方案加载失败" class="profile-error">
-              <template #extra>
-                <el-button type="primary" size="small" @click="retryScoreProfiles">重试</el-button>
-              </template>
-            </el-result>
+            <AppStateBlock
+              v-if="profilesError"
+              state="error"
+              size="tiny"
+              title="方案加载失败"
+              class="profile-error"
+              retry
+              @retry="retryScoreProfiles"
+            />
             <ul>
               <li
                 v-for="p in profiles"
@@ -1319,11 +1322,15 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <el-button type="primary" plain size="small" style="width: 100%" @click="newTradeProfile">
               ＋ 新建方案
             </el-button>
-            <el-result v-if="tProfilesError" icon="warning" title="方案加载失败" class="profile-error">
-              <template #extra>
-                <el-button type="primary" size="small" @click="retryTradeProfiles">重试</el-button>
-              </template>
-            </el-result>
+            <AppStateBlock
+              v-if="tProfilesError"
+              state="error"
+              size="tiny"
+              title="方案加载失败"
+              class="profile-error"
+              retry
+              @retry="retryTradeProfiles"
+            />
             <ul>
               <li v-for="p in tProfiles" :key="tradeProfileKey(p)" :class="{ active: tradeProfileKey(p) === tCurRef }"
                   @click="selectTradeProfile(tradeProfileKey(p))">
@@ -1465,11 +1472,11 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
       <!-- ============ 系统设置（FR-DM-12）============ -->
       <template v-else-if="activeTab === 'system'">
-        <el-result
+        <AppStateBlock
           v-if="!canManageSystemSettings"
-          icon="warning"
+          state="permission"
           title="无权限维护系统设置"
-          sub-title="系统设置仅系统管理员可编辑"
+          description="系统设置仅系统管理员可编辑"
           class="config-error"
         />
         <div v-else class="sys-wrap" v-loading="sysLoading">

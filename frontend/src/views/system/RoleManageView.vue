@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -282,9 +283,15 @@ onMounted(loadAll)
     </template>
 
     <template #main>
-      <el-result v-if="loadError" icon="warning" title="权限树加载失败" sub-title="请检查网络或稍后重试" class="rm-error">
-        <template #extra><el-button type="primary" @click="loadAll">重试</el-button></template>
-      </el-result>
+      <AppStateBlock
+        v-if="loadError"
+        state="error"
+        title="权限树加载失败"
+        description="请检查网络或稍后重试"
+        class="rm-error"
+        retry
+        @retry="loadAll"
+      />
       <div v-else class="rm-split">
         <!-- 左：角色列表 -->
         <div class="rm-col rm-left">

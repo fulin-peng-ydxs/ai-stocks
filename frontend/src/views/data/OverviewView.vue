@@ -5,6 +5,7 @@ import {
   getOverview, getCatalog, getDimensions, getStockQuality, LAYER_DESC,
   type Overview, type CatalogTable, type Dimension, type StockQuality,
 } from '@/api/data'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -233,9 +234,25 @@ onMounted(load)
 
     <template #main>
     <div class="overview-scroll">
-      <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+      <AppStateBlock
+        v-if="error && !ov"
+        state="error"
+        title="数据概览加载失败"
+        :description="error"
+        retry
+        @retry="load"
+      />
 
       <template v-else>
+        <AppStateBlock
+          v-if="error"
+          state="error"
+          size="compact"
+          title="数据概览刷新失败"
+          :description="error"
+          retry
+          @retry="load"
+        />
         <!-- KPI -->
         <div class="stat-grid" v-loading="loading">
           <el-card v-if="settings.kpi.latestTradeDate" shadow="never" class="stat">

@@ -6,6 +6,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
 import type { Component } from 'vue'
 import * as EpIcons from '@element-plus/icons-vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import IconPicker from '@/components/IconPicker.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -377,9 +378,14 @@ onMounted(() => { loadTree() })
             </el-button>
           </div>
           <div class="mr-col-body" v-loading="treeLoading">
-            <el-result v-if="treeError" icon="warning" title="菜单加载失败" sub-title="请重试">
-              <template #extra><el-button type="primary" size="small" @click="loadTree()">重试</el-button></template>
-            </el-result>
+            <AppStateBlock
+              v-if="treeError"
+              state="error"
+              title="菜单加载失败"
+              description="请重试"
+              retry
+              @retry="loadTree()"
+            />
             <el-tree
               v-else
               ref="treeRef"
@@ -569,8 +575,13 @@ onMounted(() => { loadTree() })
                       </tr>
                       <tr v-if="resError">
                         <td colspan="5" class="mr-empty">
-                          <span>功能点加载失败</span>
-                          <el-button link type="primary" size="small" @click="retryResources">重试</el-button>
+                          <AppStateBlock
+                            state="error"
+                            size="inline"
+                            title="功能点加载失败"
+                            retry
+                            @retry="retryResources"
+                          />
                         </td>
                       </tr>
                       <tr v-else-if="!resources.length && editingId !== NEW_ROW">

@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -308,9 +309,14 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 
     <template #main>
       <el-card shadow="never">
-        <el-result v-if="loadError" icon="warning" title="用户列表加载失败" sub-title="请检查网络或稍后重试">
-          <template #extra><el-button type="primary" @click="load">重试</el-button></template>
-        </el-result>
+        <AppStateBlock
+          v-if="loadError"
+          state="error"
+          title="用户列表加载失败"
+          description="请检查网络或稍后重试"
+          retry
+          @retry="load"
+        />
         <template v-else>
         <AppDataTable
           :data="list"

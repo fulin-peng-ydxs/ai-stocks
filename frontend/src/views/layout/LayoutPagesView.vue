@@ -33,6 +33,7 @@ import {
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import LayoutPagePreview from '@/layout/components/LayoutPagePreview.vue'
 import {
   listManagedPages,
@@ -50,6 +51,7 @@ import {
   type SlotSpec,
   type SlotConfigMeta,
 } from '@/layout'
+import { getErrorMessage } from '@/utils/error'
 
 type TabKey = 'workbench' | 'import' | 'report'
 type ExportScope = 'page' | 'user' | 'effective'
@@ -69,9 +71,11 @@ const selectedUserId = ref('local')
 const selectedPage = computed<PageRegistryEntry>(() => getPageEntry(selectedPageKey.value) ?? managedPages[0])
 
 const presets = ref<LayoutPresetRecord[]>([])
+const presetLoadError = ref('')
 const presetOptions = computed(() => presets.value.filter((p) => p.enabled).map((p) => ({ label: p.name, value: p.key })))
 
 const pageConfig = ref<LayoutPageConfig | null>(null)
+const pageLoadError = ref('')
 // 页面配置表单值按页面 editable 白名单 + 组件配置路径动态承载（不硬编码字段）。
 const pageDraft = reactive<{ presetKey: string; values: LayoutOverlayValues }>({ presetKey: '', values: {} })
 const pageSaving = ref(false)
@@ -134,9 +138,15 @@ function getPageComponentLayerValues(slotId: string, field: string): Partial<Rec
 // 挂载后拉一次；编辑器的可编辑判定与只读诊断都以此为准，与后端 _enforce_field_policy 同源，
 // 避免出现「前端可改、保存时后端才报越权」的脱节。
 const fieldPolicyMap = ref<Map<string, ComponentConfigLayer[]>>(new Map())
+const fieldPolicyError = ref('')
 async function reloadFieldPolicies() {
-  const { policies } = await listFieldPolicies()
-  fieldPolicyMap.value = new Map(policies.map((p) => [`${p.componentKind}.${p.field}`, p.allowedLayers]))
+  fieldPolicyError.value = ''
+  try {
+    const { policies } = await listFieldPolicies()
+    fieldPolicyMap.value = new Map(policies.map((p) => [`${p.componentKind}.${p.field}`, p.allowedLayers]))
+  } catch (error) {
+    fieldPolicyError.value = getErrorMessage(error, '组件字段策略加载失败')
+  }
 }
 /** 某 (组件种类, 字段) 当前开放的层集合；无策略记录时回退代码最大集 def.layers。 */
 function componentAllowedLayers(kind: string, field: string): ComponentConfigLayer[] | undefined {
@@ -315,6 +325,7 @@ const importText = ref('')
 const importSaving = ref(false)
 
 const reportLoading = ref(false)
+const reportError = ref('')
 const effectiveConfig = ref<EffectiveLayoutConfig | null>(null)
 const userConfig = ref<LayoutUserConfig | null>(null)
 const pageValidationErrors = ref<string[]>([])
@@ -322,10 +333,13 @@ const userValidationErrors = ref<string[]>([])
 
 async function reloadPresets(notify = false) {
   presetSyncing.value = true
+  presetLoadError.value = ''
   try {
     const data = await listLayoutPresets(true)
     presets.value = data.presets
     if (notify) ElMessage.success('预设已同步')
+  } catch (error) {
+    presetLoadError.value = getErrorMessage(error, '布局预设加载失败')
   } finally {
     presetSyncing.value = false
   }
@@ -343,16 +357,21 @@ function pageDraftValues(): LayoutOverlayValues {
 }
 
 async function loadPageConfig() {
-  const cfg = await getLayoutPageConfig(selectedPageKey.value)
-  pageConfig.value = cfg
-  pageDraft.presetKey = cfg.presetKey ?? ''
-  for (const key of Object.keys(pageDraft.values)) delete pageDraft.values[key]
-  const stored = cfg.config.values ?? {}
-  for (const knob of selectedPage.value.layout.editable) {
-    if (stored[knob.path] !== undefined) pageDraft.values[knob.path] = stored[knob.path]
-  }
-  for (const [path, value] of Object.entries(stored)) {
-    if (isComponentConfigPath(path)) pageDraft.values[path] = value
+  pageLoadError.value = ''
+  try {
+    const cfg = await getLayoutPageConfig(selectedPageKey.value)
+    pageConfig.value = cfg
+    pageDraft.presetKey = cfg.presetKey ?? ''
+    for (const key of Object.keys(pageDraft.values)) delete pageDraft.values[key]
+    const stored = cfg.config.values ?? {}
+    for (const knob of selectedPage.value.layout.editable) {
+      if (stored[knob.path] !== undefined) pageDraft.values[knob.path] = stored[knob.path]
+    }
+    for (const [path, value] of Object.entries(stored)) {
+      if (isComponentConfigPath(path)) pageDraft.values[path] = value
+    }
+  } catch (error) {
+    pageLoadError.value = getErrorMessage(error, '页面布局配置加载失败')
   }
 }
 
@@ -456,6 +475,7 @@ async function importConfig() {
 
 async function runValidationReport() {
   reportLoading.value = true
+  reportError.value = ''
   try {
     const layout = selectedPage.value.layout as unknown as Record<string, unknown>
     const page = await getLayoutPageConfig(selectedPageKey.value)
@@ -468,6 +488,8 @@ async function runValidationReport() {
     effectiveConfig.value = eff
     pageValidationErrors.value = pageResult.errors
     userValidationErrors.value = userResult.errors
+  } catch (error) {
+    reportError.value = getErrorMessage(error, '校验报告加载失败')
   } finally {
     reportLoading.value = false
   }
@@ -525,6 +547,42 @@ onMounted(async () => {
 
     <template #main>
       <div class="layout-pages-view">
+        <AppStateBlock
+          v-if="pageLoadError && !pageConfig"
+          state="error"
+          title="页面布局配置加载失败"
+          :description="pageLoadError"
+          retry
+          @retry="loadPageConfig"
+        />
+        <template v-else>
+        <AppStateBlock
+          v-if="pageLoadError"
+          state="error"
+          size="compact"
+          title="页面布局配置刷新失败"
+          :description="pageLoadError"
+          retry
+          @retry="loadPageConfig"
+        />
+        <AppStateBlock
+          v-if="presetLoadError"
+          state="error"
+          size="compact"
+          title="布局预设加载失败"
+          :description="presetLoadError"
+          retry
+          @retry="reloadPresets(true)"
+        />
+        <AppStateBlock
+          v-if="fieldPolicyError"
+          state="error"
+          size="compact"
+          title="组件字段策略加载失败"
+          :description="fieldPolicyError"
+          retry
+          @retry="reloadFieldPolicies"
+        />
         <el-tabs v-model="tab" class="config-tabs" @tab-change="onTabChange">
           <el-tab-pane label="预览与配置" name="workbench">
             <div class="workbench-pane">
@@ -752,8 +810,17 @@ onMounted(async () => {
             <div class="report-grid">
               <section class="plain-panel">
                 <div class="section-title">错误项</div>
+                <AppStateBlock
+                  v-if="reportError"
+                  state="error"
+                  size="compact"
+                  title="校验报告加载失败"
+                  :description="reportError"
+                  retry
+                  @retry="runValidationReport"
+                />
                 <el-alert
-                  v-if="!pageValidationErrors.length && !userValidationErrors.length"
+                  v-if="!reportError && !pageValidationErrors.length && !userValidationErrors.length"
                   type="success"
                   title="当前页面配置和用户覆盖均通过校验"
                   :closable="false"
@@ -779,6 +846,7 @@ onMounted(async () => {
             </div>
           </el-tab-pane>
         </el-tabs>
+        </template>
       </div>
     </template>
   </LayoutHost>

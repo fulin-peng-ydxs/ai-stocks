@@ -6,6 +6,7 @@ import { Close } from '@element-plus/icons-vue'
 import { getBars, getIndicators, getTradeEval, listStocks, type Bar, type StockBasic, type TradeEval } from '@/api/stocks'
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
 import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -177,6 +178,7 @@ const tradeProfiles = ref<TradeProfileSummary[]>([])
 const tradeId = ref('')
 const tradeEval = ref<TradeEval | null>(null)
 const tradeLoading = ref(false)
+const tradeError = ref('')
 
 // 快速点上/下一个会产生重叠请求：用 AbortController 取消在途 + 防抖只发最终一次
 let reqCtrl: AbortController | null = null
@@ -189,11 +191,15 @@ function isAbort(e: unknown): boolean {
 async function evalTrade(signal?: AbortSignal) {
   if (!tradeId.value) return
   tradeLoading.value = true
+  tradeError.value = ''
   try {
     const r = await getTradeEval(code.value, tradeId.value, undefined, signal)
     if (!signal?.aborted) tradeEval.value = r
   } catch (e) {
-    if (!isAbort(e)) tradeEval.value = null
+    if (!isAbort(e)) {
+      tradeEval.value = null
+      tradeError.value = (e as Error).message || '买卖信号加载失败'
+    }
   } finally {
     if (!signal?.aborted) tradeLoading.value = false
   }
@@ -605,9 +611,25 @@ onBeforeUnmount(() => {
       </el-button>
     </div>
 
-    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
+    <AppStateBlock
+      v-if="error && !bars.length"
+      state="error"
+      title="个股详情加载失败"
+      :description="error"
+      retry
+      @retry="load"
+    />
 
     <template v-else>
+      <AppStateBlock
+        v-if="error"
+        state="error"
+        size="compact"
+        title="个股详情刷新失败"
+        :description="error"
+        retry
+        @retry="load"
+      />
       <el-card shadow="never" v-loading="loading" :body-style="{ padding: '0' }">
         <CandleChart :bars="displayBars" :warmup-bars="warmupBars" :zoom-start="0" :zoom-end="100" />
       </el-card>
@@ -634,7 +656,16 @@ onBeforeUnmount(() => {
           </div>
         </template>
         <div v-loading="tradeLoading">
-          <el-empty v-if="!tradeEval" class="app-empty app-empty--compact" description="选择买卖方案以评估当日信号" />
+          <AppStateBlock
+            v-if="tradeError"
+            state="error"
+            size="compact"
+            title="买卖信号加载失败"
+            :description="tradeError"
+            retry
+            @retry="evalTrade()"
+          />
+          <el-empty v-else-if="!tradeEval" class="app-empty app-empty--compact" description="选择买卖方案以评估当日信号" />
           <div v-else class="trade-body">
             <div class="signal-row">
               <el-tag :type="tradeEval.buy_signal ? 'danger' : 'info'" effect="dark" size="large">

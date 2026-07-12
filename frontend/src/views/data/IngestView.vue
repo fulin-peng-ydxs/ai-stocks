@@ -9,6 +9,7 @@ import {
   type DataStatus, type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
 } from '@/api/data'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -21,6 +22,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { getErrorMessage } from '@/utils/error'
 
 const route = useRoute()
 const settingsOpen = ref(false)
@@ -52,10 +54,12 @@ const {
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 const loading = ref(false)
+const statusError = ref('')
 const status = ref<DataStatus | null>(null)
 
 // ── 任务中心：服务端分页 / 排序 / 筛选（M2.9.5）──
 const tasks = ref<AsyncTask[]>([])
+const taskError = ref('')
 const taskTotal = ref(0)
 const taskPage = ref(1)
 const taskSize = ref(DEFAULT_PAGE_SIZE)
@@ -80,6 +84,7 @@ const {
 
 // ── 采集日志：服务端分页 / 排序 / 筛选（M2.9.5）──
 const updateLogList = ref<UpdateLog[]>([])
+const logError = ref('')
 const logTotal = ref(0)
 const logPage = ref(1)
 const logSize = ref(DEFAULT_PAGE_SIZE)
@@ -256,6 +261,7 @@ function activeCount() {
 }
 async function loadTasks() {
   const before = activeCount()
+  taskError.value = ''
   try {
     const r = await listTasks({
       page: taskPage.value, size: taskSize.value,
@@ -264,14 +270,25 @@ async function loadTasks() {
     })
     tasks.value = r.tasks
     taskTotal.value = r.total ?? r.tasks.length
-  } catch { /**/ }
+  } catch (error) {
+    taskError.value = getErrorMessage(error, '任务中心加载失败')
+  }
   const after = activeCount()
-  if (before > 0 && after === 0) { await loadLogs(); try { status.value = await getDataStatus() } catch { /**/ } }
+  if (before > 0 && after === 0) {
+    await loadLogs()
+    try {
+      statusError.value = ''
+      status.value = await getDataStatus()
+    } catch (error) {
+      statusError.value = getErrorMessage(error, '数据状态刷新失败')
+    }
+  }
   if (taskTimer) { clearTimeout(taskTimer); taskTimer = undefined }
   if (after > 0) taskTimer = window.setTimeout(loadTasks, 2000)
 }
 const refreshTasks = loadTasks   // 兼容旧调用名
 async function loadLogs() {
+  logError.value = ''
   try {
     const r = await getUpdateLogs({
       page: logPage.value, size: logSize.value,
@@ -281,11 +298,18 @@ async function loadLogs() {
     updateLogList.value = r.list
     logTotal.value = r.total
     if (r.tables?.length) logTables.value = r.tables
-  } catch { /**/ }
+  } catch (error) {
+    logError.value = getErrorMessage(error, '采集日志加载失败')
+  }
 }
 async function load() {
   loading.value = true
-  try { status.value = await getDataStatus() } finally { loading.value = false }
+  statusError.value = ''
+  try {
+    status.value = await getDataStatus()
+  } catch (error) {
+    statusError.value = getErrorMessage(error, '数据状态刷新失败')
+  } finally { loading.value = false }
   await loadTasks()
   await loadLogs()
 }
@@ -408,6 +432,15 @@ onMounted(async () => {
 
     <template #main>
     <div class="ingest-body">
+      <AppStateBlock
+        v-if="statusError"
+        state="error"
+        size="compact"
+        title="数据状态刷新失败"
+        :description="statusError"
+        retry
+        @retry="load"
+      />
       <div class="ingest-top">
       <!-- 采集区 -->
       <el-card shadow="never" class="blk">
@@ -475,6 +508,24 @@ onMounted(async () => {
           </div>
         </template>
         <div class="panel-table-wrap">
+          <AppStateBlock
+            v-if="taskError && !tasks.length"
+            state="error"
+            title="任务中心加载失败"
+            :description="taskError"
+            retry
+            @retry="loadTasks"
+          />
+          <template v-else>
+          <AppStateBlock
+            v-if="taskError"
+            state="error"
+            size="compact"
+            title="任务中心刷新失败"
+            :description="taskError"
+            retry
+            @retry="loadTasks"
+          />
           <AppDataTable
             :data="tasks"
             size="small"
@@ -540,6 +591,7 @@ onMounted(async () => {
               </template>
             </el-table-column>
           </AppDataTable>
+          </template>
         </div>
       </el-card>
 
@@ -564,6 +616,24 @@ onMounted(async () => {
           </div>
         </template>
         <div class="panel-table-wrap">
+          <AppStateBlock
+            v-if="logError && !updateLogList.length"
+            state="error"
+            title="采集日志加载失败"
+            :description="logError"
+            retry
+            @retry="loadLogs"
+          />
+          <template v-else>
+          <AppStateBlock
+            v-if="logError"
+            state="error"
+            size="compact"
+            title="采集日志刷新失败"
+            :description="logError"
+            retry
+            @retry="loadLogs"
+          />
           <AppDataTable
             :data="updateLogList"
             size="small"
@@ -601,6 +671,7 @@ onMounted(async () => {
               <template #default="{ row }">{{ (row.updated_at || '').slice(0, 19) }}</template>
             </el-table-column>
           </AppDataTable>
+          </template>
         </div>
       </el-card>
       </div>
