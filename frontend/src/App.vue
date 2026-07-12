@@ -806,7 +806,6 @@ async function onLogout() {
 .topbar-action.is-success > .el-icon {
   color: var(--el-color-success);
 }
-.topbar-action--trade-date.is-success > .el-icon,
 .topbar-action--icon.is-success > .el-icon {
   color: var(--chrome-text);
 }
