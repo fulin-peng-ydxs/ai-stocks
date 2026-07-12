@@ -567,6 +567,33 @@ def save_settings(body: dict, request: Request) -> ApiResponse:
     return ok({"saved": n}, msg="配置已保存并生效")
 
 
+@router.post("/settings/reset", response_model=ApiResponse, dependencies=_SETTINGS)
+def reset_settings(body: dict, request: Request) -> ApiResponse:
+    """删除指定覆盖值，回落到 settings.yaml 默认。body={paths:[path,...]}。"""
+    from backend.storage.app_config import AppConfigRepo, ConfigValidationError
+
+    paths = body.get("paths")
+    if not isinstance(paths, list):
+        return err(400, "paths 必须是数组")
+    keys = sorted({str(path) for path in paths})
+    repo = AppConfigRepo()
+    before = _effective_setting_values(keys)
+    try:
+        n = repo.reset_many(keys)
+    except ConfigValidationError as e:
+        return err(400, str(e))
+    after = _effective_setting_values(keys)
+    _record_settings_audit(
+        {key: None for key in keys},
+        n,
+        request,
+        before=before,
+        after=after,
+        action="reset",
+    )
+    return ok({"reset": n}, msg="配置已重置为默认值")
+
+
 def _effective_setting_values(keys: list[str]) -> dict:
     from backend.config import get_effective_settings
 
@@ -581,6 +608,7 @@ def _record_settings_audit(
     *,
     before: dict | None = None,
     after: dict | None = None,
+    action: str = "update",
 ) -> None:
     """系统设置保存审计：只记录 key 和数量，不记录配置值。"""
     if not updates:
@@ -595,7 +623,7 @@ def _record_settings_audit(
         AuditRepository().record(
             event_category="config",
             event_type="config",
-            action="update",
+            action=action,
             resource_code="data-settings:manage",
             target_type="app_config",
             target_id=",".join(keys),

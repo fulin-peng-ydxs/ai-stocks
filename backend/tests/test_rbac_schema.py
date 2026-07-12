@@ -38,6 +38,61 @@ def _count(pg, table: str) -> int:
     return int(pg.query_df(f"SELECT count(*) n FROM {table}").iloc[0]["n"])
 
 
+def _snapshot_app_config(pg, keys: list[str]) -> list[dict]:
+    return pg.query_df(
+        "SELECT key, value, updated_at FROM app_config WHERE key = ANY(%s)",
+        [keys],
+    ).to_dict("records")
+
+
+def _restore_app_config(pg, keys: list[str], rows: list[dict]) -> None:
+    pg.execute("DELETE FROM app_config WHERE key = ANY(%s)", [keys])
+    for row in rows:
+        pg.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, %s)",
+            [row["key"], row["value"], row["updated_at"]],
+        )
+
+
+def _snapshot_role_grants(pg, role_id: str) -> dict[str, list[str]]:
+    menus = pg.query_df(
+        "SELECT menu_id FROM sys_role_menu WHERE role_id=%s",
+        [role_id],
+    )["menu_id"].tolist()
+    resources = pg.query_df(
+        "SELECT resource_id FROM sys_role_resource WHERE role_id=%s",
+        [role_id],
+    )["resource_id"].tolist()
+    return {"menus": menus, "resources": resources}
+
+
+def _restore_role_grants(pg, role_id: str, snapshot: dict[str, list[str]]) -> None:
+    pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s", [role_id])
+    pg.execute("DELETE FROM sys_role_resource WHERE role_id=%s", [role_id])
+    for menu_id in snapshot["menus"]:
+        pg.execute(
+            "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s)",
+            [role_id, menu_id],
+        )
+    for resource_id in snapshot["resources"]:
+        pg.execute(
+            "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s)",
+            [role_id, resource_id],
+        )
+
+
+def _snapshot_perm_versions(pg) -> list[dict]:
+    return pg.query_df("SELECT id, perm_ver FROM sys_user").to_dict("records")
+
+
+def _restore_perm_versions(pg, rows: list[dict]) -> None:
+    for row in rows:
+        pg.execute(
+            "UPDATE sys_user SET perm_ver=%s WHERE id=%s",
+            [int(row["perm_ver"]), row["id"]],
+        )
+
+
 def test_six_rbac_tables_exist(pg):
     rows = pg.query_df(
         "SELECT table_name FROM information_schema.tables "
@@ -115,6 +170,59 @@ def test_seed_rbac_does_not_overwrite_db_menu_customization(pg):
         pg.execute("DELETE FROM sys_menu WHERE id=%s", [parent_id])
 
 
+def test_seed_rbac_does_not_overwrite_db_resource_customization(pg):
+    resource_id = "score-profile:view"
+    menu_id = "pytest_resource_parent"
+    original = pg.query_df(
+        "SELECT menu_id, name, type, api_method, api_path, sort "
+        "FROM sys_resource WHERE id=%s",
+        [resource_id],
+    ).iloc[0].to_dict()
+    try:
+        pg.execute(
+            "INSERT INTO sys_menu "
+            "(id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
+            "VALUES (%s, NULL, %s, %s, 'leaf', %s, NULL, 999, 'login', FALSE) "
+            "ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title",
+            [menu_id, menu_id, "测试功能点菜单", "/pytest-resource-parent"],
+        )
+        pg.execute(
+            "UPDATE sys_resource SET menu_id=%s, name=%s, type=%s, api_method=%s, "
+            "api_path=%s, sort=%s WHERE id=%s",
+            [
+                menu_id, "运行期评分查看", "button", "POST", "/api/custom-score-view", 777,
+                resource_id,
+            ],
+        )
+        seed_rbac(pg)
+        row = pg.query_df(
+            "SELECT menu_id, name, type, api_method, api_path, sort "
+            "FROM sys_resource WHERE id=%s",
+            [resource_id],
+        ).iloc[0]
+        assert row["menu_id"] == menu_id
+        assert row["name"] == "运行期评分查看"
+        assert row["type"] == "button"
+        assert row["api_method"] == "POST"
+        assert row["api_path"] == "/api/custom-score-view"
+        assert int(row["sort"]) == 777
+    finally:
+        pg.execute(
+            "UPDATE sys_resource SET menu_id=%s, name=%s, type=%s, api_method=%s, "
+            "api_path=%s, sort=%s WHERE id=%s",
+            [
+                original["menu_id"], original["name"], original["type"],
+                original["api_method"], original["api_path"], int(original["sort"]), resource_id,
+            ],
+        )
+        pg.execute("DELETE FROM sys_menu WHERE id=%s", [menu_id])
+
+
+def test_seed_resource_codes_are_unique():
+    codes = [r[1] for r in _SEED_RESOURCES]
+    assert len(codes) == len(set(codes))
+
+
 def test_resources_seeded_and_bound_to_menu(pg):
     codes = [r[1] for r in _SEED_RESOURCES]
     df = pg.query_df(
@@ -149,6 +257,7 @@ def test_tenant_admin_grants_scope(pg):
     assert "system" in menus and "permission" in menus  # 上级分组可达
     assert "/system/roles" not in menus
     assert "/system/tenants" not in menus
+    assert "/system/audit" not in menus
     assert {"/system/config", "/system/config/score", "/system/config/trade"} <= menus
     assert "/system/config/tech" not in menus and "/system/config/system" not in menus
 
@@ -156,6 +265,7 @@ def test_tenant_admin_grants_scope(pg):
         "SELECT resource_id FROM sys_role_resource WHERE role_id=%s",
         [ROLE_TENANT_ADMIN])["resource_id"])
     assert set(_USER_RESOURCE_CODES) <= resources
+    assert "audit:view" not in resources
     assert not any(c.startswith("role:") or c.startswith("tenant:") for c in resources)
 
 
@@ -236,6 +346,10 @@ def test_stage6_asset_visibility_schema_and_resources(pg):
 
 def test_stage6_asset_publish_grants_backfilled_for_tenant_admin(pg):
     uid = "stage6_backfill_tenant_admin"
+    marker_key = _STAGE6_ASSET_VISIBILITY_MARKER
+    marker_snapshot = _snapshot_app_config(pg, [marker_key])
+    role_snapshot = _snapshot_role_grants(pg, ROLE_TENANT_ADMIN)
+    perm_snapshot = _snapshot_perm_versions(pg)
     pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
     pg.execute(
         "INSERT INTO sys_user (id, tenant_id, account, role_code, perm_ver, status) "
@@ -247,7 +361,7 @@ def test_stage6_asset_publish_grants_backfilled_for_tenant_admin(pg):
         [uid, ROLE_TENANT_ADMIN],
     )
     try:
-        pg.execute("DELETE FROM app_config WHERE key=%s", [_STAGE6_ASSET_VISIBILITY_MARKER])
+        pg.execute("DELETE FROM app_config WHERE key=%s", [marker_key])
         pg.execute(
             "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id = ANY(%s)",
             [ROLE_TENANT_ADMIN, list(ASSET_TENANT_PUBLISH_RESOURCE_CODES)],
@@ -265,10 +379,17 @@ def test_stage6_asset_publish_grants_backfilled_for_tenant_admin(pg):
         assert perm_ver == 1
     finally:
         pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+        _restore_role_grants(pg, ROLE_TENANT_ADMIN, role_snapshot)
+        _restore_app_config(pg, [marker_key], marker_snapshot)
+        _restore_perm_versions(pg, perm_snapshot)
 
 
 def test_stage4_business_grants_backfilled_for_existing_builtin_roles(pg):
     uid = "stage4_backfill_user"
+    marker_key = _STAGE4_BUSINESS_GRANTS_MARKER
+    marker_snapshot = _snapshot_app_config(pg, [marker_key])
+    role_snapshot = _snapshot_role_grants(pg, ROLE_NORMAL)
+    perm_snapshot = _snapshot_perm_versions(pg)
     pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
     pg.execute(
         "INSERT INTO sys_user (id, tenant_id, account, role_code, perm_ver, status) "
@@ -281,7 +402,7 @@ def test_stage4_business_grants_backfilled_for_existing_builtin_roles(pg):
     )
     try:
         # 模拟旧库：normal 已经有菜单，所以 _seed_role_grants 会跳过；阶段四新增授权缺失。
-        pg.execute("DELETE FROM app_config WHERE key=%s", [_STAGE4_BUSINESS_GRANTS_MARKER])
+        pg.execute("DELETE FROM app_config WHERE key=%s", [marker_key])
         pg.execute(
             "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id IN (%s, %s)",
             [ROLE_NORMAL, "board:view", "score-profile:publish-tenant"],
@@ -302,6 +423,9 @@ def test_stage4_business_grants_backfilled_for_existing_builtin_roles(pg):
         assert perm_ver == 1
     finally:
         pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+        _restore_role_grants(pg, ROLE_NORMAL, role_snapshot)
+        _restore_app_config(pg, [marker_key], marker_snapshot)
+        _restore_perm_versions(pg, perm_snapshot)
 
 
 def test_fk_delete_actions(pg):

@@ -34,7 +34,7 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTableSort } from '@/composables/useTableSort'
-import { getSettingsView, saveSettings, type SettingGroup } from '@/api/data'
+import { getSettingsView, resetSettings, saveSettings, type SettingGroup } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -173,6 +173,12 @@ const sysTabs = computed<SystemGroupTab[]>(() => {
   if (extra.length) tabs.push({ key: 'other', label: '其他', groups: extra })
   return tabs
 })
+const activeSysGroups = computed(() =>
+  sysTabs.value.find((tab) => tab.key === activeSysTab.value)?.groups ?? [],
+)
+const activeSysPaths = computed(() =>
+  activeSysGroups.value.flatMap((group) => group.fields.map((field) => field.path)),
+)
 async function saveSystem() {
   if (!canManageSystemSettings.value) return
   if (sysInvalidPaths.value.length) {
@@ -189,6 +195,24 @@ async function saveSystem() {
   try {
     await saveSettings(updates)
     ElMessage.success('配置已更新')
+    await loadSystem()
+  } catch {
+    sysSaveError.value = true
+  } finally { sysSaving.value = false }
+}
+async function resetActiveSystemTab() {
+  if (!canManageSystemSettings.value || !activeSysPaths.value.length) return
+  const tabLabel = sysTabs.value.find((tab) => tab.key === activeSysTab.value)?.label || '当前配置'
+  await ElMessageBox.confirm(
+    `确认将「${tabLabel}」下所有配置恢复为默认值？未保存的编辑也会被丢弃。`,
+    '重置配置',
+    { type: 'warning' },
+  )
+  sysSaving.value = true
+  sysSaveError.value = false
+  try {
+    await resetSettings(activeSysPaths.value)
+    ElMessage.success('配置已重置')
     await loadSystem()
   } catch {
     sysSaveError.value = true
@@ -1468,6 +1492,14 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 :closable="false"
                 show-icon
               />
+              <el-button
+                v-permission="'data-settings:manage'"
+                :loading="sysSaving"
+                :disabled="!activeSysPaths.length"
+                @click="resetActiveSystemTab"
+              >
+                重置配置
+              </el-button>
               <el-button
                 v-permission="'data-settings:manage'"
                 type="primary"

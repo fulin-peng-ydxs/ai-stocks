@@ -256,6 +256,9 @@ export function getSettingsView(): Promise<{ groups: SettingGroup[] }> {
 export function saveSettings(updates: Record<string, any>): Promise<{ saved: number }> {
   return http.post('/data/settings', { updates })
 }
+export function resetSettings(paths: string[]): Promise<{ reset: number }> {
+  return http.post('/data/settings/reset', { paths })
+}
 
 // ── 异步数据任务（M2.6 + M2.8-B）──
 export type TaskType =

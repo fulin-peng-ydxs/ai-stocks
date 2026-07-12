@@ -868,15 +868,16 @@ _BUSINESS_MENU_CODES: tuple[str, ...] = (
     "quotes", "/stocks", "/board", "/screen", "/backtest", "/training",
     "system", "/system/config", "/system/config/score", "/system/config/trade")
 _TENANT_ADMIN_EXTRA_MENUS: tuple[str, ...] = (
-    "system", "permission", "/system/users", "/system/audit")
+    "system", "permission", "/system/users")
 _USER_RESOURCE_CODES: tuple[str, ...] = (
     "user:list", "user:create", "user:update",
     "user:disable", "user:reset-password", "user:delete")
 _TENANT_ADMIN_EXTRA_RESOURCE_CODES: tuple[str, ...] = (
-    "audit:view", *ASSET_TENANT_PUBLISH_RESOURCE_CODES)
+    *ASSET_TENANT_PUBLISH_RESOURCE_CODES,)
 _STAGE4_BUSINESS_GRANTS_MARKER = "migration.stage4_business_grants_v2"
 _STAGE5_PLATFORM_CAPABILITIES_MARKER = "migration.stage5_platform_capabilities_v1"
 _STAGE6_ASSET_VISIBILITY_MARKER = "migration.stage6_asset_visibility_v1"
+_TENANT_ADMIN_AUDIT_REVOKE_MARKER = "migration.tenant_admin_audit_default_revoke_v1"
 
 _STAGE5_APP_CONFIG_DEFAULTS: tuple[tuple[str, str], ...] = (
     ("auth.require_email_code", "true"),
@@ -958,6 +959,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     seed_default_tenant(client)   # 先补 admin=system 的 role_code，供 seed_rbac 建 user_role 用
     seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 存量用户按 role_code 补 user_role
     seed_stage5_platform_capabilities(client)
+    revoke_tenant_admin_audit_default_grants(client)
     seed_stage6_asset_visibility(client)
     return created
 
@@ -1155,18 +1157,6 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
             "INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
             [code, menu_code, code, name, rtype, method, path, i * 10])
-        if (
-            code == "score:run"
-            or code.startswith("score-profile:")
-            or code.startswith("screen-profile:")
-            or code.startswith("trade-profile:")
-            or code.startswith("backtest:publish-")
-            or code in {"config:view", "config:reload", "indicator:def-manage"}
-        ):
-            client.execute(
-                "UPDATE sys_resource SET menu_id=%s, name=%s, type=%s, api_method=%s, "
-                "api_path=%s, is_builtin=TRUE WHERE id=%s",
-                [menu_code, name, rtype, method, path, code])
     # 4) 默认授权（首次 seed + 存量库一次性回填）
     _seed_role_grants(client, [m["code"] for m in menu_rows])
     _backfill_config_split_builtin_grants(client)
@@ -1228,6 +1218,8 @@ def _backfill_config_split_builtin_grants(client: PostgresClient) -> None:
         "visible=%s, is_builtin=TRUE WHERE id=%s",
         ["system", "配置管理", "group", "Files", "login", "/system/config"],
     )
+
+
 def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:
     """一次性补齐阶段四内置业务角色授权，并修正 R28 默认 publish 边界。
 
@@ -1291,7 +1283,7 @@ def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:
 
 
 def seed_stage5_platform_capabilities(client: PostgresClient | None = None) -> None:
-    """阶段五平台能力 seed：默认配置、首批字典、既有库 tenant_admin 审计授权回填。
+    """阶段五平台能力 seed：默认配置、首批字典、既有库权限快照失效。
 
     `dict:read` 是登录基线共享读码，运行时由 `perm_resolver.resolve` 注入，不落
     role_resource 授权行；迁移标记首次落地时 bump 非 system 有角色用户，让旧 token/perms
@@ -1321,23 +1313,13 @@ def seed_stage5_platform_capabilities(client: PostgresClient | None = None) -> N
 
 
 def _backfill_stage5_platform_grants(client: PostgresClient) -> None:
-    """既有库阶段五权限回填：tenant_admin 审计入口 + 新 baseline 权限快照失效。"""
+    """既有库阶段五权限回填：新增 baseline 权限快照失效，不覆盖角色授权。"""
     marker = client.query_df(
         "SELECT 1 FROM app_config WHERE key=%s", [_STAGE5_PLATFORM_CAPABILITIES_MARKER])
     if not marker.empty:
         return
 
     with client.transaction() as conn, conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
-            "ON CONFLICT DO NOTHING",
-            [ROLE_TENANT_ADMIN, "/system/audit"],
-        )
-        cur.execute(
-            "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
-            "ON CONFLICT DO NOTHING",
-            [ROLE_TENANT_ADMIN, "audit:view"],
-        )
         cur.execute(
             "UPDATE sys_user u SET perm_ver=perm_ver+1 "
             "WHERE EXISTS ("
@@ -1353,6 +1335,49 @@ def _backfill_stage5_platform_grants(client: PostgresClient) -> None:
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
             "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
             [_STAGE5_PLATFORM_CAPABILITIES_MARKER, '{"applied":true}'],
+        )
+
+
+def revoke_tenant_admin_audit_default_grants(client: PostgresClient | None = None) -> None:
+    """一次性撤销历史版本默认塞给 tenant_admin 的审计菜单/资源授权。
+
+    审计日志仍保留为可授权菜单和资源；系统管理员需要时应在角色页显式授权。
+    迁移只执行一次，避免后续管理员手工授权给某个角色后被启动逻辑反复删除。
+    """
+    client = client or get_pg_client()
+    marker = client.query_df(
+        "SELECT 1 FROM app_config WHERE key=%s", [_TENANT_ADMIN_AUDIT_REVOKE_MARKER])
+    if not marker.empty:
+        return
+
+    changed = 0
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM sys_role_menu WHERE role_id=%s AND menu_id=%s",
+            [ROLE_TENANT_ADMIN, "/system/audit"],
+        )
+        changed += max(cur.rowcount, 0)
+        cur.execute(
+            "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
+            [ROLE_TENANT_ADMIN, "audit:view"],
+        )
+        changed += max(cur.rowcount, 0)
+        if changed:
+            cur.execute(
+                "UPDATE sys_user u SET perm_ver=perm_ver+1 "
+                "WHERE EXISTS ("
+                "  SELECT 1 FROM sys_user_role ur "
+                "  WHERE ur.user_id = u.id AND ur.role_id = %s"
+                ") AND NOT EXISTS ("
+                "  SELECT 1 FROM sys_user_role sur JOIN sys_role sr ON sr.id = sur.role_id "
+                "  WHERE sur.user_id = u.id AND (sr.code = %s OR sr.kind = 'system')"
+                ")",
+                [ROLE_TENANT_ADMIN, ROLE_SYSTEM],
+            )
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
+            [_TENANT_ADMIN_AUDIT_REVOKE_MARKER, '{"applied":true}'],
         )
 
 

@@ -163,6 +163,24 @@ class AppConfigRepo:
         """删除某项覆盖，回落到 settings.yaml 默认。"""
         self.pg.execute("DELETE FROM app_config WHERE key=%s", [path])
 
+    def reset_many(self, paths: list[str]) -> int:
+        """批量删除覆盖项，回落到 settings.yaml 默认。返回删除条数。"""
+        normalized: list[str] = []
+        for path in paths:
+            key = str(path or "").strip()
+            if key not in WHITELIST:
+                raise ConfigValidationError(f"不允许重置的配置项: {key}")
+            if key not in normalized:
+                normalized.append(key)
+        if not normalized:
+            return 0
+        df = self.pg.query_df(
+            "SELECT key FROM app_config WHERE key = ANY(%s)",
+            [normalized],
+        )
+        self.pg.execute("DELETE FROM app_config WHERE key = ANY(%s)", [normalized])
+        return int(len(df))
+
 
 def apply_overrides(base: dict, overrides: dict[str, object]) -> dict:
     """把 {点分路径: 值} 深合并进 base 配置 dict（就地嵌套写入），返回 base。"""

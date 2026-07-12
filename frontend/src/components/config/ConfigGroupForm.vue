@@ -57,7 +57,6 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
         <template #label>
           <span class="field-label">
             {{ field.label }}
-            <el-tag v-if="field.overridden" size="small" type="warning" effect="plain">已覆盖</el-tag>
           </span>
         </template>
 

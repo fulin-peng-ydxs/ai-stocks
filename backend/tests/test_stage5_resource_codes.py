@@ -149,6 +149,17 @@ def test_stage5_audit_and_dict_routes_have_precise_resource_codes(client):
     assert not naked, f"阶段五新增端点缺精确资源码: {naked}"
 
 
+def test_data_settings_reset_route_reuses_manage_resource_code(client):
+    routes = list(_iter_api_routes(client.app))
+    matches = [
+        route for path, methods, route in routes
+        if path == "/api/data/settings/reset" and "POST" in methods
+    ]
+    assert matches, "POST /api/data/settings/reset 路由未注册"
+    assert any("data-settings:manage" in _resource_codes(route) for route in matches)
+    assert any(_has_system_perm(route, "data-settings:manage") for route in matches)
+
+
 def test_stage5_default_roles_me_menus_and_permissions(client, pg, users):
     tenant_admin = users(ROLE_TENANT_ADMIN)
     normal = users(ROLE_NORMAL)
@@ -162,9 +173,9 @@ def test_stage5_default_roles_me_menus_and_permissions(client, pg, users):
     ta_data = tenant_admin_me.json()["data"]
     ta_menus = _menu_indexes(ta_data["menus"])
     ta_perms = set(ta_data["permissions"])
-    assert "/system/audit" in ta_menus
+    assert "/system/audit" not in ta_menus
     assert "/system/dicts" not in ta_menus
-    assert "audit:view" in ta_perms
+    assert "audit:view" not in ta_perms
     assert "dict:read" in ta_perms
     assert not {"dict:view", "dict:type-manage", "dict:item-manage"} & ta_perms
 
@@ -190,12 +201,17 @@ def test_stage5_runtime_authorization_for_audit_and_dict(client, pg, users):
         "/api/audit",
         headers=_auth(pg, tenant_admin["id"], tenant_admin["tenant_id"]),
         params={"page": 1, "page_size": 1},
-    ).status_code == 200
+    ).status_code == 403
     assert client.get(
         "/api/audit",
         headers=_auth(pg, normal["id"], normal["tenant_id"]),
         params={"page": 1, "page_size": 1},
     ).status_code == 403
+    assert client.get(
+        "/api/audit",
+        headers=_admin_auth(pg),
+        params={"page": 1, "page_size": 1},
+    ).status_code == 200
 
     public_dict = client.get(
         "/api/dict/items/public",

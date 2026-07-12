@@ -120,3 +120,15 @@ def test_data_settings_api_exposes_and_saves_stage5_config(client, pg, app_cfg):
     assert overrides["auth.login_captcha_enabled"] is True
     assert overrides["auth.captcha_after_fails"] == 4
     assert overrides["audit.retention_days"] == 45
+
+    reset = client.post(
+        "/api/data/settings/reset",
+        headers=_admin_headers(pg),
+        json={"paths": ["auth.login_captcha_enabled", "audit.retention_days"]},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["data"]["reset"] == 2
+    overrides = AppConfigRepo(pg).get_overrides()
+    assert "auth.login_captcha_enabled" not in overrides
+    assert "audit.retention_days" not in overrides
+    assert overrides["auth.captcha_after_fails"] == 4
