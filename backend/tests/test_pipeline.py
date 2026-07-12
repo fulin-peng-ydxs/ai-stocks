@@ -65,8 +65,13 @@ def test_scheduled_job_crud():
                          trading_day_only=True, enabled=False)
         assert job["name"] == "盘后质检" and job["freq_text"] == "每天 16:05"
         assert job["enabled"] is False and len(svc.list()) == 1
+        cleanup = svc.create(name="审计日志清理", task_type="audit_cleanup", params={},
+                             freq_type="daily", freq_config={"time": "03:30"},
+                             trading_day_only=False, enabled=False)
+        assert cleanup["task_type"] == "audit_cleanup" and cleanup["freq_text"] == "每天 03:30"
         with pytest.raises(ValueError):   # fix 不在可调度类型内
             svc.create(name="x", task_type="fix", params={}, freq_type="daily",
                        freq_config={"time": "10:00"}, trading_day_only=False, enabled=False)
+        svc.delete(cleanup["id"])
         svc.delete(job["id"])
         assert svc.list() == []

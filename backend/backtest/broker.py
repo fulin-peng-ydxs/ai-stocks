@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from backend.config import CostConfig, get_settings
+from backend.config import CostConfig, get_effective_settings
 from backend.market_rules import limit_prices
 
 
@@ -64,8 +64,8 @@ class Fill:
 class Broker:
     """单账户撮合 + 记账。价格统一 hfq。"""
     cash: float
-    cost: CostConfig = field(default_factory=lambda: get_settings().backtest.cost)
-    lot_size: int = field(default_factory=lambda: get_settings().backtest.lot_size)
+    cost: CostConfig = field(default_factory=lambda: get_effective_settings().backtest.cost)
+    lot_size: int = field(default_factory=lambda: get_effective_settings().backtest.lot_size)
     positions: dict[str, Position] = field(default_factory=dict)
     fills: list[Fill] = field(default_factory=list)
 

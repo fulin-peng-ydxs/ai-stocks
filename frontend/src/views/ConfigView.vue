@@ -116,7 +116,7 @@ interface SystemGroupTab {
 const SYSTEM_GROUP_TABS = [
   { key: 'security', label: '认证与审计', groupKeys: ['auth', 'audit'] },
   { key: 'data', label: '数据采集', groupKeys: ['datasource'] },
-  { key: 'strategy', label: '股票池与回测', groupKeys: ['universe', 'cost', 'topn'] },
+  { key: 'strategy', label: '回测成本', groupKeys: ['cost'] },
 ]
 const canManageSystemSettings = computed(() =>
   hasPermission(auth.role, auth.permissions, 'data-settings:manage'),
@@ -1475,7 +1475,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div v-else class="sys-wrap" v-loading="sysLoading">
           <div class="sys-head">
             <div class="sys-summary">
-              <span>保存后即时影响数据源、股票池、回测、榜单、认证和审计查询窗口。</span>
+              <span>保存后即时影响数据源、回测成本、认证和审计查询窗口。</span>
             </div>
             <div class="sys-actions">
               <el-alert

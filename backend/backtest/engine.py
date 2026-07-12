@@ -23,7 +23,7 @@ import pandas as pd
 
 from backend.backtest.broker import Broker, can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
-from backend.config import get_settings
+from backend.config import get_effective_settings
 from backend.market_rules import price_limit_pct_for
 from backend.scoring.model import ScoreModel
 from backend.storage.duckdb_client import get_client
@@ -43,7 +43,7 @@ class BacktestEngine:
     ):
         self.c = client or get_client()
         self.model = model or ScoreModel()
-        self.s = get_settings()
+        self.s = get_effective_settings()
         self.tenant_id = tenant_id
         self.owner_user_id = owner_user_id
         from backend.indicators.engine import IndicatorEngine

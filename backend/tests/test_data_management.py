@@ -24,11 +24,11 @@ from backend.storage.duckdb_client import DuckDBClient
 # ── 配置覆盖层 ──────────────────────────────────────────────
 
 def test_app_config_override_roundtrip(app_cfg):
-    n = app_cfg.set_many({"datasource.update_concurrency": 4, "backtest.top_n": 30})
+    n = app_cfg.set_many({"datasource.update_concurrency": 4, "backtest.cost.slippage": 0.003})
     assert n == 2
     ov = app_cfg.get_overrides()
     assert ov["datasource.update_concurrency"] == 4
-    assert ov["backtest.top_n"] == 30
+    assert ov["backtest.cost.slippage"] == 0.003
 
 
 def test_app_config_rejects_non_whitelist():
@@ -55,11 +55,16 @@ def test_app_config_range_and_type_validation():
         assert repo.get_overrides() == {}
 
 
-def test_app_config_cross_field_mv_bounds(app_cfg):
+def test_app_config_rejects_removed_strategy_fields(app_cfg):
     with pytest.raises(ConfigValidationError):
-        app_cfg.set_many({"universe.float_mv_min": 1e10, "universe.float_mv_max": 5e9})
-    # 合法
-    assert app_cfg.set_many({"universe.float_mv_min": 5e9, "universe.float_mv_max": 4e10}) == 2
+        app_cfg.set_many({"universe.float_mv_min": 1e10})
+    with pytest.raises(ConfigValidationError):
+        app_cfg.set_many({"backtest.top_n": 7})
+    with pytest.raises(ConfigValidationError):
+        app_cfg.set_many({"scoring.top_n": 7})
+    assert "universe.float_mv_min" not in WHITELIST
+    assert "backtest.top_n" not in WHITELIST
+    assert "scoring.top_n" not in WHITELIST
 
 
 def test_apply_overrides_deep_merge():
@@ -77,10 +82,10 @@ def test_apply_overrides_deep_merge():
 
 def test_effective_settings_override_first(app_cfg):
     """get_effective_settings 覆盖层(PG)优先于 settings.yaml。"""
-    app_cfg.set_many({"backtest.top_n": 7})
+    app_cfg.set_many({"backtest.cost.slippage": 0.004})
     from backend.config import get_effective_settings
     s = get_effective_settings()
-    assert s.backtest.top_n == 7
+    assert s.backtest.cost.slippage == 0.004
 
 
 # ── 数据字典 / 维度注册表 ──────────────────────────────────

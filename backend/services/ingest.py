@@ -76,6 +76,14 @@ class IngestionService:
 
         raise DataSourceError(f"无数据源支持能力: {capability}")
 
+    def _thread_source(self, tls, source_name: str) -> DataSource:
+        """并发采集工作线程内按配置创建数据源实例，避免绕过 Web/YAML 的 source 选择。"""
+        src = getattr(tls, "src", None)
+        if src is None or getattr(src, "name", None) != source_name:
+            src = get_source(source_name)
+            tls.src = src
+        return src
+
     def _in_target_board(self, code6: str) -> tuple[bool, str, float]:
         """是否纳入目标板块（默认剔除北交所）。返回 (纳入?, board, limit_pct)。"""
         _, board, limit = classify_board(code6)
@@ -376,14 +384,11 @@ class IngestionService:
         else:  # 并发：线程局部 DataSource，写入由 DuckDB RLock 串行
             import threading
 
-            from backend.datasource.akshare_source import AKShareSource
             tls = threading.local()
+            source_name = val_src.name
 
             def _worker(code: str) -> int:
-                src = getattr(tls, "src", None)
-                if src is None:
-                    src = AKShareSource()
-                    tls.src = src
+                src = self._thread_source(tls, source_name)
                 return _one(code, src)
 
             with ThreadPoolExecutor(max_workers=concurrency) as ex:
@@ -462,8 +467,9 @@ class IngestionService:
         def _one(code: str, source) -> int:
             return self._valuation_one(code, source, trade_date, trade_date)
 
+        val_src = self._source_for("valuation")
         if concurrency <= 1:
-            src = self._source_for("valuation")
+            src = val_src
             for i, code in enumerate(pending, 1):
                 if ctx:
                     ctx.check_cancel()
@@ -486,13 +492,11 @@ class IngestionService:
         else:
             import threading
 
-            from backend.datasource.akshare_source import AKShareSource
             tls = threading.local()
+            source_name = val_src.name
 
             def _worker(code: str) -> int:
-                src = getattr(tls, "src", None)
-                if src is None:
-                    src = AKShareSource(); tls.src = src
+                src = self._thread_source(tls, source_name)
                 return _one(code, src)
 
             with ThreadPoolExecutor(max_workers=concurrency) as ex:
@@ -572,6 +576,7 @@ class IngestionService:
             code, lo, hi = item
             return self._valuation_one(code, source, lo, hi)
 
+        val_src = self._source_for("valuation")
         if concurrency <= 1:
             for i, item in enumerate(pending, 1):
                 if ctx:
@@ -579,7 +584,7 @@ class IngestionService:
                     ctx.set_phase("valuation_gap", phase_total=n, phase_done=i - 1, current_item=item[0],
                                   valuation_gap_done_codes=sorted(done_gap_codes))
                 try:
-                    rows += _one(item, self._source_for("valuation")); ok += 1
+                    rows += _one(item, val_src); ok += 1
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
                     if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
@@ -595,13 +600,11 @@ class IngestionService:
         else:
             import threading
 
-            from backend.datasource.akshare_source import AKShareSource
             tls = threading.local()
+            source_name = val_src.name
 
             def _worker(item) -> int:
-                src = getattr(tls, "src", None)
-                if src is None:
-                    src = AKShareSource(); tls.src = src
+                src = self._thread_source(tls, source_name)
                 return _one(item, src)
 
             with ThreadPoolExecutor(max_workers=concurrency) as ex:
@@ -782,14 +785,11 @@ class IngestionService:
         else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
             import threading
 
-            from backend.datasource.akshare_source import AKShareSource
             tls = threading.local()
+            source_name = self.src.name
 
             def _worker(code: str) -> int:
-                src = getattr(tls, "src", None)
-                if src is None:
-                    src = AKShareSource()
-                    tls.src = src
+                src = self._thread_source(tls, source_name)
                 return _one(code, source=src)
 
             with ThreadPoolExecutor(max_workers=concurrency) as ex:
@@ -1085,14 +1085,11 @@ class IngestionService:
                         ctx.log(f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，主源+兜底源均未取到）: {e}", "error")
                     self.repo.log_update("daily_bar", self.src.name, None, end, 0, "failed", f"{code}: {e}")
         else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
-            from backend.datasource.akshare_source import AKShareSource
             tls = threading.local()
+            source_name = self.src.name
 
             def _worker(code: str) -> int:
-                src = getattr(tls, "src", None)
-                if src is None:
-                    src = AKShareSource()
-                    tls.src = src
+                src = self._thread_source(tls, source_name)
                 return self._update_one(code, end, source=src)
 
             ex = ThreadPoolExecutor(max_workers=concurrency)
@@ -1416,14 +1413,11 @@ class IngestionService:
         else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
             import threading
 
-            from backend.datasource.akshare_source import AKShareSource
             tls = threading.local()
+            source_name = self.src.name
 
             def _worker(code: str) -> int:
-                src = getattr(tls, "src", None)
-                if src is None:
-                    src = AKShareSource()
-                    tls.src = src
+                src = self._thread_source(tls, source_name)
                 return _one(code, source=src)
 
             with ThreadPoolExecutor(max_workers=concurrency) as ex:

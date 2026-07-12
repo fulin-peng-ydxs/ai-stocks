@@ -15,7 +15,7 @@ import math
 
 import pandas as pd
 
-from backend.config import get_settings
+from backend.config import get_effective_settings
 
 
 def _na(x) -> bool:
@@ -25,7 +25,7 @@ def _na(x) -> bool:
 class RiskDetector:
     def __init__(self, big_pct: float = 0.05, chase_n: int = 3, settings=None):
         """big_pct: 大阳线实体涨幅阈值；chase_n: 连续大阳线根数阈值。"""
-        s = (settings or get_settings()).indicators
+        s = (settings or get_effective_settings()).indicators
         self.turnover_high = s.turnover_risk_high
         self.big_pct = big_pct
         self.chase_n = chase_n

@@ -906,7 +906,7 @@ Slot 与组件设计：
   - 运行 `npm run build`。
   - 关键视口 `1100x620`、`1366x768`、`1440x900` 验证新增字段不溢出、不遮挡，桌面端并排、窄屏单列。
 - 完成标准：R16/R17 配置能展示、保存、读取、消费。
-- 实际落地情况：已新增 `frontend/src/components/config/ConfigGroupForm.vue`，按 `/api/data/settings` 返回的 `CONFIG_GROUPS` 动态渲染 bool、enum、int、number 字段、默认值、覆盖标记、范围信息、配置组说明和字段说明；`ConfigView.vue` 的 `/system/config/system` 已从平铺工作区调整为分类 Tab，认证与审计在同一组，数据采集、股票池与回测分别归类，页面不展示“平台配置”标题。system 页初始化已从指标注册表依赖中拆出，只加载登录态和系统设置接口；无 `data-settings:manage` 权限时显示权限态且不请求设置接口。保存逻辑只提交差量字段，保存成功提示“配置已更新”，保存失败保留当前编辑值并展示错误态；空配置显示空态。已补 `ConfigView.system.spec.ts` 覆盖动态渲染、分类 Tab、system 页不加载指标注册表、差量保存、保存失败保留值、越界数值钳定保存、空态和权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t10-config-system-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；桌面端配置组已并排展示，系统设置抽屉可打开；本轮 Tab 分类整改以单测和构建复验为准。
+- 当前落地情况：已新增 `frontend/src/components/config/ConfigGroupForm.vue`，按 `/api/data/settings` 返回的 `CONFIG_GROUPS` 动态渲染 bool、enum、int、number 字段、默认值、覆盖标记、范围信息、配置组说明和字段说明；`ConfigView.vue` 的 `/system/config/system` 已从平铺工作区调整为分类 Tab，当前展示数据源、回测成本、认证与防滥用、审计设置四组，股票池、TopN 和指标全局周期不在 Web 系统设置页展示，页面不展示“平台配置”标题。system 页初始化已从指标注册表依赖中拆出，只加载登录态和系统设置接口；无 `data-settings:manage` 权限时显示权限态且不请求设置接口。保存逻辑只提交差量字段，保存成功提示“配置已更新”，保存失败保留当前编辑值并展示错误态；空配置显示空态。已补 `ConfigView.system.spec.ts` 覆盖动态渲染、分类 Tab、system 页不加载指标注册表、差量保存、保存失败保留值、越界数值钳定保存、空态和权限态。浏览器验证使用 5181 专用端口，截图保存在被 Git 忽略的 `agent-works/multi-tenant-rbac/stage5-platform-capabilities/screenshots/t10-config-system-*.png`，三档视口 `1100x620`、`1366x768`、`1440x900` 均无整页横/纵向溢出；桌面端配置组已并排展示，系统设置抽屉可打开；本轮 Tab 分类整改以单测和构建复验为准。
 
 ### 6.11 任务 T11：权限扫描和菜单授权测试
 

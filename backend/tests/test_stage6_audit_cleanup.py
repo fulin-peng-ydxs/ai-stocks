@@ -6,7 +6,9 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from backend.services.audit_service import AuditService
+from backend.storage.ddl import init_db
 from backend.storage.audit_repository import AuditRepository
+from backend.storage.duckdb_client import DuckDBClient
 
 
 def _insert_audit(pg, audit_id: str, event_time: datetime) -> None:
@@ -105,24 +107,26 @@ def test_stage6_audit_cleanup_skips_invalid_retention_without_delete(pg, monkeyp
         _cleanup_test_rows(pg, None)
 
 
-def test_stage6_audit_cleanup_scheduler_registers_platform_job_once():
-    from backend.scheduler import scheduler
+def test_stage6_audit_cleanup_is_configurable_scheduled_task():
+    from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES, ScheduledJobService
+    from backend.services.async_task import TASK_CAPABILITIES, TASK_TYPES
 
-    scheduler.shutdown_scheduler()
-    try:
-        scheduler.register_platform_jobs()
-        first_scheduler = scheduler._scheduler
-        scheduler.register_platform_jobs()
+    assert "audit_cleanup" in SCHEDULABLE_TASK_TYPES
+    assert "audit_cleanup" in TASK_TYPES
+    assert TASK_CAPABILITIES["audit_cleanup"]["can_cancel"] is False
 
-        assert scheduler._scheduler is first_scheduler
-        assert scheduler._scheduler is not None
-        assert scheduler._scheduler.running is True
-        assert scheduler._scheduler.get_job("platform.audit_cleanup") is not None
-        assert len(
-            [
-                job for job in scheduler._scheduler.get_jobs()
-                if job.id == "platform.audit_cleanup"
-            ]
-        ) == 1
-    finally:
-        scheduler.shutdown_scheduler()
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        job = svc.create(
+            name="审计日志清理",
+            task_type="audit_cleanup",
+            params={},
+            freq_type="daily",
+            freq_config={"time": "03:30"},
+            trading_day_only=False,
+            enabled=False,
+        )
+        assert job["task_type"] == "audit_cleanup"
+        assert job["trading_day_only"] is False
+        assert job["freq_text"] == "每天 03:30"

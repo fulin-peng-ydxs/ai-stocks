@@ -26,7 +26,7 @@ log = get_logger("services.async_task")
 
 # 全部任务类型（原子任务：定时任务系统按需组合调度，不再有 daily 复合任务）
 TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_price_factors",
-              "recompute", "verify", "checkup", "fix", "enrich_basic")
+              "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup")
 # 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
 WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
                               "rebuild_price_factors", "fix", "enrich_basic"})
@@ -83,6 +83,10 @@ TASK_CAPABILITIES: dict[str, dict] = {
     "checkup": {
         "can_cancel": False, "can_resume": False, "cancel_mode": "none",
         "resume_granularity": None, "cancel_message": "结构体检暂不支持中途终止/续跑",
+    },
+    "audit_cleanup": {
+        "can_cancel": False, "can_resume": False, "cancel_mode": "none",
+        "resume_granularity": None, "cancel_message": "审计清理任务很短，不支持终止/续跑",
     },
 }
 
@@ -673,6 +677,23 @@ def _h_checkup(params: dict, ctx: TaskContext) -> dict:
     return {"message": msg, "checkup": report}
 
 
+def _h_audit_cleanup(params: dict, ctx: TaskContext) -> dict:
+    """按 audit.retention_days 清理超保留期审计日志，供任务调度页配置执行频率。"""
+    from backend.services.audit_service import AuditService
+
+    ctx.progress(0.2, "审计日志清理中…")
+    ctx.log("按 audit.retention_days 清理超保留期审计日志")
+    result = AuditService().cleanup_expired()
+    if not result.get("ok"):
+        raise RuntimeError(result.get("error") or result.get("reason") or "审计日志清理失败")
+    if result.get("skipped"):
+        message = f"审计日志清理跳过：{result.get('reason') or '无可清理数据'}"
+    else:
+        message = f"审计日志清理完成：删除 {int(result.get('affected_count') or 0)} 条"
+    ctx.progress(1.0, message)
+    return {"message": message, "audit_cleanup": result}
+
+
 def _h_enrich_basic(params: dict, ctx: TaskContext) -> dict:
     """刷新上市/退市标记（含行业），并可选灌退市股历史（防幸存者偏差）。
 
@@ -859,4 +880,5 @@ _HANDLERS = {
     "checkup": _h_checkup,
     "fix": _h_fix,
     "enrich_basic": _h_enrich_basic,
+    "audit_cleanup": _h_audit_cleanup,
 }

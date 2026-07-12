@@ -173,10 +173,10 @@ def test_settings_view_and_save(client):
     view = get_settings_view().data
     assert any(g["key"] == "datasource" for g in view["groups"])
     # 保存覆盖
-    resp = save_settings({"updates": {"backtest.top_n": 33}}, _fake_request())
+    resp = save_settings({"updates": {"backtest.cost.slippage": 0.003}}, _fake_request())
     assert resp.code == 0
     from backend.config import get_effective_settings
-    assert get_effective_settings().backtest.top_n == 33
+    assert get_effective_settings().backtest.cost.slippage == 0.003
     # 非法值被拒
     bad = save_settings({"updates": {"datasource.update_concurrency": 0}}, _fake_request())
     assert bad.code == 400

@@ -14,7 +14,7 @@ import json
 
 import pandas as pd
 
-from backend.config import get_settings
+from backend.config import get_effective_settings
 from backend.indicators.operators import (
     HHV,
     MA,
@@ -26,7 +26,7 @@ from backend.indicators.operators import (
 
 def build_params(settings=None) -> dict:
     """从配置抽取指标参数（含进 param_hash，参数变即重算）。"""
-    s = (settings or get_settings()).indicators
+    s = (settings or get_effective_settings()).indicators
     return {
         "ma_periods": list(s.ma_periods),
         "hhv_periods": list(s.hhv_periods),

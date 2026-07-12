@@ -13,7 +13,7 @@ from datetime import date
 import pandas as pd
 
 from backend.common.logging import get_logger
-from backend.config import get_settings
+from backend.config import get_effective_settings
 from backend.scoring.model import ScoreModel
 from backend.screening.engine import ScreenEngine
 from backend.screening.profile import ProfileRepo
@@ -41,7 +41,7 @@ class ScreenScoreService:
         self.profiles = ProfileRepo(market=self.c, tenant_id=self.tenant_id,
                                     owner_user_id=self.owner_user_id)
         self.model = ScoreModel()
-        self.s = get_settings()
+        self.s = get_effective_settings()
 
     # ── 筛选并落库（支持任意历史交易日）──
     def run_profile(self, profile_id: str, run_date: date, persist: bool = True) -> list[str]:

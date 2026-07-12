@@ -81,8 +81,8 @@ class SignalAnalyzer:
         min_samples: int = 30,
         score_profile: dict | None = None,
     ) -> dict:
-        from backend.config import get_settings
-        bt = get_settings().backtest
+        from backend.config import get_effective_settings
+        bt = get_effective_settings().backtest
         horizons = horizons or bt.hit_horizons
         thresholds = thresholds or bt.hit_thresholds
 

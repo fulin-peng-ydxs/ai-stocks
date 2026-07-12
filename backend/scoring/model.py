@@ -10,12 +10,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from backend.config import get_settings
+from backend.config import get_effective_settings
 
 
 class ScoreModel:
     def __init__(self, settings=None):
-        self.s = (settings or get_settings()).scoring
+        self.s = (settings or get_effective_settings()).scoring
         self.weights = dict(self.s.weights)
         self.grades = self.s.grade_thresholds
 

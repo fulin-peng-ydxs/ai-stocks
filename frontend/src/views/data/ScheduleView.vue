@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
@@ -85,6 +85,10 @@ const form = reactive({
 const dlgTitle = computed(() => (editingId.value ? '编辑定时任务' : '新建定时任务'))
 // 采集类任务（逐股拉取）才有并发概念；评分维护/质检无需并发
 const needsConcurrency = computed(() => ['update', 'backfill', 'ingest_date', 'ingest_codes'].includes(form.task_type))
+watch(() => form.task_type, (type, prev) => {
+  if (type === 'audit_cleanup') form.trading_day_only = false
+  else if (prev === 'audit_cleanup' && !editingId.value) form.trading_day_only = true
+})
 
 function openCreate() {
   editingId.value = ''
@@ -171,7 +175,7 @@ async function runNow(j: ScheduledJob) {
   try {
     await ElMessageBox.confirm(
       `立即执行一次「${j.name}」（${TASK_LABEL[j.task_type]}）？不等定时时间点直接触发；`
-      + `采集类任务在非交易日 / 当日数据未就绪时会自行跳过实际拉取。`,
+      + `任务会按自身规则执行；采集类任务在非交易日 / 当日数据未就绪时会自行跳过实际拉取。`,
       '立即执行', { type: 'warning' })
   } catch { return }
   try {
@@ -205,7 +209,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
       <h2>
         任务调度
         <HelpTip title="这页管什么？" :width="440">
-          ① <b>定时任务</b>——自定义多条定时任务（增量更新 / 历史补数 / 指定日期采集 / 刷新评分 / 数据质检），
+          ① <b>定时任务</b>——自定义多条定时任务（增量更新 / 历史补数 / 指定日期采集 / 刷新评分 / 数据质检 / 审计清理），
           各自设置频率（每日/每周/每月/cron）、是否仅交易日执行，可启停、立即执行；触发记录在「数据采集」任务中心，
           标注「定时·任务名」。<br />
           ② <b>数据源健康</b>——AKShare / BaoStock 的连通性。

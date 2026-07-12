@@ -92,16 +92,18 @@ const groups: SettingGroup[] = [
     ],
   },
   {
-    key: 'universe',
-    label: '股票池',
+    key: 'cost',
+    label: '回测成本',
     fields: [
       {
-        path: 'universe.include_main_board',
-        label: '包含主板',
-        type: 'bool',
-        value: true,
-        default: true,
+        path: 'backtest.cost.slippage',
+        label: '滑点',
+        type: 'number',
+        value: 0.002,
+        default: 0.002,
         overridden: false,
+        min: 0,
+        max: 0.1,
       },
     ],
   },
@@ -135,7 +137,7 @@ const groups: SettingGroup[] = [
     fields: [
       {
         path: 'audit.retention_days',
-        label: '审计默认查询窗口(天)',
+        label: '审计保留期/默认查询窗口(天)',
         type: 'int',
         value: 90,
         default: 90,
@@ -217,12 +219,12 @@ describe('ConfigView system tab', () => {
     expect(wrapper.text()).toContain('系统设置')
     expect(wrapper.text()).toContain('认证与审计')
     expect(wrapper.text()).toContain('数据采集')
-    expect(wrapper.text()).toContain('股票池与回测')
+    expect(wrapper.text()).toContain('回测成本')
     expect(wrapper.text()).not.toContain('平台配置')
     expect(wrapper.text()).toContain('认证与防滥用')
     expect(wrapper.text()).toContain('注册需邮箱验证码')
     expect(wrapper.text()).toContain('审计设置')
-    expect(wrapper.text()).toContain('审计默认查询窗口(天)')
+    expect(wrapper.text()).toContain('审计保留期/默认查询窗口(天)')
     expect(scoreApi.getIndicatorRegistry).not.toHaveBeenCalled()
   })
 

@@ -29,7 +29,19 @@ score = 超额收益得分×0.40 + 绝对收益得分×0.25 + 回撤控制得分
 
 **资金曲线回放**（`_round_equity_curve`，`training_service.py:556`）：按成交记录逐日模拟 cash 与 pos 变化，用前复权收盘价估值；最大回撤 `_max_drawdown`（`training_service.py:581`）按峰值跌幅算，供结算统计与评分使用。
 
-**随机抽样校验**（`create_session`）：最大重试 80 次（`MAX_PICK_RETRY`），每次随机起点 → `MarketRepository.get_universe_asof` 取当日候选池（已集成 ST/次新/停牌/一字板/市值过滤）→ 校验：起点前 ≥60 历史交易日（`MIN_HISTORY`）、起点后有 ≥window_days 连续交易日数据、窗口内不退市；multi 模式用 `used_codes` 集合去重。
+**随机抽样校验**（`create_session`）：最大重试 80 次（`MAX_PICK_RETRY`），每次随机起点 → `MarketRepository.get_universe_asof` 取当日候选池 → 校验：起点前 ≥60 历史交易日（`MIN_HISTORY`）、起点后有 ≥window_days 连续交易日数据、窗口内不退市；multi 模式用 `used_codes` 集合去重。
+
+训练默认硬性股票池来自 `get_effective_settings().universe`，前端只显式暴露“排除 ST”和“板块”两个筛选项：
+
+| 规则 | 默认值 / 口径 |
+|------|---------------|
+| 板块 | 主板、创业板、科创板；不含北交所 |
+| ST | 默认排除 ST；前端可关闭 |
+| 上市天数 | 默认至少 60 个交易日 |
+| 当日可用行情 | 起点日必须有 `daily_bar`，停牌或无行情不会入池 |
+| 一字涨停 | 默认排除开盘一字涨停股（`is_one_word=true` 且 `limit_status=1`） |
+| 流通市值 | 默认 `5e9 <= float_mv <= 4e10` |
+| 数据窗口 | 起点前历史 ≥60 日，起点后可揭示窗口 ≥配置的 `window_days` |
 
 ---
 

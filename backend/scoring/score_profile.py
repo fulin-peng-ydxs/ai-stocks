@@ -19,7 +19,7 @@ import pandas as pd
 
 from backend.common.ids import prefixed_readable_id
 from backend.common.logging import get_logger
-from backend.config import get_settings
+from backend.config import get_effective_settings
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
 from backend.auth.context import get_current_owner
@@ -111,7 +111,7 @@ class ScoreProfileModel:
         self.profile = profile
         self.items = profile.get("items", [])
         g = profile.get("grade_thresholds") or {}
-        gd = (settings or get_settings()).scoring.grade_thresholds
+        gd = (settings or get_effective_settings()).scoring.grade_thresholds
         self.grades = {
             "watch": float(g.get("watch", gd.watch)),
             "leader": float(g.get("leader", gd.leader)),

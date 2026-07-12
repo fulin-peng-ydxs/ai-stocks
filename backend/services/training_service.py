@@ -21,7 +21,7 @@ import pandas as pd
 
 from backend.backtest.broker import can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
-from backend.config import get_settings
+from backend.config import get_effective_settings
 from backend.market_rules import price_limit_pct_for
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
@@ -68,7 +68,7 @@ class TrainingService:
         _ctx_t, _ctx_o = get_current_owner()
         self.tenant_id = tenant_id or _ctx_t
         self.owner_user_id = owner_user_id or _ctx_o
-        bt = get_settings().backtest
+        bt = get_effective_settings().backtest
         self.cost = bt.cost
         self.lot = bt.lot_size
 

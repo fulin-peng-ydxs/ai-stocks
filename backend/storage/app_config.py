@@ -30,21 +30,10 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "datasource.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10, "desc": "采集请求失败后的最多重试次数。"},
         {"path": "datasource.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60, "desc": "连续重试之间的等待时间。"},
     ]},
-    {"key": "universe", "label": "股票池", "desc": "控制选股、榜单和回测前置股票池过滤条件。", "fields": [
-        {"path": "universe.float_mv_min", "label": "流通市值下界(元)", "type": "number", "min": 0, "desc": "低于该流通市值的股票不进入默认股票池。"},
-        {"path": "universe.float_mv_max", "label": "流通市值上界(元)", "type": "number", "min": 0, "desc": "高于该流通市值的股票不进入默认股票池。"},
-        {"path": "universe.min_list_days", "label": "次新剔除(上市<N交易日)", "type": "int", "min": 0, "desc": "上市交易日不足该值的股票将被剔除。"},
-        {"path": "universe.exclude_st", "label": "剔除ST", "type": "bool", "desc": "开启后默认股票池排除 ST 或风险警示股票。"},
-        {"path": "universe.exclude_one_word_limit", "label": "剔除一字板", "type": "bool", "desc": "开启后默认股票池排除开盘一字涨跌停股票。"},
-    ]},
     {"key": "cost", "label": "回测成本", "desc": "控制回测成交记账时使用的默认交易成本。", "fields": [
         {"path": "backtest.cost.commission_rate", "label": "佣金率", "type": "number", "min": 0, "max": 0.1, "desc": "买卖双边计入的佣金比例。"},
         {"path": "backtest.cost.stamp_tax_rate", "label": "印花税率", "type": "number", "min": 0, "max": 0.1, "desc": "卖出成交时计入的印花税比例。"},
         {"path": "backtest.cost.slippage", "label": "滑点", "type": "number", "min": 0, "max": 0.1, "desc": "成交价相对开盘价的方向性滑点比例。"},
-    ]},
-    {"key": "topn", "label": "选股数量", "desc": "控制回测和每日榜单默认保留的候选股票数量。", "fields": [
-        {"path": "backtest.top_n", "label": "回测 TopN", "type": "int", "min": 1, "max": 500, "desc": "回测按评分排序后默认买入的候选数量。"},
-        {"path": "scoring.top_n", "label": "榜单 TopN", "type": "int", "min": 1, "max": 500, "desc": "每日榜单默认展示的最高分股票数量。"},
     ]},
     {"key": "auth", "label": "认证与防滥用", "desc": "控制注册校验、登录验证码和认证接口限流。", "fields": [
         {"path": "auth.require_email_code", "label": "注册需邮箱验证码", "type": "bool", "desc": "开启后自助注册必须提交邮箱验证码。"},
@@ -55,7 +44,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "auth.email_code_rate_per_hour", "label": "邮箱验证码限流(次/小时)", "type": "int", "min": 1, "max": 120, "desc": "同一邮箱每小时允许发送验证码的次数。"},
     ]},
     {"key": "audit", "label": "审计设置", "desc": "控制审计查询默认窗口和保留期自动清理。", "fields": [
-        {"path": "audit.retention_days", "label": "审计默认查询窗口(天)", "type": "int", "min": 7, "max": 365, "desc": "审计页未选择时间时默认查询最近多少天。"},
+        {"path": "audit.retention_days", "label": "审计保留期/默认查询窗口(天)", "type": "int", "min": 7, "max": 365, "desc": "审计页未选择时间时默认查询最近多少天，同时用于自动清理超期审计日志。"},
     ]},
     # 定时调度（遗留）：调度系统重构后改用 scheduled_job 表 + 「任务调度」页，旧的单一每日配置
     # 已不再作为运行态。这些白名单项仅供启动时一次性迁移读取旧值（读后即删，见 scheduler._migrate_legacy_config），
@@ -140,7 +129,6 @@ class AppConfigRepo:
             if field is None:
                 raise ConfigValidationError(f"不允许覆盖的配置项: {path}")
             normalized[path] = _coerce(field, value)
-        # 跨字段约束：流通市值上界 > 下界
         self._check_cross_field(normalized)
         now = datetime.now()
         for path, value in normalized.items():
@@ -152,12 +140,7 @@ class AppConfigRepo:
         return len(normalized)
 
     def _check_cross_field(self, normalized: dict[str, object]) -> None:
-        """仅校验本批 + 已存覆盖合并后的跨字段约束（市值上界>下界）。"""
-        merged = {**self.get_overrides(), **normalized}
-        lo = merged.get("universe.float_mv_min")
-        hi = merged.get("universe.float_mv_max")
-        if lo is not None and hi is not None and float(hi) <= float(lo):
-            raise ConfigValidationError("流通市值上界必须大于下界")
+        """跨字段约束入口。当前 Web 可维护配置暂无跨字段约束。"""
 
     def reset(self, path: str) -> None:
         """删除某项覆盖，回落到 settings.yaml 默认。"""

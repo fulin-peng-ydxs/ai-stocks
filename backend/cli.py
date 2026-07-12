@@ -390,10 +390,10 @@ def cmd_robust(args: argparse.Namespace) -> int:
 def cmd_check_data(args: argparse.Namespace) -> int:
     from datetime import date
 
-    from backend.config import get_settings
+    from backend.config import get_effective_settings
     from backend.services.data_report import DataIntegrityReport
 
-    s = get_settings()
+    s = get_effective_settings()
     end = date.today()
     start = date(end.year - s.datasource.history_years, end.month, end.day)
     DataIntegrityReport().run(start, end)

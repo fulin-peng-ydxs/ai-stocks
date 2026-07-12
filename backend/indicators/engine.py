@@ -19,7 +19,7 @@ from datetime import date
 import pandas as pd
 
 from backend.common.logging import get_logger
-from backend.config import get_settings
+from backend.config import get_effective_settings
 from backend.indicators.compute import (
     build_params,
     compute_market_indicators,
@@ -56,7 +56,7 @@ class IndicatorEngine:
     def __init__(self, client=None):
         self.c = client or get_client()
         self.repo = MarketRepository(self.c)
-        self.s = get_settings()
+        self.s = get_effective_settings()
         self.params = build_params(self.s)
         self.phash = param_hash(self.params)
         self.rs_window = self.s.indicators.rs_window

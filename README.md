@@ -79,7 +79,7 @@
 | 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存、版本回看、按权限公开和复制 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率；历史记录可按权限公开，公开记录可复用参数重跑 | [backtest.md](agent-works/architecture/backtest.md) |
 | 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 列表（服务端排序/分页，含退市股）；详情（K 线 + 指标快照 + 当前买卖方案信号）；股票分组篮子 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
-| ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置 | [config-definitions.md](agent-works/architecture/config-definitions.md) |
+| ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) |
 | 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
 | 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
@@ -283,7 +283,7 @@ flowchart LR
 python -m backend.cli daily              # 增量更新行情(含逐只补市值) → 数据质检 →（可选）数据体检
 ```
 
-也可在「数据管理 → 定时调度」页配置定时任务（`update`/`verify`/`checkup` 等，按 cron/每日触发，仅交易日）。
+也可在「数据管理 → 定时调度」页配置定时任务（`update`/`verify`/`checkup`/`audit_cleanup` 等，按 cron/每日/每周/每月触发；数据类任务通常仅交易日，审计清理不受交易日限制）。
 
 日常流程等价于页面里的"数据管理闭环"：
 
@@ -325,7 +325,7 @@ flowchart LR
 | 数据概览 | 看数据新鲜度、质量分、缺口、数据字典 | 进入后先看风险摘要，点击风险跳到质量或榜单 |
 | 同步补数 | 发起异步采集/补数任务，看实时日志 | 一键日常、指定日期补采、指定股票补采、续跑/终止任务 |
 | 数据质量 | 质检台账、修复、忽略、结构体检 | 先筛高危 open 问题，批量修复后复检 |
-| 定时调度 | 配置自动更新、质检、体检 | 建每日收盘后 update，再建定期 verify/checkup |
+| 定时调度 | 配置自动更新、质检、体检、审计清理 | 建每日收盘后 update，再建定期 verify/checkup；审计清理默认每天 03:30 |
 
 写库任务全局互斥：采集、补数、修复、重算等同一时间只能跑一个。遇到 409 说明已有写任务在执行，去任务列表看进度，完成后再提交。
 
@@ -361,7 +361,8 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 - **base rate**：分层命中率必减同期全市场无条件命中率得超额，并附样本量。
 - **统一基座**：技术指标是唯一原子定义，买卖/评分/筛选全部引用它组合，不在下游硬编码字段。
 - **分层职责**：`api/` 只做参数校验与响应包装，业务逻辑放 `services/` 与领域引擎；一切读写经 `storage` 点时安全仓库；长耗时操作走 `async_task` 异步任务底座 + 进度。
-- **配置即时生效**：阈值/权重/参数集中在 [`config/settings.yaml`](config/settings.yaml)，Web 表单改的进 `app_config` 覆盖层；改参不写进代码。
+- **配置即时生效**：长期基线集中在 [`config/settings.yaml`](config/settings.yaml)；Web 系统设置只覆盖白名单项（数据源、回测成本、认证与审计），落 `app_config` 覆盖层；运行期业务默认值统一读 `get_effective_settings()`，改参不写进代码。
+- **默认股票范围要标明入口**：训练随机池走 `MarketRepository.get_universe_asof` 的股票池硬过滤；榜单、筛选、买卖预览和回测候选排序主要走当日 `wide_snapshot` 并叠加 ST/方案/成交约束，不得把训练股票池规则误写成全系统默认。
 - **权限默认拒绝**：新增受控 `/api/**` 先过 `AuthMiddleware`，再挂精确 `require_perm` 或 system 守卫；不要只靠前端菜单、按钮或隐藏路由做安全控制。
 - **租户归属不可前端决定**：用户资产读写必须从请求上下文取 `tenant_id` 和 `owner_user_id`，除明确 system 管理接口外，不接受前端传入归属字段决定数据范围。
 

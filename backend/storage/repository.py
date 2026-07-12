@@ -13,7 +13,7 @@ from datetime import date, datetime
 import pandas as pd
 
 from backend.common.logging import get_logger
-from backend.config import get_settings
+from backend.config import get_effective_settings
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("storage.repository")
@@ -191,7 +191,7 @@ class MarketRepository:
         filters 可覆盖配置默认值：exclude_st/min_list_days/exclude_one_word_limit/
         float_mv_min/float_mv_max。
         """
-        u = get_settings().universe
+        u = get_effective_settings().universe
         f = filters or {}
         exclude_st = f.get("exclude_st", u.exclude_st)
         min_list_days = f.get("min_list_days", u.min_list_days)

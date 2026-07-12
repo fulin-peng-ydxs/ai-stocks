@@ -448,7 +448,7 @@
 - 边界与异常：删除不可逆；保留期小于等于 0 或配置异常时必须 fail-safe 不清理；调度失败不影响应用启动。
 - 验证方式：插入窗口内/外记录，执行清理后仅窗口外被删；重复执行幂等；scheduler 注册不创建第二个 APScheduler。
 - 完成标准：清理任务幂等，重复执行不会误删保留期内记录。
-- 实际落地情况：已完成；`AuditRepository.delete_before(cutoff)` 按 `event_time < cutoff` 删除并返回影响行数；`AuditService.cleanup_expired()` 读取 `audit.retention_days`、计算 cutoff、记录 `audit_cleanup` 任务审计事件，并对保留期非法、配置读取异常、删除异常做 fail-safe 降级不阻断主业务；CLI 已新增 `python -m backend.cli audit-cleanup` 人工入口；`backend/scheduler/scheduler.py` 已通过 `register_platform_jobs()` 在现有 APScheduler 单例注册 `platform.audit_cleanup` 每日 `03:30` 清理任务，由既有 `backend/main.py` startup/shutdown 管理。验证：`python -m pytest backend/tests/test_stage6_audit_cleanup.py -q` 通过（3 passed），覆盖窗口外删除、窗口内保留、重复执行幂等、非法保留期不删除、平台 job 重复注册不创建第二个 scheduler。
+- 当前落地情况：已完成；`AuditRepository.delete_before(cutoff)` 按 `event_time < cutoff` 删除并返回影响行数；`AuditService.cleanup_expired()` 读取 `audit.retention_days`、计算 cutoff、记录 `audit_cleanup` 任务审计事件，并对保留期非法、配置读取异常、删除异常做 fail-safe 降级不阻断主业务；CLI 已新增 `python -m backend.cli audit-cleanup` 人工入口；`backend/scheduler/scheduler.py` 已将 `audit_cleanup` 纳入 `scheduled_job` 可配置任务类型，启动时确保默认「审计日志清理」任务存在，默认每日 `03:30` 执行且不受交易日限制，可在「数据管理 → 定时调度」页调整频率、启停和交易日限制。验证：`python -m pytest backend/tests/test_stage6_audit_cleanup.py -q` 通过，覆盖窗口外删除、窗口内保留、重复执行幂等、非法保留期不删除和默认调度任务创建。
 
 ### 6.4 任务 T4：R24 审计字段变更模型
 

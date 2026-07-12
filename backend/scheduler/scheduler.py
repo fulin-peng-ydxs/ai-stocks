@@ -20,12 +20,14 @@ from backend.storage.duckdb_client import get_client
 log = get_logger("scheduler")
 
 _scheduler = None   # 进程内 APScheduler 单例（BackgroundScheduler）
-_AUDIT_CLEANUP_JOB_ID = "platform.audit_cleanup"
-_AUDIT_CLEANUP_HOUR = 3
-_AUDIT_CLEANUP_MINUTE = 30
+_DEFAULT_AUDIT_CLEANUP_NAME = "审计日志清理"
+_DEFAULT_AUDIT_CLEANUP_TIME = "03:30"
 
 # 可配成定时任务的类型：数据采集三项 + 评分维护 + 数据质检（去掉 daily 复合任务概念）
-SCHEDULABLE_TASK_TYPES = ("update", "backfill", "ingest_date", "recompute", "verify", "checkup", "enrich_basic")
+SCHEDULABLE_TASK_TYPES = (
+    "update", "backfill", "ingest_date", "recompute", "verify", "checkup", "enrich_basic",
+    "audit_cleanup",
+)
 _WEEKDAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]   # 1..7 → APScheduler 名称
 _WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]
 _FREQ_TYPES = ("daily", "weekly", "monthly", "cron")
@@ -200,34 +202,27 @@ def _fire_job(job_id: str) -> None:
         )
 
 
-def _fire_audit_cleanup_job() -> None:
-    """平台级审计清理任务：失败仅记日志，不影响调度器。"""
-    try:
-        from backend.services.audit_service import AuditService
-
-        result = AuditService().cleanup_expired()
-        if result.get("ok"):
-            log.info("[scheduler] 审计日志清理完成: %s", result)
-        else:
-            log.warning("[scheduler] 审计日志清理失败: %s", result)
-    except Exception as e:  # noqa: BLE001
-        log.warning("[scheduler] 审计日志清理任务异常，已忽略: %s", e)
+def _ensure_default_audit_cleanup_job() -> None:
+    """确保审计清理作为普通 scheduled_job 存在，从而频率/启停都可在任务调度页维护。"""
+    svc = ScheduledJobService()
+    if any(j["task_type"] == "audit_cleanup" for j in svc.list()):
+        return
+    svc.create(
+        name=_DEFAULT_AUDIT_CLEANUP_NAME,
+        task_type="audit_cleanup",
+        params={},
+        freq_type="daily",
+        freq_config={"time": _DEFAULT_AUDIT_CLEANUP_TIME},
+        trading_day_only=False,
+        enabled=True,
+    )
+    log.info("[scheduler] 已创建默认定时任务「%s」（每天 %s）",
+             _DEFAULT_AUDIT_CLEANUP_NAME, _DEFAULT_AUDIT_CLEANUP_TIME)
 
 
 def register_platform_jobs() -> None:
-    """注册平台内置定时任务，复用同一个 APScheduler 单例。"""
-    from apscheduler.triggers.cron import CronTrigger
-
-    sched = _ensure_scheduler()
-    sched.add_job(
-        _fire_audit_cleanup_job,
-        CronTrigger(hour=_AUDIT_CLEANUP_HOUR, minute=_AUDIT_CLEANUP_MINUTE),
-        id=_AUDIT_CLEANUP_JOB_ID,
-        replace_existing=True,
-        misfire_grace_time=3600,
-    )
-    if not sched.running:
-        sched.start()
+    """兼容旧调用：平台内置任务统一落到 scheduled_job，避免隐藏的固定调度。"""
+    _ensure_default_audit_cleanup_job()
 
 
 # ── 启动 / 停止 ──────────────────────────────────────────────────────────
@@ -237,16 +232,16 @@ def start_scheduler():
         _migrate_legacy_config()
     except Exception as e:  # noqa: BLE001
         log.warning("[scheduler] 旧调度配置迁移跳过: %s", e)
+    try:
+        register_platform_jobs()
+    except Exception as e:  # noqa: BLE001
+        log.warning("[scheduler] 创建默认审计清理定时任务失败，已跳过: %s", e)
     jobs = [j for j in ScheduledJobService().list() if j["enabled"]]
     for j in jobs:
         try:
             register_job(j)
         except Exception as e:  # noqa: BLE001
             log.error("[scheduler] 注册定时任务「%s」失败: %s", j.get("name"), e)
-    try:
-        register_platform_jobs()
-    except Exception as e:  # noqa: BLE001
-        log.warning("[scheduler] 注册平台审计清理任务失败，已跳过: %s", e)
     log.info("[scheduler] 已加载 %d 条启用的定时任务", len(jobs))
     return _scheduler
 

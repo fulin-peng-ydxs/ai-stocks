@@ -11,8 +11,8 @@
 - **FastAPI 全栈**：后端 FastAPI（`backend/main.py:40` `create_app`）装配全部业务路由 + 静态托管 + 启动钩子（含三库连通性自检 `_check_storages`）；CLI（`backend/cli.py`）提供 `serve/health/backfill/update/daily/backtest/migrate-rbac` 等子命令，`serve` 内部即 `uvicorn.run("backend.main:app")`。**持久层**：行情 DuckDB + 资产/配置/RBAC PostgreSQL + 短状态 Redis；行情分析、任务编排和调度仍在本进程，用户资产和平台配置在 PG，Redis 承载限流和会话短状态。
 - **DuckDB 单文件嵌入式库**：`backend/storage/duckdb_client.py` 封装单文件连接。连接惰性创建、模块级单例 `get_client()`（`:121`）。DuckDB 连接非线程安全，FastAPI 同步端点跑在线程池会并发触碰同一连接，故用一把可重入锁 `RLock`（`:43`）串行化所有 `execute/query_df`；本地查询毫秒级，串行无感。SQL 出错即把 `_conn` 置空，下次访问自动重建（`:64`/`:73`）。幂等写入靠进程内唯一名临时视图 `temp_view()`（`:91`）+ `INSERT ... SELECT`，离开作用域自动注销，避免固定视图名在共享连接下被并发覆盖。
 - **点时安全仓库（总闸门）**：`backend/storage/repository.py` 的 `MarketRepository`。一是 `upsert()`（`:47`）按主键 `_PK`（`:22`）做 `ON CONFLICT DO UPDATE` 幂等写，重复运行不产生重复行。二是**防未来函数/防幸存者偏差总闸门**（`:103` 起）：`get_bars()`（`:108`）只返回 `trade_date <= end_date` 的行，复权用去抖因子列 `adj_factor_clean`（为空 `COALESCE` 回落 `adj_factor`），qfq 按 end_date 当日因子点时归一；`get_universe_asof()`（`:182`）以"当日有行情"为存活判据组装点时股票池，含当时存活后来退市的票，并叠加 ST/次新/停牌/一字板/流通市值/板块过滤。
-- **异步任务底座**：`backend/services/async_task.py`。`TASK_TYPES`（`:28`）为 10 个原子任务类型；`WRITE_TASK_TYPES`（`:31`）为写库类型，全局只允许一个写任务在跑（单写者互斥）。`AsyncTaskService.create()`（`:164`）写 `async_task` 行后起守护线程跑处理器；`TaskContext`（`:58`）提供进度 `progress()`、节流批量实时日志 `log()`/`flush()`、断点 `set_checkpoint()`、协作式取消检查 `check_cancel()`。`_HANDLERS`（`:624`）按类型分派到各业务服务。
-- **APScheduler 定时调度**：`backend/scheduler/scheduler.py`。定义持久化在 `scheduled_job` 表，`SCHEDULABLE_TASK_TYPES`（`:25`）限定可定时的类型。频率 `daily/weekly/monthly/cron` 经 `compile_trigger()`（`:65`）统一编译成 APScheduler `CronTrigger`，注册到进程内 `BackgroundScheduler` 单例（`:22`）。到点回调 `_fire_job()`（`:140`）读最新 job 定义→`trading_day_only` 判交易日→`create()` 创建 `async_task`（`trigger_source='scheduled'`）。
+- **异步任务底座**：`backend/services/async_task.py`。`TASK_TYPES` 为 11 个原子任务类型，包含采集、补数、重算、质检、修复、基础信息刷新和 `audit_cleanup`；`WRITE_TASK_TYPES` 为写库类型，全局只允许一个写任务在跑（单写者互斥）。`AsyncTaskService.create()` 写 `async_task` 行后起守护线程跑处理器；`TaskContext` 提供进度 `progress()`、节流批量实时日志 `log()`/`flush()`、断点 `set_checkpoint()`、协作式取消检查 `check_cancel()`。`_HANDLERS` 按类型分派到各业务服务。
+- **APScheduler 定时调度**：`backend/scheduler/scheduler.py`。定义持久化在 `scheduled_job` 表，`SCHEDULABLE_TASK_TYPES` 限定可定时的类型（`update/backfill/ingest_date/recompute/verify/checkup/enrich_basic/audit_cleanup`）。频率 `daily/weekly/monthly/cron` 经 `compile_trigger()` 统一编译成 APScheduler `CronTrigger`，注册到进程内 `BackgroundScheduler` 单例。到点回调 `_fire_job()` 读最新 job 定义→`trading_day_only` 判交易日→`create()` 创建 `async_task`（`trigger_source='scheduled'`）。启动时会确保存在一条默认「审计日志清理」任务，每天 03:30 执行且不受交易日限制。
 - **配置覆盖层即时生效**：基线 `config/settings.yaml` 经 Pydantic v2 模型校验（`backend/config/settings.py`），`get_settings()`（`:188`）`lru_cache` 单例只读 YAML。Web 表单改的参数落 `app_config` 表（点分路径→JSON，`backend/storage/app_config.py`，仅白名单 `WHITELIST`（`:64`）可改、逐项类型/范围校验）。`get_effective_settings()`（`backend/config/settings.py:199`）每次调用重新合并 `YAML ⊕ 覆盖层`（不缓存），故改参即时生效，DB 不可用时静默回落 YAML。
 - **dev/prod 部署**：`start.sh` 用 `nohup` 脱离会话启动 `backend.cli serve`，防误杀。dev 模式 `--reload`（改 `backend/*.py` 热重启 worker）+ 绑 `127.0.0.1`（仅本机，外部走前端 5173 代理）；prod 无热重载、绑 `0.0.0.0` 对外托管。生产期 `frontend/dist` 由 FastAPI `StaticFiles` 同源托管，SPA 深链/刷新回退 `index.html`（`backend/main.py:80-96`）。
 - **前端布局自适应 + 列表交互标准**：Vue 3 + Element Plus + Pinia + vue-router（history 模式）。布局走可配置布局系统（`frontend/src/layout/`，地图见根目录 `DESIGN.md`）：页面声明 `PageLayout` schema 交 `<LayoutHost>` 渲染，整页/视口永不滚动、超高内容由页内"成长区"内部消化；契约样式 `.v-page/.v-grow/.v-scroll` 落在 `frontend/src/styles/global.css`，外壳 `App.vue` 的 `.main` 已 `overflow:hidden`+flex 填充。约束由校验器 + `layout-contract.spec.ts` 机制性强制。列表交互走服务端分页/排序/筛选、筛选变更自动触发、多选跨页累积。
@@ -27,7 +27,7 @@
   - 数据字典文档化：`backend/storage/catalog.py` 用代码内置 `TABLE_CATALOG` 维护表/字段中文说明，运行时 `build_catalog()` 拼上行数/最新数据时间/未解决质检数，供数据概览页渲染——不另建需手维护的字典表。
   - 目录约定：DuckDB 单文件、parquet、导出、日志路径在 `PathsConfig`（`backend/config/settings.py:31`），相对路径按项目根 `PROJECT_ROOT` 解析为绝对路径。
 
-- **被上层共用的能力**：点时闸门被选股/打分/回测/个股查询统一调用，保证全系统同一套"防未来/防幸存者"口径；异步任务底座被数据采集/补数/重算/质检/修复/基础信息刷新复用同一套执行/日志/续跑/取消语义；定时调度只是任务底座的触发器（到点→`create` 一条 `async_task`），与手动任务同一执行通道；配置覆盖层被数据源限流/并发、股票池过滤、回测成本、TopN 等读取点共用。
+- **被上层共用的能力**：点时闸门被选股/打分/回测/个股查询统一调用，保证全系统同一套"防未来/防幸存者"口径；异步任务底座被数据采集/补数/重算/质检/修复/基础信息刷新/审计清理复用同一套执行/日志/续跑/取消语义；定时调度只是任务底座的触发器（到点→`create` 一条 `async_task`），与手动任务同一执行通道；配置覆盖层被数据源限流/并发/容错、回测成本、认证防滥用和审计保留期读取点共用，股票池、TopN、指标全局周期等运行期默认值从 YAML 基线进入 `get_effective_settings()`。
 
 - **网络模型**：对外只暴露前端入口端口（dev 期前端 5173，经 Vite 代理到后端 8000；prod 期后端 8000 同源托管 `frontend/dist`）。后端 dev 绑 `127.0.0.1` 仅本机，CORS 仅放行 `localhost:5173/127.0.0.1:5173`（`backend/main.py:48`）。API 入口启用 JWT 鉴权、默认拒绝和租户归属上下文。
 
@@ -90,11 +90,11 @@ flowchart LR
 | 配置类型 | 读取方式 | 注意 |
 |----------|----------|------|
 | YAML 基线 | `get_settings()` | 有缓存，reload 或重启后更新 |
-| 覆盖层 | `get_effective_settings()` | 每次合并，适合 Web 即时改参 |
+| 覆盖层 | `get_effective_settings()` | 每次合并；Web 只覆盖数据源、回测成本、认证与审计白名单 |
 | 方案配置 | profile/version 表 | 保存即生成版本，回测记录版本 |
 | 指标全局参数 | `build_params` + `param_hash` | 影响指标缓存，需关注是否触发快照失效 |
 
-新增业务读取配置时，先判断它是"启动期路径/连接配置"还是"运行期参数"。运行期参数应优先走 `get_effective_settings()`。
+新增业务读取配置时，先判断它是"启动期路径/连接配置"还是"运行期参数"。运行期参数统一走 `get_effective_settings()`：有 Web 覆盖值先用覆盖值，没有覆盖值就使用 YAML 基线。
 
 ### 5. 前端页面开发约束
 
@@ -124,8 +124,8 @@ flowchart LR
 - **异步任务：创建→执行→完成**：`create(task_type, params, trigger_source)`（`async_task.py:164`）先校验类型、写任务类型则查 `_running_write()`（`:113`）有无在跑写任务、有则抛 `ConcurrentTaskError`（映射 409）；写入 `pending` 行后起守护线程跑 `_run()`（`:205`）。`_run` 置 `running`，调对应 `_HANDLERS` 处理器（边跑边 `ctx.progress/ctx.log`），正常完成置 `done` 并写 `result`；数据变更类任务收尾**惰性标记评分快照失效**（`_mark_snapshots_stale`，不立即重算）。
 - **协作式取消与续跑**：`cancel()`（`:277`）把 tid 加入进程内 `_CANCELLED` 集合并置"终止中"；处理器在步骤间 `ctx.check_cancel()` 探到即抛 `TaskCancelled`，`_run` 捕获后置 `interrupted`（已完成部分已入库、可续跑），并 `_release_fixing()` 把卡在 fixing 的质检问题复位 open。`resume()`（`:187`）读 `result.checkpoint` 重新拉起处理器，按 checkpoint 幂等跳过已完成项续做。
 - **重启恢复（reconcile）**：FastAPI `startup` 钩子（`backend/main.py:99`）调 `AsyncTaskService.reconcile()`（`async_task.py:251`）：残留 `running/pending` 任务标 `interrupted`（可续跑）；重启后无任务在跑故所有 fixing 必为孤儿→复位 open；清理超过 30 天的 `task_log`。
-- **定时任务触发**：`startup` 另一钩子调 `start_scheduler()`（`scheduler.py:164`）：迁移旧单一配置→加载所有 `enabled` 的 job 注册到 APScheduler。到点 `_fire_job()` 读最新 job→若 `trading_day_only` 且非交易日则跳过（`_is_trading_day` 缺日历会自愈补采再判，`:32`）→`create` 一条带 `job_id/job_name` 的 `async_task`，记 `last_run`。已有写任务在跑则本次跳过（不排队），失败仅记日志不崩调度。job 的增删改启停即时生效：CRUD 里 `register_job/unregister_job` 复用同进程单例重注册触发器，免重启。
-- **配置改参即时生效**：Web 表单提交→`AppConfigRepo.set_many()`（`app_config.py:118`）逐项 `_coerce` 类型/范围校验 + 跨字段约束（市值上界>下界），任一非法整批拒绝，合法则 `upsert` 进 `app_config`。业务读取走 `get_effective_settings()` 每次重新合并覆盖层，下一次读取即生效，无需重启；`reset()` 删某项回落 YAML 默认。
+- **定时任务触发**：`startup` 另一钩子调 `start_scheduler()`：迁移旧单一配置→确保默认 `audit_cleanup` 调度存在→加载所有 `enabled` 的 job 注册到 APScheduler。到点 `_fire_job()` 读最新 job→若 `trading_day_only` 且非交易日则跳过（`_is_trading_day` 缺日历会自愈补采再判）→`create` 一条带 `job_id/job_name` 的 `async_task`，记 `last_run`。已有写任务在跑则本次跳过（不排队），失败仅记日志不崩调度。job 的增删改启停即时生效：CRUD 里 `register_job/unregister_job` 复用同进程单例重注册触发器，免重启。
+- **配置改参即时生效**：Web 表单提交→`AppConfigRepo.set_many()` 逐项 `_coerce` 类型/范围校验，任一非法整批拒绝，合法则 `upsert` 进 `app_config`。业务读取走 `get_effective_settings()` 每次重新合并覆盖层，下一次读取即生效；未被 Web 覆盖的运行期默认值回落 YAML。`reset()` 删某项回落 YAML 默认。
 - **dev/prod 启停**：`./start.sh`（dev，热重载，绑 127.0.0.1）/`./start.sh prod`（绑 0.0.0.0 对外）/`stop`/`restart`/`status`/`logs`。启动后轮询 `/api/health`（最多约 15s）确认健康；`stop` 按进程特征 `pgrep/pkill` 优雅停、必要时 `-9` 强杀。`shutdown` 钩子停 APScheduler。
 
 ## 风险事项
