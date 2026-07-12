@@ -17,6 +17,7 @@ import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { getErrorMessage } from '@/utils/error'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -165,7 +166,7 @@ async function load() {
     dims.value = d.dimensions
     await loadSq()
   } catch (e) {
-    error.value = (e as Error).message
+    error.value = getErrorMessage(e, '数据概览加载失败')
   } finally {
     loading.value = false
   }

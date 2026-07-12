@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Lock } from '@element-plus/icons-vue'
 import { computed } from 'vue'
 
 type StateKind = 'loading' | 'empty' | 'error' | 'permission'
@@ -86,10 +87,13 @@ const defaultDescription = computed(() => {
 
     <el-result
       v-else
-      icon="warning"
+      :icon="state === 'permission' ? undefined : 'warning'"
       :title="defaultTitle"
       :class="resultClass"
     >
+      <template v-if="state === 'permission'" #icon>
+        <el-icon class="app-state-block__permission-icon"><Lock /></el-icon>
+      </template>
       <template #sub-title>
         <slot>{{ defaultDescription }}</slot>
       </template>
@@ -179,6 +183,11 @@ const defaultDescription = computed(() => {
   display: none;
 }
 
+.app-state-block__permission-icon {
+  color: var(--el-color-warning);
+  font-size: 64px;
+}
+
 .app-state-block__result--inline :deep(.el-result__title p),
 .app-state-block__result--inline :deep(.el-result__subtitle p) {
   display: inline;
@@ -202,5 +211,4 @@ const defaultDescription = computed(() => {
   font-size: 13px;
   line-height: 1.5;
 }
-
 </style>

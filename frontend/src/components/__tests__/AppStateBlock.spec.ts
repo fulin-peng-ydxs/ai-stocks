@@ -28,6 +28,7 @@ const ElResultStub = defineComponent({
   props: ['title'],
   setup(props, { slots }) {
     return () => h('div', { class: 'result-stub' }, [
+      h('div', { class: 'icon' }, slots.icon?.()),
       h('h3', String(props.title || '')),
       h('p', { class: 'subtitle' }, slots['sub-title']?.()),
       h('div', { class: 'extra' }, slots.extra?.()),
@@ -43,11 +44,19 @@ const ElButtonStub = defineComponent({
   },
 })
 
+const ElIconStub = defineComponent({
+  name: 'ElIcon',
+  setup(_props, { slots }) {
+    return () => h('span', { class: 'el-icon-stub' }, slots.default?.())
+  },
+})
+
 const stubs = {
   ElSkeleton: ElSkeletonStub,
   ElEmpty: ElEmptyStub,
   ElResult: ElResultStub,
   ElButton: ElButtonStub,
+  ElIcon: ElIconStub,
 }
 
 describe('AppStateBlock', () => {
@@ -102,5 +111,6 @@ describe('AppStateBlock', () => {
 
     expect(wrapper.text()).toContain('无权限查看')
     expect(wrapper.text()).toContain('请联系系统管理员调整权限')
+    expect(wrapper.find('.app-state-block__permission-icon').exists()).toBe(true)
   })
 })
