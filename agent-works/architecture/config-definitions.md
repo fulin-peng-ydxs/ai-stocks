@@ -15,7 +15,7 @@
   - `kind="builtin"`：映射到 `compute.py` 预先算好的宽表列（如 `ma5`/`is_bull_arrange`/`rs_pct`），通过 `wide_snapshot` 一次产出。
   - `kind="expr"`：表达式型，`expression` 是 `MA(C,{n}) > REF(MA(C,{n}),{k})` 这类模板，使用时由 `render_expression`（definition.py:22-37）把 `{param}` 用方案传入的参数渲染为可执行字符串，再走 `backend/screening/expression.py` 的白名单 DSL 沙箱（`ALLOWED_FUNCS` 仅 `MA/HHV/LLV/REF/COUNT/SUM/ABS`，expression.py:34-38）逐股求值。
 - **动态参数**：`Param`（name/label/type/default/min/max）声明指标可调参数 schema，前端据此渲染参数表单；同一指标（如 `consec_up` 连续上涨 N 天）每次引用可传不同 N，无需新建指标。
-- **运行态全局参数**：指标、评分、回测、股票池等运行期默认值从 `get_effective_settings()` 读取，先取 `app_config` 覆盖层，缺失则回落 `config/settings.yaml` 基线；Web 未开放的参数仍可通过 YAML 维护。
+- **运行态全局参数**：指标、评分、回测、股票池等运行期默认值从生效配置读取；环境变量、变量文件、YAML 基线与 `app_config` 覆盖层的优先级见 [environment-configuration.md](environment-configuration.md)。
 - **定义仓库** `backend/indicators/definition.py`：`IndicatorDefRepo` 把内置指标 seed 进 `indicator_def` 表（`seed_builtins` 幂等、保留用户改过的 `enabled` 与 `categories`，definition.py:139-151），并管理用户自定义表达式指标（`save_custom` 校验 key 合法/不与内置冲突/表达式白名单通过，definition.py:102-123）。内置指标不可删、仅可启停。
 
 ### 2. param_hash 与单次运行内存缓存
@@ -41,14 +41,11 @@
 
 ### 4. 配置覆盖层与即时生效
 
-存在两条独立的"配置生效"通道：
+环境变量、变量文件、YAML 基线、PostgreSQL `app_config` 覆盖层、DuckDB 同名旧表和生效优先级统一见 [environment-configuration.md](environment-configuration.md)。本文只保留配置定义视角：
 
-- **YAML 基线 ⊕ app_config 覆盖层**（`backend/config/settings.py` + `backend/storage/app_config.py`）：
-  - `get_settings()`（settings.py:188-196）只读 `config/settings.yaml`、`lru_cache` 单例（被 DuckDB 连接初始化依赖，故不能在此访问 DB，避免循环）。
-  - `get_effective_settings()`（settings.py:199-212）= YAML 基线 **深合并** app_config 覆盖（覆盖层优先），**每次调用重新合并不缓存**，保证 Web 改参后即时生效；DB 不可用时静默回落 YAML。
-  - `AppConfigRepo` 只接受 `WHITELIST`（由 `CONFIG_GROUPS` 派生）内的真实可调参数，逐项做类型/范围校验（`set_many` 任一非法整批拒绝），写入 `app_config` 表（点分路径 → JSON 值）。`apply_overrides` 按点分路径深合并。
-  - 当前 Web 系统设置只展示四组：数据源、回测成本、认证与防滥用、审计设置。调度旧配置仅作为隐藏迁移项；股票池、TopN、指标全局周期等不在 Web 表单展示，继续由 YAML 基线或方案配置承载。
-- **YAML 编辑 + reload**（`backend/api/config.py`）：`POST /api/config/reload`（config.py:27-31）调 `reload_settings()`（settings.py:215-218）清 `get_settings` 缓存重读 YAML——用于保留 YAML 里成段中文注释的"编辑文件再重载"路径。`GET /api/config` 返回当前 `model_dump`。
+- 运行期业务参数使用生效配置读取，Web 系统设置白名单只开放数据源、回测成本、认证与防滥用、审计设置。
+- 股票池、市值边界、TopN、指标全局周期等未开放为 Web 表单的默认参数继续由 YAML 基线或方案配置承载。
+- 方案级配置仍走评分/买卖/筛选 profile/version 表，保存即版本化，不属于环境变量链路。
 
 ---
 
@@ -96,7 +93,7 @@
 | 评分方案 | `backend/api/score_profiles.py` | `GET/POST /api/score-profiles`、`GET .../{pid}`、`GET .../{pid}/versions`、`DELETE .../{pid}`、`POST .../{pid}/visibility`、`POST .../{pid}/copy`、`POST /api/score-profiles/run`（试算榜单） |
 | 买卖方案 | `backend/api/trade_profiles.py` | `GET/POST /api/trade-profiles`、`GET .../{pid}`、`GET .../{pid}/versions`、`DELETE .../{pid}`、`POST .../{pid}/visibility`、`POST .../{pid}/copy`、`POST /api/trade-profiles/preview`（条件命中预览） |
 | 筛选方案 | `backend/api/profiles.py` | `GET/POST /api/profiles`、`GET .../{pid}`、`GET .../{pid}/versions`、`DELETE .../{pid}`、`POST .../{pid}/visibility`、`POST .../{pid}/copy`、`POST /api/screen/run` |
-| 配置生效 | `backend/api/config.py` | `GET /api/config`、`POST /api/config/reload` |
+| 配置生效 | `backend/api/config.py`、`backend/api/data_admin.py` | YAML 基线 reload 与 Web 系统设置；加载优先级见 [environment-configuration.md](environment-configuration.md) |
 
 - 评分试算 `/api/score-profiles/run`（score_profiles.py:56-107）：已保存方案走**评分快照层**（`ScoreSnapshotRepo.get_board`，命中即用/失效重算），未保存的 inline 方案当场 `score_day` 实时算不入库。
 - 评分快照 `ScoreSnapshotRepo`（snapshot.py:57-147）按 `(trade_date, profile_id, profile_version)` 惰性物化到 `score_snapshot`+`score_snapshot_meta`：首读物化、行情变更只标 `stale=true` 不立即重算、下次读到 stale 才重算覆盖。
@@ -168,12 +165,9 @@ flowchart LR
   D --> A
 ```
 
-### 4. 系统参数与 YAML/覆盖层
+### 4. 系统参数与环境配置
 
-| 配置来源 | 适用场景 | 生效方式 |
-|----------|----------|----------|
-| `config/settings.yaml` | 基线配置、带注释的长期默认值 | 修改后 `config/reload` 或重启 |
-| `app_config` 覆盖层 | Web 白名单参数的即时覆盖 | 下一次 `get_effective_settings()` 即生效 |
+环境变量、变量文件、YAML 基线和数据库覆盖层的加载生效规则只维护在 [environment-configuration.md](environment-configuration.md)。本页的系统参数说明只关注“哪些配置服务于指标、评分、买卖、筛选和回测定义”。
 
 Web 系统设置当前只开放数据源限流/并发/容错、回测成本、认证防滥用和审计保留期。股票池过滤、市值边界、TopN、指标全局周期等属于 YAML 基线或方案级配置，不在系统设置页展示；涉及采集压力或回测口径的参数，建议改动后记录原因，并用回测或体检验证影响。
 
@@ -223,8 +217,8 @@ Web 系统设置当前只开放数据源限流/并发/容错、回测成本、�
 
 ### 改参即时生效
 
-- **白名单系统参数**（数据源并发/限流/容错、回测成本、认证防滥用、审计保留期）：前端表单 → `AppConfigRepo.set_many` 校验写 `app_config` 表 → 业务读取走 `get_effective_settings()` 每次重合并即时生效，无需重启、无需 reload。
-- **YAML 基线参数**（股票池、市值边界、TopN、指标全局周期等，含成段中文注释）：编辑 `config/settings.yaml` → `POST /api/config/reload` 清 `get_settings` 缓存；运行态下一次 `get_effective_settings()` 合并时生效。
+- **白名单系统参数**（数据源并发/限流/容错、回测成本、认证防滥用、审计保留期）：前端表单保存后按 [environment-configuration.md](environment-configuration.md) 的 PG 覆盖层规则生效。
+- **YAML 基线参数**（股票池、市值边界、TopN、指标全局周期等，含成段中文注释）：按 [environment-configuration.md](environment-configuration.md) 的 YAML reload 规则刷新。
 - **全局指标参数变更**：参数进 `build_params` → `param_hash` 变 → `IndicatorEngine` 单次运行缓存键失效 → 下次计算自动重算；评分快照另由失效触发器标 stale 后重算。
 
 ---
@@ -240,5 +234,5 @@ Web 系统设置当前只开放数据源限流/并发/容错、回测成本、�
 | <span style="color:#f59e0b">●</span> 中 | 删除方案会断开历史引用 | 历史回测只记录 id+version，删方案后无法回溯内容 | 对已用于回测的方案优先停用/改名，不直接删除 |
 | <span style="color:#f59e0b">●</span> 中 | 指标启停/删除不校验下游引用 | 已有方案可能运行时才报错或缺列 | 删除/停用前先搜索方案引用 |
 | <span style="color:#16a34a">●</span> 低 | 方案版本按 JSON 字符串全等去重 | 字段顺序差异可能产生多余版本 | 前端保存前稳定 JSON 顺序 |
-| <span style="color:#16a34a">●</span> 低 | app_config 覆盖回落静默 | DB 异常时会回落 YAML，改参不生效缺少信号 | 排查改参问题时同时看日志和 `effective config` |
+| <span style="color:#16a34a">●</span> 低 | 配置覆盖层回落静默 | DB 异常时会回落 YAML，改参不生效缺少信号 | 按 [environment-configuration.md](environment-configuration.md) 的风险清单排查日志、PG 和 overridden 状态 |
 | <span style="color:#16a34a">●</span> 低 | 表达式型指标异常被吞为 None | 坏表达式或缺数只表现为空值（engine.py:214-215） | 新指标先小样本试算，确认缺失率 |

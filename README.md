@@ -86,7 +86,7 @@
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线 + T+1 真实撮合买卖；一局产出评分/评级/资金曲线；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
 > `/system/*` 是系统管理域，包含配置管理、布局配置、用户、角色、菜单/功能点和租户。评分规则与买卖指标是业务可授权子页；技术指标、系统设置、角色、菜单/功能点、租户和全局布局配置保持 system-only；用户管理可按 `user:*` 功能码授权给租户管理员，但服务层仍把非 system 用户限制在本租户。
-> 横切的基础设施（点时安全仓库、异步任务底座、定时调度、配置生效、服务部署、前端布局规范）见 [platform.md](agent-works/architecture/platform.md)。
+> 横切的基础设施（点时安全仓库、异步任务底座、定时调度、配置生效、服务部署、前端布局规范）见 [platform.md](agent-works/architecture/platform.md)；环境变量、变量文件、YAML 基线和数据库覆盖层见 [environment-configuration.md](agent-works/architecture/environment-configuration.md)。
 
 ### 2.1 模块关系图
 
@@ -193,7 +193,7 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 | 开发模式 | 日常开发、前端热更新、调试 API | 前端 `http://localhost:5173` | 前端 Vite + 后端 FastAPI 两个进程 |
 | 生产/集成模式 | 单端口访问、演示、局域网访问 | 后端 `http://<机器IP>:8000` | 后端托管 `frontend/dist` |
 
-> **前置依赖**：后端启动前 **PostgreSQL 与 Redis 须先运行**（启动期三库连通性自检，任一不通即失败）。本机开发：`brew services start postgresql@16 redis`，并建 PG 库/角色 `ai_stocks`（localhost `trust` 免密；公网部署改 pg_hba 走密码并设 `AI_STOCKS_PG_PASSWORD`）。连接参数见 `config/settings.yaml` 的 `postgres`/`redis` 段；本机敏感环境变量写入 `.env.local`（参考 `.env.local.example`，已忽略 Git）。存量从旧 DuckDB 升级：`python -m backend.cli migrate-rbac`（先 dry-run，再 `--apply`）。
+> **前置依赖**：后端启动前 **PostgreSQL 与 Redis 须先运行**（启动期三库连通性自检，任一不通即失败）。本机开发：`brew services start postgresql@16 redis`，并建 PG 库/角色 `ai_stocks`。环境变量、变量文件、连接密钥、YAML 基线与数据库覆盖层的完整口径见 [environment-configuration.md](agent-works/architecture/environment-configuration.md)。存量从旧 DuckDB 升级：`python -m backend.cli migrate-rbac`（先 dry-run，再 `--apply`）。
 
 ### 5.1 开发模式启动（前后端联动）
 
@@ -201,8 +201,7 @@ start.sh          后端启停脚本（dev/prod，见 §5.1）
 
 ```bash
 cp .env.local.example .env.local
-# 编辑 .env.local，至少填写 AI_STOCKS_JWT_SECRET；可用 openssl rand -hex 32 生成
-# 本地开发约定系统管理员：admin / Admin@12345；生产或共享环境必须改 AI_STOCKS_ADMIN_PASSWORD
+# 按 environment-configuration.md 填写本机后端启动变量
 ./start.sh                      # 后端 8000，热重载（= python -m backend.cli serve --reload，nohup 脱离会话）
 ./start-web.sh                  # 前端 5173，HMR（nohup 脱离会话，首次先 npm install）
 ```
@@ -211,8 +210,8 @@ cp .env.local.example .env.local
 
 | 账号体系 | 用途 | 密码来源 | 维护方式 |
 |----------|------|----------|----------|
-| `admin` | `default` 租户平台系统管理员，用于初始化、系统级运维和最高权限验收 | `.env.local` 的 `AI_STOCKS_ADMIN_PASSWORD`；本地开发可用约定值，生产/共享环境必须改强密码 | 后端启动 seed/校准，缺失时随机生成并写启动日志 |
-| `debug_*` | RBAC 页面和接口权限验收账号，用于验证普通用户、租户管理员、最小权限、无权限等场景 | `.env.local` 的 `AI_STOCKS_TEST_USER_PASSWORD`；未设置时本地开发回落默认测试密码 | `python -m backend.cli dev-users` 创建/校准，`--list` 查看 |
+| `admin` | `default` 租户平台系统管理员，用于初始化、系统级运维和最高权限验收 | 按 [environment-configuration.md](agent-works/architecture/environment-configuration.md) 的管理员初始密码规则维护 | 后端启动 seed/校准；已有密码不会被环境变量覆盖 |
+| `debug_*` | RBAC 页面和接口权限验收账号，用于验证普通用户、租户管理员、最小权限、无权限等场景 | 按 [test-users.md](agent-works/multi-tenant-rbac/test-users.md) 和环境配置文档维护 | `python -m backend.cli dev-users` 创建/校准，`--list` 查看 |
 
 固定调试账号清单和使用规则见 [test-users.md](agent-works/multi-tenant-rbac/test-users.md)。页面或接口权限验收应按场景选择最小权限 `debug_*` 账号，不要默认用 `admin` 覆盖权限态、空权限态或 fail-closed 场景。
 
@@ -242,7 +241,7 @@ cd frontend && npm run build && cd ..   # 产物进 frontend/dist
 ./start.sh prod                         # 后端绑 0.0.0.0:8000 托管 dist
 ```
 
-生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权、细粒度 RBAC、系统菜单、租户管理、存量业务路由资源码、基线共享读和评分/筛选/买卖/回测资产可见性；启动前须设 `AI_STOCKS_JWT_SECRET`（可写在 `.env.local`，缺失即启动失败），并显式设置 `AI_STOCKS_ADMIN_PASSWORD`，不要沿用本地开发约定的 `Admin@12345`。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
+生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权、细粒度 RBAC、系统菜单、租户管理、存量业务路由资源码、基线共享读和评分/筛选/买卖/回测资产可见性；启动前必须按 [environment-configuration.md](agent-works/architecture/environment-configuration.md) 完成密钥、管理员初始密码和 PG/Redis 连接配置。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
 
 ### 5.3 首次准备数据（依赖有序）
 
@@ -361,7 +360,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 - **base rate**：分层命中率必减同期全市场无条件命中率得超额，并附样本量。
 - **统一基座**：技术指标是唯一原子定义，买卖/评分/筛选全部引用它组合，不在下游硬编码字段。
 - **分层职责**：`api/` 只做参数校验与响应包装，业务逻辑放 `services/` 与领域引擎；一切读写经 `storage` 点时安全仓库；长耗时操作走 `async_task` 异步任务底座 + 进度。
-- **配置即时生效**：长期基线集中在 [`config/settings.yaml`](config/settings.yaml)；Web 系统设置只覆盖白名单项（数据源、回测成本、认证与审计），落 `app_config` 覆盖层；运行期业务默认值统一读 `get_effective_settings()`，改参不写进代码。
+- **配置即时生效**：环境变量、变量文件、YAML 基线、PG `app_config` 覆盖层与生效优先级统一见 [environment-configuration.md](agent-works/architecture/environment-configuration.md)；新增运行期参数不得硬编码。
 - **默认股票范围要标明入口**：训练随机池走 `MarketRepository.get_universe_asof` 的股票池硬过滤；榜单、筛选、买卖预览和回测候选排序主要走当日 `wide_snapshot` 并叠加 ST/方案/成交约束，不得把训练股票池规则误写成全系统默认。
 - **权限默认拒绝**：新增受控 `/api/**` 先过 `AuthMiddleware`，再挂精确 `require_perm` 或 system 守卫；不要只靠前端菜单、按钮或隐藏路由做安全控制。
 - **租户归属不可前端决定**：用户资产读写必须从请求上下文取 `tenant_id` 和 `owner_user_id`，除明确 system 管理接口外，不接受前端传入归属字段决定数据范围。
@@ -376,6 +375,7 @@ python -m pytest backend/tests/ -q       # 后端单测（先停掉占用 DuckDB
 | [AGENTS.md](AGENTS.md) | AI 协作入口与仓库级稳定约束 |
 | [CLAUDE.md](CLAUDE.md) | Claude Code 薄入口，指向 AGENTS 与 Claude 项目记忆 |
 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) | 登录鉴权、系统菜单、细粒度权限、多租户资产隔离和公开资产可见性的当前技术架构 |
+| [environment-configuration.md](agent-works/architecture/environment-configuration.md) | 环境变量、变量文件、YAML 基线、PG/DuckDB `app_config` 边界和配置生效规则 |
 | [multi-tenant-rbac](agent-works/multi-tenant-rbac/) | 系统菜单、权限、多租户相关需求与落地记录 |
 | [DESIGN.md — 前端设计与布局规范](DESIGN.md) | 前端布局事实源与页面开发契约：可配置布局系统、页面设计闭环、组件/布局维护矩阵、设置抽屉规范；强制规则归 `frontend/src/layout` + 契约测试 |
 | [page-template.md — 新页面开发模板](agent-works/configurable-layout-system/page-template.md) | AI/开发者新建或改造页面时复制使用的页面设计块、维护矩阵、7 个原型骨架和验收清单 |

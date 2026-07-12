@@ -1,10 +1,10 @@
-"""配置读取 / 即时生效 API（T-M7-3，A-09 改参不改码）。
+"""YAML 基线配置读取 / reload API。
 
-- GET  /api/config         查看当前全部配置（含派生路径）。
-- POST /api/config/reload  改完 config/settings.yaml 后重载 → 即时生效（不重启服务）。
+- GET  /api/config         查看 `get_settings()` 的 YAML-only 基线配置。
+- POST /api/config/reload  改完 config/settings.yaml 后清缓存重载。
 
-设计：采用"编辑 YAML + 重载"而非 Web 表单回写，**保留 settings.yaml 里成段的中文注释**
-（注释是重要文档，程序化 dump 会丢失）。前端展示关键可调参数 + 一键重载。
+Web 系统设置写 PostgreSQL app_config 覆盖层，入口在 /api/data/settings；环境变量、
+变量文件和配置覆盖层完整口径见 agent-works/architecture/environment-configuration.md。
 """
 
 from __future__ import annotations

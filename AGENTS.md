@@ -15,7 +15,7 @@
 
 - 后端：`backend/api/` 放 REST 路由，`backend/services/` 放业务编排，`backend/storage/` 管理 DuckDB/PG/Redis 与 DDL，`backend/indicators/`、`screening/`、`scoring/`、`backtest/` 放领域逻辑，测试在 `backend/tests/`。
 - 前端：`frontend/src/views/`、`components/`、`api/`、`layout/`、`stores/`。
-- 配置与运行数据：`config/settings.yaml`、`data/`、`logs/`。
+- 配置与运行数据：`config/settings.yaml`、`data/`、`logs/`；环境变量、变量文件和数据库配置覆盖层见 `agent-works/architecture/environment-configuration.md`。
 - 架构文档：`agent-works/architecture/`；前端设计规范：`DESIGN.md`。
 
 ## 核心契约
@@ -32,7 +32,7 @@
 - RBAC 口径：JWT 不携带角色/权限，权限以 PG 的用户/租户状态与 `perm_ver` 为准；授权变更与 `perm_ver` 自增必须同一 PG 事务提交。`layout:view`、`trade-calendar:view`、`indicator:registry` 是登录基线共享读，有角色的非 system 用户强制注入，无角色 fail-closed。
 - 资产可见性：评分、筛选、买卖方案和回测记录支持 `private|tenant|public`；前端透传 opaque `profile_ref`/`run_ref`，榜单、筛选、回测和评分服务必须解析真实 owner；非 owner 公开资产只读，方案类资产可复制为自己的 private，公开回测只允许复用参数重跑。
 - 长任务：采集、修复、重算等写库任务走 `async_task`；DuckDB 写任务同一时间只允许一个，PG 资产写不受该互斥限制。
-- 配置：策略参数优先来自 `config/settings.yaml` 或 `app_config` 覆盖层，不把临时研究参数写死进代码。
+- 配置：环境变量、变量文件、YAML 基线和 `app_config` 覆盖层以 `agent-works/architecture/environment-configuration.md` 为准，不把临时研究参数写死进代码。
 
 ## 运行命令
 
@@ -68,9 +68,9 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 ## 测试用户
 
 - 页面或接口权限验收需要固定调试账号时，先读 `agent-works/multi-tenant-rbac/test-users.md`，不要凭记忆猜账号、角色、权限或密码。
-- `README.md` 里的 `admin` 是 `default` 租户平台系统管理员，密码由 `.env.local` 中的 `AI_STOCKS_ADMIN_PASSWORD` 控制；它只用于初始化、系统级运维和最高权限验收，不作为普通权限边界测试账号。
+- `README.md` 里的 `admin` 是 `default` 租户平台系统管理员，密码来源和覆盖边界见 `agent-works/architecture/environment-configuration.md`；它只用于初始化、系统级运维和最高权限验收，不作为普通权限边界测试账号。
 - 本地/测试库用 `python -m backend.cli dev-users` 幂等创建或校准调试账号，`python -m backend.cli dev-users --list` 查看当前账号，`--keep-password` 用于保留已有密码。
-- `debug_*` 调试账号密码优先来自 `.env.local` 中的 `AI_STOCKS_TEST_USER_PASSWORD`，本地默认密码只允许用于开发测试；生产、共享公网或不确定环境禁止创建或使用这批账号。
+- `debug_*` 调试账号密码来源和生产禁用规则见 `agent-works/architecture/environment-configuration.md` 与 `agent-works/multi-tenant-rbac/test-users.md`；本地默认密码只允许用于开发测试，生产、共享公网或不确定环境禁止创建或使用这批账号。
 - 页面和接口测试按场景选择最小权限账号验证，不要默认用系统管理员账号覆盖权限态、空权限态或 fail-closed 场景。
 - pytest 继续使用用例内临时用户，不依赖固定调试账号。
 
@@ -86,7 +86,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 - Node.js 建议 20 LTS；前端锁文件为 npm lockfile v3。
 - 后端关键版本：FastAPI `>=0.110`、DuckDB `>=0.10`、PostgreSQL `>=14`、Redis `>=6`、pandas `>=2.2`、pytest `>=8.0`。
 - 前端关键版本：Vue `^3.4`、Vite `^5.2`、TypeScript `^5.4`、Vitest `^1.6`、Element Plus `^2.7`。
-- 本地开发需先启动 PostgreSQL 与 Redis；生产/集成必须设置 `AI_STOCKS_JWT_SECRET`、管理员初始密码和 PG/Redis 连接密钥。
+- 本地开发需先启动 PostgreSQL 与 Redis；生产/集成必须按 `agent-works/architecture/environment-configuration.md` 完成密钥、管理员初始密码和 PG/Redis 连接配置。
 
 ## 编码与测试
 
@@ -100,7 +100,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 
 - 除命令、代码、日志和原文外，面向用户输出使用简体中文。
 - 改代码前先读同类实现并优先复用；偏离既有分层、命名、返回结构、异常、日志或配置方式时说明理由。
-- 最近一次 `git pull` 操作时间：2026-07-12 19:26:01 CST。
+- 最近一次 `git pull` 操作时间：2026-07-12 21:42:39 CST。
 - 技术方案、交互设计或关键业务规则不确定时，先给推荐方案与理由让用户确认。
 - 不在用户未要求时提交或推送；提交信息使用中文语义化风格，例如 `Agent 新增(基础功能): ...`。
 - 不提交 `data/` 本地数据库、`logs/`、个人环境配置或密钥。`prod` 绑定 `0.0.0.0:8000`，公网部署必须配合反向代理、TLS、限流和运维访问控制。

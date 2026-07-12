@@ -232,7 +232,7 @@ function onSubmit() {
       </div>
 
       <footer class="login-brandmeta">
-        <span>沪深市场</span><i />
+        <span>缅A市场</span><i />
         <span>EOD 研究</span><i />
         <span>点时回测</span>
       </footer>
