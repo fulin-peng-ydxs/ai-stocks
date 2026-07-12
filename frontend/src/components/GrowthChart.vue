@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 成长曲线：历次训练评分 + 收益率。盘感训练历史成长回溯用。
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import { useTheme } from '@/composables/useTheme'
 import type { GrowthPoint } from '@/api/training'
@@ -9,6 +9,7 @@ const props = defineProps<{ data: GrowthPoint[] }>()
 const el = ref<HTMLDivElement | null>(null)
 const { isDark } = useTheme()
 let chart: echarts.ECharts | null = null
+let resizeListening = false
 
 const T = computed(() =>
   isDark.value
@@ -67,10 +68,22 @@ function render() {
 }
 
 function resize() { chart?.resize() }
-onMounted(() => { if (el.value) { chart = echarts.init(el.value); render(); window.addEventListener('resize', resize) } })
+function attachResize() {
+  if (resizeListening) return
+  window.addEventListener('resize', resize)
+  resizeListening = true
+}
+function detachResize() {
+  if (!resizeListening) return
+  window.removeEventListener('resize', resize)
+  resizeListening = false
+}
+onMounted(() => { if (el.value) { chart = echarts.init(el.value); render(); attachResize() } })
+onActivated(() => { attachResize(); resize() })
+onDeactivated(detachResize)
 watch(() => props.data, render, { deep: true })
 watch(isDark, render)
-onBeforeUnmount(() => { window.removeEventListener('resize', resize); chart?.dispose(); chart = null })
+onBeforeUnmount(() => { detachResize(); chart?.dispose(); chart = null })
 </script>
 
 <template>

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  collectMenuPaths, firstMenuPath, isRouteAllowed, hasPermission, resolveMenuGuard,
+  activeMenuPath, collectMenuPaths, findMenuLeaf, firstMenuPath, firstPathInMenu,
+  hasPermission, isRouteAllowed, menuContainsPath, resolveMenuGuard,
   SAFE_HOME, type MenuTreeNode,
 } from '@/utils/permission'
 
@@ -33,6 +34,19 @@ describe('firstMenuPath', () => {
   })
   it('空菜单返回空串', () => {
     expect(firstMenuPath([])).toBe('')
+  })
+})
+
+describe('菜单树导航口径', () => {
+  it('详情子路由按最长前缀命中授权叶子', () => {
+    expect(activeMenuPath(MENUS, '/stocks/600000.SH')).toBe('/stocks')
+    expect(findMenuLeaf(MENUS, '/stocks/600000.SH')?.title).toBe('个股行情')
+  })
+
+  it('分组可判断当前路由归属并返回首个可导航页面', () => {
+    expect(menuContainsPath(MENUS[2], '/system/users')).toBe(true)
+    expect(menuContainsPath(MENUS[0], '/system/users')).toBe(false)
+    expect(firstPathInMenu(MENUS[2])).toBe('/system/users')
   })
 })
 

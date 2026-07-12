@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
 import { ElMessage } from 'element-plus'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -450,6 +458,8 @@ onMounted(async () => {
   startTimer()
 })
 
+onActivated(startTimer)
+onDeactivated(stopTimer)
 onBeforeUnmount(stopTimer)
 </script>
 

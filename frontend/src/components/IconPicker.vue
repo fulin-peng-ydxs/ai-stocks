@@ -3,9 +3,8 @@
 // icon 字段存图标名（如 TrendCharts），渲染时按名取组件；不手填字符，从图标库可搜索网格中选。
 // 复用组件：SideMenu/菜单管理页共用同一图标名 → 组件映射，保证选什么就渲染什么。
 import { computed, ref } from 'vue'
-import * as EpIcons from '@element-plus/icons-vue'
 import { ArrowDown } from '@element-plus/icons-vue'
-import type { Component } from 'vue'
+import { MENU_ICON_NAMES, resolveMenuIcon } from '@/utils/menuIcon'
 
 const props = defineProps<{
   modelValue: string | null
@@ -14,20 +13,15 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'update:modelValue', v: string | null): void }>()
 
 // 全部图标名（稳定排序，便于网格展示）
-const ALL_NAMES = Object.keys(EpIcons).sort()
-const iconMap = EpIcons as unknown as Record<string, Component>
-
 const keyword = ref('')
 const visible = ref(false)
 const filtered = computed(() => {
   const q = keyword.value.trim().toLowerCase()
-  if (!q) return ALL_NAMES
-  return ALL_NAMES.filter((n) => n.toLowerCase().includes(q))
+  if (!q) return MENU_ICON_NAMES
+  return MENU_ICON_NAMES.filter((n) => n.toLowerCase().includes(q))
 })
 
-const currentComp = computed<Component | null>(() =>
-  props.modelValue ? (iconMap[props.modelValue] ?? null) : null,
-)
+const currentComp = computed(() => resolveMenuIcon(props.modelValue))
 
 function choose(name: string) {
   emit('update:modelValue', name)
@@ -78,7 +72,7 @@ function clear() {
           :title="name"
           @click="choose(name)"
         >
-          <el-icon :size="18"><component :is="iconMap[name]" /></el-icon>
+          <el-icon :size="18"><component :is="resolveMenuIcon(name)" /></el-icon>
           <span class="ip-cap">{{ name }}</span>
         </div>
         <div v-if="!filtered.length" class="app-empty-inline ip-empty">无匹配图标</div>

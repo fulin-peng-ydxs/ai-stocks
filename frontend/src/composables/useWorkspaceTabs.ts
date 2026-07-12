@@ -1,0 +1,109 @@
+import {
+  cloneVNode,
+  computed,
+  defineComponent,
+  ref,
+  type Component,
+  type PropType,
+  type VNode,
+} from 'vue'
+import type { RouteLocationNormalizedLoaded } from 'vue-router'
+import { findMenuLeaf, type MenuTreeNode } from '@/utils/permission'
+
+export interface WorkspaceTab {
+  key: string
+  path: string
+  title: string
+  cacheName: string
+}
+
+export const WORKSPACE_TAB_LIMIT = 12
+const workspaceTabs = ref<WorkspaceTab[]>([])
+const cacheNames = new Map<string, string>()
+const cacheWrappers = new Map<string, Component>()
+let cacheSequence = 0
+
+const workspaceCacheNames = computed(() => workspaceTabs.value.map((tab) => tab.cacheName))
+
+function cacheNameFor(key: string): string {
+  const existing = cacheNames.get(key)
+  if (existing) return existing
+  const name = `WorkspaceTabView${++cacheSequence}`
+  cacheNames.set(key, name)
+  return name
+}
+
+function releaseCache(key: string) {
+  cacheNames.delete(key)
+  cacheWrappers.delete(key)
+}
+
+function tabTitle(route: RouteLocationNormalizedLoaded, menus: MenuTreeNode[]): string {
+  const leaf = findMenuLeaf(menus, route.path)
+  const routeTitle = typeof route.meta.title === 'string' ? route.meta.title : ''
+  const base = route.path === leaf?.index ? leaf.title : (routeTitle || leaf?.title || '研究页面')
+  const code = typeof route.params.code === 'string' ? route.params.code : ''
+  return code ? `${base} · ${code}` : base
+}
+
+export function visitWorkspaceTab(route: RouteLocationNormalizedLoaded, menus: MenuTreeNode[]) {
+  if (route.meta.fullscreen || route.path === '/') return
+  const next: WorkspaceTab = {
+    key: route.path,
+    path: route.fullPath,
+    title: tabTitle(route, menus),
+    cacheName: cacheNameFor(route.path),
+  }
+  const existing = workspaceTabs.value.findIndex((tab) => tab.key === next.key)
+  if (existing >= 0) {
+    workspaceTabs.value[existing] = { ...next, cacheName: workspaceTabs.value[existing].cacheName }
+    return
+  }
+  if (workspaceTabs.value.length >= WORKSPACE_TAB_LIMIT) {
+    const removed = workspaceTabs.value.shift()
+    if (removed) releaseCache(removed.key)
+  }
+  workspaceTabs.value.push(next)
+}
+
+export function removeWorkspaceTab(key: string, activeKey: string): string | undefined {
+  if (workspaceTabs.value.length <= 1) return undefined
+  const index = workspaceTabs.value.findIndex((tab) => tab.key === key)
+  if (index < 0) return undefined
+  workspaceTabs.value.splice(index, 1)
+  releaseCache(key)
+  if (key !== activeKey) return undefined
+  return workspaceTabs.value[Math.min(index, workspaceTabs.value.length - 1)]?.path
+}
+
+export function resetWorkspaceTabs() {
+  workspaceTabs.value = []
+  cacheNames.clear()
+  cacheWrappers.clear()
+}
+
+/**
+ * 每个标签使用独立具名包装组件，让 KeepAlive.include 能精确淘汰某个路由实例；
+ * 不能直接按页面组件名缓存，否则多个个股详情标签会共享名称且无法单独关闭。
+ */
+export function workspaceViewWrapper(key: string): Component {
+  const existing = cacheWrappers.get(key)
+  if (existing) return existing
+  const name = cacheNameFor(key)
+  const wrapper = defineComponent({
+    name,
+    inheritAttrs: false,
+    props: {
+      view: { type: Object as PropType<VNode>, required: true },
+    },
+    setup(props) {
+      return () => cloneVNode(props.view)
+    },
+  })
+  cacheWrappers.set(key, wrapper)
+  return wrapper
+}
+
+export function useWorkspaceTabs() {
+  return { workspaceTabs, workspaceCacheNames, workspaceViewWrapper }
+}

@@ -214,6 +214,7 @@ Key Characteristics：
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚优先复用 |
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`；默认最多展示 3 个选中标签，溢出时提前折叠；筛选下拉优先复用 |
 | `BrandMark` | `frontend/src/components/BrandMark.vue` | 应用品牌图形与「复盘啦」字标 | 无直接系统组件种类 | 应用外壳、登录页等品牌露出统一复用；禁止在页面内另画私有 logo 或手写第二套字标 |
+| `SideMenu` / `TopNavigation` / `WorkspaceTabs` / `WorkspaceRouteView` / `MenuIcon` | `frontend/src/components/SideMenu.vue`、`frontend/src/components/TopNavigation.vue`、`frontend/src/components/WorkspaceTabs.vue`、`frontend/src/components/WorkspaceRouteView.vue`、`frontend/src/components/MenuIcon.vue` | 应用级菜单树、双层顶栏、保留现场的工作标签页、路由缓存与统一菜单图标渲染 | 无直接系统组件种类 | 菜单统一消费 `/me` 授权树和 `utils/permission.ts` 的路由归属口径；工作页面统一由 `WorkspaceRouteView` 渲染并按标签独立缓存，禁止业务页私建 KeepAlive；关闭标签必须同步移除对应缓存；侧栏、双层顶栏和菜单管理页统一用 `MenuIcon` 消费后端图标名；新增导航模式时复用 `useAppNavigation` 持久化偏好 |
 | `AssetVisibilityTag` / `AssetProfileLabel` / `AssetVisibilityActions` | `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue`、`frontend/src/components/AssetVisibilityActions.vue` | 公开资产来源、可见范围、只读状态、方案名称+版本+归属标签、发布/收回、复制为我的方案和复用参数动作 | 无直接系统组件种类 | 评分、筛选、买卖、回测等公开资产页面必须复用；方案选择/列表入口统一用 `AssetProfileLabel`，消费页包括 `BoardView`、`ScreenView`、`ConfigView` 评分 tab、`ConfigView` 买卖 tab、`BacktestView` |
 | `ConfigGroupForm` | `frontend/src/components/config/ConfigGroupForm.vue` | 系统设置配置组表单 | 无直接系统组件种类 | 动态配置组字段渲染优先复用 |
 | `HelpTip` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpHint.vue` | 页面说明和短提示 | 无直接系统组件种类 | 说明性长文收进提示组件，不在页面堆长文 |
@@ -221,6 +222,9 @@ Key Characteristics：
 ### 应用外壳
 
 - 侧栏宽度固定为 `208px`，顶栏高度 `67px`，主工作区 padding 为 `20px 24px`。
+- 应用提供 `sidebar-tabs` 与 `dual-topbar` 两种导航布局：侧栏模式在内容区上方显示可关闭工作标签；双层顶栏模式把一级菜单放在品牌顶栏、当前一级下的二级菜单放在独立次栏，三级页面由二级菜单下拉承接。
+- 工作标签按路由路径保留页面组件实例、表单筛选与独立滚动位置，最多缓存 12 个；同一页面类型的不同详情路由必须拥有独立缓存身份，关闭标签或超过上限时同步销毁对应实例与滚动记录。
+- 导航布局是独立用户偏好，不与明暗模式或颜色预设绑定；外观抽屉中的主题缩略图只表达色彩和材质，不暗示固定导航结构。
 - `.main` 必须保持 `overflow: hidden` 和 flex 填充；页面滚动由布局系统内部区域承载。
 - 菜单激活态使用主色边线和轻背景，不使用大面积高饱和底色。
 

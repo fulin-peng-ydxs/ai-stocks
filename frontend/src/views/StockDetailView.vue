@@ -26,6 +26,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const route = useRoute()
 const router = useRouter()
+// 工作标签按 path 缓存独立实例；代码固定为该实例创建时的路由，避免停用标签监听全局路由后被其他个股标签串改。
 const code = ref(String(route.params.code))
 const settingsOpen = ref(false)
 
@@ -180,9 +181,8 @@ const tradeEval = ref<TradeEval | null>(null)
 const tradeLoading = ref(false)
 const tradeError = ref('')
 
-// 快速点上/下一个会产生重叠请求：用 AbortController 取消在途 + 防抖只发最终一次
+// 同一详情标签内切换复权或区间时取消旧请求，避免较慢响应覆盖最新数据。
 let reqCtrl: AbortController | null = null
-let navTimer: ReturnType<typeof setTimeout> | null = null
 function isAbort(e: unknown): boolean {
   const c = e as { code?: string; name?: string }
   return c?.code === 'ERR_CANCELED' || c?.name === 'CanceledError'
@@ -230,23 +230,6 @@ async function load() {
     if (reqCtrl === ctrl) loading.value = false  // 仅最新一次负责收尾
   }
 }
-// 上/下一个连点防抖：路由变了立即换页，但数据加载合并到最后一次
-function scheduleLoad() {
-  if (navTimer) clearTimeout(navTimer)
-  navTimer = setTimeout(() => { navTimer = null; load() }, 140)
-}
-
-watch(
-  () => route.params.code,
-  (c) => {
-    if (c) {
-      code.value = String(c)
-      tradeEval.value = null
-      loadStockGroups()
-      scheduleLoad()
-    }
-  },
-)
 watch(viewDays, () => load())
 watch(() => settings.adjustMode, (value) => {
   adjust.value = value || ''
@@ -489,6 +472,7 @@ async function onCollectionVisibleChange(visible: boolean) {
 }
 
 onBeforeUnmount(() => {
+  reqCtrl?.abort()
   if (dropdownSearchTimer) clearTimeout(dropdownSearchTimer)
   detachDropdownScroll()
 })

@@ -28,6 +28,49 @@ export function firstMenuPath(menus: MenuTreeNode[]): string {
   return collectMenuPaths(menus)[0] ?? ''
 }
 
+/** 当前路由命中的授权叶子；详情子路由按最长前缀归属到对应菜单。 */
+export function activeMenuPath(menus: MenuTreeNode[], path: string): string {
+  let best = ''
+  for (const menuPath of collectMenuPaths(menus)) {
+    if (path === menuPath || path.startsWith(menuPath + '/')) {
+      if (menuPath.length > best.length) best = menuPath
+    }
+  }
+  return best || path
+}
+
+/** 节点下首个可导航页面；分组点击和顶栏默认落点统一使用。 */
+export function firstPathInMenu(node: MenuTreeNode): string {
+  if (!node.children?.length) return node.index.startsWith('/') ? node.index : ''
+  for (const child of node.children) {
+    const path = firstPathInMenu(child)
+    if (path) return path
+  }
+  return ''
+}
+
+/** 节点是否包含当前路由，用于侧栏、一级顶栏和二级顶栏共享激活判断。 */
+export function menuContainsPath(node: MenuTreeNode, path: string): boolean {
+  if (!node.children?.length) {
+    return node.index.startsWith('/') && (path === node.index || path.startsWith(node.index + '/'))
+  }
+  return node.children.some((child) => menuContainsPath(child, path))
+}
+
+/** 当前路由对应的叶子节点，用于工作标签页标题回落。 */
+export function findMenuLeaf(menus: MenuTreeNode[], path: string): MenuTreeNode | undefined {
+  let best: MenuTreeNode | undefined
+  for (const node of menus) {
+    if (node.children?.length) {
+      const child = findMenuLeaf(node.children, path)
+      if (child && (!best || child.index.length > best.index.length)) best = child
+    } else if (menuContainsPath(node, path) && (!best || node.index.length > best.index.length)) {
+      best = node
+    }
+  }
+  return best
+}
+
 /**
  * 路由是否放行：system 恒过；否则命中某授权叶子（精确或作为其子路由前缀，如
  * /stocks/600000 命中 /stocks）即放行。allowed 为空（未加载/加载失败）返回 false（fail-closed）。

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { EquityPoint } from '@/api/backtest'
 import { useTheme } from '@/composables/useTheme'
@@ -7,6 +7,7 @@ import { useTheme } from '@/composables/useTheme'
 const props = defineProps<{ points: EquityPoint[]; benchmarkCode: string }>()
 const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
+let resizeListening = false
 const { isDark } = useTheme()
 
 const T = computed(() =>
@@ -74,17 +75,29 @@ function render() {
 function resize() {
   chart?.resize()
 }
+function attachResize() {
+  if (resizeListening) return
+  window.addEventListener('resize', resize)
+  resizeListening = true
+}
+function detachResize() {
+  if (!resizeListening) return
+  window.removeEventListener('resize', resize)
+  resizeListening = false
+}
 onMounted(() => {
   if (el.value) {
     chart = echarts.init(el.value)
     render()
-    window.addEventListener('resize', resize)
+    attachResize()
   }
 })
+onActivated(() => { attachResize(); resize() })
+onDeactivated(detachResize)
 watch(() => props.points, render, { deep: true })
 watch(isDark, render)
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', resize)
+  detachResize()
   chart?.dispose()
   chart = null
 })

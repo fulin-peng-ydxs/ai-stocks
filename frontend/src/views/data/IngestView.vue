@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
@@ -166,7 +166,16 @@ const writeRunning = computed(() =>
 
 // 总耗时：进行中=开始到现在(随 now 每秒刷新)；已结束/人工终止=开始到截止时间(updated_at)。
 const now = ref(Date.now())
-const nowTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
+let nowTimer: number | undefined
+function startNowTimer() {
+  if (nowTimer) return
+  nowTimer = window.setInterval(() => { now.value = Date.now() }, 1000)
+}
+function stopNowTimer() {
+  if (!nowTimer) return
+  window.clearInterval(nowTimer)
+  nowTimer = undefined
+}
 function taskDuration(t: AsyncTask): string {
   if (!t.created_at) return '—'
   const start = Date.parse(t.created_at.slice(0, 19).replace(' ', 'T'))
@@ -284,7 +293,7 @@ async function loadTasks() {
     }
   }
   if (taskTimer) { clearTimeout(taskTimer); taskTimer = undefined }
-  if (after > 0) taskTimer = window.setTimeout(loadTasks, 2000)
+  if (pageActive && after > 0) taskTimer = window.setTimeout(loadTasks, 2000)
 }
 const refreshTasks = loadTasks   // 兼容旧调用名
 async function loadLogs() {
@@ -377,7 +386,10 @@ async function openLogs(id: string) {
 
 function pollLogs(id: string) {
   if (logTimer) clearTimeout(logTimer)
+  logTimer = undefined
+  if (!pageActive || !logDrawer.value) return
   const tick = async () => {
+    if (!pageActive || !logDrawer.value) return
     try {
       logTask.value = await getTask(id)
       const { logs: lines } = await getTaskLogs(id, lastSeq)
@@ -395,20 +407,47 @@ function pollLogs(id: string) {
         return
       }
     } catch { /* 下一拍重试 */ }
-    logTimer = window.setTimeout(tick, 1200)
+    if (pageActive && logDrawer.value) logTimer = window.setTimeout(tick, 1200)
   }
   tick()
 }
 
-function closeLogs() { logDrawer.value = false; if (logTimer) clearTimeout(logTimer) }
-onUnmounted(() => { if (logTimer) clearTimeout(logTimer); if (taskTimer) clearTimeout(taskTimer); clearInterval(nowTimer) })
+function closeLogs() {
+  logDrawer.value = false
+  if (logTimer) clearTimeout(logTimer)
+  logTimer = undefined
+}
+
+let pageActive = false
+let pageInitialized = false
+function stopBackgroundWork() {
+  pageActive = false
+  if (logTimer) clearTimeout(logTimer)
+  if (taskTimer) clearTimeout(taskTimer)
+  logTimer = undefined
+  taskTimer = undefined
+  stopNowTimer()
+}
+
+onActivated(() => {
+  pageActive = true
+  startNowTimer()
+  if (!pageInitialized) return
+  void loadTasks()
+  if (logDrawer.value && logTask.value) pollLogs(logTask.value.id)
+})
+onDeactivated(stopBackgroundWork)
+onUnmounted(stopBackgroundWork)
 onMounted(async () => {
+  pageActive = true
+  startNowTimer()
   optType.value = settings.defaultTaskType
   if (settings.taskStatus === 'active') taskFilter.value.status = 'running'
   else if (settings.taskStatus === 'failed') taskFilter.value.status = 'failed'
   if (settings.logStatus === 'failed') logFilter.value.status = 'failed'
   await load()
   openFromQuery()
+  pageInitialized = true
 })
 </script>
 

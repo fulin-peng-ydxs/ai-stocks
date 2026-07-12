@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
 import { useTheme } from '@/composables/useTheme'
@@ -20,6 +20,7 @@ const props = defineProps<{
 }>()
 const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
+let resizeListening = false
 const { isDark } = useTheme()
 
 // 买卖标记色（刻意避开蜡烛红绿，免混淆）：买=蓝、卖=橙
@@ -279,22 +280,34 @@ function render() {
 function resize() {
   chart?.resize()
 }
+function attachResize() {
+  if (resizeListening) return
+  window.addEventListener('resize', resize)
+  resizeListening = true
+}
+function detachResize() {
+  if (!resizeListening) return
+  window.removeEventListener('resize', resize)
+  resizeListening = false
+}
 
 onMounted(() => {
   if (el.value) {
     chart = echarts.init(el.value)
     render()
     chart.on('globalout', () => { hoverIdx.value = null })
-    window.addEventListener('resize', resize)
+    attachResize()
   }
 })
+onActivated(() => { attachResize(); resize() })
+onDeactivated(detachResize)
 watch(() => props.bars, () => { hoverIdx.value = null; render() }, { deep: true })
 watch(() => props.warmupBars, () => render(), { deep: true })
 watch(() => props.markers, () => render(), { deep: true })
 watch(() => [props.zoomStart, props.zoomEnd], () => render())
 watch(isDark, () => render()) // 主题切换重渲染
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', resize)
+  detachResize()
   chart?.dispose()
   chart = null
 })

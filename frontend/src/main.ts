@@ -10,10 +10,12 @@ import App from './App.vue'
 import router from './router'
 import { permission } from './directives/permission'
 import { initTheme } from './composables/useTheme'
+import { initAppNavigation } from './composables/useAppNavigation'
 import { initLayoutPreset } from './layout'
 
 initTheme() // 挂载前确定主题，避免闪烁
 initLayoutPreset() // 挂载前应用内置预设 token（首屏不闪烁）
+initAppNavigation() // 挂载前恢复导航布局，避免侧栏/顶栏切换闪烁
 
 const app = createApp(App)
 app.use(createPinia())

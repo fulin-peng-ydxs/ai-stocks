@@ -3,6 +3,11 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Calendar, Clock, Refresh } from '@element-plus/icons-vue'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
+import {
+  useAppNavigation,
+  type NavigationMode,
+} from '@/composables/useAppNavigation'
+import { resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { effectivePresetTokens, setPresetOverrides, useLayoutPreset, type LayoutPresetKey } from '@/layout'
 import { listLayoutPresets } from '@/api/layout'
 import {
@@ -18,8 +23,12 @@ import { useAuthStore } from '@/stores/auth'
 import { useTradeDates } from '@/composables/useTradeDates'
 import BrandMark from '@/components/BrandMark.vue'
 import SideMenu from '@/components/SideMenu.vue'
+import TopNavigation from '@/components/TopNavigation.vue'
+import WorkspaceTabs from '@/components/WorkspaceTabs.vue'
+import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 
 const { isDark } = useTheme()
+const { navigationMode, setNavigationMode } = useAppNavigation()
 const { activePresetKey, options: presetOptions, setLayoutPreset } = useLayoutPreset()
 const userDrawerVisible = ref(false)
 const appearanceDrawerVisible = ref(false)
@@ -95,6 +104,14 @@ const themeOptionsWithSwatches = computed(() =>
     preview: themePreviewFor(option.value),
   })),
 )
+const navigationOptions: Array<{
+  value: NavigationMode
+  label: string
+  description: string
+}> = [
+  { value: 'sidebar-tabs', label: '侧栏标签', description: '层级清晰，适合多页面并行研究' },
+  { value: 'dual-topbar', label: '双层顶栏', description: '一级在上，二级与子页紧随其下' },
+]
 
 function formatNumber(value: number | null | undefined): string {
   return typeof value === 'number' ? numberFormatter.format(value) : '—'
@@ -256,6 +273,7 @@ async function onLogout() {
   try {
     await auth.logout()
   } finally {
+    resetWorkspaceTabs()
     loggingOut.value = false
     userDrawerVisible.value = false
     router.push('/login')
@@ -270,7 +288,9 @@ async function onLogout() {
       <div class="topbar-brand">
         <BrandMark variant="shell" :tone="isDark ? 'dark' : 'light'" />
       </div>
-      <div class="topbar-slot" />
+      <div class="topbar-slot">
+        <TopNavigation v-if="navigationMode === 'dual-topbar'" level="primary" />
+      </div>
       <div class="topbar-actions">
         <el-popover
           v-if="canReadDataStatus"
@@ -423,8 +443,10 @@ async function onLogout() {
       </div>
     </el-header>
 
+    <TopNavigation v-if="navigationMode === 'dual-topbar'" level="secondary" />
+
     <el-container class="app-body">
-      <el-aside width="208px" class="aside">
+      <el-aside v-if="navigationMode === 'sidebar-tabs'" width="208px" class="aside">
         <SideMenu />
         <div class="aside-foot">
           <div class="foot-note">本地 EOD · 仅供研究</div>
@@ -432,20 +454,19 @@ async function onLogout() {
       </el-aside>
 
       <el-container class="workspace">
-      <el-main class="main">
-        <div v-if="!shellReady" class="shell-gate">
-          <template v-if="auth.menusStatus === 'error'">
-            <div class="shell-gate-title">权限与菜单加载失败</div>
-            <el-button type="primary" @click="auth.retryMe()">重试</el-button>
-          </template>
-          <template v-else>
-            <div class="shell-gate-title">正在加载权限与菜单…</div>
-          </template>
-        </div>
-        <router-view v-else v-slot="{ Component }">
-          <component :is="Component" :key="route.path" />
-        </router-view>
-      </el-main>
+        <WorkspaceTabs v-if="navigationMode === 'sidebar-tabs' && shellReady" />
+        <el-main class="main">
+          <div v-if="!shellReady" class="shell-gate">
+            <template v-if="auth.menusStatus === 'error'">
+              <div class="shell-gate-title">权限与菜单加载失败</div>
+              <el-button type="primary" @click="auth.retryMe()">重试</el-button>
+            </template>
+            <template v-else>
+              <div class="shell-gate-title">正在加载权限与菜单…</div>
+            </template>
+          </div>
+          <WorkspaceRouteView v-else />
+        </el-main>
       </el-container>
     </el-container>
 
@@ -494,6 +515,40 @@ async function onLogout() {
             </button>
           </div>
 
+          <section class="theme-card navigation-card">
+            <div class="theme-card-head">
+              <div>
+                <div class="theme-card-title">导航布局</div>
+                <div class="theme-card-sub">选择页面之间的组织方式</div>
+              </div>
+            </div>
+
+            <div class="navigation-list" aria-label="导航布局选择">
+              <button
+                v-for="option in navigationOptions"
+                :key="option.value"
+                class="navigation-option"
+                :class="{ 'is-active': navigationMode === option.value }"
+                type="button"
+                :aria-pressed="navigationMode === option.value"
+                @click="setNavigationMode(option.value)"
+              >
+                <span class="navigation-preview" :class="`is-${option.value}`" aria-hidden="true">
+                  <i class="nav-preview-head" />
+                  <i class="nav-preview-rail" />
+                  <i class="nav-preview-sub" />
+                  <i class="nav-preview-tabs"><b /><b /></i>
+                  <i class="nav-preview-content"><b /><b /></i>
+                </span>
+                <span class="navigation-option-copy">
+                  <strong>{{ option.label }}</strong>
+                  <small>{{ option.description }}</small>
+                </span>
+                <span class="theme-option-check" aria-hidden="true">✓</span>
+              </button>
+            </div>
+          </section>
+
           <section class="theme-card">
             <div class="theme-card-head">
               <div>
@@ -524,7 +579,6 @@ async function onLogout() {
                   aria-hidden="true"
                 >
                   <i class="preview-top" />
-                  <i class="preview-side" />
                   <i class="preview-panel"><b /><b /><b /></i>
                 </span>
                 <span class="theme-option-copy">
@@ -574,6 +628,7 @@ async function onLogout() {
 .workspace {
   min-width: 0;
   min-height: 0;
+  flex-direction: column;
   background:
     radial-gradient(720px 380px at 88% -8%, var(--shell-canvas-glow), transparent 72%),
     linear-gradient(135deg, color-mix(in srgb, var(--el-bg-color-page) 96%, white 4%), var(--el-bg-color-page));
@@ -625,6 +680,7 @@ async function onLogout() {
   position: relative;
   z-index: 1;
 }
+.topbar-slot > * { height: 100%; }
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -1185,6 +1241,188 @@ async function onLogout() {
   font-size: 12px;
   color: var(--page-settings-text-muted);
 }
+.navigation-card {
+  padding-top: 2px;
+}
+.navigation-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+.navigation-option {
+  position: relative;
+  min-width: 0;
+  min-height: 142px;
+  padding: 9px;
+  border: 1px solid var(--page-settings-section-border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
+  color: var(--page-settings-text-muted);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px;
+  grid-template-rows: 76px auto;
+  gap: 8px 6px;
+  text-align: left;
+  cursor: pointer;
+  transition: color .18s ease, border-color .18s ease, background-color .18s ease, transform .18s ease;
+}
+.navigation-option:hover {
+  color: var(--page-settings-text);
+  border-color: var(--page-settings-border);
+  transform: translateY(-1px);
+}
+.navigation-option.is-active {
+  color: var(--page-settings-text);
+  border-color: color-mix(in srgb, var(--page-settings-accent) 62%, var(--page-settings-border));
+  background: color-mix(in srgb, var(--page-settings-accent) 7%, var(--page-settings-bg));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--page-settings-shadow) 38%, transparent);
+}
+.navigation-preview {
+  position: relative;
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 76px;
+  overflow: hidden;
+  border: 1px solid var(--page-settings-section-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--page-settings-bg) 84%, var(--page-settings-section-bg));
+}
+.nav-preview-head,
+.nav-preview-rail,
+.nav-preview-sub,
+.nav-preview-tabs,
+.nav-preview-content {
+  position: absolute;
+  display: block;
+}
+.nav-preview-head {
+  inset: 0 0 auto;
+  height: 15px;
+  border-bottom: 1px solid var(--page-settings-section-border);
+  background: color-mix(in srgb, var(--page-settings-section-bg) 80%, transparent);
+}
+.nav-preview-head::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 5px;
+  width: 19px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--page-settings-accent);
+  opacity: .78;
+}
+.nav-preview-rail {
+  left: 0;
+  top: 15px;
+  bottom: 0;
+  width: 29px;
+  border-right: 1px solid var(--page-settings-section-border);
+  background: color-mix(in srgb, var(--page-settings-section-bg) 74%, transparent);
+}
+.nav-preview-rail::before,
+.nav-preview-rail::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--page-settings-text-muted);
+  opacity: .44;
+}
+.nav-preview-rail::before { top: 12px; }
+.nav-preview-rail::after { top: 23px; }
+.nav-preview-sub { display: none; }
+.nav-preview-tabs {
+  left: 29px;
+  right: 0;
+  top: 15px;
+  height: 13px;
+  padding-left: 7px;
+  border-bottom: 1px solid var(--page-settings-section-border);
+}
+.nav-preview-tabs b {
+  display: inline-block;
+  width: 24px;
+  height: 5px;
+  margin: 4px 3px 0 0;
+  border-radius: 3px;
+  background: var(--page-settings-text-muted);
+  opacity: .3;
+}
+.nav-preview-tabs b:first-child { background: var(--page-settings-accent); opacity: .78; }
+.nav-preview-content {
+  left: 39px;
+  right: 9px;
+  top: 37px;
+  bottom: 9px;
+  padding: 7px;
+  border: 1px solid var(--page-settings-section-border);
+  border-radius: 5px;
+}
+.nav-preview-content b {
+  display: block;
+  width: 65%;
+  height: 3px;
+  margin-bottom: 5px;
+  border-radius: 2px;
+  background: var(--page-settings-text-muted);
+  opacity: .28;
+}
+.nav-preview-content b:first-child { width: 42%; background: var(--page-settings-accent); opacity: .68; }
+.navigation-preview.is-dual-topbar .nav-preview-head::after {
+  content: '';
+  position: absolute;
+  left: 36px;
+  right: 8px;
+  top: 5px;
+  height: 4px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, var(--page-settings-text-muted) 0 18px, transparent 18px 26px);
+  opacity: .34;
+}
+.navigation-preview.is-dual-topbar .nav-preview-rail,
+.navigation-preview.is-dual-topbar .nav-preview-tabs { display: none; }
+.navigation-preview.is-dual-topbar .nav-preview-sub {
+  display: block;
+  left: 0;
+  right: 0;
+  top: 15px;
+  height: 14px;
+  border-bottom: 1px solid var(--page-settings-section-border);
+  background: color-mix(in srgb, var(--page-settings-section-bg) 54%, transparent);
+}
+.navigation-preview.is-dual-topbar .nav-preview-sub::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 5px;
+  width: 58px;
+  height: 4px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, var(--page-settings-accent) 0 20px, transparent 20px 27px);
+  opacity: .7;
+}
+.navigation-preview.is-dual-topbar .nav-preview-content {
+  left: 9px;
+  top: 38px;
+}
+.navigation-option-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.navigation-option-copy strong {
+  color: var(--page-settings-text);
+  font-size: 13px;
+}
+.navigation-option-copy small {
+  color: var(--page-settings-text-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
 .theme-list {
   display: flex;
   flex-direction: column;
@@ -1245,30 +1483,9 @@ async function onLogout() {
   border-radius: 3px;
   background: var(--preview-primary);
 }
-.preview-side {
-  position: absolute;
-  left: 0;
-  top: 13px;
-  bottom: 0;
-  width: 25px;
-  background: var(--preview-surface);
-  border-right: 1px solid var(--preview-border);
-}
-.preview-side::before,
-.preview-side::after {
-  content: '';
-  position: absolute;
-  left: 6px;
-  width: 13px;
-  height: 3px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--preview-text) 38%, transparent);
-}
-.preview-side::before { top: 10px; }
-.preview-side::after { top: 20px; }
 .preview-panel {
   position: absolute;
-  left: 33px;
+  left: 7px;
   right: 7px;
   top: 22px;
   bottom: 8px;
@@ -1308,7 +1525,8 @@ async function onLogout() {
   font-size: 11px;
   font-weight: 800;
 }
-.theme-option.is-active .theme-option-check {
+.theme-option.is-active .theme-option-check,
+.navigation-option.is-active .theme-option-check {
   border-color: var(--page-settings-accent);
   background: var(--page-settings-accent);
   color: var(--shell-control-mark);

@@ -4,11 +4,10 @@
 // 菜单是平台级全局唯一源，SideMenu 消费它 + 按角色权限过滤（T15）；功能点是角色授权最小资源单位。
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
-import type { Component } from 'vue'
-import * as EpIcons from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import IconPicker from '@/components/IconPicker.vue'
+import MenuIcon from '@/components/MenuIcon.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -27,12 +26,6 @@ const auth = useAuthStore()
 // 按钮显隐走全局 v-permission；脚本逻辑/表单禁用用共用 hasPermission（system 恒过），口径统一。
 const canMenuUpdate = computed(() => hasPermission(auth.role, auth.permissions, 'menu:update'))
 const canMenuReorder = computed(() => hasPermission(auth.role, auth.permissions, 'menu:reorder'))
-
-// icon 名 → 组件（与 IconPicker/SideMenu 同一图标体系）
-const iconMap = EpIcons as unknown as Record<string, Component>
-function iconComp(name: string | null): Component | null {
-  return name ? (iconMap[name] ?? null) : null
-}
 
 // ── 布局/设置抽屉（本页无业务旋钮，抽屉仅布局段）──
 const menuLayout = getPageLayout('menu-manage')
@@ -403,7 +396,7 @@ onMounted(() => { loadTree() })
             >
               <template #default="{ data }">
                 <span class="mr-tnode">
-                  <el-icon v-if="iconComp(data.icon)" class="mr-ticon"><component :is="iconComp(data.icon)" /></el-icon>
+                  <MenuIcon v-if="data.icon" :name="data.icon" class="mr-ticon" />
                   <span class="mr-tlabel">{{ data.title }}</span>
                   <el-tag size="small" effect="plain" :type="data.type === 'group' ? 'info' : 'primary'" class="mr-ttag">
                     {{ data.type === 'group' ? '分组' : '菜单' }}
@@ -433,7 +426,7 @@ onMounted(() => { loadTree() })
             <div class="mr-detail-bar">
               <div class="mr-detail-title">
                 <div class="mname">
-                  <el-icon v-if="iconComp(activeMenu.icon)" class="mr-ticon"><component :is="iconComp(activeMenu.icon)" /></el-icon>
+                  <MenuIcon v-if="activeMenu.icon" :name="activeMenu.icon" class="mr-ticon" />
                   {{ activeMenu.title }}
                 </div>
                 <div class="mmeta">

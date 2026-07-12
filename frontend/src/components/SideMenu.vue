@@ -6,25 +6,14 @@ import { useRoute } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
 import SideMenuItem from './SideMenuItem.vue'
 import { useAuthStore } from '@/stores/auth'
-import type { MenuTreeNode } from '@/utils/permission'
+import { activeMenuPath, type MenuTreeNode } from '@/utils/permission'
 
 const route = useRoute()
 const auth = useAuthStore()
 
 const menus = computed<MenuTreeNode[]>(() => auth.menus)
 
-// 子路由（如 /stocks/600000.SH、/data/*、/system/layout/*）高亮到最近的授权叶子。
-// 从菜单叶子路径中取「当前路径精确匹配或作为前缀」里最长的一个，避免硬编码路由前缀。
-const activeMenu = computed(() => {
-  const leaves = auth.menuRoutePaths
-  let best = ''
-  for (const p of leaves) {
-    if (route.path === p || route.path.startsWith(p + '/')) {
-      if (p.length > best.length) best = p
-    }
-  }
-  return best || route.path
-})
+const activeMenu = computed(() => activeMenuPath(menus.value, route.path))
 
 // 默认只展开当前路由所在的分组链（初次挂载算一次，之后由 el-menu 维护）。
 function findOpenTrail(nodes: MenuTreeNode[], target: string, trail: string[] = []): string[] {

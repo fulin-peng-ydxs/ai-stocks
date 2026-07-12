@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import CandleChart from '@/components/CandleChart.vue'
 import EquityChart from '@/components/EquityChart.vue'
@@ -299,11 +308,25 @@ function onKey(e: KeyboardEvent) {
   else if (e.key.toLowerCase() === 's' && (round.value?.pos_hands ?? 0) > 0) doSell()
 }
 
-onMounted(async () => {
+let keyListening = false
+function attachKeyboard() {
+  if (keyListening) return
   window.addEventListener('keydown', onKey)
+  keyListening = true
+}
+function detachKeyboard() {
+  if (!keyListening) return
+  window.removeEventListener('keydown', onKey)
+  keyListening = false
+}
+
+onMounted(async () => {
+  attachKeyboard()
   await Promise.all([loadHistory(), loadGrowth()])
 })
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+onActivated(attachKeyboard)
+onDeactivated(detachKeyboard)
+onBeforeUnmount(detachKeyboard)
 </script>
 
 <template>
