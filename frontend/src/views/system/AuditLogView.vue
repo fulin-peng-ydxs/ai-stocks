@@ -15,6 +15,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import { getAuditDetail, getAuditSummary, listAuditLogs, type AuditLog, type AuditQuery, type AuditSummary } from '@/api/audit'
@@ -640,7 +641,7 @@ onBeforeUnmount(stopTimer)
     </template>
 
     <template #overlays>
-      <el-drawer v-model="detailOpen" title="审计详情" size="520px" class="audit-detail-drawer">
+      <PageDrawer v-model="detailOpen" title="审计详情" size="520px" class="audit-detail-drawer">
         <div v-loading="detailLoading" class="detail-body">
           <AppStateBlock
             v-if="detailError"
@@ -718,7 +719,7 @@ onBeforeUnmount(stopTimer)
         <template #footer>
           <el-button @click="detailOpen = false">关闭</el-button>
         </template>
-      </el-drawer>
+      </PageDrawer>
 
       <PageSettingsDrawer
         v-model="settingsOpen"

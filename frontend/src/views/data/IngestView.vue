@@ -13,6 +13,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -745,8 +746,8 @@ onMounted(async () => {
     </el-dialog>
 
     <!-- 实时日志抽屉 -->
-    <el-drawer v-model="logDrawer" :title="logTask ? `${TASK_LABEL[logTask.task_type] ?? logTask.task_type} · 实时日志` : '实时日志'"
-               size="46%" class="log-drawer" @close="closeLogs">
+    <PageDrawer v-model="logDrawer" :title="logTask ? `${TASK_LABEL[logTask.task_type] ?? logTask.task_type} · 实时日志` : '实时日志'"
+                size="46%" class="log-drawer" @close="closeLogs">
       <div v-if="logTask" class="log-meta">
         <el-tag :type="taskStatusType(logTask)" size="small" effect="dark">{{ taskStatusLabel(logTask) }}</el-tag>
         <span class="lm-msg">{{ logTask.message }}</span>
@@ -761,7 +762,7 @@ onMounted(async () => {
         </div>
         <div v-if="!logs.length" class="app-empty-inline">暂无日志…</div>
       </div>
-    </el-drawer>
+    </PageDrawer>
 
     <PageSettingsDrawer
       v-model="settingsOpen"
@@ -876,7 +877,7 @@ onMounted(async () => {
 }
 </style>
 
-<!-- el-drawer 经 teleport 挂到 body，scoped 作用域属性不会带到抽屉根，
+<!-- PageDrawer 经 teleport 挂到 LayoutHost 内容区，scoped 作用域属性不会带到抽屉根，
      故用非 scoped 块（.log-drawer 类名唯一，不污染全局）让抽屉正文成为 flex 列：
      meta 固定 + 日志区填满并内部滚动，meta 行换行也不再错位/裁切 -->
 <style>

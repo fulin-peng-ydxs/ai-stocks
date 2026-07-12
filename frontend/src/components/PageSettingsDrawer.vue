@@ -5,6 +5,7 @@ import type { LayoutConfigLayer } from '@/layout/merge'
 import { getPageEntry } from '@/layout/pageRegistry'
 import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
+import PageDrawer from './PageDrawer.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
 
 /** 抽屉自动渲染所需的配置访问器（即 useRemoteLayoutConfig 的返回子集）。 */
@@ -72,7 +73,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
 </script>
 
 <template>
-  <el-drawer
+  <PageDrawer
     :model-value="props.modelValue"
     @update:model-value="(value: boolean) => emit('update:modelValue', value)"
     direction="rtl"
@@ -167,7 +168,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
         <button class="ps-reset" type="button" @click="emit('reset')">恢复默认</button>
       </footer>
     </div>
-  </el-drawer>
+  </PageDrawer>
 </template>
 
 <style scoped>

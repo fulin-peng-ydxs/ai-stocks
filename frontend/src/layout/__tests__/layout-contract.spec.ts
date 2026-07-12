@@ -30,6 +30,7 @@ const VIEWPORT_HEIGHT =
 /** 模板里真正手写布局契约类（排除注释/文档里的 .v-page 提及）。 */
 const HANDWRITTEN_LAYOUT = /class="[^"]*\bv-(?:page|grow|scroll)\b/
 const QUERY_BUTTON = /<el-button\b([^>]*)>\s*查询\s*<\/el-button>/gs
+const VIEWPORT_DRAWER = /<(?:el-drawer|ElDrawer)\b/
 
 function vueFiles(dir: string): string[] {
   const out: string[] = []
@@ -92,5 +93,15 @@ describe('布局契约守卫（M6）', () => {
       }
     }
     expect(offenders, `查询是筛选栏主命令，应使用 <el-button type="primary">：\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('页面抽屉必须使用 PageDrawer，不得覆盖应用顶栏与导航', () => {
+    const offenders = files
+      .filter((file) => VIEWPORT_DRAWER.test(readFileSync(file, 'utf8')))
+      .map(rel)
+    expect(
+      offenders,
+      `以下页面直接使用了 <el-drawer>，应改用页面边界组件 <PageDrawer>：\n${offenders.join('\n')}`,
+    ).toEqual([])
   })
 })

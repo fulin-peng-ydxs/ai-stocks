@@ -16,6 +16,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import LayoutComponentPreview from '@/layout/components/LayoutComponentPreview.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpHint from '@/components/HelpHint.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 import {
   COMPONENT_CATALOG,
   getPageLayout,
@@ -308,7 +309,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
     </template>
 
     <template #overlays>
-      <el-drawer v-model="detailVisible" :title="selected ? `${selected.label}（${selected.kind}）` : '组件详情'" size="560px">
+      <PageDrawer v-model="detailVisible" :title="selected ? `${selected.label}（${selected.kind}）` : '组件详情'" size="560px">
         <div v-if="selected" class="detail-body">
           <div class="detail-block">
             <div class="db-head">
@@ -409,7 +410,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
             title="边界：系统组件库只管理组件目录元信息与受控默认策略，不新增运行时优先级层（运行时仍为 default < preset < page < user）。"
           />
         </div>
-      </el-drawer>
+      </PageDrawer>
     </template>
   </LayoutHost>
 </template>

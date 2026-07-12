@@ -204,6 +204,7 @@ Key Characteristics：
 | 真实组件 | 路径 | 用途 | 系统组件关系 | 使用规则 |
 |---|---|---|---|---|
 | `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；读取 `size`、`bodyScroll`、`collapsibleSections`、`defaultCollapsed` | registry 页面统一使用，禁止页面另写第二套设置抽屉 |
+| `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉边界组件 | 无直接系统组件种类 | 页面打开的设置、详情、日志抽屉统一挂载到 `LayoutHost` 内容区；禁止直接覆盖应用顶栏与导航 |
 | `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 消费 `pageRegistry.consumedComponentFields`、`componentMeta` 和 `COMPONENT_FIELD_DEFS` | 设置抽屉 user 层与页面布局编辑器 page 层共用 |
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉和配置面板的分组容器 | 无直接系统组件种类 | 抽屉/设置面板分组优先复用 |
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用 |
@@ -296,7 +297,8 @@ Key Characteristics：
 ### 弹窗与抽屉
 
 - 弹窗/抽屉必须放在 `#overlays` 插槽。
-- Element Plus teleport 到 body 的内部样式必须使用唯一全局类或 `:global`，不要依赖 scoped 深层样式碰运气。
+- 页面触发的抽屉必须使用 `PageDrawer`，遮罩和抽屉高度限制在当前 `LayoutHost` 内容区；只有应用顶栏触发的用户中心、外观等全局抽屉可以使用视口级浮层。
+- Element Plus teleport 生成的浮层 DOM 必须使用唯一全局类或 `:global` 定位内部样式，不要依赖 scoped 深层样式碰运气。
 - 普通 modal 用于确认、短表单、少字段编辑；宽表、长流程、跨模块设置优先 drawer、全屏弹窗或独立页面。
 - 抽屉正文可以内滚，但外层页面不能跟随滚动；footer 或关键操作应保持稳定位置。
 

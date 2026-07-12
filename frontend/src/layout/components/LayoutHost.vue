@@ -7,14 +7,18 @@
  * 不再手写 .v-page/.v-grow/100vh 等类与高度——CSS/DOM 层红线（规范 §9）由本宿主统一兜住。
  * 开发期对传入布局做 assertLayout，不合规立即抛错（生产构建自动剔除该断言）。
  */
-import { computed } from 'vue'
+import { computed, provide, ref } from 'vue'
 import { COMPONENT_CATALOG } from '../components'
+import { PAGE_OVERLAY_TARGET } from '../pageOverlay'
 import type { PageLayout, ScrollOwnership, SlotSpec } from '../schema'
 import { assertLayout } from '../validator'
 import VColumns from './VColumns.vue'
 import VMixedGrow from './VMixedGrow.vue'
 
 const props = defineProps<{ layout: PageLayout }>()
+const pageRoot = ref<HTMLElement | null>(null)
+
+provide(PAGE_OVERLAY_TARGET, pageRoot)
 
 if (import.meta.env.DEV) assertLayout(props.layout)
 
@@ -38,7 +42,7 @@ const mainStrategy = computed<MainStrategy>(() => {
 </script>
 
 <template>
-  <div class="v-page" :class="`lh-density-${layout.density}`">
+  <div ref="pageRoot" class="v-page" :class="`lh-density-${layout.density}`">
     <slot name="action" />
     <div v-if="mainStrategy === 'grow'" class="v-grow">
       <slot name="main" />

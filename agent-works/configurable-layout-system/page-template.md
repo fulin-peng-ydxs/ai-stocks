@@ -16,7 +16,7 @@
 2. 把推荐原型 + 理由告诉用户，确认后开发。
 3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；确需新增时先判断是“普通真实组件”还是“需要进入布局配置的系统组件种类”。
 4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
-5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。
+5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。页面业务抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`，页面禁止直接使用 `el-drawer`。
 6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；若新增系统组件种类或配置字段，同步 `COMPONENT_CATALOG`、schema、后端规则、pageRegistry 消费和配置中心验证。
 7. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
 8. `npm run build`（含 vue-tsc 类型检查；改 `frontend/src` 后必构建）。
@@ -70,6 +70,15 @@
 | 组件设置 |  | preset/page/user | COMPONENT_FIELD_DEFS |  |
 | 页面记忆 |  | usePageSettings | 业务选项 |  |
 
+### 浮层设计
+- 触发来源：页面 / 应用顶栏
+- 浮层类型：dialog / 页面业务抽屉 / 页面设置抽屉 / 视口级全局抽屉
+- 组件选型：`el-dialog` / `PageDrawer` / `PageSettingsDrawer` / 应用外壳 `el-drawer`
+- 承载边界：当前 `LayoutHost` 内容区 / 整个视口
+- 滚动归属：抽屉正文内滚，页面不跟随滚动
+- 关闭策略：关闭按钮 / 遮罩 / Esc / 完成动作后关闭
+- Teleport 样式入口：唯一全局类或 `:global`
+
 ### 复用与新增判断
 - 复用已有布局：
 - 复用已有组件：
@@ -111,6 +120,7 @@
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段表 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
 | 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑 | `pageRegistry.spec.ts`、页面交互验证 |
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
+| 页面抽屉 | `#overlays`、`PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | `PageDrawer.spec.ts`、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 
 新增可配置能力必须同时具备三个事实源：组件能力事实源（`COMPONENT_CATALOG`）、字段配置事实源（`COMPONENT_FIELD_DEFS`）、页面消费事实源（`pageRegistry.consumedComponentFields` / `componentMeta`）。禁止新增页面不读取的“假配置”；禁止绕过 `LayoutHost`、绕过 `pageRegistry` 或另建并行配置体系。
@@ -156,6 +166,26 @@ const { effective, knobs: layoutKnobs, valueOf, sourceOf, setKnob } = useLayoutC
 
 ## 6. 模板骨架
 
+### 6.1 抽屉选型
+
+| 触发位置与用途 | 使用组件 | 覆盖范围 | 规则 |
+|---|---|---|---|
+| 页面内业务详情、日志、长流程 | `PageDrawer` | 当前 `LayoutHost` 内容区 | 放在 `#overlays`；正文内滚；不得遮挡应用顶栏、导航和工作标签 |
+| 页面右上角设置入口 | `PageSettingsDrawer` | 当前 `LayoutHost` 内容区 | 内部复用 `PageDrawer`；固定承载布局、组件设置和业务选项 |
+| 应用顶栏的用户中心、外观等全局能力 | 应用外壳中的 `el-drawer` | 整个视口 | 仅允许在 `App.vue` 等应用外壳使用，不属于业务页面模板 |
+
+组件关系：
+
+```text
+PageSettingsDrawer
+└── PageDrawer
+    └── el-drawer
+```
+
+`PageDrawer` 负责页面边界、遮罩、挂载位置和通用插槽；`PageSettingsDrawer` 负责页面设置的固定内容结构。二者不是并列替代关系。
+
+### 6.2 页面骨架
+
 ```vue
 <template>
   <LayoutHost :layout="effective">
@@ -163,9 +193,20 @@ const { effective, knobs: layoutKnobs, valueOf, sourceOf, setKnob } = useLayoutC
     <template #main>   <!-- 主表/主图/主列表 --> </template>
     <template #footer> <!-- 可选：固定底部批量条/购物车条（选择跨页累积）；纯渲染槽，不入 schema --> </template>
     <template #overlays>
-      <!-- el-dialog / el-drawer 放这里；给唯一自定义类，针对库内部元素的样式放非 scoped <style> -->
-      <PageSettingsDrawer>
-        <LayoutSettingsSection :knobs="layoutKnobs" :value-of="valueOf" :source-of="sourceOf" :set="setKnob" />
+      <PageDrawer v-model="detailOpen" title="业务详情" class="my-detail-drawer">
+        <!-- 页面业务详情；长内容在抽屉正文内滚 -->
+      </PageDrawer>
+
+      <PageSettingsDrawer
+        v-model="settingsOpen"
+        title="页面名称"
+        :page-key="pageKey"
+        :config="drawerConfig"
+        @reset="resetPageSettings(); resetLayout()"
+      >
+        <template #business>
+          <!-- 页面记忆或业务偏好 -->
+        </template>
       </PageSettingsDrawer>
     </template>
   </LayoutHost>
@@ -173,11 +214,13 @@ const { effective, knobs: layoutKnobs, valueOf, sourceOf, setKnob } = useLayoutC
 ```
 
 > 多组件主区（mixed/columns）按 `slot.id` 具名放置：`<template #<slotId>>…</template>`。参考端到端样板 `frontend/src/views/BoardView.vue`。
+> `el-dialog` 仍可放在 `#overlays`；页面抽屉不得用 `el-drawer` 替代 `PageDrawer`。Teleport 生成的内部 DOM 样式使用唯一全局类或 `:global`。
 
 ## 7. 验收红线（机制性强制，违反则 `npm test` 失败）
 
 - 不得新增视口硬编码高度（`height:/min-height: …vh` 或 `calc(…vh)`）——`layout-contract.spec.ts` 扫描 `src/views` 拦截。`max-height: …vh` 仅限弹层安全上限。
 - 新页面不得绕过 `LayoutHost` 手写 `.v-page/.v-grow/.v-scroll`——契约测试拦截（存量白名单仅供迁移过渡）。
+- 页面源码不得直接使用 `<el-drawer>`；业务抽屉必须使用 `PageDrawer`，页面设置必须使用 `PageSettingsDrawer`——`layout-contract.spec.ts` 扫描拦截。
 - 不得使用未登记组件种类——`validateLayout` 拦截。
 - 不得把页面业务结构放进用户级配置；不得把不可重排的大表放进多列重排——`validateLayout` 拦截。
 - 列表交互：分页/排序走服务端、筛选变更自动触发、多选跨页累积（见 [DESIGN.md](../../DESIGN.md) 交互规则）。

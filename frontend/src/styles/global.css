@@ -96,6 +96,7 @@ body {
         长内容区挂 .v-scroll。固定区（标题/筛选/操作栏/分页）无需额外类。 */
 .v-page {
   height: 100%;
+  position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;

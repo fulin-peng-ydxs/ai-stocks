@@ -1607,19 +1607,15 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
 }
 .sys-head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   flex: 0 0 auto;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 4px 0 12px;
-  background: var(--el-bg-color-page);
+  padding: 0;
 }
 .sys-summary {
   min-width: 0;
@@ -1633,7 +1629,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   line-height: 1.4;
 }
 .sys-summary span {
-  margin-top: 3px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
