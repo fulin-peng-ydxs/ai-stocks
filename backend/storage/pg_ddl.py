@@ -599,6 +599,7 @@ CREATE TABLE IF NOT EXISTS dict_item (
     type_code  TEXT NOT NULL REFERENCES dict_type(code) ON DELETE RESTRICT,
     code       TEXT NOT NULL,
     label      TEXT NOT NULL,
+    color      TEXT,
     enabled    BOOLEAN NOT NULL DEFAULT TRUE,
     sort       INTEGER NOT NULL DEFAULT 100,
     remark     TEXT,
@@ -878,6 +879,7 @@ _STAGE4_BUSINESS_GRANTS_MARKER = "migration.stage4_business_grants_v2"
 _STAGE5_PLATFORM_CAPABILITIES_MARKER = "migration.stage5_platform_capabilities_v1"
 _STAGE6_ASSET_VISIBILITY_MARKER = "migration.stage6_asset_visibility_v1"
 _TENANT_ADMIN_AUDIT_REVOKE_MARKER = "migration.tenant_admin_audit_default_revoke_v1"
+_DICT_ITEM_COLOR_BACKFILL_MARKER = "migration.dict_item_color_defaults_v1"
 
 _STAGE5_APP_CONFIG_DEFAULTS: tuple[tuple[str, str], ...] = (
     ("auth.require_email_code", "true"),
@@ -894,28 +896,28 @@ _SEED_DICT_TYPES: tuple[tuple[str, str, int, str], ...] = (
     ("audit_status", "审计状态", 50, "审计日志处理状态"),
 )
 
-_SEED_DICT_ITEMS: tuple[tuple[str, str, str, int], ...] = (
-    ("role_type", ROLE_SYSTEM, "系统管理员", 10),
-    ("role_type", ROLE_TENANT_ADMIN, "租户管理员", 20),
-    ("role_type", ROLE_NORMAL, "普通用户", 30),
-    ("role_type", ROLE_PAID, "付费用户", 40),
-    ("user_status", "active", "启用", 10),
-    ("user_status", "disabled", "停用", 20),
-    ("user_status", "locked", "锁定", 30),
-    ("audit_event_type", "api", "接口", 10),
-    ("audit_event_type", "task", "任务", 20),
-    ("audit_event_type", "security", "安全", 30),
-    ("audit_event_type", "rbac", "权限", 40),
-    ("audit_event_type", "config", "配置", 50),
-    ("audit_event_type", "dict", "字典", 60),
-    ("audit_result", "success", "成功", 10),
-    ("audit_result", "failed", "失败", 20),
-    ("audit_result", "denied", "拒绝", 30),
-    ("audit_status", "completed", "完成", 10),
-    ("audit_status", "running", "处理中", 20),
-    ("audit_status", "failed", "异常", 30),
-    ("audit_status", "blocked", "已阻断", 40),
-    ("audit_status", "skipped", "已跳过", 50),
+_SEED_DICT_ITEMS: tuple[tuple[str, str, str, int, str], ...] = (
+    ("role_type", ROLE_SYSTEM, "系统管理员", 10, "#F56C6C"),
+    ("role_type", ROLE_TENANT_ADMIN, "租户管理员", 20, "#409EFF"),
+    ("role_type", ROLE_NORMAL, "普通用户", 30, "#67C23A"),
+    ("role_type", ROLE_PAID, "付费用户", 40, "#E6A23C"),
+    ("user_status", "active", "启用", 10, "#67C23A"),
+    ("user_status", "disabled", "停用", 20, "#909399"),
+    ("user_status", "locked", "锁定", 30, "#F56C6C"),
+    ("audit_event_type", "api", "接口", 10, "#67C23A"),
+    ("audit_event_type", "task", "任务", 20, "#909399"),
+    ("audit_event_type", "security", "安全", 30, "#F56C6C"),
+    ("audit_event_type", "rbac", "权限", 40, "#67C23A"),
+    ("audit_event_type", "config", "配置", 50, "#67C23A"),
+    ("audit_event_type", "dict", "字典", 60, "#67C23A"),
+    ("audit_result", "success", "成功", 10, "#67C23A"),
+    ("audit_result", "failed", "失败", 20, "#F56C6C"),
+    ("audit_result", "denied", "拒绝", 30, "#F56C6C"),
+    ("audit_status", "completed", "完成", 10, "#67C23A"),
+    ("audit_status", "running", "处理中", 20, "#E6A23C"),
+    ("audit_status", "failed", "异常", 30, "#F56C6C"),
+    ("audit_status", "blocked", "已阻断", 40, "#909399"),
+    ("audit_status", "skipped", "已跳过", 50, "#909399"),
 )
 
 
@@ -939,6 +941,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         client.execute(idx_sql)
     for idx_sql in _STAGE5_INDEXES:
         client.execute(idx_sql)
+    _upgrade_dict_item_color(client)
     _upgrade_score_profile_visibility(client)
     _upgrade_stage6_asset_visibility(client)
     # layout 主键以 user_id 打头，补归属索引便于按 owner 统计；其余表复合主键已覆盖归属查询
@@ -1042,6 +1045,26 @@ def _upgrade_stage6_asset_visibility(client: PostgresClient) -> None:
         "ADD COLUMN IF NOT EXISTS changes JSONB NOT NULL DEFAULT '[]'::jsonb")
     for idx_sql in _STAGE6_VISIBILITY_INDEXES:
         client.execute(idx_sql)
+
+
+def _upgrade_dict_item_color(client: PostgresClient) -> None:
+    """补齐字典项颜色列，并仅首次为内置字典项填充默认色。"""
+    client.execute("ALTER TABLE dict_item ADD COLUMN IF NOT EXISTS color TEXT")
+    marker = client.query_df(
+        "SELECT 1 FROM app_config WHERE key=%s", [_DICT_ITEM_COLOR_BACKFILL_MARKER])
+    if not marker.empty:
+        return
+    for type_code, code, _label, _sort, color in _SEED_DICT_ITEMS:
+        client.execute(
+            "UPDATE dict_item SET color=%s "
+            "WHERE type_code=%s AND code=%s AND color IS NULL",
+            [color, type_code, code],
+        )
+    client.execute(
+        "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+        "ON CONFLICT (key) DO NOTHING",
+        [_DICT_ITEM_COLOR_BACKFILL_MARKER, '{"applied":true}'],
+    )
 
 
 def _resolve_admin_password() -> tuple[str, bool]:
@@ -1302,12 +1325,12 @@ def seed_stage5_platform_capabilities(client: PostgresClient | None = None) -> N
             "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (code) DO NOTHING",
             [code, code, name, sort, remark],
         )
-    for type_code, code, label, sort in _SEED_DICT_ITEMS:
+    for type_code, code, label, sort, color in _SEED_DICT_ITEMS:
         item_id = f"{type_code}:{code}"
         client.execute(
-            "INSERT INTO dict_item (id, type_code, code, label, sort) "
-            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (type_code, code) DO NOTHING",
-            [item_id, type_code, code, label, sort],
+            "INSERT INTO dict_item (id, type_code, code, label, sort, color) "
+            "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (type_code, code) DO NOTHING",
+            [item_id, type_code, code, label, sort, color],
         )
     _backfill_stage5_platform_grants(client)
 

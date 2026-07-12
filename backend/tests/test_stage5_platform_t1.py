@@ -130,7 +130,7 @@ def test_stage5_tables_indexes_and_defaults_seeded(pg, app_cfg):
     dict_types = set(pg.query_df("SELECT code FROM dict_type")["code"])
     assert {t[0] for t in _SEED_DICT_TYPES} <= dict_types
     items = set(pg.query_df("SELECT type_code || ':' || code AS k FROM dict_item")["k"])
-    assert {f"{type_code}:{code}" for type_code, code, _label, _sort in _SEED_DICT_ITEMS} <= items
+    assert {f"{type_code}:{code}" for type_code, code, _label, _sort, _color in _SEED_DICT_ITEMS} <= items
 
     fk = pg.query_df(
         "SELECT confdeltype FROM pg_constraint "

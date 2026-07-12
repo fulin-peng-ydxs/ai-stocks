@@ -16,11 +16,13 @@ import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
+import { usePublicDictItems } from '@/composables/usePublicDictItems'
 import { useAuthStore } from '@/stores/auth'
 import {
   listTenants, createTenant, updateTenant, setTenantStatus, deleteTenant, type Tenant,
 } from '@/api/tenant'
 import { listUsers, type AdminUser } from '@/api/user'
+import { dictItemLabel, dictTagStyleByCode } from '@/utils/dictColor'
 
 // 默认/平台租户 id：不可停用、不可删除（与后端 pg_ddl.DEFAULT_TENANT_ID 一致）。
 const DEFAULT_TENANT_ID = 'default'
@@ -76,7 +78,21 @@ const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(ty
 
 const STATUS_TAG: Record<string, { type: 'success' | 'danger'; label: string }> = {
   active: { type: 'success', label: '启用' },
-  disabled: { type: 'danger', label: '已停用' },
+  disabled: { type: 'danger', label: '停用' },
+}
+const { items: userStatusDictItems, load: loadUserStatusDictItems } = usePublicDictItems('user_status')
+const TENANT_STATUS_CODES = ['active', 'disabled'] as const
+const tenantStatusOptions = computed(() => TENANT_STATUS_CODES.map((code) => ({
+  code,
+  label: statusLabel(code),
+})))
+
+function statusLabel(code: string): string {
+  return dictItemLabel(userStatusDictItems.value, code, STATUS_TAG[code]?.label ?? code)
+}
+
+function statusTagStyle(code: string) {
+  return dictTagStyleByCode(userStatusDictItems.value, code)
 }
 
 async function load() {
@@ -184,6 +200,7 @@ async function save() {
 
 onMounted(async () => {
   filters.value.status = settings.defaultStatus === 'active' ? 'active' : ''
+  void loadUserStatusDictItems()
   await load()
 })
 watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'active' ? 'active' : '' })
@@ -210,8 +227,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 
         <AppControlRow class="filter-bar">
           <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
-            <el-option label="启用" value="active" />
-            <el-option label="已停用" value="disabled" />
+            <el-option v-for="item in tenantStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
           </el-select>
           <el-input v-model="filters.q" placeholder="搜索租户名 / ID" clearable style="width: 220px"
                     @keyup.enter="search" @clear="search" />
@@ -255,8 +271,8 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-table-column>
           <el-table-column label="状态" width="92">
             <template #default="{ row }">
-              <el-tag :type="STATUS_TAG[row.status]?.type ?? 'info'" size="small" effect="plain">
-                {{ STATUS_TAG[row.status]?.label ?? row.status }}
+              <el-tag :type="STATUS_TAG[row.status]?.type ?? 'info'" :style="statusTagStyle(row.status)" size="small" effect="plain">
+                {{ statusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -306,8 +322,9 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-form-item>
           <el-form-item v-if="!isEdit" label="状态">
             <el-radio-group v-model="form.status">
-              <el-radio-button value="active">启用</el-radio-button>
-              <el-radio-button value="disabled">停用</el-radio-button>
+              <el-radio-button v-for="item in tenantStatusOptions" :key="item.code" :value="item.code">
+                {{ item.label }}
+              </el-radio-button>
             </el-radio-group>
           </el-form-item>
         </el-form>

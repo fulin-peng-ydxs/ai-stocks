@@ -77,9 +77,9 @@ const row = {
 
 function mockHappyApis() {
   ;(dictApi.getPublicDictItems as ReturnType<typeof vi.fn>)
-    .mockResolvedValueOnce({ items: [{ code: 'rbac', label: '权限' }], fallback: false, version: 'v1', type_code: 'audit_event_type' })
-    .mockResolvedValueOnce({ items: [{ code: 'success', label: '成功' }], fallback: false, version: 'v1', type_code: 'audit_result' })
-    .mockResolvedValueOnce({ items: [{ code: 'completed', label: '完成' }], fallback: false, version: 'v1', type_code: 'audit_status' })
+    .mockResolvedValueOnce({ items: [{ code: 'rbac', label: '权限', color: '#67C23A' }], fallback: false, version: 'v1', type_code: 'audit_event_type' })
+    .mockResolvedValueOnce({ items: [{ code: 'success', label: '成功', color: '#67C23A' }], fallback: false, version: 'v1', type_code: 'audit_result' })
+    .mockResolvedValueOnce({ items: [{ code: 'completed', label: '完成', color: '#409EFF' }], fallback: false, version: 'v1', type_code: 'audit_status' })
   ;(auditApi.listAuditLogs as ReturnType<typeof vi.fn>).mockResolvedValue({
     list: [row],
     total: 1,
@@ -148,6 +148,7 @@ describe('AuditLogView', () => {
       sort_by: 'event_time',
       sort_order: 'desc',
     }))
+    expect(wrapper.html()).toContain('--el-tag-text-color: #409EFF')
   })
 
   it('查询时把筛选条件透传给审计列表和摘要', async () => {

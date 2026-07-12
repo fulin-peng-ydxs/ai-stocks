@@ -148,6 +148,7 @@ def test_stage5_dict_public_read_baseline_and_disabled_filter(client, pg):
                 "type_code": type_code,
                 "code": "enabled_item",
                 "label": "启用项",
+                "color": "#67c23a",
                 "enabled": True,
             },
         )
@@ -171,12 +172,28 @@ def test_stage5_dict_public_read_baseline_and_disabled_filter(client, pg):
         data = public.json()["data"]
         assert data["fallback"] is False
         assert [item["code"] for item in data["items"]] == ["enabled_item"]
+        assert data["items"][0]["color"] == "#67C23A"
+
+        invalid_color = client.post(
+            "/api/dict/items",
+            headers=headers,
+            json={
+                "type_code": type_code,
+                "code": "bad_color",
+                "label": "非法颜色",
+                "color": "red",
+                "enabled": True,
+            },
+        )
+        assert invalid_color.status_code == 200
+        assert invalid_color.json()["code"] == 4000
 
         client.put(
             f"/api/dict/items/{type_code}/enabled_item",
             headers=headers,
             json={
                 "label": "启用项",
+                "color": "#409eff",
                 "enabled": False,
                 "sort": 100,
                 "remark": None,
@@ -249,6 +266,7 @@ def test_stage5_dict_fallback_builtin_when_repo_fails():
     data = DictService(BrokenRepo()).get_enabled_items("audit_result")  # type: ignore[arg-type]
     assert data["fallback"] is True
     assert [item["code"] for item in data["items"]] == ["success", "failed", "denied"]
+    assert data["items"][0]["color"] == "#67C23A"
 
     status_data = DictService(BrokenRepo()).get_enabled_items("audit_status")  # type: ignore[arg-type]
     assert status_data["fallback"] is True

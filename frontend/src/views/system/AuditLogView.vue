@@ -18,6 +18,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
+import { dictTagStyleByCode } from '@/utils/dictColor'
 
 const pageKey = 'audit-log'
 const AUTO_REFRESH_MS = 30_000
@@ -25,6 +26,7 @@ const AUTO_REFRESH_MS = 30_000
 interface OptionItem {
   value: string
   label: string
+  color?: string | null
 }
 
 const FALLBACK_EVENT_CATEGORIES: OptionItem[] = [
@@ -162,6 +164,12 @@ function tagType(value: string | null | undefined): 'success' | 'warning' | 'dan
   return 'info'
 }
 
+function eventTagType(value: string | null | undefined): 'success' | 'warning' | 'danger' | 'info' {
+  if (value === 'security') return 'danger'
+  if (value === 'task') return 'info'
+  return 'success'
+}
+
 function labelOf(options: OptionItem[], value: string | null | undefined): string {
   if (!value) return '-'
   return options.find((item) => item.value === value)?.label ?? value
@@ -177,6 +185,18 @@ function resultLabel(value: string | null | undefined): string {
 
 function statusLabel(value: string | null | undefined): string {
   return labelOf(statusOptions.value, value)
+}
+
+function eventTagStyle(value: string | null | undefined) {
+  return dictTagStyleByCode(eventOptions.value, value)
+}
+
+function resultTagStyle(value: string | null | undefined) {
+  return dictTagStyleByCode(resultOptions.value, value)
+}
+
+function statusTagStyle(value: string | null | undefined) {
+  return dictTagStyleByCode(statusOptions.value, value)
 }
 
 function formatTime(value: string | null | undefined): string {
@@ -371,7 +391,7 @@ async function loadDictOptions() {
     try {
       const data = await getPublicDictItems(typeCode)
       return data.items.length
-        ? data.items.map((item) => ({ value: item.code, label: item.label }))
+        ? data.items.map((item) => ({ value: item.code, label: item.label, color: item.color }))
         : fallback
     } catch {
       return fallback
@@ -566,7 +586,7 @@ onBeforeUnmount(stopTimer)
           </el-table-column>
           <el-table-column v-if="colVisible('event_category')" label="事件类型" prop="event_category" width="112" sortable="custom">
             <template #default="{ row }">
-              <el-tag :type="row.event_category === 'security' ? 'danger' : row.event_category === 'task' ? 'info' : 'success'" effect="plain">
+              <el-tag :type="eventTagType(row.event_category)" :style="eventTagStyle(row.event_category)" effect="plain">
                 {{ eventLabel(row) }}
               </el-tag>
             </template>
@@ -583,10 +603,10 @@ onBeforeUnmount(stopTimer)
             </template>
           </el-table-column>
           <el-table-column v-if="colVisible('result')" label="结果" prop="result" width="86" sortable="custom">
-            <template #default="{ row }"><el-tag :type="tagType(row.result)" effect="plain">{{ resultLabel(row.result) }}</el-tag></template>
+            <template #default="{ row }"><el-tag :type="tagType(row.result)" :style="resultTagStyle(row.result)" effect="plain">{{ resultLabel(row.result) }}</el-tag></template>
           </el-table-column>
           <el-table-column v-if="colVisible('status')" label="状态" prop="status" width="96" sortable="custom">
-            <template #default="{ row }"><el-tag :type="tagType(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag></template>
+            <template #default="{ row }"><el-tag :type="tagType(row.status)" :style="statusTagStyle(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag></template>
           </el-table-column>
           <el-table-column v-if="colVisible('ip')" label="IP" prop="ip" width="132" show-overflow-tooltip />
           <el-table-column v-if="colVisible('duration_ms')" label="耗时" prop="duration_ms" width="84" sortable="custom">
@@ -627,9 +647,9 @@ onBeforeUnmount(stopTimer)
                 <span>{{ formatTime(activeDetail.event_time) }} · {{ actorText(activeDetail) }}</span>
               </div>
               <div class="detail-tags">
-                <el-tag effect="plain">{{ eventLabel(activeDetail) }}</el-tag>
-                <el-tag :type="tagType(activeDetail.result)" effect="plain">{{ resultLabel(activeDetail.result) }}</el-tag>
-                <el-tag :type="tagType(activeDetail.status)" effect="plain">{{ statusLabel(activeDetail.status) }}</el-tag>
+                <el-tag :type="eventTagType(activeDetail.event_category)" :style="eventTagStyle(activeDetail.event_category)" effect="plain">{{ eventLabel(activeDetail) }}</el-tag>
+                <el-tag :type="tagType(activeDetail.result)" :style="resultTagStyle(activeDetail.result)" effect="plain">{{ resultLabel(activeDetail.result) }}</el-tag>
+                <el-tag :type="tagType(activeDetail.status)" :style="statusTagStyle(activeDetail.status)" effect="plain">{{ statusLabel(activeDetail.status) }}</el-tag>
               </div>
             </section>
 

@@ -65,6 +65,7 @@ const itemRows = [
     type_code: 'user_status',
     code: 'active',
     label: '启用',
+    color: '#67C23A',
     enabled: true,
     sort: 10,
     remark: '可登录',
@@ -338,6 +339,26 @@ describe('DataDictionaryView', () => {
     expect(dictApi.updateDictItem).toHaveBeenLastCalledWith('user_status', 'active', expect.any(Object))
     expect(updateBody).not.toHaveProperty('type_code')
     expect(updateBody).not.toHaveProperty('code')
+    expect(updateBody).toHaveProperty('color', '#67C23A')
+  })
+
+  it('保存字典项时提交颜色绑定', async () => {
+    const wrapper = await mountView()
+    await buttonByText(wrapper, '新建字典项').trigger('click')
+    await flushPromises()
+    await wrapper.find('input[placeholder="如 active"]').setValue('locked')
+    await wrapper.find('input[placeholder="如 启用"]').setValue('锁定')
+    const colorPicker = wrapper.findComponent({ name: 'ElColorPicker' })
+    expect(colorPicker.exists()).toBe(true)
+    colorPicker.vm.$emit('update:modelValue', '#f56c6c')
+    await buttonByText(wrapper, '保存').trigger('click')
+    await flushPromises()
+    expect(dictApi.createDictItem).toHaveBeenCalledWith(expect.objectContaining({
+      type_code: 'user_status',
+      code: 'locked',
+      label: '锁定',
+      color: '#F56C6C',
+    }))
   })
 
   it('类型加载失败显示错误态，重试后恢复', async () => {

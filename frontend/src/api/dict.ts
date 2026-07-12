@@ -18,6 +18,7 @@ export interface DictItem {
   type_code: string
   code: string
   label: string
+  color?: string | null
   enabled: boolean
   sort: number
   remark?: string | null
@@ -61,6 +62,7 @@ export interface DictItemWrite {
   type_code?: string
   code?: string
   label: string
+  color?: string | null
   enabled?: boolean
   sort?: number
   remark?: string | null

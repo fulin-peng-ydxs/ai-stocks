@@ -16,12 +16,14 @@ import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
+import { usePublicDictItems } from '@/composables/usePublicDictItems'
 import { useAuthStore } from '@/stores/auth'
 import {
   listUsers, createUser, updateUser, setUserStatus, resetUserPassword, deleteUser,
   listAssignableRoles, type AdminUser, type AssignableRole,
 } from '@/api/user'
 import { listTenants, type Tenant } from '@/api/tenant'
+import { dictItemLabel, dictTagStyleByCode } from '@/utils/dictColor'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -57,6 +59,8 @@ const ROLE_LABEL_FALLBACK: Record<string, string> = {
   system: '系统管理员', tenant_admin: '租户管理员', normal: '普通用户', paid: '付费会员',
 }
 const assignableRoles = ref<AssignableRole[]>([])
+const { items: roleTypeDictItems, load: loadRoleTypeDictItems } = usePublicDictItems('role_type')
+const { items: userStatusDictItems, load: loadUserStatusDictItems } = usePublicDictItems('user_status')
 const roleNameMap = computed<Record<string, string>>(() => {
   const m: Record<string, string> = {}
   for (const r of assignableRoles.value) m[r.code] = r.name
@@ -69,6 +73,12 @@ function roleTagType(code: string): 'primary' | 'warning' | 'info' {
   if (code === 'system' || code === 'tenant_admin') return 'primary'
   if (code === 'paid') return 'warning'
   return 'info'
+}
+function roleTagStyle(code: string) {
+  return dictTagStyleByCode(roleTypeDictItems.value, code)
+}
+function statusTagStyle(code: string) {
+  return dictTagStyleByCode(userStatusDictItems.value, code)
 }
 
 const tenants = ref<Tenant[]>([])
@@ -105,8 +115,17 @@ const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(ty
 
 const STATUS_TAG: Record<string, { type: 'success' | 'danger' | 'warning'; label: string }> = {
   active: { type: 'success', label: '启用' },
-  disabled: { type: 'danger', label: '已禁用' },
-  locked: { type: 'warning', label: '已锁定' },
+  disabled: { type: 'danger', label: '停用' },
+  locked: { type: 'warning', label: '锁定' },
+}
+const USER_STATUS_CODES = ['active', 'disabled', 'locked'] as const
+const userStatusOptions = computed(() => USER_STATUS_CODES.map((code) => ({
+  code,
+  label: statusLabel(code),
+})))
+
+function statusLabel(code: string): string {
+  return dictItemLabel(userStatusDictItems.value, code, STATUS_TAG[code]?.label ?? code)
 }
 
 async function load() {
@@ -259,6 +278,7 @@ onMounted(async () => {
   // 租户管理页「查看用户」跳转带 ?tenant=<id>：system 预置租户筛选（tenant_admin 无越权、忽略）。
   const qTenant = route.query.tenant
   if (isSystem.value && typeof qTenant === 'string' && qTenant) filters.value.tenant = qTenant
+  void Promise.all([loadRoleTypeDictItems(), loadUserStatusDictItems()])
   try {
     assignableRoles.value = await listAssignableRoles()
     if (isSystem.value) tenants.value = (await listTenants({ size: 200 })).items
@@ -296,9 +316,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
           </el-select>
           <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
-            <el-option label="启用" value="active" />
-            <el-option label="已禁用" value="disabled" />
-            <el-option label="已锁定" value="locked" />
+            <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
           </el-select>
           <el-input v-model="filters.q" placeholder="搜索账号 / 邮箱" clearable style="width: 220px"
                     @keyup.enter="search" @clear="search" />
@@ -336,7 +354,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-table-column>
           <el-table-column v-if="colVisible('roles')" label="角色" min-width="180">
             <template #default="{ row }">
-              <el-tag v-for="c in row.roles" :key="c" :type="roleTagType(c)" size="small"
+              <el-tag v-for="c in row.roles" :key="c" :type="roleTagType(c)" :style="roleTagStyle(c)" size="small"
                       effect="plain" class="role-tag">{{ roleName(c) }}</el-tag>
               <span v-if="!row.roles?.length" class="muted">—</span>
             </template>
@@ -347,8 +365,8 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-table-column>
           <el-table-column v-if="colVisible('status')" label="状态" width="92">
             <template #default="{ row }">
-              <el-tag :type="STATUS_TAG[row.status]?.type ?? 'info'" size="small" effect="plain">
-                {{ STATUS_TAG[row.status]?.label ?? row.status }}
+              <el-tag :type="STATUS_TAG[row.status]?.type ?? 'info'" :style="statusTagStyle(row.status)" size="small" effect="plain">
+                {{ statusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -410,9 +428,9 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-form-item>
           <el-form-item label="状态">
             <el-radio-group v-model="form.status" :disabled="editingSelf">
-              <el-radio-button value="active">启用</el-radio-button>
-              <el-radio-button value="disabled">禁用</el-radio-button>
-              <el-radio-button value="locked">锁定</el-radio-button>
+              <el-radio-button v-for="item in userStatusOptions" :key="item.code" :value="item.code">
+                {{ item.label }}
+              </el-radio-button>
             </el-radio-group>
           </el-form-item>
         </el-form>

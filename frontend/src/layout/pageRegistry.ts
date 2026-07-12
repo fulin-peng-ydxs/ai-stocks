@@ -582,6 +582,7 @@ const REGISTRY: PageRegistryEntry[] = [
         columns: [
           { key: 'code', label: 'code 列' },
           { key: 'label', label: '名称列' },
+          { key: 'color', label: '颜色列' },
           { key: 'sort', label: '排序列' },
           { key: 'enabled', label: '启用列' },
           { key: 'remark', label: '备注列' },

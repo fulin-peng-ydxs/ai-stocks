@@ -136,7 +136,7 @@ class DictRepository:
         sort_col = _DICT_ITEM_SORT_COLS.get(sort_by, "sort")
         direction = "ASC" if sort_order.lower() == "asc" else "DESC"
         rows = self.pg.query_df(
-            f"SELECT id, type_code, code, label, enabled, sort, remark, created_at, updated_at "
+            f"SELECT id, type_code, code, label, color, enabled, sort, remark, created_at, updated_at "
             f"FROM dict_item {where} ORDER BY {sort_col} {direction} NULLS LAST, sort ASC, code ASC "
             "LIMIT %s OFFSET %s",
             params + [size, (page - 1) * size],
@@ -150,7 +150,7 @@ class DictRepository:
 
     def get_item(self, type_code: str, code: str) -> dict | None:
         df = self.pg.query_df(
-            "SELECT id, type_code, code, label, enabled, sort, remark, created_at, updated_at "
+            "SELECT id, type_code, code, label, color, enabled, sort, remark, created_at, updated_at "
             "FROM dict_item WHERE type_code=%s AND code=%s",
             [type_code, code],
         )
@@ -162,6 +162,7 @@ class DictRepository:
         type_code: str,
         code: str,
         label: str,
+        color: str | None,
         enabled: bool,
         sort: int,
         remark: str | None,
@@ -169,9 +170,9 @@ class DictRepository:
         now = datetime.now()
         self.pg.execute(
             "INSERT INTO dict_item "
-            "(id, type_code, code, label, enabled, sort, remark, created_at, updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-            [uuid.uuid4().hex, type_code, code, label, enabled, sort, remark, now, now],
+            "(id, type_code, code, label, color, enabled, sort, remark, created_at, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            [uuid.uuid4().hex, type_code, code, label, color, enabled, sort, remark, now, now],
         )
         return self.get_item(type_code, code)  # type: ignore[return-value]
 
@@ -181,14 +182,15 @@ class DictRepository:
         code: str,
         *,
         label: str,
+        color: str | None,
         enabled: bool,
         sort: int,
         remark: str | None,
     ) -> dict:
         self.pg.execute(
-            "UPDATE dict_item SET label=%s, enabled=%s, sort=%s, remark=%s, updated_at=%s "
+            "UPDATE dict_item SET label=%s, color=%s, enabled=%s, sort=%s, remark=%s, updated_at=%s "
             "WHERE type_code=%s AND code=%s",
-            [label, enabled, sort, remark, datetime.now(), type_code, code],
+            [label, color, enabled, sort, remark, datetime.now(), type_code, code],
         )
         return self.get_item(type_code, code)  # type: ignore[return-value]
 

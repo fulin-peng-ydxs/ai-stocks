@@ -32,6 +32,7 @@ class DictItemCreate(BaseModel):
     type_code: str
     code: str
     label: str
+    color: str | None = None
     enabled: bool = True
     sort: int = 100
     remark: str | None = None
@@ -41,6 +42,7 @@ class DictItemUpdate(BaseModel):
     type_code: str | None = None
     code: str | None = None
     label: str
+    color: str | None = None
     enabled: bool = True
     sort: int = 100
     remark: str | None = None
@@ -145,6 +147,7 @@ def create_item(body: DictItemCreate) -> ApiResponse:
         type_code=body.type_code,
         code=body.code,
         label=body.label,
+        color=body.color,
         enabled=body.enabled,
         sort=body.sort,
         remark=body.remark,
@@ -163,6 +166,7 @@ def update_item(type_code: str, code: str, body: DictItemUpdate) -> ApiResponse:
         body_type_code=body.type_code,
         body_code=body.code,
         label=body.label,
+        color=body.color,
         enabled=body.enabled,
         sort=body.sort,
         remark=body.remark,

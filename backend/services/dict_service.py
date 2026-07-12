@@ -12,13 +12,15 @@ from backend.storage.dict_repository import DictRepository
 from backend.storage.pg_ddl import _SEED_DICT_ITEMS
 
 _CODE_RE = re.compile(r"^[a-z][a-z0-9_:-]{0,63}$")
+_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 _FALLBACK_ITEMS: dict[str, list[dict]] = {}
-for _type_code, _code, _label, _sort in _SEED_DICT_ITEMS:
+for _type_code, _code, _label, _sort, _color in _SEED_DICT_ITEMS:
     _FALLBACK_ITEMS.setdefault(_type_code, []).append({
         "type_code": _type_code,
         "code": _code,
         "label": _label,
+        "color": _color,
         "enabled": True,
         "sort": _sort,
         "remark": None,
@@ -145,6 +147,7 @@ class DictService:
         type_code: str,
         code: str,
         label: str,
+        color: str | None = None,
         enabled: bool = True,
         sort: int = 100,
         remark: str | None = None,
@@ -158,6 +161,7 @@ class DictService:
             type_code=type_code,
             code=code,
             label=self._required(label, "字典项标签"),
+            color=self._norm_color(color),
             enabled=enabled,
             sort=sort,
             remark=remark,
@@ -173,6 +177,7 @@ class DictService:
         body_type_code: str | None,
         body_code: str | None,
         label: str,
+        color: str | None,
         enabled: bool,
         sort: int,
         remark: str | None,
@@ -188,6 +193,7 @@ class DictService:
             type_code,
             code,
             label=self._required(label, "字典项标签"),
+            color=self._norm_color(color),
             enabled=enabled,
             sort=sort,
             remark=remark,
@@ -200,7 +206,7 @@ class DictService:
             changes=AuditService.build_changes(
                 cur,
                 row,
-                fields=("label", "enabled", "sort", "remark"),
+                fields=("label", "color", "enabled", "sort", "remark"),
             ),
         )
         return row
@@ -240,6 +246,15 @@ class DictService:
         if not text:
             raise ValidationError(f"请填写{label}")
         return text
+
+    @staticmethod
+    def _norm_color(value: str | None) -> str | None:
+        color = (value or "").strip()
+        if not color:
+            return None
+        if not _COLOR_RE.fullmatch(color):
+            raise ValidationError("字典项颜色只能使用 #RRGGBB 格式")
+        return color.upper()
 
     @staticmethod
     def _audit(

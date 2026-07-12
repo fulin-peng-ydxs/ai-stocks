@@ -25,6 +25,7 @@ import { useTableSort } from '@/composables/useTableSort'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
+import { DICT_COLOR_PRESETS, dictColorSwatchStyle, dictTagStyle, normalizeDictColor } from '@/utils/dictColor'
 
 const pageKey = 'data-dictionary'
 
@@ -90,6 +91,7 @@ const itemForm = reactive({
   type_code: '',
   code: '',
   label: '',
+  color: '',
   enabled: true,
   sort: 100,
   remark: '',
@@ -146,6 +148,7 @@ function resetItemForm(row?: DictItem) {
   itemForm.type_code = row?.type_code ?? settings.selectedTypeCode
   itemForm.code = row?.code ?? ''
   itemForm.label = row?.label ?? ''
+  itemForm.color = row?.color ?? ''
   itemForm.enabled = row?.enabled ?? true
   itemForm.sort = row?.sort ?? 100
   itemForm.remark = row?.remark ?? ''
@@ -344,6 +347,7 @@ async function saveItem() {
   try {
     const body = {
       label,
+      color: normalizeDictColor(itemForm.color) || null,
       enabled: itemForm.enabled,
       sort: Number(itemForm.sort) || 100,
       remark: itemForm.remark.trim() || null,
@@ -413,6 +417,7 @@ async function toggleItem(row: DictItem, value: boolean) {
   try {
     await updateDictItem(row.type_code, row.code, {
       label: row.label,
+      color: row.color ?? null,
       enabled: value,
       sort: row.sort,
       remark: row.remark ?? null,
@@ -553,7 +558,21 @@ onBeforeUnmount(() => {
               <el-table-column v-if="colVisible('code')" label="code" prop="code" width="150" show-overflow-tooltip sortable="custom">
                 <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>
               </el-table-column>
-              <el-table-column v-if="colVisible('label')" label="名称" prop="label" min-width="150" show-overflow-tooltip sortable="custom" />
+              <el-table-column v-if="colVisible('label')" label="名称" prop="label" min-width="150" show-overflow-tooltip sortable="custom">
+                <template #default="{ row }">
+                  <el-tag v-if="row.color" effect="plain" :style="dictTagStyle(row.color)">{{ row.label }}</el-tag>
+                  <span v-else>{{ row.label }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="colVisible('color')" label="颜色" prop="color" width="122">
+                <template #default="{ row }">
+                  <span v-if="row.color" class="dict-color-cell">
+                    <i class="dict-color-swatch" :style="dictColorSwatchStyle(row.color)" />
+                    <span class="mono">{{ row.color }}</span>
+                  </span>
+                  <span v-else class="muted">-</span>
+                </template>
+              </el-table-column>
               <el-table-column v-if="colVisible('sort')" label="排序" prop="sort" width="90" sortable="custom" />
               <el-table-column v-if="colVisible('enabled')" label="启用" prop="enabled" width="110" sortable="custom">
                 <template #default="{ row }">
@@ -621,6 +640,15 @@ onBeforeUnmount(() => {
           </el-form-item>
           <el-form-item label="名称">
             <el-input v-model="itemForm.label" placeholder="如 启用" />
+          </el-form-item>
+          <el-form-item label="颜色">
+            <div class="dict-color-editor">
+              <el-color-picker v-model="itemForm.color" clearable :predefine="DICT_COLOR_PRESETS" />
+              <el-tag v-if="itemForm.color" effect="plain" :style="dictTagStyle(itemForm.color)">
+                {{ itemForm.label || itemForm.code || '预览' }}
+              </el-tag>
+              <span v-else class="muted">未绑定颜色</span>
+            </div>
           </el-form-item>
           <el-form-item label="排序">
             <el-input-number v-model="itemForm.sort" :min="0" :max="9999" />
@@ -825,6 +853,20 @@ onBeforeUnmount(() => {
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
+}
+.dict-color-cell,
+.dict-color-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dict-color-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 1px solid var(--el-border-color);
+  border-radius: 3px;
 }
 @media (max-width: 980px) {
   .dict-page-head {
