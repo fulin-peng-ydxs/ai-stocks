@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// 登录 / 注册页（stage2·T8）：科技风 + 黑白双主题，视觉原型见 agent-works/multi-tenant-rbac/prototypes/login.html。
+// 登录 / 注册页：金融科技视觉与明暗双主题，认证流程由公开配置动态控制。
 // 全屏独立壳（App.vue 按 meta.fullscreen 脱离主框架单独渲染），不套用布局 archetype、不走 LayoutHost。
 // 契约：用 position:fixed;inset:0 全屏（禁 vh 高度、禁手写 .v-page/.v-grow，过 layout-contract.spec.ts）。
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
@@ -64,6 +64,10 @@ async function loadPublicConfig(syncCaptcha = true) {
 
 onMounted(async () => {
   await loadPublicConfig()
+})
+
+onUnmounted(() => {
+  if (emailTimer) clearInterval(emailTimer)
 })
 
 function setMode(m: Mode) {
@@ -174,18 +178,53 @@ function onSubmit() {
 
 <template>
   <div class="login-shell" :class="{ 'is-register': mode === 'register', 'is-dark': isDark }">
-    <!-- 左 · 品牌视觉区（科技风：动态网格 + 标语） -->
     <section class="login-brand">
-      <div class="login-logo">
-        <BrandMark variant="login" :tone="isDark ? 'dark' : 'light'" />
+      <header class="login-brand-head">
+        <div class="login-logo">
+          <BrandMark variant="login" :tone="isDark ? 'dark' : 'light'" />
+        </div>
+        <div class="login-system-state"><span />SYSTEM ONLINE</div>
+      </header>
+
+      <div class="market-stage" aria-hidden="true">
+        <div class="market-orbit orbit-one" />
+        <div class="market-orbit orbit-two" />
+        <svg class="market-track" viewBox="0 0 900 430" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="track-gradient" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="currentColor" stop-opacity="0" />
+              <stop offset="0.36" stop-color="currentColor" stop-opacity=".42" />
+              <stop offset="1" stop-color="currentColor" stop-opacity="1" />
+            </linearGradient>
+            <filter id="track-glow" x="-20%" y="-40%" width="140%" height="180%">
+              <feGaussianBlur stdDeviation="7" result="blur" />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+          <path class="market-track-shadow" d="M-20 350C80 334 128 366 205 320C284 273 324 305 390 268C466 226 497 265 558 204C614 148 675 193 733 126C782 70 832 92 920 30" />
+          <path class="market-track-line" d="M-20 350C80 334 128 366 205 320C284 273 324 305 390 268C466 226 497 265 558 204C614 148 675 193 733 126C782 70 832 92 920 30" />
+          <circle class="market-track-node node-one" cx="390" cy="268" r="5" />
+          <circle class="market-track-node node-two" cx="558" cy="204" r="5" />
+          <circle class="market-track-node node-three" cx="733" cy="126" r="7" />
+        </svg>
+        <span class="market-index index-one">SH · 000001</span>
+        <span class="market-index index-two">TREND · LEADER</span>
+        <span class="market-index index-three">EOD · SIGNAL</span>
       </div>
-      <div class="login-sys">EOD 趋势龙头研究系统</div>
-      <div class="login-pulse" aria-hidden="true" />
-      <div class="login-tagline">数据驱动的<br />每日复盘</div>
-      <div class="login-brandmeta"><span class="bar" /> 多租户 SaaS · v0.x</div>
+
+      <div class="login-brand-copy">
+        <div class="login-eyebrow"><span>MARKET INTELLIGENCE</span><i /></div>
+        <h1>看见趋势，<br /><em>先于共识。</em></h1>
+        <p>为趋势交易者构建的每日复盘与龙头研究系统。</p>
+      </div>
+
+      <footer class="login-brandmeta">
+        <span>沪深市场</span><i />
+        <span>EOD 研究</span><i />
+        <span>点时回测</span>
+      </footer>
     </section>
 
-    <!-- 右 · 认证区 -->
     <section class="login-auth">
       <button class="login-theme" type="button" aria-label="切换主题" title="切换黑/白主题" @click="toggleTheme">
         <svg v-if="isDark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -198,13 +237,21 @@ function onSubmit() {
       </button>
 
       <div class="login-card">
-        <div class="login-tabs">
-          <div class="login-tab" :class="{ active: mode === 'login' }" @click="setMode('login')">登录</div>
-          <div class="login-tab" :class="{ active: mode === 'register' }" @click="setMode('register')">注册</div>
+        <div class="login-card-kicker"><span>PRIVATE ACCESS</span><i>01</i></div>
+        <div class="login-card-title">
+          <h2>{{ mode === 'login' ? '欢迎回来' : '创建研究账户' }}</h2>
+          <p>{{ mode === 'login' ? '进入你的市场研究工作台' : '开启专业、专注的每日复盘' }}</p>
         </div>
 
-        <!-- 账号 / 邮箱 -->
+        <div class="login-tabs" role="tablist" aria-label="账户操作">
+          <button class="login-tab" :class="{ active: mode === 'login' }" type="button" role="tab"
+                  :aria-selected="mode === 'login'" @click="setMode('login')">登录账户</button>
+          <button class="login-tab" :class="{ active: mode === 'register' }" type="button" role="tab"
+                  :aria-selected="mode === 'register'" @click="setMode('register')">注册账户</button>
+        </div>
+
         <label class="login-field">
+          <span class="field-label">ACCOUNT</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
           </svg>
@@ -212,8 +259,8 @@ function onSubmit() {
                  autocomplete="username" @keyup.enter="onSubmit" />
         </label>
 
-        <!-- 密码 -->
         <label class="login-field">
+          <span class="field-label">PASSWORD</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
           </svg>
@@ -227,8 +274,8 @@ function onSubmit() {
           </svg>
         </label>
 
-        <!-- 确认密码（仅注册） -->
         <label v-if="mode === 'register'" class="login-field">
+          <span class="field-label">CONFIRM</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
           </svg>
@@ -236,8 +283,8 @@ function onSubmit() {
                  @keyup.enter="onSubmit" />
         </label>
 
-        <!-- 邮箱（仅注册）：注册需账号/邮箱/密码/邮箱码；邮箱既作找回/通知，又是邮箱码接收地址 -->
         <label v-if="mode === 'register'" class="login-field">
+          <span class="field-label">EMAIL</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
           </svg>
@@ -245,8 +292,8 @@ function onSubmit() {
                  @keyup.enter="onSubmit" />
         </label>
 
-        <!-- 邮箱验证码（仅注册且后端要求） -->
         <label v-if="mode === 'register' && cfg.requireEmailCode" class="login-field login-emailcode">
+          <span class="field-label">VERIFY</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
           </svg>
@@ -256,16 +303,15 @@ function onSubmit() {
           </span>
         </label>
 
-        <!-- 图形验证码（仅登录，后端启用后出现） -->
         <template v-if="mode === 'login' && needCaptcha">
           <div class="login-captcha-row">
             <label class="login-field dashed">
+              <span class="field-label">CAPTCHA</span>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 3v18M3 12h18" />
               </svg>
               <input v-model="form.captchaCode" type="text" placeholder="图形验证码" @keyup.enter="onSubmit" />
             </label>
-            <!-- 后端返回 SVG 字符串，点击刷新 -->
             <div class="login-captcha-img" title="点击刷新" v-html="captchaSvg" @click="refreshCaptcha" />
           </div>
         </template>
@@ -278,156 +324,250 @@ function onSubmit() {
         </button>
 
         <div v-if="mode === 'login'" class="login-rowbetween">
-          <span class="login-link" title="占位，后续开放">忘记密码？</span>
-          <span class="login-link" @click="setMode('register')">没有账号？去注册</span>
+          <span class="login-security"><i />安全加密连接</span>
+          <button class="login-link" type="button" @click="setMode('register')">创建账户</button>
         </div>
         <div v-else class="login-rowbetween login-rowend">
-          <span class="login-link" @click="setMode('login')">已有账号？去登录</span>
+          <button class="login-link" type="button" @click="setMode('login')">已有账户，返回登录</button>
         </div>
 
-        <!-- 第三方登录占位（R6：置灰 + 敬请期待） -->
-        <div class="login-divider"><span class="line" />第三方登录（敬请期待）<span class="line" /></div>
-        <div class="login-socials">
-          <div class="login-social" title="手机登录（敬请期待）">手机</div>
-          <div class="login-social" title="邮箱登录（敬请期待）">邮箱</div>
-          <div class="login-social" title="微信登录（敬请期待）">微信</div>
-          <div class="login-social" title="QQ 登录（敬请期待）">QQ</div>
-        </div>
+        <div class="login-footnote">复盘啦 · EOD 趋势龙头研究系统</div>
       </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-/* 黑白双主题：:root 语汇（浅色）挂在 .login-shell 上，html.dark 时整体覆盖为深色。
-   对应视觉原型 prototypes/login.html 的 :root(浅) / [data-theme=dark](深)；前端切主题走 useTheme() 的 html.dark。 */
 .login-shell {
-  --login-page-bg: #ffffff;
-  --login-panel-bg: #f3f7fc;
-  --login-grid: #e6eef8;
-  --login-card-bg: #ffffff;
-  --login-border: #dbe5f0;
-  --login-border-dash: #cdd9e8;
-  --login-input-bg: #fafcfe;
-  --login-text: #0c2c4f;
-  --login-text-sub: #5b7799;
-  --login-text-muted: #8aa3c2;
-  --login-brand: #185fa5;
-  --login-accent: #2f81f7;
-  --login-accent-text: #ffffff;
-  --login-captcha-bg: #eef4fb;
-  --login-toggle-bg: #f3f7fc;
-  --login-divider: #e2eaf3;
+  --login-page-bg: #edf1f4;
+  --login-panel-bg: #0b1c2b;
+  --login-panel-deep: #06131f;
+  --login-grid: rgba(126, 159, 179, 0.11);
+  --login-card-bg: rgba(250, 252, 253, 0.86);
+  --login-card-edge: rgba(255, 255, 255, 0.92);
+  --login-border: #cbd4da;
+  --login-border-focus: #9a7a43;
+  --login-border-dash: #b8c4cb;
+  --login-input-bg: rgba(255, 255, 255, 0.6);
+  --login-text: #112533;
+  --login-text-sub: #526773;
+  --login-text-muted: #82939c;
+  --login-accent: #b69254;
+  --login-accent-strong: #876a3a;
+  --login-accent-text: #fffdf8;
+  --login-captcha-bg: #e9eef1;
+  --login-toggle-bg: rgba(255, 255, 255, 0.58);
+  --login-divider: rgba(76, 99, 111, 0.18);
+  --login-shadow: rgba(16, 35, 46, 0.16);
 
   position: fixed;
   inset: 0;
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
+  grid-template-columns: minmax(0, 1.38fr) minmax(430px, 0.82fr);
   background: var(--login-page-bg);
   color: var(--login-text);
   font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-  transition: background 0.2s, color 0.2s;
+  transition: background 0.3s, color 0.3s;
 }
-/* 深色主题：以自身 .is-dark 类切换（绑定 useTheme 的 isDark），完全 scoped、不依赖祖先 html.dark 匹配 */
 .login-shell.is-dark {
-  --login-page-bg: #0b1220;
-  --login-panel-bg: #0d1526;
-  --login-grid: #15233f;
-  --login-card-bg: #0b1220;
-  --login-border: #24344f;
-  --login-border-dash: #24344f;
-  --login-input-bg: #0f1a2c;
-  --login-text: #e6f0ff;
-  --login-text-sub: #9db4d6;
-  --login-text-muted: #5e779c;
-  --login-brand: #5cc8ff;
-  --login-accent: #2f81f7;
-  --login-accent-text: #ffffff;
-  --login-captcha-bg: #13233c;
-  --login-toggle-bg: #111c30;
-  --login-divider: #1c2942;
+  --login-page-bg: #07131d;
+  --login-card-bg: rgba(10, 27, 39, 0.9);
+  --login-card-edge: rgba(142, 168, 181, 0.18);
+  --login-border: #29404e;
+  --login-border-focus: #c9a669;
+  --login-border-dash: #36505e;
+  --login-input-bg: rgba(4, 18, 28, 0.58);
+  --login-text: #edf3f5;
+  --login-text-sub: #9eb0b9;
+  --login-text-muted: #657b87;
+  --login-accent: #c5a466;
+  --login-accent-strong: #a5834c;
+  --login-captcha-bg: #0d2433;
+  --login-toggle-bg: rgba(12, 33, 46, 0.78);
+  --login-divider: rgba(139, 165, 178, 0.16);
+  --login-shadow: rgba(0, 0, 0, 0.38);
 }
 
-/* 左 · 品牌视觉区 */
 .login-brand {
   position: relative;
-  padding: 40px;
-  background-color: var(--login-panel-bg);
+  min-width: 0;
+  padding: 38px clamp(36px, 5vw, 76px) 34px;
+  background:
+    radial-gradient(circle at 72% 46%, rgba(39, 105, 126, 0.3), transparent 28%),
+    linear-gradient(142deg, var(--login-panel-bg), var(--login-panel-deep));
+  color: #dbe7eb;
+  overflow: hidden;
+}
+.login-brand::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   background-image:
     linear-gradient(var(--login-grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--login-grid) 1px, transparent 1px);
-  background-size: 28px 28px;
-  border-right: 1px solid var(--login-divider);
-  overflow: hidden;
+  background-size: 48px 48px;
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.35), #000 55%, rgba(0, 0, 0, 0.25));
+}
+.login-brand::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 1px;
+  height: 100%;
+  background: linear-gradient(transparent, rgba(208, 176, 115, 0.48), transparent);
+}
+.login-brand-head {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 .login-logo {
   display: flex;
   align-items: center;
+  --brand-word: #f1f5f6;
+  --brand-word-stroke: rgba(11, 28, 43, 0.28);
+  --brand-icon-start: #d0ab68;
+  --brand-icon-end: #9a7137;
+  --shell-accent-soft: rgba(198, 163, 98, 0.2);
 }
-.login-sys {
-  margin-top: 12px;
-  color: var(--login-text-sub);
-  font-size: 14px;
-}
-.login-pulse {
-  position: absolute;
-  right: -60px;
-  top: 90px;
-  width: 320px;
-  height: 320px;
-  border-radius: 50%;
-  border: 1px solid var(--login-grid);
-  opacity: 0.6;
-}
-.login-pulse::after {
-  content: '';
-  position: absolute;
-  inset: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--login-grid);
-}
-.login-tagline {
-  position: absolute;
-  left: 40px;
-  bottom: 84px;
-  font-size: 26px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: var(--login-text);
-}
-.login-brandmeta {
-  position: absolute;
-  left: 40px;
-  bottom: 36px;
+.login-system-state {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--login-text-muted);
-  font-size: 13px;
+  color: rgba(198, 218, 225, 0.52);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
 }
-.login-brandmeta .bar {
-  width: 28px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--login-accent);
+.login-system-state span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #66c4a0;
+  box-shadow: 0 0 10px rgba(102, 196, 160, 0.8);
 }
+.market-stage {
+  position: absolute;
+  z-index: 1;
+  inset: 18% -4% 12% 7%;
+}
+.market-orbit {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(147, 176, 187, 0.1);
+  transform: rotate(-19deg);
+}
+.orbit-one { width: 520px; height: 220px; right: 5%; top: 18%; }
+.orbit-two { width: 680px; height: 320px; right: -9%; top: 8%; }
+.market-track {
+  position: absolute;
+  inset: 8% 0 0;
+  width: 100%;
+  height: 78%;
+  color: #c5a466;
+  overflow: visible;
+}
+.market-track-shadow {
+  fill: none;
+  stroke: rgba(197, 164, 102, 0.22);
+  stroke-width: 14;
+  filter: url(#track-glow);
+}
+.market-track-line {
+  fill: none;
+  stroke: url(#track-gradient);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 8 8;
+  animation: track-flow 18s linear infinite;
+}
+.market-track-node {
+  fill: #e8d09d;
+  stroke: rgba(232, 208, 157, 0.22);
+  stroke-width: 10;
+}
+.market-index {
+  position: absolute;
+  padding: 5px 8px;
+  border-left: 1px solid rgba(205, 176, 119, 0.45);
+  color: rgba(193, 215, 222, 0.46);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+.index-one { left: 38%; top: 64%; }
+.index-two { left: 58%; top: 43%; }
+.index-three { right: 7%; top: 19%; }
+.login-brand-copy {
+  position: absolute;
+  z-index: 2;
+  left: clamp(36px, 5vw, 76px);
+  bottom: 112px;
+}
+.login-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  color: #c5a466;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+}
+.login-eyebrow i { width: 50px; height: 1px; background: rgba(197, 164, 102, 0.56); }
+.login-brand-copy h1 {
+  margin: 18px 0 16px;
+  color: #f1f5f6;
+  font-family: 'Songti SC', STSong, 'SimSun', serif;
+  font-size: clamp(42px, 4.5vw, 70px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.18;
+}
+.login-brand-copy h1 em { color: #d2b579; font-style: normal; }
+.login-brand-copy p {
+  margin: 0;
+  color: rgba(195, 214, 220, 0.62);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+.login-brandmeta {
+  position: absolute;
+  z-index: 3;
+  left: clamp(36px, 5vw, 76px);
+  right: clamp(36px, 5vw, 76px);
+  bottom: 32px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(181, 204, 212, 0.42);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+.login-brandmeta i { width: 3px; height: 3px; border-radius: 50%; background: #a98851; }
 
-/* 右 · 认证区 */
 .login-auth {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
-  background: var(--login-card-bg);
+  min-height: 0;
+  padding: 72px clamp(34px, 4vw, 64px) 48px;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 85% 0, rgba(182, 146, 84, 0.13), transparent 28%),
+    var(--login-page-bg);
 }
 .login-theme {
   position: absolute;
-  top: 24px;
-  right: 28px;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  z-index: 2;
+  top: 28px;
+  right: 32px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
   border: 1px solid var(--login-border);
   background: var(--login-toggle-bg);
   color: var(--login-text-sub);
@@ -435,40 +575,110 @@ function onSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: border-color 0.2s, color 0.2s, transform 0.2s;
 }
+.login-theme:hover { color: var(--login-accent); border-color: var(--login-accent); transform: rotate(8deg); }
+.login-theme:focus-visible,
+.login-tab:focus-visible,
+.login-link:focus-visible,
+.login-primary:focus-visible { outline: 2px solid var(--login-accent); outline-offset: 3px; }
 .login-card {
+  position: relative;
   width: 100%;
-  max-width: 380px;
+  max-width: 430px;
+  margin: auto;
+  padding: 36px 38px 30px;
+  border: 1px solid var(--login-card-edge);
+  border-radius: 20px;
+  background: var(--login-card-bg);
+  box-shadow: 0 30px 80px var(--login-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  backdrop-filter: blur(18px);
 }
-.login-tabs {
+.login-card::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 36px;
+  width: 76px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--login-accent), transparent);
+}
+.login-card-kicker {
   display: flex;
-  gap: 24px;
-  margin-bottom: 22px;
-  font-size: 16px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--login-accent-strong);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+.login-card-kicker i { color: var(--login-text-muted); font-style: normal; }
+.login-card-title h2 {
+  margin: 18px 0 6px;
+  color: var(--login-text);
+  font-family: 'Songti SC', STSong, 'SimSun', serif;
+  font-size: 29px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.login-card-title p { margin: 0; color: var(--login-text-muted); font-size: 13px; }
+.login-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 26px 0 22px;
+  padding: 4px;
+  border: 1px solid var(--login-divider);
+  border-radius: 10px;
+  background: rgba(112, 132, 142, 0.08);
 }
 .login-tab {
-  padding-bottom: 8px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
   color: var(--login-text-muted);
+  font: inherit;
+  font-size: 13px;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
 }
 .login-tab.active {
   color: var(--login-text);
-  font-weight: 600;
-  border-bottom-color: var(--login-accent);
+  background: var(--login-input-bg);
+  box-shadow: 0 3px 12px rgba(32, 50, 60, 0.08);
+  font-weight: 650;
 }
 .login-field {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 42px;
-  padding: 0 12px;
-  margin-bottom: 14px;
+  height: 54px;
+  padding: 12px 14px 0;
+  margin-bottom: 13px;
   border: 1px solid var(--login-border);
-  border-radius: 6px;
+  border-radius: 10px;
   background: var(--login-input-bg);
   color: var(--login-text-muted);
   font-size: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.login-field:focus-within {
+  border-color: var(--login-border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--login-accent) 13%, transparent);
+  background: color-mix(in srgb, var(--login-input-bg) 82%, white 18%);
+}
+.is-dark .login-field:focus-within { background: var(--login-input-bg); }
+.field-label {
+  position: absolute;
+  top: 7px;
+  left: 40px;
+  color: var(--login-text-muted);
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 8px;
+  letter-spacing: 0.12em;
 }
 .login-field svg {
   flex: none;
@@ -482,6 +692,7 @@ function onSubmit() {
   background: transparent;
   color: var(--login-text);
   font-size: 14px;
+  line-height: 20px;
 }
 .login-field input::placeholder {
   color: var(--login-text-muted);
@@ -502,7 +713,7 @@ function onSubmit() {
 .login-captcha-row {
   display: flex;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .login-captcha-row .login-field {
   flex: 1;
@@ -512,8 +723,8 @@ function onSubmit() {
 }
 .login-captcha-img {
   width: 104px;
-  height: 42px;
-  border-radius: 6px;
+  height: 54px;
+  border-radius: 10px;
   overflow: hidden;
   background: var(--login-captcha-bg);
   border: 1px solid var(--login-border);
@@ -529,21 +740,24 @@ function onSubmit() {
 }
 .login-primary {
   width: 100%;
-  height: 44px;
-  margin-top: 8px;
-  border: none;
-  border-radius: 6px;
-  background: var(--login-accent);
+  height: 48px;
+  margin-top: 10px;
+  border: 1px solid color-mix(in srgb, var(--login-accent) 68%, black 32%);
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--login-accent), var(--login-accent-strong));
   color: var(--login-accent-text);
-  font-size: 15px;
-  font-weight: 600;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--login-accent) 25%, transparent);
+  font-size: 14px;
+  font-weight: 650;
   cursor: pointer;
-  letter-spacing: 4px;
-  text-indent: 4px;
+  letter-spacing: 0.16em;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.2s, filter 0.2s, box-shadow 0.2s;
 }
+.login-primary:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 13px 30px color-mix(in srgb, var(--login-accent) 32%, transparent); }
+.login-primary:active:not(:disabled) { transform: translateY(0); }
 .login-primary:disabled {
   opacity: 0.7;
   cursor: not-allowed;
@@ -552,62 +766,144 @@ function onSubmit() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 12px;
-  font-size: 13px;
+  margin-top: 14px;
+  font-size: 12px;
 }
 .login-rowend {
   justify-content: flex-end;
 }
 .login-link {
-  color: var(--login-text-sub);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--login-accent-strong);
+  font: inherit;
   cursor: pointer;
 }
-.login-divider {
+.login-link:hover { color: var(--login-accent); }
+.login-security {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   color: var(--login-text-muted);
-  font-size: 12px;
-  margin: 22px 0 14px;
 }
-.login-divider .line {
-  flex: 1;
-  height: 1px;
-  background: var(--login-divider);
+.login-security i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #43a47a;
+  box-shadow: 0 0 0 3px rgba(67, 164, 122, 0.1);
 }
-.login-socials {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-.login-social {
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  border: 1px solid var(--login-border);
-  background: var(--login-input-bg);
+.login-footnote {
+  margin-top: 27px;
+  padding-top: 18px;
+  border-top: 1px solid var(--login-divider);
   color: var(--login-text-muted);
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: not-allowed;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-align: center;
 }
 
-/* 窄屏退化：单列，品牌区收成顶部条 */
-@media (max-width: 768px) {
+@keyframes track-flow { to { stroke-dashoffset: -160; } }
+
+@media (max-width: 980px) {
   .login-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
   }
   .login-brand {
-    padding: 18px 24px;
+    position: absolute;
+    inset: 0;
+    padding: 24px;
   }
-  .login-tagline,
-  .login-brandmeta,
-  .login-pulse,
-  .login-sys {
-    display: none;
+  .login-brand::after { display: none; }
+  .login-brand-head { align-items: flex-start; }
+  .login-system-state { display: none; }
+  .login-brand-copy,
+  .login-brandmeta { display: none; }
+  .market-stage { inset: 26% -35% 0 -20%; opacity: 0.38; }
+  .login-auth {
+    z-index: 2;
+    padding: 92px 20px 30px;
+    background: linear-gradient(rgba(4, 17, 27, 0.12), rgba(4, 17, 27, 0.5));
+  }
+  .login-card { max-width: 430px; }
+  .login-theme {
+    position: fixed;
+    top: 26px;
+    right: 24px;
+    color: #d9e5e9;
+    border-color: rgba(220, 232, 236, 0.25);
+    background: rgba(7, 27, 39, 0.62);
+  }
+}
+
+@media (max-width: 520px) {
+  .login-brand { padding: 18px; }
+  .login-logo :deep(.brand-mark) { width: 154px; height: auto; }
+  .login-auth { padding: 80px 12px 14px; }
+  .login-card {
+    padding: 28px 20px 24px;
+    border-radius: 16px;
+  }
+  .login-card-title h2 { font-size: 26px; }
+  .login-theme { top: 20px; right: 18px; }
+}
+
+@media (max-height: 720px) and (min-width: 981px) {
+  .login-auth { align-items: flex-start; padding-top: 48px; }
+  .login-card { padding-top: 28px; padding-bottom: 24px; }
+  .login-tabs { margin-top: 18px; margin-bottom: 16px; }
+  .login-footnote { margin-top: 18px; padding-top: 14px; }
+  .login-brand-copy { bottom: 88px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .market-track-line { animation: none; }
+  .login-theme,
+  .login-primary { transition: none; }
+}
+
+@supports not (backdrop-filter: blur(18px)) {
+  .login-card { background: var(--login-page-bg); }
+}
+
+@media (forced-colors: active) {
+  .login-card,
+  .login-field,
+  .login-tabs { border: 1px solid CanvasText; }
+  .login-security i,
+  .login-system-state span { background: Highlight; }
+}
+
+@media (max-width: 360px) {
+  .login-card { padding-inline: 16px; }
+  .login-captcha-img { width: 92px; }
+  .login-rowbetween { gap: 10px; }
+  .login-footnote { letter-spacing: 0.04em; }
+}
+
+@media (max-height: 620px) and (max-width: 980px) {
+  .login-auth { align-items: flex-start; }
+  .login-card { margin-top: 0; }
+}
+
+@media print {
+  .login-theme { display: none; }
+}
+
+@media (hover: none) {
+  .login-primary:hover:not(:disabled),
+  .login-theme:hover { transform: none; }
+}
+
+@media (prefers-contrast: more) {
+  .login-field,
+  .login-tabs { border-color: var(--login-text-sub); }
+}
+
+@media (max-width: 980px) and (prefers-color-scheme: light) {
+  .login-shell:not(.is-dark) .login-card {
+    background: rgba(248, 251, 252, 0.92);
   }
 }
 </style>
