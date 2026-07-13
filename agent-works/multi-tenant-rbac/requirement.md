@@ -258,6 +258,7 @@
 - **校验规则**：仅系统管理员可改；开关变更记审计。
 - **对现有功能的影响**：与 R5/R15 登录注册链路联动。
 - **阶段五落地事实**：`auth.require_email_code`、`auth.login_captcha_enabled`、`auth.captcha_after_fails` 已进入配置白名单、`/api/data/settings` 和 `/system/config/system`；`/api/auth/public-config` 与注册/登录链路已消费配置，开启图形验证码后登录页首屏展示，后端对已提交验证码执行校验并保留失败阈值强制兜底，配置保存写入脱敏审计。
+- **补充落地事实（真实 SMTP + 发码防滥用加固，2026-07）**：阶段二遗留的「邮箱验证码只写 dev 日志」已兑现为真实 SMTP 投递（`backend/common/mailer.py`，标准库 smtplib）：发码**先存后发**、失败按值 CAS 回滚（不误删并发码），保证「发出的码一定可验证」；发码防滥用补强——邮箱规范化+格式校验、per-email + per-IP 双维度限流（新增 `auth.email_code_ip_rate_per_hour`，入白名单）、`require_email_code=false` 时停用发码、已注册邮箱统一成功但不真发（防枚举）；限流键 IP 统一走 socket 地址、`server.trust_forwarded_for` 显式开启才信任 XFF；发信开关/账号走 `AI_STOCKS_SMTP_*` 环境变量（YAML `mail` 基线默认关闭），系统设置页只读徽标展示就绪度。登录页错误改字段内联/整体错误条（不再顶部 toast）、发码加载态与倒计时修复。详见 [../email-auth-smtp/development-trace.md](../email-auth-smtp/development-trace.md)。
 
 ### R17 日志审计（新需求）
 - **功能描述**：统一采集三类事件并提供只读可观测查询页：①接口事件（所有 `/api` 请求）②任务事件（`async_task` / `scheduled_job` 钩子）③安全事件（登录成败/限流命中/验证码失败/token 吊销/越权 403）。
@@ -621,6 +622,7 @@
 | R14 | 租户 CRUD；停用租户其用户登录被拒 | 页面 + 接口测试 |
 | R15 | 暴力破解锁定、限流 429、注入/XSS 防护、密码哈希 | 安全测试 |
 | R16 | 系统设置开关切换后注册/登录校验即时变化；缺值回落默认；审计默认查询窗口按 `audit.retention_days` 生效 | `test_stage5_config_t2.py`、`test_stage5_auth_config.py`、`test_stage5_audit.py`、`ConfigView.system.spec.ts` |
+| R16 补充 | 真实 SMTP 发码就绪/失败作废/规范化/双维度限流/关闭停用/已注册不真发；先存后发保证可验证；限流键抗 XFF 伪造；系统设置页邮件就绪徽标 | `test_auth_service.py`（send/register/限流/规范化/CAS 回滚）、`test_client_ip.py`（`_client_ip`/`_scope_ip` 信任开关）、`test_stage5_config_t2.py`（`mail_status` mode/ready）、`LoginView.emailcode.spec.ts`、`ConfigView.system.spec.ts`（就绪徽标三分支） |
 | R17 | 操作/任务/安全事件（含限流/403）可按条件检索；只读不可改；system 全局、tenant_admin 本租户收口 | `test_stage5_audit.py`、`test_stage5_audit_collection.py`、`test_stage5_resource_codes.py`、`AuditLogView.spec.ts`、三档视口验证 |
 | R18 | 字典项增删停用后下拉/校验即时反映；缺失回落默认；字典管理 system-only，`dict:read` 登录基线共享读 | `test_stage5_dicts.py`、`test_stage5_resource_codes.py`、`DataDictionaryView.spec.ts`、三档视口验证 |
 | R19 | 配置 4 子页面功能完整；普通用户仅见评分规则/买卖指标；系统设置动态配置组可展示、保存和权限拦截 | 路由/pageRegistry/layout-contract 测试、`ConfigView.system.spec.ts`、`npm run build`、三档视口验证 |
@@ -712,6 +714,20 @@
 - **开发产物索引（T1-T12）**：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/auth/deps.py`、`backend/tests/test_rbac_schema.py`、`frontend/src/api/client.ts`、`frontend/src/api/authToken.ts`、`frontend/src/api/__tests__/client-refresh.spec.ts`、`frontend/src/stores/auth.ts`、`frontend/src/stores/__tests__/auth.spec.ts`、`backend/storage/audit_repository.py`、`backend/services/audit_service.py`、`backend/services/asset_audit.py`、`backend/cli.py`、`backend/scheduler/scheduler.py`、`backend/tests/test_stage6_audit_cleanup.py`、`backend/tests/test_stage6_audit_changes.py`、`backend/services/asset_visibility.py`、`backend/tests/test_stage6_asset_visibility.py`、`backend/screening/profile.py`、`backend/api/profiles.py`、`backend/services/screen_score.py`、`backend/tests/test_stage6_screen_profile_visibility.py`、`backend/tests/test_stage6_visibility_resource_codes.py`、`frontend/src/api/screening.ts`、`frontend/src/views/ScreenView.vue`、`backend/signals/trade_profile.py`、`backend/api/trade_profiles.py`、`backend/backtest/engine.py`、`backend/services/backtest_service.py`、`backend/api/backtest.py`、`backend/tests/test_stage6_trade_profile_visibility.py`、`backend/tests/test_stage6_backtest_visibility.py`、`backend/tests/test_score_profile_visibility_api.py`、`frontend/src/api/tradeProfile.ts`、`frontend/src/api/backtest.ts`、`frontend/src/api/audit.ts`、`frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue`、`frontend/src/components/AssetVisibilityActions.vue`、`frontend/src/components/__tests__/AssetVisibility.spec.ts`、`frontend/src/views/BoardView.vue`、`frontend/src/views/ConfigView.vue`、`frontend/src/views/BacktestView.vue`、`frontend/src/views/system/AuditLogView.vue`、`frontend/src/views/system/__tests__/AuditLogView.spec.ts`、[stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql](stage6-experience-asset-visibility/stage6-experience-asset-visibility.sql)、[stage6-experience-asset-visibility/resource-codes.sql](stage6-experience-asset-visibility/resource-codes.sql)。
 - **验收基线**：T11 合并后端验证集 **34 passed**（阶段六专项 + T1 权限资源 + 阶段四评分公开链路 + 阶段五审计/字典/系统设置回归）；前端专项 **16 passed**（client refresh、AssetVisibility 组件、AuditLogView 字段变更）；`npm run build` 通过；5181 预览用 `debug_tenant_admin/debug_system` 完成 `/screen`、`/system/config/score`、`/system/config/trade`、`/backtest`、`/system/audit` 在 `1100x620 / 1366x768 / 1440x900` 三档视口抽样，临时验收数据已清理为 0。审查整改复测追加：阶段六 visibility/audit/resource-code 定向后端测试 **9 passed**，T1+T4+T3 回归 **12 passed**，`cd frontend && npm run build` 通过；P0/P1/P2 后端定向回归 **11 passed**，覆盖 visibility 规范化鉴权、公开回测依赖发布约束、legacy id 写回 owner opaque ref、viewer 同名私有方案防跑偏和 BacktestEngine 显式 owner 解析评分方案；追加 P2 同签名收口验证覆盖发布 legacy run 规范化后清理已有 canonical run；追加 `source_run_ref` 数据边界回归覆盖 public run 详情不泄漏不可见来源 ref，`python -m pytest backend/tests/test_stage6_backtest_visibility.py -q` 通过（4 passed）。前端 `npm run build` 通过；5181 预览用 `debug_normal` 验证 `/backtest` 在 `390x844` 与 `1440x900` 下 `scrollWidth === innerWidth`、无横向溢出；本轮 P1 整改追加 `ConfigView.system.spec.ts` 前端专项 **7 passed**，覆盖买卖页初始化使用 `profile_ref` 拉公开方案详情，`npm run build` 通过，5181 预览验证 `/system/config/trade` 在桌面宽度和 `390x844` 下公开买卖方案、租户公开、只读、复制入口可见且无横向溢出。本轮代码审查整改追加：前端 auth/client/组件专项 **8 tests passed**，后端停服后定向回归 **18 passed**，覆盖登出最新 refresh token、跨租户 owner_label 脱敏、score_check 复用审计和 opaque ref 标签批量读取，`npm run build` 通过。
 - **范围边界**：本阶段不做公开市场、审批流、收藏、搜索广场、运营推荐、计费联动；不扩展自选股分组、盘感训练记录、布局配置、系统配置、字典或数据任务为公开资产。
+
+**补充阶段：邮箱验证码真实 SMTP 投递与发码防滥用加固** — ✅ **完成**（已合并入 `main`，提交 `0efcdd9`）
+- 覆盖需求：R16（兑现阶段二遗留的「真实邮件 SMTP 投递」，闭合公网注册防滥用验收缺口）、R15 延续（发码限流补强）。
+- 目标：把邮箱验证码从「dev 日志投递」升级为真实 SMTP，并加固发码链路与登录页错误/加载态。**达成**。
+- **落地结论**：
+  - 发信：新增 `backend/common/mailer.py`（标准库 smtplib）；`send_email_code` **先存后发**，`MailError` 后 `delete_email_code_if_match` 按值 CAS 回滚（不误删并发码）——保证「发出的码一定可验证」。
+  - 防滥用：邮箱规范化+格式校验；per-email + per-IP 双维度限流（新增 `auth.email_code_ip_rate_per_hour`，入 `app_config` 白名单）；`require_email_code=false` 停用发码（fail-closed）；已注册邮箱统一成功但不真发（防枚举）。
+  - 注册：验证码「校验不消费、创建成功后才 CAS 消费」，任何失败分支都不烧码。
+  - 限流口径：新增 `server.trust_forwarded_for`（默认 false）；认证端点/全局中间件/审计三处 IP 取值统一，默认用 socket 地址防伪造 XFF 绕过。
+  - 配置分层：`mail` 开关/账号走 `AI_STOCKS_SMTP_*` 环境变量覆盖，YAML `mail` 基线默认关闭、账号留空（不入仓库）。
+  - 前端：登录/注册错误改字段内联+整体错误条（`client.ts` `skipGlobalError`，不再顶部 toast）；发码加载态 + 倒计时单定时器修复；系统设置页「注册需邮箱验证码」开关下只读展示邮件就绪徽标（`mail_status.mode`）。
+- **验收基线**：后端 `test_auth_service.py`（含发码/注册/限流/规范化/CAS 回滚）、`test_client_ip.py`、`test_stage5_config_t2.py`（`mail_status`）通过；前端 `vue-tsc -b` 无错、`LoginView.emailcode.spec.ts`/`ConfigView.system.spec.ts` 通过；浏览器实测注册发码→收信→填码→自动登录链路跑通。真实 SMTP 端到端用 Gmail 应用专用密码验证过一次投递。
+- **需求/开发/留痕/核查文档**：需求映射见本节 R16「补充落地事实」与 §11 验收表「R16 补充」行；开发留痕 [../email-auth-smtp/development-trace.md](../email-auth-smtp/development-trace.md)（含方案选型、改动清单、四轮审查加固 P1/P2/P3、业务闭环核查整改、能力就绪可观测与后续可扩展设计）。
+- **范围边界**：本阶段只做注册邮箱验证码的真实投递与防滥用；找回密码、短信/第三方登录（R6/R25）等仍按原计划后续处理。SMTP 真实可用性的运维健康探测（能力注册表/就绪探测通用化）已在留痕中作为后续可扩展项记录，未实现。
 
 **独立需求（排期待定，非上述任一阶段的既定内容）**
 - R28 已覆盖评分/筛选/买卖/回测；这些类型之外的其他资产公开能力（如自选股分组、盘感训练记录、布局配置、系统配置、字典或数据任务）是否支持 `private/tenant/public` 仍待独立设计和排期。

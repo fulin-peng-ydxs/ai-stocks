@@ -46,7 +46,7 @@
 | 自动化验证 | `npm run dev -- --port 5181 --strictPort` | `5181` | AI 截图/交互核查专用，不占用日常 5173 |
 | 生产/集成 | `npm run build` 后 `./start.sh prod` | `0.0.0.0:8000` | 后端托管 `frontend/dist` |
 
-开发期浏览器访问 `5173`，生产/集成期访问 `8000`。系统已启用登录鉴权，但邮箱码仍走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议把 `prod` 端口直接暴露公网。
+开发期浏览器访问 `5173`，生产/集成期访问 `8000`。系统已启用登录鉴权；注册邮箱码已支持真实 SMTP 投递（仓库基线默认关闭、仅写 dev 日志，公网前用 `AI_STOCKS_SMTP_*` 开启），公网部署仍须配合反代 TLS、限流与运维访问控制。
 
 自动化验证（AI 用 preview 做截图/交互核查）走**独立端口 5181**，与日常 5173 并存、互不干扰，同样由 Vite 代理 `/api` 回 8000。Claude Code 的 preview 工具配置在 `.claude/launch.json`；它只服务 AI 验证，与日常开发的 `start.sh`/`start-web.sh` 无关。
 preview 工具只能托管自己启动的进程，故验证一律用 `ai-stocks-verify`，不要去抢占或杀掉用户手动起的 5173。
@@ -134,7 +134,7 @@ flowchart LR
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
 | <span style="color:#dc2626">●</span> 高 | DuckDB 单写锁 + 写任务单例 | 长写任务期间其它写请求被 409 拦下；不具备并发写吞吐能力 | 单机部署下写任务排队靠页面状态和人工错峰 |
-| <span style="color:#dc2626">●</span> 高 | 公网放量前的运维安全缺口 | 登录鉴权、RBAC、租户隔离、业务路由权限码、审计查询、数据字典和注册防滥用配置已接入；邮箱码仍是 dev 日志投递 | 公网前接 SMTP，并配套反代 TLS、限流、监控与备份；prod 暂不直接暴露公网 |
+| <span style="color:#f59e0b">●</span> 中 | 公网放量前的运维安全缺口 | 登录鉴权、RBAC、租户隔离、业务路由权限码、审计查询、数据字典、注册防滥用配置和真实 SMTP 发码均已接入（邮件基线默认关闭、按 `AI_STOCKS_SMTP_*` 开启） | 公网前用环境变量开启并配好发信账号，配套反代 TLS、限流、监控与备份；prod 暂不直接暴露公网 |
 | <span style="color:#f59e0b">●</span> 中 | 本机绑定与进程内状态 | 多进程/多副本下任务互斥、取消、reconcile 会失效 | 仅按单机单进程部署 |
 | <span style="color:#f59e0b">●</span> 中 | 服务重启打断在跑任务 | running/pending 会被标为 interrupted，需续跑 | 重启前确认任务完成；中断后从任务页续跑 |
 | <span style="color:#f59e0b">●</span> 中 | 配置读取入口选错 | 漏用有效配置会读不到 Web 覆盖值；启动期误读 DB 会引入初始化环 | 新增配置先按 [environment-configuration.md](environment-configuration.md) 判定归属和读取方式 |

@@ -241,7 +241,7 @@ cd frontend && npm run build && cd ..   # 产物进 frontend/dist
 ./start.sh prod                         # 后端绑 0.0.0.0:8000 托管 dist
 ```
 
-生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权、细粒度 RBAC、系统菜单、租户管理、存量业务路由资源码、基线共享读和评分/筛选/买卖/回测资产可见性；启动前必须按 [environment-configuration.md](agent-works/architecture/environment-configuration.md) 完成密钥、管理员初始密码和 PG/Redis 连接配置。**注**：邮箱验证码目前走 dev 日志投递（非真实 SMTP），公网放量前须先接 SMTP，暂不建议将 `prod` 直接暴露公网。
+生产/集成模式下只有一个入口：`http://localhost:8000` 或 `http://<机器IP>:8000`。系统已具备登录鉴权、细粒度 RBAC、系统菜单、租户管理、存量业务路由资源码、基线共享读和评分/筛选/买卖/回测资产可见性；启动前必须按 [environment-configuration.md](agent-works/architecture/environment-configuration.md) 完成密钥、管理员初始密码和 PG/Redis 连接配置。**注**：注册邮箱验证码已支持真实 SMTP 投递（`backend/common/mailer.py`），但仓库基线默认关闭（`mail.enabled=false` → 仅写 dev 日志），公网放量前需按 `environment-configuration.md` 用 `AI_STOCKS_SMTP_*` 开启并配好发信账号；公网部署仍应配合反向代理与 TLS。
 
 ### 5.3 首次准备数据（依赖有序）
 

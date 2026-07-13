@@ -39,12 +39,18 @@ flowchart TD
 | `AI_STOCKS_PG_PASSWORD` | `Settings.pg_conninfo()` | PostgreSQL 密码，配合 YAML 连接参数 | 可选；本机 trust 可不填 | 新建 `PostgresClient` 时读取 |
 | `AI_STOCKS_REDIS_URL` | `Settings.redis_url()` | Redis 完整 URL，优先级最高 | 可选；配置后覆盖 YAML 的 Redis host/port/db 和 `AI_STOCKS_REDIS_PASSWORD` | 新建 `RedisClient` 时读取；已创建客户端需重启或重建 |
 | `AI_STOCKS_REDIS_PASSWORD` | `Settings.redis_url()` | Redis 密码，配合 YAML 连接参数 | 可选；无密码 Redis 可不填 | 新建 `RedisClient` 时读取 |
+| `AI_STOCKS_SMTP_ENABLED` | `Settings.mail_config()` | 是否真实发送邮件（注册验证码等）；关闭时降级为 dev 日志、不真发 | 可选；覆盖 YAML `mail.enabled`（基线 false） | 每次 `get_effective_settings().mail_config()` 读取；改 `.env.local` 后需重启进程 |
+| `AI_STOCKS_SMTP_USERNAME` | `Settings.mail_config()` | SMTP 登录账号/发信邮箱 | 真实发信必填；覆盖 YAML `mail.username`（基线留空） | 同上 |
+| `AI_STOCKS_SMTP_SENDER` | `Settings.mail_config()` | From 显示地址；留空回落 `username` | 可选；覆盖 YAML `mail.sender` | 同上 |
+| `AI_STOCKS_SMTP_PASSWORD` | `Settings.smtp_password()`、`backend/common/mailer.py` | SMTP 登录密码/授权码（Gmail 等用应用专用密码） | 真实发信必填；无弱默认 | 真实发信时读取 |
 | `AI_STOCKS_ADMIN_PASSWORD` | `backend/storage/pg_ddl.py::seed_default_tenant()` | 首次 seed 或补齐 `admin` 密码哈希 | 生产/共享环境必须显式设置；缺失会随机生成并只在日志告警一次 | 仅在 `admin` 不存在或 `password_hash` 为空时使用；不会覆盖已有密码 |
 | `AI_STOCKS_TEST_USER_PASSWORD` | `backend/devtools/rbac_test_users.py` | `debug_*` 本地调试账号统一密码 | 可选；本地开发未设置时回落测试默认值 | 执行 `python -m backend.cli dev-users` 创建/校准时读取 |
 | `AI_STOCKS_ENV` / `ENV` | `backend/devtools/rbac_test_users.py` | 阻止在生产标记下创建调试账号 | 可选；值为 `prod` 或 `production` 时拒绝执行 | `dev-users` 命令运行时读取 |
 | `AI_STOCKS_FILE_LOG` | `backend/common/logging.py` | 额外写 `logs/ai_stocks.log` | 可选；仅值为 `1` 时开启 | 首次配置 logger 时读取；默认只由 `start.sh` 汇总 stdout/stderr 到 `logs/backend.log` |
 | `PYTHON` | `start.sh` | 选择后端启动脚本使用的 Python 可执行文件 | 可选；默认 `python` | 必须在调用 `./start.sh` 前的 shell 环境中设置；当前脚本在读取 `.env.local` 前确定该值 |
 | `WEB_PORT` | `start-web.sh` | 选择 Vite dev server 端口 | 可选；默认 `5173` | 必须在调用 `./start-web.sh` 前的 shell 环境中设置；该脚本不读取 `.env.local` |
+
+> 邮件 `mail.*` 采用「YAML 安全基线 + 环境变量覆盖」：`config/settings.yaml` 的 `mail` 段默认 `enabled=false`、账号留空（个人/部署账号不入仓库），真实开关与账号由上表 `AI_STOCKS_SMTP_*` 覆盖（`Settings.mail_config()` 叠加），密码只走 `AI_STOCKS_SMTP_PASSWORD`。另有 `server.trust_forwarded_for`（YAML，默认 `false`）控制是否信任 `X-Forwarded-For` 作为限流键 IP——直连公网时保持 false（用 socket 连接地址，防伪造头绕过 per-IP 限流），仅在可信反代会覆盖 XFF 时置 true。
 
 前端代码没有项目自定义 `VITE_*` 运行配置。当前只使用 Vite 内置的 `import.meta.env.MODE` 和 `import.meta.env.DEV` 做测试/开发期分支；API 基址固定为同源 `/api`，开发期由 Vite proxy 转发到 `127.0.0.1:8000`。
 

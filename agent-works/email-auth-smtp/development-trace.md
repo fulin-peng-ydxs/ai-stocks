@@ -1,6 +1,8 @@
 # 邮箱认证 · 接入真实 SMTP 投递
 
 > 本文只保留当前最终事实（已并入审查加固结论）。
+> 需求映射：兑现多租户 RBAC **R16** 阶段二遗留的「真实邮件 SMTP 投递」+ 发码防滥用（R15 延续）。
+> 见 [../multi-tenant-rbac/requirement.md](../multi-tenant-rbac/requirement.md) §5 R16「补充落地事实」、§11 验收「R16 补充」、§12「补充阶段」。
 
 ## 背景
 

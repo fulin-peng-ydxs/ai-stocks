@@ -11,7 +11,7 @@
 - **默认拒绝中间件**：`backend/auth/middleware.py` 的 `AuthMiddleware` 对非白名单 `/api/**` 强制校验 access token。公开路径只包括 `/api/health` 与 `/api/auth/*`；鉴权关键依赖不可用时返回 503，避免在权限链路上 fail-open。
 - **瘦 JWT**：access / refresh token 只承载用户、租户和 `perm_ver`。角色、菜单、功能码不写入 token，而是在请求进入后由 `AuthService` 和 `perm_resolver` 按用户重新解析。
 - **请求上下文**：中间件把 `AuthContext` 注入 ContextVar，服务和仓库通过 `get_current_context()` / `get_current_owner()` 读取 `user_id`、`tenant_id`、角色和授权集合。普通业务请求不从前端参数决定资产归属。
-- **安全补充**：`SecurityMiddleware` 在 API 层提供 per-IP 粗粒度限流和基础安全响应头；主防护仍应由反向代理承担。
+- **安全补充**：`SecurityMiddleware` 在 API 层提供 per-IP 粗粒度限流和基础安全响应头；主防护仍应由反向代理承担。限流键 IP 取值口径全站统一（认证端点 `_client_ip`、全局中间件 `_scope_ip`、审计留痕）：默认用不可伪造的 socket 连接地址，仅 `server.trust_forwarded_for=true` 时取 `X-Forwarded-For` 首段。
 
 ### 2. RBAC 数据模型
 
@@ -236,7 +236,7 @@ flowchart LR
 
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
-| <span style="color:#dc2626">●</span> 高 | 邮箱验证码仍是开发日志投递 | 注册和找回类能力不适合直接公网放量 | 公网前接 SMTP，并补注册频控和反滥用配置页 |
+| <span style="color:#f59e0b">●</span> 中 | 邮件真实发信默认关闭、依赖部署侧环境变量 | 漏配 `AI_STOCKS_SMTP_*` 时开关虽开但只写日志、用户收不到验证码 | 真实 SMTP 已就绪（先存后发、失败按值 CAS 回滚、双维度限流、已注册邮箱不真发）；上线用环境变量开启，系统设置页只读徽标（`mail_status.mode`）可见就绪度 |
 | <span style="color:#dc2626">●</span> 高 | 前端权限只提供体验收口 | 如果后端漏挂依赖，隐藏菜单或按钮不能阻止接口被调用 | 新增 API 必须挂后端守卫，并保留路由扫描测试 |
 | <span style="color:#f59e0b">●</span> 中 | 公开资产范围仍限评分/筛选/买卖/回测 | 自选股分组、盘感训练记录、布局配置等资产仍不能跨用户共享 | 这些类型若要开放共享，需按现有显式可见性模型单独设计和排期 |
 | <span style="color:#f59e0b">●</span> 中 | PG 和 Redis 是鉴权关键依赖 | 依赖不可用时登录态接口会拒绝，影响全站访问 | 部署前做好健康检查、备份和监控；本地开发先启动 PG/Redis |
