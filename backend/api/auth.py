@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from backend.api.response import ApiResponse, ok
 from backend.common.exceptions import ValidationError
+from backend.config import get_effective_settings
 from backend.services.auth_service import AuthService
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -43,10 +44,16 @@ class EmailCodeIn(BaseModel):
 
 
 def _client_ip(request: Request) -> str:
-    """取客户端 IP：反代后优先 X-Forwarded-For 首段，否则连接地址。"""
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
+    """取客户端 IP 作为限流键。
+
+    默认用 socket 连接地址（不可被请求头伪造）；仅当 server.trust_forwarded_for=true
+    （后端在可信反代之后、反代会覆盖 XFF）时才取 X-Forwarded-For 首段。直连公网时信任 XFF
+    会被攻击者每请求伪造成新 IP 从而绕过 per-IP 限流，故默认不信任。
+    """
+    if get_effective_settings().server.trust_forwarded_for:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 

@@ -4,7 +4,6 @@
 // 契约：用 position:fixed;inset:0 全屏（禁 vh 高度、禁手写 .v-page/.v-grow，过 layout-contract.spec.ts）。
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
 import { useLayoutPreset } from '@/layout'
 import { useAuthStore } from '@/stores/auth'
@@ -37,15 +36,59 @@ const form = reactive({
 const showPwd = ref(false)
 const loading = ref(false)
 
+// 字段级错误态：账号/密码等各输入框下方就地展开报错；form 为不归属单字段的整体错误（如账密不匹配）。
+// 不再用顶部全局 toast（见 DESIGN.md「error 不只依赖全局 toast」）。
+const errors = reactive({
+  account: '', password: '', confirm: '', email: '', emailCode: '', captcha: '', form: '',
+})
+function clearErrors() {
+  errors.account = ''
+  errors.password = ''
+  errors.confirm = ''
+  errors.email = ''
+  errors.emailCode = ''
+  errors.captcha = ''
+  errors.form = ''
+}
+// 从被拦截器跳过全局 toast 的错误里取可读文案（interceptor 已挂 uiMessage）。
+function pickMessage(e: unknown): string {
+  const err = e as { uiMessage?: string; response?: { data?: { msg?: string } }; message?: string }
+  return err?.uiMessage || err?.response?.data?.msg || ''
+}
+// 把后端错误文案按关键字落到对应字段；无法归属的进 form 整体错误。
+function mapAuthError(msg: string, fallbackField: 'password' | 'form') {
+  if (!msg) { errors.form = '操作失败，请稍后重试'; return }
+  if (msg.includes('账号已存在') || msg.includes('账号')) errors.account = msg
+  else if (msg.includes('邮箱已被注册') || msg.includes('邮箱格式') || (msg.includes('邮箱') && !msg.includes('验证码'))) errors.email = msg
+  else if (msg.includes('验证码')) errors.emailCode = msg
+  else if (msg.includes('密码')) errors.password = msg
+  else errors[fallbackField] = msg
+}
+
 // 图形验证码：后端启用即在登录页展示；登录失败后刷新，避免复用已消费的验证码。
 const captchaId = ref('')
 const captchaSvg = ref('')
 const needCaptcha = ref(false)
 const loginFails = ref(0)
 
-// 邮箱验证码发送倒计时（秒）
+// 邮箱验证码发送倒计时（秒）+ 在途加载态 + 成功提示
 const emailCountdown = ref(0)
+const emailSending = ref(false)
+const emailHint = ref('')
 let emailTimer: ReturnType<typeof setInterval> | undefined
+
+// 启动 60s 倒计时：启动前先清旧定时器，杜绝多次点击叠加多个 interval 导致「倒计时飞快」。
+function startEmailCountdown() {
+  if (emailTimer) clearInterval(emailTimer)
+  emailCountdown.value = 60
+  emailTimer = setInterval(() => {
+    emailCountdown.value -= 1
+    if (emailCountdown.value <= 0 && emailTimer) {
+      clearInterval(emailTimer)
+      emailTimer = undefined
+    }
+  }, 1000)
+}
 
 async function loadPublicConfig(syncCaptcha = true) {
   try {
@@ -76,6 +119,8 @@ onUnmounted(() => {
 
 function setMode(m: Mode) {
   mode.value = m
+  clearErrors()
+  emailHint.value = ''
   if (m === 'login' && cfg.loginCaptchaEnabled && !needCaptcha.value) {
     void refreshCaptcha()
   }
@@ -100,12 +145,12 @@ async function refreshCaptcha() {
 
 async function onLogin() {
   await loadPublicConfig()
-  if (!form.account || !form.password) {
-    ElMessage.warning('请输入账号和密码')
-    return
-  }
+  clearErrors()
+  if (!form.account) errors.account = '请输入账号'
+  if (!form.password) errors.password = '请输入密码'
+  if (errors.account || errors.password) return
   if (needCaptcha.value && !form.captchaCode) {
-    ElMessage.warning('请输入图形验证码')
+    errors.captcha = '请输入图形验证码'
     return
   }
   loading.value = true
@@ -117,13 +162,16 @@ async function onLogin() {
     const redirect = (route.query.redirect as string) || '/'
     await router.replace(redirect)
   } catch (error) {
-    // 登录失败：错误提示由拦截器统一弹出；累计失败达阈值(captchaAfterFails)且后端启用才显示图形码
-    const msg = String((error as { response?: { data?: { msg?: string } } })?.response?.data?.msg ?? '')
+    // 登录失败：就地内联报错（不弹全局 toast）；累计失败达阈值且后端启用才显示图形码
+    const msg = pickMessage(error)
     form.captchaCode = ''
     if (msg.includes('图形验证码')) {
+      errors.captcha = msg
       await refreshCaptcha()
       return
     }
+    // 账密/锁定类错误归为整体错误，展示在提交按钮上方
+    errors.form = msg || '账号或密码错误'
     loginFails.value += 1
     if (needCaptcha.value || (cfg.loginCaptchaEnabled && loginFails.value >= cfg.captchaAfterFails)) {
       await refreshCaptcha()
@@ -134,18 +182,15 @@ async function onLogin() {
 }
 
 async function onRegister() {
-  if (!form.account || !form.password) {
-    ElMessage.warning('请输入账号和密码')
-    return
+  clearErrors()
+  if (!form.account) errors.account = '请输入账号'
+  if (!form.password) errors.password = '请输入密码'
+  if (form.password && form.password !== form.confirm) errors.confirm = '两次输入的密码不一致'
+  if (cfg.requireEmailCode) {
+    if (!form.email) errors.email = '请填写邮箱'
+    if (!form.emailCode) errors.emailCode = '请填写邮箱验证码'
   }
-  if (form.password !== form.confirm) {
-    ElMessage.warning('两次输入的密码不一致')
-    return
-  }
-  if (cfg.requireEmailCode && (!form.email || !form.emailCode)) {
-    ElMessage.warning('请填写邮箱与邮箱验证码')
-    return
-  }
+  if (errors.account || errors.password || errors.confirm || errors.email || errors.emailCode) return
   loading.value = true
   try {
     await auth.register({
@@ -155,29 +200,32 @@ async function onRegister() {
       email_code: form.emailCode.trim() || undefined,
     })
     await router.replace('/') // 注册后已自动登录
-  } catch {
-    // 错误提示由拦截器统一弹出
+  } catch (error) {
+    // 注册失败：把后端文案映射到对应字段（账号已存在/邮箱已被注册/验证码错/密码强度等）
+    mapAuthError(pickMessage(error), 'form')
   } finally {
     loading.value = false
   }
 }
 
 async function onSendEmailCode() {
+  errors.emailCode = ''
+  emailHint.value = ''
   if (!form.email) {
-    ElMessage.warning('请先填写邮箱')
+    errors.email = '请先填写邮箱'
     return
   }
-  if (emailCountdown.value > 0) return
+  if (emailCountdown.value > 0 || emailSending.value) return
+  emailSending.value = true
   try {
     await sendEmailCode(form.email.trim())
-    ElMessage.success('验证码已发送，请查收邮箱')
-    emailCountdown.value = 60
-    emailTimer = setInterval(() => {
-      emailCountdown.value -= 1
-      if (emailCountdown.value <= 0 && emailTimer) clearInterval(emailTimer)
-    }, 1000)
-  } catch {
-    // 发送失败（限流等）由拦截器提示
+    emailHint.value = '验证码已发送，请查收邮箱'
+    startEmailCountdown()
+  } catch (error) {
+    // 发送失败（限流/发信异常等）就地展示在验证码框下方
+    errors.emailCode = pickMessage(error) || '验证码发送失败，请稍后重试'
+  } finally {
+    emailSending.value = false
   }
 }
 
@@ -268,71 +316,96 @@ function onSubmit() {
                   :aria-selected="mode === 'register'" @click="setMode('register')">注册账户</button>
         </div>
 
-        <label class="login-field">
-          <span class="field-label">ACCOUNT</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
-          </svg>
-          <input v-model="form.account" type="text" :placeholder="mode === 'register' ? '账号' : '账号 / 邮箱'"
-                 autocomplete="username" @keyup.enter="onSubmit" />
-        </label>
+        <div class="login-field-block">
+          <label class="login-field" :class="{ 'is-error': errors.account }">
+            <span class="field-label">ACCOUNT</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 4-6 8-6s8 2 8 6" />
+            </svg>
+            <input v-model="form.account" type="text" :placeholder="mode === 'register' ? '账号' : '账号 / 邮箱'"
+                   autocomplete="username" @input="errors.account = ''; errors.form = ''" @keyup.enter="onSubmit" />
+          </label>
+          <p v-if="errors.account" class="field-error">{{ errors.account }}</p>
+        </div>
 
-        <label class="login-field">
-          <span class="field-label">PASSWORD</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
-          </svg>
-          <input v-model="form.password" :type="showPwd ? 'text' : 'password'" placeholder="密码"
-                 autocomplete="current-password" @keyup.enter="onSubmit" />
-          <svg class="eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="2" @click="showPwd = !showPwd">
-            <path v-if="showPwd" d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
-            <path v-else d="M3 3l18 18M10.6 5.1A9.6 9.6 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.3 3.9M6.6 6.6A17 17 0 0 0 2 12s4 7 10 7a9.6 9.6 0 0 0 3.4-.6" />
-            <circle v-if="showPwd" cx="12" cy="12" r="3" />
-          </svg>
-        </label>
+        <div class="login-field-block">
+          <label class="login-field" :class="{ 'is-error': errors.password }">
+            <span class="field-label">PASSWORD</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
+            </svg>
+            <input v-model="form.password" :type="showPwd ? 'text' : 'password'" placeholder="密码"
+                   autocomplete="current-password" @input="errors.password = ''; errors.form = ''" @keyup.enter="onSubmit" />
+            <svg class="eye" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" @click="showPwd = !showPwd">
+              <path v-if="showPwd" d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Z" />
+              <path v-else d="M3 3l18 18M10.6 5.1A9.6 9.6 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3.3 3.9M6.6 6.6A17 17 0 0 0 2 12s4 7 10 7a9.6 9.6 0 0 0 3.4-.6" />
+              <circle v-if="showPwd" cx="12" cy="12" r="3" />
+            </svg>
+          </label>
+          <p v-if="errors.password" class="field-error">{{ errors.password }}</p>
+        </div>
 
-        <label v-if="mode === 'register'" class="login-field">
-          <span class="field-label">CONFIRM</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
-          </svg>
-          <input v-model="form.confirm" type="password" placeholder="确认密码" autocomplete="new-password"
-                 @keyup.enter="onSubmit" />
-        </label>
+        <div v-if="mode === 'register'" class="login-field-block">
+          <label class="login-field" :class="{ 'is-error': errors.confirm }">
+            <span class="field-label">CONFIRM</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" />
+            </svg>
+            <input v-model="form.confirm" type="password" placeholder="确认密码" autocomplete="new-password"
+                   @input="errors.confirm = ''" @keyup.enter="onSubmit" />
+          </label>
+          <p v-if="errors.confirm" class="field-error">{{ errors.confirm }}</p>
+        </div>
 
-        <label v-if="mode === 'register'" class="login-field">
-          <span class="field-label">EMAIL</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
-          </svg>
-          <input v-model="form.email" type="email" placeholder="邮箱" autocomplete="email"
-                 @keyup.enter="onSubmit" />
-        </label>
+        <div v-if="mode === 'register'" class="login-field-block">
+          <label class="login-field" :class="{ 'is-error': errors.email }">
+            <span class="field-label">EMAIL</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
+            </svg>
+            <input v-model="form.email" type="email" placeholder="邮箱" autocomplete="email"
+                   @input="errors.email = ''" @keyup.enter="onSubmit" />
+          </label>
+          <p v-if="errors.email" class="field-error">{{ errors.email }}</p>
+        </div>
 
-        <label v-if="mode === 'register' && cfg.requireEmailCode" class="login-field login-emailcode">
-          <span class="field-label">VERIFY</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
-          </svg>
-          <input v-model="form.emailCode" type="text" placeholder="邮箱验证码" @keyup.enter="onSubmit" />
-          <span class="send" :class="{ disabled: emailCountdown > 0 }" @click="onSendEmailCode">
-            {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
-          </span>
-        </label>
+        <div v-if="mode === 'register' && cfg.requireEmailCode" class="login-field-block">
+          <label class="login-field login-emailcode" :class="{ 'is-error': errors.emailCode }">
+            <span class="field-label">VERIFY</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
+            </svg>
+            <input v-model="form.emailCode" type="text" placeholder="邮箱验证码"
+                   @input="errors.emailCode = ''" @keyup.enter="onSubmit" />
+            <span class="send" :class="{ disabled: emailCountdown > 0 || emailSending }"
+                  role="button" @click="onSendEmailCode">
+              <i v-if="emailSending" class="send-spinner" aria-hidden="true" />
+              {{ emailSending ? '发送中…' : emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
+            </span>
+          </label>
+          <p v-if="errors.emailCode" class="field-error">{{ errors.emailCode }}</p>
+          <p v-else-if="emailHint" class="field-hint">{{ emailHint }}</p>
+        </div>
 
         <template v-if="mode === 'login' && needCaptcha">
-          <div class="login-captcha-row">
-            <label class="login-field dashed">
-              <span class="field-label">CAPTCHA</span>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 3v18M3 12h18" />
-              </svg>
-              <input v-model="form.captchaCode" type="text" placeholder="图形验证码" @keyup.enter="onSubmit" />
-            </label>
-            <div class="login-captcha-img" title="点击刷新" v-html="captchaSvg" @click="refreshCaptcha" />
+          <div class="login-field-block">
+            <div class="login-captcha-row">
+              <label class="login-field dashed" :class="{ 'is-error': errors.captcha }">
+                <span class="field-label">CAPTCHA</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 3v18M3 12h18" />
+                </svg>
+                <input v-model="form.captchaCode" type="text" placeholder="图形验证码"
+                       @input="errors.captcha = ''" @keyup.enter="onSubmit" />
+              </label>
+              <div class="login-captcha-img" title="点击刷新" v-html="captchaSvg" @click="refreshCaptcha" />
+            </div>
+            <p v-if="errors.captcha" class="field-error">{{ errors.captcha }}</p>
           </div>
         </template>
+
+        <p v-if="errors.form" class="login-form-error" role="alert">{{ errors.form }}</p>
 
         <button v-if="mode === 'login'" class="login-primary" type="button" :disabled="loading" @click="onLogin">
           {{ loading ? '登 录 中…' : '登 录' }}
@@ -386,6 +459,10 @@ function onSubmit() {
   --login-track-glow: rgba(197, 164, 102, 0.22);
   --login-logo-start: #d0ab68;
   --login-logo-end: #9a7137;
+  --login-danger: #d64545;
+  --login-danger-ring: rgba(214, 69, 69, 0.14);
+  --login-danger-bg: rgba(214, 69, 69, 0.09);
+  --login-success: #2f9e6b;
 
   position: fixed;
   inset: 0;
@@ -413,6 +490,10 @@ function onSubmit() {
   --login-toggle-bg: rgba(12, 33, 46, 0.78);
   --login-divider: rgba(139, 165, 178, 0.16);
   --login-shadow: rgba(0, 0, 0, 0.38);
+  --login-danger: #ff7a7a;
+  --login-danger-ring: rgba(255, 122, 122, 0.16);
+  --login-danger-bg: rgba(255, 122, 122, 0.1);
+  --login-success: #66c4a0;
 }
 
 .login-shell.preset-daylight {
@@ -770,6 +851,9 @@ function onSubmit() {
   box-shadow: 0 3px 12px rgba(32, 50, 60, 0.08);
   font-weight: 650;
 }
+.login-field-block {
+  margin-bottom: 13px;
+}
 .login-field {
   position: relative;
   display: flex;
@@ -777,7 +861,6 @@ function onSubmit() {
   gap: 10px;
   height: 54px;
   padding: 12px 14px 0;
-  margin-bottom: 13px;
   border: 1px solid var(--login-border);
   border-radius: 10px;
   background: var(--login-input-bg);
@@ -791,6 +874,38 @@ function onSubmit() {
   background: color-mix(in srgb, var(--login-input-bg) 82%, white 18%);
 }
 .is-dark .login-field:focus-within { background: var(--login-input-bg); }
+/* 错误态：红边 + 红聚焦环，与 field-error 文案配合就地报错 */
+.login-field.is-error {
+  border-color: var(--login-danger);
+}
+.login-field.is-error:focus-within {
+  border-color: var(--login-danger);
+  box-shadow: 0 0 0 3px var(--login-danger-ring);
+}
+.login-field.is-error .field-label { color: var(--login-danger); }
+.field-error {
+  margin: 6px 2px 0;
+  color: var(--login-danger);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.field-hint {
+  margin: 6px 2px 0;
+  color: var(--login-success);
+  font-size: 12px;
+  line-height: 1.4;
+}
+/* 不归属单字段的整体错误（如账密不匹配/锁定），展示在提交按钮上方 */
+.login-form-error {
+  margin: 2px 0 0;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--login-danger) 42%, transparent);
+  border-radius: 9px;
+  background: var(--login-danger-bg);
+  color: var(--login-danger);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
 .field-label {
   position: absolute;
   top: 7px;
@@ -831,6 +946,9 @@ function onSubmit() {
   cursor: pointer;
 }
 .login-emailcode .send {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--login-accent);
   font-size: 13px;
   cursor: pointer;
@@ -840,10 +958,18 @@ function onSubmit() {
   color: var(--login-text-muted);
   cursor: not-allowed;
 }
+.send-spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid color-mix(in srgb, var(--login-text-muted) 45%, transparent);
+  border-top-color: var(--login-accent);
+  border-radius: 50%;
+  animation: login-spin 0.7s linear infinite;
+}
+@keyframes login-spin { to { transform: rotate(360deg); } }
 .login-captcha-row {
   display: flex;
   gap: 10px;
-  margin-bottom: 8px;
 }
 .login-captcha-row .login-field {
   flex: 1;
@@ -992,6 +1118,7 @@ function onSubmit() {
 
 @media (prefers-reduced-motion: reduce) {
   .market-track-line { animation: none; }
+  .send-spinner { animation-duration: 1.6s; }
   .login-theme,
   .login-primary { transition: none; }
 }

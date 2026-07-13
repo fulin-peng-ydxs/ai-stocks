@@ -9,6 +9,20 @@ export interface ApiResponse<T = unknown> {
   data: T
 }
 
+// 调用方可传 skipGlobalError:true 关闭该请求的全局 toast（如登录/注册页改为字段内联报错）。
+// 被跳过时错误仍会 reject，并在 error.uiMessage 上带回可读文案，交由调用方就地展示。
+export interface AppRequestConfig extends AxiosRequestConfig {
+  skipGlobalError?: boolean
+}
+
+// 把可读文案挂到 error 上，便于跳过全局 toast 的调用方统一读取 error.uiMessage。
+function decorateError<E>(error: E, message: string): E {
+  if (error && typeof error === 'object') {
+    (error as { uiMessage?: string }).uiMessage = message
+  }
+  return error
+}
+
 const http: AxiosInstance = axios.create({
   baseURL: '/api',
   timeout: 30000,
@@ -16,7 +30,7 @@ const http: AxiosInstance = axios.create({
 
 let refreshPromise: Promise<string> | null = null
 
-interface RetryableConfig extends AxiosRequestConfig {
+interface RetryableConfig extends AppRequestConfig {
   _retry?: boolean
 }
 
@@ -99,8 +113,10 @@ http.interceptors.response.use(
   (resp) => {
     const body = resp.data as ApiResponse
     if (body.code !== 0) {
-      ElMessage.error(body.msg || '请求失败')
-      return Promise.reject(new Error(body.msg))
+      const message = body.msg || '请求失败'
+      const skip = (resp.config as RetryableConfig | undefined)?.skipGlobalError
+      if (!skip) ElMessage.error(message)
+      return Promise.reject(decorateError(new Error(message), message))
     }
     return body.data as unknown as never
   },
@@ -109,11 +125,15 @@ http.interceptors.response.use(
     // stage2·T7：按 HTTP 状态分流——401 清态跳登录、403 无权、429 限流、503 依赖不可用
     const status = error?.response?.status
     const msg = error?.response?.data?.msg
+    // skipGlobalError：调用方（如登录/注册页）要求关闭全局 toast，改由页面就地展示
+    const skip = (error?.config as RetryableConfig | undefined)?.skipGlobalError
     if (status === 401) {
       // 已在登录页时的 401 是登录动作本身失败（账密错/图形码错/锁定），此处弹后端提示；
       // 其余页面的 401 是会话失效，清态跳登录（redirectToLogin 内已判重不重复跳）。
       if (window.location.pathname === '/login') {
-        ElMessage.error(msg || '账号或密码错误')
+        const message = msg || '账号或密码错误'
+        decorateError(error, message)
+        if (!skip) ElMessage.error(message)
       } else {
         const config = error?.config as RetryableConfig | undefined
         if (config && !config._retry && !isAuthRefreshExcluded(config) && getRefreshToken()) {
@@ -136,15 +156,18 @@ http.interceptors.response.use(
       }
       return Promise.reject(error)
     }
+    let message: string
     if (status === 403) {
-      ElMessage.error(msg || '无权限执行此操作')
+      message = msg || '无权限执行此操作'
     } else if (status === 429) {
-      ElMessage.error(msg || '请求过于频繁，请稍后再试')
+      message = msg || '请求过于频繁，请稍后再试'
     } else if (status === 503) {
-      ElMessage.error(msg || '服务暂时不可用，请稍后重试')
+      message = msg || '服务暂时不可用，请稍后重试'
     } else {
-      ElMessage.error(msg || error?.message || '网络错误')
+      message = msg || error?.message || '网络错误'
     }
+    decorateError(error, message)
+    if (!skip) ElMessage.error(message)
     return Promise.reject(error)
   },
 )

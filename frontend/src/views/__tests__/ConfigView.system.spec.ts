@@ -7,7 +7,7 @@ import { ref, type Component } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import ConfigView from '@/views/ConfigView.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
-import type { SettingGroup } from '@/api/data'
+import type { MailStatus, SettingGroup } from '@/api/data'
 
 const routeState = vi.hoisted(() => ({
   meta: { configTab: 'system' },
@@ -183,8 +183,10 @@ async function mountView(role = 'system'): Promise<VueWrapper> {
   return wrapper
 }
 
-function mockSettings(nextGroups = groups) {
-  ;(dataApi.getSettingsView as ReturnType<typeof vi.fn>).mockResolvedValue({ groups: nextGroups })
+function mockSettings(nextGroups = groups, mailStatus?: MailStatus) {
+  ;(dataApi.getSettingsView as ReturnType<typeof vi.fn>).mockResolvedValue({
+    groups: nextGroups, mail_status: mailStatus,
+  })
   ;(dataApi.saveSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ saved: 1 })
 }
 
@@ -290,6 +292,31 @@ describe('ConfigView system tab', () => {
     const wrapper = await mountView('tenant_admin')
     expect(wrapper.text()).toContain('无权限维护系统设置')
     expect(dataApi.getSettingsView).not.toHaveBeenCalled()
+  })
+
+  it('邮件 mode=ready 时开关下显示已就绪', async () => {
+    mockSettings(groups, {
+      enabled: true, username_masked: 'pe***@gmail.com', password_set: true, mode: 'ready', ready: true,
+    })
+    const wrapper = await mountView()
+    expect(wrapper.text()).toContain('真实发信已就绪')
+  })
+
+  it('邮件 mode=incomplete 时提示发码会失败（非只写日志）', async () => {
+    mockSettings(groups, {
+      enabled: true, username_masked: '', password_set: false, mode: 'incomplete', ready: false,
+    })
+    const wrapper = await mountView()
+    expect(wrapper.text()).toContain('真实发信已开启但配置不完整，发码会失败')
+    expect(wrapper.text()).not.toContain('只写日志')
+  })
+
+  it('邮件 mode=disabled 时提示只写日志不真发', async () => {
+    mockSettings(groups, {
+      enabled: false, username_masked: '', password_set: false, mode: 'disabled', ready: false,
+    })
+    const wrapper = await mountView()
+    expect(wrapper.text()).toContain('验证码只写日志不真发')
   })
 })
 

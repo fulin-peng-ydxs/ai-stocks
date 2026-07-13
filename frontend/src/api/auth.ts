@@ -1,5 +1,8 @@
 // 认证接口封装（多租户 RBAC stage2·T7）——对应后端 /api/auth/*。
-import http from './client'
+import http, { type AppRequestConfig } from './client'
+
+// 登录页各请求统一关闭全局 toast，错误交由 LoginView 就地内联展示（错误态改进）。
+const silent: AppRequestConfig = { skipGlobalError: true }
 
 export interface AuthUser {
   id: string
@@ -39,7 +42,7 @@ export function login(payload: {
   captcha_id?: string
   captcha_code?: string
 }): Promise<LoginResult> {
-  return http.post('/auth/login', payload)
+  return http.post('/auth/login', payload, silent)
 }
 
 export function register(payload: {
@@ -48,7 +51,7 @@ export function register(payload: {
   email?: string
   email_code?: string
 }): Promise<LoginResult> {
-  return http.post('/auth/register', payload)
+  return http.post('/auth/register', payload, silent)
 }
 
 export function refresh(refreshToken: string): Promise<LoginResult> {
@@ -64,13 +67,13 @@ export function getMe(): Promise<MeResult> {
 }
 
 export function getPublicConfig(): Promise<PublicAuthConfig> {
-  return http.get('/auth/public-config')
+  return http.get('/auth/public-config', silent)
 }
 
 export function getCaptcha(): Promise<CaptchaResult> {
-  return http.get('/auth/captcha')
+  return http.get('/auth/captcha', silent)
 }
 
 export function sendEmailCode(email: string): Promise<null> {
-  return http.post('/auth/send-email-code', { email })
+  return http.post('/auth/send-email-code', { email }, silent)
 }

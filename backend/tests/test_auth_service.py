@@ -6,12 +6,20 @@
 
 from __future__ import annotations
 
+import re
 import uuid
+from unittest.mock import MagicMock
 
 import pytest
 
 from backend.auth import session_store as ss
-from backend.common.exceptions import AuthError, ValidationError
+from backend.common.exceptions import (
+    AuthError,
+    RateLimitError,
+    ServiceUnavailableError,
+    ValidationError,
+)
+from backend.common.mailer import MailError
 from backend.services.auth_service import AuthService
 
 _SECRET = "unit-test-jwt-secret-0123456789-abcdefghij"
@@ -66,6 +74,25 @@ def test_register_rejects_bad_email_code(auth_env):
     acc = f"pytest_auth_{uuid.uuid4().hex[:10]}"
     with pytest.raises(ValidationError):
         svc.register(acc, "GoodPass1", email=f"{acc}@ex.com", email_code="000000", ip=_ip())
+
+
+def test_register_failure_keeps_email_code(auth_env):
+    # 业务闭环：验证码正确但账号已存在 → 注册失败，但有效验证码不应被消费（可继续使用）。
+    svc = AuthService()
+    ip = _ip()
+    acc, _ = _register(svc, auth_env, ip=ip)      # 先占用 account
+    email2 = f"{acc}_2@ex.com"
+    ss.save_email_code(email2, "445566", 300)
+    with pytest.raises(ValidationError):           # 同 account + 新邮箱 + 有效码 → 账号已存在
+        svc.register(acc, "GoodPass1", email=email2, email_code="445566", ip=ip)
+    assert ss.check_email_code(email2, "445566") is True   # 未被烧掉
+
+
+def test_register_success_consumes_email_code(auth_env):
+    # 注册成功后验证码一次性消费，不能复用。
+    svc = AuthService()
+    acc, _ = _register(svc, auth_env, ip=_ip())
+    assert ss.check_email_code(f"{acc}@ex.com", "112233") is False
 
 
 def test_login_success_and_wrong_password(auth_env):
@@ -153,3 +180,135 @@ def test_public_config(auth_env):
 def test_captcha_issue(auth_env):
     out = AuthService().issue_captcha()
     assert out["captcha_id"] and out["svg"].startswith("<svg")
+
+
+# ── 邮箱验证码发送（P1/P2 加固后）：真实 Redis + monkeypatch send_email ──
+
+def _email() -> str:
+    return f"code_{uuid.uuid4().hex[:10]}@ex.com"
+
+
+def _sent_code(mock_send) -> str:
+    """从 send_email 收到的正文里取回 6 位验证码。"""
+    body = mock_send.call_args.args[2]
+    m = re.search(r"验证码是 (\d{6})", body)
+    assert m, f"正文未含验证码: {body}"
+    return m.group(1)
+
+
+def test_send_email_code_success_saves_verifiable_code(auth_env, monkeypatch):
+    send = MagicMock()
+    monkeypatch.setattr("backend.services.auth_service.send_email", send)
+    svc = AuthService()
+    email = _email()
+    svc.send_email_code(email, ip=_ip())
+    send.assert_called_once()
+    code = _sent_code(send)
+    # 发出的码必须可验证（先存后发保证一致）
+    assert ss.verify_email_code(email, code) is True
+
+
+def test_send_email_code_mail_error_leaves_no_code(auth_env, monkeypatch):
+    monkeypatch.setattr("backend.services.auth_service.send_email",
+                        MagicMock(side_effect=MailError("smtp down")))
+    svc = AuthService()
+    email = _email()
+    with pytest.raises(MailError):
+        svc.send_email_code(email, ip=_ip())
+    # 发信失败必须作废刚存的码：Redis 里不留可验证的残码
+    assert ss._r().get(f"auth:emailcode:{email}") is None
+
+
+def test_send_email_code_redis_save_failure_does_not_send(auth_env, monkeypatch):
+    send = MagicMock()
+    monkeypatch.setattr("backend.services.auth_service.send_email", send)
+    # 先存后发：save 阶段 Redis 不可用应在发信前 503，且绝不发信
+    monkeypatch.setattr("backend.auth.session_store.save_email_code",
+                        MagicMock(side_effect=ServiceUnavailableError("redis down")))
+    svc = AuthService()
+    with pytest.raises(ServiceUnavailableError):
+        svc.send_email_code(_email(), ip=_ip())
+    send.assert_not_called()
+
+
+def test_send_email_code_failed_delete_keeps_concurrent_code(auth_env, monkeypatch):
+    # 并发交错：A 存码后、发信失败前，B 已覆盖为新码并成功发信；A 的回滚按值比较，不得误删 B 的有效码。
+    svc = AuthService()
+    email = _email()
+
+    def fake_send(_to, _subject, _body):
+        ss.save_email_code(email, "999999", 600)   # 模拟 B 覆盖为新码（并成功发出）
+        raise MailError("A 发信失败")               # A 本次发信失败
+    monkeypatch.setattr("backend.services.auth_service.send_email", fake_send)
+
+    with pytest.raises(MailError):
+        svc.send_email_code(email, ip=_ip())
+    # B 的验证码必须仍可验证（A 的失败回滚没有误删它）
+    assert ss.verify_email_code(email, "999999") is True
+
+
+def test_send_email_code_disabled_when_require_off(auth_env, monkeypatch):
+    # require_email_code=false 时停用发码：不真实发信、抛错。
+    send = MagicMock()
+    monkeypatch.setattr("backend.services.auth_service.send_email", send)
+    svc = AuthService()
+    svc.cfg = svc.cfg.model_copy(update={"require_email_code": False})
+    with pytest.raises(ValidationError):
+        svc.send_email_code(_email(), ip=_ip())
+    send.assert_not_called()
+
+
+def test_send_email_code_registered_email_suppressed(auth_env, monkeypatch):
+    # 已注册邮箱：统一成功但不真实发信、不落码（防枚举 + 不骚扰）。
+    send = MagicMock()
+    monkeypatch.setattr("backend.services.auth_service.send_email", send)
+    svc = AuthService()
+    acc, _ = _register(svc, auth_env, ip=_ip())
+    email = f"{acc}@ex.com"
+    svc.send_email_code(email, ip=_ip())
+    send.assert_not_called()
+    assert ss._r().get(f"auth:emailcode:{email}") is None
+
+
+def test_send_email_code_normalizes_email(auth_env, monkeypatch):
+    send = MagicMock()
+    monkeypatch.setattr("backend.services.auth_service.send_email", send)
+    svc = AuthService()
+    base = _email()
+    svc.send_email_code(f"  {base.upper()}  ", ip=_ip())
+    code = _sent_code(send)
+    # 规范化后码存于小写去空白的键；send_email 收件人也应是规范化后的地址
+    assert ss._r().get(f"auth:emailcode:{base}") is not None
+    assert send.call_args.args[0] == base
+    assert ss.verify_email_code(base, code) is True
+
+
+def test_send_email_code_rejects_bad_format(auth_env, monkeypatch):
+    send = MagicMock()
+    monkeypatch.setattr("backend.services.auth_service.send_email", send)
+    svc = AuthService()
+    with pytest.raises(ValidationError):
+        svc.send_email_code("not-an-email", ip=_ip())
+    send.assert_not_called()
+
+
+def test_send_email_code_case_variant_shares_email_limit(auth_env, monkeypatch):
+    monkeypatch.setattr("backend.services.auth_service.send_email", MagicMock())
+    svc = AuthService()
+    svc.cfg = svc.cfg.model_copy(update={"email_code_rate_per_hour": 1})
+    base = _email()
+    ip = _ip()
+    svc.send_email_code(base, ip=ip)
+    with pytest.raises(RateLimitError):            # 大小写/空白变体应命中同一邮箱限流键
+        svc.send_email_code(f" {base.upper()} ", ip=ip)
+
+
+def test_send_email_code_ip_limit_blocks_many_emails(auth_env, monkeypatch):
+    monkeypatch.setattr("backend.services.auth_service.send_email", MagicMock())
+    svc = AuthService()
+    svc.cfg = svc.cfg.model_copy(update={"email_code_ip_rate_per_hour": 2})
+    ip = _ip()
+    svc.send_email_code(_email(), ip=ip)
+    svc.send_email_code(_email(), ip=ip)
+    with pytest.raises(RateLimitError):            # 同一 IP 对不同邮箱超过 IP 上限即拒
+        svc.send_email_code(_email(), ip=ip)

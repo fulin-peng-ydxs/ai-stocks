@@ -250,7 +250,15 @@ export interface SettingField {
   max?: number
 }
 export interface SettingGroup { key: string; label: string; desc?: string; fields: SettingField[] }
-export function getSettingsView(): Promise<{ groups: SettingGroup[] }> {
+// 只读的邮件能力就绪状态（脱敏）：来自部署级环境变量，不可在页面编辑，仅用于开关旁提示底层是否真发。
+export interface MailStatus {
+  enabled: boolean
+  username_masked: string
+  password_set: boolean
+  mode: 'disabled' | 'incomplete' | 'ready'
+  ready: boolean
+}
+export function getSettingsView(): Promise<{ groups: SettingGroup[]; mail_status?: MailStatus }> {
   return http.get('/data/settings')
 }
 export function saveSettings(updates: Record<string, any>): Promise<{ saved: number }> {

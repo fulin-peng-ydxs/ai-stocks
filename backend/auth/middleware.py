@@ -55,10 +55,15 @@ def is_public(path: str) -> bool:
 
 
 def _scope_ip(scope) -> str:
-    """取客户端 IP：反代后优先 X-Forwarded-For 首段，否则连接地址。"""
-    for k, v in scope.get("headers", []):
-        if k == b"x-forwarded-for":
-            return v.decode("latin-1").split(",")[0].strip()
+    """取客户端 IP 作为全局 /api 限流键（与认证端点 _client_ip 同口径）。
+
+    默认用不可伪造的连接地址；仅 server.trust_forwarded_for=true（后端在可信反代之后、
+    反代会覆盖 XFF）时才取 X-Forwarded-For 首段。直连公网时信任 XFF 会被伪造头绕过全局限流。
+    """
+    if get_settings().server.trust_forwarded_for:
+        for k, v in scope.get("headers", []):
+            if k == b"x-forwarded-for":
+                return v.decode("latin-1").split(",")[0].strip()
     client = scope.get("client")
     return client[0] if client else "unknown"
 

@@ -141,6 +141,10 @@ class ServerConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8000
     log_level: str = "info"
+    # 是否信任 X-Forwarded-For 作为客户端 IP（限流键来源）。
+    # 仅当后端在**可信反代之后且反代会覆盖（而非透传）XFF** 时才置 true；
+    # 直连公网/反代不清洗 XFF 时必须 false，否则 per-IP 限流可被伪造 XFF 绕过（见 _client_ip）。
+    trust_forwarded_for: bool = False
 
 
 class PostgresConfig(BaseModel):
@@ -202,6 +206,7 @@ class AuthConfig(BaseModel):
     login_rate_per_min: int = 10        # 单 IP 每分钟登录尝试上限
     register_rate_per_hour: int = 5     # 单 IP 每小时注册上限
     email_code_rate_per_hour: int = 5   # 单邮箱每小时验证码发送上限
+    email_code_ip_rate_per_hour: int = 20  # 单 IP 每小时验证码发送上限（防对海量不同邮箱各发几次）
     api_rate_per_min: int = 600         # 单 IP 每分钟全局 /api 请求上限（应用层粗粒度backstop；反代做主限流）
 
 
@@ -209,6 +214,28 @@ class AuditConfig(BaseModel):
     """审计日志配置。"""
 
     retention_days: int = Field(default=90, ge=1)  # 默认查询窗口/保留期提示；自动清理留后续阶段
+
+
+class MailConfig(BaseModel):
+    """邮件发送（SMTP）配置。用于注册邮箱验证码等系统通知。
+
+    YAML 仅存**安全基线默认**（enabled=false、账号留空）。真实发信账号与开关不入仓库，
+    运行时由环境变量覆盖（对齐 PG/Redis/JWT 模式，见 Settings.mail_config()）：
+    - AI_STOCKS_SMTP_ENABLED：是否真实发信（1/true 开）。
+    - AI_STOCKS_SMTP_USERNAME：SMTP 登录账号（发信邮箱）。
+    - AI_STOCKS_SMTP_SENDER：From 显示地址（留空回落 username）。
+    - AI_STOCKS_SMTP_PASSWORD：登录密码/授权码（仅此项为密钥）。见 Settings.smtp_password()。
+
+    enabled=false 时发信降级为 dev 日志打印（不真正投递），便于本地开发/测试。
+    """
+
+    enabled: bool = False               # 关：dev 日志兜底；开：真实 SMTP 投递
+    host: str = "smtp.qq.com"           # SMTP 服务器
+    port: int = 465                     # 465=SSL / 587=STARTTLS
+    use_ssl: bool = True                # True 用 SMTP_SSL(465)；False 用 SMTP+starttls(587)
+    username: str = ""                  # SMTP 登录账号（通常即发信邮箱）
+    sender: str = ""                    # From 显示地址；留空则用 username
+    timeout_sec: int = 10               # 建连/发信超时，避免 SMTP 不可达时长时间挂起
 
 
 class Settings(BaseModel):
@@ -227,6 +254,7 @@ class Settings(BaseModel):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    mail: MailConfig = Field(default_factory=MailConfig)
 
     # ── 派生：绝对路径辅助 ──
     def duckdb_path(self) -> Path:
@@ -276,6 +304,32 @@ class Settings(BaseModel):
             raise ConfigError(
                 "缺少环境变量 AI_STOCKS_JWT_SECRET：JWT 签名密钥必须显式配置，无弱默认")
         return secret
+
+    def smtp_password(self) -> str:
+        """SMTP 登录密码/授权码，仅从环境变量 AI_STOCKS_SMTP_PASSWORD 读取（不入 YAML/码）。
+
+        惰性调用（真实发信时）：mail.enabled=false 的开发态不触发，不影响启动/测试。
+        """
+        return os.environ.get("AI_STOCKS_SMTP_PASSWORD", "")
+
+    def mail_config(self) -> MailConfig:
+        """生效邮件配置 = YAML 基线 ⊕ 环境变量覆盖（真实账号/开关不入仓库）。
+
+        环境变量优先：AI_STOCKS_SMTP_ENABLED / _USERNAME / _SENDER 覆盖 YAML 同名项。
+        密码单独走 smtp_password()。发信入口统一读此方法（不直接读 self.mail）。
+        """
+        m = self.mail
+        override: dict[str, object] = {}
+        enabled = os.environ.get("AI_STOCKS_SMTP_ENABLED")
+        if enabled is not None:
+            override["enabled"] = enabled.strip().lower() in ("1", "true", "yes", "on")
+        username = os.environ.get("AI_STOCKS_SMTP_USERNAME")
+        if username:
+            override["username"] = username.strip()
+        sender = os.environ.get("AI_STOCKS_SMTP_SENDER")
+        if sender:
+            override["sender"] = sender.strip()
+        return m.model_copy(update=override) if override else m
 
     def export_path(self) -> Path:
         return _resolve(self.paths.export_dir)

@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import type { SettingGroup } from '@/api/data'
 
+// fieldStatus：按字段 path 附带的只读能力就绪徽标（如邮箱码开关下的「真实发信是否就绪」）。
+// 通用机制——后续新能力集成可复用同一映射，不必逐个改表单结构。
+type FieldStatus = { tone: 'ok' | 'warn'; text: string }
 const props = defineProps<{
   group: SettingGroup
   modelValue: Record<string, unknown>
   disabled?: boolean
   invalidPaths?: string[]
+  fieldStatus?: Record<string, FieldStatus>
 }>()
+
+function statusOf(path: string): FieldStatus | undefined {
+  return props.fieldStatus?.[path]
+}
 
 const emit = defineEmits<{
   'update-field': [path: string, value: unknown]
@@ -95,6 +103,13 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
           <span>默认 {{ defaultLabel(field.default) }}</span>
           <span v-if="rangeLabel(field)">范围 {{ rangeLabel(field) }}</span>
           <span v-if="isInvalid(field.path)" class="field-error">超出允许范围</span>
+          <span
+            v-if="statusOf(field.path)"
+            class="field-status"
+            :class="`is-${statusOf(field.path)!.tone}`"
+          >
+            <span class="dot" aria-hidden="true" />{{ statusOf(field.path)!.text }}
+          </span>
         </div>
       </el-form-item>
     </el-form>
@@ -162,6 +177,22 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
 .field-error {
   color: var(--el-color-danger);
 }
+.field-status {
+  flex-basis: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.field-status .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.field-status.is-ok { color: var(--el-color-success); }
+.field-status.is-ok .dot { background: var(--el-color-success); }
+.field-status.is-warn { color: var(--el-color-warning); }
+.field-status.is-warn .dot { background: var(--el-color-warning); }
 .is-invalid :deep(.el-input-number .el-input__wrapper),
 .is-invalid :deep(.el-select .el-select__wrapper) {
   box-shadow: 0 0 0 1px var(--el-color-danger) inset;

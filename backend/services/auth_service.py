@@ -5,11 +5,12 @@
 + user_repository（PG）。安全策略读 settings.auth（阈值/开关可配）。
 
 降级：黑名单/perm_ver 为鉴权关键，Redis 故障时由 session_store 异常上抛 → 上层 fail-closed。
-邮箱验证码投递本阶段 **dev 日志打印**（生产须接 SMTP，见 plan §9）。
+邮箱验证码经 backend.common.mailer 投递：mail.enabled=true 走真实 SMTP，false 时降级 dev 日志。
 """
 
 from __future__ import annotations
 
+import re
 import secrets
 import time
 import uuid
@@ -25,6 +26,7 @@ from backend.auth.jwt_tokens import (
 from backend.auth.security import check_strength, hash_password, verify_password
 from backend.common.exceptions import AuthError, RateLimitError, ValidationError
 from backend.common.logging import get_logger
+from backend.common.mailer import MailError, send_email
 from backend.config import get_effective_settings
 from backend.services.audit_service import AuditService
 from backend.storage.menu_repository import MenuRepository
@@ -34,6 +36,13 @@ from backend.storage.user_repository import UserRepository
 log = get_logger("services.auth")
 
 _CAPTCHA_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 去掉易混 O0I1L
+# 邮箱格式（宽松但可挡明显非法/注入）：本地部分@域名.顶级域，均不含空白/@。
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _normalize_email(email: str | None) -> str:
+    """规范化邮箱：去首尾空白 + 全小写。统一存储/校验/限流键口径，杜绝大小写或空白绕过。"""
+    return (email or "").strip().lower()
 
 
 class AuthService:
@@ -277,10 +286,18 @@ class AuthService:
         if not account or not account.strip():
             raise ValidationError("请填写账号")
         check_strength(password, self.cfg.min_password_len)
+        # 邮箱规范化+校验：与 send_email_code 同口径，保证验证码键匹配、唯一性判定不被大小写绕过。
+        if email:
+            email = _normalize_email(email)
+            if not _EMAIL_RE.match(email):
+                raise ValidationError("邮箱格式不正确")
+        # 验证码只校验不消费（check）：门槛不通过直接拒；其余校验（账号/邮箱已存在）失败都不烧码，
+        # 直到创建成功后才一次性消费——避免「有效验证码被非最终失败原因消耗」的业务断点。
+        # 校验放在账号/邮箱存在性判断之前，保持「无有效码不泄露账号/邮箱是否存在」的防枚举口径不变。
         if self.cfg.require_email_code:
             if not email:
                 raise ValidationError("请填写邮箱")
-            if not (email_code and ss.verify_email_code(email, email_code)):
+            if not (email_code and ss.check_email_code(email, email_code)):
                 self._record_security(
                     event_type="email_code",
                     action="register_email_code_verify",
@@ -296,6 +313,12 @@ class AuthService:
         if email and self.repo.get_by_email(email):
             raise ValidationError("邮箱已被注册")
         user = self.repo.register_tenant_and_admin(account, email, hash_password(password))
+        # 创建成功后再消费验证码（一次性、按值比较）；消费失败不影响注册（码 10 分钟自然过期）。
+        if self.cfg.require_email_code and email and email_code:
+            try:
+                ss.delete_email_code_if_match(email, email_code.strip())
+            except Exception:  # noqa: BLE001
+                log.warning("注册成功后消费验证码未成功 email=%s", email)
         self._record_security(
             event_type="register",
             action="register",
@@ -408,8 +431,27 @@ class AuthService:
         return {"captcha_id": cid, "svg": _render_captcha_svg(code)}
 
     def send_email_code(self, email: str, *, ip: str = "unknown") -> None:
+        # 功能开关关闭即停用发码（fail-closed）：不真实发信、不落码，避免公开接口在功能关闭时
+        # 仍产生邮件成本与外部投递。前端在 require_email_code=false 时本就隐藏入口，此为后端兜底。
+        if not self.cfg.require_email_code:
+            self._record_security(
+                event_type="email_code",
+                action="send_email_code",
+                result="failed",
+                status="blocked",
+                ip=ip,
+                target_type="email_code",
+                error_summary="邮箱验证码功能未启用",
+            )
+            raise ValidationError("邮箱验证码功能未启用")
+        email = _normalize_email(email)
         if not email:
             raise ValidationError("请填写邮箱")
+        if not _EMAIL_RE.match(email):
+            raise ValidationError("邮箱格式不正确")
+        # 双维度限流：单邮箱（防对同一目标轰炸）+ 单 IP（防一个源对海量不同邮箱各发几次）。
+        # email+IP 维度被这两者共同覆盖，不再单列（任一超限即拒）。任一 Redis 故障时 fail-open，
+        # 但下方 save_email_code 为鉴权关键(@_critical)，Redis 不可用会在发信前 503 兜住。
         if not ss.rate_limit_ok("emailcode", email, self.cfg.email_code_rate_per_hour, 3600):
             self._record_security(
                 event_type="rate_limit",
@@ -418,11 +460,64 @@ class AuthService:
                 status="blocked",
                 ip=ip,
                 error_summary="验证码发送过于频繁",
-                context={"rate_limit_rule": f"{self.cfg.email_code_rate_per_hour}/hour"},
+                context={"rate_limit_rule": f"email:{self.cfg.email_code_rate_per_hour}/hour"},
             )
             raise RateLimitError("验证码发送过于频繁，请稍后再试")
+        if not ss.rate_limit_ok("emailcode_ip", ip, self.cfg.email_code_ip_rate_per_hour, 3600):
+            self._record_security(
+                event_type="rate_limit",
+                action="send_email_code",
+                result="failed",
+                status="blocked",
+                ip=ip,
+                error_summary="验证码发送过于频繁",
+                context={"rate_limit_rule": f"ip:{self.cfg.email_code_ip_rate_per_hour}/hour"},
+            )
+            raise RateLimitError("验证码发送过于频繁，请稍后再试")
+        # 防账号枚举 + 不骚扰既有用户：已注册邮箱返回与正常发送一致的成功，但不真实发信、不落码。
+        # 置于限流之后，使已注册/未注册两条路径的可观察副作用（限流计数、响应）保持一致。
+        if self.repo.get_by_email(email):
+            self._record_security(
+                event_type="email_code",
+                action="send_email_code",
+                result="success",
+                status="completed",
+                ip=ip,
+                target_type="email_code",
+                context={"suppressed": "email_registered"},
+            )
+            return
         code = f"{secrets.randbelow(1_000_000):06d}"
-        ss.save_email_code(email, code, self.cfg.email_code_ttl_min * 60)
+        ttl_min = self.cfg.email_code_ttl_min
+        # 先存后发：save_email_code 是鉴权关键(@_critical)，Redis 不可用会在发信前抛 503，
+        # 保证「发出去的验证码一定可验证」；发信失败再作废刚存的码（发信成功但存码失败的窗口被消除）。
+        # mail.enabled=false 时 send_email 降级为 dev 日志（验证码见后端日志），不真正发信。
+        ss.save_email_code(email, code, ttl_min * 60)
+        try:
+            send_email(
+                email,
+                "【复盘啦】注册验证码",
+                f"您的验证码是 {code}，{ttl_min} 分钟内有效。请勿向他人泄露。\n"
+                f"如非本人操作，请忽略本邮件。",
+            )
+        except MailError:
+            # 发信失败即作废本次刚存的码，避免留下「可验证但用户没收到」的验证码。
+            # 按值比较删除（仅当当前值仍是本次 code）：并发同邮箱时不会误删他人已成功发出的新码。
+            # 作废失败不掩盖 MailError（残留码用户未收到，无法被利用，且 10 分钟后自然过期）。
+            try:
+                ss.delete_email_code_if_match(email, code)
+            except Exception:  # noqa: BLE001
+                log.warning("发信失败后作废验证码未成功 email=%s", email)
+            self._record_security(
+                event_type="email_code",
+                action="send_email_code",
+                result="failed",
+                status="failed",
+                ip=ip,
+                target_type="email_code",
+                error_summary="邮箱验证码投递失败",
+            )
+            raise
         self._record_security(
             event_type="email_code",
             action="send_email_code",
@@ -431,8 +526,6 @@ class AuthService:
             ip=ip,
             target_type="email_code",
         )
-        # dev 投递：生产须接真实 SMTP（plan §9）；此处仅日志，不回传前端
-        log.warning("【开发态·邮箱验证码】%s -> %s（生产须接 SMTP 投递，勿公网放量）", email, code)
 
     def public_config(self) -> dict:
         """登录页公开配置（无需 token）：告诉前端是否要邮箱码/图形码 + 图形码强制阈值。

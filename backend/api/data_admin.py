@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
 from backend.auth.deps import require_system_perm
+from backend.config import get_effective_settings
 from backend.storage.duckdb_client import get_client
 
 router = APIRouter(prefix="/api/data", tags=["data-admin"])
@@ -27,10 +28,55 @@ _SETTINGS = [Depends(require_system_perm("data-settings:manage"))]   # 系统设
 
 
 def _client_ip(request: Request) -> str | None:
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
+    # 审计留痕用（system 管理员操作者 IP）；XFF 信任与限流同口径：仅可信反代时取 XFF，否则用连接地址。
+    if get_effective_settings().server.trust_forwarded_for:
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            return xff.split(",")[0].strip()
     return request.client.host if request.client else None
+
+
+def _mask_email(addr: str) -> str:
+    """脱敏邮箱：保留前 2 位本地部分与完整域名，其余打码。空值返回空串。"""
+    addr = (addr or "").strip()
+    if not addr:
+        return ""
+    if "@" not in addr:
+        return "***"
+    local, _, domain = addr.partition("@")
+    head = local[:2]
+    return f"{head}{'*' * max(1, len(local) - len(head))}@{domain}"
+
+
+def _mail_status() -> dict:
+    """只读的邮件能力就绪状态（脱敏）：供系统设置页在邮箱码开关旁提示底层是否真发。
+
+    enabled/账号/密码来自部署级环境变量（AI_STOCKS_SMTP_*），不在运行期页面可改；
+    此处仅暴露就绪度，避免「开关开了但邮件其实没配」的哑巴故障。
+
+    mode 精确对齐 mailer.send_email 的真实分支（口径同源，防提示漂移）：
+    - disabled：enabled=false → 只写 dev 日志、不真发（联调可看日志）；
+    - incomplete：enabled=true 但 host/username/sender/密码 任一缺失 → 发信抛 MailError、发码会失败；
+    - ready：enabled=true 且配置齐全 → 真实投递。
+    """
+    s = get_effective_settings()
+    mc = s.mail_config()
+    password_set = bool(s.smtp_password())
+    # 与 mailer 就绪条件一致：host + username + (sender 回落 username) + 密码
+    configured = bool(mc.host and mc.username and (mc.sender or mc.username) and password_set)
+    if not mc.enabled:
+        mode = "disabled"
+    elif configured:
+        mode = "ready"
+    else:
+        mode = "incomplete"
+    return {
+        "enabled": mc.enabled,
+        "username_masked": _mask_email(mc.username),
+        "password_set": password_set,
+        "mode": mode,
+        "ready": mode == "ready",
+    }
 
 
 def _dig_config_value(dump: dict, path: str):
@@ -547,7 +593,7 @@ def get_settings_view() -> ApiResponse:
             "desc": g.get("desc"),
             "fields": fields,
         })
-    return ok({"groups": groups})
+    return ok({"groups": groups, "mail_status": _mail_status()})
 
 
 @router.post("/settings", response_model=ApiResponse, dependencies=_SETTINGS)

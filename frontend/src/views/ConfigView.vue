@@ -35,7 +35,7 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTableSort } from '@/composables/useTableSort'
-import { getSettingsView, resetSettings, saveSettings, type SettingGroup } from '@/api/data'
+import { getSettingsView, resetSettings, saveSettings, type MailStatus, type SettingGroup } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -104,6 +104,7 @@ function tableBorder(slotId: string): boolean {
 
 // ── 系统设置（FR-DM-12：真实参数 Web 可编辑，写 app_config 覆盖层）──
 const sysGroups = ref<SettingGroup[]>([])
+const mailStatus = ref<MailStatus | null>(null)
 const sysDraft = ref<Record<string, unknown>>({})
 const sysLoading = ref(false)
 const sysSaving = ref(false)
@@ -127,13 +128,32 @@ async function loadSystem() {
   sysLoading.value = true
   sysSaveError.value = false
   try {
-    const { groups } = await getSettingsView()
+    const { groups, mail_status } = await getSettingsView()
     sysGroups.value = groups
+    mailStatus.value = mail_status ?? null
     const d: Record<string, unknown> = {}
     groups.forEach((g) => g.fields.forEach((f) => { d[f.path] = f.value }))
     sysDraft.value = d
   } finally { sysLoading.value = false }
 }
+
+// 只读能力就绪徽标：挂在「注册需邮箱验证码」开关下，提示底层真实发信是否就绪（部署级，页面不可改）。
+// 这是「开关 + 能力就绪提示」的样板；后续新能力集成可复用同一 fieldStatus 机制（见开发留痕·可扩展）。
+type FieldStatus = { tone: 'ok' | 'warn'; text: string }
+const systemFieldStatus = computed<Record<string, FieldStatus>>(() => {
+  const out: Record<string, FieldStatus> = {}
+  const m = mailStatus.value
+  if (!m) return out
+  // 文案按 mode 精确对齐后端/mailer 真实分支：incomplete 会发码失败（非只写日志）。
+  if (m.mode === 'ready') {
+    out['auth.require_email_code'] = { tone: 'ok', text: `真实发信已就绪（${m.username_masked}）` }
+  } else if (m.mode === 'incomplete') {
+    out['auth.require_email_code'] = { tone: 'warn', text: '真实发信已开启但配置不完整，发码会失败（部署侧补全 AI_STOCKS_SMTP_*）' }
+  } else {
+    out['auth.require_email_code'] = { tone: 'warn', text: '真实发信未启用，验证码只写日志不真发（部署侧配 AI_STOCKS_SMTP_*）' }
+  }
+  return out
+})
 function updateSystemField(path: string, value: unknown) {
   sysDraft.value = { ...sysDraft.value, [path]: value }
 }
@@ -1539,6 +1559,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   :model-value="sysDraft"
                   :disabled="sysSaving"
                   :invalid-paths="sysInvalidPaths"
+                  :field-status="systemFieldStatus"
                   @update-field="updateSystemField"
                 />
               </div>

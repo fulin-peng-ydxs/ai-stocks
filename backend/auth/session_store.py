@@ -175,8 +175,19 @@ def save_email_code(email: str, code: str, ttl_seconds: int) -> None:
 
 
 @_critical
+def check_email_code(email: str, code: str) -> bool:
+    """只校验不消费：仅判断验证码是否匹配（供「校验通过、注册成功后才消费」用）。
+
+    注册时先 check 作为门槛，其他校验（账号/邮箱已存在等）失败都不烧码；
+    最终创建成功后再用 delete_email_code_if_match 一次性消费，避免有效码被非最终失败消耗。
+    """
+    stored = _r().get(_emailcode(email))
+    return stored is not None and stored == code.strip()
+
+
+@_critical
 def verify_email_code(email: str, code: str) -> bool:
-    """校验邮箱验证码：正确才消费（错误保留，允许在有效期内重试）。"""
+    """校验并消费邮箱验证码：正确才删（错误保留，允许在有效期内重试）。"""
     r = _r()
     k = _emailcode(email)
     stored = r.get(k)
@@ -184,6 +195,24 @@ def verify_email_code(email: str, code: str) -> bool:
         r.delete(k)
         return True
     return False
+
+
+# 按值比较删除（compare-and-delete）：仅当当前值仍等于本次的 code 时删除，原子执行。
+# 防并发竞态：A 存码→B 覆盖并成功发信→A 发信失败，A 的回滚不能误删 B 的有效码。
+_CAD_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] "
+    "then return redis.call('del', KEYS[1]) else return 0 end"
+)
+
+
+@_critical
+def delete_email_code_if_match(email: str, code: str) -> bool:
+    """作废邮箱验证码，仅当当前存储值仍等于 code（「先存后发」发信失败时回滚本次的码）。
+
+    返回是否实际删除。用 Lua 原子 get-compare-del，避免误删并发请求刚写入的新码。
+    """
+    deleted = _r().eval(_CAD_LUA, 1, _emailcode(email), code.strip())
+    return bool(deleted)
 
 
 # ── 接口限流（固定窗口计数；fail-open）──
