@@ -127,12 +127,12 @@ function onCommand(command: string | number | object) {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   min-width: 0;
 }
 .asset-visibility-actions__arrow {
   margin-left: 4px;
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   vertical-align: -1px;
 }
 </style>

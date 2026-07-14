@@ -25,7 +25,7 @@ function toggle() {
       :class="{ 'is-foldable': foldable(), 'is-collapsed': foldable() && !open }"
       @click="toggle"
     >
-      <span v-if="title" class="pss-title">{{ title }}</span>
+      <span v-if="title" class="pss-title app-caption-text">{{ title }}</span>
       <HelpHint v-if="desc" :text="desc" @click.stop />
     </header>
     <div v-show="open || !foldable()" class="pss-body">
@@ -43,7 +43,7 @@ function toggle() {
 .pss-head {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   margin-bottom: 10px;
 }
 .pss-head.is-foldable {
@@ -61,8 +61,8 @@ function toggle() {
   text-decoration-color: var(--page-settings-accent);
 }
 .pss-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--app-font-size-caption);
+  font-weight: var(--app-font-weight-section);
   letter-spacing: .04em;
   text-transform: uppercase;
   color: var(--page-settings-text-subtle);
@@ -70,6 +70,6 @@ function toggle() {
 .pss-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 </style>

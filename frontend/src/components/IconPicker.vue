@@ -85,24 +85,24 @@ function clear() {
 .ip-trigger {
   height: 32px; width: 100%; border: 1px solid var(--el-border-color); border-radius: 4px;
   background: var(--el-bg-color); color: var(--el-text-color-primary); padding: 0 8px;
-  display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px;
+  display: flex; align-items: center; gap: var(--app-space-2); cursor: pointer; font-size: var(--app-font-size-table);
 }
 .ip-trigger:hover:not(.disabled) { border-color: var(--el-color-primary); }
 .ip-trigger.disabled { cursor: not-allowed; background: var(--el-disabled-bg-color); color: var(--el-text-color-placeholder); }
-.ip-cur { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.ip-name { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--el-text-color-regular);
+.ip-cur { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); min-width: 0; }
+.ip-name { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-regular);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ip-chev { margin-left: auto; color: var(--el-text-color-secondary); }
-.ip-panel { display: flex; flex-direction: column; gap: 8px; }
+.ip-panel { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .ip-actions { display: flex; align-items: center; justify-content: space-between; }
-.ip-count { font-size: 12px; color: var(--el-text-color-secondary); }
-.ip-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-height: 320px; overflow: auto; }
+.ip-count { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.ip-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--app-space-2); max-height: 320px; overflow: auto; }
 .ip-cell { height: 58px; min-width: 0; border: 1px solid var(--el-border-color-lighter); border-radius: 6px;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--app-space-1);
   cursor: pointer; color: var(--el-text-color-regular); overflow: hidden; }
 .ip-cell:hover { background: var(--el-fill-color-light); border-color: var(--el-color-primary); }
 .ip-cell.on { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary); color: var(--el-color-primary); }
-.ip-cap { display: block; width: 100%; padding: 0 4px; font-size: 10px; line-height: 14px;
+.ip-cap { display: block; width: 100%; padding: 0 4px; font-size: var(--app-font-size-tiny); line-height: var(--app-line-height-tiny);
   color: var(--el-text-color-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ip-empty { grid-column: 1 / -1; min-height: 72px; }
 

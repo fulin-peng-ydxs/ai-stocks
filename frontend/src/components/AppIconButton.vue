@@ -104,7 +104,7 @@ defineEmits<{
   align-items: center;
   justify-content: center;
   font-size: var(--app-icon-button-glyph);
-  line-height: 1;
+  line-height: var(--app-line-height-solid);
 }
 .app-icon-button__glyph :deep(svg) {
   width: 1em;

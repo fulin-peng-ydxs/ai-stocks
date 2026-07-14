@@ -63,14 +63,14 @@ function sourceOf(path: string): LayoutConfigLayer {
 .setting-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .setting-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 14px;
+  gap: var(--app-space-2);
+  font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
 }
 </style>

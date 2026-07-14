@@ -150,7 +150,7 @@ function descendantLeaves(
 .top-navigation::-webkit-scrollbar { display: none; }
 .top-navigation.is-primary {
   height: 100%;
-  gap: 2px;
+  gap: var(--app-space-1);
   padding: 0 12px 0 6px;
 }
 .primary-entry {
@@ -164,9 +164,9 @@ function descendantLeaves(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 620;
+  gap: var(--app-space-2);
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
   letter-spacing: .02em;
   white-space: nowrap;
   cursor: pointer;
@@ -181,7 +181,7 @@ function descendantLeaves(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: var(--app-font-size-section-title);
   overflow: hidden;
   transition: color .16s ease, border-color .16s ease, background-color .16s ease;
 }
@@ -217,7 +217,7 @@ function descendantLeaves(
 .top-navigation.is-secondary {
   flex: none;
   height: 45px;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
   padding: 0 24px;
   border-bottom: 1px solid var(--chrome-border);
   background:
@@ -228,8 +228,8 @@ function descendantLeaves(
   flex: none;
   margin-right: 8px;
   color: var(--chrome-text-muted);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--app-font-size-tiny);
+  font-weight: var(--app-font-weight-strong);
   letter-spacing: .13em;
   text-transform: uppercase;
 }
@@ -251,14 +251,14 @@ function descendantLeaves(
   color: var(--chrome-text);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 580;
+  gap: var(--app-space-control-gap);
+  font-size: var(--app-font-size-caption);
+  font-weight: var(--app-font-weight-section);
   white-space: nowrap;
   cursor: pointer;
   transition: color .16s ease, border-color .16s ease, background-color .16s ease;
 }
-.secondary-entry .el-icon { font-size: 9px; }
+.secondary-entry .el-icon { font-size: var(--app-icon-size-xs); }
 .secondary-entry-icon {
   width: 19px;
   height: 19px;
@@ -266,7 +266,7 @@ function descendantLeaves(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px !important;
+  font-size: var(--app-font-size-table) !important;
   color: var(--chrome-text-muted);
   overflow: hidden;
 }
@@ -295,7 +295,7 @@ function descendantLeaves(
 .top-navigation-dropdown .el-dropdown-menu__item.is-active {
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
-  font-weight: 650;
+  font-weight: var(--app-font-weight-section);
 }
 .top-navigation-dropdown .dropdown-entry-icon {
   width: 18px;
@@ -304,6 +304,6 @@ function descendantLeaves(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
 </style>

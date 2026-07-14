@@ -535,8 +535,8 @@ onMounted(async () => {
     <template #action>
       <div class="layout-toolbar">
         <div>
-          <div class="page-title">页面布局</div>
-          <div class="page-subtitle">面向单个页面的默认配置、组件特性、导入导出与校验报告（围绕同一页面）</div>
+          <div class="page-title app-page-title">页面布局</div>
+          <div class="page-subtitle app-body-text">面向单个页面的默认配置、组件特性、导入导出与校验报告（围绕同一页面）</div>
         </div>
         <div class="toolbar-actions">
           <el-select v-model="selectedPageKey" class="page-select">
@@ -590,8 +590,8 @@ onMounted(async () => {
             <section class="plain-panel source-panel">
               <div class="source-head">
                 <div>
-                  <div class="section-title">布局源信息</div>
-                  <div class="section-subtitle">来自页面注册表（pageRegistry）的单一事实源。</div>
+                  <div class="section-title app-section-title">布局源信息</div>
+                  <div class="section-subtitle app-caption-text">来自页面注册表（pageRegistry）的单一事实源。</div>
                 </div>
                 <el-tag effect="plain">{{ selectedPage.path }} · {{ selectedPage.pageKey }}</el-tag>
               </div>
@@ -860,29 +860,29 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--app-space-4);
   padding: 14px 16px;
   border: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
   border-radius: 6px;
 }
 .page-title {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--app-font-size-title-md);
+  font-weight: var(--app-font-weight-strong);
   color: var(--el-text-color-primary);
 }
 .page-subtitle,
 .section-subtitle,
 .muted {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .toolbar-actions,
 .inline-controls,
 .button-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .page-select {
   width: 180px;
@@ -917,19 +917,19 @@ onMounted(async () => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
   overflow: hidden;
 }
 .tab-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--app-space-4);
   margin-bottom: 12px;
 }
 .section-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-strong);
   color: var(--el-text-color-primary);
 }
 .page-config-grid,
@@ -937,7 +937,7 @@ onMounted(async () => {
 .report-grid {
   display: grid;
   grid-template-columns: minmax(320px, 0.85fr) minmax(360px, 1.15fr);
-  gap: 14px;
+  gap: var(--app-space-3);
 }
 .page-config-grid {
   flex: 1 1 auto;
@@ -971,7 +971,7 @@ onMounted(async () => {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .source-collapse {
   margin-top: 8px;
@@ -982,7 +982,7 @@ onMounted(async () => {
 .preset-picker-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
   width: 100%;
 }
 .preset-select {
@@ -1005,8 +1005,8 @@ onMounted(async () => {
 }
 .cc-block-title {
   margin-top: 16px;
-  font-size: 14px;
-  font-weight: 650;
+  font-size: var(--app-font-size-body);
+  font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
 .cc-save-row {
@@ -1028,7 +1028,7 @@ onMounted(async () => {
   background: var(--el-fill-color-light);
 }
 .diag-main {
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
 .meta-desc {
@@ -1037,7 +1037,7 @@ onMounted(async () => {
 .slot-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
 }
 .file-input {
   display: block;

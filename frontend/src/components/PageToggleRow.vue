@@ -36,7 +36,7 @@ defineEmits<{
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .page-toggle-row.is-sm {
   min-height: 34px;
@@ -45,14 +45,14 @@ defineEmits<{
   min-width: 0;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .ptr-label {
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   color: var(--page-settings-text);
 }
 .page-toggle-row.is-sm .ptr-label {
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   color: var(--page-settings-text-subtle);
 }
 .ptr-tip {
@@ -62,7 +62,7 @@ defineEmits<{
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--page-settings-text-muted);
   border: 1px solid var(--page-settings-tip-border);
 }

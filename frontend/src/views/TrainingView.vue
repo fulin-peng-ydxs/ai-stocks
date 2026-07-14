@@ -583,7 +583,7 @@ onBeforeUnmount(detachKeyboard)
         <div>
           <h2 class="title-row">
             🎮 训练结算
-            <span class="grade-big" :style="{ color: gradeColor(detail.grade) }">{{ detail.grade }}</span>
+            <span class="grade-big app-data-emphasis" :style="{ color: gradeColor(detail.grade) }">{{ detail.grade }}</span>
             <span class="score-tip">综合评分 {{ detail.score?.toFixed(1) }}</span>
           </h2>
           <span class="sub">{{ modeText(detail.mode) }} · {{ detail.n_rounds }} 回合 · {{ detail.created_at?.slice(0, 16) }}</span>
@@ -696,75 +696,75 @@ onBeforeUnmount(detachKeyboard)
 </template>
 
 <style scoped>
-.training { gap: 10px; }
-.page-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 10px; padding-bottom: 4px; }
-.page-head .title-row { margin: 0; font-size: 20px; display: flex; align-items: center; gap: 6px; }
-.page-head .sub { color: var(--el-text-color-secondary); font-size: 13px; }
-.page-head .grade-big { font-size: 26px; font-weight: 800; margin-left: 4px; }
-.page-head .score-tip { font-size: 14px; color: var(--el-text-color-secondary); margin-left: 6px; }
-.page-head-actions { display: flex; align-items: center; gap: 10px; }
+.training { gap: var(--app-space-2); }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: var(--app-space-2); padding-bottom: 4px; }
+.page-head .title-row { margin: 0; font-size: var(--app-font-size-page-title-sm); display: flex; align-items: center; gap: var(--app-space-control-gap); }
+.page-head .sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
+.page-head .grade-big { font-size: var(--app-font-size-kpi-lg); font-weight: var(--app-font-weight-strong); margin-left: 4px; }
+.page-head .score-tip { font-size: var(--app-font-size-body); color: var(--el-text-color-secondary); margin-left: 6px; }
+.page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 
 /* 配置：固定块 + 历史主表 → 混合成长区 */
-.cfg-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 12px; overflow: auto; padding-right: 2px; }
+.cfg-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-3); overflow: auto; padding-right: 2px; }
 .cfg-card, .growth-card { flex: 0 0 auto; }
-.cfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
-.cfg-item { display: flex; flex-direction: column; gap: 6px; }
+.cfg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--app-space-4); }
+.cfg-item { display: flex; flex-direction: column; gap: var(--app-space-control-gap); }
 .cfg-item.wide { grid-column: span 2; }
-.cfg-item label { font-size: 13px; color: var(--el-text-color-secondary); }
+.cfg-item label { font-size: var(--app-font-size-table); color: var(--el-text-color-secondary); }
 .cfg-item .lbl-tip { display: flex; align-items: center; }
-.cfg-item .range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.cfg-item .hint { font-size: 12px; color: var(--el-text-color-placeholder); }
-.cfg-actions { margin-top: 18px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.cfg-hint { font-size: 12px; color: var(--el-text-color-secondary); }
+.cfg-item .range { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
+.cfg-item .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-placeholder); }
+.cfg-actions { margin-top: 18px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: var(--app-space-2); }
+.cfg-hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .cfg-hint .hl { cursor: pointer; }
-.card-title { font-weight: 600; }
-.card-sub { color: var(--el-text-color-secondary); font-size: 12px; margin-left: 8px; }
+.card-title { font-weight: var(--app-font-weight-section); }
+.card-sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 8px; }
 .hist-card { flex: 1 1 auto; min-height: 300px; display: flex; flex-direction: column; }
 .hist-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px; }
 .hist-table { cursor: pointer; flex: 1; }
 .pager { margin-top: 8px; }
-.grade-chip { color: #fff; padding: 1px 8px; border-radius: 10px; font-weight: 700; font-size: 12px; }
-.setting-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
+.grade-chip { color: #fff; padding: 1px 8px; border-radius: 10px; font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
+.setting-item { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); padding: 6px 0; }
 .setting-item.col { flex-direction: column; align-items: stretch; }
-.setting-label { font-size: 13px; color: var(--el-text-color-regular); }
+.setting-label { font-size: var(--app-font-size-table); color: var(--el-text-color-regular); }
 
 /* 训练中：固定块（图+面板）+ 主表 → 混合成长区 */
-.run-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow: auto; padding-right: 2px; }
+.run-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-2); overflow: auto; padding-right: 2px; }
 .chart-block { flex: 0 0 auto; }
-.action-panel { flex: 0 0 auto; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
-.acct { display: flex; gap: 26px; flex-wrap: wrap; }
+.action-panel { flex: 0 0 auto; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-2); }
+.acct { display: flex; gap: var(--app-space-5); flex-wrap: wrap; }
 .acct-item { display: flex; flex-direction: column; }
-.acct-item label { font-size: 12px; color: var(--el-text-color-secondary); }
-.acct-item b { font-size: 17px; font-variant-numeric: tabular-nums; }
+.acct-item label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.acct-item b { font-size: var(--app-font-size-data); font-variant-numeric: tabular-nums; }
 .acct-item b.lim { color: var(--el-color-primary); }
-.acct-item .muted { font-size: 12px; }
-.pending { display: flex; align-items: center; gap: 10px; background: var(--el-color-warning-light-9); padding: 4px 10px; border-radius: 6px; font-size: 13px; }
-.ops { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.acct-item .muted { font-size: var(--app-font-size-caption); }
+.pending { display: flex; align-items: center; gap: var(--app-space-2); background: var(--el-color-warning-light-9); padding: 4px 10px; border-radius: 6px; font-size: var(--app-font-size-table); }
+.ops { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
 .ops .unit { color: var(--el-text-color-secondary); margin-left: -4px; }
-.ops .hint { font-size: 12.5px; color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
-.ops .last-tip { color: var(--el-color-warning); font-size: 13px; }
+.ops .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-variant-numeric: tabular-nums; }
+.ops .last-tip { color: var(--el-color-warning); font-size: var(--app-font-size-table); }
 /* 预判高亮数字（可点填入） */
-.hl { color: var(--el-color-primary); font-weight: 700; font-size: 15px; padding: 0 3px; border-radius: 4px; cursor: pointer; transition: background .15s; }
+.hl { color: var(--el-color-primary); font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-section-title); padding: 0 3px; border-radius: 4px; cursor: pointer; transition: background .15s; }
 .hl:hover { background: var(--el-color-primary-light-9); text-decoration: underline; }
 /* 买入/卖出快捷行 */
-.trade-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.trade-row { display: flex; align-items: center; gap: var(--app-space-2); flex-wrap: wrap; }
 .trade-row.disabled { opacity: .55; }
-.side-tag { font-size: 13px; font-weight: 700; width: 40px; }
+.side-tag { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-strong); width: 40px; }
 .side-tag.buy { color: var(--el-color-danger); }
 .side-tag.sell { color: var(--el-color-success); }
 .trades-card { flex: 1 1 auto; min-height: 160px; display: flex; flex-direction: column; }
 .trades-card :deep(.el-card__body) { flex: 1; min-height: 0; padding: 8px; }
 
 /* 结算：纯长内容流 → 整体内滚 */
-.result-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 2px; }
-.kpi-row { display: flex; gap: 14px; flex-wrap: wrap; }
-.kpi { flex: 1 1 120px; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; }
-.kpi label { font-size: 12px; color: var(--el-text-color-secondary); }
-.kpi b { font-size: 20px; font-variant-numeric: tabular-nums; }
-.round-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
-.round-head .rname { font-weight: 600; }
-.round-head .round-ret { margin-left: auto; font-size: 13px; }
-.round-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; }
+.result-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--app-space-3); padding-right: 2px; }
+.kpi-row { display: flex; gap: var(--app-space-3); flex-wrap: wrap; }
+.kpi { flex: 1 1 120px; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-1); }
+.kpi label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.kpi b { font-size: var(--app-font-size-page-title-sm); font-variant-numeric: tabular-nums; }
+.round-head { display: flex; align-items: baseline; gap: var(--app-space-4); flex-wrap: wrap; }
+.round-head .rname { font-weight: var(--app-font-weight-section); }
+.round-head .round-ret { margin-left: auto; font-size: var(--app-font-size-table); }
+.round-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--app-space-3); }
 .round-equity { min-width: 0; }
 .round-trades { margin-top: 10px; }
 .review-actions { margin-top: 10px; text-align: right; }

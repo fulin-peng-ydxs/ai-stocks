@@ -45,7 +45,7 @@ onBeforeUnmount(() => ro?.disconnect())
   min-height: 0;
   overflow: auto;
   display: grid;
-  gap: 12px;
+  gap: var(--app-space-3);
   align-content: start;
 }
 .v-columns-cell {

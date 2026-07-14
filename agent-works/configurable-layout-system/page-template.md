@@ -70,6 +70,13 @@
 - 专用原生按钮：仅导航、标签页、登录专用交互可保留，并写明无法复用通用控件的语义理由。
 - 自检：无 `⚙`、`✕`、emoji 图标，无页面私有命令按钮皮肤，无渐变/内阴影/厚投影按钮。
 
+### 字体与间距规范
+- 字体族：页面主体继承 `--app-font-family-base`；代码、配置 key、日志字段只在值本身使用 `--app-font-family-mono`。
+- 页面标题 / 分区标题 / 正文 / 表格 / 辅助标签 / 微型标签 / 数字强调：必须选择 DESIGN.md §3 对应 token 或 `.app-*` 语义类；`font-size`、`line-height`、`font-weight` 不得裸写。
+- 间距：优先使用 `--app-space-1~6`、`--app-space-control-gap`、`.app-stack-*`、`.app-cluster-*`、`AppControlRow` / `AppControlItem`；不得新增随机 px 节奏。
+- 允许特例：品牌字标、登录主视觉、图表 tooltip、第三方组件适配、极窄 badge；特例必须局部且不得复制到普通业务页面。
+- 自检：无新增游离字体族 / 字重 / 行高、无普通业务文字小于 12px、无未说明的 5/7/9/11/13/15px 间距。
+
 ### 配置设计
 | 类型 | 字段 | 层级 | 落点 | 说明 |
 |---|---|---|---|---|
@@ -108,6 +115,7 @@
 - RBAC 菜单/功能点：路由、`_SEED_MENU_TREE`、`_SEED_RESOURCES`、接口守卫、`v-permission`、默认授权决策：
 - 测试：
 - 按钮契约：命令按钮 / 图标按钮选型、每组主按钮数量、loading / disabled / focus 状态：
+- 字体与间距契约：是否消费 typography/spacing token、是否存在合理特例、是否影响低宽度文本溢出：
 
 ### 验收
 - cd frontend && npm test
@@ -115,6 +123,7 @@
 - 视口验证：1100×620 / 1366×768 / 1440×900
 - 检查无整页滚动、无视口高度硬编码、设置抽屉分段正常
 - 检查按钮高度与圆角一致、图标描边一致、顶栏状态项不呈现为悬浮胶囊
+- 检查标题、正文、表格、辅助说明、KPI、标签和控件间距均来自 DESIGN.md §3 语义层级或明确特例
 ```
 
 如果计划声明“新增布局原型 / 组件种类 / 组件配置字段”，但没有维护清单，计划视为不完整，不能直接进入开发。
@@ -130,6 +139,7 @@
 | 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑 | `pageRegistry.spec.ts`、页面交互验证 |
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
+| 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
 | 页面抽屉 | `#overlays`、`PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | `PageDrawer.spec.ts`、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 

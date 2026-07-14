@@ -25,8 +25,8 @@ defineProps<{ title?: string; width?: number }>()
   border-radius: 50%;
   background: #c0c4cc;
   color: #fff;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--app-font-size-micro);
+  font-weight: var(--app-font-weight-strong);
   cursor: help;
   vertical-align: middle;
 }
@@ -34,8 +34,8 @@ defineProps<{ title?: string; width?: number }>()
   background: #409eff;
 }
 .help-body {
-  font-size: 12.5px;
-  line-height: 1.7;
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-longform);
   color: #5a6371;
 }
 </style>

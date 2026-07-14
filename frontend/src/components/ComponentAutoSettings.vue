@@ -504,25 +504,25 @@ function setSort(slotId: string, field: string, order: string): void {
 .ca-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .ca-item + .ca-item {
   margin-top: 4px;
 }
 .ca-label {
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   color: var(--page-settings-text-subtle);
 }
 .ca-label-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .ca-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .ca-select {
   width: 100%;
@@ -539,8 +539,8 @@ function setSort(slotId: string, field: string, order: string): void {
 .ca-select :deep(.el-select__placeholder),
 .ca-select :deep(.el-select__selected-item) {
   color: var(--page-settings-text);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
 }
 .ca-clear {
   color: var(--page-settings-accent);

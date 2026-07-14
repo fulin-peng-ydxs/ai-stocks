@@ -31,7 +31,7 @@ defineEmits<{
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
 }
 .seg-btn {
   min-height: 38px;
@@ -40,8 +40,8 @@ defineEmits<{
   border-radius: 10px;
   background: var(--page-settings-seg-bg);
   color: var(--page-settings-text-subtle);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
   cursor: pointer;
   transition: background-color .15s ease, color .15s ease, border-color .15s ease;
 }

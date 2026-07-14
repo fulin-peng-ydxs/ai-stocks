@@ -472,7 +472,7 @@ function onSubmit() {
   grid-template-columns: minmax(0, 1.38fr) minmax(430px, 0.82fr);
   background: var(--login-page-bg);
   color: var(--login-text);
-  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  font-family: var(--app-font-family-base);
   transition: background 0.3s, color 0.3s;
 }
 .login-shell.is-dark {
@@ -644,10 +644,10 @@ function onSubmit() {
 .login-system-state {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
   color: var(--login-brand-muted);
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 10px;
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-font-size-tiny);
   letter-spacing: 0.14em;
 }
 .login-system-state span {
@@ -702,8 +702,8 @@ function onSubmit() {
   padding: 5px 8px;
   border-left: 1px solid color-mix(in srgb, var(--login-track) 45%, transparent);
   color: var(--login-brand-muted);
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 9px;
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-icon-size-xs);
   letter-spacing: 0.12em;
 }
 .index-one { left: 38%; top: 64%; }
@@ -718,10 +718,10 @@ function onSubmit() {
 .login-eyebrow {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: var(--app-space-4);
   color: var(--login-track);
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 10px;
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-font-size-tiny);
   letter-spacing: 0.18em;
 }
 .login-eyebrow i { width: 50px; height: 1px; background: color-mix(in srgb, var(--login-track) 56%, transparent); }
@@ -738,7 +738,7 @@ function onSubmit() {
 .login-brand-copy p {
   margin: 0;
   color: var(--login-brand-sub);
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   letter-spacing: 0.06em;
 }
 .login-brandmeta {
@@ -749,9 +749,9 @@ function onSubmit() {
   bottom: 32px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-3);
   color: var(--login-brand-muted);
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   letter-spacing: 0.12em;
 }
 .login-brandmeta i { width: 3px; height: 3px; border-radius: 50%; background: var(--login-track); }
@@ -775,7 +775,7 @@ function onSubmit() {
   right: 32px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .login-theme {
   width: 38px;
@@ -799,9 +799,9 @@ function onSubmit() {
   color: var(--login-text-sub);
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--app-space-2);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   letter-spacing: .08em;
 }
 .login-preset i {
@@ -844,8 +844,8 @@ function onSubmit() {
   align-items: center;
   justify-content: space-between;
   color: var(--login-accent-readable);
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 9px;
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-icon-size-xs);
   letter-spacing: 0.18em;
 }
 .login-card-kicker i { color: var(--login-text-muted); font-style: normal; }
@@ -857,11 +857,11 @@ function onSubmit() {
   font-weight: 600;
   letter-spacing: 0.04em;
 }
-.login-card-title p { margin: 0; color: var(--login-text-muted); font-size: 13px; }
+.login-card-title p { margin: 0; color: var(--login-text-muted); font-size: var(--app-font-size-table); }
 .login-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
+  gap: var(--app-space-1);
   margin: 26px 0 22px;
   padding: 4px;
   border: 1px solid var(--login-divider);
@@ -876,7 +876,7 @@ function onSubmit() {
   background: transparent;
   color: var(--login-text-muted);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   cursor: pointer;
   transition: background 0.2s, color 0.2s, box-shadow 0.2s;
 }
@@ -893,14 +893,14 @@ function onSubmit() {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
   height: 54px;
   padding: 12px 14px 0;
   border: 1px solid var(--login-border);
   border-radius: 10px;
   background: var(--login-input-bg);
   color: var(--login-text-muted);
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
 }
 .login-field:focus-within {
@@ -921,13 +921,13 @@ function onSubmit() {
 .field-error {
   margin: 6px 2px 0;
   color: var(--login-danger);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   line-height: 1.4;
 }
 .field-hint {
   margin: 6px 2px 0;
   color: var(--login-success);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   line-height: 1.4;
 }
 /* 不归属单字段的整体错误（如账密不匹配/锁定），展示在提交按钮上方 */
@@ -938,7 +938,7 @@ function onSubmit() {
   border-radius: 9px;
   background: var(--login-danger-bg);
   color: var(--login-danger);
-  font-size: 12.5px;
+  font-size: var(--app-font-size-caption);
   line-height: 1.45;
 }
 .field-label {
@@ -946,8 +946,8 @@ function onSubmit() {
   top: 7px;
   left: 40px;
   color: var(--login-text-muted);
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 8px;
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-font-size-ornament);
   letter-spacing: 0.12em;
 }
 .login-field svg {
@@ -961,8 +961,8 @@ function onSubmit() {
   outline: none;
   background: transparent;
   color: var(--login-text);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--app-font-size-body);
+  line-height: var(--app-line-height-table);
 }
 .login-field input::placeholder {
   color: var(--login-text-muted);
@@ -983,9 +983,9 @@ function onSubmit() {
 .login-emailcode .send {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
   color: var(--login-accent);
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1004,7 +1004,7 @@ function onSubmit() {
 @keyframes login-spin { to { transform: rotate(360deg); } }
 .login-captcha-row {
   display: flex;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .login-captcha-row .login-field {
   flex: 1;
@@ -1038,7 +1038,7 @@ function onSubmit() {
   background: linear-gradient(135deg, var(--login-accent), var(--login-accent-strong));
   color: var(--login-accent-text);
   box-shadow: 0 10px 24px color-mix(in srgb, var(--login-accent) 25%, transparent);
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   font-weight: 650;
   cursor: pointer;
   letter-spacing: 0.16em;
@@ -1058,7 +1058,7 @@ function onSubmit() {
   justify-content: space-between;
   align-items: center;
   margin-top: 14px;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .login-rowend {
   justify-content: flex-end;
@@ -1075,7 +1075,7 @@ function onSubmit() {
 .login-security {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--app-space-2);
   color: var(--login-text-muted);
 }
 .login-security i {
@@ -1090,7 +1090,7 @@ function onSubmit() {
   padding-top: 18px;
   border-top: 1px solid var(--login-divider);
   color: var(--login-text-muted);
-  font-size: 10px;
+  font-size: var(--app-font-size-tiny);
   letter-spacing: 0.1em;
   text-align: center;
 }
@@ -1139,7 +1139,7 @@ function onSubmit() {
     padding: 28px 20px 24px;
     border-radius: 16px;
   }
-  .login-card-title h2 { font-size: 26px; }
+  .login-card-title h2 { font-size: var(--app-font-size-kpi-lg); }
   .login-controls { top: 20px; right: 18px; }
 }
 
@@ -1173,7 +1173,7 @@ function onSubmit() {
 @media (max-width: 360px) {
   .login-card { padding-inline: 16px; }
   .login-captcha-img { width: 92px; }
-  .login-rowbetween { gap: 10px; }
+  .login-rowbetween { gap: var(--app-space-2); }
   .login-footnote { letter-spacing: 0.04em; }
 }
 

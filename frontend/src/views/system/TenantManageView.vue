@@ -348,11 +348,11 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-.page-head h2 { margin: 0; font-size: 20px; }
-.page-head-actions { display: flex; align-items: center; gap: 10px; }
+.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
+.page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 .filter-bar { margin-bottom: 12px; }
 .builtin-tag { margin-left: 4px; }
-.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+.mono { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
 .muted { color: var(--el-text-color-secondary); }
 .locked-field { color: var(--el-text-color-regular); }
 </style>

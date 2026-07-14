@@ -203,7 +203,7 @@ function collapsed(key: string): boolean {
 .config-group-form {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 280px));
-  gap: 14px 22px;
+  gap: var(--app-space-3) var(--app-space-5);
   align-items: start;
   padding: 0;
 }
@@ -213,7 +213,7 @@ function collapsed(key: string): boolean {
 .field-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   min-width: 0;
 }
 .field-control {
@@ -235,12 +235,12 @@ function collapsed(key: string): boolean {
   display: flex;
   align-items: flex-start;
   flex-wrap: wrap;
-  gap: 5px 8px;
+  gap: var(--app-space-control-gap) var(--app-space-2);
   min-height: 18px;
   margin-top: 7px;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-comfy);
 }
 .field-error {
   color: var(--el-color-danger);
@@ -249,7 +249,7 @@ function collapsed(key: string): boolean {
   flex-basis: 100%;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
 }
 .field-status .dot {
   width: 7px;

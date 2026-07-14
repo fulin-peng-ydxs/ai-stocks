@@ -227,26 +227,26 @@ function parentLabel(s: SlotSpec): string | null {
 .preview-wrap {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .preview-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--app-space-4);
   flex-wrap: wrap;
 }
 .resp-note {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
 }
 .preview-mode-hint {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
 .resp-note .cur {
   color: var(--el-color-primary);
-  font-weight: 700;
+  font-weight: var(--app-font-weight-strong);
 }
 .resp-summary {
   border: 1px solid var(--el-border-color);
@@ -255,45 +255,45 @@ function parentLabel(s: SlotSpec): string | null {
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .rs-strategy {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--app-space-2);
   flex-wrap: wrap;
 }
 .rs-desc {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
 .rs-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .rs-h {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
   margin-bottom: 6px;
 }
 .rs-tiers {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .rs-tier {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
 }
 .rs-tier.cur {
   color: var(--el-color-primary);
-  font-weight: 650;
+  font-weight: var(--app-font-weight-section);
 }
 .rs-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--app-space-1);
 }
 @media (max-width: 980px) {
   .rs-grid {
@@ -303,12 +303,12 @@ function parentLabel(s: SlotSpec): string | null {
 .muted,
 .side-hint {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .preview-body {
   display: grid;
   grid-template-columns: minmax(360px, 1.4fr) minmax(260px, 0.9fr);
-  gap: 14px;
+  gap: var(--app-space-3);
 }
 .device-frame {
   border: 1px solid var(--el-border-color);
@@ -317,7 +317,7 @@ function parentLabel(s: SlotSpec): string | null {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .region-action,
 .region-main {
@@ -327,18 +327,18 @@ function parentLabel(s: SlotSpec): string | null {
   background: var(--el-bg-color);
 }
 .region-tag {
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   color: var(--el-text-color-secondary);
   margin-bottom: 8px;
 }
 .action-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .main-grid {
   display: grid;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .slot-box {
   text-align: left;
@@ -349,7 +349,7 @@ function parentLabel(s: SlotSpec): string | null {
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .slot-box:hover {
@@ -366,37 +366,37 @@ function parentLabel(s: SlotSpec): string | null {
 .slot-box.action {
   flex-direction: row;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--app-space-2);
   padding: 6px 12px;
 }
 .slot-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .slot-name {
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
 .slot-kind {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
 .slot-badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--app-space-1);
 }
 .slot-size {
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   color: var(--el-text-color-secondary);
 }
 .preview-side {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .side-block {
   border: 1px solid var(--el-border-color);
@@ -405,11 +405,11 @@ function parentLabel(s: SlotSpec): string | null {
   background: var(--el-bg-color);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .side-title {
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
 .slot-box.off {
@@ -419,12 +419,12 @@ function parentLabel(s: SlotSpec): string | null {
 }
 .off-tag {
   margin-left: 6px;
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   color: var(--el-color-warning);
 }
 .muted-block {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 @media (max-width: 980px) {
   .preview-body {

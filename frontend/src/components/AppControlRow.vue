@@ -29,11 +29,11 @@ withDefaults(defineProps<{
 .app-control-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--app-space-2);
   min-width: 0;
 }
 .app-control-row.is-dense {
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .app-control-row.is-fill :deep(> *) {
   flex: 1 1 auto;

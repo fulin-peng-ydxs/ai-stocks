@@ -644,7 +644,7 @@ async function onLogout() {
   border-top: 1px solid var(--chrome-border);
 }
 .foot-note {
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   color: var(--chrome-text-muted);
 }
 .workspace {
@@ -706,7 +706,7 @@ async function onLogout() {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   flex-shrink: 0;
   min-width: 0;
   max-width: 100%;
@@ -724,7 +724,7 @@ async function onLogout() {
   color: var(--chrome-text);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   white-space: nowrap;
 }
 button.topbar-status {
@@ -744,26 +744,26 @@ button.topbar-status:focus-visible {
   cursor: default;
 }
 .topbar-status > .el-icon {
-  font-size: 15px;
+  font-size: var(--app-font-size-section-title);
   color: var(--chrome-text-muted);
 }
 .topbar-status-copy {
   min-width: 0;
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
 }
 .topbar-status-label {
-  font-size: 11px;
-  line-height: 16px;
+  font-size: var(--app-font-size-micro);
+  line-height: var(--app-line-height-micro);
   color: var(--chrome-text-muted);
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
 }
 .topbar-status-date {
-  font-size: 13px;
-  line-height: 18px;
+  font-size: var(--app-font-size-table);
+  line-height: var(--app-line-height-caption);
   color: var(--chrome-text);
-  font-weight: 650;
+  font-weight: var(--app-font-weight-section);
   font-variant-numeric: tabular-nums;
   letter-spacing: .01em;
 }
@@ -771,10 +771,10 @@ button.topbar-status:focus-visible {
   min-width: 8px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--app-space-1);
   color: var(--chrome-text-muted);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--app-font-size-tiny);
+  font-weight: var(--app-font-weight-strong);
   font-variant-numeric: tabular-nums;
 }
 .topbar-status-dot {
@@ -799,7 +799,7 @@ button.topbar-status:focus-visible {
   color: var(--chrome-text-strong);
 }
 .topbar-tool .el-icon {
-  font-size: 17px;
+  font-size: var(--app-font-size-data);
 }
 .topbar-tool-signal {
   position: absolute;
@@ -815,9 +815,9 @@ button.topbar-status:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 8px;
-  line-height: 1;
-  font-weight: 800;
+  font-size: var(--app-font-size-ornament);
+  line-height: var(--app-line-height-solid);
+  font-weight: var(--app-font-weight-strong);
 }
 .topbar-tool-signal.is-dot {
   top: 4px;
@@ -880,8 +880,8 @@ button.topbar-status:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-strong);
   flex-shrink: 0;
   box-shadow: 0 3px 9px color-mix(in srgb, var(--shell-accent) 18%, transparent);
 }
@@ -898,29 +898,29 @@ button.topbar-status:focus-visible {
   padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .topbar-panel-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .topbar-panel-title {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--app-font-size-body);
+  font-weight: var(--app-font-weight-strong);
   color: var(--el-text-color-primary);
 }
 .topbar-panel-sub {
   margin-top: 3px;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
   color: var(--el-text-color-secondary);
 }
 .topbar-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .topbar-metric {
   min-width: 0;
@@ -930,15 +930,15 @@ button.topbar-status:focus-visible {
   padding: 9px 10px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--app-space-1);
 }
 .topbar-metric span {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
 .topbar-metric strong {
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--app-font-size-body);
+  line-height: var(--app-line-height-table);
   color: var(--el-text-color-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -947,25 +947,25 @@ button.topbar-status:focus-visible {
 .topbar-panel-section {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: var(--app-space-2);
 }
 .topbar-section-title {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--app-font-size-caption);
+  font-weight: var(--app-font-weight-strong);
   color: var(--el-text-color-regular);
 }
 .topbar-update-list,
 .topbar-task-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
 }
 .topbar-update,
 .topbar-task {
   min-height: 34px;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--app-space-2);
   border-radius: var(--layout-control-radius, 6px);
   padding: 6px 8px;
   background: color-mix(in srgb, var(--el-fill-color-extra-light) 78%, transparent);
@@ -979,13 +979,13 @@ button.topbar-status:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
 .topbar-update-meta,
 .topbar-task-sub {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
@@ -1014,7 +1014,7 @@ button.topbar-status:focus-visible {
   flex-direction: column;
 }
 .topbar-task-status {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
@@ -1026,12 +1026,12 @@ button.topbar-status:focus-visible {
   border: 1px dashed var(--el-border-color);
   border-radius: var(--layout-control-radius, 6px);
   color: var(--el-text-color-placeholder);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .topbar-panel-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--app-space-2);
   padding-top: 2px;
 }
 :deep(.user-drawer),
@@ -1074,18 +1074,18 @@ button.topbar-status:focus-visible {
   border-bottom: 1px solid var(--page-settings-divider);
 }
 .drawer-head--appearance {
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .drawer-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-strong);
   color: var(--page-settings-text);
   flex: none;
 }
 .drawer-subtitle {
   margin-top: 3px;
   color: var(--page-settings-text-muted);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .drawer-close {
   color: var(--page-settings-text-muted);
@@ -1102,12 +1102,12 @@ button.topbar-status:focus-visible {
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .drawer-user-card {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--app-space-3);
   padding: 14px;
   border: 1px solid var(--page-settings-section-border);
   border-radius: 12px;
@@ -1122,24 +1122,24 @@ button.topbar-status:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--app-font-size-title-md);
+  font-weight: var(--app-font-weight-strong);
   flex-shrink: 0;
 }
 .drawer-user-name {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: var(--app-font-size-data);
+  font-weight: var(--app-font-weight-strong);
   color: var(--page-settings-text);
 }
 .drawer-user-sub {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--page-settings-text-muted);
 }
 .appearance-mode-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   padding: 5px;
   border: 1px solid var(--page-settings-section-border);
   border-radius: 14px;
@@ -1154,7 +1154,7 @@ button.topbar-status:focus-visible {
   color: var(--page-settings-text-muted);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
   cursor: pointer;
   text-align: left;
   transition: background-color .18s ease, border-color .18s ease, color .18s ease;
@@ -1172,10 +1172,10 @@ button.topbar-status:focus-visible {
 .appearance-mode-switch button > span:last-child {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--app-space-1);
 }
-.appearance-mode-switch strong { font-size: 13px; line-height: 16px; }
-.appearance-mode-switch small { color: var(--page-settings-text-muted); font-size: 10px; line-height: 13px; }
+.appearance-mode-switch strong { font-size: var(--app-font-size-table); line-height: var(--app-line-height-micro); }
+.appearance-mode-switch small { color: var(--page-settings-text-muted); font-size: var(--app-font-size-tiny); line-height: var(--app-line-height-ornament); }
 .mode-orb {
   width: 24px;
   height: 24px;
@@ -1193,23 +1193,23 @@ button.topbar-status:focus-visible {
   padding: 4px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
   box-shadow: none;
 }
 .theme-card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .theme-card-title {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-strong);
   color: var(--page-settings-text);
 }
 .theme-card-sub {
   margin-top: 1px;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--page-settings-text-muted);
 }
 .navigation-card {
@@ -1218,7 +1218,7 @@ button.topbar-status:focus-visible {
 .navigation-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 9px;
+  gap: var(--app-space-2);
 }
 .navigation-option {
   position: relative;
@@ -1232,7 +1232,7 @@ button.topbar-status:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 20px;
   grid-template-rows: 76px auto;
-  gap: 8px 6px;
+  gap: var(--app-space-2) var(--app-space-control-gap);
   text-align: left;
   cursor: pointer;
   transition: color .18s ease, border-color .18s ease, background-color .18s ease, transform .18s ease;
@@ -1383,21 +1383,21 @@ button.topbar-status:focus-visible {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--app-space-1);
 }
 .navigation-option-copy strong {
   color: var(--page-settings-text);
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
 .navigation-option-copy small {
   color: var(--page-settings-text-muted);
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: var(--app-font-size-tiny);
+  line-height: var(--app-line-height-compact);
 }
 .theme-list {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: var(--app-space-2);
 }
 .theme-option {
   position: relative;
@@ -1411,7 +1411,7 @@ button.topbar-status:focus-visible {
   display: grid;
   grid-template-columns: 112px minmax(0, 1fr) 22px;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-3);
   cursor: pointer;
   text-align: left;
   transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
@@ -1466,7 +1466,7 @@ button.topbar-status:focus-visible {
   background: var(--preview-surface);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
 }
 .preview-panel b {
   height: 3px;
@@ -1478,11 +1478,11 @@ button.topbar-status:focus-visible {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--app-space-1);
 }
-.theme-option-copy strong { color: var(--page-settings-text); font-size: 14px; }
-.theme-option-copy small { color: var(--page-settings-text-muted); font-size: 11px; line-height: 1.45; }
-.theme-option-swatches { display: flex; gap: 4px; margin-top: 2px; }
+.theme-option-copy strong { color: var(--page-settings-text); font-size: var(--app-font-size-body); }
+.theme-option-copy small { color: var(--page-settings-text-muted); font-size: var(--app-font-size-micro); line-height: var(--app-line-height-comfy); }
+.theme-option-swatches { display: flex; gap: var(--app-space-1); margin-top: 2px; }
 .theme-option-swatches i { width: 16px; height: 3px; border-radius: 999px; }
 .theme-option-check {
   width: 20px;
@@ -1493,8 +1493,8 @@ button.topbar-status:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  font-weight: 800;
+  font-size: var(--app-font-size-micro);
+  font-weight: var(--app-font-weight-strong);
 }
 .theme-option.is-active .theme-option-check,
 .navigation-option.is-active .theme-option-check {
@@ -1524,11 +1524,11 @@ button.topbar-status:focus-visible {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: var(--app-space-3);
   color: var(--el-text-color-secondary);
 }
 .shell-gate-title {
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
 }
 
 @media (max-width: 720px) {
@@ -1541,7 +1541,7 @@ button.topbar-status:focus-visible {
   }
   .topbar-actions {
     padding-right: 10px;
-    gap: 6px;
+    gap: var(--app-space-control-gap);
   }
   .topbar-status {
     width: 32px;

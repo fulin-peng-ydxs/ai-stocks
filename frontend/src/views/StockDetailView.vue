@@ -748,21 +748,21 @@ onBeforeUnmount(() => {
 .title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
   flex-wrap: wrap;
 }
 .title h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--app-font-size-page-title-sm);
 }
 .code-sub {
   color: #909399;
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   font-variant-numeric: tabular-nums;
 }
 .quote-sub {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--app-font-size-body);
+  font-weight: var(--app-font-weight-strong);
   font-variant-numeric: tabular-nums;
 }
 .up {
@@ -774,13 +774,13 @@ onBeforeUnmount(() => {
 .group-option {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
 }
 .group-select-tag {
   margin: 2px 4px 2px 0;
   border-radius: 4px;
   border-style: solid;
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
 }
 .group-select-tag.more {
   color: var(--el-text-color-secondary);
@@ -795,21 +795,21 @@ onBeforeUnmount(() => {
 }
 .ops {
   display: flex;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .setting-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .setting-label {
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
 }
 .nav-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-3);
   padding: 8px 12px;
   margin-bottom: 14px;
   background: var(--el-fill-color-light);
@@ -817,13 +817,13 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 .nav-label {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-regular);
   flex: 1;
 }
 .nav-pos {
-  font-weight: 400;
+  font-weight: var(--app-font-weight-regular);
   margin-left: 6px;
   color: var(--el-text-color-secondary);
   font-variant-numeric: tabular-nums;
@@ -835,19 +835,19 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--app-space-3);
   flex-wrap: wrap;
 }
 .group-tags,
 .group-add {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
   flex-wrap: wrap;
 }
 .box-tag {
   border-radius: 4px;
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
 }
 .muted {
   color: #c0c4cc;
@@ -859,25 +859,25 @@ onBeforeUnmount(() => {
 .note {
   margin: 10px 0 0;
   color: #909399;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .trade-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .hint {
   color: #909399;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .signal-row {
   display: flex;
-  gap: 12px;
+  gap: var(--app-space-3);
   margin-bottom: 16px;
 }
 .cond-cols {
   display: flex;
-  gap: 32px;
+  gap: var(--app-space-6);
   flex-wrap: wrap;
 }
 .cond-col {
@@ -885,21 +885,21 @@ onBeforeUnmount(() => {
   min-width: 240px;
 }
 .cond-title {
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: var(--app-font-weight-section);
+  font-size: var(--app-font-size-table);
   margin-bottom: 8px;
   color: var(--el-text-color-regular);
 }
 .cond-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
   margin-bottom: 6px;
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
 .backstop {
   margin-top: 10px;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
 </style>

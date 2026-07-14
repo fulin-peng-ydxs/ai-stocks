@@ -809,7 +809,7 @@ onMounted(async () => {
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.page-head h2 { margin: 0; font-size: 20px; }
+.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
 /* 填满 LayoutHost 的 .v-grow；内部「顶部固定卡 + 底部双栏成长表」，放不下时整区内滚 */
 .ingest-body {
   flex: 1 1 auto;
@@ -817,19 +817,19 @@ onMounted(async () => {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 .ingest-top {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 .ingest-bottom {
   flex: 1 1 auto;
   min-height: 520px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 .ingest-panel {
   margin-bottom: 0;
@@ -847,23 +847,23 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
 }
-.setting-item { display: flex; flex-direction: column; gap: 8px; }
-.setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
-.page-sub { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: 13px; }
+.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
+.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
+.page-sub { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
 .blk { margin-bottom: 16px; }
-.blk-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.hint { font-size: 12px; color: var(--el-text-color-secondary); }
-.flt { display: flex; align-items: center; gap: 8px; }
-.act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.blk-head { display: flex; justify-content: space-between; align-items: center; gap: var(--app-space-3); }
+.hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.flt { display: flex; align-items: center; gap: var(--app-space-2); }
+.act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--app-space-3); }
 .act { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 12px 14px; }
-.act-t { font-weight: 600; }
-.act-d { font-size: 12px; color: var(--el-text-color-secondary); margin: 4px 0 10px; }
-.task-id { font-family: var(--el-font-family-mono, monospace); font-size: 12px; color: var(--el-text-color-secondary); }
-.log-meta { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-.lm-msg { font-size: 12px; color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lm-phase { font-size: 12px; color: var(--el-color-warning); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-body { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--el-fill-color-darker); border-radius: 6px; padding: 10px; font-family: var(--el-font-family-mono, monospace); font-size: 12px; }
-.log-line { display: flex; gap: 10px; padding: 1px 0; }
+.act-t { font-weight: var(--app-font-weight-section); }
+.act-d { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin: 4px 0 10px; }
+.task-id { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.log-meta { flex: 0 0 auto; display: flex; align-items: center; gap: var(--app-space-2); margin-bottom: 10px; }
+.lm-msg { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lm-phase { font-size: var(--app-font-size-caption); color: var(--el-color-warning); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-body { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--el-fill-color-darker); border-radius: 6px; padding: 10px; font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
+.log-line { display: flex; gap: var(--app-space-2); padding: 1px 0; }
 .log-line.warn { color: var(--app-warning-text); }
 .log-line.error { color: var(--app-danger-text); }
 .lt { color: var(--el-text-color-secondary); flex-shrink: 0; }

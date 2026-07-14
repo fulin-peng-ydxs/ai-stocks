@@ -32,9 +32,9 @@ defineProps<{ text: string }>()
   background: var(--el-fill-color);
   border: 1px solid var(--el-border-color);
   color: var(--el-text-color-regular);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
+  font-size: var(--app-font-size-micro);
+  font-weight: var(--app-font-weight-section);
+  line-height: var(--app-line-height-solid);
   cursor: help;
   user-select: none;
   transition: color .15s ease, border-color .15s ease, background-color .15s ease;

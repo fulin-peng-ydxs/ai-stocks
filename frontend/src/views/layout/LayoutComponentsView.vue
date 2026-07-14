@@ -420,26 +420,26 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--app-space-4);
   padding: 14px 16px;
   border: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
   border-radius: 6px;
 }
 .page-title {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--app-font-size-title-md);
+  font-weight: var(--app-font-weight-strong);
   color: var(--el-text-color-primary);
 }
 .page-subtitle,
 .muted {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .plain-panel {
   min-width: 0;
@@ -449,64 +449,64 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
   padding: 8px 14px 14px;
 }
 .cat-title {
-  font-size: 14px;
-  font-weight: 650;
+  font-size: var(--app-font-size-body);
+  font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
 .cat-count {
   margin-left: 8px;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
 .comp-name {
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
 }
 .caps {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
 }
 .field-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--app-space-1);
 }
 .detail-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 .detail-block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .db-head {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .db-title {
-  font-size: 13px;
-  font-weight: 650;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
   color: var(--el-text-color-primary);
 }
 .db-hint {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
 .chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
 }
 .feature-list {
   margin: 0;
   padding-left: 18px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--app-space-1);
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
 }
 </style>

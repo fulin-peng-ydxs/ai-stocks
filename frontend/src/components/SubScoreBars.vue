@@ -42,7 +42,7 @@ const cells = computed(() =>
 <style scoped>
 .cells {
   display: flex;
-  gap: 8px;
+  gap: var(--app-space-2);
   cursor: help;
 }
 .cell {
@@ -54,14 +54,14 @@ const cells = computed(() =>
 .tip {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
   min-width: 132px;
 }
 .tip-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--app-space-control-gap);
+  font-size: var(--app-font-size-caption);
 }
 .tip-dot {
   width: 9px;

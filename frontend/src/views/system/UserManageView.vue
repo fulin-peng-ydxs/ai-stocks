@@ -486,12 +486,12 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-.page-head h2 { margin: 0; font-size: 20px; }
-.page-head-actions { display: flex; align-items: center; gap: 10px; }
+.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
+.page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 .filter-bar { margin-bottom: 12px; }
 .role-tag { margin-right: 4px; }
 .muted { color: var(--el-text-color-secondary); }
 .locked-field { color: var(--el-text-color-regular); }
-.setting-item { display: flex; flex-direction: column; gap: 8px; }
-.setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
+.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
+.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 </style>

@@ -1000,7 +1000,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   <LayoutHost :layout="configEffective">
     <template #action>
     <div class="page-head">
-      <h2 class="page-title">{{ pageTitle }}</h2>
+      <h2 class="page-title app-page-title">{{ pageTitle }}</h2>
       <div class="page-head-actions">
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
@@ -1656,14 +1656,14 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .sys-head {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--app-space-4);
   padding: 0;
 }
 .sys-summary {
@@ -1674,18 +1674,18 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   display: block;
 }
 .sys-summary strong {
-  font-size: 16px;
-  line-height: 1.4;
+  font-size: var(--app-font-size-data);
+  line-height: var(--app-line-height-compact);
 }
 .sys-summary span {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .sys-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: var(--app-space-2);
   flex-wrap: wrap;
 }
 .sys-actions :deep(.el-alert) {
@@ -1701,7 +1701,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .sys-grid {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--app-space-3);
   min-width: 0;
 }
 .page-head { display: flex; justify-content: space-between; align-items: center; }
@@ -1726,28 +1726,28 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   align-items: center;
   justify-content: center;
   color: var(--el-text-color-secondary);
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
 }
 .profile-error {
   padding: 12px 0;
 }
 .profile-error :deep(.el-result__title p) {
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
-.setting-item { display: flex; flex-direction: column; gap: 8px; }
-.setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
+.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
+.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .page-title {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--app-font-size-page-title-sm);
 }
 .hint {
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   margin: 4px 0 12px;
 }
 .score-layout {
   display: flex;
-  gap: 16px;
+  gap: var(--app-space-4);
   min-height: 0;  /* 评分/买卖工作区作为成长列容器，需可被钳定，editor 的 flex:1 才能正确分高 */
 }
 .prof-list {
@@ -1766,7 +1766,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   padding: 9px 11px;
   border-radius: 7px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   margin-bottom: 4px;
 }
 .prof-list li:hover {
@@ -1775,7 +1775,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .prof-list li.active {
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary);
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
 }
 .editor {
   flex: 1;
@@ -1789,18 +1789,18 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .ed-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .spacer {
   flex: 1;
 }
 .ver-badge {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
   border-radius: 10px;
   padding: 1px 8px;
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
   cursor: pointer;
   user-select: none;
 }
@@ -1817,10 +1817,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 10px;
   padding: 1px 8px;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .mono {
-  font-family: var(--el-font-family-mono, monospace);
+  font-family: var(--app-font-family-mono);
 }
 .ver-item {
   border: 1px solid var(--el-border-color-lighter);
@@ -1831,23 +1831,23 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .ver-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .ast {
   margin: 8px 0 0;
   padding: 10px 12px;
   background: var(--el-fill-color-light);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
   max-height: 200px;
   overflow: auto;
   white-space: pre-wrap;
 }
 .wsum {
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   color: var(--el-color-success);
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
 }
 .wsum.bad {
   color: var(--el-color-danger);
@@ -1855,23 +1855,23 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .scoring-cell {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
 }
 .tip {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
 .linear-row,
 .band-row {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
+  gap: var(--app-space-control-gap);
+  font-size: var(--app-font-size-caption);
 }
 .band-box {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--app-space-1);
 }
 .band-box > .el-button.is-link,
 .def-params > .el-button.is-link {
@@ -1881,7 +1881,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .weight-cell {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .wval {
   width: 42px;
@@ -1891,7 +1891,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .run-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-3);
   margin: 22px 0 10px;
 }
 .run-table-wrap {
@@ -1901,8 +1901,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex-direction: column;
 }
 .run-title {
-  font-weight: 600;
-  font-size: 15px;
+  font-weight: var(--app-font-weight-section);
+  font-size: var(--app-font-size-section-title);
 }
 .subchip {
   display: inline-block;
@@ -1910,38 +1910,38 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   border-radius: 4px;
   padding: 1px 6px;
   margin: 0 4px 2px 0;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .param-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   margin-top: 5px;
 }
 .param-item {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 12px;
+  gap: var(--app-space-1);
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
 .tech-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--app-space-4);
   margin-bottom: 12px;
   flex: none;
 }
 .tech-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
   flex-shrink: 0;
 }
 .tech-pane {
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
   min-height: 0;
 }
 /* 原依赖全局 .v-grow，迁移后改为页面内自带成长样式（表体内滚、表头吸顶） */
@@ -1956,16 +1956,16 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   min-height: 0;
 }
 .expr {
-  font-family: var(--el-font-family-mono, monospace);
+  font-family: var(--app-font-family-mono);
   background: var(--el-fill-color-light);
   border-radius: 4px;
   padding: 1px 6px;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .usage {
   display: block;
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-reading);
   color: var(--el-text-color-regular);
   white-space: normal;
   word-break: break-word;
@@ -1973,13 +1973,13 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .def-params {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   width: 100%;
 }
 .def-param-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
 }
 .cond-block {
   margin: 14px 0;
@@ -1991,12 +1991,12 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .cond-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-3);
   margin-bottom: 10px;
 }
 .cond-title {
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: var(--app-font-weight-section);
+  font-size: var(--app-font-size-body);
 }
 .cond-title.buy {
   color: var(--el-color-danger);
@@ -2007,20 +2007,20 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .cond-row {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--app-space-2);
   margin-bottom: 7px;
   flex-wrap: wrap;
 }
 .backstop-row {
   display: flex;
-  gap: 22px;
+  gap: var(--app-space-5);
   margin-top: 8px;
 }
 .bs-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--app-space-control-gap);
+  font-size: var(--app-font-size-table);
   color: var(--el-text-color-regular);
 }
 .bs-item i {
@@ -2031,17 +2031,17 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 .subchips {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
 }
 .subchip.score {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
   white-space: nowrap;
   margin: 0;
   padding: 2px 7px;
   border-radius: 11px;
-  line-height: 1.5;
+  line-height: var(--app-line-height-comfy);
 }
 .subchip.score i {
   font-style: normal;

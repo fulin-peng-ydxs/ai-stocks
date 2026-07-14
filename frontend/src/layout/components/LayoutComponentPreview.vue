@@ -115,15 +115,15 @@ const effState = computed<ComponentState>(() => {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .cp-error {
   align-items: center;
   color: var(--el-color-danger);
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
 .cp-error-icon {
-  font-size: 22px;
+  font-size: var(--app-font-size-page-title);
 }
 /* 通用占位条：用边框色块表示内容骨架。 */
 span {
@@ -132,12 +132,12 @@ span {
 .cp-table {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
 }
 .cp-tr {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .cp-tr span {
   height: 12px;
@@ -147,7 +147,7 @@ span {
 .cp-th span {
   height: 14px;
   background: var(--el-fill-color-dark);
-  font-size: 11px;
+  font-size: var(--app-font-size-micro);
   color: var(--el-text-color-secondary);
   text-align: left;
   padding-left: 2px;
@@ -155,12 +155,12 @@ span {
 .cp-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .cp-li {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .cp-dot {
   width: 8px;
@@ -178,8 +178,8 @@ span {
 .cp-tree {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  font-size: 13px;
+  gap: var(--app-space-2);
+  font-size: var(--app-font-size-table);
   color: var(--el-text-color-regular);
 }
 .cp-node.l1 {
@@ -192,7 +192,7 @@ span {
 .cp-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .cp-input {
   height: 30px;
@@ -212,7 +212,7 @@ span {
   border-radius: 4px;
   background: var(--el-color-primary);
   color: #fff;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .cp-btn.ghost {
   background: transparent;
@@ -230,7 +230,7 @@ span {
 .cp-kpi {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .cp-card {
   border: 1px solid var(--el-border-color);
@@ -238,7 +238,7 @@ span {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .cp-num {
   height: 22px;
@@ -254,12 +254,12 @@ span {
 .cp-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--app-space-3);
 }
 .cp-fr {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .cp-flabel {
   width: 64px;
@@ -302,7 +302,7 @@ span {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--app-space-2);
   padding: 10px 0;
 }
 .cp-obody span,
@@ -320,15 +320,15 @@ span {
 .cp-ofoot {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--app-space-2);
   border-top: 1px solid var(--el-border-color);
   padding-top: 8px;
 }
 .cp-tabbar {
   display: flex;
-  gap: 16px;
+  gap: var(--app-space-4);
   border-bottom: 1px solid var(--el-border-color);
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   color: var(--el-text-color-secondary);
 }
 .cp-tabbar .active {
@@ -340,17 +340,17 @@ span {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--app-space-2);
   padding-top: 10px;
 }
 .cp-detail {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .cp-dr {
   display: flex;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .cp-dk {
   width: 72px;
@@ -367,13 +367,13 @@ span {
 }
 .cp-master {
   flex-direction: row;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .cp-mlist {
   flex: 0 0 90px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .cp-mli {
   height: 22px;
@@ -389,7 +389,7 @@ span {
   padding-left: 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .cp-structure {
   flex: 1;
@@ -399,6 +399,6 @@ span {
   align-items: center;
   justify-content: center;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
 </style>

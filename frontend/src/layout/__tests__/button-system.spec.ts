@@ -47,7 +47,7 @@ describe('全站按钮与图标操作契约', () => {
     expect(pageTemplate).toContain('### 控件与操作规范')
     expect(pageTemplate).toContain('纯图标操作：使用 `AppIconButton`')
     expect(globalCss).toContain('--app-control-height-md: 32px')
-    expect(globalCss).toContain('--app-button-font-weight: 600')
+    expect(globalCss).toContain('--app-button-font-weight: var(--app-font-weight-section)')
   })
 
   it('应用外壳、页面设置和配置编辑器共同消费 AppIconButton', () => {

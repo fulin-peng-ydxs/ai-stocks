@@ -44,7 +44,7 @@ function commitPeriods() {
 </template>
 
 <style scoped>
-.setting-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
+.setting-item { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); padding: 6px 0; }
 .setting-item.col { flex-direction: column; align-items: stretch; }
-.setting-label { font-size: 13px; color: var(--el-text-color-regular); }
+.setting-label { font-size: var(--app-font-size-table); color: var(--el-text-color-regular); }
 </style>

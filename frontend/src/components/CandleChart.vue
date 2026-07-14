@@ -342,9 +342,9 @@ onBeforeUnmount(() => {
 }
 .ma-bar {
   display: flex;
-  gap: 16px;
-  font-size: 12px;
-  font-weight: 600;
+  gap: var(--app-space-4);
+  font-size: var(--app-font-size-caption);
+  font-weight: var(--app-font-weight-section);
   padding: 2px 4px 4px;
   font-variant-numeric: tabular-nums;
 }
@@ -360,9 +360,9 @@ onBeforeUnmount(() => {
   top: 350px; /* 量能区 grid top 74% × 480 ≈ 355，置于其上方 */
   left: 12px;
   display: flex;
-  gap: 14px;
-  font-size: 11px;
-  font-weight: 600;
+  gap: var(--app-space-3);
+  font-size: var(--app-font-size-micro);
+  font-weight: var(--app-font-weight-section);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
   z-index: 5;

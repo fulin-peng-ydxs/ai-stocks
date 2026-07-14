@@ -23,8 +23,8 @@ withDefaults(defineProps<{
 
 <template>
   <span class="asset-profile-label">
-    <span class="asset-profile-label__name">{{ name }}</span>
-    <span v-if="version != null" class="asset-profile-label__version">v{{ version }}</span>
+    <span class="asset-profile-label__name app-data-text">{{ name }}</span>
+    <span v-if="version != null" class="asset-profile-label__version app-caption-text">v{{ version }}</span>
     <AssetVisibilityTag
       v-if="source"
       mode="source"
@@ -40,7 +40,7 @@ withDefaults(defineProps<{
 .asset-profile-label {
   align-items: center;
   display: inline-flex;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   min-width: 0;
   max-width: 100%;
   vertical-align: middle;
@@ -55,7 +55,7 @@ withDefaults(defineProps<{
 .asset-profile-label__version {
   color: var(--el-text-color-secondary);
   flex: 0 0 auto;
-  font-size: 12px;
-  font-weight: 400;
+  font-size: var(--app-font-size-caption);
+  font-weight: var(--app-font-weight-regular);
 }
 </style>

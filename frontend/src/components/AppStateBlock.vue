@@ -60,11 +60,11 @@ const defaultDescription = computed(() => {
   <div class="app-state-block" :class="[`app-state-block--${state}`, `app-state-block--${size}`]">
     <div v-if="state === 'loading'" class="app-state-block__loading">
       <template v-if="isInline">
-        <span class="app-state-block__inline-text">{{ defaultTitle }}</span>
+        <span class="app-state-block__inline-text app-caption-text">{{ defaultTitle }}</span>
       </template>
       <template v-else>
         <el-skeleton :rows="skeletonRows" animated />
-        <div v-if="$slots.default || description || title" class="app-state-block__loading-text">
+        <div v-if="$slots.default || description || title" class="app-state-block__loading-text app-caption-text">
           <slot>{{ description || title || defaultTitle }}</slot>
         </div>
       </template>
@@ -152,8 +152,8 @@ const defaultDescription = computed(() => {
 .app-state-block__inline-text {
   margin-top: 8px;
   color: var(--app-empty-text);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--app-font-size-table);
+  line-height: var(--app-line-height-comfy);
   text-align: center;
 }
 
@@ -185,14 +185,14 @@ const defaultDescription = computed(() => {
 
 .app-state-block__permission-icon {
   color: var(--el-color-warning);
-  font-size: 64px;
+  font-size: var(--app-state-icon-size);
 }
 
 .app-state-block__result--inline :deep(.el-result__title p),
 .app-state-block__result--inline :deep(.el-result__subtitle p) {
   display: inline;
   margin-right: 8px;
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
 
 .app-state-block__result--inline :deep(.el-result__extra) {
@@ -202,13 +202,13 @@ const defaultDescription = computed(() => {
 
 .app-state-block__result :deep(.el-result__title p) {
   color: var(--el-text-color-primary);
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-section);
 }
 
 .app-state-block__result :deep(.el-result__subtitle p) {
   color: var(--app-empty-text);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--app-font-size-table);
+  line-height: var(--app-line-height-comfy);
 }
 </style>

@@ -63,9 +63,9 @@ const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.valu
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
   color: var(--chrome-text-muted);
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
 .menu-hint.error {
   color: var(--el-color-danger);
@@ -79,7 +79,7 @@ const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.valu
   background: var(--chrome-active-bg);
   color: var(--chrome-text-strong);
   border-left: 0;
-  font-weight: 650;
+  font-weight: var(--app-font-weight-section);
   box-shadow: inset 3px 0 var(--el-color-primary);
 }
 .menu :deep(.el-menu-item.is-active .menu-icon),

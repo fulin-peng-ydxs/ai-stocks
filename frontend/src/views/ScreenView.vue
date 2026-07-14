@@ -710,7 +710,7 @@ onMounted(async () => {
 <style scoped>
 .page-head h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--app-font-size-page-title-sm);
 }
 .title-row {
   display: flex;
@@ -729,25 +729,25 @@ onMounted(async () => {
 .load-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
   padding-bottom: 12px;
   margin-bottom: 12px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .hint {
   color: var(--app-muted-text);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .b-group {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
   margin-bottom: 10px;
 }
 .b-cond {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
   margin-bottom: 8px;
   flex-wrap: wrap;
 }
@@ -758,36 +758,36 @@ onMounted(async () => {
 }
 .param-lb {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .b-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--app-space-2);
   margin-top: 4px;
 }
 .dsl-help {
   margin-top: 10px;
   color: var(--app-muted-text);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-reading);
 }
 .ast {
   margin: 12px 0 0;
   padding: 10px 12px;
   background: var(--el-fill-color-light);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
   max-height: 200px;
   overflow: auto;
 }
 .ver-link {
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
   border-radius: 10px;
   padding: 1px 8px;
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
   cursor: pointer;
   user-select: none;
 }
@@ -806,32 +806,32 @@ onMounted(async () => {
 .ver-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .run-bar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--app-space-3);
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid #ebeef5;
 }
 .run-hint {
   color: var(--app-placeholder-text);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .setting-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .setting-label {
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
 }
 .cnt {
   color: var(--app-danger-text);
-  font-size: 16px;
+  font-size: var(--app-font-size-data);
 }
 .score {
   color: var(--app-danger-text);

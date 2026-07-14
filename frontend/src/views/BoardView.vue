@@ -353,11 +353,11 @@ onMounted(async () => {
   align-items: flex-end;
   margin-bottom: 14px;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .page-head h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--app-font-size-page-title-sm);
 }
 .title-row {
   display: flex;
@@ -365,21 +365,21 @@ onMounted(async () => {
 }
 .sub {
   color: var(--app-muted-text);
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
 .ops {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
   flex-wrap: wrap;
 }
 .ops .lbl {
   color: #606266;
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
 }
 .score {
   color: var(--app-danger-text);
-  font-size: 15px;
+  font-size: var(--app-font-size-section-title);
 }
 .muted {
   color: var(--app-placeholder-text);
@@ -391,17 +391,17 @@ onMounted(async () => {
 .subchips {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
 }
 .subchip.score {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
   white-space: nowrap;
   padding: 2px 7px;
   border-radius: 11px;
-  line-height: 1.5;
-  font-size: 12px;
+  line-height: var(--app-line-height-comfy);
+  font-size: var(--app-font-size-caption);
 }
 .subchip.score i {
   font-style: normal;
@@ -431,10 +431,10 @@ onMounted(async () => {
 .setting-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .setting-label {
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
 }
 </style>

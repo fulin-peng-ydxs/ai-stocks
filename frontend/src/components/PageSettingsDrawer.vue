@@ -223,9 +223,9 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
 .ps-title {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
+  gap: var(--app-space-2);
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-section);
   color: var(--page-settings-text);
 }
 .ps-dirty-dot {

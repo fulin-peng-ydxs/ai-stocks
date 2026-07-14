@@ -23,7 +23,7 @@ withDefaults(defineProps<{
 .app-control-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   flex: 0 0 auto;
   min-width: 0;
   max-width: 100%;
@@ -34,16 +34,16 @@ withDefaults(defineProps<{
 .app-control-item__label {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--app-space-1);
   flex: 0 0 auto;
   color: var(--el-text-color-secondary);
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   white-space: nowrap;
 }
 .app-control-item__body {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   min-width: 0;
   max-width: 100%;
 }

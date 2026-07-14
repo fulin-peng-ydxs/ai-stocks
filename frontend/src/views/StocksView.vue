@@ -933,20 +933,20 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-3);
   flex-wrap: wrap;
 }
 .page-head h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--app-font-size-page-title-sm);
 }
 .setting-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .setting-label {
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
 }
 .filter-card {
@@ -956,7 +956,7 @@ onBeforeUnmount(() => {
 .gb-name {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
 }
 .color-dot {
   width: 9px;
@@ -971,18 +971,18 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: var(--app-space-3);
   flex-wrap: wrap;
 }
 .gb-main {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
   flex-wrap: wrap;
 }
 .gb-name {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--app-font-size-data);
+  font-weight: var(--app-font-weight-section);
 }
 .gb-name-edit {
   cursor: pointer;
@@ -992,7 +992,7 @@ onBeforeUnmount(() => {
   color: var(--el-color-primary);
 }
 .gb-edit-icon {
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   color: var(--app-placeholder-text);
   margin-left: 2px;
 }
@@ -1002,13 +1002,13 @@ onBeforeUnmount(() => {
 .tag-line {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--app-space-1);
   margin-left: 6px;
   flex-wrap: wrap;
 }
 .box-tag {
   border-radius: 4px;
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
 }
 .industry-tag {
   color: var(--el-color-primary);
@@ -1016,26 +1016,26 @@ onBeforeUnmount(() => {
   background: var(--el-color-primary-light-9);
 }
 .gb-ret {
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   color: var(--el-text-color-regular);
 }
 .gb-ret b {
-  font-size: 16px;
+  font-size: var(--app-font-size-data);
   margin: 0 2px;
 }
 .gb-hint,
 .f-hint {
   color: var(--app-muted-text);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .gb-ops {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
 }
 .gb-desc {
   color: var(--app-muted-text);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1061,29 +1061,29 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
+  gap: var(--app-space-4);
   flex-wrap: wrap;
 }
 .cart-info {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--app-space-3);
   flex: 1;
   min-width: 260px;
 }
 .cart-n {
-  font-size: 13px;
+  font-size: var(--app-font-size-table);
   white-space: nowrap;
   padding-top: 2px;
 }
 .cart-n b {
   color: var(--market-up-color);
-  font-size: 16px;
+  font-size: var(--app-font-size-data);
 }
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   max-height: 64px;
   overflow: auto;
 }
@@ -1092,18 +1092,18 @@ onBeforeUnmount(() => {
 }
 .more {
   color: var(--app-muted-text);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   align-self: center;
 }
 .cart-ops {
   display: flex;
-  gap: 8px;
+  gap: var(--app-space-2);
   align-items: center;
   flex-shrink: 0;
 }
 .f-codes {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
   margin-top: 4px;
 }
 </style>

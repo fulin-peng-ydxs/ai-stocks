@@ -465,29 +465,29 @@ onMounted(reloadPresets)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--app-space-4);
   padding: 14px 16px;
   border: 1px solid var(--el-border-color);
   background: var(--el-bg-color);
   border-radius: 6px;
 }
 .page-title {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--app-font-size-title-md);
+  font-weight: var(--app-font-weight-strong);
   color: var(--el-text-color-primary);
 }
 .page-subtitle,
 .section-subtitle,
 .muted {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--app-font-size-caption);
 }
 .toolbar-actions,
 .inline-controls,
 .button-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-space-2);
 }
 .plain-panel {
   min-width: 0;
@@ -497,12 +497,12 @@ onMounted(reloadPresets)
   padding: 14px;
 }
 .section-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--app-font-size-section-title);
+  font-weight: var(--app-font-weight-strong);
   color: var(--el-text-color-primary);
 }
 .preset-name {
-  font-weight: 650;
+  font-weight: var(--app-font-weight-section);
 }
 .preset-form {
   max-height: 62vh;
@@ -511,8 +511,8 @@ onMounted(reloadPresets)
 }
 .form-section-title {
   margin: 14px 0 8px;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-strong);
   color: var(--el-text-color-primary);
   padding-bottom: 4px;
   border-bottom: 1px solid var(--el-border-color-lighter);
@@ -520,7 +520,7 @@ onMounted(reloadPresets)
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .form-grid.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -528,7 +528,7 @@ onMounted(reloadPresets)
 .ie-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: var(--app-space-4);
 }
 .inline-controls {
   margin: 8px 0;

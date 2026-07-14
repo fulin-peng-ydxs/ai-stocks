@@ -32,7 +32,7 @@ const minHeightOf = (s: SlotSpec): number => s.minH ?? COMPONENT_CATALOG[s.compo
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-space-3);
 }
 .v-mixed-fixed {
   flex: 0 0 auto;

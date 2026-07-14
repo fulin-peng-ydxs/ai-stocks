@@ -27,7 +27,7 @@ defineProps<{ node: MenuTreeNode }>()
 .menu-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   min-width: 0;
 }
 .menu-icon {

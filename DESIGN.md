@@ -27,11 +27,21 @@ typography:
     fontSize: 18px
     fontWeight: 650
     lineHeight: 26px
+  section-title:
+    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
+    fontSize: 15px
+    fontWeight: 650
+    lineHeight: 22px
   body-md:
     fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
     fontSize: 14px
     fontWeight: 400
     lineHeight: 22px
+  table-md:
+    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
+    fontSize: 13px
+    fontWeight: 400
+    lineHeight: 20px
   button-md:
     fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
     fontSize: 13px
@@ -42,6 +52,21 @@ typography:
     fontSize: 12px
     fontWeight: 400
     lineHeight: 18px
+  micro:
+    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
+    fontSize: 11px
+    fontWeight: 400
+    lineHeight: 16px
+  data-emphasis:
+    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
+    fontSize: 16px
+    fontWeight: 650
+    lineHeight: 24px
+  kpi-lg:
+    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
+    fontSize: 26px
+    fontWeight: 700
+    lineHeight: 32px
 rounded:
   xs: 2px
   sm: 4px
@@ -158,23 +183,57 @@ Key Characteristics：
 
 字体栈以系统中文字体为主：`PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif`。不得引入需要联网加载的字体。
 
-| 层级 | 建议值 | 使用场景 |
+排版事实源：
+
+- token 落地在 `frontend/src/styles/global.css`，包括 `--app-font-family-base`、`--app-font-size-*`、`--app-line-height-*`、`--app-font-weight-*`。
+- 页面私有样式不得新增游离字体族；除品牌字标、登录主视觉、代码/配置值、图表 tooltip 外，必须继承 `body` 的 `--app-font-family-base`。
+- 新增文字样式必须先判断是否能消费 `.app-page-title`、`.app-section-title`、`.app-body-text`、`.app-caption-text`、`.app-micro-text`、`.app-data-text`、`.app-data-emphasis` 或对应 token。
+- 常规行高使用表内 token；图标/徽标贴边用 `--app-line-height-solid`，紧凑说明用 `--app-line-height-compact` / `--app-line-height-comfy`，长说明用 `--app-line-height-reading` / `--app-line-height-longform`，极小角标用 `--app-line-height-ornament` / `--app-line-height-tiny`。
+
+| 层级 | 强制 token / 值 | 使用场景 |
 |---|---|---|
-| 页面标题 | 20-22px / 700 | 页面主标题、工作台名称 |
-| 分区标题 | 15-18px / 600-650 | 卡片标题、抽屉标题、配置组标题 |
-| 正文 | 14px / 400 | 表单、普通说明、主体内容 |
-| 表格正文 | 13-14px / 400 | 数据表格、列表 |
-| 辅助标签 | 12px / 400 | 单位、提示、来源、次级说明 |
-| 数字强调 | 16-20px / 600-700 | KPI、收益、评分、排名 |
+| 页面标题 | `--app-font-size-page-title` 22px / 700 / 30px；紧凑页可用 20px | 页面主标题、工作台名称、配置中心一级标题 |
+| 分区标题 | `--app-font-size-section-title` 15px / 650 / 22px；抽屉或大面板可用 18px | 卡片标题、抽屉标题、配置组标题 |
+| 正文 | `--app-font-size-body` 14px / 400 / 22px | 表单、普通说明、主体内容 |
+| 表格正文 | `--app-font-size-table` 13px / 400 / 20px | 数据表格、列表、密集参数行 |
+| 辅助标签 | `--app-font-size-caption` 12px / 400 / 18px | 单位、提示、来源、次级说明、tag 内文 |
+| 微型标签 | `--app-font-size-micro` 11px / 400 / 16px | 顶栏弱标签、状态小字、空间极窄的 badge；禁止用于正文 |
+| 数字强调 | `--app-font-size-data` 16px / 650 / 24px；大 KPI 可用 `--app-font-size-kpi-lg` 26px / 700 / 32px | KPI、收益、评分、排名、需要横向比较的数字 |
 
 排版规则：
 
 - 标题用于定位页面和分区，不用于装饰性大字。
+- 页面主体新增 `font-size`、`line-height`、`font-weight` 时必须引用上述 token 或语义类；直接写 px/数字只允许在以下特例：品牌字标、登录主视觉、图表 canvas/tooltip、第三方组件适配、极窄状态点/角标、图标尺寸。特例必须是局部私有，不得被复制为普通页面模式。
+- 10px 以下只允许使用 `--app-font-size-ornament` 或 `--app-icon-size-xs`，用于图标内部标记、红点角标或不可读正文之外的装饰性标尺；不得用于业务说明、表格、表单、按钮、筛选项。
+- 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
 - 表格内长文本默认省略、tooltip 或详情承接，不默认自动换行撑高行高。
 - 说明性长文优先进入 `HelpTip` / `HelpHint`，页面上只保留必要短标签。
 - 组件内提示、说明、空状态、校验文案必须按容器宽度排版，避免长句硬塞一行；必要时分行、缩短文案或交给 tooltip / popover 承接，不得挤压主操作区或造成文本重叠。
 - 按钮、标签、抽屉标题、表格控件中的文字不得溢出容器。
 - 金融数字按列右对齐或按业务组件一致处理，避免同列数字参差。
+- 股票代码、配置 key、日志字段、接口路径等技术标识可使用 `--app-font-family-mono`，但仅限值本身，不把整段说明改成等宽体。
+
+### 3.1 Spacing & Rhythm Rules
+
+间距事实源在 `global.css`：`--app-space-1=4px`、`--app-space-2=8px`、`--app-space-3=12px`、`--app-space-4=16px`、`--app-space-5=24px`、`--app-space-6=32px`，控件内部图文间距使用 `--app-space-control-gap=6px`。
+
+| 场景 | 强制节奏 | 说明 |
+|---|---|---|
+| 页面 slot 间距 | `--layout-page-gap` = 12px | `LayoutHost` / `.v-page` 默认节奏，不在页面内重复手写 |
+| 固定操作区多行 | `.lh-action` / 12px | 工具栏 + 筛选栏纵向排列 |
+| 普通横向控件组 | `.app-cluster-md` / 8px；按钮图文 6px | 筛选项、按钮组、状态项 |
+| 表单/设置项纵向 | `.app-stack-sm` 8px 或 `.app-stack-md` 12px | label、控件、说明成组 |
+| 卡片/面板内边距 | `--layout-card-padding` = 16px；密集面板可 12px | 高密表格容器可压缩但不得牺牲可读性 |
+| 大区块分隔 | 16px 或 24px | 独立业务块、KPI 到主表、说明组到表单 |
+| 空态/异常态 | 使用 `app-empty*` / `AppStateBlock` | 不自定义另一套图标、字号、间距 |
+
+间距规则：
+
+- 页面新增 `gap`、`padding`、`margin` 时优先使用 spacing token 或语义类；不得随手新增 5px、7px、9px、11px、13px、15px 这类游离节奏。
+- 6px 仅用于控件内部图文、顶栏轻量状态组、极小图标与文字之间；10px、14px、18px 只作为已有组件历史兼容或特定密度调优，不作为新增页面默认节奏。
+- 同一行内控件必须在视觉基线上对齐；说明文字和控件作为一个整体时使用 `AppControlItem`，多个控件行使用 `AppControlRow`。
+- 同一页面内不得同时出现多套标题上/下边距节奏；分区标题下接正文用 4-8px，下接表格或复杂控件用 8-12px。
+- 精细特例可以保留，但必须局部、少量、可解释，且不改变页面主体网格和信息层级。
 
 ## 4. Component Stylings
 
@@ -422,6 +481,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 列表页分页/排序走服务端；筛选变更自动触发；多选跨分页/搜索累积。
 - 列表页筛选下拉优先复用 `AppFilterSelect`；默认多选、可搜索、可清空，业务只允许单选时必须传 `multiple=false`，最多展示 3 个选中标签并在溢出时提前折叠，选择变更即向页面发出筛选事件，页面负责触发服务端查询。
 - 普通命令使用 `el-button`，纯图标操作使用 `AppIconButton`；同一操作组只保留一个主按钮，并保持尺寸、图标和状态反馈一致。
+- 页面主体字体、字号、行高、字重和间距必须优先消费 `global.css` 的 `--app-font-*`、`--app-line-height-*`、`--app-space-*` token 或 `.app-*` 语义类；新增 px 值必须属于文档允许的局部特例。
 - 说明性/描述性文字只要不是极短标签或必要操作指引/实时状态说明，收进 `HelpTip` / `HelpHint`。
 - 新增可配置能力必须同时具备组件能力事实源、字段配置事实源、页面消费事实源。
 
@@ -438,6 +498,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 禁止接口失败只弹 toast 后留下空白区域；失败区域必须有可见错误态。
 - 禁止把 403、接口错误或未加载完成写成“暂无数据”。
 - 禁止页面为普通命令另写原生按钮皮肤，禁止用 Unicode / emoji 代替图标，禁止顶栏状态项使用永久渐变、内阴影或悬浮胶囊制造层级。
+- 禁止新增未登记的普通文字字号、游离字体族和随机间距；禁止把登录页、品牌字标、图表 tooltip 的特殊排版复制到业务页面。
 
 ### 7.3 组件特性配置治理
 
@@ -511,6 +572,8 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 先读本文件、`frontend/src/layout/pageRegistry.ts`、`frontend/src/layout/components.ts` 和相关样板页面。
 - 先判断页面原型，再列 slot、组件种类、滚动归属、`growMain` 和配置字段。
 - 需要新页面时优先用 `npm run scaffold-page`，不要复制旧页面临时改 CSS。
+- 写页面标题、分区标题、表格、辅助说明、KPI 或状态标签前，先选择 `Typography Rules` 中的语义层级；不要临时发明字号。
+- 写 `gap`、`padding`、`margin` 前，先选择 `Spacing & Rhythm Rules` 中的 token；除控件内部 6px 和已有组件精调外，不新增随机间距。
 - 如果新增配置项，必须写清谁定义、谁保存、谁读取、谁消费、谁校验、如何回退。
 - 如果改表格，必须说明列宽、长文本、排序/分页、操作列和低宽度降级。
 - 如果改弹窗/抽屉，必须说明承载边界、滚动归属、teleport 样式入口和关闭策略。
@@ -576,7 +639,7 @@ npm run build
 
 ## 10. Known Gaps
 
-- 本文件已补齐设计系统入口，但视觉 token 仍以当前代码事实为主，未引入独立设计稿或品牌规范。
+- 本文件已补齐设计系统入口，字体、字号、行高、按钮、表格、页面间距和空态已有全局 token；独立品牌设计稿仍未引入，视觉方向以当前金融科技研究终端为准。
 - 移动端不是当前产品重点，当前响应式规则优先覆盖桌面低宽度和低高度场景。
-- 仍有部分页面局部样式带有业务特例颜色或局部 class，后续如要统一视觉，应逐页复核后再沉淀为 token。
+- 仍有少量页面局部样式属于品牌、登录主视觉、图表 tooltip、代码值或极窄 badge 特例；新增业务页面不得复制这些特例作为普通排版。
 - 页面登记区块通过 `<!-- page-registry:start/end -->` marker 被 `pageRegistry.spec.ts` 和 `scaffold-page` 读取；marker 是机器契约，不要移除。

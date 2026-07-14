@@ -435,26 +435,26 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.page-head h2 { margin: 0; font-size: 20px; }
-.page-head-actions { display: flex; gap: 8px; align-items: center; }
+.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
+.page-head-actions { display: flex; gap: var(--app-space-2); align-items: center; }
 /* 填满 LayoutHost 的 .v-grow；放不下时整区内滚（兜底阶梯第 3 级） */
 .schedule-body { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
 .jobs-card { margin-bottom: 16px; }
 .jobs-card :deep(.el-card__body) { flex: 1 1 auto; min-height: 0; }
 .jobs-tbl { width: 100%; }
-.setting-item { display: flex; flex-direction: column; gap: 8px; }
-.setting-label { font-size: 14px; color: var(--page-settings-text-subtle); }
+.setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
+.setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .blk { margin-bottom: 16px; }
 .blk:last-child { margin-bottom: 0; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
-.hint { font-size: 12px; color: var(--el-text-color-secondary); margin-left: 10px; }
-.src { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
+.hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: 10px; }
+.src { display: flex; align-items: center; gap: var(--app-space-2); padding: 9px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .src:last-child { border-bottom: none; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .dot.up { background: var(--el-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-success) 18%, transparent); }
 .dot.down { background: var(--app-danger-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-danger-text) 18%, transparent); }
 .dot.unknown { background: var(--app-placeholder-text); }
-.src-name { font-weight: 600; min-width: 78px; }
-.src-state { font-size: 13px; }
-.src-meta { font-size: 12px; color: var(--el-text-color-secondary); margin-left: auto; }
+.src-name { font-weight: var(--app-font-weight-section); min-width: 78px; }
+.src-state { font-size: var(--app-font-size-table); }
+.src-meta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: auto; }
 </style>

@@ -102,13 +102,13 @@ const isGroup = computed(() => props.node.nodeType === 'group')
 .pt-grp { border: 1px solid var(--el-border-color-lighter); border-left: 4px solid var(--perm-group-color);
   border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
 .pt-grp.locked { opacity: 0.6; }
-.pt-grp-head { display: flex; align-items: center; gap: 9px; padding: 9px 12px; background: var(--el-fill-color-light);
-  cursor: pointer; font-weight: 600; font-size: 13px; }
+.pt-grp-head { display: flex; align-items: center; gap: var(--app-space-2); padding: 9px 12px; background: var(--el-fill-color-light);
+  cursor: pointer; font-weight: var(--app-font-weight-section); font-size: var(--app-font-size-table); }
 .pt-caret { color: var(--el-text-color-secondary); transition: transform 0.15s; }
 .pt-grp.collapsed .pt-caret { transform: rotate(-90deg); }
 .pt-grp.collapsed .pt-grp-body { display: none; }
 .pt-grp-title { user-select: none; }
-.pt-gcount { margin-left: auto; font-size: 11px; color: var(--el-text-color-secondary);
+.pt-gcount { margin-left: auto; font-size: var(--app-font-size-micro); color: var(--el-text-color-secondary);
   background: var(--el-bg-color); border: 1px solid var(--el-border-color); border-radius: 10px; padding: 1px 8px; }
 .pt-lock { margin-left: auto; transform: scale(0.9); }
 .pt-grp-body { padding: 6px 12px 8px; }
@@ -116,21 +116,21 @@ const isGroup = computed(() => props.node.nodeType === 'group')
 .pt-grp-body .pt-grp { margin-left: 14px; border-left: 2px solid var(--el-border-color); }
 /* 菜单行（二级） */
 .pt-menu { margin-left: 8px; border-left: 2px solid var(--el-border-color-lighter); padding-left: 12px; }
-.pt-menu-row { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
-.pt-mlabel { font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
-.pt-ico { color: var(--el-color-success); font-size: 14px; line-height: 1; }
+.pt-menu-row { display: flex; align-items: center; gap: var(--app-space-2); padding: 6px 0; }
+.pt-mlabel { font-size: var(--app-font-size-table); display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
+.pt-ico { color: var(--el-color-success); font-size: var(--app-font-size-body); line-height: var(--app-line-height-solid); }
 /* 功能点 chip 面板（三级） */
-.pt-funcs { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px; margin: 2px 0 8px 20px;
+.pt-funcs { display: flex; flex-wrap: wrap; gap: var(--app-space-control-gap) var(--app-space-4); padding: 8px 12px; margin: 2px 0 8px 20px;
   background: var(--el-fill-color-light); border: 1px dashed var(--el-border-color); border-radius: 6px; }
-.pt-func { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--el-text-color-regular); }
+.pt-func { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); font-size: var(--app-font-size-caption); color: var(--el-text-color-regular); }
 .pt-func.locked { opacity: 0.6; }
 .pt-func.baseline { opacity: 0.85; }
 .pt-ficon { width: 8px; height: 8px; border-radius: 2px; background: var(--perm-feature-color); transform: rotate(45deg);
   flex: none; margin-left: 1px; }
-.pt-baseline { font-size: 10px; color: var(--el-color-primary);
+.pt-baseline { font-size: var(--app-font-size-tiny); color: var(--el-color-primary);
   border: 1px solid color-mix(in srgb, var(--el-color-primary) 40%, transparent); border-radius: 3px; padding: 0 4px; }
 .pt-fname { user-select: none; }
-.pt-ftype { font-size: 10px; color: var(--el-text-color-secondary); border: 1px solid var(--el-border-color);
+.pt-ftype { font-size: var(--app-font-size-tiny); color: var(--el-text-color-secondary); border: 1px solid var(--el-border-color);
   border-radius: 3px; padding: 0 4px; }
 .pt-ftype.api { color: var(--el-color-success); border-color: color-mix(in srgb, var(--el-color-success) 40%, transparent); }
 .pt-ftype.button { color: var(--el-color-warning); border-color: color-mix(in srgb, var(--el-color-warning) 40%, transparent); }

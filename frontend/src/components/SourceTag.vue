@@ -31,20 +31,20 @@ const rows = computed(() =>
     <template #content>
       <div class="source-pop">
         <div v-for="row in rows" :key="row.layer" class="source-row" :class="{ active: row.layer === source }">
-          <span class="source-name">{{ row.label }}</span>
-          <span class="source-value">{{ row.value }}</span>
+          <span class="source-name app-caption-text">{{ row.label }}</span>
+          <span class="source-value app-caption-text">{{ row.value }}</span>
         </div>
       </div>
     </template>
-    <span class="source-tag" :class="`is-${source}`">{{ LABELS[source] }}</span>
+    <span class="source-tag app-micro-text" :class="`is-${source}`">{{ LABELS[source] }}</span>
   </el-tooltip>
 </template>
 
 <style scoped>
 .source-tag {
   flex: none;
-  font-size: 11px;
-  line-height: 1;
+  font-size: var(--app-font-size-micro);
+  line-height: var(--app-line-height-solid);
   padding: 2px 6px;
   border-radius: 999px;
   border: 1px solid var(--page-settings-border);
@@ -64,18 +64,18 @@ const rows = computed(() =>
   min-width: 180px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--app-space-1);
 }
 .source-row {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
-  gap: 8px;
-  font-size: 12px;
+  gap: var(--app-space-2);
+  font-size: var(--app-font-size-caption);
 }
 .source-row.active .source-name,
 .source-row.active .source-value {
   color: var(--el-color-primary);
-  font-weight: 600;
+  font-weight: var(--app-font-weight-section);
 }
 .source-name {
   color: var(--el-text-color-secondary);

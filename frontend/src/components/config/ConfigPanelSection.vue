@@ -121,7 +121,7 @@ function toggle() {
 
 .is-level-2 > .config-panel-section__head {
   align-items: center;
-  gap: 8px;
+  gap: var(--app-space-2);
   min-height: 24px;
   padding: 0 0 8px;
 }
@@ -149,14 +149,14 @@ function toggle() {
 .config-panel-section__body-description {
   margin: 0 0 12px;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
 }
 
 .config-panel-section__head {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--app-space-2);
   min-width: 0;
 }
 
@@ -183,30 +183,30 @@ function toggle() {
   display: block;
   min-width: 0;
   color: var(--el-text-color-primary);
-  font-weight: 650;
-  line-height: 1.4;
+  font-weight: var(--app-font-weight-section);
+  line-height: var(--app-line-height-compact);
 }
 
 .config-panel-section__copy {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--app-space-1);
   min-width: 0;
 }
 
 .config-panel-section__description {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
 }
 
 .is-level-1 > .config-panel-section__head .config-panel-section__title {
-  font-size: 15px;
+  font-size: var(--app-font-size-section-title);
 }
 
 .is-level-2 > .config-panel-section__head .config-panel-section__title {
-  font-size: 14px;
+  font-size: var(--app-font-size-body);
 }
 
 .is-level-2 > .config-panel-section__head .config-panel-section__copy {
@@ -222,8 +222,8 @@ function toggle() {
   border-radius: 999px;
   background: var(--el-fill-color-blank);
   color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
 }
 
 .is-level-2 > .config-panel-section__head .config-panel-section__badge {

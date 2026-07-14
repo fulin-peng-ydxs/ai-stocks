@@ -76,20 +76,20 @@ function close(key: string) {
   background: color-mix(in srgb, var(--chrome-bg) 92%, var(--el-bg-color-page) 8%);
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: var(--app-space-3);
 }
 .workspace-tabs-label {
   flex: none;
   color: var(--chrome-text-muted);
-  font-size: 9px;
-  font-weight: 750;
+  font-size: var(--app-icon-size-xs);
+  font-weight: var(--app-font-weight-strong);
   letter-spacing: .14em;
 }
 .workspace-tabs-rail {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--app-space-control-gap);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -106,8 +106,8 @@ function close(key: string) {
   color: var(--chrome-text-muted);
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 12px;
+  gap: var(--app-space-2);
+  font-size: var(--app-font-size-caption);
   cursor: pointer;
   transition: color .15s ease, background-color .15s ease, border-color .15s ease;
 }
@@ -160,7 +160,7 @@ function close(key: string) {
   background: color-mix(in srgb, var(--el-color-danger) 12%, transparent);
   color: var(--el-color-danger);
 }
-.workspace-tab-close .el-icon { font-size: 11px; }
+.workspace-tab-close .el-icon { font-size: var(--app-font-size-micro); }
 @media (max-width: 720px) {
   .workspace-tabs { padding-inline: 10px; }
   .workspace-tabs-label { display: none; }

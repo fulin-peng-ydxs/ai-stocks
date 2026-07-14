@@ -151,7 +151,7 @@ const redId = `${uid}-red`
 }
 
 .brand-mark__word-main {
-  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  font-family: var(--app-font-family-base);
   font-size: 27px;
   font-style: italic;
   font-weight: 800;
