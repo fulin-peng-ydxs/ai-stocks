@@ -174,7 +174,7 @@ function parentLabel(s: SlotSpec): string | null {
                 <el-tag size="small" effect="plain">{{ SCROLL_LABELS[effScroll(s)] }}</el-tag>
                 <el-tag v-if="s.reflowable ?? COMPONENT_CATALOG[s.component]?.reflowable" size="small" type="warning" effect="plain">可重排</el-tag>
               </div>
-              <div class="slot-size">最低 {{ effMinW(s) }}×{{ effMinH(s) }}</div>
+              <div class="slot-size">最低 {{ effMinW(s) }} x {{ effMinH(s) }}</div>
             </button>
           </div>
         </div>

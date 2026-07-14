@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Calendar, Clock, Close, Refresh } from '@element-plus/icons-vue'
+import { Calendar, Clock, Close, Refresh, Select } from '@element-plus/icons-vue'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
 import {
   useAppNavigation,
@@ -566,7 +566,7 @@ async function onLogout() {
                   <strong>{{ option.label }}</strong>
                   <small>{{ option.description }}</small>
                 </span>
-                <span class="theme-option-check" aria-hidden="true">✓</span>
+                <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
               </button>
             </div>
           </section>
@@ -610,7 +610,7 @@ async function onLogout() {
                     <i v-for="swatch in option.swatches" :key="swatch.key" :style="{ background: swatch.value }" />
                   </span>
                 </span>
-                <span class="theme-option-check" aria-hidden="true">✓</span>
+                <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
               </button>
             </div>
           </section>

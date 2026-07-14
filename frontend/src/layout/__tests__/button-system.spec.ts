@@ -27,6 +27,7 @@ function lineOf(source: string, index: number): number {
 function visibleButtonText(content: string): string {
   return content
     .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/{{[\s\S]*?}}/g, '')
     .replace(/<el-icon(?=[\s>/])[\s\S]*?<\/el-icon>/g, '')
     .replace(/<svg\b[\s\S]*?<\/svg>/g, '')
     .replace(/<[^>]+>/g, ' ')
@@ -46,7 +47,7 @@ describe('全站按钮与图标操作契约', () => {
     expect(design).toContain('顶栏状态和工具按 `32px` 控件基线对齐')
     expect(design).toContain('文字 `13px / --app-font-weight-section`')
     expect(design).toContain('纯图标异步操作必须使用 `AppIconButton` 的 `loading`')
-    expect(design).toContain('Unicode 禁令针对交互图标、操作按钮和纯图标控件')
+    expect(design).toContain('选择态勾选标记也使用 Element Plus 图标或项目 SVG')
     expect(pageTemplate).toContain('### 控件与操作规范')
     expect(pageTemplate).toContain('纯图标操作：使用 `AppIconButton`')
     expect(pageTemplate).toContain('异步纯图标操作使用 `:loading`')
@@ -121,17 +122,25 @@ describe('全站按钮与图标操作契约', () => {
     expect(violations).toEqual([])
   })
 
-  it('el-button 文案不使用 Unicode 字符冒充图标', () => {
+  it('交互按钮可见文案只允许中英文、数字和常用标点，图标必须走图标组件', () => {
     const violations: string[] = []
-    const pseudoIconChars = /[＋▶‹›→]/u
+    const allowedButtonText = /^[\p{Script=Han}A-Za-z0-9\s.,;:!?'"()（）【】[\]《》<>、，。；：！？“”‘’·/\\\-–—+_=#%&@|~…]+$/u
     const elButton = /<el-button(?=[\s>/])(?:[^>"']|"[^"]*"|'[^']*')*>([\s\S]*?)<\/el-button>/g
+    const nativeButton = /<button(?=[\s>/])(?:[^>"']|"[^"]*"|'[^']*')*>([\s\S]*?)<\/button>/g
 
     for (const file of vueFiles(SRC_DIR)) {
+      const rel = relative(SRC_DIR, file)
       const source = read(file)
       for (const match of source.matchAll(elButton)) {
         const text = visibleButtonText(match[1])
-        if (pseudoIconChars.test(text)) {
-          violations.push(`${relative(SRC_DIR, file)}:${lineOf(source, match.index ?? 0)} ${text}`)
+        if (text && !allowedButtonText.test(text)) {
+          violations.push(`${rel}:${lineOf(source, match.index ?? 0)} <el-button> ${text}`)
+        }
+      }
+      for (const match of source.matchAll(nativeButton)) {
+        const text = visibleButtonText(match[1])
+        if (text && !allowedButtonText.test(text)) {
+          violations.push(`${rel}:${lineOf(source, match.index ?? 0)} <button> ${text}`)
         }
       }
     }
@@ -147,10 +156,10 @@ describe('全站按钮与图标操作契约', () => {
     expect(violations).toEqual([])
   })
 
-  it('选择态装饰勾允许保留为 aria-hidden 文案标记，不扩大为操作图标', () => {
+  it('选择态勾选标记使用图标组件，不保留 Unicode 勾作为交互控件图形', () => {
     const app = read(join(SRC_DIR, 'App.vue'))
-    const checkMarkers = [...app.matchAll(/<span class="theme-option-check" aria-hidden="true">✓<\/span>/g)]
 
-    expect(checkMarkers).toHaveLength(2)
+    expect(app).not.toContain('class="theme-option-check" aria-hidden="true">✓')
+    expect(app).toContain('<el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>')
   })
 })
