@@ -378,7 +378,10 @@ async function onLogout() {
             <span class="topbar-status-label">交易日</span>
             <span class="topbar-status-date">{{ latestTradeDateText }}</span>
           </span>
-          <span class="topbar-status-signal" aria-hidden="true"><i class="topbar-status-dot" /></span>
+          <span class="topbar-status-signal" aria-hidden="true">
+            <i class="topbar-status-dot" />
+            <span v-if="qualitySignalText">{{ qualitySignalText }}</span>
+          </span>
         </div>
 
         <el-popover

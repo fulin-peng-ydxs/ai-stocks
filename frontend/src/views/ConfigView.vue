@@ -1873,6 +1873,11 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex-direction: column;
   gap: 4px;
 }
+.band-box > .el-button.is-link,
+.def-params > .el-button.is-link {
+  align-self: flex-start;
+  width: fit-content;
+}
 .weight-cell {
   display: flex;
   align-items: center;

@@ -20,6 +20,21 @@ function vueFiles(dir: string): string[] {
   })
 }
 
+function lineOf(source: string, index: number): number {
+  return source.slice(0, index).split('\n').length
+}
+
+function visibleButtonText(content: string): string {
+  return content
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<el-icon(?=[\s>/])[\s\S]*?<\/el-icon>/g, '')
+    .replace(/<svg\b[\s\S]*?<\/svg>/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 describe('全站按钮与图标操作契约', () => {
   it('普通命令与纯图标操作有唯一公共实现和长期文档入口', () => {
     const design = read(join(PROJECT_DIR, 'DESIGN.md'))
@@ -57,6 +72,37 @@ describe('全站按钮与图标操作契约', () => {
       for (const match of source.matchAll(/<button\b(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
         if (!allowedSpecializedClasses.test(match[0])) {
           violations.push(`${relative(SRC_DIR, file)}: ${match[0].replace(/\s+/g, ' ')}`)
+        }
+      }
+    }
+
+    expect(violations).toEqual([])
+  })
+
+  it('纯图标 el-button 必须迁移到 AppIconButton', () => {
+    const violations: string[] = []
+    const elButtonStart = /<el-button(?=[\s>/])(?:[^>"']|"[^"]*"|'[^']*')*(?:\/>|>)/g
+
+    for (const file of vueFiles(SRC_DIR)) {
+      if (relative(SRC_DIR, file) === 'components/AppIconButton.vue') continue
+
+      const source = read(file)
+      for (const match of source.matchAll(elButtonStart)) {
+        const startTag = match[0]
+        const startIndex = match.index ?? 0
+        const selfClosing = startTag.endsWith('/>')
+        const contentStart = startIndex + startTag.length
+        const closeIndex = selfClosing ? contentStart : source.indexOf('</el-button>', contentStart)
+        const content = closeIndex >= 0 ? source.slice(contentStart, closeIndex) : ''
+        const hasIconOnlySignal =
+          /\bcircle(?:[\s=>/]|$)/.test(startTag) ||
+          /\b:?icon\s*=/.test(startTag) ||
+          /<el-icon(?=[\s>/])/.test(content)
+
+        if (hasIconOnlySignal && visibleButtonText(content) === '') {
+          violations.push(
+            `${relative(SRC_DIR, file)}:${lineOf(source, startIndex)} ${startTag.replace(/\s+/g, ' ')}`
+          )
         }
       }
     }

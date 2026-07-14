@@ -6,6 +6,7 @@ import { Close } from '@element-plus/icons-vue'
 import { getBars, getIndicators, getTradeEval, listStocks, type Bar, type StockBasic, type TradeEval } from '@/api/stocks'
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
 import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
+import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -590,9 +591,9 @@ onBeforeUnmount(() => {
           :label="dropdownLoading ? '加载中...' : '向下滚动加载更多'"
         />
       </el-select>
-      <el-button size="small" text circle title="退出集合" @click="stockSet.clear()">
+      <AppIconButton label="退出集合" size="sm" tone="default" @click="stockSet.clear()">
         <el-icon><Close /></el-icon>
-      </el-button>
+      </AppIconButton>
     </div>
 
     <AppStateBlock

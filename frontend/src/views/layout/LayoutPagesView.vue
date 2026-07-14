@@ -34,6 +34,7 @@ import {
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 import LayoutPagePreview from '@/layout/components/LayoutPagePreview.vue'
 import {
   listManagedPages,
@@ -649,13 +650,15 @@ onMounted(async () => {
                         <el-option v-for="item in presetOptions" :key="item.value" :label="item.label" :value="item.value" />
                       </el-select>
                       <el-tooltip content="同步预设管理里的最新可选项和组件默认值" placement="top">
-                        <el-button
+                        <AppIconButton
                           class="preset-sync-button"
-                          :icon="Refresh"
-                          :loading="presetSyncing"
-                          aria-label="同步预设"
+                          label="同步预设"
+                          variant="soft"
+                          :disabled="presetSyncing"
                           @click="reloadPresets(true)"
-                        />
+                        >
+                          <el-icon :class="{ 'is-loading': presetSyncing }"><Refresh /></el-icon>
+                        </AppIconButton>
                       </el-tooltip>
                     </div>
                   </el-form-item>
@@ -988,6 +991,14 @@ onMounted(async () => {
 }
 .preset-sync-button {
   flex: 0 0 32px;
+}
+.preset-sync-button :deep(.is-loading) {
+  animation: preset-sync-spin 1s linear infinite;
+}
+@keyframes preset-sync-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .preview-host {
   margin-top: 12px;

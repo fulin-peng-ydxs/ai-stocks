@@ -795,7 +795,10 @@ onBeforeUnmount(() => {
 .dict-type-status {
   flex: none;
   --el-switch-on-color: var(--el-color-success);
-  --el-switch-off-color: var(--el-fill-color-dark);
+  --el-switch-off-color: color-mix(in srgb, var(--el-text-color-regular) 88%, var(--el-fill-color-dark) 12%);
+}
+html[data-layout-mode='dark'] .dict-type-status {
+  --el-switch-off-color: color-mix(in srgb, var(--el-fill-color-dark) 88%, var(--el-bg-color) 12%);
 }
 .dict-current {
   flex: 1 1 150px;
