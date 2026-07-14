@@ -526,7 +526,42 @@ CREATE TABLE IF NOT EXISTS training_trade (
 """
 
 
-# ── 布局用户层（用户资产；user_id 即身份，天然隔离）────────────────
+# ── 布局配置与用户偏好 ────────────────────────────────────────────
+
+DDL_LAYOUT_PRESET = """
+CREATE TABLE IF NOT EXISTS layout_preset (
+    key            TEXT PRIMARY KEY,
+    name           TEXT,
+    description    TEXT,
+    config         TEXT,
+    enabled        BOOLEAN,
+    is_builtin     BOOLEAN,
+    schema_version INTEGER,
+    created_at     TIMESTAMP,
+    updated_at     TIMESTAMP
+);
+"""
+
+DDL_LAYOUT_PAGE_CONFIG = """
+CREATE TABLE IF NOT EXISTS layout_page_config (
+    page_key       TEXT PRIMARY KEY,
+    preset_key     TEXT,
+    config         TEXT,
+    schema_version INTEGER,
+    updated_at     TIMESTAMP
+);
+"""
+
+DDL_LAYOUT_FIELD_POLICY = """
+CREATE TABLE IF NOT EXISTS layout_field_policy (
+    component_kind TEXT,
+    field          TEXT,
+    allowed_layers TEXT,
+    updated_at     TIMESTAMP,
+    PRIMARY KEY (component_kind, field)
+);
+"""
+
 
 DDL_LAYOUT_USER_CONFIG = f"""
 CREATE TABLE IF NOT EXISTS layout_user_config (
@@ -536,6 +571,18 @@ CREATE TABLE IF NOT EXISTS layout_user_config (
     schema_version INTEGER,
     updated_at     TIMESTAMP,
     PRIMARY KEY (user_id, page_key)
+);
+"""
+
+DDL_USER_PREFERENCE = f"""
+CREATE TABLE IF NOT EXISTS user_preference (
+{_OWN}    scope          TEXT NOT NULL,
+    page_key       TEXT NOT NULL DEFAULT '',
+    pref_key       TEXT NOT NULL,
+    value          TEXT NOT NULL,
+    schema_version INTEGER NOT NULL DEFAULT 1,
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, owner_user_id, scope, page_key, pref_key)
 );
 """
 
@@ -632,6 +679,7 @@ ASSET_PK: dict[str, list[str]] = {
     "training_round": ["tenant_id", "owner_user_id", "session_id", "seq"],
     "training_trade": ["tenant_id", "owner_user_id", "session_id", "round_seq", "seq"],
     "layout_user_config": ["user_id", "page_key"],
+    "user_preference": ["tenant_id", "owner_user_id", "scope", "page_key", "pref_key"],
 }
 
 # 表 DDL（建表用）
@@ -656,6 +704,7 @@ _ASSET_TABLES: dict[str, str] = {
     "training_round": DDL_TRAINING_ROUND,
     "training_trade": DDL_TRAINING_TRADE,
     "layout_user_config": DDL_LAYOUT_USER_CONFIG,
+    "user_preference": DDL_USER_PREFERENCE,
 }
 
 # 无归属列的表（骨架 + 平台配置）
@@ -663,6 +712,9 @@ _OTHER_TABLES: dict[str, str] = {
     "sys_tenant": DDL_SYS_TENANT,
     "sys_user": DDL_SYS_USER,
     "app_config": DDL_APP_CONFIG,
+    "layout_preset": DDL_LAYOUT_PRESET,
+    "layout_page_config": DDL_LAYOUT_PAGE_CONFIG,
+    "layout_field_policy": DDL_LAYOUT_FIELD_POLICY,
     "audit_log": DDL_AUDIT_LOG,
     "dict_type": DDL_DICT_TYPE,
     "dict_item": DDL_DICT_ITEM,
@@ -791,15 +843,17 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/system/tenants", "tenant:disable", "启停租户", "api", "POST", "/api/tenants/{id}/status"),
     ("/system/tenants", "tenant:delete", "删除租户", "api", "DELETE", "/api/tenants/{id}"),
     # ── 阶段四：13 存量业务路由资源码（stage4·R21，与 stage4-existing-routes/resource-codes.sql 一致）──
-    # A) baseline 登录基线共享读（挂 login 叶子作 FK 锚点；运行时由 perm_resolver 强制注入，见 SHARED_RESOURCE_CODES）
+    # A) baseline 登录基线：共享读 + 当前用户自持久化偏好写。挂 login 叶子作 FK 锚点；
+    #    运行时由 perm_resolver 强制注入，见 SHARED_RESOURCE_CODES。不得挂 visible='system' 菜单。
     ("/board",  "layout:view",         "布局生效配置读（全站基线）", "api", "GET", "/api/layout/effective/{page_key}"),
+    ("/board",  "layout:user-config",  "保存个人页面偏好（基线）",   "api", "POST", "/api/layout/users/{page_key}"),
+    ("/board",  "user-preference:manage", "保存个人通用偏好（基线）", "api", "POST", "/api/user-preferences"),
     ("/board",  "trade-calendar:view", "交易日历读（全站基线）",     "api", "GET", "/api/data/trade-dates"),
     ("/screen", "indicator:registry",  "指标目录读（研究基线）",     "api", "GET", "/api/indicators/registry"),
     # B) 每日榜单（/board，login）
     ("/board", "board:view",         "查看每日榜单",     "api", "GET",  "/api/scores/top"),
     ("/board", "board:compute",      "榜单即时计算",     "api", "GET",  "/api/board/compute"),
     ("/system/config/score", "score:run", "评分方案打分", "api", "POST", "/api/score-profiles/run"),
-    ("/board", "layout:user-config", "保存个人页面偏好", "api", "POST", "/api/layout/users/{page_key}"),
     # B) 策略筛选（/screen，login）
     ("/screen", "screen-profile:view",   "查看筛选方案", "api", "GET",    "/api/profiles"),
     ("/screen", "screen-profile:save",   "保存筛选方案", "api", "POST",   "/api/profiles"),

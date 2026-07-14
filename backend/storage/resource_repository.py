@@ -32,7 +32,7 @@ class ResourceRepository:
             "id": r["id"], "menu_id": r["menu_id"], "code": r["code"], "name": r["name"],
             "type": r["type"], "api_method": r.get("api_method"), "api_path": r.get("api_path"),
             "sort": int(r["sort"]), "is_builtin": bool(r["is_builtin"]),
-            # baseline 基线共享读：角色页据此渲染为恒勾选+置灰+不可反选（与 system-only 置灰相反语义）
+            # baseline 基线：角色页据此渲染为恒勾选+置灰+不可反选（与 system-only 置灰相反语义）
             "baseline_locked": r["code"] in _BASELINE_CODES,
         }
 

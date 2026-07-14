@@ -89,7 +89,7 @@ class RoleAdminService:
             raise ForbiddenError("系统超级管理员角色已锁定，权限不可修改")
         menu_ids = list(dict.fromkeys(menu_ids or []))
         resource_ids = list(dict.fromkeys(resource_ids or []))
-        # baseline 基线共享读码**不入 role_resource 授权**：由 perm_resolver.resolve 对非 system 用户运行时
+        # baseline 基线码**不入 role_resource 授权**：由 perm_resolver.resolve 对非 system 用户运行时
         # 强制注入（单一权威、无法被前端漏传/直调绕过——比"保存时并入持久化"更强，且保持 grants 表=显式授权）。
         # 角色页据 resource.baseline_locked 标记恒勾选+置灰展示，不当作可授权项。故此处不并入、保持 set/get 幂等。
         # 存在性：非法 id 直接拒（否则 FK 抛库错 → 500）

@@ -159,10 +159,10 @@ def test_business_code_absent_blocks_non_baseline_read(client, pg):
         _rm_user(pg, uid, tid, rid)
 
 
-# ── ③ 基线不可反选：/me.permissions 恒含基线三码 ────────────────────────────
+# ── ③ 基线不可反选：/me.permissions 恒含全部基线码 ──────────────────────────
 
 def test_me_permissions_force_include_baseline(client, pg):
-    """自定义角色只授业务码、role_resource 不含基线 → GET /api/auth/me 的 permissions 仍强制含基线三码。"""
+    """自定义角色只授业务码、role_resource 不含基线 → GET /api/auth/me 的 permissions 仍强制含基线码。"""
     from backend.auth.constants import SHARED_RESOURCE_CODES
     uid, tid, rid = _mk_user(pg, codes=["backtest:view"])
     try:

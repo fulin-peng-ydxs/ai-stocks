@@ -1,8 +1,8 @@
 """阶段四 T7：菜单/资源解析回归——baseline 强制注入、无角色 fail-closed、运行时不可反选、
 自定义角色业务菜单可达、resource 列表 baseline_locked 契约。
 
-资源码变多后（stage4 新增 48 码），核查 perm_resolver/AuthService 仍：
-- 对**有角色的非 system 用户**强制并入 baseline 共享读码（layout:view/trade-calendar:view/indicator:registry），
+资源码变多后（stage4 新增 48 码，配置存储迁移扩展自持久化基线），核查 perm_resolver/AuthService 仍：
+- 对**有角色的非 system 用户**强制并入 baseline 码（共享读 + 当前用户自持久化偏好），
   与 role_resource 授权无关、角色页反选不掉（运行时权威防线）；
 - 对**无角色**用户 fail-closed（空 menus/resources，不注入 baseline）；
 - 自定义角色授了业务菜单即可在 /me 菜单树导航到该业务页；
@@ -68,7 +68,7 @@ def _resolve(uid):
 
 
 def test_custom_role_baseline_force_injected(env):
-    """自定义角色只授了业务码、未授 baseline → resolve 仍强制并入 3 个 baseline 共享读码。"""
+    """自定义角色只授了业务码、未授 baseline → resolve 仍强制并入 baseline 码。"""
     uid, _, _ = env.mk_custom(resource_codes=["backtest:view"])
     res = set(_resolve(uid)["resources"])
     assert _BASELINE <= res, "baseline 共享读未被强制注入"

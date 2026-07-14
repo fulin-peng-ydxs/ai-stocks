@@ -67,7 +67,7 @@ def resolve(user_id: str, client: PostgresClient | None = None) -> dict:
             "SELECT DISTINCT r.code FROM sys_role_resource rr "
             "JOIN sys_resource r ON r.id = rr.resource_id WHERE rr.role_id = ANY(%s)",
             [role_ids])["code"].tolist()
-        # baseline 登录基线共享读（stage4·R21）：非 system 且有角色的业务用户**强制并入**，与 role_resource
+        # baseline 登录基线（共享读 + 当前用户自持久化偏好）：非 system 且有角色的业务用户**强制并入**，与 role_resource
         # 授权无关、角色页不可反选（运行时权威防线）。无角色分支不注入 → 仍 fail-closed。dedup 保序。
         resources = list(dict.fromkeys(resources + list(SHARED_RESOURCE_CODES)))
     else:           # 无角色：空权限（fail-closed，不注入 baseline）
