@@ -1,11 +1,25 @@
 <script setup lang="ts">
-import type { SettingGroup } from '@/api/data'
+import { computed } from 'vue'
+import type { SettingField, SettingGroup } from '@/api/data'
+import HelpHint from '@/components/HelpHint.vue'
+import type { ConfigFieldSection, ConfigPanelBehavior } from '@/layout/configPanel'
+import ConfigPanelSection from './ConfigPanelSection.vue'
 
 // fieldStatus：按字段 path 附带的只读能力就绪徽标（如邮箱码开关下的「真实发信是否就绪」）。
 // 通用机制——后续新能力集成可复用同一映射，不必逐个改表单结构。
 type FieldStatus = { tone: 'ok' | 'warn'; text: string }
+interface FieldBlock {
+  key: string
+  title?: string
+  hint?: string
+  badge?: string
+  defaultOpen: boolean
+  fields: SettingField[]
+}
 const props = defineProps<{
   group: SettingGroup
+  sections?: ConfigFieldSection[]
+  panelBehavior?: ConfigPanelBehavior
   modelValue: Record<string, unknown>
   disabled?: boolean
   invalidPaths?: string[]
@@ -45,105 +59,156 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
   if (field.min != null) return `>= ${field.min}`
   return `<= ${field.max}`
 }
+
+function helpText(field: SettingField): string {
+  const range = rangeLabel(field)
+  return [
+    field.desc,
+    `默认值：${defaultLabel(field.default)}`,
+    range ? `允许范围：${range}` : '',
+  ].filter(Boolean).join('；')
+}
+
+const fieldBlocks = computed<FieldBlock[]>(() => {
+  const fieldsByPath = new Map(props.group.fields.map((field) => [field.path, field]))
+  const used = new Set<string>()
+  const sections: FieldBlock[] = (props.sections ?? []).map((section) => {
+    const fields = section.fieldPaths
+      .map((path) => fieldsByPath.get(path))
+      .filter((field): field is SettingField => !!field)
+    fields.forEach((field) => used.add(field.path))
+    return {
+      key: section.key,
+      title: section.title,
+      hint: section.hint,
+      badge: `${fields.length} 项`,
+      defaultOpen: section.defaultOpen ?? true,
+      fields,
+    }
+  }).filter((section) => section.fields.length)
+
+  const rest = props.group.fields.filter((field) => !used.has(field.path))
+  if (rest.length) {
+    sections.push({
+      key: `${props.group.key}-other`,
+      title: sections.length ? '其他配置' : undefined,
+      badge: sections.length ? `${rest.length} 项` : undefined,
+      defaultOpen: true,
+      fields: rest,
+    })
+  }
+  return sections
+})
+
+const behavior = computed<ConfigPanelBehavior>(() => ({
+  collapsibleSections: props.panelBehavior?.collapsibleSections ?? true,
+  defaultCollapsed: props.panelBehavior?.defaultCollapsed ?? [],
+  showGroupDescription: props.panelBehavior?.showGroupDescription ?? true,
+  showSectionDescription: props.panelBehavior?.showSectionDescription ?? true,
+}))
+
+function collapsed(key: string): boolean {
+  return behavior.value.defaultCollapsed.includes(key)
+}
 </script>
 
 <template>
-  <section class="config-group-panel" :aria-label="group.label">
-    <header class="config-group-head">
-      <div>
-        <h3>{{ group.label }}</h3>
-        <span>{{ group.desc || `${group.fields.length} 项` }}</span>
-      </div>
-    </header>
+  <ConfigPanelSection
+    class="config-group-panel"
+    :title="group.label"
+    :description="group.desc"
+    :badge="`${group.fields.length} 项`"
+    :level="1"
+    :collapsible="behavior.collapsibleSections"
+    :default-open="!collapsed(group.key)"
+    :show-description="behavior.showGroupDescription"
+    :aria-label="group.label"
+  >
+    <ConfigPanelSection
+      v-for="block in fieldBlocks"
+      :key="block.key"
+      class="config-field-block"
+      :title="block.title"
+      :description="block.hint"
+      :badge="block.badge"
+      :level="2"
+      :collapsible="behavior.collapsibleSections && !!block.title"
+      :default-open="block.defaultOpen && !collapsed(`${group.key}.${block.key}`)"
+      :show-description="behavior.showSectionDescription"
+    >
+      <el-form class="config-group-form" label-position="top">
+        <el-form-item
+          v-for="field in block.fields"
+          :key="field.path"
+          :class="{ 'is-invalid': isInvalid(field.path) }"
+        >
+          <template #label>
+            <span class="field-label">
+              {{ field.label }}
+              <HelpHint :text="helpText(field)" />
+            </span>
+          </template>
 
-    <el-form class="config-group-form" label-position="top">
-      <el-form-item
-        v-for="field in group.fields"
-        :key="field.path"
-        :class="{ 'is-invalid': isInvalid(field.path) }"
-      >
-        <template #label>
-          <span class="field-label">
-            {{ field.label }}
-          </span>
-        </template>
+          <div class="field-control" :class="`is-${field.type}`">
+            <el-switch
+              v-if="field.type === 'bool'"
+              :model-value="Boolean(valueOf(field.path))"
+              :disabled="disabled"
+              @update:model-value="(value: boolean) => setValue(field.path, value)"
+            />
+            <el-select
+              v-else-if="field.type === 'enum'"
+              :model-value="String(valueOf(field.path) ?? '')"
+              :disabled="disabled"
+              fit-input-width
+              popper-class="config-select-popper"
+              placeholder="请选择"
+              @update:model-value="(value: string) => setValue(field.path, value)"
+            >
+              <el-option v-for="opt in field.options ?? []" :key="opt" :label="opt" :value="opt" />
+            </el-select>
+            <el-input-number
+              v-else
+              :model-value="Number(valueOf(field.path))"
+              :min="field.min"
+              :max="field.max"
+              :step="field.type === 'number' ? 0.0001 : 1"
+              :controls="field.type === 'int'"
+              :disabled="disabled"
+              @update:model-value="(value: number | undefined) => setValue(field.path, value)"
+            />
+          </div>
 
-        <div class="field-control">
-          <el-switch
-            v-if="field.type === 'bool'"
-            :model-value="Boolean(valueOf(field.path))"
-            :disabled="disabled"
-            @update:model-value="(value: boolean) => setValue(field.path, value)"
-          />
-          <el-select
-            v-else-if="field.type === 'enum'"
-            :model-value="String(valueOf(field.path) ?? '')"
-            :disabled="disabled"
-            fit-input-width
-            popper-class="config-select-popper"
-            placeholder="请选择"
-            @update:model-value="(value: string) => setValue(field.path, value)"
-          >
-            <el-option v-for="opt in field.options ?? []" :key="opt" :label="opt" :value="opt" />
-          </el-select>
-          <el-input-number
-            v-else
-            :model-value="Number(valueOf(field.path))"
-            :min="field.min"
-            :max="field.max"
-            :step="field.type === 'number' ? 0.0001 : 1"
-            :controls="field.type === 'int'"
-            :disabled="disabled"
-            @update:model-value="(value: number | undefined) => setValue(field.path, value)"
-          />
-        </div>
-
-        <div class="field-meta">
-          <span v-if="field.desc" class="field-desc">{{ field.desc }}</span>
-          <span>默认 {{ defaultLabel(field.default) }}</span>
-          <span v-if="rangeLabel(field)">范围 {{ rangeLabel(field) }}</span>
-          <span v-if="isInvalid(field.path)" class="field-error">超出允许范围</span>
-          <span
-            v-if="statusOf(field.path)"
-            class="field-status"
-            :class="`is-${statusOf(field.path)!.tone}`"
-          >
-            <span class="dot" aria-hidden="true" />{{ statusOf(field.path)!.text }}
-          </span>
-        </div>
-      </el-form-item>
-    </el-form>
-  </section>
+          <div v-if="isInvalid(field.path) || statusOf(field.path)" class="field-meta">
+            <span v-if="isInvalid(field.path)" class="field-error">超出允许范围</span>
+            <span
+              v-if="statusOf(field.path)"
+              class="field-status"
+              :class="`is-${statusOf(field.path)!.tone}`"
+            >
+              <span class="dot" aria-hidden="true" />{{ statusOf(field.path)!.text }}
+            </span>
+          </div>
+        </el-form-item>
+      </el-form>
+    </ConfigPanelSection>
+  </ConfigPanelSection>
 </template>
 
 <style scoped>
 .config-group-panel {
   min-width: 0;
-  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
-  background: var(--el-bg-color-overlay);
-}
-.config-group-head {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.config-group-head h3 {
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.35;
-}
-.config-group-head span {
-  display: block;
-  margin-top: 3px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  line-height: 1.5;
 }
 .config-group-form {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 12px 16px;
-  padding: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 280px));
+  gap: 14px 22px;
+  align-items: start;
+  padding: 0;
+}
+.config-field-block + .config-field-block {
+  margin-top: 12px;
 }
 .field-label {
   display: inline-flex;
@@ -152,12 +217,19 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
   min-width: 0;
 }
 .field-control {
-  width: 100%;
+  width: min(100%, 280px);
   min-width: 0;
+}
+.field-control.is-bool {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  width: auto;
 }
 .field-control :deep(.el-select),
 .field-control :deep(.el-input-number) {
   width: 100%;
+  max-width: 280px;
 }
 .field-meta {
   display: flex;
@@ -169,10 +241,6 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
   color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.45;
-}
-.field-desc {
-  flex-basis: 100%;
-  color: var(--el-text-color-regular);
 }
 .field-error {
   color: var(--el-color-danger);
@@ -199,5 +267,18 @@ function rangeLabel(field: SettingGroup['fields'][number]): string {
 }
 :global(.config-select-popper .el-select-dropdown__item) {
   padding-inline: 14px;
+}
+
+@media (max-width: 720px) {
+  .config-group-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .field-control,
+  .field-control :deep(.el-select),
+  .field-control :deep(.el-input-number) {
+    width: 100%;
+    max-width: none;
+  }
 }
 </style>

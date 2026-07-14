@@ -1,0 +1,242 @@
+<script setup lang="ts">
+import { ref, watch } from 'vue'
+import { ArrowDown } from '@element-plus/icons-vue'
+
+const props = withDefaults(
+  defineProps<{
+    title?: string
+    description?: string
+    badge?: string
+    level?: 1 | 2
+    collapsible?: boolean
+    defaultOpen?: boolean
+    showDescription?: boolean
+    modelValue?: boolean
+  }>(),
+  { level: 1, collapsible: true, defaultOpen: true, showDescription: true, modelValue: undefined },
+)
+
+const emit = defineEmits<{
+  'update:modelValue': [value: boolean]
+}>()
+
+const localOpen = ref(props.defaultOpen)
+
+watch(
+  () => props.defaultOpen,
+  (value) => {
+    if (props.modelValue === undefined) localOpen.value = value
+  },
+)
+
+function foldable(): boolean {
+  return props.collapsible && !!props.title
+}
+
+function isOpen(): boolean {
+  if (!foldable()) return true
+  return props.modelValue ?? localOpen.value
+}
+
+function toggle() {
+  if (!foldable()) return
+  const next = !isOpen()
+  if (props.modelValue === undefined) localOpen.value = next
+  emit('update:modelValue', next)
+}
+</script>
+
+<template>
+  <section class="config-panel-section" :class="[`is-level-${level}`, { 'is-closed': !isOpen() }]">
+    <div
+      v-if="title || badge"
+      class="config-panel-section__head"
+      :class="{ 'is-foldable': foldable() }"
+      :role="foldable() ? 'button' : undefined"
+      :tabindex="foldable() ? 0 : undefined"
+      :aria-expanded="foldable() ? isOpen() : undefined"
+      @click="toggle"
+      @keydown.enter.prevent="toggle"
+      @keydown.space.prevent="toggle"
+    >
+      <el-icon v-if="foldable()" class="config-panel-section__caret">
+        <ArrowDown />
+      </el-icon>
+      <div class="config-panel-section__copy">
+        <span v-if="title" class="config-panel-section__title">{{ title }}</span>
+        <span
+          v-if="level === 1 && showDescription && description"
+          class="config-panel-section__description"
+        >
+          {{ description }}
+        </span>
+      </div>
+      <span v-if="badge" class="config-panel-section__badge">{{ badge }}</span>
+    </div>
+    <div v-show="isOpen() || !foldable()" class="config-panel-section__body">
+      <p
+        v-if="level === 2 && showDescription && description"
+        class="config-panel-section__body-description"
+      >
+        {{ description }}
+      </p>
+      <slot />
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.config-panel-section {
+  min-width: 0;
+}
+
+.is-level-1 {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-bg-color);
+  overflow: hidden;
+}
+
+.is-level-1 + .is-level-1 {
+  margin-top: 12px;
+}
+
+.is-level-1 > .config-panel-section__head {
+  min-height: 48px;
+  padding: 11px 14px;
+  background: color-mix(in srgb, var(--el-fill-color-light) 58%, transparent);
+}
+
+.is-level-1 > .config-panel-section__body {
+  padding: 16px 14px 18px;
+}
+
+.is-level-2 {
+  padding: 0;
+}
+
+.is-level-2 + .is-level-2 {
+  margin-top: 24px;
+}
+
+.is-level-2 > .config-panel-section__head {
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 0 0 8px;
+}
+
+.is-level-2 > .config-panel-section__head::after {
+  content: "";
+  flex: 1 1 auto;
+  min-width: 72px;
+  height: 1px;
+  background: color-mix(in srgb, var(--el-border-color) 72%, transparent);
+}
+
+.is-level-2.is-closed > .config-panel-section__head::after {
+  background: color-mix(in srgb, var(--el-border-color) 88%, transparent);
+}
+
+.is-level-2 > .config-panel-section__body {
+  padding: 0;
+}
+
+.is-level-2 > .config-panel-section__head + .config-panel-section__body {
+  padding-left: 24px;
+}
+
+.config-panel-section__body-description {
+  margin: 0 0 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.config-panel-section__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.config-panel-section__head.is-foldable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.config-panel-section__head.is-foldable:hover .config-panel-section__title {
+  color: var(--el-color-primary);
+}
+
+.config-panel-section__caret {
+  flex: none;
+  color: var(--el-text-color-secondary);
+  transition: transform .16s ease;
+}
+
+.is-closed > .config-panel-section__head .config-panel-section__caret {
+  transform: rotate(-90deg);
+}
+
+.config-panel-section__title {
+  display: block;
+  min-width: 0;
+  color: var(--el-text-color-primary);
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.config-panel-section__copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.config-panel-section__description {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.is-level-1 > .config-panel-section__head .config-panel-section__title {
+  font-size: 15px;
+}
+
+.is-level-2 > .config-panel-section__head .config-panel-section__title {
+  font-size: 14px;
+}
+
+.is-level-2 > .config-panel-section__head .config-panel-section__copy {
+  flex: 0 1 auto;
+  max-width: calc(100% - 96px);
+}
+
+.config-panel-section__badge {
+  margin-left: auto;
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 999px;
+  background: var(--el-fill-color-blank);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.is-level-2 > .config-panel-section__head .config-panel-section__badge {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .is-level-2 > .config-panel-section__head::after {
+    min-width: 28px;
+  }
+
+  .is-level-2 > .config-panel-section__head .config-panel-section__copy {
+    max-width: calc(100% - 56px);
+  }
+}
+</style>

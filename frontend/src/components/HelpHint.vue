@@ -7,7 +7,14 @@ defineProps<{ text: string }>()
 </script>
 
 <template>
-  <el-tooltip :content="text" placement="top" effect="dark" :show-after="80" :hide-after="0">
+  <el-tooltip
+    :content="text"
+    :trigger="['hover', 'focus']"
+    placement="top"
+    effect="dark"
+    :show-after="80"
+    :hide-after="0"
+  >
     <span class="help-hint" tabindex="0" role="button" aria-label="说明">?</span>
   </el-tooltip>
 </template>

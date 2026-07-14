@@ -38,7 +38,7 @@ describe('组件能力目录（M1）', () => {
     'filter-bar', 'search-box', 'advanced-filter', 'toolbar', 'batch-bar',
     'data-table', 'wide-table', 'simple-list', 'description-list', 'tree-table',
     'pagination', 'column-settings', 'sort-control', 'export-button',
-    'form', 'form-section', 'field-grid', 'inline-editor',
+    'form', 'form-section', 'config-panel', 'field-grid', 'inline-editor',
     'loading-state', 'empty-state', 'error-state', 'skeleton',
     'kpi-grid', 'metric-card', 'stat-strip', 'chart', 'mini-chart', 'chart-grid', 'trend-panel',
     'detail-panel', 'detail', 'drawer', 'dialog', 'settings-drawer', 'side-panel',

@@ -51,6 +51,8 @@ const props = withDefaults(
     clearable?: boolean
     /** 页面没有业务设置 slot 时，隐藏设置抽屉的业务折叠段选项。 */
     drawerBusinessVisible?: boolean
+    /** 页面运行时可按当前业务上下文覆盖 slot 元数据，例如当前 tab 的可折叠分区候选。 */
+    componentMetaOverrides?: Record<string, SlotConfigMeta>
   }>(),
   { layer: 'user', collapsibleSlot: true, showSlotTitle: true, clearable: false },
 )
@@ -82,17 +84,19 @@ const autoSlots = computed<AutoSlot[]>(() => {
   if (!entry?.consumedComponentFields) return []
   const byId = new Map(entry.layout.slots.map((s) => [s.id, s]))
   const meta = entry.componentMeta ?? {}
+  const metaOverrides = props.componentMetaOverrides ?? {}
   return Object.entries(entry.consumedComponentFields)
     .filter(([slotId]) => !props.slotIds || props.slotIds.includes(slotId))
     .map(([slotId, fields]) => {
       const slot = byId.get(slotId)
+      const slotMeta = { ...(meta[slotId] ?? {}), ...(metaOverrides[slotId] ?? {}) }
       return {
         slotId,
         kind: slot?.component ?? '',
         label: slot?.label || slotId,
         // 只渲染当前层（+策略）允许覆盖的字段；collapsibleSections 在 user 层天然被排除。
         fields: fields.filter((field) => layerAllowed(slot?.component ?? '', field)),
-        meta: meta[slotId] ?? {},
+        meta: slotMeta,
       }
     })
     .filter((slot) => slot.fields.length)
@@ -146,6 +150,28 @@ function numVal(slotId: string, field: string, fallback: number): number {
 function boolVal(slotId: string, field: string, fallback: boolean): boolean {
   const v = props.config.componentValueOf(slotId, field)
   return typeof v === 'boolean' ? v : fallback
+}
+
+function defaultCollapsedOptions(slot: AutoSlot): { label: string; value: string }[] {
+  if (slot.kind === 'config-panel') {
+    return (slot.meta.collapseSections ?? []).map((section) => ({
+      label: section.label,
+      value: section.key,
+    }))
+  }
+  return visibleDrawerSectionOptions.value
+}
+
+function visibleDefaultCollapsedValues(slot: AutoSlot): string[] {
+  const visible = new Set(defaultCollapsedOptions(slot).map((option) => option.value))
+  return listVal(slot.slotId, 'defaultCollapsed').filter((value) => visible.has(value))
+}
+
+function setDefaultCollapsed(slot: AutoSlot, values: string[]): void {
+  const visible = new Set(defaultCollapsedOptions(slot).map((option) => option.value))
+  const hidden = listVal(slot.slotId, 'defaultCollapsed').filter((value) => !visible.has(value))
+  const nextVisible = values.filter((value) => visible.has(value))
+  props.config.setComponentKnob(slot.slotId, 'defaultCollapsed', [...hidden, ...nextVisible])
 }
 
 /** page 层「不覆盖」：清除本层显式值（null 视为不覆盖）。 */
@@ -412,7 +438,7 @@ function setSort(slotId: string, field: string, order: string): void {
 
       <div v-if="s.fields.includes('defaultCollapsed')" class="ca-item">
         <div class="ca-label-row">
-          <span class="ca-label">默认折叠段</span>
+          <span class="ca-label">{{ s.kind === 'config-panel' ? '默认折叠分区' : '默认折叠段' }}</span>
           <span class="ca-actions">
             <SourceTag
               v-if="srcOf(s.slotId, 'defaultCollapsed')"
@@ -423,13 +449,51 @@ function setSort(slotId: string, field: string, order: string): void {
           </span>
         </div>
         <el-checkbox-group
-          :model-value="listVal(s.slotId, 'defaultCollapsed')"
-          @update:model-value="(v: string[]) => config.setComponentKnob(s.slotId, 'defaultCollapsed', v)"
+          :model-value="visibleDefaultCollapsedValues(s)"
+          @update:model-value="(v: string[]) => setDefaultCollapsed(s, v)"
         >
-          <el-checkbox v-for="opt in visibleDrawerSectionOptions" :key="opt.value" :value="opt.value">
+          <el-checkbox v-for="opt in defaultCollapsedOptions(s)" :key="opt.value" :value="opt.value">
             {{ opt.label }}
           </el-checkbox>
         </el-checkbox-group>
+      </div>
+
+      <div v-if="s.fields.includes('showGroupDescription')" class="ca-item">
+        <div class="ca-label-row">
+          <span class="ca-label">显示组说明</span>
+          <span class="ca-actions">
+            <SourceTag
+              v-if="srcOf(s.slotId, 'showGroupDescription')"
+              :source="srcOf(s.slotId, 'showGroupDescription')!"
+              :values="srcValuesOf(s.slotId, 'showGroupDescription')"
+            />
+            <button v-if="clearable && isOverridden(s.slotId, 'showGroupDescription')" type="button" class="ca-clear" @click="clearField(s.slotId, 'showGroupDescription')">不覆盖</button>
+          </span>
+        </div>
+        <el-switch
+          :model-value="boolVal(s.slotId, 'showGroupDescription', true)"
+          inline-prompt
+          @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, 'showGroupDescription', v)"
+        />
+      </div>
+
+      <div v-if="s.fields.includes('showSectionDescription')" class="ca-item">
+        <div class="ca-label-row">
+          <span class="ca-label">显示分区说明</span>
+          <span class="ca-actions">
+            <SourceTag
+              v-if="srcOf(s.slotId, 'showSectionDescription')"
+              :source="srcOf(s.slotId, 'showSectionDescription')!"
+              :values="srcValuesOf(s.slotId, 'showSectionDescription')"
+            />
+            <button v-if="clearable && isOverridden(s.slotId, 'showSectionDescription')" type="button" class="ca-clear" @click="clearField(s.slotId, 'showSectionDescription')">不覆盖</button>
+          </span>
+        </div>
+        <el-switch
+          :model-value="boolVal(s.slotId, 'showSectionDescription', true)"
+          inline-prompt
+          @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, 'showSectionDescription', v)"
+        />
       </div>
     </SettingsGroup>
   </div>

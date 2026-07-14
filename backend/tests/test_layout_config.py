@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -263,6 +265,13 @@ def test_settings_drawer_component_config_layers(client):
         user_id="u1",
         layout=layout,
     )
+    with pytest.raises(LayoutConfigValidationError, match="不允许在 user 层"):
+        repo.set_user_config(
+            "board",
+            {"values": {"slots.settings.config.bodyScroll": False}},
+            user_id="u2",
+            layout=layout,
+        )
 
     eff = repo.effective_config("board", user_id="u1")
     assert eff["values"]["slots.settings.config.size"] == "lg"
@@ -271,6 +280,85 @@ def test_settings_drawer_component_config_layers(client):
     assert eff["source"]["slots.settings.config.collapsibleSections"] == "page"
     assert eff["values"]["slots.settings.config.defaultCollapsed"] == ["layout", "business"]
     assert eff["source"]["slots.settings.config.defaultCollapsed"] == "user"
+
+
+def test_effective_config_filters_stale_user_component_layer(client):
+    """历史 user 层越权组件值读 effective_config 时也要按当前层级过滤。"""
+    repo = LayoutConfigRepo(client)
+    layout = {"slots": [{"id": "settings", "component": "settings-drawer"}]}
+    repo.set_page_config(
+        "board",
+        config={"values": {"slots.settings.config.bodyScroll": True}},
+        layout=layout,
+    )
+    repo.pg.execute(
+        "INSERT INTO layout_user_config "
+        "(user_id, tenant_id, owner_user_id, page_key, config, schema_version, updated_at) "
+        "VALUES (%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP) "
+        "ON CONFLICT (user_id, page_key) DO UPDATE SET "
+        "tenant_id=EXCLUDED.tenant_id, owner_user_id=EXCLUDED.owner_user_id, "
+        "config=EXCLUDED.config, schema_version=EXCLUDED.schema_version, "
+        "updated_at=CURRENT_TIMESTAMP",
+        [
+            "u-stale",
+            "default",
+            "u-stale",
+            "board",
+            json.dumps({
+                "slots.settings.config.bodyScroll": False,
+                "slots.settings.config.defaultCollapsed": ["layout"],
+            }, ensure_ascii=False),
+            1,
+        ],
+    )
+
+    try:
+        eff = repo.effective_config("board", user_id="u-stale")
+        assert eff["values"]["slots.settings.config.bodyScroll"] is True
+        assert eff["source"]["slots.settings.config.bodyScroll"] == "page"
+        assert eff["values"]["slots.settings.config.defaultCollapsed"] == ["layout"]
+        assert eff["source"]["slots.settings.config.defaultCollapsed"] == "user"
+        user_layer = next(layer for layer in eff["layers"] if layer["layer"] == "user")
+        assert "slots.settings.config.bodyScroll" not in user_layer["config"]["values"]
+    finally:
+        repo.pg.execute(
+            "DELETE FROM layout_user_config WHERE user_id=%s AND page_key=%s",
+            ["u-stale", "board"],
+        )
+
+
+def test_config_panel_default_collapsed_accepts_section_keys(client):
+    """config-panel defaultCollapsed 使用页面登记分区 key，不沿用 settings-drawer 固定枚举。"""
+    repo = LayoutConfigRepo(client)
+    layout = {"slots": [{"id": "configPanel", "component": "config-panel"}]}
+    repo.set_page_config(
+        "config-system",
+        config={
+            "values": {
+                "slots.configPanel.config.collapsibleSections": True,
+                "slots.configPanel.config.defaultCollapsed": ["auth", "auth.login"],
+            }
+        },
+        layout=layout,
+    )
+    repo.set_user_config(
+        "config-system",
+        {
+            "values": {
+                "slots.configPanel.config.defaultCollapsed": ["datasource.request"],
+                "slots.configPanel.config.showSectionDescription": False,
+            }
+        },
+        user_id="u1",
+        layout=layout,
+    )
+
+    eff = repo.effective_config("config-system", user_id="u1")
+    assert eff["values"]["slots.configPanel.config.collapsibleSections"] is True
+    assert eff["source"]["slots.configPanel.config.collapsibleSections"] == "page"
+    assert eff["values"]["slots.configPanel.config.defaultCollapsed"] == ["datasource.request"]
+    assert eff["source"]["slots.configPanel.config.defaultCollapsed"] == "user"
+    assert eff["values"]["slots.configPanel.config.showSectionDescription"] is False
 
 
 def test_referenced_preset_cannot_be_disabled_or_deleted(client):

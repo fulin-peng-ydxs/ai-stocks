@@ -122,6 +122,7 @@ export type ComponentKind =
   | 'export-button' //   导出按钮
   | 'form' //           表单（创建/编辑）
   | 'form-section' //    表单分区
+  | 'config-panel' //    配置面板
   | 'field-grid' //      字段网格
   | 'inline-editor' //   行内编辑
   | 'loading-state' //   加载态

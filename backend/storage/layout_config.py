@@ -49,9 +49,11 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "hiddenColumns": {"type": "str_list", "layers": {"page", "user"}},
     "defaultActive": {"type": "str", "layers": {"page", "user"}},
     "size": {"type": "enum", "layers": {"preset", "page", "user"}, "options": {"sm", "md", "lg"}},
-    "bodyScroll": {"type": "bool", "layers": {"preset", "page", "user"}},
+    "bodyScroll": {"type": "bool", "layers": {"preset", "page"}},
     "collapsibleSections": {"type": "bool", "layers": {"preset", "page"}},
     "defaultCollapsed": {"type": "str_list", "layers": {"preset", "page", "user"}},
+    "showGroupDescription": {"type": "bool", "layers": {"preset", "page", "user"}},
+    "showSectionDescription": {"type": "bool", "layers": {"preset", "page", "user"}},
 }
 
 # 组件种类 -> 允许的配置字段集合（与前端 COMPONENT_FIELD_DEFS 同口径）。
@@ -62,6 +64,7 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
     "wide-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll", "collapsibleSections", "defaultCollapsed"},
+    "config-panel": {"collapsibleSections", "defaultCollapsed", "showGroupDescription", "showSectionDescription"},
 }
 
 
@@ -166,6 +169,7 @@ COMPONENT_MIN_SIZE: dict[str, tuple[int, int]] = {
     "export-button": (80, 32),
     "form": (360, 300),
     "form-section": (320, 160),
+    "config-panel": (320, 120),
     "field-grid": (320, 120),
     "inline-editor": (240, 40),
     "loading-state": (160, 80),
@@ -307,11 +311,6 @@ def _normalize_component_value(field: str, value: Any, layer: str | None) -> Any
     if t == "str_list":
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             raise LayoutConfigValidationError(f"组件配置 {field} 需为字符串数组")
-        if field == "defaultCollapsed":
-            allowed = {"layout", "components", "business"}
-            bad = [v for v in value if v not in allowed]
-            if bad:
-                raise LayoutConfigValidationError(f"组件配置 {field} 仅允许 layout/components/business")
         return value
     if t == "object":
         if not isinstance(value, dict):
@@ -928,8 +927,11 @@ class LayoutConfigRepo:
         ):
             if not cfg:
                 continue
-            layer_values = cfg.get("values", {})
-            layers.append({"layer": layer_name, "config": cfg})
+            layer_values = self._filter_effective_layer_values(cfg.get("values", {}), layer_name)
+            layers.append({
+                "layer": layer_name,
+                "config": {**cfg, "values": layer_values},
+            })
             for path, value in layer_values.items():
                 values[path] = value
                 source[path] = layer_name
@@ -942,6 +944,20 @@ class LayoutConfigRepo:
             "source": source,
             "layers": layers,
         }
+
+    @staticmethod
+    def _filter_effective_layer_values(values: dict[str, Any], layer: str) -> dict[str, Any]:
+        """读时按当前代码层级过滤组件配置，防止历史越权值继续进入 effective_config。"""
+        filtered: dict[str, Any] = {}
+        for path, value in values.items():
+            m = COMPONENT_CONFIG_PATH_RE.fullmatch(path)
+            if not m:
+                filtered[path] = value
+                continue
+            rule = COMPONENT_CONFIG_FIELD_RULES.get(m.group(2))
+            if rule and layer in rule["layers"]:
+                filtered[path] = value
+        return filtered
 
     def reset(
         self,

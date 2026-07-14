@@ -37,12 +37,31 @@ vi.mock('@/layout/pageRegistry', () => ({
         componentMeta: {},
       }
     }
+    if (pageKey === 'config-panel-demo') {
+      return {
+        layout: {
+          slots: [{ id: 'configPanel', component: 'config-panel', label: '系统设置面板' }],
+        },
+        consumedComponentFields: {
+          configPanel: ['defaultCollapsed'],
+        },
+        componentMeta: {
+          configPanel: {
+            collapseSections: [
+              { key: 'auth', label: '认证与防滥用' },
+              { key: 'auth.login', label: '登录保护' },
+              { key: 'datasource', label: '数据源' },
+            ],
+          },
+        },
+      }
+    }
     return {
       layout: {
         slots: [{ id: 'settings', component: 'settings-drawer', label: '设置抽屉' }],
       },
       consumedComponentFields: {
-        settings: ['defaultCollapsed'],
+        settings: ['bodyScroll', 'defaultCollapsed'],
       },
       componentMeta: {},
     }
@@ -51,7 +70,11 @@ vi.mock('@/layout/pageRegistry', () => ({
 
 vi.mock('@/layout/componentConfig', () => ({
   getComponentFieldDef: (_kind: string, field: string) => (
-    field === 'border' ? { layers: ['page'] } : { layers: ['user'] }
+    field === 'border'
+      ? { layers: ['page'] }
+      : field === 'bodyScroll'
+        ? { layers: ['preset', 'page'] }
+        : { layers: ['user'] }
   ),
 }))
 
@@ -130,9 +153,63 @@ function mountBorderDemo(layer: 'page' | 'user') {
         SourceTag: true,
         ElSwitch: true,
         ElEmpty: true,
+        ElSelect: { template: '<div><slot /></div>' },
+        ElOption: { props: ['label'], template: '<span>{{ label }}</span>' },
+        ElCheckboxGroup: { template: '<div><slot /></div>' },
+        ElCheckbox: { props: ['value'], template: '<label><slot /></label>' },
       },
     },
   })
+}
+
+function mountConfigPanelDemo() {
+  const setComponentKnob = vi.fn()
+  const wrapper = mount(ComponentAutoSettings as Component, {
+    props: {
+      pageKey: 'config-panel-demo',
+      componentMetaOverrides: {
+        configPanel: {
+          collapseSections: [
+            { key: 'auth', label: '认证与防滥用' },
+            { key: 'auth.login', label: '登录保护' },
+          ],
+        },
+      },
+      config: {
+        componentValueOf: vi.fn((slotId: string, field: string) => (
+          slotId === 'configPanel' && field === 'defaultCollapsed'
+            ? ['datasource', 'auth.login']
+            : []
+        )),
+        setComponentKnob,
+      },
+    },
+    global: {
+      stubs: {
+        SettingsGroup: {
+          props: ['title'],
+          template: '<section><h3 v-if="title">{{ title }}</h3><slot /></section>',
+        },
+        SourceTag: true,
+        ElSwitch: true,
+        ElEmpty: true,
+        ElSelect: { template: '<div><slot /></div>' },
+        ElOption: { props: ['label'], template: '<span>{{ label }}</span>' },
+        ElCheckboxGroup: {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template: `
+            <div class="checkbox-group" :data-model-value="modelValue.join('|')">
+              <button class="emit-collapsed" @click="$emit('update:modelValue', ['auth'])" />
+              <slot />
+            </div>
+          `,
+        },
+        ElCheckbox: { props: ['value'], template: '<label><slot /></label>' },
+      },
+    },
+  })
+  return { wrapper, setComponentKnob }
 }
 
 describe('ComponentAutoSettings', () => {
@@ -142,6 +219,11 @@ describe('ComponentAutoSettings', () => {
     expect(wrapper.text()).toContain('布局')
     expect(wrapper.text()).toContain('组件设置')
     expect(wrapper.text()).not.toContain('业务选项')
+  })
+
+  it('settings-drawer 内容区滚动不进入用户层设置抽屉', () => {
+    const wrapper = mountAuto(false)
+    expect(wrapper.text()).not.toContain('内容区滚动')
   })
 
   it('有业务设置 slot 时保留业务折叠段选项', () => {
@@ -159,5 +241,17 @@ describe('ComponentAutoSettings', () => {
   it('表格边框是 page 层组件能力，不进入用户设置层', () => {
     expect(mountBorderDemo('page').text()).toContain('显示表格边框')
     expect(mountBorderDemo('user').text()).not.toContain('显示表格边框')
+  })
+
+  it('config-panel 默认折叠候选支持按当前业务覆盖并保留隐藏选中值', async () => {
+    const { wrapper, setComponentKnob } = mountConfigPanelDemo()
+    expect(wrapper.text()).toContain('默认折叠分区')
+    expect(wrapper.text()).toContain('认证与防滥用')
+    expect(wrapper.text()).toContain('登录保护')
+    expect(wrapper.text()).not.toContain('数据源')
+    expect(wrapper.find('.checkbox-group').attributes('data-model-value')).toBe('auth.login')
+
+    await wrapper.find('.emit-collapsed').trigger('click')
+    expect(setComponentKnob).toHaveBeenCalledWith('configPanel', 'defaultCollapsed', ['datasource', 'auth'])
   })
 })

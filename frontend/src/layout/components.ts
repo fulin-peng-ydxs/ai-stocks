@@ -278,6 +278,17 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
     reflowable: false,
     configCapabilities: ['title', 'columns', 'collapsible'],
   }),
+  'config-panel': meta('config-panel', {
+    category: 'form',
+    label: '配置面板',
+    description: '系统设置等配置页的可折叠分组面板，支持组说明、分区说明和默认折叠策略。',
+    minW: 320,
+    minH: 120,
+    defaultScroll: 'none',
+    canGrowMain: false,
+    reflowable: false,
+    configCapabilities: ['collapsibleSections', 'defaultCollapsed', 'showGroupDescription', 'showSectionDescription'],
+  }),
   'field-grid': meta('field-grid', {
     category: 'form',
     label: '字段网格',

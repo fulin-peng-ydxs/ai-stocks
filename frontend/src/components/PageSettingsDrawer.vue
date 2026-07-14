@@ -2,7 +2,7 @@
 import { computed, useSlots } from 'vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
-import { getPageEntry } from '@/layout/pageRegistry'
+import { getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
 import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
 import PageDrawer from './PageDrawer.vue'
@@ -29,6 +29,7 @@ const props = defineProps<{
   pageKey?: string
   config?: DrawerConfig
   businessVisible?: boolean
+  componentMetaOverrides?: Record<string, SlotConfigMeta>
 }>()
 
 const emit = defineEmits<{
@@ -129,6 +130,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
               :page-key="pageKey!"
               :config="config"
               :drawer-business-visible="hasBusinessSlot"
+              :component-meta-overrides="componentMetaOverrides"
             />
           </SettingsGroup>
 

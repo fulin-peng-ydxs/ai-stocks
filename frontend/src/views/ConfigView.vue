@@ -38,6 +38,13 @@ import { useTableSort } from '@/composables/useTableSort'
 import { getSettingsView, resetSettings, saveSettings, type MailStatus, type SettingGroup } from '@/api/data'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
+import type { SlotConfigMeta } from '@/layout/pageRegistry'
+import {
+  CONFIG_SYSTEM_GROUP_TABS,
+  configPanelCollapseSectionsOf,
+  configPanelSectionsOf,
+  type ConfigPanelBehavior,
+} from '@/layout/configPanel'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
@@ -109,20 +116,24 @@ const sysDraft = ref<Record<string, unknown>>({})
 const sysLoading = ref(false)
 const sysSaving = ref(false)
 const sysSaveError = ref(false)
-const activeSysTab = ref('security')
+const activeSysTab = ref('access')
 interface SystemGroupTab {
   key: string
   label: string
   groups: SettingGroup[]
 }
-const SYSTEM_GROUP_TABS = [
-  { key: 'security', label: '认证与审计', groupKeys: ['auth', 'audit'] },
-  { key: 'data', label: '数据采集', groupKeys: ['datasource'] },
-  { key: 'strategy', label: '回测成本', groupKeys: ['cost'] },
-]
 const canManageSystemSettings = computed(() =>
   hasPermission(auth.role, auth.permissions, 'data-settings:manage'),
 )
+const configPanelBehavior = computed<ConfigPanelBehavior>(() => {
+  const defaultCollapsed = componentValueOf('configPanel', 'defaultCollapsed')
+  return {
+    collapsibleSections: componentValueOf('configPanel', 'collapsibleSections') !== false,
+    defaultCollapsed: Array.isArray(defaultCollapsed) ? (defaultCollapsed as string[]) : [],
+    showGroupDescription: componentValueOf('configPanel', 'showGroupDescription') !== false,
+    showSectionDescription: componentValueOf('configPanel', 'showSectionDescription') !== false,
+  }
+})
 async function loadSystem() {
   if (!canManageSystemSettings.value) return
   sysLoading.value = true
@@ -184,12 +195,12 @@ const sysInvalidPaths = computed(() => {
 })
 const sysTabs = computed<SystemGroupTab[]>(() => {
   const groupsByKey = new Map(sysGroups.value.map((group) => [group.key, group]))
-  const tabs = SYSTEM_GROUP_TABS.map((tab) => ({
+  const tabs = CONFIG_SYSTEM_GROUP_TABS.map((tab) => ({
     key: tab.key,
     label: tab.label,
     groups: tab.groupKeys.map((key) => groupsByKey.get(key)).filter((group): group is SettingGroup => !!group),
   })).filter((tab) => tab.groups.length)
-  const used = new Set(SYSTEM_GROUP_TABS.flatMap((tab) => tab.groupKeys))
+  const used = new Set(CONFIG_SYSTEM_GROUP_TABS.flatMap((tab) => tab.groupKeys))
   const extra = sysGroups.value.filter((group) => !used.has(group.key))
   if (extra.length) tabs.push({ key: 'other', label: '其他', groups: extra })
   return tabs
@@ -197,6 +208,14 @@ const sysTabs = computed<SystemGroupTab[]>(() => {
 const activeSysGroups = computed(() =>
   sysTabs.value.find((tab) => tab.key === activeSysTab.value)?.groups ?? [],
 )
+const configPanelMetaOverrides = computed<Record<string, SlotConfigMeta> | undefined>(() => {
+  if (activeTab.value !== 'system') return undefined
+  return {
+    configPanel: {
+      collapseSections: configPanelCollapseSectionsOf(activeSysGroups.value),
+    },
+  }
+})
 const activeSysPaths = computed(() =>
   activeSysGroups.value.flatMap((group) => group.fields.map((field) => field.path)),
 )
@@ -241,7 +260,7 @@ async function resetActiveSystemTab() {
 }
 watch(() => sysTabs.value.map((tab) => tab.key).join('|'), () => {
   if (!sysTabs.value.some((tab) => tab.key === activeSysTab.value)) {
-    activeSysTab.value = sysTabs.value[0]?.key || 'security'
+    activeSysTab.value = sysTabs.value[0]?.key || 'access'
   }
 })
 // ── 技术指标注册表（含内置 + 自定义）──
@@ -1502,7 +1521,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div v-else class="sys-wrap" v-loading="sysLoading">
           <div class="sys-head">
             <div class="sys-summary">
-              <span>保存后即时影响数据源、回测成本、认证和审计查询窗口。</span>
+              <span>保存后即时影响访问安全、数据采集、审计留存和研究运行参数。</span>
             </div>
             <div class="sys-actions">
               <el-alert
@@ -1556,6 +1575,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   v-for="group in tab.groups"
                   :key="group.key"
                   :group="group"
+                  :sections="configPanelSectionsOf(group.key)"
+                  :panel-behavior="configPanelBehavior"
                   :model-value="sysDraft"
                   :disabled="sysSaving"
                   :invalid-paths="sysInvalidPaths"
@@ -1610,6 +1631,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       :page-key="configPageKey"
       :config="drawerConfig"
       :business-visible="activeTab === 'tech'"
+      :component-meta-overrides="configPanelMetaOverrides"
       @reset="reset(); resetLayout()"
     >
       <template #business>
@@ -1671,8 +1693,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   overflow: visible;
 }
 .sys-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   min-width: 0;
 }

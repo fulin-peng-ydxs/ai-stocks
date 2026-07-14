@@ -118,6 +118,12 @@ const COMPONENT_CONFIG_SHAPES: Partial<Record<ComponentKind, ConfigShape>> = {
 
   form: formShape,
   'form-section': { ...formShape, title: 'string' },
+  'config-panel': {
+    collapsibleSections: 'bool',
+    defaultCollapsed: 'string[]',
+    showGroupDescription: 'bool',
+    showSectionDescription: 'bool',
+  },
   'field-grid': { columns: 'int', labelWidth: formShape.labelWidth },
   'inline-editor': { mode: ['cell', 'row', 'popover'], validation: 'object' },
 

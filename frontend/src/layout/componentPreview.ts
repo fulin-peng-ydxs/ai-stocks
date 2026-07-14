@@ -49,6 +49,7 @@ export const PREVIEW_ARCHETYPE: Record<ComponentKind, PreviewArchetype> = {
 
   form: 'form',
   'form-section': 'form',
+  'config-panel': 'form',
   'field-grid': 'form',
   'inline-editor': 'form',
 

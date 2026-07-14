@@ -7,6 +7,7 @@ import { ref, type Component } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import ConfigView from '@/views/ConfigView.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
+import HelpHint from '@/components/HelpHint.vue'
 import type { MailStatus, SettingGroup } from '@/api/data'
 
 const routeState = vi.hoisted(() => ({
@@ -114,6 +115,7 @@ const groups: SettingGroup[] = [
       {
         path: 'auth.require_email_code',
         label: '注册需邮箱验证码',
+        desc: '开启后自助注册必须提交真实邮箱验证码',
         type: 'bool',
         value: true,
         default: true,
@@ -128,6 +130,36 @@ const groups: SettingGroup[] = [
         overridden: true,
         min: 1,
         max: 10,
+      },
+      {
+        path: 'auth.login_rate_per_min',
+        label: '登录限流(次/分钟)',
+        type: 'int',
+        value: 20,
+        default: 20,
+        overridden: false,
+        min: 1,
+        max: 120,
+      },
+      {
+        path: 'auth.register_rate_per_hour',
+        label: '注册限流(次/小时)',
+        type: 'int',
+        value: 10,
+        default: 10,
+        overridden: false,
+        min: 1,
+        max: 120,
+      },
+      {
+        path: 'auth.email_code_rate_per_hour',
+        label: '邮箱验证码限流(次/小时·单邮箱)',
+        type: 'int',
+        value: 6,
+        default: 6,
+        overridden: false,
+        min: 1,
+        max: 120,
       },
     ],
   },
@@ -219,15 +251,36 @@ describe('ConfigView system tab', () => {
   it('按设置接口动态渲染认证和审计配置，且不加载指标注册表', async () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('系统设置')
-    expect(wrapper.text()).toContain('认证与审计')
-    expect(wrapper.text()).toContain('数据采集')
-    expect(wrapper.text()).toContain('回测成本')
+    expect(wrapper.text()).toContain('访问安全')
+    expect(wrapper.text()).toContain('数据治理')
+    expect(wrapper.text()).toContain('研究运行')
+    expect(wrapper.text()).not.toContain('认证与审计')
     expect(wrapper.text()).not.toContain('平台配置')
     expect(wrapper.text()).toContain('认证与防滥用')
+    expect(wrapper.text()).toContain('登录保护')
+    expect(wrapper.text()).toContain('注册校验')
+    expect(wrapper.text()).toContain('邮箱验证码发送')
     expect(wrapper.text()).toContain('注册需邮箱验证码')
     expect(wrapper.text()).toContain('审计设置')
+    expect(wrapper.text()).toContain('日志留存')
     expect(wrapper.text()).toContain('审计保留期/默认查询窗口(天)')
+    const helpTexts = wrapper.findAllComponents(HelpHint).map((node) => String(node.props('text')))
+    expect(helpTexts.some((text) => text.includes('默认值：3'))).toBe(true)
+    expect(helpTexts.some((text) => text.includes('允许范围：1 - 10'))).toBe(true)
+    expect(helpTexts.some((text) => text.includes('开启后自助注册必须提交真实邮箱验证码'))).toBe(true)
     expect(scoreApi.getIndicatorRegistry).not.toHaveBeenCalled()
+  })
+
+  it('系统设置抽屉的默认折叠候选只包含当前业务面板', async () => {
+    const wrapper = await mountView()
+    const drawer = wrapper.findComponent({ name: 'PageSettingsDrawer' })
+    const overrides = drawer.props('componentMetaOverrides') as {
+      configPanel?: { collapseSections?: { key: string; label: string }[] }
+    }
+    const labels = overrides.configPanel?.collapseSections?.map((section) => section.label) ?? []
+    expect(labels).toEqual(['认证与防滥用', '登录保护', '注册校验', '邮箱验证码发送'])
+    expect(labels).not.toContain('数据源')
+    expect(labels).not.toContain('回测成本')
   })
 
   it('保存时只提交改动字段，成功后重新加载设置', async () => {

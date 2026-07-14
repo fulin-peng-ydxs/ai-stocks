@@ -13,6 +13,7 @@
  */
 import type { Archetype, EditableKnob, PageLayout } from './schema'
 import { cloneLayout } from './path'
+import { CONFIG_SYSTEM_COLLAPSE_SECTIONS } from './configPanel'
 
 /** 页面响应式策略（plan.md §14.3）。受控命名，不等于自由编辑断点。 */
 export type ResponsiveProfile =
@@ -65,6 +66,8 @@ export interface SlotConfigMeta {
   sortHasDirection?: boolean
   /** 可选的 Tab 项（驱动 tabs.defaultActive 选择；key 为 tab name、label 为中文名）。 */
   tabs?: { key: string; label: string }[]
+  /** 可折叠分区项（驱动 config-panel/defaultCollapsed 选择；key 为折叠节点 key、label 为中文名）。 */
+  collapseSections?: { key: string; label: string }[]
 }
 
 /** 信息密度旋钮——所有页面通用的 L2 可编辑项，统一文案与取值域。 */
@@ -404,7 +407,36 @@ const REGISTRY: PageRegistryEntry[] = [
       editable: [densityKnob()],
     },
   },
-  configEntry('config-system', '系统设置', '/system/config/system'),
+  {
+    pageKey: 'config-system',
+    label: '系统设置',
+    path: '/system/config/system',
+    archetype: 'workbench',
+    responsiveProfile: 'mixed-panel',
+    supportsComponentConfig: true,
+    consumedComponentFields: {
+      configPanel: ['collapsibleSections', 'defaultCollapsed', 'showGroupDescription', 'showSectionDescription'],
+    },
+    componentMeta: {
+      configPanel: {
+        collapseSections: CONFIG_SYSTEM_COLLAPSE_SECTIONS,
+      },
+    },
+    layout: {
+      pageKey: 'config-system',
+      archetype: 'workbench',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
+        { id: 'body', component: 'section', region: 'main', label: '系统设置', order: 1 },
+        { id: 'configPanel', component: 'config-panel', region: 'main', parentId: 'body', label: '系统设置面板', order: 2 },
+        { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
+      ],
+      editable: [densityKnob()],
+    },
+  },
   {
     pageKey: 'user-manage',
     label: '用户管理',

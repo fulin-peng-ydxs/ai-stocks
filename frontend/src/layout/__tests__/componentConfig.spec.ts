@@ -26,6 +26,7 @@ const layout: PageLayout = {
   slots: [
     { id: 'filters', component: 'filter-bar', region: 'action', order: 1 },
     { id: 'table', component: 'data-table', region: 'main', growMain: true, order: 1, config: { pageSize: 20, defaultSort: 'score:desc' } },
+    { id: 'configPanel', component: 'config-panel', region: 'main', parentId: 'table', order: 2 },
     { id: 'settings', component: 'settings-drawer', region: 'overlay', order: 1 },
   ],
 }
@@ -42,7 +43,13 @@ describe('组件字段元数据', () => {
   })
 
   it('字段定义只覆盖已消费字段，不预设无消费字段', () => {
-    expect(Object.keys(COMPONENT_FIELD_DEFS).sort()).toEqual(['data-table', 'settings-drawer', 'tabs', 'wide-table'])
+    expect(Object.keys(COMPONENT_FIELD_DEFS).sort()).toEqual(['config-panel', 'data-table', 'settings-drawer', 'tabs', 'wide-table'])
+    expect((COMPONENT_FIELD_DEFS['config-panel'] ?? []).map((d) => d.key).sort()).toEqual([
+      'collapsibleSections',
+      'defaultCollapsed',
+      'showGroupDescription',
+      'showSectionDescription',
+    ])
     expect((COMPONENT_FIELD_DEFS['data-table'] ?? []).map((d) => d.key).sort()).toEqual(['border', 'defaultSort', 'hiddenColumns', 'pageSize'])
     expect((COMPONENT_FIELD_DEFS['wide-table'] ?? []).map((d) => d.key).sort()).toEqual(['border', 'defaultSort', 'hiddenColumns', 'pageSize'])
     expect((COMPONENT_FIELD_DEFS['settings-drawer'] ?? []).map((d) => d.key).sort()).toEqual([
@@ -73,6 +80,10 @@ describe('组件字段元数据', () => {
     expect(isLayerAllowed(border, 'page')).toBe(true)
     expect(isLayerAllowed(border, 'user')).toBe(false)
     expect(isLayerAllowed(border, 'preset')).toBe(false)
+    const bodyScroll = getComponentFieldDef('settings-drawer', 'bodyScroll')!
+    expect(isLayerAllowed(bodyScroll, 'preset')).toBe(true)
+    expect(isLayerAllowed(bodyScroll, 'page')).toBe(true)
+    expect(isLayerAllowed(bodyScroll, 'user')).toBe(false)
   })
 
   it('coerce 守门：类型/取值域', () => {
@@ -125,6 +136,19 @@ describe('组件配置分层合并', () => {
     })
   })
 
+  it('config-panel 展示与默认折叠配置按层合并', () => {
+    const r = resolveComponentConfig(layout, [
+      { layer: 'page', overlay: { values: { 'slots.configPanel.config.defaultCollapsed': ['datasource.request'] } } },
+      { layer: 'user', overlay: { values: { 'slots.configPanel.config.showSectionDescription': false } } },
+    ])
+    expect(r.configBySlot.configPanel.collapsibleSections).toBe(true)
+    expect(r.configBySlot.configPanel.defaultCollapsed).toEqual(['datasource.request'])
+    expect(r.configBySlot.configPanel.showGroupDescription).toBe(true)
+    expect(r.configBySlot.configPanel.showSectionDescription).toBe(false)
+    expect(r.source['slots.configPanel.config.defaultCollapsed']).toBe('page')
+    expect(r.source['slots.configPanel.config.showSectionDescription']).toBe('user')
+  })
+
   it('preset 层组件默认生效：pageSize 已放开 preset', () => {
     const r = resolveComponentConfig(layout, [
       { layer: 'preset', overlay: { values: { 'slots.table.config.pageSize': 50 } } },
@@ -143,6 +167,21 @@ describe('组件配置分层合并', () => {
     expect(r.source['slots.table.config.border']).toBe('page')
     expect(r.dropped).toContainEqual({ layer: 'preset', path: 'slots.table.config.border', reason: 'layer.notAllowed' })
     expect(r.dropped).toContainEqual({ layer: 'user', path: 'slots.table.config.border', reason: 'layer.notAllowed' })
+  })
+
+  it('settings-drawer 内容区滚动仅 preset/page 层生效，user 层越权丢弃', () => {
+    const r = resolveComponentConfig(layout, [
+      { layer: 'preset', overlay: { values: { 'slots.settings.config.bodyScroll': false } } },
+      { layer: 'page', overlay: { values: { 'slots.settings.config.bodyScroll': true } } },
+      { layer: 'user', overlay: { values: { 'slots.settings.config.bodyScroll': false } } },
+    ])
+    expect(r.configBySlot.settings.bodyScroll).toBe(true)
+    expect(r.source['slots.settings.config.bodyScroll']).toBe('page')
+    expect(r.dropped).toContainEqual({
+      layer: 'user',
+      path: 'slots.settings.config.bodyScroll',
+      reason: 'layer.notAllowed',
+    })
   })
 
   it('越权层级被丢弃：defaultSort 仅 page/user，preset 覆盖无效', () => {
