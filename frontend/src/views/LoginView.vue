@@ -2,10 +2,10 @@
 // 登录 / 注册页：金融科技视觉与明暗双主题，认证流程由公开配置动态控制。
 // 全屏独立壳（App.vue 按 meta.fullscreen 脱离主框架单独渲染），不套用布局 archetype、不走 LayoutHost。
 // 契约：用 position:fixed;inset:0 全屏（禁 vh 高度、禁手写 .v-page/.v-grow，过 layout-contract.spec.ts）。
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
-import { useLayoutPreset } from '@/layout'
+import { getLoginSurfaceSpec, rgbaFromHex, useLayoutPreset } from '@/layout'
 import { useAuthStore } from '@/stores/auth'
 import { getCaptcha, getPublicConfig, sendEmailCode } from '@/api/auth'
 import BrandMark from '@/components/BrandMark.vue'
@@ -17,6 +17,14 @@ const { isDark } = useTheme()
 const { activePresetKey, options: presetOptions, setLayoutPreset } = useLayoutPreset()
 const activePresetLabel = computed(() =>
   presetOptions.value.find((option) => option.value === activePresetKey.value)?.label ?? '晨昏')
+const loginSurfaceStyle = computed<CSSProperties>(() => {
+  const spec = getLoginSurfaceSpec(activePresetKey.value, isDark.value ? 'dark' : 'light')
+  return {
+    '--login-page-bg': spec.pageBg,
+    '--login-card-bg': rgbaFromHex(spec.cardBg, spec.cardAlpha),
+    '--login-card-opaque-bg': spec.surfaceBg,
+  } as CSSProperties
+})
 
 type Mode = 'login' | 'register'
 const mode = ref<Mode>('login')
@@ -238,6 +246,7 @@ function onSubmit() {
   <div
     class="login-shell"
     :class="[`preset-${activePresetKey}`, { 'is-register': mode === 'register', 'is-dark': isDark }]"
+    :style="loginSurfaceStyle"
   >
     <section class="login-brand">
       <header class="login-brand-head">
@@ -430,11 +439,13 @@ function onSubmit() {
 
 <style scoped>
 .login-shell {
+  /* 仅作首帧兜底；运行时基础色由 themeSurfaces.ts 注入，确保登录页与工作台同源。 */
   --login-page-bg: #edf1f4;
   --login-panel-bg: #0b1c2b;
   --login-panel-deep: #06131f;
   --login-grid: rgba(126, 159, 179, 0.11);
   --login-card-bg: rgba(250, 252, 253, 0.86);
+  --login-card-opaque-bg: #f8fafc;
   --login-card-edge: rgba(255, 255, 255, 0.92);
   --login-border: #cbd4da;
   --login-border-focus: #9a7a43;
@@ -476,9 +487,9 @@ function onSubmit() {
   transition: background 0.3s, color 0.3s;
 }
 .login-shell.is-dark {
-  /* 晨昏登录页的既有深色是主页夜间配色的视觉基准，不随主页试色反向漂移。 */
   --login-page-bg: #07131d;
   --login-card-bg: rgba(10, 27, 39, 0.9);
+  --login-card-opaque-bg: #0a1a26;
   --login-card-edge: rgba(142, 168, 181, 0.18);
   --login-border: #29404e;
   --login-border-focus: #c9a669;
@@ -500,11 +511,9 @@ function onSubmit() {
 }
 
 .login-shell.preset-daylight {
-  --login-page-bg: #f1f4f9;
   --login-panel-bg: #f7f9fd;
   --login-panel-deep: #dfe7f3;
   --login-grid: rgba(39, 69, 123, 0.08);
-  --login-card-bg: rgba(253, 254, 254, 0.92);
   --login-card-edge: rgba(255, 255, 255, 0.96);
   --login-border: #d3ddec;
   --login-border-focus: #2f5bd3;
@@ -532,11 +541,9 @@ function onSubmit() {
 }
 
 .login-shell.preset-daylight.is-dark {
-  --login-page-bg: #171b24;
   --login-panel-bg: #202632;
   --login-panel-deep: #11151d;
   --login-grid: rgba(126, 151, 208, 0.07);
-  --login-card-bg: rgba(32, 38, 50, 0.92);
   --login-card-edge: rgba(101, 115, 139, 0.3);
   --login-border: #3a4559;
   --login-border-focus: #6f8fe4;
@@ -565,10 +572,8 @@ function onSubmit() {
 }
 
 .login-shell.preset-nocturne {
-  --login-page-bg: #e8eef1;
   --login-panel-bg: #0a202c;
   --login-panel-deep: #061620;
-  --login-card-bg: rgba(248, 250, 251, 0.92);
   --login-border-focus: #227f9d;
   --login-accent: #2c88a5;
   --login-accent-strong: #17667f;
@@ -581,10 +586,8 @@ function onSubmit() {
 }
 
 .login-shell.preset-nocturne.is-dark {
-  --login-page-bg: #071721;
   --login-panel-bg: #071b25;
   --login-panel-deep: #04131b;
-  --login-card-bg: rgba(13, 34, 46, 0.94);
   --login-card-edge: rgba(132, 171, 187, 0.2);
   --login-border: #294a58;
   --login-border-focus: #62bad2;
@@ -1159,7 +1162,7 @@ function onSubmit() {
 }
 
 @supports not (backdrop-filter: blur(18px)) {
-  .login-card { background: var(--login-page-bg); }
+  .login-card { background: var(--login-card-opaque-bg); }
 }
 
 @media (forced-colors: active) {

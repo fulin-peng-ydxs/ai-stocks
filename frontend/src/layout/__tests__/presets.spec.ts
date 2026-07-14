@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS, validateLayoutPreset } from '../presets'
+import { blendHex, rgbaFromHex, THEME_SURFACE_SPECS } from '../themeSurfaces'
 import type { ThemeMode } from '../schema'
 
 const MODES: ThemeMode[] = ['light', 'dark']
@@ -86,6 +87,21 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     }
   })
 
+  it('三套预设的工作台画布/表面与登录交互区/登录卡片可见色同源', () => {
+    for (const preset of Object.values(LAYOUT_PRESETS)) {
+      for (const mode of MODES) {
+        const spec = THEME_SURFACE_SPECS[preset.key][mode]
+        expect(preset.tokens[mode].pageBg, `${preset.key}.${mode} page`).toBe(spec.pageBg)
+        expect(preset.tokens[mode].surfaceBg, `${preset.key}.${mode} surface`)
+          .toBe(spec.surfaceBg)
+        expect(spec.surfaceBg, `${preset.key}.${mode} card composite`)
+          .toBe(blendHex(spec.cardBg, spec.pageBg, spec.cardAlpha))
+        expect(rgbaFromHex(spec.cardBg, spec.cardAlpha), `${preset.key}.${mode} login card css`)
+          .toMatch(/^rgba\(\d+, \d+, \d+, 0\.\d+\)$/)
+      }
+    }
+  })
+
   it('白天模式文字在浅底上保持深色（对比度基本盘）', () => {
     for (const preset of Object.values(LAYOUT_PRESETS)) {
       const bg = luminance(preset.tokens.light.surfaceBg)
@@ -122,7 +138,7 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     const balanced = LAYOUT_PRESETS.balanced.tokens.dark
     const nocturne = LAYOUT_PRESETS.nocturne.tokens.dark
     expect(balanced.pageBg, '主页画布对齐登录交互区').toBe('#07131d')
-    expect(balanced.surfaceBg, '主页表面对齐登录卡片').toBe('#0a1b27')
+    expect(balanced.surfaceBg, '主页表面对齐登录卡片可见色').toBe('#0a1a26')
     expect(luminance(balanced.surfaceBg), '基础表面明度')
       .toBeLessThan(luminance(nocturne.surfaceBg))
     expect(channelSpread(balanced.border), '暖石墨边界')
