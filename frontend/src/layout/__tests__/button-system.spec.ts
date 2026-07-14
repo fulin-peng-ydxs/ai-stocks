@@ -44,10 +44,21 @@ describe('全站按钮与图标操作契约', () => {
     expect(design).toContain('普通业务命令统一使用 Element Plus `<el-button>`')
     expect(design).toContain('纯图标操作统一使用 `AppIconButton`')
     expect(design).toContain('顶栏状态和工具按 `32px` 控件基线对齐')
+    expect(design).toContain('文字 `13px / --app-font-weight-section`')
+    expect(design).toContain('纯图标异步操作必须使用 `AppIconButton` 的 `loading`')
+    expect(design).toContain('Unicode 禁令针对交互图标、操作按钮和纯图标控件')
     expect(pageTemplate).toContain('### 控件与操作规范')
     expect(pageTemplate).toContain('纯图标操作：使用 `AppIconButton`')
+    expect(pageTemplate).toContain('异步纯图标操作使用 `:loading`')
     expect(globalCss).toContain('--app-control-height-md: 32px')
     expect(globalCss).toContain('--app-button-font-weight: var(--app-font-weight-section)')
+
+    const sectionFontWeight = globalCss.match(/--app-font-weight-section:\s*([^;]+);/)?.[1].trim()
+    const frontMatterButtonFontWeight = design
+      .match(/button-md:\n(?:    .+\n)*?    fontWeight:\s*([^\n]+)/)?.[1]
+      .trim()
+
+    expect(frontMatterButtonFontWeight).toBe(sectionFontWeight)
   })
 
   it('应用外壳、页面设置和配置编辑器共同消费 AppIconButton', () => {
@@ -134,5 +145,12 @@ describe('全站按钮与图标操作契约', () => {
       .map((file) => relative(SRC_DIR, file))
 
     expect(violations).toEqual([])
+  })
+
+  it('选择态装饰勾允许保留为 aria-hidden 文案标记，不扩大为操作图标', () => {
+    const app = read(join(SRC_DIR, 'App.vue'))
+    const checkMarkers = [...app.matchAll(/<span class="theme-option-check" aria-hidden="true">✓<\/span>/g)]
+
+    expect(checkMarkers).toHaveLength(2)
   })
 })

@@ -28,4 +28,30 @@ describe('AppIconButton', () => {
     expect(wrapper.emitted('click')).toHaveLength(1)
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
   })
+
+  it('统一承载纯图标异步 loading，阻止重复点击但不复用禁用灰态表达进度', async () => {
+    const wrapper = mount(AppIconButton, {
+      props: { label: '同步预设', loading: true },
+      slots: { default: '<svg data-test="refresh" />' },
+    })
+
+    const button = wrapper.get('button')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('aria-busy')).toBe('true')
+    expect(button.classes()).toContain('is-loading')
+    expect(wrapper.find('.app-icon-button__loading').exists()).toBe(true)
+    expect(wrapper.find('[data-test="refresh"]').exists()).toBe(false)
+
+    await button.trigger('click')
+    expect(wrapper.emitted('click')).toBeUndefined()
+  })
+
+  it('外层 el-tooltip 承载长说明时可关闭原生 title，避免双提示', () => {
+    const wrapper = mount(AppIconButton, {
+      props: { label: '同步预设', nativeTitle: false },
+    })
+
+    expect(wrapper.get('button').attributes('aria-label')).toBe('同步预设')
+    expect(wrapper.get('button').attributes('title')).toBeUndefined()
+  })
 })

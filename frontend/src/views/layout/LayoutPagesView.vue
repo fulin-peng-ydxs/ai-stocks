@@ -654,10 +654,11 @@ onMounted(async () => {
                           class="preset-sync-button"
                           label="同步预设"
                           variant="soft"
-                          :disabled="presetSyncing"
+                          :loading="presetSyncing"
+                          :native-title="false"
                           @click="reloadPresets(true)"
                         >
-                          <el-icon :class="{ 'is-loading': presetSyncing }"><Refresh /></el-icon>
+                          <el-icon><Refresh /></el-icon>
                         </AppIconButton>
                       </el-tooltip>
                     </div>
@@ -991,14 +992,6 @@ onMounted(async () => {
 }
 .preset-sync-button {
   flex: 0 0 32px;
-}
-.preset-sync-button :deep(.is-loading) {
-  animation: preset-sync-spin 1s linear infinite;
-}
-@keyframes preset-sync-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 .preview-host {
   margin-top: 12px;

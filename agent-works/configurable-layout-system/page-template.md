@@ -66,7 +66,7 @@
 ### 控件与操作规范
 - 主操作：每个操作组最多一个 `el-button type="primary"`。
 - 次要 / 危险操作：默认、plain、text / `danger`，危险色仅用于破坏性动作。
-- 纯图标操作：使用 `AppIconButton` 并填写 `label`；图标来自 Element Plus 或项目既有 SVG。
+- 纯图标操作：使用 `AppIconButton` 并填写 `label`；异步纯图标操作使用 `:loading`，不在页面私写旋转动画；外层 `el-tooltip` 承载长说明时关闭原生 `title`；图标来自 Element Plus 或项目既有 SVG。
 - 专用原生按钮：仅导航、标签页、登录专用交互可保留，并写明无法复用通用控件的语义理由。
 - 自检：无 `⚙`、`✕`、emoji 图标，无页面私有命令按钮皮肤，无渐变/内阴影/厚投影按钮。
 

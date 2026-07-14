@@ -1,15 +1,21 @@
 <script setup lang="ts">
+import { Loading } from '@element-plus/icons-vue'
+
 withDefaults(defineProps<{
   label: string
   size?: 'xs' | 'sm' | 'md'
   variant?: 'ghost' | 'soft'
   tone?: 'default' | 'primary' | 'danger'
   disabled?: boolean
+  loading?: boolean
+  nativeTitle?: boolean | string
 }>(), {
   size: 'md',
   variant: 'ghost',
   tone: 'default',
   disabled: false,
+  loading: false,
+  nativeTitle: true,
 })
 
 defineEmits<{
@@ -20,15 +26,17 @@ defineEmits<{
 <template>
   <button
     class="app-icon-button"
-    :class="[`is-${size}`, `is-${variant}`, `is-${tone}`]"
+    :class="[`is-${size}`, `is-${variant}`, `is-${tone}`, { 'is-loading': loading }]"
     type="button"
     :aria-label="label"
-    :title="label"
-    :disabled="disabled"
+    :aria-busy="loading ? 'true' : undefined"
+    :title="nativeTitle === true ? label : nativeTitle || undefined"
+    :disabled="disabled || loading"
     @click="$emit('click', $event)"
   >
     <span class="app-icon-button__glyph" aria-hidden="true">
-      <slot />
+      <Loading v-if="loading" class="app-icon-button__loading" />
+      <slot v-else />
     </span>
     <slot name="badge" />
   </button>
@@ -93,9 +101,12 @@ defineEmits<{
   outline: none;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-primary) 18%, transparent);
 }
-.app-icon-button:disabled {
+.app-icon-button:disabled:not(.is-loading) {
   opacity: 0.45;
   cursor: not-allowed;
+}
+.app-icon-button.is-loading {
+  cursor: wait;
 }
 .app-icon-button__glyph {
   width: var(--app-icon-button-glyph);
@@ -110,5 +121,13 @@ defineEmits<{
   width: 1em;
   height: 1em;
   display: block;
+}
+.app-icon-button__loading {
+  animation: app-icon-button-spin 1s linear infinite;
+}
+@keyframes app-icon-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
