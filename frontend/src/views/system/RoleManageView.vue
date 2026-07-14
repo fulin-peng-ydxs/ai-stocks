@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -275,7 +276,10 @@ onMounted(loadAll)
             </HelpTip>
           </h2>
           <div class="page-head-actions">
-            <el-button v-permission="'role:create'" type="primary" @click="openCreate">＋ 新建角色</el-button>
+            <el-button v-permission="'role:create'" type="primary" @click="openCreate">
+              <template #icon><el-icon><Plus /></el-icon></template>
+              新建角色
+            </el-button>
             <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
           </div>
         </div>

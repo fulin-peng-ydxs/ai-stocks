@@ -10,6 +10,7 @@ import {
   watch,
 } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowRight } from '@element-plus/icons-vue'
 import CandleChart from '@/components/CandleChart.vue'
 import EquityChart from '@/components/EquityChart.vue'
 import GrowthChart from '@/components/GrowthChart.vue'
@@ -552,7 +553,10 @@ onBeforeUnmount(detachKeyboard)
 
             <div class="ops">
               <el-input v-model="order.reason" placeholder="操作理由（选填，记录买卖思路）" size="default" style="width:280px" />
-              <el-button type="primary" plain @click="nextDay">下一交易日 →</el-button>
+              <el-button type="primary" plain @click="nextDay">
+                下一交易日
+                <el-icon class="el-icon--right"><ArrowRight /></el-icon>
+              </el-button>
             </div>
           </template>
           <div class="ops" v-else>

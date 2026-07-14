@@ -4,6 +4,7 @@
 // 菜单是平台级全局唯一源，SideMenu 消费它 + 按角色权限过滤（T15）；功能点是角色授权最小资源单位。
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import IconPicker from '@/components/IconPicker.vue'
@@ -496,7 +497,10 @@ onMounted(() => { loadTree() })
                     </HelpTip>
                   </h4>
                   <el-button v-permission="'resource:create'" size="small" :disabled="editingId === NEW_ROW"
-                             @click="startCreateRes">＋ 新增功能点</el-button>
+                             @click="startCreateRes">
+                    <template #icon><el-icon><Plus /></el-icon></template>
+                    新增功能点
+                  </el-button>
                 </div>
                 <!-- 表内联增删改（承接原型，无编辑 dialog）；窄栏体内横滚 -->
                 <div class="mr-tbl-scroll" v-loading="resLoading">

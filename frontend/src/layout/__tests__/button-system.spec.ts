@@ -110,6 +110,24 @@ describe('全站按钮与图标操作契约', () => {
     expect(violations).toEqual([])
   })
 
+  it('el-button 文案不使用 Unicode 字符冒充图标', () => {
+    const violations: string[] = []
+    const pseudoIconChars = /[＋▶‹›→]/u
+    const elButton = /<el-button(?=[\s>/])(?:[^>"']|"[^"]*"|'[^']*')*>([\s\S]*?)<\/el-button>/g
+
+    for (const file of vueFiles(SRC_DIR)) {
+      const source = read(file)
+      for (const match of source.matchAll(elButton)) {
+        const text = visibleButtonText(match[1])
+        if (pseudoIconChars.test(text)) {
+          violations.push(`${relative(SRC_DIR, file)}:${lineOf(source, match.index ?? 0)} ${text}`)
+        }
+      }
+    }
+
+    expect(violations).toEqual([])
+  })
+
   it('界面源码不使用 Unicode 字符冒充设置或关闭图标', () => {
     const violations = vueFiles(SRC_DIR)
       .filter((file) => /[⚙✕]/u.test(read(file)))

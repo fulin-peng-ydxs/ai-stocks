@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Close } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
 import { getBars, getIndicators, getTradeEval, listStocks, type Bar, type StockBasic, type TradeEval } from '@/api/stocks'
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
 import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
@@ -484,7 +484,10 @@ onBeforeUnmount(() => {
     <template #action>
     <div class="page-head">
       <div class="title">
-        <el-button text @click="router.push('/stocks?restore=1')">‹ 返回</el-button>
+        <el-button text @click="router.push('/stocks?restore=1')">
+          <template #icon><el-icon><ArrowLeft /></el-icon></template>
+          返回
+        </el-button>
         <h2>{{ name || '—' }}</h2>
         <span class="code-sub">{{ code }}</span>
         <span class="quote-sub" :class="pctClass(latestPct)">
@@ -559,8 +562,14 @@ onBeforeUnmount(() => {
         <span v-else class="nav-pos muted">不在集合内 · 共 {{ collectionTotal }} 只</span>
       </span>
       <el-button-group class="nav-btns">
-        <el-button size="small" :loading="setLoading" :disabled="!prevCode && !canLoadPrev" @click="gotoNeighbor(-1)">‹ 上一个</el-button>
-        <el-button size="small" :loading="setLoading" :disabled="!nextCode && !canLoadNext" @click="gotoNeighbor(1)">下一个 ›</el-button>
+        <el-button size="small" :loading="setLoading" :disabled="!prevCode && !canLoadPrev" @click="gotoNeighbor(-1)">
+          <template #icon><el-icon><ArrowLeft /></el-icon></template>
+          上一个
+        </el-button>
+        <el-button size="small" :loading="setLoading" :disabled="!nextCode && !canLoadNext" @click="gotoNeighbor(1)">
+          下一个
+          <el-icon class="el-icon--right"><ArrowRight /></el-icon>
+        </el-button>
       </el-button-group>
       <el-select
         :model-value="code"

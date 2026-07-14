@@ -308,7 +308,7 @@ Key Characteristics：
 
 - 普通业务命令统一使用 Element Plus `<el-button>`：主命令用 `primary`，危险操作用 `danger`，次要命令用默认、plain、text 或 link；禁止页面再封装一套并行命令按钮。
 - 纯图标操作统一使用 `AppIconButton`，默认 `md=32px / glyph=16px`，紧凑区用 `sm=28px / glyph=14px`，微型附属操作用 `xs=24px / glyph=12px`。所有纯图标操作必须提供可访问 `label`。
-- 标准命令按钮为 `32px` 高、左右 padding `12px`、文字 `13px / 600`、图文间距 `6px`；small 为 `28px`、large 为 `36px`。输入框、选择器、按钮统一使用 `--layout-control-radius=6px`，主题只改变颜色和材质，不改变基础控件形态。
+- 标准命令按钮为 `32px` 高、左右 padding `12px`、文字 `13px / --app-font-weight-section`、图文间距 `6px`；small 为 `28px`、large 为 `36px`。输入框、选择器、按钮统一使用 `--layout-control-radius=6px`，主题只改变颜色和材质，不改变基础控件形态。
 - 同一操作组最多一个 primary；次要动作降为默认、plain 或 text。危险色只用于删除、退出、停用等破坏性动作，不能用来制造普通视觉重点。
 - 工作区按钮保持平面、清晰边界和轻状态反馈，不使用渐变、高光内阴影、厚重投影或装饰性位移。hover、focus-visible、disabled、loading 必须可辨；loading 使用 Element Plus `:loading`。
 - 图标统一使用 Element Plus 图标或项目既有 SVG，同一区域保持相同描边气质；禁止用 `⚙`、`✕`、emoji 等 Unicode 字符充当界面图标。

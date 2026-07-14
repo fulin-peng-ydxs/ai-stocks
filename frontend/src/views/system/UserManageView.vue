@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -302,7 +303,10 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             </HelpTip>
           </h2>
           <div class="page-head-actions">
-            <el-button v-permission="'user:create'" type="primary" @click="openCreate">＋ 新建用户</el-button>
+            <el-button v-permission="'user:create'" type="primary" @click="openCreate">
+              <template #icon><el-icon><Plus /></el-icon></template>
+              新建用户
+            </el-button>
             <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
           </div>
         </div>

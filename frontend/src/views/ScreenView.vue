@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import {
   copyProfile,
   getProfile,
@@ -576,9 +577,18 @@ onMounted(async () => {
         </div>
 
         <div class="b-actions">
-          <el-button size="small" :disabled="profileReadonly" @click="addIndRow">＋ 指标条件</el-button>
-          <el-button size="small" :disabled="profileReadonly" @click="addExprRow">＋ 表达式条件</el-button>
-          <el-button v-permission="'screen-profile:save'" text type="primary" size="small" :disabled="profileReadonly" @click="openSave">＋ 保存为方案</el-button>
+          <el-button size="small" :disabled="profileReadonly" @click="addIndRow">
+            <template #icon><el-icon><Plus /></el-icon></template>
+            指标条件
+          </el-button>
+          <el-button size="small" :disabled="profileReadonly" @click="addExprRow">
+            <template #icon><el-icon><Plus /></el-icon></template>
+            表达式条件
+          </el-button>
+          <el-button v-permission="'screen-profile:save'" text type="primary" size="small" :disabled="profileReadonly" @click="openSave">
+            <template #icon><el-icon><Plus /></el-icon></template>
+            保存为方案
+          </el-button>
         </div>
         <div class="dsl-help">
           表达式算子：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C 收 O 开 H 高 L 低 V 量 TURN 换手。

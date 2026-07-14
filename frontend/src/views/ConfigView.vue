@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Close } from '@element-plus/icons-vue'
+import { Close, Plus, VideoPlay } from '@element-plus/icons-vue'
 import {
   copyScoreProfile,
   deleteIndicatorDef,
@@ -1026,7 +1026,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <!-- 方案列表 -->
           <aside class="prof-list" v-loading="profilesLoading">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
-              ＋ 新建方案
+              <template #icon><el-icon><Plus /></el-icon></template>
+              新建方案
             </el-button>
             <AppStateBlock
               v-if="profilesError"
@@ -1150,7 +1151,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                           <el-icon><Close /></el-icon>
                         </AppIconButton>
                       </div>
-                      <el-button link type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">＋ 段</el-button>
+                      <el-button link type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">
+                        <template #icon><el-icon><Plus /></el-icon></template>
+                        段
+                      </el-button>
                     </div>
                   </div>
                 </template>
@@ -1178,14 +1182,20 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </el-table-column>
             </el-table>
 
-            <el-button size="small" plain style="margin-top: 8px" :disabled="profileReadonly" @click="addItem">＋ 添加指标</el-button>
+            <el-button size="small" plain style="margin-top: 8px" :disabled="profileReadonly" @click="addItem">
+              <template #icon><el-icon><Plus /></el-icon></template>
+              添加指标
+            </el-button>
 
             <!-- 试算 -->
             <div class="run-head">
               <span class="run-title">试算榜单</span>
               <el-tag v-if="runRows.length" type="info" size="small" round>共 {{ runRows.length }} 只</el-tag>
               <TradeDatePicker v-model="runDate" />
-              <el-button v-permission="'score:run'" :loading="running" type="success" plain @click="tryRun">▶ 用当前配置试算</el-button>
+              <el-button v-permission="'score:run'" :loading="running" type="success" plain @click="tryRun">
+                <template #icon><el-icon><VideoPlay /></el-icon></template>
+                用当前配置试算
+              </el-button>
             </div>
             <div v-if="settings.previewExpanded && runRows.length" class="run-table-wrap">
             <el-table :data="runRows" size="small" border height="100%" class="run-table">
@@ -1236,7 +1246,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </p>
           <div class="tech-actions">
             <el-input v-model="techSearch" placeholder="搜索名称/标识/说明/分类" clearable size="small" style="width: 220px" />
-            <el-button v-permission="'indicator:def-manage'" type="primary" plain size="small" @click="openNewDef">＋ 新建自定义指标</el-button>
+            <el-button v-permission="'indicator:def-manage'" type="primary" plain size="small" @click="openNewDef">
+              <template #icon><el-icon><Plus /></el-icon></template>
+              新建自定义指标
+            </el-button>
           </div>
         </div>
         <div class="tech-table-wrap">
@@ -1348,7 +1361,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                     <el-icon><Close /></el-icon>
                   </AppIconButton>
                 </div>
-                <el-button link type="primary" size="small" @click="addDefParam">＋ 参数</el-button>
+                <el-button link type="primary" size="small" @click="addDefParam">
+                  <template #icon><el-icon><Plus /></el-icon></template>
+                  参数
+                </el-button>
               </div>
             </el-form-item>
           </el-form>
@@ -1365,7 +1381,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div class="score-layout pane-fill">
           <aside class="prof-list" v-loading="tProfilesLoading">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newTradeProfile">
-              ＋ 新建方案
+              <template #icon><el-icon><Plus /></el-icon></template>
+              新建方案
             </el-button>
             <AppStateBlock
               v-if="tProfilesError"
@@ -1422,7 +1439,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   <el-radio-button value="AND">且(全满足)</el-radio-button>
                   <el-radio-button value="OR">或(任一)</el-radio-button>
                 </el-radio-group>
-                <el-button v-permission="'trade-profile:preview'" size="small" :loading="previewing === 'buy'" @click="previewSide('buy')">▶ 试算</el-button>
+                <el-button v-permission="'trade-profile:preview'" size="small" :loading="previewing === 'buy'" @click="previewSide('buy')">
+                  <template #icon><el-icon><VideoPlay /></el-icon></template>
+                  试算
+                </el-button>
                 <el-tag v-if="previewHit.buy !== null" type="success" size="small" round>今日命中 {{ previewHit.buy }} 只</el-tag>
               </div>
               <div v-for="(c, i) in buyConds" :key="'b' + i" class="cond-row">
@@ -1455,7 +1475,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 </template>
                 <el-button link type="danger" :disabled="tReadonly" @click="removeCond('buy', i)">删</el-button>
               </div>
-              <el-button size="small" plain :disabled="tReadonly" @click="addCond('buy')">＋ 买入条件</el-button>
+              <el-button size="small" plain :disabled="tReadonly" @click="addCond('buy')">
+                <template #icon><el-icon><Plus /></el-icon></template>
+                买入条件
+              </el-button>
             </div>
 
             <!-- 卖出条件 -->
@@ -1466,7 +1489,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   <el-radio-button value="AND">且(全满足)</el-radio-button>
                   <el-radio-button value="OR">或(任一)</el-radio-button>
                 </el-radio-group>
-                <el-button v-permission="'trade-profile:preview'" size="small" :loading="previewing === 'sell'" @click="previewSide('sell')">▶ 试算</el-button>
+                <el-button v-permission="'trade-profile:preview'" size="small" :loading="previewing === 'sell'" @click="previewSide('sell')">
+                  <template #icon><el-icon><VideoPlay /></el-icon></template>
+                  试算
+                </el-button>
                 <el-tag v-if="previewHit.sell !== null" type="warning" size="small" round>今日命中 {{ previewHit.sell }} 只</el-tag>
               </div>
               <div v-for="(c, i) in sellConds" :key="'s' + i" class="cond-row">
@@ -1499,7 +1525,10 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 </template>
                 <el-button link type="danger" :disabled="tReadonly" @click="removeCond('sell', i)">删</el-button>
               </div>
-              <el-button size="small" plain :disabled="tReadonly" @click="addCond('sell')">＋ 卖出条件</el-button>
+              <el-button size="small" plain :disabled="tReadonly" @click="addCond('sell')">
+                <template #icon><el-icon><Plus /></el-icon></template>
+                卖出条件
+              </el-button>
             </div>
 
             <!-- 兜底 -->
