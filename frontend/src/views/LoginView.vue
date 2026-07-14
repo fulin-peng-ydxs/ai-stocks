@@ -445,11 +445,13 @@ function onSubmit() {
   --login-text-muted: #82939c;
   --login-accent: #b69254;
   --login-accent-strong: #876a3a;
+  --login-accent-readable: var(--login-accent-strong);
   --login-accent-text: #fffdf8;
   --login-captcha-bg: #e9eef1;
   --login-toggle-bg: rgba(255, 255, 255, 0.58);
   --login-divider: rgba(76, 99, 111, 0.18);
   --login-shadow: rgba(16, 35, 46, 0.16);
+  --login-auth-glow: rgba(182, 146, 84, 0.13);
   --login-panel-glow: rgba(39, 105, 126, 0.3);
   --login-brand-text: #f1f5f6;
   --login-brand-accent: #d2b579;
@@ -474,6 +476,7 @@ function onSubmit() {
   transition: background 0.3s, color 0.3s;
 }
 .login-shell.is-dark {
+  /* 晨昏登录页的既有深色是主页夜间配色的视觉基准，不随主页试色反向漂移。 */
   --login-page-bg: #07131d;
   --login-card-bg: rgba(10, 27, 39, 0.9);
   --login-card-edge: rgba(142, 168, 181, 0.18);
@@ -497,36 +500,68 @@ function onSubmit() {
 }
 
 .login-shell.preset-daylight {
-  --login-page-bg: #edf3f5;
-  --login-panel-bg: #e7eff1;
-  --login-panel-deep: #d7e5e9;
-  --login-grid: rgba(50, 101, 120, 0.1);
-  --login-card-bg: rgba(251, 253, 253, 0.92);
-  --login-border-focus: #2c708d;
-  --login-accent: #397f99;
-  --login-accent-strong: #245f78;
-  --login-panel-glow: rgba(72, 137, 158, 0.18);
-  --login-brand-text: #163443;
-  --login-brand-accent: #2c708d;
-  --login-brand-sub: rgba(46, 77, 89, 0.68);
-  --login-brand-muted: rgba(54, 84, 96, 0.48);
-  --login-track: #3b86a0;
-  --login-track-glow: rgba(59, 134, 160, 0.2);
-  --login-logo-start: #4b91a8;
-  --login-logo-end: #286a84;
+  --login-page-bg: #f1f4f9;
+  --login-panel-bg: #f7f9fd;
+  --login-panel-deep: #dfe7f3;
+  --login-grid: rgba(39, 69, 123, 0.08);
+  --login-card-bg: rgba(253, 254, 254, 0.92);
+  --login-card-edge: rgba(255, 255, 255, 0.96);
+  --login-border: #d3ddec;
+  --login-border-focus: #2f5bd3;
+  --login-border-dash: #9facbf;
+  --login-input-bg: rgba(255, 255, 255, 0.66);
+  --login-text: #152137;
+  --login-text-sub: #40516a;
+  --login-text-muted: #63738a;
+  --login-accent: #2f5bd3;
+  --login-accent-strong: #2448ad;
+  --login-captcha-bg: #e9eef7;
+  --login-toggle-bg: rgba(255, 255, 255, 0.72);
+  --login-divider: rgba(42, 65, 104, 0.14);
+  --login-shadow: rgba(24, 43, 82, 0.16);
+  --login-auth-glow: rgba(47, 91, 211, 0.11);
+  --login-panel-glow: rgba(47, 91, 211, 0.17);
+  --login-brand-text: #152137;
+  --login-brand-accent: #2f5bd3;
+  --login-brand-sub: rgba(53, 71, 99, 0.72);
+  --login-brand-muted: rgba(72, 88, 114, 0.50);
+  --login-track: #466ee0;
+  --login-track-glow: rgba(70, 110, 224, 0.24);
+  --login-logo-start: #7f9bea;
+  --login-logo-end: #2f5bd3;
 }
 
 .login-shell.preset-daylight.is-dark {
-  --login-page-bg: #18252c;
-  --login-panel-bg: #1d3039;
-  --login-panel-deep: #12242d;
-  --login-card-bg: rgba(34, 50, 58, 0.92);
-  --login-card-edge: rgba(156, 184, 195, 0.2);
-  --login-border: #3c525c;
+  --login-page-bg: #171b24;
+  --login-panel-bg: #202632;
+  --login-panel-deep: #11151d;
+  --login-grid: rgba(126, 151, 208, 0.07);
+  --login-card-bg: rgba(32, 38, 50, 0.92);
+  --login-card-edge: rgba(101, 115, 139, 0.3);
+  --login-border: #3a4559;
+  --login-border-focus: #6f8fe4;
+  --login-border-dash: #536078;
   --login-input-bg: rgba(255, 255, 255, 0.035);
-  --login-text: #f5f9fa;
-  --login-text-sub: #d1dfe4;
-  --login-text-muted: #92a8b1;
+  --login-text: #f6f8fc;
+  --login-text-sub: #cfd7e5;
+  --login-text-muted: #96a3b7;
+  --login-accent: #496bc2;
+  --login-accent-strong: #3858a7;
+  --login-accent-readable: #91aaf0;
+  --login-captcha-bg: #2a3242;
+  --login-toggle-bg: rgba(32, 38, 50, 0.84);
+  --login-divider: rgba(101, 115, 139, 0.2);
+  --login-shadow: rgba(3, 7, 16, 0.46);
+  --login-auth-glow: rgba(73, 107, 194, 0.11);
+  --login-panel-glow: rgba(73, 107, 194, 0.18);
+  --login-brand-text: #f6f8fc;
+  --login-brand-accent: #b2c3f5;
+  --login-brand-sub: rgba(207, 215, 229, 0.68);
+  --login-brand-muted: rgba(150, 163, 183, 0.50);
+  --login-track: #7694e5;
+  --login-track-glow: rgba(118, 148, 229, 0.24);
+  --login-logo-start: #829ce6;
+  --login-logo-end: #496bc2;
 }
 
 .login-shell.preset-nocturne {
@@ -730,7 +765,7 @@ function onSubmit() {
   padding: 72px clamp(34px, 4vw, 64px) 48px;
   overflow-y: auto;
   background:
-    radial-gradient(circle at 85% 0, rgba(182, 146, 84, 0.13), transparent 28%),
+    radial-gradient(circle at 85% 0, var(--login-auth-glow), transparent 28%),
     var(--login-page-bg);
 }
 .login-controls {
@@ -808,7 +843,7 @@ function onSubmit() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: var(--login-accent-strong);
+  color: var(--login-accent-readable);
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 9px;
   letter-spacing: 0.18em;
@@ -1032,7 +1067,7 @@ function onSubmit() {
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--login-accent-strong);
+  color: var(--login-accent-readable);
   font: inherit;
   cursor: pointer;
 }

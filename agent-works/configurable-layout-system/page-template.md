@@ -14,7 +14,7 @@
 
 1. 判断业务页面类型 → 按 §2 决策选一个**原型**。
 2. 把推荐原型 + 理由告诉用户，确认后开发。
-3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；确需新增时先判断是“普通真实组件”还是“需要进入布局配置的系统组件种类”。
+3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；普通业务命令使用 `el-button`，纯图标操作使用 `AppIconButton`，确需新增时先判断是“普通真实组件”还是“需要进入布局配置的系统组件种类”。
 4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
 5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。页面业务抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`，页面禁止直接使用 `el-drawer`。
 6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；若新增系统组件种类或配置字段，同步 `COMPONENT_CATALOG`、schema、后端规则、pageRegistry 消费和配置中心验证。
@@ -63,6 +63,13 @@
 - 价值态：有数据时必须呈现主体数据、摘要指标、当前过滤条件或来源说明之一。
 - 重复检查：同一区域不能同时渲染表格默认空态和额外 `el-empty`，四态之间必须互斥。
 
+### 控件与操作规范
+- 主操作：每个操作组最多一个 `el-button type="primary"`。
+- 次要 / 危险操作：默认、plain、text / `danger`，危险色仅用于破坏性动作。
+- 纯图标操作：使用 `AppIconButton` 并填写 `label`；图标来自 Element Plus 或项目既有 SVG。
+- 专用原生按钮：仅导航、标签页、登录专用交互可保留，并写明无法复用通用控件的语义理由。
+- 自检：无 `⚙`、`✕`、emoji 图标，无页面私有命令按钮皮肤，无渐变/内阴影/厚投影按钮。
+
 ### 配置设计
 | 类型 | 字段 | 层级 | 落点 | 说明 |
 |---|---|---|---|---|
@@ -100,12 +107,14 @@
 - DESIGN.md `page-registry` 区块：
 - RBAC 菜单/功能点：路由、`_SEED_MENU_TREE`、`_SEED_RESOURCES`、接口守卫、`v-permission`、默认授权决策：
 - 测试：
+- 按钮契约：命令按钮 / 图标按钮选型、每组主按钮数量、loading / disabled / focus 状态：
 
 ### 验收
 - cd frontend && npm test
 - cd frontend && npm run build
 - 视口验证：1100×620 / 1366×768 / 1440×900
 - 检查无整页滚动、无视口高度硬编码、设置抽屉分段正常
+- 检查按钮高度与圆角一致、图标描边一致、顶栏状态项不呈现为悬浮胶囊
 ```
 
 如果计划声明“新增布局原型 / 组件种类 / 组件配置字段”，但没有维护清单，计划视为不完整，不能直接进入开发。
@@ -120,6 +129,7 @@
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段表 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
 | 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑 | `pageRegistry.spec.ts`、页面交互验证 |
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
+| 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
 | 页面抽屉 | `#overlays`、`PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | `PageDrawer.spec.ts`、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 

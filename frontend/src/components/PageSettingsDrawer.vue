@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue'
+import { Close } from '@element-plus/icons-vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
 import { getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
@@ -7,6 +8,7 @@ import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
 import PageDrawer from './PageDrawer.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
+import AppIconButton from './AppIconButton.vue'
 
 /** 抽屉自动渲染所需的配置访问器（即 useRemoteLayoutConfig 的返回子集）。 */
 export interface DrawerConfig {
@@ -88,7 +90,9 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
           <span>{{ props.title || '页面设置' }}</span>
           <span v-if="props.dirty" class="ps-dirty-dot" />
         </div>
-        <button class="ps-close" type="button" aria-label="关闭" @click="emit('update:modelValue', false)">✕</button>
+        <AppIconButton class="ps-close" label="关闭页面设置" size="sm" @click="emit('update:modelValue', false)">
+          <el-icon><Close /></el-icon>
+        </AppIconButton>
       </header>
 
       <!--
@@ -167,7 +171,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
       </div>
 
       <footer class="ps-footer">
-        <button class="ps-reset" type="button" @click="emit('reset')">恢复默认</button>
+        <el-button class="ps-reset" @click="emit('reset')">恢复默认</el-button>
       </footer>
     </div>
   </PageDrawer>
@@ -231,17 +235,10 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
   background: var(--page-settings-accent);
 }
 .ps-close {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
   color: var(--page-settings-text-muted);
-  font-size: 14px;
-  cursor: pointer;
-  transition: background-color .15s ease, color .15s ease;
 }
-.ps-close:hover {
+.ps-close:hover:not(:disabled) {
+  border-color: transparent;
   background: var(--page-settings-seg-hover-bg);
   color: var(--page-settings-text);
 }
@@ -262,17 +259,5 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
 }
 .ps-reset {
   width: 100%;
-  height: 40px;
-  border: 1px solid var(--page-settings-border);
-  border-radius: 10px;
-  background: var(--page-settings-footer-btn-bg);
-  color: var(--page-settings-text);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color .15s ease;
-}
-.ps-reset:hover {
-  background: var(--page-settings-footer-btn-hover-bg);
 }
 </style>

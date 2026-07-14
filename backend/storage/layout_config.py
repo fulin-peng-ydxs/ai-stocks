@@ -204,7 +204,7 @@ BUILTIN_PRESETS: list[dict[str, Any]] = [
     {
         "key": "daylight",
         "name": "日曜",
-        "description": "冷银白与雾蓝构成的明亮研究空间，适合白天长时间阅读。",
+        "description": "铂金银灰、蓝宝石电光与精密石墨构成的高照度研究舱。",
         "config": {"density": "standard"},
     },
     {
@@ -216,7 +216,7 @@ BUILTIN_PRESETS: list[dict[str, Any]] = [
     {
         "key": "balanced",
         "name": "晨昏",
-        "description": "海军蓝与香槟金保持明暗平衡，兼顾日间专注与夜间沉浸。",
+        "description": "日间海军蓝、夜间沿用登录页深蓝黑，以香槟金维持克制的黑金平衡。",
         "config": {"density": "standard"},
     },
 ]

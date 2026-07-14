@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Close } from '@element-plus/icons-vue'
 import {
   copyScoreProfile,
   deleteIndicatorDef,
@@ -27,6 +28,7 @@ import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -1144,7 +1146,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                         <span>→</span>
                         <el-input-number v-model="b[2]" size="small" :controls="false" :disabled="profileReadonly" :min="0" :max="100" style="width: 64px" />
                         <span>分</span>
-                        <el-button link type="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">✕</el-button>
+                        <AppIconButton label="删除分段" size="xs" tone="danger" :disabled="profileReadonly" @click="removeBand(row, bi)">
+                          <el-icon><Close /></el-icon>
+                        </AppIconButton>
                       </div>
                       <el-button link type="primary" size="small" :disabled="profileReadonly" @click="addBand(row)">＋ 段</el-button>
                     </div>
@@ -1340,7 +1344,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   <el-input v-model="p.name" size="small" placeholder="名(同{占位})" style="width: 110px" />
                   <el-input v-model="p.label" size="small" placeholder="中文标签" style="width: 100px" />
                   <el-input-number v-model="p.default" size="small" :controls="false" placeholder="默认" style="width: 80px" />
-                  <el-button link type="danger" @click="removeDefParam(i)">✕</el-button>
+                  <AppIconButton label="删除参数" size="xs" tone="danger" @click="removeDefParam(i)">
+                    <el-icon><Close /></el-icon>
+                  </AppIconButton>
                 </div>
                 <el-button link type="primary" size="small" @click="addDefParam">＋ 参数</el-button>
               </div>

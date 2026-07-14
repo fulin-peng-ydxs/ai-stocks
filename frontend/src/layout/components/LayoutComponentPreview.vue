@@ -7,6 +7,7 @@
  * （requirement §5.2 校验规则）。这是组件目录展示层，不引入运行时配置。
  */
 import { computed } from 'vue'
+import { Close, WarningFilled } from '@element-plus/icons-vue'
 import { previewArchetypeOf, FEEDBACK_DEFAULT_STATE } from '../componentPreview'
 import type { ComponentKind, ComponentState } from '../schema'
 
@@ -29,7 +30,7 @@ const effState = computed<ComponentState>(() => {
     </div>
     <el-empty v-else-if="effState === 'empty'" class="app-empty app-empty--compact" description="暂无数据" />
     <div v-else-if="effState === 'error'" class="cp-state cp-error">
-      <span class="cp-error-icon">⚠</span>
+      <el-icon class="cp-error-icon"><WarningFilled /></el-icon>
       <span>加载失败</span>
       <el-button size="small" text type="primary">重试</el-button>
     </div>
@@ -74,7 +75,7 @@ const effState = computed<ComponentState>(() => {
       </div>
 
       <div v-else-if="archetype === 'overlay'" class="cp-overlay">
-        <div class="cp-ohead"><span /><span class="cp-oclose">✕</span></div>
+        <div class="cp-ohead"><span /><el-icon class="cp-oclose"><Close /></el-icon></div>
         <div class="cp-obody"><span /><span /><span class="short" /></div>
         <div class="cp-ofoot"><span class="cp-btn ghost">取消</span><span class="cp-btn">确定</span></div>
       </div>

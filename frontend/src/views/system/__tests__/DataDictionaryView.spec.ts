@@ -240,7 +240,7 @@ describe('DataDictionaryView', () => {
     const wrapper = await mountView()
     expect(wrapper.text()).not.toContain('启用类型')
     const typeRow = typeRowByText(wrapper, '审计结果')
-    await typeRow.find('button.dict-type-status').trigger('click')
+    await typeRow.find('.dict-type-status').trigger('click')
     await flushPromises()
     expect(dictApi.updateDictType).toHaveBeenLastCalledWith('audit_result', expect.objectContaining({
       name: '审计结果',

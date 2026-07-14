@@ -14,22 +14,22 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
   daylight: {
     key: 'daylight',
     name: '日曜',
-    description: '冷银白与雾蓝构成的明亮研究空间，适合白天长时间阅读。',
+    description: '铂金银灰、蓝宝石电光与精密石墨构成的高照度研究舱。',
     tokens: tokens(
-      { cardRadius: 10, controlRadius: 8, pageGap: 14, cardPadding: 18, tableCellPaddingY: 10 },
+      { cardRadius: 10, controlRadius: 6, pageGap: 14, cardPadding: 18, tableCellPaddingY: 10 },
       {
-        primary: '#2c708d', success: '#238568', warning: '#a8732a', danger: '#c64f57',
-        pageBg: '#edf3f5', surfaceBg: '#fbfcfc', surfaceHover: '#e4edef',
-        border: '#d2dee2', borderStrong: '#adc1c9',
-        text: '#435c67', textStrong: '#102d3b', textMuted: '#7b919a',
-        activeBg: '#dce9ed', submenuBg: '#e8eff1', shadow: 'rgba(24, 58, 72, 0.11)',
+        primary: '#2f5bd3', success: '#187760', warning: '#b84d3d', danger: '#c23e5a',
+        pageBg: '#f1f4f9', surfaceBg: '#fdfefe', surfaceHover: '#e9eef7',
+        border: '#d3ddec', borderStrong: '#9facbf',
+        text: '#40516a', textStrong: '#152137', textMuted: '#63738a',
+        activeBg: '#e3e9fb', submenuBg: '#e9eef7', shadow: 'rgba(24, 43, 82, 0.12)',
       },
       {
-        primary: '#79b4c9', success: '#55b895', warning: '#d2a157', danger: '#e5757c',
-        pageBg: '#18252c', surfaceBg: '#22323a', surfaceHover: '#2c4049',
-        border: '#3c525c', borderStrong: '#687f89',
-        text: '#d1dfe4', textStrong: '#f5f9fa', textMuted: '#92a8b1',
-        activeBg: '#31505c', submenuBg: '#1b2a31', shadow: 'rgba(1, 12, 17, 0.34)',
+        primary: '#496bc2', success: '#368b72', warning: '#c45f50', danger: '#d0526d',
+        pageBg: '#171b24', surfaceBg: '#202632', surfaceHover: '#2a3242',
+        border: '#3a4559', borderStrong: '#65738b',
+        text: '#cfd7e5', textStrong: '#f6f8fc', textMuted: '#96a3b7',
+        activeBg: '#273654', submenuBg: '#11151d', shadow: 'rgba(3, 7, 16, 0.48)',
       },
     ),
     componentDefaults: { density: 'standard', tableSize: 'standard', filterDefaultExpanded: true, drawerSize: 'md' },
@@ -40,7 +40,7 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
     name: '夜航',
     description: '深海蓝、冷青与铂金边界，适合低照度环境和夜间复盘。',
     tokens: tokens(
-      { cardRadius: 8, controlRadius: 7, pageGap: 12, cardPadding: 17, tableCellPaddingY: 10 },
+      { cardRadius: 8, controlRadius: 6, pageGap: 12, cardPadding: 17, tableCellPaddingY: 10 },
       {
         primary: '#227f9d', success: '#248364', warning: '#9d6b28', danger: '#c7515d',
         pageBg: '#e8eef1', surfaceBg: '#f8fafb', surfaceHover: '#dde8ec',
@@ -62,9 +62,9 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
   balanced: {
     key: 'balanced',
     name: '晨昏',
-    description: '海军蓝与香槟金保持明暗平衡，兼顾日间专注与夜间沉浸。',
+    description: '日间海军蓝、夜间沿用登录页深蓝黑，以香槟金维持克制的黑金平衡。',
     tokens: tokens(
-      { cardRadius: 10, controlRadius: 8, pageGap: 13, cardPadding: 18, tableCellPaddingY: 10 },
+      { cardRadius: 10, controlRadius: 6, pageGap: 13, cardPadding: 18, tableCellPaddingY: 10 },
       {
         primary: '#98773f', success: '#2b8769', warning: '#aa742d', danger: '#c7565e',
         pageBg: '#edf1f3', surfaceBg: '#fafcfc', surfaceHover: '#e4eaed',
@@ -74,10 +74,10 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
       },
       {
         primary: '#c4a364', success: '#52b98f', warning: '#d4a45a', danger: '#eb747b',
-        pageBg: '#0a1a25', surfaceBg: '#102631', surfaceHover: '#193540',
-        border: '#304a56', borderStrong: '#687e87',
-        text: '#c4d2d8', textStrong: '#f3f7f8', textMuted: '#8197a1',
-        activeBg: '#3b3b34', submenuBg: '#0c202a', shadow: 'rgba(1, 10, 15, 0.42)',
+        pageBg: '#07131d', surfaceBg: '#0a1b27', surfaceHover: '#14232a',
+        border: '#343a3b', borderStrong: '#716d63',
+        text: '#c9d0d3', textStrong: '#f4f1e8', textMuted: '#87949b',
+        activeBg: '#302d25', submenuBg: '#081820', shadow: 'rgba(0, 0, 0, 0.5)',
       },
     ),
     componentDefaults: { density: 'standard', tableSize: 'standard', filterDefaultExpanded: true, drawerSize: 'md' },

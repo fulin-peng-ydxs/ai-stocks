@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Calendar, Clock, Refresh } from '@element-plus/icons-vue'
+import { Calendar, Clock, Close, Refresh } from '@element-plus/icons-vue'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
 import {
   useAppNavigation,
@@ -26,6 +26,7 @@ import SideMenu from '@/components/SideMenu.vue'
 import TopNavigation from '@/components/TopNavigation.vue'
 import WorkspaceTabs from '@/components/WorkspaceTabs.vue'
 import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 
 const { isDark } = useTheme()
 const { navigationMode, setNavigationMode } = useAppNavigation()
@@ -301,14 +302,20 @@ async function onLogout() {
         >
           <template #reference>
             <button
-              class="topbar-action topbar-action--wide topbar-action--trade-date"
+              class="topbar-status"
               :class="`is-${marketStatusTone}`"
               type="button"
               aria-label="交易数据状态"
             >
               <el-icon><Calendar /></el-icon>
-              <span class="topbar-action-label">交易日 {{ latestTradeDateText }}</span>
-              <span v-if="qualitySignalText" class="topbar-action-value">{{ qualitySignalText }}</span>
+              <span class="topbar-status-copy">
+                <span class="topbar-status-label">交易日</span>
+                <span class="topbar-status-date">{{ latestTradeDateText }}</span>
+              </span>
+              <span class="topbar-status-signal" aria-hidden="true">
+                <i class="topbar-status-dot" />
+                <span v-if="qualitySignalText">{{ qualitySignalText }}</span>
+              </span>
             </button>
           </template>
 
@@ -318,9 +325,9 @@ async function onLogout() {
                 <div class="topbar-panel-title">交易数据状态</div>
                 <div class="topbar-panel-sub">EOD 数据、质量与最近更新</div>
               </div>
-              <button class="topbar-refresh" type="button" aria-label="刷新状态" @click="refreshShellStatus">
+              <AppIconButton label="刷新交易数据状态" size="sm" variant="soft" @click="refreshShellStatus">
                 <el-icon><Refresh /></el-icon>
-              </button>
+              </AppIconButton>
             </header>
 
             <div class="topbar-metrics">
@@ -354,22 +361,25 @@ async function onLogout() {
             </div>
 
             <footer class="topbar-panel-actions">
-              <button type="button" @click="goTo('/data/overview')">数据概览</button>
-              <button type="button" @click="goTo('/data/quality')">质量检查</button>
+              <el-button size="small" plain @click="goTo('/data/overview')">数据概览</el-button>
+              <el-button size="small" plain @click="goTo('/data/quality')">质量检查</el-button>
             </footer>
           </div>
         </el-popover>
-        <button
+        <div
           v-else
-          class="topbar-action topbar-action--wide topbar-action--trade-date is-readonly"
+          class="topbar-status is-readonly"
           :class="`is-${marketStatusTone}`"
-          type="button"
+          role="status"
           aria-label="交易日状态（无详情权限）"
-          disabled
         >
           <el-icon><Calendar /></el-icon>
-          <span class="topbar-action-label">交易日 {{ latestTradeDateText }}</span>
-        </button>
+          <span class="topbar-status-copy">
+            <span class="topbar-status-label">交易日</span>
+            <span class="topbar-status-date">{{ latestTradeDateText }}</span>
+          </span>
+          <span class="topbar-status-signal" aria-hidden="true"><i class="topbar-status-dot" /></span>
+        </div>
 
         <el-popover
           v-if="canReadTasks"
@@ -379,14 +389,20 @@ async function onLogout() {
           popper-class="topbar-popover"
         >
           <template #reference>
-            <button
-              class="topbar-action topbar-action--icon"
+            <AppIconButton
+              class="topbar-tool"
               :class="`is-${taskTone}`"
-              type="button"
-              aria-label="任务中心"
+              label="任务中心"
             >
               <el-icon><Clock /></el-icon>
-            </button>
+              <template #badge>
+                <span
+                  class="topbar-tool-signal"
+                  :class="[{ 'is-dot': !taskSignalText }, `is-${taskTone}`]"
+                  aria-hidden="true"
+                >{{ taskSignalText }}</span>
+              </template>
+            </AppIconButton>
           </template>
 
           <div class="topbar-panel">
@@ -395,9 +411,9 @@ async function onLogout() {
                 <div class="topbar-panel-title">任务中心</div>
                 <div class="topbar-panel-sub">采集、质检、修复任务概览</div>
               </div>
-              <button class="topbar-refresh" type="button" aria-label="刷新任务" @click="refreshShellStatus">
+              <AppIconButton label="刷新任务" size="sm" variant="soft" @click="refreshShellStatus">
                 <el-icon><Refresh /></el-icon>
-              </button>
+              </AppIconButton>
             </header>
 
             <div v-if="shellTasks.length" class="topbar-task-list">
@@ -413,16 +429,15 @@ async function onLogout() {
             <div v-else class="topbar-empty">暂无任务记录</div>
 
             <footer class="topbar-panel-actions">
-              <button type="button" @click="goTo('/data/ingest')">查看任务</button>
-              <button type="button" @click="goTo('/data/schedule')">任务调度</button>
+              <el-button size="small" plain @click="goTo('/data/ingest')">查看任务</el-button>
+              <el-button size="small" plain @click="goTo('/data/schedule')">任务调度</el-button>
             </footer>
           </div>
         </el-popover>
 
-        <button
-          class="topbar-action topbar-action--icon topbar-action--appearance"
-          type="button"
-          aria-label="外观"
+        <AppIconButton
+          class="topbar-tool topbar-tool--appearance"
+          label="视觉环境"
           @click="appearanceDrawerVisible = true"
         >
           <svg class="skin-glyph" viewBox="0 0 24 24" aria-hidden="true">
@@ -435,11 +450,11 @@ async function onLogout() {
             <circle class="skin-glyph-swatch skin-glyph-swatch--success" cx="12" cy="13.5" r="1.35" />
             <circle class="skin-glyph-swatch skin-glyph-swatch--warning" cx="14.8" cy="13.5" r="1.35" />
           </svg>
-        </button>
+        </AppIconButton>
 
-        <button class="user-entry" type="button" aria-label="用户中心" @click="userDrawerVisible = true">
+        <AppIconButton class="user-entry" label="用户中心" @click="userDrawerVisible = true">
           <span class="user-avatar">{{ avatarText }}</span>
-        </button>
+        </AppIconButton>
       </div>
     </el-header>
 
@@ -474,7 +489,9 @@ async function onLogout() {
       <div class="drawer-card">
         <header class="drawer-head">
           <span class="drawer-title">用户中心</span>
-          <button class="drawer-close" type="button" aria-label="关闭" @click="userDrawerVisible = false">✕</button>
+          <AppIconButton class="drawer-close" label="关闭用户中心" size="sm" @click="userDrawerVisible = false">
+            <el-icon><Close /></el-icon>
+          </AppIconButton>
         </header>
 
         <div class="drawer-body">
@@ -486,9 +503,9 @@ async function onLogout() {
             </div>
           </div>
 
-          <button class="drawer-logout" type="button" :disabled="loggingOut" @click="onLogout">
-            {{ loggingOut ? '退出中…' : '退出登录' }}
-          </button>
+          <el-button class="drawer-logout" type="danger" plain :loading="loggingOut" @click="onLogout">
+            退出登录
+          </el-button>
         </div>
       </div>
     </el-drawer>
@@ -500,16 +517,18 @@ async function onLogout() {
             <div class="drawer-title">视觉环境</div>
             <div class="drawer-subtitle">选择阅读光线与研究空间气质</div>
           </div>
-          <button class="drawer-close" type="button" aria-label="关闭" @click="appearanceDrawerVisible = false">✕</button>
+          <AppIconButton class="drawer-close" label="关闭视觉环境" size="sm" @click="appearanceDrawerVisible = false">
+            <el-icon><Close /></el-icon>
+          </AppIconButton>
         </header>
 
         <div class="drawer-body">
           <div class="appearance-mode-switch" aria-label="明暗模式">
-            <button type="button" :class="{ 'is-active': !isDark }" :aria-pressed="!isDark" @click="selectThemeMode(false)">
+            <button class="appearance-mode-option" type="button" :class="{ 'is-active': !isDark }" :aria-pressed="!isDark" @click="selectThemeMode(false)">
               <span class="mode-orb mode-orb--day" />
               <span><strong>白天</strong><small>清晰阅读</small></span>
             </button>
-            <button type="button" :class="{ 'is-active': isDark }" :aria-pressed="isDark" @click="selectThemeMode(true)">
+            <button class="appearance-mode-option" type="button" :class="{ 'is-active': isDark }" :aria-pressed="isDark" @click="selectThemeMode(true)">
               <span class="mode-orb mode-orb--night" />
               <span><strong>夜间</strong><small>低照沉浸</small></span>
             </button>
@@ -684,7 +703,7 @@ async function onLogout() {
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
   min-width: 0;
   max-width: 100%;
@@ -692,88 +711,127 @@ async function onLogout() {
   position: relative;
   z-index: 1;
 }
-.topbar-action {
-  position: relative;
-  height: 36px;
-  border: 0;
+.topbar-status {
+  height: 32px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--layout-control-radius, 6px);
   background: transparent;
   color: var(--chrome-text);
-  border-radius: var(--layout-control-radius, 6px);
-  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+button.topbar-status {
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+}
+button.topbar-status:hover {
+  border-color: color-mix(in srgb, var(--chrome-border-strong) 78%, transparent);
+  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 58%, transparent);
+  color: var(--chrome-text-strong);
+}
+button.topbar-status:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--shell-accent) 18%, transparent);
+}
+.topbar-status.is-readonly {
+  cursor: default;
+}
+.topbar-status > .el-icon {
+  font-size: 15px;
+  color: var(--chrome-text-muted);
+}
+.topbar-status-copy {
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.topbar-status-label {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--chrome-text-muted);
+  font-weight: 600;
+}
+.topbar-status-date {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--chrome-text);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+.topbar-status-signal {
+  min-width: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--chrome-text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.topbar-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--chrome-text-muted);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--chrome-text-muted) 12%, transparent);
+}
+.topbar-status.is-success .topbar-status-dot { background: var(--el-color-success); }
+.topbar-status.is-warning .topbar-status-dot { background: var(--el-color-warning); }
+.topbar-status.is-danger .topbar-status-dot { background: var(--el-color-danger); }
+.topbar-status.is-success .topbar-status-signal { color: var(--el-color-success); }
+.topbar-status.is-warning .topbar-status-signal { color: var(--el-color-warning); }
+.topbar-status.is-danger .topbar-status-signal { color: var(--el-color-danger); }
+.topbar-tool {
+  color: var(--chrome-text);
+}
+.topbar-tool:hover:not(:disabled) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 58%, transparent);
+  color: var(--chrome-text-strong);
+}
+.topbar-tool .el-icon {
+  font-size: 17px;
+}
+.topbar-tool-signal {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border: 2px solid var(--chrome-bg);
+  border-radius: 999px;
+  background: var(--chrome-text-muted);
+  color: var(--chrome-bg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 800;
 }
-.topbar-action:hover {
-  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 58%, transparent);
-  color: var(--chrome-text-strong);
-}
-.topbar-action:disabled,
-.topbar-action.is-readonly {
-  cursor: default;
-}
-.topbar-action:disabled:hover,
-.topbar-action.is-readonly:hover {
-  background: transparent;
-  color: var(--chrome-text);
-}
-.topbar-action:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--shell-accent) 62%, transparent);
-  outline-offset: 2px;
-}
-.topbar-action--wide {
-  min-width: 0;
-}
-.topbar-action--trade-date {
-  height: 38px;
-  min-width: 174px;
-  margin-right: 8px;
-  padding: 0 14px;
-  gap: 7px;
-  border: 1px solid color-mix(in srgb, var(--chrome-border-strong) 72%, var(--shell-accent) 28%);
-  border-radius: 9px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--chrome-bg-soft) 88%, white 12%), var(--chrome-bg-soft)),
-    color-mix(in srgb, var(--shell-accent-faint) 38%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 20%, transparent);
-}
-.topbar-action--trade-date:hover,
-.topbar-action--trade-date.is-readonly:hover {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--chrome-bg-soft-hover) 86%, white 14%), var(--chrome-bg-soft-hover)),
-    color-mix(in srgb, var(--shell-accent-faint) 44%, transparent);
-  border-color: color-mix(in srgb, var(--shell-accent) 34%, var(--chrome-border-hover));
-}
-.topbar-action--trade-date .el-icon {
-  font-size: 16px;
-}
-.topbar-action--icon {
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
+.topbar-tool-signal.is-dot {
+  top: 4px;
+  right: 3px;
+  min-width: 7px;
+  width: 7px;
+  height: 7px;
   padding: 0;
+  border-width: 1px;
 }
-.topbar-action--icon > .el-icon {
-  font-size: 21px;
-}
-.topbar-action--appearance {
-  margin-left: -4px;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--chrome-text);
-  box-shadow: none;
-}
-.topbar-action--appearance:hover {
-  background: color-mix(in srgb, var(--chrome-bg-soft-hover) 58%, transparent);
-  color: var(--chrome-text-strong);
-}
+.topbar-tool-signal.is-success { background: var(--el-color-success); }
+.topbar-tool-signal.is-warning { background: var(--el-color-warning); }
+.topbar-tool-signal.is-danger { background: var(--el-color-danger); }
+.topbar-tool-signal.is-muted { background: var(--chrome-text-muted); }
 .skin-glyph {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   display: block;
 }
 .skin-glyph-body {
@@ -801,73 +859,28 @@ async function onLogout() {
 .skin-glyph-swatch--warning {
   fill: currentColor;
 }
-.topbar-action-label {
-  font-size: 13px;
-  font-weight: 600;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.topbar-action-value {
-  font-size: 12px;
-  color: var(--chrome-text-muted);
-  font-weight: 600;
-}
-.topbar-action.is-success > .el-icon {
-  color: var(--el-color-success);
-}
-.topbar-action--icon.is-success > .el-icon {
-  color: var(--chrome-text);
-}
-.topbar-action.is-warning > .el-icon {
-  color: var(--el-color-warning);
-}
-.topbar-action.is-danger > .el-icon {
-  color: var(--el-color-danger);
-}
-.topbar-action.is-success .topbar-action-value {
-  color: var(--el-color-success);
-}
-.topbar-action.is-warning .topbar-action-value {
-  color: var(--el-color-warning);
-}
-.topbar-action.is-danger .topbar-action-value {
-  color: var(--el-color-danger);
-}
 .user-entry {
-  border: 0;
-  background: transparent;
   color: var(--chrome-text);
-  border-radius: 999px;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
-  min-width: 0;
-  flex: none;
+  border-radius: 50%;
 }
-.user-entry:hover {
+.user-entry:hover:not(:disabled) {
+  border-color: transparent;
   background: color-mix(in srgb, var(--chrome-bg-soft-hover) 62%, transparent);
   color: var(--chrome-text-strong);
 }
 .user-avatar {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: linear-gradient(135deg, color-mix(in srgb, var(--shell-accent) 72%, white 28%), var(--shell-accent));
   color: var(--shell-control-mark);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   flex-shrink: 0;
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--shell-accent) 20%, transparent);
+  box-shadow: 0 3px 9px color-mix(in srgb, var(--shell-accent) 18%, transparent);
 }
 :global(.topbar-popover) {
   --el-popover-padding: 0;
@@ -900,24 +913,6 @@ async function onLogout() {
   font-size: 12px;
   line-height: 18px;
   color: var(--el-text-color-secondary);
-}
-.topbar-refresh {
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--layout-control-radius, 6px);
-  background: var(--el-fill-color-extra-light);
-  color: var(--el-text-color-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}
-.topbar-refresh:hover {
-  background: var(--el-fill-color-light);
-  border-color: var(--el-border-color-darker);
-  color: var(--el-text-color-primary);
 }
 .topbar-metrics {
   display: grid;
@@ -1036,26 +1031,6 @@ async function onLogout() {
   gap: 8px;
   padding-top: 2px;
 }
-.topbar-panel-actions button {
-  height: 30px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--layout-control-radius, 6px);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  padding: 0 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}
-.topbar-panel-actions button:hover {
-  background: var(--el-fill-color-light);
-  border-color: var(--el-border-color-darker);
-  color: var(--el-text-color-primary);
-}
 :deep(.user-drawer),
 :deep(.appearance-drawer) {
   --el-drawer-bg-color: transparent;
@@ -1110,17 +1085,10 @@ async function onLogout() {
   font-size: 12px;
 }
 .drawer-close {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
   color: var(--page-settings-text-muted);
-  font-size: 14px;
-  cursor: pointer;
-  transition: background-color .15s ease, color .15s ease;
 }
-.drawer-close:hover {
+.drawer-close:hover:not(:disabled) {
+  border-color: transparent;
   background: var(--page-settings-seg-hover-bg);
   color: var(--page-settings-text);
 }
@@ -1531,26 +1499,9 @@ async function onLogout() {
   background: var(--page-settings-accent);
   color: var(--shell-control-mark);
 }
-/* 退出登录（stage2·T9）：抽屉底部危险操作，红色描边区分常规项 */
 .drawer-logout {
   margin-top: auto;
-  border: 1px solid var(--el-color-danger);
-  background: transparent;
-  color: var(--el-color-danger);
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-.drawer-logout:hover {
-  background: var(--el-color-danger);
-  color: #fff;
-}
-.drawer-logout:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  width: 100%;
 }
 .main {
   background: transparent;
@@ -1589,23 +1540,14 @@ async function onLogout() {
     padding-right: 10px;
     gap: 6px;
   }
-  .topbar-action {
-    width: 34px;
-    min-width: 34px;
+  .topbar-status {
+    width: 32px;
     padding: 0;
+    justify-content: center;
   }
-  .topbar-action-label,
-  .topbar-action-value {
+  .topbar-status-copy,
+  .topbar-status-signal {
     display: none;
-  }
-  .user-entry {
-    width: 34px;
-    height: 34px;
-    padding: 0;
-  }
-  .user-avatar {
-    width: 28px;
-    height: 28px;
   }
 }
 </style>

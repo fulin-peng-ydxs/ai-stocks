@@ -229,7 +229,7 @@ function setSort(slotId: string, field: string, order: string): void {
                 :source="srcOf(s.slotId, 'defaultSort')!"
                 :values="srcValuesOf(s.slotId, 'defaultSort')"
               />
-              <button v-if="clearable && isOverridden(s.slotId, 'defaultSort')" type="button" class="ca-clear" @click="clearField(s.slotId, 'defaultSort')">不覆盖</button>
+              <el-button v-if="clearable && isOverridden(s.slotId, 'defaultSort')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'defaultSort')">不覆盖</el-button>
             </span>
           </div>
           <PageSegmented
@@ -270,7 +270,7 @@ function setSort(slotId: string, field: string, order: string): void {
                 :source="srcOf(s.slotId, 'defaultSort')!"
                 :values="srcValuesOf(s.slotId, 'defaultSort')"
               />
-              <button v-if="clearable && isOverridden(s.slotId, 'defaultSort')" type="button" class="ca-clear" @click="clearField(s.slotId, 'defaultSort')">不覆盖</button>
+              <el-button v-if="clearable && isOverridden(s.slotId, 'defaultSort')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'defaultSort')">不覆盖</el-button>
             </span>
           </div>
           <PageSegmented
@@ -306,7 +306,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'border')!"
               :values="srcValuesOf(s.slotId, 'border')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'border')" type="button" class="ca-clear" @click="clearField(s.slotId, 'border')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'border')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'border')">不覆盖</el-button>
           </span>
         </div>
         <el-switch
@@ -325,7 +325,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'pageSize')!"
               :values="srcValuesOf(s.slotId, 'pageSize')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'pageSize')" type="button" class="ca-clear" @click="clearField(s.slotId, 'pageSize')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'pageSize')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'pageSize')">不覆盖</el-button>
           </span>
         </div>
         <PageSegmented
@@ -344,7 +344,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'defaultActive')!"
               :values="srcValuesOf(s.slotId, 'defaultActive')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'defaultActive')" type="button" class="ca-clear" @click="clearField(s.slotId, 'defaultActive')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'defaultActive')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'defaultActive')">不覆盖</el-button>
           </span>
         </div>
         <PageSegmented
@@ -363,7 +363,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'size')!"
               :values="srcValuesOf(s.slotId, 'size')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'size')" type="button" class="ca-clear" @click="clearField(s.slotId, 'size')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'size')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'size')">不覆盖</el-button>
           </span>
         </div>
         <PageSegmented
@@ -382,7 +382,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'bodyScroll')!"
               :values="srcValuesOf(s.slotId, 'bodyScroll')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'bodyScroll')" type="button" class="ca-clear" @click="clearField(s.slotId, 'bodyScroll')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'bodyScroll')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'bodyScroll')">不覆盖</el-button>
           </span>
         </div>
         <el-switch
@@ -404,7 +404,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'hiddenColumns')!"
               :values="srcValuesOf(s.slotId, 'hiddenColumns')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'hiddenColumns')" type="button" class="ca-clear" @click="clearField(s.slotId, 'hiddenColumns')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'hiddenColumns')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'hiddenColumns')">不覆盖</el-button>
           </span>
         </template>
         <PageToggleRow
@@ -426,7 +426,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'collapsibleSections')!"
               :values="srcValuesOf(s.slotId, 'collapsibleSections')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'collapsibleSections')" type="button" class="ca-clear" @click="clearField(s.slotId, 'collapsibleSections')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'collapsibleSections')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'collapsibleSections')">不覆盖</el-button>
           </span>
         </div>
         <el-switch
@@ -445,7 +445,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'defaultCollapsed')!"
               :values="srcValuesOf(s.slotId, 'defaultCollapsed')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'defaultCollapsed')" type="button" class="ca-clear" @click="clearField(s.slotId, 'defaultCollapsed')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'defaultCollapsed')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'defaultCollapsed')">不覆盖</el-button>
           </span>
         </div>
         <el-checkbox-group
@@ -467,7 +467,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'showGroupDescription')!"
               :values="srcValuesOf(s.slotId, 'showGroupDescription')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'showGroupDescription')" type="button" class="ca-clear" @click="clearField(s.slotId, 'showGroupDescription')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'showGroupDescription')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'showGroupDescription')">不覆盖</el-button>
           </span>
         </div>
         <el-switch
@@ -486,7 +486,7 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'showSectionDescription')!"
               :values="srcValuesOf(s.slotId, 'showSectionDescription')"
             />
-            <button v-if="clearable && isOverridden(s.slotId, 'showSectionDescription')" type="button" class="ca-clear" @click="clearField(s.slotId, 'showSectionDescription')">不覆盖</button>
+            <el-button v-if="clearable && isOverridden(s.slotId, 'showSectionDescription')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'showSectionDescription')">不覆盖</el-button>
           </span>
         </div>
         <el-switch
@@ -543,15 +543,7 @@ function setSort(slotId: string, field: string, order: string): void {
   font-weight: 600;
 }
 .ca-clear {
-  border: none;
-  background: transparent;
-  padding: 0;
-  font-size: 12px;
   color: var(--page-settings-accent);
-  cursor: pointer;
-}
-.ca-clear:hover {
-  text-decoration: underline;
 }
 /* 页面布局「点击预览即配置」聚焦高亮 */
 .ca-highlight {

@@ -504,16 +504,17 @@ onBeforeUnmount(() => {
                 <span class="type-main">
                   <b>{{ row.name }}</b>
                 </span>
-                <button
-                  type="button"
+                <el-switch
                   class="dict-type-status"
-                  :class="{ enabled: row.enabled, disabled: !row.enabled }"
-                  :aria-pressed="row.enabled"
-                  :disabled="togglingTypeCode === row.code"
-                  @click.stop="toggleType(row, !row.enabled)"
-                >
-                  {{ row.enabled ? '启用' : '停用' }}
-                </button>
+                  :model-value="row.enabled"
+                  :loading="togglingTypeCode === row.code"
+                  inline-prompt
+                  active-text="启"
+                  inactive-text="停"
+                  aria-label="切换字典类型状态"
+                  @click.stop
+                  @update:model-value="(value: boolean) => toggleType(row, value)"
+                />
               </div>
             </template>
           </div>
@@ -793,31 +794,8 @@ onBeforeUnmount(() => {
 }
 .dict-type-status {
   flex: none;
-  min-width: 42px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
-  background: var(--el-bg-color);
-  padding: 1px 7px;
-  color: var(--el-text-color-secondary);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 20px;
-}
-.dict-type-status.enabled {
-  border-color: color-mix(in srgb, var(--el-color-success) 42%, transparent);
-  color: var(--el-color-success);
-}
-.dict-type-status.disabled {
-  border-color: var(--el-border-color);
-  color: var(--el-text-color-secondary);
-}
-.dict-type-status:hover:not(:disabled) {
-  background: var(--el-fill-color-light);
-  border-color: currentColor;
-}
-.dict-type-status:disabled {
-  cursor: wait;
-  opacity: 0.62;
+  --el-switch-on-color: var(--el-color-success);
+  --el-switch-off-color: var(--el-fill-color-dark);
 }
 .dict-current {
   flex: 1 1 150px;

@@ -32,6 +32,11 @@ typography:
     fontSize: 14px
     fontWeight: 400
     lineHeight: 22px
+  button-md:
+    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
+    fontSize: 13px
+    fontWeight: 600
+    lineHeight: 20px
   label-sm:
     fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
     fontSize: 12px
@@ -62,6 +67,15 @@ components:
     padding: 16px
   control-default:
     borderColor: "{colors.border}"
+    rounded: "{rounded.md}"
+  command-button:
+    height: 32px
+    paddingX: 12px
+    gap: 6px
+    rounded: "{rounded.md}"
+  icon-button:
+    size: 32px
+    glyphSize: 16px
     rounded: "{rounded.md}"
   data-table:
     cellPaddingY: 10px
@@ -133,9 +147,9 @@ Key Characteristics：
 
 预设规则：
 
-- `daylight`（日曜）：冷银白与雾蓝，优先服务白天长时间阅读。
+- `daylight`（日曜）：铂金银灰、瓷白表面、蓝宝石电光与精密石墨构成高照度研究舱；不使用米黄、香槟、金色、铜色或琥珀色表现高级感，材质层级由明度、银灰边界与克制冷影建立，蓝色承担轨迹信号与精密交互，优先服务白天长时间阅读。其暗色模式使用蓝黑石墨、银灰边界与蓝宝石信号，不得回落为夜航的深海青蓝色系。
 - `nocturne`（夜航）：深海蓝、冷青与铂金边界，优先服务低照度夜间复盘；禁止使用纯黑大底。
-- `balanced`（晨昏）：海军蓝与香槟金保持明暗平衡，是默认研究空间。
+- `balanced`（晨昏）：日间以海军蓝与香槟金保持明暗平衡；夜间以登录交互区既有的深蓝黑为视觉基准，主页画布和表面分别对齐登录背景与登录卡片，并配合暖石墨边界和小面积香槟金信号建立克制的黑金层级。登录页颜色不得因主页试色而反向漂移。
 - 明暗模式与三套预设正交；每套仍需维护完整 `light` / `dark` token，并在切换时保持控件对比度。
 - 存量 `technology` / `finance` 页面引用升级时迁移到 `balanced`；其预设默认密度从 `compact` 回落为 `standard`，页面层或用户层已有 `density` 覆盖继续保留。
 - 新增或调整预设必须维护 `light`、`dark`、共享形态 token，并通过 `presets.spec.ts`。
@@ -211,6 +225,7 @@ Key Characteristics：
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用 |
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用 |
 | `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 多个输入、选择器、按钮组成的横向行优先使用 `AppControlRow`；存在“说明文字 + 控件”时必须用 `AppControlItem` 包裹，避免标签和控件被拆到不同行；只有明确需要均分或撑满时才传 `fill` 或让具体 `AppControlItem` 设置 `grow` |
+| `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
 | `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽和行点击样式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 登记为 `data-table`/`wide-table` 的主列表、成长表和宽表优先复用；复杂单元格继续由业务页通过列插槽声明，不在页面复制表格外壳、分页容器和排序表头样式 |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚优先复用 |
@@ -232,11 +247,16 @@ Key Characteristics：
 
 ### 按钮与输入
 
-- 主命令用 Element Plus `primary`，危险操作用 `danger`，普通工具用默认或 plain。
-- 输入框、选择器、按钮统一使用 `--layout-control-radius`，不在页面内另写圆角体系。
+- 普通业务命令统一使用 Element Plus `<el-button>`：主命令用 `primary`，危险操作用 `danger`，次要命令用默认、plain、text 或 link；禁止页面再封装一套并行命令按钮。
+- 纯图标操作统一使用 `AppIconButton`，默认 `md=32px / glyph=16px`，紧凑区用 `sm=28px / glyph=14px`，微型附属操作用 `xs=24px / glyph=12px`。所有纯图标操作必须提供可访问 `label`。
+- 标准命令按钮为 `32px` 高、左右 padding `12px`、文字 `13px / 600`、图文间距 `6px`；small 为 `28px`、large 为 `36px`。输入框、选择器、按钮统一使用 `--layout-control-radius=6px`，主题只改变颜色和材质，不改变基础控件形态。
+- 同一操作组最多一个 primary；次要动作降为默认、plain 或 text。危险色只用于删除、退出、停用等破坏性动作，不能用来制造普通视觉重点。
+- 工作区按钮保持平面、清晰边界和轻状态反馈，不使用渐变、高光内阴影、厚重投影或装饰性位移。hover、focus-visible、disabled、loading 必须可辨；loading 使用 Element Plus `:loading`。
+- 图标统一使用 Element Plus 图标或项目既有 SVG，同一区域保持相同描边气质；禁止用 `⚙`、`✕`、emoji 等 Unicode 字符充当界面图标。
+- 自定义原生 `<button>` 仅保留给导航、标签页关闭、登录主视觉切换等具有独立语义和结构的专用控件，并在实现中保持专用 class；普通命令和纯图标操作不得借此绕过统一组件。
 - 夜间模式的复选框、单选框、输入边界和表格行悬浮必须使用强边框或主色反馈；空框、选中、禁用三态均需肉眼可辨。
-- 图标按钮优先使用图标或现有组件，不要用冗长文字按钮替代明确符号。
 - 工具栏按钮应贴近其影响区域，避免页面右上角堆积所有操作。
+- 顶栏状态和工具按 `32px` 控件基线对齐、间距 `6px`。交易日等状态项使用“图标 + 弱标签 + 强值 + 5px 状态点”的轻量结构；无详情权限时使用只读 `role=status`，不得伪装成禁用按钮，也不得使用永久渐变、内阴影或大胶囊底板。
 
 ### 表格与列表
 
@@ -401,6 +421,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 页面和主要组件必须声明 `ready / loading / empty / error` 四态处理；空态、错误态和加载态不得用彼此替代。
 - 列表页分页/排序走服务端；筛选变更自动触发；多选跨分页/搜索累积。
 - 列表页筛选下拉优先复用 `AppFilterSelect`；默认多选、可搜索、可清空，业务只允许单选时必须传 `multiple=false`，最多展示 3 个选中标签并在溢出时提前折叠，选择变更即向页面发出筛选事件，页面负责触发服务端查询。
+- 普通命令使用 `el-button`，纯图标操作使用 `AppIconButton`；同一操作组只保留一个主按钮，并保持尺寸、图标和状态反馈一致。
 - 说明性/描述性文字只要不是极短标签或必要操作指引/实时状态说明，收进 `HelpTip` / `HelpHint`。
 - 新增可配置能力必须同时具备组件能力事实源、字段配置事实源、页面消费事实源。
 
@@ -416,6 +437,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 禁止让 tooltip、popover、说明提示溢出到左侧菜单。
 - 禁止接口失败只弹 toast 后留下空白区域；失败区域必须有可见错误态。
 - 禁止把 403、接口错误或未加载完成写成“暂无数据”。
+- 禁止页面为普通命令另写原生按钮皮肤，禁止用 Unicode / emoji 代替图标，禁止顶栏状态项使用永久渐变、内阴影或悬浮胶囊制造层级。
 
 ### 7.3 组件特性配置治理
 
@@ -459,6 +481,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
 | 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑 | `pageRegistry.spec.ts`、页面交互验证 |
 | 新真实复用组件 | 本文件“真实复用组件清单”、组件文件、至少一个消费页面；如进入布局配置再同步系统组件种类和字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
+| 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、本节按钮规范；专用原生按钮例外同步契约允许项 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 
 ## 8. Responsive Behavior

@@ -20,6 +20,14 @@ body {
   --layout-page-gap: 12px;
   --layout-card-padding: 16px;
   --layout-table-cell-padding-y: 10px;
+  --app-control-height-xs: 24px;
+  --app-control-height-sm: 28px;
+  --app-control-height-md: 32px;
+  --app-control-height-lg: 36px;
+  --app-button-padding-x: 12px;
+  --app-button-font-size: 13px;
+  --app-button-font-weight: 600;
+  --app-button-icon-size: 15px;
   --chrome-bg: #f5f7fb;
   --chrome-bg-soft: #ffffff;
   --chrome-bg-soft-hover: #edf3ff;
@@ -344,6 +352,55 @@ html[data-layout-preset] .el-button,
 html[data-layout-preset] .el-input__wrapper,
 html[data-layout-preset] .el-select__wrapper {
   border-radius: var(--layout-control-radius);
+}
+/* 全站命令按钮契约：业务按钮继续复用 Element Plus，尺寸、字重、图标和状态反馈统一在此收口。 */
+html[data-layout-preset] .el-button {
+  height: var(--app-control-height-md);
+  padding: 0 var(--app-button-padding-x);
+  gap: 6px;
+  font-size: var(--app-button-font-size);
+  font-weight: var(--app-button-font-weight);
+  box-shadow: none;
+  transition:
+    background-color .15s ease,
+    border-color .15s ease,
+    color .15s ease,
+    box-shadow .15s ease;
+}
+html[data-layout-preset] .el-button.el-button--small {
+  height: var(--app-control-height-sm);
+  padding: 0 10px;
+  font-size: 12px;
+}
+html[data-layout-preset] .el-button.el-button--large {
+  height: var(--app-control-height-lg);
+  padding: 0 14px;
+  font-size: 14px;
+}
+html[data-layout-preset] .el-button.is-circle,
+html[data-layout-preset] .el-button.is-square {
+  width: var(--app-control-height-md);
+  padding: 0;
+}
+html[data-layout-preset] .el-button.el-button--small.is-circle,
+html[data-layout-preset] .el-button.el-button--small.is-square {
+  width: var(--app-control-height-sm);
+}
+html[data-layout-preset] .el-button.el-button--large.is-circle,
+html[data-layout-preset] .el-button.el-button--large.is-square {
+  width: var(--app-control-height-lg);
+}
+html[data-layout-preset] .el-button.is-text,
+html[data-layout-preset] .el-button.is-link {
+  height: var(--app-control-height-sm);
+  padding: 0 6px;
+}
+html[data-layout-preset] .el-button .el-icon {
+  font-size: var(--app-button-icon-size);
+}
+html[data-layout-preset] .el-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-primary) 18%, transparent);
 }
 html[data-layout-preset] .el-input__wrapper,
 html[data-layout-preset] .el-select__wrapper {
