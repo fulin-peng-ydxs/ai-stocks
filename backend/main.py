@@ -32,6 +32,7 @@ from backend.api.layout import router as layout_router
 from backend.api.profiles import router as profiles_router
 from backend.api.score_profiles import router as score_profiles_router
 from backend.api.trade_profiles import router as trade_profiles_router
+from backend.api.user_preferences import router as user_preferences_router
 from backend.api.stock_groups import router as stock_groups_router
 from backend.api.stocks import router as stocks_router
 from backend.api.data_tasks import router as data_tasks_router
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(layout_router)
     app.include_router(score_profiles_router)
     app.include_router(trade_profiles_router)
+    app.include_router(user_preferences_router)
     app.include_router(stock_groups_router)
     # 系统级 / 全市场写路由：整 router 挂 require_system 硬守卫（R8 最小切片，闭合注册越权窗口）。
     # stage4·T5：端点内已逐一叠加 require_system_perm 精确码（供路由扫描/审计识别），此处硬守卫保留作兜底。
