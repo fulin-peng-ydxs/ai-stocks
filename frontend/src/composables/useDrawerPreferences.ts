@@ -1,4 +1,5 @@
 import { computed, reactive } from 'vue'
+import { getAccessToken, readAuth } from '@/api/authToken'
 import { listUserPreferences, saveUserPreference } from '@/api/userPreferences'
 
 export type DrawerSectionKey = 'layout' | 'components' | 'business'
@@ -11,6 +12,7 @@ export interface DrawerPreferenceValue {
 
 const SECTION_KEYS: DrawerSectionKey[] = ['layout', 'components', 'business']
 const SIZE_KEYS: DrawerSize[] = ['sm', 'md', 'lg']
+const STORAGE_PREFIX = 'ai-stocks:drawer-preferences'
 
 const state = reactive({
   hydrated: false,
@@ -22,6 +24,21 @@ const state = reactive({
 
 let loadPromise: Promise<void> | null = null
 let saveTimer: number | undefined
+let syncedToken = ''
+let activeStorageKey = ''
+
+function storageKeyForCurrentIdentity(): string {
+  const auth = readAuth()
+  if (auth.accessToken && auth.user?.id) {
+    return `${STORAGE_PREFIX}:${auth.tenant?.id || 'default'}:${auth.user.id}`
+  }
+  return `${STORAGE_PREFIX}:anonymous`
+}
+
+function clearSaveTimer(): void {
+  if (saveTimer) window.clearTimeout(saveTimer)
+  saveTimer = undefined
+}
 
 function cleanSize(value: unknown): DrawerSize | undefined {
   return SIZE_KEYS.includes(value as DrawerSize) ? value as DrawerSize : undefined
@@ -43,7 +60,50 @@ function normalizePreference(value: unknown): DrawerPreferenceValue {
   return next
 }
 
+function readLocal(): DrawerPreferenceValue {
+  try {
+    const raw = localStorage.getItem(activeStorageKey || storageKeyForCurrentIdentity())
+    return normalizePreference(raw ? JSON.parse(raw) : undefined)
+  } catch {
+    return {}
+  }
+}
+
+function persistLocal(): void {
+  try {
+    localStorage.setItem(activeStorageKey || storageKeyForCurrentIdentity(), JSON.stringify(state.value))
+  } catch {
+    /* 本地 fallback 失败不影响页面渲染 */
+  }
+}
+
+function replaceStateValue(value: DrawerPreferenceValue): void {
+  state.value.size = value.size
+  state.value.defaultCollapsed = value.defaultCollapsed
+}
+
+function ensureIdentityState(): { token: string; changed: boolean } {
+  const token = getAccessToken()
+  const storageKey = storageKeyForCurrentIdentity()
+  const changed = token !== syncedToken || storageKey !== activeStorageKey
+  if (changed) {
+    clearSaveTimer()
+    loadPromise = null
+    syncedToken = token
+    activeStorageKey = storageKey
+    state.hydrated = false
+    state.loading = false
+    state.failed = false
+    state.dirty.clear()
+    replaceStateValue(readLocal())
+  }
+  return { token, changed }
+}
+
 function scheduleSave(): void {
+  ensureIdentityState()
+  persistLocal()
+  if (!getAccessToken()) return
   if (saveTimer) window.clearTimeout(saveTimer)
   saveTimer = window.setTimeout(async () => {
     saveTimer = undefined
@@ -63,6 +123,12 @@ function scheduleSave(): void {
 }
 
 async function load(): Promise<void> {
+  const { token } = ensureIdentityState()
+  if (!token) {
+    state.hydrated = true
+    state.failed = false
+    return Promise.resolve()
+  }
   if (state.hydrated || loadPromise) return loadPromise ?? Promise.resolve()
   state.loading = true
   loadPromise = listUserPreferences({ scope: 'global', prefKey: 'settings-drawer' })
@@ -70,6 +136,7 @@ async function load(): Promise<void> {
       const remote = normalizePreference(res.items[0]?.value)
       if (!state.dirty.has('size')) state.value.size = remote.size
       if (!state.dirty.has('defaultCollapsed')) state.value.defaultCollapsed = remote.defaultCollapsed
+      persistLocal()
       state.hydrated = true
       state.failed = false
       if (state.dirty.size) scheduleSave()
@@ -83,6 +150,22 @@ async function load(): Promise<void> {
       loadPromise = null
     })
   return loadPromise
+}
+
+export function syncDrawerPreferences(): Promise<void> {
+  return load()
+}
+
+export function resetDrawerPreferencesForTests(): void {
+  clearSaveTimer()
+  loadPromise = null
+  syncedToken = ''
+  activeStorageKey = ''
+  state.hydrated = false
+  state.loading = false
+  state.failed = false
+  state.dirty.clear()
+  replaceStateValue({})
 }
 
 export function useDrawerPreferences() {

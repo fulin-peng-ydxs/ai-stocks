@@ -162,4 +162,20 @@ describe('usePreferenceMigration', () => {
     expect(prefApi.saveUserPreferencesBulk).toHaveBeenCalled()
     expect(localStorage.getItem(CONFIG_STORAGE_MIGRATION_MARKER)).toBeNull()
   })
+
+  it('用户偏好超过后端批量上限时按 100 条分片提交', async () => {
+    login()
+    for (let i = 0; i < 105; i += 1) {
+      localStorage.setItem(`ai-stocks:page-settings:page-${i}`, JSON.stringify({ visible: i % 2 === 0 }))
+    }
+
+    const result = await migrateLocalPreferencesToRemote()
+
+    expect(result.failed).toBe(false)
+    expect(result.preferenceCount).toBe(105)
+    expect(prefApi.saveUserPreferencesBulk).toHaveBeenCalledTimes(2)
+    expect(prefApi.saveUserPreferencesBulk.mock.calls[0][0]).toHaveLength(100)
+    expect(prefApi.saveUserPreferencesBulk.mock.calls[1][0]).toHaveLength(5)
+    expect(localStorage.getItem(CONFIG_STORAGE_MIGRATION_MARKER)).toBeTruthy()
+  })
 })

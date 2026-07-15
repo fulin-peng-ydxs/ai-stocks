@@ -8,6 +8,7 @@ import {
   type NavigationMode,
 } from '@/composables/useAppNavigation'
 import { migrateLocalPreferencesToRemote } from '@/composables/usePreferenceMigration'
+import { syncDrawerPreferences } from '@/composables/useDrawerPreferences'
 import { resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { effectivePresetTokens, setPresetOverrides, useLayoutPreset, type LayoutPresetKey } from '@/layout'
 import { listLayoutPresets } from '@/api/layout'
@@ -118,7 +119,7 @@ const navigationOptions: Array<{
 async function syncGlobalPreferences() {
   if (!auth.isLoggedIn) return
   await migrateLocalPreferencesToRemote()
-  await Promise.all([syncThemePreference(), syncNavigationPreference()])
+  await Promise.all([syncThemePreference(), syncNavigationPreference(), syncDrawerPreferences()])
 }
 
 function formatNumber(value: number | null | undefined): string {

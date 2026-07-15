@@ -28,6 +28,7 @@ export interface PreferenceMigrationResult {
 
 const DRAWER_SIZE_KEYS: DrawerSize[] = ['sm', 'md', 'lg']
 const NAVIGATION_MODES: NavigationMode[] = ['sidebar-tabs', 'dual-topbar']
+const PREFERENCE_BULK_CHUNK_SIZE = 100
 let runningMigration: Promise<PreferenceMigrationResult> | null = null
 
 function emptyResult(skipped: boolean): PreferenceMigrationResult {
@@ -227,10 +228,12 @@ async function runMigration(): Promise<PreferenceMigrationResult> {
     }
   }
 
-  if (preferences.length) {
+  for (let i = 0; i < preferences.length; i += PREFERENCE_BULK_CHUNK_SIZE) {
+    const chunk = preferences.slice(i, i + PREFERENCE_BULK_CHUNK_SIZE)
+    if (!chunk.length) continue
     try {
-      await saveUserPreferencesBulk(preferences)
-      result.preferenceCount = preferences.length
+      await saveUserPreferencesBulk(chunk)
+      result.preferenceCount += chunk.length
     } catch {
       result.failed = true
     }

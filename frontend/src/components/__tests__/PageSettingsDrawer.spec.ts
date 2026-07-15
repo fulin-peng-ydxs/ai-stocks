@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref, type Ref } from 'vue'
 import PageSettingsDrawer, { type DrawerConfig } from '@/components/PageSettingsDrawer.vue'
+import { clearAuth, writeAuth } from '@/api/authToken'
+import { resetDrawerPreferencesForTests } from '@/composables/useDrawerPreferences'
 
 const prefApi = vi.hoisted(() => ({
   listUserPreferences: vi.fn(),
@@ -10,6 +12,16 @@ const prefApi = vi.hoisted(() => ({
 }))
 
 vi.mock('@/api/userPreferences', () => prefApi)
+
+function login() {
+  writeAuth({
+    accessToken: 'token',
+    refreshToken: 'refresh',
+    user: { id: 'u', account: 'u' },
+    tenant: { id: 't' },
+    role: 'normal',
+  })
+}
 
 function makeConfig(defaultCollapsedRef: Ref<string[]>) {
   const setComponentKnob = vi.fn()
@@ -86,6 +98,11 @@ function groupOpen(wrapper: ReturnType<typeof mount>, title: string): string | u
 
 describe('PageSettingsDrawer', () => {
   beforeEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+    clearAuth()
+    localStorage.clear()
+    resetDrawerPreferencesForTests()
     prefApi.listUserPreferences.mockResolvedValue({ items: [] })
     prefApi.saveUserPreference.mockResolvedValue({})
   })
@@ -119,6 +136,7 @@ describe('PageSettingsDrawer', () => {
   })
 
   it('抽屉自身偏好写入全局 user_preference，不写页面组件配置', async () => {
+    login()
     vi.useFakeTimers()
     const defaults = ref<string[]>([])
     const { wrapper, setComponentKnob } = mountDrawer(defaults)

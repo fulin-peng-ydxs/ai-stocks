@@ -24,9 +24,10 @@ export function useRemoteLayoutConfig(base: PageLayout) {
     if (!remoteHydrated.value) return
     saving.value = true
     try {
+      const userConfig = config.exportUserConfig()
       await saveLayoutUserConfig(base.pageKey, {
-        config: config.exportUserConfig(),
-        schemaVersion: config.exportUserConfig().schemaVersion,
+        config: userConfig,
+        schemaVersion: userConfig.schemaVersion,
         layout: base as unknown as Record<string, unknown>,
       })
       saveError.value = false
