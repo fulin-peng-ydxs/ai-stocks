@@ -237,10 +237,10 @@ CREATE TABLE IF NOT EXISTS user_preference (
 | 必须实现 | R4 | 组件用户层迁 PG | 组件路径进入 `layout_user_config.config.values`，保存时带真实 PageLayout | T7、T9、T11 | 进行中 | 一致 | T7 已将组件用户配置导出为 `slots.<id>.config.<field>` 并保存时带真实 `PageLayout`；T9/T11 继续覆盖迁移和整体回归。 |
 | 必须实现 | R5 | 抽屉偏好跨页面共享 | 抽屉自身偏好进 `user_preference(global/settings-drawer)`，`size/defaultCollapsed` 覆盖 page/preset 默认且运行时只选一个来源 | T4、T7、T9 | 进行中 | 一致 | T4 已提供 `user_preference` 后端存储与 API；T7 已新增全局抽屉偏好消费和保存，旧 localStorage 污染不自动回放；存量迁移留到 T9。 |
 | 必须实现 | R6 | 默认折叠与当前状态分离 | `PageSettingsDrawer` 使用运行态折叠集合，默认值仅显式设置保存 | T6、T11 | 进行中 | 一致 | T6 已完成抽屉打开期运行态分离，点击折叠段不再写 `settings.defaultCollapsed`；后续 T11 做整体回归。 |
-| 必须实现 | R7 | 页面业务偏好迁 PG | 新增 `user_preference`，改造 `usePageSettings` 和零散偏好 composable | T4、T8、T9 | 进行中 | 一致 | T4 已提供后端偏好存储与批量保存接口；前端 composable 和迁移留到 T8/T9。 |
+| 必须实现 | R7 | 页面业务偏好迁 PG | 新增 `user_preference`，改造 `usePageSettings` 和零散偏好 composable | T4、T8、T9 | 进行中 | 一致 | T4 已提供后端偏好存储与批量保存接口；T8 已新增通用 `useUserPreference`，并把 `usePageSettings`、主题、导航模式、K 线偏好、回测参数记忆接入远端优先与本地 fallback；T9 继续处理存量 localStorage 一次性迁移。 |
 | 必须实现 | R8 | 个人偏好权限口径 | `layout:user-config` 与 `user-preference:manage` 纳入登录基线自持久化能力，明确这是扩 baseline 而非可反选角色授权 | T2、T4、T11 | 进行中 | 一致 | T2 已调整资源码和测试契约，T4 已用 `user-preference:manage` 接入 API 并验证 baseline 通过、无角色 fail-closed；完整前端 403 fallback 留到 T11。 |
 | 必须实现 | R9 | 数据迁移幂等可回滚 | 后端 CLI 迁 DuckDB，前端一次性迁 localStorage | T5、T9、T12 | 进行中 | 一致 | T5 已完成后端 DuckDB→PG 配置迁移命令和 marker 跳过/force；前端 localStorage 迁移留到 T9，发布演练留到 T12。 |
-| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 进行中 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试，T5 已补迁移命令测试，T6 已补抽屉折叠运行态组件测试，T7 已补布局远端化与抽屉偏好前端单测；完整文档和发布验证仍在后续任务。 |
+| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 进行中 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试，T5 已补迁移命令测试，T6 已补抽屉折叠运行态组件测试，T7 已补布局远端化与抽屉偏好前端单测；T8 已补 `useUserPreference` 与 K 线偏好单测并通过前端构建；完整文档、浏览器页面验证和发布验证仍在后续任务。 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -382,7 +382,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 ### 6.8 任务 T8：前端业务偏好远端化
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T4
 - 涉及文件/模块：`frontend/src/composables/usePageSettings.ts`、`frontend/src/composables/useUserPreference.ts`、`frontend/src/composables/useTheme.ts`、`frontend/src/composables/useAppNavigation.ts`、`frontend/src/composables/useKlinePrefs.ts`、`frontend/src/views/BacktestView.vue`
 - 目标：页面业务偏好和全局 UI 偏好改为 PG 权威。
@@ -396,7 +396,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 边界与异常：接口失败时继续使用本地 fallback，页面不能白屏。
 - 验证方式：composable 单测、典型页面交互测试、登录后刷新回显测试。
 - 完成标准：同账号换浏览器可回显偏好；不同账号偏好隔离。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成。新增 `useUserPreference`，统一处理 `global/page/feature` 三类用户偏好，支持默认值深合并、schemaVersion、localStorage fallback、未登录跳过远端、登录态远端拉取、debounce 保存和拉取期间 dirty 保护；`usePageSettings` 已改为 `scope='page'` 包装器，保持原有页面调用的 `settings/isDirty/reset` 接口。`useTheme` 和 `useAppNavigation` 保留登录前 localStorage 读取能力，登录后按 `global/theme`、`global/navigation` 同步 PG；`useKlinePrefs` 改为 `global/kline-prefs`；`BacktestView` 的参数记忆改为 `feature/backtest/params`，保留旧 `ai-stocks-backtest-params` 作为 fallback 和后续迁移源。复用判断：本阶段没有新增页面私有偏好实现，主题、导航、K 线、回测参数均复用同一个 `useUserPreference` 存取骨架。
 
 ### 6.9 任务 T9：前端 localStorage 一次性迁移
 
@@ -502,33 +502,35 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 - 单元测试：
   - 计划：补 `test_layout_config.py` 的 PG 平台配置读写、PG 空表只读 DuckDB 回退、组件路径无 layout 被拒、真实 layout 可保存；补 `test_user_preference.py` 的用户偏好隔离；补前端 `useLayoutConfig`/`useUserPreference`/`PageSettingsDrawer` 单测。
-  - 具体完成情况：T1-T2 阶段已执行 `python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_stage4_layout.py backend/auth/perm_resolver.py backend/storage/resource_repository.py backend/services/role_admin_service.py`，通过；T3 阶段已执行 `python -m py_compile backend/storage/layout_config.py backend/tests/test_layout_config.py`，通过，并补齐 PG-backed layout repo 与 PG 空表 DuckDB 只读回退单测。T4 阶段已执行 `python -m py_compile backend/storage/user_preference.py backend/api/user_preferences.py backend/main.py backend/tests/test_user_preference.py`，通过，并补 `test_user_preference.py` 覆盖用户偏好隔离。T5 阶段已执行 `python -m py_compile backend/services/migrate_config_storage.py backend/cli.py backend/tests/test_migrate_config_storage.py`，通过，并补 `test_migrate_config_storage.py` 覆盖 dry-run、正式迁移、marker 跳过和 force 重跑。T6 阶段新增 `PageSettingsDrawer.spec.ts`，执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed。T7 阶段新增 `useLayoutConfig.spec.ts` 与 `useRemoteLayoutConfig.spec.ts`，扩展 `PageSettingsDrawer.spec.ts`；执行前端定向测试 9 passed，并在布局/组件配置回归集中执行 30 passed。
+  - 具体完成情况：T1-T2 阶段已执行 `python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_stage4_layout.py backend/auth/perm_resolver.py backend/storage/resource_repository.py backend/services/role_admin_service.py`，通过；T3 阶段已执行 `python -m py_compile backend/storage/layout_config.py backend/tests/test_layout_config.py`，通过，并补齐 PG-backed layout repo 与 PG 空表 DuckDB 只读回退单测。T4 阶段已执行 `python -m py_compile backend/storage/user_preference.py backend/api/user_preferences.py backend/main.py backend/tests/test_user_preference.py`，通过，并补 `test_user_preference.py` 覆盖用户偏好隔离。T5 阶段已执行 `python -m py_compile backend/services/migrate_config_storage.py backend/cli.py backend/tests/test_migrate_config_storage.py`，通过，并补 `test_migrate_config_storage.py` 覆盖 dry-run、正式迁移、marker 跳过和 force 重跑。T6 阶段新增 `PageSettingsDrawer.spec.ts`，执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed。T7 阶段新增 `useLayoutConfig.spec.ts` 与 `useRemoteLayoutConfig.spec.ts`，扩展 `PageSettingsDrawer.spec.ts`；执行前端定向测试 9 passed，并在布局/组件配置回归集中执行 30 passed。T8 阶段新增 `useUserPreference.spec.ts` 与 `useKlinePrefs.spec.ts`，覆盖未登录本地 fallback、登录远端覆盖、拉取期间本地编辑不丢失、K 线旧 localStorage fallback 与 reset。
 - 接口测试：
   - 计划：覆盖 `/api/layout/*`、`/api/user-preferences/*` 的鉴权、越权、非法 payload、批量保存；验证 `layout:user-config` 与 `user-preference:manage` 基线可用；改写 `test_stage4_layout.py` 的旧负向断言，新增无角色 fail-closed 断言。
   - 具体完成情况：T2 已改写 `test_stage4_layout.py` 的旧负向断言，并执行 `python -m pytest backend/tests/test_stage4_layout.py backend/tests/test_stage4_menu_guard.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_platform_t1.py backend/tests/test_stage5_resource_codes.py -q`，结果 34 passed；T3 阶段执行布局接口/RBAC 相关定向回归，结果 29 passed。T4 阶段执行 `python -m pytest backend/tests/test_user_preference.py -q`，结果 6 passed，覆盖 `/api/user-preferences` 鉴权、批量保存、非法 payload 和归属字段忽略。
 - 页面/交互测试：
   - 计划：浏览器验证系统设置页、用户管理页或数据字典页的设置抽屉、审计宽表页组件配置。
-  - 具体完成情况：T1-T2 不涉及前端页面代码，未执行浏览器验证。T6 改动设置抽屉点击折叠交互，本地环境未暴露浏览器点击工具且前端依赖未安装 Playwright，未执行真实浏览器验证；已用 jsdom 组件点击单测覆盖同一折叠事件链路。T7 同样受该环境限制未执行真实浏览器跨页面验证；已用 `useRemoteLayoutConfig.spec.ts` 和 `PageSettingsDrawer.spec.ts` 覆盖远端保存 payload、拉取竞态和全局抽屉偏好写入链路，完整浏览器回归留到具备浏览器自动化环境的 T11。
+  - 具体完成情况：T1-T2 不涉及前端页面代码，未执行浏览器验证。T6 改动设置抽屉点击折叠交互，本地环境未暴露浏览器点击工具且前端依赖未安装 Playwright，未执行真实浏览器验证；已用 jsdom 组件点击单测覆盖同一折叠事件链路。T7 同样受该环境限制未执行真实浏览器跨页面验证；已用 `useRemoteLayoutConfig.spec.ts` 和 `PageSettingsDrawer.spec.ts` 覆盖远端保存 payload、拉取竞态和全局抽屉偏好写入链路。T8 未执行真实浏览器登录后跨设备回显验证，已用 composable/jsdom 测试和构建验证业务偏好远端化链路；完整浏览器回归留到具备浏览器自动化环境的 T11。
 - 组件资产闭环测试：
   - 计划：验证 `settings-drawer.size/defaultCollapsed` 用户偏好进 `user_preference` 后真实消费且覆盖 page/preset 默认；验证运行时只应用一个抽屉默认来源；验证 `bodyScroll/collapsibleSections` 不出现在用户层保存路径；验证 `data-table`、`wide-table`、`config-panel` 字段保存到 PG 后真实消费。
   - 具体完成情况：T2 已在后端字段层级和 SQL/DDL 计划中固定 `settings-drawer.bodyScroll/collapsibleSections` 不进入用户层；T7 已验证 `settings-drawer.size/defaultCollapsed` 由全局 `user_preference` 消费并覆盖页面配置，旧页面级 localStorage 中的这两个字段不自动回放，组件路径保存 payload 带真实 `PageLayout`；真实浏览器端跨页面回显留到 T11。
 - 权限与数据范围测试：
   - 计划：不同用户保存同 pageKey 偏好互不影响；前端传 userId 不生效；有角色普通用户可保存自有偏好；无角色用户 fail-closed；403 fallback 不显示云端保存成功。
-  - 具体完成情况：T2 已执行 `python -m pytest backend/tests/test_auth_middleware.py -q`，结果 20 passed；同一阶段布局用户配置 baseline 语义已在 `test_stage4_layout.py` 验证“有角色用户通过、无角色 fail-closed”。T4 已验证 `user_preference` 跨用户隔离、前端传归属字段不生效、有角色用户 baseline 可写、无角色用户 403。T7 前端 layout/user-preference 请求均使用静默失败 fallback，已在 composable 级验证接口失败不阻塞本地态；完整 403 页面提示回归留到 T11。
+  - 具体完成情况：T2 已执行 `python -m pytest backend/tests/test_auth_middleware.py -q`，结果 20 passed；同一阶段布局用户配置 baseline 语义已在 `test_stage4_layout.py` 验证“有角色用户通过、无角色 fail-closed”。T4 已验证 `user_preference` 跨用户隔离、前端传归属字段不生效、有角色用户 baseline 可写、无角色用户 403。T7 前端 layout/user-preference 请求均使用静默失败 fallback，已在 composable 级验证接口失败不阻塞本地态。T8 已验证无 token 时不发远端请求且使用 localStorage fallback，登录态远端值可覆盖旧本地值；完整 403 页面提示回归留到 T11。
 - 回归测试：
   - 计划：`python -m pytest backend/tests/test_layout_config.py backend/tests/test_auth_middleware.py backend/tests/test_stage4_layout.py -q`；`cd frontend && npm run test -- ...`；`npm run build`。
-  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。T3 阶段执行 `python -m pytest backend/tests/test_layout_config.py -q`，结果 23 passed；布局接口/RBAC 相关定向回归 29 passed。T4 阶段执行资源码/布局权限回归 24 passed。T5 阶段执行 `python -m pytest backend/tests/test_migrate_config_storage.py -q`，结果 4 passed；执行 `python -m pytest backend/tests/test_layout_config.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py -q`，结果 42 passed。T6 阶段执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed；执行 `npm run build`，通过。T7 阶段执行 `npm run test -- src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts src/layout/__tests__/componentConfig.spec.ts src/components/__tests__/ComponentAutoSettings.spec.ts`，结果 30 passed；执行 `npm run build`，通过。
+  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。T3 阶段执行 `python -m pytest backend/tests/test_layout_config.py -q`，结果 23 passed；布局接口/RBAC 相关定向回归 29 passed。T4 阶段执行资源码/布局权限回归 24 passed。T5 阶段执行 `python -m pytest backend/tests/test_migrate_config_storage.py -q`，结果 4 passed；执行 `python -m pytest backend/tests/test_layout_config.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py -q`，结果 42 passed。T6 阶段执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed；执行 `npm run build`，通过。T7 阶段执行 `npm run test -- src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts src/layout/__tests__/componentConfig.spec.ts src/components/__tests__/ComponentAutoSettings.spec.ts`，结果 30 passed；执行 `npm run build`，通过。T8 阶段执行 `npm run test -- src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 16 passed；执行 `npm run build`，通过。
 - 异常与边界测试：
   - 计划：PG 不可用、本地旧值损坏、schemaVersion 不匹配、重复迁移、字段开放策略收紧后保存失败、远端加载中本地编辑竞态、迁移 marker 缺失。
-  - 具体完成情况：T2 已覆盖 baseline 权限反转与无角色 fail-closed 边界；T3 已覆盖迁移 marker 缺失且 PG 平台表为空时的 DuckDB 只读回退；T5 已覆盖迁移 marker 已存在时跳过、`--force` 重跑和 PG 既有 `app_config` 不被覆盖；T7 已覆盖远端加载中本地编辑竞态和旧 settings-drawer localStorage 污染字段丢弃。其它异常场景依赖 T8-T9 实现后验证。
+  - 具体完成情况：T2 已覆盖 baseline 权限反转与无角色 fail-closed 边界；T3 已覆盖迁移 marker 缺失且 PG 平台表为空时的 DuckDB 只读回退；T5 已覆盖迁移 marker 已存在时跳过、`--force` 重跑和 PG 既有 `app_config` 不被覆盖；T7 已覆盖远端加载中本地编辑竞态和旧 settings-drawer localStorage 污染字段丢弃。T8 已覆盖未登录 fallback、旧本地 K 线偏好兼容、远端拉取期间本地编辑不被覆盖并回写远端。其它异常场景依赖 T9 实现后验证。
 - 图示与原型一致性验证：
   - 本次不新增页面；验证设置抽屉视觉和交互不退化，尤其默认折叠和当前展开状态。
 - 配置闭环验证：
   - 计划：配置项展示、保存、读取、生效、重置、非法值拒绝、旧值兼容全部覆盖。
+  - 具体完成情况：T8 已验证业务偏好 composable 的默认值合并、本地 fallback、远端读取覆盖、本地编辑保存、K 线 reset 和旧 localStorage 兼容；页面级浏览器回显和 localStorage 批量迁移闭环留到 T9/T11。
 - 需求映射验证：
   - 计划：R1-R10 均有任务编号和可观察验证方式。
 - 页面功能点验证：
   - 计划：系统设置页仍按现有分组展示；设置抽屉三段仍按 DESIGN 固定顺序展示；业务选项远端保存后刷新回显。
+  - 具体完成情况：T8 已把业务选项基础存储能力切到 `useUserPreference(scope='page')`，保持 `usePageSettings` 现有调用接口；真实页面刷新回显留到 T11 浏览器验证。
 
 ## 9. 发布与回滚
 

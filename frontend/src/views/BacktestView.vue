@@ -28,6 +28,7 @@ import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useUserPreference } from '@/composables/useUserPreference'
 import { useTradeDates } from '@/composables/useTradeDates'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -36,7 +37,7 @@ import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage } from '@/utils/error'
 
-const PARAMS_KEY = 'ai-stocks-backtest-params' // 表单参数持久化
+const PARAMS_KEY = 'ai-stocks-backtest-params' // 表单参数持久化 fallback / 迁移源
 type Visibility = 'private' | 'tenant' | 'public'
 type HistorySource = 'all' | 'mine' | 'tenant' | 'public'
 const auth = useAuthStore()
@@ -49,6 +50,37 @@ const backtestDefaults = {
   robustExpanded: false,
 }
 const { settings, isDirty, reset } = usePageSettings('backtest', backtestDefaults)
+type BacktestParamMemory = {
+  kind: 'strategy' | 'score_check'
+  dateStart: string
+  dateEnd: string
+  profileId: string
+  scoreProfileId: string
+  tradeProfileId: string
+  topN: number
+  initCap: number
+  industryOn: boolean
+  industryPct: number
+}
+const backtestParamDefaults: BacktestParamMemory = {
+  kind: 'strategy',
+  dateStart: '2024-01-01',
+  dateEnd: '2024-12-31',
+  profileId: '',
+  scoreProfileId: '',
+  tradeProfileId: '',
+  topN: 10,
+  initCap: 1_000_000,
+  industryOn: false,
+  industryPct: 20,
+}
+const { value: rememberedParams, hydrated: rememberedParamsHydrated } = useUserPreference({
+  scope: 'feature',
+  pageKey: 'backtest',
+  prefKey: 'params',
+  defaults: backtestParamDefaults,
+  localStorageKey: PARAMS_KEY,
+})
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const backtestLayout = getPageLayout('backtest')
@@ -213,6 +245,9 @@ watch(() => settings.kind, (value) => { kind.value = value })
 watch(() => settings.topN, (value) => { topN.value = Number(value) })
 watch(() => settings.initCap, (value) => { initCap.value = Number(value) })
 watch(() => settings.robustExpanded, (value) => { robustPanels.value = value ? ['robust'] : [] })
+watch(rememberedParamsHydrated, (ready) => {
+  if (ready && !loadingRun.value) restoreParams()
+})
 // 程序化改参（运行/载入历史）后清脏：等参数 watcher 跑完再置 false
 function clearDirtySoon() {
   nextTick(() => { dirty.value = false; loadingRun.value = false })
@@ -322,19 +357,22 @@ const profileDesc = computed(() =>
 
 // —— 表单参数持久化（localStorage）：下次进来沿用上次设置 ——
 function saveParams() {
-  const p = {
-    kind: kind.value, dateStart: dateStart.value, dateEnd: dateEnd.value,
-    profileId: profileId.value, scoreProfileId: scoreProfileId.value, tradeProfileId: tradeProfileId.value,
-    topN: topN.value, initCap: initCap.value, industryOn: industryOn.value, industryPct: industryPct.value,
-  }
-  try { localStorage.setItem(PARAMS_KEY, JSON.stringify(p)) } catch { /* ignore */ }
+  rememberedParams.kind = kind.value
+  rememberedParams.dateStart = dateStart.value
+  rememberedParams.dateEnd = dateEnd.value
+  rememberedParams.profileId = profileId.value
+  rememberedParams.scoreProfileId = scoreProfileId.value
+  rememberedParams.tradeProfileId = tradeProfileId.value
+  rememberedParams.topN = topN.value
+  rememberedParams.initCap = initCap.value
+  rememberedParams.industryOn = industryOn.value
+  rememberedParams.industryPct = industryPct.value
 }
 function restoreParams() {
   try {
-    const raw = localStorage.getItem(PARAMS_KEY)
-    if (!raw) return
-    const p = JSON.parse(raw)
-    kind.value = (p.kind === 'signal' ? 'score_check' : p.kind) ?? kind.value
+    const p = rememberedParams
+    const rawKind = (rememberedParams as unknown as { kind?: string }).kind
+    kind.value = (rawKind === 'signal' ? 'score_check' : rawKind as 'strategy' | 'score_check' | undefined) ?? kind.value
     dateStart.value = p.dateStart ?? dateStart.value
     dateEnd.value = p.dateEnd ?? dateEnd.value
     profileId.value = normalizeScreenProfileKey(p.profileId ?? profileId.value)

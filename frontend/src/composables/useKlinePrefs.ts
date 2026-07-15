@@ -1,6 +1,7 @@
-// 全局 K 线范围偏好：快捷范围选项 + 默认范围，模块级单例 + localStorage 持久化。
+// 全局 K 线范围偏好：快捷范围选项 + 默认范围，模块级单例 + PG 用户偏好，localStorage 兜底。
 // 所有看 K 线的页面（盘感训练 / 个股详情 等）共享同一套范围选项与默认值，抽屉里改一处处处生效。
-import { computed, reactive, watch } from 'vue'
+import { computed } from 'vue'
+import { useUserPreference } from './useUserPreference'
 
 const STORAGE_KEY = 'ai-stocks:kline-prefs'
 export const ALL_DAYS = 99999 // “全部”范围哨兵值
@@ -19,39 +20,22 @@ function sanitize(list: number[]): number[] {
   return arr
 }
 
-function load(): KlinePrefs {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const s = JSON.parse(raw) as Partial<KlinePrefs>
-      const periods = Array.isArray(s.periods) && s.periods.length ? sanitize(s.periods) : [...DEFAULTS.periods]
-      return {
-        periods,
-        includeAll: s.includeAll ?? DEFAULTS.includeAll,
-        defaultPeriod: typeof s.defaultPeriod === 'number' ? s.defaultPeriod : DEFAULTS.defaultPeriod,
-      }
-    }
-  } catch {
-    /* ignore */
+let pref: ReturnType<typeof useUserPreference<KlinePrefs>> | null = null
+
+function preference() {
+  if (!pref) {
+    pref = useUserPreference<KlinePrefs>({
+      scope: 'global',
+      prefKey: 'kline-prefs',
+      defaults: DEFAULTS,
+      localStorageKey: STORAGE_KEY,
+    })
   }
-  return { ...DEFAULTS, periods: [...DEFAULTS.periods] }
+  return pref
 }
 
-const state = reactive(load())
-
-watch(
-  state,
-  (v) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(v))
-    } catch {
-      /* ignore */
-    }
-  },
-  { deep: true },
-)
-
 export function useKlinePrefs() {
+  const state = preference().value
   const options = computed(() => {
     const opts = state.periods.map((d) => ({ value: d, label: `近 ${d} 日` }))
     if (state.includeAll) opts.push({ value: ALL_DAYS, label: '全部' })

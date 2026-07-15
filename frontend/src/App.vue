@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Calendar, Clock, Close, Refresh, Select } from '@element-plus/icons-vue'
 import { useTheme, toggleTheme } from '@/composables/useTheme'
@@ -28,8 +28,8 @@ import WorkspaceTabs from '@/components/WorkspaceTabs.vue'
 import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 
-const { isDark } = useTheme()
-const { navigationMode, setNavigationMode } = useAppNavigation()
+const { isDark, syncThemePreference } = useTheme()
+const { navigationMode, setNavigationMode, syncNavigationPreference } = useAppNavigation()
 const { activePresetKey, options: presetOptions, setLayoutPreset } = useLayoutPreset()
 const userDrawerVisible = ref(false)
 const appearanceDrawerVisible = ref(false)
@@ -113,6 +113,12 @@ const navigationOptions: Array<{
   { value: 'sidebar-tabs', label: '侧栏标签', description: '层级清晰，适合多页面并行研究' },
   { value: 'dual-topbar', label: '双层顶栏', description: '一级在上，二级与子页紧随其下' },
 ]
+
+function syncGlobalPreferences() {
+  if (!auth.isLoggedIn) return
+  void syncThemePreference()
+  void syncNavigationPreference()
+}
 
 function formatNumber(value: number | null | undefined): string {
   return typeof value === 'number' ? numberFormatter.format(value) : '—'
@@ -259,6 +265,10 @@ async function bootstrapAuthenticatedShell() {
 }
 
 // 非全屏受控页渲染前后都以 /me 为身份事实源；登录页不再发受控布局接口，避免首登旧 401 清新 token。
+onMounted(syncGlobalPreferences)
+watch(() => auth.isLoggedIn, (loggedIn) => {
+  if (loggedIn) syncGlobalPreferences()
+})
 watch(() => [isFullscreen.value, auth.isLoggedIn, auth.menusStatus], bootstrapAuthenticatedShell, { immediate: true })
 watch(
   () => [isFullscreen.value, auth.isLoggedIn, auth.menusStatus, auth.role, auth.permissions.join('|')],
