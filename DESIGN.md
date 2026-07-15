@@ -277,7 +277,7 @@ Key Characteristics：
 
 | 真实组件 | 路径 | 用途 | 系统组件关系 | 使用规则 |
 |---|---|---|---|---|
-| `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；读取 `size`、`bodyScroll`、`collapsibleSections`、`defaultCollapsed` | registry 页面统一使用，禁止页面另写第二套设置抽屉 |
+| `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；`size/defaultCollapsed` 的用户偏好走 PG `user_preference`，`bodyScroll/collapsibleSections` 只允许 preset/page 层 | registry 页面统一使用，禁止页面另写第二套设置抽屉 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉边界组件 | 无直接系统组件种类 | 页面打开的设置、详情、日志抽屉统一挂载到 `LayoutHost` 内容区；禁止直接覆盖应用顶栏与导航 |
 | `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 消费 `pageRegistry.consumedComponentFields`、`componentMeta` 和 `COMPONENT_FIELD_DEFS` | 设置抽屉 user 层与页面布局编辑器 page 层共用；候选项可由页面按当前业务上下文传入运行时 meta 覆盖，避免不同面板的分区混显 |
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉的分组容器 | 无直接系统组件种类 | 页面设置抽屉分组优先复用；不直接用于主内容区配置面板 |
@@ -404,7 +404,9 @@ Key Characteristics：
 | `default` | 页面原型、slot、组件代码默认值 | `frontend/src/layout/pageRegistry.ts`、组件代码 |
 | `preset` | 风格 token、预设级组件默认、响应式默认枚举 | 系统管理 → 布局配置 → 预设管理 |
 | `page` | 单页面默认布局旋钮与组件默认值 | 系统管理 → 布局配置 → 页面布局 |
-| `user` | 当前用户/本机展示偏好 | 页面设置抽屉，localStorage `ai-stocks:layout:*` / `ai-stocks:layout-cc:*` |
+| `user` | 当前登录用户的布局、组件和业务偏好 | 页面设置抽屉；PG `layout_user_config`、PG `user_preference` |
+
+用户层以 PostgreSQL 为权威：页面布局和组件字段写入真实 pageKey 的 `layout_user_config`，页面业务偏好、主题、导航模式、K 线偏好、回测参数记忆和跨页面设置抽屉偏好写入 `user_preference`。localStorage 只允许作为未登录/离线 fallback、旧偏好迁移源、登录前主题读取和临时交互态，不得作为登录用户配置权威。
 
 ### 5.1 新建或改造页面
 
@@ -534,6 +536,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | preset/page/user | config-system |
 
 `usePageSettings` 只保留页面业务态/页面记忆，不承载通用组件展示能力。
+`settings-drawer` 的用户层只允许 `size/defaultCollapsed`；跨页面个人值写入 `user_preference(global/settings-drawer)`，不写伪页面的 `layout_user_config`。`bodyScroll/collapsibleSections` 只能由 preset/page 层控制。
 
 ### 7.4 页面 / 组件 / 布局变更维护闭环
 

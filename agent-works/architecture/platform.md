@@ -13,16 +13,17 @@
 - **点时安全仓库（总闸门）**：`backend/storage/repository.py` 的 `MarketRepository`。一是 `upsert()`（`:47`）按主键 `_PK`（`:22`）做 `ON CONFLICT DO UPDATE` 幂等写，重复运行不产生重复行。二是**防未来函数/防幸存者偏差总闸门**（`:103` 起）：`get_bars()`（`:108`）只返回 `trade_date <= end_date` 的行，复权用去抖因子列 `adj_factor_clean`（为空 `COALESCE` 回落 `adj_factor`），qfq 按 end_date 当日因子点时归一；`get_universe_asof()`（`:182`）以"当日有行情"为存活判据组装点时股票池，含当时存活后来退市的票，并叠加 ST/次新/停牌/一字板/流通市值/板块过滤。
 - **异步任务底座**：`backend/services/async_task.py`。`TASK_TYPES` 为 11 个原子任务类型，包含采集、补数、重算、质检、修复、基础信息刷新和 `audit_cleanup`；`WRITE_TASK_TYPES` 为写库类型，全局只允许一个写任务在跑（单写者互斥）。`AsyncTaskService.create()` 写 `async_task` 行后起守护线程跑处理器；`TaskContext` 提供进度 `progress()`、节流批量实时日志 `log()`/`flush()`、断点 `set_checkpoint()`、协作式取消检查 `check_cancel()`。`_HANDLERS` 按类型分派到各业务服务。
 - **APScheduler 定时调度**：`backend/scheduler/scheduler.py`。定义持久化在 `scheduled_job` 表，`SCHEDULABLE_TASK_TYPES` 限定可定时的类型（`update/backfill/ingest_date/recompute/verify/checkup/enrich_basic/audit_cleanup`）。频率 `daily/weekly/monthly/cron` 经 `compile_trigger()` 统一编译成 APScheduler `CronTrigger`，注册到进程内 `BackgroundScheduler` 单例。到点回调 `_fire_job()` 读最新 job 定义→`trading_day_only` 判交易日→`create()` 创建 `async_task`（`trigger_source='scheduled'`）。启动时会确保存在一条默认「审计日志清理」任务，每天 03:30 执行且不受交易日限制。
-- **环境与配置入口**：环境变量、`.env.local`、`config/settings.yaml`、PostgreSQL `app_config` 覆盖层、DuckDB 同名旧表和生效优先级统一维护在 [environment-configuration.md](environment-configuration.md)。平台层只约束新增运行期参数不得硬编码，并按文档选择 YAML、PG 覆盖层或业务配置表。
+- **环境与配置入口**：环境变量、`.env.local`、`config/settings.yaml`、PostgreSQL `app_config` 覆盖层、布局配置表、用户偏好表和生效优先级统一维护在 [environment-configuration.md](environment-configuration.md)。平台层只约束新增运行期参数不得硬编码，并按文档选择 YAML、PG 覆盖层、布局配置表、用户偏好表或业务配置表。
 - **dev/prod 部署**：`start.sh` 用 `nohup` 脱离会话启动 `backend.cli serve`，防误杀。dev 模式 `--reload`（改 `backend/*.py` 热重启 worker）+ 绑 `127.0.0.1`（仅本机，外部走前端 5173 代理）；prod 无热重载、绑 `0.0.0.0` 对外托管。生产期 `frontend/dist` 由 FastAPI `StaticFiles` 同源托管，SPA 深链/刷新回退 `index.html`（`backend/main.py:80-96`）。
 - **前端布局自适应 + 列表交互标准**：Vue 3 + Element Plus + Pinia + vue-router（history 模式）。布局走可配置布局系统（`frontend/src/layout/`，地图见根目录 `DESIGN.md`）：页面声明 `PageLayout` schema 交 `<LayoutHost>` 渲染，整页/视口永不滚动、超高内容由页内"成长区"内部消化；契约样式 `.v-page/.v-grow/.v-scroll` 落在 `frontend/src/styles/global.css`，外壳 `App.vue` 的 `.main` 已 `overflow:hidden`+flex 填充。约束由校验器 + `layout-contract.spec.ts` 机制性强制。列表交互走服务端分页/排序/筛选、筛选变更自动触发、多选跨页累积。
 
 ## 业务架构
 
-- **共用单例与初始化**：所有需要读写库的服务（仓库、异步任务、调度、配置、各业务服务）都经 `get_client()` 拿同一个 DuckDB 连接单例；`AsyncTaskService`/`ScheduledJobService`/`AppConfigRepo` 构造时调 `init_db()`（`backend/storage/ddl.py:645`）幂等建表，保证任意入口先碰到的服务都能把表建好。`init_db` 一次性创建 M1/M2/M3/M5/M6/M28 全部表 + 序列，并跑 `_MIGRATIONS`（`backend/storage/ddl.py:581`）轻量补列/清理旧表，再 seed 数据维度注册表。
+- **共用单例与初始化**：行情/研究相关服务经 `get_client()` 拿同一个 DuckDB 连接单例；用户资产、RBAC、平台配置和用户偏好经 `PostgresClient`。DuckDB `init_db()` 仍负责行情、任务、调度、数据维度等分析侧表的幂等建表；PG DDL 负责 `app_config`、布局平台配置、布局用户配置、用户偏好、菜单、角色和资产表。
 
 - **表与目录分工**：
-  - 基础设施自有表：`async_task`（任务状态/进度/结果/来源标记）、`task_log`（实时日志，按 `seq` 增量拉、每任务保留最近 2000 条）、`scheduled_job`（定时任务定义）、`app_config`（配置覆盖层，边界见 [environment-configuration.md](environment-configuration.md)）、`data_update_log`（采集留痕）、`data_dimension_registry`/`data_source_provenance`（数据维度与溯源）。
+  - DuckDB 基础设施表：`async_task`（任务状态/进度/结果/来源标记）、`task_log`（实时日志，按 `seq` 增量拉、每任务保留最近 2000 条）、`scheduled_job`（定时任务定义）、`data_update_log`（采集留痕）、`data_dimension_registry`/`data_source_provenance`（数据维度与溯源）。
+  - PostgreSQL 配置与用户偏好表：`app_config`（系统设置覆盖层）、`layout_preset`、`layout_page_config`、`layout_field_policy`、`layout_user_config`、`user_preference`；边界见 [environment-configuration.md](environment-configuration.md)。
   - 业务表（行情/方案/结果/回测/快照）由各业务模块拥有，但**统一经 `MarketRepository.upsert` 与点时查询闸门读写**，主键登记在 `repository._PK`。
   - 数据字典文档化：`backend/storage/catalog.py` 用代码内置 `TABLE_CATALOG` 维护表/字段中文说明，运行时 `build_catalog()` 拼上行数/最新数据时间/未解决质检数，供数据概览页渲染——不另建需手维护的字典表。
   - 目录约定：DuckDB 单文件、parquet、导出、日志路径在 `PathsConfig`（`backend/config/settings.py:31`），相对路径按项目根 `PROJECT_ROOT` 解析为绝对路径。
@@ -62,7 +63,7 @@ flowchart LR
   D --> F["AsyncTaskService\n写任务互斥"]
   G["APScheduler"] --> F
   F --> E
-  D --> H["app_config/settings"]
+  D --> H["PG app_config/layout/user_preference"]
 ```
 
 关键约束：
@@ -87,13 +88,16 @@ flowchart LR
 
 ### 4. 配置生效边界
 
-配置加载、环境变量、变量文件、YAML 缓存、PG 覆盖层和 DuckDB 旧表边界统一见 [environment-configuration.md](environment-configuration.md)。平台开发只保留一个判断原则：新增配置先区分它是启动期敏感/连接变量、非敏感 YAML 基线、Web 可改运行期参数，还是需要版本和归属的业务配置。
+配置加载、环境变量、变量文件、YAML 缓存、PG 覆盖层、布局配置表、用户偏好表和 DuckDB 旧表边界统一见 [environment-configuration.md](environment-configuration.md)。平台开发只保留一个判断原则：新增配置先区分它是启动期敏感/连接变量、非敏感 YAML 基线、Web 可改运行期参数、平台布局配置、用户自有偏好，还是需要版本和归属的业务配置。
 
 | 配置类型 | 归属 |
 |----------|------|
 | 启动期敏感/连接变量 | 环境变量 |
 | 非敏感默认值 | `config/settings.yaml` |
 | Web 可改运行期参数 | PostgreSQL `app_config` 白名单覆盖层 |
+| 布局预设/页面默认/字段策略 | PostgreSQL `layout_preset` / `layout_page_config` / `layout_field_policy` |
+| 页面布局/组件用户层 | PostgreSQL `layout_user_config` |
+| 主题、导航、页面业务偏好等用户自有偏好 | PostgreSQL `user_preference` |
 | 评分/买卖/筛选等方案 | profile/version 表 |
 | 定时任务定义 | `scheduled_job` 表 |
 

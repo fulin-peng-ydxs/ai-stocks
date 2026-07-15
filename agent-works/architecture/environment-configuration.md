@@ -27,7 +27,9 @@ flowchart TD
 | `.env.local` | 本机后端敏感变量模板的实际文件 | `start.sh` | 只由 `./start.sh` 自动读取；直接 `python -m backend.cli ...` 与 `./start-web.sh` 不自动读取 |
 | `config/settings.yaml` | 非敏感默认值、路径、端口、运行参数基线 | `backend/config/settings.py` | `get_settings()` 缓存；改 YAML 后需 `/api/config/reload` 或重启刷新缓存 |
 | PostgreSQL `app_config` | Web 系统设置白名单覆盖值 | `backend/storage/app_config.py` | `get_effective_settings()` 每次重合并，下一次读取即生效；PG 不可用时回落 YAML |
-| 方案/业务表 | 评分、买卖、筛选、布局、定时任务等业务配置 | 各 repo/service | 不属于环境变量链路，按对应模块的版本和权限规则生效 |
+| PG 布局配置表 | 布局预设、页面默认、组件字段开放策略、页面布局/组件用户层 | `backend/storage/layout_config.py` | `default < preset < page < user` 合并；平台层和用户层均由 PG 承载 |
+| PG 用户偏好表 | 主题、导航模式、页面业务偏好、K 线偏好、回测参数记忆、设置抽屉跨页面偏好 | `backend/storage/user_preference.py`、`/api/user-preferences` | 只保存当前登录用户自己的偏好；未登录或接口失败时前端使用本地 fallback |
+| 方案/业务表 | 评分、买卖、筛选、定时任务等业务配置 | 各 repo/service | 不属于环境变量链路，按对应模块的版本和权限规则生效 |
 
 ### 2. 环境变量总表
 
@@ -89,7 +91,18 @@ PostgreSQL `app_config` 是当前系统设置覆盖层的权威表：
 
 写入口是 `AppConfigRepo.set_many()`，只接受 `CONFIG_GROUPS` 派生出的 `WHITELIST`，并逐项做类型、枚举和范围校验；任一项非法则整批拒绝。当前 Web 系统设置展示数据源、回测成本、认证与防滥用、审计设置四组；隐藏的 `scheduler.*` 只服务旧配置迁移。
 
-同名的 DuckDB `app_config` 仍存在于旧 DDL 中，但不再作为运行期系统设置覆盖层。它当前主要用于旧 DuckDB 配置迁移到 PG（`migrate_rbac` 使用 `ON CONFLICT DO NOTHING`）以及布局预设一次性迁移 marker。新增运行期系统配置不要写 DuckDB `app_config`。
+同名的 DuckDB `app_config` 仍存在于旧 DDL 中，但不再作为运行期系统设置覆盖层。DuckDB 旧配置表只允许作为旧版本迁移读取源和回滚依据保留；新增运行期系统配置不要写 DuckDB `app_config`。
+
+布局与用户偏好不走 `app_config`：
+
+| 配置类型 | 权威表 | 说明 |
+|----------|--------|------|
+| 布局预设 | PostgreSQL `layout_preset` | 系统管理员维护的布局预设层 |
+| 页面布局默认 | PostgreSQL `layout_page_config` | 单页面 page 层默认值 |
+| 组件字段开放策略 | PostgreSQL `layout_field_policy` | 控制组件字段可开放到 preset/page/user 的策略 |
+| 页面布局/组件用户层 | PostgreSQL `layout_user_config` | 只保存真实 pageKey 的布局与组件用户层；组件路径保存必须带真实 `PageLayout` 校验归属 |
+| 非布局用户偏好 | PostgreSQL `user_preference` | 主题、导航、K 线、页面业务偏好、回测参数记忆等 |
+| 设置抽屉跨页面偏好 | PostgreSQL `user_preference` | `scope='global'`、`pref_key='settings-drawer'`；用户层仅 `size/defaultCollapsed` |
 
 ### 4. 读取规则
 
@@ -97,11 +110,28 @@ PostgreSQL `app_config` 是当前系统设置覆盖层的权威表：
 |------|--------|
 | 启动期路径、DuckDB 文件、PG/Redis 连接参数、服务端口 | `get_settings()` + 环境变量派生方法 |
 | 数据源限流/并发/超时、回测成本、认证开关/限流、审计保留期等运行期参数 | `get_effective_settings()` |
+| 布局预设、页面默认和组件字段开放策略 | `LayoutConfigRepo` 读取 PG 布局配置表 |
+| 页面布局/组件用户偏好 | `/api/layout/users/{pageKey}`，保存真实 pageKey 且组件路径带真实 `PageLayout` |
+| 主题、导航模式、页面业务偏好、K 线偏好、回测参数记忆 | `/api/user-preferences` / `/api/user-preferences/bulk` |
 | 评分方案、买卖方案、筛选方案 | 对应 profile/version 表，不走环境变量 |
 | 定时任务定义 | `scheduled_job` 表，不再用 `scheduler.*` 作为运行态配置 |
 | 调试账号密码 | `AI_STOCKS_TEST_USER_PASSWORD` 只在 dev-users 命令运行时读取 |
 
-新增配置项时先判断它是敏感启动变量、非敏感 YAML 基线、Web 可改运行期参数，还是业务资产配置。敏感值只放环境变量；可由系统管理员在线修改的运行期参数必须进入 `CONFIG_GROUPS` 白名单并落 PostgreSQL `app_config`；方案类配置应进入对应业务表并保留版本/归属规则。
+新增配置项时先判断它是敏感启动变量、非敏感 YAML 基线、Web 可改运行期参数、平台布局配置、用户自有偏好，还是业务资产配置。敏感值只放环境变量；可由系统管理员在线修改的运行期参数必须进入 `CONFIG_GROUPS` 白名单并落 PostgreSQL `app_config`；布局配置使用 PG 布局配置表；登录用户自有 UI/页面偏好使用 `user_preference`；方案类配置应进入对应业务表并保留版本/归属规则。
+
+### 5. 前端 localStorage 边界
+
+localStorage 不作为登录用户配置或偏好权威。在配置与偏好链路中，允许范围仅限：
+
+| 用途 | 说明 |
+|------|------|
+| 登录态 token | 当前认证存储仍由 `frontend/src/api/authToken.ts` 管理，不属于本配置链路 |
+| 登录前主题读取 | 首屏可先读本地主题，登录后以 `user_preference(global/theme)` 同步 |
+| 离线/接口失败 fallback | 页面可继续使用旧本地值渲染，不能宣称云端已保存 |
+| 旧偏好迁移源 | 登录后由前端迁移器一次性迁到 PG，并写迁移 marker |
+| 临时交互态 | 例如抽屉本次打开期间的展开/收起状态，不进 PG |
+
+`stockSet` 这类“当前股票集合/工作上下文”不是配置项，也不按用户偏好权威处理；如果后续要云端化，应按用户资产或工作集单独设计。
 
 ## 风险事项
 

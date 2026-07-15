@@ -5,8 +5,8 @@
 - 需求文档：本轮用户确认的配置存储治理诉求，以及计划审查反馈 F1-F9。
 - 需求编号说明：本文 R1-R10 为本计划基于用户诉求与审查反馈临时分配的计划内编号；当前没有独立 `requirement.md`。
 - 功能目标：
-  - 把当前仍落 DuckDB 的布局平台配置迁到 PostgreSQL。
-  - 把当前仍落浏览器 localStorage 的布局用户层、组件用户层、页面业务偏好和全局 UI 偏好迁到 PostgreSQL。
+  - 把迁移前落 DuckDB 的布局平台配置迁到 PostgreSQL。
+  - 把迁移前落浏览器 localStorage 的布局用户层、组件用户层、页面业务偏好和全局 UI 偏好迁到 PostgreSQL。
   - 保留 YAML 作为默认基线，保留 DuckDB 作为行情/分析数据存储，不再扩展 DuckDB 配置职责。
   - 修正设置抽屉“默认折叠配置”和“当前展开交互态”混用问题。
   - 明确个人偏好云端持久化的权限口径，避免从本地零权限退化为云端 403。
@@ -23,10 +23,10 @@
   - `backend/storage/app_config.py`：`AppConfigRepo` 使用 PG `app_config`，`CONFIG_GROUPS` 是系统设置白名单和前端 schema。
   - `backend/api/data_admin.py`：`GET/POST /api/data/settings` 读写系统设置。
   - `agent-works/architecture/environment-configuration.md`：明确 Web 可改运行期参数落 PostgreSQL `app_config`，DuckDB 同名旧表不再作为运行期权威。
-- 布局平台配置仍在 DuckDB：
-  - `backend/storage/layout_config.py`：`layout_preset`、`layout_page_config`、`layout_field_policy` 通过 `self.c` 读写 DuckDB；`layout_user_config` 已通过 `self.pg` 读写 PG。
-  - `backend/storage/ddl.py`：仍声明 DuckDB 版 `layout_preset`、`layout_page_config`、`layout_user_config`、`layout_field_policy`、`app_config`。
-  - `backend/storage/pg_ddl.py`：已有 PG `layout_user_config` 与 `app_config`，但没有 PG 版 `layout_preset`、`layout_page_config`、`layout_field_policy`。
+- 布局平台配置迁移前位于 DuckDB，当前阶段已迁到 PG：
+  - `backend/storage/layout_config.py`：T3 后 `layout_preset`、`layout_page_config`、`layout_field_policy` 运行期读写已改用 PG；`layout_user_config` 保持 PG。
+  - `backend/storage/ddl.py`：DuckDB 版旧配置表仍保留为迁移读取源和首版本回滚依据。
+  - `backend/storage/pg_ddl.py`：已新增 PG 版 `layout_preset`、`layout_page_config`、`layout_field_policy`、`layout_user_config` 与 `app_config`。
 - 组件配置保存存在后端归属校验：
   - `layout_config.py` 的 `_enforce_component_ownership()` 在 values 含 `slots.<slotId>.config.<field>` 且未传 layout 时会拒绝保存。
   - 因此全局抽屉偏好不能保存到伪造 pageKey 的 `/api/layout/users/__global__:settings-drawer`，除非提供合成 layout；本计划不采用合成 layout，改走 `user_preference`。
@@ -38,11 +38,11 @@
   - `layout:user-config` 当前在 `BUSINESS_RESOURCE_CODES`，不是登录基线；无该码的自定义角色会 403。
   - 个人偏好从 localStorage 迁到 PG 后，必须把自有偏好持久化能力纳入登录基线自持久化口径，否则会造成权限回归。
   - 现有 `SHARED_RESOURCE_CODES` 语义是“登录基线共享读”，运行时对有角色的非 system 用户强制注入、角色页不可反选、不落 `role_resource`；本次若放入个人偏好写码，就是有意扩展 baseline 到“自作用域写”。
-- 前端用户层仍在 localStorage：
-  - `frontend/src/layout/useLayoutConfig.ts`：`ai-stocks:layout:<pageKey>` 保存布局用户层，`ai-stocks:layout-cc:<pageKey>` 保存组件用户层。
-  - `frontend/src/composables/useRemoteLayoutConfig.ts`：只拉后端页面层，注释仍说明用户层走 localStorage。
-  - `frontend/src/composables/usePageSettings.ts`：页面业务偏好统一写 `ai-stocks:page-settings:<pageKey>`。
-  - 其它本地偏好入口：`useTheme.ts`、`useAppNavigation.ts`、`useKlinePrefs.ts`、`BacktestView.vue` 的 `ai-stocks-backtest-params`。
+- 前端用户层迁移前在 localStorage，当前阶段已改为 PG 权威：
+  - `frontend/src/layout/useLayoutConfig.ts`：旧 `ai-stocks:layout:<pageKey>` / `ai-stocks:layout-cc:<pageKey>` 只作为 fallback 和迁移源。
+  - `frontend/src/composables/useRemoteLayoutConfig.ts`：已拉取后端 page 层和真实 page user 层，并保存到 `/api/layout/users/{pageKey}`。
+  - `frontend/src/composables/usePageSettings.ts`：页面业务偏好已通过 `useUserPreference(scope='page')` 写 `user_preference`。
+  - 其它本地偏好入口：主题、导航模式、K 线偏好、回测参数记忆已迁到 `user_preference`，localStorage 仅作为未登录/接口失败 fallback 和迁移源。
 - 设置抽屉当前状态问题：
   - `frontend/src/components/PageSettingsDrawer.vue`：用户点击折叠段时直接写 `slots.settings.config.defaultCollapsed`，导致“默认配置”随当前交互变化。
 - 设计规范依据：
@@ -231,8 +231,8 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须实现 | R1 | 系统配置不再使用 DuckDB 权威 | 保持 PG `app_config` 权威，清理 DuckDB marker/旧入口依赖 | T1、T3、T5、T10 | 进行中 | 一致 | T1 已完成存储边界冻结，T3 已把布局 seed marker 改到 PG `app_config` 并兼容 DuckDB 旧 marker，T5 已提供 DuckDB 旧 `app_config` 缺失补迁命令；后续 T10 同步文档。 |
-| 必须实现 | R2 | 布局平台配置迁 PG | 新增 PG DDL，改造 `LayoutConfigRepo`，迁移 DuckDB 数据 | T2、T3、T5、T12 | 进行中 | 一致 | T2 已新增 PG 表底座，T3 已将运行期仓库读写切 PG，T5 已提供 DuckDB 布局配置到 PG 的迁移命令；发布闭环留到 T12。 |
+| 必须实现 | R1 | 系统配置不再使用 DuckDB 权威 | 保持 PG `app_config` 权威，清理 DuckDB marker/旧入口依赖 | T1、T3、T5、T10 | 进行中 | 一致 | T1 已完成存储边界冻结，T3 已把布局 seed marker 改到 PG `app_config` 并兼容 DuckDB 旧 marker，T5 已提供 DuckDB 旧 `app_config` 缺失补迁命令，T10 已同步文档边界；发布闭环留到 T12。 |
+| 必须实现 | R2 | 布局平台配置迁 PG | 新增 PG DDL，改造 `LayoutConfigRepo`，迁移 DuckDB 数据 | T2、T3、T5、T12 | 进行中 | 一致 | T2 已新增 PG 表底座，T3 已将运行期仓库读写切 PG，T5 已提供 DuckDB 布局配置到 PG 的迁移命令，T10 已同步平台/环境配置文档中的 PG 布局表边界；发布闭环留到 T12。 |
 | 必须实现 | R3 | 布局用户层迁 PG | 前端拉取/保存 `/layout/users/{pageKey}`，localStorage 降级为迁移源 | T7、T9 | 进行中 | 一致 | T7 已接入 `/layout/users/{pageKey}` 的拉取、注入和 debounce 保存；T9 已把旧 `ai-stocks:layout:<pageKey>` 按真实 pageKey 迁到 `/layout/users/{pageKey}`，localStorage 继续仅作 fallback。 |
 | 必须实现 | R4 | 组件用户层迁 PG | 组件路径进入 `layout_user_config.config.values`，保存时带真实 PageLayout | T7、T9、T11 | 进行中 | 一致 | T7 已将组件用户配置导出为 `slots.<id>.config.<field>` 并保存时带真实 `PageLayout`；T9 已迁移旧 `ai-stocks:layout-cc:<pageKey>` 中合法组件路径，保存时复用 pageRegistry 的真实 `PageLayout`；T11 继续整体回归。 |
 | 必须实现 | R5 | 抽屉偏好跨页面共享 | 抽屉自身偏好进 `user_preference(global/settings-drawer)`，`size/defaultCollapsed` 覆盖 page/preset 默认且运行时只选一个来源 | T4、T7、T9 | 进行中 | 一致 | T4 已提供 `user_preference` 后端存储与 API；T7 已新增全局抽屉偏好消费和保存；T9 只把旧 `settings-drawer.size` 迁为全局偏好，旧 `defaultCollapsed/bodyScroll/collapsibleSections` 不迁。 |
@@ -240,7 +240,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 | 必须实现 | R7 | 页面业务偏好迁 PG | 新增 `user_preference`，改造 `usePageSettings` 和零散偏好 composable | T4、T8、T9 | 进行中 | 一致 | T4 已提供后端偏好存储与批量保存接口；T8 已新增通用 `useUserPreference`，并把 `usePageSettings`、主题、导航模式、K 线偏好、回测参数记忆接入远端优先与本地 fallback；T9 已把旧 page-settings、theme、navigation、kline、backtest 本地 key 迁到 `user_preference`。 |
 | 必须实现 | R8 | 个人偏好权限口径 | `layout:user-config` 与 `user-preference:manage` 纳入登录基线自持久化能力，明确这是扩 baseline 而非可反选角色授权 | T2、T4、T11 | 进行中 | 一致 | T2 已调整资源码和测试契约，T4 已用 `user-preference:manage` 接入 API 并验证 baseline 通过、无角色 fail-closed；完整前端 403 fallback 留到 T11。 |
 | 必须实现 | R9 | 数据迁移幂等可回滚 | 后端 CLI 迁 DuckDB，前端一次性迁 localStorage | T5、T9、T12 | 进行中 | 一致 | T5 已完成后端 DuckDB→PG 配置迁移命令和 marker 跳过/force；T9 已完成前端 localStorage 一次性迁移器和 marker 跳过；发布演练留到 T12。 |
-| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 进行中 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试，T5 已补迁移命令测试，T6 已补抽屉折叠运行态组件测试，T7 已补布局远端化与抽屉偏好前端单测；T8 已补 `useUserPreference` 与 K 线偏好单测并通过前端构建；T9 已补 `usePreferenceMigration` 单测并通过前端构建；完整文档、浏览器页面验证和发布验证仍在后续任务。 |
+| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 进行中 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试，T5 已补迁移命令测试，T6 已补抽屉折叠运行态组件测试，T7 已补布局远端化与抽屉偏好前端单测；T8 已补 `useUserPreference` 与 K 线偏好单测并通过前端构建；T9 已补 `usePreferenceMigration` 单测并通过前端构建；T10 已同步 `DESIGN.md`、环境配置文档和平台文档；浏览器页面验证和发布验证仍在后续任务。 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -421,7 +421,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 ### 6.10 任务 T10：文档与设计规范同步
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T3、T4、T7、T8
 - 涉及文件/模块：`DESIGN.md`、`agent-works/architecture/environment-configuration.md`、`agent-works/architecture/platform.md`
 - 目标：同步配置存储边界，避免后续继续把配置写到 DuckDB 或 localStorage。
@@ -436,7 +436,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 边界与异常：不重复写历史迁移流水账，只沉淀稳定规则。
 - 验证方式：文档审阅，和代码事实一致。
 - 完成标准：文档不再把 DuckDB/localStorage 描述为配置权威。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成。`DESIGN.md` 已把布局 user 层维护入口改为 PG `layout_user_config` / `user_preference`，并明确 localStorage 仅作未登录/离线 fallback、旧偏好迁移源、登录前主题读取和临时交互态；`settings-drawer` 用户层字段说明收敛为 `size/defaultCollapsed`，`bodyScroll/collapsibleSections` 只允许 preset/page。`agent-works/architecture/environment-configuration.md` 已补充 PG 布局配置表、`layout_user_config`、`user_preference` 和前端 localStorage 边界。`agent-works/architecture/platform.md` 已把平台配置从 DuckDB 基础设施表中拆出，明确平台配置/用户偏好落 PG，行情和分析数据保留 DuckDB。
 
 ### 6.11 任务 T11：测试与页面验证
 
@@ -531,6 +531,9 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 页面功能点验证：
   - 计划：系统设置页仍按现有分组展示；设置抽屉三段仍按 DESIGN 固定顺序展示；业务选项远端保存后刷新回显。
   - 具体完成情况：T8 已把业务选项基础存储能力切到 `useUserPreference(scope='page')`，保持 `usePageSettings` 现有调用接口；T9 已在登录初始化中触发一次性迁移，真实页面刷新回显留到 T11 浏览器验证。
+- 文档一致性验证：
+  - 计划：`DESIGN.md`、环境配置文档和平台文档不再把 DuckDB/localStorage 描述为配置权威，且 `settings-drawer` 用户层字段与代码事实一致。
+  - 具体完成情况：T10 已执行文档检索核对并同步三份稳定规则文档；`DESIGN.md` user 层、`settings-drawer` 字段层级、`environment-configuration.md` 配置类型归属和 `platform.md` 持久层表分工均已与当前代码事实对齐。
 
 ## 9. 发布与回滚
 
