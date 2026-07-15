@@ -33,6 +33,9 @@ _CONTEXT_ALLOW_KEYS = {
     "cutoff",
     "skipped",
     "reason",
+    "migration_source",
+    "item_count",
+    "saved_count",
 }
 _SENSITIVE_TOKENS = ("password", "token", "secret", "captcha", "credential")
 _CHANGE_SENSITIVE_TOKENS = ("password", "token", "secret", "credential")
@@ -47,6 +50,7 @@ _TARGET_TYPE_LABELS = {
     "sys_resource": "功能点",
     "sys_tenant": "租户",
     "app_config": "系统设置",
+    "user_preference": "用户偏好",
     "dict_type": "字典类型",
     "dict_item": "字典项",
     "score_profile": "评分方案",

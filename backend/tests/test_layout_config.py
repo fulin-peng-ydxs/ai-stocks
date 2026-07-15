@@ -171,6 +171,53 @@ def test_pg_empty_reads_duckdb_layout_until_config_migration(client):
     assert policies[("data-table", "pageSize")]["allowedLayers"] == ["page"]
 
 
+def test_duckdb_layout_fallback_survives_accidental_pg_write_before_migration(client):
+    """即使迁移前 PG 被误写非空，marker 缺失时仍优先展示 DuckDB 存量。"""
+    client.execute(
+        "INSERT INTO layout_preset "
+        "(key, name, description, config, enabled, is_builtin, schema_version, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        ["legacy-duck", "旧库预设", "迁移前旧数据", '{"density":"compact"}', True, False, 1],
+    )
+    pg = PostgresClient()
+    try:
+        pg.execute(
+            "INSERT INTO layout_preset "
+            "(key, name, description, config, enabled, is_builtin, schema_version, created_at, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            ["bad-pg", "迁移前误写", "不应击穿 DuckDB 回退", '{"density":"standard"}', True, False, 1],
+        )
+
+        repo = LayoutConfigRepo(client)
+        keys = {p["key"] for p in repo.list_presets(include_disabled=True)}
+
+        assert "legacy-duck" in keys
+        assert "bad-pg" not in keys
+        assert repo.get_preset("legacy-duck")["config"]["values"]["density"] == "compact"
+        assert repo.get_preset("bad-pg") is None
+    finally:
+        pg.close()
+
+
+def test_platform_layout_write_blocked_until_config_storage_migrated(client):
+    """DuckDB 仍有待迁平台配置时，平台层写入必须拒绝，避免击穿只读回退。"""
+    client.execute(
+        "INSERT INTO layout_preset "
+        "(key, name, description, config, enabled, is_builtin, schema_version, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        ["legacy-duck", "旧库预设", "迁移前旧数据", '{"density":"compact"}', True, False, 1],
+    )
+
+    repo = LayoutConfigRepo(client)
+
+    with pytest.raises(LayoutConfigValidationError, match="配置存储迁移未完成"):
+        repo.upsert_preset("new-preset", "迁移前误写", config={"values": {}})
+    with pytest.raises(LayoutConfigValidationError, match="配置存储迁移未完成"):
+        repo.set_page_config("board", {"values": {"density": "standard"}})
+    with pytest.raises(LayoutConfigValidationError, match="配置存储迁移未完成"):
+        repo.set_field_policy("data-table", "pageSize", ["page"])
+
+
 def test_preset_tokens_and_references(client):
     repo = LayoutConfigRepo(client)
     repo.upsert_preset(

@@ -582,10 +582,12 @@ class LayoutConfigRepo:
         return not df.empty
 
     def _should_read_duckdb_layout(self, table: str) -> bool:
-        """迁移 marker 缺失且 PG 对应平台表为空时，允许只读回退 DuckDB 旧配置表。"""
+        """迁移 marker 缺失且 DuckDB 有旧平台配置时，优先只读回退 DuckDB。
+
+        不再以 PG 表是否为空作为前置条件：迁移前一旦误写 PG，仍应继续展示 DuckDB
+        存量，避免管理员误判存量平台配置丢失。
+        """
         if self._config_storage_migrated():
-            return False
-        if self._pg_layout_count(table) > 0:
             return False
         try:
             has_old_rows = self._duck_layout_count(table) > 0
@@ -593,8 +595,39 @@ class LayoutConfigRepo:
             log.warning("DuckDB 布局旧表回退检查失败: table=%s err=%s", table, e)
             return False
         if has_old_rows:
-            log.warning("PG %s 为空且迁移 marker 缺失，临时只读回退 DuckDB 旧配置表", table)
+            pg_count = self._pg_layout_count(table)
+            if pg_count > 0:
+                log.warning(
+                    "PG %s 已有 %s 条记录但配置迁移 marker 缺失，继续只读回退 DuckDB 旧配置表",
+                    table,
+                    pg_count,
+                )
+            else:
+                log.warning("PG %s 为空且迁移 marker 缺失，临时只读回退 DuckDB 旧配置表", table)
         return has_old_rows
+
+    def _has_pending_duckdb_platform_layout(self) -> bool:
+        """判断是否仍存在未完成迁移的 DuckDB 平台布局配置。"""
+        for table in ("layout_preset", "layout_page_config", "layout_field_policy"):
+            try:
+                if self._duck_layout_count(table) > 0:
+                    return True
+            except Exception as e:  # noqa: BLE001
+                log.warning("DuckDB 布局旧表写入保护检查失败: table=%s err=%s", table, e)
+        return False
+
+    def _ensure_platform_layout_write_ready(self) -> None:
+        """迁移完成前禁止平台层写入，避免单次 PG 写入击穿 DuckDB 只读回退。
+
+        用户层 layout_user_config 不受此限制；只拦截 preset/page/field-policy 这类平台配置。
+        """
+        if self._config_storage_migrated():
+            return
+        if self._has_pending_duckdb_platform_layout():
+            raise LayoutConfigValidationError(
+                "配置存储迁移未完成，暂不允许保存平台布局配置；"
+                "请先执行 migrate-config-storage 完成 DuckDB 到 PG 的配置迁移"
+            )
 
     def seed_builtin_presets(self) -> int:
         with _PRESET_SEED_LOCK:
@@ -604,18 +637,18 @@ class LayoutConfigRepo:
             )
             if not marker.empty:
                 return 0
-            duck_marker = self.c.query_df(
-                "SELECT 1 FROM app_config WHERE key=?",
-                [_THREE_THEME_PRESET_MARKER],
+            pending_duckdb_layout = (
+                not self._config_storage_migrated() and self._has_pending_duckdb_platform_layout()
             )
-            if not duck_marker.empty and self._pg_layout_count("layout_preset") == 0:
-                # 旧 DuckDB 已完成三主题 seed，而 PG 还未迁移；写 PG marker 防止新代码重复 seed，
-                # 读接口在迁移 marker 缺失时会只读回退 DuckDB，正式数据由 T5 迁移命令搬入 PG。
-                self.pg.execute(
-                    "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, %s) "
-                    "ON CONFLICT (key) DO NOTHING",
-                    [_THREE_THEME_PRESET_MARKER, '{"applied":true,"source":"duckdb"}', datetime.now()],
-                )
+            if pending_duckdb_layout:
+                # DuckDB 已有平台布局配置而 PG 还未完成配置迁移时，不写任何 PG preset。
+                # 读接口临时只读回退 DuckDB，正式数据只能由 migrate-config-storage 搬入 PG。
+                if self._pg_layout_count("layout_preset") == 0:
+                    self.pg.execute(
+                        "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, %s) "
+                        "ON CONFLICT (key) DO NOTHING",
+                        [_THREE_THEME_PRESET_MARKER, '{"applied":true,"source":"duckdb"}', datetime.now()],
+                    )
                 return 0
             inserted = self._apply_builtin_preset_migration()
             self.pg.execute(
@@ -684,9 +717,10 @@ class LayoutConfigRepo:
 
     def get_preset(self, key: str) -> dict[str, Any] | None:
         _validate_key("preset_key", key)
-        df = self.pg.query_df("SELECT * FROM layout_preset WHERE key=%s", [key])
-        if df.empty and not self._config_storage_migrated():
+        if self._should_read_duckdb_layout("layout_preset"):
             df = self.c.query_df("SELECT * FROM layout_preset WHERE key=?", [key])
+        else:
+            df = self.pg.query_df("SELECT * FROM layout_preset WHERE key=%s", [key])
         if df.empty:
             return None
         return self._with_references(_row_to_preset(df.iloc[0]))
@@ -701,6 +735,7 @@ class LayoutConfigRepo:
         is_builtin: bool = False,
         schema_version: int | None = None,
     ) -> dict[str, Any]:
+        self._ensure_platform_layout_write_ready()
         _validate_key("preset_key", key)
         if not name:
             raise LayoutConfigValidationError("预设名称不能为空")
@@ -728,6 +763,7 @@ class LayoutConfigRepo:
         return self.get_preset(key) or {}
 
     def delete_preset(self, key: str) -> None:
+        self._ensure_platform_layout_write_ready()
         _validate_key("preset_key", key)
         preset = self.get_preset(key)
         if not preset:
@@ -762,9 +798,10 @@ class LayoutConfigRepo:
 
     def get_page_config(self, page_key: str) -> dict[str, Any]:
         _validate_key("page_key", page_key)
-        df = self.pg.query_df("SELECT * FROM layout_page_config WHERE page_key=%s", [page_key])
-        if df.empty and not self._config_storage_migrated():
+        if self._should_read_duckdb_layout("layout_page_config"):
             df = self.c.query_df("SELECT * FROM layout_page_config WHERE page_key=?", [page_key])
+        else:
+            df = self.pg.query_df("SELECT * FROM layout_page_config WHERE page_key=%s", [page_key])
         if df.empty:
             return {
                 "pageKey": page_key,
@@ -790,6 +827,7 @@ class LayoutConfigRepo:
         schema_version: int | None = None,
         layout: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        self._ensure_platform_layout_write_ready()
         _validate_key("page_key", page_key)
         if preset_key:
             _validate_key("preset_key", preset_key)
@@ -905,6 +943,7 @@ class LayoutConfigRepo:
 
     def set_field_policy(self, component_kind: str, field: str, layers: list[str]) -> dict[str, Any]:
         """设置某 (kind, field) 的开放层级；只能在代码最大集内收放，越界 / 空集拒绝。"""
+        self._ensure_platform_layout_write_ready()
         maxl = component_field_max_layers(component_kind, field)
         if maxl is None:
             raise LayoutConfigValidationError(f"组件 {component_kind} 无受控字段 {field}")
@@ -939,6 +978,7 @@ class LayoutConfigRepo:
 
     def reset_field_policy(self, component_kind: str, field: str) -> dict[str, Any]:
         """删除某 (kind, field) 的策略覆盖，回落代码最大集。"""
+        self._ensure_platform_layout_write_ready()
         self.pg.execute(
             "DELETE FROM layout_field_policy WHERE component_kind=%s AND field=%s",
             [component_kind, field],
@@ -1041,6 +1081,7 @@ class LayoutConfigRepo:
         if path is not None:
             _normalize_path_value(path, True if path.endswith(".visible") else self._sample_value_for_path(path))
         if scope == "page":
+            self._ensure_platform_layout_write_ready()
             cfg = self.get_page_config(page_key)
             preset_key = cfg.get("presetKey")
             values = dict(cfg["config"]["values"])

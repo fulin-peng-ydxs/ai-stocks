@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { writeAuth } from '@/api/authToken'
 import {
   CONFIG_STORAGE_MIGRATION_MARKER,
+  CONFIG_STORAGE_MIGRATION_SOURCE,
   migrateLocalPreferencesToRemote,
 } from '@/composables/usePreferenceMigration'
 
@@ -107,6 +108,9 @@ describe('usePreferenceMigration', () => {
     )
 
     const bulkItems = prefApi.saveUserPreferencesBulk.mock.calls[0][0]
+    expect(prefApi.saveUserPreferencesBulk.mock.calls[0][1]).toEqual({
+      migrationSource: CONFIG_STORAGE_MIGRATION_SOURCE,
+    })
     expect(bulkItems).toEqual(expect.arrayContaining([
       expect.objectContaining({
         scope: 'page',
@@ -175,7 +179,13 @@ describe('usePreferenceMigration', () => {
     expect(result.preferenceCount).toBe(105)
     expect(prefApi.saveUserPreferencesBulk).toHaveBeenCalledTimes(2)
     expect(prefApi.saveUserPreferencesBulk.mock.calls[0][0]).toHaveLength(100)
+    expect(prefApi.saveUserPreferencesBulk.mock.calls[0][1]).toEqual({
+      migrationSource: CONFIG_STORAGE_MIGRATION_SOURCE,
+    })
     expect(prefApi.saveUserPreferencesBulk.mock.calls[1][0]).toHaveLength(5)
+    expect(prefApi.saveUserPreferencesBulk.mock.calls[1][1]).toEqual({
+      migrationSource: CONFIG_STORAGE_MIGRATION_SOURCE,
+    })
     expect(localStorage.getItem(CONFIG_STORAGE_MIGRATION_MARKER)).toBeTruthy()
   })
 })

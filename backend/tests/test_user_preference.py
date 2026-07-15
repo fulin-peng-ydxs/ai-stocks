@@ -135,6 +135,50 @@ def test_user_preference_api_bulk_and_page_scope(client, pg):
         _rm_user(pg, uid, tid, rid)
 
 
+def test_user_preference_client_migration_bulk_writes_audit(client, pg):
+    uid, tid, rid = _mk_user(pg)
+    try:
+        pg.execute(
+            "DELETE FROM audit_log WHERE actor_user_id=%s AND event_type=%s",
+            [uid, "client_preference_migration"],
+        )
+        resp = client.post(
+            "/api/user-preferences/bulk",
+            json={
+                "migrationSource": "config-storage-pg-v1",
+                "items": [
+                    {"scope": "page", "pageKey": "board", "prefKey": "settings", "value": {"dense": True}},
+                    {"scope": "global", "prefKey": "theme", "value": {"mode": "dark"}},
+                ],
+            },
+            headers=_auth(uid, tid),
+        )
+
+        body = resp.json()
+        assert body["code"] == 0
+        audits = pg.query_df(
+            "SELECT event_category, event_type, action, result, status, target_type, target_id, context "
+            "FROM audit_log WHERE actor_user_id=%s AND event_type=%s",
+            [uid, "client_preference_migration"],
+        )
+        assert len(audits) == 1
+        row = audits.iloc[0]
+        assert row["event_category"] == "migration"
+        assert row["action"] == "bulk_save"
+        assert row["result"] == "success"
+        assert row["status"] == "completed"
+        assert row["target_type"] == "user_preference"
+        assert row["target_id"] == "config-storage-pg-v1"
+        assert row["context"]["item_count"] == 2
+        assert row["context"]["saved_count"] == 2
+    finally:
+        pg.execute(
+            "DELETE FROM audit_log WHERE actor_user_id=%s AND event_type=%s",
+            [uid, "client_preference_migration"],
+        )
+        _rm_user(pg, uid, tid, rid)
+
+
 def test_user_preference_api_without_role_fail_closed(client, pg):
     uid, tid, rid = _mk_user(pg, with_role=False)
     try:

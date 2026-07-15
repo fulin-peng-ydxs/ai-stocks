@@ -14,6 +14,7 @@ import {
 } from '@/layout'
 
 export const CONFIG_STORAGE_MIGRATION_MARKER = 'ai-stocks:migration:config-storage-pg:v1'
+export const CONFIG_STORAGE_MIGRATION_SOURCE = 'config-storage-pg-v1'
 
 type DrawerSize = 'sm' | 'md' | 'lg'
 type NavigationMode = 'sidebar-tabs' | 'dual-topbar'
@@ -232,7 +233,7 @@ async function runMigration(): Promise<PreferenceMigrationResult> {
     const chunk = preferences.slice(i, i + PREFERENCE_BULK_CHUNK_SIZE)
     if (!chunk.length) continue
     try {
-      await saveUserPreferencesBulk(chunk)
+      await saveUserPreferencesBulk(chunk, { migrationSource: CONFIG_STORAGE_MIGRATION_SOURCE })
       result.preferenceCount += chunk.length
     } catch {
       result.failed = true

@@ -33,6 +33,11 @@ export function saveUserPreference<T = unknown>(
 
 export function saveUserPreferencesBulk(
   items: SaveUserPreferencePayload[],
+  options: { migrationSource?: string } = {},
 ): Promise<{ items: UserPreferenceRecord[] }> {
-  return http.post('/user-preferences/bulk', { items }, { skipGlobalError: true } as AppRequestConfig)
+  return http.post(
+    '/user-preferences/bulk',
+    { items, migrationSource: options.migrationSource },
+    { skipGlobalError: true } as AppRequestConfig,
+  )
 }

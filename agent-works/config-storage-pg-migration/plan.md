@@ -554,6 +554,13 @@ CREATE TABLE IF NOT EXISTS user_preference (
   6. 启动新后端和前端。
   7. 登录后触发客户端 localStorage 迁移。
   8. 验证系统设置、布局配置、页面设置抽屉、页面业务偏好。
+- 迁移窗口写入约束：
+  - 迁移完成前禁止接受布局预设、页面配置和字段开放策略写入。
+  - 后端已增加代码级保护：当 `migration.config_storage_pg_v1` marker 缺失且 DuckDB 仍有平台布局旧数据时，平台层写接口直接拒绝；读接口继续优先只读回退 DuckDB，不会被迁移前 PG 误写非空击穿。
+- 上线前人工核对：
+  - 使用真实数据执行 dry-run，核对 `app_config.conflict_keys` 两侧取值；本迁移默认只补 PG 缺失 key，不覆盖 PG 现有运行期配置。
+  - 确认生产部署拓扑是否单后端；多副本虽然 upsert 幂等，但迁移命令仍按单执行者 runbook 管控。
+  - 对多设备用户确认旧 localStorage 后写覆盖策略可接受；同一用户设备 B 首次登录可能用 B 的旧本地值覆盖设备 A 已迁移到 PG 的值。
 - 配置或环境变量：
   - 不新增必填环境变量。
   - 继续依赖既有 PG 连接配置。
@@ -576,6 +583,8 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - PG 用户偏好保存失败时，如果没有 fallback，页面体验会退化。对策：前端保留本地 fallback 和错误状态，不阻塞页面。
 - 远端偏好加载完成前用户已修改配置，可能被旧响应覆盖。对策：保存前等待 hydration，或按 dirty path 阻止远端覆盖本地新改动。
 - 新增 `user_preference` 可能被滥用存大对象。对策：后端限制 value 大小、scope/key 白名单或格式。
+- 迁移 marker 缺失时如果发生平台布局写入，可能导致 PG 非空并击穿 DuckDB 只读回退。对策：发布步骤要求停服务迁移；后端平台布局写接口在 DuckDB 仍有待迁旧数据且 marker 缺失时 fail-closed；读接口在 marker 缺失且 DuckDB 有旧数据时仍优先读 DuckDB。
+- 客户端 localStorage 迁移如果全量失败，纯前端 console warning 不利于运维发现。对策：前端迁移 bulk 保存携带 `migrationSource=config-storage-pg-v1`，后端在审计日志写入 `client_preference_migration` 事件，记录 item/saved 数量和成功失败结果。
 - 权限口径变更会影响 RBAC 基线定义。对策：把个人偏好写入明确命名为“登录基线自持久化能力”，并补资源列表和路由扫描测试。
 - baseline 从“共享读”扩展到“自作用域写”后不可被角色页反选。对策：计划明确接受该取舍，并把两个资源码限制为只写当前用户自己的偏好；未来只读/访客角色如果要禁止偏好写入，需要另行设计未登录或无角色模式，而不是复用有角色 baseline。
 
@@ -593,6 +602,9 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 首个迁移版本是否需要在系统管理页显示“用户偏好云同步状态”。建议不做，先用静默同步和失败 fallback。
 - `stockSet` 是否也要按用户资产迁 PG。建议不纳入本次配置迁移，后续作为“工作集/股票集合”单独设计。
 - 旧 DuckDB 配置表物理清理时间。建议至少稳定一个版本后再做单独清理计划。
+- `app_config` 冲突 key 是否坚持“PG 现有值权威”。当前实现为 DuckDB 旧值只补 PG 缺失、不覆盖；上线前需用 dry-run 的 `conflict_keys` 人工核对真实差异。
+- 多设备旧偏好后写覆盖是否可接受。当前实现按每个浏览器 localStorage 独立 marker 触发，设备 B 的旧值可能覆盖设备 A 已迁移值；这是已知 last-write-wins 策略。
+- 客户端迁移分片失败后整体重跑是否可接受。当前 layout/user_preference 目标写入均为 upsert 幂等，成功分片下次会重复提交但不会产生重复行。
 
 ## 11. 二次整体审查结论
 
@@ -650,3 +662,36 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 未执行：后端 pytest。本次整改未修改后端代码、数据库 DDL、权限 seed、路由或迁移命令；后端 57 项回归仍引用 T11/T12 结果。
 - 未执行：浏览器页面验证。本次无视觉和真实点击交互改动，核心缺陷是 composable 状态隔离，已用 Vitest 覆盖同标签换账号路径；如进入发布前验收，仍建议补一次真实浏览器同标签用户 A 登出再用户 B 登录的冒烟验证。
 - 未执行：PG 迁移演练。本次未修改后端迁移逻辑和 SQL，仅修改前端 localStorage 批量迁移分片；T12 迁移演练结论不变。
+
+## 13. 业务审查整改记录
+
+### 13.1 问题逐项回应
+
+| 审查问题 | 是否认可 | 整改内容 | 涉及文件 | 验证 |
+| --- | --- | --- | --- | --- |
+| C1：迁移窗口内平台写入会击穿 DuckDB 只读回退 | 认可，中风险运维/异常链路缺口 | 增加平台布局写入 fail-closed：`migration.config_storage_pg_v1` 缺失且 DuckDB 仍有 `layout_preset/layout_page_config/layout_field_policy` 旧数据时，`upsert_preset`、`delete_preset`、`set_page_config`、page reset、`set_field_policy`、`reset_field_policy` 均拒绝写入；读回退改为 marker 缺失且 DuckDB 有旧数据即优先读 DuckDB，不再被 PG 非空击穿；`seed_builtin_presets` 在待迁旧数据存在时不写 PG preset。发布步骤同步写入“迁移完成前禁止平台布局写入”。 | `backend/storage/layout_config.py`、`backend/tests/test_layout_config.py`、`agent-works/config-storage-pg-migration/plan.md` | 新增 `test_platform_layout_write_blocked_until_config_storage_migrated` 和 `test_duckdb_layout_fallback_survives_accidental_pg_write_before_migration`；后端定向测试通过。 |
+| C2：客户端 localStorage 迁移无服务端可观测性 | 认可，中风险运营落地缺口 | 前端 bulk 迁移请求携带 `migrationSource=config-storage-pg-v1`；后端 `/api/user-preferences/bulk` 识别该来源后写入 best-effort 审计事件 `client_preference_migration`，记录迁移来源、item_count、saved_count、success/failed。普通 bulk 保存不写该迁移审计。 | `frontend/src/api/userPreferences.ts`、`frontend/src/composables/usePreferenceMigration.ts`、`frontend/src/composables/__tests__/usePreferenceMigration.spec.ts`、`backend/api/user_preferences.py`、`backend/services/audit_service.py`、`backend/tests/test_user_preference.py`、`agent-works/config-storage-pg-migration/plan.md` | 新增 `test_user_preference_client_migration_bulk_writes_audit`；前端迁移单测断言 migrationSource；后端/前端定向测试通过。 |
+| I1：`app_config` 只补缺失、不覆盖可能丢弃 DuckDB 侧更新 | 认可为待业务确认，不改代码口径 | 当前实现和既有测试明确 PG 自 stage1 起为运行期权威，DuckDB 同名 key 不覆盖 PG。将 dry-run `conflict_keys` 两侧取值核对加入上线前人工核对项。 | `agent-works/config-storage-pg-migration/plan.md` | 文档更新；未改迁移策略，需上线前真实数据 dry-run 确认。 |
+| I2：多设备旧偏好后写覆盖是否可接受 | 认可为待业务确认，不改代码口径 | 保持计划 E4 的 last-write-wins 策略；文档明确设备 B 首次登录可能以旧 localStorage 覆盖设备 A 已迁移偏好，需要业务确认。 | `agent-works/config-storage-pg-migration/plan.md` | 文档更新；未改冲突合并策略。 |
+| I3：迁移器分片内部分失败后的重试语义 | 认可为待业务确认，不改代码口径 | 保持失败不写 marker、下次整体重跑；文档明确目标接口 upsert 幂等，成功分片会重复提交但不产生重复行。 | `agent-works/config-storage-pg-migration/plan.md` | 文档更新；分片单测已覆盖 100/5 分片提交。 |
+| M1：生产 DuckDB 存量规模与内容未知 | 认可为上线前缺口 | 发布清单要求真实数据 dry-run，核对表行数、待迁 key 和 conflict_keys。 | `agent-works/config-storage-pg-migration/plan.md` | 未执行，原因是本地无法访问生产 DuckDB。 |
+| M2：生产是否单后端未知 | 认可为上线前缺口 | 发布清单要求确认部署拓扑；多副本场景迁移命令仍需单执行者管控。 | `agent-works/config-storage-pg-migration/plan.md` | 未执行，原因是本地无法确认生产拓扑。 |
+| M3：后端回归与 PG 迁移演练未独立复现 | 认可为验证盲区 | 本次整改会补跑受影响的后端定向测试和前端构建；完整 PG 迁移演练仍列为发布前复跑项。 | `agent-works/config-storage-pg-migration/plan.md` | 后端/前端定向测试本次执行；真实 PG 迁移演练未执行。 |
+
+### 13.2 整改后业务整体审查
+
+- 入口闭环：后端迁移 CLI、布局平台读写、用户偏好 API、前端登录迁移入口仍完整；新增的迁移审计只在客户端旧偏好迁移 bulk 请求上触发，不影响普通偏好保存。
+- 权限边界：平台布局写入仍走 `require_system_perm` 或 reset scope 分流；新增 fail-closed 位于仓库层，阻断迁移未完成时的系统管理员误写；用户自作用域写仍走 baseline `layout:user-config`/`user-preference:manage`。
+- 数据一致性：平台配置迁移前 DuckDB 旧数据只读回退不再会被一次 PG 平台写入击穿；即使历史上已发生 PG 误写，marker 缺失期间也仍优先展示 DuckDB 存量；迁移完成 marker 存在后继续以 PG 为权威。
+- 运维可观测性：客户端 localStorage 迁移从“仅 console warning”提升为服务端审计可查；失败审计为 best-effort，不反向影响偏好保存接口。
+- 业务待确认：`app_config` PG 权威、localStorage 多设备后写覆盖、分片失败整体重跑仍是既定策略，不在本次擅自改口径。
+- 未发现新增菜单、权限码、DDL、页面原型或 DESIGN 规范变化；本次只影响后端保护逻辑、审计记录、前端 API payload 和发布计划。
+
+### 13.3 本轮验证记录
+
+- 已执行：`python -m py_compile backend/storage/layout_config.py backend/api/user_preferences.py backend/services/audit_service.py backend/tests/test_layout_config.py backend/tests/test_user_preference.py`，通过。
+- 已执行：`python -m pytest backend/tests/test_layout_config.py backend/tests/test_user_preference.py -q`，结果 32 passed，48 warnings（FastAPI `on_event` 既有弃用警告）。
+- 已执行：`cd frontend && npm run test -- src/composables/__tests__/usePreferenceMigration.spec.ts src/composables/__tests__/useUserPreference.spec.ts`，结果 2 files / 8 tests passed。
+- 已执行：`cd frontend && npm run build`，通过；仅有 VueUse PURE 注释和 chunk size warning。
+- 未执行：真实浏览器验证。本次无页面视觉和点击交互变化；仍建议发布前补一次同标签换账号和客户端迁移审计可见性冒烟。
+- 未执行：生产 DuckDB dry-run 与 PG 迁移演练。本地无法访问生产数据；发布前必须补真实 dry-run 冲突核对和迁移演练。
