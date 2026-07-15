@@ -42,7 +42,7 @@
   - `frontend/src/layout/useLayoutConfig.ts`：旧 `ai-stocks:layout:<pageKey>` / `ai-stocks:layout-cc:<pageKey>` 只作为 fallback 和迁移源。
   - `frontend/src/composables/useRemoteLayoutConfig.ts`：已拉取后端 page 层和真实 page user 层，并保存到 `/api/layout/users/{pageKey}`。
   - `frontend/src/composables/usePageSettings.ts`：页面业务偏好已通过 `useUserPreference(scope='page')` 写 `user_preference`。
-  - 其它本地偏好入口：主题、导航模式、K 线偏好、回测参数记忆已迁到 `user_preference`，localStorage 仅作为未登录/接口失败 fallback 和迁移源。
+  - 其它本地偏好入口：主题、导航模式和跨页面设置抽屉偏好通过 `useGlobalPreferenceSync` 同步 `user_preference`；页面业务偏好、K 线偏好和回测参数记忆通过 `useUserPreference` 同步 `user_preference`；localStorage 仅作为未登录/接口失败 fallback、首屏主题读取和迁移源。
 - 设置抽屉当前状态问题：
   - `frontend/src/components/PageSettingsDrawer.vue`：用户点击折叠段时直接写 `slots.settings.config.defaultCollapsed`，导致“默认配置”随当前交互变化。
 - 设计规范依据：
@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
   - `ai-stocks:layout:<pageKey>` 对应普通布局路径，保存到 `/api/layout/users/{pageKey}`。
   - `ai-stocks:layout-cc:<pageKey>` 对应组件路径，保存到 `/api/layout/users/{pageKey}`，请求体必须带当前真实 `PageLayout`，满足后端组件归属校验。
 - 设置抽屉自身偏好：
-  - 新增 `useDrawerPreferences()`，内部使用 `useUserPreference(scope='global', pref_key='settings-drawer')`。
+  - 新增 `useDrawerPreferences()`，内部使用 `useGlobalPreferenceSync(prefKey='settings-drawer')`，保持模块级 singleton 状态、token/用户身份重同步、本地 fallback 和远端 debounce 保存一致。
   - 只保存 `size`、`defaultCollapsed`。
   - `bodyScroll`、`collapsibleSections` 继续只读 preset/page 层，不在用户偏好 UI 中保存。
   - 抽屉运行时优先使用用户全局偏好覆盖 page/preset 默认：`drawerPref.size ?? componentValueOf('settings','size')`。
@@ -205,9 +205,10 @@ CREATE TABLE IF NOT EXISTS user_preference (
   - 登录态从 `user_preference(scope='page', page_key=<pageKey>, pref_key='settings')` 读取。
   - 保存时 debounce 写 PG。
   - 未登录或接口失败时使用 localStorage fallback。
-- 新增通用 `useUserPreference`：
-  - 支持 `global/theme`、`global/navigation`、`global/kline`、`global/settings-drawer`、`page/<pageKey>/settings`、`feature/backtest/params`。
-  - 统一 schemaVersion、默认值合并、非法旧值丢弃和 debounce 保存。
+- 新增偏好同步复用骨架：
+  - `useGlobalPreferenceSync` 承载全局 singleton 偏好的 token/身份守卫、远端读写、debounce、本地 fallback 钩子和加载/失败回调；主题、导航模式、跨页面设置抽屉偏好必须消费它。
+  - `useUserPreference` 承载页面/feature 实例级偏好的默认值合并、schemaVersion、localStorage fallback、dirty-before-hydrate 保护和 reset；页面业务选项、K 线偏好、回测参数记忆必须消费它。
+  - 后续新增用户偏好不得在页面或业务 composable 内重复实现 token 守卫、身份重同步、debounce、PG 读写和 localStorage fallback。
 - 首次登录后的 localStorage 迁移：
   - 读取 `ai-stocks:layout:*` → PG `layout_user_config` 的布局路径。
   - 读取 `ai-stocks:layout-cc:*` → PG `layout_user_config` 的组件路径，保存时带真实 PageLayout。
@@ -227,6 +228,8 @@ CREATE TABLE IF NOT EXISTS user_preference (
 | 组件设置 | 复用 `ComponentAutoSettings` | 复用 data-table/wide-table/tabs/config-panel | 复用既有字段，保存时带真实 PageLayout | 不新增字段 | 表格列显隐、分页、默认排序、config-panel 折叠偏好远端保存生效 | T7、T11 |
 | 业务选项 | 复用页面 `#business` 插槽与 `usePageSettings` | 不涉及组件种类 | 不进入 layout 组件字段 | 更新 `usePageSettings` 存储职责 | 页面业务偏好远端保存和回显 | T8、T11 |
 
+| 偏好同步复用 | 复用 `useGlobalPreferenceSync` / `useUserPreference` | 不涉及组件种类 | 不进入 layout 组件字段 | DESIGN 已登记为后续同类必须消费的 composable 入口 | 全局 singleton 偏好与页面/feature 偏好分别消费唯一同步骨架，避免重复实现和用户切换串号 | T8、T10、T11 |
+
 ## 5. 需求与开发内容映射和开发状态
 
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
@@ -237,10 +240,10 @@ CREATE TABLE IF NOT EXISTS user_preference (
 | 必须实现 | R4 | 组件用户层迁 PG | 组件路径进入 `layout_user_config.config.values`，保存时带真实 PageLayout | T7、T9、T11 | 已完成 | 一致 | T7 已将组件用户配置导出为 `slots.<id>.config.<field>` 并保存时带真实 `PageLayout`；T9 已迁移旧 `ai-stocks:layout-cc:<pageKey>` 中合法组件路径，保存时复用 pageRegistry 的真实 `PageLayout`；T11 已在榜单表格、个股表格和审计宽表页面验证组件设置抽屉正常消费。 |
 | 必须实现 | R5 | 抽屉偏好跨页面共享 | 抽屉自身偏好进 `user_preference(global/settings-drawer)`，`size/defaultCollapsed` 覆盖 page/preset 默认且运行时只选一个来源 | T4、T7、T9 | 已完成 | 一致 | T4 已提供 `user_preference` 后端存储与 API；T7 已新增全局抽屉偏好消费和保存；T9 只把旧 `settings-drawer.size` 迁为全局偏好，旧 `defaultCollapsed/bodyScroll/collapsibleSections` 不迁；T11 浏览器验证 `debug_normal` 在每日榜单改为“大”后，个股表格页抽屉仍为 440px 且显示“个人”来源。 |
 | 必须实现 | R6 | 默认折叠与当前状态分离 | `PageSettingsDrawer` 使用运行态折叠集合，默认值仅显式设置保存 | T6、T11 | 已完成 | 一致 | T6 已完成抽屉打开期运行态分离，点击折叠段不再写 `settings.defaultCollapsed`；T11 浏览器验证点击“布局”分组后“信息密度”等说明和内容一起折叠，未改变“默认折叠段”配置项。 |
-| 必须实现 | R7 | 页面业务偏好迁 PG | 新增 `user_preference`，改造 `usePageSettings` 和零散偏好 composable | T4、T8、T9 | 已完成 | 一致 | T4 已提供后端偏好存储与批量保存接口；T8 已新增通用 `useUserPreference`，并把 `usePageSettings`、主题、导航模式、K 线偏好、回测参数记忆接入远端优先与本地 fallback；T9 已把旧 page-settings、theme、navigation、kline、backtest 本地 key 迁到 `user_preference`；T11 已完成相关 composable 回归和页面打开验证。 |
+| 必须实现 | R7 | 页面业务偏好迁 PG | 新增 `user_preference`，改造 `usePageSettings` 和零散偏好 composable | T4、T8、T9 | 已完成 | 一致 | T4 已提供后端偏好存储与批量保存接口；T8 已新增 `useUserPreference` 和 `useGlobalPreferenceSync` 两类偏好骨架，`usePageSettings`、K 线偏好、回测参数记忆消费 `useUserPreference`，主题、导航模式、跨页面设置抽屉偏好消费 `useGlobalPreferenceSync`；T9 已把旧 page-settings、theme、navigation、kline、backtest 本地 key 迁到 `user_preference`；T11 已完成相关 composable 回归和页面打开验证。 |
 | 必须实现 | R8 | 个人偏好权限口径 | `layout:user-config` 与 `user-preference:manage` 纳入登录基线自持久化能力，明确这是扩 baseline 而非可反选角色授权 | T2、T4、T11 | 已完成 | 一致 | T2 已调整资源码和测试契约，T4 已用 `user-preference:manage` 接入 API 并验证 baseline 通过、无角色 fail-closed；T11 后端回归继续覆盖 baseline/no-role，浏览器审计日志可见 `layout:user-config` 与 `user-preference:manage` 基线接口调用成功。 |
 | 必须实现 | R9 | 数据迁移幂等可回滚 | 后端 CLI 迁 DuckDB，前端一次性迁 localStorage | T5、T9、T12 | 已完成 | 一致 | T5 已完成后端 DuckDB→PG 配置迁移命令和 marker 跳过/force；T9 已完成前端 localStorage 一次性迁移器和 marker 跳过；T12 本地发布演练已验证停服迁移、正式写入、marker 幂等跳过和旧 DuckDB 表保留回滚路径。 |
-| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 已完成 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试，T5 已补迁移命令测试，T6 已补抽屉折叠运行态组件测试，T7 已补布局远端化与抽屉偏好前端单测；T8 已补 `useUserPreference` 与 K 线偏好单测并通过前端构建；T9 已补 `usePreferenceMigration` 单测并通过前端构建；T10 已同步 `DESIGN.md`、环境配置文档和平台文档；T11 已完成后端/前端/构建/浏览器回归；T12 已完成本地发布演练和页面冒烟。 |
+| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 已完成 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试，T5 已补迁移命令测试，T6 已补抽屉折叠运行态组件测试，T7 已补布局远端化与抽屉偏好前端单测；T8 已补 `useUserPreference`、`useGlobalPreferenceSync`、K 线偏好和全局偏好同步单测并通过前端构建；T9 已补 `usePreferenceMigration` 单测并通过前端构建；T10 已同步 `DESIGN.md`、环境配置文档和平台文档，其中 DESIGN 已登记偏好同步唯一骨架；T11 已完成后端/前端/构建/浏览器回归；T12 已完成本地发布演练和页面冒烟。 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -378,7 +381,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 边界与异常：旧 localStorage 中的 `defaultCollapsed` 不自动视为用户明确默认设置。
 - 验证方式：Vitest 覆盖合并来源、保存 payload 带 layout、403 fallback、加载态、竞态保护；浏览器验证跨页面抽屉尺寸共享。
 - 完成标准：刷新、换页面后 PG 中用户偏好回显；点击临时展开不改变默认折叠配置；组件路径保存不触发后端归属校验错误。
-- 实际落地情况：已完成。`useLayoutConfig` 新增 `applyUserConfig`、`exportUserConfig`、`userConfigValues` 和拉取前 dirty path 保护，远端用户层返回时不会覆盖拉取期间的本地编辑；旧 `ai-stocks:layout-cc:<pageKey>` 中的 `slots.settings.config.size/defaultCollapsed` 不再自动进入页面用户层。`useRemoteLayoutConfig` 并行拉取 page/user 两层，用户修改布局旋钮或组件字段后 300ms debounce 保存 `/api/layout/users/{pageKey}`，payload 含 `{ schemaVersion, values }` 和真实 `PageLayout`。新增 `useDrawerPreferences` 与 `userPreferences` API 封装，`PageSettingsDrawer` 的 `settings-drawer.size/defaultCollapsed` 读写改走 `user_preference(global/settings-drawer)`，同时覆盖来源展示为 user。复用判断：继续复用既有 `useLayoutConfig`/`useRemoteLayoutConfig`/`PageSettingsDrawer`/`ComponentAutoSettings`，只新增小型 `useDrawerPreferences` 承载全局抽屉偏好的唯一变化点；没有引入页面私有实现，也没有把 T8 的主题/导航/业务偏好泛化迁移提前实现。
+- 实际落地情况：已完成。`useLayoutConfig` 新增 `applyUserConfig`、`exportUserConfig`、`userConfigValues` 和拉取前 dirty path 保护，远端用户层返回时不会覆盖拉取期间的本地编辑；旧 `ai-stocks:layout-cc:<pageKey>` 中的 `slots.settings.config.size/defaultCollapsed` 不再自动进入页面用户层。`useRemoteLayoutConfig` 并行拉取 page/user 两层，用户修改布局旋钮或组件字段后 300ms debounce 保存 `/api/layout/users/{pageKey}`，payload 含 `{ schemaVersion, values }` 和真实 `PageLayout`。新增 `useDrawerPreferences` 与 `userPreferences` API 封装，`PageSettingsDrawer` 的 `settings-drawer.size/defaultCollapsed` 读写改走 `user_preference(global/settings-drawer)`，同时覆盖来源展示为 user；后续复用整改已把 `useDrawerPreferences` 的远端同步内核收敛到 `useGlobalPreferenceSync`。复用判断：继续复用既有 `useLayoutConfig`/`useRemoteLayoutConfig`/`PageSettingsDrawer`/`ComponentAutoSettings`，抽屉自身偏好统一由 `useDrawerPreferences` 消费共享同步内核；没有引入页面私有实现。
 
 ### 6.8 任务 T8：前端业务偏好远端化
 
@@ -396,7 +399,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 边界与异常：接口失败时继续使用本地 fallback，页面不能白屏。
 - 验证方式：composable 单测、典型页面交互测试、登录后刷新回显测试。
 - 完成标准：同账号换浏览器可回显偏好；不同账号偏好隔离。
-- 实际落地情况：已完成。新增 `useUserPreference`，统一处理 `global/page/feature` 三类用户偏好，支持默认值深合并、schemaVersion、localStorage fallback、未登录跳过远端、登录态远端拉取、debounce 保存和拉取期间 dirty 保护；`usePageSettings` 已改为 `scope='page'` 包装器，保持原有页面调用的 `settings/isDirty/reset` 接口。`useTheme` 和 `useAppNavigation` 保留登录前 localStorage 读取能力，登录后按 `global/theme`、`global/navigation` 同步 PG；`useKlinePrefs` 改为 `global/kline-prefs`；`BacktestView` 的参数记忆改为 `feature/backtest/params`，保留旧 `ai-stocks-backtest-params` 作为 fallback 和后续迁移源。复用判断：本阶段没有新增页面私有偏好实现，主题、导航、K 线、回测参数均复用同一个 `useUserPreference` 存取骨架。
+- 实际落地情况：已完成。新增 `useUserPreference`，统一处理页面/feature 实例级用户偏好，支持默认值深合并、schemaVersion、localStorage fallback、未登录跳过远端、登录态远端拉取、debounce 保存和拉取期间 dirty 保护；`usePageSettings` 已改为 `scope='page'` 包装器，保持原有页面调用的 `settings/isDirty/reset` 接口；`useKlinePrefs` 继续以 `scope='global'` 消费 `useUserPreference` 保存全局 K 线偏好；`BacktestView` 的参数记忆改为 `feature/backtest/params`，保留旧 `ai-stocks-backtest-params` 作为 fallback 和后续迁移源。后续复用整改新增 `useGlobalPreferenceSync`，`useTheme`、`useAppNavigation` 和 `useDrawerPreferences` 保留各自模块级 singleton 与 DOM/运行态副作用，但统一消费该同步内核完成 token/身份守卫、远端读写、debounce 和 fallback 钩子。复用判断：本阶段最终形成两个偏好骨架，页面/feature 偏好消费 `useUserPreference`，全局 singleton 偏好消费 `useGlobalPreferenceSync`，不再允许新增第三套同步流程。
 
 ### 6.9 任务 T9：前端 localStorage 一次性迁移
 
@@ -436,7 +439,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 边界与异常：不重复写历史迁移流水账，只沉淀稳定规则。
 - 验证方式：文档审阅，和代码事实一致。
 - 完成标准：文档不再把 DuckDB/localStorage 描述为配置权威。
-- 实际落地情况：已完成。`DESIGN.md` 已把布局 user 层维护入口改为 PG `layout_user_config` / `user_preference`，并明确 localStorage 仅作未登录/离线 fallback、旧偏好迁移源、登录前主题读取和临时交互态；`settings-drawer` 用户层字段说明收敛为 `size/defaultCollapsed`，`bodyScroll/collapsibleSections` 只允许 preset/page。`agent-works/architecture/environment-configuration.md` 已补充 PG 布局配置表、`layout_user_config`、`user_preference` 和前端 localStorage 边界。`agent-works/architecture/platform.md` 已把平台配置从 DuckDB 基础设施表中拆出，明确平台配置/用户偏好落 PG，行情和分析数据保留 DuckDB。
+- 实际落地情况：已完成。`DESIGN.md` 已把布局 user 层维护入口改为 PG `layout_user_config` / `user_preference`，并明确 localStorage 仅作未登录/离线 fallback、旧偏好迁移源、登录前主题读取和临时交互态；`settings-drawer` 用户层字段说明收敛为 `size/defaultCollapsed`，`bodyScroll/collapsibleSections` 只允许 preset/page；复用矩阵已登记 `useGlobalPreferenceSync` 与 `useUserPreference` 为后续偏好同步唯一骨架。`agent-works/architecture/environment-configuration.md` 已补充 PG 布局配置表、`layout_user_config`、`user_preference` 和前端 localStorage 边界。`agent-works/architecture/platform.md` 已把平台配置从 DuckDB 基础设施表中拆出，明确平台配置/用户偏好落 PG，行情和分析数据保留 DuckDB。
 
 ### 6.11 任务 T11：测试与页面验证
 
@@ -506,7 +509,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 - 单元测试：
   - 计划：补 `test_layout_config.py` 的 PG 平台配置读写、PG 空表只读 DuckDB 回退、组件路径无 layout 被拒、真实 layout 可保存；补 `test_user_preference.py` 的用户偏好隔离；补前端 `useLayoutConfig`/`useUserPreference`/`PageSettingsDrawer` 单测。
-  - 具体完成情况：T1-T2 阶段已执行 `python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_stage4_layout.py backend/auth/perm_resolver.py backend/storage/resource_repository.py backend/services/role_admin_service.py`，通过；T3 阶段已执行 `python -m py_compile backend/storage/layout_config.py backend/tests/test_layout_config.py`，通过，并补齐 PG-backed layout repo 与 PG 空表 DuckDB 只读回退单测。T4 阶段已执行 `python -m py_compile backend/storage/user_preference.py backend/api/user_preferences.py backend/main.py backend/tests/test_user_preference.py`，通过，并补 `test_user_preference.py` 覆盖用户偏好隔离。T5 阶段已执行 `python -m py_compile backend/services/migrate_config_storage.py backend/cli.py backend/tests/test_migrate_config_storage.py`，通过，并补 `test_migrate_config_storage.py` 覆盖 dry-run、正式迁移、marker 跳过和 force 重跑。T6 阶段新增 `PageSettingsDrawer.spec.ts`，执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed。T7 阶段新增 `useLayoutConfig.spec.ts` 与 `useRemoteLayoutConfig.spec.ts`，扩展 `PageSettingsDrawer.spec.ts`；执行前端定向测试 9 passed，并在布局/组件配置回归集中执行 30 passed。T8 阶段新增 `useUserPreference.spec.ts` 与 `useKlinePrefs.spec.ts`，覆盖未登录本地 fallback、登录远端覆盖、拉取期间本地编辑不丢失、K 线旧 localStorage fallback 与 reset。T9 阶段新增 `usePreferenceMigration.spec.ts`，覆盖未登录不迁移、登录后拆分迁移、marker 跳过、失败不写 marker 重试。T11 汇总执行前端配置迁移相关定向单测 41 passed，覆盖 `usePreferenceMigration`、`useUserPreference`、`useKlinePrefs`、`useAppNavigation`、`useLayoutConfig`、`useRemoteLayoutConfig`、`PageSettingsDrawer`、`componentConfig`、`ComponentAutoSettings`。审查整改阶段新增 `useDrawerPreferences.spec.ts`，补齐抽屉偏好未登录本地 fallback、同标签换账号重拉远端值、按用户本地 fallback 隔离、远端加载期间 dirty 字段不被覆盖并回写远端；同步扩展 `usePreferenceMigration.spec.ts` 覆盖超过 100 条偏好分片保存。
+  - 具体完成情况：T1-T2 阶段已执行 `python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_stage4_layout.py backend/auth/perm_resolver.py backend/storage/resource_repository.py backend/services/role_admin_service.py`，通过；T3 阶段已执行 `python -m py_compile backend/storage/layout_config.py backend/tests/test_layout_config.py`，通过，并补齐 PG-backed layout repo 与 PG 空表 DuckDB 只读回退单测。T4 阶段已执行 `python -m py_compile backend/storage/user_preference.py backend/api/user_preferences.py backend/main.py backend/tests/test_user_preference.py`，通过，并补 `test_user_preference.py` 覆盖用户偏好隔离。T5 阶段已执行 `python -m py_compile backend/services/migrate_config_storage.py backend/cli.py backend/tests/test_migrate_config_storage.py`，通过，并补 `test_migrate_config_storage.py` 覆盖 dry-run、正式迁移、marker 跳过和 force 重跑。T6 阶段新增 `PageSettingsDrawer.spec.ts`，执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed。T7 阶段新增 `useLayoutConfig.spec.ts` 与 `useRemoteLayoutConfig.spec.ts`，扩展 `PageSettingsDrawer.spec.ts`；执行前端定向测试 9 passed，并在布局/组件配置回归集中执行 30 passed。T8 阶段新增 `useUserPreference.spec.ts` 与 `useKlinePrefs.spec.ts`，覆盖未登录本地 fallback、登录远端覆盖、拉取期间本地编辑不丢失、K 线旧 localStorage fallback 与 reset。T9 阶段新增 `usePreferenceMigration.spec.ts`，覆盖未登录不迁移、登录后拆分迁移、marker 跳过、失败不写 marker 重试。T11 汇总执行前端配置迁移相关定向单测 41 passed，覆盖 `usePreferenceMigration`、`useUserPreference`、`useKlinePrefs`、`useAppNavigation`、`useLayoutConfig`、`useRemoteLayoutConfig`、`PageSettingsDrawer`、`componentConfig`、`ComponentAutoSettings`。审查整改阶段新增 `useDrawerPreferences.spec.ts`，补齐抽屉偏好未登录本地 fallback、同标签换账号重拉远端值、按用户本地 fallback 隔离、远端加载期间 dirty 字段不被覆盖并回写远端；同步扩展 `usePreferenceMigration.spec.ts` 覆盖超过 100 条偏好分片保存。复用整改阶段新增 `useGlobalPreferenceSync.spec.ts`，覆盖 token/身份守卫、远端缺失时保存本地快照、身份变化重同步、debounce 保存和无 token 本地 fallback；`PageSettingsDrawer.spec.ts` 已补 `AppStateBlock` stub 以覆盖抽屉同步/失败状态渲染。
 - 接口测试：
   - 计划：覆盖 `/api/layout/*`、`/api/user-preferences/*` 的鉴权、越权、非法 payload、批量保存；验证 `layout:user-config` 与 `user-preference:manage` 基线可用；改写 `test_stage4_layout.py` 的旧负向断言，新增无角色 fail-closed 断言。
   - 具体完成情况：T2 已改写 `test_stage4_layout.py` 的旧负向断言，并执行 `python -m pytest backend/tests/test_stage4_layout.py backend/tests/test_stage4_menu_guard.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_platform_t1.py backend/tests/test_stage5_resource_codes.py -q`，结果 34 passed；T3 阶段执行布局接口/RBAC 相关定向回归，结果 29 passed。T4 阶段执行 `python -m pytest backend/tests/test_user_preference.py -q`，结果 6 passed，覆盖 `/api/user-preferences` 鉴权、批量保存、非法 payload 和归属字段忽略。T11 按停服规则执行 `python -m pytest backend/tests/test_layout_config.py backend/tests/test_user_preference.py backend/tests/test_migrate_config_storage.py backend/tests/test_stage4_layout.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py -q`，结果 57 passed，继续覆盖布局 PG 仓库、迁移 CLI、用户偏好 API、资源码 seed 和 baseline/no-role 权限语义。
@@ -521,7 +524,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
   - 具体完成情况：T2 已执行 `python -m pytest backend/tests/test_auth_middleware.py -q`，结果 20 passed；同一阶段布局用户配置 baseline 语义已在 `test_stage4_layout.py` 验证“有角色用户通过、无角色 fail-closed”。T4 已验证 `user_preference` 跨用户隔离、前端传归属字段不生效、有角色用户 baseline 可写、无角色用户 403。T7 前端 layout/user-preference 请求均使用静默失败 fallback，已在 composable 级验证接口失败不阻塞本地态。T8 已验证无 token 时不发远端请求且使用 localStorage fallback，登录态远端值可覆盖旧本地值。T9 已验证无 token 时不迁移、不写 marker；T11 后端回归继续验证 baseline/no-role 权限语义，浏览器用 `debug_normal` 验证普通有角色用户可保存抽屉个人偏好，审计日志中可见 `layout:user-config` 和 `user-preference:manage` 基线接口调用成功；普通用户直接访问系统设置路由被守卫留在业务页，系统管理员可进入系统设置和审计页。审查整改阶段新增同标签换账号单测，确认抽屉偏好不会因 `state.hydrated` 单例缓存跨用户串号；未登录态不再请求 `/api/user-preferences`，只读写匿名 localStorage fallback。
 - 回归测试：
   - 计划：`python -m pytest backend/tests/test_layout_config.py backend/tests/test_auth_middleware.py backend/tests/test_stage4_layout.py -q`；`cd frontend && npm run test -- ...`；`npm run build`。
-  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。T3 阶段执行 `python -m pytest backend/tests/test_layout_config.py -q`，结果 23 passed；布局接口/RBAC 相关定向回归 29 passed。T4 阶段执行资源码/布局权限回归 24 passed。T5 阶段执行 `python -m pytest backend/tests/test_migrate_config_storage.py -q`，结果 4 passed；执行 `python -m pytest backend/tests/test_layout_config.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py -q`，结果 42 passed。T6 阶段执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed；执行 `npm run build`，通过。T7 阶段执行 `npm run test -- src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts src/layout/__tests__/componentConfig.spec.ts src/components/__tests__/ComponentAutoSettings.spec.ts`，结果 30 passed；执行 `npm run build`，通过。T8 阶段执行 `npm run test -- src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 16 passed；执行 `npm run build`，通过。T9 阶段执行 `npm run test -- src/composables/__tests__/usePreferenceMigration.spec.ts src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 20 passed；执行 `npm run build`，通过。T11 阶段按后端服务原状态停服/恢复规则执行后端汇总回归 57 passed；前端配置迁移相关定向回归 41 passed；`npm run build` 通过，Vite 仅提示 VueUse PURE 注释和 chunk size warning。T12 阶段完成本地发布演练：停服、SQL 执行、迁移 dry-run、正式迁移、marker 幂等复查、服务恢复、关键接口 200 和浏览器页面冒烟均通过。审查整改阶段执行 `npm run test -- src/composables/__tests__/useDrawerPreferences.spec.ts src/composables/__tests__/usePreferenceMigration.spec.ts src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 8 files / 25 tests passed；随后执行 `npm run build`，通过，仍仅有 VueUse PURE 注释和 chunk size warning。
+  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。T3 阶段执行 `python -m pytest backend/tests/test_layout_config.py -q`，结果 23 passed；布局接口/RBAC 相关定向回归 29 passed。T4 阶段执行资源码/布局权限回归 24 passed。T5 阶段执行 `python -m pytest backend/tests/test_migrate_config_storage.py -q`，结果 4 passed；执行 `python -m pytest backend/tests/test_layout_config.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py -q`，结果 42 passed。T6 阶段执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed；执行 `npm run build`，通过。T7 阶段执行 `npm run test -- src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts src/layout/__tests__/componentConfig.spec.ts src/components/__tests__/ComponentAutoSettings.spec.ts`，结果 30 passed；执行 `npm run build`，通过。T8 阶段执行 `npm run test -- src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 16 passed；执行 `npm run build`，通过。T9 阶段执行 `npm run test -- src/composables/__tests__/usePreferenceMigration.spec.ts src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 20 passed；执行 `npm run build`，通过。T11 阶段按后端服务原状态停服/恢复规则执行后端汇总回归 57 passed；前端配置迁移相关定向回归 41 passed；`npm run build` 通过，Vite 仅提示 VueUse PURE 注释和 chunk size warning。T12 阶段完成本地发布演练：停服、SQL 执行、迁移 dry-run、正式迁移、marker 幂等复查、服务恢复、关键接口 200 和浏览器页面冒烟均通过。审查整改阶段执行 `npm run test -- src/composables/__tests__/useDrawerPreferences.spec.ts src/composables/__tests__/usePreferenceMigration.spec.ts src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 8 files / 25 tests passed；随后执行 `npm run build`，通过，仍仅有 VueUse PURE 注释和 chunk size warning。复用整改阶段执行 `npm run test -- src/composables/__tests__/useGlobalPreferenceSync.spec.ts src/composables/__tests__/useDrawerPreferences.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts src/components/__tests__/AppStateBlock.spec.ts`，结果 5 files / 20 tests passed；执行 `npm run build`，通过；执行 `npm run test:e2e`，结果 1 passed。
 - 异常与边界测试：
   - 计划：PG 不可用、本地旧值损坏、schemaVersion 不匹配、重复迁移、字段开放策略收紧后保存失败、远端加载中本地编辑竞态、迁移 marker 缺失。
   - 具体完成情况：T2 已覆盖 baseline 权限反转与无角色 fail-closed 边界；T3 已覆盖迁移 marker 缺失且 PG 平台表为空时的 DuckDB 只读回退；T5 已覆盖迁移 marker 已存在时跳过、`--force` 重跑和 PG 既有 `app_config` 不被覆盖；T7 已覆盖远端加载中本地编辑竞态和旧 settings-drawer localStorage 污染字段丢弃。T8 已覆盖未登录 fallback、旧本地 K 线偏好兼容、远端拉取期间本地编辑不被覆盖并回写远端。T9 已覆盖前端 marker 跳过、迁移失败不写 marker 并允许下次重试、未登录不迁移。T11 浏览器过程中遇到旧本地偏好迁移 warning，页面按设计继续 fallback；专用前端端口 `WEB_PORT=5181 ./start-web.sh dev` 在当前环境后台启动后会立即退出，已改用前台 Vite 会话完成验证并在结束后显式停止，不影响正式脚本约束。审查整改阶段补齐抽屉偏好无 token 请求守卫、匿名和用户维度 localStorage fallback、同标签换账号重置、批量偏好迁移 100 条分片边界。
@@ -703,14 +706,14 @@ CREATE TABLE IF NOT EXISTS user_preference (
 | 审查问题 | 是否认可 | 整改内容 | 涉及文件 | 验证 |
 | --- | --- | --- | --- | --- |
 | P1：页面设置抽屉「恢复默认」不重置抽屉自身 `size/defaultCollapsed` | 认可，迁移后重置闭环回退 | `useDrawerPreferences` 暴露 `reset()`，将抽屉自身偏好清为空对象并保存到 `user_preference(global/settings-drawer)`；`PageSettingsDrawer` footer 的统一「恢复默认」先重置抽屉自身偏好，再继续 emit 页面 `reset`，使所有复用该抽屉的页面一起闭环，不逐页补私有逻辑。 | `frontend/src/composables/useDrawerPreferences.ts`、`frontend/src/components/PageSettingsDrawer.vue`、`frontend/src/composables/__tests__/useDrawerPreferences.spec.ts`、`frontend/src/components/__tests__/PageSettingsDrawer.spec.ts`、`DESIGN.md` | 新增 reset 单测：抽屉尺寸设为“大”后点击「恢复默认」会保存 `{}`、来源回落默认，并继续触发页面 reset；前端定向测试通过。复核补充浏览器实测：`debug_normal` 每日榜单抽屉从 440px / “大” / “个人”点击「恢复默认」后回到 360px / “中” / “默认”，后端 `settings-drawer` 值为 `{}`。 |
-| P2：抽屉未消费 `hydrated/failed`，无加载态/失败 fallback 提示 | 认可，与第 4.5 节状态要求不一致 | `PageSettingsDrawer` 消费 `useDrawerPreferences().hydrated/failed`，打开抽屉时远端偏好未 hydrate 显示“正在同步抽屉偏好…”，远端失败时显示“抽屉偏好暂用本地设置”。 | `frontend/src/components/PageSettingsDrawer.vue`、`frontend/src/components/__tests__/PageSettingsDrawer.spec.ts` | 新增同步中与失败态组件单测；前端定向测试通过。 |
+| P2：抽屉未消费 `hydrated/failed`，无加载态/失败 fallback 提示 | 认可，与第 4.5 节状态要求不一致 | `PageSettingsDrawer` 消费 `useDrawerPreferences().hydrated/failed`，打开抽屉时远端偏好未 hydrate 通过 `AppStateBlock(state='loading', size='inline')` 显示“正在同步抽屉偏好…”，远端失败时通过 `AppStateBlock(state='error', size='inline')` 显示“抽屉偏好暂用本地设置”。 | `frontend/src/components/PageSettingsDrawer.vue`、`frontend/src/components/__tests__/PageSettingsDrawer.spec.ts` | 新增同步中与失败态组件单测；前端定向测试通过。 |
 
 ### 14.2 复用判断
 
-- 已查找的同类实现：`PageSettingsDrawer` 在每日榜单、个股、系统页、数据页等 registry 页面复用；`useDrawerPreferences` 已是抽屉自身偏好的唯一 composable；状态提示使用组件内轻量状态条，不新增第二套抽屉或页面私有状态。
-- 已复用的组件 / hook / util / schema / 样式 / test helper：继续复用 `PageSettingsDrawer`、`PageDrawer`、`SettingsGroup`、`ComponentAutoSettings`、`useDrawerPreferences` 和既有组件单测结构。
+- 已查找的同类实现：`PageSettingsDrawer` 在每日榜单、个股、系统页、数据页等 registry 页面复用；`useDrawerPreferences` 已是抽屉自身偏好的唯一 composable；状态反馈优先复用 `AppStateBlock`，不新增第二套抽屉或页面私有状态。
+- 已复用的组件 / hook / util / schema / 样式 / test helper：继续复用 `PageSettingsDrawer`、`PageDrawer`、`SettingsGroup`、`ComponentAutoSettings`、`AppStateBlock`、`useDrawerPreferences` 和既有组件单测结构。
 - 本次新增的复用单元：无新增组件；仅扩展 `useDrawerPreferences.reset/loading`，供统一抽屉消费。
-- 未抽取的重复点及理由：同步/失败提示仅属于 `PageSettingsDrawer` 内部的抽屉自身偏好状态，当前没有第二个独立消费点；抽成全局状态组件会增加跨模块语义负担。
+- 未抽取的重复点及理由：抽屉自身偏好的 loading/failed 条件判断仍属于 `PageSettingsDrawer` 内部状态编排；视觉呈现已复用 `AppStateBlock`，不再保留私有状态块样式。
 - 需要同步维护的组件清单 / DESIGN / 测试：`DESIGN.md` 已补“恢复默认必须覆盖抽屉自身偏好”；`PageSettingsDrawer.spec.ts` 和 `useDrawerPreferences.spec.ts` 已补回归。
 
 ### 14.3 本轮页面整体复查
@@ -727,3 +730,48 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 已执行：`git diff --check`，通过。
 - 已执行：应用内浏览器真实页面复测。后端 `127.0.0.1:8000` 和前端 `5173` 运行中，使用调试账号 `debug_normal` 登录每日榜单页；先通过本地接口把 `user_preference(global/settings-drawer)` 置为 `{ size: "lg", defaultCollapsed: ["layout"] }`，打开页面设置抽屉后确认宽度 440px、尺寸“大” active、来源“个人”；点击 footer 「恢复默认」后确认抽屉宽度回到 360px、尺寸“中” active、来源“默认”，接口查询 `settings-drawer` 值为 `{}`；浏览器控制台未见 warn/error。
 - 未执行：真实断网/后端 403 失败态浏览器注入。原因是本轮问题聚焦 P1 恢复默认真实点击闭环；P2 的加载态和失败提示已由 `PageSettingsDrawer.spec.ts` 覆盖，未在浏览器中人为破坏接口。
+
+## 15. 前端复用审查与文档闭环记录
+
+### 15.1 问题逐项回应
+
+| 审查问题 | 是否认可 | 整改内容 | 涉及文件 | 验证 |
+| --- | --- | --- | --- | --- |
+| P1：`useTheme` / `useAppNavigation` / `useDrawerPreferences` 重复实现全局偏好 PG 同步 | 认可，且已产生过用户切换串号缺陷 | 新增 `useGlobalPreferenceSync`，封装 token/身份守卫、远端读写、debounce、本地 fallback 钩子和加载/失败回调；`useTheme`、`useAppNavigation`、`useDrawerPreferences` 均改为消费该同步内核，各自只保留值归一化、DOM/运行态副作用和本地 key 差异。 | `frontend/src/composables/useGlobalPreferenceSync.ts`、`frontend/src/composables/useTheme.ts`、`frontend/src/composables/useAppNavigation.ts`、`frontend/src/composables/useDrawerPreferences.ts`、`frontend/src/composables/__tests__/useGlobalPreferenceSync.spec.ts` | `useGlobalPreferenceSync.spec.ts` 覆盖 token/身份守卫、远端缺失保存、身份变化重同步、debounce 保存和无 token fallback；前端定向测试、build、E2E 通过。 |
+| P2：抽屉同步/降级提示使用私有 `ps-sync-state` 状态块 | 认可，违反状态组件复用口径 | `PageSettingsDrawer` 的同步中和失败提示改用 `AppStateBlock(size='inline')`，仅保留局部 margin 样式，不再维护第二套状态块视觉。 | `frontend/src/components/PageSettingsDrawer.vue`、`frontend/src/components/__tests__/PageSettingsDrawer.spec.ts` | `PageSettingsDrawer.spec.ts` 使用 `AppStateBlock` stub 覆盖提示渲染；前端定向测试、build、E2E 通过。 |
+| P3：新增偏好同步内核未登记为 DESIGN 后续消费入口 | 认可，属于维护闭环缺口 | `DESIGN.md` 增加偏好同步复用规则：全局 singleton 偏好使用 `useGlobalPreferenceSync`，页面/feature 实例偏好使用 `useUserPreference`；并在核心 composable 复用清单登记两者。 | `DESIGN.md` | `git diff --check` 通过；文档内容与当前代码消费关系一致。 |
+
+### 15.2 整改后整体复查
+
+- 复用边界：全局 singleton 偏好和页面/feature 实例偏好分为两套底层骨架，避免把 DOM 副作用型全局状态强塞进 `useUserPreference`，也避免继续复制 token/身份守卫和远端保存流程。
+- 用户隔离：`useDrawerPreferences` 继续按 token 与用户身份切换重置，本次抽取同步内核没有削弱同标签换账号隔离。
+- 页面状态：设置抽屉同步/失败提示复用 `AppStateBlock`，不新增页面私有状态视觉；抽屉布局、折叠、恢复默认闭环不变。
+- 存储/权限：本次复用整改不新增后端接口、PG 表、SQL、资源码、菜单、环境变量或脚本，不改变 `user_preference` 和 `layout_user_config` 的存储边界。
+- 迁移链路：客户端 localStorage 迁移、后端 DuckDB→PG 迁移、发布顺序和回滚策略未改变。
+
+### 15.3 本轮验证记录
+
+- 已执行：`cd frontend && npm run test -- src/composables/__tests__/useGlobalPreferenceSync.spec.ts src/composables/__tests__/useDrawerPreferences.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts src/components/__tests__/AppStateBlock.spec.ts`，结果 5 files / 20 tests passed。
+- 已执行：`cd frontend && npm run build`，通过；仅有 VueUse PURE 注释和 chunk size warning。
+- 已执行：`cd frontend && npm run test:e2e`，结果 1 passed；Vite webServer 仅提示 `NO_COLOR` 被 `FORCE_COLOR` 覆盖。
+- 已执行：`git diff --check`，通过。
+- 未执行：后端 pytest。本轮只修改前端偏好同步复用和 DESIGN/计划文档，未修改后端代码、SQL、权限、菜单或迁移命令。
+- 未执行：真实浏览器多账号手工复测。本轮关键隔离逻辑已由 `useGlobalPreferenceSync` / `useDrawerPreferences` 单测覆盖；既有 T11/T12 浏览器验证和页面 UX 复测结论不变。
+
+### 15.4 关联文档复核结果
+
+| 文档/配套项 | 是否更新 | 结论 |
+| --- | --- | --- |
+| `agent-works/config-storage-pg-migration/requirement.md` | 不更新 | 本功能目录没有独立 `requirement.md`，计划第 1 章已声明 R1-R10 为基于用户诉求和审查反馈临时分配的计划内编号；本轮不事后补写需求文档，避免把计划事实伪装成原始需求来源。 |
+| `agent-works/configurable-layout-system/requirement.md` | 已更新 | 该文档是可配置布局的总需求口径之一，原“用户配置短期可继续 localStorage”已过期；已同步当前状态：登录用户布局/组件用户层以 PG `layout_user_config` 为权威，非布局用户偏好以 PG `user_preference` 为权威，localStorage 仅作 fallback/迁移源/临时态。 |
+| `agent-works/configurable-layout-system/plan.md` | 已更新 | 该旧计划的“用户配置短期 localStorage”和完成定义已过期；已同步为登录用户配置以后端持久化为权威，localStorage 不作为登录用户配置权威。 |
+| `agent-works/config-storage-pg-migration/plan.md` | 已更新 | 已同步两类偏好骨架的实际分工、需求映射、T7/T8/T10 实际落地、测试验证和复用审查整改记录。 |
+| `agent-works/config-storage-pg-migration/config-storage-pg.sql` | 不更新 | 本轮没有新增 PG 表、字段、索引、资源码、菜单锚点或权限 seed；SQL 归档仍与后端 DDL/seed 事实一致。 |
+| `DESIGN.md` | 已更新 | 已登记 `useGlobalPreferenceSync` / `useUserPreference` 为偏好同步唯一骨架，并要求后续同类实现必须消费。 |
+| `agent-works/architecture/environment-configuration.md` | 不更新 | 该文档已描述 PG `app_config`、布局配置表、`layout_user_config`、`user_preference` 和 localStorage 边界；本轮新增的是前端复用入口，不改变环境/存储架构。 |
+| `agent-works/architecture/platform.md` | 不更新 | 该文档已描述 DuckDB/PG/Redis 持久层分工和 PG 配置/用户偏好表；本轮不改变平台架构。 |
+| `README.md` | 不更新 | README 只需保留项目启动、持久层和迁移入口级说明；本轮没有新增用户需要执行的新命令或环境变量。 |
+| `AGENTS.md` / `CLAUDE.md` | 不更新 | 项目级 AI 约束已有“前端改动先查同类并优先复用”和 DESIGN 入口；偏好同步的具体消费规则已落在 DESIGN，不需要把组件级规则复制到 AI 总约束。 |
+| 权限、菜单、seed、配置、环境变量、脚本 | 不更新 | 本轮没有产生稳定事实变化；既有 `layout:user-config` / `user-preference:manage` baseline 口径、SQL 和发布 runbook 不变。 |
+
+整体一致性复查：代码、`DESIGN.md` 和本计划现在都把用户偏好同步分为 `useGlobalPreferenceSync` 与 `useUserPreference` 两类骨架；架构文档继续只维护存储和环境边界，不承载前端实现细节；不存在“计划说已完成但代码未落地”的新增不一致。

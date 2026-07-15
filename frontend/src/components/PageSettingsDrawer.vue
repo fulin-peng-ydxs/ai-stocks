@@ -9,6 +9,7 @@ import ComponentAutoSettings from './ComponentAutoSettings.vue'
 import PageDrawer from './PageDrawer.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
 import AppIconButton from './AppIconButton.vue'
+import AppStateBlock from './AppStateBlock.vue'
 import { useDrawerPreferences } from '@/composables/useDrawerPreferences'
 
 /** 抽屉自动渲染所需的配置访问器（即 useRemoteLayoutConfig 的返回子集）。 */
@@ -171,9 +172,21 @@ function handleReset(): void {
         业务选项始终由页面声明（业务态/「页面记忆」，不进四层配置链路）。
       -->
       <div class="ps-body" :class="{ 'is-scroll-disabled': !bodyScroll }">
-        <div v-if="drawerPreferenceSyncing || drawerPreferenceFallback" class="ps-sync-state">
-          {{ drawerPreferenceSyncing ? '正在同步抽屉偏好…' : '抽屉偏好暂用本地设置' }}
-        </div>
+        <AppStateBlock
+          v-if="drawerPreferenceSyncing"
+          class="ps-sync-state"
+          state="loading"
+          size="inline"
+          title="正在同步抽屉偏好…"
+        />
+        <AppStateBlock
+          v-else-if="drawerPreferenceFallback"
+          class="ps-sync-state"
+          state="error"
+          size="inline"
+          title="抽屉偏好暂用本地设置"
+          description="远端同步失败，当前使用本地偏好"
+        />
 
         <template v-if="activeConfig">
           <SettingsGroup
@@ -326,13 +339,6 @@ function handleReset(): void {
 }
 .ps-sync-state {
   margin-bottom: 10px;
-  padding: 7px 10px;
-  border: 1px solid var(--page-settings-border);
-  border-radius: 8px;
-  color: var(--page-settings-text-muted);
-  background: var(--page-settings-seg-bg);
-  font-size: var(--app-font-size-caption);
-  line-height: 1.35;
 }
 /* 三段结构已抽到 SettingsGroup.vue（level 1 卡片 + 折叠 + 比例标题），此处不再重复样式。 */
 .ps-footer {

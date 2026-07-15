@@ -84,6 +84,10 @@ function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
           `,
         },
         AppIconButton: { template: '<button type="button"><slot /></button>' },
+        AppStateBlock: {
+          props: ['state', 'title', 'description'],
+          template: '<div class="state-block">{{ title }}{{ description }}</div>',
+        },
         ElButton: { template: '<button type="button"><slot /></button>' },
         ElIcon: { template: '<span><slot /></span>' },
       },

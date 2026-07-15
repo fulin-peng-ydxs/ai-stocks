@@ -32,7 +32,7 @@
 | 自定义模式 | 受控配置，不做自由拖拽画布，不开放任意 CSS |
 | 配置优先级 | 系统代码默认 < 预设配置 < 页面配置 < 用户配置 |
 | 首批预设 | `professional`、`government`、`technology`、`finance`、`high-contrast` |
-| 用户配置持久化 | 预设和页面配置先后端化；用户配置短期 localStorage，后续随多用户接后端 |
+| 用户配置持久化 | 预设、页面配置和登录用户配置均已接入后端；localStorage 仅保留为未登录/接口失败 fallback、旧偏好迁移源和临时交互态 |
 | 权限体系 | 后续会接入多用户和权限管理，表和 API 设计先预留 |
 | 配置中心入口 | 新增独立“布局配置”页面，不并入 `ConfigView` |
 | 自定义预设 | 允许管理员新增，只开放 token 和受控策略 |
@@ -84,7 +84,7 @@
    - 记录 `BoardView` 和 `QualityView` 的原型、组件清单、可编辑项。
 
 2. 标注现有实现边界。
-   - `useLayoutConfig` 当前只支持 localStorage 用户覆盖。
+   - `useLayoutConfig` 已从单一 localStorage 用户覆盖升级为多层配置源；旧 localStorage 仅作为迁移源和 fallback。
    - `COMPONENT_CATALOG` 当前只是最低尺寸目录，不是完整组件能力目录。
    - `LayoutSettingsSection` 当前只支持简单 knob，不支持复杂对象配置。
 
@@ -612,7 +612,7 @@
 2. 至少覆盖需求文档中的后台常用组件类别。
 3. 配置合并优先级为 `系统代码默认 < 预设 < 页面 < 用户`。
 4. 预设和页面配置后端持久化。
-5. 用户配置具备后端接入预留，短期 localStorage 不阻塞。
+5. 登录用户配置以后端持久化为权威，localStorage 不作为登录用户配置权威。
 6. 独立“布局配置”页面可用。
 7. AI 新页面开发流程写入 `DESIGN.md` 和 `CLAUDE.md`。
 8. 新页面必须使用布局系统、通过校验和构建。

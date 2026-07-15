@@ -1,11 +1,10 @@
 // 全局主题（白天/夜间）：模块级单例状态，首屏读 localStorage，登录后同步 PG 用户偏好。
 import { ref } from 'vue'
-import { getAccessToken } from '@/api/authToken'
-import { listUserPreferences, saveUserPreference } from '@/api/userPreferences'
+import { createGlobalPreferenceSync } from './useGlobalPreferenceSync'
 
 const STORAGE_KEY = 'ai-stocks-theme'
 const isDark = ref(false)
-let syncedToken = ''
+type ThemePreference = { mode: 'dark' | 'light' }
 
 function apply(v: boolean) {
   document.documentElement.classList.toggle('dark', v)
@@ -15,19 +14,19 @@ function persistLocal() {
   localStorage.setItem(STORAGE_KEY, isDark.value ? 'dark' : 'light')
 }
 
-async function saveThemePreference() {
-  if (!getAccessToken()) return
-  try {
-    await saveUserPreference({
-      scope: 'global',
-      prefKey: 'theme',
-      value: { mode: isDark.value ? 'dark' : 'light' },
-      schemaVersion: 1,
-    })
-  } catch {
-    /* 远端偏好失败不影响主题切换 */
-  }
-}
+const themePreferenceSync = createGlobalPreferenceSync<ThemePreference>({
+  prefKey: 'theme',
+  snapshot: () => ({ mode: isDark.value ? 'dark' : 'light' }),
+  normalize(value) {
+    const mode = (value as { mode?: unknown } | undefined)?.mode
+    return mode === 'dark' || mode === 'light' ? { mode } : undefined
+  },
+  applyRemote(value) {
+    isDark.value = value.mode === 'dark'
+    persistLocal()
+    apply(isDark.value)
+  },
+})
 
 export function initTheme() {
   const saved = localStorage.getItem(STORAGE_KEY)
@@ -43,26 +42,11 @@ export function toggleTheme() {
   isDark.value = !isDark.value
   persistLocal()
   apply(isDark.value)
-  void saveThemePreference()
+  void themePreferenceSync.saveNow()
 }
 
 export async function syncThemePreference() {
-  const token = getAccessToken()
-  if (!token || syncedToken === token) return
-  syncedToken = token
-  try {
-    const res = await listUserPreferences({ scope: 'global', prefKey: 'theme' })
-    const mode = (res.items[0]?.value as { mode?: unknown } | undefined)?.mode
-    if (mode === 'dark' || mode === 'light') {
-      isDark.value = mode === 'dark'
-      persistLocal()
-      apply(isDark.value)
-      return
-    }
-    await saveThemePreference()
-  } catch {
-    /* 登录后偏好同步失败时继续使用 localStorage 主题 */
-  }
+  await themePreferenceSync.syncOnce()
 }
 
 export function useTheme() {

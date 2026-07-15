@@ -250,6 +250,7 @@ Key Characteristics：
 - 表格列、筛选项、弹窗/抽屉结构、空态/加载/错误态、操作按钮组第二次出现时，也纳入复用判断。
 - 不抽取时必须有明确理由，例如领域语义不同、生命周期明显不同、抽象后反而增加调用复杂度。
 - 复用单元形成后，后续同类实现必须消费该组件、composable 或 helper，禁止继续复制同类代码。
+- 用户偏好同步只能消费既有偏好骨架：全局 singleton 偏好使用 `useGlobalPreferenceSync`，页面/feature 级实例偏好使用 `useUserPreference`；禁止在页面或业务 composable 内另写 token 守卫、身份重同步、debounce、PG 读写和 localStorage fallback 的并行实现。
 
 ### 组件资产分层
 
@@ -295,6 +296,13 @@ Key Characteristics：
 | `AssetVisibilityTag` / `AssetProfileLabel` / `AssetVisibilityActions` | `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue`、`frontend/src/components/AssetVisibilityActions.vue` | 公开资产来源、可见范围、只读状态、方案名称+版本+归属标签、发布/收回、复制为我的方案和复用参数动作 | 无直接系统组件种类 | 评分、筛选、买卖、回测等公开资产页面必须复用；方案选择/列表入口统一用 `AssetProfileLabel`，消费页包括 `BoardView`、`ScreenView`、`ConfigView` 评分 tab、`ConfigView` 买卖 tab、`BacktestView` |
 | `ConfigGroupForm` | `frontend/src/components/config/ConfigGroupForm.vue` | 系统设置配置组表单 | 消费 `config-panel` 的折叠与说明展示配置 | 动态配置组字段渲染优先复用 |
 | `HelpTip` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpHint.vue` | 页面说明和短提示 | 无直接系统组件种类 | 说明性长文收进提示组件，不在页面堆长文 |
+
+核心 composable 复用清单：
+
+| Composable | 路径 | 用途 | 使用规则 |
+|---|---|---|---|
+| `useGlobalPreferenceSync` | `frontend/src/composables/useGlobalPreferenceSync.ts` | 全局 singleton 用户偏好同步内核，统一 token/身份守卫、PG `user_preference` 读写、debounce、加载失败回调和本地 fallback 钩子 | 主题、导航模式、跨页面设置抽屉等全局偏好必须消费；调用方只保留值归一化、DOM 副作用和本地存储 key 差异，不得复制远端同步流程 |
+| `useUserPreference` | `frontend/src/composables/useUserPreference.ts` | 页面或 feature 实例级用户偏好骨架，统一默认值合并、PG `user_preference` 读写、本地 fallback、dirty-before-hydrate 保护和重置入口 | 页面业务选项、K 线偏好、回测参数记忆等按页面或功能隔离的偏好必须消费；页面只声明 defaults、scope、pageKey/prefKey 和业务字段 |
 
 ### 应用外壳
 

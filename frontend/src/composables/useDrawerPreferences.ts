@@ -1,6 +1,6 @@
 import { computed, reactive } from 'vue'
 import { getAccessToken, readAuth } from '@/api/authToken'
-import { listUserPreferences, saveUserPreference } from '@/api/userPreferences'
+import { createGlobalPreferenceSync } from './useGlobalPreferenceSync'
 
 export type DrawerSectionKey = 'layout' | 'components' | 'business'
 export type DrawerSize = 'sm' | 'md' | 'lg'
@@ -22,9 +22,6 @@ const state = reactive({
   value: {} as DrawerPreferenceValue,
 })
 
-let loadPromise: Promise<void> | null = null
-let saveTimer: number | undefined
-let syncedToken = ''
 let activeStorageKey = ''
 
 function storageKeyForCurrentIdentity(): string {
@@ -33,11 +30,6 @@ function storageKeyForCurrentIdentity(): string {
     return `${STORAGE_PREFIX}:${auth.tenant?.id || 'default'}:${auth.user.id}`
   }
   return `${STORAGE_PREFIX}:anonymous`
-}
-
-function clearSaveTimer(): void {
-  if (saveTimer) window.clearTimeout(saveTimer)
-  saveTimer = undefined
 }
 
 function cleanSize(value: unknown): DrawerSize | undefined {
@@ -82,48 +74,60 @@ function replaceStateValue(value: DrawerPreferenceValue): void {
   state.value.defaultCollapsed = value.defaultCollapsed
 }
 
-function ensureIdentityState(): { token: string; changed: boolean } {
-  const token = getAccessToken()
-  const storageKey = storageKeyForCurrentIdentity()
-  const changed = token !== syncedToken || storageKey !== activeStorageKey
-  if (changed) {
-    clearSaveTimer()
-    loadPromise = null
-    syncedToken = token
-    activeStorageKey = storageKey
+const drawerPreferenceSync = createGlobalPreferenceSync<DrawerPreferenceValue>({
+  prefKey: 'settings-drawer',
+  identityKey: storageKeyForCurrentIdentity,
+  isHydrated: () => state.hydrated,
+  snapshot: () => ({ ...state.value }),
+  normalize: normalizePreference,
+  applyRemote(remote) {
+    if (!state.dirty.has('size')) state.value.size = remote.size
+    if (!state.dirty.has('defaultCollapsed')) state.value.defaultCollapsed = remote.defaultCollapsed
+  },
+  persistLocal,
+  onIdentityChange({ identityKey }) {
+    activeStorageKey = identityKey
     state.hydrated = false
     state.loading = false
     state.failed = false
     state.dirty.clear()
     replaceStateValue(readLocal())
-  }
-  return { token, changed }
-}
+  },
+  onNoToken() {
+    state.hydrated = true
+    state.failed = false
+  },
+  onLoadStart() {
+    state.loading = true
+  },
+  onLoadSuccess() {
+    state.hydrated = true
+    state.failed = false
+  },
+  onLoadError() {
+    state.hydrated = true
+    state.failed = true
+  },
+  onLoadFinally() {
+    state.loading = false
+  },
+  onSaveSuccess() {
+    state.failed = false
+  },
+  onSaveError() {
+    state.failed = true
+  },
+  afterRemoteApplied() {
+    if (state.dirty.size) drawerPreferenceSync.scheduleSave()
+  },
+})
 
 function scheduleSave(): void {
-  ensureIdentityState()
-  persistLocal()
-  if (!getAccessToken()) return
-  if (saveTimer) window.clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(async () => {
-    saveTimer = undefined
-    try {
-      await saveUserPreference<DrawerPreferenceValue>({
-        scope: 'global',
-        pageKey: '',
-        prefKey: 'settings-drawer',
-        value: { ...state.value },
-        schemaVersion: 1,
-      })
-      state.failed = false
-    } catch {
-      state.failed = true
-    }
-  }, 300)
+  drawerPreferenceSync.scheduleSave()
 }
 
 function resetPreference(): void {
-  ensureIdentityState()
+  drawerPreferenceSync.ensureIdentity()
   replaceStateValue({})
   state.dirty.add('size')
   state.dirty.add('defaultCollapsed')
@@ -131,33 +135,7 @@ function resetPreference(): void {
 }
 
 async function load(): Promise<void> {
-  const { token } = ensureIdentityState()
-  if (!token) {
-    state.hydrated = true
-    state.failed = false
-    return Promise.resolve()
-  }
-  if (state.hydrated || loadPromise) return loadPromise ?? Promise.resolve()
-  state.loading = true
-  loadPromise = listUserPreferences({ scope: 'global', prefKey: 'settings-drawer' })
-    .then((res) => {
-      const remote = normalizePreference(res.items[0]?.value)
-      if (!state.dirty.has('size')) state.value.size = remote.size
-      if (!state.dirty.has('defaultCollapsed')) state.value.defaultCollapsed = remote.defaultCollapsed
-      persistLocal()
-      state.hydrated = true
-      state.failed = false
-      if (state.dirty.size) scheduleSave()
-    })
-    .catch(() => {
-      state.hydrated = true
-      state.failed = true
-    })
-    .finally(() => {
-      state.loading = false
-      loadPromise = null
-    })
-  return loadPromise
+  return drawerPreferenceSync.syncOnce()
 }
 
 export function syncDrawerPreferences(): Promise<void> {
@@ -165,9 +143,7 @@ export function syncDrawerPreferences(): Promise<void> {
 }
 
 export function resetDrawerPreferencesForTests(): void {
-  clearSaveTimer()
-  loadPromise = null
-  syncedToken = ''
+  drawerPreferenceSync.resetForTests()
   activeStorageKey = ''
   state.hydrated = false
   state.loading = false

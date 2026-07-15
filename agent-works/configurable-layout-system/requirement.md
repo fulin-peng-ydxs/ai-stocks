@@ -45,7 +45,7 @@
 - [archetypes.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/archetypes.ts)：已有 `list`、`master-detail`、`dashboard`、`form`、`detail`、`workbench`、`wizard` 原型预设。
 - [validator.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/validator.ts)：已有 schema 层校验器，能校验组件下限、主表唯一、操作区一致性、响应式断点和可编辑白名单。
 - [LayoutHost.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components/LayoutHost.vue)：已有布局宿主，消费 `PageLayout` 并输出 `.v-page`、`.v-grow`、`.v-scroll`、`VMixedGrow`、`VColumns`。
-- [useLayoutConfig.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/useLayoutConfig.ts)：已有 L2 覆盖层，使用 localStorage 存储用户布局覆盖。
+- [useLayoutConfig.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/useLayoutConfig.ts)：已有多层配置源合并能力，登录用户布局/组件覆盖以 PG `layout_user_config` 为权威，localStorage 仅作为 fallback 和旧值迁移源。
 - [LayoutSettingsSection.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components/LayoutSettingsSection.vue)：已有基于 `editable` 自动渲染的布局设置表单。
 
 已有单测：
@@ -64,10 +64,10 @@
 
 ### 2.4 已有配置存储能力
 
-当前前端已有两类本地设置：
+当前前端已有两类用户设置入口，登录态均以后端持久化为权威：
 
-- [usePageSettings.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/composables/usePageSettings.ts)：页面组件偏好，使用 `localStorage`，例如列显隐、排序、默认 Top N。
-- [useLayoutConfig.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/useLayoutConfig.ts)：布局参数覆盖，使用 `localStorage`，例如 `density`。
+- [usePageSettings.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/composables/usePageSettings.ts)：页面业务偏好，消费 `useUserPreference` 并写入 PG `user_preference`；localStorage 仅作为未登录/接口失败 fallback 和旧值迁移源。
+- [useLayoutConfig.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/useLayoutConfig.ts)：布局和组件用户层覆盖，登录态写入 PG `layout_user_config`；组件路径保存必须带真实 `PageLayout` 校验归属。
 
 后端已有系统配置覆盖层：
 
@@ -75,14 +75,14 @@
 - [backend/storage/ddl.py](/Users/pengshuaifeng/ai-stocks/backend/storage/ddl.py)：已定义 `app_config` 表。
 - [backend/api/data_admin.py](/Users/pengshuaifeng/ai-stocks/backend/api/data_admin.py)：已有 `/settings` 读写系统设置的 API。
 
-这些能力可以复用，但当前还没有面向布局系统的专用后端表和 API，也没有“预设-页面-用户”的布局配置优先级模型。
+这些能力已经扩展为“预设-页面-用户”的布局配置优先级模型：平台布局配置写入 PG `layout_preset`、`layout_page_config`、`layout_field_policy`，真实页面用户层写入 PG `layout_user_config`，非布局用户偏好写入 PG `user_preference`。
 
 ### 2.5 当前主要差距
 
 1. 组件目录偏基础，只覆盖了布局类型和最低尺寸，没有完整定义每类组件的共同特性、专属特性、状态、数据绑定、操作区、权限、空态、错误态、加载态等配置。
 2. 原型只有页面布局原型，缺少组件组合模板，例如“筛选 + 批量 + 主表 + 分页”、“主表 + 右抽屉详情”、“图表 + 明细表”等高频业务组合。
 3. 风格预设没有一等模型。当前只有 CSS 变量和 `density`，没有政务风、科技风、专业后台风等可存储、可切换预设。
-4. 覆盖优先级不满足目标。当前是代码默认 schema + 用户 localStorage 覆盖，缺少“预设配置 -> 页面配置 -> 用户配置”的明确合并链路。
+4. 覆盖优先级已形成 `default < preset < page < user` 的明确合并链路；后续改造重点是继续让新增页面和组件字段严格消费该链路，避免回退到页面私有 localStorage。
 5. Web 配置能力偏弱。当前设置面板只能渲染少量 `editable` 旋钮，不能管理全局预设、页面配置、组件目录、响应式规则、导入导出和重置范围。
 6. AI 开发流程还停留在文档提醒和代码约束，缺少面向 AI 的页面开发清单、页面 schema 模板、选型确认表、自动校验报告和登记机制。
 
@@ -274,8 +274,8 @@
 
 对现有功能的影响：
 
-- 当前 `useLayoutConfig` 需要升级为从多层配置源读取，而不是只读 localStorage。
-- 当前 `usePageSettings` 可保留，但需要纳入统一配置视图，避免 L2 和 L3 两套入口割裂。
+- `useLayoutConfig` 已从只读 localStorage 升级为多层配置源读取，后续新增布局/组件用户层字段必须继续走该链路。
+- `usePageSettings` 已纳入 PG 用户偏好骨架，后续页面业务偏好必须继续消费 `useUserPreference`，避免 L2 和 L3 两套入口割裂。
 
 ### 5.2 组件目录与组件共同特性
 
@@ -601,7 +601,8 @@ API 需求：
 
 - 第一阶段可继续使用 localStorage 验证交互。
 - 第二阶段将预设和页面配置落后端，形成管理员可维护的系统级和页面级默认值。
-- 第三阶段用户配置也接入后端，localStorage 只做离线缓存或降级；在真实多用户和权限管理接入前，用户级配置可先继续使用 localStorage。
+- 第三阶段用户配置也接入后端，localStorage 只做离线缓存或降级。
+- 当前状态：配置存储 PG 迁移完成后，真实页面布局/组件用户层以 PostgreSQL `layout_user_config` 为权威，页面业务偏好、主题、导航、K 线、回测参数记忆和设置抽屉跨页面偏好以 PostgreSQL `user_preference` 为权威；localStorage 仅保留为未登录/接口失败 fallback、旧偏好迁移源、登录前主题读取和临时交互态。
 
 ### 5.7 Web 配置界面
 
@@ -968,7 +969,7 @@ interface EffectiveLayoutConfig {
    - 影响：预设 key、默认 token、配置界面文案和导入导出 schema 均按这 5 套起步。
 
 2. 用户配置持久化采用推荐节奏。
-   - 决策：预设配置和页面配置优先后端化；用户配置短期可继续 localStorage，后续随多用户体系接入后端。
+   - 决策：预设配置和页面配置优先后端化；用户配置随多用户和权限体系接入后端。当前已完成配置存储 PG 迁移，登录用户布局/组件用户层和非布局用户偏好均以 PostgreSQL 为权威，localStorage 不再作为登录用户配置权威。
 
 3. 后续会接入多用户和权限管理。
    - 决策：布局配置表、API 和权限策略从设计阶段预留 `user_id`、角色权限和管理级操作校验。
