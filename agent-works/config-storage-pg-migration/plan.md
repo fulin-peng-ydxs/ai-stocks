@@ -231,16 +231,16 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须实现 | R1 | 系统配置不再使用 DuckDB 权威 | 保持 PG `app_config` 权威，清理 DuckDB marker/旧入口依赖 | T1、T3、T5、T10 | 进行中 | 一致 | T1 已完成存储边界冻结，T3 已把布局 seed marker 改到 PG `app_config` 并兼容 DuckDB 旧 marker，T5 已提供 DuckDB 旧 `app_config` 缺失补迁命令，T10 已同步文档边界；发布闭环留到 T12。 |
-| 必须实现 | R2 | 布局平台配置迁 PG | 新增 PG DDL，改造 `LayoutConfigRepo`，迁移 DuckDB 数据 | T2、T3、T5、T12 | 进行中 | 一致 | T2 已新增 PG 表底座，T3 已将运行期仓库读写切 PG，T5 已提供 DuckDB 布局配置到 PG 的迁移命令，T10 已同步平台/环境配置文档中的 PG 布局表边界；发布闭环留到 T12。 |
+| 必须实现 | R1 | 系统配置不再使用 DuckDB 权威 | 保持 PG `app_config` 权威，清理 DuckDB marker/旧入口依赖 | T1、T3、T5、T10 | 已完成 | 一致 | T1 已完成存储边界冻结，T3 已把布局 seed marker 改到 PG `app_config` 并兼容 DuckDB 旧 marker，T5 已提供 DuckDB 旧 `app_config` 缺失补迁命令，T10 已同步文档边界；T12 本地发布演练确认 `app_config` 缺失补迁不会覆盖 PG 既有值。 |
+| 必须实现 | R2 | 布局平台配置迁 PG | 新增 PG DDL，改造 `LayoutConfigRepo`，迁移 DuckDB 数据 | T2、T3、T5、T12 | 已完成 | 一致 | T2 已新增 PG 表底座，T3 已将运行期仓库读写切 PG，T5 已提供 DuckDB 布局配置到 PG 的迁移命令，T10 已同步平台/环境配置文档中的 PG 布局表边界；T12 本地发布演练已把 3 条 `layout_preset`、1 条 `layout_page_config`、2 条 `layout_field_policy` 从 DuckDB 迁到 PG。 |
 | 必须实现 | R3 | 布局用户层迁 PG | 前端拉取/保存 `/layout/users/{pageKey}`，localStorage 降级为迁移源 | T7、T9 | 已完成 | 一致 | T7 已接入 `/layout/users/{pageKey}` 的拉取、注入和 debounce 保存；T9 已把旧 `ai-stocks:layout:<pageKey>` 按真实 pageKey 迁到 `/layout/users/{pageKey}`，localStorage 继续仅作 fallback；T11 已完成布局用户层相关后端/前端回归和浏览器页面设置验证。 |
 | 必须实现 | R4 | 组件用户层迁 PG | 组件路径进入 `layout_user_config.config.values`，保存时带真实 PageLayout | T7、T9、T11 | 已完成 | 一致 | T7 已将组件用户配置导出为 `slots.<id>.config.<field>` 并保存时带真实 `PageLayout`；T9 已迁移旧 `ai-stocks:layout-cc:<pageKey>` 中合法组件路径，保存时复用 pageRegistry 的真实 `PageLayout`；T11 已在榜单表格、个股表格和审计宽表页面验证组件设置抽屉正常消费。 |
 | 必须实现 | R5 | 抽屉偏好跨页面共享 | 抽屉自身偏好进 `user_preference(global/settings-drawer)`，`size/defaultCollapsed` 覆盖 page/preset 默认且运行时只选一个来源 | T4、T7、T9 | 已完成 | 一致 | T4 已提供 `user_preference` 后端存储与 API；T7 已新增全局抽屉偏好消费和保存；T9 只把旧 `settings-drawer.size` 迁为全局偏好，旧 `defaultCollapsed/bodyScroll/collapsibleSections` 不迁；T11 浏览器验证 `debug_normal` 在每日榜单改为“大”后，个股表格页抽屉仍为 440px 且显示“个人”来源。 |
 | 必须实现 | R6 | 默认折叠与当前状态分离 | `PageSettingsDrawer` 使用运行态折叠集合，默认值仅显式设置保存 | T6、T11 | 已完成 | 一致 | T6 已完成抽屉打开期运行态分离，点击折叠段不再写 `settings.defaultCollapsed`；T11 浏览器验证点击“布局”分组后“信息密度”等说明和内容一起折叠，未改变“默认折叠段”配置项。 |
 | 必须实现 | R7 | 页面业务偏好迁 PG | 新增 `user_preference`，改造 `usePageSettings` 和零散偏好 composable | T4、T8、T9 | 已完成 | 一致 | T4 已提供后端偏好存储与批量保存接口；T8 已新增通用 `useUserPreference`，并把 `usePageSettings`、主题、导航模式、K 线偏好、回测参数记忆接入远端优先与本地 fallback；T9 已把旧 page-settings、theme、navigation、kline、backtest 本地 key 迁到 `user_preference`；T11 已完成相关 composable 回归和页面打开验证。 |
 | 必须实现 | R8 | 个人偏好权限口径 | `layout:user-config` 与 `user-preference:manage` 纳入登录基线自持久化能力，明确这是扩 baseline 而非可反选角色授权 | T2、T4、T11 | 已完成 | 一致 | T2 已调整资源码和测试契约，T4 已用 `user-preference:manage` 接入 API 并验证 baseline 通过、无角色 fail-closed；T11 后端回归继续覆盖 baseline/no-role，浏览器审计日志可见 `layout:user-config` 与 `user-preference:manage` 基线接口调用成功。 |
-| 必须实现 | R9 | 数据迁移幂等可回滚 | 后端 CLI 迁 DuckDB，前端一次性迁 localStorage | T5、T9、T12 | 进行中 | 一致 | T5 已完成后端 DuckDB→PG 配置迁移命令和 marker 跳过/force；T9 已完成前端 localStorage 一次性迁移器和 marker 跳过；发布演练留到 T12。 |
-| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 进行中 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试，T5 已补迁移命令测试，T6 已补抽屉折叠运行态组件测试，T7 已补布局远端化与抽屉偏好前端单测；T8 已补 `useUserPreference` 与 K 线偏好单测并通过前端构建；T9 已补 `usePreferenceMigration` 单测并通过前端构建；T10 已同步 `DESIGN.md`、环境配置文档和平台文档；T11 已完成后端/前端/构建/浏览器回归，发布演练仍留到 T12。 |
+| 必须实现 | R9 | 数据迁移幂等可回滚 | 后端 CLI 迁 DuckDB，前端一次性迁 localStorage | T5、T9、T12 | 已完成 | 一致 | T5 已完成后端 DuckDB→PG 配置迁移命令和 marker 跳过/force；T9 已完成前端 localStorage 一次性迁移器和 marker 跳过；T12 本地发布演练已验证停服迁移、正式写入、marker 幂等跳过和旧 DuckDB 表保留回滚路径。 |
+| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 已完成 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试，T5 已补迁移命令测试，T6 已补抽屉折叠运行态组件测试，T7 已补布局远端化与抽屉偏好前端单测；T8 已补 `useUserPreference` 与 K 线偏好单测并通过前端构建；T9 已补 `usePreferenceMigration` 单测并通过前端构建；T10 已同步 `DESIGN.md`、环境配置文档和平台文档；T11 已完成后端/前端/构建/浏览器回归；T12 已完成本地发布演练和页面冒烟。 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -460,7 +460,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 ### 6.12 任务 T12：发布与回滚闭环
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T5、T11
 - 涉及文件/模块：`agent-works/config-storage-pg-migration/config-storage-pg.sql`、发布说明、迁移命令
 - 目标：确保上线顺序和回滚路径清晰，避免 PG 空表导致布局平台层短暂丢失。
@@ -478,7 +478,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 边界与异常：如果必须误启动新后端，T3 的只读回退可防止 PG 空表直接丢失平台层；正式流程仍要求先迁移再启动。
 - 验证方式：预发布环境演练。
 - 完成标准：无“新代码已读 PG 但 PG 未迁移”的配置丢失窗口。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成本地发布演练。执行前先按协作规则 `git pull --rebase`，确认 main 已是最新；确认后端运行中后执行 `./start.sh stop` 并确认后端未运行。通过项目 PG 客户端在事务中执行 `agent-works/config-storage-pg-migration/config-storage-pg.sql`，执行前后关键计数：`sys_resource` 中个人偏好 baseline 资源保持 2 条，`sys_role_resource` 中相关显式授权从 5 条清理为 0 条。随后执行 `python -m backend.cli migrate-config-storage --dry-run`：DuckDB 源包含 3 条 `layout_preset`、1 条 `layout_page_config`、2 条 `layout_field_policy`，PG 目标表为空且 marker 不存在；执行正式 `python -m backend.cli migrate-config-storage` 后 PG 写入 3/1/2 条并写入 `migration.config_storage_pg_v1` marker；再次 dry-run 显示 marker 已存在并默认跳过，验证幂等。恢复后端 `./start.sh` 后 `/api/health=200`，并用调试账号验证 `/api/layout/presets`、`/api/layout/pages/config-system`、`/api/layout/users/board`、`/api/user-preferences`、`/api/data/settings` 均 200；临时 smoke 偏好已删除。浏览器 5181 验证布局预设页可见 3 套 preset（balanced/daylight/nocturne），系统设置页可见访问安全和认证与防滥用分组，每日榜单及页面设置抽屉可打开，控制台无错误。旧 DuckDB 配置表未删除，PG 新表保留，回滚仍按“切回旧代码、保留 PG 新表、不破坏数据”执行。
 
 ## 7. 数据库与 SQL 计划
 
@@ -497,6 +497,10 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 回滚方式或不可回滚原因：
   - 首版本回滚不 drop 新 PG 表；回滚旧代码后仍读 DuckDB 旧配置表。
   - 若必须清理，可删除 PG 新增表，但会丢失迁移后产生的新用户偏好，因此生产回滚不建议 drop。
+- 本地演练结果：
+  - SQL 归档已在后端停服状态下通过项目 PG 客户端事务执行，资源码 seed 幂等，旧显式授权清理生效。
+  - `migrate-config-storage --dry-run`、正式迁移和二次 dry-run 均通过；二次 dry-run 因 `migration.config_storage_pg_v1` marker 存在默认跳过。
+  - 本地演练不删除 DuckDB 旧配置表，不 drop PG 新表；这与首版本回滚策略一致。
 
 ## 8. 测试与验证计划
 
@@ -517,7 +521,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
   - 具体完成情况：T2 已执行 `python -m pytest backend/tests/test_auth_middleware.py -q`，结果 20 passed；同一阶段布局用户配置 baseline 语义已在 `test_stage4_layout.py` 验证“有角色用户通过、无角色 fail-closed”。T4 已验证 `user_preference` 跨用户隔离、前端传归属字段不生效、有角色用户 baseline 可写、无角色用户 403。T7 前端 layout/user-preference 请求均使用静默失败 fallback，已在 composable 级验证接口失败不阻塞本地态。T8 已验证无 token 时不发远端请求且使用 localStorage fallback，登录态远端值可覆盖旧本地值。T9 已验证无 token 时不迁移、不写 marker；T11 后端回归继续验证 baseline/no-role 权限语义，浏览器用 `debug_normal` 验证普通有角色用户可保存抽屉个人偏好，审计日志中可见 `layout:user-config` 和 `user-preference:manage` 基线接口调用成功；普通用户直接访问系统设置路由被守卫留在业务页，系统管理员可进入系统设置和审计页。
 - 回归测试：
   - 计划：`python -m pytest backend/tests/test_layout_config.py backend/tests/test_auth_middleware.py backend/tests/test_stage4_layout.py -q`；`cd frontend && npm run test -- ...`；`npm run build`。
-  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。T3 阶段执行 `python -m pytest backend/tests/test_layout_config.py -q`，结果 23 passed；布局接口/RBAC 相关定向回归 29 passed。T4 阶段执行资源码/布局权限回归 24 passed。T5 阶段执行 `python -m pytest backend/tests/test_migrate_config_storage.py -q`，结果 4 passed；执行 `python -m pytest backend/tests/test_layout_config.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py -q`，结果 42 passed。T6 阶段执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed；执行 `npm run build`，通过。T7 阶段执行 `npm run test -- src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts src/layout/__tests__/componentConfig.spec.ts src/components/__tests__/ComponentAutoSettings.spec.ts`，结果 30 passed；执行 `npm run build`，通过。T8 阶段执行 `npm run test -- src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 16 passed；执行 `npm run build`，通过。T9 阶段执行 `npm run test -- src/composables/__tests__/usePreferenceMigration.spec.ts src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 20 passed；执行 `npm run build`，通过。T11 阶段按后端服务原状态停服/恢复规则执行后端汇总回归 57 passed；前端配置迁移相关定向回归 41 passed；`npm run build` 通过，Vite 仅提示 VueUse PURE 注释和 chunk size warning。
+  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。T3 阶段执行 `python -m pytest backend/tests/test_layout_config.py -q`，结果 23 passed；布局接口/RBAC 相关定向回归 29 passed。T4 阶段执行资源码/布局权限回归 24 passed。T5 阶段执行 `python -m pytest backend/tests/test_migrate_config_storage.py -q`，结果 4 passed；执行 `python -m pytest backend/tests/test_layout_config.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py -q`，结果 42 passed。T6 阶段执行 `npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 2 passed；执行 `npm run build`，通过。T7 阶段执行 `npm run test -- src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts src/layout/__tests__/componentConfig.spec.ts src/components/__tests__/ComponentAutoSettings.spec.ts`，结果 30 passed；执行 `npm run build`，通过。T8 阶段执行 `npm run test -- src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 16 passed；执行 `npm run build`，通过。T9 阶段执行 `npm run test -- src/composables/__tests__/usePreferenceMigration.spec.ts src/composables/__tests__/useUserPreference.spec.ts src/composables/__tests__/useKlinePrefs.spec.ts src/composables/__tests__/useAppNavigation.spec.ts src/layout/__tests__/useLayoutConfig.spec.ts src/composables/__tests__/useRemoteLayoutConfig.spec.ts src/components/__tests__/PageSettingsDrawer.spec.ts`，结果 20 passed；执行 `npm run build`，通过。T11 阶段按后端服务原状态停服/恢复规则执行后端汇总回归 57 passed；前端配置迁移相关定向回归 41 passed；`npm run build` 通过，Vite 仅提示 VueUse PURE 注释和 chunk size warning。T12 阶段完成本地发布演练：停服、SQL 执行、迁移 dry-run、正式迁移、marker 幂等复查、服务恢复、关键接口 200 和浏览器页面冒烟均通过。
 - 异常与边界测试：
   - 计划：PG 不可用、本地旧值损坏、schemaVersion 不匹配、重复迁移、字段开放策略收紧后保存失败、远端加载中本地编辑竞态、迁移 marker 缺失。
   - 具体完成情况：T2 已覆盖 baseline 权限反转与无角色 fail-closed 边界；T3 已覆盖迁移 marker 缺失且 PG 平台表为空时的 DuckDB 只读回退；T5 已覆盖迁移 marker 已存在时跳过、`--force` 重跑和 PG 既有 `app_config` 不被覆盖；T7 已覆盖远端加载中本地编辑竞态和旧 settings-drawer localStorage 污染字段丢弃。T8 已覆盖未登录 fallback、旧本地 K 线偏好兼容、远端拉取期间本地编辑不被覆盖并回写远端。T9 已覆盖前端 marker 跳过、迁移失败不写 marker 并允许下次重试、未登录不迁移。T11 浏览器过程中遇到旧本地偏好迁移 warning，页面按设计继续 fallback；专用前端端口 `WEB_PORT=5181 ./start-web.sh dev` 在当前环境后台启动后会立即退出，已改用前台 Vite 会话完成验证并在结束后显式停止，不影响正式脚本约束。
@@ -530,7 +534,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
   - 计划：R1-R10 均有任务编号和可观察验证方式。
 - 页面功能点验证：
   - 计划：系统设置页仍按现有分组展示；设置抽屉三段仍按 DESIGN 固定顺序展示；业务选项远端保存后刷新回显。
-  - 具体完成情况：T8 已把业务选项基础存储能力切到 `useUserPreference(scope='page')`，保持 `usePageSettings` 现有调用接口；T9 已在登录初始化中触发一次性迁移；T11 浏览器验证每日榜单、个股行情、系统设置、审计日志页面功能点可进入，设置抽屉按“布局、组件设置、业务选项/页面私有内容”顺序展示，系统设置页真实说明放在页面配置分组内而不是抽屉配置项里。
+  - 具体完成情况：T8 已把业务选项基础存储能力切到 `useUserPreference(scope='page')`，保持 `usePageSettings` 现有调用接口；T9 已在登录初始化中触发一次性迁移；T11 浏览器验证每日榜单、个股行情、系统设置、审计日志页面功能点可进入，设置抽屉按“布局、组件设置、业务选项/页面私有内容”顺序展示，系统设置页真实说明放在页面配置分组内而不是抽屉配置项里。T12 迁移后再次验证布局预设页可见 3 套迁移后的 preset，系统设置页可见访问安全配置分组，每日榜单页面设置抽屉可打开，控制台无错误。
 - 文档一致性验证：
   - 计划：`DESIGN.md`、环境配置文档和平台文档不再把 DuckDB/localStorage 描述为配置权威，且 `settings-drawer` 用户层字段与代码事实一致。
   - 具体完成情况：T10 已执行文档检索核对并同步三份稳定规则文档；`DESIGN.md` user 层、`settings-drawer` 字段层级、`environment-configuration.md` 配置类型归属和 `platform.md` 持久层表分工均已与当前代码事实对齐。
@@ -558,6 +562,10 @@ CREATE TABLE IF NOT EXISTS user_preference (
   - DuckDB 旧配置表未删除，旧代码继续读取。
   - PG 新表保留，不做数据破坏。
   - 若前端已迁移 localStorage marker，旧代码仍可读旧 localStorage fallback；如需完全回退，可清除 marker 后重新按旧逻辑使用本地值。
+- 本地演练结果：
+  - 已按停服顺序执行 SQL、dry-run、正式迁移和启动验证，没有出现“新代码读 PG 空表”的窗口。
+  - 迁移写入 PG 后，`migrate-config-storage --dry-run` 因 marker 存在默认跳过，说明重复执行不会重复迁移。
+  - 回滚路径未在本地执行破坏性操作；旧 DuckDB 表仍保留，PG 新表保留，符合首版本回滚策略。
 
 ## 10. 风险、假设与待确认项
 
