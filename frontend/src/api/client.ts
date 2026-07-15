@@ -60,6 +60,10 @@ function isAuthRefreshExcluded(config: RetryableConfig | undefined): boolean {
     || url.includes('/auth/refresh')
 }
 
+function isLoginRequest(config: RetryableConfig | undefined): boolean {
+  return String(config?.url || '').includes('/auth/login')
+}
+
 function applyBearer(config: RetryableConfig, token: string): void {
   const headers = config.headers as
     | { set?: (name: string, value: string) => void; Authorization?: string }
@@ -128,14 +132,14 @@ http.interceptors.response.use(
     // skipGlobalError：调用方（如登录/注册页）要求关闭全局 toast，改由页面就地展示
     const skip = (error?.config as RetryableConfig | undefined)?.skipGlobalError
     if (status === 401) {
-      // 已在登录页时的 401 是登录动作本身失败（账密错/图形码错/锁定），此处弹后端提示；
-      // 其余页面的 401 是会话失效，清态跳登录（redirectToLogin 内已判重不重复跳）。
-      if (window.location.pathname === '/login') {
+      // 只有登录接口自身的 401 才是账密/验证码等登录失败；其他接口即便响应晚到登录页，
+      // 也只是旧页面尾随请求的会话失效，必须静默清态，避免退出后连续弹错。
+      const config = error?.config as RetryableConfig | undefined
+      if (isLoginRequest(config)) {
         const message = msg || '账号或密码错误'
         decorateError(error, message)
         if (!skip) ElMessage.error(message)
       } else {
-        const config = error?.config as RetryableConfig | undefined
         if (config && !config._retry && !isAuthRefreshExcluded(config) && getRefreshToken()) {
           config._retry = true
           try {

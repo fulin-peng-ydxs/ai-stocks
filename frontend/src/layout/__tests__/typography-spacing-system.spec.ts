@@ -51,6 +51,15 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).toContain('.app-cluster-md')
   })
 
+  it('登录页右侧光晕由当前预设强调色推导，避免单套预设漏覆盖', () => {
+    const loginView = read(join(SRC_DIR, 'views/LoginView.vue'))
+
+    expect(loginView).not.toContain('--login-auth-glow')
+    expect(loginView).toMatch(
+      /radial-gradient\(\s*circle at 85% 0,\s*color-mix\(in srgb,\s*var\(--login-accent\)\s+12%,\s*transparent\),\s*transparent 28%\s*\)/,
+    )
+  })
+
   it('普通页面样式不新增游离 font-size、line-height、font-weight、gap 或 font-family', () => {
     const violations: string[] = []
     const allowedRawFontSizeFiles = new Set([

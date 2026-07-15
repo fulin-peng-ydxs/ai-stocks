@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import type { AxiosAdapter, InternalAxiosRequestConfig } from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ElMessage } from 'element-plus'
 
 import http from '../client'
 import { readAuth, writeAuth } from '../authToken'
@@ -27,6 +28,7 @@ describe('api client silent refresh', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.restoreAllMocks()
+    vi.clearAllMocks()
     window.history.pushState({}, '', '/board')
     writeAuth({
       accessToken: 'old-access',
@@ -93,5 +95,25 @@ describe('api client silent refresh', () => {
 
     expect(readAuth().accessToken).toBe('')
     expect(readAuth().refreshToken).toBe('')
+  })
+
+  it('does not show login error toast for stale protected requests that finish on login page', async () => {
+    window.history.pushState({}, '', '/login')
+    writeAuth({
+      accessToken: '',
+      refreshToken: '',
+      user: null,
+      tenant: null,
+      role: '',
+    })
+    const adapter: AxiosAdapter = async (config) => Promise.reject({
+      config,
+      response: { status: 401, data: { msg: '未登录' } },
+    })
+    http.defaults.adapter = adapter
+
+    await expect(http.get('/layout/pages/config-score')).rejects.toBeTruthy()
+
+    expect(ElMessage.error).not.toHaveBeenCalled()
   })
 })

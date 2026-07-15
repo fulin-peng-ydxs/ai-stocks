@@ -462,7 +462,6 @@ function onSubmit() {
   --login-toggle-bg: rgba(255, 255, 255, 0.58);
   --login-divider: rgba(76, 99, 111, 0.18);
   --login-shadow: rgba(16, 35, 46, 0.16);
-  --login-auth-glow: rgba(182, 146, 84, 0.13);
   --login-panel-glow: rgba(39, 105, 126, 0.3);
   --login-brand-text: #f1f5f6;
   --login-brand-accent: #d2b579;
@@ -528,7 +527,6 @@ function onSubmit() {
   --login-toggle-bg: rgba(255, 255, 255, 0.72);
   --login-divider: rgba(42, 65, 104, 0.14);
   --login-shadow: rgba(24, 43, 82, 0.16);
-  --login-auth-glow: rgba(47, 91, 211, 0.11);
   --login-panel-glow: rgba(47, 91, 211, 0.17);
   --login-brand-text: #152137;
   --login-brand-accent: #2f5bd3;
@@ -559,7 +557,6 @@ function onSubmit() {
   --login-toggle-bg: rgba(32, 38, 50, 0.84);
   --login-divider: rgba(101, 115, 139, 0.2);
   --login-shadow: rgba(3, 7, 16, 0.46);
-  --login-auth-glow: rgba(73, 107, 194, 0.11);
   --login-panel-glow: rgba(73, 107, 194, 0.18);
   --login-brand-text: #f6f8fc;
   --login-brand-accent: #b2c3f5;
@@ -768,7 +765,7 @@ function onSubmit() {
   padding: 72px clamp(34px, 4vw, 64px) 48px;
   overflow-y: auto;
   background:
-    radial-gradient(circle at 85% 0, var(--login-auth-glow), transparent 28%),
+    radial-gradient(circle at 85% 0, color-mix(in srgb, var(--login-accent) 12%, transparent), transparent 28%),
     var(--login-page-bg);
 }
 .login-controls {
