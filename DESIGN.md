@@ -2,113 +2,9 @@
 version: alpha
 name: 复盘啦
 description: A 股趋势研究工作台，面向高密度行情、筛选、回测、训练、权限管理和数据治理工作流，采用克制、可配置、可验证的专业后台界面。
-colors:
-  primary: "#409eff"
-  secondary: "#0891b2"
-  background: "#f5f7fa"
-  surface: "#ffffff"
-  surface-hover: "#eef1f6"
-  text-primary: "#1f2937"
-  text-regular: "#4b5563"
-  text-secondary: "#8a94a6"
-  border: "#e4e7ed"
-  border-strong: "#d0d5dd"
-  success: "#2f9e44"
-  warning: "#d97706"
-  danger: "#dc2626"
 typography:
-  heading-lg:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 22px
-    fontWeight: 700
-    lineHeight: 30px
-  heading-md:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 18px
-    fontWeight: 650
-    lineHeight: 26px
-  section-title:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 15px
-    fontWeight: 650
-    lineHeight: 22px
-  body-md:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 22px
-  table-md:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 13px
-    fontWeight: 400
-    lineHeight: 20px
   button-md:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 13px
     fontWeight: 650
-    lineHeight: 20px
-  label-sm:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 12px
-    fontWeight: 400
-    lineHeight: 18px
-  micro:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 11px
-    fontWeight: 400
-    lineHeight: 16px
-  data-emphasis:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 16px
-    fontWeight: 650
-    lineHeight: 24px
-  kpi-lg:
-    fontFamily: "PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif"
-    fontSize: 26px
-    fontWeight: 700
-    lineHeight: 32px
-rounded:
-  xs: 2px
-  sm: 4px
-  md: 6px
-  lg: 8px
-  drawer: 16px
-spacing:
-  xs: 4px
-  sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 24px
-components:
-  app-shell:
-    sidebarWidth: 208px
-    topbarHeight: 67px
-    structure: "topbar spans full width; sidebar starts below topbar"
-    mainPadding: "20px 24px"
-  card-default:
-    backgroundColor: "{colors.surface}"
-    borderColor: "{colors.border}"
-    rounded: "{rounded.sm}"
-    padding: 16px
-  control-default:
-    borderColor: "{colors.border}"
-    rounded: "{rounded.md}"
-  command-button:
-    height: 32px
-    paddingX: 12px
-    gap: 6px
-    rounded: "{rounded.md}"
-  icon-button:
-    size: 32px
-    glyphSize: 16px
-    rounded: "{rounded.md}"
-  data-table:
-    cellPaddingY: 10px
-    headerTextColor: "{colors.text-primary}"
-    bodyTextColor: "{colors.text-regular}"
-  page-settings-drawer:
-    rounded: "{rounded.drawer}"
-    bodyWidth: "320px / 360px / 440px"
 ---
 
 # 复盘啦 Design System
@@ -129,6 +25,8 @@ components:
 - 配置中心：`frontend/src/views/layout/{LayoutPresetsView,LayoutPagesView,LayoutComponentsView}.vue`
 - 后端持久化与校验：`backend/storage/layout_config.py`、`backend/api/layout.py`
 - 新页面模板：`agent-works/configurable-layout-system/page-template.md`
+
+文件头 frontmatter 只保留已被自动化读取的兼容字段；运行时 token 以 `global.css`、`presets.ts` 和 `themeSurfaces.ts` 为准。新增 token 不回填 frontmatter，除非同步新增机器读取契约和测试。
 
 ## 1. Visual Theme & Atmosphere
 
@@ -530,18 +428,25 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 配置中心和设置抽屉可按层级渲染。
 - 测试覆盖合并、越权、类型和值域。
 
-当前已接入字段：
+当前受控字段摘要：
 
-| 组件 | 字段 | 层级 | 消费 |
+下表只记录字段和开放层级；消费页面、slot、候选列、排序字段和 tab 项不在 DESIGN 手写维护，统一以 `pageRegistry.consumedComponentFields`、`componentMeta` 和 `COMPONENT_FIELD_DEFS` 为准。`data-table` / `wide-table` 的 `border` 由 `pageRegistry.ts` 对所有表格 slot 自动补登，并由 `pageRegistry.spec.ts` 校验真实页面接入。
+
+| 组件 | 字段 | 层级 | 归属事实源 |
 |---|---|---|---|
-| `data-table` | `defaultSort` | page/user | board、screen、stocks、data-quality、data-ingest、backtest、training、config-tech、user-manage、tenant-manage、data-dictionary |
-| `data-table` | `hiddenColumns` | page/user | board、screen、stocks、data-quality、backtest、user-manage、tenant-manage、data-dictionary |
-| `data-table` | `pageSize` | preset/page/user | stocks 普通列表、data-dictionary |
-| `wide-table` | `defaultSort`、`pageSize`、`hiddenColumns` | preset/page/user | audit-log |
-| `settings-drawer` | `size`、`defaultCollapsed` | preset/page/user | 全部 registry 页面 |
-| `settings-drawer` | `bodyScroll`、`collapsibleSections` | preset/page | 全部 registry 页面 |
-| `config-panel` | `collapsibleSections` | preset/page | config-system |
-| `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | preset/page/user | config-system |
+| `data-table` | `border` | page | 全部 `data-table` slot 自动补登；页面需实际消费 `tableBorder(slotId)` |
+| `data-table` | `pageSize` | preset/page/user | 消费 slot 以 `pageRegistry.consumedComponentFields` 为准 |
+| `data-table` | `defaultSort` | page/user | 候选排序字段以 `componentMeta.sortFields` 为准 |
+| `data-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
+| `wide-table` | `border` | page | 全部 `wide-table` slot 自动补登；页面需实际消费 `tableBorder(slotId)` |
+| `wide-table` | `pageSize` | preset/page/user | 消费 slot 以 `pageRegistry.consumedComponentFields` 为准 |
+| `wide-table` | `defaultSort` | page/user | 候选排序字段以 `componentMeta.sortFields` 为准 |
+| `wide-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
+| `tabs` | `defaultActive` | page/user | 仅在页面登记 tabs slot 且 `componentMeta.tabs` 提供候选时渲染 |
+| `settings-drawer` | `size`、`defaultCollapsed` | preset/page/user | 全部 registry 页面共享 `settings` overlay slot |
+| `settings-drawer` | `bodyScroll`、`collapsibleSections` | preset/page | 全部 registry 页面共享 `settings` overlay slot |
+| `config-panel` | `collapsibleSections` | preset/page | `config-system.configPanel` |
+| `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | preset/page/user | `config-system.configPanel`；分区候选以 `componentMeta.collapseSections` 为准 |
 
 `usePageSettings` 只保留页面业务态/页面记忆，不承载通用组件展示能力。
 `settings-drawer` 的用户层只允许 `size/defaultCollapsed`；跨页面个人值写入 `user_preference(global/settings-drawer)`，不写伪页面的 `layout_user_config`。`bodyScroll/collapsibleSections` 只能由 preset/page 层控制。
@@ -589,47 +494,20 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 抽屉宽度使用受控档位：`sm=320px`、`md=360px`、`lg=440px`。
 - 弹窗和抽屉允许 `max-height` 作为视口安全上限，但不能用视口高度驱动页面主体布局。
 
-## 9. Agent Prompt Guide
+## 9. AI 开发入口
 
-后续 AI 新增或改造前端时，按以下提示执行：
+本节只做入口，不维护可复制 prompt、计划块或验证命令。新增或改造前端页面时，固定流程、页面设计闭环、维护清单、页面登记模板和验收命令统一维护在 `agent-works/configurable-layout-system/page-template.md`。
 
-- 先读本文件、`frontend/src/layout/pageRegistry.ts`、`frontend/src/layout/components.ts` 和相关样板页面。
-- 先判断页面原型，再列 slot、组件种类、滚动归属、`growMain` 和配置字段。
-- 需要新页面时优先用 `npm run scaffold-page`，不要复制旧页面临时改 CSS。
-- 写页面标题、分区标题、表格、辅助说明、KPI 或状态标签前，先选择 `Typography Rules` 中的语义层级；不要临时发明字号。
-- 写 `gap`、`padding`、`margin` 前，先选择 `Spacing & Rhythm Rules` 中的 token；除控件内部 6px 和已有组件精调外，不新增随机间距。
-- 如果新增配置项，必须写清谁定义、谁保存、谁读取、谁消费、谁校验、如何回退。
-- 如果改表格，必须说明列宽、长文本、排序/分页、操作列和低宽度降级。
-- 如果改弹窗/抽屉，必须说明承载边界、滚动归属、teleport 样式入口和关闭策略。
-- 如果新增或调整组件提示文案，必须检查换行、溢出、间距、低宽度展示和是否遮挡主操作。
-- 改完前端必须运行 `cd frontend && npm test` 和 `cd frontend && npm run build`。
+执行边界：
 
-Quick Color Reference：
-
-- 交互主色用 `colors.primary` / Element Plus primary。
-- 金融涨跌用 `--market-up-color` / `--market-down-color`。
-- 状态色用 `colors.success` / `warning` / `danger`，不要把状态色当作装饰色。
-- 背景、表面、边框和文字优先使用 CSS 变量或 front matter token。
-
-Example Component Prompts：
-
-- “新增一个列表页：使用 `list` 原型，action 为筛选工具栏，main 为 `data-table(growMain)`，表体内滚，页面设置抽屉包含布局和表格列设置。”
-- “改造一个工作台：使用 `workbench` 原型，action 固定参数区，main 为 `section`，内部固定摘要块 + 主图/主表成长区。”
-- “新增组件配置字段：先在字段事实源登记，再同步 schema、后端规则、页面消费、设置抽屉、配置中心和测试。”
-
-Verification Guide：
-
-```bash
-cd frontend
-npm test
-npm run build
-```
-
-重点测试：`layout-contract.spec.ts`、`pageRegistry.spec.ts`、`componentConfig.spec.ts`、`validator.spec.ts`、`presets.spec.ts`、`responsive.spec.ts`。
+- 设计规则以本文件 §1~§8 为准；代码事实以 `frontend/src/layout/`、`frontend/src/components/`、`frontend/src/styles/global.css` 和后端 layout 校验为准。
+- 页面原型、slot、滚动归属、`growMain`、组件字段和页面登记按 `page-template.md` 执行。
+- 新增组件字段必须回到 §7.3 的字段治理闭环，不在 prompt 或计划里临时声明第二套配置口径。
+- 如 `page-template.md` 与本文件或布局测试冲突，优先修正下游模板，不在 DESIGN 复制流程细节。
 
 ### Page Registry Index
 
-该区块只作为机器读取和人工索引，不承载组件字段事实源。新增 registry 页面必须写入 `pageRegistry.ts` 并出现在下方 marker 内；`pageRegistry.spec.ts` 和 `scaffold-page` 会读取此区块。
+该区块只作为机器读取和轻量人工索引，不承载组件字段、slot 配置、列、排序或业务状态事实源。新增 registry 页面必须写入 `pageRegistry.ts` 并出现在下方 marker 内；`pageRegistry.spec.ts` 和 `scaffold-page` 会读取此区块。
 
 <!-- page-registry:start -->
 | 页面 | 原型 | 可编辑旋钮 | 组件清单 |
@@ -659,11 +537,11 @@ npm run build
 | `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`simple-list` / nested:`data-table` / overlay:`form` / overlay:`dialog` |
 <!-- page-registry:end -->
 
-全部 registry 页面必须有 `settings-drawer` overlay slot。组件字段事实源在 `COMPONENT_FIELD_DEFS`、`pageRegistry.consumedComponentFields` 和 `componentMeta`，不要在本表重复维护字段细节。
+全部 registry 页面必须有 `settings-drawer` overlay slot。组件字段、slot 细节和候选项事实源在 `COMPONENT_FIELD_DEFS`、`pageRegistry.consumedComponentFields` 和 `componentMeta`，不要在本表重复维护。
 
-## 10. Known Gaps
+## 10. Scope & Exceptions
 
-- 本文件已补齐设计系统入口，字体、字号、行高、按钮、表格、页面间距和空态已有全局 token；独立品牌设计稿仍未引入，视觉方向以当前金融科技研究终端为准。
-- 移动端不是当前产品重点，当前响应式规则优先覆盖桌面低宽度和低高度场景。
-- 仍有少量页面局部样式属于品牌、登录主视觉、图表 tooltip、代码值或极窄 badge 特例；新增业务页面不得复制这些特例作为普通排版。
+- 本项目桌面工作台优先；响应式规则覆盖低高度和常见桌面宽度，移动端不是当前验收重点。
+- 当前没有独立品牌设计稿；视觉方向以本文件的金融科技研究终端规则和现有品牌组件为准。
+- 品牌字标、登录主视觉、图表 tooltip、代码值和极窄 badge 允许局部排版特例；新增业务页面不得复制这些特例作为普通排版。
 - 页面登记区块通过 `<!-- page-registry:start/end -->` marker 被 `pageRegistry.spec.ts` 和 `scaffold-page` 读取；marker 是机器契约，不要移除。
