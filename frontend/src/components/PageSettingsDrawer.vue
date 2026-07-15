@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, useSlots } from 'vue'
+import { computed, ref, useSlots, watch } from 'vue'
 import { Close } from '@element-plus/icons-vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
@@ -60,18 +60,27 @@ const collapsedSections = computed<SectionKey[]>(() => {
   if (!Array.isArray(raw)) return []
   return raw.filter((v): v is SectionKey => SECTION_KEYS.includes(v as SectionKey))
 })
+const runtimeCollapsedSections = ref<SectionKey[]>([])
+
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (open) runtimeCollapsedSections.value = [...collapsedSections.value]
+  },
+  { immediate: true },
+)
 
 function sectionOpen(key: SectionKey): boolean {
   if (!collapsibleSections.value) return true
-  return !collapsedSections.value.includes(key)
+  return !runtimeCollapsedSections.value.includes(key)
 }
 
 function setSectionOpen(key: SectionKey, open: boolean): void {
-  if (!props.config || !collapsibleSections.value) return
-  const next = new Set(collapsedSections.value)
+  if (!collapsibleSections.value) return
+  const next = new Set(runtimeCollapsedSections.value)
   if (open) next.delete(key)
   else next.add(key)
-  props.config.setComponentKnob('settings', 'defaultCollapsed', SECTION_KEYS.filter((section) => next.has(section)))
+  runtimeCollapsedSections.value = SECTION_KEYS.filter((section) => next.has(section))
 }
 </script>
 
