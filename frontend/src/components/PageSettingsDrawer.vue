@@ -99,6 +99,8 @@ const drawerSize = computed(() => {
   return size === 'sm' ? '320px' : size === 'lg' ? '440px' : '360px'
 })
 const bodyScroll = computed(() => props.config?.componentValueOf('settings', 'bodyScroll') !== false)
+const drawerPreferenceSyncing = computed(() => props.modelValue && !drawerPreferences.hydrated.value)
+const drawerPreferenceFallback = computed(() => props.modelValue && drawerPreferences.failed.value)
 const collapsedSections = computed<SectionKey[]>(() => {
   const raw = activeConfig.value?.componentValueOf('settings', 'defaultCollapsed')
   if (!Array.isArray(raw)) return []
@@ -134,6 +136,11 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
   runtimeTouched.value = true
   runtimeCollapsedSections.value = SECTION_KEYS.filter((section) => next.has(section))
 }
+
+function handleReset(): void {
+  drawerPreferences.reset()
+  emit('reset')
+}
 </script>
 
 <template>
@@ -163,6 +170,10 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
         业务选项始终由页面声明（业务态/「页面记忆」，不进四层配置链路）。
       -->
       <div class="ps-body" :class="{ 'is-scroll-disabled': !bodyScroll }">
+        <div v-if="drawerPreferenceSyncing || drawerPreferenceFallback" class="ps-sync-state">
+          {{ drawerPreferenceSyncing ? '正在同步抽屉偏好…' : '抽屉偏好暂用本地设置' }}
+        </div>
+
         <template v-if="activeConfig">
           <SettingsGroup
             v-if="hasLayoutKnobs"
@@ -232,7 +243,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
       </div>
 
       <footer class="ps-footer">
-        <el-button class="ps-reset" @click="emit('reset')">恢复默认</el-button>
+        <el-button class="ps-reset" @click="handleReset">恢复默认</el-button>
       </footer>
     </div>
   </PageDrawer>
@@ -311,6 +322,16 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
 }
 .ps-body.is-scroll-disabled {
   overflow: hidden;
+}
+.ps-sync-state {
+  margin-bottom: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--page-settings-border);
+  border-radius: 8px;
+  color: var(--page-settings-text-muted);
+  background: var(--page-settings-seg-bg);
+  font-size: var(--app-font-size-caption);
+  line-height: 1.35;
 }
 /* 三段结构已抽到 SettingsGroup.vue（level 1 卡片 + 折叠 + 比例标题），此处不再重复样式。 */
 .ps-footer {

@@ -121,4 +121,27 @@ describe('useDrawerPreferences', () => {
       value: { size: 'sm' },
     }))
   })
+
+  it('reset 清空抽屉自身偏好并保存空对象', async () => {
+    vi.useFakeTimers()
+    login('user-a')
+    prefApi.listUserPreferences.mockResolvedValueOnce({ items: [{ value: { size: 'lg', defaultCollapsed: ['layout'] } }] })
+
+    const pref = useDrawerPreferences()
+    await flushPromises()
+    expect(pref.size.value).toBe('lg')
+
+    pref.reset()
+    await vi.runOnlyPendingTimersAsync()
+
+    expect(pref.size.value).toBeUndefined()
+    expect(pref.defaultCollapsed.value).toBeUndefined()
+    expect(JSON.parse(localStorage.getItem('ai-stocks:drawer-preferences:tenant-a:user-a') || '{}'))
+      .toEqual({})
+    expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
+      scope: 'global',
+      prefKey: 'settings-drawer',
+      value: {},
+    }))
+  })
 })

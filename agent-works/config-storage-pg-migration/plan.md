@@ -695,3 +695,34 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 已执行：`cd frontend && npm run build`，通过；仅有 VueUse PURE 注释和 chunk size warning。
 - 未执行：真实浏览器验证。本次无页面视觉和点击交互变化；仍建议发布前补一次同标签换账号和客户端迁移审计可见性冒烟。
 - 未执行：生产 DuckDB dry-run 与 PG 迁移演练。本地无法访问生产数据；发布前必须补真实 dry-run 冲突核对和迁移演练。
+
+## 14. 页面 UX 审查整改记录
+
+### 14.1 问题逐项回应
+
+| 审查问题 | 是否认可 | 整改内容 | 涉及文件 | 验证 |
+| --- | --- | --- | --- | --- |
+| P1：页面设置抽屉「恢复默认」不重置抽屉自身 `size/defaultCollapsed` | 认可，迁移后重置闭环回退 | `useDrawerPreferences` 暴露 `reset()`，将抽屉自身偏好清为空对象并保存到 `user_preference(global/settings-drawer)`；`PageSettingsDrawer` footer 的统一「恢复默认」先重置抽屉自身偏好，再继续 emit 页面 `reset`，使所有复用该抽屉的页面一起闭环，不逐页补私有逻辑。 | `frontend/src/composables/useDrawerPreferences.ts`、`frontend/src/components/PageSettingsDrawer.vue`、`frontend/src/composables/__tests__/useDrawerPreferences.spec.ts`、`frontend/src/components/__tests__/PageSettingsDrawer.spec.ts`、`DESIGN.md` | 新增 reset 单测：抽屉尺寸设为“大”后点击「恢复默认」会保存 `{}`、来源回落默认，并继续触发页面 reset；前端定向测试通过。 |
+| P2：抽屉未消费 `hydrated/failed`，无加载态/失败 fallback 提示 | 认可，与第 4.5 节状态要求不一致 | `PageSettingsDrawer` 消费 `useDrawerPreferences().hydrated/failed`，打开抽屉时远端偏好未 hydrate 显示“正在同步抽屉偏好…”，远端失败时显示“抽屉偏好暂用本地设置”。 | `frontend/src/components/PageSettingsDrawer.vue`、`frontend/src/components/__tests__/PageSettingsDrawer.spec.ts` | 新增同步中与失败态组件单测；前端定向测试通过。 |
+
+### 14.2 复用判断
+
+- 已查找的同类实现：`PageSettingsDrawer` 在每日榜单、个股、系统页、数据页等 registry 页面复用；`useDrawerPreferences` 已是抽屉自身偏好的唯一 composable；状态提示使用组件内轻量状态条，不新增第二套抽屉或页面私有状态。
+- 已复用的组件 / hook / util / schema / 样式 / test helper：继续复用 `PageSettingsDrawer`、`PageDrawer`、`SettingsGroup`、`ComponentAutoSettings`、`useDrawerPreferences` 和既有组件单测结构。
+- 本次新增的复用单元：无新增组件；仅扩展 `useDrawerPreferences.reset/loading`，供统一抽屉消费。
+- 未抽取的重复点及理由：同步/失败提示仅属于 `PageSettingsDrawer` 内部的抽屉自身偏好状态，当前没有第二个独立消费点；抽成全局状态组件会增加跨模块语义负担。
+- 需要同步维护的组件清单 / DESIGN / 测试：`DESIGN.md` 已补“恢复默认必须覆盖抽屉自身偏好”；`PageSettingsDrawer.spec.ts` 和 `useDrawerPreferences.spec.ts` 已补回归。
+
+### 14.3 本轮页面整体复查
+
+- 重置闭环：统一 footer 「恢复默认」现在覆盖页面业务偏好、布局/组件用户层和抽屉自身用户偏好；不会再出现抽屉尺寸来源仍为“个人”且无入口恢复的问题。
+- 状态闭环：抽屉偏好远端加载和失败 fallback 均有轻量可观察提示；失败不阻塞页面使用。
+- 运行态分离：点击折叠组仍只影响当前打开周期，不写默认折叠配置；默认折叠仍只由显式配置项保存。
+- 页面范围：本次集中修复复用组件，所有使用 `PageSettingsDrawer` 的页面受益；未新增页面、菜单、权限、SQL 或后端接口。
+
+### 14.4 本轮验证记录
+
+- 已执行：`cd frontend && npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts src/composables/__tests__/useDrawerPreferences.spec.ts src/composables/__tests__/usePreferenceMigration.spec.ts src/composables/__tests__/useUserPreference.spec.ts`，结果 4 files / 18 tests passed。
+- 已执行：`cd frontend && npm run build`，通过；仅有 VueUse PURE 注释和 chunk size warning。
+- 已执行：`git diff --check`，通过。
+- 未执行：真实浏览器复测。原因是本地前端依赖未安装 Playwright，当前工具搜索也未提供可直接驱动页面点击的浏览器控制工具；本轮用 jsdom 交互单测覆盖「恢复默认」点击链路和同步/失败提示。若需要严格复现审查路径，可再用 debug_normal 做每日榜单抽屉点击冒烟。

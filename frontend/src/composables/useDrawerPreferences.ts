@@ -122,6 +122,14 @@ function scheduleSave(): void {
   }, 300)
 }
 
+function resetPreference(): void {
+  ensureIdentityState()
+  replaceStateValue({})
+  state.dirty.add('size')
+  state.dirty.add('defaultCollapsed')
+  scheduleSave()
+}
+
 async function load(): Promise<void> {
   const { token } = ensureIdentityState()
   if (!token) {
@@ -192,10 +200,12 @@ export function useDrawerPreferences() {
 
   return {
     hydrated: computed(() => state.hydrated),
+    loading: computed(() => state.loading),
     failed: computed(() => state.failed),
     size,
     defaultCollapsed,
     setSize,
     setDefaultCollapsed,
+    reset: resetPreference,
   }
 }
