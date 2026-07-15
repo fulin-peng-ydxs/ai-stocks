@@ -64,7 +64,7 @@ export interface UserConfigExport {
 
 type Overlay = LayoutOverlayValues
 
-function readStoredOverlay(storageKey: string, knobs: Map<string, EditableKnob>): Overlay {
+export function readStoredOverlay(storageKey: string, knobs: Map<string, EditableKnob>): Overlay {
   const overlay: Overlay = {}
   try {
     const raw = localStorage.getItem(storageKey)
@@ -91,12 +91,12 @@ function readStoredOverlay(storageKey: string, knobs: Map<string, EditableKnob>)
 /** 组件配置覆盖：路径(slots.<id>.config.<field>) -> 值。 */
 type ComponentOverlay = Record<string, ComponentFieldValue>
 
-function isDrawerGlobalPreferencePath(path: string): boolean {
+export function isDrawerGlobalPreferencePath(path: string): boolean {
   return path === 'slots.settings.config.size' || path === 'slots.settings.config.defaultCollapsed'
 }
 
 /** 读 localStorage 中的用户层组件配置覆盖，逐项按字段定义守门，非法项丢弃。 */
-function readStoredComponentOverlay(storageKey: string, slotKindById: Map<string, string>): ComponentOverlay {
+export function readStoredComponentOverlay(storageKey: string, slotKindById: Map<string, string>): ComponentOverlay {
   const overlay: ComponentOverlay = {}
   try {
     const raw = localStorage.getItem(storageKey)

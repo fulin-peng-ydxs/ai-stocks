@@ -7,6 +7,7 @@ import {
   useAppNavigation,
   type NavigationMode,
 } from '@/composables/useAppNavigation'
+import { migrateLocalPreferencesToRemote } from '@/composables/usePreferenceMigration'
 import { resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import { effectivePresetTokens, setPresetOverrides, useLayoutPreset, type LayoutPresetKey } from '@/layout'
 import { listLayoutPresets } from '@/api/layout'
@@ -114,10 +115,10 @@ const navigationOptions: Array<{
   { value: 'dual-topbar', label: '双层顶栏', description: '一级在上，二级与子页紧随其下' },
 ]
 
-function syncGlobalPreferences() {
+async function syncGlobalPreferences() {
   if (!auth.isLoggedIn) return
-  void syncThemePreference()
-  void syncNavigationPreference()
+  await migrateLocalPreferencesToRemote()
+  await Promise.all([syncThemePreference(), syncNavigationPreference()])
 }
 
 function formatNumber(value: number | null | undefined): string {
@@ -256,6 +257,7 @@ async function bootstrapAuthenticatedShell() {
   shellBootstrapping = true
   try {
     await auth.ensureLoaded()
+    await migrateLocalPreferencesToRemote()
     await loadPresetOverridesAfterAuth()
   } catch {
     /* 失败(401 等)已由拦截器处理；菜单加载失败由 SideMenu 显错误态 + 重试 */
@@ -265,9 +267,11 @@ async function bootstrapAuthenticatedShell() {
 }
 
 // 非全屏受控页渲染前后都以 /me 为身份事实源；登录页不再发受控布局接口，避免首登旧 401 清新 token。
-onMounted(syncGlobalPreferences)
+onMounted(() => {
+  void syncGlobalPreferences()
+})
 watch(() => auth.isLoggedIn, (loggedIn) => {
-  if (loggedIn) syncGlobalPreferences()
+  if (loggedIn) void syncGlobalPreferences()
 })
 watch(() => [isFullscreen.value, auth.isLoggedIn, auth.menusStatus], bootstrapAuthenticatedShell, { immediate: true })
 watch(
