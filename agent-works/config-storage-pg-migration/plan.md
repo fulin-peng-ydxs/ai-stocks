@@ -702,7 +702,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 | 审查问题 | 是否认可 | 整改内容 | 涉及文件 | 验证 |
 | --- | --- | --- | --- | --- |
-| P1：页面设置抽屉「恢复默认」不重置抽屉自身 `size/defaultCollapsed` | 认可，迁移后重置闭环回退 | `useDrawerPreferences` 暴露 `reset()`，将抽屉自身偏好清为空对象并保存到 `user_preference(global/settings-drawer)`；`PageSettingsDrawer` footer 的统一「恢复默认」先重置抽屉自身偏好，再继续 emit 页面 `reset`，使所有复用该抽屉的页面一起闭环，不逐页补私有逻辑。 | `frontend/src/composables/useDrawerPreferences.ts`、`frontend/src/components/PageSettingsDrawer.vue`、`frontend/src/composables/__tests__/useDrawerPreferences.spec.ts`、`frontend/src/components/__tests__/PageSettingsDrawer.spec.ts`、`DESIGN.md` | 新增 reset 单测：抽屉尺寸设为“大”后点击「恢复默认」会保存 `{}`、来源回落默认，并继续触发页面 reset；前端定向测试通过。 |
+| P1：页面设置抽屉「恢复默认」不重置抽屉自身 `size/defaultCollapsed` | 认可，迁移后重置闭环回退 | `useDrawerPreferences` 暴露 `reset()`，将抽屉自身偏好清为空对象并保存到 `user_preference(global/settings-drawer)`；`PageSettingsDrawer` footer 的统一「恢复默认」先重置抽屉自身偏好，再继续 emit 页面 `reset`，使所有复用该抽屉的页面一起闭环，不逐页补私有逻辑。 | `frontend/src/composables/useDrawerPreferences.ts`、`frontend/src/components/PageSettingsDrawer.vue`、`frontend/src/composables/__tests__/useDrawerPreferences.spec.ts`、`frontend/src/components/__tests__/PageSettingsDrawer.spec.ts`、`DESIGN.md` | 新增 reset 单测：抽屉尺寸设为“大”后点击「恢复默认」会保存 `{}`、来源回落默认，并继续触发页面 reset；前端定向测试通过。复核补充浏览器实测：`debug_normal` 每日榜单抽屉从 440px / “大” / “个人”点击「恢复默认」后回到 360px / “中” / “默认”，后端 `settings-drawer` 值为 `{}`。 |
 | P2：抽屉未消费 `hydrated/failed`，无加载态/失败 fallback 提示 | 认可，与第 4.5 节状态要求不一致 | `PageSettingsDrawer` 消费 `useDrawerPreferences().hydrated/failed`，打开抽屉时远端偏好未 hydrate 显示“正在同步抽屉偏好…”，远端失败时显示“抽屉偏好暂用本地设置”。 | `frontend/src/components/PageSettingsDrawer.vue`、`frontend/src/components/__tests__/PageSettingsDrawer.spec.ts` | 新增同步中与失败态组件单测；前端定向测试通过。 |
 
 ### 14.2 复用判断
@@ -725,4 +725,5 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 已执行：`cd frontend && npm run test -- src/components/__tests__/PageSettingsDrawer.spec.ts src/composables/__tests__/useDrawerPreferences.spec.ts src/composables/__tests__/usePreferenceMigration.spec.ts src/composables/__tests__/useUserPreference.spec.ts`，结果 4 files / 18 tests passed。
 - 已执行：`cd frontend && npm run build`，通过；仅有 VueUse PURE 注释和 chunk size warning。
 - 已执行：`git diff --check`，通过。
-- 未执行：真实浏览器复测。原因是本地前端依赖未安装 Playwright，当前工具搜索也未提供可直接驱动页面点击的浏览器控制工具；本轮用 jsdom 交互单测覆盖「恢复默认」点击链路和同步/失败提示。若需要严格复现审查路径，可再用 debug_normal 做每日榜单抽屉点击冒烟。
+- 已执行：应用内浏览器真实页面复测。后端 `127.0.0.1:8000` 和前端 `5173` 运行中，使用调试账号 `debug_normal` 登录每日榜单页；先通过本地接口把 `user_preference(global/settings-drawer)` 置为 `{ size: "lg", defaultCollapsed: ["layout"] }`，打开页面设置抽屉后确认宽度 440px、尺寸“大” active、来源“个人”；点击 footer 「恢复默认」后确认抽屉宽度回到 360px、尺寸“中” active、来源“默认”，接口查询 `settings-drawer` 值为 `{}`；浏览器控制台未见 warn/error。
+- 未执行：真实断网/后端 403 失败态浏览器注入。原因是本轮问题聚焦 P1 恢复默认真实点击闭环；P2 的加载态和失败提示已由 `PageSettingsDrawer.spec.ts` 覆盖，未在浏览器中人为破坏接口。
