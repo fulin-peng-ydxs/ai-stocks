@@ -5,16 +5,16 @@
 
 ## 0. 开工前必读
 
-1. 读 [DESIGN.md](../../DESIGN.md) §1~§8（三层模型、7 步、原型清单、真实复用组件清单、组件目录、主区策略、预设、组件特性缺口、落地坑）。
+1. 读 [DESIGN.md](../../DESIGN.md) §1~§8（视觉主题、颜色预设、排版间距、组件关系、布局原则、层级、禁止事项、响应式）。
 2. 读 `frontend/src/layout/archetypes.ts`（原型预设）和 `frontend/src/layout/components.ts`（组件能力目录）。
 3. 涉及新增可导航页面、系统页、API 动作或按钮权限时，读 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 的“新页面接入菜单和权限”。
 4. 守 [AGENTS.md](../../AGENTS.md) 的协作约束：原型与组件清单选定后，先给用户推荐 + 理由再开发。
 
 ## 1. 固定流程
 
-1. 判断业务页面类型 → 按 §2 决策选一个**原型**。
+1. 判断业务页面类型 → 按 [DESIGN.md](../../DESIGN.md) §5.3 选一个**原型**，并按本文 §2 / §4 写明选择理由。
 2. 把推荐原型 + 理由告诉用户，确认后开发。
-3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；普通业务命令使用 `el-button`，纯图标操作使用 `AppIconButton`，确需新增时先判断是“普通真实组件”还是“需要进入布局配置的系统组件种类”。
+3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；控件选型、图标按钮和系统组件种类边界按 DESIGN 执行。
 4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
 5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。页面业务抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`，页面禁止直接使用 `el-drawer`。
 6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；若新增系统组件种类或配置字段，同步 `COMPONENT_CATALOG`、schema、后端规则、pageRegistry 消费和配置中心验证。
@@ -49,38 +49,38 @@
 | overlay | settings | settings-drawer | 否 |  | 否 | 页面设置 |
 
 ### 四态反馈设计
-| 状态 | 页面 / 组件处理 | 图标与组件 | 文案 |
-|---|---|---|---|
-| ready / 价值态 |  | 表格 / KPI / 图表 / 详情 / 状态 tag | 范围、日期、数量、来源 |
-| loading / 加载态 |  | `v-loading` / `el-skeleton` / 按钮 `:loading` | 正在加载{对象}… / {动作}中… |
-| empty / 空态 |  | 全局 `el-table` 空态 / `el-empty.app-empty*` / `app-empty-inline` | 暂无{对象} / 请选择{对象} / 当前条件无命中 |
-| error / 异常态 |  | `el-result icon="warning"` / 表内错误行 / 重试按钮 | {对象}加载失败 / 无权限查看{对象} |
+规则入口：[DESIGN.md](../../DESIGN.md) §4「四态反馈总则 / 空状态 / 加载态与异常态」。
 
-- 表格空态：使用全局 `el-table` 空态；如需业务文案只写 `<template #empty>` 文案，不自绘图标。
-- 非表格空态：按容器大小使用 `app-empty` / `app-empty--compact` / `app-empty--tiny` / `app-empty-inline`。
-- 加载态：首次加载不和空态同时出现；刷新时优先保留旧数据并覆盖 `v-loading`，避免闪回空态。
-- 异常态：接口失败不能只弹 toast；失败区域必须留下错误态和重试入口，403 / 无权限不能伪装为空态。
-- 价值态：有数据时必须呈现主体数据、摘要指标、当前过滤条件或来源说明之一。
-- 重复检查：同一区域不能同时渲染表格默认空态和额外 `el-empty`，四态之间必须互斥。
+| 状态 | 页面 / 组件处理 | 复用组件 / 样式 | 结论 |
+|---|---|---|---|
+| ready / 价值态 |  |  |  |
+| loading / 加载态 |  |  |  |
+| empty / 空态 |  |  |  |
+| error / 异常态 |  |  |  |
+
+- 自检结论：四态互斥、空态/错误态/重试入口按 DESIGN 处理；如有例外写明原因。
 
 ### 控件与操作规范
-- 主操作：每个操作组最多一个 `el-button type="primary"`。
-- 次要 / 危险操作：默认、plain、text / `danger`，危险色仅用于破坏性动作。
-- 纯图标操作：使用 `AppIconButton` 并填写 `label`；异步纯图标操作使用 `:loading`，不在页面私写旋转动画；外层 `el-tooltip` 承载长说明时关闭原生 `title`；图标来自 Element Plus 或项目既有 SVG。
-- 专用原生按钮：仅导航、标签页、登录专用交互可保留，并写明无法复用通用控件的语义理由。
-- 自检：交互控件无 Unicode 伪图标，无 `⚙`、`✕`、emoji 图标，无页面私有命令按钮皮肤，无渐变/内阴影/厚投影按钮。
+规则入口：[DESIGN.md](../../DESIGN.md) §4「按钮与输入」和 §7「Do's and Don'ts」。
+
+- 主 / 次 / 危险操作选型：
+- 纯图标操作：使用 `AppIconButton`；异步纯图标操作使用 `:loading`；具体尺寸、tooltip 和 Unicode 禁令见 DESIGN。
+- 专用原生按钮例外：
+- 自检结论：
 
 ### 字体与间距规范
-- 字体族：页面主体继承 `--app-font-family-base`；代码、配置 key、日志字段只在值本身使用 `--app-font-family-mono`。
-- 页面标题 / 分区标题 / 正文 / 表格 / 辅助标签 / 微型标签 / 数字强调：必须选择 DESIGN.md §3 对应 token 或 `.app-*` 语义类；`font-size`、`line-height`、`font-weight` 不得裸写。
-- 间距：优先使用 `--app-space-1~6`、`--app-space-control-gap`、`.app-stack-*`、`.app-cluster-*`、`AppControlRow` / `AppControlItem`；不得新增随机 px 节奏。
-- 允许特例：品牌字标、登录主视觉、图表 tooltip、第三方组件适配、极窄 badge；特例必须局部且不得复制到普通业务页面。
-- 自检：无新增游离字体族 / 字重 / 行高、无普通业务文字小于 12px、无未说明的 5/7/9/11/13/15px 间距。
+规则入口：[DESIGN.md](../../DESIGN.md) §3「Typography Rules / Spacing & Rhythm Rules」。
+
+- 新增或复用的语义类 / token：
+- 排版或间距特例：
+- 自检结论：
 
 ### 主题底色规范
-- 三套预设的登录页与工作台底色必须同源：登录右侧交互区基础色对应工作台 `pageBg`，登录卡片叠加后的可见色对应工作台 `surfaceBg`。
-- 调整主题底色时维护 `frontend/src/layout/themeSurfaces.ts`，再由 `presets.ts` 消费；不要在登录页或业务页面单独写一份 page/surface 色。
-- 登录页可保留光晕、网格、轨迹、透明和模糊等品牌装饰，但装饰层不能改变基础色事实源。
+规则入口：[DESIGN.md](../../DESIGN.md) §2「Color Palette & Roles」。
+
+- 是否调整主题底色 / 预设：
+- 涉及 `themeSurfaces.ts` / `presets.ts`：
+- 自检结论：
 
 ### 配置设计
 | 类型 | 字段 | 层级 | 落点 | 说明 |
@@ -90,6 +90,8 @@
 | 页面记忆 |  | usePageSettings | 业务选项 |  |
 
 ### 浮层设计
+规则入口：[DESIGN.md](../../DESIGN.md) §4「弹窗与抽屉 / 设置抽屉」。
+
 - 触发来源：页面 / 应用顶栏
 - 浮层类型：dialog / 页面业务抽屉 / 页面设置抽屉 / 视口级全局抽屉
 - 组件选型：`el-dialog` / `PageDrawer` / `PageSettingsDrawer` / 应用外壳 `el-drawer`
@@ -117,7 +119,7 @@
 - componentPreview：
 - DESIGN.md 真实复用组件清单：
 - DESIGN.md `page-registry` 区块：
-- RBAC 菜单/功能点：路由、`_SEED_MENU_TREE`、`_SEED_RESOURCES`、接口守卫、`v-permission`、默认授权决策：
+- RBAC 接入结论：是否触发 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md)“新页面接入菜单和权限”；涉及项：
 - 测试：
 - 按钮契约：命令按钮 / 图标按钮选型、每组主按钮数量、loading / disabled / focus 状态：
 - 字体与间距契约：是否消费 typography/spacing token、是否存在合理特例、是否影响低宽度文本溢出：
@@ -125,10 +127,9 @@
 ### 验收
 - cd frontend && npm test
 - cd frontend && npm run build
-- 视口验证：1100×620 / 1366×768 / 1440×900
+- 视口验证：按 DESIGN.md §8 选择关键视口，默认覆盖 1100×620 / 1366×768 / 1440×900
 - 检查无整页滚动、无视口高度硬编码、设置抽屉分段正常
-- 检查按钮高度与圆角一致、图标描边一致、顶栏状态项不呈现为悬浮胶囊
-- 检查标题、正文、表格、辅助说明、KPI、标签和控件间距均来自 DESIGN.md §3 语义层级或明确特例
+- 检查按钮、图标、排版、间距、表格、抽屉和四态反馈均符合 DESIGN 对应章节；例外写明原因
 ```
 
 如果计划声明“新增布局原型 / 组件种类 / 组件配置字段”，但没有维护清单，计划视为不完整，不能直接进入开发。
@@ -140,7 +141,7 @@
 | 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
-| 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段表 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
+| 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段治理入口 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
 | 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑 | `pageRegistry.spec.ts`、页面交互验证 |
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
@@ -153,17 +154,7 @@
 
 ## 4. 原型决策
 
-| 原型 | 选它当… |
-|---|---|
-| `list` | 筛选/批量 + 一张主表（最高频） |
-| `master-detail` | 左列表 + 右详情，两栏各自内滚 |
-| `dashboard` | KPI 卡 + 图表网格，平级块可重排多列 |
-| `form` | 标题吸顶 + 字段区内滚 + 按钮吸底 |
-| `detail` | 摘要/操作吸顶 + 分区内容内滚 |
-| `workbench` | 参数区固定 + 混合成长区（固定分析块 + 主表） |
-| `wizard` | 步骤条吸顶 + 内容内滚 + 导航吸底 |
-
-判断要点：① 有「操作→内容」上下级关系 → `hasActionRegion:true`，否则 `false`。② 数清主区组件个数与各自最低高宽。③ 各最低尺寸之和 ≤ 可用空间 → 富余给主表/主图 grow；否则走兜底阶梯：内部滚动 → 满足三条件才重排多列 → 整区滚动（不可跳级）。单个大表**不要**重排。
+原型语义和决策顺序以 [DESIGN.md](../../DESIGN.md) §5.3 为准；执行时只需要在计划中填写“选择的原型 + 选择理由 + 是否需要新增原型”。可复制骨架见本文 §9。
 
 ## 5. PageLayout 骨架（列表页示例）
 
@@ -238,7 +229,7 @@ PageSettingsDrawer
 </template>
 ```
 
-> 多组件主区（mixed/columns）按 `slot.id` 具名放置：`<template #<slotId>>…</template>`。参考端到端样板 `frontend/src/views/BoardView.vue`。
+> 多组件主区（mixed/columns）按 `slot.id` 具名放置：`<template #<slotId>>…</template>`。可参考已登记且通过契约测试的同原型页面。
 > `el-dialog` 仍可放在 `#overlays`；页面抽屉不得用 `el-drawer` 替代 `PageDrawer`。Teleport 生成的内部 DOM 样式使用唯一全局类或 `:global`。
 
 ## 7. 验收红线（机制性强制，违反则 `npm test` 失败）
@@ -248,7 +239,7 @@ PageSettingsDrawer
 - 页面源码不得直接使用 `<el-drawer>`；业务抽屉必须使用 `PageDrawer`，页面设置必须使用 `PageSettingsDrawer`——`layout-contract.spec.ts` 扫描拦截。
 - 不得使用未登记组件种类——`validateLayout` 拦截。
 - 不得把页面业务结构放进用户级配置；不得把不可重排的大表放进多列重排——`validateLayout` 拦截。
-- 列表交互：分页/排序走服务端、筛选变更自动触发、多选跨页累积（见 [DESIGN.md](../../DESIGN.md) 交互规则）。
+- 列表交互：分页/排序走服务端、筛选变更自动触发、多选跨页累积（见 [DESIGN.md](../../DESIGN.md) §4「表格与列表」）。
 - 真实组件：已有真实复用组件能覆盖的控件行为，不得继续在页面内复制手写；新增真实复用组件必须补 DESIGN 清单和消费测试。
 - 四态反馈：ready / loading / empty / error 互斥；表格走全局空态；非表格使用 `app-empty*` 统一类名；错误态必须可见且有重试或原因说明，不新增页面私有状态样式。
 
@@ -257,12 +248,6 @@ PageSettingsDrawer
 ```text
 | 页面 | 原型 | 可编辑旋钮 | 组件清单 |
 | `<PageView>`（中文名） | `<archetype>` | `density` | action:`toolbar` / main:`section` |
-```
-
-填写示例：
-
-```text
-| `BoardView`（每日榜单） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 ```
 
 ## 9. 7 个原型可复制骨架

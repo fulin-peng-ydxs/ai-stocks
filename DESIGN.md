@@ -71,6 +71,7 @@ Key Characteristics：
 预设规则：
 
 - 每套预设的登录页与工作台必须同源：同一 `preset + light/dark` 下，登录页右侧交互区基础色等于工作台 `pageBg`；登录卡片可保留透明、模糊、边框和阴影，但卡片叠加到右侧基础色后的肉眼可见色必须等于工作台 `surfaceBg`。该关系以 `frontend/src/layout/themeSurfaces.ts` 为登录/工作台底色事实源，并由 `presets.spec.ts` 守卫；禁止只改登录页或只改主页造成同主题内体验漂移。
+- 登录页可保留光晕、网格、轨迹、透明和模糊等品牌装饰，但装饰层不能改变 `themeSurfaces.ts` 和 `presets.ts` 定义的基础底色事实源。
 - `daylight`（日曜）：铂金银灰、瓷白表面、蓝宝石电光与精密石墨构成高照度研究舱；不使用米黄、香槟、金色、铜色或琥珀色表现高级感，材质层级由明度、银灰边界与克制冷影建立，蓝色承担轨迹信号与精密交互，优先服务白天长时间阅读。其暗色模式使用蓝黑石墨、银灰边界与蓝宝石信号，不得回落为夜航的深海青蓝色系。
 - `nocturne`（夜航）：深海蓝、冷青与铂金边界，优先服务低照度夜间复盘；禁止使用纯黑大底。
 - `balanced`（晨昏）：日间以海军蓝与香槟金保持明暗平衡；夜间以登录交互区既有的深蓝黑为视觉基准，并配合暖石墨边界和小面积香槟金信号建立克制的黑金层级。登录页颜色不得因主页试色而反向漂移。
@@ -453,16 +454,11 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 ### 7.4 页面 / 组件 / 布局变更维护闭环
 
-| 变更类型 | 必须同步维护 | 必须验证 |
-|---|---|---|
-| 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、build、关键视口 |
-| 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
-| 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
-| 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
-| 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑 | `pageRegistry.spec.ts`、页面交互验证 |
-| 新真实复用组件 | 本文件“真实复用组件清单”、组件文件、至少一个消费页面；如进入布局配置再同步系统组件种类和字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
-| 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、本节按钮规范；专用原生按钮例外同步契约允许项 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
-| 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
+具体维护矩阵、计划块和验收命令统一维护在 `agent-works/configurable-layout-system/page-template.md`。本节只保留长期规则：
+
+- 页面、布局原型、系统组件种类、组件字段、真实复用组件、按钮图标体系或业务偏好发生变化时，必须同步对应代码事实源、页面消费事实源、文档入口和测试。
+- DESIGN 只维护稳定设计规则、组件关系、字段治理原则和机器读取的页面登记 marker；不展开可复制流程和命令清单。
+- `page-template.md` 是执行清单；如它与本文件或布局测试冲突，优先修正模板或代码事实源，不在 DESIGN 复制第二套矩阵。
 
 ### 7.5 自动化测试锚点
 
@@ -500,6 +496,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 执行边界：
 
+- 凡涉及新增或改造前端页面、布局、组件配置、抽屉、表格、样式或交互表现，必须先读取并执行 `agent-works/configurable-layout-system/page-template.md`；未在计划或回复中明确该入口和适用结论，视为执行不完整。
 - 设计规则以本文件 §1~§8 为准；代码事实以 `frontend/src/layout/`、`frontend/src/components/`、`frontend/src/styles/global.css` 和后端 layout 校验为准。
 - 页面原型、slot、滚动归属、`growMain`、组件字段和页面登记按 `page-template.md` 执行。
 - 新增组件字段必须回到 §7.3 的字段治理闭环，不在 prompt 或计划里临时声明第二套配置口径。
