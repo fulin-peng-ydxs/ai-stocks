@@ -17,7 +17,14 @@ from backend.common.logging import get_logger
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.pg_client import get_pg_client
 from backend.auth.context import get_current_owner
-from backend.storage.pg_ddl import DEFAULT_OWNER_USER_ID
+from backend.storage.pg_ddl import (
+    DEFAULT_OWNER_USER_ID,
+    DDL_APP_CONFIG,
+    DDL_LAYOUT_FIELD_POLICY,
+    DDL_LAYOUT_PAGE_CONFIG,
+    DDL_LAYOUT_PRESET,
+    DDL_LAYOUT_USER_CONFIG,
+)
 
 log = get_logger("storage.layout_config")
 
@@ -230,8 +237,8 @@ LEGACY_BUILTIN_PRESET_MAP = {
 }
 
 _THREE_THEME_PRESET_MARKER = "migration.layout_presets_three_theme_v1"
+_CONFIG_STORAGE_PG_MARKER = "migration.config_storage_pg_v1"
 _PRESET_SEED_LOCK = threading.Lock()
-_PRESET_SEEDED_DATABASES: set[str] = set()
 
 
 class LayoutConfigValidationError(ValueError):
@@ -531,10 +538,10 @@ def _row_to_preset(row: Any) -> dict[str, Any]:
 
 
 class LayoutConfigRepo:
-    """可配置布局持久化（混合持久层 stage1·T2）。
+    """可配置布局持久化。
 
-    预设层/页面层/字段策略属平台配置，留 DuckDB（self.c）；用户层 layout_user_config
-    属用户资产，落 PG（self.pg），按 user_id 隔离（user_id 即归属，owner_user_id 同步写入）。
+    预设层、页面层和字段策略属平台配置，运行期落 PG；DuckDB 只作为配置迁移前的旧数据
+    只读回退源。用户层 layout_user_config 仍落 PG，按 user_id 隔离。
     """
 
     def __init__(self, client: DuckDBClient | None = None, *, tenant_id: str | None = None):
@@ -543,40 +550,91 @@ class LayoutConfigRepo:
 
         init_db(self.c)
         self.pg = get_pg_client()
+        self._init_pg_layout_tables()
         self.tenant_id = tenant_id or get_current_owner()[0]
         self.seed_builtin_presets()
 
+    def _init_pg_layout_tables(self) -> None:
+        """只初始化布局系统需要的 PG 表，避免仓库构造触发全量 RBAC/menu seed。"""
+        for ddl in (
+            DDL_APP_CONFIG,
+            DDL_LAYOUT_PRESET,
+            DDL_LAYOUT_PAGE_CONFIG,
+            DDL_LAYOUT_FIELD_POLICY,
+            DDL_LAYOUT_USER_CONFIG,
+        ):
+            self.pg.execute(ddl)
+
+    def _pg_layout_count(self, table: str, where: str = "", params: list[Any] | None = None) -> int:
+        sql = f"SELECT count(*) AS n FROM {table}"
+        if where:
+            sql += f" WHERE {where}"
+        return int(self.pg.query_df(sql, params or []).iloc[0]["n"])
+
+    def _duck_layout_count(self, table: str, where: str = "", params: list[Any] | None = None) -> int:
+        sql = f"SELECT count(*) AS n FROM {table}"
+        if where:
+            sql += f" WHERE {where}"
+        return int(self.c.query_df(sql, params or []).iloc[0]["n"])
+
+    def _config_storage_migrated(self) -> bool:
+        df = self.pg.query_df("SELECT 1 FROM app_config WHERE key=%s", [_CONFIG_STORAGE_PG_MARKER])
+        return not df.empty
+
+    def _should_read_duckdb_layout(self, table: str) -> bool:
+        """迁移 marker 缺失且 PG 对应平台表为空时，允许只读回退 DuckDB 旧配置表。"""
+        if self._config_storage_migrated():
+            return False
+        if self._pg_layout_count(table) > 0:
+            return False
+        try:
+            has_old_rows = self._duck_layout_count(table) > 0
+        except Exception as e:  # noqa: BLE001
+            log.warning("DuckDB 布局旧表回退检查失败: table=%s err=%s", table, e)
+            return False
+        if has_old_rows:
+            log.warning("PG %s 为空且迁移 marker 缺失，临时只读回退 DuckDB 旧配置表", table)
+        return has_old_rows
+
     def seed_builtin_presets(self) -> int:
-        database_key = str(self.c.db_path.resolve())
         with _PRESET_SEED_LOCK:
-            if database_key in _PRESET_SEEDED_DATABASES:
-                return 0
-            marker = self.c.query_df(
-                "SELECT 1 FROM app_config WHERE key=?",
+            marker = self.pg.query_df(
+                "SELECT 1 FROM app_config WHERE key=%s",
                 [_THREE_THEME_PRESET_MARKER],
             )
             if not marker.empty:
-                _PRESET_SEEDED_DATABASES.add(database_key)
+                return 0
+            duck_marker = self.c.query_df(
+                "SELECT 1 FROM app_config WHERE key=?",
+                [_THREE_THEME_PRESET_MARKER],
+            )
+            if not duck_marker.empty and self._pg_layout_count("layout_preset") == 0:
+                # 旧 DuckDB 已完成三主题 seed，而 PG 还未迁移；写 PG marker 防止新代码重复 seed，
+                # 读接口在迁移 marker 缺失时会只读回退 DuckDB，正式数据由 T5 迁移命令搬入 PG。
+                self.pg.execute(
+                    "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, %s) "
+                    "ON CONFLICT (key) DO NOTHING",
+                    [_THREE_THEME_PRESET_MARKER, '{"applied":true,"source":"duckdb"}', datetime.now()],
+                )
                 return 0
             inserted = self._apply_builtin_preset_migration()
-            self.c.execute(
-                "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, ?) "
+            self.pg.execute(
+                "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, %s) "
                 "ON CONFLICT (key) DO NOTHING",
                 [_THREE_THEME_PRESET_MARKER, '{"applied":true}', datetime.now()],
             )
-            _PRESET_SEEDED_DATABASES.add(database_key)
             return inserted
 
     def _apply_builtin_preset_migration(self) -> int:
         """一次性写入三套内置预设并迁移旧五套引用；由版本 marker 保证稳态零写。"""
-        before = int(self.c.query_df("SELECT count(*) AS n FROM layout_preset").iloc[0]["n"])
+        before = self._pg_layout_count("layout_preset")
         now = datetime.now()
         for preset in BUILTIN_PRESETS:
             cfg = normalize_preset_override(preset["config"])
-            self.c.execute(
+            self.pg.execute(
                 "INSERT INTO layout_preset "
                 "(key, name, description, config, enabled, is_builtin, schema_version, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT (key) DO UPDATE SET "
                 "name=EXCLUDED.name, description=EXCLUDED.description, enabled=TRUE, is_builtin=TRUE, "
                 "schema_version=EXCLUDED.schema_version, updated_at=EXCLUDED.updated_at",
@@ -595,21 +653,21 @@ class LayoutConfigRepo:
         # 旧五套内置预设收敛为三套视觉人格；页面引用先迁移，再删除旧内置行。
         # 只清理 is_builtin=true，避免误删用户恰好使用旧 key 创建的自定义数据。
         for legacy_key, target_key in LEGACY_BUILTIN_PRESET_MAP.items():
-            legacy = self.c.query_df(
-                "SELECT is_builtin FROM layout_preset WHERE key=?",
+            legacy = self.pg.query_df(
+                "SELECT is_builtin FROM layout_preset WHERE key=%s",
                 [legacy_key],
             )
             if legacy.empty or not bool(legacy.iloc[0]["is_builtin"]):
                 continue
-            self.c.execute(
-                "UPDATE layout_page_config SET preset_key=? WHERE preset_key=?",
+            self.pg.execute(
+                "UPDATE layout_page_config SET preset_key=%s WHERE preset_key=%s",
                 [target_key, legacy_key],
             )
-            self.c.execute(
-                "DELETE FROM layout_preset WHERE key=? AND is_builtin=true",
+            self.pg.execute(
+                "DELETE FROM layout_preset WHERE key=%s AND is_builtin=true",
                 [legacy_key],
             )
-        after = int(self.c.query_df("SELECT count(*) AS n FROM layout_preset").iloc[0]["n"])
+        after = self._pg_layout_count("layout_preset")
         return max(0, after - before)
 
     def list_presets(self, include_disabled: bool = False) -> list[dict[str, Any]]:
@@ -618,12 +676,17 @@ class LayoutConfigRepo:
         if not include_disabled:
             sql += " WHERE enabled=true"
         sql += " ORDER BY is_builtin DESC, key"
-        df = self.c.query_df(sql, params)
+        if self._should_read_duckdb_layout("layout_preset"):
+            df = self.c.query_df(sql, params)
+        else:
+            df = self.pg.query_df(sql, params)
         return [self._with_references(_row_to_preset(r)) for _, r in df.iterrows()]
 
     def get_preset(self, key: str) -> dict[str, Any] | None:
         _validate_key("preset_key", key)
-        df = self.c.query_df("SELECT * FROM layout_preset WHERE key=?", [key])
+        df = self.pg.query_df("SELECT * FROM layout_preset WHERE key=%s", [key])
+        if df.empty and not self._config_storage_migrated():
+            df = self.c.query_df("SELECT * FROM layout_preset WHERE key=?", [key])
         if df.empty:
             return None
         return self._with_references(_row_to_preset(df.iloc[0]))
@@ -651,10 +714,10 @@ class LayoutConfigRepo:
         created_at = now
         if existing and existing.get("created_at"):
             created_at = datetime.fromisoformat(str(existing["created_at"]))
-        self.c.execute(
+        self.pg.execute(
             "INSERT INTO layout_preset "
             "(key, name, description, config, enabled, is_builtin, schema_version, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (key) DO UPDATE SET "
             "name=EXCLUDED.name, description=EXCLUDED.description, config=EXCLUDED.config, "
             "enabled=EXCLUDED.enabled, is_builtin=EXCLUDED.is_builtin, "
@@ -673,19 +736,22 @@ class LayoutConfigRepo:
             raise LayoutConfigValidationError(f"内置预设不能删除: {key}")
         if self._preset_ref_count(key) > 0:
             raise LayoutConfigValidationError(f"预设已被页面引用，不能删除: {key}")
-        self.c.execute("DELETE FROM layout_preset WHERE key=?", [key])
+        self.pg.execute("DELETE FROM layout_preset WHERE key=%s", [key])
 
     def _preset_ref_count(self, key: str) -> int:
-        return int(
-            self.c.query_df(
-                "SELECT count(*) AS n FROM layout_page_config WHERE preset_key=?", [key]
-            ).iloc[0]["n"]
-        )
+        if self._should_read_duckdb_layout("layout_page_config"):
+            return self._duck_layout_count("layout_page_config", "preset_key=?", [key])
+        return self._pg_layout_count("layout_page_config", "preset_key=%s", [key])
 
     def _preset_ref_pages(self, key: str) -> list[str]:
-        df = self.c.query_df(
-            "SELECT page_key FROM layout_page_config WHERE preset_key=? ORDER BY page_key", [key]
-        )
+        if self._should_read_duckdb_layout("layout_page_config"):
+            df = self.c.query_df(
+                "SELECT page_key FROM layout_page_config WHERE preset_key=? ORDER BY page_key", [key]
+            )
+        else:
+            df = self.pg.query_df(
+                "SELECT page_key FROM layout_page_config WHERE preset_key=%s ORDER BY page_key", [key]
+            )
         return df["page_key"].tolist()
 
     def _with_references(self, preset: dict[str, Any]) -> dict[str, Any]:
@@ -696,7 +762,9 @@ class LayoutConfigRepo:
 
     def get_page_config(self, page_key: str) -> dict[str, Any]:
         _validate_key("page_key", page_key)
-        df = self.c.query_df("SELECT * FROM layout_page_config WHERE page_key=?", [page_key])
+        df = self.pg.query_df("SELECT * FROM layout_page_config WHERE page_key=%s", [page_key])
+        if df.empty and not self._config_storage_migrated():
+            df = self.c.query_df("SELECT * FROM layout_page_config WHERE page_key=?", [page_key])
         if df.empty:
             return {
                 "pageKey": page_key,
@@ -731,9 +799,9 @@ class LayoutConfigRepo:
         cfg = normalize_override(config, schema_version, layer="page")
         _enforce_component_ownership(cfg["values"], layout)
         self._enforce_field_policy(cfg["values"], layout, "page")
-        self.c.execute(
+        self.pg.execute(
             "INSERT INTO layout_page_config (page_key, preset_key, config, schema_version, updated_at) "
-            "VALUES (?,?,?,?,?) "
+            "VALUES (%s,%s,%s,%s,%s) "
             "ON CONFLICT (page_key) DO UPDATE SET "
             "preset_key=EXCLUDED.preset_key, config=EXCLUDED.config, "
             "schema_version=EXCLUDED.schema_version, updated_at=EXCLUDED.updated_at",
@@ -794,7 +862,10 @@ class LayoutConfigRepo:
     # ── 字段开放策略（P10：元配置，不参与运行时值合并）────────────────────
     def get_field_policy_map(self) -> dict[tuple[str, str], set[str]]:
         """读取所有开放策略覆盖：{(kind, field): {允许层级}}。缺行的字段不在表中（回落代码最大集）。"""
-        df = self.c.query_df("SELECT component_kind, field, allowed_layers FROM layout_field_policy")
+        if self._should_read_duckdb_layout("layout_field_policy"):
+            df = self.c.query_df("SELECT component_kind, field, allowed_layers FROM layout_field_policy")
+        else:
+            df = self.pg.query_df("SELECT component_kind, field, allowed_layers FROM layout_field_policy")
         out: dict[tuple[str, str], set[str]] = {}
         for _, r in df.iterrows():
             layers = _json_load(r["allowed_layers"], [])
@@ -850,9 +921,9 @@ class LayoutConfigRepo:
             if layer not in chosen:
                 chosen.append(layer)
         ordered = [x for x in ALL_COMPONENT_LAYERS if x in chosen]
-        self.c.execute(
+        self.pg.execute(
             "INSERT INTO layout_field_policy (component_kind, field, allowed_layers, updated_at) "
-            "VALUES (?,?,?,?) "
+            "VALUES (%s,%s,%s,%s) "
             "ON CONFLICT (component_kind, field) DO UPDATE SET "
             "allowed_layers=EXCLUDED.allowed_layers, updated_at=EXCLUDED.updated_at",
             [component_kind, field, _json_dump(ordered), datetime.now()],
@@ -868,8 +939,8 @@ class LayoutConfigRepo:
 
     def reset_field_policy(self, component_kind: str, field: str) -> dict[str, Any]:
         """删除某 (kind, field) 的策略覆盖，回落代码最大集。"""
-        self.c.execute(
-            "DELETE FROM layout_field_policy WHERE component_kind=? AND field=?",
+        self.pg.execute(
+            "DELETE FROM layout_field_policy WHERE component_kind=%s AND field=%s",
             [component_kind, field],
         )
         maxl = component_field_max_layers(component_kind, field) or set()
@@ -976,7 +1047,7 @@ class LayoutConfigRepo:
             if path:
                 values.pop(path, None)
                 return self.set_page_config(page_key, {"values": values}, preset_key)
-            self.c.execute("DELETE FROM layout_page_config WHERE page_key=?", [page_key])
+            self.pg.execute("DELETE FROM layout_page_config WHERE page_key=%s", [page_key])
             return self.get_page_config(page_key)
         if scope == "user":
             if not user_id:

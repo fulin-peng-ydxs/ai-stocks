@@ -8,10 +8,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 import backend.storage.duckdb_client as dc
+from backend.common.exceptions import StorageError
 from backend.main import app
 from backend.storage.ddl import init_db, list_tables
 from backend.storage.duckdb_client import DuckDBClient
 from backend.storage.layout_config import LayoutConfigRepo, LayoutConfigValidationError
+from backend.storage.pg_client import PostgresClient
+from backend.storage.pg_ddl import init_pg_db
 
 
 @pytest.fixture()
@@ -22,6 +25,38 @@ def client(tmp_path, monkeypatch):
     yield c
     c.close()
     monkeypatch.setattr(dc, "_client", None)
+
+
+@pytest.fixture(autouse=True)
+def _layout_pg_snapshot():
+    """布局平台层已迁 PG，测试前清空并在测试后恢复，避免污染真实平台配置。"""
+    pg = PostgresClient()
+    try:
+        if not pg.ping():
+            pytest.skip("PostgreSQL 未就绪")
+    except StorageError:
+        pytest.skip("PostgreSQL 未就绪")
+    init_pg_db(pg)
+    tables = ["layout_preset", "layout_page_config", "layout_field_policy", "layout_user_config", "app_config"]
+    snapshots = {table: pg.query_df(f"SELECT * FROM {table}") for table in tables}
+    for table in ["layout_user_config", "layout_field_policy", "layout_page_config", "layout_preset", "app_config"]:
+        pg.execute(f"DELETE FROM {table}")
+    yield
+    for table in ["layout_user_config", "layout_field_policy", "layout_page_config", "layout_preset", "app_config"]:
+        pg.execute(f"DELETE FROM {table}")
+    for table in tables:
+        df = snapshots[table]
+        if df.empty:
+            continue
+        columns = list(df.columns)
+        placeholders = ",".join(["%s"] * len(columns))
+        quoted = ",".join(columns)
+        for _, r in df.iterrows():
+            pg.execute(
+                f"INSERT INTO {table} ({quoted}) VALUES ({placeholders})",
+                [r[col] for col in columns],
+            )
+    pg.close()
 
 
 @pytest.fixture(autouse=True)
@@ -78,19 +113,21 @@ def test_builtin_presets_seed_and_custom_preset_roundtrip(client, monkeypatch):
 
 
 def test_legacy_builtin_preset_reference_migrates_to_three_preset_system(client):
-    client.execute(
+    repo = LayoutConfigRepo(client)
+    repo.pg.execute(
         "INSERT INTO layout_preset "
         "(key, name, description, config, enabled, is_builtin, schema_version, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
         ["finance", "旧金融数据", "旧内置预设", '{"density":"compact"}', True, True, 1],
     )
-    client.execute(
+    repo.pg.execute(
         "INSERT INTO layout_page_config (page_key, preset_key, config, schema_version, updated_at) "
-        "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        "VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)",
         ["board", "finance", "{}", 1],
     )
+    repo.pg.execute("DELETE FROM app_config WHERE key=%s", ["migration.layout_presets_three_theme_v1"])
 
-    repo = LayoutConfigRepo(client)
+    repo.seed_builtin_presets()
 
     assert repo.get_page_config("board")["presetKey"] == "balanced"
     assert repo.get_preset("finance") is None
@@ -100,6 +137,38 @@ def test_legacy_builtin_preset_reference_migrates_to_three_preset_system(client)
     repo.seed_builtin_presets()
     assert repo.get_page_config("stocks")["presetKey"] == "finance"
     assert repo.get_preset("finance")["is_builtin"] is False
+
+
+def test_pg_empty_reads_duckdb_layout_until_config_migration(client):
+    """迁移 marker 缺失且 PG 平台表为空时，布局平台配置临时只读回退 DuckDB。"""
+    client.execute(
+        "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        ["migration.layout_presets_three_theme_v1", '{"applied":true}'],
+    )
+    client.execute(
+        "INSERT INTO layout_preset "
+        "(key, name, description, config, enabled, is_builtin, schema_version, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+        ["legacy-duck", "旧库预设", "迁移前旧数据", '{"density":"compact"}', True, False, 1],
+    )
+    client.execute(
+        "INSERT INTO layout_page_config (page_key, preset_key, config, schema_version, updated_at) "
+        "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        ["duck-page", "legacy-duck", '{"density":"comfortable"}', 1],
+    )
+    client.execute(
+        "INSERT INTO layout_field_policy (component_kind, field, allowed_layers, updated_at) "
+        "VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+        ["data-table", "pageSize", '["page"]'],
+    )
+
+    repo = LayoutConfigRepo(client)
+
+    assert any(p["key"] == "legacy-duck" for p in repo.list_presets(include_disabled=True))
+    assert repo.get_preset("legacy-duck")["config"]["values"]["density"] == "compact"
+    assert repo.get_page_config("duck-page")["presetKey"] == "legacy-duck"
+    policies = {(p["componentKind"], p["field"]): p for p in repo.list_field_policies()}
+    assert policies[("data-table", "pageSize")]["allowedLayers"] == ["page"]
 
 
 def test_preset_tokens_and_references(client):

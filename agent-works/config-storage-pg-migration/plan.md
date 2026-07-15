@@ -231,8 +231,8 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须实现 | R1 | 系统配置不再使用 DuckDB 权威 | 保持 PG `app_config` 权威，清理 DuckDB marker/旧入口依赖 | T1、T3、T5、T10 | 进行中 | 一致 | T1 已完成存储边界冻结；后续 T3/T5/T10 继续落运行时代码和文档。 |
-| 必须实现 | R2 | 布局平台配置迁 PG | 新增 PG DDL，改造 `LayoutConfigRepo`，迁移 DuckDB 数据 | T2、T3、T5、T12 | 进行中 | 一致 | T2 已新增 PG 表底座；后续 T3/T5/T12 迁运行仓库和数据。 |
+| 必须实现 | R1 | 系统配置不再使用 DuckDB 权威 | 保持 PG `app_config` 权威，清理 DuckDB marker/旧入口依赖 | T1、T3、T5、T10 | 进行中 | 一致 | T1 已完成存储边界冻结，T3 已把布局 seed marker 改到 PG `app_config` 并兼容 DuckDB 旧 marker；后续 T5/T10 继续落迁移命令和文档。 |
+| 必须实现 | R2 | 布局平台配置迁 PG | 新增 PG DDL，改造 `LayoutConfigRepo`，迁移 DuckDB 数据 | T2、T3、T5、T12 | 进行中 | 一致 | T2 已新增 PG 表底座，T3 已将运行期仓库读写切 PG；后续 T5/T12 迁存量数据并做发布闭环。 |
 | 必须实现 | R3 | 布局用户层迁 PG | 前端拉取/保存 `/layout/users/{pageKey}`，localStorage 降级为迁移源 | T7、T9 | 待开始 | 一致 | 使用已有 PG `layout_user_config`。 |
 | 必须实现 | R4 | 组件用户层迁 PG | 组件路径进入 `layout_user_config.config.values`，保存时带真实 PageLayout | T7、T9、T11 | 待开始 | 一致 | 避免 F1 所述后端归属校验失败。 |
 | 必须实现 | R5 | 抽屉偏好跨页面共享 | 抽屉自身偏好进 `user_preference(global/settings-drawer)`，`size/defaultCollapsed` 覆盖 page/preset 默认且运行时只选一个来源 | T4、T7、T9 | 待开始 | 一致 | 不再使用伪 pageKey 的 layout 用户层。 |
@@ -240,7 +240,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 | 必须实现 | R7 | 页面业务偏好迁 PG | 新增 `user_preference`，改造 `usePageSettings` 和零散偏好 composable | T4、T8、T9 | 待开始 | 一致 | localStorage 仅 fallback。 |
 | 必须实现 | R8 | 个人偏好权限口径 | `layout:user-config` 与 `user-preference:manage` 纳入登录基线自持久化能力，明确这是扩 baseline 而非可反选角色授权 | T2、T4、T11 | 进行中 | 一致 | T2 已调整资源码和测试契约；后续 T4/T11 接 user-preference API 与完整验证。 |
 | 必须实现 | R9 | 数据迁移幂等可回滚 | 后端 CLI 迁 DuckDB，前端一次性迁 localStorage | T5、T9、T12 | 待开始 | 一致 | 迁移 marker 防重复。 |
-| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 进行中 | 一致 | T2 已补权限测试契约与 SQL 归档；完整文档和发布验证仍在后续任务。 |
+| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 进行中 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试；完整文档和发布验证仍在后续任务。 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -285,7 +285,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 ### 6.3 任务 T3：后端布局配置仓库迁 PG
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2
 - 涉及文件/模块：`backend/storage/layout_config.py`、`backend/api/layout.py`、`backend/tests/test_layout_config.py`
 - 目标：布局平台配置运行期只写 PG，迁移期可只读回退 DuckDB 防空窗。
@@ -301,7 +301,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 边界与异常：PG 不可用时接口应返回明确错误；前端保留默认渲染兜底。
 - 验证方式：后端 layout 单测覆盖 preset/page/user/field-policy/effective/reset，以及 PG 空表只读回退。
 - 完成标准：迁移完成后运行期保存和读取布局配置不访问 DuckDB 配置表。
-- 实际落地情况：待实施。
+- 实际落地情况：已将 `LayoutConfigRepo` 的 `layout_preset`、`layout_page_config`、`layout_field_policy` 读写切到 PG；仓库构造仅初始化 `app_config` 与布局相关 PG DDL，不触发全量 RBAC/menu seed；`seed_builtin_presets` marker 改写 PG `app_config`，并在发现 DuckDB 旧 marker 且 PG 预设为空时写入 PG marker、保留 DuckDB 只读回退；迁移 marker 缺失且 PG 对应平台表为空时，读接口只读回退 DuckDB 并记录 warning，所有写接口仍写 PG。`test_layout_config.py` 已改为 PG 平台表快照/还原，避免污染真实配置，并新增 PG 空表回退用例。
 
 ### 6.4 任务 T4：用户偏好后端服务与 API
 
@@ -502,10 +502,10 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 - 单元测试：
   - 计划：补 `test_layout_config.py` 的 PG 平台配置读写、PG 空表只读 DuckDB 回退、组件路径无 layout 被拒、真实 layout 可保存；补 `test_user_preference.py` 的用户偏好隔离；补前端 `useLayoutConfig`/`useUserPreference`/`PageSettingsDrawer` 单测。
-  - 具体完成情况：T1-T2 阶段已执行 `python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_stage4_layout.py backend/auth/perm_resolver.py backend/storage/resource_repository.py backend/services/role_admin_service.py`，通过；PG-backed layout repo、user preference API 和前端单测仍属于 T3/T4/T7/T8/T11。
+  - 具体完成情况：T1-T2 阶段已执行 `python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_stage4_layout.py backend/auth/perm_resolver.py backend/storage/resource_repository.py backend/services/role_admin_service.py`，通过；T3 阶段已执行 `python -m py_compile backend/storage/layout_config.py backend/tests/test_layout_config.py`，通过，并补齐 PG-backed layout repo 与 PG 空表 DuckDB 只读回退单测。`user_preference` API 和前端单测仍属于 T4/T7/T8/T11。
 - 接口测试：
   - 计划：覆盖 `/api/layout/*`、`/api/user-preferences/*` 的鉴权、越权、非法 payload、批量保存；验证 `layout:user-config` 与 `user-preference:manage` 基线可用；改写 `test_stage4_layout.py` 的旧负向断言，新增无角色 fail-closed 断言。
-  - 具体完成情况：T2 已改写 `test_stage4_layout.py` 的旧负向断言，并执行 `python -m pytest backend/tests/test_stage4_layout.py backend/tests/test_stage4_menu_guard.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_platform_t1.py backend/tests/test_stage5_resource_codes.py -q`，结果 34 passed；`/api/user-preferences/*` 仍待 T4 实现后验证。
+  - 具体完成情况：T2 已改写 `test_stage4_layout.py` 的旧负向断言，并执行 `python -m pytest backend/tests/test_stage4_layout.py backend/tests/test_stage4_menu_guard.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_platform_t1.py backend/tests/test_stage5_resource_codes.py -q`，结果 34 passed；T3 阶段执行 `python -m pytest backend/tests/test_stage4_layout.py backend/tests/test_stage4_menu_guard.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py -q`，结果 29 passed。`/api/user-preferences/*` 仍待 T4 实现后验证。
 - 页面/交互测试：
   - 计划：浏览器验证系统设置页、用户管理页或数据字典页的设置抽屉、审计宽表页组件配置。
   - 具体完成情况：T1-T2 不涉及前端页面代码，未执行浏览器验证；设置抽屉与页面交互验证留到 T6/T7/T11。
@@ -517,10 +517,10 @@ CREATE TABLE IF NOT EXISTS user_preference (
   - 具体完成情况：T2 已执行 `python -m pytest backend/tests/test_auth_middleware.py -q`，结果 20 passed；同一阶段布局用户配置 baseline 语义已在 `test_stage4_layout.py` 验证“有角色用户通过、无角色 fail-closed”。`user_preference` 跨用户隔离和前端 403 fallback 留到 T4/T8/T11。
 - 回归测试：
   - 计划：`python -m pytest backend/tests/test_layout_config.py backend/tests/test_auth_middleware.py backend/tests/test_stage4_layout.py -q`；`cd frontend && npm run test -- ...`；`npm run build`。
-  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。未改前端源码，未执行前端构建；PG layout repo 回归待 T3 后补跑。
+  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。T3 阶段执行 `python -m pytest backend/tests/test_layout_config.py -q`，结果 23 passed；布局接口/RBAC 相关定向回归 29 passed。未改前端源码，未执行前端构建。
 - 异常与边界测试：
   - 计划：PG 不可用、本地旧值损坏、schemaVersion 不匹配、重复迁移、字段开放策略收紧后保存失败、远端加载中本地编辑竞态、迁移 marker 缺失。
-  - 具体完成情况：T2 已覆盖 baseline 权限反转与无角色 fail-closed 边界；其它异常场景依赖 T3-T9 实现后验证。
+  - 具体完成情况：T2 已覆盖 baseline 权限反转与无角色 fail-closed 边界；T3 已覆盖迁移 marker 缺失且 PG 平台表为空时的 DuckDB 只读回退。其它异常场景依赖 T4-T9 实现后验证。
 - 图示与原型一致性验证：
   - 本次不新增页面；验证设置抽屉视觉和交互不退化，尤其默认折叠和当前展开状态。
 - 配置闭环验证：
