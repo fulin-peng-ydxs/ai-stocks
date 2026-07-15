@@ -259,6 +259,50 @@ def cmd_migrate_rbac(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_migrate_config_storage(args: argparse.Namespace) -> int:
+    """配置存储 DuckDB→PG 迁移。默认实迁；--dry-run 只预演。"""
+    from backend.services.migrate_config_storage import migrate_config_storage
+
+    dry = bool(getattr(args, "dry_run", False))
+    force = bool(getattr(args, "force", False))
+    report = migrate_config_storage(dry_run=dry, force=force)
+    glob = report.get("_global", {})
+    print(f"=== 配置存储迁移 {'DRY-RUN（未写入）' if dry else 'APPLY（写入 PG）'} ===")
+    print(
+        f"marker={glob.get('marker')} "
+        f"exists_before={glob.get('marker_exists')} "
+        f"skipped={glob.get('skipped')} "
+        f"force={glob.get('force')}"
+    )
+    print(f"{'表':<24}{'DuckDB源':>10}{'PG前':>8}{'待新增':>8}{'冲突':>8}{'已写':>8}{'PG后':>8}")
+    for table in ("layout_preset", "layout_page_config", "layout_field_policy", "app_config"):
+        r = report[table]
+        print(
+            f"{table:<24}{r.get('duck', 0):>10}{r.get('pg_before', 0):>8}"
+            f"{r.get('pending', 0):>8}{r.get('conflicts', 0):>8}{r.get('migrated', 0):>8}"
+            f"{str(r.get('pg_after', '-')):>8}"
+        )
+        missing = r.get("missing_keys") or []
+        conflicts = r.get("conflict_keys") or []
+        print(f"  conflict_policy={r.get('conflict_policy')}")
+        if missing:
+            print(f"  pending_keys={', '.join(missing[:20])}{' ...' if len(missing) > 20 else ''}")
+        if conflicts:
+            print(f"  conflict_keys={', '.join(conflicts[:20])}{' ...' if len(conflicts) > 20 else ''}")
+    problems = glob.get("problems") or []
+    if problems:
+        print("\n问题：")
+        for problem in problems:
+            print(f"  - {problem}")
+    if glob.get("skipped"):
+        print("\n已跳过：PG marker 已存在；如需重跑请加 --force。")
+    elif dry:
+        print("\n预演完成；不加 --dry-run 将执行实际迁移。")
+    else:
+        print("\n迁移完成。")
+    return 1 if problems else 0
+
+
 def cmd_screen(args: argparse.Namespace) -> int:
     from datetime import date
 
@@ -625,6 +669,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_mig.add_argument("--recreate", action="store_true",
                        help="DROP+重建资产表后再迁（从旧单主键 schema 升级用；破坏性，配合 --apply）")
     p_mig.set_defaults(func=cmd_migrate_rbac)
+
+    p_cfg = sub.add_parser(
+        "migrate-config-storage",
+        help="配置存储 DuckDB→PG 迁移：默认执行，--dry-run 仅预演")
+    p_cfg.add_argument("--dry-run", action="store_true", dest="dry_run",
+                       help="只输出迁移报告，不写入 PG")
+    p_cfg.add_argument("--force", action="store_true",
+                       help="即使 migration.config_storage_pg_v1 marker 已存在也重新执行")
+    p_cfg.set_defaults(func=cmd_migrate_config_storage)
     return parser
 
 

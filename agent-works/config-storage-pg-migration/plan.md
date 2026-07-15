@@ -231,16 +231,16 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须实现 | R1 | 系统配置不再使用 DuckDB 权威 | 保持 PG `app_config` 权威，清理 DuckDB marker/旧入口依赖 | T1、T3、T5、T10 | 进行中 | 一致 | T1 已完成存储边界冻结，T3 已把布局 seed marker 改到 PG `app_config` 并兼容 DuckDB 旧 marker；后续 T5/T10 继续落迁移命令和文档。 |
-| 必须实现 | R2 | 布局平台配置迁 PG | 新增 PG DDL，改造 `LayoutConfigRepo`，迁移 DuckDB 数据 | T2、T3、T5、T12 | 进行中 | 一致 | T2 已新增 PG 表底座，T3 已将运行期仓库读写切 PG；后续 T5/T12 迁存量数据并做发布闭环。 |
+| 必须实现 | R1 | 系统配置不再使用 DuckDB 权威 | 保持 PG `app_config` 权威，清理 DuckDB marker/旧入口依赖 | T1、T3、T5、T10 | 进行中 | 一致 | T1 已完成存储边界冻结，T3 已把布局 seed marker 改到 PG `app_config` 并兼容 DuckDB 旧 marker，T5 已提供 DuckDB 旧 `app_config` 缺失补迁命令；后续 T10 同步文档。 |
+| 必须实现 | R2 | 布局平台配置迁 PG | 新增 PG DDL，改造 `LayoutConfigRepo`，迁移 DuckDB 数据 | T2、T3、T5、T12 | 进行中 | 一致 | T2 已新增 PG 表底座，T3 已将运行期仓库读写切 PG，T5 已提供 DuckDB 布局配置到 PG 的迁移命令；发布闭环留到 T12。 |
 | 必须实现 | R3 | 布局用户层迁 PG | 前端拉取/保存 `/layout/users/{pageKey}`，localStorage 降级为迁移源 | T7、T9 | 待开始 | 一致 | 使用已有 PG `layout_user_config`。 |
 | 必须实现 | R4 | 组件用户层迁 PG | 组件路径进入 `layout_user_config.config.values`，保存时带真实 PageLayout | T7、T9、T11 | 待开始 | 一致 | 避免 F1 所述后端归属校验失败。 |
 | 必须实现 | R5 | 抽屉偏好跨页面共享 | 抽屉自身偏好进 `user_preference(global/settings-drawer)`，`size/defaultCollapsed` 覆盖 page/preset 默认且运行时只选一个来源 | T4、T7、T9 | 进行中 | 一致 | T4 已提供 `user_preference` 后端存储与 API；前端消费和迁移留到 T7/T9。 |
 | 必须实现 | R6 | 默认折叠与当前状态分离 | `PageSettingsDrawer` 使用运行态折叠集合，默认值仅显式设置保存 | T6、T11 | 待开始 | 一致 | 可先独立实施。 |
 | 必须实现 | R7 | 页面业务偏好迁 PG | 新增 `user_preference`，改造 `usePageSettings` 和零散偏好 composable | T4、T8、T9 | 进行中 | 一致 | T4 已提供后端偏好存储与批量保存接口；前端 composable 和迁移留到 T8/T9。 |
 | 必须实现 | R8 | 个人偏好权限口径 | `layout:user-config` 与 `user-preference:manage` 纳入登录基线自持久化能力，明确这是扩 baseline 而非可反选角色授权 | T2、T4、T11 | 进行中 | 一致 | T2 已调整资源码和测试契约，T4 已用 `user-preference:manage` 接入 API 并验证 baseline 通过、无角色 fail-closed；完整前端 403 fallback 留到 T11。 |
-| 必须实现 | R9 | 数据迁移幂等可回滚 | 后端 CLI 迁 DuckDB，前端一次性迁 localStorage | T5、T9、T12 | 待开始 | 一致 | 迁移 marker 防重复。 |
-| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 进行中 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试；完整文档和发布验证仍在后续任务。 |
+| 必须实现 | R9 | 数据迁移幂等可回滚 | 后端 CLI 迁 DuckDB，前端一次性迁 localStorage | T5、T9、T12 | 进行中 | 一致 | T5 已完成后端 DuckDB→PG 配置迁移命令和 marker 跳过/force；前端 localStorage 迁移留到 T9，发布演练留到 T12。 |
+| 必须实现 | R10 | 测试、权限、文档、发布闭环 | 补后端/前端测试、页面验证、文档更新和无窗口发布顺序 | T10、T11、T12 | 进行中 | 一致 | T2 已补权限测试契约与 SQL 归档，T3 已补 PG-backed layout repo 与 PG 空表回退测试，T4 已补用户偏好 API 测试，T5 已补迁移命令测试；完整文档和发布验证仍在后续任务。 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -324,7 +324,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 ### 6.5 任务 T5：DuckDB → PG 配置迁移命令
 
-- 状态：待开始
+- 状态：已完成
 - 依赖：T2、T3
 - 涉及文件/模块：`backend/cli.py`、`backend/services/migrate_config_storage.py`、`backend/tests/test_migrate_config_storage.py`
 - 目标：把历史 DuckDB 配置迁到 PG，支持 dry-run、幂等和回滚。
@@ -341,7 +341,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 边界与异常：迁移在 PG 事务内完成；失败回滚 PG 写入。
 - 验证方式：构造 DuckDB 旧数据，执行 dry-run 和正式迁移，校验 PG 数据一致。
 - 完成标准：迁移前后 layout 配置有效值一致，重复执行不重复写。
-- 实际落地情况：待实施。
+- 实际落地情况：已新增 `backend/services/migrate_config_storage.py` 和 CLI `python -m backend.cli migrate-config-storage`。命令默认执行实迁，`--dry-run` 仅输出 DuckDB/PG 行数、待迁移 key、冲突 key 和冲突策略，`--force` 可在 `migration.config_storage_pg_v1` 已存在时重跑；迁移表覆盖 `layout_preset`、`layout_page_config`、`layout_field_policy`，采用 upsert 更新冲突项；DuckDB 旧 `app_config` 只做 PG 缺失补迁，不覆盖已有 PG 值；正式执行在 PG 事务内写入并设置 `migration.config_storage_pg_v1` marker。
 
 ### 6.6 任务 T6：设置抽屉折叠状态先行修复
 
@@ -502,7 +502,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 
 - 单元测试：
   - 计划：补 `test_layout_config.py` 的 PG 平台配置读写、PG 空表只读 DuckDB 回退、组件路径无 layout 被拒、真实 layout 可保存；补 `test_user_preference.py` 的用户偏好隔离；补前端 `useLayoutConfig`/`useUserPreference`/`PageSettingsDrawer` 单测。
-  - 具体完成情况：T1-T2 阶段已执行 `python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_stage4_layout.py backend/auth/perm_resolver.py backend/storage/resource_repository.py backend/services/role_admin_service.py`，通过；T3 阶段已执行 `python -m py_compile backend/storage/layout_config.py backend/tests/test_layout_config.py`，通过，并补齐 PG-backed layout repo 与 PG 空表 DuckDB 只读回退单测。T4 阶段已执行 `python -m py_compile backend/storage/user_preference.py backend/api/user_preferences.py backend/main.py backend/tests/test_user_preference.py`，通过，并补 `test_user_preference.py` 覆盖用户偏好隔离。前端单测仍属于 T7/T8/T11。
+  - 具体完成情况：T1-T2 阶段已执行 `python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_stage4_layout.py backend/auth/perm_resolver.py backend/storage/resource_repository.py backend/services/role_admin_service.py`，通过；T3 阶段已执行 `python -m py_compile backend/storage/layout_config.py backend/tests/test_layout_config.py`，通过，并补齐 PG-backed layout repo 与 PG 空表 DuckDB 只读回退单测。T4 阶段已执行 `python -m py_compile backend/storage/user_preference.py backend/api/user_preferences.py backend/main.py backend/tests/test_user_preference.py`，通过，并补 `test_user_preference.py` 覆盖用户偏好隔离。T5 阶段已执行 `python -m py_compile backend/services/migrate_config_storage.py backend/cli.py backend/tests/test_migrate_config_storage.py`，通过，并补 `test_migrate_config_storage.py` 覆盖 dry-run、正式迁移、marker 跳过和 force 重跑。前端单测仍属于 T7/T8/T11。
 - 接口测试：
   - 计划：覆盖 `/api/layout/*`、`/api/user-preferences/*` 的鉴权、越权、非法 payload、批量保存；验证 `layout:user-config` 与 `user-preference:manage` 基线可用；改写 `test_stage4_layout.py` 的旧负向断言，新增无角色 fail-closed 断言。
   - 具体完成情况：T2 已改写 `test_stage4_layout.py` 的旧负向断言，并执行 `python -m pytest backend/tests/test_stage4_layout.py backend/tests/test_stage4_menu_guard.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_platform_t1.py backend/tests/test_stage5_resource_codes.py -q`，结果 34 passed；T3 阶段执行布局接口/RBAC 相关定向回归，结果 29 passed。T4 阶段执行 `python -m pytest backend/tests/test_user_preference.py -q`，结果 6 passed，覆盖 `/api/user-preferences` 鉴权、批量保存、非法 payload 和归属字段忽略。
@@ -517,10 +517,10 @@ CREATE TABLE IF NOT EXISTS user_preference (
   - 具体完成情况：T2 已执行 `python -m pytest backend/tests/test_auth_middleware.py -q`，结果 20 passed；同一阶段布局用户配置 baseline 语义已在 `test_stage4_layout.py` 验证“有角色用户通过、无角色 fail-closed”。T4 已验证 `user_preference` 跨用户隔离、前端传归属字段不生效、有角色用户 baseline 可写、无角色用户 403。前端 403 fallback 留到 T8/T11。
 - 回归测试：
   - 计划：`python -m pytest backend/tests/test_layout_config.py backend/tests/test_auth_middleware.py backend/tests/test_stage4_layout.py -q`；`cd frontend && npm run test -- ...`；`npm run build`。
-  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。T3 阶段执行 `python -m pytest backend/tests/test_layout_config.py -q`，结果 23 passed；布局接口/RBAC 相关定向回归 29 passed。T4 阶段执行 `python -m pytest backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py backend/tests/test_stage4_layout.py -q`，结果 24 passed。未改前端源码，未执行前端构建。
+  - 具体完成情况：T1-T2 已完成后端定向回归：布局/RBAC/资源码 34 passed，鉴权中间件 20 passed。T3 阶段执行 `python -m pytest backend/tests/test_layout_config.py -q`，结果 23 passed；布局接口/RBAC 相关定向回归 29 passed。T4 阶段执行资源码/布局权限回归 24 passed。T5 阶段执行 `python -m pytest backend/tests/test_migrate_config_storage.py -q`，结果 4 passed；执行 `python -m pytest backend/tests/test_layout_config.py backend/tests/test_stage4_resource_codes.py backend/tests/test_stage5_resource_codes.py -q`，结果 42 passed。未改前端源码，未执行前端构建。
 - 异常与边界测试：
   - 计划：PG 不可用、本地旧值损坏、schemaVersion 不匹配、重复迁移、字段开放策略收紧后保存失败、远端加载中本地编辑竞态、迁移 marker 缺失。
-  - 具体完成情况：T2 已覆盖 baseline 权限反转与无角色 fail-closed 边界；T3 已覆盖迁移 marker 缺失且 PG 平台表为空时的 DuckDB 只读回退。其它异常场景依赖 T4-T9 实现后验证。
+  - 具体完成情况：T2 已覆盖 baseline 权限反转与无角色 fail-closed 边界；T3 已覆盖迁移 marker 缺失且 PG 平台表为空时的 DuckDB 只读回退；T5 已覆盖迁移 marker 已存在时跳过、`--force` 重跑和 PG 既有 `app_config` 不被覆盖。其它异常场景依赖 T6-T9 实现后验证。
 - 图示与原型一致性验证：
   - 本次不新增页面；验证设置抽屉视觉和交互不退化，尤其默认折叠和当前展开状态。
 - 配置闭环验证：
