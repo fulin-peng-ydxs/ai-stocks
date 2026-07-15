@@ -2,7 +2,7 @@
  * 布局配置覆盖链路（M3）。
  *
  * 合并优先级：系统代码默认 < 预设配置 < 页面配置 < 用户配置。
- * 用户层仍使用 localStorage；预设层来自 useLayoutPreset；页面层为后续后端配置中心预留输入。
+ * 用户层以 PG 为权威；localStorage 仅作为离线 fallback 与迁移源。
  */
 import { computed, reactive, ref, watch } from 'vue'
 import type { EditableKnob, PageLayout } from './schema'
@@ -48,7 +48,18 @@ export interface UseLayoutConfigOptions {
 /** applyPageConfig 入参：后端页面配置（预设 key + 覆盖值）。 */
 export interface PageConfigInput {
   presetKey?: string | null
-  values?: LayoutOverlayValues
+  values?: Record<string, unknown>
+}
+
+/** 用户层输入：后端 layout_user_config.config.values 同时承载布局旋钮与组件配置路径。 */
+export interface UserConfigInput {
+  schemaVersion?: number
+  values?: Record<string, unknown>
+}
+
+export interface UserConfigExport {
+  schemaVersion: number
+  values: Record<string, unknown>
 }
 
 type Overlay = LayoutOverlayValues
@@ -80,6 +91,10 @@ function readStoredOverlay(storageKey: string, knobs: Map<string, EditableKnob>)
 /** 组件配置覆盖：路径(slots.<id>.config.<field>) -> 值。 */
 type ComponentOverlay = Record<string, ComponentFieldValue>
 
+function isDrawerGlobalPreferencePath(path: string): boolean {
+  return path === 'slots.settings.config.size' || path === 'slots.settings.config.defaultCollapsed'
+}
+
 /** 读 localStorage 中的用户层组件配置覆盖，逐项按字段定义守门，非法项丢弃。 */
 function readStoredComponentOverlay(storageKey: string, slotKindById: Map<string, string>): ComponentOverlay {
   const overlay: ComponentOverlay = {}
@@ -89,6 +104,8 @@ function readStoredComponentOverlay(storageKey: string, slotKindById: Map<string
     const parsed = JSON.parse(raw) as { schemaVersion?: number; values?: Record<string, unknown> }
     if (parsed.schemaVersion && parsed.schemaVersion !== LAYOUT_CONFIG_SCHEMA_VERSION) return overlay
     for (const [path, value] of Object.entries(parsed.values ?? {})) {
+      // settings-drawer 自身个人偏好是跨页面全局偏好，T7 起不再从页面级 localStorage 自动恢复。
+      if (isDrawerGlobalPreferencePath(path)) continue
       const parsedPath = parseComponentConfigPath(path)
       if (!parsedPath) continue
       const kind = slotKindById.get(parsedPath.slotId)
@@ -124,6 +141,8 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
 
   const pageOverlay = reactive<Overlay>({ ...(options.pageOverride?.values ?? {}) })
   const userOverlay = reactive<Overlay>(readStoredOverlay(storageKey, knobs))
+  const remoteUserHydrated = ref(false)
+  const preHydrationDirtyPaths = reactive(new Set<string>())
 
   // 组件配置覆盖层（与 L2 布局参数并行的独立通道，路径 slots.<id>.config.<field>）。
   const pageComponentOverlay = reactive<ComponentOverlay>({})
@@ -239,17 +258,40 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     return componentResult.value.perLayerValues[`slots.${slotId}.config.${field}`] ?? {}
   }
 
+  function markUserPathDirty(path: string): void {
+    if (!remoteUserHydrated.value) preHydrationDirtyPaths.add(path)
+  }
+
+  function assignComponentOverlay(path: string, value: unknown, target: ComponentOverlay): boolean {
+    if (isDrawerGlobalPreferencePath(path)) return false
+    const parsedPath = parseComponentConfigPath(path)
+    if (!parsedPath) return false
+    const kind = slotKindById.get(parsedPath.slotId)
+    const def = kind ? getComponentFieldDef(kind as never, parsedPath.field) : undefined
+    if (!def || !isLayerAllowed(def, 'user')) return false
+    try {
+      target[path] = coerceComponentValue(def, value)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   /** 改一个用户层组件配置（越权/越界抛错）。 */
   function setComponentKnob(slotId: string, field: string, value: unknown): void {
     const kind = slotKindById.get(slotId)
     const def = kind ? getComponentFieldDef(kind as never, field) : undefined
     if (!def) throw new Error(`未登记的组件配置项: ${slotId}.${field}`)
     if (!isLayerAllowed(def, 'user')) throw new Error(`该字段不允许用户层修改: ${slotId}.${field}`)
-    userComponentOverlay[`slots.${slotId}.config.${field}`] = coerceComponentValue(def, value)
+    const path = `slots.${slotId}.config.${field}`
+    userComponentOverlay[path] = coerceComponentValue(def, value)
+    markUserPathDirty(path)
   }
 
   function resetComponentKnob(slotId: string, field: string): void {
-    delete userComponentOverlay[`slots.${slotId}.config.${field}`]
+    const path = `slots.${slotId}.config.${field}`
+    delete userComponentOverlay[path]
+    markUserPathDirty(path)
   }
 
   /** 改一个用户层旋钮（越界/类型不符抛 LayoutConfigError）。 */
@@ -257,21 +299,25 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     const knob = knobs.get(path)
     if (!knob) throw new Error(`未开放编辑的布局项: ${path}`)
     userOverlay[path] = coerceEditableValue(knob, value) as LayoutOverlayValue
+    markUserPathDirty(path)
   }
 
   function resetKnob(path: string): void {
     delete userOverlay[path]
+    markUserPathDirty(path)
   }
 
   function resetLayer(layer: Exclude<LayoutConfigLayer, 'default' | 'preset'>): void {
     const target = layer === 'page' ? pageOverlay : userOverlay
-    for (const key of Object.keys(target)) delete target[key]
+    for (const key of Object.keys(target)) {
+      delete target[key]
+      if (layer === 'user') markUserPathDirty(key)
+    }
   }
 
   /**
    * 注入后端页面配置（layout_page_config）：替换页面层覆盖并切换页面默认预设。
    * 非法/越权项由 mergeLayoutConfig 在合并时按 allowedPaths + validateLayout 守门丢弃，页面不崩。
-   * 用户层仍走 localStorage（决策：用户配置后端化属后续多用户阶段）。
    */
   function applyPageConfig(input: PageConfigInput = {}): void {
     if (input.presetKey !== undefined) pagePresetKey.value = input.presetKey
@@ -280,16 +326,70 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     // 后端页面配置的 values 同时含 L2 布局参数与组件配置，按路径分流到对应通道。
     for (const [path, value] of Object.entries(input.values ?? {})) {
       if (isComponentConfigPath(path)) pageComponentOverlay[path] = value as ComponentFieldValue
-      else pageOverlay[path] = value
+      else pageOverlay[path] = value as LayoutOverlayValue
+    }
+  }
+
+  function applyUserConfig(input: UserConfigInput = {}, opts: { preserveDirty?: boolean } = {}): { preservedDirty: boolean } {
+    const preserveDirty = opts.preserveDirty !== false
+    const values = input.values ?? {}
+    let preservedDirty = false
+
+    for (const key of Object.keys(userOverlay)) {
+      if (preserveDirty && preHydrationDirtyPaths.has(key)) {
+        preservedDirty = true
+        continue
+      }
+      delete userOverlay[key]
+    }
+    for (const key of Object.keys(userComponentOverlay)) {
+      if (preserveDirty && preHydrationDirtyPaths.has(key)) {
+        preservedDirty = true
+        continue
+      }
+      delete userComponentOverlay[key]
+    }
+
+    for (const [path, value] of Object.entries(values)) {
+      if (preserveDirty && preHydrationDirtyPaths.has(path)) {
+        preservedDirty = true
+        continue
+      }
+      if (isComponentConfigPath(path)) {
+        assignComponentOverlay(path, value, userComponentOverlay)
+        continue
+      }
+      const knob = knobs.get(path)
+      if (!knob) continue
+      try {
+        userOverlay[path] = coerceEditableValue(knob, value) as LayoutOverlayValue
+      } catch {
+        /* 远端旧值越界：丢弃 */
+      }
+    }
+
+    remoteUserHydrated.value = true
+    preHydrationDirtyPaths.clear()
+    return { preservedDirty }
+  }
+
+  function exportUserConfig(): UserConfigExport {
+    return {
+      schemaVersion: LAYOUT_CONFIG_SCHEMA_VERSION,
+      values: { ...userOverlay, ...userComponentOverlay },
     }
   }
 
   function resetAll(): void {
     resetLayer('user')
-    for (const key of Object.keys(userComponentOverlay)) delete userComponentOverlay[key]
+    for (const key of Object.keys(userComponentOverlay)) {
+      delete userComponentOverlay[key]
+      markUserPathDirty(key)
+    }
   }
 
   const isDirty = computed(() => Object.keys(userOverlay).length > 0 || Object.keys(userComponentOverlay).length > 0)
+  const userConfigValues = computed(() => exportUserConfig().values)
 
   /** 读某旋钮当前有效值（供表单回显）。 */
   function valueOf(path: string): unknown {
@@ -312,6 +412,10 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     resetLayer,
     resetAll,
     applyPageConfig,
+    applyUserConfig,
+    exportUserConfig,
+    remoteUserHydrated,
+    userConfigValues,
     isDirty,
     valueOf,
     sourceOf,

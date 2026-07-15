@@ -9,6 +9,7 @@ import ComponentAutoSettings from './ComponentAutoSettings.vue'
 import PageDrawer from './PageDrawer.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
 import AppIconButton from './AppIconButton.vue'
+import { useDrawerPreferences } from '@/composables/useDrawerPreferences'
 
 /** 抽屉自动渲染所需的配置访问器（即 useRemoteLayoutConfig 的返回子集）。 */
 export interface DrawerConfig {
@@ -39,8 +40,51 @@ const emit = defineEmits<{
   reset: []
 }>()
 const slots = useSlots()
+const drawerPreferences = useDrawerPreferences()
 
-const hasLayoutKnobs = computed(() => !!props.config?.knobs?.length)
+const activeConfig = computed<DrawerConfig | undefined>(() => {
+  if (!props.config) return undefined
+  return {
+    ...props.config,
+    componentValueOf(slotId: string, field: string) {
+      if (slotId === 'settings' && field === 'size') {
+        return drawerPreferences.size.value ?? props.config?.componentValueOf(slotId, field)
+      }
+      if (slotId === 'settings' && field === 'defaultCollapsed') {
+        return drawerPreferences.defaultCollapsed.value ?? props.config?.componentValueOf(slotId, field)
+      }
+      return props.config?.componentValueOf(slotId, field)
+    },
+    setComponentKnob(slotId: string, field: string, value: unknown) {
+      if (slotId === 'settings' && field === 'size') {
+        drawerPreferences.setSize(value)
+        return
+      }
+      if (slotId === 'settings' && field === 'defaultCollapsed') {
+        drawerPreferences.setDefaultCollapsed(value)
+        return
+      }
+      props.config?.setComponentKnob(slotId, field, value)
+    },
+    componentSourceOf(slotId: string, field: string) {
+      if (slotId === 'settings' && field === 'size' && drawerPreferences.size.value) return 'user'
+      if (slotId === 'settings' && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) return 'user'
+      return props.config?.componentSourceOf?.(slotId, field) ?? 'default'
+    },
+    componentLayerValuesOf(slotId: string, field: string) {
+      const values = props.config?.componentLayerValuesOf?.(slotId, field) ?? {}
+      if (slotId === 'settings' && field === 'size' && drawerPreferences.size.value) {
+        return { ...values, user: drawerPreferences.size.value }
+      }
+      if (slotId === 'settings' && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) {
+        return { ...values, user: drawerPreferences.defaultCollapsed.value }
+      }
+      return values
+    },
+  }
+})
+
+const hasLayoutKnobs = computed(() => !!activeConfig.value?.knobs?.length)
 const hasComponentConfig = computed(
   () => !!props.pageKey && !!getPageEntry(props.pageKey)?.consumedComponentFields,
 )
@@ -51,24 +95,31 @@ const SECTION_KEYS: SectionKey[] = ['layout', 'components', 'business']
 
 const collapsibleSections = computed(() => props.config?.componentValueOf('settings', 'collapsibleSections') !== false)
 const drawerSize = computed(() => {
-  const size = props.config?.componentValueOf('settings', 'size')
+  const size = activeConfig.value?.componentValueOf('settings', 'size')
   return size === 'sm' ? '320px' : size === 'lg' ? '440px' : '360px'
 })
 const bodyScroll = computed(() => props.config?.componentValueOf('settings', 'bodyScroll') !== false)
 const collapsedSections = computed<SectionKey[]>(() => {
-  const raw = props.config?.componentValueOf('settings', 'defaultCollapsed')
+  const raw = activeConfig.value?.componentValueOf('settings', 'defaultCollapsed')
   if (!Array.isArray(raw)) return []
   return raw.filter((v): v is SectionKey => SECTION_KEYS.includes(v as SectionKey))
 })
 const runtimeCollapsedSections = ref<SectionKey[]>([])
+const runtimeTouched = ref(false)
 
 watch(
   () => props.modelValue,
   (open) => {
-    if (open) runtimeCollapsedSections.value = [...collapsedSections.value]
+    if (open) {
+      runtimeTouched.value = false
+      runtimeCollapsedSections.value = [...collapsedSections.value]
+    }
   },
   { immediate: true },
 )
+watch(collapsedSections, (value) => {
+  if (props.modelValue && !runtimeTouched.value) runtimeCollapsedSections.value = [...value]
+})
 
 function sectionOpen(key: SectionKey): boolean {
   if (!collapsibleSections.value) return true
@@ -80,6 +131,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
   const next = new Set(runtimeCollapsedSections.value)
   if (open) next.delete(key)
   else next.add(key)
+  runtimeTouched.value = true
   runtimeCollapsedSections.value = SECTION_KEYS.filter((section) => next.has(section))
 }
 </script>
@@ -111,7 +163,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
         业务选项始终由页面声明（业务态/「页面记忆」，不进四层配置链路）。
       -->
       <div class="ps-body" :class="{ 'is-scroll-disabled': !bodyScroll }">
-        <template v-if="config">
+        <template v-if="activeConfig">
           <SettingsGroup
             v-if="hasLayoutKnobs"
             title="布局"
@@ -122,11 +174,11 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
             @update:model-value="(open) => setSectionOpen('layout', open)"
           >
             <LayoutSettingsSection
-              :knobs="config.knobs"
-              :value-of="config.valueOf"
-              :source-of="config.sourceOf"
-              :layer-values-of="config.layerValuesOf"
-              :set="config.setKnob"
+              :knobs="activeConfig.knobs"
+              :value-of="activeConfig.valueOf"
+              :source-of="activeConfig.sourceOf"
+              :layer-values-of="activeConfig.layerValuesOf"
+              :set="activeConfig.setKnob"
             />
           </SettingsGroup>
 
@@ -141,7 +193,7 @@ function setSectionOpen(key: SectionKey, open: boolean): void {
           >
             <ComponentAutoSettings
               :page-key="pageKey!"
-              :config="config"
+              :config="activeConfig"
               :drawer-business-visible="hasBusinessSlot"
               :component-meta-overrides="componentMetaOverrides"
             />

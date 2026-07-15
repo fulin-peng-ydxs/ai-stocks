@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref, type Ref } from 'vue'
 import PageSettingsDrawer, { type DrawerConfig } from '@/components/PageSettingsDrawer.vue'
+
+const prefApi = vi.hoisted(() => ({
+  listUserPreferences: vi.fn(),
+  saveUserPreference: vi.fn(),
+}))
+
+vi.mock('@/api/userPreferences', () => prefApi)
 
 function makeConfig(defaultCollapsedRef: Ref<string[]>) {
   const setComponentKnob = vi.fn()
@@ -30,6 +37,7 @@ function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
     props: {
       modelValue: true,
       config,
+      pageKey: 'board',
       businessVisible: true,
     },
     slots: {
@@ -54,7 +62,15 @@ function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
           `,
         },
         LayoutSettingsSection: true,
-        ComponentAutoSettings: true,
+        ComponentAutoSettings: {
+          props: ['config'],
+          template: `
+            <div>
+              <button class="set-drawer-size" @click="config.setComponentKnob('settings', 'size', 'lg')" />
+              <button class="set-drawer-collapsed" @click="config.setComponentKnob('settings', 'defaultCollapsed', ['layout'])" />
+            </div>
+          `,
+        },
         AppIconButton: { template: '<button type="button"><slot /></button>' },
         ElButton: { template: '<button type="button"><slot /></button>' },
         ElIcon: { template: '<span><slot /></span>' },
@@ -69,6 +85,11 @@ function groupOpen(wrapper: ReturnType<typeof mount>, title: string): string | u
 }
 
 describe('PageSettingsDrawer', () => {
+  beforeEach(() => {
+    prefApi.listUserPreferences.mockResolvedValue({ items: [] })
+    prefApi.saveUserPreference.mockResolvedValue({})
+  })
+
   it('点击折叠段只改变抽屉运行态，不写入默认折叠配置', async () => {
     const defaults = ref<string[]>([])
     const { wrapper, setComponentKnob } = mountDrawer(defaults)
@@ -95,5 +116,22 @@ describe('PageSettingsDrawer', () => {
     expect(groupOpen(wrapper, '布局')).toBe('true')
     expect(groupOpen(wrapper, '业务选项')).toBe('false')
     expect(setComponentKnob).not.toHaveBeenCalled()
+  })
+
+  it('抽屉自身偏好写入全局 user_preference，不写页面组件配置', async () => {
+    vi.useFakeTimers()
+    const defaults = ref<string[]>([])
+    const { wrapper, setComponentKnob } = mountDrawer(defaults)
+
+    await wrapper.find('.set-drawer-size').trigger('click')
+    await vi.advanceTimersByTimeAsync(350)
+
+    expect(setComponentKnob).not.toHaveBeenCalled()
+    expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
+      scope: 'global',
+      prefKey: 'settings-drawer',
+      value: expect.objectContaining({ size: 'lg' }),
+    }))
+    vi.useRealTimers()
   })
 })

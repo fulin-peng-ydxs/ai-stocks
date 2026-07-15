@@ -1,9 +1,9 @@
 // 可配置布局系统 API（对应 backend/api/layout.py）
-import http from './client'
+import http, { type AppRequestConfig } from './client'
 
 export const LAYOUT_CONFIG_SCHEMA_VERSION = 1
 
-export type LayoutOverlayValue = string | number | boolean
+export type LayoutOverlayValue = string | number | boolean | string[] | number[] | Record<string, unknown>
 export type LayoutOverlayValues = Record<string, LayoutOverlayValue>
 
 export interface LayoutOverride {
@@ -61,7 +61,7 @@ export interface SavePresetPayload {
 
 export interface SavePageConfigPayload {
   presetKey?: string | null
-  config?: Partial<LayoutOverride> | LayoutOverlayValues
+  config?: { schemaVersion?: number; values?: Record<string, unknown> } | Record<string, unknown>
   schemaVersion?: number
   /** 含组件配置时必传：用于后端校验字段归属（slot 存在 + 字段属于该组件种类）。 */
   layout?: Record<string, unknown>
@@ -69,13 +69,13 @@ export interface SavePageConfigPayload {
 
 export interface SaveUserConfigPayload {
   userId?: string
-  config?: Partial<LayoutOverride> | LayoutOverlayValues
+  config?: { schemaVersion?: number; values?: Record<string, unknown> } | Record<string, unknown>
   schemaVersion?: number
   layout?: Record<string, unknown>
 }
 
 export interface ValidateLayoutPayload {
-  config?: Partial<LayoutOverride> | LayoutOverlayValues
+  config?: { schemaVersion?: number; values?: Record<string, unknown> } | Record<string, unknown>
   layout?: Record<string, unknown>
   schemaVersion?: number
 }
@@ -106,11 +106,18 @@ export function saveLayoutPageConfig(pageKey: string, payload: SavePageConfigPay
 }
 
 export function getLayoutUserConfig(pageKey: string, userId = 'local'): Promise<LayoutUserConfig> {
-  return http.get(`/layout/users/${encodeURIComponent(pageKey)}`, { params: { userId } })
+  return http.get(
+    `/layout/users/${encodeURIComponent(pageKey)}`,
+    { params: { userId }, skipGlobalError: true } as AppRequestConfig,
+  )
 }
 
 export function saveLayoutUserConfig(pageKey: string, payload: SaveUserConfigPayload): Promise<LayoutUserConfig> {
-  return http.post(`/layout/users/${encodeURIComponent(pageKey)}`, payload)
+  return http.post(
+    `/layout/users/${encodeURIComponent(pageKey)}`,
+    payload,
+    { skipGlobalError: true } as AppRequestConfig,
+  )
 }
 
 export function validateLayoutConfig(payload: ValidateLayoutPayload): Promise<LayoutValidateResult> {
