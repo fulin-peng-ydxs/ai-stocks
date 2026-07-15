@@ -551,6 +551,16 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、本节按钮规范；专用原生按钮例外同步契约允许项 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 
+### 7.5 自动化测试锚点
+
+关键点击链路允许使用 `data-testid` 作为测试锚点，但只服务自动化测试，不表达样式或业务状态。
+
+- 自动化测试流程、Playwright 与交互式浏览器工具的适用边界，以 `agent-works/e2e-automation/guide.md` 为入口；本节只约束 UI 组件如何提供稳定锚点。
+- 必须加锚点的对象：页面级入口按钮、抽屉/弹窗容器、提交/重置/删除等关键命令、分段控件中会被 E2E 断言的选项。
+- 不给普通文本、布局装饰、一次性容器批量加锚点；能通过稳定复用组件承载时，不在页面私有 DOM 上重复加。
+- 复用组件提供可选 `testId` 时，页面或配置渲染器只在需要 E2E 覆盖的关键实例上传入。
+- Playwright E2E 优先用 `getByTestId` 和项目 helper；临时浏览器复核可以用可见文本定位，但不能把脆弱定位沉淀成长期用例。
+
 ## 8. Responsive Behavior
 
 当前项目主要面向桌面端本地工作台，仍必须保证低高度和常见桌面宽度下可用。

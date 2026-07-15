@@ -369,6 +369,7 @@ function setSort(slotId: string, field: string, order: string): void {
         <PageSegmented
           :model-value="strVal(s.slotId, 'size') || 'md'"
           :options="DRAWER_SIZE_OPTIONS"
+          :test-id="s.slotId === 'settings' ? 'drawer-size' : undefined"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, 'size', String(v))"
         />
       </div>

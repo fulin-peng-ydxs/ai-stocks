@@ -150,6 +150,7 @@ function handleReset(): void {
     direction="rtl"
     :size="drawerSize"
     class="page-settings-drawer"
+    data-testid="page-settings-drawer"
     modal-class="ps-settings-modal"
   >
     <div class="ps-card">
@@ -243,7 +244,7 @@ function handleReset(): void {
       </div>
 
       <footer class="ps-footer">
-        <el-button class="ps-reset" @click="handleReset">恢复默认</el-button>
+        <el-button class="ps-reset" data-testid="page-settings-reset" @click="handleReset">恢复默认</el-button>
       </footer>
     </div>
   </PageDrawer>

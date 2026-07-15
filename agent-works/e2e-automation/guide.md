@@ -1,0 +1,73 @@
+# E2E 自动化验证规范
+
+## 目标
+
+为后续 AI 页面开发提供稳定、可重复的浏览器验证流程。项目内长期回归走 Playwright；交互式浏览器工具用于临时复核和探索性排查。
+
+## 文档入口与关联
+
+- `AGENTS.md`：项目级执行红线，说明何时必须考虑 Playwright E2E，以及端口、后端启动和交付说明要求。
+- `DESIGN.md`：UI 组件和 `data-testid` 锚点规范，说明哪些真实组件可以承载测试锚点，以及锚点不表达样式/业务状态。
+- 本文件：E2E 执行流程、工具边界、沉淀触发条件和 helper 使用规则。
+- `frontend/playwright.config.ts`：Playwright 运行配置，固定 `frontend/e2e/`、`5181`、trace/screenshot/video 策略。
+- `frontend/e2e/helpers/`：登录、数据预置、偏好读写等长期复用 helper；新增 E2E 不重复手写登录态和接口 seed。
+- `agent-works/multi-tenant-rbac/test-users.md`：`debug_*` 调试账号事实源。
+
+后续修改上述任一文件影响自动化流程时，必须同步检查其余入口是否仍一致。
+
+## 工具边界
+
+| 场景 | 使用工具 | 要求 |
+| --- | --- | --- |
+| 已知关键业务路径、交付前回归、CI 候选 | Playwright E2E | 用例放 `frontend/e2e/`，通过 `npm run test:e2e` 执行，失败保留 trace/screenshot/video |
+| 新问题复现、视觉细节确认、一次性探索、查看控制台 | 交互式浏览器工具 | 可临时点击和截图；若满足下方“必须沉淀为 Playwright”的条件，本次整改内补 Playwright 用例 |
+| 纯 composable、合并逻辑、字段守门、错误分支 | Vitest | 不用浏览器替代单元测试 |
+
+## 必须沉淀为 Playwright 的条件
+
+不要使用“第几次人工复核”作为判断依据。AI 无法可靠知道全历史次数，必须按当前代码和任务事实判断。
+
+满足任一条件时，本次改动必须复用、更新或新增 `frontend/e2e/` 用例；如果确实不能新增，交付说明必须写清楚原因和替代验证：
+
+- 改动影响 `frontend/e2e/` 已覆盖路径，例如页面设置抽屉、登录后页面入口或已有 helper 使用链路。
+- 用户明确要求“以后稳定执行”“自动化回归”“Playwright 验证”“不要只临时点页面”。
+- 修复的是页面真实点击缺陷、审查复发现象、用户可感知的抽屉/弹窗/表格/表单/路由/权限入口问题。
+- 改动涉及跨页面、跨用户、权限、远端存储、本地 fallback、迁移或重置闭环，并且需要浏览器验证才能确认业务成立。
+- 新增或改造可复用页面组件，且该组件承载关键命令或配置项，会被多个页面消费。
+
+只做一次性视觉观察、临时定位问题、读取控制台、确认不稳定实验路径时，可以只用交互式浏览器工具；但交付说明必须标注这是临时复核，不能写成已建立长期回归。
+
+这里的“交互式浏览器工具”是工具中立概念，包括 AI 工具内置浏览器、人工浏览器操作、Chrome/浏览器扩展控制、一次性 Playwright 脚本等临时验证方式；它们不等同于项目长期回归资产。
+
+## 固定命令
+
+```bash
+./start.sh
+cd frontend && npm run test:e2e:install   # 首次或浏览器缺失时
+cd frontend && npm run test:e2e
+```
+
+Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；后端使用 `127.0.0.1:8000`，由 `./start.sh` 管理。
+
+## 选择器规则
+
+- 长期 E2E 优先使用 `data-testid`。
+- 关键复用组件提供可选 `testId`，例如 `PageSegmented` 会输出容器和选项锚点。
+- 禁止在长期用例里使用坐标、深层 CSS 结构、DOM 顺序或容易变动的说明文案。
+- 新增或修改页面关键交互时，同步检查是否需要补充或调整测试锚点。
+
+## 调试账号
+
+- 页面权限验收使用 `debug_*` 账号，账号事实源为 `agent-works/multi-tenant-rbac/test-users.md`。
+- E2E 登录 helper 默认使用 `debug_normal`，密码读取顺序：`AI_STOCKS_TEST_USER_PASSWORD` 环境变量、仓库根目录本地 `.env.local`、本地 dev-users 默认值。
+- 账号不存在或权限漂移时，先执行 `python -m backend.cli dev-users` 校准。
+
+## 后续 AI 执行要求
+
+- 改页面、抽屉、弹窗、配置面板、路由或权限入口时，先检查 `frontend/e2e/` 是否已有相关路径；已有则更新并运行相关用例，没有则按“必须沉淀为 Playwright 的条件”判断是否新增。
+- 交付说明必须区分：已跑 Vitest、已跑 build、已跑 Playwright、仅做交互式浏览器临时复核、未执行及原因。
+- Playwright 失败时先看 trace/screenshot/console，不直接改产品代码迁就测试；若是选择器不稳定，优先补稳定锚点或 helper。
+
+## 当前基线用例
+
+- `frontend/e2e/page-settings-drawer.spec.ts`：验证每日榜单页面设置抽屉「恢复默认」会清除 `user_preference(global/settings-drawer)` 中的抽屉自身偏好，并回到默认尺寸。

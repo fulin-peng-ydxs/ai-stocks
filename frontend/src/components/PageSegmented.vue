@@ -1,24 +1,31 @@
 <script setup lang="ts">
 type OptionValue = string | number | boolean
 
-defineProps<{
+const props = defineProps<{
   modelValue: OptionValue
   options: { label: string; value: OptionValue }[]
+  /** 稳定自动化测试锚点；只在需要 E2E 覆盖的关键控件上显式传入。 */
+  testId?: string
 }>()
 
 defineEmits<{
   'update:modelValue': [value: OptionValue]
 }>()
+
+function optionTestId(value: OptionValue): string | undefined {
+  return props.testId ? `${props.testId}-${String(value)}` : undefined
+}
 </script>
 
 <template>
-  <div class="page-segmented">
+  <div class="page-segmented" :data-testid="props.testId">
     <button
-      v-for="option in options"
+      v-for="option in props.options"
       :key="String(option.value)"
       type="button"
       class="seg-btn"
-      :class="{ active: option.value === modelValue }"
+      :class="{ active: option.value === props.modelValue }"
+      :data-testid="optionTestId(option.value)"
       @click="$emit('update:modelValue', option.value)"
     >
       {{ option.label }}

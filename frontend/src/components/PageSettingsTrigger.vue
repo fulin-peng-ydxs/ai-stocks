@@ -7,7 +7,12 @@ defineEmits<{ click: [] }>()
 </script>
 
 <template>
-  <AppIconButton class="page-settings-trigger" label="页面设置" @click="$emit('click')">
+  <AppIconButton
+    class="page-settings-trigger"
+    data-testid="page-settings-trigger"
+    label="页面设置"
+    @click="$emit('click')"
+  >
     <el-icon><Setting /></el-icon>
     <span v-if="dirty" class="dot" />
   </AppIconButton>
