@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -26,6 +27,7 @@ import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { DICT_COLOR_PRESETS, dictColorSwatchStyle, dictTagStyle, normalizeDictColor } from '@/utils/dictColor'
+import type { AppRowAction } from '@/components/rowActions'
 
 const pageKey = 'data-dictionary'
 
@@ -394,6 +396,20 @@ async function removeItem(row: DictItem) {
   ElMessage.success('已删除')
 }
 
+function itemRowActions(row: DictItem): AppRowAction[] {
+  return [
+    { key: 'edit', label: '编辑', permission: 'dict:item-manage', onClick: () => openEditItem(row) },
+    {
+      key: 'delete',
+      label: '删除',
+      type: 'danger',
+      permission: 'dict:item-manage',
+      placement: 'more',
+      onClick: () => removeItem(row),
+    },
+  ]
+}
+
 async function toggleType(row: DictType, value: boolean) {
   if (togglingTypeCode.value) return
   togglingTypeCode.value = row.code
@@ -529,7 +545,7 @@ onBeforeUnmount(() => {
             <div class="dict-actions">
               <el-button v-if="activeType" v-permission="'dict:type-manage'" size="small" @click="openEditType()">编辑类型</el-button>
               <el-button v-if="activeType" v-permission="'dict:type-manage'" size="small" type="danger" plain @click="removeType()">删除类型</el-button>
-              <el-button v-if="activeType" v-permission="'dict:item-manage'" size="small" type="primary" @click="openCreateItem">新建字典项</el-button>
+              <el-button v-if="activeType" v-permission="'dict:item-manage'" size="small" type="success" plain @click="openCreateItem">新建字典项</el-button>
             </div>
           </header>
 
@@ -591,13 +607,12 @@ onBeforeUnmount(() => {
               </el-table-column>
               <el-table-column label="操作" width="132" fixed="right">
                 <template #default="{ row }">
-                  <el-button v-permission="'dict:item-manage'" link type="primary" @click="openEditItem(row)">编辑</el-button>
-                  <el-button v-permission="'dict:item-manage'" link type="danger" @click="removeItem(row)">删除</el-button>
+                  <AppRowActions :actions="itemRowActions(row)" :inline-limit="1" />
                 </template>
               </el-table-column>
               <template #empty>
                 <el-empty class="app-empty" :description="activeType ? '暂无字典项' : '请选择字典类型'">
-                  <el-button v-if="activeType" v-permission="'dict:item-manage'" type="primary" @click="openCreateItem">新建字典项</el-button>
+                  <el-button v-if="activeType" v-permission="'dict:item-manage'" type="success" plain @click="openCreateItem">新建字典项</el-button>
                 </el-empty>
               </template>
             </AppDataTable>

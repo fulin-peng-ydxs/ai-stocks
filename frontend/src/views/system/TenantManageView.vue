@@ -8,6 +8,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -24,6 +25,7 @@ import {
 } from '@/api/tenant'
 import { listUsers, type AdminUser } from '@/api/user'
 import { dictItemLabel, dictTagStyleByCode } from '@/utils/dictColor'
+import type { AppRowAction } from '@/components/rowActions'
 
 // 默认/平台租户 id：不可停用、不可删除（与后端 pg_ddl.DEFAULT_TENANT_ID 一致）。
 const DEFAULT_TENANT_ID = 'default'
@@ -151,6 +153,42 @@ async function removeTenant(row: Tenant) {
     ElMessage.success('已删除')
     await load()
   } catch (e) { if (e === 'cancel') return /* 默认租户/仍有用户由拦截器弹出 */ }
+}
+
+function tenantRowActions(row: Tenant): AppRowAction[] {
+  const isDefaultTenant = row.id === DEFAULT_TENANT_ID
+  const hasUsers = (row.user_count ?? 0) > 0
+  return [
+    { key: 'edit', label: '编辑', permission: 'tenant:update', onClick: () => openEdit(row) },
+    { key: 'users', label: '查看用户', onClick: () => viewUsers(row) },
+    {
+      key: 'disable',
+      label: '停用',
+      type: 'danger',
+      permission: 'tenant:disable',
+      visible: row.status === 'active' && !isDefaultTenant,
+      onClick: () => changeStatus(row, 'disabled', '停用'),
+    },
+    {
+      key: 'enable',
+      label: '启用',
+      type: 'success',
+      permission: 'tenant:disable',
+      visible: row.status === 'disabled',
+      onClick: () => changeStatus(row, 'active', '启用'),
+    },
+    {
+      key: 'delete',
+      label: '删除',
+      type: 'danger',
+      permission: 'tenant:delete',
+      visible: !isDefaultTenant,
+      disabled: hasUsers,
+      title: hasUsers ? '该租户仍有用户，不可删除' : undefined,
+      placement: 'more',
+      onClick: () => removeTenant(row),
+    },
+  ]
 }
 
 // ── 新建 / 编辑弹窗 ──
@@ -291,17 +329,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-table-column>
           <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
-              <el-button v-permission="'tenant:update'" type="primary" size="small" link
-                         @click="openEdit(row)">编辑</el-button>
-              <el-button type="primary" size="small" link @click="viewUsers(row)">查看用户</el-button>
-              <el-button v-if="row.status === 'active' && row.id !== DEFAULT_TENANT_ID" v-permission="'tenant:disable'"
-                         type="danger" size="small" link @click="changeStatus(row, 'disabled', '停用')">停用</el-button>
-              <el-button v-if="row.status === 'disabled'" v-permission="'tenant:disable'"
-                         type="success" size="small" link @click="changeStatus(row, 'active', '启用')">启用</el-button>
-              <el-button v-if="row.id !== DEFAULT_TENANT_ID" v-permission="'tenant:delete'" type="danger" size="small" link
-                         :disabled="(row.user_count ?? 0) > 0"
-                         :title="(row.user_count ?? 0) > 0 ? '该租户仍有用户，不可删除' : ''"
-                         @click="removeTenant(row)">删除</el-button>
+              <AppRowActions :actions="tenantRowActions(row)" :inline-limit="3" />
             </template>
           </el-table-column>
         </AppDataTable>

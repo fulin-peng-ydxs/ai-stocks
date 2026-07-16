@@ -16,9 +16,11 @@ import {
   type LayoutPresetRecord,
 } from '@/api/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { getLayoutPreset, getPageLayout, setPresetOverrides, type StyleTokenConfig, type ThemeMode } from '@/layout'
 import { getErrorMessage } from '@/utils/error'
+import type { AppRowAction } from '@/components/rowActions'
 
 // 可编辑 token 清单（颜色按白天/夜间各一套；形态/密度明暗共用）。label 给编辑器展示用。
 const COLOR_KEYS: { key: keyof StyleTokenConfig; label: string }[] = [
@@ -213,6 +215,33 @@ async function removePreset(row: LayoutPresetRecord) {
   await reloadPresets()
 }
 
+function presetRowActions(row: LayoutPresetRecord): AppRowAction[] {
+  return [
+    {
+      key: 'edit',
+      label: row.is_builtin ? '查看' : '编辑',
+      onClick: () => openEditPreset(row),
+    },
+    {
+      key: 'toggle',
+      label: row.enabled ? '停用' : '启用',
+      type: row.enabled ? 'danger' : 'success',
+      permission: 'layout:preset-manage',
+      onClick: () => togglePreset(row),
+    },
+    {
+      key: 'delete',
+      label: '删除',
+      type: 'danger',
+      permission: 'layout:preset-manage',
+      disabled: row.is_builtin,
+      title: row.is_builtin ? '系统内置预设不可删除' : undefined,
+      placement: 'more',
+      onClick: () => removePreset(row),
+    },
+  ]
+}
+
 function buildExport() {
   exportText.value = JSON.stringify({ type: 'layout-presets', presets: presets.value }, null, 2)
 }
@@ -335,9 +364,7 @@ onMounted(reloadPresets)
           </el-table-column>
           <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" @click="openEditPreset(row)">{{ row.is_builtin ? '查看' : '编辑' }}</el-button>
-              <el-button v-permission="'layout:preset-manage'" size="small" @click="togglePreset(row)">{{ row.enabled ? '停用' : '启用' }}</el-button>
-              <el-button v-permission="'layout:preset-manage'" size="small" :type="row.is_builtin ? 'info' : 'danger'" :disabled="row.is_builtin" @click="removePreset(row)">删除</el-button>
+              <AppRowActions :actions="presetRowActions(row)" :inline-limit="2" />
             </template>
           </el-table-column>
         </el-table>

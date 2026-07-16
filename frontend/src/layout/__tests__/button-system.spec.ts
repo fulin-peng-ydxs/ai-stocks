@@ -75,8 +75,16 @@ describe('全站按钮与图标操作契约', () => {
     }
   })
 
+  it('列表普通操作与禁用态使用不同文本层级', () => {
+    const rowActions = read(join(SRC_DIR, 'components/AppRowActions.vue'))
+
+    expect(rowActions).toContain('--row-action-text: var(--el-text-color-regular)')
+    expect(rowActions).toContain('color: var(--el-text-color-disabled) !important')
+    expect(rowActions).not.toContain('--row-action-text: var(--el-text-color-secondary)')
+  })
+
   it('原生 button 只用于已声明的专用交互，不回流为页面私有命令按钮', () => {
-    const allowedSpecializedClasses = /class="(?:topbar-status|appearance-mode-option|navigation-option|theme-option|workspace-tab-close|primary-entry|secondary-entry|seg-btn|slot-box(?: [^"]*)?|app-icon-button|login-[^"]+)"/
+    const allowedSpecializedClasses = /class="(?:topbar-status|appearance-mode-option|navigation-option|theme-option|workspace-tab-close|primary-entry|secondary-entry|seg-btn|slot-box(?: [^"]*)?|app-icon-button|app-row-actions-menu__item|login-[^"]+)"/
     const violations: string[] = []
 
     for (const file of vueFiles(SRC_DIR)) {
@@ -111,7 +119,8 @@ describe('全站按钮与图标操作契约', () => {
           /\b:?icon\s*=/.test(startTag) ||
           /<el-icon(?=[\s>/])/.test(content)
 
-        if (hasIconOnlySignal && visibleButtonText(content) === '') {
+        const hasDynamicText = /{{[\s\S]*?}}/.test(content)
+        if (hasIconOnlySignal && visibleButtonText(content) === '' && !hasDynamicText) {
           violations.push(
             `${relative(SRC_DIR, file)}:${lineOf(source, startIndex)} ${startTag.replace(/\s+/g, ' ')}`
           )

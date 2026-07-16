@@ -9,6 +9,7 @@ import {
   type DataStatus, type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
 } from '@/api/data'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
@@ -24,6 +25,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
+import type { AppRowAction } from '@/components/rowActions'
 
 const route = useRoute()
 const settingsOpen = ref(false)
@@ -385,6 +387,34 @@ async function openLogs(id: string) {
   pollLogs(id)
 }
 
+function taskRowActions(row: AsyncTask): AppRowAction[] {
+  return [
+    {
+      key: 'waiting',
+      label: '等待检查点',
+      type: 'warning',
+      visible: isCancellingTask(row),
+      disabled: true,
+      title: taskPhaseText(row) || row.message || undefined,
+    },
+    {
+      key: 'cancel',
+      label: '终止',
+      type: 'danger',
+      visible: !isCancellingTask(row) && canCancelTask(row),
+      onClick: () => cancel(row),
+    },
+    {
+      key: 'resume',
+      label: '续跑',
+      type: 'warning',
+      visible: canResumeTask(row),
+      onClick: () => resume(row),
+    },
+    { key: 'logs', label: '日志', type: 'primary', onClick: () => openLogs(row.id) },
+  ]
+}
+
 function pollLogs(id: string) {
   if (logTimer) clearTimeout(logTimer)
   logTimer = undefined
@@ -620,14 +650,7 @@ onMounted(async () => {
             </el-table-column>
             <el-table-column label="操作" width="130">
               <template #default="{ row }">
-                <el-tooltip v-if="isCancellingTask(row)" :content="taskPhaseText(row) || row.message" placement="top">
-                  <el-button type="warning" size="small" link disabled>等待检查点</el-button>
-                </el-tooltip>
-                <el-button v-else-if="canCancelTask(row)" type="danger" size="small" link
-                           @click.stop="cancel(row)">终止</el-button>
-                <el-button v-if="canResumeTask(row)" type="warning" size="small" link
-                           @click.stop="resume(row)">续跑</el-button>
-                <el-button type="primary" size="small" link @click.stop="openLogs(row.id)">日志</el-button>
+                <AppRowActions :actions="taskRowActions(row)" :inline-limit="2" />
               </template>
             </el-table-column>
           </AppDataTable>

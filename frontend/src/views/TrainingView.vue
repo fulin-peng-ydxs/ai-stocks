@@ -15,6 +15,7 @@ import CandleChart from '@/components/CandleChart.vue'
 import EquityChart from '@/components/EquityChart.vue'
 import GrowthChart from '@/components/GrowthChart.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -36,6 +37,7 @@ import {
   type RunningView, type DetailView, type SessionRow, type GrowthPoint, type DetailRound,
 } from '@/api/training'
 import { getErrorMessage } from '@/utils/error'
+import type { AppRowAction } from '@/components/rowActions'
 
 // ── 页面阶段：config(未开局) / running(训练中) / result(结算回看) ──
 const view = ref<(RunningView & Partial<DetailView>) | null>(null)
@@ -255,6 +257,18 @@ async function removeSession(id: string) {
   await Promise.all([loadHistory(), loadGrowth()])
 }
 
+function sessionRowActions(row: SessionRow): AppRowAction[] {
+  return [
+    {
+      key: 'delete',
+      label: '删除',
+      type: 'danger',
+      permission: 'training:delete',
+      onClick: () => removeSession(row.id),
+    },
+  ]
+}
+
 // ── 复盘笔记 ──
 const reviewNote = ref('')
 async function persistReview() {
@@ -464,8 +478,10 @@ onBeforeUnmount(detachKeyboard)
             <el-table-column label="结束时间" prop="completed_at" min-width="140" sortable="custom">
               <template #default="{ row }">{{ row.completed_at?.slice(0, 16) ?? '--' }}</template>
             </el-table-column>
-            <el-table-column label="" width="60">
-              <template #default="{ row }"><el-button v-permission="'training:delete'" link type="danger" size="small" @click.stop="removeSession(row.id)">删除</el-button></template>
+            <el-table-column label="操作" width="72">
+              <template #default="{ row }">
+                <AppRowActions :actions="sessionRowActions(row)" :inline-limit="1" />
+              </template>
             </el-table-column>
           </AppDataTable>
           </template>

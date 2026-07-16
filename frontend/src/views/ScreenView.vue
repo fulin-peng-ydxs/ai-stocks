@@ -19,6 +19,7 @@ import { getIndicatorRegistry, type IndicatorDef } from '@/api/scoreProfile'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
@@ -34,6 +35,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
+import type { AppRowAction } from '@/components/rowActions'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -139,6 +141,17 @@ function addExprRow() {
 }
 function removeRow(i: number) {
   rows.value.splice(i, 1)
+}
+function conditionRowActions(i: number): AppRowAction[] {
+  return [
+    {
+      key: 'delete',
+      label: '删除',
+      type: 'danger',
+      disabled: profileReadonly.value,
+      onClick: () => removeRow(i),
+    },
+  ]
 }
 function onIndKey(row: Row) {
   const d = defOf(row.key)
@@ -413,6 +426,12 @@ function restoreVersion(v: ProfileVersion) {
   ElMessage.success(`已载入 v${v.version} 到编辑器，确认后点「保存」生成新版本`)
 }
 
+function versionRowActions(v: ProfileVersion): AppRowAction[] {
+  return [
+    { key: 'restore', label: '载入此版本', onClick: () => restoreVersion(v) },
+  ]
+}
+
 function rowClass({ row }: { row: ScreenHit }) {
   return row.is_st ? 'st-row' : ''
 }
@@ -572,7 +591,7 @@ onMounted(async () => {
             />
           </template>
 
-          <el-button text type="danger" size="small" :disabled="profileReadonly" @click="removeRow(i)">删除</el-button>
+          <AppRowActions :actions="conditionRowActions(i)" :inline-limit="1" />
         </div>
         </div>
 
@@ -679,7 +698,7 @@ onMounted(async () => {
         <div class="ver-head">
           <b>v{{ v.version }}</b>
           <span class="hint">{{ v.saved_at?.slice(0, 16) }}</span>
-          <el-button text type="primary" size="small" @click="restoreVersion(v)">载入此版本</el-button>
+          <AppRowActions :actions="versionRowActions(v)" :inline-limit="1" />
         </div>
         <pre class="ast">{{ JSON.stringify(v.expression, null, 2) }}</pre>
       </div>

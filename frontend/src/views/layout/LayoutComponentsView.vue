@@ -14,6 +14,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import LayoutComponentPreview from '@/layout/components/LayoutComponentPreview.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpHint from '@/components/HelpHint.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
@@ -33,6 +34,7 @@ import {
   type FieldPolicyRecord,
 } from '@/api/layout'
 import { getErrorMessage } from '@/utils/error'
+import type { AppRowAction } from '@/components/rowActions'
 
 const componentsLayout = getPageLayout('layout-components')
 
@@ -178,6 +180,23 @@ function openDetail(row: ComponentRow) {
   detailVisible.value = true
 }
 
+function componentRowActions(row: ComponentRow): AppRowAction[] {
+  return [
+    { key: 'preview', label: '预览', onClick: () => openDetail(row) },
+  ]
+}
+
+function fieldPolicyRowActions(row: ConfigurableField): AppRowAction[] {
+  return [
+    {
+      key: 'reset',
+      label: '恢复默认',
+      permission: 'layout:field-policy',
+      onClick: () => resetField(row.key),
+    },
+  ]
+}
+
 /** 更新某字段可覆盖范围并即时刷新 policyMap（写后端 layout_field_policy）。 */
 async function persistPolicy(field: string, layers: ComponentConfigLayer[]): Promise<void> {
   const kind = selectedKind.value
@@ -299,7 +318,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               </el-table-column>
               <el-table-column label="操作" width="92" fixed="right">
                 <template #default="{ row }">
-                  <el-button size="small" @click="openDetail(row)">预览</el-button>
+                  <AppRowActions :actions="componentRowActions(row)" :inline-limit="1" />
                 </template>
               </el-table-column>
             </el-table>
@@ -381,7 +400,11 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               </el-table-column>
               <el-table-column label="" width="96" align="right">
                 <template #default="{ row }">
-                  <el-button v-permission="'layout:field-policy'" v-if="row.overridden" size="small" text type="primary" @click="resetField(row.key)">恢复默认</el-button>
+                  <AppRowActions
+                    v-if="row.overridden"
+                    :actions="fieldPolicyRowActions(row)"
+                    :inline-limit="1"
+                  />
                   <span v-else class="muted">默认</span>
                 </template>
               </el-table-column>

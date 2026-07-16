@@ -13,6 +13,7 @@ import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
@@ -28,6 +29,7 @@ import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { dictTagStyleByCode } from '@/utils/dictColor'
+import type { AppRowAction } from '@/components/rowActions'
 
 const pageKey = 'audit-log'
 const AUTO_REFRESH_MS = 30_000
@@ -395,6 +397,12 @@ async function openDetail(row: AuditLog) {
   }
 }
 
+function auditRowActions(row: AuditLog): AppRowAction[] {
+  return [
+    { key: 'detail', label: '详情', onClick: () => openDetail(row) },
+  ]
+}
+
 async function loadDictOptions() {
   const load = async (typeCode: string, fallback: OptionItem[]) => {
     try {
@@ -628,7 +636,7 @@ onBeforeUnmount(stopTimer)
           </el-table-column>
           <el-table-column label="操作" width="78" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
+              <AppRowActions :actions="auditRowActions(row)" :inline-limit="1" />
             </template>
           </el-table-column>
           <template #empty>

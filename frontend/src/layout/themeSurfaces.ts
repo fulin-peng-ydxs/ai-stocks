@@ -35,6 +35,10 @@ export function rgbaFromHex(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
+export function rgbChannelsFromHex(hex: string): string {
+  return parseHex(hex).join(', ')
+}
+
 function surface(pageBg: string, cardBg: string, cardAlpha: number): LoginSurfaceSpec {
   return {
     pageBg,

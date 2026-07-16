@@ -12,6 +12,7 @@ import {
 import { ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -25,6 +26,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
 import { getErrorMessage } from '@/utils/error'
+import type { AppRowAction } from '@/components/rowActions'
 
 const route = useRoute()
 const router = useRouter()
@@ -185,6 +187,50 @@ function openDelist(row: QualityIssue) {
   delistRow.value = row
   delistDate.value = (row.trade_date || '').slice(0, 10)   // 截到 YYYY-MM-DD（trade_date 可能带 00:00:00）
   delistDlg.value = true
+}
+
+function qualityRowActions(row: QualityIssue): AppRowAction[] {
+  if (row.status !== 'open' && row.status !== 'fixing') return []
+  const busy = busyId.value !== null
+  const fixingElsewhere = row.status === 'fixing' && busyId.value !== row.id
+  return [
+    {
+      key: 'recover',
+      label: fixingElsewhere ? '处理中…' : (RECOVER_ACTION_LABEL[row.issue_type] ?? '恢复'),
+      type: 'primary',
+      permission: 'data-quality:fix',
+      loading: busyId.value === row.id,
+      disabled: busy,
+      onClick: () => fixOne(row),
+    },
+    {
+      key: 'reset',
+      label: '复位',
+      type: 'warning',
+      permission: 'data-quality:fix',
+      visible: fixingElsewhere,
+      onClick: () => resetOne(row),
+    },
+    {
+      key: 'delist',
+      label: '标记退市',
+      type: 'danger',
+      permission: 'data-quality:fix',
+      visible: GAP_TYPES.includes(row.issue_type),
+      disabled: busy,
+      placement: 'more',
+      onClick: () => openDelist(row),
+    },
+    {
+      key: 'ignore',
+      label: '标记正常',
+      type: 'info',
+      permission: 'data-quality:fix',
+      disabled: busy,
+      placement: 'more',
+      onClick: () => ignoreOne(row),
+    },
+  ]
 }
 async function confirmDelist() {
   if (!delistRow.value) return
@@ -407,22 +453,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <template v-if="row.status === 'open' || row.status === 'fixing'">
-              <el-button v-permission="'data-quality:fix'" type="primary" size="small" link
-                         :loading="busyId === row.id" :disabled="busyId !== null"
-                         @click="fixOne(row)">
-                {{ row.status === 'fixing' && busyId !== row.id ? '处理中…'
-                   : (RECOVER_ACTION_LABEL[row.issue_type] ?? '恢复') }}
-              </el-button>
-              <!-- 修复中且非本页正在处理 → 可能是孤儿状态（任务失败/中断/卡死），允许手动复位解套 -->
-              <el-button v-permission="'data-quality:fix'" v-if="row.status === 'fixing' && busyId !== row.id" type="warning" size="small" link
-                         @click="resetOne(row)">复位</el-button>
-              <el-button v-permission="'data-quality:fix'" v-if="GAP_TYPES.includes(row.issue_type)" type="warning" size="small" link
-                         :disabled="busyId !== null" @click="openDelist(row)">标记退市</el-button>
-              <el-button v-permission="'data-quality:fix'" type="info" size="small" link :disabled="busyId !== null"
-                         @click="ignoreOne(row)">标记正常</el-button>
-            </template>
-            <span v-else class="muted">—</span>
+            <AppRowActions :actions="qualityRowActions(row)" :inline-limit="2" />
           </template>
         </el-table-column>
       </AppDataTable>

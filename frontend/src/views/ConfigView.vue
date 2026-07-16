@@ -29,6 +29,7 @@ import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -50,6 +51,7 @@ import {
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
+import type { AppRowAction } from '@/components/rowActions'
 
 const settingsOpen = ref(false)
 const route = useRoute()
@@ -339,6 +341,19 @@ async function removeDef(row: IndicatorDef) {
   await reloadRegistry()
 }
 
+function indicatorDefRowActions(row: IndicatorDef): AppRowAction[] {
+  if (row.is_builtin) return []
+  return [
+    {
+      key: 'delete',
+      label: '删',
+      type: 'danger',
+      permission: 'indicator:def-manage',
+      onClick: () => removeDef(row),
+    },
+  ]
+}
+
 const defDialog = ref(false)
 const defForm = ref<{
   key: string; name_cn: string; dtype: 'bool' | 'number'; expression: string
@@ -441,6 +456,12 @@ function restoreScoreVersion(v: ScoreProfileVersion) {
   ElMessage.success(`已载入 v${v.version} 到编辑器，确认后点「保存」生成新版本`)
 }
 
+function scoreVersionRowActions(v: ScoreProfileVersion): AppRowAction[] {
+  return [
+    { key: 'restore', label: '载入此版本', onClick: () => restoreScoreVersion(v) },
+  ]
+}
+
 // 确保评分项的 params 含该指标全部参数（补默认值），供参数输入框绑定
 function ensureParams(item: ScoreItem) {
   if (!item.params) item.params = {}
@@ -489,6 +510,18 @@ function defaultParams(def: IndicatorDef): Record<string, number> {
 function removeItem(idx: number) {
   items.value.splice(idx, 1)
   rebalanceEqual()
+}
+
+function scoreItemRowActions(idx: number): AppRowAction[] {
+  return [
+    {
+      key: 'delete',
+      label: '删',
+      type: 'danger',
+      disabled: profileReadonly.value,
+      onClick: () => removeItem(idx),
+    },
+  ]
 }
 
 // 当指标类型切换为 bool 时，scoring 自动切 bool；数值默认 linear
@@ -750,6 +783,18 @@ function removeCond(side: 'buy' | 'sell', i: number) {
   condListOf(side).value.splice(i, 1)
 }
 
+function tradeCondRowActions(side: 'buy' | 'sell', i: number): AppRowAction[] {
+  return [
+    {
+      key: 'delete',
+      label: '删',
+      type: 'danger',
+      disabled: tReadonly.value,
+      onClick: () => removeCond(side, i),
+    },
+  ]
+}
+
 function toTree(logic: 'AND' | 'OR', conds: TradeCond[]): CondTree {
   return {
     op: logic,
@@ -815,6 +860,12 @@ function restoreTradeVersion(v: TradeProfileVersion) {
   }
   tVerVisible.value = false
   ElMessage.success(`已载入 v${v.version} 到编辑器，确认后点「保存」生成新版本`)
+}
+
+function tradeVersionRowActions(v: TradeProfileVersion): AppRowAction[] {
+  return [
+    { key: 'restore', label: '载入此版本', onClick: () => restoreTradeVersion(v) },
+  ]
 }
 async function saveTrade() {
   if (tReadonly.value) { ElMessage.warning('公开方案为只读，请先复制为自己的方案'); return }
@@ -1177,7 +1228,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 
               <el-table-column width="50">
                 <template #default="{ $index }">
-                  <el-button link type="danger" :disabled="profileReadonly" @click="removeItem($index)">删</el-button>
+                  <AppRowActions :actions="scoreItemRowActions($index)" :inline-limit="1" />
                 </template>
               </el-table-column>
             </el-table>
@@ -1304,8 +1355,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           </el-table-column>
           <el-table-column label="操作" width="60">
             <template #default="{ row }">
-              <el-button v-permission="'indicator:def-manage'" v-if="!row.is_builtin" link type="danger" @click="removeDef(row)">删</el-button>
-              <span v-else>—</span>
+              <AppRowActions :actions="indicatorDefRowActions(row)" :inline-limit="1" />
             </template>
           </el-table-column>
         </AppDataTable>
@@ -1473,7 +1523,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   <el-input-number v-else :model-value="(c.value as number)" size="small" :disabled="tReadonly" :controls="false" style="width: 96px"
                                    @update:model-value="(v: number) => (c.value = v)" />
                 </template>
-                <el-button link type="danger" :disabled="tReadonly" @click="removeCond('buy', i)">删</el-button>
+                <AppRowActions :actions="tradeCondRowActions('buy', i)" :inline-limit="1" />
               </div>
               <el-button size="small" plain :disabled="tReadonly" @click="addCond('buy')">
                 <template #icon><el-icon><Plus /></el-icon></template>
@@ -1523,7 +1573,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   <el-input-number v-else :model-value="(c.value as number)" size="small" :disabled="tReadonly" :controls="false" style="width: 96px"
                                    @update:model-value="(v: number) => (c.value = v)" />
                 </template>
-                <el-button link type="danger" :disabled="tReadonly" @click="removeCond('sell', i)">删</el-button>
+                <AppRowActions :actions="tradeCondRowActions('sell', i)" :inline-limit="1" />
               </div>
               <el-button size="small" plain :disabled="tReadonly" @click="addCond('sell')">
                 <template #icon><el-icon><Plus /></el-icon></template>
@@ -1637,7 +1687,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <span class="hint">{{ v.saved_at?.slice(0, 16) }}</span>
           <span class="hint">{{ v.items.length }} 项指标</span>
           <div class="spacer" />
-          <el-button text type="primary" size="small" @click="restoreScoreVersion(v)">载入此版本</el-button>
+          <AppRowActions :actions="scoreVersionRowActions(v)" :inline-limit="1" />
         </div>
         <pre class="ast">{{ JSON.stringify(v.items, null, 2) }}</pre>
       </div>
@@ -1651,7 +1701,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <b>v{{ v.version }}</b>
           <span class="hint">{{ v.saved_at?.slice(0, 16) }}</span>
           <div class="spacer" />
-          <el-button text type="primary" size="small" @click="restoreTradeVersion(v)">载入此版本</el-button>
+          <AppRowActions :actions="tradeVersionRowActions(v)" :inline-limit="1" />
         </div>
         <pre class="ast">买入 {{ JSON.stringify(v.buy_tree, null, 2) }}
 卖出 {{ JSON.stringify(v.sell_tree, null, 2) }}

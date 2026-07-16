@@ -10,12 +10,14 @@
  * 单字段为叶子不折叠。页面布局编辑器一次只聚焦一个 slot，slot 头作锚点不折叠（collapsibleSlot=false）。
  */
 import { computed, nextTick, ref, watch } from 'vue'
+import AppRowActions from './AppRowActions.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import PageSegmented from './PageSegmented.vue'
 import PageToggleRow from './PageToggleRow.vue'
 import SourceTag from './SourceTag.vue'
 import { getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
 import { getComponentFieldDef, type ComponentConfigLayer, type ComponentConfigSource } from '@/layout/componentConfig'
+import type { AppRowAction } from './rowActions'
 
 interface ComponentConfigAccess {
   componentValueOf: (slotId: string, field: string) => unknown
@@ -185,6 +187,16 @@ function isOverridden(slotId: string, field: string): boolean {
 function clearField(slotId: string, field: string): void {
   props.config.setComponentKnob(slotId, field, null)
 }
+function clearFieldActions(slotId: string, field: string): AppRowAction[] {
+  return [
+    {
+      key: 'clear',
+      label: '不覆盖',
+      type: 'default',
+      onClick: () => clearField(slotId, field),
+    },
+  ]
+}
 
 function colVisible(slotId: string, key: string): boolean {
   return !listVal(slotId, 'hiddenColumns').includes(key)
@@ -229,7 +241,11 @@ function setSort(slotId: string, field: string, order: string): void {
                 :source="srcOf(s.slotId, 'defaultSort')!"
                 :values="srcValuesOf(s.slotId, 'defaultSort')"
               />
-              <el-button v-if="clearable && isOverridden(s.slotId, 'defaultSort')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'defaultSort')">不覆盖</el-button>
+              <AppRowActions
+                v-if="clearable && isOverridden(s.slotId, 'defaultSort')"
+                :actions="clearFieldActions(s.slotId, 'defaultSort')"
+                :inline-limit="1"
+              />
             </span>
           </div>
           <PageSegmented
@@ -270,7 +286,11 @@ function setSort(slotId: string, field: string, order: string): void {
                 :source="srcOf(s.slotId, 'defaultSort')!"
                 :values="srcValuesOf(s.slotId, 'defaultSort')"
               />
-              <el-button v-if="clearable && isOverridden(s.slotId, 'defaultSort')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'defaultSort')">不覆盖</el-button>
+              <AppRowActions
+                v-if="clearable && isOverridden(s.slotId, 'defaultSort')"
+                :actions="clearFieldActions(s.slotId, 'defaultSort')"
+                :inline-limit="1"
+              />
             </span>
           </div>
           <PageSegmented
@@ -306,7 +326,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'border')!"
               :values="srcValuesOf(s.slotId, 'border')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'border')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'border')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'border')"
+              :actions="clearFieldActions(s.slotId, 'border')"
+              :inline-limit="1"
+            />
           </span>
         </div>
         <el-switch
@@ -325,7 +349,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'pageSize')!"
               :values="srcValuesOf(s.slotId, 'pageSize')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'pageSize')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'pageSize')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'pageSize')"
+              :actions="clearFieldActions(s.slotId, 'pageSize')"
+              :inline-limit="1"
+            />
           </span>
         </div>
         <PageSegmented
@@ -344,7 +372,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'defaultActive')!"
               :values="srcValuesOf(s.slotId, 'defaultActive')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'defaultActive')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'defaultActive')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'defaultActive')"
+              :actions="clearFieldActions(s.slotId, 'defaultActive')"
+              :inline-limit="1"
+            />
           </span>
         </div>
         <PageSegmented
@@ -363,7 +395,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'size')!"
               :values="srcValuesOf(s.slotId, 'size')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'size')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'size')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'size')"
+              :actions="clearFieldActions(s.slotId, 'size')"
+              :inline-limit="1"
+            />
           </span>
         </div>
         <PageSegmented
@@ -383,7 +419,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'bodyScroll')!"
               :values="srcValuesOf(s.slotId, 'bodyScroll')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'bodyScroll')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'bodyScroll')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'bodyScroll')"
+              :actions="clearFieldActions(s.slotId, 'bodyScroll')"
+              :inline-limit="1"
+            />
           </span>
         </div>
         <el-switch
@@ -405,7 +445,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'hiddenColumns')!"
               :values="srcValuesOf(s.slotId, 'hiddenColumns')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'hiddenColumns')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'hiddenColumns')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'hiddenColumns')"
+              :actions="clearFieldActions(s.slotId, 'hiddenColumns')"
+              :inline-limit="1"
+            />
           </span>
         </template>
         <PageToggleRow
@@ -427,7 +471,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'collapsibleSections')!"
               :values="srcValuesOf(s.slotId, 'collapsibleSections')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'collapsibleSections')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'collapsibleSections')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'collapsibleSections')"
+              :actions="clearFieldActions(s.slotId, 'collapsibleSections')"
+              :inline-limit="1"
+            />
           </span>
         </div>
         <el-switch
@@ -446,7 +494,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'defaultCollapsed')!"
               :values="srcValuesOf(s.slotId, 'defaultCollapsed')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'defaultCollapsed')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'defaultCollapsed')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'defaultCollapsed')"
+              :actions="clearFieldActions(s.slotId, 'defaultCollapsed')"
+              :inline-limit="1"
+            />
           </span>
         </div>
         <el-checkbox-group
@@ -468,7 +520,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'showGroupDescription')!"
               :values="srcValuesOf(s.slotId, 'showGroupDescription')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'showGroupDescription')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'showGroupDescription')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'showGroupDescription')"
+              :actions="clearFieldActions(s.slotId, 'showGroupDescription')"
+              :inline-limit="1"
+            />
           </span>
         </div>
         <el-switch
@@ -487,7 +543,11 @@ function setSort(slotId: string, field: string, order: string): void {
               :source="srcOf(s.slotId, 'showSectionDescription')!"
               :values="srcValuesOf(s.slotId, 'showSectionDescription')"
             />
-            <el-button v-if="clearable && isOverridden(s.slotId, 'showSectionDescription')" class="ca-clear" link size="small" type="primary" @click="clearField(s.slotId, 'showSectionDescription')">不覆盖</el-button>
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, 'showSectionDescription')"
+              :actions="clearFieldActions(s.slotId, 'showSectionDescription')"
+              :inline-limit="1"
+            />
           </span>
         </div>
         <el-switch
@@ -542,9 +602,6 @@ function setSort(slotId: string, field: string, order: string): void {
   color: var(--page-settings-text);
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
-}
-.ca-clear {
-  color: var(--page-settings-accent);
 }
 /* 页面布局「点击预览即配置」聚焦高亮 */
 .ca-highlight {

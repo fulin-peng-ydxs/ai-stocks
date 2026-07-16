@@ -7,6 +7,7 @@ import {
   getSources, testSources, SOURCE_LABEL, TASK_LABEL,
   type ScheduledJob, type ScheduledJobInput, type SourceStatus, type TaskType, type FreqType,
 } from '@/api/data'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
@@ -19,6 +20,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
+import type { AppRowAction } from '@/components/rowActions'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -189,6 +191,27 @@ async function runNow(j: ScheduledJob) {
   } catch { /* 409 等由拦截器弹出 */ }
 }
 
+function scheduleRowActions(row: ScheduledJob): AppRowAction[] {
+  return [
+    {
+      key: 'run',
+      label: '立即执行',
+      type: 'primary',
+      permission: 'data-schedule:manage',
+      onClick: () => runNow(row),
+    },
+    { key: 'edit', label: '编辑', permission: 'data-schedule:manage', onClick: () => openEdit(row) },
+    {
+      key: 'delete',
+      label: '删除',
+      type: 'danger',
+      permission: 'data-schedule:manage',
+      placement: 'more',
+      onClick: () => remove(row),
+    },
+  ]
+}
+
 async function loadSources(ping = false) {
   pinging.value = ping
   sourceError.value = ''
@@ -287,9 +310,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="{ row }">
-              <el-button v-permission="'data-schedule:manage'" type="primary" link size="small" @click="runNow(row)">立即执行</el-button>
-              <el-button v-permission="'data-schedule:manage'" link size="small" @click="openEdit(row)">编辑</el-button>
-              <el-button v-permission="'data-schedule:manage'" type="danger" link size="small" @click="remove(row)">删除</el-button>
+              <AppRowActions :actions="scheduleRowActions(row)" :inline-limit="2" />
             </template>
           </el-table-column>
           <template #empty>暂无定时任务，点右上「新建定时任务」添加</template>

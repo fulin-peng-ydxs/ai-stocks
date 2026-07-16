@@ -6,6 +6,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -25,6 +26,7 @@ import {
 } from '@/api/user'
 import { listTenants, type Tenant } from '@/api/tenant'
 import { dictItemLabel, dictTagStyleByCode } from '@/utils/dictColor'
+import type { AppRowAction } from '@/components/rowActions'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -274,6 +276,50 @@ async function removeUser(row: AdminUser) {
   } catch (e) { if (e === 'cancel') return }
 }
 
+function userRowActions(row: AdminUser): AppRowAction[] {
+  const selfTitle = isSelfUser(row) ? '不能操作当前登录用户' : undefined
+  return [
+    { key: 'edit', label: '编辑', permission: 'user:update', onClick: () => openEdit(row) },
+    { key: 'reset', label: '重置密码', permission: 'user:reset-password', onClick: () => openReset(row) },
+    {
+      key: 'disable',
+      label: '禁用',
+      type: 'danger',
+      permission: 'user:disable',
+      visible: row.status === 'active',
+      disabled: isSelfUser(row),
+      title: selfTitle,
+      onClick: () => changeStatus(row, 'disabled', '禁用'),
+    },
+    {
+      key: 'enable',
+      label: '启用',
+      type: 'success',
+      permission: 'user:disable',
+      visible: row.status === 'disabled',
+      onClick: () => changeStatus(row, 'active', '启用'),
+    },
+    {
+      key: 'unlock',
+      label: '解锁',
+      type: 'success',
+      permission: 'user:disable',
+      visible: row.status === 'locked',
+      onClick: () => changeStatus(row, 'active', '解锁'),
+    },
+    {
+      key: 'delete',
+      label: '删除',
+      type: 'danger',
+      permission: 'user:delete',
+      disabled: isSelfUser(row),
+      title: selfTitle,
+      placement: 'more',
+      onClick: () => removeUser(row),
+    },
+  ]
+}
+
 onMounted(async () => {
   filters.value.status = settings.defaultStatus === 'active' ? 'active' : ''
   // 租户管理页「查看用户」跳转带 ?tenant=<id>：system 预置租户筛选（tenant_admin 无越权、忽略）。
@@ -382,18 +428,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-table-column>
           <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">
-              <el-button v-permission="'user:update'" type="primary" size="small" link
-                         @click="openEdit(row)">编辑</el-button>
-              <el-button v-permission="'user:reset-password'" type="primary" size="small" link
-                         @click="openReset(row)">重置密码</el-button>
-              <el-button v-if="row.status === 'active'" v-permission="'user:disable'" type="danger" size="small"
-                         link :disabled="isSelfUser(row)" @click="changeStatus(row, 'disabled', '禁用')">禁用</el-button>
-              <el-button v-if="row.status === 'disabled'" v-permission="'user:disable'" type="success" size="small"
-                         link @click="changeStatus(row, 'active', '启用')">启用</el-button>
-              <el-button v-if="row.status === 'locked'" v-permission="'user:disable'" type="success" size="small"
-                         link @click="changeStatus(row, 'active', '解锁')">解锁</el-button>
-              <el-button v-permission="'user:delete'" type="danger" size="small"
-                         link :disabled="isSelfUser(row)" @click="removeUser(row)">删除</el-button>
+              <AppRowActions :actions="userRowActions(row)" :inline-limit="3" />
             </template>
           </el-table-column>
         </AppDataTable>

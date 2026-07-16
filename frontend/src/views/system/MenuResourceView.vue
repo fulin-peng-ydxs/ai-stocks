@@ -5,6 +5,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import IconPicker from '@/components/IconPicker.vue'
@@ -22,6 +23,7 @@ import {
   type MenuNode, type Resource,
 } from '@/api/menu'
 import { hasPermission } from '@/utils/permission'
+import type { AppRowAction } from '@/components/rowActions'
 
 const auth = useAuthStore()
 // 按钮显隐走全局 v-permission；脚本逻辑/表单禁用用共用 hasPermission（system 恒过），口径统一。
@@ -328,6 +330,51 @@ async function removeRes(r: Resource) {
   } catch (e) { if (e === 'cancel') return /* 内置由拦截器弹出 */ }
 }
 
+function resourceEditRowActions(): AppRowAction[] {
+  return [
+    {
+      key: 'save',
+      label: '保存',
+      type: 'primary',
+      loading: resSaving.value,
+      onClick: () => saveResRow(),
+    },
+    {
+      key: 'cancel',
+      label: '取消',
+      onClick: () => cancelRes(),
+    },
+  ]
+}
+
+function resourceRowActions(r: Resource): AppRowAction[] {
+  const editingOther = editingId.value !== ''
+  return [
+    {
+      key: 'edit',
+      label: '编辑',
+      permission: 'resource:update',
+      disabled: r.is_builtin || editingOther,
+      title: r.is_builtin
+        ? '系统内置功能点不可编辑'
+        : editingOther
+          ? '请先完成当前编辑'
+          : undefined,
+      onClick: () => startEditRes(r),
+    },
+    {
+      key: 'delete',
+      label: '删',
+      type: 'danger',
+      permission: 'resource:delete',
+      disabled: r.is_builtin,
+      title: r.is_builtin ? '系统内置功能点不可删除' : undefined,
+      placement: 'more',
+      onClick: () => removeRes(r),
+    },
+  ]
+}
+
 onMounted(() => { loadTree() })
 </script>
 
@@ -529,8 +576,7 @@ onMounted(() => { loadTree() })
                             </div>
                           </td>
                           <td>
-                            <el-button link type="primary" size="small" :loading="resSaving" @click="saveResRow">保存</el-button>
-                            <el-button link size="small" @click="cancelRes">取消</el-button>
+                            <AppRowActions :actions="resourceEditRowActions()" :inline-limit="2" />
                           </td>
                         </tr>
                         <!-- 展示态 -->
@@ -540,10 +586,7 @@ onMounted(() => { loadTree() })
                           <td><el-tag size="small" effect="plain" :type="r.type === 'api' ? 'success' : 'warning'">{{ r.type === 'api' ? '接口' : '按钮' }}</el-tag></td>
                           <td class="mono" :class="{ dim: !r.api_path }">{{ bindingText(r) }}</td>
                           <td>
-                            <el-button v-permission="'resource:update'" link type="primary" size="small"
-                                       :disabled="r.is_builtin || editingId !== ''" @click="startEditRes(r)">编辑</el-button>
-                            <el-button v-permission="'resource:delete'" link type="danger" size="small"
-                                       :disabled="r.is_builtin" @click="removeRes(r)">删</el-button>
+                            <AppRowActions :actions="resourceRowActions(r)" :inline-limit="1" />
                             <span v-if="r.is_builtin" class="builtin-tag">系统内置</span>
                           </td>
                         </tr>
@@ -566,8 +609,7 @@ onMounted(() => { loadTree() })
                           </div>
                         </td>
                         <td>
-                          <el-button link type="primary" size="small" :loading="resSaving" @click="saveResRow">保存</el-button>
-                          <el-button link size="small" @click="cancelRes">取消</el-button>
+                          <AppRowActions :actions="resourceEditRowActions()" :inline-limit="2" />
                         </td>
                       </tr>
                       <tr v-if="resError">

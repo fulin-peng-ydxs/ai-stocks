@@ -132,6 +132,25 @@ const ElOptionStub = defineComponent({
   },
 })
 
+const AppRowActionsStub = defineComponent({
+  name: 'AppRowActions',
+  props: {
+    actions: { type: Array, required: true },
+  },
+  setup(props) {
+    return () => h('span', { class: 'app-row-actions' },
+      (props.actions as Array<{ key: string; label: string; visible?: boolean; disabled?: boolean; onClick?: () => void }>)
+        .filter((action) => action.visible !== false)
+        .map((action) => h('button', {
+          key: action.key,
+          type: 'button',
+          disabled: action.disabled,
+          onClick: () => action.onClick?.(),
+        }, action.label)),
+    )
+  },
+})
+
 const stubs = {
   LayoutHost: {
     template: '<div><slot name="action"/><slot name="main"/><slot name="overlays"/></div>',
@@ -139,6 +158,7 @@ const stubs = {
   PageSettingsDrawer: true,
   PageSettingsTrigger: true,
   AppPagination: true,
+  AppRowActions: AppRowActionsStub,
   HelpTip: { template: '<span><slot/></span>' },
   ElTable: ElTableStub,
   ElTableColumn: ElTableColumnStub,

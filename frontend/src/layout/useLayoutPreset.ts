@@ -1,5 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS } from './presets'
+import { blendHex, rgbChannelsFromHex, rgbaFromHex } from './themeSurfaces'
 import type { LayoutPresetKey, StyleTokenConfig } from './schema'
 import { useTheme } from '@/composables/useTheme'
 
@@ -18,14 +19,29 @@ function setCssVar(tokens: StyleTokenConfig, key: keyof StyleTokenConfig, cssNam
   document.documentElement.style.setProperty(cssName, `${tokens[key]}${unit}`)
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim())
-  if (!m) return hex
-  const n = parseInt(m[1], 16)
-  const r = (n >> 16) & 255
-  const g = (n >> 8) & 255
-  const b = n & 255
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+const ELEMENT_COLOR_LIGHT_LEVELS = [3, 5, 7, 8, 9] as const
+type ElementSemanticColor = 'primary' | 'success' | 'warning' | 'danger' | 'error'
+
+function applyElementColorScale(
+  root: HTMLElement,
+  name: ElementSemanticColor,
+  color: string,
+  mode: 'light' | 'dark',
+  surfaceBg: string,
+) {
+  root.style.setProperty(`--el-color-${name}`, color)
+  root.style.setProperty(`--el-color-${name}-rgb`, rgbChannelsFromHex(color))
+
+  // Element Plus 的 light-* 在暗色模式实际表示向表面色收敛，不能继续沿用组件库默认色阶。
+  const quietTarget = mode === 'dark' ? surfaceBg : '#ffffff'
+  for (const level of ELEMENT_COLOR_LIGHT_LEVELS) {
+    root.style.setProperty(
+      `--el-color-${name}-light-${level}`,
+      blendHex(color, quietTarget, 1 - level / 10),
+    )
+  }
+  const activeTarget = mode === 'dark' ? '#ffffff' : '#000000'
+  root.style.setProperty(`--el-color-${name}-dark-2`, blendHex(color, activeTarget, 0.8))
 }
 
 /** 内置 token（按模式）叠加后端覆盖：颜色/阴影取 `tokens.<mode>.*`，形态/密度取 `tokens.shared.*`。 */
@@ -51,17 +67,18 @@ function applyPreset(key: LayoutPresetKey) {
   root.dataset.layoutMode = mode
   const chromeBg = mode === 'dark' ? t.submenuBg : t.surfaceBg
 
-  root.style.setProperty('--el-color-primary', t.primary)
-  root.style.setProperty('--el-color-success', t.success)
-  root.style.setProperty('--el-color-warning', t.warning)
-  root.style.setProperty('--el-color-danger', t.danger)
+  applyElementColorScale(root, 'primary', t.primary, mode, t.surfaceBg)
+  applyElementColorScale(root, 'success', t.success, mode, t.surfaceBg)
+  applyElementColorScale(root, 'warning', t.warning, mode, t.surfaceBg)
+  applyElementColorScale(root, 'danger', t.danger, mode, t.surfaceBg)
+  applyElementColorScale(root, 'error', t.danger, mode, t.surfaceBg)
   root.style.setProperty('--el-bg-color-page', t.pageBg)
   root.style.setProperty('--el-bg-color', t.surfaceBg)
   root.style.setProperty('--el-bg-color-overlay', t.surfaceBg)
   root.style.setProperty('--el-fill-color-blank', t.surfaceBg)
   root.style.setProperty('--el-fill-color-light', t.surfaceHover)
-  root.style.setProperty('--el-fill-color-lighter', hexToRgba(t.border, mode === 'dark' ? 0.46 : 0.34))
-  root.style.setProperty('--el-fill-color-extra-light', hexToRgba(t.surfaceHover, mode === 'dark' ? 0.72 : 0.58))
+  root.style.setProperty('--el-fill-color-lighter', rgbaFromHex(t.border, mode === 'dark' ? 0.46 : 0.34))
+  root.style.setProperty('--el-fill-color-extra-light', rgbaFromHex(t.surfaceHover, mode === 'dark' ? 0.72 : 0.58))
   root.style.setProperty('--el-disabled-bg-color', t.surfaceHover)
   root.style.setProperty('--el-border-color', t.border)
   root.style.setProperty('--el-border-color-light', t.border)
@@ -85,23 +102,23 @@ function applyPreset(key: LayoutPresetKey) {
   root.style.setProperty('--chrome-text-muted', t.textMuted)
   root.style.setProperty('--chrome-submenu-bg', t.submenuBg)
   root.style.setProperty('--chrome-active-bg', t.activeBg)
-  root.style.setProperty('--chrome-menu-icon-active-bg', hexToRgba(t.primary, mode === 'dark' ? 0.22 : 0.14))
-  root.style.setProperty('--chrome-menu-icon-active-border', hexToRgba(t.primary, mode === 'dark' ? 0.42 : 0.26))
+  root.style.setProperty('--chrome-menu-icon-active-bg', rgbaFromHex(t.primary, mode === 'dark' ? 0.22 : 0.14))
+  root.style.setProperty('--chrome-menu-icon-active-border', rgbaFromHex(t.primary, mode === 'dark' ? 0.42 : 0.26))
   root.style.setProperty('--chrome-menu-icon-active-color', t.primary)
   root.style.setProperty('--shell-accent', t.primary)
   root.style.setProperty('--shell-accent-strong', t.danger)
-  root.style.setProperty('--shell-accent-soft', hexToRgba(t.primary, mode === 'dark' ? 0.22 : 0.12))
-  root.style.setProperty('--shell-accent-faint', hexToRgba(t.primary, mode === 'dark' ? 0.14 : 0.07))
-  root.style.setProperty('--shell-accent-line', hexToRgba(t.primary, mode === 'dark' ? 0.42 : 0.22))
-  root.style.setProperty('--shell-danger-line', hexToRgba(t.danger, mode === 'dark' ? 0.18 : 0.10))
-  root.style.setProperty('--shell-canvas-glow', hexToRgba(t.primary, mode === 'dark' ? 0.12 : 0.08))
+  root.style.setProperty('--shell-accent-soft', rgbaFromHex(t.primary, mode === 'dark' ? 0.22 : 0.12))
+  root.style.setProperty('--shell-accent-faint', rgbaFromHex(t.primary, mode === 'dark' ? 0.14 : 0.07))
+  root.style.setProperty('--shell-accent-line', rgbaFromHex(t.primary, mode === 'dark' ? 0.42 : 0.22))
+  root.style.setProperty('--shell-danger-line', rgbaFromHex(t.danger, mode === 'dark' ? 0.18 : 0.10))
+  root.style.setProperty('--shell-canvas-glow', rgbaFromHex(t.primary, mode === 'dark' ? 0.12 : 0.08))
   root.style.setProperty('--shell-surface-shadow', t.shadow)
   root.style.setProperty('--shell-control-mark', mode === 'dark' ? '#f7fbfc' : '#ffffff')
   root.style.setProperty('--brand-icon-start', t.primary)
   root.style.setProperty('--brand-icon-end', t.danger)
-  root.style.setProperty('--brand-signal', hexToRgba(t.danger, mode === 'dark' ? 0.58 : 0.42))
+  root.style.setProperty('--brand-signal', rgbaFromHex(t.danger, mode === 'dark' ? 0.58 : 0.42))
   root.style.setProperty('--brand-word', t.textStrong)
-  root.style.setProperty('--brand-word-stroke', hexToRgba(mode === 'dark' ? t.pageBg : t.surfaceBg, mode === 'dark' ? 0.58 : 0.68))
+  root.style.setProperty('--brand-word-stroke', rgbaFromHex(mode === 'dark' ? t.pageBg : t.surfaceBg, mode === 'dark' ? 0.58 : 0.68))
   root.style.setProperty('--drawer-bg', t.pageBg)
   root.style.setProperty('--drawer-card-bg', t.surfaceBg)
   root.style.setProperty('--drawer-border', t.border)
