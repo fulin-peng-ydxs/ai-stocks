@@ -1,6 +1,13 @@
 import { computed, ref, watch } from 'vue'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS } from './presets'
-import { blendHex, rgbChannelsFromHex, rgbaFromHex } from './themeSurfaces'
+import {
+  blendHex,
+  hasDistinctTextHierarchy,
+  isHexColor,
+  isStyleColorTokenKey,
+  rgbChannelsFromHex,
+  rgbaFromHex,
+} from './themeSurfaces'
 import type { LayoutPresetKey, StyleTokenConfig } from './schema'
 import { useTheme } from '@/composables/useTheme'
 
@@ -29,19 +36,21 @@ function applyElementColorScale(
   mode: 'light' | 'dark',
   surfaceBg: string,
 ) {
-  root.style.setProperty(`--el-color-${name}`, color)
-  root.style.setProperty(`--el-color-${name}-rgb`, rgbChannelsFromHex(color))
+  const safeColor = isHexColor(color) ? color : '#000000'
+  const safeSurfaceBg = isHexColor(surfaceBg) ? surfaceBg : safeColor
+  root.style.setProperty(`--el-color-${name}`, safeColor)
+  root.style.setProperty(`--el-color-${name}-rgb`, rgbChannelsFromHex(safeColor))
 
   // Element Plus 的 light-* 在暗色模式实际表示向表面色收敛，不能继续沿用组件库默认色阶。
-  const quietTarget = mode === 'dark' ? surfaceBg : '#ffffff'
+  const quietTarget = mode === 'dark' ? safeSurfaceBg : '#ffffff'
   for (const level of ELEMENT_COLOR_LIGHT_LEVELS) {
     root.style.setProperty(
       `--el-color-${name}-light-${level}`,
-      blendHex(color, quietTarget, 1 - level / 10),
+      blendHex(safeColor, quietTarget, 1 - level / 10),
     )
   }
   const activeTarget = mode === 'dark' ? '#ffffff' : '#000000'
-  root.style.setProperty(`--el-color-${name}-dark-2`, blendHex(color, activeTarget, 0.8))
+  root.style.setProperty(`--el-color-${name}-dark-2`, blendHex(safeColor, activeTarget, 0.8))
 }
 
 /** 内置 token（按模式）叠加后端覆盖：颜色/阴影取 `tokens.<mode>.*`，形态/密度取 `tokens.shared.*`。 */
@@ -50,8 +59,17 @@ function mergeTokens(base: StyleTokenConfig, ov: Record<string, string | number>
   const modePrefix = `tokens.${mode}.`
   const sharedPrefix = 'tokens.shared.'
   for (const [path, val] of Object.entries(ov)) {
-    if (path.startsWith(modePrefix)) m[path.slice(modePrefix.length)] = val
+    if (path.startsWith(modePrefix)) {
+      const key = path.slice(modePrefix.length)
+      // 防御历史脏数据：颜色覆盖不合法时保留内置 token，禁止生成 NaN CSS 变量。
+      if (isStyleColorTokenKey(key) && !isHexColor(val)) continue
+      m[key] = val
+    }
     else if (path.startsWith(sharedPrefix)) m[path.slice(sharedPrefix.length)] = val
+  }
+  if (!hasDistinctTextHierarchy(String(m.text), String(m.textMuted))) {
+    m.text = base.text
+    m.textMuted = base.textMuted
   }
   return m as unknown as StyleTokenConfig
 }

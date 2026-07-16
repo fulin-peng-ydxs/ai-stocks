@@ -12,6 +12,7 @@ const props = withDefaults(defineProps<{
   ariaLabel?: string
   emptyText?: string
   moreLabel?: string
+  testId?: string
 }>(), {
   inlineLimit: 3,
   ariaLabel: '行操作',
@@ -26,6 +27,7 @@ const menuEl = ref<HTMLElement | null>(null)
 const menuOpen = ref(false)
 const menuStyle = ref<Record<string, string>>({})
 let listening = false
+let positionFrame: number | null = null
 
 function isAllowed(action: AppRowAction): boolean {
   if (action.visible === false) return false
@@ -62,6 +64,10 @@ function actionClass(action: AppRowAction, inlineIndex?: number) {
   ]
 }
 
+function actionTestId(action: AppRowAction): string | undefined {
+  return action.testId ?? (props.testId ? `${props.testId}-${action.key}` : undefined)
+}
+
 function runAction(action: AppRowAction, event?: MouseEvent): void {
   if (action.disabled || action.loading) return
   action.onClick?.(event)
@@ -95,12 +101,25 @@ function positionMenu(): void {
   }
 }
 
+function requestMenuPosition(): void {
+  if (positionFrame !== null) return
+  positionFrame = window.requestAnimationFrame(() => {
+    positionFrame = null
+    if (!menuOpen.value) return
+    if (!getAnchorEl()) {
+      closeMenu()
+      return
+    }
+    positionMenu()
+  })
+}
+
 function addListeners(): void {
   if (listening) return
   document.addEventListener('click', onDocumentClick, true)
   document.addEventListener('keydown', onDocumentKeydown, true)
-  window.addEventListener('resize', closeMenu, true)
-  window.addEventListener('scroll', closeMenu, true)
+  window.addEventListener('resize', requestMenuPosition, true)
+  window.addEventListener('scroll', requestMenuPosition, true)
   listening = true
 }
 
@@ -108,8 +127,12 @@ function removeListeners(): void {
   if (!listening) return
   document.removeEventListener('click', onDocumentClick, true)
   document.removeEventListener('keydown', onDocumentKeydown, true)
-  window.removeEventListener('resize', closeMenu, true)
-  window.removeEventListener('scroll', closeMenu, true)
+  window.removeEventListener('resize', requestMenuPosition, true)
+  window.removeEventListener('scroll', requestMenuPosition, true)
+  if (positionFrame !== null) {
+    window.cancelAnimationFrame(positionFrame)
+    positionFrame = null
+  }
   listening = false
 }
 
@@ -118,7 +141,7 @@ function openMenu(): void {
   positionMenu()
   menuOpen.value = true
   addListeners()
-  void nextTick(positionMenu)
+  void nextTick(requestMenuPosition)
 }
 
 function closeMenu(): void {
@@ -154,7 +177,7 @@ onBeforeUnmount(removeListeners)
 </script>
 
 <template>
-  <div class="app-row-actions" role="group" :aria-label="ariaLabel">
+  <div class="app-row-actions" role="group" :aria-label="ariaLabel" :data-testid="testId">
     <template v-if="visibleActions.length">
       <el-button
         v-for="(action, index) in inlineActions"
@@ -166,6 +189,7 @@ onBeforeUnmount(removeListeners)
         :loading="action.loading"
         :disabled="action.disabled"
         :title="action.title"
+        :data-testid="actionTestId(action)"
         @click.stop="runAction(action, $event)"
       >
         {{ action.label }}
@@ -179,6 +203,7 @@ onBeforeUnmount(removeListeners)
           size="small"
           :aria-expanded="menuOpen"
           aria-haspopup="menu"
+          :data-testid="testId ? `${testId}-more` : undefined"
           @click="toggleMenu"
         >
           {{ moreLabel }}
@@ -194,21 +219,25 @@ onBeforeUnmount(removeListeners)
         class="app-row-actions-menu"
         :style="menuStyle"
         role="menu"
+        :data-testid="testId ? `${testId}-menu` : undefined"
         @click.stop
       >
-        <button
-          v-for="(action, index) in moreActions"
+        <el-button
+          v-for="action in moreActions"
           :key="action.key"
-          type="button"
           class="app-row-actions-menu__item"
           :class="actionClass(action)"
+          link
+          size="small"
+          :loading="action.loading"
           :disabled="action.disabled || action.loading"
           :title="action.title"
           role="menuitem"
+          :data-testid="actionTestId(action)"
           @click="runMenuAction(action, $event)"
         >
           {{ action.label }}
-        </button>
+        </el-button>
       </div>
     </Teleport>
   </div>
@@ -306,21 +335,22 @@ onBeforeUnmount(removeListeners)
   --row-action-menu-bg: var(--el-fill-color-light);
   width: 100%;
   min-height: 28px;
-  padding: 0 10px;
-  border: 0;
+  justify-content: flex-start;
+  margin-left: 0 !important;
+  padding: 0 10px !important;
+  border: 0 !important;
   border-radius: 4px;
-  background: transparent;
-  color: var(--row-action-menu-text);
-  font: inherit;
+  background: transparent !important;
+  color: var(--row-action-menu-text) !important;
   font-size: var(--app-font-size-body);
   text-align: left;
-  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease;
 }
 
-.app-row-actions-menu__item:hover,
-.app-row-actions-menu__item:focus-visible {
+.app-row-actions-menu__item:not(.is-disabled):hover,
+.app-row-actions-menu__item:not(.is-disabled):focus-visible {
   outline: none;
-  background: var(--row-action-menu-bg);
+  background: var(--row-action-menu-bg) !important;
 }
 
 .app-row-actions-menu__item.is-tone-primary {
@@ -348,8 +378,9 @@ onBeforeUnmount(removeListeners)
   --row-action-menu-bg: var(--el-fill-color-light);
 }
 
+.app-row-actions-menu__item.is-disabled,
 .app-row-actions-menu__item:disabled {
-  color: var(--el-text-color-disabled);
+  color: var(--el-text-color-disabled) !important;
   cursor: not-allowed;
 }
 

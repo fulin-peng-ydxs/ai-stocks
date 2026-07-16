@@ -42,6 +42,7 @@ SCROLL_OWNERSHIPS = {"none", "body-y", "body-xy", "region"}
 PAGE_KEY_RE = re.compile(r"^[A-Za-z0-9:_-]{1,80}$")
 PRESET_KEY_RE = re.compile(r"^[a-z][a-z0-9-]{1,63}$")
 SLOT_ID_RE = re.compile(r"^[A-Za-z0-9:_-]{1,80}$")
+HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 # 组件配置覆盖路径：slots.<slotId>.config.<field>（与前端 componentConfig.ts 同口径）。
 COMPONENT_CONFIG_PATH_RE = re.compile(r"^slots\.([A-Za-z0-9:_-]{1,80})\.config\.([A-Za-z0-9_]{1,40})$")
 
@@ -152,6 +153,7 @@ TOKEN_COLOR_FIELDS = {
 TOKEN_NUMBER_FIELDS = {"cardRadius", "controlRadius", "pageGap", "cardPadding", "tableCellPaddingY"}
 TOKEN_TEXT_FIELDS = {"shadow"}
 PRESET_DENSITY_FIELDS = {"density", "componentDefaults.density", "componentDefaults.tableSize"}
+MIN_TEXT_HIERARCHY_LUMINANCE_DELTA = 0.06
 
 # 后端只需要维护稳定的组件登记和最低尺寸，用于 /validate 的最终拒绝。
 # 组件专属 config 能力仍由前端 componentSchemas.ts 负责即时校验。
@@ -392,7 +394,14 @@ def _normalize_preset_token(path: str, value: Any) -> str | int | float:
     parts = path.split(".")
     if len(parts) == 3:
         scope, token = parts[1], parts[2]
-        if scope in ("light", "dark") and token in TOKEN_COLOR_FIELDS | TOKEN_TEXT_FIELDS:
+        if scope in ("light", "dark") and token in TOKEN_COLOR_FIELDS:
+            if not isinstance(value, str) or not value.strip():
+                raise LayoutConfigValidationError(f"{path} 不能为空")
+            normalized = value.strip()
+            if not HEX_COLOR_RE.fullmatch(normalized):
+                raise LayoutConfigValidationError(f"{path} 需为 #RRGGBB 颜色")
+            return normalized
+        if scope in ("light", "dark") and token in TOKEN_TEXT_FIELDS:
             if not isinstance(value, str) or not value.strip():
                 raise LayoutConfigValidationError(f"{path} 不能为空")
             return value.strip()
@@ -407,6 +416,42 @@ def _normalize_preset_token(path: str, value: Any) -> str | int | float:
                 raise LayoutConfigValidationError(f"{path} 不能小于 0")
             return int(num) if num.is_integer() else num
     raise LayoutConfigValidationError(f"不支持的预设 token 路径: {path}")
+
+
+def _relative_luminance(hex_color: str) -> float:
+    channels = [int(hex_color[index : index + 2], 16) / 255 for index in (1, 3, 5)]
+    linear = [
+        channel / 12.92
+        if channel <= 0.03928
+        else ((channel + 0.055) / 1.055) ** 2.4
+        for channel in channels
+    ]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _validate_preset_text_hierarchy(values: dict[str, Any]) -> None:
+    for mode in ("light", "dark"):
+        text_path = f"tokens.{mode}.text"
+        text_muted_path = f"tokens.{mode}.textMuted"
+        has_text = text_path in values
+        has_text_muted = text_muted_path in values
+        if has_text != has_text_muted:
+            label = "白天" if mode == "light" else "夜间"
+            raise LayoutConfigValidationError(
+                f"{label}模式正文与弱化文字必须成对覆盖"
+            )
+        if not has_text:
+            continue
+        text = values[text_path]
+        text_muted = values[text_muted_path]
+        if not isinstance(text, str) or not isinstance(text_muted, str):
+            continue
+        delta = abs(_relative_luminance(text) - _relative_luminance(text_muted))
+        if delta < MIN_TEXT_HIERARCHY_LUMINANCE_DELTA:
+            label = "白天" if mode == "light" else "夜间"
+            raise LayoutConfigValidationError(
+                f"{label}模式正文与弱化文字的相对亮度差不能小于 0.06"
+            )
 
 
 def _normalize_preset_component_default(path: str, value: Any) -> Any:
@@ -485,6 +530,7 @@ def normalize_preset_override(raw: dict[str, Any] | None, schema_version: int | 
             normalized[path] = _normalize_preset_responsive(path, value)
             continue
         normalized[path] = _normalize_path_value(path, value, "preset")
+    _validate_preset_text_hierarchy(normalized)
     return {"schemaVersion": version, "values": normalized}
 
 

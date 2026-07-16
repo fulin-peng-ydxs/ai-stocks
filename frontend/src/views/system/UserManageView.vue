@@ -428,7 +428,11 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-table-column>
           <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">
-              <AppRowActions :actions="userRowActions(row)" :inline-limit="3" />
+              <AppRowActions
+                :actions="userRowActions(row)"
+                :inline-limit="3"
+                :test-id="`user-row-actions-${row.account}`"
+              />
             </template>
           </el-table-column>
         </AppDataTable>

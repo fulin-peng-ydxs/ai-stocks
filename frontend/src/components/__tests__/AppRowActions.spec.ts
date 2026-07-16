@@ -36,10 +36,13 @@ const ElIconStub = defineComponent({
   },
 })
 
+const mountedWrappers: Array<{ unmount: () => void }> = []
+
 function mountActions(actions: AppRowAction[], opts: {
   inlineLimit?: number
   role?: string
   permissions?: string[]
+  testId?: string
 } = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -47,10 +50,11 @@ function mountActions(actions: AppRowAction[], opts: {
   auth.role = opts.role ?? 'system'
   auth.permissions = opts.permissions ?? []
 
-  return mount(AppRowActions, {
+  const wrapper = mount(AppRowActions, {
     props: {
       actions,
       inlineLimit: opts.inlineLimit ?? 2,
+      testId: opts.testId,
     },
     global: {
       plugins: [pinia],
@@ -62,10 +66,13 @@ function mountActions(actions: AppRowAction[], opts: {
     },
     attachTo: document.body,
   })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
 describe('AppRowActions', () => {
   afterEach(() => {
+    for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
     document.body.innerHTML = ''
     vi.clearAllMocks()
   })
@@ -77,7 +84,7 @@ describe('AppRowActions', () => {
       { key: 'reset', label: '重置密码' },
       { key: 'disable', label: '禁用', type: 'danger' },
       { key: 'delete', label: '删除', type: 'danger', placement: 'more', onClick: remove },
-    ])
+    ], { testId: 'user-actions' })
 
     const directButtons = wrapper.findAll('.app-row-actions__button').map((button) => button.text())
     expect(directButtons).toEqual(['编辑', '重置密码', '更多'])
@@ -87,8 +94,15 @@ describe('AppRowActions', () => {
     await wrapper.find('.app-row-actions__more').trigger('click')
     await nextTick()
 
+    expect(wrapper.get('[data-testid="user-actions-edit"]')).toBeTruthy()
+    expect(wrapper.get('[data-testid="user-actions-more"]')).toBeTruthy()
+    expect(document.body.querySelector('[data-testid="user-actions-menu"]')).not.toBeNull()
     const menuItems = Array.from(document.body.querySelectorAll('.app-row-actions-menu__item'))
     expect(menuItems.map((item) => item.textContent?.trim())).toEqual(['禁用', '删除'])
+
+    window.dispatchEvent(new Event('scroll'))
+    await nextTick()
+    expect(document.body.querySelector('[data-testid="user-actions-menu"]')).not.toBeNull()
 
     const deleteItem = menuItems.find((item) => item.textContent?.trim() === '删除') as HTMLButtonElement
     deleteItem.click()
@@ -130,6 +144,26 @@ describe('AppRowActions', () => {
     }
 
     expect(disabled).not.toHaveBeenCalled()
+    expect(loading).not.toHaveBeenCalled()
+  })
+
+  it('更多菜单使用 Element Plus 命令按钮并展示可见 loading 状态', async () => {
+    const loading = vi.fn()
+    const wrapper = mountActions([
+      { key: 'edit', label: '编辑' },
+      { key: 'sync', label: '同步中', loading: true, placement: 'more', onClick: loading },
+    ], { inlineLimit: 1, testId: 'quality-actions' })
+
+    await wrapper.get('[data-testid="quality-actions-more"]').trigger('click')
+    await nextTick()
+
+    const loadingItem = document.body.querySelector(
+      '[data-testid="quality-actions-sync"]',
+    ) as HTMLButtonElement
+    expect(loadingItem.classList).toContain('el-button')
+    expect(loadingItem.classList).toContain('is-loading')
+    expect(loadingItem.disabled).toBe(true)
+    loadingItem.click()
     expect(loading).not.toHaveBeenCalled()
   })
 })

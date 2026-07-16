@@ -533,6 +533,29 @@ def test_preset_rejects_bad_extras(client):
     repo = LayoutConfigRepo(client)
     with pytest.raises(LayoutConfigValidationError, match="token 路径"):
         repo.upsert_preset("p1", "P1", config={"values": {"tokens.mid.primary": "#fff"}})
+    with pytest.raises(LayoutConfigValidationError, match="#RRGGBB"):
+        repo.upsert_preset(
+            "bad-color",
+            "非法颜色",
+            config={"values": {"tokens.light.primary": "#fff"}},
+        )
+    with pytest.raises(LayoutConfigValidationError, match="必须成对覆盖"):
+        repo.upsert_preset(
+            "partial-text",
+            "不完整文字层级",
+            config={"values": {"tokens.dark.textMuted": "#c9d0d3"}},
+        )
+    with pytest.raises(LayoutConfigValidationError, match="相对亮度差"):
+        repo.upsert_preset(
+            "flat-text",
+            "无文字层级",
+            config={
+                "values": {
+                    "tokens.dark.text": "#8899aa",
+                    "tokens.dark.textMuted": "#8899aa",
+                }
+            },
+        )
     with pytest.raises(LayoutConfigValidationError, match="仅允许"):
         repo.upsert_preset("p2", "P2", config={"values": {"responsiveDefaults.reflowBreakpoint": 999}})
     # defaultSort 不允许 preset 层（仅 page/user）→ 预设组件默认拒绝

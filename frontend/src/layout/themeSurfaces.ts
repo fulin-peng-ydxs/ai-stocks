@@ -1,4 +1,23 @@
-import type { LayoutPresetKey, ThemeMode } from './schema'
+import type { LayoutPresetKey, StyleTokenConfig, ThemeMode } from './schema'
+
+export const STYLE_COLOR_TOKEN_KEYS = [
+  'primary',
+  'success',
+  'warning',
+  'danger',
+  'pageBg',
+  'surfaceBg',
+  'surfaceHover',
+  'border',
+  'borderStrong',
+  'text',
+  'textStrong',
+  'textMuted',
+  'activeBg',
+  'submenuBg',
+] as const satisfies readonly (keyof StyleTokenConfig)[]
+
+export const MIN_TEXT_HIERARCHY_LUMINANCE_DELTA = 0.06
 
 export interface LoginSurfaceSpec {
   /** 登录页右侧交互区的基础画布色，同时也是工作台 pageBg。 */
@@ -11,14 +30,24 @@ export interface LoginSurfaceSpec {
   surfaceBg: string
 }
 
-function parseHex(hex: string): [number, number, number] {
+type RgbChannels = [number, number, number]
+
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value.trim())
+}
+
+export function isStyleColorTokenKey(value: string): value is (typeof STYLE_COLOR_TOKEN_KEYS)[number] {
+  return STYLE_COLOR_TOKEN_KEYS.includes(value as (typeof STYLE_COLOR_TOKEN_KEYS)[number])
+}
+
+function parseHex(hex: string): RgbChannels | null {
   const m = /^#([0-9a-f]{6})$/i.exec(hex.trim())
-  if (!m) return [NaN, NaN, NaN]
+  if (!m) return null
   const n = parseInt(m[1], 16)
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 
-function toHex(channels: number[]): string {
+function toHex(channels: RgbChannels): string {
   return `#${channels
     .map((value) => Math.round(value).toString(16).padStart(2, '0'))
     .join('')}`
@@ -27,16 +56,40 @@ function toHex(channels: number[]): string {
 export function blendHex(foreground: string, background: string, alpha: number): string {
   const fg = parseHex(foreground)
   const bg = parseHex(background)
-  return toHex(fg.map((value, index) => value * alpha + bg[index] * (1 - alpha)))
+  if (!fg && !bg) return '#000000'
+  if (!fg) return toHex(bg as RgbChannels)
+  if (!bg) return toHex(fg)
+  const safeAlpha = Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1
+  return toHex(fg.map((value, index) => (
+    value * safeAlpha + bg[index] * (1 - safeAlpha)
+  )) as RgbChannels)
 }
 
 export function rgbaFromHex(hex: string, alpha: number): string {
-  const [r, g, b] = parseHex(hex)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  const [r, g, b] = parseHex(hex) ?? [0, 0, 0]
+  const safeAlpha = Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1
+  return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`
 }
 
 export function rgbChannelsFromHex(hex: string): string {
-  return parseHex(hex).join(', ')
+  return (parseHex(hex) ?? [0, 0, 0]).join(', ')
+}
+
+export function relativeLuminanceFromHex(hex: string): number {
+  const channels = parseHex(hex)
+  if (!channels) return NaN
+  const [r, g, b] = channels.map((value) => {
+    const normalized = value / 255
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4
+  }) as RgbChannels
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+export function hasDistinctTextHierarchy(text: string, textMuted: string): boolean {
+  const delta = Math.abs(relativeLuminanceFromHex(text) - relativeLuminanceFromHex(textMuted))
+  return Number.isFinite(delta) && delta >= MIN_TEXT_HIERARCHY_LUMINANCE_DELTA
 }
 
 function surface(pageBg: string, cardBg: string, cardAlpha: number): LoginSurfaceSpec {

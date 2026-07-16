@@ -18,7 +18,15 @@ import {
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import { getLayoutPreset, getPageLayout, setPresetOverrides, type StyleTokenConfig, type ThemeMode } from '@/layout'
+import {
+  getLayoutPreset,
+  getPageLayout,
+  hasDistinctTextHierarchy,
+  isHexColor,
+  setPresetOverrides,
+  type StyleTokenConfig,
+  type ThemeMode,
+} from '@/layout'
 import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
 
@@ -137,6 +145,17 @@ function presetFormValues(): LayoutOverlayValues {
   return out
 }
 
+function presetTextHierarchyError(values: Record<string, unknown>): string | null {
+  for (const mode of ['light', 'dark'] as ThemeMode[]) {
+    const text = values[`tokens.${mode}.text`]
+    const textMuted = values[`tokens.${mode}.textMuted`]
+    if (isHexColor(text) && isHexColor(textMuted) && !hasDistinctTextHierarchy(text, textMuted)) {
+      return `${mode === 'light' ? '白天' : '夜间'}模式的正文与弱化文字亮度过于接近`
+    }
+  }
+  return null
+}
+
 async function reloadPresets() {
   loading.value = true
   loadError.value = ''
@@ -177,6 +196,12 @@ async function submitPreset() {
     ElMessage.warning('请填写预设标识和名称')
     return
   }
+  const values = presetFormValues()
+  const hierarchyError = presetTextHierarchyError(values)
+  if (hierarchyError) {
+    ElMessage.warning(hierarchyError)
+    return
+  }
   presetSaving.value = true
   try {
     const saved = await saveLayoutPreset({
@@ -185,7 +210,7 @@ async function submitPreset() {
       description: presetForm.description,
       enabled: presetForm.enabled,
       is_builtin: presetForm.is_builtin,
-      config: { values: presetFormValues() },
+      config: { values },
     })
     selectedPresetKey.value = saved.key
     presetDialog.value = false
@@ -274,6 +299,11 @@ async function importPresets() {
       return
     }
     for (const preset of parsed.presets ?? []) {
+      const values = preset.config?.values
+      const hierarchyError = values && typeof values === 'object'
+        ? presetTextHierarchyError(values as Record<string, unknown>)
+        : null
+      if (hierarchyError) throw new Error(`预设「${preset.name || preset.key}」：${hierarchyError}`)
       await saveLayoutPreset({
         key: preset.key,
         name: preset.name,

@@ -1,5 +1,10 @@
 import type { LayoutPreset, LayoutPresetKey, PresetTokens, StyleTokenConfig, ThemeMode } from './schema'
-import { THEME_SURFACE_SPECS } from './themeSurfaces'
+import {
+  hasDistinctTextHierarchy,
+  isHexColor,
+  STYLE_COLOR_TOKEN_KEYS,
+  THEME_SURFACE_SPECS,
+} from './themeSurfaces'
 
 /** 模式无关的形态/密度 token（圆角、间距、行高）：白天/夜间共用。 */
 type SharedShape = Pick<StyleTokenConfig, 'cardRadius' | 'controlRadius' | 'pageGap' | 'cardPadding' | 'tableCellPaddingY'>
@@ -122,6 +127,13 @@ export function validateLayoutPreset(preset: LayoutPreset): string[] {
     for (const [key, value] of Object.entries(set)) {
       if (typeof value === 'string' && !value.trim()) issues.push(`${mode}.${key} 不能为空`)
       if (typeof value === 'number' && (!Number.isFinite(value) || value < 0)) issues.push(`${mode}.${key} 必须为非负数值`)
+    }
+    for (const key of STYLE_COLOR_TOKEN_KEYS) {
+      if (!isHexColor(set[key])) issues.push(`${mode}.${key} 必须是 #RRGGBB 颜色`)
+    }
+    if (isHexColor(set.text) && isHexColor(set.textMuted)
+      && !hasDistinctTextHierarchy(set.text, set.textMuted)) {
+      issues.push(`${mode}.text 与 ${mode}.textMuted 的相对亮度差不足`)
     }
   }
   if (!['compact', 'standard', 'comfortable'].includes(preset.componentDefaults.density)) {

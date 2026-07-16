@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS, validateLayoutPreset } from '../presets'
-import { blendHex, rgbaFromHex, THEME_SURFACE_SPECS } from '../themeSurfaces'
+import {
+  blendHex,
+  MIN_TEXT_HIERARCHY_LUMINANCE_DELTA,
+  relativeLuminanceFromHex,
+  rgbaFromHex,
+  THEME_SURFACE_SPECS,
+} from '../themeSurfaces'
 import type { ThemeMode } from '../schema'
 
 const MODES: ThemeMode[] = ['light', 'dark']
@@ -108,6 +114,32 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
       const text = luminance(preset.tokens.light.text)
       expect(bg - text, `${preset.key} light 文字/卡片对比`).toBeGreaterThan(90)
     }
+  })
+
+  it('所有预设的普通操作与禁用操作保持可辨文字亮度层级', () => {
+    for (const preset of Object.values(LAYOUT_PRESETS)) {
+      for (const mode of MODES) {
+        const tokens = preset.tokens[mode]
+        const delta = Math.abs(
+          relativeLuminanceFromHex(tokens.text) - relativeLuminanceFromHex(tokens.textMuted),
+        )
+        expect(delta, `${preset.key}.${mode} 正文/弱文字亮度差`)
+          .toBeGreaterThanOrEqual(MIN_TEXT_HIERARCHY_LUMINANCE_DELTA)
+      }
+    }
+  })
+
+  it('预设校验拒绝正文与弱化文字亮度塌缩', () => {
+    const base = LAYOUT_PRESETS.balanced
+    const invalid = {
+      ...base,
+      tokens: {
+        ...base.tokens,
+        dark: { ...base.tokens.dark, textMuted: base.tokens.dark.text },
+      },
+    }
+
+    expect(validateLayoutPreset(invalid)).toContain('dark.text 与 dark.textMuted 的相对亮度差不足')
   })
 
   it('日曜以铂金银灰和蓝宝石交互与夜航形成稳定差异', () => {

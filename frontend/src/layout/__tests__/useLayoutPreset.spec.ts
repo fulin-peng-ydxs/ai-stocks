@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { useTheme } from '@/composables/useTheme'
 import { LAYOUT_PRESETS } from '../presets'
 import { blendHex, rgbChannelsFromHex } from '../themeSurfaces'
-import { setLayoutPreset } from '../useLayoutPreset'
+import { setLayoutPreset, setPresetOverrides } from '../useLayoutPreset'
 import type { LayoutPresetKey, ThemeMode } from '../schema'
 
 const COLOR_LEVELS = [3, 5, 7, 8, 9] as const
@@ -14,6 +14,7 @@ describe('布局预设运行时 Element Plus 色阶', () => {
 
   afterEach(() => {
     isDark.value = false
+    setPresetOverrides({})
     document.documentElement.removeAttribute('style')
     document.documentElement.removeAttribute('data-layout-preset')
     document.documentElement.removeAttribute('data-layout-mode')
@@ -63,5 +64,37 @@ describe('布局预设运行时 Element Plus 色阶', () => {
     expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).not.toBe('#2a598a')
     expect(document.documentElement.style.getPropertyValue('--el-color-error'))
       .toBe(document.documentElement.style.getPropertyValue('--el-color-danger'))
+  })
+
+  it('忽略历史非法颜色覆盖，运行时不生成 NaN CSS 变量', () => {
+    setPresetOverrides({
+      balanced: {
+        'tokens.dark.primary': '#fff',
+        'tokens.dark.surfaceBg': 'navy',
+      },
+    })
+    isDark.value = true
+    setLayoutPreset('balanced')
+
+    expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#c4a364')
+    expect(document.documentElement.style.cssText).not.toContain('NaN')
+  })
+
+  it('历史文字覆盖破坏亮度层级时整对回退到内置 token', () => {
+    const invalidOverrides: Array<Record<string, string | number>> = [
+      { 'tokens.dark.textMuted': '#c9d0d3' },
+      { 'tokens.dark.text': '#8899aa', 'tokens.dark.textMuted': '#8899aa' },
+    ]
+
+    for (const overrides of invalidOverrides) {
+      setPresetOverrides({ balanced: overrides })
+      isDark.value = true
+      setLayoutPreset('balanced')
+
+      expect(document.documentElement.style.getPropertyValue('--el-text-color-regular'))
+        .toBe('#c9d0d3')
+      expect(document.documentElement.style.getPropertyValue('--el-text-color-disabled'))
+        .toBe('#87949b')
+    }
   })
 })

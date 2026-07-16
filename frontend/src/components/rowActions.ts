@@ -5,6 +5,7 @@ export type AppRowActionPlacement = 'auto' | 'inline' | 'more'
 export interface AppRowAction {
   key: string
   label: string
+  testId?: string
   type?: AppRowActionType
   permission?: string | string[]
   visible?: boolean
