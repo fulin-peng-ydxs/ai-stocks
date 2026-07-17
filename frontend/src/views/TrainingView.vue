@@ -120,8 +120,11 @@ function tableBorder(slotId: string): boolean {
 }
 const growthData = ref<GrowthPoint[]>([])
 const growthError = ref('')
+const historyLoading = ref(true)
+const growthLoading = ref(true)
 
 async function loadHistory() {
+  historyLoading.value = true
   history.sort_by = historySortBy.value
   history.sort_order = historySortOrder.value
   historyError.value = ''
@@ -136,14 +139,19 @@ async function loadHistory() {
     history.total = r.total
   } catch (error) {
     historyError.value = getErrorMessage(error, '训练历史加载失败')
+  } finally {
+    historyLoading.value = false
   }
 }
 async function loadGrowth() {
+  growthLoading.value = true
   growthError.value = ''
   try {
     growthData.value = await fetchGrowth()
   } catch (error) {
     growthError.value = getErrorMessage(error, '成长曲线加载失败')
+  } finally {
+    growthLoading.value = false
   }
 }
 
@@ -401,10 +409,15 @@ onBeforeUnmount(detachKeyboard)
           </div>
         </el-card>
 
-        <el-card v-if="growthData.length || growthError" shadow="never" class="growth-card">
+        <el-card v-if="growthLoading || growthData.length || growthError" shadow="never" class="growth-card">
           <template #header><span class="card-title">成长曲线</span><span class="card-sub">历次评分 / 收益</span></template>
           <AppStateBlock
-            v-if="growthError && !growthData.length"
+            v-if="growthLoading && !growthData.length"
+            state="loading"
+            title="正在加载成长曲线…"
+          />
+          <AppStateBlock
+            v-else-if="growthError && !growthData.length"
             state="error"
             title="成长曲线加载失败"
             :description="growthError"
@@ -421,14 +434,21 @@ onBeforeUnmount(detachKeyboard)
             retry
             @retry="loadGrowth"
           />
-          <GrowthChart :data="growthData" />
+          <div v-loading="growthLoading">
+            <GrowthChart :data="growthData" />
+          </div>
           </template>
         </el-card>
 
         <el-card shadow="never" class="hist-card">
           <template #header><span class="card-title">训练历史</span><span class="card-sub">共 {{ history.total }} 局，点行回看</span></template>
           <AppStateBlock
-            v-if="historyError && !history.list.length"
+            v-if="historyLoading && !history.list.length"
+            state="loading"
+            title="正在加载训练历史…"
+          />
+          <AppStateBlock
+            v-else-if="historyError && !history.list.length"
             state="error"
             title="训练历史加载失败"
             :description="historyError"
@@ -447,6 +467,7 @@ onBeforeUnmount(detachKeyboard)
           />
           <AppDataTable
             :data="history.list"
+            :loading="historyLoading"
             size="small"
             table-class="hist-table"
             :border="tableBorder('history')"

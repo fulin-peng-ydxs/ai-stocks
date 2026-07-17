@@ -477,7 +477,8 @@ onBeforeUnmount(() => {
     <template #main>
       <AppStateBlock
         v-if="permissionError"
-        state="permission"
+        state="error"
+        variant="permission"
         title="无权限维护数据字典"
         description="数据字典管理仅系统管理员可用"
         class="dict-state"

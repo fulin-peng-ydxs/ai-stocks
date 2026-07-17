@@ -144,6 +144,8 @@ const industryPct = ref(20)            // 单行业持仓上限 %
 const profiles = ref<Profile[]>([])
 const scoreProfiles = ref<ScoreProfileSummary[]>([])
 const tradeProfiles = ref<TradeProfileSummary[]>([])
+const profileOptionsLoading = ref(true)
+const profileOptionsError = ref('')
 const nextRunSourceRef = ref('')
 
 function screenProfileKey(p: Profile): string {
@@ -384,6 +386,40 @@ function restoreParams() {
   } catch { /* ignore */ }
 }
 
+async function loadProfileOptions() {
+  profileOptionsLoading.value = true
+  profileOptionsError.value = ''
+  const failures: string[] = []
+  try {
+    const [screenResult, scoreResult, tradeResult] = await Promise.allSettled([
+      listProfiles(),
+      listScoreProfiles(),
+      listTradeProfiles(),
+    ])
+    if (screenResult.status === 'fulfilled') {
+      profiles.value = screenResult.value
+      profileId.value = normalizeScreenProfileKey(profileId.value)
+    } else {
+      failures.push(getErrorMessage(screenResult.reason, '选股方案加载失败'))
+    }
+    if (scoreResult.status === 'fulfilled') {
+      scoreProfiles.value = scoreResult.value
+      scoreProfileId.value = normalizeScoreProfileKey(scoreProfileId.value)
+    } else {
+      failures.push(getErrorMessage(scoreResult.reason, '评分方案加载失败'))
+    }
+    if (tradeResult.status === 'fulfilled') {
+      tradeProfiles.value = tradeResult.value
+      tradeProfileId.value = normalizeTradeProfileKey(tradeProfileId.value)
+    } else {
+      failures.push(getErrorMessage(tradeResult.reason, '买卖方案加载失败'))
+    }
+    profileOptionsError.value = failures.join('；')
+  } finally {
+    profileOptionsLoading.value = false
+  }
+}
+
 async function loadHistory() {
   historyError.value = ''
   try {
@@ -559,18 +595,7 @@ onMounted(async () => {
   topN.value = Number(settings.topN)
   initCap.value = Number(settings.initCap)
   robustPanels.value = settings.robustExpanded ? ['robust'] : []
-  try {
-    profiles.value = await listProfiles()
-    profileId.value = normalizeScreenProfileKey(profileId.value)
-  } catch { /* ignore */ }
-  try {
-    scoreProfiles.value = await listScoreProfiles()
-    scoreProfileId.value = normalizeScoreProfileKey(scoreProfileId.value)
-  } catch { /* ignore */ }
-  try {
-    tradeProfiles.value = await listTradeProfiles()
-    tradeProfileId.value = normalizeTradeProfileKey(tradeProfileId.value)
-  } catch { /* ignore */ }
+  await loadProfileOptions()
   await loadHistory()
   // 默认载入最近一次回测结果，避免空屏、不用反复重跑
   if (settings.autoLoadHistory && runHistory.value.length) {
@@ -974,7 +999,21 @@ async function openTradeChart(row: TradeRow) {
 
     <template #main>
     <div class="backtest-body">
-    <el-card shadow="never" class="form-card">
+    <el-card
+      v-loading="profileOptionsLoading"
+      element-loading-text="正在加载回测方案…"
+      shadow="never"
+      class="form-card"
+    >
+      <AppStateBlock
+        v-if="profileOptionsError"
+        state="error"
+        size="inline"
+        title="回测方案加载不完整"
+        :description="profileOptionsError"
+        retry
+        @retry="loadProfileOptions"
+      />
       <AppControlRow class="form-row" dense>
         <el-radio-group v-model="kind">
           <el-radio-button value="strategy">策略回测</el-radio-button>
@@ -993,7 +1032,7 @@ async function openTradeChart(row: TradeRow) {
               <p>策略回测里用于<b>候选超过持仓数时按分排序截断</b>；评分验证里用于<b>分档检验高分组是否更易涨</b>。去「配置管理 → 评分规则」定义。</p>
             </HelpTip>
           </template>
-          <el-select v-model="scoreProfileId" placeholder="请选择评分方案" no-data-text="暂无可用评分方案" style="width: 190px">
+          <el-select v-model="scoreProfileId" :loading="profileOptionsLoading" placeholder="请选择评分方案" no-data-text="暂无可用评分方案" style="width: 190px">
             <template v-if="selectedScoreProfile" #label>
               <AssetProfileLabel
                 :name="selectedScoreProfile.name"
@@ -1032,7 +1071,7 @@ async function openTradeChart(row: TradeRow) {
                   <b>方案说明：</b> <br>{{ profileDesc }}
                 </div>
               </template>
-              <el-select v-model="profileId" clearable placeholder="请选择选股方案" no-data-text="暂无可用选股方案" style="width: 190px">
+              <el-select v-model="profileId" :loading="profileOptionsLoading" clearable placeholder="请选择选股方案" no-data-text="暂无可用选股方案" style="width: 190px">
                 <template v-if="selectedScreenProfile" #label>
                   <AssetProfileLabel
                     :name="selectedScreenProfile.name"
@@ -1075,7 +1114,7 @@ async function openTradeChart(row: TradeRow) {
                 <p>选某买卖方案 → 买入须<b>筛选命中且买入条件成立</b>，卖出走方案的<b>卖出条件 + 兜底(止盈/止损/最大持有)</b>。去「配置管理 → 买卖指标」定义。</p>
               </HelpTip>
             </template>
-            <el-select v-model="tradeProfileId" placeholder="请选择买卖方案" no-data-text="暂无可用买卖方案" style="width: 190px">
+            <el-select v-model="tradeProfileId" :loading="profileOptionsLoading" placeholder="请选择买卖方案" no-data-text="暂无可用买卖方案" style="width: 190px">
               <template v-if="selectedTradeProfile" #label>
                 <AssetProfileLabel
                   :name="selectedTradeProfile.name"

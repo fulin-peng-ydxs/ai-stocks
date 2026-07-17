@@ -164,7 +164,9 @@ export type ComponentCategory =
   | 'complex'
   | 'navigation'
 
-export type ComponentState = 'loading' | 'empty' | 'error' | 'ready'
+/** 页面和组件的数据反馈四态；预览、运行时状态组件与布局契约共同消费。 */
+export const COMPONENT_STATES = ['ready', 'loading', 'empty', 'error'] as const
+export type ComponentState = (typeof COMPONENT_STATES)[number]
 
 export interface ComponentStateStrategy {
   /** 状态切换时是否保留稳定占位，避免布局跳变。 */

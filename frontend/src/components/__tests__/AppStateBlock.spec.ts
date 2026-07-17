@@ -103,14 +103,16 @@ describe('AppStateBlock', () => {
     expect(wrapper.emitted('retry')).toHaveLength(1)
   })
 
-  it('permission 使用无权限默认文案', () => {
+  it('permission 作为 error 的语义变体使用无权限默认文案', () => {
     const wrapper = mount(AppStateBlock, {
-      props: { state: 'permission' },
+      props: { state: 'error', variant: 'permission' },
       global: { stubs },
     })
 
     expect(wrapper.text()).toContain('无权限查看')
     expect(wrapper.text()).toContain('请联系系统管理员调整权限')
     expect(wrapper.find('.app-state-block__permission-icon').exists()).toBe(true)
+    expect(wrapper.classes()).toContain('app-state-block--error')
+    expect(wrapper.classes()).toContain('app-state-block--permission')
   })
 })

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Lock } from '@element-plus/icons-vue'
 import { computed } from 'vue'
+import type { ComponentState } from '@/layout/schema'
 
-type StateKind = 'loading' | 'empty' | 'error' | 'permission'
+type StateKind = Exclude<ComponentState, 'ready'>
 type StateSize = 'default' | 'compact' | 'tiny' | 'inline'
 
 const props = withDefaults(defineProps<{
@@ -13,6 +14,8 @@ const props = withDefaults(defineProps<{
   retry?: boolean
   retryText?: string
   skeletonRows?: number
+  /** 无权限是 error 的语义子类型，不扩展第五种顶层状态。 */
+  variant?: 'permission'
 }>(), {
   size: 'default',
   retry: false,
@@ -25,6 +28,7 @@ const emit = defineEmits<{
 }>()
 
 const isInline = computed(() => props.size === 'inline')
+const isPermission = computed(() => props.state === 'error' && props.variant === 'permission')
 const emptyClass = computed(() => [
   'app-empty',
   {
@@ -43,21 +47,24 @@ const resultClass = computed(() => [
 
 const defaultTitle = computed(() => {
   if (props.title) return props.title
-  if (props.state === 'permission') return '无权限查看'
+  if (isPermission.value) return '无权限查看'
   if (props.state === 'error') return '加载失败'
   if (props.state === 'loading') return '正在加载...'
   return '暂无数据'
 })
 const defaultDescription = computed(() => {
   if (props.description) return props.description
-  if (props.state === 'permission') return '请联系系统管理员调整权限'
+  if (isPermission.value) return '请联系系统管理员调整权限'
   if (props.state === 'error') return '请检查网络或稍后重试'
   return ''
 })
 </script>
 
 <template>
-  <div class="app-state-block" :class="[`app-state-block--${state}`, `app-state-block--${size}`]">
+  <div
+    class="app-state-block"
+    :class="[`app-state-block--${state}`, `app-state-block--${size}`, { 'app-state-block--permission': isPermission }]"
+  >
     <div v-if="state === 'loading'" class="app-state-block__loading">
       <template v-if="isInline">
         <span class="app-state-block__inline-text app-caption-text">{{ defaultTitle }}</span>
@@ -87,11 +94,11 @@ const defaultDescription = computed(() => {
 
     <el-result
       v-else
-      :icon="state === 'permission' ? undefined : 'warning'"
+      :icon="isPermission ? undefined : 'warning'"
       :title="defaultTitle"
       :class="resultClass"
     >
-      <template v-if="state === 'permission'" #icon>
+      <template v-if="isPermission" #icon>
         <el-icon class="app-state-block__permission-icon"><Lock /></el-icon>
       </template>
       <template #sub-title>

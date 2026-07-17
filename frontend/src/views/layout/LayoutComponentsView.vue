@@ -90,6 +90,7 @@ const ALL_LAYERS: ComponentConfigLayer[] = ['preset', 'page', 'user']
 // 可覆盖范围（后端 layout_field_policy）：键 `${kind}.${field}`。挂载后拉取，编辑即时刷新。
 const policyMap = ref<Map<string, FieldPolicyRecord>>(new Map())
 const policyError = ref('')
+const policyLoading = ref(true)
 
 function buildRow(meta: ComponentMeta): ComponentRow {
   const fieldDefs = getComponentFieldDefs(meta.kind)
@@ -115,6 +116,7 @@ function buildRow(meta: ComponentMeta): ComponentRow {
 }
 
 async function loadPolicies(): Promise<void> {
+  policyLoading.value = true
   policyError.value = ''
   try {
     const { policies } = await listFieldPolicies()
@@ -124,6 +126,8 @@ async function loadPolicies(): Promise<void> {
   } catch (error) {
     policyError.value = getErrorMessage(error, '组件字段策略加载失败')
     /* 离线 / 接口失败：保持代码默认展示，不阻塞页面 */
+  } finally {
+    policyLoading.value = false
   }
 }
 onMounted(loadPolicies)
@@ -246,7 +250,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
         <div>
           <div class="page-title">系统组件</div>
           <div class="page-subtitle">
-            组件能力目录：共 {{ totalCount }} 种 · {{ consumedCount }} 种被页面消费 · {{ configurableCount }} 种已开放 Web 配置；点「预览」可在线编辑字段可覆盖范围
+            组件能力目录：共 {{ totalCount }} 种 · {{ consumedCount }} 种被页面消费 · {{ configurableCount }} 种已开放 Web 配置；点「预览」查看四态规范样板与字段可覆盖范围
           </div>
         </div>
         <div class="toolbar-actions">
@@ -256,7 +260,11 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
     </template>
 
     <template #main>
-      <section class="plain-panel">
+      <section
+        v-loading="policyLoading"
+        element-loading-text="正在加载组件字段策略…"
+        class="plain-panel"
+      >
         <AppStateBlock
           v-if="policyError"
           state="error"
@@ -318,7 +326,11 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               </el-table-column>
               <el-table-column label="操作" width="92" fixed="right">
                 <template #default="{ row }">
-                  <AppRowActions :actions="componentRowActions(row)" :inline-limit="1" />
+                  <AppRowActions
+                    :actions="componentRowActions(row)"
+                    :inline-limit="1"
+                    :test-id="`component-catalog-${row.kind}`"
+                  />
                 </template>
               </el-table-column>
             </el-table>
@@ -328,17 +340,30 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
     </template>
 
     <template #overlays>
-      <PageDrawer v-model="detailVisible" :title="selected ? `${selected.label}（${selected.kind}）` : '组件详情'" size="560px">
+      <PageDrawer
+        v-model="detailVisible"
+        :title="selected ? `${selected.label}（${selected.kind}）` : '组件详情'"
+        size="560px"
+        data-testid="component-preview-drawer"
+      >
         <div v-if="selected" class="detail-body">
           <div class="detail-block">
             <div class="db-head">
-              <span class="db-title">可视化预览</span>
-              <HelpHint text="代表性占位示意（不挂载真实组件）；四态切换不改变外层尺寸。" />
+              <span class="db-title">四态规范预览</span>
+              <HelpHint text="给开发与验收人员对照该组件种类的 ready / loading / empty / error 规范；不是业务页面截图，也不代表消费页面已经接入。非 ready 态与真实页面共用 AppStateBlock。" />
               <el-radio-group v-model="previewState" size="small" style="margin-left:auto">
-                <el-radio-button v-for="s in PREVIEW_STATES" :key="s.value" :value="s.value">{{ s.label }}</el-radio-button>
+                <el-radio-button
+                  v-for="s in PREVIEW_STATES"
+                  :key="s.value"
+                  :value="s.value"
+                  :data-testid="`component-state-${s.value}`"
+                >{{ s.label }}</el-radio-button>
               </el-radio-group>
             </div>
             <LayoutComponentPreview :kind="selected.kind" :state="previewState" />
+            <div class="preview-purpose app-caption-text">
+              用途：统一状态语义、文案和稳定占位；业务页面仍需接入真实数据并单独通过四态测试。
+            </div>
           </div>
 
           <div class="detail-block">
@@ -517,6 +542,10 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
 .db-hint {
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
+}
+.preview-purpose {
+  color: var(--el-text-color-secondary);
+  line-height: var(--app-line-height-body);
 }
 .chip-row {
   display: flex;

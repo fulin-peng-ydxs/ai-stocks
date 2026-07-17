@@ -566,7 +566,8 @@ onBeforeUnmount(stopTimer)
     <template #auditTable>
       <AppStateBlock
         v-if="permissionError"
-        state="permission"
+        state="error"
+        variant="permission"
         title="无权限查看审计日志"
         description="请联系系统管理员调整审计查看权限"
         class="audit-state"

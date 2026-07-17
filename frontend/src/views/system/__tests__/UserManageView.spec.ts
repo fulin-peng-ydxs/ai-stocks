@@ -104,7 +104,12 @@ function mockHappyApis() {
       account: 'debug_system',
       email: 'debug@example.com',
       role_code: 'system',
-      roles: ['system', 'paid'],
+      roles: ['custom_reviewer', 'paid', 'system'],
+      role_names: {
+        custom_reviewer: '复核员',
+        paid: '付费用户',
+        system: '系统管理员',
+      },
       status: 'locked',
       perm_ver: 1,
       last_login_at: null,
@@ -198,5 +203,20 @@ describe('UserManageView 字典颜色', () => {
     expect(wrapper.text()).toContain('锁定')
     expect(wrapper.text()).not.toContain('已锁定')
     expect(wrapper.html()).not.toContain('--el-tag-text-color')
+  })
+
+  it('角色按字典顺序优先排列，并使用列表返回的自定义角色名称', async () => {
+    const wrapper = await mountView()
+    const labels = wrapper.findAll('.role-tag').map((tag) => tag.text())
+    expect(labels).toEqual(['系统管理员', '付费用户', '复核员'])
+    expect(wrapper.text()).not.toContain('custom_reviewer')
+  })
+
+  it('角色或租户依赖失败时保留用户列表并显示局部重试态', async () => {
+    ;(userApi.listAssignableRoles as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('roles failed'))
+    const wrapper = await mountView()
+    expect(wrapper.text()).toContain('筛选与表单选项加载不完整')
+    expect(wrapper.text()).toContain('roles failed')
+    expect(wrapper.text()).toContain('debug_system')
   })
 })

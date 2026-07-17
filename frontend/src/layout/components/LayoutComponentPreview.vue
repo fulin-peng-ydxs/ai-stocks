@@ -2,12 +2,13 @@
 /**
  * 组件可视化预览（P6 / M8-D）——「系统组件」库里每个组件的代表性占位预览。
  *
- * 不挂载真实业务组件，而是按 componentPreview.ts 的视觉原型渲染代表性 mock，并支持
- * 默认 / loading / empty / error 四态切换。预览框**固定高度**，证明「状态切换不改变外层尺寸」
- * （requirement §5.2 校验规则）。这是组件目录展示层，不引入运行时配置。
+ * ready 使用视觉原型展示该组件种类的内容形态；loading / empty / error 直接复用
+ * AppStateBlock，作为开发与验收可对照的状态规范样板。预览框固定高度，只证明规范样板
+ * 的状态切换不改变容器尺寸；真实页面仍须独立接入并通过页面测试。
  */
 import { computed } from 'vue'
-import { Close, WarningFilled } from '@element-plus/icons-vue'
+import { Close } from '@element-plus/icons-vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import { previewArchetypeOf, FEEDBACK_DEFAULT_STATE } from '../componentPreview'
 import type { ComponentKind, ComponentState } from '../schema'
 
@@ -23,17 +24,27 @@ const effState = computed<ComponentState>(() => {
 </script>
 
 <template>
-  <div class="cp-frame">
-    <!-- 通用状态占位：固定高度内渲染，切换不改变外层尺寸。 -->
-    <div v-if="effState === 'loading'" class="cp-state">
-      <el-skeleton :rows="3" animated />
-    </div>
-    <el-empty v-else-if="effState === 'empty'" class="app-empty app-empty--compact" description="暂无数据" />
-    <div v-else-if="effState === 'error'" class="cp-state cp-error">
-      <el-icon class="cp-error-icon"><WarningFilled /></el-icon>
-      <span>加载失败</span>
-      <el-button size="small" text type="primary">重试</el-button>
-    </div>
+  <div class="cp-frame" data-testid="component-state-preview" :data-state="effState">
+    <!-- 非 ready 态复用真实运行时组件，避免预览与业务页面各维护一套状态视觉。 -->
+    <AppStateBlock
+      v-if="effState === 'loading'"
+      state="loading"
+      size="compact"
+      title="正在加载组件数据…"
+    />
+    <AppStateBlock
+      v-else-if="effState === 'empty'"
+      state="empty"
+      size="compact"
+      description="暂无组件数据"
+    />
+    <AppStateBlock
+      v-else-if="effState === 'error'"
+      state="error"
+      size="compact"
+      title="组件数据加载失败"
+      retry
+    />
 
     <!-- 默认（ready）态：按视觉原型渲染代表性 mock。 -->
     <template v-else>
@@ -101,7 +112,9 @@ const effState = computed<ComponentState>(() => {
 
 <style scoped>
 .cp-frame {
-  height: 176px;
+  /* 四态共用 256px 稳定画布；该高度覆盖 compact 空态的完整图文，避免 overflow:hidden 裁切。 */
+  box-sizing: border-box;
+  height: 256px;
   border: 1px solid var(--el-border-color);
   border-radius: 6px;
   background: var(--el-bg-color);
@@ -109,21 +122,6 @@ const effState = computed<ComponentState>(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-.cp-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--app-space-2);
-}
-.cp-error {
-  align-items: center;
-  color: var(--el-color-danger);
-  font-size: var(--app-font-size-table);
-}
-.cp-error-icon {
-  font-size: var(--app-font-size-page-title);
 }
 /* 通用占位条：用边框色块表示内容骨架。 */
 span {

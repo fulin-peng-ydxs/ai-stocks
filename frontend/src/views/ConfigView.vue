@@ -1598,7 +1598,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <template v-else-if="activeTab === 'system'">
         <AppStateBlock
           v-if="!canManageSystemSettings"
-          state="permission"
+          state="error"
+          variant="permission"
           title="无权限维护系统设置"
           description="系统设置仅系统管理员可编辑"
           class="config-error"

@@ -2,7 +2,7 @@
 // 归属/角色一律取自后端上下文；tenantId 仅 system 生效（tenant_admin 忽略，防越权）。
 import http from './client'
 
-/** 用户管理列表/详情视图（无 password_hash）；roles 为角色码集，权限取并集。 */
+/** 用户管理列表/详情视图（无 password_hash）；roles 为角色码集，role_names 为服务端权威名称。 */
 export interface AdminUser {
   id: string
   tenant_id: string
@@ -10,6 +10,7 @@ export interface AdminUser {
   email: string | null
   role_code: string
   roles: string[]
+  role_names: Record<string, string>
   status: string // active | disabled | locked
   perm_ver: number
   last_login_at: string | null

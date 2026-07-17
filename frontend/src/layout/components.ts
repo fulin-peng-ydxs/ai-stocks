@@ -43,10 +43,12 @@ const DEFAULT_STATES: Partial<Record<ComponentState, ComponentStateStrategy>> = 
 }
 
 function meta(kind: ComponentKind, input: MetaInput): ComponentMeta {
+  const { defaultStates, ...rest } = input
   return {
     kind,
-    defaultStates: DEFAULT_STATES,
-    ...input,
+    ...rest,
+    // 专属状态只收紧自己的占位高度，不能覆盖掉所有组件共有的 loading / empty / error 策略。
+    defaultStates: { ...DEFAULT_STATES, ...defaultStates },
   }
 }
 

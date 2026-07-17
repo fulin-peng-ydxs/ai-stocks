@@ -47,7 +47,7 @@ const {
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
 const router = useRouter()
-const loading = ref(false)
+const loading = ref(true)
 const error = ref('')
 const runDate = ref<string>('')
 const topN = ref(50)
@@ -115,6 +115,9 @@ const displaySubKeys = computed(() => {
   if (settings.subScoreMode === 'brief') return subKeys.value.slice(0, 3)
   return subKeys.value
 })
+const tableEmptyText = computed(() =>
+  profiles.value.length ? '当前条件暂无榜单数据' : '暂无可用评分方案',
+)
 
 watch(runDate, () => {
   if (!profileRef.value || syncingRunDate.value) return
@@ -172,15 +175,20 @@ function exportCsv() {
 }
 
 onMounted(async () => {
+  loading.value = true
+  error.value = ''
   try {
     registry.value = (await getIndicatorRegistry(true)).items
     profiles.value = await listBoardProfiles()
     if (profiles.value.length) {
       profileRef.value = profileKey(profiles.value[0])
       await load()
+    } else {
+      loading.value = false
     }
   } catch (e) {
     error.value = (e as Error).message
+    loading.value = false
   }
 })
 </script>
@@ -259,7 +267,12 @@ onMounted(async () => {
     <template #main>
     <el-card shadow="never">
       <AppStateBlock
-        v-if="error && !rows.length"
+        v-if="loading && !rows.length"
+        state="loading"
+        title="正在加载榜单…"
+      />
+      <AppStateBlock
+        v-else-if="error && !rows.length"
         state="error"
         title="榜单加载失败"
         :description="error"
@@ -270,6 +283,7 @@ onMounted(async () => {
         v-else
         :data="displayRows"
         :loading="loading"
+        :empty-text="tableEmptyText"
         :border="tableBorder('table')"
         :default-sort="elementDefaultSort"
         clickable

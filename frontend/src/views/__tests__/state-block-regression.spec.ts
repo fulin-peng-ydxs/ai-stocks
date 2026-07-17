@@ -245,6 +245,22 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('overview failed')
   })
 
+  it('数据概览的逐股质量失败只落在局部错误态', async () => {
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      latest_trade_date: '2026-07-16',
+      codes: { active: 1, delisted: 0 },
+      bar_rows: 1,
+      quality: { score: 100, open: 0, by_severity: {}, by_layer: [] },
+      gaps: { stocks_with_gap: 0, gap_days_total: 0 },
+      last_scan_at: null,
+    })
+    ;(dataApi.getStockQuality as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('stock quality failed'))
+    const wrapper = await mountView(OverviewView)
+    expect(wrapper.text()).toContain('逐股质量加载失败')
+    expect(wrapper.text()).toContain('stock quality failed')
+    expect(wrapper.text()).not.toContain('数据概览加载失败')
+  })
+
   it('数据质量加载失败显示错误态', async () => {
     ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('quality failed'))
     const wrapper = await mountView(QualityView)
@@ -263,6 +279,13 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('screen failed')
   })
 
+  it('筛选初始化失败显示配置错误态而不是空构建器', async () => {
+    ;(scoreApi.getIndicatorRegistry as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('registry failed'))
+    const wrapper = await mountView(ScreenView)
+    expect(wrapper.text()).toContain('筛选配置加载失败')
+    expect(wrapper.text()).toContain('registry failed')
+  })
+
   it('回测运行失败落到结果区错误态', async () => {
     localStorage.setItem('ai-stocks-backtest-params', JSON.stringify({
       kind: 'strategy',
@@ -279,6 +302,14 @@ describe('代表性页面四态回归', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('回测运行失败')
     expect(wrapper.text()).toContain('backtest failed')
+  })
+
+  it('回测方案局部加载失败保留表单并提供页内重试态', async () => {
+    ;(scoreApi.listScoreProfiles as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('score profiles failed'))
+    const wrapper = await mountView(BacktestView)
+    expect(wrapper.text()).toContain('回测方案加载不完整')
+    expect(wrapper.text()).toContain('score profiles failed')
+    expect(wrapper.text()).toContain('运行回测')
   })
 
   it('训练历史加载失败显示错误态', async () => {

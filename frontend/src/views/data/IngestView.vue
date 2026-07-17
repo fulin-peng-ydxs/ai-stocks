@@ -63,6 +63,7 @@ const status = ref<DataStatus | null>(null)
 // ── 任务中心：服务端分页 / 排序 / 筛选（M2.9.5）──
 const tasks = ref<AsyncTask[]>([])
 const taskError = ref('')
+const taskLoading = ref(true)
 const taskTotal = ref(0)
 const taskPage = ref(1)
 const taskSize = ref(DEFAULT_PAGE_SIZE)
@@ -88,6 +89,7 @@ const {
 // ── 采集日志：服务端分页 / 排序 / 筛选（M2.9.5）──
 const updateLogList = ref<UpdateLog[]>([])
 const logError = ref('')
+const logLoading = ref(true)
 const logTotal = ref(0)
 const logPage = ref(1)
 const logSize = ref(DEFAULT_PAGE_SIZE)
@@ -273,6 +275,7 @@ function activeCount() {
 }
 async function loadTasks() {
   const before = activeCount()
+  taskLoading.value = true
   taskError.value = ''
   try {
     const r = await listTasks({
@@ -284,6 +287,8 @@ async function loadTasks() {
     taskTotal.value = r.total ?? r.tasks.length
   } catch (error) {
     taskError.value = getErrorMessage(error, '任务中心加载失败')
+  } finally {
+    taskLoading.value = false
   }
   const after = activeCount()
   if (before > 0 && after === 0) {
@@ -300,6 +305,7 @@ async function loadTasks() {
 }
 const refreshTasks = loadTasks   // 兼容旧调用名
 async function loadLogs() {
+  logLoading.value = true
   logError.value = ''
   try {
     const r = await getUpdateLogs({
@@ -312,6 +318,8 @@ async function loadLogs() {
     if (r.tables?.length) logTables.value = r.tables
   } catch (error) {
     logError.value = getErrorMessage(error, '采集日志加载失败')
+  } finally {
+    logLoading.value = false
   }
 }
 async function load() {
@@ -579,7 +587,12 @@ onMounted(async () => {
         </template>
         <div class="panel-table-wrap">
           <AppStateBlock
-            v-if="taskError && !tasks.length"
+            v-if="taskLoading && !tasks.length"
+            state="loading"
+            title="正在加载任务中心…"
+          />
+          <AppStateBlock
+            v-else-if="taskError && !tasks.length"
             state="error"
             title="任务中心加载失败"
             :description="taskError"
@@ -598,6 +611,7 @@ onMounted(async () => {
           />
           <AppDataTable
             :data="tasks"
+            :loading="taskLoading"
             size="small"
             :border="tableBorder('taskTable')"
             :default-sort="taskDefaultSort"
@@ -680,7 +694,12 @@ onMounted(async () => {
         </template>
         <div class="panel-table-wrap">
           <AppStateBlock
-            v-if="logError && !updateLogList.length"
+            v-if="logLoading && !updateLogList.length"
+            state="loading"
+            title="正在加载采集日志…"
+          />
+          <AppStateBlock
+            v-else-if="logError && !updateLogList.length"
             state="error"
             title="采集日志加载失败"
             :description="logError"
@@ -699,6 +718,7 @@ onMounted(async () => {
           />
           <AppDataTable
             :data="updateLogList"
+            :loading="logLoading"
             size="small"
             :border="tableBorder('logTable')"
             :default-sort="logDefaultSort"

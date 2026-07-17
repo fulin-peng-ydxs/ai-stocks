@@ -26,6 +26,7 @@ import {
 } from '@/api/user'
 import { listTenants, type Tenant } from '@/api/tenant'
 import { dictItemLabel, dictTagStyleByCode } from '@/utils/dictColor'
+import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
 
 const auth = useAuthStore()
@@ -69,8 +70,22 @@ const roleNameMap = computed<Record<string, string>>(() => {
   for (const r of assignableRoles.value) m[r.code] = r.name
   return m
 })
-function roleName(code: string): string {
-  return roleNameMap.value[code] ?? ROLE_LABEL_FALLBACK[code] ?? code
+const roleDictOrder = computed(() => new Map(
+  roleTypeDictItems.value.map((item, index) => [item.code, { sort: item.sort, index }]),
+))
+function roleName(row: AdminUser, code: string): string {
+  return row.role_names?.[code] ?? roleNameMap.value[code] ?? ROLE_LABEL_FALLBACK[code] ?? code
+}
+function orderedRoles(row: AdminUser): string[] {
+  return (row.roles || [])
+    .map((code, index) => ({ code, index, dict: roleDictOrder.value.get(code) }))
+    .sort((a, b) => {
+      if (a.dict && !b.dict) return -1
+      if (!a.dict && b.dict) return 1
+      if (a.dict && b.dict) return a.dict.sort - b.dict.sort || a.dict.index - b.dict.index
+      return a.index - b.index
+    })
+    .map(({ code }) => code)
 }
 function roleTagType(code: string): 'primary' | 'warning' | 'info' {
   if (code === 'system' || code === 'tenant_admin') return 'primary'
@@ -85,6 +100,8 @@ function statusTagStyle(code: string) {
 }
 
 const tenants = ref<Tenant[]>([])
+const dependencyLoading = ref(true)
+const dependencyError = ref('')
 const tenantNameMap = computed<Record<string, string>>(() => {
   const m: Record<string, string> = {}
   for (const t of tenants.value) m[t.id] = t.name
@@ -92,6 +109,26 @@ const tenantNameMap = computed<Record<string, string>>(() => {
 })
 function tenantName(id: string): string {
   return tenantNameMap.value[id] ?? id
+}
+
+async function loadDependencies() {
+  dependencyLoading.value = true
+  dependencyError.value = ''
+  const failures: string[] = []
+  try {
+    assignableRoles.value = await listAssignableRoles()
+  } catch (error) {
+    failures.push(getErrorMessage(error, '可分配角色加载失败'))
+  }
+  if (isSystem.value) {
+    try {
+      tenants.value = (await listTenants({ size: 200 })).items
+    } catch (error) {
+      failures.push(getErrorMessage(error, '租户列表加载失败'))
+    }
+  }
+  dependencyError.value = failures.join('；')
+  dependencyLoading.value = false
 }
 
 // ── 列表 ──
@@ -326,11 +363,7 @@ onMounted(async () => {
   const qTenant = route.query.tenant
   if (isSystem.value && typeof qTenant === 'string' && qTenant) filters.value.tenant = qTenant
   void Promise.all([loadRoleTypeDictItems(), loadUserStatusDictItems()])
-  try {
-    assignableRoles.value = await listAssignableRoles()
-    if (isSystem.value) tenants.value = (await listTenants({ size: 200 })).items
-  } catch { /* 下拉字典失败不阻塞列表；拦截器已提示 */ }
-  await load()
+  await Promise.all([loadDependencies(), load()])
 })
 watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'active' ? 'active' : '' })
 </script>
@@ -359,10 +392,10 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 
         <AppControlRow class="filter-bar">
           <el-select v-if="isSystem" v-model="filters.tenant" placeholder="租户：全部" clearable
-                     style="width: 180px">
+                     :loading="dependencyLoading" style="width: 180px">
             <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
           </el-select>
-          <el-select v-model="filters.role" placeholder="角色：全部" clearable style="width: 170px">
+          <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable style="width: 170px">
             <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
           </el-select>
           <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
@@ -372,6 +405,15 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
                     @keyup.enter="search" @clear="search" />
           <el-button type="primary" @click="search">查询</el-button>
         </AppControlRow>
+        <AppStateBlock
+          v-if="dependencyError"
+          state="error"
+          size="inline"
+          title="筛选与表单选项加载不完整"
+          :description="dependencyError"
+          retry
+          @retry="loadDependencies"
+        />
       </div>
     </template>
 
@@ -404,8 +446,8 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </el-table-column>
           <el-table-column v-if="colVisible('roles')" label="角色" min-width="180">
             <template #default="{ row }">
-              <el-tag v-for="c in row.roles" :key="c" :type="roleTagType(c)" :style="roleTagStyle(c)" size="small"
-                      effect="plain" class="role-tag">{{ roleName(c) }}</el-tag>
+              <el-tag v-for="c in orderedRoles(row)" :key="c" :type="roleTagType(c)" :style="roleTagStyle(c)" size="small"
+                      effect="plain" class="role-tag">{{ roleName(row, c) }}</el-tag>
               <span v-if="!row.roles?.length" class="muted">—</span>
             </template>
           </el-table-column>

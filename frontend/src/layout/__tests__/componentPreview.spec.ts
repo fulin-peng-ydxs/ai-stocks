@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { COMPONENT_CATALOG } from '../components'
 import { PREVIEW_ARCHETYPE, FEEDBACK_DEFAULT_STATE, previewArchetypeOf } from '../componentPreview'
-import type { ComponentKind } from '../schema'
+import { COMPONENT_STATES, type ComponentKind } from '../schema'
 
 const ARCHETYPES = new Set([
   'table', 'list', 'tree', 'controls', 'chart', 'kpi',
@@ -13,11 +13,24 @@ const ARCHETYPES = new Set([
 ])
 
 describe('组件预览映射完整性（P6）', () => {
+  it('四态契约只有 ready / loading / empty / error', () => {
+    expect(COMPONENT_STATES).toEqual(['ready', 'loading', 'empty', 'error'])
+  })
+
   it('目录里每个组件都有合法预览原型', () => {
     for (const kind of Object.keys(COMPONENT_CATALOG) as ComponentKind[]) {
       const arch = previewArchetypeOf(kind)
       expect(ARCHETYPES.has(arch), `${kind} 预览原型非法: ${arch}`).toBe(true)
       expect(PREVIEW_ARCHETYPE[kind], `${kind} 未登记预览原型`).toBeTruthy()
+    }
+  })
+
+  it('目录里每个组件都声明 loading / empty / error 稳定占位策略', () => {
+    for (const kind of Object.keys(COMPONENT_CATALOG) as ComponentKind[]) {
+      const states = COMPONENT_CATALOG[kind].defaultStates
+      for (const state of ['loading', 'empty', 'error'] as const) {
+        expect(states[state]?.reserveSpace, `${kind} 缺少 ${state} 稳定占位策略`).toBe(true)
+      }
     }
   })
 

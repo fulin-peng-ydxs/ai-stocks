@@ -47,7 +47,7 @@ const {
 
 // 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
-const loading = ref(false)
+const loading = ref(true)
 const error = ref('')
 const ov = ref<Overview | null>(null)
 const tables = ref<CatalogTable[]>([])
@@ -55,10 +55,12 @@ const dims = ref<Dimension[]>([])
 
 // 逐股质量
 const sq = ref<StockQuality | null>(null)
-const sqLoading = ref(false)
+const sqLoading = ref(true)
+const sqError = ref('')
 const sqSelected = ref<string[]>([])           // 已选股票代码（下拉多选）
 const sqOptions = ref<{ code: string; label: string }[]>([])
 const sqOptLoading = ref(false)
+const sqOptError = ref('')
 const sqPage = ref(1)
 const sqSize = ref(Number(settings.sqSize))
 watch(() => settings.sqSize, (value) => {
@@ -174,22 +176,29 @@ async function load() {
 
 async function loadSq() {
   sqLoading.value = true
+  sqError.value = ''
   try {
     sq.value = await getStockQuality({
       codes: sqSelected.value.length ? sqSelected.value.join(',') : undefined,
       page: sqPage.value, size: sqSize.value,
     })
+  } catch (error) {
+    sqError.value = getErrorMessage(error, '逐股质量加载失败')
   } finally {
     sqLoading.value = false
   }
 }
 // 下拉多选：输入代码或名称远程搜索候选股
 async function remoteSearch(q: string) {
-  if (!q) { sqOptions.value = []; return }
+  if (!q) { sqOptions.value = []; sqOptError.value = ''; return }
   sqOptLoading.value = true
+  sqOptError.value = ''
   try {
     const r = await getStockQuality({ keyword: q, size: 30 })
     sqOptions.value = r.list.map((x) => ({ code: x.code, label: `${x.code} ${x.name}` }))
+  } catch (error) {
+    sqOptions.value = []
+    sqOptError.value = getErrorMessage(error, '股票候选加载失败')
   } finally {
     sqOptLoading.value = false
   }
@@ -398,11 +407,35 @@ onMounted(load)
             <el-select v-model="sqSelected" multiple filterable remote clearable collapse-tags
                        allow-create default-first-option
                        :remote-method="remoteSearch" :loading="sqOptLoading" :reserve-keyword="false"
+                       :no-data-text="sqOptError || '无匹配股票'"
                        placeholder="输入/粘贴代码或名称搜索，可多选（支持手动输入代码，留空=全部）" style="width: 460px"
                        @change="onSqSelect" @paste.native="onSqPaste">
               <el-option v-for="o in sqOptions" :key="o.code" :label="o.label" :value="o.code" />
             </el-select>
           </div>
+          <AppStateBlock
+            v-if="sqLoading && !sq"
+            state="loading"
+            title="正在加载逐股质量…"
+          />
+          <AppStateBlock
+            v-else-if="sqError && !sq"
+            state="error"
+            title="逐股质量加载失败"
+            :description="sqError"
+            retry
+            @retry="loadSq"
+          />
+          <template v-else>
+          <AppStateBlock
+            v-if="sqError"
+            state="error"
+            size="compact"
+            title="逐股质量刷新失败"
+            :description="sqError"
+            retry
+            @retry="loadSq"
+          />
           <el-table :data="sq?.list ?? []" size="small" height="100%" v-loading="sqLoading" row-key="code">
             <el-table-column label="代码" prop="code" width="110" />
             <el-table-column label="名称" prop="name" width="100" />
@@ -429,6 +462,7 @@ onMounted(load)
                            @current-change="(p: number) => { sqPage = p; loadSq() }"
                            @size-change="(s: number) => { sqSize = s; sqPage = 1; loadSq() }" />
           </div>
+          </template>
         </el-card>
         </div>
       </template>

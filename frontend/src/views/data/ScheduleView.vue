@@ -47,7 +47,7 @@ const {
 // 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
-const loading = ref(false)
+const loading = ref(true)
 const loadError = ref('')
 const jobs = ref<ScheduledJob[]>([])
 const taskTypes = ref<TaskType[]>([])
@@ -55,6 +55,7 @@ const togglingId = ref('')
 
 const sources = ref<SourceStatus[]>([])
 const pinging = ref(false)
+const sourceLoading = ref(true)
 const sourceError = ref('')
 const displaySources = computed(() => settings.sourceMode === 'primary' ? sources.value.filter((s) => s.role === 'primary') : sources.value)
 
@@ -213,13 +214,17 @@ function scheduleRowActions(row: ScheduledJob): AppRowAction[] {
 }
 
 async function loadSources(ping = false) {
+  sourceLoading.value = true
   pinging.value = ping
   sourceError.value = ''
   try {
     sources.value = (ping ? await testSources() : await getSources(false)).sources
   } catch (error) {
     sourceError.value = getErrorMessage(error, '数据源健康加载失败')
-  } finally { pinging.value = false }
+  } finally {
+    sourceLoading.value = false
+    pinging.value = false
+  }
 }
 
 async function load() {
@@ -267,7 +272,12 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             <span class="hint">到点自动创建对应任务；仅交易日的任务在非交易日跳过。</span></div>
         </template>
         <AppStateBlock
-          v-if="loadError && !jobs.length"
+          v-if="loading && !jobs.length"
+          state="loading"
+          title="正在加载定时任务…"
+        />
+        <AppStateBlock
+          v-else-if="loadError && !jobs.length"
           state="error"
           title="定时任务加载失败"
           :description="loadError"
@@ -322,17 +332,22 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
       <el-card shadow="never" class="blk">
         <template #header>
           <div class="blk-head"><span>数据源健康</span>
-            <el-button v-permission="'data-source:test'" size="small" type="primary" plain :loading="pinging" @click="loadSources(true)">测试连通</el-button></div>
+            <el-button v-permission="'data-source:test'" size="small" type="primary" plain :loading="pinging || sourceLoading" @click="loadSources(true)">测试连通</el-button></div>
         </template>
         <AppStateBlock
-          v-if="sourceError && !displaySources.length"
+          v-if="sourceLoading && !displaySources.length"
+          state="loading"
+          title="正在加载数据源健康…"
+        />
+        <AppStateBlock
+          v-else-if="sourceError && !displaySources.length"
           state="error"
           title="数据源健康加载失败"
           :description="sourceError"
           retry
           @retry="loadSources(false)"
         />
-        <template v-else>
+        <div v-else v-loading="sourceLoading" class="sources-body">
         <AppStateBlock
           v-if="sourceError"
           state="error"
@@ -352,7 +367,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <span class="src-meta">最近成功 {{ fmtTime(s.last_success_at) }} · 超时 {{ s.timeout_sec }}s</span>
         </div>
         <div v-if="!displaySources.length" class="app-empty-inline">点「测试连通」检查 AKShare / BaoStock 可达性</div>
-        </template>
+        </div>
       </el-card>
     </div>
     </template>

@@ -180,6 +180,29 @@ def test_tenant_admin_lists_own_tenant_only(client, env):
     assert {u["tenant_id"] for u in data["items"]} == {tid}   # 只见本租户
 
 
+def test_tenant_admin_user_list_includes_custom_role_name(client, env):
+    """租户管理员不能分配自定义角色，但查看已有成员时仍应得到角色名称而非只能展示编码。"""
+    tid = env.mk_tenant()
+    ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    member = env.mk_user(tid, ROLE_NORMAL)
+    role_id = "role_" + uuid.uuid4().hex[:8]
+    role_name = "租户复核员"
+    env.pg.execute(
+        "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
+        "VALUES (%s,%s,%s,'custom',FALSE,FALSE)",
+        [role_id, role_id, role_name],
+    )
+    try:
+        env.pg.execute(
+            "INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)", [member, role_id])
+        items = client.get("/api/users", headers=_tok(ta, tid)).json()["data"]["items"]
+        row = next(item for item in items if item["id"] == member)
+        assert row["role_names"][role_id] == role_name
+    finally:
+        env.pg.execute("DELETE FROM sys_user_role WHERE user_id=%s AND role_id=%s", [member, role_id])
+        env.pg.execute("DELETE FROM sys_role WHERE id=%s", [role_id])
+
+
 def test_list_users_sort_by_account(client, env):
     tid = env.mk_tenant()
     ta = env.mk_user(tid, ROLE_TENANT_ADMIN)

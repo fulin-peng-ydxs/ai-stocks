@@ -247,6 +247,13 @@ function parseAst(ast: Record<string, unknown>): { op: 'AND' | 'OR'; rows: Row[]
 const profiles = ref<Profile[]>([])
 const loadId = ref('')
 const loadedProfile = ref<Profile | null>(null)
+const initLoading = ref(true)
+const initError = ref('')
+const profilesLoading = ref(false)
+const profilesError = ref('')
+const profileLoading = ref(false)
+const profileError = ref('')
+let profileLoadSeq = 0
 const auth = useAuthStore()
 const visibilitySaving = ref(false)
 const profileReadonly = computed(() => !!loadedProfile.value?.readonly)
@@ -266,25 +273,54 @@ const selectedLoadProfile = computed(() =>
 async function loadProfiles() {
   // 次级加载按自身 view 码优雅降级：无 screen-profile:view 的部分授权角色（如只授 screen:run）
   // 不拉方案列表、也不因此 403 卡住页面主体（筛选构建/运行仍可用）。默认业务角色含该码不受影响。
-  if (!hasPermission(auth.role, auth.permissions, 'screen-profile:view')) return
-  profiles.value = await listProfiles()
-}
-watch(loadId, async (id) => {
-  if (!id) {
-    loadedProfile.value = null
+  if (!hasPermission(auth.role, auth.permissions, 'screen-profile:view')) {
+    profiles.value = []
+    profilesError.value = ''
     return
   }
-  const p = await getProfile(id)
-  loadedProfile.value = p
-  const parsed = parseAst(p.expression || {})
-  if (parsed) {
-    groupOp.value = parsed.op
-    rows.value = parsed.rows
-    complexAst.value = null
-  } else {
-    complexAst.value = p.expression || {} // 嵌套结构：只读运行
-    rows.value = []
+  profilesLoading.value = true
+  profilesError.value = ''
+  try {
+    profiles.value = await listProfiles()
+  } catch (error) {
+    profilesError.value = getErrorMessage(error, '筛选方案加载失败')
+  } finally {
+    profilesLoading.value = false
   }
+}
+async function loadSelectedProfile(id: string) {
+  const seq = ++profileLoadSeq
+  if (!id) {
+    loadedProfile.value = null
+    profileError.value = ''
+    profileLoading.value = false
+    return
+  }
+  profileLoading.value = true
+  profileError.value = ''
+  try {
+    const p = await getProfile(id)
+    if (seq !== profileLoadSeq) return
+    loadedProfile.value = p
+    const parsed = parseAst(p.expression || {})
+    if (parsed) {
+      groupOp.value = parsed.op
+      rows.value = parsed.rows
+      complexAst.value = null
+    } else {
+      complexAst.value = p.expression || {} // 嵌套结构：只读运行
+      rows.value = []
+    }
+  } catch (error) {
+    if (seq !== profileLoadSeq) return
+    loadedProfile.value = null
+    profileError.value = getErrorMessage(error, '筛选方案详情加载失败')
+  } finally {
+    if (seq === profileLoadSeq) profileLoading.value = false
+  }
+}
+watch(loadId, (id) => {
+  void loadSelectedProfile(id)
 })
 function clearAll() {
   rows.value = []
@@ -444,15 +480,25 @@ function exportCsv() {
   downloadCsv(`筛选结果_${result.value.date}.csv`, headers, data)
 }
 
-onMounted(async () => {
-  registry.value = (await getIndicatorRegistry(true)).items
-  await loadProfiles()
-  if (!rows.value.length && !complexAst.value) {
-    rows.value = [newIndRow('bull_arrange'), newIndRow('rs_pct')]
-    rows.value[1].cmp = '>='
-    rows.value[1].value = 90
+async function initializeScreen() {
+  initLoading.value = true
+  initError.value = ''
+  try {
+    registry.value = (await getIndicatorRegistry(true)).items
+    await loadProfiles()
+    if (!rows.value.length && !complexAst.value) {
+      rows.value = [newIndRow('bull_arrange'), newIndRow('rs_pct')]
+      rows.value[1].cmp = '>='
+      rows.value[1].value = 90
+    }
+  } catch (error) {
+    initError.value = getErrorMessage(error, '筛选配置加载失败')
+  } finally {
+    initLoading.value = false
   }
-})
+}
+
+onMounted(initializeScreen)
 </script>
 
 <template>
@@ -473,11 +519,31 @@ onMounted(async () => {
       </div>
     </div>
 
-    <el-card shadow="never" class="cond-card">
+    <AppStateBlock
+      v-if="initLoading"
+      state="loading"
+      title="正在加载筛选配置…"
+    />
+    <AppStateBlock
+      v-else-if="initError"
+      state="error"
+      title="筛选配置加载失败"
+      :description="initError"
+      retry
+      @retry="initializeScreen"
+    />
+    <el-card v-else shadow="never" class="cond-card">
       <!-- 载入已存/系统内置方案 -->
       <div class="load-row">
         <span class="hint">载入方案</span>
-        <el-select v-model="loadId" placeholder="选系统内置/我的方案（可选）" clearable filterable style="width: 280px">
+        <el-select
+          v-model="loadId"
+          placeholder="选系统内置/我的方案（可选）"
+          clearable
+          filterable
+          :loading="profilesLoading || profileLoading"
+          style="width: 280px"
+        >
           <template v-if="selectedLoadProfile" #label>
             <AssetProfileLabel
               :name="selectedLoadProfile.name"
@@ -516,6 +582,15 @@ onMounted(async () => {
         />
         <el-button text size="small" @click="clearAll">清空</el-button>
       </div>
+      <AppStateBlock
+        v-if="profilesError || profileError"
+        state="error"
+        size="inline"
+        :title="profileError ? '筛选方案详情加载失败' : '筛选方案加载失败'"
+        :description="profileError || profilesError"
+        retry
+        @retry="profileError ? loadSelectedProfile(loadId) : loadProfiles()"
+      />
 
       <!-- 复杂嵌套方案：只读运行 -->
       <el-alert

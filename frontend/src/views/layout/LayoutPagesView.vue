@@ -327,6 +327,7 @@ const importSaving = ref(false)
 
 const reportLoading = ref(false)
 const reportError = ref('')
+const pageLoading = ref(true)
 const effectiveConfig = ref<EffectiveLayoutConfig | null>(null)
 const userConfig = ref<LayoutUserConfig | null>(null)
 const pageValidationErrors = ref<string[]>([])
@@ -357,7 +358,9 @@ function pageDraftValues(): LayoutOverlayValues {
   return values
 }
 
-async function loadPageConfig() {
+async function loadPageConfig(options: { clearCurrent?: boolean } = {}) {
+  if (options.clearCurrent) pageConfig.value = null
+  pageLoading.value = true
   pageLoadError.value = ''
   try {
     const cfg = await getLayoutPageConfig(selectedPageKey.value)
@@ -373,6 +376,8 @@ async function loadPageConfig() {
     }
   } catch (error) {
     pageLoadError.value = getErrorMessage(error, '页面布局配置加载失败')
+  } finally {
+    pageLoading.value = false
   }
 }
 
@@ -519,14 +524,14 @@ const sourceRows = computed(() => {
 watch(selectedPageKey, async () => {
   exportText.value = ''
   focusedSlot.value = null
-  await loadPageConfig()
+  await loadPageConfig({ clearCurrent: true })
   if (tab.value === 'report') await runValidationReport()
 })
 
 onMounted(async () => {
   await reloadFieldPolicies()
   await reloadPresets()
-  await loadPageConfig()
+  await loadPageConfig({ clearCurrent: true })
 })
 </script>
 
@@ -547,9 +552,14 @@ onMounted(async () => {
     </template>
 
     <template #main>
-      <div class="layout-pages-view">
+      <div class="layout-pages-view" v-loading="pageLoading && !!pageConfig">
         <AppStateBlock
-          v-if="pageLoadError && !pageConfig"
+          v-if="pageLoading && !pageConfig"
+          state="loading"
+          title="正在加载页面布局配置…"
+        />
+        <AppStateBlock
+          v-else-if="pageLoadError && !pageConfig"
           state="error"
           title="页面布局配置加载失败"
           :description="pageLoadError"

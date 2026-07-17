@@ -93,9 +93,14 @@ class UserRepository:
                 return None
             return v.isoformat() if hasattr(v, "isoformat") else v
         roles = list(r.get("roles") or [])
+        role_names = r.get("role_names") or {}
+        if not isinstance(role_names, dict):
+            role_names = {}
         return {
             "id": r["id"], "tenant_id": r["tenant_id"], "account": r["account"],
             "email": r.get("email"), "role_code": r["role_code"], "roles": roles,
+            # 名称随列表行返回，避免租户管理员因不可读取自定义角色的可分配集合而只能看到角色码。
+            "role_names": role_names,
             "status": r["status"], "perm_ver": int(r["perm_ver"]),
             "last_login_at": _iso(r.get("last_login_at")), "created_at": _iso(r.get("created_at")),
         }
@@ -136,7 +141,9 @@ class UserRepository:
         rows = self.pg.query_df(
             f"SELECT u.id, u.tenant_id, u.account, u.email, u.role_code, u.status, u.perm_ver, "
             f"u.last_login_at, u.created_at, "
-            f"COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{{}}') AS roles "
+            f"COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{{}}') AS roles, "
+            f"COALESCE(jsonb_object_agg(r.code, r.name) FILTER (WHERE r.code IS NOT NULL), "
+            f"'{{}}'::jsonb) AS role_names "
             f"FROM sys_user u "
             f"LEFT JOIN sys_user_role ur ON ur.user_id=u.id "
             f"LEFT JOIN sys_role r ON r.id=ur.role_id {where} "
@@ -151,7 +158,9 @@ class UserRepository:
         df = self.pg.query_df(
             "SELECT u.id, u.tenant_id, u.account, u.email, u.role_code, u.status, u.perm_ver, "
             "u.last_login_at, u.created_at, "
-            "COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles "
+            "COALESCE(array_agg(r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles, "
+            "COALESCE(jsonb_object_agg(r.code, r.name) FILTER (WHERE r.code IS NOT NULL), "
+            "'{}'::jsonb) AS role_names "
             "FROM sys_user u LEFT JOIN sys_user_role ur ON ur.user_id=u.id "
             "LEFT JOIN sys_role r ON r.id=ur.role_id WHERE u.id=%s AND u.deleted_at IS NULL "
             "GROUP BY u.id", [user_id])

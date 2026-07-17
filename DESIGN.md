@@ -172,8 +172,9 @@ Key Characteristics：
 - `LayoutComponentsView` 展示的组件名称、说明、最低尺寸、滚动归属、成长/重排能力和专属特性来自 `COMPONENT_CATALOG`；这些信息变化时必须优先更新 `frontend/src/layout/components.ts`，不要在页面内硬编码第二套说明。
 - `configCapabilities` 是英文能力 key 摘要，用于系统组件页展示组件具备的能力，不等同于“已开放 Web 配置字段”；不要为了展示把它本地化成另一套中文映射。
 - 组件 kind 的语义变化时，必须同步检查 `components.ts` 的 `label`、`description`、`configCapabilities`，`componentSchemas.ts` 的 config shape，`componentPreview.ts` 的预览归类，以及 `schema.ts` 中该 kind 的说明。
+- 系统组件页的可视化预览是给开发和验收人员对照组件形态、状态语义、文案与稳定占位的规范样板，不是业务页面截图，也不证明消费页面已经完成接入。`ready` 可使用代表性原型；`loading / empty / error` 必须直接复用 `AppStateBlock`，不得在预览层维护第二套状态视觉。
 - 只有真实可被页面设置、页面布局或预设消费的字段，才进入 `COMPONENT_FIELD_DEFS`、后端 `layout_config.py` 字段规则和 `pageRegistry.consumedComponentFields`；否则只能停留在 `componentSchemas.ts` 的结构校验或 `configCapabilities` 的能力摘要。
-- 改动系统组件信息后至少运行相关布局测试；涉及前端源码时同时运行构建。
+- 改动系统组件信息后至少运行相关布局测试；改动预览四态时必须验证预览复用 `AppStateBlock`；涉及前端源码时同时运行构建。
 
 核心真实复用组件清单：
 
@@ -244,7 +245,7 @@ Key Characteristics：
 
 ### 四态反馈总则
 
-页面和组件的数据反馈统一按 `ready / loading / empty / error` 四态处理。文档、`COMPONENT_CATALOG.defaultStates`、`LayoutComponentPreview` 和页面实现必须使用同一语义，不新增“暂无/失败/加载中”的私有视觉体系。
+页面和组件的数据反馈统一按 `ready / loading / empty / error` 四态处理，代码枚举以 `frontend/src/layout/schema.ts` 的 `COMPONENT_STATES` 为事实源。文档、`COMPONENT_CATALOG.defaultStates`、`LayoutComponentPreview` 和页面实现必须使用同一语义，不新增“暂无/失败/加载中”的私有视觉体系。
 
 | 状态 | 中文口径 | 使用场景 | 组件和图标 | 文案模板 |
 |---|---|---|---|---|
@@ -257,6 +258,7 @@ Key Characteristics：
 
 - 首次进入页面时，`loading` 不和 `empty` 同时出现；已有数据刷新时保留旧 `ready` 内容并覆盖 `v-loading`，避免闪回空态。
 - `error` 不只依赖全局 toast；主内容、侧栏列表、详情面板、表格局部依赖失败时，失败区域必须留下页内错误态和“重试”或明确原因。
+- 无权限是 `error` 的语义变体，运行时使用 `AppStateBlock state="error" variant="permission"`，不得扩展为第五种顶层状态。
 - `empty` 表示“成功返回但无数据”，不能混用来表达接口失败、无权限或加载中。
 - `ready` 必须呈现业务价值：至少有主体数据、摘要指标、当前过滤条件或来源说明之一；不要用大段说明文字替代真实数据展示。
 - 四态切换不得改变外层 slot 的稳定尺寸；布局系统组件种类的 `loading-state`、`empty-state`、`error-state`、`skeleton` 只作为系统组件和预览语义，业务页面运行时优先复用真实组件和 Element Plus 状态能力。
