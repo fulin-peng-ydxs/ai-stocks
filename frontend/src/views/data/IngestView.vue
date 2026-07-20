@@ -273,9 +273,9 @@ let taskTimer: number | undefined
 function activeCount() {
   return tasks.value.filter((t) => t.status === 'pending' || t.status === 'running').length
 }
-async function loadTasks() {
+async function loadTasks(silent = false) {
   const before = activeCount()
-  taskLoading.value = true
+  if (!silent) taskLoading.value = true
   taskError.value = ''
   try {
     const r = await listTasks({
@@ -288,7 +288,7 @@ async function loadTasks() {
   } catch (error) {
     taskError.value = getErrorMessage(error, '任务中心加载失败')
   } finally {
-    taskLoading.value = false
+    if (!silent) taskLoading.value = false
   }
   const after = activeCount()
   if (before > 0 && after === 0) {
@@ -301,7 +301,10 @@ async function loadTasks() {
     }
   }
   if (taskTimer) { clearTimeout(taskTimer); taskTimer = undefined }
-  if (pageActive && after > 0) taskTimer = window.setTimeout(loadTasks, 2000)
+  // 自动轮询只更新任务数据，不反复触发表格 loading 遮罩，避免页面每两秒闪烁。
+  if (pageActive && after > 0) {
+    taskTimer = window.setTimeout(() => { void loadTasks(true) }, 2000)
+  }
 }
 const refreshTasks = loadTasks   // 兼容旧调用名
 async function loadLogs() {
@@ -585,7 +588,7 @@ onMounted(async () => {
             </div>
           </div>
         </template>
-        <div class="panel-table-wrap">
+        <div class="panel-table-wrap" data-testid="task-center-panel">
           <AppStateBlock
             v-if="taskLoading && !tasks.length"
             state="loading"

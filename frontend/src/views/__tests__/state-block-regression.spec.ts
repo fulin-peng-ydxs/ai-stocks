@@ -62,6 +62,9 @@ vi.mock('@/api/board', () => ({
   computeBoard: vi.fn(),
 }))
 vi.mock('@/api/data', () => ({
+  getDataStatus: vi.fn(),
+  getUpdateLogs: vi.fn(),
+  listTasks: vi.fn(),
   getOverview: vi.fn(),
   getCatalog: vi.fn(),
   getDimensions: vi.fn(),
@@ -74,6 +77,11 @@ vi.mock('@/api/data', () => ({
   markDelisted: vi.fn(),
   createTask: vi.fn(),
   getTask: vi.fn(),
+  getTaskLogs: vi.fn(),
+  resumeTask: vi.fn(),
+  cancelTask: vi.fn(),
+  TASK_LABEL: { update: '每日更新' },
+  STATUS_LABEL: { running: '运行中', done: '已完成' },
   LAYER_DESC: {},
   ISSUE_TYPE_LABEL: { data_gap: '缺口' },
   SEVERITY_LABEL: { high: '高' },
@@ -124,6 +132,7 @@ import * as tradeApi from '@/api/tradeProfile'
 import * as trainingApi from '@/api/training'
 import BoardView from '@/views/BoardView.vue'
 import OverviewView from '@/views/data/OverviewView.vue'
+import IngestView from '@/views/data/IngestView.vue'
 import QualityView from '@/views/data/QualityView.vue'
 import ScreenView from '@/views/ScreenView.vue'
 import BacktestView from '@/views/BacktestView.vue'
@@ -159,7 +168,10 @@ const stubs = {
   LayoutHost: {
     template: '<div><slot name="action"/><slot name="summary"/><slot name="filters"/><slot name="main"/><slot name="footer"/><slot name="overlays"/></div>',
   },
-  AppDataTable: { template: '<div class="app-data-table"><slot/><slot name="empty"/></div>' },
+  AppDataTable: {
+    props: ['loading'],
+    template: '<div class="app-data-table" :data-loading="String(Boolean(loading))"><slot/><slot name="empty"/></div>',
+  },
   AppControlRow: { template: '<div><slot/></div>' },
   AppControlItem: { template: '<label><slot name="label"/><slot/></label>' },
   TradeDatePicker: { template: '<input />' },
@@ -221,6 +233,9 @@ beforeEach(() => {
   ;(dataApi.getCatalog as ReturnType<typeof vi.fn>).mockResolvedValue({ tables: [] })
   ;(dataApi.getDimensions as ReturnType<typeof vi.fn>).mockResolvedValue({ dimensions: [] })
   ;(dataApi.getStockQuality as ReturnType<typeof vi.fn>).mockResolvedValue({ list: [], total: 0 })
+  ;(dataApi.getDataStatus as ReturnType<typeof vi.fn>).mockResolvedValue({})
+  ;(dataApi.getUpdateLogs as ReturnType<typeof vi.fn>).mockResolvedValue({ list: [], total: 0, tables: [] })
+  ;(dataApi.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue({ tasks: [], total: 0 })
   ;(screeningApi.listProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
   ;(backtestApi.prepareBacktest as ReturnType<typeof vi.fn>).mockResolvedValue({ duplicate: null })
   ;(backtestApi.listRuns as ReturnType<typeof vi.fn>).mockResolvedValue({ runs: [] })
@@ -266,6 +281,40 @@ describe('代表性页面四态回归', () => {
     const wrapper = await mountView(QualityView)
     expect(wrapper.text()).toContain('数据质量加载失败')
     expect(wrapper.text()).toContain('quality failed')
+  })
+
+  it('任务中心自动轮询静默刷新，不重复显示表格加载态', async () => {
+    vi.useFakeTimers()
+    let resolvePolling!: (value: unknown) => void
+    const activeResult = {
+      tasks: [{
+        id: 'task-1',
+        task_type: 'update',
+        status: 'running',
+        progress: 0.5,
+        message: '执行中',
+        params: {},
+        created_at: '2026-07-20 10:00:00',
+        updated_at: '2026-07-20 10:01:00',
+      }],
+      total: 1,
+    }
+    ;(dataApi.listTasks as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(activeResult)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolvePolling = resolve }))
+
+    const wrapper = await mountView(IngestView)
+    const taskTables = wrapper.findAll('.app-data-table')
+    expect(taskTables[0].attributes('data-loading')).toBe('false')
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(dataApi.listTasks).toHaveBeenCalledTimes(2)
+    expect(taskTables[0].attributes('data-loading')).toBe('false')
+
+    resolvePolling(activeResult)
+    await flushPromises()
+    wrapper.unmount()
+    vi.useRealTimers()
   })
 
   it('筛选运行失败落到结果区错误态', async () => {
