@@ -202,7 +202,11 @@ export interface ScheduledJobInput {
   trading_day_only: boolean
   enabled: boolean
 }
-export function listSchedules(): Promise<{ jobs: ScheduledJob[]; task_types: TaskType[] }> {
+export function listSchedules(): Promise<{
+  jobs: ScheduledJob[]
+  task_types: TaskType[]
+  quality_issue_types: string[]
+}> {
   return http.get('/data/schedules')
 }
 export function createSchedule(body: ScheduledJobInput): Promise<ScheduledJob> {
@@ -351,7 +355,7 @@ export const TASK_LABEL: Record<TaskType, string> = {
   update: '增量更新', backfill: '历史补数', ingest_date: '指定日期采集',
   ingest_codes: '指定股票采集', rebuild_price_factors: '重算价格因子',
   recompute: '评分维护', verify: '数据质检',
-  checkup: '结构体检', fix: '问题修复', enrich_basic: '退市标记刷新',
+  checkup: '结构体检', fix: '质检问题恢复', enrich_basic: '退市标记刷新',
   audit_cleanup: '审计日志清理',
 }
 export const STATUS_LABEL: Record<TaskStatus, string> = {
@@ -365,6 +369,18 @@ export const ISSUE_TYPE_LABEL: Record<string, string> = {
   null_close: '收盘价非法(丢弃)', ohl_repaired: '开高低修补', mv_missing: '市值缺失',
   mv_gap: '市值缺口(近端)', abnormal_change: '异常涨跌幅', adj_jump: '复权跳变',
   data_gap: '行情缺口(疑似漏采)', stale: '数据滞后',
+}
+
+/** 任务列表/调度/顶栏共用的展示口径：fix 任务带上动态恢复的质检问题类型。 */
+export function taskDisplayLabel(
+  taskType: TaskType | string,
+  params?: Record<string, any> | null,
+): string {
+  const base = TASK_LABEL[taskType as TaskType] ?? taskType
+  const issueType = taskType === 'fix' && typeof params?.issue_type === 'string'
+    ? params.issue_type
+    : ''
+  return issueType ? `${base}·${ISSUE_TYPE_LABEL[issueType] ?? issueType}` : base
 }
 // 各问题类型归属的质量层（M2.9 DM-D15 / M2.9.2 DM-D20），用于质量页/概览按层归类。
 export const ISSUE_LAYER: Record<string, string> = {

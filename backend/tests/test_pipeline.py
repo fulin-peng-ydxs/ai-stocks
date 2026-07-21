@@ -56,7 +56,7 @@ def test_freq_compile_and_text():
 
 
 def test_scheduled_job_crud():
-    """定时任务 CRUD（enabled=False 不触碰调度器）：建/读/删 + 不可调度类型被拒。"""
+    """定时任务 CRUD：普通任务 + 按类型质检恢复可建，非法恢复参数被拒。"""
     with DuckDBClient(db_path=":memory:") as c:
         init_db(c)
         svc = ScheduledJobService(c)
@@ -69,9 +69,24 @@ def test_scheduled_job_crud():
                              freq_type="daily", freq_config={"time": "03:30"},
                              trading_day_only=False, enabled=False)
         assert cleanup["task_type"] == "audit_cleanup" and cleanup["freq_text"] == "每天 03:30"
-        with pytest.raises(ValueError):   # fix 不在可调度类型内
+        repair = svc.create(
+            name="每日恢复行情缺口", task_type="fix", params={"issue_type": "data_gap"},
+            freq_type="daily", freq_config={"time": "17:00"},
+            trading_day_only=True, enabled=False,
+        )
+        assert repair["task_type"] == "fix"
+        assert repair["params"] == {"issue_type": "data_gap"}
+        with pytest.raises(ValueError, match="需选择问题类型"):
             svc.create(name="x", task_type="fix", params={}, freq_type="daily",
                        freq_config={"time": "10:00"}, trading_day_only=False, enabled=False)
+        with pytest.raises(ValueError, match="不接受固定问题 ID"):
+            svc.create(name="x", task_type="fix",
+                       params={"issue_type": "data_gap", "issue_ids": [1]}, freq_type="daily",
+                       freq_config={"time": "10:00"}, trading_day_only=False, enabled=False)
+        with pytest.raises(ValueError):
+            svc.create(name="x", task_type="ingest_codes", params={}, freq_type="daily",
+                       freq_config={"time": "10:00"}, trading_day_only=False, enabled=False)
+        svc.delete(repair["id"])
         svc.delete(cleanup["id"])
         svc.delete(job["id"])
         assert svc.list() == []

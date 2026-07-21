@@ -4,7 +4,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
   listSchedules, createSchedule, updateSchedule, setScheduleEnabled, deleteSchedule, runSchedule,
-  getSources, testSources, SOURCE_LABEL, TASK_LABEL,
+  getSources, testSources, SOURCE_LABEL, TASK_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE,
+  taskDisplayLabel,
   type ScheduledJob, type ScheduledJobInput, type SourceStatus, type TaskType, type FreqType,
 } from '@/api/data'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -51,6 +52,7 @@ const loading = ref(true)
 const loadError = ref('')
 const jobs = ref<ScheduledJob[]>([])
 const taskTypes = ref<TaskType[]>([])
+const qualityIssueTypes = ref<string[]>([...ISSUE_TYPES_ACTIVE])
 const togglingId = ref('')
 
 const sources = ref<SourceStatus[]>([])
@@ -84,6 +86,7 @@ const editingId = ref('')
 const saving = ref(false)
 const form = reactive({
   name: '', task_type: 'update' as TaskType,
+  issue_type: 'null_close',
   date_start: '', date_end: '', years: null as number | null, concurrency: null as number | null,
   freq_type: 'daily' as FreqType,
   time: '15:30', weekdays: [1, 2, 3, 4, 5] as number[], day: 1, cron: '',
@@ -100,7 +103,8 @@ watch(() => form.task_type, (type, prev) => {
 function openCreate() {
   editingId.value = ''
   Object.assign(form, {
-    name: '', task_type: 'update', date_start: '', date_end: '', years: null, concurrency: null,
+    name: '', task_type: 'update', issue_type: qualityIssueTypes.value[0] || 'null_close',
+    date_start: '', date_end: '', years: null, concurrency: null,
     freq_type: 'daily', time: '15:30', weekdays: [1, 2, 3, 4, 5], day: 1, cron: '',
     trading_day_only: true, enabled: true,
   })
@@ -111,6 +115,7 @@ function openEdit(j: ScheduledJob) {
   editingId.value = j.id
   Object.assign(form, {
     name: j.name, task_type: j.task_type,
+    issue_type: j.params?.issue_type || qualityIssueTypes.value[0] || 'null_close',
     date_start: j.params?.date_start || '', date_end: j.params?.date_end || '',
     years: j.params?.years ?? null, concurrency: j.params?.concurrency ?? null,
     freq_type: j.freq_type,
@@ -132,6 +137,9 @@ function buildPayload(): ScheduledJobInput | null {
     params.date_end = form.date_end || form.date_start
   } else if (form.task_type === 'backfill' && form.years) {
     params.years = form.years
+  } else if (form.task_type === 'fix') {
+    if (!form.issue_type) { ElMessage.warning('质检问题恢复需选择问题类型'); return null }
+    params.issue_type = form.issue_type
   }
   if (needsConcurrency.value && form.concurrency) params.concurrency = form.concurrency
   const fc: Record<string, unknown> = {}
@@ -181,7 +189,7 @@ async function remove(j: ScheduledJob) {
 async function runNow(j: ScheduledJob) {
   try {
     await ElMessageBox.confirm(
-      `立即执行一次「${j.name}」（${TASK_LABEL[j.task_type]}）？不等定时时间点直接触发；`
+      `立即执行一次「${j.name}」（${taskDisplayLabel(j.task_type, j.params)}）？不等定时时间点直接触发；`
       + `任务会按自身规则执行；采集类任务在非交易日 / 当日数据未就绪时会自行跳过实际拉取。`,
       '立即执行', { type: 'warning' })
   } catch { return }
@@ -234,6 +242,9 @@ async function load() {
     const r = await listSchedules()
     jobs.value = r.jobs
     taskTypes.value = r.task_types
+    qualityIssueTypes.value = r.quality_issue_types?.length
+      ? r.quality_issue_types
+      : [...ISSUE_TYPES_ACTIVE]
   } catch (error) {
     loadError.value = getErrorMessage(error, '定时任务加载失败')
   } finally { loading.value = false }
@@ -249,14 +260,19 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
       <h2>
         任务调度
         <HelpTip title="这页管什么？" :width="440">
-          ① <b>定时任务</b>——自定义多条定时任务（增量更新 / 历史补数 / 指定日期采集 / 刷新评分 / 数据质检 / 审计清理），
+          ① <b>定时任务</b>——自定义多条定时任务（数据采集 / 评分维护 / 数据质检 / 按问题类型恢复 / 审计清理），
           各自设置频率（每日/每周/每月/cron）、是否仅交易日执行，可启停、立即执行；触发记录在「数据采集」任务中心，
           标注「定时·任务名」。<br />
           ② <b>数据源健康</b>——AKShare / BaoStock 的连通性。
         </HelpTip>
       </h2>
       <div class="page-head-actions">
-        <el-button v-permission="'data-schedule:manage'" type="primary" @click="openCreate">新建定时任务</el-button>
+        <el-button
+          v-permission="'data-schedule:manage'"
+          data-testid="schedule-create"
+          type="primary"
+          @click="openCreate"
+        >新建定时任务</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -297,7 +313,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         <el-table :data="jobs" size="small" class="jobs-tbl" v-loading="loading">
           <el-table-column label="名称" prop="name" min-width="140" show-overflow-tooltip />
           <el-table-column label="任务类型" width="120">
-            <template #default="{ row }">{{ TASK_LABEL[row.task_type as TaskType] ?? row.task_type }}</template>
+            <template #default="{ row }">{{ taskDisplayLabel(row.task_type, row.params) }}</template>
           </el-table-column>
           <el-table-column label="频率" prop="freq_text" min-width="150" show-overflow-tooltip />
           <el-table-column label="仅交易日" width="90" align="center">
@@ -374,17 +390,34 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 
     <template #overlays>
     <!-- 新建/编辑对话框 -->
-    <el-dialog v-model="dlg" :title="dlgTitle" width="520px">
+    <el-dialog v-model="dlg" :title="dlgTitle" width="520px" data-testid="schedule-dialog">
       <el-form label-width="92px">
         <el-form-item label="任务名称">
-          <el-input v-model="form.name" placeholder="如：盘后增量更新" maxlength="40" show-word-limit />
+          <el-input
+            v-model="form.name"
+            data-testid="schedule-name"
+            placeholder="如：盘后增量更新"
+            maxlength="40"
+            show-word-limit
+          />
         </el-form-item>
         <el-form-item label="任务类型">
-          <el-select v-model="form.task_type" style="width: 100%">
+          <el-select v-model="form.task_type" data-testid="schedule-task-type" style="width: 100%">
             <el-option v-for="o in taskTypeOptions()" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
         </el-form-item>
         <!-- 按类型的动态参数 -->
+        <el-form-item v-if="form.task_type === 'fix'" label="问题类型">
+          <el-select v-model="form.issue_type" data-testid="schedule-issue-type" style="width: 100%">
+            <el-option
+              v-for="issueType in qualityIssueTypes"
+              :key="issueType"
+              :label="ISSUE_TYPE_LABEL[issueType] ?? issueType"
+              :value="issueType"
+            />
+          </el-select>
+          <span class="hint">每次触发时动态恢复该类型当前所有“未处理”问题，无问题时正常结束</span>
+        </el-form-item>
         <template v-if="form.task_type === 'ingest_date'">
           <el-form-item label="起始日期">
             <TradeDatePicker v-model="form.date_start" placeholder="必填，仅可选交易日" />
@@ -427,12 +460,18 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <span class="hint">开启后非交易日自动跳过（行情/质检类建议开）</span>
         </el-form-item>
         <el-form-item label="启用">
-          <el-switch v-model="form.enabled" />
+          <el-switch v-model="form.enabled" data-testid="schedule-enabled" />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dlg = false">取消</el-button>
-        <el-button v-permission="'data-schedule:manage'" type="primary" :loading="saving" @click="save">保存</el-button>
+        <el-button
+          v-permission="'data-schedule:manage'"
+          data-testid="schedule-save"
+          type="primary"
+          :loading="saving"
+          @click="save"
+        >保存</el-button>
       </template>
     </el-dialog>
 

@@ -23,9 +23,9 @@ _scheduler = None   # 进程内 APScheduler 单例（BackgroundScheduler）
 _DEFAULT_AUDIT_CLEANUP_NAME = "审计日志清理"
 _DEFAULT_AUDIT_CLEANUP_TIME = "03:30"
 
-# 可配成定时任务的类型：数据采集三项 + 评分维护 + 数据质检（去掉 daily 复合任务概念）
+# 可配成定时任务的类型：原子采集/维护/质检 + 按问题类型动态恢复。
 SCHEDULABLE_TASK_TYPES = (
-    "update", "backfill", "ingest_date", "recompute", "verify", "checkup", "enrich_basic",
+    "update", "backfill", "ingest_date", "recompute", "verify", "checkup", "fix", "enrich_basic",
     "audit_cleanup",
 )
 _WEEKDAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]   # 1..7 → APScheduler 名称
@@ -326,9 +326,19 @@ class ScheduledJobService:
         df = self.c.query_df("SELECT * FROM scheduled_job WHERE id=?", [jid])
         return None if df.empty else self._row(df.iloc[0])
 
-    def _validate(self, task_type: str, freq_type: str, freq_config: dict | None) -> None:
+    def _validate(self, task_type: str, params: dict | None,
+                  freq_type: str, freq_config: dict | None) -> None:
         if task_type not in SCHEDULABLE_TASK_TYPES:
             raise ValueError(f"该任务类型不支持定时: {task_type}（可选 {SCHEDULABLE_TASK_TYPES}）")
+        if task_type == "fix":
+            from backend.dataquality.checker import QUALITY_ISSUE_TYPES
+
+            fix_params = params or {}
+            issue_type = str(fix_params.get("issue_type") or "").strip()
+            if issue_type not in QUALITY_ISSUE_TYPES:
+                raise ValueError(f"质检问题恢复需选择问题类型（可选 {QUALITY_ISSUE_TYPES}）")
+            if fix_params.get("issue_id") is not None or fix_params.get("issue_ids"):
+                raise ValueError("定时恢复按问题类型动态取数，不接受固定问题 ID")
         if freq_type not in _FREQ_TYPES:
             raise ValueError(f"未知频率类型: {freq_type}（可选 {_FREQ_TYPES}）")
         compile_trigger(freq_type, freq_config)   # 提前校验频率配置合法
@@ -338,7 +348,7 @@ class ScheduledJobService:
                trading_day_only: bool, enabled: bool) -> dict:
         if not (name or "").strip():
             raise ValueError("任务名称不能为空")
-        self._validate(task_type, freq_type, freq_config)
+        self._validate(task_type, params, freq_type, freq_config)
         jid = f"job_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         now = datetime.now()
         self.c.execute(
@@ -360,7 +370,7 @@ class ScheduledJobService:
             raise ValueError("定时任务不存在")
         if not (name or "").strip():
             raise ValueError("任务名称不能为空")
-        self._validate(task_type, freq_type, freq_config)
+        self._validate(task_type, params, freq_type, freq_config)
         self.c.execute(
             "UPDATE scheduled_job SET name=?, task_type=?, params=?, freq_type=?, freq_config=?, "
             "trading_day_only=?, enabled=?, updated_at=? WHERE id=?",

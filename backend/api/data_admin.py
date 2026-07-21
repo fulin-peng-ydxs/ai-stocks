@@ -489,9 +489,11 @@ class ScheduledJobIn(BaseModel):
 @router.get("/schedules", response_model=ApiResponse, dependencies=_SCHEDULE)
 def schedules_list() -> ApiResponse:
     """定时任务列表（含频率人话、下次触发、最近触发）+ 可调度类型/频率枚举，前端建表单用。"""
+    from backend.dataquality.checker import QUALITY_ISSUE_TYPES
     from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES, ScheduledJobService
     return ok({"jobs": ScheduledJobService().list(),
-               "task_types": list(SCHEDULABLE_TASK_TYPES)})
+               "task_types": list(SCHEDULABLE_TASK_TYPES),
+               "quality_issue_types": list(QUALITY_ISSUE_TYPES)})
 
 
 @router.post("/schedules", response_model=ApiResponse, dependencies=_SCHEDULE)

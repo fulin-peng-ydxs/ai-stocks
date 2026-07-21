@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
   getDataStatus, getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, getStockQuality,
-  TASK_LABEL, STATUS_LABEL, ISSUE_TYPE_LABEL,
+  TASK_LABEL, STATUS_LABEL, taskDisplayLabel,
   type DataStatus, type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
 } from '@/api/data'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -167,7 +167,8 @@ function logRowClass({ row }: { row: { status: string } }): string {
 }
 const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
-    && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'fix'].includes(t.task_type)))
+    && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
+      'verify', 'fix', 'enrich_basic'].includes(t.task_type)))
 
 // 总耗时：进行中=开始到现在(随 now 每秒刷新)；已结束/人工终止=开始到截止时间(updated_at)。
 const now = ref(Date.now())
@@ -631,8 +632,7 @@ onMounted(async () => {
             </el-table-column>
             <el-table-column label="类型" prop="type" width="150" sortable="custom">
               <template #default="{ row }">
-                {{ TASK_LABEL[row.task_type as TaskType] ?? row.task_type }}<!--
-                -->{{ row.task_type === 'fix' && row.params?.issue_type ? `·${ISSUE_TYPE_LABEL[row.params.issue_type] ?? row.params.issue_type}` : '' }}
+                {{ taskDisplayLabel(row.task_type, row.params) }}
               </template>
             </el-table-column>
             <el-table-column label="来源" width="150" show-overflow-tooltip>
@@ -792,7 +792,7 @@ onMounted(async () => {
     </el-dialog>
 
     <!-- 实时日志抽屉 -->
-    <PageDrawer v-model="logDrawer" :title="logTask ? `${TASK_LABEL[logTask.task_type] ?? logTask.task_type} · 实时日志` : '实时日志'"
+    <PageDrawer v-model="logDrawer" :title="logTask ? `${taskDisplayLabel(logTask.task_type, logTask.params)} · 实时日志` : '实时日志'"
                 size="46%" class="log-drawer" @close="closeLogs">
       <div v-if="logTask" class="log-meta">
         <el-tag :type="taskStatusType(logTask)" size="small" effect="dark">{{ taskStatusLabel(logTask) }}</el-tag>

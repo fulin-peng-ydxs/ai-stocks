@@ -179,8 +179,8 @@
 ```mermaid
 flowchart LR
   A["质检扫描"] --> B["data_quality_issue\nstatus=open"]
-  B --> C{"用户判断"}
-  C -->|修复| D["创建 fix 任务\nstatus=fixing"]
+  B --> C{"手工或定时恢复"}
+  C -->|按问题类型恢复| D["创建 fix 任务\nstatus=fixing"]
   C -->|真实异常/可接受| E["标记 ignored"]
   D --> F["重采/补市值/补缺口/重算复权"]
   F --> G["复检 recheck_clean"]
@@ -199,11 +199,12 @@ flowchart LR
 |----------|----------|------------|------|
 | `update` | 每个交易日收盘后 | 是 | 日常行情与最新市值更新 |
 | `verify` | 每个交易日更新后或隔日 | 可选 | 四层质检写台账 |
+| `fix` | 每个交易日质检后 | 可选 | 每条调度选一种质检问题，触发时动态恢复当前 open 问题 |
 | `checkup` | 每周/每月 | 否 | 结构与字段体检，耗时可控 |
 | `audit_cleanup` | 每日或每周 | 否 | 按 `audit.retention_days` 清理超期审计日志，默认每天 03:30 |
 | `backfill` | 不建议定时 | 否 | 全量任务重，适合手动 |
 
-定时任务触发时如果已有写任务在跑，本次不会排队，会跳过并记录日志。这是为了避免 DuckDB 单写锁下任务堆积。`fix` 修复任务仍由质量台账的人工修复动作触发，不作为通用定时任务开放。
+定时任务触发时如果已有写任务在跑，本次不会排队，会跳过并记录日志。这是为了避免 DuckDB 单写锁下任务堆积；质检扫描与问题恢复也共享该互斥，避免同批质量台账被同时重建和恢复。`fix` 定时任务不保存问题 ID，而是保存单一 `issue_type`；每次触发时再查询该类型当前全部 `open` 问题，无匹配问题时作为成功空跑结束。
 
 ### 5. 与其它模块的关联关系
 
@@ -243,13 +244,13 @@ flowchart LR
 → 数据质检 scan_quality_issues(四层写台账)
 → (可选) 数据体检 DataVerifier
 ```
-可手动 `cli daily`，或在「定时调度」页配 `update`/`verify`/`checkup` 等数据任务按 cron/每日触发（通常仅交易日）；审计日志清理通过 `audit_cleanup` 定时任务执行，不受交易日限制。
+可手动 `cli daily`，或在「定时调度」页配 `update`/`verify`/`fix`/`checkup` 等数据任务按 cron/每日触发（通常仅交易日）；审计日志清理通过 `audit_cleanup` 定时任务执行，不受交易日限制。
 
 ### 3. 质检修复闭环
 ```
-质检发现 → status=open → 用户点修复/一键恢复 → status=fixing(绑 fix_task_id)
+质检发现 → status=open → 手工恢复/按 issue_type 定时恢复 → status=fixing(绑 fix_task_id)
   → 按 issue_type 分派: mv_missing/mv_gap→补市值; data_gap/stale→reconcile_gaps;
-     null_close/abnormal_change→单日重采; adj_jump→整段重采重算复权
+     null_close/ohl_repaired/abnormal_change→单日重采; adj_jump→整段重采重算复权
   → recheck_clean 复检 → 通过=resolved / 未通过=退回 open
 任务失败或服务重启 → fixing 孤儿自动复位 open（不留死锁）；ignored 人工豁免幂等不翻回。
 ```

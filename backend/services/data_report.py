@@ -554,6 +554,16 @@ class DataIntegrityReport:
             return int(self._scalar(
                 "SELECT count(*) FROM daily_bar WHERE code=? AND trade_date=? AND close>0",
                 [code, trade_date])) > 0
+        if issue_type == "ohl_repaired":
+            if trade_date is None:
+                return False
+            # 当前问题在恢复期间已是 fixing；若重采后原始 OHL 仍异常，
+            # 入库闸门会再生成一条 open 问题。以此区分“真正重采正常”与
+            # “仍用收盘价回填”，不能只看库内 OHL 非空就误判恢复成功。
+            return int(self._scalar(
+                "SELECT count(*) FROM data_quality_issue "
+                "WHERE code=? AND trade_date=? AND issue_type='ohl_repaired' AND status='open'",
+                [code, trade_date])) == 0
         if issue_type == "abnormal_change":
             if trade_date is None:
                 return False

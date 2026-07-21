@@ -7,7 +7,7 @@ M2.8-B 增强：
 - **实时日志**（FR-DM-9）：TaskContext.log() 批量写 task_log（节流，DM-D8），前端按 after_seq 增量拉。
 - **checkpoint / 续跑**（FR-DM-10）：处理器把已完成项写 result.checkpoint；服务重启 reconcile() 把
   残留 running/pending 标 interrupted；resume() 按 checkpoint 跳过已完成续跑。
-- **并发互斥**（FR-DM-11）：同类写任务（update/backfill/ingest_*/fix）不允许并发，创建即 409。
+- **并发互斥**（FR-DM-11）：写任务（采集/质检/恢复等）不允许并发，创建即 409。
 - **数据修复**（FR-DM-4）：fix 任务定向重拉单条质检问题对应股票/日期，回写 issue 状态。
 
 数据变更类任务完成后标记评分快照失效；评分维护任务会显式生产 PUBLIC_BOARD_OWNER 公共榜单。
@@ -29,7 +29,7 @@ TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_pric
               "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup")
 # 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
 WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
-                              "rebuild_price_factors", "fix", "enrich_basic"})
+                              "rebuild_price_factors", "verify", "fix", "enrich_basic"})
 
 # 日志保留（DM-D8）
 LOG_MAX_PER_TASK = 2000
@@ -760,7 +760,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 note = ing.reconcile_note(r)
                 ctx.log(f"重采写入 {r['rows']} 行；{note}"
                         f"（内部缺口源端无数据者已确认停牌，末尾滞后不强判停牌）")
-        elif issue_type in ("null_close", "abnormal_change"):
+        elif issue_type in ("null_close", "ohl_repaired", "abnormal_change"):
             if td:
                 ctx.log(f"恢复：重采 {code} {td} 单日行情")
                 ing.ingest_one_daily(code, td, td, ctx=ctx)
@@ -798,7 +798,8 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
 def _h_fix(params: dict, ctx: TaskContext) -> dict:
     """质检问题定向恢复（FR-DM-4，DM-D22）：按问题类型分派恢复手段 → 复检 → 仅复检通过才置已解决。
 
-    支持单条 `issue_id` 或批量 `issue_ids`（单写者模型下，批量在一个任务内顺序恢复，逐条写实时日志）。
+    支持单条 `issue_id`、批量 `issue_ids`，或定时任务使用的 `issue_type`。
+    `issue_type` 会在每次真正执行时动态查询当前 open 问题，不把过期问题 ID 固化到调度定义。
     - mv_missing(L2)        → ingest_valuation([code])（补市值字段，不是重拉行情）
     - data_gap/stale(L4)    → 反向重采缺口区间：补回的入库；源端仍无数据的确认为停牌写 stock_suspension（收敛）
     - null_close/abnormal   → 重采该单日；adj_jump → 重采该股整段 + 重算复权
@@ -813,13 +814,35 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
     ids = params.get("issue_ids")
     if not ids:
         iid = params.get("issue_id")
-        if iid is None:
-            raise ValueError("缺少 issue_id 或 issue_ids")
-        ids = [iid]
+        if iid is not None:
+            ids = [iid]
+        else:
+            from backend.dataquality.checker import QUALITY_ISSUE_TYPES
+
+            issue_type = str(params.get("issue_type") or "").strip()
+            if issue_type not in QUALITY_ISSUE_TYPES:
+                raise ValueError(
+                    f"缺少或非法的 issue_type: {issue_type or '-'}"
+                    f"（可选 {QUALITY_ISSUE_TYPES}）"
+                )
+            # 定时恢复只接管待处理问题。fixing 属于另一任务或异常残留，
+            # 应由在跑任务/reconcile/手工复位收口，避免定时任务抢占归属。
+            ids = c.query_df(
+                "SELECT id FROM data_quality_issue "
+                "WHERE issue_type=? AND status='open' ORDER BY id",
+                [issue_type],
+            )["id"].tolist()
+            ctx.log(f"定时恢复动态取数：{issue_type} 当前待处理 {len(ids)} 条")
     ids = [int(x) for x in ids]
     done_ids = set(int(x) for x in (ctx.checkpoint.get("issue_done_ids") or [])) if ctx.checkpoint else set()
     ids = [x for x in ids if x not in done_ids]
     n = len(ids)
+    if n == 0:
+        issue_type = str(params.get("issue_type") or "").strip()
+        message = f"质检问题恢复完成：{issue_type} 当前无待处理问题"
+        ctx.progress(1.0, message)
+        return {"message": message, "ok": True, "resolved": 0, "failed": 0, "total": 0,
+                "snapshots_marked_stale": 0}
     resolved = 0
     all_affected: list = []
     failed = 0

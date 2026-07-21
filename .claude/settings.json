@@ -7,9 +7,7 @@
       "WebFetch",
       "WebSearch",
       "Glob",
-      "Grep",
-      "mcp__aiot-dm-database__*",
-      "mcp__Claude_Preview__preview_start"
+      "Grep"
     ],
     "deny": [
       "Bash(rm -rf /)",

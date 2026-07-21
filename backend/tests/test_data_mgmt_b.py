@@ -55,6 +55,21 @@ def test_concurrency_mutex(client, monkeypatch):
     _wait(svc, t1)
 
 
+def test_quality_scan_and_repair_share_write_mutex(client, monkeypatch):
+    svc = AsyncTaskService(client)
+
+    def slow_scan(self):
+        time.sleep(0.4)
+        return {}
+
+    monkeypatch.setattr(DataIntegrityReport, "scan_quality_issues", slow_scan, raising=True)
+
+    verify_id = svc.create("verify")
+    with pytest.raises(ConcurrentTaskError):
+        svc.create("fix", {"issue_type": "data_gap"})
+    _wait(svc, verify_id)
+
+
 # ── reconcile + 续跑（FR-DM-10）──
 def test_reconcile_marks_interrupted(client):
     svc = AsyncTaskService(client)
@@ -120,6 +135,106 @@ def test_fix_resolves_issue(client, monkeypatch):
     _wait(svc, tid)
     row = client.query_df("SELECT status, resolved_at FROM data_quality_issue WHERE id=1").iloc[0]
     assert row["status"] == "resolved" and row["resolved_at"] is not None
+
+
+def test_scheduled_fix_resolves_current_open_issues_by_type(client, monkeypatch):
+    """定时 fix 在执行时按类型动态取 open；不处理其它类型/已忽略，空跑正常完成。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+
+    def restore_daily(self, code, start, end, *args, **kwargs):
+        client.execute(
+            "INSERT INTO daily_bar (code, trade_date, open, high, low, close) "
+            "VALUES (?, ?, 10, 10, 10, 10)",
+            [code, start],
+        )
+        return 1
+
+    monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily", restore_daily, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    now = datetime.now()
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detail, detected_at) VALUES "
+        "(1, 'A.SH', DATE '2024-01-03', 'null_close', 'mid', 'open', 'x', ?),"
+        "(2, 'B.SH', DATE '2024-01-03', 'null_close', 'mid', 'ignored', 'x', ?),"
+        "(3, 'C.SH', DATE '2024-01-03', 'abnormal_change', 'mid', 'open', 'x', ?)",
+        [now, now, now],
+    )
+
+    task = _wait(svc, svc.create("fix", {"issue_type": "null_close"}))
+    assert task["status"] == "done"
+    assert task["result"]["ok"] is True and task["result"]["total"] == 1
+    statuses = client.query_df(
+        "SELECT id, status FROM data_quality_issue ORDER BY id"
+    ).set_index("id")["status"].to_dict()
+    assert statuses == {1: "resolved", 2: "ignored", 3: "open"}
+
+    empty = _wait(svc, svc.create("fix", {"issue_type": "null_close"}))
+    assert empty["status"] == "done"
+    assert empty["result"]["ok"] is True and empty["result"]["total"] == 0
+
+
+def test_ohl_repaired_fix_reingests_before_resolve(client, monkeypatch):
+    """OHL 修补问题不再只做复检；必须先重采当日行情。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    called: list[tuple] = []
+
+    def restore_daily(self, code, start, end, *args, **kwargs):
+        called.append((code, start, end))
+        return 1
+
+    monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily", restore_daily, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
+        "VALUES (1, 'A.SH', DATE '2024-01-03', 'ohl_repaired', 'low', 'open', 'x', ?)",
+        [datetime.now()],
+    )
+
+    task = _wait(svc, svc.create("fix", {"issue_type": "ohl_repaired"}))
+    assert task["result"]["ok"] is True
+    assert called == [("A.SH", date(2024, 1, 3), date(2024, 1, 3))]
+
+
+def test_ohl_repaired_fix_stays_open_without_duplicate_when_source_is_still_bad(
+    client, monkeypatch,
+):
+    """原始 OHL 持续异常时复检不通过，原问题退回 open 且不重复增长台账。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+
+    def init_ingestion(instance, source=None):
+        instance.c = client
+
+    def still_bad(instance, code, start, end, *args, **kwargs):
+        instance._record_issues(code, [start], "ohl_repaired", "开高低仍异常")
+        return 1
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", init_ingestion, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_one_daily", still_bad, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
+        "VALUES (1, 'A.SH', DATE '2024-01-03', 'ohl_repaired', 'low', 'open', 'x', ?)",
+        [datetime.now()],
+    )
+
+    task = _wait(svc, svc.create("fix", {"issue_type": "ohl_repaired"}))
+    assert task["result"]["ok"] is False
+    rows = client.query_df(
+        "SELECT id, status, fix_task_id FROM data_quality_issue "
+        "WHERE code='A.SH' AND trade_date=DATE '2024-01-03' AND issue_type='ohl_repaired'"
+    )
+    assert len(rows) == 1 and rows.iloc[0]["status"] == "open"
+    assert rows.iloc[0]["fix_task_id"] is None or pd.isna(rows.iloc[0]["fix_task_id"])
 
 
 # ── 概览缺口 + 逐股质量（FR-DM-1，DM-D9）──

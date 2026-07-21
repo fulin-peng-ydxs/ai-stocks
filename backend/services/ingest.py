@@ -653,21 +653,35 @@ class IngestionService:
         """把一批问题行记入 data_quality_issue（入库即暴露、不静默）。
 
         通用于 L1 入库闸门各类（null_close 丢弃 / ohl_repaired 修补），severity 由类型映射。
+        同一 (code, date, type) 的 open/fixing 问题幂等复用：定时恢复遇到源端持续坏数据时，
+        将原 fixing 问题退回 open，不每次再堆一条重复台账。
         """
         from datetime import datetime
 
         from backend.dataquality.checker import severity_for
 
         sev = severity_for(issue_type)
-        rows = [
-            {
+        rows = []
+        for td in trade_dates:
+            now = datetime.now()
+            existing = self.c.query_df(
+                "SELECT id FROM data_quality_issue WHERE code=? AND trade_date=? AND issue_type=? "
+                "AND status IN ('open','fixing') ORDER BY id LIMIT 1",
+                [code, td, issue_type],
+            )
+            if not existing.empty:
+                self.c.execute(
+                    "UPDATE data_quality_issue SET severity=?, status='open', detail=?, detected_at=?, "
+                    "fix_task_id=NULL WHERE id=?",
+                    [sev, detail, now, int(existing.iloc[0]["id"])],
+                )
+                continue
+            rows.append({
                 "id": int(self.c.query_df("SELECT nextval('seq_quality_issue') AS v").iloc[0]["v"]),
                 "code": code, "trade_date": td, "issue_type": issue_type,
                 "severity": sev, "status": "open",
-                "detail": detail, "detected_at": datetime.now(),
-            }
-            for td in trade_dates
-        ]
+                "detail": detail, "detected_at": now,
+            })
         if not rows:
             return
         tmp = pd.DataFrame(rows)

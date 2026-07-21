@@ -16,7 +16,7 @@ import {
   getDataStatus,
   listTasks,
   STATUS_LABEL,
-  TASK_LABEL,
+  taskDisplayLabel,
   type AsyncTask,
   type DataStatus,
   type TaskStatus,
@@ -137,7 +137,7 @@ function formatDateOnly(value: string | null | undefined): string {
 }
 
 function taskTypeLabel(task: AsyncTask): string {
-  return TASK_LABEL[task.task_type] ?? task.task_type
+  return taskDisplayLabel(task.task_type, task.params)
 }
 
 function taskStatusLabel(status: TaskStatus): string {
