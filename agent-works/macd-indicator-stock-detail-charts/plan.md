@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1–T5 已完成并通过对应阶段验证；T6–T13 尚未开始，本轮未进入后续阶段。
+- 当前进度：T1–T6 已完成并通过对应阶段验证；T7–T13 尚未开始，本轮未进入后续阶段。
 
 ## 2. 当前项目依据
 
@@ -39,14 +39,14 @@
 - `GET /api/stocks/{code}/bars` 与 `GET /api/stocks/{code}/indicators` 均受 `stocks:view` 保护。
 - 指标接口已支持可选 `fields` 业务字段白名单和 `lookback=1..6000`；未传 `fields` 时仍返回旧完整指标行，传入时始终保留 `trade_date`。
 - 指标序列化已统一把 pandas/NumPy 标量转换为原生 JSON 类型，并把 `NaN`、`pd.NA`、正负无穷转换为 `null`。
-- 当前 `StockDetailView.vue` 用同一个 `Promise.all` 拉行情、最新指标和原始最新价，任一指标请求失败会把整个主图链路置为错误态，不满足 R9 的局部失败隔离。
+- `StockDetailView.vue` 已在 T6 将行情、指标序列、原始最新价和买卖评估拆为独立请求通道，分别使用取消信号与请求序号守卫；指标局部失败不再把主图链路置为整体错误。
 
 ### 2.3 页面、图表与布局
 
 - 页面入口、路由和菜单已经存在：`/stocks/:code`、`StockDetailView.vue`、`pageKey=stock-detail`，不新增路由或菜单。
 - 页面已使用 `LayoutHost` 和 `detail` 原型；`detail` 主区由 `LayoutHost` 的 `.v-scroll` 承担内部滚动，适合承载最低 650px 的图表工作区和下方顺序卡片。
 - `CandleChart.vue` 继续保持单个 ECharts 实例、固定 480px、K线与量能双 grid 及原 props 契约；其 MA/VMA、格式化和主题取色已抽到 `stock-chart/chartUtils.ts`，盘感训练和回测继续复用旧组件。
-- `StockChartWorkspace.vue` 已完成按面板分实例、唯一 ECharts group、共享日期轴/缩放、MACD 信号、局部状态和可访问分隔线；页面数据请求和 `StockDetailView` 正式消费仍由 T6 承接。
+- `StockChartWorkspace.vue` 已完成按面板分实例、唯一 ECharts group、共享日期轴/缩放、MACD 信号、局部状态和可访问分隔线，并已由 `StockDetailView` 正式消费；`DESIGN.md` 已登记其真实组件职责与使用规则。
 - `DESIGN.md` 明确禁止页面写 `calc(100vh - Npx)`，要求金融涨跌使用 `--market-up-color` / `--market-down-color`，四态使用 `AppStateBlock`，页面设置使用 `PageSettingsDrawer`。
 
 ### 2.4 用户偏好与权限
@@ -78,14 +78,14 @@
 | R1 | EMA 与 `macd_diff/macd_dea/macd_hist` 三个数值原子结果 | 已完成（T9 总回归待执行） | T1、T9 |
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成（T9 总回归待执行） | T1、T9 |
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成（T9/T13 总回归待执行） | T2、T9、T13 |
-| R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 部分完成（T3 已完成，页面对齐与总回归待执行） | T3、T6、T9、T10、T11、T13 |
-| R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 部分完成（T5 工作区组件已完成，页面接入与总回归待执行） | T5、T6、T10、T11 |
+| R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 部分完成（T3/T6 已完成，总回归待执行） | T3、T6、T9、T10、T11、T13 |
+| R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 部分完成（T5/T6 已完成，总回归待执行） | T5、T6、T10、T11 |
 | R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 部分完成（T4 状态模型已完成） | T4、T7、T10、T11 |
 | R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 部分完成（T4 状态模型、T5 分隔线与提交事件已完成） | T4、T5、T10、T11 |
 | R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 部分完成（T4 偏好结构与兼容已完成） | T4、T7、T9、T10、T11、T13 |
-| R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 部分完成（T3 权限/接口、T5 MACD 面板局部状态已验证） | T3、T5、T6、T8、T10、T11 |
+| R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 部分完成（T3/T5/T6 已完成对应部分，页面视觉总验收待执行） | T3、T5、T6、T8、T10、T11 |
 | R15 | 响应式、主题、pointer/键盘可访问性和 reduced motion | 部分完成（T5 组件与关键视口已验证） | T5、T8、T10、T11、T12 |
-| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 部分完成（T3 接口、T4 偏好、T5 图表生命周期已验证） | T3、T4、T5、T6、T10、T11、T13 |
+| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 部分完成（T3–T6 已完成对应部分，总回归待执行） | T3、T4、T5、T6、T10、T11、T13 |
 
 ### 3.2 可选增强（建议项处理）
 
@@ -336,14 +336,14 @@ flowchart LR
 | 必须实现 | R1 | `requirement.md §5.1`：EMA 与三个数值原子结果 | EMA、三数值列、暖机、空值、算法版本、单股/全市场一致 | T1、T9 | 已完成（T9 总回归待执行） | 一致 | 已知公式、前缀稳定、两路径容差单测 | T1 定向测试通过；固定 12/26/9，不开放参数。 |
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成（T9 总回归待执行） | 一致 | 交叉边界和缺失段单测 | T1 定向测试通过；空值保留 null，下游按不成立处理。 |
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 已完成（T9/T13 总回归待执行） | 一致 | repo/API/筛选/评分/买卖方案测试 | T2 定向与完整相关文件回归通过；启动 seed 同时修复全新库目录为空的存量初始化缺口，影响面在 §7 单列。 |
-| 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 部分完成（T3 已完成） | 一致 | API、Vitest、Playwright | T3 已完成安全序列契约；页面按日期对齐和总回归留在后续任务。 |
-| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 部分完成（T5 工作区组件已完成） | 一致 | option/组件测试、固定样本、截图和 E2E | T5 已验证信号标签只做纵向 lane、label/line/anchor 同 X；页面正式消费留 T6。 |
+| 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 部分完成（T3/T6 已完成） | 一致 | API、Vitest、Playwright | 安全序列契约和页面按交易日对齐均已落地；总回归留后续任务。 |
+| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 部分完成（T5/T6 已完成） | 一致 | option/组件测试、固定样本、截图和 E2E | 工作区已由真实个股详情消费，三视口 E2E 已验证默认三图和局部重试；总回归留后续任务。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 部分完成（T4 状态模型已完成） | 一致 | 归一化单测、抽屉 E2E | 9 种组合与自动交换已测；抽屉和实际面板留待 T7。 |
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T10、T11 | 部分完成（T4/T5 已完成） | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | pointermove 只发 draft，pointerup/pointercancel/停用终态只发一次 commit；页面偏好消费与 E2E 留后续。 |
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4 偏好结构与兼容已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | 旧值递归补默认、非法组合局部回退和 dirty-before-hydrate 已测。 |
-| 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3/T5 已完成对应部分） | 一致 | 状态测试、403/失败注入 E2E | T5 已实现 MACD loading/insufficient/error 稳定覆盖和局部重试；页面请求隔离留 T6/T8。 |
+| 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3/T5/T6 已完成对应部分） | 一致 | 状态测试、403/失败注入 E2E | 行情错误/空态/403 与 MACD loading/insufficient/error 已分层，真实页面局部失败重试已测；页面视觉总验收留 T8。 |
 | 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 部分完成（T5 组件已完成） | 一致 | 样式/契约测试、build、主题截图 | T5 已验证 token、1100×620、键盘/ARIA和 reduced-motion；页面级视口总验收留后续。 |
-| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3/T4/T5 已完成对应部分） | 一致 | 竞态和生命周期测试、E2E | KeepAlive 停用释放实例/监听、恢复只重建一组已测；页面请求竞态留 T6。 |
+| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3–T6 已完成对应部分） | 一致 | 竞态和生命周期测试、E2E | 行情、指标、报价和买卖评估均有独立取消/序号守卫，KeepAlive 停用取消、激活恢复已落地；总回归留后续。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
 | 暂不实现 | R12 | `requirement.md §4.3`：其他周期 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 仅日线前复权。 |
@@ -591,7 +591,7 @@ flowchart LR
 
 ### 6.6 任务 T6：接入个股页面并拆分请求竞态
 
-- 状态：待开始
+- 状态：已完成
 - 对应需求：R4、R5、R9、R16。
 - 依赖：T3、T5。
 - 涉及文件：
@@ -613,7 +613,23 @@ flowchart LR
   - 指标失败只让 MACD 面板进入局部 error；最新指标快照保留已有值，初次无值显示 `—`，不阻断 K线/量能。
 - 验证方式：请求 mock、延迟响应竞态、取消、局部失败和无权限测试。
 - 完成标准：旧响应不会覆盖新状态，R9 分层成立。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-23）。
+  - `StockDetailView` 已用 `StockChartWorkspace` 替换原 `CandleChart` 卡片，消费 `useStockChartPreferences` 的当前槽位和组合高度；图表设置抽屉选项与高度持久化事件仍按阶段边界留给 T7。
+  - 指标请求一次携带八个快照字段和五个 MACD 字段，lookback 与行情加载边界一致；工作区继续按 `trade_date` 对齐，不按数组位置拼接。`getIndicators` 使用局部错误反馈并关闭重复全局 toast，旧无参数调用的 URL/参数语义不变。
+  - 行情、指标、原始最新价和买卖评估拆为四个请求通道，各自持有 `AbortController + sequence`；范围变化只刷新行情和指标，复权只刷新行情，辅助图显隐不请求数据，报价和买卖评估不被范围/复权连带刷新。
+  - 快速切换范围或买卖方案时先取消旧请求，并以序号和当前方案二次校验响应；KeepAlive 停用时记录在途通道并取消，激活后只恢复原本在途的请求。
+  - 行情首次失败使用页面错误态，已有行情刷新失败保留旧图并显示紧凑错误，无行情使用 empty；HTTP 403 使用 `AppStateBlock variant=permission` 且不展示旧报价。MACD 加载、历史不足和局部失败只覆盖 MACD 面板，失败保留旧快照并提供“重试 MACD”。
+  - `KlineRangeSelect` 新增可选 `testId`，个股页使用稳定 `stock-detail-range` 锚点；`DESIGN.md` 已登记 `StockChartWorkspace` 的真实组件职责。通用 HTTP 状态提取收敛到 `utils/error.ts::getErrorStatus`，审计页同步复用，无第二套状态组件或错误状态解析。
+  - 复用判断：
+    - 已查找的同类实现：详情页原请求取消、`AuditLogView` 请求序号/403、`AppStateBlock` 四态、`useStockChartPreferences` 组合状态、项目 E2E 登录 helper。
+    - 已复用：`StockChartWorkspace`、`AppStateBlock`、`useStockChartPreferences`、`getErrorMessage`、`loginAsDebugUser` 和既有 `LayoutHost`/设置抽屉。
+    - 本次新增复用单元：`getErrorStatus` 作为通用 HTTP 状态提取，原审计页同步迁移；`KlineRangeSelect.testId` 作为可选稳定自动化锚点，不改变既有调用方。
+    - 未抽取的重复点及理由：四个 `RequestChannel` 共享页面内小型 helper，但不抽成通用 composable；行情、指标、报价和买卖评估的触发条件、旧值保留和恢复规则只属于个股详情，跨页面抽象会泄漏领域状态。
+    - 同步维护：`DESIGN.md` 真实组件清单、页面/API/错误工具测试和真实页面 Playwright。
+  - 页面定向测试 `frontend/src/views/__tests__/StockDetailView.spec.ts` 为 7 passed，覆盖初始请求契约、复权/范围/显隐刷新边界、MACD 局部失败与重试、范围旧响应、买卖评估旧响应、取消信号、403 permission 和历史不足；相关 API、错误工具、工作区、偏好及审计页定向回归共 58 passed。
+  - 真实页面 Playwright `npm run test:e2e -- stock-detail-chart-workspace.spec.ts` 使用 `debug_stocks_only`，在 1100×620、1366×768、1440×900 注入一次指标 503，验证三图仍在、MACD 局部重试恢复和范围切换重新请求指标，结果 3 passed。
+  - 前端全量回归 `64 files / 411 tests passed`；`npm run build` 通过，仅有既有依赖注释位置和大 chunk 告警；`git diff --check` 通过。
+  - 本阶段未增加图表二/三设置项、未接收高度 commit 写偏好、未修改恢复默认闭环，T7 尚未开始。
 
 ### 6.7 任务 T7：接入设置抽屉、自动保存和恢复默认
 
@@ -846,9 +862,11 @@ WHERE is_builtin = TRUE
   - T4 前端全量回归 `59 files / 387 tests passed`，正式构建通过；本阶段无模板、样式或点击入口变更，不执行浏览器视觉验收。
   - T5 已完成：三/二/一图、日期对齐、完整 K线 tooltip、MACD 零轴与单边范围、日期轴首尾向内对齐、信号同 X、双工作区 group 隔离、底部轴迁移、局部状态、ARIA、pointercancel、键盘 2%、隐藏销毁、KeepAlive 往返和旧 `CandleChart` 回归定向 15 passed；连同 T4 偏好模型为 38 passed。
   - T5 前端全量回归 `62 files / 402 tests passed`，正式构建通过；可重复 Playwright 夹具在 1100×620、1366×768、1440×900 三项目覆盖明暗主题、三种可见数量、局部错误、键盘调整、横向溢出和控制台错误，日期轴边界修复后复跑仍为 3 passed；浅色/深色实际画布确认首日 `2026-04-01` 和末日标签完整。
+  - T6 已完成：真实详情页消费三图工作区；行情/指标/报价/买卖评估独立取消与序号守卫；复权、范围和显隐刷新边界；MACD 局部失败/重试、历史不足、行情错误/空态/403 均有自动化证据，相关定向回归 58 passed。
+  - T6 前端全量回归 `64 files / 411 tests passed`，正式构建通过；真实页面 Playwright 使用最小 `stocks:view` 账号在三关键视口完成指标 503 注入、局部重试和范围刷新验证，3 passed。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
-  - T6–T13 尚未开始；真实个股页面接入及其业务 Playwright、发布 smoke 的验证均保留到对应阶段，不提前执行。
+  - T7–T13 尚未开始；设置抽屉、高度持久化、页面视觉总验收和发布 smoke 均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵
 

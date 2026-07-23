@@ -29,6 +29,7 @@ import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { dictTagStyleByCode } from '@/utils/dictColor'
+import { getErrorStatus } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
 
 const pageKey = 'audit-log'
@@ -273,10 +274,6 @@ function buildQuery(): AuditQuery {
   }
 }
 
-function errorStatus(error: unknown): number | undefined {
-  return (error as { response?: { status?: number } })?.response?.status
-}
-
 async function loadSummary(silent = false) {
   const seq = ++summaryRequestSeq
   if (!silent) {
@@ -319,7 +316,7 @@ async function loadList(silent = false) {
     }
   } catch (error) {
     if (seq === listRequestSeq) {
-      if (errorStatus(error) === 403) permissionError.value = true
+      if (getErrorStatus(error) === 403) permissionError.value = true
       else if (!silent) loadError.value = true
     }
   } finally {

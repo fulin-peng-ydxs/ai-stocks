@@ -12,3 +12,7 @@ export function getErrorMessage(error: unknown, fallback = '请求失败'): stri
   }
   return fallback
 }
+
+export function getErrorStatus(error: unknown): number | undefined {
+  return (error as { response?: { status?: number } })?.response?.status
+}

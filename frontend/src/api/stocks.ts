@@ -1,5 +1,6 @@
 // 个股查询 API（对应 backend/api/stocks.py）
 import http from './client'
+import type { AppRequestConfig } from './client'
 
 export interface StockBasic {
   code: string
@@ -103,7 +104,11 @@ export function getIndicators(
   const query = params
     ? { ...params, fields: params.fields?.join(',') }
     : undefined
-  return http.get(`/stocks/${code}/indicators`, { params: query, signal })
+  return http.get(`/stocks/${code}/indicators`, {
+    params: query,
+    signal,
+    skipGlobalError: true,
+  } as AppRequestConfig)
 }
 
 export interface StockSignal {

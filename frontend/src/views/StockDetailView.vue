@@ -1,9 +1,28 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  ref,
+  watch,
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, Close } from '@element-plus/icons-vue'
-import { getBars, getIndicators, getTradeEval, listStocks, type Bar, type StockBasic, type TradeEval } from '@/api/stocks'
+import {
+  getBars,
+  getIndicators,
+  getTradeEval,
+  listStocks,
+  type Bar,
+  type IndicatorField,
+  type IndicatorRow,
+  type StockBasic,
+  type TradeEval,
+} from '@/api/stocks'
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
 import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -15,16 +34,18 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
+import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
 import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
+import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import {
   createDefaultStockChartPreferences,
   useStockChartPreferences,
 } from '@/composables/useStockChartPreferences'
-import CandleChart from '@/components/CandleChart.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -135,16 +156,20 @@ async function gotoNeighbor(dir: -1 | 1) {
     return gotoCode(stockSet.neighbor(code.value, dir))
   }
 }
-const loading = ref(false)
-const error = ref('')
-const adjust = ref<string>(settings.adjustMode || '')
+const barsLoading = ref(true)
+const barsError = ref('')
+const barsPermissionDenied = ref(false)
+const indicatorLoading = ref(true)
+const indicatorError = ref('')
+const indicatorRows = ref<IndicatorRow[]>([])
+const quoteLoading = ref(true)
 // 显示范围（缩放）：默认来自全局 K 线偏好，数据始终全量加载，可自由拖动看全部
 const { validDefault: klineDefault } = useKlinePrefs()
 const viewDays = ref(klineDefault.value)
 const bars = ref<Bar[]>([])
 const name = ref('')
 const latestQuote = ref<Bar | null>(null)
-const latest = ref<Record<string, unknown> | null>(null)
+const latest = ref<IndicatorRow | null>(null)
 
 // 始终至少加载 5 年数据保证 MA60/MA120 有足够热身窗口，displayBars 控制图表可见范围
 const MIN_HISTORY_DAYS = 1250
@@ -160,7 +185,7 @@ const latestPct = computed(() => {
 const latestClose = computed(() => latestQuote.value?.close ?? null)
 
 // 个股详情页展示的关键指标（取最新一日）
-const INDICATOR_FIELDS: { key: string; label: string }[] = [
+const INDICATOR_FIELDS = [
   { key: 'ma20', label: 'MA20' },
   { key: 'ma60', label: 'MA60' },
   { key: 'dist_to_high_2y', label: '距两年高(比)' },
@@ -169,8 +194,34 @@ const INDICATOR_FIELDS: { key: string; label: string }[] = [
   { key: 'ma20_up', label: 'MA20 向上' },
   { key: 'is_platform_breakout', label: '平台突破' },
   { key: 'is_vol_breakout', label: '放量突破' },
-]
+] as const
+const MACD_FIELDS = [
+  'macd_diff',
+  'macd_dea',
+  'macd_hist',
+  'macd_golden_cross',
+  'macd_dead_cross',
+] as const satisfies readonly IndicatorField[]
+const DETAIL_INDICATOR_FIELDS = [
+  ...INDICATOR_FIELDS.map((field) => field.key),
+  ...MACD_FIELDS,
+] as readonly IndicatorField[]
 const visibleIndicatorFields = computed(() => INDICATOR_FIELDS.filter((f) => settings.indicators[f.key as keyof typeof settings.indicators]))
+const adjustLabel = computed(() => {
+  if (settings.adjustMode === 'qfq') return '前复权'
+  if (settings.adjustMode === 'hfq') return '后复权'
+  return '不复权'
+})
+const hasCompleteMacd = computed(() => indicatorRows.value.some((row) => (
+  typeof row.macd_diff === 'number'
+  && typeof row.macd_dea === 'number'
+  && typeof row.macd_hist === 'number'
+)))
+const macdState = computed<MacdPanelState>(() => {
+  if (indicatorLoading.value) return 'loading'
+  if (indicatorError.value) return 'error'
+  return hasCompleteMacd.value ? 'ready' : 'insufficient'
+})
 
 function fmt(v: unknown): string {
   if (v === null || v === undefined) return '—'
@@ -194,71 +245,200 @@ const tradeEval = ref<TradeEval | null>(null)
 const tradeLoading = ref(false)
 const tradeError = ref('')
 
-// 同一详情标签内切换复权或区间时取消旧请求，避免较慢响应覆盖最新数据。
-let reqCtrl: AbortController | null = null
+interface RequestChannel {
+  controller: AbortController | null
+  sequence: number
+}
+
+function createRequestChannel(): RequestChannel {
+  return { controller: null, sequence: 0 }
+}
+
+const barsRequest = createRequestChannel()
+const indicatorRequest = createRequestChannel()
+const quoteRequest = createRequestChannel()
+const tradeRequest = createRequestChannel()
+
+function beginRequest(channel: RequestChannel) {
+  channel.controller?.abort()
+  const controller = new AbortController()
+  const sequence = ++channel.sequence
+  channel.controller = controller
+  return { controller, sequence }
+}
+
+function isCurrentRequest(
+  channel: RequestChannel,
+  controller: AbortController,
+  sequence: number,
+): boolean {
+  return channel.sequence === sequence && !controller.signal.aborted
+}
+
+function cancelRequest(channel: RequestChannel): void {
+  channel.sequence += 1
+  channel.controller?.abort()
+  channel.controller = null
+}
+
+function cancelDetailRequests(): void {
+  cancelRequest(barsRequest)
+  cancelRequest(indicatorRequest)
+  cancelRequest(quoteRequest)
+  cancelRequest(tradeRequest)
+}
+
+let resumeBarsRequest = false
+let resumeIndicatorRequest = false
+let resumeQuoteRequest = false
+let resumeTradeRequest = false
+
 function isAbort(e: unknown): boolean {
   const c = e as { code?: string; name?: string }
   return c?.code === 'ERR_CANCELED' || c?.name === 'CanceledError'
 }
 
-async function evalTrade(signal?: AbortSignal) {
-  if (!tradeId.value) return
+async function evalTrade() {
+  const profileId = tradeId.value
+  if (!profileId) {
+    cancelRequest(tradeRequest)
+    tradeEval.value = null
+    tradeLoading.value = false
+    return
+  }
+  const { controller, sequence } = beginRequest(tradeRequest)
   tradeLoading.value = true
   tradeError.value = ''
   try {
-    const r = await getTradeEval(code.value, tradeId.value, undefined, signal)
-    if (!signal?.aborted) tradeEval.value = r
+    const result = await getTradeEval(code.value, profileId, undefined, controller.signal)
+    if (isCurrentRequest(tradeRequest, controller, sequence) && tradeId.value === profileId) {
+      tradeEval.value = result
+    }
   } catch (e) {
-    if (!isAbort(e)) {
+    if (!isAbort(e) && isCurrentRequest(tradeRequest, controller, sequence)) {
       tradeEval.value = null
-      tradeError.value = (e as Error).message || '买卖信号加载失败'
+      tradeError.value = getErrorMessage(e, '买卖信号加载失败')
     }
   } finally {
-    if (!signal?.aborted) tradeLoading.value = false
+    if (isCurrentRequest(tradeRequest, controller, sequence)) {
+      tradeLoading.value = false
+      tradeRequest.controller = null
+    }
   }
 }
 
-async function load() {
-  reqCtrl?.abort()                      // 取消上一次在途请求
-  const ctrl = new AbortController()
-  reqCtrl = ctrl
-  loading.value = true
-  error.value = ''
+async function loadBars() {
+  const { controller, sequence } = beginRequest(barsRequest)
+  barsLoading.value = true
+  barsError.value = ''
+  barsPermissionDenied.value = false
   try {
-    const [b, ind, quote] = await Promise.all([
-      getBars(code.value, { adjust: adjust.value, lookback: chartLookback.value }, ctrl.signal),
-      getIndicators(code.value, { lookback: 1 }, ctrl.signal),
-      getBars(code.value, { adjust: '', lookback: 1 }, ctrl.signal),
-    ])
-    if (ctrl.signal.aborted) return
-    bars.value = b.bars
-    name.value = b.name || ''
-    latest.value = ind.indicators.length ? ind.indicators[ind.indicators.length - 1] : null
-    latestQuote.value = quote.bars.length ? quote.bars[quote.bars.length - 1] : null
-    if (tradeId.value) evalTrade(ctrl.signal)  // 不阻塞主图
+    const result = await getBars(
+      code.value,
+      { adjust: settings.adjustMode || '', lookback: chartLookback.value },
+      controller.signal,
+    )
+    if (!isCurrentRequest(barsRequest, controller, sequence)) return
+    bars.value = result.bars
+    name.value = result.name || ''
   } catch (e) {
-    if (isAbort(e)) return
-    error.value = (e as Error).message
+    if (isAbort(e) || !isCurrentRequest(barsRequest, controller, sequence)) return
+    barsPermissionDenied.value = getErrorStatus(e) === 403
+    if (barsPermissionDenied.value) {
+      cancelRequest(quoteRequest)
+      quoteLoading.value = false
+      latestQuote.value = null
+    }
+    barsError.value = getErrorMessage(e, '个股行情加载失败')
   } finally {
-    if (reqCtrl === ctrl) loading.value = false  // 仅最新一次负责收尾
+    if (isCurrentRequest(barsRequest, controller, sequence)) {
+      barsLoading.value = false
+      barsRequest.controller = null
+    }
   }
 }
-watch(viewDays, () => load())
-watch(() => settings.adjustMode, (value) => {
-  adjust.value = value || ''
-  load()
+
+async function loadIndicators() {
+  const { controller, sequence } = beginRequest(indicatorRequest)
+  indicatorLoading.value = true
+  indicatorError.value = ''
+  try {
+    const result = await getIndicators(
+      code.value,
+      { lookback: chartLookback.value, fields: DETAIL_INDICATOR_FIELDS },
+      controller.signal,
+    )
+    if (!isCurrentRequest(indicatorRequest, controller, sequence)) return
+    indicatorRows.value = result.indicators
+    latest.value = result.indicators.at(-1) ?? null
+  } catch (e) {
+    if (isAbort(e) || !isCurrentRequest(indicatorRequest, controller, sequence)) return
+    indicatorError.value = getErrorStatus(e) === 403
+      ? '无权限查看 MACD 指标，请联系系统管理员调整权限'
+      : getErrorMessage(e, 'MACD 指标加载失败，K线与量能不受影响')
+  } finally {
+    if (isCurrentRequest(indicatorRequest, controller, sequence)) {
+      indicatorLoading.value = false
+      indicatorRequest.controller = null
+    }
+  }
+}
+
+async function loadLatestQuote() {
+  const { controller, sequence } = beginRequest(quoteRequest)
+  quoteLoading.value = true
+  try {
+    const result = await getBars(
+      code.value,
+      { adjust: '', lookback: 1 },
+      controller.signal,
+    )
+    if (!isCurrentRequest(quoteRequest, controller, sequence)) return
+    latestQuote.value = result.bars.at(-1) ?? null
+  } catch (e) {
+    if (!isAbort(e) && isCurrentRequest(quoteRequest, controller, sequence)) {
+      latestQuote.value = null
+    }
+  } finally {
+    if (isCurrentRequest(quoteRequest, controller, sequence)) {
+      quoteLoading.value = false
+      quoteRequest.controller = null
+    }
+  }
+}
+
+async function reloadRangeData() {
+  await Promise.all([loadBars(), loadIndicators()])
+}
+
+watch(viewDays, () => {
+  void reloadRangeData()
+})
+watch(() => settings.adjustMode, () => {
+  void loadBars()
 })
 
 onMounted(async () => {
   await auth.ensureLoaded().catch(() => undefined)
   clearUnauthorizedGroupSet()
-  try {
-    tradeProfiles.value = await listTradeProfiles()
-    if (tradeProfiles.value.length) tradeId.value = tradeProfiles.value[0].id
-  } catch {
-    /* 方案列表失败不阻塞 */
-  }
-  await Promise.all([load(), loadGroups(), loadStockGroups()])
+  const tradeProfilesPromise = (async () => {
+    try {
+      tradeProfiles.value = await listTradeProfiles()
+      if (tradeProfiles.value.length) {
+        tradeId.value = tradeProfiles.value[0].id
+        await evalTrade()
+      }
+    } catch {
+      /* 方案列表失败不阻塞图表。 */
+    }
+  })()
+  await Promise.all([
+    reloadRangeData(),
+    loadLatestQuote(),
+    tradeProfilesPromise,
+    loadGroups(),
+    loadStockGroups(),
+  ])
 })
 
 // ── 分组编辑 ──
@@ -484,8 +664,31 @@ async function onCollectionVisibleChange(visible: boolean) {
   attachDropdownScroll()
 }
 
+onDeactivated(() => {
+  resumeBarsRequest = barsLoading.value
+  resumeIndicatorRequest = indicatorLoading.value
+  resumeQuoteRequest = quoteLoading.value
+  resumeTradeRequest = tradeLoading.value
+  cancelDetailRequests()
+  barsLoading.value = false
+  indicatorLoading.value = false
+  quoteLoading.value = false
+  tradeLoading.value = false
+})
+
+onActivated(() => {
+  if (resumeBarsRequest) void loadBars()
+  if (resumeIndicatorRequest) void loadIndicators()
+  if (resumeQuoteRequest) void loadLatestQuote()
+  if (resumeTradeRequest) void evalTrade()
+  resumeBarsRequest = false
+  resumeIndicatorRequest = false
+  resumeQuoteRequest = false
+  resumeTradeRequest = false
+})
+
 onBeforeUnmount(() => {
-  reqCtrl?.abort()
+  cancelDetailRequests()
   if (dropdownSearchTimer) clearTimeout(dropdownSearchTimer)
   detachDropdownScroll()
 })
@@ -558,7 +761,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="page-head-actions">
         <div class="ops">
-          <KlineRangeSelect v-model="viewDays" />
+          <KlineRangeSelect v-model="viewDays" test-id="stock-detail-range" />
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -618,27 +821,47 @@ onBeforeUnmount(() => {
     </div>
 
     <AppStateBlock
-      v-if="error && !bars.length"
+      v-if="barsPermissionDenied || (barsError && !bars.length)"
       state="error"
-      title="个股详情加载失败"
-      :description="error"
-      retry
-      @retry="load"
+      :variant="barsPermissionDenied ? 'permission' : undefined"
+      :title="barsPermissionDenied ? '无权限查看个股详情' : '个股详情加载失败'"
+      :description="barsPermissionDenied ? '请联系系统管理员调整股票查看权限' : barsError"
+      :retry="!barsPermissionDenied"
+      @retry="loadBars"
+    />
+
+    <AppStateBlock
+      v-else-if="!barsLoading && !bars.length"
+      state="empty"
+      title="暂无个股行情"
+      description="当前股票在所选范围内没有可用行情"
     />
 
     <template v-else>
       <AppStateBlock
-        v-if="error"
+        v-if="barsError"
         state="error"
         size="compact"
         title="个股详情刷新失败"
-        :description="error"
+        :description="barsError"
         retry
-        @retry="load"
+        @retry="loadBars"
       />
-      <el-card shadow="never" v-loading="loading" :body-style="{ padding: '0' }">
-        <CandleChart :bars="displayBars" :warmup-bars="warmupBars" :zoom-start="0" :zoom-end="100" />
-      </el-card>
+      <StockChartWorkspace
+        v-loading="barsLoading"
+        :bars="displayBars"
+        :warmup-bars="warmupBars"
+        :indicators="indicatorRows"
+        :slot2="chartPreferences.preferences.value.slot2"
+        :slot3="chartPreferences.preferences.value.slot3"
+        :height-ratios="chartPreferences.currentRatios.value"
+        :adjust-label="adjustLabel"
+        :macd-state="macdState"
+        :macd-error="indicatorError"
+        :zoom-start="0"
+        :zoom-end="100"
+        @retry-macd="loadIndicators"
+      />
 
       <el-card shadow="never" class="ind-card" header="最新指标快照">
         <el-descriptions :column="4" border size="small">

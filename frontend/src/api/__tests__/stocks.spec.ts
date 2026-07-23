@@ -31,6 +31,7 @@ describe('getIndicators', () => {
         fields: 'macd_hist,macd_diff,macd_golden_cross',
       },
       signal: controller.signal,
+      skipGlobalError: true,
     })
   })
 
@@ -40,6 +41,7 @@ describe('getIndicators', () => {
     expect(http.get).toHaveBeenCalledWith('/stocks/600000.SH/indicators', {
       params: undefined,
       signal: undefined,
+      skipGlobalError: true,
     })
   })
 })
