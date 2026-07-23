@@ -381,9 +381,21 @@ flowchart LR
   - `operators.py` 新增严格后向 EMA，采用 `adjust=False/min_periods=n`，缺失和无穷输入当天保持空值。
   - 单股与全市场路径均输出固定 12/26/9 的 DIFF、DEA、MACD柱、金叉和死叉；交叉不跨股票或缺失行。
   - `_IND_COLS` 已加入五个字段，`build_params()` 已加入 `2.1-macd-v1` 算法版本并进入 `param_hash`。
-  - `backend/tests/test_indicators.py` 已覆盖 pandas 公式对照、暖机、相等穿越、缺失段、前缀稳定、含 `NaN/+inf/-inf` 的单股/全市场一致和算法版本 hash。
-  - 定向验证结果：`python -m pytest backend/tests/test_indicators.py -q` 为 `13 passed`。
-  - 下游冒烟结果：筛选 `ScreenEngine.wide_snapshot`、评分 `ScoreProfileModel`、回测 `HitPrecomputer` 三条链路与指标测试合并执行为 `16 passed`，确认 `_IND_COLS` 加列不破坏既有下游。
+  - `backend/tests/test_indicators.py` 已覆盖 pandas 公式对照、暖机、相等后向上/向下突破、缺失段、前缀稳定、含 `NaN/+inf/-inf` 的单股/全市场一致和算法版本 hash。
+  - 定向验证结果：`python -m pytest backend/tests/test_indicators.py -q` 为 `14 passed`。
+  - 下游冒烟结果：筛选 `ScreenEngine.wide_snapshot`、评分 `ScoreProfileModel`、回测 `HitPrecomputer` 三条链路与指标测试合并执行为 `17 passed`，确认 `_IND_COLS` 加列不破坏既有下游。
+  - 本次可复现完整命令：
+
+    ```bash
+    python -m pytest \
+      backend/tests/test_indicators.py \
+      backend/tests/test_screening.py::test_screen_engine_hybrid_col_and_expr \
+      backend/tests/test_indicator_def.py::test_custom_indicator_in_scoring_end_to_end \
+      backend/tests/test_backtest.py::test_precompute_matches_screen_engine \
+      -q
+    ```
+
+    执行结果：`17 passed in 1.13s`。
   - 停服恢复结果：测试前后端运行中，已用 `./start.sh stop` 停服；测试后用 `./start.sh` 恢复，`./start.sh status` 确认 `/api/health=200`。
   - 其他验证结果：`python -m py_compile` 与 `git diff --check` 通过。
   - 静态检查限制：当前 Python 环境未安装 Ruff（`python -m ruff` 返回 `No module named ruff`），因此未执行 Ruff；未将工具缺失误记为代码失败。
@@ -742,8 +754,8 @@ WHERE is_builtin = TRUE
 
 - 计划：按后端领域/接口、前端单元/契约、Playwright 真实点击、关键视口和发布 smoke 五层执行；任何访问项目 DuckDB/FastAPI 的后端测试严格遵守停服与恢复规则。
 - 具体完成情况：
-  - T1 已完成：指标测试通过（13 passed），其中双路径一致性覆盖正常值、`NaN`、正无穷和负无穷。
-  - T1 下游冒烟已完成：筛选、评分、回测三条真实 `wide_snapshot/_IND_COLS` 链路与指标测试合计 16 passed；按停服规则恢复后 `/api/health=200`。
+  - T1 已完成：指标测试通过（14 passed），其中相等后向上/向下突破均有独立断言，双路径一致性覆盖正常值、`NaN`、正无穷和负无穷。
+  - T1 下游冒烟已完成：筛选、评分、回测三条真实 `wide_snapshot/_IND_COLS` 链路与指标测试合计 17 passed；完整命令记录在 T1“实际落地情况”，按停服规则恢复后 `/api/health=200`。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
   - T2–T13 尚未开始；涉及 DuckDB、接口、前端、Playwright、关键视口和发布 smoke 的验证均保留到对应阶段，不在 T1 提前执行。

@@ -164,6 +164,19 @@ def test_macd_cross_events_include_equal_break_and_do_not_cross_missing_gap():
     assert pd.isna(gap_ind["macd_dead_cross"].iloc[41])
 
 
+def test_macd_dead_cross_includes_equal_to_down_break():
+    close = pd.Series([10.0] * 40 + [0.0])
+    df = _fake_bars(len(close))
+    df["close"] = close
+    df["high"] = close
+    ind = compute_stock_indicators(df, build_params())
+
+    assert np.isclose(ind["macd_diff"].iloc[39], ind["macd_dea"].iloc[39])
+    assert ind["macd_diff"].iloc[40] < ind["macd_dea"].iloc[40]
+    assert bool(ind["macd_dead_cross"].iloc[40]) is True
+    assert bool(ind["macd_golden_cross"].iloc[40]) is False
+
+
 def test_macd_is_prefix_stable_when_future_rows_are_appended():
     df = _fake_bars(120)
     prefix = compute_stock_indicators(df.iloc[:80], build_params())
