@@ -47,6 +47,14 @@ test.describe('个股详情三图工作区', () => {
     })
     await page.goto('/stocks')
     await expect(page.getByRole('columnheader', { name: '所属分组' })).toHaveCount(0)
+    await page.getByTestId('page-settings-trigger').click()
+    const settingsDrawer = page.getByTestId('page-settings-drawer')
+    await expect(settingsDrawer).toBeVisible()
+    await expect(settingsDrawer.getByTestId('stocks-default-view-list')).toBeVisible()
+    await expect(settingsDrawer.getByText('显示所属分组', { exact: true })).toHaveCount(0)
+    await expect(settingsDrawer.getByText('分组视图', { exact: true })).toHaveCount(0)
+    await expect(settingsDrawer.getByTestId('stocks-default-view-group')).toHaveCount(0)
+    await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
 
     await page.route('**/api/stocks/*/indicators*', async (route) => {
       indicatorRequests += 1

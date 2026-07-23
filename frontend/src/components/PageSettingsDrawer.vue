@@ -33,6 +33,8 @@ const props = defineProps<{
   pageKey?: string
   config?: DrawerConfig
   businessVisible?: boolean
+  /** 运行时只开放指定组件 slot；复用 ComponentAutoSettings 的 slotIds 过滤能力。 */
+  componentSlotIds?: string[]
   componentMetaOverrides?: Record<string, SlotConfigMeta>
 }>()
 
@@ -220,6 +222,7 @@ function handleReset(): void {
               :page-key="pageKey!"
               :config="activeConfig"
               :drawer-business-visible="hasBusinessSlot"
+              :slot-ids="componentSlotIds"
               :component-meta-overrides="componentMetaOverrides"
             />
           </SettingsGroup>

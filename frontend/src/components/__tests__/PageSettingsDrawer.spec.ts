@@ -75,7 +75,8 @@ function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
         },
         LayoutSettingsSection: true,
         ComponentAutoSettings: {
-          props: ['config'],
+          name: 'ComponentAutoSettings',
+          props: ['config', 'slotIds', 'componentMetaOverrides'],
           template: `
             <div>
               <button class="set-drawer-size" @click="config.setComponentKnob('settings', 'size', 'lg')" />
@@ -134,6 +135,25 @@ describe('PageSettingsDrawer', () => {
 
     expect(groupOpen(wrapper, '布局')).toBe('false')
     expect(setComponentKnob).not.toHaveBeenCalled()
+  })
+
+  it('把运行时 slot 与元数据过滤条件透传给组件设置', async () => {
+    const defaults = ref<string[]>([])
+    const { wrapper } = mountDrawer(defaults)
+    const overrides = {
+      table: {
+        columns: [{ key: 'code', label: '代码' }],
+      },
+    }
+
+    await wrapper.setProps({
+      componentSlotIds: ['table'],
+      componentMetaOverrides: overrides,
+    })
+
+    const autoSettings = wrapper.findComponent({ name: 'ComponentAutoSettings' })
+    expect(autoSettings.props('slotIds')).toEqual(['table'])
+    expect(autoSettings.props('componentMetaOverrides')).toEqual(overrides)
   })
 
   it('每次打开抽屉时从当前默认折叠配置重新初始化运行态', async () => {

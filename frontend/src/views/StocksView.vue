@@ -32,7 +32,7 @@ import { hasPermission } from '@/utils/permission'
 import { useTradeDates } from '@/composables/useTradeDates'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
-import { getPageLayout } from '@/layout'
+import { getPageEntry, getPageLayout, type SlotConfigMeta } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 
@@ -219,6 +219,33 @@ let groupSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 const auth = useAuthStore()
 const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
+const settingsComponentSlotIds = computed(() => (
+  canViewGroups.value ? undefined : ['table']
+))
+const settingsComponentMetaOverrides = computed<Record<string, SlotConfigMeta> | undefined>(() => {
+  if (canViewGroups.value) return undefined
+  const tableColumns = getPageEntry('stocks')?.componentMeta?.table?.columns ?? []
+  return {
+    table: {
+      columns: tableColumns.filter((column) => column.key !== 'groups'),
+    },
+  }
+})
+const visibleDefaultView = computed<'list' | 'group'>({
+  get: () => (canViewGroups.value ? settings.defaultView : 'list'),
+  set: (value) => {
+    if (value === 'group' && !canViewGroups.value) return
+    settings.defaultView = value
+  },
+})
+const defaultViewOptions = computed<{ label: string; value: 'list' | 'group' }[]>(() => (
+  canViewGroups.value
+    ? [
+        { label: '普通查询', value: 'list' },
+        { label: '默认分组', value: 'group' },
+      ]
+    : [{ label: '普通查询', value: 'list' }]
+))
 async function reloadGroups() {
   // 次级加载按自身 view 码优雅降级：无 stock-group:view 的部分授权角色（如只授 stocks:view）
   // 不拉分组列表、也不因此 403 卡住个股行情主体。默认业务角色含该码不受影响。
@@ -909,16 +936,20 @@ onBeforeUnmount(() => {
       :dirty="isDirty || layoutDirty"
       page-key="stocks"
       :config="drawerConfig"
+      :business-visible="true"
+      :component-slot-ids="settingsComponentSlotIds"
+      :component-meta-overrides="settingsComponentMetaOverrides"
       @reset="reset(); resetLayout()"
     >
       <template #business>
         <PageSettingSection title="默认查询">
           <div class="setting-item">
             <div class="setting-label">默认视图</div>
-            <PageSegmented v-model="settings.defaultView" :options="[
-              { label: '普通查询', value: 'list' },
-              { label: '默认分组', value: 'group' },
-            ]" />
+            <PageSegmented
+              v-model="visibleDefaultView"
+              :options="defaultViewOptions"
+              test-id="stocks-default-view"
+            />
           </div>
           <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
         </PageSettingSection>
