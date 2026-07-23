@@ -9,9 +9,18 @@ import pytest
 
 from backend.indicators.definition import IndicatorDefRepo, render_expression
 from backend.indicators.engine import IndicatorEngine
+from backend.indicators.registry import PRESET_CATEGORIES, REGISTRY
 from backend.scoring.score_profile import ScoreProfileModel
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
+
+_MACD_KEYS = {
+    "macd_diff",
+    "macd_dea",
+    "macd_hist",
+    "macd_golden_cross",
+    "macd_dead_cross",
+}
 
 
 def test_render_expression_substitutes_and_validates():
@@ -50,6 +59,94 @@ def test_def_repo_seed_crud_and_builtin_protection():
         # 非法表达式拒绝保存
         with pytest.raises(ValueError):
             repo.save_custom("bad", "坏", "bool", "C > ")
+
+
+def test_seed_builtins_is_full_idempotent_and_preserves_admin_state():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        repo = IndicatorDefRepo(c)
+        assert repo.seed_builtins() == len(REGISTRY)
+        assert set(c.query_df(
+            "SELECT key FROM indicator_def WHERE is_builtin"
+        )["key"]) == {d.key for d in REGISTRY}
+
+        repo.set_enabled("ma5", False)
+        repo.set_categories("ma5", [])
+        repo.set_enabled("macd_dead_cross", False)
+        repo.set_categories("macd_dead_cross", ["风险事件"])
+        c.execute("UPDATE indicator_def SET name_cn='旧名称' WHERE key IN ('ma5','macd_dead_cross')")
+
+        assert repo.seed_builtins() == len(REGISTRY)
+        assert len(repo.list()) == len(REGISTRY)
+        assert repo.get("ma5")["name_cn"] == "MA5"
+        assert repo.get("ma5")["enabled"] is False
+        assert repo.get("ma5")["categories"] == []
+        assert repo.get("macd_dead_cross")["name_cn"] == "MACD死叉"
+        assert repo.get("macd_dead_cross")["enabled"] is False
+        assert repo.get("macd_dead_cross")["categories"] == ["风险事件"]
+        assert "macd_dead_cross" not in {
+            item["key"] for item in repo.list(include_disabled=False)
+        }
+
+
+def test_macd_builtin_metadata_and_registry_api(monkeypatch):
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        repo = IndicatorDefRepo(c)
+        repo.seed_builtins()
+        items = {item["key"]: item for item in repo.list() if item["key"] in _MACD_KEYS}
+        assert set(items) == _MACD_KEYS
+        for key, item in items.items():
+            assert item["dtype"] == ("bool" if key.endswith("_cross") else "number")
+            assert item["category"] == "趋势"
+            assert item["categories"] == ["趋势", "动量"]
+            assert item["direction"] is None
+            assert item["params"] == []
+            assert item["kind"] == "builtin"
+            assert item["is_builtin"] is True
+            assert item["enabled"] is True
+            assert "12/26/9" in item["desc"]
+            assert "前复权" in item["desc"]
+            assert PRESET_CATEGORIES[key] == ["趋势", "动量"]
+
+        monkeypatch.setattr("backend.indicators.definition.get_client", lambda: c)
+        from backend.api.indicators import indicators_registry
+
+        response = indicators_registry(include_disabled=False)
+        api_keys = {item["key"] for item in response.data["items"]}
+        assert response.code == 0
+        assert _MACD_KEYS <= api_keys
+        assert response.data["count"] == sum(1 for item in REGISTRY if item.enabled)
+
+
+def test_application_startup_seeds_full_builtin_registry(monkeypatch):
+    with DuckDBClient(db_path=":memory:") as c:
+        import backend.main as main_module
+        import backend.storage as storage_module
+        import backend.storage.pg_ddl as pg_ddl_module
+
+        class _ReadyDependency:
+            @staticmethod
+            def ping() -> bool:
+                return True
+
+        class _ReadySettings:
+            @staticmethod
+            def jwt_secret() -> str:
+                return "test-jwt-secret"
+
+        monkeypatch.setattr(storage_module, "get_client", lambda: c)
+        monkeypatch.setattr(storage_module, "get_pg_client", _ReadyDependency)
+        monkeypatch.setattr(storage_module, "get_redis_client", _ReadyDependency)
+        monkeypatch.setattr(pg_ddl_module, "init_pg_db", lambda: None)
+        monkeypatch.setattr(main_module, "get_settings", _ReadySettings)
+
+        app = main_module.create_app()
+        startup = next(fn for fn in app.router.on_startup if fn.__name__ == "_check_storages")
+        startup()
+        assert set(c.query_df(
+            "SELECT key FROM indicator_def WHERE is_builtin"
+        )["key"]) == {d.key for d in REGISTRY}
 
 
 def _seed_stock(c, code, closes):

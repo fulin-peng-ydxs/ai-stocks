@@ -80,6 +80,22 @@ def test_profile_model_weight_auto_normalize():
     assert out.loc["C", "total_score"] == 50.0
 
 
+def test_macd_columns_score_without_special_resolver_branch():
+    snap = pd.DataFrame({
+        "macd_hist": [-1.0, 0.0, 1.0],
+        "macd_golden_cross": [False, True, pd.NA],
+    }, index=["WEAK", "CROSS", "STRONG"])
+    profile = {"items": [
+        {"indicator": "macd_hist", "weight": 0.5,
+         "scoring": {"type": "linear", "min": -1.0, "max": 1.0}},
+        {"indicator": "macd_golden_cross", "weight": 0.5, "scoring": {"type": "bool"}},
+    ]}
+    out = ScoreProfileModel(profile).score(snap)
+    assert out.loc["WEAK", "total_score"] == 0.0
+    assert out.loc["CROSS", "total_score"] == 75.0
+    assert out.loc["STRONG", "total_score"] == 50.0
+
+
 def test_resolver_dynamic_param_and_errors():
     snap = pd.DataFrame({"ma20": [1.0], "hhv480": [2.0], "rs_pct": [50.0]})
     assert resolve_indicator("ma", {"period": 20}, snap).iloc[0] == 1.0

@@ -69,6 +69,24 @@ REGISTRY: list[IndicatorDef] = [
                  expression="MA(C, {n}) > REF(MA(C, {n}), {k})"),
     IndicatorDef("above_ma250", "站上年线", "bool", "趋势", None, [],
                  "口径:收盘>MA250(年线)。是什么:长期多头标志。怎么用:作长期趋势过滤(牛熊线)。"),
+    # MACD（固定 12/26/9，与动态计算宽表同名，不开放方案级参数）
+    IndicatorDef("macd_diff", "MACD DIFF", "number", "趋势", None, [],
+                 "口径:EMA(前复权收盘,12)-EMA(前复权收盘,26)。固定参数12/26/9。"
+                 "是什么:MACD快慢线差值。怎么用:结合DEA、零轴和交叉事件判断趋势动量。"),
+    IndicatorDef("macd_dea", "MACD DEA", "number", "趋势", None, [],
+                 "口径:EMA(DIFF,9)，DIFF基于前复权收盘的EMA12与EMA26。固定参数12/26/9。"
+                 "是什么:MACD信号线。怎么用:结合DIFF判断趋势方向与交叉。"),
+    IndicatorDef("macd_hist", "MACD柱", "number", "趋势", None, [],
+                 "口径:2×(DIFF-DEA)，基于前复权日线，固定参数12/26/9。"
+                 "是什么:多空动量柱。怎么用:正负和柱体变化用于衡量动量强弱。"),
+    IndicatorDef("macd_golden_cross", "MACD金叉", "bool", "趋势", None, [],
+                 "口径:基于前复权日线，同股相邻有效交易日DIFF由不高于DEA变为高于DEA，"
+                 "固定参数12/26/9。"
+                 "是什么:MACD向上交叉事件。怎么用:作为筛选、评分或买入条件。"),
+    IndicatorDef("macd_dead_cross", "MACD死叉", "bool", "趋势", None, [],
+                 "口径:基于前复权日线，同股相邻有效交易日DIFF由不低于DEA变为低于DEA，"
+                 "固定参数12/26/9。"
+                 "是什么:MACD向下交叉事件。怎么用:作为风险过滤或卖出条件。"),
     # 新高 / 位置
     IndicatorDef("hhv", "N日最高点", "number", "新高", "higher_better",
                  [Param("window", "窗口", "int", 480, 5, 1200)],
@@ -183,6 +201,9 @@ PRESET_CATEGORIES: dict[str, list[str]] = {
     "ma_bias": ["均线", "动量"], "near_ma": ["均线", "位置"], "below_ma": ["均线"], "above_ma": ["均线", "趋势"],
     "bull_arrange": ["趋势", "均线"], "ma20_up": ["趋势", "均线"], "ma60_up": ["趋势", "均线"],
     "ma_up": ["趋势", "均线"], "above_ma250": ["趋势", "均线"],
+    "macd_diff": ["趋势", "动量"], "macd_dea": ["趋势", "动量"],
+    "macd_hist": ["趋势", "动量"], "macd_golden_cross": ["趋势", "动量"],
+    "macd_dead_cross": ["趋势", "动量"],
     "hhv": ["位置", "新高"], "is_high_120": ["位置", "新高"], "is_high_1y": ["位置", "新高"],
     "is_high_2y": ["位置", "新高"], "new_high": ["位置", "新高", "突破"], "dist_to_high_2y": ["位置"],
     "volume": ["量能"], "vol_change_pct": ["量能"], "is_vol_breakout": ["量能", "突破"], "vol_break": ["量能", "突破"],

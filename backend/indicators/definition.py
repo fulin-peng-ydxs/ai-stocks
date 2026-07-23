@@ -138,14 +138,20 @@ class IndicatorDefRepo:
 
     def seed_builtins(self) -> int:
         """内置指标定义入库（幂等；保留用户改过的 enabled 与 categories）。"""
-        existing = {r["key"]: r for r in self.list()}
+        existing = {
+            r["key"]: r
+            for r in self.c.query_df(
+                "SELECT key,enabled,categories FROM indicator_def WHERE is_builtin"
+            ).to_dict("records")
+        }
         for d in REGISTRY:
             row = _row(d)
             old = existing.get(d.key)
             if old:  # 不覆盖用户对内置的启停 / 分类自定义
-                row["enabled"] = old["enabled"]
-                if old.get("categories"):
-                    row["categories"] = json.dumps(old["categories"], ensure_ascii=False)
+                row["enabled"] = bool(old["enabled"])
+                # SQL NULL 表示旧库尚未初始化分类，应补预设；"[]" 是管理员明确清空，必须保留。
+                if isinstance(old.get("categories"), str):
+                    row["categories"] = old["categories"]
             self._upsert(row)
         log.info("内置指标定义入库 %d 个", len(REGISTRY))
         return len(REGISTRY)

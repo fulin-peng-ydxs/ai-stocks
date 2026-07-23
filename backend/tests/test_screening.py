@@ -147,6 +147,36 @@ def test_screen_engine_hybrid_col_and_expr():
         assert eng.run_hits(mix, T) == ["AAA.SH"]
 
 
+def test_screen_engine_uses_registered_macd_golden_cross():
+    from backend.indicators.definition import IndicatorDefRepo
+    from backend.screening.engine import ScreenEngine
+    from backend.storage.ddl import init_db
+    from backend.storage.duckdb_client import DuckDBClient
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        IndicatorDefRepo(c).seed_builtins()
+        closes = [10.0] * 40 + [20.0]
+        days = [d.date() for d in pd.bdate_range("2024-01-02", periods=len(closes))]
+        rows = [{
+            "code": "GOLDEN.SH", "trade_date": day,
+            "open": close, "high": close, "low": close, "close": close, "pre_close": close,
+            "volume": 1000, "amount": close * 1000, "adj_factor": 1.0, "turnover_rate": 5.0,
+            "is_st": False, "is_suspended": False, "limit_status": 0, "is_one_word": False,
+        } for day, close in zip(days, closes)]
+        c.register_df("macd_bars", pd.DataFrame(rows))
+        c.execute("INSERT INTO daily_bar BY NAME SELECT * FROM macd_bars")
+        c.unregister("macd_bars")
+
+        ast = {
+            "type": "ind",
+            "key": "macd_golden_cross",
+            "cmp": "==",
+            "value": True,
+        }
+        assert ScreenEngine(c).run_hits(ast, days[-1]) == ["GOLDEN.SH"]
+
+
 def test_score_model_normalizes_to_100():
     """评分：满分维度 → 接近100；资金流权重0自动归一。"""
     from backend.scoring.model import ScoreModel

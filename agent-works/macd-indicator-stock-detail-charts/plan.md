@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1 已完成并通过定向验证；T2–T13 尚未开始，本轮未进入后续阶段。
+- 当前进度：T1、T2 已完成并通过定向验证；T3–T13 尚未开始，本轮未进入后续阶段。
 
 ## 2. 当前项目依据
 
@@ -75,7 +75,7 @@
 | --- | --- | --- | --- |
 | R1 | EMA 与 `macd_diff/macd_dea/macd_hist` 三个数值原子结果 | 已完成（T9 总回归待执行） | T1、T9 |
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成（T9 总回归待执行） | T1、T9 |
-| R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 待开始 | T2、T9、T13 |
+| R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成（T9/T13 总回归待执行） | T2、T9、T13 |
 | R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 待开始 | T3、T6、T9、T10、T11、T13 |
 | R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 待开始 | T5、T6、T10、T11 |
 | R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 待开始 | T4、T7、T10、T11 |
@@ -333,7 +333,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 必须实现 | R1 | `requirement.md §5.1`：EMA 与三个数值原子结果 | EMA、三数值列、暖机、空值、算法版本、单股/全市场一致 | T1、T9 | 已完成（T9 总回归待执行） | 一致 | 已知公式、前缀稳定、两路径容差单测 | T1 定向测试通过；固定 12/26/9，不开放参数。 |
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成（T9 总回归待执行） | 一致 | 交叉边界和缺失段单测 | T1 定向测试通过；空值保留 null，下游按不成立处理。 |
-| 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 待开始 | 一致 | repo/API/筛选/评分/买卖方案测试 | 启动 seed 同时修复全新库目录为空的存量初始化缺口，影响面在 §7 单列。 |
+| 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 已完成（T9/T13 总回归待执行） | 一致 | repo/API/筛选/评分/买卖方案测试 | T2 定向与完整相关文件回归通过；启动 seed 同时修复全新库目录为空的存量初始化缺口，影响面在 §7 单列。 |
 | 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 待开始 | 一致 | API、Vitest、Playwright | 6000 对齐 bars 行情边界，不描述为 indicators 现状。 |
 | 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 待开始 | 一致 | option/组件测试、固定样本、截图和 E2E | 信号标签只做纵向避让。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 待开始 | 一致 | 归一化单测、抽屉 E2E | 图表一固定 K线。 |
@@ -402,7 +402,7 @@ flowchart LR
 
 ### 6.2 任务 T2：注册五指标并接入启动 seed 与既有下游
 
-- 状态：待开始
+- 状态：已完成
 - 对应需求：R3。
 - 依赖：T1。
 - 涉及文件：
@@ -426,7 +426,27 @@ flowchart LR
   - 被停用定义不进入新建候选，但已有引用不被删除。
 - 验证方式：全量 REGISTRY repo seed、registry API、管理员配置保留和下游固定样本测试。
 - 完成标准：五指标目录可见且下游正确求值，重复启动幂等。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-23）。
+  - `REGISTRY` 已增加五个固定 12/26/9、前复权、默认启用的 builtin；主分类为“趋势”，预设分类为“趋势/动量”，数值和布尔定义均无方向与参数 schema。
+  - `seed_builtins()` 继续处理整套 REGISTRY，并改为从原始列区分 SQL `NULL` 与管理员明确清空的 `"[]"`：重复 seed 保留任意 builtin 的 `enabled/categories`，同时刷新代码管理的元数据。
+  - 应用启动期在 DuckDB 连通后通过 `IndicatorDefRepo` 幂等确保 schema 并 seed 整套 builtin；PG、Redis、JWT 自检和既有任务/调度流程不变。
+  - 目录 API 的启用项、全量幂等、内置不可删除、管理员停用/分类保留均已有自动化证据；停用的 MACD 定义不进入启用候选但仍保留记录。
+  - 筛选通过注册指标叶子使用 `macd_golden_cross`，评分直接消费 `macd_hist/macd_golden_cross`，买卖条件直接消费金叉/死叉；三个下游均复用同名快照列和通用求值，没有新增 MACD 专属分支。
+  - 真实启动验证前已在仓库外创建本地 DuckDB 备份；启动 seed 前为 38 个 builtin、0 个 MACD，启动后为 43 个 builtin、5 个 MACD，五个定义的类型、分类和启用状态对账通过。
+  - 完整相关文件回归命令：
+
+    ```bash
+    python -m pytest \
+      backend/tests/test_indicators.py \
+      backend/tests/test_indicator_def.py \
+      backend/tests/test_screening.py \
+      backend/tests/test_score_profile.py \
+      backend/tests/test_trade_profile.py \
+      -q
+    ```
+
+    执行结果：`69 passed in 5.52s`；16 条 warning 均为项目既存 FastAPI `on_event` 弃用提示，无测试失败。
+  - 停服恢复结果：测试和真实库对账均按 `./start.sh stop` 停服；最终用 `./start.sh` 恢复，`./start.sh status` 确认 `/api/health=200`。
 
 ### 6.3 任务 T3：扩展个股指标接口并保证兼容序列化
 
@@ -756,9 +776,11 @@ WHERE is_builtin = TRUE
 - 具体完成情况：
   - T1 已完成：指标测试通过（14 passed），其中相等后向上/向下突破均有独立断言，双路径一致性覆盖正常值、`NaN`、正无穷和负无穷。
   - T1 下游冒烟已完成：筛选、评分、回测三条真实 `wide_snapshot/_IND_COLS` 链路与指标测试合计 17 passed；完整命令记录在 T1“实际落地情况”，按停服规则恢复后 `/api/health=200`。
+  - T2 已完成：五个 MACD builtin、全量启动 seed、目录 API 和筛选/评分/买卖通用求值均有自动化证据；五个相关测试文件完整回归为 69 passed。
+  - T2 真实启动对账已完成：builtin 从 38 增至 43，MACD 从 0 增至 5；仓库外备份可用于本地精确恢复，最终 `/api/health=200`。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
-  - T2–T13 尚未开始；涉及 DuckDB、接口、前端、Playwright、关键视口和发布 smoke 的验证均保留到对应阶段，不在 T1 提前执行。
+  - T3–T13 尚未开始；涉及接口、前端、Playwright、关键视口和发布 smoke 的验证均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵
 

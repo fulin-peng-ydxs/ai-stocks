@@ -153,11 +153,16 @@ def create_app() -> FastAPI:
     def _check_storages() -> None:
         from backend.storage import get_client, get_pg_client, get_redis_client
 
-        # 行情 DuckDB（只读分析）
+        # 行情 DuckDB（只读分析）及其平台指标定义：IndicatorDefRepo 会先幂等确保 schema，
+        # 再持久化完整 REGISTRY；重复启动保留管理员对 builtin 的 enabled/categories 设置。
         try:
-            get_client().query_df("SELECT 1 AS ok")
+            market = get_client()
+            market.query_df("SELECT 1 AS ok")
+            from backend.indicators.definition import IndicatorDefRepo
+
+            builtin_count = IndicatorDefRepo(market).seed_builtins()
         except Exception as e:  # noqa: BLE001
-            raise RuntimeError(f"DuckDB 连通性自检失败：{e}") from e
+            raise RuntimeError(f"DuckDB 连通性或内置指标初始化失败：{e}") from e
         if not get_pg_client().ping():
             raise RuntimeError("PostgreSQL 连通性自检失败：ping 未返回预期结果")
         if not get_redis_client().ping():
@@ -168,7 +173,11 @@ def create_app() -> FastAPI:
         init_pg_db()
         # 认证密钥自检（stage2·T2）：JWT 签名密钥无弱默认，缺失即启动失败（不留到首个请求才 500）
         get_settings().jwt_secret()
-        log.info("混合持久层自检通过：DuckDB + PostgreSQL + Redis 均连通，PG 资产表已就绪，JWT 密钥已配置")
+        log.info(
+            "混合持久层自检通过：DuckDB + PostgreSQL + Redis 均连通，"
+            "builtin 指标 %d 个、PG 资产表与 JWT 密钥已就绪",
+            builtin_count,
+        )
 
     # ── 启动：任务 reconcile（FR-DM-10）+ 定时调度（按 scheduler.enabled）──
     @app.on_event("startup")
