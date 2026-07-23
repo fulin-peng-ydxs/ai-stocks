@@ -104,6 +104,15 @@ const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
 const stockSet = useStockSet()
 const auth = useAuthStore()
 const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
+const canViewTradeProfiles = computed(() => (
+  hasPermission(auth.role, auth.permissions, 'trade-profile:view')
+))
+const canEvaluateTrades = computed(() => (
+  hasPermission(auth.role, auth.permissions, 'stocks:trade-eval')
+))
+const canUseTradeEvaluation = computed(() => (
+  canViewTradeProfiles.value && canEvaluateTrades.value
+))
 const setIndex = computed(() => stockSet.indexOf(code.value))
 const inSet = computed(() => setIndex.value >= 0)
 const prevCode = computed(() => stockSet.neighbor(code.value, -1))
@@ -245,6 +254,10 @@ const tradeEval = ref<TradeEval | null>(null)
 const tradeLoading = ref(false)
 const tradeError = ref('')
 
+function tradeProfileKey(profile: TradeProfileSummary): string {
+  return profile.profile_ref || profile.id
+}
+
 interface RequestChannel {
   controller: AbortController | null
   sequence: number
@@ -331,7 +344,6 @@ async function loadBars() {
   const { controller, sequence } = beginRequest(barsRequest)
   barsLoading.value = true
   barsError.value = ''
-  barsPermissionDenied.value = false
   try {
     const result = await getBars(
       code.value,
@@ -339,15 +351,30 @@ async function loadBars() {
       controller.signal,
     )
     if (!isCurrentRequest(barsRequest, controller, sequence)) return
+    // 权限态必须持续到受保护行情成功返回，不能在新请求 pending 时短暂回显旧数据。
+    barsPermissionDenied.value = false
     bars.value = result.bars
     name.value = result.name || ''
   } catch (e) {
     if (isAbort(e) || !isCurrentRequest(barsRequest, controller, sequence)) return
-    barsPermissionDenied.value = getErrorStatus(e) === 403
-    if (barsPermissionDenied.value) {
-      cancelRequest(quoteRequest)
-      quoteLoading.value = false
+    if (getErrorStatus(e) === 403) {
+      barsPermissionDenied.value = true
+      // stocks:view 已被拒绝后立即清除全部详情派生数据，并终止并发通道，保持 fail-closed。
+      // 后续普通失败也不解除权限态；只有新的行情成功响应才能恢复展示。
+      bars.value = []
+      name.value = ''
+      indicatorRows.value = []
+      latest.value = null
       latestQuote.value = null
+      tradeEval.value = null
+      indicatorError.value = ''
+      tradeError.value = ''
+      cancelRequest(indicatorRequest)
+      cancelRequest(quoteRequest)
+      cancelRequest(tradeRequest)
+      indicatorLoading.value = false
+      quoteLoading.value = false
+      tradeLoading.value = false
     }
     barsError.value = getErrorMessage(e, '个股行情加载失败')
   } finally {
@@ -421,17 +448,19 @@ watch(() => settings.adjustMode, () => {
 onMounted(async () => {
   await auth.ensureLoaded().catch(() => undefined)
   clearUnauthorizedGroupSet()
-  const tradeProfilesPromise = (async () => {
-    try {
-      tradeProfiles.value = await listTradeProfiles()
-      if (tradeProfiles.value.length) {
-        tradeId.value = tradeProfiles.value[0].id
-        await evalTrade()
+  const tradeProfilesPromise = canUseTradeEvaluation.value
+    ? (async () => {
+      try {
+        tradeProfiles.value = await listTradeProfiles()
+        if (tradeProfiles.value.length && !barsPermissionDenied.value) {
+          tradeId.value = tradeProfileKey(tradeProfiles.value[0])
+          await evalTrade()
+        }
+      } catch {
+        /* 方案列表失败不阻塞图表。 */
       }
-    } catch {
-      /* 方案列表失败不阻塞图表。 */
-    }
-  })()
+    })()
+    : Promise.resolve()
   await Promise.all([
     reloadRangeData(),
     loadLatestQuote(),
@@ -705,13 +734,18 @@ onBeforeUnmount(() => {
         </el-button>
         <h2>{{ name || '—' }}</h2>
         <span class="code-sub">{{ code }}</span>
-        <span class="quote-sub" :class="pctClass(latestPct)">
+        <span
+          class="quote-sub"
+          data-testid="stock-latest-quote"
+          :class="pctClass(latestPct)"
+        >
           {{ latestClose == null ? '--' : latestClose.toFixed(2) }}
           {{ fmtPct(latestPct) }}
         </span>
         <el-select
-          v-if="canViewGroups"
+          v-if="canViewGroups && !barsPermissionDenied"
           v-permission="'stock-group:member-update'"
+          data-testid="stock-group-select"
           v-model="selectedGroupIds"
           multiple
           filterable
@@ -873,12 +907,20 @@ onBeforeUnmount(() => {
       </el-card>
 
       <!-- 买卖指标方案评估 -->
-      <el-card v-if="settings.showTradeCard" shadow="never" class="trade-card">
+      <el-card
+        v-if="settings.showTradeCard && canUseTradeEvaluation"
+        data-testid="stock-trade-eval-card"
+        shadow="never"
+        class="trade-card"
+      >
         <template #header>
           <div class="trade-head">
             <span>买卖信号评估</span>
             <el-select v-model="tradeId" size="small" style="width: 220px" @change="() => evalTrade()">
-              <el-option v-for="p in tradeProfiles" :key="p.id" :value="p.id"
+              <el-option
+                v-for="p in tradeProfiles"
+                :key="tradeProfileKey(p)"
+                :value="tradeProfileKey(p)"
                 :label="p.name + (p.is_preset ? '（系统内置）' : '')" />
             </el-select>
             <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
@@ -974,7 +1016,11 @@ onBeforeUnmount(() => {
 
         <PageSettingSection title="辅助模块">
           <PageToggleRow v-model="settings.showNav" label="显示集合导航条" />
-          <PageToggleRow v-model="settings.showTradeCard" label="显示买卖信号评估卡" />
+          <PageToggleRow
+            v-if="canUseTradeEvaluation"
+            v-model="settings.showTradeCard"
+            label="显示买卖信号评估卡"
+          />
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>

@@ -446,16 +446,49 @@ def test_fk_delete_actions(pg):
 
 
 def test_existing_users_have_user_role(pg):
-    """存量用户按 role_code 补 sys_user_role；admin=system。"""
+    """无角色存量用户按 role_code 补 sys_user_role；admin=system。"""
     admin = pg.query_df(
         "SELECT role_id FROM sys_user_role WHERE user_id=%s", ["admin"])
     assert ROLE_SYSTEM in set(admin["role_id"])
-    # 每个 role_code 命中内置角色的用户都应有对应 user_role（无遗漏）
+    # role_code 只用于无角色旧用户迁移；已有自定义角色的用户不应被追加内置角色。
     gap = pg.query_df(
         "SELECT count(*) n FROM sys_user u JOIN sys_role r ON r.code=u.role_code "
-        "WHERE NOT EXISTS (SELECT 1 FROM sys_user_role ur "
-        "WHERE ur.user_id=u.id AND ur.role_id=r.id)")
+        "WHERE NOT EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id)")
     assert int(gap.iloc[0]["n"]) == 0
+
+
+def test_seed_rbac_does_not_append_legacy_role_to_user_with_custom_role(pg):
+    """启动 seed 不得把遗留 role_code=normal 重新附加给最小权限自定义角色用户。"""
+    user_id = "pytest_custom_role_only_user"
+    role_id = "pytest_custom_role_only"
+    pg.execute("DELETE FROM sys_user WHERE id=%s", [user_id])
+    pg.execute("DELETE FROM sys_role WHERE id=%s", [role_id])
+    try:
+        pg.execute(
+            "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
+            "VALUES (%s,%s,'最小权限测试','custom',FALSE,FALSE)",
+            [role_id, role_id],
+        )
+        pg.execute(
+            "INSERT INTO sys_user (id,tenant_id,account,role_code,perm_ver,status) "
+            "VALUES (%s,'pytest',%s,%s,0,'active')",
+            [user_id, user_id, ROLE_NORMAL],
+        )
+        pg.execute(
+            "INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)",
+            [user_id, role_id],
+        )
+
+        seed_rbac(pg)
+
+        roles = set(pg.query_df(
+            "SELECT role_id FROM sys_user_role WHERE user_id=%s",
+            [user_id],
+        )["role_id"])
+        assert roles == {role_id}
+    finally:
+        pg.execute("DELETE FROM sys_user WHERE id=%s", [user_id])
+        pg.execute("DELETE FROM sys_role WHERE id=%s", [role_id])
 
 
 def test_seed_rbac_idempotent(pg):

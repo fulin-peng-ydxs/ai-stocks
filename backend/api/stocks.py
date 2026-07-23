@@ -234,7 +234,9 @@ def stock_trade_eval(code: str, profile_id: str,
     from backend.signals.trade_profile import TradeProfileRepo, collect_indicators, eval_conditions
 
     c = get_client()
-    prof = TradeProfileRepo(c).get(profile_id)
+    # profile_id 对外兼容旧字段名，但值允许为 opaque profile_ref；裸 id 只能解析到当前 owner。
+    # 可见性统一交给资产仓库，避免 public/tenant 方案在列表可见、到评估接口却再次 owner-only。
+    prof = TradeProfileRepo(c).get_visible(profile_id)
     if not prof:
         return err(404, "买卖方案不存在")
     d = date.fromisoformat(date_) if date_ else pd.Timestamp(

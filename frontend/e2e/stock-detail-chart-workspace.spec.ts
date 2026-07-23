@@ -16,6 +16,18 @@ test.describe('个股详情三图工作区', () => {
 
     const auth = await loginAsDebugUser(page, request, 'debug_stocks_only')
     const headers = { authorization: `Bearer ${auth.accessToken}` }
+    const meResponse = await request.get(`${API_URL}/auth/me`, { headers })
+    expect(meResponse.ok()).toBe(true)
+    const meBody = await meResponse.json()
+    expect(meBody.code, meBody.msg || '读取最小权限账号失败').toBe(0)
+    expect(meBody.data.roles).toEqual(['debug_role_stocks_only'])
+    const permissions = meBody.data.permissions as string[]
+    expect(permissions).toContain('stocks:view')
+    expect(permissions).not.toContain('stock-group:view')
+    expect(permissions).not.toContain('stock-group:member-update')
+    expect(permissions).not.toContain('trade-profile:view')
+    expect(permissions).not.toContain('stocks:trade-eval')
+
     const stocksResponse = await request.get(`${API_URL}/stocks?page=1&size=1`, { headers })
     expect(stocksResponse.ok()).toBe(true)
     const stocksBody = await stocksResponse.json()
@@ -25,6 +37,13 @@ test.describe('个股详情三图工作区', () => {
 
     let failNextIndicatorRequest = true
     let indicatorRequests = 0
+    let unauthorizedSecondaryRequests = 0
+    page.on('request', (pageRequest) => {
+      const url = pageRequest.url()
+      if (url.includes('/api/stock-groups') || url.includes('/api/trade-profiles')) {
+        unauthorizedSecondaryRequests += 1
+      }
+    })
     await page.route('**/api/stocks/*/indicators*', async (route) => {
       indicatorRequests += 1
       if (failNextIndicatorRequest) {
@@ -58,6 +77,9 @@ test.describe('个股详情三图工作区', () => {
     await expect.poll(() => indicatorRequests).toBe(3)
 
     await expect(page.locator('[data-panel-key]')).toHaveCount(3)
+    await expect(page.getByTestId('stock-group-select')).toHaveCount(0)
+    await expect(page.getByTestId('stock-trade-eval-card')).toHaveCount(0)
+    expect(unauthorizedSecondaryRequests).toBe(0)
     expect(consoleIssues).toEqual([])
   })
 })

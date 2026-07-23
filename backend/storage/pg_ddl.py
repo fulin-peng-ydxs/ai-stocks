@@ -1014,7 +1014,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_user_email "
         "ON sys_user (email) WHERE email IS NOT NULL")
     seed_default_tenant(client)   # 先补 admin=system 的 role_code，供 seed_rbac 建 user_role 用
-    seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 存量用户按 role_code 补 user_role
+    seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 无角色存量用户补 user_role
     seed_stage5_platform_capabilities(client)
     revoke_tenant_admin_audit_default_grants(client)
     seed_stage6_asset_visibility(client)
@@ -1204,7 +1204,7 @@ def _flatten_menu_tree(tree: list, parent_code: str | None = None) -> list[dict]
 
 
 def seed_rbac(client: PostgresClient | None = None) -> None:
-    """幂等 seed 内置角色 / 菜单树 / 功能点 / 默认授权，并按 role_code 为存量用户补 sys_user_role。
+    """幂等 seed 内置角色 / 菜单树 / 功能点 / 默认授权，并为无角色存量用户补 sys_user_role。
 
     幂等策略：主体（角色/菜单/资源）ON CONFLICT (id) DO NOTHING。sys_menu 是运行期数据库事实源，
     seed 只补缺失内置节点，不覆盖已有菜单的父级、类型、路由、标题、图标、排序或可见性，避免重启
@@ -1238,10 +1238,12 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
     _seed_role_grants(client, [m["code"] for m in menu_rows])
     _backfill_config_split_builtin_grants(client)
     _backfill_stage4_builtin_business_grants(client)
-    # 5) 存量用户 → sys_user_role（按 role_code JOIN 已存在的内置角色）
+    # 5) 仅为尚无任何角色的存量用户按遗留 role_code 补角色。sys_user_role 是权限事实源；
+    # 已有自定义角色时不得再追加 role_code=normal，否则每次启动都会扩大最小权限账号的授权。
     client.execute(
         "INSERT INTO sys_user_role (user_id, role_id) "
         "SELECT u.id, r.id FROM sys_user u JOIN sys_role r ON r.code = u.role_code "
+        "WHERE NOT EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id) "
         "ON CONFLICT (user_id, role_id) DO NOTHING")
 
 

@@ -52,6 +52,7 @@ python -m backend.cli dev-users --keep-password
 ## 维护规则
 
 - 账号和自定义角色均为固定 ID，脚本幂等校准；手工改乱后重新执行命令即可恢复。
+- 启动 seed 只为尚无任何 `sys_user_role` 的存量用户按遗留 `role_code` 补角色；已有自定义角色的最小权限账号不会被重新附加 `normal`。若 `--list` 发现漂移，先执行 `dev-users` 校准，再重启并复查。
 - 自定义角色同时维护 `sys_role_menu` 和 `sys_role_resource`，保证菜单可进入、接口有权限。
 - `layout:view`、`trade-calendar:view`、`indicator:registry` 不写入角色授权表，由 `perm_resolver` 对有角色的非 system 用户运行时注入。
 - pytest 仍使用临时用户，不依赖这批固定调试账号。

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, shallowMount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, h, nextTick, reactive, ref } from 'vue'
+import { defineComponent, h, KeepAlive, nextTick, reactive, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ElementPlus from 'element-plus'
 import type { Bar, IndicatorRow } from '@/api/stocks'
@@ -164,6 +164,15 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+function httpError(status: number, msg: string) {
+  return {
+    response: {
+      status,
+      data: { msg },
+    },
+  }
+}
+
 const router = createRouter({
   history: createMemoryHistory(),
   routes: [
@@ -172,47 +181,76 @@ const router = createRouter({
   ],
 })
 
-async function mountView() {
+function testGlobal(pinia: ReturnType<typeof createPinia>) {
+  return {
+    plugins: [pinia, router, ElementPlus],
+    directives: {
+      permission: {},
+    },
+    stubs: {
+      LayoutHost: {
+        template: '<main><slot name="action"/><slot name="main"/><slot name="overlays"/></main>',
+      },
+      StockChartWorkspace: StockChartWorkspaceStub,
+      AppStateBlock: AppStateBlockStub,
+      KlineRangeSelect: KlineRangeSelectStub,
+      PageSettingsDrawer: true,
+      PageSettingsTrigger: true,
+      PageSettingSection: { template: '<section><slot/></section>' },
+      PageSegmented: true,
+      PageToggleRow: true,
+      KlineSettingSection: true,
+      ElCard: { template: '<section><slot name="header"/><slot/></section>' },
+      ElDescriptions: { template: '<dl><slot/></dl>' },
+      ElDescriptionsItem: {
+        props: ['label'],
+        template: '<div><dt>{{ label }}</dt><dd><slot/></dd></div>',
+      },
+    },
+  }
+}
+
+async function prepareAuth(permissions = [
+  'stocks:view',
+  'stocks:trade-eval',
+  'trade-profile:view',
+]) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
   auth.role = 'normal'
-  auth.permissions = ['stocks:view']
+  auth.permissions = permissions
   auth.menusStatus = 'ready'
   await router.push('/stocks/600000.SH')
   await router.isReady()
+  return pinia
+}
 
+async function mountView(permissions?: string[]) {
+  const pinia = await prepareAuth(permissions)
   const wrapper = shallowMount(StockDetailView, {
-    global: {
-      plugins: [pinia, router, ElementPlus],
-      directives: {
-        permission: {},
-      },
-      stubs: {
-        LayoutHost: {
-          template: '<main><slot name="action"/><slot name="main"/><slot name="overlays"/></main>',
-        },
-        StockChartWorkspace: StockChartWorkspaceStub,
-        AppStateBlock: AppStateBlockStub,
-        KlineRangeSelect: KlineRangeSelectStub,
-        PageSettingsDrawer: true,
-        PageSettingsTrigger: true,
-        PageSettingSection: { template: '<section><slot/></section>' },
-        PageSegmented: true,
-        PageToggleRow: true,
-        KlineSettingSection: true,
-        ElCard: { template: '<section><slot name="header"/><slot/></section>' },
-        ElDescriptions: { template: '<dl><slot/></dl>' },
-        ElDescriptionsItem: {
-          props: ['label'],
-          template: '<div><dt>{{ label }}</dt><dd><slot/></dd></div>',
-        },
-      },
-    },
+    global: testGlobal(pinia),
   })
   await flushPromises()
   await nextTick()
   return wrapper
+}
+
+async function mountKeepAliveView() {
+  const pinia = await prepareAuth()
+  const active = ref(true)
+  const Host = defineComponent({
+    setup() {
+      return () => h(KeepAlive, null, {
+        default: () => (active.value ? h(StockDetailView) : null),
+      })
+    },
+  })
+  const wrapper = mount(Host, {
+    global: testGlobal(pinia),
+  })
+  await nextTick()
+  return { active, wrapper }
 }
 
 function setDefaultApiResponses() {
@@ -231,7 +269,7 @@ function setDefaultApiResponses() {
   vi.mocked(stocksApi.getTradeEval).mockResolvedValue({
     code: '600000.SH',
     date: '2026-07-23',
-    profile_id: 'trade-1',
+    profile_id: 'avr_trade_1',
     name: '默认买卖',
     version: 1,
     buy_signal: false,
@@ -250,6 +288,7 @@ function setDefaultApiResponses() {
   vi.mocked(tradeProfileApi.listTradeProfiles).mockResolvedValue([
     {
       id: 'trade-1',
+      profile_ref: 'avr_trade_1',
       name: '默认买卖',
       version: 1,
       is_preset: true,
@@ -300,6 +339,86 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('macdState')).toBe('ready')
     expect(workspace.props('adjustLabel')).toBe('前复权')
     expect(wrapper.text()).toContain('12.34')
+    expect(stocksApi.getTradeEval).toHaveBeenCalledWith(
+      '600000.SH',
+      'avr_trade_1',
+      undefined,
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('最小 stocks:view 权限不请求也不展示分组和买卖评估能力', async () => {
+    const wrapper = await mountView(['stocks:view'])
+
+    expect(tradeProfileApi.listTradeProfiles).not.toHaveBeenCalled()
+    expect(stocksApi.getTradeEval).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="stock-group-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stock-trade-eval-card"]').exists()).toBe(false)
+    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(true)
+  })
+
+  it('初次行情普通错误显示可重试错误态，重试成功后恢复工作区', async () => {
+    let chartAttempts = 0
+    vi.mocked(stocksApi.getBars).mockImplementation(async (_code, params) => {
+      if (params?.lookback === 1) {
+        return {
+          code: '600000.SH',
+          name: '浦发银行',
+          adjust: '',
+          bars: [bar('2026-07-23', 10.5)],
+        }
+      }
+      chartAttempts += 1
+      if (chartAttempts === 1) throw new Error('行情服务暂不可用')
+      return {
+        code: '600000.SH',
+        name: '浦发银行',
+        adjust: params?.adjust || '',
+        bars: [bar('2026-07-23', 11)],
+      }
+    })
+
+    const wrapper = await mountView()
+    const state = wrapper.findComponent(AppStateBlockStub)
+    expect(state.props('variant')).toBeUndefined()
+    expect(state.props('retry')).toBe(true)
+    expect(wrapper.text()).toContain('行情服务暂不可用')
+    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
+
+    await state.get('button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findComponent(AppStateBlockStub).exists()).toBe(false)
+    expect(wrapper.get('[data-testid="workspace-close"]').text()).toBe('11')
+  })
+
+  it('行情成功空数据进入 empty 状态且不渲染工作区', async () => {
+    vi.mocked(stocksApi.getBars).mockImplementation(async (_code, params) => ({
+      code: '600000.SH',
+      name: '浦发银行',
+      adjust: params?.adjust || '',
+      bars: params?.lookback === 1 ? [bar('2026-07-23', 10.5)] : [],
+    }))
+
+    const wrapper = await mountView()
+    const state = wrapper.findComponent(AppStateBlockStub)
+
+    expect(state.props('state')).toBe('empty')
+    expect(wrapper.text()).toContain('暂无个股行情')
+    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
+  })
+
+  it('已有行情刷新失败保留旧图并显示紧凑错误态', async () => {
+    const wrapper = await mountView()
+    vi.mocked(stocksApi.getBars).mockRejectedValueOnce(new Error('范围刷新失败'))
+
+    await wrapper.get('[data-testid="range-250"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(true)
+    expect(wrapper.get('[data-testid="workspace-close"]').text()).toBe('10.5')
+    expect(wrapper.text()).toContain('个股详情刷新失败')
+    expect(wrapper.text()).toContain('范围刷新失败')
   })
 
   it('复权只刷新行情；范围同时刷新行情和指标，不重复请求报价或买卖评估', async () => {
@@ -428,8 +547,20 @@ describe('StockDetailView 三图数据协调', () => {
 
   it('快速切换买卖方案时取消旧评估且旧响应不会覆盖新方案', async () => {
     vi.mocked(tradeProfileApi.listTradeProfiles).mockResolvedValue([
-      { id: 'trade-1', name: '方案一', version: 1, is_preset: true } as any,
-      { id: 'trade-2', name: '方案二', version: 1, is_preset: true } as any,
+      {
+        id: 'same-id',
+        profile_ref: 'avr_trade_1',
+        name: '方案一',
+        version: 1,
+        is_preset: true,
+      } as any,
+      {
+        id: 'same-id',
+        profile_ref: 'avr_trade_2',
+        name: '方案二',
+        version: 1,
+        is_preset: true,
+      } as any,
     ])
     const oldTrade = deferred<Awaited<ReturnType<typeof stocksApi.getTradeEval>>>()
     vi.mocked(stocksApi.getTradeEval)
@@ -437,7 +568,7 @@ describe('StockDetailView 三图数据协调', () => {
       .mockResolvedValueOnce({
         code: '600000.SH',
         date: '2026-07-23',
-        profile_id: 'trade-2',
+        profile_id: 'avr_trade_2',
         name: '方案二',
         version: 2,
         buy_signal: false,
@@ -449,24 +580,24 @@ describe('StockDetailView 三图数据协调', () => {
 
     const wrapper = await mountView()
     const tradeSelect = wrapper.findAllComponents({ name: 'ElSelect' }).find(
-      (component) => component.props('modelValue') === 'trade-1',
+      (component) => component.props('modelValue') === 'avr_trade_1',
     )
     expect(tradeSelect).toBeTruthy()
 
-    tradeSelect!.vm.$emit('update:modelValue', 'trade-2')
-    tradeSelect!.vm.$emit('change', 'trade-2')
+    tradeSelect!.vm.$emit('update:modelValue', 'avr_trade_2')
+    tradeSelect!.vm.$emit('change', 'avr_trade_2')
     await nextTick()
     await flushPromises()
 
     const tradeCalls = vi.mocked(stocksApi.getTradeEval).mock.calls
     expect(tradeCalls[0][3]?.aborted).toBe(true)
-    expect(tradeCalls[1][1]).toBe('trade-2')
+    expect(tradeCalls[1][1]).toBe('avr_trade_2')
     expect(wrapper.text()).toContain('v2')
 
     oldTrade.resolve({
       code: '600000.SH',
       date: '2026-07-22',
-      profile_id: 'trade-1',
+      profile_id: 'avr_trade_1',
       name: '方案一',
       version: 1,
       buy_signal: true,
@@ -507,6 +638,218 @@ describe('StockDetailView 三图数据协调', () => {
     expect(state.props('retry')).toBe(false)
     expect(wrapper.text()).toContain('无权限查看个股详情')
     expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
+  })
+
+  it('行情 403 先返回时，稍后完成的方案列表不会再发起买卖评估', async () => {
+    const profiles = deferred<Awaited<ReturnType<typeof tradeProfileApi.listTradeProfiles>>>()
+    vi.mocked(tradeProfileApi.listTradeProfiles).mockImplementation(() => profiles.promise)
+    vi.mocked(stocksApi.getBars).mockImplementation(async (_code, params) => {
+      if (params?.lookback === 1) {
+        return {
+          code: '600000.SH',
+          name: '浦发银行',
+          adjust: '',
+          bars: [bar('2026-07-23', 10.5)],
+        }
+      }
+      throw httpError(403, '无权限查看个股行情')
+    })
+
+    const wrapper = await mountView()
+    profiles.resolve([{
+      id: 'trade-1',
+      profile_ref: 'avr_trade_1',
+      name: '默认买卖',
+      version: 1,
+      is_preset: true,
+    }])
+    await flushPromises()
+
+    expect(wrapper.findComponent(AppStateBlockStub).props('variant')).toBe('permission')
+    expect(stocksApi.getTradeEval).not.toHaveBeenCalled()
+  })
+
+  it('已有数据后收到 403 会清空详情，后续 pending 和再次 403 始终保持 fail-closed', async () => {
+    const wrapper = await mountView()
+    vi.mocked(stocksApi.getBars).mockRejectedValueOnce(
+      httpError(403, '股票查看权限已撤销'),
+    )
+
+    await wrapper.get('[data-testid="range-250"]').trigger('click')
+    await flushPromises()
+
+    let state = wrapper.findComponent(AppStateBlockStub)
+    expect(state.props('variant')).toBe('permission')
+    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stock-latest-quote"]').text()).toContain('--')
+
+    const pending = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
+    vi.mocked(stocksApi.getBars).mockImplementationOnce(() => pending.promise)
+    pageSettingsState.current.adjustMode = 'hfq'
+    await nextTick()
+
+    state = wrapper.findComponent(AppStateBlockStub)
+    expect(state.props('variant')).toBe('permission')
+    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
+
+    pending.reject(httpError(403, '仍无股票查看权限'))
+    await flushPromises()
+
+    state = wrapper.findComponent(AppStateBlockStub)
+    expect(state.props('variant')).toBe('permission')
+    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('10.50')
+  })
+
+  it('报价失败只清空报价，不影响行情、指标和工作区', async () => {
+    vi.mocked(stocksApi.getBars).mockImplementation(async (_code, params) => {
+      if (params?.lookback === 1) throw new Error('报价服务超时')
+      return {
+        code: '600000.SH',
+        name: '浦发银行',
+        adjust: params?.adjust || '',
+        bars: [bar('2026-07-23', 10.5)],
+      }
+    })
+
+    const wrapper = await mountView()
+
+    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(true)
+    expect(wrapper.get('[data-testid="stock-latest-quote"]').text()).toContain('--')
+    expect(wrapper.text()).toContain('12.34')
+    expect(wrapper.findComponent(AppStateBlockStub).exists()).toBe(false)
+  })
+
+  it('KeepAlive 停用会取消四个在途通道，激活后恢复且旧报价不会覆盖新结果', async () => {
+    const oldBars = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
+    const newBars = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
+    const oldQuote = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
+    const newQuote = deferred<Awaited<ReturnType<typeof stocksApi.getBars>>>()
+    const oldIndicators = deferred<Awaited<ReturnType<typeof stocksApi.getIndicators>>>()
+    const newIndicators = deferred<Awaited<ReturnType<typeof stocksApi.getIndicators>>>()
+    const oldTrade = deferred<Awaited<ReturnType<typeof stocksApi.getTradeEval>>>()
+    const newTrade = deferred<Awaited<ReturnType<typeof stocksApi.getTradeEval>>>()
+    let barsCalls = 0
+    let quoteCalls = 0
+    let indicatorCalls = 0
+    let tradeCalls = 0
+
+    vi.mocked(stocksApi.getBars).mockImplementation((_code, params) => {
+      if (params?.lookback === 1) {
+        quoteCalls += 1
+        return quoteCalls === 1 ? oldQuote.promise : newQuote.promise
+      }
+      barsCalls += 1
+      return barsCalls === 1 ? oldBars.promise : newBars.promise
+    })
+    vi.mocked(stocksApi.getIndicators).mockImplementation(() => {
+      indicatorCalls += 1
+      return indicatorCalls === 1 ? oldIndicators.promise : newIndicators.promise
+    })
+    vi.mocked(stocksApi.getTradeEval).mockImplementation(() => {
+      tradeCalls += 1
+      return tradeCalls === 1 ? oldTrade.promise : newTrade.promise
+    })
+
+    const { active, wrapper } = await mountKeepAliveView()
+    await flushPromises()
+    expect(barsCalls).toBe(1)
+    expect(quoteCalls).toBe(1)
+    expect(indicatorCalls).toBe(1)
+    expect(tradeCalls).toBe(1)
+
+    const firstBarsSignal = vi.mocked(stocksApi.getBars).mock.calls.find(
+      ([, params]) => params?.lookback !== 1,
+    )?.[2]
+    const firstQuoteSignal = vi.mocked(stocksApi.getBars).mock.calls.find(
+      ([, params]) => params?.lookback === 1,
+    )?.[2]
+    const firstIndicatorSignal = vi.mocked(stocksApi.getIndicators).mock.calls[0][2]
+    const firstTradeSignal = vi.mocked(stocksApi.getTradeEval).mock.calls[0][3]
+
+    active.value = false
+    await nextTick()
+    expect(firstBarsSignal?.aborted).toBe(true)
+    expect(firstQuoteSignal?.aborted).toBe(true)
+    expect(firstIndicatorSignal?.aborted).toBe(true)
+    expect(firstTradeSignal?.aborted).toBe(true)
+
+    active.value = true
+    await nextTick()
+    await flushPromises()
+    expect(barsCalls).toBe(2)
+    expect(quoteCalls).toBe(2)
+    expect(indicatorCalls).toBe(2)
+    expect(tradeCalls).toBe(2)
+
+    newBars.resolve({
+      code: '600000.SH',
+      name: '浦发银行',
+      adjust: 'qfq',
+      bars: [bar('2026-07-23', 20)],
+    })
+    newQuote.resolve({
+      code: '600000.SH',
+      name: '浦发银行',
+      adjust: '',
+      bars: [bar('2026-07-23', 21)],
+    })
+    newIndicators.resolve({
+      code: '600000.SH',
+      indicators: [indicator('2026-07-23', 20.2)],
+    })
+    newTrade.resolve({
+      code: '600000.SH',
+      date: '2026-07-23',
+      profile_id: 'avr_trade_1',
+      name: '默认买卖',
+      version: 2,
+      buy_signal: false,
+      sell_signal: false,
+      buy: { op: 'AND', conds: [] },
+      sell: { op: 'AND', conds: [] },
+      backstop: {},
+    })
+    await flushPromises()
+
+    const detail = wrapper.findComponent(StockDetailView)
+    expect(detail.get('[data-testid="workspace-close"]').text()).toBe('20')
+    expect(detail.get('[data-testid="stock-latest-quote"]').text()).toContain('21.00')
+
+    oldBars.resolve({
+      code: '600000.SH',
+      name: '旧行情',
+      adjust: 'qfq',
+      bars: [bar('2026-07-22', 5)],
+    })
+    oldQuote.resolve({
+      code: '600000.SH',
+      name: '旧报价',
+      adjust: '',
+      bars: [bar('2026-07-22', 5)],
+    })
+    oldIndicators.resolve({
+      code: '600000.SH',
+      indicators: [indicator('2026-07-22', 5.2)],
+    })
+    oldTrade.resolve({
+      code: '600000.SH',
+      date: '2026-07-22',
+      profile_id: 'avr_trade_1',
+      name: '旧买卖',
+      version: 1,
+      buy_signal: true,
+      sell_signal: false,
+      buy: { op: 'AND', conds: [] },
+      sell: { op: 'AND', conds: [] },
+      backstop: {},
+    })
+    await flushPromises()
+
+    expect(detail.get('[data-testid="workspace-close"]').text()).toBe('20')
+    expect(detail.get('[data-testid="stock-latest-quote"]').text()).toContain('21.00')
+    expect(detail.text()).toContain('v2')
+    expect(detail.text()).not.toContain('v1')
   })
 
   it('指标历史不足时只让 MACD 面板进入 insufficient', async () => {

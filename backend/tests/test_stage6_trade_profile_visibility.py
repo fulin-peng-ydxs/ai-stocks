@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -235,3 +236,79 @@ def test_backtest_resolves_visible_trade_profile_ref(market, pg):
         for owner_id in (owner, viewer):
             pg.execute("DELETE FROM trade_profile WHERE owner_user_id=%s", [owner_id])
             pg.execute("DELETE FROM trade_profile_version WHERE owner_user_id=%s", [owner_id])
+
+
+def test_stock_trade_eval_resolves_visible_profile_refs_and_owner_legacy_ids(
+    client,
+    pg,
+    market,
+    monkeypatch,
+):
+    """个股评估透传 opaque ref；裸 id 仅兼容当前 owner，不会误命中他人同名方案。"""
+    tenant = "trade_eval_tenant_" + uuid.uuid4().hex[:8]
+    owner, tid, owner_role = _mk_user(pg, ["stocks:trade-eval"], tenant=tenant)
+    viewer, _, viewer_role = _mk_user(pg, ["stocks:trade-eval"], tenant=tenant)
+    outsider, otid, outsider_role = _mk_user(pg, ["stocks:trade-eval"])
+    shared_id = "trade_eval_same_" + uuid.uuid4().hex[:6]
+    private_id = "trade_eval_private_" + uuid.uuid4().hex[:6]
+    public_id = "trade_eval_public_" + uuid.uuid4().hex[:6]
+    monkeypatch.setattr("backend.api.stocks.get_client", lambda: market)
+    monkeypatch.setattr(
+        "backend.indicators.engine.IndicatorEngine.wide_snapshot",
+        lambda *_args, **_kwargs: pd.DataFrame(),
+    )
+
+    try:
+        owner_repo = TradeProfileRepo(
+            market=market,
+            pg=pg,
+            tenant_id=tid,
+            owner_user_id=owner,
+        )
+        viewer_repo = TradeProfileRepo(
+            market=market,
+            pg=pg,
+            tenant_id=tid,
+            owner_user_id=viewer,
+        )
+        owner_repo.save(shared_id, "同租户共享方案", _BUY, _SELL, _BACKSTOP)
+        tenant_shared = owner_repo.set_visibility(shared_id, "tenant", published_by=owner)
+        owner_repo.save(private_id, "他人私有方案", _BUY, _SELL, _BACKSTOP)
+        private_profile = owner_repo.get_visible(private_id)
+        owner_repo.save(public_id, "全体公开方案", _BUY, _SELL, _BACKSTOP)
+        public_profile = owner_repo.set_visibility(public_id, "public", published_by=owner)
+        viewer_repo.save(shared_id, "查看者同名自有方案", _BUY, _SELL, _BACKSTOP)
+
+        def evaluate(uid: str, tenant_id: str, profile_id: str):
+            return client.get(
+                "/api/stocks/600000.SH/trade-eval",
+                params={"profile_id": profile_id, "date": "2024-01-02"},
+                headers=_auth(uid, tenant_id),
+            ).json()
+
+        same_tenant = evaluate(viewer, tid, tenant_shared["profile_ref"])
+        assert same_tenant["code"] == 0
+        assert same_tenant["data"]["name"] == "同租户共享方案"
+
+        public = evaluate(outsider, otid, public_profile["profile_ref"])
+        assert public["code"] == 0
+        assert public["data"]["name"] == "全体公开方案"
+
+        private = evaluate(viewer, tid, private_profile["profile_ref"])
+        assert private["code"] == 404
+        assert private["msg"] == "买卖方案不存在"
+
+        viewer_legacy = evaluate(viewer, tid, shared_id)
+        assert viewer_legacy["code"] == 0
+        assert viewer_legacy["data"]["name"] == "查看者同名自有方案"
+
+        owner_legacy = evaluate(owner, tid, shared_id)
+        assert owner_legacy["code"] == 0
+        assert owner_legacy["data"]["name"] == "同租户共享方案"
+    finally:
+        for owner_id in (owner, viewer, outsider):
+            pg.execute("DELETE FROM trade_profile WHERE owner_user_id=%s", [owner_id])
+            pg.execute("DELETE FROM trade_profile_version WHERE owner_user_id=%s", [owner_id])
+        _rm_user(pg, owner, tid, owner_role)
+        _rm_user(pg, viewer, tid, viewer_role)
+        _rm_user(pg, outsider, otid, outsider_role)
