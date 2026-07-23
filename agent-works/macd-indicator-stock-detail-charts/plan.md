@@ -581,12 +581,12 @@ flowchart LR
 - 完成标准：工作区在三种可见数量、明暗主题和 KeepAlive 往返下稳定。
 - 实际落地情况：
   - 新增 `StockChartWorkspace.vue`，按 K线、图表二、图表三分别维护 ECharts 实例；group ID 由 `chartUtils.ts` 的模块级递增器生成，组件内三图同组、同时并存的不同组件实例异组，任一实例销毁不会断开另一实例。隐藏或换位会销毁/复用正确实例，最下方可见图独占日期标签和 slider，inside zoom 与 axisPointer 通过 group 联动。
-  - 新增 `workspaceOptions.ts`：按 `trade_date` 对齐行情与指标，分别生成 K线、量能、MACD option；K线 formatter 保留时间、开高低收、涨幅、振幅、成交量、成交额和换手率；MACD 空点不连线，正负柱消费涨跌 token，并通过 `markLine yAxis=0` 和动态 min/max 保证全正、全负数据都显示零轴；金叉/死叉只读取 R2 布尔结果，自定义 series 的标签、引导线和 DIFF 锚点共用事件日 X，密集信号只使用纵向 lane。
+  - 新增 `workspaceOptions.ts`：按 `trade_date` 对齐行情与指标，分别生成 K线、量能、MACD option；K线 formatter 保留时间、开高低收、涨幅、振幅、成交量、成交额和换手率；底部日期轴显式保留首尾标签，并将首标签左对齐、末标签右对齐，避免紧凑视口下边界交易日被画布裁切；MACD 空点不连线，正负柱消费涨跌 token，并通过 `markLine yAxis=0` 和动态 min/max 保证全正、全负数据都显示零轴；金叉/死叉只读取 R2 布尔结果，自定义 series 的标签、引导线和 DIFF 锚点共用事件日 X，密集信号只使用纵向 lane。
   - 新增 `chartUtils.ts` 并让既有 `CandleChart` 复用后向 MA、量额格式化和主题 token 解析；`CandleChart` 原 props、双 grid、K线/量能和训练/回测消费契约不变。
   - 分隔线实现 pointer、触控和键盘输入，提供 `role=separator`、水平朝向、min/max/now；K线/辅助图最低 250/126px，工作区最低 650px；pointermove 只发 draft，pointerup、pointercancel、KeepAlive 停用或卸载的有效终态只提交一次。
   - 主题切换重渲染图表，分隔线遵守 reduced-motion；MACD loading/insufficient/error 复用 `AppStateBlock` 紧凑覆盖，标题和面板高度稳定，error 只发局部 `retryMacd`。
-  - 新增 15 个图表定向用例，覆盖日期对齐、完整 K线 tooltip、MACD 零轴与全正/全负范围、信号同 X、双工作区 group 隔离、三/二/一图、底部轴迁移、局部状态、ARIA、pointercancel、键盘 2%、隐藏销毁、KeepAlive 往返和旧 `CandleChart` 回归；连同 T4 偏好用例定向执行为 38 passed。
-  - 前端全量回归 `62 files / 402 tests passed`；正式构建通过。新增不进入生产路由的 E2E 回归夹具和 Playwright 用例，固定命令 `npm run test:e2e -- stock-chart-workspace-preview.spec.ts` 可在 1100×620、1366×768、1440×900 重放三/二/一图、夜间主题、MACD 局部错误、键盘调整、横向溢出和控制台错误检查，3 projects passed。
+  - 新增 15 个图表定向用例，覆盖日期对齐、完整 K线 tooltip、MACD 零轴与全正/全负范围、日期轴首尾向内对齐配置、信号同 X、双工作区 group 隔离、三/二/一图、底部轴迁移、局部状态、ARIA、pointercancel、键盘 2%、隐藏销毁、KeepAlive 往返和旧 `CandleChart` 回归；连同 T4 偏好用例定向执行为 38 passed。
+  - 前端全量回归 `62 files / 402 tests passed`；正式构建通过。新增不进入生产路由的 E2E 回归夹具和 Playwright 用例，固定命令 `npm run test:e2e -- stock-chart-workspace-preview.spec.ts` 可在 1100×620、1366×768、1440×900 重放三/二/一图、夜间主题、MACD 局部错误、键盘调整、横向溢出和控制台错误检查，3 projects passed；日期轴边界修复后再次执行同一命令仍为 3 passed，并在浅色/深色实际画布中确认首日 `2026-04-01` 与末日标签完整可读。
   - 本阶段只交付可独立验证的工作区组件和共享 helper，没有提前修改 `StockDetailView` 请求/渲染链，也未进入 T6；真实页面消费与 DESIGN 真实组件登记按计划留 T6/T8。
 
 ### 6.6 任务 T6：接入个股页面并拆分请求竞态
@@ -844,8 +844,8 @@ WHERE is_builtin = TRUE
   - T3 真实库五字段序列冒烟返回 60 行且严格 JSON 通过；前端正式构建通过，最终 `/api/health=200`。
   - T4 已完成：9 种槽位组合、自动交换、隐藏/重显、五种有序组合高度、非法比例局部回退、draft/commit 和 dirty-before-hydrate 均有自动化证据；定向 27 passed。
   - T4 前端全量回归 `59 files / 387 tests passed`，正式构建通过；本阶段无模板、样式或点击入口变更，不执行浏览器视觉验收。
-  - T5 已完成：三/二/一图、日期对齐、完整 K线 tooltip、MACD 零轴与单边范围、信号同 X、双工作区 group 隔离、底部轴迁移、局部状态、ARIA、pointercancel、键盘 2%、隐藏销毁、KeepAlive 往返和旧 `CandleChart` 回归定向 15 passed；连同 T4 偏好模型为 38 passed。
-  - T5 前端全量回归 `62 files / 402 tests passed`，正式构建通过；可重复 Playwright 夹具在 1100×620、1366×768、1440×900 三项目覆盖明暗主题、三种可见数量、局部错误、键盘调整、横向溢出和控制台错误，3 passed。
+  - T5 已完成：三/二/一图、日期对齐、完整 K线 tooltip、MACD 零轴与单边范围、日期轴首尾向内对齐、信号同 X、双工作区 group 隔离、底部轴迁移、局部状态、ARIA、pointercancel、键盘 2%、隐藏销毁、KeepAlive 往返和旧 `CandleChart` 回归定向 15 passed；连同 T4 偏好模型为 38 passed。
+  - T5 前端全量回归 `62 files / 402 tests passed`，正式构建通过；可重复 Playwright 夹具在 1100×620、1366×768、1440×900 三项目覆盖明暗主题、三种可见数量、局部错误、键盘调整、横向溢出和控制台错误，日期轴边界修复后复跑仍为 3 passed；浅色/深色实际画布确认首日 `2026-04-01` 和末日标签完整。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
   - T6–T13 尚未开始；真实个股页面接入及其业务 Playwright、发布 smoke 的验证均保留到对应阶段，不提前执行。

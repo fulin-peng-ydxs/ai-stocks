@@ -229,6 +229,10 @@ function commonAxes(context: OptionContext) {
       axisTick: { show: context.isBottom },
       axisLabel: {
         show: context.isBottom,
+        showMinLabel: true,
+        showMaxLabel: true,
+        alignMinLabel: 'left',
+        alignMaxLabel: 'right',
         color: context.theme.label,
         fontSize: 10,
       },

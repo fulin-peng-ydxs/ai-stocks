@@ -130,6 +130,13 @@ describe('workspaceOptions', () => {
     expect(option.yAxis.min({ min: -0.3 })).toBe(-0.3)
     expect(option.yAxis.max({ max: -0.1 })).toBe(0)
     expect(option.yAxis.max({ max: 0.4 })).toBe(0.4)
+    expect(option.xAxis.axisLabel).toMatchObject({
+      show: true,
+      showMinLabel: true,
+      showMaxLabel: true,
+      alignMinLabel: 'left',
+      alignMaxLabel: 'right',
+    })
     expect(option.dataZoom).toHaveLength(2)
     expect(option.dataZoom[1]).toMatchObject({ type: 'slider', start: 10, end: 90 })
   })
