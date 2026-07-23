@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1、T2 已完成并通过定向验证；T3–T13 尚未开始，本轮未进入后续阶段。
+- 当前进度：T1、T2、T3 已完成并通过对应阶段验证；T4–T13 尚未开始，本轮未进入后续阶段。
 
 ## 2. 当前项目依据
 
@@ -37,7 +37,8 @@
 ### 2.2 个股接口
 
 - `GET /api/stocks/{code}/bars` 与 `GET /api/stocks/{code}/indicators` 均受 `stocks:view` 保护。
-- 当前指标接口固定返回完整指标行，`lookback` 没有上下限，也没有字段过滤；记录中的 pandas/NumPy 空值尚未统一清洗为 JSON `null`。
+- 指标接口已支持可选 `fields` 业务字段白名单和 `lookback=1..6000`；未传 `fields` 时仍返回旧完整指标行，传入时始终保留 `trade_date`。
+- 指标序列化已统一把 pandas/NumPy 标量转换为原生 JSON 类型，并把 `NaN`、`pd.NA`、正负无穷转换为 `null`。
 - 当前 `StockDetailView.vue` 用同一个 `Promise.all` 拉行情、最新指标和原始最新价，任一指标请求失败会把整个主图链路置为错误态，不满足 R9 的局部失败隔离。
 
 ### 2.3 页面、图表与布局
@@ -76,14 +77,14 @@
 | R1 | EMA 与 `macd_diff/macd_dea/macd_hist` 三个数值原子结果 | 已完成（T9 总回归待执行） | T1、T9 |
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成（T9 总回归待执行） | T1、T9 |
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成（T9/T13 总回归待执行） | T2、T9、T13 |
-| R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 待开始 | T3、T6、T9、T10、T11、T13 |
+| R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 部分完成（T3 已完成，页面对齐与总回归待执行） | T3、T6、T9、T10、T11、T13 |
 | R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 待开始 | T5、T6、T10、T11 |
 | R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 待开始 | T4、T7、T10、T11 |
 | R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 待开始 | T4、T5、T10、T11 |
 | R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 待开始 | T4、T7、T9、T10、T11、T13 |
-| R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 待开始 | T3、T5、T6、T8、T10、T11 |
+| R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 部分完成（T3 权限/接口异常已验证） | T3、T5、T6、T8、T10、T11 |
 | R15 | 响应式、主题、pointer/键盘可访问性和 reduced motion | 待开始 | T5、T8、T10、T11、T12 |
-| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 待开始 | T3、T4、T5、T6、T10、T11、T13 |
+| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 部分完成（T3 接口兼容已验证） | T3、T4、T5、T6、T10、T11、T13 |
 
 ### 3.2 可选增强（建议项处理）
 
@@ -334,14 +335,14 @@ flowchart LR
 | 必须实现 | R1 | `requirement.md §5.1`：EMA 与三个数值原子结果 | EMA、三数值列、暖机、空值、算法版本、单股/全市场一致 | T1、T9 | 已完成（T9 总回归待执行） | 一致 | 已知公式、前缀稳定、两路径容差单测 | T1 定向测试通过；固定 12/26/9，不开放参数。 |
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成（T9 总回归待执行） | 一致 | 交叉边界和缺失段单测 | T1 定向测试通过；空值保留 null，下游按不成立处理。 |
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 已完成（T9/T13 总回归待执行） | 一致 | repo/API/筛选/评分/买卖方案测试 | T2 定向与完整相关文件回归通过；启动 seed 同时修复全新库目录为空的存量初始化缺口，影响面在 §7 单列。 |
-| 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 待开始 | 一致 | API、Vitest、Playwright | 6000 对齐 bars 行情边界，不描述为 indicators 现状。 |
+| 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 部分完成（T3 已完成） | 一致 | API、Vitest、Playwright | T3 已完成安全序列契约；页面按日期对齐和总回归留在后续任务。 |
 | 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 待开始 | 一致 | option/组件测试、固定样本、截图和 E2E | 信号标签只做纵向避让。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 待开始 | 一致 | 归一化单测、抽屉 E2E | 图表一固定 K线。 |
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T10、T11 | 待开始 | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | 拖动临时态不直接写远端偏好。 |
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 待开始 | 一致 | 偏好 API、Vitest、跨用户 E2E | 复用现有表和权限，不新增 DDL。 |
-| 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 待开始 | 一致 | 状态测试、403/失败注入 E2E | MACD 失败不阻断 K线/量能。 |
+| 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3 权限/接口异常已验证） | 一致 | 状态测试、403/失败注入 E2E | 页面级局部失败隔离仍由 T5/T6/T8 承接。 |
 | 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 待开始 | 一致 | 样式/契约测试、build、主题截图 | 不新增金色 token，不使用视口减法。 |
-| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 待开始 | 一致 | 竞态和生命周期测试、E2E | 旧偏好只回退非法组合，不清空其他设置。 |
+| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3 接口兼容已验证） | 一致 | 竞态和生命周期测试、E2E | 旧调用不传 `fields` 的完整行兼容已验证；请求竞态与生命周期留待后续。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
 | 暂不实现 | R12 | `requirement.md §4.3`：其他周期 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 仅日线前复权。 |
@@ -453,13 +454,14 @@ flowchart LR
 
 ### 6.3 任务 T3：扩展个股指标接口并保证兼容序列化
 
-- 状态：待开始
+- 状态：已完成（2026-07-23）
 - 对应需求：R4、R9、R16。
 - 依赖：T1。
 - 涉及文件：
   - `backend/api/stocks.py`
   - `frontend/src/api/stocks.ts`
-  - `backend/tests/test_api.py` 或新增 `backend/tests/test_stock_indicators_api.py`
+  - `backend/tests/test_stock_indicators_api.py`
+  - `frontend/src/api/__tests__/stocks.spec.ts`
 - 目标：在不建立第二套接口的前提下，为详情页提供安全、兼容的整段 MACD 序列。
 - 开发内容：
   - 增加 `fields` 白名单，并为 indicators 接口新增 `lookback=1..6000`；6000 对齐同页 bars 行情加载边界。
@@ -474,7 +476,29 @@ flowchart LR
   - 无 `stocks:view` 保持 403。
 - 验证方式：旧调用、字段裁剪、边界 lookback、非法字段、null JSON 和权限测试。
 - 完成标准：接口契约满足 R4，现有调用方无需改造即可继续使用。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-23）。
+  - `GET /api/stocks/{code}/indicators` 新增 `fields` 逗号参数；仅开放 `_IND_COLS` 业务指标列，排除重复身份字段 `code/trade_date` 和内部 `param_hash`，`trade_date` 始终返回。
+  - 未传 `fields` 时保留旧完整指标行；空项和重复项按首次出现顺序归一化，未知或内部字段在指标计算前返回 400。
+  - `lookback` 新增 FastAPI `1..6000` 校验，计算仍复用既有 520 行暖机窗口；空行情保持空数组。
+  - pandas/NumPy 标量统一转为原生 JSON；`NaN`、`pd.NA`、正无穷和负无穷均转为 `null`，可空布尔保持 `bool/null`。
+  - 前端在既有 `stocks.ts` 内新增 `IndicatorField`、`IndicatorRow` 和 `IndicatorParams`，字段数组按调用方顺序编码为逗号参数；没有新增请求 helper 或第二套接口。
+  - 复用判断：沿用现有 `http.get(..., { params, signal })` 和项目已有短 `join(',')` 参数模式；该领域字段联合只服务个股指标契约，抽成跨 API query builder 会扩大依赖且没有第二个同变化原因的消费点，因此未新增公共 util。
+  - 后端目标及相关回归：
+
+    ```bash
+    python -m pytest \
+      backend/tests/test_stock_indicators_api.py \
+      backend/tests/test_indicators.py \
+      backend/tests/test_rbac_deps.py \
+      backend/tests/test_stage4_resource_codes.py \
+      -q
+    ```
+
+    执行结果：`44 passed in 4.95s`；112 条 warning 均为项目既存 FastAPI `on_event` 弃用提示。
+  - 前端目标测试：`cd frontend && npm run test -- --run src/api/__tests__/stocks.spec.ts`，结果 `2 passed`。
+  - 前端构建：`cd frontend && npm run build` 通过；仅有依赖注释位置和既有大 chunk 告警，无类型或构建失败。
+  - 真实库冒烟：`600000.SH` 五个 MACD 字段返回 60 行（2026-04-24 至 2026-07-22），字段裁剪准确，`json.dumps(..., allow_nan=False)` 通过。
+  - `python -m py_compile backend/api/stocks.py backend/tests/test_stock_indicators_api.py` 与 `git diff --check` 通过；最终按脚本恢复后端，`/api/health=200`。
 
 ### 6.4 任务 T4：实现图表偏好归一化与高度状态模型
 
@@ -781,9 +805,11 @@ WHERE is_builtin = TRUE
   - T1 下游冒烟已完成：筛选、评分、回测三条真实 `wide_snapshot/_IND_COLS` 链路与指标测试合计 17 passed；完整命令记录在 T1“实际落地情况”，按停服规则恢复后 `/api/health=200`。
   - T2 已完成：五个 MACD builtin、全量启动 seed、目录 API 和筛选/评分/买卖通用求值均有自动化证据；`enabled=NULL` 回退与无变化 `updated_at` 稳定均有回归，五个相关测试文件完整回归为 70 passed。
   - T2 真实启动对账已完成：builtin 从 38 增至 43，MACD 从 0 增至 5；仓库外备份可用于本地精确恢复，最终 `/api/health=200`。
+  - T3 已完成：字段白名单、旧完整行兼容、lookback 1/6000 边界、非法字段 400、空行情、严格 null JSON 和 `stocks:view` 权限均有自动化证据；相关后端回归 44 passed，前端 API 测试 2 passed。
+  - T3 真实库五字段序列冒烟返回 60 行且严格 JSON 通过；前端正式构建通过，最终 `/api/health=200`。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
-  - T3–T13 尚未开始；涉及接口、前端、Playwright、关键视口和发布 smoke 的验证均保留到对应阶段，不提前执行。
+  - T4–T13 尚未开始；涉及页面、Playwright、关键视口和发布 smoke 的验证均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵
 

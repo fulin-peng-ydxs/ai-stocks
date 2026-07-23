@@ -52,9 +52,35 @@ export interface Bars {
   bars: Bar[]
 }
 
+export type NumericIndicatorField =
+  | 'ma5' | 'ma10' | 'ma20' | 'ma60' | 'ma250'
+  | 'macd_diff' | 'macd_dea' | 'macd_hist'
+  | 'hhv60' | 'hhv120' | 'hhv240' | 'hhv480' | 'dist_to_high_2y'
+  | 'vol_ma5' | 'vol_ma20' | 'rs_pct'
+
+export type BooleanIndicatorField =
+  | 'macd_golden_cross' | 'macd_dead_cross'
+  | 'is_high_60' | 'is_high_120' | 'is_high_1y' | 'is_high_2y'
+  | 'is_bull_arrange' | 'ma20_up' | 'ma60_up' | 'above_ma250'
+  | 'is_vol_breakout' | 'is_platform_breakout' | 'is_turnover_healthy'
+
+export type IndicatorField = NumericIndicatorField | BooleanIndicatorField
+
+export type IndicatorRow = {
+  trade_date: string
+  code?: string
+  param_hash?: string | null
+} & Partial<Record<NumericIndicatorField, number | null>>
+  & Partial<Record<BooleanIndicatorField, boolean | null>>
+
 export interface Indicators {
   code: string
-  indicators: Record<string, unknown>[]
+  indicators: IndicatorRow[]
+}
+
+export interface IndicatorParams {
+  lookback?: number
+  fields?: readonly IndicatorField[]
 }
 
 export function listStocks(params?: StockListParams): Promise<StockList> {
@@ -71,10 +97,13 @@ export function getBars(
 
 export function getIndicators(
   code: string,
-  params?: { lookback?: number },
+  params?: IndicatorParams,
   signal?: AbortSignal,
 ): Promise<Indicators> {
-  return http.get(`/stocks/${code}/indicators`, { params, signal })
+  const query = params
+    ? { ...params, fields: params.fields?.join(',') }
+    : undefined
+  return http.get(`/stocks/${code}/indicators`, { params: query, signal })
 }
 
 export interface StockSignal {

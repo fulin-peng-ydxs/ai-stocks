@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import date
+from typing import Annotated
 
 import pandas as pd
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_perm, require_system_perm
 from backend.groups.stock_group import StockGroupRepo
+from backend.indicators.engine import _IND_COLS
 from backend.storage import get_client
 from backend.storage.repository import MarketRepository
 
@@ -20,6 +23,64 @@ router = APIRouter(prefix="/api", tags=["stocks", "data"])
 # 服务端排序白名单（防注入）：前端字段 → SQL 列；pct_chg/close 为查询内别名
 _STOCK_SORT_COLS = {"pct_chg": "pct_chg", "close": "b.close", "name": "sb.name",
                     "industry": "sb.industry", "code": "sb.code"}
+
+# 个股序列只开放业务指标列：code 已在响应外层，trade_date 始终返回；
+# param_hash 属内部缓存契约。
+_INDICATOR_FIELD_ALLOWLIST = frozenset(_IND_COLS) - {"code", "trade_date", "param_hash"}
+
+
+def _parse_indicator_fields(fields: str | None) -> list[str] | None:
+    """解析逗号字段列表；空项/重复项归一化，未知字段在计算前拒绝。"""
+    if fields is None:
+        return None
+    selected: list[str] = []
+    invalid: list[str] = []
+    for raw in fields.split(","):
+        field = raw.strip()
+        if not field:
+            continue
+        if field not in _INDICATOR_FIELD_ALLOWLIST:
+            if field not in invalid:
+                invalid.append(field)
+            continue
+        if field not in selected:
+            selected.append(field)
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的指标字段: {', '.join(invalid)}",
+        )
+    return selected
+
+
+def _indicator_json_scalar(value):
+    """把 pandas/NumPy 标量规范成严格 JSON；缺失和非有限数统一为 null。"""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, (bool, int, str)):
+        return value
+    return value
+
+
+def _serialize_indicator_rows(df: pd.DataFrame) -> list[dict]:
+    rows: list[dict] = []
+    for raw in df.to_dict("records"):
+        row = {key: _indicator_json_scalar(value) for key, value in raw.items()}
+        trade_date = row.get("trade_date")
+        row["trade_date"] = (
+            None if trade_date is None else str(pd.Timestamp(trade_date).date())
+        )
+        rows.append(row)
+    return rows
 
 
 @router.get("/stocks", response_model=ApiResponse,
@@ -207,8 +268,14 @@ def stock_trade_eval(code: str, profile_id: str,
 
 @router.get("/stocks/{code}/indicators", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stocks:view"))])
-def stock_indicators(code: str, lookback: int = 60) -> ApiResponse:
+def stock_indicators(
+    code: str,
+    lookback: Annotated[int, Query(ge=1, le=6000)] = 60,
+    fields: str | None = None,
+) -> ApiResponse:
     from backend.indicators.engine import IndicatorEngine
+
+    selected = _parse_indicator_fields(fields)
     c = get_client()
     # v2.0：指标动态实时计算（无 indicator 表）。多取窗口暖机后裁末段 lookback 行。
     # 注：rs_pct 为横截面量，单股序列不填（个股查询页该列为空，M2.4 适配）。
@@ -216,10 +283,9 @@ def stock_indicators(code: str, lookback: int = 60) -> ApiResponse:
     if df.empty:
         return ok({"code": code, "indicators": []})
     df = df.sort_values("trade_date").tail(int(lookback))
-    rows = df.to_dict("records")
-    for r in rows:
-        r["trade_date"] = str(pd.Timestamp(r["trade_date"]).date())
-    return ok({"code": code, "indicators": rows})
+    if selected is not None:
+        df = df.reindex(columns=["trade_date", *selected])
+    return ok({"code": code, "indicators": _serialize_indicator_rows(df)})
 
 
 # 数据管理页专属读接口：仅平台系统管理员可见（需求 §7 数据管理菜单 system-only；R8 守卫）。
