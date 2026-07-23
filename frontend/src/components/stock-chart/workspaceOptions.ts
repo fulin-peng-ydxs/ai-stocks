@@ -283,6 +283,7 @@ function commonOption(context: OptionContext) {
 export function buildKlineOption(context: OptionContext) {
   const bars = context.rows.map((row) => row.bar)
   const allCloses = [...context.warmupBars, ...bars].map((bar) => bar.close)
+  const base = commonOption(context)
   const maDefinitions = [
     { period: 5, color: context.theme.label },
     { period: 10, color: context.theme.diff },
@@ -291,7 +292,17 @@ export function buildKlineOption(context: OptionContext) {
     { period: 60, color: '#ff7a18' },
   ]
   return {
-    ...commonOption(context),
+    ...base,
+    tooltip: {
+      ...base.tooltip,
+      formatter: (params: unknown) => {
+        const list = Array.isArray(params) ? params : [params]
+        const index = (list[0] as { dataIndex?: unknown } | undefined)?.dataIndex
+        if (typeof index !== 'number') return ''
+        const row = context.rows[index]
+        return row ? klineTooltip(row) : ''
+      },
+    },
     yAxis: {
       scale: true,
       position: 'right',
@@ -380,6 +391,8 @@ export function buildMacdOption(context: OptionContext) {
     ...commonOption(context),
     yAxis: {
       scale: true,
+      min: ({ min }: { min: number }) => Math.min(0, min),
+      max: ({ max }: { max: number }) => Math.max(0, max),
       position: 'right',
       axisLine: { show: false },
       axisLabel: { color: context.theme.label, fontSize: 10 },
@@ -389,6 +402,13 @@ export function buildMacdOption(context: OptionContext) {
       {
         name: 'MACD',
         type: 'bar',
+        markLine: {
+          silent: true,
+          symbol: ['none', 'none'],
+          label: { show: false },
+          lineStyle: { color: context.theme.axis, width: 1 },
+          data: [{ yAxis: 0 }],
+        },
         data: context.rows.map((row) => {
           const value = row.indicator?.macd_hist ?? null
           return {
@@ -465,6 +485,7 @@ export function macdMetrics(rows: readonly AlignedStockChartRow[], index: number
 export function klineTooltip(row: AlignedStockChartRow): string {
   const bar = row.bar
   const pct = bar.pre_close ? ((bar.close - bar.pre_close) / bar.pre_close) * 100 : null
+  const amplitude = bar.pre_close ? ((bar.high - bar.low) / bar.pre_close) * 100 : null
   return [
     `时间：${bar.date}`,
     `开盘：${formatChartNumber(bar.open)}`,
@@ -472,7 +493,9 @@ export function klineTooltip(row: AlignedStockChartRow): string {
     `最高：${formatChartNumber(bar.high)}`,
     `最低：${formatChartNumber(bar.low)}`,
     `涨幅：${pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`}`,
+    `振幅：${amplitude == null ? '--' : `${amplitude.toFixed(2)}%`}`,
     `成交量：${formatVolume(bar.volume)}`,
     `成交额：${formatAmount(bar.amount)}`,
+    `换手率：${bar.turnover_rate == null ? '--' : `${bar.turnover_rate.toFixed(2)}%`}`,
   ].join('<br/>')
 }

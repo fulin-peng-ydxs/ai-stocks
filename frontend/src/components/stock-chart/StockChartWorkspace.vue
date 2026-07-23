@@ -14,7 +14,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useTheme } from '@/composables/useTheme'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
-import { stockChartTheme } from './chartUtils'
+import { nextStockChartWorkspaceGroupId, stockChartTheme } from './chartUtils'
 import {
   AUXILIARY_MIN_HEIGHT,
   KEYBOARD_RATIO_STEP,
@@ -77,8 +77,7 @@ const emit = defineEmits<{
   retryMacd: []
 }>()
 
-let groupSequence = 0
-const groupId = `stock-chart-workspace-${++groupSequence}`
+const groupId = nextStockChartWorkspaceGroupId()
 const workspaceEl = ref<HTMLElement | null>(null)
 const chartElements = new Map<WorkspacePanelKey, HTMLElement>()
 const charts = new Map<WorkspacePanelKey, echarts.ECharts>()

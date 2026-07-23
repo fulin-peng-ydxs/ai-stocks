@@ -3,6 +3,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import {
   adjustAdjacentRatios,
   alignStockChartRows,
+  buildKlineOption,
   buildMacdOption,
   buildSignalData,
   signalRenderGeometry,
@@ -106,7 +107,14 @@ describe('workspaceOptions', () => {
       zoomStart: 10,
       zoomEnd: 90,
     })
-    const series = option.series as Array<{ name: string, data?: unknown[] }>
+    const series = option.series as Array<{
+      name: string
+      data?: unknown[]
+      markLine?: {
+        data: Array<{ yAxis: number }>
+        symbol: string[]
+      }
+    }>
     const macd = series.find((item) => item.name === 'MACD')
 
     expect(macd?.data?.[0]).toMatchObject({ value: null })
@@ -114,8 +122,43 @@ describe('workspaceOptions', () => {
       value: -0.2,
       itemStyle: { color: '#down' },
     })
+    expect(macd?.markLine).toMatchObject({
+      symbol: ['none', 'none'],
+      data: [{ yAxis: 0 }],
+    })
+    expect(option.yAxis.min({ min: 0.1 })).toBe(0)
+    expect(option.yAxis.min({ min: -0.3 })).toBe(-0.3)
+    expect(option.yAxis.max({ max: -0.1 })).toBe(0)
+    expect(option.yAxis.max({ max: 0.4 })).toBe(0.4)
     expect(option.dataZoom).toHaveLength(2)
     expect(option.dataZoom[1]).toMatchObject({ type: 'slider', start: 10, end: 90 })
+  })
+
+  it('K线 tooltip 保留既有完整行情字段', () => {
+    const rows = alignStockChartRows([bar('2026-07-22', 10)], [])
+    const option = buildKlineOption({
+      rows,
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      zoomStart: 0,
+      zoomEnd: 100,
+    })
+    const formatter = option.tooltip.formatter as (
+      params: Array<{ dataIndex: number }>,
+    ) => string
+    const content = formatter([{ dataIndex: 0 }])
+
+    expect(content).toContain('时间：2026-07-22')
+    expect(content).toContain('开盘：9.80')
+    expect(content).toContain('收盘：10.00')
+    expect(content).toContain('最高：10.40')
+    expect(content).toContain('最低：9.50')
+    expect(content).toContain('涨幅：+1.01%')
+    expect(content).toContain('振幅：9.09%')
+    expect(content).toContain('成交量：1000手')
+    expect(content).toContain('成交额：100万')
+    expect(content).toContain('换手率：1.00%')
   })
 
   it('拖动只改变相邻比例并受最低高度比例约束', () => {

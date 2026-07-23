@@ -129,6 +129,31 @@ describe('StockChartWorkspace', () => {
     expect(latestOptions[2].dataZoom).toHaveLength(2)
   })
 
+  it('同时挂载两个工作区时使用不同 group，互不连接或断开', async () => {
+    const first = await mountWorkspace()
+    const firstGroup = echartsMock.instances[0].group
+    expect(new Set(echartsMock.instances.slice(0, 3).map((instance) => instance.group)).size)
+      .toBe(1)
+
+    const second = await mountWorkspace()
+    const secondGroup = echartsMock.instances[3].group
+    expect(new Set(echartsMock.instances.slice(3, 6).map((instance) => instance.group)).size)
+      .toBe(1)
+    expect(secondGroup).not.toBe(firstGroup)
+
+    const secondDisconnectsBefore = echartsMock.disconnect.mock.calls.filter(
+      ([group]) => group === secondGroup,
+    ).length
+    first.unmount()
+    expect(echartsMock.disconnect).toHaveBeenCalledWith(firstGroup)
+    expect(echartsMock.disconnect.mock.calls.filter(
+      ([group]) => group === secondGroup,
+    )).toHaveLength(secondDisconnectsBefore)
+
+    second.unmount()
+    expect(echartsMock.disconnect).toHaveBeenCalledWith(secondGroup)
+  })
+
   it('隐藏辅助图时销毁实例和无效分隔线，剩余底图接管日期轴', async () => {
     const wrapper = await mountWorkspace()
     const removed = echartsMock.instances[2]

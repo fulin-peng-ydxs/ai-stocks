@@ -13,6 +13,14 @@ export interface StockChartTheme {
   focus: string
 }
 
+let workspaceGroupSequence = 0
+
+/** 模块级递增，确保同一页面并存的多个工作区不会误连到同一 ECharts group。 */
+export function nextStockChartWorkspaceGroupId(): string {
+  workspaceGroupSequence += 1
+  return `stock-chart-workspace-${workspaceGroupSequence}`
+}
+
 function cssVariable(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
