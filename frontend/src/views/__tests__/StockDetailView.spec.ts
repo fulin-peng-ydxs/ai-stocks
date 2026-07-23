@@ -8,7 +8,11 @@ import ElementPlus from 'element-plus'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import { useAuthStore } from '@/stores/auth'
 
-const pageSettingsState = vi.hoisted(() => ({ current: null as any }))
+const pageSettingsState = vi.hoisted(() => ({
+  current: null as any,
+  reset: vi.fn(),
+}))
+const resetLayout = vi.hoisted(() => vi.fn())
 
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
   useRemoteLayoutConfig: () => ({
@@ -18,7 +22,7 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
     valueOf: vi.fn(),
     sourceOf: vi.fn(),
     isDirty: ref(false),
-    resetAll: vi.fn(),
+    resetAll: resetLayout,
     componentValueOf: vi.fn(),
     setComponentKnob: vi.fn(),
     componentSourceOf: vi.fn(),
@@ -30,10 +34,16 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
 vi.mock('@/composables/usePageSettings', () => ({
   usePageSettings: (_key: string, defaults: Record<string, unknown>) => {
     pageSettingsState.current ??= reactive(structuredClone(defaults))
+    pageSettingsState.reset = vi.fn(() => {
+      for (const key of Object.keys(pageSettingsState.current)) {
+        delete pageSettingsState.current[key]
+      }
+      Object.assign(pageSettingsState.current, structuredClone(defaults))
+    })
     return {
       settings: pageSettingsState.current,
       isDirty: ref(false),
-      reset: vi.fn(),
+      reset: pageSettingsState.reset,
       hydrated: ref(true),
     }
   },
@@ -78,7 +88,7 @@ const StockChartWorkspaceStub = defineComponent({
     'macdState',
     'macdError',
   ],
-  emits: ['retryMacd'],
+  emits: ['retryMacd', 'ratioDraft', 'ratioCommit'],
   setup(props, { emit }) {
     return () => h('section', {
       'data-testid': 'stock-chart-workspace',
@@ -92,7 +102,45 @@ const StockChartWorkspaceStub = defineComponent({
         'data-testid': 'retry-macd',
         onClick: () => emit('retryMacd'),
       }, '重试 MACD'),
+      h('button', {
+        'data-testid': 'ratio-draft',
+        onClick: () => emit('ratioDraft', [0.5, 0.3, 0.2]),
+      }, '调整高度草稿'),
+      h('button', {
+        'data-testid': 'ratio-commit',
+        onClick: () => emit('ratioCommit', [0.5, 0.3, 0.2]),
+      }, '提交高度'),
     ])
+  },
+})
+
+const PageSettingsDrawerStub = defineComponent({
+  name: 'PageSettingsDrawer',
+  props: ['businessVisible'],
+  emits: ['reset'],
+  setup(_props, { emit, slots }) {
+    return () => h('aside', { 'data-testid': 'page-settings-drawer' }, [
+      slots.business?.(),
+      h('button', {
+        'data-testid': 'page-settings-reset',
+        onClick: () => emit('reset'),
+      }, '恢复默认'),
+    ])
+  },
+})
+
+const PageSegmentedStub = defineComponent({
+  name: 'PageSegmented',
+  props: ['modelValue', 'options', 'testId'],
+  emits: ['update:modelValue'],
+  setup(props, { emit }) {
+    return () => h('div', { 'data-testid': props.testId }, (
+      props.options as Array<{ label: string; value: string | number | boolean }>
+    ).map((option) => h('button', {
+      'data-testid': props.testId ? `${props.testId}-${String(option.value)}` : undefined,
+      'data-active': String(props.modelValue === option.value),
+      onClick: () => emit('update:modelValue', option.value),
+    }, option.label)))
   },
 })
 
@@ -194,10 +242,10 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       StockChartWorkspace: StockChartWorkspaceStub,
       AppStateBlock: AppStateBlockStub,
       KlineRangeSelect: KlineRangeSelectStub,
-      PageSettingsDrawer: true,
+      PageSettingsDrawer: PageSettingsDrawerStub,
       PageSettingsTrigger: true,
       PageSettingSection: { template: '<section><slot/></section>' },
-      PageSegmented: true,
+      PageSegmented: PageSegmentedStub,
       PageToggleRow: true,
       KlineSettingSection: true,
       ElCard: { template: '<section><slot name="header"/><slot/></section>' },
@@ -300,6 +348,7 @@ describe('StockDetailView 三图数据协调', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     pageSettingsState.current = null
+    resetLayout.mockReset()
     localStorage.clear()
     setDefaultApiResponses()
   })
@@ -460,6 +509,68 @@ describe('StockDetailView 三图数据协调', () => {
     expect(stocksApi.getBars).toHaveBeenCalledTimes(barsAfterRange)
     expect(stocksApi.getIndicators).toHaveBeenCalledTimes(indicatorsAfterRange)
     expect(wrapper.findComponent(StockChartWorkspaceStub).props('slot3')).toBe('hidden')
+  })
+
+  it('设置抽屉即时交换和隐藏辅助图，高度只在 commit 后保存且恢复默认完整重置', async () => {
+    const wrapper = await mountView()
+    const initialBars = vi.mocked(stocksApi.getBars).mock.calls.length
+    const initialIndicators = vi.mocked(stocksApi.getIndicators).mock.calls.length
+    const workspace = wrapper.findComponent(StockChartWorkspaceStub)
+
+    expect(wrapper.findComponent(PageSettingsDrawerStub).props('businessVisible')).toBe(true)
+    expect(wrapper.get('[data-testid="stock-detail-chart-slot1-kline"]').text())
+      .toContain('固定，不可隐藏')
+
+    await wrapper.get('[data-testid="stock-detail-chart-slot2-macd"]').trigger('click')
+    await nextTick()
+    expect(pageSettingsState.current.charts).toMatchObject({
+      slot2: 'macd',
+      slot3: 'volume',
+    })
+    expect(workspace.props('slot2')).toBe('macd')
+    expect(workspace.props('slot3')).toBe('volume')
+
+    await wrapper.get('[data-testid="stock-detail-chart-slot3-hidden"]').trigger('click')
+    await nextTick()
+    expect(workspace.props('slot3')).toBe('hidden')
+    expect(stocksApi.getBars).toHaveBeenCalledTimes(initialBars)
+    expect(stocksApi.getIndicators).toHaveBeenCalledTimes(initialIndicators)
+
+    const persistedBeforeDraft = JSON.parse(
+      JSON.stringify(pageSettingsState.current.charts.heightRatios),
+    )
+    await wrapper.get('[data-testid="ratio-draft"]').trigger('click')
+    await nextTick()
+    expect(pageSettingsState.current.charts.heightRatios).toEqual(persistedBeforeDraft)
+
+    await wrapper.get('[data-testid="ratio-commit"]').trigger('click')
+    await nextTick()
+    expect(pageSettingsState.current.charts.heightRatios['kline|macd'])
+      .toEqual([0.75, 0.25])
+
+    // 三图终态用于验证 commit 真正写入当前有序组合，而不是草稿或其他组合。
+    await wrapper.get('[data-testid="stock-detail-chart-slot3-volume"]').trigger('click')
+    await nextTick()
+    await wrapper.get('[data-testid="ratio-commit"]').trigger('click')
+    await nextTick()
+    expect(pageSettingsState.current.charts.heightRatios['kline|macd|volume'])
+      .toEqual([0.5, 0.3, 0.2])
+
+    await wrapper.get('[data-testid="page-settings-reset"]').trigger('click')
+    await nextTick()
+    expect(pageSettingsState.reset).toHaveBeenCalledTimes(1)
+    expect(resetLayout).toHaveBeenCalledTimes(1)
+    expect(pageSettingsState.current.charts).toEqual({
+      slot2: 'volume',
+      slot3: 'macd',
+      heightRatios: {
+        kline: [1],
+        'kline|volume': [0.75, 0.25],
+        'kline|macd': [0.75, 0.25],
+        'kline|volume|macd': [0.6, 0.2, 0.2],
+        'kline|macd|volume': [0.6, 0.2, 0.2],
+      },
+    })
   })
 
   it('MACD 局部失败保留行情和快照，局部重试不刷新行情', async () => {

@@ -45,6 +45,7 @@ import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import {
   createDefaultStockChartPreferences,
   useStockChartPreferences,
+  type AuxiliaryChartSlot,
 } from '@/composables/useStockChartPreferences'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -99,6 +100,31 @@ const chartSettings = computed({
   },
 })
 const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
+const auxiliaryChartOptions = [
+  { label: '量能', value: 'volume' },
+  { label: 'MACD', value: 'macd' },
+  { label: '隐藏', value: 'hidden' },
+]
+
+function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
+  chartPreferences.setSlotType(slot, value)
+}
+
+function handleRatioDraft(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+}
+
+function handleRatioCommit(ratios: number[]): void {
+  // pointer 未移动也可能直接产生 commit；先接收终态，再只向持久偏好写入一次。
+  chartPreferences.updateRatioDraft(ratios)
+  chartPreferences.commitRatioDraft()
+}
+
+function resetDetailSettings(): void {
+  chartPreferences.cancelRatioDraft()
+  reset()
+  resetLayout()
+}
 
 // ── 通用导航：当前集合（分组成员 / 列表勾选 / 查询结果）上一个·下一个·直选 ──
 const stockSet = useStockSet()
@@ -894,6 +920,8 @@ onBeforeUnmount(() => {
         :macd-error="indicatorError"
         :zoom-start="0"
         :zoom-end="100"
+        @ratio-draft="handleRatioDraft"
+        @ratio-commit="handleRatioCommit"
         @retry-macd="loadIndicators"
       />
 
@@ -987,10 +1015,11 @@ onBeforeUnmount(() => {
       :dirty="isDirty || layoutDirty"
       page-key="stock-detail"
       :config="drawerConfig"
-      @reset="reset(); resetLayout()"
+      :business-visible="true"
+      @reset="resetDetailSettings"
     >
       <template #business>
-        <PageSettingSection title="图表设置" desc="结构参考同花顺，但颜色跟随当前主题。">
+        <PageSettingSection title="图表设置" desc="图表类型、显隐和拖动后的高度会自动保存。">
           <div class="setting-item">
             <div class="setting-label">复权模式</div>
             <PageSegmented v-model="settings.adjustMode" :options="[
@@ -998,6 +1027,30 @@ onBeforeUnmount(() => {
               { label: '前复权', value: 'qfq' },
               { label: '后复权', value: 'hfq' },
             ]" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">图表一</div>
+            <div class="fixed-chart-value" data-testid="stock-detail-chart-slot1-kline">
+              K线（固定，不可隐藏）
+            </div>
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">图表二</div>
+            <PageSegmented
+              :model-value="chartPreferences.preferences.value.slot2"
+              :options="auxiliaryChartOptions"
+              test-id="stock-detail-chart-slot2"
+              @update:model-value="setAuxiliaryChart('slot2', $event)"
+            />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">图表三</div>
+            <PageSegmented
+              :model-value="chartPreferences.preferences.value.slot3"
+              :options="auxiliaryChartOptions"
+              test-id="stock-detail-chart-slot3"
+              @update:model-value="setAuxiliaryChart('slot3', $event)"
+            />
           </div>
         </PageSettingSection>
 
@@ -1095,6 +1148,18 @@ onBeforeUnmount(() => {
 .setting-label {
   font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
+}
+.fixed-chart-value {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--page-settings-seg-active-border);
+  border-radius: 10px;
+  background: var(--page-settings-seg-active-bg);
+  color: var(--page-settings-text);
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
 }
 .nav-bar {
   display: flex;

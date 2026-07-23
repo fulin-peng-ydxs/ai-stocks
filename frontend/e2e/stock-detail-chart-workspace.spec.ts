@@ -4,7 +4,7 @@ import { loginAsDebugUser } from './helpers/auth'
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
 
 test.describe('个股详情三图工作区', () => {
-  test('MACD 局部失败不阻断行情，重试与范围刷新使用独立指标请求', async ({ page, request }) => {
+  test('MACD 局部失败隔离，图表组合和高度偏好可自动保存与重置', async ({ page, request }) => {
     const consoleIssues: string[] = []
     page.on('console', (message) => {
       const text = message.text()
@@ -42,6 +42,11 @@ test.describe('个股详情三图工作区', () => {
     const stocksPreferenceKey = preferenceKey({
       scope: 'page',
       pageKey: 'stocks',
+      prefKey: 'settings',
+    })
+    const stockDetailPreferenceKey = preferenceKey({
+      scope: 'page',
+      pageKey: 'stock-detail',
       prefKey: 'settings',
     })
     preferenceStore.set(stocksPreferenceKey, {
@@ -175,6 +180,74 @@ test.describe('个股详情三图工作区', () => {
     await expect(page.getByTestId('stock-group-select')).toHaveCount(0)
     await expect(page.getByTestId('stock-trade-eval-card')).toHaveCount(0)
     expect(unauthorizedSecondaryRequests).toBe(0)
+
+    const indicatorRequestsBeforeSettings = indicatorRequests
+    await page.getByTestId('page-settings-trigger').click()
+    const detailSettingsDrawer = page.getByTestId('page-settings-drawer')
+    await expect(detailSettingsDrawer).toBeVisible()
+    await expect(detailSettingsDrawer.getByTestId('stock-detail-chart-slot1-kline')).toContainText(
+      '固定，不可隐藏',
+    )
+
+    // 目标类型已被另一槽使用时自动交换，不产生新的行情或指标请求。
+    await detailSettingsDrawer.getByTestId('stock-detail-chart-slot2-macd').click()
+    await expect(workspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
+    await expect(workspace.locator('[data-panel-key="slot3"]')).toContainText('量能')
+
+    await detailSettingsDrawer.getByTestId('stock-detail-chart-slot3-hidden').click()
+    await expect(page.locator('[data-panel-key]')).toHaveCount(2)
+    await expect(workspace.getByRole('separator')).toHaveCount(1)
+    await expect.poll(() => {
+      const value = preferenceStore.get(stockDetailPreferenceKey)?.value as {
+        charts?: { slot2?: string; slot3?: string }
+      } | undefined
+      return [value?.charts?.slot2, value?.charts?.slot3]
+    }).toEqual(['macd', 'hidden'])
+    expect(indicatorRequests).toBe(indicatorRequestsBeforeSettings)
+
+    await detailSettingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
+    await expect(page.locator('[data-panel-key]')).toHaveCount(2)
+
+    // 重新加载后由隔离远端偏好恢复组合，不依赖共享调试账号 PG 历史值。
+    await page.reload()
+    await expect(page.locator('[data-panel-key]')).toHaveCount(2)
+    await expect(workspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
+    await expect(workspace.locator('[data-panel-key="slot3"]')).toHaveCount(0)
+    const indicatorRequestsAfterReload = indicatorRequests
+
+    const firstSeparator = workspace.getByRole('separator').first()
+    const ratioBeforeKeyboard = await firstSeparator.getAttribute('aria-valuenow')
+    await firstSeparator.press('ArrowDown')
+    await expect(firstSeparator).not.toHaveAttribute('aria-valuenow', ratioBeforeKeyboard || '')
+    await expect.poll(() => {
+      const value = preferenceStore.get(stockDetailPreferenceKey)?.value as {
+        charts?: { heightRatios?: Record<string, number[]> }
+      } | undefined
+      return value?.charts?.heightRatios?.['kline|macd']
+    }).not.toEqual([0.75, 0.25])
+
+    await page.getByTestId('page-settings-trigger').click()
+    const resetDrawer = page.getByTestId('page-settings-drawer')
+    await resetDrawer.getByTestId('page-settings-reset').click()
+    await expect(page.locator('[data-panel-key]')).toHaveCount(3)
+    await expect(resetDrawer.getByTestId('stock-detail-chart-slot2-volume')).toHaveClass(/active/)
+    await expect(resetDrawer.getByTestId('stock-detail-chart-slot3-macd')).toHaveClass(/active/)
+    await expect(workspace.getByRole('separator').first()).toHaveAttribute('aria-valuenow', '60')
+    await expect.poll(() => {
+      const value = preferenceStore.get(stockDetailPreferenceKey)?.value as {
+        charts?: {
+          slot2?: string
+          slot3?: string
+          heightRatios?: Record<string, number[]>
+        }
+      } | undefined
+      return {
+        slot2: value?.charts?.slot2,
+        slot3: value?.charts?.slot3,
+        ratios: value?.charts?.heightRatios?.['kline|volume|macd'],
+      }
+    }).toEqual({ slot2: 'volume', slot3: 'macd', ratios: [0.6, 0.2, 0.2] })
+    expect(indicatorRequests).toBe(indicatorRequestsAfterReload)
 
     // 模拟同一登录身份恢复分组权限：隐藏期间未被覆盖的 group 偏好应重新生效。
     await page.route('**/api/auth/me', async (route) => {
