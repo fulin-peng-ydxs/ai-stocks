@@ -19,6 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
+- 当前进度：T1 已完成并通过定向验证；T2–T13 尚未开始，本轮未进入后续阶段。
 
 ## 2. 当前项目依据
 
@@ -72,8 +73,8 @@
 
 | 需求编号 | 内容 | 开发状态 | 对应任务 |
 | --- | --- | --- | --- |
-| R1 | EMA 与 `macd_diff/macd_dea/macd_hist` 三个数值原子结果 | 待开始 | T1、T9 |
-| R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 待开始 | T1、T9 |
+| R1 | EMA 与 `macd_diff/macd_dea/macd_hist` 三个数值原子结果 | 已完成（T9 总回归待执行） | T1、T9 |
+| R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成（T9 总回归待执行） | T1、T9 |
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 待开始 | T2、T9、T13 |
 | R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 待开始 | T3、T6、T9、T10、T11、T13 |
 | R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 待开始 | T5、T6、T10、T11 |
@@ -330,8 +331,8 @@ flowchart LR
 
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 验证方式 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须实现 | R1 | `requirement.md §5.1`：EMA 与三个数值原子结果 | EMA、三数值列、暖机、空值、算法版本、单股/全市场一致 | T1、T9 | 待开始 | 一致 | 已知公式、前缀稳定、两路径容差单测 | 固定 12/26/9，不开放参数。 |
-| 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 待开始 | 一致 | 交叉边界和缺失段单测 | 空值保留 null，下游按不成立处理。 |
+| 必须实现 | R1 | `requirement.md §5.1`：EMA 与三个数值原子结果 | EMA、三数值列、暖机、空值、算法版本、单股/全市场一致 | T1、T9 | 已完成（T9 总回归待执行） | 一致 | 已知公式、前缀稳定、两路径容差单测 | T1 定向测试通过；固定 12/26/9，不开放参数。 |
+| 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成（T9 总回归待执行） | 一致 | 交叉边界和缺失段单测 | T1 定向测试通过；空值保留 null，下游按不成立处理。 |
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 待开始 | 一致 | repo/API/筛选/评分/买卖方案测试 | 启动 seed 同时修复全新库目录为空的存量初始化缺口，影响面在 §7 单列。 |
 | 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 待开始 | 一致 | API、Vitest、Playwright | 6000 对齐 bars 行情边界，不描述为 indicators 现状。 |
 | 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 待开始 | 一致 | option/组件测试、固定样本、截图和 E2E | 信号标签只做纵向避让。 |
@@ -351,7 +352,7 @@ flowchart LR
 
 ### 6.1 任务 T1：建立 EMA 与 MACD 五原子计算口径
 
-- 状态：待开始
+- 状态：已完成
 - 对应需求：R1、R2。
 - 依赖：无。
 - 涉及文件：
@@ -376,7 +377,13 @@ flowchart LR
   - 暖机、相等穿越、缺失段、前缀稳定测试。
   - 单股和全市场逐行对照。
 - 完成标准：R1、R2 的全部验收样本通过，现有指标列无回归。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-23）。
+  - `operators.py` 新增严格后向 EMA，采用 `adjust=False/min_periods=n`，缺失和无穷输入当天保持空值。
+  - 单股与全市场路径均输出固定 12/26/9 的 DIFF、DEA、MACD柱、金叉和死叉；交叉不跨股票或缺失行。
+  - `_IND_COLS` 已加入五个字段，`build_params()` 已加入 `2.1-macd-v1` 算法版本并进入 `param_hash`。
+  - `backend/tests/test_indicators.py` 已覆盖 pandas 公式对照、暖机、相等穿越、缺失段、前缀稳定、单股/全市场一致和算法版本 hash。
+  - 验证结果：`python -m pytest backend/tests/test_indicators.py -q` 为 `12 passed`；`python -m py_compile` 与 `git diff --check` 通过。
+  - 静态检查限制：当前 Python 环境未安装 Ruff（`python -m ruff` 返回 `No module named ruff`），因此未执行 Ruff；未将工具缺失误记为代码失败。
 
 ### 6.2 任务 T2：注册五指标并接入启动 seed 与既有下游
 
@@ -731,7 +738,10 @@ WHERE is_builtin = TRUE
 ## 8. 测试与验证计划
 
 - 计划：按后端领域/接口、前端单元/契约、Playwright 真实点击、关键视口和发布 smoke 五层执行；任何访问项目 DuckDB/FastAPI 的后端测试严格遵守停服与恢复规则。
-- 具体完成情况：待验证。当前仅完成计划文档结构与覆盖校验，尚未实施代码、运行产品测试或生成验收截图；后续每轮开发完成后在对应 T9–T13 的“实际落地情况”同步命令、结果和未执行原因。
+- 具体完成情况：
+  - T1 已完成：`python -m pytest backend/tests/test_indicators.py -q` 通过（12 passed），`python -m py_compile` 与 `git diff --check` 通过。
+  - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
+  - T2–T13 尚未开始；涉及 DuckDB、接口、前端、Playwright、关键视口和发布 smoke 的验证均保留到对应阶段，不在 T1 提前执行。
 
 ### 8.1 后端测试矩阵
 

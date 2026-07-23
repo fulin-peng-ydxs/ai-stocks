@@ -35,6 +35,7 @@ log = get_logger("indicators.engine")
 _IND_COLS = [
     "code", "trade_date",
     "ma5", "ma10", "ma20", "ma60", "ma250",
+    "macd_diff", "macd_dea", "macd_hist", "macd_golden_cross", "macd_dead_cross",
     "hhv60", "hhv120", "hhv240", "hhv480",
     "is_high_60", "is_high_120", "is_high_1y", "is_high_2y", "dist_to_high_2y",
     "is_bull_arrange", "ma20_up", "ma60_up", "above_ma250",

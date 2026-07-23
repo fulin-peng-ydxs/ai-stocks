@@ -16,6 +16,7 @@ import pandas as pd
 
 from backend.config import get_effective_settings
 from backend.indicators.operators import (
+    EMA,
     HHV,
     MA,
     REF,
@@ -23,11 +24,17 @@ from backend.indicators.operators import (
     platform_breakout,
 )
 
+INDICATOR_ALGO_VERSION = "2.1-macd-v1"
+_MACD_FAST = 12
+_MACD_SLOW = 26
+_MACD_SIGNAL = 9
+
 
 def build_params(settings=None) -> dict:
     """从配置抽取指标参数（含进 param_hash，参数变即重算）。"""
     s = (settings or get_effective_settings()).indicators
     return {
+        "algo_version": INDICATOR_ALGO_VERSION,
         "ma_periods": list(s.ma_periods),
         "hhv_periods": list(s.hhv_periods),
         "ma_up_lookback": s.ma_up_lookback,
@@ -41,9 +48,26 @@ def build_params(settings=None) -> dict:
 
 
 def param_hash(params: dict) -> str:
-    """参数版本哈希（短）。参数变 → hash 变 → 重算。"""
+    """参数与算法版本哈希（短）。任一语义变化 → hash 变 → 重算。"""
     blob = json.dumps(params, sort_keys=True, ensure_ascii=False)
     return hashlib.md5(blob.encode("utf-8")).hexdigest()[:12]
+
+
+def _macd_cross_events(
+    diff: pd.Series,
+    dea: pd.Series,
+    groups: pd.Series | None = None,
+) -> tuple[pd.Series, pd.Series]:
+    """按紧邻交易行计算金叉/死叉；缺失行和股票边界均保持可空语义。"""
+    if groups is None:
+        prev_diff, prev_dea = diff.shift(1), dea.shift(1)
+    else:
+        prev_diff = diff.groupby(groups, sort=False).shift(1)
+        prev_dea = dea.groupby(groups, sort=False).shift(1)
+    valid = diff.notna() & dea.notna() & prev_diff.notna() & prev_dea.notna()
+    golden = ((diff > dea) & (prev_diff <= prev_dea)).where(valid, other=pd.NA)
+    dead = ((diff < dea) & (prev_diff >= prev_dea)).where(valid, other=pd.NA)
+    return golden.astype("boolean"), dead.astype("boolean")
 
 
 def compute_stock_indicators(df: pd.DataFrame, params: dict | None = None) -> pd.DataFrame:
@@ -59,6 +83,18 @@ def compute_stock_indicators(df: pd.DataFrame, params: dict | None = None) -> pd
     ma = {n: MA(close, n) for n in (5, 10, 20, 60, 250)}
     for n in (5, 10, 20, 60, 250):
         out[f"ma{n}"] = ma[n]
+
+    # ── MACD（固定 12/26/9，全部严格后向）──
+    ema_fast = EMA(close, _MACD_FAST)
+    ema_slow = EMA(close, _MACD_SLOW)
+    macd_diff = ema_fast - ema_slow
+    macd_dea = EMA(macd_diff, _MACD_SIGNAL)
+    out["macd_diff"] = macd_diff
+    out["macd_dea"] = macd_dea
+    out["macd_hist"] = 2.0 * (macd_diff - macd_dea)
+    out["macd_golden_cross"], out["macd_dead_cross"] = _macd_cross_events(
+        macd_diff, macd_dea
+    )
 
     # ── 新高（位置）──
     hhv = {n: HHV(high, n) for n in (60, 120, 240, 480)}
@@ -100,7 +136,14 @@ def compute_stock_indicators(df: pd.DataFrame, params: dict | None = None) -> pd
     out["param_hash"] = param_hash(params)
 
     # 可空布尔列转成 object（保留 <NA>），其余布尔转 bool
-    for col in ("is_high_60", "is_high_120", "is_high_1y", "is_high_2y"):
+    for col in (
+        "is_high_60",
+        "is_high_120",
+        "is_high_1y",
+        "is_high_2y",
+        "macd_golden_cross",
+        "macd_dead_cross",
+    ):
         out[col] = out[col].astype("boolean")
     return out
 
@@ -129,6 +172,30 @@ def compute_market_indicators(df: pd.DataFrame, params: dict | None = None) -> p
     ma = {n: rmean("close", n) for n in (5, 10, 20, 60, 250)}
     for n in (5, 10, 20, 60, 250):
         out[f"ma{n}"] = ma[n].values
+
+    def rema(series: pd.Series, n: int) -> pd.Series:
+        clean = pd.to_numeric(series, errors="coerce").astype("float64")
+        clean = clean.replace([float("inf"), float("-inf")], float("nan"))
+        result = (
+            clean.groupby(code, sort=False)
+            .ewm(span=n, adjust=False, min_periods=n)
+            .mean()
+            .reset_index(level=0, drop=True)
+            .reindex(clean.index)
+        )
+        return result.where(clean.notna())
+
+    ema_fast = rema(close, _MACD_FAST)
+    ema_slow = rema(close, _MACD_SLOW)
+    macd_diff = ema_fast - ema_slow
+    macd_dea = rema(macd_diff, _MACD_SIGNAL)
+    out["macd_diff"] = macd_diff.values
+    out["macd_dea"] = macd_dea.values
+    out["macd_hist"] = (2.0 * (macd_diff - macd_dea)).values
+    golden, dead = _macd_cross_events(macd_diff, macd_dea, code)
+    out["macd_golden_cross"] = golden.values
+    out["macd_dead_cross"] = dead.values
+
     hhv = {n: rmax("high", n) for n in (60, 120, 240, 480)}
     for n in (60, 120, 240, 480):
         out[f"hhv{n}"] = hhv[n].values
@@ -161,6 +228,13 @@ def compute_market_indicators(df: pd.DataFrame, params: dict | None = None) -> p
     ).fillna(False).values
     out["rs_pct"] = pd.NA
     out["param_hash"] = param_hash(params)
-    for col in ("is_high_60", "is_high_120", "is_high_1y", "is_high_2y"):
+    for col in (
+        "is_high_60",
+        "is_high_120",
+        "is_high_1y",
+        "is_high_2y",
+        "macd_golden_cross",
+        "macd_dead_cross",
+    ):
         out[col] = out[col].astype("boolean")
     return out

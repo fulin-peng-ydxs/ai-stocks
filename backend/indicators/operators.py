@@ -13,6 +13,20 @@ from __future__ import annotations
 import pandas as pd
 
 
+def EMA(x: pd.Series, n: int) -> pd.Series:
+    """N 日指数移动平均，采用递推口径且不足 N 个有效值时返回 NaN。
+
+    口径等价于 ``ewm(span=n, adjust=False, min_periods=n).mean()``。缺失或无穷输入
+    当日必须保持 NaN，避免沿用上一日 EMA 冒充当日有效指标；后续有效行仍按 pandas
+    的递推语义继续计算。
+    """
+    if n <= 0:
+        raise ValueError("EMA 周期 n 必须 > 0")
+    clean = pd.to_numeric(x, errors="coerce").astype("float64")
+    clean = clean.replace([float("inf"), float("-inf")], float("nan"))
+    return clean.ewm(span=n, adjust=False, min_periods=n).mean().where(clean.notna())
+
+
 def MA(x: pd.Series, n: int) -> pd.Series:
     """N 日简单移动平均。不足 N 日 → NaN（不适用）。"""
     return x.rolling(n, min_periods=n).mean()

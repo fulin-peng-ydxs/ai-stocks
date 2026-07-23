@@ -7,9 +7,17 @@ import pathlib
 
 import numpy as np
 import pandas as pd
+from pandas.testing import assert_series_equal
 
 from backend.indicators import operators as op
-from backend.indicators.compute import build_params, compute_stock_indicators
+from backend.indicators.compute import (
+    INDICATOR_ALGO_VERSION,
+    build_params,
+    compute_market_indicators,
+    compute_stock_indicators,
+    param_hash,
+)
+from backend.indicators.engine import _IND_COLS
 
 
 # ── 1. 基础算子正确性 + 后向性 ──
@@ -18,6 +26,23 @@ def test_ma_backward_only():
     ma = op.MA(x, 3)
     assert pd.isna(ma.iloc[0]) and pd.isna(ma.iloc[1])  # 不足 3 日 → NaN
     assert ma.iloc[2] == 2.0 and ma.iloc[4] == 4.0      # 仅用过去+当日
+
+
+def test_ema_matches_pandas_recursive_formula_and_preserves_invalid_rows():
+    x = pd.Series([1.0, 2, 3, 4, 5, np.nan, 7, np.inf, 9])
+    actual = op.EMA(x, 3)
+    clean = x.replace([np.inf, -np.inf], np.nan)
+    expected = clean.ewm(span=3, adjust=False, min_periods=3).mean().where(clean.notna())
+    assert_series_equal(actual, expected)
+    assert pd.isna(actual.iloc[5]) and pd.isna(actual.iloc[7])
+
+
+def test_ema_rejects_non_positive_period():
+    try:
+        op.EMA(pd.Series([1.0]), 0)
+        assert False, "EMA 非正周期应报错"
+    except ValueError:
+        pass
 
 
 def test_ref_rejects_future():
@@ -93,3 +118,85 @@ def test_compute_stock_indicators_shapes_and_values():
     assert bool(ind["is_turnover_healthy"].iloc[-1]) is True
     # param_hash 非空
     assert ind["param_hash"].iloc[0]
+
+
+def test_macd_numeric_values_warmup_and_algo_hash():
+    df = _fake_bars(90)
+    ind = compute_stock_indicators(df, build_params())
+    close = df["close"]
+    ema12 = close.ewm(span=12, adjust=False, min_periods=12).mean()
+    ema26 = close.ewm(span=26, adjust=False, min_periods=26).mean()
+    expected_diff = ema12 - ema26
+    expected_dea = expected_diff.ewm(span=9, adjust=False, min_periods=9).mean()
+    expected_hist = 2.0 * (expected_diff - expected_dea)
+
+    assert_series_equal(ind["macd_diff"], expected_diff, check_names=False)
+    assert_series_equal(ind["macd_dea"], expected_dea, check_names=False)
+    assert_series_equal(ind["macd_hist"], expected_hist, check_names=False)
+    assert ind["macd_diff"].iloc[:25].isna().all()
+    assert ind["macd_dea"].iloc[:33].isna().all()
+    assert ind["macd_hist"].iloc[:33].isna().all()
+
+    params = build_params()
+    assert params["algo_version"] == INDICATOR_ALGO_VERSION
+    legacy = {**params, "algo_version": "legacy"}
+    assert param_hash(params) != param_hash(legacy)
+
+
+def test_macd_cross_events_include_equal_break_and_do_not_cross_missing_gap():
+    close = pd.Series([10.0] * 40 + [20.0, 0.0])
+    df = _fake_bars(len(close))
+    df["close"] = close
+    df["high"] = close
+    ind = compute_stock_indicators(df, build_params())
+    assert bool(ind["macd_golden_cross"].iloc[40]) is True
+    assert bool(ind["macd_dead_cross"].iloc[41]) is True
+    assert not (ind["macd_golden_cross"].fillna(False) & ind["macd_dead_cross"].fillna(False)).any()
+
+    gap_close = pd.Series([10.0] * 40 + [np.nan, 20.0])
+    gap_df = _fake_bars(len(gap_close))
+    gap_df["close"] = gap_close
+    gap_df["high"] = gap_close
+    gap_ind = compute_stock_indicators(gap_df, build_params())
+    assert pd.isna(gap_ind["macd_golden_cross"].iloc[40])
+    assert pd.isna(gap_ind["macd_golden_cross"].iloc[41])
+    assert pd.isna(gap_ind["macd_dead_cross"].iloc[40])
+    assert pd.isna(gap_ind["macd_dead_cross"].iloc[41])
+
+
+def test_macd_is_prefix_stable_when_future_rows_are_appended():
+    df = _fake_bars(120)
+    prefix = compute_stock_indicators(df.iloc[:80], build_params())
+    full = compute_stock_indicators(df, build_params()).iloc[:80].reset_index(drop=True)
+    cols = [
+        "macd_diff",
+        "macd_dea",
+        "macd_hist",
+        "macd_golden_cross",
+        "macd_dead_cross",
+    ]
+    pd.testing.assert_frame_equal(prefix[cols], full[cols])
+
+
+def test_market_macd_matches_per_stock_and_engine_columns():
+    first = _fake_bars(100)
+    second = _fake_bars(100)
+    second["code"] = "000001.SZ"
+    second["close"] = pd.Series([10.0] * 40 + [20.0, 0.0] + [12.0] * 58)
+    second["high"] = second["close"]
+    market_bars = pd.concat([first, second], ignore_index=True)
+    market = compute_market_indicators(market_bars, build_params())
+    cols = [
+        "macd_diff",
+        "macd_dea",
+        "macd_hist",
+        "macd_golden_cross",
+        "macd_dead_cross",
+    ]
+
+    for code, bars in market_bars.groupby("code", sort=False):
+        stock = compute_stock_indicators(bars, build_params()).reset_index(drop=True)
+        actual = market[market["code"] == code].reset_index(drop=True)
+        pd.testing.assert_frame_equal(actual[cols], stock[cols])
+
+    assert set(cols).issubset(_IND_COLS)
