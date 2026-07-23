@@ -3,6 +3,12 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
 import { useTheme } from '@/composables/useTheme'
+import {
+  formatAmount,
+  formatVolume,
+  movingAverage,
+  stockChartTheme,
+} from '@/components/stock-chart/chartUtils'
 
 // 交易标记：在 K 线上标出买卖点（date=交易日, kind=买/卖, label=多行说明文本）
 export interface TradeMarker {
@@ -35,30 +41,27 @@ const MA_DEFS = computed(() => [
   { n: 30, color: '#16b8c4' },
   { n: 60, color: '#ff7a18' },
 ])
-const UP = '#ef4d4d' // 红涨
-const DOWN = '#22b573' // 绿跌
-
 // 主题色板
-const T = computed(() =>
-  isDark.value
-    ? { bg: '#0b0e16', axis: '#2b3550', split: '#161c28', label: '#8b94a7', mark: '#e6e6e6',
-        tipBg: 'rgba(13,17,26,0.92)', tipBorder: '#2b3550', tipText: '#c9d1d9', tipKey: '#8b94a7', zoom: '#2b3550' }
-    : { bg: '#ffffff', axis: '#dcdfe6', split: '#ebeef5', label: '#909399', mark: '#303133',
-        tipBg: 'rgba(255,255,255,0.96)', tipBorder: '#dcdfe6', tipText: '#303133', tipKey: '#909399', zoom: '#dcdfe6' },
-)
+const T = computed(() => {
+  const theme = stockChartTheme(isDark.value)
+  return {
+    bg: theme.background,
+    axis: theme.axis,
+    split: theme.split,
+    label: theme.label,
+    mark: theme.text,
+    tipBg: theme.tooltipBackground,
+    tipBorder: theme.tooltipBorder,
+    tipText: theme.text,
+    tipKey: theme.label,
+    zoom: theme.axis,
+    up: theme.up,
+    down: theme.down,
+  }
+})
 const wrapBg = computed(() => T.value.bg)
 const legLabelColor = computed(() => T.value.label)
 const legValColor = computed(() => T.value.tipText)
-
-// 后向移动平均（只用当日及之前数据，与后端口径一致，无未来函数）
-function ma(arr: number[], n: number): (number | null)[] {
-  return arr.map((_, i) => {
-    if (i + 1 < n) return null
-    let s = 0
-    for (let j = i + 1 - n; j <= i; j++) s += arr[j]
-    return +(s / n).toFixed(2)
-  })
-}
 
 // 跟随光标的索引（驱动顶部 MA 数值条），null=取最后一根
 const hoverIdx = ref<number | null>(null)
@@ -69,7 +72,7 @@ const activeIdx = computed(() => hoverIdx.value ?? lastIdx.value)
 const allCloses = computed(() => [...(props.warmupBars ?? []), ...props.bars].map((b) => b.close))
 const maSeries = computed(() =>
   MA_DEFS.value.map((d) => {
-    const full = ma(allCloses.value, d.n)
+    const full = movingAverage(allCloses.value, d.n)
     return { ...d, data: full.slice(full.length - props.bars.length) }
   }),
 )
@@ -87,31 +90,18 @@ const maLabels = computed(() =>
 const VMA5_COLOR = '#f5a623'
 const VMA10_COLOR = '#16b8c4'
 const allVolumes = computed(() => [...(props.warmupBars ?? []), ...props.bars].map((b) => b.volume))
-const volMa5Arr = computed(() => { const f = ma(allVolumes.value, 5); return f.slice(f.length - props.bars.length) })
-const volMa10Arr = computed(() => { const f = ma(allVolumes.value, 10); return f.slice(f.length - props.bars.length) })
+const volMa5Arr = computed(() => { const f = movingAverage(allVolumes.value, 5); return f.slice(f.length - props.bars.length) })
+const volMa10Arr = computed(() => { const f = movingAverage(allVolumes.value, 10); return f.slice(f.length - props.bars.length) })
 const volLabels = computed(() => {
   const i = activeIdx.value
   const b = props.bars[i]
-  const f = (v: number | null) => (v != null ? fmtVol(v) : '--')
+  const f = (v: number | null) => (v != null ? formatVolume(v) : '--')
   return {
-    total: b ? fmtVol(b.volume) : '--',
+    total: b ? formatVolume(b.volume) : '--',
     ma5: f(volMa5Arr.value[i] ?? null),
     ma10: f(volMa10Arr.value[i] ?? null),
   }
 })
-
-function fmtAmt(yuan: number | null): string {
-  if (yuan == null) return '--'
-  if (yuan >= 1e8) return (yuan / 1e8).toFixed(2) + '亿'
-  if (yuan >= 1e4) return (yuan / 1e4).toFixed(0) + '万'
-  return yuan.toFixed(0)
-}
-function fmtVol(shares: number): string {
-  const lots = shares / 100 // 股→手
-  if (lots >= 1e8) return (lots / 1e8).toFixed(2) + '亿手'
-  if (lots >= 1e4) return (lots / 1e4).toFixed(2) + '万手'
-  return lots.toFixed(0) + '手'
-}
 
 function render() {
   if (!chart) return
@@ -122,7 +112,7 @@ function render() {
   const kline = bars.map((b) => [b.open, b.close, b.low, b.high]) // ECharts: 开收低高
   const vols = bars.map((b) => ({
     value: b.volume,
-    itemStyle: { color: b.close >= b.open ? UP : DOWN },
+    itemStyle: { color: b.close >= b.open ? T.value.up : T.value.down },
   }))
   const volMa5 = volMa5Arr.value
   const volMa10 = volMa10Arr.value
@@ -190,7 +180,7 @@ function render() {
         const pct = pre ? ((b.close - pre) / pre) * 100 : null
         const amp = pre ? ((b.high - b.low) / pre) * 100 : null
         const pc = pct == null ? '--' : (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'
-        const pcColor = pct == null ? t.tipText : pct >= 0 ? UP : DOWN
+        const pcColor = pct == null ? t.tipText : pct >= 0 ? t.up : t.down
         const row = (k: string, v: string, c = t.tipText) =>
           `<div style="display:flex;justify-content:space-between;gap:18px"><span style="color:${t.tipKey}">${k}</span><span style="color:${c}">${v}</span></div>`
         return (
@@ -202,8 +192,8 @@ function render() {
           row('最低', b.low.toFixed(2)) +
           row('涨幅', pc, pcColor) +
           row('振幅', amp == null ? '--' : amp.toFixed(2) + '%') +
-          row('成交量', fmtVol(b.volume)) +
-          row('成交额', fmtAmt(b.amount)) +
+          row('成交量', formatVolume(b.volume)) +
+          row('成交额', formatAmount(b.amount)) +
           row('换手率', b.turnover_rate == null ? '--' : b.turnover_rate.toFixed(2) + '%') +
           `</div>`
         )
@@ -232,7 +222,7 @@ function render() {
       {
         gridIndex: 1, scale: true, position: 'right', splitNumber: 2,
         axisLine: { show: false },
-        axisLabel: { color: t.label, fontSize: 10, formatter: (v: number) => fmtVol(v) },
+        axisLabel: { color: t.label, fontSize: 10, formatter: (v: number) => formatVolume(v) },
         splitLine: { show: false },
       },
     ],
@@ -247,7 +237,12 @@ function render() {
     series: [
       {
         name: 'K线', type: 'candlestick', data: kline,
-        itemStyle: { color: UP, color0: DOWN, borderColor: UP, borderColor0: DOWN },
+        itemStyle: {
+          color: t.up,
+          color0: t.down,
+          borderColor: t.up,
+          borderColor0: t.down,
+        },
         markPoint: {
           symbolSize: 0,
           data: [

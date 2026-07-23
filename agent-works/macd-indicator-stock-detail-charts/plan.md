@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1–T4 已完成并通过对应阶段验证；T5–T13 尚未开始，本轮未进入后续阶段。
+- 当前进度：T1–T5 已完成并通过对应阶段验证；T6–T13 尚未开始，本轮未进入后续阶段。
 
 ## 2. 当前项目依据
 
@@ -45,8 +45,8 @@
 
 - 页面入口、路由和菜单已经存在：`/stocks/:code`、`StockDetailView.vue`、`pageKey=stock-detail`，不新增路由或菜单。
 - 页面已使用 `LayoutHost` 和 `detail` 原型；`detail` 主区由 `LayoutHost` 的 `.v-scroll` 承担内部滚动，适合承载最低 650px 的图表工作区和下方顺序卡片。
-- `CandleChart.vue` 当前是单个 ECharts 实例、固定 480px、K线与量能双 grid；它同时被盘感训练和回测页面复用，不能为个股详情需求做破坏性改造。
-- 当前图表已有主题切换、MA/VMA、axisPointer、dataZoom、window resize 和 KeepAlive 生命周期基础，可抽取共享计算/主题工具后复用。
+- `CandleChart.vue` 继续保持单个 ECharts 实例、固定 480px、K线与量能双 grid 及原 props 契约；其 MA/VMA、格式化和主题取色已抽到 `stock-chart/chartUtils.ts`，盘感训练和回测继续复用旧组件。
+- `StockChartWorkspace.vue` 已完成按面板分实例、唯一 ECharts group、共享日期轴/缩放、MACD 信号、局部状态和可访问分隔线；页面数据请求和 `StockDetailView` 正式消费仍由 T6 承接。
 - `DESIGN.md` 明确禁止页面写 `calc(100vh - Npx)`，要求金融涨跌使用 `--market-up-color` / `--market-down-color`，四态使用 `AppStateBlock`，页面设置使用 `PageSettingsDrawer`。
 
 ### 2.4 用户偏好与权限
@@ -79,13 +79,13 @@
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成（T9 总回归待执行） | T1、T9 |
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成（T9/T13 总回归待执行） | T2、T9、T13 |
 | R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 部分完成（T3 已完成，页面对齐与总回归待执行） | T3、T6、T9、T10、T11、T13 |
-| R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 待开始 | T5、T6、T10、T11 |
+| R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 部分完成（T5 工作区组件已完成，页面接入与总回归待执行） | T5、T6、T10、T11 |
 | R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 部分完成（T4 状态模型已完成） | T4、T7、T10、T11 |
-| R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 部分完成（T4 草稿/提交模型已完成） | T4、T5、T10、T11 |
+| R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 部分完成（T4 状态模型、T5 分隔线与提交事件已完成） | T4、T5、T10、T11 |
 | R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 部分完成（T4 偏好结构与兼容已完成） | T4、T7、T9、T10、T11、T13 |
-| R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 部分完成（T3 权限/接口异常已验证） | T3、T5、T6、T8、T10、T11 |
-| R15 | 响应式、主题、pointer/键盘可访问性和 reduced motion | 待开始 | T5、T8、T10、T11、T12 |
-| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 部分完成（T3 接口、T4 偏好兼容已验证） | T3、T4、T5、T6、T10、T11、T13 |
+| R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 部分完成（T3 权限/接口、T5 MACD 面板局部状态已验证） | T3、T5、T6、T8、T10、T11 |
+| R15 | 响应式、主题、pointer/键盘可访问性和 reduced motion | 部分完成（T5 组件与关键视口已验证） | T5、T8、T10、T11、T12 |
+| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 部分完成（T3 接口、T4 偏好、T5 图表生命周期已验证） | T3、T4、T5、T6、T10、T11、T13 |
 
 ### 3.2 可选增强（建议项处理）
 
@@ -337,13 +337,13 @@ flowchart LR
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成（T9 总回归待执行） | 一致 | 交叉边界和缺失段单测 | T1 定向测试通过；空值保留 null，下游按不成立处理。 |
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 已完成（T9/T13 总回归待执行） | 一致 | repo/API/筛选/评分/买卖方案测试 | T2 定向与完整相关文件回归通过；启动 seed 同时修复全新库目录为空的存量初始化缺口，影响面在 §7 单列。 |
 | 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 部分完成（T3 已完成） | 一致 | API、Vitest、Playwright | T3 已完成安全序列契约；页面按日期对齐和总回归留在后续任务。 |
-| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 待开始 | 一致 | option/组件测试、固定样本、截图和 E2E | 信号标签只做纵向避让。 |
+| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 部分完成（T5 工作区组件已完成） | 一致 | option/组件测试、固定样本、截图和 E2E | T5 已验证信号标签只做纵向 lane、label/line/anchor 同 X；页面正式消费留 T6。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 部分完成（T4 状态模型已完成） | 一致 | 归一化单测、抽屉 E2E | 9 种组合与自动交换已测；抽屉和实际面板留待 T7。 |
-| 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T10、T11 | 部分完成（T4 草稿/提交模型已完成） | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | 临时比例不写偏好，commit 才更新组合高度；实际分隔线留待 T5。 |
+| 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T10、T11 | 部分完成（T4/T5 已完成） | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | pointermove 只发 draft，pointerup/pointercancel/停用终态只发一次 commit；页面偏好消费与 E2E 留后续。 |
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4 偏好结构与兼容已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | 旧值递归补默认、非法组合局部回退和 dirty-before-hydrate 已测。 |
-| 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3 权限/接口异常已验证） | 一致 | 状态测试、403/失败注入 E2E | 页面级局部失败隔离仍由 T5/T6/T8 承接。 |
-| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 待开始 | 一致 | 样式/契约测试、build、主题截图 | 不新增金色 token，不使用视口减法。 |
-| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3 接口、T4 偏好兼容已验证） | 一致 | 竞态和生命周期测试、E2E | 旧接口与旧偏好兼容已验证；请求竞态和 KeepAlive 留待后续。 |
+| 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3/T5 已完成对应部分） | 一致 | 状态测试、403/失败注入 E2E | T5 已实现 MACD loading/insufficient/error 稳定覆盖和局部重试；页面请求隔离留 T6/T8。 |
+| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 部分完成（T5 组件已完成） | 一致 | 样式/契约测试、build、主题截图 | T5 已验证 token、1100×620、键盘/ARIA和 reduced-motion；页面级视口总验收留后续。 |
+| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3/T4/T5 已完成对应部分） | 一致 | 竞态和生命周期测试、E2E | KeepAlive 停用释放实例/监听、恢复只重建一组已测；页面请求竞态留 T6。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
 | 暂不实现 | R12 | `requirement.md §4.3`：其他周期 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 仅日线前复权。 |
@@ -552,7 +552,7 @@ flowchart LR
 
 ### 6.5 任务 T5：开发三图联动工作区和可访问分隔线
 
-- 状态：待开始
+- 状态：已完成
 - 对应需求：R5、R7、R9、R15、R16。
 - 依赖：T1、T4。
 - 涉及文件：
@@ -577,7 +577,15 @@ flowchart LR
   - role/ARIA、pointercancel、keyboard、resize 和监听清理。
   - 盘感训练/回测 `CandleChart` 回归。
 - 完成标准：工作区在三种可见数量、明暗主题和 KeepAlive 往返下稳定。
-- 实际落地情况：待实施。
+- 实际落地情况：
+  - 新增 `StockChartWorkspace.vue`，按 K线、图表二、图表三分别维护 ECharts 实例并使用组件实例唯一 group；隐藏或换位会销毁/复用正确实例，最下方可见图独占日期标签和 slider，inside zoom 与 axisPointer 通过 group 联动。
+  - 新增 `workspaceOptions.ts`：按 `trade_date` 对齐行情与指标，分别生成 K线、量能、MACD option；MACD 空点不连线，正负柱消费涨跌 token，金叉/死叉只读取 R2 布尔结果，自定义 series 的标签、引导线和 DIFF 锚点共用事件日 X，密集信号只使用纵向 lane。
+  - 新增 `chartUtils.ts` 并让既有 `CandleChart` 复用后向 MA、量额格式化和主题 token 解析；`CandleChart` 原 props、双 grid、K线/量能和训练/回测消费契约不变。
+  - 分隔线实现 pointer、触控和键盘输入，提供 `role=separator`、水平朝向、min/max/now；K线/辅助图最低 250/126px，工作区最低 650px；pointermove 只发 draft，pointerup、pointercancel、KeepAlive 停用或卸载的有效终态只提交一次。
+  - 主题切换重渲染图表，分隔线遵守 reduced-motion；MACD loading/insufficient/error 复用 `AppStateBlock` 紧凑覆盖，标题和面板高度稳定，error 只发局部 `retryMacd`。
+  - 新增 13 个图表定向用例，覆盖日期对齐、MACD option、信号同 X、三/二/一图、底部轴迁移、局部状态、ARIA、pointercancel、键盘 2%、隐藏销毁、KeepAlive 往返和旧 `CandleChart` 回归；连同 T4 偏好用例定向执行为 36 passed。
+  - 前端全量回归 `62 files / 400 tests passed`；正式构建通过。浏览器临时预览在 1440×900 和 1100×620 验证三/二/一图、明暗主题、MACD 局部错误和键盘调整，1100 宽无横向溢出，控制台无 error；临时预览文件已移除，不形成生产入口。
+  - 本阶段只交付可独立验证的工作区组件和共享 helper，没有提前修改 `StockDetailView` 请求/渲染链，也未进入 T6；真实页面消费与 DESIGN 真实组件登记按计划留 T6/T8。
 
 ### 6.6 任务 T6：接入个股页面并拆分请求竞态
 
@@ -834,9 +842,11 @@ WHERE is_builtin = TRUE
   - T3 真实库五字段序列冒烟返回 60 行且严格 JSON 通过；前端正式构建通过，最终 `/api/health=200`。
   - T4 已完成：9 种槽位组合、自动交换、隐藏/重显、五种有序组合高度、非法比例局部回退、draft/commit 和 dirty-before-hydrate 均有自动化证据；定向 27 passed。
   - T4 前端全量回归 `59 files / 387 tests passed`，正式构建通过；本阶段无模板、样式或点击入口变更，不执行浏览器视觉验收。
+  - T5 已完成：三/二/一图、日期对齐、MACD option、信号同 X、底部轴迁移、局部状态、ARIA、pointercancel、键盘 2%、隐藏销毁、KeepAlive 往返和旧 `CandleChart` 回归定向 13 passed；连同 T4 偏好模型为 36 passed。
+  - T5 前端全量回归 `62 files / 400 tests passed`，正式构建通过；临时浏览器预览覆盖 1440×900、1100×620、明暗主题、三种可见数量、局部错误和键盘调整，1100 宽无横向溢出且控制台无 error。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
-  - T5–T13 尚未开始；涉及页面、Playwright、关键视口和发布 smoke 的验证均保留到对应阶段，不提前执行。
+  - T6–T13 尚未开始；涉及真实个股页面、Playwright 沉淀和发布 smoke 的验证均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵
 
