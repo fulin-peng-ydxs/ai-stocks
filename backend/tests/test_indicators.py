@@ -200,3 +200,30 @@ def test_market_macd_matches_per_stock_and_engine_columns():
         pd.testing.assert_frame_equal(actual[cols], stock[cols])
 
     assert set(cols).issubset(_IND_COLS)
+
+
+def test_market_macd_matches_per_stock_with_nan_and_infinite_close():
+    first = _fake_bars(100)
+    second = _fake_bars(100)
+    second["code"] = "000001.SZ"
+    second.loc[45, "close"] = np.nan
+    second.loc[65, "close"] = np.inf
+    second.loc[85, "close"] = -np.inf
+    market_bars = pd.concat([first, second], ignore_index=True)
+    market = compute_market_indicators(market_bars, build_params())
+    cols = [
+        "macd_diff",
+        "macd_dea",
+        "macd_hist",
+        "macd_golden_cross",
+        "macd_dead_cross",
+    ]
+
+    for code, bars in market_bars.groupby("code", sort=False):
+        stock = compute_stock_indicators(bars, build_params()).reset_index(drop=True)
+        actual = market[market["code"] == code].reset_index(drop=True)
+        pd.testing.assert_frame_equal(actual[cols], stock[cols])
+
+    invalid = market[market["code"] == "000001.SZ"].reset_index(drop=True).iloc[[45, 65, 85]]
+    assert invalid[["macd_diff", "macd_dea", "macd_hist"]].isna().all().all()
+    assert invalid[["macd_golden_cross", "macd_dead_cross"]].isna().all().all()
