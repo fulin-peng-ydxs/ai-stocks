@@ -429,6 +429,8 @@ flowchart LR
 - 实际落地情况：已完成（2026-07-23）。
   - `REGISTRY` 已增加五个固定 12/26/9、前复权、默认启用的 builtin；主分类为“趋势”，预设分类为“趋势/动量”，数值和布尔定义均无方向与参数 schema。
   - `seed_builtins()` 继续处理整套 REGISTRY，并改为从原始列区分 SQL `NULL` 与管理员明确清空的 `"[]"`：重复 seed 保留任意 builtin 的 `enabled/categories`，同时刷新代码管理的元数据。
+  - 旧库 `enabled=NULL` 按“未初始化”处理并回退 REGISTRY 默认值，只有明确的 `TRUE/FALSE` 才作为管理员启停状态保留。
+  - seed 会比较名称、分类、类型、方向、种类、表达式、参数、分类标签、启用态、内置标记和描述；11 个业务字段均未变化时跳过 `_upsert`，不刷新 `updated_at`。
   - 应用启动期在 DuckDB 连通后通过 `IndicatorDefRepo` 幂等确保 schema 并 seed 整套 builtin；PG、Redis、JWT 自检和既有任务/调度流程不变。
   - 目录 API 的启用项、全量幂等、内置不可删除、管理员停用/分类保留均已有自动化证据；停用的 MACD 定义不进入启用候选但仍保留记录。
   - 筛选通过注册指标叶子使用 `macd_golden_cross`，评分直接消费 `macd_hist/macd_golden_cross`，买卖条件直接消费金叉/死叉；三个下游均复用同名快照列和通用求值，没有新增 MACD 专属分支。
@@ -445,7 +447,8 @@ flowchart LR
       -q
     ```
 
-    执行结果：`69 passed in 5.52s`；16 条 warning 均为项目既存 FastAPI `on_event` 弃用提示，无测试失败。
+    执行结果：`70 passed in 5.69s`；16 条 warning 均为项目既存 FastAPI `on_event` 弃用提示，无测试失败。
+  - 真实启动幂等验证：43 个 builtin 的 `key+updated_at` SHA-256 在启动前后均为 `e6ed1db09b64a36ddd3db93dacb0d8c8e7959dee53615ac6b5e6f8ecc90c1e75`，确认无变化启动不产生 43 行无意义写入。
   - 停服恢复结果：测试和真实库对账均按 `./start.sh stop` 停服；最终用 `./start.sh` 恢复，`./start.sh status` 确认 `/api/health=200`。
 
 ### 6.3 任务 T3：扩展个股指标接口并保证兼容序列化
@@ -776,7 +779,7 @@ WHERE is_builtin = TRUE
 - 具体完成情况：
   - T1 已完成：指标测试通过（14 passed），其中相等后向上/向下突破均有独立断言，双路径一致性覆盖正常值、`NaN`、正无穷和负无穷。
   - T1 下游冒烟已完成：筛选、评分、回测三条真实 `wide_snapshot/_IND_COLS` 链路与指标测试合计 17 passed；完整命令记录在 T1“实际落地情况”，按停服规则恢复后 `/api/health=200`。
-  - T2 已完成：五个 MACD builtin、全量启动 seed、目录 API 和筛选/评分/买卖通用求值均有自动化证据；五个相关测试文件完整回归为 69 passed。
+  - T2 已完成：五个 MACD builtin、全量启动 seed、目录 API 和筛选/评分/买卖通用求值均有自动化证据；`enabled=NULL` 回退与无变化 `updated_at` 稳定均有回归，五个相关测试文件完整回归为 70 passed。
   - T2 真实启动对账已完成：builtin 从 38 增至 43，MACD 从 0 增至 5；仓库外备份可用于本地精确恢复，最终 `/api/health=200`。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。

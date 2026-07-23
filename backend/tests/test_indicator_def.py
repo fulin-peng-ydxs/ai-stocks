@@ -89,6 +89,27 @@ def test_seed_builtins_is_full_idempotent_and_preserves_admin_state():
         }
 
 
+def test_seed_builtins_fills_null_enabled_and_keeps_noop_updated_at():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        repo = IndicatorDefRepo(c)
+        repo.seed_builtins()
+        c.execute("UPDATE indicator_def SET enabled=NULL WHERE key IN ('ma5','total_mv')")
+
+        repo.seed_builtins()
+        assert repo.get("ma5")["enabled"] is True
+        assert repo.get("total_mv")["enabled"] is False
+
+        before = c.query_df(
+            "SELECT key,updated_at FROM indicator_def WHERE is_builtin ORDER BY key"
+        )
+        repo.seed_builtins()
+        after = c.query_df(
+            "SELECT key,updated_at FROM indicator_def WHERE is_builtin ORDER BY key"
+        )
+        pd.testing.assert_frame_equal(after, before)
+
+
 def test_macd_builtin_metadata_and_registry_api(monkeypatch):
     with DuckDBClient(db_path=":memory:") as c:
         init_db(c)

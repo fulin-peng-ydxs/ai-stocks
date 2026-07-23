@@ -141,17 +141,28 @@ class IndicatorDefRepo:
         existing = {
             r["key"]: r
             for r in self.c.query_df(
-                "SELECT key,enabled,categories FROM indicator_def WHERE is_builtin"
+                "SELECT key,name_cn,category,dtype,direction,kind,expression,params,categories,"
+                "enabled,is_builtin,descr FROM indicator_def WHERE is_builtin"
             ).to_dict("records")
         }
+        compare_fields = (
+            "name_cn", "category", "dtype", "direction", "kind", "expression", "params",
+            "categories", "enabled", "is_builtin", "descr",
+        )
+        changed = 0
         for d in REGISTRY:
             row = _row(d)
             old = existing.get(d.key)
             if old:  # 不覆盖用户对内置的启停 / 分类自定义
-                row["enabled"] = bool(old["enabled"])
+                # NULL 是旧库未初始化，不是管理员明确禁用；应回退到 REGISTRY 默认值。
+                if old.get("enabled") is not None:
+                    row["enabled"] = bool(old["enabled"])
                 # SQL NULL 表示旧库尚未初始化分类，应补预设；"[]" 是管理员明确清空，必须保留。
                 if isinstance(old.get("categories"), str):
                     row["categories"] = old["categories"]
+                if all(old.get(field) == row[field] for field in compare_fields):
+                    continue
             self._upsert(row)
-        log.info("内置指标定义入库 %d 个", len(REGISTRY))
+            changed += 1
+        log.info("内置指标定义校准完成：总数 %d，变更 %d", len(REGISTRY), changed)
         return len(REGISTRY)
