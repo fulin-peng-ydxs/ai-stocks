@@ -34,6 +34,7 @@ test.describe('个股详情三图工作区', () => {
     expect(stocksBody.code, stocksBody.msg || '读取验收股票失败').toBe(0)
     const code = stocksBody.data.list[0]?.code as string | undefined
     expect(code, '本地行情库没有可用于个股详情验收的股票').toBeTruthy()
+    expect(stocksBody.data.list[0]?.groups).toEqual([])
 
     let failNextIndicatorRequest = true
     let indicatorRequests = 0
@@ -44,6 +45,9 @@ test.describe('个股详情三图工作区', () => {
         unauthorizedSecondaryRequests += 1
       }
     })
+    await page.goto('/stocks')
+    await expect(page.getByRole('columnheader', { name: '所属分组' })).toHaveCount(0)
+
     await page.route('**/api/stocks/*/indicators*', async (route) => {
       indicatorRequests += 1
       if (failNextIndicatorRequest) {

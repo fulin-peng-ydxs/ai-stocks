@@ -774,7 +774,7 @@ onBeforeUnmount(() => {
           <el-table-column v-if="colVisible('pct')" label="涨跌幅" prop="pct_chg" width="120" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</b></template>
           </el-table-column>
-          <el-table-column v-if="colVisible('groups')" label="所属分组" min-width="150">
+          <el-table-column v-if="canViewGroups && colVisible('groups')" label="所属分组" min-width="150">
             <template #default="{ row }">
               <span v-if="row.groups?.length" class="tag-line">
                 <el-tag

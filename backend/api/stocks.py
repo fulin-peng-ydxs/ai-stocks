@@ -11,6 +11,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.api.response import ApiResponse, ok
+from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm, require_system_perm
 from backend.groups.stock_group import StockGroupRepo
 from backend.indicators.engine import _IND_COLS
@@ -129,7 +130,15 @@ def list_stocks(q: str | None = None, board: str | None = None,
         f"WHERE {where} ORDER BY {order_clause} LIMIT {int(size)} OFFSET {int((page-1)*size)}",
         [td, *params])
     rows = df.to_dict("records")
-    groups_by_code = StockGroupRepo(market=c).groups_for_codes([r["code"] for r in rows])
+    ctx = get_current_context()
+    can_view_groups = bool(
+        ctx and (ctx.is_system or "stock-group:view" in ctx.resources)
+    )
+    groups_by_code = (
+        StockGroupRepo(market=c).groups_for_codes([r["code"] for r in rows])
+        if can_view_groups
+        else {}
+    )
     for r in rows:
         r["list_date"] = str(r["list_date"]) if r.get("list_date") is not None and not pd.isna(r["list_date"]) else None
         r["delist_date"] = str(r["delist_date"]) if r.get("delist_date") is not None and not pd.isna(r["delist_date"]) else None

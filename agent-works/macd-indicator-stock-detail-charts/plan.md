@@ -328,6 +328,7 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | `GET /api/stocks/{code}/indicators` | 增加 `fields` 可选参数；新增 `lookback=1..6000` 上限并对齐同页 bars 的 6000 行加载边界；返回五个 MACD 字段 | `stocks:view` | 不传 `fields` 时外层和字段行为不变 | 非法字段明确 400；空/非有限值转 `null` |
 | `GET /api/stocks/{code}/bars` | 无契约变更 | `stocks:view` | 保持现状 | 行情失败进入页面级错误 |
+| `GET /api/stocks` | 仅在当前上下文具备 `stock-group:view` 时读取并附加自选分组 | `stocks:view`；分组 enrichment 另查 `stock-group:view` | `groups` 字段保持存在；无分组权限时固定为空数组，不创建默认分组 | 次级资产权限缺失时 fail-closed，不实例化 `StockGroupRepo` |
 | `GET/POST /api/user-preferences` | 无接口/DDL变更，只增加 `settings.value.charts` JSON 子树 | `user-preference:manage` | 旧偏好递归合并默认；旧客户端忽略新字段 | 失败继续 localStorage fallback |
 | `GET /api/indicators/registry` | seed 后自然出现五定义 | `indicator:registry` | 外层不变 | 管理员停用后不进入新建方案候选 |
 
@@ -598,8 +599,10 @@ flowchart LR
 - 依赖：T3、T5。
 - 涉及文件：
   - `frontend/src/views/StockDetailView.vue`
+  - `frontend/src/views/StocksView.vue`
   - `frontend/src/api/stocks.ts`
-  - 页面测试
+  - `backend/api/stocks.py`
+  - 页面、接口与 E2E 测试
 - 目标：把三图工作区接入真实详情页，并让行情、指标和买卖评估各自收敛状态与竞态。
 - 开发内容：
   - 以工作区替换详情页当前 `CandleChart` 卡片。
@@ -608,7 +611,7 @@ flowchart LR
   - 复权只刷新行情，范围刷新行情和指标，显隐不刷新数据。
   - 增加 MACD 局部重试和 403 permission 识别。
 - 产出：完成数据接线和请求分层的 `StockDetailView`、局部重试入口及页面测试。
-- 影响范围：个股详情的主图、最新指标快照和请求协调；集合导航、分组与买卖评估职责保持不变。
+- 影响范围：个股详情的主图、最新指标快照和请求协调；集合导航与买卖评估职责保持不变；个股列表的分组 enrichment 和列显示按既有 `stock-group:view` 权限收口。
 - 异常：
   - 行情失败没有 bars 时页面级错误。
   - 已有行情刷新失败时保留旧图并显示紧凑错误。
@@ -621,7 +624,8 @@ flowchart LR
   - 行情、指标、原始最新价和买卖评估拆为四个请求通道，各自持有 `AbortController + sequence`；范围变化只刷新行情和指标，复权只刷新行情，辅助图显隐不请求数据，报价和买卖评估不被范围/复权连带刷新。买卖方案选择值统一使用 `profile_ref || id`，后端评估接口复用 `TradeProfileRepo.get_visible()`，公共/同租户方案可评估，旧裸 id 仅命中当前 owner。
   - 快速切换范围或买卖方案时先取消旧请求，并以序号和当前方案二次校验响应；KeepAlive 停用时记录在途通道并取消，激活后只恢复原本在途的请求。
   - 行情首次失败使用页面错误态，已有行情刷新失败保留旧图并显示紧凑错误，无行情使用 empty；HTTP 403 使用 `AppStateBlock variant=permission`，立即清除行情、指标、报价和买卖评估并取消并发通道，后续请求 pending/普通失败均保持 fail-closed，只有新的行情成功响应才解除权限态。MACD 加载、历史不足和局部失败只覆盖 MACD 面板，失败保留旧快照并提供“重试 MACD”。
-  - 方案列表和评估卡按 `trade-profile:view + stocks:trade-eval` 双权限消费；最小 `stocks:view` 账号不请求方案/分组接口、不渲染对应控件。为保证该验收可重复，`seed_rbac()` 的存量迁移改为只给无任何角色用户补 `role_code`，影响范围是启动期 PG RBAC seed，不新增 DDL/SQL/资源码；回滚只需还原该代码条件，但会重新引入自定义角色账号被扩权的风险。
+  - 方案列表和评估卡按 `trade-profile:view + stocks:trade-eval` 双权限消费；最小 `stocks:view` 账号不请求方案/分组接口、不渲染对应控件。`GET /api/stocks` 也只在当前上下文包含 `stock-group:view` 时构造 `StockGroupRepo` 并附加分组，无权限时保持兼容的 `groups: []`，不会读取分组成员或由只读请求创建默认分组；`StocksView` 的“所属分组”列复用既有 `canViewGroups` 同步隐藏。
+  - 为保证最小权限验收可重复，`seed_rbac()` 的存量迁移改为只给无任何角色用户补 `role_code`，影响范围是启动期 PG RBAC seed，不新增 DDL/SQL/资源码；回滚只需还原该代码条件，但会重新引入自定义角色账号被扩权的风险。§7.1 已同步记录执行时机、影响范围和回滚方式。
   - `KlineRangeSelect` 新增可选 `testId`，个股页使用稳定 `stock-detail-range` 锚点；`DESIGN.md` 已登记 `StockChartWorkspace` 的真实组件职责。通用 HTTP 状态提取收敛到 `utils/error.ts::getErrorStatus`，审计页同步复用，无第二套状态组件或错误状态解析。
   - 复用判断：
     - 已查找的同类实现：详情页原请求取消、`AuditLogView` 请求序号/403、`AppStateBlock` 四态、`useStockChartPreferences` 组合状态、Board/Config/Backtest 的 `profile_ref || id` 资产引用口径、项目 E2E 登录 helper。
@@ -630,8 +634,11 @@ flowchart LR
     - 未抽取的重复点及理由：四个 `RequestChannel` 共享页面内小型 helper，但不抽成通用 composable；行情、指标、报价和买卖评估的触发条件、旧值保留和恢复规则只属于个股详情，跨页面抽象会泄漏领域状态。`profile_ref || id` 是与既有页面一致的一行 opaque 引用兼容表达式，单独抽 util 会增加类型耦合且不减少业务分支。
     - 同步维护：`DESIGN.md` 真实组件清单、页面/API/错误工具测试和真实页面 Playwright。
   - 页面定向测试扩展为 15 passed，覆盖初始请求与 opaque `profile_ref`、最小权限不请求次级接口、复权/范围/显隐刷新边界、MACD 局部失败与重试、初次普通错误/重试、成功空数据、已有行情刷新失败、成功后 403 及二次 pending/403、403 早于方案列表的竞态、范围/买卖竞态、报价失败、KeepAlive 四通道取消恢复和历史不足；API/错误工具合计定向 19 passed。
-  - 后端资产可见性与 RBAC seed 定向回归 21 passed，覆盖 public、同租户、私有不可见、跨 owner 同名裸 id、owner 旧 id 兼容和自定义角色重启不追加 `normal`。完整后端回归为 `662 passed, 1 failed`；唯一失败 `test_stage5_audit_tenant_admin_is_scoped_to_own_tenant` 独立复跑仍失败，原因为存量测试假定 tenant_admin 默认有 `audit:view`，与当前 `revoke_tenant_admin_audit_default_grants()` 既有事实冲突，不属于 T6 改动范围。
-  - Playwright 前先执行 `python -m backend.cli dev-users` 校准，校准后及后端重启后 `debug_stocks_only` 均仅有 `debug_role_stocks_only`。真实页面在 1100×620、1366×768、1440×900 断言 `/auth/me` 有 `stocks:view` 且无分组、方案和评估权限，不发起越权次级请求；同时验证三图、指标 503 局部重试和范围刷新，结果 3 passed。
+  - 后端资产可见性与 RBAC seed 定向回归 21 passed，覆盖 public、同租户、私有不可见、跨 owner 同名裸 id、owner 旧 id 兼容和自定义角色重启不追加 `normal`。新增 `test_stocks_permissions.py` 预置真实分组成员，断言最小 `stocks:view` 请求不构造分组仓库、响应不泄露分组且不创建默认分组；连同分组、方案可见性和 RBAC schema 回归执行为 26 passed。完整后端回归为 `662 passed, 1 failed`；唯一失败 `test_stage5_audit_tenant_admin_is_scoped_to_own_tenant` 独立复跑仍失败，原因为存量测试假定 tenant_admin 默认有 `audit:view`，与当前 `revoke_tenant_admin_audit_default_grants()` 既有事实冲突，不属于 T6 改动范围。
+    - 本轮可复现命令：`python -m pytest backend/tests/test_stocks_permissions.py backend/tests/test_stock_group.py backend/tests/test_stage6_trade_profile_visibility.py backend/tests/test_rbac_schema.py -q`。
+    - system 授权路径另以真实库执行 `python -m pytest backend/tests/test_api.py::test_stocks_list_and_bars -q`，结果 1 passed，确认原有分组 enrichment 路径仍可用。
+  - Playwright 前先执行 `python -m backend.cli dev-users` 校准，校准后及后端重启后 `debug_stocks_only` 均仅有 `debug_role_stocks_only`。真实页面在 1100×620、1366×768、1440×900 断言 `/auth/me` 有 `stocks:view` 且无分组、方案和评估权限；先进入个股列表验证“所属分组”列不存在且未请求 `/api/stock-groups`，再验证详情三图、指标 503 局部重试和范围刷新，结果 3 passed。
+    - 本轮可复现命令：`cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts`。
   - 前端全量回归 `64 files / 419 tests passed`；`npm run build` 通过，仅有既有依赖注释位置和大 chunk 告警；`git diff --check` 通过。
   - 本阶段未增加图表二/三设置项、未接收高度 commit 写偏好、未修改恢复默认闭环，T7 尚未开始。
 
@@ -799,7 +806,7 @@ flowchart LR
 | DuckDB DDL | 无新增；复用 `backend/storage/ddl.py::DDL_INDICATOR_DEF` | 无额外执行 | 不新增指标值表，不修改 `daily_bar` | 无 DDL 回滚 |
 | DuckDB seed | `backend/indicators/registry.py`、`backend/indicators/definition.py::seed_builtins`、`backend/main.py` 启动链路 | 首次部署前备份 `indicator_def`；新版本后端每次启动时在 DuckDB schema 就绪后幂等执行 | 首次启用会持久化整个 `REGISTRY`：全新库写入全部 builtin，存量库刷新全部 builtin 的代码元数据并新增五个 MACD key；重复执行保留管理员 `enabled/categories` | 回滚前停用五个 MACD 定义；非 MACD builtin 默认保留，避免破坏既有目录；只有要求精确恢复部署前状态时才使用预部署备份 |
 | PG DDL | 无新增；复用 `backend/storage/pg_ddl.py::DDL_USER_PREFERENCE` | 无额外执行 | 只在既有 `value` JSON 增加 `charts` 子树 | 旧前端会忽略未知子树；无需删行或改表 |
-| 菜单/资源/角色 seed | 无变更；复用 `stocks:view`、`indicator:registry`、`indicator:def-manage`、`user-preference:manage` | 无 | 不影响菜单和默认角色 | 无 |
+| 菜单/资源/角色 seed | 菜单、资源定义和默认授权定义无变化；调整 `backend/storage/pg_ddl.py::seed_rbac()` 的存量 `role_code` 迁移条件 | PG schema 初始化后每次执行 `seed_rbac()` 时 | 只给尚无任何 `sys_user_role` 关联的存量用户补 `role_code`；已有自定义/最小角色用户不再被追加 `normal`，不新增资源码或默认授权 | 还原迁移条件即可回滚代码，但会重新引入自定义角色账号被追加旧角色的扩权风险；无需回滚 schema，已存在的错误角色关联应通过 `dev-users` 校准或管理员按归属清理 |
 | 应用配置 | 不修改 `config/settings.yaml` 或 PG `app_config` | 无 | MACD 固定 12/26/9；算法版本在代码参数哈希中 | 代码回滚 |
 | 前端本地 fallback | `ai-stocks:page-settings:stock-detail` | 用户进入页面和修改偏好时 | 当前浏览器、当前用户页面偏好降级 | 恢复旧代码后未知 `charts` 字段被默认合并逻辑忽略 |
 
@@ -809,7 +816,7 @@ flowchart LR
 - 原因：
   - `indicator_def` 表已存在，整套 builtin 由现有 repository 幂等 seed，五个 MACD key 随 `REGISTRY` 一并进入。
   - `user_preference` 表、归属主键、权限资源均已存在。
-  - 没有菜单、资源码、角色授权、配置表或初始化数据结构变更。
+  - 没有菜单、资源码、默认角色授权、配置表或初始化数据结构变更；`seed_rbac()` 仅修正存量 `role_code` 向 `sys_user_role` 的迁移条件，因此不另建 SQL 文件。
 
 ### 7.3 seed 验证与回滚 SQL
 
@@ -867,8 +874,8 @@ WHERE is_builtin = TRUE
   - T5 已完成：三/二/一图、日期对齐、完整 K线 tooltip、MACD 零轴与单边范围、日期轴首尾向内对齐、信号同 X、双工作区 group 隔离、底部轴迁移、局部状态、ARIA、pointercancel、键盘 2%、隐藏销毁、KeepAlive 往返和旧 `CandleChart` 回归定向 15 passed；连同 T4 偏好模型为 38 passed。
   - T5 前端全量回归 `62 files / 402 tests passed`，正式构建通过；可重复 Playwright 夹具在 1100×620、1366×768、1440×900 三项目覆盖明暗主题、三种可见数量、局部错误、键盘调整、横向溢出和控制台错误，日期轴边界修复后复跑仍为 3 passed；浅色/深色实际画布确认首日 `2026-04-01` 和末日标签完整。
   - T6 已完成：真实详情页消费三图工作区；行情/指标/报价/买卖评估独立取消与序号守卫；复权、范围和显隐刷新边界；MACD 局部失败/重试、历史不足、普通错误/重试、空态、刷新保留、403 fail-closed、KeepAlive 和报价失败均有自动化证据。页面 15 passed，相关 API/错误工具合计定向 19 passed。
-  - T6 后端定向 21 passed，覆盖买卖评估 `profile_ref` 的 public/tenant/private、同名裸 id 和 owner 兼容，以及 RBAC seed 不扩权。后端全量 `662 passed, 1 failed`，唯一失败为与本次无关且可独立复现的既有 tenant_admin 审计授权测试与当前撤权 seed 事实冲突。
-  - T6 前端全量回归 `64 files / 419 tests passed`，正式构建通过；Playwright 前幂等校准账号，重启后最小角色未漂移，真实页面三关键视口同时断言最小权限集合、无越权次级请求、指标 503 局部重试和范围刷新，3 passed。
+  - T6 后端原定向 21 passed，覆盖买卖评估 `profile_ref` 的 public/tenant/private、同名裸 id 和 owner 兼容，以及 RBAC seed 不扩权；最小权限分组隔离修复后，新增接口用例并连同分组、方案可见性与 RBAC schema 回归执行为 26 passed，system 授权路径真实库冒烟另为 1 passed。后端全量 `662 passed, 1 failed`，唯一失败为与本次无关且可独立复现的既有 tenant_admin 审计授权测试与当前撤权 seed 事实冲突。
+  - T6 前端全量回归 `64 files / 419 tests passed`，正式构建通过；Playwright 前幂等校准账号，重启后最小角色未漂移，真实页面三关键视口同时断言最小权限集合、个股列表不展示分组列、无越权次级请求、指标 503 局部重试和范围刷新，3 passed。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
   - T7–T13 尚未开始；设置抽屉、高度持久化、页面视觉总验收和发布 smoke 均保留到对应阶段，不提前执行。
@@ -883,6 +890,7 @@ WHERE is_builtin = TRUE
 | 定义 | 整套 REGISTRY 首次持久化、全量幂等、启停/分类保留、五个 MACD 元数据、不可删除 | `test_indicator_def.py` |
 | 下游 | 筛选、评分、买卖条件求值 | `test_screening.py`、`test_score_profile.py`、`test_trade_profile.py` |
 | API | fields、lookback、null、旧调用、403 | `test_stock_indicators_api.py` 或 `test_api.py` |
+| 次级资产权限 | 仅 `stocks:view` 时不读取、创建或泄露分组 | `test_stocks_permissions.py` |
 | 偏好 | 用户/租户隔离、JSON additive、64KB/非法 JSON 既有约束 | `test_user_preference.py` |
 
 建议命令：
