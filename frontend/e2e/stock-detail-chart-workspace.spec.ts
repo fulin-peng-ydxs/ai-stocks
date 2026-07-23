@@ -27,6 +27,12 @@ test.describe('个股详情三图工作区', () => {
     expect(permissions).not.toContain('stock-group:member-update')
     expect(permissions).not.toContain('trade-profile:view')
     expect(permissions).not.toContain('stocks:trade-eval')
+    await page.addInitScript(() => {
+      window.localStorage.setItem(
+        'ai-stocks:page-settings:stocks',
+        JSON.stringify({ defaultView: 'group', excludeSt: true }),
+      )
+    })
 
     const stocksResponse = await request.get(`${API_URL}/stocks?page=1&size=1`, { headers })
     expect(stocksResponse.ok()).toBe(true)
@@ -54,6 +60,10 @@ test.describe('个股详情三图工作区', () => {
     await expect(settingsDrawer.getByText('显示所属分组', { exact: true })).toHaveCount(0)
     await expect(settingsDrawer.getByText('分组视图', { exact: true })).toHaveCount(0)
     await expect(settingsDrawer.getByTestId('stocks-default-view-group')).toHaveCount(0)
+    await settingsDrawer.getByTestId('stocks-default-view-list').click()
+    await expect.poll(() => page.evaluate(() => (
+      JSON.parse(window.localStorage.getItem('ai-stocks:page-settings:stocks') || '{}').defaultView
+    ))).toBe('group')
     await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
 
     await page.route('**/api/stocks/*/indicators*', async (route) => {
@@ -92,6 +102,29 @@ test.describe('个股详情三图工作区', () => {
     await expect(page.getByTestId('stock-group-select')).toHaveCount(0)
     await expect(page.getByTestId('stock-trade-eval-card')).toHaveCount(0)
     expect(unauthorizedSecondaryRequests).toBe(0)
+
+    // 模拟同一登录身份恢复分组权限：隐藏期间未被覆盖的 group 偏好应重新生效。
+    await page.route('**/api/auth/me', async (route) => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.data.permissions = [...new Set([
+        ...(body.data.permissions as string[]),
+        'stock-group:view',
+      ])]
+      await route.fulfill({ response, json: body })
+    })
+    await page.route('**/api/stock-groups', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 0, msg: 'ok', data: [] }),
+      })
+    })
+    await page.goto('/stocks')
+    await page.getByTestId('page-settings-trigger').click()
+    const restoredDrawer = page.getByTestId('page-settings-drawer')
+    await expect(restoredDrawer.getByTestId('stocks-default-view-group')).toBeVisible()
+    await expect(restoredDrawer.getByTestId('stocks-default-view-group')).toHaveClass(/active/)
     expect(consoleIssues).toEqual([])
   })
 })

@@ -234,7 +234,8 @@ const settingsComponentMetaOverrides = computed<Record<string, SlotConfigMeta> |
 const visibleDefaultView = computed<'list' | 'group'>({
   get: () => (canViewGroups.value ? settings.defaultView : 'list'),
   set: (value) => {
-    if (value === 'group' && !canViewGroups.value) return
+    // 无分组权限时整个默认视图控件是只读安全投影，任何点击都不能覆盖隐藏的原偏好。
+    if (!canViewGroups.value) return
     settings.defaultView = value
   },
 })
