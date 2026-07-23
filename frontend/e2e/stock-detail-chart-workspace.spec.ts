@@ -27,11 +27,74 @@ test.describe('个股详情三图工作区', () => {
     expect(permissions).not.toContain('stock-group:member-update')
     expect(permissions).not.toContain('trade-profile:view')
     expect(permissions).not.toContain('stocks:trade-eval')
-    await page.addInitScript(() => {
-      window.localStorage.setItem(
-        'ai-stocks:page-settings:stocks',
-        JSON.stringify({ defaultView: 'group', excludeSt: true }),
-      )
+
+    type PreferencePayload = {
+      scope: string
+      pageKey?: string
+      prefKey: string
+      value: unknown
+      schemaVersion?: number
+    }
+    const preferenceKey = (item: Pick<PreferencePayload, 'scope' | 'pageKey' | 'prefKey'>) => (
+      `${item.scope}|${item.pageKey || ''}|${item.prefKey}`
+    )
+    const preferenceStore = new Map<string, PreferencePayload>()
+    const stocksPreferenceKey = preferenceKey({
+      scope: 'page',
+      pageKey: 'stocks',
+      prefKey: 'settings',
+    })
+    preferenceStore.set(stocksPreferenceKey, {
+      scope: 'page',
+      pageKey: 'stocks',
+      prefKey: 'settings',
+      value: { defaultView: 'group', excludeSt: true },
+      schemaVersion: 1,
+    })
+    let stocksPreferenceWrites = 0
+    // 最小权限账号不能用真实 PG helper 写偏好；用例内存端点同时隔离共享账号历史状态和写入。
+    await page.route('**/api/user-preferences*', async (route) => {
+      const request = route.request()
+      const url = new URL(request.url())
+      const respond = (data: unknown, msg = 'ok') => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 0, msg, data }),
+      })
+      const save = (payload: PreferencePayload) => {
+        const normalized = {
+          ...payload,
+          pageKey: payload.pageKey || '',
+          schemaVersion: payload.schemaVersion || 1,
+        }
+        const key = preferenceKey(normalized)
+        preferenceStore.set(key, normalized)
+        if (key === stocksPreferenceKey) stocksPreferenceWrites += 1
+        return normalized
+      }
+
+      if (request.method() === 'GET') {
+        const scope = url.searchParams.get('scope')
+        const pageKey = url.searchParams.get('pageKey')
+        const prefKey = url.searchParams.get('prefKey')
+        const items = [...preferenceStore.values()].filter((item) => (
+          (scope === null || item.scope === scope)
+          && (pageKey === null || (item.pageKey || '') === pageKey)
+          && (prefKey === null || item.prefKey === prefKey)
+        ))
+        await respond({ items })
+        return
+      }
+
+      const body = request.postDataJSON() as PreferencePayload | {
+        items: PreferencePayload[]
+      }
+      if (url.pathname.endsWith('/bulk')) {
+        const items = body && 'items' in body ? body.items.map(save) : []
+        await respond({ items }, '用户偏好已批量保存')
+        return
+      }
+      await respond(save(body as PreferencePayload), '用户偏好已保存')
     })
 
     const stocksResponse = await request.get(`${API_URL}/stocks?page=1&size=1`, { headers })
@@ -60,10 +123,20 @@ test.describe('个股详情三图工作区', () => {
     await expect(settingsDrawer.getByText('显示所属分组', { exact: true })).toHaveCount(0)
     await expect(settingsDrawer.getByText('分组视图', { exact: true })).toHaveCount(0)
     await expect(settingsDrawer.getByTestId('stocks-default-view-group')).toHaveCount(0)
+    await expect.poll(() => (
+      (preferenceStore.get(stocksPreferenceKey)?.value as { defaultView?: string }).defaultView
+    )).toBe('group')
+    const writesBeforeListClick = stocksPreferenceWrites
     await settingsDrawer.getByTestId('stocks-default-view-list').click()
+    // 远端自动保存有 300ms 防抖；跨过窗口后确认这次无效点击没有触发新写入。
+    await page.waitForTimeout(400)
     await expect.poll(() => page.evaluate(() => (
       JSON.parse(window.localStorage.getItem('ai-stocks:page-settings:stocks') || '{}').defaultView
     ))).toBe('group')
+    expect(
+      (preferenceStore.get(stocksPreferenceKey)?.value as { defaultView?: string }).defaultView,
+    ).toBe('group')
+    expect(stocksPreferenceWrites).toBe(writesBeforeListClick)
     await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
 
     await page.route('**/api/stocks/*/indicators*', async (route) => {
