@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1、T2、T3 已完成并通过对应阶段验证；T4–T13 尚未开始，本轮未进入后续阶段。
+- 当前进度：T1–T4 已完成并通过对应阶段验证；T5–T13 尚未开始，本轮未进入后续阶段。
 
 ## 2. 当前项目依据
 
@@ -57,6 +57,7 @@
   - `prefKey=settings`
   - localStorage key 为 `ai-stocks:page-settings:stock-detail`
 - `useUserPreference` 已提供递归默认值合并、localStorage 回退、300ms 远端延迟保存和 dirty-before-hydrate 保护。
+- `stock-detail/settings` 已增加 `charts` 默认子树；图表类型、组合 key、按组合高度和拖动草稿由 `useStockChartPreferences` 统一归一化，远端同步仍复用 `useUserPreference`。
 - PG `user_preference` 已具备 `tenant_id + owner_user_id` 归属主键、64KB JSON 限制和标准 JSON 校验；本次不新增 DDL。
 - `user-preference:manage` 是登录基线自有偏好能力；即使远端请求失败，前端仍必须按既有骨架本地降级。
 - 本次不新增资源码、菜单、默认角色授权或按钮权限；公共行情仍只使用 `stocks:view`。
@@ -79,12 +80,12 @@
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成（T9/T13 总回归待执行） | T2、T9、T13 |
 | R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 部分完成（T3 已完成，页面对齐与总回归待执行） | T3、T6、T9、T10、T11、T13 |
 | R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 待开始 | T5、T6、T10、T11 |
-| R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 待开始 | T4、T7、T10、T11 |
-| R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 待开始 | T4、T5、T10、T11 |
-| R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 待开始 | T4、T7、T9、T10、T11、T13 |
+| R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 部分完成（T4 状态模型已完成） | T4、T7、T10、T11 |
+| R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 部分完成（T4 草稿/提交模型已完成） | T4、T5、T10、T11 |
+| R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 部分完成（T4 偏好结构与兼容已完成） | T4、T7、T9、T10、T11、T13 |
 | R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 部分完成（T3 权限/接口异常已验证） | T3、T5、T6、T8、T10、T11 |
 | R15 | 响应式、主题、pointer/键盘可访问性和 reduced motion | 待开始 | T5、T8、T10、T11、T12 |
-| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 部分完成（T3 接口兼容已验证） | T3、T4、T5、T6、T10、T11、T13 |
+| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 部分完成（T3 接口、T4 偏好兼容已验证） | T3、T4、T5、T6、T10、T11、T13 |
 
 ### 3.2 可选增强（建议项处理）
 
@@ -337,12 +338,12 @@ flowchart LR
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 已完成（T9/T13 总回归待执行） | 一致 | repo/API/筛选/评分/买卖方案测试 | T2 定向与完整相关文件回归通过；启动 seed 同时修复全新库目录为空的存量初始化缺口，影响面在 §7 单列。 |
 | 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 部分完成（T3 已完成） | 一致 | API、Vitest、Playwright | T3 已完成安全序列契约；页面按日期对齐和总回归留在后续任务。 |
 | 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 待开始 | 一致 | option/组件测试、固定样本、截图和 E2E | 信号标签只做纵向避让。 |
-| 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 待开始 | 一致 | 归一化单测、抽屉 E2E | 图表一固定 K线。 |
-| 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T10、T11 | 待开始 | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | 拖动临时态不直接写远端偏好。 |
-| 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 待开始 | 一致 | 偏好 API、Vitest、跨用户 E2E | 复用现有表和权限，不新增 DDL。 |
+| 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 部分完成（T4 状态模型已完成） | 一致 | 归一化单测、抽屉 E2E | 9 种组合与自动交换已测；抽屉和实际面板留待 T7。 |
+| 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T10、T11 | 部分完成（T4 草稿/提交模型已完成） | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | 临时比例不写偏好，commit 才更新组合高度；实际分隔线留待 T5。 |
+| 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4 偏好结构与兼容已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | 旧值递归补默认、非法组合局部回退和 dirty-before-hydrate 已测。 |
 | 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3 权限/接口异常已验证） | 一致 | 状态测试、403/失败注入 E2E | 页面级局部失败隔离仍由 T5/T6/T8 承接。 |
 | 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 待开始 | 一致 | 样式/契约测试、build、主题截图 | 不新增金色 token，不使用视口减法。 |
-| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3 接口兼容已验证） | 一致 | 竞态和生命周期测试、E2E | 旧调用不传 `fields` 的完整行兼容已验证；请求竞态与生命周期留待后续。 |
+| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3 接口、T4 偏好兼容已验证） | 一致 | 竞态和生命周期测试、E2E | 旧接口与旧偏好兼容已验证；请求竞态和 KeepAlive 留待后续。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
 | 暂不实现 | R12 | `requirement.md §4.3`：其他周期 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 仅日线前复权。 |
@@ -502,7 +503,7 @@ flowchart LR
 
 ### 6.4 任务 T4：实现图表偏好归一化与高度状态模型
 
-- 状态：待开始
+- 状态：已完成（2026-07-23）
 - 对应需求：R6、R7、R8、R16。
 - 依赖：无。
 - 涉及文件：
@@ -523,7 +524,31 @@ flowchart LR
   - 负数、零、NaN、无穷、长度/和异常。
   - dirty-before-hydrate 期间用户操作不被覆盖。
 - 完成标准：任何输入都归一化为至少有 K线的合法组合，且不高频远端写高度。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-23）。
+  - 新增 `useStockChartPreferences.ts`，集中声明 `ChartType`、两个辅助槽枚举、五种有序组合 key、默认 60/20/20、75/25 和仅 K线比例。
+  - 旧偏好缺少 `charts` 继续由 `usePageSettings/useUserPreference` 递归补默认；新 composable 在 hydrate 完成前只提供安全派生值，不主动回写，避免本地修复误触 dirty-before-hydrate。
+  - 存量重复可见类型因无法判断最后操作槽位而回完整默认；只有一个槽位非法时保留另一个合法槽位，并为非法槽位选择不冲突的回退类型。
+  - 实时类型冲突按 R6 交换；当前槽原为 `hidden` 时，另一槽随交换隐藏。隐藏不删除任何有序组合高度，重显恢复原组合最近比例。
+  - 高度逐组合校验长度、有限正数与和为 1；负数、零、`NaN`、正负无穷、长度或和异常只回退该组合，其他合法组合不受影响。
+  - `useStockChartPreferences` 将拖动比例保存在 draft；`updateRatioDraft()` 不写 `settings`，只有 `commitRatioDraft()`/`commitHeightRatios()` 才更新当前组合一次。
+  - `StockDetailView` 的 `detailDefaults` 已增加 additive `charts` 子树，并通过可写 computed 接入归一化模型；现有复权、指标快照、导航和交易卡偏好字段不变。
+  - 复用判断：
+    - 已查找 `useUserPreference`、`usePageSettings`、`useDrawerPreferences` 及对应测试。
+    - 已复用递归默认合并、300ms 远端保存、localStorage 降级和 dirty-before-hydrate；未复制身份、远端请求或保存状态逻辑。
+    - 新增的领域 composable 只承担图表组合与高度规则，后续 T5/T7 的工作区和设置抽屉共同消费；不新增 UI 组件、样式或 DESIGN 登记。
+  - 定向验证：
+
+    ```bash
+    cd frontend
+    npm run test -- --run \
+      src/composables/__tests__/useStockChartPreferences.spec.ts \
+      src/composables/__tests__/useUserPreference.spec.ts
+    ```
+
+    执行结果：`27 passed`。
+  - 前端全量回归：`cd frontend && npm test`，结果 `59 files / 387 tests passed`；输出中的 PageDrawer 容器与 Element Plus `null` prop 提示为既存用例提示，无失败。
+  - 前端构建：`cd frontend && npm run build` 通过；仅有依赖注释位置和既有大 chunk 告警。
+  - 本阶段未改模板、样式或真实点击入口，浏览器视觉/E2E 不适用；设置抽屉和分隔线交互分别留在 T7/T5。
 
 ### 6.5 任务 T5：开发三图联动工作区和可访问分隔线
 
@@ -807,9 +832,11 @@ WHERE is_builtin = TRUE
   - T2 真实启动对账已完成：builtin 从 38 增至 43，MACD 从 0 增至 5；仓库外备份可用于本地精确恢复，最终 `/api/health=200`。
   - T3 已完成：字段白名单、旧完整行兼容、lookback 1/6000 边界、非法字段 400、空行情、严格 null JSON 和 `stocks:view` 权限均有自动化证据；相关后端回归 44 passed，前端 API 测试 2 passed。
   - T3 真实库五字段序列冒烟返回 60 行且严格 JSON 通过；前端正式构建通过，最终 `/api/health=200`。
+  - T4 已完成：9 种槽位组合、自动交换、隐藏/重显、五种有序组合高度、非法比例局部回退、draft/commit 和 dirty-before-hydrate 均有自动化证据；定向 27 passed。
+  - T4 前端全量回归 `59 files / 387 tests passed`，正式构建通过；本阶段无模板、样式或点击入口变更，不执行浏览器视觉验收。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
-  - T4–T13 尚未开始；涉及页面、Playwright、关键视口和发布 smoke 的验证均保留到对应阶段，不提前执行。
+  - T5–T13 尚未开始；涉及页面、Playwright、关键视口和发布 smoke 的验证均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵
 

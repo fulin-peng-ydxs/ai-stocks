@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
-import { nextTick } from 'vue'
+import { computed, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useUserPreference } from '@/composables/useUserPreference'
 import { writeAuth } from '@/api/authToken'
+import {
+  createDefaultStockChartPreferences,
+  useStockChartPreferences,
+} from '@/composables/useStockChartPreferences'
 
 const prefApi = vi.hoisted(() => ({
   listUserPreferences: vi.fn(),
@@ -102,6 +106,46 @@ describe('useUserPreference', () => {
       pageKey: 'board',
       prefKey: 'settings',
       value: { density: 'comfortable' },
+    }))
+  })
+
+  it('图表组合在远端返回前被编辑时继续遵守 dirty-before-hydrate', async () => {
+    login()
+    const remote = deferred<{ items: Array<{ value: {
+      charts: ReturnType<typeof createDefaultStockChartPreferences>
+    } }> }>()
+    prefApi.listUserPreferences.mockReturnValue(remote.promise)
+    const defaults = { charts: createDefaultStockChartPreferences() }
+    const pref = useUserPreference({
+      scope: 'page',
+      pageKey: 'stock-detail',
+      prefKey: 'settings',
+      defaults,
+      localStorageKey: 'pref:stock-detail',
+    })
+    const charts = computed({
+      get: () => pref.value.charts,
+      set: (value) => {
+        pref.value.charts = value
+      },
+    })
+    const model = useStockChartPreferences(charts, pref.hydrated)
+
+    model.setSlotType('slot2', 'hidden')
+    const remoteCharts = createDefaultStockChartPreferences()
+    remoteCharts.slot2 = 'macd'
+    remoteCharts.slot3 = 'volume'
+    remote.resolve({ items: [{ value: { charts: remoteCharts } }] })
+    await flushPromises()
+
+    expect(pref.value.charts.slot2).toBe('hidden')
+    expect(prefApi.saveUserPreference).toHaveBeenCalledWith(expect.objectContaining({
+      scope: 'page',
+      pageKey: 'stock-detail',
+      prefKey: 'settings',
+      value: expect.objectContaining({
+        charts: expect.objectContaining({ slot2: 'hidden', slot3: 'macd' }),
+      }),
     }))
   })
 })

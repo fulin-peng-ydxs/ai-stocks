@@ -20,6 +20,10 @@ import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
+import {
+  createDefaultStockChartPreferences,
+  useStockChartPreferences,
+} from '@/composables/useStockChartPreferences'
 import CandleChart from '@/components/CandleChart.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -64,8 +68,16 @@ const detailDefaults = {
     is_platform_breakout: true,
     is_vol_breakout: true,
   },
+  charts: createDefaultStockChartPreferences(),
 }
-const { settings, isDirty, reset } = usePageSettings('stock-detail', detailDefaults)
+const { settings, isDirty, reset, hydrated } = usePageSettings('stock-detail', detailDefaults)
+const chartSettings = computed({
+  get: () => settings.charts,
+  set: (value) => {
+    settings.charts = value
+  },
+})
+const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
 
 // ── 通用导航：当前集合（分组成员 / 列表勾选 / 查询结果）上一个·下一个·直选 ──
 const stockSet = useStockSet()
