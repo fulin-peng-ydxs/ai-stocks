@@ -346,7 +346,7 @@ flowchart LR
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4/T7/T9/T10 已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | 后端隔离与容量边界、前端组合/草稿/回退均已通过总回归；跨用户浏览器与发布总回归留 T11/T13。 |
 | 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3/T5/T6/T8/T10 已完成） | 一致 | 状态测试、403/失败注入 E2E | T10 直接覆盖 MACD loading/insufficient/error 稳定面板，并复核行情空态、错误、403 和局部重试；浏览器总回归留 T11。 |
 | 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 部分完成（T5/T8/T10 已完成） | 一致 | 样式/契约测试、build、主题截图 | T10 的布局契约、键盘/ARIA、主题重绘与正式构建均通过；浏览器和文档总回归留 T11/T12。 |
-| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3–T6/T10 已完成） | 一致 | 竞态和生命周期测试、E2E | T10 复核四请求通道竞态，并新增 observer 与集合下拉滚动监听的 KeepAlive 精确清理计数；浏览器与发布总回归留 T11/T13。 |
+| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3–T6/T10 已完成） | 一致 | 竞态和生命周期测试、E2E | T10 复核四请求通道竞态和 observer 精确清理，并通过两个 KeepAlive 个股实例验证下拉触底事件与分页状态互不串扰；浏览器与发布总回归留 T11/T13。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
 | 暂不实现 | R12 | `requirement.md §4.3`：其他周期 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 仅日线前复权。 |
@@ -778,7 +778,8 @@ flowchart LR
   - 工作区测试覆盖三/二/一图、标题、底部日期轴、K线 tooltip、MACD 零轴与 signal 同 X 引导线、唯一 group、主题重绘、separator ARIA、pointercancel、键盘 2% 和卸载清理。
   - 新增 MACD `loading/insufficient/error` 三种局部状态的真实组件断言，确认均保留 MACD 图名、稳定最低高度，且只有错误态提供局部重试。
   - `ResizeObserver` mock 记录每个实例；KeepAlive 停用时旧 observer 仅断开一次，激活时仅创建并 observe 一份新实例，卸载时当前 observer 仅断开一次。
-  - 修复 `StockDetailView` 在 KeepAlive 停用时未主动解绑集合下拉滚动监听的问题；新增测试预置集合并验证首次打开注册一次、停用解绑一次、恢复后再注册一次、卸载再解绑一次，不残留或重复注册。
+  - 集合下拉懒加载直接消费当前 Element Plus Select 的 `end-reached` 事件；删除全局 `document.querySelector`、共享 popper class 和手工 `addEventListener/removeEventListener`，每个页面实例只处理自身 Select 发出的触底事件。
+  - 新增两个 KeepAlive 个股实例的隔离回归：两个实例均从第 1 页独立加载第 2 页，停用第一个实例后，第二个实例继续独立加载第 3 页，确认持久化下拉与分页状态不会跨标签串扰。
   - 页面测试继续覆盖行情/指标/报价/买卖评估四通道竞态与取消、MACD 局部重试、复权不重拉指标、范围刷新边界、空态/错误/403、刷新保留和历史不足；布局契约继续拦截视口高度硬编码。
   - 定向验证完整命令：
 
@@ -795,7 +796,7 @@ flowchart LR
     执行结果：`5 files / 64 tests passed`。
   - 前端全量回归：`cd frontend && npm test`，结果 `64 files / 429 tests passed`；PageDrawer 容器与 Element Plus `null` prop 输出为既存测试提示，无失败。
   - 前端构建：`cd frontend && npm run build` 通过并同步 `frontend/dist`；仅有依赖注释位置与既有大 chunk 告警。
-  - 本阶段未新增数据库、SQL、seed、菜单、权限、接口或配置字段；页面结构和视觉样式未变化，因此未重复执行真实浏览器验收，Playwright 总回归留 T11。
+  - 本阶段未新增数据库、SQL、seed、菜单、权限、接口或配置字段；页面结构和视觉样式未变化。真实浏览器同时保留两个个股详情标签，`300834.SZ` 集合下拉触底后候选由 20 条增至 120 条（含加载提示的 option 数由 21 增至 121），控制台无错误；该探索性复核不替代 T11 的 Playwright 总回归。
 
 ### 6.11 任务 T11：新增 Playwright 业务闭环回归
 
@@ -947,7 +948,7 @@ WHERE is_builtin = TRUE
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
   - T8 已完成：主题修订版本覆盖预设 key、明暗和同 key 后端覆盖，驱动 ECharts 重新取色；个股页清除本次路径的涨跌硬编码并完成紧凑视口换行；四个定向文件 37 passed、前端全量 428 passed、正式构建通过。真实页面三关键视口 12 项 Playwright 覆盖纵向最低高度、无横向溢出、明暗/预设、reduced-motion、loading/empty/permission 和既有偏好闭环；确定性交易日历 fixture 保证明暗截图外壳业务状态一致，HTML 报告真实留存 6 张明暗截图。
   - T9 已完成：七文件后端定向回归 `87 passed`，覆盖 R1/R2 公式与边界、R3 全量 seed/目录/五原子下游求值、R4 白名单/边界/null/403，以及 R8 additive JSON、精确 65536/65537 bytes 边界、标准 JSON 和租户/用户隔离；测试身份使用 UUID，偏好清理遵守租户归属与精确键约束。次级资产权限另为 `1 passed`，停服测试后已恢复 `/api/health=200`。
-  - T10 已完成：五文件定向回归 `64 passed`，前端全量 `64 files / 429 tests passed`，正式构建通过；KeepAlive observer 与集合下拉监听均有精确注册/解绑计数。
+  - T10 已完成：五文件定向回归 `64 passed`，前端全量 `64 files / 429 tests passed`，正式构建通过；KeepAlive observer 有精确清理计数，两个缓存个股实例的集合下拉触底事件与分页状态互不串扰。真实浏览器同时保留两个个股详情标签，`300834.SZ` 集合下拉触底后候选由 20 条增至 120 条（含加载提示的 option 数由 21 增至 121），控制台无错误；该探索性复核不替代 T11 的 Playwright 总回归。
   - T11–T13 尚未开始；Playwright 总回归、文档总核对和发布 smoke 均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵

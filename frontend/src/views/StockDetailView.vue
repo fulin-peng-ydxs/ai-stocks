@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   computed,
-  nextTick,
   onActivated,
   onBeforeUnmount,
   onDeactivated,
@@ -570,7 +569,6 @@ const dropdownTotal = ref(0)
 const dropdownKeyword = ref('')
 const dropdownLoading = ref(false)
 const dropdownLoadedPages = ref<number[]>([])
-let dropdownScrollEl: HTMLElement | null = null
 let dropdownSearchTimer: ReturnType<typeof setTimeout> | null = null
 let dropdownRequestSeq = 0
 
@@ -687,36 +685,17 @@ function onCollectionSelect(c: string | null) {
   gotoCode(c)
 }
 
-function detachDropdownScroll() {
-  if (dropdownScrollEl) {
-    dropdownScrollEl.removeEventListener('scroll', onDropdownScroll)
-    dropdownScrollEl = null
-  }
-}
-
-function onDropdownScroll() {
-  if (!dropdownScrollEl || dropdownLoading.value || !dropdownHasMore.value) return
-  const distance = dropdownScrollEl.scrollHeight - dropdownScrollEl.scrollTop - dropdownScrollEl.clientHeight
-  if (distance <= 40) {
-    const nextPage = dropdownLoadedPages.value.length ? Math.max(...dropdownLoadedPages.value) + 1 : dropdownPage.value + 1
-    loadDropdownPage(nextPage)
-  }
-}
-
-function attachDropdownScroll() {
-  detachDropdownScroll()
-  dropdownScrollEl = document.querySelector('.stock-set-dropdown .el-select-dropdown__wrap') as HTMLElement | null
-  dropdownScrollEl?.addEventListener('scroll', onDropdownScroll)
-}
-
 async function onCollectionVisibleChange(visible: boolean) {
-  if (!visible) {
-    detachDropdownScroll()
-    return
-  }
+  if (!visible) return
   if (!dropdownItems.value.length || dropdownKeyword.value) await resetDropdown('')
-  await nextTick()
-  attachDropdownScroll()
+}
+
+function onCollectionEndReached(direction: string) {
+  if (direction !== 'bottom' || dropdownLoading.value || !dropdownHasMore.value) return
+  const nextPage = dropdownLoadedPages.value.length
+    ? Math.max(...dropdownLoadedPages.value) + 1
+    : dropdownPage.value + 1
+  void loadDropdownPage(nextPage)
 }
 
 onDeactivated(() => {
@@ -725,7 +704,6 @@ onDeactivated(() => {
   resumeQuoteRequest = quoteLoading.value
   resumeTradeRequest = tradeLoading.value
   cancelDetailRequests()
-  detachDropdownScroll()
   barsLoading.value = false
   indicatorLoading.value = false
   quoteLoading.value = false
@@ -746,7 +724,6 @@ onActivated(() => {
 onBeforeUnmount(() => {
   cancelDetailRequests()
   if (dropdownSearchTimer) clearTimeout(dropdownSearchTimer)
-  detachDropdownScroll()
 })
 </script>
 
@@ -848,6 +825,7 @@ onBeforeUnmount(() => {
         </el-button>
       </el-button-group>
       <el-select
+        data-testid="stock-set-select"
         :model-value="code"
         placeholder="从集合中选择"
         filterable
@@ -855,12 +833,12 @@ onBeforeUnmount(() => {
         clearable
         reserve-keyword
         size="small"
-        popper-class="stock-set-dropdown"
         style="width: 260px"
         :remote-method="onCollectionSearch"
         :loading="dropdownLoading"
         @change="onCollectionSelect"
         @visible-change="onCollectionVisibleChange"
+        @end-reached="onCollectionEndReached"
       >
         <el-option
           v-for="(it, i) in dropdownOptions"

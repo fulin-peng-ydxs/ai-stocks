@@ -178,12 +178,11 @@ const KlineRangeSelectStub = defineComponent({
 
 const ElSelectStub = defineComponent({
   name: 'ElSelect',
-  props: ['modelValue', 'popperClass'],
-  emits: ['update:modelValue', 'change', 'visible-change'],
+  props: ['modelValue'],
+  emits: ['update:modelValue', 'change', 'visible-change', 'end-reached'],
   setup(props, { slots }) {
     return () => h('div', {
       'data-model-value': String(props.modelValue ?? ''),
-      'data-popper-class': String(props.popperClass ?? ''),
     }, slots.default?.())
   },
 })
@@ -302,9 +301,12 @@ async function mountView(permissions?: string[]) {
   return wrapper
 }
 
-async function mountKeepAliveView(withStockSet = false) {
+async function mountKeepAliveView(options: {
+  count?: number
+  withPagedStockSet?: boolean
+} = {}) {
   const pinia = await prepareAuth()
-  if (withStockSet) {
+  if (options.withPagedStockSet) {
     useStockSet().setSet(
       'list',
       [
@@ -312,21 +314,30 @@ async function mountKeepAliveView(withStockSet = false) {
         { code: '000001.SZ', name: '平安银行' },
       ],
       '查询结果',
+      '',
+      {
+        query: { kind: 'stocks', params: { q: '银行' } },
+        total: 250,
+        loadedPages: [1],
+        pageSize: 100,
+      },
     )
   }
-  const active = ref(true)
+  const actives = Array.from({ length: options.count ?? 1 }, () => ref(true))
   const Host = defineComponent({
     setup() {
-      return () => h(KeepAlive, null, {
-        default: () => (active.value ? h(StockDetailView) : null),
-      })
+      return () => h('div', actives.map((active, index) => h(KeepAlive, null, {
+        default: () => (active.value
+          ? h(StockDetailView, { key: `stock-detail-${index}` })
+          : null),
+      })))
     },
   })
   const wrapper = mount(Host, {
     global: testGlobal(pinia),
   })
   await nextTick()
-  return { active, wrapper }
+  return { active: actives[0], actives, wrapper }
 }
 
 function setDefaultApiResponses() {
@@ -990,44 +1001,58 @@ describe('StockDetailView 三图数据协调', () => {
     expect(detail.text()).not.toContain('v1')
   })
 
-  it('KeepAlive 停用解绑集合下拉滚动监听，恢复后不会重复注册', async () => {
-    const popper = document.createElement('div')
-    popper.className = 'stock-set-dropdown'
-    const scroller = document.createElement('div')
-    scroller.className = 'el-select-dropdown__wrap'
-    popper.appendChild(scroller)
-    document.body.appendChild(popper)
-    const addSpy = vi.spyOn(scroller, 'addEventListener')
-    const removeSpy = vi.spyOn(scroller, 'removeEventListener')
+  it('两个 KeepAlive 个股实例分别消费自身下拉触底事件和分页状态', async () => {
+    vi.mocked(stocksApi.listStocks).mockImplementation(async (params) => ({
+      total: 250,
+      page: params?.page ?? 1,
+      size: params?.size ?? 100,
+      trade_date: '2026-07-23',
+      list: [{
+        code: `PAGE-${params?.page ?? 1}`,
+        name: `第${params?.page ?? 1}页`,
+      } as any],
+    }))
 
-    const { active, wrapper } = await mountKeepAliveView(true)
+    const { actives, wrapper } = await mountKeepAliveView({
+      count: 2,
+      withPagedStockSet: true,
+    })
     await flushPromises()
-    const detail = wrapper.findComponent(StockDetailView)
-    const collectionSelect = detail.findAllComponents({ name: 'ElSelect' }).find(
-      (component) => component.props('popperClass') === 'stock-set-dropdown',
+    const details = wrapper.findAllComponents(StockDetailView)
+    expect(details).toHaveLength(2)
+    const collectionSelects = details.map((detail) => (
+      detail.findAllComponents(ElSelectStub).find(
+        (component) => component.attributes('data-testid') === 'stock-set-select',
+      )
+    ))
+    expect(collectionSelects.every(Boolean)).toBe(true)
+
+    collectionSelects.forEach((select) => select!.vm.$emit('visible-change', true))
+    await flushPromises()
+    vi.mocked(stocksApi.listStocks).mockClear()
+
+    collectionSelects[0]!.vm.$emit('end-reached', 'bottom')
+    await flushPromises()
+    expect(stocksApi.listStocks).toHaveBeenLastCalledWith(
+      expect.objectContaining({ q: '银行', page: 2, size: 100 }),
     )
-    expect(collectionSelect).toBeTruthy()
 
-    collectionSelect!.vm.$emit('visible-change', true)
+    collectionSelects[1]!.vm.$emit('end-reached', 'bottom')
     await flushPromises()
-    expect(addSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1)
+    expect(vi.mocked(stocksApi.listStocks).mock.calls).toHaveLength(2)
+    expect(stocksApi.listStocks).toHaveBeenLastCalledWith(
+      expect.objectContaining({ q: '银行', page: 2, size: 100 }),
+    )
 
-    active.value = false
+    actives[0].value = false
     await nextTick()
-    expect(removeSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1)
-
-    active.value = true
-    await nextTick()
+    collectionSelects[1]!.vm.$emit('end-reached', 'bottom')
     await flushPromises()
-    collectionSelect!.vm.$emit('visible-change', true)
-    await flushPromises()
-
-    expect(addSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2)
-    expect(removeSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1)
-
+    expect(vi.mocked(stocksApi.listStocks).mock.calls).toHaveLength(3)
+    expect(stocksApi.listStocks).toHaveBeenLastCalledWith(
+      expect.objectContaining({ q: '银行', page: 3, size: 100 }),
+    )
     wrapper.unmount()
-    expect(removeSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2)
-    popper.remove()
   })
 
   it('指标历史不足时只让 MACD 面板进入 insufficient', async () => {
