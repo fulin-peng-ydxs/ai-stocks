@@ -11,20 +11,34 @@
 - 排序字段走白名单映射防注入：`_STOCK_SORT_COLS`（`stocks.py:20`）只放行 `pct_chg / name / industry / code`，其余回落 `pct_chg`；`sort_order` 仅 `asc/desc`。排序统一 `... NULLS LAST, sb.code ASC`（`stocks.py:58`），停牌（当日无行情）的 NULL 涨跌幅恒排末尾，并以 code 作稳定次序键。
 - 当日涨跌幅按交易日 `LEFT JOIN daily_bar` 现算 `(close/pre_close-1)*100`（`stocks.py:62`），`trade_date` 缺省取 `max(trade_date)`。
 - 退市/ST 口径：`board='退市'` 只看 `delist_date IS NOT NULL`，其余板块一律 `delist_date IS NULL` 排除退市；`board='ST'` 按名称含 `ST` 过滤，其它板块可选 `exclude_st` 再剔 ST（`stocks.py:42-52`）。
-- 每行附带所属分组标签：批量查 `StockGroupRepo.groups_for_codes`（`stocks.py:68`、`groups/stock_group.py:209`），一次 JOIN 取齐当页所有 code 的分组，避免 N+1。
+- 只有认证上下文具备 `stock-group:view`（或 system）时才构造 `StockGroupRepo` 并批量调用 `groups_for_codes`；无权限时统一返回空 `groups`，不读取分组资产，也不会因仓库构造而创建默认分组。前端同时隐藏分组列、分组视图和对应页面设置元数据。
 
-### K线 + 指标快照取数
-详情页三块数据由前端并发拉取（`StockDetailView.vue:164`）：
-- K线 `GET /stocks/{code}/bars`（`stocks.py:78`）经 `MarketRepository.get_bars` 按复权方式（qfq/hfq）输出，含 `pre_close`（算涨幅/振幅）、成交额、换手率。
-- 指标序列 `GET /stocks/{code}/indicators`（`stocks.py:201`）由 `IndicatorEngine.compute_series` 实时计算（指标无存储表，动态算），多取 520 行暖机窗口后裁末段 lookback；横截面量 `rs_pct` 在单股序列下不填。
-- 详情页展示「最新一日指标快照」（取序列末行，`StockDetailView.vue:172`）。
+### 行情、指标、报价与买卖评估分层
+
+详情页把受保护数据拆为四个独立请求通道，每个通道都有独立 `AbortController` 和递增序号；切股、KeepAlive 停用和卸载会取消在途请求，迟到响应不能覆盖当前股票：
+
+- **复权行情**：`GET /stocks/{code}/bars?adjust=...&lookback=...` 经 `MarketRepository.get_bars` 输出 K线和量能所需的 `pre_close/amount/turnover_rate`；范围切换重拉行情与指标，复权切换只重拉行情。
+- **指标序列**：`GET /stocks/{code}/indicators?lookback=1..6000&fields=...` 只请求详情快照字段与五个 MACD 原子，接口始终保留 `trade_date`，未知字段在计算前拒绝，NaN/无穷/可空布尔序列化为 `null`。前端按交易日与行情对齐，末行同时供“最新指标快照”。
+- **原始最新报价**：独立调用 `bars?adjust=&lookback=1`，用于最新价和涨跌幅；失败只降级报价，不清空已加载图表。
+- **买卖评估**：只有同时具备 `trade-profile:view` 与 `stocks:trade-eval` 权限时才加载可见方案并请求 `trade-eval`；方案列表失败或评估失败不阻断行情与指标。
+
+行情 403 是详情页主权限边界：立即清除行情、指标、报价和评估派生数据并取消其它通道，后续 pending/普通失败均不重新展示旧数据，只有新的行情成功响应才解除 permission 状态。MACD 指标请求普通失败则只让 MACD 面板进入局部错误态，K线与量能继续可用。
 
 ### 买卖信号：由当前买卖方案推导
 个股详情的买卖信号不是固定引擎，而是用「当前选定的买卖指标方案」在该股当日快照上现算（`GET /stocks/{code}/trade-eval`，`stocks.py:156`）：
-- 取 `TradeProfileRepo.get(profile_id)` 拿到买/卖条件树（`signals/trade_profile.py:173`），用 `IndicatorEngine.wide_snapshot` 取单股当日截面，`attach_columns` 预补条件树用到的全部指标列（`collect_indicators`）。
+- 前端选择值透传列表返回的 opaque `profile_ref`；后端由 `TradeProfileRepo.get_visible(profile_ref_or_id)` 解析真实 owner，支持 owner 旧裸 ID、同租户和公开方案，不可见 private 方案统一按不存在处理。
+- 取得买/卖条件树后，用 `IndicatorEngine.wide_snapshot` 取单股当日截面，`attach_columns` 预补条件树用到的全部指标列（`collect_indicators`）。
 - `eval_conditions` 递归按 AND/OR 合并叶子比较得买入/卖出命中布尔（`trade_profile.py:43`）；`_describe_tree`（`stocks.py:123`）把条件树拍平为每个叶子的中文标签 + 该股是否成立明细，供详情页逐条展示。
 - 点时安全：只用 `≤ 当日` 数据，方案所用指标均非横截面，单股快照求值即正确。
 - 旧的 `GET /stocks/{code}/signal`（`stocks.py:105`）仍在，按 `ScreenScoreService.compute_signals` 给出 `buy_point` 文案 + `risk_flags` + K线买点标记，与方案评估互补。
+
+### K线、量能与 MACD 三图工作区
+
+- `StockChartWorkspace` 用三个独立 ECharts 实例组成纵向工作区，同一组件实例使用唯一 group 联动光标、日期和缩放；多个 KeepAlive 个股标签不会串联或互相 disconnect。
+- 图表一固定为 K线；图表二、三可选量能、MACD 或隐藏，选择已占用类型时自动交换。隐藏会释放面板和分隔线，不保留空白。
+- 默认组合为 K线/量能/MACD，比例 60/20/20；拖动和键盘分隔线调整只在提交时写偏好。图表类型及五种有序组合的相对高度保存在 `user_preference(page/stock-detail/settings).charts`，远端失败沿用 localStorage fallback。
+- 每幅图有名称和随共享光标更新的指标摘要；MACD 含正负柱、DIFF、DEA、零轴，以及锚定事件交易日的金叉/死叉标签、数据点和常驻引导线。
+- 画布取色复用 `--market-up-color` / `--market-down-color` 和预设主题修订版本；明暗、预设 key 或同 key 后端 token 覆盖变化都会重绘现有实例。
 
 ### 分组篮子：跨页多选累积与导航
 - 选择购物车（`StocksView.vue:216` `cart`）在前端维护，按 code 去重，跨分页/跨搜索/跨普通查询与分组视图累积，切换上下文（切分组）才清空（`StocksView.vue:142`）。表头全选只对「当前页」做并/差集（`toggleAllCur`，`StocksView.vue:232`）。
@@ -35,14 +49,14 @@
 
 ### 三块功能
 1. 个股查询（`StocksView.vue` 普通查询视图）：按交易日/板块/ST/退市/关键词筛选，服务端排序分页，行内显示涨跌幅与所属分组。
-2. 个股详情（`StockDetailView.vue`）：K线图 + 最新指标快照 + 当前买卖方案在该股的买入/卖出信号与逐条成立明细 + 分组归属编辑 + 集合内上一只/下一只导航。
+2. 个股详情（`StockDetailView.vue`）：K线/量能/MACD 三图工作区 + 最新指标快照 + 当前可见买卖方案在该股的买入/卖出信号与逐条成立明细 + 分组归属编辑 + 集合内上一只/下一只导航。
 3. 股票分组（`StocksView.vue` 分组视图 + `stock_groups.py`）：用户手动圈定的股票篮子，含成员加入日期与自加入日起的等权平均涨幅。
 
 ### 与其它模块的关系
 - 指标模块：详情快照、指标序列、买卖条件求值都依赖 `IndicatorEngine`（实时计算，无指标表）；条件树与评分共用 `resolve_indicator`。
 - 买卖方案模块：详情信号直接消费 `trade_profile`（买/卖条件树 + 兜底止盈止损/最大持仓），方案列表由 `tradeProfile` API 提供，默认选首个方案。
 - 数据管理模块：列表涨跌幅、K线、分组涨幅均读 `daily_bar`；前复权口径统一 `close*COALESCE(adj_factor_clean, adj_factor)`（`stock_group.py:240,252`）。
-- 默认自选分组：`StockGroupRepo` 初始化时确保存在 `grp_default_watchlist`（`stock_group.py:44`），固定红色、不可改名/改色/删除。
+- 默认自选分组：只有具备分组权限的业务链路才构造 `StockGroupRepo`；仓库按 `tenant_id + owner_user_id` 确保每个归属者存在 `grp_default_{owner_user_id}`，固定为“自选”和项目默认色，不可改名/改色/删除。
 
 ### 涉及表
 - `stock_group`（`storage/ddl.py:304`）：分组元信息 id/name/group_date/description/color/is_default。
@@ -74,7 +88,8 @@
 
 | 区块 | 展示内容 | 业务用途 |
 |------|----------|----------|
-| K线图 | 复权 K线、成交量、涨跌幅 | 复盘形态和断档 |
+| 三图工作区 | 复权 K线、量能、MACD；共享日期、光标和缩放 | 同时复盘价格、成交量和趋势动量 |
+| 图表设置与高度 | 图表二/三选择量能、MACD或隐藏；拖动/键盘调整相对高度 | 按用户和有序组合恢复阅读习惯 |
 | 最新指标快照 | 均线、强弱、趋势、量能等 | 判断该股处于什么状态 |
 | 买卖方案信号 | 当前方案买入/卖出是否触发 | 解释方案在单股上的结果 |
 | 条件明细 | 每条条件的当前值与命中状态 | 排查为什么触发/没触发 |
@@ -129,8 +144,9 @@ flowchart LR
 ### 查个股详情看信号
 1. 个股查询页选交易日/板块/关键词，服务端返回当页列表（含涨跌幅、所属分组）。
 2. 点击某行进入详情：写入「当前集合」（含本页查询快照），跳 `/stocks/{code}`。
-3. 详情页并发拉 K线 + 最新指标快照 + 当日实时行情；默认选首个买卖方案调 `trade-eval`，展示买入/卖出是否触发及每条条件成立明细、兜底参数。
-4. 切换买卖方案或交易日即重算信号；用上一只/下一只在集合内连续翻看，到边界自动续拉下一页。
+3. 详情页分通道并发拉复权行情、指标序列和原始最新报价；默认三图按交易日对齐，MACD 局部失败不影响 K线/量能。
+4. 同时具备 `trade-profile:view` 与 `stocks:trade-eval` 时加载可见买卖方案并透传 opaque `profile_ref` 做评估；切换方案即重算信号。用上一只/下一只在集合内连续翻看，到边界自动续拉下一页。
+5. 图表二/三类型、隐藏状态及各有序组合高度自动保存；刷新、切股或 KeepAlive 往返后恢复。
 
 ### 建 / 用股票分组
 1. 普通查询中跨页/跨搜索勾选股票，累积进底部购物车。
@@ -146,4 +162,4 @@ flowchart LR
 | <span style="color:#f59e0b">●</span> 中 | 分组详情搜索/排序/分页在 Python 内存层完成 | 成员极多时需全量物化再切片 | 大分组避免复杂排序；后续下推 SQL |
 | <span style="color:#f59e0b">●</span> 中 | `add_members` 返回 added 计数含已存在成员（`stock_group.py:124`） | 前端提示数量可能偏大 | 返回实际插入数，或提示"已提交成员数" |
 | <span style="color:#16a34a">●</span> 低 | `stockSet` 依赖 localStorage 快照 | 多标签页变更后相邻导航不会同步 | 需要最新集合时从列表重新进入详情 |
-| <span style="color:#16a34a">●</span> 低 | `trade-eval` 指标无法计算时返回 400（`stocks.py:188`） | 详情页信号卡可能清空，难区分缺数和未触发 | 同时查看数据质量和条件明细 |
+| <span style="color:#16a34a">●</span> 低 | `trade-eval` 指标无法计算时返回 400 | 详情页买卖评估进入局部错误态，但图表仍可用 | 检查方案引用指标、数据质量和条件明细后单独重试评估 |

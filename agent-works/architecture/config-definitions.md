@@ -17,6 +17,8 @@
 - **动态参数**：`Param`（name/label/type/default/min/max）声明指标可调参数 schema，前端据此渲染参数表单；同一指标（如 `consec_up` 连续上涨 N 天）每次引用可传不同 N，无需新建指标。
 - **运行态全局参数**：指标、评分、回测、股票池等运行期默认值从生效配置读取；环境变量、变量文件、YAML 基线与 `app_config` 覆盖层的优先级见 [environment-configuration.md](environment-configuration.md)。
 - **定义仓库** `backend/indicators/definition.py`：`IndicatorDefRepo` 把内置指标 seed 进 `indicator_def` 表（`seed_builtins` 幂等、保留用户改过的 `enabled` 与 `categories`，definition.py:139-151），并管理用户自定义表达式指标（`save_custom` 校验 key 合法/不与内置冲突/表达式白名单通过，definition.py:102-123）。内置指标不可删、仅可启停。
+- **启动校准**：FastAPI 存储自检在 DuckDB schema 就绪后调用 `seed_builtins()`，每次启动对齐整套 `REGISTRY`，不是只补本次新增 key。全新库会持久化全部 builtin；存量库会刷新代码管理的名称、类型、表达式、参数和描述，保留管理员明确设置的 `enabled/categories`，旧库 `NULL` 则回退注册表默认值；元数据未变化时跳过 UPDATE，避免启动写放大和无意义刷新 `updated_at`。
+- **MACD 五原子**：`macd_diff`、`macd_dea`、`macd_hist` 为 `number`，`macd_golden_cross`、`macd_dead_cross` 为可空 `bool`；固定参数 12/26/9，主分类“趋势”，预设分类“趋势/动量”，默认启用且不可删除。单股和全市场向量化路径使用同一严格后向 EMA/交叉口径，五列进入 `_IND_COLS` 后由筛选、评分和买卖条件通用求值链直接复用，不建立 MACD 专属下游分支。
 
 ### 2. param_hash 与单次运行内存缓存
 
@@ -194,6 +196,13 @@ Web 系统设置当前只开放数据源限流/并发/容错、回测成本、�
 
 ## 业务流程
 
+### 内置指标启动校准
+
+1. 应用启动先完成 DuckDB 连通与 `indicator_def` schema 初始化。
+2. `seed_builtins()` 遍历完整 `REGISTRY`：新增缺失定义，刷新代码管理元数据，保留管理员启停与分类。
+3. 五个 MACD key 与其它 builtin 一起进入统一指标目录；管理页、筛选、评分和买卖方案读取同一份 `indicator_def`。
+4. 重复启动若元数据无变化不执行 UPDATE；内置定义只能启停或调分类，不能删除。
+
 ### 新增（自定义）技术指标
 
 1. 前端「技术指标」页填 key / 中文名 / dtype / DSL 表达式（含 `{param}` 占位）/ 参数 schema / 分类 → `POST /api/indicators/def`。
@@ -229,6 +238,7 @@ Web 系统设置当前只开放数据源限流/并发/容错、回测成本、�
 |------|--------|------|------|
 | <span style="color:#dc2626">●</span> 高 | 已实例化服务可能持有旧配置对象 | 长任务或已创建的领域服务实例不会自动重建，可能继续使用创建时的 effective settings | 配置改动后新任务/新请求生效；需要严格切换口径时重启服务或重建相关服务实例 |
 | <span style="color:#dc2626">●</span> 高 | YAML reload 不会自动失效历史快照 | 改指标全局参数后，已物化的旧评分快照可能继续返回 | 改全局指标参数后显式标记评分快照 stale 或重跑相关结果 |
+| <span style="color:#f59e0b">●</span> 中 | 启动 seed 覆盖整套 builtin | 首次启用时会持久化全部注册表定义，不只是新指标；回滚旧代码前若下游已引用新 key 会无法计算 | 发布前备份 `indicator_def` 并对账完整 builtin；回滚优先停用新增定义，不直接删除 |
 | <span style="color:#f59e0b">●</span> 中 | 评分指标解析仅支持固定周期映射 | 非预设 `ma/hhv` 周期在试算时失败（score_profile.py:48-56） | 任意周期先走表达式型指标 |
 | <span style="color:#f59e0b">●</span> 中 | RS 指标不可逐方案调参 | `rs_pct` 使用全局窗口，方案里传参无效 | 需要多窗口 RS 时新增独立表达式/内置指标 |
 | <span style="color:#f59e0b">●</span> 中 | 删除方案会断开历史引用 | 历史回测只记录 id+version，删方案后无法回溯内容 | 对已用于回测的方案优先停用/改名，不直接删除 |
