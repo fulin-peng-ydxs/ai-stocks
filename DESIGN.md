@@ -65,8 +65,8 @@ Key Characteristics：
 
 - 权限树颜色使用 `--perm-group-color`、`--perm-feature-color`；菜单点使用 Element Plus 成功色，不在页面内写死色值。
 - 金融涨跌使用 `--market-up-color` / `--market-down-color`，不要在页面里直接写红绿 hex。
-- ECharts/canvas 金融图表统一通过 `stock-chart/chartUtils.ts::stockChartTheme()` 读取 CSS 语义色；MACD 正柱与金叉使用 `--market-up-color`，负柱与死叉使用 `--market-down-color`。交叉事件必须同时使用“金叉/死叉”文字、标签轮廓、数据点锚点和交易日引导线表达，不得只依赖红绿颜色，也不为金叉新增独立金色 token。
-- Canvas 不会随 CSS 变量自动重绘；消费主题 token 的图表必须监听预设系统在完整 token 写入后递增的 `themeRevision`，同时覆盖明暗切换、预设 key 切换和当前预设同 key 后端覆盖更新。禁止只监听预设名或在组件内复制主题版本状态。
+- `StockChartWorkspace` 及个股详情股票画布通过 `stock-chart/chartUtils.ts::stockChartTheme()` 读取 CSS 语义色；该工作区的 MACD 正柱与金叉使用 `--market-up-color`，负柱与死叉使用 `--market-down-color`。交叉事件必须同时使用“金叉/死叉”文字、标签轮廓、数据点锚点和交易日引导线表达，不得只依赖红绿颜色，也不为金叉新增独立金色 token。
+- `StockChartWorkspace` 的 Canvas 不会随 CSS 变量自动重绘；该组件必须监听预设系统在完整 token 写入后递增的 `themeRevision`，同时覆盖明暗切换、预设 key 切换和当前预设同 key 后端覆盖更新。本条只适用于 `StockChartWorkspace`/个股详情股票画布；其它图表不会自动继承，扩大适用范围时必须同步完成运行时改造和独立回归。
 - 分项评分徽章使用 `--score-high-*` / `--score-mid-*`，低分使用弱底色和占位文字色。
 - 页面提示、弱文本、占位文本优先使用 `--app-warning-text`、`--app-muted-text`、`--app-placeholder-text`；确属 Element Plus 标准状态时可直接用 `var(--el-color-*)`。
 - 普通操作文字与禁用操作文字分别使用 `text`、`textMuted`；二者按 WCAG 线性相对亮度计算的差值必须 `≥ 0.06`。这是文字层级阈值的唯一数值事实源，预设保存和运行时合并均须守卫。

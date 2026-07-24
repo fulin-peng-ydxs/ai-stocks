@@ -878,12 +878,12 @@ flowchart LR
 - 验证方式：文档事实复核、`npm test`、`npm run build` 和 dist 差异检查。
 - 完成标准：文档与代码事实一致，生产静态资源包含新页面。
 - 实际落地情况：已完成（2026-07-24）。
-  - `DESIGN.md` 在既有 `StockChartWorkspace` 组件登记基础上补齐画布 token 长期规则：金融图表统一经 `stockChartTheme()` 读取语义色，MACD 正柱/金叉与负柱/死叉分别复用 A 股涨跌 token；事件同时依靠文字、轮廓、锚点和交易日引导线识别，不新增金色 token。Canvas 消费方必须监听完整 token 写入后的 `themeRevision`，覆盖明暗、预设 key 与同 key 后端覆盖。
+  - `DESIGN.md` 在既有 `StockChartWorkspace` 组件登记基础上补齐个股工作区画布 token 规则：该组件经 `stockChartTheme()` 读取语义色，MACD 正柱/金叉与负柱/死叉分别复用 A 股涨跌 token；事件同时依靠文字、轮廓、锚点和交易日引导线识别，不新增金色 token。`StockChartWorkspace` 监听完整 token 写入后的 `themeRevision`，覆盖明暗、预设 key 与同 key 后端覆盖；该规则不扩展为仓库全部金融图表的既有契约。
   - `config-definitions.md` 同步五个 MACD 原子的 key、dtype、固定 12/26/9、分类和不可删除口径，并记录 FastAPI 启动时校准完整 `REGISTRY`、保留管理员启停/分类、旧库 NULL 回落默认及无变化跳过 UPDATE；风险表明确首次启用 seed 的整套 builtin 影响和回滚边界。
   - `stocks-and-groups.md` 从旧的三请求/双图/owner-only 方案描述更新为行情、指标、报价、买卖评估四通道，补齐 403 fail-closed、MACD 局部失败、opaque `profile_ref/get_visible()`、无分组权限不构造仓库、三图联动、辅助图显隐交换和按组合高度偏好。
   - `e2e-automation/guide.md` 登记 `stock-detail-chart-workspace.spec.ts` 为稳定基线，说明标准视口业务闭环、三关键视口视觉状态、临时 normal/paid 用户、双重环境授权、PG 指纹和零残留要求。
   - 前端全量 `cd frontend && npm test` 为 `64 files / 429 tests passed`；`npm run build` 通过，仅有既有依赖注释和大 chunk 告警。构建后的 `frontend/dist` 与仓库已跟踪产物无差异，个股详情产物可检索到 MACD 工作区文本，说明生产静态资源已经包含当前源码，不产生重复 hash 提交。
-  - 文档事实复核、`git diff --check`、后端 `/api/health=200` 与日常前端 `5173=200` 通过；本阶段不改生产页面源码、数据库、seed、权限或接口，不需要重跑浏览器交互，T11 已留存的 Playwright 业务与视觉证据继续有效。
+  - 文档事实复核、`git diff --check`、后端 `/api/health=200` 与日常前端 `5173=200` 通过；P1 复审后将主题硬约束从“全部金融图表”收窄为真实消费 `themeRevision` 的 `StockChartWorkspace`/个股详情股票画布，未扩大到其它既有图表。收窄后执行 `cd frontend && npm test -- --run src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/layout/__tests__/useLayoutPreset.spec.ts`，结果 `2 files / 15 tests passed`。本阶段不改生产页面源码、数据库、seed、权限或接口，不需要重跑浏览器交互，T11 已留存的 Playwright 业务与视觉证据继续有效。
 
 ### 6.13 任务 T13：发布、烟测与回滚演练
 
@@ -992,7 +992,7 @@ WHERE is_builtin = TRUE
   - T9 已完成：七文件后端定向回归 `87 passed`，覆盖 R1/R2 公式与边界、R3 全量 seed/目录/五原子下游求值、R4 白名单/边界/null/403，以及 R8 additive JSON、精确 65536/65537 bytes 边界、标准 JSON 和租户/用户隔离；测试身份使用 UUID，偏好清理遵守租户归属与精确键约束。次级资产权限另为 `1 passed`，停服测试后已恢复 `/api/health=200`。
   - T10 已完成：五文件定向回归 `64 passed`，前端全量 `64 files / 429 tests passed`，正式构建通过；KeepAlive observer 有精确清理计数，两个缓存个股实例的集合下拉触底事件与分页状态互不串扰。真实浏览器同时保留两个个股详情标签，`300834.SZ` 集合下拉触底后候选由 20 条增至 120 条（含加载提示的 option 数由 21 增至 121），控制台无错误；该探索性复核不替代 T11 的 Playwright 总回归。
   - T11 已完成：环境/夹具定向最新 `20 passed`，当前包含健康路由、鉴权中间件与路由扫描的五文件范围实跑为 `57 passed`；覆盖 fail-closed 环境白名单、`dev-users --list` 查询守卫、独立 E2E 写开关、统一 `.env.local` 与 `export` 变量加载、Playwright npm 启动器复用、后端/夹具实时 PG 指纹、错误身份零删除、最终行数异常事务回滚，以及软删除用户状态/角色/密码/`perm_ver` 校准。前端全量 `64 files / 429 tests passed`、正式构建通过。显式授权下定向 Playwright 最终 `10 passed / 14 skipped in 46.6s`，跨用户用例结束后 PG 中 `e2e_%` 用户计数为 0；回归后移除写开关并恢复 `/api/health=200`、`/api/health/e2e` 业务码 403，日常前端 `5173` 仍为 200。HTML 报告继续留存页面/工作区/MACD 明暗 PNG。
-  - T12 已完成：DESIGN 补齐画布语义色、信号多重识别与 `themeRevision` 重绘规则；配置和个股架构文档同步五原子、完整 builtin 启动 seed、四请求通道、opaque 方案和三图偏好；E2E guide 登记稳定个股工作区用例。前端全量 `64 files / 429 tests passed`、正式构建通过，`frontend/dist` 与当前源码构建结果一致且无新增差异。
+  - T12 已完成：DESIGN 补齐 `StockChartWorkspace`/个股详情股票画布的语义色、信号多重识别与 `themeRevision` 重绘规则，不追溯约束其它既有金融图表；配置和个股架构文档同步五原子、完整 builtin 启动 seed、四请求通道、opaque 方案和三图偏好；E2E guide 登记稳定个股工作区用例。前端全量 `64 files / 429 tests passed`、正式构建通过，`frontend/dist` 与当前源码构建结果一致且无新增差异。
   - T13 尚未开始；发布 smoke、完整 builtin 对账和回滚演练保留到下一阶段，不提前执行。
 
 ### 8.1 后端测试矩阵
