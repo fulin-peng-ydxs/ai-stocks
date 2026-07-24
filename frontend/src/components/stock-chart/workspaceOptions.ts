@@ -146,7 +146,6 @@ export function buildSignalSeries(
       api: {
         value: (dimension: number) => number
         coord: (value: [number, number]) => [number, number]
-        style: (style: Record<string, unknown>) => Record<string, unknown>
       },
     ) => {
       const isGolden = api.value(3) === 1
@@ -191,7 +190,7 @@ export function buildSignalSeries(
           },
           {
             type: 'text',
-            style: api.style({
+            style: {
               x: geometry.x,
               y: geometry.labelCenterY,
               text: label,
@@ -200,7 +199,7 @@ export function buildSignalSeries(
               fontWeight: 700,
               align: 'center',
               verticalAlign: 'middle',
-            }),
+            },
           },
         ],
       }

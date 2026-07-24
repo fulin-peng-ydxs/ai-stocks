@@ -345,7 +345,7 @@ flowchart LR
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 部分完成（T4/T5/T7 已完成对应部分） | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | pointermove 只更新草稿，pointerup/pointercancel/键盘终态只提交一次；页面已只消费 commit 写偏好并有真实键盘保存证据。 |
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4/T7 页面偏好闭环已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | 旧值兼容、按组合保存、刷新恢复和总重置已测；后端隔离与跨用户总回归留 T9/T11/T13。 |
 | 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3/T5/T6/T8 已完成对应部分） | 一致 | 状态测试、403/失败注入 E2E | 行情错误/空态/403 与 MACD loading/insufficient/error 已分层；真实页面已验证局部失败重试及 loading、empty、permission 正确图层，总回归留 T10/T11。 |
-| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 部分完成（T5/T8 已完成对应部分） | 一致 | 样式/契约测试、build、主题截图 | 组件和真实页面均已验证 1100×620、1366×768、1440×900，覆盖语义 token、明暗/预设重绘、纵向最低高度、无横向溢出、键盘/ARIA 和 reduced-motion；总回归留 T10/T11/T12。 |
+| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 部分完成（T5/T8 已完成对应部分） | 一致 | 样式/契约测试、build、主题截图 | 组件和真实页面均已验证 1100×620、1366×768、1440×900，覆盖语义 token、明暗、预设 key 与同 key 后端覆盖重绘、纵向最低高度、无横向溢出、键盘/ARIA 和 reduced-motion；总回归留 T10/T11/T12。 |
 | 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3–T6 已完成对应部分） | 一致 | 竞态和生命周期测试、E2E | 行情、指标、报价和买卖评估均有独立取消/序号守卫，KeepAlive 停用取消、激活恢复已落地；总回归留后续。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
@@ -695,6 +695,11 @@ flowchart LR
 - 涉及文件：
   - `frontend/src/views/StockDetailView.vue`
   - `frontend/src/components/stock-chart/StockChartWorkspace.vue`
+  - `frontend/src/components/stock-chart/workspaceOptions.ts`
+  - `frontend/src/layout/useLayoutPreset.ts`
+  - `frontend/playwright.config.ts`
+  - `frontend/e2e/stock-detail-chart-workspace.spec.ts`
+  - `agent-works/e2e-automation/guide.md`
   - `DESIGN.md`
 - 目标：让更新后的 P1 页面完整符合项目四态、布局、主题、响应式和可访问性规范。
 - 开发内容：
@@ -708,12 +713,13 @@ flowchart LR
 - 验证方式：layout contract、主题、关键视口、无横向溢出和 reduced motion。
 - 完成标准：页面设计闭环维护项和视口验收全部通过。
 - 实际落地情况：
-  - `StockChartWorkspace` 在既有明暗模式之外监听 `activePresetKey`，研究空间预设切换后重新读取运行时 CSS token 并重绘全部 ECharts 实例；组件测试断言三幅画布均重新 `setOption` 且背景 token 实际变化。
+  - `useLayoutPreset` 新增共享响应式 `themeRevision`，每次预设 key、明暗模式或同 key 后端覆盖完成整套 CSS token 写入后递增；`StockChartWorkspace` 监听该版本重新取色。组件测试覆盖“工作区已挂载 → 当前预设注入覆盖”，断言三幅画布均重新 `setOption` 且读取新背景色。
   - `StockDetailView` 的最新价涨跌改为 `--market-up-color` / `--market-down-color`，次级文本改用 Element 语义 token；页面头部和买卖评估头部允许自然换行，1180px 以下标题与操作区分行，不新增视口高度公式。
   - ready/loading/empty/error/permission 继续复用 `AppStateBlock`、`v-loading` 和 MACD 局部状态；真实浏览器验证 loading 时三幅图名和 650px 工作区稳定，empty/permission 不渲染旧工作区，MACD 局部错误仍不阻断 K线与量能。
-  - `DESIGN.md` 既有真实组件登记已补充明暗/预设重绘与 reduced-motion 使用规则；未新增系统组件种类、布局字段、页面原型、slot 或主题预设。
-  - 定向 Vitest 命令为 `cd frontend && npm test -- --run src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/views/__tests__/StockDetailView.spec.ts src/layout/__tests__/layout-contract.spec.ts src/layout/__tests__/useLayoutPreset.spec.ts`，结果 `4 files / 35 tests passed`；前端全量为 `64 files / 425 tests passed`，正式构建通过，仅有既有依赖注释位置和大 chunk 告警。
-  - 固定 Playwright 命令 `cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts` 在 1100×620、1366×768、1440×900 三项目最终为 `12 passed (36.1s)`；覆盖纵向三图、最低高度、`LayoutHost` 主区滚动、无横向溢出、白天/夜间及夜航预设、reduced-motion、状态图层和既有偏好闭环，并附加明暗页面截图到测试运行产物。
+  - `DESIGN.md` 既有真实组件登记已补充主题修订版本和 reduced-motion 使用规则；未新增系统组件种类、布局字段、页面原型、slot 或主题预设。MACD 信号自定义系列移除 ECharts 已废弃的 `api.style`，确定性视觉样本包含金叉/死叉时控制台仍保持无告警。
+  - 定向 Vitest 命令为 `cd frontend && npm test -- --run src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/views/__tests__/StockDetailView.spec.ts src/layout/__tests__/layout-contract.spec.ts src/layout/__tests__/useLayoutPreset.spec.ts`，结果 `4 files / 37 tests passed`；前端全量为 `64 files / 428 tests passed`，正式构建通过，仅有既有依赖注释位置和大 chunk 告警。
+  - 固定 Playwright 命令 `cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts` 在 1100×620、1366×768、1440×900 三项目最终为 `12 passed (46.1s)`；视觉用例使用确定性行情/MACD fixture，覆盖纵向三图、最低高度、`LayoutHost` 主区滚动、无横向溢出、白天/夜间及夜航预设、reduced-motion、金叉/死叉和既有偏好闭环。
+  - Playwright 同时启用 list 与 HTML reporter，并同步 `agent-works/e2e-automation/guide.md`；成功运行后的 `frontend/playwright-report/index.html` 真实存在，`data/` 留存三视口各一组明暗 PNG 共 6 张，已用文件类型检查并实际打开 1440×900 明暗图复核。该目录按项目规则保持为本地忽略验收产物，不纳入 Git。
   - 本阶段没有数据库、SQL、seed、菜单、权限码、接口或配置初始化变更；T9 尚未开始。
 
 ### 6.9 任务 T9：补齐后端领域、接口和数据隔离测试
@@ -910,7 +916,7 @@ WHERE is_builtin = TRUE
   - T7 定向 Vitest 完整命令为 `cd frontend && npm test -- --run src/components/__tests__/PageSettingsDrawer.spec.ts src/composables/__tests__/useStockChartPreferences.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/views/__tests__/StockDetailView.spec.ts`，结果 `4 files / 56 tests passed`；前端全量 `64 files / 424 tests passed`，正式构建通过。Playwright 拆为两个独立用例，隔离偏好端点并复用同 worker 认证快照；固定命令 `cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts` 在三个关键视口共 6 项，默认 45 秒限制下连续两轮分别 `6 passed (20.9s)`、`6 passed (27.6s)`。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
-  - T8 已完成：研究空间预设切换会驱动 ECharts 重新取色；个股页清除本次路径的涨跌硬编码并完成紧凑视口换行；四个定向文件 35 passed、前端全量 425 passed、正式构建通过。真实页面三关键视口 12 项 Playwright 覆盖纵向最低高度、无横向溢出、明暗/预设、reduced-motion、loading/empty/permission 和既有偏好闭环。
+  - T8 已完成：主题修订版本覆盖预设 key、明暗和同 key 后端覆盖，驱动 ECharts 重新取色；个股页清除本次路径的涨跌硬编码并完成紧凑视口换行；四个定向文件 37 passed、前端全量 428 passed、正式构建通过。真实页面三关键视口 12 项 Playwright 覆盖纵向最低高度、无横向溢出、明暗/预设、reduced-motion、loading/empty/permission 和既有偏好闭环；HTML 报告真实留存 6 张明暗截图。
   - T9–T13 尚未开始；后端/前端总回归和发布 smoke 均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵

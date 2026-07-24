@@ -96,6 +96,75 @@ async function installPreferenceEndpoint(page: Page, seeds: PreferencePayload[] 
   }
 }
 
+async function installVisualChartEndpoints(page: Page, code: string) {
+  const dates: string[] = []
+  const cursor = new Date('2026-01-05T00:00:00Z')
+  while (dates.length < 90) {
+    const day = cursor.getUTCDay()
+    if (day !== 0 && day !== 6) dates.push(cursor.toISOString().slice(0, 10))
+    cursor.setUTCDate(cursor.getUTCDate() + 1)
+  }
+  const bars = dates.map((date, index) => {
+    const previous = 20 + index * 0.035 + Math.sin((index - 1) / 6) * 0.6
+    const close = 20 + index * 0.035 + Math.sin(index / 6) * 0.6
+    return {
+      date,
+      open: Number((previous + Math.sin(index / 4) * 0.08).toFixed(2)),
+      high: Number((Math.max(previous, close) + 0.22).toFixed(2)),
+      low: Number((Math.min(previous, close) - 0.2).toFixed(2)),
+      close: Number(close.toFixed(2)),
+      pre_close: Number(previous.toFixed(2)),
+      volume: 2_000_000 + index * 18_000,
+      amount: 42_000_000 + index * 320_000,
+      turnover_rate: 1.2 + index / 500,
+    }
+  })
+  const indicators = dates.map((tradeDate, index) => {
+    const diff = Math.sin(index / 7) * 0.42
+    const dea = Math.sin((index - 2) / 7) * 0.36
+    const previousDiff = Math.sin((index - 1) / 7) * 0.42
+    const previousDea = Math.sin((index - 3) / 7) * 0.36
+    return {
+      trade_date: tradeDate,
+      macd_diff: Number(diff.toFixed(4)),
+      macd_dea: Number(dea.toFixed(4)),
+      macd_hist: Number(((diff - dea) * 2).toFixed(4)),
+      macd_golden_cross: previousDiff <= previousDea && diff > dea,
+      macd_dead_cross: previousDiff >= previousDea && diff < dea,
+    }
+  })
+
+  await page.route('**/api/stocks/*/bars*', async (route) => {
+    const url = new URL(route.request().url())
+    const result = url.searchParams.get('lookback') === '1' ? bars.slice(-1) : bars
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: {
+          code,
+          name: 'E2E 视觉样本',
+          adjust: url.searchParams.get('adjust') || '',
+          bars: result,
+        },
+      }),
+    })
+  })
+  await page.route('**/api/stocks/*/indicators*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: { code, indicators },
+      }),
+    })
+  })
+}
+
 async function loadStocksOnlyContext(page: Page, request: APIRequestContext) {
   const auth = cachedAuth || await loginAsDebugUser(page, request, 'debug_stocks_only')
   if (cachedAuth) await installAuthSnapshot(page, auth)
@@ -342,6 +411,7 @@ test.describe('个股详情三图工作区', () => {
       window.localStorage.setItem('ai-stocks:layout-preset', 'balanced')
     })
     const { code } = await loadStocksOnlyContext(page, request)
+    await installVisualChartEndpoints(page, code)
     await installPreferenceEndpoint(page, [{
       scope: 'page',
       pageKey: 'stock-detail',
@@ -362,6 +432,8 @@ test.describe('个股详情三图工作区', () => {
     await expect(workspace.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
     await expect(workspace.getByText('量能', { exact: true })).toBeVisible()
     await expect(workspace.getByText('MACD（12,26,9·前复权）', { exact: true })).toBeVisible()
+    await expect(workspace.locator('.el-loading-mask')).toHaveCount(0)
+    await expect(workspace.getByText('MACD 数据加载中', { exact: true })).toHaveCount(0)
 
     const geometry = await workspace.evaluate((element) => {
       const panels = [...element.querySelectorAll<HTMLElement>('[data-panel-key]')]
@@ -410,6 +482,9 @@ test.describe('个股详情三图工作区', () => {
       (element) => getComputedStyle(element).backgroundColor,
     )
     expect(nocturneBackground).not.toBe(darkBackground)
+    const closeAppearance = page.getByRole('button', { name: '关闭视觉环境' })
+    await closeAppearance.click()
+    await expect(closeAppearance).toBeHidden()
     await testInfo.attach('stock-detail-dark-nocturne', {
       body: await page.screenshot(),
       contentType: 'image/png',

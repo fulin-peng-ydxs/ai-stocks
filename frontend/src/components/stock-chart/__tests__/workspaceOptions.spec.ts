@@ -6,6 +6,7 @@ import {
   buildKlineOption,
   buildMacdOption,
   buildSignalData,
+  buildSignalSeries,
   signalRenderGeometry,
 } from '@/components/stock-chart/workspaceOptions'
 import type { StockChartTheme } from '@/components/stock-chart/chartUtils'
@@ -88,6 +89,32 @@ describe('workspaceOptions', () => {
     expect(nextLane.x).toBe(first.x)
     expect(nextLane.anchorY).toBe(first.anchorY)
     expect(nextLane.labelCenterY).not.toBe(first.labelCenterY)
+  })
+
+  it('信号自定义系列使用字面量样式，不依赖 ECharts 已废弃 api.style', () => {
+    const rows = alignStockChartRows(
+      [bar('2026-07-21')],
+      [{
+        trade_date: '2026-07-21',
+        macd_diff: 0.2,
+        macd_golden_cross: true,
+      }],
+    )
+    const series = buildSignalSeries(rows, theme)
+    const result = series.renderItem(
+      { coordSys: { y: 0, height: 200 } },
+      {
+        value: (dimension) => [0, 0.2, 0, 1][dimension],
+        coord: () => [80, 100],
+      },
+    )
+    const text = result.children.find((child) => child.type === 'text')
+
+    expect(text?.style).toMatchObject({
+      text: '金叉',
+      x: 80,
+      fill: '#ffffff',
+    })
   })
 
   it('MACD 保留空点、零轴和值方向色，底部面板才提供 slider', () => {

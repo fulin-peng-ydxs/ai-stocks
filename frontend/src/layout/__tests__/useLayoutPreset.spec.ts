@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { useTheme } from '@/composables/useTheme'
 import { LAYOUT_PRESETS } from '../presets'
 import { blendHex, rgbChannelsFromHex } from '../themeSurfaces'
-import { setLayoutPreset, setPresetOverrides } from '../useLayoutPreset'
+import { setLayoutPreset, setPresetOverrides, useLayoutPreset } from '../useLayoutPreset'
 import type { LayoutPresetKey, ThemeMode } from '../schema'
 
 const COLOR_LEVELS = [3, 5, 7, 8, 9] as const
@@ -96,5 +96,20 @@ describe('布局预设运行时 Element Plus 色阶', () => {
       expect(document.documentElement.style.getPropertyValue('--el-text-color-disabled'))
         .toBe('#87949b')
     }
+  })
+
+  it('每次运行时 token 应用完成后递增主题修订版本', () => {
+    const { themeRevision } = useLayoutPreset()
+    setLayoutPreset('balanced')
+    const beforeOverride = themeRevision.value
+
+    setPresetOverrides({
+      balanced: {
+        'tokens.light.surfaceBg': '#f2f5f8',
+      },
+    })
+
+    expect(themeRevision.value).toBe(beforeOverride + 1)
+    expect(document.documentElement.style.getPropertyValue('--el-bg-color')).toBe('#f2f5f8')
   })
 })

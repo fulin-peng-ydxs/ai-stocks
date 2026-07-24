@@ -13,6 +13,11 @@ import { useTheme } from '@/composables/useTheme'
 
 const STORAGE_KEY = 'ai-stocks:layout-preset'
 const activePresetKey = ref<LayoutPresetKey>(DEFAULT_LAYOUT_PRESET)
+/**
+ * 运行时主题 token 的提交版本。预设 key、明暗模式或后端覆盖任一来源完成 CSS 变量写入后递增，
+ * 供 ECharts 等不会自动响应 CSS 变量的画布消费者重新取色。
+ */
+const themeRevision = ref(0)
 const { isDark } = useTheme()
 
 /**
@@ -170,6 +175,8 @@ function applyPreset(key: LayoutPresetKey) {
   setCssVar(t, 'pageGap', '--layout-page-gap', 'px')
   setCssVar(t, 'cardPadding', '--layout-card-padding', 'px')
   setCssVar(t, 'tableCellPaddingY', '--layout-table-cell-padding-y', 'px')
+  // 必须在全部 CSS 变量写入后发布，避免画布消费者读到新版本号与旧 token 的中间态。
+  themeRevision.value += 1
 }
 
 export function initLayoutPreset() {
@@ -221,5 +228,5 @@ export function useLayoutPreset() {
     value: p.key,
     description: p.description,
   })))
-  return { activePresetKey, activePreset, options, setLayoutPreset }
+  return { activePresetKey, activePreset, themeRevision, options, setLayoutPreset }
 }

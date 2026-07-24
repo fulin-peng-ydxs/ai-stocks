@@ -4,7 +4,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
-import { setLayoutPreset } from '@/layout/useLayoutPreset'
+import { setLayoutPreset, setPresetOverrides } from '@/layout/useLayoutPreset'
 
 const echartsMock = vi.hoisted(() => {
   const instances: Array<Record<string, any>> = []
@@ -105,6 +105,7 @@ function pointerEvent(type: string, pointerId: number, clientY: number): Event {
 
 describe('StockChartWorkspace', () => {
   beforeEach(() => {
+    setPresetOverrides({})
     setLayoutPreset('balanced')
     echartsMock.instances.length = 0
     echartsMock.init.mockClear()
@@ -172,6 +173,27 @@ describe('StockChartWorkspace', () => {
     const backgroundAfter = echartsMock.instances[0].setOption.mock.calls.at(-1)?.[0]
       ?.backgroundColor
     expect(backgroundAfter).not.toBe(backgroundBefore)
+
+    wrapper.unmount()
+  })
+
+  it('当前预设注入后端覆盖时按主题版本重绘全部画布', async () => {
+    const wrapper = await mountWorkspace()
+    const callsBefore = echartsMock.instances.map((instance) => instance.setOption.mock.calls.length)
+
+    setPresetOverrides({
+      balanced: {
+        'tokens.light.surfaceBg': '#f2f5f8',
+        'tokens.light.border': '#a8b4c2',
+      },
+    })
+    await nextTick()
+    await nextTick()
+
+    echartsMock.instances.forEach((instance, index) => {
+      expect(instance.setOption.mock.calls.length).toBeGreaterThan(callsBefore[index])
+      expect(instance.setOption.mock.calls.at(-1)?.[0]?.backgroundColor).toBe('#f2f5f8')
+    })
 
     wrapper.unmount()
   })

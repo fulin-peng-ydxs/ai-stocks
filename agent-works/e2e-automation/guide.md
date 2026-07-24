@@ -19,7 +19,7 @@
 
 | 场景 | 使用工具 | 要求 |
 | --- | --- | --- |
-| 已知关键业务路径、交付前回归、CI 候选 | Playwright E2E | 用例放 `frontend/e2e/`，通过 `npm run test:e2e` 执行，失败保留 trace/screenshot/video |
+| 已知关键业务路径、交付前回归、CI 候选 | Playwright E2E | 用例放 `frontend/e2e/`，通过 `npm run test:e2e` 执行；list reporter 实时输出，HTML reporter 在 `frontend/playwright-report/` 留存用例主动附件，失败另保留 trace/screenshot/video |
 | 新问题复现、视觉细节确认、一次性探索、查看控制台 | 交互式浏览器工具 | 可临时点击和截图；若满足下方“必须沉淀为 Playwright”的条件，本次整改内补 Playwright 用例 |
 | 纯 composable、合并逻辑、字段守门、错误分支 | Vitest | 不用浏览器替代单元测试 |
 
@@ -48,6 +48,7 @@ cd frontend && npm run test:e2e
 ```
 
 Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；后端使用 `127.0.0.1:8000`，由 `./start.sh` 管理。
+`frontend/playwright-report/` 是本地忽略的可打开验收产物；用例通过 `testInfo.attach()` 附加的截图会进入该报告。需要对外归档时由 CI 或发布流程保存整个报告目录，不在业务提交中追踪哈希附件。
 
 ## 选择器规则
 

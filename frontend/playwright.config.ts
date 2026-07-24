@@ -8,7 +8,10 @@ export default defineConfig({
   timeout: 45_000,
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
-  reporter: [['list']],
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: 'playwright-report', open: 'never' }],
+  ],
   expect: {
     timeout: 8_000,
   },

@@ -83,7 +83,7 @@ const workspaceEl = ref<HTMLElement | null>(null)
 const chartElements = new Map<WorkspacePanelKey, HTMLElement>()
 const charts = new Map<WorkspacePanelKey, echarts.ECharts>()
 const { isDark } = useTheme()
-const { activePresetKey } = useLayoutPreset()
+const { themeRevision } = useLayoutPreset()
 const activeIndex = ref<number | null>(null)
 const liveRatios = ref<number[]>([])
 let resizeObserver: ResizeObserver | null = null
@@ -103,8 +103,8 @@ const ratios = computed(() => normalizeWorkspaceRatios(
 const lastIndex = computed(() => Math.max(0, rows.value.length - 1))
 const metricIndex = computed(() => activeIndex.value ?? lastIndex.value)
 const theme = computed(() => {
-  // ECharts 画布不会自动响应 CSS 变量变化；把预设 key 纳入依赖以触发重新取色。
-  void activePresetKey.value
+  // ECharts 画布不会自动响应 CSS 变量变化；主题版本统一覆盖预设、明暗与后端覆盖更新。
+  void themeRevision.value
   return stockChartTheme(isDark.value)
 })
 
@@ -369,7 +369,7 @@ watch(
   { deep: true },
 )
 watch(
-  [panels, rows, () => props.warmupBars, () => props.macdState, isDark, activePresetKey,
+  [panels, rows, () => props.warmupBars, () => props.macdState, isDark, themeRevision,
     () => props.zoomStart, () => props.zoomEnd],
   async () => {
     activeIndex.value = null
