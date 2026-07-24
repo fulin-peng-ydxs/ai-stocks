@@ -9,6 +9,8 @@
 #   ./start.sh restart    重启（开发模式）
 #   ./start.sh status     查看运行状态
 #   ./start.sh logs       跟踪日志（Ctrl-C 退出跟踪，不影响服务）
+#   ./start.sh dev-users [参数]  在统一本机环境下维护调试账号
+#   ./start.sh e2e-user [参数]   Playwright 临时用户内部入口
 #
 # 设计要点：
 #   - 独立 session 脱离会话：AI 跑别的命令 / 终端关闭 / 对话结束都不会误杀（解决"老挂"）。
@@ -31,14 +33,11 @@ PROC_PATTERN="backend.cli serve"
 
 mkdir -p "$LOG_DIR"
 
-# 本机敏感环境变量入口：文件已被 .gitignore 忽略，可放 JWT secret、PG/Redis 密码等。
-# 示例见 .env.local.example；文件内变量可写 export KEY=... 或 KEY=...。
-if [[ -f ".env.local" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source ".env.local"
-  set +a
-fi
+# 本机敏感环境变量入口：后端服务、dev-users 与 E2E 临时用户统一消费这一加载函数，
+# 避免直接 Python CLI 绕过 .env.local 后连接到另一套 PG。
+# shellcheck disable=SC1091
+source "scripts/load-local-env.sh"
+load_project_local_env
 
 # 是否有存活的后端进程；有则回显 PID
 running_pid() {
@@ -52,6 +51,13 @@ start() {
   if [[ -n "$pid" ]]; then
     echo "⚠️  后端已在运行 (PID $pid)，如需重启请先 ./start.sh stop 或用 ./start.sh restart"
     exit 0
+  fi
+
+  # prod 动作是不可绕过的安全边界：即使 .env.local 误写为 dev 或遗留 E2E 开关，
+  # 子进程也强制标记 production 并移除物理测试写授权。
+  if [[ "$mode" == "prod" ]]; then
+    export AI_STOCKS_ENV="production"
+    unset AI_STOCKS_E2E_WRITE
   fi
 
   # dev：热重载 + 绑 127.0.0.1（仅本机，外部走前端 5173 代理）；prod：绑 0.0.0.0（对外托管）。
@@ -140,5 +146,16 @@ case "${1:-dev}" in
   restart)  stop; start dev ;;
   status)   status ;;
   logs)     tail -f "$LOG_FILE" ;;
-  *)        echo "用法: ./start.sh [dev|prod|stop|restart|status|logs]"; exit 1 ;;
+  dev-users)
+    shift
+    "$PY" -m backend.cli dev-users "$@"
+    ;;
+  e2e-user)
+    shift
+    "$PY" -m backend.devtools.e2e_test_users "$@"
+    ;;
+  *)
+    echo "用法: ./start.sh [dev|prod|stop|restart|status|logs|dev-users|e2e-user]"
+    exit 1
+    ;;
 esac

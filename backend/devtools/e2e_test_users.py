@@ -8,36 +8,58 @@ from __future__ import annotations
 
 import argparse
 import json
+import secrets
 import uuid
 
 from backend.auth.constants import ROLE_NORMAL, ROLE_PAID
 from backend.auth.perm_resolver import clear_perms_cache
 from backend.auth.security import hash_password
+from backend.devtools.environment_guard import require_e2e_write_enabled
 from backend.devtools.rbac_test_users import (
     DEBUG_TENANT_ID,
     UserSpec,
     _bump_user_permissions,
     _ensure_users,
-    _guard_not_production,
     resolve_debug_password,
 )
 from backend.storage.pg_client import PostgresClient, get_pg_client
 from backend.storage.pg_ddl import _ASSET_TABLES
+from backend.storage.pg_identity import pg_fingerprint
 
 _ALLOWED_ROLES = {ROLE_NORMAL, ROLE_PAID}
+
+
+def _assert_pg_target(pg: PostgresClient, expected_pg_fingerprint: str) -> None:
+    if not expected_pg_fingerprint:
+        raise RuntimeError("缺少被测后端 PostgreSQL 指纹，拒绝执行 E2E 数据写入")
+    actual = pg_fingerprint(pg)
+    if not secrets.compare_digest(actual, expected_pg_fingerprint):
+        raise RuntimeError("E2E 夹具 PostgreSQL 与被测后端不一致，拒绝执行数据写入")
+
+
+def _lock_temporary_user(cur, *, user_id: str, tenant_id: str, account: str) -> None:
+    cur.execute(
+        "SELECT id FROM sys_user "
+        "WHERE id=%s AND tenant_id=%s AND account=%s FOR UPDATE",
+        [user_id, tenant_id, account],
+    )
+    if cur.fetchone() is None:
+        raise RuntimeError("临时用户精确身份校验失败，已回滚且未删除任何资产")
 
 
 def create_temporary_user(
     role_code: str,
     *,
+    expected_pg_fingerprint: str,
     pg: PostgresClient | None = None,
 ) -> dict[str, str]:
     """创建单个唯一临时用户，复用真实调试密码与角色校准链路。"""
-    _guard_not_production()
+    require_e2e_write_enabled()
     if role_code not in _ALLOWED_ROLES:
         raise ValueError(f"不支持的临时用户角色：{role_code}")
 
     pg = pg or get_pg_client()
+    _assert_pg_target(pg, expected_pg_fingerprint)
     tenant = pg.query_df(
         "SELECT id FROM sys_tenant "
         "WHERE id=%s AND status='active' AND deleted_at IS NULL",
@@ -48,7 +70,7 @@ def create_temporary_user(
         [role_code],
     )
     if tenant.empty or role.empty:
-        raise RuntimeError("调试租户或内置角色未就绪；先执行 python -m backend.cli dev-users")
+        raise RuntimeError("调试租户或内置角色未就绪；先执行 ./start.sh dev-users")
 
     suffix = uuid.uuid4().hex
     user = UserSpec(
@@ -82,16 +104,25 @@ def destroy_temporary_user(
     user_id: str,
     tenant_id: str,
     account: str,
+    expected_pg_fingerprint: str,
     pg: PostgresClient | None = None,
 ) -> dict[str, int | str]:
     """精确清除一个临时用户及其私有资产；固定账号或跨租户参数均不会被命中。"""
-    _guard_not_production()
+    require_e2e_write_enabled()
     if not user_id.startswith("e2e_") or not account.startswith("e2e_"):
         raise ValueError("拒绝清理非 E2E 临时用户")
 
     pg = pg or get_pg_client()
+    _assert_pg_target(pg, expected_pg_fingerprint)
     asset_rows = 0
     with pg.transaction() as conn, conn.cursor() as cur:
+        _lock_temporary_user(
+            cur,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            account=account,
+        )
+
         for table in reversed(tuple(_ASSET_TABLES)):
             if table == "layout_user_config":
                 cur.execute(
@@ -122,10 +153,12 @@ def destroy_temporary_user(
             [user_id, tenant_id, account],
         )
         user_rows = max(cur.rowcount, 0)
+        if user_rows != 1:
+            raise RuntimeError(
+                f"临时用户精确清理异常：期望 1 行，实际 {user_rows} 行，已回滚"
+            )
 
     clear_perms_cache([user_id])
-    if user_rows != 1:
-        raise RuntimeError(f"临时用户精确清理异常：期望 1 行，实际 {user_rows} 行")
     return {
         "userId": user_id,
         "assetRows": asset_rows,
@@ -140,22 +173,28 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     create = sub.add_parser("create")
     create.add_argument("--role", required=True, choices=sorted(_ALLOWED_ROLES))
+    create.add_argument("--expected-pg-fingerprint", required=True)
     destroy = sub.add_parser("destroy")
     destroy.add_argument("--user-id", required=True)
     destroy.add_argument("--tenant-id", required=True)
     destroy.add_argument("--account", required=True)
+    destroy.add_argument("--expected-pg-fingerprint", required=True)
     return parser
 
 
 def main() -> int:
     args = _build_parser().parse_args()
     if args.command == "create":
-        result = create_temporary_user(args.role)
+        result = create_temporary_user(
+            args.role,
+            expected_pg_fingerprint=args.expected_pg_fingerprint,
+        )
     else:
         result = destroy_temporary_user(
             user_id=args.user_id,
             tenant_id=args.tenant_id,
             account=args.account,
+            expected_pg_fingerprint=args.expected_pg_fingerprint,
         )
     print(json.dumps(result, ensure_ascii=False))
     return 0

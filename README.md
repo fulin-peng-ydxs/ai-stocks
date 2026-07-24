@@ -211,11 +211,11 @@ cp .env.local.example .env.local
 | 账号体系 | 用途 | 密码来源 | 维护方式 |
 |----------|------|----------|----------|
 | `admin` | `default` 租户平台系统管理员，用于初始化、系统级运维和最高权限验收 | 按 [environment-configuration.md](agent-works/architecture/environment-configuration.md) 的管理员初始密码规则维护 | 后端启动 seed/校准；已有密码不会被环境变量覆盖 |
-| `debug_*` | RBAC 页面和接口权限验收账号，用于验证普通用户、租户管理员、最小权限、无权限等场景 | 按 [test-users.md](agent-works/multi-tenant-rbac/test-users.md) 和环境配置文档维护 | `python -m backend.cli dev-users` 创建/校准，`--list` 查看 |
+| `debug_*` | RBAC 页面和接口权限验收账号，用于验证普通用户、租户管理员、最小权限、无权限等场景 | 按 [test-users.md](agent-works/multi-tenant-rbac/test-users.md) 和环境配置文档维护 | 明确 `AI_STOCKS_ENV=dev|test|local` 后用 `./start.sh dev-users` 创建/校准，`--list` 查看 |
 
 固定调试账号清单和使用规则见 [test-users.md](agent-works/multi-tenant-rbac/test-users.md)。页面或接口权限验收应按场景选择最小权限 `debug_*` 账号，不要默认用 `admin` 覆盖权限态、空权限态或 fail-closed 场景。
 
-两个脚本接口一致：`dev`(默认) / `stop` / `restart` / `status` / `logs`。后端日志 `logs/backend.log`，前端日志 `logs/frontend.log`。
+两个脚本的服务生命周期接口一致：`dev`(默认) / `stop` / `restart` / `status` / `logs`。后端另提供受环境守卫的 `dev-users` 与 E2E 内部 `e2e-user` 动作，确保与服务统一加载 `.env.local`。后端日志 `logs/backend.log`，前端日志 `logs/frontend.log`。
 
 | 角色 | 命令 | 监听 | 对外? | 热更 |
 |------|------|------|-------|------|

@@ -9,7 +9,7 @@
 ```mermaid
 flowchart TD
   Shell["调用脚本前的 Shell 环境"] --> Start["./start.sh"]
-  DotEnv[".env.local\n仅 start.sh 自动 source"] --> Start
+  DotEnv[".env.local\n由 start.sh 统一 source"] --> Start
   Start --> Proc["后端进程环境变量"]
   Proc --> Secret["敏感值/连接派生\nJWT、PG、Redis、admin seed"]
   Proc --> ConfigPath["AI_STOCKS_CONFIG\n可覆盖 YAML 路径"]
@@ -24,7 +24,7 @@ flowchart TD
 | 层级 | 当前用途 | 代码入口 | 生效边界 |
 |------|----------|----------|----------|
 | Shell 环境变量 | 进程启动前注入的密钥、连接串、脚本开关 | `os.environ` | 已启动进程通常不会感知外部 shell 后续变化；测试可用 `monkeypatch` 改当前进程 |
-| `.env.local` | 本机后端敏感变量模板的实际文件 | `start.sh` | 只由 `./start.sh` 自动读取；直接 `python -m backend.cli ...` 与 `./start-web.sh` 不自动读取 |
+| `.env.local` | 本机后端敏感变量模板的实际文件 | `start.sh` | 由 `./start.sh` 的服务、`dev-users` 和 `e2e-user` 动作统一读取；直接 `python -m backend.cli ...` 与 `./start-web.sh` 不自动读取 |
 | `config/settings.yaml` | 非敏感默认值、路径、端口、运行参数基线 | `backend/config/settings.py` | `get_settings()` 缓存；改 YAML 后需 `/api/config/reload` 或重启刷新缓存 |
 | PostgreSQL `app_config` | Web 系统设置白名单覆盖值 | `backend/storage/app_config.py` | `get_effective_settings()` 每次重合并，下一次读取即生效；PG 不可用时回落 YAML |
 | PG 布局配置表 | 布局预设、页面默认、组件字段开放策略、页面布局/组件用户层 | `backend/storage/layout_config.py` | `default < preset < page < user` 合并；平台层和用户层均由 PG 承载 |
@@ -46,8 +46,10 @@ flowchart TD
 | `AI_STOCKS_SMTP_SENDER` | `Settings.mail_config()` | From 显示地址；留空回落 `username` | 可选；覆盖 YAML `mail.sender` | 同上 |
 | `AI_STOCKS_SMTP_PASSWORD` | `Settings.smtp_password()`、`backend/common/mailer.py` | SMTP 登录密码/授权码（Gmail 等用应用专用密码） | 真实发信必填；无弱默认 | 真实发信时读取 |
 | `AI_STOCKS_ADMIN_PASSWORD` | `backend/storage/pg_ddl.py::seed_default_tenant()` | 首次 seed 或补齐 `admin` 密码哈希 | 生产/共享环境必须显式设置；缺失会随机生成并只在日志告警一次 | 仅在 `admin` 不存在或 `password_hash` 为空时使用；不会覆盖已有密码 |
-| `AI_STOCKS_TEST_USER_PASSWORD` | `backend/devtools/rbac_test_users.py` | `debug_*` 本地调试账号统一密码 | 可选；本地开发未设置时回落测试默认值 | 执行 `python -m backend.cli dev-users` 创建/校准时读取 |
-| `AI_STOCKS_ENV` / `ENV` | `backend/devtools/rbac_test_users.py` | 阻止在生产标记下创建调试账号 | 可选；值为 `prod` 或 `production` 时拒绝执行 | `dev-users` 命令运行时读取 |
+| `AI_STOCKS_TEST_USER_PASSWORD` | `backend/devtools/rbac_test_users.py` | `debug_*` 本地调试账号统一密码 | 可选；本地开发未设置时回落测试默认值 | 执行 `./start.sh dev-users` 创建/校准时读取 |
+| `AI_STOCKS_ENV` / `ENV` | `backend/devtools/environment_guard.py` | 调试账号与 E2E 临时数据写入的环境白名单 | 执行调试数据写入时必填；仅 `dev/development/local/test/testing` 放行，空值、未知值和生产值全部拒绝 | `dev-users`、后端 E2E 健康检查和临时用户夹具每次执行时读取 |
+| `AI_STOCKS_E2E_WRITE` | `backend/devtools/environment_guard.py`、`/api/health/e2e` | 允许 Playwright 创建并物理销毁临时 PG 用户 | 默认未启用；只有精确值 `1` 放行，且必须同时满足本地/测试环境白名单 | 启动被测后端和执行 Playwright 时必须同时显式传入；回归结束后重启后端移除 |
+| `AI_STOCKS_ENV_FILE` | `scripts/load-local-env.sh` | 覆盖 `start.sh` 要读取的变量文件路径 | 仅自动化验证变量加载器时使用；日常缺省为仓库根目录 `.env.local` | `start.sh` 启动及其受控 devtool 动作执行前 |
 | `AI_STOCKS_FILE_LOG` | `backend/common/logging.py` | 额外写 `logs/ai_stocks.log` | 可选；仅值为 `1` 时开启 | 首次配置 logger 时读取；默认只由 `start.sh` 汇总 stdout/stderr 到 `logs/backend.log` |
 | `PYTHON` | `start.sh` | 选择后端启动脚本使用的 Python 可执行文件 | 可选；默认 `python` | 必须在调用 `./start.sh` 前的 shell 环境中设置；当前脚本在读取 `.env.local` 前确定该值 |
 | `WEB_PORT` | `start-web.sh` | 选择 Vite dev server 端口 | 可选；默认 `5173` | 必须在调用 `./start-web.sh` 前的 shell 环境中设置；该脚本不读取 `.env.local` |
@@ -65,11 +67,26 @@ flowchart TD
 | 文件 | Git 状态 | 自动加载者 | 职责 |
 |------|----------|------------|------|
 | `.env.local.example` | 跟踪 | 无 | 本机模板，只放变量名和示例注释，不放真实密钥 |
-| `.env.local` | 忽略 | `./start.sh` | 本机后端启动变量，可写 `KEY=value` 或 `export KEY=value` |
+| `.env.local` | 忽略 | `./start.sh` | 本机后端服务及受控 `dev-users/e2e-user` 动作变量，可写 `KEY=value` 或 `export KEY=value` |
 | `.env` / `.env.*.local` | 忽略 | 当前脚本无自动读取 | 保留给人工或外部工具，项目脚本不依赖它们 |
 | `config/settings.yaml` | 跟踪 | 后端配置模块 | 非敏感基线配置；敏感值不写入 |
 
-`start.sh` 在项目根目录执行 `set -a; source .env.local; set +a`，因此 `.env.local` 里的变量会进入后端子进程环境。直接运行 Python CLI 时不会自动 source 该文件；如果 CLI 需要 JWT、PG 密码或 Redis 密码，调用前要确保当前 shell 已经具备这些环境变量。
+`start.sh` 通过 `scripts/load-local-env.sh` 在项目根目录执行
+`set -a; source .env.local; set +a`，因此 `.env.local` 里的变量会同时进入后端服务、
+`./start.sh dev-users` 和 `./start.sh e2e-user` 子进程。直接运行 Python CLI 仍不会自动 source
+该文件；需要 PG/JWT/Redis 配置的调试账号维护必须走上述受控 `start.sh` 动作，避免连接到与后端
+不同的存储。`AI_STOCKS_ENV_FILE` 只为加载器自动化回归提供临时变量文件，不作为日常多环境切换入口。
+
+会物理清理临时用户资产的 Playwright 用例还有两层额外保护：
+
+1. 后端与 Playwright 进程都必须明确处于 dev/test/local 环境并设置
+   `AI_STOCKS_E2E_WRITE=1`，否则 `/api/health/e2e` 与 Python 夹具均拒绝执行。
+2. 后端从实时 PG 连接生成不可逆指纹；夹具在创建和销毁前用同一算法校验指纹，避免 `.env.local`
+   PG 覆盖未传导或后端运行中切库时误写、误删另一数据库。
+
+`./start.sh prod` 不信任变量文件里的环境标记：启动生产模式前会强制
+`AI_STOCKS_ENV=production` 并移除 `AI_STOCKS_E2E_WRITE`，因此误把本地 `.env.local`
+复制到生产也不会开放调试数据写入口。
 
 ### 2. YAML 基线与缓存
 
@@ -137,7 +154,8 @@ localStorage 不作为登录用户配置或偏好权威。在配置与偏好链�
 
 | 等级 | 风险点 | 影响 | 建议 |
 |------|--------|------|------|
-| <span style="color:#dc2626">●</span> 高 | 直接运行 CLI 不加载 `.env.local` | CLI 可能缺 JWT/PG/Redis 环境变量，连接或认证相关命令失败 | 运行前在 shell 中注入变量，或通过服务脚本启动后端 |
+| <span style="color:#dc2626">●</span> 高 | 直接运行 CLI 不加载 `.env.local` | CLI 可能缺 JWT/PG/Redis 环境变量并连接错误数据库 | 调试账号与 E2E 临时用户只通过 `./start.sh dev-users/e2e-user` 执行；夹具另校验后端实时 PG 指纹 |
+| <span style="color:#dc2626">●</span> 高 | 环境标记或 E2E 写开关不明确 | 在生产、共享公网或不确定环境创建/物理删除测试数据 | 调试写入环境白名单 fail-closed；E2E 物理写还须 `AI_STOCKS_E2E_WRITE=1`，结束后立即移除并重启后端 |
 | <span style="color:#dc2626">●</span> 高 | `AI_STOCKS_ADMIN_PASSWORD` 不覆盖已有密码 | 以为改变量即可改 admin 密码，但已有 `password_hash` 不会被 seed 覆盖 | 生产首部署前设置好；已有账号改密走系统功能或专门维护脚本 |
 | <span style="color:#f59e0b">●</span> 中 | 连接客户端缓存了初始化时的 DSN/URL | 改 PG/Redis 环境变量后旧连接池仍使用旧连接信息 | 改连接类变量后重启服务 |
 | <span style="color:#f59e0b">●</span> 中 | `get_settings()` 与 `get_effective_settings()` 用错 | Web 覆盖值不生效，或启动期初始化访问数据库形成依赖环 | 启动期用 `get_settings()`，运行期业务参数用 `get_effective_settings()` |

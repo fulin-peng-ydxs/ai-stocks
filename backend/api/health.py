@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from backend.api.response import ApiResponse, ok
+from backend.api.response import ApiResponse, err, ok
 from backend.config import get_settings
+from backend.devtools.environment_guard import e2e_write_environment
 from backend.storage import get_client, get_pg_client, get_redis_client
+from backend.storage.pg_identity import pg_fingerprint
 
 router = APIRouter(prefix="/api", tags=["health"])
 
@@ -55,3 +57,16 @@ def health() -> ApiResponse:
             "top_n": s.scoring.top_n,
         }
     )
+
+
+@router.get("/health/e2e", response_model=ApiResponse)
+def e2e_health() -> ApiResponse:
+    """只在明确本地/测试环境且开启写开关时提供后端 PG 的不可逆指纹。"""
+    environment = e2e_write_environment()
+    if environment is None:
+        return err(403, "E2E 写环境未启用")
+    try:
+        fingerprint = pg_fingerprint()
+    except Exception as e:  # noqa: BLE001
+        return err(503, f"PostgreSQL 指纹读取失败: {e}")
+    return ok({"environment": environment, "pgFingerprint": fingerprint})

@@ -607,9 +607,9 @@ test.describe('个股详情三图工作区', () => {
     let paidContext: BrowserContext | undefined
 
     try {
-      const normalUser = await createTemporaryE2EUser('normal')
+      const normalUser = await createTemporaryE2EUser(request, 'normal')
       temporaryUsers.push(normalUser)
-      const paidUser = await createTemporaryE2EUser('paid')
+      const paidUser = await createTemporaryE2EUser(request, 'paid')
       temporaryUsers.push(paidUser)
       const normalAuth = await authenticateDebugUser(request, normalUser.account)
       const paidAuth = await authenticateDebugUser(request, paidUser.account)
@@ -672,7 +672,7 @@ test.describe('个股详情三图工作区', () => {
     } finally {
       await normalContext?.close()
       await paidContext?.close()
-      await destroyTemporaryE2EUsers(temporaryUsers)
+      await destroyTemporaryE2EUsers(request, temporaryUsers)
     }
   })
 

@@ -517,7 +517,7 @@ def cmd_dev_users(args: argparse.Namespace) -> int:
     if getattr(args, "list", False) and not getattr(args, "ensure", False):
         rows = list_debug_users()
         if not rows:
-            print("未找到 RBAC 调试用户；执行 python -m backend.cli dev-users 创建。")
+            print("未找到 RBAC 调试用户；执行 ./start.sh dev-users 创建。")
             return 0
         print("=== RBAC 调试用户 ===")
         for r in rows:

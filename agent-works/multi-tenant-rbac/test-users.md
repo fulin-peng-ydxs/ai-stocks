@@ -4,7 +4,7 @@
 
 ## AI 使用指引
 
-- 页面或接口验收前，先执行 `python -m backend.cli dev-users --list` 查看固定调试账号；账号缺失、角色漂移或权限异常时，执行 `python -m backend.cli dev-users` 重新校准。
+- 页面或接口验收前，先明确设置 `AI_STOCKS_ENV=dev|test|local`，再执行 `./start.sh dev-users --list` 查看固定调试账号；账号缺失、角色漂移或权限异常时，执行 `./start.sh dev-users` 重新校准。该入口与后端统一加载 `.env.local`，避免连到另一套 PG。
 - 按测试场景选择最小权限账号：系统页用 system，租户管理用 tenant_admin，普通业务链路用 normal/paid，权限边界用 board_only、stocks_only、stocks_group、backtest_view。
 - `admin` 是 README 中的本地开发系统管理员账号，归属 `default` 租户；密码来源和覆盖边界见 [environment-configuration.md](../architecture/environment-configuration.md)。它不属于本清单的 `debug_*` 调试账号，不用于替代最小权限或无权限场景。
 - 不把固定调试账号作为 pytest 依赖；自动化后端用例继续在用例内创建临时用户。
@@ -22,12 +22,12 @@
 ## 维护命令
 
 ```bash
-python -m backend.cli dev-users              # 创建/校准全部调试用户，默认重置为统一密码
-python -m backend.cli dev-users --list       # 查看当前调试用户
-python -m backend.cli dev-users --keep-password
+AI_STOCKS_ENV=dev ./start.sh dev-users                 # 创建/校准全部调试用户
+AI_STOCKS_ENV=dev ./start.sh dev-users --list          # 查看当前调试用户
+AI_STOCKS_ENV=dev ./start.sh dev-users --keep-password
 ```
 
-密码来源、默认回落和生产禁用规则见 [environment-configuration.md](../architecture/environment-configuration.md)。
+密码来源、默认回落和生产禁用规则见 [environment-configuration.md](../architecture/environment-configuration.md)。环境标记为空、未知、生产或共享公网时均拒绝写入。
 
 ## 固定租户
 

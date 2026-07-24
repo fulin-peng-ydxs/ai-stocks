@@ -69,7 +69,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 
 - 页面或接口权限验收需要固定调试账号时，先读 `agent-works/multi-tenant-rbac/test-users.md`，不要凭记忆猜账号、角色、权限或密码。
 - `README.md` 里的 `admin` 是 `default` 租户平台系统管理员，密码来源和覆盖边界见 `agent-works/architecture/environment-configuration.md`；它只用于初始化、系统级运维和最高权限验收，不作为普通权限边界测试账号。
-- 本地/测试库用 `python -m backend.cli dev-users` 幂等创建或校准调试账号，`python -m backend.cli dev-users --list` 查看当前账号，`--keep-password` 用于保留已有密码。
+- 本地/测试库须明确设置 `AI_STOCKS_ENV=dev|test|local`，并通过 `./start.sh dev-users` 幂等创建或校准调试账号、`./start.sh dev-users --list` 查看当前账号；该入口与后端服务统一加载 `.env.local`，`--keep-password` 用于保留已有密码。空值、未知环境、生产或共享公网环境一律禁止执行。
 - `debug_*` 调试账号密码来源和生产禁用规则见 `agent-works/architecture/environment-configuration.md` 与 `agent-works/multi-tenant-rbac/test-users.md`；本地默认密码只允许用于开发测试，生产、共享公网或不确定环境禁止创建或使用这批账号。
 - 页面和接口测试按场景选择最小权限账号验证，不要默认用系统管理员账号覆盖权限态、空权限态或 fail-closed 场景。
 - pytest 继续使用用例内临时用户，不依赖固定调试账号。

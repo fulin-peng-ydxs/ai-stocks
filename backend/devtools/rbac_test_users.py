@@ -14,6 +14,7 @@ from backend.auth.constants import ROLE_NORMAL, ROLE_PAID, ROLE_SYSTEM, ROLE_TEN
 from backend.auth.perm_resolver import clear_perms_cache
 from backend.auth.security import check_strength, hash_password
 from backend.config import get_settings
+from backend.devtools.environment_guard import require_local_test_environment
 from backend.storage.pg_client import PostgresClient, get_pg_client
 from backend.storage.pg_ddl import DEFAULT_TENANT_ID, init_pg_db
 
@@ -103,10 +104,8 @@ def resolve_debug_password() -> tuple[str, str]:
     return pwd, source
 
 
-def _guard_not_production() -> None:
-    env = (os.environ.get("AI_STOCKS_ENV") or os.environ.get("ENV") or "").lower()
-    if env in {"prod", "production"}:
-        raise RuntimeError("当前环境标记为 production，拒绝创建 RBAC 调试用户")
+def _guard_local_test_environment() -> None:
+    require_local_test_environment()
 
 
 def _ensure_tenant(cur) -> None:
@@ -203,7 +202,7 @@ def _bump_user_permissions(cur, users: tuple[UserSpec, ...] = DEBUG_USERS) -> No
 def ensure_debug_users(*, reset_password: bool = True,
                        pg: PostgresClient | None = None) -> dict:
     """幂等创建/校准调试租户、角色、用户。返回摘要。"""
-    _guard_not_production()
+    _guard_local_test_environment()
     pg = pg or get_pg_client()
     init_pg_db(pg)
     password, source = resolve_debug_password()

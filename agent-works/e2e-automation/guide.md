@@ -42,12 +42,19 @@
 ## 固定命令
 
 ```bash
-./start.sh
+AI_STOCKS_ENV=dev ./start.sh dev-users
+AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 ./start.sh restart
 cd frontend && npm run test:e2e:install   # 首次或浏览器缺失时
-cd frontend && npm run test:e2e
+cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e
+# 回归结束后恢复日常后端，不保留 E2E 物理写开关：
+cd .. && AI_STOCKS_ENV=dev ./start.sh restart
 ```
 
 Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；后端使用 `127.0.0.1:8000`，由 `./start.sh` 管理。
+涉及临时 PG 用户的用例会先读取后端 `/api/health/e2e` 的不可逆 PG 指纹，再通过
+`./start.sh e2e-user` 创建/销毁用户；该入口与后端复用 `.env.local` 加载，且后端、Playwright
+和夹具必须同时处于明确 dev/test/local 环境并启用 `AI_STOCKS_E2E_WRITE=1`。任一条件缺失、
+PG 指纹不一致或后端运行中切换数据库时均 fail-closed，不执行物理清理。
 `frontend/playwright-report/` 是本地忽略的可打开验收产物；用例通过 `testInfo.attach()` 附加的截图会进入该报告。需要对外归档时由 CI 或发布流程保存整个报告目录，不在业务提交中追踪哈希附件。
 
 ## 选择器规则
@@ -61,7 +68,7 @@ Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；�
 
 - 页面权限验收使用 `debug_*` 账号，账号事实源为 `agent-works/multi-tenant-rbac/test-users.md`。
 - E2E 登录 helper 默认使用 `debug_normal`，密码读取顺序：`AI_STOCKS_TEST_USER_PASSWORD` 环境变量、仓库根目录本地 `.env.local`、本地 dev-users 默认值。
-- 账号不存在或权限漂移时，先执行 `python -m backend.cli dev-users` 校准。
+- 账号不存在或权限漂移时，先执行 `AI_STOCKS_ENV=dev ./start.sh dev-users` 校准。
 
 ## 后续 AI 执行要求
 

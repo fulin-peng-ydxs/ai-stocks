@@ -23,6 +23,7 @@ export interface TemporaryE2EUser {
   account: string
   tenantId: string
   role: 'normal' | 'paid'
+  pgFingerprint: string
 }
 
 function readLocalEnv(name: string): string {
@@ -45,8 +46,8 @@ function debugPassword(): string {
 async function runTemporaryUserFixture(args: string[]): Promise<Record<string, unknown>> {
   const repositoryRoot = resolve(process.cwd(), '..')
   const { stdout } = await execFileAsync(
-    process.env.PYTHON || 'python',
-    ['-m', 'backend.devtools.e2e_test_users', ...args],
+    resolve(repositoryRoot, 'start.sh'),
+    ['e2e-user', ...args],
     {
       cwd: repositoryRoot,
       env: process.env,
@@ -59,10 +60,31 @@ async function runTemporaryUserFixture(args: string[]): Promise<Record<string, u
   return JSON.parse(line) as Record<string, unknown>
 }
 
+async function backendE2ETarget(request: APIRequestContext): Promise<string> {
+  const resp = await request.get(`${API_URL}/health/e2e`)
+  expect(resp.ok(), '后端 E2E 环境检查请求失败').toBe(true)
+  const body = await resp.json()
+  expect(
+    body.code,
+    body.msg
+      || '后端未以明确 dev/test/local 环境和 AI_STOCKS_E2E_WRITE=1 启动',
+  ).toBe(0)
+  expect(body.data?.pgFingerprint, '后端未返回 PostgreSQL 指纹').toMatch(/^[a-f0-9]{64}$/)
+  return body.data.pgFingerprint as string
+}
+
 export async function createTemporaryE2EUser(
+  request: APIRequestContext,
   role: TemporaryE2EUser['role'],
 ): Promise<TemporaryE2EUser> {
-  const result = await runTemporaryUserFixture(['create', '--role', role])
+  const pgFingerprint = await backendE2ETarget(request)
+  const result = await runTemporaryUserFixture([
+    'create',
+    '--role',
+    role,
+    '--expected-pg-fingerprint',
+    pgFingerprint,
+  ])
   if (
     typeof result.userId !== 'string'
     || typeof result.account !== 'string'
@@ -71,11 +93,18 @@ export async function createTemporaryE2EUser(
   ) {
     throw new Error('临时 E2E 用户夹具返回结构非法')
   }
-  return result as unknown as TemporaryE2EUser
+  return { ...result, pgFingerprint } as unknown as TemporaryE2EUser
 }
 
-export async function destroyTemporaryE2EUser(user: TemporaryE2EUser): Promise<void> {
+export async function destroyTemporaryE2EUser(
+  request: APIRequestContext,
+  user: TemporaryE2EUser,
+): Promise<void> {
   try {
+    const currentPgFingerprint = await backendE2ETarget(request)
+    if (currentPgFingerprint !== user.pgFingerprint) {
+      throw new Error('被测后端 PostgreSQL 在用例执行期间发生变化，拒绝清理')
+    }
     const result = await runTemporaryUserFixture([
       'destroy',
       '--user-id',
@@ -84,6 +113,8 @@ export async function destroyTemporaryE2EUser(user: TemporaryE2EUser): Promise<v
       user.tenantId,
       '--account',
       user.account,
+      '--expected-pg-fingerprint',
+      user.pgFingerprint,
     ])
     if (result.userRows !== 1) {
       throw new Error(`临时 E2E 用户清理数量异常：${String(result.userRows)}`)
@@ -93,11 +124,14 @@ export async function destroyTemporaryE2EUser(user: TemporaryE2EUser): Promise<v
   }
 }
 
-export async function destroyTemporaryE2EUsers(users: TemporaryE2EUser[]): Promise<void> {
+export async function destroyTemporaryE2EUsers(
+  request: APIRequestContext,
+  users: TemporaryE2EUser[],
+): Promise<void> {
   const errors: unknown[] = []
   for (const user of [...users].reverse()) {
     try {
-      await destroyTemporaryE2EUser(user)
+      await destroyTemporaryE2EUser(request, user)
     } catch (error) {
       errors.push(error)
     }
@@ -131,7 +165,7 @@ export async function authenticateDebugUser(
   const resp = await request.post(`${API_URL}/auth/login`, {
     data: { account, password: debugPassword() },
   })
-  expect(resp.ok(), `调试账号 ${account} 登录失败；先执行 python -m backend.cli dev-users 校准账号`).toBe(true)
+  expect(resp.ok(), `调试账号 ${account} 登录失败；先执行 ./start.sh dev-users 校准账号`).toBe(true)
   const body = await resp.json()
   expect(body.code, body.msg || '登录接口返回非 0 code').toBe(0)
   const data = body.data
