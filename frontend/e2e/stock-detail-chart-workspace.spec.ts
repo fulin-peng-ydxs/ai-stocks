@@ -174,6 +174,7 @@ async function installVisualChartEndpoints(page: Page, code: string) {
           dates,
           min: dates[0],
           max: dates[dates.length - 1],
+          count: dates.length,
         },
       }),
     })

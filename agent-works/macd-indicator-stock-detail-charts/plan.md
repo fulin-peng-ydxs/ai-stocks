@@ -718,7 +718,7 @@ flowchart LR
   - ready/loading/empty/error/permission 继续复用 `AppStateBlock`、`v-loading` 和 MACD 局部状态；真实浏览器验证 loading 时三幅图名和 650px 工作区稳定，empty/permission 不渲染旧工作区，MACD 局部错误仍不阻断 K线与量能。
   - `DESIGN.md` 既有真实组件登记已补充主题修订版本和 reduced-motion 使用规则；未新增系统组件种类、布局字段、页面原型、slot 或主题预设。MACD 信号自定义系列移除 ECharts 已废弃的 `api.style`，确定性视觉样本包含金叉/死叉时控制台仍保持无告警。
   - 定向 Vitest 命令为 `cd frontend && npm test -- --run src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/views/__tests__/StockDetailView.spec.ts src/layout/__tests__/layout-contract.spec.ts src/layout/__tests__/useLayoutPreset.spec.ts`，结果 `4 files / 37 tests passed`；前端全量为 `64 files / 428 tests passed`，正式构建通过，仅有既有依赖注释位置和大 chunk 告警。
-  - 固定 Playwright 命令 `cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts` 在 1100×620、1366×768、1440×900 三项目最终为 `12 passed (24.4s)`；视觉用例使用确定性行情/MACD/交易日历 fixture，浅色与深色截图前均断言顶栏交易日为同一个固定样本，覆盖纵向三图、最低高度、`LayoutHost` 主区滚动、无横向溢出、白天/夜间及夜航预设、reduced-motion、金叉/死叉和既有偏好闭环。
+  - 固定 Playwright 命令 `cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts` 在 1100×620、1366×768、1440×900 三项目最终为 `12 passed (24.4s)`；视觉用例使用确定性行情/MACD/交易日历 fixture，交易日历替身完整返回真实接口的 `dates/min/max/count` 契约，浅色与深色截图前均断言顶栏交易日为同一个固定样本，覆盖纵向三图、最低高度、`LayoutHost` 主区滚动、无横向溢出、白天/夜间及夜航预设、reduced-motion、金叉/死叉和既有偏好闭环；补齐 `count` 后视觉定向三项目复跑为 `3 passed (8.9s)`。
   - Playwright 同时启用 list 与 HTML reporter，并同步 `agent-works/e2e-automation/guide.md`；成功运行后的 `frontend/playwright-report/index.html` 真实存在，`data/` 留存三视口各一组明暗 PNG 共 6 张，已用文件类型检查并实际打开 1100×620 明暗图复核，两图顶栏交易日均为 `2026-05-08`。该目录按项目规则保持为本地忽略验收产物，不纳入 Git。
   - 本阶段没有数据库、SQL、seed、菜单、权限码、接口或配置初始化变更；T9 尚未开始。
 
