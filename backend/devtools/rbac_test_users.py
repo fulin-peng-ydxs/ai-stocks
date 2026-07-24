@@ -146,9 +146,15 @@ def _ensure_custom_roles(cur) -> None:
             )
 
 
-def _ensure_users(cur, *, password_hash: str, reset_password: bool) -> None:
+def _ensure_users(
+    cur,
+    *,
+    password_hash: str,
+    reset_password: bool,
+    users: tuple[UserSpec, ...] = DEBUG_USERS,
+) -> None:
     now = datetime.now()
-    for user in DEBUG_USERS:
+    for user in users:
         cur.execute(
             "SELECT id FROM sys_user WHERE account=%s AND id<>%s",
             [user.account, user.id],
@@ -185,6 +191,15 @@ def _ensure_users(cur, *, password_hash: str, reset_password: bool) -> None:
             )
 
 
+def _bump_user_permissions(cur, users: tuple[UserSpec, ...] = DEBUG_USERS) -> None:
+    """让本次被校准用户的既有 token 失效；须与用户/角色校准处于同一事务。"""
+    user_ids = [user.id for user in users]
+    cur.execute(
+        "UPDATE sys_user SET perm_ver=perm_ver+1 WHERE id=ANY(%s)",
+        [user_ids],
+    )
+
+
 def ensure_debug_users(*, reset_password: bool = True,
                        pg: PostgresClient | None = None) -> dict:
     """幂等创建/校准调试租户、角色、用户。返回摘要。"""
@@ -193,7 +208,6 @@ def ensure_debug_users(*, reset_password: bool = True,
     init_pg_db(pg)
     password, source = resolve_debug_password()
     pwd_hash = hash_password(password)
-    user_ids = [u.id for u in DEBUG_USERS]
 
     with pg.transaction() as conn, conn.cursor() as cur:
         _ensure_tenant(cur)
@@ -203,11 +217,8 @@ def ensure_debug_users(*, reset_password: bool = True,
             "UPDATE sys_tenant SET admin_user_id=%s WHERE id=%s",
             ["debug_tenant_admin", DEBUG_TENANT_ID],
         )
-        cur.execute(
-            "UPDATE sys_user SET perm_ver=perm_ver+1 WHERE id=ANY(%s)",
-            [user_ids],
-        )
-    clear_perms_cache(user_ids)
+        _bump_user_permissions(cur)
+    clear_perms_cache([user.id for user in DEBUG_USERS])
     return {
         "tenant_id": DEBUG_TENANT_ID,
         "users": [u.account for u in DEBUG_USERS],

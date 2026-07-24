@@ -9,11 +9,14 @@ import {
 } from '@playwright/test'
 import {
   authenticateDebugUser,
+  createTemporaryE2EUser,
+  destroyTemporaryE2EUsers,
   getUserPreference,
   installAuthSnapshot,
   loginAsDebugUser,
   saveUserPreference,
   type E2EAuthSnapshot,
+  type TemporaryE2EUser,
 } from './helpers/auth'
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
@@ -592,22 +595,26 @@ test.describe('个股详情三图工作区', () => {
     expect(consoleIssues).toEqual([])
   })
 
-  test('debug_normal 与 debug_paid 的 PG 图表偏好相互隔离', async ({
+  test('临时 normal 与 paid 用户的 PG 图表偏好相互隔离', async ({
     browser,
     request,
   }, testInfo) => {
     runInStandardViewport(testInfo)
 
-    const normalAuth = await authenticateDebugUser(request, 'debug_normal')
-    const paidAuth = await authenticateDebugUser(request, 'debug_paid')
-    const [sample] = await loadStockSamples(request, normalAuth, 1)
     const prefParams = { scope: 'page', pageKey: 'stock-detail', prefKey: 'settings' }
-    const normalOriginal = await getUserPreference(request, normalAuth, prefParams)
-    const paidOriginal = await getUserPreference(request, paidAuth, prefParams)
+    const temporaryUsers: TemporaryE2EUser[] = []
     let normalContext: BrowserContext | undefined
     let paidContext: BrowserContext | undefined
 
     try {
+      const normalUser = await createTemporaryE2EUser('normal')
+      temporaryUsers.push(normalUser)
+      const paidUser = await createTemporaryE2EUser('paid')
+      temporaryUsers.push(paidUser)
+      const normalAuth = await authenticateDebugUser(request, normalUser.account)
+      const paidAuth = await authenticateDebugUser(request, paidUser.account)
+      const [sample] = await loadStockSamples(request, normalAuth, 1)
+
       await saveUserPreference(request, normalAuth, {
         ...prefParams,
         value: stockDetailPreference('volume', 'macd'),
@@ -665,14 +672,7 @@ test.describe('个股详情三图工作区', () => {
     } finally {
       await normalContext?.close()
       await paidContext?.close()
-      await saveUserPreference(request, normalAuth, {
-        ...prefParams,
-        value: normalOriginal ?? {},
-      })
-      await saveUserPreference(request, paidAuth, {
-        ...prefParams,
-        value: paidOriginal ?? {},
-      })
+      await destroyTemporaryE2EUsers(temporaryUsers)
     }
   })
 

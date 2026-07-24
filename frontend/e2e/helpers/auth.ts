@@ -1,11 +1,14 @@
+import { execFile } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { promisify } from 'node:util'
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect } from '@playwright/test'
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
 const AUTH_STORAGE_KEY = 'ai-stocks-auth'
 const debugAuthCache = new Map<string, E2EAuthSnapshot>()
+const execFileAsync = promisify(execFile)
 
 export interface E2EAuthSnapshot {
   accessToken: string
@@ -13,6 +16,13 @@ export interface E2EAuthSnapshot {
   user: { id: string; account: string; email?: string | null; status?: string | null }
   tenant: { id: string }
   role: string
+}
+
+export interface TemporaryE2EUser {
+  userId: string
+  account: string
+  tenantId: string
+  role: 'normal' | 'paid'
 }
 
 function readLocalEnv(name: string): string {
@@ -30,6 +40,71 @@ function debugPassword(): string {
   return process.env.AI_STOCKS_TEST_USER_PASSWORD
     || readLocalEnv('AI_STOCKS_TEST_USER_PASSWORD')
     || 'Test@12345'
+}
+
+async function runTemporaryUserFixture(args: string[]): Promise<Record<string, unknown>> {
+  const repositoryRoot = resolve(process.cwd(), '..')
+  const { stdout } = await execFileAsync(
+    process.env.PYTHON || 'python',
+    ['-m', 'backend.devtools.e2e_test_users', ...args],
+    {
+      cwd: repositoryRoot,
+      env: process.env,
+      maxBuffer: 1024 * 1024,
+      timeout: 15_000,
+    },
+  )
+  const line = stdout.trim().split(/\r?\n/).at(-1)
+  if (!line) throw new Error('临时 E2E 用户夹具未返回结果')
+  return JSON.parse(line) as Record<string, unknown>
+}
+
+export async function createTemporaryE2EUser(
+  role: TemporaryE2EUser['role'],
+): Promise<TemporaryE2EUser> {
+  const result = await runTemporaryUserFixture(['create', '--role', role])
+  if (
+    typeof result.userId !== 'string'
+    || typeof result.account !== 'string'
+    || typeof result.tenantId !== 'string'
+    || result.role !== role
+  ) {
+    throw new Error('临时 E2E 用户夹具返回结构非法')
+  }
+  return result as unknown as TemporaryE2EUser
+}
+
+export async function destroyTemporaryE2EUser(user: TemporaryE2EUser): Promise<void> {
+  try {
+    const result = await runTemporaryUserFixture([
+      'destroy',
+      '--user-id',
+      user.userId,
+      '--tenant-id',
+      user.tenantId,
+      '--account',
+      user.account,
+    ])
+    if (result.userRows !== 1) {
+      throw new Error(`临时 E2E 用户清理数量异常：${String(result.userRows)}`)
+    }
+  } finally {
+    debugAuthCache.delete(user.account)
+  }
+}
+
+export async function destroyTemporaryE2EUsers(users: TemporaryE2EUser[]): Promise<void> {
+  const errors: unknown[] = []
+  for (const user of [...users].reverse()) {
+    try {
+      await destroyTemporaryE2EUser(user)
+    } catch (error) {
+      errors.push(error)
+    }
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, '一个或多个临时 E2E 用户清理失败')
+  }
 }
 
 export async function installAuthSnapshot(

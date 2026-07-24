@@ -343,7 +343,7 @@ flowchart LR
 | 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T11 真实页面验证默认三图、共享光标日期、主题与 MACD 信号近照；组件层继续覆盖共享缩放和底轴。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 已完成 | 一致 | 归一化单测、抽屉 E2E | 真实点击覆盖自动交换、隐藏、重显、无无效分隔线、切股与刷新恢复。 |
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 已完成 | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | T11 以分隔线实际位置执行 pointer 拖动，验证最低高度、相对比例保存、键盘调整及切股/刷新恢复。 |
-| 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4/T7/T9/T10/T11 已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | T11 真实 PG 轮询证明 `debug_normal` 与 `debug_paid` 相互隔离并恢复测试前值，403 route mock 证明 local fallback；发布总回归留 T13。 |
+| 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4/T7/T9/T10/T11 已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | T11 每次创建唯一 normal/paid 临时用户，真实 PG 轮询证明相互隔离，结束后按 tenant+user 精确物理清理，不读写固定调试账号历史偏好；403 route mock 证明 local fallback，发布总回归留 T13。 |
 | 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 已完成 | 一致 | 状态测试、403/失败注入 E2E | T11 真实路由和 route 注入覆盖路由守卫、页面 loading/empty/permission、MACD 503 局部失败与重试。 |
 | 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 部分完成（T5/T8/T10/T11 已完成） | 一致 | 样式/契约测试、build、主题截图 | 三关键视口、明暗/夜航预设、reduced-motion、主区滚动和无横向溢出均有浏览器证据；文档总回归留 T12。 |
 | 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3–T6/T10/T11 已完成） | 一致 | 竞态和生命周期测试、E2E | 单元层覆盖竞态/KeepAlive，T11 覆盖远端 403 fallback、切股和刷新恢复；发布总回归留 T13。 |
@@ -807,19 +807,20 @@ flowchart LR
   - `frontend/e2e/stock-detail-chart-workspace.spec.ts`
   - `frontend/e2e/helpers/auth.ts`
   - `backend/devtools/rbac_test_users.py`
+  - `backend/devtools/e2e_test_users.py`
   - `backend/tests/test_rbac_test_users.py`
 - 目标：把三图、设置、拖动、远端偏好、权限和局部失败沉淀为真实点击回归。
 - 场景：
   - `debug_normal` 默认三图、图名、共享日期和设置抽屉。
   - 自动交换、隐藏、重显和无无效分隔线。
   - pointer 拖动、键盘调整、最低高度、刷新/切个股恢复。
-  - PG 偏好值轮询，`debug_paid` 与 `debug_normal` 用户隔离。
+  - PG 偏好值轮询，单次运行唯一 normal/paid 临时用户隔离。
   - 恢复默认得到 60/20/20。
   - 路由注入指标失败，验证 MACD 局部重试而 K线/量能仍在。
   - `debug_board_only` 直达详情由路由守卫 fail-closed；页面级 403 由行情 route mock 验证 permission 状态，偏好 403 用 route mock 验证本地 fallback。
   - 1100×620、1366×768、1440×900，明暗主题截图和无横向溢出。
 - 产出：个股三图 Playwright 用例、必要的偏好测试 helper 和关键视口截图。
-- 影响范围：`frontend/e2e` 长期回归和本地调试账号校准工具；真实 PG 用户偏好在测试后恢复原值，固定调试账号 seed 仅允许在本地/测试环境运行。
+- 影响范围：`frontend/e2e` 长期回归、本地调试账号校准工具和测试专用临时用户夹具；跨用户用例不再改写固定调试账号偏好，临时用户及其资产在测试后按租户与用户精确物理清理；全部创建/清理入口均有生产环境硬守卫。
 - 选择器：只使用 data-testid、可访问名称和 helper，不使用坐标或脆弱层级；拖动按 splitter bounding box 计算相对移动属于业务动作，不用固定屏幕坐标。
 - 验证方式：执行 §8.4 定向 Playwright，并检查 trace、截图和控制台。
 - 完成标准：真实点击、远端偏好和局部失败有长期回归。
@@ -827,17 +828,18 @@ flowchart LR
   - 现有 `stock-detail-chart-workspace.spec.ts` 从 T8 的四类基础场景扩展为八类长期回归；业务/权限/真实 PG 写入集中在 `chromium-standard` 串行执行，三种视口只重复视觉契约，避免固定调试账号跨 project 登录触发后端 10 次/分钟限流。
   - `debug_normal` 首次进入验证默认 K线、量能、MACD 三图、完整图名、两个分隔线和设置抽屉默认值；`debug_board_only` 真实直达被路由守卫退回每日榜单，行情 403 注入继续验证页面 permission 状态。
   - 组合闭环从个股列表真实点击进入详情，覆盖指标 503 局部失败/重试、范围刷新、自动交换、隐藏、无效点击/原位释放零写入、pointer 拖动到最低高度、键盘调整、切换第二只股票、刷新恢复和 60/20/20 总重置。
-  - 新增真实 PG 跨用户用例：分别预置 `debug_normal` 与 `debug_paid` 的图表组合，页面水合后由普通用户修改并轮询 PG，确认付费用户值不变；关闭页面后在 `finally` 恢复两名用户测试前的原偏好。
+  - 新增真实 PG 跨用户用例：每次运行创建 UUID 化 normal/paid 临时用户，分别预置图表组合，页面水合后由普通用户修改并轮询 PG，确认付费用户值不变；`finally` 关闭上下文后按 `tenant_id + owner_user_id` 清除全部私有资产，再按 `id + tenant_id + account` 物理删除用户，固定 `debug_normal/debug_paid` 的 value、schemaVersion、updated_at 和记录存在性均不再被测试触碰。
   - 偏好接口 403 用 route mock 验证 `ai-stocks:page-settings:stock-detail` 本地 fallback 仍能读取和保存调整；最小 `stocks:view` 用例继续确认分组能力不展示、不请求，隐藏分组偏好不被无效点击覆盖。
   - 视觉固定样本在 1100×620、1366×768、1440×900 验证三图纵向布局、650px 最低高度、主区滚动、无横向溢出、共享光标日期、明暗/夜航预设和 reduced-motion；成功 HTML 报告真实留存每个视口的页面、工作区、MACD 面板明暗图，共 18 张 PNG，MACD 近照可见金叉/死叉标签、事件锚点和竖向引导线。
-  - 固定调试账号首次复核发现 `debug_paid` 为历史软删除状态，而旧 `dev-users` 只恢复 `status`、未清 `deleted_at`；校准工具现会幂等清除固定账号 `deleted_at`，纯单测验证全部八个 debug 用户 upsert 都包含恢复语义。认证 helper 抽出并缓存按账号的认证快照，同 worker 后续页面复用，进一步降低登录限流噪声。
-  - 定向后端验证：`python -m pytest backend/tests/test_rbac_test_users.py -q`，结果 `1 passed`。
+  - 固定调试账号首次复核发现 `debug_paid` 为历史软删除状态，而旧 `dev-users` 只恢复 `status`、未清 `deleted_at`；校准工具现会幂等清除固定账号 `deleted_at`。测试已升级为真实 PostgreSQL 集成回归：以 UUID 租户/用户预置 `disabled + deleted_at + paid` 状态，执行与 `dev-users` 相同的 upsert、角色重建和同事务 `perm_ver` 递增后，断言恢复为 `active + deleted_at=NULL + normal + perm_ver 8`，并按精确租户/用户条件清理。认证 helper 抽出并缓存按账号的认证快照，同 worker 后续页面复用，进一步降低登录限流噪声。
+  - 新增 `backend.devtools.e2e_test_users` 作为可销毁临时用户夹具：只允许 normal/paid、账号和 ID 均为 `e2e_<uuid>`、生产环境拒绝执行；销毁时按反向依赖顺序精确清理现有 PG 私有资产、测试审计、角色关联和用户行，并要求用户删除恰好命中 1 行。
+  - 定向后端验证：`python -m pytest backend/tests/test_rbac_test_users.py -q`，结果 `1 passed`；临时用户 create/destroy 命令实跑均成功，清理返回 `roleRows=1/userRows=1`。
   - 前端全量回归：`cd frontend && npm test`，结果 `64 files / 429 tests passed`；正式构建 `cd frontend && npm run build` 通过，仅有既有依赖注释和大 chunk 告警。
-  - 最终定向 Playwright：`cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts`，结果 `10 passed / 14 skipped in 38.5s`；14 项为非标准视口有意跳过的重复业务场景，不是环境跳过或未验证功能。
+  - 最终定向 Playwright：`cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts`，结果 `10 passed / 14 skipped in 33.7s`；14 项为非标准视口有意跳过的重复业务场景，不是环境跳过或未验证功能。跨用户用例单独复跑为 `1 passed in 10.7s`；完整回归结束后 PG 中 `e2e_%` 用户计数为 0。
   - 复用判断：
-    - 已查找的同类实现：既有 `stock-detail-chart-workspace.spec.ts`、`page-settings-drawer.spec.ts`、`helpers/auth.ts`、偏好 API helper、固定调试账号清单和页面稳定 `data-testid`/可访问名称。
-    - 已复用：认证快照安装、偏好 GET/POST、内存偏好端点、固定行情/MACD/交易日历 fixture、PageSettings 选择器、真实 splitter bounding box 和 HTML reporter 附件机制。
-    - 本次新增的复用单元：`authenticateDebugUser()` 提供不绑定页面的账号认证与同 worker 快照缓存；旧 `loginAsDebugUser()` 继续复用它，不建立第二套登录流程。
+    - 已查找的同类实现：既有 `stock-detail-chart-workspace.spec.ts`、`page-settings-drawer.spec.ts`、`helpers/auth.ts`、偏好 API helper、固定调试账号清单、`rbac_test_users` 校准链路、PG 资产表清单和页面稳定 `data-testid`/可访问名称。
+    - 已复用：认证快照安装、偏好 GET/POST、内存偏好端点、固定行情/MACD/交易日历 fixture、PageSettings 选择器、真实 splitter bounding box、HTML reporter 附件机制、真实 `_ensure_users()` 用户/角色校准与 `_ASSET_TABLES` 私有资产范围。
+    - 本次新增的复用单元：`authenticateDebugUser()` 提供不绑定页面的账号认证与同 worker 快照缓存；旧 `loginAsDebugUser()` 继续复用它，不建立第二套登录流程。`createTemporaryE2EUser()/destroyTemporaryE2EUser()` 统一封装临时账号生命周期，页面 spec 不内嵌 PG SQL。
     - 未抽取：个股固定列表和三图偏好 fixture 仍留在同一领域 spec 内；它们只服务该页面的组合/切股语义，抽到全局 helper 会把股票领域细节泄漏给无关 E2E。
     - 同步维护：本计划任务状态、R4–R9/R15/R16 映射和本地调试账号 seed 影响/回滚说明；E2E guide 的稳定用例登记按阶段边界留 T12。
 
@@ -892,6 +894,7 @@ flowchart LR
 | PG DDL | 无新增；复用 `backend/storage/pg_ddl.py::DDL_USER_PREFERENCE` | 无额外执行 | 只在既有 `value` JSON 增加 `charts` 子树 | 旧前端会忽略未知子树；无需删行或改表 |
 | 菜单/资源/角色 seed | 菜单、资源定义和默认授权定义无变化；调整 `backend/storage/pg_ddl.py::seed_rbac()` 的存量 `role_code` 迁移条件 | PG schema 初始化后每次执行 `seed_rbac()` 时 | 只给尚无任何 `sys_user_role` 关联的存量用户补 `role_code`；已有自定义/最小角色用户不再被追加 `normal`，不新增资源码或默认授权 | 还原迁移条件即可回滚代码，但会重新引入自定义角色账号被追加旧角色的扩权风险；无需回滚 schema，已存在的错误角色关联应通过 `dev-users` 校准或管理员按归属清理 |
 | 本地调试账号 seed | `backend/devtools/rbac_test_users.py::ensure_debug_users()` | 仅在本地/测试环境执行 Playwright 前运行 `python -m backend.cli dev-users` | 幂等校准固定 `debug_*` 账号、角色、密码和 active 状态；T11 补充清除固定账号历史 `deleted_at`，确保软删除账号能被真实恢复；生产环境有硬守卫且禁止执行 | 回滚代码不会自动重新软删除账号；如需恢复测试前状态，管理员可在本地测试库按具体账号重新设置状态/软删除，禁止在生产运行该 seed |
+| Playwright 临时用户 | `backend/devtools/e2e_test_users.py`、`frontend/e2e/helpers/auth.ts` | 仅 T11 跨用户 E2E 用例开始/结束时创建与销毁 | 每次创建唯一 normal/paid 用户；仅该临时用户的 PG 私有资产、测试审计和角色关联受影响，不读取或覆盖固定账号偏好；生产环境硬拒绝 | `finally` 自动按 `tenant_id + owner_user_id` 清理资产并按 `id + tenant_id + account` 删除用户；清理未恰好删除 1 个用户时测试失败，人工补救也必须使用输出的三项精确标识 |
 | 应用配置 | 不修改 `config/settings.yaml` 或 PG `app_config` | 无 | MACD 固定 12/26/9；算法版本在代码参数哈希中 | 代码回滚 |
 | 前端本地 fallback | `ai-stocks:page-settings:stock-detail` | 用户进入页面和修改偏好时 | 当前浏览器、当前用户页面偏好降级 | 恢复旧代码后未知 `charts` 字段被默认合并逻辑忽略 |
 
@@ -968,7 +971,7 @@ WHERE is_builtin = TRUE
   - T8 已完成：主题修订版本覆盖预设 key、明暗和同 key 后端覆盖，驱动 ECharts 重新取色；个股页清除本次路径的涨跌硬编码并完成紧凑视口换行；四个定向文件 37 passed、前端全量 428 passed、正式构建通过。真实页面三关键视口 12 项 Playwright 覆盖纵向最低高度、无横向溢出、明暗/预设、reduced-motion、loading/empty/permission 和既有偏好闭环；确定性交易日历 fixture 保证明暗截图外壳业务状态一致，HTML 报告真实留存 6 张明暗截图。
   - T9 已完成：七文件后端定向回归 `87 passed`，覆盖 R1/R2 公式与边界、R3 全量 seed/目录/五原子下游求值、R4 白名单/边界/null/403，以及 R8 additive JSON、精确 65536/65537 bytes 边界、标准 JSON 和租户/用户隔离；测试身份使用 UUID，偏好清理遵守租户归属与精确键约束。次级资产权限另为 `1 passed`，停服测试后已恢复 `/api/health=200`。
   - T10 已完成：五文件定向回归 `64 passed`，前端全量 `64 files / 429 tests passed`，正式构建通过；KeepAlive observer 有精确清理计数，两个缓存个股实例的集合下拉触底事件与分页状态互不串扰。真实浏览器同时保留两个个股详情标签，`300834.SZ` 集合下拉触底后候选由 20 条增至 120 条（含加载提示的 option 数由 21 增至 121），控制台无错误；该探索性复核不替代 T11 的 Playwright 总回归。
-  - T11 已完成：调试账号 seed 恢复软删除账号单测 `1 passed`，前端全量 `64 files / 429 tests passed`、正式构建通过；定向 Playwright 最终 `10 passed / 14 skipped in 38.5s`，标准视口覆盖默认三图、权限、局部失败、组合/高度、真实 PG 跨用户隔离与本地 fallback，三关键视口覆盖共享光标日期、主题、reduced-motion、滚动和溢出。HTML 报告留存 18 张页面/工作区/MACD 明暗 PNG，并已实际打开紧凑视口 MACD 近照确认信号标签、锚点和竖向引导线。
+  - T11 已完成：调试账号 seed 的软删除恢复使用真实 PG 集成回归 `1 passed`，覆盖状态、角色、密码和 `perm_ver` 同事务校准；前端全量 `64 files / 429 tests passed`、正式构建通过。定向 Playwright 最终 `10 passed / 14 skipped in 33.7s`，标准视口覆盖默认三图、权限、局部失败、组合/高度、临时 normal/paid 用户真实 PG 隔离与本地 fallback，三关键视口覆盖共享光标日期、主题、reduced-motion、滚动和溢出。跨用户用例结束后精确销毁临时用户及资产，PG 中 `e2e_%` 用户计数为 0；HTML 报告留存 18 张页面/工作区/MACD 明暗 PNG，并已实际打开紧凑视口 MACD 近照确认信号标签、锚点和竖向引导线。
   - T12–T13 尚未开始；设计/架构/E2E 文档总核对和发布 smoke 均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵
