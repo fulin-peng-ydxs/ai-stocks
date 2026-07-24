@@ -650,8 +650,15 @@ flowchart LR
 - 依赖：T4、T6。
 - 涉及文件：
   - `frontend/src/views/StockDetailView.vue`
+  - `frontend/src/components/PageSettingsDrawer.vue`
   - `frontend/src/components/PageSegmented.vue`（仅复用，原则上不改）
+  - `frontend/src/composables/useStockChartPreferences.ts`
   - `frontend/src/composables/usePageSettings.ts`（原则上只消费，不复制同步逻辑）
+  - `frontend/src/components/__tests__/PageSettingsDrawer.spec.ts`
+  - `frontend/src/composables/__tests__/useStockChartPreferences.spec.ts`
+  - `frontend/src/views/__tests__/StockDetailView.spec.ts`
+  - `frontend/e2e/helpers/auth.ts`
+  - `frontend/e2e/stock-detail-chart-workspace.spec.ts`
 - 目标：在既有页面设置抽屉内完成辅助图选择、自动保存和总重置闭环。
 - 开发内容：
   - 在既有“图表设置”增加固定图表一、图表二和图表三选择。
@@ -660,22 +667,24 @@ flowchart LR
   - 高度只接收工作区 commit 后写偏好。
   - `@reset` 保持 `reset(); resetLayout()` 总重置契约。
 - 产出：设置抽屉图表选项、稳定 E2E 锚点、即时生效和恢复默认链路。
-- 影响范围：`stock-detail` 页面业务选项和既有“恢复默认”；不新增第二个抽屉或提交按钮。
+- 影响范围：`stock-detail` 页面业务选项和既有“恢复默认”；共享 `PageSettingsDrawer` 恢复“提供 `#business` 默认显示、显式 `false` 才隐藏”的 DESIGN 契约；不新增第二个抽屉或提交按钮。
 - 验证方式：自动交换、隐藏、关闭不撤销、刷新恢复和默认重置。
 - 完成标准：无第二个抽屉、无提交按钮、偏好正确保存。
 - 实际落地情况：已完成（2026-07-24）。
-  - `StockDetailView` 在既有 `PageSettingsDrawer` 业务选项中显式开放图表设置；由于 `businessVisible` 是 Boolean prop、未传时运行值为 `false`，本页现在明确传入 `true`，使原有复权、K线范围、指标快照和辅助模块设置与新增图表设置都能在真实抽屉中消费，不修改公共抽屉语义。
+  - `PageSettingsDrawer` 通过 `withDefaults(..., { businessVisible: true })` 落实共享契约：页面提供 `#business` 且未传 prop 时默认显示，Config 等显式传 `false` 的场景继续隐藏。`StockDetailView` 不再携带单页绕过；组件测试分别锁定默认显示和显式隐藏。
   - 图表一以静态“`K线（固定，不可隐藏）`”表达，不提供伪可编辑控件；图表二、图表三复用 `PageSegmented`，分别提供量能、MACD、隐藏及稳定 `stock-detail-chart-slot2/slot3-*` 锚点。选择统一调用 `useStockChartPreferences.setSlotType()`，冲突时自动交换，隐藏后实际面板和无效分隔线立即移除。
-  - `StockChartWorkspace.ratioDraft` 只调用 `updateRatioDraft()` 更新当前内存显示；`ratioCommit` 接收最终比例后调用 `commitRatioDraft()`，只在 pointer/键盘终态写入当前有序组合的页面偏好。类型、显隐和高度变化均继续由 `usePageSettings/useUserPreference` 300ms 延迟自动保存，关闭抽屉不撤销，不新增提交按钮或网络请求分支。
+  - `StockChartWorkspace.ratioDraft` 只调用 `updateRatioDraft()` 更新当前内存显示；`ratioCommit` 接收最终比例后调用 `commitRatioDraft()`，只在 pointer/键盘终态写入当前有序组合的页面偏好。`useStockChartPreferences` 在槽位类型或归一化比例与现值相同时跳过 source 赋值，重复选择和分隔线原位释放不会触发完整偏好 POST；真实变化继续由 `usePageSettings/useUserPreference` 300ms 延迟自动保存，关闭抽屉不撤销。
   - 恢复默认先取消未提交高度草稿，再保持 `reset(); resetLayout()` 的总重置契约；图表组合恢复量能/MACD，全部组合高度恢复默认，其中三图为 60/20/20。重置不重新请求行情或指标；抽屉自身全局偏好仍由 `PageSettingsDrawer` 既有逻辑同时重置。
-  - Playwright 用户偏好继续使用用例内存 GET/POST 端点，不读取或污染固定调试账号 PG 状态；真实页面覆盖自动交换、隐藏、空间释放、关闭不撤销、刷新恢复、键盘高度保存、总重置和全过程不额外请求指标，1100×620、1366×768、1440×900 三个项目均通过。
+  - Playwright 将原长链拆为“最小权限分组偏好”和“详情图表偏好闭环”两个独立用例；用户偏好继续使用用例内存 GET/POST 端点，不读取或污染固定调试账号 PG 状态。现有认证 helper 新增认证快照安装能力，同一项目 worker 的第二个用例复用快照，单独运行仍自行登录，避免拆分后重复登录触发限流。
+  - 详情用例覆盖重复选择与分隔线原位释放零写入、自动交换、隐藏、空间释放、关闭不撤销、刷新恢复、键盘高度保存、总重置和全过程不额外请求指标；1100×620、1366×768、1440×900 共 6 项在默认 45 秒限制下连续执行两轮，分别 `6 passed (20.9s)`、`6 passed (27.6s)`。
   - 复用判断：
-    - 已查找的同类实现：`PageSettingsDrawer` 总重置、`PageSegmented` 稳定锚点、`usePageSettings/useUserPreference` 自动保存、`useStockChartPreferences` 组合归一化和 `StockChartWorkspace` draft/commit 事件。
-    - 已复用：上述全部公共能力；未新增第二个抽屉、保存按钮、页面私有偏好 API、组合归一化函数或测试登录 helper。
-    - 本次新增复用单元：无。新增代码仅是 `stock-detail` 页领域接线和测试场景，不形成第二个同类消费点。
+    - 已查找的同类实现：`PageSettingsDrawer` 的全部 `#business` 消费页和 Config 显式条件控制、`PageSegmented` 稳定锚点、`usePageSettings/useUserPreference` 自动保存、`useStockChartPreferences` 组合归一化、`StockChartWorkspace` draft/commit 事件及 Playwright 认证 helper。
+    - 已复用：上述公共能力；未新增第二个抽屉、保存按钮、页面私有偏好 API、组合归一化函数或认证写入逻辑。
+    - 本次新增复用单元：`installAuthSnapshot()` 进入既有 E2E `auth` helper，登录函数和同 worker 的第二用例共同消费；共享抽屉默认值在组件层一次修复，所有 `#business` 消费页统一受益。
     - 未抽取的重复点及理由：固定 K线说明是本页单个静态业务值，抽组件会增加无意义 API；两个辅助槽共用同一 options 常量与 setter，未复制行为逻辑。
-    - 同步维护：页面单元测试、现有真实页面 Playwright 和本计划任务状态；不新增系统组件类型或 DESIGN 配置字段。
-  - 定向 Vitest 为 `3 files / 47 tests passed`；前端全量为 `64 files / 421 tests passed`。正式构建通过，仅有既有依赖注释位置和大 chunk 告警；`git diff --check` 通过。
+    - 同步维护：共享抽屉组件测试、偏好 composable 测试、页面单元测试、真实页面 Playwright 和本计划任务状态；不新增系统组件类型或 DESIGN 配置字段。
+  - 定向 Vitest 完整命令：`cd frontend && npm test -- --run src/components/__tests__/PageSettingsDrawer.spec.ts src/composables/__tests__/useStockChartPreferences.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/views/__tests__/StockDetailView.spec.ts`，结果 `4 files / 56 tests passed`。
+  - 前端全量为 `64 files / 424 tests passed`；固定 E2E 命令 `cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts` 连续两轮均为 6 passed；正式构建通过，仅有既有依赖注释位置和大 chunk 告警。
   - 本阶段没有数据库、SQL、seed、菜单、权限码、接口或配置初始化变更；T8 尚未开始。
 
 ### 6.8 任务 T8：完成页面四态、主题和关键视口设计闭环
@@ -890,8 +899,8 @@ WHERE is_builtin = TRUE
   - T6 已完成：真实详情页消费三图工作区；行情/指标/报价/买卖评估独立取消与序号守卫；复权、范围和显隐刷新边界；MACD 局部失败/重试、历史不足、普通错误/重试、空态、刷新保留、403 fail-closed、KeepAlive 和报价失败均有自动化证据。页面 15 passed，相关 API/错误工具合计定向 19 passed。
   - T6 后端原定向 21 passed，覆盖买卖评估 `profile_ref` 的 public/tenant/private、同名裸 id 和 owner 兼容，以及 RBAC seed 不扩权；最小权限分组隔离修复后，新增接口用例并连同分组、方案可见性与 RBAC schema 回归执行为 26 passed，system 授权路径真实库冒烟另为 1 passed。后端全量 `662 passed, 1 failed`，唯一失败为与本次无关且可独立复现的既有 tenant_admin 审计授权测试与当前撤权 seed 事实冲突。
   - T6 前端全量回归 `64 files / 420 tests passed`，正式构建通过；Playwright 前幂等校准账号，重启后最小角色未漂移，偏好 GET/POST 使用用例内存端点隔离共享 PG 状态，真实页面三关键视口同时断言最小权限集合、个股列表和设置抽屉均不展示分组能力、隐藏偏好在本地与内存远端均不被点击覆盖且权限恢复后重新生效、无越权次级请求、指标 503 局部重试和范围刷新，连续两轮均为 3 passed。
-  - T7 已完成：既有页面设置抽屉显式开放业务选项，图表一固定展示，图表二/三复用 `PageSegmented` 支持量能、MACD、隐藏和自动交换；高度 draft 不写偏好、commit 才按有序组合保存；恢复默认同时清除草稿并保持页面、布局和抽屉总重置。
-  - T7 定向 Vitest `3 files / 47 tests passed`，前端全量 `64 files / 421 tests passed`，正式构建通过。隔离偏好端点下的真实页面 E2E 覆盖自动交换、隐藏、关闭不撤销、刷新恢复、键盘高度保存、总重置和无额外指标请求，三个关键视口为 3 passed。
+  - T7 已完成：共享抽屉落实“提供 `#business` 默认显示、显式 `false` 才隐藏”的契约；图表一固定展示，图表二/三复用 `PageSegmented` 支持量能、MACD、隐藏和自动交换；高度 draft 不写偏好、commit 才按有序组合保存，同值类型和比例不写 source/远端；恢复默认同时清除草稿并保持页面、布局和抽屉总重置。
+  - T7 定向 Vitest 完整命令为 `cd frontend && npm test -- --run src/components/__tests__/PageSettingsDrawer.spec.ts src/composables/__tests__/useStockChartPreferences.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/views/__tests__/StockDetailView.spec.ts`，结果 `4 files / 56 tests passed`；前端全量 `64 files / 424 tests passed`，正式构建通过。Playwright 拆为两个独立用例，隔离偏好端点并复用同 worker 认证快照；固定命令 `cd frontend && npm run test:e2e -- stock-detail-chart-workspace.spec.ts` 在三个关键视口共 6 项，默认 45 秒限制下连续两轮分别 `6 passed (20.9s)`、`6 passed (27.6s)`。
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
   - T8–T13 尚未开始；页面四态与主题视觉总验收、后端/前端总回归和发布 smoke 均保留到对应阶段，不提前执行。

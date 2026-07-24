@@ -1,5 +1,5 @@
 import { computed, nextTick, ref } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   chartCompositionKey,
   createDefaultStockChartPreferences,
@@ -113,6 +113,25 @@ describe('useStockChartPreferences pure helpers', () => {
 })
 
 describe('useStockChartPreferences draft state', () => {
+  it('重复选择和未移动草稿提交不改写持久偏好源', () => {
+    const persisted = ref<StockChartPreferences>(createDefaultStockChartPreferences())
+    const writeSource = vi.fn((value: StockChartPreferences) => {
+      persisted.value = value
+    })
+    const source = computed({
+      get: () => persisted.value,
+      set: writeSource,
+    })
+    const model = useStockChartPreferences(source, ref(true))
+
+    model.setSlotType('slot2', 'volume')
+    model.beginRatioDraft()
+    model.commitRatioDraft()
+    model.commitHeightRatios([0.6, 0.2, 0.2])
+
+    expect(writeSource).not.toHaveBeenCalled()
+  })
+
   it('拖动草稿只更新内存，commit 后才写入持久偏好源', async () => {
     const persisted = ref<StockChartPreferences>(createDefaultStockChartPreferences())
     const source = computed({

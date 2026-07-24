@@ -31,6 +31,15 @@ function debugPassword(): string {
     || 'Test@12345'
 }
 
+export async function installAuthSnapshot(
+  page: Page,
+  snapshot: E2EAuthSnapshot,
+): Promise<void> {
+  await page.addInitScript(([key, value]) => {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  }, [AUTH_STORAGE_KEY, snapshot] as const)
+}
+
 export async function expectBackendHealthy(request: APIRequestContext): Promise<void> {
   const resp = await request.get(`${API_URL}/health`)
   expect(resp.ok(), '后端 8000 未就绪；先执行 ./start.sh 并确认 /api/health=200').toBe(true)
@@ -61,9 +70,7 @@ export async function loginAsDebugUser(
     tenant: { id: data.user.tenant_id },
     role: data.user.role,
   }
-  await page.addInitScript(([key, value]) => {
-    window.localStorage.setItem(key, JSON.stringify(value))
-  }, [AUTH_STORAGE_KEY, snapshot] as const)
+  await installAuthSnapshot(page, snapshot)
   return snapshot
 }
 

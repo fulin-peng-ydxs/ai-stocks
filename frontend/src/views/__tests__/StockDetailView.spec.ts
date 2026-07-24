@@ -517,7 +517,6 @@ describe('StockDetailView 三图数据协调', () => {
     const initialIndicators = vi.mocked(stocksApi.getIndicators).mock.calls.length
     const workspace = wrapper.findComponent(StockChartWorkspaceStub)
 
-    expect(wrapper.findComponent(PageSettingsDrawerStub).props('businessVisible')).toBe(true)
     expect(wrapper.get('[data-testid="stock-detail-chart-slot1-kline"]').text())
       .toContain('固定，不可隐藏')
 

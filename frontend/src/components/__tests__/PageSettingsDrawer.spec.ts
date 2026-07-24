@@ -50,7 +50,6 @@ function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
       modelValue: true,
       config,
       pageKey: 'board',
-      businessVisible: true,
     },
     slots: {
       business: '<div>业务内容</div>',
@@ -124,6 +123,22 @@ describe('PageSettingsDrawer', () => {
     resetDrawerPreferencesForTests()
     prefApi.listUserPreferences.mockResolvedValue({ items: [] })
     prefApi.saveUserPreference.mockResolvedValue({})
+  })
+
+  it('提供业务插槽且未传 businessVisible 时默认显示业务选项', () => {
+    const { wrapper } = mountDrawer(ref([]))
+
+    expect(wrapper.find('.settings-group[data-title="业务选项"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('业务内容')
+  })
+
+  it('显式传入 businessVisible=false 时隐藏业务选项', async () => {
+    const { wrapper } = mountDrawer(ref([]))
+
+    await wrapper.setProps({ businessVisible: false })
+
+    expect(wrapper.find('.settings-group[data-title="业务选项"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('业务内容')
   })
 
   it('点击折叠段只改变抽屉运行态，不写入默认折叠配置', async () => {

@@ -1015,7 +1015,6 @@ onBeforeUnmount(() => {
       :dirty="isDirty || layoutDirty"
       page-key="stock-detail"
       :config="drawerConfig"
-      :business-visible="true"
       @reset="resetDetailSettings"
     >
       <template #business>

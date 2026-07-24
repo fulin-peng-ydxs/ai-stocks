@@ -25,7 +25,7 @@ export interface DrawerConfig {
   componentLayerValuesOf?: (slotId: string, field: string) => Partial<Record<'default' | 'preset' | 'page' | 'user', unknown>>
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
   title?: string
   dirty?: boolean
@@ -36,7 +36,9 @@ const props = defineProps<{
   /** 运行时只开放指定组件 slot；复用 ComponentAutoSettings 的 slotIds 过滤能力。 */
   componentSlotIds?: string[]
   componentMetaOverrides?: Record<string, SlotConfigMeta>
-}>()
+}>(), {
+  businessVisible: true,
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]

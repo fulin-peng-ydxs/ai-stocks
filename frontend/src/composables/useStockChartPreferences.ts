@@ -151,7 +151,8 @@ export function useStockChartPreferences(
 
   function setSlotType(slot: AuxiliaryChartSlot, nextType: unknown): void {
     clearDraft()
-    source.value = setAuxiliaryChartType(source.value, slot, nextType)
+    const next = setAuxiliaryChartType(source.value, slot, nextType)
+    if (!samePreferences(source.value, next)) source.value = next
   }
 
   function beginRatioDraft(): number[] {
@@ -172,13 +173,14 @@ export function useStockChartPreferences(
     key: ChartCompositionKey = composition.value,
   ): void {
     const preferences = normalizeStockChartPreferences(source.value)
-    source.value = {
+    const next = {
       ...preferences,
       heightRatios: {
         ...preferences.heightRatios,
         [key]: normalizeHeightRatios(value, key),
       },
     }
+    if (!samePreferences(source.value, next)) source.value = next
   }
 
   function commitRatioDraft(): void {
