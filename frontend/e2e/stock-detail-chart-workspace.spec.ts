@@ -25,11 +25,13 @@ const preferenceKey = (item: Pick<PreferencePayload, 'scope' | 'pageKey' | 'pref
   `${item.scope}|${item.pageKey || ''}|${item.prefKey}`
 )
 
-function collectConsoleIssues(page: Page): string[] {
+function collectConsoleIssues(page: Page, allowedHttpStatuses: number[] = []): string[] {
   const issues: string[] = []
   page.on('console', (message) => {
     const text = message.text()
-    const expectedInjectedFailure = text.includes('status of 503')
+    const expectedInjectedFailure = allowedHttpStatuses.some(
+      (status) => text.includes(`status of ${status}`),
+    )
     if (['error', 'warning'].includes(message.type()) && !expectedInjectedFailure) {
       issues.push(text)
     }
@@ -196,7 +198,7 @@ test.describe('个股详情三图工作区', () => {
   })
 
   test('MACD 局部失败隔离，图表组合和高度偏好可自动保存与重置', async ({ page, request }) => {
-    const consoleIssues = collectConsoleIssues(page)
+    const consoleIssues = collectConsoleIssues(page, [503])
     const { code } = await loadStocksOnlyContext(page, request)
     const stockDetailPreferenceKey = preferenceKey({
       scope: 'page',
@@ -326,6 +328,160 @@ test.describe('个股详情三图工作区', () => {
       }
     }).toEqual({ slot2: 'volume', slot3: 'macd', ratios: [0.6, 0.2, 0.2] })
     expect(indicatorRequests).toBe(indicatorRequestsAfterReload)
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('关键视口保持纵向三图、语义主题和 reduced-motion 契约', async ({
+    page,
+    request,
+  }, testInfo) => {
+    const consoleIssues = collectConsoleIssues(page)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.addInitScript(() => {
+      window.localStorage.setItem('ai-stocks-theme', 'light')
+      window.localStorage.setItem('ai-stocks:layout-preset', 'balanced')
+    })
+    const { code } = await loadStocksOnlyContext(page, request)
+    await installPreferenceEndpoint(page, [{
+      scope: 'page',
+      pageKey: 'stock-detail',
+      prefKey: 'settings',
+      value: {
+        charts: {
+          slot2: 'volume',
+          slot3: 'macd',
+          heightRatios: { 'kline|volume|macd': [0.6, 0.2, 0.2] },
+        },
+      },
+      schemaVersion: 1,
+    }])
+
+    await page.goto(`/stocks/${code}`)
+    const workspace = page.getByLabel('个股多图联动工作区')
+    await expect(workspace.locator('[data-panel-key]')).toHaveCount(3)
+    await expect(workspace.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
+    await expect(workspace.getByText('量能', { exact: true })).toBeVisible()
+    await expect(workspace.getByText('MACD（12,26,9·前复权）', { exact: true })).toBeVisible()
+
+    const geometry = await workspace.evaluate((element) => {
+      const panels = [...element.querySelectorAll<HTMLElement>('[data-panel-key]')]
+        .map((panel) => panel.getBoundingClientRect())
+      const rect = element.getBoundingClientRect()
+      const splitter = element.querySelector<HTMLElement>('[role="separator"]')
+      const scrollRegion = element.closest<HTMLElement>('.v-scroll')
+      return {
+        workspaceHeight: rect.height,
+        panelTops: panels.map((panel) => panel.top),
+        splitterTransition: splitter ? getComputedStyle(splitter).transitionDuration : '',
+        mainRegionOwnsScroll: Boolean(
+          scrollRegion && scrollRegion.scrollHeight > scrollRegion.clientHeight,
+        ),
+        noHorizontalOverflow:
+          document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      }
+    })
+    expect(geometry.workspaceHeight).toBeGreaterThanOrEqual(650)
+    expect(geometry.panelTops[1]).toBeGreaterThan(geometry.panelTops[0])
+    expect(geometry.panelTops[2]).toBeGreaterThan(geometry.panelTops[1])
+    expect(geometry.splitterTransition).toBe('0s')
+    expect(geometry.mainRegionOwnsScroll).toBe(true)
+    expect(geometry.noHorizontalOverflow).toBe(true)
+
+    const lightBackground = await workspace.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    )
+    await testInfo.attach('stock-detail-light', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    })
+
+    await page.getByRole('button', { name: '视觉环境' }).click()
+    await page.getByRole('button', { name: /^夜间 低照沉浸$/ }).click()
+    await expect(page.locator('html')).toHaveClass(/dark/)
+    const darkBackground = await workspace.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    )
+    expect(darkBackground).not.toBe(lightBackground)
+
+    const nocturne = page.getByRole('button', { name: /^夜航 / })
+    await nocturne.click()
+    await expect(nocturne).toHaveAttribute('aria-pressed', 'true')
+    const nocturneBackground = await workspace.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    )
+    expect(nocturneBackground).not.toBe(darkBackground)
+    await testInfo.attach('stock-detail-dark-nocturne', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    })
+
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('页面加载、空数据和 permission 状态保持正确图层', async ({ page, request }) => {
+    const consoleIssues = collectConsoleIssues(page, [403])
+    const { code } = await loadStocksOnlyContext(page, request)
+    await installPreferenceEndpoint(page)
+
+    let releaseBars!: () => void
+    const barsGate = new Promise<void>((resolve) => { releaseBars = resolve })
+    await page.route('**/api/stocks/*/bars*', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('lookback') === '1') {
+        await route.continue()
+        return
+      }
+      await barsGate
+      await route.continue()
+    })
+
+    await page.goto(`/stocks/${code}`)
+    const workspace = page.getByLabel('个股多图联动工作区')
+    await expect(workspace.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
+    await expect(workspace.locator('.el-loading-mask')).toBeVisible()
+    releaseBars()
+    await expect(workspace.locator('.el-loading-mask')).toHaveCount(0)
+
+    await page.unroute('**/api/stocks/*/bars*')
+    await page.route('**/api/stocks/*/bars*', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('lookback') === '1') {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: { code, name: 'E2E 空行情', adjust: 'qfq', bars: [] },
+        }),
+      })
+    })
+    await page.reload()
+    await expect(page.getByText('当前股票在所选范围内没有可用行情', { exact: true }))
+      .toBeVisible()
+    await expect(page.getByLabel('个股多图联动工作区')).toHaveCount(0)
+
+    await page.unroute('**/api/stocks/*/bars*')
+    await page.route('**/api/stocks/*/bars*', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get('lookback') === '1') {
+        await route.continue()
+        return
+      }
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 403, msg: 'E2E stocks:view 已撤销', data: null }),
+      })
+    })
+    await page.reload()
+    await expect(page.getByText('无权限查看个股详情', { exact: true })).toBeVisible()
+    await expect(page.getByText('请联系系统管理员调整股票查看权限', { exact: true }))
+      .toBeVisible()
+    await expect(page.getByLabel('个股多图联动工作区')).toHaveCount(0)
     expect(consoleIssues).toEqual([])
   })
 })

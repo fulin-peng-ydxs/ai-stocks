@@ -14,6 +14,7 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { useTheme } from '@/composables/useTheme'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
+import { useLayoutPreset } from '@/layout/useLayoutPreset'
 import { nextStockChartWorkspaceGroupId, stockChartTheme } from './chartUtils'
 import {
   AUXILIARY_MIN_HEIGHT,
@@ -82,6 +83,7 @@ const workspaceEl = ref<HTMLElement | null>(null)
 const chartElements = new Map<WorkspacePanelKey, HTMLElement>()
 const charts = new Map<WorkspacePanelKey, echarts.ECharts>()
 const { isDark } = useTheme()
+const { activePresetKey } = useLayoutPreset()
 const activeIndex = ref<number | null>(null)
 const liveRatios = ref<number[]>([])
 let resizeObserver: ResizeObserver | null = null
@@ -100,7 +102,11 @@ const ratios = computed(() => normalizeWorkspaceRatios(
 ))
 const lastIndex = computed(() => Math.max(0, rows.value.length - 1))
 const metricIndex = computed(() => activeIndex.value ?? lastIndex.value)
-const theme = computed(() => stockChartTheme(isDark.value))
+const theme = computed(() => {
+  // ECharts 画布不会自动响应 CSS 变量变化；把预设 key 纳入依赖以触发重新取色。
+  void activePresetKey.value
+  return stockChartTheme(isDark.value)
+})
 
 function panelMetrics(type: ChartType): Metric[] {
   if (!rows.value.length) {
@@ -363,7 +369,7 @@ watch(
   { deep: true },
 )
 watch(
-  [panels, rows, () => props.warmupBars, () => props.macdState, isDark,
+  [panels, rows, () => props.warmupBars, () => props.macdState, isDark, activePresetKey,
     () => props.zoomStart, () => props.zoomEnd],
   async () => {
     activeIndex.value = null

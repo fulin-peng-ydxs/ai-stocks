@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import { setLayoutPreset } from '@/layout/useLayoutPreset'
 
 const echartsMock = vi.hoisted(() => {
   const instances: Array<Record<string, any>> = []
@@ -104,6 +105,7 @@ function pointerEvent(type: string, pointerId: number, clientY: number): Event {
 
 describe('StockChartWorkspace', () => {
   beforeEach(() => {
+    setLayoutPreset('balanced')
     echartsMock.instances.length = 0
     echartsMock.init.mockClear()
     echartsMock.connect.mockClear()
@@ -152,6 +154,26 @@ describe('StockChartWorkspace', () => {
 
     second.unmount()
     expect(echartsMock.disconnect).toHaveBeenCalledWith(secondGroup)
+  })
+
+  it('切换研究空间预设时重新读取主题 token 并重绘全部画布', async () => {
+    const wrapper = await mountWorkspace()
+    const callsBefore = echartsMock.instances.map((instance) => instance.setOption.mock.calls.length)
+    const backgroundBefore = echartsMock.instances[0].setOption.mock.calls.at(-1)?.[0]
+      ?.backgroundColor
+
+    setLayoutPreset('nocturne')
+    await nextTick()
+    await nextTick()
+
+    echartsMock.instances.forEach((instance, index) => {
+      expect(instance.setOption.mock.calls.length).toBeGreaterThan(callsBefore[index])
+    })
+    const backgroundAfter = echartsMock.instances[0].setOption.mock.calls.at(-1)?.[0]
+      ?.backgroundColor
+    expect(backgroundAfter).not.toBe(backgroundBefore)
+
+    wrapper.unmount()
   })
 
   it('隐藏辅助图时销毁实例和无效分隔线，剩余底图接管日期轴', async () => {
