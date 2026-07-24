@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.storage.user_preference import UserPreferenceRepo, UserPreferenceValidationError
+from backend.storage.user_preference import (
+    MAX_VALUE_BYTES,
+    UserPreferenceRepo,
+    UserPreferenceValidationError,
+)
 
 _SECRET = "test-secret-user-pref-0123456789abcdef"
 
@@ -47,7 +52,10 @@ def _mk_user(pg, *, with_role: bool = True) -> tuple[str, str, str | None]:
 
 
 def _rm_user(pg, uid: str, tid: str, rid: str | None) -> None:
-    pg.execute("DELETE FROM user_preference WHERE owner_user_id=%s", [uid])
+    pg.execute(
+        "DELETE FROM user_preference WHERE tenant_id=%s AND owner_user_id=%s",
+        [tid, uid],
+    )
     pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
     if rid:
         pg.execute("DELETE FROM sys_role WHERE id=%s", [rid])
@@ -55,8 +63,12 @@ def _rm_user(pg, uid: str, tid: str, rid: str | None) -> None:
 
 
 def test_user_preference_repo_roundtrip_and_isolation(pg):
-    a = UserPreferenceRepo(pg, tenant_id="pref_t", owner_user_id="owner_a")
-    b = UserPreferenceRepo(pg, tenant_id="pref_t", owner_user_id="owner_b")
+    suffix = uuid.uuid4().hex
+    tenant_id = f"pref_t_{suffix}"
+    owner_a = f"pref_owner_a_{suffix}"
+    owner_b = f"pref_owner_b_{suffix}"
+    a = UserPreferenceRepo(pg, tenant_id=tenant_id, owner_user_id=owner_a)
+    b = UserPreferenceRepo(pg, tenant_id=tenant_id, owner_user_id=owner_b)
     try:
         saved = a.set(
             scope="global",
@@ -67,31 +79,71 @@ def test_user_preference_repo_roundtrip_and_isolation(pg):
         assert a.get(scope="global", pref_key="settings-drawer")["value"]["defaultCollapsed"] == ["layout"]
         assert b.get(scope="global", pref_key="settings-drawer") is None
     finally:
-        pg.execute("DELETE FROM user_preference WHERE owner_user_id IN (%s,%s)", ["owner_a", "owner_b"])
+        pg.execute(
+            "DELETE FROM user_preference "
+            "WHERE tenant_id=%s AND owner_user_id=%s "
+            "AND scope='global' AND page_key='' AND pref_key='settings-drawer'",
+            [tenant_id, owner_a],
+        )
 
 
 def test_user_preference_repo_validation(pg):
-    repo = UserPreferenceRepo(pg, tenant_id="pref_t", owner_user_id="owner_v")
-    with pytest.raises(UserPreferenceValidationError, match="scope"):
-        repo.set(scope="tenant", pref_key="x", value={})
-    with pytest.raises(UserPreferenceValidationError, match="pref_key"):
-        repo.set(scope="global", pref_key="../x", value={})
-    with pytest.raises(UserPreferenceValidationError, match="对象或标量"):
-        repo.set(scope="global", pref_key="x", value=[1, 2])
-    with pytest.raises(UserPreferenceValidationError, match="标准 JSON"):
-        repo.set(scope="global", pref_key="x", value={"ratio": float("nan")})
-    with pytest.raises(UserPreferenceValidationError, match="大小限制"):
-        repo.set(scope="global", pref_key="x", value={"blob": "x" * (64 * 1024)})
+    suffix = uuid.uuid4().hex
+    tenant_id = f"pref_validation_t_{suffix}"
+    owner_id = f"pref_validation_u_{suffix}"
+    repo = UserPreferenceRepo(pg, tenant_id=tenant_id, owner_user_id=owner_id)
+    pref_key = "size-boundary"
+    try:
+        with pytest.raises(UserPreferenceValidationError, match="scope"):
+            repo.set(scope="tenant", pref_key="x", value={})
+        with pytest.raises(UserPreferenceValidationError, match="pref_key"):
+            repo.set(scope="global", pref_key="../x", value={})
+        with pytest.raises(UserPreferenceValidationError, match="对象或标量"):
+            repo.set(scope="global", pref_key="x", value=[1, 2])
+        with pytest.raises(UserPreferenceValidationError, match="标准 JSON"):
+            repo.set(scope="global", pref_key="x", value={"ratio": float("nan")})
+
+        empty_size = len(
+            json.dumps(
+                {"blob": ""},
+                ensure_ascii=False,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        )
+        at_limit = {"blob": "x" * (MAX_VALUE_BYTES - empty_size)}
+        serialized = json.dumps(
+            at_limit,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        assert len(serialized) == MAX_VALUE_BYTES
+        assert repo.set(scope="global", pref_key=pref_key, value=at_limit)["value"] == at_limit
+
+        over_limit = {"blob": at_limit["blob"] + "x"}
+        with pytest.raises(UserPreferenceValidationError, match="大小限制"):
+            repo.set(scope="global", pref_key=pref_key, value=over_limit)
+    finally:
+        pg.execute(
+            "DELETE FROM user_preference "
+            "WHERE tenant_id=%s AND owner_user_id=%s "
+            "AND scope='global' AND page_key='' AND pref_key=%s",
+            [tenant_id, owner_id, pref_key],
+        )
 
 
 def test_stock_detail_chart_preference_is_additive_and_tenant_owner_isolated(pg):
-    owner = "pref_shared_owner"
-    tenant_a = UserPreferenceRepo(pg, tenant_id="pref_tenant_a", owner_user_id=owner)
-    tenant_b = UserPreferenceRepo(pg, tenant_id="pref_tenant_b", owner_user_id=owner)
+    suffix = uuid.uuid4().hex
+    owner = f"pref_shared_owner_{suffix}"
+    tenant_a_id = f"pref_tenant_a_{suffix}"
+    tenant_b_id = f"pref_tenant_b_{suffix}"
+    tenant_a = UserPreferenceRepo(pg, tenant_id=tenant_a_id, owner_user_id=owner)
+    tenant_b = UserPreferenceRepo(pg, tenant_id=tenant_b_id, owner_user_id=owner)
     other_owner = UserPreferenceRepo(
         pg,
-        tenant_id="pref_tenant_a",
-        owner_user_id="pref_other_owner",
+        tenant_id=tenant_a_id,
+        owner_user_id=f"pref_other_owner_{suffix}",
     )
     key = {"scope": "page", "page_key": "stock-detail", "pref_key": "settings"}
     try:
@@ -124,8 +176,10 @@ def test_stock_detail_chart_preference_is_additive_and_tenant_owner_isolated(pg)
         assert other_owner.get(**key) is None
     finally:
         pg.execute(
-            "DELETE FROM user_preference WHERE owner_user_id IN (%s,%s)",
-            [owner, "pref_other_owner"],
+            "DELETE FROM user_preference "
+            "WHERE tenant_id=%s AND owner_user_id=%s "
+            "AND scope='page' AND page_key='stock-detail' AND pref_key='settings'",
+            [tenant_a_id, owner],
         )
 
 

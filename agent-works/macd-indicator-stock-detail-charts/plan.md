@@ -343,7 +343,7 @@ flowchart LR
 | 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 部分完成（T5/T6 已完成） | 一致 | option/组件测试、固定样本、截图和 E2E | 工作区已由真实个股详情消费，三视口 E2E 已验证默认三图和局部重试；总回归留后续任务。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 部分完成（T4/T7 功能开发已完成） | 一致 | 归一化单测、抽屉 E2E | 9 种组合、自动交换、隐藏释放空间、关闭不撤销和刷新恢复均已测；总回归留 T10/T11。 |
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 部分完成（T4/T5/T7 已完成对应部分） | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | pointermove 只更新草稿，pointerup/pointercancel/键盘终态只提交一次；页面已只消费 commit 写偏好并有真实键盘保存证据。 |
-| 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4/T7/T9 已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | T9 已验证 additive JSON、同租户跨用户和同 owner 跨租户隔离及既有大小/标准 JSON 约束；前端与发布总回归留 T10/T11/T13。 |
+| 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4/T7/T9 已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | T9 已验证 additive JSON、同租户跨用户和同 owner 跨租户隔离、标准 JSON，以及精确 65536/65537 bytes 边界；前端与发布总回归留 T10/T11/T13。 |
 | 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3/T5/T6/T8 已完成对应部分） | 一致 | 状态测试、403/失败注入 E2E | 行情错误/空态/403 与 MACD loading/insufficient/error 已分层；真实页面已验证局部失败重试及 loading、empty、permission 正确图层，总回归留 T10/T11。 |
 | 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 部分完成（T5/T8 已完成对应部分） | 一致 | 样式/契约测试、build、主题截图 | 组件和真实页面均已验证 1100×620、1366×768、1440×900，覆盖语义 token、明暗、预设 key 与同 key 后端覆盖重绘、纵向最低高度、无横向溢出、键盘/ARIA 和 reduced-motion；总回归留 T10/T11/T12。 |
 | 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3–T6 已完成对应部分） | 一致 | 竞态和生命周期测试、E2E | 行情、指标、报价和买卖评估均有独立取消/序号守卫，KeepAlive 停用取消、激活恢复已落地；总回归留后续。 |
@@ -744,9 +744,10 @@ flowchart LR
 - 完成标准：需求后端验收项都有自动化证据。
 - 实际落地情况：
   - 复用既有领域和接口测试，新增的测试资产仅位于 `backend/tests/`：五个 MACD 原子结果共同进入筛选条件、评分模型和买卖条件求值；五个 MACD builtin 逐项验证不可删除。
-  - `test_user_preference.py` 新增 `stock-detail/settings` additive JSON 回归：在保留既有复权、范围和未知旧字段的基础上增加 `charts`，并同时验证同租户跨用户、同 owner 跨租户隔离；既有校验测试补充非标准 `NaN` JSON 与 64KB 上限。
-  - 按 §8.2 在后端运行状态下先执行 `./start.sh stop`；最终源码状态运行 §8.1 七文件命令，结果 `87 passed, 56 warnings in 7.32s`。告警均为既有 FastAPI `on_event` 弃用提示，不是测试失败或本次新增告警类型。
-  - 次级资产权限矩阵 `python -m pytest backend/tests/test_stocks_permissions.py -q` 结果 `1 passed, 16 warnings in 1.29s`，确认最小 `stocks:view` 仍不读取、创建或泄露分组。
+  - `test_user_preference.py` 新增 `stock-detail/settings` additive JSON 回归：测试租户与用户使用 UUID 隔离，在保留既有复权、范围和未知旧字段的基础上增加 `charts`，并同时验证同租户跨用户、同 owner 跨租户读取隔离；清理 SQL 精确限定 `tenant_id + owner_user_id + scope + page_key + pref_key`，同文件通用用户清理也至少绑定 `tenant_id + owner_user_id`。
+  - 偏好大小测试直接复用生产 `MAX_VALUE_BYTES` 和同样的紧凑 JSON 序列化，断言序列化后恰好 `65536 bytes` 保存成功、`65537 bytes` 明确报大小限制；同时保留非标准 `NaN` JSON 拒绝断言。偏好文件独立复跑为 `8 passed, 48 warnings in 2.89s`。
+  - 按 §8.2 在后端运行状态下先执行 `./start.sh stop`；最终源码状态运行 §8.1 七文件命令，结果 `87 passed, 56 warnings in 7.77s`。告警均为既有 FastAPI `on_event` 弃用提示，不是测试失败或本次新增告警类型。
+  - 次级资产权限矩阵 `python -m pytest backend/tests/test_stocks_permissions.py -q` 结果 `1 passed, 16 warnings in 1.16s`，确认最小 `stocks:view` 仍不读取、创建或泄露分组。
   - 测试结束后使用 `./start.sh` 恢复原运行状态，最终 `/api/health=200`。本阶段没有生产代码、数据库、SQL、seed、菜单、权限、接口或配置变更，也未进入 T10。
 
 ### 6.10 任务 T10：补齐前端单元、组件和布局契约测试
@@ -922,7 +923,7 @@ WHERE is_builtin = TRUE
   - `python -m py_compile` 与 `git diff --check` 通过。
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
   - T8 已完成：主题修订版本覆盖预设 key、明暗和同 key 后端覆盖，驱动 ECharts 重新取色；个股页清除本次路径的涨跌硬编码并完成紧凑视口换行；四个定向文件 37 passed、前端全量 428 passed、正式构建通过。真实页面三关键视口 12 项 Playwright 覆盖纵向最低高度、无横向溢出、明暗/预设、reduced-motion、loading/empty/permission 和既有偏好闭环；确定性交易日历 fixture 保证明暗截图外壳业务状态一致，HTML 报告真实留存 6 张明暗截图。
-  - T9 已完成：七文件后端定向回归 `87 passed`，覆盖 R1/R2 公式与边界、R3 全量 seed/目录/五原子下游求值、R4 白名单/边界/null/403，以及 R8 additive JSON、64KB/标准 JSON 和租户/用户隔离；次级资产权限另为 `1 passed`，停服测试后已恢复 `/api/health=200`。
+  - T9 已完成：七文件后端定向回归 `87 passed`，覆盖 R1/R2 公式与边界、R3 全量 seed/目录/五原子下游求值、R4 白名单/边界/null/403，以及 R8 additive JSON、精确 65536/65537 bytes 边界、标准 JSON 和租户/用户隔离；测试身份使用 UUID，偏好清理遵守租户归属与精确键约束。次级资产权限另为 `1 passed`，停服测试后已恢复 `/api/health=200`。
   - T10–T13 尚未开始；前端总回归、Playwright 总回归和发布 smoke 均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵
