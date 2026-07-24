@@ -138,6 +138,9 @@ def test_macd_builtin_metadata_and_registry_api(monkeypatch):
         assert response.code == 0
         assert _MACD_KEYS <= api_keys
         assert response.data["count"] == sum(1 for item in REGISTRY if item.enabled)
+        for key in _MACD_KEYS:
+            with pytest.raises(ValueError, match="内置指标不可删除"):
+                repo.delete(key)
 
 
 def test_application_startup_seeds_full_builtin_registry(monkeypatch):

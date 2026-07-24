@@ -78,6 +78,55 @@ def test_user_preference_repo_validation(pg):
         repo.set(scope="global", pref_key="../x", value={})
     with pytest.raises(UserPreferenceValidationError, match="对象或标量"):
         repo.set(scope="global", pref_key="x", value=[1, 2])
+    with pytest.raises(UserPreferenceValidationError, match="标准 JSON"):
+        repo.set(scope="global", pref_key="x", value={"ratio": float("nan")})
+    with pytest.raises(UserPreferenceValidationError, match="大小限制"):
+        repo.set(scope="global", pref_key="x", value={"blob": "x" * (64 * 1024)})
+
+
+def test_stock_detail_chart_preference_is_additive_and_tenant_owner_isolated(pg):
+    owner = "pref_shared_owner"
+    tenant_a = UserPreferenceRepo(pg, tenant_id="pref_tenant_a", owner_user_id=owner)
+    tenant_b = UserPreferenceRepo(pg, tenant_id="pref_tenant_b", owner_user_id=owner)
+    other_owner = UserPreferenceRepo(
+        pg,
+        tenant_id="pref_tenant_a",
+        owner_user_id="pref_other_owner",
+    )
+    key = {"scope": "page", "page_key": "stock-detail", "pref_key": "settings"}
+    try:
+        tenant_a.set(
+            **key,
+            value={
+                "adjust": "qfq",
+                "range": "120",
+                "legacyPanel": {"collapsed": True},
+            },
+        )
+        previous = tenant_a.get(**key)
+        assert previous is not None
+        merged = {
+            **previous["value"],
+            "charts": {
+                "slot2": "volume",
+                "slot3": "macd",
+                "heightRatios": {
+                    "kline|volume|macd": [0.6, 0.2, 0.2],
+                },
+            },
+        }
+        saved = tenant_a.set(**key, value=merged)
+
+        assert saved["value"] == merged
+        assert saved["value"]["adjust"] == "qfq"
+        assert saved["value"]["legacyPanel"] == {"collapsed": True}
+        assert tenant_b.get(**key) is None
+        assert other_owner.get(**key) is None
+    finally:
+        pg.execute(
+            "DELETE FROM user_preference WHERE owner_user_id IN (%s,%s)",
+            [owner, "pref_other_owner"],
+        )
 
 
 def test_user_preference_api_allowed_by_baseline_and_ignores_owner_fields(client, pg):

@@ -147,7 +147,7 @@ def test_screen_engine_hybrid_col_and_expr():
         assert eng.run_hits(mix, T) == ["AAA.SH"]
 
 
-def test_screen_engine_uses_registered_macd_golden_cross():
+def test_screen_engine_uses_all_registered_macd_results():
     from backend.indicators.definition import IndicatorDefRepo
     from backend.screening.engine import ScreenEngine
     from backend.storage.ddl import init_db
@@ -168,12 +168,13 @@ def test_screen_engine_uses_registered_macd_golden_cross():
         c.execute("INSERT INTO daily_bar BY NAME SELECT * FROM macd_bars")
         c.unregister("macd_bars")
 
-        ast = {
-            "type": "ind",
-            "key": "macd_golden_cross",
-            "cmp": "==",
-            "value": True,
-        }
+        ast = {"op": "AND", "children": [
+            {"type": "ind", "key": "macd_diff", "cmp": ">", "value": 0},
+            {"type": "ind", "key": "macd_dea", "cmp": ">=", "value": 0},
+            {"type": "ind", "key": "macd_hist", "cmp": ">", "value": 0},
+            {"type": "ind", "key": "macd_golden_cross", "cmp": "==", "value": True},
+            {"type": "ind", "key": "macd_dead_cross", "cmp": "==", "value": False},
+        ]}
         assert ScreenEngine(c).run_hits(ast, days[-1]) == ["GOLDEN.SH"]
 
 

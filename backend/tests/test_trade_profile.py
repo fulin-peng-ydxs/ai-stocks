@@ -42,12 +42,20 @@ def test_eval_and_or():
     assert list(eval_conditions(or_tree, snap)) == [True, False, True]
 
 
-def test_macd_crosses_work_as_buy_and_sell_conditions():
+def test_all_macd_results_work_as_buy_and_sell_conditions():
     snap = pd.DataFrame({
+        "macd_diff": [0.4, -0.4, pd.NA],
+        "macd_dea": [0.2, -0.2, pd.NA],
+        "macd_hist": [0.4, -0.4, pd.NA],
         "macd_golden_cross": pd.array([True, False, pd.NA], dtype="boolean"),
         "macd_dead_cross": pd.array([False, True, pd.NA], dtype="boolean"),
     }, index=["GOLDEN", "DEAD", "EMPTY"])
-    buy = {"indicator": "macd_golden_cross", "cmp": "==", "value": True}
+    buy = {"op": "AND", "children": [
+        {"indicator": "macd_diff", "cmp": ">", "value": 0},
+        {"indicator": "macd_dea", "cmp": ">", "value": 0},
+        {"indicator": "macd_hist", "cmp": ">", "value": 0},
+        {"indicator": "macd_golden_cross", "cmp": "==", "value": True},
+    ]}
     sell = {"indicator": "macd_dead_cross", "cmp": "==", "value": True}
     assert eval_conditions(buy, snap).to_dict() == {
         "GOLDEN": True, "DEAD": False, "EMPTY": False,
