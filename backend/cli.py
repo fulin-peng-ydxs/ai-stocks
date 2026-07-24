@@ -512,8 +512,10 @@ def cmd_purge_suspension_bars(args: argparse.Namespace) -> int:
 
 def cmd_dev_users(args: argparse.Namespace) -> int:
     """创建/查看本地 RBAC 调试用户。"""
+    from backend.devtools.environment_guard import require_local_test_environment
     from backend.devtools.rbac_test_users import ensure_debug_users, list_debug_users
 
+    require_local_test_environment()
     if getattr(args, "list", False) and not getattr(args, "ensure", False):
         rows = list_debug_users()
         if not rows:

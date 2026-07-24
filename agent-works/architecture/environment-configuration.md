@@ -46,10 +46,10 @@ flowchart TD
 | `AI_STOCKS_SMTP_SENDER` | `Settings.mail_config()` | From 显示地址；留空回落 `username` | 可选；覆盖 YAML `mail.sender` | 同上 |
 | `AI_STOCKS_SMTP_PASSWORD` | `Settings.smtp_password()`、`backend/common/mailer.py` | SMTP 登录密码/授权码（Gmail 等用应用专用密码） | 真实发信必填；无弱默认 | 真实发信时读取 |
 | `AI_STOCKS_ADMIN_PASSWORD` | `backend/storage/pg_ddl.py::seed_default_tenant()` | 首次 seed 或补齐 `admin` 密码哈希 | 生产/共享环境必须显式设置；缺失会随机生成并只在日志告警一次 | 仅在 `admin` 不存在或 `password_hash` 为空时使用；不会覆盖已有密码 |
-| `AI_STOCKS_TEST_USER_PASSWORD` | `backend/devtools/rbac_test_users.py` | `debug_*` 本地调试账号统一密码 | 可选；本地开发未设置时回落测试默认值 | 执行 `./start.sh dev-users` 创建/校准时读取 |
+| `AI_STOCKS_TEST_USER_PASSWORD` | `backend/devtools/rbac_test_users.py`、`frontend/e2e/helpers/auth.ts` | `debug_*` 本地调试账号与 Playwright 登录统一密码 | 可选；本地开发未设置时回落测试默认值 | 执行 `./start.sh dev-users` 创建/校准及 `npm run test:e2e(:ui)` 启动时读取 |
 | `AI_STOCKS_ENV` / `ENV` | `backend/devtools/environment_guard.py` | 调试账号与 E2E 临时数据写入的环境白名单 | 执行调试数据写入时必填；仅 `dev/development/local/test/testing` 放行，空值、未知值和生产值全部拒绝 | `dev-users`、后端 E2E 健康检查和临时用户夹具每次执行时读取 |
 | `AI_STOCKS_E2E_WRITE` | `backend/devtools/environment_guard.py`、`/api/health/e2e` | 允许 Playwright 创建并物理销毁临时 PG 用户 | 默认未启用；只有精确值 `1` 放行，且必须同时满足本地/测试环境白名单 | 启动被测后端和执行 Playwright 时必须同时显式传入；回归结束后重启后端移除 |
-| `AI_STOCKS_ENV_FILE` | `scripts/load-local-env.sh` | 覆盖 `start.sh` 要读取的变量文件路径 | 仅自动化验证变量加载器时使用；日常缺省为仓库根目录 `.env.local` | `start.sh` 启动及其受控 devtool 动作执行前 |
+| `AI_STOCKS_ENV_FILE` | `scripts/load-local-env.sh` | 覆盖后端和 Playwright 启动器要读取的变量文件路径 | 仅自动化验证变量加载器时使用；日常缺省为仓库根目录 `.env.local` | `start.sh` 及 `scripts/run-playwright.sh` 启动子进程前 |
 | `AI_STOCKS_FILE_LOG` | `backend/common/logging.py` | 额外写 `logs/ai_stocks.log` | 可选；仅值为 `1` 时开启 | 首次配置 logger 时读取；默认只由 `start.sh` 汇总 stdout/stderr 到 `logs/backend.log` |
 | `PYTHON` | `start.sh` | 选择后端启动脚本使用的 Python 可执行文件 | 可选；默认 `python` | 必须在调用 `./start.sh` 前的 shell 环境中设置；当前脚本在读取 `.env.local` 前确定该值 |
 | `WEB_PORT` | `start-web.sh` | 选择 Vite dev server 端口 | 可选；默认 `5173` | 必须在调用 `./start-web.sh` 前的 shell 环境中设置；该脚本不读取 `.env.local` |
@@ -67,15 +67,17 @@ flowchart TD
 | 文件 | Git 状态 | 自动加载者 | 职责 |
 |------|----------|------------|------|
 | `.env.local.example` | 跟踪 | 无 | 本机模板，只放变量名和示例注释，不放真实密钥 |
-| `.env.local` | 忽略 | `./start.sh` | 本机后端服务及受控 `dev-users/e2e-user` 动作变量，可写 `KEY=value` 或 `export KEY=value` |
+| `.env.local` | 忽略 | `./start.sh`、`npm run test:e2e(:ui)` | 本机后端服务、受控 devtool 与 Playwright 变量，可写 `KEY=value` 或 `export KEY=value` |
 | `.env` / `.env.*.local` | 忽略 | 当前脚本无自动读取 | 保留给人工或外部工具，项目脚本不依赖它们 |
 | `config/settings.yaml` | 跟踪 | 后端配置模块 | 非敏感基线配置；敏感值不写入 |
 
-`start.sh` 通过 `scripts/load-local-env.sh` 在项目根目录执行
+`start.sh` 与 `scripts/run-playwright.sh` 通过 `scripts/load-local-env.sh` 在项目根目录执行
 `set -a; source .env.local; set +a`，因此 `.env.local` 里的变量会同时进入后端服务、
-`./start.sh dev-users` 和 `./start.sh e2e-user` 子进程。直接运行 Python CLI 仍不会自动 source
-该文件；需要 PG/JWT/Redis 配置的调试账号维护必须走上述受控 `start.sh` 动作，避免连接到与后端
-不同的存储。`AI_STOCKS_ENV_FILE` 只为加载器自动化回归提供临时变量文件，不作为日常多环境切换入口。
+`./start.sh dev-users`、`./start.sh e2e-user` 和 Playwright 子进程。前端认证 helper 只读取
+已经导出的进程变量，不再实现一套不完整的 `.env.local` 文本解析。直接运行 Python CLI 或
+`playwright test` 仍不会自动 source 该文件；需要 PG/JWT/Redis 配置的调试账号维护必须走
+受控 `start.sh` 动作，E2E 必须走 npm 脚本，避免连接到与后端不同的存储或使用不同登录密码。
+`AI_STOCKS_ENV_FILE` 只为加载器自动化回归提供临时变量文件，不作为日常多环境切换入口。
 
 会物理清理临时用户资产的 Playwright 用例还有两层额外保护：
 

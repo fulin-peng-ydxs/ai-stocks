@@ -1,4 +1,4 @@
-"""本地调试与 E2E 写操作的 fail-closed 环境守卫。"""
+"""本地调试数据操作与 E2E 写操作的 fail-closed 环境守卫。"""
 
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ def runtime_environment() -> str:
 
 
 def require_local_test_environment() -> str:
-    """只有明确标记为本地/测试的进程可执行调试数据写入；空值和未知值一律拒绝。"""
+    """只有明确标记为本地/测试的进程可操作调试数据；空值和未知值一律拒绝。"""
     environment = runtime_environment()
     if environment not in LOCAL_TEST_ENVIRONMENTS:
         shown = environment or "<unset>"
         raise RuntimeError(
-            f"当前环境 {shown} 未明确标记为 dev/test/local，拒绝执行调试数据写入"
+            f"当前环境 {shown} 未明确标记为 dev/test/local，拒绝执行调试数据操作"
         )
     return environment
 

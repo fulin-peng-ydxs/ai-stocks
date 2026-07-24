@@ -1,5 +1,4 @@
 import { execFile } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { APIRequestContext, Page } from '@playwright/test'
@@ -26,21 +25,8 @@ export interface TemporaryE2EUser {
   pgFingerprint: string
 }
 
-function readLocalEnv(name: string): string {
-  const envPath = resolve(process.cwd(), '..', '.env.local')
-  if (!existsSync(envPath)) return ''
-  const line = readFileSync(envPath, 'utf8')
-    .split(/\r?\n/)
-    .map((entry) => entry.trim())
-    .find((entry) => entry && !entry.startsWith('#') && entry.startsWith(`${name}=`))
-  if (!line) return ''
-  return line.slice(name.length + 1).replace(/^['"]|['"]$/g, '')
-}
-
 function debugPassword(): string {
-  return process.env.AI_STOCKS_TEST_USER_PASSWORD
-    || readLocalEnv('AI_STOCKS_TEST_USER_PASSWORD')
-    || 'Test@12345'
+  return process.env.AI_STOCKS_TEST_USER_PASSWORD || 'Test@12345'
 }
 
 async function runTemporaryUserFixture(args: string[]): Promise<Record<string, unknown>> {

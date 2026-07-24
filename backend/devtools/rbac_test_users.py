@@ -228,6 +228,8 @@ def ensure_debug_users(*, reset_password: bool = True,
 
 
 def list_debug_users(pg: PostgresClient | None = None) -> list[dict]:
+    """列出调试用户；读取入口同样只允许明确的本地或测试环境。"""
+    _guard_local_test_environment()
     pg = pg or get_pg_client()
     accounts = [u.account for u in DEBUG_USERS]
     df = pg.query_df(

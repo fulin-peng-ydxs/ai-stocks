@@ -51,6 +51,9 @@ cd .. && AI_STOCKS_ENV=dev ./start.sh restart
 ```
 
 Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；后端使用 `127.0.0.1:8000`，由 `./start.sh` 管理。
+`npm run test:e2e` 和 `npm run test:e2e:ui` 均通过 `scripts/run-playwright.sh` 启动，
+并复用 `scripts/load-local-env.sh` 加载仓库根目录 `.env.local`；因此登录密码和 PG/E2E
+环境与后端使用相同的 `KEY=value` / `export KEY=value` 语义，不在 TypeScript helper 中二次解析变量文件。
 涉及临时 PG 用户的用例会先读取后端 `/api/health/e2e` 的不可逆 PG 指纹，再通过
 `./start.sh e2e-user` 创建/销毁用户；该入口与后端复用 `.env.local` 加载，且后端、Playwright
 和夹具必须同时处于明确 dev/test/local 环境并启用 `AI_STOCKS_E2E_WRITE=1`。任一条件缺失、
@@ -67,7 +70,7 @@ PG 指纹不一致或后端运行中切换数据库时均 fail-closed，不执�
 ## 调试账号
 
 - 页面权限验收使用 `debug_*` 账号，账号事实源为 `agent-works/multi-tenant-rbac/test-users.md`。
-- E2E 登录 helper 默认使用 `debug_normal`，密码读取顺序：`AI_STOCKS_TEST_USER_PASSWORD` 环境变量、仓库根目录本地 `.env.local`、本地 dev-users 默认值。
+- E2E 登录 helper 默认使用 `debug_normal`，密码读取顺序：Playwright 进程继承的 `AI_STOCKS_TEST_USER_PASSWORD`、本地 dev-users 默认值；`.env.local` 由统一启动脚本在 Playwright 进程创建前加载。
 - 账号不存在或权限漂移时，先执行 `AI_STOCKS_ENV=dev ./start.sh dev-users` 校准。
 
 ## 后续 AI 执行要求
