@@ -725,6 +725,7 @@ onDeactivated(() => {
   resumeQuoteRequest = quoteLoading.value
   resumeTradeRequest = tradeLoading.value
   cancelDetailRequests()
+  detachDropdownScroll()
   barsLoading.value = false
   indicatorLoading.value = false
   quoteLoading.value = false

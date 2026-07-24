@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1–T9 已完成并通过对应阶段验证；T10–T13 尚未开始，本轮未进入后续阶段。
+- 当前进度：T1–T10 已完成并通过对应阶段验证；T11–T13 尚未开始，本轮未进入后续阶段。
 
 ## 2. 当前项目依据
 
@@ -80,14 +80,14 @@
 | R1 | EMA 与 `macd_diff/macd_dea/macd_hist` 三个数值原子结果 | 已完成 | T1、T9 |
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成 | T1、T9 |
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成（T13 总回归待执行） | T2、T9、T13 |
-| R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 部分完成（T3/T6/T9 已完成，总回归待执行） | T3、T6、T9、T10、T11、T13 |
-| R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 部分完成（T5/T6 已完成，总回归待执行） | T5、T6、T10、T11 |
-| R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 部分完成（T4/T7 功能开发已完成，总回归待执行） | T4、T7、T10、T11 |
-| R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 部分完成（T4/T5/T7 状态、交互与页面保存已完成，总回归待执行） | T4、T5、T7、T10、T11 |
-| R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 部分完成（T4/T7/T9 已完成页面与后端隔离，总回归待执行） | T4、T7、T9、T10、T11、T13 |
-| R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 部分完成（T3/T5/T6/T8 已完成页面分层与视觉验收，总回归待执行） | T3、T5、T6、T8、T10、T11 |
-| R15 | 响应式、主题、pointer/键盘可访问性和 reduced motion | 部分完成（T5/T8 已完成组件和真实页面关键视口验收，总回归待执行） | T5、T8、T10、T11、T12 |
-| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 部分完成（T3–T6 已完成对应部分，总回归待执行） | T3、T4、T5、T6、T10、T11、T13 |
+| R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 部分完成（T3/T6/T9/T10 已完成，浏览器与发布总回归待执行） | T3、T6、T9、T10、T11、T13 |
+| R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 部分完成（T5/T6/T10 已完成，浏览器总回归待执行） | T5、T6、T10、T11 |
+| R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 部分完成（T4/T7/T10 已完成，浏览器总回归待执行） | T4、T7、T10、T11 |
+| R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 部分完成（T4/T5/T7/T10 已完成，浏览器总回归待执行） | T4、T5、T7、T10、T11 |
+| R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 部分完成（T4/T7/T9/T10 已完成，浏览器与发布总回归待执行） | T4、T7、T9、T10、T11、T13 |
+| R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 部分完成（T3/T5/T6/T8/T10 已完成，浏览器总回归待执行） | T3、T5、T6、T8、T10、T11 |
+| R15 | 响应式、主题、pointer/键盘可访问性和 reduced motion | 部分完成（T5/T8/T10 已完成，浏览器与文档总回归待执行） | T5、T8、T10、T11、T12 |
+| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 部分完成（T3–T6/T10 已完成，浏览器与发布总回归待执行） | T3、T4、T5、T6、T10、T11、T13 |
 
 ### 3.2 可选增强（建议项处理）
 
@@ -339,14 +339,14 @@ flowchart LR
 | 必须实现 | R1 | `requirement.md §5.1`：EMA 与三个数值原子结果 | EMA、三数值列、暖机、空值、算法版本、单股/全市场一致 | T1、T9 | 已完成 | 一致 | 已知公式、前缀稳定、两路径容差单测 | T1 实现与 T9 后端总回归均已通过；固定 12/26/9，不开放参数。 |
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成 | 一致 | 交叉边界和缺失段单测 | T1 实现与 T9 后端总回归均已通过；空值保留 null，下游按不成立处理。 |
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 已完成（T13 总回归待执行） | 一致 | repo/API/筛选/评分/买卖方案测试 | T9 已逐项验证五个内置定义不可删除，并让五原子共同通过筛选、评分和买卖条件求值；发布前总回归留 T13。 |
-| 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 部分完成（T3/T6/T9 已完成） | 一致 | API、Vitest、Playwright | 安全序列契约、null/403/边界和页面按交易日对齐均已落地；前端与发布总回归留后续任务。 |
-| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 部分完成（T5/T6 已完成） | 一致 | option/组件测试、固定样本、截图和 E2E | 工作区已由真实个股详情消费，三视口 E2E 已验证默认三图和局部重试；总回归留后续任务。 |
-| 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 部分完成（T4/T7 功能开发已完成） | 一致 | 归一化单测、抽屉 E2E | 9 种组合、自动交换、隐藏释放空间、关闭不撤销和刷新恢复均已测；总回归留 T10/T11。 |
-| 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 部分完成（T4/T5/T7 已完成对应部分） | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | pointermove 只更新草稿，pointerup/pointercancel/键盘终态只提交一次；页面已只消费 commit 写偏好并有真实键盘保存证据。 |
-| 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4/T7/T9 已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | T9 已验证 additive JSON、同租户跨用户和同 owner 跨租户隔离、标准 JSON，以及精确 65536/65537 bytes 边界；前端与发布总回归留 T10/T11/T13。 |
-| 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3/T5/T6/T8 已完成对应部分） | 一致 | 状态测试、403/失败注入 E2E | 行情错误/空态/403 与 MACD loading/insufficient/error 已分层；真实页面已验证局部失败重试及 loading、empty、permission 正确图层，总回归留 T10/T11。 |
-| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 部分完成（T5/T8 已完成对应部分） | 一致 | 样式/契约测试、build、主题截图 | 组件和真实页面均已验证 1100×620、1366×768、1440×900，覆盖语义 token、明暗、预设 key 与同 key 后端覆盖重绘、纵向最低高度、无横向溢出、键盘/ARIA 和 reduced-motion；总回归留 T10/T11/T12。 |
-| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3–T6 已完成对应部分） | 一致 | 竞态和生命周期测试、E2E | 行情、指标、报价和买卖评估均有独立取消/序号守卫，KeepAlive 停用取消、激活恢复已落地；总回归留后续。 |
+| 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 部分完成（T3/T6/T9/T10 已完成） | 一致 | API、Vitest、Playwright | 安全序列契约、null/403/边界和页面按交易日对齐均已落地；T10 前端总回归通过，浏览器与发布总回归留 T11/T13。 |
+| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 部分完成（T5/T6/T10 已完成） | 一致 | option/组件测试、固定样本、截图和 E2E | 工作区已由真实个股详情消费；T10 复核 panel、标题、底轴、信号和局部状态，浏览器总回归留 T11。 |
+| 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 部分完成（T4/T7/T10 已完成） | 一致 | 归一化单测、抽屉 E2E | 9 种组合、自动交换、隐藏释放空间、关闭不撤销和刷新恢复均已测；浏览器总回归留 T11。 |
+| 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 部分完成（T4/T5/T7/T10 已完成） | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | T10 全量复核 pointermove 草稿、pointerup/pointercancel/键盘单次提交、ARIA 和最低高度；浏览器总回归留 T11。 |
+| 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 部分完成（T4/T7/T9/T10 已完成） | 一致 | 偏好 API、Vitest、跨用户 E2E | 后端隔离与容量边界、前端组合/草稿/回退均已通过总回归；跨用户浏览器与发布总回归留 T11/T13。 |
+| 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 部分完成（T3/T5/T6/T8/T10 已完成） | 一致 | 状态测试、403/失败注入 E2E | T10 直接覆盖 MACD loading/insufficient/error 稳定面板，并复核行情空态、错误、403 和局部重试；浏览器总回归留 T11。 |
+| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 部分完成（T5/T8/T10 已完成） | 一致 | 样式/契约测试、build、主题截图 | T10 的布局契约、键盘/ARIA、主题重绘与正式构建均通过；浏览器和文档总回归留 T11/T12。 |
+| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 部分完成（T3–T6/T10 已完成） | 一致 | 竞态和生命周期测试、E2E | T10 复核四请求通道竞态，并新增 observer 与集合下拉滚动监听的 KeepAlive 精确清理计数；浏览器与发布总回归留 T11/T13。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
 | 暂不实现 | R12 | `requirement.md §4.3`：其他周期 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 仅日线前复权。 |
@@ -752,7 +752,7 @@ flowchart LR
 
 ### 6.10 任务 T10：补齐前端单元、组件和布局契约测试
 
-- 状态：待开始
+- 状态：已完成（2026-07-24）
 - 对应需求：R4、R5、R6、R7、R8、R9、R15、R16。
 - 依赖：T4、T5、T6、T7、T8。
 - 涉及文件：
@@ -772,7 +772,30 @@ flowchart LR
 - 影响范围：前端自动化测试资产及为可测性新增的稳定组件边界；不增加业务配置字段。
 - 验证方式：执行 `cd frontend && npm test`。
 - 完成标准：前端核心逻辑不依赖人工点击才能证明。
-- 实际落地情况：待实施。
+- 实际落地情况：已完成（2026-07-24）。
+  - 复用并扩展既有 `useStockChartPreferences.spec.ts`、`workspaceOptions.spec.ts`、`StockChartWorkspace.spec.ts`、`StockDetailView.spec.ts` 和 `layout-contract.spec.ts`，没有建立第二套页面或偏好测试夹具。
+  - 偏好测试覆盖 9 种辅助槽组合、自动交换、隐藏/重显、有序组合高度、非法枚举/比例局部回退、拖动草稿与单次提交，以及 hydrate 前用户修改保护。
+  - 工作区测试覆盖三/二/一图、标题、底部日期轴、K线 tooltip、MACD 零轴与 signal 同 X 引导线、唯一 group、主题重绘、separator ARIA、pointercancel、键盘 2% 和卸载清理。
+  - 新增 MACD `loading/insufficient/error` 三种局部状态的真实组件断言，确认均保留 MACD 图名、稳定最低高度，且只有错误态提供局部重试。
+  - `ResizeObserver` mock 记录每个实例；KeepAlive 停用时旧 observer 仅断开一次，激活时仅创建并 observe 一份新实例，卸载时当前 observer 仅断开一次。
+  - 修复 `StockDetailView` 在 KeepAlive 停用时未主动解绑集合下拉滚动监听的问题；新增测试预置集合并验证首次打开注册一次、停用解绑一次、恢复后再注册一次、卸载再解绑一次，不残留或重复注册。
+  - 页面测试继续覆盖行情/指标/报价/买卖评估四通道竞态与取消、MACD 局部重试、复权不重拉指标、范围刷新边界、空态/错误/403、刷新保留和历史不足；布局契约继续拦截视口高度硬编码。
+  - 定向验证完整命令：
+
+    ```bash
+    cd frontend
+    npm run test -- --run \
+      src/composables/__tests__/useStockChartPreferences.spec.ts \
+      src/components/stock-chart/__tests__/workspaceOptions.spec.ts \
+      src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts \
+      src/views/__tests__/StockDetailView.spec.ts \
+      src/layout/__tests__/layout-contract.spec.ts
+    ```
+
+    执行结果：`5 files / 64 tests passed`。
+  - 前端全量回归：`cd frontend && npm test`，结果 `64 files / 429 tests passed`；PageDrawer 容器与 Element Plus `null` prop 输出为既存测试提示，无失败。
+  - 前端构建：`cd frontend && npm run build` 通过并同步 `frontend/dist`；仅有依赖注释位置与既有大 chunk 告警。
+  - 本阶段未新增数据库、SQL、seed、菜单、权限、接口或配置字段；页面结构和视觉样式未变化，因此未重复执行真实浏览器验收，Playwright 总回归留 T11。
 
 ### 6.11 任务 T11：新增 Playwright 业务闭环回归
 
@@ -924,7 +947,8 @@ WHERE is_builtin = TRUE
   - Ruff 未执行：当前环境没有 `ruff` 命令且未安装 Python Ruff 模块。
   - T8 已完成：主题修订版本覆盖预设 key、明暗和同 key 后端覆盖，驱动 ECharts 重新取色；个股页清除本次路径的涨跌硬编码并完成紧凑视口换行；四个定向文件 37 passed、前端全量 428 passed、正式构建通过。真实页面三关键视口 12 项 Playwright 覆盖纵向最低高度、无横向溢出、明暗/预设、reduced-motion、loading/empty/permission 和既有偏好闭环；确定性交易日历 fixture 保证明暗截图外壳业务状态一致，HTML 报告真实留存 6 张明暗截图。
   - T9 已完成：七文件后端定向回归 `87 passed`，覆盖 R1/R2 公式与边界、R3 全量 seed/目录/五原子下游求值、R4 白名单/边界/null/403，以及 R8 additive JSON、精确 65536/65537 bytes 边界、标准 JSON 和租户/用户隔离；测试身份使用 UUID，偏好清理遵守租户归属与精确键约束。次级资产权限另为 `1 passed`，停服测试后已恢复 `/api/health=200`。
-  - T10–T13 尚未开始；前端总回归、Playwright 总回归和发布 smoke 均保留到对应阶段，不提前执行。
+  - T10 已完成：五文件定向回归 `64 passed`，前端全量 `64 files / 429 tests passed`，正式构建通过；KeepAlive observer 与集合下拉监听均有精确注册/解绑计数。
+  - T11–T13 尚未开始；Playwright 总回归、文档总核对和发布 smoke 均保留到对应阶段，不提前执行。
 
 ### 8.1 后端测试矩阵
 
@@ -974,12 +998,15 @@ python -m pytest \
 | 布局契约 | 无 `calc(100vh - Npx)`、无私建页面外壳/抽屉 |
 | 兼容回归 | `CandleChart` 在训练/回测的现有 props 和渲染不变 |
 
-命令：
+计划验证命令：
 
 ```bash
 cd frontend && npm test
 cd frontend && npm run build
 ```
+
+具体完成情况（T10）：定向 `5 files / 64 tests passed`，前端全量
+`64 files / 429 tests passed`，正式构建通过；Playwright 总回归仍按任务边界留 T11。
 
 ### 8.4 Playwright 与视觉验收
 

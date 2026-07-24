@@ -35,8 +35,14 @@ vi.mock('echarts', () => ({
 }))
 
 class ResizeObserverMock {
+  static instances: ResizeObserverMock[] = []
+
   observe = vi.fn()
   disconnect = vi.fn()
+
+  constructor(_callback: ResizeObserverCallback) {
+    ResizeObserverMock.instances.push(this)
+  }
 }
 
 vi.stubGlobal('ResizeObserver', ResizeObserverMock)
@@ -111,6 +117,7 @@ describe('StockChartWorkspace', () => {
     echartsMock.init.mockClear()
     echartsMock.connect.mockClear()
     echartsMock.disconnect.mockClear()
+    ResizeObserverMock.instances.length = 0
   })
 
   it('默认创建三幅独立图、唯一联动 group，并把日期轴 slider 放在底图', async () => {
@@ -214,16 +221,28 @@ describe('StockChartWorkspace', () => {
     expect(volumeOption.dataZoom).toHaveLength(2)
   })
 
-  it('局部 MACD 状态保留图名与稳定面板，错误态只发出局部重试', async () => {
-    const wrapper = await mountWorkspace({
+  it('局部 MACD 加载、历史不足和错误状态均保留图名与稳定面板', async () => {
+    const wrapper = await mountWorkspace({ macdState: 'loading' })
+    let macdPanel = wrapper.find('.stock-chart-panel--macd')
+
+    expect(macdPanel.text()).toContain('MACD（12,26,9·前复权）')
+    expect(macdPanel.text()).toContain('MACD 数据加载中')
+    expect(macdPanel.find('button').exists()).toBe(false)
+    expect(macdPanel.attributes('style')).toContain('min-height: 126px')
+
+    await wrapper.setProps({ macdState: 'insufficient' })
+    await nextTick()
+    macdPanel = wrapper.find('.stock-chart-panel--macd')
+    expect(macdPanel.text()).toContain('历史数据不足')
+    expect(macdPanel.find('button').exists()).toBe(false)
+
+    await wrapper.setProps({
       macdState: 'error',
       macdError: 'MACD 暂不可用，K线与量能不受影响',
     })
-
-    const macdPanel = wrapper.find('.stock-chart-panel--macd')
-    expect(macdPanel.text()).toContain('MACD（12,26,9·前复权）')
+    await nextTick()
+    macdPanel = wrapper.find('.stock-chart-panel--macd')
     expect(macdPanel.text()).toContain('MACD 加载失败')
-    expect(macdPanel.attributes('style')).toContain('min-height: 126px')
 
     await macdPanel.find('button').trigger('click')
     expect(wrapper.emitted('retryMacd')).toHaveLength(1)
@@ -307,12 +326,15 @@ describe('StockChartWorkspace', () => {
     await nextTick()
     await nextTick()
     expect(echartsMock.init).toHaveBeenCalledTimes(3)
+    expect(ResizeObserverMock.instances).toHaveLength(1)
+    expect(ResizeObserverMock.instances[0].observe).toHaveBeenCalledTimes(1)
 
     visible.value = false
     await nextTick()
     expect(echartsMock.instances.slice(0, 3).every(
       (instance) => instance.dispose.mock.calls.length === 1,
     )).toBe(true)
+    expect(ResizeObserverMock.instances[0].disconnect).toHaveBeenCalledTimes(1)
 
     visible.value = true
     await nextTick()
@@ -321,7 +343,11 @@ describe('StockChartWorkspace', () => {
     expect(echartsMock.instances.slice(3).every(
       (instance) => instance.dispose.mock.calls.length === 0,
     )).toBe(true)
+    expect(ResizeObserverMock.instances).toHaveLength(2)
+    expect(ResizeObserverMock.instances[0].disconnect).toHaveBeenCalledTimes(1)
+    expect(ResizeObserverMock.instances[1].observe).toHaveBeenCalledTimes(1)
 
     wrapper.unmount()
+    expect(ResizeObserverMock.instances[1].disconnect).toHaveBeenCalledTimes(1)
   })
 })

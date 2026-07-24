@@ -7,6 +7,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import ElementPlus from 'element-plus'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import { useAuthStore } from '@/stores/auth'
+import { useStockSet } from '@/stores/stockSet'
 
 const pageSettingsState = vi.hoisted(() => ({
   current: null as any,
@@ -175,6 +176,18 @@ const KlineRangeSelectStub = defineComponent({
   },
 })
 
+const ElSelectStub = defineComponent({
+  name: 'ElSelect',
+  props: ['modelValue', 'popperClass'],
+  emits: ['update:modelValue', 'change', 'visible-change'],
+  setup(props, { slots }) {
+    return () => h('div', {
+      'data-model-value': String(props.modelValue ?? ''),
+      'data-popper-class': String(props.popperClass ?? ''),
+    }, slots.default?.())
+  },
+})
+
 function bar(date: string, close: number): Bar {
   return {
     date,
@@ -248,6 +261,11 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       PageSegmented: PageSegmentedStub,
       PageToggleRow: true,
       KlineSettingSection: true,
+      ElSelect: ElSelectStub,
+      ElOption: {
+        props: ['label', 'value'],
+        template: '<span :data-value="String(value)">{{ label }}</span>',
+      },
       ElCard: { template: '<section><slot name="header"/><slot/></section>' },
       ElDescriptions: { template: '<dl><slot/></dl>' },
       ElDescriptionsItem: {
@@ -284,8 +302,18 @@ async function mountView(permissions?: string[]) {
   return wrapper
 }
 
-async function mountKeepAliveView() {
+async function mountKeepAliveView(withStockSet = false) {
   const pinia = await prepareAuth()
+  if (withStockSet) {
+    useStockSet().setSet(
+      'list',
+      [
+        { code: '600000.SH', name: '浦发银行' },
+        { code: '000001.SZ', name: '平安银行' },
+      ],
+      '查询结果',
+    )
+  }
   const active = ref(true)
   const Host = defineComponent({
     setup() {
@@ -960,6 +988,46 @@ describe('StockDetailView 三图数据协调', () => {
     expect(detail.get('[data-testid="stock-latest-quote"]').text()).toContain('21.00')
     expect(detail.text()).toContain('v2')
     expect(detail.text()).not.toContain('v1')
+  })
+
+  it('KeepAlive 停用解绑集合下拉滚动监听，恢复后不会重复注册', async () => {
+    const popper = document.createElement('div')
+    popper.className = 'stock-set-dropdown'
+    const scroller = document.createElement('div')
+    scroller.className = 'el-select-dropdown__wrap'
+    popper.appendChild(scroller)
+    document.body.appendChild(popper)
+    const addSpy = vi.spyOn(scroller, 'addEventListener')
+    const removeSpy = vi.spyOn(scroller, 'removeEventListener')
+
+    const { active, wrapper } = await mountKeepAliveView(true)
+    await flushPromises()
+    const detail = wrapper.findComponent(StockDetailView)
+    const collectionSelect = detail.findAllComponents({ name: 'ElSelect' }).find(
+      (component) => component.props('popperClass') === 'stock-set-dropdown',
+    )
+    expect(collectionSelect).toBeTruthy()
+
+    collectionSelect!.vm.$emit('visible-change', true)
+    await flushPromises()
+    expect(addSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1)
+
+    active.value = false
+    await nextTick()
+    expect(removeSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1)
+
+    active.value = true
+    await nextTick()
+    await flushPromises()
+    collectionSelect!.vm.$emit('visible-change', true)
+    await flushPromises()
+
+    expect(addSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2)
+    expect(removeSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(1)
+
+    wrapper.unmount()
+    expect(removeSpy.mock.calls.filter(([type]) => type === 'scroll')).toHaveLength(2)
+    popper.remove()
   })
 
   it('指标历史不足时只让 MACD 面板进入 insufficient', async () => {
