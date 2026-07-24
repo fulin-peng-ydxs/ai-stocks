@@ -163,6 +163,22 @@ async function installVisualChartEndpoints(page: Page, code: string) {
       }),
     })
   })
+  await page.route('**/api/data/trade-dates', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: {
+          dates,
+          min: dates[0],
+          max: dates[dates.length - 1],
+        },
+      }),
+    })
+  })
+  return { latestTradeDate: dates[dates.length - 1] }
 }
 
 async function loadStocksOnlyContext(page: Page, request: APIRequestContext) {
@@ -411,7 +427,7 @@ test.describe('个股详情三图工作区', () => {
       window.localStorage.setItem('ai-stocks:layout-preset', 'balanced')
     })
     const { code } = await loadStocksOnlyContext(page, request)
-    await installVisualChartEndpoints(page, code)
+    const { latestTradeDate } = await installVisualChartEndpoints(page, code)
     await installPreferenceEndpoint(page, [{
       scope: 'page',
       pageKey: 'stock-detail',
@@ -434,6 +450,10 @@ test.describe('个股详情三图工作区', () => {
     await expect(workspace.getByText('MACD（12,26,9·前复权）', { exact: true })).toBeVisible()
     await expect(workspace.locator('.el-loading-mask')).toHaveCount(0)
     await expect(workspace.getByText('MACD 数据加载中', { exact: true })).toHaveCount(0)
+    const shellTradeDate = page
+      .getByLabel('交易日状态（无详情权限）')
+      .getByText(latestTradeDate, { exact: true })
+    await expect(shellTradeDate).toBeVisible()
 
     const geometry = await workspace.evaluate((element) => {
       const panels = [...element.querySelectorAll<HTMLElement>('[data-panel-key]')]
@@ -485,6 +505,7 @@ test.describe('个股详情三图工作区', () => {
     const closeAppearance = page.getByRole('button', { name: '关闭视觉环境' })
     await closeAppearance.click()
     await expect(closeAppearance).toBeHidden()
+    await expect(shellTradeDate).toBeVisible()
     await testInfo.attach('stock-detail-dark-nocturne', {
       body: await page.screenshot(),
       contentType: 'image/png',
