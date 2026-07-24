@@ -5,6 +5,7 @@ import { expect } from '@playwright/test'
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
 const AUTH_STORAGE_KEY = 'ai-stocks-auth'
+const debugAuthCache = new Map<string, E2EAuthSnapshot>()
 
 export interface E2EAuthSnapshot {
   accessToken: string
@@ -45,11 +46,12 @@ export async function expectBackendHealthy(request: APIRequestContext): Promise<
   expect(resp.ok(), '后端 8000 未就绪；先执行 ./start.sh 并确认 /api/health=200').toBe(true)
 }
 
-export async function loginAsDebugUser(
-  page: Page,
+export async function authenticateDebugUser(
   request: APIRequestContext,
   account = process.env.E2E_ACCOUNT || 'debug_normal',
 ): Promise<E2EAuthSnapshot> {
+  const cached = debugAuthCache.get(account)
+  if (cached) return cached
   await expectBackendHealthy(request)
   const resp = await request.post(`${API_URL}/auth/login`, {
     data: { account, password: debugPassword() },
@@ -70,6 +72,16 @@ export async function loginAsDebugUser(
     tenant: { id: data.user.tenant_id },
     role: data.user.role,
   }
+  debugAuthCache.set(account, snapshot)
+  return snapshot
+}
+
+export async function loginAsDebugUser(
+  page: Page,
+  request: APIRequestContext,
+  account = process.env.E2E_ACCOUNT || 'debug_normal',
+): Promise<E2EAuthSnapshot> {
+  const snapshot = await authenticateDebugUser(request, account)
   await installAuthSnapshot(page, snapshot)
   return snapshot
 }

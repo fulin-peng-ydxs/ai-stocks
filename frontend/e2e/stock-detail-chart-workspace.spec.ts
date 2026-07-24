@@ -2,16 +2,21 @@ import {
   expect,
   test,
   type APIRequestContext,
+  type BrowserContext,
+  type BrowserContextOptions,
   type Page,
+  type TestInfo,
 } from '@playwright/test'
 import {
+  authenticateDebugUser,
+  getUserPreference,
   installAuthSnapshot,
   loginAsDebugUser,
+  saveUserPreference,
   type E2EAuthSnapshot,
 } from './helpers/auth'
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
-let cachedAuth: E2EAuthSnapshot | null = null
 
 type PreferencePayload = {
   scope: string
@@ -19,6 +24,33 @@ type PreferencePayload = {
   prefKey: string
   value: unknown
   schemaVersion?: number
+}
+
+type StockSample = Record<string, unknown> & {
+  code: string
+  name?: string | null
+  groups?: unknown[]
+}
+
+const defaultHeightRatios = {
+  kline: [1],
+  'kline|volume': [0.75, 0.25],
+  'kline|macd': [0.75, 0.25],
+  'kline|volume|macd': [0.6, 0.2, 0.2],
+  'kline|macd|volume': [0.6, 0.2, 0.2],
+}
+
+function stockDetailPreference(
+  slot2: 'volume' | 'macd' | 'hidden' = 'volume',
+  slot3: 'volume' | 'macd' | 'hidden' = 'macd',
+) {
+  return {
+    charts: {
+      slot2,
+      slot3,
+      heightRatios: structuredClone(defaultHeightRatios),
+    },
+  }
 }
 
 const preferenceKey = (item: Pick<PreferencePayload, 'scope' | 'pageKey' | 'prefKey'>) => (
@@ -37,6 +69,13 @@ function collectConsoleIssues(page: Page, allowedHttpStatuses: number[] = []): s
     }
   })
   return issues
+}
+
+function runInStandardViewport(testInfo: TestInfo) {
+  test.skip(
+    testInfo.project.name !== 'chromium-standard',
+    '业务与权限闭环在标准视口串行执行；三关键视口由专用视觉用例覆盖',
+  )
 }
 
 async function installPreferenceEndpoint(page: Page, seeds: PreferencePayload[] = []) {
@@ -182,10 +221,43 @@ async function installVisualChartEndpoints(page: Page, code: string) {
   return { latestTradeDate: dates[dates.length - 1] }
 }
 
+async function loadStockSamples(
+  request: APIRequestContext,
+  auth: E2EAuthSnapshot,
+  size = 2,
+): Promise<StockSample[]> {
+  const headers = { authorization: `Bearer ${auth.accessToken}` }
+  const stocksResponse = await request.get(`${API_URL}/stocks?page=1&size=${size}`, { headers })
+  expect(stocksResponse.ok()).toBe(true)
+  const stocksBody = await stocksResponse.json()
+  expect(stocksBody.code, stocksBody.msg || '读取验收股票失败').toBe(0)
+  const rows = stocksBody.data.list as StockSample[]
+  expect(rows.length, '本地行情库没有足够的股票用于个股详情验收').toBeGreaterThanOrEqual(size)
+  return rows
+}
+
+async function installFixedStockListEndpoint(page: Page, samples: StockSample[]) {
+  await page.route(/\/api\/stocks(?:\?|$)/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: {
+          total: samples.length,
+          page: 1,
+          size: samples.length,
+          trade_date: '2026-07-23',
+          list: samples,
+        },
+      }),
+    })
+  })
+}
+
 async function loadStocksOnlyContext(page: Page, request: APIRequestContext) {
-  const auth = cachedAuth || await loginAsDebugUser(page, request, 'debug_stocks_only')
-  if (cachedAuth) await installAuthSnapshot(page, auth)
-  cachedAuth = auth
+  const auth = await loginAsDebugUser(page, request, 'debug_stocks_only')
   const headers = { authorization: `Bearer ${auth.accessToken}` }
   const meResponse = await request.get(`${API_URL}/auth/me`, { headers })
   expect(meResponse.ok()).toBe(true)
@@ -199,19 +271,61 @@ async function loadStocksOnlyContext(page: Page, request: APIRequestContext) {
   expect(permissions).not.toContain('trade-profile:view')
   expect(permissions).not.toContain('stocks:trade-eval')
 
-  const stocksResponse = await request.get(`${API_URL}/stocks?page=1&size=1`, { headers })
-  expect(stocksResponse.ok()).toBe(true)
-  const stocksBody = await stocksResponse.json()
-  expect(stocksBody.code, stocksBody.msg || '读取验收股票失败').toBe(0)
-  const code = stocksBody.data.list[0]?.code as string | undefined
-  expect(code, '本地行情库没有可用于个股详情验收的股票').toBeTruthy()
-  expect(stocksBody.data.list[0]?.groups).toEqual([])
+  const samples = await loadStockSamples(request, auth)
+  expect(samples[0].groups).toEqual([])
 
-  return { code: code! }
+  return { auth, code: samples[0].code, samples }
 }
 
 test.describe('个股详情三图工作区', () => {
-  test('最小权限隐藏分组能力且不覆盖被隐藏的分组偏好', async ({ page, request }) => {
+  test('debug_normal 首次进入默认显示三图和完整图名', async ({ page, request }, testInfo) => {
+    runInStandardViewport(testInfo)
+    const consoleIssues = collectConsoleIssues(page)
+    const auth = await loginAsDebugUser(page, request, 'debug_normal')
+    const [sample] = await loadStockSamples(request, auth, 1)
+    await installPreferenceEndpoint(page)
+
+    await page.goto(`/stocks/${sample.code}`)
+    const workspace = page.getByLabel('个股多图联动工作区')
+    await expect(workspace.locator('[data-panel-key]')).toHaveCount(3)
+    await expect(workspace.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
+    await expect(workspace.getByText('量能', { exact: true })).toBeVisible()
+    await expect(workspace.getByText('MACD（12,26,9·前复权）', { exact: true })).toBeVisible()
+    await expect(workspace.getByRole('separator')).toHaveCount(2)
+
+    await page.getByTestId('page-settings-trigger').click()
+    const drawer = page.getByTestId('page-settings-drawer')
+    await expect(drawer.getByTestId('stock-detail-chart-slot1-kline')).toContainText(
+      '固定，不可隐藏',
+    )
+    await expect(drawer.getByTestId('stock-detail-chart-slot2-volume')).toHaveClass(/active/)
+    await expect(drawer.getByTestId('stock-detail-chart-slot3-macd')).toHaveClass(/active/)
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('debug_board_only 直达个股详情由路由守卫 fail-closed', async (
+    { page, request },
+    testInfo,
+  ) => {
+    runInStandardViewport(testInfo)
+    const consoleIssues = collectConsoleIssues(page)
+    const stocksAuth = await authenticateDebugUser(request, 'debug_stocks_only')
+    const [sample] = await loadStockSamples(request, stocksAuth, 1)
+    await loginAsDebugUser(page, request, 'debug_board_only')
+    await installPreferenceEndpoint(page)
+
+    await page.goto(`/stocks/${sample.code}`)
+    await expect(page).toHaveURL(/\/board$/)
+    await expect(page.getByRole('heading', { name: '每日榜单' })).toBeVisible()
+    await expect(page.getByLabel('个股多图联动工作区')).toHaveCount(0)
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('最小权限隐藏分组能力且不覆盖被隐藏的分组偏好', async (
+    { page, request },
+    testInfo,
+  ) => {
+    runInStandardViewport(testInfo)
     const consoleIssues = collectConsoleIssues(page)
     await loadStocksOnlyContext(page, request)
     const stocksPreference: PreferencePayload = {
@@ -244,6 +358,8 @@ test.describe('个股详情三图工作区', () => {
       (preferences.store.get(stocksPreferenceKey)?.value as { defaultView?: string }).defaultView
     )).toBe('group')
 
+    // 等远端水合后的既有自动保存窗口结束，再统计当前选项的无效点击。
+    await page.waitForTimeout(400)
     const writesBeforeListClick = preferences.writesFor(stocksPreferenceKey)
     await settingsDrawer.getByTestId('stocks-default-view-list').click()
     // 跨过 300ms 自动保存窗口，证明唯一可见选项的无效点击不会改写隐藏偏好。
@@ -283,15 +399,22 @@ test.describe('个股详情三图工作区', () => {
     expect(consoleIssues).toEqual([])
   })
 
-  test('MACD 局部失败隔离，图表组合和高度偏好可自动保存与重置', async ({ page, request }) => {
+  test('MACD 局部失败隔离，图表组合和高度偏好可自动保存与重置', async (
+    { page, request },
+    testInfo,
+  ) => {
+    runInStandardViewport(testInfo)
     const consoleIssues = collectConsoleIssues(page, [503])
-    const { code } = await loadStocksOnlyContext(page, request)
+    const { samples } = await loadStocksOnlyContext(page, request)
+    const [sample, nextSample] = samples
+    const code = sample.code
     const stockDetailPreferenceKey = preferenceKey({
       scope: 'page',
       pageKey: 'stock-detail',
       prefKey: 'settings',
     })
     const preferences = await installPreferenceEndpoint(page)
+    await installFixedStockListEndpoint(page, samples)
     let failNextIndicatorRequest = true
     let indicatorRequests = 0
     await page.route('**/api/stocks/*/indicators*', async (route) => {
@@ -308,7 +431,9 @@ test.describe('个股详情三图工作区', () => {
       await route.continue()
     })
 
-    await page.goto(`/stocks/${code}`)
+    await page.goto('/stocks')
+    await page.getByRole('cell', { name: code, exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/stocks/${code.replace('.', '\\.')}$`))
     await expect(page.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
     await expect(page.getByText('量能', { exact: true })).toBeVisible()
     await expect(page.getByText('MACD（12,26,9·前复权）', { exact: true })).toBeVisible()
@@ -379,7 +504,57 @@ test.describe('个股详情三图工作区', () => {
     await expect(page.locator('[data-panel-key]')).toHaveCount(2)
     await expect(workspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
     await expect(workspace.locator('[data-panel-key="slot3"]')).toHaveCount(0)
-    const indicatorRequestsAfterReload = indicatorRequests
+
+    const draggedSeparator = workspace.getByRole('separator').first()
+    await draggedSeparator.scrollIntoViewIfNeeded()
+    await draggedSeparator.hover()
+    const dragSeparatorBox = await draggedSeparator.boundingBox()
+    const workspaceBox = await workspace.boundingBox()
+    expect(dragSeparatorBox).not.toBeNull()
+    expect(workspaceBox).not.toBeNull()
+    const ratioBeforePointer = await draggedSeparator.getAttribute('aria-valuenow')
+    await page.mouse.move(
+      dragSeparatorBox!.x + dragSeparatorBox!.width / 2,
+      dragSeparatorBox!.y + dragSeparatorBox!.height / 2,
+    )
+    await page.mouse.down()
+    await page.mouse.move(
+      dragSeparatorBox!.x + dragSeparatorBox!.width / 2,
+      Math.max(
+        1,
+        dragSeparatorBox!.y + dragSeparatorBox!.height / 2 - workspaceBox!.height * 0.8,
+      ),
+      { steps: 5 },
+    )
+    await page.mouse.up()
+    await expect(draggedSeparator).not.toHaveAttribute('aria-valuenow', ratioBeforePointer || '')
+    const ratioAfterPointer = await draggedSeparator.getAttribute('aria-valuenow')
+    await expect.poll(() => {
+      const value = preferences.store.get(stockDetailPreferenceKey)?.value as {
+        charts?: { heightRatios?: Record<string, number[]> }
+      } | undefined
+      return value?.charts?.heightRatios?.['kline|macd']
+    }).not.toEqual([0.75, 0.25])
+    const panelHeights = await workspace.locator('[data-panel-key]').evaluateAll((panels) => (
+      panels.map((panel) => panel.getBoundingClientRect().height)
+    ))
+    expect(panelHeights[0]).toBeGreaterThanOrEqual(250)
+    expect(panelHeights[1]).toBeGreaterThanOrEqual(126)
+
+    await page.getByTestId('stock-set-select').click()
+    await page.getByRole('option').filter({ hasText: nextSample.code }).click()
+    await expect(page).toHaveURL(new RegExp(`/stocks/${nextSample.code.replace('.', '\\.')}$`))
+    await expect(workspace.getByRole('separator').first()).toHaveAttribute(
+      'aria-valuenow',
+      ratioAfterPointer || '',
+    )
+    await page.reload()
+    await expect(workspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
+    await expect(workspace.getByRole('separator').first()).toHaveAttribute(
+      'aria-valuenow',
+      ratioAfterPointer || '',
+    )
+    const indicatorRequestsAfterPersistenceChecks = indicatorRequests
 
     const firstSeparator = workspace.getByRole('separator').first()
     const ratioBeforeKeyboard = await firstSeparator.getAttribute('aria-valuenow')
@@ -413,7 +588,131 @@ test.describe('个股详情三图工作区', () => {
         ratios: value?.charts?.heightRatios?.['kline|volume|macd'],
       }
     }).toEqual({ slot2: 'volume', slot3: 'macd', ratios: [0.6, 0.2, 0.2] })
-    expect(indicatorRequests).toBe(indicatorRequestsAfterReload)
+    expect(indicatorRequests).toBe(indicatorRequestsAfterPersistenceChecks)
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('debug_normal 与 debug_paid 的 PG 图表偏好相互隔离', async ({
+    browser,
+    request,
+  }, testInfo) => {
+    runInStandardViewport(testInfo)
+
+    const normalAuth = await authenticateDebugUser(request, 'debug_normal')
+    const paidAuth = await authenticateDebugUser(request, 'debug_paid')
+    const [sample] = await loadStockSamples(request, normalAuth, 1)
+    const prefParams = { scope: 'page', pageKey: 'stock-detail', prefKey: 'settings' }
+    const normalOriginal = await getUserPreference(request, normalAuth, prefParams)
+    const paidOriginal = await getUserPreference(request, paidAuth, prefParams)
+    let normalContext: BrowserContext | undefined
+    let paidContext: BrowserContext | undefined
+
+    try {
+      await saveUserPreference(request, normalAuth, {
+        ...prefParams,
+        value: stockDetailPreference('volume', 'macd'),
+      })
+      await saveUserPreference(request, paidAuth, {
+        ...prefParams,
+        value: stockDetailPreference('macd', 'volume'),
+      })
+
+      const contextOptions: BrowserContextOptions = {
+        baseURL: testInfo.project.use.baseURL,
+        viewport: testInfo.project.use.viewport,
+      }
+      normalContext = await browser.newContext(contextOptions)
+      paidContext = await browser.newContext(contextOptions)
+      const normalPage = await normalContext.newPage()
+      const paidPage = await paidContext.newPage()
+      const normalConsoleIssues = collectConsoleIssues(normalPage)
+      const paidConsoleIssues = collectConsoleIssues(paidPage)
+      await installAuthSnapshot(normalPage, normalAuth)
+      await installAuthSnapshot(paidPage, paidAuth)
+
+      await Promise.all([
+        normalPage.goto(`/stocks/${sample.code}`),
+        paidPage.goto(`/stocks/${sample.code}`),
+      ])
+      const normalWorkspace = normalPage.getByLabel('个股多图联动工作区')
+      const paidWorkspace = paidPage.getByLabel('个股多图联动工作区')
+      await expect(normalWorkspace.locator('[data-panel-key]')).toHaveCount(3)
+      await expect(normalWorkspace.locator('[data-panel-key="slot2"]')).toContainText('量能')
+      await expect(paidWorkspace.locator('[data-panel-key]')).toHaveCount(3)
+      await expect(paidWorkspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
+
+      await normalPage.getByTestId('page-settings-trigger').click()
+      await normalPage.getByTestId('stock-detail-chart-slot3-hidden').click()
+      await expect(normalWorkspace.locator('[data-panel-key]')).toHaveCount(2)
+      await expect.poll(async () => {
+        const value = await getUserPreference(request, normalAuth, prefParams) as {
+          charts?: { slot2?: string; slot3?: string }
+        }
+        return [value.charts?.slot2, value.charts?.slot3]
+      }).toEqual(['volume', 'hidden'])
+      const paidValue = await getUserPreference(request, paidAuth, prefParams) as {
+        charts?: { slot2?: string; slot3?: string }
+      }
+      expect([paidValue.charts?.slot2, paidValue.charts?.slot3]).toEqual(['macd', 'volume'])
+
+      await Promise.all([normalPage.reload(), paidPage.reload()])
+      await expect(normalWorkspace.locator('[data-panel-key]')).toHaveCount(2)
+      await expect(normalWorkspace.locator('[data-panel-key="slot2"]')).toContainText('量能')
+      await expect(paidWorkspace.locator('[data-panel-key]')).toHaveCount(3)
+      await expect(paidWorkspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
+      expect(normalConsoleIssues).toEqual([])
+      expect(paidConsoleIssues).toEqual([])
+    } finally {
+      await normalContext?.close()
+      await paidContext?.close()
+      await saveUserPreference(request, normalAuth, {
+        ...prefParams,
+        value: normalOriginal ?? {},
+      })
+      await saveUserPreference(request, paidAuth, {
+        ...prefParams,
+        value: paidOriginal ?? {},
+      })
+    }
+  })
+
+  test('偏好接口 403 时使用本地 fallback 并继续保存当前用户调整', async ({
+    page,
+    request,
+  }, testInfo) => {
+    runInStandardViewport(testInfo)
+    const consoleIssues = collectConsoleIssues(page, [403])
+    const auth = await loginAsDebugUser(page, request, 'debug_normal')
+    const [sample] = await loadStockSamples(request, auth, 1)
+    const localPreference = stockDetailPreference('macd', 'hidden')
+    await page.addInitScript((value) => {
+      window.localStorage.setItem('ai-stocks:page-settings:stock-detail', JSON.stringify(value))
+    }, localPreference)
+    let remoteWriteAttempts = 0
+    await page.route('**/api/user-preferences*', async (route) => {
+      if (route.request().method() !== 'GET') remoteWriteAttempts += 1
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 403, msg: 'E2E 偏好服务无权限', data: null }),
+      })
+    })
+
+    await page.goto(`/stocks/${sample.code}`)
+    const workspace = page.getByLabel('个股多图联动工作区')
+    await expect(workspace.locator('[data-panel-key]')).toHaveCount(2)
+    await expect(workspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
+
+    await page.getByTestId('page-settings-trigger').click()
+    await page.getByTestId('stock-detail-chart-slot3-volume').click()
+    await expect(workspace.locator('[data-panel-key]')).toHaveCount(3)
+    await expect.poll(() => page.evaluate(() => {
+      const value = JSON.parse(
+        window.localStorage.getItem('ai-stocks:page-settings:stock-detail') || '{}',
+      )
+      return [value.charts?.slot2, value.charts?.slot3]
+    })).toEqual(['macd', 'volume'])
+    await expect.poll(() => remoteWriteAttempts).toBeGreaterThan(0)
     expect(consoleIssues).toEqual([])
   })
 
@@ -433,13 +732,7 @@ test.describe('个股详情三图工作区', () => {
       scope: 'page',
       pageKey: 'stock-detail',
       prefKey: 'settings',
-      value: {
-        charts: {
-          slot2: 'volume',
-          slot3: 'macd',
-          heightRatios: { 'kline|volume|macd': [0.6, 0.2, 0.2] },
-        },
-      },
+      value: stockDetailPreference(),
       schemaVersion: 1,
     }])
 
@@ -480,11 +773,45 @@ test.describe('个股详情三图工作区', () => {
     expect(geometry.mainRegionOwnsScroll).toBe(true)
     expect(geometry.noHorizontalOverflow).toBe(true)
 
+    const panelDates = workspace.locator('.stock-chart-panel__date')
+    await expect(panelDates).toHaveCount(3)
+    const latestPanelDates = await panelDates.allTextContents()
+    expect(new Set(latestPanelDates.map((value) => value.trim()))).toEqual(
+      new Set([latestTradeDate]),
+    )
+    const klineCanvas = workspace.getByLabel('K线（日线·前复权）图表')
+    await klineCanvas.scrollIntoViewIfNeeded()
+    const klineRenderCanvas = klineCanvas.locator('canvas').first()
+    await expect(klineRenderCanvas).toBeVisible()
+    const klineCanvasBox = await klineRenderCanvas.boundingBox()
+    expect(klineCanvasBox).not.toBeNull()
+    await page.mouse.move(
+      klineCanvasBox!.x + klineCanvasBox!.width * 0.25,
+      klineCanvasBox!.y + klineCanvasBox!.height * 0.5,
+    )
+    await expect.poll(async () => {
+      const values = (await panelDates.allTextContents()).map((value) => value.trim())
+      return new Set(values).size === 1 && values[0] !== latestTradeDate
+    }).toBe(true)
+    await page.mouse.move(1, 1)
+    await expect(panelDates.first()).toHaveText(latestTradeDate)
+
     const lightBackground = await workspace.evaluate(
       (element) => getComputedStyle(element).backgroundColor,
     )
     await testInfo.attach('stock-detail-light', {
       body: await page.screenshot(),
+      contentType: 'image/png',
+    })
+    await testInfo.attach('stock-detail-workspace-light', {
+      body: await workspace.screenshot(),
+      contentType: 'image/png',
+    })
+    const macdPanel = workspace.locator('[data-panel-key="slot3"]')
+    await macdPanel.scrollIntoViewIfNeeded()
+    await expect(macdPanel.getByText('MACD（12,26,9·前复权）', { exact: true })).toBeVisible()
+    await testInfo.attach('stock-detail-macd-light', {
+      body: await macdPanel.screenshot(),
       contentType: 'image/png',
     })
 
@@ -511,11 +838,24 @@ test.describe('个股详情三图工作区', () => {
       body: await page.screenshot(),
       contentType: 'image/png',
     })
+    await testInfo.attach('stock-detail-workspace-dark-nocturne', {
+      body: await workspace.screenshot(),
+      contentType: 'image/png',
+    })
+    await macdPanel.scrollIntoViewIfNeeded()
+    await testInfo.attach('stock-detail-macd-dark-nocturne', {
+      body: await macdPanel.screenshot(),
+      contentType: 'image/png',
+    })
 
     expect(consoleIssues).toEqual([])
   })
 
-  test('页面加载、空数据和 permission 状态保持正确图层', async ({ page, request }) => {
+  test('页面加载、空数据和 permission 状态保持正确图层', async (
+    { page, request },
+    testInfo,
+  ) => {
+    runInStandardViewport(testInfo)
     const consoleIssues = collectConsoleIssues(page, [403])
     const { code } = await loadStocksOnlyContext(page, request)
     await installPreferenceEndpoint(page)

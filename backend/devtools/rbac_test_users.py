@@ -162,7 +162,8 @@ def _ensure_users(cur, *, password_hash: str, reset_password: bool) -> None:
             "VALUES (%s,%s,%s,NULL,%s,%s,0,'active',%s,%s) "
             "ON CONFLICT (id) DO UPDATE SET "
             "tenant_id=EXCLUDED.tenant_id,account=EXCLUDED.account,email=NULL,"
-            "role_code=EXCLUDED.role_code,status='active',updated_at=EXCLUDED.updated_at",
+            "role_code=EXCLUDED.role_code,status='active',deleted_at=NULL,"
+            "updated_at=EXCLUDED.updated_at",
             [user.id, user.tenant_id, user.account, password_hash, user.role_code, now, now],
         )
         if reset_password:
