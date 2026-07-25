@@ -901,6 +901,7 @@ flowchart LR
 - 验证方式：执行 §9.1 发布顺序、§7.3 对账 SQL 和 §9.2 回滚检查。
 - 完成标准：发布后核心 smoke 通过，回滚不会留下“定义可选但旧引擎无法计算”的不一致。
 - 实际落地情况：已完成（2026-07-25）。
+  - 完整可复演命令、实际快照定位、SHA-256、Playwright 报告位置、旧前端 worktree 构建和事务精确恢复记录见 [release-verification.md](./release-verification.md)；该文档是 T13 发布与回滚审计的命令事实源。
   - 发布前在仓库外导出 `indicator_def` 全表 Parquet 快照和 JSON 基线，记录 44 条定义、43 个 builtin、5 个 MACD；快照哈希已校验。按停服规则执行七文件后端发布门槛，结果 `87 passed / 56 warnings`，告警均为既有 FastAPI `on_event` 弃用提示。
   - 当前后端真实启动日志连续确认 `内置指标定义校准完成：总数 43，变更 0`。目录 API 对账为 44 条定义、43 个 builtin、5 个 MACD，五项均为 builtin、默认启用，dtype 为 3 个 `number` 和 2 个 `bool`。
   - `300834.SZ` 真实接口 smoke 通过：旧调用 `lookback=1` 返回 200；五字段 `lookback=6000` 返回 1094 个按交易日对齐的严格 JSON 行，范围为 2022-01-13 至 2026-07-22；非法字段返回 400，`lookback=6001` 返回 422。
@@ -909,7 +910,7 @@ flowchart LR
   - `debug_system` 在真实 `/system/config/tech` 页面看到五个 MACD 定义且均为启用，浏览器控制台错误为 0；系统目录 API 与页面展示一致。
   - 前端回滚采用功能开发前提交 `6169975` 的临时 detached worktree 重新构建旧 dist，构建通过；旧包 90 个文件、入口引用 3 项且缺失 0，且不含新工作区 marker。临时 worktree 已移除，当前工作区和当前 dist 未被替换。
   - 指标定义回滚按 §7.3 scoped UPDATE 仅停用五个 MACD builtin：停用数 5、builtin 总数仍为 43、其余定义与快照差异 0；再次执行完整 `seed_builtins()` 后五项仍保持停用，证明管理员停用态不会被启动 seed 反向覆盖。
-  - 演练结束从发布前快照精确恢复五项全部字段，`indicator_def` 全表双向差异为 0、五项重新启用；恢复当前后端后启动 seed 仍为“43、变更 0”，`/api/health=200`。演练没有删除定义、清理用户偏好、修改 PG schema 或留下临时 E2E 用户。
+  - 演练结束在事务内从发布前快照精确恢复五项全部字段，`indicator_def` 全表双向差异为 0、五项重新启用；恢复后 44 行规范化 SHA-256 与快照同为 `b5fa225e96a93e01698c15b2e3969faf91073bb19a9079421c3902fcd9807a3b`。恢复当前后端后启动 seed 仍为“43、变更 0”，`/api/health=200`。演练没有删除定义、清理用户偏好、修改 PG schema 或留下临时 E2E 用户。
 
 ## 7. 数据库、SQL、seed 与配置计划
 
@@ -975,6 +976,7 @@ WHERE is_builtin = TRUE
 - 首次部署前应导出或备份 `indicator_def`；如果必须精确恢复 seed 前状态，只能在确认无上线后新增引用后使用该备份，不用宽泛 DELETE 猜测历史来源。
 - 如果上线后已有方案引用 MACD，后端旧版本不能单独回滚；应优先回滚前端或保留新后端计算能力，待引用盘点后再处理。
 - 不对 `user_preference` 做批量清理；新 `charts` 字段是兼容的 additive JSON。
+- T13 的快照导出、规范化哈希、停用影响行数、完整 seed、双向 `EXCEPT`、事务全字段恢复、旧前端 worktree 构建与清理，以及 Playwright 实际命令和报告位置，统一见 [release-verification.md](./release-verification.md)。
 
 ## 8. 测试与验证计划
 
