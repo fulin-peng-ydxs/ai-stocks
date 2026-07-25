@@ -484,7 +484,7 @@ onBeforeUnmount(() => {
               {{ metric.label }} <b>{{ metric.value }}</b>
             </span>
           </div>
-          <time v-if="rows.length" class="stock-chart-panel__date">
+          <time v-if="panel.type === 'kline' && rows.length" class="stock-chart-panel__date">
             {{ rows[metricIndex]?.bar.date }}
           </time>
         </header>

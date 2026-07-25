@@ -835,11 +835,9 @@ test.describe('个股详情三图工作区', () => {
     expect(geometry.noHorizontalOverflow).toBe(true)
 
     const panelDates = workspace.locator('.stock-chart-panel__date')
-    await expect(panelDates).toHaveCount(3)
+    await expect(panelDates).toHaveCount(1)
     const latestPanelDates = await panelDates.allTextContents()
-    expect(new Set(latestPanelDates.map((value) => value.trim()))).toEqual(
-      new Set([latestTradeDate]),
-    )
+    expect(latestPanelDates.map((value) => value.trim())).toEqual([latestTradeDate])
     const klineCanvas = workspace.getByLabel('K线（日线·前复权）图表')
     await klineCanvas.scrollIntoViewIfNeeded()
     const klineRenderCanvas = klineCanvas.locator('canvas').first()
@@ -854,7 +852,7 @@ test.describe('个股详情三图工作区', () => {
     )
     await expect.poll(async () => {
       const values = (await panelDates.allTextContents()).map((value) => value.trim())
-      return new Set(values).size === 1 && values[0] !== latestTradeDate
+      return values.length === 1 && values[0] !== latestTradeDate
     }).toBe(true)
     const klineTooltip = workspace.locator('.stock-chart-kline-tooltip')
     await expect(klineTooltip).toHaveCount(1)

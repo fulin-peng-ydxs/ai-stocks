@@ -302,6 +302,9 @@ describe('workspaceOptions', () => {
       .toBe(false)
     expect((buildMacdOption(context).tooltip as { showContent?: boolean }).showContent)
       .toBe(false)
+    expect(option.xAxis.axisPointer.label.show).toBe(true)
+    expect(buildVolumeOption(context).xAxis.axisPointer.label.show).toBe(false)
+    expect(buildMacdOption(context).xAxis.axisPointer.label.show).toBe(false)
 
     const downOption = buildKlineOption({
       ...context,

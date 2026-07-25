@@ -246,7 +246,7 @@ interface OptionContext {
   zoomEnd: number
 }
 
-function commonAxes(context: OptionContext) {
+function commonAxes(context: OptionContext, showPointerDate: boolean) {
   const dates = context.rows.map((row) => row.bar.date)
   return {
     grid: {
@@ -270,6 +270,9 @@ function commonAxes(context: OptionContext) {
         margin: 8,
         color: context.theme.label,
         fontSize: 10,
+      },
+      axisPointer: {
+        label: { show: showPointerDate },
       },
       splitLine: { show: false },
     },
@@ -297,8 +300,8 @@ function commonAxes(context: OptionContext) {
   }
 }
 
-function commonOption(context: OptionContext) {
-  const axes = commonAxes(context)
+function commonOption(context: OptionContext, showPointerDate: boolean) {
+  const axes = commonAxes(context, showPointerDate)
   return {
     animation: false,
     backgroundColor: context.theme.background,
@@ -322,7 +325,7 @@ function commonOption(context: OptionContext) {
 export function buildKlineOption(context: OptionContext) {
   const bars = context.rows.map((row) => row.bar)
   const allCloses = [...context.warmupBars, ...bars].map((bar) => bar.close)
-  const base = commonOption(context)
+  const base = commonOption(context, true)
   const maDefinitions = [
     { period: 5, color: context.theme.series.kline.ma5 },
     { period: 10, color: context.theme.series.kline.ma10 },
@@ -387,7 +390,7 @@ export function buildVolumeOption(context: OptionContext) {
   const allVolumes = [...context.warmupBars, ...bars].map((bar) => bar.volume)
   const volMa5 = movingAverage(allVolumes, 5).slice(-bars.length)
   const volMa10 = movingAverage(allVolumes, 10).slice(-bars.length)
-  const base = commonOption(context)
+  const base = commonOption(context, false)
   return {
     ...base,
     tooltip: { ...base.tooltip, showContent: false },
@@ -435,7 +438,7 @@ export function buildVolumeOption(context: OptionContext) {
 }
 
 export function buildMacdOption(context: OptionContext) {
-  const base = commonOption(context)
+  const base = commonOption(context, false)
   return {
     ...base,
     tooltip: { ...base.tooltip, showContent: false },

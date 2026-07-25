@@ -5,6 +5,7 @@ import { nextTick } from 'vue'
 import CandleChart from '@/components/CandleChart.vue'
 import type { Bar } from '@/api/stocks'
 import { stockChartTheme } from '@/components/stock-chart/chartUtils'
+import { setLayoutPreset, setPresetOverrides } from '@/layout/useLayoutPreset'
 
 const echartsMock = vi.hoisted(() => ({
   setOption: vi.fn(),
@@ -40,8 +41,8 @@ function makeBars(length: number): Bar[] {
 describe('CandleChart shared helper regression', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    document.documentElement.style.setProperty('--el-color-warning', '#facc15')
-    document.documentElement.style.setProperty('--el-color-danger', '#ef4d4d')
+    setPresetOverrides({})
+    setLayoutPreset('balanced')
     document.documentElement.style.setProperty('--market-up-color', '#ef4d4d')
   })
 
@@ -58,6 +59,7 @@ describe('CandleChart shared helper regression', () => {
 
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as {
       grid: unknown[]
+      xAxis: Array<{ axisPointer?: { label?: { show?: boolean } } }>
       dataZoom: Array<{ start: number, end: number }>
       tooltip: {
         position: () => number[]
@@ -75,14 +77,55 @@ describe('CandleChart shared helper regression', () => {
     expect(option.series.some((series) => series.name === '量')).toBe(true)
     expect(option.series.find((series) => series.name === 'MA60')?.data?.[0]).not.toBeNull()
     expect(option.series.find((series) => series.name === 'MA60')?.lineStyle?.color)
-      .toBe('#facc15')
-    expect(stockChartTheme(false).series.kline).toMatchObject({
-      ma5: '#ef4d4d',
-      ma60: '#facc15',
+      .toBe('#ff7a18')
+    const sharedSeries = stockChartTheme(false).series
+    expect(sharedSeries).toEqual({
+      kline: {
+        ma5: '#606266',
+        ma10: '#f5a623',
+        ma20: '#d63bd6',
+        ma30: '#16b8c4',
+        ma60: '#ff7a18',
+      },
+      volume: {
+        ma5: '#f5a623',
+        ma10: '#16b8c4',
+      },
+      macd: {
+        diff: '#f5a623',
+        dea: '#16b8c4',
+      },
     })
+    expect(Object.fromEntries(
+      option.series
+        .filter((series) => ['MA5', 'MA10', 'MA20', 'MA30', 'MA60', 'VMA5', 'VMA10']
+          .includes(series.name))
+        .map((series) => [series.name, series.lineStyle?.color]),
+    )).toEqual({
+      MA5: sharedSeries.kline.ma5,
+      MA10: sharedSeries.kline.ma10,
+      MA20: sharedSeries.kline.ma20,
+      MA30: sharedSeries.kline.ma30,
+      MA60: sharedSeries.kline.ma60,
+      VMA5: sharedSeries.volume.ma5,
+      VMA10: sharedSeries.volume.ma10,
+    })
+    expect(stockChartTheme(true).series.kline.ma5).toBe('#dfe4ea')
+    expect(option.xAxis[0].axisPointer?.label?.show).toBe(true)
+    expect(option.xAxis[1].axisPointer?.label?.show).toBe(false)
     expect(option.tooltip.position()).toEqual([10, 6])
     expect(option.tooltip.formatter([{ dataIndex: 0 }]))
       .toContain('style="color:#ef4d4d">10.50</span>')
+
+    const renderCount = echartsMock.setOption.mock.calls.length
+    setPresetOverrides({
+      balanced: {
+        'tokens.light.surfaceBg': '#f2f5f8',
+      },
+    })
+    await nextTick()
+    await nextTick()
+    expect(echartsMock.setOption.mock.calls.length).toBeGreaterThan(renderCount)
 
     wrapper.unmount()
     expect(echartsMock.dispose).toHaveBeenCalledTimes(1)

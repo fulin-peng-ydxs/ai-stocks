@@ -1,5 +1,4 @@
 import type { Bar } from '@/api/stocks'
-import { blendHex } from '@/layout/themeSurfaces'
 
 export interface StockChartSeriesPalette {
   kline: {
@@ -46,15 +45,34 @@ function cssVariable(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
 }
 
+/**
+ * 盘感训练既有色板是股票指标序列的唯一身份色事实源。
+ * 固定序列色不表达涨跌方向；蜡烛、柱体和信号方向仍使用 market token。
+ */
+export function trainingChartSeriesPalette(isDark: boolean): StockChartSeriesPalette {
+  return {
+    kline: {
+      ma5: isDark ? '#dfe4ea' : '#606266',
+      ma10: '#f5a623',
+      ma20: '#d63bd6',
+      ma30: '#16b8c4',
+      ma60: '#ff7a18',
+    },
+    volume: {
+      ma5: '#f5a623',
+      ma10: '#16b8c4',
+    },
+    macd: {
+      diff: '#f5a623',
+      dea: '#16b8c4',
+    },
+  }
+}
+
 export function stockChartTheme(isDark: boolean): StockChartTheme {
   const primary = cssVariable('--el-color-primary', '#409eff')
-  const success = cssVariable('--el-color-success', '#67c23a')
-  const warning = cssVariable('--el-color-warning', '#e6a23c')
-  const danger = cssVariable('--el-color-danger', '#f56c6c')
   const up = cssVariable('--market-up-color', isDark ? '#ff6b6b' : '#ef4d4d')
   const down = cssVariable('--market-down-color', isDark ? '#45c486' : '#22b573')
-  const ma20 = blendHex(danger, primary, 0.48)
-  const ma30 = blendHex(success, primary, 0.58)
 
   return {
     background: cssVariable('--el-bg-color', isDark ? '#0b0e16' : '#ffffff'),
@@ -69,23 +87,7 @@ export function stockChartTheme(isDark: boolean): StockChartTheme {
     tooltipBorder: cssVariable('--el-border-color', isDark ? '#2b3550' : '#dcdfe6'),
     up,
     down,
-    series: {
-      kline: {
-        ma5: up,
-        ma10: primary,
-        ma20,
-        ma30,
-        ma60: warning,
-      },
-      volume: {
-        ma5: warning,
-        ma10: ma30,
-      },
-      macd: {
-        diff: warning,
-        dea: primary,
-      },
-    },
+    series: trainingChartSeriesPalette(isDark),
     focus: primary,
   }
 }

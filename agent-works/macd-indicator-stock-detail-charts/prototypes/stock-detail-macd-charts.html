@@ -21,8 +21,9 @@
       --up: var(--market-up-color);
       --down: var(--market-down-color);
       --orange: #f5a623;
-      --cyan: #16a8bd;
-      --purple: #bd53c7;
+      --cyan: #16b8c4;
+      --purple: #d63bd6;
+      --ma60: #ff7a18;
       --sidebar: #131a25;
       --sidebar-text: #c8d0dc;
       --shadow: 0 12px 34px rgba(31, 41, 55, 0.10);
@@ -335,6 +336,7 @@
     .metric.orange { color: var(--orange); }
     .metric.cyan { color: var(--cyan); }
     .metric.purple { color: var(--purple); }
+    .metric.ma60 { color: var(--ma60); }
     .panel-note {
       margin-left: auto;
       color: var(--text-muted);
@@ -750,7 +752,8 @@
                   <span class="metric">MA5 <b id="ma5">1444.18</b></span>
                   <span class="metric orange">MA10 <b id="ma10">1421.63</b></span>
                   <span class="metric purple">MA20 <b id="ma20">1396.42</b></span>
-                  <span class="metric cyan">MA60 <b id="ma60">1372.08</b></span>
+                  <span class="metric cyan">MA30 <b id="ma30">1384.55</b></span>
+                  <span class="metric ma60">MA60 <b id="ma60">1372.08</b></span>
                 </div>
                 <span class="panel-note mono" id="activeDate">2026-07-22</span>
               </header>
@@ -1042,10 +1045,14 @@
         var ma5Series = movingAverage(closes, 5);
         var ma10Series = movingAverage(closes, 10);
         var ma20Series = movingAverage(closes, 20);
+        var ma30Series = movingAverage(closes, 30);
+        var ma60Series = movingAverage(closes, 60);
         [
           { values: ma5Series, color: "#667085" },
           { values: ma10Series, color: "#f5a623" },
-          { values: ma20Series, color: "#bd53c7" }
+          { values: ma20Series, color: "#d63bd6" },
+          { values: ma30Series, color: "#16b8c4" },
+          { values: ma60Series, color: "#ff7a18" }
         ].forEach(function (line) {
           svg.appendChild(svgEl("path", {
             d: pathFrom(line.values, min, max, 18, 226),
@@ -1076,7 +1083,7 @@
         });
         [
           { values: movingAverage(volumes, 5), color: "#f5a623" },
-          { values: movingAverage(volumes, 10), color: "#16a8bd" }
+          { values: movingAverage(volumes, 10), color: "#16b8c4" }
         ].forEach(function (line) {
           svg.appendChild(svgEl("path", {
             d: pathFrom(line.values, 0, max, 18, 226),
@@ -1102,11 +1109,11 @@
         });
         svg.appendChild(svgEl("path", {
           d: pathFrom(diffs, min, max, 18, 226),
-          fill: "none", stroke: "#f28c38", "stroke-width": 2
+          fill: "none", stroke: "#f5a623", "stroke-width": 2
         }));
         svg.appendChild(svgEl("path", {
           d: pathFrom(deas, min, max, 18, 226),
-          fill: "none", stroke: "#3b82f6", "stroke-width": 2
+          fill: "none", stroke: "#16b8c4", "stroke-width": 2
         }));
         for (var i = 1; i < dates.length; i += 1) {
           var golden = diffs[i] > deas[i] && diffs[i - 1] <= deas[i - 1];
@@ -1154,7 +1161,8 @@
         document.getElementById("ma5").textContent = fmt(movingAverage(closes, 5)[activeIndex]);
         document.getElementById("ma10").textContent = fmt(movingAverage(closes, 10)[activeIndex]);
         document.getElementById("ma20").textContent = fmt(movingAverage(closes, 20)[activeIndex]);
-        document.getElementById("ma60").textContent = fmt(movingAverage(closes, 30)[activeIndex]);
+        document.getElementById("ma30").textContent = fmt(movingAverage(closes, 30)[activeIndex]);
+        document.getElementById("ma60").textContent = fmt(movingAverage(closes, 60)[activeIndex]);
         updateSlotMeta("slot2");
         updateSlotMeta("slot3");
       }
@@ -1164,7 +1172,7 @@
         var target = document.getElementById(slot + "Meta");
         if (type === "volume") {
           target.innerHTML =
-            '<span class="metric up">总量 <b>' + fmtVolume(volumes[activeIndex]) + '</b></span>' +
+            '<span class="metric">总量 <b>' + fmtVolume(volumes[activeIndex]) + '</b></span>' +
             '<span class="metric orange">MA5 <b>' + fmtVolume(movingAverage(volumes, 5)[activeIndex]) + '</b></span>' +
             '<span class="metric cyan">MA10 <b>' + fmtVolume(movingAverage(volumes, 10)[activeIndex]) + '</b></span>';
         } else if (type === "macd" && ["loading", "insufficient", "error"].indexOf(prototypeMode) < 0) {
@@ -1172,11 +1180,11 @@
           target.innerHTML =
             '<span class="metric ' + cls + '">MACD <b>' + fmt(macds[activeIndex]) + '</b></span>' +
             '<span class="metric orange">DIFF <b>' + fmt(diffs[activeIndex]) + '</b></span>' +
-            '<span class="metric" style="color:#3b82f6">DEA <b>' + fmt(deas[activeIndex]) + '</b></span>';
+            '<span class="metric cyan">DEA <b>' + fmt(deas[activeIndex]) + '</b></span>';
         } else if (type === "macd") {
           target.innerHTML = '<span class="metric">MACD <b>--</b></span>' +
             '<span class="metric orange">DIFF <b>--</b></span>' +
-            '<span class="metric" style="color:#3b82f6">DEA <b>--</b></span>';
+            '<span class="metric cyan">DEA <b>--</b></span>';
         } else {
           target.innerHTML = "";
         }

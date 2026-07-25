@@ -3,6 +3,7 @@ import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, 
 import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
 import { useTheme } from '@/composables/useTheme'
+import { useLayoutPreset } from '@/layout/useLayoutPreset'
 import {
   formatVolume,
   klineTooltipHtml,
@@ -28,22 +29,28 @@ const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 let resizeListening = false
 const { isDark } = useTheme()
+const { themeRevision } = useLayoutPreset()
+const chartTheme = computed(() => {
+  // 盘感训练、回测与个股工作区在预设覆盖后必须同时重新读取共享色板。
+  void themeRevision.value
+  return stockChartTheme(isDark.value)
+})
 
 // 买卖标记色（刻意避开蜡烛红绿，免混淆）：买=蓝、卖=橙
 const BUY_COLOR = '#3b82f6'
 const SELL_COLOR = '#f5a623'
 
-// 兼容图表保留既有均线色；MA60 复用工作区的主题黄色，避免同一指标跨页面漂移。
+// 盘感训练既有均线色由共享色板统一供给，个股详情与回测不再维护第二套映射。
 const MA_DEFS = computed(() => [
-  { n: 5, color: isDark.value ? '#dfe4ea' : '#606266' },
-  { n: 10, color: '#f5a623' },
-  { n: 20, color: '#d63bd6' },
-  { n: 30, color: '#16b8c4' },
-  { n: 60, color: stockChartTheme(isDark.value).series.kline.ma60 },
+  { n: 5, color: chartTheme.value.series.kline.ma5 },
+  { n: 10, color: chartTheme.value.series.kline.ma10 },
+  { n: 20, color: chartTheme.value.series.kline.ma20 },
+  { n: 30, color: chartTheme.value.series.kline.ma30 },
+  { n: 60, color: chartTheme.value.series.kline.ma60 },
 ])
 // 主题色板
 const T = computed(() => {
-  const theme = stockChartTheme(isDark.value)
+  const theme = chartTheme.value
   return {
     bg: theme.background,
     axis: theme.axis,
@@ -87,8 +94,8 @@ const maLabels = computed(() =>
 )
 
 // 量能均线（VMA5/VMA10）颜色 + 随光标更新的数值（供 HTML 图例叠加层）
-const VMA5_COLOR = '#f5a623'
-const VMA10_COLOR = '#16b8c4'
+const VMA5_COLOR = computed(() => chartTheme.value.series.volume.ma5)
+const VMA10_COLOR = computed(() => chartTheme.value.series.volume.ma10)
 const allVolumes = computed(() => [...(props.warmupBars ?? []), ...props.bars].map((b) => b.volume))
 const volMa5Arr = computed(() => { const f = movingAverage(allVolumes.value, 5); return f.slice(f.length - props.bars.length) })
 const volMa10Arr = computed(() => { const f = movingAverage(allVolumes.value, 10); return f.slice(f.length - props.bars.length) })
@@ -188,12 +195,14 @@ function render() {
         type: 'category', data: dates, boundaryGap: true,
         axisLine: { lineStyle: { color: t.axis } },
         axisLabel: { color: t.label, fontSize: 10 },
+        axisPointer: { label: { show: true } },
         splitLine: { show: false },
       },
       {
         type: 'category', gridIndex: 1, data: dates,
         axisLine: { lineStyle: { color: t.axis } },
         axisLabel: { show: false }, axisTick: { show: false },
+        axisPointer: { label: { show: false } },
       },
     ],
     yAxis: [
@@ -246,11 +255,11 @@ function render() {
       { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols, z: 1 },
       {
         name: 'VMA5', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: volMa5,
-        showSymbol: false, lineStyle: { width: 1.4, color: VMA5_COLOR },
+        showSymbol: false, lineStyle: { width: 1.4, color: VMA5_COLOR.value },
       },
       {
         name: 'VMA10', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: volMa10,
-        showSymbol: false, lineStyle: { width: 1.4, color: VMA10_COLOR },
+        showSymbol: false, lineStyle: { width: 1.4, color: VMA10_COLOR.value },
       },
     ],
   })
@@ -284,7 +293,7 @@ watch(() => props.bars, () => { hoverIdx.value = null; render() }, { deep: true 
 watch(() => props.warmupBars, () => render(), { deep: true })
 watch(() => props.markers, () => render(), { deep: true })
 watch(() => [props.zoomStart, props.zoomEnd], () => render())
-watch(isDark, () => render()) // 主题切换重渲染
+watch([isDark, themeRevision], () => render()) // 明暗、预设及同 key 覆盖变化均重渲染
 onBeforeUnmount(() => {
   detachResize()
   chart?.dispose()
