@@ -1029,6 +1029,7 @@ onBeforeUnmount(() => {
             <PageSegmented
               :model-value="chartPreferences.preferences.value.slot2"
               :options="auxiliaryChartOptions"
+              aria-label="图表二类型"
               test-id="stock-detail-chart-slot2"
               @update:model-value="setAuxiliaryChart('slot2', $event)"
             />
@@ -1038,6 +1039,7 @@ onBeforeUnmount(() => {
             <PageSegmented
               :model-value="chartPreferences.preferences.value.slot3"
               :options="auxiliaryChartOptions"
+              aria-label="图表三类型"
               test-id="stock-detail-chart-slot3"
               @update:model-value="setAuxiliaryChart('slot3', $event)"
             />

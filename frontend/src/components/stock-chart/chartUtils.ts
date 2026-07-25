@@ -53,18 +53,18 @@ export function trainingChartSeriesPalette(isDark: boolean): StockChartSeriesPal
   return {
     kline: {
       ma5: isDark ? '#dfe4ea' : '#606266',
-      ma10: '#f5a623',
-      ma20: '#d63bd6',
-      ma30: '#16b8c4',
-      ma60: '#ff7a18',
+      ma10: isDark ? '#f5a623' : '#9a5b00',
+      ma20: isDark ? '#d63bd6' : '#9c2aa0',
+      ma30: isDark ? '#16b8c4' : '#0b7580',
+      ma60: isDark ? '#ff7a18' : '#b54708',
     },
     volume: {
-      ma5: '#f5a623',
-      ma10: '#16b8c4',
+      ma5: isDark ? '#f5a623' : '#9a5b00',
+      ma10: isDark ? '#16b8c4' : '#0b7580',
     },
     macd: {
-      diff: '#f5a623',
-      dea: '#16b8c4',
+      diff: isDark ? '#f5a623' : '#9a5b00',
+      dea: isDark ? '#16b8c4' : '#0b7580',
     },
   }
 }

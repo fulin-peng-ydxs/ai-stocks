@@ -25,6 +25,7 @@ function optionTestId(value: OptionValue): string | undefined {
       type="button"
       class="seg-btn"
       :class="{ active: option.value === props.modelValue }"
+      :aria-pressed="option.value === props.modelValue"
       :data-testid="optionTestId(option.value)"
       @click="$emit('update:modelValue', option.value)"
     >

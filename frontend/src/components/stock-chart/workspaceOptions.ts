@@ -166,6 +166,9 @@ export function buildSignalSeries(
     z: 8,
     data: buildSignalData(rows, theme),
     tooltip: {
+      show: true,
+      trigger: 'item' as const,
+      confine: true,
       formatter: (params: { data?: SignalDatum }) => {
         const datum = params.data
         return datum ? `${datum.signalType}<br/>交易日：${datum.tradeDate}` : ''
@@ -216,7 +219,11 @@ export function buildSignalSeries(
               height: 18,
               r: 5,
             },
-            style: { fill: color, opacity: 0.96 },
+            style: {
+              fill: theme.background,
+              stroke: color,
+              lineWidth: 1.5,
+            },
           },
           {
             type: 'text',
@@ -224,7 +231,7 @@ export function buildSignalSeries(
               x: geometry.x,
               y: geometry.labelCenterY,
               text: label,
-              fill: '#ffffff',
+              fill: theme.text,
               fontSize: 10,
               fontWeight: 700,
               align: 'center',
@@ -441,7 +448,13 @@ export function buildMacdOption(context: OptionContext) {
   const base = commonOption(context, false)
   return {
     ...base,
-    tooltip: { ...base.tooltip, showContent: false },
+    tooltip: {
+      ...base.tooltip,
+      className: 'stock-chart-macd-signal-tooltip',
+      showContent: true,
+      // 普通柱线仍只驱动十字光标；信号系列以 item tooltip 覆盖并显示完整交易日。
+      formatter: () => '',
+    },
     yAxis: {
       scale: true,
       min: ({ min }: { min: number }) => Math.min(0, min),

@@ -138,6 +138,7 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.find('.stock-chart-panel--kline .stock-chart-panel__date').exists()).toBe(true)
     expect(wrapper.find('.stock-chart-panel--volume .stock-chart-panel__date').exists()).toBe(false)
     expect(wrapper.find('.stock-chart-panel--macd .stock-chart-panel__date').exists()).toBe(false)
+    expect(wrapper.find('[aria-live]').exists()).toBe(false)
     expect(echartsMock.init).toHaveBeenCalledTimes(3)
     expect(new Set(echartsMock.instances.map((instance) => instance.group)).size).toBe(1)
     expect(echartsMock.connect).toHaveBeenCalledTimes(1)

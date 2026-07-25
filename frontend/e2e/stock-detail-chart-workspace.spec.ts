@@ -175,6 +175,12 @@ async function installVisualChartEndpoints(page: Page, code: string) {
       macd_dead_cross: previousDiff >= previousDea && diff < dea,
     }
   })
+  const goldenSignalIndex = indicators.findIndex((item) => item.macd_golden_cross)
+  const goldenSignal = {
+    index: goldenSignalIndex,
+    tradeDate: dates[goldenSignalIndex],
+    total: dates.length,
+  }
 
   await page.route('**/api/stocks/*/bars*', async (route) => {
     const url = new URL(route.request().url())
@@ -221,7 +227,7 @@ async function installVisualChartEndpoints(page: Page, code: string) {
       }),
     })
   })
-  return { latestTradeDate: dates[dates.length - 1] }
+  return { latestTradeDate: dates[dates.length - 1], goldenSignal }
 }
 
 async function loadStockSamples(
@@ -788,7 +794,7 @@ test.describe('个股详情三图工作区', () => {
       window.localStorage.setItem('ai-stocks:layout-preset', 'balanced')
     })
     const { code } = await loadStocksOnlyContext(page, request)
-    const { latestTradeDate } = await installVisualChartEndpoints(page, code)
+    const { latestTradeDate, goldenSignal } = await installVisualChartEndpoints(page, code)
     await installPreferenceEndpoint(page, [{
       scope: 'page',
       pageKey: 'stock-detail',
@@ -885,6 +891,28 @@ test.describe('个股详情三图工作区', () => {
     const macdPanel = workspace.locator('[data-panel-key="slot3"]')
     await macdPanel.scrollIntoViewIfNeeded()
     await expect(macdPanel.getByText('MACD（12,26,9·前复权）', { exact: true })).toBeVisible()
+    const macdRenderCanvas = macdPanel.getByLabel('MACD（12,26,9·前复权）图表')
+      .locator('canvas')
+      .first()
+    const signalCanvasBox = await macdRenderCanvas.boundingBox()
+    expect(signalCanvasBox).not.toBeNull()
+    const macdPlotWidth = signalCanvasBox!.width - 8 - 64
+    await page.mouse.move(
+      signalCanvasBox!.x
+        + 8
+        + ((goldenSignal.index + 0.5) / goldenSignal.total) * macdPlotWidth,
+      signalCanvasBox!.y + 25,
+    )
+    const signalTooltip = workspace.locator('.stock-chart-macd-signal-tooltip')
+    await expect(signalTooltip).toBeVisible()
+    await expect(signalTooltip).toContainText('金叉')
+    await expect(signalTooltip).toContainText(`交易日：${goldenSignal.tradeDate}`)
+    await testInfo.attach('stock-detail-macd-signal-tooltip', {
+      body: await macdPanel.screenshot(),
+      contentType: 'image/png',
+    })
+    await page.mouse.move(1, 1)
+    await expect(signalTooltip).not.toBeVisible()
     await testInfo.attach('stock-detail-macd-light', {
       body: await macdPanel.screenshot(),
       contentType: 'image/png',

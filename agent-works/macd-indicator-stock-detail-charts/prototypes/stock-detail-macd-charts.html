@@ -20,10 +20,10 @@
       --market-down-color: #22a66f;
       --up: var(--market-up-color);
       --down: var(--market-down-color);
-      --orange: #f5a623;
-      --cyan: #16b8c4;
-      --purple: #d63bd6;
-      --ma60: #ff7a18;
+      --orange: #9a5b00;
+      --cyan: #0b7580;
+      --purple: #9c2aa0;
+      --ma60: #b54708;
       --sidebar: #131a25;
       --sidebar-text: #c8d0dc;
       --shadow: 0 12px 34px rgba(31, 41, 55, 0.10);
@@ -1049,10 +1049,10 @@
         var ma60Series = movingAverage(closes, 60);
         [
           { values: ma5Series, color: "#667085" },
-          { values: ma10Series, color: "#f5a623" },
-          { values: ma20Series, color: "#d63bd6" },
-          { values: ma30Series, color: "#16b8c4" },
-          { values: ma60Series, color: "#ff7a18" }
+          { values: ma10Series, color: "#9a5b00" },
+          { values: ma20Series, color: "#9c2aa0" },
+          { values: ma30Series, color: "#0b7580" },
+          { values: ma60Series, color: "#b54708" }
         ].forEach(function (line) {
           svg.appendChild(svgEl("path", {
             d: pathFrom(line.values, min, max, 18, 226),
@@ -1082,8 +1082,8 @@
           }));
         });
         [
-          { values: movingAverage(volumes, 5), color: "#f5a623" },
-          { values: movingAverage(volumes, 10), color: "#16b8c4" }
+          { values: movingAverage(volumes, 5), color: "#9a5b00" },
+          { values: movingAverage(volumes, 10), color: "#0b7580" }
         ].forEach(function (line) {
           svg.appendChild(svgEl("path", {
             d: pathFrom(line.values, 0, max, 18, 226),
@@ -1109,11 +1109,11 @@
         });
         svg.appendChild(svgEl("path", {
           d: pathFrom(diffs, min, max, 18, 226),
-          fill: "none", stroke: "#f5a623", "stroke-width": 2
+          fill: "none", stroke: "#9a5b00", "stroke-width": 2
         }));
         svg.appendChild(svgEl("path", {
           d: pathFrom(deas, min, max, 18, 226),
-          fill: "none", stroke: "#16b8c4", "stroke-width": 2
+          fill: "none", stroke: "#0b7580", "stroke-width": 2
         }));
         for (var i = 1; i < dates.length; i += 1) {
           var golden = diffs[i] > deas[i] && diffs[i - 1] <= deas[i - 1];
@@ -1139,11 +1139,11 @@
             }));
             tag.appendChild(svgEl("rect", {
               x: xAt(i) - 15, y: tagY, width: 30, height: 15, rx: 5,
-              fill: signalColor, opacity: .96
+              fill: "var(--surface)", stroke: signalColor, "stroke-width": 1.5
             }));
             var text = svgEl("text", {
               x: xAt(i), y: tagY + 11, "text-anchor": "middle",
-              fill: "#fff", "font-size": 9, "font-weight": 700
+              fill: "var(--text)", "font-size": 9, "font-weight": 700
             });
             text.textContent = golden ? "金叉" : "死叉";
             tag.appendChild(text);

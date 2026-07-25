@@ -1307,7 +1307,11 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <AppDataTable :data="techRows" size="small" :border="tableBorder('techTable')"
                   :default-sort="techDefaultSort" @sort-change="onTechSortChange">
           <el-table-column prop="name_cn" label="名称" width="130" sortable="custom" />
-          <el-table-column prop="key" label="标识" width="120" />
+          <el-table-column prop="key" label="标识" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="mono">{{ row.key }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="catOrder" label="分类" width="280" sortable="custom">
             <template #default="{ row }">
               <el-select

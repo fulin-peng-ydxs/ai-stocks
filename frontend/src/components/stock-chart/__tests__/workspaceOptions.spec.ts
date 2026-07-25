@@ -130,12 +130,22 @@ describe('workspaceOptions', () => {
       },
     )
     const text = result.children.find((child) => child.type === 'text')
+    const labelBackground = result.children.find((child) => child.type === 'rect')
 
     expect(text?.style).toMatchObject({
       text: '金叉',
       x: 80,
-      fill: '#ffffff',
+      fill: '#222',
     })
+    expect(labelBackground?.style).toMatchObject({
+      fill: '#fff',
+      stroke: '#up',
+      lineWidth: 1.5,
+    })
+    expect(series.tooltip).toMatchObject({ show: true, trigger: 'item', confine: true })
+    expect(series.tooltip.formatter({
+      data: buildSignalData(rows, theme)[0],
+    })).toBe('金叉<br/>交易日：2026-07-21')
   })
 
   it('MACD 保留空点、零轴和值方向色，底部面板才提供 slider', () => {
@@ -300,8 +310,16 @@ describe('workspaceOptions', () => {
     expect(content).toContain('style="color:#up">+1.01%</span>')
     expect((buildVolumeOption(context).tooltip as { showContent?: boolean }).showContent)
       .toBe(false)
-    expect((buildMacdOption(context).tooltip as { showContent?: boolean }).showContent)
-      .toBe(false)
+    const macdTooltip = buildMacdOption(context).tooltip as {
+      className?: string
+      showContent?: boolean
+      formatter: () => string
+    }
+    expect(macdTooltip).toMatchObject({
+      className: 'stock-chart-macd-signal-tooltip',
+      showContent: true,
+    })
+    expect(macdTooltip.formatter()).toBe('')
     expect(option.xAxis.axisPointer.label.show).toBe(true)
     expect(buildVolumeOption(context).xAxis.axisPointer.label.show).toBe(false)
     expect(buildMacdOption(context).xAxis.axisPointer.label.show).toBe(false)

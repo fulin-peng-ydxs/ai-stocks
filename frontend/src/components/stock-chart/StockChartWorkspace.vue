@@ -474,7 +474,7 @@ onBeforeUnmount(() => {
       >
         <header class="stock-chart-panel__header">
           <strong class="stock-chart-panel__title">{{ panelTitle(panel.type, adjustLabel) }}</strong>
-          <div class="stock-chart-panel__metrics" aria-live="polite">
+          <div class="stock-chart-panel__metrics">
             <span
               v-for="metric in panelMetrics(panel.type)"
               :key="metric.label"

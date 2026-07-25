@@ -19,8 +19,14 @@ describe('PageSegmented', () => {
 
     expect(wrapper.attributes('data-testid')).toBe('drawer-size')
     expect(wrapper.get('[data-testid="drawer-size-md"]').classes()).toContain('active')
+    expect(wrapper.get('[data-testid="drawer-size-md"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-testid="drawer-size-sm"]').attributes('aria-pressed')).toBe('false')
 
     await wrapper.get('[data-testid="drawer-size-lg"]').trigger('click')
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['lg'])
+
+    await wrapper.setProps({ modelValue: 'lg' })
+    expect(wrapper.get('[data-testid="drawer-size-md"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[data-testid="drawer-size-lg"]').attributes('aria-pressed')).toBe('true')
   })
 })

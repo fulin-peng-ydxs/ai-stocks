@@ -4,7 +4,7 @@
 
 - 需求文档：[requirement.md](./requirement.md)。
 - 交互原型：[prototypes/stock-detail-macd-charts.html](./prototypes/stock-detail-macd-charts.html)。
-- 阅读结论：已完整读取当前需求文档 701 行及其引用原型 1556 行；原型中的状态演示按钮只用于说明，不作为线上工具栏功能。
+- 阅读结论：已完整读取当前需求文档 707 行及其引用原型 1556 行；原型中的状态演示按钮只用于说明，不作为线上工具栏功能。
 - 需求编号：严格沿用需求文档的 R1–R16，不重新编号、不改变含义。
 - 功能目标：
   - 建立 EMA、MACD 数值与金叉/死叉五个原子结果的唯一后端口径。
@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1–T16 已全部完成并通过对应阶段验证；发布 smoke、seed 对账、回滚演练及三轮上线后图表体验修正均已闭环。
+- 当前进度：T1–T17 已全部完成并通过对应阶段验证；发布 smoke、seed 对账、回滚演练及四轮上线后图表体验修正均已闭环。
 
 ## 2. 当前项目依据
 
@@ -79,14 +79,14 @@
 | --- | --- | --- | --- |
 | R1 | EMA 与 `macd_diff/macd_dea/macd_hist` 三个数值原子结果 | 已完成 | T1、T9 |
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成 | T1、T9 |
-| R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成 | T2、T9、T13 |
+| R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成 | T2、T9、T13、T17 |
 | R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 已完成 | T3、T6、T9、T10、T11、T13 |
-| R5 | 默认三图、图名、共享日期/光标/缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 图形和信号引导线 | 已完成 | T5、T6、T10、T11、T14、T15、T16 |
-| R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 已完成 | T4、T7、T10、T11 |
+| R5 | 默认三图、图名、共享日期/光标/缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 图形、信号引导线与完整日期提示 | 已完成 | T5、T6、T10、T11、T14、T15、T16、T17 |
+| R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 已完成 | T4、T7、T10、T11、T17 |
 | R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 已完成 | T4、T5、T7、T10、T11 |
 | R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 已完成 | T4、T7、T9、T10、T11、T13 |
 | R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 已完成 | T3、T5、T6、T8、T10、T11 |
-| R15 | 响应式、辅助模块显隐、主题、pointer/键盘可访问性和 reduced motion | 已完成 | T5、T8、T10、T11、T12、T14 |
+| R15 | 响应式、辅助模块显隐、主题、pointer/键盘可访问性和 reduced motion | 已完成 | T5、T8、T10、T11、T12、T14、T17 |
 | R16 | 接口/偏好兼容、请求竞态、辅助模块旧偏好合并和 KeepAlive 生命周期 | 已完成 | T3、T4、T5、T6、T10、T11、T13、T14 |
 
 ### 3.2 可选增强（建议项处理）
@@ -338,14 +338,14 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 必须实现 | R1 | `requirement.md §5.1`：EMA 与三个数值原子结果 | EMA、三数值列、暖机、空值、算法版本、单股/全市场一致 | T1、T9 | 已完成 | 一致 | 已知公式、前缀稳定、两路径容差单测 | T1 实现与 T9 后端总回归均已通过；固定 12/26/9，不开放参数。 |
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成 | 一致 | 交叉边界和缺失段单测 | T1 实现与 T9 后端总回归均已通过；空值保留 null，下游按不成立处理。 |
-| 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 已完成 | 一致 | repo/API/筛选/评分/买卖方案测试 | T13 真实启动对账为 43 个 builtin、五个 MACD 定义，启动 seed 变更 0；筛选、评分和买卖条件固定样本均通过。 |
+| 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值、长技术标识可读 | T2、T9、T13、T17 | 已完成 | 一致 | repo/API/筛选/评分/买卖方案测试、管理页检查 | T13 真实启动对账为 43 个 builtin、五个 MACD 定义，启动 seed 变更 0；筛选、评分和买卖条件固定样本均通过。T17 为标识列补足最小宽度、等宽字体与溢出提示。 |
 | 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 已完成 | 一致 | API、Vitest、Playwright | T13 真实接口同时通过旧调用、五字段 `lookback=6000`、严格 JSON、非法字段 400 和超界 422，页面继续按交易日对齐。 |
-| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/显式缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 与信号引导线 | T5、T6、T10、T11、T14、T15、T16 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T15 收口唯一 K线 tooltip；T16 按最新确认将 MA/VMA/MACD 统一为盘感训练共享色板，并把光标日期收敛为仅 K线一次。 |
-| 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 已完成 | 一致 | 归一化单测、抽屉 E2E | 真实点击覆盖自动交换、隐藏、重显、无无效分隔线、切股与刷新恢复。 |
+| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/显式缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 信号引导线与完整日期提示 | T5、T6、T10、T11、T14、T15、T16、T17 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T15 收口唯一 K线 tooltip；T16 统一 MA/VMA/MACD 色板和唯一光标日期；T17 为浅色主题提供同色相高对比版本，并以真实信号 item 悬停验证完整交易日期。 |
+| 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏、空间释放和程序化选中语义 | T4、T7、T10、T11、T17 | 已完成 | 一致 | 归一化单测、抽屉 E2E、可访问属性测试 | 真实点击覆盖自动交换、隐藏、重显、无无效分隔线、切股与刷新恢复；T17 由共享 `PageSegmented` 补齐 `aria-pressed`。 |
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 已完成 | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | T11 以分隔线实际位置执行 pointer 拖动，验证最低高度、相对比例保存、键盘调整及切股/刷新恢复。 |
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 已完成 | 一致 | 偏好 API、Vitest、跨用户 E2E | T13 发布 smoke 再次覆盖图表组合、高度保存/重置、真实 PG 跨用户隔离和 403 本地回退；临时用户清理后残留为 0。 |
 | 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 已完成 | 一致 | 状态测试、403/失败注入 E2E | T11 真实路由和 route 注入覆盖路由守卫、页面 loading/empty/permission、MACD 503 局部失败与重试。 |
-| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 自适应填满、指标快照显隐、主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12、T14 | 已完成 | 一致 | 样式/契约测试、build、主题截图和尺寸 E2E | T14 验证隐藏指标快照和买卖评估卡后工作区填满主区，恢复模块后正确释放空间；短视口仍保留 650px 最低高度并由主区滚动。 |
+| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 自适应填满、指标快照显隐、主题 token、关键视口、pointer/键盘、reduced motion、播报与选中语义 | T5、T8、T10、T11、T12、T14、T17 | 已完成 | 一致 | 样式/契约测试、build、主题截图、尺寸 E2E、可访问属性测试 | T14 验证工作区自适应；T17 移除三组光标跟随指标的高频 `aria-live`，为辅助图分段选项补齐可访问名称与 `aria-pressed`。 |
 | 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、模块显隐旧值合并、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13、T14 | 已完成 | 一致 | 竞态和生命周期测试、偏好 Vitest 与 E2E | T14 将 `showIndicatorSnapshot` 作为 additive 页面偏好，旧值默认显示并复用总恢复默认；图表主题重绘保持当前共享缩放窗口。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
@@ -1015,6 +1015,45 @@ flowchart LR
   - 原型通过无服务器 Playwright file smoke，页面脚本错误为 0；MA5/10/20/30/60 的计算后颜色依次为灰白、橙黄、洋红、青色、橙红，K线标题日期节点 1 个、辅助图活动日期节点 0 个。
   - 无数据库、接口、偏好结构、权限、菜单、seed、配置或后端运行态变更。
 
+### 6.17 任务 T17：修复 MACD 信号提示、浅色对比度与可访问细节
+
+- 状态：已完成
+- 对应需求：R3、R5、R6、R15。
+- 依赖：T16。
+- 涉及文件：
+  - `frontend/src/components/stock-chart/chartUtils.ts`
+  - `frontend/src/components/stock-chart/workspaceOptions.ts`
+  - `frontend/src/components/stock-chart/StockChartWorkspace.vue`
+  - `frontend/src/components/PageSegmented.vue`
+  - `frontend/src/views/StockDetailView.vue`
+  - `frontend/src/views/ConfigView.vue`
+  - `frontend/e2e/stock-detail-chart-workspace.spec.ts`
+  - 对应组件测试、引用原型、需求、DESIGN、E2E 基线和本计划
+- 目标：修复审查发现的信号完整日期不可悬停、浅色身份色与信号文字对比度不足，并收口高频播报、分段选中语义和指标长 key 可读性。
+- 开发内容：
+  - 保持量能和 MACD 普通柱线无内容浮层，为金叉/死叉自定义 item 系列单独启用 tooltip，显示信号类型和完整交易日期。
+  - `trainingChartSeriesPalette()` 保持盘感训练色相身份不变，浅色主题使用同色相加深版本，暗色主题继续使用高亮版本；对实际画布背景增加 `4.5:1` 对比度回归。
+  - 信号标签改用主题中性表面和中性文字，涨跌 token 只用于标签轮廓、引导线与锚点，同时保留“金叉/死叉”文字。
+  - 移除三组随光标高频变化指标值的 `aria-live`；共享 `PageSegmented` 为选项增加 `aria-pressed`，个股详情为图表二、三分别提供可访问名称。
+  - 指标管理的技术标识列改为合理最小宽度、等宽字体并启用溢出提示。
+- 产出：可真实悬停的 MACD 信号日期提示、明暗主题可读色板、信号高对比标签、共享分段选中语义和可完整识别的指标 key。
+- 影响范围：个股详情三图、盘感训练与回测共享色板、全部 `PageSegmented` 消费页、技术指标管理表格及对应测试/文档；不改变后端、接口、数据库、权限、菜单、seed、配置、偏好结构或 E2E 临时用户。
+- 验证方式：
+  - option 单测断言普通柱线 formatter 为空、信号 item tooltip 可见且包含类型与完整日期。
+  - 主题单测按 WCAG 相对亮度公式断言明暗两套 MA/VMA/MACD 身份色对各自画布背景均不低于 `4.5:1`。
+  - 组件测试断言工作区无高频 `aria-live`，`PageSegmented` 当前项正确切换 `aria-pressed`。
+  - 三关键视口 Playwright 在真实 ECharts canvas 上悬停金叉标签，断言提示包含 `金叉` 与确定性 fixture 的完整交易日期，并留存 MACD 面板截图。
+  - 前端全量 Vitest、正式 build、原型 file smoke 和 `git diff --check`。
+- 完成标准：审查的 2 项 P1 与 3 项 P2 均有生产实现和相称验证，MACD 普通柱线无多余行情浮层，信号日期可精确确认，明暗身份色和标签文字可辨，可访问状态不形成高频播报。
+- 实际落地情况：已完成（2026-07-25）。
+  - 复用判断：继续复用 `trainingChartSeriesPalette()`、`stockChartTheme()`、ECharts 原生 item tooltip、共享 `PageSegmented` 与 `ConfigView` 既有 `.mono`，没有新增第二套色板、提示组件、分段控件或表格外壳。
+  - 浅色身份色对 `#ffffff` 的最低对比度为 `5.43:1`，暗色身份色对 `#0b0e16` 的最低对比度为 `5.01:1`；信号标签在明暗主题均使用画布表面与主题文字，方向继续由文字、轮廓、引导线和锚点共同表达。
+  - 定向命令：`cd frontend && npm test -- --run src/components/stock-chart/__tests__/workspaceOptions.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/components/stock-chart/__tests__/CandleChartRegression.spec.ts src/components/__tests__/PageSegmented.spec.ts --reporter=dot`，结果 `4 files / 23 tests passed`。
+  - 前端全量命令：`cd frontend && npm test -- --run --reporter=dot`，结果 `64 files / 434 tests passed`；`npm run build` 通过，仅有既有依赖注释位置和大 chunk 告警。
+  - 浏览器命令：`cd frontend && npx playwright test e2e/stock-detail-chart-workspace.spec.ts --grep '关键视口保持纵向三图' --workers=1`，结果 `3 passed`。1100×620、1366×768、1440×900 三项目均在真实 MACD canvas 悬停金叉，断言 `金叉` 和完整交易日期，并把 `stock-detail-macd-signal-tooltip` 截图附加到 `frontend/playwright-report/index.html`。
+  - 原型通过无服务器 Playwright file smoke，页面脚本错误为 0；默认 MACD 面板存在 2 个信号，SVG 原生 title 均包含类型和完整日期，标签表面/文字分别使用 `var(--surface)` / `var(--text)`。
+  - 后端 `/api/health=200`；无数据库、接口、权限、菜单、seed、配置、初始化数据、偏好结构或后端运行态变更。
+
 ## 7. 数据库、SQL、seed 与配置计划
 
 ### 7.1 变更清单
@@ -1111,6 +1150,7 @@ WHERE is_builtin = TRUE
   - T14 已完成：三图工作区自适应填满、指标快照模块显隐、K线/量能/MACD 柱宽递减、日期轴与缩放滑块分层、显式三图 zoom 广播和标题/序列同源配色均已落地。定向 `3 files / 38 tests passed`，前端全量 `64 files / 433 tests passed`，正式构建通过；显式本地 E2E 授权下串行三项目为 `11 passed / 16 skipped`，回归后 `/api/health=200`、E2E 写入口业务码 403、临时用户为 0。
   - T15 已完成：仅 K线显示固定左上角行情 tooltip，收盘和涨幅具备红涨绿跌语义；量能/MACD 无内容浮层但联动保持。该阶段色板后由 T16 按最新确认统一为盘感训练标准；其余定向 `3 files / 21 tests passed`、前端全量 `64 files / 433 tests passed`、正式构建和三关键视口 Playwright `3 passed` 结论继续有效。
   - T16 已完成：盘感训练、回测和个股详情共同消费盘感训练标准 MA/VMA/MACD 色板；仅 K线显示标题日期与光标日期，辅助图联动保持。定向 `3 files / 21 tests passed`，前端全量 `64 files / 433 tests passed`，正式构建通过；三关键视口 Playwright `3 passed`，截图确认无重复日期气泡。
+  - T17 已完成：MACD 普通柱线继续无内容浮层，信号 item 可悬停显示类型与完整日期；浅色共享身份色和信号标签达到可读对比度；工作区移除高频 `aria-live`，共享分段控件补齐 `aria-pressed`，指标长 key 可完整识别。定向 `4 files / 23 tests passed`、前端全量 `64 files / 434 tests passed`、正式构建通过；三关键视口真实画布悬停 `3 passed`，HTML 报告留存信号完整日期截图。
 
 ### 8.1 后端测试矩阵
 
@@ -1195,14 +1235,14 @@ cd .. && AI_STOCKS_ENV=dev ./start.sh restart
 关键断言：
 
 - 三图默认名称和顺序。
-- 只有 K线显示固定左上角行情 tooltip；量能/MACD 无内容浮层，十字光标和标题值仍同步。
-- K线 tooltip 的收盘与涨幅按相对昨收使用红涨绿跌；MA/VMA/MACD 折线统一消费盘感训练标准色板。
+- 只有 K线显示固定左上角行情 tooltip；量能和 MACD 普通柱线无内容浮层，十字光标和标题值仍同步；金叉/死叉 item 悬停显示信号类型和完整交易日期。
+- K线 tooltip 的收盘与涨幅按相对昨收使用红涨绿跌；MA/VMA/MACD 折线统一消费盘感训练标准色相，浅色使用同色相加深版本、暗色使用高亮版本，实际背景对比度不低于 `4.5:1`。
 - 光标轴交易日气泡只在 K线面板显示一次，量能/MACD 不重复显示日期但指标值继续联动。
 - 光标/日期/缩放联动。
 - 任一图的 inside/slider 缩放显式同步到其余图，主题重绘后窗口不复位。
 - K线、量能、MACD 柱宽明显递减；标题指标颜色与实际折线或柱体一一对应。
 - 底部日期标签完整位于缩放滑块上方，不被遮挡或裁切。
-- 金叉/死叉日期、颜色 token 语义和常驻引导线截图。
+- 金叉/死叉日期、颜色 token 语义、常驻引导线和真实 item 悬停完整日期截图。
 - 自动交换、隐藏、重显。
 - 隐藏指标快照和买卖评估卡后图表填满主区；重新显示模块后正确释放空间。
 - pointer/键盘高度调整和最低高度。
