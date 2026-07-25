@@ -647,7 +647,13 @@ onBeforeUnmount(stopTimer)
     </template>
 
     <template #overlays>
-      <PageDrawer v-model="detailOpen" title="审计详情" size="xl" class="audit-detail-drawer">
+      <PageDrawer
+        v-model="detailOpen"
+        title="审计详情"
+        size="wide"
+        class="audit-detail-drawer"
+        data-testid="audit-detail-drawer"
+      >
         <div v-loading="detailLoading" class="detail-body">
           <AppStateBlock
             v-if="detailError"

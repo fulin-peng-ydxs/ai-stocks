@@ -32,7 +32,7 @@ const HANDWRITTEN_LAYOUT = /class="[^"]*\bv-(?:page|grow|scroll)\b/
 const QUERY_BUTTON = /<el-button\b([^>]*)>\s*查询\s*<\/el-button>/gs
 const VIEWPORT_DRAWER = /<(?:el-drawer|ElDrawer)\b/
 const PAGE_DRAWER = /<PageDrawer\b[\s\S]*?>/g
-const CONTROLLED_DRAWER_SIZE = /\bsize\s*=\s*["'](?:sm|md|lg|xl)["']/
+const CONTROLLED_DRAWER_SIZE = /\bsize\s*=\s*["'](?:sm|md|lg|xl|wide)["']/
 
 function vueFiles(dir: string): string[] {
   const out: string[] = []
@@ -120,7 +120,20 @@ describe('布局契约守卫（M6）', () => {
     }
     expect(
       offenders,
-      `页面业务抽屉必须使用 sm/md/lg/xl 语义档位：\n${offenders.join('\n')}`,
+      `页面业务抽屉必须使用 sm/md/lg/xl/wide 语义档位：\n${offenders.join('\n')}`,
     ).toEqual([])
+  })
+
+  it('响应式 wide 抽屉只用于已登记的宽内容场景', () => {
+    const consumers = files
+      .filter((file) =>
+        [...readFileSync(file, 'utf8').matchAll(PAGE_DRAWER)]
+          .some((match) => /\bsize\s*=\s*["']wide["']/.test(match[0])))
+      .map(rel)
+      .sort()
+    expect(consumers).toEqual([
+      'data/IngestView.vue',
+      'system/AuditLogView.vue',
+    ])
   })
 })

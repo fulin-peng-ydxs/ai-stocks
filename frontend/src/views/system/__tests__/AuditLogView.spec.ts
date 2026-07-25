@@ -6,6 +6,7 @@ import ElementPlus from 'element-plus'
 import { ref, type Component } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 import AuditLogView from '@/views/system/AuditLogView.vue'
 
 vi.mock('@/api/audit', () => ({
@@ -217,6 +218,7 @@ describe('AuditLogView', () => {
     expect(wrapper.text()).toContain('无字段级变更')
     expect(wrapper.text()).toContain('事件上下文')
     expect(wrapper.text()).toContain('req1')
+    expect(wrapper.findComponent(PageDrawer).props('size')).toBe('wide')
   })
 
   it('详情抽屉展示字段级 before/after 变更并处理长值换行', async () => {

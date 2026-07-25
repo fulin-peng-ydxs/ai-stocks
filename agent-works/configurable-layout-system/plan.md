@@ -625,7 +625,7 @@
 - 目标：收口全项目 DESIGN 审查发现的页面设置假登记、抽屉私有宽度、HelpTip 私有色板、真实复用组件清单缺口和非股票 Canvas 主题边界。
 - 开发内容：
   - `pageRegistry` 新增 `supportsPageSettings` 机器字段；预设管理、页面布局和系统组件三个平台管理页显式为 false，不再自动补 `settings-drawer`、组件字段或个人设置能力。
-  - `PageDrawer` 统一消费类型化 `sm/md/lg/xl` 宽度事实源；组件预览、审计详情和实时日志迁移到 `xl=560px`，布局契约测试禁止页面传 px/%。
+  - `PageDrawer` 统一消费类型化 `sm/md/lg/xl/wide` 宽度事实源；组件预览使用固定 `xl=560px`，审计详情和实时日志使用 `wide=clamp(560px, 46%, 760px)`，布局契约测试禁止页面传 px/%。
   - `HelpTip` 清除私有 hex，统一消费 Element Plus 预设语义 token，并补键盘聚焦和真实页面 token 对账。
   - 新增 `useEChartsTheme()` 与共享 `useResponsiveEChartsTheme()`；`EquityChart`、`GrowthChart` 响应明暗、预设 key 和同 key 后端覆盖，股票画布继续通过 `useStockChartTheme()` 保持专属序列契约。
   - DESIGN 核心组件清单补齐 `PageSettingsTrigger`、`PageSettingSection`、`TradeDatePicker`、K线设置组件和普通曲线组件；机器测试扫描两个以上页面的组件消费，防止清单再次漂移。
@@ -670,3 +670,31 @@
   - 前端全量 Vitest：`66 files / 445 tests passed`。
   - 正式构建：通过；仅有既有依赖注释位置和大 chunk 告警。
   - Playwright：1100×620、1366×768、1440×900 三项目共 `6 passed`；HelpTip 的 hover、真实 Tab 聚焦、主色反馈、提示显示和移焦关闭均通过。
+
+## 19. 页面业务抽屉响应式宽度收口
+
+- 任务编号：D3。
+- 状态：已完成（2026-07-25）。
+- 目标：恢复实时日志抽屉随页面内容区自适应的横向阅读空间，并排查全项目是否存在同类宽内容抽屉被固定档位压缩的问题。
+- 开发内容：
+  - 在 `PageDrawer` 类型化尺寸事实源中新增 `wide=clamp(560px, 46%, 760px)`；页面只消费语义档位，不直接写百分比、像素或响应式公式。
+  - 实时任务日志和审计详情迁移到 `wide`；两者分别承载连续日志，以及三列字段差异、上下文和长 JSON，属于需要随可用宽度增长的横向阅读内容。
+  - 保留系统组件预览的固定 `xl=560px`；页面设置继续只使用 `sm/md/lg`，用户中心和外观设置继续使用应用外壳的固定 440px，避免将所有抽屉无差别扩大。
+  - 布局机器契约限定当前 `wide` 消费者为实时日志和审计详情，并继续禁止页面传入私有 px/%；后续新增宽内容抽屉必须先更新共享语义和适用范围。
+  - Playwright 使用稳定测试标识打开真实日志抽屉，对照页面内容区计算期望宽度，并验证 1920px 视口下宽度增长且不超过 760px。
+- 实际落地情况：已完成；任务日志恢复响应式增长，审计详情同步采用相同语义契约，其余抽屉经全量消费点排查后保持原固定档位。
+- 产出：
+  - `frontend/src/components/pageDrawerSize.ts`
+  - 实时日志、审计详情页面及相关 Vitest/Playwright 回归。
+  - 同步后的 `DESIGN.md`、`requirement.md`、`page-template.md` 和本计划。
+- 影响范围：前端业务抽屉宽度、布局机器契约和浏览器验收；不涉及接口、权限、数据库、seed、配置字段或用户偏好结构。
+- 复用判断：
+  - 已查找：全项目 `PageDrawer` 消费点和应用外壳 `el-drawer`，包括实时日志、审计详情、组件预览、页面设置、用户中心和外观设置。
+  - 已复用：既有 `PageDrawer`、集中式 `PAGE_DRAWER_WIDTHS`、布局契约测试和任务中心 E2E；未恢复页面私有 `46%`。
+  - 新增复用单元：仅新增共享 `wide` 语义档位，不新增抽屉组件或第二套响应式计算。
+  - 保留差异：组件预览需要稳定预览画布，页面设置和账户类表单属于窄内容，变化原因与宽日志/字段差异不同，因此继续使用固定档位。
+- 验证：
+  - 定向 Vitest：`3 files / 21 tests passed`。
+  - 前端全量 Vitest：`66 files / 446 tests passed`。
+  - 正式构建：通过；仅有既有依赖注释位置和大 chunk 告警。
+  - Playwright：1100×620、1366×768、1440×900 三项目共 `12 passed`；固定 `xl` 组件预览保持 560px，实时日志随页面内容区增长并受 560–760px 上下限约束，控制台无 error/warning。
