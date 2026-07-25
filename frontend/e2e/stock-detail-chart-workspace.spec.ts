@@ -856,7 +856,21 @@ test.describe('个股详情三图工作区', () => {
       const values = (await panelDates.allTextContents()).map((value) => value.trim())
       return new Set(values).size === 1 && values[0] !== latestTradeDate
     }).toBe(true)
+    const klineTooltip = workspace.locator('.stock-chart-kline-tooltip')
+    await expect(klineTooltip).toHaveCount(1)
+    await expect(klineTooltip).toBeVisible()
+    const klinePanelBox = await workspace.locator('[data-panel-key="kline"]').boundingBox()
+    const klineTooltipBox = await klineTooltip.boundingBox()
+    expect(klinePanelBox).not.toBeNull()
+    expect(klineTooltipBox).not.toBeNull()
+    expect(klineTooltipBox!.x - klinePanelBox!.x).toBeLessThanOrEqual(24)
+    expect(klineTooltipBox!.y - klinePanelBox!.y).toBeLessThanOrEqual(60)
+    await testInfo.attach('stock-detail-kline-tooltip', {
+      body: await workspace.screenshot(),
+      contentType: 'image/png',
+    })
     await page.mouse.move(1, 1)
+    await expect(klineTooltip).not.toBeVisible()
     await expect(panelDates.first()).toHaveText(latestTradeDate)
 
     const lightBackground = await workspace.evaluate(

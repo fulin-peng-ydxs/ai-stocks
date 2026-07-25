@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1–T14 已全部完成并通过对应阶段验证；发布 smoke、seed 对账、回滚演练及上线后图表体验修正均已闭环。
+- 当前进度：T1–T15 已全部完成并通过对应阶段验证；发布 smoke、seed 对账、回滚演练及两轮上线后图表体验修正均已闭环。
 
 ## 2. 当前项目依据
 
@@ -46,8 +46,8 @@
 
 - 页面入口、路由和菜单已经存在：`/stocks/:code`、`StockDetailView.vue`、`pageKey=stock-detail`，不新增路由或菜单。
 - 页面已使用 `LayoutHost` 和 `detail` 原型；`detail` 主区由 `LayoutHost` 的 `.v-scroll` 承担内部滚动，适合承载最低 650px 的图表工作区和下方顺序卡片。
-- `CandleChart.vue` 继续保持单个 ECharts 实例、固定 480px、K线与量能双 grid 及原 props 契约；其 MA/VMA、格式化和主题取色已抽到 `stock-chart/chartUtils.ts`，盘感训练和回测继续复用旧组件。
-- `StockChartWorkspace.vue` 已完成按面板分实例、唯一 ECharts group、共享日期轴、显式缩放广播、MACD 信号、分层柱宽、标题/序列同源配色、局部状态和可访问分隔线，并已由 `StockDetailView` 正式消费；`DESIGN.md` 已登记其真实组件职责与使用规则。
+- `CandleChart.vue` 继续保持单个 ECharts 实例、固定 480px、K线与量能双 grid 及原 props 契约；其 MA/VMA、格式化、K线 tooltip 和主题取色复用 `stock-chart/chartUtils.ts`，盘感训练和回测继续复用旧组件。
+- `StockChartWorkspace.vue` 已完成按面板分实例、唯一 ECharts group、共享日期轴、显式缩放广播、MACD 信号、分层柱宽、标题/序列同源配色、仅 K线固定左上角行情 tooltip、局部状态和可访问分隔线，并已由 `StockDetailView` 正式消费；`DESIGN.md` 已登记其真实组件职责与使用规则。
 - `DESIGN.md` 明确禁止页面写 `calc(100vh - Npx)`，要求金融涨跌使用 `--market-up-color` / `--market-down-color`，四态使用 `AppStateBlock`，页面设置使用 `PageSettingsDrawer`。
 
 ### 2.4 用户偏好与权限
@@ -81,7 +81,7 @@
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成 | T1、T9 |
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成 | T2、T9、T13 |
 | R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 已完成 | T3、T6、T9、T10、T11、T13 |
-| R5 | 默认三图、图名、共享日期/光标/缩放、分层柱宽、同源配色、MACD 图形和信号引导线 | 已完成 | T5、T6、T10、T11、T14 |
+| R5 | 默认三图、图名、共享日期/光标/缩放、分层柱宽、同源配色、唯一 K线 tooltip、MACD 图形和信号引导线 | 已完成 | T5、T6、T10、T11、T14、T15 |
 | R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 已完成 | T4、T7、T10、T11 |
 | R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 已完成 | T4、T5、T7、T10、T11 |
 | R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 已完成 | T4、T7、T9、T10、T11、T13 |
@@ -340,7 +340,7 @@ flowchart LR
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成 | 一致 | 交叉边界和缺失段单测 | T1 实现与 T9 后端总回归均已通过；空值保留 null，下游按不成立处理。 |
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 已完成 | 一致 | repo/API/筛选/评分/买卖方案测试 | T13 真实启动对账为 43 个 builtin、五个 MACD 定义，启动 seed 变更 0；筛选、评分和买卖条件固定样本均通过。 |
 | 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 已完成 | 一致 | API、Vitest、Playwright | T13 真实接口同时通过旧调用、五字段 `lookback=6000`、严格 JSON、非法字段 400 和超界 422，页面继续按交易日对齐。 |
-| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/显式缩放、分层柱宽、标题/序列同源配色、MACD 与信号引导线 | T5、T6、T10、T11、T14 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T14 补齐 K线/量能/MACD 柱宽递减、底部日期与滑块分层、任一图缩放显式广播及标题指标色与实际序列一致；共享窗口有组件和真实浏览器证据。 |
+| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/显式缩放、分层柱宽、标题/序列同源配色、唯一 K线 tooltip、MACD 与信号引导线 | T5、T6、T10、T11、T14、T15 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T15 收口为仅 K线显示固定左上角行情 tooltip，收盘/涨幅使用市场涨跌色；量能/MACD 只保留光标和标题联动。MA5 使用红色系、MA60 使用主题黄色，新旧 K线组件复用同一 tooltip helper。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 已完成 | 一致 | 归一化单测、抽屉 E2E | 真实点击覆盖自动交换、隐藏、重显、无无效分隔线、切股与刷新恢复。 |
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 已完成 | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | T11 以分隔线实际位置执行 pointer 拖动，验证最低高度、相对比例保存、键盘调整及切股/刷新恢复。 |
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 已完成 | 一致 | 偏好 API、Vitest、跨用户 E2E | T13 发布 smoke 再次覆盖图表组合、高度保存/重置、真实 PG 跨用户隔离和 403 本地回退；临时用户清理后残留为 0。 |
@@ -948,6 +948,36 @@ flowchart LR
   - 完整浏览器命令：`cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npx playwright test e2e/stock-detail-chart-workspace.spec.ts --workers=1`，三个浏览器项目结果为 `11 passed / 16 skipped`。串行命令避免固定调试账号并发认证的环境噪声，同时保留三项目覆盖。
   - 回归结束已移除 E2E 写开关并重启后端，`/api/health=200`、`/api/health/e2e` 业务码 403，PG 中 `e2e_%` 临时用户为 0。无数据库、seed、配置或初始化数据变更。
 
+### 6.15 任务 T15：收敛三图 tooltip 与 MA60 颜色
+
+- 状态：已完成
+- 对应需求：R5。
+- 依赖：T14。
+- 涉及文件：
+  - `frontend/src/components/stock-chart/chartUtils.ts`
+  - `frontend/src/components/stock-chart/workspaceOptions.ts`
+  - `frontend/src/components/CandleChart.vue`
+  - 对应 option/兼容组件测试、Playwright、需求、DESIGN 和 E2E 基线文档
+- 目标：消除三幅图同时弹出内容浮层造成的遮挡，把 K线详情固定到主图左上角并补齐涨跌色，同时明确 MA60 黄色。
+- 开发内容：
+  - 抽取 `klineTooltipHtml()`，统一新工作区与兼容 `CandleChart` 的行情字段、双列布局和涨跌语义色。
+  - K线 tooltip 固定为绘图区左上角 `[10, 6]` 并限制在画布内；收盘与涨幅按相对昨收使用 `--market-up-color/--market-down-color`。
+  - 量能和 MACD 设置 `showContent=false`，不再渲染内容 tooltip；共享十字光标、交易日与标题值继续联动。
+  - MA5 使用市场上涨红色系，MA60 使用 Element Plus warning 主题黄色；标题值和折线继续消费同一 `series.kline` 色板。
+- 产出：唯一 K线行情 tooltip、无辅助图内容浮层、共享 tooltip helper 和稳定 MA60 黄色。
+- 影响范围：个股三图工作区及继续消费兼容 `CandleChart` 的训练/回测页面；不改变数据、接口、偏好、权限、菜单、数据库、seed 或配置。
+- 验证方式：
+  - option 测试断言固定位置、完整字段、上涨/下跌颜色及辅助图 `showContent=false`。
+  - 兼容组件测试断言共享 helper、MA60 主题黄色和既有双 grid/暖机行为。
+  - 三关键视口 Playwright 断言 tooltip 只存在于 K线、位于主图左上角并留存明暗截图。
+- 完成标准：量能/MACD 无内容浮层，K线 tooltip 位置和涨跌色可重复验证，MA60 在明暗主题可辨且新旧 K线图一致。
+- 实际落地情况：已完成（2026-07-25）。
+  - 复用判断：已查找并复用旧 `CandleChart` 的固定左上角提示交互、`stockChartTheme()` 主题 token、`formatVolume/formatAmount` 格式化和现有工作区 option/test fixture；共同 HTML 收敛到 `klineTooltipHtml()`，没有新增提示组件、第二套主题色或页面私有样式。两类图表生命周期不同，仍各自维护 ECharts option，仅共享稳定的纯格式化能力。
+  - 定向命令：`cd frontend && npm test -- --run src/components/stock-chart/__tests__/workspaceOptions.spec.ts src/components/stock-chart/__tests__/CandleChartRegression.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts`，结果 `3 files / 21 tests passed`。
+  - 前端全量 `64 files / 433 tests passed`；`npm run build` 通过，仅有既有依赖注释和大 chunk 告警。
+  - 浏览器命令：`cd frontend && npx playwright test e2e/stock-detail-chart-workspace.spec.ts --grep '关键视口保持纵向三图' --workers=1`，结果 `3 passed`。三项目均断言 `.stock-chart-kline-tooltip` 唯一、可见并位于 K线面板左上角，移出画布后隐藏；报告附加 K线 tooltip 截图。
+  - 视觉复核确认浅色截图只出现一个 K线行情框，收盘和负涨幅使用下跌绿色，量能/MACD 无内容浮层；MA5 为红色系、MA60 为主题黄色。无数据库、seed、权限、配置、初始化数据或后端运行态变更。
+
 ## 7. 数据库、SQL、seed 与配置计划
 
 ### 7.1 变更清单
@@ -1042,6 +1072,7 @@ WHERE is_builtin = TRUE
   - T12 已完成：DESIGN 补齐 `StockChartWorkspace`/个股详情股票画布的语义色、信号多重识别与 `themeRevision` 重绘规则，不追溯约束其它既有金融图表；配置和个股架构文档同步五原子、完整 builtin 启动 seed、四请求通道、opaque 方案和三图偏好；E2E guide 登记稳定个股工作区用例。前端全量 `64 files / 429 tests passed`、正式构建通过，`frontend/dist` 与当前源码构建结果一致且无新增差异。
   - T13 已完成：七文件后端发布门槛 `87 passed`，真实启动 seed 为 43 个 builtin 且变更 0，目录/API/下游/page smoke 通过；当前和功能开发前前端均可独立构建，五定义 scoped 停用后不会被 seed 重启用，最终从快照恢复且 `indicator_def` 全表差异为 0。
   - T14 已完成：三图工作区自适应填满、指标快照模块显隐、K线/量能/MACD 柱宽递减、日期轴与缩放滑块分层、显式三图 zoom 广播和标题/序列同源配色均已落地。定向 `3 files / 38 tests passed`，前端全量 `64 files / 433 tests passed`，正式构建通过；显式本地 E2E 授权下串行三项目为 `11 passed / 16 skipped`，回归后 `/api/health=200`、E2E 写入口业务码 403、临时用户为 0。
+  - T15 已完成：仅 K线显示固定左上角行情 tooltip，收盘和涨幅具备红涨绿跌语义；量能/MACD 无内容浮层但联动保持；MA5 为红色系、MA60 为主题黄色。定向 `3 files / 21 tests passed`，前端全量 `64 files / 433 tests passed`，正式构建通过；三关键视口 Playwright `3 passed` 并留存 tooltip 截图。
 
 ### 8.1 后端测试矩阵
 
@@ -1126,6 +1157,8 @@ cd .. && AI_STOCKS_ENV=dev ./start.sh restart
 关键断言：
 
 - 三图默认名称和顺序。
+- 只有 K线显示固定左上角行情 tooltip；量能/MACD 无内容浮层，十字光标和标题值仍同步。
+- K线 tooltip 的收盘与涨幅按相对昨收使用红涨绿跌；MA5 红色系、MA60 主题黄色。
 - 光标/日期/缩放联动。
 - 任一图的 inside/slider 缩放显式同步到其余图，主题重绘后窗口不复位。
 - K线、量能、MACD 柱宽明显递减；标题指标颜色与实际折线或柱体一一对应。

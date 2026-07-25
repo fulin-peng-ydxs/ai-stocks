@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import CandleChart from '@/components/CandleChart.vue'
 import type { Bar } from '@/api/stocks'
+import { stockChartTheme } from '@/components/stock-chart/chartUtils'
 
 const echartsMock = vi.hoisted(() => ({
   setOption: vi.fn(),
@@ -39,6 +40,9 @@ function makeBars(length: number): Bar[] {
 describe('CandleChart shared helper regression', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    document.documentElement.style.setProperty('--el-color-warning', '#facc15')
+    document.documentElement.style.setProperty('--el-color-danger', '#ef4d4d')
+    document.documentElement.style.setProperty('--market-up-color', '#ef4d4d')
   })
 
   it('保持现有 props、双 grid、K线+量能系列和暖机均线行为', async () => {
@@ -55,13 +59,30 @@ describe('CandleChart shared helper regression', () => {
     const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as {
       grid: unknown[]
       dataZoom: Array<{ start: number, end: number }>
-      series: Array<{ name: string, data?: Array<number | null> }>
+      tooltip: {
+        position: () => number[]
+        formatter: (params: Array<{ dataIndex: number }>) => string
+      }
+      series: Array<{
+        name: string
+        data?: Array<number | null>
+        lineStyle?: { color?: string }
+      }>
     }
     expect(option.grid).toHaveLength(2)
     expect(option.dataZoom[0]).toMatchObject({ start: 5, end: 95 })
     expect(option.series.some((series) => series.name === 'K线')).toBe(true)
     expect(option.series.some((series) => series.name === '量')).toBe(true)
     expect(option.series.find((series) => series.name === 'MA60')?.data?.[0]).not.toBeNull()
+    expect(option.series.find((series) => series.name === 'MA60')?.lineStyle?.color)
+      .toBe('#facc15')
+    expect(stockChartTheme(false).series.kline).toMatchObject({
+      ma5: '#ef4d4d',
+      ma60: '#facc15',
+    })
+    expect(option.tooltip.position()).toEqual([10, 6])
+    expect(option.tooltip.formatter([{ dataIndex: 0 }]))
+      .toContain('style="color:#ef4d4d">10.50</span>')
 
     wrapper.unmount()
     expect(echartsMock.dispose).toHaveBeenCalledTimes(1)

@@ -4,8 +4,8 @@ import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
 import { useTheme } from '@/composables/useTheme'
 import {
-  formatAmount,
   formatVolume,
+  klineTooltipHtml,
   movingAverage,
   stockChartTheme,
 } from '@/components/stock-chart/chartUtils'
@@ -33,13 +33,13 @@ const { isDark } = useTheme()
 const BUY_COLOR = '#3b82f6'
 const SELL_COLOR = '#f5a623'
 
-// 均线定义（MA5 颜色随主题，其余固定）
+// 兼容图表保留既有均线色；MA60 复用工作区的主题黄色，避免同一指标跨页面漂移。
 const MA_DEFS = computed(() => [
   { n: 5, color: isDark.value ? '#dfe4ea' : '#606266' },
   { n: 10, color: '#f5a623' },
   { n: 20, color: '#d63bd6' },
   { n: 30, color: '#16b8c4' },
-  { n: 60, color: '#ff7a18' },
+  { n: 60, color: stockChartTheme(isDark.value).series.kline.ma60 },
 ])
 // 主题色板
 const T = computed(() => {
@@ -175,28 +175,12 @@ function render() {
         const idx = p[0]?.dataIndex
         if (idx == null) return ''
         hoverIdx.value = idx
-        const b = bars[idx]
-        const pre = b.pre_close
-        const pct = pre ? ((b.close - pre) / pre) * 100 : null
-        const amp = pre ? ((b.high - b.low) / pre) * 100 : null
-        const pc = pct == null ? '--' : (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%'
-        const pcColor = pct == null ? t.tipText : pct >= 0 ? t.up : t.down
-        const row = (k: string, v: string, c = t.tipText) =>
-          `<div style="display:flex;justify-content:space-between;gap:18px"><span style="color:${t.tipKey}">${k}</span><span style="color:${c}">${v}</span></div>`
-        return (
-          `<div style="min-width:150px;line-height:1.6">` +
-          row('时间', b.date) +
-          row('开盘', b.open.toFixed(2)) +
-          row('收盘', b.close.toFixed(2)) +
-          row('最高', b.high.toFixed(2)) +
-          row('最低', b.low.toFixed(2)) +
-          row('涨幅', pc, pcColor) +
-          row('振幅', amp == null ? '--' : amp.toFixed(2) + '%') +
-          row('成交量', formatVolume(b.volume)) +
-          row('成交额', formatAmount(b.amount)) +
-          row('换手率', b.turnover_rate == null ? '--' : b.turnover_rate.toFixed(2) + '%') +
-          `</div>`
-        )
+        return klineTooltipHtml(bars[idx], {
+          text: t.tipText,
+          label: t.tipKey,
+          up: t.up,
+          down: t.down,
+        })
       },
     },
     xAxis: [

@@ -261,31 +261,60 @@ describe('workspaceOptions', () => {
     expect(panelMetricColor(theme, 'macd', 'MACD', 0.2)).toBe(theme.up)
   })
 
-  it('K线 tooltip 保留既有完整行情字段', () => {
+  it('仅 K线显示固定左上角行情 tooltip，并用涨跌语义色突出收盘与涨幅', () => {
     const rows = alignStockChartRows([bar('2026-07-22', 10)], [])
-    const option = buildKlineOption({
+    const context = {
       rows,
       warmupBars: [],
       theme,
       isBottom: false,
       zoomStart: 0,
       zoomEnd: 100,
-    })
-    const formatter = option.tooltip.formatter as (
-      params: Array<{ dataIndex: number }>,
-    ) => string
-    const content = formatter([{ dataIndex: 0 }])
+    }
+    const option = buildKlineOption(context)
+    const tooltip = option.tooltip as {
+      position: () => number[]
+      formatter: (params: Array<{ dataIndex: number }>) => string
+    }
+    const content = tooltip.formatter([{ dataIndex: 0 }])
 
-    expect(content).toContain('时间：2026-07-22')
-    expect(content).toContain('开盘：9.80')
-    expect(content).toContain('收盘：10.00')
-    expect(content).toContain('最高：10.40')
-    expect(content).toContain('最低：9.50')
-    expect(content).toContain('涨幅：+1.01%')
-    expect(content).toContain('振幅：9.09%')
-    expect(content).toContain('成交量：1000手')
-    expect(content).toContain('成交额：100万')
-    expect(content).toContain('换手率：1.00%')
+    expect(tooltip.position()).toEqual([10, 6])
+    for (const field of ['时间', '开盘', '收盘', '最高', '最低', '涨幅', '振幅', '成交量', '成交额', '换手率']) {
+      expect(content).toContain(`>${field}<`)
+    }
+    for (const value of [
+      '2026-07-22',
+      '9.80',
+      '10.00',
+      '10.40',
+      '9.50',
+      '+1.01%',
+      '9.09%',
+      '1000手',
+      '100万',
+      '1.00%',
+    ]) {
+      expect(content).toContain(`>${value}<`)
+    }
+    expect(content).toContain('style="color:#up">10.00</span>')
+    expect(content).toContain('style="color:#up">+1.01%</span>')
+    expect((buildVolumeOption(context).tooltip as { showContent?: boolean }).showContent)
+      .toBe(false)
+    expect((buildMacdOption(context).tooltip as { showContent?: boolean }).showContent)
+      .toBe(false)
+
+    const downOption = buildKlineOption({
+      ...context,
+      rows: alignStockChartRows([{
+        ...bar('2026-07-23', 9.8),
+        pre_close: 10,
+      }], []),
+    })
+    const downContent = (downOption.tooltip.formatter as (
+      params: Array<{ dataIndex: number }>,
+    ) => string)([{ dataIndex: 0 }])
+    expect(downContent).toContain('style="color:#down">9.80</span>')
+    expect(downContent).toContain('style="color:#down">-2.00%</span>')
   })
 
   it('拖动只改变相邻比例并受最低高度比例约束', () => {

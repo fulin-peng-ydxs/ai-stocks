@@ -1,3 +1,4 @@
+import type { Bar } from '@/api/stocks'
 import { blendHex } from '@/layout/themeSurfaces'
 
 export interface StockChartSeriesPalette {
@@ -50,9 +51,10 @@ export function stockChartTheme(isDark: boolean): StockChartTheme {
   const success = cssVariable('--el-color-success', '#67c23a')
   const warning = cssVariable('--el-color-warning', '#e6a23c')
   const danger = cssVariable('--el-color-danger', '#f56c6c')
+  const up = cssVariable('--market-up-color', isDark ? '#ff6b6b' : '#ef4d4d')
+  const down = cssVariable('--market-down-color', isDark ? '#45c486' : '#22b573')
   const ma20 = blendHex(danger, primary, 0.48)
   const ma30 = blendHex(success, primary, 0.58)
-  const ma60 = blendHex(danger, warning, 0.38)
 
   return {
     background: cssVariable('--el-bg-color', isDark ? '#0b0e16' : '#ffffff'),
@@ -65,15 +67,15 @@ export function stockChartTheme(isDark: boolean): StockChartTheme {
       isDark ? 'rgba(13,17,26,0.96)' : 'rgba(255,255,255,0.96)',
     ),
     tooltipBorder: cssVariable('--el-border-color', isDark ? '#2b3550' : '#dcdfe6'),
-    up: cssVariable('--market-up-color', isDark ? '#ff6b6b' : '#ef4d4d'),
-    down: cssVariable('--market-down-color', isDark ? '#45c486' : '#22b573'),
+    up,
+    down,
     series: {
       kline: {
-        ma5: warning,
+        ma5: up,
         ma10: primary,
         ma20,
         ma30,
-        ma60,
+        ma60: warning,
       },
       volume: {
         ma5: warning,
@@ -117,4 +119,44 @@ export function formatVolume(shares: number | null | undefined): string {
 
 export function formatChartNumber(value: number | null | undefined, digits = 2): string {
   return value == null || !Number.isFinite(value) ? '--' : value.toFixed(digits)
+}
+
+type KlineTooltipPalette = Pick<StockChartTheme, 'text' | 'label' | 'up' | 'down'>
+
+function tooltipRow(label: string, value: string, palette: KlineTooltipPalette, color?: string) {
+  return `<div style="display:flex;justify-content:space-between;gap:18px">`
+    + `<span style="color:${palette.label}">${label}</span>`
+    + `<span style="color:${color ?? palette.text}">${value}</span>`
+    + '</div>'
+}
+
+/** K线详情统一格式：固定字段、A股涨跌色和紧凑双列布局由新旧图表共同复用。 */
+export function klineTooltipHtml(bar: Bar, palette: KlineTooltipPalette): string {
+  const pct = bar.pre_close ? ((bar.close - bar.pre_close) / bar.pre_close) * 100 : null
+  const amplitude = bar.pre_close ? ((bar.high - bar.low) / bar.pre_close) * 100 : null
+  const directionColor = pct == null || pct === 0
+    ? palette.text
+    : pct > 0 ? palette.up : palette.down
+  const pctText = pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
+
+  return '<div style="min-width:150px;line-height:1.6">'
+    + tooltipRow('时间', bar.date, palette)
+    + tooltipRow('开盘', formatChartNumber(bar.open), palette)
+    + tooltipRow('收盘', formatChartNumber(bar.close), palette, directionColor)
+    + tooltipRow('最高', formatChartNumber(bar.high), palette)
+    + tooltipRow('最低', formatChartNumber(bar.low), palette)
+    + tooltipRow('涨幅', pctText, palette, directionColor)
+    + tooltipRow(
+      '振幅',
+      amplitude == null ? '--' : `${amplitude.toFixed(2)}%`,
+      palette,
+    )
+    + tooltipRow('成交量', formatVolume(bar.volume), palette)
+    + tooltipRow('成交额', formatAmount(bar.amount), palette)
+    + tooltipRow(
+      '换手率',
+      bar.turnover_rate == null ? '--' : `${bar.turnover_rate.toFixed(2)}%`,
+      palette,
+    )
+    + '</div>'
 }

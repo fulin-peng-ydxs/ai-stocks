@@ -1,9 +1,9 @@
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import type { ChartType } from '@/composables/useStockChartPreferences'
 import {
-  formatAmount,
   formatChartNumber,
   formatVolume,
+  klineTooltipHtml,
   movingAverage,
   type StockChartTheme,
 } from './chartUtils'
@@ -334,12 +334,15 @@ export function buildKlineOption(context: OptionContext) {
     ...base,
     tooltip: {
       ...base.tooltip,
+      className: 'stock-chart-kline-tooltip',
+      confine: true,
+      position: () => [10, 6],
       formatter: (params: unknown) => {
         const list = Array.isArray(params) ? params : [params]
         const index = (list[0] as { dataIndex?: unknown } | undefined)?.dataIndex
         if (typeof index !== 'number') return ''
         const row = context.rows[index]
-        return row ? klineTooltip(row) : ''
+        return row ? klineTooltipHtml(row.bar, context.theme) : ''
       },
     },
     yAxis: {
@@ -384,8 +387,10 @@ export function buildVolumeOption(context: OptionContext) {
   const allVolumes = [...context.warmupBars, ...bars].map((bar) => bar.volume)
   const volMa5 = movingAverage(allVolumes, 5).slice(-bars.length)
   const volMa10 = movingAverage(allVolumes, 10).slice(-bars.length)
+  const base = commonOption(context)
   return {
-    ...commonOption(context),
+    ...base,
+    tooltip: { ...base.tooltip, showContent: false },
     yAxis: {
       scale: true,
       position: 'right',
@@ -430,8 +435,10 @@ export function buildVolumeOption(context: OptionContext) {
 }
 
 export function buildMacdOption(context: OptionContext) {
+  const base = commonOption(context)
   return {
-    ...commonOption(context),
+    ...base,
+    tooltip: { ...base.tooltip, showContent: false },
     yAxis: {
       scale: true,
       min: ({ min }: { min: number }) => Math.min(0, min),
@@ -525,22 +532,4 @@ export function macdMetrics(rows: readonly AlignedStockChartRow[], index: number
     { label: 'DIFF', value: formatChartNumber(indicator?.macd_diff) },
     { label: 'DEA', value: formatChartNumber(indicator?.macd_dea) },
   ]
-}
-
-export function klineTooltip(row: AlignedStockChartRow): string {
-  const bar = row.bar
-  const pct = bar.pre_close ? ((bar.close - bar.pre_close) / bar.pre_close) * 100 : null
-  const amplitude = bar.pre_close ? ((bar.high - bar.low) / bar.pre_close) * 100 : null
-  return [
-    `时间：${bar.date}`,
-    `开盘：${formatChartNumber(bar.open)}`,
-    `收盘：${formatChartNumber(bar.close)}`,
-    `最高：${formatChartNumber(bar.high)}`,
-    `最低：${formatChartNumber(bar.low)}`,
-    `涨幅：${pct == null ? '--' : `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`}`,
-    `振幅：${amplitude == null ? '--' : `${amplitude.toFixed(2)}%`}`,
-    `成交量：${formatVolume(bar.volume)}`,
-    `成交额：${formatAmount(bar.amount)}`,
-    `换手率：${bar.turnover_rate == null ? '--' : `${bar.turnover_rate.toFixed(2)}%`}`,
-  ].join('<br/>')
 }
