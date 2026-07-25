@@ -19,7 +19,7 @@ export interface AlignedStockChartRow {
 }
 
 export interface SignalDatum {
-  value: [number, number, number, 0 | 1]
+  value: [number, number, 0 | 1]
   signalType: '金叉' | '死叉'
   tradeDate: string
   color: string
@@ -109,15 +109,13 @@ export function buildSignalData(
   rows: readonly AlignedStockChartRow[],
   theme: StockChartTheme,
 ): SignalDatum[] {
-  let goldenLane = 0
-  let deadLane = 0
   const signals: SignalDatum[] = []
   rows.forEach((row, index) => {
     const diff = row.indicator?.macd_diff
     if (diff == null || !Number.isFinite(diff)) return
     if (row.indicator?.macd_golden_cross === true) {
       signals.push({
-        value: [index, diff, goldenLane++ % 3, 1],
+        value: [index, diff, 1],
         signalType: '金叉',
         tradeDate: row.bar.date,
         color: theme.up,
@@ -125,7 +123,7 @@ export function buildSignalData(
     }
     if (row.indicator?.macd_dead_cross === true) {
       signals.push({
-        value: [index, diff, deadLane++ % 3, 0],
+        value: [index, diff, 0],
         signalType: '死叉',
         tradeDate: row.bar.date,
         color: theme.down,
@@ -137,19 +135,17 @@ export function buildSignalData(
 
 export function signalRenderGeometry(
   coord: [number, number],
-  coordTop: number,
-  coordBottom: number,
-  lane: number,
   isGolden: boolean,
 ) {
   const x = coord[0]
   const anchorY = coord[1]
-  const labelCenterY = isGolden
-    ? coordTop + 17 + lane * 23
-    : coordBottom - 17 - lane * 23
+  const labelCenterY = anchorY + (isGolden ? -13 : 13)
   const labelTop = labelCenterY - 9
-  const lineStartY = isGolden ? labelTop + 18 : labelTop
-  return { x, anchorY, labelCenterY, labelTop, lineStartY }
+  const pointerBaseY = isGolden ? labelTop + 18 : labelTop
+  const pointerPoints = isGolden
+    ? [[x - 3, pointerBaseY], [x + 3, pointerBaseY], [x, anchorY]]
+    : [[x, anchorY], [x - 3, pointerBaseY], [x + 3, pointerBaseY]]
+  return { x, anchorY, labelCenterY, labelTop, pointerPoints }
 }
 
 export function buildSignalSeries(
@@ -174,40 +170,24 @@ export function buildSignalSeries(
       },
     },
     renderItem: (
-      params: { coordSys: { y: number, height: number } },
+      _params: { coordSys: { y: number, height: number } },
       api: {
         value: (dimension: number) => number
         coord: (value: [number, number]) => [number, number]
       },
     ) => {
-      const isGolden = api.value(3) === 1
+      const isGolden = api.value(2) === 1
       const coord = api.coord([api.value(0), api.value(1)])
-      const geometry = signalRenderGeometry(
-        coord,
-        params.coordSys.y,
-        params.coordSys.y + params.coordSys.height,
-        api.value(2),
-        isGolden,
-      )
+      const geometry = signalRenderGeometry(coord, isGolden)
       const color = isGolden ? theme.up : theme.down
       const label = isGolden ? '金叉' : '死叉'
       return {
         type: 'group',
         children: [
           {
-            type: 'line',
-            shape: {
-              x1: geometry.x,
-              x2: geometry.x,
-              y1: geometry.lineStartY,
-              y2: geometry.anchorY,
-            },
-            style: { stroke: color, lineWidth: 1.3 },
-          },
-          {
-            type: 'circle',
-            shape: { cx: geometry.x, cy: geometry.anchorY, r: 3 },
-            style: { fill: color, stroke: theme.background, lineWidth: 1 },
+            type: 'polygon',
+            shape: { points: geometry.pointerPoints },
+            style: { fill: color },
           },
           {
             type: 'rect',

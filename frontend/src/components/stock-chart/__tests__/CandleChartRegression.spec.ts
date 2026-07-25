@@ -81,23 +81,23 @@ describe('CandleChart shared helper regression', () => {
     expect(option.series.some((series) => series.name === '量')).toBe(true)
     expect(option.series.find((series) => series.name === 'MA60')?.data?.[0]).not.toBeNull()
     expect(option.series.find((series) => series.name === 'MA60')?.lineStyle?.color)
-      .toBe('#b54708')
+      .toBe('#c2410c')
     const sharedSeries = stockChartTheme(false).series
     expect(sharedSeries).toEqual({
       kline: {
-        ma5: '#606266',
-        ma10: '#9a5b00',
-        ma20: '#9c2aa0',
-        ma30: '#0b7580',
-        ma60: '#b54708',
+        ma5: '#374151',
+        ma10: '#8a6500',
+        ma20: '#a21caf',
+        ma30: '#006d77',
+        ma60: '#c2410c',
       },
       volume: {
-        ma5: '#9a5b00',
-        ma10: '#0b7580',
+        ma5: '#8a6500',
+        ma10: '#006d77',
       },
       macd: {
-        diff: '#9a5b00',
-        dea: '#0b7580',
+        diff: '#8a6500',
+        dea: '#006d77',
       },
     })
     expect(Object.fromEntries(

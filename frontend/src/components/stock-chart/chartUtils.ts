@@ -75,19 +75,19 @@ export function nextStockChartWorkspaceGroupId(): string {
 export function trainingChartSeriesPalette(isDark: boolean): StockChartSeriesPalette {
   return {
     kline: {
-      ma5: isDark ? '#dfe4ea' : '#606266',
-      ma10: isDark ? '#f5a623' : '#9a5b00',
-      ma20: isDark ? '#d63bd6' : '#9c2aa0',
-      ma30: isDark ? '#16b8c4' : '#0b7580',
-      ma60: isDark ? '#ff7a18' : '#b54708',
+      ma5: isDark ? '#dfe4ea' : '#374151',
+      ma10: isDark ? '#f5a623' : '#8a6500',
+      ma20: isDark ? '#d63bd6' : '#a21caf',
+      ma30: isDark ? '#16b8c4' : '#006d77',
+      ma60: isDark ? '#ff7a18' : '#c2410c',
     },
     volume: {
-      ma5: isDark ? '#f5a623' : '#9a5b00',
-      ma10: isDark ? '#16b8c4' : '#0b7580',
+      ma5: isDark ? '#f5a623' : '#8a6500',
+      ma10: isDark ? '#16b8c4' : '#006d77',
     },
     macd: {
-      diff: isDark ? '#f5a623' : '#9a5b00',
-      dea: isDark ? '#16b8c4' : '#0b7580',
+      diff: isDark ? '#f5a623' : '#8a6500',
+      dea: isDark ? '#16b8c4' : '#006d77',
     },
   }
 }

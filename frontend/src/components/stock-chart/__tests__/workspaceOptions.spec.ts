@@ -96,13 +96,13 @@ describe('workspaceOptions', () => {
 
     expect(buildSignalData(rows, theme)).toEqual([
       expect.objectContaining({
-        value: [1, 0.2, 0, 1],
+        value: [1, 0.2, 1],
         signalType: '金叉',
         tradeDate: '2026-07-21',
         color: '#up',
       }),
       expect.objectContaining({
-        value: [2, -0.1, 0, 0],
+        value: [2, -0.1, 0],
         signalType: '死叉',
         tradeDate: '2026-07-22',
         color: '#down',
@@ -110,15 +110,14 @@ describe('workspaceOptions', () => {
     ])
   })
 
-  it('信号标签、引导线与锚点严格共用事件日 X 坐标，lane 只改变 Y', () => {
-    const first = signalRenderGeometry([123, 88], 10, 210, 0, true)
-    const nextLane = signalRenderGeometry([123, 88], 10, 210, 2, true)
+  it('信号标签紧贴事件点，仅保留短三角指针且不绘制长引导线', () => {
+    const golden = signalRenderGeometry([123, 88], true)
+    const dead = signalRenderGeometry([123, 88], false)
 
-    expect(first.x).toBe(123)
-    expect(first.anchorY).toBe(88)
-    expect(nextLane.x).toBe(first.x)
-    expect(nextLane.anchorY).toBe(first.anchorY)
-    expect(nextLane.labelCenterY).not.toBe(first.labelCenterY)
+    expect(golden).toMatchObject({ x: 123, anchorY: 88, labelCenterY: 75 })
+    expect(dead).toMatchObject({ x: 123, anchorY: 88, labelCenterY: 101 })
+    expect(golden.pointerPoints[2]).toEqual([123, 88])
+    expect(dead.pointerPoints[0]).toEqual([123, 88])
   })
 
   it('信号自定义系列使用字面量样式，不依赖 ECharts 已废弃 api.style', () => {
@@ -134,12 +133,13 @@ describe('workspaceOptions', () => {
     const result = series.renderItem(
       { coordSys: { y: 0, height: 200 } },
       {
-        value: (dimension) => [0, 0.2, 0, 1][dimension],
+        value: (dimension) => [0, 0.2, 1][dimension],
         coord: () => [80, 100],
       },
     )
     const text = result.children.find((child) => child.type === 'text')
     const labelBackground = result.children.find((child) => child.type === 'rect')
+    const pointer = result.children.find((child) => child.type === 'polygon')
 
     expect(text?.style).toMatchObject({
       text: '金叉',
@@ -151,6 +151,11 @@ describe('workspaceOptions', () => {
       stroke: '#up',
       lineWidth: 1.5,
     })
+    expect(pointer?.shape).toMatchObject({
+      points: [[77, 96], [83, 96], [80, 100]],
+    })
+    expect(result.children.some((child) => child.type === 'line')).toBe(false)
+    expect(result.children.some((child) => child.type === 'circle')).toBe(false)
     expect(series.tooltip).toMatchObject({ show: true, trigger: 'item', confine: true })
     expect(series.tooltip.formatter({
       data: buildSignalData(rows, theme)[0],

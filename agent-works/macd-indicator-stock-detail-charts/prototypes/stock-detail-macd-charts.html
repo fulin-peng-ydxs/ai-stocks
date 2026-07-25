@@ -20,10 +20,10 @@
       --market-down-color: #22a66f;
       --up: var(--market-up-color);
       --down: var(--market-down-color);
-      --orange: #9a5b00;
-      --cyan: #0b7580;
-      --purple: #9c2aa0;
-      --ma60: #b54708;
+      --orange: #8a6500;
+      --cyan: #006d77;
+      --purple: #a21caf;
+      --ma60: #c2410c;
       --sidebar: #131a25;
       --sidebar-text: #c8d0dc;
       --shadow: 0 12px 34px rgba(31, 41, 55, 0.10);
@@ -1048,11 +1048,11 @@
         var ma30Series = movingAverage(closes, 30);
         var ma60Series = movingAverage(closes, 60);
         [
-          { values: ma5Series, color: "#667085" },
-          { values: ma10Series, color: "#9a5b00" },
-          { values: ma20Series, color: "#9c2aa0" },
-          { values: ma30Series, color: "#0b7580" },
-          { values: ma60Series, color: "#b54708" }
+          { values: ma5Series, color: "#374151" },
+          { values: ma10Series, color: "#8a6500" },
+          { values: ma20Series, color: "#a21caf" },
+          { values: ma30Series, color: "#006d77" },
+          { values: ma60Series, color: "#c2410c" }
         ].forEach(function (line) {
           svg.appendChild(svgEl("path", {
             d: pathFrom(line.values, min, max, 18, 226),
@@ -1082,8 +1082,8 @@
           }));
         });
         [
-          { values: movingAverage(volumes, 5), color: "#9a5b00" },
-          { values: movingAverage(volumes, 10), color: "#0b7580" }
+          { values: movingAverage(volumes, 5), color: "#8a6500" },
+          { values: movingAverage(volumes, 10), color: "#006d77" }
         ].forEach(function (line) {
           svg.appendChild(svgEl("path", {
             d: pathFrom(line.values, 0, max, 18, 226),
@@ -1109,11 +1109,11 @@
         });
         svg.appendChild(svgEl("path", {
           d: pathFrom(diffs, min, max, 18, 226),
-          fill: "none", stroke: "#9a5b00", "stroke-width": 2
+          fill: "none", stroke: "#8a6500", "stroke-width": 2
         }));
         svg.appendChild(svgEl("path", {
           d: pathFrom(deas, min, max, 18, 226),
-          fill: "none", stroke: "#0b7580", "stroke-width": 2
+          fill: "none", stroke: "#006d77", "stroke-width": 2
         }));
         for (var i = 1; i < dates.length; i += 1) {
           var golden = diffs[i] > deas[i] && diffs[i - 1] <= deas[i - 1];
@@ -1121,21 +1121,17 @@
           if (golden || dead) {
             var yy = yScale(diffs[i], min, max, 18, 226);
             var signalColor = golden ? "var(--market-up-color)" : "var(--market-down-color)";
-            var tagAbove = yy > 48;
-            var tagY = tagAbove ? yy - 35 : yy + 20;
+            var tagAbove = golden;
+            var tagY = tagAbove ? yy - 22 : yy + 7;
             var tag = svgEl("g", {});
             var title = svgEl("title", {});
             title.textContent = (golden ? "金叉" : "死叉") + " · " + dates[i];
             tag.appendChild(title);
-            tag.appendChild(svgEl("line", {
-              x1: xAt(i), x2: xAt(i),
-              y1: tagAbove ? tagY + 15 : yy + 3,
-              y2: tagAbove ? yy - 3 : tagY,
-              stroke: signalColor, "stroke-width": 1.5
-            }));
-            tag.appendChild(svgEl("circle", {
-              cx: xAt(i), cy: yy, r: 2.8,
-              fill: signalColor, stroke: "#fff", "stroke-width": 1
+            tag.appendChild(svgEl("polygon", {
+              points: tagAbove
+                ? (xAt(i) - 3) + "," + (tagY + 15) + " " + (xAt(i) + 3) + "," + (tagY + 15) + " " + xAt(i) + "," + yy
+                : xAt(i) + "," + yy + " " + (xAt(i) - 3) + "," + tagY + " " + (xAt(i) + 3) + "," + tagY,
+              fill: signalColor
             }));
             tag.appendChild(svgEl("rect", {
               x: xAt(i) - 15, y: tagY, width: 30, height: 15, rx: 5,

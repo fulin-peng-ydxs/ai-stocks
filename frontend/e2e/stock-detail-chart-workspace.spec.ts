@@ -884,13 +884,18 @@ test.describe('个股详情三图工作区', () => {
     const signalCanvasBox = await macdRenderCanvas.boundingBox()
     expect(signalCanvasBox).not.toBeNull()
     const macdPlotWidth = signalCanvasBox!.width - 8 - 64
-    await page.mouse.move(
-      signalCanvasBox!.x
-        + 8
-        + ((goldenSignal.index + 0.5) / goldenSignal.total) * macdPlotWidth,
-      signalCanvasBox!.y + 25,
-    )
+    const signalX = signalCanvasBox!.x
+      + 8
+      + ((goldenSignal.index + 0.5) / goldenSignal.total) * macdPlotWidth
     const signalTooltip = workspace.locator('.stock-chart-macd-signal-tooltip')
+    // 标签紧贴交叉点且画布坐标会受 ECharts nice scale 影响，沿事件日 X 轴扫描命中真实 item。
+    for (
+      let offsetY = 12;
+      offsetY < signalCanvasBox!.height - 52 && !(await signalTooltip.isVisible());
+      offsetY += 3
+    ) {
+      await page.mouse.move(signalX, signalCanvasBox!.y + offsetY)
+    }
     await expect(signalTooltip).toBeVisible()
     await expect(signalTooltip).toContainText('金叉')
     await expect(signalTooltip).toContainText(`交易日：${goldenSignal.tradeDate}`)
