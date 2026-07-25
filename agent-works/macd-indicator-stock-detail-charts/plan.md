@@ -1072,27 +1072,28 @@ flowchart LR
 - 目标：修复复用专项审查发现的股票主题订阅、均线元数据、WCAG 对比度公式和 E2E 控制台监听重复，保持两个图表组件各自布局与生命周期不变。
 - 开发内容：
   - 新增 `useStockChartTheme()` 作为股票画布响应式主题唯一入口，内部统一组合 `useTheme`、`useLayoutPreset`、`themeRevision` 与 `stockChartTheme()`；两个画布只监听返回的 computed theme。
-  - 新增类型化 `KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS`，统一周期、标题、ECharts 系列名与 palette key；兼容 `CandleChart`、工作区序列、标题指标和颜色映射共同消费。
+  - 新增类型化 `KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS`，统一周期、标题、ECharts 系列名与 palette key；兼容 `CandleChart`、工作区序列、有数据/空数据标题指标和颜色映射共同消费。
   - 在 `themeSurfaces.ts` 增加 `contrastRatioFromHex()`，图表和布局预设测试共同使用；非法颜色返回 `NaN`，避免不同测试维护不同公式和错误兜底。
   - 新增 `e2e/helpers/console.ts::collectConsoleIssues()`，默认统一收集 `error/warning`，预期路由失败通过 `allowedHttpStatuses` 显式白名单；迁移个股详情、工作区预览、页面设置、质检定时恢复和组件四态预览用例。
 - 产出：股票画布主题 composable、类型化均线定义、共享 WCAG 对比度工具和共享 Playwright 控制台 helper。
 - 影响范围：个股详情 `StockChartWorkspace`、训练/回测 `CandleChart`、主题预设测试及五个 E2E 用例；不改变图表 props、数据、视觉、接口、数据库、权限、菜单、seed、配置或用户偏好结构。
 - 验证方式：
-  - option 测试断言 K线/量能的 series 名称、标题指标与颜色映射均逐项等于共享定义。
+  - option 测试断言 K线/量能的 series 名称、有数据标题指标与颜色映射均逐项等于共享定义；工作区组件测试以空行情断言空数据标题仍逐项来自相同定义。
   - `CandleChartRegression` 与 `StockChartWorkspace` 测试分别验证兼容组件和三图工作区在同 key 预设覆盖后通过共享主题重绘。
   - 预设测试验证 `contrastRatioFromHex()` 的 21:1、1:1 和非法颜色 `NaN` 边界，图表色板继续验证明暗背景 `≥4.5:1`。
   - 五个迁移后的 E2E 用例使用同一 console helper；页面注入的 403/503 仍通过显式白名单验证。
   - 前端全量 Vitest、正式 build、`git diff --check` 和服务健康检查。
-- 完成标准：两个股票画布不再直接组合主题依赖，不再复制 MA/VMA 周期和标签；前端只保留一个 WCAG 对比度公式和一个 E2E console error/warning 收集实现，现有页面行为及主题回归全部通过。
-- 实际落地情况：已完成（2026-07-25）。
+- 完成标准：两个股票画布不再直接组合主题依赖，序列及有数据/空数据标题不再复制 MA/VMA 周期和标签；前端只保留一个 WCAG 对比度公式和一个 E2E console error/warning 收集实现，现有页面行为及主题回归全部通过。
+- 实际落地情况：已完成（2026-07-25；复审补充空数据标题消费共享定义）。
   - 复用判断：
     - 已查找的同类实现：`CandleChart`、`StockChartWorkspace`、`workspaceOptions` 的序列/标题、`themeSurfaces`、预设与图表对比度测试、全部 `frontend/e2e` 控制台监听。
     - 已复用：`useTheme`、`useLayoutPreset`、`stockChartTheme`、`trainingChartSeriesPalette`、`movingAverage`、既有两个图表组件和各自 fixture。
     - 本次新增复用单元：`useStockChartTheme`、`KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS`、`contrastRatioFromHex`、`collectConsoleIssues`。
     - 未抽取：兼容双 grid 与个股三图的 ECharts option、状态和实例生命周期变化原因不同；组件预览 fixture 与真实页面 API fixture 的业务目标不同，继续保留，未合并成高参数万能组件或 fixture。
     - 同步维护：DESIGN 股票画布契约、E2E helper 规范、T16/T17 复用判断、共享工具测试和两个画布回归。
-  - 定向命令：`cd frontend && npm test -- --run src/components/stock-chart/__tests__/workspaceOptions.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/components/stock-chart/__tests__/CandleChartRegression.spec.ts src/layout/__tests__/presets.spec.ts --reporter=dot`，结果 `4 files / 35 tests passed`。
-  - 前端全量命令：`cd frontend && npm test -- --run --reporter=dot`，结果 `64 files / 435 tests passed`。
+    - 复审补充：移除 `StockChartWorkspace` 空数据分支中硬编码的 K线周期与量能标签，空态分别消费 `KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS`；新增空行情组件回归，防止状态切换前后标签漂移。
+  - 定向命令：`cd frontend && npm test -- --run src/components/stock-chart/__tests__/workspaceOptions.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/components/stock-chart/__tests__/CandleChartRegression.spec.ts src/layout/__tests__/presets.spec.ts --reporter=dot`，复审补充后结果 `4 files / 36 tests passed`；其中空态直接关联的两文件先行验证为 `2 files / 21 tests passed`。
+  - 前端全量命令：`cd frontend && npm test -- --run --reporter=dot`，复审补充后结果 `64 files / 436 tests passed`。
   - 正式构建：`cd frontend && npm run build` 通过，仅有既有依赖注释位置和大 chunk 告警。
   - 共享 console helper 用例：`npx playwright test e2e/stock-chart-workspace-preview.spec.ts e2e/page-settings-drawer.spec.ts e2e/quality-repair-schedule.spec.ts e2e/component-state-preview.spec.ts --project=chromium-standard --workers=1`，结果 `4 passed`。
   - 三图真实页面：`npx playwright test e2e/stock-detail-chart-workspace.spec.ts --grep '关键视口保持纵向三图' --workers=1`，结果三个视口 `3 passed`；完整日期悬停、主题、布局和 console error/warning 均无回归。
@@ -1195,7 +1196,7 @@ WHERE is_builtin = TRUE
   - T15 已完成：仅 K线显示固定左上角行情 tooltip，收盘和涨幅具备红涨绿跌语义；量能/MACD 无内容浮层但联动保持。该阶段色板后由 T16 按最新确认统一为盘感训练标准；其余定向 `3 files / 21 tests passed`、前端全量 `64 files / 433 tests passed`、正式构建和三关键视口 Playwright `3 passed` 结论继续有效。
   - T16 已完成：盘感训练、回测和个股详情共同消费盘感训练标准 MA/VMA/MACD 色板；仅 K线显示标题日期与光标日期，辅助图联动保持。定向 `3 files / 21 tests passed`，前端全量 `64 files / 433 tests passed`，正式构建通过；三关键视口 Playwright `3 passed`，截图确认无重复日期气泡。
   - T17 已完成：MACD 普通柱线继续无内容浮层，信号 item 可悬停显示类型与完整日期；浅色共享身份色和信号标签达到可读对比度；工作区移除高频 `aria-live`，共享分段控件补齐 `aria-pressed`，指标长 key 可完整识别。定向 `4 files / 23 tests passed`、前端全量 `64 files / 434 tests passed`、正式构建通过；三关键视口真实画布悬停 `3 passed`，HTML 报告留存信号完整日期截图。
-  - T18 已完成：两个股票画布统一消费响应式主题 composable 和类型化 MA/VMA 定义；图表与预设测试统一使用 WCAG 对比度工具，五个 E2E 用例统一使用 console error/warning helper。定向 `4 files / 35 tests passed`、前端全量 `64 files / 435 tests passed`、正式构建通过；console helper 迁移用例 `4 passed`，三关键视口真实页面 `3 passed`。
+  - T18 已完成：两个股票画布统一消费响应式主题 composable 和类型化 MA/VMA 定义，工作区有数据/空数据标题均不再维护第二份周期或标签；图表与预设测试统一使用 WCAG 对比度工具，五个 E2E 用例统一使用 console error/warning helper。复审补充后相关两文件定向 `21 passed`、前端全量 `64 files / 436 tests passed`、正式构建通过；此前 console helper 迁移用例 `4 passed`、三关键视口真实页面 `3 passed` 结论继续有效。
 
 ### 8.1 后端测试矩阵
 

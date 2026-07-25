@@ -4,6 +4,10 @@ import { mount } from '@vue/test-utils'
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import {
+  KLINE_MA_DEFINITIONS,
+  VOLUME_MA_DEFINITIONS,
+} from '@/components/stock-chart/chartUtils'
 import { setLayoutPreset, setPresetOverrides } from '@/layout/useLayoutPreset'
 
 const echartsMock = vi.hoisted(() => {
@@ -149,6 +153,20 @@ describe('StockChartWorkspace', () => {
     expect(latestOptions[0].dataZoom).toHaveLength(1)
     expect(latestOptions[1].dataZoom).toHaveLength(1)
     expect(latestOptions[2].dataZoom).toHaveLength(2)
+  })
+
+  it('空数据标题仍从共享 MA/VMA 定义生成', async () => {
+    const wrapper = await mountWorkspace({ bars: [], indicators: [] })
+    const labels = (selector: string) => wrapper.findAll(selector).map(
+      (metric) => metric.text().replace(/\s+--$/, ''),
+    )
+
+    expect(labels('.stock-chart-panel--kline .stock-chart-panel__metric'))
+      .toEqual(KLINE_MA_DEFINITIONS.map(({ label }) => label))
+    expect(labels('.stock-chart-panel--volume .stock-chart-panel__metric'))
+      .toEqual(['总量', ...VOLUME_MA_DEFINITIONS.map(({ label }) => label)])
+
+    wrapper.unmount()
   })
 
   it('同时挂载两个工作区时使用不同 group，互不连接或断开', async () => {

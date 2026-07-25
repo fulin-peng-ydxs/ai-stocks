@@ -13,7 +13,11 @@ import * as echarts from 'echarts'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
-import { nextStockChartWorkspaceGroupId } from './chartUtils'
+import {
+  KLINE_MA_DEFINITIONS,
+  VOLUME_MA_DEFINITIONS,
+  nextStockChartWorkspaceGroupId,
+} from './chartUtils'
 import { useStockChartTheme } from './useStockChartTheme'
 import {
   AUXILIARY_MIN_HEIGHT,
@@ -116,8 +120,15 @@ const metricIndex = computed(() => activeIndex.value ?? lastIndex.value)
 
 function panelMetrics(type: ChartType): Metric[] {
   if (!rows.value.length) {
-    if (type === 'kline') return [5, 10, 20, 30, 60].map((period) => ({ label: `MA${period}`, value: '--' }))
-    if (type === 'volume') return ['总量', 'MA5', 'MA10'].map((label) => ({ label, value: '--' }))
+    if (type === 'kline') {
+      return KLINE_MA_DEFINITIONS.map(({ label }) => ({ label, value: '--' }))
+    }
+    if (type === 'volume') {
+      return [
+        { label: '总量', value: '--' },
+        ...VOLUME_MA_DEFINITIONS.map(({ label }) => ({ label, value: '--' })),
+      ]
+    }
     return ['MACD', 'DIFF', 'DEA'].map((label) => ({ label, value: '--' }))
   }
   if (type === 'kline') {
