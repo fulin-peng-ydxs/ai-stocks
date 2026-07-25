@@ -92,8 +92,46 @@ test.describe('系统组件四态预览', () => {
     })
     expect(tokenStyle.primary).not.toBe('')
 
+    const helpPopover = page.getByRole('tooltip')
+      .filter({ hasText: '记录接口、任务、安全、权限、配置和字典事件' })
     await helpTip.hover()
-    await expect(page.getByRole('tooltip')).toContainText('记录接口、任务、安全、权限、配置和字典事件')
+    await expect(helpPopover).toBeVisible()
+    await page.mouse.move(0, 0)
+    await expect(helpPopover).toBeHidden()
+
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    for (let index = 0; index < 80; index += 1) {
+      await page.keyboard.press('Tab')
+      if (await helpTip.evaluate((element) => document.activeElement === element)) break
+    }
+    await expect(helpTip).toBeFocused()
+    await expect(helpPopover).toBeVisible()
+    const expectedFocusStyle = await page.locator('html').evaluate(() => {
+      const probe = document.createElement('span')
+      probe.style.cssText = `
+        position: fixed;
+        background: var(--el-color-primary);
+        color: var(--el-color-white);
+        border: 1px solid var(--el-color-primary);
+      `
+      document.body.appendChild(probe)
+      const style = getComputedStyle(probe)
+      const resolved = {
+        background: style.backgroundColor,
+        color: style.color,
+        border: style.borderColor,
+      }
+      probe.remove()
+      return resolved
+    })
+    await expect.poll(() => helpTip.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { background: style.backgroundColor, color: style.color, border: style.borderColor }
+    })).toEqual(expectedFocusStyle)
+
+    await page.keyboard.press('Tab')
+    await expect(helpTip).not.toBeFocused()
+    await expect(helpPopover).toBeHidden()
     expect(consoleIssues).toEqual([])
   })
 })

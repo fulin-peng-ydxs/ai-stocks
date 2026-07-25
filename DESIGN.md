@@ -184,9 +184,10 @@ Key Characteristics：
 
 | 真实组件 | 路径 | 用途 | 系统组件关系 | 使用规则 |
 |---|---|---|---|---|
-| `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；`size/defaultCollapsed` 的用户偏好走 PG `user_preference`，`bodyScroll/collapsibleSections` 只允许 preset/page 层 | registry 页面统一使用，禁止页面另写第二套设置抽屉 |
+| `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；`size/defaultCollapsed` 的用户偏好走 PG `user_preference`，`bodyScroll/collapsibleSections` 只允许 preset/page 层 | `supportsPageSettings !== false` 的 registry 页面统一使用，禁止页面另写第二套设置抽屉 |
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉边界组件 | 无直接系统组件种类 | 页面打开的设置、详情、日志抽屉统一挂载到 `LayoutHost` 内容区；宽度只传 `sm/md/lg/xl` 语义档位，禁止页面私传 px/%；禁止直接覆盖应用顶栏与导航 |
+| `LayoutHost` | `frontend/src/layout/components/LayoutHost.vue` | registry 页面统一布局、slot、滚动和 overlay 运行时宿主 | 消费 `PageLayout` 中登记的系统组件种类与区域 | 所有 registry 业务页面统一消费；页面不得绕过宿主手写页面外壳、主成长区、滚动归属或 overlay 边界 |
 | `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 消费 `pageRegistry.consumedComponentFields`、`componentMeta` 和 `COMPONENT_FIELD_DEFS` | 设置抽屉 user 层与页面布局编辑器 page 层共用；候选项可由页面按当前业务上下文传入运行时 meta 覆盖，避免不同面板的分区混显 |
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉的分组容器 | 无直接系统组件种类 | 页面设置抽屉分组优先复用；不直接用于主内容区配置面板 |
 | `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | `PageSettingsDrawer` 的业务选项统一复用；不得在页面内复制标题、说明和分区间距 |
@@ -198,6 +199,7 @@ Key Characteristics：
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示和轻量“更多”菜单收纳 | 无直接系统组件种类 | 表格 `label="操作"`、自绘表格行、列表项和编辑器条件行的行内按钮组优先复用；首个未显式指定语义色的行内高频动作使用主色，普通次要动作使用常规正文色，禁用态使用弱文本色并满足语义 token 规则定义的文字层级阈值，停用/禁用/终止/删除等破坏性动作使用危险色；动作始终清晰可见，不对整组做透明度弱显；低频或危险动作可设置 `placement: 'more'`，菜单命令继续使用 Element Plus 按钮并呈现真实 loading，不得在页面内手写多行按钮或原生命令按钮 |
 | `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽和行点击样式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 登记为 `data-table`/`wide-table` 的主列表、成长表和宽表优先复用；复杂单元格继续由业务页通过列插槽声明，不在页面复制表格外壳、分页容器和排序表头样式 |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
+| `CandleChart` | `frontend/src/components/CandleChart.vue` | 盘感训练和回测复用的 K线、量能、MA/VMA 与买卖标记画布 | 无系统组件种类；图表参数由消费页面管理 | 盘感训练和回测统一消费；保持单实例双网格与既有 props 契约，并与 `StockChartWorkspace` 共用 MA/VMA 定义、tooltip helper 和 `useStockChartTheme()`，不得复制股票画布基础能力 |
 | `StockChartWorkspace` | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | 个股 K线、量能和 MACD 的纵向联动工作区，统一日期轴、光标、显式缩放同步、局部状态和可访问高度分隔线 | 无系统组件种类；图表组合与高度属于 `stock-detail` 页面业务偏好，不进入布局字段 | 个股详情统一消费；行情与指标按交易日对齐，MACD 局部失败不得阻断 K线/量能；只有 K线显示固定在绘图区左上角的行情 tooltip 和唯一光标轴日期气泡，量能和 MACD 普通柱线只保留联动光标与标题当前值，不显示行情内容浮层、日期气泡或标题日期，MACD 信号 item 悬停例外显示信号类型与完整日期；三图标题值与实际序列必须复用盘感训练共享色板，柱宽按 K线、量能、MACD 明显递减，底部日期标签不得被缩放滑块遮挡；任一图的 `dataZoom` 必须显式同步给其余可见图并在主题重绘后保留；画布必须监听预设系统在完整 CSS token 写入后发布的主题修订版本，覆盖明暗、预设 key 和同 key 后端覆盖变化，分隔线遵守 reduced-motion；光标跟随指标值不得设置 `aria-live`，避免三组高频播报；页面不得再拼装第二套多图联动和分隔线逻辑 |
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚优先复用 |
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`；默认最多展示 3 个选中标签，溢出时提前折叠；筛选下拉优先复用 |

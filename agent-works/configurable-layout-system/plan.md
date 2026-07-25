@@ -647,3 +647,26 @@
   - Playwright：1100×620、1366×768、1440×900 三项目共 `6 passed`；确认系统组件页无个人设置入口、组件预览抽屉为 560px、HelpTip 实际样式等于当前预设 token，控制台无 error/warning。
   - MACD/T18 关键视口回归：1100×620、1366×768、1440×900 共 `3 passed`；三图纵向布局、语义主题和 reduced-motion 契约未受普通图表主题入口收敛影响。
   - 服务：后端 `/api/health=200`，前端 `5173=200`。
+
+## 18. 真实组件登记守卫与键盘验收修正
+
+- 任务编号：D2。
+- 状态：已完成（2026-07-25）。
+- 目标：修正 D1 组件登记测试对混合 import 和 Markdown 边界的漏检，并补齐 HelpTip 键盘焦点的真实浏览器证据。
+- 开发内容：
+  - `pageRegistry.spec.ts` 改用 TypeScript AST 读取 Vue `script setup` 的运行时默认组件导入；同时覆盖 `src/components/**` 和 `src/layout/components/**`，按导入路径还原组件真实名称，支持默认＋具名、别名和多行 import，忽略纯类型导入。
+  - DESIGN 清单解析严格限定在“核心真实复用组件清单”表格第一列，不再由后续章节的偶然文本造成假通过；补充独立解析回归样本。
+  - 将盘感训练与回测共同消费的 `CandleChart`、全部 registry 页面共同消费的 `LayoutHost` 登记到 DESIGN 核心组件表，并把 `PageSettingsDrawer` 的适用范围统一为 `supportsPageSettings !== false`。
+  - Playwright 通过真实 Tab 焦点链进入 HelpTip，验证 `:focus-visible` 语义主色、提示层显示及移焦关闭；等待主题过渡完成后再对账最终样式。
+- 实际落地情况：已完成；机器契约能够发现 Backtest 的混合导入并要求 CandleChart 登记，HelpTip 键盘路径已在三个关键视口复跑。
+- 产出：`DESIGN.md`、`pageRegistry.spec.ts`、`component-state-preview.spec.ts`。
+- 影响范围：DESIGN 真实组件清单、布局机器契约和 HelpTip 验收证据；不修改生产业务流程、接口、权限、数据库、seed、配置或用户偏好。
+- 复用判断：
+  - 已查找：Training/Backtest 的 CandleChart 消费、Vue 页面组件导入形态、DESIGN 核心组件表和既有 HelpTip E2E。
+  - 已复用：项目 TypeScript 编译依赖、现有页面遍历、Playwright 控制台收集器和 HelpTip 真实业务入口。
+  - 未新增生产复用单元：本轮仅强化机器契约与验收，不引入第二套组件扫描器或预览页面。
+- 验证：
+  - 定向 Vitest：`2 files / 21 tests passed`。
+  - 前端全量 Vitest：`66 files / 445 tests passed`。
+  - 正式构建：通过；仅有既有依赖注释位置和大 chunk 告警。
+  - Playwright：1100×620、1366×768、1440×900 三项目共 `6 passed`；HelpTip 的 hover、真实 Tab 聚焦、主色反馈、提示显示和移焦关闭均通过。

@@ -4,8 +4,9 @@
  */
 import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 import { PAGE_REGISTRY, getPageEntry, getPageLayout, listComponentUsage, listManagedPages } from '../pageRegistry'
 import { validateLayout } from '../validator'
 import { COMPONENT_CATALOG } from '../components'
@@ -16,9 +17,6 @@ const RESPONSIVE_PROFILES = new Set(['single-column', 'safe-reflow', 'mixed-pane
 const DESIGN_MD = readFileSync(new URL('../../../../DESIGN.md', import.meta.url), 'utf-8')
 const DESIGN_PAGE_SECTION = DESIGN_MD.match(
   /<!-- page-registry:start -->([\s\S]*?)<!-- page-registry:end -->/,
-)?.[1] ?? ''
-const DESIGN_COMPONENT_SECTION = DESIGN_MD.match(
-  /核心真实复用组件清单：([\s\S]*?)- Playwright E2E/,
 )?.[1] ?? ''
 const VIEWS_DIR = fileURLToPath(new URL('../../views/', import.meta.url))
 const ROUTER_TS = readFileSync(new URL('../../router/index.ts', import.meta.url), 'utf-8')
@@ -40,6 +38,51 @@ function vueFiles(dir: string): string[] {
     return entry.name.endsWith('.vue') ? [path] : []
   })
 }
+
+function coreComponentNames(markdown: string): Set<string> {
+  const heading = /^核心真实复用组件清单：\s*$/m.exec(markdown)
+  if (heading?.index == null) return new Set()
+  const afterHeading = markdown.slice(heading.index + heading[0].length)
+  const nextSection = /^核心 composable 复用清单：\s*$/m.exec(afterHeading)
+  const table = nextSection?.index == null
+    ? afterHeading
+    : afterHeading.slice(0, nextSection.index)
+  const names = new Set<string>()
+  for (const line of table.split('\n')) {
+    if (!line.startsWith('|')) continue
+    const firstColumn = line.split('|')[1] ?? ''
+    for (const match of firstColumn.matchAll(/`([^`]+)`/g)) names.add(match[1])
+  }
+  return names
+}
+
+function runtimeComponentImports(source: string, fileName = 'component.vue'): Set<string> {
+  const script = source.match(/<script\b[^>]*\bsetup\b[^>]*>([\s\S]*?)<\/script>/)?.[1] ?? source
+  const sourceFile = ts.createSourceFile(fileName, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const components = new Set<string>()
+
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue
+    const importPath = statement.moduleSpecifier.text
+    if (
+      !importPath.startsWith('@/components/')
+      && !importPath.startsWith('@/layout/components/')
+    ) continue
+    const clause = statement.importClause
+    if (!clause || clause.isTypeOnly) continue
+    const namedDefault = clause.namedBindings && ts.isNamedImports(clause.namedBindings)
+      ? clause.namedBindings.elements.some((element) =>
+        !element.isTypeOnly
+        && (element.propertyName?.text === 'default' || element.name.text === 'default'))
+      : false
+    if (!clause.name && !namedDefault) continue
+    components.add(basename(importPath).replace(/\.vue$/, ''))
+  }
+
+  return components
+}
+
+const DESIGN_CORE_COMPONENTS = coreComponentNames(DESIGN_MD)
 
 describe('页面注册表完整性', () => {
   it('注册表非空且与 listManagedPages 一致', () => {
@@ -122,22 +165,51 @@ describe('页面注册表完整性', () => {
     const consumers = new Map<string, Set<string>>()
     for (const file of vueFiles(VIEWS_DIR)) {
       const source = readFileSync(file, 'utf8')
-      for (const match of source.matchAll(
-        /import\s+(\w+)\s+from\s+['"]@\/components\/[^'"]+['"]/g,
-      )) {
-        const pages = consumers.get(match[1]) ?? new Set<string>()
+      for (const component of runtimeComponentImports(source, file)) {
+        const pages = consumers.get(component) ?? new Set<string>()
         pages.add(file)
-        consumers.set(match[1], pages)
+        consumers.set(component, pages)
       }
     }
 
     for (const [component, pages] of consumers) {
       if (pages.size < 2) continue
       expect(
-        DESIGN_COMPONENT_SECTION,
+        DESIGN_CORE_COMPONENTS.has(component),
         `${component} 已被 ${pages.size} 个页面消费但未登记到 DESIGN 核心组件清单`,
-      ).toContain(`\`${component}\``)
+      ).toBe(true)
     }
+  })
+
+  it('组件消费解析支持混合、别名和多行 import，并忽略纯类型导入', () => {
+    const components = runtimeComponentImports(`
+      <script setup lang="ts">
+      import ReplayChart,
+        { type TradeMarker }
+        from '@/components/CandleChart.vue'
+      import { default as DrawerAlias } from '@/components/PageDrawer.vue'
+      import LayoutAlias from '@/layout/components/LayoutHost.vue'
+      import type { HelpTipProps } from '@/components/HelpTip.vue'
+      </script>
+    `)
+    expect([...components].sort()).toEqual(['CandleChart', 'LayoutHost', 'PageDrawer'])
+  })
+
+  it('DESIGN 组件登记只读取核心真实复用组件表格第一列', () => {
+    const components = coreComponentNames(`
+核心真实复用组件清单：
+
+| 真实组件 | 路径 |
+|---|---|
+| \`InsideTable\` / \`InsidePair\` | \`OutsidePathMention\` |
+
+核心 composable 复用清单：
+
+| Composable | 路径 |
+|---|---|
+| \`OutsideSection\` | x |
+    `)
+    expect([...components].sort()).toEqual(['InsidePair', 'InsideTable'])
   })
 
   it('只有真实消费个人设置的页面登记 settings-drawer，布局管理页显式排除', () => {
