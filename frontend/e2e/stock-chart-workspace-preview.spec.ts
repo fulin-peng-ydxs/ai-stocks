@@ -1,10 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { collectConsoleIssues } from './helpers/console'
 
 test('多图工作区三种可见数量、局部错误、主题和键盘高度可重复验收', async ({ page }) => {
-  const consoleErrors: string[] = []
-  page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text())
-  })
+  const consoleIssues = collectConsoleIssues(page)
 
   await page.goto('/e2e/fixtures/stock-chart-workspace-preview.html')
 
@@ -41,5 +39,5 @@ test('多图工作区三种可见数量、局部错误、主题和键盘高度�
   expect(await page.evaluate(() =>
     document.documentElement.scrollWidth <= document.documentElement.clientWidth,
   )).toBe(true)
-  expect(consoleErrors).toEqual([])
+  expect(consoleIssues).toEqual([])
 })

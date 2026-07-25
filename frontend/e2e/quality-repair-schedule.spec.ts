@@ -1,15 +1,13 @@
 import { expect, test } from '@playwright/test'
 
 import { loginAsDebugUser } from './helpers/auth'
+import { collectConsoleIssues } from './helpers/console'
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
 
 test.describe('质检问题定时恢复', () => {
   test('可按问题类型创建定时任务并保存动态恢复参数', async ({ page, request }) => {
-    const consoleIssues: string[] = []
-    page.on('console', (msg) => {
-      if (['error', 'warning'].includes(msg.type())) consoleIssues.push(msg.text())
-    })
+    const consoleIssues = collectConsoleIssues(page)
 
     const auth = await loginAsDebugUser(page, request, 'debug_system')
     const headers = { authorization: `Bearer ${auth.accessToken}` }

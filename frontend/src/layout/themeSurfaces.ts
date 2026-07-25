@@ -87,6 +87,16 @@ export function relativeLuminanceFromHex(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
+/** WCAG 对比度统一口径；任一颜色不是六位 hex 时返回 NaN。 */
+export function contrastRatioFromHex(left: string, right: string): number {
+  const leftLuminance = relativeLuminanceFromHex(left)
+  const rightLuminance = relativeLuminanceFromHex(right)
+  if (!Number.isFinite(leftLuminance) || !Number.isFinite(rightLuminance)) return NaN
+  const light = Math.max(leftLuminance, rightLuminance)
+  const dark = Math.min(leftLuminance, rightLuminance)
+  return (light + 0.05) / (dark + 0.05)
+}
+
 export function hasDistinctTextHierarchy(text: string, textMuted: string): boolean {
   const delta = Math.abs(relativeLuminanceFromHex(text) - relativeLuminanceFromHex(textMuted))
   return Number.isFinite(delta) && delta >= MIN_TEXT_HIERARCHY_LUMINANCE_DELTA

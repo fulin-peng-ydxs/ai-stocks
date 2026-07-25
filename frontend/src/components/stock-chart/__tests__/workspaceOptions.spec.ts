@@ -10,12 +10,18 @@ import {
   buildSignalData,
   buildSignalSeries,
   KLINE_BAR_WIDTH,
+  klineMetrics,
   MACD_BAR_WIDTH,
   panelMetricColor,
   signalRenderGeometry,
   VOLUME_BAR_WIDTH,
+  volumeMetrics,
 } from '@/components/stock-chart/workspaceOptions'
-import type { StockChartTheme } from '@/components/stock-chart/chartUtils'
+import {
+  KLINE_MA_DEFINITIONS,
+  VOLUME_MA_DEFINITIONS,
+  type StockChartTheme,
+} from '@/components/stock-chart/chartUtils'
 
 const theme: StockChartTheme = {
   background: '#fff',
@@ -245,26 +251,33 @@ describe('workspaceOptions', () => {
       zoomEnd: 100,
     }
     const klineSeries = buildKlineOption(context).series.slice(1) as Array<{
+      name: string
       lineStyle: { color: string }
     }>
     const volumeSeries = buildVolumeOption(context).series.slice(1) as Array<{
+      name: string
       lineStyle: { color: string }
     }>
     const macdSeries = buildMacdOption(context).series as Array<{
       lineStyle?: { color: string }
     }>
 
-    expect(klineSeries.map((series) => series.lineStyle.color)).toEqual([
-      panelMetricColor(theme, 'kline', 'MA5'),
-      panelMetricColor(theme, 'kline', 'MA10'),
-      panelMetricColor(theme, 'kline', 'MA20'),
-      panelMetricColor(theme, 'kline', 'MA30'),
-      panelMetricColor(theme, 'kline', 'MA60'),
-    ])
-    expect(volumeSeries.map((series) => series.lineStyle.color)).toEqual([
-      panelMetricColor(theme, 'volume', 'MA5'),
-      panelMetricColor(theme, 'volume', 'MA10'),
-    ])
+    expect(klineSeries.map((series) => series.name))
+      .toEqual(KLINE_MA_DEFINITIONS.map((definition) => definition.label))
+    expect(klineSeries.map((series) => series.lineStyle.color))
+      .toEqual(KLINE_MA_DEFINITIONS.map((definition) => (
+        panelMetricColor(theme, 'kline', definition.label)
+      )))
+    expect(klineMetrics(rows, [], 0).map((metric) => metric.label))
+      .toEqual(KLINE_MA_DEFINITIONS.map((definition) => definition.label))
+    expect(volumeSeries.map((series) => series.name))
+      .toEqual(VOLUME_MA_DEFINITIONS.map((definition) => definition.seriesName))
+    expect(volumeSeries.map((series) => series.lineStyle.color))
+      .toEqual(VOLUME_MA_DEFINITIONS.map((definition) => (
+        panelMetricColor(theme, 'volume', definition.label)
+      )))
+    expect(volumeMetrics(rows, [], 0).slice(1).map((metric) => metric.label))
+      .toEqual(VOLUME_MA_DEFINITIONS.map((definition) => definition.label))
     expect(macdSeries[1].lineStyle?.color).toBe(panelMetricColor(theme, 'macd', 'DIFF'))
     expect(macdSeries[2].lineStyle?.color).toBe(panelMetricColor(theme, 'macd', 'DEA'))
     expect(panelMetricColor(theme, 'macd', 'MACD', -0.2)).toBe(theme.down)

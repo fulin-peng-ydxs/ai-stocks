@@ -12,10 +12,9 @@ import {
 import * as echarts from 'echarts'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import { useTheme } from '@/composables/useTheme'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
-import { useLayoutPreset } from '@/layout/useLayoutPreset'
-import { nextStockChartWorkspaceGroupId, stockChartTheme } from './chartUtils'
+import { nextStockChartWorkspaceGroupId } from './chartUtils'
+import { useStockChartTheme } from './useStockChartTheme'
 import {
   AUXILIARY_MIN_HEIGHT,
   KEYBOARD_RATIO_STEP,
@@ -94,8 +93,7 @@ const groupId = nextStockChartWorkspaceGroupId()
 const workspaceEl = ref<HTMLElement | null>(null)
 const chartElements = new Map<WorkspacePanelKey, HTMLElement>()
 const charts = new Map<WorkspacePanelKey, echarts.ECharts>()
-const { isDark } = useTheme()
-const { themeRevision } = useLayoutPreset()
+const theme = useStockChartTheme()
 const activeIndex = ref<number | null>(null)
 const liveRatios = ref<number[]>([])
 const zoomRange = ref<ZoomRange>(normalizeZoomRange(props.zoomStart, props.zoomEnd))
@@ -115,11 +113,6 @@ const ratios = computed(() => normalizeWorkspaceRatios(
 ))
 const lastIndex = computed(() => Math.max(0, rows.value.length - 1))
 const metricIndex = computed(() => activeIndex.value ?? lastIndex.value)
-const theme = computed(() => {
-  // ECharts 画布不会自动响应 CSS 变量变化；主题版本统一覆盖预设、明暗与后端覆盖更新。
-  void themeRevision.value
-  return stockChartTheme(isDark.value)
-})
 
 function panelMetrics(type: ChartType): Metric[] {
   if (!rows.value.length) {
@@ -420,7 +413,7 @@ watch(
   },
 )
 watch(
-  [panels, rows, () => props.warmupBars, () => props.macdState, isDark, themeRevision,
+  [panels, rows, () => props.warmupBars, () => props.macdState, theme,
   ],
   async () => {
     activeIndex.value = null

@@ -18,6 +18,7 @@ import {
   type E2EAuthSnapshot,
   type TemporaryE2EUser,
 } from './helpers/auth'
+import { collectConsoleIssues } from './helpers/console'
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
 
@@ -59,20 +60,6 @@ function stockDetailPreference(
 const preferenceKey = (item: Pick<PreferencePayload, 'scope' | 'pageKey' | 'prefKey'>) => (
   `${item.scope}|${item.pageKey || ''}|${item.prefKey}`
 )
-
-function collectConsoleIssues(page: Page, allowedHttpStatuses: number[] = []): string[] {
-  const issues: string[] = []
-  page.on('console', (message) => {
-    const text = message.text()
-    const expectedInjectedFailure = allowedHttpStatuses.some(
-      (status) => text.includes(`status of ${status}`),
-    )
-    if (['error', 'warning'].includes(message.type()) && !expectedInjectedFailure) {
-      issues.push(text)
-    }
-  })
-  return issues
-}
 
 function runInStandardViewport(testInfo: TestInfo) {
   test.skip(
@@ -474,7 +461,7 @@ test.describe('个股详情三图工作区', () => {
     testInfo,
   ) => {
     runInStandardViewport(testInfo)
-    const consoleIssues = collectConsoleIssues(page, [503])
+    const consoleIssues = collectConsoleIssues(page, { allowedHttpStatuses: [503] })
     const { samples } = await loadStocksOnlyContext(page, request)
     const [sample, nextSample] = samples
     const code = sample.code
@@ -748,7 +735,7 @@ test.describe('个股详情三图工作区', () => {
     request,
   }, testInfo) => {
     runInStandardViewport(testInfo)
-    const consoleIssues = collectConsoleIssues(page, [403])
+    const consoleIssues = collectConsoleIssues(page, { allowedHttpStatuses: [403] })
     const auth = await loginAsDebugUser(page, request, 'debug_normal')
     const [sample] = await loadStockSamples(request, auth, 1)
     const localPreference = stockDetailPreference('macd', 'hidden')
@@ -977,7 +964,7 @@ test.describe('个股详情三图工作区', () => {
     testInfo,
   ) => {
     runInStandardViewport(testInfo)
-    const consoleIssues = collectConsoleIssues(page, [403])
+    const consoleIssues = collectConsoleIssues(page, { allowedHttpStatuses: [403] })
     const { code } = await loadStocksOnlyContext(page, request)
     await installPreferenceEndpoint(page)
 

@@ -3,8 +3,10 @@ import type { ChartType } from '@/composables/useStockChartPreferences'
 import {
   formatChartNumber,
   formatVolume,
+  KLINE_MA_DEFINITIONS,
   klineTooltipHtml,
   movingAverage,
+  VOLUME_MA_DEFINITIONS,
   type StockChartTheme,
 } from './chartUtils'
 
@@ -56,15 +58,12 @@ export function panelMetricColor(
     return macdValue < 0 ? theme.down : theme.up
   }
   if (type === 'kline') {
-    if (label === 'MA5') return theme.series.kline.ma5
-    if (label === 'MA10') return theme.series.kline.ma10
-    if (label === 'MA20') return theme.series.kline.ma20
-    if (label === 'MA30') return theme.series.kline.ma30
-    if (label === 'MA60') return theme.series.kline.ma60
+    const definition = KLINE_MA_DEFINITIONS.find((item) => item.label === label)
+    if (definition) return theme.series.kline[definition.paletteKey]
   }
   if (type === 'volume') {
-    if (label === 'MA5') return theme.series.volume.ma5
-    if (label === 'MA10') return theme.series.volume.ma10
+    const definition = VOLUME_MA_DEFINITIONS.find((item) => item.label === label)
+    if (definition) return theme.series.volume[definition.paletteKey]
   }
   if (label === 'DIFF') return theme.series.macd.diff
   if (label === 'DEA') return theme.series.macd.dea
@@ -333,13 +332,6 @@ export function buildKlineOption(context: OptionContext) {
   const bars = context.rows.map((row) => row.bar)
   const allCloses = [...context.warmupBars, ...bars].map((bar) => bar.close)
   const base = commonOption(context, true)
-  const maDefinitions = [
-    { period: 5, color: context.theme.series.kline.ma5 },
-    { period: 10, color: context.theme.series.kline.ma10 },
-    { period: 20, color: context.theme.series.kline.ma20 },
-    { period: 30, color: context.theme.series.kline.ma30 },
-    { period: 60, color: context.theme.series.kline.ma60 },
-  ]
   return {
     ...base,
     tooltip: {
@@ -376,15 +368,18 @@ export function buildKlineOption(context: OptionContext) {
           borderColor0: context.theme.down,
         },
       },
-      ...maDefinitions.map(({ period, color }) => {
-        const full = movingAverage(allCloses, period)
+      ...KLINE_MA_DEFINITIONS.map((definition) => {
+        const full = movingAverage(allCloses, definition.period)
         return {
-          name: `MA${period}`,
+          name: definition.label,
           type: 'line',
           data: full.slice(full.length - bars.length),
           showSymbol: false,
           connectNulls: false,
-          lineStyle: { width: 1, color },
+          lineStyle: {
+            width: 1,
+            color: context.theme.series.kline[definition.paletteKey],
+          },
           z: 3,
         }
       }),
@@ -395,8 +390,6 @@ export function buildKlineOption(context: OptionContext) {
 export function buildVolumeOption(context: OptionContext) {
   const bars = context.rows.map((row) => row.bar)
   const allVolumes = [...context.warmupBars, ...bars].map((bar) => bar.volume)
-  const volMa5 = movingAverage(allVolumes, 5).slice(-bars.length)
-  const volMa10 = movingAverage(allVolumes, 10).slice(-bars.length)
   const base = commonOption(context, false)
   return {
     ...base,
@@ -424,22 +417,17 @@ export function buildVolumeOption(context: OptionContext) {
           itemStyle: { color: bar.close >= bar.open ? context.theme.up : context.theme.down },
         })),
       },
-      {
-        name: 'VMA5',
+      ...VOLUME_MA_DEFINITIONS.map((definition) => ({
+        name: definition.seriesName,
         type: 'line',
-        data: volMa5,
+        data: movingAverage(allVolumes, definition.period).slice(-bars.length),
         showSymbol: false,
         connectNulls: false,
-        lineStyle: { width: 1.4, color: context.theme.series.volume.ma5 },
-      },
-      {
-        name: 'VMA10',
-        type: 'line',
-        data: volMa10,
-        showSymbol: false,
-        connectNulls: false,
-        lineStyle: { width: 1.4, color: context.theme.series.volume.ma10 },
-      },
+        lineStyle: {
+          width: 1.4,
+          color: context.theme.series.volume[definition.paletteKey],
+        },
+      })),
     ],
   }
 }
@@ -521,9 +509,9 @@ export function klineMetrics(
 ) {
   const closes = [...warmupBars, ...rows.map((row) => row.bar)].map((bar) => bar.close)
   const offset = warmupBars.length + index
-  return [5, 10, 20, 30, 60].map((period) => ({
-    label: `MA${period}`,
-    value: formatChartNumber(movingAverage(closes, period)[offset]),
+  return KLINE_MA_DEFINITIONS.map((definition) => ({
+    label: definition.label,
+    value: formatChartNumber(movingAverage(closes, definition.period)[offset]),
   }))
 }
 
@@ -536,8 +524,10 @@ export function volumeMetrics(
   const offset = warmupBars.length + index
   return [
     { label: '总量', value: formatVolume(rows[index]?.bar.volume) },
-    { label: 'MA5', value: formatVolume(movingAverage(volumes, 5)[offset]) },
-    { label: 'MA10', value: formatVolume(movingAverage(volumes, 10)[offset]) },
+    ...VOLUME_MA_DEFINITIONS.map((definition) => ({
+      label: definition.label,
+      value: formatVolume(movingAverage(volumes, definition.period)[offset]),
+    })),
   ]
 }
 

@@ -32,6 +32,37 @@ export interface StockChartTheme {
   focus: string
 }
 
+export type KlineMaPaletteKey = keyof StockChartSeriesPalette['kline']
+export type VolumeMaPaletteKey = keyof StockChartSeriesPalette['volume']
+
+export interface KlineMaDefinition {
+  period: number
+  label: string
+  paletteKey: KlineMaPaletteKey
+}
+
+export interface VolumeMaDefinition {
+  period: number
+  label: string
+  seriesName: string
+  paletteKey: VolumeMaPaletteKey
+}
+
+/** 股票 K 线均线的周期、标题和色板键统一事实源。 */
+export const KLINE_MA_DEFINITIONS = [
+  { period: 5, label: 'MA5', paletteKey: 'ma5' },
+  { period: 10, label: 'MA10', paletteKey: 'ma10' },
+  { period: 20, label: 'MA20', paletteKey: 'ma20' },
+  { period: 30, label: 'MA30', paletteKey: 'ma30' },
+  { period: 60, label: 'MA60', paletteKey: 'ma60' },
+] as const satisfies readonly KlineMaDefinition[]
+
+/** 股票量能均线的周期、标题、ECharts 名称和色板键统一事实源。 */
+export const VOLUME_MA_DEFINITIONS = [
+  { period: 5, label: 'MA5', seriesName: 'VMA5', paletteKey: 'ma5' },
+  { period: 10, label: 'MA10', seriesName: 'VMA10', paletteKey: 'ma10' },
+] as const satisfies readonly VolumeMaDefinition[]
+
 let workspaceGroupSequence = 0
 
 /** 模块级递增，确保同一页面并存的多个工作区不会误连到同一 ECharts group。 */

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS, validateLayoutPreset } from '../presets'
 import {
   blendHex,
+  contrastRatioFromHex,
   MIN_TEXT_HIERARCHY_LUMINANCE_DELTA,
   relativeLuminanceFromHex,
   rgbaFromHex,
@@ -44,23 +45,13 @@ function channelSpread(hex: string): number {
   return Math.max(...channels) - Math.min(...channels)
 }
 
-function relativeLuminance(hex: string): number {
-  const channels = rgb(hex).map((value) => {
-    const normalized = value / 255
-    return normalized <= 0.03928
-      ? normalized / 12.92
-      : ((normalized + 0.055) / 1.055) ** 2.4
-  })
-  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
-}
-
-function contrast(a: string, b: string): number {
-  const light = Math.max(relativeLuminance(a), relativeLuminance(b))
-  const dark = Math.min(relativeLuminance(a), relativeLuminance(b))
-  return (light + 0.05) / (dark + 0.05)
-}
-
 describe('布局风格预设（M2 / M9 双模式）', () => {
+  it('颜色工具统一计算 WCAG 对比度并对非法颜色 fail-closed', () => {
+    expect(contrastRatioFromHex('#000000', '#ffffff')).toBeCloseTo(21)
+    expect(contrastRatioFromHex('#ffffff', '#ffffff')).toBe(1)
+    expect(contrastRatioFromHex('invalid', '#ffffff')).toBeNaN()
+  })
+
   it('内置三套金融科技预设完整可用，light/dark 两套 token 均合法', () => {
     expect(Object.keys(LAYOUT_PRESETS).sort()).toEqual([
       'balanced',
@@ -158,11 +149,12 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
   it('日曜双模式的正文、弱文字和主按钮保持 WCAG AA 对比度', () => {
     for (const mode of MODES) {
       const daylight = LAYOUT_PRESETS.daylight.tokens[mode]
-      expect(contrast(daylight.text, daylight.surfaceBg), `${mode} 正文`)
+      expect(contrastRatioFromHex(daylight.text, daylight.surfaceBg), `${mode} 正文`)
         .toBeGreaterThanOrEqual(4.5)
-      expect(contrast(daylight.textMuted, daylight.surfaceBg), `${mode} 弱文字`)
+      expect(contrastRatioFromHex(daylight.textMuted, daylight.surfaceBg), `${mode} 弱文字`)
         .toBeGreaterThanOrEqual(4.5)
-      expect(contrast(daylight.primary, '#ffffff'), `${mode} 主按钮`).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatioFromHex(daylight.primary, '#ffffff'), `${mode} 主按钮`)
+        .toBeGreaterThanOrEqual(4.5)
     }
   })
 
@@ -175,7 +167,7 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
       .toBeLessThan(luminance(nocturne.surfaceBg))
     expect(channelSpread(balanced.border), '暖石墨边界')
       .toBeLessThan(channelSpread(nocturne.border) / 2)
-    expect(contrast(balanced.textMuted, balanced.surfaceBg), '弱文字可读性')
+    expect(contrastRatioFromHex(balanced.textMuted, balanced.surfaceBg), '弱文字可读性')
       .toBeGreaterThanOrEqual(4.5)
   })
 

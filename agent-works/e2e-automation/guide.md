@@ -10,7 +10,7 @@
 - `DESIGN.md`：UI 组件和 `data-testid` 锚点规范，说明哪些真实组件可以承载测试锚点，以及锚点不表达样式/业务状态。
 - 本文件：E2E 执行流程、工具边界、沉淀触发条件和 helper 使用规则。
 - `frontend/playwright.config.ts`：Playwright 运行配置，固定 `frontend/e2e/`、`5181`、trace/screenshot/video 策略。
-- `frontend/e2e/helpers/`：登录、数据预置、偏好读写等长期复用 helper；新增 E2E 不重复手写登录态和接口 seed。
+- `frontend/e2e/helpers/`：登录、数据预置、偏好读写和控制台问题收集等长期复用 helper；新增 E2E 不重复手写登录态、接口 seed 或 `page.on('console')`。
 - `agent-works/multi-tenant-rbac/test-users.md`：`debug_*` 调试账号事实源。
 
 后续修改上述任一文件影响自动化流程时，必须同步检查其余入口是否仍一致。
@@ -59,6 +59,8 @@ Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；�
 和夹具必须同时处于明确 dev/test/local 环境并启用 `AI_STOCKS_E2E_WRITE=1`。任一条件缺失、
 PG 指纹不一致或后端运行中切换数据库时均 fail-closed，不执行物理清理。
 `frontend/playwright-report/` 是本地忽略的可打开验收产物；用例通过 `testInfo.attach()` 附加的截图会进入该报告。需要对外归档时由 CI 或发布流程保存整个报告目录，不在业务提交中追踪哈希附件。
+
+控制台问题统一通过 `frontend/e2e/helpers/console.ts::collectConsoleIssues()` 收集，默认同时阻断 `error` 和 `warning`。路由注入形成的预期 HTTP 失败必须通过 `allowedHttpStatuses` 显式声明；不得在用例内复制监听器、只检查 `error` 或私自放宽 warning 口径。
 
 ## 选择器规则
 

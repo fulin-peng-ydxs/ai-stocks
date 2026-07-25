@@ -4,7 +4,7 @@
 
 - 需求文档：[requirement.md](./requirement.md)。
 - 交互原型：[prototypes/stock-detail-macd-charts.html](./prototypes/stock-detail-macd-charts.html)。
-- 阅读结论：已完整读取当前需求文档 707 行及其引用原型 1556 行；原型中的状态演示按钮只用于说明，不作为线上工具栏功能。
+- 阅读结论：已完整读取当前需求文档 710 行及其引用原型 1556 行；原型中的状态演示按钮只用于说明，不作为线上工具栏功能。
 - 需求编号：严格沿用需求文档的 R1–R16，不重新编号、不改变含义。
 - 功能目标：
   - 建立 EMA、MACD 数值与金叉/死叉五个原子结果的唯一后端口径。
@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1–T17 已全部完成并通过对应阶段验证；发布 smoke、seed 对账、回滚演练及四轮上线后图表体验修正均已闭环。
+- 当前进度：T1–T18 已全部完成并通过对应阶段验证；发布 smoke、seed 对账、回滚演练、四轮图表体验修正及前端复用专项收口均已闭环。
 
 ## 2. 当前项目依据
 
@@ -46,7 +46,7 @@
 
 - 页面入口、路由和菜单已经存在：`/stocks/:code`、`StockDetailView.vue`、`pageKey=stock-detail`，不新增路由或菜单。
 - 页面已使用 `LayoutHost` 和 `detail` 原型；`detail` 主区由 `LayoutHost` 的 `.v-scroll` 承担内部滚动，适合承载最低 650px 的图表工作区和下方顺序卡片。
-- `CandleChart.vue` 继续保持单个 ECharts 实例、固定 480px、K线与量能双 grid 及原 props 契约；其 MA/VMA、格式化、K线 tooltip、盘感训练标准序列色和主题修订重绘均复用 `stock-chart/chartUtils.ts`，盘感训练和回测继续复用旧组件。
+- `CandleChart.vue` 继续保持单个 ECharts 实例、固定 480px、K线与量能双 grid 及原 props 契约；其 MA/VMA 定义、格式化、K线 tooltip 和盘感训练标准序列色复用 `stock-chart/chartUtils.ts`，响应式主题统一消费 `useStockChartTheme()`，盘感训练和回测继续复用旧组件。
 - `StockChartWorkspace.vue` 已完成按面板分实例、唯一 ECharts group、共享日期轴、显式缩放广播、MACD 信号、分层柱宽、盘感训练同源配色、仅 K线固定左上角行情 tooltip 与唯一光标日期、局部状态和可访问分隔线，并已由 `StockDetailView` 正式消费；`DESIGN.md` 已登记其真实组件职责与使用规则。
 - `DESIGN.md` 明确禁止页面写 `calc(100vh - Npx)`，要求金融涨跌使用 `--market-up-color` / `--market-down-color`，四态使用 `AppStateBlock`，页面设置使用 `PageSettingsDrawer`。
 
@@ -81,12 +81,12 @@
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成 | T1、T9 |
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成 | T2、T9、T13、T17 |
 | R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 已完成 | T3、T6、T9、T10、T11、T13 |
-| R5 | 默认三图、图名、共享日期/光标/缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 图形、信号引导线与完整日期提示 | 已完成 | T5、T6、T10、T11、T14、T15、T16、T17 |
+| R5 | 默认三图、图名、共享日期/光标/缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 图形、信号引导线与完整日期提示 | 已完成 | T5、T6、T10、T11、T14、T15、T16、T17、T18 |
 | R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 已完成 | T4、T7、T10、T11、T17 |
 | R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 已完成 | T4、T5、T7、T10、T11 |
 | R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 已完成 | T4、T7、T9、T10、T11、T13 |
 | R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 已完成 | T3、T5、T6、T8、T10、T11 |
-| R15 | 响应式、辅助模块显隐、主题、pointer/键盘可访问性和 reduced motion | 已完成 | T5、T8、T10、T11、T12、T14、T17 |
+| R15 | 响应式、辅助模块显隐、主题、pointer/键盘可访问性和 reduced motion | 已完成 | T5、T8、T10、T11、T12、T14、T17、T18 |
 | R16 | 接口/偏好兼容、请求竞态、辅助模块旧偏好合并和 KeepAlive 生命周期 | 已完成 | T3、T4、T5、T6、T10、T11、T13、T14 |
 
 ### 3.2 可选增强（建议项处理）
@@ -183,7 +183,7 @@ flowchart LR
 - 新增页面域多图组件，建议路径：
   - `frontend/src/components/stock-chart/StockChartWorkspace.vue`
   - 必要的内部 panel/option helper 放在同目录。
-- 不直接把 `CandleChart.vue` 改造成承载所有页面专属状态的大组件；抽取 MA/VMA、主题 token 解析和通用格式化工具，让 `CandleChart` 与新工作区共同消费，避免重复实现并保护盘感训练/回测。
+- 不直接把 `CandleChart.vue` 改造成承载所有页面专属状态的大组件；抽取类型化 MA/VMA 定义、响应式股票主题入口、主题 token 解析和通用格式化工具，让 `CandleChart` 与新工作区共同消费，避免重复实现并保护盘感训练/回测。
 - 工作区采用“每个可见面板一个 ECharts 实例 + 当前组件唯一 group id + `echarts.connect`”：
   - DOM 面板天然承载图名、局部四态和可访问分隔线。
   - group 同步 axisPointer、dataZoom 和日期索引。
@@ -340,12 +340,12 @@ flowchart LR
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成 | 一致 | 交叉边界和缺失段单测 | T1 实现与 T9 后端总回归均已通过；空值保留 null，下游按不成立处理。 |
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值、长技术标识可读 | T2、T9、T13、T17 | 已完成 | 一致 | repo/API/筛选/评分/买卖方案测试、管理页检查 | T13 真实启动对账为 43 个 builtin、五个 MACD 定义，启动 seed 变更 0；筛选、评分和买卖条件固定样本均通过。T17 为标识列补足最小宽度、等宽字体与溢出提示。 |
 | 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 已完成 | 一致 | API、Vitest、Playwright | T13 真实接口同时通过旧调用、五字段 `lookback=6000`、严格 JSON、非法字段 400 和超界 422，页面继续按交易日对齐。 |
-| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/显式缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 信号引导线与完整日期提示 | T5、T6、T10、T11、T14、T15、T16、T17 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T15 收口唯一 K线 tooltip；T16 统一 MA/VMA/MACD 色板和唯一光标日期；T17 为浅色主题提供同色相高对比版本，并以真实信号 item 悬停验证完整交易日期。 |
+| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/显式缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 信号引导线与完整日期提示 | T5、T6、T10、T11、T14、T15、T16、T17、T18 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T15 收口唯一 K线 tooltip；T16 统一 MA/VMA/MACD 色板和唯一光标日期；T17 完成高对比与真实信号悬停；T18 将两类股票画布的响应式主题和 MA/VMA 元数据收敛为唯一复用入口。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏、空间释放和程序化选中语义 | T4、T7、T10、T11、T17 | 已完成 | 一致 | 归一化单测、抽屉 E2E、可访问属性测试 | 真实点击覆盖自动交换、隐藏、重显、无无效分隔线、切股与刷新恢复；T17 由共享 `PageSegmented` 补齐 `aria-pressed`。 |
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 已完成 | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | T11 以分隔线实际位置执行 pointer 拖动，验证最低高度、相对比例保存、键盘调整及切股/刷新恢复。 |
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 已完成 | 一致 | 偏好 API、Vitest、跨用户 E2E | T13 发布 smoke 再次覆盖图表组合、高度保存/重置、真实 PG 跨用户隔离和 403 本地回退；临时用户清理后残留为 0。 |
 | 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 已完成 | 一致 | 状态测试、403/失败注入 E2E | T11 真实路由和 route 注入覆盖路由守卫、页面 loading/empty/permission、MACD 503 局部失败与重试。 |
-| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 自适应填满、指标快照显隐、主题 token、关键视口、pointer/键盘、reduced motion、播报与选中语义 | T5、T8、T10、T11、T12、T14、T17 | 已完成 | 一致 | 样式/契约测试、build、主题截图、尺寸 E2E、可访问属性测试 | T14 验证工作区自适应；T17 移除三组光标跟随指标的高频 `aria-live`，为辅助图分段选项补齐可访问名称与 `aria-pressed`。 |
+| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 自适应填满、指标快照显隐、主题 token、关键视口、pointer/键盘、reduced motion、播报与选中语义 | T5、T8、T10、T11、T12、T14、T17、T18 | 已完成 | 一致 | 样式/契约测试、build、主题截图、尺寸 E2E、可访问属性测试 | T14 验证工作区自适应；T17 补齐播报和选中语义；T18 统一主题修订订阅、WCAG 对比度公式和 E2E 控制台问题口径。 |
 | 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、模块显隐旧值合并、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13、T14 | 已完成 | 一致 | 竞态和生命周期测试、偏好 Vitest 与 E2E | T14 将 `showIndicatorSnapshot` 作为 additive 页面偏好，旧值默认显示并复用总恢复默认；图表主题重绘保持当前共享缩放窗口。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
@@ -993,8 +993,8 @@ flowchart LR
   - 对应 option/组件测试、Playwright、需求、DESIGN 和 E2E 基线文档
 - 目标：以盘感训练既有颜色为股票指标序列的唯一标准，使训练、回测和个股三图同步；光标轴日期气泡只在 K线显示一次。
 - 开发内容：
-  - 将 MA5/10/20/30/60、VMA5/10、DIFF/DEA 的盘感训练色板收口到 `trainingChartSeriesPalette()`，`CandleChart` 与 `StockChartWorkspace` 只消费共享映射。
-  - `CandleChart` 同步监听 `themeRevision`，保证盘感训练、回测与个股工作区在明暗、预设及同 key 后端覆盖后一起重绘。
+  - 将 MA5/10/20/30/60、VMA5/10、DIFF/DEA 的盘感训练色板收口到 `trainingChartSeriesPalette()`；T18 进一步把 K线/量能的周期、标签、ECharts 名称和色板键收口到类型化定义，使 `CandleChart` 与 `StockChartWorkspace` 的序列和标题共同消费。
+  - T18 抽取 `useStockChartTheme()`，由其统一订阅明暗和 `themeRevision`；两个画布只监听该响应式主题，保证盘感训练、回测与个股工作区在明暗、预设及同 key 后端覆盖后一起重绘。
   - K线保留光标日期标签和标题日期；量能、MACD 隐藏重复的 X 轴光标日期标签与标题日期，但继续同步十字线、指标值和缩放窗口。
 - 产出：盘感训练标准共享色板、三个消费页面一致的指标颜色、三图唯一交易日展示。
 - 影响范围：盘感训练和回测的兼容 `CandleChart`、个股详情 `StockChartWorkspace` 及相关测试/文档；不改变后端、接口、数据库、权限、seed、配置或偏好结构。
@@ -1004,9 +1004,9 @@ flowchart LR
   - 三关键视口 Playwright 断言页面只有一个标题日期，并用真实画布截图复核只有 K线日期气泡。
 - 完成标准：训练/回测/个股详情不存在页面私有指标色值，三图只在 K线显示一次光标轴交易日气泡，联动、缩放和 tooltip 行为无回归。
 - 实际落地情况：已完成（2026-07-25）。
-  - 复用判断：已检查盘感训练/回测共用的 `CandleChart` 与个股详情 `StockChartWorkspace`；MA/VMA 的页面私有色值已删除，完整序列身份色统一收口到 `trainingChartSeriesPalette()`。两类图表的布局和生命周期不同，不合并为万能组件，只共享稳定色板、格式化与主题能力。
+  - 复用判断：已检查盘感训练/回测共用的 `CandleChart` 与个股详情 `StockChartWorkspace`。两类图表的布局、状态和实例生命周期不同，因此不合并为万能组件；共同变化点已由 T18 收敛为 `useStockChartTheme()`、`KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS`、共享色板、格式化和 tooltip helper，不再分别订阅主题或复制均线周期/标签映射。
   - K线、量能、MACD 的标题值和实际折线继续通过同一 `stockChartTheme().series` 取色；共享色板为 MA5 灰白、MA10/VMA5/DIFF 橙黄、MA20 洋红、MA30/VMA10/DEA 青色、MA60 橙红。红涨绿跌只用于蜡烛、方向柱、信号和 tooltip 方向值。
-  - `CandleChart` 已监听 `themeRevision`；盘感训练、回测和个股工作区在明暗、预设 key 或同 key 后端覆盖后均重新读取共享主题。
+  - `CandleChart` 与 `StockChartWorkspace` 均只监听 `useStockChartTheme()`；盘感训练、回测和个股工作区在明暗、预设 key 或同 key 后端覆盖后均重新读取共享主题。
   - K线 X 轴保留光标日期标签，量能/MACD 的 X 轴光标日期标签关闭；工作区标题日期也只渲染在 K线。辅助图的十字线、指标值和缩放联动保持不变。
   - 需求引用原型同步补齐 MA30，将 MA60 恢复为真实 60 日计算，并统一 MA/VMA/DIFF/DEA 色值与唯一 K线标题日期，避免原型继续传播旧标准。
   - 定向命令：`cd frontend && npm test -- --run src/components/stock-chart/__tests__/workspaceOptions.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/components/stock-chart/__tests__/CandleChartRegression.spec.ts --reporter=dot`，结果 `3 files / 21 tests passed`。
@@ -1040,19 +1040,63 @@ flowchart LR
 - 影响范围：个股详情三图、盘感训练与回测共享色板、全部 `PageSegmented` 消费页、技术指标管理表格及对应测试/文档；不改变后端、接口、数据库、权限、菜单、seed、配置、偏好结构或 E2E 临时用户。
 - 验证方式：
   - option 单测断言普通柱线 formatter 为空、信号 item tooltip 可见且包含类型与完整日期。
-  - 主题单测按 WCAG 相对亮度公式断言明暗两套 MA/VMA/MACD 身份色对各自画布背景均不低于 `4.5:1`。
+  - 主题单测通过共享 `contrastRatioFromHex()` 断言明暗两套 MA/VMA/MACD 身份色对各自画布背景均不低于 `4.5:1`。
   - 组件测试断言工作区无高频 `aria-live`，`PageSegmented` 当前项正确切换 `aria-pressed`。
   - 三关键视口 Playwright 在真实 ECharts canvas 上悬停金叉标签，断言提示包含 `金叉` 与确定性 fixture 的完整交易日期，并留存 MACD 面板截图。
   - 前端全量 Vitest、正式 build、原型 file smoke 和 `git diff --check`。
 - 完成标准：审查的 2 项 P1 与 3 项 P2 均有生产实现和相称验证，MACD 普通柱线无多余行情浮层，信号日期可精确确认，明暗身份色和标签文字可辨，可访问状态不形成高频播报。
 - 实际落地情况：已完成（2026-07-25）。
-  - 复用判断：继续复用 `trainingChartSeriesPalette()`、`stockChartTheme()`、ECharts 原生 item tooltip、共享 `PageSegmented` 与 `ConfigView` 既有 `.mono`，没有新增第二套色板、提示组件、分段控件或表格外壳。
+  - 复用判断：继续复用 `trainingChartSeriesPalette()`、`stockChartTheme()`、ECharts 原生 item tooltip、共享 `PageSegmented` 与 `ConfigView` 既有 `.mono`；T18 将本任务新增的对比度验证迁移到 `contrastRatioFromHex()`，并把相关 E2E 的 console error/warning 与 HTTP 白名单规则迁移到 `helpers/console.ts`，不再保留测试私有公式或监听器。
   - 浅色身份色对 `#ffffff` 的最低对比度为 `5.43:1`，暗色身份色对 `#0b0e16` 的最低对比度为 `5.01:1`；信号标签在明暗主题均使用画布表面与主题文字，方向继续由文字、轮廓、引导线和锚点共同表达。
   - 定向命令：`cd frontend && npm test -- --run src/components/stock-chart/__tests__/workspaceOptions.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/components/stock-chart/__tests__/CandleChartRegression.spec.ts src/components/__tests__/PageSegmented.spec.ts --reporter=dot`，结果 `4 files / 23 tests passed`。
   - 前端全量命令：`cd frontend && npm test -- --run --reporter=dot`，结果 `64 files / 434 tests passed`；`npm run build` 通过，仅有既有依赖注释位置和大 chunk 告警。
   - 浏览器命令：`cd frontend && npx playwright test e2e/stock-detail-chart-workspace.spec.ts --grep '关键视口保持纵向三图' --workers=1`，结果 `3 passed`。1100×620、1366×768、1440×900 三项目均在真实 MACD canvas 悬停金叉，断言 `金叉` 和完整交易日期，并把 `stock-detail-macd-signal-tooltip` 截图附加到 `frontend/playwright-report/index.html`。
   - 原型通过无服务器 Playwright file smoke，页面脚本错误为 0；默认 MACD 面板存在 2 个信号，SVG 原生 title 均包含类型和完整日期，标签表面/文字分别使用 `var(--surface)` / `var(--text)`。
   - 后端 `/api/health=200`；无数据库、接口、权限、菜单、seed、配置、初始化数据、偏好结构或后端运行态变更。
+
+### 6.18 任务 T18：收口股票画布与前端测试共享契约
+
+- 状态：已完成
+- 对应需求：R5、R15。
+- 依赖：T16、T17。
+- 涉及文件：
+  - `frontend/src/components/stock-chart/useStockChartTheme.ts`
+  - `frontend/src/components/stock-chart/chartUtils.ts`
+  - `frontend/src/components/stock-chart/workspaceOptions.ts`
+  - `frontend/src/components/stock-chart/StockChartWorkspace.vue`
+  - `frontend/src/components/CandleChart.vue`
+  - `frontend/src/layout/themeSurfaces.ts`
+  - `frontend/e2e/helpers/console.ts`
+  - 股票画布、布局预设与五个相关 E2E 测试
+  - `DESIGN.md`、E2E 指南、本计划及 `AGENTS.md` 拉取时间记录
+- 目标：修复复用专项审查发现的股票主题订阅、均线元数据、WCAG 对比度公式和 E2E 控制台监听重复，保持两个图表组件各自布局与生命周期不变。
+- 开发内容：
+  - 新增 `useStockChartTheme()` 作为股票画布响应式主题唯一入口，内部统一组合 `useTheme`、`useLayoutPreset`、`themeRevision` 与 `stockChartTheme()`；两个画布只监听返回的 computed theme。
+  - 新增类型化 `KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS`，统一周期、标题、ECharts 系列名与 palette key；兼容 `CandleChart`、工作区序列、标题指标和颜色映射共同消费。
+  - 在 `themeSurfaces.ts` 增加 `contrastRatioFromHex()`，图表和布局预设测试共同使用；非法颜色返回 `NaN`，避免不同测试维护不同公式和错误兜底。
+  - 新增 `e2e/helpers/console.ts::collectConsoleIssues()`，默认统一收集 `error/warning`，预期路由失败通过 `allowedHttpStatuses` 显式白名单；迁移个股详情、工作区预览、页面设置、质检定时恢复和组件四态预览用例。
+- 产出：股票画布主题 composable、类型化均线定义、共享 WCAG 对比度工具和共享 Playwright 控制台 helper。
+- 影响范围：个股详情 `StockChartWorkspace`、训练/回测 `CandleChart`、主题预设测试及五个 E2E 用例；不改变图表 props、数据、视觉、接口、数据库、权限、菜单、seed、配置或用户偏好结构。
+- 验证方式：
+  - option 测试断言 K线/量能的 series 名称、标题指标与颜色映射均逐项等于共享定义。
+  - `CandleChartRegression` 与 `StockChartWorkspace` 测试分别验证兼容组件和三图工作区在同 key 预设覆盖后通过共享主题重绘。
+  - 预设测试验证 `contrastRatioFromHex()` 的 21:1、1:1 和非法颜色 `NaN` 边界，图表色板继续验证明暗背景 `≥4.5:1`。
+  - 五个迁移后的 E2E 用例使用同一 console helper；页面注入的 403/503 仍通过显式白名单验证。
+  - 前端全量 Vitest、正式 build、`git diff --check` 和服务健康检查。
+- 完成标准：两个股票画布不再直接组合主题依赖，不再复制 MA/VMA 周期和标签；前端只保留一个 WCAG 对比度公式和一个 E2E console error/warning 收集实现，现有页面行为及主题回归全部通过。
+- 实际落地情况：已完成（2026-07-25）。
+  - 复用判断：
+    - 已查找的同类实现：`CandleChart`、`StockChartWorkspace`、`workspaceOptions` 的序列/标题、`themeSurfaces`、预设与图表对比度测试、全部 `frontend/e2e` 控制台监听。
+    - 已复用：`useTheme`、`useLayoutPreset`、`stockChartTheme`、`trainingChartSeriesPalette`、`movingAverage`、既有两个图表组件和各自 fixture。
+    - 本次新增复用单元：`useStockChartTheme`、`KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS`、`contrastRatioFromHex`、`collectConsoleIssues`。
+    - 未抽取：兼容双 grid 与个股三图的 ECharts option、状态和实例生命周期变化原因不同；组件预览 fixture 与真实页面 API fixture 的业务目标不同，继续保留，未合并成高参数万能组件或 fixture。
+    - 同步维护：DESIGN 股票画布契约、E2E helper 规范、T16/T17 复用判断、共享工具测试和两个画布回归。
+  - 定向命令：`cd frontend && npm test -- --run src/components/stock-chart/__tests__/workspaceOptions.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/components/stock-chart/__tests__/CandleChartRegression.spec.ts src/layout/__tests__/presets.spec.ts --reporter=dot`，结果 `4 files / 35 tests passed`。
+  - 前端全量命令：`cd frontend && npm test -- --run --reporter=dot`，结果 `64 files / 435 tests passed`。
+  - 正式构建：`cd frontend && npm run build` 通过，仅有既有依赖注释位置和大 chunk 告警。
+  - 共享 console helper 用例：`npx playwright test e2e/stock-chart-workspace-preview.spec.ts e2e/page-settings-drawer.spec.ts e2e/quality-repair-schedule.spec.ts e2e/component-state-preview.spec.ts --project=chromium-standard --workers=1`，结果 `4 passed`。
+  - 三图真实页面：`npx playwright test e2e/stock-detail-chart-workspace.spec.ts --grep '关键视口保持纵向三图' --workers=1`，结果三个视口 `3 passed`；完整日期悬停、主题、布局和 console error/warning 均无回归。
+  - 后端 `/api/health=200`；前端 `5173=200`。无数据库、接口、权限、菜单、seed、配置、初始化数据、偏好结构或后端运行态变更。
 
 ## 7. 数据库、SQL、seed 与配置计划
 
@@ -1151,6 +1195,7 @@ WHERE is_builtin = TRUE
   - T15 已完成：仅 K线显示固定左上角行情 tooltip，收盘和涨幅具备红涨绿跌语义；量能/MACD 无内容浮层但联动保持。该阶段色板后由 T16 按最新确认统一为盘感训练标准；其余定向 `3 files / 21 tests passed`、前端全量 `64 files / 433 tests passed`、正式构建和三关键视口 Playwright `3 passed` 结论继续有效。
   - T16 已完成：盘感训练、回测和个股详情共同消费盘感训练标准 MA/VMA/MACD 色板；仅 K线显示标题日期与光标日期，辅助图联动保持。定向 `3 files / 21 tests passed`，前端全量 `64 files / 433 tests passed`，正式构建通过；三关键视口 Playwright `3 passed`，截图确认无重复日期气泡。
   - T17 已完成：MACD 普通柱线继续无内容浮层，信号 item 可悬停显示类型与完整日期；浅色共享身份色和信号标签达到可读对比度；工作区移除高频 `aria-live`，共享分段控件补齐 `aria-pressed`，指标长 key 可完整识别。定向 `4 files / 23 tests passed`、前端全量 `64 files / 434 tests passed`、正式构建通过；三关键视口真实画布悬停 `3 passed`，HTML 报告留存信号完整日期截图。
+  - T18 已完成：两个股票画布统一消费响应式主题 composable 和类型化 MA/VMA 定义；图表与预设测试统一使用 WCAG 对比度工具，五个 E2E 用例统一使用 console error/warning helper。定向 `4 files / 35 tests passed`、前端全量 `64 files / 435 tests passed`、正式构建通过；console helper 迁移用例 `4 passed`，三关键视口真实页面 `3 passed`。
 
 ### 8.1 后端测试矩阵
 
@@ -1193,10 +1238,10 @@ python -m pytest \
 | 维度 | 重点 |
 | --- | --- |
 | 偏好纯函数 | 自动交换、隐藏、composition key、比例校验、局部回退 |
-| 图表组件 | panel/标题、MACD series、信号 X 对齐、底部日期轴、局部四态 |
+| 图表组件 | 共享响应式主题、类型化 MA/VMA 定义、panel/标题、MACD series、信号 X 对齐、底部日期轴、局部四态 |
 | 分隔线 | pointer、keyboard、ARIA、最低高度、释放单次 commit |
 | 页面请求 | 行情/指标隔离、重试、取消、旧响应、复权/范围差异 |
-| 生命周期 | theme、window resize、KeepAlive、unmount 监听清理 |
+| 生命周期 | `useStockChartTheme`、window resize、KeepAlive、unmount 监听清理 |
 | 布局契约 | 无 `calc(100vh - Npx)`、无私建页面外壳/抽屉 |
 | 兼容回归 | `CandleChart` 在训练/回测的现有 props 和渲染不变 |
 

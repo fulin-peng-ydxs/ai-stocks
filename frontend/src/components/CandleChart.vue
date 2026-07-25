@@ -2,14 +2,14 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
-import { useTheme } from '@/composables/useTheme'
-import { useLayoutPreset } from '@/layout/useLayoutPreset'
 import {
   formatVolume,
+  KLINE_MA_DEFINITIONS,
   klineTooltipHtml,
   movingAverage,
-  stockChartTheme,
+  VOLUME_MA_DEFINITIONS,
 } from '@/components/stock-chart/chartUtils'
+import { useStockChartTheme } from '@/components/stock-chart/useStockChartTheme'
 
 // 交易标记：在 K 线上标出买卖点（date=交易日, kind=买/卖, label=多行说明文本）
 export interface TradeMarker {
@@ -28,26 +28,12 @@ const props = defineProps<{
 const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 let resizeListening = false
-const { isDark } = useTheme()
-const { themeRevision } = useLayoutPreset()
-const chartTheme = computed(() => {
-  // 盘感训练、回测与个股工作区在预设覆盖后必须同时重新读取共享色板。
-  void themeRevision.value
-  return stockChartTheme(isDark.value)
-})
+const chartTheme = useStockChartTheme()
 
 // 买卖标记色（刻意避开蜡烛红绿，免混淆）：买=蓝、卖=橙
 const BUY_COLOR = '#3b82f6'
 const SELL_COLOR = '#f5a623'
 
-// 盘感训练既有均线色由共享色板统一供给，个股详情与回测不再维护第二套映射。
-const MA_DEFS = computed(() => [
-  { n: 5, color: chartTheme.value.series.kline.ma5 },
-  { n: 10, color: chartTheme.value.series.kline.ma10 },
-  { n: 20, color: chartTheme.value.series.kline.ma20 },
-  { n: 30, color: chartTheme.value.series.kline.ma30 },
-  { n: 60, color: chartTheme.value.series.kline.ma60 },
-])
 // 主题色板
 const T = computed(() => {
   const theme = chartTheme.value
@@ -78,35 +64,45 @@ const activeIdx = computed(() => hoverIdx.value ?? lastIdx.value)
 // warmupBars 在前，bars 在后拼接，计算完整 MA 后只取尾部 bars.length 个值用于展示
 const allCloses = computed(() => [...(props.warmupBars ?? []), ...props.bars].map((b) => b.close))
 const maSeries = computed(() =>
-  MA_DEFS.value.map((d) => {
-    const full = movingAverage(allCloses.value, d.n)
-    return { ...d, data: full.slice(full.length - props.bars.length) }
+  KLINE_MA_DEFINITIONS.map((definition) => {
+    const full = movingAverage(allCloses.value, definition.period)
+    return {
+      ...definition,
+      color: chartTheme.value.series.kline[definition.paletteKey],
+      data: full.slice(full.length - props.bars.length),
+    }
   }),
 )
 
 // 顶部 MA 数值条（随光标更新）
 const maLabels = computed(() =>
   maSeries.value.map((m) => ({
-    n: m.n,
+    label: m.label,
     color: m.color,
     val: m.data[activeIdx.value] != null ? m.data[activeIdx.value]!.toFixed(2) : '--',
   })),
 )
 
-// 量能均线（VMA5/VMA10）颜色 + 随光标更新的数值（供 HTML 图例叠加层）
-const VMA5_COLOR = computed(() => chartTheme.value.series.volume.ma5)
-const VMA10_COLOR = computed(() => chartTheme.value.series.volume.ma10)
 const allVolumes = computed(() => [...(props.warmupBars ?? []), ...props.bars].map((b) => b.volume))
-const volMa5Arr = computed(() => { const f = movingAverage(allVolumes.value, 5); return f.slice(f.length - props.bars.length) })
-const volMa10Arr = computed(() => { const f = movingAverage(allVolumes.value, 10); return f.slice(f.length - props.bars.length) })
+const volumeMaSeries = computed(() => VOLUME_MA_DEFINITIONS.map((definition) => {
+  const full = movingAverage(allVolumes.value, definition.period)
+  return {
+    ...definition,
+    color: chartTheme.value.series.volume[definition.paletteKey],
+    data: full.slice(full.length - props.bars.length),
+  }
+}))
 const volLabels = computed(() => {
   const i = activeIdx.value
   const b = props.bars[i]
   const f = (v: number | null) => (v != null ? formatVolume(v) : '--')
   return {
     total: b ? formatVolume(b.volume) : '--',
-    ma5: f(volMa5Arr.value[i] ?? null),
-    ma10: f(volMa10Arr.value[i] ?? null),
+    averages: volumeMaSeries.value.map((series) => ({
+      label: series.label,
+      color: series.color,
+      value: f(series.data[i] ?? null),
+    })),
   }
 })
 
@@ -121,11 +117,8 @@ function render() {
     value: b.volume,
     itemStyle: { color: b.close >= b.open ? T.value.up : T.value.down },
   }))
-  const volMa5 = volMa5Arr.value
-  const volMa10 = volMa10Arr.value
-
   const maLineSeries = maSeries.value.map((m) => ({
-    name: `MA${m.n}`,
+    name: m.label,
     type: 'line' as const,
     data: m.data,
     smooth: false,
@@ -253,14 +246,15 @@ function render() {
       },
       ...maLineSeries,
       { name: '量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols, z: 1 },
-      {
-        name: 'VMA5', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: volMa5,
-        showSymbol: false, lineStyle: { width: 1.4, color: VMA5_COLOR.value },
-      },
-      {
-        name: 'VMA10', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: volMa10,
-        showSymbol: false, lineStyle: { width: 1.4, color: VMA10_COLOR.value },
-      },
+      ...volumeMaSeries.value.map((series) => ({
+        name: series.seriesName,
+        type: 'line' as const,
+        xAxisIndex: 1,
+        yAxisIndex: 1,
+        data: series.data,
+        showSymbol: false,
+        lineStyle: { width: 1.4, color: series.color },
+      })),
     ],
   })
 }
@@ -293,7 +287,7 @@ watch(() => props.bars, () => { hoverIdx.value = null; render() }, { deep: true 
 watch(() => props.warmupBars, () => render(), { deep: true })
 watch(() => props.markers, () => render(), { deep: true })
 watch(() => [props.zoomStart, props.zoomEnd], () => render())
-watch([isDark, themeRevision], () => render()) // 明暗、预设及同 key 覆盖变化均重渲染
+watch(chartTheme, () => render()) // 明暗、预设及同 key 覆盖变化由共享主题入口统一触发
 onBeforeUnmount(() => {
   detachResize()
   chart?.dispose()
@@ -305,8 +299,8 @@ onBeforeUnmount(() => {
   <div class="candle-wrap">
     <!-- 顶部 MA 数值条（随光标更新） -->
     <div class="ma-bar">
-      <span v-for="m in maLabels" :key="m.n" :style="{ color: m.color }">
-        MA{{ m.n }}:{{ m.val }}
+      <span v-for="m in maLabels" :key="m.label" :style="{ color: m.color }">
+        {{ m.label }}:{{ m.val }}
       </span>
     </div>
     <div class="chart-area">
@@ -315,8 +309,13 @@ onBeforeUnmount(() => {
       <div class="vol-legend">
         <span :style="{ color: legLabelColor }">量能</span>
         <span :style="{ color: legValColor }">总量 {{ volLabels.total }}</span>
-        <span :style="{ color: VMA5_COLOR }">MA5 {{ volLabels.ma5 }}</span>
-        <span :style="{ color: VMA10_COLOR }">MA10 {{ volLabels.ma10 }}</span>
+        <span
+          v-for="average in volLabels.averages"
+          :key="average.label"
+          :style="{ color: average.color }"
+        >
+          {{ average.label }} {{ average.value }}
+        </span>
       </div>
     </div>
   </div>

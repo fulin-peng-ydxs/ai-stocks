@@ -4,13 +4,11 @@ import {
   loginAsDebugUser,
   saveUserPreference,
 } from './helpers/auth'
+import { collectConsoleIssues } from './helpers/console'
 
 test.describe('页面设置抽屉', () => {
   test('恢复默认会清除抽屉自身用户偏好并回到默认尺寸', async ({ page, request }) => {
-    const consoleIssues: string[] = []
-    page.on('console', (msg) => {
-      if (['error', 'warning'].includes(msg.type())) consoleIssues.push(msg.text())
-    })
+    const consoleIssues = collectConsoleIssues(page)
 
     const auth = await loginAsDebugUser(page, request, 'debug_normal')
     await saveUserPreference(request, auth, {

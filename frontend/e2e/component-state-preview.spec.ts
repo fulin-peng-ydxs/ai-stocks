@@ -1,12 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { loginAsDebugUser } from './helpers/auth'
+import { collectConsoleIssues } from './helpers/console'
 
 test.describe('系统组件四态预览', () => {
   test('四态共用稳定容器，非 ready 态消费统一状态组件', async ({ page, request }) => {
-    const consoleIssues: string[] = []
-    page.on('console', (msg) => {
-      if (['error', 'warning'].includes(msg.type())) consoleIssues.push(msg.text())
-    })
+    const consoleIssues = collectConsoleIssues(page)
 
     await loginAsDebugUser(page, request, 'debug_system')
     await page.goto('/system/layout/components')

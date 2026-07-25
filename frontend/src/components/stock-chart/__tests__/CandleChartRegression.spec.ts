@@ -9,6 +9,7 @@ import {
   trainingChartSeriesPalette,
 } from '@/components/stock-chart/chartUtils'
 import { setLayoutPreset, setPresetOverrides } from '@/layout/useLayoutPreset'
+import { contrastRatioFromHex } from '@/layout/themeSurfaces'
 
 const echartsMock = vi.hoisted(() => ({
   setOption: vi.fn(),
@@ -39,23 +40,6 @@ function makeBars(length: number): Bar[] {
     amount: 1_000_000,
     turnover_rate: 1,
   }))
-}
-
-function relativeLuminance(hex: string): number {
-  const value = Number.parseInt(hex.slice(1), 16)
-  const channels = [(value >> 16) & 255, (value >> 8) & 255, value & 255].map((channel) => {
-    const normalized = channel / 255
-    return normalized <= 0.03928
-      ? normalized / 12.92
-      : ((normalized + 0.055) / 1.055) ** 2.4
-  })
-  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
-}
-
-function contrastRatio(left: string, right: string): number {
-  const high = Math.max(relativeLuminance(left), relativeLuminance(right))
-  const low = Math.min(relativeLuminance(left), relativeLuminance(right))
-  return (high + 0.05) / (low + 0.05)
 }
 
 describe('CandleChart shared helper regression', () => {
@@ -166,10 +150,12 @@ describe('CandleChart shared helper regression', () => {
     ]
 
     lightColors.forEach((color) => {
-      expect(contrastRatio(color, '#ffffff'), `${color} / light`).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatioFromHex(color, '#ffffff'), `${color} / light`)
+        .toBeGreaterThanOrEqual(4.5)
     })
     darkColors.forEach((color) => {
-      expect(contrastRatio(color, '#0b0e16'), `${color} / dark`).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatioFromHex(color, '#0b0e16'), `${color} / dark`)
+        .toBeGreaterThanOrEqual(4.5)
     })
   })
 })
