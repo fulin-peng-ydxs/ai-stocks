@@ -4,6 +4,7 @@ withDefaults(defineProps<{
   modelValue: boolean
   tip?: string
   size?: 'md' | 'sm'
+  testId?: string
 }>(), { size: 'md' })
 
 defineEmits<{
@@ -12,7 +13,7 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="page-toggle-row" :class="`is-${size}`">
+  <div class="page-toggle-row" :class="`is-${size}`" :data-testid="testId">
     <div class="ptr-left">
       <span class="ptr-label">{{ label }}</span>
       <el-tooltip v-if="tip" :content="tip" placement="top">

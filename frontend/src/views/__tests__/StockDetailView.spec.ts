@@ -145,6 +145,19 @@ const PageSegmentedStub = defineComponent({
   },
 })
 
+const PageToggleRowStub = defineComponent({
+  name: 'PageToggleRow',
+  props: ['modelValue', 'label', 'testId'],
+  emits: ['update:modelValue'],
+  setup(props, { emit }) {
+    return () => h('button', {
+      'data-testid': props.testId,
+      'data-active': String(props.modelValue),
+      onClick: () => emit('update:modelValue', !props.modelValue),
+    }, String(props.label))
+  },
+})
+
 const AppStateBlockStub = defineComponent({
   name: 'AppStateBlock',
   props: ['state', 'variant', 'title', 'description', 'retry'],
@@ -258,7 +271,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       PageSettingsTrigger: true,
       PageSettingSection: { template: '<section><slot/></section>' },
       PageSegmented: PageSegmentedStub,
-      PageToggleRow: true,
+      PageToggleRow: PageToggleRowStub,
       KlineSettingSection: true,
       ElSelect: ElSelectStub,
       ElOption: {
@@ -609,6 +622,34 @@ describe('StockDetailView 三图数据协调', () => {
         'kline|macd|volume': [0.6, 0.2, 0.2],
       },
     })
+  })
+
+  it('最新指标快照作为独立辅助模块隐藏，保留指标请求和字段偏好并可恢复默认', async () => {
+    const wrapper = await mountView()
+    const barsCalls = vi.mocked(stocksApi.getBars).mock.calls.length
+    const indicatorCalls = vi.mocked(stocksApi.getIndicators).mock.calls.length
+
+    expect(wrapper.find('[data-testid="stock-indicator-snapshot-card"]').exists()).toBe(true)
+    expect(wrapper.find('.stock-detail-main').exists()).toBe(true)
+    expect(wrapper.find('.stock-detail-ready').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="stock-chart-workspace"]').classes())
+      .toContain('detail-chart-workspace')
+
+    await wrapper.get('[data-testid="stock-detail-toggle-indicator-snapshot"]').trigger('click')
+    await nextTick()
+    await flushPromises()
+
+    expect(pageSettingsState.current.showIndicatorSnapshot).toBe(false)
+    expect(wrapper.find('[data-testid="stock-indicator-snapshot-card"]').exists()).toBe(false)
+    expect(pageSettingsState.current.indicators.ma20).toBe(true)
+    expect(stocksApi.getBars).toHaveBeenCalledTimes(barsCalls)
+    expect(stocksApi.getIndicators).toHaveBeenCalledTimes(indicatorCalls)
+
+    await wrapper.get('[data-testid="page-settings-reset"]').trigger('click')
+    await nextTick()
+
+    expect(pageSettingsState.current.showIndicatorSnapshot).toBe(true)
+    expect(wrapper.find('[data-testid="stock-indicator-snapshot-card"]').exists()).toBe(true)
   })
 
   it('MACD 局部失败保留行情和快照，局部重试不刷新行情', async () => {

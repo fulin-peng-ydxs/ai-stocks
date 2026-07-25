@@ -28,6 +28,10 @@ export const AUXILIARY_MIN_HEIGHT = 126
 export const WORKSPACE_MIN_HEIGHT = 650
 export const SPLITTER_SIZE = 8
 export const KEYBOARD_RATIO_STEP = 0.02
+export const KLINE_BAR_WIDTH = '72%'
+export const VOLUME_BAR_WIDTH = '44%'
+export const MACD_BAR_WIDTH = '24%'
+export const BOTTOM_GRID_HEIGHT = 52
 
 export function alignStockChartRows(
   bars: readonly Bar[],
@@ -39,6 +43,32 @@ export function alignStockChartRows(
 
 export function panelMinHeight(type: ChartType): number {
   return type === 'kline' ? KLINE_MIN_HEIGHT : AUXILIARY_MIN_HEIGHT
+}
+
+export function panelMetricColor(
+  theme: StockChartTheme,
+  type: ChartType,
+  label: string,
+  macdValue?: number | null,
+): string {
+  if (type === 'macd' && label === 'MACD') {
+    if (macdValue == null) return theme.label
+    return macdValue < 0 ? theme.down : theme.up
+  }
+  if (type === 'kline') {
+    if (label === 'MA5') return theme.series.kline.ma5
+    if (label === 'MA10') return theme.series.kline.ma10
+    if (label === 'MA20') return theme.series.kline.ma20
+    if (label === 'MA30') return theme.series.kline.ma30
+    if (label === 'MA60') return theme.series.kline.ma60
+  }
+  if (type === 'volume') {
+    if (label === 'MA5') return theme.series.volume.ma5
+    if (label === 'MA10') return theme.series.volume.ma10
+  }
+  if (label === 'DIFF') return theme.series.macd.diff
+  if (label === 'DEA') return theme.series.macd.dea
+  return theme.label
 }
 
 export function normalizeWorkspaceRatios(value: readonly number[], count: number): number[] {
@@ -219,7 +249,12 @@ interface OptionContext {
 function commonAxes(context: OptionContext) {
   const dates = context.rows.map((row) => row.bar.date)
   return {
-    grid: { left: 8, right: 64, top: 8, bottom: context.isBottom ? 34 : 8 },
+    grid: {
+      left: 8,
+      right: 64,
+      top: 8,
+      bottom: context.isBottom ? BOTTOM_GRID_HEIGHT : 8,
+    },
     xAxis: {
       type: 'category',
       data: dates,
@@ -232,6 +267,7 @@ function commonAxes(context: OptionContext) {
         showMaxLabel: true,
         alignMinLabel: 'left',
         alignMaxLabel: 'right',
+        margin: 8,
         color: context.theme.label,
         fontSize: 10,
       },
@@ -248,8 +284,8 @@ function commonAxes(context: OptionContext) {
         ? [{
             type: 'slider',
             xAxisIndex: 0,
-            bottom: 2,
-            height: 16,
+            bottom: 4,
+            height: 14,
             start: context.zoomStart,
             end: context.zoomEnd,
             borderColor: context.theme.axis,
@@ -288,11 +324,11 @@ export function buildKlineOption(context: OptionContext) {
   const allCloses = [...context.warmupBars, ...bars].map((bar) => bar.close)
   const base = commonOption(context)
   const maDefinitions = [
-    { period: 5, color: context.theme.label },
-    { period: 10, color: context.theme.diff },
-    { period: 20, color: '#bd53c7' },
-    { period: 30, color: '#16a8bd' },
-    { period: 60, color: '#ff7a18' },
+    { period: 5, color: context.theme.series.kline.ma5 },
+    { period: 10, color: context.theme.series.kline.ma10 },
+    { period: 20, color: context.theme.series.kline.ma20 },
+    { period: 30, color: context.theme.series.kline.ma30 },
+    { period: 60, color: context.theme.series.kline.ma60 },
   ]
   return {
     ...base,
@@ -317,6 +353,8 @@ export function buildKlineOption(context: OptionContext) {
       {
         name: 'K线',
         type: 'candlestick',
+        barWidth: KLINE_BAR_WIDTH,
+        barMaxWidth: 18,
         data: bars.map((bar) => [bar.open, bar.close, bar.low, bar.high]),
         itemStyle: {
           color: context.theme.up,
@@ -364,6 +402,8 @@ export function buildVolumeOption(context: OptionContext) {
       {
         name: '量能',
         type: 'bar',
+        barWidth: VOLUME_BAR_WIDTH,
+        barMaxWidth: 12,
         data: bars.map((bar) => ({
           value: bar.volume,
           itemStyle: { color: bar.close >= bar.open ? context.theme.up : context.theme.down },
@@ -375,7 +415,7 @@ export function buildVolumeOption(context: OptionContext) {
         data: volMa5,
         showSymbol: false,
         connectNulls: false,
-        lineStyle: { width: 1.4, color: context.theme.diff },
+        lineStyle: { width: 1.4, color: context.theme.series.volume.ma5 },
       },
       {
         name: 'VMA10',
@@ -383,7 +423,7 @@ export function buildVolumeOption(context: OptionContext) {
         data: volMa10,
         showSymbol: false,
         connectNulls: false,
-        lineStyle: { width: 1.4, color: '#16a8bd' },
+        lineStyle: { width: 1.4, color: context.theme.series.volume.ma10 },
       },
     ],
   }
@@ -405,6 +445,8 @@ export function buildMacdOption(context: OptionContext) {
       {
         name: 'MACD',
         type: 'bar',
+        barWidth: MACD_BAR_WIDTH,
+        barMaxWidth: 7,
         markLine: {
           silent: true,
           symbol: ['none', 'none'],
@@ -428,7 +470,7 @@ export function buildMacdOption(context: OptionContext) {
         data: context.rows.map((row) => row.indicator?.macd_diff ?? null),
         showSymbol: false,
         connectNulls: false,
-        lineStyle: { width: 1.8, color: context.theme.diff },
+        lineStyle: { width: 1.8, color: context.theme.series.macd.diff },
       },
       {
         name: 'DEA',
@@ -436,7 +478,7 @@ export function buildMacdOption(context: OptionContext) {
         data: context.rows.map((row) => row.indicator?.macd_dea ?? null),
         showSymbol: false,
         connectNulls: false,
-        lineStyle: { width: 1.8, color: context.theme.dea },
+        lineStyle: { width: 1.8, color: context.theme.series.macd.dea },
       },
       buildSignalSeries(context.rows, context.theme),
     ],

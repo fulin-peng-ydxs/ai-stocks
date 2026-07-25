@@ -306,6 +306,67 @@ test.describe('个股详情三图工作区', () => {
     expect(consoleIssues).toEqual([])
   })
 
+  test('隐藏下方辅助卡后图表自适应填满主区，快照开关即时释放与恢复空间', async ({
+    page,
+    request,
+  }, testInfo) => {
+    runInStandardViewport(testInfo)
+    await page.setViewportSize({ width: 1440, height: 1100 })
+    const consoleIssues = collectConsoleIssues(page)
+    const auth = await loginAsDebugUser(page, request, 'debug_normal')
+    const [sample] = await loadStockSamples(request, auth, 1)
+    await installVisualChartEndpoints(page, sample.code)
+    await installPreferenceEndpoint(page, [{
+      scope: 'page',
+      pageKey: 'stock-detail',
+      prefKey: 'settings',
+      value: {
+        ...stockDetailPreference(),
+        showNav: false,
+        showIndicatorSnapshot: false,
+        showTradeCard: false,
+      },
+      schemaVersion: 1,
+    }])
+
+    await page.goto(`/stocks/${sample.code}`)
+    const workspace = page.getByLabel('个股多图联动工作区')
+    await expect(workspace.locator('[data-panel-key]')).toHaveCount(3)
+    await expect(page.getByTestId('stock-indicator-snapshot-card')).toHaveCount(0)
+    await expect(page.getByTestId('stock-trade-eval-card')).toHaveCount(0)
+
+    const hiddenGeometry = await workspace.evaluate((element) => {
+      const workspaceRect = element.getBoundingClientRect()
+      const scrollRegion = element.closest<HTMLElement>('.v-scroll')
+      return {
+        workspaceHeight: workspaceRect.height,
+        scrollHeight: scrollRegion?.clientHeight ?? 0,
+      }
+    })
+    expect(hiddenGeometry.workspaceHeight).toBeGreaterThanOrEqual(
+      hiddenGeometry.scrollHeight - 2,
+    )
+
+    await page.getByTestId('page-settings-trigger').click()
+    const snapshotToggle = page.getByTestId('stock-detail-toggle-indicator-snapshot')
+    await expect(snapshotToggle.getByRole('switch')).toHaveCount(1)
+    const visibleSnapshotSwitch = snapshotToggle.locator('.el-switch')
+    await expect(visibleSnapshotSwitch).toHaveCount(1)
+    await visibleSnapshotSwitch.click()
+    await expect(page.getByTestId('stock-indicator-snapshot-card')).toBeVisible()
+    const visibleHeight = await workspace.evaluate((element) => (
+      element.getBoundingClientRect().height
+    ))
+    expect(visibleHeight).toBeLessThan(hiddenGeometry.workspaceHeight)
+
+    await visibleSnapshotSwitch.click()
+    await expect(page.getByTestId('stock-indicator-snapshot-card')).toHaveCount(0)
+    await expect.poll(async () => workspace.evaluate((element) => (
+      element.getBoundingClientRect().height
+    ))).toBeGreaterThanOrEqual(hiddenGeometry.workspaceHeight - 2)
+    expect(consoleIssues).toEqual([])
+  })
+
   test('debug_board_only 直达个股详情由路由守卫 fail-closed', async (
     { page, request },
     testInfo,
@@ -785,9 +846,11 @@ test.describe('个股详情三图工作区', () => {
     await expect(klineRenderCanvas).toBeVisible()
     const klineCanvasBox = await klineRenderCanvas.boundingBox()
     expect(klineCanvasBox).not.toBeNull()
+    await page.mouse.move(1, 1)
     await page.mouse.move(
       klineCanvasBox!.x + klineCanvasBox!.width * 0.25,
       klineCanvasBox!.y + klineCanvasBox!.height * 0.5,
+      { steps: 4 },
     )
     await expect.poll(async () => {
       const values = (await panelDates.allTextContents()).map((value) => value.trim())
@@ -847,6 +910,24 @@ test.describe('个股详情三图工作区', () => {
       body: await macdPanel.screenshot(),
       contentType: 'image/png',
     })
+
+    const macdCanvas = workspace
+      .getByLabel('MACD（12,26,9·前复权）图表')
+      .locator('canvas')
+    await expect(macdCanvas).toHaveCount(1)
+    await macdCanvas.scrollIntoViewIfNeeded()
+    const macdCanvasBox = await macdCanvas.boundingBox()
+    expect(macdCanvasBox).not.toBeNull()
+    await page.mouse.move(macdCanvasBox!.x + 12, macdCanvasBox!.y + macdCanvasBox!.height - 11)
+    await page.mouse.down()
+    await page.mouse.move(
+      macdCanvasBox!.x + macdCanvasBox!.width * 0.28,
+      macdCanvasBox!.y + macdCanvasBox!.height - 11,
+      { steps: 6 },
+    )
+    await page.mouse.up()
+    await expect.poll(async () => Number(await workspace.getAttribute('data-zoom-start')))
+      .toBeGreaterThan(10)
 
     expect(consoleIssues).toEqual([])
   })

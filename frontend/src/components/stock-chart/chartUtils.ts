@@ -1,3 +1,23 @@
+import { blendHex } from '@/layout/themeSurfaces'
+
+export interface StockChartSeriesPalette {
+  kline: {
+    ma5: string
+    ma10: string
+    ma20: string
+    ma30: string
+    ma60: string
+  }
+  volume: {
+    ma5: string
+    ma10: string
+  }
+  macd: {
+    diff: string
+    dea: string
+  }
+}
+
 export interface StockChartTheme {
   background: string
   axis: string
@@ -8,8 +28,7 @@ export interface StockChartTheme {
   tooltipBorder: string
   up: string
   down: string
-  diff: string
-  dea: string
+  series: StockChartSeriesPalette
   focus: string
 }
 
@@ -27,6 +46,14 @@ function cssVariable(name: string, fallback: string): string {
 }
 
 export function stockChartTheme(isDark: boolean): StockChartTheme {
+  const primary = cssVariable('--el-color-primary', '#409eff')
+  const success = cssVariable('--el-color-success', '#67c23a')
+  const warning = cssVariable('--el-color-warning', '#e6a23c')
+  const danger = cssVariable('--el-color-danger', '#f56c6c')
+  const ma20 = blendHex(danger, primary, 0.48)
+  const ma30 = blendHex(success, primary, 0.58)
+  const ma60 = blendHex(danger, warning, 0.38)
+
   return {
     background: cssVariable('--el-bg-color', isDark ? '#0b0e16' : '#ffffff'),
     axis: cssVariable('--el-border-color', isDark ? '#2b3550' : '#dcdfe6'),
@@ -40,9 +67,24 @@ export function stockChartTheme(isDark: boolean): StockChartTheme {
     tooltipBorder: cssVariable('--el-border-color', isDark ? '#2b3550' : '#dcdfe6'),
     up: cssVariable('--market-up-color', isDark ? '#ff6b6b' : '#ef4d4d'),
     down: cssVariable('--market-down-color', isDark ? '#45c486' : '#22b573'),
-    diff: cssVariable('--el-color-warning', '#e6a23c'),
-    dea: cssVariable('--el-color-primary', '#409eff'),
-    focus: cssVariable('--el-color-primary', '#409eff'),
+    series: {
+      kline: {
+        ma5: warning,
+        ma10: primary,
+        ma20,
+        ma30,
+        ma60,
+      },
+      volume: {
+        ma5: warning,
+        ma10: ma30,
+      },
+      macd: {
+        diff: warning,
+        dea: primary,
+      },
+    },
+    focus: primary,
   }
 }
 

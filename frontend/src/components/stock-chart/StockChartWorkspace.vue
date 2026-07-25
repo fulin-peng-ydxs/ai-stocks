@@ -30,6 +30,7 @@ import {
   klineMetrics,
   macdMetrics,
   normalizeWorkspaceRatios,
+  panelMetricColor,
   panelMinHeight,
   panelTitle,
   volumeMetrics,
@@ -45,6 +46,17 @@ interface PanelDescriptor {
 interface Metric {
   label: string
   value: string
+}
+
+interface ZoomRange {
+  start: number
+  end: number
+}
+
+interface DataZoomEvent {
+  start?: number
+  end?: number
+  batch?: Array<{ start?: number; end?: number }>
 }
 
 const props = withDefaults(defineProps<{
@@ -86,6 +98,7 @@ const { isDark } = useTheme()
 const { themeRevision } = useLayoutPreset()
 const activeIndex = ref<number | null>(null)
 const liveRatios = ref<number[]>([])
+const zoomRange = ref<ZoomRange>(normalizeZoomRange(props.zoomStart, props.zoomEnd))
 let resizeObserver: ResizeObserver | null = null
 let active = true
 
@@ -126,16 +139,9 @@ function panelMetrics(type: ChartType): Metric[] {
   return macdMetrics(rows.value, metricIndex.value)
 }
 
-function metricClass(type: ChartType, metric: Metric): string {
-  if (type === 'macd' && metric.label === 'MACD') {
-    const value = rows.value[metricIndex.value]?.indicator?.macd_hist
-    return value != null && value < 0 ? 'is-down' : 'is-up'
-  }
-  if (metric.label === 'DIFF' || metric.label === 'MA10' || metric.label === 'MA5') {
-    return 'is-diff'
-  }
-  if (metric.label === 'DEA') return 'is-dea'
-  return ''
+function metricColor(type: ChartType, metric: Metric): string {
+  const macdValue = rows.value[metricIndex.value]?.indicator?.macd_hist
+  return panelMetricColor(theme.value, type, metric.label, macdValue)
 }
 
 function setChartElement(key: WorkspacePanelKey, element: unknown): void {
@@ -149,8 +155,8 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     warmupBars: props.warmupBars,
     theme: theme.value,
     isBottom,
-    zoomStart: props.zoomStart,
-    zoomEnd: props.zoomEnd,
+    zoomStart: zoomRange.value.start,
+    zoomEnd: zoomRange.value.end,
   }
   if (panel.type === 'kline') return buildKlineOption(context)
   if (panel.type === 'volume') return buildVolumeOption(context)
@@ -173,6 +179,36 @@ function onAxisPointer(event: {
   } else if (typeof value === 'number') {
     activeIndex.value = Math.max(0, Math.min(Math.round(value), lastIndex.value))
   }
+}
+
+function normalizeZoomRange(start: number, end: number): ZoomRange {
+  const safeStart = Number.isFinite(start) ? Math.min(100, Math.max(0, start)) : 0
+  const safeEnd = Number.isFinite(end) ? Math.min(100, Math.max(0, end)) : 100
+  return safeStart <= safeEnd
+    ? { start: safeStart, end: safeEnd }
+    : { start: safeEnd, end: safeStart }
+}
+
+function sameZoomRange(left: ZoomRange, right: ZoomRange): boolean {
+  return left.start === right.start && left.end === right.end
+}
+
+function onDataZoom(sourceKey: WorkspacePanelKey, event: DataZoomEvent): void {
+  const payload = event.batch?.[0] ?? event
+  if (typeof payload.start !== 'number' || typeof payload.end !== 'number') return
+  const next = normalizeZoomRange(payload.start, payload.end)
+  if (sameZoomRange(zoomRange.value, next)) return
+
+  zoomRange.value = next
+  charts.forEach((chart, key) => {
+    if (key === sourceKey || chart.isDisposed()) return
+    // 独立 ECharts 实例的 connect 在部分运行时不会转发 dataZoom，显式广播保证三图同窗。
+    chart.dispatchAction({
+      type: 'dataZoom',
+      start: next.start,
+      end: next.end,
+    })
+  })
 }
 
 function connectCharts(): void {
@@ -198,6 +234,9 @@ function syncCharts(): void {
       chart = echarts.init(element)
       chart.on('updateAxisPointer', (event: unknown) => {
         onAxisPointer(event as Parameters<typeof onAxisPointer>[0])
+      })
+      chart.on('datazoom', (event: unknown) => {
+        onDataZoom(panel.key, event as DataZoomEvent)
       })
       chart.on('globalout', () => { activeIndex.value = null })
       charts.set(panel.key, chart)
@@ -369,8 +408,20 @@ watch(
   { deep: true },
 )
 watch(
+  [() => props.zoomStart, () => props.zoomEnd],
+  ([start, end]) => {
+    const next = normalizeZoomRange(start, end)
+    if (sameZoomRange(zoomRange.value, next)) return
+    zoomRange.value = next
+    charts.forEach((chart) => {
+      if (chart.isDisposed()) return
+      chart.dispatchAction({ type: 'dataZoom', start: next.start, end: next.end })
+    })
+  },
+)
+watch(
   [panels, rows, () => props.warmupBars, () => props.macdState, isDark, themeRevision,
-    () => props.zoomStart, () => props.zoomEnd],
+  ],
   async () => {
     activeIndex.value = null
     if (!drag) liveRatios.value = []
@@ -410,6 +461,8 @@ onBeforeUnmount(() => {
     ref="workspaceEl"
     class="stock-chart-workspace"
     :style="{ minHeight: `${WORKSPACE_MIN_HEIGHT}px` }"
+    :data-zoom-start="zoomRange.start"
+    :data-zoom-end="zoomRange.end"
     aria-label="个股多图联动工作区"
   >
     <template v-for="(panel, index) in panels" :key="panel.key">
@@ -426,7 +479,7 @@ onBeforeUnmount(() => {
               v-for="metric in panelMetrics(panel.type)"
               :key="metric.label"
               class="stock-chart-panel__metric"
-              :class="metricClass(panel.type, metric)"
+              :style="{ color: metricColor(panel.type, metric) }"
             >
               {{ metric.label }} <b>{{ metric.value }}</b>
             </span>
@@ -529,22 +582,6 @@ onBeforeUnmount(() => {
 
 .stock-chart-panel__metric b {
   font-weight: var(--app-font-weight-section);
-}
-
-.stock-chart-panel__metric.is-up {
-  color: var(--market-up-color);
-}
-
-.stock-chart-panel__metric.is-down {
-  color: var(--market-down-color);
-}
-
-.stock-chart-panel__metric.is-diff {
-  color: var(--el-color-warning);
-}
-
-.stock-chart-panel__metric.is-dea {
-  color: var(--el-color-primary);
 }
 
 .stock-chart-panel__date {

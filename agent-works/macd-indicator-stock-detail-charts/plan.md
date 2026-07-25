@@ -11,7 +11,7 @@
   - 让五个原子结果进入统一指标目录，并自然贯通筛选、评分、榜单和买卖方案。
   - 在 `/stocks/:code` 把现有 K线/量能双网格升级为 K线、量能、MACD 三图联动工作区。
   - 支持辅助图选择、自动交换、隐藏、拖动/键盘调整高度，并按用户、按可见组合保存偏好。
-  - 完成局部失败隔离、请求竞态、KeepAlive、主题、响应式和可访问性闭环。
+  - 完成局部失败隔离、请求竞态、KeepAlive、主题、响应式、辅助模块显隐和可访问性闭环。
 - 本次不做：
   - 不实现 R10 的统一云端偏好失败告警。
   - 不实现 R11 的自定义 MACD 参数。
@@ -19,7 +19,7 @@
   - 不新增 MACD 值表、PG DDL、菜单、资源码、默认角色授权或布局组件配置字段。
 - 计划输出：`agent-works/macd-indicator-stock-detail-charts/plan.md`。
 - 当前结论：不存在会改变已确认流程、数据结构、权限、接口或验收标准的阻塞项，可以进入开发。
-- 当前进度：T1–T13 已全部完成并通过对应阶段验证；发布 smoke、seed 对账和回滚演练均已闭环。
+- 当前进度：T1–T14 已全部完成并通过对应阶段验证；发布 smoke、seed 对账、回滚演练及上线后图表体验修正均已闭环。
 
 ## 2. 当前项目依据
 
@@ -47,7 +47,7 @@
 - 页面入口、路由和菜单已经存在：`/stocks/:code`、`StockDetailView.vue`、`pageKey=stock-detail`，不新增路由或菜单。
 - 页面已使用 `LayoutHost` 和 `detail` 原型；`detail` 主区由 `LayoutHost` 的 `.v-scroll` 承担内部滚动，适合承载最低 650px 的图表工作区和下方顺序卡片。
 - `CandleChart.vue` 继续保持单个 ECharts 实例、固定 480px、K线与量能双 grid 及原 props 契约；其 MA/VMA、格式化和主题取色已抽到 `stock-chart/chartUtils.ts`，盘感训练和回测继续复用旧组件。
-- `StockChartWorkspace.vue` 已完成按面板分实例、唯一 ECharts group、共享日期轴/缩放、MACD 信号、局部状态和可访问分隔线，并已由 `StockDetailView` 正式消费；`DESIGN.md` 已登记其真实组件职责与使用规则。
+- `StockChartWorkspace.vue` 已完成按面板分实例、唯一 ECharts group、共享日期轴、显式缩放广播、MACD 信号、分层柱宽、标题/序列同源配色、局部状态和可访问分隔线，并已由 `StockDetailView` 正式消费；`DESIGN.md` 已登记其真实组件职责与使用规则。
 - `DESIGN.md` 明确禁止页面写 `calc(100vh - Npx)`，要求金融涨跌使用 `--market-up-color` / `--market-down-color`，四态使用 `AppStateBlock`，页面设置使用 `PageSettingsDrawer`。
 
 ### 2.4 用户偏好与权限
@@ -58,7 +58,7 @@
   - `prefKey=settings`
   - localStorage key 为 `ai-stocks:page-settings:stock-detail`
 - `useUserPreference` 已提供递归默认值合并、localStorage 回退、300ms 远端延迟保存和 dirty-before-hydrate 保护。
-- `stock-detail/settings` 已增加 `charts` 默认子树；图表类型、组合 key、按组合高度和拖动草稿由 `useStockChartPreferences` 统一归一化，远端同步仍复用 `useUserPreference`。
+- `stock-detail/settings` 已增加 `charts` 默认子树和 `showIndicatorSnapshot` 模块显隐字段；图表类型、组合 key、按组合高度和拖动草稿由 `useStockChartPreferences` 统一归一化，远端同步仍复用 `useUserPreference`。
 - PG `user_preference` 已具备 `tenant_id + owner_user_id` 归属主键、64KB JSON 限制和标准 JSON 校验；本次不新增 DDL。
 - `user-preference:manage` 是登录基线自有偏好能力；即使远端请求失败，前端仍必须按既有骨架本地降级。
 - 本次不新增资源码、菜单、默认角色授权或按钮权限；公共行情仍只使用 `stocks:view`。
@@ -81,13 +81,13 @@
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成 | T1、T9 |
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成 | T2、T9、T13 |
 | R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 已完成 | T3、T6、T9、T10、T11、T13 |
-| R5 | 默认三图、图名、共享日期/光标/缩放、MACD 图形和信号引导线 | 已完成 | T5、T6、T10、T11 |
+| R5 | 默认三图、图名、共享日期/光标/缩放、分层柱宽、同源配色、MACD 图形和信号引导线 | 已完成 | T5、T6、T10、T11、T14 |
 | R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 已完成 | T4、T7、T10、T11 |
 | R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 已完成 | T4、T5、T7、T10、T11 |
 | R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 已完成 | T4、T7、T9、T10、T11、T13 |
 | R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 已完成 | T3、T5、T6、T8、T10、T11 |
-| R15 | 响应式、主题、pointer/键盘可访问性和 reduced motion | 已完成 | T5、T8、T10、T11、T12 |
-| R16 | 接口/偏好兼容、请求竞态和 KeepAlive 生命周期 | 已完成 | T3、T4、T5、T6、T10、T11、T13 |
+| R15 | 响应式、辅助模块显隐、主题、pointer/键盘可访问性和 reduced motion | 已完成 | T5、T8、T10、T11、T12、T14 |
+| R16 | 接口/偏好兼容、请求竞态、辅助模块旧偏好合并和 KeepAlive 生命周期 | 已完成 | T3、T4、T5、T6、T10、T11、T13、T14 |
 
 ### 3.2 可选增强（建议项处理）
 
@@ -329,7 +329,7 @@ flowchart LR
 | `GET /api/stocks/{code}/indicators` | 增加 `fields` 可选参数；新增 `lookback=1..6000` 上限并对齐同页 bars 的 6000 行加载边界；返回五个 MACD 字段 | `stocks:view` | 不传 `fields` 时外层和字段行为不变 | 非法字段明确 400；空/非有限值转 `null` |
 | `GET /api/stocks/{code}/bars` | 无契约变更 | `stocks:view` | 保持现状 | 行情失败进入页面级错误 |
 | `GET /api/stocks` | 仅在当前上下文具备 `stock-group:view` 时读取并附加自选分组 | `stocks:view`；分组 enrichment 另查 `stock-group:view` | `groups` 字段保持存在；无分组权限时固定为空数组，不创建默认分组 | 次级资产权限缺失时 fail-closed，不实例化 `StockGroupRepo` |
-| `GET/POST /api/user-preferences` | 无接口/DDL变更，只增加 `settings.value.charts` JSON 子树 | `user-preference:manage` | 旧偏好递归合并默认；旧客户端忽略新字段 | 失败继续 localStorage fallback |
+| `GET/POST /api/user-preferences` | 无接口/DDL变更，增加 `settings.value.charts` JSON 子树和 `showIndicatorSnapshot` 布尔字段 | `user-preference:manage` | 旧偏好递归合并默认；旧客户端忽略新字段 | 失败继续 localStorage fallback |
 | `GET /api/indicators/registry` | seed 后自然出现五定义 | `indicator:registry` | 外层不变 | 管理员停用后不进入新建方案候选 |
 
 ## 5. 需求与开发内容映射和开发状态
@@ -340,13 +340,13 @@ flowchart LR
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成 | 一致 | 交叉边界和缺失段单测 | T1 实现与 T9 后端总回归均已通过；空值保留 null，下游按不成立处理。 |
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值 | T2、T9、T13 | 已完成 | 一致 | repo/API/筛选/评分/买卖方案测试 | T13 真实启动对账为 43 个 builtin、五个 MACD 定义，启动 seed 变更 0；筛选、评分和买卖条件固定样本均通过。 |
 | 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 已完成 | 一致 | API、Vitest、Playwright | T13 真实接口同时通过旧调用、五字段 `lookback=6000`、严格 JSON、非法字段 400 和超界 422，页面继续按交易日对齐。 |
-| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/缩放、MACD 与信号引导线 | T5、T6、T10、T11 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T11 真实页面验证默认三图、共享光标日期、主题与 MACD 信号近照；组件层继续覆盖共享缩放和底轴。 |
+| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/显式缩放、分层柱宽、标题/序列同源配色、MACD 与信号引导线 | T5、T6、T10、T11、T14 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T14 补齐 K线/量能/MACD 柱宽递减、底部日期与滑块分层、任一图缩放显式广播及标题指标色与实际序列一致；共享窗口有组件和真实浏览器证据。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏和空间释放 | T4、T7、T10、T11 | 已完成 | 一致 | 归一化单测、抽屉 E2E | 真实点击覆盖自动交换、隐藏、重显、无无效分隔线、切股与刷新恢复。 |
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 已完成 | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | T11 以分隔线实际位置执行 pointer 拖动，验证最低高度、相对比例保存、键盘调整及切股/刷新恢复。 |
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 已完成 | 一致 | 偏好 API、Vitest、跨用户 E2E | T13 发布 smoke 再次覆盖图表组合、高度保存/重置、真实 PG 跨用户隔离和 403 本地回退；临时用户清理后残留为 0。 |
 | 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 已完成 | 一致 | 状态测试、403/失败注入 E2E | T11 真实路由和 route 注入覆盖路由守卫、页面 loading/empty/permission、MACD 503 局部失败与重试。 |
-| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12 | 已完成 | 一致 | 样式/契约测试、build、主题截图 | 三关键视口、明暗/夜航预设、reduced-motion、主区滚动和无横向溢出均有浏览器证据；T12 已把画布 token、主题修订和信号多重识别规则同步到 DESIGN 与架构文档。 |
-| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13 | 已完成 | 一致 | 竞态和生命周期测试、E2E | T13 发布 smoke 复核旧接口兼容、偏好 fallback、切股/刷新恢复和页面状态；旧前端源码可独立重建回滚包。 |
+| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 自适应填满、指标快照显隐、主题 token、关键视口、pointer/键盘、reduced motion | T5、T8、T10、T11、T12、T14 | 已完成 | 一致 | 样式/契约测试、build、主题截图和尺寸 E2E | T14 验证隐藏指标快照和买卖评估卡后工作区填满主区，恢复模块后正确释放空间；短视口仍保留 650px 最低高度并由主区滚动。 |
+| 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、模块显隐旧值合并、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13、T14 | 已完成 | 一致 | 竞态和生命周期测试、偏好 Vitest 与 E2E | T14 将 `showIndicatorSnapshot` 作为 additive 页面偏好，旧值默认显示并复用总恢复默认；图表主题重绘保持当前共享缩放窗口。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
 | 暂不实现 | R12 | `requirement.md §4.3`：其他周期 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 仅日线前复权。 |
@@ -912,6 +912,42 @@ flowchart LR
   - 指标定义回滚按 §7.3 scoped UPDATE 仅停用五个 MACD builtin：停用数 5、builtin 总数仍为 43、其余定义与快照差异 0；再次执行完整 `seed_builtins()` 后五项仍保持停用，证明管理员停用态不会被启动 seed 反向覆盖。
   - 演练结束在事务内从发布前快照精确恢复五项全部字段，`indicator_def` 全表双向差异为 0、五项重新启用；恢复后 44 行规范化 SHA-256 与快照同为 `b5fa225e96a93e01698c15b2e3969faf91073bb19a9079421c3902fcd9807a3b`。恢复当前后端后启动 seed 仍为“43、变更 0”，`/api/health=200`。演练没有删除定义、清理用户偏好、修改 PG schema 或留下临时 E2E 用户。
 
+### 6.14 任务 T14：修复三图自适应、缩放与视觉映射
+
+- 状态：已完成
+- 对应需求：R5、R15、R16。
+- 依赖：T13。
+- 涉及文件：
+  - `frontend/src/views/StockDetailView.vue`
+  - `frontend/src/components/PageToggleRow.vue`
+  - `frontend/src/components/stock-chart/StockChartWorkspace.vue`
+  - `frontend/src/components/stock-chart/chartUtils.ts`
+  - `frontend/src/components/stock-chart/workspaceOptions.ts`
+  - 对应 Vitest、Playwright、需求、DESIGN 和 E2E 基线文档
+- 目标：修复真实页面中图表高度固定、指标快照不可整块隐藏、柱宽缺少层级、日期轴被滑块遮挡、缩放未可靠联动和标题值配色与曲线不一致的问题。
+- 开发内容：
+  - 详情页改为正常文档流下的弹性主区；工作区最低 650px，并填满扣除当前可见辅助模块后的剩余高度。
+  - 在页面设置抽屉新增“最新指标快照”显隐开关，复用 `PageToggleRow` 与现有页面偏好；默认显示，旧偏好递归补齐。
+  - K线、量能、MACD 柱宽分别使用 `72%/44%/24%`，最大宽度分别为 `18/12/7px`。
+  - 增加底部日期轴和 dataZoom 的纵向留白，保证首尾标签完整且不被滑块覆盖。
+  - 维护组件级共享 `start/end`，任一图触发 `datazoom` 时显式广播到其他可见图，主题重绘继续使用该窗口。
+  - 将标题指标值和 ECharts 系列统一接入 `stockChartTheme().series` 映射，坐标轴保持中性色。
+- 产出：自适应详情布局、指标快照模块偏好、可靠三图缩放同步、分层柱宽、日期轴修复和同源主题配色。
+- 影响范围：仅个股详情页、共享 `PageToggleRow` 的可选测试锚点、`StockChartWorkspace` 及其测试/文档；不改变后端接口、数据库 schema、seed、权限、菜单或指标计算。
+- 验证方式：
+  - option/组件测试断言柱宽、标题/序列色映射、日期轴与滑块间距、显式 zoom 广播及重绘后窗口保持。
+  - 页面测试断言指标快照显隐、恢复默认、无额外请求和弹性布局类。
+  - Playwright 在真实画布上验证隐藏辅助模块后的高度填充、重新显示后的空间释放、MACD slider 驱动共享缩放及关键视口/主题。
+- 完成标准：六项反馈全部可由自动化重现并验证，旧偏好与短视口行为兼容，文档状态同步后本地提交。
+- 实际落地情况：已完成（2026-07-25）。
+  - `StockDetailView` 使用 `.stock-detail-main/.stock-detail-ready` 弹性容器，工作区采用 `flex: 1 0 650px`；指标快照和买卖评估卡都隐藏时，图表实际填满 `.v-scroll` 主区，重新显示快照后图表按可用空间收缩，短视口仍由既有主区滚动。
+  - `showIndicatorSnapshot` 已加入 `stock-detail/settings` additive 默认值并由设置抽屉控制；旧值默认 `true`，总恢复默认重新显示。共享 `PageToggleRow` 只增加可选 `data-testid`，未形成第二套开关组件。
+  - 三图柱宽、最大宽度、底部 grid/axis label/dataZoom 间距和主题系列映射统一在 `workspaceOptions.ts/chartUtils.ts`；标题值通过同一 `panelMetricColor()` 取色，避免展示色与折线色分叉。
+  - `StockChartWorkspace` 保留唯一 ECharts group 处理光标，同时增加组件级共享 zoom 状态和显式 sibling `dispatchAction`；单实例触发 `datazoom` 后三图窗口一致，主题修订或 option 重建不重置用户窗口。
+  - 定向 Vitest 命令：`cd frontend && npm test -- --run src/components/stock-chart/__tests__/workspaceOptions.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/views/__tests__/StockDetailView.spec.ts`，结果 `3 files / 38 tests passed`。前端全量为 `64 files / 433 tests passed`；`npm run build` 通过，仅有既有依赖注释和大 chunk 告警。
+  - 完整浏览器命令：`cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npx playwright test e2e/stock-detail-chart-workspace.spec.ts --workers=1`，三个浏览器项目结果为 `11 passed / 16 skipped`。串行命令避免固定调试账号并发认证的环境噪声，同时保留三项目覆盖。
+  - 回归结束已移除 E2E 写开关并重启后端，`/api/health=200`、`/api/health/e2e` 业务码 403，PG 中 `e2e_%` 临时用户为 0。无数据库、seed、配置或初始化数据变更。
+
 ## 7. 数据库、SQL、seed 与配置计划
 
 ### 7.1 变更清单
@@ -920,13 +956,13 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | DuckDB DDL | 无新增；复用 `backend/storage/ddl.py::DDL_INDICATOR_DEF` | 无额外执行 | 不新增指标值表，不修改 `daily_bar` | 无 DDL 回滚 |
 | DuckDB seed | `backend/indicators/registry.py`、`backend/indicators/definition.py::seed_builtins`、`backend/main.py` 启动链路 | 首次部署前备份 `indicator_def`；新版本后端每次启动时在 DuckDB schema 就绪后幂等执行 | 首次启用会持久化整个 `REGISTRY`：全新库写入全部 builtin，存量库刷新全部 builtin 的代码元数据并新增五个 MACD key；重复执行保留管理员 `enabled/categories` | 回滚前停用五个 MACD 定义；非 MACD builtin 默认保留，避免破坏既有目录；只有要求精确恢复部署前状态时才使用预部署备份 |
-| PG DDL | 无新增；复用 `backend/storage/pg_ddl.py::DDL_USER_PREFERENCE` | 无额外执行 | 只在既有 `value` JSON 增加 `charts` 子树 | 旧前端会忽略未知子树；无需删行或改表 |
+| PG DDL | 无新增；复用 `backend/storage/pg_ddl.py::DDL_USER_PREFERENCE` | 无额外执行 | 只在既有 `value` JSON 增加 `charts` 子树和 `showIndicatorSnapshot` 布尔字段 | 旧前端会忽略未知字段；新前端对缺失模块字段递归合并为默认显示；无需删行或改表 |
 | 菜单/资源/角色 seed | 菜单、资源定义和默认授权定义无变化；调整 `backend/storage/pg_ddl.py::seed_rbac()` 的存量 `role_code` 迁移条件 | PG schema 初始化后每次执行 `seed_rbac()` 时 | 只给尚无任何 `sys_user_role` 关联的存量用户补 `role_code`；已有自定义/最小角色用户不再被追加 `normal`，不新增资源码或默认授权 | 还原迁移条件即可回滚代码，但会重新引入自定义角色账号被追加旧角色的扩权风险；无需回滚 schema，已存在的错误角色关联应通过 `dev-users` 校准或管理员按归属清理 |
 | 本地调试账号 seed | `backend/devtools/rbac_test_users.py::ensure_debug_users()/list_debug_users()`、`./start.sh dev-users` | 创建、校准和 `--list` 均仅在明确 `dev/development/local/test/testing` 环境执行；`start.sh` 与后端统一加载 `.env.local` | 幂等校准固定 `debug_*` 账号、角色、密码和 active 状态；T11 补充清除固定账号历史 `deleted_at`，确保软删除账号能被真实恢复；查询与写入对空值、未知值及生产环境均 fail-closed | 回滚代码不会自动重新软删除账号；如需恢复测试前状态，管理员只能在明确本地/测试库按具体账号处理；守卫代码回滚会重新暴露不确定环境下的查询风险 |
 | Playwright 临时用户 | `backend/devtools/e2e_test_users.py`、`backend/devtools/environment_guard.py`、`backend/storage/pg_identity.py`、`frontend/e2e/helpers/auth.ts` | 仅后端和 Playwright 同时明确本地/测试环境且启用 `AI_STOCKS_E2E_WRITE=1` 时，在跨用户 E2E 开始/结束创建与销毁 | 每次创建唯一 normal/paid 用户；创建/销毁前校验后端与夹具实时 PG 指纹；只影响精确临时用户，不读取或覆盖固定账号偏好 | `finally` 自动销毁；事务先以三项身份锁行，再清资产/审计/角色/用户，任一身份或最终行数检查失败均整体回滚；回归结束移除写开关并重启后端 |
 | E2E 环境配置 | `.env.local.example`、`scripts/load-local-env.sh`、`scripts/run-playwright.sh`、`AI_STOCKS_ENV`、`AI_STOCKS_E2E_WRITE` | 本地调试账号维护或真实 PG E2E 前显式设置；日常后端不启用 E2E 写开关 | 不写 PG 配置表；只控制本地进程是否允许调试数据操作，后端、devtool 和 Playwright 复用同一变量文件及 `export` 语义 | 清除 `AI_STOCKS_E2E_WRITE` 并重启后端；环境标记为空或未知时自动拒绝，不存在数据回滚 |
 | 应用配置 | 不修改 `config/settings.yaml` 或 PG `app_config` | 无 | MACD 固定 12/26/9；算法版本在代码参数哈希中 | 代码回滚 |
-| 前端本地 fallback | `ai-stocks:page-settings:stock-detail` | 用户进入页面和修改偏好时 | 当前浏览器、当前用户页面偏好降级 | 恢复旧代码后未知 `charts` 字段被默认合并逻辑忽略 |
+| 前端本地 fallback | `ai-stocks:page-settings:stock-detail` | 用户进入页面和修改偏好时 | 当前浏览器、当前用户图表组合、高度和指标快照模块显隐偏好降级 | 恢复旧代码后未知 `charts/showIndicatorSnapshot` 字段被旧默认合并逻辑忽略 |
 
 ### 7.2 SQL 文件结论
 
@@ -1005,6 +1041,7 @@ WHERE is_builtin = TRUE
   - T11 已完成：环境/夹具定向最新 `20 passed`，当前包含健康路由、鉴权中间件与路由扫描的五文件范围实跑为 `57 passed`；覆盖 fail-closed 环境白名单、`dev-users --list` 查询守卫、独立 E2E 写开关、统一 `.env.local` 与 `export` 变量加载、Playwright npm 启动器复用、后端/夹具实时 PG 指纹、错误身份零删除、最终行数异常事务回滚，以及软删除用户状态/角色/密码/`perm_ver` 校准。前端全量 `64 files / 429 tests passed`、正式构建通过。显式授权下定向 Playwright 最终 `10 passed / 14 skipped in 46.6s`，跨用户用例结束后 PG 中 `e2e_%` 用户计数为 0；回归后移除写开关并恢复 `/api/health=200`、`/api/health/e2e` 业务码 403，日常前端 `5173` 仍为 200。HTML 报告继续留存页面/工作区/MACD 明暗 PNG。
   - T12 已完成：DESIGN 补齐 `StockChartWorkspace`/个股详情股票画布的语义色、信号多重识别与 `themeRevision` 重绘规则，不追溯约束其它既有金融图表；配置和个股架构文档同步五原子、完整 builtin 启动 seed、四请求通道、opaque 方案和三图偏好；E2E guide 登记稳定个股工作区用例。前端全量 `64 files / 429 tests passed`、正式构建通过，`frontend/dist` 与当前源码构建结果一致且无新增差异。
   - T13 已完成：七文件后端发布门槛 `87 passed`，真实启动 seed 为 43 个 builtin 且变更 0，目录/API/下游/page smoke 通过；当前和功能开发前前端均可独立构建，五定义 scoped 停用后不会被 seed 重启用，最终从快照恢复且 `indicator_def` 全表差异为 0。
+  - T14 已完成：三图工作区自适应填满、指标快照模块显隐、K线/量能/MACD 柱宽递减、日期轴与缩放滑块分层、显式三图 zoom 广播和标题/序列同源配色均已落地。定向 `3 files / 38 tests passed`，前端全量 `64 files / 433 tests passed`，正式构建通过；显式本地 E2E 授权下串行三项目为 `11 passed / 16 skipped`，回归后 `/api/health=200`、E2E 写入口业务码 403、临时用户为 0。
 
 ### 8.1 后端测试矩阵
 
@@ -1090,8 +1127,12 @@ cd .. && AI_STOCKS_ENV=dev ./start.sh restart
 
 - 三图默认名称和顺序。
 - 光标/日期/缩放联动。
+- 任一图的 inside/slider 缩放显式同步到其余图，主题重绘后窗口不复位。
+- K线、量能、MACD 柱宽明显递减；标题指标颜色与实际折线或柱体一一对应。
+- 底部日期标签完整位于缩放滑块上方，不被遮挡或裁切。
 - 金叉/死叉日期、颜色 token 语义和常驻引导线截图。
 - 自动交换、隐藏、重显。
+- 隐藏指标快照和买卖评估卡后图表填满主区；重新显示模块后正确释放空间。
 - pointer/键盘高度调整和最低高度。
 - 刷新、切个股、重新登录后的偏好恢复。
 - MACD 局部失败不影响 K线/量能。
@@ -1154,13 +1195,13 @@ cd .. && AI_STOCKS_ENV=dev ./start.sh restart
 
 | 风险 | 影响 | 控制 |
 | --- | --- | --- |
-| 多 ECharts 实例同步循环或跨标签串联 | 光标/缩放抖动、不同股票互相影响 | 每个工作区唯一 group id；销毁时 disconnect；组件和 E2E 验证。 |
+| 多 ECharts 实例同步循环或跨标签串联 | 光标/缩放抖动、不同股票互相影响 | 每个工作区唯一 group id；光标继续使用 group，缩放维护组件级共享窗口并只向 sibling 显式广播；同值守卫阻断回环；销毁时 disconnect；组件和 E2E 验证。 |
 | 信号密集导致标签遮挡 | 无法判断事件交易日 | X 固定、只做竖向 lane、保留引导线/锚点、固定样本和截图验收。 |
 | 启动 seed 首次写入/刷新整套 builtin | 影响面超过五个 MACD key，可能暴露历史目录初始化缺口或刷新存量元数据 | 部署前备份并对账 `indicator_def`；全新库和存量库分别测试；断言全量幂等且不覆盖任意 builtin 的 enabled/categories。 |
 | 全局算法版本改变 `param_hash` | 新版本首次相关计算不能复用旧语义缓存 | 明确一次性进程内缓存失效；用固定范围记录首次和后续耗时，不做持久化回填。 |
 | 指标接口长范围响应过大 | “全部”模式加载变慢 | `fields` 白名单只取 MACD+快照字段；最大 6000；一次请求复用。 |
 | 拖动过程触发偏好高频写 | PG 写放大、交互卡顿 | 临时比例不进 settings；仅释放/键盘有效动作 commit。 |
-| 短视口最低高度与下方卡片冲突 | 图表压缩或页面外层滚动 | 工作区 min-height 650px；由 `LayoutHost` 主区内滚；禁止视口减法。 |
+| 短视口最低高度与下方卡片冲突 | 图表压缩、隐藏卡片后留下空白或页面外层滚动 | 工作区 `flex: 1 0 650px` 填满剩余主区；辅助模块独立显隐；空间不足时由 `LayoutHost` 主区内滚；禁止视口减法。 |
 | 后端回滚后 definition 仍可选 | 方案可保存但无法求值 | 回滚先停用五定义；已有引用时保留新计算后端。 |
 | 重构共享图表 helper 影响训练/回测 | 存量图表回归 | 保持 `CandleChart` props；补现有消费页 smoke 和 build。 |
 
@@ -1168,7 +1209,7 @@ cd .. && AI_STOCKS_ENV=dev ./start.sh restart
 
 - `fields` 采用逗号分隔字符串，前端 helper 接收强类型数组后统一编码。
 - indicators 接口新增 `lookback=6000` 上限；该值对齐前端“全部”档给 bars 行情接口使用的 6000 行加载边界，不是 indicators 接口既有能力。
-- 多图采用独立 ECharts 实例 + 唯一 group 连接，以便 DOM 分隔线、局部状态和高度调整；不改变需求的共享日期/光标/缩放语义。
+- 多图采用独立 ECharts 实例 + 唯一 group 连接，以便 DOM 分隔线、局部状态和高度调整；光标使用 group，同步缩放采用共享 `start/end` 加显式 `dataZoom` 广播，避免依赖 group 的不稳定缩放传播。
 - 高度按有序可见组合保存，不按槽位像素保存。
 - MACD 固定前复权；K线复权切换不触发指标重算。
 - 不新增金色 token，金叉用上涨红、死叉用下跌绿。
@@ -1176,5 +1217,5 @@ cd .. && AI_STOCKS_ENV=dev ./start.sh restart
 ### 10.3 非阻塞待办
 
 - 开发时根据最终组件拆分决定内部文件名，但不得改变 R5–R8 的状态与偏好语义。
-- 如果 ECharts `connect` 在自动化中出现不可控循环，可改为显式转发 `dataZoom/updateAxisPointer`；这属于实现替换，不改变接口或验收标准。
+- `dataZoom` 显式转发已在 T14 采用并完成回环守卫；`updateAxisPointer` 继续由唯一 group 连接，若后续 ECharts 升级改变其语义，必须用组件与 Playwright 回归后再调整。
 - R10、R11 保留为后续独立需求，不在本次顺手实现。

@@ -12,13 +12,20 @@ const echartsMock = vi.hoisted(() => {
     instances,
     init: vi.fn(() => {
       let disposed = false
+      const listeners = new Map<string, Array<(event: unknown) => void>>()
       const instance = {
         group: undefined as string | undefined,
         setOption: vi.fn(),
+        dispatchAction: vi.fn(),
         resize: vi.fn(),
         dispose: vi.fn(() => { disposed = true }),
         isDisposed: vi.fn(() => disposed),
-        on: vi.fn(),
+        on: vi.fn((name: string, handler: (event: unknown) => void) => {
+          listeners.set(name, [...(listeners.get(name) ?? []), handler])
+        }),
+        emit(name: string, event: unknown) {
+          listeners.get(name)?.forEach((handler) => handler(event))
+        },
       }
       instances.push(instance)
       return instance
@@ -162,6 +169,48 @@ describe('StockChartWorkspace', () => {
 
     second.unmount()
     expect(echartsMock.disconnect).toHaveBeenCalledWith(secondGroup)
+  })
+
+  it('任意图缩放后显式同步全部兄弟图，并在重绘后保留共享窗口', async () => {
+    const wrapper = await mountWorkspace()
+    const [kline, volume, macd] = echartsMock.instances
+
+    macd.emit('datazoom', { batch: [{ start: 24, end: 82 }] })
+    await nextTick()
+
+    expect(kline.dispatchAction).toHaveBeenCalledWith({
+      type: 'dataZoom',
+      start: 24,
+      end: 82,
+    })
+    expect(volume.dispatchAction).toHaveBeenCalledWith({
+      type: 'dataZoom',
+      start: 24,
+      end: 82,
+    })
+    expect(macd.dispatchAction).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ macdState: 'loading' })
+    await nextTick()
+
+    echartsMock.instances.forEach((instance) => {
+      const option = instance.setOption.mock.calls.at(-1)?.[0] as {
+        dataZoom: Array<{ start: number; end: number }>
+      }
+      expect(option.dataZoom[0]).toMatchObject({ start: 24, end: 82 })
+    })
+
+    kline.emit('datazoom', { start: 35, end: 70 })
+    expect(volume.dispatchAction).toHaveBeenLastCalledWith({
+      type: 'dataZoom',
+      start: 35,
+      end: 70,
+    })
+    expect(macd.dispatchAction).toHaveBeenLastCalledWith({
+      type: 'dataZoom',
+      start: 35,
+      end: 70,
+    })
   })
 
   it('切换研究空间预设时重新读取主题 token 并重绘全部画布', async () => {

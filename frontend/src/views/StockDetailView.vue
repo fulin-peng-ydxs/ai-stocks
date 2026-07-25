@@ -78,6 +78,7 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, component
 const detailDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
   showTradeCard: true,
+  showIndicatorSnapshot: true,
   showNav: true,
   indicators: {
     ma20: true,
@@ -807,6 +808,7 @@ onBeforeUnmount(() => {
     </template>
 
     <template #main>
+    <div class="stock-detail-main">
     <!-- 通用集合导航条 -->
     <div v-if="settings.showNav && stockSet.has" class="nav-bar">
       <span class="nav-label">
@@ -877,6 +879,7 @@ onBeforeUnmount(() => {
     />
 
     <template v-else>
+      <div class="stock-detail-ready">
       <AppStateBlock
         v-if="barsError"
         state="error"
@@ -887,6 +890,7 @@ onBeforeUnmount(() => {
         @retry="loadBars"
       />
       <StockChartWorkspace
+        class="detail-chart-workspace"
         v-loading="barsLoading"
         :bars="displayBars"
         :warmup-bars="warmupBars"
@@ -904,7 +908,13 @@ onBeforeUnmount(() => {
         @retry-macd="loadIndicators"
       />
 
-      <el-card shadow="never" class="ind-card" header="最新指标快照">
+      <el-card
+        v-if="settings.showIndicatorSnapshot"
+        data-testid="stock-indicator-snapshot-card"
+        shadow="never"
+        class="ind-card"
+        header="最新指标快照"
+      >
         <el-descriptions :column="4" border size="small">
           <el-descriptions-item v-for="f in visibleIndicatorFields" :key="f.key" :label="f.label">
             {{ latest ? fmt(latest[f.key]) : '—' }}
@@ -984,7 +994,9 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </el-card>
+      </div>
     </template>
+    </div>
     </template>
 
     <template #overlays>
@@ -1048,9 +1060,15 @@ onBeforeUnmount(() => {
         <PageSettingSection title="辅助模块">
           <PageToggleRow v-model="settings.showNav" label="显示集合导航条" />
           <PageToggleRow
+            v-model="settings.showIndicatorSnapshot"
+            label="显示最新指标快照"
+            test-id="stock-detail-toggle-indicator-snapshot"
+          />
+          <PageToggleRow
             v-if="canUseTradeEvaluation"
             v-model="settings.showTradeCard"
             label="显示买卖信号评估卡"
+            test-id="stock-detail-toggle-trade-card"
           />
         </PageSettingSection>
       </template>
@@ -1060,6 +1078,23 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.stock-detail-main {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.stock-detail-ready {
+  min-height: 0;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-chart-workspace {
+  flex: 1 0 650px;
+}
+
 .page-head {
   display: flex;
   justify-content: space-between;

@@ -3,11 +3,17 @@ import type { Bar, IndicatorRow } from '@/api/stocks'
 import {
   adjustAdjacentRatios,
   alignStockChartRows,
+  BOTTOM_GRID_HEIGHT,
   buildKlineOption,
   buildMacdOption,
+  buildVolumeOption,
   buildSignalData,
   buildSignalSeries,
+  KLINE_BAR_WIDTH,
+  MACD_BAR_WIDTH,
+  panelMetricColor,
   signalRenderGeometry,
+  VOLUME_BAR_WIDTH,
 } from '@/components/stock-chart/workspaceOptions'
 import type { StockChartTheme } from '@/components/stock-chart/chartUtils'
 
@@ -21,8 +27,23 @@ const theme: StockChartTheme = {
   tooltipBorder: '#ddd',
   up: '#up',
   down: '#down',
-  diff: '#diff',
-  dea: '#dea',
+  series: {
+    kline: {
+      ma5: '#ma5',
+      ma10: '#ma10',
+      ma20: '#ma20',
+      ma30: '#ma30',
+      ma60: '#ma60',
+    },
+    volume: {
+      ma5: '#vma5',
+      ma10: '#vma10',
+    },
+    macd: {
+      diff: '#diff',
+      dea: '#dea',
+    },
+  },
   focus: '#focus',
 }
 
@@ -163,9 +184,81 @@ describe('workspaceOptions', () => {
       showMaxLabel: true,
       alignMinLabel: 'left',
       alignMaxLabel: 'right',
+      margin: 8,
     })
+    expect(option.grid.bottom).toBe(BOTTOM_GRID_HEIGHT)
     expect(option.dataZoom).toHaveLength(2)
-    expect(option.dataZoom[1]).toMatchObject({ type: 'slider', start: 10, end: 90 })
+    expect(option.dataZoom[1]).toMatchObject({
+      type: 'slider',
+      start: 10,
+      end: 90,
+      bottom: 4,
+      height: 14,
+    })
+  })
+
+  it('K线、量能和 MACD 柱宽按主图到辅助图明显递减', () => {
+    const rows = alignStockChartRows(
+      [bar('2026-07-21'), bar('2026-07-22')],
+      [{ trade_date: '2026-07-22', macd_hist: 0.2 }],
+    )
+    const context = {
+      rows,
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      zoomStart: 0,
+      zoomEnd: 100,
+    }
+    const kline = buildKlineOption(context).series[0]
+    const volume = buildVolumeOption(context).series[0]
+    const macd = buildMacdOption(context).series[0]
+
+    expect(kline).toMatchObject({ barWidth: KLINE_BAR_WIDTH, barMaxWidth: 18 })
+    expect(volume).toMatchObject({ barWidth: VOLUME_BAR_WIDTH, barMaxWidth: 12 })
+    expect(macd).toMatchObject({ barWidth: MACD_BAR_WIDTH, barMaxWidth: 7 })
+  })
+
+  it('标题指标值与各折线严格消费同一系列色板', () => {
+    const rows = alignStockChartRows([bar('2026-07-22')], [{
+      trade_date: '2026-07-22',
+      macd_diff: 0.2,
+      macd_dea: 0.1,
+      macd_hist: -0.2,
+    }])
+    const context = {
+      rows,
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      zoomStart: 0,
+      zoomEnd: 100,
+    }
+    const klineSeries = buildKlineOption(context).series.slice(1) as Array<{
+      lineStyle: { color: string }
+    }>
+    const volumeSeries = buildVolumeOption(context).series.slice(1) as Array<{
+      lineStyle: { color: string }
+    }>
+    const macdSeries = buildMacdOption(context).series as Array<{
+      lineStyle?: { color: string }
+    }>
+
+    expect(klineSeries.map((series) => series.lineStyle.color)).toEqual([
+      panelMetricColor(theme, 'kline', 'MA5'),
+      panelMetricColor(theme, 'kline', 'MA10'),
+      panelMetricColor(theme, 'kline', 'MA20'),
+      panelMetricColor(theme, 'kline', 'MA30'),
+      panelMetricColor(theme, 'kline', 'MA60'),
+    ])
+    expect(volumeSeries.map((series) => series.lineStyle.color)).toEqual([
+      panelMetricColor(theme, 'volume', 'MA5'),
+      panelMetricColor(theme, 'volume', 'MA10'),
+    ])
+    expect(macdSeries[1].lineStyle?.color).toBe(panelMetricColor(theme, 'macd', 'DIFF'))
+    expect(macdSeries[2].lineStyle?.color).toBe(panelMetricColor(theme, 'macd', 'DEA'))
+    expect(panelMetricColor(theme, 'macd', 'MACD', -0.2)).toBe(theme.down)
+    expect(panelMetricColor(theme, 'macd', 'MACD', 0.2)).toBe(theme.up)
   })
 
   it('K线 tooltip 保留既有完整行情字段', () => {
