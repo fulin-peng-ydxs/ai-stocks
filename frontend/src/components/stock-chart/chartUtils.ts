@@ -1,4 +1,9 @@
 import type { Bar } from '@/api/stocks'
+import {
+  chartCssVariable,
+  echartsTheme,
+  type EChartsTheme,
+} from '@/components/chartTheme'
 
 export interface StockChartSeriesPalette {
   kline: {
@@ -18,18 +23,10 @@ export interface StockChartSeriesPalette {
   }
 }
 
-export interface StockChartTheme {
-  background: string
-  axis: string
-  split: string
-  label: string
-  text: string
-  tooltipBackground: string
-  tooltipBorder: string
+export interface StockChartTheme extends EChartsTheme {
   up: string
   down: string
   series: StockChartSeriesPalette
-  focus: string
 }
 
 export type KlineMaPaletteKey = keyof StockChartSeriesPalette['kline']
@@ -71,11 +68,6 @@ export function nextStockChartWorkspaceGroupId(): string {
   return `stock-chart-workspace-${workspaceGroupSequence}`
 }
 
-function cssVariable(name: string, fallback: string): string {
-  if (typeof document === 'undefined') return fallback
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
-}
-
 /**
  * 盘感训练既有色板是股票指标序列的唯一身份色事实源。
  * 固定序列色不表达涨跌方向；蜡烛、柱体和信号方向仍使用 market token。
@@ -101,25 +93,15 @@ export function trainingChartSeriesPalette(isDark: boolean): StockChartSeriesPal
 }
 
 export function stockChartTheme(isDark: boolean): StockChartTheme {
-  const primary = cssVariable('--el-color-primary', '#409eff')
-  const up = cssVariable('--market-up-color', isDark ? '#ff6b6b' : '#ef4d4d')
-  const down = cssVariable('--market-down-color', isDark ? '#45c486' : '#22b573')
+  const base = echartsTheme(isDark)
+  const up = chartCssVariable('--market-up-color', isDark ? '#ff6b6b' : '#ef4d4d')
+  const down = chartCssVariable('--market-down-color', isDark ? '#45c486' : '#22b573')
 
   return {
-    background: cssVariable('--el-bg-color', isDark ? '#0b0e16' : '#ffffff'),
-    axis: cssVariable('--el-border-color', isDark ? '#2b3550' : '#dcdfe6'),
-    split: cssVariable('--el-border-color-lighter', isDark ? '#161c28' : '#ebeef5'),
-    label: cssVariable('--el-text-color-secondary', isDark ? '#8b94a7' : '#909399'),
-    text: cssVariable('--el-text-color-primary', isDark ? '#c9d1d9' : '#303133'),
-    tooltipBackground: cssVariable(
-      '--el-bg-color-overlay',
-      isDark ? 'rgba(13,17,26,0.96)' : 'rgba(255,255,255,0.96)',
-    ),
-    tooltipBorder: cssVariable('--el-border-color', isDark ? '#2b3550' : '#dcdfe6'),
+    ...base,
     up,
     down,
     series: trainingChartSeriesPalette(isDark),
-    focus: primary,
   }
 }
 

@@ -475,7 +475,7 @@ onBeforeUnmount(stopTimer)
       <div class="audit-head">
         <div class="audit-title">
           <h2>审计日志</h2>
-          <HelpTip title="审计日志说明" :width="420">
+          <HelpTip title="审计日志说明" :width="420" test-id="audit-help-tip">
             记录接口、任务、安全、权限、配置和字典事件。系统管理员查看全局，租户管理员仅查看本租户事件。
           </HelpTip>
         </div>
@@ -647,7 +647,7 @@ onBeforeUnmount(stopTimer)
     </template>
 
     <template #overlays>
-      <PageDrawer v-model="detailOpen" title="审计详情" size="520px" class="audit-detail-drawer">
+      <PageDrawer v-model="detailOpen" title="审计详情" size="xl" class="audit-detail-drawer">
         <div v-loading="detailLoading" class="detail-body">
           <AppStateBlock
             v-if="detailError"

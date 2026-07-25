@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
 import { PAGE_OVERLAY_TARGET } from '@/layout/pageOverlay'
+import {
+  PAGE_DRAWER_WIDTHS,
+  type PageDrawerSize,
+} from './pageDrawerSize'
 
 defineOptions({ inheritAttrs: false })
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: boolean
   modalClass?: string
-}>()
+  size?: PageDrawerSize
+}>(), {
+  size: 'md',
+})
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
@@ -20,6 +27,7 @@ if (import.meta.env.DEV && pageTarget == null) {
 // 真实页面由 LayoutHost 提供目标；body 回退仅兼容组件预览与把 LayoutHost 替换为测试桩的场景。
 const appendTarget = computed(() => pageTarget?.value ?? 'body')
 const modalClassName = computed(() => ['page-drawer-modal', props.modalClass].filter(Boolean).join(' '))
+const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
 </script>
 
 <template>
@@ -28,6 +36,7 @@ const modalClassName = computed(() => ['page-drawer-modal', props.modalClass].fi
     :model-value="props.modelValue"
     :append-to="appendTarget"
     :modal-class="modalClassName"
+    :size="drawerWidth"
     @update:model-value="(value: boolean) => emit('update:modelValue', value)"
   >
     <template v-if="$slots.header" #header>

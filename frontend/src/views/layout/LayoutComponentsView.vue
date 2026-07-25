@@ -343,7 +343,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
       <PageDrawer
         v-model="detailVisible"
         :title="selected ? `${selected.label}（${selected.kind}）` : '组件详情'"
-        size="560px"
+        size="xl"
         data-testid="component-preview-drawer"
       >
         <div v-if="selected" class="detail-body">

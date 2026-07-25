@@ -1,6 +1,5 @@
-import { computed, type ComputedRef } from 'vue'
-import { useTheme } from '@/composables/useTheme'
-import { useLayoutPreset } from '@/layout/useLayoutPreset'
+import type { ComputedRef } from 'vue'
+import { useResponsiveEChartsTheme } from '@/components/chartTheme'
 import { stockChartTheme, type StockChartTheme } from './chartUtils'
 
 /**
@@ -8,10 +7,5 @@ import { stockChartTheme, type StockChartTheme } from './chartUtils'
  * themeRevision 在整套 CSS token 写入后变化，保证调用方不会读取半更新主题。
  */
 export function useStockChartTheme(): ComputedRef<StockChartTheme> {
-  const { isDark } = useTheme()
-  const { themeRevision } = useLayoutPreset()
-  return computed(() => {
-    void themeRevision.value
-    return stockChartTheme(isDark.value)
-  })
+  return useResponsiveEChartsTheme(stockChartTheme)
 }

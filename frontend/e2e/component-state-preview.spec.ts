@@ -8,11 +8,15 @@ test.describe('系统组件四态预览', () => {
 
     await loginAsDebugUser(page, request, 'debug_system')
     await page.goto('/system/layout/components')
+    await expect(page.getByTestId('page-settings-trigger')).toHaveCount(0)
     await page.getByTestId('component-catalog-data-table-preview').click()
 
     const drawer = page.getByTestId('component-preview-drawer')
     const preview = page.getByTestId('component-state-preview')
     await expect(drawer).toBeVisible()
+    await expect.poll(async () => Math.round(
+      await drawer.evaluate((element) => element.getBoundingClientRect().width),
+    )).toBe(560)
     await expect(drawer).toContainText('业务页面仍需接入真实数据并单独通过四态测试')
     await expect(preview).toHaveAttribute('data-state', 'ready')
 
@@ -45,6 +49,51 @@ test.describe('系统组件四态预览', () => {
       expect(overflow.scrollWidth, `${state} 预览内容不应被横向裁切`).toBeLessThanOrEqual(overflow.clientWidth)
     }
 
+    expect(consoleIssues).toEqual([])
+  })
+
+  test('HelpTip 消费当前预设 token，不回退固定色板', async ({ page, request }) => {
+    const consoleIssues = collectConsoleIssues(page)
+
+    await loginAsDebugUser(page, request, 'debug_system')
+    await page.goto('/system/audit')
+    const helpTip = page.getByTestId('audit-help-tip')
+    await expect(helpTip).toBeVisible()
+    const helpStyle = await helpTip.evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { background: style.backgroundColor, color: style.color, border: style.borderColor }
+    })
+    const tokenStyle = await page.locator('html').evaluate((element) => {
+      const root = getComputedStyle(element)
+      const probe = document.createElement('span')
+      probe.style.cssText = `
+        position: fixed;
+        background: var(--el-fill-color-light);
+        color: var(--el-text-color-regular);
+        border: 1px solid var(--el-border-color);
+      `
+      document.body.appendChild(probe)
+      const style = getComputedStyle(probe)
+      const resolved = {
+        background: style.backgroundColor,
+        color: style.color,
+        border: style.borderColor,
+      }
+      probe.remove()
+      return {
+        ...resolved,
+        primary: root.getPropertyValue('--el-color-primary').trim(),
+      }
+    })
+    expect(helpStyle).toEqual({
+      background: tokenStyle.background,
+      color: tokenStyle.color,
+      border: tokenStyle.border,
+    })
+    expect(tokenStyle.primary).not.toBe('')
+
+    await helpTip.hover()
+    await expect(page.getByRole('tooltip')).toContainText('记录接口、任务、安全、权限、配置和字典事件')
     expect(consoleIssues).toEqual([])
   })
 })

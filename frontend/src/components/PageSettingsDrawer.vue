@@ -10,6 +10,7 @@ import PageDrawer from './PageDrawer.vue'
 import LayoutSettingsSection from '@/layout/components/LayoutSettingsSection.vue'
 import AppIconButton from './AppIconButton.vue'
 import AppStateBlock from './AppStateBlock.vue'
+import type { PageDrawerSize } from './pageDrawerSize'
 import { useDrawerPreferences } from '@/composables/useDrawerPreferences'
 
 /** 抽屉自动渲染所需的配置访问器（即 useRemoteLayoutConfig 的返回子集）。 */
@@ -99,9 +100,9 @@ type SectionKey = 'layout' | 'components' | 'business'
 const SECTION_KEYS: SectionKey[] = ['layout', 'components', 'business']
 
 const collapsibleSections = computed(() => props.config?.componentValueOf('settings', 'collapsibleSections') !== false)
-const drawerSize = computed(() => {
+const drawerSize = computed<PageDrawerSize>(() => {
   const size = activeConfig.value?.componentValueOf('settings', 'size')
-  return size === 'sm' ? '320px' : size === 'lg' ? '440px' : '360px'
+  return size === 'sm' || size === 'lg' ? size : 'md'
 })
 const bodyScroll = computed(() => props.config?.componentValueOf('settings', 'bodyScroll') !== false)
 const drawerPreferenceSyncing = computed(() => props.modelValue && !drawerPreferences.hydrated.value)

@@ -1,12 +1,23 @@
 <script setup lang="ts">
 // 通用帮助气泡：标题旁一个 ❓，鼠标移入展示规则/注意事项（默认插槽）
-defineProps<{ title?: string; width?: number }>()
+defineProps<{ title?: string; width?: number; testId?: string }>()
 </script>
 
 <template>
-  <el-popover :title="title" :width="width ?? 360" trigger="hover" placement="bottom-start">
+  <el-popover
+    :title="title"
+    :width="width ?? 360"
+    :trigger="['hover', 'focus']"
+    placement="bottom-start"
+  >
     <template #reference>
-      <span class="help-icon">?</span>
+      <span
+        class="help-icon"
+        tabindex="0"
+        role="button"
+        aria-label="说明"
+        :data-testid="testId"
+      >?</span>
     </template>
     <div class="help-body">
       <slot />
@@ -23,19 +34,25 @@ defineProps<{ title?: string; width?: number }>()
   height: 16px;
   margin-left: 6px;
   border-radius: 50%;
-  background: #c0c4cc;
-  color: #fff;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color);
+  color: var(--el-text-color-regular);
   font-size: var(--app-font-size-micro);
   font-weight: var(--app-font-weight-strong);
   cursor: help;
   vertical-align: middle;
+  transition: color .15s ease, border-color .15s ease, background-color .15s ease;
 }
-.help-icon:hover {
-  background: #409eff;
+.help-icon:hover,
+.help-icon:focus-visible {
+  color: var(--el-color-white);
+  background: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+  outline: none;
 }
 .help-body {
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-longform);
-  color: #5a6371;
+  color: var(--el-text-color-regular);
 }
 </style>

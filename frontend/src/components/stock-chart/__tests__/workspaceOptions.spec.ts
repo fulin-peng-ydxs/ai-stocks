@@ -31,6 +31,9 @@ const theme: StockChartTheme = {
   text: '#222',
   tooltipBackground: '#fff',
   tooltipBorder: '#ddd',
+  accent: '#accent',
+  muted: '#muted',
+  area: '#area',
   up: '#up',
   down: '#down',
   series: {

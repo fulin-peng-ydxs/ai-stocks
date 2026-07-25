@@ -793,7 +793,7 @@ onMounted(async () => {
 
     <!-- 实时日志抽屉 -->
     <PageDrawer v-model="logDrawer" :title="logTask ? `${taskDisplayLabel(logTask.task_type, logTask.params)} · 实时日志` : '实时日志'"
-                size="46%" class="log-drawer" @close="closeLogs">
+                size="xl" class="log-drawer" @close="closeLogs">
       <div v-if="logTask" class="log-meta">
         <el-tag :type="taskStatusType(logTask)" size="small" effect="dark">{{ taskStatusLabel(logTask) }}</el-tag>
         <span class="lm-msg">{{ logTask.message }}</span>

@@ -3,7 +3,9 @@
  * 每个登记布局都过校验器、pageKey 自洽、无重复、editable 路径合法、getPageLayout 返回深拷贝。
  */
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { PAGE_REGISTRY, getPageEntry, getPageLayout, listComponentUsage, listManagedPages } from '../pageRegistry'
 import { validateLayout } from '../validator'
 import { COMPONENT_CATALOG } from '../components'
@@ -15,6 +17,10 @@ const DESIGN_MD = readFileSync(new URL('../../../../DESIGN.md', import.meta.url)
 const DESIGN_PAGE_SECTION = DESIGN_MD.match(
   /<!-- page-registry:start -->([\s\S]*?)<!-- page-registry:end -->/,
 )?.[1] ?? ''
+const DESIGN_COMPONENT_SECTION = DESIGN_MD.match(
+  /核心真实复用组件清单：([\s\S]*?)- Playwright E2E/,
+)?.[1] ?? ''
+const VIEWS_DIR = fileURLToPath(new URL('../../views/', import.meta.url))
 const ROUTER_TS = readFileSync(new URL('../../router/index.ts', import.meta.url), 'utf-8')
 const ROUTE_COMPONENT_BY_NAME = new Map<string, string>()
 for (const match of ROUTER_TS.matchAll(/name:\s*'([^']+)'[^}]*component:\s*\(\)\s*=>\s*import\('@\/([^']+)'\)/g)) {
@@ -25,6 +31,14 @@ function sourceForPage(pageKey: string): string {
   const componentPath = ROUTE_COMPONENT_BY_NAME.get(pageKey)
   if (!componentPath) return ''
   return readFileSync(new URL(`../../${componentPath}`, import.meta.url), 'utf-8')
+}
+
+function vueFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) return vueFiles(path)
+    return entry.name.endsWith('.vue') ? [path] : []
+  })
 }
 
 describe('页面注册表完整性', () => {
@@ -104,9 +118,48 @@ describe('页面注册表完整性', () => {
     }
   })
 
-  it('每个 registry 页面都有 settings-drawer overlay slot', () => {
+  it('被两个以上页面消费的真实组件均登记到 DESIGN 核心清单', () => {
+    const consumers = new Map<string, Set<string>>()
+    for (const file of vueFiles(VIEWS_DIR)) {
+      const source = readFileSync(file, 'utf8')
+      for (const match of source.matchAll(
+        /import\s+(\w+)\s+from\s+['"]@\/components\/[^'"]+['"]/g,
+      )) {
+        const pages = consumers.get(match[1]) ?? new Set<string>()
+        pages.add(file)
+        consumers.set(match[1], pages)
+      }
+    }
+
+    for (const [component, pages] of consumers) {
+      if (pages.size < 2) continue
+      expect(
+        DESIGN_COMPONENT_SECTION,
+        `${component} 已被 ${pages.size} 个页面消费但未登记到 DESIGN 核心组件清单`,
+      ).toContain(`\`${component}\``)
+    }
+  })
+
+  it('只有真实消费个人设置的页面登记 settings-drawer，布局管理页显式排除', () => {
+    const excluded = new Set(['layout-presets', 'layout-pages', 'layout-components'])
+    expect(
+      PAGE_REGISTRY.filter((entry) => entry.supportsPageSettings === false)
+        .map((entry) => entry.pageKey)
+        .sort(),
+    ).toEqual([...excluded].sort())
+
     for (const entry of PAGE_REGISTRY) {
       const slot = entry.layout.slots.find((s) => s.id === 'settings')
+      if (excluded.has(entry.pageKey)) {
+        expect(slot, `${entry.pageKey} 不消费个人设置，不得登记假 settings slot`).toBeUndefined()
+        expect(entry.consumedComponentFields?.settings).toBeUndefined()
+        expect(entry.supportsComponentConfig).toBe(false)
+        const source = sourceForPage(entry.pageKey)
+        expect(source).not.toContain('PageSettingsTrigger')
+        expect(source).not.toContain('PageSettingsDrawer')
+        expect(source).not.toContain('useRemoteLayoutConfig')
+        continue
+      }
       expect(slot, `${entry.pageKey} 缺少 settings overlay slot`).toBeTruthy()
       expect(slot?.component).toBe('settings-drawer')
       expect(slot?.region).toBe('overlay')

@@ -37,6 +37,11 @@ export interface PageRegistryEntry {
    * 配置中心已将其标注为"声明，待 P5 落地"，避免高估当前自适应能力。
    */
   responsiveProfile: ResponsiveProfile
+  /**
+   * 是否开放页面级个人设置入口。默认 true；平台布局管理页只管理系统配置，
+   * 不消费 page/user 覆盖时必须显式为 false，避免登记 settings-drawer 假能力。
+   */
+  supportsPageSettings?: boolean
   /** 是否已接入组件特性配置层（顶层 slot 可承载受控字段）；决定配置中心是否显示组件配置区块。 */
   supportsComponentConfig: boolean
   /**
@@ -752,6 +757,7 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/system/layout/presets',
     archetype: 'list',
     responsiveProfile: 'single-column',
+    supportsPageSettings: false,
     supportsComponentConfig: false,
     layout: {
       pageKey: 'layout-presets',
@@ -772,6 +778,7 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/system/layout/pages',
     archetype: 'list',
     responsiveProfile: 'single-column',
+    supportsPageSettings: false,
     supportsComponentConfig: false,
     layout: {
       pageKey: 'layout-pages',
@@ -792,6 +799,7 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/system/layout/components',
     archetype: 'list',
     responsiveProfile: 'single-column',
+    supportsPageSettings: false,
     supportsComponentConfig: false,
     layout: {
       pageKey: 'layout-components',
@@ -808,9 +816,8 @@ const REGISTRY: PageRegistryEntry[] = [
   },
 ]
 
-// P13 overlay 纳管：所有业务页面都有「页面设置抽屉」（用户层入口）。统一补登一个 overlay
-// settings-drawer slot（已显式声明者跳过，如 training），使「系统组件」页能正确显示 settings-drawer
-// 的消费关系（消除"暂无页面消费"的假象）。overlay slot 不进主流渲染，由各页自渲染抽屉，纯纳管/可寻址用途。
+// P13 overlay 纳管：开放个人设置的业务页面统一补登 settings-drawer；平台布局管理页
+// 显式 supportsPageSettings=false，只管理系统配置，不声明或消费 page/user 设置能力。
 for (const entry of REGISTRY) {
   for (const slot of entry.layout.slots) {
     if (slot.component !== 'data-table' && slot.component !== 'wide-table') continue
@@ -822,6 +829,7 @@ for (const entry of REGISTRY) {
       }
     }
   }
+  if (entry.supportsPageSettings === false) continue
   if (!entry.layout.slots.some((s) => s.component === 'settings-drawer')) {
     const overlayCount = entry.layout.slots.filter((s) => s.region === 'overlay').length
     entry.layout.slots.push({

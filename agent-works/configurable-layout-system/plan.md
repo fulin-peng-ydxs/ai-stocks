@@ -617,3 +617,33 @@
 7. AI 新页面开发流程写入 `DESIGN.md` 和 `CLAUDE.md`。
 8. 新页面必须使用布局系统、通过校验和构建。
 9. `BoardView`、`QualityView` 和至少一批高频列表页完成迁移验证。
+
+## 17. DESIGN 合规复审整改
+
+- 任务编号：D1。
+- 状态：已完成（2026-07-25）。
+- 目标：收口全项目 DESIGN 审查发现的页面设置假登记、抽屉私有宽度、HelpTip 私有色板、真实复用组件清单缺口和非股票 Canvas 主题边界。
+- 开发内容：
+  - `pageRegistry` 新增 `supportsPageSettings` 机器字段；预设管理、页面布局和系统组件三个平台管理页显式为 false，不再自动补 `settings-drawer`、组件字段或个人设置能力。
+  - `PageDrawer` 统一消费类型化 `sm/md/lg/xl` 宽度事实源；组件预览、审计详情和实时日志迁移到 `xl=560px`，布局契约测试禁止页面传 px/%。
+  - `HelpTip` 清除私有 hex，统一消费 Element Plus 预设语义 token，并补键盘聚焦和真实页面 token 对账。
+  - 新增 `useEChartsTheme()` 与共享 `useResponsiveEChartsTheme()`；`EquityChart`、`GrowthChart` 响应明暗、预设 key 和同 key 后端覆盖，股票画布继续通过 `useStockChartTheme()` 保持专属序列契约。
+  - DESIGN 核心组件清单补齐 `PageSettingsTrigger`、`PageSettingSection`、`TradeDatePicker`、K线设置组件和普通曲线组件；机器测试扫描两个以上页面的组件消费，防止清单再次漂移。
+- 产出：
+  - `frontend/src/components/pageDrawerSize.ts`
+  - `frontend/src/components/chartTheme.ts`
+  - registry、抽屉、帮助提示、普通/股票图表及相关契约测试。
+  - 同步后的 `DESIGN.md`、`requirement.md`、`page-template.md` 和本计划。
+- 影响范围：前端布局元数据、页面业务抽屉、帮助提示、训练/回测曲线和 DESIGN 机器契约；不涉及路由、菜单、权限、接口、数据库、seed、配置字段或用户偏好结构。
+- 复用判断：
+  - 已查找：`PageSettingsDrawer`、三个布局管理页、全部 `PageDrawer` 消费点、`HelpHint`、股票主题入口、`EquityChart`、`GrowthChart` 和真实组件清单。
+  - 已复用：`LayoutHost`/`PageDrawer` 边界、Element Plus token、`themeRevision`、页面 registry 和既有 E2E 控制台 helper。
+  - 新增复用单元：类型化抽屉尺寸事实源、普通 ECharts 响应式主题入口。
+  - 未合并：股票画布与净值/成长曲线的数据、option 和生命周期职责不同，只共享主题修订触发与基础语义色，不合并为万能图表组件。
+- 验证：
+  - 定向 Vitest：`9 files / 62 tests passed`。
+  - 前端全量 Vitest：`66 files / 443 tests passed`。
+  - 正式构建：通过；仅有既有依赖注释位置和大 chunk 告警。
+  - Playwright：1100×620、1366×768、1440×900 三项目共 `6 passed`；确认系统组件页无个人设置入口、组件预览抽屉为 560px、HelpTip 实际样式等于当前预设 token，控制台无 error/warning。
+  - MACD/T18 关键视口回归：1100×620、1366×768、1440×900 共 `3 passed`；三图纵向布局、语义主题和 reduced-motion 契约未受普通图表主题入口收敛影响。
+  - 服务：后端 `/api/health=200`，前端 `5173=200`。

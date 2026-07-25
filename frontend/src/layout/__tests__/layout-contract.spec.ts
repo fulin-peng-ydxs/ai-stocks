@@ -31,6 +31,8 @@ const VIEWPORT_HEIGHT =
 const HANDWRITTEN_LAYOUT = /class="[^"]*\bv-(?:page|grow|scroll)\b/
 const QUERY_BUTTON = /<el-button\b([^>]*)>\s*查询\s*<\/el-button>/gs
 const VIEWPORT_DRAWER = /<(?:el-drawer|ElDrawer)\b/
+const PAGE_DRAWER = /<PageDrawer\b[\s\S]*?>/g
+const CONTROLLED_DRAWER_SIZE = /\bsize\s*=\s*["'](?:sm|md|lg|xl)["']/
 
 function vueFiles(dir: string): string[] {
   const out: string[] = []
@@ -102,6 +104,23 @@ describe('布局契约守卫（M6）', () => {
     expect(
       offenders,
       `以下页面直接使用了 <el-drawer>，应改用页面边界组件 <PageDrawer>：\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('PageDrawer 只允许使用受控语义尺寸档位', () => {
+    const offenders: string[] = []
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8')
+      for (const match of source.matchAll(PAGE_DRAWER)) {
+        const tag = match[0]
+        if (!/\b:?size\s*=/.test(tag) || CONTROLLED_DRAWER_SIZE.test(tag)) continue
+        const line = source.slice(0, match.index).split('\n').length
+        offenders.push(`${rel(file)}:${line} ${tag.replace(/\s+/g, ' ')}`)
+      }
+    }
+    expect(
+      offenders,
+      `页面业务抽屉必须使用 sm/md/lg/xl 语义档位：\n${offenders.join('\n')}`,
     ).toEqual([])
   })
 })
