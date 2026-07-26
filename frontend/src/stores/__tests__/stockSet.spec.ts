@@ -45,6 +45,7 @@ describe('stockSet group context cleanup', () => {
 
     expect(stockSet.clearGroupContext()).toBe(true)
     expect(stockSet.source).toBe('')
+    expect(stockSet.returnPath).toBe('')
     expect(stockSet.groupId).toBe('')
     expect(stockSet.items).toEqual([])
     expect(stockSet.query).toBeNull()
@@ -75,5 +76,20 @@ describe('stockSet group context cleanup', () => {
     expect(stockSet.source).toBe('list')
     expect(stockSet.items).toHaveLength(1)
     expect(stockSet.query?.kind).toBe('stocks')
+    expect(stockSet.returnPath).toBe('/stocks?restore=1')
+  })
+
+  it('persists a custom collection return path', () => {
+    const stockSet = useStockSet()
+    stockSet.setSet(
+      'list',
+      [{ code: '000001.SZ', name: '平安银行' }],
+      '每日榜单',
+      '',
+      { returnPath: '/board' },
+    )
+
+    expect(stockSet.returnPath).toBe('/board')
+    expect(JSON.parse(localStorage.getItem('ai-stocks:stockSet') || '{}').returnPath).toBe('/board')
   })
 })

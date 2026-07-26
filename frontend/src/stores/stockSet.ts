@@ -34,6 +34,7 @@ export interface StockListState {
 interface State {
   source: '' | 'group' | 'list'
   label: string          // 展示名，如分组名 / “查询结果”
+  returnPath: string     // 详情页返回当前集合来源页
   groupId: string        // source=group 时
   items: SetItem[]       // 有序成员
   query: SetQuery | null
@@ -56,6 +57,7 @@ function load(): State {
       return {
         source: parsed.source ?? '',
         label: parsed.label ?? '',
+        returnPath: parsed.returnPath ?? '',
         groupId: parsed.groupId ?? '',
         items: parsed.items ?? [],
         query,
@@ -68,7 +70,7 @@ function load(): State {
   } catch {
     /* ignore */
   }
-  return { source: '', label: '', groupId: '', items: [], query: null, total: 0, loadedPages: [], pageSize: 20, listState: null }
+  return { source: '', label: '', returnPath: '', groupId: '', items: [], query: null, total: 0, loadedPages: [], pageSize: 20, listState: null }
 }
 
 export const useStockSet = defineStore('stockSet', {
@@ -91,11 +93,18 @@ export const useStockSet = defineStore('stockSet', {
       items: SetItem[],
       label: string,
       groupId = '',
-      meta?: { query?: SetQuery | null; total?: number; loadedPages?: number[]; pageSize?: number },
+      meta?: {
+        query?: SetQuery | null
+        total?: number
+        loadedPages?: number[]
+        pageSize?: number
+        returnPath?: string
+      },
     ) {
       this.source = source
       this.items = items
       this.label = label
+      this.returnPath = meta?.returnPath ?? '/stocks?restore=1'
       this.groupId = groupId
       this.query = meta?.query ?? null
       this.total = meta?.total ?? items.length
@@ -141,6 +150,7 @@ export const useStockSet = defineStore('stockSet', {
       if (!hasGroupContext) return false
       this.source = ''
       this.label = ''
+      this.returnPath = ''
       this.groupId = ''
       this.items = []
       this.query = null
@@ -153,6 +163,7 @@ export const useStockSet = defineStore('stockSet', {
     clear() {
       this.source = ''
       this.label = ''
+      this.returnPath = ''
       this.groupId = ''
       this.items = []
       this.query = null

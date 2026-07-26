@@ -1096,6 +1096,28 @@ describe('StockDetailView 三图数据协调', () => {
     wrapper.unmount()
   })
 
+  it('首次渲染集合下拉时保留当前股票的真实序号', async () => {
+    const pinia = await prepareAuth()
+    useStockSet().setSet(
+      'list',
+      [
+        { code: '000001.SZ', name: '平安银行' },
+        { code: '600000.SH', name: '浦发银行' },
+      ],
+      '查询结果',
+    )
+    const wrapper = shallowMount(StockDetailView, {
+      global: testGlobal(pinia),
+    })
+    await flushPromises()
+
+    const collectionSelect = wrapper.findAllComponents(ElSelectStub).find(
+      (component) => component.attributes('data-testid') === 'stock-set-select',
+    )
+    expect(collectionSelect?.text()).toContain('2. 浦发银行 600000.SH')
+    wrapper.unmount()
+  })
+
   it('指标历史不足时只让 MACD 面板进入 insufficient', async () => {
     vi.mocked(stocksApi.getIndicators).mockResolvedValue({
       code: '600000.SH',

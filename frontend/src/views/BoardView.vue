@@ -24,6 +24,7 @@ import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useStockSet } from '@/stores/stockSet'
 
 // 列表页布局（原型 A）：操作区=头部（标题+控件），主内容区=榜单表格（撑满·表体内滚）。
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -47,6 +48,7 @@ const {
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
 const router = useRouter()
+const stockSet = useStockSet()
 const loading = ref(true)
 const error = ref('')
 const runDate = ref<string>('')
@@ -161,6 +163,13 @@ async function load() {
 }
 
 function gotoStock(row: ScoreRunRow) {
+  const items = displayRows.value.map((item) => ({ code: item.code, name: item.name }))
+  stockSet.setSet('list', items, '每日榜单', '', {
+    total: items.length,
+    loadedPages: [1],
+    pageSize: Math.max(items.length, 1),
+    returnPath: '/board',
+  })
   router.push(`/stocks/${row.code}`)
 }
 

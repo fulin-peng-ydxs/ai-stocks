@@ -6,6 +6,7 @@ import ElementPlus from 'element-plus'
 import { reactive, ref, type Component } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useStockSet } from '@/stores/stockSet'
 
 vi.mock('@/composables/useRemoteLayoutConfig', () => ({
   useRemoteLayoutConfig: () => ({
@@ -140,7 +141,10 @@ import TrainingView from '@/views/TrainingView.vue'
 
 const router = createRouter({
   history: createMemoryHistory(),
-  routes: [{ path: '/', component: { template: '<div />' } }],
+  routes: [
+    { path: '/', component: { template: '<div />' } },
+    { path: '/stocks/:code', component: { template: '<div />' } },
+  ],
 })
 
 const stubs = {
@@ -169,8 +173,20 @@ const stubs = {
     template: '<div><slot name="action"/><slot name="summary"/><slot name="filters"/><slot name="main"/><slot name="footer"/><slot name="overlays"/></div>',
   },
   AppDataTable: {
-    props: ['loading'],
-    template: '<div class="app-data-table" :data-loading="String(Boolean(loading))"><slot/><slot name="empty"/></div>',
+    props: ['loading', 'data'],
+    emits: ['row-click'],
+    template: `
+      <div class="app-data-table" :data-loading="String(Boolean(loading))">
+        <button
+          v-if="data?.length"
+          class="first-data-row"
+          @click="$emit('row-click', data[0])"
+        >
+          打开首行
+        </button>
+        <slot/><slot name="empty"/>
+      </div>
+    `,
   },
   AppControlRow: { template: '<div><slot/></div>' },
   AppControlItem: { template: '<label><slot name="label"/><slot/></label>' },
@@ -246,6 +262,43 @@ beforeEach(() => {
 })
 
 describe('代表性页面四态回归', () => {
+  it('从每日榜单进入详情时同步榜单集合和返回地址', async () => {
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2026-07-25',
+      top: 2,
+      count: 2,
+      list: [
+        {
+          rank: 1,
+          code: '000001.SZ',
+          name: '平安银行',
+          total_score: 90,
+          grade: '龙头候选',
+          sub_scores: {},
+        },
+        {
+          rank: 2,
+          code: '600000.SH',
+          name: '浦发银行',
+          total_score: 80,
+          grade: '观察',
+          sub_scores: {},
+        },
+      ],
+    })
+    const push = vi.spyOn(router, 'push')
+    const wrapper = await mountView(BoardView)
+
+    await wrapper.get('.first-data-row').trigger('click')
+
+    const stockSet = useStockSet()
+    expect(stockSet.label).toBe('每日榜单')
+    expect(stockSet.codes).toEqual(['000001.SZ', '600000.SH'])
+    expect(stockSet.returnPath).toBe('/board')
+    expect(push).toHaveBeenCalledWith('/stocks/000001.SZ')
+    push.mockRestore()
+  })
+
   it('榜单加载失败显示错误态且不显示表格空态', async () => {
     ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('board failed'))
     const wrapper = await mountView(BoardView)

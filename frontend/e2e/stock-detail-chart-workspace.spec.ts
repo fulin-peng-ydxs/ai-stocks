@@ -252,6 +252,50 @@ async function installFixedStockListEndpoint(page: Page, samples: StockSample[])
   })
 }
 
+async function installFixedBoardEndpoints(page: Page, samples: StockSample[]) {
+  await page.route('**/api/board/profiles', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: [{
+          id: 'e2e-board-profile',
+          name: 'E2E 榜单方案',
+          version: 1,
+          source: 'preset',
+          is_preset: true,
+        }],
+      }),
+    })
+  })
+  await page.route('**/api/board/run', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        msg: 'ok',
+        data: {
+          run_date: '2026-07-25',
+          top: samples.length,
+          count: samples.length,
+          cache_status: 'cached',
+          list: samples.map((sample, index) => ({
+            rank: index + 1,
+            code: sample.code,
+            name: sample.name,
+            total_score: 90 - index,
+            grade: index === 0 ? '龙头候选' : '观察',
+            sub_scores: {},
+          })),
+        },
+      }),
+    })
+  })
+}
+
 async function loadStocksOnlyContext(page: Page, request: APIRequestContext) {
   const auth = await loginAsDebugUser(page, request, 'debug_stocks_only')
   const headers = { authorization: `Bearer ${auth.accessToken}` }
@@ -274,6 +318,37 @@ async function loadStocksOnlyContext(page: Page, request: APIRequestContext) {
 }
 
 test.describe('个股详情三图工作区', () => {
+  test('每日榜单进入第二只股票后集合序号和返回来源保持一致', async ({
+    page,
+    request,
+  }, testInfo) => {
+    runInStandardViewport(testInfo)
+    const consoleIssues = collectConsoleIssues(page)
+    const auth = await loginAsDebugUser(page, request, 'debug_normal')
+    const samples = await loadStockSamples(request, auth, 2)
+    await installPreferenceEndpoint(page)
+    await installFixedBoardEndpoints(page, samples)
+    await installFixedStockListEndpoint(page, samples)
+
+    await page.goto('/board')
+    await page.getByRole('row').filter({ hasText: samples[1].code }).click()
+
+    await expect(page).toHaveURL(new RegExp(`/stocks/${samples[1].code.replace('.', '\\.')}$`))
+    await expect(page.getByTestId('stock-set-navigation')).toContainText('每日榜单')
+    await expect(page.getByTestId('stock-set-navigation')).toContainText('2/2')
+
+    await page.getByTestId('stock-set-select').click()
+    await expect(page.getByRole('option', {
+      name: `2. ${samples[1].name || ''} ${samples[1].code}`,
+    })).toBeVisible()
+    await page.keyboard.press('Escape')
+
+    await page.getByRole('button', { name: '返回' }).click()
+    await expect(page).toHaveURL(/\/board$/)
+    await expect(page.getByRole('heading', { name: '每日榜单' })).toBeVisible()
+    expect(consoleIssues).toEqual([])
+  })
+
   test('debug_normal 首次进入默认显示三图和完整图名', async ({ page, request }, testInfo) => {
     runInStandardViewport(testInfo)
     const consoleIssues = collectConsoleIssues(page)

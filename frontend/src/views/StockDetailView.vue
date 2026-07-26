@@ -146,6 +146,9 @@ const nextCode = computed(() => stockSet.neighbor(code.value, 1))
 function gotoCode(c: string | null) {
   if (c && c !== '__more__' && c !== code.value) router.push(`/stocks/${c}`)
 }
+function returnToCollection() {
+  router.push(stockSet.returnPath || '/stocks?restore=1')
+}
 const collectionTotal = computed(() => stockSet.total || stockSet.items.length)
 const collectionTotalPages = computed(() => Math.max(1, Math.ceil(collectionTotal.value / Math.max(stockSet.pageSize || 20, 1))))
 const minLoadedPage = computed(() => stockSet.loadedPages.length ? Math.min(...stockSet.loadedPages) : 1)
@@ -564,12 +567,15 @@ async function removeSelectedGroup(gid: string) {
 
 // ── 集合下拉：保留全量集合语义，候选项按 100 条懒加载，搜索合并在同一个下拉里 ──
 const DROPDOWN_PAGE_SIZE = 100
-const dropdownItems = ref<{ code: string; name?: string | null }[]>([])
-const dropdownPage = ref(1)
-const dropdownTotal = ref(0)
+// 首屏直接消费共享集合，否则当前股票会在下拉候选加载前被临时补成第 1 项。
+const dropdownItems = ref<{ code: string; name?: string | null }[]>([...stockSet.items])
+const dropdownPage = ref(stockSet.loadedPages.length ? Math.max(...stockSet.loadedPages) : 1)
+const dropdownTotal = ref(collectionTotal.value)
 const dropdownKeyword = ref('')
 const dropdownLoading = ref(false)
-const dropdownLoadedPages = ref<number[]>([])
+const dropdownLoadedPages = ref<number[]>(
+  stockSet.loadedPages.length ? [...stockSet.loadedPages] : (stockSet.items.length ? [1] : []),
+)
 let dropdownSearchTimer: ReturnType<typeof setTimeout> | null = null
 let dropdownRequestSeq = 0
 
@@ -733,7 +739,7 @@ onBeforeUnmount(() => {
     <template #action>
     <div class="page-head">
       <div class="title">
-        <el-button text @click="router.push('/stocks?restore=1')">
+        <el-button text @click="returnToCollection">
           <template #icon><el-icon><ArrowLeft /></el-icon></template>
           返回
         </el-button>
