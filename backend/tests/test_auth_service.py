@@ -175,6 +175,13 @@ def test_public_config(auth_env):
     assert cfg["login_captcha_enabled"] is False
     # 图形码强制阈值须下发，供后端达到阈值后强制要求验证码。
     assert isinstance(cfg["captcha_after_fails"], int) and cfg["captcha_after_fails"] >= 1
+    assert cfg["appearance_presets"]
+    allowed = re.compile(
+        r"^tokens\.(?:light|dark)\.(?:primary|success|warning|danger)$"
+    )
+    for preset in cfg["appearance_presets"]:
+        assert {"key", "name", "description", "config"} <= set(preset)
+        assert all(allowed.fullmatch(key) for key in preset["config"]["values"])
 
 
 def test_captcha_issue(auth_env):

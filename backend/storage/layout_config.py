@@ -211,34 +211,24 @@ COMPONENT_MIN_SIZE: dict[str, tuple[int, int]] = {
 
 BUILTIN_PRESETS: list[dict[str, Any]] = [
     {
-        "key": "daylight",
-        "name": "日曜",
-        "description": "铂金银灰、蓝宝石电光与精密石墨构成的高照度研究舱。",
-        "config": {"density": "standard"},
-    },
-    {
-        "key": "nocturne",
-        "name": "夜航",
-        "description": "深海蓝、冷青与铂金边界，适合低照度环境和夜间复盘。",
-        "config": {"density": "standard"},
-    },
-    {
         "key": "balanced",
-        "name": "晨昏",
-        "description": "日间海军蓝、夜间沿用登录页深蓝黑，以香槟金维持克制的黑金平衡。",
+        "name": "澄空蓝",
+        "description": "蓝色强调信号与固定中性明暗表面构成的默认研究空间。",
         "config": {"density": "standard"},
     },
 ]
 
 LEGACY_BUILTIN_PRESET_MAP = {
+    "daylight": "balanced",
+    "nocturne": "balanced",
     "professional": "balanced",
-    "government": "daylight",
+    "government": "balanced",
     "technology": "balanced",
     "finance": "balanced",
-    "high-contrast": "nocturne",
+    "high-contrast": "balanced",
 }
 
-_THREE_THEME_PRESET_MARKER = "migration.layout_presets_three_theme_v1"
+_SINGLE_BLUE_PRESET_MARKER = "migration.layout_presets_single_blue_v1"
 _CONFIG_STORAGE_PG_MARKER = "migration.config_storage_pg_v1"
 _PRESET_SEED_LOCK = threading.Lock()
 
@@ -679,7 +669,7 @@ class LayoutConfigRepo:
         with _PRESET_SEED_LOCK:
             marker = self.pg.query_df(
                 "SELECT 1 FROM app_config WHERE key=%s",
-                [_THREE_THEME_PRESET_MARKER],
+                [_SINGLE_BLUE_PRESET_MARKER],
             )
             if not marker.empty:
                 return 0
@@ -693,19 +683,19 @@ class LayoutConfigRepo:
                     self.pg.execute(
                         "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, %s) "
                         "ON CONFLICT (key) DO NOTHING",
-                        [_THREE_THEME_PRESET_MARKER, '{"applied":true,"source":"duckdb"}', datetime.now()],
+                        [_SINGLE_BLUE_PRESET_MARKER, '{"applied":true,"source":"duckdb"}', datetime.now()],
                     )
                 return 0
             inserted = self._apply_builtin_preset_migration()
             self.pg.execute(
                 "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, %s) "
                 "ON CONFLICT (key) DO NOTHING",
-                [_THREE_THEME_PRESET_MARKER, '{"applied":true}', datetime.now()],
+                [_SINGLE_BLUE_PRESET_MARKER, '{"applied":true}', datetime.now()],
             )
             return inserted
 
     def _apply_builtin_preset_migration(self) -> int:
-        """一次性写入三套内置预设并迁移旧五套引用；由版本 marker 保证稳态零写。"""
+        """一次性收敛为单一内置蓝色预设；自定义预设继续保留并可扩展。"""
         before = self._pg_layout_count("layout_preset")
         now = datetime.now()
         for preset in BUILTIN_PRESETS:
@@ -729,7 +719,7 @@ class LayoutConfigRepo:
                     now,
                 ],
             )
-        # 旧五套内置预设收敛为三套视觉人格；页面引用先迁移，再删除旧内置行。
+        # 历史内置预设收敛为 balanced；页面引用先迁移，再删除旧内置行。
         # 只清理 is_builtin=true，避免误删用户恰好使用旧 key 创建的自定义数据。
         for legacy_key, target_key in LEGACY_BUILTIN_PRESET_MAP.items():
             legacy = self.pg.query_df(

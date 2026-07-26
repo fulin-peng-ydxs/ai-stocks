@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: 复盘啦
-description: A 股趋势研究工作台，面向高密度行情、筛选、回测、训练、权限管理和数据治理工作流，采用克制、可配置、可验证的专业后台界面。
+description: A 股趋势研究工作台，面向高密度行情、筛选、回测、训练、权限管理和数据治理工作流，采用明亮蓝色信号、中性明暗表面和可验证的专业后台界面。
 typography:
   button-md:
     fontWeight: 650
@@ -30,34 +30,36 @@ typography:
 
 ## 1. Visual Theme & Atmosphere
 
-复盘啦是专业金融研究空间，不是传统后台、营销页或内容站。界面优先支持反复扫描、比较、筛选、回测和配置，视觉应当安静、克制、可读，并通过统一材质与清晰层级保持金融科技气质。
+复盘啦是专业金融研究空间，不是传统后台、营销页或内容站。界面优先支持反复扫描、比较、筛选、回测和配置，以高辨识蓝色信号、中性黑白表面和清晰层级保持明亮、现代的金融科技气质。
 
 Key Characteristics：
 
 - 信息密度偏高，但通过表格内滚、抽屉分段、字段收纳和提示悬浮保持可扫读。
-- 默认气质为冷静、均衡的金融科技研究终端；金融数据场景允许红绿涨跌色，但不以过度紧凑和控件堆叠表达专业。
+- 默认气质为明亮、清晰的金融科技研究终端；主交互蓝保持鲜明，不通过低饱和暖灰、金棕或泛黄底色营造所谓护眼感。金融数据场景允许红绿涨跌色，但不以过度紧凑和控件堆叠表达专业。
+- 明暗模式缩略图、外观预览和装饰性状态图形也必须使用冷白、亮蓝、深蓝与中性灰；不得用金黄、棕灰或泛黄色模拟“白天”，避免预览层与真实页面色彩语言脱节。
 - 页面首屏直接呈现业务工具，不做大 hero、不做营销式空白、不做卡片堆叠式装饰。
 - 所有业务页面通过布局系统组织，页面结构由 schema 和测试约束，不依赖临时 CSS 猜高度。
 - 视觉预设可以改变 token、密度和受控组件默认策略，但不能改变页面业务结构。
 
 ## 2. Color Palette & Roles
 
-颜色以 Element Plus 变量、`global.css` 的 `--chrome-*` / `--page-settings-*` 变量和 `LAYOUT_PRESETS` 为事实源。内置预设只保留 `daylight`、`nocturne`、`balanced` 三套，默认使用 `balanced`；三套预设必须同时覆盖登录页、应用外壳、业务内容区和外观选择预览。
+颜色以 Element Plus 变量、`global.css` 的 `--chrome-*` / `--page-settings-*` 变量和 `LAYOUT_PRESETS` 为事实源。内置视觉只保留 `balanced` 一个稳定 key，对外名称为“澄空蓝”；历史内置项统一迁移到该默认项。预设管理仍可新增自定义预设，启用项会自动进入外观抽屉并真实驱动强调色、形态和组件默认策略。
 
 | 角色 | 默认值 | 使用规则 |
 |---|---:|---|
-| 主交互色 | `#409eff` | 主按钮、当前菜单、可点击强调、选中边框 |
-| 页面背景 | `#f5f7fa` | 工作区底色，不直接承载业务控件 |
-| 表面色 | `#ffffff` | 卡片、表格、输入框、抽屉内容面 |
-| 悬停表面 | `#eef1f6` | 菜单、表格行、轻量按钮 hover |
-| 主文字 | `#1f2937` | 标题、表头、关键字段 |
-| 正文文字 | `#4b5563` | 表格正文、表单值、说明正文 |
-| 次要文字 | `#8a94a6` | 提示、辅助说明、弱化信息 |
-| 边框 | `#e4e7ed` | 卡片、表格、分割线、输入框 |
-| 强边框 | `#d0d5dd` | 选中、强调分区、高对比预设 |
-| 成功 | `#2f9e44` | 健康状态、成功提示、部分下跌色 |
-| 警告 | `#d97706` | 异常但未失败、样本不足、风险提示 |
-| 危险 | `#dc2626` | 失败、删除、风险、金融上涨色 |
+| 主交互色 | 白天 `#1677ff` / 夜间 `#3b8cff` | 主按钮、当前菜单、可点击强调、选中边框 |
+| 页面背景 | 白天 `#ffffff` / 夜间 `#171717` | 对齐参考原型主区；工作区与登录页统一画布，只受明暗模式控制 |
+| 边栏背景 | 白天 `#fcfcfc` / 夜间 `#1f1f1f` | 对齐参考原型侧栏；固定中性表面，不随预设强调色变化 |
+| 表面色 | 白天 `#ffffff` / 夜间 `#1f1f1f` | 卡片、表格、输入框、抽屉内容面；不随预设变化 |
+| 悬停表面 | 白天 `#f3f3f3` / 夜间 `#292929` | 菜单、表格行、轻量按钮 hover |
+| 主文字 | 白天 `#17181c` / 夜间 `#f4f4f4` | 标题、表头、关键字段 |
+| 正文文字 | 白天 `#44464d` / 夜间 `#d2d2d2` | 表格正文、表单值、说明正文 |
+| 次要文字 | 白天 `#73757d` / 夜间 `#9a9a9a` | 提示、辅助说明、弱化信息 |
+| 边框 | 白天 `#e5e5e5` / 夜间 `#353535` | 卡片、表格、分割线、输入框 |
+| 强边框 | 白天 `#c9c9c9` / 夜间 `#545454` | 选中、强调分区、高对比控件 |
+| 成功 | 白天 `#168f63` / 夜间 `#35c48d` | 健康状态、成功提示、部分下跌色 |
+| 警告 | 白天 `#d97706` / 夜间 `#f0a43c` | 异常但未失败、样本不足、风险提示 |
+| 危险 | 白天 `#d9363e` / 夜间 `#ff6670` | 失败、删除、风险、金融上涨色 |
 
 金融涨跌色遵循当前项目口径：上涨/正收益多用红色，下跌/负收益多用绿色；不要套用海外红跌绿涨习惯。
 
@@ -76,14 +78,17 @@ Key Characteristics：
 
 预设规则：
 
-- 每套预设的登录页与工作台必须同源：同一 `preset + light/dark` 下，登录页右侧交互区基础色等于工作台 `pageBg`；登录卡片可保留透明、模糊、边框和阴影，但卡片叠加到右侧基础色后的肉眼可见色必须等于工作台 `surfaceBg`。该关系以 `frontend/src/layout/themeSurfaces.ts` 为登录/工作台底色事实源，并由 `presets.spec.ts` 守卫；禁止只改登录页或只改主页造成同主题内体验漂移。
-- 登录页可保留光晕、网格、轨迹、透明和模糊等品牌装饰，但装饰层不能改变 `themeSurfaces.ts` 和 `presets.ts` 定义的基础底色事实源。
-- `daylight`（日曜）：铂金银灰、瓷白表面、蓝宝石电光与精密石墨构成高照度研究舱；不使用米黄、香槟、金色、铜色或琥珀色表现高级感，材质层级由明度、银灰边界与克制冷影建立，蓝色承担轨迹信号与精密交互，优先服务白天长时间阅读。其暗色模式使用蓝黑石墨、银灰边界与蓝宝石信号，不得回落为夜航的深海青蓝色系。
-- `nocturne`（夜航）：深海蓝、冷青与铂金边界，优先服务低照度夜间复盘；禁止使用纯黑大底。
-- `balanced`（晨昏）：日间以海军蓝与香槟金保持明暗平衡；夜间以登录交互区既有的深蓝黑为视觉基准，并配合暖石墨边界和小面积香槟金信号建立克制的黑金层级。登录页颜色不得因主页试色而反向漂移。
-- 明暗模式与三套预设正交；每套仍需维护完整 `light` / `dark` token，并在切换时保持控件对比度。
-- 存量 `technology` / `finance` 页面引用升级时迁移到 `balanced`；其预设默认密度从 `compact` 回落为 `standard`，页面层或用户层已有 `density` 覆盖继续保留。
-- 新增或调整预设必须维护 `light`、`dark`、共享形态 token、`themeSurfaces.ts` 登录/工作台底色事实源，并通过 `presets.spec.ts`。
+- 登录页与工作台必须同源：同一 `light/dark` 下，登录右侧交互区基础色等于工作台 `pageBg`，登录卡片可见色等于工作台 `surfaceBg`。该关系以 `frontend/src/layout/themeSurfaces.ts` 为底色事实源，并由 `presets.spec.ts` 守卫。
+- 登录或注册成功时，登录页当前可见的 `light/dark` 是本次会话的明确模式：进入工作台前先暂存，鉴权后优先写回用户偏好；只有登录页没有形成待同步模式时，才允许远端用户偏好覆盖本地模式。
+- 登录页恢复为修改前的全屏左右品牌布局：左侧承载品牌字标、趋势轨迹与“看见趋势，先于共识。”主视觉文案，右侧承载独立登录/注册卡片；页面结构、文案层级与交互以 `LoginView.vue` 的恢复版本为准。
+- 登录页可保留原有光晕、网格、轨迹、透明和模糊等品牌装饰，但装饰层不能改变 `themeSurfaces.ts` 和 `presets.ts` 定义的基础底色事实源；按钮、焦点、品牌强调、趋势轨迹、Logo 渐变和光晕必须消费当前运行时 `primary`，禁止遗留独立硬编码主题色。
+- 登录页与应用外壳的「复盘啦」必须直接复用 `BrandMark` 的同一几何、尺寸、渐变、文字与描边定义；组件不提供 `login/shell` 场景变体，消费容器不得覆盖 `--brand-*` 形成第二套字标。只有容器不足 `184×52px` 时允许按原始宽高比整体缩放。Logo 渐变由运行时 `primary` 派生，因此新增并启用颜色预设后，登录页与工作台会同步更新。
+- `balanced`（澄空蓝）使用鲜明蓝色信号；页面、边栏、卡片、悬停、边框和文字属于固定中性基础表面，只受明暗模式控制，禁止预设覆盖。预设允许覆盖 `primary/success/warning/danger`、共享形态、响应式默认和组件默认策略。
+- 外观抽屉必须保留视觉预设区：当前只有一套时显示唯一选中项；预设管理新增并启用自定义项后，无需改前端代码即可出现在抽屉并驱动运行时。登录页不提供预设管理入口。
+- 启用预设的名称和明暗语义强调色通过登录公开配置下发，并写入首屏安全缓存；登录页与工作台必须共同消费 `setRuntimePresetSources()`，不得各自解析或维护另一套预设。公开配置禁止携带页面、组件或其他平台布局字段。
+- 调整基础表面必须同步维护 `light`、`dark`、`themeSurfaces.ts` 与 `presets.spec.ts`；调整预设能力必须验证后端目录、运行时选择和固定表面不受覆盖。
+- 页面设置抽屉保留 `32%` 黑色遮光层，用于明确浮层焦点和点击外部关闭边界；遮光层属于临时交互状态，不参与主题底色定义，抽屉内容面与页面常驻容器仍必须使用中性明暗表面。
+- `surfaceHover` 只用于 hover、选中或明确可操作控件状态；查询摘要、图表分隔带、设置分组等常驻容器必须使用 `surfaceBg`，禁止把悬停灰当作静态页面底色。
 
 ## 3. Typography Rules
 
@@ -206,7 +211,7 @@ Key Characteristics：
 | `TradeDatePicker` | `frontend/src/components/TradeDatePicker.vue` | 交易日选择器 | 无直接系统组件种类 | 回测、筛选、训练和数据任务等交易日输入统一复用；不得退回普通日期选择后自行补交易日校验 |
 | `KlineRangeSelect` / `KlineSettingSection` | `frontend/src/components/KlineRangeSelect.vue`、`frontend/src/components/KlineSettingSection.vue` | K线范围快捷选择与共享设置分区 | 无系统组件种类；消费全局 K线偏好 | 个股详情、盘感训练等 K线页面统一复用，不复制范围选项或偏好写入逻辑 |
 | `EquityChart` / `GrowthChart` | `frontend/src/components/EquityChart.vue`、`frontend/src/components/GrowthChart.vue` | 回测/训练净值与成长曲线 | 无直接系统组件种类 | 保持各自数据与布局职责；画布主题统一消费 `useEChartsTheme()`，不得私有维护明暗基础色板 |
-| `BrandMark` | `frontend/src/components/BrandMark.vue` | 应用品牌图形与「复盘啦」字标 | 无直接系统组件种类 | 应用外壳、登录页等品牌露出统一复用；禁止在页面内另画私有 logo 或手写第二套字标 |
+| `BrandMark` | `frontend/src/components/BrandMark.vue` | 应用品牌图形与「复盘啦」字标 | 无直接系统组件种类 | 应用外壳、登录页等品牌露出直接复用同一外观；禁止场景变体、消费侧 `--brand-*` 覆盖、私有 logo 或第二套字标；窄容器只允许等比缩放 |
 | `SideMenu` / `TopNavigation` / `WorkspaceTabs` / `WorkspaceRouteView` / `MenuIcon` | `frontend/src/components/SideMenu.vue`、`frontend/src/components/TopNavigation.vue`、`frontend/src/components/WorkspaceTabs.vue`、`frontend/src/components/WorkspaceRouteView.vue`、`frontend/src/components/MenuIcon.vue` | 应用级菜单树、双层顶栏、保留现场的工作标签页、路由缓存与统一菜单图标渲染 | 无直接系统组件种类 | 菜单统一消费 `/me` 授权树和 `utils/permission.ts` 的路由归属口径；工作页面统一由 `WorkspaceRouteView` 渲染并按标签独立缓存，禁止业务页私建 KeepAlive；关闭标签必须同步移除对应缓存；侧栏、双层顶栏和菜单管理页统一用 `MenuIcon` 消费后端图标名；新增导航模式时复用 `useAppNavigation` 持久化偏好 |
 | `AssetVisibilityTag` / `AssetProfileLabel` / `AssetVisibilityActions` | `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue`、`frontend/src/components/AssetVisibilityActions.vue` | 公开资产来源、可见范围、只读状态、方案名称+版本+归属标签、发布/收回、复制为我的方案和复用参数动作 | 无直接系统组件种类 | 评分、筛选、买卖、回测等公开资产页面必须复用；方案选择/列表入口统一用 `AssetProfileLabel`，消费页包括 `BoardView`、`ScreenView`、`ConfigView` 评分 tab、`ConfigView` 买卖 tab、`BacktestView` |
 | `ConfigGroupForm` | `frontend/src/components/config/ConfigGroupForm.vue` | 系统设置配置组表单 | 消费 `config-panel` 的折叠与说明展示配置 | 动态配置组字段渲染优先复用 |

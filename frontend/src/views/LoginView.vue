@@ -4,8 +4,17 @@
 // 契约：用 position:fixed;inset:0 全屏（禁 vh 高度、禁手写 .v-page/.v-grow，过 layout-contract.spec.ts）。
 import { computed, onMounted, onUnmounted, reactive, ref, type CSSProperties } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useTheme, toggleTheme } from '@/composables/useTheme'
-import { getLoginSurfaceSpec, rgbaFromHex, useLayoutPreset } from '@/layout'
+import {
+  carryCurrentThemeIntoSession,
+  toggleTheme,
+  useTheme,
+} from '@/composables/useTheme'
+import {
+  getLoginSurfaceSpec,
+  rgbaFromHex,
+  setRuntimePresetSources,
+  useLayoutPreset,
+} from '@/layout'
 import { useAuthStore } from '@/stores/auth'
 import { getCaptcha, getPublicConfig, sendEmailCode } from '@/api/auth'
 import BrandMark from '@/components/BrandMark.vue'
@@ -16,11 +25,13 @@ const route = useRoute()
 const { isDark } = useTheme()
 const { activePresetKey, options: presetOptions, setLayoutPreset } = useLayoutPreset()
 const activePresetLabel = computed(() =>
-  presetOptions.value.find((option) => option.value === activePresetKey.value)?.label ?? '晨昏')
+  presetOptions.value.find((option) => option.value === activePresetKey.value)?.label ?? '澄空蓝')
 const loginSurfaceStyle = computed<CSSProperties>(() => {
-  const spec = getLoginSurfaceSpec(activePresetKey.value, isDark.value ? 'dark' : 'light')
+  const spec = getLoginSurfaceSpec(isDark.value ? 'dark' : 'light')
   return {
     '--login-page-bg': spec.pageBg,
+    '--login-panel-bg': spec.sidebarBg,
+    '--login-panel-deep': spec.sidebarBg,
     '--login-card-bg': rgbaFromHex(spec.cardBg, spec.cardAlpha),
     '--login-card-opaque-bg': spec.surfaceBg,
   } as CSSProperties
@@ -104,6 +115,7 @@ async function loadPublicConfig(syncCaptcha = true) {
     cfg.requireEmailCode = c.require_email_code
     cfg.loginCaptchaEnabled = c.login_captcha_enabled
     cfg.captchaAfterFails = c.captcha_after_fails
+    if (c.appearance_presets?.length) setRuntimePresetSources(c.appearance_presets)
     if (!cfg.loginCaptchaEnabled) {
       needCaptcha.value = false
       captchaId.value = ''
@@ -163,6 +175,7 @@ async function onLogin() {
   }
   loading.value = true
   try {
+    carryCurrentThemeIntoSession()
     await auth.login(form.account.trim(), form.password, {
       captchaId: needCaptcha.value ? captchaId.value : undefined,
       captchaCode: needCaptcha.value ? form.captchaCode.trim() : undefined,
@@ -201,6 +214,7 @@ async function onRegister() {
   if (errors.account || errors.password || errors.confirm || errors.email || errors.emailCode) return
   loading.value = true
   try {
+    carryCurrentThemeIntoSession()
     await auth.register({
       account: form.account.trim(),
       password: form.password,
@@ -248,10 +262,10 @@ function onSubmit() {
     :class="[`preset-${activePresetKey}`, { 'is-register': mode === 'register', 'is-dark': isDark }]"
     :style="loginSurfaceStyle"
   >
-    <section class="login-brand">
+    <section class="login-brand" data-testid="login-brand-surface">
       <header class="login-brand-head">
         <div class="login-logo">
-          <BrandMark variant="login" :tone="isDark ? 'dark' : 'light'" />
+          <BrandMark :tone="isDark ? 'dark' : 'light'" />
         </div>
         <div class="login-system-state"><span />SYSTEM ONLINE</div>
       </header>
@@ -295,7 +309,7 @@ function onSubmit() {
       </footer>
     </section>
 
-    <section class="login-auth">
+    <section class="login-auth" data-testid="login-auth-surface">
       <div class="login-controls">
         <button class="login-preset" type="button" :aria-label="`切换研究空间，当前${activePresetLabel}`" @click="cyclePreset">
           <i /><span>{{ activePresetLabel }}</span>
@@ -311,7 +325,7 @@ function onSubmit() {
         </button>
       </div>
 
-      <div class="login-card">
+      <div class="login-card" data-testid="login-card-surface">
         <div class="login-card-kicker"><span>PRIVATE ACCESS</span><i>01</i></div>
         <div class="login-card-title">
           <h2>{{ mode === 'login' ? '欢迎回来' : '创建研究账户' }}</h2>
@@ -440,41 +454,38 @@ function onSubmit() {
 <style scoped>
 .login-shell {
   /* 仅作首帧兜底；运行时基础色由 themeSurfaces.ts 注入，确保登录页与工作台同源。 */
-  --login-page-bg: #edf1f4;
-  --login-panel-bg: #0b1c2b;
-  --login-panel-deep: #06131f;
-  --login-grid: rgba(126, 159, 179, 0.11);
-  --login-card-bg: rgba(250, 252, 253, 0.86);
-  --login-card-opaque-bg: #f8fafc;
-  --login-card-edge: rgba(255, 255, 255, 0.92);
-  --login-border: #cbd4da;
-  --login-border-focus: #9a7a43;
-  --login-border-dash: #b8c4cb;
-  --login-input-bg: rgba(255, 255, 255, 0.6);
-  --login-text: #112533;
-  --login-text-sub: #526773;
-  --login-text-muted: #82939c;
-  --login-accent: #b69254;
-  --login-accent-strong: #876a3a;
+  --login-page-bg: #ffffff;
+  --login-panel-bg: #fcfcfc;
+  --login-panel-deep: #fcfcfc;
+  --login-grid: color-mix(in srgb, var(--login-accent) 7%, transparent);
+  --login-card-bg: #ffffff;
+  --login-card-opaque-bg: #ffffff;
+  --login-card-edge: var(--el-border-color, #e5e5e5);
+  --login-border: var(--el-border-color, #e5e5e5);
+  --login-border-focus: var(--el-color-primary, #1677ff);
+  --login-border-dash: var(--el-border-color-dark, #c9c9c9);
+  --login-input-bg: color-mix(in srgb, var(--login-card-opaque-bg) 92%, var(--login-page-bg) 8%);
+  --login-text: var(--el-text-color-primary, #17181c);
+  --login-text-sub: var(--el-text-color-regular, #44464d);
+  --login-text-muted: var(--el-text-color-secondary, #73757d);
+  --login-accent: var(--el-color-primary, #1677ff);
+  --login-accent-strong: var(--el-color-primary-dark-2, #1264d9);
   --login-accent-readable: var(--login-accent-strong);
-  --login-accent-text: #fffdf8;
-  --login-captcha-bg: #e9eef1;
-  --login-toggle-bg: rgba(255, 255, 255, 0.58);
-  --login-divider: rgba(76, 99, 111, 0.18);
-  --login-shadow: rgba(16, 35, 46, 0.16);
-  --login-panel-glow: rgba(39, 105, 126, 0.3);
-  --login-brand-text: #f1f5f6;
-  --login-brand-accent: #d2b579;
-  --login-brand-sub: rgba(195, 214, 220, 0.62);
-  --login-brand-muted: rgba(181, 204, 212, 0.42);
-  --login-track: #c5a466;
-  --login-track-glow: rgba(197, 164, 102, 0.22);
-  --login-logo-start: #d0ab68;
-  --login-logo-end: #9a7137;
-  --login-danger: #d64545;
-  --login-danger-ring: rgba(214, 69, 69, 0.14);
-  --login-danger-bg: rgba(214, 69, 69, 0.09);
-  --login-success: #2f9e6b;
+  --login-accent-text: #ffffff;
+  --login-captcha-bg: var(--el-fill-color-light, #f3f3f3);
+  --login-toggle-bg: color-mix(in srgb, var(--login-card-opaque-bg) 88%, transparent);
+  --login-divider: var(--el-border-color, #e5e5e5);
+  --login-shadow: var(--shell-surface-shadow, rgba(20, 24, 32, 0.1));
+  --login-brand-text: var(--el-text-color-primary, #17181c);
+  --login-brand-accent: var(--login-accent);
+  --login-brand-sub: var(--el-text-color-regular, #44464d);
+  --login-brand-muted: var(--el-text-color-secondary, #73757d);
+  --login-track: color-mix(in srgb, var(--login-accent) 84%, white 16%);
+  --login-track-glow: color-mix(in srgb, var(--login-accent) 25%, transparent);
+  --login-danger: var(--el-color-danger, #d9363e);
+  --login-danger-ring: color-mix(in srgb, var(--login-danger) 16%, transparent);
+  --login-danger-bg: color-mix(in srgb, var(--login-danger) 10%, transparent);
+  --login-success: var(--el-color-success, #168f63);
 
   position: fixed;
   inset: 0;
@@ -486,123 +497,16 @@ function onSubmit() {
   transition: background 0.3s, color 0.3s;
 }
 .login-shell.is-dark {
-  --login-page-bg: #07131d;
-  --login-card-bg: rgba(10, 27, 39, 0.9);
-  --login-card-opaque-bg: #0a1a26;
-  --login-card-edge: rgba(142, 168, 181, 0.18);
-  --login-border: #29404e;
-  --login-border-focus: #c9a669;
-  --login-border-dash: #36505e;
-  --login-input-bg: rgba(4, 18, 28, 0.58);
-  --login-text: #edf3f5;
-  --login-text-sub: #9eb0b9;
-  --login-text-muted: #657b87;
-  --login-accent: #c5a466;
-  --login-accent-strong: #a5834c;
-  --login-captcha-bg: #0d2433;
-  --login-toggle-bg: rgba(12, 33, 46, 0.78);
-  --login-divider: rgba(139, 165, 178, 0.16);
-  --login-shadow: rgba(0, 0, 0, 0.38);
-  --login-danger: #ff7a7a;
-  --login-danger-ring: rgba(255, 122, 122, 0.16);
-  --login-danger-bg: rgba(255, 122, 122, 0.1);
-  --login-success: #66c4a0;
-}
-
-.login-shell.preset-daylight {
-  --login-panel-bg: #f7f9fd;
-  --login-panel-deep: #dfe7f3;
-  --login-grid: rgba(39, 69, 123, 0.08);
-  --login-card-edge: rgba(255, 255, 255, 0.96);
-  --login-border: #d3ddec;
-  --login-border-focus: #2f5bd3;
-  --login-border-dash: #9facbf;
-  --login-input-bg: rgba(255, 255, 255, 0.66);
-  --login-text: #152137;
-  --login-text-sub: #40516a;
-  --login-text-muted: #63738a;
-  --login-accent: #2f5bd3;
-  --login-accent-strong: #2448ad;
-  --login-captcha-bg: #e9eef7;
-  --login-toggle-bg: rgba(255, 255, 255, 0.72);
-  --login-divider: rgba(42, 65, 104, 0.14);
-  --login-shadow: rgba(24, 43, 82, 0.16);
-  --login-panel-glow: rgba(47, 91, 211, 0.17);
-  --login-brand-text: #152137;
-  --login-brand-accent: #2f5bd3;
-  --login-brand-sub: rgba(53, 71, 99, 0.72);
-  --login-brand-muted: rgba(72, 88, 114, 0.50);
-  --login-track: #466ee0;
-  --login-track-glow: rgba(70, 110, 224, 0.24);
-  --login-logo-start: #7f9bea;
-  --login-logo-end: #2f5bd3;
-}
-
-.login-shell.preset-daylight.is-dark {
-  --login-panel-bg: #202632;
-  --login-panel-deep: #11151d;
-  --login-grid: rgba(126, 151, 208, 0.07);
-  --login-card-edge: rgba(101, 115, 139, 0.3);
-  --login-border: #3a4559;
-  --login-border-focus: #6f8fe4;
-  --login-border-dash: #536078;
-  --login-input-bg: rgba(255, 255, 255, 0.035);
-  --login-text: #f6f8fc;
-  --login-text-sub: #cfd7e5;
-  --login-text-muted: #96a3b7;
-  --login-accent: #496bc2;
-  --login-accent-strong: #3858a7;
-  --login-accent-readable: #91aaf0;
-  --login-captcha-bg: #2a3242;
-  --login-toggle-bg: rgba(32, 38, 50, 0.84);
-  --login-divider: rgba(101, 115, 139, 0.2);
-  --login-shadow: rgba(3, 7, 16, 0.46);
-  --login-panel-glow: rgba(73, 107, 194, 0.18);
-  --login-brand-text: #f6f8fc;
-  --login-brand-accent: #b2c3f5;
-  --login-brand-sub: rgba(207, 215, 229, 0.68);
-  --login-brand-muted: rgba(150, 163, 183, 0.50);
-  --login-track: #7694e5;
-  --login-track-glow: rgba(118, 148, 229, 0.24);
-  --login-logo-start: #829ce6;
-  --login-logo-end: #496bc2;
-}
-
-.login-shell.preset-nocturne {
-  --login-panel-bg: #0a202c;
-  --login-panel-deep: #061620;
-  --login-border-focus: #227f9d;
-  --login-accent: #2c88a5;
-  --login-accent-strong: #17667f;
-  --login-panel-glow: rgba(41, 132, 159, 0.28);
-  --login-brand-accent: #83c6d8;
-  --login-track: #62bad2;
-  --login-track-glow: rgba(98, 186, 210, 0.22);
-  --login-logo-start: #69bed4;
-  --login-logo-end: #2d819b;
-}
-
-.login-shell.preset-nocturne.is-dark {
-  --login-panel-bg: #071b25;
-  --login-panel-deep: #04131b;
-  --login-card-edge: rgba(132, 171, 187, 0.2);
-  --login-border: #294a58;
-  --login-border-focus: #62bad2;
-  --login-input-bg: rgba(255, 255, 255, 0.035);
-  --login-text: #f2f7f8;
-  --login-text-sub: #bfd0d7;
-  --login-text-muted: #8199a4;
-  --login-accent: #62bad2;
-  --login-accent-strong: #398ca7;
+  --login-accent-readable: var(--el-color-primary-light-3, #77adff);
+  --login-input-bg: color-mix(in srgb, var(--login-card-opaque-bg) 88%, var(--login-page-bg) 12%);
+  --login-toggle-bg: color-mix(in srgb, var(--login-card-opaque-bg) 90%, transparent);
 }
 
 .login-brand {
   position: relative;
   min-width: 0;
   padding: 38px clamp(36px, 5vw, 76px) 34px;
-  background:
-    radial-gradient(circle at 72% 46%, var(--login-panel-glow), transparent 28%),
-    linear-gradient(142deg, var(--login-panel-bg), var(--login-panel-deep));
+  background: var(--login-panel-bg);
   color: var(--login-brand-text);
   overflow: hidden;
 }
@@ -635,11 +539,6 @@ function onSubmit() {
 .login-logo {
   display: flex;
   align-items: center;
-  --brand-word: var(--login-brand-text);
-  --brand-word-stroke: rgba(11, 28, 43, 0.28);
-  --brand-icon-start: var(--login-logo-start);
-  --brand-icon-end: var(--login-logo-end);
-  --shell-accent-soft: color-mix(in srgb, var(--login-track) 20%, transparent);
 }
 .login-system-state {
   display: flex;
@@ -654,8 +553,8 @@ function onSubmit() {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #66c4a0;
-  box-shadow: 0 0 10px rgba(102, 196, 160, 0.8);
+  background: var(--login-success);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--login-success) 56%, transparent);
 }
 .market-stage {
   position: absolute;
@@ -665,7 +564,7 @@ function onSubmit() {
 .market-orbit {
   position: absolute;
   border-radius: 50%;
-  border: 1px solid rgba(147, 176, 187, 0.1);
+  border: 1px solid color-mix(in srgb, var(--login-accent) 10%, transparent);
   transform: rotate(-19deg);
 }
 .orbit-one { width: 520px; height: 220px; right: 5%; top: 18%; }
@@ -1115,7 +1014,7 @@ function onSubmit() {
   .login-auth {
     z-index: 2;
     padding: 92px 20px 30px;
-    background: linear-gradient(rgba(4, 17, 27, 0.12), rgba(4, 17, 27, 0.5));
+    background: var(--login-page-bg);
   }
   .login-card { max-width: 430px; }
   .login-controls {
@@ -1125,15 +1024,14 @@ function onSubmit() {
   }
   .login-theme,
   .login-preset {
-    color: #d9e5e9;
-    border-color: rgba(220, 232, 236, 0.25);
-    background: rgba(7, 27, 39, 0.62);
+    color: var(--login-text-sub);
+    border-color: var(--login-border);
+    background: var(--login-toggle-bg);
   }
 }
 
 @media (max-width: 520px) {
   .login-brand { padding: 18px; }
-  .login-logo :deep(.brand-mark) { width: 154px; height: auto; }
   .login-auth { padding: 80px 12px 14px; }
   .login-card {
     padding: 28px 20px 24px;
@@ -1196,9 +1094,4 @@ function onSubmit() {
   .login-tabs { border-color: var(--login-text-sub); }
 }
 
-@media (max-width: 980px) and (prefers-color-scheme: light) {
-  .login-shell:not(.is-dark) .login-card {
-    background: rgba(248, 251, 252, 0.92);
-  }
-}
 </style>

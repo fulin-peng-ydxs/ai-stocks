@@ -1,13 +1,10 @@
 <script setup lang="ts">
-type BrandVariant = 'shell' | 'login'
 type BrandTone = 'light' | 'dark'
 
 withDefaults(defineProps<{
-  variant?: BrandVariant
   tone?: BrandTone
   ariaLabel?: string
 }>(), {
-  variant: 'shell',
   tone: 'light',
   ariaLabel: '复盘啦',
 })
@@ -21,7 +18,7 @@ const redId = `${uid}-red`
 <template>
   <span
     class="brand-mark"
-    :class="[`brand-mark--${variant}`, `brand-mark--${tone}`]"
+    :class="`brand-mark--${tone}`"
     role="img"
     :aria-label="ariaLabel"
   >
@@ -55,10 +52,10 @@ const redId = `${uid}-red`
 
       <g class="brand-mark__icon" :filter="`url(#${glowId})`" transform="translate(8 6)">
         <rect width="40" height="40" rx="12" :fill="`url(#${redId})`" />
-        <path d="M9 27L15 20.5L20 23.5L30 13" stroke="#fff7f4" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
-        <path d="M28 13H30V15" stroke="#fff7f4" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
-        <circle cx="15" cy="20.5" r="2.2" fill="#fff7f4" opacity="0.92" />
-        <circle cx="20" cy="23.5" r="2" fill="#fff7f4" opacity="0.78" />
+        <path d="M9 27L15 20.5L20 23.5L30 13" stroke="var(--shell-control-mark)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M28 13H30V15" stroke="var(--shell-control-mark)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="15" cy="20.5" r="2.2" fill="var(--shell-control-mark)" opacity="0.92" />
+        <circle cx="20" cy="23.5" r="2" fill="var(--shell-control-mark)" opacity="0.78" />
       </g>
 
       <g class="brand-mark__word" transform="translate(59 10) skewX(-6)">
@@ -71,25 +68,16 @@ const redId = `${uid}-red`
 <style scoped>
 .brand-mark {
   --brand-panel-start: rgba(255, 255, 255, 0.72);
-  --brand-panel-end: rgba(255, 247, 247, 0.74);
+  --brand-panel-end: rgba(255, 255, 255, 0.74);
   --brand-line: var(--shell-accent-faint);
   --brand-line-strong: var(--brand-signal);
 
   display: inline-flex;
   flex: none;
-  width: 172px;
-  height: 50px;
+  width: min(184px, 100%);
+  aspect-ratio: 184 / 52;
+  height: auto;
   color: var(--brand-word);
-}
-
-.brand-mark--login {
-  width: 184px;
-  height: 52px;
-}
-
-.brand-mark--shell {
-  width: 164px;
-  height: 44px;
 }
 
 .brand-mark--dark {
@@ -105,29 +93,20 @@ const redId = `${uid}-red`
 }
 
 .brand-mark__panel {
-  stroke: rgba(225, 29, 29, 0.08);
-}
-
-.brand-mark--shell .brand-mark__panel,
-.brand-mark--login .brand-mark__panel {
   fill: transparent;
   stroke: transparent;
 }
 
-.brand-mark--shell .brand-mark__panel-line,
-.brand-mark--shell .brand-mark__signal-fill,
-.brand-mark--login .brand-mark__panel-line,
-.brand-mark--login .brand-mark__signal-fill {
+.brand-mark__panel-line,
+.brand-mark__signal-fill {
   display: none;
 }
 
-.brand-mark--shell .brand-mark__icon,
-.brand-mark--login .brand-mark__icon {
+.brand-mark__icon {
   filter: drop-shadow(0 3px 8px var(--shell-accent-soft));
 }
 
-.brand-mark--shell .brand-mark__word-main,
-.brand-mark--login .brand-mark__word-main {
+.brand-mark__word-main {
   stroke-width: 0.65px;
 }
 
@@ -137,7 +116,7 @@ const redId = `${uid}-red`
 }
 
 .brand-mark__signal-fill {
-  fill: rgba(225, 29, 29, 0.06);
+  fill: var(--shell-danger-line);
 }
 
 .brand-mark__signal {

@@ -84,7 +84,7 @@ describe('普通 ECharts 主题消费者', () => {
 
     expect(chart.setOption.mock.calls.length).toBeGreaterThan(callsBefore)
     const option = chart.setOption.mock.calls.at(-1)?.[0]
-    expect(option.backgroundColor).toBe('#f2f5f8')
+    expect(option.backgroundColor).toBe('#ffffff')
     expect(option.series[0].lineStyle.color).toBe('#2457d6')
 
     wrapper.unmount()

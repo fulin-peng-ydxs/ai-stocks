@@ -3,8 +3,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { useTheme } from '@/composables/useTheme'
 import { LAYOUT_PRESETS } from '../presets'
 import { blendHex, rgbChannelsFromHex } from '../themeSurfaces'
-import { setLayoutPreset, setPresetOverrides, useLayoutPreset } from '../useLayoutPreset'
-import type { LayoutPresetKey, ThemeMode } from '../schema'
+import {
+  setLayoutPreset,
+  setPresetCatalog,
+  setPresetOverrides,
+  setRuntimePresetSources,
+  useLayoutPreset,
+} from '../useLayoutPreset'
+import type { ThemeMode } from '../schema'
 
 const COLOR_LEVELS = [3, 5, 7, 8, 9] as const
 const SEMANTIC_COLORS = ['primary', 'success', 'warning', 'danger'] as const
@@ -14,6 +20,7 @@ describe('布局预设运行时 Element Plus 色阶', () => {
 
   afterEach(() => {
     isDark.value = false
+    setPresetCatalog([{ key: 'balanced', name: '澄空蓝', description: '默认预设' }])
     setPresetOverrides({})
     document.documentElement.removeAttribute('style')
     document.documentElement.removeAttribute('data-layout-preset')
@@ -25,7 +32,7 @@ describe('布局预设运行时 Element Plus 色阶', () => {
     for (const [presetKey, preset] of Object.entries(LAYOUT_PRESETS)) {
       for (const mode of ['light', 'dark'] as ThemeMode[]) {
         isDark.value = mode === 'dark'
-        setLayoutPreset(presetKey as LayoutPresetKey)
+        setLayoutPreset(presetKey)
         const tokens = preset.tokens[mode]
         const quietTarget = mode === 'dark' ? tokens.surfaceBg : '#ffffff'
         const activeTarget = mode === 'dark' ? '#ffffff' : '#000000'
@@ -55,12 +62,12 @@ describe('布局预设运行时 Element Plus 色阶', () => {
     }
   })
 
-  it('晨昏夜间禁用主按钮使用香槟金派生色，不回退 Element Plus 默认蓝色', () => {
+  it('澄空蓝夜间同步生成蓝色派生色，不回退 Element Plus 默认色板', () => {
     isDark.value = true
     setLayoutPreset('balanced')
 
-    expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#c4a364')
-    expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).toBe('#675f45')
+    expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#3b8cff')
+    expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).toBe('#2d568f')
     expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).not.toBe('#2a598a')
     expect(document.documentElement.style.getPropertyValue('--el-color-error'))
       .toBe(document.documentElement.style.getPropertyValue('--el-color-danger'))
@@ -76,7 +83,7 @@ describe('布局预设运行时 Element Plus 色阶', () => {
     isDark.value = true
     setLayoutPreset('balanced')
 
-    expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#c4a364')
+    expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#3b8cff')
     expect(document.documentElement.style.cssText).not.toContain('NaN')
   })
 
@@ -92,24 +99,90 @@ describe('布局预设运行时 Element Plus 色阶', () => {
       setLayoutPreset('balanced')
 
       expect(document.documentElement.style.getPropertyValue('--el-text-color-regular'))
-        .toBe('#c9d0d3')
+        .toBe('#d2d2d2')
       expect(document.documentElement.style.getPropertyValue('--el-text-color-disabled'))
-        .toBe('#87949b')
+        .toBe('#9a9a9a')
     }
   })
 
-  it('每次运行时 token 应用完成后递增主题修订版本', () => {
+  it('后端预设更新强调色但不能改变固定基础表面，并递增主题修订版本', () => {
     const { themeRevision } = useLayoutPreset()
     setLayoutPreset('balanced')
     const beforeOverride = themeRevision.value
 
     setPresetOverrides({
       balanced: {
+        'tokens.light.primary': '#7c3aed',
         'tokens.light.surfaceBg': '#f2f5f8',
       },
     })
 
     expect(themeRevision.value).toBe(beforeOverride + 1)
-    expect(document.documentElement.style.getPropertyValue('--el-bg-color')).toBe('#f2f5f8')
+    expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#7c3aed')
+    expect(document.documentElement.style.getPropertyValue('--el-bg-color')).toBe('#ffffff')
+    expect(document.documentElement.style.getPropertyValue('--chrome-bg')).toBe('#fcfcfc')
+  })
+
+  it('启用的后端自定义预设可被选择并真实驱动强调色', () => {
+    setPresetCatalog([
+      { key: 'balanced', name: '澄空蓝', description: '默认预设' },
+      { key: 'custom-red', name: '信号红', description: '自定义强调色' },
+    ])
+    setPresetOverrides({
+      'custom-red': {
+        'tokens.light.primary': '#e5484d',
+        'tokens.light.pageBg': '#fff1f1',
+      },
+    })
+    setLayoutPreset('custom-red')
+
+    const { activePresetKey, options } = useLayoutPreset()
+    expect(activePresetKey.value).toBe('custom-red')
+    expect(options.value.map((option) => option.value)).toEqual(['balanced', 'custom-red'])
+    expect(document.documentElement.dataset.layoutPreset).toBe('custom-red')
+    expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#e5484d')
+    expect(document.documentElement.style.getPropertyValue('--el-bg-color-page')).toBe('#ffffff')
+  })
+
+  it('公开外观目录缓存自定义预设并让登录页与系统页消费同一强调色', () => {
+    setRuntimePresetSources([
+      {
+        key: 'balanced',
+        name: '澄空蓝',
+        description: '默认预设',
+        config: { values: { 'tokens.light.primary': '#1677ff' } },
+      },
+      {
+        key: 'custom-purple',
+        name: '星云紫',
+        description: '新增颜色预设',
+        config: {
+          values: {
+            'tokens.light.primary': '#7c3aed',
+            'tokens.dark.primary': '#a78bfa',
+          },
+        },
+      },
+    ])
+    setLayoutPreset('custom-purple')
+
+    expect(useLayoutPreset().options.value.map((option) => option.value))
+      .toEqual(['balanced', 'custom-purple'])
+    expect(document.documentElement.style.getPropertyValue('--shell-accent')).toBe('#7c3aed')
+    expect(document.documentElement.style.getPropertyValue('--brand-icon-start'))
+      .toBe(blendHex('#7c3aed', '#ffffff', 0.62))
+    expect(document.documentElement.style.getPropertyValue('--brand-icon-end'))
+      .toBe(blendHex('#7c3aed', '#000000', 0.8))
+    expect(localStorage.getItem('ai-stocks:layout-preset')).toBe('custom-purple')
+    expect(localStorage.getItem('ai-stocks:layout-preset-catalog:v1')).toContain('custom-purple')
+
+    isDark.value = true
+    setLayoutPreset('custom-purple')
+    expect(document.documentElement.style.getPropertyValue('--shell-accent')).toBe('#a78bfa')
+    expect(document.documentElement.style.getPropertyValue('--brand-icon-start'))
+      .toBe(blendHex('#a78bfa', '#ffffff', 0.62))
+    expect(document.documentElement.style.getPropertyValue('--brand-icon-end'))
+      .toBe(blendHex('#a78bfa', '#ffffff', 0.8))
+    expect(document.documentElement.style.getPropertyValue('--el-bg-color-page')).toBe('#171717')
   })
 })

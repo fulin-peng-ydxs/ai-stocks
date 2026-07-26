@@ -7,6 +7,9 @@ import LoginView from '@/views/LoginView.vue'
 const replace = vi.fn()
 const login = vi.fn()
 const register = vi.fn()
+const themeMocks = vi.hoisted(() => ({
+  carryCurrentThemeIntoSession: vi.fn(),
+}))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ replace }),
@@ -16,6 +19,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@/composables/useTheme', () => ({
   useTheme: () => ({ isDark: ref(false) }),
   toggleTheme: vi.fn(),
+  carryCurrentThemeIntoSession: themeMocks.carryCurrentThemeIntoSession,
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -72,5 +76,25 @@ describe('LoginView captcha', () => {
 
     expect(authApi.getCaptcha).toHaveBeenCalledTimes(2)
     expect(wrapper.find('input[placeholder="图形验证码"]').exists()).toBe(true)
+  })
+
+  it('登录成功前锁定登录页当前主题，进入工作台后不被旧远端模式覆盖', async () => {
+    ;(authApi.getPublicConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      require_email_code: true,
+      login_captcha_enabled: false,
+      captcha_after_fails: 3,
+    })
+    login.mockResolvedValueOnce(undefined)
+
+    const wrapper = mount(LoginView as Component)
+    await flushPromises()
+    await wrapper.find('input[placeholder="账号 / 邮箱"]').setValue('debug_normal')
+    await wrapper.find('input[placeholder="密码"]').setValue('test-password')
+    await wrapper.find('button.login-primary').trigger('click')
+    await flushPromises()
+
+    expect(themeMocks.carryCurrentThemeIntoSession).toHaveBeenCalledTimes(1)
+    expect(login).toHaveBeenCalled()
+    expect(replace).toHaveBeenCalled()
   })
 })

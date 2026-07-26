@@ -17,6 +17,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@/composables/useTheme', () => ({
   useTheme: () => ({ isDark: ref(false) }),
   toggleTheme: vi.fn(),
+  carryCurrentThemeIntoSession: vi.fn(),
 }))
 
 vi.mock('@/stores/auth', () => ({

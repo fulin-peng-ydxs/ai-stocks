@@ -21,8 +21,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import {
   getLayoutPreset,
   getPageLayout,
-  hasDistinctTextHierarchy,
-  isHexColor,
+  setPresetCatalog,
   setPresetOverrides,
   type StyleTokenConfig,
   type ThemeMode,
@@ -36,16 +35,6 @@ const COLOR_KEYS: { key: keyof StyleTokenConfig; label: string }[] = [
   { key: 'success', label: '成功' },
   { key: 'warning', label: '警告' },
   { key: 'danger', label: '危险' },
-  { key: 'pageBg', label: '页面背景' },
-  { key: 'surfaceBg', label: '卡片背景' },
-  { key: 'surfaceHover', label: '悬浮背景' },
-  { key: 'border', label: '边框' },
-  { key: 'borderStrong', label: '强边框' },
-  { key: 'text', label: '正文' },
-  { key: 'textStrong', label: '强调文字' },
-  { key: 'textMuted', label: '弱化文字' },
-  { key: 'activeBg', label: '激活背景' },
-  { key: 'submenuBg', label: '子菜单背景' },
 ]
 const SHAPE_KEYS: { key: keyof StyleTokenConfig; label: string; max: number }[] = [
   { key: 'cardRadius', label: '卡片圆角', max: 24 },
@@ -84,8 +73,6 @@ const presetForm = reactive({
   // 视觉 token：颜色按模式两套 + 形态密度共用
   light: {} as TokenMap,
   dark: {} as TokenMap,
-  shadowLight: '',
-  shadowDark: '',
   shared: {} as Record<string, number>,
 })
 
@@ -115,8 +102,6 @@ function presetToForm(row?: LayoutPresetRecord) {
       target[key] = String(values[`tokens.${mode}.${key}`] ?? base.tokens[mode][key])
     }
   }
-  presetForm.shadowLight = String(values['tokens.light.shadow'] ?? base.tokens.light.shadow)
-  presetForm.shadowDark = String(values['tokens.dark.shadow'] ?? base.tokens.dark.shadow)
   for (const { key } of SHAPE_KEYS) {
     presetForm.shared[key] = Number(values[`tokens.shared.${key}`] ?? base.tokens.light[key])
   }
@@ -132,8 +117,6 @@ function presetFormValues(): LayoutOverlayValues {
     'componentDefaults.drawerSize': presetForm.drawerSize,
     'componentFieldDefaults.data-table.pageSize': Number(presetForm.pageSize),
     'responsiveDefaults.reflowBreakpoint': Number(presetForm.reflowBreakpoint),
-    'tokens.light.shadow': presetForm.shadowLight,
-    'tokens.dark.shadow': presetForm.shadowDark,
   }
   for (const { key } of COLOR_KEYS) {
     out[`tokens.light.${key}`] = presetForm.light[key]
@@ -143,17 +126,6 @@ function presetFormValues(): LayoutOverlayValues {
     out[`tokens.shared.${key}`] = Number(presetForm.shared[key])
   }
   return out
-}
-
-function presetTextHierarchyError(values: Record<string, unknown>): string | null {
-  for (const mode of ['light', 'dark'] as ThemeMode[]) {
-    const text = values[`tokens.${mode}.text`]
-    const textMuted = values[`tokens.${mode}.textMuted`]
-    if (isHexColor(text) && isHexColor(textMuted) && !hasDistinctTextHierarchy(text, textMuted)) {
-      return `${mode === 'light' ? '白天' : '夜间'}模式的正文与弱化文字亮度过于接近`
-    }
-  }
-  return null
 }
 
 async function reloadPresets() {
@@ -166,12 +138,19 @@ async function reloadPresets() {
       selectedPresetKey.value = presets.value[0]?.key ?? 'balanced'
     }
     // 同步运行时：让预设编辑/启停/导入即时驱动外观（P11 运行时打通）。
-    const map: Record<string, Record<string, string | number>> = {}
-    for (const p of presets.value) {
+    const enabledPresets = presets.value.filter((preset) => preset.enabled)
+    const map: Record<string, Record<string, string | number | boolean>> = {}
+    for (const p of enabledPresets) {
       const v = p.config?.values
-      if (v && Object.keys(v).length) map[p.key] = v as Record<string, string | number>
+      if (!v) continue
+      const primitiveValues = Object.fromEntries(
+        Object.entries(v).filter(([, value]) =>
+          typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'),
+      ) as Record<string, string | number | boolean>
+      if (Object.keys(primitiveValues).length) map[p.key] = primitiveValues
     }
     setPresetOverrides(map)
+    setPresetCatalog(enabledPresets.map(({ key, name, description }) => ({ key, name, description })))
   } catch (error) {
     loadError.value = getErrorMessage(error, '布局预设加载失败')
   } finally {
@@ -197,11 +176,6 @@ async function submitPreset() {
     return
   }
   const values = presetFormValues()
-  const hierarchyError = presetTextHierarchyError(values)
-  if (hierarchyError) {
-    ElMessage.warning(hierarchyError)
-    return
-  }
   presetSaving.value = true
   try {
     const saved = await saveLayoutPreset({
@@ -299,11 +273,6 @@ async function importPresets() {
       return
     }
     for (const preset of parsed.presets ?? []) {
-      const values = preset.config?.values
-      const hierarchyError = values && typeof values === 'object'
-        ? presetTextHierarchyError(values as Record<string, unknown>)
-        : null
-      if (hierarchyError) throw new Error(`预设「${preset.name || preset.key}」：${hierarchyError}`)
       await saveLayoutPreset({
         key: preset.key,
         name: preset.name,
@@ -453,15 +422,12 @@ onMounted(reloadPresets)
             </el-form-item>
           </div>
 
-          <div class="form-section-title">视觉 token（颜色按白天/夜间各一套，形态/密度两模式共用）</div>
+          <div class="form-section-title">强调色 token（背景与边栏由明暗模式固定）</div>
           <el-tabs v-model="tokenTab">
             <el-tab-pane label="白天" name="light">
               <div class="form-grid three">
                 <el-form-item v-for="c in COLOR_KEYS" :key="c.key" :label="c.label">
                   <el-color-picker v-model="presetForm.light[c.key]" />
-                </el-form-item>
-                <el-form-item label="阴影">
-                  <el-input v-model="presetForm.shadowLight" placeholder="rgba(…)" />
                 </el-form-item>
               </div>
             </el-tab-pane>
@@ -469,9 +435,6 @@ onMounted(reloadPresets)
               <div class="form-grid three">
                 <el-form-item v-for="c in COLOR_KEYS" :key="c.key" :label="c.label">
                   <el-color-picker v-model="presetForm.dark[c.key]" />
-                </el-form-item>
-                <el-form-item label="阴影">
-                  <el-input v-model="presetForm.shadowDark" placeholder="rgba(…)" />
                 </el-form-item>
               </div>
             </el-tab-pane>

@@ -273,7 +273,7 @@ function handleReset(): void {
 :global(.page-settings-drawer) {
   --el-drawer-bg-color: transparent;
 }
-/* 淡遮罩：抽屉卡片按内容取高后，下方/周围以压暗背景兜底，避免透出页面表格显得"空/乱"。 */
+/* 页面设置沿用抽屉遮光层，明确浮层焦点；抽屉与页面自身底色仍由中性主题表面控制。 */
 :global(.el-overlay.ps-settings-modal) {
   background-color: rgba(0, 0, 0, 0.32) !important;
 }

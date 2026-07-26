@@ -623,7 +623,9 @@ onBeforeUnmount(() => {
   justify-content: center;
   cursor: row-resize;
   touch-action: none;
-  background: var(--el-fill-color-light);
+  background: var(--el-bg-color);
+  border-top: 1px solid var(--el-border-color-lighter);
+  border-bottom: 1px solid var(--el-border-color-lighter);
   outline: none;
 }
 

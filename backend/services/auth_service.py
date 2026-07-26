@@ -38,6 +38,9 @@ log = get_logger("services.auth")
 _CAPTCHA_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # 去掉易混 O0I1L
 # 邮箱格式（宽松但可挡明显非法/注入）：本地部分@域名.顶级域，均不含空白/@。
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PUBLIC_APPEARANCE_TOKEN_RE = re.compile(
+    r"^tokens\.(?:light|dark)\.(?:primary|success|warning|danger)$"
+)
 
 
 def _normalize_email(email: str | None) -> str:
@@ -528,15 +531,44 @@ class AuthService:
         )
 
     def public_config(self) -> dict:
-        """登录页公开配置（无需 token）：告诉前端是否要邮箱码/图形码 + 图形码强制阈值。
+        """登录页公开配置（无需 token）：认证开关和登录前可消费的外观预设。
 
         前端在 login_captcha_enabled 开启后直接展示图形码；captcha_after_fails 仍作为
-        后端强制要求图形码的失败次数兜底。
+        后端强制要求图形码的失败次数兜底。外观预设只公开启用项的语义强调色，
+        不下发页面、组件或其他平台布局配置。
         """
+        appearance_presets: list[dict] = []
+        try:
+            # 延迟导入，避免认证服务初始化与布局存储形成模块级耦合。
+            from backend.storage.layout_config import LayoutConfigRepo
+
+            for preset in LayoutConfigRepo().list_presets():
+                values = preset.get("config", {}).get("values", {})
+                public_values = {
+                    key: value
+                    for key, value in values.items()
+                    if _PUBLIC_APPEARANCE_TOKEN_RE.fullmatch(key)
+                    and isinstance(value, (str, int, float, bool))
+                }
+                appearance_presets.append(
+                    {
+                        "key": preset["key"],
+                        "name": preset["name"],
+                        "description": preset.get("description", ""),
+                        "config": {
+                            "schemaVersion": preset.get("schemaVersion", 1),
+                            "values": public_values,
+                        },
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            # 外观目录不可用不能阻断登录；前端会继续使用内置预设或最近一次安全缓存。
+            log.warning("登录页公开外观预设读取失败: %s", exc)
         return {
             "require_email_code": self.cfg.require_email_code,
             "login_captcha_enabled": self.cfg.login_captcha_enabled,
             "captcha_after_fails": self.cfg.captcha_after_fails,
+            "appearance_presets": appearance_presets,
         }
 
     @staticmethod

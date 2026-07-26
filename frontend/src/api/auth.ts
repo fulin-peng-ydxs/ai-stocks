@@ -29,6 +29,17 @@ export interface PublicAuthConfig {
   require_email_code: boolean
   login_captcha_enabled: boolean
   captcha_after_fails: number
+  appearance_presets: PublicAppearancePreset[]
+}
+
+export interface PublicAppearancePreset {
+  key: string
+  name: string
+  description: string
+  config: {
+    schemaVersion: number
+    values: Record<string, string | number | boolean>
+  }
 }
 
 export interface CaptchaResult {

@@ -1,4 +1,4 @@
-import type { LayoutPresetKey, StyleTokenConfig, ThemeMode } from './schema'
+import type { StyleTokenConfig, ThemeMode } from './schema'
 
 export const STYLE_COLOR_TOKEN_KEYS = [
   'primary',
@@ -20,9 +20,11 @@ export const STYLE_COLOR_TOKEN_KEYS = [
 export const MIN_TEXT_HIERARCHY_LUMINANCE_DELTA = 0.06
 
 export interface LoginSurfaceSpec {
-  /** 登录页右侧交互区的基础画布色，同时也是工作台 pageBg。 */
+  /** 登录页统一画布基础色，同时也是工作台 pageBg。 */
   pageBg: string
-  /** 登录卡片的原始基色；登录页可用透明度和模糊保留玻璃材质。 */
+  /** 登录页品牌区基础色，同时也是工作台边栏背景。 */
+  sidebarBg: string
+  /** 登录卡片的原始基色；可按 cardAlpha 与画布合成。 */
   cardBg: string
   /** 登录卡片在 pageBg 上叠加时使用的透明度。 */
   cardAlpha: number
@@ -102,33 +104,30 @@ export function hasDistinctTextHierarchy(text: string, textMuted: string): boole
   return Number.isFinite(delta) && delta >= MIN_TEXT_HIERARCHY_LUMINANCE_DELTA
 }
 
-function surface(pageBg: string, cardBg: string, cardAlpha: number): LoginSurfaceSpec {
+function surface(
+  pageBg: string,
+  sidebarBg: string,
+  cardBg: string,
+  cardAlpha: number,
+): LoginSurfaceSpec {
   return {
     pageBg,
+    sidebarBg,
     cardBg,
     cardAlpha,
     surfaceBg: blendHex(cardBg, pageBg, cardAlpha),
   }
 }
 
-export const THEME_SURFACE_SPECS: Record<LayoutPresetKey, Record<ThemeMode, LoginSurfaceSpec>> = {
-  daylight: {
-    light: surface('#f1f4f9', '#fdfefe', 0.92),
-    dark: surface('#171b24', '#202632', 0.92),
-  },
-  nocturne: {
-    light: surface('#e8eef1', '#f8fafb', 0.92),
-    dark: surface('#071721', '#0d222e', 0.94),
-  },
-  balanced: {
-    light: surface('#edf1f4', '#fafcfd', 0.86),
-    dark: surface('#07131d', '#0a1b27', 0.9),
-  },
+/**
+ * 明暗模式的固定基础表面。
+ * 预设只能覆盖强调色和形态，不能改变主画布、边栏、卡片、文字与边界的中性底色。
+ */
+export const THEME_SURFACE_SPECS: Record<ThemeMode, LoginSurfaceSpec> = {
+  light: surface('#ffffff', '#fcfcfc', '#ffffff', 1),
+  dark: surface('#171717', '#1f1f1f', '#1f1f1f', 1),
 }
 
-export function getLoginSurfaceSpec(
-  preset: LayoutPresetKey,
-  mode: ThemeMode,
-): LoginSurfaceSpec {
-  return THEME_SURFACE_SPECS[preset][mode]
+export function getLoginSurfaceSpec(mode: ThemeMode): LoginSurfaceSpec {
+  return THEME_SURFACE_SPECS[mode]
 }

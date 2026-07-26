@@ -83,8 +83,16 @@ def test_layout_tables_created(client):
 def test_builtin_presets_seed_and_custom_preset_roundtrip(client, monkeypatch):
     repo = LayoutConfigRepo(client)
     keys = {p["key"] for p in repo.list_presets()}
-    assert {"daylight", "nocturne", "balanced"} <= keys
-    assert not {"professional", "government", "technology", "finance", "high-contrast"} & keys
+    assert "balanced" in keys
+    assert not {
+        "daylight",
+        "nocturne",
+        "professional",
+        "government",
+        "technology",
+        "finance",
+        "high-contrast",
+    } & keys
 
     saved = repo.upsert_preset(
         key="dense-lab",
@@ -112,7 +120,7 @@ def test_builtin_presets_seed_and_custom_preset_roundtrip(client, monkeypatch):
     assert calls == {"execute": 0, "query": 0}
 
 
-def test_legacy_builtin_preset_reference_migrates_to_three_preset_system(client):
+def test_legacy_builtin_preset_reference_migrates_to_single_builtin_system(client):
     repo = LayoutConfigRepo(client)
     repo.pg.execute(
         "INSERT INTO layout_preset "
@@ -125,7 +133,7 @@ def test_legacy_builtin_preset_reference_migrates_to_three_preset_system(client)
         "VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)",
         ["board", "finance", "{}", 1],
     )
-    repo.pg.execute("DELETE FROM app_config WHERE key=%s", ["migration.layout_presets_three_theme_v1"])
+    repo.pg.execute("DELETE FROM app_config WHERE key=%s", ["migration.layout_presets_single_blue_v1"])
 
     repo.seed_builtin_presets()
 

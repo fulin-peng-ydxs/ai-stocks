@@ -8,6 +8,7 @@ import {
   KLINE_MA_DEFINITIONS,
   VOLUME_MA_DEFINITIONS,
 } from '@/components/stock-chart/chartUtils'
+import { useTheme } from '@/composables/useTheme'
 import { setLayoutPreset, setPresetOverrides } from '@/layout/useLayoutPreset'
 
 const echartsMock = vi.hoisted(() => {
@@ -121,7 +122,10 @@ function pointerEvent(type: string, pointerId: number, clientY: number): Event {
 }
 
 describe('StockChartWorkspace', () => {
+  const { isDark } = useTheme()
+
   beforeEach(() => {
+    isDark.value = false
     setPresetOverrides({})
     setLayoutPreset('balanced')
     echartsMock.instances.length = 0
@@ -236,13 +240,14 @@ describe('StockChartWorkspace', () => {
     })
   })
 
-  it('切换研究空间预设时重新读取主题 token 并重绘全部画布', async () => {
+  it('切换明暗模式时重新读取默认主题 token 并重绘全部画布', async () => {
     const wrapper = await mountWorkspace()
     const callsBefore = echartsMock.instances.map((instance) => instance.setOption.mock.calls.length)
     const backgroundBefore = echartsMock.instances[0].setOption.mock.calls.at(-1)?.[0]
       ?.backgroundColor
 
-    setLayoutPreset('nocturne')
+    isDark.value = true
+    setLayoutPreset('balanced')
     await nextTick()
     await nextTick()
 
@@ -256,7 +261,7 @@ describe('StockChartWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('当前预设注入后端覆盖时按主题版本重绘全部画布', async () => {
+  it('当前预设更新后重绘全部画布但忽略基础表面覆盖', async () => {
     const wrapper = await mountWorkspace()
     const callsBefore = echartsMock.instances.map((instance) => instance.setOption.mock.calls.length)
 
@@ -264,6 +269,7 @@ describe('StockChartWorkspace', () => {
       balanced: {
         'tokens.light.surfaceBg': '#f2f5f8',
         'tokens.light.border': '#a8b4c2',
+        'tokens.light.primary': '#2457d6',
       },
     })
     await nextTick()
@@ -271,7 +277,7 @@ describe('StockChartWorkspace', () => {
 
     echartsMock.instances.forEach((instance, index) => {
       expect(instance.setOption.mock.calls.length).toBeGreaterThan(callsBefore[index])
-      expect(instance.setOption.mock.calls.at(-1)?.[0]?.backgroundColor).toBe('#f2f5f8')
+      expect(instance.setOption.mock.calls.at(-1)?.[0]?.backgroundColor).toBe('#ffffff')
     })
 
     wrapper.unmount()

@@ -10,7 +10,11 @@ import {
 import { migrateLocalPreferencesToRemote } from '@/composables/usePreferenceMigration'
 import { syncDrawerPreferences } from '@/composables/useDrawerPreferences'
 import { resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
-import { effectivePresetTokens, setPresetOverrides, useLayoutPreset, type LayoutPresetKey } from '@/layout'
+import {
+  effectivePresetTokens,
+  setRuntimePresetSources,
+  useLayoutPreset,
+} from '@/layout'
 import { listLayoutPresets } from '@/api/layout'
 import {
   getDataStatus,
@@ -101,11 +105,13 @@ const taskSignalText = computed(() => {
   return ''
 })
 const themeOptionsWithSwatches = computed(() =>
-  presetOptions.value.map((option) => ({
-    ...option,
-    swatches: themeSwatchesFor(option.value),
-    preview: themePreviewFor(option.value),
-  })),
+  presetOptions.value.map((option) => {
+    const tokens = effectivePresetTokens(option.value, isDark.value ? 'dark' : 'light')
+    return {
+      ...option,
+      swatches: [tokens.primary, tokens.success, tokens.warning, tokens.danger],
+    }
+  }),
 )
 const navigationOptions: Array<{
   value: NavigationMode
@@ -148,33 +154,12 @@ function goTo(path: string) {
   void router.push(path)
 }
 
-function selectPreset(key: LayoutPresetKey) {
-  setLayoutPreset(key)
-}
-
-function themeSwatchesFor(key: LayoutPresetKey) {
-  const tokens = effectivePresetTokens(key, isDark.value ? 'dark' : 'light')
-  return [
-    { key: 'primary', value: tokens.primary, weight: 44 },
-    { key: 'success', value: tokens.success, weight: 26 },
-    { key: 'warning', value: tokens.warning, weight: 18 },
-    { key: 'danger', value: tokens.danger, weight: 12 },
-  ]
-}
-
-function themePreviewFor(key: LayoutPresetKey) {
-  const t = effectivePresetTokens(key, isDark.value ? 'dark' : 'light')
-  return {
-    page: t.pageBg,
-    surface: t.surfaceBg,
-    border: t.borderStrong,
-    primary: t.primary,
-    text: t.textStrong,
-  }
-}
-
 function selectThemeMode(dark: boolean) {
   if (isDark.value !== dark) toggleTheme()
+}
+
+function selectPreset(key: string) {
+  setLayoutPreset(key)
 }
 
 function clearShellStatusTimer() {
@@ -244,12 +229,7 @@ async function refreshShellStatus() {
 async function loadPresetOverridesAfterAuth() {
   if (presetOverridesLoaded) return
   const { presets } = await listLayoutPresets()
-  const map: Record<string, Record<string, string | number>> = {}
-  for (const p of presets) {
-    const values = p.config?.values
-    if (values && Object.keys(values).length) map[p.key] = values as Record<string, string | number>
-  }
-  if (Object.keys(map).length) setPresetOverrides(map)
+  setRuntimePresetSources(presets)
   presetOverridesLoaded = true
 }
 
@@ -300,9 +280,9 @@ async function onLogout() {
 <template>
   <router-view v-if="isFullscreen" :key="route.path" />
   <el-container v-else class="app">
-    <el-header class="topbar">
+    <el-header class="topbar" data-testid="app-topbar-surface">
       <div class="topbar-brand">
-        <BrandMark variant="shell" :tone="isDark ? 'dark' : 'light'" />
+        <BrandMark :tone="isDark ? 'dark' : 'light'" />
       </div>
       <div class="topbar-slot">
         <TopNavigation v-if="navigationMode === 'dual-topbar'" level="primary" />
@@ -479,14 +459,19 @@ async function onLogout() {
     <TopNavigation v-if="navigationMode === 'dual-topbar'" level="secondary" />
 
     <el-container class="app-body">
-      <el-aside v-if="navigationMode === 'sidebar-tabs'" width="208px" class="aside">
+      <el-aside
+        v-if="navigationMode === 'sidebar-tabs'"
+        width="208px"
+        class="aside"
+        data-testid="app-sidebar-surface"
+      >
         <SideMenu />
         <div class="aside-foot">
           <div class="foot-note">本地 EOD · 仅供研究</div>
         </div>
       </el-aside>
 
-      <el-container class="workspace">
+      <el-container class="workspace" data-testid="app-workspace-surface">
         <WorkspaceTabs v-if="navigationMode === 'sidebar-tabs' && shellReady" />
         <el-main class="main">
           <div v-if="!shellReady" class="shell-gate">
@@ -533,7 +518,7 @@ async function onLogout() {
         <header class="drawer-head drawer-head--appearance">
           <div>
             <div class="drawer-title">视觉环境</div>
-            <div class="drawer-subtitle">选择阅读光线与研究空间气质</div>
+            <div class="drawer-subtitle">选择阅读光线与导航方式</div>
           </div>
           <AppIconButton class="drawer-close" label="关闭视觉环境" size="sm" @click="appearanceDrawerVisible = false">
             <el-icon><Close /></el-icon>
@@ -551,6 +536,41 @@ async function onLogout() {
               <span><strong>夜间</strong><small>低照沉浸</small></span>
             </button>
           </div>
+
+          <section class="theme-card">
+            <div class="theme-card-head">
+              <div>
+                <div class="theme-card-title">视觉预设</div>
+                <div class="theme-card-sub">预设改变强调色与布局策略，不改变明暗基础背景</div>
+              </div>
+            </div>
+
+            <div class="theme-list" aria-label="视觉预设选择">
+              <button
+                v-for="option in themeOptionsWithSwatches"
+                :key="option.value"
+                class="theme-option"
+                :class="{ 'is-active': option.value === activePresetKey }"
+                type="button"
+                :aria-pressed="option.value === activePresetKey"
+                @click="selectPreset(option.value)"
+              >
+                <span class="theme-option-signal" aria-hidden="true">
+                  <i
+                    v-for="(swatch, index) in option.swatches"
+                    :key="`${index}-${swatch}`"
+                    :class="{ 'is-primary': index === 0 }"
+                    :style="{ background: swatch }"
+                  />
+                </span>
+                <span class="theme-option-copy">
+                  <strong>{{ option.label }}</strong>
+                  <small>{{ option.description }}</small>
+                </span>
+                <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
+              </button>
+            </div>
+          </section>
 
           <section class="theme-card navigation-card">
             <div class="theme-card-head">
@@ -586,49 +606,6 @@ async function onLogout() {
             </div>
           </section>
 
-          <section class="theme-card">
-            <div class="theme-card-head">
-              <div>
-                <div class="theme-card-title">研究空间</div>
-                <div class="theme-card-sub">三套风格同时作用于登录页与工作台</div>
-              </div>
-            </div>
-
-            <div class="theme-list" aria-label="主题风格选择">
-              <button
-                v-for="option in themeOptionsWithSwatches"
-                :key="option.value"
-                class="theme-option"
-                :class="{ 'is-active': option.value === activePresetKey }"
-                type="button"
-                :aria-pressed="option.value === activePresetKey"
-                @click="selectPreset(option.value)"
-              >
-                <span
-                  class="theme-option-preview"
-                  :style="{
-                    '--preview-page': option.preview.page,
-                    '--preview-surface': option.preview.surface,
-                    '--preview-border': option.preview.border,
-                    '--preview-primary': option.preview.primary,
-                    '--preview-text': option.preview.text,
-                  }"
-                  aria-hidden="true"
-                >
-                  <i class="preview-top" />
-                  <i class="preview-panel"><b /><b /><b /></i>
-                </span>
-                <span class="theme-option-copy">
-                  <strong>{{ option.label }}</strong>
-                  <small>{{ option.description }}</small>
-                  <span class="theme-option-swatches" aria-hidden="true">
-                    <i v-for="swatch in option.swatches" :key="swatch.key" :style="{ background: swatch.value }" />
-                  </span>
-                </span>
-                <el-icon class="theme-option-check" aria-hidden="true"><Select /></el-icon>
-              </button>
-            </div>
-          </section>
         </div>
       </div>
     </el-drawer>
@@ -646,8 +623,7 @@ async function onLogout() {
   min-height: 0;
 }
 .aside {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--chrome-bg) 92%, var(--shell-accent) 8%), var(--chrome-bg));
+  background: var(--chrome-bg);
   color: var(--chrome-text);
   display: flex;
   flex-direction: column;
@@ -666,21 +642,12 @@ async function onLogout() {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  background:
-    radial-gradient(720px 380px at 88% -8%, var(--shell-canvas-glow), transparent 72%),
-    linear-gradient(135deg, color-mix(in srgb, var(--el-bg-color-page) 96%, white 4%), var(--el-bg-color-page));
+  background: var(--el-bg-color-page);
 }
 .topbar {
   height: 67px;
   padding: 0;
-  background:
-    radial-gradient(360px 96px at 62px -18px, var(--shell-accent-soft) 0%, transparent 74%),
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--chrome-bg) 88%, var(--shell-accent) 12%) 0%,
-      color-mix(in srgb, var(--chrome-bg) 97%, var(--shell-accent) 3%) 28%,
-      var(--chrome-bg) 100%
-    );
+  background: var(--el-bg-color-page);
   border-bottom: 1px solid var(--chrome-border);
   display: flex;
   align-items: center;
@@ -691,13 +658,7 @@ async function onLogout() {
   overflow: hidden;
 }
 .topbar::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent 0%, var(--shell-accent-faint) 12%, transparent 36%);
-  opacity: 0.3;
-  mask-image: linear-gradient(90deg, #000 0%, #000 24%, transparent 58%);
+  content: none;
 }
 .topbar-brand {
   width: 208px;
@@ -1199,8 +1160,8 @@ button.topbar-status:focus-visible {
   border: 1px solid var(--page-settings-border);
   box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--page-settings-bg) 58%, transparent);
 }
-.mode-orb--day { background: radial-gradient(circle at 38% 35%, #fff7d8 0 20%, #d8b76e 22% 48%, #9fc1ce 51% 100%); }
-.mode-orb--night { background: radial-gradient(circle at 60% 38%, #d8e7ed 0 16%, #617d8a 18% 40%, #0d2836 43% 100%); }
+.mode-orb--day { background: radial-gradient(circle at 38% 35%, #ffffff 0 20%, #9ec5ff 22% 48%, #3b82f6 51% 100%); }
+.mode-orb--night { background: radial-gradient(circle at 60% 38%, #dbeafe 0 16%, #4b7bbd 18% 40%, #172554 43% 100%); }
 .theme-card {
   border: 0;
   background: transparent;
@@ -1226,6 +1187,70 @@ button.topbar-status:focus-visible {
   margin-top: 1px;
   font-size: var(--app-font-size-caption);
   color: var(--page-settings-text-muted);
+}
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-2);
+}
+.theme-option {
+  width: 100%;
+  min-height: 76px;
+  padding: 10px 11px;
+  border: 1px solid var(--page-settings-section-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
+  color: var(--page-settings-text-muted);
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: var(--app-space-3);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s ease, background-color .18s ease, transform .18s ease;
+}
+.theme-option:hover {
+  border-color: var(--page-settings-border);
+  transform: translateY(-1px);
+}
+.theme-option.is-active {
+  border-color: color-mix(in srgb, var(--page-settings-accent) 62%, var(--page-settings-border));
+  background: color-mix(in srgb, var(--page-settings-accent) 7%, var(--page-settings-bg));
+}
+.theme-option-signal {
+  height: 44px;
+  padding: 8px;
+  border: 1px solid var(--page-settings-section-border);
+  border-radius: 8px;
+  background: var(--page-settings-bg);
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  align-items: end;
+  gap: var(--app-space-1);
+}
+.theme-option-signal i {
+  height: 11px;
+  border-radius: 3px;
+  opacity: .86;
+}
+.theme-option-signal i.is-primary {
+  height: 26px;
+  opacity: 1;
+}
+.theme-option-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-1);
+}
+.theme-option-copy strong {
+  color: var(--page-settings-text);
+  font-size: var(--app-font-size-table);
+}
+.theme-option-copy small {
+  color: var(--page-settings-text-muted);
+  font-size: var(--app-font-size-tiny);
+  line-height: var(--app-line-height-compact);
 }
 .navigation-card {
   padding-top: 2px;
@@ -1409,96 +1434,6 @@ button.topbar-status:focus-visible {
   font-size: var(--app-font-size-tiny);
   line-height: var(--app-line-height-compact);
 }
-.theme-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-2);
-}
-.theme-option {
-  position: relative;
-  width: 100%;
-  min-height: 94px;
-  border: 1px solid var(--page-settings-section-border);
-  border-radius: 13px;
-  background: color-mix(in srgb, var(--page-settings-section-bg) 58%, transparent);
-  color: var(--page-settings-text-muted);
-  padding: 10px;
-  display: grid;
-  grid-template-columns: 112px minmax(0, 1fr) 22px;
-  align-items: center;
-  gap: var(--app-space-3);
-  cursor: pointer;
-  text-align: left;
-  transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
-}
-.theme-option:hover {
-  color: var(--page-settings-text);
-  border-color: var(--page-settings-border);
-  transform: translateY(-1px);
-}
-.theme-option.is-active {
-  color: var(--page-settings-text);
-  border-color: color-mix(in srgb, var(--page-settings-accent) 62%, var(--page-settings-border));
-  background: color-mix(in srgb, var(--page-settings-accent) 7%, var(--page-settings-bg));
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--page-settings-shadow) 44%, transparent);
-}
-.theme-option-preview {
-  position: relative;
-  width: 112px;
-  height: 72px;
-  border: 1px solid var(--preview-border);
-  border-radius: 8px;
-  background: var(--preview-page);
-  overflow: hidden;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
-}
-.preview-top {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 13px;
-  background: var(--preview-surface);
-  border-bottom: 1px solid var(--preview-border);
-}
-.preview-top::before {
-  content: '';
-  position: absolute;
-  left: 7px;
-  top: 4px;
-  width: 23px;
-  height: 4px;
-  border-radius: 3px;
-  background: var(--preview-primary);
-}
-.preview-panel {
-  position: absolute;
-  left: 7px;
-  right: 7px;
-  top: 22px;
-  bottom: 8px;
-  padding: 8px;
-  border: 1px solid var(--preview-border);
-  border-radius: 5px;
-  background: var(--preview-surface);
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-control-gap);
-}
-.preview-panel b {
-  height: 3px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--preview-text) 24%, transparent);
-}
-.preview-panel b:first-child { width: 46%; background: var(--preview-primary); opacity: .72; }
-.theme-option-copy {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-1);
-}
-.theme-option-copy strong { color: var(--page-settings-text); font-size: var(--app-font-size-body); }
-.theme-option-copy small { color: var(--page-settings-text-muted); font-size: var(--app-font-size-micro); line-height: var(--app-line-height-comfy); }
-.theme-option-swatches { display: flex; gap: var(--app-space-1); margin-top: 2px; }
-.theme-option-swatches i { width: 16px; height: 3px; border-radius: 999px; }
 .theme-option-check {
   width: 20px;
   height: 20px;

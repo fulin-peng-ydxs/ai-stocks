@@ -7,7 +7,6 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { EditableKnob, PageLayout } from './schema'
 import { getLayoutValue } from './path'
-import { getLayoutPreset } from './presets'
 import {
   editablePathSet,
   knobMap,
@@ -21,7 +20,7 @@ import {
   type MergeLayer,
 } from './merge'
 import { coerceEditableValue } from './validator'
-import { useLayoutPreset, presetComponentDefaults } from './useLayoutPreset'
+import { getRuntimeLayoutPreset, useLayoutPreset, presetComponentDefaults } from './useLayoutPreset'
 import {
   coerceComponentValue,
   getComponentFieldDef,
@@ -136,7 +135,7 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
   // 页面默认预设：来自后端 layout_page_config.preset_key。未配置时回落到全局当前预设（App.vue 用户选择）。
   const pagePresetKey = ref<string | null | undefined>(options.presetKey)
   const effectivePreset = computed(() =>
-    pagePresetKey.value ? getLayoutPreset(pagePresetKey.value) : activePreset.value,
+    pagePresetKey.value ? getRuntimeLayoutPreset(pagePresetKey.value) : activePreset.value,
   )
 
   const pageOverlay = reactive<Overlay>({ ...(options.pageOverride?.values ?? {}) })

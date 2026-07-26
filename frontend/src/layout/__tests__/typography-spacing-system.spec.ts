@@ -55,6 +55,14 @@ describe('字体与间距设计契约', () => {
     const loginView = read(join(SRC_DIR, 'views/LoginView.vue'))
 
     expect(loginView).not.toContain('--login-auth-glow')
+    expect(loginView).toContain('--login-accent: var(--el-color-primary, #1677ff)')
+    expect(loginView).toContain('--login-accent-strong: var(--el-color-primary-dark-2, #1264d9)')
+    expect(loginView).not.toContain('.login-shell.preset-daylight')
+    expect(loginView).not.toContain('.login-shell.preset-nocturne')
+    expect(loginView).not.toMatch(/#(?:b69254|876a3a|c5a466|d0ab68|9a7137)\b/i)
+    expect(loginView).toContain(
+      'grid-template-columns: minmax(0, 1.38fr) minmax(430px, 0.82fr)',
+    )
     expect(loginView).toMatch(
       /radial-gradient\(\s*circle at 85% 0,\s*color-mix\(in srgb,\s*var\(--login-accent\)\s+12%,\s*transparent\),\s*transparent 28%\s*\)/,
     )

@@ -810,7 +810,11 @@ onBeforeUnmount(() => {
     <template #main>
     <div class="stock-detail-main">
     <!-- 通用集合导航条 -->
-    <div v-if="settings.showNav && stockSet.has" class="nav-bar">
+    <div
+      v-if="settings.showNav && stockSet.has"
+      class="nav-bar"
+      data-testid="stock-set-navigation"
+    >
       <span class="nav-label">
         {{ stockSet.label }}
         <span v-if="inSet" class="nav-pos">{{ setIndex + 1 }}/{{ collectionTotal }}</span>
@@ -1193,7 +1197,8 @@ onBeforeUnmount(() => {
   gap: var(--app-space-3);
   padding: 8px 12px;
   margin-bottom: 14px;
-  background: var(--el-fill-color-light);
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   flex-wrap: wrap;
 }

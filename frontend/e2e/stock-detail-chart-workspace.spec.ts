@@ -280,6 +280,19 @@ test.describe('个股详情三图工作区', () => {
     const auth = await loginAsDebugUser(page, request, 'debug_normal')
     const [sample] = await loadStockSamples(request, auth, 1)
     await installPreferenceEndpoint(page)
+    await page.addInitScript((item) => {
+      window.localStorage.setItem('ai-stocks:stockSet', JSON.stringify({
+        source: 'list',
+        label: '查询结果',
+        groupId: '',
+        items: [item],
+        query: null,
+        total: 1,
+        loadedPages: [1],
+        pageSize: 20,
+        listState: null,
+      }))
+    }, { code: sample.code, name: sample.name })
 
     await page.goto(`/stocks/${sample.code}`)
     const workspace = page.getByLabel('个股多图联动工作区')
@@ -291,6 +304,14 @@ test.describe('个股详情三图工作区', () => {
 
     await page.getByTestId('page-settings-trigger').click()
     const drawer = page.getByTestId('page-settings-drawer')
+    await expect(page.locator('.el-overlay.ps-settings-modal'))
+      .toHaveCSS('background-color', 'rgba(0, 0, 0, 0.32)')
+    await expect(page.getByTestId('stock-set-navigation'))
+      .toHaveCSS('background-color', 'rgb(255, 255, 255)')
+    await expect(page.locator('.stock-chart-splitter').first())
+      .toHaveCSS('background-color', 'rgb(255, 255, 255)')
+    await expect(drawer.locator('.sg-l1').first())
+      .toHaveCSS('background-color', 'rgb(255, 255, 255)')
     await expect(drawer.getByTestId('stock-detail-chart-slot1-kline')).toContainText(
       '固定，不可隐藏',
     )
@@ -917,28 +938,22 @@ test.describe('个股详情三图工作区', () => {
       (element) => getComputedStyle(element).backgroundColor,
     )
     expect(darkBackground).not.toBe(lightBackground)
-
-    const nocturne = page.getByRole('button', { name: /^夜航 / })
-    await nocturne.click()
-    await expect(nocturne).toHaveAttribute('aria-pressed', 'true')
-    const nocturneBackground = await workspace.evaluate(
-      (element) => getComputedStyle(element).backgroundColor,
-    )
-    expect(nocturneBackground).not.toBe(darkBackground)
+    await expect(page.getByText('视觉预设', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: /澄空蓝/ })).toHaveCount(1)
     const closeAppearance = page.getByRole('button', { name: '关闭视觉环境' })
     await closeAppearance.click()
     await expect(closeAppearance).toBeHidden()
     await expect(shellTradeDate).toBeVisible()
-    await testInfo.attach('stock-detail-dark-nocturne', {
+    await testInfo.attach('stock-detail-dark-blue', {
       body: await page.screenshot(),
       contentType: 'image/png',
     })
-    await testInfo.attach('stock-detail-workspace-dark-nocturne', {
+    await testInfo.attach('stock-detail-workspace-dark-blue', {
       body: await workspace.screenshot(),
       contentType: 'image/png',
     })
     await macdPanel.scrollIntoViewIfNeeded()
-    await testInfo.attach('stock-detail-macd-dark-nocturne', {
+    await testInfo.attach('stock-detail-macd-dark-blue', {
       body: await macdPanel.screenshot(),
       contentType: 'image/png',
     })

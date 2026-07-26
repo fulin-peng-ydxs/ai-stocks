@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_LAYOUT_PRESET, getLayoutPreset, LAYOUT_PRESETS, validateLayoutPreset } from '../presets'
 import {
@@ -11,6 +14,8 @@ import {
 import type { ThemeMode } from '../schema'
 
 const MODES: ThemeMode[] = ['light', 'dark']
+const TEST_DIR = dirname(fileURLToPath(import.meta.url))
+const SRC_DIR = join(TEST_DIR, '../..')
 
 /** 取 #rrggbb 的相对亮度（0~255 粗算），用于断言「白天底比夜间底亮」。 */
 function luminance(hex: string): number {
@@ -21,30 +26,6 @@ function luminance(hex: string): number {
   return 0.299 * r + 0.587 * g + 0.114 * b
 }
 
-function rgb(hex: string): [number, number, number] {
-  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim())
-  if (!m) return [NaN, NaN, NaN]
-  const n = parseInt(m[1], 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-}
-
-/** 红蓝通道差值用于防止日曜环境底色漂向米黄、香槟或金色。 */
-function goldBias(hex: string): number {
-  const [r, , b] = rgb(hex)
-  return r - b
-}
-
-function colorDistance(a: string, b: string): number {
-  const [ar, ag, ab] = rgb(a)
-  const [br, bg, bb] = rgb(b)
-  return Math.hypot(ar - br, ag - bg, ab - bb)
-}
-
-function channelSpread(hex: string): number {
-  const channels = rgb(hex)
-  return Math.max(...channels) - Math.min(...channels)
-}
-
 describe('布局风格预设（M2 / M9 双模式）', () => {
   it('颜色工具统一计算 WCAG 对比度并对非法颜色 fail-closed', () => {
     expect(contrastRatioFromHex('#000000', '#ffffff')).toBeCloseTo(21)
@@ -52,12 +33,9 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     expect(contrastRatioFromHex('invalid', '#ffffff')).toBeNaN()
   })
 
-  it('内置三套金融科技预设完整可用，light/dark 两套 token 均合法', () => {
-    expect(Object.keys(LAYOUT_PRESETS).sort()).toEqual([
-      'balanced',
-      'daylight',
-      'nocturne',
-    ])
+  it('只暴露一套澄空蓝预设，light/dark 两套 token 均合法', () => {
+    expect(Object.keys(LAYOUT_PRESETS)).toEqual(['balanced'])
+    expect(LAYOUT_PRESETS.balanced.name).toBe('澄空蓝')
     for (const preset of Object.values(LAYOUT_PRESETS)) {
       expect(validateLayoutPreset(preset), preset.key).toEqual([])
       for (const mode of MODES) {
@@ -76,7 +54,7 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     }
   })
 
-  it('三套预设共用 6px 控件圆角，主题切换不改变按钮与输入的基础形态', () => {
+  it('默认预设共用 6px 控件圆角，主题切换不改变按钮与输入的基础形态', () => {
     for (const preset of Object.values(LAYOUT_PRESETS)) {
       for (const mode of MODES) {
         expect(preset.tokens[mode].controlRadius, `${preset.key}.${mode}`).toBe(6)
@@ -84,17 +62,19 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     }
   })
 
-  it('三套预设的工作台画布/表面与登录交互区/登录卡片可见色同源', () => {
+  it('工作台画布/表面与登录统一画布/登录卡片可见色同源', () => {
     for (const preset of Object.values(LAYOUT_PRESETS)) {
       for (const mode of MODES) {
-        const spec = THEME_SURFACE_SPECS[preset.key][mode]
+        const spec = THEME_SURFACE_SPECS[mode]
         expect(preset.tokens[mode].pageBg, `${preset.key}.${mode} page`).toBe(spec.pageBg)
         expect(preset.tokens[mode].surfaceBg, `${preset.key}.${mode} surface`)
           .toBe(spec.surfaceBg)
+        expect(preset.tokens[mode].submenuBg, `${preset.key}.${mode} sidebar`)
+          .toBe(spec.sidebarBg)
         expect(spec.surfaceBg, `${preset.key}.${mode} card composite`)
           .toBe(blendHex(spec.cardBg, spec.pageBg, spec.cardAlpha))
         expect(rgbaFromHex(spec.cardBg, spec.cardAlpha), `${preset.key}.${mode} login card css`)
-          .toMatch(/^rgba\(\d+, \d+, \d+, 0\.\d+\)$/)
+          .toMatch(/^rgba\(\d+, \d+, \d+, 1\)$/)
       }
     }
   })
@@ -133,46 +113,70 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     expect(validateLayoutPreset(invalid)).toContain('dark.text 与 dark.textMuted 的相对亮度差不足')
   })
 
-  it('日曜以铂金银灰和蓝宝石交互与夜航形成稳定差异', () => {
+  it('澄空蓝双模式的正文和弱文字保持 WCAG AA 对比度', () => {
     for (const mode of MODES) {
-      const daylight = LAYOUT_PRESETS.daylight.tokens[mode]
-      const nocturne = LAYOUT_PRESETS.nocturne.tokens[mode]
-      expect(goldBias(daylight.pageBg), `${mode} 环境底色无暖金偏色`)
-        .toBeLessThanOrEqual(0)
-      expect(colorDistance(daylight.primary, nocturne.primary), `${mode} 主交互色差异`)
-        .toBeGreaterThan(60)
-    }
-    expect(luminance(LAYOUT_PRESETS.daylight.tokens.light.pageBg), '白天高照度')
-      .toBeGreaterThan(luminance(LAYOUT_PRESETS.nocturne.tokens.light.pageBg) + 5)
-  })
-
-  it('日曜双模式的正文、弱文字和主按钮保持 WCAG AA 对比度', () => {
-    for (const mode of MODES) {
-      const daylight = LAYOUT_PRESETS.daylight.tokens[mode]
-      expect(contrastRatioFromHex(daylight.text, daylight.surfaceBg), `${mode} 正文`)
+      const preset = LAYOUT_PRESETS.balanced.tokens[mode]
+      expect(contrastRatioFromHex(preset.text, preset.surfaceBg), `${mode} 正文`)
         .toBeGreaterThanOrEqual(4.5)
-      expect(contrastRatioFromHex(daylight.textMuted, daylight.surfaceBg), `${mode} 弱文字`)
-        .toBeGreaterThanOrEqual(4.5)
-      expect(contrastRatioFromHex(daylight.primary, '#ffffff'), `${mode} 主按钮`)
+      expect(contrastRatioFromHex(preset.textMuted, preset.surfaceBg), `${mode} 弱文字`)
         .toBeGreaterThanOrEqual(4.5)
     }
   })
 
-  it('晨昏夜间沿用登录页既有深蓝黑基准，并保持暖石墨边界', () => {
+  it('澄空蓝使用参考原型的中性白天底与炭黑夜间底', () => {
+    const light = LAYOUT_PRESETS.balanced.tokens.light
     const balanced = LAYOUT_PRESETS.balanced.tokens.dark
-    const nocturne = LAYOUT_PRESETS.nocturne.tokens.dark
-    expect(balanced.pageBg, '主页画布对齐登录交互区').toBe('#07131d')
-    expect(balanced.surfaceBg, '主页表面对齐登录卡片可见色').toBe('#0a1a26')
-    expect(luminance(balanced.surfaceBg), '基础表面明度')
-      .toBeLessThan(luminance(nocturne.surfaceBg))
-    expect(channelSpread(balanced.border), '暖石墨边界')
-      .toBeLessThan(channelSpread(nocturne.border) / 2)
+    expect(light.pageBg).toBe('#ffffff')
+    expect(light.surfaceBg).toBe('#ffffff')
+    expect(light.submenuBg).toBe('#fcfcfc')
+    expect(light.primary).toBe('#1677ff')
+    expect(balanced.pageBg, '主页画布对齐登录统一画布').toBe('#171717')
+    expect(balanced.surfaceBg, '主页表面对齐登录卡片').toBe('#1f1f1f')
+    expect(balanced.submenuBg, '边栏对齐原型深色表面').toBe('#1f1f1f')
+    expect(balanced.primary).toBe('#3b8cff')
     expect(contrastRatioFromHex(balanced.textMuted, balanced.surfaceBg), '弱文字可读性')
       .toBeGreaterThanOrEqual(4.5)
   })
 
-  it('未知或旧预设回落到默认晨昏', () => {
+  it('页面设置抽屉保留遮光层，同时使用中性明暗内容表面', () => {
+    const drawer = readFileSync(join(SRC_DIR, 'components/PageSettingsDrawer.vue'), 'utf8')
+    const globalCss = readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8')
+
+    expect(drawer).toMatch(
+      /\.el-overlay\.ps-settings-modal\)\s*\{\s*background-color:\s*rgba\(0, 0, 0, 0\.32\) !important;/,
+    )
+    expect(globalCss).toContain('--drawer-bg: #ffffff')
+    expect(globalCss).toContain('--page-settings-section-bg: #ffffff')
+    expect(globalCss).toContain('--drawer-bg: #171717')
+    expect(globalCss).toContain('--page-settings-bg: #1f1f1f')
+  })
+
+  it('核心主题与品牌入口不残留偏暖底色或旧护眼色板', () => {
+    const sources = [
+      'App.vue',
+      'components/BrandMark.vue',
+      'views/LoginView.vue',
+      'styles/global.css',
+    ].map((path) => readFileSync(join(SRC_DIR, path), 'utf8').toLowerCase())
+    const forbiddenWarmColors = [
+      '#fff7f4',
+      '#fff7d8',
+      '#d8b76e',
+      '#9fc1ce',
+      '#e2e2df',
+      '#c9c9c5',
+      '#f2f2f0',
+    ]
+
+    for (const color of forbiddenWarmColors) {
+      expect(sources.join('\n'), color).not.toContain(color)
+    }
+  })
+
+  it('未知或旧预设回落到默认澄空蓝', () => {
     expect(getLayoutPreset('nope').key).toBe(DEFAULT_LAYOUT_PRESET)
+    expect(getLayoutPreset('daylight').key).toBe(DEFAULT_LAYOUT_PRESET)
+    expect(getLayoutPreset('nocturne').key).toBe(DEFAULT_LAYOUT_PRESET)
   })
 
   it('预设只包含 token、组件默认和响应式默认，不携带页面结构', () => {

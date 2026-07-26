@@ -8,11 +8,13 @@ import {
   rgbChannelsFromHex,
   rgbaFromHex,
 } from './themeSurfaces'
-import type { LayoutPresetKey, StyleTokenConfig } from './schema'
+import type { LayoutPreset, PresetComponentDefaults, StyleTokenConfig } from './schema'
 import { useTheme } from '@/composables/useTheme'
 
 const STORAGE_KEY = 'ai-stocks:layout-preset'
-const activePresetKey = ref<LayoutPresetKey>(DEFAULT_LAYOUT_PRESET)
+const RUNTIME_PRESET_CACHE_KEY = 'ai-stocks:layout-preset-catalog:v1'
+const activePresetKey = ref<string>(DEFAULT_LAYOUT_PRESET)
+let preferredPresetKey = DEFAULT_LAYOUT_PRESET as string
 /**
  * 运行时主题 token 的提交版本。预设 key、明暗模式或后端覆盖任一来源完成 CSS 变量写入后递增，
  * 供 ECharts 等不会自动响应 CSS 变量的画布消费者重新取色。
@@ -25,7 +27,28 @@ const { isDark } = useTheme()
  * 形如 { [presetKey]: { 'tokens.light.primary': '#...', 'tokens.shared.cardRadius': 8, ... } }，
  * 由 main.ts 挂载后异步拉取注入；缺省（离线/未拉取）则只用前端内置 presets.ts（首屏不闪烁）。
  */
-const presetOverrides = ref<Record<string, Record<string, string | number>>>({})
+type RuntimePresetValue = string | number | boolean
+const presetOverrides = ref<Record<string, Record<string, RuntimePresetValue>>>({})
+export interface RuntimePresetDefinition {
+  key: string
+  name: string
+  description: string
+}
+export interface RuntimePresetSource extends RuntimePresetDefinition {
+  config?: {
+    values?: Record<string, unknown>
+  }
+}
+
+const presetCatalog = ref<RuntimePresetDefinition[]>(
+  Object.values(LAYOUT_PRESETS).map(({ key, name, description }) => ({ key, name, description })),
+)
+const PRESET_COLOR_KEYS = new Set<keyof StyleTokenConfig>([
+  'primary',
+  'success',
+  'warning',
+  'danger',
+])
 
 function setCssVar(tokens: StyleTokenConfig, key: keyof StyleTokenConfig, cssName: string, unit = '') {
   document.documentElement.style.setProperty(cssName, `${tokens[key]}${unit}`)
@@ -58,19 +81,25 @@ function applyElementColorScale(
   root.style.setProperty(`--el-color-${name}-dark-2`, blendHex(safeColor, activeTarget, 0.8))
 }
 
-/** 内置 token（按模式）叠加后端覆盖：颜色/阴影取 `tokens.<mode>.*`，形态/密度取 `tokens.shared.*`。 */
-function mergeTokens(base: StyleTokenConfig, ov: Record<string, string | number>, mode: 'light' | 'dark'): StyleTokenConfig {
+/**
+ * 内置 token 叠加后端预设。
+ * 基础表面由明暗模式固定，预设只允许改变强调色和共享形态，避免主题色污染边栏与主画布。
+ */
+function mergeTokens(base: StyleTokenConfig, ov: Record<string, RuntimePresetValue>, mode: 'light' | 'dark'): StyleTokenConfig {
   const m = { ...base } as Record<string, string | number>
   const modePrefix = `tokens.${mode}.`
   const sharedPrefix = 'tokens.shared.'
   for (const [path, val] of Object.entries(ov)) {
     if (path.startsWith(modePrefix)) {
       const key = path.slice(modePrefix.length)
+      if (!PRESET_COLOR_KEYS.has(key as keyof StyleTokenConfig)) continue
       // 防御历史脏数据：颜色覆盖不合法时保留内置 token，禁止生成 NaN CSS 变量。
-      if (isStyleColorTokenKey(key) && !isHexColor(val)) continue
+      if (typeof val !== 'string' || (isStyleColorTokenKey(key) && !isHexColor(val))) continue
       m[key] = val
     }
-    else if (path.startsWith(sharedPrefix)) m[path.slice(sharedPrefix.length)] = val
+    else if (path.startsWith(sharedPrefix) && typeof val === 'number' && Number.isFinite(val)) {
+      m[path.slice(sharedPrefix.length)] = val
+    }
   }
   if (!hasDistinctTextHierarchy(String(m.text), String(m.textMuted))) {
     m.text = base.text
@@ -79,16 +108,120 @@ function mergeTokens(base: StyleTokenConfig, ov: Record<string, string | number>
   return m as unknown as StyleTokenConfig
 }
 
-function applyPreset(key: LayoutPresetKey) {
-  const preset = getLayoutPreset(key)
+function resolvePresetKey(key: string | null | undefined): string {
+  const candidate = key || DEFAULT_LAYOUT_PRESET
+  return presetCatalog.value.some((preset) => preset.key === candidate)
+    ? candidate
+    : DEFAULT_LAYOUT_PRESET
+}
+
+function normalizeRuntimePresetSources(definitions: RuntimePresetSource[]) {
+  const catalog: RuntimePresetDefinition[] = []
+  const overrides: Record<string, Record<string, RuntimePresetValue>> = {}
+  const seen = new Set<string>()
+  for (const preset of definitions) {
+    const key = preset.key?.trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    catalog.push({
+      key,
+      name: preset.name || key,
+      description: preset.description || '',
+    })
+    const values = preset.config?.values
+    if (!values) continue
+    const primitiveValues = Object.fromEntries(
+      Object.entries(values).filter(([, value]) =>
+        typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'),
+    ) as Record<string, RuntimePresetValue>
+    if (Object.keys(primitiveValues).length) overrides[key] = primitiveValues
+  }
+  return { catalog, overrides }
+}
+
+function installRuntimePresetSources(definitions: RuntimePresetSource[], persist: boolean) {
+  const { catalog, overrides } = normalizeRuntimePresetSources(definitions)
+  const builtIn = LAYOUT_PRESETS[DEFAULT_LAYOUT_PRESET]
+  if (!catalog.some((preset) => preset.key === DEFAULT_LAYOUT_PRESET)) {
+    catalog.unshift({
+      key: builtIn.key,
+      name: builtIn.name,
+      description: builtIn.description,
+    })
+  }
+  presetCatalog.value = catalog
+  presetOverrides.value = overrides
+  activePresetKey.value = resolvePresetKey(preferredPresetKey)
+  localStorage.setItem(STORAGE_KEY, activePresetKey.value)
+  if (persist) {
+    localStorage.setItem(RUNTIME_PRESET_CACHE_KEY, JSON.stringify(definitions))
+  }
+  applyPreset(activePresetKey.value)
+}
+
+function restoreRuntimePresetCache() {
+  const raw = localStorage.getItem(RUNTIME_PRESET_CACHE_KEY)
+  if (!raw) return
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) installRuntimePresetSources(parsed, false)
+  } catch {
+    localStorage.removeItem(RUNTIME_PRESET_CACHE_KEY)
+  }
+}
+
+function componentDefaultsFor(
+  base: PresetComponentDefaults,
+  overrides: Record<string, RuntimePresetValue>,
+): PresetComponentDefaults {
+  const density = overrides['componentDefaults.density']
+  const tableSize = overrides['componentDefaults.tableSize']
+  const drawerSize = overrides['componentDefaults.drawerSize']
+  return {
+    density: ['compact', 'standard', 'comfortable'].includes(String(density))
+      ? density as PresetComponentDefaults['density']
+      : base.density,
+    tableSize: ['compact', 'standard', 'comfortable'].includes(String(tableSize))
+      ? tableSize as PresetComponentDefaults['tableSize']
+      : base.tableSize,
+    filterDefaultExpanded: typeof overrides['componentDefaults.filterDefaultExpanded'] === 'boolean'
+      ? overrides['componentDefaults.filterDefaultExpanded']
+      : base.filterDefaultExpanded,
+    drawerSize: ['sm', 'md', 'lg'].includes(String(drawerSize))
+      ? drawerSize as PresetComponentDefaults['drawerSize']
+      : base.drawerSize,
+  }
+}
+
+/** 将后端预设转换为真实可消费的运行时预设；自定义项以默认中性表面为基础。 */
+export function getRuntimeLayoutPreset(key: string | null | undefined): LayoutPreset {
+  const resolvedKey = resolvePresetKey(key)
+  const base = getLayoutPreset(resolvedKey)
+  const meta = presetCatalog.value.find((preset) => preset.key === resolvedKey)
+  const overrides = presetOverrides.value[resolvedKey] ?? {}
+  return {
+    ...base,
+    key: resolvedKey,
+    name: meta?.name ?? base.name,
+    description: meta?.description ?? base.description,
+    tokens: {
+      light: mergeTokens(base.tokens.light, overrides, 'light'),
+      dark: mergeTokens(base.tokens.dark, overrides, 'dark'),
+    },
+    componentDefaults: componentDefaultsFor(base.componentDefaults, overrides),
+  }
+}
+
+function applyPreset(key: string) {
+  const preset = getRuntimeLayoutPreset(key)
   const root = document.documentElement
   // 按当前白天/夜间模式取对应 token 集（M9：预设 × 明暗二维）
   const mode = isDark.value ? 'dark' : 'light'
   // 内置 token 叠加后端预设覆盖（P11 运行时打通）
-  const t = mergeTokens(preset.tokens[mode], presetOverrides.value[preset.key] ?? {}, mode)
+  const t = preset.tokens[mode]
   root.dataset.layoutPreset = preset.key
   root.dataset.layoutMode = mode
-  const chromeBg = mode === 'dark' ? t.submenuBg : t.surfaceBg
+  const chromeBg = t.submenuBg
 
   applyElementColorScale(root, 'primary', t.primary, mode, t.surfaceBg)
   applyElementColorScale(root, 'success', t.success, mode, t.surfaceBg)
@@ -137,8 +270,9 @@ function applyPreset(key: LayoutPresetKey) {
   root.style.setProperty('--shell-canvas-glow', rgbaFromHex(t.primary, mode === 'dark' ? 0.12 : 0.08))
   root.style.setProperty('--shell-surface-shadow', t.shadow)
   root.style.setProperty('--shell-control-mark', mode === 'dark' ? '#f7fbfc' : '#ffffff')
-  root.style.setProperty('--brand-icon-start', t.primary)
-  root.style.setProperty('--brand-icon-end', t.danger)
+  // 品牌字标只消费运行时主色：登录页与工作台不得再各自组合第二套 Logo 色板。
+  root.style.setProperty('--brand-icon-start', blendHex(t.primary, '#ffffff', 0.62))
+  root.style.setProperty('--brand-icon-end', blendHex(t.primary, mode === 'dark' ? '#ffffff' : '#000000', 0.8))
   root.style.setProperty('--brand-signal', rgbaFromHex(t.danger, mode === 'dark' ? 0.58 : 0.42))
   root.style.setProperty('--brand-word', t.textStrong)
   root.style.setProperty('--brand-word-stroke', rgbaFromHex(mode === 'dark' ? t.pageBg : t.surfaceBg, mode === 'dark' ? 0.58 : 0.68))
@@ -150,7 +284,7 @@ function applyPreset(key: LayoutPresetKey) {
   root.style.setProperty('--page-settings-bg', t.surfaceBg)
   root.style.setProperty('--page-settings-border', t.border)
   root.style.setProperty('--page-settings-shadow', t.shadow)
-  root.style.setProperty('--page-settings-section-bg', t.surfaceHover)
+  root.style.setProperty('--page-settings-section-bg', t.surfaceBg)
   root.style.setProperty('--page-settings-section-border', t.border)
   root.style.setProperty('--page-settings-divider', t.border)
   root.style.setProperty('--page-settings-text', t.textStrong)
@@ -180,29 +314,60 @@ function applyPreset(key: LayoutPresetKey) {
 }
 
 export function initLayoutPreset() {
-  const saved = localStorage.getItem(STORAGE_KEY) as LayoutPresetKey | null
-  activePresetKey.value = getLayoutPreset(saved).key
+  const saved = localStorage.getItem(STORAGE_KEY)
+  preferredPresetKey = saved || DEFAULT_LAYOUT_PRESET
+  // 登录前无法使用受保护的布局接口，先恢复最近一次公开外观目录，保证自定义预设首屏可用。
+  restoreRuntimePresetCache()
+  activePresetKey.value = resolvePresetKey(preferredPresetKey)
   applyPreset(activePresetKey.value)
   // 白天/夜间切换（useTheme.toggleTheme 改 isDark）时，按当前预设重刷对应模式 token
   watch(isDark, () => applyPreset(activePresetKey.value))
 }
 
-export function setLayoutPreset(key: LayoutPresetKey) {
-  activePresetKey.value = getLayoutPreset(key).key
+/**
+ * 同一入口接收登录页公开外观配置和登录后完整预设列表。
+ * 登录页与系统页由此共享同一目录、同一强调色覆盖与同一首屏缓存。
+ */
+export function setRuntimePresetSources(definitions: RuntimePresetSource[]) {
+  installRuntimePresetSources(definitions, true)
+}
+
+export function setLayoutPreset(key: string) {
+  preferredPresetKey = key
+  activePresetKey.value = resolvePresetKey(key)
+  localStorage.setItem(STORAGE_KEY, activePresetKey.value)
+  applyPreset(activePresetKey.value)
+}
+
+/** 注入后端启用预设目录；当前只有一套也保留选择入口，新增项无需再改外观抽屉。 */
+export function setPresetCatalog(definitions: RuntimePresetDefinition[]) {
+  const byKey = new Map<string, RuntimePresetDefinition>()
+  for (const preset of definitions) {
+    if (preset.key) byKey.set(preset.key, preset)
+  }
+  const builtIn = LAYOUT_PRESETS[DEFAULT_LAYOUT_PRESET]
+  if (!byKey.has(DEFAULT_LAYOUT_PRESET)) {
+    byKey.set(DEFAULT_LAYOUT_PRESET, {
+      key: builtIn.key,
+      name: builtIn.name,
+      description: builtIn.description,
+    })
+  }
+  presetCatalog.value = [...byKey.values()]
+  activePresetKey.value = resolvePresetKey(preferredPresetKey)
   localStorage.setItem(STORAGE_KEY, activePresetKey.value)
   applyPreset(activePresetKey.value)
 }
 
 /** 注入后端预设覆盖并立即重刷当前预设外观（P11：预设编辑驱动运行时）。 */
-export function setPresetOverrides(map: Record<string, Record<string, string | number>>) {
+export function setPresetOverrides(map: Record<string, Record<string, RuntimePresetValue>>) {
   presetOverrides.value = map
   applyPreset(activePresetKey.value)
 }
 
 /** 取某预设某模式下「内置 + 后端覆盖」的有效 token（供预设管理页回显当前生效值）。 */
 export function effectivePresetTokens(key: string, mode: 'light' | 'dark'): StyleTokenConfig {
-  const preset = getLayoutPreset(key)
-  return mergeTokens(preset.tokens[mode], presetOverrides.value[preset.key] ?? {}, mode)
+  return getRuntimeLayoutPreset(key).tokens[mode]
 }
 
 const CFD_RE = /^componentFieldDefaults\.([^.]+)\.([^.]+)$/
@@ -212,7 +377,7 @@ const CFD_RE = /^componentFieldDefaults\.([^.]+)\.([^.]+)$/
  * 供 useLayoutConfig 把预设组件默认展开成各 slot 的 preset 层组件配置覆盖（P11）。
  */
 export function presetComponentDefaults(key: string): Record<string, Record<string, string | number | boolean>> {
-  const ov = presetOverrides.value[getLayoutPreset(key).key] ?? {}
+  const ov = presetOverrides.value[resolvePresetKey(key)] ?? {}
   const out: Record<string, Record<string, string | number | boolean>> = {}
   for (const [path, val] of Object.entries(ov)) {
     const m = CFD_RE.exec(path)
@@ -222,11 +387,11 @@ export function presetComponentDefaults(key: string): Record<string, Record<stri
 }
 
 export function useLayoutPreset() {
-  const activePreset = computed(() => getLayoutPreset(activePresetKey.value))
-  const options = computed(() => Object.values(LAYOUT_PRESETS).map((p) => ({
-    label: p.name,
-    value: p.key,
-    description: p.description,
+  const activePreset = computed(() => getRuntimeLayoutPreset(activePresetKey.value))
+  const options = computed(() => presetCatalog.value.map((preset) => ({
+    label: preset.name,
+    value: preset.key,
+    description: preset.description,
   })))
   return { activePresetKey, activePreset, themeRevision, options, setLayoutPreset }
 }

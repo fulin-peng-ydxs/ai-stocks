@@ -22,4 +22,9 @@ app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
 app.directive('permission', permission) // 全局 v-permission 按钮级权限指令（T15）
-app.mount('#app')
+
+// 首次导航（含公开路由判定、失效 token 清理和 /me 鉴权）完成前不挂载应用。
+// 否则刷新 /login 时，START_LOCATION 会被 App 误判为非 fullscreen，短暂渲染工作台壳。
+void router.isReady().then(() => {
+  app.mount('#app')
+})

@@ -48,7 +48,8 @@ export type RegionRole = 'action' | 'main' | 'overlay'
 /** 信息密度档位（L2 可调）。 */
 export type Density = 'compact' | 'standard' | 'comfortable'
 
-export type LayoutPresetKey = 'daylight' | 'nocturne' | 'balanced'
+/** 当前内置预设只保留 balanced；运行时还允许加载预设管理中启用的自定义 key。 */
+export type LayoutPresetKey = 'balanced'
 
 export interface StyleTokenConfig {
   primary: string
@@ -92,7 +93,7 @@ export type ThemeMode = 'light' | 'dark'
 export type PresetTokens = Record<ThemeMode, StyleTokenConfig>
 
 export interface LayoutPreset {
-  key: LayoutPresetKey
+  key: string
   name: string
   description: string
   tokens: PresetTokens
