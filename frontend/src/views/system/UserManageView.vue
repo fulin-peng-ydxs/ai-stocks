@@ -60,7 +60,7 @@ function tableBorder(slotId: string): boolean {
 
 // ── 角色/租户字典（用于列表展示映射 + 表单下拉）──
 const ROLE_LABEL_FALLBACK: Record<string, string> = {
-  system: '系统管理员', tenant_admin: '租户管理员', normal: '普通用户', paid: '付费会员',
+  system: '系统管理员', tenant_admin: '租户管理员', normal: '普通用户',
 }
 const assignableRoles = ref<AssignableRole[]>([])
 const { items: roleTypeDictItems, load: loadRoleTypeDictItems } = usePublicDictItems('role_type')
@@ -89,7 +89,6 @@ function orderedRoles(row: AdminUser): string[] {
 }
 function roleTagType(code: string): 'primary' | 'warning' | 'info' {
   if (code === 'system' || code === 'tenant_admin') return 'primary'
-  if (code === 'paid') return 'warning'
   return 'info'
 }
 function roleTagStyle(code: string) {
@@ -209,6 +208,9 @@ const form = ref<{
 
 const isEdit = computed(() => editing.value !== null)
 const editingSelf = computed(() => editing.value ? isSelfUser(editing.value) : false)
+const editingOwnSystemRole = computed(
+  () => editingSelf.value && !!editing.value?.roles?.includes('system'),
+)
 // 角色 id→code 反查（编辑回填时把用户 roles 的 code 映射回可分配角色 id）。
 const roleIdByCode = computed<Record<string, string>>(() => {
   const m: Record<string, string> = {}
@@ -225,11 +227,12 @@ function openCreate() {
   dialogVisible.value = true
 }
 function openEdit(row: AdminUser) {
+  if (isTenantAdminBlocked(row)) return
   editing.value = row
   form.value = {
     account: row.account,
     email: row.email ?? '',
-    // 仅回填仍在可分配集合内的角色（system 超管角色不可分配、不参与编辑）。
+    // 仅回填仍在当前操作者可分配集合内的角色，避免提交不可分配角色。
     roleIds: (row.roles || []).map((c) => roleIdByCode.value[c]).filter(Boolean),
     status: row.status,
     tenantId: row.tenant_id,
@@ -272,6 +275,7 @@ const resetTarget = ref<AdminUser | null>(null)
 const resetForm = ref<{ pwd: string; confirm: string }>({ pwd: '', confirm: '' })
 const resetting = ref(false)
 function openReset(row: AdminUser) {
+  if (isTenantAdminBlocked(row)) return
   resetTarget.value = row
   resetForm.value = { pwd: '', confirm: '' }
   resetVisible.value = true
@@ -303,6 +307,9 @@ async function changeStatus(row: AdminUser, status: string, verb: string) {
 function isSelfUser(row: AdminUser): boolean {
   return row.id === auth.user?.id
 }
+function isTenantAdminBlocked(row: AdminUser): boolean {
+  return !isSystem.value && !!row.roles?.includes('system')
+}
 async function removeUser(row: AdminUser) {
   try {
     await ElMessageBox.confirm(`确认删除用户「${row.account}」？该操作不可恢复。`, '删除用户',
@@ -314,18 +321,38 @@ async function removeUser(row: AdminUser) {
 }
 
 function userRowActions(row: AdminUser): AppRowAction[] {
-  const selfTitle = isSelfUser(row) ? '不能操作当前登录用户' : undefined
+  const tenantAdminBlocked = isTenantAdminBlocked(row)
+  const self = isSelfUser(row)
+  const blockedTitle = tenantAdminBlocked
+    ? '租户管理员不能操作系统管理员'
+    : self
+      ? '不能操作当前登录用户'
+      : undefined
   return [
-    { key: 'edit', label: '编辑', permission: 'user:update', onClick: () => openEdit(row) },
-    { key: 'reset', label: '重置密码', permission: 'user:reset-password', onClick: () => openReset(row) },
+    {
+      key: 'edit',
+      label: '编辑',
+      permission: 'user:update',
+      disabled: tenantAdminBlocked,
+      title: blockedTitle,
+      onClick: () => openEdit(row),
+    },
+    {
+      key: 'reset',
+      label: '重置密码',
+      permission: 'user:reset-password',
+      disabled: tenantAdminBlocked,
+      title: blockedTitle,
+      onClick: () => openReset(row),
+    },
     {
       key: 'disable',
       label: '禁用',
       type: 'danger',
       permission: 'user:disable',
       visible: row.status === 'active',
-      disabled: isSelfUser(row),
-      title: selfTitle,
+      disabled: self || tenantAdminBlocked,
+      title: blockedTitle,
       onClick: () => changeStatus(row, 'disabled', '禁用'),
     },
     {
@@ -334,6 +361,8 @@ function userRowActions(row: AdminUser): AppRowAction[] {
       type: 'success',
       permission: 'user:disable',
       visible: row.status === 'disabled',
+      disabled: tenantAdminBlocked,
+      title: blockedTitle,
       onClick: () => changeStatus(row, 'active', '启用'),
     },
     {
@@ -342,6 +371,8 @@ function userRowActions(row: AdminUser): AppRowAction[] {
       type: 'success',
       permission: 'user:disable',
       visible: row.status === 'locked',
+      disabled: tenantAdminBlocked,
+      title: blockedTitle,
       onClick: () => changeStatus(row, 'active', '解锁'),
     },
     {
@@ -349,8 +380,8 @@ function userRowActions(row: AdminUser): AppRowAction[] {
       label: '删除',
       type: 'danger',
       permission: 'user:delete',
-      disabled: isSelfUser(row),
-      title: selfTitle,
+      disabled: self || tenantAdminBlocked,
+      title: blockedTitle,
       placement: 'more',
       onClick: () => removeUser(row),
     },
@@ -377,7 +408,8 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             用户管理
             <HelpTip title="用户管理说明" :width="420">
               系统管理员可跨租户查看与管理；租户管理员仅限本租户。<br /><br />
-              一个用户可挂<b>多个角色</b>，权限取并集；租户管理员只能分配系统内置角色。<br /><br />
+              一个用户可挂<b>多个角色</b>，权限取并集；系统管理员可任命新的系统管理员，租户管理员只能分配租户级系统内置角色。<br /><br />
+              租户管理员可以看到本租户的系统管理员，但不能编辑、重置密码、启停或删除。<br /><br />
               <b>禁用 / 锁定 / 重置密码</b>保存后，该用户下次校验即失效，需重新登录。
             </HelpTip>
           </h2>
@@ -499,7 +531,13 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           <el-form-item label="角色">
             <el-select v-model="form.roleIds" multiple placeholder="可多选，权限取并集"
                        style="width: 100%">
-              <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.id" />
+              <el-option
+                v-for="r in assignableRoles"
+                :key="r.id"
+                :label="r.name"
+                :value="r.id"
+                :disabled="editingOwnSystemRole && r.code === 'system'"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="租户">

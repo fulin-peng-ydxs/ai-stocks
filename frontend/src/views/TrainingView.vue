@@ -359,7 +359,7 @@ onBeforeUnmount(detachKeyboard)
     <div class="page-head">
         <div>
           <h2 class="title-row">
-            🎮 盘感训练
+            盘感训练
             <HelpTip title="盘感训练是什么？" :width="440">
               <p><b>针对个股的买卖手感训练</b>：系统在你指定的历史区间里随机抽一只个股、随机一个起点，<b>盲测</b>（隐藏股名/代码/真实日期）下逐日揭示 K 线，你负责买卖。</p>
               <p style="margin:6px 0 2px"><b>买入当日按收盘价成交（T+0）</b>，<b>卖出次日开盘价成交（T+1）</b>；套用收盘/开盘涨跌停买不到、跌停卖不出、停牌顺延等真实约束；可选计入交易成本。</p>
@@ -520,7 +520,7 @@ onBeforeUnmount(detachKeyboard)
     <div class="page-head">
         <div>
           <h2 class="title-row">
-            🎮 盘感训练 · 进行中
+            盘感训练 · 进行中
             <HelpTip title="训练规则" :width="380">
               <p><b>盲测</b>：隐藏个股身份与真实日期，横轴用相对日（D±n）。</p>
               <p style="margin:6px 0 0"><b>买 T+0</b>：买入当日按收盘价即时成交（收盘封涨停买不到）。<b>卖 T+1</b>：卖出登记后次日开盘成交（开盘跌停卖不出、停牌顺延）。窗口末日仍持仓将按收盘价强制清算。</p>

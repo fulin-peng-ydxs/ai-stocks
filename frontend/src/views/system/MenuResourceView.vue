@@ -5,11 +5,13 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import IconPicker from '@/components/IconPicker.vue'
 import MenuIcon from '@/components/MenuIcon.vue'
+import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -140,6 +142,13 @@ function loadForm() {
 }
 function onFormChange() {
   formDirty.value = formFingerprint(form.value) !== originalForm
+}
+function onParentChange(value: string) {
+  form.value.parentId = value || null
+  onFormChange()
+}
+function onCreateParentChange(value: string) {
+  menuCreateForm.value.parentId = value || null
 }
 
 const resources = ref<Resource[]>([])
@@ -364,7 +373,7 @@ function resourceRowActions(r: Resource): AppRowAction[] {
     },
     {
       key: 'delete',
-      label: '删',
+      label: '删除',
       type: 'danger',
       permission: 'resource:delete',
       disabled: r.is_builtin,
@@ -407,16 +416,15 @@ onMounted(() => { loadTree() })
             <span>菜单树</span>
             <span class="mini">可拖拽排序</span>
             <div class="mr-head-spacer" />
-            <el-button
+            <AppIconButton
               v-permission="'menu:create'"
-              size="small"
-              text
+              label="新增根节点"
+              size="sm"
               class="mr-root-add"
-              title="新增根节点"
               @click="openCreateRoot"
             >
-              +
-            </el-button>
+              <Plus />
+            </AppIconButton>
           </div>
           <div class="mr-col-body" v-loading="treeLoading">
             <AppStateBlock
@@ -446,21 +454,19 @@ onMounted(() => { loadTree() })
                 <span class="mr-tnode">
                   <MenuIcon v-if="data.icon" :name="data.icon" class="mr-ticon" />
                   <span class="mr-tlabel">{{ data.title }}</span>
-                  <el-tag size="small" effect="plain" :type="data.type === 'group' ? 'info' : 'primary'" class="mr-ttag">
-                    {{ data.type === 'group' ? '分组' : '菜单' }}
+                  <el-tag v-if="!data.is_builtin" size="small" effect="plain" type="info" class="mr-ttag">
+                    自定义
                   </el-tag>
-                  <el-tag v-if="data.visible === 'system'" size="small" effect="plain" type="warning" class="mr-ttag">系统</el-tag>
-                  <el-button
+                  <AppIconButton
                     v-if="data.type === 'group'"
                     v-permission="'menu:create'"
+                    label="新增子节点"
                     class="mr-node-add"
-                    size="small"
-                    text
-                    title="新增子节点"
+                    size="sm"
                     @click.stop="openCreateChild(data)"
                   >
-                    +
-                  </el-button>
+                    <Plus />
+                  </AppIconButton>
                 </span>
               </template>
             </el-tree>
@@ -475,11 +481,11 @@ onMounted(() => { loadTree() })
               <div class="mr-detail-title">
                 <div class="mname">
                   <MenuIcon v-if="activeMenu.icon" :name="activeMenu.icon" class="mr-ticon" />
+                  <SystemBuiltinTag v-if="activeMenu.is_builtin" />
                   {{ activeMenu.title }}
                 </div>
                 <div class="mmeta">
                   标识 {{ activeMenu.code }}
-                  <span v-if="activeMenu.is_builtin" class="builtin-note"> · 系统内置菜单（对应已发布页面，不可删除）</span>
                 </div>
               </div>
               <div class="page-head-actions">
@@ -502,12 +508,17 @@ onMounted(() => { loadTree() })
                     </el-select>
                   </div>
                   <div class="mr-field"><label>上级</label>
-                    <el-select v-model="form.parentId" size="small" :disabled="!canMenuUpdate" @change="onFormChange">
+                    <el-select
+                      :model-value="form.parentId ?? ''"
+                      size="small"
+                      :disabled="!canMenuUpdate"
+                      @change="onParentChange"
+                    >
                       <el-option
                         v-for="opt in parentOptions"
                         :key="opt.id ?? '__root__'"
                         :label="opt.title"
-                        :value="opt.id"
+                        :value="opt.id ?? ''"
                         :disabled="opt.disabled"
                       />
                     </el-select>
@@ -540,7 +551,7 @@ onMounted(() => { loadTree() })
                     <HelpTip title="功能点说明" :width="360">
                       功能码全局唯一、稳定不可复用（与后端接口权限码对账）；<br />
                       「接口」类绑定后端接口路径，「按钮」类为前端动作；<br />
-                      系统内置功能点不可改不可删；删除被角色引用的功能点会同时解除授权。
+                      系统内置功能点不可编辑、不可删除；删除被角色引用的功能点会同时解除授权。
                     </HelpTip>
                   </h4>
                   <el-button v-permission="'resource:create'" size="small" :disabled="editingId === NEW_ROW"
@@ -581,13 +592,15 @@ onMounted(() => { loadTree() })
                         </tr>
                         <!-- 展示态 -->
                         <tr v-else>
-                          <td class="mono">{{ r.code }}</td>
+                          <td class="mr-code-cell">
+                            <SystemBuiltinTag v-if="r.is_builtin" />
+                            <span class="mono">{{ r.code }}</span>
+                          </td>
                           <td>{{ r.name }}</td>
                           <td><el-tag size="small" effect="plain" :type="r.type === 'api' ? 'success' : 'warning'">{{ r.type === 'api' ? '接口' : '按钮' }}</el-tag></td>
                           <td class="mono" :class="{ dim: !r.api_path }">{{ bindingText(r) }}</td>
                           <td>
                             <AppRowActions :actions="resourceRowActions(r)" :inline-limit="1" />
-                            <span v-if="r.is_builtin" class="builtin-tag">系统内置</span>
                           </td>
                         </tr>
                       </template>
@@ -650,12 +663,16 @@ onMounted(() => { loadTree() })
       <el-dialog v-model="menuDialog" title="新增菜单节点" width="480px">
         <el-form label-width="72px">
           <el-form-item label="上级">
-            <el-select v-model="menuCreateForm.parentId" filterable>
+            <el-select
+              :model-value="menuCreateForm.parentId ?? ''"
+              filterable
+              @change="onCreateParentChange"
+            >
               <el-option
                 v-for="opt in createParentOptions"
                 :key="opt.id ?? '__root__'"
                 :label="opt.title"
-                :value="opt.id"
+                :value="opt.id ?? ''"
               />
             </el-select>
           </el-form-item>
@@ -715,13 +732,7 @@ onMounted(() => { loadTree() })
 .mr-col-head .mini { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-regular); }
 .mr-head-spacer { flex: 1; }
 .mr-root-add {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  padding: 0;
-  font-size: var(--app-font-size-page-title);
-  line-height: var(--app-line-height-solid);
-  font-weight: var(--app-font-weight-strong);
+  color: var(--el-text-color-regular);
 }
 .mr-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px; }
 .mr-tnode { display: inline-flex; align-items: center; gap: var(--app-space-2); min-width: 0; width: 100%; }
@@ -730,13 +741,6 @@ onMounted(() => { loadTree() })
 .mr-ttag { transform: scale(0.9); flex: none; }
 .mr-node-add {
   margin-left: auto;
-  min-width: 28px;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  font-size: var(--app-font-size-page-title);
-  line-height: var(--app-line-height-solid);
-  font-weight: var(--app-font-weight-strong);
   opacity: 0;
 }
 .mr-tnode:hover .mr-node-add {
@@ -746,7 +750,6 @@ onMounted(() => { loadTree() })
   display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
 .mr-detail-title .mname { font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-strong); display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
 .mr-detail-title .mmeta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 2px; }
-.builtin-note { color: var(--el-color-warning); }
 .mr-section { padding: 14px 16px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .mr-section h4 { margin: 0 0 12px; font-size: var(--app-font-size-table); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-section);
   display: inline-flex; align-items: center; }
@@ -776,7 +779,7 @@ onMounted(() => { loadTree() })
 }
 .mr-edit-row td { background: var(--el-fill-color-lighter); }
 .mr-bind { display: flex; gap: var(--app-space-control-gap); }
-.builtin-tag { font-size: var(--app-font-size-micro); color: var(--el-text-color-secondary); margin-left: 4px; }
+.mr-code-cell { display: flex; align-items: center; gap: var(--app-space-2); white-space: nowrap; }
 .mr-detail-foot { border-top: 1px solid var(--el-border-color-lighter); padding: 12px 16px;
   display: flex; align-items: center; justify-content: space-between; }
 .dirty { font-size: var(--app-font-size-caption); color: var(--el-color-warning); }

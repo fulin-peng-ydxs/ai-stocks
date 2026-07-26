@@ -7,7 +7,7 @@ from threading import Event, Thread
 
 import pytest
 
-from backend.auth.constants import ROLE_NORMAL, ROLE_PAID
+from backend.auth.constants import ROLE_NORMAL, ROLE_TENANT_ADMIN
 from backend.common.exceptions import StorageError
 from backend.devtools.e2e_test_users import _lock_temporary_user, destroy_temporary_user
 from backend.devtools.rbac_test_users import (
@@ -41,11 +41,11 @@ def test_ensure_users_reactivates_soft_deleted_account_in_postgres(pg) -> None:
             "INSERT INTO sys_user "
             "(id,tenant_id,account,password_hash,role_code,perm_ver,status,deleted_at) "
             "VALUES (%s,%s,%s,%s,%s,7,'disabled',%s)",
-            [user_id, tenant_id, account, "old-hash", ROLE_PAID, datetime.now()],
+            [user_id, tenant_id, account, "old-hash", ROLE_TENANT_ADMIN, datetime.now()],
         )
         pg.execute(
             "INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)",
-            [user_id, ROLE_PAID],
+            [user_id, ROLE_TENANT_ADMIN],
         )
 
         with pg.transaction() as conn, conn.cursor() as cur:

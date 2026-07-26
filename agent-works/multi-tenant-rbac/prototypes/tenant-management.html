@@ -103,7 +103,7 @@
       <table>
         <thead><tr><th style="width:180px">租户名</th><th style="width:140px">租户 ID</th><th style="width:92px">状态</th><th style="width:150px">租户管理员</th><th style="width:80px">用户数</th><th style="width:140px">创建时间</th><th style="width:230px">操作</th></tr></thead>
         <tbody id="tbody">
-          <tr data-builtin="1"><td>默认租户 <span class="tag tag-info">内置</span></td><td class="mono">default</td><td class="st"><span class="tag tag-success">启用</span></td><td>admin</td><td>3</td><td>2026-05-01 10:00</td><td class="ops"></td></tr>
+          <tr data-builtin="1"><td>默认租户 <span class="tag tag-info">系统内置</span></td><td class="mono">default</td><td class="st"><span class="tag tag-success">启用</span></td><td>admin</td><td>3</td><td>2026-05-01 10:00</td><td class="ops"></td></tr>
           <tr><td>企业 A</td><td class="mono">tt_a1b2c3</td><td class="st"><span class="tag tag-success">启用</span></td><td>tenant_a_admin</td><td>12</td><td>2026-06-10 14:22</td><td class="ops"></td></tr>
           <tr><td>企业 B</td><td class="mono">tt_d4e5f6</td><td class="st"><span class="tag tag-danger">已停用</span></td><td>b_admin</td><td>5</td><td>2026-06-18 09:40</td><td class="ops"></td></tr>
         </tbody>
@@ -137,7 +137,7 @@
     document.querySelectorAll('#tbody tr').forEach(function(tr){
       var st=tr.querySelector('.st').textContent.trim(), builtin=tr.dataset.builtin==='1';
       var ops='<span class="link" onclick="openDialog(\'编辑租户\')">编辑</span><span class="link" onclick="toast(\'跳用户管理并按该租户过滤（原型示意）\')">查看用户</span>';
-      if(st==='启用') ops+= builtin? '<span class="link muted" title="内置租户不可删">删除</span>' : '<span class="link danger" onclick="toggleStatus(this,\'已停用\')">停用</span>';
+      if(st==='启用') ops+= builtin? '<span class="link muted" title="系统内置租户不可删除">删除</span>' : '<span class="link danger" onclick="toggleStatus(this,\'已停用\')">停用</span>';
       else ops+='<span class="link" onclick="toggleStatus(this,\'启用\')">启用</span>';
       tr.querySelector('.ops').innerHTML=ops;
     });

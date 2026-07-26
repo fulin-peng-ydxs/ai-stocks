@@ -14,7 +14,7 @@
 - **本次不做**（明确边界，防蔓延）：
   - **存量 13 业务路由全量接 resource code → 阶段四（R21）**；本阶段只建机制 + 用在新管理接口。
   - 审计（R17）/ 数据字典（R18）/ 配置拆父子菜单（R19）/ 注册防滥用开关页（R16）→ **阶段五**。
-  - 租户管理员**自建角色**（R11 遗留 5）→ 仅分配系统预设角色；付费角色**创建入口** → 仅预留 `paid` 类型。
+  - 租户管理员**自建角色**（R11 遗留 5）→ 仅分配系统预设角色。
   - 用户/租户表**批量操作**（R10/R14 未提）→ 去勾选列、不做批量工具条。
 - **计划输出目录**：`agent-works/multi-tenant-rbac/stage3-rbac-tenant/`。
 
@@ -46,7 +46,7 @@
 - 角色权限树"按分组批量勾选"快捷（原型已示意分组勾选，全选/清空已在必做）。
 
 ### 3.3 暂不实现
-- 存量 13 路由全量 resource code（阶段四 R21）；审计/字典/配置拆页/开关页（阶段五）；租管自建角色、付费角色入口、字段级变更对比、用户/租户批量操作。
+- 存量 13 路由全量 resource code（阶段四 R21）；审计/字典/配置拆页/开关页（阶段五）；租管自建角色、字段级变更对比、用户/租户批量操作。
 
 ## 4. 技术方案
 
@@ -64,7 +64,7 @@
 
 - **FK 删除策略取舍**：`sys_menu.parent_id` / `sys_resource.menu_id` / `sys_user_role.role_id` 用 **RESTRICT**（有子节点/被用户引用时 DB 兜底禁删，应用层先给"影响范围"提示）；`sys_role_menu`/`sys_role_resource` 对菜单/资源/角色删除用 **CASCADE**（授权关系随主体消亡自动清）。删除操作在**单事务**内：先查引用 → 提示或放行 → 删主体 + 级联 + bump 受影响用户（见 §4.2）。
 - **role_code 去留【已确认】**：`sys_user.role_code` **保留**为兼容/兜底列（seed admin=system、注册=tenant_admin 仍写它，阶段二读它的代码不破）；权限解析**以 sys_user_role 为准**。
-- **seed**（幂等 ON CONFLICT DO NOTHING）：内置 3 角色（system 全授权 + is_locked、tenant_admin、normal）+ paid（预留）；菜单树（按现 menuConfig + 新增「系统管理→权限管理」子组 4 叶子，emoji→EP 图标名映射）；各页功能点（精确码见 §4.3）；存量 sys_user 按 role_code 补 sys_user_role。
+- **seed**（幂等 ON CONFLICT DO NOTHING）：内置 3 角色（system 全授权 + is_locked、tenant_admin、normal）；菜单树（按现 menuConfig + 新增「系统管理→权限管理」子组 4 叶子，emoji→EP 图标名映射）；各页功能点（精确码见 §4.3）；存量 sys_user 按 role_code 补 sys_user_role。
 
 ### 4.2 权限解析与令牌【已确认：瘦令牌 + 服务端解析 + Redis 缓存 + 强制重登】
 - **JWT 瘦身**：claims 去 `role`，留 `sub/tenant_id/perm_ver/typ/jti`。
@@ -201,7 +201,7 @@
 - 依赖：无
 - 涉及文件/模块：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`(补 ROLE_PAID/ASSIGNABLE_PRESET_ROLES)、`stage3-rbac-tenant/rbac-schema.sql`(产出)、`backend/tests/test_rbac_schema.py`(产出)
 - 目标：建 6 张 RBAC 表（含 FK/索引，§4.1）+ seed 内置角色/菜单树/功能点 + 存量补 sys_user_role。
-- 操作：`init_pg_db` 幂等建 6 表（复合主键 + FK 删除策略 + 索引）；`seed_rbac`：4 内置角色(system/tenant_admin/normal/paid)、菜单树(menuConfig+权限管理子组、emoji→EP 图标名)、24 精确功能码、system 全授权+is_locked、tenant_admin=业务+用户管理+user:*、normal/paid=业务页、存量用户按 role_code 补 sys_user_role。
+- 操作：`init_pg_db` 幂等建 6 表（复合主键 + FK 删除策略 + 索引）；`seed_rbac`：3 内置角色(system/tenant_admin/normal)、菜单树(menuConfig+权限管理子组、emoji→EP 图标名)、24 精确功能码、system 全授权+is_locked、tenant_admin=业务+用户管理+user:*、normal=业务页、存量用户按 role_code 补 sys_user_role。
 - 产出：6 表 DDL + seed 逻辑 + `rbac-schema.sql` 留痕 + 10 个 T1 单测。
 - 影响范围：仅新增平台表；不动资产表/行情 DuckDB/`role_code`。
 - 边界与异常：幂等（IF NOT EXISTS + ON CONFLICT DO NOTHING）；默认授权仅角色首次无授权时写、不覆盖后续手工调整；FK RESTRICT/CASCADE 按 §4.1。
@@ -261,7 +261,7 @@
 - 依赖：T4
 - 涉及文件/模块：`backend/api/roles.py`(新)、`backend/services/role_admin_service.py`(**新增**，编排/守卫/失效，沿用 user_admin_service 分层，api 保持薄层)、`backend/storage/role_repository.py`(T5 只读部分之上扩 CRUD/授权/内置·成员·system-only 检测)、`backend/main.py`(注册 roles_router)、`backend/tests/test_rbac_roles.py`(产出，15 用例)
 - 目标：角色 CRUD + 授权（全选/清空/还原）+ 内置保护 + 授权 bump。
-- 操作：`GET/POST/PUT/DELETE /api/roles`、`GET/PUT /api/roles/{id}/perms`（写 role_menu/role_resource 单事务全删重插 + `bump_users_of_roles([id])`）——均挂 **require_system**；内置不可删、超管 is_locked 不可改/不可授、system-only 码拒绝授予、code 撞内置/重复拒。**另加 `GET /api/roles/assignable`（挂 `require_perm("user:list")`，非 require_system）**（Codex P1 + 二轮复核）：**按调用者角色分流**——① `ctx.is_system`：返回**除 system 超管外的全部可分配角色**（系统预设 tenant_admin/normal/paid **＋系统管理员自建的 custom 角色**），承接 R11「新建角色可被用户分配」；② tenant_admin：**仅系统预设可分配角色**（is_builtin 且 kind∈{tenant_admin,normal,paid}），**不含 system 超管、不含任何 custom**（自建角色仅 system 可分配）。供用户管理页角色下拉，闭合 R10/R11 分配链路。
+- 操作：`GET/POST/PUT/DELETE /api/roles`、`GET/PUT /api/roles/{id}/perms`（写 role_menu/role_resource 单事务全删重插 + `bump_users_of_roles([id])`）——均挂 **require_system**；内置不可删、超管 is_locked 不可改/不可授、system-only 码拒绝授予、code 撞内置/重复拒。**另加 `GET /api/roles/assignable`（挂 `require_perm("user:list")`，非 require_system）**：**按调用者角色分流**——① `ctx.is_system`：返回 system、tenant_admin、normal 和系统管理员自建的 custom 角色，支持系统管理员给其他用户授予系统管理员角色；② tenant_admin：仅返回 tenant_admin、normal，不含 system 和任何 custom。供用户管理页角色下拉，闭合 R10/R11 分配链路。
 - 产出：角色接口(含 assignable 只读 + get/set perms) + 仓库 CRUD/授权 + service 编排 + bump 联动。
 - 影响范围：新 router/service/repo；assignable 供 T5/T11 用户页消费；`GET /api/roles/{id}/perms` 供 T12 权限树回显。
 - 边界与异常：名/code 唯一（撞内置码亦拒）；删被 sys_user_role 引用角色——应用层先查 member_count 给友好提示（避免 FK RESTRICT 直接抛库错 500）；超管锁定名称/描述与授权均拒；system-only 码（归属 visible='system' 菜单的功能，如 role:*/menu:*/tenant:*）不可授非 system 角色；set_grants 前校验 menu/resource id 存在性（非法 id 直接 ValidationError 而非 FK 抛错）。

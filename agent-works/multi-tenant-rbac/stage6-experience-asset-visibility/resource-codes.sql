@@ -1,6 +1,6 @@
 -- 阶段六其他资产公开能力资源码与默认授权（幂等）
 -- 用途：新增筛选方案、买卖方案、回测记录 publish 权限码，并回填 tenant_admin 默认授权。
--- 默认口径：tenant publish 给 tenant_admin/system；public publish 仅 system。normal/paid 需显式授权。
+-- 默认口径：tenant publish 给 tenant_admin/system；public publish 仅 system。normal 需显式授权。
 
 INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin)
 VALUES
@@ -27,7 +27,7 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 DELETE FROM sys_role_resource
-WHERE role_id IN ('normal', 'paid')
+WHERE role_id = 'normal'
   AND resource_id IN (
     'screen-profile:publish-tenant',
     'trade-profile:publish-tenant',
@@ -51,7 +51,7 @@ WHERE EXISTS (
   SELECT 1
   FROM sys_user_role ur
   WHERE ur.user_id = u.id
-    AND ur.role_id IN ('tenant_admin', 'normal', 'paid')
+    AND ur.role_id IN ('tenant_admin', 'normal')
 );
 
 INSERT INTO app_config (key, value, updated_at)

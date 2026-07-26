@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 
 from backend.auth.constants import (
     ROLE_NORMAL,
-    ROLE_PAID,
     ROLE_TENANT_ADMIN,
     SHARED_RESOURCE_CODES,
 )
@@ -163,7 +162,6 @@ def test_data_settings_reset_route_reuses_manage_resource_code(client):
 def test_stage5_default_roles_me_menus_and_permissions(client, pg, users):
     tenant_admin = users(ROLE_TENANT_ADMIN)
     normal = users(ROLE_NORMAL)
-    paid = users(ROLE_PAID)
 
     tenant_admin_me = client.get(
         "/api/auth/me",
@@ -179,17 +177,19 @@ def test_stage5_default_roles_me_menus_and_permissions(client, pg, users):
     assert "dict:read" in ta_perms
     assert not {"dict:view", "dict:type-manage", "dict:item-manage"} & ta_perms
 
-    for user in (normal, paid):
-        resp = client.get("/api/auth/me", headers=_auth(pg, user["id"], user["tenant_id"]))
-        assert resp.status_code == 200
-        data = resp.json()["data"]
-        menus = _menu_indexes(data["menus"])
-        perms = set(data["permissions"])
-        assert "/system/audit" not in menus
-        assert "/system/dicts" not in menus
-        assert "audit:view" not in perms
-        assert "dict:read" in perms
-        assert not {"dict:view", "dict:type-manage", "dict:item-manage"} & perms
+    resp = client.get(
+        "/api/auth/me",
+        headers=_auth(pg, normal["id"], normal["tenant_id"]),
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    menus = _menu_indexes(data["menus"])
+    perms = set(data["permissions"])
+    assert "/system/audit" not in menus
+    assert "/system/dicts" not in menus
+    assert "audit:view" not in perms
+    assert "dict:read" in perms
+    assert not {"dict:view", "dict:type-manage", "dict:item-manage"} & perms
 
 
 def test_stage5_runtime_authorization_for_audit_and_dict(client, pg, users):

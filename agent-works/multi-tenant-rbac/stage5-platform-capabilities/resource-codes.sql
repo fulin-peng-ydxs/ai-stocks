@@ -16,7 +16,7 @@
 --   - perm_ver 自增不可有意义回退，只会要求用户重新登录，属于可接受副作用。
 --
 -- 关键口径：
---   - dict:read 是登录基线共享读，不写入 normal/paid/tenant_admin 的 role_resource。
+--   - dict:read 是登录基线共享读，不写入 normal/tenant_admin 的 role_resource。
 --   - dict:read 必须挂 visible='login' 的叶子菜单锚点 /board，不得挂 /system/dicts。
 --   - /system/dicts 为 system-only 管理页；非 system 角色不得获得字典管理权限。
 -- ============================================================================
@@ -98,4 +98,3 @@ BEGIN
 END $$;
 
 COMMIT;
-

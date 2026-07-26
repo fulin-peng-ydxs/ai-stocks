@@ -15,7 +15,7 @@
 
 - 多人各自拥有私有研究资产，按租户与用户隔离，互不可见。
 - 通过角色控制每个人能看哪些**菜单**、用哪些**功能**（按钮 + 接口）。
-- **租户**作为数据隔离与计费单元，为后续「付费角色」铺路。
+- **租户**作为数据隔离单元，承载用户、权限和资产归属。
 - 安全可控的 Web 登录，抵御暴力破解、越权、常见 Web 攻击与接口滥刷。
 - 新增**日志审计**与**数据字典**两项平台能力，并重构**配置管理**为父子菜单。
 
@@ -73,9 +73,8 @@
 | 角色 | 管理/数据范围 | 典型场景 |
 | --- | --- | --- |
 | **系统管理员（平台方）** | 跨租户全局：用户、角色、菜单定义、功能资源、租户、数据字典、日志审计、**全局行情采集/调度/技术指标/系统设置/布局配置** | 维护权限模型、平台后台离线采集全市场数据、管租户 |
-| **租户管理员** | **本租户内**：用户、为用户分配角色（仅限系统管理员预设角色）、查看本租户审计 | 拉人进租户、分配普通/付费角色 |
+| **租户管理员** | **本租户内**：用户、为用户分配租户级系统预设角色、查看本租户审计 | 拉人进租户、分配普通用户或租户管理员角色 |
 | **普通用户** | **仅自己的私有资产** + 被授权研究功能（行情/筛选/回测/训练 + 评分规则/买卖指标自配） | 建策略、跑回测、盘感训练、看行情 |
-| **付费角色（后续）** | 普通用户 + 套餐解锁的功能/配额 | 本期仅预留角色模型扩展位，不实现计费（R25） |
 
 权限边界关键点【已确认】：
 - 「数据管理」「任务调度」「技术指标」「系统设置」「布局配置」「菜单管理」「租户管理」「数据字典」**仅平台系统管理员可见**；普通用户/租户管理员菜单无此组。
@@ -126,10 +125,8 @@
 | 需求编号 | 需求项 | 不做原因 | 后续触发条件 |
 | --- | --- | --- | --- |
 | R25 | 第三方登录真实对接（手机/邮件/微信/QQ OAuth） | 本期只留入口（R6），对接工作量大、依赖外部资质 | 拿到各平台开发者资质 + 业务需要时 |
-| R26 | 付费角色计费与配额 | 本期仅在角色模型预留套餐/配额扩展位，不做交易与计费 | 商业化启动时单独立项 |
 | R27 | 高强度行情防爬（行为指纹/风控/验证码挑战体系） | 本期反扒收敛为接口限流 + 异常频次告警 + 审计 | 出现实际批量爬取行情时再升级 |
 
-> R26「预留扩展位」指：角色表预留 `role_type`（system/tenant_admin/normal/paid）与可空 `plan_code`/`quota` 字段，不实现其消费逻辑。
 >
 > R28「资产可见性与自助公开」指：用户资产（评分/筛选/买卖方案、回测等）在个人私有基础上增加可见性维度（private / tenant / public），读侧从「仅本人」放宽为「本人 ∪ 公开 [∪ 同租户]」，用户可自助把自己的方案公开到同租户或全体。阶段四 R28 已先落地**评分方案**：公开到租户由 `score-profile:publish-tenant` 控制，公开到全体由 `score-profile:publish-public` 控制；非 owner 公开方案只读，可复制为自己的 private；公开方案快照写方案 owner 槽；新用户可见平台内置 public 预设。阶段六已按同一模型扩展**筛选方案、买卖方案和回测记录**：方案类资产可复制为 viewer 的 private，跨租户 public 资产归属标签不暴露原始 owner_user_id；回测记录只读可见，选中历史记录会载入详情和参数；非 owner 公开回测记录提供“复用参数”入口，用于明确切换为 viewer 自己的重跑并记录复用审计，策略回测和评分验证/信号分析均写入复用审计，运行结果仍归当前执行者；发布公开回测记录前需校验其引用的筛选/评分/买卖方案对目标公开范围也可见，并把可公开依赖规范化为真实 owner 的 opaque ref，同时清理规范化后同签名的其他回测记录，避免公开结果可见但参数复用跑偏，并维持同条件历史唯一；公开回测历史列表批量读取 opaque ref 对应的方案名称/版本，避免逐行查询放大；`source_run_ref` 仅用于运行时复用审计，发布公开时从 params 清除，避免泄漏不可见来源 run 标识。公开市场、审批流、收藏/搜索/运营推荐仍不纳入。
 
@@ -214,7 +211,7 @@
 - **对现有功能的影响**：新增模块。
 
 ### R11 角色管理
-- **功能描述**：角色 CRUD + 为角色勾选菜单 + 功能点；内置三角色（系统管理员/租户管理员/普通用户）+ 付费角色类型预留。
+- **功能描述**：角色 CRUD + 为角色勾选菜单 + 功能点；内置系统管理员、租户管理员、普通用户三个角色，支持系统管理员创建自定义角色。
 - **操作流程**：角色列表 → 编辑 → 在菜单&功能树上勾选 → 保存 → 触发相关用户 perm_ver 自增。
 - **校验规则**：内置角色不可删除（可调整其权限范围需谨慎，系统管理员超管角色权限锁定）；角色名唯一。
 - **异常情况**：删除被用户引用的角色 → 阻止或要求先解绑。
@@ -314,7 +311,7 @@
 | --- | --- | --- |
 | `sys_tenant` | 租户 | id, name, status, admin_user_id, created_at |
 | `sys_user` | 用户 | id, tenant_id, account, email, password_hash, status(启用/禁用/锁定), created_at |
-| `sys_role` | 角色 | id, code, name, role_type(system/tenant_admin/normal/paid), plan_code?, quota?, builtin(bool) |
+| `sys_role` | 角色 | id, code, name, kind(system/tenant_admin/normal/custom), is_builtin, is_locked |
 | `sys_menu` | 菜单树 | id, parent_id, code, title, icon, route_path, sort, type(group/leaf), visible |
 | `sys_resource` | 功能点/资源 | id, menu_id, code(全局唯一), name, type(button/api), api_path? |
 | `sys_user_role` | 用户-角色 | user_id, role_id |
@@ -452,7 +449,7 @@
 - 页面类型：新增页面（系统管理 → 权限管理 → 角色管理，`/system/roles`）
 - 页面入口：侧边菜单「系统管理 → 权限管理 → 角色管理」（系统管理员；租户管理员本期仅分配不自建）
 - 原型文件：[prototypes/role-management.html](prototypes/role-management.html)（自包含静态 HTML，内置黑/白主题；master-detail 布局）。
-- 页面布局：master-detail——左「角色列表」（内置系统管理员[超管·权限锁定]/租户管理员/普通用户 + 付费类型预留 + 自建角色，选中态）；右「菜单&功能授权树」（`el-tree show-checkbox`，菜单为父、功能点[按钮/接口]为叶）+ 详情条（角色名/角色码/关联用户数、重命名、全选/清空）+ 底部脏标 [还原][保存并刷新权限]；顶部 [＋新建角色]。超管角色权限树禁用勾选。
+- 页面布局：master-detail——左侧为系统内置角色和自定义角色列表；右侧按菜单分组展示授权摘要，功能点默认收起、按需展开精细调整，底部固定 [还原][保存并刷新权限]。系统管理员角色权限锁定。
 - 数据来源：`/api/roles`、`/api/menus`、`/api/resources`
 - 权限与可见性：系统管理员可编辑；租户管理员本期仅查看/分配（遗留项 5）
 #### 7.5.1 功能点：角色 CRUD
@@ -689,7 +686,7 @@
 - 目标：把阶段四 A 的“平台公共榜单特例”收敛进通用可见评分方案模型。**达成**——`score_profile.visibility=private|tenant|public`；`GET /api/score-profiles` 与 `GET /api/board/profiles` 返回自己的、同租户公开、全体公开和平台内置预设；前端用 opaque `profile_ref` 定位真实 owner；非 owner 公开方案只读并可复制为自己的 private，复制目标已存在时拒绝覆盖；`POST /api/board/run` 按可见方案、日期、版本读取 fresh 快照，缺失或 stale 时由 `board:view` 触发受控物化，结果写方案 owner 的 `score_snapshot` 槽，物化按 owner/profile/version/date 加 PG advisory lock；`force=true` 才要求 `board:compute`。回测页和 `/board/compute` 同步透传/解析 `profile_ref`，可使用他人公开评分方案。
 - 配置管理拆页：`/system/config` 改为父菜单，`/system/config/score` 评分规则和 `/system/config/trade` 买卖指标为业务可授权子页，`/system/config/tech` 技术指标和 `/system/config/system` 系统设置仍 system-only；`/score-profiles` 仅兼容重定向到 `/system/config/score`，不作为菜单入口。评分方案公开范围由当前状态标签下拉设置，不再平铺“租户公开/全体公开”按钮。
 - **验收基线**：阶段四 B 开发中执行后端公开方案/榜单/RBAC 专项 **73 passed**；配置拆页后 RBAC seed 专项 **42 passed**；复审整改后后端阶段四关联专项 **60 passed**，前端 `npm run build` 通过，前端权限/布局相关测试 **155 passed**；后端 `/api/health=200`。
-- **Codex 复审整改（2026-07-04）**：已补阶段四内置角色存量库一次性 backfill 并 bump `perm_ver`；`score-profile:publish-tenant` 默认仅给 `tenant_admin/system`，normal/paid 需显式授权；公开榜单读穿透物化加入 PG advisory lock + meta upsert；回测页、回测服务、回测引擎和 `/board/compute` 扩散 `profile_ref` 契约；复制公开方案禁止覆盖当前用户已有同 id 方案。
+- **Codex 复审整改（2026-07-04）**：已补阶段四内置角色存量库一次性 backfill 并 bump `perm_ver`；`score-profile:publish-tenant` 默认仅给 `tenant_admin/system`，normal 需显式授权；公开榜单读穿透物化加入 PG advisory lock + meta upsert；回测页、回测服务、回测引擎和 `/board/compute` 扩散 `profile_ref` 契约；复制公开方案禁止覆盖当前用户已有同 id 方案。
 - **开发产物索引**（相对 `agent-works/multi-tenant-rbac/`）：计划和实施记录 [stage4-public-profile-visibility/plan.md](stage4-public-profile-visibility/plan.md)；评分方案 DDL/兼容迁移 SQL [stage4-public-profile-visibility/score-profile-visibility.sql](stage4-public-profile-visibility/score-profile-visibility.sql)；配置拆页和资源码回填 SQL [stage4-public-profile-visibility/resource-codes.sql](stage4-public-profile-visibility/resource-codes.sql)。核心实现：`backend/scoring/score_profile.py`、`backend/scoring/snapshot.py`、`backend/api/score_profiles.py`、`backend/api/board.py`、`backend/services/backtest_service.py`、`backend/backtest/engine.py`、`backend/storage/pg_ddl.py`、`frontend/src/views/BoardView.vue`、`frontend/src/views/BacktestView.vue`、`frontend/src/views/ConfigView.vue`、`frontend/src/router/index.ts`。测试：`backend/tests/test_score_profile_visibility_api.py`、`backend/tests/test_score_profile.py`、`backend/tests/test_stage4_board.py`、`backend/tests/test_backtest.py`、`backend/tests/test_rbac_{schema,menus,me}.py`。
 - **仍未覆盖**：筛选方案、买卖方案、回测记录等其他资产的公开能力；公开审批流、公开市场、收藏/搜索/运营推荐；审计/数据字典/注册防滥用开关页。
 

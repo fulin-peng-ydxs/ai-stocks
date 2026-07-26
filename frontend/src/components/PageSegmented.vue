@@ -39,23 +39,31 @@ function optionTestId(value: OptionValue): string | undefined {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  gap: var(--app-space-control-gap);
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--page-settings-section-border);
+  border-radius: 12px;
+  background: var(--page-settings-seg-bg);
 }
 .seg-btn {
   min-height: 38px;
   padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--page-settings-seg-bg);
+  border-radius: 8px;
+  background: transparent;
   color: var(--page-settings-text-subtle);
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
   cursor: pointer;
-  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-.seg-btn:hover {
+.seg-btn:hover:not(.active) {
   background: var(--page-settings-seg-hover-bg);
   color: var(--page-settings-text);
+}
+.seg-btn:focus-visible {
+  outline: 2px solid var(--page-settings-accent);
+  outline-offset: -2px;
 }
 .seg-btn.active {
   background: var(--page-settings-seg-active-bg);

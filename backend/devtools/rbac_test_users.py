@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 
-from backend.auth.constants import ROLE_NORMAL, ROLE_PAID, ROLE_SYSTEM, ROLE_TENANT_ADMIN
+from backend.auth.constants import ROLE_NORMAL, ROLE_SYSTEM, ROLE_TENANT_ADMIN
 from backend.auth.perm_resolver import clear_perms_cache
 from backend.auth.security import check_strength, hash_password
 from backend.config import get_settings
@@ -80,8 +80,6 @@ DEBUG_USERS: tuple[UserSpec, ...] = (
              (ROLE_TENANT_ADMIN,), "租户管理员调试。"),
     UserSpec("debug_normal", "debug_normal", DEBUG_TENANT_ID, ROLE_NORMAL,
              (ROLE_NORMAL,), "普通默认业务用户。"),
-    UserSpec("debug_paid", "debug_paid", DEBUG_TENANT_ID, ROLE_PAID,
-             (ROLE_PAID,), "付费角色默认授权验证。"),
     UserSpec("debug_board_only", "debug_board_only", DEBUG_TENANT_ID, ROLE_NORMAL,
              ("debug_role_board_only",), "每日榜单最小权限。"),
     UserSpec("debug_stocks_only", "debug_stocks_only", DEBUG_TENANT_ID, ROLE_NORMAL,

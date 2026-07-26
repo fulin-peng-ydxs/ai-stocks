@@ -5,8 +5,9 @@ api/users.py 只做参数校验与响应包装。
 
 隔离与守卫（R9 + 阶段验收铁律）：
 - **域过滤**：system 全局（可指定租户）；tenant_admin 仅限本租户，跨租户目标视为不存在(404)。
-- **可分配角色**：只能分配 RoleRepository.assignable(调用者)——防 tenant_admin 越权授 system/自建角色。
-- **自身保护**：不能停用/删除自己。
+- **可分配角色**：系统管理员可分配全部角色；租户管理员只能分配租户级系统预设角色。
+- **系统管理员保护**：租户管理员不能编辑、启停、重置密码或删除拥有 system 角色的用户。
+- **自身保护**：不能停用/删除自己，系统管理员不能移除自己的 system 角色。
 - **失效即时生效（Codex 五轮 P1，原子化）**：改角色/停用/重置密码 → **业务写入(conn) + `bump_perm_ver`
   在同一 PG 事务原子提交** → 提交后 `clear_perms_cache` best-effort。停用/删除者另由 `claims_from_bearer`
   每请求实时校验 status/存在性即时拒绝（不依赖 Redis）。删除无需 bump（get_by_id→None 即拒）。
@@ -15,7 +16,7 @@ api/users.py 只做参数校验与响应包装。
 from __future__ import annotations
 
 from backend.auth import perm_resolver
-from backend.auth.constants import ROLE_TENANT_ADMIN
+from backend.auth.constants import ROLE_SYSTEM, ROLE_TENANT_ADMIN
 from backend.auth.context import AuthContext
 from backend.auth.security import check_strength, hash_password
 from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationError
@@ -79,6 +80,8 @@ class UserAdminService:
         self._check_status(status)
         if user_id == ctx.user_id and status != target["status"]:
             raise ValidationError("不能变更自己的账号状态")
+        if user_id == ctx.user_id and ROLE_SYSTEM in target["roles"] and ROLE_SYSTEM not in role_ids:
+            raise ValidationError("不能移除自己的系统管理员角色")
         role_code = self._validate_roles(ctx, role_ids)
 
         # 业务写入 + perm_ver 自增**同事务原子提交**（Codex 五轮 P1）→ 提交后 best-effort 清缓存。
@@ -148,16 +151,18 @@ class UserAdminService:
         return tenant_id or ctx.tenant_id
 
     def _load_in_scope(self, ctx: AuthContext, user_id: str) -> dict:
-        """取目标用户并做域校验；tenant_admin 跨租户目标一律视为不存在(404)，不泄露存在性。"""
+        """取目标用户并做域校验，再保护系统管理员不被租户管理员操作。"""
         target = self.users.get_admin_view(user_id)
         if target is None:
             raise NotFoundError("用户不存在")
         if not ctx.is_system and target["tenant_id"] != ctx.tenant_id:
             raise NotFoundError("用户不存在")
+        if not ctx.is_system and ROLE_SYSTEM in target["roles"]:
+            raise ForbiddenError("租户管理员不能操作系统管理员")
         return target
 
     def _validate_roles(self, ctx: AuthContext, role_ids: list[str]) -> str:
-        """校验角色非空、存在、均在调用者可分配集合内；返回兼容 role_code（首选 tenant_admin）。"""
+        """校验角色非空且可分配；按 system→tenant_admin→其它生成兼容 role_code。"""
         role_ids = list(dict.fromkeys(role_ids or []))
         if not role_ids:
             raise ValidationError("请至少选择一个角色")
@@ -168,6 +173,8 @@ class UserAdminService:
         if not set(role_ids) <= allowed:
             raise ForbiddenError("包含当前身份不可分配的角色")
         codes = [r["code"] for r in found]
+        if ROLE_SYSTEM in codes:
+            return ROLE_SYSTEM
         return ROLE_TENANT_ADMIN if ROLE_TENANT_ADMIN in codes else codes[0]
 
     def _ensure_tenant_writable(self, tenant_id: str) -> None:

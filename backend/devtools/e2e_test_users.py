@@ -11,7 +11,7 @@ import json
 import secrets
 import uuid
 
-from backend.auth.constants import ROLE_NORMAL, ROLE_PAID
+from backend.auth.constants import ROLE_NORMAL
 from backend.auth.perm_resolver import clear_perms_cache
 from backend.auth.security import hash_password
 from backend.devtools.environment_guard import require_e2e_write_enabled
@@ -26,7 +26,7 @@ from backend.storage.pg_client import PostgresClient, get_pg_client
 from backend.storage.pg_ddl import _ASSET_TABLES
 from backend.storage.pg_identity import pg_fingerprint
 
-_ALLOWED_ROLES = {ROLE_NORMAL, ROLE_PAID}
+_ALLOWED_ROLES = {ROLE_NORMAL}
 
 
 def _assert_pg_target(pg: PostgresClient, expected_pg_fingerprint: str) -> None:

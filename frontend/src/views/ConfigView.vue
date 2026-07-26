@@ -30,6 +30,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
+import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -346,7 +347,7 @@ function indicatorDefRowActions(row: IndicatorDef): AppRowAction[] {
   return [
     {
       key: 'delete',
-      label: '删',
+      label: '删除',
       type: 'danger',
       permission: 'indicator:def-manage',
       onClick: () => removeDef(row),
@@ -516,7 +517,7 @@ function scoreItemRowActions(idx: number): AppRowAction[] {
   return [
     {
       key: 'delete',
-      label: '删',
+      label: '删除',
       type: 'danger',
       disabled: profileReadonly.value,
       onClick: () => removeItem(idx),
@@ -787,7 +788,7 @@ function tradeCondRowActions(side: 'buy' | 'sell', i: number): AppRowAction[] {
   return [
     {
       key: 'delete',
-      label: '删',
+      label: '删除',
       type: 'danger',
       disabled: tReadonly.value,
       onClick: () => removeCond(side, i),
@@ -1291,7 +1292,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div class="pane-fill tech-pane">
         <div class="tech-head">
           <p class="hint" style="margin: 0">
-            技术指标定义（动态实时计算,无指标值表）。系统内置不可删仅可启停;自定义=一段带参数的表达式,
+            技术指标定义（动态实时计算,无指标值表）。系统内置不可删除，仅可启停；自定义=一段带参数的表达式，
             供评分/筛选/买卖引用。表达式函数:MA/HHV/LLV/REF/COUNT/SUM/ABS,变量:C/O/H/L/V/TURN。
             分类可多选/自定义命名（直接输入新名回车即可）。
           </p>
@@ -1328,9 +1329,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           <el-table-column prop="typeLabel" label="类型" width="74" sortable="custom" />
           <el-table-column prop="srcLabel" label="来源" width="88" sortable="custom">
             <template #default="{ row }">
-              <el-tag :type="row.is_builtin ? 'info' : 'warning'" size="small" effect="plain">
-                {{ row.srcLabel }}
-              </el-tag>
+              <SystemBuiltinTag v-if="row.is_builtin" />
+              <el-tag v-else type="warning" size="small" effect="plain">自定义</el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="hasParams" label="有无参数" width="100" sortable="custom">

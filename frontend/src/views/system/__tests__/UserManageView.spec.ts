@@ -104,10 +104,10 @@ function mockHappyApis() {
       account: 'debug_system',
       email: 'debug@example.com',
       role_code: 'system',
-      roles: ['custom_reviewer', 'paid', 'system'],
+      roles: ['custom_reviewer', 'normal', 'system'],
       role_names: {
         custom_reviewer: '复核员',
-        paid: '付费用户',
+        normal: '普通用户',
         system: '系统管理员',
       },
       status: 'locked',
@@ -119,7 +119,7 @@ function mockHappyApis() {
   })
   ;(userApi.listAssignableRoles as ReturnType<typeof vi.fn>).mockResolvedValue([
     { id: 'system', code: 'system', name: '系统管理员', kind: 'system', is_builtin: true, is_locked: true },
-    { id: 'paid', code: 'paid', name: '付费用户', kind: 'paid', is_builtin: true, is_locked: false },
+    { id: 'normal', code: 'normal', name: '普通用户', kind: 'normal', is_builtin: true, is_locked: false },
   ])
   ;(tenantApi.listTenants as ReturnType<typeof vi.fn>).mockResolvedValue({
     items: [{ id: 'default', name: '默认租户', status: 'active' }],
@@ -132,7 +132,7 @@ function mockHappyApis() {
       version: 'v1',
       items: [
         { id: 'r1', type_code: 'role_type', code: 'system', label: '系统管理员', color: '#F56C6C', enabled: true, sort: 10 },
-        { id: 'r2', type_code: 'role_type', code: 'paid', label: '付费用户', color: '#E6A23C', enabled: true, sort: 40 },
+        { id: 'r2', type_code: 'role_type', code: 'normal', label: '普通用户', color: '#67C23A', enabled: true, sort: 30 },
       ],
     })
     .mockResolvedValueOnce({
@@ -145,11 +145,11 @@ function mockHappyApis() {
     })
 }
 
-async function mountView(): Promise<VueWrapper> {
+async function mountView(role: 'system' | 'tenant_admin' = 'system'): Promise<VueWrapper> {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
-  auth.role = 'system'
+  auth.role = role
   auth.permissions = [
     'user:list',
     'user:create',
@@ -190,7 +190,7 @@ describe('UserManageView 字典颜色', () => {
     expect(dictApi.getPublicDictItems).toHaveBeenCalledWith('role_type')
     expect(dictApi.getPublicDictItems).toHaveBeenCalledWith('user_status')
     expect(wrapper.html()).toContain('--el-tag-text-color: #F56C6C')
-    expect(wrapper.html()).toContain('--el-tag-text-color: #E6A23C')
+    expect(wrapper.html()).toContain('--el-tag-text-color: #67C23A')
     expect(wrapper.text()).toContain('字典锁定')
     expect(wrapper.text()).not.toContain('已锁定')
   })
@@ -208,7 +208,7 @@ describe('UserManageView 字典颜色', () => {
   it('角色按字典顺序优先排列，并使用列表返回的自定义角色名称', async () => {
     const wrapper = await mountView()
     const labels = wrapper.findAll('.role-tag').map((tag) => tag.text())
-    expect(labels).toEqual(['系统管理员', '付费用户', '复核员'])
+    expect(labels).toEqual(['系统管理员', '普通用户', '复核员'])
     expect(wrapper.text()).not.toContain('custom_reviewer')
   })
 
@@ -218,5 +218,15 @@ describe('UserManageView 字典颜色', () => {
     expect(wrapper.text()).toContain('筛选与表单选项加载不完整')
     expect(wrapper.text()).toContain('roles failed')
     expect(wrapper.text()).toContain('debug_system')
+  })
+})
+
+describe('UserManageView 系统管理员保护', () => {
+  it('租户管理员不能操作系统管理员用户', async () => {
+    const wrapper = await mountView('tenant_admin')
+    const rowActions = wrapper.get('[data-testid="user-row-actions-debug_system"]')
+    const buttons = rowActions.findAll('button')
+    expect(buttons.map((button) => button.text())).toEqual(['编辑', '重置密码', '解锁', '更多'])
+    expect(buttons.slice(0, 3).every((button) => button.attributes('disabled') !== undefined)).toBe(true)
   })
 })

@@ -105,7 +105,6 @@ INSERT INTO dict_item (id, type_code, code, label, sort) VALUES
   ('role_type:system', 'role_type', 'system', '系统管理员', 10),
   ('role_type:tenant_admin', 'role_type', 'tenant_admin', '租户管理员', 20),
   ('role_type:normal', 'role_type', 'normal', '普通用户', 30),
-  ('role_type:paid', 'role_type', 'paid', '付费用户', 40),
   ('user_status:active', 'user_status', 'active', '启用', 10),
   ('user_status:disabled', 'user_status', 'disabled', '停用', 20),
   ('user_status:locked', 'user_status', 'locked', '锁定', 30),

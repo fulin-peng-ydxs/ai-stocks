@@ -238,6 +238,7 @@ describe('ComponentAutoSettings', () => {
   it('排序字段候选超过三个时使用下拉，避免窄抽屉内分段按钮挤压', () => {
     const wrapper = mountSortDemo()
     expect(wrapper.find('.select-stub').exists()).toBe(true)
+    expect(wrapper.find('.ca-select').exists()).toBe(true)
     expect(wrapper.find('.segmented-stub').exists()).toBe(true) // 排序方向仍使用分段控件
     expect(wrapper.text()).toContain('更新时间')
   })

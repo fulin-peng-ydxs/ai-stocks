@@ -13,7 +13,6 @@ from backend.auth.constants import (
     ASSET_PUBLIC_PUBLISH_RESOURCE_CODES,
     ASSET_TENANT_PUBLISH_RESOURCE_CODES,
     ROLE_NORMAL,
-    ROLE_PAID,
     ROLE_SYSTEM,
     ROLE_TENANT_ADMIN,
 )
@@ -24,6 +23,7 @@ from backend.storage.pg_ddl import (
     _SEED_RESOURCES,
     _USER_RESOURCE_CODES,
     _flatten_menu_tree,
+    _remove_legacy_paid_role,
     seed_rbac,
     seed_stage6_asset_visibility,
 )
@@ -105,16 +105,83 @@ def test_builtin_roles_seeded(pg):
     df = pg.query_df(
         "SELECT code, name, kind, is_builtin, is_locked FROM sys_role "
         "WHERE code = ANY(%s)",
-        [[ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID]])
+        [[ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL]])
     by_code = {r["code"]: r for _, r in df.iterrows()}
-    assert set(by_code) == {ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID}
+    assert set(by_code) == {ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL}
     # 全部内置；仅 system 锁定
     assert all(bool(r["is_builtin"]) for r in by_code.values())
     assert bool(by_code[ROLE_SYSTEM]["is_locked"]) is True
     assert bool(by_code[ROLE_TENANT_ADMIN]["is_locked"]) is False
     # kind 与 code 同名（系统内置）
-    for code in (ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID):
+    for code in (ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL):
         assert by_code[code]["kind"] == code
+
+
+def test_legacy_paid_role_is_migrated_to_normal_and_removed(pg):
+    legacy_code = "paid"
+    tenant_id = "pytest_paid_role_tenant"
+    user_id = "pytest_paid_role_user"
+    pg.execute(
+        "INSERT INTO sys_tenant (id,name,status) VALUES (%s,%s,'active') "
+        "ON CONFLICT (id) DO NOTHING",
+        [tenant_id, tenant_id],
+    )
+    try:
+        pg.execute(
+            "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
+            "VALUES (%s,%s,%s,%s,TRUE,FALSE)",
+            [legacy_code, legacy_code, "历史角色", legacy_code],
+        )
+        pg.execute(
+            "INSERT INTO sys_user (id,tenant_id,account,role_code,perm_ver,status) "
+            "VALUES (%s,%s,%s,%s,4,'active')",
+            [user_id, tenant_id, user_id, legacy_code],
+        )
+        pg.execute(
+            "INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)",
+            [user_id, legacy_code],
+        )
+        pg.execute(
+            "INSERT INTO dict_item (id,type_code,code,label,sort) "
+            "VALUES (%s,'role_type',%s,%s,40)",
+            [f"role_type:{legacy_code}", legacy_code, "历史角色"],
+        )
+
+        _remove_legacy_paid_role(pg)
+
+        assert pg.query_df(
+            "SELECT 1 FROM sys_role WHERE code=%s OR kind=%s",
+            [legacy_code, legacy_code],
+        ).empty
+        assert pg.query_df(
+            "SELECT 1 FROM dict_item WHERE type_code='role_type' AND code=%s",
+            [legacy_code],
+        ).empty
+        row = pg.query_df(
+            "SELECT role_code,perm_ver FROM sys_user WHERE id=%s",
+            [user_id],
+        ).iloc[0]
+        roles = pg.query_df(
+            "SELECT role_id FROM sys_user_role WHERE user_id=%s",
+            [user_id],
+        )["role_id"].tolist()
+        assert row["role_code"] == ROLE_NORMAL
+        assert int(row["perm_ver"]) == 5
+        assert roles == [ROLE_NORMAL]
+
+        _remove_legacy_paid_role(pg)
+        assert int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s",
+            [user_id],
+        ).iloc[0]["perm_ver"]) == 5
+    finally:
+        pg.execute("DELETE FROM sys_user WHERE id=%s", [user_id])
+        pg.execute(
+            "DELETE FROM dict_item WHERE type_code='role_type' AND code=%s",
+            [legacy_code],
+        )
+        pg.execute("DELETE FROM sys_role WHERE code=%s", [legacy_code])
+        pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tenant_id])
 
 
 def test_menu_tree_parent_linkage_and_type(pg):

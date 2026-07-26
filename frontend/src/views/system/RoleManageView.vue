@@ -6,8 +6,10 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
-import PermissionTree, { type PermNode } from './PermissionTree.vue'
+import PermissionTree from './PermissionTree.vue'
+import type { PermNode } from './permissionTree'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -40,20 +42,6 @@ const activeIsSystemRole = computed(
 )
 const rolesLoading = ref(false)
 const loadError = ref(false)   // 权限树/角色初次加载失败 → 页内错误态 + 重试
-
-const roleToneLabels = {
-  builtin: '系统内置',
-  paid: '付费角色',
-  custom: '自定义',
-} as const
-
-type RoleTone = keyof typeof roleToneLabels
-
-function roleTone(r: Role): RoleTone {
-  if (r.is_builtin) return 'builtin'
-  if (r.kind === 'paid') return 'paid'
-  return 'custom'
-}
 
 async function loadRoles(keepActive = false) {
   rolesLoading.value = true
@@ -88,7 +76,15 @@ function buildTree(menus: MenuNode[], resources: Resource[]) {
     for (const res of resByMenu.get(m.id) || []) {
       const key = `r:${res.id}`
       const baselineLocked = !!res.baseline_locked
-      children.push({ key, label: res.name, kind: 'resource', nodeType: res.type, sysLocked: locked, baselineLocked })
+      children.push({
+        key,
+        code: res.code,
+        label: res.name,
+        kind: 'resource',
+        nodeType: res.type,
+        sysLocked: locked,
+        baselineLocked,
+      })
       // baseline 恒勾选、不可反选：排除出可勾选/全选原子叶子集（后端强制注入+保存并入，前端不当作授权项）
       if (!locked && !baselineLocked) leaves.push(key)
     }
@@ -270,7 +266,7 @@ onMounted(loadAll)
             角色管理
             <HelpTip title="角色管理说明" :width="440">
               角色勾选菜单与功能点后保存，拥有该角色的用户权限即时生效（无权按钮消失 / 接口 403）。<br /><br />
-              青灰色左边线代表分组，绿色圆点代表菜单，紫色菱形代表功能点；功能点上的「接口 / 按钮」只表示权限触发方式。<br /><br />
+              授权按菜单分组展示，功能点默认收起；需要精细调整时再展开对应菜单，避免所有权限同时铺开。<br /><br />
               「基线」是登录后的共享读权限，后端自动拥有、不可取消，也不作为角色授权保存。<br /><br />
               系统管理员角色拥有全部菜单与功能点，页面仅展示已拥有且锁定；「仅系统管理员」资源不能授予其它角色。
             </HelpTip>
@@ -301,18 +297,13 @@ onMounted(loadAll)
         <div class="rm-col rm-left">
           <div class="rm-col-head">
             <span class="rm-head-title">角色 <span class="mini">{{ roles.length }}</span></span>
-            <span class="role-tone-legend" aria-label="角色类型颜色说明">
-              <span class="role-tone-item"><i class="role-dot builtin" />系统内置</span>
-              <span class="role-tone-item"><i class="role-dot paid" />付费</span>
-              <span class="role-tone-item"><i class="role-dot custom" />自定义</span>
-            </span>
           </div>
           <div class="rm-col-body" v-loading="rolesLoading">
             <div v-for="r in roles" :key="r.id" class="role" :class="{ active: r.id === activeId }"
                  @click="selectRole(r.id)">
               <div class="role-name">
+                <SystemBuiltinTag v-if="r.is_builtin" />
                 {{ r.name }}
-                <i class="role-dot" :class="roleTone(r)" :title="roleToneLabels[roleTone(r)]" />
               </div>
               <div v-if="r.member_count != null" class="role-desc">关联用户 {{ r.member_count }} 名</div>
             </div>
@@ -323,8 +314,11 @@ onMounted(loadAll)
         <!-- 右：权限树 -->
         <div class="rm-col rm-right">
           <div class="rm-detail-bar">
-            <div class="rm-detail-title">
-              <div class="rname">{{ activeRole?.name || '—' }}</div>
+              <div class="rm-detail-title">
+              <div class="rname">
+                <SystemBuiltinTag v-if="activeRole?.is_builtin" />
+                {{ activeRole?.name || '—' }}
+              </div>
               <div class="rmeta">
                 <template v-if="activeRole">
                   角色码 {{ activeRole.code }}<span v-if="activeRole.member_count != null"> · 关联用户 {{ activeRole.member_count }} 名</span>
@@ -343,14 +337,6 @@ onMounted(loadAll)
 
           <div class="rm-col-body">
             <template v-if="activeRole">
-              <div class="rm-legend">
-                <span class="lg"><i class="mark group" />分组</span>
-                <span class="lg"><i class="dot m" />菜单</span>
-                <span class="lg"><i class="diamond func" />功能点(按钮/接口)</span>
-                <span class="lg"><span class="sample-base">基线</span>自动拥有</span>
-                <span class="lg"><span class="sample-lock">仅系统管理员</span>系统专属</span>
-                <span class="lg-hint">勾选父级级联子级，子级部分选中父级显半选</span>
-              </div>
               <PermissionTree
                 v-for="node in treeData" :key="node.key"
                 :node="node" :state-of="stateOf" :toggle="toggle" :readonly="treeReadonly"
@@ -417,13 +403,6 @@ onMounted(loadAll)
   display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); }
 .rm-head-title { display: inline-flex; align-items: center; gap: var(--app-space-2); min-width: 0; }
 .rm-col-head .mini { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-regular); }
-.role-tone-legend { display: inline-flex; align-items: center; gap: var(--app-space-2); color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-micro); font-weight: var(--app-font-weight-regular); white-space: nowrap; }
-.role-tone-item { display: inline-flex; align-items: center; gap: var(--app-space-1); }
-.role-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
-.role-dot.builtin { background: var(--el-text-color-secondary); }
-.role-dot.paid { background: var(--el-color-primary); }
-.role-dot.custom { background: var(--el-color-success); }
 .rm-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 10px 14px; }
 .role { padding: 10px 12px; border-radius: 7px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
 .role:hover { background: var(--el-fill-color-light); }
@@ -432,23 +411,10 @@ onMounted(loadAll)
 .role-desc { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 3px; }
 .rm-detail-bar { padding: 12px 16px; border-bottom: 1px solid var(--el-border-color-lighter);
   display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
-.rm-detail-title .rname { font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-strong); }
+.rm-detail-title .rname { font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-strong);
+  display: flex; align-items: center; gap: var(--app-space-2); }
 .rm-detail-title .rmeta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 2px; }
 .lock-note { color: var(--el-color-warning); }
-/* 图例 */
-.rm-legend { display: flex; align-items: center; gap: var(--app-space-3); padding: 0 2px 10px; font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); flex-wrap: wrap; }
-.rm-legend .lg { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
-.rm-legend .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
-.rm-legend .dot.m { background: var(--el-color-success); }
-.rm-legend .lg-hint { margin-left: auto; }
-.mark { width: 4px; height: 14px; border-radius: 2px; display: inline-block; }
-.mark.group { background: var(--perm-group-color); }
-.diamond { width: 9px; height: 9px; border-radius: 2px; display: inline-block; transform: rotate(45deg); }
-.diamond.func { background: var(--perm-feature-color); }
-.sample-base { font-size: var(--app-font-size-tiny); color: var(--el-color-primary);
-  border: 1px solid color-mix(in srgb, var(--el-color-primary) 40%, transparent); border-radius: 3px; padding: 0 4px; }
-.sample-lock { font-size: var(--app-font-size-tiny); color: var(--el-color-warning);
-  border: 1px solid color-mix(in srgb, var(--el-color-warning) 40%, transparent); border-radius: 3px; padding: 0 4px; }
 .rm-detail-foot { border-top: 1px solid var(--el-border-color-lighter); padding: 12px 16px;
   display: flex; align-items: center; justify-content: space-between; }
 .dirty { font-size: var(--app-font-size-caption); color: var(--el-color-warning); }

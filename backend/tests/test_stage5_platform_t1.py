@@ -196,7 +196,7 @@ def test_stage5_menu_resource_seed_and_default_grants(pg):
     assert not {"dict:view", "dict:type-manage", "dict:item-manage"} & tenant_admin_resources
     assert "dict:read" not in tenant_admin_resources
 
-    for role_id in (ROLE_NORMAL, "paid"):
+    for role_id in (ROLE_NORMAL,):
         menus_for_role = set(pg.query_df(
             "SELECT menu_id FROM sys_role_menu WHERE role_id=%s",
             [role_id],

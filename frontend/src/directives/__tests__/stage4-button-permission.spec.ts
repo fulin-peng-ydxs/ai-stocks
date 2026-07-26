@@ -20,7 +20,7 @@ function gated(role: string, permissions: string[], code: string) {
   ).find('.g').exists()
 }
 
-// stage4 业务页按钮码（授予 normal/paid/tenant_admin，自定义角色可能仅持读码）。
+// stage4 业务页按钮码（授予 normal/tenant_admin，自定义角色可能仅持读码）。
 const BUSINESS_BUTTON_CODES = [
   'screen-profile:save', 'screen:run',
   'backtest:run', 'backtest:robust', 'backtest:delete',

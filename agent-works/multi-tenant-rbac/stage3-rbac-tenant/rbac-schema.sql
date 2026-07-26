@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS sys_role (
     id          TEXT PRIMARY KEY,
     code        TEXT NOT NULL,
     name        TEXT NOT NULL,
-    kind        TEXT NOT NULL DEFAULT 'custom',   -- system|tenant_admin|normal|paid | custom
+    kind        TEXT NOT NULL DEFAULT 'custom',   -- system|tenant_admin|normal|custom
     is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,
     is_locked   BOOLEAN NOT NULL DEFAULT FALSE,   -- system 超管：全授权且锁定不可改
     description TEXT,
@@ -102,12 +102,12 @@ CREATE INDEX IF NOT EXISTS idx_sys_role_resource_resource ON sys_role_resource (
 
 -- ── seed（内置角色/菜单/功能点/默认授权/存量 user_role）──────────────────────
 -- 完整 seed 逻辑见 backend/storage/pg_ddl.py::seed_rbac()。要点：
---   * 内置角色 4 个：system(锁定·全授权)/tenant_admin/normal/paid；id=code。
+--   * 内置角色 3 个：system(锁定·全授权)/tenant_admin/normal；id=code。
 --   * 菜单树承接前端 menuConfig（emoji→EP 图标名）+ 新增「系统管理→权限管理」子组
 --     （用户管理/角色管理/菜单与功能/租户管理 4 叶子）。
 --   * 功能点 24 个（user/role/menu/resource/tenant 各域精确码）；id=code。
 --   * 默认授权（仅角色首次无授权时写，不覆盖后续手工调整）：
 --       system      → 全部菜单 + 全部功能点（展示用；运行时由 perm_resolver 判全量兜底）
 --       tenant_admin→ 业务页 + 系统管理/权限管理/用户管理 + user:* 功能点
---       normal/paid → 业务页（行情/筛选/回测/训练）
+--       normal → 业务页（行情/筛选/回测/训练）
 --   * 存量用户：INSERT ... SELECT u.id, r.id FROM sys_user u JOIN sys_role r ON r.code=u.role_code。

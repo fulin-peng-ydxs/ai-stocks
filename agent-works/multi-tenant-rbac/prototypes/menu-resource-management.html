@@ -167,9 +167,9 @@
           <table>
             <thead><tr><th style="width:190px">功能码</th><th style="min-width:120px">名称</th><th style="width:80px">类型</th><th style="min-width:200px">绑定接口</th><th style="width:90px">操作</th></tr></thead>
             <tbody id="funcBody">
-              <tr><td class="code">board:view</td><td>查看榜单</td><td><span class="ftag api">接口</span></td><td class="code">GET /api/board</td><td><span class="link" onclick="toast('编辑功能点（原型示意）')">编辑</span><span class="link danger" onclick="delRow(this)">删</span></td></tr>
-              <tr><td class="code">board:export</td><td>导出 CSV</td><td><span class="ftag btn">按钮</span></td><td class="code">GET /api/board/export</td><td><span class="link" onclick="toast('编辑功能点（原型示意）')">编辑</span><span class="link danger" onclick="delRow(this)">删</span></td></tr>
-              <tr><td class="code">board:profile-switch</td><td>切换评分规则</td><td><span class="ftag btn">按钮</span></td><td style="color:var(--pg-text-sub)">— 纯前端动作</td><td><span class="link" onclick="toast('编辑功能点（原型示意）')">编辑</span><span class="link danger" onclick="delRow(this)">删</span></td></tr>
+              <tr><td class="code">board:view</td><td>查看榜单</td><td><span class="ftag api">接口</span></td><td class="code">GET /api/board</td><td><span class="link" onclick="toast('编辑功能点（原型示意）')">编辑</span><span class="link danger" onclick="delRow(this)">删除</span></td></tr>
+              <tr><td class="code">board:export</td><td>导出 CSV</td><td><span class="ftag btn">按钮</span></td><td class="code">GET /api/board/export</td><td><span class="link" onclick="toast('编辑功能点（原型示意）')">编辑</span><span class="link danger" onclick="delRow(this)">删除</span></td></tr>
+              <tr><td class="code">board:profile-switch</td><td>切换评分规则</td><td><span class="ftag btn">按钮</span></td><td style="color:var(--pg-text-sub)">— 纯前端动作</td><td><span class="link" onclick="toast('编辑功能点（原型示意）')">编辑</span><span class="link danger" onclick="delRow(this)">删除</span></td></tr>
             </tbody>
           </table>
           </div>
@@ -264,7 +264,7 @@
   function pickDD(id,valId,val){ document.getElementById(valId).textContent=val; var m=document.getElementById(id); m.querySelectorAll('.opt').forEach(o=>o.classList.toggle('on',o.textContent===val)); m.classList.remove('show'); }
   function closeAllDD(except){ document.querySelectorAll('.dd-menu').forEach(m=>{if(m.id!==except)m.classList.remove('show');}); }
   // 功能点增删
-  function addFunc(){ var tb=document.getElementById('funcBody'); var tr=document.createElement('tr'); tr.innerHTML='<td><input class="inp code" style="height:26px" placeholder="menu:action"></td><td><input class="inp" style="height:26px" placeholder="名称"></td><td><span class="ftag btn">按钮</span></td><td><input class="inp code" style="height:26px" placeholder="GET /api/..."></td><td><span class="link" onclick="toast(\'编辑（原型示意）\')">编辑</span><span class="link danger" onclick="delRow(this)">删</span></td>'; tb.appendChild(tr); toast('已新增一行功能点'); }
+  function addFunc(){ var tb=document.getElementById('funcBody'); var tr=document.createElement('tr'); tr.innerHTML='<td><input class="inp code" style="height:26px" placeholder="menu:action"></td><td><input class="inp" style="height:26px" placeholder="名称"></td><td><span class="ftag btn">按钮</span></td><td><input class="inp code" style="height:26px" placeholder="GET /api/..."></td><td><span class="link" onclick="toast(\'编辑（原型示意）\')">编辑</span><span class="link danger" onclick="delRow(this)">删除</span></td>'; tb.appendChild(tr); toast('已新增一行功能点'); }
   function delRow(x){ x.closest('tr').remove(); toast('已删除'); }
   // toast
   var tt; function toast(m){ var e=document.getElementById('toast'); e.textContent=m; e.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>e.classList.remove('show'),1600); }

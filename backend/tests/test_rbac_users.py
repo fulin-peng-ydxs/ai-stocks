@@ -280,6 +280,79 @@ def test_system_create_and_list(client, env):
     assert created["tenant_id"] == tid and ROLE_NORMAL in created["roles"]
 
 
+def test_system_can_create_another_system_admin(client, env):
+    from backend.auth.constants import ROLE_SYSTEM
+
+    tid = env.mk_tenant()
+    acc = "newsys_" + uuid.uuid4().hex[:6]
+    r = client.post(
+        "/api/users",
+        json={
+            "account": acc,
+            "password": "GoodPass1",
+            "roleIds": [ROLE_SYSTEM],
+            "tenantId": tid,
+        },
+        headers=env.sys_headers(),
+    )
+    assert r.status_code == 200 and r.json()["code"] == 0
+    created = r.json()["data"]
+    assert created["role_code"] == ROLE_SYSTEM
+    assert created["roles"] == [ROLE_SYSTEM]
+
+
+@pytest.mark.parametrize("action", ["update", "status", "reset", "delete"])
+def test_tenant_admin_cannot_operate_system_user_in_own_tenant(client, env, action):
+    from backend.auth.constants import ROLE_SYSTEM
+
+    tid = env.mk_tenant()
+    tenant_admin = env.mk_user(tid, ROLE_TENANT_ADMIN)
+    target = env.mk_user(tid, ROLE_SYSTEM)
+    headers = _tok(tenant_admin, tid)
+
+    if action == "update":
+        r = client.put(
+            f"/api/users/{target}",
+            json={"email": None, "roleIds": [ROLE_NORMAL], "status": "active"},
+            headers=headers,
+        )
+    elif action == "status":
+        r = client.post(
+            f"/api/users/{target}/status",
+            json={"status": "disabled"},
+            headers=headers,
+        )
+    elif action == "reset":
+        r = client.post(
+            f"/api/users/{target}/reset-password",
+            json={"password": "GoodPass1"},
+            headers=headers,
+        )
+    else:
+        r = client.delete(f"/api/users/{target}", headers=headers)
+
+    assert r.status_code == 403
+    row = env.pg.query_df(
+        "SELECT status, deleted_at FROM sys_user WHERE id=%s",
+        [target],
+    ).iloc[0]
+    assert row["status"] == "active"
+    assert row["deleted_at"] is None
+
+
+def test_system_admin_cannot_remove_own_system_role(client, env):
+    r = client.put(
+        "/api/users/admin",
+        json={"email": None, "roleIds": [ROLE_NORMAL], "status": "active"},
+        headers=env.sys_headers(),
+    )
+    assert r.json()["code"] == 4000
+    roles = set(env.pg.query_df(
+        "SELECT role_id FROM sys_user_role WHERE user_id='admin'",
+    )["role_id"])
+    assert "system" in roles
+
+
 def test_create_multi_role(client, env):
     tid = env.mk_tenant()
     acc = "multi_" + uuid.uuid4().hex[:6]

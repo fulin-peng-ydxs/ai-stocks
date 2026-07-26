@@ -259,7 +259,7 @@
 - 默认授权：
   - `*-publish-tenant` 默认给 `tenant_admin` 和 `system`。
   - `*-publish-public` 默认仅给 `system`。
-  - `normal/paid` 可由角色显式授权，授权变更与 `perm_ver` bump 同事务提交。
+  - `normal` 可由角色显式授权，授权变更与 `perm_ver` bump 同事务提交。
 - 复制权限：
   - 筛选方案复制使用 `screen-profile:save`。
   - 买卖方案复制使用 `trade-profile:save`。
@@ -394,14 +394,14 @@
 - 操作：
   - 为 `screen_profile/trade_profile/backtest_run/audit_log` 设计增量字段、约束和索引。
   - 新增 publish 权限码：`screen-profile:publish-tenant/public`、`trade-profile:publish-tenant/public`、`backtest:publish-tenant/public`。
-  - 默认授权：tenant publish 默认给 tenant_admin/system；public publish 默认 system；normal/paid 需角色显式授权。
+  - 默认授权：tenant publish 默认给 tenant_admin/system；public publish 默认 system；normal 需角色显式授权。
   - 写 SQL 留痕，说明执行时机、影响范围和回滚方式。
 - 产出：DDL/seed 修改方案、SQL 留痕文件、需求验收 R28 行和权限码清单。
 - 影响范围：PG 表结构、资源 seed、角色默认授权、权限缓存版本。
 - 边界与异常：新增字段必须默认 `private` 兼容历史数据；资源码回滚必须同步 bump 受影响用户 `perm_ver`。
 - 验证方式：资源码扫描测试覆盖新增接口；SQL diff 与 `pg_ddl.py` 保持一致；历史数据默认私有。
 - 完成标准：DDL/seed 计划和 §5 映射无遗漏，新增资源码不 fail-open。
-- 实际落地情况：已完成；`backend/storage/pg_ddl.py` 已补 `audit_log.changes`、`screen_profile/trade_profile/backtest_run.visibility/published_at/published_by`、合法值约束和可见性索引，并新增既有库幂等升级函数 `_upgrade_stage6_asset_visibility()`；`backend/auth/constants.py` 已新增阶段六 tenant/public publish 权限常量且未放入默认业务授权集合；`_SEED_RESOURCES` 已新增 6 个 publish 资源码，`seed_stage6_asset_visibility()` 用 `migration.stage6_asset_visibility_v1` 标记一次性回填 tenant_admin 的租户公开权限并清理 normal/paid 与 tenant_admin 的 public publish 误授权；内置菜单 seed 会校准旧库父级、类型与路由结构，system 角色会补齐数据库内全量菜单/功能授权，避免旧 IA 残留导致菜单树断链或锁定角色授权缺口；已生成 SQL 留痕 `stage6-experience-asset-visibility.sql` 和 `resource-codes.sql`；`backend/tests/test_rbac_schema.py` 已补 T1 专项断言。验证：`python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_rbac_schema.py` 通过；`git diff --check` 通过；T1 相关 pytest `test_stage6_asset_visibility_schema_and_resources`、`test_stage6_asset_publish_grants_backfilled_for_tenant_admin`、`test_tenant_admin_has_tenant_publish_by_default`、`test_normal_role_business_only` 共 4 项通过；完整 `python -m pytest backend/tests/test_rbac_schema.py -q` 通过（14 passed）。
+- 实际落地情况：已完成；`backend/storage/pg_ddl.py` 已补 `audit_log.changes`、`screen_profile/trade_profile/backtest_run.visibility/published_at/published_by`、合法值约束和可见性索引，并新增既有库幂等升级函数 `_upgrade_stage6_asset_visibility()`；`backend/auth/constants.py` 已新增阶段六 tenant/public publish 权限常量且未放入默认业务授权集合；`_SEED_RESOURCES` 已新增 6 个 publish 资源码，`seed_stage6_asset_visibility()` 用 `migration.stage6_asset_visibility_v1` 标记一次性回填 tenant_admin 的租户公开权限并清理 normal 与 tenant_admin 的 public publish 误授权；内置菜单 seed 会校准旧库父级、类型与路由结构，system 角色会补齐数据库内全量菜单/功能授权，避免旧 IA 残留导致菜单树断链或锁定角色授权缺口；已生成 SQL 留痕 `stage6-experience-asset-visibility.sql` 和 `resource-codes.sql`；`backend/tests/test_rbac_schema.py` 已补 T1 专项断言。验证：`python -m py_compile backend/auth/constants.py backend/storage/pg_ddl.py backend/tests/test_rbac_schema.py` 通过；`git diff --check` 通过；T1 相关 pytest `test_stage6_asset_visibility_schema_and_resources`、`test_stage6_asset_publish_grants_backfilled_for_tenant_admin`、`test_tenant_admin_has_tenant_publish_by_default`、`test_normal_role_business_only` 共 4 项通过；完整 `python -m pytest backend/tests/test_rbac_schema.py -q` 通过（14 passed）。
 
 ### 6.2 任务 T2：R22 token 静默刷新
 

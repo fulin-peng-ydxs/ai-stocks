@@ -76,7 +76,6 @@
   .tag { display:inline-flex; align-items:center; height:20px; padding:0 7px; border-radius:4px; font-size:11px; border:1px solid transparent; white-space:nowrap; }
   .tag-lock { color:var(--pg-warning); background:color-mix(in srgb,var(--pg-warning) 14%,transparent); border-color:color-mix(in srgb,var(--pg-warning) 34%,transparent); }
   .tag-builtin { color:var(--pg-info); background:var(--pg-fill); border-color:var(--pg-border); }
-  .tag-paid { color:var(--pg-primary); background:var(--pg-primary-bg); border-color:color-mix(in srgb,var(--pg-primary) 25%,transparent); }
   /* 右栏详情条 */
   .detail-bar { padding:12px 16px; border-bottom:1px solid var(--pg-border-light); display:flex; align-items:center; justify-content:space-between; gap:12px; }
   .detail-bar .rname { font-size:15px; font-weight:700; display:flex; align-items:center; }
@@ -156,12 +155,11 @@
   <div class="split">
     <!-- 左：角色列表（可点切换） -->
     <div class="col col-left">
-      <div class="col-head">角色 <span class="mini">5</span></div>
+      <div class="col-head">角色 <span class="mini">4</span></div>
       <div class="col-body" id="roleList">
-        <div class="role" data-role="系统管理员" data-meta="角色码 system · 超管，权限锁定" data-lock="1"><div class="name">系统管理员 <span class="tag tag-lock">超管·锁定</span></div><div class="desc">平台全局最高权限，内置不可删/权限锁定</div></div>
-        <div class="role active" data-role="租户管理员" data-meta="角色码 tenant_admin · 关联用户 12 名"><div class="name">租户管理员 <span class="tag tag-builtin">内置</span></div><div class="desc">本租户内用户/审计管理</div></div>
-        <div class="role" data-role="普通用户" data-meta="角色码 normal · 关联用户 143 名"><div class="name">普通用户 <span class="tag tag-builtin">内置</span></div><div class="desc">本租户业务功能，默认注册角色</div></div>
-        <div class="role" data-role="付费会员" data-meta="角色码 paid · 付费类型预留"><div class="name">付费会员 <span class="tag tag-paid">付费·预留</span></div><div class="desc">付费角色类型预留，本阶段不做创建入口</div></div>
+        <div class="role" data-role="系统管理员" data-meta="角色码 system · 权限锁定" data-lock="1"><div class="name">系统管理员 <span class="tag tag-builtin">系统内置</span></div><div class="desc">平台全局最高权限，权限锁定不可编辑</div></div>
+        <div class="role active" data-role="租户管理员" data-meta="角色码 tenant_admin · 关联用户 12 名"><div class="name">租户管理员 <span class="tag tag-builtin">系统内置</span></div><div class="desc">本租户内用户/审计管理</div></div>
+        <div class="role" data-role="普通用户" data-meta="角色码 normal · 关联用户 143 名"><div class="name">普通用户 <span class="tag tag-builtin">系统内置</span></div><div class="desc">本租户业务功能，默认注册角色</div></div>
         <div class="role" data-role="数据分析员" data-meta="角色码 analyst · 自定义 · 关联用户 4 名"><div class="name">数据分析员 <span class="tag tag-builtin">自定义</span></div><div class="desc">系统管理员自建角色示例</div></div>
       </div>
     </div>

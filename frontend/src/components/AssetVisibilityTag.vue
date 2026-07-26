@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import SystemBuiltinTag from './SystemBuiltinTag.vue'
 
 type AssetSource = 'mine' | 'tenant' | 'public' | 'preset'
 type AssetVisibility = 'private' | 'tenant' | 'public'
@@ -51,7 +52,9 @@ const title = computed(() => {
 </script>
 
 <template>
+  <SystemBuiltinTag v-if="mode === 'source' && source === 'preset'" />
   <el-tag
+    v-else
     class="asset-visibility-tag"
     :class="{ 'is-clickable': clickable }"
     :type="tagType"

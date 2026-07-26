@@ -6,7 +6,7 @@ export interface Role {
   id: string
   code: string
   name: string
-  kind: string // system | tenant_admin | normal | paid | custom
+  kind: string // system | tenant_admin | normal | custom
   is_builtin: boolean
   is_locked: boolean
   description?: string | null

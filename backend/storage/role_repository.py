@@ -4,15 +4,15 @@ T5 落**只读**部分（按 id 取角色、可分配角色集）；T6 扩展角
 （role_menu/role_resource 全删重插）+ 内置/成员/ system-only 检测（bump 由 service 编排）。
 
 可分配规则（Codex 三轮评审结论）：
-- 调用者是 system：返回**除 system 超管外的全部**可分配角色（系统内置 + 系统管理员自建 custom）；
-- 调用者是 tenant_admin：**仅系统内置**可分配角色（tenant_admin/normal/paid），不含 system、不含 custom。
+- 调用者是 system：返回全部角色，可为其他用户新增或撤销系统管理员角色；
+- 调用者是 tenant_admin：仅可分配 tenant_admin/normal，不含 system 和 custom。
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from backend.auth.constants import ASSIGNABLE_PRESET_ROLES, ROLE_SYSTEM
+from backend.auth.constants import ASSIGNABLE_PRESET_ROLES
 from backend.common.logging import get_logger
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
@@ -23,7 +23,7 @@ _ROLE_COLS = "id, code, name, kind, is_builtin, is_locked, description"
 # 角色列表默认排序：system 超管在前，其余按内置优先 + 预设序 + 名称
 _ROLE_ORDER = (
     "CASE kind WHEN 'system' THEN 0 WHEN 'tenant_admin' THEN 1 "
-    "WHEN 'normal' THEN 2 WHEN 'paid' THEN 3 ELSE 4 END, name")
+    "WHEN 'normal' THEN 2 ELSE 3 END, name")
 
 
 class RoleRepository:
@@ -46,15 +46,14 @@ class RoleRepository:
         return [self._row(r.to_dict()) for _, r in df.iterrows()]
 
     def assignable(self, *, is_system: bool) -> list[dict]:
-        """可分配角色集（按调用者角色分流，见模块 docstring）。system 超管永不出现在结果中。"""
+        """可分配角色集（按调用者身份分流，见模块 docstring）。"""
         if is_system:
-            # 除 system 超管外全部（含自建 custom）
+            # 系统管理员可以任命其他系统管理员，也可以分配自建角色。
             df = self.pg.query_df(
                 f"SELECT {_ROLE_COLS} FROM sys_role "
-                "WHERE code <> %s AND kind <> 'system' ORDER BY is_builtin DESC, kind, name",
-                [ROLE_SYSTEM])
+                f"ORDER BY is_builtin DESC, {_ROLE_ORDER}")
         else:
-            # 仅系统内置角色可分配（不含 system、不含 custom）
+            # 租户管理员只能在明确的租户级预设角色中选择。
             df = self.pg.query_df(
                 f"SELECT {_ROLE_COLS} FROM sys_role "
                 "WHERE is_builtin = TRUE AND kind = ANY(%s) ORDER BY kind, name",

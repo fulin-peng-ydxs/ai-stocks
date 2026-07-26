@@ -94,6 +94,19 @@ describe('角色页 loadAll error+retry 闭环', () => {
 describe('菜单页 loadResources error+retry 闭环', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
+  it('菜单树只标记自定义节点，不重复展示系统内置和系统管理员可见性', async () => {
+    ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...MENU, id: 'builtin', title: '系统菜单', is_builtin: true, visible: 'system' },
+      { ...MENU, id: 'custom', title: '自定义菜单' },
+    ])
+    ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    const w = await mountView(MenuResourceView)
+    const menuTree = w.find('.mr-left')
+    expect(menuTree.text()).toContain('自定义')
+    expect(menuTree.text()).not.toContain('系统内置')
+    expect(menuTree.text()).not.toContain('仅系统管理员')
+  })
+
   it('功能点列表加载失败 → 显"功能点加载失败+重试"（回归：曾静默结束 loading）', async () => {
     ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([MENU])
     ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('boom'))

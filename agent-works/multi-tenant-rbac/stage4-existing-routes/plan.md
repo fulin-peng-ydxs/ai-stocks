@@ -23,7 +23,7 @@
   - `frontend/src/directives/permission.ts`、`frontend/src/utils/permission.ts`、`frontend/src/stores/auth.ts`：前端菜单、路由守卫和按钮权限消费 `/me` 的 `menus/permissions`。
 - 当前资源 seed 只覆盖阶段三管理页：
   - `backend/storage/pg_ddl.py` 的 `_SEED_RESOURCES` 已有 `user:*`、`role:*`、`menu:*`、`resource:*`、`tenant:*`。
-  - `_seed_role_grants()` 当前只给 normal/paid 默认业务菜单，不给业务功能资源；新增业务功能码后需要处理默认授权和既有库回填。
+  - `_seed_role_grants()` 当前只给 normal 默认业务菜单，不给业务功能资源；新增业务功能码后需要处理默认授权和既有库回填。
 - 存量 13 路由现状：
   - `backend/api/backtest.py`、`board.py`、`profiles.py`、`score_profiles.py`、`trade_profiles.py`、`stock_groups.py`、`stocks.py`、`training.py`：业务读写接口多数尚未挂精确 `require_perm`。
   - `backend/api/config.py`、`indicators.py`、`layout.py`、`data_admin.py`、`data_tasks.py`：部分系统级接口已有 `require_system`，但缺阶段四精确资源码口径。
@@ -76,7 +76,7 @@
 
 - 后端为准：所有有业务权限含义的 API 必须先由后端守卫拒绝无权请求，前端隐藏只是体验层。
 - system-only 不降级：数据管理、任务调度、技术指标写、系统配置、布局平台配置继续由 `require_system` 硬守。资源码只用于登记、页面按钮、测试扫描和后续审计，不作为允许非 system 访问的依据。
-- 用户资产类可授权：筛选方案、评分方案、买卖指标方案、自选分组、回测记录、盘感训练、用户级布局配置使用 `require_perm(code)`，normal/paid/tenant_admin 可通过角色授权获得。
+- 用户资产类可授权：筛选方案、评分方案、买卖指标方案、自选分组、回测记录、盘感训练、用户级布局配置使用 `require_perm(code)`，normal/tenant_admin 可通过角色授权获得。
 - 共享只读类仍要有码：行情列表、个股详情、每日榜单、指标注册表、交易日期、布局生效配置等虽然不加归属过滤，也要通过资源码控制是否可用。
 - 全站/研究基础共享读必须独立成登录基线码，不能挂到某个业务页面码或 system-only 码上：布局预设/页面配置/生效配置、交易日历、指标目录这类端点被多个页面或应用启动链路消费，必须对所有登录业务角色恒可用，并在角色页置灰不可反选。
 - 数据隔离复核：凡写入或读取用户资产的接口，服务或仓库必须从 `get_current_owner()` 获取归属，不接受前端传入归属覆盖。
@@ -155,7 +155,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - `backend/storage/pg_ddl.py`
   - 扩展 `_SEED_RESOURCES`，追加阶段四资源码。
   - 新增 `_SHARED_RESOURCE_CODES`，包含 `layout:view`、`trade-calendar:view`、`indicator:registry` 等所有登录业务角色必须具备且不可移除的 `baseline_locked` 基础读码。
-  - 新增 `_BUSINESS_RESOURCE_CODES`，包含 normal/paid/tenant_admin 默认可用的业务资源码。
+  - 新增 `_BUSINESS_RESOURCE_CODES`，包含 normal/tenant_admin 默认可用的业务资源码。
   - system 角色继续幂等补齐全量菜单和全量资源。
   - 非 system 内置角色不改变既有“管理员手工调整不被启动覆盖”的原则。
 - `backend/auth/perm_resolver.py`、`backend/services/auth_service.py`
@@ -167,7 +167,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - `agent-works/multi-tenant-rbac/stage4-existing-routes/resource-codes.sql`
   - 作为阶段四资源码、基线码与默认授权的一次性执行/审阅脚本。
   - 仅对阶段四新增资源码执行 `INSERT ... ON CONFLICT DO NOTHING`。
-  - 对 normal/paid/tenant_admin 的默认业务资源执行一次性 `INSERT ... ON CONFLICT DO NOTHING`，不作为每次启动自动重置。
+  - 对 normal/tenant_admin 的默认业务资源执行一次性 `INSERT ... ON CONFLICT DO NOTHING`，不作为每次启动自动重置。
   - 回填授权或启用基线码时必须同步对受影响用户执行 `perm_ver` 自增；建议通过迁移 CLI 在同一 PG 事务内完成 `sys_role_resource` 写入、基线码启用与 `sys_user.perm_ver` bump，提交后 best-effort 清理 Redis `auth:perms:*` 缓存。若使用纯 SQL，必须在 SQL 中包含 affected users 的 `UPDATE sys_user SET perm_ver = perm_ver + 1 ...`，并在发布步骤中强制相关用户重新登录。
   - system-only 资源挂在 `visible='system'` 菜单下，`RoleRepository.system_only_resource_ids()` 会阻止授予非 system 角色。
 
@@ -225,7 +225,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
     1. **`POST /api/layout/validate` 现无任何守卫**（`layout.py:156`，纯校验、不落库不涉归属），经查仅被系统页面布局工作台 `LayoutPagesView.vue` 消费 → 归 `layout:page-manage`（system-only），T5 补 `require_system_perm`。这是本次核对发现的既有裸露端点。
     2. baseline 三码 + `layout:user-config` 无天然业务菜单，而 `sys_resource.menu_id` 为 `NOT NULL + FK` 且不得挂 `visible='system'` 菜单（否则被 `system_only_resource_ids` 误判、非 system 授不了）。经确认 `menu_id` 只影响角色页分组渲染与 system-only 判定、**不影响 baseline 的运行时强制注入**，故锚定现有 login 叶子（零菜单树改动）：`layout:view`/`trade-calendar:view`/`layout:user-config`→`/board`，`indicator:registry`→`/screen`。
   - **score-profile:\* / trade-profile:\* 在阶段四 A 归 `/system/config`（visible='system'）**：本计划配置页仍 system-only，这些码经菜单可见性自动进 `system_only_resource_ids`，非 system 授权被拦截 → 事实上 system-only；阶段四 B 已随配置拆页迁至业务可授权子页，故 T3a 仍以 `require_perm(code)` 接入（保留迁移路径），不用 `require_system_perm`。
-  - SQL 含既有库一次性回填：资源落行 + normal/paid/tenant_admin 业务默认授权 + system 全量补齐 + 全部非 system 用户 `perm_ver` bump，整脚本单事务。
+  - SQL 含既有库一次性回填：资源落行 + normal/tenant_admin 业务默认授权 + system 全量补齐 + 全部非 system 用户 `perm_ver` bump，整脚本单事务。
 
 ### 6.2 任务 T2：补齐资源 seed、基线码、默认授权与权限依赖元数据
 
@@ -243,7 +243,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 操作：
   - 扩展 `_SEED_RESOURCES`，追加阶段四资源码。
   - 增加 `_SHARED_RESOURCE_CODES`，用于所有登录业务角色强制持有且不可反选的全站/研究基础共享读码。
-  - 增加 `_BUSINESS_RESOURCE_CODES`，用于 normal/paid/tenant_admin 默认业务授权的一次性回填。
+  - 增加 `_BUSINESS_RESOURCE_CODES`，用于 normal/tenant_admin 默认业务授权的一次性回填。
   - 权限解析时把 `_SHARED_RESOURCE_CODES` 注入所有非 system 已认证业务用户的 `resources`；无角色用户仍 fail-closed。
   - 角色授权读写时把基线码作为 `baseline_locked` 资源处理：回显勾选、前端置灰、保存时后端强制并入。
   - 确保 system 角色启动幂等补齐全量资源。
@@ -252,16 +252,16 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 产出：资源 seed、基线共享读机制、默认授权机制、权限依赖元数据。
 - 影响范围：新装数据库、既有数据库升级、角色管理页可勾选资源树、`/me` 权限集合。
 - 边界与异常：
-  - 不在每次启动时强制恢复 normal/paid 的业务资源授权，避免覆盖管理员后续手工调整。
+  - 不在每次启动时强制恢复 normal 的业务资源授权，避免覆盖管理员后续手工调整。
   - `_SHARED_RESOURCE_CODES` 不属于可被管理员移除的业务授权，不适用“手工调整不覆盖”原则；这是业务用户运行应用的基线能力。
   - system-only 资源必须挂在 `visible='system'` 菜单下，防止非 system 角色被误授。
 - 验证方式：
   - `python -m pytest backend/tests/test_rbac_schema.py backend/tests/test_rbac_roles.py -q`
   - 新增 seed/backfill 测试。
-- 完成标准：阶段四资源码可在 PG 中幂等存在；system 全量；normal/paid/tenant_admin 有业务默认码；非 system 不能拿 system-only 码。
+- 完成标准：阶段四资源码可在 PG 中幂等存在；system 全量；normal/tenant_admin 有业务默认码；非 system 不能拿 system-only 码。
 - 实际落地情况：已完成（2026-07-04）。
   - `backend/auth/constants.py`：新增 `SHARED_RESOURCE_CODES`（3 baseline）+ `BUSINESS_RESOURCE_CODES`（24），零依赖、供 pg_ddl/perm_resolver/repository 共用。
-  - `backend/storage/pg_ddl.py`：`_SEED_RESOURCES` 追加 48 阶段四资源码（与 resource-codes.sql 一致）；`_seed_role_grants` 给 normal/paid = `BUSINESS_RESOURCE_CODES`、tenant_admin = 用户管理码 + 业务码；system 全量补齐不变。
+  - `backend/storage/pg_ddl.py`：`_SEED_RESOURCES` 追加 48 阶段四资源码（与 resource-codes.sql 一致）；`_seed_role_grants` 给 normal = `BUSINESS_RESOURCE_CODES`、tenant_admin = 用户管理码 + 业务码；system 全量补齐不变。
   - `backend/auth/deps.py`：`require_perm` 返回依赖挂 `resource_code` 元数据；新增 `require_system_perm(code)`（运行时 = require_system 硬守卫 + 挂 `resource_code`/`require_system_perm=True` 供 T8 扫描）。
   - `backend/auth/perm_resolver.py`：`resolve()` 对**非 system 且有角色**用户强制并入 baseline（运行时权威）；无角色仍 fail-closed。
   - `backend/storage/resource_repository.py`：DTO 增 `baseline_locked`（code ∈ SHARED_RESOURCE_CODES）。
@@ -363,7 +363,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - 复核 `reset_layout_config`：`scope=page/preset` 仍 system-only，`scope=user` 可走当前用户资源码。
 - 产出：回测、训练、用户偏好接口权限接入。
 - 影响范围：`/backtest`、`/training`、所有页面设置抽屉。
-- 边界与异常：用户设置抽屉是跨页面基础能力，normal/paid/tenant_admin 默认应具备 `layout:user-config`。
+- 边界与异常：用户设置抽屉是跨页面基础能力，normal/tenant_admin 默认应具备 `layout:user-config`。
 - 验证方式：
   - 跨用户无法读取/删除别人的回测、训练。
   - 非 system 不能重置 page scope 布局。
@@ -477,7 +477,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 - 目标：资源码变多后，菜单、路由、首个可导航落点仍 fail-closed 且用户体验稳定。
 - 操作：
   - 复核 `/me` 返回的 menus/resources 与角色授权一致。
-  - normal/paid 默认菜单和资源能进入 `/board`、`/stocks`、`/screen`、`/backtest`、`/training`。
+  - normal 默认菜单和资源能进入 `/board`、`/stocks`、`/screen`、`/backtest`、`/training`。
   - 所有登录业务角色强制具备 `layout:view`、`trade-calendar:view`、`indicator:registry`，自定义角色即使未显式授权或在角色页尝试反选，也能加载全站布局、交易日历和指标目录。
   - 角色权限树中 `baseline_locked` 资源始终勾选且不可取消；保存授权后再次读取仍包含基线码。
   - tenant_admin 默认能进入业务页和用户管理页，不可见 system-only 菜单。
@@ -491,7 +491,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
   - **代码复核（无需改动，机制在 T2 已建、T3~T6 未破坏）**：
     - `perm_resolver.resolve`：有角色的非 system 用户在 `role_resource` 并集后**强制并入** `SHARED_RESOURCE_CODES`（dedup 保序）；`is_system` 全量；**无角色分支 `menus,resources=[],[]` 不注入 baseline**（fail-closed）——正确。
     - `auth_service.me`：`permissions = perms["resources"]`（含注入的 baseline）；`_visible_menu_tree` 按「授权 ∩ 可见性」双过滤 + 空分组剪除 + 非 system 隐藏 `visible='system'` 整棵子树——正确。
-    - `pg_ddl` seed：业务菜单（quotes/stocks/board/screen/backtest/training）`visible='login'`，数据/配置/布局/角色·菜单·租户 `visible='system'`；`_seed_role_grants` 给 normal/paid=业务菜单+`BUSINESS_RESOURCE_CODES`，tenant_admin 另加 `permission/系统/用户管理菜单`+`_USER_RESOURCE_CODES`，system 幂等全量；baseline 不入授权行——与 resolver 注入配套、与 resource-codes.sql 一致。
+    - `pg_ddl` seed：业务菜单（quotes/stocks/board/screen/backtest/training）`visible='login'`，数据/配置/布局/角色·菜单·租户 `visible='system'`；`_seed_role_grants` 给 normal=业务菜单+`BUSINESS_RESOURCE_CODES`，tenant_admin 另加 `permission/系统/用户管理菜单`+`_USER_RESOURCE_CODES`，system 幂等全量；baseline 不入授权行——与 resolver 注入配套、与 resource-codes.sql 一致。
   - **前端（已覆盖，无需新增）**：`utils/permission.spec.ts`（21 用例）覆盖 `isRouteAllowed`/`resolveMenuGuard`/`firstMenuPath` 的 fail-closed、SAFE_HOME 回落、首个授权落点、不放行被请求未授权页、不自跳死循环；`SideMenu.spec.ts`（3）消费后端菜单不静态兜底；`directives/permission` + `stage4-button-permission`（T6）覆盖按钮级。
   - **新增测试**：[test_stage4_menu_guard.py](../../../backend/tests/test_stage4_menu_guard.py)（5 用例）——① 自定义角色只授业务码 → resolve 强制注入 3 baseline；② 运行时不可反选（role_resource 全空 → 仍注入 baseline）；③ 无角色用户 fail-closed（空 menus/resources、baseline 也不注入）；④ 自定义角色授业务菜单 `/backtest` → `/me` 菜单树可导航且 system-only 分支隐藏；⑤ `ResourceRepository.list_all` baseline 码标 `baseline_locked=True`、业务/系统码为 False（前端权限树恒勾选+置灰的数据契约）。全量后端 **436 passed**。
 
@@ -679,7 +679,7 @@ T1 需把下表固化成 `resource-codes.sql` 和 `pg_ddl.py` seed。最终 code
 ### 10.2 假设
 
 - 阶段三 RBAC、瘦令牌、`perm_ver` 强制重登、菜单 fail-closed 均保持现状。
-- 阶段四默认给 normal/paid/tenant_admin 授予研究业务功能码；system 继续全量。
+- 阶段四默认给 normal/tenant_admin 授予研究业务功能码；system 继续全量。
 - 租户管理员默认可用研究业务功能和用户管理，但不可用数据管理、任务调度、系统配置、布局平台配置、菜单/角色/租户/资源管理。
 - 阶段四 A 时配置管理单页保持 system-only；阶段四 B 已开放普通用户评分规则/买卖指标独立入口。
 - 行情/参考数据仍为全局共享只读，不做 tenant/owner 过滤。

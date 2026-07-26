@@ -295,9 +295,12 @@ function applyPreset(key: string) {
   root.style.setProperty('--page-settings-trigger-text', t.textMuted)
   root.style.setProperty('--page-settings-trigger-hover-text', t.textStrong)
   root.style.setProperty('--page-settings-trigger-hover-bg', t.surfaceHover)
-  root.style.setProperty('--page-settings-seg-bg', t.pageBg)
-  root.style.setProperty('--page-settings-seg-hover-bg', t.surfaceHover)
-  root.style.setProperty('--page-settings-seg-active-bg', t.activeBg)
+  root.style.setProperty('--page-settings-seg-bg', t.surfaceHover)
+  root.style.setProperty('--page-settings-seg-hover-bg', t.activeBg)
+  root.style.setProperty(
+    '--page-settings-seg-active-bg',
+    mode === 'dark' ? blendHex(t.activeBg, t.textStrong, 0.88) : t.surfaceBg,
+  )
   root.style.setProperty('--page-settings-seg-active-border', t.borderStrong)
   root.style.setProperty('--page-settings-switch-off', t.borderStrong)
   root.style.setProperty('--page-settings-tip-border', t.borderStrong)

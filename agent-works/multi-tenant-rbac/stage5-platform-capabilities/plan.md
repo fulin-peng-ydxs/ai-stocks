@@ -111,7 +111,6 @@
 | 需求编号 | 需求项 | 开发状态 | 不做原因 | 后续触发条件 |
 | --- | --- | --- | --- | --- |
 | R25 | 第三方登录真实对接 | 跳过 | 本阶段不对接外部 OAuth 或短信服务 | 获取平台资质并单独立项 |
-| R26 | 付费角色计费与配额 | 跳过 | 本阶段只沿用已有角色类型，不做商业化消费 | 商业化启动 |
 | R27 | 高强度行情防爬 | 跳过 | 本阶段只保留现有接口限流、验证码和审计，不接行为风控 | 出现实际批量爬取或引入风控平台 |
 | 遗留项 4 | `data_dimension_registry` 并入数据字典 | 跳过 | 需求明确本期不并入 | 后续重新评估数据维度和枚举边界 |
 
@@ -223,7 +222,7 @@ CREATE TABLE IF NOT EXISTS dict_item (
 
 首批默认字典：
 
-- `role_type`：`system`、`tenant_admin`、`normal`、`paid`
+- `role_type`：`system`、`tenant_admin`、`normal`
 - `user_status`：`active`、`disabled`、`locked`
 - `audit_event_type`：`api`、`task`、`security`、`rbac`、`config`、`dict`
 - `audit_result`：`success`、`failed`、`denied`
@@ -307,7 +306,7 @@ CREATE TABLE IF NOT EXISTS dict_item (
 
 - 新增阶段五迁移标记，例如 `migration.stage5_platform_capabilities_v1`。
 - 对已有 tenant_admin 回填审计菜单和 `audit:view` 时，同事务自增对应用户 `perm_ver`。
-- normal、paid 不默认获得审计或字典管理权限，但有角色用户可获得 `dict:read` 共享只读能力。
+- normal 不默认获得审计或字典管理权限，但有角色用户可获得 `dict:read` 共享只读能力。
 
 ### 4.5 审计采集方案
 
@@ -620,7 +619,7 @@ Slot 与组件设计：
 - 边界与异常：
   - 重复执行不得重复插入或重复授权。
   - system 角色仍自动拥有全部新增资源。
-  - normal/paid 不默认获得审计或字典管理权限。
+  - normal 不默认获得审计或字典管理权限。
   - 无角色用户不获得 `dict:read`。
 - 验证方式：
   - 后端 DDL 初始化测试。
@@ -920,7 +919,7 @@ Slot 与组件设计：
 - 操作：
   - 扩展路由扫描测试，覆盖 `/api/audit` 和 `/api/dict`。
   - 测试 tenant_admin 拥有审计菜单和 `audit:view`。
-  - 测试 normal/paid 默认无审计和字典管理菜单，但具备 `dict:read` 共享只读能力。
+  - 测试 normal 默认无审计和字典管理菜单，但具备 `dict:read` 共享只读能力。
   - 测试字典菜单和接口 system-only。
   - 测试无角色用户不获得 `dict:read`。
   - 测试 `dict:read` 挂 `visible=login` 菜单锚点、加入 `SHARED_RESOURCE_CODES`、角色页 baseline_locked 不可反选。
@@ -935,7 +934,7 @@ Slot 与组件设计：
   - `python -m pytest backend/tests/test_stage4_menu_guard.py -q`
 - 完成标准：新增 API 无裸露端点，默认角色授权符合需求。
 - 实际落地情况：已新增 `backend/tests/test_stage5_resource_codes.py`，集中覆盖阶段五 `/api/audit`、`/api/dict`
-  路由精确资源码扫描、`require_system_perm` system-only 元数据、tenant_admin 审计菜单和 `audit:view`、normal/paid
+  路由精确资源码扫描、`require_system_perm` system-only 元数据、tenant_admin 审计菜单和 `audit:view`、normal
   默认无审计和字典管理入口但具备 `dict:read`、字典管理接口 system-only、无角色用户 `dict:read` fail-closed、
   `dict:read` 挂 `/board` 且 `visible=login`、`SHARED_RESOURCE_CODES` 与 `baseline_locked` 契约，以及
   `/system/audit`、`/system/dicts` 菜单路径与前端 router/pageRegistry 对齐。已按约束先停后台服务再验证，
@@ -1086,8 +1085,8 @@ SQL 约束：
   - 计划：审计页筛选/分页/详情/自动刷新/错误重试；字典页主从联动/弹窗/启停/删除/缓存失效；系统设置页新增配置。
   - 具体完成情况：日志审计页已完成筛选/分页/详情/自动刷新/错误重试和三档视口验证，本轮补多选筛选、租户下拉、选择即时查询、请求竞态防护和接口保留期提示测试；数据字典页已完成主从联动、弹窗、筛选、启停、删除确认、错误重试、权限态和三档视口验证，本轮补请求竞态防护、pageSize 单路径加载和保存失败保留弹窗输入；系统设置页已完成新增配置组动态渲染、分类 Tab、保存失败、空态、权限态和三档视口验证。
 - 权限与数据范围测试：
-  - 计划：system 全局审计和字典；tenant_admin 仅本租户审计；normal/paid 默认无审计和字典；后端接口 403 为准。
-  - 具体完成情况：已覆盖 system 全局审计查询、tenant_admin 本租户审计收口、字典管理 system-only、`dict:read` 登录基线共享读、normal/paid 默认无审计/字典管理授权和无角色 fail-closed。
+  - 计划：system 全局审计和字典；tenant_admin 仅本租户审计；normal 默认无审计和字典；后端接口 403 为准。
+  - 具体完成情况：已覆盖 system 全局审计查询、tenant_admin 本租户审计收口、字典管理 system-only、`dict:read` 登录基线共享读、normal 默认无审计/字典管理授权和无角色 fail-closed。
 - 回归测试：
   - 计划：阶段四资源码扫描、菜单守卫、登录基线共享读、ConfigView 既有 score/trade/tech/system 子页不回归。
   - 具体完成情况：已跑阶段四菜单守卫和资源码回归；前端 `pageRegistry.spec.ts` 与 `npm run build` 通过。
@@ -1143,7 +1142,7 @@ cd frontend && npm run build
   4. 发布前端构建产物。
   5. 用 system 管理员验证系统设置、数据字典、日志审计。
   6. 用 tenant_admin 验证只看到本租户审计。
-  7. 用 normal/paid 验证默认不可见审计和字典。
+  7. 用 normal 验证默认不可见审计和字典。
 - 配置或环境变量：
   - 本阶段不新增必需环境变量。
   - 新增 `app_config` 平台配置：认证防滥用字段、`audit.retention_days`。

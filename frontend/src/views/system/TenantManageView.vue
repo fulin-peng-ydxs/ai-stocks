@@ -13,6 +13,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
@@ -305,7 +306,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           <el-table-column label="租户名" prop="name" min-width="180" fixed="left" show-overflow-tooltip sortable="custom">
             <template #default="{ row }">
               {{ row.name }}
-              <el-tag v-if="row.id === DEFAULT_TENANT_ID" type="info" size="small" effect="plain" class="builtin-tag">系统内置</el-tag>
+              <SystemBuiltinTag v-if="row.id === DEFAULT_TENANT_ID" class="builtin-tag" />
             </template>
           </el-table-column>
           <el-table-column v-if="colVisible('id')" label="租户 ID" prop="id" width="150">

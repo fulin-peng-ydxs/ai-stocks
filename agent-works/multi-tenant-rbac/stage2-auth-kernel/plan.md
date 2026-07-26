@@ -114,10 +114,10 @@
 | 项 | 决策 | 理由 |
 | --- | --- | --- |
 | 认证异常 HTTP 码 | 新增 `AuthError(401)`/`ForbiddenError(403)`/`RateLimitError(429)`，基类带 `http_status`；改 `exception_handler` 用 `getattr(exc,'http_status',200)` 作 status_code，**业务异常仍 200**，仅认证类用真实码 | R4/R7/R15 明确要求 401/403/429；前端按 HTTP status 分流 |
-| 角色模型（本阶段） | `sys_user` 加 `role_code TEXT`（`system`/`tenant_admin`/`normal`，常量见 `backend/auth/constants.py`）；**不建** `sys_role/sys_user_role`。**角色来源明确**：seed `admin`=`system`；自助注册用户=`tenant_admin`（其新租户管理员）；`normal` 用户本阶段**无创建入口**（阶段三用户管理页才建）；`paid`/`plan_code`/`quota`（需求 6.1）**本阶段不做** | 阶段二只需 JWT 携带 role + 粗粒度 tier；完整 RBAC 表与多角色是阶段三，避免提前建半套 |
+| 角色模型（本阶段） | `sys_user` 加 `role_code TEXT`（`system`/`tenant_admin`/`normal`，常量见 `backend/auth/constants.py`）；**不建** `sys_role/sys_user_role`。**角色来源明确**：seed `admin`=`system`；自助注册用户=`tenant_admin`（其新租户管理员）；`normal` 用户本阶段**无创建入口**（阶段三用户管理页才建） | 阶段二只需 JWT 携带 role + 粗粒度 tier；完整 RBAC 表与多角色是阶段三，避免提前建半套 |
 | 默认 deny 机制 | **应用级 auth 中间件**按路径白名单拦截（非约定式逐 router 挂依赖）+ 路由扫描测试兜底 | 新增路由默认受保护，结构上不可漏挂（评审 P1） |
 | 角色守卫粒度 | 系统级/全市场写接口叠加 `require_role("system")`；用户私有资产接口仅需登录（靠 R9 归属隔离） | 关闭注册越权窗口（评审 P0）；非系统接口的隔离由上下文归属保证 |
-| 阶段三衔接 | 阶段三引入 `sys_role/sys_user_role` 后，`role_code` **1:1 映射**进 `sys_role.code`（`system`/`tenant_admin`/`normal` 直接对应内置角色，再补 `paid`），用户-角色迁入 `sys_user_role`；additive，admin→system 不丢 | 升级可加列/加表，不破坏阶段二数据 |
+| 阶段三衔接 | 阶段三引入 `sys_role/sys_user_role` 后，`role_code` **1:1 映射**进 `sys_role.code`（`system`/`tenant_admin`/`normal` 直接对应内置角色），用户-角色迁入 `sys_user_role`；additive，admin→system 不丢 | 升级可加列/加表，不破坏阶段二数据 |
 | perm_ver 落点 | PG `sys_user.perm_ver INT DEFAULT 0` 为权威 + Redis 缓存；权限/状态变更自增 | R4/R8 即时失效；阶段二变更点=禁用/锁定/改密 |
 | JWT 库与密钥 | `PyJWT` HS256；密钥 `AI_STOCKS_JWT_SECRET`（环境变量，缺失时启动报错不用默认弱密钥）；access 默认 60min、refresh 默认 14d，均可配 | 同步栈轻量；密钥不入码（CLAUDE.md） |
 | 密码哈希 | `bcrypt`（经 `passlib[bcrypt]` 或直接 `bcrypt`）；禁明文/弱哈希（R15） | 成熟、无需 GPU 资源；argon2 亦可，择一 |
@@ -381,7 +381,7 @@
 - 【已确认·评审 P1】**Redis 鉴权关键 fail-closed**（黑名单/perm_ver 不可用→拒绝/503，保"登出旧 token 失效"里程碑）；限流 fail-open + 告警。
 - 【已确认·评审 P1】**默认 deny 用中间件机制 + 路由扫描测试**，非逐 router 约定挂依赖。
 - 【已确认·评审 P1】**HTTP 请求链缺上下文直接报错，不回落 admin**；仅 CLI/后台/迁移经 `system_context()` 用 default/admin。
-- 【已确认】角色本阶段单 `role_code`（system/tenant_admin/normal）：seed admin=system、注册=tenant_admin、normal 无创建入口、paid 不做；阶段三 1:1 迁 `sys_role`。
+- 【已确认】角色本阶段单 `role_code`（system/tenant_admin/normal）：seed admin=system、注册=tenant_admin、normal 无创建入口；阶段三 1:1 迁 `sys_role`。
 - 【已确认】存量受控接口本阶段**全量需登录**（公开仅 auth/health）。
 - 第三方 OAuth 仅前端占位 + 后端路由占位（不实现）。
 

@@ -21,7 +21,7 @@ RBAC 主数据落 PostgreSQL，核心表由 `backend/storage/pg_ddl.py` 创建�
 |----|------|
 | `sys_tenant` | 租户、状态、管理员关系 |
 | `sys_user` | 用户、租户归属、账号状态、`perm_ver` |
-| `sys_role` | 平台级角色，含 system / tenant_admin / normal / paid 等内置角色 |
+| `sys_role` | 平台级角色，内置 system / tenant_admin / normal，另支持系统管理员创建自定义角色 |
 | `sys_menu` | 导航树，区分分组和叶子，记录路由、图标、可见域 |
 | `sys_resource` | 功能点，记录资源码、类型、API 方法和路径元数据 |
 | `sys_user_role` | 用户与角色关系 |
@@ -212,7 +212,7 @@ flowchart LR
 | 功能点 | 内置 API / 按钮权限在 `_SEED_RESOURCES` 登记，资源码全局唯一并绑定菜单 | seed 后自动入库 |
 | 接口守卫 | 业务功能挂 `require_perm("xxx:action")`，系统功能挂 `require_system_perm("xxx:action")` 或 `require_system()` | 不自动 |
 | 按钮权限 | 前端按钮、危险操作、导入导出等动作使用 `v-permission="'xxx:action'"` | 不自动 |
-| 默认授权 | system 角色每次 seed 自动补齐全量；normal / paid / tenant_admin 不覆盖已配置授权，需要角色页授权或显式一次性回填 | system 自动，业务角色需决策 |
+| 默认授权 | system 角色每次 seed 自动补齐全量；normal / tenant_admin 不覆盖已配置授权，需要角色页授权或显式一次性回填 | system 自动，业务角色需决策 |
 | 用户资产 | 新表和查询必须带 `tenant_id + owner_user_id`，服务层从上下文取归属 | 不自动 |
 
 默认授权决策按页面性质处理：

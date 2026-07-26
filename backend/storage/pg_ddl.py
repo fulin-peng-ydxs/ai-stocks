@@ -29,7 +29,6 @@ from backend.auth.constants import (
     ASSET_TENANT_PUBLISH_RESOURCE_CODES,
     BUSINESS_RESOURCE_CODES,
     ROLE_NORMAL,
-    ROLE_PAID,
     ROLE_SYSTEM,
     ROLE_TENANT_ADMIN,
 )
@@ -99,7 +98,7 @@ CREATE TABLE IF NOT EXISTS sys_role (
     id          TEXT PRIMARY KEY,
     code        TEXT NOT NULL,
     name        TEXT NOT NULL,
-    kind        TEXT NOT NULL DEFAULT 'custom',   -- system|tenant_admin|normal|paid（系统内置）| custom（自建）
+    kind        TEXT NOT NULL DEFAULT 'custom',   -- system|tenant_admin|normal（系统内置）| custom（自建）
     is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,   -- 内置角色不可删
     is_locked   BOOLEAN NOT NULL DEFAULT FALSE,   -- 权限锁定（system 超管：全授权且不可改）
     description TEXT,
@@ -770,8 +769,6 @@ _SEED_ROLES: tuple[tuple[str, str, str, bool, str], ...] = (
      "本租户管理员：管理本租户用户，使用全部业务功能"),
     (ROLE_NORMAL, "普通用户", "normal", False,
      "普通用户：使用行情/筛选/回测/训练等业务功能"),
-    (ROLE_PAID, "付费用户", "paid", False,
-     "付费用户（预留，阶段三无创建入口/配额）"),
 )
 
 # 菜单树 seed：承接前端 menuConfig（emoji→Element Plus 图标名），新增「系统管理→权限管理」子组。
@@ -954,7 +951,6 @@ _SEED_DICT_ITEMS: tuple[tuple[str, str, str, int, str], ...] = (
     ("role_type", ROLE_SYSTEM, "系统管理员", 10, "#F56C6C"),
     ("role_type", ROLE_TENANT_ADMIN, "租户管理员", 20, "#409EFF"),
     ("role_type", ROLE_NORMAL, "普通用户", 30, "#67C23A"),
-    ("role_type", ROLE_PAID, "付费用户", 40, "#E6A23C"),
     ("user_status", "active", "启用", 10, "#67C23A"),
     ("user_status", "disabled", "停用", 20, "#909399"),
     ("user_status", "locked", "锁定", 30, "#F56C6C"),
@@ -1015,6 +1011,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         "ON sys_user (email) WHERE email IS NOT NULL")
     seed_default_tenant(client)   # 先补 admin=system 的 role_code，供 seed_rbac 建 user_role 用
     seed_rbac(client)             # 内置角色/菜单树/功能点/默认授权 + 无角色存量用户补 user_role
+    _remove_legacy_paid_role(client)
     seed_stage5_platform_capabilities(client)
     revoke_tenant_admin_audit_default_grants(client)
     seed_stage6_asset_visibility(client)
@@ -1247,12 +1244,76 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
         "ON CONFLICT (user_id, role_id) DO NOTHING")
 
 
+def _remove_legacy_paid_role(client: PostgresClient) -> None:
+    """幂等移除历史付费角色，受影响用户迁移为普通用户并立即失效旧权限快照。
+
+    角色关联是权限事实源，迁移先给受影响用户补 normal，再删除历史角色。`role_code` 只作为
+    登录响应兼容字段，按迁移后的真实角色优先级重新归一，避免同时拥有 system/tenant_admin
+    的用户被错误降级。
+    """
+    legacy_code = "paid"
+    affected_df = client.query_df(
+        "SELECT DISTINCT u.id FROM sys_user u "
+        "LEFT JOIN sys_user_role ur ON ur.user_id=u.id "
+        "LEFT JOIN sys_role r ON r.id=ur.role_id "
+        "WHERE u.role_code=%s OR r.code=%s OR r.kind=%s",
+        [legacy_code, legacy_code, legacy_code],
+    )
+    affected = affected_df["id"].tolist() if not affected_df.empty else []
+
+    with client.transaction() as conn, conn.cursor() as cur:
+        if affected:
+            cur.execute(
+                "INSERT INTO sys_user_role (user_id, role_id) "
+                "SELECT id, %s FROM sys_user WHERE id=ANY(%s) "
+                "ON CONFLICT (user_id, role_id) DO NOTHING",
+                [ROLE_NORMAL, affected],
+            )
+        cur.execute(
+            "DELETE FROM sys_user_role WHERE role_id IN ("
+            "SELECT id FROM sys_role WHERE code=%s OR kind=%s)",
+            [legacy_code, legacy_code],
+        )
+        cur.execute(
+            "DELETE FROM sys_role WHERE code=%s OR kind=%s",
+            [legacy_code, legacy_code],
+        )
+        if affected:
+            cur.execute(
+                "UPDATE sys_user u SET role_code=CASE "
+                "WHEN EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id=ur.role_id "
+                "  WHERE ur.user_id=u.id AND (r.code=%s OR r.kind='system')) THEN %s "
+                "WHEN EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id=ur.role_id "
+                "  WHERE ur.user_id=u.id AND r.code=%s) THEN %s "
+                "ELSE %s END, perm_ver=perm_ver+1 "
+                "WHERE u.id=ANY(%s)",
+                [
+                    ROLE_SYSTEM,
+                    ROLE_SYSTEM,
+                    ROLE_TENANT_ADMIN,
+                    ROLE_TENANT_ADMIN,
+                    ROLE_NORMAL,
+                    affected,
+                ],
+            )
+        cur.execute(
+            "DELETE FROM dict_item WHERE type_code='role_type' AND code=%s",
+            [legacy_code],
+        )
+
+    if affected:
+        from backend.auth.perm_resolver import clear_perms_cache
+
+        clear_perms_cache(affected)
+        log.info("历史角色已移除，%d 个用户已迁移为普通用户", len(affected))
+
+
 def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None:
     """为内置角色写默认菜单/功能授权（仅当该角色尚无 role_menu，避免覆盖后续手工调整）。"""
     all_resource_codes = [r[1] for r in _SEED_RESOURCES]
     business = list(_BUSINESS_MENU_CODES)
     # (role_id, 菜单码集, 资源码集)
-    # 阶段四（R21/R28）：normal/paid/tenant_admin 默认授研究业务功能码（BUSINESS_RESOURCE_CODES）；
+    # 阶段四（R21/R28）：normal/tenant_admin 默认授研究业务功能码（BUSINESS_RESOURCE_CODES）；
     # tenant_admin 另含用户管理码和租户公开评分方案码。baseline（SHARED_RESOURCE_CODES）不入授权（由 resolve 强制注入）；
     # system-only 码不授非 system（挂 visible='system' 菜单，system_only_resource_ids 拦截）。
     biz_res = list(BUSINESS_RESOURCE_CODES)
@@ -1261,7 +1322,6 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
         (ROLE_TENANT_ADMIN, business + list(_TENANT_ADMIN_EXTRA_MENUS),
          list(_USER_RESOURCE_CODES) + list(_TENANT_ADMIN_EXTRA_RESOURCE_CODES) + biz_res),
         (ROLE_NORMAL, business, biz_res),
-        (ROLE_PAID, business, biz_res),   # 付费角色预留：暂同普通用户业务页，后续可在角色页调整
     ]
     for role_id, menu_codes, resource_codes in grants:
         # system 角色：锁定、不可手工编辑，始终**幂等补齐全量**——保证新增菜单/功能点即时纳入其全授权
@@ -1315,7 +1375,7 @@ def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:
     changed = 0
 
     with client.transaction() as conn, conn.cursor() as cur:
-        for role_id in (ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID):
+        for role_id in (ROLE_TENANT_ADMIN, ROLE_NORMAL):
             menus = business_menus + (list(_TENANT_ADMIN_EXTRA_MENUS) if role_id == ROLE_TENANT_ADMIN else [])
             resources = (
                 business_resources
@@ -1342,8 +1402,8 @@ def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:
 
         cur.execute(
             "DELETE FROM sys_role_resource "
-            "WHERE role_id IN (%s, %s) AND resource_id=%s",
-            [ROLE_NORMAL, ROLE_PAID, "score-profile:publish-tenant"],
+            "WHERE role_id=%s AND resource_id=%s",
+            [ROLE_NORMAL, "score-profile:publish-tenant"],
         )
         changed += max(cur.rowcount, 0)
 
@@ -1351,8 +1411,8 @@ def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:
             cur.execute(
                 "UPDATE sys_user u SET perm_ver=perm_ver+1 "
                 "WHERE EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id "
-                "AND ur.role_id IN (%s, %s, %s))",
-                [ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID],
+                "AND ur.role_id IN (%s, %s))",
+                [ROLE_TENANT_ADMIN, ROLE_NORMAL],
             )
         cur.execute(
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
@@ -1482,8 +1542,8 @@ def seed_stage6_asset_visibility(client: PostgresClient | None = None) -> None:
 
         cur.execute(
             "DELETE FROM sys_role_resource "
-            "WHERE role_id IN (%s, %s) AND resource_id = ANY(%s)",
-            [ROLE_NORMAL, ROLE_PAID, tenant_publish + public_publish],
+            "WHERE role_id=%s AND resource_id = ANY(%s)",
+            [ROLE_NORMAL, tenant_publish + public_publish],
         )
         changed += max(cur.rowcount, 0)
 
@@ -1498,8 +1558,8 @@ def seed_stage6_asset_visibility(client: PostgresClient | None = None) -> None:
             cur.execute(
                 "UPDATE sys_user u SET perm_ver=perm_ver+1 "
                 "WHERE EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id "
-                "AND ur.role_id IN (%s, %s, %s))",
-                [ROLE_TENANT_ADMIN, ROLE_NORMAL, ROLE_PAID],
+                "AND ur.role_id IN (%s, %s))",
+                [ROLE_TENANT_ADMIN, ROLE_NORMAL],
             )
         cur.execute(
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "

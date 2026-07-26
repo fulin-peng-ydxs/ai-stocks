@@ -1,39 +1,39 @@
 <script setup lang="ts">
-// 角色权限树节点（多租户 RBAC stage3·T12 / Codex 整改：承接 role-management.html 定制三级树）。
-// 递归渲染：分组=可折叠卡片；叶子菜单=菜单行 + 其功能点 chip 面板；三态勾选（on/half/off）级联。
-// 勾选态由父组件以「原子叶子集合」派生（stateOf），toggle 交回父组件级联，故本组件仅负责渲染 + 事件。
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
-
-export interface PermNode {
-  key: string
-  label: string
-  kind: 'menu' | 'resource'
-  nodeType: string // menu: group/leaf；resource: button/api
-  sysLocked: boolean // system 可见子树：非 system 角色不可授（后端硬拒，前端置灰=off）
-  baselineLocked?: boolean // 登录基线共享读：所有角色恒有、置灰=on 不可反选（与 sysLocked 相反语义，stage4·R21）
-  children?: PermNode[]
-}
+import PermissionResourceList from './PermissionResourceList.vue'
+import type { PermNode } from './permissionTree'
 
 const props = defineProps<{
   node: PermNode
-  stateOf: (n: PermNode) => 'on' | 'half' | 'off'
-  toggle: (n: PermNode) => void
+  stateOf: (node: PermNode) => 'on' | 'half' | 'off'
+  toggle: (node: PermNode) => void
   readonly: boolean
 }>()
 
-// 分组默认展开；system 锁定分组默认折叠（对齐原型：置灰组收起）
 const collapsed = ref(props.node.sysLocked)
-
-const childMenus = computed(() => (props.node.children ?? []).filter((c) => c.kind === 'menu'))
-const childResources = computed(() => (props.node.children ?? []).filter((c) => c.kind === 'resource'))
+const resourcesOpen = ref(false)
+const childMenus = computed(() => (props.node.children ?? []).filter((child) => child.kind === 'menu'))
+const childResources = computed(() => (props.node.children ?? []).filter((child) => child.kind === 'resource'))
 const isGroup = computed(() => props.node.nodeType === 'group')
+
+function descendantResources(node: PermNode): PermNode[] {
+  if (node.kind === 'resource') return [node]
+  return (node.children ?? []).flatMap(descendantResources)
+}
+
+const resourceStats = computed(() => {
+  const resources = descendantResources(props.node)
+  const selected = resources.filter((resource) => (
+    resource.baselineLocked || props.stateOf(resource) === 'on'
+  )).length
+  return { selected, total: resources.length }
+})
 </script>
 
 <template>
-  <!-- 分组：可折叠卡片 -->
-  <div v-if="isGroup" class="pt-grp" :class="{ collapsed, locked: node.sysLocked }">
-    <div class="pt-grp-head" @click="collapsed = !collapsed">
+  <section v-if="isGroup" class="pt-group" :class="{ collapsed, locked: node.sysLocked }">
+    <div class="pt-group-head" @click="collapsed = !collapsed">
       <el-icon class="pt-caret"><ArrowDown /></el-icon>
       <el-checkbox
         :model-value="stateOf(node) === 'on'"
@@ -42,35 +42,32 @@ const isGroup = computed(() => props.node.nodeType === 'group')
         @click.stop
         @change="toggle(node)"
       />
-      <span class="pt-grp-title">{{ node.label }}</span>
-      <el-tag v-if="node.sysLocked" type="warning" size="small" effect="plain" class="pt-lock">仅系统管理员</el-tag>
-      <span v-else class="pt-gcount">分组</span>
+      <span class="pt-group-title">{{ node.label }}</span>
+      <span v-if="resourceStats.total" class="pt-summary">
+        已选 {{ resourceStats.selected }}/{{ resourceStats.total }}
+      </span>
+      <span v-if="node.sysLocked" class="pt-system-only">仅系统管理员</span>
     </div>
-    <div v-show="!collapsed" class="pt-grp-body">
+    <div v-show="!collapsed" class="pt-group-body">
       <PermissionTree
-        v-for="c in childMenus" :key="c.key"
-        :node="c" :state-of="stateOf" :toggle="toggle" :readonly="readonly"
+        v-for="child in childMenus"
+        :key="child.key"
+        :node="child"
+        :state-of="stateOf"
+        :toggle="toggle"
+        :readonly="readonly"
       />
-      <!-- 分组直挂功能点（少见）：chip 面板 -->
-      <div v-if="childResources.length" class="pt-funcs">
-        <span v-for="r in childResources" :key="r.key" class="pt-func"
-              :class="{ locked: r.sysLocked, baseline: r.baselineLocked }">
-          <el-checkbox
-            :model-value="r.baselineLocked || stateOf(r) === 'on'"
-            :disabled="readonly || r.sysLocked || r.baselineLocked"
-            @change="toggle(r)"
-          />
-          <span class="pt-ficon" aria-hidden="true" />
-          <span class="pt-fname">{{ r.label }}</span>
-          <span class="pt-ftype" :class="r.nodeType">{{ r.nodeType === 'api' ? '接口' : '按钮' }}</span>
-          <span v-if="r.baselineLocked" class="pt-baseline">基线</span>
-        </span>
-      </div>
+      <PermissionResourceList
+        v-if="childResources.length"
+        :resources="childResources"
+        :state-of="stateOf"
+        :toggle="toggle"
+        :readonly="readonly"
+      />
     </div>
-  </div>
+  </section>
 
-  <!-- 叶子菜单：菜单行 + 功能点 chip 面板 -->
-  <div v-else class="pt-menu" :class="{ locked: node.sysLocked }">
+  <section v-else class="pt-menu" :class="{ locked: node.sysLocked }">
     <div class="pt-menu-row">
       <el-checkbox
         :model-value="stateOf(node) === 'on'"
@@ -78,63 +75,133 @@ const isGroup = computed(() => props.node.nodeType === 'group')
         :disabled="readonly || node.sysLocked"
         @change="toggle(node)"
       />
-      <span class="pt-mlabel"><span class="pt-ico">●</span>{{ node.label }}</span>
+      <span class="pt-menu-label">{{ node.label }}</span>
+      <span v-if="node.sysLocked" class="pt-system-only">仅系统管理员</span>
+      <el-button
+        v-if="childResources.length"
+        class="pt-resource-trigger"
+        link
+        size="small"
+        :aria-expanded="resourcesOpen"
+        @click="resourcesOpen = !resourcesOpen"
+      >
+        功能权限 {{ resourceStats.selected }}/{{ resourceStats.total }}
+        <el-icon class="pt-resource-caret" :class="{ open: resourcesOpen }"><ArrowDown /></el-icon>
+      </el-button>
+      <span v-else class="pt-summary">无功能点</span>
     </div>
-    <div v-if="childResources.length" class="pt-funcs">
-      <span v-for="r in childResources" :key="r.key" class="pt-func"
-            :class="{ locked: r.sysLocked, baseline: r.baselineLocked }">
-        <el-checkbox
-          :model-value="r.baselineLocked || stateOf(r) === 'on'"
-          :disabled="readonly || r.sysLocked || r.baselineLocked"
-          @change="toggle(r)"
-          />
-          <span class="pt-ficon" aria-hidden="true" />
-          <span class="pt-fname">{{ r.label }}</span>
-          <span class="pt-ftype" :class="r.nodeType">{{ r.nodeType === 'api' ? '接口' : '按钮' }}</span>
-          <span v-if="r.baselineLocked" class="pt-baseline">基线</span>
-      </span>
-    </div>
-  </div>
+    <PermissionResourceList
+      v-if="resourcesOpen && childResources.length"
+      :resources="childResources"
+      :state-of="stateOf"
+      :toggle="toggle"
+      :readonly="readonly"
+    />
+  </section>
 </template>
 
 <style scoped>
-/* 分组卡片（一级） */
-.pt-grp { border: 1px solid var(--el-border-color-lighter); border-left: 4px solid var(--perm-group-color);
-  border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
-.pt-grp.locked { opacity: 0.6; }
-.pt-grp-head { display: flex; align-items: center; gap: var(--app-space-2); padding: 9px 12px; background: var(--el-fill-color-light);
-  cursor: pointer; font-weight: var(--app-font-weight-section); font-size: var(--app-font-size-table); }
-.pt-caret { color: var(--el-text-color-secondary); transition: transform 0.15s; }
-.pt-grp.collapsed .pt-caret { transform: rotate(-90deg); }
-.pt-grp.collapsed .pt-grp-body { display: none; }
-.pt-grp-title { user-select: none; }
-.pt-gcount { margin-left: auto; font-size: var(--app-font-size-micro); color: var(--el-text-color-secondary);
-  background: var(--el-bg-color); border: 1px solid var(--el-border-color); border-radius: 10px; padding: 1px 8px; }
-.pt-lock { margin-left: auto; transform: scale(0.9); }
-.pt-grp-body { padding: 6px 12px 8px; }
-/* 嵌套分组缩进 + 引导线 */
-.pt-grp-body .pt-grp { margin-left: 14px; border-left: 2px solid var(--el-border-color); }
-/* 菜单行（二级） */
-.pt-menu { margin-left: 8px; border-left: 2px solid var(--el-border-color-lighter); padding-left: 12px; }
-.pt-menu-row { display: flex; align-items: center; gap: var(--app-space-2); padding: 6px 0; }
-.pt-mlabel { font-size: var(--app-font-size-table); display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
-.pt-ico { color: var(--el-color-success); font-size: var(--app-font-size-body); line-height: var(--app-line-height-solid); }
-/* 功能点 chip 面板（三级） */
-.pt-funcs { display: flex; flex-wrap: wrap; gap: var(--app-space-control-gap) var(--app-space-4); padding: 8px 12px; margin: 2px 0 8px 20px;
-  background: var(--el-fill-color-light); border: 1px dashed var(--el-border-color); border-radius: 6px; }
-.pt-func { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); font-size: var(--app-font-size-caption); color: var(--el-text-color-regular); }
-.pt-func.locked { opacity: 0.6; }
-.pt-func.baseline { opacity: 0.85; }
-.pt-ficon { width: 8px; height: 8px; border-radius: 2px; background: var(--perm-feature-color); transform: rotate(45deg);
-  flex: none; margin-left: 1px; }
-.pt-baseline { font-size: var(--app-font-size-tiny); color: var(--el-color-primary);
-  border: 1px solid color-mix(in srgb, var(--el-color-primary) 40%, transparent); border-radius: 3px; padding: 0 4px; }
-.pt-fname { user-select: none; }
-.pt-ftype { font-size: var(--app-font-size-tiny); color: var(--el-text-color-secondary); border: 1px solid var(--el-border-color);
-  border-radius: 3px; padding: 0 4px; }
-.pt-ftype.api { color: var(--el-color-success); border-color: color-mix(in srgb, var(--el-color-success) 40%, transparent); }
-.pt-ftype.button { color: var(--el-color-warning); border-color: color-mix(in srgb, var(--el-color-warning) 40%, transparent); }
-/* el-checkbox 只留框，不占 label 宽度 */
-.pt-grp-head :deep(.el-checkbox), .pt-menu-row :deep(.el-checkbox), .pt-func :deep(.el-checkbox) { height: auto; margin-right: 0; }
-.pt-grp-head :deep(.el-checkbox__label), .pt-menu-row :deep(.el-checkbox__label), .pt-func :deep(.el-checkbox__label) { display: none; }
+.pt-group {
+  overflow: hidden;
+  margin-bottom: var(--app-space-3);
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+}
+.pt-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  min-height: 40px;
+  padding: 7px 12px;
+  background: var(--el-fill-color-light);
+  cursor: pointer;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
+}
+.pt-group-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  white-space: nowrap;
+}
+.pt-caret,
+.pt-resource-caret {
+  color: var(--el-text-color-secondary);
+  transition: transform 150ms ease;
+}
+.pt-group.collapsed .pt-caret {
+  transform: rotate(-90deg);
+}
+.pt-resource-caret {
+  margin-left: 3px;
+  transform: rotate(-90deg);
+}
+.pt-resource-caret.open {
+  transform: rotate(0);
+}
+.pt-group-body {
+  padding: 4px 12px 8px;
+}
+.pt-group-body .pt-group {
+  margin: var(--app-space-2) 0 var(--app-space-2) var(--app-space-3);
+  border-color: var(--el-border-color-lighter);
+}
+.pt-menu {
+  overflow: hidden;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.pt-menu:last-child {
+  border-bottom: 0;
+}
+.pt-menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  min-height: 40px;
+  padding: 6px 8px;
+}
+.pt-menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pt-summary {
+  flex: none;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  font-weight: var(--app-font-weight-regular);
+}
+.pt-resource-trigger {
+  flex: none;
+  margin-left: auto;
+  padding: 0 2px;
+}
+.pt-system-only {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--el-color-warning) 40%, var(--el-border-color));
+  border-radius: 3px;
+  color: var(--el-color-warning);
+  font-size: var(--app-font-size-tiny);
+  font-weight: var(--app-font-weight-regular);
+}
+:deep(.el-checkbox) {
+  height: auto;
+  margin-right: 0;
+}
+:deep(.el-checkbox__label) {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pt-caret,
+  .pt-resource-caret {
+    transition: none;
+  }
+}
 </style>

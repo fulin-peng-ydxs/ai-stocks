@@ -745,7 +745,7 @@ test.describe('个股详情三图工作区', () => {
     expect(consoleIssues).toEqual([])
   })
 
-  test('临时 normal 与 paid 用户的 PG 图表偏好相互隔离', async ({
+  test('两个临时普通用户的 PG 图表偏好相互隔离', async ({
     browser,
     request,
   }, testInfo) => {
@@ -754,22 +754,22 @@ test.describe('个股详情三图工作区', () => {
     const prefParams = { scope: 'page', pageKey: 'stock-detail', prefKey: 'settings' }
     const temporaryUsers: TemporaryE2EUser[] = []
     let normalContext: BrowserContext | undefined
-    let paidContext: BrowserContext | undefined
+    let secondaryContext: BrowserContext | undefined
 
     try {
       const normalUser = await createTemporaryE2EUser(request, 'normal')
       temporaryUsers.push(normalUser)
-      const paidUser = await createTemporaryE2EUser(request, 'paid')
-      temporaryUsers.push(paidUser)
+      const secondaryUser = await createTemporaryE2EUser(request, 'normal')
+      temporaryUsers.push(secondaryUser)
       const normalAuth = await authenticateDebugUser(request, normalUser.account)
-      const paidAuth = await authenticateDebugUser(request, paidUser.account)
+      const secondaryAuth = await authenticateDebugUser(request, secondaryUser.account)
       const [sample] = await loadStockSamples(request, normalAuth, 1)
 
       await saveUserPreference(request, normalAuth, {
         ...prefParams,
         value: stockDetailPreference('volume', 'macd'),
       })
-      await saveUserPreference(request, paidAuth, {
+      await saveUserPreference(request, secondaryAuth, {
         ...prefParams,
         value: stockDetailPreference('macd', 'volume'),
       })
@@ -779,24 +779,24 @@ test.describe('个股详情三图工作区', () => {
         viewport: testInfo.project.use.viewport,
       }
       normalContext = await browser.newContext(contextOptions)
-      paidContext = await browser.newContext(contextOptions)
+      secondaryContext = await browser.newContext(contextOptions)
       const normalPage = await normalContext.newPage()
-      const paidPage = await paidContext.newPage()
+      const secondaryPage = await secondaryContext.newPage()
       const normalConsoleIssues = collectConsoleIssues(normalPage)
-      const paidConsoleIssues = collectConsoleIssues(paidPage)
+      const secondaryConsoleIssues = collectConsoleIssues(secondaryPage)
       await installAuthSnapshot(normalPage, normalAuth)
-      await installAuthSnapshot(paidPage, paidAuth)
+      await installAuthSnapshot(secondaryPage, secondaryAuth)
 
       await Promise.all([
         normalPage.goto(`/stocks/${sample.code}`),
-        paidPage.goto(`/stocks/${sample.code}`),
+        secondaryPage.goto(`/stocks/${sample.code}`),
       ])
       const normalWorkspace = normalPage.getByLabel('个股多图联动工作区')
-      const paidWorkspace = paidPage.getByLabel('个股多图联动工作区')
+      const secondaryWorkspace = secondaryPage.getByLabel('个股多图联动工作区')
       await expect(normalWorkspace.locator('[data-panel-key]')).toHaveCount(3)
       await expect(normalWorkspace.locator('[data-panel-key="slot2"]')).toContainText('量能')
-      await expect(paidWorkspace.locator('[data-panel-key]')).toHaveCount(3)
-      await expect(paidWorkspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
+      await expect(secondaryWorkspace.locator('[data-panel-key]')).toHaveCount(3)
+      await expect(secondaryWorkspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
 
       await normalPage.getByTestId('page-settings-trigger').click()
       await normalPage.getByTestId('stock-detail-chart-slot3-hidden').click()
@@ -807,21 +807,21 @@ test.describe('个股详情三图工作区', () => {
         }
         return [value.charts?.slot2, value.charts?.slot3]
       }).toEqual(['volume', 'hidden'])
-      const paidValue = await getUserPreference(request, paidAuth, prefParams) as {
+      const secondaryValue = await getUserPreference(request, secondaryAuth, prefParams) as {
         charts?: { slot2?: string; slot3?: string }
       }
-      expect([paidValue.charts?.slot2, paidValue.charts?.slot3]).toEqual(['macd', 'volume'])
+      expect([secondaryValue.charts?.slot2, secondaryValue.charts?.slot3]).toEqual(['macd', 'volume'])
 
-      await Promise.all([normalPage.reload(), paidPage.reload()])
+      await Promise.all([normalPage.reload(), secondaryPage.reload()])
       await expect(normalWorkspace.locator('[data-panel-key]')).toHaveCount(2)
       await expect(normalWorkspace.locator('[data-panel-key="slot2"]')).toContainText('量能')
-      await expect(paidWorkspace.locator('[data-panel-key]')).toHaveCount(3)
-      await expect(paidWorkspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
+      await expect(secondaryWorkspace.locator('[data-panel-key]')).toHaveCount(3)
+      await expect(secondaryWorkspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
       expect(normalConsoleIssues).toEqual([])
-      expect(paidConsoleIssues).toEqual([])
+      expect(secondaryConsoleIssues).toEqual([])
     } finally {
       await normalContext?.close()
-      await paidContext?.close()
+      await secondaryContext?.close()
       await destroyTemporaryE2EUsers(request, temporaryUsers)
     }
   })

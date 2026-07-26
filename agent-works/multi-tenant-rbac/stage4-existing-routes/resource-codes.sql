@@ -3,7 +3,7 @@
 -- ----------------------------------------------------------------------------
 -- 用途：
 --   1) 把阶段四为 13 个存量业务路由固化的精确资源码（sys_resource）写入既有 PG 库；
---   2) 为 normal/paid/tenant_admin 内置角色写默认业务授权（sys_role_resource），一次性、
+--   2) 为 normal/tenant_admin 内置角色写默认业务授权（sys_role_resource），一次性、
 --      ON CONFLICT DO NOTHING，不覆盖管理员在角色页的后续手工调整；
 --   3) 为 system 角色幂等补齐全量新资源（角色页「全选+锁定」展示；运行时 system 由
 --      perm_resolver 判全量兜底）；
@@ -39,7 +39,7 @@ BEGIN;
 -- ────────────────────────────────────────────────────────────────────────
 -- 1) 资源码落行（sys_resource）
 --    分三类：A=baseline 登录基线共享读（挂 login 菜单，force-inject，角色页锁定不可反选）；
---            B=可授权业务码（挂 login 菜单，默认授 normal/paid/tenant_admin）；
+--            B=可授权业务码（挂 login 菜单，默认授 normal/tenant_admin）；
 --            C=system-only（挂 visible='system' 菜单，system_only_resource_ids 自动拦截授非 system）。
 -- ────────────────────────────────────────────────────────────────────────
 
@@ -119,14 +119,14 @@ INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, s
 ON CONFLICT (id) DO NOTHING;
 
 -- ────────────────────────────────────────────────────────────────────────
--- 2) 默认业务授权（sys_role_resource）：normal / paid / tenant_admin ← _BUSINESS_RESOURCE_CODES
+-- 2) 默认业务授权（sys_role_resource）：normal / tenant_admin ← _BUSINESS_RESOURCE_CODES
 --    仅一次性 ON CONFLICT DO NOTHING；baseline（A 类）不写授权行（resolver 强制注入）；
 --    system-only（C 类）不授非 system。tenant_admin 得业务码但仍不含数据管理/系统配置/布局平台/角色菜单租户管理。
 -- ────────────────────────────────────────────────────────────────────────
 
 INSERT INTO sys_role_resource (role_id, resource_id)
 SELECT r.id, code
-FROM (VALUES ('normal'), ('paid'), ('tenant_admin')) AS r(id)
+FROM (VALUES ('normal'), ('tenant_admin')) AS r(id)
 CROSS JOIN (VALUES
   ('board:view'), ('board:compute'), ('score:run'), ('layout:user-config'),
   ('screen-profile:view'), ('screen-profile:save'), ('screen-profile:delete'), ('screen:run'),

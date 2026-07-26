@@ -58,6 +58,14 @@ describe('布局预设运行时 Element Plus 色阶', () => {
         }
         expect(document.documentElement.style.getPropertyValue('--el-color-error-dark-2'))
           .toBe(document.documentElement.style.getPropertyValue('--el-color-danger-dark-2'))
+        expect(document.documentElement.style.getPropertyValue('--page-settings-seg-bg'))
+          .toBe(tokens.surfaceHover)
+        expect(document.documentElement.style.getPropertyValue('--page-settings-seg-hover-bg'))
+          .toBe(tokens.activeBg)
+        expect(document.documentElement.style.getPropertyValue('--page-settings-seg-active-bg'))
+          .toBe(mode === 'dark'
+            ? blendHex(tokens.activeBg, tokens.textStrong, 0.88)
+            : tokens.surfaceBg)
       }
     }
   })

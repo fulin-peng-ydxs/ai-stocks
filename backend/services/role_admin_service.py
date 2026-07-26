@@ -4,7 +4,7 @@
 后端只做"替换保存"）。守卫与业务规则集中在此，api/roles.py 只做参数校验与响应包装。
 
 业务规则（阶段三铁律）：
-- **内置保护**：is_builtin 角色不可删除（system/tenant_admin/normal/paid）。
+- **内置保护**：is_builtin 角色不可删除（system/tenant_admin/normal）。
 - **超管锁定**：is_locked 角色（system 超管）名称/描述与授权均不可改（其权限由 perm_resolver 判全量）。
 - **唯一**：角色 code 全局唯一，且不得撞内置码。
 - **删除前置**：角色下仍有用户时不可删（避免 FK RESTRICT 直接抛库错，给友好提示）。

@@ -110,19 +110,19 @@ def test_list_allowed_for_system(client, env):
     r = client.get("/api/roles", headers=env.sys_headers())
     assert r.status_code == 200
     codes = {x["code"] for x in r.json()["data"]}
-    assert {ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL} <= codes   # 至少四内置
+    assert {ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL} <= codes
 
 
 # ── assignable 分流（Codex P1 + 二轮复核）──
 
-def test_assignable_system_includes_custom(client, env):
+def test_assignable_system_includes_custom_and_system(client, env):
     custom = env.mk_role()
     r = client.get("/api/roles/assignable", headers=env.sys_headers())
     assert r.status_code == 200
     data = r.json()["data"]
     ids = {x["id"] for x in data}
     assert custom in ids                                   # system 可分配自建 custom
-    assert ROLE_SYSTEM not in {x["code"] for x in data}    # 但永不含 system 超管
+    assert ROLE_SYSTEM in {x["code"] for x in data}
 
 
 def test_assignable_tenant_admin_preset_only(client, env):
@@ -136,7 +136,7 @@ def test_assignable_tenant_admin_preset_only(client, env):
     kinds = {x["kind"] for x in data}
     assert custom not in ids                               # 不含任何 custom
     assert ROLE_SYSTEM not in {x["code"] for x in data}    # 不含 system
-    assert kinds <= {"tenant_admin", "normal", "paid"}     # 仅系统预设
+    assert kinds <= {"tenant_admin", "normal"}             # 仅租户级系统预设
 
 
 # ── CRUD ──

@@ -22,7 +22,7 @@ export interface UserListResult {
   total: number
 }
 
-/** 可分配角色（供用户下拉；按调用者身份分流，system 得含自建 custom、tenant_admin 仅系统预设）。 */
+/** 可分配角色（system 得全部角色；tenant_admin 仅得租户级系统预设）。 */
 export interface AssignableRole {
   id: string
   code: string

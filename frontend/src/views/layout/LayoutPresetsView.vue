@@ -18,6 +18,7 @@ import {
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import {
   getLayoutPreset,
   getPageLayout,
@@ -358,7 +359,8 @@ onMounted(reloadPresets)
           </el-table-column>
           <el-table-column label="类型" width="100">
             <template #default="{ row }">
-              <el-tag :type="row.is_builtin ? 'warning' : 'primary'" effect="plain">{{ row.is_builtin ? '系统内置' : '自定义' }}</el-tag>
+              <SystemBuiltinTag v-if="row.is_builtin" />
+              <el-tag v-else type="primary" effect="plain">自定义</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="230" fixed="right">

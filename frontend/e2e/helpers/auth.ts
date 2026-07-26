@@ -21,7 +21,7 @@ export interface TemporaryE2EUser {
   userId: string
   account: string
   tenantId: string
-  role: 'normal' | 'paid'
+  role: 'normal'
   pgFingerprint: string
 }
 

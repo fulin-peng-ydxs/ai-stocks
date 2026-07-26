@@ -26,6 +26,7 @@ import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } fr
 import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -948,7 +949,13 @@ onBeforeUnmount(() => {
                 v-for="p in tradeProfiles"
                 :key="tradeProfileKey(p)"
                 :value="tradeProfileKey(p)"
-                :label="p.name + (p.is_preset ? '（系统内置）' : '')" />
+                :label="p.name"
+              >
+                <span class="trade-profile-option">
+                  <SystemBuiltinTag v-if="p.is_preset" />
+                  <span>{{ p.name }}</span>
+                </span>
+              </el-option>
             </el-select>
             <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
           </div>
@@ -1090,6 +1097,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.trade-profile-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-2);
+}
 .stock-detail-main {
   min-height: 100%;
   display: flex;
