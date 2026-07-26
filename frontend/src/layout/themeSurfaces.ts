@@ -125,7 +125,7 @@ function surface(
  */
 export const THEME_SURFACE_SPECS: Record<ThemeMode, LoginSurfaceSpec> = {
   light: surface('#ffffff', '#fcfcfc', '#ffffff', 1),
-  dark: surface('#171717', '#1f1f1f', '#1b1b1b', 1),
+  dark: surface('#171717', '#1f1f1f', '#171717', 1),
 }
 
 export function getLoginSurfaceSpec(mode: ThemeMode): LoginSurfaceSpec {

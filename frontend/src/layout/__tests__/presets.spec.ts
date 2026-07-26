@@ -131,7 +131,7 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     expect(light.submenuBg).toBe('#fcfcfc')
     expect(light.primary).toBe('#1677ff')
     expect(balanced.pageBg, '主页画布对齐登录统一画布').toBe('#171717')
-    expect(balanced.surfaceBg, '主页表面对齐登录卡片').toBe('#1b1b1b')
+    expect(balanced.surfaceBg, '夜间主体表面必须与主页画布连续').toBe('#171717')
     expect(balanced.submenuBg, '边栏对齐原型深色表面').toBe('#1f1f1f')
     expect(balanced.primary).toBe('#3b8cff')
     expect(contrastRatioFromHex(balanced.textMuted, balanced.surfaceBg), '弱文字可读性')
@@ -148,8 +148,8 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     expect(globalCss).toContain('--drawer-bg: #ffffff')
     expect(globalCss).toContain('--page-settings-section-bg: #ffffff')
     expect(globalCss).toContain('--drawer-bg: #171717')
-    expect(globalCss).toContain('--drawer-card-bg: #1b1b1b')
-    expect(globalCss).toContain('--page-settings-bg: #1b1b1b')
+    expect(globalCss).toContain('--drawer-card-bg: #171717')
+    expect(globalCss).toContain('--page-settings-bg: #171717')
   })
 
   it('二级导航与工作标签栏共享随预设强调色变化的背景渐变', () => {
