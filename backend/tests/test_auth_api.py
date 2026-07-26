@@ -39,7 +39,9 @@ def test_me_without_token_returns_401(client):
 def test_public_config_is_public_200(client):
     resp = client.get("/api/auth/public-config")
     assert resp.status_code == 200
-    assert "require_email_code" in resp.json()["data"]
+    data = resp.json()["data"]
+    assert "require_email_code" in data
+    assert any(preset["key"] == "balanced" for preset in data["appearance_presets"])
 
 
 def test_oauth_placeholder_is_soft_business_error(client):

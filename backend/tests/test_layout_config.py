@@ -8,7 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import backend.storage.duckdb_client as dc
-from backend.common.exceptions import StorageError
+from backend.auth.context import enter_request, exit_request
+from backend.common.exceptions import AuthError, StorageError
 from backend.main import app
 from backend.storage.ddl import init_db, list_tables
 from backend.storage.duckdb_client import DuckDBClient
@@ -118,6 +119,17 @@ def test_builtin_presets_seed_and_custom_preset_roundtrip(client, monkeypatch):
     monkeypatch.setattr(client, "query_df", count_query)
     assert repo.seed_builtin_presets() == 0
     assert calls == {"execute": 0, "query": 0}
+
+
+def test_platform_preset_read_is_public_but_user_tenant_stays_fail_closed(client):
+    request_token = enter_request()
+    try:
+        repo = LayoutConfigRepo(client)
+        assert any(preset["key"] == "balanced" for preset in repo.list_presets())
+        with pytest.raises(AuthError, match="请求缺少认证上下文"):
+            _ = repo.tenant_id
+    finally:
+        exit_request(request_token)
 
 
 def test_legacy_builtin_preset_reference_migrates_to_single_builtin_system(client):

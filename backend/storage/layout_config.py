@@ -587,8 +587,17 @@ class LayoutConfigRepo:
         init_db(self.c)
         self.pg = get_pg_client()
         self._init_pg_layout_tables()
-        self.tenant_id = tenant_id or get_current_owner()[0]
+        # 平台预设、页面模板和字段策略是全局配置，公开登录页也需要在未认证请求中读取。
+        # 租户只在访问用户层配置时解析，避免仓库构造阶段把平台读取误绑到认证上下文。
+        self._tenant_id = tenant_id or None
         self.seed_builtin_presets()
+
+    @property
+    def tenant_id(self) -> str:
+        """用户层配置所属租户；请求内缺少认证上下文时继续 fail-closed。"""
+        if self._tenant_id is not None:
+            return self._tenant_id
+        return get_current_owner()[0]
 
     def _init_pg_layout_tables(self) -> None:
         """只初始化布局系统需要的 PG 表，避免仓库构造触发全量 RBAC/menu seed。"""
