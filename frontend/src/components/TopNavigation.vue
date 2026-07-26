@@ -220,8 +220,7 @@ function descendantLeaves(
   gap: var(--app-space-control-gap);
   padding: 0 24px;
   border-bottom: 1px solid var(--chrome-border);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--chrome-bg) 94%, var(--shell-accent) 6%), var(--chrome-bg));
+  background: var(--chrome-context-bar-bg);
   color: var(--chrome-text);
 }
 .secondary-context {

@@ -131,7 +131,7 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     expect(light.submenuBg).toBe('#fcfcfc')
     expect(light.primary).toBe('#1677ff')
     expect(balanced.pageBg, '主页画布对齐登录统一画布').toBe('#171717')
-    expect(balanced.surfaceBg, '主页表面对齐登录卡片').toBe('#1f1f1f')
+    expect(balanced.surfaceBg, '主页表面对齐登录卡片').toBe('#1b1b1b')
     expect(balanced.submenuBg, '边栏对齐原型深色表面').toBe('#1f1f1f')
     expect(balanced.primary).toBe('#3b8cff')
     expect(contrastRatioFromHex(balanced.textMuted, balanced.surfaceBg), '弱文字可读性')
@@ -148,7 +148,20 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
     expect(globalCss).toContain('--drawer-bg: #ffffff')
     expect(globalCss).toContain('--page-settings-section-bg: #ffffff')
     expect(globalCss).toContain('--drawer-bg: #171717')
-    expect(globalCss).toContain('--page-settings-bg: #1f1f1f')
+    expect(globalCss).toContain('--drawer-card-bg: #1b1b1b')
+    expect(globalCss).toContain('--page-settings-bg: #1b1b1b')
+  })
+
+  it('二级导航与工作标签栏共享随预设强调色变化的背景渐变', () => {
+    const globalCss = readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8')
+    const topNavigation = readFileSync(join(SRC_DIR, 'components/TopNavigation.vue'), 'utf8')
+    const workspaceTabs = readFileSync(join(SRC_DIR, 'components/WorkspaceTabs.vue'), 'utf8')
+
+    expect(globalCss).toContain(
+      '--chrome-context-bar-bg: linear-gradient(90deg, color-mix(in srgb, var(--chrome-bg) 94%, var(--shell-accent) 6%), var(--chrome-bg))',
+    )
+    expect(topNavigation).toContain('background: var(--chrome-context-bar-bg)')
+    expect(workspaceTabs).toContain('background: var(--chrome-context-bar-bg)')
   })
 
   it('核心主题与品牌入口不残留偏暖底色或旧护眼色板', () => {

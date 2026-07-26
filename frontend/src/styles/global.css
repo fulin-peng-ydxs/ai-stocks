@@ -95,6 +95,7 @@ body {
   --chrome-menu-icon-active-border: rgba(64, 158, 255, 0.26);
   --chrome-menu-icon-active-color: #409eff;
   --shell-accent: #409eff;
+  --chrome-context-bar-bg: linear-gradient(90deg, color-mix(in srgb, var(--chrome-bg) 94%, var(--shell-accent) 6%), var(--chrome-bg));
   --shell-accent-strong: #dc2626;
   --shell-accent-soft: rgba(64, 158, 255, 0.12);
   --shell-accent-faint: rgba(64, 158, 255, 0.07);
@@ -257,9 +258,9 @@ html[data-layout-mode='dark'] .trade-cal .el-date-table td.available:not(.curren
    data-layout-mode='dark'，确保它们跟随当前预设实际生效模式。 */
 html.dark {
   --el-bg-color-page: #171717;
-  --el-bg-color: #1f1f1f;
-  --el-bg-color-overlay: #1f1f1f;
-  --el-fill-color-blank: #1f1f1f;
+  --el-bg-color: #1b1b1b;
+  --el-bg-color-overlay: #1b1b1b;
+  --el-fill-color-blank: #1b1b1b;
   --el-text-color-primary: #f4f4f4;
   --el-text-color-regular: #d2d2d2;
   --el-border-color: #353535;
@@ -268,7 +269,7 @@ html.dark {
   --el-fill-color: #303030;
   --el-fill-color-light: #292929;
   --chrome-bg: #1f1f1f;
-  --chrome-bg-soft: #1f1f1f;
+  --chrome-bg-soft: #1b1b1b;
   --chrome-bg-soft-hover: #292929;
   --chrome-border: #353535;
   --chrome-border-strong: #545454;
@@ -293,21 +294,21 @@ html.dark {
   --brand-word: #ffffff;
   --brand-word-stroke: rgba(0, 0, 0, 0.58);
   --drawer-bg: #171717;
-  --drawer-card-bg: #1f1f1f;
+  --drawer-card-bg: #1b1b1b;
   --drawer-border: #353535;
   --drawer-text: #d2d2d2;
   --drawer-text-muted: #9a9a9a;
-  --page-settings-bg: #1f1f1f;
+  --page-settings-bg: #1b1b1b;
   --page-settings-border: #353535;
   --page-settings-shadow: rgba(0, 0, 0, 0.42);
-  --page-settings-section-bg: #1f1f1f;
+  --page-settings-section-bg: #1b1b1b;
   --page-settings-section-border: #353535;
   --page-settings-divider: #353535;
   --page-settings-text: #f4f4f4;
   --page-settings-text-subtle: #d2d2d2;
   --page-settings-text-muted: #9a9a9a;
   --page-settings-accent: #3b8cff;
-  --page-settings-dot-ring: #1f1f1f;
+  --page-settings-dot-ring: #1b1b1b;
   --page-settings-trigger-text: #9a9a9a;
   --page-settings-trigger-hover-text: #f4f4f4;
   --page-settings-trigger-hover-bg: #292929;

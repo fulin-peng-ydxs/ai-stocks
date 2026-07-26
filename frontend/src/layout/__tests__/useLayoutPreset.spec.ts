@@ -67,7 +67,7 @@ describe('布局预设运行时 Element Plus 色阶', () => {
     setLayoutPreset('balanced')
 
     expect(document.documentElement.style.getPropertyValue('--el-color-primary')).toBe('#3b8cff')
-    expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).toBe('#2d568f')
+    expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).toBe('#2b548d')
     expect(document.documentElement.style.getPropertyValue('--el-color-primary-light-5')).not.toBe('#2a598a')
     expect(document.documentElement.style.getPropertyValue('--el-color-error'))
       .toBe(document.documentElement.style.getPropertyValue('--el-color-danger'))

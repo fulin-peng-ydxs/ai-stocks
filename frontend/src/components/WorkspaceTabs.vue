@@ -73,7 +73,7 @@ function close(key: string) {
   min-width: 0;
   padding: 0 18px 0 21px;
   border-bottom: 1px solid var(--chrome-border);
-  background: color-mix(in srgb, var(--chrome-bg) 92%, var(--el-bg-color-page) 8%);
+  background: var(--chrome-context-bar-bg);
   display: flex;
   align-items: center;
   gap: var(--app-space-3);
