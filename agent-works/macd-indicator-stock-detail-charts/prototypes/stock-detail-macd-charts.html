@@ -20,10 +20,11 @@
       --market-down-color: #22a66f;
       --up: var(--market-up-color);
       --down: var(--market-down-color);
-      --orange: #8a6500;
-      --cyan: #006d77;
-      --purple: #a21caf;
-      --ma60: #c2410c;
+      --orange: #e28a35;
+      --blue: #418af5;
+      --cyan: #56c3df;
+      --purple: #9f3793;
+      --ma60: #e56023;
       --sidebar: #131a25;
       --sidebar-text: #c8d0dc;
       --shadow: 0 12px 34px rgba(31, 41, 55, 0.10);
@@ -334,6 +335,7 @@
     .metric.up { color: var(--up); }
     .metric.down { color: var(--down); }
     .metric.orange { color: var(--orange); }
+    .metric.blue { color: var(--blue); }
     .metric.cyan { color: var(--cyan); }
     .metric.purple { color: var(--purple); }
     .metric.ma60 { color: var(--ma60); }
@@ -749,8 +751,8 @@
               <header class="panel-head">
                 <span class="panel-name" id="kTitle">K线（日线·前复权）</span>
                 <div class="panel-meta mono">
-                  <span class="metric">MA5 <b id="ma5">1444.18</b></span>
-                  <span class="metric orange">MA10 <b id="ma10">1421.63</b></span>
+                  <span class="metric orange">MA5 <b id="ma5">1444.18</b></span>
+                  <span class="metric blue">MA10 <b id="ma10">1421.63</b></span>
                   <span class="metric purple">MA20 <b id="ma20">1396.42</b></span>
                   <span class="metric cyan">MA30 <b id="ma30">1384.55</b></span>
                   <span class="metric ma60">MA60 <b id="ma60">1372.08</b></span>
@@ -1048,11 +1050,11 @@
         var ma30Series = movingAverage(closes, 30);
         var ma60Series = movingAverage(closes, 60);
         [
-          { values: ma5Series, color: "#374151" },
-          { values: ma10Series, color: "#8a6500" },
-          { values: ma20Series, color: "#a21caf" },
-          { values: ma30Series, color: "#006d77" },
-          { values: ma60Series, color: "#c2410c" }
+          { values: ma5Series, color: "#e28a35" },
+          { values: ma10Series, color: "#418af5" },
+          { values: ma20Series, color: "#9f3793" },
+          { values: ma30Series, color: "#56c3df" },
+          { values: ma60Series, color: "#e56023" }
         ].forEach(function (line) {
           svg.appendChild(svgEl("path", {
             d: pathFrom(line.values, min, max, 18, 226),
@@ -1082,8 +1084,8 @@
           }));
         });
         [
-          { values: movingAverage(volumes, 5), color: "#8a6500" },
-          { values: movingAverage(volumes, 10), color: "#006d77" }
+          { values: movingAverage(volumes, 5), color: "#e28a35" },
+          { values: movingAverage(volumes, 10), color: "#418af5" }
         ].forEach(function (line) {
           svg.appendChild(svgEl("path", {
             d: pathFrom(line.values, 0, max, 18, 226),
@@ -1109,11 +1111,11 @@
         });
         svg.appendChild(svgEl("path", {
           d: pathFrom(diffs, min, max, 18, 226),
-          fill: "none", stroke: "#8a6500", "stroke-width": 2
+          fill: "none", stroke: "#e28a35", "stroke-width": 2
         }));
         svg.appendChild(svgEl("path", {
           d: pathFrom(deas, min, max, 18, 226),
-          fill: "none", stroke: "#006d77", "stroke-width": 2
+          fill: "none", stroke: "#418af5", "stroke-width": 2
         }));
         for (var i = 1; i < dates.length; i += 1) {
           var golden = diffs[i] > deas[i] && diffs[i - 1] <= deas[i - 1];
@@ -1170,17 +1172,17 @@
           target.innerHTML =
             '<span class="metric">总量 <b>' + fmtVolume(volumes[activeIndex]) + '</b></span>' +
             '<span class="metric orange">MA5 <b>' + fmtVolume(movingAverage(volumes, 5)[activeIndex]) + '</b></span>' +
-            '<span class="metric cyan">MA10 <b>' + fmtVolume(movingAverage(volumes, 10)[activeIndex]) + '</b></span>';
+            '<span class="metric blue">MA10 <b>' + fmtVolume(movingAverage(volumes, 10)[activeIndex]) + '</b></span>';
         } else if (type === "macd" && ["loading", "insufficient", "error"].indexOf(prototypeMode) < 0) {
           var cls = macds[activeIndex] >= 0 ? "up" : "down";
           target.innerHTML =
             '<span class="metric ' + cls + '">MACD <b>' + fmt(macds[activeIndex]) + '</b></span>' +
             '<span class="metric orange">DIFF <b>' + fmt(diffs[activeIndex]) + '</b></span>' +
-            '<span class="metric cyan">DEA <b>' + fmt(deas[activeIndex]) + '</b></span>';
+            '<span class="metric blue">DEA <b>' + fmt(deas[activeIndex]) + '</b></span>';
         } else if (type === "macd") {
           target.innerHTML = '<span class="metric">MACD <b>--</b></span>' +
             '<span class="metric orange">DIFF <b>--</b></span>' +
-            '<span class="metric cyan">DEA <b>--</b></span>';
+            '<span class="metric blue">DEA <b>--</b></span>';
         } else {
           target.innerHTML = "";
         }

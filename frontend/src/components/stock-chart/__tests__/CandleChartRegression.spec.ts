@@ -9,7 +9,6 @@ import {
   trainingChartSeriesPalette,
 } from '@/components/stock-chart/chartUtils'
 import { setLayoutPreset, setPresetOverrides } from '@/layout/useLayoutPreset'
-import { contrastRatioFromHex } from '@/layout/themeSurfaces'
 
 const echartsMock = vi.hoisted(() => ({
   setOption: vi.fn(),
@@ -81,23 +80,23 @@ describe('CandleChart shared helper regression', () => {
     expect(option.series.some((series) => series.name === '量')).toBe(true)
     expect(option.series.find((series) => series.name === 'MA60')?.data?.[0]).not.toBeNull()
     expect(option.series.find((series) => series.name === 'MA60')?.lineStyle?.color)
-      .toBe('#c2410c')
+      .toBe('#e56023')
     const sharedSeries = stockChartTheme(false).series
     expect(sharedSeries).toEqual({
       kline: {
-        ma5: '#374151',
-        ma10: '#8a6500',
-        ma20: '#a21caf',
-        ma30: '#006d77',
-        ma60: '#c2410c',
+        ma5: '#e28a35',
+        ma10: '#418af5',
+        ma20: '#9f3793',
+        ma30: '#56c3df',
+        ma60: '#e56023',
       },
       volume: {
-        ma5: '#8a6500',
-        ma10: '#006d77',
+        ma5: '#e28a35',
+        ma10: '#418af5',
       },
       macd: {
-        diff: '#8a6500',
-        dea: '#006d77',
+        diff: '#e28a35',
+        dea: '#418af5',
       },
     })
     expect(Object.fromEntries(
@@ -114,7 +113,7 @@ describe('CandleChart shared helper regression', () => {
       VMA5: sharedSeries.volume.ma5,
       VMA10: sharedSeries.volume.ma10,
     })
-    expect(stockChartTheme(true).series.kline.ma5).toBe('#dfe4ea')
+    expect(stockChartTheme(true).series.kline.ma20).toBe('#c53c92')
     expect(option.xAxis[0].axisPointer?.label?.show).toBe(true)
     expect(option.xAxis[1].axisPointer?.label?.show).toBe(false)
     expect(option.tooltip.position()).toEqual([10, 6])
@@ -135,27 +134,23 @@ describe('CandleChart shared helper regression', () => {
     expect(echartsMock.dispose).toHaveBeenCalledTimes(1)
   })
 
-  it('盘感训练同色相在明暗背景下满足小文字对比度', () => {
+  it('盘感训练、量能和 MACD 统一消费参考图身份色', () => {
     const light = trainingChartSeriesPalette(false)
     const dark = trainingChartSeriesPalette(true)
-    const lightColors = [
-      ...Object.values(light.kline),
-      ...Object.values(light.volume),
-      ...Object.values(light.macd),
-    ]
-    const darkColors = [
-      ...Object.values(dark.kline),
-      ...Object.values(dark.volume),
-      ...Object.values(dark.macd),
-    ]
 
-    lightColors.forEach((color) => {
-      expect(contrastRatioFromHex(color, '#ffffff'), `${color} / light`)
-        .toBeGreaterThanOrEqual(4.5)
+    expect(light.kline).toEqual({
+      ma5: '#e28a35',
+      ma10: '#418af5',
+      ma20: '#9f3793',
+      ma30: '#56c3df',
+      ma60: '#e56023',
     })
-    darkColors.forEach((color) => {
-      expect(contrastRatioFromHex(color, '#0b0e16'), `${color} / dark`)
-        .toBeGreaterThanOrEqual(4.5)
+    expect(dark.kline).toEqual({
+      ...light.kline,
+      ma20: '#c53c92',
     })
+    expect(light.volume).toEqual({ ma5: light.kline.ma5, ma10: light.kline.ma10 })
+    expect(light.macd).toEqual({ diff: light.kline.ma5, dea: light.kline.ma10 })
+    expect(new Set(Object.values(light.kline))).toHaveLength(5)
   })
 })

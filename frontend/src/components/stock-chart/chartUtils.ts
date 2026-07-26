@@ -75,19 +75,19 @@ export function nextStockChartWorkspaceGroupId(): string {
 export function trainingChartSeriesPalette(isDark: boolean): StockChartSeriesPalette {
   return {
     kline: {
-      ma5: isDark ? '#dfe4ea' : '#374151',
-      ma10: isDark ? '#f5a623' : '#8a6500',
-      ma20: isDark ? '#d63bd6' : '#a21caf',
-      ma30: isDark ? '#16b8c4' : '#006d77',
-      ma60: isDark ? '#ff7a18' : '#c2410c',
+      ma5: '#e28a35',
+      ma10: '#418af5',
+      ma20: isDark ? '#c53c92' : '#9f3793',
+      ma30: '#56c3df',
+      ma60: '#e56023',
     },
     volume: {
-      ma5: isDark ? '#f5a623' : '#8a6500',
-      ma10: isDark ? '#16b8c4' : '#006d77',
+      ma5: '#e28a35',
+      ma10: '#418af5',
     },
     macd: {
-      diff: isDark ? '#f5a623' : '#8a6500',
-      dea: isDark ? '#16b8c4' : '#006d77',
+      diff: '#e28a35',
+      dea: '#418af5',
     },
   }
 }

@@ -81,12 +81,12 @@
 | R2 | `macd_golden_cross/macd_dead_cross` 两个可空布尔原子结果 | 已完成 | T1、T9 |
 | R3 | 五指标注册、启动期 seed、统一目录及既有下游接入 | 已完成 | T2、T9、T13、T17 |
 | R4 | 个股 MACD 序列查询、字段白名单、lookback 校验、日期对齐 | 已完成 | T3、T6、T9、T10、T11、T13 |
-| R5 | 默认三图、图名、共享日期/光标/缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 图形、贴点信号标签与完整日期提示 | 已完成 | T5、T6、T10、T11、T14、T15、T16、T17、T18、T19 |
+| R5 | 默认三图、图名、共享日期/光标/缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 图形、贴点信号标签与完整日期提示 | 已完成 | T5、T6、T10、T11、T14、T15、T16、T17、T18、T19、T20 |
 | R6 | 图表二/三选择量能、MACD、隐藏，自动交换且不留空白 | 已完成 | T4、T7、T10、T11、T17 |
 | R7 | pointer 拖动、键盘调整、最低高度、相对比例和释放后保存 | 已完成 | T4、T5、T7、T10、T11 |
 | R8 | 按用户、按有序组合保存类型和高度，兼容旧偏好并恢复默认 | 已完成 | T4、T7、T9、T10、T11、T13 |
 | R9 | 页面四态、历史不足、MACD 局部失败、整体失败和权限分层 | 已完成 | T3、T5、T6、T8、T10、T11 |
-| R15 | 响应式、辅助模块显隐、主题、pointer/键盘可访问性和 reduced motion | 已完成 | T5、T8、T10、T11、T12、T14、T17、T18 |
+| R15 | 响应式、辅助模块显隐、主题、pointer/键盘可访问性和 reduced motion | 已完成 | T5、T8、T10、T11、T12、T14、T17、T18、T20 |
 | R16 | 接口/偏好兼容、请求竞态、辅助模块旧偏好合并和 KeepAlive 生命周期 | 已完成 | T3、T4、T5、T6、T10、T11、T13、T14 |
 
 ### 3.2 可选增强（建议项处理）
@@ -340,12 +340,12 @@ flowchart LR
 | 必须实现 | R2 | `requirement.md §5.2`：金叉、死叉两个布尔原子结果 | 两个可空交叉列、相等穿越、缺失段和同日互斥 | T1、T9 | 已完成 | 一致 | 交叉边界和缺失段单测 | T1 实现与 T9 后端总回归均已通过；空值保留 null，下游按不成立处理。 |
 | 必须实现 | R3 | `requirement.md §5.3`：统一指标目录与既有下游接入 | 五定义、分类、方向、整套 builtin 启动 seed、下游通用求值、长技术标识可读 | T2、T9、T13、T17 | 已完成 | 一致 | repo/API/筛选/评分/买卖方案测试、管理页检查 | T13 真实启动对账为 43 个 builtin、五个 MACD 定义，启动 seed 变更 0；筛选、评分和买卖条件固定样本均通过。T17 为标识列补足最小宽度、等宽字体与溢出提示。 |
 | 必须实现 | R4 | `requirement.md §5.4`：个股 MACD 序列查询与日期对齐 | 字段白名单、新增 lookback 上限、null、单次指标序列、trade_date 对齐 | T3、T6、T9、T10、T11、T13 | 已完成 | 一致 | API、Vitest、Playwright | T13 真实接口同时通过旧调用、五字段 `lookback=6000`、严格 JSON、非法字段 400 和超界 422，页面继续按交易日对齐。 |
-| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/显式缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 贴点信号标签与完整日期提示 | T5、T6、T10、T11、T14、T15、T16、T17、T18、T19 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T15 收口唯一 K线 tooltip；T16 统一 MA/VMA/MACD 色板和唯一光标日期；T17 完成高对比与真实信号悬停；T18 将两类股票画布的响应式主题和 MA/VMA 元数据收敛为唯一复用入口；T19 按最新确认改为无长引导线的贴点标签并增强浅色辨识度。 |
+| 必须实现 | R5 | `requirement.md §5.5`：个股详情三图联动与图表命名 | 三图、命名、共享日期/光标/显式缩放、分层柱宽、盘感训练同源配色、唯一 K线 tooltip/日期、MACD 贴点信号标签与完整日期提示 | T5、T6、T10、T11、T14、T15、T16、T17、T18、T19、T20 | 已完成 | 一致 | option/组件测试、固定样本、截图和 E2E | T15 收口唯一 K线 tooltip；T16 统一 MA/VMA/MACD 色板和唯一光标日期；T17 完成真实信号悬停；T18 将两类股票画布的响应式主题和 MA/VMA 元数据收敛为唯一复用入口；T19 收口无长引导线的贴点标签；T20 按最新确认将训练、回测、个股详情和原型统一为参考图精确身份色。 |
 | 必须实现 | R6 | `requirement.md §5.6`：辅助图类型、交换与隐藏 | 两辅助槽选择、自动交换、隐藏、空间释放和程序化选中语义 | T4、T7、T10、T11、T17 | 已完成 | 一致 | 归一化单测、抽屉 E2E、可访问属性测试 | 真实点击覆盖自动交换、隐藏、重显、无无效分隔线、切股与刷新恢复；T17 由共享 `PageSegmented` 补齐 `aria-pressed`。 |
 | 必须实现 | R7 | `requirement.md §5.7`：拖动与键盘调整高度 | pointer/键盘分隔线、最低高度、释放提交 | T4、T5、T7、T10、T11 | 已完成 | 一致 | 组件 ARIA/事件测试、E2E 尺寸断言 | T11 以分隔线实际位置执行 pointer 拖动，验证最低高度、相对比例保存、键盘调整及切股/刷新恢复。 |
 | 必须实现 | R8 | `requirement.md §5.8`：组合与高度个人偏好 | 有序组合比例、PG/本地偏好、隔离、重置 | T4、T7、T9、T10、T11、T13 | 已完成 | 一致 | 偏好 API、Vitest、跨用户 E2E | T13 发布 smoke 再次覆盖图表组合、高度保存/重置、真实 PG 跨用户隔离和 403 本地回退；临时用户清理后残留为 0。 |
 | 必须实现 | R9 | `requirement.md §5.9`：页面状态与局部失败隔离 | 整体与局部四态、历史不足、权限语义 | T3、T5、T6、T8、T10、T11 | 已完成 | 一致 | 状态测试、403/失败注入 E2E | T11 真实路由和 route 注入覆盖路由守卫、页面 loading/empty/permission、MACD 503 局部失败与重试。 |
-| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 自适应填满、指标快照显隐、主题 token、关键视口、pointer/键盘、reduced motion、播报与选中语义 | T5、T8、T10、T11、T12、T14、T17、T18 | 已完成 | 一致 | 样式/契约测试、build、主题截图、尺寸 E2E、可访问属性测试 | T14 验证工作区自适应；T17 补齐播报和选中语义；T18 统一主题修订订阅、WCAG 对比度公式和 E2E 控制台问题口径。 |
+| 必须实现 | R15 | `requirement.md §5.10`：响应式、主题与可访问性 | 自适应填满、指标快照显隐、主题 token、关键视口、pointer/键盘、reduced motion、播报与选中语义 | T5、T8、T10、T11、T12、T14、T17、T18、T20 | 已完成 | 一致 | 样式/契约测试、build、主题截图、尺寸 E2E、可访问属性测试 | T14 验证工作区自适应；T17 补齐播报和选中语义；T18 统一主题修订订阅、WCAG 对比度公式和 E2E 控制台问题口径；T20 验证明暗主题使用同一参考色相身份，MA20 仅在暗色使用亮紫变体。 |
 | 必须实现 | R16 | `requirement.md §5.11`：兼容回退与竞态保护 | 接口与偏好兼容、模块显隐旧值合并、竞态、KeepAlive 监听清理 | T3、T4、T5、T6、T10、T11、T13、T14 | 已完成 | 一致 | 竞态和生命周期测试、偏好 Vitest 与 E2E | T14 将 `showIndicatorSnapshot` 作为 additive 页面偏好，旧值默认显示并复用总恢复默认；图表主题重绘保持当前共享缩放窗口。 |
 | 建议实现 | R10 | `requirement.md §4.2`：云端同步失败统一显式消息 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次沿用本地 fallback。 |
 | 建议实现 | R11 | `requirement.md §4.2`：自定义 MACD 参数 | 不纳入本次开发 | - | 跳过 | 一致 | 范围审查 | 需求已明确留作后续建议，本次固定 12/26/9。 |
@@ -1139,6 +1139,42 @@ flowchart LR
   - 原型通过无服务器 Playwright file smoke：页面脚本错误为 0，默认 MACD 两个信号均只含 `title/polygon/rect/text`，K线五类 stroke 与共享浅色色板一致。
   - 后端 `/api/health=200`；前端 `5173=200`。无数据库、接口、权限、菜单、seed、配置、初始化数据、偏好结构或后端运行态变更。
 
+### 6.20 任务 T20：统一参考图指标色板
+
+- 状态：已完成。
+- 对应需求：R5、R15。
+- 依赖：T18、T19。
+- 涉及文件：
+  - `frontend/src/components/stock-chart/chartUtils.ts`
+  - `frontend/src/components/stock-chart/__tests__/CandleChartRegression.spec.ts`
+  - `agent-works/macd-indicator-stock-detail-charts/prototypes/stock-detail-macd-charts.html`
+  - `DESIGN.md`、需求文档与本计划
+- 目标：按最新确认的明暗参考图，将盘感训练、回测、个股详情三图及原型的 MA/VMA/MACD 指标颜色统一为同一组身份色。
+- 开发内容：
+  - 共享色板固定为 MA5 `#e28a35`、MA10 `#418af5`、MA20 浅色 `#9f3793`/暗色 `#c53c92`、MA30 `#56c3df`、MA60 `#e56023`。
+  - VMA5 与 DIFF 复用 MA5 橙色，VMA10 与 DEA 复用 MA10 蓝色；颜色只表达指标身份，不表达涨跌方向。
+  - `CandleChart` 与 `StockChartWorkspace` 继续共同消费 `trainingChartSeriesPalette()`，不在页面或 option 中新增第二套色值。
+  - 同步静态原型、需求和 DESIGN；T19 的贴点信号形态保持不变，仅由本任务替换其临时浅色高对比色板。
+- 产出：参考图精确色板的唯一运行时事实源、原型同步和颜色身份回归测试。
+- 影响范围：前端股票画布共享色板、原型和关联文档；不涉及指标算法、接口、数据库、权限、菜单、seed、配置或用户偏好。
+- 复用判断：
+  - 已查找：`CandleChart`、`StockChartWorkspace`、`trainingChartSeriesPalette()`、MA/VMA 共享定义、盘感训练与个股详情图表测试。
+  - 已复用：既有共享色板、响应式股票主题和类型化 MA/VMA 定义；训练、回测与详情无需页面级改动即可同步生效。
+  - 本次新增复用单元：无；继续维护唯一色板入口。
+  - 未抽取：静态 SVG 原型无法直接加载 TypeScript 运行时，按相同精确色值同步并通过无服务器 smoke 验证。
+- 验证方式：
+  - 定向 Vitest 断言精确明暗色板、五色唯一性和 VMA/MACD 身份复用。
+  - 三关键视口 Playwright 核对浅色、暗色真实 Canvas 色相与既有贴点信号悬停。
+  - 前端全量 Vitest、正式 build、原型 file smoke、`git diff --check` 和服务健康检查。
+- 实际落地情况：已完成（2026-07-26）。
+  - `trainingChartSeriesPalette()` 已成为参考图精确色板的唯一运行时入口：MA5/VMA5/DIFF 为 `#e28a35`，MA10/VMA10/DEA 为 `#418af5`，MA20 浅色为 `#9f3793`、暗色为 `#c53c92`，MA30 为 `#56c3df`，MA60 为 `#e56023`。
+  - 盘感训练、回测和个股详情沿用同一共享色板；静态原型同步精确色值，T19 的贴点信号结构和完整日期 item tooltip 保持不变。
+  - 定向命令：`cd frontend && npm test -- --run src/components/stock-chart/__tests__/workspaceOptions.spec.ts src/components/stock-chart/__tests__/StockChartWorkspace.spec.ts src/components/stock-chart/__tests__/CandleChartRegression.spec.ts --reporter=dot`，结果 `3 files / 23 tests passed`。
+  - 前端全量命令：`cd frontend && npm test -- --run --reporter=dot`，结果 `66 files / 446 tests passed`；`npm run build` 通过，仅有既有依赖注释位置和大 chunk 告警。
+  - 浏览器命令：`cd frontend && npx playwright test e2e/stock-detail-chart-workspace.spec.ts --grep '关键视口保持纵向三图' --workers=1`，1100×620、1366×768、1440×900 三项目 `3 passed`；浅色、暗色 Canvas 与既有共享缩放、光标和信号悬停无回归。
+  - 原型通过无服务器 Playwright file smoke：页面脚本错误为 0，K线 stroke 精确包含五个参考色值，两个 MACD 信号均只含 `title/polygon/rect/text`。
+  - `git diff --check` 通过；后端 `/api/health=200`，前端 `5173=200`。无数据库、接口、权限、菜单、seed、配置、初始化数据、偏好结构或后端运行态变更。
+
 ## 7. 数据库、SQL、seed 与配置计划
 
 ### 7.1 变更清单
@@ -1238,6 +1274,7 @@ WHERE is_builtin = TRUE
   - T17 已完成：MACD 普通柱线继续无内容浮层，信号 item 可悬停显示类型与完整日期；浅色共享身份色和信号标签达到可读对比度；工作区移除高频 `aria-live`，共享分段控件补齐 `aria-pressed`，指标长 key 可完整识别。定向 `4 files / 23 tests passed`、前端全量 `64 files / 434 tests passed`、正式构建通过；三关键视口真实画布悬停 `3 passed`，HTML 报告留存信号完整日期截图。
   - T18 已完成：两个股票画布统一消费响应式主题 composable 和类型化 MA/VMA 定义，工作区有数据/空数据标题均不再维护第二份周期或标签；图表与预设测试统一使用 WCAG 对比度工具，五个 E2E 用例统一使用 console error/warning helper。复审补充后相关两文件定向 `21 passed`、前端全量 `64 files / 436 tests passed`、正式构建通过；此前 console helper 迁移用例 `4 passed`、三关键视口真实页面 `3 passed` 结论继续有效。
   - T19 已完成：金叉/死叉改为紧贴当日 DIFF 点的短三角指针标签，删除贯穿式长线、圆形锚点和全局 lane；浅色五类共享身份色进一步拉开。定向 `3 files / 23 tests passed`、前端全量 `66 files / 446 tests passed`、正式构建通过；三关键视口真实 Canvas 悬停 `3 passed`，原型 file smoke 无脚本错误。
+  - T20 已完成：按最新参考图将 MA5/VMA5/DIFF、MA10/VMA10/DEA、MA20、MA30、MA60 收敛为精确身份色，并同步训练、回测、个股详情和静态原型。定向 `3 files / 23 tests passed`、前端全量 `66 files / 446 tests passed`、正式构建通过；三关键视口真实页面 `3 passed`，原型 file smoke 无脚本错误且精确命中五个色值。
 
 ### 8.1 后端测试矩阵
 
@@ -1323,7 +1360,7 @@ cd .. && AI_STOCKS_ENV=dev ./start.sh restart
 
 - 三图默认名称和顺序。
 - 只有 K线显示固定左上角行情 tooltip；量能和 MACD 普通柱线无内容浮层，十字光标和标题值仍同步；金叉/死叉 item 悬停显示信号类型和完整交易日期。
-- K线 tooltip 的收盘与涨幅按相对昨收使用红涨绿跌；MA/VMA/MACD 折线统一消费盘感训练标准色相，浅色使用高饱和、深明度且彼此明显分离的同色相版本，暗色使用高亮版本，实际背景对比度不低于 `4.5:1`。
+- K线 tooltip 的收盘与涨幅按相对昨收使用红涨绿跌；MA/VMA/MACD 折线统一消费参考图身份色：MA5/VMA5/DIFF `#e28a35`，MA10/VMA10/DEA `#418af5`，MA20 浅色 `#9f3793`、暗色 `#c53c92`，MA30 `#56c3df`，MA60 `#e56023`。
 - 光标轴交易日气泡只在 K线面板显示一次，量能/MACD 不重复显示日期但指标值继续联动。
 - 光标/日期/缩放联动。
 - 任一图的 inside/slider 缩放显式同步到其余图，主题重绘后窗口不复位。
