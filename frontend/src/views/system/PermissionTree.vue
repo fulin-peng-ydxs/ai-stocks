@@ -16,6 +16,11 @@ const resourcesOpen = ref(false)
 const childMenus = computed(() => (props.node.children ?? []).filter((child) => child.kind === 'menu'))
 const childResources = computed(() => (props.node.children ?? []).filter((child) => child.kind === 'resource'))
 const isGroup = computed(() => props.node.nodeType === 'group')
+const domKey = computed(() => encodeURIComponent(props.node.key).replaceAll('%', '-'))
+const groupToggleId = computed(() => `permission-group-toggle-${domKey.value}`)
+const groupRegionId = computed(() => `permission-group-region-${domKey.value}`)
+const resourceToggleId = computed(() => `permission-resource-toggle-${domKey.value}`)
+const resourceRegionId = computed(() => `permission-resource-region-${domKey.value}`)
 
 function descendantResources(node: PermNode): PermNode[] {
   if (node.kind === 'resource') return [node]
@@ -33,22 +38,38 @@ const resourceStats = computed(() => {
 
 <template>
   <section v-if="isGroup" class="pt-group" :class="{ collapsed, locked: node.sysLocked }">
-    <div class="pt-group-head" @click="collapsed = !collapsed">
-      <el-icon class="pt-caret"><ArrowDown /></el-icon>
+    <div class="pt-group-head">
       <el-checkbox
+        class="pt-node-checkbox"
         :model-value="stateOf(node) === 'on'"
         :indeterminate="stateOf(node) === 'half'"
         :disabled="readonly || node.sysLocked"
-        @click.stop
+        :aria-label="`选择${node.label}全部权限`"
         @change="toggle(node)"
       />
-      <span class="pt-group-title">{{ node.label }}</span>
-      <span v-if="resourceStats.total" class="pt-summary">
-        已选 {{ resourceStats.selected }}/{{ resourceStats.total }}
-      </span>
-      <span v-if="node.sysLocked" class="pt-system-only">仅系统管理员</span>
+      <button
+        :id="groupToggleId"
+        class="pt-group-toggle"
+        type="button"
+        :aria-expanded="!collapsed"
+        :aria-controls="groupRegionId"
+        @click="collapsed = !collapsed"
+      >
+        <el-icon class="pt-caret"><ArrowDown /></el-icon>
+        <span class="pt-group-title">{{ node.label }}</span>
+        <span v-if="resourceStats.total" class="pt-summary">
+          已选 {{ resourceStats.selected }}/{{ resourceStats.total }}
+        </span>
+        <span v-if="node.sysLocked" class="pt-system-only">仅系统管理员</span>
+      </button>
     </div>
-    <div v-show="!collapsed" class="pt-group-body">
+    <div
+      v-show="!collapsed"
+      :id="groupRegionId"
+      class="pt-group-body"
+      role="region"
+      :aria-labelledby="groupToggleId"
+    >
       <PermissionTree
         v-for="child in childMenus"
         :key="child.key"
@@ -70,19 +91,24 @@ const resourceStats = computed(() => {
   <section v-else class="pt-menu" :class="{ locked: node.sysLocked }">
     <div class="pt-menu-row">
       <el-checkbox
+        class="pt-node-checkbox"
         :model-value="stateOf(node) === 'on'"
         :indeterminate="stateOf(node) === 'half'"
         :disabled="readonly || node.sysLocked"
+        :aria-label="`选择${node.label}权限`"
         @change="toggle(node)"
       />
       <span class="pt-menu-label">{{ node.label }}</span>
       <span v-if="node.sysLocked" class="pt-system-only">仅系统管理员</span>
       <el-button
         v-if="childResources.length"
+        :id="resourceToggleId"
         class="pt-resource-trigger"
         link
         size="small"
         :aria-expanded="resourcesOpen"
+        :aria-controls="resourceRegionId"
+        :aria-label="`${node.label}功能权限 ${resourceStats.selected}/${resourceStats.total}`"
         @click="resourcesOpen = !resourcesOpen"
       >
         功能权限 {{ resourceStats.selected }}/{{ resourceStats.total }}
@@ -91,7 +117,11 @@ const resourceStats = computed(() => {
       <span v-else class="pt-summary">无功能点</span>
     </div>
     <PermissionResourceList
-      v-if="resourcesOpen && childResources.length"
+      v-if="childResources.length"
+      v-show="resourcesOpen"
+      :id="resourceRegionId"
+      role="region"
+      :aria-labelledby="resourceToggleId"
       :resources="childResources"
       :state-of="stateOf"
       :toggle="toggle"
@@ -115,9 +145,28 @@ const resourceStats = computed(() => {
   min-height: 40px;
   padding: 7px 12px;
   background: var(--el-fill-color-light);
-  cursor: pointer;
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
+}
+.pt-group-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--app-space-2);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.pt-group-toggle:focus-visible {
+  border-radius: var(--layout-control-radius);
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
 }
 .pt-group-title {
   min-width: 0;
@@ -177,6 +226,9 @@ const resourceStats = computed(() => {
   font-size: var(--app-font-size-caption);
   font-weight: var(--app-font-weight-regular);
 }
+.pt-group-toggle .pt-summary {
+  margin-left: auto;
+}
 .pt-resource-trigger {
   flex: none;
   margin-left: auto;
@@ -191,11 +243,11 @@ const resourceStats = computed(() => {
   font-size: var(--app-font-size-tiny);
   font-weight: var(--app-font-weight-regular);
 }
-:deep(.el-checkbox) {
+.pt-node-checkbox {
   height: auto;
   margin-right: 0;
 }
-:deep(.el-checkbox__label) {
+.pt-node-checkbox :deep(.el-checkbox__label) {
   display: none;
 }
 @media (prefers-reduced-motion: reduce) {

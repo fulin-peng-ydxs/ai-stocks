@@ -44,6 +44,7 @@ function sourceOf(path: string): LayoutConfigLayer {
         v-if="knob.type === 'enum'"
         :model-value="props.valueOf(knob.path) as string | number"
         :options="segOptions(knob)"
+        :aria-label="knob.label"
         @update:model-value="(v) => props.set(knob.path, v)"
       />
       <el-input-number

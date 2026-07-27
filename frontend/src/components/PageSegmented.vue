@@ -18,7 +18,11 @@ function optionTestId(value: OptionValue): string | undefined {
 </script>
 
 <template>
-  <div class="page-segmented" :data-testid="props.testId">
+  <div
+    class="page-segmented"
+    role="group"
+    :data-testid="props.testId"
+  >
     <button
       v-for="option in props.options"
       :key="String(option.value)"
@@ -39,7 +43,7 @@ function optionTestId(value: OptionValue): string | undefined {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  gap: 2px;
+  gap: var(--app-space-1);
   padding: 3px;
   border: 1px solid var(--page-settings-section-border);
   border-radius: 12px;

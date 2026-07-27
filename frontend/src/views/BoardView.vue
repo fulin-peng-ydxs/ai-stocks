@@ -348,7 +348,7 @@ onMounted(async () => {
         <PageSettingSection title="默认结果">
           <div class="setting-item">
             <div class="setting-label">Top N</div>
-            <PageSegmented v-model="settings.topN" :options="[
+            <PageSegmented v-model="settings.topN" aria-label="Top N" :options="[
               { label: '20', value: 20 },
               { label: '50', value: 50 },
               { label: '100', value: 100 },
@@ -356,7 +356,7 @@ onMounted(async () => {
           </div>
           <div class="setting-item">
             <div class="setting-label">分项达标分</div>
-            <PageSegmented v-model="settings.subScoreMode" :options="[
+            <PageSegmented v-model="settings.subScoreMode" aria-label="分项达标分" :options="[
               { label: '全显', value: 'full' },
               { label: '精简', value: 'brief' },
               { label: '隐藏', value: 'hidden' },

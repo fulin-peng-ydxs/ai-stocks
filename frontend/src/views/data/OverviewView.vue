@@ -482,7 +482,7 @@ onMounted(load)
         <PageSettingSection title="逐股体检">
           <div class="setting-item">
             <div class="setting-label">每页条数</div>
-            <PageSegmented v-model="settings.sqSize" :options="[
+            <PageSegmented v-model="settings.sqSize" aria-label="每页条数" :options="[
               { label: '20', value: 20 },
               { label: '50', value: 50 },
               { label: '100', value: 100 },
@@ -490,7 +490,7 @@ onMounted(load)
           </div>
           <div class="setting-item">
             <div class="setting-label">默认关注层</div>
-            <PageSegmented v-model="settings.focusLayer" :options="[
+            <PageSegmented v-model="settings.focusLayer" aria-label="默认关注层" :options="[
               { label: '全部', value: 'all' },
               { label: 'L1-L2', value: 'L12' },
               { label: 'L3-L4', value: 'L34' },

@@ -595,7 +595,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           <PageSettingSection title="默认筛选">
             <div class="setting-item">
               <div class="setting-label">状态筛选</div>
-              <PageSegmented v-model="settings.defaultStatus" :options="[
+              <PageSegmented v-model="settings.defaultStatus" aria-label="状态筛选" :options="[
                 { label: '全部', value: 'all' },
                 { label: '仅启用', value: 'active' },
               ]" />

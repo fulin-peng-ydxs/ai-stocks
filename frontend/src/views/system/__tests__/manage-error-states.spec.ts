@@ -66,9 +66,47 @@ async function mountView(comp: Component) {
 }
 
 const MENU = { id: 'm1', code: 'm1', title: '策略筛选', type: 'leaf', route_path: '/screen', icon: null, visible: 'login', sort: 10, parent_id: null, is_builtin: false, children: [] }
+const BUILTIN_RESOURCE = {
+  id: 'resource-1',
+  menu_id: 'builtin',
+  code: 'menu:view',
+  name: '查看菜单',
+  type: 'api',
+  api_method: 'GET',
+  api_path: '/api/menus',
+  is_builtin: true,
+}
 
 describe('角色页 loadAll error+retry 闭环', () => {
   beforeEach(() => { vi.clearAllMocks() })
+
+  it('系统内置标签统一展示在角色名称后面', async () => {
+    ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(roleApi.listRoles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'system-role',
+        code: 'system',
+        name: '系统管理员',
+        description: null,
+        kind: 'system',
+        is_builtin: true,
+        is_locked: true,
+        member_count: 2,
+      },
+    ])
+    ;(roleApi.getRoleGrants as ReturnType<typeof vi.fn>).mockResolvedValue({
+      menu_ids: [],
+      resource_ids: [],
+    })
+
+    const w = await mountView(RoleManageView)
+    const normalizedText = (selector: string) =>
+      w.get(selector).element.textContent?.replace(/\s+/g, '')
+
+    expect(normalizedText('.role-name')).toBe('系统管理员系统内置')
+    expect(normalizedText('.rname')).toBe('系统管理员系统内置')
+  })
 
   it('菜单/资源成功但角色列表失败 → 进错误态（回归：loadRoles 曾在 catch 外）', async () => {
     ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([])
@@ -93,6 +131,46 @@ describe('角色页 loadAll error+retry 闭环', () => {
 
 describe('菜单页 loadResources error+retry 闭环', () => {
   beforeEach(() => { vi.clearAllMocks() })
+
+  it('系统内置标签统一展示在菜单名称和功能码后面', async () => {
+    ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...MENU, id: 'builtin', title: '系统菜单', is_builtin: true },
+    ])
+    ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockResolvedValue([BUILTIN_RESOURCE])
+
+    const w = await mountView(MenuResourceView)
+    const normalizedText = (selector: string) =>
+      w.get(selector).element.textContent?.replace(/\s+/g, '')
+
+    expect(normalizedText('.mname')).toBe('系统菜单系统内置')
+    expect(normalizedText('.mr-code-cell')).toBe('menu:view系统内置')
+  })
+
+  it('快速切换菜单时忽略较早返回的功能点响应', async () => {
+    let resolveInitial!: (value: unknown[]) => void
+    const initialResources = new Promise<unknown[]>((resolve) => {
+      resolveInitial = resolve
+    })
+    ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...MENU, id: 'initial', title: '初始菜单' },
+      { ...MENU, id: 'builtin', title: '系统菜单', is_builtin: true },
+    ])
+    ;(menuApi.listResources as ReturnType<typeof vi.fn>).mockImplementation((menuId: string) => (
+      menuId === 'initial' ? initialResources : Promise.resolve([BUILTIN_RESOURCE])
+    ))
+
+    const w = await mountView(MenuResourceView)
+    const targetNode = w.findAll('[role="treeitem"]').find((node) => node.text().includes('系统菜单'))
+    expect(targetNode).toBeTruthy()
+    await targetNode!.trigger('click')
+    await flushPromises()
+    expect(w.text()).toContain('menu:view')
+
+    resolveInitial([])
+    await flushPromises()
+    expect(w.text()).toContain('menu:view')
+    expect(w.text()).not.toContain('该菜单暂无功能点')
+  })
 
   it('菜单树只标记自定义节点，不重复展示系统内置和系统管理员可见性', async () => {
     ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([

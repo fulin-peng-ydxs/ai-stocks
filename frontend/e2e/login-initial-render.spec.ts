@@ -1,5 +1,16 @@
 import { expect, test } from '@playwright/test'
 import { collectConsoleIssues } from './helpers/console'
+import { THEME_SURFACE_SPECS, rgbChannelsFromHex } from '../src/layout/themeSurfaces'
+
+function expectedLoginSurfaces(mode: 'light' | 'dark') {
+  const spec = THEME_SURFACE_SPECS[mode]
+  const cssRgb = (hex: string) => `rgb(${rgbChannelsFromHex(hex)})`
+  return {
+    brand: cssRgb(spec.sidebarBg),
+    auth: cssRgb(spec.pageBg),
+    card: cssRgb(spec.surfaceBg),
+  }
+}
 
 declare global {
   interface Window {
@@ -18,8 +29,14 @@ test('刷新登录页时首帧不挂载工作台壳', async ({ page }) => {
     window.__loginInitialRenderTrace = trace
     const inspect = (node: Node) => {
       if (!(node instanceof Element)) return
-      if (node.matches('.app') || node.querySelector('.app')) trace.shellMounted = true
-      if (node.matches('.login-shell') || node.querySelector('.login-shell')) trace.loginMounted = true
+      if (
+        node.matches('[role="region"][aria-label="研究工作台"]')
+        || node.querySelector('[role="region"][aria-label="研究工作台"]')
+      ) trace.shellMounted = true
+      if (
+        node.matches('[role="region"][aria-label="登录页"]')
+        || node.querySelector('[role="region"][aria-label="登录页"]')
+      ) trace.loginMounted = true
     }
     new MutationObserver((records) => {
       records.forEach((record) => record.addedNodes.forEach(inspect))
@@ -27,12 +44,12 @@ test('刷新登录页时首帧不挂载工作台壳', async ({ page }) => {
   })
 
   await page.goto('/login')
-  await expect(page.locator('.login-shell')).toBeVisible()
+  await expect(page.getByRole('region', { name: '登录页' })).toBeVisible()
   const brandMark = page.getByRole('img', { name: '复盘啦' })
   await expect(brandMark).toHaveCSS('width', '184px')
   await expect(brandMark).toHaveCSS('height', '52px')
   await page.reload()
-  await expect(page.locator('.login-shell')).toBeVisible()
+  await expect(page.getByRole('region', { name: '登录页' })).toBeVisible()
 
   await expect.poll(() => page.evaluate(() => window.__loginInitialRenderTrace)).toEqual({
     shellMounted: false,
@@ -50,18 +67,10 @@ test('刷新登录页时首帧不挂载工作台壳', async ({ page }) => {
       card: read('login-card-surface'),
     }
   })
-  await expect.poll(readLoginSurfaces).toEqual({
-    brand: 'rgb(252, 252, 252)',
-    auth: 'rgb(255, 255, 255)',
-    card: 'rgb(255, 255, 255)',
-  })
+  await expect.poll(readLoginSurfaces).toEqual(expectedLoginSurfaces('light'))
 
   await page.getByRole('button', { name: '切换主题' }).click()
   await expect(page.locator('html')).toHaveClass(/dark/)
-  await expect.poll(readLoginSurfaces).toEqual({
-    brand: 'rgb(31, 31, 31)',
-    auth: 'rgb(23, 23, 23)',
-    card: 'rgb(31, 31, 31)',
-  })
+  await expect.poll(readLoginSurfaces).toEqual(expectedLoginSurfaces('dark'))
   expect(consoleIssues).toEqual([])
 })

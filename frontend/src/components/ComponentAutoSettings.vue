@@ -252,6 +252,7 @@ function setSort(slotId: string, field: string, order: string): void {
             v-if="s.meta.sortFields.length <= SEGMENTED_OPTION_LIMIT"
             :model-value="sortField(s.slotId)"
             :options="s.meta.sortFields.map((f) => ({ label: f.label, value: f.key }))"
+            :aria-label="`${s.label}：默认排序字段`"
             @update:model-value="(v) => setSort(s.slotId, String(v), sortOrder(s.slotId))"
           />
           <el-select
@@ -273,6 +274,7 @@ function setSort(slotId: string, field: string, order: string): void {
           <PageSegmented
             :model-value="sortOrder(s.slotId)"
             :options="ORDER_OPTIONS"
+            :aria-label="`${s.label}：默认排序方向`"
             @update:model-value="(v) => setSort(s.slotId, sortField(s.slotId), String(v))"
           />
         </div>
@@ -297,6 +299,7 @@ function setSort(slotId: string, field: string, order: string): void {
             v-if="s.meta.sortFields.length <= SEGMENTED_OPTION_LIMIT"
             :model-value="strVal(s.slotId, 'defaultSort')"
             :options="s.meta.sortFields.map((f) => ({ label: f.label, value: f.key }))"
+            :aria-label="`${s.label}：默认排序`"
             @update:model-value="(v) => config.setComponentKnob(s.slotId, 'defaultSort', String(v))"
           />
           <el-select
@@ -359,6 +362,7 @@ function setSort(slotId: string, field: string, order: string): void {
         <PageSegmented
           :model-value="numVal(s.slotId, 'pageSize', 20)"
           :options="PAGE_SIZE_OPTIONS.map((n) => ({ label: String(n), value: n }))"
+          :aria-label="`${s.label}：每页条数`"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, 'pageSize', Number(v))"
         />
       </div>
@@ -382,6 +386,7 @@ function setSort(slotId: string, field: string, order: string): void {
         <PageSegmented
           :model-value="strVal(s.slotId, 'defaultActive')"
           :options="s.meta.tabs.map((t) => ({ label: t.label, value: t.key }))"
+          :aria-label="`${s.label}：默认标签页`"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, 'defaultActive', String(v))"
         />
       </div>
@@ -405,6 +410,7 @@ function setSort(slotId: string, field: string, order: string): void {
         <PageSegmented
           :model-value="strVal(s.slotId, 'size') || 'md'"
           :options="DRAWER_SIZE_OPTIONS"
+          :aria-label="`${s.label}：抽屉尺寸`"
           :test-id="s.slotId === 'settings' ? 'drawer-size' : undefined"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, 'size', String(v))"
         />

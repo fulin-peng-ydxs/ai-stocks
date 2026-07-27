@@ -949,6 +949,7 @@ onBeforeUnmount(() => {
             <PageSegmented
               v-model="visibleDefaultView"
               :options="defaultViewOptions"
+              aria-label="默认视图"
               test-id="stocks-default-view"
             />
           </div>

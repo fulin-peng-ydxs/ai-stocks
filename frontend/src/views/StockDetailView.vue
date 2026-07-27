@@ -25,8 +25,8 @@ import {
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
 import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -951,10 +951,11 @@ onBeforeUnmount(() => {
                 :value="tradeProfileKey(p)"
                 :label="p.name"
               >
-                <span class="trade-profile-option">
-                  <SystemBuiltinTag v-if="p.is_preset" />
-                  <span>{{ p.name }}</span>
-                </span>
+                <AssetProfileLabel
+                  :name="p.name"
+                  :source="p.is_preset ? 'preset' : null"
+                  :is-preset="p.is_preset"
+                />
               </el-option>
             </el-select>
             <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
@@ -1029,7 +1030,7 @@ onBeforeUnmount(() => {
         <PageSettingSection title="图表设置" desc="图表类型、显隐和拖动后的高度会自动保存。">
           <div class="setting-item">
             <div class="setting-label">复权模式</div>
-            <PageSegmented v-model="settings.adjustMode" :options="[
+            <PageSegmented v-model="settings.adjustMode" aria-label="复权模式" :options="[
               { label: '不复权', value: '' },
               { label: '前复权', value: 'qfq' },
               { label: '后复权', value: 'hfq' },
@@ -1097,11 +1098,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.trade-profile-option {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-2);
-}
 .stock-detail-main {
   min-height: 100%;
   display: flex;

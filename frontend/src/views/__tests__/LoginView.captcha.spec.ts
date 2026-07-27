@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { ref, type Component } from 'vue'
 import LoginView from '@/views/LoginView.vue'
+import { setRuntimePresetSources } from '@/layout'
 
 const replace = vi.fn()
 const login = vi.fn()
@@ -36,6 +37,14 @@ import * as authApi from '@/api/auth'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setRuntimePresetSources([
+    {
+      key: 'balanced',
+      name: '澄空蓝',
+      description: '默认预设',
+      config: { values: {} },
+    },
+  ])
   ;(authApi.getCaptcha as ReturnType<typeof vi.fn>).mockResolvedValue({
     captcha_id: 'captcha-1',
     svg: '<svg viewBox="0 0 100 36"></svg>',
@@ -43,6 +52,54 @@ beforeEach(() => {
 })
 
 describe('LoginView captcha', () => {
+  it('只有一个研究空间预设时不显示空操作切换按钮', async () => {
+    ;(authApi.getPublicConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      require_email_code: true,
+      login_captcha_enabled: false,
+      captcha_after_fails: 3,
+      appearance_presets: [
+        {
+          key: 'balanced',
+          name: '澄空蓝',
+          description: '默认预设',
+          config: { values: {} },
+        },
+      ],
+    })
+
+    const wrapper = mount(LoginView as Component)
+    await flushPromises()
+
+    expect(wrapper.find('.login-preset').exists()).toBe(false)
+  })
+
+  it('多个研究空间预设时保留切换入口并显示当前预设名称', async () => {
+    ;(authApi.getPublicConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      require_email_code: true,
+      login_captcha_enabled: false,
+      captcha_after_fails: 3,
+      appearance_presets: [
+        {
+          key: 'balanced',
+          name: '澄空蓝',
+          description: '默认预设',
+          config: { values: {} },
+        },
+        {
+          key: 'custom-gold',
+          name: '曜金',
+          description: '暖色预设',
+          config: { values: {} },
+        },
+      ],
+    })
+
+    const wrapper = mount(LoginView as Component)
+    await flushPromises()
+
+    expect(wrapper.get('.login-preset').attributes('aria-label')).toContain('当前澄空蓝')
+  })
+
   it('图形验证码开启后进入登录页直接展示验证码', async () => {
     ;(authApi.getPublicConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
       require_email_code: true,

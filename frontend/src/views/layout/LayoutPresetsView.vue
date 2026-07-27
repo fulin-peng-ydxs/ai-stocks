@@ -22,8 +22,7 @@ import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import {
   getLayoutPreset,
   getPageLayout,
-  setPresetCatalog,
-  setPresetOverrides,
+  setRuntimePresetSources,
   type StyleTokenConfig,
   type ThemeMode,
 } from '@/layout'
@@ -140,18 +139,7 @@ async function reloadPresets() {
     }
     // 同步运行时：让预设编辑/启停/导入即时驱动外观（P11 运行时打通）。
     const enabledPresets = presets.value.filter((preset) => preset.enabled)
-    const map: Record<string, Record<string, string | number | boolean>> = {}
-    for (const p of enabledPresets) {
-      const v = p.config?.values
-      if (!v) continue
-      const primitiveValues = Object.fromEntries(
-        Object.entries(v).filter(([, value]) =>
-          typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'),
-      ) as Record<string, string | number | boolean>
-      if (Object.keys(primitiveValues).length) map[p.key] = primitiveValues
-    }
-    setPresetOverrides(map)
-    setPresetCatalog(enabledPresets.map(({ key, name, description }) => ({ key, name, description })))
+    setRuntimePresetSources(enabledPresets)
   } catch (error) {
     loadError.value = getErrorMessage(error, '布局预设加载失败')
   } finally {

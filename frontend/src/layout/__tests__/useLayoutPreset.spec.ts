@@ -153,6 +153,8 @@ describe('布局预设运行时 Element Plus 色阶', () => {
   })
 
   it('公开外观目录缓存自定义预设并让登录页与系统页消费同一强调色', () => {
+    const { themeRevision } = useLayoutPreset()
+    const beforeInstall = themeRevision.value
     setRuntimePresetSources([
       {
         key: 'balanced',
@@ -172,6 +174,7 @@ describe('布局预设运行时 Element Plus 色阶', () => {
         },
       },
     ])
+    expect(themeRevision.value).toBe(beforeInstall + 1)
     setLayoutPreset('custom-purple')
 
     expect(useLayoutPreset().options.value.map((option) => option.value))

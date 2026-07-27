@@ -61,9 +61,7 @@ describe('AssetProfileLabel', () => {
       },
       global: { plugins: [ElementPlus] },
     })
-    expect(w.text()).toContain('趋势评分')
-    expect(w.text()).toContain('v3')
-    expect(w.text()).toContain('租户公开')
+    expect(w.text()).toBe('趋势评分v3租户公开')
     expect(w.find('.asset-visibility-tag').attributes('title')).toContain('owner_a')
     expect(w.find('.asset-visibility-tag').attributes('title')).toContain('只读')
   })

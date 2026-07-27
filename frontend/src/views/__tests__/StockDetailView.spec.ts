@@ -74,6 +74,7 @@ vi.mock('@/api/tradeProfile', () => ({
 
 import * as stocksApi from '@/api/stocks'
 import * as tradeProfileApi from '@/api/tradeProfile'
+import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import StockDetailView from '@/views/StockDetailView.vue'
 
 const StockChartWorkspaceStub = defineComponent({
@@ -276,7 +277,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
       ElSelect: ElSelectStub,
       ElOption: {
         props: ['label', 'value'],
-        template: '<span :data-value="String(value)">{{ label }}</span>',
+        template: '<span :data-value="String(value)"><slot>{{ label }}</slot></span>',
       },
       ElCard: { template: '<section><slot name="header"/><slot/></section>' },
       ElDescriptions: { template: '<dl><slot/></dl>' },
@@ -403,6 +404,15 @@ describe('StockDetailView 三图数据协调', () => {
     resetLayout.mockReset()
     localStorage.clear()
     setDefaultApiResponses()
+  })
+
+  it('买卖方案复用统一标签组件，名称在系统内置标记前', async () => {
+    const wrapper = await mountView()
+    const profileLabel = wrapper.findComponent(AssetProfileLabel)
+
+    expect(profileLabel.exists()).toBe(true)
+    expect(profileLabel.props('name')).toBe('默认买卖')
+    expect(profileLabel.props('source')).toBe('preset')
   })
 
   it('初次并行加载行情、全量指标序列和报价，并把默认三图接入页面', async () => {

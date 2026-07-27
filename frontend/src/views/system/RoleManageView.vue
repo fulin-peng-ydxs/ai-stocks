@@ -299,11 +299,16 @@ onMounted(loadAll)
             <span class="rm-head-title">角色 <span class="mini">{{ roles.length }}</span></span>
           </div>
           <div class="rm-col-body" v-loading="rolesLoading">
-            <div v-for="r in roles" :key="r.id" class="role" :class="{ active: r.id === activeId }"
-                 @click="selectRole(r.id)">
+            <div
+              v-for="r in roles"
+              :key="r.id"
+              class="role"
+              :class="{ active: r.id === activeId }"
+              @click="selectRole(r.id)"
+            >
               <div class="role-name">
-                <SystemBuiltinTag v-if="r.is_builtin" />
                 {{ r.name }}
+                <SystemBuiltinTag v-if="r.is_builtin" />
               </div>
               <div v-if="r.member_count != null" class="role-desc">关联用户 {{ r.member_count }} 名</div>
             </div>
@@ -315,10 +320,10 @@ onMounted(loadAll)
         <div class="rm-col rm-right">
           <div class="rm-detail-bar">
               <div class="rm-detail-title">
-              <div class="rname">
-                <SystemBuiltinTag v-if="activeRole?.is_builtin" />
+              <h2 class="rname">
                 {{ activeRole?.name || '—' }}
-              </div>
+                <SystemBuiltinTag v-if="activeRole?.is_builtin" />
+              </h2>
               <div class="rmeta">
                 <template v-if="activeRole">
                   角色码 {{ activeRole.code }}<span v-if="activeRole.member_count != null"> · 关联用户 {{ activeRole.member_count }} 名</span>
@@ -412,7 +417,7 @@ onMounted(loadAll)
 .rm-detail-bar { padding: 12px 16px; border-bottom: 1px solid var(--el-border-color-lighter);
   display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
 .rm-detail-title .rname { font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-strong);
-  display: flex; align-items: center; gap: var(--app-space-2); }
+  display: flex; align-items: center; gap: var(--app-space-2); margin: 0; }
 .rm-detail-title .rmeta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 2px; }
 .lock-note { color: var(--el-color-warning); }
 .rm-detail-foot { border-top: 1px solid var(--el-border-color-lighter); padding: 12px 16px;

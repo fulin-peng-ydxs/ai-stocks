@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>原型 · 公开资产搜索抽屉</title>
+<style>
+  :root{
+    --primary:#1677ff; --page:#ffffff; --surface:#ffffff; --hover:#f3f3f3;
+    --text:#17181c; --body:#44464d; --muted:#73757d; --border:#e5e5e5; --border-strong:#c9c9c9;
+    --success:#168f63; --note-bg:#fff8e6; --note-border:#f2c94c; --note-text:#7a5b00;
+    --radius:8px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#eef0f3;color:var(--body);padding:24px;}
+  .stage-hint{max-width:1040px;margin:0 auto 16px;font-size:13px;color:var(--muted);}
+  .mock-page{position:relative;max-width:1040px;height:660px;margin:0 auto;background:var(--page);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.06);}
+  /* 底层页面示意 */
+  .page-body{padding:20px;filter:blur(1px);opacity:.5;pointer-events:none;}
+  .page-body h2{margin:0 0 12px;font-size:16px;color:var(--text);}
+  .selector-row{display:flex;gap:8px;align-items:center;}
+  .fake-select{flex:1;height:34px;border:1px solid var(--border);border-radius:6px;background:#fff;display:flex;align-items:center;padding:0 12px;color:var(--muted);font-size:13px;}
+  .btn{height:34px;padding:0 14px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--body);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff;}
+  .btn.search{border-color:var(--primary);color:var(--primary);background:#fff;font-weight:600;}
+  /* 抽屉遮罩 + 抽屉 */
+  .overlay{position:absolute;inset:0;background:rgba(0,0,0,.28);}
+  .drawer{position:absolute;top:0;right:0;bottom:0;width:560px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;box-shadow:-8px 0 24px rgba(0,0,0,.12);}
+  .drawer-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
+  .drawer-head h3{margin:0;font-size:15px;color:var(--text);font-weight:600;}
+  .close{border:none;background:transparent;font-size:20px;color:var(--muted);cursor:pointer;line-height:1;}
+  .toolbar{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:12px;}
+  .segment{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:fit-content;}
+  .segment button{border:none;background:#fff;padding:6px 16px;font-size:13px;color:var(--body);cursor:pointer;}
+  .segment button.active{background:var(--primary);color:#fff;}
+  .searchbox{display:flex;align-items:center;height:34px;border:1px solid var(--border);border-radius:6px;padding:0 10px;gap:8px;}
+  .searchbox input{border:none;outline:none;flex:1;font-size:13px;color:var(--text);background:transparent;}
+  .searchbox .ico{color:var(--muted);}
+  /* 列表 */
+  .list{flex:1;overflow:auto;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{position:sticky;top:0;background:#fafafa;text-align:left;padding:10px 20px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap;}
+  tbody td{padding:12px 20px;border-bottom:1px solid var(--border);color:var(--body);vertical-align:middle;}
+  .name{color:var(--text);font-weight:600;}
+  .tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:10px;border:1px solid var(--border);color:var(--muted);background:#f7f7f7;}
+  .tag.public{color:var(--primary);border-color:#bcd8ff;background:#f0f6ff;}
+  .tag.tenant{color:var(--success);border-color:#bfe6d5;background:#eefaf4;}
+  .owner{color:var(--muted);font-size:12px;}
+  .ver{color:var(--muted);font-size:12px;}
+  .ops{display:flex;gap:8px;white-space:nowrap;}
+  .link{color:var(--primary);cursor:pointer;font-size:12px;}
+  .link.copy{font-weight:600;}
+  .foot{border-top:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted);}
+  .pager{display:flex;gap:6px;}
+  .pager span{border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;background:#fff;}
+  .pager span.on{border-color:var(--primary);color:var(--primary);}
+  /* 原型说明批注 */
+  .note{background:var(--note-bg);border:1px dashed var(--note-border);color:var(--note-text);border-radius:6px;padding:10px 12px;margin:14px auto 0;max-width:1040px;font-size:12px;line-height:1.7;}
+  .note b{color:var(--note-text);}
+  .toast{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);background:rgba(22,143,99,.95);color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;display:none;}
+  .toast.show{display:block;}
+</style>
+</head>
+<body>
+  <div class="stage-hint">原型 · 统一「公开资产搜索抽屉」（评分 / 筛选 / 买卖 / 回测 / 榜单 / 个股详情 复用同一交互；此处以「评分方案」为例）</div>
+
+  <div class="mock-page">
+    <!-- 底层业务页示意（虚化，仅表达入口位置）-->
+    <div class="page-body">
+      <h2>评分方案</h2>
+      <div class="selector-row">
+        <div class="fake-select">选择我的评分方案…（下拉只加载自己的资产）</div>
+        <button class="btn search">🔍 搜索</button>
+        <button class="btn">复制为我的</button>
+        <button class="btn primary">发布</button>
+      </div>
+    </div>
+
+    <!-- 抽屉 -->
+    <div class="overlay"></div>
+    <div class="drawer" role="dialog" aria-label="浏览公开的评分方案">
+      <div class="drawer-head">
+        <h3>浏览公开的评分方案</h3>
+        <button class="close" title="关闭">×</button>
+      </div>
+
+      <div class="toolbar">
+        <div class="segment">
+          <button data-src="tenant">租户公开</button>
+          <button class="active" data-src="public">全体公开</button>
+        </div>
+        <div class="searchbox">
+          <span class="ico">🔍</span>
+          <input id="q" placeholder="按方案名称搜索（留空显示全部公开）" />
+        </div>
+      </div>
+
+      <div class="list">
+        <table>
+          <thead>
+            <tr><th>方案名称</th><th>来源</th><th>提供者</th><th>版本</th><th>更新时间</th><th>操作</th></tr>
+          </thead>
+          <tbody id="rows">
+            <tr>
+              <td class="name">趋势龙头·基础评分</td>
+              <td><span class="tag public">全体公开</span></td>
+              <td class="owner">admin</td>
+              <td class="ver">v3</td>
+              <td class="ver">2026-07-20</td>
+              <td class="ops"><span class="link">加载查看</span><span class="link copy" data-copy>复制为我的</span></td>
+            </tr>
+            <tr>
+              <td class="name">量价齐升·进攻型</td>
+              <td><span class="tag public">全体公开</span></td>
+              <td class="owner">其他租户用户</td>
+              <td class="ver">v1</td>
+              <td class="ver">2026-07-18</td>
+              <td class="ops"><span class="link">加载查看</span><span class="link copy" data-copy>复制为我的</span></td>
+            </tr>
+            <tr>
+              <td class="name">低波稳健·防守打分</td>
+              <td><span class="tag public">全体公开</span></td>
+              <td class="owner">其他租户用户</td>
+              <td class="ver">v2</td>
+              <td class="ver">2026-07-15</td>
+              <td class="ops"><span class="link">加载查看</span><span class="link copy" data-copy>复制为我的</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="foot">
+        <span>共 3 条公开方案</span>
+        <div class="pager"><span class="on">1</span><span>2</span><span>›</span></div>
+      </div>
+
+      <div class="toast" id="toast">已复制为「我的方案」，已加入自己的下拉</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>原型说明（开发实现时忽略本批注框）：</b><br>
+    · 本抽屉是<b>跨资产类型复用的同一组件</b>，标题「浏览公开的{资产类型}」随入口页变化；数据来自 browse 接口（<code>source=tenant|public</code> + <code>q</code> 关键字），字段经 <code>decorate_asset_row</code> 脱敏，<b>提供者列只显示「同租户用户 / 其他租户用户 / admin」等脱敏标签，绝不回显真实 user_id</b>。<br>
+    · 「租户公开」分段仅对同租户可见；列表<b>排除当前用户自己的资产</b>（自己的走页面「仅自己」下拉）。<br>
+    · 「加载查看」= 关闭抽屉并把该公开方案以<b>只读态</b>载入当前页；「复制为我的」= 调已有 <code>/copy</code>，落当前用户 <b>private</b> 副本并刷新「我的」下拉。<br>
+    · 关键状态：加载中 / 空态（暂无公开{类型}）/ 错误可重试 / 复制 409 冲突提示 / 窄视口抽屉转全宽。<br>
+    · 本框及下方「原型演示」控件为评审辅助，非线上内容。
+  </div>
+
+  <script>
+    // 原型演示交互（仅用于评审点击反馈，非业务实现）
+    var seg=document.querySelectorAll('.segment button');
+    seg.forEach(function(b){b.onclick=function(){seg.forEach(function(x){x.classList.remove('active')});b.classList.add('active');};});
+    document.querySelectorAll('[data-copy]').forEach(function(el){
+      el.onclick=function(){var t=document.getElementById('toast');t.classList.add('show');setTimeout(function(){t.classList.remove('show');},1600);};
+    });
+    document.querySelector('.close').onclick=function(){alert('原型演示：关闭抽屉');};
+  </script>
+</body>
+</html>

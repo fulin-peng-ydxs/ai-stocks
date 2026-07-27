@@ -822,7 +822,7 @@ onMounted(async () => {
         <PageSettingSection title="任务中心">
           <div class="setting-item">
             <div class="setting-label">默认任务筛选</div>
-            <PageSegmented v-model="settings.taskStatus" :options="[
+            <PageSegmented v-model="settings.taskStatus" aria-label="默认任务筛选" :options="[
               { label: '全部', value: 'all' },
               { label: '运行中', value: 'active' },
               { label: '失败项', value: 'failed' },
@@ -832,14 +832,14 @@ onMounted(async () => {
         <PageSettingSection title="日志与显示">
           <div class="setting-item">
             <div class="setting-label">采集日志筛选</div>
-            <PageSegmented v-model="settings.logStatus" :options="[
+            <PageSegmented v-model="settings.logStatus" aria-label="采集日志筛选" :options="[
               { label: '全部', value: 'all' },
               { label: '仅失败', value: 'failed' },
             ]" />
           </div>
           <div class="setting-item">
             <div class="setting-label">更多选项默认任务</div>
-            <PageSegmented v-model="settings.defaultTaskType" :options="[
+            <PageSegmented v-model="settings.defaultTaskType" aria-label="更多选项默认任务" :options="[
               { label: '指定日期', value: 'ingest_date' },
               { label: '增量更新', value: 'update' },
               { label: '历史补数', value: 'backfill' },

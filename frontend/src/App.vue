@@ -279,7 +279,7 @@ async function onLogout() {
 
 <template>
   <router-view v-if="isFullscreen" :key="route.path" />
-  <el-container v-else class="app">
+  <el-container v-else class="app" role="region" aria-label="研究工作台">
     <el-header class="topbar" data-testid="app-topbar-surface">
       <div class="topbar-brand">
         <BrandMark :tone="isDark ? 'dark' : 'light'" />

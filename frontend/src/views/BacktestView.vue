@@ -1499,14 +1499,14 @@ async function openTradeChart(row: TradeRow) {
         <PageSettingSection title="默认参数">
           <div class="setting-item">
             <div class="setting-label">默认模式</div>
-            <PageSegmented v-model="settings.kind" :options="[
+            <PageSegmented v-model="settings.kind" aria-label="默认模式" :options="[
               { label: '策略回测', value: 'strategy' },
               { label: '评分验证', value: 'score_check' },
             ]" />
           </div>
           <div class="setting-item">
             <div class="setting-label">Top N</div>
-            <PageSegmented v-model="settings.topN" :options="[
+            <PageSegmented v-model="settings.topN" aria-label="Top N" :options="[
               { label: '5', value: 5 },
               { label: '10', value: 10 },
               { label: '20', value: 20 },
@@ -1514,7 +1514,7 @@ async function openTradeChart(row: TradeRow) {
           </div>
           <div class="setting-item">
             <div class="setting-label">初始资金</div>
-            <PageSegmented v-model="settings.initCap" :options="[
+            <PageSegmented v-model="settings.initCap" aria-label="初始资金" :options="[
               { label: '50万', value: 500000 },
               { label: '100万', value: 1000000 },
               { label: '300万', value: 3000000 },

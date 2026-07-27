@@ -495,7 +495,7 @@ onMounted(() => {
         <PageSettingSection title="默认筛选">
           <div class="setting-item">
             <div class="setting-label">状态筛选</div>
-            <PageSegmented v-model="settings.defaultStatus" :options="[
+            <PageSegmented v-model="settings.defaultStatus" aria-label="状态筛选" :options="[
               { label: '待办两态', value: 'todo' },
               { label: '仅未处理', value: 'open' },
               { label: '全部', value: 'all' },
@@ -503,7 +503,7 @@ onMounted(() => {
           </div>
           <div class="setting-item">
             <div class="setting-label">严重度筛选</div>
-            <PageSegmented v-model="settings.defaultSeverity" :options="[
+            <PageSegmented v-model="settings.defaultSeverity" aria-label="严重度筛选" :options="[
               { label: '全部', value: 'all' },
               { label: '高危优先', value: 'high' },
             ]" />

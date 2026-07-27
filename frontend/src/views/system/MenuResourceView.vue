@@ -154,17 +154,23 @@ function onCreateParentChange(value: string) {
 const resources = ref<Resource[]>([])
 const resLoading = ref(false)
 const resError = ref(false)
+let resourceRequestVersion = 0
 async function loadResources(menuId: string) {
+  const requestVersion = ++resourceRequestVersion
   resLoading.value = true
   resError.value = false
   try {
-    resources.value = await listResources(menuId)
+    const nextResources = await listResources(menuId)
+    // 快速切换菜单时，较早请求可能最后返回；只允许当前菜单的最新响应落状态。
+    if (requestVersion !== resourceRequestVersion || activeId.value !== menuId) return
+    resources.value = nextResources
   } catch {
+    if (requestVersion !== resourceRequestVersion || activeId.value !== menuId) return
     // 功能点列表加载失败给明确错误态 + 重试入口（error+retry 闭环，勿静默结束 loading）
     resources.value = []
     resError.value = true
   } finally {
-    resLoading.value = false
+    if (requestVersion === resourceRequestVersion) resLoading.value = false
   }
 }
 function retryResources() {
@@ -479,11 +485,11 @@ onMounted(() => { loadTree() })
           <template v-if="activeMenu">
             <div class="mr-detail-bar">
               <div class="mr-detail-title">
-                <div class="mname">
+                <h2 class="mname">
                   <MenuIcon v-if="activeMenu.icon" :name="activeMenu.icon" class="mr-ticon" />
-                  <SystemBuiltinTag v-if="activeMenu.is_builtin" />
                   {{ activeMenu.title }}
-                </div>
+                  <SystemBuiltinTag v-if="activeMenu.is_builtin" />
+                </h2>
                 <div class="mmeta">
                   标识 {{ activeMenu.code }}
                 </div>
@@ -562,7 +568,7 @@ onMounted(() => { loadTree() })
                 </div>
                 <!-- 表内联增删改（承接原型，无编辑 dialog）；窄栏体内横滚 -->
                 <div class="mr-tbl-scroll" v-loading="resLoading">
-                  <table class="mr-ftable">
+                  <table class="mr-ftable" aria-label="功能点">
                     <thead>
                       <tr><th style="min-width: 190px">功能码</th><th style="min-width: 120px">名称</th>
                         <th style="width: 92px">类型</th><th style="min-width: 220px">绑定接口</th><th style="width: 116px">操作</th></tr>
@@ -593,8 +599,8 @@ onMounted(() => { loadTree() })
                         <!-- 展示态 -->
                         <tr v-else>
                           <td class="mr-code-cell">
-                            <SystemBuiltinTag v-if="r.is_builtin" />
                             <span class="mono">{{ r.code }}</span>
+                            <SystemBuiltinTag v-if="r.is_builtin" />
                           </td>
                           <td>{{ r.name }}</td>
                           <td><el-tag size="small" effect="plain" :type="r.type === 'api' ? 'success' : 'warning'">{{ r.type === 'api' ? '接口' : '按钮' }}</el-tag></td>
@@ -748,7 +754,7 @@ onMounted(() => { loadTree() })
 }
 .mr-detail-bar { padding: 12px 16px; border-bottom: 1px solid var(--el-border-color-lighter);
   display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
-.mr-detail-title .mname { font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-strong); display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
+.mr-detail-title .mname { margin: 0; font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-strong); display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
 .mr-detail-title .mmeta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 2px; }
 .mr-section { padding: 14px 16px; border-bottom: 1px solid var(--el-border-color-lighter); }
 .mr-section h4 { margin: 0 0 12px; font-size: var(--app-font-size-table); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-section);

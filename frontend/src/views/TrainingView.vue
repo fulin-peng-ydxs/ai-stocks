@@ -560,7 +560,7 @@ onBeforeUnmount(detachKeyboard)
 
           <template v-if="!isLast">
             <div class="ops order-input">
-              <PageSegmented v-model="cfg.orderMode" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
+              <PageSegmented v-model="cfg.orderMode" aria-label="本轮下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
               <el-input-number v-model="order.qty" :min="inputMin" :max="inputMax" :step="inputStep" controls-position="right" style="width:160px" />
               <span class="unit">{{ isAmount ? '元' : '手' }}</span>
               <span class="hint" v-if="!isAmount">
@@ -721,7 +721,7 @@ onBeforeUnmount(detachKeyboard)
       <PageSettingSection title="快捷下单" desc="配置下单方式与一键预设，训练时直接点选快速买卖。">
         <div class="setting-item">
           <div class="setting-label">默认下单方式</div>
-          <PageSegmented v-model="cfg.orderMode" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
+          <PageSegmented v-model="cfg.orderMode" aria-label="默认下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
         </div>
         <div class="setting-item col">
           <div class="setting-label">手数预设（逗号分隔）</div>

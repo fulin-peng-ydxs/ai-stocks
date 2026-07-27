@@ -8,6 +8,7 @@ describe('PageSegmented', () => {
     const wrapper = mount(PageSegmented, {
       props: {
         modelValue: 'md',
+        'aria-label': '抽屉尺寸',
         testId: 'drawer-size',
         options: [
           { label: '小', value: 'sm' },
@@ -17,6 +18,8 @@ describe('PageSegmented', () => {
       },
     })
 
+    expect(wrapper.attributes('role')).toBe('group')
+    expect(wrapper.attributes('aria-label')).toBe('抽屉尺寸')
     expect(wrapper.attributes('data-testid')).toBe('drawer-size')
     expect(wrapper.get('[data-testid="drawer-size-md"]').classes()).toContain('active')
     expect(wrapper.get('[data-testid="drawer-size-md"]').attributes('aria-pressed')).toBe('true')
@@ -28,5 +31,23 @@ describe('PageSegmented', () => {
     await wrapper.setProps({ modelValue: 'lg' })
     expect(wrapper.get('[data-testid="drawer-size-md"]').attributes('aria-pressed')).toBe('false')
     expect(wrapper.get('[data-testid="drawer-size-lg"]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('支持由页面已有标题提供可访问名称关联', () => {
+    const wrapper = mount(PageSegmented, {
+      props: {
+        modelValue: 'all',
+        'aria-label': '显示范围',
+        'aria-labelledby': 'source-mode-label',
+        options: [
+          { label: '全部源', value: 'all' },
+          { label: '只主源', value: 'primary' },
+        ],
+      },
+    })
+
+    expect(wrapper.attributes('role')).toBe('group')
+    expect(wrapper.attributes('aria-label')).toBe('显示范围')
+    expect(wrapper.attributes('aria-labelledby')).toBe('source-mode-label')
   })
 })

@@ -20,7 +20,12 @@ function leaf(): PermNode {
   }
 }
 
-async function mountTree(opts: { stateOf?: (n: PermNode) => 'on' | 'half' | 'off'; readonly?: boolean; toggle?: (n: PermNode) => void }) {
+async function mountTree(opts: {
+  stateOf?: (n: PermNode) => 'on' | 'half' | 'off'
+  readonly?: boolean
+  toggle?: (n: PermNode) => void
+  expandResources?: boolean
+}) {
   const wrapper = mount(PermissionTree, {
     props: {
       node: leaf(),
@@ -30,7 +35,9 @@ async function mountTree(opts: { stateOf?: (n: PermNode) => 'on' | 'half' | 'off
     },
     global: { plugins: [ElementPlus] },
   })
-  await wrapper.find('.pt-resource-trigger').trigger('click')
+  if (opts.expandResources !== false) {
+    await wrapper.find('.pt-resource-trigger').trigger('click')
+  }
   return wrapper
 }
 
@@ -38,7 +45,7 @@ async function mountTree(opts: { stateOf?: (n: PermNode) => 'on' | 'half' | 'off
 function chipCheckbox(w: Awaited<ReturnType<typeof mountTree>>, label: string): string[] {
   const chip = w.findAll('.pt-func').find((c) => c.find('.pt-fname').text() === label)
   if (!chip) throw new Error(`未找到功能点 chip: ${label}`)
-  return chip.find('.el-checkbox').classes()
+  return chip.classes()
 }
 
 describe('PermissionTree baseline_locked（stage4 T9）', () => {
@@ -83,5 +90,71 @@ describe('PermissionTree baseline_locked（stage4 T9）', () => {
     const baseline = w.findAll('.pt-func').find((c) => c.find('.pt-fname').text() === '布局生效读')!
     await baseline.find('input').trigger('change')
     expect(toggle).not.toHaveBeenCalled()
+  })
+
+  it('菜单功能权限按钮提供唯一名称、展开态和受控区域关系', async () => {
+    const w = await mountTree({ stateOf: () => 'off' })
+    const trigger = w.get('.pt-resource-trigger')
+    const region = w.get('.pt-resource-list')
+
+    expect(trigger.attributes('aria-label')).toBe('每日榜单功能权限 1/3')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(trigger.attributes('aria-controls')).toBe(region.attributes('id'))
+    expect(region.attributes('role')).toBe('region')
+  })
+
+  it('功能权限收起时保留 aria-controls 指向的受控区域', async () => {
+    const w = await mountTree({ stateOf: () => 'off', expandResources: false })
+    const trigger = w.get('.pt-resource-trigger')
+    const region = w.get('.pt-resource-list')
+
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+    expect(trigger.attributes('aria-controls')).toBe(region.attributes('id'))
+    expect(region.isVisible()).toBe(false)
+  })
+
+  it('功能权限项只渲染一个 label，并由 checkbox 自身承载整行名称', async () => {
+    const w = await mountTree({ stateOf: () => 'off' })
+    const plain = w.findAll('.pt-func').find((c) => c.find('.pt-fname').text() === '查看榜单')!
+
+    expect(plain.element.tagName).toBe('LABEL')
+    expect(plain.findAll('label')).toHaveLength(0)
+    expect(plain.text()).toContain('查看榜单')
+  })
+})
+
+describe('PermissionTree 分组可访问交互', () => {
+  it('使用可聚焦原生按钮暴露展开态和受控区域关系', async () => {
+    const group: PermNode = {
+      key: 'g:research',
+      label: '研究分析',
+      kind: 'menu',
+      nodeType: 'group',
+      sysLocked: false,
+      children: [leaf()],
+    }
+    const w = mount(PermissionTree, {
+      props: {
+        node: group,
+        stateOf: () => 'off',
+        toggle: () => {},
+        readonly: false,
+      },
+      global: { plugins: [ElementPlus] },
+    })
+    const trigger = w.get('.pt-group-toggle')
+    const region = w.get('.pt-group-body')
+
+    expect(trigger.element.tagName).toBe('BUTTON')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    expect(trigger.attributes('aria-controls')).toBe(region.attributes('id'))
+    expect(region.attributes('aria-labelledby')).toBe(trigger.attributes('id'))
+    expect((trigger.element as HTMLButtonElement).tabIndex).toBe(0)
+
+    await trigger.trigger('click')
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+
+    await trigger.trigger('click')
+    expect(trigger.attributes('aria-expanded')).toBe('true')
   })
 })

@@ -436,7 +436,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 
         <el-divider content-position="left" style="margin: 4px 0 14px">触发频率</el-divider>
         <el-form-item label="频率">
-          <PageSegmented v-model="form.freq_type" :options="FREQ_OPTIONS" />
+          <PageSegmented v-model="form.freq_type" :options="FREQ_OPTIONS" aria-label="频率" />
         </el-form-item>
         <el-form-item v-if="form.freq_type === 'weekly'" label="星期">
           <el-checkbox-group v-model="form.weekdays">
@@ -487,7 +487,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         <PageSettingSection title="显示">
           <div class="setting-item">
             <div class="setting-label">时间显示</div>
-            <PageSegmented v-model="settings.timeMode" :options="[
+            <PageSegmented v-model="settings.timeMode" aria-label="时间显示" :options="[
               { label: '完整时间', value: 'full' },
               { label: '仅时分', value: 'hm' },
             ]" />
@@ -496,7 +496,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         <PageSettingSection title="数据源视图">
           <div class="setting-item">
             <div class="setting-label">显示范围</div>
-            <PageSegmented v-model="settings.sourceMode" :options="[
+            <PageSegmented v-model="settings.sourceMode" aria-label="显示范围" :options="[
               { label: '全部源', value: 'all' },
               { label: '只主源', value: 'primary' },
             ]" />

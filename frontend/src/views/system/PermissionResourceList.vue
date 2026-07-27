@@ -11,17 +11,15 @@ defineProps<{
 
 <template>
   <div class="pt-resource-list">
-    <label
+    <el-checkbox
       v-for="resource in resources"
       :key="resource.key"
       class="pt-func"
       :class="{ locked: resource.sysLocked, baseline: resource.baselineLocked }"
+      :model-value="resource.baselineLocked || stateOf(resource) === 'on'"
+      :disabled="readonly || resource.sysLocked || resource.baselineLocked"
+      @change="toggle(resource)"
     >
-      <el-checkbox
-        :model-value="resource.baselineLocked || stateOf(resource) === 'on'"
-        :disabled="readonly || resource.sysLocked || resource.baselineLocked"
-        @change="toggle(resource)"
-      />
       <span class="pt-resource-copy">
         <span class="pt-fname">{{ resource.label }}</span>
         <span class="pt-fcode">{{ resource.code || resource.key.replace(/^r:/, '') }}</span>
@@ -29,7 +27,7 @@ defineProps<{
       <span class="pt-ftype">{{ resource.nodeType === 'api' ? '接口' : '按钮' }}</span>
       <span v-if="resource.baselineLocked" class="pt-baseline">基线</span>
       <span v-if="resource.sysLocked" class="pt-system-only">仅系统管理员</span>
-    </label>
+    </el-checkbox>
   </div>
 </template>
 
@@ -44,9 +42,12 @@ defineProps<{
 }
 .pt-func {
   display: flex;
+  width: 100%;
+  height: auto;
   align-items: center;
   gap: var(--app-space-2);
   min-width: 0;
+  margin-right: 0;
   padding: 7px 9px;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
@@ -101,6 +102,12 @@ defineProps<{
   margin-right: 0;
 }
 :deep(.el-checkbox__label) {
-  display: none;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: var(--app-space-2);
+  min-width: 0;
+  padding-left: 0;
+  color: inherit;
 }
 </style>

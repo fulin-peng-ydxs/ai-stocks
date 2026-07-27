@@ -259,6 +259,8 @@ function onSubmit() {
 <template>
   <div
     class="login-shell"
+    role="region"
+    aria-label="登录页"
     :class="[`preset-${activePresetKey}`, { 'is-register': mode === 'register', 'is-dark': isDark }]"
     :style="loginSurfaceStyle"
   >
@@ -311,7 +313,13 @@ function onSubmit() {
 
     <section class="login-auth" data-testid="login-auth-surface">
       <div class="login-controls">
-        <button class="login-preset" type="button" :aria-label="`切换研究空间，当前${activePresetLabel}`" @click="cyclePreset">
+        <button
+          v-if="presetOptions.length > 1"
+          class="login-preset"
+          type="button"
+          :aria-label="`切换研究空间，当前${activePresetLabel}`"
+          @click="cyclePreset"
+        >
           <i /><span>{{ activePresetLabel }}</span>
         </button>
         <button class="login-theme" type="button" aria-label="切换主题" title="切换黑/白主题" @click="toggleTheme">
