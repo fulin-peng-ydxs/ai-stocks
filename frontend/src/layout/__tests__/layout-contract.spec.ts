@@ -10,6 +10,16 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 const VIEWS_DIR = resolve(process.cwd(), 'src/views')
+const APP_SOURCE = readFileSync(resolve(process.cwd(), 'src/App.vue'), 'utf8')
+const GLOBAL_CSS = readFileSync(resolve(process.cwd(), 'src/styles/global.css'), 'utf8')
+const ADAPTIVE_GROW_SOURCE = readFileSync(
+  resolve(process.cwd(), 'src/layout/components/VAdaptiveGrow.vue'),
+  'utf8',
+)
+const MIXED_GROW_SOURCE = readFileSync(
+  resolve(process.cwd(), 'src/layout/components/VMixedGrow.vue'),
+  'utf8',
+)
 
 /**
  * 存量未迁移、仍手写 `.v-page/.v-grow/.v-scroll` 契约的页面白名单（相对 src/views）。
@@ -60,6 +70,24 @@ describe('布局契约守卫（M6）', () => {
       })
     }
     expect(offenders, `视口硬编码高度违规（应交给布局系统的 flex 链路）：\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('应用主内容 flex 链允许低视口收缩，页面一级子项不得被全局固定', () => {
+    const mainBlock = APP_SOURCE.match(/\.main\s*\{([\s\S]*?)\}/)?.[1] ?? ''
+    expect(mainBlock).toMatch(/min-height\s*:\s*0/)
+    expect(mainBlock).toMatch(/overflow\s*:\s*clip/)
+    expect(GLOBAL_CSS).not.toMatch(/\.v-page\s*>\s*\*\s*\{[^}]*\bflex\s*:/)
+  })
+
+  it('成长区卡片样式只作用于直接子卡片，不得覆盖业务区内嵌卡片', () => {
+    expect(ADAPTIVE_GROW_SOURCE).toMatch(
+      /\.v-adaptive-grow__main\s*>\s*:deep\(\.el-card\)/,
+    )
+    expect(ADAPTIVE_GROW_SOURCE).not.toMatch(
+      /\.v-adaptive-grow__main\s+:deep\(\.el-card\)/,
+    )
+    expect(MIXED_GROW_SOURCE).toMatch(/\.v-mixed-main\s*>\s*:deep\(\.el-card\)/)
+    expect(MIXED_GROW_SOURCE).not.toMatch(/\.v-mixed-main\s+:deep\(\.el-card\)/)
   })
 
   it('新页面必须走 LayoutHost，不得手写 .v-page/.v-grow 契约', () => {

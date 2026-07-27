@@ -44,7 +44,7 @@
 - [components.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components.ts)：已有组件最低尺寸目录 `COMPONENT_CATALOG`。
 - [archetypes.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/archetypes.ts)：已有 `list`、`master-detail`、`dashboard`、`form`、`detail`、`workbench`、`wizard` 原型预设。
 - [validator.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/validator.ts)：已有 schema 层校验器，能校验组件下限、主表唯一、操作区一致性、响应式断点和可编辑白名单。
-- [LayoutHost.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components/LayoutHost.vue)：已有布局宿主，消费 `PageLayout` 并输出 `.v-page`、`.v-grow`、`.v-scroll`、`VMixedGrow`、`VColumns`。
+- [LayoutHost.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components/LayoutHost.vue)：布局宿主消费 `PageLayout`，统一输出页面外壳、`VAdaptiveGrow`、`VMixedGrow`、整区滚动与响应式多列容器。
 - [useLayoutConfig.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/useLayoutConfig.ts)：已有多层配置源合并能力，登录用户布局/组件覆盖以 PG `layout_user_config` 为权威，localStorage 仅作为 fallback 和旧值迁移源。
 - [LayoutSettingsSection.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components/LayoutSettingsSection.vue)：已有基于 `editable` 自动渲染的布局设置表单。
 
@@ -453,6 +453,7 @@
 - 页面外壳永不滚动。
 - 固定操作区按内容取高。
 - 主内容区吃剩余高度。
+- 剩余高度达到主组件有效 `minH` 时，主内容区不滚动，由主组件内部滚动；低于 `minH` 时才允许主内容区整体滚动兜底。
 - 主表、主图、主列表优先内部滚动。
 - 宽表只允许表体横向滚动，不允许整页横向滚动。
 - 多组件在满足最低尺寸时可重排。
@@ -812,7 +813,7 @@ interface EffectiveLayoutConfig {
 
 ## 8. 边界条件与异常场景
 
-- 浏览器高度很低，例如 1100×620：页面不得出现整页滚动，主内容区内部滚动。
+- 浏览器高度很低，例如 1100×620：应用外壳不得滚动；达到主组件 `minH` 时由组件内部滚动，低于 `minH` 时由主内容区滚动兜底。
 - 表格分页大小改为 100：表体内部滚动，分页不被挤出。
 - 搜索条件很多：筛选栏默认一行，支持展开更多，展开后挤压主内容区。
 - 宽表列很多：表体横向滚动，冻结关键列，不让整页横滚。

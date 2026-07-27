@@ -312,7 +312,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           retry
           @retry="load"
         />
-        <AppDataTable :data="jobs" size="small" class="jobs-tbl" :loading="loading" :fill="false">
+        <AppDataTable :data="jobs" size="small" class="jobs-tbl" :loading="loading">
           <AppTableColumn label="名称" prop="name" show-overflow-tooltip />
           <AppTableColumn label="任务类型">
             <template #default="{ row }">{{ taskDisplayLabel(row.task_type, row.params) }}</template>
@@ -514,11 +514,22 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
 .page-head-actions { display: flex; gap: var(--app-space-2); align-items: center; }
-/* 填满 LayoutHost 的 .v-grow；放不下时整区内滚（兜底阶梯第 3 级） */
+/* 填满 LayoutHost 的条件成长区；放不下时整区内滚（兜底阶梯第 3 级） */
 .schedule-body { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
-.jobs-card { margin-bottom: 16px; }
-.jobs-card :deep(.el-card__body) { flex: 1 1 auto; min-height: 0; }
-.jobs-tbl { width: 100%; }
+.jobs-card {
+  flex: 1 1 auto;
+  min-height: 300px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+}
+.jobs-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.jobs-tbl { width: 100%; flex: 1 1 auto; min-height: 0; }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .blk { margin-bottom: 16px; }

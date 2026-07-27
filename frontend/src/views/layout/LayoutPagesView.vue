@@ -622,7 +622,7 @@ onMounted(async () => {
               </el-descriptions>
               <el-collapse class="source-collapse">
                 <el-collapse-item title="页面默认布局字段" name="editable">
-                  <AppDataTable v-if="selectedPage.layout.editable.length" :data="selectedPage.layout.editable" max-height="140" size="small" :fill="false">
+                  <AppDataTable v-if="selectedPage.layout.editable.length" :data="selectedPage.layout.editable" max-height="140" size="small" embedded>
                     <AppTableColumn prop="label" label="字段" />
                     <AppTableColumn prop="path" label="路径" />
                     <AppTableColumn prop="type" label="类型" />
@@ -741,7 +741,7 @@ onMounted(async () => {
 
                 <div class="cc-block-title">只读诊断</div>
                 <div class="section-subtitle">只显示当前点击 slot 的页面默认值、可覆盖范围和安全枚举诊断；不可编辑字段只在这里解释原因。</div>
-                <AppDataTable v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table" :fill="false">
+                <AppDataTable v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table" embedded>
                   <AppTableColumn label="字段">
                     <template #default="{ row }">
                       <div class="diag-main">{{ row.fieldLabel }}</div>
@@ -853,7 +853,7 @@ onMounted(async () => {
 
               <section class="plain-panel">
                 <div class="section-title">字段来源</div>
-                <AppDataTable :data="sourceRows" height="320" :fill="false">
+                <AppDataTable :data="sourceRows" height="320" embedded>
                   <AppTableColumn prop="path" label="路径" />
                   <AppTableColumn prop="value" label="值" />
                   <AppTableColumn prop="source" label="来源" />

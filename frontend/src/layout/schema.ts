@@ -3,7 +3,7 @@
  *
  * 把布局规范的「页面原型 / 组件最低尺寸 / 滚动归属 / 重排多列」（原 ai-agent 规范稿，已代码化退场）
  * 抽象成机器可读的声明式描述符。每个页面用一份 PageLayout 声明其布局，
- * 由校验器（validator.ts）保证不越规、由渲染器（M2）按描述产出 .v-page/.v-grow/.v-scroll 契约。
+ * 由校验器（validator.ts）保证不越规、由渲染器（M2）产出页面外壳和条件成长/滚动区域。
  *
  * 三层配置模型（详见 agent-works/configurable-layout-system/plan.md）：
  *   L1 archetype（开发期选定、用户确认、运行期锁死）

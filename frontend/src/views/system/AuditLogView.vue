@@ -701,7 +701,7 @@ onBeforeUnmount(stopTimer)
               <div v-else class="change-table">
                 <AppDataTable
                   :data="activeDetail.changes"
-                  :fill="false"
+                  embedded
                   kind="wide-table"
                   row-key="field"
                   size="small"

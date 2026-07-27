@@ -857,7 +857,7 @@ onMounted(async () => {
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
-/* 填满 LayoutHost 的 .v-grow；内部「顶部固定卡 + 底部双栏成长表」，放不下时整区内滚 */
+/* 填满 LayoutHost 的条件成长区；内部「顶部固定卡 + 底部双栏成长表」，放不下时整区内滚 */
 .ingest-body {
   flex: 1 1 auto;
   min-height: 0;

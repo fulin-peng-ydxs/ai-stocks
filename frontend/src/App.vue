@@ -1459,6 +1459,7 @@ button.topbar-status:focus-visible {
 .main {
   background: transparent;
   padding: 20px 24px;
+  min-height: 0;
   overflow: clip;            /* 外壳不是滚动容器，也禁止 scrollIntoView 产生隐藏 scrollTop */
   display: flex;
   flex-direction: column;

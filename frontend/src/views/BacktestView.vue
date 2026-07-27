@@ -1251,7 +1251,7 @@ async function openTradeChart(row: TradeRow) {
               </AppControlRow>
 
               <!-- 参数敏感性结果 -->
-              <AppDataTable v-if="sweepRes" :data="sweepRes.rows" size="small" border :fill="false">
+              <AppDataTable v-if="sweepRes" :data="sweepRes.rows" size="small" border embedded>
                 <AppTableColumn :label="ROBUST_PARAM_OPTS.find(o => o.v === sweepRes!.param)?.t || sweepRes.param" role="number">
                   <template #default="{ row }"><b>{{ sweepValLabel(row.value) }}</b></template>
                 </AppTableColumn>
@@ -1279,7 +1279,7 @@ async function openTradeChart(row: TradeRow) {
               <AppDataTable v-if="inOutRes" :data="[
                 { seg: '样本内', ...inOutRes.in_sample },
                 { seg: '样本外', ...inOutRes.out_sample },
-              ]" size="small" border :fill="false">
+              ]" size="small" border embedded>
                 <AppTableColumn label="样本">
                   <template #default="{ row }"><b>{{ row.seg }}</b><span class="opt-range">{{ row.range[0] }}~{{ row.range[1] }}</span></template>
                 </AppTableColumn>
@@ -1310,7 +1310,7 @@ async function openTradeChart(row: TradeRow) {
           分层命中率 vs 全市场基线（超额）
           <span class="sub">区间 {{ layersData.date_start }} ~ {{ layersData.date_end }}，总信号 {{ layersData.total_signals }}</span>
         </div>
-        <AppDataTable :data="layerRows" size="small" :fill="false">
+        <AppDataTable :data="layerRows" size="small" embedded>
           <AppTableColumn label="分档">
             <template #default="{ row }">
               <b :class="{ base: row.isBase }">{{ row.name }}</b>
@@ -1425,7 +1425,7 @@ async function openTradeChart(row: TradeRow) {
         <CandleChart v-if="dlgBars.length" :bars="dlgBars" :markers="dlgMarkers"
                      :zoom-start="dlgZoom.start" :zoom-end="dlgZoom.end" />
         <div class="dlg-tbl-title">本股交易明细 + 卖出后表现（看卖得对不对）</div>
-        <AppDataTable :data="dlgTrades" size="small" class="dlg-trades" :fill="false">
+        <AppDataTable :data="dlgTrades" size="small" class="dlg-trades" embedded>
           <AppTableColumn label="买入" prop="entry_date" />
           <AppTableColumn label="卖出" prop="exit_date" />
           <AppTableColumn label="收益">
@@ -1476,7 +1476,7 @@ async function openTradeChart(row: TradeRow) {
         </div>
         <el-alert v-if="boardMissing && boardRows.length" type="warning" :closable="false" show-icon style="margin-bottom:8px"
                   title="本笔买入的票不在 Top 50 内（榜单名次更靠后）——它因选股方案命中且方案内排名靠前而被买入，并非综合分靠前。" />
-        <AppDataTable :data="boardRows" size="small" height="460" :row-class-name="boardRowClass" :fill="false">
+        <AppDataTable :data="boardRows" size="small" height="460" :row-class-name="boardRowClass" embedded>
           <AppTableColumn label="#" prop="rank" />
           <AppTableColumn label="代码" prop="code" />
           <AppTableColumn label="名称" prop="name">
@@ -1587,7 +1587,7 @@ async function openTradeChart(row: TradeRow) {
   border: 1px solid var(--el-color-info-light-7);
 }
 .backtest-body {
-  flex: 1 1 auto;          /* 填满 LayoutHost 的 .v-grow */
+  flex: 1 1 auto;          /* 填满 LayoutHost 的条件成长区 */
   min-height: 0;
   overflow: hidden;        /* 自身不滚：固定表单卡 + 内部 .results 区滚动 */
   display: flex;
@@ -1636,8 +1636,11 @@ async function openTradeChart(row: TradeRow) {
   min-height: 300px;
   overflow: hidden;
   margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
 }
 .trade-block :deep(.el-card__body) {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;

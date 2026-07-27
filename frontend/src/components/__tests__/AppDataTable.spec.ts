@@ -82,11 +82,11 @@ describe('AppDataTable', () => {
     expect(wrapper.emitted('size-change')?.[0]).toEqual([100])
   })
 
-  it('非成长表关闭 fill 后不强制占满父容器', () => {
+  it('嵌入式表格不强制占满父容器', () => {
     const wrapper = mount(AppDataTable, {
       props: {
         data: [],
-        fill: false,
+        embedded: true,
       },
       global: {
         directives: { loading: {} },
@@ -97,7 +97,7 @@ describe('AppDataTable', () => {
       },
     })
 
-    expect(wrapper.classes()).toContain('app-data-table--auto')
+    expect(wrapper.classes()).toContain('app-data-table--embedded')
     expect(wrapper.classes()).not.toContain('app-data-table--fill')
   })
 })

@@ -282,7 +282,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               <span class="cat-title">{{ group.label }}</span>
               <span class="cat-count">{{ group.rows.length }}</span>
             </template>
-            <AppDataTable :data="group.rows" row-key="kind" size="small" :fill="false">
+            <AppDataTable :data="group.rows" row-key="kind" size="small" embedded>
               <AppTableColumn label="组件">
                 <template #default="{ row }">
                   <div class="comp-name">{{ row.label }}</div>
@@ -402,7 +402,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               <span class="db-title">可覆盖范围（在线编辑）</span>
               <HelpHint text="勾选某字段允许在哪些层被覆盖（预设 / 页面 / 个人）。灰色项=代码未声明、不可开放（安全红线）。组件默认值请到「预设管理」按预设设置。" />
             </div>
-            <AppDataTable v-if="selected.configurableFields.length" :data="selected.configurableFields" size="small" :fill="false">
+            <AppDataTable v-if="selected.configurableFields.length" :data="selected.configurableFields" size="small" embedded>
               <AppTableColumn label="字段">
                 <template #default="{ row }">
                   <div class="comp-name">{{ row.label }}</div>

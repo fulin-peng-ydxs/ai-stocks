@@ -203,7 +203,7 @@ Key Characteristics：
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示和轻量“更多”菜单收纳 | 无直接系统组件种类 | 表格 `label="操作"`、自绘表格行、列表项和编辑器条件行的行内按钮组优先复用；首个未显式指定语义色的行内高频动作使用主色，普通次要动作使用常规正文色，禁用态使用弱文本色并满足语义 token 规则定义的文字层级阈值，停用/禁用/终止/删除等破坏性动作使用危险色；动作始终清晰可见，不对整组做透明度弱显；低频或危险动作可设置 `placement: 'more'`，菜单命令继续使用 Element Plus 按钮并呈现真实 loading，不得在页面内手写多行按钮或原生命令按钮 |
 | `SystemBuiltinTag` | `frontend/src/components/SystemBuiltinTag.vue` | 全站“系统内置”来源标记，固定使用灰色文字、灰色描边和中性浅底 | 无直接系统组件种类 | 菜单、功能点、角色、租户、布局预设、技术指标和系统内置方案等来源标记统一复用；文案固定为“系统内置”，不追加对象名称或保护规则说明；与对象名称或标识并列时统一放在对象后面，独立的来源/类型字段保持标签单独展示 |
-| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽、行点击样式和成长/自然高度模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；主列表使用默认成长模式，弹窗、展开区和局部明细显式传 `fill=false`；复杂单元格继续由业务页通过列插槽声明，不在页面复制表格外壳、分页容器和排序表头样式 |
+| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；主列表默认成长，抽屉、展开行和局部明细等非主表显式使用 `embedded`；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
 | `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和中文标签推导语义角色，统一提供固定结构宽或弹性最小宽 | `data-table`、`wide-table` 的稳定列宽能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width`；确有歧义的动态标签只传 `role`，数值事实只维护在 `ADAPTIVE_COLUMN_RULES` |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
 | `CandleChart` | `frontend/src/components/CandleChart.vue` | 盘感训练和回测复用的 K线、量能、MA/VMA 与买卖标记画布 | 无系统组件种类；图表参数由消费页面管理 | 盘感训练和回测统一消费；保持单实例双网格与既有 props 契约，并与 `StockChartWorkspace` 共用 MA/VMA 定义、tooltip helper 和 `useStockChartTheme()`，不得复制股票画布基础能力 |
@@ -254,6 +254,7 @@ Key Characteristics：
 ### 表格与列表
 
 - 主数据表应作为 `growMain` 占据剩余空间，使用 `height="100%"` 让表体内部滚动；当一个标签页工作区承载多个互斥主表时，由 `tabs` 作为唯一 `growMain`，当前面板内的表体承接滚动。
+- `list` 原型必须且只能有一个顶层 `growMain`；主列表不得使用 `embedded`。
 - 页面数据表格统一使用 `AppDataTable + AppTableColumn`。页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，也不得向列传 `width/min-width`。
 - 列宽采用语义自适应契约：选择、展开、序号等结构列保持稳定窄宽；代码、名称、状态、数值、日期、时间、标识、操作、正文和长说明使用各自语义最小宽度。容器有余量时由 Element Plus `fit` 按最小宽度权重分配并铺满，空间不足时保持最小可读宽度并由表体横向滚动。
 - 自适应列宽的角色、推导顺序和数值唯一维护在 `components/table/adaptiveColumnWidth.ts`；页面只在动态标签无法推导时声明语义 `role`，不得复制数值。
@@ -376,8 +377,9 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 1. 有“操作 → 内容”上下级关系时，使用固定操作区 + 主内容区；否则按平级面板处理。
 2. 数清主内容区组件数量、最低宽高和主成长组件。
-3. 能放下时富余空间给主表/主图；放不下时按“组件内部滚动 → 满足条件才重排多列 → 主内容区整体滚动兜底”处理。
-4. 单个大表不做多列重排，直接表体内滚。
+3. 能放下时富余空间给主表/主图；当剩余高度不低于其有效 `minH` 时，主内容区本身不滚动，由组件内部滚动；只有剩余高度低于 `minH` 时，主内容区才整体滚动兜底。
+4. 多组件只有满足宽度、阅读顺序和组件可重排条件时才重排；否则保持业务顺序。
+5. 单个大表不做多列重排，直接表体内滚。
 
 ### 5.4 主内容区策略
 
@@ -385,9 +387,9 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 | 策略 | 触发 | 行为 |
 |---|---|---|
-| `grow` | 单组件、非整区滚动型 | 主组件填满剩余空间，表体内滚 |
+| `grow` | 单组件、非整区滚动型 | `VAdaptiveGrow` 应用有效 `minH`：余量足够时主组件填满且内部滚动，余量不足时主内容区滚动兜底 |
 | `scroll` | 单组件整区滚动型 / 多组件无主成长组件 | 主内容区内部滚动 |
-| `mixed` | 多组件且恰一个 `growMain` | 固定块自然高，主表/主图成长 |
+| `mixed` | 多组件且恰一个 `growMain` | `VMixedGrow` 保持固定块自然高，并对主成长组件执行同一 `minH` 条件滚动规则 |
 | `columns` | 多组件且允许重排 | 容器宽度足够时多列，窄屏回退单列 |
 
 ## 6. Depth & Elevation
@@ -504,7 +506,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 | 视口 | 规则 |
 |---|---|
-| `1100×620` | 页面不得整页滚动；固定区保持可用，主内容区内部滚动 |
+| `1100×620` | 应用外壳不得滚动；固定区保持可用；余量达到组件 `minH` 时组件内部滚动，否则主内容区滚动兜底 |
 | `1366×768` | 主操作、状态列、时间列、核心业务列优先可见；次要说明列截断或进详情 |
 | `1440×900` | 默认桌面验收视口；表格、抽屉、工作台应无重叠和无文本溢出 |
 | `1920×1080` | 不无限拉宽说明文本；宽屏富余给主表、主图或多列概览 |
@@ -552,12 +554,12 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `ConfigView`（技术指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `ConfigView`（系统设置） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `UserManageView`（用户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `RoleManageView`（角色管理） | `list` | `density` | action:`toolbar` / main:`section` |
-| `MenuResourceView`（菜单与功能） | `list` | `density` | action:`toolbar` / main:`section` |
+| `RoleManageView`（角色管理） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
+| `MenuResourceView`（菜单与功能） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
 | `TenantManageView`（租户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `LayoutPresetsView`（预设管理） | `list` | 暂无 | action:`toolbar` / main:`section` |
-| `LayoutPagesView`（页面布局） | `list` | 暂无 | action:`toolbar` / main:`section` |
-| `LayoutComponentsView`（系统组件） | `list` | 暂无 | action:`toolbar` / main:`section` |
+| `LayoutPresetsView`（预设管理） | `list` | 暂无 | action:`toolbar` / main:`data-table(growMain)` |
+| `LayoutPagesView`（页面布局） | `workbench` | 暂无 | action:`toolbar` / main:`tabs(growMain)` |
+| `LayoutComponentsView`（系统组件） | `detail` | 暂无 | action:`toolbar` / main:`section(region)` |
 | `AuditLogView`（审计日志） | `list` | `density` | action:`toolbar` / main:`kpi-grid` / main:`filter-bar` / main:`wide-table` / overlay:`detail` |
 | `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`simple-list` / nested:`data-table` / overlay:`form` / overlay:`dialog` |
 <!-- page-registry:end -->

@@ -660,7 +660,7 @@ onBeforeUnmount(detachKeyboard)
             /></div>
             <div class="round-equity"><EquityChart :points="roundEquityPoints(rd, detail.initial_capital)" benchmark-code="满仓持有" /></div>
           </div>
-          <AppDataTable :data="rd.trades" size="small" class="round-trades" empty-text="本回合无成交" :fill="false">
+          <AppDataTable :data="rd.trades" size="small" class="round-trades" empty-text="本回合无成交" embedded>
             <AppTableColumn label="决策日"><template #default="{ row }">{{ row.decide_date }}</template></AppTableColumn>
             <AppTableColumn label="成交日"><template #default="{ row }">{{ row.fill_date }}</template></AppTableColumn>
             <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>

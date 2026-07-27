@@ -376,7 +376,7 @@ onMounted(load)
                     <div class="expand">
                       <div class="exp-line"><b>说明：</b>{{ row.purpose }}</div>
                       <div class="exp-line" v-if="row.relations?.length"><b>关联：</b>{{ row.relations.join('；') }}</div>
-                      <AppDataTable v-if="row.fields?.length" :data="row.fields" size="small" class="fld-tbl" :fill="false">
+                      <AppDataTable v-if="row.fields?.length" :data="row.fields" size="small" class="fld-tbl" embedded>
                         <AppTableColumn label="字段" prop="name" />
                         <AppTableColumn label="中文名" prop="name_cn" />
                         <AppTableColumn label="类型" prop="type" />
@@ -404,7 +404,7 @@ onMounted(load)
                 <AppTableColumn label="最新数据时间">
                   <template #default="{ row }">{{ (row.latest_time || '—').slice(0, 19) }}</template>
                 </AppTableColumn>
-                <AppTableColumn>
+                <AppTableColumn role="status">
                   <template #header>
                     <span>质量</span>
                     <HelpTip title="表级质量怎么判定？" :width="440">

@@ -34,7 +34,8 @@ const props = withDefaults(defineProps<{
   emptyText?: string
   ariaLabel?: string
   pagination?: PaginationConfig
-  fill?: boolean
+  /** 仅用于抽屉、展开行、局部详情等非主成长表；页面主列表不得开启。 */
+  embedded?: boolean
 }>(), {
   kind: 'data-table',
   loading: false,
@@ -43,10 +44,10 @@ const props = withDefaults(defineProps<{
   stripe: false,
   border: false,
   framed: false,
-  fill: true,
+  embedded: false,
 })
 
-const resolvedHeight = computed(() => props.height ?? (props.fill ? '100%' : undefined))
+const resolvedHeight = computed(() => props.height ?? (!props.embedded ? '100%' : undefined))
 const tableRef = ref<{ $el?: HTMLElement } | null>(null)
 
 function syncSemanticTableLabels(): void {
@@ -77,8 +78,8 @@ const emit = defineEmits<{
     :class="[
       `app-data-table--${kind}`,
       {
-        'app-data-table--fill': fill,
-        'app-data-table--auto': !fill,
+        'app-data-table--fill': !embedded,
+        'app-data-table--embedded': embedded,
         'app-data-table--clickable': clickable,
         'app-data-table--framed': framed,
         'app-data-table--with-pager': Boolean(pagination),
@@ -139,7 +140,7 @@ const emit = defineEmits<{
   flex: 1 1 auto;
 }
 
-.app-data-table--auto {
+.app-data-table--embedded {
   height: auto;
   flex: 0 1 auto;
 }

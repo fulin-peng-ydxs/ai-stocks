@@ -149,12 +149,10 @@ body {
   --perm-feature-color: #7c3aed;
 }
 
-/* ── 全站自适应布局契约（禁止整页滚动；内容超高 → 成长区内部滚动）──
-   .v-page  : 页面根（flex 纵向、占满内容区、overflow:clip）。子元素默认按内容高（固定区）。
-   .v-grow  : 表格成长区（占剩余高度）；内部 el-table 用 height="100%" 即表体内部滚动、表头吸顶。
-   .v-scroll: 长内容成长区（区域内部滚动，如回测结果/配置/详情）。
-   用法：页面根挂 .v-page；列表/表格卡挂 .v-grow 并把 el-table height 改为 100%；
-        长内容区挂 .v-scroll。固定区（标题/筛选/操作栏/分页）无需额外类。 */
+/* ── 全站自适应布局契约 ──
+   .v-page 由 LayoutHost 创建并锁住页面外壳；主成长区由 VAdaptiveGrow / VMixedGrow
+   根据组件 minH 决定“组件内部滚动”或“主内容区滚动兜底”；.v-scroll 仅承载
+   明确声明 scroll=region 的长内容。业务页面不得直接使用这些布局类。 */
 .v-page {
   height: 100%;
   position: relative;
@@ -163,19 +161,11 @@ body {
   overflow: clip;
   gap: var(--layout-page-gap);
 }
-.v-page > * { flex: 0 0 auto; min-height: 0; }
-.v-grow { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.v-page > * { min-height: 0; }
 /* LayoutHost 操作区/单组件主区插槽要求单根；用 .lh-action 把多个固定块（工具栏 + 筛选条等）
    收进一个根容器，纵向自然排列、保留区块间距。 */
 .lh-action { display: flex; flex-direction: column; gap: var(--app-space-3); }
 .v-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
-/* el-card 作为成长区时撑满高度，并让其 body 成为可放表格的 flex 列 */
-.v-grow > .el-card,
-.v-grow.el-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.v-grow > .el-card > .el-card__body,
-.v-grow.el-card > .el-card__body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-/* 成长区里的表格占满；其后的分页等保持自身高 */
-.v-grow .el-table { flex: 1 1 auto; min-height: 0; }
 
 /* 全站空态规范：
    - 列表/表格空态统一为「居中图标 + 场景文案」。

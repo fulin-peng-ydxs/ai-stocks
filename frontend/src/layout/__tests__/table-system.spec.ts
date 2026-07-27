@@ -22,6 +22,7 @@ interface ElementFinding {
   tag: string
   line: number
   forbiddenProps: string[]
+  missingColumnSemantics: boolean
 }
 
 function inspectTemplate(file: string): ElementFinding[] {
@@ -36,16 +37,26 @@ function inspectTemplate(file: string): ElementFinding[] {
       const forbiddenProps = node.props
         .map((prop: any) => prop.type === 6 ? prop.name : prop.arg?.content)
         .filter((name: string | undefined) =>
-          name === 'width' || name === 'min-width' || name === 'minWidth')
+          name === 'width'
+          || name === 'min-width'
+          || name === 'minWidth'
+          || (node.tag === 'AppDataTable' && name === 'fill'))
+      const propNames = node.props
+        .map((prop: any) => prop.type === 6 ? prop.name : prop.arg?.content)
+        .filter(Boolean)
+      const missingColumnSemantics = node.tag === 'AppTableColumn'
+        && !['label', 'prop', 'type', 'role'].some((name) => propNames.includes(name))
       if (
         ['table', 'el-table', 'el-table-column'].includes(node.tag)
-        || (node.tag === 'AppTableColumn' && forbiddenProps.length)
+        || (['AppTableColumn', 'AppDataTable'].includes(node.tag)
+          && (forbiddenProps.length || missingColumnSemantics))
       ) {
         findings.push({
           file: relative(VIEWS_DIR, file).split('\\').join('/'),
           tag: node.tag,
           line: node.loc.start.line,
           forbiddenProps,
+          missingColumnSemantics,
         })
       }
     }
@@ -76,6 +87,28 @@ describe('统一自适应表格契约', () => {
       findings,
       `列宽必须由语义规则推导：\n${findings.map((item) =>
         `${item.file}:${item.line} ${item.forbiddenProps.join(', ')}`).join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('页面不得用 fill 布尔值绕过主表/嵌入表语义', () => {
+    const findings = vueFiles(VIEWS_DIR)
+      .flatMap(inspectTemplate)
+      .filter((item) => item.tag === 'AppDataTable' && item.forbiddenProps.includes('fill'))
+    expect(
+      findings,
+      `主表默认成长；抽屉、展开行或局部详情表必须显式使用 embedded：\n${findings.map((item) =>
+        `${item.file}:${item.line}`).join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('无字段列必须显式声明结构、状态或操作等语义', () => {
+    const findings = vueFiles(VIEWS_DIR)
+      .flatMap(inspectTemplate)
+      .filter((item) => item.missingColumnSemantics)
+    expect(
+      findings,
+      `无 label/prop/type 的自定义列无法可靠推导宽度，必须声明 role：\n${findings.map((item) =>
+        `${item.file}:${item.line}`).join('\n')}`,
     ).toEqual([])
   })
 })

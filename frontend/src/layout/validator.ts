@@ -125,6 +125,11 @@ export function validateLayout(layout: PageLayout): ValidationIssue[] {
   if (growCount > 1) {
     push('error', 'growMain.multiple', `主内容区出现 ${growCount} 个 growMain，至多允许 1 个`)
   }
+  // 列表页不是“若有主表则成长”，而是必须明确唯一主列表。否则渲染器无法区分
+  // 主列表内滚与整页滚动，页面很容易退化为由内容高度决定的长页面。
+  if (layout.archetype === 'list' && growCount !== 1) {
+    push('error', 'list.growMain.required', `列表页必须且只能声明 1 个顶层 growMain，当前为 ${growCount} 个`)
+  }
 
   // 6. 滚动轴唯一（规范 §6）：同一 region 内至多一个「整区滚动」(scroll=region)。仅看顶层 slot，嵌套滚动由父组件自理。
   for (const region of ['action', 'main'] as const) {

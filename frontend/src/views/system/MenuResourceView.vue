@@ -522,7 +522,7 @@ onMounted(() => { loadTree() })
               </div>
             </div>
 
-            <div class="mr-col-body">
+            <div class="mr-col-body mr-detail-body">
               <!-- 菜单属性 -->
               <div class="mr-section">
                 <h4>菜单属性</h4>
@@ -574,7 +574,7 @@ onMounted(() => { loadTree() })
               </div>
 
               <!-- 功能点 -->
-              <div class="mr-section" style="border-bottom: none">
+              <div class="mr-section mr-resource-section">
                 <div class="mr-func-head">
                   <h4 style="margin: 0">功能点（供角色授权）
                     <HelpTip title="功能点说明" :width="360">
@@ -604,7 +604,6 @@ onMounted(() => { loadTree() })
                   kind="wide-table"
                   :data="resourceRows"
                   :loading="resLoading"
-                  :fill="false"
                   row-key="id"
                   empty-text="该菜单暂无功能点"
                   :row-class-name="resourceRowClassName"
@@ -755,6 +754,7 @@ onMounted(() => { loadTree() })
   color: var(--el-text-color-regular);
 }
 .mr-col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px; }
+.mr-detail-body { display: flex; flex-direction: column; }
 .mr-tnode { display: inline-flex; align-items: center; gap: var(--app-space-2); min-width: 0; width: 100%; }
 .mr-ticon { color: var(--el-text-color-regular); }
 .mr-tlabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -771,6 +771,13 @@ onMounted(() => { loadTree() })
 .mr-detail-title .mname { margin: 0; font-size: var(--app-font-size-section-title); font-weight: var(--app-font-weight-strong); display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
 .mr-detail-title .mmeta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 2px; }
 .mr-section { padding: 14px 16px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.mr-resource-section {
+  flex: 1 1 auto;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  border-bottom: none;
+}
 .mr-section h4 { margin: 0 0 12px; font-size: var(--app-font-size-table); color: var(--el-text-color-secondary); font-weight: var(--app-font-weight-section);
   display: inline-flex; align-items: center; }
 .mr-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--app-space-3) var(--app-space-5); }
@@ -780,7 +787,13 @@ onMounted(() => { loadTree() })
 .mono :deep(input), .mono { font-family: var(--app-font-family-mono); }
 .hint { font-size: var(--app-font-size-micro); color: var(--el-text-color-placeholder); }
 .mr-func-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.resource-table { overflow: hidden; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+.resource-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+}
 .resource-table :deep(.mr-edit-row > td) { background: var(--el-fill-color-lighter); }
 .resource-table :deep(.dim) { color: var(--el-text-color-placeholder); }
 .mr-bind { display: flex; gap: var(--app-space-control-gap); }

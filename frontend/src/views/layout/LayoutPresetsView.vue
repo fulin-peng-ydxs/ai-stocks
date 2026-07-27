@@ -48,6 +48,8 @@ const SHAPE_KEYS: { key: keyof StyleTokenConfig; label: string; max: number }[] 
 const REFLOW_BREAKPOINTS = [1024, 1100, 1280]
 
 const presetsLayout = getPageLayout('layout-presets')
+// 平台布局管理页不开放用户级组件配置；表格仍显式消费统一边框契约。
+const tableBorder = (_slotId: string) => false
 
 const loading = ref(false)
 const loadError = ref('')
@@ -305,8 +307,7 @@ onMounted(reloadPresets)
     </template>
 
     <template #main>
-      <section class="plain-panel">
-        <!-- 整区滚动（section scroll=region），表格按内容自然成高随区域滚动，不写视口硬编码高度（DESIGN.md §7 红线）。 -->
+      <section class="plain-panel preset-list-panel">
         <AppStateBlock
           v-if="loadError && !presets.length"
           state="error"
@@ -325,7 +326,13 @@ onMounted(reloadPresets)
           retry
           @retry="reloadPresets"
         />
-        <AppDataTable :data="presets" :loading="loading" row-key="key" :fill="false">
+        <AppDataTable
+          :data="presets"
+          :loading="loading"
+          row-key="key"
+          :border="tableBorder('table')"
+          data-testid="preset-table"
+        >
           <AppTableColumn prop="name" label="名称">
             <template #default="{ row }">
               <div class="preset-name">{{ row.name }}</div>
@@ -507,6 +514,12 @@ onMounted(reloadPresets)
   background: var(--el-bg-color);
   border-radius: 6px;
   padding: 14px;
+}
+.preset-list-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .section-title {
   font-size: var(--app-font-size-section-title);

@@ -4,7 +4,7 @@
  * 并按规范自动选择主内容区策略（grow / 整区滚动 / 混合成长区 / 重排多列）。
  *
  * 「由构造即合规」：页面只用具名插槽（slot.id）填内容、声明 schema，
- * 不再手写 .v-page/.v-grow/100vh 等类与高度——CSS/DOM 层红线（规范 §9）由本宿主统一兜住。
+ * 不再手写页面外壳、成长区或视口高度——CSS/DOM 层红线（规范 §9）由本宿主统一兜住。
  * 开发期对传入布局做 assertLayout，不合规立即抛错（生产构建自动剔除该断言）。
  */
 import { computed, provide, ref } from 'vue'
@@ -12,6 +12,7 @@ import { COMPONENT_CATALOG } from '../components'
 import { PAGE_OVERLAY_TARGET } from '../pageOverlay'
 import type { PageLayout, ScrollOwnership, SlotSpec } from '../schema'
 import { assertLayout } from '../validator'
+import VAdaptiveGrow from './VAdaptiveGrow.vue'
 import VColumns from './VColumns.vue'
 import VMixedGrow from './VMixedGrow.vue'
 
@@ -36,17 +37,19 @@ const mainStrategy = computed<MainStrategy>(() => {
   if (!slots.length) return 'scroll'
   if (props.layout.responsive.allowReflow && slots.length > 1) return 'columns'
   if (slots.length > 1) return slots.some((s) => s.growMain) ? 'mixed' : 'scroll'
-  // 单组件：整区滚动型 → .v-scroll；否则当作要撑满的主表/主图 → .v-grow
+  // 单组件：整区滚动型 → .v-scroll；否则进入带 minH 的条件成长区。
   return effScroll(slots[0]) === 'region' ? 'scroll' : 'grow'
 })
 </script>
 
 <template>
   <div ref="pageRoot" class="v-page" :class="`lh-density-${layout.density}`">
-    <slot name="action" />
-    <div v-if="mainStrategy === 'grow'" class="v-grow">
-      <slot name="main" />
+    <div v-if="layout.hasActionRegion && $slots.action" class="lh-action-region">
+      <slot name="action" />
     </div>
+    <VAdaptiveGrow v-if="mainStrategy === 'grow'" :slot="mainSlots[0]">
+      <slot name="main" />
+    </VAdaptiveGrow>
     <div v-else-if="mainStrategy === 'scroll' && mainSlots.length === 1" class="v-scroll">
       <slot name="main" />
     </div>
@@ -68,7 +71,17 @@ const mainStrategy = computed<MainStrategy>(() => {
       <slot name="main" />
     </div>
     <!-- 固定底部区（如多选批量条/购物车条）：随 .v-page 取自身高、不滚动，在主区之下。纯渲染槽，不入 schema（同 #overlays）。 -->
-    <slot name="footer" />
+    <div v-if="$slots.footer" class="lh-footer-region">
+      <slot name="footer" />
+    </div>
     <slot name="overlays" />
   </div>
 </template>
+
+<style scoped>
+.lh-action-region,
+.lh-footer-region {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+</style>

@@ -1139,7 +1139,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               综合分。调一个权重，其余自动按比例重分配保持 100%。
             </p>
 
-            <AppDataTable :data="items" size="small" border class="item-table" :fill="false">
+            <AppDataTable :data="items" size="small" border class="item-table" embedded>
               <AppTableColumn label="指标">
                 <template #default="{ row }">
                   <el-select v-model="row.indicator" size="small" filterable :disabled="profileReadonly" @change="onIndicatorChange(row)">
@@ -1228,7 +1228,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 </template>
               </AppTableColumn>
 
-              <AppTableColumn>
+              <AppTableColumn role="structural">
                 <template #default="{ $index }">
                   <AppRowActions :actions="scoreItemRowActions($index)" :inline-limit="1" />
                 </template>
@@ -1791,7 +1791,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .page-head { display: flex; justify-content: space-between; align-items: center; }
 .config-body {
-  flex: 1 1 auto;   /* 填满 LayoutHost 的 .v-grow，页面内容在本区域内滚动 */
+  flex: 1 1 auto;   /* 填满 LayoutHost 的条件成长区，页面内容在本区域内滚动 */
   min-height: 0;
   height: 100%;
   display: flex;
@@ -2029,7 +2029,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   gap: var(--app-space-3);
   min-height: 0;
 }
-/* 原依赖全局 .v-grow，迁移后改为页面内自带成长样式（表体内滚、表头吸顶） */
+/* 技术指标表承接复合面板内部的成长与表体滚动。 */
 .tech-table-wrap {
   flex: 1 1 auto;
   min-height: 360px;

@@ -722,7 +722,7 @@ onBeforeUnmount(() => {
           @sort-change="onGroupSortChange"
           @page-change="(p:number)=>{ groupPage=p; loadGroupDetail() }"
           @size-change="(s:number)=>{ groupSize=s; groupPage=1; loadGroupDetail() }">
-          <AppTableColumn>
+          <AppTableColumn role="structural">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
             </template>
@@ -782,7 +782,7 @@ onBeforeUnmount(() => {
           @sort-change="onSortChange"
           @page-change="(p:number)=>{ page=p; load() }"
           @size-change="(s:number)=>{ size=s; page=1; load() }">
-          <AppTableColumn>
+          <AppTableColumn role="structural">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
             </template>
@@ -1083,9 +1083,6 @@ onBeforeUnmount(() => {
 }
 .muted {
   color: var(--app-placeholder-text);
-}
-.v-grow .el-table {
-  min-height: 240px;
 }
 .cart-card {
   border: 1px solid var(--el-color-primary-light-7);

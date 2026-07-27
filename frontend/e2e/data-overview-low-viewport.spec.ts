@@ -66,10 +66,15 @@ test('数据概览在 1100×620 保持固定摘要和可用主工作区', async 
   expect(geometry.summary.height).toBeGreaterThan(40)
   expect(geometry.quality.top).toBeGreaterThanOrEqual(geometry.summary.bottom)
   expect(geometry.workspace.top).toBeGreaterThanOrEqual(geometry.quality.bottom)
-  expect(geometry.grow.height).toBeGreaterThan(100)
-  expect(geometry.workspace.bottom).toBeLessThanOrEqual(geometry.main.bottom + 1)
+  expect(geometry.grow.height).toBeGreaterThanOrEqual(200)
+  expect(geometry.workspace.top).toBeLessThanOrEqual(geometry.main.bottom)
   expect(geometry.main.scrollTop).toBe(0)
-  expect(geometry.mixed.scrollHeight).toBeLessThanOrEqual(geometry.mixed.clientHeight + 1)
+  // 固定摘要 + 质量条 + tabs 最低高在 620 高视口下已超过余量：
+  // 应由 mixed 主内容区滚动兜底，而不是压缩 tabs 或让应用外壳滚动。
+  expect(geometry.mixed.scrollHeight).toBeGreaterThan(geometry.mixed.clientHeight + 1)
+  await mixed.evaluate((node) => { node.scrollTop = node.scrollHeight })
+  await expect.poll(() => mixed.evaluate((node) => node.scrollTop)).toBeGreaterThan(0)
+  await mixed.evaluate((node) => { node.scrollTop = 0 })
   await expectAdaptiveTableFillsContainer(page, 'overview-asset-table')
 
   await page.getByRole('tab', { name: '逐股分层体检' }).click()

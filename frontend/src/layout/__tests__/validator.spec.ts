@@ -116,6 +116,12 @@ describe('状态占位策略', () => {
 })
 
 describe('主表唯一与 growMain 约束（规范 §1）', () => {
+  it('列表页必须声明唯一主成长列表', () => {
+    const layout = createLayout('list', 'p')
+    layout.slots.find((s) => s.id === 'table')!.growMain = false
+    expect(codesOf(layout)).toContain('list.growMain.required')
+  })
+
   it('标签页可作为工作台唯一主成长区，由当前面板承接内部滚动', () => {
     const layout = createLayout('workbench', 'p')
     layout.slots = [

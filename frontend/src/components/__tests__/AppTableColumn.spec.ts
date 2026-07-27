@@ -43,6 +43,10 @@ describe('自适应表格列', () => {
       role: 'structural',
       width: 48,
     })
+    expect(resolveAdaptiveColumnWidth({ role: 'structural' })).toMatchObject({
+      role: 'structural',
+      width: 48,
+    })
     expect(resolveAdaptiveColumnWidth({ type: 'index' })).toMatchObject({
       role: 'rank',
       width: 60,
