@@ -222,7 +222,12 @@ function connectCharts(): void {
   echarts.connect(groupId)
 }
 
+function hasRenderableSize(element: HTMLElement): boolean {
+  return element.clientWidth > 0 && element.clientHeight > 0
+}
+
 function syncCharts(): void {
+  if (!active) return
   const visibleKeys = new Set(panels.value.map((panel) => panel.key))
   charts.forEach((chart, key) => {
     if (visibleKeys.has(key) && chartElements.has(key)) return
@@ -235,6 +240,9 @@ function syncCharts(): void {
     if (!element) return
     let chart = charts.get(panel.key)
     if (!chart || chart.isDisposed()) {
+      // KeepAlive 切换期间 DOM 可能已隐藏但 onDeactivated 尚未执行；禁止在 0×0 容器初始化，
+      // 等 ResizeObserver 收到可见尺寸后再补建，避免 ECharts 告警和无效实例。
+      if (!hasRenderableSize(element)) return
       chart = echarts.init(element)
       chart.on('updateAxisPointer', (event: unknown) => {
         onAxisPointer(event as Parameters<typeof onAxisPointer>[0])
@@ -258,6 +266,17 @@ function resizeCharts(): void {
   })
 }
 
+function onWorkspaceResize(): void {
+  if (!active) return
+  const hasPendingVisibleChart = panels.value.some((panel) => {
+    const element = chartElements.get(panel.key)
+    const chart = charts.get(panel.key)
+    return Boolean(element && hasRenderableSize(element) && (!chart || chart.isDisposed()))
+  })
+  if (hasPendingVisibleChart) syncCharts()
+  else resizeCharts()
+}
+
 function disposeCharts(): void {
   echarts.disconnect(groupId)
   charts.forEach((chart) => chart.dispose())
@@ -266,7 +285,7 @@ function disposeCharts(): void {
 
 function observeResize(): void {
   if (!workspaceEl.value || resizeObserver) return
-  resizeObserver = new ResizeObserver(resizeCharts)
+  resizeObserver = new ResizeObserver(onWorkspaceResize)
   resizeObserver.observe(workspaceEl.value)
 }
 

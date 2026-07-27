@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue'
 import type { Bar, IndicatorRow } from '@/api/stocks'
@@ -51,13 +51,48 @@ class ResizeObserverMock {
 
   observe = vi.fn()
   disconnect = vi.fn()
+  private readonly callback: ResizeObserverCallback
 
-  constructor(_callback: ResizeObserverCallback) {
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback
     ResizeObserverMock.instances.push(this)
+  }
+
+  trigger(): void {
+    this.callback([], this as unknown as ResizeObserver)
   }
 }
 
 vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+
+const clientWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
+let mockClientWidth = 640
+let mockClientHeight = 240
+
+beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get: () => mockClientWidth,
+  })
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+    configurable: true,
+    get: () => mockClientHeight,
+  })
+})
+
+afterAll(() => {
+  if (clientWidthDescriptor) {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidthDescriptor)
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, 'clientWidth')
+  }
+  if (clientHeightDescriptor) {
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeightDescriptor)
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight')
+  }
+})
 
 function bars(): Bar[] {
   return Array.from({ length: 40 }, (_, index) => ({
@@ -133,6 +168,8 @@ describe('StockChartWorkspace', () => {
     echartsMock.connect.mockClear()
     echartsMock.disconnect.mockClear()
     ResizeObserverMock.instances.length = 0
+    mockClientWidth = 640
+    mockClientHeight = 240
   })
 
   it('默认创建三幅独立图、唯一联动 group，并把日期轴 slider 放在底图', async () => {
@@ -427,5 +464,22 @@ describe('StockChartWorkspace', () => {
 
     wrapper.unmount()
     expect(ResizeObserverMock.instances[1].disconnect).toHaveBeenCalledTimes(1)
+  })
+
+  it('容器为 0×0 时延迟初始化，尺寸恢复后由 ResizeObserver 补建图表', async () => {
+    mockClientWidth = 0
+    mockClientHeight = 0
+    const wrapper = await mountWorkspace()
+
+    expect(echartsMock.init).not.toHaveBeenCalled()
+    expect(ResizeObserverMock.instances).toHaveLength(1)
+
+    mockClientWidth = 640
+    mockClientHeight = 240
+    ResizeObserverMock.instances[0].trigger()
+    await nextTick()
+
+    expect(echartsMock.init).toHaveBeenCalledTimes(3)
+    wrapper.unmount()
   })
 })

@@ -609,7 +609,7 @@ onMounted(async () => {
               </div>
               <el-descriptions :column="4" size="small" border class="meta-desc">
                 <el-descriptions-item label="原型">{{ selectedPage.archetype }}</el-descriptions-item>
-                <el-descriptions-item label="响应式策略">{{ responsiveProfileLabel(selectedPage.responsiveProfile) }}</el-descriptions-item>
+                <el-descriptions-item label="目标响应式策略">{{ responsiveProfileLabel(selectedPage.responsiveProfile) }}</el-descriptions-item>
                 <el-descriptions-item label="当前页面预设">{{ pageConfig?.presetKey || '继承全局' }}</el-descriptions-item>
                 <el-descriptions-item label="组件配置">{{ selectedPage.supportsComponentConfig ? '已纳入页面默认配置' : '暂未开放' }}</el-descriptions-item>
                 <el-descriptions-item label="组件槽位" :span="4">

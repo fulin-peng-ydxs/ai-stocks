@@ -39,6 +39,7 @@ const VIEWPORT_HEIGHT =
 
 /** 模板里真正手写布局契约类（排除注释/文档里的 .v-page 提及）。 */
 const HANDWRITTEN_LAYOUT = /class="[^"]*\bv-(?:page|grow|scroll)\b/
+const SCAFFOLD_PLACEHOLDER = /\bdata-scaffold-placeholder\b/
 const QUERY_BUTTON = /<el-button\b([^>]*)>\s*查询\s*<\/el-button>/gs
 const VIEWPORT_DRAWER = /<(?:el-drawer|ElDrawer)\b/
 const PAGE_DRAWER = /<PageDrawer\b[\s\S]*?>/g
@@ -90,7 +91,7 @@ describe('布局契约守卫（M6）', () => {
     expect(MIXED_GROW_SOURCE).not.toMatch(/\.v-mixed-main\s+:deep\(\.el-card\)/)
   })
 
-  it('新页面必须走 LayoutHost，不得手写 .v-page/.v-grow 契约', () => {
+  it('页面不得绕过 LayoutHost 手写 .v-page/.v-grow 契约', () => {
     const offenders: string[] = []
     for (const file of files) {
       if (HANDWRITTEN_LAYOUT.test(readFileSync(file, 'utf8')) && !LEGACY_HANDWRITTEN.has(rel(file))) {
@@ -98,6 +99,16 @@ describe('布局契约守卫（M6）', () => {
       }
     }
     expect(offenders, `以下页面手写了布局契约类，应改用 <LayoutHost>：\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('registry 页面不得保留脚手架占位内容', () => {
+    const offenders = files
+      .filter((file) => SCAFFOLD_PLACEHOLDER.test(readFileSync(file, 'utf8')))
+      .map(rel)
+    expect(
+      offenders,
+      `以下页面仍保留脚手架占位内容，必须接入真实组件和四态后再交付：\n${offenders.join('\n')}`,
+    ).toEqual([])
   })
 
   it('已迁移页面必须从存量白名单移除（保持名单与迁移进度同步）', () => {

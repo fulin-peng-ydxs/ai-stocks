@@ -15,7 +15,7 @@
 1. 判断业务页面类型 → 按 [DESIGN.md](../../DESIGN.md) §5.3 选一个**原型**，并按本文 §2 / §4 写明选择理由。
 2. 把推荐原型 + 理由告诉用户，确认后开发。
 3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；控件选型、图标按钮和系统组件种类边界按 DESIGN 执行。
-4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
+4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；脚手架中的 `data-scaffold-placeholder` 是未完成标记，接入真实组件和四态后必须删除，否则契约测试会失败。需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
 5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。页面业务抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`，页面禁止直接使用 `el-drawer`。数据表格使用 `AppDataTable + AppTableColumn`，列只声明语义角色，不声明 `width/min-width`；主表使用默认成长模式，只有抽屉、展开行和局部明细等非主表使用 `embedded`。
 6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；若新增系统组件种类或配置字段，同步 `COMPONENT_CATALOG`、schema、后端规则、pageRegistry 消费和配置中心验证。
 7. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
@@ -141,7 +141,7 @@
 
 | 变更类型 | 必须同步维护 | 必须验证 |
 |---|---|---|
-| 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
+| 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；四处 `pageKey` 必须一致；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段治理入口 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
@@ -236,24 +236,27 @@ PageSettingsDrawer
 > 多组件主区（mixed/columns）按 `slot.id` 具名放置：`<template #<slotId>>…</template>`。可参考已登记且通过契约测试的同原型页面。
 > `el-dialog` 仍可放在 `#overlays`；页面抽屉不得用 `el-drawer` 替代 `PageDrawer`。Teleport 生成的内部 DOM 样式使用唯一全局类或 `:global`。
 
-## 7. 验收红线（机制性强制，违反则 `npm test` 失败）
+## 7. 验收红线（机制性强制，违反则对应 `npm test` / `npm run test:design` 门禁失败）
 
+- 后端按项目约束以明确的本地环境和 `AI_STOCKS_E2E_WRITE=1` 健康启动、并校准调试账号后，完整设计验收统一执行 `AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:design`（`dev` 可按实际环境替换为 `test` 或 `local`）；命令会先校验调用方安全环境，再请求 `E2E_API_URL`（默认 `http://127.0.0.1:8000/api`）下的 `/health/e2e`，只有响应 `code: 0` 且返回合法 PG 指纹时才继续 Vitest、生产构建和串行 Playwright 响应式回归。后端未启动或未以 E2E 写模式启动时必须在前置检查中 fail-fast，并给出带相同环境变量的重启指引。串行用于避免多个视口并发复用调试账号造成鉴权级联失败，日常快速门禁仍可单独执行 `npm test`。
 - 不得新增视口硬编码高度（`height:/min-height: …vh` 或 `calc(…vh)`）——`layout-contract.spec.ts` 扫描 `src/views` 拦截。`max-height: …vh` 仅限弹层安全上限。
-- 新页面不得绕过 `LayoutHost` 手写 `.v-page/.v-grow/.v-scroll`——契约测试拦截（存量白名单仅供迁移过渡）。
+- 非公开 View 路由、`pageRegistry` 和 DESIGN marker 必须以 `pageKey` 双向一致；registry 页面必须真实导入和渲染 `LayoutHost`，并通过 `getPageLayout` 消费布局——`pageRegistry.spec.ts` 使用 TypeScript AST 与页面源码共同拦截。
+- 页面不得绕过 `LayoutHost` 手写 `.v-page/.v-grow/.v-scroll`——`layout-contract.spec.ts` 拦截。
+- 页面不得保留脚手架 `data-scaffold-placeholder`——必须接入真实组件和四态后再交付。
 - 页面源码不得直接使用 `<el-drawer>`；业务抽屉必须使用 `PageDrawer`，页面设置必须使用 `PageSettingsDrawer`——`layout-contract.spec.ts` 扫描拦截。
 - 不得使用未登记组件种类——`validateLayout` 拦截。
 - 不得把页面业务结构放进用户级配置；不得把不可重排的大表放进多列重排——`validateLayout` 拦截。
 - 列表交互：分页/排序走服务端、筛选变更自动触发、多选跨页累积（见 [DESIGN.md](../../DESIGN.md) §4「表格与列表」）。
-- 真实组件：已有真实复用组件能覆盖的控件行为，不得继续在页面内复制手写；新增真实复用组件必须补 DESIGN 清单和消费测试。
+- 真实组件：已有真实复用组件能覆盖的控件行为，不得继续在页面内复制手写；`data-table` / `wide-table`、`settings-drawer` 等逻辑种类由 `pageRegistry.spec.ts` 校验真实导入和渲染，`config-panel` 校验页面级入口 `ConfigGroupForm`，再由该组件复用 `ConfigPanelSection`；组合型 `toolbar` / `section` / `tabs` 不要求虚构同名空壳组件。
 - 表格列宽：页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，不得向 `AppTableColumn` 传 `width/min-width`；宽度统一由语义自适应规则推导。
 - 高度与滚动：`list` 必须唯一 `growMain`；`LayoutHost` 统一应用组件有效 `minH`。剩余高度达到 `minH` 时由组件内部滚动，低于 `minH` 时才由主内容区滚动兜底。页面不得用 `fill`、私有视口高度或外层滚动覆盖该决策。
-- 四态反馈：ready / loading / empty / error 互斥；表格走全局空态；非表格使用 `app-empty*` 统一类名；错误态必须可见且有重试或原因说明，不新增页面私有状态样式。
+- 四态反馈：registry 页面必须真实复用 `AppStateBlock` 承接非 ready 状态；ready / loading / empty / error 互斥，表格加载/空态可继续由 `AppDataTable` 承接；错误态必须可见且有重试或原因说明，具体分支由消费页测试或关键视口 E2E 验证。
 
 ## 8. 页面登记块（填好贴进 DESIGN.md `page-registry` 表格）
 
 ```text
-| 页面 | 原型 | 可编辑旋钮 | 组件清单 |
-| `<PageView>`（中文名） | `<archetype>` | `density` | action:`toolbar` / main:`section` |
+| pageKey | 页面 | 原型 | 可编辑旋钮 | 组件清单 |
+| `<page-key>` | `<PageView>`（中文名） | `<archetype>` | `density` | action:`toolbar` / main:`section` |
 ```
 
 ## 9. 7 个原型可复制骨架

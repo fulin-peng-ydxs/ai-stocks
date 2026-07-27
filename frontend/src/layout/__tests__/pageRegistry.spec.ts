@@ -20,10 +20,70 @@ const DESIGN_PAGE_SECTION = DESIGN_MD.match(
 )?.[1] ?? ''
 const VIEWS_DIR = fileURLToPath(new URL('../../views/', import.meta.url))
 const ROUTER_TS = readFileSync(new URL('../../router/index.ts', import.meta.url), 'utf-8')
-const ROUTE_COMPONENT_BY_NAME = new Map<string, string>()
-for (const match of ROUTER_TS.matchAll(/name:\s*'([^']+)'[^}]*component:\s*\(\)\s*=>\s*import\('@\/([^']+)'\)/g)) {
-  ROUTE_COMPONENT_BY_NAME.set(match[1], match[2])
+
+interface RouteViewEntry {
+  name: string
+  path: string
+  componentPath: string
+  isPublic: boolean
 }
+
+function property(object: ts.ObjectLiteralExpression, name: string): ts.PropertyAssignment | undefined {
+  return object.properties.find((item): item is ts.PropertyAssignment =>
+    ts.isPropertyAssignment(item)
+    && ((ts.isIdentifier(item.name) && item.name.text === name)
+      || (ts.isStringLiteral(item.name) && item.name.text === name)))
+}
+
+function stringValue(object: ts.ObjectLiteralExpression, name: string): string | undefined {
+  const initializer = property(object, name)?.initializer
+  return initializer && ts.isStringLiteral(initializer) ? initializer.text : undefined
+}
+
+function routeViewEntries(source: string): RouteViewEntry[] {
+  const sourceFile = ts.createSourceFile(
+    'router.ts',
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
+  const routesDeclaration = sourceFile.statements
+    .filter(ts.isVariableStatement)
+    .flatMap((statement) => statement.declarationList.declarations)
+    .find((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === 'routes')
+  const initializer = routesDeclaration?.initializer
+  if (!initializer || !ts.isArrayLiteralExpression(initializer)) return []
+
+  return initializer.elements.flatMap((element) => {
+    if (!ts.isObjectLiteralExpression(element)) return []
+    const name = stringValue(element, 'name')
+    const path = stringValue(element, 'path')
+    const component = property(element, 'component')?.initializer
+    if (!name || !path || !component || !ts.isArrowFunction(component)) return []
+
+    const body = component.body
+    if (!ts.isCallExpression(body) || body.expression.kind !== ts.SyntaxKind.ImportKeyword) return []
+    const argument = body.arguments[0]
+    if (!argument || !ts.isStringLiteral(argument) || !argument.text.startsWith('@/views/')) return []
+
+    const meta = property(element, 'meta')?.initializer
+    const publicValue = meta && ts.isObjectLiteralExpression(meta)
+      ? property(meta, 'public')?.initializer
+      : undefined
+    return [{
+      name,
+      path,
+      componentPath: argument.text.slice(2),
+      isPublic: publicValue?.kind === ts.SyntaxKind.TrueKeyword,
+    }]
+  })
+}
+
+const ROUTE_VIEWS = routeViewEntries(ROUTER_TS)
+const ROUTE_COMPONENT_BY_NAME = new Map(
+  ROUTE_VIEWS.map((entry) => [entry.name, entry.componentPath]),
+)
 
 function sourceForPage(pageKey: string): string {
   const componentPath = ROUTE_COMPONENT_BY_NAME.get(pageKey)
@@ -83,6 +143,19 @@ function runtimeComponentImports(source: string, fileName = 'component.vue'): Se
 }
 
 const DESIGN_CORE_COMPONENTS = coreComponentNames(DESIGN_MD)
+const DESIGN_PAGE_KEYS = new Set(
+  DESIGN_PAGE_SECTION
+    .split('\n')
+    .map((line) => line.match(/^\|\s*`([^`]+)`\s*\|/)?.[1])
+    .filter((value): value is string => Boolean(value && value !== 'pageKey')),
+)
+
+const SLOT_RUNTIME_COMPONENTS: Partial<Record<ComponentKind, string[]>> = {
+  'data-table': ['AppDataTable', 'AppTableColumn'],
+  'wide-table': ['AppDataTable', 'AppTableColumn'],
+  'settings-drawer': ['PageSettingsDrawer'],
+  'config-panel': ['ConfigGroupForm'],
+}
 
 describe('页面注册表完整性', () => {
   it('注册表非空且与 listManagedPages 一致', () => {
@@ -104,6 +177,29 @@ describe('页面注册表完整性', () => {
     for (const entry of PAGE_REGISTRY) {
       const errors = validateLayout(entry.layout).filter((i) => i.level === 'error')
       expect(errors, `${entry.pageKey} 布局违规: ${errors.map((e) => e.message).join('; ')}`).toEqual([])
+    }
+  })
+
+  it('受控页面路由、pageRegistry 与页面源码保持双向一致', () => {
+    const managedRoutes = ROUTE_VIEWS.filter((entry) => !entry.isPublic)
+    expect(
+      managedRoutes.map((entry) => entry.name).sort(),
+      '所有非公开 View 路由都必须进入 pageRegistry',
+    ).toEqual(PAGE_REGISTRY.map((entry) => entry.pageKey).sort())
+
+    for (const entry of PAGE_REGISTRY) {
+      const route = managedRoutes.find((item) => item.name === entry.pageKey)
+      expect(route, `${entry.pageKey} 缺少同名受控路由`).toBeTruthy()
+      expect(route?.path, `${entry.pageKey} 的 registry.path 与路由不一致`).toBe(entry.path)
+
+      const source = sourceForPage(entry.pageKey)
+      expect(source, `${entry.pageKey} 无法定位真实 Vue 页面`).not.toBe('')
+      const imports = runtimeComponentImports(source, route?.componentPath)
+      expect(imports.has('LayoutHost'), `${entry.pageKey} 必须导入 LayoutHost`).toBe(true)
+      expect(source, `${entry.pageKey} 必须真实渲染 <LayoutHost>`).toContain('<LayoutHost')
+      expect(source, `${entry.pageKey} 必须通过 getPageLayout 消费 registry 布局`).toContain('getPageLayout')
+      expect(imports.has('AppStateBlock'), `${entry.pageKey} 必须复用 AppStateBlock 承接非 ready 状态`).toBe(true)
+      expect(source, `${entry.pageKey} 必须真实渲染 <AppStateBlock>`).toContain('<AppStateBlock')
     }
   })
 
@@ -155,10 +251,8 @@ describe('页面注册表完整性', () => {
     )
   })
 
-  it('每个 registry 页面都已登记到 DESIGN.md 页面登记区块', () => {
-    for (const entry of PAGE_REGISTRY) {
-      expect(DESIGN_PAGE_SECTION, `${entry.pageKey}(${entry.label}) 未出现在 DESIGN.md 页面登记区块`).toContain(entry.label)
-    }
+  it('DESIGN.md 页面 marker 与 pageRegistry 的 pageKey 精确一致', () => {
+    expect([...DESIGN_PAGE_KEYS].sort()).toEqual(PAGE_REGISTRY.map((entry) => entry.pageKey).sort())
   })
 
   it('被两个以上页面消费的真实组件均登记到 DESIGN 核心清单', () => {
@@ -235,6 +329,32 @@ describe('页面注册表完整性', () => {
       expect(slot, `${entry.pageKey} 缺少 settings overlay slot`).toBeTruthy()
       expect(slot?.component).toBe('settings-drawer')
       expect(slot?.region).toBe('overlay')
+      const source = sourceForPage(entry.pageKey)
+      const imports = runtimeComponentImports(source)
+      expect(imports.has('PageSettingsTrigger'), `${entry.pageKey} 必须导入 PageSettingsTrigger`).toBe(true)
+      expect(imports.has('PageSettingsDrawer'), `${entry.pageKey} 必须导入 PageSettingsDrawer`).toBe(true)
+      expect(source, `${entry.pageKey} 必须真实渲染页面设置入口`).toContain('<PageSettingsTrigger')
+      expect(source, `${entry.pageKey} 必须真实渲染页面设置抽屉`).toContain('<PageSettingsDrawer')
+    }
+  })
+
+  it('具有稳定真实实现的逻辑组件必须由页面实际消费对应组件', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      const imports = runtimeComponentImports(source)
+      const kinds = new Set(entry.layout.slots.map((slot) => slot.component))
+      for (const kind of kinds) {
+        for (const component of SLOT_RUNTIME_COMPONENTS[kind] ?? []) {
+          expect(
+            imports.has(component),
+            `${entry.pageKey} 声明 ${kind}，但未导入真实组件 ${component}`,
+          ).toBe(true)
+          expect(
+            source.includes(`<${component}`),
+            `${entry.pageKey} 声明 ${kind}，但未真实渲染 <${component}>`,
+          ).toBe(true)
+        }
+      }
     }
   })
 })

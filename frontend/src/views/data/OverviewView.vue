@@ -435,7 +435,7 @@ onMounted(load)
                            allow-create default-first-option
                            :remote-method="remoteSearch" :loading="sqOptLoading" :reserve-keyword="false"
                            :no-data-text="sqOptError || '无匹配股票'"
-                           placeholder="输入/粘贴代码或名称搜索，可多选（支持手动输入代码，留空=全部）"
+                           placeholder="输入代码或名称搜索，可多选"
                            @change="onSqSelect" @paste.native="onSqPaste">
                   <el-option v-for="o in sqOptions" :key="o.code" :label="o.label" :value="o.code" />
                 </el-select>
@@ -623,7 +623,7 @@ onMounted(load)
 .stat-val .sub { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); }
 .stat-val.warn { color: var(--app-warning-text); }
 .stat-val.danger { color: var(--app-danger-text); }
-.stat-foot { font-size: var(--app-font-size-micro); color: var(--el-text-color-secondary); margin-top: 4px; }
+.stat-foot { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
 .scan-time { font-size: var(--app-font-size-caption); color: var(--el-text-color-regular); margin-top: 8px; }
 .scan-time .hint { color: var(--el-text-color-secondary); margin-left: 6px; }
 .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
@@ -633,7 +633,7 @@ onMounted(load)
 .fld-tbl { margin-top: 8px; }
 .layer-card { padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
 .layer-name { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); margin-bottom: 6px; }
-.layer-foot { font-size: var(--app-font-size-micro); color: var(--el-text-color-secondary); margin-top: 4px; }
+.layer-foot { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
 .quality-summary :deep(.el-card__header) { padding: 9px 12px; }
 .quality-summary :deep(.el-card__body) { padding: 10px 12px; }
 .clk-tag { cursor: pointer; }

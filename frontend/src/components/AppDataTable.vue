@@ -53,16 +53,19 @@ const tableRef = ref<{ $el?: HTMLElement } | null>(null)
 function syncSemanticTableLabels(): void {
   void nextTick(() => {
     const root = tableRef.value?.$el
-    if (!root || !props.ariaLabel) return
-    root.querySelector<HTMLElement>('.el-table__header')
-      ?.setAttribute('aria-label', `${props.ariaLabel}表头`)
-    root.querySelector<HTMLElement>('.el-table__body')
-      ?.setAttribute('aria-label', props.ariaLabel)
+    if (!root) return
+    const header = root.querySelector<HTMLElement>('.el-table__header')
+    const body = root.querySelector<HTMLElement>('.el-table__body')
+    header?.setAttribute('aria-busy', String(props.loading))
+    body?.setAttribute('aria-busy', String(props.loading))
+    if (!props.ariaLabel) return
+    header?.setAttribute('aria-label', `${props.ariaLabel}表头`)
+    body?.setAttribute('aria-label', props.ariaLabel)
   })
 }
 
 onMounted(syncSemanticTableLabels)
-watch(() => props.ariaLabel, syncSemanticTableLabels)
+watch(() => [props.ariaLabel, props.loading], syncSemanticTableLabels)
 
 const emit = defineEmits<{
   'sort-change': [value: Sort]
@@ -92,6 +95,7 @@ const emit = defineEmits<{
       :data="data"
       :fit="true"
       :aria-label="ariaLabel"
+      :aria-busy="loading"
       :height="resolvedHeight"
       :size="size"
       :row-key="rowKey"

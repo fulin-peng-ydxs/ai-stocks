@@ -240,7 +240,7 @@ const resourceStats = computed(() => {
   border: 1px solid color-mix(in srgb, var(--el-color-warning) 40%, var(--el-border-color));
   border-radius: 3px;
   color: var(--el-color-warning);
-  font-size: var(--app-font-size-tiny);
+  font-size: var(--app-font-size-caption);
   font-weight: var(--app-font-weight-regular);
 }
 .pt-node-checkbox {

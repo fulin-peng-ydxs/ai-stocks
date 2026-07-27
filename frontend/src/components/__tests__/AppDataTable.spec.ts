@@ -66,6 +66,7 @@ describe('AppDataTable', () => {
     expect(wrapper.classes()).toContain('app-data-table--clickable')
     expect(wrapper.find('.el-table').attributes('data-border')).toBe('false')
     expect(wrapper.find('.el-table').attributes('data-fit')).toBe('true')
+    expect(wrapper.find('.el-table').attributes('aria-busy')).toBe('false')
     expect(wrapper.find('.el-table__header').attributes('aria-label')).toBe('测试数据表头')
     expect(wrapper.find('.el-table__body').attributes('aria-label')).toBe('测试数据')
     expect(wrapper.find('.column-slot').text()).toBe('代码列')

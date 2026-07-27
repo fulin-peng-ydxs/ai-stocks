@@ -75,14 +75,14 @@ defineProps<{
   overflow: hidden;
   color: var(--el-text-color-secondary);
   font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-tiny);
+  font-size: var(--app-font-size-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .pt-ftype {
   flex: none;
   color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-tiny);
+  font-size: var(--app-font-size-caption);
 }
 .pt-baseline,
 .pt-system-only {
@@ -91,7 +91,7 @@ defineProps<{
   border: 1px solid var(--el-border-color);
   border-radius: 3px;
   color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-tiny);
+  font-size: var(--app-font-size-caption);
 }
 .pt-system-only {
   border-color: color-mix(in srgb, var(--el-color-warning) 40%, var(--el-border-color));

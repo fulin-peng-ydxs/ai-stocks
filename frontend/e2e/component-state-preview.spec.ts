@@ -9,6 +9,8 @@ test.describe('系统组件四态预览', () => {
     await loginAsDebugUser(page, request, 'debug_system')
     await page.goto('/system/layout/components')
     await expect(page.getByTestId('page-settings-trigger')).toHaveCount(0)
+    const catalog = page.getByTestId('component-catalog')
+    await expect(catalog).toHaveAttribute('aria-busy', 'false')
     await page.getByTestId('component-catalog-data-table-preview').click()
 
     const drawer = page.getByTestId('component-preview-drawer')

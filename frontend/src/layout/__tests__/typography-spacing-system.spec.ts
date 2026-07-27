@@ -43,8 +43,13 @@ describe('字体与间距设计契约', () => {
     expect(design).toContain('禁止新增未登记的普通文字字号')
     expect(pageTemplate).toContain('### 字体与间距规范')
     expect(globalCss).toContain('--app-font-family-base')
+    expect(globalCss).toContain("'Segoe UI Variable'")
+    expect(globalCss).toContain("'Microsoft YaHei UI'")
     expect(globalCss).toContain('--app-font-size-body')
-    expect(globalCss).toContain('--app-font-weight-section')
+    expect(globalCss).toContain('--app-table-content-font-size')
+    expect(globalCss).toContain('@media (max-resolution: 1.5dppx)')
+    expect(globalCss).toContain('.lh-density-comfortable')
+    expect(globalCss).toContain('--app-font-weight-section: 600')
     expect(globalCss).toContain('--app-line-height-solid')
     expect(globalCss).toContain('--app-space-control-gap')
     expect(globalCss).toContain('.app-page-title')
@@ -140,5 +145,16 @@ describe('字体与间距设计契约', () => {
     expect(
       semanticClasses.filter((className) => !new RegExp(`class=["'][^"']*${className}\\b`).test(sources)),
     ).toEqual([])
+  })
+
+  it('新页面脚手架直接消费排版/间距事实源，并显式标记未完成占位', () => {
+    const scaffold = read(join(FRONTEND_DIR, 'scripts/scaffold-page.mjs'))
+
+    expect(scaffold).toContain('class="app-page-title"')
+    expect(scaffold).toContain('gap: var(--app-space-3)')
+    expect(scaffold).toContain('AppStateBlock')
+    expect(scaffold).toContain('data-scaffold-placeholder')
+    expect(scaffold).not.toMatch(/\.page-toolbar h1\s*\{[\s\S]*?font-size\s*:/)
+    expect(scaffold).not.toMatch(/\bgap\s*:\s*\d+px/)
   })
 })

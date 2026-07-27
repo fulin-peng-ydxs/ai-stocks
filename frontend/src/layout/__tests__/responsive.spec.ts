@@ -3,6 +3,7 @@
  * 列数按断点推导无误。把"散落在注释里的响应式口径"变成可测的单一事实源。
  */
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { RESPONSIVE_PROFILES, columnsAt, describeResponsive } from '../responsive'
 import { PAGE_REGISTRY, getPageLayout } from '../pageRegistry'
 import type { PageLayout } from '../schema'
@@ -19,6 +20,34 @@ describe('自适应策略摘要（P8）', () => {
     for (const entry of PAGE_REGISTRY) {
       expect(RESPONSIVE_PROFILES[entry.responsiveProfile], `${entry.pageKey} profile 未登记`).toBeTruthy()
     }
+  })
+
+  it('目标响应式画像与实际 layout.responsive 基线不冲突', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const layout = entry.layout
+      if (entry.responsiveProfile === 'single-column') {
+        expect(layout.responsive.allowReflow, `${entry.pageKey} 单列画像不得开启重排`).toBe(false)
+        expect(
+          layout.responsive.breakpoints.every((breakpoint) => breakpoint.columns === 1),
+          `${entry.pageKey} 单列画像的所有断点都必须保持一列`,
+        ).toBe(true)
+      } else if (entry.responsiveProfile === 'safe-reflow') {
+        expect(layout.responsive.allowReflow, `${entry.pageKey} 安全重排画像必须真实开启重排`).toBe(true)
+      } else {
+        expect(
+          ['workbench', 'master-detail'].includes(layout.archetype),
+          `${entry.pageKey} 混合面板画像只适用于工作台或主从原型`,
+        ).toBe(true)
+        expect(layout.responsive.allowReflow, `${entry.pageKey} 混合面板由成长/滚动承接，不启用多列重排`).toBe(false)
+      }
+    }
+  })
+
+  it('页面布局工作台把 profile 明确展示为目标策略', () => {
+    const pageView = readFileSync(new URL('../../views/layout/LayoutPagesView.vue', import.meta.url), 'utf8')
+    const preview = readFileSync(new URL('../components/LayoutPagePreview.vue', import.meta.url), 'utf8')
+    expect(pageView).toContain('label="目标响应式策略"')
+    expect(preview).toContain('目标 · {{ summary.profileLabel }}')
   })
 
   it('单列页（board）：三档恒 1 列，主表归入不可重排（grow）', () => {

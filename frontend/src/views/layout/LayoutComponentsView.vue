@@ -203,6 +203,16 @@ function fieldPolicyRowActions(row: ConfigurableField): AppRowAction[] {
   ]
 }
 
+function fieldMaxLayers(row: ConfigurableField): ComponentConfigLayer[] {
+  if (Array.isArray(row.maxLayers)) return row.maxLayers
+  return getComponentFieldDefs(selectedKind.value ?? 'section')
+    .find((def) => def.key === row.key)?.layers ?? []
+}
+
+function fieldAllowedLayers(row: ConfigurableField): ComponentConfigLayer[] {
+  return Array.isArray(row.allowedLayers) ? row.allowedLayers : fieldMaxLayers(row)
+}
+
 /** 更新某字段可覆盖范围并即时刷新 policyMap（写后端 layout_field_policy）。 */
 async function persistPolicy(field: string, layers: ComponentConfigLayer[]): Promise<void> {
   const kind = selectedKind.value
@@ -266,6 +276,8 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
         v-loading="policyLoading"
         element-loading-text="正在加载组件字段策略…"
         class="plain-panel"
+        :aria-busy="policyLoading"
+        data-testid="component-catalog"
       >
         <AppStateBlock
           v-if="policyError"
@@ -343,7 +355,8 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
 
     <template #overlays>
       <PageDrawer
-        v-model="detailVisible"
+        :model-value="detailVisible"
+        @update:model-value="(value: boolean) => { detailVisible = value }"
         :title="selected ? `${selected.label}（${selected.kind}）` : '组件详情'"
         size="xl"
         data-testid="component-preview-drawer"
@@ -413,14 +426,14 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
                 <template #default="{ row }">
                   <el-checkbox-group
                     v-permission="'layout:field-policy'"
-                    :model-value="row.allowedLayers"
+                    :model-value="fieldAllowedLayers(row)"
                     @change="(v: ComponentConfigLayer[]) => onLayersChange(row.key, v)"
                   >
                     <el-checkbox
                       v-for="l in ALL_LAYERS"
                       :key="l"
                       :value="l"
-                      :disabled="!row.maxLayers.includes(l)"
+                      :disabled="!fieldMaxLayers(row).includes(l)"
                     >{{ LAYER_LABELS[l] }}</el-checkbox>
                   </el-checkbox-group>
                 </template>

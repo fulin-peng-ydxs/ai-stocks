@@ -1567,7 +1567,7 @@ async function openTradeChart(row: TradeRow) {
 }
 .ds-item { display: flex; flex-direction: column; }
 .ds-item.ds-span { margin-left: auto; }
-.ds-k { font-size: var(--app-font-size-micro); color: var(--el-text-color-secondary); }
+.ds-k { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .ds-v { font-size: var(--app-font-size-data); font-weight: var(--app-font-weight-strong); font-variant-numeric: tabular-nums; }
 .ds-rank { font-size: var(--app-font-size-section-title); }
 .ds-rank .ds-sub { font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); }
@@ -1662,9 +1662,9 @@ async function openTradeChart(row: TradeRow) {
 .metric.good .m-val { color: var(--market-up-color); }
 .metric.bad .m-val { color: var(--market-down-color); }
 .hit { font-weight: var(--app-font-weight-section); font-variant-numeric: tabular-nums; }
-.excess { display: block; font-size: var(--app-font-size-micro); color: var(--market-down-color); }
+.excess { display: block; font-size: var(--app-font-size-caption); color: var(--market-down-color); }
 .excess.pos { color: var(--market-up-color); }
-.unreliable { display: block; font-size: var(--app-font-size-tiny); color: var(--app-warning-text); }
+.unreliable { display: block; font-size: var(--app-font-size-caption); color: var(--app-warning-text); }
 .base { color: var(--el-text-color-secondary); }
 .legend-line { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 8px; }
 .up { color: var(--market-up-color); } .down { color: var(--market-down-color); }

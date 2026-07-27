@@ -4,7 +4,7 @@ name: 复盘啦
 description: A 股趋势研究工作台，面向高密度行情、筛选、回测、训练、权限管理和数据治理工作流，采用明亮蓝色信号、中性明暗表面和可验证的专业后台界面。
 typography:
   button-md:
-    fontWeight: 650
+    fontWeight: 600
 ---
 
 # 复盘啦 Design System
@@ -92,7 +92,7 @@ Key Characteristics：
 
 ## 3. Typography Rules
 
-字体栈以系统中文字体为主：`PingFang SC, Hiragino Sans GB, Microsoft YaHei, Arial, sans-serif`。不得引入需要联网加载的字体。
+字体栈以系统 UI 字体为主：`system-ui, -apple-system, BlinkMacSystemFont, Segoe UI Variable, Segoe UI, Microsoft YaHei UI, PingFang SC, Hiragino Sans GB, sans-serif`。macOS 由系统字体与苹方承接，Windows 由 Segoe UI 与微软雅黑 UI 承接；不得引入需要联网加载的字体。
 
 排版事实源：
 
@@ -104,12 +104,12 @@ Key Characteristics：
 | 层级 | 强制 token / 值 | 使用场景 |
 |---|---|---|
 | 页面标题 | `--app-font-size-page-title` 22px / 700 / 30px；紧凑页可用 20px | 页面主标题、工作台名称、配置中心一级标题 |
-| 分区标题 | `--app-font-size-section-title` 15px / 650 / 22px；抽屉或大面板可用 18px | 卡片标题、抽屉标题、配置组标题 |
+| 分区标题 | `--app-font-size-section-title` 15px / 600 / 22px；抽屉或大面板可用 18px | 卡片标题、抽屉标题、配置组标题 |
 | 正文 | `--app-font-size-body` 14px / 400 / 22px | 表单、普通说明、主体内容 |
-| 表格正文 | `--app-font-size-table` 13px / 400 / 20px | 数据表格、列表、密集参数行 |
+| 表格正文 | 默认 `--app-font-size-table` 13px / 400 / 20px；`comfortable` 密度或不高于 `1.5dppx` 的低像素密度屏幕使用 14px / 22px | 数据表格、列表、密集参数行 |
 | 辅助标签 | `--app-font-size-caption` 12px / 400 / 18px | 单位、提示、来源、次级说明、tag 内文 |
 | 微型标签 | `--app-font-size-micro` 11px / 400 / 16px | 顶栏弱标签、状态小字、空间极窄的 badge；禁止用于正文 |
-| 数字强调 | `--app-font-size-data` 16px / 650 / 24px；大 KPI 可用 `--app-font-size-kpi-lg` 26px / 700 / 32px | KPI、收益、评分、排名、需要横向比较的数字 |
+| 数字强调 | `--app-font-size-data` 16px / 600 / 24px；大 KPI 可用 `--app-font-size-kpi-lg` 26px / 700 / 32px | KPI、收益、评分、排名、需要横向比较的数字 |
 
 排版规则：
 
@@ -487,6 +487,8 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 具体维护矩阵、计划块和验收命令统一维护在 `agent-works/configurable-layout-system/page-template.md`。本节只保留长期规则：
 
 - 页面、布局原型、系统组件种类、组件字段、真实复用组件、按钮图标体系或业务偏好发生变化时，必须同步对应代码事实源、页面消费事实源、文档入口和测试。
+- 非公开 View 路由、`pageRegistry` 和页面登记 marker 必须以 `pageKey` 双向一致；registry 页面必须真实渲染 `LayoutHost`、通过 `getPageLayout` 消费布局，并复用 `AppStateBlock` 承接非 ready 状态。
+- 已有稳定真实实现的系统组件种类必须由消费页面实际导入并渲染对应复用入口；当前强映射包括 `data-table` / `wide-table` → `AppDataTable + AppTableColumn`、`settings-drawer` → `PageSettingsDrawer`、`config-panel` → `ConfigGroupForm → ConfigPanelSection`。`toolbar`、`section`、`tabs` 等组合型种类不要求虚构一对一空壳组件。
 - DESIGN 只维护稳定设计规则、组件关系、字段治理原则和机器读取的页面登记 marker；不展开可复制流程和命令清单。
 - `page-template.md` 是执行清单；如它与本文件或布局测试冲突，优先修正模板或代码事实源，不在 DESIGN 复制第二套矩阵。
 
@@ -513,6 +515,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 响应式原则：
 
+- `pageRegistry.responsiveProfile` 是页面类型的目标响应式画像，用于说明设计意图，不等同于已完成浏览器验收；实际列数和重排由 `layout.responsive` 决定，运行时滚动由 `LayoutHost` 决定，最终可用性以关键视口 E2E 为准。页面布局工作台必须显示为“目标响应式策略”，不得把画像名称当成已验证结论。
 - 响应式配置必须有 `minWidth=0` 的基础断点。
 - 单个大表、大图、大列表不靠多列重排解决高度问题，优先内部滚动。
 - 多组件平级块只有在都允许重排、无强阅读顺序且最小宽度满足时才进入 `columns`。
@@ -534,34 +537,34 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 ### Page Registry Index
 
-该区块只作为机器读取和轻量人工索引，不承载组件字段、slot 配置、列、排序或业务状态事实源。新增 registry 页面必须写入 `pageRegistry.ts` 并出现在下方 marker 内；`pageRegistry.spec.ts` 和 `scaffold-page` 会读取此区块。
+该区块只作为机器读取和轻量人工索引，不承载组件字段、slot 配置、列、排序或业务状态事实源。新增 registry 页面必须写入 `pageRegistry.ts` 并以相同 `pageKey` 出现在下方 marker 内；`pageRegistry.spec.ts` 会校验受控路由、registry 与 marker 的 `pageKey` 双向一致，`scaffold-page` 负责同步生成三处登记。
 
 <!-- page-registry:start -->
-| 页面 | 原型 | 可编辑旋钮 | 组件清单 |
-|---|---|---|---|
-| `BoardView`（每日榜单） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `ScreenView`（策略筛选） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `StocksView`（个股查询） | `list` | `density` | action:`filter-bar` / main:`data-table` / nested:`data-table` / footer |
-| `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`section` |
-| `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table` / overlay:`settings-drawer` |
-| `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` |
-| `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `StockDetailView`（个股详情） | `detail` | `density` | action:`toolbar` / main:`detail` |
-| `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `ConfigView`（买卖指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `ConfigView`（技术指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `ConfigView`（系统设置） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `UserManageView`（用户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `RoleManageView`（角色管理） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
-| `MenuResourceView`（菜单与功能） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
-| `TenantManageView`（租户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `LayoutPresetsView`（预设管理） | `list` | 暂无 | action:`toolbar` / main:`data-table(growMain)` |
-| `LayoutPagesView`（页面布局） | `workbench` | 暂无 | action:`toolbar` / main:`tabs(growMain)` |
-| `LayoutComponentsView`（系统组件） | `detail` | 暂无 | action:`toolbar` / main:`section(region)` |
-| `AuditLogView`（审计日志） | `list` | `density` | action:`toolbar` / main:`kpi-grid` / main:`filter-bar` / main:`wide-table` / overlay:`detail` |
-| `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`simple-list` / nested:`data-table` / overlay:`form` / overlay:`dialog` |
+| pageKey | 页面 | 原型 | 可编辑旋钮 | 组件清单 |
+|---|---|---|---|---|
+| `board` | `BoardView`（每日榜单） | `list` | `density` | action:`filter-bar` / main:`data-table` |
+| `screen` | `ScreenView`（策略筛选） | `list` | `density` | action:`filter-bar` / main:`data-table` |
+| `stocks` | `StocksView`（个股查询） | `list` | `density` | action:`filter-bar` / main:`data-table` / nested:`data-table` / footer |
+| `data-quality` | `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |
+| `data-schedule` | `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`section` |
+| `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table` / overlay:`settings-drawer` |
+| `backtest` | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` |
+| `training` | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `stock-detail` | `StockDetailView`（个股详情） | `detail` | `density` | action:`toolbar` / main:`detail` |
+| `config-score` | `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `config-trade` | `ConfigView`（买卖指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `config-tech` | `ConfigView`（技术指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `config-system` | `ConfigView`（系统设置） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `user-manage` | `UserManageView`（用户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
+| `role-manage` | `RoleManageView`（角色管理） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
+| `menu-manage` | `MenuResourceView`（菜单与功能） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
+| `tenant-manage` | `TenantManageView`（租户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
+| `layout-presets` | `LayoutPresetsView`（预设管理） | `list` | 暂无 | action:`toolbar` / main:`data-table(growMain)` |
+| `layout-pages` | `LayoutPagesView`（页面布局） | `workbench` | 暂无 | action:`toolbar` / main:`tabs(growMain)` |
+| `layout-components` | `LayoutComponentsView`（系统组件） | `detail` | 暂无 | action:`toolbar` / main:`section(region)` |
+| `audit-log` | `AuditLogView`（审计日志） | `list` | `density` | action:`toolbar` / main:`kpi-grid` / main:`filter-bar` / main:`wide-table` / overlay:`detail` |
+| `data-dictionary` | `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`simple-list` / nested:`data-table` / overlay:`form` / overlay:`dialog` |
 <!-- page-registry:end -->
 
 除 `supportsPageSettings=false` 的预设管理、页面布局、系统组件三个平台管理页外，registry 页面必须有 `settings-drawer` overlay slot。三个管理页只管理系统配置，不开放或持久化个人页面设置。组件字段、slot 细节和候选项事实源在 `COMPONENT_FIELD_DEFS`、`pageRegistry.consumedComponentFields` 和 `componentMeta`，不要在本表重复维护。

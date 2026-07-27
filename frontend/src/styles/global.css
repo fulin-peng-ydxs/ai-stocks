@@ -19,7 +19,8 @@ body {
 }
 
 :root {
-  --app-font-family-base: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  --app-font-family-base: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable',
+    'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
   --app-font-family-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --app-font-size-page-title: 22px;
   --app-font-size-page-title-sm: 20px;
@@ -29,6 +30,7 @@ body {
   --app-font-size-data: 16px;
   --app-font-size-body: 14px;
   --app-font-size-table: 13px;
+  --app-table-content-font-size: var(--app-font-size-table);
   --app-font-size-caption: 12px;
   --app-font-size-micro: 11px;
   --app-font-size-tiny: 10px;
@@ -41,6 +43,7 @@ body {
   --app-line-height-section-title: 22px;
   --app-line-height-body: 22px;
   --app-line-height-table: 20px;
+  --app-table-content-line-height: var(--app-line-height-table);
   --app-line-height-caption: 18px;
   --app-line-height-micro: 16px;
   --app-line-height-solid: 1;
@@ -54,7 +57,7 @@ body {
   --app-line-height-data: 24px;
   --app-font-weight-regular: 400;
   --app-font-weight-medium: 500;
-  --app-font-weight-section: 650;
+  --app-font-weight-section: 600;
   --app-font-weight-strong: 700;
   --app-space-1: 4px;
   --app-space-2: 8px;
@@ -147,6 +150,14 @@ body {
   --score-mid-text: #d48806;
   --perm-group-color: #64748b;
   --perm-feature-color: #7c3aed;
+}
+
+/* 低像素密度屏幕优先保证行情表格清晰度；按钮与密集控件仍保持 13px。 */
+@media (max-resolution: 1.5dppx) {
+  :root {
+    --app-table-content-font-size: var(--app-font-size-body);
+    --app-table-content-line-height: var(--app-line-height-body);
+  }
 }
 
 /* ── 全站自适应布局契约 ──
@@ -400,6 +411,8 @@ html.dark {
   padding-bottom: 6px;
 }
 .lh-density-comfortable {
+  --app-table-content-font-size: var(--app-font-size-body);
+  --app-table-content-line-height: var(--app-line-height-body);
   gap: var(--app-space-4);
 }
 .lh-density-comfortable .el-table__cell {
@@ -441,8 +454,8 @@ html[data-layout-preset] .el-table {
   --el-table-header-text-color: var(--chrome-text-strong);
   background-color: var(--el-bg-color);
   color: var(--chrome-text);
-  font-size: var(--app-font-size-table);
-  line-height: var(--app-line-height-table);
+  font-size: var(--app-table-content-font-size);
+  line-height: var(--app-table-content-line-height);
 }
 html[data-layout-preset] .el-table th.el-table__cell {
   font-weight: var(--app-font-weight-section);

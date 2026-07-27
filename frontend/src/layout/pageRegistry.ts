@@ -32,9 +32,9 @@ export interface PageRegistryEntry {
   /** 该页面的代码默认布局（default 层，单一事实源）。 */
   layout: PageLayout
   /**
-   * 声明的目标响应式策略，用于配置中心报告与 P5 自适应产品化。
-   * 注意：当前仅为"声明值"，尚未由 layout.responsive 强制落地（各页实际 responsive 仍多为 single-column）；
-   * 配置中心已将其标注为"声明，待 P5 落地"，避免高估当前自适应能力。
+   * 页面类型的目标响应式画像，用于表达设计意图和配置中心摘要。
+   * 实际列数/重排由 layout.responsive 决定，滚动由 LayoutHost 决定，
+   * 浏览器可用性以关键视口 E2E 为准；配置中心不得把本字段展示成已验证结论。
    */
   responsiveProfile: ResponsiveProfile
   /**

@@ -464,7 +464,8 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
         <AppDataTable
           :data="list"
           size="small"
-          :loading="loading"
+          aria-label="用户列表"
+          :loading="loading || dependencyLoading"
           :border="tableBorder('table')"
           :default-sort="elementDefaultSort"
           :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"

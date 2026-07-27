@@ -19,6 +19,10 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
+const model = computed({
+  get: () => props.modelValue,
+  set: (value: boolean) => emit('update:modelValue', value),
+})
 
 const pageTarget = inject(PAGE_OVERLAY_TARGET, null)
 if (import.meta.env.DEV && pageTarget == null) {
@@ -32,12 +36,11 @@ const drawerWidth = computed(() => PAGE_DRAWER_WIDTHS[props.size])
 
 <template>
   <el-drawer
+    v-model="model"
     v-bind="$attrs"
-    :model-value="props.modelValue"
     :append-to="appendTarget"
     :modal-class="modalClassName"
     :size="drawerWidth"
-    @update:model-value="(value: boolean) => emit('update:modelValue', value)"
   >
     <template v-if="$slots.header" #header>
       <slot name="header" />

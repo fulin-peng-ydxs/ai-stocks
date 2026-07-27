@@ -102,7 +102,7 @@ function clear() {
   cursor: pointer; color: var(--el-text-color-regular); overflow: hidden; }
 .ip-cell:hover { background: var(--el-fill-color-light); border-color: var(--el-color-primary); }
 .ip-cell.on { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary); color: var(--el-color-primary); }
-.ip-cap { display: block; width: 100%; padding: 0 4px; font-size: var(--app-font-size-tiny); line-height: var(--app-line-height-tiny);
+.ip-cap { display: block; width: 100%; padding: 0 4px; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption);
   color: var(--el-text-color-secondary); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ip-empty { grid-column: 1 / -1; min-height: 72px; }
 

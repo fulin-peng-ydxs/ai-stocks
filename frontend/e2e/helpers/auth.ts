@@ -3,8 +3,13 @@ import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { APIRequestContext, Page } from '@playwright/test'
 import { expect } from '@playwright/test'
+import {
+  DEFAULT_E2E_API_URL,
+  e2eBackendHealthUrl,
+  requireE2EBackendHealth,
+} from './e2e-backend-health.mjs'
 
-const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
+const API_URL = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
 const AUTH_STORAGE_KEY = 'ai-stocks-auth'
 const debugAuthCache = new Map<string, E2EAuthSnapshot>()
 const execFileAsync = promisify(execFile)
@@ -47,16 +52,10 @@ async function runTemporaryUserFixture(args: string[]): Promise<Record<string, u
 }
 
 async function backendE2ETarget(request: APIRequestContext): Promise<string> {
-  const resp = await request.get(`${API_URL}/health/e2e`)
+  const resp = await request.get(e2eBackendHealthUrl(API_URL))
   expect(resp.ok(), '后端 E2E 环境检查请求失败').toBe(true)
   const body = await resp.json()
-  expect(
-    body.code,
-    body.msg
-      || '后端未以明确 dev/test/local 环境和 AI_STOCKS_E2E_WRITE=1 启动',
-  ).toBe(0)
-  expect(body.data?.pgFingerprint, '后端未返回 PostgreSQL 指纹').toMatch(/^[a-f0-9]{64}$/)
-  return body.data.pgFingerprint as string
+  return requireE2EBackendHealth(body)
 }
 
 export async function createTemporaryE2EUser(

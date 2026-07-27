@@ -50,6 +50,45 @@ describe('PageDrawer 页面边界', () => {
     wrapper.unmount()
   })
 
+  it('挂载后更新 modelValue 会同步打开和关闭真实抽屉', async () => {
+    const Host = defineComponent({
+      components: { LayoutHost, PageDrawer },
+      setup() {
+        return { layout: getPageLayout('board'), visible: ref(false) }
+      },
+      template: `
+        <LayoutHost :layout="layout">
+          <template #main><div>页面内容</div></template>
+          <template #overlays>
+            <PageDrawer v-model="visible" title="动态抽屉">
+              <div>抽屉内容</div>
+            </PageDrawer>
+          </template>
+        </LayoutHost>
+      `,
+    })
+
+    const wrapper = mount(Host, {
+      attachTo: document.body,
+      global: { plugins: [ElementPlus] },
+    })
+    const vm = wrapper.vm as unknown as { visible: boolean }
+
+    vm.visible = true
+    await nextTick()
+    await nextTick()
+    expect(document.querySelector<HTMLElement>('.el-overlay.page-drawer-modal')?.style.display)
+      .not.toBe('none')
+
+    vm.visible = false
+    await nextTick()
+    await nextTick()
+    expect(document.querySelector<HTMLElement>('.el-overlay.page-drawer-modal')?.style.display)
+      .toBe('none')
+
+    wrapper.unmount()
+  })
+
   it('在 LayoutHost 外使用时开发环境给出回退提示', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const wrapper = mount(PageDrawer, {

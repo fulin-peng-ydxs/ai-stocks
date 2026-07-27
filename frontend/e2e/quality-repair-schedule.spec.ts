@@ -2,8 +2,9 @@ import { expect, test } from '@playwright/test'
 
 import { loginAsDebugUser } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
+import { DEFAULT_E2E_API_URL } from './helpers/e2e-backend-health.mjs'
 
-const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
+const API_URL = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
 
 test.describe('质检问题定时恢复', () => {
   test('可按问题类型创建定时任务并保存动态恢复参数', async ({ page, request }) => {

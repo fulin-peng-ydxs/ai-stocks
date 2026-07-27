@@ -91,6 +91,7 @@ function viewTemplate({ pageKey, label, slots }) {
   const mainSlots = slots.filter((slot) => slot.region === 'main')
   return `<script setup lang="ts">
 import { ref } from 'vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -121,12 +122,17 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, layerValuesOf, set
   <LayoutHost :layout="effective">
 ${hasActionSlot ? `    <template #action>
       <section class="page-toolbar">
-        <h1>${label}</h1>
+        <h1 class="app-page-title">${label}</h1>
         <PageSettingsTrigger @click="settingsOpen = true" />
       </section>
     </template>` : ''}
 ${mainSlots.map((slot) => `    <template #${mainSlots.length === 1 ? 'main' : slot.id}>
-      <section class="page-placeholder">${slot.id}</section>
+      <AppStateBlock
+        data-scaffold-placeholder
+        state="empty"
+        title="待接入 ${slot.id} 业务内容"
+        description="接入真实组件和 ready / loading / empty / error 四态后删除脚手架占位标记"
+      />
     </template>`).join('\n')}
     <template #overlays>
       <PageSettingsDrawer
@@ -146,20 +152,7 @@ ${mainSlots.map((slot) => `    <template #${mainSlots.length === 1 ? 'main' : sl
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-}
-.page-toolbar h1 {
-  margin: 0;
-  font-size: 18px;
-}
-.page-placeholder {
-  min-height: 0;
-  height: 100%;
-  border: 1px dashed var(--el-border-color);
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  color: var(--el-text-color-secondary);
+  gap: var(--app-space-3);
 }
 </style>
 `
@@ -198,9 +191,9 @@ function routeEntry({ route, pageKey, label, viewFile }) {
 `
 }
 
-function designRow({ viewName, label, archetype, slots }) {
+function designRow({ pageKey, viewName, label, archetype, slots }) {
   const components = slots.map((slot) => `${slot.region}:${slot.component}${slot.grow ? '(growMain)' : ''}`).join(' / ')
-  return `| \`${viewName}\`（${label}，pageKey \`${slots.pageKey ?? ''}\`） | \`${archetype}\` | \`density\` 信息密度 | 组件清单：${components}；由 scaffold-page 生成骨架，需补业务内容并完成视口验证 |`
+  return `| \`${pageKey}\` | \`${viewName}\`（${label}） | \`${archetype}\` | \`density\` 信息密度 | 组件清单：${components}；由 scaffold-page 生成骨架，需补业务内容并完成视口验证 |`
 }
 
 const DESIGN_REGISTRY_END = '<!-- page-registry:end -->'
@@ -225,7 +218,6 @@ function main() {
   const viewName = args.view ?? `${pascalCase(pageKey)}View`
   const viewFile = `${viewName}.vue`
   const slots = parseSlots(archetype, args.slots)
-  slots.pageKey = pageKey
 
   const files = {
     view: join(root, 'src/views', viewFile),
@@ -260,7 +252,7 @@ function main() {
   )
   writeFileSync(
     files.design,
-    insertBefore(readFileSync(files.design, 'utf-8'), DESIGN_REGISTRY_END, `${designRow({ viewName, label, archetype, slots })}\n`),
+    insertBefore(readFileSync(files.design, 'utf-8'), DESIGN_REGISTRY_END, `${designRow({ pageKey, viewName, label, archetype, slots })}\n`),
     'utf-8',
   )
   console.log(plan.join('\n'))

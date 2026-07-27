@@ -103,7 +103,7 @@ function parentLabel(s: SlotSpec): string | null {
     <!-- 响应式摘要（P8）：受控策略命名 + 三档列数 + 可重排/不可重排大表大图分类（红线不可配，仅展示）。 -->
     <div class="resp-summary">
       <div class="rs-strategy">
-        <el-tag size="small" type="primary" effect="plain">{{ summary.profileLabel }}</el-tag>
+        <el-tag size="small" type="primary" effect="plain">目标 · {{ summary.profileLabel }}</el-tag>
         <span class="rs-desc">{{ summary.profileDesc }}</span>
       </div>
       <div class="rs-grid">

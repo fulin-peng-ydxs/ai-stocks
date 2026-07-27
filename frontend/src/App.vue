@@ -1151,7 +1151,7 @@ button.topbar-status:focus-visible {
   gap: var(--app-space-1);
 }
 .appearance-mode-switch strong { font-size: var(--app-font-size-table); line-height: var(--app-line-height-micro); }
-.appearance-mode-switch small { color: var(--page-settings-text-muted); font-size: var(--app-font-size-tiny); line-height: var(--app-line-height-ornament); }
+.appearance-mode-switch small { color: var(--page-settings-text-muted); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
 .mode-orb {
   width: 24px;
   height: 24px;
@@ -1249,8 +1249,8 @@ button.topbar-status:focus-visible {
 }
 .theme-option-copy small {
   color: var(--page-settings-text-muted);
-  font-size: var(--app-font-size-tiny);
-  line-height: var(--app-line-height-compact);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
 }
 .navigation-card {
   padding-top: 2px;
@@ -1431,8 +1431,8 @@ button.topbar-status:focus-visible {
 }
 .navigation-option-copy small {
   color: var(--page-settings-text-muted);
-  font-size: var(--app-font-size-tiny);
-  line-height: var(--app-line-height-compact);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
 }
 .theme-option-check {
   width: 20px;

@@ -785,7 +785,7 @@ onMounted(() => { loadTree() })
 .mr-field label { width: 54px; text-align: right; color: var(--el-text-color-regular); font-size: var(--app-font-size-table); flex: none; }
 .mr-field :deep(.el-select), .mr-field :deep(.el-input) { flex: 1; }
 .mono :deep(input), .mono { font-family: var(--app-font-family-mono); }
-.hint { font-size: var(--app-font-size-micro); color: var(--el-text-color-placeholder); }
+.hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-placeholder); }
 .mr-func-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .resource-table {
   flex: 1 1 auto;

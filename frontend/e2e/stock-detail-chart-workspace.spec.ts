@@ -19,8 +19,9 @@ import {
   type TemporaryE2EUser,
 } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
+import { DEFAULT_E2E_API_URL } from './helpers/e2e-backend-health.mjs'
 
-const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
+const API_URL = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
 
 type PreferencePayload = {
   scope: string
