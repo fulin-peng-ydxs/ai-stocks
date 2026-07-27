@@ -150,7 +150,7 @@ body {
 }
 
 /* ── 全站自适应布局契约（禁止整页滚动；内容超高 → 成长区内部滚动）──
-   .v-page  : 页面根（flex 纵向、占满内容区、overflow:hidden）。子元素默认按内容高（固定区）。
+   .v-page  : 页面根（flex 纵向、占满内容区、overflow:clip）。子元素默认按内容高（固定区）。
    .v-grow  : 表格成长区（占剩余高度）；内部 el-table 用 height="100%" 即表体内部滚动、表头吸顶。
    .v-scroll: 长内容成长区（区域内部滚动，如回测结果/配置/详情）。
    用法：页面根挂 .v-page；列表/表格卡挂 .v-grow 并把 el-table height 改为 100%；
@@ -160,7 +160,7 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
   gap: var(--layout-page-gap);
 }
 .v-page > * { flex: 0 0 auto; min-height: 0; }

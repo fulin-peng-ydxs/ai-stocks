@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import {
   computed,
   onActivated,
@@ -595,48 +596,48 @@ onBeforeUnmount(stopTimer)
           @page-change="pageChanged"
           @size-change="pageSizeChanged"
         >
-          <el-table-column v-if="colVisible('event_time')" label="时间" prop="event_time" width="168" sortable="custom">
+          <AppTableColumn v-if="colVisible('event_time')" label="时间" prop="event_time" sortable="custom">
             <template #default="{ row }">{{ formatTime(row.event_time) }}</template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('actor')" label="处理人" width="132" show-overflow-tooltip>
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('actor')" label="处理人" show-overflow-tooltip>
             <template #default="{ row }">{{ actorText(row) }}</template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('event_category')" label="事件类型" prop="event_category" width="112" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('event_category')" label="事件类型" prop="event_category" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="eventTagType(row.event_category)" :style="eventTagStyle(row.event_category)" effect="plain">
                 {{ eventLabel(row) }}
               </el-tag>
             </template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('resource_code')" label="资源码" min-width="170" show-overflow-tooltip>
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('resource_code')" label="资源码" show-overflow-tooltip>
             <template #default="{ row }"><span class="mono">{{ row.resource_code || '-' }}</span></template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('target')" label="目标对象" min-width="180" show-overflow-tooltip>
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('target')" label="目标对象" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="target-cell">
                 <b>{{ targetText(row) }}</b>
                 <em v-if="targetDescription(row)">{{ targetDescription(row) }}</em>
               </span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('result')" label="结果" prop="result" width="86" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('result')" label="结果" prop="result" sortable="custom">
             <template #default="{ row }"><el-tag :type="tagType(row.result)" :style="resultTagStyle(row.result)" effect="plain">{{ resultLabel(row.result) }}</el-tag></template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('status')" label="状态" prop="status" width="96" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('status')" label="状态" prop="status" sortable="custom">
             <template #default="{ row }"><el-tag :type="tagType(row.status)" :style="statusTagStyle(row.status)" effect="plain">{{ statusLabel(row.status) }}</el-tag></template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('ip')" label="IP" prop="ip" width="132" show-overflow-tooltip />
-          <el-table-column v-if="colVisible('duration_ms')" label="耗时" prop="duration_ms" width="84" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('ip')" label="IP" prop="ip" show-overflow-tooltip />
+          <AppTableColumn v-if="colVisible('duration_ms')" label="耗时" prop="duration_ms" sortable="custom">
             <template #default="{ row }">{{ formatDuration(row.duration_ms) }}</template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('error_summary')" label="错误摘要" min-width="180" show-overflow-tooltip>
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('error_summary')" label="错误摘要" show-overflow-tooltip>
             <template #default="{ row }">{{ row.error_summary || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="78" fixed="right">
+          </AppTableColumn>
+          <AppTableColumn label="操作" fixed="right">
             <template #default="{ row }">
               <AppRowActions :actions="auditRowActions(row)" :inline-limit="1" />
             </template>
-          </el-table-column>
+          </AppTableColumn>
           <template #empty>
             <el-empty class="app-empty" description="暂无审计记录">
               <el-button @click="resetFilters">重置筛选</el-button>
@@ -698,22 +699,24 @@ onBeforeUnmount(stopTimer)
               <h4>字段变更</h4>
               <p v-if="!activeDetail.changes?.length" class="muted">无字段级变更</p>
               <div v-else class="change-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th style="width: 34%">字段</th>
-                      <th style="width: 33%">变更前</th>
-                      <th style="width: 33%">变更后</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="change in activeDetail.changes" :key="change.field">
-                      <td class="change-field">{{ change.field }}</td>
-                      <td class="change-before">{{ formatChangeValue(change.before) }}</td>
-                      <td class="change-after">{{ formatChangeValue(change.after) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                <AppDataTable
+                  :data="activeDetail.changes"
+                  :fill="false"
+                  kind="wide-table"
+                  row-key="field"
+                  size="small"
+                  aria-label="字段变更"
+                >
+                  <AppTableColumn label="字段" prop="field" role="key">
+                    <template #default="{ row }"><span class="change-field">{{ row.field }}</span></template>
+                  </AppTableColumn>
+                  <AppTableColumn label="变更前" role="description">
+                    <template #default="{ row }"><span class="change-before">{{ formatChangeValue(row.before) }}</span></template>
+                  </AppTableColumn>
+                  <AppTableColumn label="变更后" role="description">
+                    <template #default="{ row }"><span class="change-after">{{ formatChangeValue(row.after) }}</span></template>
+                  </AppTableColumn>
+                </AppDataTable>
               </div>
             </section>
 
@@ -930,31 +933,13 @@ onBeforeUnmount(stopTimer)
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 6px;
 }
-.change-table table {
-  width: 100%;
-  min-width: 420px;
-  border-collapse: collapse;
-  table-layout: fixed;
-}
-.change-table th,
-.change-table td {
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  padding: 8px 10px;
+.change-table :deep(.cell) {
   color: var(--el-text-color-regular);
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-comfy);
   text-align: left;
-  vertical-align: top;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-.change-table th {
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-secondary);
-  font-weight: var(--app-font-weight-section);
-}
-.change-table tr:last-child td {
-  border-bottom: none;
 }
 .change-field {
   color: var(--el-color-primary);

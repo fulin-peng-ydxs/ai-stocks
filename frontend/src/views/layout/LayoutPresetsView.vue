@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 /**
  * 预设管理工作区（P4 布局平台 IA 重构）。
  *
@@ -323,40 +325,40 @@ onMounted(reloadPresets)
           retry
           @retry="reloadPresets"
         />
-        <el-table :data="presets" v-loading="loading" row-key="key">
-          <el-table-column prop="name" label="名称" min-width="140">
+        <AppDataTable :data="presets" :loading="loading" row-key="key" :fill="false">
+          <AppTableColumn prop="name" label="名称">
             <template #default="{ row }">
               <div class="preset-name">{{ row.name }}</div>
               <div class="muted">{{ row.key }}</div>
             </template>
-          </el-table-column>
-          <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
-          <el-table-column label="密度" width="96">
+          </AppTableColumn>
+          <AppTableColumn prop="description" label="说明" show-overflow-tooltip />
+          <AppTableColumn label="密度">
             <template #default="{ row }">{{ row.config.values.density || row.config.values['componentDefaults.density'] || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="引用页面" min-width="160">
+          </AppTableColumn>
+          <AppTableColumn label="引用页面">
             <template #default="{ row }">
               <span v-if="row.referenceCount">{{ row.referencedPages?.join('、') }}</span>
               <span v-else class="muted">未引用</span>
             </template>
-          </el-table-column>
-          <el-table-column label="状态" width="110">
+          </AppTableColumn>
+          <AppTableColumn label="状态">
             <template #default="{ row }">
               <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">{{ row.enabled ? '启用' : '停用' }}</el-tag>
             </template>
-          </el-table-column>
-          <el-table-column label="类型" width="100">
+          </AppTableColumn>
+          <AppTableColumn label="类型">
             <template #default="{ row }">
               <SystemBuiltinTag v-if="row.is_builtin" />
               <el-tag v-else type="primary" effect="plain">自定义</el-tag>
             </template>
-          </el-table-column>
-          <el-table-column label="操作" width="230" fixed="right">
+          </AppTableColumn>
+          <AppTableColumn label="操作" fixed="right">
             <template #default="{ row }">
               <AppRowActions :actions="presetRowActions(row)" :inline-limit="2" />
             </template>
-          </el-table-column>
-        </el-table>
+          </AppTableColumn>
+        </AppDataTable>
         </template>
       </section>
     </template>

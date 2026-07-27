@@ -116,6 +116,16 @@ describe('状态占位策略', () => {
 })
 
 describe('主表唯一与 growMain 约束（规范 §1）', () => {
+  it('标签页可作为工作台唯一主成长区，由当前面板承接内部滚动', () => {
+    const layout = createLayout('workbench', 'p')
+    layout.slots = [
+      { id: 'summary', component: 'kpi-grid', region: 'main', order: 1 },
+      { id: 'workspace', component: 'tabs', region: 'main', growMain: true, order: 2 },
+    ]
+    layout.editable = []
+    expect(errorsOf(layout)).toEqual([])
+  })
+
   it('主内容区两个 growMain → error', () => {
     const layout = createLayout('workbench', 'p')
     layout.slots.find((s) => s.id === 'chart')!.growMain = true // 已有 table growMain

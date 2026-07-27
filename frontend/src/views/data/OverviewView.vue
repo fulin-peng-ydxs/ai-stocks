@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -47,6 +49,13 @@ const {
 
 // 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const activeWorkspaceTab = computed<'assets' | 'stocks'>({
+  get: () => componentValueOf('workspace', 'defaultActive') === 'stocks' ? 'stocks' : 'assets',
+  set: (value) => setComponentKnob('workspace', 'defaultActive', value),
+})
+function tableBorder(slotId: string): boolean {
+  return componentValueOf(slotId, 'border') === true
+}
 const loading = ref(true)
 const error = ref('')
 const ov = ref<Overview | null>(null)
@@ -242,18 +251,8 @@ onMounted(load)
     </div>
     </template>
 
-    <template #main>
-    <div class="overview-scroll">
-      <AppStateBlock
-        v-if="error && !ov"
-        state="error"
-        title="数据概览加载失败"
-        :description="error"
-        retry
-        @retry="load"
-      />
-
-      <template v-else>
+    <template #summary>
+      <div v-if="!error || ov" class="overview-summary" data-testid="overview-summary">
         <AppStateBlock
           v-if="error"
           state="error"
@@ -263,8 +262,7 @@ onMounted(load)
           retry
           @retry="load"
         />
-        <!-- KPI -->
-        <div class="stat-grid" v-loading="loading">
+        <div class="stat-grid" data-testid="overview-kpi-grid" v-loading="loading">
           <el-card v-if="settings.kpi.latestTradeDate" shadow="never" class="stat">
             <el-tooltip content="库内 daily_bar 的最大交易日，全局鲜活度的基准日" placement="top">
               <div class="stat-label">最新交易日 <span class="qm">?</span></div>
@@ -315,9 +313,16 @@ onMounted(load)
           最近质检时间：<b>{{ ov.last_scan_at ? ov.last_scan_at.slice(0, 19) : '尚未质检' }}</b>
           <span class="hint">（“立即质检”或定时质检任务会刷新它）</span>
         </div>
+      </div>
+    </template>
 
-        <!-- 分层质量条 -->
-        <el-card shadow="never" class="blk" v-if="ov?.quality.by_layer?.length">
+    <template #quality>
+      <el-card
+        v-if="ov?.quality.by_layer?.length"
+        shadow="never"
+        class="quality-summary"
+        data-testid="overview-quality-summary"
+      >
           <template #header><span>分层质量模型（达标率）</span></template>
           <el-row :gutter="12">
             <el-col :span="6" v-for="l in ov.quality.by_layer" :key="l.layer">
@@ -331,142 +336,173 @@ onMounted(load)
               </el-tooltip>
             </el-col>
           </el-row>
-        </el-card>
+      </el-card>
+    </template>
 
-        <div class="lower-grid">
-        <!-- 数据资产表（字典 + 维度合并）-->
-        <el-card shadow="never" class="blk">
-          <template #header>
-            <div class="blk-head">
-              <span>数据资产表（维度 / 物理表 / 采集状态 / 行数 / 鲜活 / 质量）</span>
-              <span class="hint">展开行可看字段字典与表间关联；规划中维度为占位（无物理表）</span>
+    <template #workspace>
+      <AppStateBlock
+        v-if="error && !ov"
+        state="error"
+        title="数据概览加载失败"
+        :description="error"
+        retry
+        @retry="load"
+      />
+      <el-card
+        v-else
+        shadow="never"
+        class="overview-workspace-card"
+        data-testid="overview-workspace"
+      >
+        <el-tabs v-model="activeWorkspaceTab" class="overview-tabs">
+          <el-tab-pane label="数据资产" name="assets">
+            <div class="overview-panel">
+              <div class="panel-head">
+                <span class="panel-title">数据资产表</span>
+                <span class="hint">展开行查看字段字典与表间关联；规划中维度暂无物理表</span>
+              </div>
+              <AppDataTable
+                :data="assets"
+                size="small"
+                height="100%"
+                aria-label="数据资产表"
+                data-testid="overview-asset-table"
+                :border="tableBorder('assetTable')"
+                :loading="loading"
+                row-key="key"
+              >
+                <AppTableColumn type="expand">
+                  <template #default="{ row }">
+                    <div class="expand">
+                      <div class="exp-line"><b>说明：</b>{{ row.purpose }}</div>
+                      <div class="exp-line" v-if="row.relations?.length"><b>关联：</b>{{ row.relations.join('；') }}</div>
+                      <AppDataTable v-if="row.fields?.length" :data="row.fields" size="small" class="fld-tbl" :fill="false">
+                        <AppTableColumn label="字段" prop="name" />
+                        <AppTableColumn label="中文名" prop="name_cn" />
+                        <AppTableColumn label="类型" prop="type" />
+                        <AppTableColumn label="说明" prop="desc" show-overflow-tooltip />
+                      </AppDataTable>
+                      <el-empty v-else class="app-empty app-empty--tiny" description="规划中维度，本期暂无物理表与字段" />
+                    </div>
+                  </template>
+                </AppTableColumn>
+                <AppTableColumn label="数据维度" prop="name_cn" />
+                <AppTableColumn label="物理表">
+                  <template #default="{ row }"><span class="mono">{{ row.table }}</span></template>
+                </AppTableColumn>
+                <AppTableColumn label="采集状态">
+                  <template #default="{ row }">
+                    <el-tag :type="DIM_STATUS[row.status]?.type ?? 'info'" size="small" effect="plain">
+                      {{ DIM_STATUS[row.status]?.label ?? row.status }}
+                    </el-tag>
+                  </template>
+                </AppTableColumn>
+                <AppTableColumn label="数据源" prop="source" show-overflow-tooltip />
+                <AppTableColumn label="行数" align="right">
+                  <template #default="{ row }">{{ row.rows.toLocaleString() }}</template>
+                </AppTableColumn>
+                <AppTableColumn label="最新数据时间">
+                  <template #default="{ row }">{{ (row.latest_time || '—').slice(0, 19) }}</template>
+                </AppTableColumn>
+                <AppTableColumn>
+                  <template #header>
+                    <span>质量</span>
+                    <HelpTip title="表级质量怎么判定？" :width="440">
+                      分两类：<br />
+                      <b>时序表</b>（日线行情 / 市值指标 / 指数）：最新数据时间须 ≥ 全局最新交易日才算鲜活；
+                      为空或滞后 → 「无数据 / 数据滞后」；有未解决质检问题 → 显示问题数。<br />
+                      <b>基础 / 台账表</b>（股票基础信息 / 交易日历 / 采集日志 / 质量台账）：无交易日时间维度，
+                      不判鲜活——最新时间显示「—」属正常，只要有数据即「正常」。<br />
+                      <b>规划中维度</b>（股东数 / 筹码分布）：尚无物理表，显示「规划中」。
+                    </HelpTip>
+                  </template>
+                  <template #default="{ row }">
+                    <el-tag :type="tableQuality(row).type as any" size="small" effect="plain">{{ tableQuality(row).text }}</el-tag>
+                  </template>
+                </AppTableColumn>
+              </AppDataTable>
             </div>
-          </template>
-          <el-table :data="assets" size="small" height="100%" v-loading="loading" row-key="key">
-            <el-table-column type="expand">
-              <template #default="{ row }">
-                <div class="expand">
-                  <div class="exp-line"><b>说明：</b>{{ row.purpose }}</div>
-                  <div class="exp-line" v-if="row.relations?.length"><b>关联：</b>{{ row.relations.join('；') }}</div>
-                  <el-table v-if="row.fields?.length" :data="row.fields" size="small" class="fld-tbl">
-                    <el-table-column label="字段" prop="name" width="150" />
-                    <el-table-column label="中文名" prop="name_cn" width="120" />
-                    <el-table-column label="类型" prop="type" width="100" />
-                    <el-table-column label="说明" prop="desc" show-overflow-tooltip />
-                  </el-table>
-                  <el-empty v-else class="app-empty app-empty--tiny" description="规划中维度，本期暂无物理表与字段" />
+          </el-tab-pane>
+
+          <el-tab-pane label="逐股分层体检" name="stocks" lazy>
+            <div class="overview-panel">
+              <div class="panel-head">
+                <span class="panel-title">L1 入库 / L2 契约 / L3 正确性 / L4 覆盖鲜活</span>
+                <span class="hint">点击层级徽章进入解决页 · 最新交易日 {{ (sq?.latest_trade_date || '—').slice(0, 10) }}</span>
+              </div>
+              <div class="sq-bar">
+                <el-select v-model="sqSelected" multiple filterable remote clearable collapse-tags
+                           allow-create default-first-option
+                           :remote-method="remoteSearch" :loading="sqOptLoading" :reserve-keyword="false"
+                           :no-data-text="sqOptError || '无匹配股票'"
+                           placeholder="输入/粘贴代码或名称搜索，可多选（支持手动输入代码，留空=全部）"
+                           @change="onSqSelect" @paste.native="onSqPaste">
+                  <el-option v-for="o in sqOptions" :key="o.code" :label="o.label" :value="o.code" />
+                </el-select>
+              </div>
+              <AppStateBlock
+                v-if="sqLoading && !sq"
+                state="loading"
+                title="正在加载逐股质量…"
+              />
+              <AppStateBlock
+                v-else-if="sqError && !sq"
+                state="error"
+                title="逐股质量加载失败"
+                :description="sqError"
+                retry
+                @retry="loadSq"
+              />
+              <template v-else>
+                <AppStateBlock
+                  v-if="sqError"
+                  state="error"
+                  size="compact"
+                  title="逐股质量刷新失败"
+                  :description="sqError"
+                  retry
+                  @retry="loadSq"
+                />
+                <AppDataTable
+                  :data="sq?.list ?? []"
+                  size="small"
+                  height="100%"
+                  aria-label="逐股分层体检表"
+                  data-testid="overview-stock-table"
+                  :border="tableBorder('stockTable')"
+                  :loading="sqLoading"
+                  row-key="code"
+                >
+                  <AppTableColumn label="代码" prop="code" />
+                  <AppTableColumn label="名称" prop="name" />
+                  <AppTableColumn label="最新数据">
+                    <template #default="{ row }">{{ (row.latest_date || '—').slice(0, 10) }}</template>
+                  </AppTableColumn>
+                  <AppTableColumn v-for="k in ['L1', 'L2', 'L3', 'L4'].filter(shouldShowLayer)" :key="k" :label="LAYER_CN[k]" role="status" align="center">
+                    <template #header>
+                      <el-tooltip :content="LAYER_DESC[k]" placement="top"><span>{{ LAYER_CN[k] }} <span class="qm">?</span></span></el-tooltip>
+                    </template>
+                    <template #default="{ row }">
+                      <el-tooltip :content="layerCell(k, row.layers[k]).tip" placement="top">
+                        <el-tag :type="layerCell(k, row.layers[k]).type as any" size="small" effect="plain"
+                                class="clk-tag" @click="goLayer(k, row)">
+                          {{ layerCell(k, row.layers[k]).text }}
+                        </el-tag>
+                      </el-tooltip>
+                    </template>
+                  </AppTableColumn>
+                </AppDataTable>
+                <div class="pager">
+                  <el-pagination layout="total, sizes, prev, pager, next" :total="sq?.total ?? 0"
+                                 :current-page="sqPage" :page-size="sqSize" :page-sizes="PAGE_SIZE_OPTIONS" background
+                                 @current-change="(p: number) => { sqPage = p; loadSq() }"
+                                 @size-change="(s: number) => { sqSize = s; sqPage = 1; loadSq() }" />
                 </div>
               </template>
-            </el-table-column>
-            <el-table-column label="数据维度" prop="name_cn" width="120" />
-            <el-table-column label="物理表" width="160">
-              <template #default="{ row }"><span class="mono">{{ row.table }}</span></template>
-            </el-table-column>
-            <el-table-column label="采集状态" width="100">
-              <template #default="{ row }">
-                <el-tag :type="DIM_STATUS[row.status]?.type ?? 'info'" size="small" effect="plain">
-                  {{ DIM_STATUS[row.status]?.label ?? row.status }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="数据源" prop="source" width="160" show-overflow-tooltip />
-            <el-table-column label="行数" width="100" align="right">
-              <template #default="{ row }">{{ row.rows.toLocaleString() }}</template>
-            </el-table-column>
-            <el-table-column label="最新数据时间" width="160">
-              <template #default="{ row }">{{ (row.latest_time || '—').slice(0, 19) }}</template>
-            </el-table-column>
-            <el-table-column width="120">
-              <template #header>
-                <span>质量</span>
-                <HelpTip title="表级质量怎么判定？" :width="440">
-                  分两类：<br />
-                  <b>时序表</b>（日线行情 / 市值指标 / 指数）：最新数据时间须 ≥ 全局最新交易日才算鲜活；
-                  为空或滞后 → 「无数据 / 数据滞后」；有未解决质检问题 → 显示问题数。<br />
-                  <b>基础 / 台账表</b>（股票基础信息 / 交易日历 / 采集日志 / 质量台账）：无交易日时间维度，
-                  不判鲜活——最新时间显示「—」属正常，只要有数据即「正常」。<br />
-                  <b>规划中维度</b>（股东数 / 筹码分布）：尚无物理表，显示「规划中」。
-                </HelpTip>
-              </template>
-              <template #default="{ row }">
-                <el-tag :type="tableQuality(row).type as any" size="small" effect="plain">{{ tableQuality(row).text }}</el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-
-        <!-- 逐股数据质量（分层体检）-->
-        <el-card shadow="never" class="blk">
-          <template #header>
-            <div class="blk-head">
-              <span>逐股分层体检（L1 入库 / L2 契约 / L3 正确性 / L4 覆盖鲜活）</span>
-              <span class="hint">点任一层徽章 → 进入对应解决页 · 最新交易日 {{ (sq?.latest_trade_date || '—').slice(0, 10) }}</span>
             </div>
-          </template>
-          <div class="sq-bar">
-            <el-select v-model="sqSelected" multiple filterable remote clearable collapse-tags
-                       allow-create default-first-option
-                       :remote-method="remoteSearch" :loading="sqOptLoading" :reserve-keyword="false"
-                       :no-data-text="sqOptError || '无匹配股票'"
-                       placeholder="输入/粘贴代码或名称搜索，可多选（支持手动输入代码，留空=全部）" style="width: 460px"
-                       @change="onSqSelect" @paste.native="onSqPaste">
-              <el-option v-for="o in sqOptions" :key="o.code" :label="o.label" :value="o.code" />
-            </el-select>
-          </div>
-          <AppStateBlock
-            v-if="sqLoading && !sq"
-            state="loading"
-            title="正在加载逐股质量…"
-          />
-          <AppStateBlock
-            v-else-if="sqError && !sq"
-            state="error"
-            title="逐股质量加载失败"
-            :description="sqError"
-            retry
-            @retry="loadSq"
-          />
-          <template v-else>
-          <AppStateBlock
-            v-if="sqError"
-            state="error"
-            size="compact"
-            title="逐股质量刷新失败"
-            :description="sqError"
-            retry
-            @retry="loadSq"
-          />
-          <el-table :data="sq?.list ?? []" size="small" height="100%" v-loading="sqLoading" row-key="code">
-            <el-table-column label="代码" prop="code" width="110" />
-            <el-table-column label="名称" prop="name" width="100" />
-            <el-table-column label="最新数据" width="110">
-              <template #default="{ row }">{{ (row.latest_date || '—').slice(0, 10) }}</template>
-            </el-table-column>
-            <el-table-column v-for="k in ['L1', 'L2', 'L3', 'L4'].filter(shouldShowLayer)" :key="k" :label="LAYER_CN[k]" width="96" align="center">
-              <template #header>
-                <el-tooltip :content="LAYER_DESC[k]" placement="top"><span>{{ LAYER_CN[k] }} <span class="qm">?</span></span></el-tooltip>
-              </template>
-              <template #default="{ row }">
-                <el-tooltip :content="layerCell(k, row.layers[k]).tip" placement="top">
-                  <el-tag :type="layerCell(k, row.layers[k]).type as any" size="small" effect="plain"
-                          class="clk-tag" @click="goLayer(k, row)">
-                    {{ layerCell(k, row.layers[k]).text }}
-                  </el-tag>
-                </el-tooltip>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div class="pager">
-            <el-pagination layout="total, sizes, prev, pager, next" :total="sq?.total ?? 0"
-                           :current-page="sqPage" :page-size="sqSize" :page-sizes="PAGE_SIZE_OPTIONS" background
-                           @current-change="(p: number) => { sqPage = p; loadSq() }"
-                           @size-change="(s: number) => { sqSize = s; sqPage = 1; loadSq() }" />
-          </div>
-          </template>
-        </el-card>
-        </div>
-      </template>
-    </div>
+          </el-tab-pane>
+        </el-tabs>
+      </el-card>
     </template>
 
     <template #overlays>
@@ -517,62 +553,64 @@ onMounted(load)
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .page-sub { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
-/* 混合成长区(重排多列)：固定分析块(KPI/分层)自然高 + 下方"资产表 | 逐股体检表"双列成长区。
-   宽屏左右两列、各自表体内滚（横向换高度）；窄屏回落上下单列、等分高度内滚；
-   连最低高都放不下→ .overview-scroll 整体滚动兜底（不裁切）。 */
-.overview-scroll {
-  flex: 1 1 auto;          /* 填满 LayoutHost 的 .v-grow */
-  overflow: auto;
+.overview-summary { min-width: 0; }
+.overview-workspace-card {
+  height: 100%;
   min-height: 0;
-  padding-right: 2px;
   display: flex;
   flex-direction: column;
 }
-/* 固定分析块按自然高，不被压缩 */
-.overview-scroll > .stat-grid,
-.overview-scroll > .scan-time,
-.overview-scroll > .blk {
+.overview-workspace-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px 12px;
+}
+.overview-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.overview-tabs :deep(.el-tabs__header) {
   flex: 0 0 auto;
+  margin-bottom: 8px;
 }
-/* 双列成长区：占满剩余高度 */
-.lower-grid {
+.overview-tabs :deep(.el-tabs__content) {
   flex: 1 1 auto;
-  min-height: 360px;
-  display: grid;
-  gap: var(--app-space-4);
-  grid-template-columns: 1fr;   /* 默认/窄屏：单列 */
-  grid-auto-rows: 1fr;          /* 单列时两行等分高度 */
+  min-height: 0;
+  overflow: hidden;
 }
-/* 够宽才并排：每列需 ≈700px 容下 7 列表，否则横滚反而更糟，回落单列。
-   阈值取 1600px（侧栏+留白后每列约 700px+）。 */
-@media (min-width: 1600px) {
-  .lower-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-auto-rows: auto;       /* 单行两列，行高由成长区撑满 */
-  }
+.overview-tabs :deep(.el-tab-pane) {
+  height: 100%;
+  min-height: 0;
 }
-/* 双列里的每张表卡：填满所在格、表体内滚、表头吸顶；分页/搜索栏固定 */
-.lower-grid > .blk {
-  margin-bottom: 0;
+.overview-panel {
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-.lower-grid > .blk :deep(.el-card__body) {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.lower-grid > .blk .sq-bar,
-.lower-grid > .blk .pager {
+.panel-head {
   flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+  margin-bottom: 8px;
 }
-.lower-grid > .blk .el-table {
+.panel-title {
+  color: var(--el-text-color-primary);
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
+}
+.overview-panel > .el-table {
   flex: 1 1 auto;
   min-height: 0;
 }
-.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--app-space-3); margin-bottom: 16px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--app-space-3); }
 .stat { text-align: center; }
 .stat :deep(.el-card__body) { padding: 14px 6px; }
 .stat.clickable { cursor: pointer; transition: box-shadow .15s; }
@@ -586,10 +624,8 @@ onMounted(load)
 .stat-val.warn { color: var(--app-warning-text); }
 .stat-val.danger { color: var(--app-danger-text); }
 .stat-foot { font-size: var(--app-font-size-micro); color: var(--el-text-color-secondary); margin-top: 4px; }
-.scan-time { font-size: var(--app-font-size-caption); color: var(--el-text-color-regular); margin: -4px 0 14px; }
+.scan-time { font-size: var(--app-font-size-caption); color: var(--el-text-color-regular); margin-top: 8px; }
 .scan-time .hint { color: var(--el-text-color-secondary); margin-left: 6px; }
-.blk { margin-bottom: 16px; }
-.blk-head { display: flex; justify-content: space-between; align-items: center; }
 .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .mono { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
 .expand { padding: 6px 14px; }
@@ -598,9 +634,28 @@ onMounted(load)
 .layer-card { padding: 8px 10px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
 .layer-name { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); margin-bottom: 6px; }
 .layer-foot { font-size: var(--app-font-size-micro); color: var(--el-text-color-secondary); margin-top: 4px; }
+.quality-summary :deep(.el-card__header) { padding: 9px 12px; }
+.quality-summary :deep(.el-card__body) { padding: 10px 12px; }
 .clk-tag { cursor: pointer; }
 .clk-tag:hover { filter: brightness(0.95); text-decoration: underline; }
 .sq-bar { display: flex; gap: var(--app-space-2); margin-bottom: 12px; }
+.sq-bar .el-select { width: min(460px, 100%); }
 .txt-warn { color: var(--app-warning-text); font-weight: var(--app-font-weight-section); }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+@media (max-height: 700px) {
+  .stat :deep(.el-card__body) { padding: 7px 6px; }
+  .stat-label { font-size: var(--app-font-size-caption); }
+  .stat-val { margin-top: 1px; font-size: var(--app-font-size-body); line-height: var(--app-line-height-compact); }
+  .stat-foot { display: none; }
+  .scan-time { margin-top: 4px; line-height: var(--app-line-height-compact); }
+  .quality-summary :deep(.el-card__header) { padding: 5px 10px; }
+  .quality-summary :deep(.el-card__body) { padding: 5px 10px; }
+  .layer-card { padding: 3px 7px; }
+  .layer-name { margin-bottom: 2px; font-size: var(--app-font-size-caption); }
+  .layer-foot { display: none; }
+  .panel-head { margin-bottom: 5px; }
+  .overview-workspace-card :deep(.el-card__body) { padding: 6px 10px 8px; }
+  .overview-tabs :deep(.el-tabs__header) { margin-bottom: 5px; }
+}
 </style>

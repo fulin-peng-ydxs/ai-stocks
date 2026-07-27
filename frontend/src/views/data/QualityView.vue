@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
@@ -422,40 +423,40 @@ onMounted(() => {
         @page-change="(p: number) => { page = p; load() }"
         @size-change="(s: number) => { size = s; page = 1; load() }"
       >
-        <el-table-column v-if="colVisible('severity')" label="严重度" prop="severity" width="90" sortable="custom">
+        <AppTableColumn v-if="colVisible('severity')" label="严重度" prop="severity" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="sevType[row.severity] ?? 'info'" size="small" effect="dark">{{ SEVERITY_LABEL[row.severity] ?? row.severity }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="110" />
-        <el-table-column v-if="colVisible('name')" label="名称" prop="name" width="100" show-overflow-tooltip />
-        <el-table-column v-if="colVisible('date')" label="日期" width="110">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" />
+        <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" show-overflow-tooltip />
+        <AppTableColumn v-if="colVisible('date')" label="日期">
           <template #default="{ row }">{{ (row.trade_date || '—').slice(0, 10) }}</template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('layer')" label="层" width="64">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('layer')" label="层">
           <template #default="{ row }">
             <el-tooltip :content="LAYER_LABEL[ISSUE_LAYER[row.issue_type]] ?? '—'" placement="top">
               <span class="layer-tag">{{ ISSUE_LAYER[row.issue_type] ?? '—' }}</span>
             </el-tooltip>
           </template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('type')" label="类型" width="130">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('type')" label="类型">
           <template #default="{ row }">{{ ISSUE_TYPE_LABEL[row.issue_type] ?? row.issue_type }}</template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('detail')" label="详情" prop="detail" show-overflow-tooltip />
-        <el-table-column v-if="colVisible('status')" label="状态" width="90">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('detail')" label="详情" prop="detail" show-overflow-tooltip />
+        <AppTableColumn v-if="colVisible('status')" label="状态">
           <template #default="{ row }">
             <el-tag :type="statType[row.status] ?? 'info'" size="small" effect="plain">{{ ISSUE_STATUS_LABEL[row.status] ?? row.status }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('detectedAt')" label="检出时间" prop="time" width="160" sortable="custom">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('detectedAt')" label="检出时间" prop="time" sortable="custom">
           <template #default="{ row }">{{ (row.detected_at || '').slice(0, 19) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        </AppTableColumn>
+        <AppTableColumn label="操作" fixed="right">
           <template #default="{ row }">
             <AppRowActions :actions="qualityRowActions(row)" :inline-limit="2" />
           </template>
-        </el-table-column>
+        </AppTableColumn>
       </AppDataTable>
       </template>
     </el-card>

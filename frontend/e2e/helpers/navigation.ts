@@ -22,7 +22,7 @@ export async function waitForNamedTableCells(
   cellText: string | RegExp,
 ): Promise<Locator> {
   const cells = page
-    .getByRole('table', { name: tableName })
+    .getByRole('table', { name: tableName, exact: true })
     .getByRole('cell')
     .filter({ hasText: cellText })
   await expect(cells.first()).toBeVisible({ timeout: COLD_ROUTE_READY_TIMEOUT })

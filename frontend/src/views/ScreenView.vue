@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -739,25 +740,25 @@ onMounted(initializeScreen)
         @sort-change="onResultSortChange"
         @row-click="(r: ScreenHit) => router.push(`/stocks/${r.code}`)"
       >
-        <el-table-column label="#" type="index" width="56" />
-        <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="120" sortable />
-        <el-table-column v-if="colVisible('name')" label="名称" min-width="140" sortable :sort-by="(r:any)=>r.name || ''">
+        <AppTableColumn label="#" type="index" />
+        <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />
+        <AppTableColumn v-if="colVisible('name')" label="名称" sortable :sort-by="(r:any)=>r.name || ''">
           <template #default="{ row }">
             <span>{{ row.name || '—' }}</span>
             <el-tag v-if="colVisible('st') && row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('score')" label="综合分" prop="total_score" width="110" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
           <template #default="{ row }">
             <strong class="score">{{ row.total_score ?? '—' }}</strong>
           </template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('grade')" label="评级" width="130">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('grade')" label="评级">
           <template #default="{ row }">
             <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" effect="light">{{ row.grade }}</el-tag>
             <span v-else class="muted">—</span>
           </template>
-        </el-table-column>
+        </AppTableColumn>
       </AppDataTable>
       <el-empty v-else-if="result" class="app-empty" description="无命中" />
       <el-empty v-else class="app-empty" description="运行后在这里展示筛选结果" />

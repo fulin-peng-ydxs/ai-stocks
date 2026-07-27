@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -471,36 +472,36 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           @page-change="(p: number) => { page = p; load() }"
           @size-change="(s: number) => { size = s; page = 1; load() }"
         >
-          <el-table-column label="账号" prop="account" width="150" fixed="left" sortable="custom" />
-          <el-table-column v-if="colVisible('email')" label="邮箱" prop="email" min-width="180"
+          <AppTableColumn label="账号" prop="account" fixed="left" sortable="custom" />
+          <AppTableColumn v-if="colVisible('email')" label="邮箱" prop="email"
                            show-overflow-tooltip>
             <template #default="{ row }">{{ row.email || '—' }}</template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('roles')" label="角色" min-width="180">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('roles')" label="角色">
             <template #default="{ row }">
               <el-tag v-for="c in orderedRoles(row)" :key="c" :type="roleTagType(c)" :style="roleTagStyle(c)" size="small"
                       effect="plain" class="role-tag">{{ roleName(row, c) }}</el-tag>
               <span v-if="!row.roles?.length" class="muted">—</span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="isSystem && colVisible('tenant')" label="租户" width="140"
+          </AppTableColumn>
+          <AppTableColumn v-if="isSystem && colVisible('tenant')" label="租户"
                            show-overflow-tooltip>
             <template #default="{ row }">{{ tenantName(row.tenant_id) }}</template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('status')" label="状态" width="92">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('status')" label="状态">
             <template #default="{ row }">
               <el-tag :type="STATUS_TAG[row.status]?.type ?? 'info'" :style="statusTagStyle(row.status)" size="small" effect="plain">
                 {{ statusLabel(row.status) }}
               </el-tag>
             </template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('lastLogin')" label="最后登录" prop="lastLogin" width="160" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('lastLogin')" label="最后登录" prop="lastLogin" sortable="custom">
             <template #default="{ row }">{{ fmtTime(row.last_login_at) }}</template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('created')" label="创建时间" prop="created" width="160" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('created')" label="创建时间" prop="created" sortable="custom">
             <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="220" fixed="right">
+          </AppTableColumn>
+          <AppTableColumn label="操作" fixed="right">
             <template #default="{ row }">
               <AppRowActions
                 :actions="userRowActions(row)"
@@ -508,7 +509,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
                 :test-id="`user-row-actions-${row.account}`"
               />
             </template>
-          </el-table-column>
+          </AppTableColumn>
         </AppDataTable>
         </template>
       </el-card>

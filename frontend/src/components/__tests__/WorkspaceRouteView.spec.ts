@@ -42,26 +42,20 @@ describe('工作区路由缓存', () => {
     await router.isReady()
     const wrapper = mount(WorkspaceRouteView, { global: { plugins: [pinia, router] } })
     await flushPromises()
-    const scrollContainer = wrapper.element.parentElement as HTMLElement
-    scrollContainer.scrollTop = 136
     await wrapper.get('[aria-label="研究笔记"]').setValue('第一只股票的现场')
 
     await router.push('/detail/two')
     await flushPromises()
-    expect(scrollContainer.scrollTop).toBe(0)
-    scrollContainer.scrollTop = 48
     await wrapper.get('[aria-label="研究笔记"]').setValue('第二只股票的现场')
 
     await router.push('/detail/one')
     await flushPromises()
-    expect(scrollContainer.scrollTop).toBe(136)
     expect(wrapper.get('[aria-label="研究笔记"]').element).toHaveProperty(
       'value', '第一只股票的现场',
     )
 
     await router.push('/detail/two')
     await flushPromises()
-    expect(scrollContainer.scrollTop).toBe(48)
     expect(removeWorkspaceTab('/detail/one', '/detail/two')).toBeUndefined()
     await nextTick()
     expect(useWorkspaceTabs().workspaceTabs.value.map((tab) => tab.key)).toEqual(['/detail/two'])

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computeBoard, type BoardRow } from '@/api/board'
@@ -1250,54 +1251,54 @@ async function openTradeChart(row: TradeRow) {
               </AppControlRow>
 
               <!-- 参数敏感性结果 -->
-              <el-table v-if="sweepRes" :data="sweepRes.rows" size="small" border>
-                <el-table-column :label="ROBUST_PARAM_OPTS.find(o => o.v === sweepRes!.param)?.t || sweepRes.param" width="130">
+              <AppDataTable v-if="sweepRes" :data="sweepRes.rows" size="small" border :fill="false">
+                <AppTableColumn :label="ROBUST_PARAM_OPTS.find(o => o.v === sweepRes!.param)?.t || sweepRes.param" role="number">
                   <template #default="{ row }"><b>{{ sweepValLabel(row.value) }}</b></template>
-                </el-table-column>
-                <el-table-column label="累计收益" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="累计收益" align="right">
                   <template #default="{ row }"><span :class="row.total_return >= 0 ? 'up' : 'down'">{{ pct(row.total_return) }}</span></template>
-                </el-table-column>
-                <el-table-column label="超额" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="超额" align="right">
                   <template #default="{ row }"><span :class="row.excess_return >= 0 ? 'up' : 'down'">{{ pct(row.excess_return) }}</span></template>
-                </el-table-column>
-                <el-table-column label="最大回撤" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="最大回撤" align="right">
                   <template #default="{ row }">{{ pct(row.max_drawdown) }}</template>
-                </el-table-column>
-                <el-table-column label="夏普" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="夏普" align="right">
                   <template #default="{ row }">{{ num(row.sharpe) }}</template>
-                </el-table-column>
-                <el-table-column label="胜率" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="胜率" align="right">
                   <template #default="{ row }">{{ pct(row.win_rate) }}</template>
-                </el-table-column>
-                <el-table-column label="交易数" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="交易数" align="right">
                   <template #default="{ row }">{{ row.n_trades ?? '—' }}</template>
-                </el-table-column>
-              </el-table>
+                </AppTableColumn>
+              </AppDataTable>
 
               <!-- 样本内外结果 -->
-              <el-table v-if="inOutRes" :data="[
+              <AppDataTable v-if="inOutRes" :data="[
                 { seg: '样本内', ...inOutRes.in_sample },
                 { seg: '样本外', ...inOutRes.out_sample },
-              ]" size="small" border>
-                <el-table-column label="样本" width="120">
+              ]" size="small" border :fill="false">
+                <AppTableColumn label="样本">
                   <template #default="{ row }"><b>{{ row.seg }}</b><span class="opt-range">{{ row.range[0] }}~{{ row.range[1] }}</span></template>
-                </el-table-column>
-                <el-table-column label="累计收益" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="累计收益" align="right">
                   <template #default="{ row }"><span :class="row.total_return >= 0 ? 'up' : 'down'">{{ pct(row.total_return) }}</span></template>
-                </el-table-column>
-                <el-table-column label="超额" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="超额" align="right">
                   <template #default="{ row }"><span :class="row.excess_return >= 0 ? 'up' : 'down'">{{ pct(row.excess_return) }}</span></template>
-                </el-table-column>
-                <el-table-column label="最大回撤" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="最大回撤" align="right">
                   <template #default="{ row }">{{ pct(row.max_drawdown) }}</template>
-                </el-table-column>
-                <el-table-column label="夏普" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="夏普" align="right">
                   <template #default="{ row }">{{ num(row.sharpe) }}</template>
-                </el-table-column>
-                <el-table-column label="胜率" align="right">
+                </AppTableColumn>
+                <AppTableColumn label="胜率" align="right">
                   <template #default="{ row }">{{ pct(row.win_rate) }}</template>
-                </el-table-column>
-              </el-table>
+                </AppTableColumn>
+              </AppDataTable>
             </el-collapse-item>
           </el-collapse>
         </el-card>
@@ -1309,13 +1310,13 @@ async function openTradeChart(row: TradeRow) {
           分层命中率 vs 全市场基线（超额）
           <span class="sub">区间 {{ layersData.date_start }} ~ {{ layersData.date_end }}，总信号 {{ layersData.total_signals }}</span>
         </div>
-        <el-table :data="layerRows" size="small">
-          <el-table-column label="分档" min-width="160">
+        <AppDataTable :data="layerRows" size="small" :fill="false">
+          <AppTableColumn label="分档">
             <template #default="{ row }">
               <b :class="{ base: row.isBase }">{{ row.name }}</b>
             </template>
-          </el-table-column>
-          <el-table-column v-for="lk in layerKeys" :key="lk.key" :label="lk.label" align="center" min-width="120">
+          </AppTableColumn>
+          <AppTableColumn v-for="lk in layerKeys" :key="lk.key" :label="lk.label" role="number" align="center">
             <template #default="{ row }">
               <template v-if="row.cells[lk.key] && row.cells[lk.key].hit_rate != null">
                 <span class="hit">{{ (row.cells[lk.key].hit_rate * 100).toFixed(1) }}%</span>
@@ -1327,8 +1328,8 @@ async function openTradeChart(row: TradeRow) {
               </template>
               <span v-else class="muted">—</span>
             </template>
-          </el-table-column>
-        </el-table>
+          </AppTableColumn>
+        </AppDataTable>
         <div class="legend-line">
           每格上为命中率，下为<b>超额</b>（命中率−基线）。超额为正说明该档比"随便买"更可能摸到目标涨幅。
         </div>
@@ -1347,35 +1348,35 @@ async function openTradeChart(row: TradeRow) {
                   :border="tableBorder('trades')"
                   :default-sort="tradeDefaultSort" @sort-change="onTradeSortChange"
                   @row-click="(r:any) => openTradeChart(r)">
-          <el-table-column label="代码" prop="code" width="110" />
-          <el-table-column label="买入" prop="entry_date" width="110" sortable :sort-by="(r:any)=>r.entry_date" />
-          <el-table-column label="买价" width="90"><template #default="{ row }">{{ num(row.entry_price) }}</template></el-table-column>
-          <el-table-column label="卖出" prop="exit_date" width="110" sortable :sort-by="(r:any)=>r.exit_date" />
-          <el-table-column label="卖价" width="90"><template #default="{ row }">{{ num(row.exit_price) }}</template></el-table-column>
-          <el-table-column v-if="tradeColVisible('ret')" label="收益" prop="return_pct" width="100" sortable :sort-by="(r:any)=>r.return_pct">
+          <AppTableColumn label="代码" prop="code" />
+          <AppTableColumn label="买入" prop="entry_date" sortable :sort-by="(r:any)=>r.entry_date" />
+          <AppTableColumn label="买价"><template #default="{ row }">{{ num(row.entry_price) }}</template></AppTableColumn>
+          <AppTableColumn label="卖出" prop="exit_date" sortable :sort-by="(r:any)=>r.exit_date" />
+          <AppTableColumn label="卖价"><template #default="{ row }">{{ num(row.exit_price) }}</template></AppTableColumn>
+          <AppTableColumn v-if="tradeColVisible('ret')" label="收益" prop="return_pct" sortable :sort-by="(r:any)=>r.return_pct">
             <template #default="{ row }">
               <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="tradeColVisible('hold')" label="持有(日)" prop="hold_days" width="90" sortable :sort-by="(r:any)=>r.hold_days" />
-          <el-table-column v-if="tradeColVisible('reason')" label="卖出原因" min-width="150">
+          </AppTableColumn>
+          <AppTableColumn v-if="tradeColVisible('hold')" label="持有(日)" prop="hold_days" sortable :sort-by="(r:any)=>r.hold_days" />
+          <AppTableColumn v-if="tradeColVisible('reason')" label="卖出原因">
             <template #default="{ row }">
               <template v-if="sellTags(row).length">
                 <el-tag v-for="t in sellTags(row)" :key="t" type="warning" size="small" effect="light" class="sell-tag">{{ t }}</el-tag>
               </template>
               <span v-else>{{ row.exit_reason }}</span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="tradeColVisible('grade')" label="买入档" width="110">
+          </AppTableColumn>
+          <AppTableColumn v-if="tradeColVisible('grade')" label="买入档">
             <template #default="{ row }">
               <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" size="small" effect="light">{{ row.grade }}</el-tag>
               <span v-else-if="row.entry_score != null" class="muted" title="综合分未达「观察」档阈值，但因候选池内排名靠前而买入">无评级·{{ row.entry_score.toFixed(0) }}分</span>
               <span v-else class="muted">—</span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="tradeColVisible('rank')" label="榜单排名" width="90">
+          </AppTableColumn>
+          <AppTableColumn v-if="tradeColVisible('rank')" label="榜单排名">
             <template #default="{ row }">{{ row.entry_rank ? '#' + row.entry_rank : '—' }}</template>
-          </el-table-column>
+          </AppTableColumn>
         </AppDataTable>
         </div>
       </el-card>
@@ -1424,43 +1425,43 @@ async function openTradeChart(row: TradeRow) {
         <CandleChart v-if="dlgBars.length" :bars="dlgBars" :markers="dlgMarkers"
                      :zoom-start="dlgZoom.start" :zoom-end="dlgZoom.end" />
         <div class="dlg-tbl-title">本股交易明细 + 卖出后表现（看卖得对不对）</div>
-        <el-table :data="dlgTrades" size="small" class="dlg-trades">
-          <el-table-column label="买入" prop="entry_date" width="110" />
-          <el-table-column label="卖出" prop="exit_date" width="110" />
-          <el-table-column label="收益" width="90">
+        <AppDataTable :data="dlgTrades" size="small" class="dlg-trades" :fill="false">
+          <AppTableColumn label="买入" prop="entry_date" />
+          <AppTableColumn label="卖出" prop="exit_date" />
+          <AppTableColumn label="收益">
             <template #default="{ row }">
               <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
             </template>
-          </el-table-column>
-          <el-table-column label="持有(日)" prop="hold_days" width="80" />
-          <el-table-column label="卖出原因" min-width="140">
+          </AppTableColumn>
+          <AppTableColumn label="持有(日)" prop="hold_days" />
+          <AppTableColumn label="卖出原因">
             <template #default="{ row }">
               <template v-if="sellTags(row).length">
                 <el-tag v-for="t in sellTags(row)" :key="t" type="warning" size="small" effect="light" class="sell-tag">{{ t }}</el-tag>
               </template>
               <span v-else>{{ row.exit_reason }}</span>
             </template>
-          </el-table-column>
-          <el-table-column label="买入档" width="110">
+          </AppTableColumn>
+          <AppTableColumn label="买入档">
             <template #default="{ row }">
               <span v-if="row.grade">{{ row.grade }}</span>
               <span v-else-if="row.entry_score != null" class="muted">无评级·{{ row.entry_score.toFixed(0) }}分</span>
               <span v-else class="muted">—</span>
             </template>
-          </el-table-column>
-          <el-table-column label="榜单排名" width="90">
+          </AppTableColumn>
+          <AppTableColumn label="榜单排名">
             <template #default="{ row }">{{ row.entry_rank ? '#' + row.entry_rank : '—' }}</template>
-          </el-table-column>
-          <el-table-column label="卖后10日" width="90">
+          </AppTableColumn>
+          <AppTableColumn label="卖后10日">
             <template #default="{ row }"><span :class="row.fwd10 == null ? '' : row.fwd10 >= 0 ? 'up' : 'down'">{{ pct(row.fwd10, 1) }}</span></template>
-          </el-table-column>
-          <el-table-column label="卖后30日" width="90">
+          </AppTableColumn>
+          <AppTableColumn label="卖后30日">
             <template #default="{ row }"><span :class="row.fwd30 == null ? '' : row.fwd30 >= 0 ? 'up' : 'down'">{{ pct(row.fwd30, 1) }}</span></template>
-          </el-table-column>
-          <el-table-column label="卖后半年" width="90">
+          </AppTableColumn>
+          <AppTableColumn label="卖后半年">
             <template #default="{ row }"><span :class="row.fwd120 == null ? '' : row.fwd120 >= 0 ? 'up' : 'down'">{{ pct(row.fwd120, 1) }}</span></template>
-          </el-table-column>
-        </el-table>
+          </AppTableColumn>
+        </AppDataTable>
         <div class="dlg-hint" style="margin-top:6px">
           「卖后涨跌」是卖出后该股继续涨/跌的幅度：卖后大涨=卖早了，卖后续跌=卖对了。
         </div>
@@ -1475,15 +1476,15 @@ async function openTradeChart(row: TradeRow) {
         </div>
         <el-alert v-if="boardMissing && boardRows.length" type="warning" :closable="false" show-icon style="margin-bottom:8px"
                   title="本笔买入的票不在 Top 50 内（榜单名次更靠后）——它因选股方案命中且方案内排名靠前而被买入，并非综合分靠前。" />
-        <el-table :data="boardRows" size="small" height="460" :row-class-name="boardRowClass">
-          <el-table-column label="#" prop="rank" width="60" />
-          <el-table-column label="代码" prop="code" width="120" />
-          <el-table-column label="名称" prop="name" width="120">
+        <AppDataTable :data="boardRows" size="small" height="460" :row-class-name="boardRowClass" :fill="false">
+          <AppTableColumn label="#" prop="rank" />
+          <AppTableColumn label="代码" prop="code" />
+          <AppTableColumn label="名称" prop="name">
             <template #default="{ row }">{{ row.name || '—' }}</template>
-          </el-table-column>
-          <el-table-column label="综合分" prop="total_score" width="90" />
-          <el-table-column label="评级" prop="grade" />
-        </el-table>
+          </AppTableColumn>
+          <AppTableColumn label="综合分" prop="total_score" />
+          <AppTableColumn label="评级" prop="grade" />
+        </AppDataTable>
       </div>
     </el-dialog>
 

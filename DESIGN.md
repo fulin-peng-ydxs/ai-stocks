@@ -203,7 +203,8 @@ Key Characteristics：
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示和轻量“更多”菜单收纳 | 无直接系统组件种类 | 表格 `label="操作"`、自绘表格行、列表项和编辑器条件行的行内按钮组优先复用；首个未显式指定语义色的行内高频动作使用主色，普通次要动作使用常规正文色，禁用态使用弱文本色并满足语义 token 规则定义的文字层级阈值，停用/禁用/终止/删除等破坏性动作使用危险色；动作始终清晰可见，不对整组做透明度弱显；低频或危险动作可设置 `placement: 'more'`，菜单命令继续使用 Element Plus 按钮并呈现真实 loading，不得在页面内手写多行按钮或原生命令按钮 |
 | `SystemBuiltinTag` | `frontend/src/components/SystemBuiltinTag.vue` | 全站“系统内置”来源标记，固定使用灰色文字、灰色描边和中性浅底 | 无直接系统组件种类 | 菜单、功能点、角色、租户、布局预设、技术指标和系统内置方案等来源标记统一复用；文案固定为“系统内置”，不追加对象名称或保护规则说明；与对象名称或标识并列时统一放在对象后面，独立的来源/类型字段保持标签单独展示 |
-| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽和行点击样式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 登记为 `data-table`/`wide-table` 的主列表、成长表和宽表优先复用；复杂单元格继续由业务页通过列插槽声明，不在页面复制表格外壳、分页容器和排序表头样式 |
+| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽、行点击样式和成长/自然高度模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；主列表使用默认成长模式，弹窗、展开区和局部明细显式传 `fill=false`；复杂单元格继续由业务页通过列插槽声明，不在页面复制表格外壳、分页容器和排序表头样式 |
+| `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和中文标签推导语义角色，统一提供固定结构宽或弹性最小宽 | `data-table`、`wide-table` 的稳定列宽能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width`；确有歧义的动态标签只传 `role`，数值事实只维护在 `ADAPTIVE_COLUMN_RULES` |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
 | `CandleChart` | `frontend/src/components/CandleChart.vue` | 盘感训练和回测复用的 K线、量能、MA/VMA 与买卖标记画布 | 无系统组件种类；图表参数由消费页面管理 | 盘感训练和回测统一消费；保持单实例双网格与既有 props 契约，并与 `StockChartWorkspace` 共用 MA/VMA 定义、tooltip helper 和 `useStockChartTheme()`，不得复制股票画布基础能力 |
 | `StockChartWorkspace` | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | 个股 K线、量能和 MACD 的纵向联动工作区，统一日期轴、光标、显式缩放同步、局部状态和可访问高度分隔线 | 无系统组件种类；图表组合与高度属于 `stock-detail` 页面业务偏好，不进入布局字段 | 个股详情统一消费；行情与指标按交易日对齐，MACD 局部失败不得阻断 K线/量能；只有 K线显示固定在绘图区左上角的行情 tooltip 和唯一光标轴日期气泡，量能和 MACD 普通柱线只保留联动光标与标题当前值，不显示行情内容浮层、日期气泡或标题日期，MACD 信号 item 悬停例外显示信号类型与完整日期；三图标题值与实际序列必须复用盘感训练共享色板，柱宽按 K线、量能、MACD 明显递减，底部日期标签不得被缩放滑块遮挡；任一图的 `dataZoom` 必须显式同步给其余可见图并在主题重绘后保留；画布必须监听预设系统在完整 CSS token 写入后发布的主题修订版本，覆盖明暗、预设 key 和同 key 后端覆盖变化，分隔线遵守 reduced-motion；光标跟随指标值不得设置 `aria-live`，避免三组高频播报；页面不得再拼装第二套多图联动和分隔线逻辑 |
@@ -232,7 +233,7 @@ Key Characteristics：
 - 工作标签按路由路径保留页面组件实例、表单筛选与独立滚动位置，最多缓存 12 个；同一页面类型的不同详情路由必须拥有独立缓存身份，关闭标签或超过上限时同步销毁对应实例与滚动记录。
 - 导航布局是独立用户偏好，不与明暗模式或颜色预设绑定；外观抽屉中的主题缩略图只表达色彩和材质，不暗示固定导航结构。
 - 双层顶栏的二级导航与侧栏模式的工作标签栏统一消费 `--chrome-context-bar-bg`：以固定中性 chrome 底色为主体，仅混入当前预设强调色形成轻量横向渐变；两处不得维护私有背景配方。
-- `.main` 必须保持 `overflow: hidden` 和 flex 填充；页面滚动由布局系统内部区域承载。
+- `.main` 必须保持 `overflow: clip` 和 flex 填充，禁止浏览器把隐藏外层变成可滚动容器；页面滚动由布局系统内部区域承载。
 - 菜单激活态使用主色边线和轻背景，不使用大面积高饱和底色。
 
 ### 按钮与输入
@@ -252,7 +253,10 @@ Key Characteristics：
 
 ### 表格与列表
 
-- 主数据表应作为 `growMain` 占据剩余空间，使用 `height="100%"` 让表体内部滚动。
+- 主数据表应作为 `growMain` 占据剩余空间，使用 `height="100%"` 让表体内部滚动；当一个标签页工作区承载多个互斥主表时，由 `tabs` 作为唯一 `growMain`，当前面板内的表体承接滚动。
+- 页面数据表格统一使用 `AppDataTable + AppTableColumn`。页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，也不得向列传 `width/min-width`。
+- 列宽采用语义自适应契约：选择、展开、序号等结构列保持稳定窄宽；代码、名称、状态、数值、日期、时间、标识、操作、正文和长说明使用各自语义最小宽度。容器有余量时由 Element Plus `fit` 按最小宽度权重分配并铺满，空间不足时保持最小可读宽度并由表体横向滚动。
+- 自适应列宽的角色、推导顺序和数值唯一维护在 `components/table/adaptiveColumnWidth.ts`；页面只在动态标签无法推导时声明语义 `role`，不得复制数值。
 - 表头保持稳定，分页、批量操作和关键筛选不被表体滚动带走。
 - 不使用隔行变色作为默认识别手段；当前全局样式会取消 stripe 背景。
 - 列宽按信息类型分配：编号、状态、日期、操作列稳定窄列；名称、标题、描述、备注更宽；数字列保持易比较。
@@ -539,7 +543,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`section` |
 | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table` / overlay:`settings-drawer` |
 | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` |
 | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `StockDetailView`（个股详情） | `detail` | `density` | action:`toolbar` / main:`detail` |

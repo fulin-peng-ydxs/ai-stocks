@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
@@ -721,33 +722,33 @@ onBeforeUnmount(() => {
           @sort-change="onGroupSortChange"
           @page-change="(p:number)=>{ groupPage=p; loadGroupDetail() }"
           @size-change="(s:number)=>{ groupSize=s; groupPage=1; loadGroupDetail() }">
-          <el-table-column width="46">
+          <AppTableColumn>
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
             </template>
             <template #default="{ row }">
               <span @click.stop><el-checkbox :model-value="inCart(row.code)" @change="() => toggle(row)" /></span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="groupColVisible('code')" label="代码" prop="code" width="120" sortable="custom" />
-          <el-table-column v-if="groupColVisible('name')" label="名称" prop="name" min-width="120" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="groupColVisible('code')" label="代码" prop="code" sortable="custom" />
+          <AppTableColumn v-if="groupColVisible('name')" label="名称" prop="name" sortable="custom">
             <template #default="{ row }">{{ row.name || '—' }}</template>
-          </el-table-column>
-          <el-table-column v-if="groupColVisible('price')" label="股价" prop="price" width="100" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="groupColVisible('price')" label="股价" prop="price" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPrice(row.price) }}</b></template>
-          </el-table-column>
-          <el-table-column v-if="groupColVisible('pct')" label="涨跌幅" prop="pct_chg" width="110" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="groupColVisible('pct')" label="涨跌幅" prop="pct_chg" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</b></template>
-          </el-table-column>
-          <el-table-column v-if="groupColVisible('ret')" label="截止涨幅" prop="ret" width="120" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="groupColVisible('ret')" label="截止涨幅" prop="ret" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.ret)">{{ fmtPctRatio(row.ret) }}</b></template>
-          </el-table-column>
-          <el-table-column v-if="groupColVisible('lastDate')" label="截至当前" prop="last_date" width="120" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="groupColVisible('lastDate')" label="截至当前" prop="last_date" sortable="custom">
             <template #default="{ row }">{{ row.last_date || '—' }}</template>
-          </el-table-column>
-          <el-table-column v-if="groupColVisible('addDate')" label="加入日期" prop="add_date" width="120" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="groupColVisible('addDate')" label="加入日期" prop="add_date" sortable="custom">
             <template #default="{ row }">{{ row.add_date || '—' }}</template>
-          </el-table-column>
+          </AppTableColumn>
         </AppDataTable>
         </template>
       </template>
@@ -781,28 +782,28 @@ onBeforeUnmount(() => {
           @sort-change="onSortChange"
           @page-change="(p:number)=>{ page=p; load() }"
           @size-change="(s:number)=>{ size=s; page=1; load() }">
-          <el-table-column width="46">
+          <AppTableColumn>
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
             </template>
             <template #default="{ row }">
               <span @click.stop><el-checkbox :model-value="inCart(row.code)" @change="() => toggle(row)" /></span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="116" sortable="custom" />
-          <el-table-column v-if="colVisible('name')" label="名称" prop="name" min-width="130" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable="custom" />
+          <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" sortable="custom">
             <template #default="{ row }">
               <span>{{ row.name || '—' }}</span>
               <el-tag v-if="row.is_st" type="danger" size="small" effect="plain" style="margin-left:6px">ST</el-tag>
             </template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('price')" label="股价" prop="close" width="100" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('price')" label="股价" prop="close" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPrice(row.close) }}</b></template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('pct')" label="涨跌幅" prop="pct_chg" width="120" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('pct')" label="涨跌幅" prop="pct_chg" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPct(row.pct_chg) }}</b></template>
-          </el-table-column>
-          <el-table-column v-if="canViewGroups && colVisible('groups')" label="所属分组" min-width="150">
+          </AppTableColumn>
+          <AppTableColumn v-if="canViewGroups && colVisible('groups')" label="所属分组">
             <template #default="{ row }">
               <span v-if="row.groups?.length" class="tag-line">
                 <el-tag
@@ -818,22 +819,22 @@ onBeforeUnmount(() => {
               </span>
               <span v-else class="muted">—</span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('industry')" label="行业" prop="industry" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('industry')" label="行业" prop="industry" sortable="custom">
             <template #default="{ row }">
               <el-tag v-if="row.industry" size="small" effect="plain" class="box-tag industry-tag">{{ row.industry }}</el-tag>
               <span v-else class="muted">—</span>
             </template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('board')" label="板块" prop="board" width="100" />
-          <el-table-column v-if="colVisible('status')" label="状态" width="84">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('board')" label="板块" prop="board" />
+          <AppTableColumn v-if="colVisible('status')" label="状态">
             <template #default="{ row }">
               <el-tag v-if="row.delist_date" type="info" effect="plain" size="small">退市</el-tag>
               <el-tag v-else :type="row.is_st ? 'danger' : 'success'" effect="plain" size="small">
                 {{ row.is_st ? 'ST' : '正常' }}
               </el-tag>
             </template>
-          </el-table-column>
+          </AppTableColumn>
         </AppDataTable>
         </template>
       </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1138,8 +1139,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               综合分。调一个权重，其余自动按比例重分配保持 100%。
             </p>
 
-            <el-table :data="items" size="small" border class="item-table">
-              <el-table-column label="指标" width="186">
+            <AppDataTable :data="items" size="small" border class="item-table" :fill="false">
+              <AppTableColumn label="指标">
                 <template #default="{ row }">
                   <el-select v-model="row.indicator" size="small" filterable :disabled="profileReadonly" @change="onIndicatorChange(row)">
                     <el-option v-for="d in scorable" :key="d.key" :label="d.name_cn" :value="d.key" />
@@ -1160,9 +1161,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                     </span>
                   </div>
                 </template>
-              </el-table-column>
+              </AppTableColumn>
 
-              <el-table-column label="打分方式" width="320">
+              <AppTableColumn label="打分方式">
                 <template #default="{ row }">
                   <div class="scoring-cell">
                     <el-radio-group
@@ -1210,9 +1211,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                     </div>
                   </div>
                 </template>
-              </el-table-column>
+              </AppTableColumn>
 
-              <el-table-column label="权重">
+              <AppTableColumn label="权重">
                 <template #default="{ row, $index }">
                   <div class="weight-cell">
                     <el-slider
@@ -1225,14 +1226,14 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                     <span class="wval">{{ Math.round(row.weight * 100) }}%</span>
                   </div>
                 </template>
-              </el-table-column>
+              </AppTableColumn>
 
-              <el-table-column width="50">
+              <AppTableColumn>
                 <template #default="{ $index }">
                   <AppRowActions :actions="scoreItemRowActions($index)" :inline-limit="1" />
                 </template>
-              </el-table-column>
-            </el-table>
+              </AppTableColumn>
+            </AppDataTable>
 
             <el-button size="small" plain style="margin-top: 8px" :disabled="profileReadonly" @click="addItem">
               <template #icon><el-icon><Plus /></el-icon></template>
@@ -1250,24 +1251,24 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </el-button>
             </div>
             <div v-if="settings.previewExpanded && runRows.length" class="run-table-wrap">
-            <el-table :data="runRows" size="small" border height="100%" class="run-table">
-              <el-table-column label="#" width="46">
+            <AppDataTable :data="runRows" size="small" border height="100%" class="run-table">
+              <AppTableColumn label="#">
                 <template #default="{ row }">{{ row.rank }}</template>
-              </el-table-column>
-              <el-table-column prop="code" label="代码" width="100" />
-              <el-table-column prop="name" label="名称" width="110" />
-              <el-table-column label="综合分" width="90">
+              </AppTableColumn>
+              <AppTableColumn prop="code" label="代码" />
+              <AppTableColumn prop="name" label="名称" />
+              <AppTableColumn label="综合分">
                 <template #default="{ row }"><b style="color: #d92626">{{ row.total_score }}</b></template>
-              </el-table-column>
-              <el-table-column label="评级" width="104">
+              </AppTableColumn>
+              <AppTableColumn label="评级">
                 <template #default="{ row }">
                   <el-tag v-if="row.grade" :type="gradeType(row.grade)" size="small" effect="light">
                     {{ row.grade }}
                   </el-tag>
                   <span v-else>—</span>
                 </template>
-              </el-table-column>
-              <el-table-column label="分项达标分" min-width="300">
+              </AppTableColumn>
+              <AppTableColumn label="分项达标分">
                 <template #default="{ row }">
                   <div class="subchips">
                     <span
@@ -1280,8 +1281,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                     </span>
                   </div>
                 </template>
-              </el-table-column>
-            </el-table>
+              </AppTableColumn>
+            </AppDataTable>
             </div>
           </section>
         </div>
@@ -1307,13 +1308,13 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div class="tech-table-wrap">
         <AppDataTable :data="techRows" size="small" :border="tableBorder('techTable')"
                   :default-sort="techDefaultSort" @sort-change="onTechSortChange">
-          <el-table-column prop="name_cn" label="名称" width="130" sortable="custom" />
-          <el-table-column prop="key" label="标识" min-width="180" show-overflow-tooltip>
+          <AppTableColumn prop="name_cn" label="名称" sortable="custom" />
+          <AppTableColumn prop="key" label="标识" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="mono">{{ row.key }}</span>
             </template>
-          </el-table-column>
-          <el-table-column prop="catOrder" label="分类" width="280" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn prop="catOrder" label="分类" sortable="custom">
             <template #default="{ row }">
               <el-select
                 :model-value="row.categories"
@@ -1325,43 +1326,43 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 <el-option v-for="cat in allCategories" :key="cat" :label="cat" :value="cat" />
               </el-select>
             </template>
-          </el-table-column>
-          <el-table-column prop="typeLabel" label="类型" width="74" sortable="custom" />
-          <el-table-column prop="srcLabel" label="来源" width="88" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn prop="typeLabel" label="类型" sortable="custom" />
+          <AppTableColumn prop="srcLabel" label="来源" sortable="custom">
             <template #default="{ row }">
               <SystemBuiltinTag v-if="row.is_builtin" />
               <el-tag v-else type="warning" size="small" effect="plain">自定义</el-tag>
             </template>
-          </el-table-column>
-          <el-table-column prop="hasParams" label="有无参数" width="100" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn prop="hasParams" label="有无参数" sortable="custom">
             <template #default="{ row }">
               <span v-if="!row.params.length" class="tip">无</span>
               <span v-else>
                 <span v-for="p in row.params" :key="p.name" class="subchip">{{ p.label }}({{ p.default }})</span>
               </span>
             </template>
-          </el-table-column>
-          <el-table-column label="计算 / 表达式" min-width="170">
+          </AppTableColumn>
+          <AppTableColumn label="计算 / 表达式">
             <template #default="{ row }">
               <code v-if="row.expression" class="expr">{{ row.expression }}</code>
               <span v-else class="tip">系统内置·代码向量化计算（无 DSL 表达式）</span>
             </template>
-          </el-table-column>
-          <el-table-column label="说明 / 用法" min-width="280">
+          </AppTableColumn>
+          <AppTableColumn label="说明 / 用法">
             <template #default="{ row }">
               <span class="usage">{{ row.desc || '—' }}</span>
             </template>
-          </el-table-column>
-          <el-table-column label="启用" width="64">
+          </AppTableColumn>
+          <AppTableColumn label="启用">
             <template #default="{ row }">
               <el-switch v-permission="'indicator:def-manage'" :model-value="row.enabled" size="small" @change="toggleEnabled(row)" />
             </template>
-          </el-table-column>
-          <el-table-column label="操作" width="60">
+          </AppTableColumn>
+          <AppTableColumn label="操作">
             <template #default="{ row }">
               <AppRowActions :actions="indicatorDefRowActions(row)" :inline-limit="1" />
             </template>
-          </el-table-column>
+          </AppTableColumn>
         </AppDataTable>
         </div>
 

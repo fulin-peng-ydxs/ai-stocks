@@ -170,7 +170,18 @@ const stubs = {
   },
   ElTableColumn: true,
   LayoutHost: {
-    template: '<div><slot name="action"/><slot name="summary"/><slot name="filters"/><slot name="main"/><slot name="footer"/><slot name="overlays"/></div>',
+    template: `
+      <div>
+        <slot name="action"/>
+        <slot name="summary"/>
+        <slot name="quality"/>
+        <slot name="filters"/>
+        <slot name="workspace"/>
+        <slot name="main"/>
+        <slot name="footer"/>
+        <slot name="overlays"/>
+      </div>
+    `,
   },
   AppDataTable: {
     props: ['loading', 'data'],
@@ -324,6 +335,11 @@ describe('代表性页面四态回归', () => {
     })
     ;(dataApi.getStockQuality as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('stock quality failed'))
     const wrapper = await mountView(OverviewView)
+    const stockTab = wrapper.findAll('[role="tab"]')
+      .find((tab) => tab.text().includes('逐股分层体检'))
+    expect(stockTab).toBeTruthy()
+    await stockTab!.trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('逐股质量加载失败')
     expect(wrapper.text()).toContain('stock quality failed')
     expect(wrapper.text()).not.toContain('数据概览加载失败')

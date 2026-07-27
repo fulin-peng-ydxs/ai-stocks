@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -299,25 +300,25 @@ onMounted(async () => {
         @sort-change="onTableSortChange"
         @row-click="gotoStock"
       >
-        <el-table-column label="#" prop="rank" width="60" sortable :sort-by="(r:any)=>r.rank">
+        <AppTableColumn label="#" prop="rank" sortable :sort-by="(r:any)=>r.rank">
           <template #default="{ row }">{{ row.rank }}</template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('code')" label="代码" prop="code" width="110" sortable />
-        <el-table-column v-if="colVisible('name')" label="名称" prop="name" width="120">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />
+        <AppTableColumn v-if="colVisible('name')" label="名称" prop="name">
           <template #default="{ row }">{{ row.name || '—' }}</template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('score')" label="综合分" prop="total_score" width="100" sortable :sort-by="(r:any)=>r.total_score">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score">
           <template #default="{ row }">
             <strong class="score">{{ row.total_score }}</strong>
           </template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('grade')" label="评级" width="120">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('grade')" label="评级">
           <template #default="{ row }">
             <el-tag v-if="row.grade" :type="gradeType(row.grade)" effect="light">{{ row.grade }}</el-tag>
             <span v-else class="muted">—</span>
           </template>
-        </el-table-column>
-        <el-table-column v-if="colVisible('subScores') && displaySubKeys.length" label="分项达标分" min-width="320">
+        </AppTableColumn>
+        <AppTableColumn v-if="colVisible('subScores') && displaySubKeys.length" label="分项达标分">
           <template #default="{ row }">
             <div class="subchips">
               <span
@@ -330,7 +331,7 @@ onMounted(async () => {
               </span>
             </div>
           </template>
-        </el-table-column>
+        </AppTableColumn>
       </AppDataTable>
     </el-card>
     </template>

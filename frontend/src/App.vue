@@ -473,7 +473,7 @@ async function onLogout() {
 
       <el-container class="workspace" data-testid="app-workspace-surface">
         <WorkspaceTabs v-if="navigationMode === 'sidebar-tabs' && shellReady" />
-        <el-main class="main">
+        <el-main class="main" data-testid="app-main-surface">
           <div v-if="!shellReady" class="shell-gate">
             <template v-if="auth.menusStatus === 'error'">
               <div class="shell-gate-title">权限与菜单加载失败</div>
@@ -1459,7 +1459,7 @@ button.topbar-status:focus-visible {
 .main {
   background: transparent;
   padding: 20px 24px;
-  overflow: hidden;          /* 禁止整页滚动：超高内容由各页内部成长区自行滚动 */
+  overflow: clip;            /* 外壳不是滚动容器，也禁止 scrollIntoView 产生隐藏 scrollTop */
   display: flex;
   flex-direction: column;
 }

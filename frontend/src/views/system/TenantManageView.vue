@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 // 租户管理页（多租户 RBAC stage3·T14，R14）。承接 tenant-management.html（去勾选列、无批量工具条）。
 // 列表 + 筛选 + 分页 + 编辑弹窗（含指定管理员）+ 行内启停 + 查看用户跳转。整页仅系统管理员可达（require_system）。
 import { computed, onMounted, ref, watch } from 'vue'
@@ -303,36 +304,36 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           @page-change="(p: number) => { page = p; load() }"
           @size-change="(s: number) => { size = s; page = 1; load() }"
         >
-          <el-table-column label="租户名" prop="name" min-width="180" fixed="left" show-overflow-tooltip sortable="custom">
+          <AppTableColumn label="租户名" prop="name" fixed="left" show-overflow-tooltip sortable="custom">
             <template #default="{ row }">
               {{ row.name }}
               <SystemBuiltinTag v-if="row.id === DEFAULT_TENANT_ID" class="builtin-tag" />
             </template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('id')" label="租户 ID" prop="id" width="150">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('id')" label="租户 ID" prop="id">
             <template #default="{ row }"><span class="mono">{{ row.id }}</span></template>
-          </el-table-column>
-          <el-table-column label="状态" width="92">
+          </AppTableColumn>
+          <AppTableColumn label="状态">
             <template #default="{ row }">
               <el-tag :type="STATUS_TAG[row.status]?.type ?? 'info'" :style="statusTagStyle(row.status)" size="small" effect="plain">
                 {{ statusLabel(row.status) }}
               </el-tag>
             </template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('admin')" label="租户管理员" min-width="150" show-overflow-tooltip>
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('admin')" label="租户管理员" show-overflow-tooltip>
             <template #default="{ row }">{{ row.admin_account || '—' }}</template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('userCount')" label="用户数" prop="userCount" width="90" align="right" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('userCount')" label="用户数" prop="userCount" align="right" sortable="custom">
             <template #default="{ row }">{{ row.user_count ?? 0 }}</template>
-          </el-table-column>
-          <el-table-column v-if="colVisible('created')" label="创建时间" prop="created" width="160" sortable="custom">
+          </AppTableColumn>
+          <AppTableColumn v-if="colVisible('created')" label="创建时间" prop="created" sortable="custom">
             <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="230" fixed="right">
+          </AppTableColumn>
+          <AppTableColumn label="操作" fixed="right">
             <template #default="{ row }">
               <AppRowActions :actions="tenantRowActions(row)" :inline-limit="3" />
             </template>
-          </el-table-column>
+          </AppTableColumn>
         </AppDataTable>
         </template>
       </el-card>

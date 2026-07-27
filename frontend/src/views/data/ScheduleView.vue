@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -310,37 +312,37 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           retry
           @retry="load"
         />
-        <el-table :data="jobs" size="small" class="jobs-tbl" v-loading="loading">
-          <el-table-column label="名称" prop="name" min-width="140" show-overflow-tooltip />
-          <el-table-column label="任务类型" width="120">
+        <AppDataTable :data="jobs" size="small" class="jobs-tbl" :loading="loading" :fill="false">
+          <AppTableColumn label="名称" prop="name" show-overflow-tooltip />
+          <AppTableColumn label="任务类型">
             <template #default="{ row }">{{ taskDisplayLabel(row.task_type, row.params) }}</template>
-          </el-table-column>
-          <el-table-column label="频率" prop="freq_text" min-width="150" show-overflow-tooltip />
-          <el-table-column label="仅交易日" width="90" align="center">
+          </AppTableColumn>
+          <AppTableColumn label="频率" prop="freq_text" show-overflow-tooltip />
+          <AppTableColumn label="仅交易日" align="center">
             <template #default="{ row }">
               <el-tag :type="row.trading_day_only ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.trading_day_only ? '是' : '否' }}
               </el-tag>
             </template>
-          </el-table-column>
-          <el-table-column label="启用" width="80" align="center">
+          </AppTableColumn>
+          <AppTableColumn label="启用" align="center">
             <template #default="{ row }">
               <el-switch v-permission="'data-schedule:manage'" :model-value="row.enabled" :loading="togglingId === row.id" @change="toggleEnabled(row)" />
             </template>
-          </el-table-column>
-          <el-table-column label="下次触发" width="160">
+          </AppTableColumn>
+          <AppTableColumn label="下次触发">
             <template #default="{ row }">{{ row.enabled ? fmtTime(row.next_run_time) : '—' }}</template>
-          </el-table-column>
-          <el-table-column label="最近触发" width="160">
+          </AppTableColumn>
+          <AppTableColumn label="最近触发">
             <template #default="{ row }">{{ fmtTime(row.last_run_at) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="180" fixed="right">
+          </AppTableColumn>
+          <AppTableColumn label="操作" fixed="right">
             <template #default="{ row }">
               <AppRowActions :actions="scheduleRowActions(row)" :inline-limit="2" />
             </template>
-          </el-table-column>
+          </AppTableColumn>
           <template #empty>暂无定时任务，点右上「新建定时任务」添加</template>
-        </el-table>
+        </AppDataTable>
         </template>
       </el-card>
 

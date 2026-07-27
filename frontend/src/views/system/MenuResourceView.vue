@@ -5,9 +5,11 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox, ElTree } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import IconPicker from '@/components/IconPicker.vue'
 import MenuIcon from '@/components/MenuIcon.vue'
@@ -296,6 +298,27 @@ const resDraft = ref<{ code: string; name: string; type: string; apiMethod: stri
   { code: '', name: '', type: 'api', apiMethod: 'GET', apiPath: '' },
 )
 const resSaving = ref(false)
+const resourceRows = computed<Resource[]>(() => {
+  if (editingId.value !== NEW_ROW) return resources.value
+  return [
+    ...resources.value,
+    {
+      id: NEW_ROW,
+      menu_id: activeId.value,
+      code: '',
+      name: '',
+      type: 'api',
+      api_method: 'GET',
+      api_path: null,
+      sort: resources.value.length,
+      is_builtin: false,
+    },
+  ]
+})
+
+function resourceRowClassName({ row }: { row: Resource }): string {
+  return editingId.value === row.id ? 'mr-edit-row' : ''
+}
 
 function bindingText(r: Resource): string {
   return r.api_path ? `${r.api_method || ''} ${r.api_path}`.trim() : '— 纯前端动作'
@@ -566,88 +589,79 @@ onMounted(() => { loadTree() })
                     新增功能点
                   </el-button>
                 </div>
-                <!-- 表内联增删改（承接原型，无编辑 dialog）；窄栏体内横滚 -->
-                <div class="mr-tbl-scroll" v-loading="resLoading">
-                  <table class="mr-ftable" aria-label="功能点">
-                    <thead>
-                      <tr><th style="min-width: 190px">功能码</th><th style="min-width: 120px">名称</th>
-                        <th style="width: 92px">类型</th><th style="min-width: 220px">绑定接口</th><th style="width: 116px">操作</th></tr>
-                    </thead>
-                    <tbody>
-                      <template v-for="r in resources" :key="r.id">
-                        <!-- 编辑态：内联输入 -->
-                        <tr v-if="editingId === r.id" class="mr-edit-row">
-                          <td><el-input v-model="resDraft.code" size="small" class="mono" placeholder="menu:action" /></td>
-                          <td><el-input v-model="resDraft.name" size="small" placeholder="名称" /></td>
-                          <td>
-                            <el-select v-model="resDraft.type" size="small">
-                              <el-option label="接口" value="api" /><el-option label="按钮" value="button" />
-                            </el-select>
-                          </td>
-                          <td>
-                            <div class="mr-bind">
-                              <el-select v-if="resDraft.type === 'api'" v-model="resDraft.apiMethod" size="small" style="width: 92px">
-                                <el-option v-for="mth in ['GET','POST','PUT','DELETE']" :key="mth" :label="mth" :value="mth" />
-                              </el-select>
-                              <el-input v-model="resDraft.apiPath" size="small" class="mono" placeholder="/api/…（按钮可空）" />
-                            </div>
-                          </td>
-                          <td>
-                            <AppRowActions :actions="resourceEditRowActions()" :inline-limit="2" />
-                          </td>
-                        </tr>
-                        <!-- 展示态 -->
-                        <tr v-else>
-                          <td class="mr-code-cell">
-                            <span class="mono">{{ r.code }}</span>
-                            <SystemBuiltinTag v-if="r.is_builtin" />
-                          </td>
-                          <td>{{ r.name }}</td>
-                          <td><el-tag size="small" effect="plain" :type="r.type === 'api' ? 'success' : 'warning'">{{ r.type === 'api' ? '接口' : '按钮' }}</el-tag></td>
-                          <td class="mono" :class="{ dim: !r.api_path }">{{ bindingText(r) }}</td>
-                          <td>
-                            <AppRowActions :actions="resourceRowActions(r)" :inline-limit="1" />
-                          </td>
-                        </tr>
-                      </template>
-                      <!-- 新增行 -->
-                      <tr v-if="editingId === NEW_ROW" class="mr-edit-row">
-                        <td><el-input v-model="resDraft.code" size="small" class="mono" placeholder="menu:action（全局唯一）" /></td>
-                        <td><el-input v-model="resDraft.name" size="small" placeholder="名称" /></td>
-                        <td>
-                          <el-select v-model="resDraft.type" size="small">
-                            <el-option label="接口" value="api" /><el-option label="按钮" value="button" />
-                          </el-select>
-                        </td>
-                        <td>
-                          <div class="mr-bind">
-                            <el-select v-if="resDraft.type === 'api'" v-model="resDraft.apiMethod" size="small" style="width: 92px">
-                              <el-option v-for="mth in ['GET','POST','PUT','DELETE']" :key="mth" :label="mth" :value="mth" />
-                            </el-select>
-                            <el-input v-model="resDraft.apiPath" size="small" class="mono" placeholder="/api/…（按钮可空）" />
-                          </div>
-                        </td>
-                        <td>
-                          <AppRowActions :actions="resourceEditRowActions()" :inline-limit="2" />
-                        </td>
-                      </tr>
-                      <tr v-if="resError">
-                        <td colspan="5" class="mr-empty">
-                          <AppStateBlock
-                            state="error"
-                            size="inline"
-                            title="功能点加载失败"
-                            retry
-                            @retry="retryResources"
-                          />
-                        </td>
-                      </tr>
-                      <tr v-else-if="!resources.length && editingId !== NEW_ROW">
-                        <td colspan="5" class="mr-empty">该菜单暂无功能点</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                <!-- 表内联增删改（承接原型，无编辑 dialog）；宽度由统一语义列规则自适应。 -->
+                <AppStateBlock
+                  v-if="resError"
+                  state="error"
+                  size="inline"
+                  title="功能点加载失败"
+                  retry
+                  @retry="retryResources"
+                />
+                <AppDataTable
+                  v-else
+                  class="resource-table"
+                  kind="wide-table"
+                  :data="resourceRows"
+                  :loading="resLoading"
+                  :fill="false"
+                  row-key="id"
+                  empty-text="该菜单暂无功能点"
+                  :row-class-name="resourceRowClassName"
+                  aria-label="功能点"
+                >
+                  <AppTableColumn label="功能码" prop="code" role="key">
+                    <template #default="{ row: r }">
+                      <el-input
+                        v-if="editingId === r.id"
+                        v-model="resDraft.code"
+                        size="small"
+                        class="mono"
+                        :placeholder="r.id === NEW_ROW ? 'menu:action（全局唯一）' : 'menu:action'"
+                      />
+                      <div v-else class="mr-code-cell">
+                        <span class="mono">{{ r.code }}</span>
+                        <SystemBuiltinTag v-if="r.is_builtin" />
+                      </div>
+                    </template>
+                  </AppTableColumn>
+                  <AppTableColumn label="名称" prop="name">
+                    <template #default="{ row: r }">
+                      <el-input v-if="editingId === r.id" v-model="resDraft.name" size="small" placeholder="名称" />
+                      <span v-else>{{ r.name }}</span>
+                    </template>
+                  </AppTableColumn>
+                  <AppTableColumn label="类型" prop="type" role="status">
+                    <template #default="{ row: r }">
+                      <el-select v-if="editingId === r.id" v-model="resDraft.type" size="small">
+                        <el-option label="接口" value="api" />
+                        <el-option label="按钮" value="button" />
+                      </el-select>
+                      <el-tag v-else size="small" effect="plain" :type="r.type === 'api' ? 'success' : 'warning'">
+                        {{ r.type === 'api' ? '接口' : '按钮' }}
+                      </el-tag>
+                    </template>
+                  </AppTableColumn>
+                  <AppTableColumn label="绑定接口" prop="api_path" role="description">
+                    <template #default="{ row: r }">
+                      <div v-if="editingId === r.id" class="mr-bind">
+                        <el-select v-if="resDraft.type === 'api'" v-model="resDraft.apiMethod" size="small" class="mr-method-select">
+                          <el-option v-for="mth in ['GET','POST','PUT','DELETE']" :key="mth" :label="mth" :value="mth" />
+                        </el-select>
+                        <el-input v-model="resDraft.apiPath" size="small" class="mono" placeholder="/api/…（按钮可空）" />
+                      </div>
+                      <span v-else class="mono" :class="{ dim: !r.api_path }">{{ bindingText(r) }}</span>
+                    </template>
+                  </AppTableColumn>
+                  <AppTableColumn label="操作" role="action">
+                    <template #default="{ row: r }">
+                      <AppRowActions
+                        :actions="editingId === r.id ? resourceEditRowActions() : resourceRowActions(r)"
+                        :inline-limit="editingId === r.id ? 2 : 1"
+                      />
+                    </template>
+                  </AppTableColumn>
+                </AppDataTable>
               </div>
             </div>
 
@@ -766,25 +780,11 @@ onMounted(() => { loadTree() })
 .mono :deep(input), .mono { font-family: var(--app-font-family-mono); }
 .hint { font-size: var(--app-font-size-micro); color: var(--el-text-color-placeholder); }
 .mr-func-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-/* 功能点内联表：窄栏体内横滚，列不被压 */
-.mr-tbl-scroll { overflow-x: auto; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
-.mr-ftable { width: 100%; min-width: 600px; border-collapse: collapse; font-size: var(--app-font-size-table); }
-.mr-ftable thead th { background: var(--el-fill-color-light); color: var(--el-text-color-regular); font-weight: var(--app-font-weight-section);
-  text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--el-border-color-lighter); white-space: nowrap; }
-.mr-ftable tbody td { padding: 7px 12px; border-bottom: 1px solid var(--el-border-color-lighter); color: var(--el-text-color-regular); vertical-align: middle; }
-.mr-ftable tbody tr:last-child td { border-bottom: none; }
-.mr-ftable .dim { color: var(--el-text-color-placeholder); }
-.mr-ftable .mr-empty {
-  text-align: center;
-  color: var(--app-empty-text);
-  padding: 18px;
-  font-size: var(--app-font-size-table);
-}
-.mr-ftable .mr-empty > span {
-  margin-right: 6px;
-}
-.mr-edit-row td { background: var(--el-fill-color-lighter); }
+.resource-table { overflow: hidden; border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+.resource-table :deep(.mr-edit-row > td) { background: var(--el-fill-color-lighter); }
+.resource-table :deep(.dim) { color: var(--el-text-color-placeholder); }
 .mr-bind { display: flex; gap: var(--app-space-control-gap); }
+.mr-method-select { flex: 0 0 92px; }
 .mr-code-cell { display: flex; align-items: center; gap: var(--app-space-2); white-space: nowrap; }
 .mr-detail-foot { border-top: 1px solid var(--el-border-color-lighter); padding: 12px 16px;
   display: flex; align-items: center; justify-content: space-between; }

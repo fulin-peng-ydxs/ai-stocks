@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -627,15 +628,15 @@ onMounted(async () => {
             @page-change="(p: number) => { taskPage = p; loadTasks() }"
             @size-change="(s: number) => { taskSize = s; taskPage = 1; loadTasks() }"
           >
-            <el-table-column label="任务ID" width="220" show-overflow-tooltip>
+            <AppTableColumn label="任务ID" show-overflow-tooltip>
               <template #default="{ row }"><span class="task-id">{{ row.id }}</span></template>
-            </el-table-column>
-            <el-table-column label="类型" prop="type" width="150" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="类型" prop="type" sortable="custom">
               <template #default="{ row }">
                 {{ taskDisplayLabel(row.task_type, row.params) }}
               </template>
-            </el-table-column>
-            <el-table-column label="来源" width="150" show-overflow-tooltip>
+            </AppTableColumn>
+            <AppTableColumn label="来源" show-overflow-tooltip>
               <template #default="{ row }">
                 <el-tag v-if="row.trigger_source === 'scheduled'" type="warning" size="small" effect="plain">
                   定时{{ row.job_name ? `·${row.job_name}` : '' }}
@@ -644,32 +645,32 @@ onMounted(async () => {
                   {{ row.job_name ? `手动·${row.job_name}` : '手动' }}
                 </el-tag>
               </template>
-            </el-table-column>
-            <el-table-column label="状态" prop="status" width="90" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="状态" prop="status" sortable="custom">
               <template #default="{ row }">
                 <el-tag :type="taskStatusType(row)" size="small" effect="dark">
                   {{ taskStatusLabel(row) }}
                 </el-tag>
               </template>
-            </el-table-column>
-            <el-table-column label="进度" width="140">
+            </AppTableColumn>
+            <AppTableColumn label="进度">
               <template #default="{ row }">
                 <el-progress :percentage="Math.round((row.progress ?? 0) * 100)" :stroke-width="10"
                   :status="row.status === 'failed' || row.status === 'interrupted' ? 'exception' : row.status === 'done' ? 'success' : undefined" />
               </template>
-            </el-table-column>
-            <el-table-column label="信息" prop="message" show-overflow-tooltip />
-            <el-table-column label="截止时间" prop="time" width="160" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="信息" prop="message" show-overflow-tooltip />
+            <AppTableColumn label="截止时间" prop="time" sortable="custom">
               <template #default="{ row }">{{ (row.updated_at || '').slice(0, 19) }}</template>
-            </el-table-column>
-            <el-table-column label="总耗时" width="100">
+            </AppTableColumn>
+            <AppTableColumn label="总耗时">
               <template #default="{ row }">{{ taskDuration(row) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="130">
+            </AppTableColumn>
+            <AppTableColumn label="操作">
               <template #default="{ row }">
                 <AppRowActions :actions="taskRowActions(row)" :inline-limit="2" />
               </template>
-            </el-table-column>
+            </AppTableColumn>
           </AppDataTable>
           </template>
         </div>
@@ -731,31 +732,31 @@ onMounted(async () => {
             @page-change="(p: number) => { logPage = p; loadLogs() }"
             @size-change="(s: number) => { logSize = s; logPage = 1; loadLogs() }"
           >
-            <el-table-column label="目标表" prop="table" width="130" sortable="custom">
+            <AppTableColumn label="目标表" prop="table" sortable="custom">
               <template #default="{ row }">{{ row.table_name }}</template>
-            </el-table-column>
-            <el-table-column label="数据源" width="92">
+            </AppTableColumn>
+            <AppTableColumn label="数据源">
               <template #default="{ row }">{{ row.source === 'akshare' ? 'AKShare' : row.source === 'baostock' ? 'BaoStock' : row.source }}</template>
-            </el-table-column>
-            <el-table-column label="结果" prop="status" width="76" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="结果" prop="status" sortable="custom">
               <template #default="{ row }">
                 <el-tag :type="updateLogType[row.status] ?? 'info'" size="small" effect="plain">
                   {{ row.status === 'success' ? '成功' : row.status === 'failed' ? '失败' : row.status === 'partial' ? '部分' : row.status }}
                 </el-tag>
               </template>
-            </el-table-column>
-            <el-table-column label="行数" prop="row_count" width="70" align="right" />
-            <el-table-column label="区间" width="180">
+            </AppTableColumn>
+            <AppTableColumn label="行数" prop="row_count" align="right" />
+            <AppTableColumn label="区间">
               <template #default="{ row }">{{ row.date_start ? `${row.date_start} ~ ${row.date_end || row.date_start}` : '—' }}</template>
-            </el-table-column>
-            <el-table-column label="详情 / 失败原因" min-width="220" show-overflow-tooltip>
+            </AppTableColumn>
+            <AppTableColumn label="详情 / 失败原因" show-overflow-tooltip>
               <template #default="{ row }">
                 <span :class="{ 'fail-detail': row.status === 'failed' }">{{ row.detail || (row.status === 'success' ? '—' : '') }}</span>
               </template>
-            </el-table-column>
-            <el-table-column label="时间" prop="time" width="160" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="时间" prop="time" sortable="custom">
               <template #default="{ row }">{{ (row.updated_at || '').slice(0, 19) }}</template>
-            </el-table-column>
+            </AppTableColumn>
           </AppDataTable>
           </template>
         </div>

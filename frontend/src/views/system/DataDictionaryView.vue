@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -573,16 +574,16 @@ onBeforeUnmount(() => {
               @page-change="pageChanged"
               @size-change="pageSizeChanged"
             >
-              <el-table-column v-if="colVisible('code')" label="code" prop="code" width="150" show-overflow-tooltip sortable="custom">
+              <AppTableColumn v-if="colVisible('code')" label="code" prop="code" show-overflow-tooltip sortable="custom">
                 <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>
-              </el-table-column>
-              <el-table-column v-if="colVisible('label')" label="名称" prop="label" min-width="150" show-overflow-tooltip sortable="custom">
+              </AppTableColumn>
+              <AppTableColumn v-if="colVisible('label')" label="名称" prop="label" show-overflow-tooltip sortable="custom">
                 <template #default="{ row }">
                   <el-tag v-if="row.color" effect="plain" :style="dictTagStyle(row.color)">{{ row.label }}</el-tag>
                   <span v-else>{{ row.label }}</span>
                 </template>
-              </el-table-column>
-              <el-table-column v-if="colVisible('color')" label="颜色" prop="color" width="122">
+              </AppTableColumn>
+              <AppTableColumn v-if="colVisible('color')" label="颜色" prop="color">
                 <template #default="{ row }">
                   <span v-if="row.color" class="dict-color-cell">
                     <i class="dict-color-swatch" :style="dictColorSwatchStyle(row.color)" />
@@ -590,9 +591,9 @@ onBeforeUnmount(() => {
                   </span>
                   <span v-else class="muted">-</span>
                 </template>
-              </el-table-column>
-              <el-table-column v-if="colVisible('sort')" label="排序" prop="sort" width="90" sortable="custom" />
-              <el-table-column v-if="colVisible('enabled')" label="启用" prop="enabled" width="110" sortable="custom">
+              </AppTableColumn>
+              <AppTableColumn v-if="colVisible('sort')" label="排序" prop="sort" sortable="custom" />
+              <AppTableColumn v-if="colVisible('enabled')" label="启用" prop="enabled" sortable="custom">
                 <template #default="{ row }">
                   <el-switch
                     v-model="row.enabled"
@@ -601,16 +602,16 @@ onBeforeUnmount(() => {
                     @change="(value: boolean) => toggleItem(row, value)"
                   />
                 </template>
-              </el-table-column>
-              <el-table-column v-if="colVisible('remark')" label="备注" prop="remark" min-width="220" show-overflow-tooltip />
-              <el-table-column v-if="colVisible('updated_at')" label="更新时间" prop="updated_at" width="170" sortable="custom">
+              </AppTableColumn>
+              <AppTableColumn v-if="colVisible('remark')" label="备注" prop="remark" show-overflow-tooltip />
+              <AppTableColumn v-if="colVisible('updated_at')" label="更新时间" prop="updated_at" sortable="custom">
                 <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
-              </el-table-column>
-              <el-table-column label="操作" width="132" fixed="right">
+              </AppTableColumn>
+              <AppTableColumn label="操作" fixed="right">
                 <template #default="{ row }">
                   <AppRowActions :actions="itemRowActions(row)" :inline-limit="1" />
                 </template>
-              </el-table-column>
+              </AppTableColumn>
               <template #empty>
                 <el-empty class="app-empty" :description="activeType ? '暂无字典项' : '请选择字典类型'">
                   <el-button v-if="activeType" v-permission="'dict:item-manage'" type="success" plain @click="openCreateItem">新建字典项</el-button>

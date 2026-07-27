@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import {
   computed,
   onActivated,
@@ -475,35 +476,35 @@ onBeforeUnmount(detachKeyboard)
             :default-sort="historyDefaultSort"
             @sort-change="onHistorySortChange"
             @row-click="(r:SessionRow)=>openSession(r.id)">
-            <el-table-column label="模式" width="90">
+            <AppTableColumn label="模式">
               <template #default="{ row }">{{ modeText(row.mode) }}·{{ row.n_rounds }}</template>
-            </el-table-column>
-            <el-table-column label="评级" width="70">
+            </AppTableColumn>
+            <AppTableColumn label="评级">
               <template #default="{ row }">
                 <span v-if="row.grade" class="grade-chip" :style="{ background: gradeColor(row.grade) }">{{ row.grade }}</span>
                 <span v-else class="muted">进行中</span>
               </template>
-            </el-table-column>
-            <el-table-column label="评分" prop="score" width="70" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="评分" prop="score" sortable="custom">
               <template #default="{ row }">{{ row.score != null ? row.score.toFixed(1) : '--' }}</template>
-            </el-table-column>
-            <el-table-column label="收益" prop="total_return" width="90" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="收益" prop="total_return" sortable="custom">
               <template #default="{ row }"><span :class="(row.total_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(row.total_return) }}</span></template>
-            </el-table-column>
-            <el-table-column label="胜率" prop="win_rate" width="80" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="胜率" prop="win_rate" sortable="custom">
               <template #default="{ row }">{{ row.win_rate != null ? (row.win_rate * 100).toFixed(0) + '%' : '--' }}</template>
-            </el-table-column>
-            <el-table-column label="开始时间" prop="created_at" min-width="140" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="开始时间" prop="created_at" sortable="custom">
               <template #default="{ row }">{{ row.created_at?.slice(0, 16) }}</template>
-            </el-table-column>
-            <el-table-column label="结束时间" prop="completed_at" min-width="140" sortable="custom">
+            </AppTableColumn>
+            <AppTableColumn label="结束时间" prop="completed_at" sortable="custom">
               <template #default="{ row }">{{ row.completed_at?.slice(0, 16) ?? '--' }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="72">
+            </AppTableColumn>
+            <AppTableColumn label="操作">
               <template #default="{ row }">
                 <AppRowActions :actions="sessionRowActions(row)" :inline-limit="1" />
               </template>
-            </el-table-column>
+            </AppTableColumn>
           </AppDataTable>
           </template>
           <el-pagination v-if="history.total > history.size" small layout="prev, pager, next"
@@ -603,15 +604,15 @@ onBeforeUnmount(detachKeyboard)
         </div>
 
         <el-card class="trades-card" shadow="never">
-          <el-table :data="round.trades" height="100%" size="small" empty-text="尚无成交">
-            <el-table-column label="相对日" width="80"><template #default="{ row }">D{{ row.rel_day }}</template></el-table-column>
-            <el-table-column label="方向" width="70"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></el-table-column>
-            <el-table-column label="成交价" width="90"><template #default="{ row }">{{ row.price.toFixed(2) }}</template></el-table-column>
-            <el-table-column label="手数" width="70"><template #default="{ row }">{{ row.hands }}</template></el-table-column>
-            <el-table-column label="盈亏" width="100"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ money(row.pnl) }}</span><span v-else class="muted">—</span></template></el-table-column>
-            <el-table-column label="收益率" width="90"><template #default="{ row }"><span v-if="row.return_pct != null" :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></el-table-column>
-            <el-table-column label="理由" min-width="120"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></el-table-column>
-          </el-table>
+          <AppDataTable :data="round.trades" height="100%" size="small" empty-text="尚无成交">
+            <AppTableColumn label="相对日"><template #default="{ row }">D{{ row.rel_day }}</template></AppTableColumn>
+            <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
+            <AppTableColumn label="成交价"><template #default="{ row }">{{ row.price.toFixed(2) }}</template></AppTableColumn>
+            <AppTableColumn label="手数"><template #default="{ row }">{{ row.hands }}</template></AppTableColumn>
+            <AppTableColumn label="盈亏"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ money(row.pnl) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="收益率"><template #default="{ row }"><span v-if="row.return_pct != null" :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="理由"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></AppTableColumn>
+          </AppDataTable>
         </el-card>
     </div>
     </template>
@@ -659,16 +660,16 @@ onBeforeUnmount(detachKeyboard)
             /></div>
             <div class="round-equity"><EquityChart :points="roundEquityPoints(rd, detail.initial_capital)" benchmark-code="满仓持有" /></div>
           </div>
-          <el-table :data="rd.trades" size="small" class="round-trades" empty-text="本回合无成交">
-            <el-table-column label="决策日" width="110"><template #default="{ row }">{{ row.decide_date }}</template></el-table-column>
-            <el-table-column label="成交日" width="110"><template #default="{ row }">{{ row.fill_date }}</template></el-table-column>
-            <el-table-column label="方向" width="70"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></el-table-column>
-            <el-table-column label="成交价" width="90"><template #default="{ row }">{{ row.price.toFixed(2) }}</template></el-table-column>
-            <el-table-column label="手数" width="70"><template #default="{ row }">{{ row.hands }}</template></el-table-column>
-            <el-table-column label="盈亏" width="100"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ money(row.pnl) }}</span><span v-else class="muted">—</span></template></el-table-column>
-            <el-table-column label="收益率" width="90"><template #default="{ row }"><span v-if="row.return_pct != null" :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></el-table-column>
-            <el-table-column label="理由" min-width="120"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></el-table-column>
-          </el-table>
+          <AppDataTable :data="rd.trades" size="small" class="round-trades" empty-text="本回合无成交" :fill="false">
+            <AppTableColumn label="决策日"><template #default="{ row }">{{ row.decide_date }}</template></AppTableColumn>
+            <AppTableColumn label="成交日"><template #default="{ row }">{{ row.fill_date }}</template></AppTableColumn>
+            <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
+            <AppTableColumn label="成交价"><template #default="{ row }">{{ row.price.toFixed(2) }}</template></AppTableColumn>
+            <AppTableColumn label="手数"><template #default="{ row }">{{ row.hands }}</template></AppTableColumn>
+            <AppTableColumn label="盈亏"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ money(row.pnl) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="收益率"><template #default="{ row }"><span v-if="row.return_pct != null" :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="理由"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></AppTableColumn>
+          </AppDataTable>
         </el-card>
 
         <el-card shadow="never" class="review-card">

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 /**
  * 系统组件工作区（P4 IA 重构起步，P6 补可视化预览）。
  *
@@ -280,35 +282,35 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               <span class="cat-title">{{ group.label }}</span>
               <span class="cat-count">{{ group.rows.length }}</span>
             </template>
-            <el-table :data="group.rows" row-key="kind" size="small">
-              <el-table-column label="组件" min-width="150">
+            <AppDataTable :data="group.rows" row-key="kind" size="small" :fill="false">
+              <AppTableColumn label="组件">
                 <template #default="{ row }">
                   <div class="comp-name">{{ row.label }}</div>
                   <div class="muted">{{ row.kind }}</div>
                 </template>
-              </el-table-column>
-              <el-table-column label="说明" min-width="180" show-overflow-tooltip>
+              </AppTableColumn>
+              <AppTableColumn label="说明" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.description }}</template>
-              </el-table-column>
-              <el-table-column label="最低尺寸" width="100">
+              </AppTableColumn>
+              <AppTableColumn label="最低尺寸">
                 <template #default="{ row }">{{ row.minW }}×{{ row.minH }}</template>
-              </el-table-column>
-              <el-table-column label="滚动" width="90">
+              </AppTableColumn>
+              <AppTableColumn label="滚动">
                 <template #default="{ row }">{{ scrollLabel(row.defaultScroll) }}</template>
-              </el-table-column>
-              <el-table-column label="能力" width="120">
+              </AppTableColumn>
+              <AppTableColumn label="能力">
                 <template #default="{ row }">
                   <el-tag v-if="row.canGrowMain" size="small" type="success" effect="plain">主区可成长</el-tag>
                   <el-tag v-if="row.reflowable" size="small" type="warning" effect="plain">可重排</el-tag>
                   <span v-if="!row.canGrowMain && !row.reflowable" class="muted">—</span>
                 </template>
-              </el-table-column>
-              <el-table-column label="专属配置能力" min-width="180">
+              </AppTableColumn>
+              <AppTableColumn label="专属配置能力">
                 <template #default="{ row }">
                   <span class="caps">{{ row.configCapabilities.join('、') || '—' }}</span>
                 </template>
-              </el-table-column>
-              <el-table-column label="已开放 Web 配置（可覆盖范围）" min-width="190">
+              </AppTableColumn>
+              <AppTableColumn label="已开放 Web 配置（可覆盖范围）">
                 <template #default="{ row }">
                   <div v-if="row.configurableFields.length" class="field-chips">
                     <el-tag v-for="f in row.configurableFields" :key="f.key" size="small" effect="plain">
@@ -317,14 +319,14 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
                   </div>
                   <span v-else class="muted">未开放</span>
                 </template>
-              </el-table-column>
-              <el-table-column label="消费页面" min-width="150">
+              </AppTableColumn>
+              <AppTableColumn label="消费页面">
                 <template #default="{ row }">
                   <span v-if="row.usagePages.length">{{ row.usagePages.join('、') }}</span>
                   <span v-else class="muted">暂无页面消费</span>
                 </template>
-              </el-table-column>
-              <el-table-column label="操作" width="92" fixed="right">
+              </AppTableColumn>
+              <AppTableColumn label="操作" fixed="right">
                 <template #default="{ row }">
                   <AppRowActions
                     :actions="componentRowActions(row)"
@@ -332,8 +334,8 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
                     :test-id="`component-catalog-${row.kind}`"
                   />
                 </template>
-              </el-table-column>
-            </el-table>
+              </AppTableColumn>
+            </AppDataTable>
           </el-collapse-item>
         </el-collapse>
       </section>
@@ -400,14 +402,14 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               <span class="db-title">可覆盖范围（在线编辑）</span>
               <HelpHint text="勾选某字段允许在哪些层被覆盖（预设 / 页面 / 个人）。灰色项=代码未声明、不可开放（安全红线）。组件默认值请到「预设管理」按预设设置。" />
             </div>
-            <el-table v-if="selected.configurableFields.length" :data="selected.configurableFields" size="small">
-              <el-table-column label="字段" min-width="130">
+            <AppDataTable v-if="selected.configurableFields.length" :data="selected.configurableFields" size="small" :fill="false">
+              <AppTableColumn label="字段">
                 <template #default="{ row }">
                   <div class="comp-name">{{ row.label }}</div>
                   <div class="muted">{{ row.key }}</div>
                 </template>
-              </el-table-column>
-              <el-table-column label="允许覆盖范围" min-width="200">
+              </AppTableColumn>
+              <AppTableColumn label="允许覆盖范围">
                 <template #default="{ row }">
                   <el-checkbox-group
                     v-permission="'layout:field-policy'"
@@ -422,8 +424,8 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
                     >{{ LAYER_LABELS[l] }}</el-checkbox>
                   </el-checkbox-group>
                 </template>
-              </el-table-column>
-              <el-table-column label="" width="96" align="right">
+              </AppTableColumn>
+              <AppTableColumn label="" align="right">
                 <template #default="{ row }">
                   <AppRowActions
                     v-if="row.overridden"
@@ -432,8 +434,8 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
                   />
                   <span v-else class="muted">默认</span>
                 </template>
-              </el-table-column>
-            </el-table>
+              </AppTableColumn>
+            </AppDataTable>
             <div v-else class="muted">该组件未登记受控字段——仅代码默认（default），无可在线收放的覆盖范围。</div>
           </div>
 

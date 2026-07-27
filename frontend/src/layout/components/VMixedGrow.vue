@@ -1,23 +1,21 @@
 <script setup lang="ts">
 /**
- * 混合成长区（规范 §8 / §4-F）：固定分析块（flex:0 0 auto 自然高）+ 一张主表/主图（flex:1 + 业务最低高 + 内部内滚）。
- * 容器 overflow:auto 兜底：放得下→主表 grow 填满内滚；放不下→容器整体滚动不裁切。
+ * 混合成长区（规范 §8 / §4-F）：固定分析块（flex:0 0 auto 自然高）+ 一张主表/主图（flex:1 + 内部内滚）。
+ * 组件目录的 minH 用于布局校验和设计预览；真实低视口中成长区必须允许收缩，
+ * 把有限空间交给表体滚动，不能反向撑高容器并切掉固定分析块。
  * 由 LayoutHost 在「多组件 + 恰一个 growMain」时选用，slot 内容按 slots[].id 具名传入。
  */
-import { COMPONENT_CATALOG } from '../components'
 import type { SlotSpec } from '../schema'
 
 const props = defineProps<{ slots: SlotSpec[] }>()
-
-const minHeightOf = (s: SlotSpec): number => s.minH ?? COMPONENT_CATALOG[s.component]?.minH ?? 0
 </script>
 
 <template>
-  <div class="v-mixed">
+  <div class="v-mixed" data-testid="layout-mixed-region">
     <template v-for="s in props.slots" :key="s.id">
       <div
         :class="s.growMain ? 'v-mixed-main' : 'v-mixed-fixed'"
-        :style="s.growMain ? { minHeight: minHeightOf(s) + 'px' } : undefined"
+        :data-testid="s.growMain ? 'layout-grow-region' : undefined"
       >
         <slot :name="s.id" />
       </div>
@@ -29,7 +27,7 @@ const minHeightOf = (s: SlotSpec): number => s.minH ?? COMPONENT_CATALOG[s.compo
 .v-mixed {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--app-space-3);

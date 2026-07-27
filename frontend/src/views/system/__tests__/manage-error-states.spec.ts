@@ -143,7 +143,7 @@ describe('菜单页 loadResources error+retry 闭环', () => {
       w.get(selector).element.textContent?.replace(/\s+/g, '')
 
     expect(normalizedText('.mname')).toBe('系统菜单系统内置')
-    expect(normalizedText('.mr-code-cell')).toBe('menu:view系统内置')
+    expect(normalizedText('.el-table__body .mr-code-cell')).toBe('menu:view系统内置')
   })
 
   it('快速切换菜单时忽略较早返回的功能点响应', async () => {

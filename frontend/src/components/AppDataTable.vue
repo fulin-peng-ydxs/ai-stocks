@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import AppPagination from '@/components/AppPagination.vue'
 import type { Sort } from 'element-plus'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+
+defineOptions({ inheritAttrs: false })
 
 type TableKind = 'data-table' | 'wide-table'
 type RowKey = string | ((row: any) => string)
@@ -14,7 +17,7 @@ interface PaginationConfig {
   small?: boolean
 }
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   data: unknown[]
   kind?: TableKind
   loading?: boolean
@@ -29,17 +32,36 @@ withDefaults(defineProps<{
   border?: boolean
   framed?: boolean
   emptyText?: string
+  ariaLabel?: string
   pagination?: PaginationConfig
+  fill?: boolean
 }>(), {
   kind: 'data-table',
   loading: false,
-  height: '100%',
   size: 'default',
   clickable: false,
   stripe: false,
   border: false,
   framed: false,
+  fill: true,
 })
+
+const resolvedHeight = computed(() => props.height ?? (props.fill ? '100%' : undefined))
+const tableRef = ref<{ $el?: HTMLElement } | null>(null)
+
+function syncSemanticTableLabels(): void {
+  void nextTick(() => {
+    const root = tableRef.value?.$el
+    if (!root || !props.ariaLabel) return
+    root.querySelector<HTMLElement>('.el-table__header')
+      ?.setAttribute('aria-label', `${props.ariaLabel}表头`)
+    root.querySelector<HTMLElement>('.el-table__body')
+      ?.setAttribute('aria-label', props.ariaLabel)
+  })
+}
+
+onMounted(syncSemanticTableLabels)
+watch(() => props.ariaLabel, syncSemanticTableLabels)
 
 const emit = defineEmits<{
   'sort-change': [value: Sort]
@@ -55,6 +77,8 @@ const emit = defineEmits<{
     :class="[
       `app-data-table--${kind}`,
       {
+        'app-data-table--fill': fill,
+        'app-data-table--auto': !fill,
         'app-data-table--clickable': clickable,
         'app-data-table--framed': framed,
         'app-data-table--with-pager': Boolean(pagination),
@@ -62,9 +86,12 @@ const emit = defineEmits<{
     ]"
   >
     <el-table
+      ref="tableRef"
       v-bind="$attrs"
       :data="data"
-      :height="height"
+      :fit="true"
+      :aria-label="ariaLabel"
+      :height="resolvedHeight"
       :size="size"
       :row-key="rowKey"
       :default-sort="defaultSort"
@@ -102,9 +129,19 @@ const emit = defineEmits<{
 .app-data-table {
   display: flex;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  flex-direction: column;
+}
+
+.app-data-table--fill {
   height: 100%;
   flex: 1 1 auto;
-  flex-direction: column;
+}
+
+.app-data-table--auto {
+  height: auto;
+  flex: 0 1 auto;
 }
 
 .app-data-table--framed {
@@ -115,8 +152,12 @@ const emit = defineEmits<{
 }
 
 .app-data-table__table {
-  flex: 1 1 auto;
   min-height: 0;
+  width: 100%;
+}
+
+.app-data-table--fill .app-data-table__table {
+  flex: 1 1 auto;
 }
 
 .app-data-table :deep(th .cell) {

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppTableColumn from '@/components/AppTableColumn.vue'
+import AppDataTable from '@/components/AppDataTable.vue'
 /**
  * 页面布局工作区（P4 布局平台 IA 重构）。
  *
@@ -620,16 +622,16 @@ onMounted(async () => {
               </el-descriptions>
               <el-collapse class="source-collapse">
                 <el-collapse-item title="页面默认布局字段" name="editable">
-                  <el-table v-if="selectedPage.layout.editable.length" :data="selectedPage.layout.editable" max-height="140" size="small">
-                    <el-table-column prop="label" label="字段" min-width="110" />
-                    <el-table-column prop="path" label="路径" min-width="150" />
-                    <el-table-column prop="type" label="类型" width="80" />
-                    <el-table-column label="范围" min-width="110">
+                  <AppDataTable v-if="selectedPage.layout.editable.length" :data="selectedPage.layout.editable" max-height="140" size="small" :fill="false">
+                    <AppTableColumn prop="label" label="字段" />
+                    <AppTableColumn prop="path" label="路径" />
+                    <AppTableColumn prop="type" label="类型" />
+                    <AppTableColumn label="范围">
                       <template #default="{ row }">
                         {{ row.options?.join('/') || `${row.min ?? '-'} ~ ${row.max ?? '-'}` }}
                       </template>
-                    </el-table-column>
-                  </el-table>
+                    </AppTableColumn>
+                  </AppDataTable>
                   <el-empty v-if="!selectedPage.layout.editable.length" class="app-empty app-empty--tiny" description="该页无页面默认布局字段" />
                 </el-collapse-item>
               </el-collapse>
@@ -739,31 +741,31 @@ onMounted(async () => {
 
                 <div class="cc-block-title">只读诊断</div>
                 <div class="section-subtitle">只显示当前点击 slot 的页面默认值、可覆盖范围和安全枚举诊断；不可编辑字段只在这里解释原因。</div>
-                <el-table v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table">
-                  <el-table-column label="字段" min-width="120">
+                <AppDataTable v-if="focusedDiagnosticRows.length" :data="focusedDiagnosticRows" max-height="220" size="small" class="diagnostic-table" :fill="false">
+                  <AppTableColumn label="字段">
                     <template #default="{ row }">
                       <div class="diag-main">{{ row.fieldLabel }}</div>
                       <div class="muted">{{ row.field }}</div>
                     </template>
-                  </el-table-column>
-                  <el-table-column label="页面默认值" min-width="120">
+                  </AppTableColumn>
+                  <AppTableColumn label="页面默认值">
                     <template #default="{ row }">
                       <div class="diag-main">{{ row.valueLabel }}</div>
                       <div class="muted">{{ row.sourceLabel }}</div>
                     </template>
-                  </el-table-column>
-                  <el-table-column label="可覆盖范围" min-width="120">
+                  </AppTableColumn>
+                  <AppTableColumn label="可覆盖范围">
                     <template #default="{ row }">
                       <span class="muted">{{ row.layersLabel }}</span>
                     </template>
-                  </el-table-column>
-                  <el-table-column label="状态" width="130">
+                  </AppTableColumn>
+                  <AppTableColumn label="状态">
                     <template #default="{ row }">
                       <el-tag size="small" :type="diagnosticTagType(row.status)" effect="plain">{{ row.statusLabel }}</el-tag>
                     </template>
-                  </el-table-column>
-                  <el-table-column prop="detail" label="说明" min-width="220" show-overflow-tooltip />
-                </el-table>
+                  </AppTableColumn>
+                  <AppTableColumn prop="detail" label="说明" show-overflow-tooltip />
+                </AppDataTable>
                 <el-empty
                   v-if="!focusedDiagnosticRows.length"
                   class="app-empty app-empty--compact"
@@ -851,11 +853,11 @@ onMounted(async () => {
 
               <section class="plain-panel">
                 <div class="section-title">字段来源</div>
-                <el-table :data="sourceRows" height="320">
-                  <el-table-column prop="path" label="路径" min-width="180" />
-                  <el-table-column prop="value" label="值" min-width="120" />
-                  <el-table-column prop="source" label="来源" width="100" />
-                </el-table>
+                <AppDataTable :data="sourceRows" height="320" :fill="false">
+                  <AppTableColumn prop="path" label="路径" />
+                  <AppTableColumn prop="value" label="值" />
+                  <AppTableColumn prop="source" label="来源" />
+                </AppDataTable>
               </section>
             </div>
           </el-tab-pane>

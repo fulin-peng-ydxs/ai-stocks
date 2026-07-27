@@ -209,7 +209,7 @@ describe('AuditLogView', () => {
 
   it('点击详情打开只读抽屉并展示脱敏上下文', async () => {
     const wrapper = await mountView()
-    const detail = wrapper.findAll('button').find((button) => button.text() === '详情')
+    const detail = wrapper.find('.el-table__body').findAll('button').find((button) => button.text() === '详情')
     expect(detail).toBeTruthy()
     await detail!.trigger('click')
     await flushPromises()
@@ -234,7 +234,7 @@ describe('AuditLogView', () => {
       ],
     })
     const wrapper = await mountView()
-    const detail = wrapper.findAll('button').find((button) => button.text() === '详情')
+    const detail = wrapper.find('.el-table__body').findAll('button').find((button) => button.text() === '详情')
     expect(detail).toBeTruthy()
     await detail!.trigger('click')
     await flushPromises()
