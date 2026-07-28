@@ -36,7 +36,7 @@ function onSizeChange(value: number) {
     :page-size="pageSize"
     :page-sizes="pageSizes"
     :total="total"
-    :small="small"
+    :size="small ? 'small' : 'default'"
     layout="total, sizes, prev, pager, next"
     background
     @current-change="onCurrentChange"

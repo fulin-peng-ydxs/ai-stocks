@@ -89,12 +89,12 @@
 
 | 范围 | 需求编号 | 需求内容/来源 | 开发内容 | 任务 | 状态 | 偏差 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须 | R3 | 下拉仅自己（C2） | list source=mine（纯 owner）+ 各页接入 | T2A,T3,T4,T5 | 后端完成·前端待 | 一致 | 后端 T2A 已过；含平台槽互斥修复 |
+| 必须 | R3 | 下拉仅自己（C2） | list source=mine（纯 owner）+ 各页接入 | T2A,T3,T4,T5 | 后端完成·ScreenView 样板完成·3 页待扩展 | 一致 | 后端 T2A 已过；T3 筛选页接入；含平台槽互斥修复 |
 | 必须 | R4 | 放开发布权（C4） | 发布码归类+撤 DELETE+新迁移回填 | T1B | 后端完成 | 一致 | 安全边界；回滚 SQL 已精准化 |
-| 必须 | R5 | 搜索弹窗+租户/全体+复制（C3/C8） | browse tenant/public + AssetSearchDrawer + 复制 | T2B,T3 | 后端完成·前端待 | 一致 | 复制已改原子插入 |
-| 必须 | R14 | 系统内置来源段（C3/C9） | browse source=preset 严格 public + 前端段 | T2B,T3 | 后端完成·前端待·生产核验挂起 | 一致 | 筛选空态；生产分布待 T0 |
+| 必须 | R5 | 搜索弹窗+租户/全体+复制（C3/C8） | browse tenant/public + AssetSearchDrawer + 复制 | T2B,T3 | 后端完成·ScreenView 样板完成 | 一致 | 复制已改原子插入；抽屉/选择器 T3 落地 |
+| 必须 | R14 | 系统内置来源段（C3/C9） | browse source=preset 严格 public + 前端段 | T2B,T3 | 后端完成·ScreenView 样板完成·生产核验挂起 | 一致 | 筛选空态（E2E 已断言）；生产分布待 T0 |
 | 必须 | R6 | 回测复用重跑（C7） | 回测独立 summary + q + 重跑入口 | T2C,T5 | 后端完成·前端待 | 一致 | q 已修发布态 ref 搜索 |
-| 必须 | R7 | 共享组件 | AssetSearchDrawer/AssetProfileSelect | T3 | 待开始 | 一致 | |
+| 必须 | R7 | 共享组件 | AssetSearchDrawer/AssetProfileSelect | T3 | 组件完成·ScreenView 已消费·4 页待扩展 | 一致 | select/list 双形态已实现；list 真实消费留 T4 |
 | 必须 | R10 | 个股详情接入 | 仅自己 + 搜索 | T4 | 待开始 | 一致 | |
 | 可选 | R9 | 新用户默认复制 | 暂不纳入 | - | 跳过 | 未覆盖 | 待产品确认 |
 | 可选 | R8 | 公开资产治理 | 暂不纳入 | - | 跳过 | 未覆盖 | 后续建议 |
@@ -239,7 +239,7 @@
 ### 阶段 3 · 前端垂直样板（只接入 ScreenView）
 
 #### 6.6 任务 T3：共享组件 + ScreenView 样板
-- 状态：待开始　依赖：T2A,T2B
+- 状态：已完成（前端·Vitest/构建/E2E 三视口通过）　依赖：T2A,T2B
 - 涉及：新增 `AssetSearchDrawer.vue`、`AssetProfileSelect.vue`；`ScreenView.vue:539-571`；`api/screening.ts`
 - 目标：共享抽屉/选择器在筛选页跑通全链路，DESIGN 合规。
 - 操作：实现三来源段（防抖 q、分页）、加载查看（临时只读注入）、单击复制（自动 id/名称）、四态；PageDrawer `xl`、AppDataTable/AppTableColumn/AppRowActions/AppIconButton、无 Unicode 图标；ScreenView 下拉改 source=mine、接入抽屉、发布按钮随后端放开。
@@ -247,7 +247,7 @@
 - 边界：临时只读不进我的、不持久化、不自动跑筛选。
 - 验证：Vitest（三段/q/空态/复制/临时只读）+ E2E + 三视口（1100×620/1366×768/1440×900）截图。
 - 完成标准：筛选页全链路可用且 DESIGN 合规。
-- 实际落地情况：待实施。
+- 实际落地情况：**已完成（2026-07-29）**。①新增 `components/asset-search/`：`types.ts`（方案/回测 summary 契约对齐后端 summarize_*、assetItemKey/formatAssetTime）+ `AssetSearchDrawer.vue`（PageDrawer xl 挂 #overlays；PageSegmented 来源三段、回测形态隐藏系统内置段；防抖 q 300ms；服务端分页；四态——表体 loading/空态由 AppDataTable 承接、错误 AppStateBlock+重试；操作列 AppRowActions「加载查看/复制为我的」（回测「加载查看/复用参数重跑」），复制按 `copyPermission` 过滤；方案列=名称(AssetProfileLabel)/版本/来源徽标/提供者/更新时间，回测列=kind+日期区间/状态/来源/提供者/创建时间；openWith 支持空态引导直达「系统内置」段）+ `AssetProfileSelect.vue`（`select`/`list` 双形态；fetchMine 只拉 source=mine；「我的」空态引导去系统内置搜索复制；「加载查看」注入会话内临时只读项——置顶候选、切换即丢弃、不持久化；「复制为我的」成功后 reload 我的列表并选中新 ref；暴露 reload/openSearch）。②`api/screening.ts`：`listProfiles(source?)`、`browseProfiles(source|q|page|pageSize)`、`copyProfile` 去必填 id 并返回新标识、`Profile` 补 `updated_at`。③ScreenView 样板：el-select 私有选择器整体替换为 AssetProfileSelect（保留 view 码降级守卫在 fetchMine 回调）；doSave/publish/copyCurrentProfile 改为组件 reload + 后端生成 id；删除 `nextCopyProfileId` 前端撞库逻辑。④`AppPagination` 内部 `small` 改映射 `size="small"`（消除 el-pagination 弃用告警，E2E console 契约拦截发现）。⑤DESIGN.md 真实复用组件清单登记两组件。验证：Vitest 新增 16 用例（抽屉 9 + 选择器 7）全过，前端全量 **521 passed**；`npm run build` 通过（含 vue-tsc）；新 E2E `asset-search-drawer.spec.ts`（跨用户真实链路：debug_normal 发布租户公开 → debug_tenant_admin 浏览/复制/临时只读，含系统内置空态与脱敏断言）**三视口全过**并附截图；全量 Playwright 回归 58 passed/3 failed，3 例（数据概览低视口×2、HelpTip 预设 token）单重重跑全过，确认为串行环境 flake 与本改动无关。偏差：回测形态列/重跑 UI 已实现但真实消费留 T5；`list` 形态已实现、真实消费留 T4（ConfigView）。
 
 ### 阶段 4 · 普通方案页扩展
 
@@ -295,14 +295,15 @@
 ## 8. 测试与验证计划
 > **口径**：区分「定向测试通过」（本阶段新增/相关用例）、「全量后端结果」、「未验证（前端未实施）」。
 > **全量后端（2026-07-28，停服释放 DuckDB 锁后跑，含 R2–R9 补测）**：`728 passed`（R9 新增「仅清空菜单也 bump perm_ver」正向回归 + 成功重授 bump，故障回滚用例改名保留）。**R7 覆盖顺序重启，R8 覆盖并发锁串行+fail-closed，R9 覆盖菜单变化的 perm_ver 一致性**。恒有 1 例**既有失败**（`test_stage5_audit.py::test_stage5_audit_tenant_admin_is_scoped_to_own_tenant`，期望 200 实得 403），根因是既有 `revoke_tenant_admin_audit_default_grants` 迁移撤销 tenant_admin 审计默认授权，**与本重构无关、不在本次 diff**，已单列待处理。Ruff：环境未安装，未验证。
+> **前端（2026-07-29，T3 ScreenView 样板）**：Vitest 全量 `521 passed`（含新增组件 16 用例）；`npm run build` 通过（含 vue-tsc）；Playwright 新增 `asset-search-drawer.spec.ts` 跨用户链路三视口（1100×620/1366×768/1440×900）通过并附截图；全量串行回归 `58 passed / 3 failed / 20 skipped`，3 例失败（数据概览低视口×2、HelpTip 预设 token）单重重跑全过，确认为串行环境 flake、与本改动无关；后端曾按 E2E 写模式重启、验收后已恢复日常模式（/api/health=200）。
 - 单元测试：`scoped_where` 四来源互斥（含 **mine 平台槽排除预设**）、preset 负例（private 不出现）、summary 含 updated_at、回测独立 summary、发布码授权解析。具体完成情况：**定向通过**（`test_stage6_asset_visibility` 等）。
 - 接口测试：list `source=mine`（**含平台槽 owner 互斥**）；browse `preset|tenant|public`+q+分页+脱敏（preset 严格公开负例）；未知 source 返回 400；发布放开后 normal 可发布/非 owner 403；回测重跑归属+审计；**发布态回测按引用方案名 q 命中**；**复制原子插入不覆盖同 id 既有资产**。具体完成情况：**定向通过**（含 `test_asset_review_fixes` 3 例 P1 回归）。
-- 页面/交互测试：Vitest（AssetSearchDrawer 三段/q/空态/复制/临时只读、AssetProfileSelect 双形态）、E2E（搜索→加载只读→复制→我的下拉；下拉仅自己；normal 发布；回测重跑）。具体完成情况：**未验证（前端未实施，T3+）**。
-- 组件资产闭环测试：AssetSearchDrawer/AssetProfileSelect 在 ScreenView 样板 + 4 页真实消费；DESIGN 矩阵登记；无 Unicode 图标、PageDrawer xl、AppDataTable/AppRowActions。具体完成情况：**未验证（前端未实施，T3+）**。
+- 页面/交互测试：Vitest（AssetSearchDrawer 三段/q/空态/复制/临时只读、AssetProfileSelect 双形态）、E2E（搜索→加载只读→复制→我的下拉；下拉仅自己；normal 发布；回测重跑）。具体完成情况：**ScreenView 样板通过（T3，2026-07-29）**——组件 Vitest 16 用例全过、前端全量 521 passed；`asset-search-drawer.spec.ts` 跨用户链路（发布租户公开→浏览/复制/临时只读/脱敏/系统内置空态）三视口通过并附截图；其余页面待 T4/T5。
+- 组件资产闭环测试：AssetSearchDrawer/AssetProfileSelect 在 ScreenView 样板 + 4 页真实消费；DESIGN 矩阵登记；无 Unicode 图标、PageDrawer xl、AppDataTable/AppRowActions。具体完成情况：**DESIGN 真实复用组件清单已登记（T3）**；ScreenView 真实消费通过；4 页消费待 T4/T5；按钮文案/间距契约扫描全过（button-system/typography-spacing-system）。
 - 权限与数据范围测试：多角色（`test-users.md`）验证发布放开、mine 隔离、跨租户 tenant 不可见、preset 严格公开、owner 脱敏。具体完成情况：**后端定向通过**；多角色端到端待前端。
 - 回归测试：系统内置徽标/`is_preset`/榜单零改动回归；现有 copy/visibility 链路；stage6 断言更新。具体完成情况：**定向通过**（copy/visibility 簇 57 passed）。
-- 异常与边界：下拉空态、系统内置段空态（筛选）、临时只读不持久化、复制撞库/并发有限次重试（原子插入）、回测同步重跑 DuckDB 单写锁串行、停用降级。具体完成情况：**后端边界定向通过**；前端空态/临时只读待 T3。
-- 图示与原型一致性：AssetSearchDrawer 覆盖原型区域（三来源段/搜索/列表/操作列/分页/四态）+ 三关键视口 + DESIGN 合规。具体完成情况：**未验证（前端未实施，T3+）**。
+- 异常与边界：下拉空态、系统内置段空态（筛选）、临时只读不持久化、复制撞库/并发有限次重试（原子插入）、回测同步重跑 DuckDB 单写锁串行、停用降级。具体完成情况：**后端边界定向通过**；前端空态/临时只读 ScreenView 样板通过（T3，空态引导直达系统内置段、临时项切换丢弃/不持久化均由组件 Vitest + E2E 覆盖），其余页面待 T4/T5。
+- 图示与原型一致性：AssetSearchDrawer 覆盖原型区域（三来源段/搜索/列表/操作列/分页/四态）+ 三关键视口 + DESIGN 合规。具体完成情况：**ScreenView 样板通过（T3）**——抽屉实现与原型 §7.1 逐条对齐（来源分段/防抖搜索/操作列/分页/四态/提供者脱敏），三视口 E2E 截图留存于 playwright-report；其余页面待 T4/T5。
 - 需求映射验证：R3/R4/R5/R6/R7/R10/R14 均有任务与可观察验证；R1/R2/R8/R9/R11/R12/R13 跳过并说明。
 - 负向验收：R1/R2/R11/R12/R13 对应区域零 diff。
 

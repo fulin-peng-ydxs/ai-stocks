@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
+  browseProfiles,
   copyProfile,
   getProfile,
   getProfileVersions,
@@ -22,9 +23,10 @@ import { hasPermission } from '@/utils/permission'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
-import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -245,13 +247,13 @@ function parseAst(ast: Record<string, unknown>): { op: 'AND' | 'OR'; rows: Row[]
 }
 
 // ── 已存/系统内置方案：载入到构建器 ──
-const profiles = ref<Profile[]>([])
+// R3/R5：方案选择统一走 AssetProfileSelect——下拉只加载「我的」（source=mine 纯 owner），
+// 「搜索」入口打开共享搜索抽屉（系统内置/租户公开/全体公开），「加载查看」注入临时只读、
+// 「复制为我的」自动刷新并选中（组件内部闭环，本页不再维护列表/复制逻辑）。
 const loadId = ref('')
 const loadedProfile = ref<Profile | null>(null)
 const initLoading = ref(true)
 const initError = ref('')
-const profilesLoading = ref(false)
-const profilesError = ref('')
 const profileLoading = ref(false)
 const profileError = ref('')
 let profileLoadSeq = 0
@@ -265,29 +267,18 @@ const canPublishTenant = computed(() =>
 const canPublishPublic = computed(() =>
   hasPermission(auth.role, auth.permissions, 'screen-profile:publish-public'),
 )
-function profileKey(p: Profile): string {
-  return p.profile_ref || p.id
-}
-const selectedLoadProfile = computed(() =>
-  profiles.value.find((p) => profileKey(p) === loadId.value || p.id === loadId.value),
-)
-async function loadProfiles() {
+const profileSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
+async function fetchMineProfiles(): Promise<Profile[]> {
   // 次级加载按自身 view 码优雅降级：无 screen-profile:view 的部分授权角色（如只授 screen:run）
   // 不拉方案列表、也不因此 403 卡住页面主体（筛选构建/运行仍可用）。默认业务角色含该码不受影响。
-  if (!hasPermission(auth.role, auth.permissions, 'screen-profile:view')) {
-    profiles.value = []
-    profilesError.value = ''
-    return
-  }
-  profilesLoading.value = true
-  profilesError.value = ''
-  try {
-    profiles.value = await listProfiles()
-  } catch (error) {
-    profilesError.value = getErrorMessage(error, '筛选方案加载失败')
-  } finally {
-    profilesLoading.value = false
-  }
+  if (!hasPermission(auth.role, auth.permissions, 'screen-profile:view')) return []
+  return listProfiles('mine')
+}
+function browseScreenProfiles(params: AssetBrowseParams) {
+  return browseProfiles(params)
+}
+function copyAnyProfile(item: ProfileSummary) {
+  return copyProfile(item.profile_ref || item.id)
 }
 async function loadSelectedProfile(id: string) {
   const seq = ++profileLoadSeq
@@ -395,9 +386,9 @@ async function doSave() {
     const r = await saveProfile({ id, name: saveName.value.trim(), expression: expr })
     ElMessage.success(`已保存（v${r.version}）`)
     saveVisible.value = false
-    await loadProfiles()
-    const saved = profiles.value.find((p) => p.id === id && p.source === 'mine')
-    loadId.value = saved ? profileKey(saved) : id
+    const list = await profileSelectRef.value?.reload()
+    const saved = list?.find((p) => p.id === id)
+    loadId.value = saved ? (saved.profile_ref || saved.id) : id
   } catch {
     /* 统一弹错 */
   } finally {
@@ -420,30 +411,19 @@ async function publishProfile(visibility: 'private' | 'tenant' | 'public') {
   try {
     loadedProfile.value = await setProfileVisibility(loadId.value, visibility)
     ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
-    await loadProfiles()
+    await profileSelectRef.value?.reload()
   } finally {
     visibilitySaving.value = false
   }
 }
-function nextCopyProfileId(base: string): string {
-  const root = (base || 'screen').replace(/[^\w-]/g, '_') || 'screen'
-  const mineIds = new Set(profiles.value.filter((p) => p.source === 'mine').map((p) => p.id))
-  let id = `${root}_copy`
-  let seq = 2
-  while (mineIds.has(id)) {
-    id = `${root}_copy_${seq}`
-    seq += 1
-  }
-  return id
-}
+// C8：复制由后端生成唯一 id、名称默认「原名 副本」，返回新标识供选中
 async function copyCurrentProfile() {
   if (!loadId.value || !loadedProfile.value) return
-  const id = nextCopyProfileId(loadedProfile.value.id)
-  await copyProfile(loadId.value, { id, name: `${loadedProfile.value.name || '筛选方案'} 副本` })
+  const r = await copyProfile(loadId.value)
   ElMessage.success('已复制为我的方案')
-  await loadProfiles()
-  const copied = profiles.value.find((p) => p.id === id && p.source === 'mine')
-  if (copied) loadId.value = profileKey(copied)
+  const list = await profileSelectRef.value?.reload()
+  const copied = list?.find((p) => p.id === r.id)
+  loadId.value = copied ? (copied.profile_ref || copied.id) : (r.profile_ref || r.id)
 }
 
 // ── 历史版本 ──
@@ -486,7 +466,6 @@ async function initializeScreen() {
   initError.value = ''
   try {
     registry.value = (await getIndicatorRegistry(true)).items
-    await loadProfiles()
     if (!rows.value.length && !complexAst.value) {
       rows.value = [newIndRow('bull_arrange'), newIndRow('rs_pct')]
       rows.value[1].cmp = '>='
@@ -534,40 +513,20 @@ onMounted(initializeScreen)
       @retry="initializeScreen"
     />
     <el-card v-else shadow="never" class="cond-card">
-      <!-- 载入已存/系统内置方案 -->
+      <!-- 载入我的方案 + 搜索系统内置/租户/全体公开（R3/R5/R14） -->
       <div class="load-row">
         <span class="hint">载入方案</span>
-        <el-select
+        <AssetProfileSelect
+          ref="profileSelectRef"
           v-model="loadId"
-          placeholder="选系统内置/我的方案（可选）"
-          clearable
-          filterable
-          :loading="profilesLoading || profileLoading"
-          style="width: 280px"
-        >
-          <template v-if="selectedLoadProfile" #label>
-            <AssetProfileLabel
-              :name="selectedLoadProfile.name"
-              :version="selectedLoadProfile.version"
-              :source="selectedLoadProfile.is_preset ? 'preset' : selectedLoadProfile.source"
-              :is-preset="selectedLoadProfile.is_preset"
-              :owner-label="selectedLoadProfile.owner_label"
-              :readonly="selectedLoadProfile.readonly"
-              label-mine="我的方案"
-            />
-          </template>
-          <el-option v-for="p in profiles" :key="profileKey(p)" :label="p.name" :value="profileKey(p)">
-            <AssetProfileLabel
-              :name="p.name"
-              :version="p.version"
-              :source="p.is_preset ? 'preset' : p.source"
-              :is-preset="p.is_preset"
-              :owner-label="p.owner_label"
-              :readonly="p.readonly"
-              label-mine="我的方案"
-            />
-          </el-option>
-        </el-select>
+          asset-label="筛选方案"
+          :fetch-mine="fetchMineProfiles"
+          :browse="browseScreenProfiles"
+          :copy-item="copyAnyProfile"
+          copy-permission="screen-profile:save"
+          placeholder="选我的筛选方案（可选）"
+          style="width: 400px"
+        />
         <span class="ver-link" v-if="loadedProfile" title="点击查看历史版本" @click="openVersions">v{{ loadedProfile.version }}</span>
         <AssetVisibilityActions
           v-if="loadedProfile"
@@ -584,13 +543,13 @@ onMounted(initializeScreen)
         <el-button text size="small" @click="clearAll">清空</el-button>
       </div>
       <AppStateBlock
-        v-if="profilesError || profileError"
+        v-if="profileError"
         state="error"
         size="inline"
-        :title="profileError ? '筛选方案详情加载失败' : '筛选方案加载失败'"
-        :description="profileError || profilesError"
+        title="筛选方案详情加载失败"
+        :description="profileError"
         retry
-        @retry="profileError ? loadSelectedProfile(loadId) : loadProfiles()"
+        @retry="loadSelectedProfile(loadId)"
       />
 
       <!-- 复杂嵌套方案：只读运行 -->
