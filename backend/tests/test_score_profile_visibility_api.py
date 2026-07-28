@@ -82,7 +82,6 @@ def test_score_profile_tenant_visibility_and_copy(client, pg):
     )
     outsider, otid, outsider_role = _mk_user(pg, ["score-profile:view"])
     pid = "spv_profile_" + uuid.uuid4().hex[:6]
-    copy_id = "spv_copy_" + uuid.uuid4().hex[:6]
     try:
         saved = client.post("/api/score-profiles", json=_profile_body(pid), headers=_auth(owner, tid))
         assert saved.status_code == 200 and saved.json()["code"] == 0
@@ -152,24 +151,28 @@ def test_score_profile_tenant_visibility_and_copy(client, pg):
 
         copied = client.post(
             f"/api/score-profiles/{shared['profile_ref']}/copy",
-            json={"id": copy_id, "name": "我的副本"},
+            json={"name": "我的副本"},  # C8：前端不传 id，后端生成
             headers=_auth(viewer, tid),
         )
         assert copied.status_code == 200 and copied.json()["data"]["version"] == 1
+        new_id = copied.json()["data"]["id"]
+        assert new_id and copied.json()["data"]["profile_ref"]
         copy_audit = pg.query_df(
             "SELECT action, resource_code, target_type, target_id FROM audit_log "
             "WHERE tenant_id=%s AND actor_user_id=%s AND event_type='asset_copy' "
             "AND action='score_profile_copy' AND target_id=%s",
-            [tid, viewer, copy_id],
+            [tid, viewer, new_id],
         )
         assert not copy_audit.empty
         assert copy_audit.iloc[0]["resource_code"] == "score-profile:save"
+        # C8 单击即复制：再次复制成功且生成不同 id（不再有「已存在」409 冲突）
         duplicated = client.post(
             f"/api/score-profiles/{shared['profile_ref']}/copy",
-            json={"id": copy_id, "name": "覆盖副本"},
+            json={"name": "我的副本"},
             headers=_auth(viewer, tid),
         )
-        assert duplicated.status_code == 200 and duplicated.json()["code"] == 409
+        assert duplicated.status_code == 200 and duplicated.json()["code"] == 0
+        assert duplicated.json()["data"]["id"] != new_id
 
         out = client.get("/api/score-profiles", headers=_auth(outsider, otid))
         assert pid not in {r["id"] for r in out.json()["data"]}
@@ -239,3 +242,26 @@ def test_delete_public_profile_returns_409_not_500(client, pg):
         pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner])
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s", [owner])
         _rm_user(pg, owner, tid, owner_role)
+
+
+def test_list_source_validation_and_pagination_clamp(client, pg):
+    """R2-P2：未知 source 返回 400（信封码）；browse 分页越界值被 clamp 且如实回显。"""
+    uid, tid, rid = _mk_user(pg, ["score-profile:view", "score-profile:save"])
+    try:
+        # 未知 source → 信封 code 400（不静默回退 list_visible）
+        bad = client.get("/api/score-profiles", params={"source": "favorite"}, headers=_auth(uid, tid))
+        assert bad.status_code == 200 and bad.json()["code"] == 400
+        # 合法 source=mine 正常
+        mine = client.get("/api/score-profiles", params={"source": "mine"}, headers=_auth(uid, tid))
+        assert mine.status_code == 200 and mine.json()["code"] == 0
+        # browse 越界分页：page<1 → 1，page_size>100 → 100，且回显 clamp 后的值
+        clamp = client.get(
+            "/api/score-profiles",
+            params={"source": "public", "page": 0, "page_size": 999},
+            headers=_auth(uid, tid),
+        )
+        assert clamp.status_code == 200 and clamp.json()["code"] == 0
+        data = clamp.json()["data"]
+        assert data["page"] == 1 and data["page_size"] == 100
+    finally:
+        _rm_user(pg, uid, tid, rid)

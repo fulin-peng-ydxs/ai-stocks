@@ -43,7 +43,7 @@ class TradeProfileVisibilityBody(BaseModel):
 
 
 class TradeProfileCopyBody(BaseModel):
-    id: str
+    # C8：前端不再传 id，后端自动生成唯一 id + 名称「原名 副本」；name 可选
     name: str | None = None
 
 
@@ -56,8 +56,22 @@ def _has_perm(code: str) -> bool:
 
 @router.get("/trade-profiles", response_model=ApiResponse,
             dependencies=[Depends(require_perm("trade-profile:view"))])
-def list_trade_profiles() -> ApiResponse:
-    return ok(TradeProfileRepo().list_visible())
+def list_trade_profiles(
+    source: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> ApiResponse:
+    # source=mine：下拉只加载自己的资产（纯 owner，R3/C2）；
+    # source=preset|tenant|public：搜索弹窗浏览（分页 + q，R5/R14）；不传维持 list_visible 兼容
+    repo = TradeProfileRepo()
+    if source is not None and source not in ("mine", "preset", "tenant", "public"):
+        return err(400, "source 必须是 mine、preset、tenant 或 public")
+    if source == "mine":
+        return ok(repo.list_mine())
+    if source in ("preset", "tenant", "public"):
+        return ok(repo.browse(source, q=q, page=page, page_size=page_size))
+    return ok(repo.list_visible())
 
 
 @router.get("/trade-profiles/{pid}", response_model=ApiResponse,
@@ -144,11 +158,11 @@ def copy_trade_profile(pid: str, body: TradeProfileCopyBody) -> ApiResponse:
     if not source:
         return err(404, "方案不存在")
     try:
-        version = repo.copy_visible(pid, body.id, body.name)
+        result = repo.copy_visible(pid, body.name)
     except ValueError as e:
         msg = str(e)
-        return err(409 if "已存在" in msg else 404, msg)
-    copied = repo.get_visible(body.id, include_owner=True)
+        return err(409 if ("已存在" in msg or "冲突" in msg) else 404, msg)
+    copied = repo.get_visible(result["profile_ref"], include_owner=True)
     record_asset_copy_audit(
         source,
         copied,
@@ -157,7 +171,13 @@ def copy_trade_profile(pid: str, body: TradeProfileCopyBody) -> ApiResponse:
         resource_code="trade-profile:save",
         ref_key="profile_ref",
     )
-    return ok({"id": body.id, "version": version, "msg": "已复制"})
+    return ok({
+        "id": result["id"],
+        "profile_ref": result["profile_ref"],
+        "name": result["name"],
+        "version": result["version"],
+        "msg": "已复制",
+    })
 
 
 @router.post("/trade-profiles/preview", response_model=ApiResponse,

@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 
@@ -929,6 +930,10 @@ _TENANT_ADMIN_EXTRA_RESOURCE_CODES: tuple[str, ...] = (
 _STAGE4_BUSINESS_GRANTS_MARKER = "migration.stage4_business_grants_v2"
 _STAGE5_PLATFORM_CAPABILITIES_MARKER = "migration.stage5_platform_capabilities_v1"
 _STAGE6_ASSET_VISIBILITY_MARKER = "migration.stage6_asset_visibility_v1"
+# 仅作「已应用」幂等标记；回滚采用确定性基线恢复（见 asset-publish-open.sql），不依赖 marker 内容。
+_ASSET_PUBLISH_OPEN_MARKER = "migration.asset_publish_open_v2"
+# 迁移并发互斥用的事务级 advisory lock key（固定常量，避免多实例并发启动时重复执行/重复 bump）
+_ASSET_PUBLISH_OPEN_LOCK = 8410010002
 _TENANT_ADMIN_AUDIT_REVOKE_MARKER = "migration.tenant_admin_audit_default_revoke_v1"
 _DICT_ITEM_COLOR_BACKFILL_MARKER = "migration.dict_item_color_defaults_v1"
 
@@ -1015,6 +1020,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     seed_stage5_platform_capabilities(client)
     revoke_tenant_admin_audit_default_grants(client)
     seed_stage6_asset_visibility(client)
+    _backfill_asset_publish_open_v1(client)
     return created
 
 
@@ -1308,41 +1314,120 @@ def _remove_legacy_paid_role(client: PostgresClient) -> None:
         log.info("历史角色已移除，%d 个用户已迁移为普通用户", len(affected))
 
 
+# ── 发布权策略状态机（统一裁决，所有写入者共同消费）──────────────────────────
+# marker(_ASSET_PUBLISH_OPEN_MARKER) 的四态；发布权是**安全边界**，非法/冲突状态一律 fail-closed。
+_PUBLISH_STATE_MISSING = "missing"        # 从未应用（新装）→ 正向迁移可应用；seed 按放开授
+_PUBLISH_STATE_APPLIED = "applied"        # 已放开发布权
+_PUBLISH_STATE_ROLLED_BACK = "rolled_back"  # 已回滚（tombstone）→ seed 落 C4 基线、正向迁移 no-op
+_PUBLISH_STATE_INVALID = "invalid"        # marker 损坏/结构冲突 → fail-closed，按已回滚保守处理
+
+
+def _publish_policy_state_cur(cur) -> str:
+    """在**调用方事务的同一 cursor** 内读取发布权策略状态（四态）。
+
+    发布权写入者（`_seed_role_grants` / `seed_stage6_asset_visibility` / `_backfill` / `rollback`）
+    必须先取共享 advisory lock、再用本函数在同一事务读状态，避免「事务外读旧状态 → 并发回滚提交 →
+    据旧状态写回发布权」的竞态。非法 JSON / 非 dict / applied 与 rolled_back 冲突 → INVALID（fail-closed）。
+    """
+    cur.execute("SELECT value FROM app_config WHERE key=%s", [_ASSET_PUBLISH_OPEN_MARKER])
+    row = cur.fetchone()
+    if row is None:
+        return _PUBLISH_STATE_MISSING
+    raw = row[0]
+    try:
+        val = json.loads(raw) if raw else {}
+    except (TypeError, ValueError):
+        return _PUBLISH_STATE_INVALID
+    if not isinstance(val, dict):
+        return _PUBLISH_STATE_INVALID
+    rolled_back = val.get("rolled_back")
+    applied = val.get("applied")
+    if rolled_back is True and applied is False:
+        return _PUBLISH_STATE_ROLLED_BACK
+    if applied is True and "rolled_back" not in val:
+        return _PUBLISH_STATE_APPLIED
+    return _PUBLISH_STATE_INVALID  # 冲突/未知结构 → fail-closed
+
+
+def _publish_suppressed(state: str) -> bool:
+    """是否应抑制发布权授予（fail-closed）：已回滚或状态非法/冲突都不放开。"""
+    return state in (_PUBLISH_STATE_ROLLED_BACK, _PUBLISH_STATE_INVALID)
+
+
 def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None:
-    """为内置角色写默认菜单/功能授权（仅当该角色尚无 role_menu，避免覆盖后续手工调整）。"""
-    all_resource_codes = [r[1] for r in _SEED_RESOURCES]
+    """为内置角色写默认菜单/功能授权（仅当该角色尚无 role_menu，避免覆盖后续手工调整）。
+
+    非系统内置角色（normal/tenant_admin）的整份默认授权在**共享 advisory lock + 单事务**内完成：
+    锁内读发布策略状态门控发布码（回滚/非法态落 C4 基线），菜单+资源+发布码原子写入，授权确有变化
+    则同事务 bump 该角色用户 perm_ver（perm_resolver 硬契约）。这样即便与回滚并发、或被清空菜单后
+    重新触发本函数，也不会绕过 tombstone 复活发布权、不会留半成品、不会与 token 权限版本脱节。
+    """
     business = list(_BUSINESS_MENU_CODES)
-    # (role_id, 菜单码集, 资源码集)
-    # 阶段四（R21/R28）：normal/tenant_admin 默认授研究业务功能码（BUSINESS_RESOURCE_CODES）；
-    # tenant_admin 另含用户管理码和租户公开评分方案码。baseline（SHARED_RESOURCE_CODES）不入授权（由 resolve 强制注入）；
-    # system-only 码不授非 system（挂 visible='system' 菜单，system_only_resource_ids 拦截）。
     biz_res = list(BUSINESS_RESOURCE_CODES)
-    grants: list[tuple[str, list[str], list[str]]] = [
-        (ROLE_SYSTEM, all_menu_codes, all_resource_codes),
+    tenant_pub = list(ASSET_TENANT_PUBLISH_RESOURCE_CODES)
+    public_pub = list(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)
+
+    # system 角色：锁定、不可手工编辑，始终**幂等补齐全量**（含发布码，system 恒全授、不受回滚影响）。
+    sys_menus = client.query_df("SELECT id FROM sys_menu")["id"].tolist()
+    sys_res = client.query_df("SELECT id FROM sys_resource")["id"].tolist()
+    for mid in sys_menus:
+        client.execute("INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
+                       "ON CONFLICT DO NOTHING", [ROLE_SYSTEM, mid])
+    for rid in sys_res:
+        client.execute("INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                       "ON CONFLICT DO NOTHING", [ROLE_SYSTEM, rid])
+
+    # 非系统内置角色：仅首次（role_menu 空）写默认授权；发布码在锁内按发布策略状态门控。
+    # 非发布资源码（发布码单独按状态追加）：
+    #   tenant_admin = 用户管理码 + 租户扩展码 + 业务码；normal = 业务码。
+    nonpublish = [
         (ROLE_TENANT_ADMIN, business + list(_TENANT_ADMIN_EXTRA_MENUS),
          list(_USER_RESOURCE_CODES) + list(_TENANT_ADMIN_EXTRA_RESOURCE_CODES) + biz_res),
-        (ROLE_NORMAL, business, biz_res),
+        (ROLE_NORMAL, business, list(biz_res)),
     ]
-    for role_id, menu_codes, resource_codes in grants:
-        # system 角色：锁定、不可手工编辑，始终**幂等补齐全量**——保证新增菜单/功能点即时纳入其全授权
-        # （否则存量库新增资源后 system 出现授权缺口，角色页无法全选+锁定；见 test_system_role_full_grants）。
-        if role_id == ROLE_SYSTEM:
-            menu_codes = client.query_df("SELECT id FROM sys_menu")["id"].tolist()
-            resource_codes = client.query_df("SELECT id FROM sys_resource")["id"].tolist()
-        # 其它内置角色：仅首次写默认授权，避免覆盖管理员在角色页的后续手工调整。
-        if role_id != ROLE_SYSTEM:
-            df = client.query_df(
-                "SELECT 1 FROM sys_role_menu WHERE role_id=%s LIMIT 1", [role_id])
-            if not df.empty:
-                continue   # 已配置过 → 不覆盖
-        for mid in menu_codes:
-            client.execute(
-                "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
-                "ON CONFLICT DO NOTHING", [role_id, mid])
-        for rid in resource_codes:
-            client.execute(
-                "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
-                "ON CONFLICT DO NOTHING", [role_id, rid])
+    bumped_roles: list[str] = []
+    for role_id, menu_codes, resource_codes in nonpublish:
+        with client.transaction() as conn, conn.cursor() as cur:
+            # 与 seed_stage6 / backfill / rollback 同一把锁串行：杜绝并发写发布权竞态
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", [_ASSET_PUBLISH_OPEN_LOCK])
+            cur.execute("SELECT 1 FROM sys_role_menu WHERE role_id=%s LIMIT 1", [role_id])
+            if cur.fetchone() is not None:
+                continue  # 已配置过 → 不覆盖（空事务提交）
+            # grant_changed 统计**菜单 + 资源 + 发布码**任一实际插入——菜单也是授权，只清空菜单
+            # （资源完整）重授时 perm_ver 也必须变，否则菜单权限扩大却与 token 版本脱节（perm_resolver 硬契约）。
+            grant_changed = 0
+            for mid in menu_codes:
+                cur.execute("INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
+                            "ON CONFLICT DO NOTHING", [role_id, mid])
+                grant_changed += max(cur.rowcount or 0, 0)
+            for rid in resource_codes:
+                cur.execute("INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                            "ON CONFLICT DO NOTHING", [role_id, rid])
+                grant_changed += max(cur.rowcount or 0, 0)
+            # 发布码：锁内读状态门控（fail-closed）——回滚/非法态下 normal 无发布码、tenant_admin 仅 tenant
+            if _publish_suppressed(_publish_policy_state_cur(cur)):
+                pub_codes = tenant_pub if role_id == ROLE_TENANT_ADMIN else []
+            else:
+                pub_codes = tenant_pub + public_pub
+            for rid in pub_codes:
+                cur.execute("INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                            "ON CONFLICT DO NOTHING", [role_id, rid])
+                grant_changed += max(cur.rowcount or 0, 0)
+            if grant_changed:  # 任一授权（菜单/资源/发布码）变化 → 同事务 bump 该角色用户 perm_ver
+                cur.execute("UPDATE sys_user SET perm_ver=perm_ver+1 "
+                            "WHERE id IN (SELECT user_id FROM sys_user_role WHERE role_id=%s)", [role_id])
+                bumped_roles.append(role_id)
+    # 提交后 best-effort 清受影响用户 perms 缓存（纯优化，权威在 perm_ver；失败仅告警）
+    if bumped_roles:
+        try:
+            affected = client.query_df(
+                "SELECT user_id FROM sys_user_role WHERE role_id = ANY(%s)",
+                [bumped_roles])["user_id"].tolist()
+            if affected:
+                from backend.auth.perm_resolver import clear_perms_cache
+                clear_perms_cache(affected)
+        except Exception:  # noqa: BLE001
+            log.warning("_seed_role_grants: 清 perms 缓存失败（忽略，权威在 perm_ver）", exc_info=True)
 
 
 def _backfill_config_split_builtin_grants(client: PostgresClient) -> None:
@@ -1400,12 +1485,9 @@ def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:
                 )
                 changed += max(cur.rowcount, 0)
 
-        cur.execute(
-            "DELETE FROM sys_role_resource "
-            "WHERE role_id=%s AND resource_id=%s",
-            [ROLE_NORMAL, "score-profile:publish-tenant"],
-        )
-        changed += max(cur.rowcount, 0)
+        # 注：原此处 DELETE normal 的 score-profile:publish-tenant（R28 收紧发布边界）已随
+        # asset-ownership-refactor C4/R4 放开普通用户发布而移除；发布码统一由
+        # _seed_role_grants（新装）+ _backfill_asset_publish_open_v1（存量回填）授予。
 
         if changed:
             cur.execute(
@@ -1521,7 +1603,12 @@ def revoke_tenant_admin_audit_default_grants(client: PostgresClient | None = Non
 
 
 def seed_stage6_asset_visibility(client: PostgresClient | None = None) -> None:
-    """阶段六资产公开权限回填：tenant_admin 获得租户公开，public 仅 system。"""
+    """阶段六资产公开权限回填。
+
+    历史版本此处只授 tenant_admin 租户公开（public 仅 system）；C4/R4 放开后本函数改为给
+    tenant_admin 授 tenant + public 全部发布码（见下方循环），normal 发布码由 _seed_role_grants
+    （新装）+ _backfill_asset_publish_open_v1（存量回填，marker v2）授予。
+    """
     client = client or get_pg_client()
     marker = client.query_df(
         "SELECT 1 FROM app_config WHERE key=%s", [_STAGE6_ASSET_VISIBILITY_MARKER])
@@ -1532,27 +1619,24 @@ def seed_stage6_asset_visibility(client: PostgresClient | None = None) -> None:
     public_publish = list(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)
     changed = 0
     with client.transaction() as conn, conn.cursor() as cur:
-        for rid in tenant_publish:
+        # 与 seed_role_grants / backfill / rollback 同一把锁串行；发布策略状态在锁内、同事务读取，
+        # 杜绝「事务外读旧状态 → 并发回滚提交 → 据旧状态补回 public」竞态。
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [_ASSET_PUBLISH_OPEN_LOCK])
+        # 消费统一发布策略状态：已回滚/非法态（fail-closed）只授 C4 基线的 tenant，不补 public
+        if _publish_suppressed(_publish_policy_state_cur(cur)):
+            publish_codes = tenant_publish
+        else:
+            publish_codes = tenant_publish + public_publish
+        # C4/R4：tenant_admin 默认获得 tenant + public 全部发布码（原仅 tenant）。
+        # 原「DELETE normal 全部发布码」「DELETE tenant_admin public 发布码」两处收紧已移除；
+        # normal 发布码由 _seed_role_grants（新装）+ _backfill_asset_publish_open_v1（存量回填）授予。
+        for rid in publish_codes:
             cur.execute(
                 "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
                 "ON CONFLICT DO NOTHING",
                 [ROLE_TENANT_ADMIN, rid],
             )
             changed += max(cur.rowcount, 0)
-
-        cur.execute(
-            "DELETE FROM sys_role_resource "
-            "WHERE role_id=%s AND resource_id = ANY(%s)",
-            [ROLE_NORMAL, tenant_publish + public_publish],
-        )
-        changed += max(cur.rowcount, 0)
-
-        cur.execute(
-            "DELETE FROM sys_role_resource "
-            "WHERE role_id=%s AND resource_id = ANY(%s)",
-            [ROLE_TENANT_ADMIN, public_publish],
-        )
-        changed += max(cur.rowcount, 0)
 
         if changed:
             cur.execute(
@@ -1566,6 +1650,116 @@ def seed_stage6_asset_visibility(client: PostgresClient | None = None) -> None:
             "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
             [_STAGE6_ASSET_VISIBILITY_MARKER, '{"applied":true}'],
         )
+
+
+def _backfill_asset_publish_open_v1(client: PostgresClient | None = None) -> None:
+    """asset-ownership-refactor C4/R4：存量库回填「放开普通用户发布权」。
+
+    stage4/stage6 的收紧迁移（DELETE 掉 normal 发布码、tenant_admin 的 public 发布码）在存量库
+    已随各自 marker 落地，编辑那两个函数只影响新装；存量库须由本迁移把 8 个 tenant/public 发布码
+    补授给 normal 与 tenant_admin（ON CONFLICT DO NOTHING，幂等），并在同一事务 bump 受影响用户
+    perm_ver，使旧权限快照失效、下次解析拿到发布权。
+
+    **可逆性（确定性基线恢复）**：本次是**默认角色策略变更**，发布权在多处 seed（新装 `_seed_role_grants`、
+    存量 `seed_stage6_asset_visibility`、本回填）写入，无法用「本迁移实际新增行」账本覆盖全部来源。
+    回滚因此采用确定性基线恢复：把 normal/tenant_admin 的发布码恢复到 C4 前默认策略（见
+    asset-publish-open.sql）。与所有默认策略迁移一致，**不保留迁移后经角色管理页做的人工增删**。
+
+    **并发安全**：marker 判定与写入全在**同一事务**内，并先取事务级 advisory lock 串行化多实例
+    并发启动；marker 已存在则整段 no-op；仅当确有新增才 bump perm_ver。
+    """
+    client = client or get_pg_client()
+    publish_codes = list(ASSET_TENANT_PUBLISH_RESOURCE_CODES) + list(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)
+    with client.transaction() as conn, conn.cursor() as cur:
+        # 事务级 advisory lock：多实例并发启动时串行执行本迁移，随事务提交/回滚自动释放
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [_ASSET_PUBLISH_OPEN_LOCK])
+        # marker 判定移入锁内：marker 存在即整段 no-op。**含回滚 tombstone**——回滚不删 marker，
+        # 故回滚后当前版本重启、init 再跑本迁移时因 marker 存在而 no-op，发布权不被自动复活。
+        cur.execute("SELECT 1 FROM app_config WHERE key=%s", [_ASSET_PUBLISH_OPEN_MARKER])
+        if cur.fetchone() is not None:
+            return
+
+        changed = 0
+        for role_id in (ROLE_NORMAL, ROLE_TENANT_ADMIN):
+            for rid in publish_codes:
+                cur.execute(
+                    "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                    "ON CONFLICT DO NOTHING",
+                    [role_id, rid],
+                )
+                if cur.rowcount and cur.rowcount > 0:  # 确有新增（既有则被 DO NOTHING 跳过）
+                    changed += cur.rowcount
+
+        if changed:  # 仅当确有新增才 bump，避免空跑污染 perm_ver
+            cur.execute(
+                "UPDATE sys_user u SET perm_ver=perm_ver+1 "
+                "WHERE EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id "
+                "AND ur.role_id IN (%s, %s))",
+                [ROLE_NORMAL, ROLE_TENANT_ADMIN],
+            )
+        # marker 首次写入用普通 INSERT（锁内已确认不存在）：仅记「已应用」，回滚不依赖其内容
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now())",
+            [_ASSET_PUBLISH_OPEN_MARKER, json.dumps({"applied": True})],
+        )
+
+
+def rollback_asset_publish_open_v1(client: PostgresClient | None = None) -> None:
+    """回滚 C4/R4 发布权放开：确定性恢复 **C4 前默认角色策略**（应急/测试用，不在 seed 序列自动执行）。
+
+    C4 前基线：normal 无任何发布码；tenant_admin 仅 4 个 tenant 发布码（由 stage6 授予）、无 public。
+    因此回滚在同一 advisory-lock 事务内：
+      - normal：删全部 8 个发布码；
+      - tenant_admin：删 4 个 public 码，并 `ON CONFLICT DO NOTHING` **补齐 4 个 tenant 码**
+        （若迁移期间被人工移除也一并恢复到基线）；
+      - 仅当确有增删才 bump perm_ver；最后把 marker 改写成 **tombstone** `{"applied":false,"rolled_back":true}`。
+    与所有默认策略迁移一致：恢复默认策略、**不保留迁移后经角色管理页做的人工增删**。
+
+    **持久性（关键）**：回滚**不删除 marker**，而是留 tombstone。正向迁移 `_backfill_asset_publish_open_v1`
+    以「marker 存在即 no-op」为准，故回滚后即使当前版本重启、init 再跑正向迁移，也不会复活发布权
+    （若删 marker，重启会因 marker 缺失重新授权 → 回滚被自动反向覆盖）。**重新启用发布权须显式操作**：
+    删除该 tombstone 后再跑正向迁移。marker 缺失（从未应用）或已是 tombstone → 整段 no-op。
+    """
+    client = client or get_pg_client()
+    tenant_codes = list(ASSET_TENANT_PUBLISH_RESOURCE_CODES)
+    public_codes = list(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)
+    all_codes = tenant_codes + public_codes
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [_ASSET_PUBLISH_OPEN_LOCK])
+        # 锁内读状态：MISSING（从未应用）/ ROLLED_BACK（已回滚）→ no-op；APPLIED/INVALID → 恢复基线
+        state = _publish_policy_state_cur(cur)
+        if state in (_PUBLISH_STATE_MISSING, _PUBLISH_STATE_ROLLED_BACK):
+            return  # 无可回滚 / 已回滚 → 整段 no-op（二次回滚安全）
+
+        changed = 0
+        # normal：删全部 8 发布码（基线无发布权）
+        cur.execute(
+            "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id = ANY(%s)",
+            [ROLE_NORMAL, all_codes])
+        changed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        # tenant_admin：删 4 个 public 码
+        cur.execute(
+            "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id = ANY(%s)",
+            [ROLE_TENANT_ADMIN, public_codes])
+        changed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        # tenant_admin：补齐 4 个 tenant 码到基线（幂等）
+        for rid in tenant_codes:
+            cur.execute(
+                "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING",
+                [ROLE_TENANT_ADMIN, rid])
+            changed += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+
+        if changed:  # 仅当确有增删才 bump
+            cur.execute(
+                "UPDATE sys_user u SET perm_ver=perm_ver+1 "
+                "WHERE EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id "
+                "AND ur.role_id IN (%s, %s))",
+                [ROLE_NORMAL, ROLE_TENANT_ADMIN])
+        # tombstone：留 marker 但标记已回滚，使正向迁移重启后 no-op、发布权不被自动复活
+        cur.execute(
+            "UPDATE app_config SET value=%s, updated_at=now() WHERE key=%s",
+            [json.dumps({"applied": False, "rolled_back": True}), _ASSET_PUBLISH_OPEN_MARKER])
 
 
 def asset_pk_mismatches(client: PostgresClient | None = None) -> list[str]:

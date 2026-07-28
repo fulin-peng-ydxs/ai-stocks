@@ -222,9 +222,58 @@ def summarize_asset_row(
         "source": out["source"],
         "readonly": out["readonly"],
         "owner_label": out["owner_label"],
+        # 方案表均有 updated_at 列（搜索弹窗列表展示「更新时间」）；行内缺列时回退 None。
+        "updated_at": str(out["updated_at"]) if out.get("updated_at") is not None else None,
     }
     if ref_key:
         summary[ref_key] = out[ref_key]
+    return summary
+
+
+def summarize_backtest_row(
+    row: dict[str, Any],
+    *,
+    tenant_id: str,
+    owner_user_id: str,
+    ref_key: str = "run_ref",
+) -> dict[str, Any]:
+    """回测浏览专用 summary：回测无 name/version/is_preset/updated_at，字段独立于方案类。
+
+    字段清单对齐计划 §4.2：id/kind/date_start/date_end/status/created_at/finished_at
+    /visibility/source/readonly/owner_label + run_ref；并透传三类引用方案名供关键字/展示，
+    owner 全程脱敏（decorate_asset_row 不回显 tenant_id/owner_user_id）。
+    """
+    out = decorate_asset_row(
+        row,
+        asset_type=ASSET_BACKTEST_RUN,
+        tenant_id=tenant_id,
+        owner_user_id=owner_user_id,
+        ref_key=ref_key,
+    )
+
+    def _s(key: str) -> Any:
+        val = out.get(key)
+        return str(val) if val is not None else None
+
+    summary = {
+        "id": out["id"],
+        "asset_ref": out["asset_ref"],
+        "kind": out.get("kind"),
+        "date_start": _s("date_start"),
+        "date_end": _s("date_end"),
+        "status": out.get("status"),
+        "created_at": _s("created_at"),
+        "finished_at": _s("finished_at"),
+        "visibility": out["visibility"],
+        "source": out["source"],
+        "readonly": out["readonly"],
+        "owner_label": out["owner_label"],
+        # 回测自身无 name，浏览按三类引用方案名 + kind 过滤/展示（查询已 JOIN，见 backtest_service）
+        "profile_name": out.get("profile_name"),
+        "score_profile_name": out.get("score_profile_name"),
+        "trade_profile_name": out.get("trade_profile_name"),
+    }
+    summary[ref_key] = out[ref_key]
     return summary
 
 
@@ -239,6 +288,123 @@ def visible_sql(alias: str = "") -> str:
 
 def visible_params(*, tenant_id: str, owner_user_id: str) -> list[str]:
     return [tenant_id, owner_user_id, tenant_id]
+
+
+# ── 四来源互斥取数口径（R3/R5/R14，计划 §4.1）──────────────────────
+# 搜索弹窗把可见资产切成互斥的四段来源，供下拉（mine）与浏览（preset/tenant/public）复用同一口径：
+#   mine   ：纯 owner，下拉只加载自己的资产。
+#   preset ：系统内置段，严格 is_preset AND public AND 平台槽（PUBLIC_BOARD_OWNER），永不泄露 private。
+#   tenant ：本租户公开且排除自己。
+#   public ：全体公开且排除自己，且**强制补集**排除平台槽公开预设（只归 preset 段），四段真正互斥。
+SCOPE_MINE = "mine"
+SCOPE_PRESET = "preset"
+SCOPE_TENANT = "tenant"
+SCOPE_PUBLIC = "public"
+PROFILE_SCOPES = frozenset({SCOPE_MINE, SCOPE_PRESET, SCOPE_TENANT, SCOPE_PUBLIC})
+# 回测无 is_preset，无系统内置段，浏览仅 tenant/public（mine 用于「我的」历史置顶，不作过滤段）。
+BACKTEST_SCOPES = frozenset({SCOPE_MINE, SCOPE_TENANT, SCOPE_PUBLIC})
+
+
+def scoped_where(
+    source: str,
+    *,
+    tenant_id: str,
+    owner_user_id: str,
+    public_board_owner: tuple[str, str],
+    alias: str = "",
+    has_preset: bool = True,
+) -> tuple[str, list[str]]:
+    """返回某来源段的互斥 WHERE 片段 + 参数。
+
+    has_preset=False（回测）时：preset 段不支持；public 段省略平台槽预设的强制补集（无 is_preset 列）。
+    参数顺序与片段内 %s 顺序严格对应，调用方按此拼接。
+    """
+    p = f"{alias}." if alias else ""
+    pub_t, pub_o = public_board_owner
+    if source == SCOPE_MINE:
+        base = f"{p}tenant_id=%s AND {p}owner_user_id=%s"
+        params = [tenant_id, owner_user_id]
+        if has_preset:
+            # 平台槽公开预设只归 preset 段：即便当前 owner 恰为平台槽账号（system 管理员），
+            # mine 也不得混入系统内置，保证四段互斥（谓词与 preset 段严格镜像）。
+            base += (f" AND NOT ({p}is_preset=true AND {p}visibility='public' "
+                     f"AND {p}tenant_id=%s AND {p}owner_user_id=%s)")
+            params += [pub_t, pub_o]
+        return f"({base})", params
+    if source == SCOPE_PRESET:
+        if not has_preset:
+            raise ValueError("该资产类型无系统内置（preset）来源")
+        return (
+            f"({p}is_preset=true AND {p}visibility='public' "
+            f"AND {p}tenant_id=%s AND {p}owner_user_id=%s)",
+            [pub_t, pub_o],
+        )
+    if source == SCOPE_TENANT:
+        return (
+            f"({p}visibility='tenant' AND {p}tenant_id=%s "
+            f"AND NOT ({p}tenant_id=%s AND {p}owner_user_id=%s))",
+            [tenant_id, tenant_id, owner_user_id],
+        )
+    if source == SCOPE_PUBLIC:
+        base = f"{p}visibility='public' AND NOT ({p}tenant_id=%s AND {p}owner_user_id=%s)"
+        params = [tenant_id, owner_user_id]
+        if has_preset:
+            # 强制补集：平台槽公开预设只归 preset 段，从 public 段剔除，保证四段互斥不重复。
+            base += f" AND NOT ({p}is_preset=true AND {p}tenant_id=%s AND {p}owner_user_id=%s)"
+            params += [pub_t, pub_o]
+        return f"({base})", params
+    raise ValueError(f"不支持的取数来源: {source}")
+
+
+# 方案类三表共用列/排序（回测字段不同，走 backtest_service 独立查询，不用此路径）
+_PROFILE_SCOPED_COLUMNS = "id, tenant_id, owner_user_id, name, version, is_preset, visibility, updated_at"
+_PROFILE_SCOPED_ORDER = "is_preset DESC, updated_at DESC NULLS LAST, name, id"
+
+
+def scoped_query(
+    pg,
+    *,
+    table: str,
+    source: str,
+    tenant_id: str,
+    owner_user_id: str,
+    public_board_owner: tuple[str, str],
+    q: str | None = None,
+    page: int | None = None,
+    page_size: int = 20,
+    has_preset: bool = True,
+    columns: str = _PROFILE_SCOPED_COLUMNS,
+    order_by: str = _PROFILE_SCOPED_ORDER,
+) -> tuple[list[dict], int]:
+    """按来源段取方案类资产行（依赖注入 pg，保持本模块无存储层耦合）。
+
+    page 为 None → 不分页，返回全部（下拉 mine 用）；否则按 page/page_size 分页并返回总数（浏览用）。
+    q 非空 → name ILIKE 关键字过滤。返回 (rows, total)。四来源互斥口径由 scoped_where 保证。
+    """
+    where, params = scoped_where(
+        source,
+        tenant_id=tenant_id,
+        owner_user_id=owner_user_id,
+        public_board_owner=public_board_owner,
+        has_preset=has_preset,
+    )
+    if q and q.strip():
+        where += " AND name ILIKE %s"
+        params.append(f"%{q.strip()}%")
+    if page is None:
+        df = pg.query_df(
+            f"SELECT {columns} FROM {table} WHERE {where} ORDER BY {order_by}", params)
+        return df.to_dict("records"), len(df)
+    total_df = pg.query_df(f"SELECT count(*) AS n FROM {table} WHERE {where}", params)
+    total = int(total_df.iloc[0]["n"]) if not total_df.empty else 0
+    page = max(1, int(page))
+    page_size = max(1, min(int(page_size), 100))
+    offset = (page - 1) * page_size
+    df = pg.query_df(
+        f"SELECT {columns} FROM {table} WHERE {where} ORDER BY {order_by} LIMIT %s OFFSET %s",
+        [*params, page_size, offset],
+    )
+    return df.to_dict("records"), total
 
 
 # 四类公开资产表(评分/筛选/买卖方案 + 回测记录)

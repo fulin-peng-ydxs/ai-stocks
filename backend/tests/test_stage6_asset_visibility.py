@@ -8,6 +8,10 @@ from backend.services.asset_visibility import (
     ASSET_BACKTEST_RUN,
     ASSET_SCREEN_PROFILE,
     ASSET_TRADE_PROFILE,
+    SCOPE_MINE,
+    SCOPE_PRESET,
+    SCOPE_PUBLIC,
+    SCOPE_TENANT,
     VISIBILITY_PRIVATE,
     VISIBILITY_PUBLIC,
     VISIBILITY_TENANT,
@@ -18,9 +22,14 @@ from backend.services.asset_visibility import (
     make_asset_ref,
     parse_asset_ref,
     resolve_asset_ref_or_legacy_id,
+    scoped_where,
+    summarize_asset_row,
+    summarize_backtest_row,
     visible_params,
     visible_sql,
 )
+
+_SLOT = ("default", "admin")
 
 
 def test_stage6_asset_ref_roundtrip_and_type_mismatch_rejected():
@@ -149,3 +158,141 @@ def test_stage6_asset_visible_sql_fragment_and_params():
         "owner_a",
         "tenant_a",
     ]
+
+
+# ── T1A：四来源互斥取数口径 scoped_where ─────────────────────────────
+def _scoped(source, alias="p", has_preset=True):
+    return scoped_where(
+        source,
+        tenant_id="tenant_a",
+        owner_user_id="owner_a",
+        public_board_owner=_SLOT,
+        alias=alias,
+        has_preset=has_preset,
+    )
+
+
+def test_scoped_where_mine_excludes_platform_slot_preset():
+    # 方案类 mine：纯 owner，且强制排除平台槽公开预设（与 preset 段镜像），
+    # 使平台槽账号下 mine 与 preset 互斥、不混入系统内置。
+    sql, params = _scoped(SCOPE_MINE)
+    assert sql == (
+        "(p.tenant_id=%s AND p.owner_user_id=%s "
+        "AND NOT (p.is_preset=true AND p.visibility='public' "
+        "AND p.tenant_id=%s AND p.owner_user_id=%s))"
+    )
+    assert params == ["tenant_a", "owner_a", "default", "admin"]
+
+
+def test_scoped_where_preset_strict_public_platform_slot():
+    sql, params = _scoped(SCOPE_PRESET)
+    # 系统内置段：严格 is_preset AND public AND 平台槽，永不泄露 private
+    assert sql == (
+        "(p.is_preset=true AND p.visibility='public' "
+        "AND p.tenant_id=%s AND p.owner_user_id=%s)"
+    )
+    assert params == ["default", "admin"]
+
+
+def test_scoped_where_tenant_excludes_self():
+    sql, params = _scoped(SCOPE_TENANT)
+    assert sql == (
+        "(p.visibility='tenant' AND p.tenant_id=%s "
+        "AND NOT (p.tenant_id=%s AND p.owner_user_id=%s))"
+    )
+    assert params == ["tenant_a", "tenant_a", "owner_a"]
+
+
+def test_scoped_where_public_force_excludes_platform_slot_preset():
+    sql, params = _scoped(SCOPE_PUBLIC)
+    # 强制补集：平台槽公开预设只归 preset 段，从 public 段剔除 → 四段互斥
+    assert sql == (
+        "(p.visibility='public' AND NOT (p.tenant_id=%s AND p.owner_user_id=%s) "
+        "AND NOT (p.is_preset=true AND p.tenant_id=%s AND p.owner_user_id=%s))"
+    )
+    assert params == ["tenant_a", "owner_a", "default", "admin"]
+
+
+def test_scoped_where_backtest_has_no_preset_source():
+    # 回测无 is_preset：preset 段不支持
+    with pytest.raises(ValueError, match="系统内置"):
+        _scoped(SCOPE_PRESET, has_preset=False)
+    # public 段省略平台槽预设补集（无 is_preset 列，避免 SQL 报错）
+    sql, params = _scoped(SCOPE_PUBLIC, has_preset=False)
+    assert sql == "(p.visibility='public' AND NOT (p.tenant_id=%s AND p.owner_user_id=%s))"
+    assert params == ["tenant_a", "owner_a"]
+    assert "is_preset" not in sql
+    # mine 段同样省略预设补集：回测无 is_preset，退化为纯 owner
+    mine_sql, mine_params = _scoped(SCOPE_MINE, has_preset=False)
+    assert mine_sql == "(p.tenant_id=%s AND p.owner_user_id=%s)"
+    assert mine_params == ["tenant_a", "owner_a"]
+    assert "is_preset" not in mine_sql
+
+
+def test_scoped_where_rejects_unknown_source():
+    with pytest.raises(ValueError, match="来源"):
+        _scoped("favorite")
+
+
+def test_scoped_where_no_alias():
+    sql, _ = _scoped(SCOPE_MINE, alias="", has_preset=False)
+    assert sql == "(tenant_id=%s AND owner_user_id=%s)"
+
+
+# ── T1A：summary 字段契约 ──────────────────────────────────────────
+def test_summarize_asset_row_includes_updated_at():
+    row = {
+        "id": "score_1",
+        "tenant_id": "tenant_a",
+        "owner_user_id": "owner_a",
+        "name": "我的评分",
+        "version": 3,
+        "is_preset": False,
+        "visibility": VISIBILITY_PRIVATE,
+        "updated_at": "2026-07-27 10:00:00",
+    }
+    summary = summarize_asset_row(
+        row, asset_type=ASSET_SCREEN_PROFILE, tenant_id="tenant_a", owner_user_id="owner_a"
+    )
+    assert summary["updated_at"] == "2026-07-27 10:00:00"
+    assert summary["version"] == 3
+    # 缺列时回退 None，不抛错
+    row.pop("updated_at")
+    summary2 = summarize_asset_row(
+        row, asset_type=ASSET_SCREEN_PROFILE, tenant_id="tenant_a", owner_user_id="owner_a"
+    )
+    assert summary2["updated_at"] is None
+
+
+def test_summarize_backtest_row_independent_fields_and_owner_masked():
+    row = {
+        "id": "bt_1",
+        "tenant_id": "tenant_b",
+        "owner_user_id": "owner_b",
+        "visibility": VISIBILITY_PUBLIC,
+        "kind": "strategy",
+        "date_start": "2025-01-01",
+        "date_end": "2025-06-30",
+        "status": "success",
+        "created_at": "2026-07-01 09:00:00",
+        "finished_at": "2026-07-01 09:05:00",
+        "score_profile_name": "趋势分",
+        "trade_profile_name": "均线卖出",
+        "profile_name": "龙头筛选",
+    }
+    summary = summarize_backtest_row(
+        row, tenant_id="tenant_a", owner_user_id="owner_a"
+    )
+    # 回测独立字段：无 name/version/is_preset
+    assert "name" not in summary and "version" not in summary and "is_preset" not in summary
+    assert summary["kind"] == "strategy"
+    assert summary["date_start"] == "2025-01-01" and summary["date_end"] == "2025-06-30"
+    assert summary["status"] == "success"
+    assert summary["source"] == VISIBILITY_PUBLIC and summary["readonly"] is True
+    # owner 脱敏：不回显真实 tenant/user
+    assert summary["owner_label"] == "其他租户用户"
+    assert "owner_b" not in summary.values() and "tenant_b" not in summary.values()
+    # run_ref 可解析回原 id
+    assert parse_asset_ref(summary["run_ref"], expected_type=ASSET_BACKTEST_RUN).asset_id == "bt_1"
+    # 透传三类引用方案名供关键字/展示
+    assert summary["score_profile_name"] == "趋势分"

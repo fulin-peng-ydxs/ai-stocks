@@ -465,9 +465,15 @@ class BacktestService:
         limit: int | None = None,
         kind: str | None = None,
         source: str | None = None,
+        q: str | None = None,
     ) -> list[dict]:
         """历史记录。kind 给定则只列该类（strategy / score_check），策略与评分验证不混展；
-        limit=None 则全列（不截断），同签名因覆盖语义本就只留一条。run⋈三方案⋈metrics 全在 PG。"""
+        limit=None 则全列（不截断），同签名因覆盖语义本就只留一条。run⋈三方案⋈metrics 全在 PG。
+
+        q（搜索弹窗浏览）：回测自身无 name，按三类引用方案名（筛选/评分/买卖）+ kind 关键字过滤。"""
+        # 防御：非正 limit 归一为「不截断」，避免无 q 时 SQL LIMIT 负值报错、有 q 时 Python 切片语义反常
+        if limit is not None and limit < 1:
+            limit = None
         where = f"WHERE {visible_sql('r')} "
         args: list = visible_params(tenant_id=self.tenant_id, owner_user_id=self.owner_user_id)
         if kind == "score_check":
@@ -483,16 +489,40 @@ class BacktestService:
         elif source == "public":
             where += "AND r.visibility='public' AND NOT (r.tenant_id=%s AND r.owner_user_id=%s) "
             args += [self.tenant_id, self.owner_user_id]
-        # 「我的」置顶,与方案 list_visible 口径一致;排序参数必须在 LIMIT 之前
+        # q 名称过滤不在 SQL 侧做：发布态回测的方案引用列已被改写成 opaque ref，
+        # SQL 里 JOIN 裸 id 取不到 p.name/sp.name/tp.name，只能在解析 ref、补全方案名之后于 Python 侧过滤。
+        q_norm = q.strip().lower() if q and q.strip() else None
+        # 「我的」置顶,与方案 list_visible 口径一致;末位补**完整主键** (tenant_id, owner_user_id, id)
+        # 作稳定唯一键——回测主键是三元组且 created_at 仅秒级精度、跨 owner 可同 id，只补 r.id 仍可能抖动。
+        # 排序参数必须在 LIMIT 之前。
         order_by = (
             "ORDER BY (CASE WHEN r.tenant_id=%s AND r.owner_user_id=%s THEN 0 ELSE 1 END), "
-            "r.created_at DESC "
+            "r.created_at DESC, r.tenant_id, r.owner_user_id, r.id "
         )
-        args += [self.tenant_id, self.owner_user_id]
-        tail = ""
-        if limit is not None:
-            tail = "LIMIT %s"
-            args = [*args, limit]
+        owner_args = [self.tenant_id, self.owner_user_id]
+
+        if q_norm is None:
+            tail = "LIMIT %s" if limit is not None else ""
+            tail_args = [limit] if limit is not None else []
+            return self._query_runs_decorated(where, order_by, tail, [*args, *owner_args, *tail_args])
+
+        # q：取全部可见行（不截断），解析 opaque ref、补全方案名后于 Python 侧按名 + kind 过滤，
+        # 再按 limit 截断。**correctness 优先**：不设扫描上限，避免匹配项靠后被静默漏掉、
+        # 也不破坏 limit=None「全列」契约。发布态回测规模化后的成本优化（keyset/冗余搜索列）
+        # 留 T5 回测前端接入时按其分页 UX 统一设计（见 plan §8 备注 / 跟踪任务）。
+        def _hit(row: dict) -> bool:
+            for key in ("profile_name", "score_profile_name", "trade_profile_name", "kind"):
+                val = row.get(key)
+                if val and q_norm in str(val).lower():
+                    return True
+            return False
+
+        rows = self._query_runs_decorated(where, order_by, "", [*args, *owner_args])
+        matched = [r for r in rows if _hit(r)]
+        return matched[:limit] if limit is not None else matched
+
+    def _query_runs_decorated(self, where: str, order_by: str, tail: str, args: list) -> list[dict]:
+        """执行 run⋈三方案⋈metrics 查询 + 脱敏装饰 + 发布态 opaque ref 方案名补全，返回装饰后行。"""
         df = self.pg.query_df(
             "SELECT r.id, r.tenant_id, r.owner_user_id, r.kind, r.profile_id, "
             "       p.name AS profile_name, r.profile_version, "
@@ -514,27 +544,18 @@ class BacktestService:
             f"{order_by}{tail}", args)
         rows = [self._decorate_run_row(r) for r in df.to_dict("records")]
         screen_labels = self._batch_profile_labels(
-            [
-                str(r["profile_id"])
-                for r in rows
-                if r.get("profile_id") and not r.get("profile_name")
-            ],
+            [str(r["profile_id"]) for r in rows
+             if r.get("profile_id") and not r.get("profile_name")],
             table="screen_profile",
             ref_type=ASSET_SCREEN_PROFILE,
         )
         score_labels = self._batch_score_profile_labels(
-            [
-                str(r["score_profile_id"])
-                for r in rows
-                if r.get("score_profile_id") and not r.get("score_profile_name")
-            ],
+            [str(r["score_profile_id"]) for r in rows
+             if r.get("score_profile_id") and not r.get("score_profile_name")],
         )
         trade_labels = self._batch_profile_labels(
-            [
-                str(r["trade_profile_id"])
-                for r in rows
-                if r.get("trade_profile_id") and not r.get("trade_profile_name")
-            ],
+            [str(r["trade_profile_id"]) for r in rows
+             if r.get("trade_profile_id") and not r.get("trade_profile_name")],
             table="trade_profile",
             ref_type=ASSET_TRADE_PROFILE,
         )

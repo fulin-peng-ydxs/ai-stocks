@@ -3,158 +3,259 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>原型 · 公开资产搜索抽屉</title>
+<title>原型 · 资产搜索抽屉</title>
 <style>
   :root{
     --primary:#1677ff; --page:#ffffff; --surface:#ffffff; --hover:#f3f3f3;
     --text:#17181c; --body:#44464d; --muted:#73757d; --border:#e5e5e5; --border-strong:#c9c9c9;
-    --success:#168f63; --note-bg:#fff8e6; --note-border:#f2c94c; --note-text:#7a5b00;
-    --radius:8px;
+    --success:#168f63; --note-bg:#fff8e6; --note-border:#f2c94c; --note-text:#7a5b00; --radius:8px;
   }
   *{box-sizing:border-box;}
-  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#eef0f3;color:var(--body);padding:24px;}
-  .stage-hint{max-width:1040px;margin:0 auto 16px;font-size:13px;color:var(--muted);}
-  .mock-page{position:relative;max-width:1040px;height:660px;margin:0 auto;background:var(--page);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.06);}
-  /* 底层页面示意 */
-  .page-body{padding:20px;filter:blur(1px);opacity:.5;pointer-events:none;}
-  .page-body h2{margin:0 0 12px;font-size:16px;color:var(--text);}
-  .selector-row{display:flex;gap:8px;align-items:center;}
-  .fake-select{flex:1;height:34px;border:1px solid var(--border);border-radius:6px;background:#fff;display:flex;align-items:center;padding:0 12px;color:var(--muted);font-size:13px;}
-  .btn{height:34px;padding:0 14px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--body);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+  .hidden{display:none !important;}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#eef0f3;color:var(--body);padding:20px;}
+  .stage-hint{max-width:1040px;margin:0 auto 12px;font-size:13px;color:var(--muted);line-height:1.7;}
+  .stage-hint .vp{color:var(--body);}
+  .toolbar-top{max-width:1040px;margin:0 auto 12px;display:flex;gap:8px;}
+  .btn{height:32px;padding:0 14px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--body);font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
   .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff;}
-  .btn.search{border-color:var(--primary);color:var(--primary);background:#fff;font-weight:600;}
-  /* 抽屉遮罩 + 抽屉 */
+  .btn.search{border-color:var(--primary);color:var(--primary);font-weight:600;}
+  svg.ic{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .mock-page{position:relative;max-width:1040px;height:640px;margin:0 auto;background:var(--page);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.06);}
+  .page-body{padding:20px;}
+  .page-body h2{margin:0 0 12px;font-size:16px;color:var(--text);}
+  .selector-row{display:flex;gap:8px;align-items:center;max-width:640px;}
+  .fake-select{flex:1;height:34px;border:1px solid var(--border);border-radius:6px;background:#fff;display:flex;align-items:center;padding:0 12px;color:var(--muted);font-size:13px;}
+  .readonly-chip{margin-top:12px;display:none;align-items:center;gap:8px;max-width:640px;padding:8px 12px;border:1px dashed var(--primary);border-radius:6px;background:#f0f6ff;color:var(--body);font-size:13px;}
+  .readonly-chip .ro{font-size:11px;color:var(--primary);border:1px solid #bcd8ff;border-radius:10px;padding:1px 8px;}
+  /* 抽屉（真实实现 = PageDrawer size=xl，挂 #overlays） */
   .overlay{position:absolute;inset:0;background:rgba(0,0,0,.28);}
-  .drawer{position:absolute;top:0;right:0;bottom:0;width:560px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;box-shadow:-8px 0 24px rgba(0,0,0,.12);}
-  .drawer-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
+  .drawer{position:absolute;top:0;right:0;bottom:0;width:56%;min-width:520px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;box-shadow:-8px 0 24px rgba(0,0,0,.12);}
+  .drawer.hidden,.overlay.hidden{display:none;}
+  .drawer-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);}
   .drawer-head h3{margin:0;font-size:15px;color:var(--text);font-weight:600;}
-  .close{border:none;background:transparent;font-size:20px;color:var(--muted);cursor:pointer;line-height:1;}
-  .toolbar{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:12px;}
+  .icon-btn{width:30px;height:30px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+  .icon-btn:hover{background:var(--hover);}
+  .toolbar{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:10px;}
   .segment{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:fit-content;}
-  .segment button{border:none;background:#fff;padding:6px 16px;font-size:13px;color:var(--body);cursor:pointer;}
+  .segment button{border:none;background:#fff;padding:6px 16px;font-size:13px;color:var(--body);cursor:pointer;border-right:1px solid var(--border);}
+  .segment button:last-child{border-right:none;}
   .segment button.active{background:var(--primary);color:#fff;}
   .searchbox{display:flex;align-items:center;height:34px;border:1px solid var(--border);border-radius:6px;padding:0 10px;gap:8px;}
   .searchbox input{border:none;outline:none;flex:1;font-size:13px;color:var(--text);background:transparent;}
-  .searchbox .ico{color:var(--muted);}
-  /* 列表 */
+  .searchbox .ic{color:var(--muted);flex:none;}
   .list{flex:1;overflow:auto;}
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  thead th{position:sticky;top:0;background:#fafafa;text-align:left;padding:10px 20px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap;}
-  tbody td{padding:12px 20px;border-bottom:1px solid var(--border);color:var(--body);vertical-align:middle;}
+  thead th{position:sticky;top:0;background:#fafafa;text-align:left;padding:10px 18px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap;}
+  tbody td{padding:12px 18px;border-bottom:1px solid var(--border);color:var(--body);vertical-align:middle;}
   .name{color:var(--text);font-weight:600;}
   .tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:10px;border:1px solid var(--border);color:var(--muted);background:#f7f7f7;}
   .tag.public{color:var(--primary);border-color:#bcd8ff;background:#f0f6ff;}
   .tag.tenant{color:var(--success);border-color:#bfe6d5;background:#eefaf4;}
-  .owner{color:var(--muted);font-size:12px;}
-  .ver{color:var(--muted);font-size:12px;}
-  .ops{display:flex;gap:8px;white-space:nowrap;}
-  .link{color:var(--primary);cursor:pointer;font-size:12px;}
-  .link.copy{font-weight:600;}
-  .foot{border-top:1px solid var(--border);padding:10px 20px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted);}
+  .tag.preset{color:var(--muted);border-color:var(--border);background:#f7f7f7;}
+  .owner,.ver{color:var(--muted);font-size:12px;}
+  .ops{display:flex;gap:12px;white-space:nowrap;}
+  .link{color:var(--body);cursor:pointer;font-size:12px;}
+  .link.copy{color:var(--primary);font-weight:600;}
+  .empty{padding:48px 18px;text-align:center;color:var(--muted);font-size:13px;}
+  .foot{border-top:1px solid var(--border);padding:10px 18px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted);}
   .pager{display:flex;gap:6px;}
-  .pager span{border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;background:#fff;}
-  .pager span.on{border-color:var(--primary);color:var(--primary);}
-  /* 原型说明批注 */
-  .note{background:var(--note-bg);border:1px dashed var(--note-border);color:var(--note-text);border-radius:6px;padding:10px 12px;margin:14px auto 0;max-width:1040px;font-size:12px;line-height:1.7;}
+  .pager button{border:1px solid var(--border);border-radius:4px;padding:2px 9px;cursor:pointer;background:#fff;color:var(--body);}
+  .pager button.on{border-color:var(--primary);color:var(--primary);}
+  .pager button:disabled{opacity:.4;cursor:default;}
+  .toast{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(22,143,99,.95);color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;}
+  .toast.show{opacity:1;}
+  .note{background:var(--note-bg);border:1px dashed var(--note-border);color:var(--note-text);border-radius:6px;padding:10px 12px;margin:14px auto 0;max-width:1040px;font-size:12px;line-height:1.75;}
   .note b{color:var(--note-text);}
-  .toast{position:absolute;bottom:64px;left:50%;transform:translateX(-50%);background:rgba(22,143,99,.95);color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;display:none;}
-  .toast.show{display:block;}
+  .note.hidden{display:none;}
 </style>
 </head>
 <body>
-  <div class="stage-hint">原型 · 统一「公开资产搜索抽屉」（评分 / 筛选 / 买卖 / 回测 / 榜单 / 个股详情 复用同一交互；此处以「评分方案」为例）</div>
+  <div class="stage-hint" id="stageHint">
+    原型 · 统一「资产搜索抽屉」（来源分段：系统内置 / 租户公开 / 全体公开；评分/筛选/买卖/回测/榜单/个股详情复用同一交互，此处以「评分方案」为例）。
+    真实实现 = <b>PageDrawer size="xl"</b>（挂 <b>#overlays</b>）+ <b>AppDataTable+AppTableColumn</b> + <b>AppRowActions</b> + <b>AppStateBlock</b> + <b>AppIconButton</b>；关键视口 <span class="vp">1100×620 / 1366×768 / 1440×900</span>。
+  </div>
+
+  <div class="toolbar-top">
+    <button class="btn" id="reopen">重新打开抽屉（原型演示）</button>
+    <button class="btn" id="toggleNote">隐藏原型说明</button>
+  </div>
 
   <div class="mock-page">
-    <!-- 底层业务页示意（虚化，仅表达入口位置）-->
     <div class="page-body">
       <h2>评分方案</h2>
       <div class="selector-row">
-        <div class="fake-select">选择我的评分方案…（下拉只加载自己的资产）</div>
-        <button class="btn search">🔍 搜索</button>
-        <button class="btn">复制为我的</button>
-        <button class="btn primary">发布</button>
+        <div class="fake-select">选择我的评分方案…（下拉只加载自己的资产，纯 owner）</div>
+        <button class="btn search" id="openSearch">
+          <svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg>
+          搜索
+        </button>
+        <div class="publish-wrap" style="position:relative;display:inline-block;">
+          <button class="btn primary" id="publishBtn" aria-haspopup="menu" aria-expanded="false">发布</button>
+          <div class="publish-menu hidden" id="publishMenu" role="menu"
+               style="position:absolute;top:calc(100% + 4px);left:0;min-width:160px;background:var(--panel,#fff);border:1px solid var(--border,#d0d7de);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:20;overflow:hidden;">
+            <button class="btn" role="menuitem" data-vis="private" style="display:block;width:100%;text-align:left;border:0;border-radius:0;">设为私有</button>
+            <button class="btn" role="menuitem" data-vis="tenant" style="display:block;width:100%;text-align:left;border:0;border-radius:0;">租户公开</button>
+            <button class="btn" role="menuitem" data-vis="public" style="display:block;width:100%;text-align:left;border:0;border-radius:0;">全体公开</button>
+          </div>
+        </div>
+      </div>
+      <div class="readonly-chip" id="roChip">
+        <span class="ro">只读</span><span id="roName"></span>
+        <span style="color:var(--muted);">（临时加载查看，未进入「我的」，刷新不保留）</span>
       </div>
     </div>
 
-    <!-- 抽屉 -->
-    <div class="overlay"></div>
-    <div class="drawer" role="dialog" aria-label="浏览公开的评分方案">
+    <div class="overlay" id="overlay"></div>
+    <div class="drawer" id="drawer" role="dialog" aria-label="浏览评分方案">
       <div class="drawer-head">
-        <h3>浏览公开的评分方案</h3>
-        <button class="close" title="关闭">×</button>
+        <h3>浏览评分方案</h3>
+        <button class="icon-btn" id="closeBtn" aria-label="关闭">
+          <svg class="ic" viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg>
+        </button>
       </div>
-
       <div class="toolbar">
-        <div class="segment">
+        <div class="segment" id="segment">
+          <button class="active" data-src="preset">系统内置</button>
           <button data-src="tenant">租户公开</button>
-          <button class="active" data-src="public">全体公开</button>
+          <button data-src="public">全体公开</button>
         </div>
         <div class="searchbox">
-          <span class="ico">🔍</span>
-          <input id="q" placeholder="按方案名称搜索（留空显示全部公开）" />
+          <svg class="ic ic-s" viewBox="0 0 24 24" style="width:14px;height:14px;color:var(--muted);"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.5" y2="16.5"></line></svg>
+          <input id="q" placeholder="按方案名称搜索（留空显示该来源全部）" />
         </div>
       </div>
-
-      <div class="list">
-        <table>
-          <thead>
-            <tr><th>方案名称</th><th>来源</th><th>提供者</th><th>版本</th><th>更新时间</th><th>操作</th></tr>
-          </thead>
-          <tbody id="rows">
-            <tr>
-              <td class="name">趋势龙头·基础评分</td>
-              <td><span class="tag public">全体公开</span></td>
-              <td class="owner">admin</td>
-              <td class="ver">v3</td>
-              <td class="ver">2026-07-20</td>
-              <td class="ops"><span class="link">加载查看</span><span class="link copy" data-copy>复制为我的</span></td>
-            </tr>
-            <tr>
-              <td class="name">量价齐升·进攻型</td>
-              <td><span class="tag public">全体公开</span></td>
-              <td class="owner">其他租户用户</td>
-              <td class="ver">v1</td>
-              <td class="ver">2026-07-18</td>
-              <td class="ops"><span class="link">加载查看</span><span class="link copy" data-copy>复制为我的</span></td>
-            </tr>
-            <tr>
-              <td class="name">低波稳健·防守打分</td>
-              <td><span class="tag public">全体公开</span></td>
-              <td class="owner">其他租户用户</td>
-              <td class="ver">v2</td>
-              <td class="ver">2026-07-15</td>
-              <td class="ops"><span class="link">加载查看</span><span class="link copy" data-copy>复制为我的</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
+      <div class="list" id="list"></div>
       <div class="foot">
-        <span>共 3 条公开方案</span>
-        <div class="pager"><span class="on">1</span><span>2</span><span>›</span></div>
+        <span id="count"></span>
+        <div class="pager" id="pager"></div>
       </div>
-
-      <div class="toast" id="toast">已复制为「我的方案」，已加入自己的下拉</div>
+      <div class="toast" id="toast">已复制为「我的方案」（后端自动生成 id，名称「原名 副本」），已加入自己的下拉</div>
     </div>
   </div>
 
-  <div class="note">
-    <b>原型说明（开发实现时忽略本批注框）：</b><br>
-    · 本抽屉是<b>跨资产类型复用的同一组件</b>，标题「浏览公开的{资产类型}」随入口页变化；数据来自 browse 接口（<code>source=tenant|public</code> + <code>q</code> 关键字），字段经 <code>decorate_asset_row</code> 脱敏，<b>提供者列只显示「同租户用户 / 其他租户用户 / admin」等脱敏标签，绝不回显真实 user_id</b>。<br>
-    · 「租户公开」分段仅对同租户可见；列表<b>排除当前用户自己的资产</b>（自己的走页面「仅自己」下拉）。<br>
-    · 「加载查看」= 关闭抽屉并把该公开方案以<b>只读态</b>载入当前页；「复制为我的」= 调已有 <code>/copy</code>，落当前用户 <b>private</b> 副本并刷新「我的」下拉。<br>
-    · 关键状态：加载中 / 空态（暂无公开{类型}）/ 错误可重试 / 复制 409 冲突提示 / 窄视口抽屉转全宽。<br>
-    · 本框及下方「原型演示」控件为评审辅助，非线上内容。
+  <div class="note" id="noteBox">
+    <b>原型说明（真实实现忽略本批注框；点上方「隐藏原型说明」可整体隐藏）：</b><br>
+    · 来源三段对应 browse <code>source=preset|tenant|public</code>。<b>系统内置段严格取 <code>is_preset=true AND visibility=public</code>（限平台槽 PUBLIC_BOARD_OWNER），永不泄露 private</b>；<b>本地 dev 实测：评分、买卖系统内置段非空（各有 public 预设），筛选系统内置段为空态（正常，非缺陷）；生产真实分布仍待 T0 只读核验</b>；回测无 is_preset，回测弹窗无系统内置段、默认「全体公开」。<br>
+    · 提供者列经 <code>decorate_asset_row</code> 脱敏，只显示「同租户用户/其他租户用户」等标签，系统内置显示「—」，<b>绝不回显真实 user_id</b>；租户/全体段排除当前用户自己的资产。<br>
+    · 「加载查看」= 关闭抽屉 + 把该对象作为<b>会话内临时只读选中项</b>注入当前页（上方虚线条），不进入「我的」、切换/刷新不保留、不自动触发计算/评估/回测。<br>
+    · 「复制为我的」= 单击直接调 <code>/copy</code>，<b>后端自动生成唯一 id、名称默认「原名 副本」，不弹窗</b>；冲突判据是目标 id 存在（撞库后端追加后缀重试）。<br>
+    · 回测弹窗操作列为「加载查看 / 复用参数重跑」（R6：以公开参数在当前环境重跑生成自己的新 run，不复制他人结果快照）。<br>
+    · 列（方案类）：名称/版本/来源徽标/提供者/更新时间/操作（<code>summarize_asset_row</code> 需补 <code>updated_at</code>）；列（回测）：kind+日期区间/状态/创建时间/来源/提供者/操作（回测无 name/version/is_preset/updated_at）。<br>
+    · DESIGN 硬契约：抽屉 <code>PageDrawer size="xl"</code> 挂 <code>#overlays</code>；表格 <code>AppDataTable+AppTableColumn</code>（禁原生 table/禁传 width）；行操作 <code>AppRowActions</code>；关闭/搜索用 <code>AppIconButton</code>（<b>禁 Unicode 图标</b>，本原型用内联 SVG 表意）；四态 <code>AppStateBlock</code>；覆盖 1100×620/1366×768/1440×900。<br>
+    · 本框及「重新打开抽屉（原型演示）」按钮为评审辅助，非线上内容。
   </div>
 
   <script>
-    // 原型演示交互（仅用于评审点击反馈，非业务实现）
-    var seg=document.querySelectorAll('.segment button');
-    seg.forEach(function(b){b.onclick=function(){seg.forEach(function(x){x.classList.remove('active')});b.classList.add('active');};});
-    document.querySelectorAll('[data-copy]').forEach(function(el){
-      el.onclick=function(){var t=document.getElementById('toast');t.classList.add('show');setTimeout(function(){t.classList.remove('show');},1600);};
+    var DATA = {
+      preset: [
+        {name:'趋势龙头·基础评分', tag:'preset', tagText:'系统内置', owner:'—', ver:'v3', time:'2026-07-20'},
+        {name:'龙头首板·内置评分', tag:'preset', tagText:'系统内置', owner:'—', ver:'v2', time:'2026-07-18'},
+        {name:'低波稳健·内置打分', tag:'preset', tagText:'系统内置', owner:'—', ver:'v1', time:'2026-07-15'},
+      ],
+      tenant: [
+        {name:'本租户·北向增强评分', tag:'tenant', tagText:'租户公开', owner:'同租户用户', ver:'v2', time:'2026-07-22'},
+        {name:'本租户·量能突破打分', tag:'tenant', tagText:'租户公开', owner:'同租户用户', ver:'v1', time:'2026-07-19'},
+      ],
+      public: [
+        {name:'量价齐升·进攻型', tag:'public', tagText:'全体公开', owner:'其他租户用户', ver:'v4', time:'2026-07-25'},
+        {name:'高股息·防守评分', tag:'public', tagText:'全体公开', owner:'其他租户用户', ver:'v2', time:'2026-07-21'},
+        {name:'困境反转·左侧评分', tag:'public', tagText:'全体公开', owner:'同租户用户', ver:'v1', time:'2026-07-17'},
+        {name:'北向共振·中线评分', tag:'public', tagText:'全体公开', owner:'其他租户用户', ver:'v3', time:'2026-07-14'},
+        {name:'放量突破·短线评分', tag:'public', tagText:'全体公开', owner:'同租户用户', ver:'v1', time:'2026-07-11'},
+      ],
+    };
+    var srcLabel = {preset:'系统内置', tenant:'租户公开', public:'全体公开'};
+    // pageSize=3：全体公开段 5 条 → 2 页，可实际翻页验证
+    var state = {src:'preset', q:'', page:1, pageSize:3};
+
+    function rows(){
+      var q = state.q.trim();
+      return DATA[state.src].filter(function(r){ return !q || r.name.indexOf(q) >= 0; });
+    }
+    function render(){
+      var all = rows();
+      var totalPage = Math.max(1, Math.ceil(all.length / state.pageSize));
+      if(state.page > totalPage) state.page = totalPage;
+      var slice = all.slice((state.page-1)*state.pageSize, state.page*state.pageSize);
+      var list = document.getElementById('list');
+      if(slice.length === 0){
+        list.innerHTML = '<div class="empty">暂无'+srcLabel[state.src]+'评分方案</div>';
+      } else {
+        var body = slice.map(function(r){
+          return '<tr>'+
+            '<td class="name">'+r.name+'</td>'+
+            '<td><span class="tag '+r.tag+'">'+r.tagText+'</span></td>'+
+            '<td class="owner">'+r.owner+'</td>'+
+            '<td class="ver">'+r.ver+'</td>'+
+            '<td class="ver">'+r.time+'</td>'+
+            '<td class="ops"><span class="link" data-load="'+r.name+'">加载查看</span>'+
+            '<span class="link copy" data-copy="1">复制为我的</span></td>'+
+          '</tr>';
+        }).join('');
+        list.innerHTML = '<table><thead><tr><th>方案名称</th><th>来源</th><th>提供者</th><th>版本</th><th>更新时间</th><th>操作</th></tr></thead><tbody>'+body+'</tbody></table>';
+      }
+      document.getElementById('count').textContent = '共 '+all.length+' 条'+srcLabel[state.src]+'方案';
+      var pager = document.getElementById('pager');
+      var btns = '<button '+(state.page<=1?'disabled':'')+' data-pg="prev">上一页</button>';
+      for(var i=1;i<=totalPage;i++){ btns += '<button class="'+(i===state.page?'on':'')+'" data-pg="'+i+'">'+i+'</button>'; }
+      btns += '<button '+(state.page>=totalPage?'disabled':'')+' data-pg="next">下一页</button>';
+      pager.innerHTML = btns;
+    }
+
+    document.getElementById('segment').addEventListener('click', function(e){
+      var b = e.target.closest('button'); if(!b) return;
+      [].forEach.call(this.querySelectorAll('button'), function(x){x.classList.remove('active');});
+      b.classList.add('active'); state.src = b.dataset.src; state.page = 1; render();
     });
-    document.querySelector('.close').onclick=function(){alert('原型演示：关闭抽屉');};
+    document.getElementById('q').addEventListener('input', function(e){ state.q = e.target.value; state.page = 1; render(); });
+    document.getElementById('pager').addEventListener('click', function(e){
+      var b = e.target.closest('button'); if(!b || b.disabled) return;
+      var pg = b.dataset.pg;
+      if(pg==='prev') state.page--; else if(pg==='next') state.page++; else state.page = parseInt(pg,10);
+      render();
+    });
+    function closeDrawer(){ document.getElementById('drawer').classList.add('hidden'); document.getElementById('overlay').classList.add('hidden'); }
+    function openDrawer(){ document.getElementById('drawer').classList.remove('hidden'); document.getElementById('overlay').classList.remove('hidden'); }
+    document.getElementById('list').addEventListener('click', function(e){
+      var load = e.target.closest('[data-load]');
+      if(load){
+        document.getElementById('roName').textContent = load.dataset.load;
+        document.getElementById('roChip').style.display = 'flex';
+        closeDrawer(); return;
+      }
+      if(e.target.closest('[data-copy]')){
+        var t = document.getElementById('toast'); t.classList.add('show'); setTimeout(function(){t.classList.remove('show');}, 1800);
+      }
+    });
+    document.getElementById('closeBtn').addEventListener('click', closeDrawer);
+    document.getElementById('overlay').addEventListener('click', closeDrawer);
+    document.getElementById('reopen').addEventListener('click', openDrawer);
+    document.getElementById('openSearch').addEventListener('click', openDrawer);
+    // 发布按钮 = 轻量可见性三档下拉菜单（真实实现 = AssetVisibilityActions）
+    var publishBtn = document.getElementById('publishBtn');
+    var publishMenu = document.getElementById('publishMenu');
+    function closePublishMenu(){ publishMenu.classList.add('hidden'); publishBtn.setAttribute('aria-expanded','false'); }
+    publishBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var open = publishMenu.classList.toggle('hidden');
+      publishBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+    publishMenu.addEventListener('click', function(e){
+      var it = e.target.closest('[data-vis]'); if(!it) return;
+      var label = {private:'私有',tenant:'租户公开',public:'全体公开'}[it.dataset.vis];
+      closePublishMenu();
+      var t = document.getElementById('toast');
+      t.textContent = '已把当前方案发布为：' + label + '（普通用户可自主发布，owner-only 守卫）';
+      t.classList.add('show'); setTimeout(function(){ t.classList.remove('show'); t.textContent='已复制为「我的方案」（后端自动生成 id，名称「原名 副本」），已加入自己的下拉'; }, 1800);
+    });
+    document.addEventListener('click', closePublishMenu);
+    // 隐藏原型说明 = 同时隐藏顶部说明、底部批注与演示专用控件（重新打开抽屉）
+    document.getElementById('toggleNote').addEventListener('click', function(){
+      var on = !document.getElementById('noteBox').classList.contains('hidden');
+      ['noteBox','stageHint','reopen'].forEach(function(id){ document.getElementById(id).classList.toggle('hidden', on); });
+      this.textContent = on ? '显示原型说明' : '隐藏原型说明';
+    });
+    render();
   </script>
 </body>
 </html>

@@ -9,6 +9,9 @@
 
 from __future__ import annotations
 
+import json
+from contextlib import contextmanager
+
 from backend.auth.constants import (
     ASSET_PUBLIC_PUBLISH_RESOURCE_CODES,
     ASSET_TENANT_PUBLISH_RESOURCE_CODES,
@@ -17,13 +20,24 @@ from backend.auth.constants import (
     ROLE_TENANT_ADMIN,
 )
 from backend.storage.pg_ddl import (
+    _ASSET_PUBLISH_OPEN_LOCK,
+    _ASSET_PUBLISH_OPEN_MARKER,
+    _PUBLISH_STATE_APPLIED,
+    _PUBLISH_STATE_INVALID,
+    _PUBLISH_STATE_MISSING,
+    _PUBLISH_STATE_ROLLED_BACK,
     _STAGE4_BUSINESS_GRANTS_MARKER,
     _STAGE6_ASSET_VISIBILITY_MARKER,
     _SEED_MENU_TREE,
     _SEED_RESOURCES,
     _USER_RESOURCE_CODES,
+    _backfill_asset_publish_open_v1,
     _flatten_menu_tree,
+    _publish_policy_state_cur,
+    _publish_suppressed,
     _remove_legacy_paid_role,
+    _seed_role_grants,
+    rollback_asset_publish_open_v1,
     seed_rbac,
     seed_stage6_asset_visibility,
 )
@@ -354,22 +368,24 @@ def test_normal_role_business_only(pg):
         "trade-profile:delete",
         "trade-profile:preview",
     } <= resources
-    assert "score-profile:publish-tenant" not in resources
-    assert "score-profile:publish-public" not in resources
-    assert not set(ASSET_TENANT_PUBLISH_RESOURCE_CODES) & resources
-    assert not set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) & resources
+    # asset-ownership-refactor C4/R4：放开普通用户发布——normal 默认获得 8 个 tenant/public 发布码
+    assert "score-profile:publish-tenant" in resources
+    assert "score-profile:publish-public" in resources
+    assert set(ASSET_TENANT_PUBLISH_RESOURCE_CODES) <= resources
+    assert set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) <= resources
     assert not any(c.startswith("user:") or c.startswith("role:") or c.startswith("tenant:")
                    for c in resources)
 
 
-def test_tenant_admin_has_tenant_publish_by_default(pg):
+def test_tenant_admin_has_all_publish_by_default(pg):
+    # asset-ownership-refactor C4/R4：tenant_admin 默认获得 tenant + public 全部发布码
     resources = set(pg.query_df(
         "SELECT resource_id FROM sys_role_resource WHERE role_id=%s",
         [ROLE_TENANT_ADMIN])["resource_id"])
     assert "score-profile:publish-tenant" in resources
-    assert "score-profile:publish-public" not in resources
+    assert "score-profile:publish-public" in resources
     assert set(ASSET_TENANT_PUBLISH_RESOURCE_CODES) <= resources
-    assert not set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) & resources
+    assert set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) <= resources
 
 
 def test_stage6_asset_visibility_schema_and_resources(pg):
@@ -441,12 +457,66 @@ def test_stage6_asset_publish_grants_backfilled_for_tenant_admin(pg):
             [ROLE_TENANT_ADMIN])["resource_id"])
         perm_ver = int(pg.query_df(
             "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        # C4/R4：seed_stage6 现同时授予 tenant_admin 的 tenant + public 发布码
         assert set(ASSET_TENANT_PUBLISH_RESOURCE_CODES) <= resources
-        assert not set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) & resources
+        assert set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) <= resources
         assert perm_ver == 1
     finally:
         pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
         _restore_role_grants(pg, ROLE_TENANT_ADMIN, role_snapshot)
+        _restore_app_config(pg, [marker_key], marker_snapshot)
+        _restore_perm_versions(pg, perm_snapshot)
+
+
+def test_asset_publish_open_backfilled_for_normal(pg):
+    """asset-ownership-refactor C4/R4：存量库回填把 8 个发布码授给 normal，并 bump perm_ver。"""
+    uid = "asset_publish_open_normal"
+    marker_key = _ASSET_PUBLISH_OPEN_MARKER
+    marker_snapshot = _snapshot_app_config(pg, [marker_key])
+    role_snapshot = _snapshot_role_grants(pg, ROLE_NORMAL)
+    perm_snapshot = _snapshot_perm_versions(pg)
+    all_publish = list(ASSET_TENANT_PUBLISH_RESOURCE_CODES) + list(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)
+    pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+    pg.execute(
+        "INSERT INTO sys_user (id, tenant_id, account, role_code, perm_ver, status) "
+        "VALUES (%s, 'pytest', %s, %s, 0, 'active')",
+        [uid, uid, ROLE_NORMAL],
+    )
+    pg.execute(
+        "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        [uid, ROLE_NORMAL],
+    )
+    try:
+        # 模拟存量库：迁移标记未落地 + normal 尚无任何发布码
+        pg.execute("DELETE FROM app_config WHERE key=%s", [marker_key])
+        pg.execute(
+            "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id = ANY(%s)",
+            [ROLE_NORMAL, all_publish],
+        )
+
+        _backfill_asset_publish_open_v1(pg)
+
+        resources = set(pg.query_df(
+            "SELECT resource_id FROM sys_role_resource WHERE role_id=%s",
+            [ROLE_NORMAL])["resource_id"])
+        perm_ver = int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert set(all_publish) <= resources
+        assert perm_ver == 1  # 确有新增 → bump 一次
+
+        # marker 只记「已应用」（回滚走确定性基线，不依赖 marker 内容）
+        marker_val = json.loads(pg.query_df(
+            "SELECT value FROM app_config WHERE key=%s", [marker_key]).iloc[0]["value"])
+        assert marker_val.get("applied") is True
+
+        # 幂等 + 并发安全：marker 已落地 → 再跑整段 no-op，不重复授权、不再 bump
+        _backfill_asset_publish_open_v1(pg)
+        perm_ver2 = int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert perm_ver2 == 1
+    finally:
+        pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+        _restore_role_grants(pg, ROLE_NORMAL, role_snapshot)
         _restore_app_config(pg, [marker_key], marker_snapshot)
         _restore_perm_versions(pg, perm_snapshot)
 
@@ -471,8 +541,8 @@ def test_stage4_business_grants_backfilled_for_existing_builtin_roles(pg):
         # 模拟旧库：normal 已经有菜单，所以 _seed_role_grants 会跳过；阶段四新增授权缺失。
         pg.execute("DELETE FROM app_config WHERE key=%s", [marker_key])
         pg.execute(
-            "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id IN (%s, %s)",
-            [ROLE_NORMAL, "board:view", "score-profile:publish-tenant"],
+            "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
+            [ROLE_NORMAL, "board:view"],
         )
         pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s AND menu_id=%s", [ROLE_NORMAL, "/board"])
 
@@ -486,7 +556,7 @@ def test_stage4_business_grants_backfilled_for_existing_builtin_roles(pg):
             "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
         assert "/board" in menus
         assert "board:view" in resources
-        assert "score-profile:publish-tenant" not in resources
+        # 发布码不再由 stage4 backfill 管辖（见 _backfill_asset_publish_open_v1），本用例只验证业务码回填
         assert perm_ver == 1
     finally:
         pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
@@ -563,3 +633,330 @@ def test_seed_rbac_idempotent(pg):
     seed_rbac(pg)   # 复跑
     after = {t: _count(pg, t) for t in RBAC_TABLES}
     assert before == after
+
+
+# ── R4/R5：发布权回滚（确定性基线恢复）可执行 + 有测试 ──────────────────────────
+def _role_publish_codes(pg, role_id: str, codes: list[str]) -> set[str]:
+    got = pg.query_df(
+        "SELECT resource_id FROM sys_role_resource WHERE role_id=%s AND resource_id = ANY(%s)",
+        [role_id, codes])
+    return set(got["resource_id"]) if not got.empty else set()
+
+
+class _FaultRbacPG:
+    """包装真实 pg：transaction() 内命中指定 SQL 片段即抛错，验证回滚整体原子性。"""
+
+    def __init__(self, real, fail_on: str):
+        self._real = real
+        self._fail_on = fail_on
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    @contextmanager
+    def transaction(self):
+        fail_on = self._fail_on
+
+        class _Cur:
+            def __init__(self, real):
+                self._real = real
+
+            def execute(self, sql, params=None):
+                if fail_on in sql:
+                    raise RuntimeError(f"fault-injected on: {fail_on}")
+                return self._real.execute(sql, params)
+
+            def fetchone(self):
+                return self._real.fetchone()
+
+            @property
+            def rowcount(self):
+                return self._real.rowcount
+
+        class _Conn:
+            def __init__(self, real):
+                self._real = real
+
+            @contextmanager
+            def cursor(self):
+                with self._real.cursor() as c:
+                    yield _Cur(c)
+
+        with self._real.transaction() as conn:
+            yield _Conn(conn)
+
+
+def test_asset_publish_open_rollback_restores_c4_baseline(pg):
+    """回滚确定性恢复 C4 前基线：normal 清空 8 码；tenant_admin 删 public、补齐 tenant；
+    marker 写 tombstone（不删）；确有增删 → bump；回滚后按真实 init 顺序跑三写入者仍不复活；
+    二次回滚因 rolled_back 短路 no-op。"""
+    marker_key = _ASSET_PUBLISH_OPEN_MARKER
+    tenant_codes = list(ASSET_TENANT_PUBLISH_RESOURCE_CODES)
+    public_codes = list(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)
+    all_codes = tenant_codes + public_codes
+    uid = "asset_publish_rollback_user"
+    stage6_key = _STAGE6_ASSET_VISIBILITY_MARKER
+    marker_snap = _snapshot_app_config(pg, [marker_key, stage6_key])
+    normal_snap = _snapshot_role_grants(pg, ROLE_NORMAL)
+    ta_snap = _snapshot_role_grants(pg, ROLE_TENANT_ADMIN)
+    perm_snap = _snapshot_perm_versions(pg)
+    pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+    pg.execute(
+        "INSERT INTO sys_user (id, tenant_id, account, role_code, perm_ver, status) "
+        "VALUES (%s, 'pytest', %s, %s, 0, 'active')", [uid, uid, ROLE_NORMAL])
+    pg.execute("INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+               [uid, ROLE_NORMAL])
+    try:
+        # 前置：确保已应用（marker + 全量授权）
+        _backfill_asset_publish_open_v1(pg)
+        # 模拟迁移期间人工移除 tenant_admin 一个 tenant 码
+        pg.execute("DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
+                   [ROLE_TENANT_ADMIN, tenant_codes[0]])
+        pv_before = int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+
+        rollback_asset_publish_open_v1(pg)
+
+        # normal：无任何发布码
+        assert _role_publish_codes(pg, ROLE_NORMAL, all_codes) == set()
+        # tenant_admin：tenant 全部补齐（含被人工删的）、public 清空
+        assert _role_publish_codes(pg, ROLE_TENANT_ADMIN, tenant_codes) == set(tenant_codes)
+        assert _role_publish_codes(pg, ROLE_TENANT_ADMIN, public_codes) == set()
+        # marker 不删除，改写为 tombstone（rolled_back=true），使正向迁移重启后 no-op
+        mval = json.loads(pg.query_df(
+            "SELECT value FROM app_config WHERE key=%s", [marker_key]).iloc[0]["value"])
+        assert mval.get("rolled_back") is True and mval.get("applied") is False
+        # 确有增删 → bump 一次
+        pv_after = int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert pv_after == pv_before + 1
+
+        # 持久性关键回归：回滚后**按真实启动顺序**跑全部发布权写入者 → 发布权**不得复活**、仍 C4 基线。
+        # 且构造角色管理接口允许的边界：清空 normal 菜单（触发 _seed_role_grants 重授默认权限）、
+        # 删除 stage6 marker（触发 seed_stage6 重跑），确认二者都消费 tombstone、不复活 public/发布码。
+        pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])
+        pg.execute("DELETE FROM app_config WHERE key=%s", [stage6_key])
+        menu_codes = pg.query_df("SELECT id FROM sys_menu")["id"].tolist()
+        _seed_role_grants(pg, menu_codes)        # init 第一个写入者
+        seed_stage6_asset_visibility(pg)          # init 第二个写入者
+        _backfill_asset_publish_open_v1(pg)       # init 第三个写入者
+        # 三者跑完，发布权仍为 C4 基线：normal 无、tenant_admin 仅 tenant
+        assert _role_publish_codes(pg, ROLE_NORMAL, all_codes) == set()
+        assert _role_publish_codes(pg, ROLE_TENANT_ADMIN, public_codes) == set()
+        assert _role_publish_codes(pg, ROLE_TENANT_ADMIN, tenant_codes) == set(tenant_codes)
+        mval2 = json.loads(pg.query_df(
+            "SELECT value FROM app_config WHERE key=%s", [marker_key]).iloc[0]["value"])
+        assert mval2.get("rolled_back") is True  # tombstone 未被任何写入者覆盖
+        # 关键：发布权状态未变（仍基线）。perm_ver 因 _seed_role_grants 重授**菜单**而 +1（R9 正确行为，
+        # 菜单也是授权），但这不是发布权复活——上面已断言 normal 无发布码、tenant_admin 仅 tenant。
+        pv_reinit = int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert pv_reinit == pv_after + 1  # 仅菜单重授触发一次 bump（非发布权变更）
+
+        # 二次回滚：tombstone 已在 → 整段 no-op，不再 bump（perm_ver 停在 reinit 后的值）
+        rollback_asset_publish_open_v1(pg)
+        pv_again = int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert pv_again == pv_reinit
+    finally:
+        pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+        _restore_role_grants(pg, ROLE_NORMAL, normal_snap)
+        _restore_role_grants(pg, ROLE_TENANT_ADMIN, ta_snap)
+        _restore_app_config(pg, [marker_key, stage6_key], marker_snap)
+        _restore_perm_versions(pg, perm_snap)
+
+
+def _all_role_grants(pg, role_id: str) -> set[str]:
+    got = pg.query_df("SELECT resource_id FROM sys_role_resource WHERE role_id=%s", [role_id])
+    return set(got["resource_id"]) if not got.empty else set()
+
+
+def _perm_ver_map(pg) -> dict[str, int]:
+    df = pg.query_df("SELECT id, perm_ver FROM sys_user")
+    return {r["id"]: int(r["perm_ver"]) for _, r in df.iterrows()}
+
+
+def test_asset_publish_open_rollback_is_atomic_on_failure(pg):
+    """回滚中途故障（tombstone 写入前抛错）：normal/tenant_admin 授权、marker、perm_ver 整体回滚，无半成品。"""
+    marker_key = _ASSET_PUBLISH_OPEN_MARKER
+    all_codes = list(ASSET_TENANT_PUBLISH_RESOURCE_CODES) + list(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES)
+    marker_snap = _snapshot_app_config(pg, [marker_key])
+    normal_snap = _snapshot_role_grants(pg, ROLE_NORMAL)
+    ta_snap = _snapshot_role_grants(pg, ROLE_TENANT_ADMIN)
+    perm_snap = _snapshot_perm_versions(pg)
+    try:
+        _backfill_asset_publish_open_v1(pg)  # 确保已应用
+        # 故障前完整快照：两类角色授权集合 + 全体 perm_ver + marker 值
+        normal_before = _all_role_grants(pg, ROLE_NORMAL)
+        ta_before = _all_role_grants(pg, ROLE_TENANT_ADMIN)
+        perm_before = _perm_ver_map(pg)
+        marker_before = pg.query_df(
+            "SELECT value FROM app_config WHERE key=%s", [marker_key]).iloc[0]["value"]
+        assert normal_before & set(all_codes), "前置：normal 应已有发布码"
+
+        # 故障注入：tombstone 写入（UPDATE app_config）抛错 → 整个回滚事务回滚
+        import pytest
+
+        from backend.common.exceptions import StorageError
+        fault_pg = _FaultRbacPG(pg, fail_on="UPDATE app_config")
+        with pytest.raises(StorageError):
+            rollback_asset_publish_open_v1(fault_pg)
+
+        # 逐项断言完全不变：normal 授权、tenant_admin 授权、marker 值、全体 perm_ver
+        assert _all_role_grants(pg, ROLE_NORMAL) == normal_before
+        assert _all_role_grants(pg, ROLE_TENANT_ADMIN) == ta_before
+        assert pg.query_df(
+            "SELECT value FROM app_config WHERE key=%s", [marker_key]).iloc[0]["value"] == marker_before
+        assert _perm_ver_map(pg) == perm_before
+    finally:
+        _restore_role_grants(pg, ROLE_NORMAL, normal_snap)
+        _restore_role_grants(pg, ROLE_TENANT_ADMIN, ta_snap)
+        _restore_app_config(pg, [marker_key], marker_snap)
+        _restore_perm_versions(pg, perm_snap)
+
+
+# ── R8-P1-3：发布策略状态机——非法/冲突 marker fail-closed（不放开发布权）──────────
+def test_publish_policy_state_model_and_fail_closed(pg):
+    key = _ASSET_PUBLISH_OPEN_MARKER
+    snap = _snapshot_app_config(pg, [key])
+    cases = [
+        (None, _PUBLISH_STATE_MISSING),
+        ('{"applied":true}', _PUBLISH_STATE_APPLIED),
+        ('{"applied":false,"rolled_back":true}', _PUBLISH_STATE_ROLLED_BACK),
+        ('not-json', _PUBLISH_STATE_INVALID),
+        ('{}', _PUBLISH_STATE_INVALID),
+        ('{"applied":true,"rolled_back":true}', _PUBLISH_STATE_INVALID),   # 冲突字段
+        ('[1,2,3]', _PUBLISH_STATE_INVALID),                              # 非 dict
+    ]
+    try:
+        for raw, expected in cases:
+            pg.execute("DELETE FROM app_config WHERE key=%s", [key])
+            if raw is not None:
+                pg.execute("INSERT INTO app_config (key,value,updated_at) VALUES (%s,%s,now())", [key, raw])
+            with pg.transaction() as conn, conn.cursor() as cur:
+                state = _publish_policy_state_cur(cur)
+            assert state == expected, (raw, state)
+        # fail-closed：rolled_back / invalid 抑制授予；missing / applied 放开
+        assert _publish_suppressed(_PUBLISH_STATE_ROLLED_BACK)
+        assert _publish_suppressed(_PUBLISH_STATE_INVALID)
+        assert not _publish_suppressed(_PUBLISH_STATE_MISSING)
+        assert not _publish_suppressed(_PUBLISH_STATE_APPLIED)
+    finally:
+        _restore_app_config(pg, [key], snap)
+
+
+# ── R8-P1-1：_seed_role_grants 获取与回滚共享的 advisory lock（串行化，防并发复活）──────
+def test_seed_role_grants_acquires_shared_publish_lock(pg):
+    import threading
+
+    lock_key = _ASSET_PUBLISH_OPEN_LOCK
+    done = threading.Event()
+    err: list = []
+
+    def _run_seed():
+        try:
+            _seed_role_grants(pg, [])
+        except Exception as e:  # noqa: BLE001
+            err.append(e)
+        finally:
+            done.set()
+
+    with pg.pool.connection() as holder:
+        with holder.cursor() as c:
+            c.execute("SELECT pg_advisory_lock(%s)", [lock_key])  # 会话级持有，跨事务
+        holder.commit()
+        t = threading.Thread(target=_run_seed)
+        t.start()
+        try:
+            # 锁被占用 → seed 的非系统角色事务阻塞在同一把锁上，1s 内不完成
+            assert not done.wait(timeout=1.0), "seed_role_grants 应阻塞在共享 advisory lock 上"
+        finally:
+            with holder.cursor() as c:
+                c.execute("SELECT pg_advisory_unlock(%s)", [lock_key])
+            holder.commit()
+    # 释放锁后 seed 应完成
+    assert done.wait(timeout=10.0), "释放锁后 seed_role_grants 应完成"
+    t.join(timeout=5.0)
+    assert not err, err
+
+
+def _mk_role_user(pg, uid: str, role_id: str) -> None:
+    pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+    pg.execute("INSERT INTO sys_user (id, tenant_id, account, role_code, perm_ver, status) "
+               "VALUES (%s,'pytest',%s,%s,0,'active')", [uid, uid, role_id])
+    pg.execute("INSERT INTO sys_user_role (user_id, role_id) VALUES (%s,%s) ON CONFLICT DO NOTHING",
+               [uid, role_id])
+
+
+# ── R8-P1-2：_seed_role_grants 授权非原子——故障时菜单+资源+perm_ver 同退（回滚路径）──────
+def test_seed_role_grants_atomic_rollback_on_failure(pg):
+    """清空 tenant_admin 授权后重跑 seed，注入 perm_ver bump 故障 → 该角色菜单/资源整体回滚、perm_ver 不变。"""
+    import pytest
+
+    from backend.common.exceptions import StorageError
+    ta_snap = _snapshot_role_grants(pg, ROLE_TENANT_ADMIN)
+    perm_snap = _snapshot_perm_versions(pg)
+    try:
+        pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s", [ROLE_TENANT_ADMIN])
+        pg.execute("DELETE FROM sys_role_resource WHERE role_id=%s", [ROLE_TENANT_ADMIN])
+        fault_pg = _FaultRbacPG(pg, fail_on="UPDATE sys_user SET perm_ver")
+        with pytest.raises(StorageError):
+            _seed_role_grants(fault_pg, [])
+        after = _snapshot_role_grants(pg, ROLE_TENANT_ADMIN)
+        assert after["menus"] == [] and after["resources"] == []   # 半成品零残留
+        assert _perm_ver_map(pg) == {r["id"]: int(r["perm_ver"]) for r in perm_snap}
+    finally:
+        _restore_role_grants(pg, ROLE_TENANT_ADMIN, ta_snap)
+        _restore_perm_versions(pg, perm_snap)
+
+
+# ── R9-P1：仅清空菜单（资源完整）重授，菜单变化也必须 bump perm_ver ──────────────────
+def test_seed_role_grants_menu_only_reseed_bumps_perm_ver(pg):
+    """角色管理允许「菜单空、资源完整」合法态；seed 恢复菜单 → 资源 INSERT 全冲突、res 计数为 0，
+    但菜单确有恢复 → perm_ver 必须 +1（否则菜单权限扩大与 token 版本脱节）。"""
+    uid = "seed_menu_only_user"
+    normal_snap = _snapshot_role_grants(pg, ROLE_NORMAL)
+    perm_snap = _snapshot_perm_versions(pg)
+    _mk_role_user(pg, uid, ROLE_NORMAL)
+    try:
+        res_before = set(_snapshot_role_grants(pg, ROLE_NORMAL)["resources"])
+        assert res_before, "前置：normal 资源应完整"
+        # 只清菜单，保留资源
+        pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])
+        pv0 = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+
+        _seed_role_grants(pg, [])
+
+        # 菜单恢复非空、资源不变
+        assert _snapshot_role_grants(pg, ROLE_NORMAL)["menus"], "菜单应被恢复"
+        assert set(_snapshot_role_grants(pg, ROLE_NORMAL)["resources"]) == res_before
+        # 关键：仅菜单变化也 bump perm_ver
+        pv1 = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert pv1 == pv0 + 1
+    finally:
+        pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+        _restore_role_grants(pg, ROLE_NORMAL, normal_snap)
+        _restore_perm_versions(pg, perm_snap)
+
+
+# ── R9-P2：成功重授（菜单+资源都清空）→ 授权恢复且 perm_ver +1（成功路径断言）──────────
+def test_seed_role_grants_full_reseed_bumps_perm_ver(pg):
+    uid = "seed_full_reseed_user"
+    normal_snap = _snapshot_role_grants(pg, ROLE_NORMAL)
+    perm_snap = _snapshot_perm_versions(pg)
+    _mk_role_user(pg, uid, ROLE_NORMAL)
+    try:
+        pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])
+        pg.execute("DELETE FROM sys_role_resource WHERE role_id=%s", [ROLE_NORMAL])
+        pv0 = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+
+        _seed_role_grants(pg, [])
+
+        after = _snapshot_role_grants(pg, ROLE_NORMAL)
+        assert after["menus"] and after["resources"]   # 菜单+资源都恢复
+        pv1 = int(pg.query_df("SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert pv1 == pv0 + 1
+    finally:
+        pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+        _restore_role_grants(pg, ROLE_NORMAL, normal_snap)
+        _restore_perm_versions(pg, perm_snap)

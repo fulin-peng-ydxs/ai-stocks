@@ -12,22 +12,26 @@ import json
 from datetime import datetime
 
 from backend.auth.context import get_current_owner
+from backend.common.ids import prefixed_readable_id
 from backend.common.logging import get_logger
 from backend.screening.condition import validate_ast
 from backend.screening.presets import PRESET_PROFILES
 from backend.services.asset_visibility import (
     ASSET_SCREEN_PROFILE,
+    SCOPE_MINE,
     VISIBILITY_PRIVATE,
     decorate_asset_row,
     is_asset_visible,
     make_asset_ref,
     normalize_visibility,
     resolve_asset_ref_or_legacy_id,
+    scoped_query,
     summarize_asset_row,
     visible_params,
     visible_sql,
 )
 from backend.storage.pg_client import get_pg_client
+from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
 log = get_logger("screening.profile")
 
@@ -158,6 +162,44 @@ class ProfileRepo:
         )
         return [self._decorate_summary(r) for r in df.to_dict("records")]
 
+    def list_mine(self) -> list[dict]:
+        """下拉专用：只加载「自己的资产」（纯 owner），不含他人公开与平台槽系统内置段；
+        平台槽账号下也剔除严格系统内置预设，保证与 preset 段互斥（R3/C2）。"""
+        rows, _ = scoped_query(
+            self.pg,
+            table="screen_profile",
+            source=SCOPE_MINE,
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+            public_board_owner=PUBLIC_BOARD_OWNER,
+        )
+        return [self._decorate_summary(r) for r in rows]
+
+    def browse(self, source: str, q: str | None = None, page: int = 1, page_size: int = 20) -> dict:
+        """搜索弹窗浏览：preset（系统内置严格公开）/ tenant / public（强制补集），关键字 + 分页（R5/R14）。"""
+        if source not in ("preset", "tenant", "public"):
+            raise ValueError("browse 仅支持 preset/tenant/public 来源")
+        page = max(1, int(page))
+        page_size = max(1, min(int(page_size), 100))
+        rows, total = scoped_query(
+            self.pg,
+            table="screen_profile",
+            source=source,
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+            public_board_owner=PUBLIC_BOARD_OWNER,
+            q=q,
+            page=page,
+            page_size=page_size,
+        )
+        return {
+            "items": [self._decorate_summary(r) for r in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "source": source,
+        }
+
     def get_visible(self, profile_ref_or_id: str, *, include_owner: bool = False) -> dict | None:
         try:
             ref = resolve_asset_ref_or_legacy_id(
@@ -212,16 +254,61 @@ class ProfileRepo:
             return None
         return self.get_visible(profile_ref_or_id)
 
-    def copy_visible(self, profile_ref_or_id: str, new_id: str, new_name: str | None = None) -> int:
-        new_id = (new_id or "").strip()
-        if not new_id:
-            raise ValueError("目标方案 id 不能为空")
+    def _make_copy_id(self, name: str) -> str:
+        base = prefixed_readable_id(name, prefix="screen_")
+        new_id = base
+        seq = 2
+        while self.get(new_id):
+            new_id = f"{base}_{seq}"
+            seq += 1
+        return new_id
+
+    def _insert_copy(self, new_id: str, name: str, expression: dict, params: dict) -> bool:
+        """原子插入一条全新 private 副本（version=1）；id 已存在则不写并返回 False，交上层换 id 重试。
+
+        主表 + 版本表在**同一事务同一游标**内写入：`INSERT ... ON CONFLICT DO NOTHING`
+        主表 0 行即撞库（换 id 重试）；版本表失败则整体回滚，杜绝「主表残留、无版本历史」的半成品。"""
+        now = datetime.now()
+        expr_json = json.dumps(expression, ensure_ascii=False)
+        with self.pg.transaction() as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO screen_profile "
+                "(id,tenant_id,owner_user_id,name,version,expression,params,is_preset,created_at,updated_at) "
+                "VALUES (%s,%s,%s,%s,1,%s,%s,false,%s,%s) "
+                "ON CONFLICT (tenant_id, owner_user_id, id) DO NOTHING",
+                [new_id, self.tenant_id, self.owner_user_id, name, expr_json,
+                 json.dumps(params or {}, ensure_ascii=False), now, now],
+            )
+            if cur.rowcount == 0:
+                return False
+            # 版本表用普通 INSERT（不 DO NOTHING）：新 id 下若已存在同版本=孤儿数据不一致，
+            # 冲突即抛错、整个事务回滚（含刚写的主表），不静默吞成「主表新、版本旧」。
+            cur.execute(
+                "INSERT INTO screen_profile_version "
+                "(id,tenant_id,owner_user_id,version,name,expression,saved_at) "
+                "VALUES (%s,%s,%s,1,%s,%s,%s)",
+                [new_id, self.tenant_id, self.owner_user_id, name, expr_json, now],
+            )
+        return True
+
+    def copy_visible(self, profile_ref_or_id: str, new_name: str | None = None) -> dict:
+        """复制可见方案为「我的」private（C8）：后端生成唯一 id、名称默认「原名 副本」，
+        撞库/并发有限次重试；仅真正插入成功才返回新 id/profile_ref/name/version。"""
         src = self.get_visible(profile_ref_or_id, include_owner=True)
         if not src:
             raise ValueError("方案不存在")
-        if self.get(new_id):
-            raise ValueError("目标方案已存在，请改名后再复制")
-        return self.save(new_id, new_name or f"{src['name']} 副本", src["expression"], src["params"])
+        base_name = (new_name or "").strip() or f"{src['name']} 副本"
+        for _ in range(5):
+            new_id = self._make_copy_id(base_name)
+            if self._insert_copy(new_id, base_name, src["expression"], src["params"]):
+                return {
+                    "id": new_id,
+                    "profile_ref": make_asset_ref(
+                        ASSET_SCREEN_PROFILE, self.tenant_id, self.owner_user_id, new_id),
+                    "name": base_name,
+                    "version": 1,
+                }
+        raise ValueError("复制失败：目标 id 冲突，请重试")
 
     def versions_visible(self, profile_ref_or_id: str) -> dict | None:
         prof = self.get_visible(profile_ref_or_id, include_owner=True)

@@ -11,7 +11,7 @@ MVP 说明：本地单用户、DuckDB 单写锁，回测同步执行（区间数
 from __future__ import annotations
 
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
 from backend.api.response import ApiResponse, err, ok
@@ -132,13 +132,15 @@ def robust(body: RobustIn) -> ApiResponse:
 @router.get("/runs", response_model=ApiResponse,
             dependencies=[Depends(require_perm("backtest:view"))])
 def list_runs(
-    limit: int | None = None,
+    limit: int | None = Query(None, ge=1),   # 有 q 时 Python 切片、无 q 时 SQL LIMIT，负值/0 两路语义不一致，统一 ge=1
     kind: str | None = None,
     source: str | None = None,
+    q: str | None = None,
 ) -> ApiResponse:
     if source not in (None, "mine", "tenant", "public"):
         return err(400, "source 必须是 mine、tenant 或 public")
-    runs = BacktestService().list_runs(limit, kind=kind, source=source)
+    # 回测无系统内置段（无 is_preset）：搜索弹窗仅 tenant/public；q 按三类引用方案名 + kind 过滤
+    runs = BacktestService().list_runs(limit, kind=kind, source=source, q=q)
 
     def _nan_none(v):
         return None if v is None or (isinstance(v, float) and pd.isna(v)) else v

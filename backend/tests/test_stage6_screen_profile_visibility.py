@@ -94,7 +94,6 @@ def test_screen_profile_tenant_visibility_copy_and_owner_guards(client, pg):
     )
     outsider, otid, outsider_role = _mk_user(pg, ["screen-profile:view"])
     pid = "screen_vis_" + uuid.uuid4().hex[:6]
-    copy_id = "screen_copy_" + uuid.uuid4().hex[:6]
     try:
         saved = client.post("/api/profiles", json=_profile_body(pid), headers=_auth(owner, tid))
         assert saved.status_code == 200 and saved.json()["code"] == 0
@@ -163,29 +162,34 @@ def test_screen_profile_tenant_visibility_copy_and_owner_guards(client, pg):
 
         copied = client.post(
             f"/api/profiles/{shared['profile_ref']}/copy",
-            json={"id": copy_id, "name": "我的筛选副本"},
+            json={"name": "我的筛选副本"},  # C8：前端不传 id，后端生成
             headers=_auth(viewer, tid),
         )
         assert copied.status_code == 200 and copied.json()["data"]["version"] == 1
+        new_id = copied.json()["data"]["id"]
+        assert new_id and copied.json()["data"]["profile_ref"]
         audit = pg.query_df(
             "SELECT action, resource_code, target_type, target_id FROM audit_log "
             "WHERE tenant_id=%s AND actor_user_id=%s AND event_type='asset_copy' "
             "AND action='screen_profile_copy' AND target_id=%s",
-            [tid, viewer, copy_id],
+            [tid, viewer, new_id],
         )
         assert not audit.empty
         assert audit.iloc[0]["resource_code"] == "screen-profile:save"
-        copied_detail = client.get(f"/api/profiles/{copy_id}", headers=_auth(viewer, tid)).json()["data"]
+        copied_detail = client.get(
+            f"/api/profiles/{copied.json()['data']['profile_ref']}", headers=_auth(viewer, tid)).json()["data"]
         assert copied_detail["name"] == "我的筛选副本"
         assert copied_detail["visibility"] == "private"
         assert copied_detail["readonly"] is False
 
+        # C8 单击即复制：再次复制成功且生成不同 id（不再 409 冲突）
         duplicated = client.post(
             f"/api/profiles/{shared['profile_ref']}/copy",
-            json={"id": copy_id, "name": "覆盖副本"},
+            json={"name": "我的筛选副本"},
             headers=_auth(viewer, tid),
         )
-        assert duplicated.status_code == 200 and duplicated.json()["code"] == 409
+        assert duplicated.status_code == 200 and duplicated.json()["code"] == 0
+        assert duplicated.json()["data"]["id"] != new_id
 
         outsider_rows = client.get("/api/profiles", headers=_auth(outsider, otid)).json()["data"]
         assert pid not in {r["id"] for r in outsider_rows}

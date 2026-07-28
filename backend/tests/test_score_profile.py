@@ -273,13 +273,15 @@ def test_visibility_owner_only_and_copy_visible(market, pg):
         with pytest.raises(PermissionError):
             viewer.set_visibility(src["profile_ref"], "private", published_by=TEST_OWNER)
 
-        assert viewer.copy_visible(src["profile_ref"], "copied_profile", "我的副本") == 1
-        copied = viewer.get("copied_profile")
+        # C8：后端生成唯一 id，返回 id/profile_ref/name/version；复制体落 viewer 名下 private
+        res = viewer.copy_visible(src["profile_ref"], "我的副本")
+        assert res["version"] == 1 and res["name"] == "我的副本" and res["id"] and res["profile_ref"]
+        copied = viewer.get(res["id"])
         assert copied["name"] == "我的副本"
         assert copied["visibility"] == "private"
-        with pytest.raises(ValueError, match="已存在"):
-            viewer.copy_visible(src["profile_ref"], "copied_profile", "覆盖副本")
-        assert viewer.get("copied_profile")["name"] == "我的副本"
+        # 单击即复制、无需改名：再复制一次得到不同 id（后端自动去重）
+        res2 = viewer.copy_visible(src["profile_ref"], "我的副本")
+        assert res2["id"] != res["id"]
     finally:
         for owner_id in ("pytest_pub_owner", TEST_OWNER):
             pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [owner_id])
@@ -370,16 +372,18 @@ def test_delete_not_blocked_by_other_owner_same_id_run(market, pg):
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s AND id=%s", [TEST_OWNER, same_id])
 
 
-def test_copy_visible_rejects_empty_id(market, pg):
-    """P7:score.copy_visible 空 new_id 报错,与 screen/trade 口径一致。"""
+def test_copy_visible_backend_generates_id_and_default_name(market, pg):
+    """C8：score.copy_visible 后端生成唯一 id；不传 name 默认「原名 副本」，与 screen/trade 口径一致。"""
     items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
     repo = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
     try:
         repo.save("copy_src_empty", "源方案", items)
-        with pytest.raises(ValueError, match="不能为空"):
-            repo.copy_visible("copy_src_empty", "   ")
+        res = repo.copy_visible("copy_src_empty")  # 不传 name
+        assert res["name"] == "源方案 副本"
+        assert res["id"] and res["id"] != "copy_src_empty" and res["version"] == 1
+        assert repo.get(res["id"])["visibility"] == "private"
     finally:
-        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s AND id='copy_src_empty'", [TEST_OWNER])
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s", [TEST_OWNER])
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s AND id='copy_src_empty'", [TEST_OWNER])
 
 

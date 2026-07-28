@@ -142,11 +142,28 @@ def board_compute(date_: str = Query(..., alias="date"), top: int = 50,
 
 @router.get("/board/profiles", response_model=ApiResponse,
             dependencies=[Depends(require_perm("board:view"))])
-def board_profiles() -> ApiResponse:
-    """榜单可选评分方案列表：自己的 + 同租户公开 + 全体公开 + 平台系统内置方案。"""
+def board_profiles(
+    source: str | None = None,
+    q: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> ApiResponse:
+    """榜单可选评分方案列表。
+
+    source=mine：下拉只加载自己的评分方案（纯 owner，R3/C2）；
+    source=preset|tenant|public：搜索弹窗浏览（分页 + q，R5/R14）；
+    不传维持 list_visible 兼容（自己 + 租户公开 + 全体公开 + 系统内置混合）。
+    """
     from backend.scoring.score_profile import ScoreProfileRepo
 
-    return ok(ScoreProfileRepo(get_client(), get_pg_client()).list_visible())
+    if source is not None and source not in ("mine", "preset", "tenant", "public"):
+        return err(400, "source 必须是 mine、preset、tenant 或 public")
+    repo = ScoreProfileRepo(get_client(), get_pg_client())
+    if source == "mine":
+        return ok(repo.list_mine())
+    if source in ("preset", "tenant", "public"):
+        return ok(repo.browse(source, q=q, page=page, page_size=page_size))
+    return ok(repo.list_visible())
 
 
 @router.post("/board/run", response_model=ApiResponse,

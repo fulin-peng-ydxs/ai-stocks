@@ -47,8 +47,11 @@ BUSINESS_RESOURCE_CODES: tuple[str, ...] = (
     "training:view", "training:start", "training:trade", "training:review", "training:delete",
 )
 
-# 阶段六资产公开权限码：tenant publish 默认给 tenant_admin/system，public publish 仅 system。
-# 不放入 BUSINESS_RESOURCE_CODES，避免 normal 在默认业务授权中获得发布能力。
+# 资产公开权限码（asset-ownership-refactor C4/R4）：放开普通用户自主发布——
+# tenant/public publish 默认授予 normal 与 tenant_admin（system 恒有全量）。
+# 守卫仍是 owner-only（api/*_profiles.py、api/backtest.py 的可见性接口只允许改自己的资产），
+# 放开的是「能否发布」而非「能否改他人资产」。仍不并入 BUSINESS_RESOURCE_CODES（保持业务码与
+# 发布码语义分栏），而是在 _seed_role_grants（新装）+ _backfill_asset_publish_open_v1（存量回填）显式授予。
 ASSET_TENANT_PUBLISH_RESOURCE_CODES: tuple[str, ...] = (
     "score-profile:publish-tenant",
     "screen-profile:publish-tenant",
