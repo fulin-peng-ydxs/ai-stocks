@@ -268,12 +268,22 @@
 
 #### 6.7 任务 T4：评分/买卖/榜单/个股详情接入
 - 状态：已完成（前端·Vitest/构建通过）　依赖：T3
-- 涉及：`ConfigView.vue`（评分 1093-1118 / 买卖 1450-1470）、`BoardView.vue:228-249`、`StockDetailView.vue:947-960`（R10）
+- 涉及：`ConfigView.vue`（评分/买卖两侧栏 AssetProfileSelect list 形态）、`BoardView.vue`（头部评分方案选择器 select 形态）、`StockDetailView.vue`（买卖方案选择器 select 形态，R10）
 - 目标：四页接入共享组件，下拉改 source=mine，搜索入口，发布放开。
 - 操作：侧栏/下拉接入 AssetProfileSelect + AssetSearchDrawer；加载只读**不自动计算/评估/跑榜单**（§7.0/§7.2）。
 - 验证：各页 Vitest + E2E；目视系统内置徽标不受影响。
 - 完成标准：四页一致、加载不自动运行。
 - 实际落地情况：**已完成（2026-07-29）**。①API 三模块契约扩展：`scoreProfile.ts`/`tradeProfile.ts` 各加 `list*(source?)`、`browse*`（preset/tenant/public + q + 分页）、`copy*` 去必填 id 并返回 `{id, profile_ref?, name?, version}`，Summary 补 `asset_ref?`/`updated_at?`；`board.ts` 榜单复用评分域 `browse/copy` 契约。②ConfigView（评分+买卖，list 形态）：侧栏 `<ul>` 替换为 `AssetProfileSelect mode="list"`，`fetchMine` 无 view 码降级返回 []，`loadProfiles`/`loadTradeProfiles` 改 `list*('mine')`；`onScoreSelect`/`onTradeSelect` 为唯一载入入口（设 ref + 调 selectProfile，**不自动试算/评估**）；`copy*` 无 id 调用 + 组件 `reload()`；save/publish 后同样 reload；删除 `nextCopyProfileId`/`nextCopyTradeId` 前端撞库逻辑；init 取首项后走 onSelect（选择器 pageReady 前未挂载，不经 ref）。③BoardView（select 形态）：el-select 换为 `AssetProfileSelect`（width 300px），`onProfileSelect` 只设 ref **不调 load()**（不自动跑榜单，用户显式点「刷新」）；`onProfileLoaded` 把临时只读项并入 profiles 供 curProfile（标题/导出/榜单参数）解析。④StockDetailView（R10，select 形态）：el-select 换为选择器（width 300px），`onTradeSelect` 设 id 并显式 `evalTrade()`（沿用原 @change 行为），`onTradeLoaded` 只并入列表**不自动重评**。⑤测试适配：`StockDetailView.spec.ts` 3 用例改写为驱动 AssetProfileSelect stub（统一选择器/source=mine、快速切换取消旧评估、KeepAlive v1/v2 断言收窄到评估卡）20/20 通过；`ConfigView.system.spec.ts` 补 browse mock、末用例改 mine-only 语义（mountView 加 permissions 参数、normal 补 trade-profile:view）。验证：前端全量 Vitest **525 passed**；`npm run build` 通过（含 vue-tsc）；四页一致消费、加载只读不自动运行。**E2E 本轮未复跑（Playwright 需真实服务，留 T6）**。偏差：BacktestView 三选择器仍调 `list*()` 无参（T5 范围，新签名参数可选故编译不受影响）。
+- 自审查发现（2026-07-29，登记为 T6 待办，不在本阶段改动业务代码）：
+  - 【P1】ConfigView 详情加载吞错：`onScoreSelect`/`onTradeSelect`（`ConfigView.vue:473`/`:878`）先设 ref 再 `void selectProfile(key)`，`selectProfile` 无 try/catch——`getScoreProfile`/`getTradeProfile` 失败时「选中新方案、编辑器仍是旧方案、无报错/重试」。T6 修：`.catch` 回滚 ref 或 toast。
+  - 【P1】save/copy 后 find 失败回退丢 profile_ref（`ConfigView.vue:636-684`）：`reload()` 列表 find 未命中时 `curRef` 回退裸 id 而非 profile_ref；publish 公开后方案离开 mine 口径，reload 列表不再有它，`selectedItem` find 失败致下拉 label 回退空。T6 修：回退统一优先 profile_ref；publish 后保持选中回显。
+  - 【P1】核心契约测试盲区：「加载查看注入临时项不自动运行」「切换丢弃临时项」「复制后端生成 id 并刷新选中」三条在四页均无用例直接覆盖（现仅锁 source=mine 与 profile_ref 拉详情）。T6 补：emit loaded 不触发 run/eval、切换后临时项从 options 消失、copy 后列表刷新且 modelValue=返回 ref。
+  - 【P2】ConfigView `selectProfile`/`selectTradeProfile` 无竞态守卫（连续快速点击慢响应覆盖编辑器；StockDetailView `beginRequest` 范本可复用）。
+  - 【P2】组件 `tempItem` 与页面 `onProfileLoaded`/`onTradeLoaded` 并入列表双份真相，页面侧只加不删（内存残留，不影响正确性）。
+  - 【P2】BoardView `watch(runDate)`/`watch(topN)` 可用临时只读方案自动跑榜单（绕过「显式刷新」口径，需确认是否有意）。
+  - 【P2】BoardView `selected` undefined 时把 `profileRef`（opaque ref）塞进 `profile_id` 字段（`BoardView.vue:182`），口径错误（仅 find 失败边缘路径）。
+  - 【P2·语义确认】榜单复制复用评分域 `score-profile:save` 属跨域授权（行为正确 fail-closed，有意设计），建议在榜单需求文档显式固化此约定。
+  - 说明：StockDetailView「主下拉切换即评估」（`onTradeSelect`→`evalTrade()`）经核为**沿用 T4 前既有交互**（原 `@change="() => evalTrade()"`），R10「不自动重评」约束的是「加载查看」路径（`onTradeLoaded` 不评估 ✓），**非回归、不改**。
 
 ### 阶段 5 · 回测专属接入
 
@@ -292,7 +302,7 @@
 - 状态：待开始　依赖：T3,T4,T5,T1B
 - 涉及：Vitest、E2E、stage6 测试、`DESIGN.md` 组件矩阵、`frontend/dist`
 - 目标：多租户/多角色 E2E、路由守卫、组件测试、关键视口、构建同步。
-- 操作：跑 `pytest backend/tests/`、`npm run test:e2e`、`npm run build`；DESIGN 登记新组件；更新 stage6 断言。
+- 操作：跑 `pytest backend/tests/`、`npm run test:e2e`、`npm run build`；DESIGN 登记新组件；更新 stage6 断言；**整改 T4 自审查登记项**（§6.7：ConfigView 详情吞错、save/copy 丢 profile_ref、契约测试盲区，及各项 P2）。
 - 验证：全绿 + build 成功 + dist 同步 + 三视口。
 - 完成标准：交付红线满足（AGENTS 端口/构建）。
 - 实际落地情况：待实施。
