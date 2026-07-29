@@ -140,7 +140,7 @@
     · 「加载查看」= 关闭抽屉 + 把该对象作为<b>会话内临时只读选中项</b>注入当前页（上方虚线条），不进入「我的」、切换/刷新不保留、不自动触发计算/评估/回测。<br>
     · 「复制为我的」= 单击直接调 <code>/copy</code>，<b>后端自动生成唯一 id、名称默认「原名 副本」，不弹窗</b>；冲突判据是目标 id 存在（撞库后端追加后缀重试）。<br>
     · 回测弹窗操作列为「加载查看 / 复用参数重跑」（R6：以公开参数在当前环境重跑生成自己的新 run，不复制他人结果快照）。<br>
-    · 列（方案类）：名称/版本/来源徽标/提供者/更新时间/操作（<code>summarize_asset_row</code> 需补 <code>updated_at</code>）；列（回测）：kind+日期区间/状态/创建时间/来源/提供者/操作（回测无 name/version/is_preset/updated_at）。<br>
+    · 列（方案类，合并形态）：方案名称（名称+版本，次行「更新于 {时间}」）/来源徽标（title 含脱敏提供者）/操作（固定右缘）——信息项同六列契约，版本并入名称行、更新时间并入名称次行、提供者并入来源徽标 tooltip，对齐 <code>xl=560px</code> 抽屉保证全部完整可见、无横向滚动（<code>summarize_asset_row</code> 需补 <code>updated_at</code>）；列（回测）：kind+日期区间/状态/创建时间/来源/提供者/操作（回测无 name/version/is_preset/updated_at）。<br>
     · DESIGN 硬契约：抽屉 <code>PageDrawer size="xl"</code> 挂 <code>#overlays</code>；表格 <code>AppDataTable+AppTableColumn</code>（禁原生 table/禁传 width）；行操作 <code>AppRowActions</code>；关闭/搜索用 <code>AppIconButton</code>（<b>禁 Unicode 图标</b>，本原型用内联 SVG 表意）；四态 <code>AppStateBlock</code>；覆盖 1100×620/1366×768/1440×900。<br>
     · 本框及「重新打开抽屉（原型演示）」按钮为评审辅助，非线上内容。
   </div>

@@ -327,14 +327,19 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
           :aria-label="`浏览${assetLabel}`"
         >
           <template v-if="kind === 'profile'">
+            <!-- 方案类列契约（合并形态）：方案名称(名称+版本/更新时间次行)/来源(徽标 title 含提供者)/操作 -->
             <AppTableColumn label="方案名称" prop="name">
               <template #default="{ row }">
-                <AssetProfileLabel
-                  v-if="profileOf(row)"
-                  :name="profileOf(row)!.name"
-                  :version="profileOf(row)!.version"
-                  :readonly="profileOf(row)!.readonly"
-                />
+                <div v-if="profileOf(row)" class="asset-search__profile">
+                  <AssetProfileLabel
+                    :name="profileOf(row)!.name"
+                    :version="profileOf(row)!.version"
+                    :readonly="profileOf(row)!.readonly"
+                  />
+                  <span class="asset-search__profile-meta app-caption-text">
+                    更新于 {{ formatAssetTime(profileOf(row)?.updated_at) }}
+                  </span>
+                </div>
               </template>
             </AppTableColumn>
             <AppTableColumn label="来源">
@@ -346,11 +351,6 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
                   :owner-label="profileOf(row)!.owner_label"
                   :readonly="profileOf(row)!.readonly"
                 />
-              </template>
-            </AppTableColumn>
-            <AppTableColumn label="提供者">
-              <template #default="{ row }">
-                {{ profileOf(row)?.owner_label || '—' }}
               </template>
             </AppTableColumn>
           </template>
@@ -466,6 +466,16 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
   display: inline-flex;
   flex-direction: column;
   line-height: var(--app-line-height-compact);
+}
+.asset-search__profile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: var(--app-line-height-compact);
+}
+.asset-search__profile-meta {
+  color: var(--el-text-color-secondary);
+  margin-top: var(--app-space-1);
 }
 .asset-search__run-range {
   color: var(--el-text-color-secondary);

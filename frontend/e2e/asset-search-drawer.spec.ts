@@ -55,28 +55,36 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
       contentType: 'image/png',
     })
 
-    // 切到租户公开段：同租户他人发布的方案可见，提供者脱敏
+    // 切到租户公开段：同租户他人发布的方案可见，提供者经来源徽标 title 脱敏承载
     await drawer.getByTestId('asset-search-drawer-segment-tenant').click()
     const row = drawer.getByRole('row').filter({ hasText: marker })
     await expect(row).toBeVisible()
-    await expect(row).toContainText('同租户用户')
+    await expect(row.locator('.asset-visibility-tag').first()).toHaveAttribute('title', /同租户用户/)
     await expect(row).not.toContainText('debug_normal')
-    // 操作列固定右侧且必须位于抽屉可视范围内（核心操作不被挤出横向滚动区）
-    const loadBtn = row.getByTestId('asset-search-drawer-load')
+    // 需求契约（合并形态）：方案类列 = 方案名称(含版本/更新时间)/来源(徽标 title 含提供者)/操作
+    // 三列全部完整可见（左右边界都在抽屉可视区内），无横向滚动
     const drawerBox = await drawerPanel.boundingBox()
-    const loadBox = await loadBtn.boundingBox()
     expect(drawerBox, '抽屉应有可视区域').not.toBeNull()
-    expect(loadBox, '操作列「加载查看」应渲染').not.toBeNull()
-    expect(loadBox!.x, '操作列不应超出抽屉左边界').toBeGreaterThanOrEqual(drawerBox!.x - 1)
-    expect(loadBox!.x + loadBox!.width, '操作列不应超出抽屉右边界').toBeLessThanOrEqual(drawerBox!.x + drawerBox!.width + 1)
-    // 所有列头都应落在抽屉可视区内（不被固定列挤出）：方案名称/来源/提供者/操作
-    for (const header of ['方案名称', '来源', '提供者', '操作']) {
+    const drawerLeft = drawerBox!.x
+    const drawerRight = drawerBox!.x + drawerBox!.width
+    for (const header of ['方案名称', '来源', '操作']) {
       const cell = drawer.getByRole('columnheader', { name: header })
       await expect(cell, `列头「${header}」应渲染`).toBeVisible()
       const box = await cell.boundingBox()
       expect(box, `列头「${header}」应有可视区域`).not.toBeNull()
-      expect(box!.x + box!.width, `列头「${header}」不应超出抽屉右边界`).toBeLessThanOrEqual(drawerBox!.x + drawerBox!.width + 1)
+      expect(box!.x, `列头「${header}」左缘不应超出抽屉左边界`).toBeGreaterThanOrEqual(drawerLeft - 1)
+      expect(box!.x + box!.width, `列头「${header}」右缘不应超出抽屉右边界`).toBeLessThanOrEqual(drawerRight + 1)
     }
+    // 合并单元格：名称单元格次行含「更新于 + 时间」；提供者经来源徽标 title 承载
+    await expect(row).toContainText('更新于')
+    await expect(row.locator('.asset-visibility-tag').first()).toHaveAttribute('title', /同租户用户/)
+    // 操作列 fixed="right"：核心操作完整可见
+    const loadBtn = row.getByTestId('asset-search-drawer-load')
+    await expect(loadBtn).toBeVisible()
+    const loadBox = await loadBtn.boundingBox()
+    expect(loadBox, '操作列「加载查看」应渲染').not.toBeNull()
+    expect(loadBox!.x, '操作列左缘不应超出抽屉左边界').toBeGreaterThanOrEqual(drawerLeft - 1)
+    expect(loadBox!.x + loadBox!.width, '操作列右缘不应超出抽屉右边界').toBeLessThanOrEqual(drawerRight + 1)
     await testInfo.attach(`asset-search-drawer-tenant-${testInfo.project.name}`, {
       body: await drawerPanel.screenshot(),
       contentType: 'image/png',
