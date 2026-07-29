@@ -75,8 +75,8 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
       expect(box!.x, `列头「${header}」左缘不应超出抽屉左边界`).toBeGreaterThanOrEqual(drawerLeft - 1)
       expect(box!.x + box!.width, `列头「${header}」右缘不应超出抽屉右边界`).toBeLessThanOrEqual(drawerRight + 1)
     }
-    // 合并单元格：名称单元格次行含「更新于 + 时间」；提供者经来源徽标 title 承载
-    await expect(row).toContainText('更新于')
+    // 合并单元格：名称单元格次行含「更新于 + 真实时间」（非占位「—」）；提供者经来源徽标 title 承载
+    await expect(row.locator('.asset-search__profile-meta').first()).toContainText(/更新于 \d{4}-\d{2}-\d{2} \d{2}:\d{2}/)
     await expect(row.locator('.asset-visibility-tag').first()).toHaveAttribute('title', /同租户用户/)
     // 操作列 fixed="right"：核心操作完整可见
     const loadBtn = row.getByTestId('asset-search-drawer-load')

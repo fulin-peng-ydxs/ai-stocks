@@ -48,6 +48,9 @@
   thead th{position:sticky;top:0;background:#fafafa;text-align:left;padding:10px 18px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);white-space:nowrap;}
   tbody td{padding:12px 18px;border-bottom:1px solid var(--border);color:var(--body);vertical-align:middle;}
   .name{color:var(--text);font-weight:600;}
+  .p-name{font-weight:600;color:var(--text);}
+  .p-name .ver{color:var(--muted);font-size:12px;font-weight:400;margin-left:4px;}
+  .p-meta{color:var(--muted);font-size:12px;margin-top:2px;}
   .tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:10px;border:1px solid var(--border);color:var(--muted);background:#f7f7f7;}
   .tag.public{color:var(--primary);border-color:#bcd8ff;background:#f0f6ff;}
   .tag.tenant{color:var(--success);border-color:#bfe6d5;background:#eefaf4;}
@@ -136,7 +139,7 @@
   <div class="note" id="noteBox">
     <b>原型说明（真实实现忽略本批注框；点上方「隐藏原型说明」可整体隐藏）：</b><br>
     · 来源三段对应 browse <code>source=preset|tenant|public</code>。<b>系统内置段严格取 <code>is_preset=true AND visibility=public</code>（限平台槽 PUBLIC_BOARD_OWNER），永不泄露 private</b>；<b>本地 dev 实测：评分、买卖系统内置段非空（各有 public 预设），筛选系统内置段为空态（正常，非缺陷）；生产真实分布仍待 T0 只读核验</b>；回测无 is_preset，回测弹窗无系统内置段、默认「全体公开」。<br>
-    · 提供者列经 <code>decorate_asset_row</code> 脱敏，只显示「同租户用户/其他租户用户」等标签，系统内置显示「—」，<b>绝不回显真实 user_id</b>；租户/全体段排除当前用户自己的资产。<br>
+    · 提供者信息经 <code>decorate_asset_row</code> 脱敏，只显示「同租户用户/其他租户用户」等标签，系统内置显示「—」，<b>绝不回显真实 user_id</b>；方案类并入来源徽标 <code>title</code> 承载，回测类为独立列；租户/全体段排除当前用户自己的资产。<br>
     · 「加载查看」= 关闭抽屉 + 把该对象作为<b>会话内临时只读选中项</b>注入当前页（上方虚线条），不进入「我的」、切换/刷新不保留、不自动触发计算/评估/回测。<br>
     · 「复制为我的」= 单击直接调 <code>/copy</code>，<b>后端自动生成唯一 id、名称默认「原名 副本」，不弹窗</b>；冲突判据是目标 id 存在（撞库后端追加后缀重试）。<br>
     · 回测弹窗操作列为「加载查看 / 复用参数重跑」（R6：以公开参数在当前环境重跑生成自己的新 run，不复制他人结果快照）。<br>
@@ -183,16 +186,14 @@
       } else {
         var body = slice.map(function(r){
           return '<tr>'+
-            '<td class="name">'+r.name+'</td>'+
-            '<td><span class="tag '+r.tag+'">'+r.tagText+'</span></td>'+
-            '<td class="owner">'+r.owner+'</td>'+
-            '<td class="ver">'+r.ver+'</td>'+
-            '<td class="ver">'+r.time+'</td>'+
+            '<td class="name"><div class="p-name">'+r.name+' <span class="ver">'+r.ver+'</span></div>'+
+            '<div class="p-meta">更新于 '+r.time+'</div></td>'+
+            '<td><span class="tag '+r.tag+'" title="'+r.tagText+' · '+r.owner+'">'+r.tagText+'</span></td>'+
             '<td class="ops"><span class="link" data-load="'+r.name+'">加载查看</span>'+
             '<span class="link copy" data-copy="1">复制为我的</span></td>'+
           '</tr>';
         }).join('');
-        list.innerHTML = '<table><thead><tr><th>方案名称</th><th>来源</th><th>提供者</th><th>版本</th><th>更新时间</th><th>操作</th></tr></thead><tbody>'+body+'</tbody></table>';
+        list.innerHTML = '<table><thead><tr><th>方案名称</th><th>来源</th><th>操作</th></tr></thead><tbody>'+body+'</tbody></table>';
       }
       document.getElementById('count').textContent = '共 '+all.length+' 条'+srcLabel[state.src]+'方案';
       var pager = document.getElementById('pager');

@@ -255,7 +255,7 @@
 - **P2-1 空态截图非有效视觉证据**：E2E 截图前等待 `.el-drawer` `offsetWidth===560`（进场动画结束），并改对抽屉面板 locator 截图而非整页。
 - **P2-2 关闭/卸载仍可能发防抖请求**：`watch(open)` 关闭分支清理 `searchTimer` 并 `fetchSeq+=1` 使在途响应失效；`onBeforeUnmount` 同口径清理。
 - **复查新发现问题（审查者未提，已一并修）**：初版无权态仍显示工具栏（分段/搜索框）与「共 0 条」分页页脚，语义矛盾——改为无权态整体隐藏。
-- 整改验证：两组件定向 Vitest **20 passed**（新增无权态×2、防抖清理×1、权限入口×1 共 4 例），前端全量 **525 passed**；`npm run build` 通过（含 vue-tsc）；定向 E2E 三视口 **3 passed**（新增列头/操作列可视断言全部成立）。**本轮未复跑全量 Playwright**（沿用既有结论：定向链路已覆盖本改动面，全量回归留 T6）。
+- 整改验证：两组件定向 Vitest **20 passed**（新增无权态×2、防抖清理×1、权限入口×1 共 4 例），前端全量 **525 passed**；`npm run build` 通过（含 vue-tsc）；定向 E2E 三视口 **3 passed**（新增列头/操作列可视断言全部成立）。**本轮全量 Playwright 未复跑（未验证，留 T6）**。
 
 **T3 审查整改 R2（2026-07-29，复核二轮审查 1×P1 + 3×P2；P1 属实并已按用户确认的「改需求·合并」方案修复）**：
 - **R2-P1 擅删需求强制的「更新时间」列**：一轮为适配宽度直接删列，属需求偏离（requirement 表格列契约明确方案类含更新时间）。**回滚删列**，改按用户确认的**合并方案**（并同步修改需求契约）：方案类列收敛为「方案名称（名称+版本，次行「更新于 {时间}」）/ 来源徽标（`title` 含脱敏提供者）/ 操作（固定右缘）」三列——版本并入名称行、更新时间并入名称次行、提供者并入来源徽标 tooltip，信息项不丢，对齐 `xl=560px` 抽屉保证全部完整可见、无横向滚动。回测类列契约不变（创建时间本为独立列）。**同步修改** requirement 表格列契约与原型 `public-asset-search-drawer.html` 列说明。
@@ -313,7 +313,7 @@
 > **前端（2026-07-29，T3 ScreenView 样板，含 R1/R2 两轮审查整改）**：Vitest 全量 `525 passed`（组件用例：抽屉 11 + 选择器 9 = 20）；`npm run build` 通过（含 vue-tsc）；Playwright `asset-search-drawer.spec.ts` 跨用户链路三视口（1100×620/1366×768/1440×900）通过并附截图——截图前等待抽屉 `offsetWidth===560` 稳定、对抽屉面板 locator 截图；列断言覆盖需求合并后的方案类列集合「方案名称（含次行『更新于』)/来源（title 含提供者）/操作」三列头左右边界均在抽屉可视区、操作列 `fixed="right"` 完整可见、无权态 fail-closed 不调 browse。**全量 Playwright 本轮未复跑（未验证，留 T6）**；后端曾按 E2E 写模式重启、验收后已恢复日常模式（/api/health=200）。
 - 单元测试：`scoped_where` 四来源互斥（含 **mine 平台槽排除预设**）、preset 负例（private 不出现）、summary 含 updated_at、回测独立 summary、发布码授权解析。具体完成情况：**定向通过**（`test_stage6_asset_visibility` 等）。
 - 接口测试：list `source=mine`（**含平台槽 owner 互斥**）；browse `preset|tenant|public`+q+分页+脱敏（preset 严格公开负例）；未知 source 返回 400；发布放开后 normal 可发布/非 owner 403；回测重跑归属+审计；**发布态回测按引用方案名 q 命中**；**复制原子插入不覆盖同 id 既有资产**。具体完成情况：**定向通过**（含 `test_asset_review_fixes` 3 例 P1 回归）。
-- 页面/交互测试：Vitest（AssetSearchDrawer 三段/q/空态/复制/临时只读、AssetProfileSelect 双形态）、E2E（搜索→加载只读→复制→我的下拉；下拉仅自己；normal 发布；回测重跑）。具体完成情况：**ScreenView 样板通过（T3，2026-07-29）**——组件 Vitest 16 用例全过、前端全量 521 passed；`asset-search-drawer.spec.ts` 跨用户链路（发布租户公开→浏览/复制/临时只读/脱敏/系统内置空态）三视口通过并附截图；其余页面待 T4/T5。
+- 页面/交互测试：Vitest（AssetSearchDrawer 三段/q/空态/复制/临时只读、AssetProfileSelect 双形态）、E2E（搜索→加载只读→复制→我的下拉；下拉仅自己；normal 发布；回测重跑）。具体完成情况：**ScreenView 样板通过（T3，2026-07-29）**——组件 Vitest 20 用例（抽屉 11 + 选择器 9）全过、前端全量 525 passed；`asset-search-drawer.spec.ts` 跨用户链路（发布租户公开→浏览/复制/临时只读/脱敏/系统内置空态/合并列集合可视）三视口通过并附截图；其余页面待 T4/T5。
 - 组件资产闭环测试：AssetSearchDrawer/AssetProfileSelect 在 ScreenView 样板 + 4 页真实消费；DESIGN 矩阵登记；无 Unicode 图标、PageDrawer xl、AppDataTable/AppRowActions。具体完成情况：**DESIGN 真实复用组件清单已登记（T3）**；ScreenView 真实消费通过；4 页消费待 T4/T5；按钮文案/间距契约扫描全过（button-system/typography-spacing-system）。
 - 权限与数据范围测试：多角色（`test-users.md`）验证发布放开、mine 隔离、跨租户 tenant 不可见、preset 严格公开、owner 脱敏。具体完成情况：**后端定向通过**；多角色端到端待前端。
 - 回归测试：系统内置徽标/`is_preset`/榜单零改动回归；现有 copy/visibility 链路；stage6 断言更新。具体完成情况：**定向通过**（copy/visibility 簇 57 passed）。
