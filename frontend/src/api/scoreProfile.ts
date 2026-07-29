@@ -79,6 +79,7 @@ export interface ScoreProfile {
 
 export interface ScoreProfileSummary {
   profile_ref?: string
+  asset_ref?: string
   id: string
   name: string
   version: number
@@ -87,6 +88,16 @@ export interface ScoreProfileSummary {
   source?: 'mine' | 'tenant' | 'public' | 'preset'
   readonly?: boolean
   owner_label?: string
+  updated_at?: string | null
+}
+
+// browse 分页结果（后端 repo.browse：items/total/page/page_size/source）
+export interface ScoreProfileBrowseResult {
+  items: ScoreProfileSummary[]
+  total: number
+  page: number
+  page_size: number
+  source: string
 }
 
 export interface ScoreRunRow {
@@ -98,8 +109,26 @@ export interface ScoreRunRow {
   sub_scores: Record<string, number>
 }
 
-export function listScoreProfiles(): Promise<ScoreProfileSummary[]> {
-  return http.get('/score-profiles')
+// source=mine：下拉只加载自己的资产（纯 owner，R3/C2）；不传维持 list_visible 兼容
+export function listScoreProfiles(source?: 'mine'): Promise<ScoreProfileSummary[]> {
+  return http.get('/score-profiles', { params: source ? { source } : undefined })
+}
+
+// 搜索弹窗三来源浏览（R5/R14）：preset 严格公开 / tenant / public，关键字 + 分页
+export function browseScoreProfiles(params: {
+  source: 'preset' | 'tenant' | 'public'
+  q?: string
+  page?: number
+  pageSize?: number
+}): Promise<ScoreProfileBrowseResult> {
+  return http.get('/score-profiles', {
+    params: {
+      source: params.source,
+      q: params.q || undefined,
+      page: params.page ?? 1,
+      page_size: params.pageSize ?? 20,
+    },
+  })
 }
 export function getScoreProfile(pid: string): Promise<ScoreProfile> {
   return http.get(`/score-profiles/${pid}`)
@@ -121,8 +150,12 @@ export function setScoreProfileVisibility(
 ): Promise<ScoreProfile> {
   return http.post(`/score-profiles/${pid}/visibility`, { visibility })
 }
-export function copyScoreProfile(pid: string, body: { id: string; name?: string }): Promise<{ id: string; version: number }> {
-  return http.post(`/score-profiles/${pid}/copy`, body)
+// C8：前端不再传 id，后端生成唯一 id、名称默认「原名 副本」，返回新标识供刷新选中
+export function copyScoreProfile(
+  pid: string,
+  body?: { name?: string },
+): Promise<{ id: string; profile_ref?: string; name?: string; version: number }> {
+  return http.post(`/score-profiles/${pid}/copy`, body ?? {})
 }
 
 // 方案历史版本（回看/载入）

@@ -28,6 +28,7 @@ vi.mock('@/api/data', async (importOriginal) => {
 })
 
 vi.mock('@/api/scoreProfile', () => ({
+  browseScoreProfiles: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 20, source: 'preset' })),
   copyScoreProfile: vi.fn(),
   deleteIndicatorDef: vi.fn(),
   deleteScoreProfile: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('@/api/scoreProfile', () => ({
 }))
 
 vi.mock('@/api/tradeProfile', () => ({
+  browseTradeProfiles: vi.fn(async () => ({ items: [], total: 0, page: 1, page_size: 20, source: 'preset' })),
   copyTradeProfile: vi.fn(),
   deleteTradeProfile: vi.fn(),
   getTradeProfile: vi.fn(),
@@ -194,12 +196,12 @@ const stubs = {
   teleport: true,
 }
 
-async function mountView(role = 'system'): Promise<VueWrapper> {
+async function mountView(role = 'system', permissions?: string[]): Promise<VueWrapper> {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
   auth.role = role
-  auth.permissions = role === 'system' ? ['data-settings:manage'] : []
+  auth.permissions = permissions ?? (role === 'system' ? ['data-settings:manage'] : [])
   auth.menusStatus = 'ready'
   auth.tenant = { id: 'tenant-a' }
   const wrapper = mount(ConfigView as Component, {
@@ -374,41 +376,43 @@ describe('ConfigView system tab', () => {
 })
 
 describe('ConfigView trade tab', () => {
-  it('初始化公开买卖方案时使用 profile_ref 拉详情', async () => {
+  it('初始化「我的」买卖方案时使用 profile_ref 拉详情', async () => {
     routeState.meta.configTab = 'trade'
     ;(tradeApi.listTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
-        id: 'ui6_trade_public',
-        profile_ref: 'asset:trade_profile:tenant-a:owner-a:ui6_trade_public',
-        name: 'UI6公开买卖方案',
+        id: 'ui6_trade_mine',
+        profile_ref: 'asset:trade_profile:tenant-a:owner-a:ui6_trade_mine',
+        name: 'UI6我的买卖方案',
         version: 1,
         is_preset: false,
-        visibility: 'tenant',
-        source: 'tenant',
-        readonly: true,
+        visibility: 'private',
+        source: 'mine',
+        readonly: false,
       },
     ])
     ;(tradeApi.getTradeProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: 'ui6_trade_public',
-      profile_ref: 'asset:trade_profile:tenant-a:owner-a:ui6_trade_public',
-      name: 'UI6公开买卖方案',
+      id: 'ui6_trade_mine',
+      profile_ref: 'asset:trade_profile:tenant-a:owner-a:ui6_trade_mine',
+      name: 'UI6我的买卖方案',
       version: 1,
       is_preset: false,
-      visibility: 'tenant',
-      source: 'tenant',
-      readonly: true,
+      visibility: 'private',
+      source: 'mine',
+      readonly: false,
       buy_tree: { op: 'AND', children: [] },
       sell_tree: { op: 'OR', children: [] },
       backstop: {},
     })
 
-    const wrapper = await mountView('normal')
+    // normal 角色补 trade-profile:view 权限码，使 canViewTradeProfiles=true（hasPermission 非 system 需命中授权码）
+    const wrapper = await mountView('normal', ['trade-profile:view'])
 
+    // 初始化选中「我的」首项，且以 profile_ref（非裸 id）拉详情
+    expect(tradeApi.listTradeProfiles).toHaveBeenCalledWith('mine')
     expect(tradeApi.getTradeProfile).toHaveBeenCalledWith(
-      'asset:trade_profile:tenant-a:owner-a:ui6_trade_public',
+      'asset:trade_profile:tenant-a:owner-a:ui6_trade_mine',
     )
-    expect(tradeApi.getTradeProfile).not.toHaveBeenCalledWith('ui6_trade_public')
-    expect(wrapper.text()).toContain('UI6公开买卖方案')
-    expect(wrapper.text()).toContain('租户公开')
+    expect(tradeApi.getTradeProfile).not.toHaveBeenCalledWith('ui6_trade_mine')
+    expect(wrapper.text()).toContain('UI6我的买卖方案')
   })
 })

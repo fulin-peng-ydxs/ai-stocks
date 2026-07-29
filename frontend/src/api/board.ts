@@ -1,6 +1,6 @@
 // 榜单/评分 API（对应 backend/api/board.py）
 import http from './client'
-import type { ScoreProfileSummary, ScoreRunRow } from './scoreProfile'
+import type { ScoreProfileBrowseResult, ScoreProfileSummary, ScoreRunRow } from './scoreProfile'
 
 export interface SubScores {
   position: number
@@ -74,9 +74,28 @@ export function computeBoard(
 }
 
 // ── 可见方案榜单（board:view）──
-// 方案来自“自己的 + 同租户公开 + 全体公开 + 平台系统内置方案”，榜单快照写入方案 owner 的共享缓存槽。
-export function listBoardProfiles(): Promise<ScoreProfileSummary[]> {
-  return http.get('/board/profiles')
+// source=mine：下拉只加载自己的评分方案（纯 owner，R3/C2）；
+// source=preset|tenant|public：搜索弹窗浏览（分页 + q，R5/R14）；
+// 不传维持 list_visible 兼容（自己 + 租户公开 + 全体公开 + 系统内置混合）。
+export function listBoardProfiles(source?: 'mine'): Promise<ScoreProfileSummary[]> {
+  return http.get('/board/profiles', { params: source ? { source } : undefined })
+}
+
+// 搜索弹窗三来源浏览（R5/R14）：preset 严格公开 / tenant / public，关键字 + 分页
+export function browseBoardProfiles(params: {
+  source: 'preset' | 'tenant' | 'public'
+  q?: string
+  page?: number
+  pageSize?: number
+}): Promise<ScoreProfileBrowseResult> {
+  return http.get('/board/profiles', {
+    params: {
+      source: params.source,
+      q: params.q || undefined,
+      page: params.page ?? 1,
+      page_size: params.pageSize ?? 20,
+    },
+  })
 }
 export function runBoardProfile(body: {
   profile_ref?: string

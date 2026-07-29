@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Close, Plus, VideoPlay } from '@element-plus/icons-vue'
 import {
+  browseScoreProfiles,
   copyScoreProfile,
   deleteIndicatorDef,
   deleteScoreProfile,
@@ -26,7 +27,7 @@ import {
   type ScoreRunRow,
 } from '@/api/scoreProfile'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
-import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
+import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -54,6 +55,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import type { AppRowAction } from '@/components/rowActions'
+import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 
 const settingsOpen = ref(false)
 const route = useRoute()
@@ -392,6 +394,9 @@ async function submitNewDef() {
 }
 
 // ── 评分方案 ──
+// R3/R5/R7：侧栏列表统一走 AssetProfileSelect（list 形态）——只加载「我的」（source=mine 纯 owner），
+// 「搜索」入口打开共享搜索抽屉（系统内置/租户公开/全体公开），「加载查看」注入临时只读项、
+// 「复制为我的」由后端生成唯一 id 并自动刷新选中；本页不再维护前端撞库/列表来源逻辑。
 const profiles = ref<ScoreProfileSummary[]>([])
 const profilesLoading = ref(false)
 const profilesError = ref(false)
@@ -412,15 +417,31 @@ const canPublishTenant = computed(() =>
 const canPublishPublic = computed(() =>
   hasPermission(auth.role, auth.permissions, 'score-profile:publish-public'),
 )
+const canViewScoreProfiles = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'score-profile:view'),
+)
 const weightSum = computed(() =>
   Math.round(items.value.reduce((s, it) => s + (it.weight || 0), 0) * 100),
 )
+
+const scoreSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
+async function fetchMineScoreProfiles(): Promise<ScoreProfileSummary[]> {
+  // 无 score-profile:view 的角色不拉方案列表（避免 403 卡住页面主体）
+  if (!canViewScoreProfiles.value) return []
+  return listScoreProfiles('mine')
+}
+function browseScore(params: AssetBrowseParams) {
+  return browseScoreProfiles(params)
+}
+function copyAnyScoreProfile(item: ProfileSummary) {
+  return copyScoreProfile(item.profile_ref || item.id)
+}
 
 async function loadProfiles() {
   profilesLoading.value = true
   profilesError.value = false
   try {
-    profiles.value = await listScoreProfiles()
+    profiles.value = canViewScoreProfiles.value ? await listScoreProfiles('mine') : []
   } catch (e) {
     profilesError.value = true
     throw e
@@ -429,7 +450,9 @@ async function loadProfiles() {
   }
 }
 
+// 供「加载查看」临时只读项回显：注入侧栏顶部，点击/选中后走统一 selectProfile 载入编辑器
 async function selectProfile(profileKey: string) {
+  if (!profileKey) return
   const p = await getScoreProfile(profileKey)
   curRef.value = p.profile_ref || profileKey
   curId.value = p.id
@@ -441,6 +464,13 @@ async function selectProfile(profileKey: string) {
   profileReadonly.value = !!p.readonly
   profileVisibility.value = p.visibility || 'private'
   isNew.value = false
+}
+// 侧栏选择器选中变化（含「加载查看」注入的临时只读项）→ 载入编辑器；不自动试算。
+// 选择器 v-model 同步 curRef 后即调用本函数作为唯一载入入口（含临时只读项）。
+function onScoreSelect(key: string) {
+  curRef.value = key
+  if (!key) return
+  void selectProfile(key)
 }
 
 // ── 评分方案历史版本（回看/载入；载入仅写入编辑器，保存后才生成新版本）──
@@ -603,8 +633,9 @@ async function save() {
     editId.value = r.id
     curId.value = r.id
     await loadProfiles()
-    const saved = profiles.value.find((p) => p.id === r.id && p.source === 'mine')
-    if (saved) curRef.value = saved.profile_ref || saved.id
+    const list = await scoreSelectRef.value?.reload()
+    const saved = (list as ScoreProfileSummary[] | undefined)?.find((p) => p.id === r.id)
+    curRef.value = saved ? (saved.profile_ref || saved.id) : r.id
   } finally {
     saving.value = false
   }
@@ -636,31 +667,21 @@ async function publishScoreProfile(visibility: 'private' | 'tenant' | 'public') 
     profileVisibility.value = p.visibility || visibility
     ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
     await loadProfiles()
+    await scoreSelectRef.value?.reload()
   } finally {
     visibilitySaving.value = false
   }
 }
 
-function nextCopyProfileId(base: string): string {
-  const root = (base || 'score').replace(/[^\w-]/g, '_') || 'score'
-  const mineIds = new Set(profiles.value.filter((p) => p.source === 'mine').map((p) => p.id))
-  let id = `${root}_copy`
-  let seq = 2
-  while (mineIds.has(id)) {
-    id = `${root}_copy_${seq}`
-    seq += 1
-  }
-  return id
-}
-
+// C8：复制由后端生成唯一 id、名称默认「原名 副本」，返回新标识供选中
 async function copyCurrentScoreProfile() {
   if (!curRef.value) return
-  const id = nextCopyProfileId(curId.value)
-  await copyScoreProfile(curRef.value, { id, name: `${editName.value || '评分方案'} 副本` })
+  const r = await copyScoreProfile(curRef.value)
   ElMessage.success('已复制为我的方案')
   await loadProfiles()
-  const copied = profiles.value.find((p) => p.id === id && p.source === 'mine')
-  if (copied) await selectProfile(copied.profile_ref || copied.id)
+  const list = await scoreSelectRef.value?.reload()
+  const copied = (list as ScoreProfileSummary[] | undefined)?.find((p) => p.id === r.id)
+  curRef.value = copied ? (copied.profile_ref || copied.id) : (r.profile_ref || r.id)
 }
 
 // ── 试算 ──
@@ -700,6 +721,7 @@ async function tryRun() {
 
 // ════════════ 买卖指标方案 ════════════
 import {
+  browseTradeProfiles,
   copyTradeProfile,
   deleteTradeProfile,
   getTradeProfile,
@@ -742,14 +764,28 @@ const canTradePublishTenant = computed(() =>
 const canTradePublishPublic = computed(() =>
   hasPermission(auth.role, auth.permissions, 'trade-profile:publish-public'),
 )
+const canViewTradeProfiles = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'trade-profile:view'),
+)
 function tradeProfileKey(p: TradeProfileSummary): string {
   return p.profile_ref || p.id
+}
+const tradeSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
+async function fetchMineTradeProfiles(): Promise<TradeProfileSummary[]> {
+  if (!canViewTradeProfiles.value) return []
+  return listTradeProfiles('mine')
+}
+function browseTrade(params: AssetBrowseParams) {
+  return browseTradeProfiles(params)
+}
+function copyAnyTradeProfile(item: ProfileSummary) {
+  return copyTradeProfile(item.profile_ref || item.id)
 }
 async function loadTradeProfiles() {
   tProfilesLoading.value = true
   tProfilesError.value = false
   try {
-    tProfiles.value = await listTradeProfiles()
+    tProfiles.value = canViewTradeProfiles.value ? await listTradeProfiles('mine') : []
   } catch (e) {
     tProfilesError.value = true
     throw e
@@ -821,6 +857,7 @@ function fromTree(tree: CondTree | Record<string, never> | undefined): { logic: 
 }
 
 async function selectTradeProfile(pid: string) {
+  if (!pid) return
   const p = await getTradeProfile(pid)
   tCurRef.value = p.profile_ref || pid
   tCurId.value = p.id; tCurVersion.value = p.version; tEditId.value = p.id; tEditName.value = p.name; tIsNew.value = false
@@ -833,6 +870,12 @@ async function selectTradeProfile(pid: string) {
     sl: p.backstop?.stop_loss != null ? Math.round(p.backstop.stop_loss * 100) : null,
     hold: p.backstop?.max_hold_days ?? null,
   }
+}
+// 侧栏选择器选中变化（含「加载查看」注入的临时只读项）→ 载入编辑器；不自动试算
+function onTradeSelect(key: string) {
+  tCurRef.value = key
+  if (!key) return
+  void selectTradeProfile(key)
 }
 function newTradeProfile() {
   tCurRef.value = ''
@@ -893,7 +936,8 @@ async function saveTrade() {
     tEditId.value = r.id
     tCurId.value = r.id
     await loadTradeProfiles()
-    const saved = tProfiles.value.find((p) => p.id === r.id && p.source === 'mine')
+    const list = await tradeSelectRef.value?.reload()
+    const saved = (list as TradeProfileSummary[] | undefined)?.find((p) => p.id === r.id)
     tCurRef.value = saved ? tradeProfileKey(saved) : r.id
   } catch { /* 拦截器已提示 */ } finally { tSaving.value = false }
 }
@@ -921,29 +965,20 @@ async function publishTradeProfile(visibility: 'private' | 'tenant' | 'public') 
     tVisibility.value = p.visibility || visibility
     ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
     await loadTradeProfiles()
+    await tradeSelectRef.value?.reload()
   } finally {
     tVisibilitySaving.value = false
   }
 }
-function nextCopyTradeId(base: string): string {
-  const root = (base || 'trade').replace(/[^\w-]/g, '_') || 'trade'
-  const mineIds = new Set(tProfiles.value.filter((p) => p.source === 'mine').map((p) => p.id))
-  let id = `${root}_copy`
-  let seq = 2
-  while (mineIds.has(id)) {
-    id = `${root}_copy_${seq}`
-    seq += 1
-  }
-  return id
-}
+// C8：复制由后端生成唯一 id、名称默认「原名 副本」，返回新标识供选中
 async function copyCurrentTradeProfile() {
   if (!tCurRef.value) return
-  const id = nextCopyTradeId(tCurId.value)
-  await copyTradeProfile(tCurRef.value, { id, name: `${tEditName.value || '买卖方案'} 副本` })
+  const r = await copyTradeProfile(tCurRef.value)
   ElMessage.success('已复制为我的方案')
   await loadTradeProfiles()
-  const copied = tProfiles.value.find((p) => p.id === id && p.source === 'mine')
-  if (copied) await selectTradeProfile(tradeProfileKey(copied))
+  const list = await tradeSelectRef.value?.reload()
+  const copied = (list as TradeProfileSummary[] | undefined)?.find((p) => p.id === r.id)
+  tCurRef.value = copied ? tradeProfileKey(copied) : (r.profile_ref || r.id)
 }
 
 const previewHit = ref<{ buy: number | null; sell: number | null }>({ buy: null, sell: null })
@@ -985,8 +1020,10 @@ async function withInitialRetry<T>(task: () => Promise<T>): Promise<T> {
 
 async function initScorePage() {
   await withInitialRetry(async () => {
+    // 选择器在 pageReady 后才挂载，此处直接拉「我的」列表决定初始选中；
+    // 选择器挂载后自行 reload 填充同一数据（mine 口径一致）。
     await loadProfiles()
-    if (profiles.value.length) await selectProfile(profiles.value[0].profile_ref || profiles.value[0].id)
+    if (profiles.value.length) onScoreSelect(profiles.value[0].profile_ref || profiles.value[0].id)
     else newProfile()
   })
 }
@@ -994,7 +1031,7 @@ async function initScorePage() {
 async function initTradePage() {
   await withInitialRetry(async () => {
     await loadTradeProfiles()
-    if (tProfiles.value.length) await selectTradeProfile(tradeProfileKey(tProfiles.value[0]))
+    if (tProfiles.value.length) onTradeSelect(tradeProfileKey(tProfiles.value[0]))
     else newTradeProfile()
   })
 }
@@ -1076,7 +1113,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <!-- ============ 评分规则 ============ -->
       <template v-if="activeTab === 'score'">
         <div class="score-layout pane-fill">
-          <!-- 方案列表 -->
+          <!-- 方案列表（R3/R5/R7：统一选择器 list 形态，仅我的 + 搜索系统内置/租户/全体公开） -->
           <aside class="prof-list" v-loading="profilesLoading">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
               <template #icon><el-icon><Plus /></el-icon></template>
@@ -1091,23 +1128,20 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               retry
               @retry="retryScoreProfiles"
             />
-            <ul>
-              <li
-                v-for="p in profiles"
-                :key="p.profile_ref || p.id"
-                :class="{ active: (p.profile_ref || p.id) === curRef }"
-                @click="selectProfile(p.profile_ref || p.id)"
-              >
-                <AssetProfileLabel
-                  :name="p.name"
-                  :version="p.version"
-                  :source="p.is_preset ? 'preset' : p.source"
-                  :is-preset="p.is_preset"
-                  :owner-label="p.owner_label"
-                  :readonly="p.readonly"
-                />
-              </li>
-            </ul>
+            <AssetProfileSelect
+              v-else
+              ref="scoreSelectRef"
+              mode="list"
+              :model-value="curRef"
+              asset-label="评分方案"
+              :fetch-mine="fetchMineScoreProfiles"
+              :browse="browseScore"
+              :copy-item="copyAnyScoreProfile"
+              copy-permission="score-profile:save"
+              view-permission="score-profile:view"
+              test-id="score-profile-select"
+              @update:model-value="onScoreSelect"
+            />
           </aside>
 
           <!-- 编辑器 -->
@@ -1448,19 +1482,20 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               retry
               @retry="retryTradeProfiles"
             />
-            <ul>
-              <li v-for="p in tProfiles" :key="tradeProfileKey(p)" :class="{ active: tradeProfileKey(p) === tCurRef }"
-                  @click="selectTradeProfile(tradeProfileKey(p))">
-                <AssetProfileLabel
-                  :name="p.name"
-                  :version="p.version"
-                  :source="p.is_preset ? 'preset' : p.source"
-                  :is-preset="p.is_preset"
-                  :owner-label="p.owner_label"
-                  :readonly="p.readonly"
-                />
-              </li>
-            </ul>
+            <AssetProfileSelect
+              v-else
+              ref="tradeSelectRef"
+              mode="list"
+              :model-value="tCurRef"
+              asset-label="买卖方案"
+              :fetch-mine="fetchMineTradeProfiles"
+              :browse="browseTrade"
+              :copy-item="copyAnyTradeProfile"
+              copy-permission="trade-profile:save"
+              view-permission="trade-profile:view"
+              test-id="trade-profile-select"
+              @update:model-value="onTradeSelect"
+            />
           </aside>
 
           <section class="editor">

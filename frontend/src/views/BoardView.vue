@@ -3,12 +3,13 @@ import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  copyScoreProfile,
   getIndicatorRegistry,
   type IndicatorDef,
   type ScoreProfileSummary,
   type ScoreRunRow,
 } from '@/api/scoreProfile'
-import { listBoardProfiles, runBoardProfile } from '@/api/board'
+import { browseBoardProfiles, listBoardProfiles, runBoardProfile } from '@/api/board'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
@@ -18,7 +19,7 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
-import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
+import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { downloadCsv } from '@/utils/csv'
 import { ElMessage } from 'element-plus'
@@ -26,6 +27,9 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useStockSet } from '@/stores/stockSet'
+import { useAuthStore } from '@/stores/auth'
+import { hasPermission } from '@/utils/permission'
+import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 
 // 列表页布局（原型 A）：操作区=头部（标题+控件），主内容区=榜单表格（撑满·表体内滚）。
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -90,7 +94,10 @@ function onTableSortChange({ prop }: { prop: string; order: string | null }): vo
   setComponentKnob('table', 'defaultSort', BOARD_SORT_PROPS[prop] ?? 'score')
 }
 
-// 评分规则方案
+// 评分规则方案（R3/R5/R7：统一选择器——下拉只加载「我的」source=mine 纯 owner，
+// 「搜索」入口打开共享搜索抽屉浏览系统内置/租户公开/全体公开；「加载查看」注入临时只读项
+// 并按现状由用户显式触发榜单，不自动跑榜单；「复制为我的」后端生成 id 并刷新选中）。
+const auth = useAuthStore()
 const profiles = ref<ScoreProfileSummary[]>([])
 const profileRef = ref('')
 function profileKey(p: ScoreProfileSummary): string {
@@ -98,6 +105,32 @@ function profileKey(p: ScoreProfileSummary): string {
 }
 const curProfile = computed(() => profiles.value.find((p) => profileKey(p) === profileRef.value))
 const cacheStatus = ref('')
+const canViewBoardProfiles = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'board:view'),
+)
+const boardSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
+async function fetchMineBoardProfiles(): Promise<ScoreProfileSummary[]> {
+  if (!canViewBoardProfiles.value) return []
+  return listBoardProfiles('mine')
+}
+function browseBoard(params: AssetBrowseParams) {
+  return browseBoardProfiles(params)
+}
+function copyAnyBoardProfile(item: ProfileSummary) {
+  // 榜单方案=评分方案，复制走评分 copy 端点（后端生成唯一 id）
+  return copyScoreProfile(item.profile_ref || item.id)
+}
+// 选择器选中 → 仅更新选中，不自动跑榜单（保持现状由用户显式触发）
+function onProfileSelect(key: string) {
+  profileRef.value = key
+}
+// 「加载查看」临时只读项：并入 profiles 供 curProfile（标题/导出/榜单参数）解析，不自动跑榜单
+function onProfileLoaded(item: ProfileSummary) {
+  const summary = item as ScoreProfileSummary
+  if (!profiles.value.some((p) => profileKey(p) === profileKey(summary))) {
+    profiles.value = [summary, ...profiles.value]
+  }
+}
 
 // 指标注册表：用于把指标 key 映射成中文名（分项达标分徽章）
 const registry = ref<IndicatorDef[]>([])
@@ -189,7 +222,7 @@ onMounted(async () => {
   error.value = ''
   try {
     registry.value = (await getIndicatorRegistry(true)).items
-    profiles.value = await listBoardProfiles()
+    profiles.value = canViewBoardProfiles.value ? await listBoardProfiles('mine') : []
     if (profiles.value.length) {
       profileRef.value = profileKey(profiles.value[0])
       await load()
@@ -226,28 +259,21 @@ onMounted(async () => {
       <div class="page-head-actions">
         <div class="ops">
           <span class="lbl">评分规则</span>
-          <el-select v-model="profileRef" style="width: 220px" @change="load">
-            <template v-if="curProfile" #label>
-              <AssetProfileLabel
-                :name="curProfile.name"
-                :version="curProfile.version"
-                :source="curProfile.source"
-                :is-preset="curProfile.is_preset"
-                :owner-label="curProfile.owner_label"
-                :readonly="curProfile.readonly"
-              />
-            </template>
-            <el-option v-for="p in profiles" :key="profileKey(p)" :value="profileKey(p)" :label="p.name">
-              <AssetProfileLabel
-                :name="p.name"
-                :version="p.version"
-                :source="p.source"
-                :is-preset="p.is_preset"
-                :owner-label="p.owner_label"
-                :readonly="p.readonly"
-              />
-            </el-option>
-          </el-select>
+          <AssetProfileSelect
+            ref="boardSelectRef"
+            :model-value="profileRef"
+            asset-label="评分方案"
+            :fetch-mine="fetchMineBoardProfiles"
+            :browse="browseBoard"
+            :copy-item="copyAnyBoardProfile"
+            copy-permission="score-profile:save"
+            view-permission="board:view"
+            placeholder="选我的评分方案（可选）"
+            test-id="board-profile-select"
+            style="width: 300px"
+            @update:model-value="onProfileSelect"
+            @loaded="onProfileLoaded"
+          />
           <TradeDatePicker v-model="runDate" clearable />
           <span class="lbl">Top</span>
           <el-select v-model="topN" style="width: 88px" @change="load">

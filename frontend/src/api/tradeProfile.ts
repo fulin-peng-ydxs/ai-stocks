@@ -42,10 +42,38 @@ export interface TradeProfileSummary {
   source?: 'mine' | 'tenant' | 'public' | 'preset'
   readonly?: boolean
   owner_label?: string
+  updated_at?: string | null
 }
 
-export function listTradeProfiles(): Promise<TradeProfileSummary[]> {
-  return http.get('/trade-profiles')
+// browse 分页结果（后端 repo.browse：items/total/page/page_size/source）
+export interface TradeProfileBrowseResult {
+  items: TradeProfileSummary[]
+  total: number
+  page: number
+  page_size: number
+  source: string
+}
+
+// source=mine：下拉只加载自己的资产（纯 owner，R3/C2）；不传维持 list_visible 兼容
+export function listTradeProfiles(source?: 'mine'): Promise<TradeProfileSummary[]> {
+  return http.get('/trade-profiles', { params: source ? { source } : undefined })
+}
+
+// 搜索弹窗三来源浏览（R5/R14）：preset 严格公开 / tenant / public，关键字 + 分页
+export function browseTradeProfiles(params: {
+  source: 'preset' | 'tenant' | 'public'
+  q?: string
+  page?: number
+  pageSize?: number
+}): Promise<TradeProfileBrowseResult> {
+  return http.get('/trade-profiles', {
+    params: {
+      source: params.source,
+      q: params.q || undefined,
+      page: params.page ?? 1,
+      page_size: params.pageSize ?? 20,
+    },
+  })
 }
 export function getTradeProfile(pid: string): Promise<TradeProfile> {
   return http.get(`/trade-profiles/${pid}`)
@@ -68,8 +96,12 @@ export function setTradeProfileVisibility(
 ): Promise<TradeProfile> {
   return http.post(`/trade-profiles/${pid}/visibility`, { visibility })
 }
-export function copyTradeProfile(pid: string, body: { id: string; name?: string }): Promise<{ id: string; version: number }> {
-  return http.post(`/trade-profiles/${pid}/copy`, body)
+// C8：前端不再传 id，后端生成唯一 id、名称默认「原名 副本」，返回新标识供刷新选中
+export function copyTradeProfile(
+  pid: string,
+  body?: { name?: string },
+): Promise<{ id: string; profile_ref?: string; name?: string; version: number }> {
+  return http.post(`/trade-profiles/${pid}/copy`, body ?? {})
 }
 
 // 方案历史版本（回看/载入）

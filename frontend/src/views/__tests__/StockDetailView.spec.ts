@@ -74,7 +74,7 @@ vi.mock('@/api/tradeProfile', () => ({
 
 import * as stocksApi from '@/api/stocks'
 import * as tradeProfileApi from '@/api/tradeProfile'
-import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
+import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import StockDetailView from '@/views/StockDetailView.vue'
 
 const StockChartWorkspaceStub = defineComponent({
@@ -406,13 +406,15 @@ describe('StockDetailView 三图数据协调', () => {
     setDefaultApiResponses()
   })
 
-  it('买卖方案复用统一标签组件，名称在系统内置标记前', async () => {
+  it('买卖方案统一走共享选择器，仅加载「我的」（source=mine）', async () => {
     const wrapper = await mountView()
-    const profileLabel = wrapper.findComponent(AssetProfileLabel)
+    const select = wrapper.findComponent(AssetProfileSelect)
 
-    expect(profileLabel.exists()).toBe(true)
-    expect(profileLabel.props('name')).toBe('默认买卖')
-    expect(profileLabel.props('source')).toBe('preset')
+    expect(select.exists()).toBe(true)
+    expect(select.props('assetLabel')).toBe('买卖方案')
+    expect(select.props('modelValue')).toBe('avr_trade_1')
+    // 列表只取「我的」：listTradeProfiles 以 mine 口径调用
+    expect(tradeProfileApi.listTradeProfiles).toHaveBeenCalledWith('mine')
   })
 
   it('初次并行加载行情、全量指标序列和报价，并把默认三图接入页面', async () => {
@@ -779,13 +781,11 @@ describe('StockDetailView 三图数据协调', () => {
       })
 
     const wrapper = await mountView()
-    const tradeSelect = wrapper.findAllComponents({ name: 'ElSelect' }).find(
-      (component) => component.props('modelValue') === 'avr_trade_1',
-    )
-    expect(tradeSelect).toBeTruthy()
+    const tradeSelect = wrapper.findComponent(AssetProfileSelect)
+    expect(tradeSelect.exists()).toBe(true)
+    expect(tradeSelect.props('modelValue')).toBe('avr_trade_1')
 
-    tradeSelect!.vm.$emit('update:modelValue', 'avr_trade_2')
-    tradeSelect!.vm.$emit('change', 'avr_trade_2')
+    tradeSelect.vm.$emit('update:modelValue', 'avr_trade_2')
     await nextTick()
     await flushPromises()
 
@@ -1048,8 +1048,10 @@ describe('StockDetailView 三图数据协调', () => {
 
     expect(detail.get('[data-testid="workspace-close"]').text()).toBe('20')
     expect(detail.get('[data-testid="stock-latest-quote"]').text()).toContain('21.00')
-    expect(detail.text()).toContain('v2')
-    expect(detail.text()).not.toContain('v1')
+    // 评估卡内显示新评估 v2，不被旧响应 v1 覆盖（选择器区另含方案列表版本，不在此断言范围）
+    const tradeCard = detail.get('[data-testid="stock-trade-eval-card"]')
+    expect(tradeCard.text()).toContain('v2')
+    expect(tradeCard.text()).not.toContain('旧买卖')
   })
 
   it('两个 KeepAlive 个股实例分别消费自身下拉触底事件和分页状态', async () => {

@@ -23,9 +23,9 @@ import {
   type TradeEval,
 } from '@/api/stocks'
 import { addMembers, getGroup, listGroups, removeMembers, type GroupSummary } from '@/api/stockGroup'
-import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
+import { browseTradeProfiles, copyTradeProfile, listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
 import AppIconButton from '@/components/AppIconButton.vue'
-import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
+import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -41,6 +41,7 @@ import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { usePageSettings } from '@/composables/usePageSettings'
+import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import {
   createDefaultStockChartPreferences,
@@ -278,6 +279,9 @@ function pctClass(v: number | null | undefined): string {
 }
 
 // ── 买卖指标方案评估（v2.0：替代固定买点引擎）──
+// R3/R5/R7/R10：方案选择统一走 AssetProfileSelect——下拉只加载「我的」source=mine 纯 owner，
+// 「搜索」入口打开共享搜索抽屉（系统内置/租户公开/全体公开）；「加载查看」注入临时只读项
+// 并按现状由用户显式触发评估，不自动重评；「复制为我的」后端生成 id 并刷新选中。
 const tradeProfiles = ref<TradeProfileSummary[]>([])
 const tradeId = ref('')
 const tradeEval = ref<TradeEval | null>(null)
@@ -286,6 +290,29 @@ const tradeError = ref('')
 
 function tradeProfileKey(profile: TradeProfileSummary): string {
   return profile.profile_ref || profile.id
+}
+const tradeSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
+async function fetchMineTradeProfiles(): Promise<TradeProfileSummary[]> {
+  if (!canViewTradeProfiles.value) return []
+  return listTradeProfiles('mine')
+}
+function browseTrade(params: AssetBrowseParams) {
+  return browseTradeProfiles(params)
+}
+function copyAnyTradeProfile(item: ProfileSummary) {
+  return copyTradeProfile(item.profile_ref || item.id)
+}
+// 选择器选中 → 触发评估（显式操作，沿用现状 @change 行为）
+function onTradeSelect(key: string) {
+  tradeId.value = key
+  void evalTrade()
+}
+// 「加载查看」临时只读项：并入 tradeProfiles 供选中回显；不自动重评，由用户显式触发（R10）
+function onTradeLoaded(item: ProfileSummary) {
+  const summary = item as TradeProfileSummary
+  if (!tradeProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileKey(summary))) {
+    tradeProfiles.value = [summary, ...tradeProfiles.value]
+  }
 }
 
 interface RequestChannel {
@@ -481,7 +508,7 @@ onMounted(async () => {
   const tradeProfilesPromise = canUseTradeEvaluation.value
     ? (async () => {
       try {
-        tradeProfiles.value = await listTradeProfiles()
+        tradeProfiles.value = await listTradeProfiles('mine')
         if (tradeProfiles.value.length && !barsPermissionDenied.value) {
           tradeId.value = tradeProfileKey(tradeProfiles.value[0])
           await evalTrade()
@@ -944,20 +971,21 @@ onBeforeUnmount(() => {
         <template #header>
           <div class="trade-head">
             <span>买卖信号评估</span>
-            <el-select v-model="tradeId" size="small" style="width: 220px" @change="() => evalTrade()">
-              <el-option
-                v-for="p in tradeProfiles"
-                :key="tradeProfileKey(p)"
-                :value="tradeProfileKey(p)"
-                :label="p.name"
-              >
-                <AssetProfileLabel
-                  :name="p.name"
-                  :source="p.is_preset ? 'preset' : null"
-                  :is-preset="p.is_preset"
-                />
-              </el-option>
-            </el-select>
+            <AssetProfileSelect
+              ref="tradeSelectRef"
+              :model-value="tradeId"
+              asset-label="买卖方案"
+              :fetch-mine="fetchMineTradeProfiles"
+              :browse="browseTrade"
+              :copy-item="copyAnyTradeProfile"
+              copy-permission="trade-profile:save"
+              view-permission="trade-profile:view"
+              placeholder="选我的买卖方案（可选）"
+              test-id="stock-trade-select"
+              style="width: 300px"
+              @update:model-value="onTradeSelect"
+              @loaded="onTradeLoaded"
+            />
             <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
           </div>
         </template>
