@@ -34,12 +34,12 @@ const publicItem: ProfileSummary = {
   updated_at: '2026-07-25 11:00:00',
 }
 
-function mountSelect(extra: Record<string, unknown> = {}) {
+function mountSelect(extra: Record<string, unknown> = {}, permissions: string[] = ['screen-profile:save']) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
   auth.role = 'normal'
-  auth.permissions = ['screen-profile:save']
+  auth.permissions = permissions
   const fetchMine = (extra.fetchMine as () => Promise<ProfileSummary[]>) ?? (async () => [mineItem])
   const wrapper = mount(AssetProfileSelect, {
     props: {
@@ -165,6 +165,27 @@ describe('AssetProfileSelect', () => {
     const list = wrapper.find('.asset-profile-select__list')
     expect(list.exists()).toBe(true)
     expect(list.text()).toContain('我的筛选方案A')
+    wrapper.unmount()
+  })
+
+  it('无查看权限（viewPermission 不满足）时不渲染搜索入口与复制引导', async () => {
+    const { wrapper } = mountSelect({ viewPermission: 'screen-profile:view' }, ['screen-profile:save'])
+    await flush()
+    // 当前角色仅 screen-profile:save，无 screen-profile:view → 搜索入口与空态引导都隐藏
+    expect(wrapper.find('[data-testid="asset-profile-select-search"]').exists()).toBe(false)
+    await wrapper.find('[data-testid="asset-profile-select-select"]').trigger('click')
+    await flush()
+    expect(document.body.textContent).not.toContain('去“系统内置”搜索复制')
+    wrapper.unmount()
+  })
+
+  it('具备查看权限时正常渲染搜索入口', async () => {
+    const { wrapper } = mountSelect(
+      { viewPermission: 'screen-profile:view', fetchMine: async () => [mineItem] },
+      ['screen-profile:save', 'screen-profile:view'],
+    )
+    await flush()
+    expect(wrapper.find('[data-testid="asset-profile-select-search"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })

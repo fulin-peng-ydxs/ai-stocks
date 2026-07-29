@@ -524,6 +524,7 @@ onMounted(initializeScreen)
           :browse="browseScreenProfiles"
           :copy-item="copyAnyProfile"
           copy-permission="screen-profile:save"
+          view-permission="screen-profile:view"
           placeholder="选我的筛选方案（可选）"
           style="width: 400px"
         />

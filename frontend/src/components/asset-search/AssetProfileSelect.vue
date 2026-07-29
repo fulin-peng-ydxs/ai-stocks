@@ -3,12 +3,16 @@
 // 内置「搜索」入口打开 AssetSearchDrawer；「加载查看」注入会话内临时只读选中项
 // （不进「我的」、切换即丢弃、不持久化、不自动运行，§7.0 契约）；「复制为我的」
 // 成功后刷新「我的」并选中新资产。五页选择器实例统一消费本组件，不允许页面私有同类逻辑。
+// 权限态（§307）：配置 viewPermission 后，无权限角色不渲染搜索入口与复制引导，
+// 不调用 browse（避免 403），抽屉内显示「无权限查看」无权态——不把无权伪装成空态。
 import { computed, onMounted, ref, watch } from 'vue'
 import { Search } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AssetSearchDrawer from './AssetSearchDrawer.vue'
+import { useAuthStore } from '@/stores/auth'
 import { getErrorMessage } from '@/utils/error'
+import { hasPermission } from '@/utils/permission'
 import {
   assetItemKey,
   type AssetBrowseItem,
@@ -29,12 +33,15 @@ const props = withDefaults(defineProps<{
   browse: (params: AssetBrowseParams) => Promise<AssetBrowseResult>
   copyItem: (item: ProfileSummary) => Promise<AssetCopyResult>
   copyPermission?: string
+  /** 查看（browse）权限码；传入且无权限时不渲染搜索入口与复制引导，抽屉显示无权态（DESIGN 权限态，§307） */
+  viewPermission?: string
   placeholder?: string
   labelMine?: string
   testId?: string
 }>(), {
   mode: 'select',
   copyPermission: '',
+  viewPermission: '',
   placeholder: '',
   labelMine: '我的方案',
   testId: 'asset-profile-select',
@@ -55,6 +62,12 @@ const loadingMine = ref(false)
 const errorMine = ref('')
 const drawerOpen = ref(false)
 const drawerRef = ref<InstanceType<typeof AssetSearchDrawer> | null>(null)
+const auth = useAuthStore()
+
+// 是否可打开搜索抽屉浏览公开资产；未配置 viewPermission 时默认可浏览
+const canBrowse = computed(() => (
+  !props.viewPermission || hasPermission(auth.role, auth.permissions, props.viewPermission)
+))
 
 const options = computed<ProfileSummary[]>(() => (
   tempItem.value ? [tempItem.value, ...items.value] : items.value
@@ -165,6 +178,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
           <div class="asset-profile-select__empty">
             <span>{{ emptyText }}</span>
             <el-button
+              v-if="canBrowse"
               link
               type="primary"
               size="small"
@@ -177,6 +191,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
         </template>
       </el-select>
       <el-button
+        v-if="canBrowse"
         class="asset-profile-select__search"
         :data-testid="`${testId}-search`"
         @click="openSearch()"
@@ -189,7 +204,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
     </template>
 
     <template v-else>
-      <div class="asset-profile-select__list-head">
+      <div v-if="canBrowse" class="asset-profile-select__list-head">
         <el-button
           class="asset-profile-select__search asset-profile-select__search--block"
           plain
@@ -223,6 +238,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
       <div v-else class="asset-profile-select__empty" v-loading="loadingMine">
         <span>{{ emptyText }}</span>
         <el-button
+          v-if="canBrowse"
           link
           type="primary"
           size="small"
@@ -252,6 +268,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
       :browse="browse"
       :copy-item="(item) => copyItem(item as ProfileSummary)"
       :copy-permission="copyPermission"
+      :can-browse="canBrowse"
       @load="onDrawerLoad"
       @copied="onDrawerCopied"
     />

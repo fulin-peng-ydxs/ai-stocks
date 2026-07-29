@@ -2,7 +2,7 @@
 // 统一「资产搜索抽屉」（R5/R7/R14）：系统内置/租户公开/全体公开三来源分段 + 防抖关键字 +
 // 服务端分页 + 四态；操作列「加载查看 / 复制为我的」（回测为「加载查看 / 复用参数重跑」）。
 // 取数与复制通过回调注入，评分/筛选/买卖/榜单/个股详情/回测共用本组件（原型 §7.1）。
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import PageDrawer from '@/components/PageDrawer.vue'
@@ -40,6 +40,8 @@ const props = withDefaults(defineProps<{
   copyPermission?: string
   rerunItem?: (item: AssetBrowseItem) => Promise<unknown>
   rerunPermission?: string
+  /** 是否具备浏览（查看）权限；false 时显示无权态、不调 browse（DESIGN 权限态，§307） */
+  canBrowse?: boolean
   testId?: string
 }>(), {
   kind: 'profile',
@@ -47,6 +49,7 @@ const props = withDefaults(defineProps<{
   copyPermission: '',
   rerunItem: undefined,
   rerunPermission: '',
+  canBrowse: true,
   testId: 'asset-search-drawer',
 })
 
@@ -91,6 +94,7 @@ const open = computed({
 })
 
 async function fetchPage() {
+  if (!props.canBrowse) return
   const seq = ++fetchSeq
   loading.value = true
   error.value = ''
@@ -119,8 +123,20 @@ async function fetchPage() {
 // syncing 抑制重置期间 source/q watcher 的重复拉取（flush:sync 保证即时生效）。
 let pendingSource: AssetBrowseSource | null = null
 let syncing = false
+
+// 关闭/卸载时清理防抖计时器，并递增 fetchSeq 使在途响应失效（避免隐藏请求与重复查询）
+function clearSearchTimer() {
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+}
 watch(open, (value) => {
-  if (!value) return
+  if (!value) {
+    clearSearchTimer()
+    fetchSeq += 1
+    return
+  }
   syncing = true
   source.value = pendingSource ?? defaultSource.value
   pendingSource = null
@@ -162,6 +178,11 @@ function openWith(next?: AssetBrowseSource) {
 }
 
 defineExpose({ openWith })
+
+onBeforeUnmount(() => {
+  clearSearchTimer()
+  fetchSeq += 1
+})
 
 function onPageChange(value: number) {
   page.value = value
@@ -261,7 +282,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
 <template>
   <PageDrawer v-model="open" size="xl" :title="`浏览${assetLabel}`" class="asset-search-drawer">
     <div class="asset-search" :data-testid="testId">
-      <div class="asset-search__toolbar">
+      <div v-if="canBrowse" class="asset-search__toolbar">
         <PageSegmented
           v-model="source"
           :options="segments"
@@ -283,7 +304,14 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
 
       <div class="asset-search__body">
         <AppStateBlock
-          v-if="error"
+          v-if="!canBrowse"
+          state="error"
+          variant="permission"
+          :title="`无权限查看${assetLabel}`"
+          description="请联系系统管理员调整权限"
+        />
+        <AppStateBlock
+          v-else-if="error"
           state="error"
           :title="`${assetLabel}加载失败`"
           :description="error"
@@ -323,11 +351,6 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
             <AppTableColumn label="提供者">
               <template #default="{ row }">
                 {{ profileOf(row)?.owner_label || '—' }}
-              </template>
-            </AppTableColumn>
-            <AppTableColumn label="更新时间">
-              <template #default="{ row }">
-                {{ formatAssetTime(profileOf(row)?.updated_at) }}
               </template>
             </AppTableColumn>
           </template>
@@ -372,7 +395,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
             </AppTableColumn>
           </template>
 
-          <AppTableColumn label="操作">
+          <AppTableColumn label="操作" role="action" fixed="right">
             <template #default="{ row }">
               <AppRowActions :actions="rowActions(row)" :aria-label="`${assetLabel}行操作`" />
             </template>
@@ -384,7 +407,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
         </AppDataTable>
       </div>
 
-      <div class="asset-search__footer">
+      <div v-if="canBrowse" class="asset-search__footer">
         <span class="asset-search__count app-caption-text">共 {{ total }} 条{{ SOURCE_LABEL[source] }}{{ assetLabel }}</span>
         <AppPagination
           :current-page="page"

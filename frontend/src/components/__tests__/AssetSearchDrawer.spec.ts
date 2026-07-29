@@ -197,4 +197,42 @@ describe('AssetSearchDrawer', () => {
     expect(document.querySelector('[data-testid="asset-search-drawer-segment-public"]')).not.toBeNull()
     wrapper.unmount()
   })
+
+  it('无浏览权限（canBrowse=false）时不调 browse，显示无权态而非空态', async () => {
+    const browse = makeBrowse({ preset: [presetItem] })
+    const { wrapper } = mountDrawer({ browse, canBrowse: false })
+    await flush()
+    expect(browse).not.toHaveBeenCalled()
+    const text = document.body.textContent || ''
+    expect(text).toContain('无权限查看评分方案')
+    expect(text).toContain('请联系系统管理员调整权限')
+    expect(text).not.toContain('暂无系统内置评分方案')
+    expect(text).not.toContain('加载查看')
+    // 无权态整体隐藏工具栏与分页页脚（不呈可操作假象）
+    expect(document.querySelector('.asset-search__toolbar')).toBeNull()
+    expect(document.querySelector('.asset-search__footer')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('关闭抽屉清理未触发的防抖搜索，重开不再携带旧关键字', async () => {
+    vi.useFakeTimers()
+    try {
+      const browse = makeBrowse({ preset: [presetItem] })
+      const { wrapper } = mountDrawer({ browse })
+      await flush()
+      browse.mockClear()
+      // 输入关键字（未达防抖阈值）后立即关闭
+      const input = document.querySelector<HTMLInputElement>('[data-testid="asset-search-drawer-q"]')!
+      input.value = '龙头'
+      input.dispatchEvent(new Event('input'))
+      await wrapper.setProps({ modelValue: false })
+      await vi.advanceTimersByTimeAsync(500)
+      await flush()
+      // 关闭清理了 searchTimer，不应再发起隐藏请求
+      expect(browse).not.toHaveBeenCalled()
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

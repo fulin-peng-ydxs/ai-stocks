@@ -239,7 +239,7 @@
 ### 阶段 3 · 前端垂直样板（只接入 ScreenView）
 
 #### 6.6 任务 T3：共享组件 + ScreenView 样板
-- 状态：已完成（前端·Vitest/构建/E2E 三视口通过）　依赖：T2A,T2B
+- 状态：已完成（前端·Vitest/构建/E2E 三视口通过；审查整改已闭环）　依赖：T2A,T2B
 - 涉及：新增 `AssetSearchDrawer.vue`、`AssetProfileSelect.vue`；`ScreenView.vue:539-571`；`api/screening.ts`
 - 目标：共享抽屉/选择器在筛选页跑通全链路，DESIGN 合规。
 - 操作：实现三来源段（防抖 q、分页）、加载查看（临时只读注入）、单击复制（自动 id/名称）、四态；PageDrawer `xl`、AppDataTable/AppTableColumn/AppRowActions/AppIconButton、无 Unicode 图标；ScreenView 下拉改 source=mine、接入抽屉、发布按钮随后端放开。
@@ -248,6 +248,14 @@
 - 验证：Vitest（三段/q/空态/复制/临时只读）+ E2E + 三视口（1100×620/1366×768/1440×900）截图。
 - 完成标准：筛选页全链路可用且 DESIGN 合规。
 - 实际落地情况：**已完成（2026-07-29）**。①新增 `components/asset-search/`：`types.ts`（方案/回测 summary 契约对齐后端 summarize_*、assetItemKey/formatAssetTime）+ `AssetSearchDrawer.vue`（PageDrawer xl 挂 #overlays；PageSegmented 来源三段、回测形态隐藏系统内置段；防抖 q 300ms；服务端分页；四态——表体 loading/空态由 AppDataTable 承接、错误 AppStateBlock+重试；操作列 AppRowActions「加载查看/复制为我的」（回测「加载查看/复用参数重跑」），复制按 `copyPermission` 过滤；方案列=名称(AssetProfileLabel)/版本/来源徽标/提供者/更新时间，回测列=kind+日期区间/状态/来源/提供者/创建时间；openWith 支持空态引导直达「系统内置」段）+ `AssetProfileSelect.vue`（`select`/`list` 双形态；fetchMine 只拉 source=mine；「我的」空态引导去系统内置搜索复制；「加载查看」注入会话内临时只读项——置顶候选、切换即丢弃、不持久化；「复制为我的」成功后 reload 我的列表并选中新 ref；暴露 reload/openSearch）。②`api/screening.ts`：`listProfiles(source?)`、`browseProfiles(source|q|page|pageSize)`、`copyProfile` 去必填 id 并返回新标识、`Profile` 补 `updated_at`。③ScreenView 样板：el-select 私有选择器整体替换为 AssetProfileSelect（保留 view 码降级守卫在 fetchMine 回调）；doSave/publish/copyCurrentProfile 改为组件 reload + 后端生成 id；删除 `nextCopyProfileId` 前端撞库逻辑。④`AppPagination` 内部 `small` 改映射 `size="small"`（消除 el-pagination 弃用告警，E2E console 契约拦截发现）。⑤DESIGN.md 真实复用组件清单登记两组件。验证：Vitest 新增 16 用例（抽屉 9 + 选择器 7）全过，前端全量 **521 passed**；`npm run build` 通过（含 vue-tsc）；新 E2E `asset-search-drawer.spec.ts`（跨用户真实链路：debug_normal 发布租户公开 → debug_tenant_admin 浏览/复制/临时只读，含系统内置空态与脱敏断言）**三视口全过**并附截图；全量 Playwright 回归 58 passed/3 failed，3 例（数据概览低视口×2、HelpTip 预设 token）单重重跑全过，确认为串行环境 flake 与本改动无关。偏差：回测形态列/重跑 UI 已实现但真实消费留 T5；`list` 形态已实现、真实消费留 T4（ConfigView）。
+
+**T3 审查整改（2026-07-29，复核 AI 审查 2×P1 + 2×P2，四条均属实已修复）**：
+- **P1-1 无查看权限仍暴露搜索入口**：`AssetProfileSelect` 新增 `viewPermission`（经 `hasPermission` 判定 `canBrowse`，缺省可浏览），无权限时不渲染搜索按钮与「去系统内置搜索复制」空态引导、不调 browse；`AssetSearchDrawer` 新增 `canBrowse`，`fetchPage` 顶部短路，无权时显示 `AppStateBlock state="error" variant="permission"`「无权限查看{对象}/请联系系统管理员调整权限」并整体隐藏工具栏与分页页脚（对齐 DESIGN §286/§307 权限态，不把无权伪装成空态）；`ScreenView` 传入 `view-permission="screen-profile:view"`。
+- **P1-2 三视口看不到操作列**：操作列改 `role="action" fixed="right"` 固定右缘；同时**移除方案类「更新时间」列**（`datetime` 168px，连同名称128/来源96/提供者140/操作232 ≈ 664px 超出 xl 抽屉 560px 内容区，会把操作列挤回横向滚动区；回测类少一列仍保留「创建时间」）。E2E 增加操作列「加载查看」与全部列头 bounding box 必须位于抽屉可视范围内的硬断言。
+- **P2-1 空态截图非有效视觉证据**：E2E 截图前等待 `.el-drawer` `offsetWidth===560`（进场动画结束），并改对抽屉面板 locator 截图而非整页。
+- **P2-2 关闭/卸载仍可能发防抖请求**：`watch(open)` 关闭分支清理 `searchTimer` 并 `fetchSeq+=1` 使在途响应失效；`onBeforeUnmount` 同口径清理。
+- **复查新发现问题（审查者未提，已一并修）**：初版无权态仍显示工具栏（分段/搜索框）与「共 0 条」分页页脚，语义矛盾——改为无权态整体隐藏。
+- 整改验证：两组件定向 Vitest **20 passed**（新增无权态×2、防抖清理×1、权限入口×1 共 4 例），前端全量 **525 passed**；`npm run build` 通过（含 vue-tsc）；定向 E2E 三视口 **3 passed**（新增列头/操作列可视断言全部成立）。**本轮未复跑全量 Playwright**（沿用既有结论：定向链路已覆盖本改动面，全量回归留 T6）。
 
 ### 阶段 4 · 普通方案页扩展
 
@@ -295,7 +303,7 @@
 ## 8. 测试与验证计划
 > **口径**：区分「定向测试通过」（本阶段新增/相关用例）、「全量后端结果」、「未验证（前端未实施）」。
 > **全量后端（2026-07-28，停服释放 DuckDB 锁后跑，含 R2–R9 补测）**：`728 passed`（R9 新增「仅清空菜单也 bump perm_ver」正向回归 + 成功重授 bump，故障回滚用例改名保留）。**R7 覆盖顺序重启，R8 覆盖并发锁串行+fail-closed，R9 覆盖菜单变化的 perm_ver 一致性**。恒有 1 例**既有失败**（`test_stage5_audit.py::test_stage5_audit_tenant_admin_is_scoped_to_own_tenant`，期望 200 实得 403），根因是既有 `revoke_tenant_admin_audit_default_grants` 迁移撤销 tenant_admin 审计默认授权，**与本重构无关、不在本次 diff**，已单列待处理。Ruff：环境未安装，未验证。
-> **前端（2026-07-29，T3 ScreenView 样板）**：Vitest 全量 `521 passed`（含新增组件 16 用例）；`npm run build` 通过（含 vue-tsc）；Playwright 新增 `asset-search-drawer.spec.ts` 跨用户链路三视口（1100×620/1366×768/1440×900）通过并附截图；全量串行回归 `58 passed / 3 failed / 20 skipped`，3 例失败（数据概览低视口×2、HelpTip 预设 token）单重重跑全过，确认为串行环境 flake、与本改动无关；后端曾按 E2E 写模式重启、验收后已恢复日常模式（/api/health=200）。
+> **前端（2026-07-29，T3 ScreenView 样板，含审查整改）**：Vitest 全量 `525 passed`（含新增组件 20 用例：抽屉 11 + 选择器 9）；`npm run build` 通过（含 vue-tsc）；Playwright `asset-search-drawer.spec.ts` 跨用户链路三视口（1100×620/1366×768/1440×900）通过并附截图——截图前等待抽屉 `offsetWidth===560` 稳定、对抽屉面板 locator 截图，并新增操作列「加载查看」与全部列头 bounding box 必须位于抽屉可视范围内的硬断言（覆盖整改 P1-2/P2-1）；无权态经组件 Vitest 覆盖（`canBrowse=false` 不调 browse、显示无权态而非空态、隐藏工具栏与分页页脚）。全量 Playwright 本轮未复跑，沿用既有 `58 passed / 3 failed`（3 例 flake 单重重跑全过、与本改动无关），全量回归留 T6；后端曾按 E2E 写模式重启、验收后已恢复日常模式（/api/health=200）。
 - 单元测试：`scoped_where` 四来源互斥（含 **mine 平台槽排除预设**）、preset 负例（private 不出现）、summary 含 updated_at、回测独立 summary、发布码授权解析。具体完成情况：**定向通过**（`test_stage6_asset_visibility` 等）。
 - 接口测试：list `source=mine`（**含平台槽 owner 互斥**）；browse `preset|tenant|public`+q+分页+脱敏（preset 严格公开负例）；未知 source 返回 400；发布放开后 normal 可发布/非 owner 403；回测重跑归属+审计；**发布态回测按引用方案名 q 命中**；**复制原子插入不覆盖同 id 既有资产**。具体完成情况：**定向通过**（含 `test_asset_review_fixes` 3 例 P1 回归）。
 - 页面/交互测试：Vitest（AssetSearchDrawer 三段/q/空态/复制/临时只读、AssetProfileSelect 双形态）、E2E（搜索→加载只读→复制→我的下拉；下拉仅自己；normal 发布；回测重跑）。具体完成情况：**ScreenView 样板通过（T3，2026-07-29）**——组件 Vitest 16 用例全过、前端全量 521 passed；`asset-search-drawer.spec.ts` 跨用户链路（发布租户公开→浏览/复制/临时只读/脱敏/系统内置空态）三视口通过并附截图；其余页面待 T4/T5。

@@ -47,8 +47,11 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
     const drawer = page.getByTestId('asset-search-drawer')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText('暂无系统内置筛选方案')
+    // 视觉验收：等待抽屉进场动画结束、宽度稳定到语义档位 xl（560px）后再截图
+    const drawerPanel = page.locator('.el-drawer', { has: drawer })
+    await expect(drawerPanel).toHaveJSProperty('offsetWidth', 560)
     await testInfo.attach(`asset-search-drawer-preset-empty-${testInfo.project.name}`, {
-      body: await page.screenshot(),
+      body: await drawerPanel.screenshot(),
       contentType: 'image/png',
     })
 
@@ -58,8 +61,24 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
     await expect(row).toBeVisible()
     await expect(row).toContainText('同租户用户')
     await expect(row).not.toContainText('debug_normal')
+    // 操作列固定右侧且必须位于抽屉可视范围内（核心操作不被挤出横向滚动区）
+    const loadBtn = row.getByTestId('asset-search-drawer-load')
+    const drawerBox = await drawerPanel.boundingBox()
+    const loadBox = await loadBtn.boundingBox()
+    expect(drawerBox, '抽屉应有可视区域').not.toBeNull()
+    expect(loadBox, '操作列「加载查看」应渲染').not.toBeNull()
+    expect(loadBox!.x, '操作列不应超出抽屉左边界').toBeGreaterThanOrEqual(drawerBox!.x - 1)
+    expect(loadBox!.x + loadBox!.width, '操作列不应超出抽屉右边界').toBeLessThanOrEqual(drawerBox!.x + drawerBox!.width + 1)
+    // 所有列头都应落在抽屉可视区内（不被固定列挤出）：方案名称/来源/提供者/操作
+    for (const header of ['方案名称', '来源', '提供者', '操作']) {
+      const cell = drawer.getByRole('columnheader', { name: header })
+      await expect(cell, `列头「${header}」应渲染`).toBeVisible()
+      const box = await cell.boundingBox()
+      expect(box, `列头「${header}」应有可视区域`).not.toBeNull()
+      expect(box!.x + box!.width, `列头「${header}」不应超出抽屉右边界`).toBeLessThanOrEqual(drawerBox!.x + drawerBox!.width + 1)
+    }
     await testInfo.attach(`asset-search-drawer-tenant-${testInfo.project.name}`, {
-      body: await page.screenshot(),
+      body: await drawerPanel.screenshot(),
       contentType: 'image/png',
     })
 
