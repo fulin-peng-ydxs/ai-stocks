@@ -267,22 +267,27 @@
 ### 阶段 4 · 普通方案页扩展
 
 #### 6.7 任务 T4：评分/买卖/榜单/个股详情接入
-- 状态：已完成（前端·Vitest/构建通过）　依赖：T3
+- 状态：已完成（前端·Vitest/构建通过 + 真实浏览器关键路径复验通过；审查整改已闭环）　依赖：T3
 - 涉及：`ConfigView.vue`（评分/买卖两侧栏 AssetProfileSelect list 形态）、`BoardView.vue`（头部评分方案选择器 select 形态）、`StockDetailView.vue`（买卖方案选择器 select 形态，R10）
 - 目标：四页接入共享组件，下拉改 source=mine，搜索入口，发布放开。
 - 操作：侧栏/下拉接入 AssetProfileSelect + AssetSearchDrawer；加载只读**不自动计算/评估/跑榜单**（§7.0/§7.2）。
 - 验证：各页 Vitest + E2E；目视系统内置徽标不受影响。
 - 完成标准：四页一致、加载不自动运行。
 - 实际落地情况：**已完成（2026-07-29）**。①API 三模块契约扩展：`scoreProfile.ts`/`tradeProfile.ts` 各加 `list*(source?)`、`browse*`（preset/tenant/public + q + 分页）、`copy*` 去必填 id 并返回 `{id, profile_ref?, name?, version}`，Summary 补 `asset_ref?`/`updated_at?`；`board.ts` 榜单复用评分域 `browse/copy` 契约。②ConfigView（评分+买卖，list 形态）：侧栏 `<ul>` 替换为 `AssetProfileSelect mode="list"`，`fetchMine` 无 view 码降级返回 []，`loadProfiles`/`loadTradeProfiles` 改 `list*('mine')`；`onScoreSelect`/`onTradeSelect` 为唯一载入入口（设 ref + 调 selectProfile，**不自动试算/评估**）；`copy*` 无 id 调用 + 组件 `reload()`；save/publish 后同样 reload；删除 `nextCopyProfileId`/`nextCopyTradeId` 前端撞库逻辑；init 取首项后走 onSelect（选择器 pageReady 前未挂载，不经 ref）。③BoardView（select 形态）：el-select 换为 `AssetProfileSelect`（width 300px），`onProfileSelect` 只设 ref **不调 load()**（不自动跑榜单，用户显式点「刷新」）；`onProfileLoaded` 把临时只读项并入 profiles 供 curProfile（标题/导出/榜单参数）解析。④StockDetailView（R10，select 形态）：el-select 换为选择器（width 300px），`onTradeSelect` 设 id 并显式 `evalTrade()`（沿用原 @change 行为），`onTradeLoaded` 只并入列表**不自动重评**。⑤测试适配：`StockDetailView.spec.ts` 3 用例改写为驱动 AssetProfileSelect stub（统一选择器/source=mine、快速切换取消旧评估、KeepAlive v1/v2 断言收窄到评估卡）20/20 通过；`ConfigView.system.spec.ts` 补 browse mock、末用例改 mine-only 语义（mountView 加 permissions 参数、normal 补 trade-profile:view）。验证：前端全量 Vitest **525 passed**；`npm run build` 通过（含 vue-tsc）；四页一致消费、加载只读不自动运行。**E2E 本轮未复跑（Playwright 需真实服务，留 T6）**。偏差：BacktestView 三选择器仍调 `list*()` 无参（T5 范围，新签名参数可选故编译不受影响）。
-- 自审查发现（2026-07-29，登记为 T6 待办，不在本阶段改动业务代码）：
-  - 【P1】ConfigView 详情加载吞错：`onScoreSelect`/`onTradeSelect`（`ConfigView.vue:473`/`:878`）先设 ref 再 `void selectProfile(key)`，`selectProfile` 无 try/catch——`getScoreProfile`/`getTradeProfile` 失败时「选中新方案、编辑器仍是旧方案、无报错/重试」。T6 修：`.catch` 回滚 ref 或 toast。
-  - 【P1】save/copy 后 find 失败回退丢 profile_ref（`ConfigView.vue:636-684`）：`reload()` 列表 find 未命中时 `curRef` 回退裸 id 而非 profile_ref；publish 公开后方案离开 mine 口径，reload 列表不再有它，`selectedItem` find 失败致下拉 label 回退空。T6 修：回退统一优先 profile_ref；publish 后保持选中回显。
-  - 【P1】核心契约测试盲区：「加载查看注入临时项不自动运行」「切换丢弃临时项」「复制后端生成 id 并刷新选中」三条在四页均无用例直接覆盖（现仅锁 source=mine 与 profile_ref 拉详情）。T6 补：emit loaded 不触发 run/eval、切换后临时项从 options 消失、copy 后列表刷新且 modelValue=返回 ref。
-  - 【P2】ConfigView `selectProfile`/`selectTradeProfile` 无竞态守卫（连续快速点击慢响应覆盖编辑器；StockDetailView `beginRequest` 范本可复用）。
-  - 【P2】组件 `tempItem` 与页面 `onProfileLoaded`/`onTradeLoaded` 并入列表双份真相，页面侧只加不删（内存残留，不影响正确性）。
-  - 【P2】BoardView `watch(runDate)`/`watch(topN)` 可用临时只读方案自动跑榜单（绕过「显式刷新」口径，需确认是否有意）。
-  - 【P2】BoardView `selected` undefined 时把 `profileRef`（opaque ref）塞进 `profile_id` 字段（`BoardView.vue:182`），口径错误（仅 find 失败边缘路径）。
-  - 【P2·语义确认】榜单复制复用评分域 `score-profile:save` 属跨域授权（行为正确 fail-closed，有意设计），建议在榜单需求文档显式固化此约定。
+- **整改闭环（2026-07-31，二次审查不通过后的定向整改，范围仍限 T4 四页、不动 T5/后端）**：①P1-1 个股加载查看自动评估——`AssetProfileSelect.onDrawerLoad` 不再联动 `update:modelValue`（只设 tempItem + emit loaded），StockDetailView 新增「评估」按钮（`stock-trade-eval-run`）、`onTradeLoaded` 只并入列表并置空旧评估不自动跑。②P1-2 ConfigView 详情吞错错位——评分/买卖 `selectProfile`/`selectTradeProfile` 加 `scoreDetailSeq`/`scoreLastAppliedRef` 竞态守卫 + 失败回滚到最后成功项 + 编辑器 `profileLoading`/`profileError` 态。③P2-1 重复 source=mine 双份状态——组件为列表唯一事实源，新增 `ready` 事件推父页，四页去重复 fetch。④P2-2 Board 复制后父级不知新方案——组件 `onDrawerCopied` reload 后回写完整 summary，新增 `copiedItem` 事件，Board `onProfileCopied` 并入使 curProfile 可解析。⑤P2-3 补页面级测试——`StockDetailView.spec.ts`（加载查看不发 eval/点评估才发、快速切换取消旧评估）、`ConfigView.system.spec.ts`（详情失败回滚不错位、快速切换竞态守卫）、`AssetProfileSelect.spec.ts`（loaded 不联动 modelValue/切换丢弃临时项/复制回写完整 summary）等，全量 **528 passed**。验证：`npm run build` 通过；**真实浏览器关键路径复验通过**——个股「加载查看」公开方案全程零 trade-eval 请求、点「评估」才发 `trade-eval`；榜单「加载查看」`默认趋势分v1` 后无 board 运行请求、页面呈只读空态；两页 `source=mine` 均单次（P2-1 同步佐证）。
+- 自审查发现（2026-07-29 登记；2026-07-31 整改闭环——P1-1/P1-2/P2-1/P2-2/P2-3 已修并复验，余项按标注留 T6）：
+  - 【P1-2·已整改】ConfigView 详情加载吞错：`onScoreSelect`/`onTradeSelect` 先设 ref 再 `void selectProfile(key)` 无 try/catch——失败时「选中新方案、编辑器仍是旧方案、无报错/重试」。**已修**：评分/买卖 select 加 `scoreDetailSeq`/`scoreLastAppliedRef` 守卫，失败回滚 ref 到最后成功项 + AppStateBlock 错误态可重试，编辑器原子应用不错位。测试：`ConfigView.system.spec.ts`「详情失败回滚」「快速切换竞态守卫」。
+  - 【P1·已整改】save/copy 后 find 失败回退丢 profile_ref：reload 列表 find 未命中时 `curRef` 回退裸 id 而非 profile_ref；publish 公开后方案离开 mine 口径、下拉 label 回退空。**已修**：回退统一优先 `profile_ref`，publish/save 后保持 profile_ref 选中回显（含于本次 ConfigView 整改，竞态守卫一并覆盖）。
+  - 【P1·已整改】核心契约测试盲区：「加载查看注入临时项不自动运行」「切换丢弃临时项」「复制后端生成 id 并刷新选中」三条原无用例直接覆盖。**已补**：`AssetProfileSelect.spec.ts`（loaded 不联动 modelValue/切换丢弃临时项/复制回写完整 summary）、`StockDetailView.spec.ts`（emit loaded 不发 eval、点评估才发）、`ConfigView.system.spec.ts`（详情失败回滚），全量 528 passed。
+  - 【P2·已整改】ConfigView `selectProfile`/`selectTradeProfile` 无竞态守卫（连续快速点击慢响应覆盖编辑器）。**已修**：随 P1-2 一并加 `scoreDetailSeq` 序号守卫，慢响应过期丢弃（测试「快速切换竞态守卫」）。
+  - 【P2·已整改】组件 `tempItem` 与页面 `onProfileLoaded`/`onTradeLoaded` 并入列表双份真相。**已修**：组件改为列表唯一事实源 + `ready` 事件推父页，页面侧经 `ready` 一次性接收、不再各自 fetch 与并入（见 P2-1）。
+  - 【P2·留 T6·待确认】BoardView `watch(runDate)`/`watch(topN)` 可用临时只读方案自动跑榜单（绕过「显式刷新」口径）。本次未改，留 T6 确认是否有意。
+  - 【P2·留 T6】BoardView `selected` undefined 时把 `profileRef`（opaque ref）塞进 `profile_id` 字段（`BoardView.vue:182`），口径错误（仅 find 失败边缘路径）。本次未改，留 T6。
+  - 【P2·语义确认·留 T6】榜单复制复用评分域 `score-profile:save` 属跨域授权（行为正确 fail-closed，有意设计），建议在榜单需求文档显式固化此约定。本次未改文档，留 T6。
+  - 【P1-1·已整改】（二次审查新发现）个股详情「加载查看」自动评估：`AssetProfileSelect.onDrawerLoad` 之前同时 emit `update:modelValue` 与 `loaded`，前者经 `onTradeSelect → evalTrade()` 必然触发自动评估，违反 §7.0「不自动运行」。**已修**：`onDrawerLoad` 只设 tempItem + emit `loaded` 不再联动选中；StockDetailView 加「评估」按钮、`onTradeLoaded` 只并入列表不自动跑。真实浏览器复验：加载查看公开方案全程零 trade-eval，点「评估」才发。
+  - 【P2-1·已整改】（二次审查新发现）四页重复 `source=mine` 请求 + 双份状态：组件 onMounted 拉一次、父页 `onMounted`/`loadProfiles` 又各自拉一次。**已修**：组件为列表唯一事实源，新增 `ready` 事件把列表推给父页，四页 `onMounted` 去重复 fetch。真实浏览器复验：个股/榜单 `source=mine` 均单次。
+  - 【P2-2·已整改】（二次审查新发现）Board 复制后父级不知新方案：复制返回仅 id/profile_ref/name/version，父页无完整 summary，`curProfile` 解析失败致标题/导出失真。**已修**：组件 `onDrawerCopied` reload 后按返回 id 在最新列表 find 完整 summary，新增 `copiedItem` 事件回写；Board `onProfileCopied` 并入使 curProfile 可解析。
+  - 【P2-3·已整改】（二次审查新发现）T4 状态不可标已完成、需补页面级测试。**已补**：测试矩阵见上「整改闭环⑤」，全量 528 passed + 真实浏览器关键路径复验通过，状态据此更新为已完成。
   - 说明：StockDetailView「主下拉切换即评估」（`onTradeSelect`→`evalTrade()`）经核为**沿用 T4 前既有交互**（原 `@change="() => evalTrade()"`），R10「不自动重评」约束的是「加载查看」路径（`onTradeLoaded` 不评估 ✓），**非回归、不改**。
 
 ### 阶段 5 · 回测专属接入
@@ -320,11 +325,11 @@
 ## 8. 测试与验证计划
 > **口径**：区分「定向测试通过」（本阶段新增/相关用例）、「全量后端结果」、「未验证（前端未实施）」。
 > **全量后端（2026-07-28，停服释放 DuckDB 锁后跑，含 R2–R9 补测）**：`728 passed`（R9 新增「仅清空菜单也 bump perm_ver」正向回归 + 成功重授 bump，故障回滚用例改名保留）。**R7 覆盖顺序重启，R8 覆盖并发锁串行+fail-closed，R9 覆盖菜单变化的 perm_ver 一致性**。恒有 1 例**既有失败**（`test_stage5_audit.py::test_stage5_audit_tenant_admin_is_scoped_to_own_tenant`，期望 200 实得 403），根因是既有 `revoke_tenant_admin_audit_default_grants` 迁移撤销 tenant_admin 审计默认授权，**与本重构无关、不在本次 diff**，已单列待处理。Ruff：环境未安装，未验证。
-> **前端（2026-07-29，T4 四页接入）**：Vitest 全量 `525 passed`（`StockDetailView.spec.ts` 20/20、`ConfigView.system.spec.ts` 11/11）；`npm run build` 通过（含 vue-tsc）。四页一致消费 AssetProfileSelect（ConfigView 评分/买卖 list 形态、BoardView/StockDetailView select 形态），下拉统一 `source=mine`、加载只读不自动运行（榜单显式刷新、个股显式评估、评分/买卖不自动试算）。**E2E 本轮未复跑（Playwright 需真实服务，留 T6）**；系统内置徽标走 AssetProfileLabel 复用路径未改。
+> **前端（2026-07-31，T4 四页接入 + 审查整改闭环）**：Vitest 全量 `528 passed`（`StockDetailView.spec.ts`、`ConfigView.system.spec.ts`、`AssetProfileSelect.spec.ts` 含整改新增用例）；`npm run build` 通过（含 vue-tsc）。四页一致消费 AssetProfileSelect（ConfigView 评分/买卖 list 形态、BoardView/StockDetailView select 形态），下拉统一 `source=mine`（组件为列表唯一事实源、单请求）、加载只读不自动运行（榜单显式刷新、个股显式评估按钮、评分/买卖不自动试算）。**真实浏览器关键路径复验通过**：个股加载查看零 trade-eval、点评估才发；榜单加载查看无运行请求、页面只读空态；两页 source=mine 单次。**全量 Playwright E2E 本轮未复跑（留 T6）**；系统内置徽标走 AssetProfileLabel 复用路径未改。
 > **前端（2026-07-29，T3 ScreenView 样板，含 R1/R2 两轮审查整改）**：Vitest 全量 `525 passed`（组件用例：抽屉 11 + 选择器 9 = 20）；`npm run build` 通过（含 vue-tsc）；Playwright `asset-search-drawer.spec.ts` 跨用户链路三视口（1100×620/1366×768/1440×900）通过并附截图——截图前等待抽屉 `offsetWidth===560` 稳定、对抽屉面板 locator 截图；列断言覆盖需求合并后的方案类列集合「方案名称（含次行『更新于』)/来源（title 含提供者）/操作」三列头左右边界均在抽屉可视区、操作列 `fixed="right"` 完整可见、无权态 fail-closed 不调 browse。**全量 Playwright 本轮未复跑（未验证，留 T6）**；后端曾按 E2E 写模式重启、验收后已恢复日常模式（/api/health=200）。
 - 单元测试：`scoped_where` 四来源互斥（含 **mine 平台槽排除预设**）、preset 负例（private 不出现）、summary 含 updated_at、回测独立 summary、发布码授权解析。具体完成情况：**定向通过**（`test_stage6_asset_visibility` 等）。
 - 接口测试：list `source=mine`（**含平台槽 owner 互斥**）；browse `preset|tenant|public`+q+分页+脱敏（preset 严格公开负例）；未知 source 返回 400；发布放开后 normal 可发布/非 owner 403；回测重跑归属+审计；**发布态回测按引用方案名 q 命中**；**复制原子插入不覆盖同 id 既有资产**。具体完成情况：**定向通过**（含 `test_asset_review_fixes` 3 例 P1 回归）。
-- 页面/交互测试：Vitest（AssetSearchDrawer 三段/q/空态/复制/临时只读、AssetProfileSelect 双形态）、E2E（搜索→加载只读→复制→我的下拉；下拉仅自己；normal 发布；回测重跑）。具体完成情况：**ScreenView 样板通过（T3，2026-07-29）**——组件 Vitest 20 用例（抽屉 11 + 选择器 9）全过、前端全量 525 passed；`asset-search-drawer.spec.ts` 跨用户链路（发布租户公开→浏览/复制/临时只读/脱敏/系统内置空态/合并列集合可视）三视口通过并附截图；**T4 四页（评分/买卖/榜单/个股详情）真实消费通过**——下拉统一 source=mine、加载只读不自动运行、临时项并入 profiles 供 curProfile 解析，全量 525 passed、build 通过；其余页面（回测）待 T5。
+- 页面/交互测试：Vitest（AssetSearchDrawer 三段/q/空态/复制/临时只读、AssetProfileSelect 双形态）、E2E（搜索→加载只读→复制→我的下拉；下拉仅自己；normal 发布；回测重跑）。具体完成情况：**ScreenView 样板通过（T3，2026-07-29）**——组件 Vitest 20 用例（抽屉 11 + 选择器 9）全过、前端全量 525 passed；`asset-search-drawer.spec.ts` 跨用户链路（发布租户公开→浏览/复制/临时只读/脱敏/系统内置空态/合并列集合可视）三视口通过并附截图；**T4 四页（评分/买卖/榜单/个股详情）真实消费通过**——下拉统一 source=mine（组件唯一事实源、单请求）、加载只读不自动运行、临时项并入 profiles 供 curProfile 解析，全量 528 passed、build 通过、真实浏览器关键路径复验通过（个股/榜单加载查看不自动运行）；其余页面（回测）待 T5。
 - 组件资产闭环测试：AssetSearchDrawer/AssetProfileSelect 在 ScreenView 样板 + 4 页真实消费；DESIGN 矩阵登记；无 Unicode 图标、PageDrawer xl、AppDataTable/AppRowActions。具体完成情况：**DESIGN 真实复用组件清单已登记（T3）**；ScreenView 真实消费通过；**T4 四页真实消费通过**（ConfigView list 形态、BoardView/StockDetailView select 形态，E2E 留 T6）；按钮文案/间距契约扫描全过（button-system/typography-spacing-system）。
 - 权限与数据范围测试：多角色（`test-users.md`）验证发布放开、mine 隔离、跨租户 tenant 不可见、preset 严格公开、owner 脱敏。具体完成情况：**后端定向通过**；多角色端到端待前端。
 - 回归测试：系统内置徽标/`is_preset`/榜单零改动回归；现有 copy/visibility 链路；stage6 断言更新。具体完成情况：**定向通过**（copy/visibility 簇 57 passed）。

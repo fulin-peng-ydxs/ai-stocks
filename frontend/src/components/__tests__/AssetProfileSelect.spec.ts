@@ -89,13 +89,14 @@ describe('AssetProfileSelect', () => {
     wrapper.unmount()
   })
 
-  it('加载查看：临时只读项注入顶部、选中并发出 loaded，不进入「我的」', async () => {
+  it('加载查看：临时只读项注入顶部并发出 loaded，不改变选中、不进入「我的」', async () => {
     const fetchMine = vi.fn(async () => [mineItem])
     const { wrapper } = mountSelect({ fetchMine })
     await flush()
     wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
     await flush()
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['ref_pub_b'])
+    // 「加载查看」只注入临时只读项并通知父级，不再联动 update:modelValue（是否选中由父级决定）
+    expect(wrapper.emitted('update:modelValue')).toBeFalsy()
     expect(wrapper.emitted('loaded')).toBeTruthy()
     // 临时项不进「我的」：fetchMine 不被重拉，「我的」仍只有 1 条
     expect(fetchMine).toHaveBeenCalledTimes(1)
@@ -141,6 +142,8 @@ describe('AssetProfileSelect', () => {
     expect(fetchMine).toHaveBeenCalledTimes(2)
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['ref_new'])
     expect(wrapper.emitted('copied')).toBeTruthy()
+    // P2-2：复制后回写完整 summary（含 source/readonly/is_preset），父级据此并入
+    expect(wrapper.emitted('copiedItem')?.at(-1)).toEqual([copiedItem])
     wrapper.unmount()
   })
 

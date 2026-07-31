@@ -397,6 +397,17 @@ function setDefaultApiResponses() {
   ])
 }
 
+// 列表改由共享选择器组件经 ready 事件提供（P2-1，组件为唯一事实源）。
+// 本测试以 shallowMount 渲染，AssetProfileSelect 被自动 stub、不会自行 emit ready，
+// 故显式触发 ready 模拟组件装载「我的」列表，驱动首项选中并评估。
+const mineTradeList = [
+  { id: 'trade-1', profile_ref: 'avr_trade_1', name: '默认买卖', version: 1, is_preset: true } as any,
+]
+async function emitTradeReady(wrapper: any, list = mineTradeList) {
+  await wrapper.findComponent(AssetProfileSelect).vm.$emit('ready', list)
+  await flushPromises()
+}
+
 describe('StockDetailView 三图数据协调', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -409,16 +420,41 @@ describe('StockDetailView 三图数据协调', () => {
   it('买卖方案统一走共享选择器，仅加载「我的」（source=mine）', async () => {
     const wrapper = await mountView()
     const select = wrapper.findComponent(AssetProfileSelect)
+    await emitTradeReady(wrapper)
 
     expect(select.exists()).toBe(true)
     expect(select.props('assetLabel')).toBe('买卖方案')
     expect(select.props('modelValue')).toBe('avr_trade_1')
-    // 列表只取「我的」：listTradeProfiles 以 mine 口径调用
-    expect(tradeProfileApi.listTradeProfiles).toHaveBeenCalledWith('mine')
+    // 组件为列表唯一事实源（P2-1）：页面传入 fetchMine 回调、不再自行 fetch；
+    // 该回调内部以 source=mine 调 listTradeProfiles（真实组件挂载时触发，本处 stub 不触发）。
+    expect(typeof select.props('fetchMine')).toBe('function')
+  })
+
+  it('加载查看公开方案只选中不自动评估，点「评估」按钮才运行（R10）', async () => {
+    const wrapper = await mountView()
+    await emitTradeReady(wrapper)
+    vi.mocked(stocksApi.getTradeEval).mockClear()
+
+    const select = wrapper.findComponent(AssetProfileSelect)
+    // 「加载查看」注入临时只读项：只选中+展示，不发评估请求
+    select.vm.$emit('loaded', {
+      id: 'pub-x', profile_ref: 'avr_pub_x', name: '趋势买卖', version: 3, is_preset: true, source: 'preset', readonly: true,
+    })
+    await flushPromises()
+    expect(select.props('modelValue')).toBe('avr_pub_x')
+    expect(stocksApi.getTradeEval).not.toHaveBeenCalled()
+
+    // 用户点「评估」按钮才显式运行
+    await wrapper.get('[data-testid="stock-trade-eval-run"]').trigger('click')
+    await flushPromises()
+    expect(stocksApi.getTradeEval).toHaveBeenCalledWith(
+      '600000.SH', 'avr_pub_x', undefined, expect.any(AbortSignal),
+    )
   })
 
   it('初次并行加载行情、全量指标序列和报价，并把默认三图接入页面', async () => {
     const wrapper = await mountView()
+    await emitTradeReady(wrapper)
     const workspace = wrapper.findComponent(StockChartWorkspaceStub)
 
     expect(stocksApi.getBars).toHaveBeenCalledWith(
@@ -782,6 +818,11 @@ describe('StockDetailView 三图数据协调', () => {
 
     const wrapper = await mountView()
     const tradeSelect = wrapper.findComponent(AssetProfileSelect)
+    // ready 装载列表 → 首项 avr_trade_1 自动选中并发起首次评估（oldTrade）
+    await emitTradeReady(wrapper, [
+      { id: 'same-id', profile_ref: 'avr_trade_1', name: '方案一', version: 1, is_preset: true } as any,
+      { id: 'same-id', profile_ref: 'avr_trade_2', name: '方案二', version: 1, is_preset: true } as any,
+    ])
     expect(tradeSelect.exists()).toBe(true)
     expect(tradeSelect.props('modelValue')).toBe('avr_trade_1')
 
@@ -952,6 +993,9 @@ describe('StockDetailView 三图数据协调', () => {
     })
 
     const { active, wrapper } = await mountKeepAliveView()
+    await flushPromises()
+    // ready 装载列表 → 首项自动选中并发起评估（占第 1 次 trade 调用）
+    await wrapper.findComponent(AssetProfileSelect).vm.$emit('ready', mineTradeList)
     await flushPromises()
     expect(barsCalls).toBe(1)
     expect(quoteCalls).toBe(1)

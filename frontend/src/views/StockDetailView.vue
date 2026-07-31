@@ -302,17 +302,22 @@ function browseTrade(params: AssetBrowseParams) {
 function copyAnyTradeProfile(item: ProfileSummary) {
   return copyTradeProfile(item.profile_ref || item.id)
 }
-// 选择器选中 → 触发评估（显式操作，沿用现状 @change 行为）
+// 主下拉「主动切换」→ 显式评估（沿用现状 @change 习惯，用户明确操作）
 function onTradeSelect(key: string) {
   tradeId.value = key
   void evalTrade()
 }
-// 「加载查看」临时只读项：并入 tradeProfiles 供选中回显；不自动重评，由用户显式触发（R10）
+// 「加载查看」临时只读项（R10）：并入 tradeProfiles 并设为当前选中回显，但**不自动评估**——
+// 清空旧结果，由用户点「评估」按钮显式运行。组件「加载查看」不再联动 update:modelValue，此为本路径唯一入口。
 function onTradeLoaded(item: ProfileSummary) {
   const summary = item as TradeProfileSummary
   if (!tradeProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileKey(summary))) {
     tradeProfiles.value = [summary, ...tradeProfiles.value]
   }
+  tradeId.value = tradeProfileKey(summary)
+  cancelRequest(tradeRequest)
+  tradeEval.value = null
+  tradeError.value = ''
 }
 
 interface RequestChannel {
@@ -502,26 +507,28 @@ watch(() => settings.adjustMode, () => {
   void loadBars()
 })
 
+// 组件为列表唯一事实源（P2-1）：经 ready 接收「我的」列表，不再重复 fetch；首项自动选中并评估
+async function onTradeReady(list: ProfileSummary[]) {
+  tradeProfiles.value = list as TradeProfileSummary[]
+  if (tradeProfiles.value.length && !tradeId.value && !barsPermissionDenied.value) {
+    tradeId.value = tradeProfileKey(tradeProfiles.value[0])
+    await evalTrade()
+  }
+}
+// 复制成功（P2-2）：组件回写完整 summary，并入 tradeProfiles 供选中回显
+function onTradeCopied(item: ProfileSummary) {
+  const summary = item as TradeProfileSummary
+  if (!tradeProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileKey(summary))) {
+    tradeProfiles.value = [summary, ...tradeProfiles.value]
+  }
+}
+
 onMounted(async () => {
   await auth.ensureLoaded().catch(() => undefined)
   clearUnauthorizedGroupSet()
-  const tradeProfilesPromise = canUseTradeEvaluation.value
-    ? (async () => {
-      try {
-        tradeProfiles.value = await listTradeProfiles('mine')
-        if (tradeProfiles.value.length && !barsPermissionDenied.value) {
-          tradeId.value = tradeProfileKey(tradeProfiles.value[0])
-          await evalTrade()
-        }
-      } catch {
-        /* 方案列表失败不阻塞图表。 */
-      }
-    })()
-    : Promise.resolve()
   await Promise.all([
     reloadRangeData(),
     loadLatestQuote(),
-    tradeProfilesPromise,
     loadGroups(),
     loadStockGroups(),
   ])
@@ -985,7 +992,19 @@ onBeforeUnmount(() => {
               style="width: 300px"
               @update:model-value="onTradeSelect"
               @loaded="onTradeLoaded"
+              @ready="onTradeReady"
+              @copied-item="onTradeCopied"
             />
+            <el-button
+              type="primary"
+              size="small"
+              :disabled="!tradeId"
+              :loading="tradeLoading"
+              data-testid="stock-trade-eval-run"
+              @click="evalTrade()"
+            >
+              评估
+            </el-button>
             <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
           </div>
         </template>

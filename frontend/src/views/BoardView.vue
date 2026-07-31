@@ -131,6 +131,23 @@ function onProfileLoaded(item: ProfileSummary) {
     profiles.value = [summary, ...profiles.value]
   }
 }
+// 组件为列表唯一事实源（P2-1）：经 ready 接收「我的」列表，不再重复 fetch；首项自动选中并跑榜单
+async function onProfilesReady(list: ProfileSummary[]) {
+  profiles.value = list as ScoreProfileSummary[]
+  if (profiles.value.length && !profileRef.value) {
+    profileRef.value = profileKey(profiles.value[0])
+    await load()
+  } else if (!profiles.value.length) {
+    loading.value = false
+  }
+}
+// 复制成功（P2-2）：组件回写完整 summary，并入 profiles 使 curProfile（标题/导出/榜单参数）可解析
+function onProfileCopied(item: ProfileSummary) {
+  const summary = item as ScoreProfileSummary
+  if (!profiles.value.some((p) => profileKey(p) === profileKey(summary))) {
+    profiles.value = [summary, ...profiles.value]
+  }
+}
 
 // 指标注册表：用于把指标 key 映射成中文名（分项达标分徽章）
 const registry = ref<IndicatorDef[]>([])
@@ -221,14 +238,8 @@ onMounted(async () => {
   loading.value = true
   error.value = ''
   try {
+    // 只取指标注册表；方案列表由选择器组件经 ready 事件提供（P2-1，组件为唯一事实源，不重复 fetch）
     registry.value = (await getIndicatorRegistry(true)).items
-    profiles.value = canViewBoardProfiles.value ? await listBoardProfiles('mine') : []
-    if (profiles.value.length) {
-      profileRef.value = profileKey(profiles.value[0])
-      await load()
-    } else {
-      loading.value = false
-    }
   } catch (e) {
     error.value = (e as Error).message
     loading.value = false
@@ -273,6 +284,8 @@ onMounted(async () => {
             style="width: 300px"
             @update:model-value="onProfileSelect"
             @loaded="onProfileLoaded"
+            @ready="onProfilesReady"
+            @copied-item="onProfileCopied"
           />
           <TradeDatePicker v-model="runDate" clearable />
           <span class="lbl">Top</span>

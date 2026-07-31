@@ -415,4 +415,71 @@ describe('ConfigView trade tab', () => {
     expect(tradeApi.getTradeProfile).not.toHaveBeenCalledWith('ui6_trade_mine')
     expect(wrapper.text()).toContain('UI6我的买卖方案')
   })
+
+  it('买卖方案详情加载失败回滚选中值并保留旧编辑器，不出现「新选中+旧内容」错位（P1-2）', async () => {
+    routeState.meta.configTab = 'trade'
+    ;(tradeApi.listTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 't1', profile_ref: 'ref_t1', name: '方案一', version: 1,
+        is_preset: false, visibility: 'private', source: 'mine', readonly: false,
+      },
+      {
+        id: 't2', profile_ref: 'ref_t2', name: '方案二', version: 1,
+        is_preset: false, visibility: 'private', source: 'mine', readonly: false,
+      },
+    ])
+    const wrapper = await mountView('normal', ['trade-profile:view'])
+    // 首次成功载入方案一
+    ;(tradeApi.getTradeProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 't1', profile_ref: 'ref_t1', name: '方案一', version: 1,
+      is_preset: false, visibility: 'private', source: 'mine', readonly: false,
+      buy_tree: { op: 'AND', children: [] }, sell_tree: { op: 'OR', children: [] }, backstop: {},
+    })
+    await wrapper.findComponent({ name: 'AssetProfileSelect' }).vm.$emit('update:modelValue', 'ref_t1')
+    await flushPromises()
+    expect(wrapper.text()).toContain('方案一')
+
+    // 切到方案二时详情接口失败 → 选中值回滚到 ref_t1，编辑器仍是方案一，出现错误态
+    ;(tradeApi.getTradeProfile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('boom'))
+    await wrapper.findComponent({ name: 'AssetProfileSelect' }).vm.$emit('update:modelValue', 'ref_t2')
+    await flushPromises()
+    const select = wrapper.findComponent({ name: 'AssetProfileSelect' })
+    expect(select.props('modelValue')).toBe('ref_t1')
+    expect(wrapper.text()).toContain('方案一')
+    expect(wrapper.text()).toContain('买卖方案详情加载失败')
+  })
+
+  it('快速切换买卖方案时较慢的旧响应不覆盖新选择（P1-2 竞态守卫）', async () => {
+    routeState.meta.configTab = 'trade'
+    ;(tradeApi.listTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 't1', profile_ref: 'ref_t1', name: '方案一', version: 1, is_preset: false, visibility: 'private', source: 'mine', readonly: false },
+      { id: 't2', profile_ref: 'ref_t2', name: '方案二', version: 1, is_preset: false, visibility: 'private', source: 'mine', readonly: false },
+    ])
+    let resolveSlow!: (v: unknown) => void
+    const slow = new Promise((r) => { resolveSlow = r })
+    const wrapper = await mountView('normal', ['trade-profile:view'])
+    // 先点方案一（慢响应挂起），立即再点方案二（快响应）
+    ;(tradeApi.getTradeProfile as ReturnType<typeof vi.fn>).mockImplementation((ref: string) =>
+      ref === 'ref_t1' ? slow : Promise.resolve({
+        id: 't2', profile_ref: 'ref_t2', name: '方案二', version: 1,
+        is_preset: false, visibility: 'private', source: 'mine', readonly: false,
+        buy_tree: { op: 'AND', children: [] }, sell_tree: { op: 'OR', children: [] }, backstop: {},
+      }),
+    )
+    const select = wrapper.findComponent({ name: 'AssetProfileSelect' })
+    await select.vm.$emit('update:modelValue', 'ref_t1')
+    await select.vm.$emit('update:modelValue', 'ref_t2')
+    await flushPromises()
+    // 方案二已应用
+    expect(wrapper.text()).toContain('方案二')
+    // 慢响应（方案一）后到达，不得覆盖方案二
+    resolveSlow({
+      id: 't1', profile_ref: 'ref_t1', name: '方案一', version: 1,
+      is_preset: false, visibility: 'private', source: 'mine', readonly: false,
+      buy_tree: { op: 'AND', children: [] }, sell_tree: { op: 'OR', children: [] }, backstop: {},
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('方案二')
+    expect(select.props('modelValue')).toBe('ref_t2')
+  })
 })

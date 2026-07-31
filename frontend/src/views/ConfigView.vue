@@ -34,6 +34,7 @@ import AppIconButton from '@/components/AppIconButton.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
+import { getErrorMessage } from '@/utils/error'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -400,6 +401,14 @@ async function submitNewDef() {
 const profiles = ref<ScoreProfileSummary[]>([])
 const profilesLoading = ref(false)
 const profilesError = ref(false)
+// 方案详情加载（选中→编辑器）独立状态：加载态/错误态/竞态守卫（P1-2）
+const profileDetailLoading = ref(false)
+const profileDetailError = ref('')
+let scoreDetailSeq = 0
+// 详情加载失败时的目标项（用于错误块重试——curRef 已回滚，需凭此重试用户真正想选的方案）
+let scoreDetailAttempt = ''
+// 最后一次成功载入编辑器的方案 ref（失败回滚的目标；不能用 curRef——onScoreSelect 已先写入新值）
+let scoreLastAppliedRef = ''
 const curRef = ref<string>('')
 const curId = ref<string>('')
 const curVersion = ref<number | null>(null)
@@ -450,20 +459,37 @@ async function loadProfiles() {
   }
 }
 
-// 供「加载查看」临时只读项回显：注入侧栏顶部，点击/选中后走统一 selectProfile 载入编辑器
+// 供「加载查看」临时只读项回显：注入侧栏顶部，点击/选中后走统一 selectProfile 载入编辑器。
+// P1-2：原子应用详情 + 失败回滚选中值 + seq 竞态守卫，保证「选中项 == 编辑器内容」不错位。
 async function selectProfile(profileKey: string) {
   if (!profileKey) return
-  const p = await getScoreProfile(profileKey)
-  curRef.value = p.profile_ref || profileKey
-  curId.value = p.id
-  curVersion.value = p.version
-  editId.value = p.id
-  editName.value = p.name
-  items.value = JSON.parse(JSON.stringify(p.items))
-  items.value.forEach(ensureParams)
-  profileReadonly.value = !!p.readonly
-  profileVisibility.value = p.visibility || 'private'
-  isNew.value = false
+  const seq = ++scoreDetailSeq
+  scoreDetailAttempt = profileKey
+  profileDetailLoading.value = true
+  profileDetailError.value = ''
+  try {
+    const p = await getScoreProfile(profileKey)
+    if (seq !== scoreDetailSeq) return
+    // 成功才整体写入编辑器（原子应用，不写一半）
+    curRef.value = p.profile_ref || profileKey
+    curId.value = p.id
+    curVersion.value = p.version
+    editId.value = p.id
+    editName.value = p.name
+    items.value = JSON.parse(JSON.stringify(p.items))
+    items.value.forEach(ensureParams)
+    profileReadonly.value = !!p.readonly
+    profileVisibility.value = p.visibility || 'private'
+    isNew.value = false
+    scoreLastAppliedRef = curRef.value
+  } catch (e) {
+    if (seq !== scoreDetailSeq) return
+    // 失败回滚到最后成功载入的项，编辑器保留旧内容，避免出现「选中新方案、保存到旧方案」
+    curRef.value = scoreLastAppliedRef
+    profileDetailError.value = getErrorMessage(e, '评分方案详情加载失败')
+  } finally {
+    if (seq === scoreDetailSeq) profileDetailLoading.value = false
+  }
 }
 // 侧栏选择器选中变化（含「加载查看」注入的临时只读项）→ 载入编辑器；不自动试算。
 // 选择器 v-model 同步 curRef 后即调用本函数作为唯一载入入口（含临时只读项）。
@@ -513,6 +539,10 @@ function newProfile() {
   profileReadonly.value = false
   profileVisibility.value = 'private'
   isNew.value = true
+  // 新建态同步清空「最后成功项」，避免后续详情失败回滚到已废弃的旧方案
+  scoreLastAppliedRef = ''
+  scoreDetailAttempt = ''
+  profileDetailError.value = ''
 }
 
 // 新增评分项（默认 bool / 平均分配权重）
@@ -739,6 +769,14 @@ import {
 const tProfiles = ref<TradeProfileSummary[]>([])
 const tProfilesLoading = ref(false)
 const tProfilesError = ref(false)
+// 买卖方案详情加载（选中→编辑器）独立状态：加载态/错误态/竞态守卫（P1-2）
+const tDetailLoading = ref(false)
+const tDetailError = ref('')
+let tradeDetailSeq = 0
+// 详情加载失败时的目标项（用于错误块重试）
+let tradeDetailAttempt = ''
+// 最后一次成功载入编辑器的方案 ref（失败回滚的目标）
+let tradeLastAppliedRef = ''
 const tCurRef = ref('')
 const tCurId = ref('')
 const tCurVersion = ref<number | null>(null)
@@ -856,19 +894,35 @@ function fromTree(tree: CondTree | Record<string, never> | undefined): { logic: 
   return { logic: t.op ?? 'AND', conds }
 }
 
+// P1-2：原子应用详情 + 失败回滚选中值 + seq 竞态守卫，保证「选中项 == 编辑器内容」不错位。
 async function selectTradeProfile(pid: string) {
   if (!pid) return
-  const p = await getTradeProfile(pid)
-  tCurRef.value = p.profile_ref || pid
-  tCurId.value = p.id; tCurVersion.value = p.version; tEditId.value = p.id; tEditName.value = p.name; tIsNew.value = false
-  tReadonly.value = !!p.readonly
-  tVisibility.value = p.visibility || 'private'
-  const b = fromTree(p.buy_tree); buyLogic.value = b.logic; buyConds.value = b.conds
-  const s = fromTree(p.sell_tree); sellLogic.value = s.logic; sellConds.value = s.conds
-  backstop.value = {
-    tp: p.backstop?.take_profit != null ? Math.round(p.backstop.take_profit * 100) : null,
-    sl: p.backstop?.stop_loss != null ? Math.round(p.backstop.stop_loss * 100) : null,
-    hold: p.backstop?.max_hold_days ?? null,
+  const seq = ++tradeDetailSeq
+  tradeDetailAttempt = pid
+  tDetailLoading.value = true
+  tDetailError.value = ''
+  try {
+    const p = await getTradeProfile(pid)
+    if (seq !== tradeDetailSeq) return
+    tCurRef.value = p.profile_ref || pid
+    tCurId.value = p.id; tCurVersion.value = p.version; tEditId.value = p.id; tEditName.value = p.name; tIsNew.value = false
+    tReadonly.value = !!p.readonly
+    tVisibility.value = p.visibility || 'private'
+    const b = fromTree(p.buy_tree); buyLogic.value = b.logic; buyConds.value = b.conds
+    const s = fromTree(p.sell_tree); sellLogic.value = s.logic; sellConds.value = s.conds
+    backstop.value = {
+      tp: p.backstop?.take_profit != null ? Math.round(p.backstop.take_profit * 100) : null,
+      sl: p.backstop?.stop_loss != null ? Math.round(p.backstop.stop_loss * 100) : null,
+      hold: p.backstop?.max_hold_days ?? null,
+    }
+    tradeLastAppliedRef = tCurRef.value
+  } catch (e) {
+    if (seq !== tradeDetailSeq) return
+    // 失败回滚到最后成功载入的项，编辑器保留旧内容
+    tCurRef.value = tradeLastAppliedRef
+    tDetailError.value = getErrorMessage(e, '买卖方案详情加载失败')
+  } finally {
+    if (seq === tradeDetailSeq) tDetailLoading.value = false
   }
 }
 // 侧栏选择器选中变化（含「加载查看」注入的临时只读项）→ 载入编辑器；不自动试算
@@ -885,6 +939,9 @@ function newTradeProfile() {
   buyLogic.value = 'AND'; buyConds.value = []
   sellLogic.value = 'OR'; sellConds.value = []
   backstop.value = { tp: null, sl: null, hold: null }
+  tradeLastAppliedRef = ''
+  tradeDetailAttempt = ''
+  tDetailError.value = ''
 }
 
 // ── 买卖方案历史版本（回看/载入；载入仅写入编辑器，保存后才生成新版本）──
@@ -1018,21 +1075,42 @@ async function withInitialRetry<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
+// 组件为列表唯一事实源（P2-1）：经 ready 接收「我的」列表并决定初始选中，不再在 init 直接 fetch。
+// init 仅做权限/菜单就绪重试（withInitialRetry），列表拉取交给选择器组件（onMounted 拉一次后 emit ready）。
+function onScoreReady(list: ProfileSummary[]) {
+  profiles.value = list as ScoreProfileSummary[]
+  if (profiles.value.length && !curRef.value) onScoreSelect(profiles.value[0].profile_ref || profiles.value[0].id)
+  else if (!profiles.value.length && !curRef.value) newProfile()
+}
+// 复制成功（P2-2）：组件回写完整 summary，并入 profiles 供侧栏/编辑器一致
+function onScoreCopied(item: ProfileSummary) {
+  const summary = item as ScoreProfileSummary
+  if (!profiles.value.some((p) => (p.profile_ref || p.id) === (summary.profile_ref || summary.id))) {
+    profiles.value = [summary, ...profiles.value]
+  }
+}
+function onTradeReady(list: ProfileSummary[]) {
+  tProfiles.value = list as TradeProfileSummary[]
+  if (tProfiles.value.length && !tCurRef.value) onTradeSelect(tradeProfileKey(tProfiles.value[0]))
+  else if (!tProfiles.value.length && !tCurRef.value) newTradeProfile()
+}
+function onTradeCopied(item: ProfileSummary) {
+  const summary = item as TradeProfileSummary
+  if (!tProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileKey(summary))) {
+    tProfiles.value = [summary, ...tProfiles.value]
+  }
+}
+
 async function initScorePage() {
   await withInitialRetry(async () => {
-    // 选择器在 pageReady 后才挂载，此处直接拉「我的」列表决定初始选中；
-    // 选择器挂载后自行 reload 填充同一数据（mine 口径一致）。
-    await loadProfiles()
-    if (profiles.value.length) onScoreSelect(profiles.value[0].profile_ref || profiles.value[0].id)
-    else newProfile()
+    // 选择器组件挂载后自行拉取并经 ready 回推列表/首项选中；此处仅确保权限与菜单就绪。
+    await auth.ensureLoaded()
   })
 }
 
 async function initTradePage() {
   await withInitialRetry(async () => {
-    await loadTradeProfiles()
-    if (tProfiles.value.length) onTradeSelect(tradeProfileKey(tProfiles.value[0]))
-    else newTradeProfile()
+    await auth.ensureLoaded()
   })
 }
 
@@ -1141,6 +1219,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               view-permission="score-profile:view"
               test-id="score-profile-select"
               @update:model-value="onScoreSelect"
+              @ready="onScoreReady"
+              @copied-item="onScoreCopied"
             />
           </aside>
 
@@ -1167,6 +1247,23 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <el-button v-permission="'score-profile:save'" :disabled="profileReadonly" :loading="saving" type="primary" @click="save">保存</el-button>
               <el-button v-permission="'score-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
             </div>
+
+            <!-- 详情加载态/失败态（P1-2）：失败已回滚选中值，编辑器保留旧内容 -->
+            <AppStateBlock
+              v-if="profileDetailError"
+              state="error"
+              size="compact"
+              title="评分方案详情加载失败"
+              :description="profileDetailError"
+              retry
+              @retry="onScoreSelect(scoreDetailAttempt || curRef)"
+            />
+            <AppStateBlock
+              v-else-if="profileDetailLoading"
+              state="loading"
+              size="compact"
+              title="正在加载方案详情…"
+            />
 
             <p class="hint">
               每个指标产出 0~100 达标分（布尔=满足100/否0；数值按阈值映射），按权重百分比加权 →
@@ -1495,6 +1592,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               view-permission="trade-profile:view"
               test-id="trade-profile-select"
               @update:model-value="onTradeSelect"
+              @ready="onTradeReady"
+              @copied-item="onTradeCopied"
             />
           </aside>
 
@@ -1519,6 +1618,23 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <el-button v-permission="'trade-profile:save'" :disabled="tReadonly" :loading="tSaving" type="primary" @click="saveTrade">保存</el-button>
               <el-button v-permission="'trade-profile:delete'" v-if="tCurId && !tIsNew && !tReadonly" type="danger" plain @click="removeTrade">删除</el-button>
             </div>
+
+            <!-- 详情加载态/失败态（P1-2）：失败已回滚选中值，编辑器保留旧内容 -->
+            <AppStateBlock
+              v-if="tDetailError"
+              state="error"
+              size="compact"
+              title="买卖方案详情加载失败"
+              :description="tDetailError"
+              retry
+              @retry="onTradeSelect(tradeDetailAttempt || tCurRef)"
+            />
+            <AppStateBlock
+              v-else-if="tDetailLoading"
+              state="loading"
+              size="compact"
+              title="正在加载方案详情…"
+            />
             <p class="hint">买入/卖出各是一组技术指标条件(且/或)。卖出以指标命中为主,止盈/止损/最大持仓为可选兜底,先到先卖。</p>
 
             <!-- 买入条件 -->

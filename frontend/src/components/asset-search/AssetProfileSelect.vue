@@ -49,8 +49,12 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
-  /** 临时只读对象注入（加载查看）；父级据此拉详情，不自动运行 */
+  /** 临时只读对象注入（加载查看）；父级据此拉详情/展示，不自动运行。不再联动 update:modelValue，是否设为当前选中由父级决定 */
   loaded: [item: ProfileSummary]
+  /** 列表加载完成（含 onMounted 首次与复制后刷新）；组件为列表唯一事实源，父级经此接收，不再重复 fetch */
+  ready: [items: ProfileSummary[]]
+  /** 复制成功且列表已刷新：回写完整 summary（含 source/readonly/is_preset），父级据此并入自身状态 */
+  copiedItem: [item: ProfileSummary]
   /** 复制成功：列表已刷新、新资产已选中 */
   copied: [result: AssetCopyResult]
 }>()
@@ -92,6 +96,7 @@ async function reload(): Promise<ProfileSummary[]> {
   errorMine.value = ''
   try {
     items.value = await props.fetchMine()
+    emit('ready', items.value)
   } catch (error) {
     items.value = []
     errorMine.value = getErrorMessage(error, `${props.assetLabel}加载失败`)
@@ -111,15 +116,19 @@ function openSearch(source?: AssetBrowseSource) {
 
 defineExpose({ reload, openSearch })
 
+// 「加载查看」只注入临时只读项并通知父级，不联动 update:modelValue——
+// 是否把它设为当前选中/是否运行由父级决定（个股详情 R10 等要求加载查看不自动运行）。
 function onDrawerLoad(raw: AssetBrowseItem) {
   const item = raw as ProfileSummary
   tempItem.value = item
-  emit('update:modelValue', assetItemKey(item))
   emit('loaded', item)
 }
 
 async function onDrawerCopied(result: AssetCopyResult) {
-  await reload()
+  const list = await reload()
+  // 复制响应只含 id/profile_ref/name/version，回写完整 summary（含 source/readonly/is_preset）
+  const copied = list.find((p) => p.id === result.id)
+  if (copied) emit('copiedItem', copied)
   emit('update:modelValue', result.profile_ref || result.id)
   emit('copied', result)
 }
