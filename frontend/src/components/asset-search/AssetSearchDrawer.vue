@@ -230,11 +230,15 @@ async function onRerun(item: AssetBrowseItem) {
 
 function rowActions(item: AssetBrowseItem): AppRowAction[] {
   const key = assetItemKey(item)
+  // 幻影行守卫：el-table 在数据到达前用空 scope 先渲染 body，此行 item={}、key=undefined；
+  // 禁用操作避免点到绑定空对象的「加载查看」（真实数据加载后此行即被替换）。
+  const ghost = !key
   const actions: AppRowAction[] = [
     {
       key: 'load',
       label: '加载查看',
       testId: `${props.testId}-load`,
+      disabled: ghost,
       onClick: () => onLoad(item),
     },
   ]
@@ -246,6 +250,7 @@ function rowActions(item: AssetBrowseItem): AppRowAction[] {
         testId: `${props.testId}-rerun`,
         permission: props.rerunPermission || undefined,
         loading: rerunningKey.value === key,
+        disabled: ghost,
         onClick: () => void onRerun(item),
       })
     }
@@ -258,6 +263,7 @@ function rowActions(item: AssetBrowseItem): AppRowAction[] {
       testId: `${props.testId}-copy`,
       permission: props.copyPermission || undefined,
       loading: copyingKey.value === key,
+      disabled: ghost,
       onClick: () => void onCopy(item),
     })
   }

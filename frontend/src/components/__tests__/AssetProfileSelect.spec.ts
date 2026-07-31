@@ -95,7 +95,9 @@ describe('AssetProfileSelect', () => {
     await flush()
     wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
     await flush()
-    // 「加载查看」只注入临时只读项并通知父级，不再联动 update:modelValue（是否选中由父级决定）
+    // 「加载查看」= 临时只读预览对象：注入候选顶部 + emit loaded，**不联动 update:modelValue**。
+    // 组件刻意不把临时项设为选中（规避 el-select 把 selectedItem 锁到非持久 tempItem 的更新循环）；
+    // 是否载入展示由各页 loaded 回调在页面级状态完成。
     expect(wrapper.emitted('update:modelValue')).toBeFalsy()
     expect(wrapper.emitted('loaded')).toBeTruthy()
     // 临时项不进「我的」：fetchMine 不被重拉，「我的」仍只有 1 条

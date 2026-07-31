@@ -152,8 +152,10 @@ describe('AssetSearchDrawer', () => {
     const copyItem = vi.fn(async () => ({ id: 'new_id', profile_ref: 'ref_new', name: '趋势龙头·基础评分 副本', version: 1 }))
     const { wrapper } = mountDrawer({ copyItem })
     await flush()
-    const copyBtn = document.querySelector<HTMLElement>('[data-testid="asset-search-drawer-copy"]')
-    expect(copyBtn).not.toBeNull()
+    // el-table 幻影行（数据到达前空 scope）也渲染同 testId 按钮但已 disabled；须点真实数据行的可用按钮
+    const copyBtn = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="asset-search-drawer-copy"]'))
+      .find((b) => !(b as HTMLButtonElement).disabled)
+    expect(copyBtn).toBeTruthy()
     copyBtn!.click()
     await flush()
     expect(copyItem).toHaveBeenCalledTimes(1)
@@ -174,7 +176,11 @@ describe('AssetSearchDrawer', () => {
   it('加载查看：发出 load 并关闭抽屉', async () => {
     const { wrapper } = mountDrawer()
     await flush()
-    document.querySelector<HTMLElement>('[data-testid="asset-search-drawer-load"]')!.click()
+    // 同上：跳过 el-table 幻影行的 disabled 按钮，点真实数据行的「加载查看」
+    const loadBtn = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="asset-search-drawer-load"]'))
+      .find((b) => !(b as HTMLButtonElement).disabled)
+    expect(loadBtn).toBeTruthy()
+    loadBtn!.click()
     await flush()
     expect(wrapper.emitted('load')).toBeTruthy()
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])

@@ -116,8 +116,10 @@ function openSearch(source?: AssetBrowseSource) {
 
 defineExpose({ reload, openSearch })
 
-// 「加载查看」只注入临时只读项并通知父级，不联动 update:modelValue——
-// 是否把它设为当前选中/是否运行由父级决定（个股详情 R10 等要求加载查看不自动运行）。
+// 「加载查看」= 临时只读预览对象：注入候选顶部 + emit loaded，**不设为当前选中**（不 emit update:modelValue）。
+// 关键：若同步选中，el-select 会把 selectedItem 锁到不在持久 items 的 tempItem 上，#label/option/watch 形成
+// 稳定更新循环（ElSelect 递归超限）。故由各页 loaded 回调在**页面级状态**载入该对象做只读展示——
+// ConfigView 编辑器 selectProfile 载入、个股详情 tradeId 回显，均不经过本组件的选中态。
 function onDrawerLoad(raw: AssetBrowseItem) {
   const item = raw as ProfileSummary
   tempItem.value = item

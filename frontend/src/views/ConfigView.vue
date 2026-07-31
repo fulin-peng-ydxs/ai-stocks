@@ -1089,6 +1089,16 @@ function onScoreCopied(item: ProfileSummary) {
     profiles.value = [summary, ...profiles.value]
   }
 }
+// 「加载查看」（R5/§7.0）：并入列表 + 载入编辑器只读展示（页面级状态，不经组件选中态——
+// 组件刻意不把临时项设为选中，规避 el-select 把 selectedItem 锁到非持久 tempItem 的更新循环）。
+// 复用 onScoreSelect（seq 守卫 + 失败回滚），只读由 profileReadonly 控制、不自动试算。
+function onScoreLoaded(item: ProfileSummary) {
+  const summary = item as ScoreProfileSummary
+  if (!profiles.value.some((p) => (p.profile_ref || p.id) === (summary.profile_ref || summary.id))) {
+    profiles.value = [summary, ...profiles.value]
+  }
+  onScoreSelect(summary.profile_ref || summary.id)
+}
 function onTradeReady(list: ProfileSummary[]) {
   tProfiles.value = list as TradeProfileSummary[]
   if (tProfiles.value.length && !tCurRef.value) onTradeSelect(tradeProfileKey(tProfiles.value[0]))
@@ -1099,6 +1109,14 @@ function onTradeCopied(item: ProfileSummary) {
   if (!tProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileKey(summary))) {
     tProfiles.value = [summary, ...tProfiles.value]
   }
+}
+// 「加载查看」（R5/§7.0）：并入列表 + 载入编辑器只读展示（同 onScoreLoaded，页面级状态不经组件选中态）。
+function onTradeLoaded(item: ProfileSummary) {
+  const summary = item as TradeProfileSummary
+  if (!tProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileKey(summary))) {
+    tProfiles.value = [summary, ...tProfiles.value]
+  }
+  onTradeSelect(tradeProfileKey(summary))
 }
 
 async function initScorePage() {
@@ -1219,6 +1237,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               view-permission="score-profile:view"
               test-id="score-profile-select"
               @update:model-value="onScoreSelect"
+              @loaded="onScoreLoaded"
               @ready="onScoreReady"
               @copied-item="onScoreCopied"
             />
@@ -1592,6 +1611,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               view-permission="trade-profile:view"
               test-id="trade-profile-select"
               @update:model-value="onTradeSelect"
+              @loaded="onTradeLoaded"
               @ready="onTradeReady"
               @copied-item="onTradeCopied"
             />

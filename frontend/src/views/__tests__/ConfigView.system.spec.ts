@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
-import { ref, type Component } from 'vue'
+import { ref, h, defineComponent, type Component } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import ConfigView from '@/views/ConfigView.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
@@ -183,6 +183,25 @@ const groups: SettingGroup[] = [
   },
 ]
 
+// 编辑器区真实 el-select（评分指标/买卖条件树）在 jsdom 下经「加载查看」注入临时项 +
+// 编辑器载入会触发 ElSelect 递归更新循环（真实浏览器正常，已复验）。本 spec 断言走
+// findComponent + emit + text()/api 调用，不依赖 el-select 的 DOM 交互，故全局 stub 掉。
+const ElSelectStub = defineComponent({
+  name: 'ElSelect',
+  props: ['modelValue'],
+  emits: ['update:modelValue', 'change'],
+  setup(props, { slots }) {
+    return () => h('div', { 'data-model-value': String(props.modelValue ?? '') }, slots.default?.())
+  },
+})
+const ElOptionStub = defineComponent({
+  name: 'ElOption',
+  props: ['label', 'value'],
+  setup(props, { slots }) {
+    return () => h('span', { 'data-value': String(props.value ?? '') }, slots.default?.() ?? String(props.label ?? ''))
+  },
+})
+
 const stubs = {
   LayoutHost: {
     template: '<div><slot name="action"/><slot name="main"/><slot name="overlays"/></div>',
@@ -193,6 +212,8 @@ const stubs = {
   PageSegmented: true,
   PageSettingSection: { template: '<section><slot/></section>' },
   PageToggleRow: true,
+  ElSelect: ElSelectStub,
+  ElOption: ElOptionStub,
   teleport: true,
 }
 
@@ -481,5 +502,70 @@ describe('ConfigView trade tab', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('方案二')
     expect(select.props('modelValue')).toBe('ref_t2')
+  })
+
+  it('「加载查看」注入临时只读项并以 profile_ref 载入编辑器只读展示（P1-1 接入 @loaded）', async () => {
+    routeState.meta.configTab = 'trade'
+    ;(tradeApi.listTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    // 搜索抽屉浏览返回一条系统内置 preset（走真实 onDrawerLoad，组件自同步 modelValue）
+    ;(tradeApi.browseTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [{
+        id: 'tp1', profile_ref: 'avr_trade_preset', name: '趋势买卖', version: 4,
+        is_preset: true, visibility: 'private', source: 'preset', readonly: true,
+      }],
+      total: 1, page: 1, page_size: 20, source: 'preset',
+    })
+    ;(tradeApi.getTradeProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'tp1', profile_ref: 'avr_trade_preset', name: '趋势买卖', version: 4,
+      is_preset: true, visibility: 'private', source: 'preset', readonly: true,
+      buy_tree: { op: 'AND', children: [] }, sell_tree: { op: 'OR', children: [] }, backstop: {},
+    })
+    const wrapper = await mountView('normal', ['trade-profile:view'])
+    // 「加载查看」经组件 loaded 事件触发 onTradeLoaded（真实浏览器路径已复验；
+    // jsdom 下打开抽屉 + tempItem 会触发 ElSelect 更新循环，故此处直接 emit loaded 聚焦页面级载入断言）
+    wrapper.findComponent({ name: 'AssetProfileSelect' }).vm.$emit('loaded', {
+      id: 'tp1', profile_ref: 'avr_trade_preset', name: '趋势买卖', version: 4,
+      is_preset: true, visibility: 'private', source: 'preset', readonly: true,
+    })
+    await flushPromises()
+    // onTradeLoaded 以 profile_ref 拉详情载入编辑器只读展示（不自动试算）
+    expect(tradeApi.getTradeProfile).toHaveBeenCalledWith('avr_trade_preset')
+    // 编辑器名称输入框载入该方案名，且只读生效（preset readonly）
+    const nameInput = wrapper.find('input[placeholder="方案名称"]')
+    expect((nameInput.element as HTMLInputElement).value).toBe('趋势买卖')
+    expect((nameInput.element as HTMLInputElement).disabled).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('ConfigView score tab 加载查看', () => {
+  it('「加载查看」注入临时只读项并以 profile_ref 载入编辑器只读展示（P1-1 接入 @loaded）', async () => {
+    routeState.meta.configTab = 'score'
+    ;(scoreApi.listScoreProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(scoreApi.browseScoreProfiles as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [{
+        id: 'sp1', profile_ref: 'avr_score_preset', name: '默认趋势分', version: 1,
+        is_preset: true, visibility: 'private', source: 'preset', readonly: true,
+      }],
+      total: 1, page: 1, page_size: 20, source: 'preset',
+    })
+    ;(scoreApi.getScoreProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'sp1', profile_ref: 'avr_score_preset', name: '默认趋势分', version: 1,
+      is_preset: true, visibility: 'private', source: 'preset', readonly: true,
+      items: [],
+    })
+    const wrapper = await mountView('normal', ['score-profile:view'])
+    wrapper.findComponent({ name: 'AssetProfileSelect' }).vm.$emit('loaded', {
+      id: 'sp1', profile_ref: 'avr_score_preset', name: '默认趋势分', version: 1,
+      is_preset: true, visibility: 'private', source: 'preset', readonly: true,
+    })
+    await flushPromises()
+    // onScoreLoaded 以 profile_ref 拉详情载入编辑器只读展示
+    expect(scoreApi.getScoreProfile).toHaveBeenCalledWith('avr_score_preset')
+    // 编辑器名称输入框载入该方案名，且只读生效（preset readonly）
+    const nameInput = wrapper.find('input[placeholder="方案名称"]')
+    expect((nameInput.element as HTMLInputElement).value).toBe('默认趋势分')
+    expect((nameInput.element as HTMLInputElement).disabled).toBe(true)
+    wrapper.unmount()
   })
 })
