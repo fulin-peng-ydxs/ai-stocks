@@ -296,6 +296,10 @@
   - 【P2-2·已固化】榜单「加载查看」不回显选中（`onProfileLoaded` 只并入 profiles 供 curProfile 解析、不设 profileRef），与个股「回显选中」语义不一致。**取舍固化**：榜单加载查看**不切换当前选中**是有意设计——榜单「运行」以当前选中方案为准，加载查看只是只读预览、不自动跑榜单，若同步切换选中会让用户误以为「已切到该方案」；与个股（单目标对象、回显即上下文）语义不同，故保持「只并入供解析、不切换选中」。个股「回显选中」因评估按钮以 tradeId 为唯一目标，必须回显才有意义。
   - 【页面级测试盲区·已补】三次审查两个 P1 漏网根源：既有 Vitest 只断言组件行为（emit/props），未覆盖「加载查看后 ConfigView 编辑器载入 / 个股回显+评估可用」页面级链路。**已补**：`ConfigView.system.spec.ts` 新增评分/买卖两「加载查看」用例（emit loaded → 断言 `getScoreProfile`/`getTradeProfile` 以 profile_ref 拉详情 + 编辑器名称输入框载入方案名 + 只读生效；编辑器区真实 el-select 在 jsdom 下经临时项注入触发更新循环，故全局 stub `ElSelect`/`ElOption` 聚焦页面级断言——真实浏览器已复验正常）；个股回显+评估可用由既有 `StockDetailView.spec.ts`「加载查看公开方案只选中不自动评估，点评估按钮才运行」覆盖。同时修 `AssetSearchDrawer.spec.ts` 两例：原一直在点 el-table 幻影行按钮（加守卫后暴露），改为跳过 disabled 幻影按钮点真实数据行。全量 **530 passed**（528+2）。
   - 【P1-2 误报警示】`ConfigView.system.spec.ts` 两新用例与「加载查看」链路在 jsdom 下不复现 el-table 幻影行时序，**P1-2 类时序问题只能靠真实浏览器核查**，Vitest 无法替代（本轮已补真实浏览器复验）。
+- **复审残留闭环（2026-08-01，三次审查通过后的非阻塞残留处理，不动 T5/后端）**：复审确认 T4 可通过、维持「已完成」，另给 2 P2/P3 残留，均不阻塞。逐项处理：
+  - 【P2-1·已补齐】买卖 tab 加载查看浏览器复验：复审时因 tab 切换未成功（URL 停在评分 tab）未能亲验买卖侧，要求补验或标注「部分验证」。**本轮已真实浏览器补齐**：导航 `/system/config/trade` → 搜索买卖方案 → 点真实行「加载查看」→ 编辑器载入「趋势买卖」只读（`editDisabled=true`）、侧栏「趋势买卖v4 系统内置」active、买入/卖出条件树完整，截图留存。评分/买卖两 tab 浏览器复验均通过，无「部分验证」残留。
+  - 【P3-1·已如实标注】新增 ConfigView 用例绕开真实 ElSelect 渲染：`ConfigView.system.spec.ts` 新用例「直接 emit loaded + 全局 stub ElSelect/ElOption」，覆盖页面级载入逻辑（`onScoreLoaded`→`selectProfile`→编辑器），但**不覆盖组件→页面的事件链路真实渲染**（el-select 被 stub）。这是为规避 jsdom ElSelect 递归的取舍，断言粒度比端到端真实渲染弱一层；组件→页面真实交互靠浏览器复验兜底（评分/买卖 tab 均已亲验）。**标注为可接受取舍**，不追求 jsdom 端到端。
+  - 【P3-2·已登记已知坑】ElSelect 锁非持久 option 的递归循环根因仍在，当前仅「加载查看不设为选中、改走页面级状态」绕开。**已登记进 [DESIGN.md](../../DESIGN.md) 组件清单**「已知约束（ElSelect 递归）」：临时只读项 `tempItem` 不得同步设为当前选中（不 emit `update:modelValue`），否则 el-select 把 `selectedItem` 锁到非持久 option 形成稳定更新循环；契约 = 组件 `onDrawerLoad` 只设 `tempItem` + emit `loaded`，各页 `loaded` 回调在页面级状态载入。明确提示 T5 回测接入「加载查看」时须沿用此契约，避免重蹈。
 
 ### 阶段 5 · 回测专属接入
 
