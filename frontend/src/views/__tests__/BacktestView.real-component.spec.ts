@@ -56,6 +56,7 @@ vi.mock('@/api/tradeProfile', () => ({
 import * as scoreApi from '@/api/scoreProfile'
 import BacktestView from '@/views/BacktestView.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
+import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
 
 const stubs = {
   LayoutHost: { template: '<div><slot name="action"/><slot name="main"/><slot name="overlays"/></div>' },
@@ -98,6 +99,19 @@ function findSelect(wrapper: VueWrapper, testId: string) {
   return wrapper.findAllComponents(AssetProfileSelect).find((c) => c.props('testId') === testId)
 }
 
+// 找到真实 AssetProfileSelect 内部的 AssetSearchDrawer（组件无 test-id，按其所在选择器子树定位）。
+function innerDrawer(select: VueWrapper) {
+  return select.findComponent(AssetSearchDrawer)
+}
+
+// 驱动真实链路：抽屉 emit load → 组件 onDrawerLoad 设 tempItem + emit loaded → 页面记 tempSelected。
+// 不复读组件 loaded（onDrawerLoad 内部已 emit），直接对抽屉发 load。
+async function drawerLoad(select: VueWrapper, item: unknown) {
+  innerDrawer(select).vm.$emit('load', item)
+  await nextTick()
+  await flushPromises()
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   pageSettingsState.current = null
@@ -108,8 +122,8 @@ beforeEach(() => {
   ])
 })
 
-describe('BacktestView + 真实 AssetProfileSelect（P1-3 递归契约）', () => {
-  it('「加载查看」后真实选择器 modelValue 不被设为临时项、无递归超限，名称经选择器外 chip 展示', async () => {
+describe('BacktestView + 真实 AssetProfileSelect（递归契约 + 完整 onDrawerLoad 链路）', () => {
+  it('抽屉 load → 真实 onDrawerLoad 设 tempItem、selectedItem 不锁 temp、无递归，名称经选择器外 chip 展示', async () => {
     const wrapper = await mountView()
     const score = findSelect(wrapper, 'backtest-score-select')!
     expect(score.exists()).toBe(true)
@@ -117,42 +131,53 @@ describe('BacktestView + 真实 AssetProfileSelect（P1-3 递归契约）', () =
     await flushPromises()
     expect(score.props('modelValue')).toBe('')
 
-    // 模拟抽屉「加载查看」emit loaded（真实组件 onDrawerLoad 设 tempItem + emit loaded，不设选中）
+    // 完整链路：真实抽屉 load → 组件 onDrawerLoad 设内部 tempItem + emit loaded → 页面记 tempSelected
     const pub = { id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true }
-    score.vm.$emit('loaded', pub)
-    await nextTick()
-    await flushPromises()
+    await drawerLoad(score, pub)
 
-    // 递归契约：真实选择器的当前选中**不是**临时项（页面方案b 不把临时项设为选择器 modelValue）
+    // 真实组件内部 tempItem 已被 onDrawerLoad 设置
+    expect((score.vm as any).tempItem?.profile_ref).toBe('avr_score_pub')
+    // 递归契约：选择器 modelValue 不被设为临时项；selectedItem 解析不到（modelValue 为空），不锁 tempItem
     expect(score.props('modelValue')).toBe('')
-    // 组件内部 selectedItem 解析不到（modelValue 为空），不会把 el-select 锁到 tempItem
     expect((score.vm as any).selectedItem ?? null).toBeNull()
     // 名称经页面选择器外 chip 渲染（非 opaque ref）
     const chip = wrapper.find('[data-testid="backtest-score-select-temp"]')
     expect(chip.exists()).toBe(true)
     expect(chip.text()).toContain('公开评分')
+    expect(chip.text()).not.toContain('avr_score_pub')
     // 无递归超限：组件仍正常渲染（若有 Maximum recursive updates，挂载/更新会抛错使断言失败）
     expect(wrapper.find('[data-testid="backtest-score-select"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('临时项→改选真实 mine 项：选择器正常选中、临时 chip 清除、无递归', async () => {
+  it('已选 mine → 抽屉 load 公开 → 运行用公开快照；改选真实 mine → chip 清、selectedItem 指向 mine、无递归', async () => {
     const wrapper = await mountView()
     const score = findSelect(wrapper, 'backtest-score-select')!
     await flushPromises()
-    // 加载查看公开项
-    score.vm.$emit('loaded', { id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true })
-    await flushPromises()
-    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(true)
-    // 用户改选真实 mine 项（经组件 update:modelValue）
+    // 用户先选真实 mine 项
     score.vm.$emit('update:modelValue', 'avr_score_1')
     await nextTick()
     await flushPromises()
-    // 选择器选中真实 mine 项；组件 selectedItem 解析到 mine 列表项（非临时）
     expect(score.props('modelValue')).toBe('avr_score_1')
+
+    // 对公开方案点「加载查看」（完整 onDrawerLoad 链路）
+    await drawerLoad(score, { id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true })
+    expect((score.vm as any).tempItem?.profile_ref).toBe('avr_score_pub')
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(true)
+    // 快照优先：已有 mine 选择时运行仍用公开快照（三次复审 P1）
+    expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_pub')
+
+    // 用户重选同一真实 mine 项：页面 @update:model-value 无条件清 tempSelected（值不变 watch 不触发的边界）。
+    score.vm.$emit('update:modelValue', 'avr_score_1')
+    await nextTick()
+    await flushPromises()
+    expect(score.props('modelValue')).toBe('avr_score_1')
+    // 组件 tempItem 自管：重选同值时组件 watch 不触发、tempItem 残留——但运行取页面 tempSelected 快照，
+    // 组件残留不影响口径、也不破递归（selectedItem 仍解析到持久 mine 项，非 tempItem）。
     expect((score.vm as any).selectedItem?.name).toBe('默认趋势分')
-    // 临时 chip 被清除
+    // 页面 chip 已清、buildBody 恢复用 mine（核心断言：口径与展示都回到 mine）
     expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(false)
+    expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_1')
     wrapper.unmount()
   })
 })

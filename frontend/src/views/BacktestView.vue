@@ -578,6 +578,12 @@ function onTradeCopied(_item: ProfileSummary) {
 function clearTemp(kind: 'screen' | 'score' | 'trade') {
   tempSelected.value[kind] = null
 }
+// 用户在选择器里做出选择（含重选同一值）即丢弃对应临时只读快照：watch(profileId) 只在值变化时触发，
+// 覆盖不了「已选 mine-A → 加载公开 → 重选同一 mine-A」这一边界；故在 update:modelValue 回调里无条件清。
+// 不改组件选中逻辑（组件 tempItem 由组件自管，运行取的是页面 tempSelected 快照，组件残留不影响口径）。
+function onScoreSelect() { tempSelected.value.score = null }
+function onScreenSelect() { tempSelected.value.screen = null }
+function onTradeSelect() { tempSelected.value.trade = null }
 
 async function loadHistory() {
   historyError.value = ''
@@ -893,12 +899,14 @@ function buildBody(): RunParams {
     kind: kind.value, date_start: dateStart.value, date_end: dateEnd.value,
     horizons: HORIZONS, thresholds: THRESHOLDS,
   }
-  // 运行按 tempSelected 快照取 ref（仅当对应选择器为空——加载查看的临时方案作为本次运行口径，选择器外展示）
-  const scoreRef = scoreProfileId.value || (tempSelected.value.score ? scoreProfileKey(tempSelected.value.score) : '')
+  // 运行取 ref 优先级统一为:tempSelected 临时快照 > mine 选择器值 > 空(2026-08-01 三次复审拍板)。
+  // 「加载查看」是用户最后一次明确操作,chip 即本次运行口径;不修改选择器值与持久偏好。
+  // 清除 chip / 改选 mine / 复制为我的 / 载入历史会清掉临时快照,自然恢复 mine 值。
+  const scoreRef = tempSelected.value.score ? scoreProfileKey(tempSelected.value.score) : scoreProfileId.value
   if (scoreRef) body.score_profile_id = scoreRef
   if (kind.value === 'strategy') {
-    const screenRef = profileId.value || (tempSelected.value.screen ? screenProfileKey(tempSelected.value.screen) : '')
-    const tradeRef = tradeProfileId.value || (tempSelected.value.trade ? tradeProfileKey(tempSelected.value.trade) : '')
+    const screenRef = tempSelected.value.screen ? screenProfileKey(tempSelected.value.screen) : profileId.value
+    const tradeRef = tempSelected.value.trade ? tradeProfileKey(tempSelected.value.trade) : tradeProfileId.value
     Object.assign(body, {
       top_n: topN.value, initial_capital: initCap.value,
       profile_id: screenRef || null,
@@ -1281,13 +1289,15 @@ async function openTradeChart(row: TradeRow) {
             @ready="onScoreReady"
             @loaded="onScoreLoaded"
             @copied-item="onScoreCopied"
+            @update:model-value="onScoreSelect"
           />
-          <!-- 加载查看的临时只读项：选择器外展示（方案b，不破组件递归契约），显示名称非 opaque ref -->
+          <!-- 加载查看的临时只读项：选择器外展示（方案b，不破组件递归契约），显示名称非 opaque ref；本次运行口径（快照优先于 mine 选择器值） -->
           <span
             v-if="tempSelected.score"
             class="temp-readonly-chip"
             :data-testid="`${'backtest-score-select'}-temp`"
           >
+            <span class="temp-readonly-chip-prefix">本次运行：</span>
             <AssetProfileLabel
               :name="tempSelected.score.name"
               :version="tempSelected.score.version"
@@ -1329,14 +1339,16 @@ async function openTradeChart(row: TradeRow) {
                 @ready="onScreenReady"
                 @loaded="onScreenLoaded"
                 @copied-item="onScreenCopied"
+                @update:model-value="onScreenSelect"
               />
             </el-tooltip>
-            <!-- 加载查看的临时只读项：选择器外展示（方案b） -->
+            <!-- 加载查看的临时只读项：选择器外展示（方案b）；本次运行口径（快照优先于 mine 选择器值） -->
             <span
               v-if="tempSelected.screen"
               class="temp-readonly-chip"
               data-testid="backtest-screen-select-temp"
             >
+              <span class="temp-readonly-chip-prefix">本次运行：</span>
               <AssetProfileLabel
                 :name="tempSelected.screen.name"
                 :version="tempSelected.screen.version"
@@ -1381,13 +1393,15 @@ async function openTradeChart(row: TradeRow) {
               @ready="onTradeReady"
               @loaded="onTradeLoaded"
               @copied-item="onTradeCopied"
+              @update:model-value="onTradeSelect"
             />
-            <!-- 加载查看的临时只读项：选择器外展示（方案b） -->
+            <!-- 加载查看的临时只读项：选择器外展示（方案b）；本次运行口径（快照优先于 mine 选择器值） -->
             <span
               v-if="tempSelected.trade"
               class="temp-readonly-chip"
               data-testid="backtest-trade-select-temp"
             >
+              <span class="temp-readonly-chip-prefix">本次运行：</span>
               <AssetProfileLabel
                 :name="tempSelected.trade.name"
                 :version="tempSelected.trade.version"
@@ -1993,5 +2007,8 @@ async function openTradeChart(row: TradeRow) {
   border-radius: var(--layout-control-radius, 6px);
   background: var(--el-fill-color-light);
   white-space: nowrap;
+}
+.temp-readonly-chip-prefix {
+  color: var(--el-text-color-secondary);
 }
 </style>

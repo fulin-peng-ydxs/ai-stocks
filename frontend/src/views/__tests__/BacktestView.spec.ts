@@ -286,18 +286,62 @@ describe('BacktestView 三方案选择器（T5）', () => {
     wrapper.unmount()
   })
 
-  it('临时项作为运行口径：选择器为空时 buildBody 按 tempSelected 快照取 ref（P1-3 方案b 运行路径）', async () => {
+  it('临时项作为运行口径：buildBody 按 tempSelected 快照取 ref（方案b 运行路径）', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     await emitLoaded(wrapper, 'backtest-trade-select', {
       id: 'pub-t', profile_ref: 'avr_trade_pub', name: '公开买卖', version: 2, source: 'public', readonly: true,
     })
-    // 选择器为空、临时项在 → 卖出规则行用临时项名称（tradeProfileName 回退 tempSelected）
-    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
+    // 卖出规则行用临时项名称（tradeProfileName 回退 tempSelected）
     expect((wrapper.vm as any).tradeProfileName('avr_trade_pub')).toBe('公开买卖')
-    // buildBody 在选择器为空时按 tempSelected 快照取 ref（运行可使用临时方案）
+    // buildBody 按 tempSelected 快照取 ref
     const body = (wrapper.vm as any).buildBody()
     expect(body.trade_profile_id).toBe('avr_trade_pub')
+    wrapper.unmount()
+  })
+
+  it('快照优先（三次复审 P1）：已选 mine → 加载公开 chip 后 buildBody 用公开快照、saveParams 仍保存 mine', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    // 用户先选自己的评分方案 mine-A
+    const score = findSelect(wrapper, 'backtest-score-select')!
+    score.vm.$emit('update:modelValue', 'avr_score_1')
+    await flushPromises()
+    // 再对公开方案 public-B 点「加载查看」
+    await emitLoaded(wrapper, 'backtest-score-select', {
+      id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true,
+    })
+    // 选择器仍是 mine-A（不动选择器与持久偏好），chip 同时显示 public-B 且标「本次运行：」
+    expect(score.props('modelValue')).toBe('avr_score_1')
+    const chip = wrapper.find('[data-testid="backtest-score-select-temp"]')
+    expect(chip.exists()).toBe(true)
+    expect(chip.text()).toContain('本次运行')
+    expect(chip.text()).toContain('公开评分')
+    // buildBody 用公开快照（快照优先于 mine 选择器值），不是 mine-A
+    const body = (wrapper.vm as any).buildBody()
+    expect(body.score_profile_id).toBe('avr_score_pub')
+    // 持久偏好仍是 mine-A，不被临时快照覆盖
+    ;(wrapper.vm as any).saveParams()
+    expect((wrapper.vm as any).rememberedParams.scoreProfileId).toBe('avr_score_1')
+    wrapper.unmount()
+  })
+
+  it('清除 chip 后 buildBody 恢复使用 mine（快照优先的自然回退）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    const score = findSelect(wrapper, 'backtest-score-select')!
+    score.vm.$emit('update:modelValue', 'avr_score_1')
+    await flushPromises()
+    await emitLoaded(wrapper, 'backtest-score-select', {
+      id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true,
+    })
+    expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_pub')
+    // 用户点清除
+    ;(wrapper.vm as any).clearTemp('score')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(false)
+    // 恢复用 mine-A
+    expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_1')
     wrapper.unmount()
   })
 
@@ -317,6 +361,8 @@ describe('BacktestView 三方案选择器（T5）', () => {
     // 保存偏好写的是有效 mine 选择，不被误剔除为空（rememberedParams 经 watcher 持久化到 localStorage）
     ;(wrapper.vm as any).saveParams()
     expect((wrapper.vm as any).rememberedParams.scoreProfileId).toBe('avr_score_1')
+    // 改选 mine 后临时快照已清，buildBody 用新 mine（覆盖「改选另一个 mine → 用新 mine」）
+    expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_1')
     wrapper.unmount()
   })
 
