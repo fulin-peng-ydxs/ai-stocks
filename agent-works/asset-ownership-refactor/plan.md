@@ -49,7 +49,7 @@
 ### 4.2 回测独立模型（R6）
 回测无 is_preset/name/version/updated_at：
 - 独立 summary：id/kind/date_start/date_end/status/created_at/finished_at/visibility/source/readonly/owner_label。
-- browse `source∈{tenant,public}`（无 preset 段）+ `q`：**`q` 匹配三类引用方案名称 + kind**（回测无自身 name）。发布态回测的方案引用列已改写成 opaque ref，SQL JOIN 裸 id 取不到名，故 **`q` 在解析 ref、补全方案名之后于 Python 侧全量过滤**（correctness 优先，不设扫描上限以免漏匹配/破坏 `limit=None`；规模化优化留 T5）。
+- browse `source∈{tenant,public}`（无 preset 段）+ `q`：**`q` 匹配三类引用方案名称 + kind**（回测无自身 name）。发布态回测的方案引用列已改写成 opaque ref，SQL JOIN 裸 id 取不到名，故 **`q` 在解析 ref、补全方案名之后于 Python 侧全量过滤**（correctness 优先，不设扫描上限以免漏匹配/破坏 `limit=None`；规模化优化留 T5 → **T5 已落地 offset/total 分页契约，见 §6.8**：q 路径 Python 全量过滤后切片 `matched[offset:offset+limit]` + `len(matched)` 作真 total，不再依赖裸 `limit`；keyset/冗余搜索列的规模化成本优化仍开放，不阻塞）。
 - 「另存」= 复用参数重跑：走现有重跑链路（`source_run_ref` 透传 + `_record_reuse_if_needed` 审计），新 run 归当前 owner private；**不新增 copy 接口**（C7）。
 - **执行模型（已核实）**：现有 `POST /api/backtest/run` **同步执行**、同步返回落库（`backtest.py:3,7-8`，异步是 M7 规划）。R6 **保持同步**：前端按钮 loading + 成功/失败反馈；DuckDB 单写锁串行；**本次不做异步化**。
 
@@ -89,12 +89,12 @@
 
 | 范围 | 需求编号 | 需求内容/来源 | 开发内容 | 任务 | 状态 | 偏差 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须 | R3 | 下拉仅自己（C2） | list source=mine（纯 owner）+ 各页接入 | T2A,T3,T4,T5 | 后端完成·ScreenView 样板完成·4 页已接入（回测待 T5） | 一致 | 后端 T2A 已过；T3 筛选页接入；T4 评分/买卖/榜单/个股详情接入 |
+| 必须 | R3 | 下拉仅自己（C2） | list source=mine（纯 owner）+ 各页接入 | T2A,T3,T4,T5 | 已完成（6 页全接入） | 一致 | 后端 T2A 已过；T3 筛选页；T4 评分/买卖/榜单/个股详情；T5 回测页 |
 | 必须 | R4 | 放开发布权（C4） | 发布码归类+撤 DELETE+新迁移回填 | T1B | 后端完成 | 一致 | 安全边界；回滚 SQL 已精准化 |
 | 必须 | R5 | 搜索弹窗+租户/全体+复制（C3/C8） | browse tenant/public + AssetSearchDrawer + 复制 | T2B,T3 | 后端完成·ScreenView 样板完成 | 一致 | 复制已改原子插入；抽屉/选择器 T3 落地 |
 | 必须 | R14 | 系统内置来源段（C3/C9） | browse source=preset 严格 public + 前端段 | T2B,T3 | 后端完成·ScreenView 样板完成·生产核验挂起 | 一致 | 筛选空态（E2E 已断言）；生产分布待 T0 |
-| 必须 | R6 | 回测复用重跑（C7） | 回测独立 summary + q + 重跑入口 | T2C,T5 | 后端完成·前端待 | 一致 | q 已修发布态 ref 搜索 |
-| 必须 | R7 | 共享组件 | AssetSearchDrawer/AssetProfileSelect | T3,T4 | 组件完成·5 页已消费（回测待 T5） | 一致 | select/list 双形态；T3 ScreenView 样板、T4 四页真实消费（list 形态 ConfigView） |
+| 必须 | R6 | 回测复用重跑（C7） | 回测独立 summary + q + 重跑入口 | T2C,T5 | 已完成 | 一致 | q 已修发布态 ref 搜索；T5 落地分页契约+真实点验（新 run 归我的/审计 source_run_ref） |
+| 必须 | R7 | 共享组件 | AssetSearchDrawer/AssetProfileSelect | T3,T4 | 已完成（6 页全消费） | 一致 | select/list 双形态；T3 ScreenView、T4 四页、T5 回测页（首个 kind=backtest 消费方） |
 | 必须 | R10 | 个股详情接入 | 仅自己 + 搜索 | T4 | 已完成 | 一致 | select 形态接入，加载只读不自动重评 |
 | 可选 | R9 | 新用户默认复制 | 暂不纳入 | - | 跳过 | 未覆盖 | 待产品确认 |
 | 可选 | R8 | 公开资产治理 | 暂不纳入 | - | 跳过 | 未覆盖 | 后续建议 |
@@ -234,7 +234,7 @@
 - **R9-P2 测试名实不符**：R8 的 `..._is_atomic_and_bumps_perm_ver` 删了菜单+资源（res 计数>0）恰好绕开菜单-only 漏 bump，且只断言故障回滚、无成功 bump 断言。**拆为三例**：故障回滚（改名 `..._atomic_rollback_on_failure`）、成功重授 bump（`..._full_reseed_bumps_perm_ver`）、**仅清空菜单也 bump 的正向回归**（`..._menu_only_reseed_bumps_perm_ver`，直击本 P1）。
 
 - **遗留（非本重构，另行处理）**：`test_stage5_audit_tenant_admin_is_scoped_to_own_tenant` 既有失败（tenant_admin 审计默认授权被既有迁移撤销）。
-- **已知性能项（留 T5）**：发布态回测 q 为解析 opaque ref 走全量取数+Python 过滤，规模化后需 keyset 分页或冗余搜索列；当前数据量小、correctness 优先，随 T5 回测前端分页 UX 统一优化。
+- **已知性能项（留 T5 → 部分闭环）**：发布态回测 q 为解析 opaque ref 走全量取数+Python 过滤，规模化后需 keyset 分页或冗余搜索列；当前数据量小、correctness 优先。**T5（§6.8）已落地回测分页契约（offset/total）**，前端抽屉按真 total 分页，不再一次性拉全列；keyset/冗余搜索列的深度成本优化仍开放（不阻塞）。
 
 ### 阶段 3 · 前端垂直样板（只接入 ScreenView）
 
@@ -304,13 +304,18 @@
 ### 阶段 5 · 回测专属接入
 
 #### 6.8 任务 T5：回测页选择器 + 历史浏览 + 同步重跑
-- 状态：待开始　依赖：T3,T2C
-- 涉及：`BacktestView.vue` 评分方案 `:1036`、选股方案 `:1075`、买卖方案 `:1118`、历史区 `:955-978`
+- 状态：已完成（2026-08-01）　依赖：T3,T2C
+- 涉及：`BacktestView.vue` 评分方案 `:1036`、选股方案 `:1075`、买卖方案 `:1118`、历史区 `:955-978`；**后端** `services/backtest_service.py::list_runs` + `api/backtest.py::list_runs`
 - 目标：**3 个方案选择器**（评分/选股/买卖）各带搜索入口（方案有系统内置段）+ 历史回测浏览入口（tenant/public，无系统内置，默认全体）+「复用参数重跑」（同步，按钮 loading）。
 - 操作：**4 个入口**（3 方案 + 1 历史）按 §7.2；方案选择器临时只读；历史浏览只读，仅同步重跑产生自己的新 run。
-- 验证：E2E（4 个入口计数、同步重跑归属+loading 反馈、状态流转）。
+- **本轮范围扩为「前端 + 后端回测分页契约」（用户拍板）**：回测抽屉分页需真 `total`，原 `GET /api/backtest/runs` 仅 `limit`（无 offset/total）。后端 `list_runs` 抽共享 `_runs_where/_runs_q_filter/_runs_order`，加 `offset`，新增 `count_runs`；无 q 路径 SQL `LIMIT %s OFFSET %s`（仅 offset 时 `LIMIT ALL OFFSET %s`——PG 与 DuckDB 均合法，无需方言分支）+ 同 where `COUNT(*)`；q 路径 Python 全量过滤后 `matched[offset:offset+limit]` + `len(matched)`。API 加 `page/page_size`（ge=1/le=200），分页模式回 `{runs,total,page,page_size}`，兼容模式（不传 page/page_size）保持 `{runs}`，`runs` 键不变（平铺下拉 `listRuns` 无缝）。前端 `api/backtest.ts` 新增 `browseRuns`（契约适配，`listRuns` 不动）。
+- **加载查看语义（决策1，用户拍板）= 只并入候选，不选中**（区别于个股详情的选中回显）：临时只读项并入对应列表 ref 供手动从下拉选中，不自动改 `profileId/scoreProfileId/tradeProfileId`、不置脏、不运行（回测是重操作，避免误导跑他人方案）；沿用 §6.7 ElSelect 递归约束（loaded 不设选中）。
+- **复用参数重跑（决策2，用户拍板）前不弹确认**：`rerunPublicRun` 取详情→`buildBodyFromRun`（解析 params JSON→RunParams，不写回表单/不置脏）→`source_run_ref`→`runBacktest`，组件行内 loading；`onRunRerunDone` toast + `loadHistory` 选中新 run（归「我的」置顶）。`AssetSearchDrawer kind="backtest"`（BacktestView 是首个 kind=backtest 消费方）：segments=[tenant,public] 默认 public（无系统内置段）。
+- **loadProfileOptions 删除**：组件为列表唯一事实源（P2-1），三选择器 `ready` 回调喂页面级 ref 并补 normalize；删聚合错误块（v-loading + AppStateBlock profileOptionsError），错误由组件内联 errorMine + AppStateBlock 重试承接。
+- 验证（**全部真实通过**）：后端 `test_backtest_browse_q.py` 3 passed（含新增 `test_backtest_pagination_offset_and_total`）+ 回归 40 passed；前端 `BacktestView.spec.ts` 新建 8/8（三选择器 props/权限、fetchMine source=mine、加载查看只并入候选不运行、抽屉存在+权限、加载查看调 getRun 不重跑、复用重跑 getRun+runBacktest 含 source_run_ref+刷新、复用重跑不写回表单、无 backtest:view 时 canBrowse=false）、`state-block-regression.spec.ts` 回测用例改组件内联错误断言后全量 **538/538 全绿**（78 文件）、`npm run build`（含 vue-tsc）通过。**真实浏览器 5181 复验（debug_system）**：4 入口全渲染、方案抽屉三段/回测抽屉两段默认全体、分页契约 `?source=public&page=1&page_size=20` 回 `{total,page,page_size}`。**决策1/2 真实点验（临时种子法，已完全回滚）**：停服→PG 种子一条 owner=admin/visibility=public 极简回测（无 profile 依赖/top_n=1/2 日区间）→重启→点验→停服→清理种子与新 run+本次审计→重启还原（库回 10 行）。决策1「加载查看」仅发 `GET /runs/{ref}`、无 POST /run，载入结果区不改表单不运行 ✓；决策2「复用重跑」行内 loading→`POST /run` 200 复现参数→新 run `bt_strategy_*` owner=debug_system/private 归「我的」→审计 `backtest_run_reuse` context/changes 含 `source_run_ref` ✓。
+- **本轮不补回测 Playwright E2E，留 T6（决策4，用户拍板）**。
+- **遗留候选（T6，不阻塞）**：`AssetSearchDrawer` 幻影行守卫——el-table 数据到达前以空 scope 渲染 body 留下一个 disabled 同名按钮副本（真实数据行按钮正常 enabled），建议 T6 评估用 `:key` 或 v-if 杜绝残留副本。
 - 完成标准：回测交互符合 §7.2（4 入口）。
-- 实际落地情况：待实施。
 
 ### 阶段 6 · 全链路验收
 
@@ -318,7 +323,7 @@
 - 状态：待开始　依赖：T3,T4,T5,T1B
 - 涉及：Vitest、E2E、stage6 测试、`DESIGN.md` 组件矩阵、`frontend/dist`
 - 目标：多租户/多角色 E2E、路由守卫、组件测试、关键视口、构建同步。
-- 操作：跑 `pytest backend/tests/`、`npm run test:e2e`、`npm run build`；DESIGN 登记新组件；更新 stage6 断言；**整改 T4 自审查登记项**（§6.7：ConfigView 详情吞错、save/copy 丢 profile_ref、契约测试盲区，及各项 P2）。
+- 操作：跑 `pytest backend/tests/`、`npm run test:e2e`、`npm run build`；DESIGN 登记新组件；更新 stage6 断言；**整改 T4 自审查登记项**（§6.7：ConfigView 详情吞错、save/copy 丢 profile_ref、契约测试盲区，及各项 P2）；**补回测 Playwright E2E（T5 决策4 留项：4 入口计数、加载查看不运行、复用重跑归属+loading+source_run_ref 审计）**；**评估 T5 遗留的幻影行守卫残留副本（§6.8）**。
 - 验证：全绿 + build 成功 + dist 同步 + 三视口。
 - 完成标准：交付红线满足（AGENTS 端口/构建）。
 - 实际落地情况：待实施。
@@ -337,10 +342,11 @@
 > **口径**：区分「定向测试通过」（本阶段新增/相关用例）、「全量后端结果」、「未验证（前端未实施）」。
 > **全量后端（2026-07-28，停服释放 DuckDB 锁后跑，含 R2–R9 补测）**：`728 passed`（R9 新增「仅清空菜单也 bump perm_ver」正向回归 + 成功重授 bump，故障回滚用例改名保留）。**R7 覆盖顺序重启，R8 覆盖并发锁串行+fail-closed，R9 覆盖菜单变化的 perm_ver 一致性**。恒有 1 例**既有失败**（`test_stage5_audit.py::test_stage5_audit_tenant_admin_is_scoped_to_own_tenant`，期望 200 实得 403），根因是既有 `revoke_tenant_admin_audit_default_grants` 迁移撤销 tenant_admin 审计默认授权，**与本重构无关、不在本次 diff**，已单列待处理。Ruff：环境未安装，未验证。
 > **前端（2026-07-31，T4 四页接入 + 二/三次审查整改闭环）**：Vitest 全量 `530 passed`（`StockDetailView.spec.ts`、`ConfigView.system.spec.ts`、`AssetProfileSelect.spec.ts` 含整改新增用例——ConfigView 评分/买卖「加载查看」页面级用例、AssetSearchDrawer 幻影行守卫适配）；`npm run build` 通过（含 vue-tsc）。四页一致消费 AssetProfileSelect（ConfigView 评分/买卖 list 形态、BoardView/StockDetailView select 形态），下拉统一 `source=mine`（组件为列表唯一事实源、单请求）、加载只读不自动运行（榜单显式刷新、个股显式评估按钮、评分/买卖不自动试算）。**真实浏览器关键路径复验通过**：评分 tab 加载查看载入「默认趋势分」编辑器只读、买卖 tab 载入「趋势买卖 v4」编辑器只读（ConfigView `@loaded` 接入）；个股加载查看零 trade-eval、点评估才发；榜单加载查看无运行请求、页面只读空态；两页 source=mine 单次。**全量 Playwright E2E 本轮未复跑（留 T6）**；系统内置徽标走 AssetProfileLabel 复用路径未改。
+> **前后端（2026-08-01，T5 回测页接入 + 回测分页契约）**：后端 `test_backtest_browse_q.py` 3 passed（含新增分页用例 `test_backtest_pagination_offset_and_total`——q 路径 count==5/offset 切片不漏不重、无 q 路径分页拼接==全列）+ 相关回归 40 passed（停服跑、已重启健康 200）；前端 `BacktestView.spec.ts` 新建 8/8、`state-block-regression.spec.ts` 回测用例改组件内联错误断言后全量 **538/538 全绿**（78 文件）、`npm run build`（含 vue-tsc）通过。BacktestView 三选择器（评分/选股/买卖 select 形态）+ 历史区「浏览公开回测」（首个 kind=backtest 消费方）接入；**范围扩为前端+后端回测分页契约（用户拍板）**——`list_runs`+`count_runs` offset/total、API `page/page_size` 回 `{runs,total,page,page_size}`、`runs` 键兼容。**真实浏览器 5181 复验（debug_system）**：4 入口全渲染、方案抽屉三段/回测抽屉两段默认全体、分页契约真实生效；**决策1/2 真实点验（临时种子法，已完全回滚还原库）**：决策1 加载查看仅发 `GET /runs/{ref}` 无 POST /run、载入结果区不改表单不运行；决策2 复用重跑行内 loading→`POST /run` 200 复现参数→新 run owner=debug_system/private 归「我的」→审计 `backtest_run_reuse` 含 `source_run_ref`。**全量 Playwright E2E 本轮未复跑（决策4 留 T6）**；遗留幻影行守卫残留副本（T6 评估）。
 > **前端（2026-07-29，T3 ScreenView 样板，含 R1/R2 两轮审查整改）**：Vitest 全量 `525 passed`（组件用例：抽屉 11 + 选择器 9 = 20）；`npm run build` 通过（含 vue-tsc）；Playwright `asset-search-drawer.spec.ts` 跨用户链路三视口（1100×620/1366×768/1440×900）通过并附截图——截图前等待抽屉 `offsetWidth===560` 稳定、对抽屉面板 locator 截图；列断言覆盖需求合并后的方案类列集合「方案名称（含次行『更新于』)/来源（title 含提供者）/操作」三列头左右边界均在抽屉可视区、操作列 `fixed="right"` 完整可见、无权态 fail-closed 不调 browse。**全量 Playwright 本轮未复跑（未验证，留 T6）**；后端曾按 E2E 写模式重启、验收后已恢复日常模式（/api/health=200）。
 - 单元测试：`scoped_where` 四来源互斥（含 **mine 平台槽排除预设**）、preset 负例（private 不出现）、summary 含 updated_at、回测独立 summary、发布码授权解析。具体完成情况：**定向通过**（`test_stage6_asset_visibility` 等）。
 - 接口测试：list `source=mine`（**含平台槽 owner 互斥**）；browse `preset|tenant|public`+q+分页+脱敏（preset 严格公开负例）；未知 source 返回 400；发布放开后 normal 可发布/非 owner 403；回测重跑归属+审计；**发布态回测按引用方案名 q 命中**；**复制原子插入不覆盖同 id 既有资产**。具体完成情况：**定向通过**（含 `test_asset_review_fixes` 3 例 P1 回归）。
-- 页面/交互测试：Vitest（AssetSearchDrawer 三段/q/空态/复制/临时只读、AssetProfileSelect 双形态）、E2E（搜索→加载只读→复制→我的下拉；下拉仅自己；normal 发布；回测重跑）。具体完成情况：**ScreenView 样板通过（T3，2026-07-29）**——组件 Vitest 20 用例（抽屉 11 + 选择器 9）全过、前端全量 525 passed；`asset-search-drawer.spec.ts` 跨用户链路（发布租户公开→浏览/复制/临时只读/脱敏/系统内置空态/合并列集合可视）三视口通过并附截图；**T4 四页（评分/买卖/榜单/个股详情）真实消费通过**——下拉统一 source=mine（组件唯一事实源、单请求）、加载只读不自动运行、临时项并入 profiles 供 curProfile 解析、ConfigView 评分/买卖 `@loaded` 载入编辑器只读，全量 530 passed、build 通过、真实浏览器关键路径复验通过（ConfigView 双 tab 加载查看载入编辑器只读、个股/榜单加载查看不自动运行）；其余页面（回测）待 T5。
+- 页面/交互测试：Vitest（AssetSearchDrawer 三段/q/空态/复制/临时只读、AssetProfileSelect 双形态）、E2E（搜索→加载只读→复制→我的下拉；下拉仅自己；normal 发布；回测重跑）。具体完成情况：**ScreenView 样板通过（T3，2026-07-29）**——组件 Vitest 20 用例（抽屉 11 + 选择器 9）全过、前端全量 525 passed；`asset-search-drawer.spec.ts` 跨用户链路（发布租户公开→浏览/复制/临时只读/脱敏/系统内置空态/合并列集合可视）三视口通过并附截图；**T4 四页（评分/买卖/榜单/个股详情）真实消费通过**——下拉统一 source=mine（组件唯一事实源、单请求）、加载只读不自动运行、临时项并入 profiles 供 curProfile 解析、ConfigView 评分/买卖 `@loaded` 载入编辑器只读，全量 530 passed、build 通过、真实浏览器关键路径复验通过（ConfigView 双 tab 加载查看载入编辑器只读、个股/榜单加载查看不自动运行）；**T5 回测页真实消费通过（2026-08-01）**——三选择器统一 AssetProfileSelect（select 形态、fetchMine source=mine）、历史区首个 kind=backtest 抽屉（两段默认全体）+ 复用重跑，全量 538 passed、build 通过、真实浏览器 4 入口复验通过、决策1/2 临时种子真实点验通过（加载查看不运行、复用重跑归我的+source_run_ref 审计）；Playwright E2E 留 T6。
 - 组件资产闭环测试：AssetSearchDrawer/AssetProfileSelect 在 ScreenView 样板 + 4 页真实消费；DESIGN 矩阵登记；无 Unicode 图标、PageDrawer xl、AppDataTable/AppRowActions。具体完成情况：**DESIGN 真实复用组件清单已登记（T3）**；ScreenView 真实消费通过；**T4 四页真实消费通过**（ConfigView list 形态、BoardView/StockDetailView select 形态，E2E 留 T6）；按钮文案/间距契约扫描全过（button-system/typography-spacing-system）。
 - 权限与数据范围测试：多角色（`test-users.md`）验证发布放开、mine 隔离、跨租户 tenant 不可见、preset 严格公开、owner 脱敏。具体完成情况：**后端定向通过**；多角色端到端待前端。
 - 回归测试：系统内置徽标/`is_preset`/榜单零改动回归；现有 copy/visibility 链路；stage6 断言更新。具体完成情况：**定向通过**（copy/visibility 簇 57 passed）。

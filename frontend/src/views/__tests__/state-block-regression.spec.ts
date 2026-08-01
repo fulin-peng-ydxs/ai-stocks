@@ -425,7 +425,9 @@ describe('代表性页面四态回归', () => {
   it('回测方案局部加载失败保留表单并提供页内重试态', async () => {
     ;(scoreApi.listScoreProfiles as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('score profiles failed'))
     const wrapper = await mountView(BacktestView)
-    expect(wrapper.text()).toContain('回测方案加载不完整')
+    // T5：方案加载错误由 AssetProfileSelect 组件内联承接（AppStateBlock + 重试），不再有页面聚合错误块；
+    // 局部失败不阻塞表单，运行入口仍可用。
+    expect(wrapper.text()).toContain('评分方案加载失败')
     expect(wrapper.text()).toContain('score profiles failed')
     expect(wrapper.text()).toContain('运行回测')
   })

@@ -136,11 +136,24 @@ def list_runs(
     kind: str | None = None,
     source: str | None = None,
     q: str | None = None,
+    page: int | None = Query(None, ge=1),          # 分页契约（搜索抽屉）：page/page_size → offset/limit + 真 total
+    page_size: int | None = Query(None, ge=1, le=200),
 ) -> ApiResponse:
     if source not in (None, "mine", "tenant", "public"):
         return err(400, "source 必须是 mine、tenant 或 public")
     # 回测无系统内置段（无 is_preset）：搜索弹窗仅 tenant/public；q 按三类引用方案名 + kind 过滤
-    runs = BacktestService().list_runs(limit, kind=kind, source=source, q=q)
+    svc = BacktestService()
+    if page is not None or page_size is not None:
+        # 分页模式：缺省 page=1、page_size=20；offset 由页码换算。total 为同 where/q 口径的真总数。
+        pg = page or 1
+        ps = page_size or 20
+        offset = (pg - 1) * ps
+        runs = svc.list_runs(ps, kind=kind, source=source, q=q, offset=offset)
+        total = svc.count_runs(kind=kind, source=source, q=q)
+    else:
+        # 兼容模式（平铺下拉 listRuns）：不传分页，按 limit 直传、limit=None 全列，不返回 total
+        runs = svc.list_runs(limit, kind=kind, source=source, q=q)
+        total = None
 
     def _nan_none(v):
         return None if v is None or (isinstance(v, float) and pd.isna(v)) else v
@@ -159,7 +172,12 @@ def list_runs(
         for k in ("profile_version", "trade_profile_version", "score_profile_version"):
             v = _nan_none(r.get(k))
             r[k] = int(v) if v is not None else None
-    return ok({"runs": runs})
+    payload: dict = {"runs": runs}
+    if total is not None:
+        payload["total"] = total
+        payload["page"] = page or 1
+        payload["page_size"] = page_size or 20
+    return ok(payload)
 
 
 @router.post("/runs/{run_id}/visibility", response_model=ApiResponse,

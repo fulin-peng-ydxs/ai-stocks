@@ -75,3 +75,46 @@ def test_backtest_list_runs_nonpositive_limit_is_no_truncation(pg, market):
             pg.execute(f"DELETE FROM {table} WHERE owner_user_id=%s", [TEST_OWNER])
         pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [TEST_OWNER])
         pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [TEST_OWNER])
+
+
+def test_backtest_pagination_offset_and_total(pg, market):
+    """T5 分页契约：offset 切片 + count_runs 真 total，无 q（SQL LIMIT/OFFSET/COUNT）与有 q
+    （Python 切片 + len(matched)）两路径口径一致。"""
+    svc = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    screen = ProfileRepo(pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    try:
+        screen.save("pg_screen", "分页筛选名PG", _EXPR)
+        # 5 条引用 pg_screen 的 strategy run（id 字典序即 created_at 排序基准——同 now() 时靠稳定键兜底，
+        # 故断言按「切片后的集合关系」而非具体次序，避免与 created_at 秒级精度耦合）
+        for rid in ("pg_r1", "pg_r2", "pg_r3", "pg_r4", "pg_r5"):
+            _mk_run(pg, rid, "strategy", profile_id="pg_screen")
+
+        # 有 q 路径：total=len(matched)=5；offset 切片不漏不重
+        assert svc.count_runs(q="分页筛选名PG") == 5
+        p1 = {r["id"] for r in svc.list_runs(q="分页筛选名PG", limit=2, offset=0)}
+        p2 = {r["id"] for r in svc.list_runs(q="分页筛选名PG", limit=2, offset=2)}
+        p3 = {r["id"] for r in svc.list_runs(q="分页筛选名PG", limit=2, offset=4)}
+        assert len(p1) == 2 and len(p2) == 2 and len(p3) == 1
+        assert p1.isdisjoint(p2) and p2.isdisjoint(p3) and p1.isdisjoint(p3)
+        assert p1 | p2 | p3 == {"pg_r1", "pg_r2", "pg_r3", "pg_r4", "pg_r5"}
+
+        # 无 q 路径：total=COUNT(*)（含本测试 5 条，可能含库中其他 run，故只校验 ≥5 与 offset 不漏不重）
+        assert svc.count_runs() >= 5
+        assert svc.count_runs(kind="strategy") >= 5
+        # 无 q 全列 vs 分页拼接一致（对 strategy + 本 owner 可见集）
+        all_ids = [r["id"] for r in svc.list_runs(kind="strategy")]
+        step = 3
+        stitched: list[str] = []
+        off = 0
+        while True:
+            page = [r["id"] for r in svc.list_runs(kind="strategy", limit=step, offset=off)]
+            if not page:
+                break
+            stitched.extend(page)
+            off += step
+        assert stitched == all_ids  # 顺序一致、不漏不重
+    finally:
+        for table in ("backtest_trade", "backtest_equity", "backtest_metrics", "backtest_run"):
+            pg.execute(f"DELETE FROM {table} WHERE owner_user_id=%s", [TEST_OWNER])
+        pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [TEST_OWNER])
+        pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [TEST_OWNER])

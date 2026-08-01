@@ -460,20 +460,8 @@ class BacktestService:
         return self._visible_run_row(run["run_ref"])
 
     # ── 读取 ──
-    def list_runs(
-        self,
-        limit: int | None = None,
-        kind: str | None = None,
-        source: str | None = None,
-        q: str | None = None,
-    ) -> list[dict]:
-        """历史记录。kind 给定则只列该类（strategy / score_check），策略与评分验证不混展；
-        limit=None 则全列（不截断），同签名因覆盖语义本就只留一条。run⋈三方案⋈metrics 全在 PG。
-
-        q（搜索弹窗浏览）：回测自身无 name，按三类引用方案名（筛选/评分/买卖）+ kind 关键字过滤。"""
-        # 防御：非正 limit 归一为「不截断」，避免无 q 时 SQL LIMIT 负值报错、有 q 时 Python 切片语义反常
-        if limit is not None and limit < 1:
-            limit = None
+    def _runs_where(self, kind: str | None, source: str | None) -> tuple[str, list]:
+        """list_runs / count_runs 共用的 WHERE 构建（可见性 + kind + source 过滤）。"""
         where = f"WHERE {visible_sql('r')} "
         args: list = visible_params(tenant_id=self.tenant_id, owner_user_id=self.owner_user_id)
         if kind == "score_check":
@@ -489,9 +477,21 @@ class BacktestService:
         elif source == "public":
             where += "AND r.visibility='public' AND NOT (r.tenant_id=%s AND r.owner_user_id=%s) "
             args += [self.tenant_id, self.owner_user_id]
-        # q 名称过滤不在 SQL 侧做：发布态回测的方案引用列已被改写成 opaque ref，
-        # SQL 里 JOIN 裸 id 取不到 p.name/sp.name/tp.name，只能在解析 ref、补全方案名之后于 Python 侧过滤。
-        q_norm = q.strip().lower() if q and q.strip() else None
+        return where, args
+
+    @staticmethod
+    def _runs_q_filter(q_norm: str):
+        """q 名称过滤：发布态回测的方案引用列已被改写成 opaque ref，SQL JOIN 裸 id 取不到方案名，
+        只能在解析 ref、补全方案名之后于 Python 侧按三类引用方案名 + kind 过滤。"""
+        def _hit(row: dict) -> bool:
+            for key in ("profile_name", "score_profile_name", "trade_profile_name", "kind"):
+                val = row.get(key)
+                if val and q_norm in str(val).lower():
+                    return True
+            return False
+        return _hit
+
+    def _runs_order(self) -> tuple[str, list]:
         # 「我的」置顶,与方案 list_visible 口径一致;末位补**完整主键** (tenant_id, owner_user_id, id)
         # 作稳定唯一键——回测主键是三元组且 created_at 仅秒级精度、跨 owner 可同 id，只补 r.id 仍可能抖动。
         # 排序参数必须在 LIMIT 之前。
@@ -499,27 +499,69 @@ class BacktestService:
             "ORDER BY (CASE WHEN r.tenant_id=%s AND r.owner_user_id=%s THEN 0 ELSE 1 END), "
             "r.created_at DESC, r.tenant_id, r.owner_user_id, r.id "
         )
-        owner_args = [self.tenant_id, self.owner_user_id]
+        return order_by, [self.tenant_id, self.owner_user_id]
+
+    def count_runs(
+        self,
+        kind: str | None = None,
+        source: str | None = None,
+        q: str | None = None,
+    ) -> int:
+        """list_runs 的真 total（分页契约）。无 q 走 SQL COUNT（where 只涉 backtest_run 列，无需 JOIN）；
+        q 路径因需 Python 侧按方案名过滤，取全量装饰行后按 len(matched) 计数（与 list_runs 同口径）。"""
+        where, args = self._runs_where(kind, source)
+        q_norm = q.strip().lower() if q and q.strip() else None
+        if q_norm is None:
+            df = self.pg.query_df(f"SELECT COUNT(*) AS c FROM backtest_run r {where}", args)
+            return int(df.iloc[0]["c"]) if len(df) else 0
+        order_by, owner_args = self._runs_order()
+        rows = self._query_runs_decorated(where, order_by, "", [*args, *owner_args])
+        hit = self._runs_q_filter(q_norm)
+        return sum(1 for r in rows if hit(r))
+
+    def list_runs(
+        self,
+        limit: int | None = None,
+        kind: str | None = None,
+        source: str | None = None,
+        q: str | None = None,
+        offset: int = 0,
+    ) -> list[dict]:
+        """历史记录。kind 给定则只列该类（strategy / score_check），策略与评分验证不混展；
+        limit=None 则全列（不截断），同签名因覆盖语义本就只留一条。run⋈三方案⋈metrics 全在 PG。
+        offset 用于分页（搜索抽屉）；total 由 count_runs 提供（同 where/q 口径）。
+
+        q（搜索弹窗浏览）：回测自身无 name，按三类引用方案名（筛选/评分/买卖）+ kind 关键字过滤。"""
+        # 防御：非正 limit 归一为「不截断」，避免无 q 时 SQL LIMIT 负值报错、有 q 时 Python 切片语义反常
+        if limit is not None and limit < 1:
+            limit = None
+        if offset < 0:
+            offset = 0
+        where, args = self._runs_where(kind, source)
+        q_norm = q.strip().lower() if q and q.strip() else None
+        order_by, owner_args = self._runs_order()
 
         if q_norm is None:
-            tail = "LIMIT %s" if limit is not None else ""
-            tail_args = [limit] if limit is not None else []
+            tail = ""
+            tail_args: list = []
+            if limit is not None:
+                tail = "LIMIT %s OFFSET %s"
+                tail_args = [limit, offset]
+            elif offset:
+                # 无 limit 但有 offset：LIMIT ALL 在 PostgreSQL 与 DuckDB 均合法，占位保证 OFFSET 生效（语义仍为「不截断上限」）
+                tail = "LIMIT ALL OFFSET %s"
+                tail_args = [offset]
             return self._query_runs_decorated(where, order_by, tail, [*args, *owner_args, *tail_args])
 
         # q：取全部可见行（不截断），解析 opaque ref、补全方案名后于 Python 侧按名 + kind 过滤，
-        # 再按 limit 截断。**correctness 优先**：不设扫描上限，避免匹配项靠后被静默漏掉、
+        # 再按 offset/limit 切片。**correctness 优先**：不设扫描上限，避免匹配项靠后被静默漏掉、
         # 也不破坏 limit=None「全列」契约。发布态回测规模化后的成本优化（keyset/冗余搜索列）
-        # 留 T5 回测前端接入时按其分页 UX 统一设计（见 plan §8 备注 / 跟踪任务）。
-        def _hit(row: dict) -> bool:
-            for key in ("profile_name", "score_profile_name", "trade_profile_name", "kind"):
-                val = row.get(key)
-                if val and q_norm in str(val).lower():
-                    return True
-            return False
-
+        # 留后续按分页 UX 统一设计（见 plan §8 备注 / 跟踪任务）。
+        hit = self._runs_q_filter(q_norm)
         rows = self._query_runs_decorated(where, order_by, "", [*args, *owner_args])
-        matched = [r for r in rows if _hit(r)]
-        return matched[:limit] if limit is not None else matched
+        matched = [r for r in rows if hit(r)]
+        sliced = matched[offset:]
+        return sliced[:limit] if limit is not None else sliced
 
     def _query_runs_decorated(self, where: str, order_by: str, tail: str, args: list) -> list[dict]:
         """执行 run⋈三方案⋈metrics 查询 + 脱敏装饰 + 发布态 opaque ref 方案名补全，返回装饰后行。"""

@@ -1,5 +1,10 @@
 // 回测 API（对应 backend/api/backtest.py）
 import http from './client'
+import type {
+  AssetBrowseParams,
+  AssetBrowseResult,
+  BacktestRunSummary,
+} from '@/components/asset-search/types'
 
 export interface BacktestMetrics {
   total_return: number
@@ -192,6 +197,29 @@ export function listRuns(kind?: string, source?: string): Promise<{ runs: RunSum
       ...(source && source !== 'all' ? { source } : {}),
     },
   })
+}
+
+// 搜索抽屉「浏览公开回测」分页浏览（T5）：走后端 page/page_size 契约，返回真 total。
+// 后端返回 { runs, total, page, page_size }（http 拦截器已解包到 data），此处适配为抽屉统一 Result 形态。
+export async function browseRuns(
+  params: AssetBrowseParams & { kind?: string },
+): Promise<AssetBrowseResult<BacktestRunSummary>> {
+  const res = (await http.get('/backtest/runs', {
+    params: {
+      source: params.source,
+      q: params.q || undefined,
+      page: params.page,
+      page_size: params.pageSize,
+      ...(params.kind ? { kind: params.kind } : {}),
+    },
+  })) as { runs?: BacktestRunSummary[]; total?: number; page?: number; page_size?: number }
+  return {
+    items: res.runs ?? [],
+    total: res.total ?? 0,
+    page: res.page ?? params.page,
+    page_size: res.page_size ?? params.pageSize,
+    source: params.source,
+  }
 }
 
 export function deleteRun(runId: string): Promise<{ deleted: string }> {

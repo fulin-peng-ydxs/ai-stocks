@@ -4,16 +4,17 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { computeBoard, type BoardRow } from '@/api/board'
 import {
-  runBacktest, prepareBacktest, listRuns, getRun, deleteRun, runRobust, setRunVisibility,
+  runBacktest, prepareBacktest, listRuns, getRun, deleteRun, runRobust, setRunVisibility, browseRuns,
   type StrategyResult, type Layers, type RunParams, type LayerCell,
   type TradeRow, type RunSummary, type ParamSweepResult, type InOutSampleResult,
 } from '@/api/backtest'
-import { listProfiles, getProfile, type Profile } from '@/api/screening'
-import { listScoreProfiles, type ScoreProfileSummary } from '@/api/scoreProfile'
-import { listTradeProfiles, type TradeProfileSummary } from '@/api/tradeProfile'
+import { listProfiles, getProfile, browseProfiles, copyProfile, type Profile } from '@/api/screening'
+import { listScoreProfiles, browseScoreProfiles, copyScoreProfile, type ScoreProfileSummary } from '@/api/scoreProfile'
+import { listTradeProfiles, browseTradeProfiles, copyTradeProfile, type TradeProfileSummary } from '@/api/tradeProfile'
 import { getBars, type Bar } from '@/api/stocks'
 import EquityChart from '@/components/EquityChart.vue'
 import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
+import { Search } from '@element-plus/icons-vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -28,6 +29,15 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
+import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
+import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
+import {
+  assetItemKey,
+  type AssetBrowseItem,
+  type AssetBrowseParams,
+  type ProfileSummary,
+  type BacktestRunSummary,
+} from '@/components/asset-search/types'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useUserPreference } from '@/composables/useUserPreference'
 import { useTradeDates } from '@/composables/useTradeDates'
@@ -145,9 +155,42 @@ const industryPct = ref(20)            // 单行业持仓上限 %
 const profiles = ref<Profile[]>([])
 const scoreProfiles = ref<ScoreProfileSummary[]>([])
 const tradeProfiles = ref<TradeProfileSummary[]>([])
-const profileOptionsLoading = ref(true)
-const profileOptionsError = ref('')
 const nextRunSourceRef = ref('')
+
+// R3/R5/R7：三方案选择器统一走 AssetProfileSelect（select 形态）——下拉只加载「我的」source=mine 纯 owner，
+// 「搜索」入口打开共享抽屉（系统内置/租户公开/全体公开）；「加载查看」**只并入候选、不选中不运行**（决策，
+// 不同于个股详情的选中回显，避免误导用户对他人方案直接回测）；「复制为我的」并入候选并由组件选中。
+// 组件为列表唯一事实源（onMounted fetchMine → emit ready），父页不再各自 list_visible，normalize 时序移 ready。
+async function fetchMineScreenProfiles(): Promise<ProfileSummary[]> {
+  if (!hasPermission(auth.role, auth.permissions, 'screen-profile:view')) return []
+  return listProfiles('mine')
+}
+async function fetchMineScoreProfiles(): Promise<ProfileSummary[]> {
+  if (!hasPermission(auth.role, auth.permissions, 'score-profile:view')) return []
+  return listScoreProfiles('mine')
+}
+async function fetchMineTradeProfiles(): Promise<ProfileSummary[]> {
+  if (!hasPermission(auth.role, auth.permissions, 'trade-profile:view')) return []
+  return listTradeProfiles('mine')
+}
+function browseScreen(params: AssetBrowseParams) {
+  return browseProfiles(params)
+}
+function browseScore(params: AssetBrowseParams) {
+  return browseScoreProfiles(params)
+}
+function browseTrade(params: AssetBrowseParams) {
+  return browseTradeProfiles(params)
+}
+function copyAnyScreenProfile(item: ProfileSummary) {
+  return copyProfile(item.profile_ref || item.id)
+}
+function copyAnyScoreProfile(item: ProfileSummary) {
+  return copyScoreProfile(item.profile_ref || item.id)
+}
+function copyAnyTradeProfile(item: ProfileSummary) {
+  return copyTradeProfile(item.profile_ref || item.id)
+}
 
 function screenProfileKey(p: Profile): string {
   return p.profile_ref || p.id
@@ -282,6 +325,13 @@ const canPublishTenant = computed(() =>
 const canPublishPublic = computed(() =>
   hasPermission(auth.role, auth.permissions, 'backtest:publish-public'),
 )
+// R5/R6：历史区「浏览公开回测」抽屉（kind='backtest'，tenant/public 段、无系统内置、默认全体公开）。
+// 与平铺 historySource/selectedRun 职责正交：平铺负责按来源筛+选中加载结果，抽屉负责表格化浏览公开回测
+// + 「加载查看」载入结果 + 「复用参数重跑」立即同步重跑（不弹确认，组件行内 loading，决策2）。
+const canViewBacktest = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'backtest:view'),
+)
+const runBrowseOpen = ref(false)
 // 卖出原因命中的具体指标（卖树部分命中时）：解析 exit_detail(JSON 数组)；全命中/非卖树返回空
 function sellTags(row: TradeRow): string[] {
   if (!row.exit_detail) return []
@@ -387,38 +437,47 @@ function restoreParams() {
   } catch { /* ignore */ }
 }
 
-async function loadProfileOptions() {
-  profileOptionsLoading.value = true
-  profileOptionsError.value = ''
-  const failures: string[] = []
-  try {
-    const [screenResult, scoreResult, tradeResult] = await Promise.allSettled([
-      listProfiles(),
-      listScoreProfiles(),
-      listTradeProfiles(),
-    ])
-    if (screenResult.status === 'fulfilled') {
-      profiles.value = screenResult.value
-      profileId.value = normalizeScreenProfileKey(profileId.value)
-    } else {
-      failures.push(getErrorMessage(screenResult.reason, '选股方案加载失败'))
-    }
-    if (scoreResult.status === 'fulfilled') {
-      scoreProfiles.value = scoreResult.value
-      scoreProfileId.value = normalizeScoreProfileKey(scoreProfileId.value)
-    } else {
-      failures.push(getErrorMessage(scoreResult.reason, '评分方案加载失败'))
-    }
-    if (tradeResult.status === 'fulfilled') {
-      tradeProfiles.value = tradeResult.value
-      tradeProfileId.value = normalizeTradeProfileKey(tradeProfileId.value)
-    } else {
-      failures.push(getErrorMessage(tradeResult.reason, '买卖方案加载失败'))
-    }
-    profileOptionsError.value = failures.join('；')
-  } finally {
-    profileOptionsLoading.value = false
+// 组件 ready：列表落地后 normalize 纠偏（restoreParams 早期写入的裸 id → profile_ref 稳定键）
+function onScreenReady(items: ProfileSummary[]) {
+  profiles.value = items as Profile[]
+  profileId.value = normalizeScreenProfileKey(profileId.value)
+}
+function onScoreReady(items: ProfileSummary[]) {
+  scoreProfiles.value = items as ScoreProfileSummary[]
+  scoreProfileId.value = normalizeScoreProfileKey(scoreProfileId.value)
+}
+function onTradeReady(items: ProfileSummary[]) {
+  tradeProfiles.value = items as TradeProfileSummary[]
+  tradeProfileId.value = normalizeTradeProfileKey(tradeProfileId.value)
+}
+// 「加载查看」只并入候选供用户手动从下拉选中；不改选中、不置脏、不运行（ElSelect 递归约束 + 决策1）
+function onScreenLoaded(item: ProfileSummary) {
+  const p = item as Profile
+  if (!profiles.value.some((x) => screenProfileKey(x) === screenProfileKey(p))) {
+    profiles.value = [p, ...profiles.value]
   }
+}
+function onScoreLoaded(item: ProfileSummary) {
+  const p = item as ScoreProfileSummary
+  if (!scoreProfiles.value.some((x) => scoreProfileKey(x) === scoreProfileKey(p))) {
+    scoreProfiles.value = [p, ...scoreProfiles.value]
+  }
+}
+function onTradeLoaded(item: ProfileSummary) {
+  const p = item as TradeProfileSummary
+  if (!tradeProfiles.value.some((x) => tradeProfileKey(x) === tradeProfileKey(p))) {
+    tradeProfiles.value = [p, ...tradeProfiles.value]
+  }
+}
+// 复制成功：组件已选中并 emit copiedItem 回写完整 summary，并入候选保证 selectedXxx 可解析
+function onScreenCopied(item: ProfileSummary) {
+  onScreenLoaded(item)
+}
+function onScoreCopied(item: ProfileSummary) {
+  onScoreLoaded(item)
+}
+function onTradeCopied(item: ProfileSummary) {
+  onTradeLoaded(item)
 }
 
 async function loadHistory() {
@@ -566,6 +625,62 @@ async function reuseCurrentRunParams() {
   }
 }
 
+// —— 历史区「浏览公开回测」抽屉（R5/R6）——
+// 「加载查看」载入该回测结果（不重跑）：复用 loadRun，并同步平铺 selectedRun 保持一致
+function onRunLoaded(item: AssetBrowseItem) {
+  const key = assetItemKey(item)
+  if (!key) return
+  selectedRun.value = key
+  void loadRun(key)
+}
+
+// 解析历史 run.params JSON → RunParams（与 applyRunParams 同口径解析，但**不写回表单、不置脏**）
+function buildBodyFromRun(run: RunSummary): RunParams {
+  let p: Record<string, any> = {}
+  try { p = JSON.parse((run as { params?: string }).params || '{}') } catch { /* ignore */ }
+  const rawKind = (run.kind || p.kind || 'strategy') as string
+  const k = rawKind === 'signal' ? 'score_check' : (rawKind as 'strategy' | 'score_check')
+  const body: RunParams = {
+    kind: k,
+    date_start: ymd(p.date_start || run.date_start || ''),
+    date_end: ymd(p.date_end || run.date_end || ''),
+    horizons: HORIZONS,
+    thresholds: THRESHOLDS,
+  }
+  if (p.score_profile_id) body.score_profile_id = p.score_profile_id
+  if (k === 'strategy') {
+    Object.assign(body, {
+      top_n: p.top_n ?? 10,
+      initial_capital: p.initial_capital ?? 1_000_000,
+      profile_id: p.profile_id ?? null,
+      trade_profile_id: p.trade_profile_id ?? null,
+    })
+    if (p.industry_max_pct != null) body.industry_max_pct = p.industry_max_pct
+  }
+  return body
+}
+
+// 「复用参数重跑」（决策2：不弹确认，立即同步重跑，组件行内 loading；不写回表单、不置脏、不影响当前选中）。
+// 新 run 归当前 owner、private，审计含 source_run_ref；不复制他人结果快照（C7）。
+async function rerunPublicRun(item: AssetBrowseItem): Promise<unknown> {
+  const ref = assetItemKey(item)
+  const detail = await getRun(ref)
+  const body = buildBodyFromRun(detail.run)
+  body.source_run_ref = detail.run.run_ref || ref
+  return runBacktest(body)
+}
+
+// 重跑成功：刷新历史并选中新 run（归「我的」置顶），载入其结果
+function onRunRerunDone() {
+  ElMessage.success('已按该回测参数重跑，新记录归「我的」')
+  void loadHistory().then(() => {
+    if (runHistory.value.length) {
+      selectedRun.value = runKey(runHistory.value[0])
+      void loadRun(selectedRun.value)
+    }
+  })
+}
+
 // 导出当前回测的逐笔交易为 CSV（带 BOM，Excel 中文不乱码）
 function exportTradesCsv() {
   if (!strat.value?.trades.length) return
@@ -596,7 +711,6 @@ onMounted(async () => {
   topN.value = Number(settings.topN)
   initCap.value = Number(settings.initCap)
   robustPanels.value = settings.robustExpanded ? ['robust'] : []
-  await loadProfileOptions()
   await loadHistory()
   // 默认载入最近一次回测结果，避免空屏、不用反复重跑
   if (settings.autoLoadHistory && runHistory.value.length) {
@@ -991,6 +1105,14 @@ async function openTradeChart(row: TradeRow) {
             @reuse="reuseCurrentRunParams"
           />
           <el-button v-permission="'backtest:delete'" v-if="!selectedRunReadonly" :disabled="!selectedRun" @click="removeCurrentRun" title="删除当前选中的历史回测">删除</el-button>
+          <!-- 浏览公开回测（R5/R6）：表格化浏览 tenant/public 回测 + 加载查看 + 复用参数重跑 -->
+          <el-button
+            v-if="canViewBacktest"
+            :icon="Search"
+            data-testid="backtest-browse-open"
+            title="浏览租户/全体公开的历史回测，可加载查看或复用参数重跑"
+            @click="runBrowseOpen = true"
+          >浏览公开回测</el-button>
           <span v-if="!runHistory.length && historySource !== 'all'" class="hist-empty">{{ historyEmptyText }}</span>
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
@@ -1001,20 +1123,9 @@ async function openTradeChart(row: TradeRow) {
     <template #main>
     <div class="backtest-body">
     <el-card
-      v-loading="profileOptionsLoading"
-      element-loading-text="正在加载回测方案…"
       shadow="never"
       class="form-card"
     >
-      <AppStateBlock
-        v-if="profileOptionsError"
-        state="error"
-        size="inline"
-        title="回测方案加载不完整"
-        :description="profileOptionsError"
-        retry
-        @retry="loadProfileOptions"
-      />
       <AppControlRow class="form-row" dense>
         <el-radio-group v-model="kind">
           <el-radio-button value="strategy">策略回测</el-radio-button>
@@ -1033,28 +1144,21 @@ async function openTradeChart(row: TradeRow) {
               <p>策略回测里用于<b>候选超过持仓数时按分排序截断</b>；评分验证里用于<b>分档检验高分组是否更易涨</b>。去「配置管理 → 评分规则」定义。</p>
             </HelpTip>
           </template>
-          <el-select v-model="scoreProfileId" :loading="profileOptionsLoading" placeholder="请选择评分方案" no-data-text="暂无可用评分方案" style="width: 190px">
-            <template v-if="selectedScoreProfile" #label>
-              <AssetProfileLabel
-                :name="selectedScoreProfile.name"
-                :version="selectedScoreProfile.version"
-                :source="selectedScoreProfile.source"
-                :is-preset="selectedScoreProfile.is_preset"
-                :owner-label="selectedScoreProfile.owner_label"
-                :readonly="selectedScoreProfile.readonly"
-              />
-            </template>
-            <el-option v-for="p in scoreProfiles" :key="scoreProfileKey(p)" :value="scoreProfileKey(p)" :label="p.name">
-              <AssetProfileLabel
-                :name="p.name"
-                :version="p.version"
-                :source="p.source"
-                :is-preset="p.is_preset"
-                :owner-label="p.owner_label"
-                :readonly="p.readonly"
-              />
-            </el-option>
-          </el-select>
+          <AssetProfileSelect
+            v-model="scoreProfileId"
+            asset-label="评分方案"
+            :fetch-mine="fetchMineScoreProfiles"
+            :browse="browseScore"
+            :copy-item="copyAnyScoreProfile"
+            copy-permission="score-profile:save"
+            view-permission="score-profile:view"
+            placeholder="选我的评分方案（可选）"
+            test-id="backtest-score-select"
+            style="width: 300px"
+            @ready="onScoreReady"
+            @loaded="onScoreLoaded"
+            @copied-item="onScoreCopied"
+          />
         </AppControlItem>
         <template v-if="kind === 'strategy'">
           <AppControlItem>
@@ -1072,28 +1176,21 @@ async function openTradeChart(row: TradeRow) {
                   <b>方案说明：</b> <br>{{ profileDesc }}
                 </div>
               </template>
-              <el-select v-model="profileId" :loading="profileOptionsLoading" clearable placeholder="请选择选股方案" no-data-text="暂无可用选股方案" style="width: 190px">
-                <template v-if="selectedScreenProfile" #label>
-                  <AssetProfileLabel
-                    :name="selectedScreenProfile.name"
-                    :version="selectedScreenProfile.version"
-                    :source="selectedScreenProfile.source"
-                    :is-preset="selectedScreenProfile.is_preset"
-                    :owner-label="selectedScreenProfile.owner_label"
-                    :readonly="selectedScreenProfile.readonly"
-                  />
-                </template>
-                <el-option v-for="p in profiles" :key="screenProfileKey(p)" :value="screenProfileKey(p)" :label="p.name">
-                  <AssetProfileLabel
-                    :name="p.name"
-                    :version="p.version"
-                    :source="p.source"
-                    :is-preset="p.is_preset"
-                    :owner-label="p.owner_label"
-                    :readonly="p.readonly"
-                  />
-                </el-option>
-              </el-select>
+              <AssetProfileSelect
+                v-model="profileId"
+                asset-label="选股方案"
+                :fetch-mine="fetchMineScreenProfiles"
+                :browse="browseScreen"
+                :copy-item="copyAnyScreenProfile"
+                copy-permission="screen-profile:save"
+                view-permission="screen-profile:view"
+                placeholder="选我的选股方案（可选）"
+                test-id="backtest-screen-select"
+                style="width: 300px"
+                @ready="onScreenReady"
+                @loaded="onScreenLoaded"
+                @copied-item="onScreenCopied"
+              />
             </el-tooltip>
           </AppControlItem>
           <AppControlItem>
@@ -1115,28 +1212,21 @@ async function openTradeChart(row: TradeRow) {
                 <p>选某买卖方案 → 买入须<b>筛选命中且买入条件成立</b>，卖出走方案的<b>卖出条件 + 兜底(止盈/止损/最大持有)</b>。去「配置管理 → 买卖指标」定义。</p>
               </HelpTip>
             </template>
-            <el-select v-model="tradeProfileId" :loading="profileOptionsLoading" placeholder="请选择买卖方案" no-data-text="暂无可用买卖方案" style="width: 190px">
-              <template v-if="selectedTradeProfile" #label>
-                <AssetProfileLabel
-                  :name="selectedTradeProfile.name"
-                  :version="selectedTradeProfile.version"
-                  :source="selectedTradeProfile.source"
-                  :is-preset="selectedTradeProfile.is_preset"
-                  :owner-label="selectedTradeProfile.owner_label"
-                  :readonly="selectedTradeProfile.readonly"
-                />
-              </template>
-              <el-option v-for="p in tradeProfiles" :key="tradeProfileKey(p)" :value="tradeProfileKey(p)" :label="p.name">
-                <AssetProfileLabel
-                  :name="p.name"
-                  :version="p.version"
-                  :source="p.source"
-                  :is-preset="p.is_preset"
-                  :owner-label="p.owner_label"
-                  :readonly="p.readonly"
-                />
-              </el-option>
-            </el-select>
+            <AssetProfileSelect
+              v-model="tradeProfileId"
+              asset-label="买卖方案"
+              :fetch-mine="fetchMineTradeProfiles"
+              :browse="browseTrade"
+              :copy-item="copyAnyTradeProfile"
+              copy-permission="trade-profile:save"
+              view-permission="trade-profile:view"
+              placeholder="选我的买卖方案（可选）"
+              test-id="backtest-trade-select"
+              style="width: 300px"
+              @ready="onTradeReady"
+              @loaded="onTradeLoaded"
+              @copied-item="onTradeCopied"
+            />
           </AppControlItem>
           <AppControlItem>
             <el-checkbox v-model="industryOn">行业上限</el-checkbox>
@@ -1487,6 +1577,20 @@ async function openTradeChart(row: TradeRow) {
         </AppDataTable>
       </div>
     </el-dialog>
+
+    <!-- 浏览公开回测抽屉（R5/R6）：kind='backtest'，tenant/public 段、无系统内置、默认全体公开 -->
+    <AssetSearchDrawer
+      v-model="runBrowseOpen"
+      asset-label="回测"
+      kind="backtest"
+      :browse="(p) => browseRuns({ ...p, kind })"
+      :rerun-item="rerunPublicRun"
+      rerun-permission="backtest:run"
+      :can-browse="canViewBacktest"
+      test-id="backtest-run-drawer"
+      @load="onRunLoaded"
+      @rerun-done="onRunRerunDone"
+    />
 
     <PageSettingsDrawer
       v-model="settingsOpen"
