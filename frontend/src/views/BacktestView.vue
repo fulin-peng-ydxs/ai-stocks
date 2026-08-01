@@ -14,7 +14,7 @@ import { listTradeProfiles, browseTradeProfiles, copyTradeProfile, type TradePro
 import { getBars, type Bar } from '@/api/stocks'
 import EquityChart from '@/components/EquityChart.vue'
 import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Close } from '@element-plus/icons-vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -29,6 +29,7 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetVisibilityTag from '@/components/AssetVisibilityTag.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
 import {
@@ -157,14 +158,18 @@ const scoreProfiles = ref<ScoreProfileSummary[]>([])
 const tradeProfiles = ref<TradeProfileSummary[]>([])
 const nextRunSourceRef = ref('')
 
-// 加载查看的临时只读项（决策1重裁：并入持久列表后选中展示，option 变持久天然避开 ElSelect 递归，
-// 同 StockDetailView:312 路径）。快照于保存/恢复参数时剔除、不持久化；run() 保存快照即冻结回测口径，
-// 快照生效期间（loadingRun=true）参数 watcher 不置脏，与「不写回持久表单」一致。
+// 加载查看的临时只读项（2026-08-01 复审重裁：选择器外只读展示，DESIGN ElSelect 递归契约不破）。
+// 不再并入选择器候选、不设为选择器选中（组件仍只锁 mine/tempItem，选择器外 chip 显示名称非 opaque ref）；
+// 不持久化（saveParams 恒剔除）、不自动运行。运行按 buildBody 的 tempSelected 快照取 ref（仅当对应选择器为空）。
+// 用户选 mine 项 / 复制为我的 / 载入历史即清；切换或离开页面即丢弃。
 const tempSelected = ref<{
   screen: Profile | null
   score: ScoreProfileSummary | null
   trade: TradeProfileSummary | null
 }>({ screen: null, score: null, trade: null })
+// 三类 mine 列表就绪屏障（P1-1）：列表 ready 与偏好 hydration 两个时点都可能写入 ref，
+// 任一到齐后统一 reconcileProfileRefs() 校验并清掉非 mine/非临时残留，杜绝 opaque ref 回弹。
+const readyFlags = ref({ screen: false, score: false, trade: false })
 
 // 「复用参数重跑」从公开回测 params 复制字段的允许白名单（R6，P1-1）：含撮合参数（卖出 MA/止盈/止损/
 // 最大持有/调仓）、基准与分层阈值——缺一即改变撮合与收益，非「以公开回测参数重跑」。剔除 source_run_ref。
@@ -294,6 +299,8 @@ const historyError = ref('')
 const selectedRun = ref<string>('')
 const historySource = ref<HistorySource>('all')
 const runVisibilitySaving = ref(false)
+// 重跑切源后待选中的新 run_id（P2-2）：historySource watcher 的唯一一次 loadHistory 完成后据此精确选中
+const pendingRerunSelect = ref<string | null>(null)
 
 // 切换"策略/信号"标签 → 清空下方结果（避免显示与当前模式不符的旧结果）
 // loadingRun 期间由程序设置参数，不触发清空 / 不置脏
@@ -307,7 +314,20 @@ watch(historySource, () => {
   selectedRun.value = ''
   strat.value = null
   sig.value = null
-  loadHistory()
+  // 重跑切源待选中（P2-2）：watcher 这一次 loadHistory 完成后按 run_id 精确选中新 run，不再二次加载
+  const pending = pendingRerunSelect.value
+  pendingRerunSelect.value = null
+  if (pending) {
+    void loadHistory().then(() => {
+      const target = runHistory.value.find((r) => r.id === pending || runKey(r) === pending) || runHistory.value[0]
+      if (target) {
+        selectedRun.value = runKey(target)
+        void loadRun(selectedRun.value)
+      }
+    })
+  } else {
+    loadHistory()
+  }
 })
 
 // 运行按钮状态机：dirty=true 蓝色可点；出结果/载入历史后置 false（灰、不可点）；改任一参数恢复
@@ -321,12 +341,27 @@ watch(() => settings.topN, (value) => { topN.value = Number(value) })
 watch(() => settings.initCap, (value) => { initCap.value = Number(value) })
 watch(() => settings.robustExpanded, (value) => { robustPanels.value = value ? ['robust'] : [] })
 watch(rememberedParamsHydrated, (ready) => {
-  if (ready && !loadingRun.value) restoreParams()
+  if (ready && !loadingRun.value) {
+    restoreParams()
+    reconcileProfileRefs() // P1-1：hydration 再 restore 后须重校验，清掉晚到的旧 opaque ref（防回弹）
+  }
 })
 // 程序化改参（运行/载入历史）后清脏：等参数 watcher 跑完再置 false
 function clearDirtySoon() {
   nextTick(() => { dirty.value = false; loadingRun.value = false })
 }
+
+// 切换/清空选择即丢弃对应临时只读项（P1-2）：当前 key 不等于临时项 key 立即清除，
+// 避免「加载公开方案→切到自己的方案」后仍把有效选择当临时剔除（saveParams 写空）。
+watch(profileId, (v) => {
+  if (tempSelected.value.screen && screenProfileKey(tempSelected.value.screen) !== v) tempSelected.value.screen = null
+})
+watch(scoreProfileId, (v) => {
+  if (tempSelected.value.score && scoreProfileKey(tempSelected.value.score) !== v) tempSelected.value.score = null
+})
+watch(tradeProfileId, (v) => {
+  if (tempSelected.value.trade && tradeProfileKey(tempSelected.value.trade) !== v) tempSelected.value.trade = null
+})
 
 // 方案(版本) 文本：名字带版本号，空则占位
 function nameVer(name?: string | null, ver?: number | null, fallback = ''): string {
@@ -341,10 +376,10 @@ function runKey(r: RunSummary): string {
 const selectedRunSummary = computed(() =>
   runHistory.value.find((r) => runKey(r) === selectedRun.value || r.id === selectedRun.value),
 )
-// fail-closed（P1-4）：选中项摘要缺失时按只读处理（不启用删除/公开编辑）——加载查看注入的公开行
-// 或载入进行中（loadingRun）时摘要可能暂缺，默认可写会让「删除」对他人记录错误可点。
+// fail-closed（P1-4 + 复审 P2-1）：有摘要按 readonly；无摘要但存在选中值时一律只读（不启用删除/公开编辑）——
+// 加载查看注入的公开行或选中后摘要暂缺（含非 loading 场景），默认可写会让「删除」对他人记录错误可点。
 const selectedRunReadonly = computed(() =>
-  selectedRunSummary.value ? !!selectedRunSummary.value.readonly : loadingRun.value,
+  selectedRunSummary.value ? !!selectedRunSummary.value.readonly : !!selectedRun.value,
 )
 const historyEmptyText = computed(() => {
   if (historySource.value === 'mine') return '暂无回测记录'
@@ -446,10 +481,11 @@ function saveParams() {
   rememberedParams.kind = kind.value
   rememberedParams.dateStart = dateStart.value
   rememberedParams.dateEnd = dateEnd.value
-  // 加载查看的临时只读项不入持久偏好（切换即丢弃），避免下次恢复出非 mine 的 opaque ref
-  rememberedParams.profileId = tempSelected.value.screen ? '' : profileId.value
-  rememberedParams.scoreProfileId = tempSelected.value.score ? '' : scoreProfileId.value
-  rememberedParams.tradeProfileId = tempSelected.value.trade ? '' : tradeProfileId.value
+  // 持久化选择器的真实 mine 选择。临时只读项在选择器外、不进选择器 modelValue，故无需剔除——
+  // 选择器值本就是有效 mine 选择；临时快照（tempSelected）从不写入偏好，刷新即弃。
+  rememberedParams.profileId = profileId.value
+  rememberedParams.scoreProfileId = scoreProfileId.value
+  rememberedParams.tradeProfileId = tradeProfileId.value
   rememberedParams.topN = topN.value
   rememberedParams.initCap = initCap.value
   rememberedParams.industryOn = industryOn.value
@@ -473,70 +509,74 @@ function restoreParams() {
   } catch { /* ignore */ }
 }
 
-// 组件 ready：列表落地后 normalize 纠偏（restoreParams 早期写入的裸 id → profile_ref 稳定键）；
-// 若既不在 mine 列表、也不是本次会话注入的临时只读项（R3 下拉仅 mine），清空选择并提示重新选择。
+// 统一归属校验（P1-1 时序竞态修复）：列表 ready 与偏好 hydration 两个时点都可能写入 ref，
+// 每次任一发生后都对「已 ready 的类」做一次校验，清掉既不在 mine 列表、也不是本次会话临时只读项的残留
+// （R3 下拉仅 mine）。否则 ready 后 hydration 再次 restore 会把旧 opaque ref 写回且不再校验（复审实证回弹）。
+function reconcileProfileRefs() {
+  const stale: string[] = []
+  if (readyFlags.value.screen && profileId.value
+    && !profiles.value.some((p) => screenProfileKey(p) === profileId.value)
+    && !(tempSelected.value.screen && screenProfileKey(tempSelected.value.screen) === profileId.value)) {
+    profileId.value = ''; stale.push('选股')
+  }
+  if (readyFlags.value.score && scoreProfileId.value
+    && !scoreProfiles.value.some((p) => scoreProfileKey(p) === scoreProfileId.value)
+    && !(tempSelected.value.score && scoreProfileKey(tempSelected.value.score) === scoreProfileId.value)) {
+    scoreProfileId.value = ''; stale.push('评分')
+  }
+  if (readyFlags.value.trade && tradeProfileId.value
+    && !tradeProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileId.value)
+    && !(tempSelected.value.trade && tradeProfileKey(tempSelected.value.trade) === tradeProfileId.value)) {
+    tradeProfileId.value = ''; stale.push('买卖')
+  }
+  if (stale.length) ElMessage.warning(`原${stale.join('/')}方案已不可用（非「我的」方案），请重新选择`)
+}
+
+// 组件 ready：列表落地后置就绪标记、normalize 纠偏（restoreParams 早期写入的裸 id → profile_ref 稳定键），
+// 再统一 reconcile（onMounted restore 早于 ready、偏好 hydration 晚于 ready 都被这道屏障兜住）。
 function onScreenReady(items: ProfileSummary[]) {
   profiles.value = items as Profile[]
+  readyFlags.value.screen = true
   profileId.value = normalizeScreenProfileKey(profileId.value)
-  if (profileId.value && !profiles.value.some((p) => screenProfileKey(p) === profileId.value)
-    && !(tempSelected.value.screen && screenProfileKey(tempSelected.value.screen) === profileId.value)) {
-    profileId.value = ''
-    ElMessage.warning('原选股方案已不可用（非「我的」方案），请重新选择')
-  }
+  reconcileProfileRefs()
 }
 function onScoreReady(items: ProfileSummary[]) {
   scoreProfiles.value = items as ScoreProfileSummary[]
+  readyFlags.value.score = true
   scoreProfileId.value = normalizeScoreProfileKey(scoreProfileId.value)
-  if (scoreProfileId.value && !scoreProfiles.value.some((p) => scoreProfileKey(p) === scoreProfileId.value)
-    && !(tempSelected.value.score && scoreProfileKey(tempSelected.value.score) === scoreProfileId.value)) {
-    scoreProfileId.value = ''
-    ElMessage.warning('原评分方案已不可用（非「我的」方案），请重新选择')
-  }
+  reconcileProfileRefs()
 }
 function onTradeReady(items: ProfileSummary[]) {
   tradeProfiles.value = items as TradeProfileSummary[]
+  readyFlags.value.trade = true
   tradeProfileId.value = normalizeTradeProfileKey(tradeProfileId.value)
-  if (tradeProfileId.value && !tradeProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileId.value)
-    && !(tempSelected.value.trade && tradeProfileKey(tempSelected.value.trade) === tradeProfileId.value)) {
-    tradeProfileId.value = ''
-    ElMessage.warning('原买卖方案已不可用（非「我的」方案），请重新选择')
-  }
+  reconcileProfileRefs()
 }
-// 「加载查看」临时只读项：并入持久列表 + 选中展示（option 变持久，避开 ElSelect 锁非持久递归，
-// 同 StockDetailView onTradeLoaded）；快照记录供保存/恢复剔除、run() 冻结口径；不改持久表单、不运行。
+// 「加载查看」临时只读项（方案b）：仅记快照供选择器外 chip 展示 + 运行时按快照取 ref，不并入选择器候选、
+// 不设为选择器选中（组件仍只锁 mine/tempItem，不破 ElSelect 递归契约）；不运行、不持久化、切换即弃。
 function onScreenLoaded(item: ProfileSummary) {
-  const p = item as Profile
-  if (!profiles.value.some((x) => screenProfileKey(x) === screenProfileKey(p))) {
-    profiles.value = [p, ...profiles.value]
-  }
-  tempSelected.value.screen = p
-  profileId.value = screenProfileKey(p)
+  tempSelected.value.screen = item as Profile
 }
 function onScoreLoaded(item: ProfileSummary) {
-  const p = item as ScoreProfileSummary
-  if (!scoreProfiles.value.some((x) => scoreProfileKey(x) === scoreProfileKey(p))) {
-    scoreProfiles.value = [p, ...scoreProfiles.value]
-  }
-  tempSelected.value.score = p
-  scoreProfileId.value = scoreProfileKey(p)
+  tempSelected.value.score = item as ScoreProfileSummary
 }
 function onTradeLoaded(item: ProfileSummary) {
-  const p = item as TradeProfileSummary
-  if (!tradeProfiles.value.some((x) => tradeProfileKey(x) === tradeProfileKey(p))) {
-    tradeProfiles.value = [p, ...tradeProfiles.value]
-  }
-  tempSelected.value.trade = p
-  tradeProfileId.value = tradeProfileKey(p)
+  tempSelected.value.trade = item as TradeProfileSummary
 }
-// 复制成功：组件已选中并 emit copiedItem 回写完整 summary，并入候选保证 selectedXxx 可解析
-function onScreenCopied(item: ProfileSummary) {
-  onScreenLoaded(item)
+// 复制成功（P1-2 修复：不复用 onXLoaded）：组件已把新资产并入其 mine 列表并选中、经 ready 喂页面列表、
+// copiedItem 回写完整 summary。复制结果归「我的」，不是临时项——清空对应 tempSelected（避免误当临时剔除），
+// 选中交给组件的 update:modelValue。
+function onScreenCopied(_item: ProfileSummary) {
+  tempSelected.value.screen = null
 }
-function onScoreCopied(item: ProfileSummary) {
-  onScoreLoaded(item)
+function onScoreCopied(_item: ProfileSummary) {
+  tempSelected.value.score = null
 }
-function onTradeCopied(item: ProfileSummary) {
-  onTradeLoaded(item)
+function onTradeCopied(_item: ProfileSummary) {
+  tempSelected.value.trade = null
+}
+function clearTemp(kind: 'screen' | 'score' | 'trade') {
+  tempSelected.value[kind] = null
 }
 
 async function loadHistory() {
@@ -732,20 +772,24 @@ async function rerunPublicRun(item: AssetBrowseItem): Promise<unknown> {
   return runBacktest(body)
 }
 
-// 重跑成功（P2-5）：用抽屉透传的 runBacktest 返回值取新 run_id 精确选中，而非盲选列表首行。
-// 新 run 归「我的」，historySource 切到 mine 使其入列后再加载结果。
+// 重跑成功（P2-5 + 复审 P2-2）：用抽屉透传的 runBacktest 返回值取新 run_id 精确选中，而非盲选列表首行。
+// 新 run 归「我的」。已是 mine 直接 loadHistory 一次后选中；否则经 pendingRerunSelect 交给 historySource
+// watcher 的那一次 loadHistory 完成后选中——任一路径都只有**一次**列表加载。
 function onRunRerunDone(result: unknown) {
   ElMessage.success('已按该回测参数重跑，新记录归「我的」')
-  const rid = (result as { run_id?: string } | null)?.run_id
-  historySource.value = 'mine'
-  void loadHistory().then(() => {
-    const target = (rid && runHistory.value.find((r) => r.id === rid || runKey(r) === rid))
-      || runHistory.value[0]
-    if (target) {
-      selectedRun.value = runKey(target)
-      void loadRun(selectedRun.value)
-    }
-  })
+  const rid = (result as { run_id?: string } | null)?.run_id || null
+  if (historySource.value === 'mine') {
+    void loadHistory().then(() => {
+      const target = (rid && runHistory.value.find((r) => r.id === rid || runKey(r) === rid)) || runHistory.value[0]
+      if (target) {
+        selectedRun.value = runKey(target)
+        void loadRun(selectedRun.value)
+      }
+    })
+  } else {
+    pendingRerunSelect.value = rid
+    historySource.value = 'mine' // watcher 触发唯一一次 loadHistory 并按 pendingRerunSelect 选中
+  }
 }
 
 // 导出当前回测的逐笔交易为 CSV（带 BOM，Excel 中文不乱码）
@@ -849,12 +893,16 @@ function buildBody(): RunParams {
     kind: kind.value, date_start: dateStart.value, date_end: dateEnd.value,
     horizons: HORIZONS, thresholds: THRESHOLDS,
   }
-  if (scoreProfileId.value) body.score_profile_id = scoreProfileId.value
+  // 运行按 tempSelected 快照取 ref（仅当对应选择器为空——加载查看的临时方案作为本次运行口径，选择器外展示）
+  const scoreRef = scoreProfileId.value || (tempSelected.value.score ? scoreProfileKey(tempSelected.value.score) : '')
+  if (scoreRef) body.score_profile_id = scoreRef
   if (kind.value === 'strategy') {
+    const screenRef = profileId.value || (tempSelected.value.screen ? screenProfileKey(tempSelected.value.screen) : '')
+    const tradeRef = tradeProfileId.value || (tempSelected.value.trade ? tradeProfileKey(tempSelected.value.trade) : '')
     Object.assign(body, {
       top_n: topN.value, initial_capital: initCap.value,
-      profile_id: profileId.value || null,
-      trade_profile_id: tradeProfileId.value || null,
+      profile_id: screenRef || null,
+      trade_profile_id: tradeRef || null,
     })
     if (nextRunSourceRef.value) body.source_run_ref = nextRunSourceRef.value
     if (industryOn.value) body.industry_max_pct = industryPct.value / 100
@@ -863,11 +911,13 @@ function buildBody(): RunParams {
 }
 
 function validateRunSelection(): boolean {
-  if (!scoreProfileId.value) {
+  const hasScore = !!(scoreProfileId.value || tempSelected.value.score)
+  if (!hasScore) {
     ElMessage.warning('请选择评分方案')
     return false
   }
-  if (kind.value === 'strategy' && !tradeProfileId.value) {
+  const hasTrade = !!(tradeProfileId.value || tempSelected.value.trade)
+  if (kind.value === 'strategy' && !hasTrade) {
     ElMessage.warning('请选择买卖方案')
     return false
   }
@@ -1232,6 +1282,22 @@ async function openTradeChart(row: TradeRow) {
             @loaded="onScoreLoaded"
             @copied-item="onScoreCopied"
           />
+          <!-- 加载查看的临时只读项：选择器外展示（方案b，不破组件递归契约），显示名称非 opaque ref -->
+          <span
+            v-if="tempSelected.score"
+            class="temp-readonly-chip"
+            :data-testid="`${'backtest-score-select'}-temp`"
+          >
+            <AssetProfileLabel
+              :name="tempSelected.score.name"
+              :version="tempSelected.score.version"
+              :source="tempSelected.score.is_preset ? 'preset' : tempSelected.score.source"
+              :is-preset="tempSelected.score.is_preset"
+              :owner-label="tempSelected.score.owner_label"
+              readonly
+            />
+            <AppIconButton label="清除临时只读方案" size="xs" @click="clearTemp('score')"><el-icon><Close /></el-icon></AppIconButton>
+          </span>
         </AppControlItem>
         <template v-if="kind === 'strategy'">
           <AppControlItem>
@@ -1265,6 +1331,22 @@ async function openTradeChart(row: TradeRow) {
                 @copied-item="onScreenCopied"
               />
             </el-tooltip>
+            <!-- 加载查看的临时只读项：选择器外展示（方案b） -->
+            <span
+              v-if="tempSelected.screen"
+              class="temp-readonly-chip"
+              data-testid="backtest-screen-select-temp"
+            >
+              <AssetProfileLabel
+                :name="tempSelected.screen.name"
+                :version="tempSelected.screen.version"
+                :source="tempSelected.screen.is_preset ? 'preset' : tempSelected.screen.source"
+                :is-preset="tempSelected.screen.is_preset"
+                :owner-label="tempSelected.screen.owner_label"
+                readonly
+              />
+              <AppIconButton label="清除临时只读方案" size="xs" @click="clearTemp('screen')"><el-icon><Close /></el-icon></AppIconButton>
+            </span>
           </AppControlItem>
           <AppControlItem>
             <template #label>
@@ -1300,6 +1382,22 @@ async function openTradeChart(row: TradeRow) {
               @loaded="onTradeLoaded"
               @copied-item="onTradeCopied"
             />
+            <!-- 加载查看的临时只读项：选择器外展示（方案b） -->
+            <span
+              v-if="tempSelected.trade"
+              class="temp-readonly-chip"
+              data-testid="backtest-trade-select-temp"
+            >
+              <AssetProfileLabel
+                :name="tempSelected.trade.name"
+                :version="tempSelected.trade.version"
+                :source="tempSelected.trade.is_preset ? 'preset' : tempSelected.trade.source"
+                :is-preset="tempSelected.trade.is_preset"
+                :owner-label="tempSelected.trade.owner_label"
+                readonly
+              />
+              <AppIconButton label="清除临时只读方案" size="xs" @click="clearTemp('trade')"><el-icon><Close /></el-icon></AppIconButton>
+            </span>
           </AppControlItem>
           <AppControlItem>
             <el-checkbox v-model="industryOn">行业上限</el-checkbox>
@@ -1309,9 +1407,9 @@ async function openTradeChart(row: TradeRow) {
         </template>
       </AppControlRow>
 
-      <AppControlRow v-if="kind === 'strategy' && tradeProfileId" class="form-row sell-row" dense>
+      <AppControlRow v-if="kind === 'strategy' && (tradeProfileId || tempSelected.trade)" class="form-row sell-row" dense>
         <AppControlItem label="卖出规则">
-          <span class="tip-inline">由买卖方案「{{ tradeProfileName(tradeProfileId) }}」的卖出条件 + 兜底接管</span>
+          <span class="tip-inline">由买卖方案「{{ tradeProfileName(tradeProfileId || (tempSelected.trade ? tradeProfileKey(tempSelected.trade) : '')) }}」的卖出条件 + 兜底接管</span>
         </AppControlItem>
       </AppControlRow>
 
@@ -1883,5 +1981,17 @@ async function openTradeChart(row: TradeRow) {
   .form-row .lbl {
     margin-left: 0;
   }
+}
+
+/* 加载查看的临时只读项 chip（选择器外展示，方案b）：与选择器同行，弱化边框标示只读 */
+.temp-readonly-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--app-space-2);
+  padding: 2px 6px;
+  border: 1px dashed var(--el-border-color);
+  border-radius: var(--layout-control-radius, 6px);
+  background: var(--el-fill-color-light);
+  white-space: nowrap;
 }
 </style>

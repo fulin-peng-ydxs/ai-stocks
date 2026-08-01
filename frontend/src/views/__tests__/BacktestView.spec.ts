@@ -121,26 +121,14 @@ function assetCompStub(name: string, testId: string) {
 }
 const AssetSearchDrawerStub = assetCompStub('AssetSearchDrawer', 'asset-search-drawer-stub')
 
-// 选择器 stub：持有一份加载查看项，当页面把该项 key 回写为 modelValue 时用 AssetProfileLabel
-// 渲染其名称——使「加载查看后名称可见、非 opaque ref」可在 jsdom 断言；内部真实 el-select 仍 stub。
-// 注意：jsdom 下 setup 渲染闭包内 ref 需经 nextTick 手动物化 .value 才会反映到渲染输出，
-// 故 item 用「setup 作用域可变绑定 + 闭包读取」而非闭包内 .value 赋值（否则永远拿不到物化值）。
+// 选择器 stub（方案b）：只声明 props/emits、渲染占位 div。临时项名称改由页面级 chip 渲染（选择器外），
+// 不再由 stub 承接；页面 chip 用 AssetProfileLabel 真实渲染，jsdom 可直接断言其文本（名称非 opaque ref）。
 const AssetProfileSelectStub = defineComponent({
   name: 'AssetProfileSelect',
   props: ['modelValue', 'assetLabel', 'kind', 'fetchMine', 'browse', 'copyItem', 'copyPermission', 'viewPermission', 'rerunItem', 'rerunPermission', 'canBrowse', 'placeholder', 'labelMine', 'testId'],
   emits: ['update:modelValue', 'ready', 'loaded', 'copiedItem', 'copied', 'load', 'rerunDone'],
-  setup(props, { expose }) {
-    const itemRef = ref<{ profile_ref?: string; id: string; name: string; version?: number; readonly?: boolean } | null>(null)
-    let item: typeof itemRef.value = null
-    expose({ setLoadedItem: (i: unknown) => { item = i as typeof item } })
-    return () => {
-      const cur = item
-      return h('div', { 'data-testid': 'asset-profile-select-stub' }, [
-        cur && (cur.profile_ref || cur.id) === (props.modelValue as string)
-          ? h(AssetProfileLabel, { name: cur.name, version: cur.version, readonly: cur.readonly })
-          : null,
-      ])
-    }
+  setup() {
+    return () => h('div', { 'data-testid': 'asset-profile-select-stub' })
   },
 })
 
@@ -222,13 +210,11 @@ function getRunDetail(params: Record<string, unknown>, extra: Record<string, unk
   } as any
 }
 
-// 装载后把三选择器的临时只读项并入持久列表并选中（决策1重裁：临时选中只读、不运行、不置脏）；
-// 同步喂给 stub 让它渲染选中项名称（真实组件内部 el-select 已 stub，名称展示改由 stub 承接断言）。
+// 触发「加载查看」：直接 emit loaded（方案b 下页面记 tempSelected 快照、渲染选择器外 chip）。
 async function emitLoaded(wrapper: VueWrapper, testId: string, item: unknown) {
   const sel = findSelect(wrapper, testId)!
-  ;(sel.vm as unknown as { setLoadedItem?: (i: unknown) => void }).setLoadedItem?.(item)
   sel.vm.$emit('loaded', item)
-  await nextTick() // 物化 stub 渲染闭包（jsdom 需手动 nextTick 才把 .value 反映到 DOM）
+  await nextTick()
   await flushPromises()
 }
 
@@ -277,7 +263,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     wrapper.unmount()
   })
 
-  it('「加载查看」并入候选并临时选中只读展示、不运行、不置脏（决策1重裁 + R3 名称可见）', async () => {
+  it('「加载查看」选择器外 chip 显示名称（非 opaque ref）、不改选择器选中、不运行、不持久化（方案b）', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     const score = findSelect(wrapper, 'backtest-score-select')!
@@ -287,27 +273,89 @@ describe('BacktestView 三方案选择器（T5）', () => {
     await emitLoaded(wrapper, 'backtest-score-select', {
       id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true,
     })
-    // 并入候选 + 临时选中（ref 为该方案 key，option 持久、可显示名称而非 opaque ref）
-    expect(score.props('modelValue')).toBe('avr_score_pub')
+    // 不破组件递归契约：选择器 modelValue 不被设为临时项
+    expect(score.props('modelValue')).toBe('')
     expect(backtestApi.runBacktest).not.toHaveBeenCalled()
-    // 临时项并入持久候选：名称（非 opaque ref）可在下拉中解析、供选中项展示
-    expect((wrapper.vm as any).scoreProfiles.some((p: any) => p.profile_ref === 'avr_score_pub' && p.name === '公开评分')).toBe(true)
+    // 名称经选择器外 chip 渲染（AssetProfileLabel），非 opaque ref
+    const chip = wrapper.find('[data-testid="backtest-score-select-temp"]')
+    expect(chip.exists()).toBe(true)
+    expect(chip.text()).toContain('公开评分')
+    expect(chip.text()).not.toContain('avr_score_pub')
     // 临时项不入持久偏好
     expect(localStorage.getItem('ai-stocks-backtest-params') ?? '').not.toContain('avr_score_pub')
     wrapper.unmount()
   })
 
-  it('「加载查看」的临时只读项可被页面解析出名称（tradeProfileName 回退 tempSelected，非 opaque ref）', async () => {
+  it('临时项作为运行口径：选择器为空时 buildBody 按 tempSelected 快照取 ref（P1-3 方案b 运行路径）', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
-    // 买卖方案：选中后「卖出规则」行由 tradeProfileName(tradeProfileId) 渲染名称，数据源含 tempSelected 回退
     await emitLoaded(wrapper, 'backtest-trade-select', {
       id: 'pub-t', profile_ref: 'avr_trade_pub', name: '公开买卖', version: 2, source: 'public', readonly: true,
     })
-    await flushPromises()
-    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('avr_trade_pub')
-    // tradeProfileName 经 tempSelected 回退解析出名称（非空、非 opaque ref），卖出规则行可读
+    // 选择器为空、临时项在 → 卖出规则行用临时项名称（tradeProfileName 回退 tempSelected）
+    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
     expect((wrapper.vm as any).tradeProfileName('avr_trade_pub')).toBe('公开买卖')
+    // buildBody 在选择器为空时按 tempSelected 快照取 ref（运行可使用临时方案）
+    const body = (wrapper.vm as any).buildBody()
+    expect(body.trade_profile_id).toBe('avr_trade_pub')
+    wrapper.unmount()
+  })
+
+  it('临时→mine 切换即丢弃临时项：chip 消失、保存偏好写的是 mine 选择（P1-2 路径1）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    await emitLoaded(wrapper, 'backtest-score-select', {
+      id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true,
+    })
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(true)
+    // 用户改选自己的方案（mine 列表 avr_score_1）
+    const score = findSelect(wrapper, 'backtest-score-select')!
+    score.vm.$emit('update:modelValue', 'avr_score_1')
+    await flushPromises()
+    // 临时项被清除（chip 消失）
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(false)
+    // 保存偏好写的是有效 mine 选择，不被误剔除为空（rememberedParams 经 watcher 持久化到 localStorage）
+    ;(wrapper.vm as any).saveParams()
+    expect((wrapper.vm as any).rememberedParams.scoreProfileId).toBe('avr_score_1')
+    wrapper.unmount()
+  })
+
+  it('复制为我的→不标临时、保存偏好可恢复（P1-2 路径2：copiedItem 不复用 onXLoaded）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    const score = findSelect(wrapper, 'backtest-score-select')!
+    // 模拟组件复制成功：ready 重喂含新 mine 项 + copiedItem 回写 + update:modelValue 选中新项
+    const copied = { id: 's-copy', profile_ref: 'avr_score_copy', name: '评分副本', version: 1, is_preset: false, source: 'mine' } as any
+    score.vm.$emit('ready', [...mineScoreList(), copied])
+    score.vm.$emit('copiedItem', copied)
+    score.vm.$emit('update:modelValue', 'avr_score_copy')
+    await flushPromises()
+    // 复制结果不标临时：无 chip
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(false)
+    // 保存偏好写的是新 mine 选择（不被当临时剔除），刷新可恢复
+    ;(wrapper.vm as any).saveParams()
+    expect((wrapper.vm as any).rememberedParams.scoreProfileId).toBe('avr_score_copy')
+    wrapper.unmount()
+  })
+
+  it('旧 public/preset ref：ready 后偏好 hydration 再 restore，最终清空不回弹（P1-1 时序屏障）', async () => {
+    localStorage.setItem('ai-stocks-backtest-params', JSON.stringify({
+      kind: 'strategy', dateStart: '2024-01-01', dateEnd: '2024-12-31',
+      profileId: '', scoreProfileId: 'avr_score_old', tradeProfileId: 'avr_trade_old',
+      topN: 10, initCap: 1000000, industryOn: false, industryPct: 20,
+    }))
+    const wrapper = await mountView()
+    await emitAllReady(wrapper) // 列表 ready（reconcile 清掉非 mine 残留）
+    expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
+    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
+    // 模拟偏好稍后 hydration：再次触发 restore + reconcile（rememberedParamsHydrated watcher 路径）
+    pageSettingsState.current = null // 强制重置；restoreParams 从 localStorage 再读旧 ref
+    ;(wrapper.vm as any).restoreParams()
+    ;(wrapper.vm as any).reconcileProfileRefs()
+    await flushPromises()
+    // 旧 ref 最终为空、不回弹（readyFlags 屏障 + reconcile 兜底）
+    expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
+    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
     wrapper.unmount()
   })
 
