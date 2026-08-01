@@ -57,6 +57,8 @@ const emit = defineEmits<{
   copiedItem: [item: ProfileSummary]
   /** 复制成功：列表已刷新、新资产已选中 */
   copied: [result: AssetCopyResult]
+  /** 复用重跑完成（回测形态）：透传抽屉 rerunDone，回传 rerunItem 返回值 + 原行，供父级选中新 run */
+  rerunDone: [result: unknown, item: ProfileSummary]
 }>()
 
 const items = ref<ProfileSummary[]>([])

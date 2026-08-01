@@ -76,6 +76,19 @@ import * as tradeApi from '@/api/tradeProfile'
 import BacktestView from '@/views/BacktestView.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
+import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
+import type { Layers } from '@/api/backtest'
+
+// 合法 Layers fixture（P1-3）：layers 不可为 {}——渲染访问 grades_order/by_grade/base_rate，
+// mock 成 {} 会抛「grades_order is not iterable」unhandled error（组件崩溃后断言仍通过的假绿根因）。
+function validLayers(): Layers {
+  return {
+    date_start: '2024-01-01', date_end: '2024-06-30',
+    horizons: [10, 20], thresholds: [0.1, 0.2],
+    min_samples: 1, total_signals: 0,
+    base_rate: {}, by_grade: {}, grades_order: [],
+  }
+}
 
 const ElSelectStub = defineComponent({
   name: 'ElSelect',
@@ -106,8 +119,30 @@ function assetCompStub(name: string, testId: string) {
     },
   })
 }
-const AssetProfileSelectStub = assetCompStub('AssetProfileSelect', 'asset-profile-select-stub')
 const AssetSearchDrawerStub = assetCompStub('AssetSearchDrawer', 'asset-search-drawer-stub')
+
+// 选择器 stub：持有一份加载查看项，当页面把该项 key 回写为 modelValue 时用 AssetProfileLabel
+// 渲染其名称——使「加载查看后名称可见、非 opaque ref」可在 jsdom 断言；内部真实 el-select 仍 stub。
+// 注意：jsdom 下 setup 渲染闭包内 ref 需经 nextTick 手动物化 .value 才会反映到渲染输出，
+// 故 item 用「setup 作用域可变绑定 + 闭包读取」而非闭包内 .value 赋值（否则永远拿不到物化值）。
+const AssetProfileSelectStub = defineComponent({
+  name: 'AssetProfileSelect',
+  props: ['modelValue', 'assetLabel', 'kind', 'fetchMine', 'browse', 'copyItem', 'copyPermission', 'viewPermission', 'rerunItem', 'rerunPermission', 'canBrowse', 'placeholder', 'labelMine', 'testId'],
+  emits: ['update:modelValue', 'ready', 'loaded', 'copiedItem', 'copied', 'load', 'rerunDone'],
+  setup(props, { expose }) {
+    const itemRef = ref<{ profile_ref?: string; id: string; name: string; version?: number; readonly?: boolean } | null>(null)
+    let item: typeof itemRef.value = null
+    expose({ setLoadedItem: (i: unknown) => { item = i as typeof item } })
+    return () => {
+      const cur = item
+      return h('div', { 'data-testid': 'asset-profile-select-stub' }, [
+        cur && (cur.profile_ref || cur.id) === (props.modelValue as string)
+          ? h(AssetProfileLabel, { name: cur.name, version: cur.version, readonly: cur.readonly })
+          : null,
+      ])
+    }
+  },
+})
 
 const stubs = {
   LayoutHost: { template: '<div><slot name="action"/><slot name="main"/><slot name="overlays"/></div>' },
@@ -120,6 +155,9 @@ const stubs = {
   HelpTip: { template: '<span><slot/></span>' },
   EquityChart: true,
   CandleChart: true,
+  // 占位替代布尔 stub(true)：布尔 stub 在 el-option v-for 等结构下会触发 emitsOptions 空引用
+  AssetVisibilityActions: { template: '<div />' },
+  AssetVisibilityTag: { template: '<div />' },
   ElSelect: ElSelectStub,
   ElOption: ElOptionStub,
   AssetProfileSelect: AssetProfileSelectStub,
@@ -172,6 +210,28 @@ function runDrawer(wrapper: VueWrapper) {
   return wrapper.findAllComponents(AssetSearchDrawer).find((c) => c.props('kind') === 'backtest')
 }
 
+// getRun 返回的合法结构（layers 用 validLayers，避免 grades_order 崩溃假绿）
+function getRunDetail(params: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  return {
+    run: {
+      id: 'r1', run_ref: 'run_ref_1', kind: 'strategy',
+      date_start: '2024-01-01', date_end: '2024-06-30', created_at: '2024-07-01 10:00:00',
+      params: JSON.stringify(params), ...extra,
+    },
+    metrics: {}, layers: validLayers(), trades: [], equity: [],
+  } as any
+}
+
+// 装载后把三选择器的临时只读项并入持久列表并选中（决策1重裁：临时选中只读、不运行、不置脏）；
+// 同步喂给 stub 让它渲染选中项名称（真实组件内部 el-select 已 stub，名称展示改由 stub 承接断言）。
+async function emitLoaded(wrapper: VueWrapper, testId: string, item: unknown) {
+  const sel = findSelect(wrapper, testId)!
+  ;(sel.vm as unknown as { setLoadedItem?: (i: unknown) => void }).setLoadedItem?.(item)
+  sel.vm.$emit('loaded', item)
+  await nextTick() // 物化 stub 渲染闭包（jsdom 需手动 nextTick 才把 .value 反映到 DOM）
+  await flushPromises()
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   pageSettingsState.current = null
@@ -203,6 +263,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     expect(screen.props('viewPermission')).toBe('screen-profile:view')
     expect(trade.props('copyPermission')).toBe('trade-profile:save')
     expect(trade.props('viewPermission')).toBe('trade-profile:view')
+    wrapper.unmount()
   })
 
   it('fetchMine 以 source=mine 调对应 list（组件真实挂载时触发，此处直接调回调验证口径）', async () => {
@@ -213,22 +274,54 @@ describe('BacktestView 三方案选择器（T5）', () => {
     expect(screeningApi.listProfiles).toHaveBeenCalledWith('mine')
     await findSelect(wrapper, 'backtest-trade-select')!.props('fetchMine')()
     expect(tradeApi.listTradeProfiles).toHaveBeenCalledWith('mine')
+    wrapper.unmount()
   })
 
-  it('「加载查看」只并入候选、不选中、不运行（决策1）', async () => {
+  it('「加载查看」并入候选并临时选中只读展示、不运行、不置脏（决策1重裁 + R3 名称可见）', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     const score = findSelect(wrapper, 'backtest-score-select')!
     expect(score.props('modelValue')).toBe('')
     vi.mocked(backtestApi.runBacktest).mockClear()
 
-    // 加载查看公开评分方案 → 并入候选，但不改选中、不发回测
-    score.vm.$emit('loaded', {
+    await emitLoaded(wrapper, 'backtest-score-select', {
       id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true,
     })
-    await flushPromises()
-    expect(score.props('modelValue')).toBe('')  // 未自动选中
+    // 并入候选 + 临时选中（ref 为该方案 key，option 持久、可显示名称而非 opaque ref）
+    expect(score.props('modelValue')).toBe('avr_score_pub')
     expect(backtestApi.runBacktest).not.toHaveBeenCalled()
+    // 临时项并入持久候选：名称（非 opaque ref）可在下拉中解析、供选中项展示
+    expect((wrapper.vm as any).scoreProfiles.some((p: any) => p.profile_ref === 'avr_score_pub' && p.name === '公开评分')).toBe(true)
+    // 临时项不入持久偏好
+    expect(localStorage.getItem('ai-stocks-backtest-params') ?? '').not.toContain('avr_score_pub')
+    wrapper.unmount()
+  })
+
+  it('「加载查看」的临时只读项可被页面解析出名称（tradeProfileName 回退 tempSelected，非 opaque ref）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    // 买卖方案：选中后「卖出规则」行由 tradeProfileName(tradeProfileId) 渲染名称，数据源含 tempSelected 回退
+    await emitLoaded(wrapper, 'backtest-trade-select', {
+      id: 'pub-t', profile_ref: 'avr_trade_pub', name: '公开买卖', version: 2, source: 'public', readonly: true,
+    })
+    await flushPromises()
+    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('avr_trade_pub')
+    // tradeProfileName 经 tempSelected 回退解析出名称（非空、非 opaque ref），卖出规则行可读
+    expect((wrapper.vm as any).tradeProfileName('avr_trade_pub')).toBe('公开买卖')
+    wrapper.unmount()
+  })
+
+  it('旧 public/preset ref 恢复后 ready 清空并提示重新选择（R3 下拉仅 mine）', async () => {
+    localStorage.setItem('ai-stocks-backtest-params', JSON.stringify({
+      kind: 'strategy', dateStart: '2024-01-01', dateEnd: '2024-12-31',
+      profileId: '', scoreProfileId: 'avr_score_old', tradeProfileId: 'avr_trade_old',
+      topN: 10, initCap: 1000000, industryOn: false, industryPct: 20,
+    }))
+    const wrapper = await mountView()
+    await emitAllReady(wrapper) // ready 列表落地后清掉非 mine 残留
+    expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
+    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
+    wrapper.unmount()
   })
 })
 
@@ -243,37 +336,35 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     expect(typeof drawer.props('rerunItem')).toBe('function')
     // 触发按钮存在
     expect(wrapper.find('[data-testid="backtest-browse-open"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
-  it('「加载查看」公开回测 → 调 getRun 载入结果（不重跑）', async () => {
+  it('「加载查看」公开回测 → 调 getRun 载入结果（不重跑），readonly 行注入使删除不可见（P1-4）', async () => {
     const wrapper = await mountView()
-    vi.mocked(backtestApi.getRun).mockResolvedValue({
-      run: {
-        id: 'r1', run_ref: 'run_ref_1', kind: 'strategy',
-        date_start: '2024-01-01', date_end: '2024-06-30', created_at: '2024-07-01 10:00:00',
-        params: JSON.stringify({ date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1', profile_id: 'avr_screen_1', trade_profile_id: 'avr_trade_1', top_n: 10, initial_capital: 1000000 }),
-      },
-      metrics: {}, layers: {}, trades: [], equity: [],
-    } as any)
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1', profile_id: 'avr_screen_1', trade_profile_id: 'avr_trade_1', top_n: 10, initial_capital: 1000000 },
+    ))
     vi.mocked(backtestApi.runBacktest).mockClear()
 
     const drawer = runDrawer(wrapper)!
-    drawer.vm.$emit('load', { id: 'r1', run_ref: 'run_ref_1', kind: 'strategy' })
+    drawer.vm.$emit('load', { id: 'r1', run_ref: 'run_ref_1', kind: 'strategy', readonly: true, source: 'public' })
     await flushPromises()
     expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_1')
     expect(backtestApi.runBacktest).not.toHaveBeenCalled()
+    // 公开只读行 → 删除按钮不可见（readonly fail-closed，非默认可写）
+    expect(wrapper.findAll('button').some((b) => b.text() === '删除')).toBe(false)
+    wrapper.unmount()
   })
 
-  it('「复用参数重跑」→ getRun + runBacktest，body 含 source_run_ref，成功后刷新历史（决策2，不弹确认）', async () => {
+  it('「复用参数重跑」完整复制回测参数（撮合/基准/阈值，P1-1）+ source_run_ref', async () => {
     const wrapper = await mountView()
-    vi.mocked(backtestApi.getRun).mockResolvedValue({
-      run: {
-        id: 'r9', run_ref: 'run_ref_9', kind: 'strategy',
-        date_start: '2024-01-01', date_end: '2024-06-30',
-        params: JSON.stringify({ date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1', profile_id: 'avr_screen_1', trade_profile_id: 'avr_trade_1', top_n: 5, initial_capital: 500000 }),
-      },
-      metrics: {}, layers: {}, trades: [], equity: [],
-    } as any)
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail({
+      date_start: '2024-01-01', date_end: '2024-06-30',
+      score_profile_id: 'avr_score_1', profile_id: 'avr_screen_1', trade_profile_id: 'avr_trade_1',
+      top_n: 5, initial_capital: 500000, industry_max_pct: 0.2,
+      sell_ma_period: 30, take_profit: 0.25, stop_loss: 0.08, max_hold_days: 40, rebalance_days: 5,
+      benchmark: '000300.SH', horizons: [5, 15], thresholds: [0.05, 0.15],
+    }, { id: 'r9', run_ref: 'run_ref_9' }))
     vi.mocked(backtestApi.runBacktest).mockResolvedValue({ run_id: 'new_run' } as any)
     vi.mocked(backtestApi.listRuns).mockResolvedValue({ runs: [{ id: 'new_run', run_ref: 'run_ref_new', kind: 'strategy' } as any] })
 
@@ -286,13 +377,43 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     const body = vi.mocked(backtestApi.runBacktest).mock.calls[0][0] as any
     expect(body.source_run_ref).toBe('run_ref_9')
     expect(body.kind).toBe('strategy')
-    expect(body.top_n).toBe(5)
+    // 基础字段
     expect(body.score_profile_id).toBe('avr_score_1')
+    expect(body.profile_id).toBe('avr_screen_1')
+    expect(body.trade_profile_id).toBe('avr_trade_1')
+    expect(body.horizons).toEqual([5, 15])          // 沿用历史分层阈值，不被常量覆盖
+    expect(body.thresholds).toEqual([0.05, 0.15])
+    expect(body.benchmark).toBe('000300.SH')
+    // 撮合参数（缺一即改变撮合与收益，P1-1 核心）
+    expect(body.top_n).toBe(5)
+    expect(body.initial_capital).toBe(500000)
+    expect(body.industry_max_pct).toBe(0.2)
+    expect(body.sell_ma_period).toBe(30)
+    expect(body.take_profit).toBe(0.25)
+    expect(body.stop_loss).toBe(0.08)
+    expect(body.max_hold_days).toBe(40)
+    expect(body.rebalance_days).toBe(5)
+    wrapper.unmount()
+  })
 
-    // rerunDone → 刷新历史
-    drawer.vm.$emit('rerunDone', { id: 'new_run', run_ref: 'run_ref_new' })
+  it('rerunDone 携带新 run 返回值，按 run_id 精确选中并切到我的（P2-5）', async () => {
+    const wrapper = await mountView()
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [
+        { id: 'older', run_ref: 'run_ref_older', kind: 'strategy' } as any,
+        { id: 'new_run', run_ref: 'run_ref_new', kind: 'strategy' } as any,
+      ],
+    })
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail({ date_start: '2024-01-01', date_end: '2024-06-30' }))
+
+    const drawer = runDrawer(wrapper)!
+    // 真实组件会 emit('rerunDone', result, item)；此处直接驱动父级回调验证按 run_id 选中
+    drawer.vm.$emit('rerunDone', { run_id: 'new_run' }, { id: 'r9', run_ref: 'run_ref_9', kind: 'strategy' })
     await flushPromises()
     expect(backtestApi.listRuns).toHaveBeenCalled()
+    // 选中的必须是返回值指定的新 run（new_run 不在列表首行，证明非盲选 [0]）
+    expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_new')
+    wrapper.unmount()
   })
 
   it('复用重跑不写回表单、不改当前选中（决策2，与 reuseCurrentRunParams 语义不同）', async () => {
@@ -300,13 +421,9 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     await emitAllReady(wrapper)
     const score = findSelect(wrapper, 'backtest-score-select')!
     expect(score.props('modelValue')).toBe('')
-    vi.mocked(backtestApi.getRun).mockResolvedValue({
-      run: {
-        id: 'r9', run_ref: 'run_ref_9', kind: 'strategy', date_start: '2024-01-01', date_end: '2024-06-30',
-        params: JSON.stringify({ date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1', trade_profile_id: 'avr_trade_1', top_n: 5 }),
-      },
-      metrics: {}, layers: {}, trades: [], equity: [],
-    } as any)
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1', trade_profile_id: 'avr_trade_1', top_n: 5 },
+    ))
     vi.mocked(backtestApi.runBacktest).mockResolvedValue({ run_id: 'new_run' } as any)
 
     const drawer = runDrawer(wrapper)!
@@ -315,6 +432,7 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     await flushPromises()
     // 表单选中未被改写（重跑不复用到表单）
     expect(score.props('modelValue')).toBe('')
+    wrapper.unmount()
   })
 
   it('无 backtest:view 时抽屉 canBrowse=false 且不渲染触发按钮', async () => {
@@ -322,5 +440,6 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     const drawer = runDrawer(wrapper)!
     expect(drawer.props('canBrowse')).toBe(false)
     expect(wrapper.find('[data-testid="backtest-browse-open"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

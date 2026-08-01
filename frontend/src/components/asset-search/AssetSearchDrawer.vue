@@ -58,7 +58,8 @@ const emit = defineEmits<{
   /** 加载查看：临时只读注入，由父级关闭抽屉后注入选择器（§7.0 契约） */
   load: [item: AssetBrowseItem]
   copied: [result: AssetCopyResult, item: AssetBrowseItem]
-  rerunDone: [item: AssetBrowseItem]
+  /** 复用重跑完成：回传 rerunItem 返回值（回测为新 run 结果，含 run_id 供父级精确选中）+ 原行 */
+  rerunDone: [result: unknown, item: AssetBrowseItem]
 }>()
 
 const SOURCE_LABEL: Record<AssetBrowseSource, string> = {
@@ -219,8 +220,8 @@ async function onRerun(item: AssetBrowseItem) {
   const key = assetItemKey(item)
   rerunningKey.value = key
   try {
-    await props.rerunItem(item)
-    emit('rerunDone', item)
+    const result = await props.rerunItem(item)
+    emit('rerunDone', result, item)
   } catch {
     // 全局响应拦截已 toast；此处只复位行内 loading
   } finally {
