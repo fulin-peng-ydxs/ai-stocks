@@ -937,7 +937,45 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     await (wrapper.vm as any).run()
     await flushPromises()
     expect((wrapper.vm as any).externalRunSummary).toBeNull()
-    expect((wrapper.vm as any).selectedRun).toBe('dup_run')
+    // P1-2（六次复审）：选中 key 是 opaque run_ref，不是后端内部 id——否则下拉匹配不到 option
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_dup')
+    expect((wrapper.vm as any).selectedRun).not.toBe('dup_run')
+    confirmSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('查重加载 pending 期间切换历史/关闭公开：晚到响应不得覆盖页面、不得清公开快照（六次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({
+      duplicate: { run_id: 'dup_run', created_at: '2024-07-01 10:00:00' },
+    } as any)
+    const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    // getRun 挂起，模拟详情请求在途
+    let resolveRun!: (v: any) => void
+    vi.mocked(backtestApi.getRun).mockImplementation(
+      () => new Promise((resolve) => { resolveRun = resolve }),
+    )
+
+    void (wrapper.vm as any).run() // 不 await——请求 pending
+    await flushPromises()
+    // pending 期间用户关闭公开查看（递增序列、恢复快照）
+    ;(wrapper.vm as any).clearExternalRun()
+    await flushPromises()
+    const beforeLate = (wrapper.vm as any).dateStart
+    // 旧请求晚到成功返回——序列已过期，不得写状态
+    resolveRun(getRunDetail(
+      { date_start: '2030-01-01', date_end: '2030-06-30', score_profile_id: 'late_score' },
+      { id: 'dup_run', run_ref: 'run_ref_dup' },
+    ))
+    await flushPromises()
+
+    expect((wrapper.vm as any).selectedRun).not.toBe('run_ref_dup') // 未被晚到响应选中
+    expect((wrapper.vm as any).dateStart).toBe(beforeLate)          // 表单未被覆盖
+    expect((wrapper.vm as any).dateStart).not.toBe('2030-01-01')
+    expect((wrapper.vm as any).strat?.run_id).not.toBe('run_ref_dup')
     confirmSpy.mockRestore()
     wrapper.unmount()
   })

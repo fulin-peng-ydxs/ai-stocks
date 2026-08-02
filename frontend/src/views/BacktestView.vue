@@ -1252,21 +1252,32 @@ async function run() {
       if (choice === 'abort') { loadingRun.value = false; return }
       if (choice === 'load') {
         // P1-1（五次复审）：先成功获取该 mine 历史详情，再原子执行「应用详情 + 退出公开查看态」。
-        // 详情加载失败时不动公开快照，用户仍可关闭公开查看恢复原现场。
+        // P1-1（六次复审）：全程挂 runLoadSequence——请求 pending 期间用户关闭公开查看/切换历史
+        // 会递增序列，本分支晚到响应在成功/异常/finally 写状态前校验，过期即弃，不覆盖当前页面。
         const did = pre.duplicate.run_id
+        const sequence = ++runLoadSequence
         loading.value = true
         loadingRun.value = true
         try {
           const detail = await fetchRunDetail(did)
+          if (sequence !== runLoadSequence) return
           commitMineRun() // 详情已取到 → 原子提交：清公开摘要+进入前快照
-          selectedRun.value = did
-          applyRunDetail(did, detail)
+          // P1-2（六次复审）：选中 key 用 opaque run_ref（与历史下拉 option value 一致），
+          // 不写后端内部 id——否则 selectedRun 匹配不到 option，下拉显示 bt_.../内部 ID。
+          const key = (detail.run as { run_ref?: string }).run_ref || did
+          // 经 runHistory 归一化：优先用列表里同 run_ref 的 option value，确保与 option 完全一致
+          const inHistory = runHistory.value.find((r) => runKey(r) === key || r.id === did)
+          selectedRun.value = inHistory ? runKey(inHistory) : key
+          applyRunDetail(selectedRun.value, detail)
           clearDirtySoon()
         } catch (e) {
+          if (sequence !== runLoadSequence) return
           ElMessage.error(getErrorMessage(e, '历史回测载入失败'))
         } finally {
-          loading.value = false
-          nextTick(() => { loadingRun.value = false })
+          if (sequence === runLoadSequence) {
+            loading.value = false
+            nextTick(() => { loadingRun.value = false })
+          }
         }
         return
       }
