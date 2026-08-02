@@ -412,6 +412,11 @@ function restoreRunView(snapshot: RunViewSnapshot) {
 // 切换"策略/信号"标签 → 清空下方结果（避免显示与当前模式不符的旧结果）
 // loadingRun 期间由程序设置参数，不触发清空 / 不置脏
 const loadingRun = ref(false)
+// P1-1（九次复审）：拆分「真实回测请求在途」与「程序化恢复参数」两个状态。
+// runningRun=true 表示 runBacktest 已发出、结果未落地；此时用户改任一影响 buildBody 的参数
+// 应立即使该次 operation token 失效（dirty watcher 递增 runLoadSequence），旧结果晚到即 stale 不写回，
+// 且不得把页面标为未修改——否则页面表单是新参数 B、结果却是旧口径 A。
+const runningRun = ref(false)
 watch(kind, () => {
   if (loadingRun.value) return
   runLoadSequence += 1
@@ -424,7 +429,11 @@ watch(kind, () => {
 const dirty = ref(true)
 watch(
   [kind, dateStart, dateEnd, profileId, scoreProfileId, tradeProfileId, topN, initCap, industryOn, industryPct],
-  () => { if (!loadingRun.value) dirty.value = true },
+  () => {
+    if (loadingRun.value) return // 程序化恢复参数：不置脏、不使 token 失效
+    dirty.value = true
+    if (runningRun.value) runLoadSequence += 1 // 回测在途时用户改参 → 旧 operation token 立即失效
+  },
 )
 watch(() => settings.kind, (value) => { kind.value = value })
 watch(() => settings.topN, (value) => { topN.value = Number(value) })
@@ -1235,9 +1244,11 @@ async function run() {
   // 之后每个写状态/发请求的节点都校验，旧操作晚到即弃，不得覆盖新页面状态（含不得用旧参数 doRun 落库）。
   const sequence = ++runLoadSequence
   // 以「保存时的表单」冻结回测口径：若表单含加载查看的临时只读方案，保存剔除后 profileId 会变，
-  // 不能让该变化触发 dirty（取消运行）；loadingRun 让参数 watcher 在本轮保存/恢复期间不置脏
+  // 不能让该变化触发 dirty（取消运行）；loadingRun 只覆盖 saveParams 的同步窗口（守卫同步参数 watcher），
+  // 不贯穿 runBacktest 在途期——在途期由 runningRun 标记，用户改参须置脏并使 token 失效（九次复审 P1-1）。
   loadingRun.value = true
   saveParams()
+  loadingRun.value = false // 同步窗口结束：此后用户改参走正常置脏/token 失效逻辑
   const frozen = buildBody()
   try {
     const pre = await prepareBacktest(body)
@@ -1293,7 +1304,7 @@ async function run() {
     /* 查重失败不阻塞，直接回测 */
   }
   if (sequence !== runLoadSequence) return // 进入 doRun 前再校验：页面已切换则不得用旧参数落库
-  await doRun(frozen, sequence) // 用冻结口径跑；doRun 末尾清脏并复位 loadingRun
+  await doRun(frozen, sequence) // 用冻结口径跑；doRun 末尾按 token 是否失效决定是否清脏
 }
 
 // P1-1（八次复审）：doRun 消费 operation token——runBacktest 结果先入局部变量，校验未过期才写响应式状态；
@@ -1303,14 +1314,16 @@ async function run() {
 // 列表刷新后按 id 找到新记录取 runKey；刷新失败或暂缺新项时保持未选中并提示，不把内部 ID 填进下拉。
 async function doRun(body: RunParams, sequence?: number) {
   const stale = () => sequence !== undefined && sequence !== runLoadSequence
-  // 参数已在 run() 保存并冻结，这里不再重复保存；loadingRun 由 run() 置位、本次结束后复位
+  // 参数已在 run() 保存并冻结，这里不再重复保存
   loading.value = true
+  runningRun.value = true // 真实回测请求在途：用户改参立即使本 token 失效
   runTime.value = ''
   fromHistory.value = false
   resultError.value = ''
   resultErrorContext.value = 'run'
   try {
     const res = (await runBacktest(body)) as StrategyResult | Layers
+    runningRun.value = false // 请求已返回：后续用户改参只置脏，token 失效与否由 stale 决定
     if (stale()) return // 回测请求 pending 期间页面已切换：丢弃本次写回（后台记录仍落库，留待刷新）
     // 先取内部 id 局部持有，loadHistory 后按 id 归一化为 run_ref 再选中
     const internalId = body.kind === 'strategy'
@@ -1331,22 +1344,26 @@ async function doRun(body: RunParams, sequence?: number) {
     if (target) {
       selectedRun.value = runKey(target)
     } else if (internalId) {
-      // 列表刷新失败或新项暂缺：保持未选中，提示用户手动刷新，不把内部 id 填进下拉
+      // 列表里找不到新记录：保持未选中，不把内部 id 填进下拉；无论刷新失败还是新项暂缺都提示（P2-1 九次复审）
       selectedRun.value = ''
       if (!refreshed) ElMessage.warning('回测已完成，但我的记录刷新失败，请稍后从历史记录选择')
+      else ElMessage.warning('回测已完成，但新记录尚未出现在列表中，请稍后刷新')
     }
     resultScoreRef.value = body.score_profile_id || '' // 冻结本次结果实际评分口径（下钻榜单用）
     nextRunSourceRef.value = ''
-    dirty.value = false // 出结果 → 按钮置灰（参数未变时再点无意义）
+    // 出结果 → 按钮置灰；但若用户运行期间改过参数（token 已失效），保持 dirty=true，不误标「未修改」
+    if (sequence === undefined || sequence === runLoadSequence) dirty.value = false
   } catch (e) {
+    runningRun.value = false
     if (stale()) return // 旧请求失败：不在当前页面显示过期错误
     resultErrorContext.value = 'run'
     resultError.value = getErrorMessage(e, '回测失败')
     ElMessage.error(resultError.value)
   } finally {
+    runningRun.value = false // 兜底：任何出口都复位在途标记
     if (!stale()) {
       loading.value = false
-      nextTick(() => { loadingRun.value = false }) // 复位 run() 的冻结守卫
+      // loadingRun 已在 run() 的 saveParams 同步窗口复位，这里不再触碰（在途期由 runningRun 标记）
     }
   }
 }

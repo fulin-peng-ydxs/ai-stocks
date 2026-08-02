@@ -1176,6 +1176,114 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     wrapper.unmount()
   })
 
+  it('doRun 列表刷新成功但不含新 ID：保持未选中并提示「新记录尚未出现」（九次复审 P2-1）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    vi.mocked(backtestApi.runBacktest).mockResolvedValue({
+      run_id: 'bt_internal_123', metrics: {}, layers: validLayers(), trades: [], equity: [],
+    } as any)
+    // listRuns 成功返回（refreshed=true），但列表里没有 run_id=bt_internal_123 的新记录（后端延迟可见）
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({ runs: [] })
+    const warning = vi.spyOn(ElMessage, 'warning')
+
+    await (wrapper.vm as any).doRun({ kind: 'strategy', date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1', trade_profile_id: 'avr_trade_1' })
+    await flushPromises()
+    expect((wrapper.vm as any).selectedRun).toBe('') // 不把内部 id 填进下拉
+    expect((wrapper.vm as any).selectedRun).not.toBe('bt_internal_123')
+    // refreshed=true 分支也要提示，不再静默保持未选中（P2-1）
+    expect(warning).toHaveBeenCalledWith('回测已完成，但新记录尚未出现在列表中，请稍后刷新')
+    wrapper.unmount()
+  })
+
+  it('runBacktest pending 期间用户改日期/方案：旧结果不写回、页面保持 dirty=true（九次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
+    ;(wrapper.vm as any).dirty = false
+    const seqBefore = (wrapper.vm as any).runLoadSequence
+    let resolveRun!: (v: any) => void
+    vi.mocked(backtestApi.runBacktest).mockImplementation(
+      () => new Promise((resolve) => { resolveRun = resolve }),
+    )
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({ duplicate: null } as any)
+
+    void (wrapper.vm as any).run() // 不 await——runBacktest pending，runningRun=true
+    await flushPromises()
+    expect((wrapper.vm as any).runningRun).toBe(true)
+    // pending 期间用户改日期：dirty watcher 置脏且 runningRun → 递增 token 使本次 operation 失效
+    ;(wrapper.vm as any).dateStart = '2025-03-01'
+    await nextTick()
+    expect((wrapper.vm as any).dirty).toBe(true)
+    expect((wrapper.vm as any).runLoadSequence).toBeGreaterThan(seqBefore) // token 已失效（递增≥1）
+    // 旧 runBacktest 晚到——doRun 校验 token 过期，丢弃写回且不得标「未修改」
+    resolveRun({ run_id: 'bt_late', metrics: {}, layers: validLayers(), trades: [], equity: [] })
+    await flushPromises()
+
+    expect((wrapper.vm as any).strat).toBeNull() // 旧结果未写回
+    expect((wrapper.vm as any).dirty).toBe(true) // 保持「已修改」，按钮可再点，不误标未修改
+    expect((wrapper.vm as any).selectedRun).not.toBe('bt_late')
+    wrapper.unmount()
+  })
+
+  it('runBacktest pending 期间用户改方案 ref：旧结果不写回、保持 dirty（九次复审 P1-1 改参路径）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
+    ;(wrapper.vm as any).dirty = false
+    let resolveRun!: (v: any) => void
+    vi.mocked(backtestApi.runBacktest).mockImplementation(
+      () => new Promise((resolve) => { resolveRun = resolve }),
+    )
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({ duplicate: null } as any)
+
+    void (wrapper.vm as any).run()
+    await flushPromises()
+    // pending 期间改任一影响 buildBody 的方案 ref（评分方案）→ token 失效 + 保持 dirty
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_other'
+    await nextTick()
+    resolveRun({ run_id: 'bt_late', metrics: {}, layers: validLayers(), trades: [], equity: [] })
+    await flushPromises()
+
+    expect((wrapper.vm as any).strat).toBeNull()
+    expect((wrapper.vm as any).dirty).toBe(true)
+    expect((wrapper.vm as any).scoreProfileId).toBe('avr_score_other') // 用户改动保留
+    wrapper.unmount()
+  })
+
+  it('runBacktest pending 期间切换策略/评分模式：旧结果不写回、不混入新模式（九次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    ;(wrapper.vm as any).kind = 'strategy'
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
+    let resolveRun!: (v: any) => void
+    vi.mocked(backtestApi.runBacktest).mockImplementation(
+      () => new Promise((resolve) => { resolveRun = resolve }),
+    )
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({ duplicate: null } as any)
+
+    void (wrapper.vm as any).run() // 策略模式 pending
+    await flushPromises()
+    // pending 期间切到评分验证模式：kind watcher 清结果+selectedRun+递增 token；dirty watcher 同步置脏/失效
+    ;(wrapper.vm as any).kind = 'score_check'
+    await nextTick()
+    await flushPromises()
+    // 旧策略结果晚到——token 过期，不得把 strategy 结果写进 score_check 模式
+    resolveRun({ run_id: 'bt_late', metrics: {}, layers: validLayers(), trades: [], equity: [] })
+    await flushPromises()
+
+    expect((wrapper.vm as any).strat).toBeNull()
+    expect((wrapper.vm as any).sig).toBeNull()
+    expect((wrapper.vm as any).selectedRun).not.toBe('bt_late')
+    expect((wrapper.vm as any).kind).toBe('score_check')
+    wrapper.unmount()
+  })
+
   it('runBacktest pending 期间切换历史：旧结果晚到不覆盖结果/选中项/公开快照（八次复审 P1-1）', async () => {
     const wrapper = await mountView()
     await enterPublicRun(wrapper)
