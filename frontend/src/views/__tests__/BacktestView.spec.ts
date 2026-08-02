@@ -1117,4 +1117,153 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     expect((wrapper.vm as any).resultScoreRef).toBe('avr_score_fresh')
     wrapper.unmount()
   })
+
+  it('doRun 成功（策略）选中 run_ref 而非内部 run_id，option 可匹配显示业务名称（八次复审 P1-2）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    vi.mocked(backtestApi.runBacktest).mockResolvedValue({
+      run_id: 'bt_internal_123', metrics: {}, layers: validLayers(), trades: [], equity: [],
+    } as any)
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{
+        id: 'bt_internal_123', run_ref: 'run_ref_bt123', kind: 'strategy',
+        score_profile_name: '我的评分', profile_name: '我的选股', trade_profile_name: '我的买卖',
+        source: 'mine', readonly: false,
+      } as any],
+    })
+
+    await (wrapper.vm as any).doRun({ kind: 'strategy', date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1', trade_profile_id: 'avr_trade_1' })
+    await flushPromises()
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_bt123')
+    expect((wrapper.vm as any).selectedRun).not.toBe('bt_internal_123')
+    wrapper.unmount()
+  })
+
+  it('doRun 成功（评分验证）选中 run_ref 而非内部 run_id（八次复审 P1-2）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    vi.mocked(backtestApi.runBacktest).mockResolvedValue({
+      ...validLayers(), run_id: 'bt_internal_999',
+    } as any)
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{
+        id: 'bt_internal_999', run_ref: 'run_ref_bt999', kind: 'score_check',
+        score_profile_name: '我的评分', source: 'mine', readonly: false,
+      } as any],
+    })
+
+    await (wrapper.vm as any).doRun({ kind: 'score_check', date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1' })
+    await flushPromises()
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_bt999')
+    expect((wrapper.vm as any).selectedRun).not.toBe('bt_internal_999')
+    wrapper.unmount()
+  })
+
+  it('doRun 列表刷新失败/新项暂缺：保持未选中不填内部 id，并提示（八次复审 P1-2）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    vi.mocked(backtestApi.runBacktest).mockResolvedValue({
+      run_id: 'bt_internal_123', metrics: {}, layers: validLayers(), trades: [], equity: [],
+    } as any)
+    vi.mocked(backtestApi.listRuns).mockRejectedValue(new Error('网络瞬时失败'))
+    const warning = vi.spyOn(ElMessage, 'warning')
+
+    await (wrapper.vm as any).doRun({ kind: 'strategy', date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1', trade_profile_id: 'avr_trade_1' })
+    await flushPromises()
+    expect((wrapper.vm as any).selectedRun).toBe('') // 不把内部 id 填进下拉
+    expect((wrapper.vm as any).selectedRun).not.toBe('bt_internal_123')
+    expect(warning).toHaveBeenCalledWith('回测已完成，但我的记录刷新失败，请稍后从历史记录选择')
+    wrapper.unmount()
+  })
+
+  it('runBacktest pending 期间切换历史：旧结果晚到不覆盖结果/选中项/公开快照（八次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    // runBacktest 挂起
+    let resolveRun!: (v: any) => void
+    vi.mocked(backtestApi.runBacktest).mockImplementation(
+      () => new Promise((resolve) => { resolveRun = resolve }),
+    )
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({ duplicate: null } as any)
+
+    void (wrapper.vm as any).run() // 不 await——runBacktest pending
+    await flushPromises()
+    // pending 期间用户切到另一条历史（选中 + loadRun 递增序列）
+    vi.mocked(backtestApi.getRun).mockReset().mockResolvedValue(getRunDetail(
+      { date_start: '2025-01-01', date_end: '2025-06-30', score_profile_id: 'other_score' },
+      { id: 'other', run_ref: 'run_ref_other' },
+    ))
+    ;(wrapper.vm as any).selectedRun = 'run_ref_other'
+    await (wrapper.vm as any).loadRun('run_ref_other')
+    await flushPromises()
+    const stratBefore = (wrapper.vm as any).strat
+    // 旧 runBacktest 晚到返回——doRun 校验 token 过期，丢弃写回
+    resolveRun({ run_id: 'bt_late', metrics: {}, layers: validLayers(), trades: [], equity: [] })
+    await flushPromises()
+
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_other') // 不被旧结果覆盖
+    expect((wrapper.vm as any).strat).toBe(stratBefore)
+    expect((wrapper.vm as any).strat?.run_id).not.toBe('bt_late')
+    wrapper.unmount()
+  })
+
+  it('runBacktest pending 期间关闭公开查看：旧结果晚到不清公开快照已恢复的现场、不写结果（八次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    const { prevResult } = await enterPublicRun(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    let resolveRun!: (v: any) => void
+    vi.mocked(backtestApi.runBacktest).mockImplementation(
+      () => new Promise((resolve) => { resolveRun = resolve }),
+    )
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({ duplicate: null } as any)
+
+    void (wrapper.vm as any).run()
+    await flushPromises()
+    // pending 期间关闭公开查看（递增序列、恢复进入前现场）
+    ;(wrapper.vm as any).clearExternalRun()
+    await flushPromises()
+    const dateBefore = (wrapper.vm as any).dateStart
+    // 旧 runBacktest 晚到——token 过期，不得写结果/覆盖恢复的现场
+    resolveRun({ run_id: 'bt_late', metrics: {}, layers: validLayers(), trades: [], equity: [] })
+    await flushPromises()
+
+    expect((wrapper.vm as any).dateStart).toBe(dateBefore)
+    expect((wrapper.vm as any).strat).toStrictEqual(prevResult) // 恢复的现场未被旧结果覆盖
+    expect((wrapper.vm as any).selectedRun).not.toBe('bt_late')
+    wrapper.unmount()
+  })
+
+  it('runBacktest 旧请求失败：页面已切换后不显示过期错误（八次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    let rejectRun!: (e: any) => void
+    vi.mocked(backtestApi.runBacktest).mockImplementation(
+      () => new Promise((_, reject) => { rejectRun = reject }),
+    )
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({ duplicate: null } as any)
+    const errSpy = vi.spyOn(ElMessage, 'error')
+
+    void (wrapper.vm as any).run()
+    await flushPromises()
+    // pending 期间切换历史
+    vi.mocked(backtestApi.getRun).mockReset().mockResolvedValue(getRunDetail(
+      { date_start: '2025-01-01', date_end: '2025-06-30' }, { id: 'other', run_ref: 'run_ref_other' },
+    ))
+    ;(wrapper.vm as any).selectedRun = 'run_ref_other'
+    await (wrapper.vm as any).loadRun('run_ref_other')
+    await flushPromises()
+    errSpy.mockClear()
+    // 旧 runBacktest 晚到失败——token 过期，不在当前页面显示过期错误
+    rejectRun(new Error('旧回测请求失败'))
+    await flushPromises()
+
+    expect(errSpy).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).resultError).toBe('')
+    wrapper.unmount()
+  })
 })

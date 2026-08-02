@@ -1293,10 +1293,16 @@ async function run() {
     /* 查重失败不阻塞，直接回测 */
   }
   if (sequence !== runLoadSequence) return // 进入 doRun 前再校验：页面已切换则不得用旧参数落库
-  await doRun(frozen) // 用冻结口径跑；doRun 末尾清脏并复位 loadingRun
+  await doRun(frozen, sequence) // 用冻结口径跑；doRun 末尾清脏并复位 loadingRun
 }
 
-async function doRun(body: RunParams) {
+// P1-1（八次复审）：doRun 消费 operation token——runBacktest 结果先入局部变量，校验未过期才写响应式状态；
+// 响应返回后/loadHistory 前后/异常/finally 写 loading 前分别检查。过期则丢弃页面写回（后台记录可能已落库，
+// 静默保留在历史列表，下次主动刷新再出现），不得覆盖当前结果、选中项、公开快照，也不显示旧请求错误。
+// P1-2（八次复审）：选中 key 用 opaque run_ref（与历史下拉 option 一致），不写后端内部 run_id——
+// 列表刷新后按 id 找到新记录取 runKey；刷新失败或暂缺新项时保持未选中并提示，不把内部 ID 填进下拉。
+async function doRun(body: RunParams, sequence?: number) {
+  const stale = () => sequence !== undefined && sequence !== runLoadSequence
   // 参数已在 run() 保存并冻结，这里不再重复保存；loadingRun 由 run() 置位、本次结束后复位
   loading.value = true
   runTime.value = ''
@@ -1304,29 +1310,44 @@ async function doRun(body: RunParams) {
   resultError.value = ''
   resultErrorContext.value = 'run'
   try {
+    const res = (await runBacktest(body)) as StrategyResult | Layers
+    if (stale()) return // 回测请求 pending 期间页面已切换：丢弃本次写回（后台记录仍落库，留待刷新）
+    // 先取内部 id 局部持有，loadHistory 后按 id 归一化为 run_ref 再选中
+    const internalId = body.kind === 'strategy'
+      ? (res as StrategyResult).run_id
+      : (res as unknown as { run_id?: string }).run_id
     if (body.kind === 'strategy') {
-      strat.value = (await runBacktest(body)) as StrategyResult
+      strat.value = res as StrategyResult
       sig.value = null
-      if (strat.value?.run_id) selectedRun.value = strat.value.run_id
     } else {
-      sig.value = (await runBacktest(body)) as Layers
+      sig.value = res as Layers
       strat.value = null
-      // 评分验证也落库 → 用 run_id 选中历史
-      const rid = (sig.value as unknown as { run_id?: string })?.run_id
-      if (rid) selectedRun.value = rid
     }
-    await loadHistory() // 新结果进历史列表
+    const refreshed = await loadHistory() // 新结果进历史列表
+    if (stale()) return // loadHistory 期间页面又切换：不选中、不清公开快照
     commitMineRun() // mine 新结果成为当前结果 → 退出公开查看态（清公开摘要+进入前快照）
+    // 选中用 run_ref（下拉 option value），不写内部 id
+    const target = internalId ? runHistory.value.find((r) => r.id === internalId) : undefined
+    if (target) {
+      selectedRun.value = runKey(target)
+    } else if (internalId) {
+      // 列表刷新失败或新项暂缺：保持未选中，提示用户手动刷新，不把内部 id 填进下拉
+      selectedRun.value = ''
+      if (!refreshed) ElMessage.warning('回测已完成，但我的记录刷新失败，请稍后从历史记录选择')
+    }
     resultScoreRef.value = body.score_profile_id || '' // 冻结本次结果实际评分口径（下钻榜单用）
     nextRunSourceRef.value = ''
     dirty.value = false // 出结果 → 按钮置灰（参数未变时再点无意义）
   } catch (e) {
+    if (stale()) return // 旧请求失败：不在当前页面显示过期错误
     resultErrorContext.value = 'run'
     resultError.value = getErrorMessage(e, '回测失败')
     ElMessage.error(resultError.value)
   } finally {
-    loading.value = false
-    nextTick(() => { loadingRun.value = false }) // 复位 run() 的冻结守卫
+    if (!stale()) {
+      loading.value = false
+      nextTick(() => { loadingRun.value = false }) // 复位 run() 的冻结守卫
+    }
   }
 }
 
