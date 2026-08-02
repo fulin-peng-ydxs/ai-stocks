@@ -640,9 +640,10 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     await emitAllReady(wrapper)
     ;(wrapper.vm as any).dateStart = '2023-01-01'
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
-    ;(wrapper.vm as any).dirty = false
     const previousResult = { run_id: 'mine-result', metrics: {}, layers: validLayers(), trades: [], equity: [] }
     ;(wrapper.vm as any).strat = previousResult
+    await nextTick() // 先结清进入 operation 前的表单 watcher，模拟下一次真实点击事件
+    ;(wrapper.vm as any).dirty = false
 
     vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail({
       date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'public-score',
@@ -923,6 +924,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     // 进入公开后表单被公开参数覆盖（无买卖方案），补全必填使 validateRunSelection 通过
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
     ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
 
     await (wrapper.vm as any).run()
     await flushPromises()
@@ -953,6 +955,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
     ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
     // getRun 挂起，模拟详情请求在途
     let resolveRun!: (v: any) => void
     vi.mocked(backtestApi.getRun).mockImplementation(
@@ -985,6 +988,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     await enterPublicRun(wrapper)
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
     ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
     // prepareBacktest 挂起
     let resolvePrepare!: (v: any) => void
     vi.mocked(backtestApi.prepareBacktest).mockImplementation(
@@ -1016,6 +1020,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     await enterPublicRun(wrapper)
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
     ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
     // prepareBacktest 挂起后 reject
     let rejectPrepare!: (e: any) => void
     vi.mocked(backtestApi.prepareBacktest).mockImplementation(
@@ -1217,13 +1222,116 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     await nextTick()
     expect((wrapper.vm as any).dirty).toBe(true)
     expect((wrapper.vm as any).runLoadSequence).toBeGreaterThan(seqBefore) // token 已失效（递增≥1）
+    expect((wrapper.vm as any).runningRun).toBe(false)
+    expect((wrapper.vm as any).loading).toBe(false) // 取消旧 operation 后立即释放按钮，不永久转圈
     // 旧 runBacktest 晚到——doRun 校验 token 过期，丢弃写回且不得标「未修改」
     resolveRun({ run_id: 'bt_late', metrics: {}, layers: validLayers(), trades: [], equity: [] })
     await flushPromises()
 
     expect((wrapper.vm as any).strat).toBeNull() // 旧结果未写回
     expect((wrapper.vm as any).dirty).toBe(true) // 保持「已修改」，按钮可再点，不误标未修改
+    expect((wrapper.vm as any).loading).toBe(false)
     expect((wrapper.vm as any).selectedRun).not.toBe('bt_late')
+    wrapper.unmount()
+  })
+
+  it('prepareBacktest pending 期间改参：立即取消整个 operation，旧 prepare 返回后不启动回测（十次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
+    let resolvePrepare!: (v: any) => void
+    vi.mocked(backtestApi.prepareBacktest).mockImplementation(
+      () => new Promise((resolve) => { resolvePrepare = resolve }),
+    )
+    vi.mocked(backtestApi.runBacktest).mockClear()
+
+    void (wrapper.vm as any).run()
+    await flushPromises()
+    expect((wrapper.vm as any).runningRun).toBe(true)
+    ;(wrapper.vm as any).dateEnd = '2025-12-31'
+    await nextTick()
+    expect((wrapper.vm as any).runningRun).toBe(false)
+    expect((wrapper.vm as any).dirty).toBe(true)
+    expect((wrapper.vm as any).loading).toBe(false)
+
+    resolvePrepare({ duplicate: null })
+    await flushPromises()
+    expect(backtestApi.runBacktest).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).dateEnd).toBe('2025-12-31')
+    wrapper.unmount()
+  })
+
+  it('查重确认框 pending 期间改参：确认晚到也不得加载或重跑旧参数（十次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({
+      duplicate: { run_id: 'dup_old', created_at: '2025-01-01 10:00:00' },
+    } as any)
+    let resolveConfirm!: (v: any) => void
+    const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockImplementation(
+      () => new Promise((resolve) => { resolveConfirm = resolve }) as any,
+    )
+    vi.mocked(backtestApi.runBacktest).mockClear()
+    const getRunCalls = vi.mocked(backtestApi.getRun).mock.calls.length
+
+    void (wrapper.vm as any).run()
+    await flushPromises()
+    ;(wrapper.vm as any).topN = 17
+    await nextTick()
+    expect((wrapper.vm as any).runningRun).toBe(false)
+    resolveConfirm('confirm')
+    await flushPromises()
+
+    expect(backtestApi.runBacktest).not.toHaveBeenCalled()
+    expect(vi.mocked(backtestApi.getRun).mock.calls.length).toBe(getRunCalls)
+    expect((wrapper.vm as any).topN).toBe(17)
+    confirmSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('旧运行晚于新运行返回：旧 finally 不得清除新 operation 的 loading 所有权（十次复审 P1-2）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({ duplicate: null } as any)
+    let resolveFirst!: (v: any) => void
+    let resolveSecond!: (v: any) => void
+    vi.mocked(backtestApi.runBacktest)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve }))
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{ id: 'bt_second', run_ref: 'run_ref_second', kind: 'strategy' } as any],
+    })
+
+    void (wrapper.vm as any).run()
+    await flushPromises()
+    ;(wrapper.vm as any).dateStart = '2025-01-01' // 取消第一轮并释放按钮
+    await nextTick()
+    expect((wrapper.vm as any).runningRun).toBe(false)
+    expect((wrapper.vm as any).loading).toBe(false)
+
+    void (wrapper.vm as any).run() // 第二轮成为当前 operation
+    await flushPromises()
+    expect((wrapper.vm as any).runningRun).toBe(true)
+    expect((wrapper.vm as any).loading).toBe(true)
+
+    resolveFirst({ run_id: 'bt_first', metrics: {}, layers: validLayers(), trades: [], equity: [] })
+    await flushPromises()
+    expect((wrapper.vm as any).runningRun).toBe(true)
+    expect((wrapper.vm as any).loading).toBe(true)
+
+    resolveSecond({ run_id: 'bt_second', metrics: {}, layers: validLayers(), trades: [], equity: [] })
+    await flushPromises()
+    expect((wrapper.vm as any).runningRun).toBe(false)
+    expect((wrapper.vm as any).loading).toBe(false)
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_second')
     wrapper.unmount()
   })
 
@@ -1289,6 +1397,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     await enterPublicRun(wrapper)
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
     ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
     // runBacktest 挂起
     let resolveRun!: (v: any) => void
     vi.mocked(backtestApi.runBacktest).mockImplementation(
@@ -1322,6 +1431,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     const { prevResult } = await enterPublicRun(wrapper)
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
     ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
     let resolveRun!: (v: any) => void
     vi.mocked(backtestApi.runBacktest).mockImplementation(
       () => new Promise((resolve) => { resolveRun = resolve }),
@@ -1349,6 +1459,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     await enterPublicRun(wrapper)
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
     ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    await nextTick()
     let rejectRun!: (e: any) => void
     vi.mocked(backtestApi.runBacktest).mockImplementation(
       () => new Promise((_, reject) => { rejectRun = reject }),

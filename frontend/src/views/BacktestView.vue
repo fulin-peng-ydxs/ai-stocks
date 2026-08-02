@@ -356,6 +356,31 @@ type RunViewSnapshot = {
 }
 let beforeExternalRun: RunViewSnapshot | null = null
 let runLoadSequence = 0
+type RunViewOperationKind = 'run' | 'load'
+const activeRunOperation = ref<{ sequence: number; kind: RunViewOperationKind } | null>(null)
+const runningRun = computed(() => activeRunOperation.value?.kind === 'run')
+
+function beginRunViewOperation(kind: RunViewOperationKind): number {
+  const sequence = ++runLoadSequence
+  activeRunOperation.value = { sequence, kind }
+  return sequence
+}
+
+function invalidateRunViewOperation(): void {
+  runLoadSequence += 1
+  activeRunOperation.value = null
+  loading.value = false
+}
+
+function finishRunViewOperation(sequence?: number): void {
+  if (sequence === undefined) {
+    loading.value = false
+    return
+  }
+  if (activeRunOperation.value?.sequence !== sequence) return
+  activeRunOperation.value = null
+  loading.value = false
+}
 
 function snapshotRunView(): RunViewSnapshot {
   return {
@@ -412,14 +437,11 @@ function restoreRunView(snapshot: RunViewSnapshot) {
 // 切换"策略/信号"标签 → 清空下方结果（避免显示与当前模式不符的旧结果）
 // loadingRun 期间由程序设置参数，不触发清空 / 不置脏
 const loadingRun = ref(false)
-// P1-1（九次复审）：拆分「真实回测请求在途」与「程序化恢复参数」两个状态。
-// runningRun=true 表示 runBacktest 已发出、结果未落地；此时用户改任一影响 buildBody 的参数
-// 应立即使该次 operation token 失效（dirty watcher 递增 runLoadSequence），旧结果晚到即 stale 不写回，
-// 且不得把页面标为未修改——否则页面表单是新参数 B、结果却是旧口径 A。
-const runningRun = ref(false)
+// loadingRun 只保护同步的程序化参数应用；网络等待由 activeRunOperation 持有。
+// 用户改任一影响 buildBody 的参数时取消当前 operation 并释放其 loading，旧响应只能静默落库，不能回写页面。
 watch(kind, () => {
   if (loadingRun.value) return
-  runLoadSequence += 1
+  invalidateRunViewOperation()
   beforeExternalRun = null
   strat.value = null; sig.value = null; selectedRun.value = ''; externalRunSummary.value = null
   loadHistory()  // 历史按 kind 分别加载，策略与评分验证不混展
@@ -432,7 +454,7 @@ watch(
   () => {
     if (loadingRun.value) return // 程序化恢复参数：不置脏、不使 token 失效
     dirty.value = true
-    if (runningRun.value) runLoadSequence += 1 // 回测在途时用户改参 → 旧 operation token 立即失效
+    if (activeRunOperation.value) invalidateRunViewOperation()
   },
 )
 watch(() => settings.kind, (value) => { kind.value = value })
@@ -711,12 +733,15 @@ function onScoreSelect() { clearTemp('score') }
 function onScreenSelect() { clearTemp('screen') }
 function onTradeSelect() { clearTemp('trade') }
 
-async function loadHistory(): Promise<boolean> {
+async function loadHistory(sequence?: number): Promise<boolean> {
   historyError.value = ''
   try {
-    runHistory.value = (await listRuns(kind.value, 'mine')).runs
+    const runs = (await listRuns(kind.value, 'mine')).runs
+    if (sequence !== undefined && sequence !== runLoadSequence) return false
+    runHistory.value = runs
     return true
   } catch (error) {
+    if (sequence !== undefined && sequence !== runLoadSequence) return false
     historyError.value = getErrorMessage(error, '历史回测加载失败')
     return false
   }
@@ -855,9 +880,8 @@ function applyRunDetail(id: string, r: Awaited<ReturnType<typeof fetchRunDetail>
 
 async function loadRun(id: string, summary?: RunSummary) {
   if (!id) return
-  const sequence = ++runLoadSequence
+  const sequence = beginRunViewOperation('load')
   loading.value = true
-  loadingRun.value = true
   nextRunSourceRef.value = ''
   resultError.value = ''
   strat.value = null
@@ -867,6 +891,7 @@ async function loadRun(id: string, summary?: RunSummary) {
   try {
     const r = await fetchRunDetail(id)
     if (sequence !== runLoadSequence) return
+    loadingRun.value = true
     applyRunDetail(id, r, summary)
     clearDirtySoon()  // 载入成功 → 按钮置灰（loadingRun 保持到 nextTick，避免参数 watcher 误置脏）
   } catch (e) {
@@ -876,7 +901,7 @@ async function loadRun(id: string, summary?: RunSummary) {
     ElMessage.error(resultError.value)
     loadingRun.value = false
   } finally {
-    if (sequence === runLoadSequence) loading.value = false
+    finishRunViewOperation(sequence)
   }
 }
 
@@ -944,12 +969,12 @@ async function publishRunVisibility(visibility: Visibility) {
 async function reuseCurrentRunParams() {
   const runRef = activeRunRef.value
   if (!runRef) return
-  const sequence = ++runLoadSequence
+  const sequence = beginRunViewOperation('load')
   loading.value = true
-  loadingRun.value = true
   try {
     const r = await getRun(runRef)
     if (sequence !== runLoadSequence) return
+    loadingRun.value = true
     applyRunParams(r.run, selectedRunSummary.value)
     nextRunSourceRef.value = r.run.run_ref || runRef
     if (r.run.kind === 'signal' || r.run.kind === 'score_check') {
@@ -968,7 +993,7 @@ async function reuseCurrentRunParams() {
     ElMessage.error((e as Error).message || '复用参数失败')
     loadingRun.value = false
   } finally {
-    if (sequence === runLoadSequence) loading.value = false
+    finishRunViewOperation(sequence)
   }
 }
 
@@ -1000,8 +1025,7 @@ function commitMineRun() {
 }
 
 function clearExternalRun() {
-  runLoadSequence += 1
-  loading.value = false
+  invalidateRunViewOperation()
   loadingRun.value = false
   externalRunSummary.value = null
   resultError.value = ''
@@ -1069,12 +1093,12 @@ async function onRunRerunDone(result: unknown) {
   // P1-1（五次复审）：先成功获取新 mine 详情，再原子执行「应用详情 + 退出公开查看态 + 选中」。
   // 详情加载失败时不动 externalRunSummary/beforeExternalRun，用户仍可关闭公开查看恢复原现场。
   const key = runKey(target)
-  const sequence = ++runLoadSequence
+  const sequence = beginRunViewOperation('load')
   loading.value = true
-  loadingRun.value = true
   try {
     const detail = await fetchRunDetail(key)
     if (sequence !== runLoadSequence) return
+    loadingRun.value = true
     commitMineRun() // 详情已取到 → 原子提交：清公开摘要+进入前快照，再应用新结果
     selectedRun.value = key
     applyRunDetail(key, detail, target)
@@ -1084,7 +1108,7 @@ async function onRunRerunDone(result: unknown) {
     ElMessage.error(getErrorMessage(e, '重跑结果载入失败，请稍后从历史记录选择'))
     loadingRun.value = false
   } finally {
-    if (sequence === runLoadSequence) loading.value = false
+    finishRunViewOperation(sequence)
   }
 }
 
@@ -1242,13 +1266,9 @@ async function run() {
   // P1-1（七次复审）：整个 run() 作为一次统一 operation token——发起 prepareBacktest 前即建立序列。
   // prepare 请求/查重确认框 pending 期间，用户关闭公开查看或切换历史会递增 runLoadSequence；
   // 之后每个写状态/发请求的节点都校验，旧操作晚到即弃，不得覆盖新页面状态（含不得用旧参数 doRun 落库）。
-  const sequence = ++runLoadSequence
-  // 以「保存时的表单」冻结回测口径：若表单含加载查看的临时只读方案，保存剔除后 profileId 会变，
-  // 不能让该变化触发 dirty（取消运行）；loadingRun 只覆盖 saveParams 的同步窗口（守卫同步参数 watcher），
-  // 不贯穿 runBacktest 在途期——在途期由 runningRun 标记，用户改参须置脏并使 token 失效（九次复审 P1-1）。
-  loadingRun.value = true
+  const sequence = beginRunViewOperation('run')
+  // 保存偏好不修改表单 ref，无需占用程序化参数静默状态；operation 从 prepare 开始覆盖到历史刷新结束。
   saveParams()
-  loadingRun.value = false // 同步窗口结束：此后用户改参走正常置脏/token 失效逻辑
   const frozen = buildBody()
   try {
     const pre = await prepareBacktest(body)
@@ -1266,17 +1286,17 @@ async function run() {
         choice = act === 'cancel' ? 'rerun' : 'abort' // cancel=重新回测；关闭/Esc=放弃
       }
       if (sequence !== runLoadSequence) return // 确认框等待期间页面已切换，丢弃本次操作
-      if (choice === 'abort') { loadingRun.value = false; return }
+      if (choice === 'abort') { finishRunViewOperation(sequence); return }
       if (choice === 'load') {
         // P1-1（五次复审）：先成功获取该 mine 历史详情，再原子执行「应用详情 + 退出公开查看态」。
         // P1-1（六次复审）：沿用 run() 的 operation token——详情请求 pending 期间页面切换会递增序列，
         // 晚到响应在成功/异常/finally 写状态前校验，过期即弃，不覆盖当前页面。
         const did = pre.duplicate.run_id
         loading.value = true
-        loadingRun.value = true
         try {
           const detail = await fetchRunDetail(did)
           if (sequence !== runLoadSequence) return
+          loadingRun.value = true
           commitMineRun() // 详情已取到 → 原子提交：清公开摘要+进入前快照
           // P1-2（六次复审）：选中 key 用 opaque run_ref（与历史下拉 option value 一致），
           // 不写后端内部 id——否则 selectedRun 匹配不到 option，下拉显示 bt_.../内部 ID。
@@ -1291,9 +1311,9 @@ async function run() {
           ElMessage.error(getErrorMessage(e, '历史回测载入失败'))
         } finally {
           if (sequence === runLoadSequence) {
-            loading.value = false
             nextTick(() => { loadingRun.value = false })
           }
+          finishRunViewOperation(sequence)
         }
         return
       }
@@ -1314,16 +1334,14 @@ async function run() {
 // 列表刷新后按 id 找到新记录取 runKey；刷新失败或暂缺新项时保持未选中并提示，不把内部 ID 填进下拉。
 async function doRun(body: RunParams, sequence?: number) {
   const stale = () => sequence !== undefined && sequence !== runLoadSequence
-  // 参数已在 run() 保存并冻结，这里不再重复保存
+  // 参数已在 run() 保存并冻结；activeRunOperation 从 prepare 起持续持有，直到历史刷新结束或用户取消。
   loading.value = true
-  runningRun.value = true // 真实回测请求在途：用户改参立即使本 token 失效
   runTime.value = ''
   fromHistory.value = false
   resultError.value = ''
   resultErrorContext.value = 'run'
   try {
     const res = (await runBacktest(body)) as StrategyResult | Layers
-    runningRun.value = false // 请求已返回：后续用户改参只置脏，token 失效与否由 stale 决定
     if (stale()) return // 回测请求 pending 期间页面已切换：丢弃本次写回（后台记录仍落库，留待刷新）
     // 先取内部 id 局部持有，loadHistory 后按 id 归一化为 run_ref 再选中
     const internalId = body.kind === 'strategy'
@@ -1336,7 +1354,7 @@ async function doRun(body: RunParams, sequence?: number) {
       sig.value = res as Layers
       strat.value = null
     }
-    const refreshed = await loadHistory() // 新结果进历史列表
+    const refreshed = await loadHistory(sequence) // 新结果进历史列表；过期列表响应也不得覆盖当前 kind
     if (stale()) return // loadHistory 期间页面又切换：不选中、不清公开快照
     commitMineRun() // mine 新结果成为当前结果 → 退出公开查看态（清公开摘要+进入前快照）
     // 选中用 run_ref（下拉 option value），不写内部 id
@@ -1354,17 +1372,12 @@ async function doRun(body: RunParams, sequence?: number) {
     // 出结果 → 按钮置灰；但若用户运行期间改过参数（token 已失效），保持 dirty=true，不误标「未修改」
     if (sequence === undefined || sequence === runLoadSequence) dirty.value = false
   } catch (e) {
-    runningRun.value = false
     if (stale()) return // 旧请求失败：不在当前页面显示过期错误
     resultErrorContext.value = 'run'
     resultError.value = getErrorMessage(e, '回测失败')
     ElMessage.error(resultError.value)
   } finally {
-    runningRun.value = false // 兜底：任何出口都复位在途标记
-    if (!stale()) {
-      loading.value = false
-      // loadingRun 已在 run() 的 saveParams 同步窗口复位，这里不再触碰（在途期由 runningRun 标记）
-    }
+    finishRunViewOperation(sequence)
   }
 }
 
@@ -1820,7 +1833,7 @@ async function openTradeChart(row: TradeRow) {
 
       <!-- 运行按钮 + 紧贴其下的执行说明。dirty=蓝可点；出结果/载入历史后置灰；改参恢复 -->
       <div class="run-row">
-        <el-button v-permission="'backtest:run'" :type="dirty ? 'primary' : 'info'" size="large" :loading="loading"
+        <el-button v-permission="'backtest:run'" :type="dirty ? 'primary' : 'info'" size="large" :loading="loading || runningRun"
                    :disabled="!dirty" @click="run">
           {{ dirty ? '运行回测' : '已是最新结果' }}
         </el-button>
