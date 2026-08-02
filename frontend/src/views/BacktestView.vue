@@ -1230,6 +1230,10 @@ async function run() {
   if (!dateStart.value || !dateEnd.value) return ElMessage.warning('请选择回测区间')
   if (!validateRunSelection()) return
   const body = buildBody()
+  // P1-1（七次复审）：整个 run() 作为一次统一 operation token——发起 prepareBacktest 前即建立序列。
+  // prepare 请求/查重确认框 pending 期间，用户关闭公开查看或切换历史会递增 runLoadSequence；
+  // 之后每个写状态/发请求的节点都校验，旧操作晚到即弃，不得覆盖新页面状态（含不得用旧参数 doRun 落库）。
+  const sequence = ++runLoadSequence
   // 以「保存时的表单」冻结回测口径：若表单含加载查看的临时只读方案，保存剔除后 profileId 会变，
   // 不能让该变化触发 dirty（取消运行）；loadingRun 让参数 watcher 在本轮保存/恢复期间不置脏
   loadingRun.value = true
@@ -1237,6 +1241,7 @@ async function run() {
   const frozen = buildBody()
   try {
     const pre = await prepareBacktest(body)
+    if (sequence !== runLoadSequence) return // prepare 晚到：页面已切换，丢弃本次操作
     if (pre.duplicate) {
       let choice: 'load' | 'rerun' | 'abort' = 'abort'
       try {
@@ -1249,13 +1254,13 @@ async function run() {
       } catch (act) {
         choice = act === 'cancel' ? 'rerun' : 'abort' // cancel=重新回测；关闭/Esc=放弃
       }
+      if (sequence !== runLoadSequence) return // 确认框等待期间页面已切换，丢弃本次操作
       if (choice === 'abort') { loadingRun.value = false; return }
       if (choice === 'load') {
         // P1-1（五次复审）：先成功获取该 mine 历史详情，再原子执行「应用详情 + 退出公开查看态」。
-        // P1-1（六次复审）：全程挂 runLoadSequence——请求 pending 期间用户关闭公开查看/切换历史
-        // 会递增序列，本分支晚到响应在成功/异常/finally 写状态前校验，过期即弃，不覆盖当前页面。
+        // P1-1（六次复审）：沿用 run() 的 operation token——详情请求 pending 期间页面切换会递增序列，
+        // 晚到响应在成功/异常/finally 写状态前校验，过期即弃，不覆盖当前页面。
         const did = pre.duplicate.run_id
-        const sequence = ++runLoadSequence
         loading.value = true
         loadingRun.value = true
         try {
@@ -1283,7 +1288,11 @@ async function run() {
       }
       // rerun → 继续，runBacktest 落库时覆盖同签名旧记录
     }
-  } catch { /* 查重失败不阻塞，直接回测 */ }
+  } catch {
+    if (sequence !== runLoadSequence) return // 查重失败但页面已切换：不得因 catch 路径继续 doRun
+    /* 查重失败不阻塞，直接回测 */
+  }
+  if (sequence !== runLoadSequence) return // 进入 doRun 前再校验：页面已切换则不得用旧参数落库
   await doRun(frozen) // 用冻结口径跑；doRun 末尾清脏并复位 loadingRun
 }
 

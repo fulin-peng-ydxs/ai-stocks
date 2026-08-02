@@ -980,6 +980,101 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     wrapper.unmount()
   })
 
+  it('prepareBacktest pending 期间切换历史：返回无重复后不得调用 runBacktest（七次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    // prepareBacktest 挂起
+    let resolvePrepare!: (v: any) => void
+    vi.mocked(backtestApi.prepareBacktest).mockImplementation(
+      () => new Promise((resolve) => { resolvePrepare = resolve }),
+    )
+    vi.mocked(backtestApi.runBacktest).mockClear()
+
+    void (wrapper.vm as any).run() // 不 await——prepare pending
+    await flushPromises()
+    // pending 期间用户切换历史记录（选中 + loadRun 递增序列）
+    vi.mocked(backtestApi.getRun).mockReset().mockResolvedValue(getRunDetail(
+      { date_start: '2025-01-01', date_end: '2025-06-30', score_profile_id: 'other_score' },
+      { id: 'other', run_ref: 'run_ref_other' },
+    ))
+    ;(wrapper.vm as any).selectedRun = 'run_ref_other'
+    await (wrapper.vm as any).loadRun('run_ref_other')
+    await flushPromises()
+    // 旧 prepare 晚到返回「无重复」——序列已过期，不得进入 doRun
+    resolvePrepare({ duplicate: null })
+    await flushPromises()
+
+    expect(backtestApi.runBacktest).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_other') // 仍是用户切换的历史
+    wrapper.unmount()
+  })
+
+  it('prepareBacktest pending 期间关闭公开查看：请求失败也不得因 catch 路径调用 doRun（七次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    // prepareBacktest 挂起后 reject
+    let rejectPrepare!: (e: any) => void
+    vi.mocked(backtestApi.prepareBacktest).mockImplementation(
+      () => new Promise((_, reject) => { rejectPrepare = reject }),
+    )
+    vi.mocked(backtestApi.runBacktest).mockClear()
+
+    void (wrapper.vm as any).run()
+    await flushPromises()
+    // pending 期间用户关闭公开查看（递增序列、恢复快照）
+    ;(wrapper.vm as any).clearExternalRun()
+    await flushPromises()
+    const beforeLate = (wrapper.vm as any).dateStart
+    // 旧 prepare 晚到失败——catch 路径校验序列过期，不得继续 doRun
+    rejectPrepare(new Error('网络瞬时失败'))
+    await flushPromises()
+
+    expect(backtestApi.runBacktest).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).dateStart).toBe(beforeLate) // 恢复的现场未被覆盖
+    wrapper.unmount()
+  })
+
+  it('run 已开始后再次切换状态：旧 prepare 晚到不得改变 loading/结果/选中项（七次复审 P1-1）', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    let resolvePrepare!: (v: any) => void
+    vi.mocked(backtestApi.prepareBacktest).mockImplementation(
+      () => new Promise((resolve) => { resolvePrepare = resolve }),
+    )
+    vi.mocked(backtestApi.runBacktest).mockClear()
+
+    void (wrapper.vm as any).run()
+    await flushPromises()
+    // 用户切到另一条历史（选中 + loadRun）
+    vi.mocked(backtestApi.getRun).mockReset().mockResolvedValue(getRunDetail(
+      { date_start: '2025-03-01', date_end: '2025-08-31', score_profile_id: 'other_score' },
+      { id: 'other', run_ref: 'run_ref_other' },
+    ))
+    ;(wrapper.vm as any).selectedRun = 'run_ref_other'
+    await (wrapper.vm as any).loadRun('run_ref_other')
+    await flushPromises()
+    const stratBefore = (wrapper.vm as any).strat
+    const loadingBefore = (wrapper.vm as any).loading
+    const getRunCallsBefore = vi.mocked(backtestApi.getRun).mock.calls.length
+    // 旧 prepare 晚到返回「有重复」——确认框都不应再影响当前页（序列过期直接 return）
+    resolvePrepare({ duplicate: { run_id: 'dup_run', created_at: '2024-07-01 10:00:00' } })
+    await flushPromises()
+
+    expect(backtestApi.runBacktest).not.toHaveBeenCalled()
+    // prepare 晚到后不得再发起新的详情请求（序列过期直接 return，未进查重 load 分支）
+    expect(vi.mocked(backtestApi.getRun).mock.calls.length).toBe(getRunCallsBefore)
+    expect((wrapper.vm as any).strat).toBe(stratBefore)
+    expect((wrapper.vm as any).loading).toBe(loadingBefore)
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_other')
+    wrapper.unmount()
+  })
+
   it('loadRun 冻结 resultScoreRef 并驱动 openDayBoard 用同一评分口径（P1-2）', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)

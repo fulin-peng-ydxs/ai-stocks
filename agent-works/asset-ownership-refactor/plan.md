@@ -304,7 +304,7 @@
 ### 阶段 5 · 回测专属接入
 
 #### 6.8 任务 T5：回测页选择器 + 历史浏览 + 同步重跑
-- 状态：已完成（2026-08-01 落地；经 2026-08-01/08-02 六轮 Request Changes 复审逐项整改后重验通过，第四次 5 P1+2 P2 见 §6.8.12、第五次 1 P1+2 P2 见 §6.8.13、第六次 2 P1+1 P2 见 §6.8.14）　依赖：T3,T2C
+- 状态：已完成（2026-08-01 落地；经 2026-08-01/08-02 七轮 Request Changes 复审逐项整改后重验通过，第四次 5 P1+2 P2 见 §6.8.12、第五次 1 P1+2 P2 见 §6.8.13、第六次 2 P1+1 P2 见 §6.8.14、第七次 1 P1 见 §6.8.15）　依赖：T3,T2C
 - 涉及（按组件/函数定位，不用易漂移行号）：`BacktestView.vue` 三个方案选择器（test-id `backtest-score-select`/`backtest-screen-select`/`backtest-trade-select`）、历史区「浏览公开回测」抽屉（`AssetSearchDrawer kind="backtest"`）与 `onRunLoaded/onRunRerunDone/run()/doRun/loadRun/fetchRunDetail/applyRunDetail`；**后端** `services/backtest_service.py::list_runs/count_runs` + `api/backtest.py::list_runs`
 - 目标：**3 个方案选择器**（评分/选股/买卖）各带搜索入口（方案有系统内置段）+ 历史回测浏览入口（tenant/public，无系统内置，默认全体）+「复用参数重跑」（同步，按钮 loading）。
 - 操作：**4 个入口**（3 方案 + 1 历史）按 §7.2；方案选择器临时只读；历史浏览只读，仅同步重跑产生自己的新 run。
@@ -441,6 +441,12 @@
 - 【P1-2·已整改】查重加载成功后把内部 run ID 写进下拉框：后端查重接口返回数据库内部 `id`（`pre.duplicate.run_id`），前端直接赋给 `selectedRun`；历史下拉正常 option 用 opaque `run_ref`，`selectedRun` 匹配不到 option 会显示 `bt_...`/内部 ID 或无对应选项（违反 opaque 化与「不显示内部 ref」口径）。**已修**：`const key = detail.run.run_ref || did`，并经 `runHistory` 归一化（优先列表里同 run_ref 的 option value）后赋 `selectedRun`；测试断言改 `run_ref_dup` 并断言不等于内部 id `dup_run`。
 - 【P2-1·已整改】计划状态/测试结论提前标绿：`:307` T5 状态随本节修复后登记六轮复审闭环；`:308` 涉及位置由失效历史行号（`:1036/:1075/:1118/:955-978`）改为组件 test-id/函数名定位；§6.8.13 的「原子闭环」结论以本节晚到响应修复 + run_ref 选中新测试为准，原内部 id 断言已更正。
 
+#### 6.8.15 T5 七次复审整改（2026-08-02，第七次 Request Changes 后逐项修复重验）
+
+- **状态：已完成代码、回归测试、构建与文档同步；本轮纯前端（未改后端）。**
+- 第七次复审确认第六次修复了「详情请求 pending」场景，但序列守卫覆盖得太晚，仍有 1 P1（阻塞）。核实属实、整改并重验。**整改后真实验证**：前端全量 **80 文件 580/580、退出码 0**（无 unhandled errors）、`npm run build`（vue-tsc + Vite）通过。
+- 【P1-1·已整改】`prepareBacktest` 晚到仍可覆盖新页面状态：`run()` 在调 `prepareBacktest()` 前未建序列，序列守卫直到选「加载历史」后才建立；非重复路径直接 `doRun(frozen)` 不检查期间页面是否已切换。可复现：公开回测 A 点运行 → prepare pending → 用户关闭公开查看/切换历史（序列已递增）→ 旧 prepare 晚到返回「无重复」或失败 → 旧操作仍进 `doRun(frozen)` 覆盖刚选的历史结果，甚至用旧参数落一条新回测记录。**已修**：整个 `run()` 作为统一 operation token——发起 `prepareBacktest()` 前 `const sequence = ++runLoadSequence`，并在四个节点校验：prepare 返回后、查重确认框返回后、进入查重详情请求前（load 分支沿用同一 token，不再另建）、非重复/查重失败准备 `doRun()` 前（含 catch 路径）。过期即 return，不得覆盖页面也不得用旧参数落库。**回归测试** 3 例：prepare pending→切换历史→返回无重复不调 `runBacktest`；prepare pending→关闭公开查看→请求失败不因 catch 路径 doRun；run 开始后旧 prepare 晚到不改变 loading/结果/选中项、不再发起新详情请求。
+
 ### 阶段 6 · 全链路验收
 
 #### 6.9 任务 T6：验收、测试与构建
@@ -475,6 +481,7 @@
 > **前端（2026-08-02，§6.8.11 全量复核统一整改）**：新增覆盖公开查看关闭恢复、历史请求乱序、加载中关闭、评分验证来源审计、mine+公开买卖展示/运行同口径、榜单清空废弃迟到响应、方案列表失败重试和交易日后续恢复；定向 **56/56**，Vitest 全量 **80 文件 568/568、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。5181 `debug_normal` 真实验证：榜单默认交易日 `2026-07-31`，系统内置「默认趋势分 v1」加载后直接选中并自动展示 Top 50 与“已缓存”，控制台 error 为空。公开回测抽屉实际为 0 条，故真实“加载→关闭恢复”和公开评分验证页面复用链路为**未验证**，由新增页面级状态/竞态回归覆盖。本轮未改后端；复核阶段相关后端定向 **84 passed**，服务保持 `/api/health=200`。
 > **前端（2026-08-02，§6.8.13 第五次复审 1 P1+2 P2 统一整改）**：Vitest 全量 **80 文件 576/576、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。本轮纯前端 + 类型契约（未改后端逻辑，后端测试不受影响）。`BacktestView.spec.ts` 增至 **34/34**（新增 describe「公开查看态原子提交 + 冻结评分口径」5 例：抽屉重跑详情失败可恢复公开 A、详情成功则公开摘要+快照同清、查重 load 失败不销毁快照/成功同清、loadRun→resultScoreRef→openDayBoard computeBoard 第三参断言、doRun 冻结 body 评分+快照恢复 resultScoreRef）；`BacktestView.real-component.spec.ts` 增至 **5/5**（新增 P2-2 列表缺新项兜底、name 空串中文兜底）。类型契约收紧（`AssetCopyResult.name/version` 必填 + 三个复制 API 同步）经 vue-tsc 全量通过。浏览器侧：公开回测抽屉仍为 0 条，真实「重跑落库但详情加载失败」链路浏览器未验证，由上述失败/成功分支页面级测试覆盖。
 > **前端（2026-08-02，§6.8.14 第六次复审 2 P1+1 P2 统一整改）**：Vitest 全量 **80 文件 577/577、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。本轮纯前端（未改后端）。`BacktestView.spec.ts` 增至 **35/35**：查重 load 成功分支断言改 `run_ref_dup` 且不等于内部 id `dup_run`（P1-2）；新增「查重加载 pending 期间切换历史/关闭公开：晚到响应不得覆盖页面、不得清公开快照」（P1-1 序列守卫）。P2-1 文档：T5 状态行随本节登记六轮复审闭环、涉及位置改 test-id/函数名定位、§6.8.13 提前结论以本节为准更正。浏览器侧：公开回测 0 条，查重 load 真实链路浏览器未验证，由上述页面级测试覆盖。
+> **前端（2026-08-02，§6.8.15 第七次复审 1 P1 统一整改）**：Vitest 全量 **80 文件 580/580、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。本轮纯前端（未改后端）。`BacktestView.spec.ts` 增至 **38/38**：新增 3 例 prepareBacktest 序列守卫——prepare pending→切换历史→返回无重复不调 runBacktest；prepare pending→关闭公开查看→请求失败不因 catch 路径 doRun；run 开始后旧 prepare 晚到不改变 loading/结果/选中项、不再发起新详情请求。整改把整个 run() 作为统一 operation token，在 prepare 返回后/查重确认框返回后/进入查重详情前/doRun 前四节点校验 runLoadSequence。浏览器侧：公开回测 0 条，prepare 晚到真实链路浏览器未验证，由上述页面级测试覆盖。
 > **前后端（2026-08-02，§6.8.12 第四次复审 5 P1+2 P2 统一整改）**：Vitest 全量 **80 文件 569/569、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。后端 8 文件 **61 passed**（停服跑、已 `./start.sh dev` 重启 `/api/health=200`），含新增 `test_backtest_review4_failclosed.py` **7/7**（P1-4 五例：不存在/跨租户私有/失效 screen、score、trade ref 均 `ValueError` 拒绝且不落库；P1-5 两例：同秒 200 次 `_new_id` 全唯一、`_persist_run` 状态转换 UPDATE 单行不丢记录）。前端 `BacktestView.real-component.spec.ts` 增至 **3/3**（新增 P1-3「复制成功但 mine 刷新失败不写 opaque ref」）。本轮改动前端 2 文件（BacktestView/AssetProfileSelect）+ 后端 1 文件（backtest_service）+ 测试 2 文件。浏览器侧：公开回测抽屉仍为 0 条，真实「加载→复用→运行→再次查看/关闭」与「复制成功但刷新失败」链路浏览器未验证，由上述前端真实组件测试 + 后端 fail-closed/唯一性回归覆盖。
 > **前端（2026-08-02，§6.8.6 回测控件语义收敛）**：`BacktestView.spec.ts` **20/20**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **552/552、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖页头仅请求 `source=mine`、不再渲染重复来源下拉、公开浏览入口保留、选股方案空值语义更新，以及重跑完成后单次刷新并按 `run_id` 精确选中。5181 真实页面验证：页头只显示「回测记录」和精确记录选择器，未再出现「全部/我的/租户公开/全体公开」来源下拉；空记录显示「暂无我的回测」；选股方案显示「不使用选股方案（默认）」；点击「浏览公开回测」后抽屉正常显示「租户公开/全体公开」来源段及空态。
 > **前端（2026-08-02，§6.8.7 控件语义复核整改）**：`BacktestView.spec.ts` **23/23**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **555/555、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖重跑刷新失败/目标缺失均不误选旧记录、公开加载使用独立只读快照且不污染 mine 候选、失效偏好提示聚合去重、mine 列表限制最近 100 条。5181 真实页面验证：页头仍只显示 mine 记录选择器，控件 title 明示最近 100 条；失效评分/买卖偏好合并为**一次**提示；公开抽屉的租户/全体来源段及空态正常。本地无公开回测，故「真实公开行加载 → 选择器外只读快照」浏览器链路记为**未验证**，由页面级真实状态测试覆盖。
