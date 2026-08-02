@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import ElementPlus, { ElMessage } from 'element-plus'
+import ElementPlus, { ElMessage, ElMessageBox } from 'element-plus'
 import { defineComponent, h, nextTick, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -69,10 +69,15 @@ vi.mock('@/api/tradeProfile', () => ({
   copyTradeProfile: vi.fn(),
 }))
 
+vi.mock('@/api/board', () => ({
+  computeBoard: vi.fn(async () => ({ list: [] })),
+}))
+
 import * as backtestApi from '@/api/backtest'
 import * as screeningApi from '@/api/screening'
 import * as scoreApi from '@/api/scoreProfile'
 import * as tradeApi from '@/api/tradeProfile'
+import * as boardApi from '@/api/board'
 import BacktestView from '@/views/BacktestView.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
@@ -832,6 +837,151 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     const drawer = runDrawer(wrapper)!
     expect(drawer.props('canBrowse')).toBe(false)
     expect(wrapper.find('[data-testid="backtest-browse-open"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+// 五次复审 P1-1：commitMineRun 不得先于新 mine 详情加载成功提交；P1-2：resultScoreRef 冻结口径驱动 openDayBoard。
+describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次复审 P1-1/P1-2）', () => {
+  // 进入「正在查看公开回测 A」现场：进入前 mine 现场被快照，返回进入前快照断言基线。
+  async function enterPublicRun(wrapper: VueWrapper) {
+    await emitAllReady(wrapper)
+    ;(wrapper.vm as any).dateStart = '2023-01-01'
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    const prevResult = { run_id: 'mine-before', metrics: {}, layers: validLayers(), trades: [], equity: [] }
+    ;(wrapper.vm as any).strat = prevResult
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'public-score' },
+      { id: 'public-a', run_ref: 'run_ref_public_a' },
+    ))
+    runDrawer(wrapper)!.vm.$emit('load', {
+      id: 'public-a', run_ref: 'run_ref_public_a', kind: 'strategy',
+      score_profile_name: '公开评分A', readonly: true, source: 'public',
+    })
+    await flushPromises()
+    expect((wrapper.vm as any).externalRunSummary?.run_ref).toBe('run_ref_public_a')
+    return { prevResult }
+  }
+
+  it('抽屉重跑成功但 mine 详情加载失败：不销毁公开快照，仍可关闭恢复公开A进入前现场（P1-1）', async () => {
+    const wrapper = await mountView()
+    const { prevResult } = await enterPublicRun(wrapper)
+    // 重跑落库 + 列表刷新成功，但取新 mine 详情失败
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{ id: 'new_run', run_ref: 'run_ref_new', kind: 'strategy' } as any],
+    })
+    vi.mocked(backtestApi.getRun).mockRejectedValue(new Error('网络瞬时失败'))
+    const errSpy = vi.spyOn(ElMessage, 'error')
+
+    runDrawer(wrapper)!.vm.$emit('rerunDone', { run_id: 'new_run' }, { id: 'r9' })
+    await flushPromises()
+
+    // 公开摘要与进入前快照都未被清除；未选中新记录
+    expect((wrapper.vm as any).externalRunSummary?.run_ref).toBe('run_ref_public_a')
+    expect((wrapper.vm as any).selectedRun).toBe('')
+    expect(errSpy).toHaveBeenCalled()
+    // 关闭公开查看 → 恢复进入前 mine 现场（快照仍在）
+    ;(wrapper.vm as any).clearExternalRun()
+    await flushPromises()
+    expect((wrapper.vm as any).externalRunSummary).toBeNull()
+    expect((wrapper.vm as any).dateStart).toBe('2023-01-01')
+    expect((wrapper.vm as any).scoreProfileId).toBe('avr_score_1')
+    expect((wrapper.vm as any).strat).toStrictEqual(prevResult)
+    wrapper.unmount()
+  })
+
+  it('抽屉重跑成功且详情加载成功：原子提交——公开摘要与进入前快照同时清除、选中新 mine（P1-1）', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{ id: 'new_run', run_ref: 'run_ref_new', kind: 'strategy', score_profile_name: '我的评分' } as any],
+    })
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-02-01', date_end: '2024-08-31', score_profile_id: 'avr_score_1' },
+      { id: 'new_run', run_ref: 'run_ref_new' },
+    ))
+
+    runDrawer(wrapper)!.vm.$emit('rerunDone', { run_id: 'new_run' }, { id: 'r9' })
+    await flushPromises()
+
+    expect((wrapper.vm as any).externalRunSummary).toBeNull()
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_new')
+    // 已进入新 mine 结果：公开快照已清，再 clearExternalRun 不会再恢复到进入前旧现场
+    expect((wrapper.vm as any).dateStart).toBe('2024-02-01')
+    wrapper.unmount()
+  })
+
+  it('查重选择加载 mine：详情加载失败不销毁公开快照；成功则同清公开摘要与快照（P1-1 查重路径）', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    // 失败分支：prepare 命中重复 → 选「加载历史」→ getRun 失败
+    vi.mocked(backtestApi.prepareBacktest).mockResolvedValue({
+      duplicate: { run_id: 'dup_run', created_at: '2024-07-01 10:00:00' },
+    } as any)
+    vi.mocked(backtestApi.getRun).mockRejectedValue(new Error('网络瞬时失败'))
+    const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+    // 进入公开后表单被公开参数覆盖（无买卖方案），补全必填使 validateRunSelection 通过
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+
+    await (wrapper.vm as any).run()
+    await flushPromises()
+    expect((wrapper.vm as any).externalRunSummary?.run_ref).toBe('run_ref_public_a')
+    expect((wrapper.vm as any).selectedRun).toBe('')
+
+    // 成功分支：getRun 恢复成功 → 原子提交
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-03-01', date_end: '2024-09-30', score_profile_id: 'avr_score_1' },
+      { id: 'dup_run', run_ref: 'run_ref_dup' },
+    ))
+    await (wrapper.vm as any).run()
+    await flushPromises()
+    expect((wrapper.vm as any).externalRunSummary).toBeNull()
+    expect((wrapper.vm as any).selectedRun).toBe('dup_run')
+    confirmSpy.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('loadRun 冻结 resultScoreRef 并驱动 openDayBoard 用同一评分口径（P1-2）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    // 载入一条 score_profile_id=avr_score_frozen 的历史 run
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_frozen' },
+      { id: 'r1', run_ref: 'run_ref_1' },
+    ))
+    await (wrapper.vm as any).loadRun('run_ref_1')
+    await flushPromises()
+    expect((wrapper.vm as any).resultScoreRef).toBe('avr_score_frozen')
+
+    vi.mocked(boardApi.computeBoard).mockResolvedValue({ list: [] } as any)
+    await (wrapper.vm as any).openDayBoard('2024-03-05', '000001.SZ')
+    await flushPromises()
+    // 第三参 = 冻结的评分口径（非空、非默认）
+    expect(vi.mocked(boardApi.computeBoard).mock.calls[0][2]).toBe('avr_score_frozen')
+    wrapper.unmount()
+  })
+
+  it('doRun 成功用冻结 body 评分写 resultScoreRef 并退出公开查看态；快照恢复 resultScoreRef（P1-2）', async () => {
+    const wrapper = await mountView()
+    await enterPublicRun(wrapper)
+    // 直接驱动 doRun（被测单元）：成功后用冻结 body 的评分写 resultScoreRef、退出公开查看态
+    vi.mocked(backtestApi.runBacktest).mockResolvedValue({
+      run_id: 'fresh_run', metrics: {}, layers: validLayers(), trades: [], equity: [],
+    } as any)
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({ runs: [] })
+
+    await (wrapper.vm as any).doRun({ kind: 'strategy', date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_fresh', trade_profile_id: 'avr_trade_1' })
+    await flushPromises()
+    expect((wrapper.vm as any).resultScoreRef).toBe('avr_score_fresh')
+    expect((wrapper.vm as any).externalRunSummary).toBeNull() // doRun 成功退出公开查看态
+
+    // 快照恢复 resultScoreRef：构造快照改值后恢复
+    const snap = (wrapper.vm as any).snapshotRunView()
+    ;(wrapper.vm as any).resultScoreRef = 'avr_score_other'
+    ;(wrapper.vm as any).restoreRunView(snap)
+    await flushPromises()
+    expect((wrapper.vm as any).resultScoreRef).toBe('avr_score_fresh')
     wrapper.unmount()
   })
 })

@@ -47,7 +47,7 @@ function mountSelect(extra: Record<string, unknown> = {}, permissions: string[] 
       assetLabel: '筛选方案',
       fetchMine,
       browse: async () => ({ items: [], total: 0, page: 1, page_size: 20, source: 'preset' }),
-      copyItem: async () => ({ id: 'x', version: 1 }),
+      copyItem: async () => ({ id: 'x', name: '筛选方案 副本', version: 1 }),
       copyPermission: 'screen-profile:save',
       ...extra,
     },

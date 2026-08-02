@@ -100,7 +100,7 @@ export function setTradeProfileVisibility(
 export function copyTradeProfile(
   pid: string,
   body?: { name?: string },
-): Promise<{ id: string; profile_ref?: string; name?: string; version: number }> {
+): Promise<{ id: string; profile_ref?: string; name: string; version: number }> {
   return http.post(`/trade-profiles/${pid}/copy`, body ?? {})
 }
 

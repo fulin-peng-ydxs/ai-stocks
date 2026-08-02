@@ -197,4 +197,37 @@ describe('BacktestView + 真实 AssetProfileSelect（递归契约 + 完整 onDra
     expect((score.vm as any).selectedItem?.name).not.toContain('avr_score_copy')
     wrapper.unmount()
   })
+
+  it('复制刷新成功但新记录暂未出现在列表：同样构造可解析 summary（P2-2 统一兜底）', async () => {
+    const wrapper = await mountView()
+    const score = findSelect(wrapper, 'backtest-score-select')!
+    await flushPromises()
+    // reload 成功但返回列表不含新复制项（后端延迟可见）——仍须兜底，不写裸 ref
+    vi.mocked(scoreApi.listScoreProfiles).mockResolvedValueOnce([
+      { id: 's1', profile_ref: 'avr_score_1', name: '默认趋势分', version: 2, is_preset: false } as any,
+    ])
+    innerDrawer(score).vm.$emit('copied', { id: 's-copy', profile_ref: 'avr_score_copy', name: '公开评分 副本', version: 1 })
+    await nextTick()
+    await flushPromises()
+    expect(score.props('modelValue')).toBe('avr_score_copy')
+    expect((score.vm as any).selectedItem?.name).toBe('公开评分 副本')
+    expect((score.vm as any).selectedItem?.name).not.toContain('avr_score_copy')
+    wrapper.unmount()
+  })
+
+  it('复制响应 name 为空串时兜底中文名而非 opaque ref（P2-2 防退化）', async () => {
+    const wrapper = await mountView()
+    const score = findSelect(wrapper, 'backtest-score-select')!
+    await flushPromises()
+    vi.mocked(scoreApi.listScoreProfiles).mockRejectedValueOnce(new Error('网络瞬时失败'))
+    // name 为空串（异常后端）→ 组件用「评分方案 副本」中文兜底名，不退化成 profile_ref/id
+    innerDrawer(score).vm.$emit('copied', { id: 's-copy', profile_ref: 'avr_score_copy', name: '', version: 1 })
+    await nextTick()
+    await flushPromises()
+    const name = (score.vm as any).selectedItem?.name
+    expect(name).toBe('评分方案 副本')
+    expect(name).not.toContain('avr_score_copy')
+    expect(name).not.toBe('s-copy')
+    wrapper.unmount()
+  })
 })

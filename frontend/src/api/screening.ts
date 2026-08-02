@@ -98,7 +98,7 @@ export function setProfileVisibility(
 export function copyProfile(
   pid: string,
   body?: { name?: string },
-): Promise<{ id: string; profile_ref?: string; name?: string; version: number }> {
+): Promise<{ id: string; profile_ref?: string; name: string; version: number }> {
   return http.post(`/profiles/${pid}/copy`, body ?? {})
 }
 

@@ -57,11 +57,13 @@ export interface AssetBrowseResult<T = AssetBrowseItem> {
 }
 
 // C8：复制由后端生成唯一 id、名称默认「原名 副本」，返回新标识供前端选中
+// P2-2（五次复审）：name/version 收紧为必填（后端复制契约必返，默认「原名 副本」+version=1），
+// 前端兜底不再退化为 profile_ref/id（opaque ref），缺名时用中文兜底名。
 export interface AssetCopyResult {
   id: string
   profile_ref?: string
-  name?: string
-  version?: number
+  name: string
+  version: number
 }
 
 export function isProfileSummary(item: AssetBrowseItem): item is ProfileSummary {

@@ -154,7 +154,7 @@ export function setScoreProfileVisibility(
 export function copyScoreProfile(
   pid: string,
   body?: { name?: string },
-): Promise<{ id: string; profile_ref?: string; name?: string; version: number }> {
+): Promise<{ id: string; profile_ref?: string; name: string; version: number }> {
   return http.post(`/score-profiles/${pid}/copy`, body ?? {})
 }
 

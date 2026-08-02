@@ -151,18 +151,20 @@ function onDrawerLoad(raw: AssetBrowseItem) {
 
 async function onDrawerCopied(result: AssetCopyResult) {
   const list = await reload()
-  if (list) {
-    // 复制响应只含 id/profile_ref/name/version，回写完整 summary（含 source/readonly/is_preset）
-    const copied = list.find((p) => p.id === result.id)
-    if (copied) emit('copiedItem', copied)
+  // 复制响应只含 id/profile_ref/name/version，回写完整 summary（含 source/readonly/is_preset）
+  const copied = list?.find((p) => p.id === result.id)
+  if (copied) {
+    emit('copiedItem', copied)
   } else {
-    // 复制已成功但 mine 刷新失败（P1-3）：不写无法解析的裸 ref——用复制响应构造临时 mine summary
-    // 置顶进 items，让选中项有名称可显示（非 opaque ref），并 emit copiedItem 供父页同步临时快照。
+    // 复制已成功但 mine 刷新失败，或刷新成功但新记录暂未出现在列表（P1-3/P2-2）：
+    // 不写无法解析的裸 ref——用复制响应构造可解析的临时 mine summary 置顶进 items，
+    // 让选中项始终有名称可显示（非 opaque ref），并 emit copiedItem 供父页同步临时快照。
     const fallback: ProfileSummary = {
       id: result.id,
       profile_ref: result.profile_ref,
-      name: result.name ?? result.profile_ref ?? result.id,
-      version: result.version ?? 1,
+      // name/version 已为必填（后端复制契约）；仍防 null/空串退化为 opaque ref，用中文兜底名
+      name: result.name || `${props.assetLabel} 副本`,
+      version: result.version || 1,
       is_preset: false,
       source: 'mine',
       readonly: false,

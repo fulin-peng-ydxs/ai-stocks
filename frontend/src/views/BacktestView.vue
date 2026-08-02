@@ -809,6 +809,41 @@ function applyRunParams(run: RunSummary, summary?: RunSummary) {
 }
 
 // 从历史重新载入某次回测结果（不重跑）
+// 从历史重新载入某次回测结果（不重跑）
+// P1-1（五次复审）拆为「获取详情」+「应用详情」两段：fetch 只发请求、不碰任何页面状态；
+// apply 才写表单/结果/resultScoreRef。调用方可在「获取成功」后原子执行 应用详情+commitMineRun，
+// 避免详情加载失败时已永久清掉公开摘要与进入前快照（用户既看不到新结果也无法恢复原现场）。
+async function fetchRunDetail(id: string) {
+  const r = await getRun(id)
+  if (!r?.run) throw new Error('历史回测载入失败')
+  return r
+}
+
+// 应用已获取的详情到页面状态（同步、不再发请求）。返回该 run 实际评分口径供 resultScoreRef 冻结。
+function applyRunDetail(id: string, r: Awaited<ReturnType<typeof fetchRunDetail>>, summary?: RunSummary) {
+  const ca = (r.run as { created_at?: string }).created_at
+  runTime.value = ca ? String(ca).slice(0, 19) : ''
+  fromHistory.value = true
+  const p = applyRunParams(r.run, summary ?? selectedRunSummary.value)
+  resultScoreRef.value = p.score_profile_id || '' // 冻结该历史 run 实际评分口径（下钻榜单用）
+  if (r.run.kind === 'signal' || r.run.kind === 'score_check') {
+    kind.value = 'score_check'
+    strat.value = null
+    sig.value = r.layers as Layers
+  } else {
+    kind.value = 'strategy'
+    // 同步表单到该次回测的参数（方案/持仓/本金/卖出规则随之显示）
+    const bench = p.benchmark || '000905.SH'
+    const initCapV = r.equity.length ? r.equity[0].equity : initCap.value
+    strat.value = {
+      run_id: r.run.run_ref || id, metrics: r.metrics as any, layers: r.layers as Layers,
+      trades: r.trades as TradeRow[], equity: r.equity, benchmark_code: bench,
+      initial_capital: initCapV,
+    }
+    sig.value = null
+  }
+}
+
 async function loadRun(id: string, summary?: RunSummary) {
   if (!id) return
   const sequence = ++runLoadSequence
@@ -821,29 +856,9 @@ async function loadRun(id: string, summary?: RunSummary) {
   fromHistory.value = false
   runTime.value = ''
   try {
-    const r = await getRun(id)
+    const r = await fetchRunDetail(id)
     if (sequence !== runLoadSequence) return
-    const ca = (r.run as { created_at?: string }).created_at
-    runTime.value = ca ? String(ca).slice(0, 19) : ''
-    fromHistory.value = true
-    const p = applyRunParams(r.run, summary ?? selectedRunSummary.value)
-    resultScoreRef.value = p.score_profile_id || '' // 冻结该历史 run 实际评分口径（下钻榜单用）
-    if (r.run.kind === 'signal' || r.run.kind === 'score_check') {
-      kind.value = 'score_check'
-      strat.value = null
-      sig.value = r.layers as Layers
-    } else {
-      kind.value = 'strategy'
-      // 同步表单到该次回测的参数（方案/持仓/本金/卖出规则随之显示）
-      const bench = p.benchmark || '000905.SH'
-      const initCapV = r.equity.length ? r.equity[0].equity : initCap.value
-      strat.value = {
-        run_id: r.run.run_ref || id, metrics: r.metrics as any, layers: r.layers as Layers,
-        trades: r.trades as TradeRow[], equity: r.equity, benchmark_code: bench,
-        initial_capital: initCapV,
-      }
-      sig.value = null
-    }
+    applyRunDetail(id, r, summary)
     clearDirtySoon()  // 载入成功 → 按钮置灰（loadingRun 保持到 nextTick，避免参数 watcher 误置脏）
   } catch (e) {
     if (sequence !== runLoadSequence) return
@@ -1042,9 +1057,26 @@ async function onRunRerunDone(result: unknown) {
     ElMessage.warning('重跑已完成，但新记录尚未出现在列表中，请稍后刷新')
     return
   }
-  commitMineRun() // 抽屉直接重跑的新 mine 结果成为当前结果 → 退出公开查看态（清公开摘要+进入前快照）
-  selectedRun.value = runKey(target)
-  await loadRun(selectedRun.value)
+  // P1-1（五次复审）：先成功获取新 mine 详情，再原子执行「应用详情 + 退出公开查看态 + 选中」。
+  // 详情加载失败时不动 externalRunSummary/beforeExternalRun，用户仍可关闭公开查看恢复原现场。
+  const key = runKey(target)
+  const sequence = ++runLoadSequence
+  loading.value = true
+  loadingRun.value = true
+  try {
+    const detail = await fetchRunDetail(key)
+    if (sequence !== runLoadSequence) return
+    commitMineRun() // 详情已取到 → 原子提交：清公开摘要+进入前快照，再应用新结果
+    selectedRun.value = key
+    applyRunDetail(key, detail, target)
+    clearDirtySoon()
+  } catch (e) {
+    if (sequence !== runLoadSequence) return
+    ElMessage.error(getErrorMessage(e, '重跑结果载入失败，请稍后从历史记录选择'))
+    loadingRun.value = false
+  } finally {
+    if (sequence === runLoadSequence) loading.value = false
+  }
 }
 
 // 导出当前回测的逐笔交易为 CSV（带 BOM，Excel 中文不乱码）
@@ -1219,10 +1251,23 @@ async function run() {
       }
       if (choice === 'abort') { loadingRun.value = false; return }
       if (choice === 'load') {
-        loadingRun.value = false // loadRun 会自设 loadingRun
-        commitMineRun() // 查重命中的 mine 历史成为当前结果 → 退出公开查看态
-        selectedRun.value = pre.duplicate.run_id
-        await loadRun(pre.duplicate.run_id)
+        // P1-1（五次复审）：先成功获取该 mine 历史详情，再原子执行「应用详情 + 退出公开查看态」。
+        // 详情加载失败时不动公开快照，用户仍可关闭公开查看恢复原现场。
+        const did = pre.duplicate.run_id
+        loading.value = true
+        loadingRun.value = true
+        try {
+          const detail = await fetchRunDetail(did)
+          commitMineRun() // 详情已取到 → 原子提交：清公开摘要+进入前快照
+          selectedRun.value = did
+          applyRunDetail(did, detail)
+          clearDirtySoon()
+        } catch (e) {
+          ElMessage.error(getErrorMessage(e, '历史回测载入失败'))
+        } finally {
+          loading.value = false
+          nextTick(() => { loadingRun.value = false })
+        }
         return
       }
       // rerun → 继续，runBacktest 落库时覆盖同签名旧记录
