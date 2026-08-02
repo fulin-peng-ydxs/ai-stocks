@@ -292,7 +292,7 @@ def visible_params(*, tenant_id: str, owner_user_id: str) -> list[str]:
 
 # ── 四来源互斥取数口径（R3/R5/R14，计划 §4.1）──────────────────────
 # 搜索弹窗把可见资产切成互斥的四段来源，供下拉（mine）与浏览（preset/tenant/public）复用同一口径：
-#   mine   ：纯 owner，下拉只加载自己的资产。
+#   mine   ：纯 owner，下拉只加载自己的非平台预设资产。
 #   preset ：系统内置段，严格 is_preset AND public AND 平台槽（PUBLIC_BOARD_OWNER），永不泄露 private。
 #   tenant ：本租户公开且排除自己。
 #   public ：全体公开且排除自己，且**强制补集**排除平台槽公开预设（只归 preset 段），四段真正互斥。
@@ -325,9 +325,9 @@ def scoped_where(
         base = f"{p}tenant_id=%s AND {p}owner_user_id=%s"
         params = [tenant_id, owner_user_id]
         if has_preset:
-            # 平台槽公开预设只归 preset 段：即便当前 owner 恰为平台槽账号（system 管理员），
-            # mine 也不得混入系统内置，保证四段互斥（谓词与 preset 段严格镜像）。
-            base += (f" AND NOT ({p}is_preset=true AND {p}visibility='public' "
+            # 平台预设无论历史可见性为何都不是个人资产。这里不依赖 visibility，避免旧库中
+            # private preset 泄漏到平台管理员的「我的方案」下拉；公开修复由 seed 命令负责。
+            base += (f" AND NOT ({p}is_preset=true "
                      f"AND {p}tenant_id=%s AND {p}owner_user_id=%s)")
             params += [pub_t, pub_o]
         return f"({base})", params
@@ -413,6 +413,34 @@ PROFILE_ASSET_TABLES: tuple[str, ...] = (
     "screen_profile",
     "trade_profile",
 )
+
+
+def publish_platform_presets(
+    pg,
+    *,
+    table: str,
+    preset_ids: list[str],
+    tenant_id: str,
+    owner_user_id: str,
+    public_board_owner: tuple[str, str],
+) -> int:
+    """把已写入的平台预设幂等校准为 public，只修改平台槽中的指定稳定 id。"""
+    if (tenant_id, owner_user_id) != public_board_owner or not preset_ids:
+        return 0
+    if table not in PROFILE_ASSET_TABLES:
+        raise ValueError(f"不支持的平台预设表: {table}")
+    placeholders = ",".join(["%s"] * len(preset_ids))
+    return pg.execute(
+        f"UPDATE {table} SET is_preset=true, visibility='public', "
+        "published_at=COALESCE(published_at, now()), "
+        "published_by=%s, updated_at=now() "
+        f"WHERE tenant_id=%s AND owner_user_id=%s AND id IN ({placeholders}) "
+        "AND (is_preset IS DISTINCT FROM true OR visibility IS DISTINCT FROM 'public' "
+        "OR published_at IS NULL OR published_by IS DISTINCT FROM %s)",
+        [owner_user_id, tenant_id, owner_user_id, *preset_ids, owner_user_id],
+    )
+
+
 ASSET_TABLES: tuple[str, ...] = (
     *PROFILE_ASSET_TABLES,
     "backtest_run",

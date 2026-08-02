@@ -15,6 +15,7 @@ import { getErrorMessage } from '@/utils/error'
 import { hasPermission } from '@/utils/permission'
 import {
   assetItemKey,
+  assetDisplaySource,
   type AssetBrowseItem,
   type AssetBrowseParams,
   type AssetBrowseResult,
@@ -38,6 +39,8 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   labelMine?: string
   testId?: string
+  /** 加载查看后直接选中：适用于“选择即执行/展示”的消费页；默认仍只发 loaded，由页面决定展示方式。 */
+  selectLoaded?: boolean
 }>(), {
   mode: 'select',
   copyPermission: '',
@@ -45,6 +48,7 @@ const props = withDefaults(defineProps<{
   placeholder: '',
   labelMine: '我的方案',
   testId: 'asset-profile-select',
+  selectLoaded: false,
 })
 
 const emit = defineEmits<{
@@ -53,6 +57,8 @@ const emit = defineEmits<{
   loaded: [item: ProfileSummary]
   /** 列表加载完成（含 onMounted 首次与复制后刷新）；组件为列表唯一事实源，父级经此接收，不再重复 fetch */
   ready: [items: ProfileSummary[]]
+  /** 列表加载失败；需要首屏汇合的父级据此结束 pending 并展示可重试错误态。 */
+  loadFailed: [message: string]
   /** 复制成功且列表已刷新：回写完整 summary（含 source/readonly/is_preset），父级据此并入自身状态 */
   copiedItem: [item: ProfileSummary]
   /** 复制成功：列表已刷新、新资产已选中 */
@@ -64,6 +70,8 @@ const emit = defineEmits<{
 const items = ref<ProfileSummary[]>([])
 // §7.0 会话内临时只读选中项：注入候选顶部，不进「我的」，切换即丢弃
 const tempItem = ref<ProfileSummary | null>(null)
+// 选择即执行页面的稳定只读 option：与 tempItem 分开，避免 ElSelect 把当前选中锁到临时预览项后递归更新。
+const selectedLoadedItem = ref<ProfileSummary | null>(null)
 const loadingMine = ref(false)
 const errorMine = ref('')
 const drawerOpen = ref(false)
@@ -76,7 +84,9 @@ const canBrowse = computed(() => (
 ))
 
 const options = computed<ProfileSummary[]>(() => (
-  tempItem.value ? [tempItem.value, ...items.value] : items.value
+  selectedLoadedItem.value
+    ? [selectedLoadedItem.value, ...items.value]
+    : tempItem.value ? [tempItem.value, ...items.value] : items.value
 ))
 
 const selectedItem = computed(() => (
@@ -91,6 +101,7 @@ const inner = computed({
 // 切换/清空选中即丢弃临时只读项
 watch(() => props.modelValue, (value) => {
   if (tempItem.value && assetItemKey(tempItem.value) !== value) tempItem.value = null
+  if (selectedLoadedItem.value && assetItemKey(selectedLoadedItem.value) !== value) selectedLoadedItem.value = null
 })
 
 async function reload(): Promise<ProfileSummary[]> {
@@ -102,6 +113,7 @@ async function reload(): Promise<ProfileSummary[]> {
   } catch (error) {
     items.value = []
     errorMine.value = getErrorMessage(error, `${props.assetLabel}加载失败`)
+    emit('loadFailed', errorMine.value)
   } finally {
     loadingMine.value = false
   }
@@ -124,8 +136,15 @@ defineExpose({ reload, openSearch })
 // ConfigView 编辑器 selectProfile 载入、个股详情 tradeId 回显，均不经过本组件的选中态。
 function onDrawerLoad(raw: AssetBrowseItem) {
   const item = raw as ProfileSummary
-  tempItem.value = item
+  if (props.selectLoaded) {
+    tempItem.value = null
+    selectedLoadedItem.value = item
+  } else {
+    selectedLoadedItem.value = null
+    tempItem.value = item
+  }
   emit('loaded', item)
+  if (props.selectLoaded) emit('update:modelValue', assetItemKey(item))
 }
 
 async function onDrawerCopied(result: AssetCopyResult) {
@@ -133,6 +152,8 @@ async function onDrawerCopied(result: AssetCopyResult) {
   // 复制响应只含 id/profile_ref/name/version，回写完整 summary（含 source/readonly/is_preset）
   const copied = list.find((p) => p.id === result.id)
   if (copied) emit('copiedItem', copied)
+  selectedLoadedItem.value = null
+  tempItem.value = null
   emit('update:modelValue', result.profile_ref || result.id)
   emit('copied', result)
 }
@@ -164,7 +185,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
           <AssetProfileLabel
             :name="selectedItem.name"
             :version="selectedItem.version"
-            :source="selectedItem.is_preset ? 'preset' : selectedItem.source"
+            :source="assetDisplaySource(selectedItem.source, selectedItem.is_preset)"
             :is-preset="selectedItem.is_preset"
             :owner-label="selectedItem.owner_label"
             :readonly="selectedItem.readonly"
@@ -180,7 +201,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
           <AssetProfileLabel
             :name="p.name"
             :version="p.version"
-            :source="p.is_preset ? 'preset' : p.source"
+            :source="assetDisplaySource(p.source, p.is_preset)"
             :is-preset="p.is_preset"
             :owner-label="p.owner_label"
             :readonly="p.readonly"
@@ -240,7 +261,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
           <AssetProfileLabel
             :name="p.name"
             :version="p.version"
-            :source="p.is_preset ? 'preset' : p.source"
+            :source="assetDisplaySource(p.source, p.is_preset)"
             :is-preset="p.is_preset"
             :owner-label="p.owner_label"
             :readonly="p.readonly"

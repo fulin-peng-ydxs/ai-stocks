@@ -85,12 +85,14 @@ def test_system_route_allows_system_role(client, pg):
     assert resp.status_code not in (401, 403)   # 通过鉴权+角色守卫（业务是否 200 不在本测范围）
 
 
-def test_context_isolation_tenant_admin_sees_no_admin_presets(client, tadmin):
-    # admin 归属下有系统内置方案；租户管理员在独立租户应看不到（上下文归属隔离）
+def test_context_isolation_tenant_admin_mine_excludes_admin_presets(client, tadmin):
+    # 公开系统预设允许跨租户浏览，但 source=mine 必须严格保持当前 owner 隔离。
     uid, tid = tadmin
-    resp = client.get("/api/profiles", headers=_auth(_access(uid, tid)))
+    resp = client.get(
+        "/api/profiles", params={"source": "mine"}, headers=_auth(_access(uid, tid))
+    )
     assert resp.status_code == 200
-    assert resp.json()["data"] == []   # 各自归属，互不可见
+    assert resp.json()["data"] == []
 
 
 def test_indicator_patch_writes_forbidden_for_tenant_admin(client, tadmin):

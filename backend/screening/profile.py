@@ -24,6 +24,7 @@ from backend.services.asset_visibility import (
     is_asset_visible,
     make_asset_ref,
     normalize_visibility,
+    publish_platform_presets,
     resolve_asset_ref_or_legacy_id,
     scoped_query,
     summarize_asset_row,
@@ -164,7 +165,7 @@ class ProfileRepo:
 
     def list_mine(self) -> list[dict]:
         """下拉专用：只加载「自己的资产」（纯 owner），不含他人公开与平台槽系统内置段；
-        平台槽账号下也剔除严格系统内置预设，保证与 preset 段互斥（R3/C2）。"""
+        平台槽账号下也剔除全部系统预设，包括尚未完成公开校准的历史数据（R3/C2）。"""
         rows, _ = scoped_query(
             self.pg,
             table="screen_profile",
@@ -351,10 +352,18 @@ class ProfileRepo:
             raise ValueError("该方案被回测记录引用，无法删除，请先删除相关回测")
 
     def seed_presets(self) -> int:
-        """把系统内置方案写入（幂等）。"""
+        """把系统内置方案写入；平台槽预设幂等校准为公开只读资产。"""
         n = 0
         for p in PRESET_PROFILES:
             self.save(p["id"], p["name"], p["expression"], is_preset=True)
             n += 1
+        publish_platform_presets(
+            self.pg,
+            table="screen_profile",
+            preset_ids=[p["id"] for p in PRESET_PROFILES],
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+            public_board_owner=PUBLIC_BOARD_OWNER,
+        )
         log.info("系统内置筛选方案入库 %d 个", n)
         return n

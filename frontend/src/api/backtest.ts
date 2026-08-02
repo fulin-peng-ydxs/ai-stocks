@@ -108,6 +108,7 @@ export interface RunSummary {
   published_by?: string | null
   created_at: string
   total_return: number | null
+  params?: string
 }
 
 export interface RunParams {
@@ -189,12 +190,13 @@ export function getTradeDates(): Promise<{
   return http.get('/data/trade-dates')
 }
 
-// 不传 limit 则全列（同签名因覆盖语义本就只留一条，不会膨胀）
-export function listRuns(kind?: string, source?: string): Promise<{ runs: RunSummary[] }> {
+// 页头精确选择器只承载最近记录，避免不同签名长期积累后一次性 JOIN、传输和渲染全量历史。
+export function listRuns(kind?: string, source?: string, limit = 100): Promise<{ runs: RunSummary[] }> {
   return http.get('/backtest/runs', {
     params: {
       ...(kind ? { kind } : {}),
       ...(source && source !== 'all' ? { source } : {}),
+      limit,
     },
   })
 }

@@ -138,6 +138,8 @@ import QualityView from '@/views/data/QualityView.vue'
 import ScreenView from '@/views/ScreenView.vue'
 import BacktestView from '@/views/BacktestView.vue'
 import TrainingView from '@/views/TrainingView.vue'
+import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
+import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
 
 const router = createRouter({
   history: createMemoryHistory(),
@@ -300,6 +302,12 @@ describe('代表性页面四态回归', () => {
     const push = vi.spyOn(router, 'push')
     const wrapper = await mountView(BoardView)
 
+    expect(boardApi.runBoardProfile).toHaveBeenCalledWith(expect.objectContaining({
+      profile_id: 'board1',
+      run_date: '2024-12-31',
+    }))
+    expect(boardApi.runBoardProfile).toHaveBeenCalledTimes(1)
+
     await wrapper.get('.first-data-row').trigger('click')
 
     const stockSet = useStockSet()
@@ -310,11 +318,83 @@ describe('代表性页面四态回归', () => {
     push.mockRestore()
   })
 
+  it('榜单加载查看公开评分方案后直接选中并自动刷新', async () => {
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2024-12-31',
+      top: 50,
+      count: 0,
+      list: [],
+    })
+    const wrapper = await mountView(BoardView)
+    const select = wrapper.findComponent(AssetProfileSelect)
+    expect(select.props('selectLoaded')).toBe(true)
+
+    const publicProfile = {
+      id: 'public-score',
+      profile_ref: 'ref_public_score',
+      name: '公开评分方案',
+      version: 2,
+      source: 'public',
+      visibility: 'public',
+      readonly: true,
+      is_preset: false,
+    }
+    select.findComponent(AssetSearchDrawer).vm.$emit('load', publicProfile)
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(select.props('modelValue')).toBe('ref_public_score')
+    expect(boardApi.runBoardProfile).toHaveBeenLastCalledWith(expect.objectContaining({
+      profile_ref: 'ref_public_score',
+      run_date: '2024-12-31',
+    }))
+  })
+
   it('榜单加载失败显示错误态且不显示表格空态', async () => {
     ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('board failed'))
     const wrapper = await mountView(BoardView)
     expect(wrapper.text()).toContain('榜单加载失败')
     expect(wrapper.text()).toContain('board failed')
+  })
+
+  it('榜单方案列表加载失败结束首屏等待，重试成功后自动加载榜单', async () => {
+    ;(boardApi.listBoardProfiles as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('profiles failed'))
+      .mockResolvedValueOnce([{ id: 'board1', name: '榜单方案', version: 1, source: 'mine' }])
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2024-12-31', top: 50, count: 0, list: [],
+    })
+
+    const wrapper = await mountView(BoardView)
+    expect(wrapper.text()).toContain('榜单加载失败')
+    expect(wrapper.text()).toContain('profiles failed')
+
+    await wrapper.findComponent(AssetProfileSelect).vm.reload()
+    await flushPromises()
+    expect(boardApi.runBoardProfile).toHaveBeenCalledWith(expect.objectContaining({ profile_id: 'board1' }))
+    expect(wrapper.text()).not.toContain('profiles failed')
+  })
+
+  it('清空榜单方案会使在途请求失效，迟到响应不得重新写回结果', async () => {
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2024-12-31', top: 50, count: 0, list: [],
+    })
+    const wrapper = await mountView(BoardView)
+    let resolveLate!: (value: unknown) => void
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveLate = resolve }),
+    )
+
+    ;(wrapper.vm as unknown as { onProfileSelect: (key: string) => void }).onProfileSelect('board1')
+    ;(wrapper.vm as unknown as { onProfileSelect: (key: string) => void }).onProfileSelect('')
+    resolveLate({
+      run_date: '2024-12-31', top: 50, count: 1,
+      list: [{ rank: 1, code: '000001.SZ', name: '平安银行', total_score: 90, grade: '观察', sub_scores: {} }],
+    })
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('')
+    expect((wrapper.vm as unknown as { rows: unknown[] }).rows).toEqual([])
   })
 
   it('数据概览加载失败显示错误态', async () => {

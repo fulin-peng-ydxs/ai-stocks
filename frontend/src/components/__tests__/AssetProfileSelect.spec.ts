@@ -76,6 +76,8 @@ describe('AssetProfileSelect', () => {
     await wrapper.find('[data-testid="asset-profile-select-select"]').trigger('click')
     await flush()
     expect(document.body.textContent).toContain('我的筛选方案A')
+    expect(document.body.querySelector('.asset-visibility-tag')).toBeNull()
+    expect(document.body.querySelector('.system-builtin-tag')).toBeNull()
     wrapper.unmount()
   })
 
@@ -126,6 +128,29 @@ describe('AssetProfileSelect', () => {
     wrapper.unmount()
   })
 
+  it('selectLoaded 模式把加载查看项设为稳定只读选项并直接选中', async () => {
+    const { wrapper } = mountSelect({ selectLoaded: true })
+    await flush()
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
+    await flush()
+
+    expect(wrapper.emitted('loaded')?.at(-1)).toEqual([publicItem])
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['ref_pub_b'])
+
+    // 模拟父组件 v-model 回写；加载项必须仍是当前 option，而不是锁入一次性 tempItem。
+    await wrapper.setProps({ modelValue: 'ref_pub_b' })
+    await flush()
+    expect((wrapper.vm as unknown as { selectedItem: ProfileSummary | null }).selectedItem)
+      .toMatchObject({ profile_ref: 'ref_pub_b', readonly: true })
+
+    await wrapper.find('[data-testid="asset-profile-select-select"]').trigger('click')
+    await flush()
+    const options = Array.from(document.querySelectorAll('.el-select-dropdown__item'))
+    expect(options[0]?.textContent).toContain('量价齐升·进攻型')
+    expect(options[0]?.textContent).toContain('全体公开')
+    wrapper.unmount()
+  })
+
   it('复制成功：刷新「我的」、选中新资产并发出 copied', async () => {
     const copiedItem: ProfileSummary = {
       ...mineItem,
@@ -156,6 +181,7 @@ describe('AssetProfileSelect', () => {
     const { wrapper } = mountSelect({ fetchMine })
     await flush()
     expect(wrapper.text()).toContain('筛选方案加载失败')
+    expect(wrapper.emitted('loadFailed')?.at(-1)).toEqual(['boom'])
     const retry = wrapper.findAll('button').find((b) => b.text().includes('重试'))
     expect(retry).toBeTruthy()
     await retry!.trigger('click')

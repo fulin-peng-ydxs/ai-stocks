@@ -4,12 +4,12 @@
 - 需求文档：[requirement.md](./requirement.md)（R3–R14，含 §0 上游确认 C1–C9）
 - 原型：[prototypes/public-asset-search-drawer.html](./prototypes/public-asset-search-drawer.html)
 - 功能目标：下拉只加载自己的资产（C2/R3）；放开普通用户发布（C4/R4）；统一「资产搜索」弹窗，来源分段 系统内置/租户公开/全体公开（C3/R5/R14），加载查看 + 单击复制（后端自动 id/名称，C8）；回测「另存」= 复用参数重跑（C7/R6）；抽共享组件（R7）；个股详情接入（R10）。
-- 本次不做：R1/R2（保留系统内置，撤销）、R11 收藏、R12 分组/训练、R13 删 is_preset 列（依据 C1，保留不删）。「不迁移预设」为 C9/R14 范围边界，非 R13。
-- 关键取舍（已确认）：C7 重跑不复制快照；C8 复制后端自动生成 id、名称「原名 副本」；C9 系统内置严格 `is_preset AND public`（限平台槽）、不迁移。
+- 本次不做：R1/R2（保留系统内置，撤销）、R11 收藏、R12 分组/训练、R13 删 is_preset 列（依据 C1，保留不删）。
+- 关键取舍（已确认）：C7 重跑不复制快照；C8 复制后端自动生成 id、名称「原名 副本」；C9 系统内置严格 `is_preset AND public`（限平台槽），三类代码内置预设由统一 seed 补齐并公开。
 
 ## 2. 当前项目依据（校准后）
 - 复制契约：请求体强制 `id`、`name` 可选（`api/score_profiles.py:40-42`）；`copy_visible` 冲突判据是**目标 id 已存在**（`scoring/score_profile.py:394`），缺省名落「原名 副本」（`:396`）。→ C8 由后端生成唯一 id。
-- 预设自动公开：**仅评分方案**在平台槽下 save 自动置 public（`score_profile.py:288-290`）；筛选/买卖 save 无 public 联动（`screening/profile.py:76`、`signals/trade_profile.py:206`）→ R14 严格条件下筛选/买卖系统内置段常态可能为空。
+- 预设初始化：普通筛选/买卖保存仍默认 private；`seed-presets` 显式使用平台槽写入评分/筛选/买卖三类代码预设，并幂等校准为 public。`mine` 同时排除平台槽全部预设，防历史 private 数据误入 admin 下拉。
 - 可见性工具：`visible_sql`（`services/asset_visibility.py:231-237`）是**单一合并表达式**，source 分段需在其上叠加独立条件（回测 `services/backtest_service.py:477-485` 即此模式）；`summarize_asset_row`（`:199-228`）**不含 `updated_at`**，需补。
 - 回测表：`backtest_run` **无 is_preset/name/version/updated_at**，有 kind/date_start/date_end/status/created_at/finished_at/visibility（`storage/pg_ddl.py:333-354`）→ 回测需独立 summary 与表格列。
 - 角色：仅 `system/tenant_admin/normal`（`auth/constants.py:10-15`），无 paid。
@@ -34,13 +34,13 @@
 | R8 | 公开资产治理/下架入口 | 后续建议 | 跳过 | - | 现有停用降级先兜底 |
 
 ### 3.3 暂不实现
-- R1/R2（保留系统内置，撤销）、R11 收藏、R12 分组/训练接入、R13 删 is_preset 列（依据 C1，保留不删）。「不迁移预设」为 C9/R14 范围边界，非 R13。
+- R1/R2（保留系统内置，撤销）、R11 收藏、R12 分组/训练接入、R13 删 is_preset 列（依据 C1，保留不删）。
 
 ## 4. 技术方案
 
 ### 4.1 取数口径（互斥、可审计）
 统一在 repo 层新增 `list_scoped(source, q, page)`（或 API 层分派），四来源互斥：
-- `mine` → `WHERE tenant_id=? AND owner_user_id=?`（纯 owner，R3，下拉用）。
+- `mine` → 当前 owner 且排除平台槽全部 `is_preset`（含历史 private preset，R3，下拉用）。
 - `preset` → `WHERE is_preset=true AND visibility='public' AND (tenant_id,owner_user_id)=PUBLIC_BOARD_OWNER`（R14，严格只读公开，永不泄露 private）。
 - `tenant` → `visibility='tenant' AND tenant_id=? AND NOT own`（排除自己）。
 - `public` → `visibility='public' AND NOT own AND NOT (is_preset=true AND (tenant_id,owner_user_id)=PUBLIC_BOARD_OWNER)`（**强制补集**：平台槽公开预设只归「系统内置」段，四来源真正互斥，不重复出现）。
@@ -348,6 +348,71 @@
 - 【P2·已整改】真实组件测试仍绕开核心 `onDrawerLoad` 路径：原 `real-component.spec.ts` 直接 `score.vm.$emit('loaded', pub)`，不经真实 `onDrawerLoad`、不设组件内部 `tempItem`，证据强度被高估。**已修**：改为对真实 AssetProfileSelect 内部的 AssetSearchDrawer stub 发 `load`，让真实 `onDrawerLoad` 完整执行（设 `tempItem` + emit loaded → 页面记 tempSelected）；断言内部 `tempItem` 已存在、`selectedItem` 不锁 temp、chip 显示、无递归、已有 mine 场景运行用公开快照。**连带发现并修复边界**：「已选 mine-A → 加载公开 → 重选同一 mine-A」时组件 `watch(modelValue)` 与页面 `watch(scoreProfileId)` 均因值不变不触发、临时快照不清——按系统设计规范（不改组件选中逻辑、改动最小、不破递归）在页面 `@update:model-value` 回调里无条件清 `tempSelected`；组件 `tempItem` 残留自管、不影响运行口径（运行取页面 tempSelected 快照）也不破递归。
 - 【P2·已整改】plan 仍保留互相冲突的旧结论与旧数量：`:302`（T4 复审残留段）仍以「已落地」语气写「页面并入持久列表、option 变持久」旧结论、`:323`（§6.8.1）仍登记 `37 passed`。**已修**：旧段显式标「历史误判，已由 §6.8.2 废止，勿再消费」；37 标误记并指向最终 7 文件、53 passed 命令（§8）。
 
+#### 6.8.4 T5 默认预设与下拉归类收尾（2026-08-01）
+
+- **状态：已完成代码与文档，验证结果见 §8 新增记录。**
+- 【P1·已整改】平台账号下拉混入“系统内置”：`mine` 旧谓词只排除 public 平台预设，历史 `private + is_preset` 筛选预设因此被 admin 当作“我的方案”返回。现改为排除平台槽全部预设，不依赖 visibility；普通平台私有资产仍保留在 mine。
+- 【P1·已整改】“默认趋势分”代码存在但数据库缺行：旧 CLI 只 seed 筛选，评分/买卖 `seed_defaults()` 无生产入口。现保留 `seed-presets` 命令并扩为三类统一初始化，显式使用 `PUBLIC_BOARD_OWNER`，补齐缺失记录并把稳定预设 id 幂等校准为 public；重复执行不重复插入、不无故改版本。
+- 数据影响：无 DDL；只新增/更新平台槽代码登记的稳定预设 id。执行前按项目规则停后端释放 DuckDB，再运行 `python -m backend.cli seed-presets`，完成后恢复服务并核验 health。回滚如需撤销公开状态，应先停止使用统一 seed，再按稳定 id 收回 visibility；删除默认记录会使引用它的历史业务对象失去可解析方案，不建议直接删除。
+
+#### 6.8.5 T5 历史方案展示与运行口径收尾（2026-08-02）
+
+- **状态：已完成代码、测试、构建与文档同步；浏览器验证结果见 §8。**
+- 【P1·已整改】自动载入历史回测时，`applyRunParams` 把系统/公开方案 raw ref 直接写入 mine-only `AssetProfileSelect.modelValue`；候选中无对应 option 时退化显示 `default` / `preset_trend_leader`。现统一做历史方案投影：属于 mine 的 ref 正常选中；系统/公开 ref 不写选择器，以选择器外只读 chip 显示历史摘要返回的中文名称与版本；既无名称又不在 mine 的 ref 显示“历史方案已不可用”并 fail-closed，禁止静默换口径。评分验证历史也同步应用其评分参数，不再保留旧表单值。
+- 【P1·已整改】稳健性测试 `buildStrategyParams` 只读 mine 选择器值，忽略页面明确展示的 `tempSelected`，与普通回测 `buildBody` 口径分叉。现抽取唯一 `effectiveProfileRefs()`，普通回测、稳健性测试和校验统一消费 **tempSelected 快照 > mine 选择器值 > 空**。
+- 【P1·已整改】评分/买卖占位文案标“可选”但运行校验实际必选。现改为“请选择评分方案（必选）”“请选择买卖方案（必选）”；选股最终收敛为“不使用选股方案（默认）”，含义是“不额外套用选股方案”，基础池仍排除 ST 并执行评分与买入条件。后端 nullable 字段继续仅承担旧式回测兼容，当前页面新建策略仍要求评分与买卖方案。
+- **回归验证**：`BacktestView.spec.ts` 19/19 + `BacktestView.real-component.spec.ts` 2/2；前端全量 79 文件 **551/551、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。新增覆盖系统历史方案中文投影/raw ref 不入选择器、失效历史 fail-closed、普通回测与稳健性测试同 ref、三类空值文案契约。
+
+#### 6.8.6 T5 回测控件语义收敛（2026-08-02）
+
+- **状态：已完成代码、测试、构建与文档同步；浏览器验证结果见 §8。**
+- 用户确认移除页头重复的历史来源下拉：页头「回测记录」固定只加载当前用户自己的记录并用于精确选择；租户公开/全体公开记录继续统一由既有「浏览公开回测」抽屉承接，加载查看与复用参数重跑能力不变。
+- 选股方案空值文案由容易误解为“无过滤全市场”的表述改成「不使用选股方案（默认）」；帮助说明明确基础股票池仍排除 ST，并继续执行评分与买入条件，避免把“未叠加选股方案”误读为“所有股票无条件进入回测”。
+- `onRunRerunDone` 收敛为只刷新一次 mine 记录，再按返回的 `run_id` 精确选中新记录；删除已无职责的来源状态、watch、空态分支与样式。
+- **回归验证**：`BacktestView.spec.ts` 20/20 + `BacktestView.real-component.spec.ts` 2/2；前端全量 79 文件 **552/552、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。
+
+#### 6.8.7 T5 控件语义复核整改（2026-08-02）
+
+- **状态：已完成代码、测试、构建与文档同步；浏览器验证结果见 §8。**
+- 【P1·已整改】重跑成功后 mine 列表刷新失败仍回退选旧记录：`loadHistory()` 改返回明确成功状态；刷新失败、接口无 `run_id`、目标记录暂未出现三条失败路径均只提示、不改当前选中，只有找到返回的 `run_id` 才加载新记录。
+- 【P1·已整改】公开记录「加载查看」会 prepend 到 mine-only `runHistory`：新增单个 `externalRunSummary` 只读快照，复用已有只读 chip、来源标签和关闭按钮在选择器外展示；顶部候选始终只来自 mine，公开 ref 不写入 ElSelect，复用参数仍通过统一 `activeRunRef` 工作。
+- 【P2·已整改】失效偏好在三类 ready 与 hydration 时重复告警：按失效 ref 会话去重，等三类列表及偏好 hydration 全部完成后合并为一次提示。
+- 【P2·已整改】页头 mine 历史无上限全量加载：`listRuns` 默认传 `limit=100`，顶部只承载最近 100 条，避免不同签名长期积累后全量 JOIN、传输和渲染。
+- **回归验证**：`BacktestView.spec.ts` 23/23 + `BacktestView.real-component.spec.ts` 2/2；前端全量 79 文件 **555/555、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。新增覆盖公开快照不污染 mine、刷新失败不误选、目标缺失不误选、失效提示只出现一次。
+
+#### 6.8.8 每日榜单选择与交易日体验收敛（2026-08-02）
+
+- **状态：已完成代码、测试、构建、浏览器验证与文档同步；结果见 §8。**
+- 用户重裁榜单交互：它是“选择即查看结果”页面，加载查看公开/系统方案后应直接成为当前只读选项并自动刷新；普通方案改选、交易日和 Top N 变化同样自动刷新，“刷新”保留为显式重试/重算入口。此结论取代 T4 的“榜单加载查看不切换、不自动运行”旧口径。
+- `AssetProfileSelect` 新增默认关闭的 `selectLoaded` 能力：启用时加载项进入独立稳定 `selectedLoadedItem` 后回写 `modelValue`，不把一次性 `tempItem` 锁为 ElSelect 当前选项；仅 BoardView 启用，回测等页面仍保持既有选择器外快照/显式执行契约。
+- 榜单首屏等待方案列表与交易日历两路 ready 后只发一次请求，日期明确显示数据最新交易日；请求加入序号守卫，快速切换时旧响应不得覆盖新方案。筛选页与配置页评分试算的同类单日控件统一使用 `TradeDatePicker.defaultLatest`；训练、回测和数据任务的显式日期区间不改。
+- mine-only 资产下拉不再重复展示“我的”来源标签；只有系统内置、租户公开和全体公开只读项保留来源标签。
+
+#### 6.8.9 回测记录来源标签复核整改（2026-08-02）
+
+- **状态：已完成代码、测试、构建与文档同步；浏览器验证结果见 §8。**
+- 【P2·已整改】上一轮只覆盖统一 `AssetProfileSelect`，遗漏 `BacktestView` 页头自定义回测记录 `el-select`；该列表固定请求 `source=mine`，却仍无条件渲染 `AssetVisibilityTag`，导致候选重复显示“我的”。
+- 抽取共享 `assetDisplaySource()`，统一约束 mine 返回空展示来源、preset/tenant/public 保留来源；`AssetProfileSelect` 与回测记录下拉共同消费，公开回测选择器外只读快照继续保留来源标签。
+- 【P1·复核新增并整改】5181 在偏好 hydration 已完成、mine 列表尚未 ready 的短暂窗口真实复现买卖方案 opaque ref 闪现，约 1 秒后才被 `reconcileProfileRefs()` 清空。新增三类 `guardedProfileModel` 初始化显示屏障：ready 前选择器只接收空值，ready 后再投影有效 mine ref 或清理失效 ref；回归同时断言页面内部可暂存待校验 ref，但任何时点不得传给 ElSelect。
+- **复核范围**：全仓 `AssetVisibilityTag mode=source` 与 `AssetProfileLabel` 消费点；资产方案下拉均走 `AssetProfileSelect`，唯一自定义资产下拉为回测记录，已收敛。资源库抽屉本身用于跨来源浏览，继续显示来源属于必要信息。
+
+#### 6.8.10 回测记录下拉定位整改（2026-08-02）
+
+- **状态：已完成代码、回归测试、构建、浏览器空数据交互验证与设计文档同步；结果见 §8。**
+- 【P1·已整改】历史记录名称、日期和收益共同撑大下拉内容宽度，Element Plus 的 Popper 在右侧空间不足时从默认 `bottom-start` 回退到 `left`，导致弹层覆盖页面左上区域、与触发控件失去视觉关联。
+- 回测记录选择器启用 `fit-input-width` 并显式声明 `placement=bottom-start`：弹层宽度与 340px 输入框一致、优先在控件正下方展开；候选行改为 flex 布局，长名称省略并保留完整 title，日期与收益固定可见。继续复用原生 `el-select/el-option`，未新增平行弹层组件。
+
+#### 6.8.11 全量复核阻塞项统一整改（2026-08-02）
+
+- **状态：已完成代码、回归测试、构建、文档同步与可用数据范围内的浏览器验证。**
+- 【P1·已整改】公开回测关闭后遗留方案参数且按钮仍置灰：进入公开查看前保存完整页面快照，关闭时原子恢复表单、结果、选中记录、来源和 dirty 状态；无快照兜底明确恢复为可运行态。
+- 【P1·已整改】回测 A→B 快速选择、加载中关闭和复用参数请求存在迟到覆盖：统一使用 `runLoadSequence`，只有当前代次可写表单、结果、错误和 loading；加载新记录时先清旧结果，避免失败时出现“新选中+旧结果”。
+- 【P1·已整改】榜单清空方案未使在途请求失效：所有方案变化先递增请求代次；后端日期回写保持同步屏障到 nextTick，避免归一化日期触发第二次请求。
+- 【P1·已整改】买卖方案说明优先显示 mine、实际运行却取公开快照：新增唯一 `effectiveTradeProfile`，卖出规则展示与 `effectiveProfileRefs()` 同为临时快照优先。
+- 【P1·已整改】评分验证页面复用参数后运行丢 `source_run_ref`：来源引用移出 strategy 分支，策略与评分验证统一透传审计来源。
+- 【P2·已整改】`AssetProfileSelect` mine 列表失败新增 `loadFailed`，榜单首屏结束 pending 并显示可重试错误；重试成功后自动选中并加载。`TradeDatePicker` 监听共享 `dataMax` 后续恢复，展开空日历时可重试首次失败。
+- **复用判断**：请求竞态复用项目既有 sequence 模式；方案列表失败复用统一选择器事件，不在榜单复制 fetch；交易日恢复继续消费 `useTradeDates` 单例；买卖展示与请求共用有效方案计算。未新增平行组件、API 或样式。
+
 ### 阶段 6 · 全链路验收
 
 #### 6.9 任务 T6：验收、测试与构建
@@ -360,7 +425,7 @@
 - 实际落地情况：待实施。
 
 ## 7. 数据库与 SQL 计划
-- 不新增表、不删列、不迁移预设（C9）。
+- 不新增表、不删列；统一 seed 仅补齐/校准平台槽代码预设（C9）。
 - 权限授权回填（Python 迁移 + 新 marker，遵循 `pg_ddl.py` seed 模式）。
 - SQL 留痕：`agent-works/asset-ownership-refactor/asset-publish-open.sql`
   - 用途：记录给 normal（及 tenant_admin public）授 8 发布码、撤销原撤权 DELETE 的等价 SQL 与**回滚 SQL**。
@@ -374,6 +439,14 @@
 > **全量后端（2026-07-28，停服释放 DuckDB 锁后跑，含 R2–R9 补测）**：`728 passed`（R9 新增「仅清空菜单也 bump perm_ver」正向回归 + 成功重授 bump，故障回滚用例改名保留）。**R7 覆盖顺序重启，R8 覆盖并发锁串行+fail-closed，R9 覆盖菜单变化的 perm_ver 一致性**。恒有 1 例**既有失败**（`test_stage5_audit.py::test_stage5_audit_tenant_admin_is_scoped_to_own_tenant`，期望 200 实得 403），根因是既有 `revoke_tenant_admin_audit_default_grants` 迁移撤销 tenant_admin 审计默认授权，**与本重构无关、不在本次 diff**，已单列待处理。Ruff：环境未安装，未验证。
 > **前端（2026-07-31，T4 四页接入 + 二/三次审查整改闭环）**：Vitest 全量 `530 passed`（`StockDetailView.spec.ts`、`ConfigView.system.spec.ts`、`AssetProfileSelect.spec.ts` 含整改新增用例——ConfigView 评分/买卖「加载查看」页面级用例、AssetSearchDrawer 幻影行守卫适配）；`npm run build` 通过（含 vue-tsc）。四页一致消费 AssetProfileSelect（ConfigView 评分/买卖 list 形态、BoardView/StockDetailView select 形态），下拉统一 `source=mine`（组件为列表唯一事实源、单请求）、加载只读不自动运行（榜单显式刷新、个股显式评估按钮、评分/买卖不自动试算）。**真实浏览器关键路径复验通过**：评分 tab 加载查看载入「默认趋势分」编辑器只读、买卖 tab 载入「趋势买卖 v4」编辑器只读（ConfigView `@loaded` 接入）；个股加载查看零 trade-eval、点评估才发；榜单加载查看无运行请求、页面只读空态；两页 source=mine 单次。**全量 Playwright E2E 本轮未复跑（留 T6）**；系统内置徽标走 AssetProfileLabel 复用路径未改。
 > **前后端（2026-08-01，T5 回测页接入 + 回测分页契约，经两次复审 Request Changes 整改后重验）**：后端 `pytest tests/test_backtest.py tests/test_backtest_browse_q.py tests/test_stage6_backtest_visibility.py tests/test_asset_browse_copy.py tests/test_asset_list_mine.py tests/test_asset_repository.py tests/test_asset_review_fixes.py` = **53 passed**（停服释放 DuckDB 锁后跑、已重启 health=200；含 `test_backtest_browse_q.py` 3 passed 分页用例 `test_backtest_pagination_offset_and_total`——q 路径 count==5/offset 切片不漏不重、无 q 路径分页拼接==全列）。前端 `BacktestView.spec.ts`（三次复审整改后 16/16）+ `BacktestView.real-component.spec.ts`（真实 AssetProfileSelect 挂 BacktestView、经真实 onDrawerLoad 完整链路验证递归契约+快照优先，2/2）+ 全量 **548/548 退出码 0**（79 文件，无 unhandled errors）、`npm run build`（含 vue-tsc）通过。BacktestView 三选择器（评分/选股/买卖 select 形态）+ 历史区「浏览公开回测」（首个 kind=backtest 消费方）接入；**范围扩为前端+后端回测分页契约（用户拍板）**——`list_runs`+`count_runs` offset/total、API `page/page_size` 回 `{runs,total,page,page_size}`、`runs` 键兼容。**一次复审整改（§6.8.1）**：4 P1（重跑完整参数白名单、旧 ref 残留清空、假绿退出码归 0、公开回测只读 fail-closed）+ 1 P2（rerunDone 精确选中）逐项修复重验；1 P2（q 双查）登记 T6 遗留。**二次复审整改（§6.8.2）**：3 P1（旧 ref 时序竞态 readyFlags 屏障+reconcileProfileRefs、临时项切换清理+onXCopied 独立、方案b 选择器外只读展示+真实组件测试）+ 3 P2（readonly fail-closed、重跑单载、后端数量 37→53 留痕更正）逐项修复重验；**推翻一次复审「页面侧并入持久列表后选中」结论，用户拍板定为方案b：选择器外只读展示**。**三次复审整改（§6.8.3）**：1 P1（已选 mine 时 chip 不参与运行——buildBody 改快照优先 tempSelected>mine>空、chip 标「本次运行：」、删「仅当选择器为空」限制）+ 2 P2（真实组件测试改走真实 onDrawerLoad 完整链路并补「重选同值」边界、plan 旧结论/旧数量显式废止标注）逐项修复重验。**真实浏览器 5181 复验**：确认选择器无 opaque ref（readyFlags 屏障生效）、4 入口正常渲染、无控制台错误；本地库 preset/tenant/public 方案为空（一次复审种子已回滚），「加载查看 → chip → 运行参数」链路未能在浏览器亲验——该链路改由 `BacktestView.real-component.spec.ts` 真实组件测试覆盖，记为**部分验证**。**全量 Playwright E2E 本轮未复跑（决策4 留 T6）**；遗留幻影行守卫残留副本与 q 双查（T6 评估）。**说明**：本条为首轮登记（含「538/538 全绿」「37 passed」不实/不精确结论）经三次复审更正后的如实口径——当时退出码实为 1、后端实为 53 passed，整改后才达成 548/548 退出码 0。
+> **后端与页面（2026-08-01，§6.8.4 平台预设收尾）**：资产相关 9 文件定向回归 **73 passed**；后端全量排除已登记既有失败 `test_stage5_audit_tenant_admin_is_scoped_to_own_tenant` 后 **731 passed, 1 deselected**，该既有用例单跑仍为期望 200/实际 403，与上方历史记录一致。统一 `python -m backend.cli seed-presets` 连续执行两次均成功，真实库结果为 `mine_preset_ids` 三类全空、系统内置筛选 5 / 评分 1（`default`）/ 买卖 2。5181 真实浏览器复验：筛选“我的方案”下拉为空且系统内置抽屉显示 5 项；评分系统内置抽屉显示“默认趋势分 v1”。本轮未改 `frontend/src`，故未重跑前端 build/Vitest；Ruff 环境未安装，未验证。后端已按测试前状态恢复，`/api/health=200`。
+> **前端（2026-08-02，§6.8.5 历史方案展示与运行口径收尾）**：`BacktestView.spec.ts` **19/19**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **551/551、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖系统历史方案中文投影、raw ref 不进入 mine-only 选择器、失效历史 fail-closed、评分验证历史参数同步、普通回测与稳健性测试统一 `effectiveProfileRefs()`、评分/买卖必选及选股不选=全市场文案。5181 浏览器验证：无历史账号下三项新占位文案与页面渲染已验证；admin 特定历史记录的中文 chip 实际链路因本轮未使用 admin 会话，记为**未验证**，由历史参数与真实 PG 摘要匹配的组件回归覆盖。
+> **前端（2026-08-02，§6.8.8 每日榜单交互收敛）**：定向 `AssetProfileSelect.spec.ts` + `TradeDatePicker.spec.ts` + `state-block-regression.spec.ts` **24/24**；Vitest 全量 **80 文件 559/559、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。5181 使用 `debug_normal` 真实验证：榜单首屏交易日显示 `2026-07-31`；系统内置「默认趋势分 v1」点“加载查看”后直接成为当前选项（保留“系统内置”来源标签），无需二次下拉选择即自动展示 Top 50 榜单与“已缓存”状态；筛选页单日控件、配置页评分试算单日控件均显示同一最新交易日；控制台 error 日志为空。mine-only 候选不显示“我的”标签由真实 `AssetProfileSelect` 组件测试覆盖；本地 `debug_normal` 无 mine 方案，故该标签在浏览器有数据场景记为**未验证**。训练/回测/数据任务显式日期区间经代码范围复核未启用 `defaultLatest`。
+> **前端（2026-08-02，§6.8.9 回测记录来源标签整改）**：定向 `AssetProfileSelect.spec.ts` + `BacktestView.spec.ts` + `BacktestView.real-component.spec.ts` **36/36**；Vitest 全量 **80 文件 560/560、退出码 0**，无 unhandled errors；最终 `BacktestView.spec.ts` 24/24 与 `npm run build`（vue-tsc + Vite）再次通过。新增断言 mine 回测记录保留完整名称但不渲染来源标签，公开回测快照仍显示 public 来源；并覆盖 ready 前旧偏好 ref 不传给选择器、ready 后清理。5181 初次复核真实发现初始化短暂显示 opaque ref，整改后在加载后 250ms 快照已只显示中文占位、无内部 ref，控制台 error 为空。`debug_normal` 与 `debug_system` 均无 mine 回测记录，故“有数据下拉展开后不显示我的”的真实浏览器数据场景明确记为**未验证**，由 BacktestView 渲染回归覆盖。
+> **前端（2026-08-02，§6.8.10 回测记录下拉定位整改）**：`BacktestView.spec.ts` **24/24**，新增断言历史选择器 `fitInputWidth=true`、`placement=bottom-start`；设计间距契约 **5/5**，Vitest 全量 **80 文件 560/560、退出码 0**，`npm run build`（vue-tsc + Vite）通过。5181 真实打开空记录下拉，量测触发框与弹层均为 **340px**，弹层 `data-popper-placement=bottom-start` 且坐标位于触发框下方；当前调试账号无 mine 回测，故多条长名称候选的真实数据页面明确记为**未验证**，长名称省略、日期收益固定与完整 title 由代码和组件回归覆盖。
+> **前端（2026-08-02，§6.8.11 全量复核统一整改）**：新增覆盖公开查看关闭恢复、历史请求乱序、加载中关闭、评分验证来源审计、mine+公开买卖展示/运行同口径、榜单清空废弃迟到响应、方案列表失败重试和交易日后续恢复；定向 **56/56**，Vitest 全量 **80 文件 568/568、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。5181 `debug_normal` 真实验证：榜单默认交易日 `2026-07-31`，系统内置「默认趋势分 v1」加载后直接选中并自动展示 Top 50 与“已缓存”，控制台 error 为空。公开回测抽屉实际为 0 条，故真实“加载→关闭恢复”和公开评分验证页面复用链路为**未验证**，由新增页面级状态/竞态回归覆盖。本轮未改后端；复核阶段相关后端定向 **84 passed**，服务保持 `/api/health=200`。
+> **前端（2026-08-02，§6.8.6 回测控件语义收敛）**：`BacktestView.spec.ts` **20/20**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **552/552、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖页头仅请求 `source=mine`、不再渲染重复来源下拉、公开浏览入口保留、选股方案空值语义更新，以及重跑完成后单次刷新并按 `run_id` 精确选中。5181 真实页面验证：页头只显示「回测记录」和精确记录选择器，未再出现「全部/我的/租户公开/全体公开」来源下拉；空记录显示「暂无我的回测」；选股方案显示「不使用选股方案（默认）」；点击「浏览公开回测」后抽屉正常显示「租户公开/全体公开」来源段及空态。
+> **前端（2026-08-02，§6.8.7 控件语义复核整改）**：`BacktestView.spec.ts` **23/23**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **555/555、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖重跑刷新失败/目标缺失均不误选旧记录、公开加载使用独立只读快照且不污染 mine 候选、失效偏好提示聚合去重、mine 列表限制最近 100 条。5181 真实页面验证：页头仍只显示 mine 记录选择器，控件 title 明示最近 100 条；失效评分/买卖偏好合并为**一次**提示；公开抽屉的租户/全体来源段及空态正常。本地无公开回测，故「真实公开行加载 → 选择器外只读快照」浏览器链路记为**未验证**，由页面级真实状态测试覆盖。
 > **前端（2026-07-29，T3 ScreenView 样板，含 R1/R2 两轮审查整改）**：Vitest 全量 `525 passed`（组件用例：抽屉 11 + 选择器 9 = 20）；`npm run build` 通过（含 vue-tsc）；Playwright `asset-search-drawer.spec.ts` 跨用户链路三视口（1100×620/1366×768/1440×900）通过并附截图——截图前等待抽屉 `offsetWidth===560` 稳定、对抽屉面板 locator 截图；列断言覆盖需求合并后的方案类列集合「方案名称（含次行『更新于』)/来源（title 含提供者）/操作」三列头左右边界均在抽屉可视区、操作列 `fixed="right"` 完整可见、无权态 fail-closed 不调 browse。**全量 Playwright 本轮未复跑（未验证，留 T6）**；后端曾按 E2E 写模式重启、验收后已恢复日常模式（/api/health=200）。
 - 单元测试：`scoped_where` 四来源互斥（含 **mine 平台槽排除预设**）、preset 负例（private 不出现）、summary 含 updated_at、回测独立 summary、发布码授权解析。具体完成情况：**定向通过**（`test_stage6_asset_visibility` 等）。
 - 接口测试：list `source=mine`（**含平台槽 owner 互斥**）；browse `preset|tenant|public`+q+分页+脱敏（preset 严格公开负例）；未知 source 返回 400；发布放开后 normal 可发布/非 owner 403；回测重跑归属+审计；**发布态回测按引用方案名 q 命中**；**复制原子插入不覆盖同 id 既有资产**。具体完成情况：**定向通过**（含 `test_asset_review_fixes` 3 例 P1 回归）。
@@ -390,19 +463,19 @@
 - 发布前检查：**T0 本地/dev 已核验；生产只读核验必须在 R14 上线门禁前完成**（本地样本不代表生产分布）；新 marker 不冲突；`pytest` 与前端测试全绿；`npm run build` 同步 dist。
 - 发布步骤：后端先上（迁移回填授权 + perm_ver bump，受影响用户重登）→ 前端上。
 - 配置/环境：无新增。
-- 回滚：前端独立回滚；后端授权回填可逆（`asset-publish-open.sql` 回滚段**确定性恢复 C4 前默认角色策略**，属默认策略迁移语义、不保留迁移后人工增删）；预设/is_preset 未改无数据回滚风险。
+- 回滚：前端独立回滚；后端授权回填可逆（`asset-publish-open.sql` 回滚段**确定性恢复 C4 前默认角色策略**，属默认策略迁移语义、不保留迁移后人工增删）；平台预设校准不建议删除记录，确需回退时按稳定 id 收回 visibility，并同步回退 seed 入口。
 
 ## 10. 风险、假设与待确认项
 ### 10.1 风险
 - [高] R4 安全边界变更：公开资产增多；缓解 owner-only、停用降级、引用范围校验；R8 治理列后续。
 - [中] stage6 既有断言（normal 无发布权）需批量更新。
 - [中] 存量库迁移必须新 marker，否则 normal 拿不到发布权。
-- [中] R14 严格条件下筛选/买卖系统内置段常态可能为空——需 T0 核实并做空态兜底，避免被误判为 bug。
+- [中] 部署或库重建后漏执行统一 seed 会使系统内置段为空；页面空态兜底保留，发布流程必须执行并核验三类预设。
 - [低] 选择器双形态抽取需保留评分/买卖侧栏形态。
 
 ### 10.2 假设
 - C1–C9 已确认（§0）。系统内置/`is_preset`/榜单前后端不动。
-- R6 = 重跑（不新增 copy）；复制 = 后端自动 id/名称；系统内置 = 严格 `is_preset AND public`、不迁移。
+- R6 = 重跑（不新增 copy）；复制 = 后端自动 id/名称；系统内置 = 严格 `is_preset AND public`，由统一 seed 维护平台预设。
 
 ### 10.3 前置核验 / 发布门禁
 - **T0（只读事实核验）**：核实线上评分/筛选/买卖预设真实 owner/is_preset/visibility 分布。**只门禁 R14 数据验收与发布**，不阻塞 T1A/T1B（依赖：无，可与 T0 并行）；结论影响 R14 系统内置段实际内容/空态兜底。

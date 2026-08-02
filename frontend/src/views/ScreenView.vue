@@ -654,7 +654,7 @@ onMounted(initializeScreen)
 
       <!-- 运行栏 -->
       <div class="run-bar">
-        <TradeDatePicker v-model="runDate" placeholder="最新交易日" clearable style="width: 160px" />
+        <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest style="width: 160px" />
         <el-button v-permission="'screen:run'" type="primary" :loading="loading" @click="run">运行筛选</el-button>
         <span class="run-hint">含表达式/带参指标需全市场逐股求值，约十几秒</span>
       </div>

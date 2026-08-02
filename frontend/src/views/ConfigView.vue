@@ -1394,7 +1394,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             <div class="run-head">
               <span class="run-title">试算榜单</span>
               <el-tag v-if="runRows.length" type="info" size="small" round>共 {{ runRows.length }} 只</el-tag>
-              <TradeDatePicker v-model="runDate" />
+              <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest />
               <el-button v-permission="'score:run'" :loading="running" type="success" plain @click="tryRun">
                 <template #icon><el-icon><VideoPlay /></el-icon></template>
                 用当前配置试算

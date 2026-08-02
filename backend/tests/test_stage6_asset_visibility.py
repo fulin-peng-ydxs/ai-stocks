@@ -21,6 +21,7 @@ from backend.services.asset_visibility import (
     is_asset_visible,
     make_asset_ref,
     parse_asset_ref,
+    publish_platform_presets,
     resolve_asset_ref_or_legacy_id,
     scoped_where,
     summarize_asset_row,
@@ -30,6 +31,52 @@ from backend.services.asset_visibility import (
 )
 
 _SLOT = ("default", "admin")
+
+
+class _CapturePG:
+    """记录平台预设校准 SQL，避免单元测试依赖真实数据库。"""
+
+    def __init__(self):
+        self.calls: list[tuple[str, list]] = []
+
+    def execute(self, sql, params):
+        self.calls.append((sql, params))
+        return 2
+
+
+def test_publish_platform_presets_is_scoped_and_allowlisted():
+    pg = _CapturePG()
+    assert publish_platform_presets(
+        pg,
+        table="screen_profile",
+        preset_ids=["preset_a", "preset_b"],
+        tenant_id="default",
+        owner_user_id="admin",
+        public_board_owner=_SLOT,
+    ) == 2
+    sql, params = pg.calls[0]
+    assert "tenant_id=%s AND owner_user_id=%s" in sql
+    assert "id IN (%s,%s)" in sql
+    assert params == ["admin", "default", "admin", "preset_a", "preset_b", "admin"]
+
+    assert publish_platform_presets(
+        pg,
+        table="screen_profile",
+        preset_ids=["preset_a"],
+        tenant_id="tenant_a",
+        owner_user_id="owner_a",
+        public_board_owner=_SLOT,
+    ) == 0
+    assert len(pg.calls) == 1
+    with pytest.raises(ValueError, match="不支持的平台预设表"):
+        publish_platform_presets(
+            pg,
+            table="unsafe_table",
+            preset_ids=["preset_a"],
+            tenant_id="default",
+            owner_user_id="admin",
+            public_board_owner=_SLOT,
+        )
 
 
 def test_stage6_asset_ref_roundtrip_and_type_mismatch_rejected():
@@ -173,13 +220,12 @@ def _scoped(source, alias="p", has_preset=True):
 
 
 def test_scoped_where_mine_excludes_platform_slot_preset():
-    # 方案类 mine：纯 owner，且强制排除平台槽公开预设（与 preset 段镜像），
-    # 使平台槽账号下 mine 与 preset 互斥、不混入系统内置。
+    # 方案类 mine：纯 owner，且强制排除平台槽全部预设。历史 private preset 也不能
+    # 泄漏到平台管理员下拉；其公开状态由统一 seed 修复。
     sql, params = _scoped(SCOPE_MINE)
     assert sql == (
         "(p.tenant_id=%s AND p.owner_user_id=%s "
-        "AND NOT (p.is_preset=true AND p.visibility='public' "
-        "AND p.tenant_id=%s AND p.owner_user_id=%s))"
+        "AND NOT (p.is_preset=true AND p.tenant_id=%s AND p.owner_user_id=%s))"
     )
     assert params == ["tenant_a", "owner_a", "default", "admin"]
 

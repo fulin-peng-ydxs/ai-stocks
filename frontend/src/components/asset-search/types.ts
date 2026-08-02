@@ -74,6 +74,15 @@ export function assetItemKey(item: AssetBrowseItem): string {
   return item.run_ref || item.asset_ref || item.id
 }
 
+// mine-only 选择器里归属已由入口语义确定，不重复显示“我的”；外部只读资产仍保留来源。
+export function assetDisplaySource(
+  source?: AssetSource | null,
+  isPreset = false,
+): AssetSource | null {
+  if (isPreset) return 'preset'
+  return source && source !== 'mine' ? source : null
+}
+
 export function formatAssetTime(value?: string | null): string {
   if (!value) return '—'
   // 后端为 ISO/「YYYY-MM-DD HH:MM:SS」字符串；列表只展示到分钟

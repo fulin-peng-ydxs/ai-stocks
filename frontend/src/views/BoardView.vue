@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   copyScoreProfile,
@@ -21,6 +21,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useTradeDates } from '@/composables/useTradeDates'
 import { downloadCsv } from '@/utils/csv'
 import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -61,6 +62,7 @@ const topN = ref(50)
 const rows = ref<ScoreRunRow[]>([])
 const syncingRunDate = ref(false)
 const settingsOpen = ref(false)
+const { dataMax, ensureLoaded: ensureTradeDatesLoaded } = useTradeDates()
 
 // topN、分项达标分模式属榜单业务态偏好，保留在 usePageSettings；
 // 列显隐与默认排序迁入组件配置层（slots.table.config.*），消除与 usePageSettings 的双入口（plan.md §13.3）。
@@ -94,9 +96,8 @@ function onTableSortChange({ prop }: { prop: string; order: string | null }): vo
   setComponentKnob('table', 'defaultSort', BOARD_SORT_PROPS[prop] ?? 'score')
 }
 
-// 评分规则方案（R3/R5/R7：统一选择器——下拉只加载「我的」source=mine 纯 owner，
-// 「搜索」入口打开共享搜索抽屉浏览系统内置/租户公开/全体公开；「加载查看」注入临时只读项
-// 并按现状由用户显式触发榜单，不自动跑榜单；「复制为我的」后端生成 id 并刷新选中）。
+// 评分规则方案（R3/R5/R7）：下拉加载「我的」，搜索抽屉可浏览可见资产；
+// 榜单属于“选择即查看”页面，加载公开方案后直接形成只读选项并自动刷新。
 const auth = useAuthStore()
 const profiles = ref<ScoreProfileSummary[]>([])
 const profileRef = ref('')
@@ -120,26 +121,56 @@ function copyAnyBoardProfile(item: ProfileSummary) {
   // 榜单方案=评分方案，复制走评分 copy 端点（后端生成唯一 id）
   return copyScoreProfile(item.profile_ref || item.id)
 }
-// 选择器选中 → 仅更新选中，不自动跑榜单（保持现状由用户显式触发）
 function onProfileSelect(key: string) {
+  // 任何选择变化（包括清空）都先让旧请求失效，避免无选中时被迟到响应重新写回榜单。
+  loadSequence += 1
   profileRef.value = key
+  if (key) void load()
+  else {
+    rows.value = []
+    cacheStatus.value = ''
+    loading.value = false
+  }
 }
-// 「加载查看」临时只读项：并入 profiles 供 curProfile（标题/导出/榜单参数）解析，不自动跑榜单
+// 加载的只读项并入页面侧摘要列表，使执行参数与标题都按 opaque profile_ref 解析。
 function onProfileLoaded(item: ProfileSummary) {
   const summary = item as ScoreProfileSummary
   if (!profiles.value.some((p) => profileKey(p) === profileKey(summary))) {
     profiles.value = [summary, ...profiles.value]
   }
 }
-// 组件为列表唯一事实源（P2-1）：经 ready 接收「我的」列表，不再重复 fetch；首项自动选中并跑榜单
+const profilesReady = ref(false)
+const tradeDatesReady = ref(false)
+let initialLoadStarted = false
+async function maybeLoadInitialBoard() {
+  if (initialLoadStarted || !profilesReady.value || !tradeDatesReady.value) return
+  initialLoadStarted = true
+  if (profileRef.value) await load()
+  else loading.value = false
+}
+
+// 组件为列表唯一事实源：经 ready 接收「我的」列表；与交易日初始化汇合后只发起一次首屏请求。
 async function onProfilesReady(list: ProfileSummary[]) {
+  const recoveredFromError = profilesReady.value && !!error.value
+  // 搜索抽屉可能比 mine 列表先返回；ready 不得把已加载的当前只读方案覆盖掉。
+  const selectedBeforeReady = profiles.value.find((p) => profileKey(p) === profileRef.value)
   profiles.value = list as ScoreProfileSummary[]
+  if (selectedBeforeReady && !profiles.value.some((p) => profileKey(p) === profileKey(selectedBeforeReady))) {
+    profiles.value = [selectedBeforeReady, ...profiles.value]
+  }
   if (profiles.value.length && !profileRef.value) {
     profileRef.value = profileKey(profiles.value[0])
-    await load()
-  } else if (!profiles.value.length) {
-    loading.value = false
   }
+  profilesReady.value = true
+  error.value = ''
+  if (recoveredFromError && profileRef.value) await load()
+  else await maybeLoadInitialBoard()
+}
+function onProfilesLoadFailed(message: string) {
+  // 刷新失败时保留已成功加载的摘要与榜单；首屏本来为空，仍会自然进入全页错误态。
+  profilesReady.value = true
+  error.value = message
+  loading.value = false
 }
 // 复制成功（P2-2）：组件回写完整 summary，并入 profiles 使 curProfile（标题/导出/榜单参数）可解析
 function onProfileCopied(item: ProfileSummary) {
@@ -189,27 +220,37 @@ function gradeType(g: string): string {
   return g === '主升浪核心' ? 'danger' : g === '龙头候选' ? 'warning' : g === '观察' ? 'success' : 'info'
 }
 
+let loadSequence = 0
 async function load() {
   if (!profileRef.value) return
+  const selected = curProfile.value
+  if (!selected) {
+    error.value = '评分方案信息尚未加载完成，请重新选择'
+    loading.value = false
+    return
+  }
+  const sequence = ++loadSequence
   loading.value = true
   error.value = ''
   try {
-    const selected = curProfile.value
     const res = await runBoardProfile({
-      ...(selected?.profile_ref ? { profile_ref: selected.profile_ref } : { profile_id: selected?.id || profileRef.value }),
+      ...(selected.profile_ref ? { profile_ref: selected.profile_ref } : { profile_id: selected.id }),
       run_date: runDate.value || undefined,
       top: topN.value,
     })
+    if (sequence !== loadSequence) return
     rows.value = res.list
     cacheStatus.value = res.cache_status || ''
     syncingRunDate.value = true
     runDate.value = res.run_date
+    await nextTick()
     syncingRunDate.value = false
     if (!res.list.length) ElMessage.info('无结果（可能该日无数据）')
   } catch (e) {
+    if (sequence !== loadSequence) return
     error.value = (e as Error).message
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
 
@@ -238,8 +279,18 @@ onMounted(async () => {
   loading.value = true
   error.value = ''
   try {
-    // 只取指标注册表；方案列表由选择器组件经 ready 事件提供（P2-1，组件为唯一事实源，不重复 fetch）
-    registry.value = (await getIndicatorRegistry(true)).items
+    // 日期与指标并行加载；先显示数据最新交易日，再与选择器 ready 汇合，避免首屏重复请求。
+    const [registryResult] = await Promise.all([
+      getIndicatorRegistry(true),
+      ensureTradeDatesLoaded(),
+    ])
+    registry.value = registryResult.items
+    syncingRunDate.value = true
+    if (!runDate.value && dataMax.value) runDate.value = dataMax.value
+    await nextTick()
+    syncingRunDate.value = false
+    tradeDatesReady.value = true
+    await maybeLoadInitialBoard()
   } catch (e) {
     error.value = (e as Error).message
     loading.value = false
@@ -279,15 +330,17 @@ onMounted(async () => {
             :copy-item="copyAnyBoardProfile"
             copy-permission="score-profile:save"
             view-permission="board:view"
-            placeholder="选我的评分方案（可选）"
+            placeholder="请选择评分方案"
+            select-loaded
             test-id="board-profile-select"
             style="width: 300px"
             @update:model-value="onProfileSelect"
             @loaded="onProfileLoaded"
             @ready="onProfilesReady"
+            @load-failed="onProfilesLoadFailed"
             @copied-item="onProfileCopied"
           />
-          <TradeDatePicker v-model="runDate" clearable />
+          <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
           <span class="lbl">Top</span>
           <el-select v-model="topN" style="width: 88px" @change="load">
             <el-option :value="20" label="20" />

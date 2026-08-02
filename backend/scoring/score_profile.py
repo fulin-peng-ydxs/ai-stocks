@@ -32,6 +32,7 @@ from backend.services.asset_visibility import (
     make_asset_ref,
     normalize_visibility,
     parse_asset_ref,
+    publish_platform_presets,
     resolve_asset_ref_or_legacy_id,
     scoped_query,
     summarize_asset_row,
@@ -346,7 +347,7 @@ class ScoreProfileRepo:
 
     def list_mine(self) -> list[dict]:
         """下拉专用：只加载「自己的资产」（纯 owner），不含他人公开与平台槽系统内置段；
-        平台槽账号下也剔除严格系统内置预设，保证与 preset 段互斥（R3/C2）。"""
+        平台槽账号下也剔除全部系统预设，包括尚未完成公开校准的历史数据（R3/C2）。"""
         rows, _ = scoped_query(
             self.pg,
             table="score_profile",
@@ -528,5 +529,13 @@ class ScoreProfileRepo:
     def seed_defaults(self) -> int:
         for p in DEFAULT_SCORE_PROFILES:
             self.save(p["id"], p["name"], p["items"], p.get("grade_thresholds"), is_preset=True)
+        publish_platform_presets(
+            self.pg,
+            table="score_profile",
+            preset_ids=[p["id"] for p in DEFAULT_SCORE_PROFILES],
+            tenant_id=self.tenant_id,
+            owner_user_id=self.owner_user_id,
+            public_board_owner=PUBLIC_BOARD_OWNER,
+        )
         log.info("内置评分方案入库 %d 个", len(DEFAULT_SCORE_PROFILES))
         return len(DEFAULT_SCORE_PROFILES)

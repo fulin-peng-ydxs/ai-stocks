@@ -1,7 +1,7 @@
-"""阶段 2 审查修复回归测试（P1-1 / P1-2 / P1-3）。
+"""资产归属审查修复回归测试。
 
-- P1-3：平台槽账号（PUBLIC_BOARD_OWNER）下 list_mine 不得混入严格系统内置公开预设，
-  即 mine 与 preset 段真正互斥。
+- 平台槽账号（PUBLIC_BOARD_OWNER）下 list_mine 不得混入任何系统预设，包括历史 private 行。
+- 三类平台预设的 seed 必须补齐缺失记录并把历史状态幂等校准为 public。
 - P1-1：发布态回测的方案引用列已改写成 opaque ref，q 必须在解析 ref、补全方案名之后过滤，
   按引用方案名能命中发布态回测。
 - P1-2：复制走原子 INSERT ... ON CONFLICT DO NOTHING，撞到同 id 既有资产时不覆盖、返回 False。
@@ -17,12 +17,15 @@ from datetime import date
 import pytest
 
 from backend.common.exceptions import StorageError
+from backend.scoring import score_profile as score_profile_module
 from backend.screening.presets import PRESET_PROFILES
+from backend.screening import profile as screen_profile_module
 from backend.screening.profile import ProfileRepo
 from backend.scoring.score_profile import ScoreProfileRepo
 from backend.services.asset_visibility import make_asset_ref
 from backend.services.asset_visibility import ASSET_SCREEN_PROFILE
 from backend.services.backtest_service import BacktestService
+from backend.signals import trade_profile as trade_profile_module
 from backend.signals.trade_profile import TradeProfileRepo
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 from backend.tests.conftest import TEST_OWNER, TEST_TENANT
@@ -77,22 +80,104 @@ class _FaultPG:
 
 
 # ── P1-3：平台槽 mine 与 preset 互斥 ────────────────────────────────
-def test_platform_slot_mine_excludes_strict_public_preset(market, pg):
-    """平台槽账号自身查询 list_mine：私有资产在、严格系统内置公开预设不在（归 preset 段）。"""
+def test_platform_slot_mine_excludes_public_and_legacy_private_presets(market, pg):
+    """平台槽 mine 排除全部系统预设，包括初始化修复前遗留的 private 预设。"""
     slot = ScoreProfileRepo(market=market, pg=pg, tenant_id=_SLOT_T, owner_user_id=_SLOT_O)
     try:
         slot.save("slot_preset_x", "平台内置预设X", _ITEMS, is_preset=True)   # owner==slot → 自动 public
+        pg.execute(
+            "UPDATE score_profile SET visibility='private', published_at=NULL, published_by=NULL "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [_SLOT_T, _SLOT_O, "slot_preset_x"],
+        )
         slot.save("slot_private_x", "平台私有X", _ITEMS)                       # private
         mine_ids = {r["id"] for r in slot.list_mine()}
         assert "slot_private_x" in mine_ids            # 自己的私有资产仍在 mine
-        assert "slot_preset_x" not in mine_ids         # 系统内置预设被剔除，不混入 mine
-        # 而 preset 段仍能浏览到它
-        preset_ids = {r["id"] for r in slot.browse("preset")["items"]}
-        assert "slot_preset_x" in preset_ids
+        assert "slot_preset_x" not in mine_ids         # private preset 也不能伪装成 mine
+        assert "slot_preset_x" not in {
+            r["id"] for r in slot.browse("preset")["items"]
+        }                                               # 未修复前也不泄露到公开浏览
     finally:
-        pg.execute("DELETE FROM score_profile WHERE tenant_id=%s AND owner_user_id=%s", [_SLOT_T, _SLOT_O])
-        pg.execute("DELETE FROM score_profile_version WHERE tenant_id=%s AND owner_user_id=%s",
-                   [_SLOT_T, _SLOT_O])
+        for table in ("score_profile", "score_profile_version"):
+            pg.execute(
+                f"DELETE FROM {table} WHERE tenant_id=%s AND owner_user_id=%s "
+                "AND id IN (%s,%s)",
+                [_SLOT_T, _SLOT_O, "slot_preset_x", "slot_private_x"],
+            )
+
+
+def test_platform_seed_restores_and_publishes_all_profile_presets(market, pg, monkeypatch):
+    """统一 seed 补齐评分默认项，并修复筛选/买卖历史 private 预设。"""
+    screen_id = "pytest_seed_screen"
+    score_id = "pytest_seed_score"
+    trade_id = "pytest_seed_trade"
+    monkeypatch.setattr(screen_profile_module, "PRESET_PROFILES", [{
+        "id": screen_id, "name": "测试筛选预设", "expression": _EXPR,
+    }])
+    monkeypatch.setattr(score_profile_module, "DEFAULT_SCORE_PROFILES", [{
+        "id": score_id,
+        "name": "测试评分预设",
+        "items": _ITEMS,
+        "grade_thresholds": {"watch": 80, "leader": 90, "core": 95},
+    }])
+    monkeypatch.setattr(trade_profile_module, "DEFAULT_TRADE_PROFILES", [{
+        "id": trade_id,
+        "name": "测试买卖预设",
+        "buy_tree": _BUY,
+        "sell_tree": _SELL,
+        "backstop": {},
+    }])
+    screen = ProfileRepo(pg=pg, tenant_id=_SLOT_T, owner_user_id=_SLOT_O)
+    score = ScoreProfileRepo(market=market, pg=pg, tenant_id=_SLOT_T, owner_user_id=_SLOT_O)
+    trade = TradeProfileRepo(market=market, pg=pg, tenant_id=_SLOT_T, owner_user_id=_SLOT_O)
+    try:
+        assert screen.seed_presets() == 1
+        assert score.seed_defaults() == 1
+        assert trade.seed_defaults() == 1
+        for table, preset_id in (
+            ("screen_profile", screen_id),
+            ("score_profile", score_id),
+            ("trade_profile", trade_id),
+        ):
+            row = pg.query_df(
+                f"SELECT is_preset, visibility, published_at, published_by FROM {table} "
+                "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                [_SLOT_T, _SLOT_O, preset_id],
+            ).iloc[0]
+            assert bool(row["is_preset"]) is True
+            assert row["visibility"] == "public"
+            assert row["published_at"] is not None
+            assert row["published_by"] == _SLOT_O
+
+        # 模拟旧库回退：再次 seed 必须自愈，且不创建重复记录。
+        pg.execute(
+            "UPDATE screen_profile SET visibility='private', published_at=NULL, published_by=NULL "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [_SLOT_T, _SLOT_O, screen_id],
+        )
+        assert screen.seed_presets() == 1
+        healed = pg.query_df(
+            "SELECT visibility, published_at, published_by FROM screen_profile "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+            [_SLOT_T, _SLOT_O, screen_id],
+        ).iloc[0]
+        assert healed["visibility"] == "public"
+        assert healed["published_at"] is not None
+        assert healed["published_by"] == _SLOT_O
+    finally:
+        for table, preset_id in (
+            ("screen_profile", screen_id),
+            ("score_profile", score_id),
+            ("trade_profile", trade_id),
+        ):
+            pg.execute(
+                f"DELETE FROM {table} WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                [_SLOT_T, _SLOT_O, preset_id],
+            )
+            pg.execute(
+                f"DELETE FROM {table}_version WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                [_SLOT_T, _SLOT_O, preset_id],
+            )
 
 
 # ── P1-1：发布态回测按引用方案名搜索 ────────────────────────────────

@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import { defineComponent, h, nextTick, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -92,7 +92,11 @@ function validLayers(): Layers {
 
 const ElSelectStub = defineComponent({
   name: 'ElSelect',
-  props: ['modelValue'],
+  props: {
+    modelValue: { default: '' },
+    fitInputWidth: Boolean,
+    placement: { type: String, default: '' },
+  },
   emits: ['update:modelValue', 'change'],
   setup(props, { slots }) {
     return () => h('div', { 'data-model-value': String(props.modelValue ?? '') }, slots.default?.())
@@ -145,7 +149,10 @@ const stubs = {
   CandleChart: true,
   // 占位替代布尔 stub(true)：布尔 stub 在 el-option v-for 等结构下会触发 emitsOptions 空引用
   AssetVisibilityActions: { template: '<div />' },
-  AssetVisibilityTag: { template: '<div />' },
+  AssetVisibilityTag: {
+    props: ['source'],
+    template: '<span v-if="source" class="asset-source-stub">{{ source }}</span>',
+  },
   ElSelect: ElSelectStub,
   ElOption: ElOptionStub,
   AssetProfileSelect: AssetProfileSelectStub,
@@ -237,6 +244,9 @@ describe('BacktestView 三方案选择器（T5）', () => {
     expect(score.props('assetLabel')).toBe('评分方案')
     expect(screen.props('assetLabel')).toBe('选股方案')
     expect(trade.props('assetLabel')).toBe('买卖方案')
+    expect(score.props('placeholder')).toBe('请选择评分方案（必选）')
+    expect(screen.props('placeholder')).toBe('不使用选股方案（默认）')
+    expect(trade.props('placeholder')).toBe('请选择买卖方案（必选）')
 
     for (const sel of [score, screen, trade]) {
       expect(typeof sel.props('fetchMine')).toBe('function')
@@ -249,6 +259,63 @@ describe('BacktestView 三方案选择器（T5）', () => {
     expect(screen.props('viewPermission')).toBe('screen-profile:view')
     expect(trade.props('copyPermission')).toBe('trade-profile:save')
     expect(trade.props('viewPermission')).toBe('trade-profile:view')
+    wrapper.unmount()
+  })
+
+  it('顶部历史只加载我的记录，不再渲染与公开浏览重复的来源下拉', async () => {
+    const wrapper = await mountView()
+    expect(backtestApi.listRuns).toHaveBeenCalledWith('strategy', 'mine')
+    expect(wrapper.find('.history-source-select').exists()).toBe(false)
+    expect(wrapper.text()).toContain('回测记录')
+    expect(wrapper.find('[data-testid="backtest-browse-open"]').exists()).toBe(true)
+    const historySelect = wrapper.findAllComponents(ElSelectStub)
+      .find((select) => select.classes().includes('history-run-select'))
+    expect(historySelect?.props('fitInputWidth')).toBe(true)
+    expect(historySelect?.props('placement')).toBe('bottom-start')
+    wrapper.unmount()
+  })
+
+  it('mine-only 回测记录下拉不重复显示“我的”来源标签', async () => {
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{
+        id: 'mine-run', run_ref: 'run_ref_mine', kind: 'strategy',
+        date_start: '2024-01-01', date_end: '2024-12-31',
+        score_profile_name: '我的评分', profile_name: '我的选股', trade_profile_name: '我的买卖',
+        source: 'mine', readonly: false,
+      } as any],
+    })
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-01-01', date_end: '2024-12-31' },
+      { id: 'mine-run', run_ref: 'run_ref_mine' },
+    ))
+    const wrapper = await mountView()
+
+    expect(wrapper.find('.history-run-select').text()).toContain('我的评分-我的选股-我的买卖')
+    expect(wrapper.find('.history-run-select').find('.asset-source-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('公开回测加载查看使用独立只读快照，不混入我的记录下拉', async () => {
+    const wrapper = await mountView()
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-01-01', date_end: '2024-06-30' },
+      { id: 'public-run', run_ref: 'run_ref_public' },
+    ))
+    const item = {
+      id: 'public-run', run_ref: 'run_ref_public', kind: 'strategy',
+      date_start: '2024-01-01', date_end: '2024-06-30', created_at: '2024-07-01 10:00:00',
+      score_profile_name: '公开评分', profile_name: '公开选股', trade_profile_name: '公开买卖',
+      source: 'public', readonly: true,
+    } as any
+
+    runDrawer(wrapper)!.vm.$emit('load', item)
+    await flushPromises()
+
+    expect((wrapper.vm as any).runHistory).toEqual([])
+    expect((wrapper.vm as any).selectedRun).toBe('')
+    expect(wrapper.find('[data-testid="backtest-external-run"]').text()).toContain('公开评分-公开选股-公开买卖')
+    expect(wrapper.find('[data-testid="backtest-external-run"] .asset-source-stub').text()).toBe('public')
+    expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_public')
     wrapper.unmount()
   })
 
@@ -292,11 +359,115 @@ describe('BacktestView 三方案选择器（T5）', () => {
     await emitLoaded(wrapper, 'backtest-trade-select', {
       id: 'pub-t', profile_ref: 'avr_trade_pub', name: '公开买卖', version: 2, source: 'public', readonly: true,
     })
-    // 卖出规则行用临时项名称（tradeProfileName 回退 tempSelected）
-    expect((wrapper.vm as any).tradeProfileName('avr_trade_pub')).toBe('公开买卖')
     // buildBody 按 tempSelected 快照取 ref
     const body = (wrapper.vm as any).buildBody()
     expect(body.trade_profile_id).toBe('avr_trade_pub')
+    expect(wrapper.find('.sell-row').text()).toContain('公开买卖')
+    wrapper.unmount()
+  })
+
+  it('已有 mine 买卖方案时临时公开快照同时驱动运行参数和卖出规则名称', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    findSelect(wrapper, 'backtest-trade-select')!.vm.$emit('update:modelValue', 'avr_trade_1')
+    await flushPromises()
+    await emitLoaded(wrapper, 'backtest-trade-select', {
+      id: 'pub-t', profile_ref: 'avr_trade_pub', name: '公开买卖', version: 2, source: 'public', readonly: true,
+    })
+
+    expect((wrapper.vm as any).buildBody().trade_profile_id).toBe('avr_trade_pub')
+    expect(wrapper.find('.sell-row').text()).toContain('公开买卖')
+    expect(wrapper.find('.sell-row').text()).not.toContain('趋势买卖')
+    wrapper.unmount()
+  })
+
+  it('普通回测与稳健性测试共用同一临时快照 ref，不出现展示/运行口径分叉', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    await emitLoaded(wrapper, 'backtest-score-select', {
+      id: 'pub-s', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true,
+    })
+    await emitLoaded(wrapper, 'backtest-screen-select', {
+      id: 'pub-p', profile_ref: 'avr_screen_pub', name: '公开选股', version: 2, source: 'public', readonly: true,
+    })
+    await emitLoaded(wrapper, 'backtest-trade-select', {
+      id: 'pub-t', profile_ref: 'avr_trade_pub', name: '公开买卖', version: 4, source: 'public', readonly: true,
+    })
+    vi.mocked(backtestApi.runRobust).mockResolvedValue({ rows: [] } as any)
+
+    const normal = (wrapper.vm as any).buildBody()
+    await (wrapper.vm as any).runRobustTest()
+
+    expect(backtestApi.runRobust).toHaveBeenCalledTimes(1)
+    const robust = vi.mocked(backtestApi.runRobust).mock.calls[0][0] as any
+    expect(robust.params.profile_id).toBe(normal.profile_id)
+    expect(robust.params.score_profile_id).toBe(normal.score_profile_id)
+    expect(robust.params.trade_profile_id).toBe(normal.trade_profile_id)
+    expect(robust.params).toMatchObject({
+      profile_id: 'avr_screen_pub',
+      score_profile_id: 'avr_score_pub',
+      trade_profile_id: 'avr_trade_pub',
+    })
+    wrapper.unmount()
+  })
+
+  it('自动载入含系统方案的历史记录时显示中文名称，不把内部 id 写入 mine-only 选择器', async () => {
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{
+        id: 'r-system', run_ref: 'run_ref_system', kind: 'strategy',
+        date_start: '2024-01-01', date_end: '2024-06-30', created_at: '2024-07-01 10:00:00',
+        profile_name: '趋势龙头', profile_version: 1,
+        score_profile_name: '默认趋势分', score_profile_version: 2,
+        trade_profile_name: '趋势买卖', trade_profile_version: 3,
+      } as any],
+    })
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail({
+      date_start: '2024-01-01', date_end: '2024-06-30',
+      profile_id: 'preset_trend_leader', score_profile_id: 'default', trade_profile_id: 'default',
+      top_n: 3, initial_capital: 1000000,
+    }, { id: 'r-system', run_ref: 'run_ref_system' }))
+
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+
+    expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
+    expect(findSelect(wrapper, 'backtest-screen-select')!.props('modelValue')).toBe('')
+    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').text()).toContain('默认趋势分')
+    expect(wrapper.find('[data-testid="backtest-screen-select-temp"]').text()).toContain('趋势龙头')
+    expect(wrapper.find('[data-testid="backtest-trade-select-temp"]').text()).toContain('趋势买卖')
+    expect(wrapper.text()).not.toContain('preset_trend_leader')
+
+    // 用户随后加载另一公开方案时，历史投影必须让位；列表再次 ready 也不能把旧历史快照覆盖回来。
+    await emitLoaded(wrapper, 'backtest-score-select', {
+      id: 'pub-new', profile_ref: 'avr_score_new', name: '新公开评分', version: 5, source: 'public', readonly: true,
+    })
+    findSelect(wrapper, 'backtest-score-select')!.vm.$emit('ready', mineScoreList())
+    await flushPromises()
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').text()).toContain('新公开评分')
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').text()).not.toContain('默认趋势分')
+    wrapper.unmount()
+  })
+
+  it('历史方案 ref 无名称且不在 mine 列表时显示失效态并阻止运行', async () => {
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{
+        id: 'r-stale', run_ref: 'run_ref_stale', kind: 'strategy',
+        date_start: '2024-01-01', date_end: '2024-06-30', created_at: '2024-07-01 10:00:00',
+      } as any],
+    })
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail({
+      date_start: '2024-01-01', date_end: '2024-06-30',
+      profile_id: 'gone-screen', score_profile_id: 'gone-score', trade_profile_id: 'gone-trade',
+    }, { id: 'r-stale', run_ref: 'run_ref_stale' }))
+
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+
+    expect(wrapper.text()).toContain('历史评分方案已不可用')
+    expect(wrapper.text()).toContain('历史选股方案已不可用')
+    expect(wrapper.text()).toContain('历史买卖方案已不可用')
+    expect((wrapper.vm as any).validateRunSelection()).toBe(false)
     wrapper.unmount()
   })
 
@@ -391,6 +562,11 @@ describe('BacktestView 三方案选择器（T5）', () => {
       topN: 10, initCap: 1000000, industryOn: false, industryPct: 20,
     }))
     const wrapper = await mountView()
+    // hydration 已写入页面内部状态、mine 列表尚未 ready 时，也不得把 opaque ref 暴露给 ElSelect。
+    expect((wrapper.vm as any).scoreProfileId).toBe('avr_score_old')
+    expect((wrapper.vm as any).tradeProfileId).toBe('avr_trade_old')
+    expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
+    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
     await emitAllReady(wrapper) // 列表 ready（reconcile 清掉非 mine 残留）
     expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
     expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
@@ -412,9 +588,13 @@ describe('BacktestView 三方案选择器（T5）', () => {
       topN: 10, initCap: 1000000, industryOn: false, industryPct: 20,
     }))
     const wrapper = await mountView()
+    const warning = vi.spyOn(ElMessage, 'warning')
     await emitAllReady(wrapper) // ready 列表落地后清掉非 mine 残留
     expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
     expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
+    const staleWarnings = warning.mock.calls.filter(([message]) => String(message).includes('方案已不可用'))
+    expect(staleWarnings).toHaveLength(1)
+    expect(String(staleWarnings[0][0])).toContain('评分/买卖')
     wrapper.unmount()
   })
 })
@@ -447,6 +627,92 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     expect(backtestApi.runBacktest).not.toHaveBeenCalled()
     // 公开只读行 → 删除按钮不可见（readonly fail-closed，非默认可写）
     expect(wrapper.findAll('button').some((b) => b.text() === '删除')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('关闭公开回测恢复进入前的表单、结果与运行按钮状态', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    ;(wrapper.vm as any).dateStart = '2023-01-01'
+    ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
+    ;(wrapper.vm as any).dirty = false
+    const previousResult = { run_id: 'mine-result', metrics: {}, layers: validLayers(), trades: [], equity: [] }
+    ;(wrapper.vm as any).strat = previousResult
+
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail({
+      date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'public-score',
+    }, { id: 'public-run', run_ref: 'run_ref_public' }))
+    runDrawer(wrapper)!.vm.$emit('load', {
+      id: 'public-run', run_ref: 'run_ref_public', kind: 'strategy',
+      score_profile_name: '公开评分', readonly: true, source: 'public',
+    })
+    await flushPromises()
+    expect((wrapper.vm as any).dateStart).toBe('2024-01-01')
+
+    ;(wrapper.vm as any).clearExternalRun()
+    await flushPromises()
+    expect((wrapper.vm as any).externalRunSummary).toBeNull()
+    expect((wrapper.vm as any).dateStart).toBe('2023-01-01')
+    expect((wrapper.vm as any).scoreProfileId).toBe('avr_score_1')
+    expect((wrapper.vm as any).strat).toStrictEqual(previousResult)
+    expect((wrapper.vm as any).dirty).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('历史回测快速切换时只允许最后一次请求写入页面', async () => {
+    const wrapper = await mountView()
+    let resolveFirst!: (value: any) => void
+    let resolveSecond!: (value: any) => void
+    vi.mocked(backtestApi.getRun)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve }))
+
+    void (wrapper.vm as any).loadRun('run-first')
+    void (wrapper.vm as any).loadRun('run-second')
+    resolveSecond(getRunDetail({ date_start: '2025-02-01', date_end: '2025-06-30' }, { run_ref: 'run-second' }))
+    await flushPromises()
+    resolveFirst(getRunDetail({ date_start: '2024-01-01', date_end: '2024-06-30' }, { run_ref: 'run-first' }))
+    await flushPromises()
+
+    expect((wrapper.vm as any).dateStart).toBe('2025-02-01')
+    expect((wrapper.vm as any).strat?.run_id).toBe('run-second')
+    wrapper.unmount()
+  })
+
+  it('关闭加载中的公开回测会使迟到响应失效', async () => {
+    const wrapper = await mountView()
+    let resolveRun!: (value: any) => void
+    vi.mocked(backtestApi.getRun).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveRun = resolve }),
+    )
+    runDrawer(wrapper)!.vm.$emit('load', {
+      id: 'public-run', run_ref: 'run_ref_public', kind: 'strategy', readonly: true, source: 'public',
+    })
+    ;(wrapper.vm as any).clearExternalRun()
+    resolveRun(getRunDetail({ date_start: '2030-01-01', date_end: '2030-06-30' }))
+    await flushPromises()
+
+    expect((wrapper.vm as any).externalRunSummary).toBeNull()
+    expect((wrapper.vm as any).dateStart).not.toBe('2030-01-01')
+    expect((wrapper.vm as any).strat).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('评分验证通过页面复用参数后运行仍携带 source_run_ref', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail({
+      date_start: '2024-01-01', date_end: '2024-06-30', score_profile_id: 'avr_score_1',
+    }, { id: 'score-run', run_ref: 'score_run_ref', kind: 'score_check' }))
+    runDrawer(wrapper)!.vm.$emit('load', {
+      id: 'score-run', run_ref: 'score_run_ref', kind: 'score_check', readonly: true, source: 'public',
+    })
+    await flushPromises()
+
+    await (wrapper.vm as any).reuseCurrentRunParams()
+    expect((wrapper.vm as any).buildBody()).toMatchObject({
+      kind: 'score_check', score_profile_id: 'avr_score_1', source_run_ref: 'score_run_ref',
+    })
     wrapper.unmount()
   })
 
@@ -490,7 +756,7 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     wrapper.unmount()
   })
 
-  it('rerunDone 携带新 run 返回值，按 run_id 精确选中并切到我的（P2-5）', async () => {
+  it('rerunDone 携带新 run 返回值，单次刷新我的记录并按 run_id 精确选中（P2-5）', async () => {
     const wrapper = await mountView()
     vi.mocked(backtestApi.listRuns).mockResolvedValue({
       runs: [
@@ -504,9 +770,41 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     // 真实组件会 emit('rerunDone', result, item)；此处直接驱动父级回调验证按 run_id 选中
     drawer.vm.$emit('rerunDone', { run_id: 'new_run' }, { id: 'r9', run_ref: 'run_ref_9', kind: 'strategy' })
     await flushPromises()
-    expect(backtestApi.listRuns).toHaveBeenCalled()
+    expect(backtestApi.listRuns).toHaveBeenLastCalledWith('strategy', 'mine')
     // 选中的必须是返回值指定的新 run（new_run 不在列表首行，证明非盲选 [0]）
     expect(backtestApi.getRun).toHaveBeenCalledWith('run_ref_new')
+    wrapper.unmount()
+  })
+
+  it('rerunDone 刷新失败时不回退选择旧记录', async () => {
+    const wrapper = await mountView()
+    vi.mocked(backtestApi.getRun).mockClear()
+    vi.mocked(backtestApi.listRuns).mockRejectedValueOnce(new Error('network'))
+    const warning = vi.spyOn(ElMessage, 'warning')
+
+    runDrawer(wrapper)!.vm.$emit('rerunDone', { run_id: 'new_run' }, { id: 'r9' })
+    await flushPromises()
+
+    expect(backtestApi.getRun).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).selectedRun).toBe('')
+    expect(warning).toHaveBeenCalledWith('重跑已完成，但我的记录刷新失败，请稍后重试')
+    wrapper.unmount()
+  })
+
+  it('rerunDone 刷新成功但目标记录未出现时不误选首行', async () => {
+    const wrapper = await mountView()
+    vi.mocked(backtestApi.getRun).mockClear()
+    vi.mocked(backtestApi.listRuns).mockResolvedValueOnce({
+      runs: [{ id: 'older', run_ref: 'run_ref_older', kind: 'strategy' } as any],
+    })
+    const warning = vi.spyOn(ElMessage, 'warning')
+
+    runDrawer(wrapper)!.vm.$emit('rerunDone', { run_id: 'new_run' }, { id: 'r9' })
+    await flushPromises()
+
+    expect(backtestApi.getRun).not.toHaveBeenCalled()
+    expect((wrapper.vm as any).selectedRun).toBe('')
+    expect(warning).toHaveBeenCalledWith('重跑已完成，但新记录尚未出现在列表中，请稍后刷新')
     wrapper.unmount()
   })
 

@@ -219,10 +219,26 @@ def cmd_refetch_daily(args: argparse.Namespace) -> int:
 
 
 def cmd_seed_presets(args: argparse.Namespace) -> int:
+    from backend.scoring.score_profile import ScoreProfileRepo
     from backend.screening.profile import ProfileRepo
+    from backend.signals.trade_profile import TradeProfileRepo
+    from backend.storage import get_client
+    from backend.storage.pg_client import get_pg_client
+    from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
-    n = ProfileRepo().seed_presets()
-    print(f"系统内置筛选方案入库: {n} 个")
+    tenant_id, owner_user_id = PUBLIC_BOARD_OWNER
+    pg = get_pg_client()
+    market = get_client()
+    counts = {
+        "筛选": ProfileRepo(
+            pg=pg, tenant_id=tenant_id, owner_user_id=owner_user_id).seed_presets(),
+        "评分": ScoreProfileRepo(
+            market=market, pg=pg, tenant_id=tenant_id, owner_user_id=owner_user_id).seed_defaults(),
+        "买卖": TradeProfileRepo(
+            market=market, pg=pg, tenant_id=tenant_id, owner_user_id=owner_user_id).seed_defaults(),
+    }
+    summary = "，".join(f"{kind} {count} 个" for kind, count in counts.items())
+    print(f"系统内置方案入库: {summary}")
     return 0
 
 
@@ -598,7 +614,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_ind.add_argument("--incremental", action="store_true", help="增量：只算新增交易日（params 不变时用，省时）")
     p_ind.set_defaults(func=cmd_indicators)
 
-    sub.add_parser("seed-presets", help="系统内置筛选方案入库（M3）").set_defaults(func=cmd_seed_presets)
+    sub.add_parser(
+        "seed-presets", help="三类系统内置方案幂等入库并校准为公开"
+    ).set_defaults(func=cmd_seed_presets)
 
     p_scr = sub.add_parser("screen", help="对某交易日运行筛选方案（M3）")
     p_scr.add_argument("profile", help="方案 id，如 preset_trend_leader")
