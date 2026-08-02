@@ -180,4 +180,21 @@ describe('BacktestView + 真实 AssetProfileSelect（递归契约 + 完整 onDra
     expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_1')
     wrapper.unmount()
   })
+
+  it('复制成功但 mine 刷新失败：不写无法解析的裸 ref，用复制响应构造临时 summary 显示名称（P1-3）', async () => {
+    const wrapper = await mountView()
+    const score = findSelect(wrapper, 'backtest-score-select')!
+    await flushPromises()
+    // 让后续 fetchMine（复制后的 reload）失败——真实组件 reload 保留旧列表并返回 null
+    vi.mocked(scoreApi.listScoreProfiles).mockRejectedValueOnce(new Error('网络瞬时失败'))
+    // 抽屉 emit copied → 组件 onDrawerCopied：reload 失败 → 用复制响应构造临时 mine summary 置顶
+    innerDrawer(score).vm.$emit('copied', { id: 's-copy', profile_ref: 'avr_score_copy', name: '公开评分 副本', version: 1 })
+    await nextTick()
+    await flushPromises()
+    // 选中项有 summary 可解析：selectedItem 显示名称（非 opaque ref），不写无法解析的裸 ref
+    expect(score.props('modelValue')).toBe('avr_score_copy')
+    expect((score.vm as any).selectedItem?.name).toBe('公开评分 副本')
+    expect((score.vm as any).selectedItem?.name).not.toContain('avr_score_copy')
+    wrapper.unmount()
+  })
 })

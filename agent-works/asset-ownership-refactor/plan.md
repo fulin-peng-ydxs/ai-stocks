@@ -304,7 +304,7 @@
 ### 阶段 5 · 回测专属接入
 
 #### 6.8 任务 T5：回测页选择器 + 历史浏览 + 同步重跑
-- 状态：已完成（2026-08-01）　依赖：T3,T2C
+- 状态：已完成（2026-08-01 落地；经 2026-08-01/08-02 四轮 Request Changes 复审逐项整改后重验通过，第四次复审 5 P1+2 P2 见 §6.8.12）　依赖：T3,T2C
 - 涉及：`BacktestView.vue` 评分方案 `:1036`、选股方案 `:1075`、买卖方案 `:1118`、历史区 `:955-978`；**后端** `services/backtest_service.py::list_runs` + `api/backtest.py::list_runs`
 - 目标：**3 个方案选择器**（评分/选股/买卖）各带搜索入口（方案有系统内置段）+ 历史回测浏览入口（tenant/public，无系统内置，默认全体）+「复用参数重跑」（同步，按钮 loading）。
 - 操作：**4 个入口**（3 方案 + 1 历史）按 §7.2；方案选择器临时只读；历史浏览只读，仅同步重跑产生自己的新 run。
@@ -413,6 +413,18 @@
 - 【P2·已整改】`AssetProfileSelect` mine 列表失败新增 `loadFailed`，榜单首屏结束 pending 并显示可重试错误；重试成功后自动选中并加载。`TradeDatePicker` 监听共享 `dataMax` 后续恢复，展开空日历时可重试首次失败。
 - **复用判断**：请求竞态复用项目既有 sequence 模式；方案列表失败复用统一选择器事件，不在榜单复制 fetch；交易日恢复继续消费 `useTradeDates` 单例；买卖展示与请求共用有效方案计算。未新增平行组件、API 或样式。
 
+#### 6.8.12 T5 四次复审整改（2026-08-02，第四次 Request Changes 后逐项修复重验）
+
+- **状态：已完成代码、回归测试、构建、后端重验与文档同步；可用数据范围内的浏览器验证见 §8。**
+- 第四次复审判「T5 不能通过」，给 5 P1（阻塞）+ 2 P2。逐项核实全部属实、整改并重验如下。**整改后真实验证**：前端全量 **80 文件 569/569、退出码 0**（无 unhandled errors）、`npm run build`（vue-tsc + Vite）通过；后端 8 文件 **61 passed**（含新增 `test_backtest_review4_failclosed.py` 7 例；停服跑、已重启 health=200）。
+- 【P1-1·已整改】公开回测复用成功后没有正确退出「公开查看态」：`reuseCurrentRunParams` 保留 `externalRunSummary/beforeExternalRun`、`doRun` 成功后只清 `nextRunSourceRef`、`onRunRerunDone` 只清公开摘要未清进入前快照——运行成功后页面仍可能显示「正在查看公开回测」，关闭公开快照会把刚产生的新结果恢复成旧状态。**已修**：抽取统一 `commitMineRun()` 状态转换——mine 新结果成为当前结果时同时清 `externalRunSummary` + `beforeExternalRun`；覆盖页面运行（`doRun`）、抽屉直接重跑（`onRunRerunDone`）、查重后加载 mine（`run()` choice==='load'）三条路径。
+- 【P1-2·已整改】「查看买入当日榜单」仍使用 mine 选择器值、与实际回测口径分叉：`openDayBoard` 调 `computeBoard` 传 `scoreProfileId.value`，加载系统/公开历史后选择器为空或仍 mine-A，下钻退回默认评分或 mine-A。**已修**：新增 `resultScoreRef` 保存当前结果实际评分 ref（`doRun` 用冻结 body、`loadRun` 用该 run params 写入，纳入 `RunViewSnapshot` 快照/恢复）；`openDayBoard` 改用 `resultScoreRef`，与回测口径一致。
+- 【P1-3·已整改】复制成功但 mine 刷新失败时选中无法解析的 opaque ref：`reload()` 失败清 `items` 吞异常、`onDrawerCopied` 无论成功与否都写新 `modelValue`。**已修**：`reload()` 失败保留旧列表并返回 `null`；`onDrawerCopied` 刷新失败时用复制响应构造临时 mine summary（含名称）置顶进 `items` 再选中并 emit `copiedItem`，不写无法解析的裸 ref。**回归测试**：real-component.spec「复制成功但 mine 刷新失败：显示名称非 opaque ref」。
+- 【P1-4·已整改】评分验证对显式不可见/失效方案 fail-open、静默改用默认评分：`run_signal` 的 `_load_score_profile` 返回 `None` 交给分析器等同默认方案，失效/下架/跨租户竞态时「复用重跑」可能成功落库并审计但实际非按原方案。**已修**：新增 `_ensure_explicit_deps_visible()` 统一解析三类显式依赖，任一显式 ref 当前用户不可见/不存在即 `ValueError`（API 转 400），在 `prepare`/`run_signal`/`run_strategy` 持久化与审计前调用（strategy 的 trade/score 本由引擎 fail-closed，此补齐 screen 与 signal 的 score 并前置到持久化之前）。**回归测试**：不存在/跨租户私有/失效 screen/score/trade ref 均拒绝且不落库。
+- 【P1-5·已整改】回测 ID 只有秒级精度、同一用户并发互相覆盖：`_new_id` 生成 `bt_{kind}_YYYYMMDDHHMMSS`、`_persist_run` 先 DELETE 再 INSERT——同秒多标签/重试/并发得到相同 ID 交叉删除记录。**已修**：`_new_id` 加短 UUID 后缀（同秒 200 次生成全唯一）；`_persist_run` 状态转换改 `UPDATE`（running→done/failed 不删行），唯一性由 `_new_id` 保证、同条件去重仍由 `_purge_signature` 负责，不再用 DELETE 承担 ID 生成。**回归测试**：并发唯一 + 状态转换单行不丢记录。
+- 【P2-1·已登记遗留，不阻塞】带 q 分页仍两次全量读取+装饰：`count_runs(q)` 与 `list_runs(q)` 各跑一遍 `_query_runs_decorated`。计划已明确登记 T6（一次过滤同时产出 items+total，或冗余搜索列 SQL 层分页），不能称性能闭环。
+- 【P2-2·已整改】注释/行号/状态未同步：`BacktestView` 头注释仍写「只并入候选」→ 改方案b 快照优先口径；`requirement.md:249` 旧行号 `:1036/:1075/:1118` → 改组件 test-id/函数定位；T5 状态行按 P1 未闭环如实降级后于本轮验证通过恢复。
+
 ### 阶段 6 · 全链路验收
 
 #### 6.9 任务 T6：验收、测试与构建
@@ -445,6 +457,7 @@
 > **前端（2026-08-02，§6.8.9 回测记录来源标签整改）**：定向 `AssetProfileSelect.spec.ts` + `BacktestView.spec.ts` + `BacktestView.real-component.spec.ts` **36/36**；Vitest 全量 **80 文件 560/560、退出码 0**，无 unhandled errors；最终 `BacktestView.spec.ts` 24/24 与 `npm run build`（vue-tsc + Vite）再次通过。新增断言 mine 回测记录保留完整名称但不渲染来源标签，公开回测快照仍显示 public 来源；并覆盖 ready 前旧偏好 ref 不传给选择器、ready 后清理。5181 初次复核真实发现初始化短暂显示 opaque ref，整改后在加载后 250ms 快照已只显示中文占位、无内部 ref，控制台 error 为空。`debug_normal` 与 `debug_system` 均无 mine 回测记录，故“有数据下拉展开后不显示我的”的真实浏览器数据场景明确记为**未验证**，由 BacktestView 渲染回归覆盖。
 > **前端（2026-08-02，§6.8.10 回测记录下拉定位整改）**：`BacktestView.spec.ts` **24/24**，新增断言历史选择器 `fitInputWidth=true`、`placement=bottom-start`；设计间距契约 **5/5**，Vitest 全量 **80 文件 560/560、退出码 0**，`npm run build`（vue-tsc + Vite）通过。5181 真实打开空记录下拉，量测触发框与弹层均为 **340px**，弹层 `data-popper-placement=bottom-start` 且坐标位于触发框下方；当前调试账号无 mine 回测，故多条长名称候选的真实数据页面明确记为**未验证**，长名称省略、日期收益固定与完整 title 由代码和组件回归覆盖。
 > **前端（2026-08-02，§6.8.11 全量复核统一整改）**：新增覆盖公开查看关闭恢复、历史请求乱序、加载中关闭、评分验证来源审计、mine+公开买卖展示/运行同口径、榜单清空废弃迟到响应、方案列表失败重试和交易日后续恢复；定向 **56/56**，Vitest 全量 **80 文件 568/568、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。5181 `debug_normal` 真实验证：榜单默认交易日 `2026-07-31`，系统内置「默认趋势分 v1」加载后直接选中并自动展示 Top 50 与“已缓存”，控制台 error 为空。公开回测抽屉实际为 0 条，故真实“加载→关闭恢复”和公开评分验证页面复用链路为**未验证**，由新增页面级状态/竞态回归覆盖。本轮未改后端；复核阶段相关后端定向 **84 passed**，服务保持 `/api/health=200`。
+> **前后端（2026-08-02，§6.8.12 第四次复审 5 P1+2 P2 统一整改）**：Vitest 全量 **80 文件 569/569、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。后端 8 文件 **61 passed**（停服跑、已 `./start.sh dev` 重启 `/api/health=200`），含新增 `test_backtest_review4_failclosed.py` **7/7**（P1-4 五例：不存在/跨租户私有/失效 screen、score、trade ref 均 `ValueError` 拒绝且不落库；P1-5 两例：同秒 200 次 `_new_id` 全唯一、`_persist_run` 状态转换 UPDATE 单行不丢记录）。前端 `BacktestView.real-component.spec.ts` 增至 **3/3**（新增 P1-3「复制成功但 mine 刷新失败不写 opaque ref」）。本轮改动前端 2 文件（BacktestView/AssetProfileSelect）+ 后端 1 文件（backtest_service）+ 测试 2 文件。浏览器侧：公开回测抽屉仍为 0 条，真实「加载→复用→运行→再次查看/关闭」与「复制成功但刷新失败」链路浏览器未验证，由上述前端真实组件测试 + 后端 fail-closed/唯一性回归覆盖。
 > **前端（2026-08-02，§6.8.6 回测控件语义收敛）**：`BacktestView.spec.ts` **20/20**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **552/552、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖页头仅请求 `source=mine`、不再渲染重复来源下拉、公开浏览入口保留、选股方案空值语义更新，以及重跑完成后单次刷新并按 `run_id` 精确选中。5181 真实页面验证：页头只显示「回测记录」和精确记录选择器，未再出现「全部/我的/租户公开/全体公开」来源下拉；空记录显示「暂无我的回测」；选股方案显示「不使用选股方案（默认）」；点击「浏览公开回测」后抽屉正常显示「租户公开/全体公开」来源段及空态。
 > **前端（2026-08-02，§6.8.7 控件语义复核整改）**：`BacktestView.spec.ts` **23/23**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **555/555、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖重跑刷新失败/目标缺失均不误选旧记录、公开加载使用独立只读快照且不污染 mine 候选、失效偏好提示聚合去重、mine 列表限制最近 100 条。5181 真实页面验证：页头仍只显示 mine 记录选择器，控件 title 明示最近 100 条；失效评分/买卖偏好合并为**一次**提示；公开抽屉的租户/全体来源段及空态正常。本地无公开回测，故「真实公开行加载 → 选择器外只读快照」浏览器链路记为**未验证**，由页面级真实状态测试覆盖。
 > **前端（2026-07-29，T3 ScreenView 样板，含 R1/R2 两轮审查整改）**：Vitest 全量 `525 passed`（组件用例：抽屉 11 + 选择器 9 = 20）；`npm run build` 通过（含 vue-tsc）；Playwright `asset-search-drawer.spec.ts` 跨用户链路三视口（1100×620/1366×768/1440×900）通过并附截图——截图前等待抽屉 `offsetWidth===560` 稳定、对抽屉面板 locator 截图；列断言覆盖需求合并后的方案类列集合「方案名称（含次行『更新于』)/来源（title 含提供者）/操作」三列头左右边界均在抽屉可视区、操作列 `fixed="right"` 完整可见、无权态 fail-closed 不调 browse。**全量 Playwright 本轮未复跑（未验证，留 T6）**；后端曾按 E2E 写模式重启、验收后已恢复日常模式（/api/health=200）。

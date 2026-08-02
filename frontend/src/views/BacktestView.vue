@@ -213,8 +213,9 @@ const RERUN_STRATEGY_FIELDS = [
 ] as const
 
 // R3/R5/R7：三方案选择器统一走 AssetProfileSelect（select 形态）——下拉只加载「我的」source=mine 纯 owner，
-// 「搜索」入口打开共享抽屉（系统内置/租户公开/全体公开）；「加载查看」**只并入候选、不选中不运行**（决策，
-// 不同于个股详情的选中回显，避免误导用户对他人方案直接回测）；「复制为我的」并入候选并由组件选中。
+// 「搜索」入口打开共享抽屉（系统内置/租户公开/全体公开）。「加载查看」走方案b：只记 tempSelected 快照、
+// 选择器外 chip 展示（非 opaque ref），运行按快照优先（tempSelected > mine > 空），不并入候选、不选中、
+// 不自动运行、不持久化；切换/复制/载入历史即清。「复制为我的」并入候选并由组件选中。
 // 组件为列表唯一事实源（onMounted fetchMine → emit ready），父页不再各自 list_visible，normalize 时序移 ready。
 async function fetchMineScreenProfiles(): Promise<ProfileSummary[]> {
   if (!hasPermission(auth.role, auth.permissions, 'screen-profile:view')) return []
@@ -327,6 +328,9 @@ const historyError = ref('')
 const selectedRun = ref<string>('')
 // 公开抽屉「加载查看」只保存当前只读快照，不写入 mine-only runHistory，也不把 opaque ref 写入 ElSelect。
 const externalRunSummary = ref<RunSummary | null>(null)
+// 当前结果实际使用的评分方案 ref（P1-2）：doRun 用冻结 body、loadRun 用该 run params 写入；
+// 「查看买入当日榜单」以此为准（与回测口径一致），不用 mine 选择器值——避免加载公开/历史后选择器为空或仍 mine-A 时下钻错口径。
+const resultScoreRef = ref('')
 const runVisibilitySaving = ref(false)
 type RunViewSnapshot = {
   dateStart: string
@@ -342,6 +346,7 @@ type RunViewSnapshot = {
   historyProfileDisplays: typeof historyProfileDisplays.value
   historyProfileUnavailable: typeof historyProfileUnavailable.value
   selectedRun: string
+  resultScoreRef: string
   strat: StrategyResult | null
   sig: Layers | null
   runTime: string
@@ -367,6 +372,7 @@ function snapshotRunView(): RunViewSnapshot {
     historyProfileDisplays: { ...historyProfileDisplays.value },
     historyProfileUnavailable: { ...historyProfileUnavailable.value },
     selectedRun: selectedRun.value,
+    resultScoreRef: resultScoreRef.value,
     strat: strat.value,
     sig: sig.value,
     runTime: runTime.value,
@@ -391,6 +397,7 @@ function restoreRunView(snapshot: RunViewSnapshot) {
   historyProfileDisplays.value = { ...snapshot.historyProfileDisplays }
   historyProfileUnavailable.value = { ...snapshot.historyProfileUnavailable }
   selectedRun.value = snapshot.selectedRun
+  resultScoreRef.value = snapshot.resultScoreRef
   strat.value = snapshot.strat
   sig.value = snapshot.sig
   runTime.value = snapshot.runTime
@@ -820,6 +827,7 @@ async function loadRun(id: string, summary?: RunSummary) {
     runTime.value = ca ? String(ca).slice(0, 19) : ''
     fromHistory.value = true
     const p = applyRunParams(r.run, summary ?? selectedRunSummary.value)
+    resultScoreRef.value = p.score_profile_id || '' // 冻结该历史 run 实际评分口径（下钻榜单用）
     if (r.run.kind === 'signal' || r.run.kind === 'score_check') {
       kind.value = 'score_check'
       strat.value = null
@@ -959,6 +967,14 @@ function onMineRunSelected(id: string) {
   void loadRun(id)
 }
 
+// 统一状态转换（P1-1）：mine 新结果成为当前结果时，同时退出「公开查看态」——
+// 清掉公开摘要与「进入公开查看前的快照」，避免之后误把新 mine 结果恢复成进入前的旧状态、
+// 或再次加载公开记录时恢复到更早的陈旧快照。覆盖：页面运行、抽屉直接重跑、查重后加载 mine 三条路径。
+function commitMineRun() {
+  externalRunSummary.value = null
+  beforeExternalRun = null
+}
+
 function clearExternalRun() {
   runLoadSequence += 1
   loading.value = false
@@ -1026,7 +1042,7 @@ async function onRunRerunDone(result: unknown) {
     ElMessage.warning('重跑已完成，但新记录尚未出现在列表中，请稍后刷新')
     return
   }
-  externalRunSummary.value = null
+  commitMineRun() // 抽屉直接重跑的新 mine 结果成为当前结果 → 退出公开查看态（清公开摘要+进入前快照）
   selectedRun.value = runKey(target)
   await loadRun(selectedRun.value)
 }
@@ -1204,6 +1220,7 @@ async function run() {
       if (choice === 'abort') { loadingRun.value = false; return }
       if (choice === 'load') {
         loadingRun.value = false // loadRun 会自设 loadingRun
+        commitMineRun() // 查重命中的 mine 历史成为当前结果 → 退出公开查看态
         selectedRun.value = pre.duplicate.run_id
         await loadRun(pre.duplicate.run_id)
         return
@@ -1234,6 +1251,8 @@ async function doRun(body: RunParams) {
       if (rid) selectedRun.value = rid
     }
     await loadHistory() // 新结果进历史列表
+    commitMineRun() // mine 新结果成为当前结果 → 退出公开查看态（清公开摘要+进入前快照）
+    resultScoreRef.value = body.score_profile_id || '' // 冻结本次结果实际评分口径（下钻榜单用）
     nextRunSourceRef.value = ''
     dirty.value = false // 出结果 → 按钮置灰（参数未变时再点无意义）
   } catch (e) {
@@ -1348,7 +1367,7 @@ async function openDayBoard(buyDate: string, highlightCode: string) {
   boardLoading.value = true
   boardDlg.value = true
   try {
-    boardRows.value = (await computeBoard(sigDate, 50, scoreProfileId.value || undefined)).list
+    boardRows.value = (await computeBoard(sigDate, 50, resultScoreRef.value || undefined)).list
     boardMissing.value = !boardRows.value.some((r) => r.code === highlightCode)
     // 自动滚动高亮行到可视区
     nextTick(() => {

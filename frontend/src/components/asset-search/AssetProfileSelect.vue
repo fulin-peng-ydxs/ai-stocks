@@ -104,20 +104,22 @@ watch(() => props.modelValue, (value) => {
   if (selectedLoadedItem.value && assetItemKey(selectedLoadedItem.value) !== value) selectedLoadedItem.value = null
 })
 
-async function reload(): Promise<ProfileSummary[]> {
+// 返回 mine 列表；失败时保留旧列表（不清空）并返回 null，由调用方区分成功/失败（P1-3）。
+async function reload(): Promise<ProfileSummary[] | null> {
   loadingMine.value = true
   errorMine.value = ''
   try {
     items.value = await props.fetchMine()
     emit('ready', items.value)
+    return items.value
   } catch (error) {
-    items.value = []
+    // 保留旧列表：避免瞬时失败后选中项失去 summary 解析、显示 opaque ref
     errorMine.value = getErrorMessage(error, `${props.assetLabel}加载失败`)
     emit('loadFailed', errorMine.value)
+    return null
   } finally {
     loadingMine.value = false
   }
-  return items.value
 }
 
 onMounted(() => {
@@ -149,9 +151,25 @@ function onDrawerLoad(raw: AssetBrowseItem) {
 
 async function onDrawerCopied(result: AssetCopyResult) {
   const list = await reload()
-  // 复制响应只含 id/profile_ref/name/version，回写完整 summary（含 source/readonly/is_preset）
-  const copied = list.find((p) => p.id === result.id)
-  if (copied) emit('copiedItem', copied)
+  if (list) {
+    // 复制响应只含 id/profile_ref/name/version，回写完整 summary（含 source/readonly/is_preset）
+    const copied = list.find((p) => p.id === result.id)
+    if (copied) emit('copiedItem', copied)
+  } else {
+    // 复制已成功但 mine 刷新失败（P1-3）：不写无法解析的裸 ref——用复制响应构造临时 mine summary
+    // 置顶进 items，让选中项有名称可显示（非 opaque ref），并 emit copiedItem 供父页同步临时快照。
+    const fallback: ProfileSummary = {
+      id: result.id,
+      profile_ref: result.profile_ref,
+      name: result.name ?? result.profile_ref ?? result.id,
+      version: result.version ?? 1,
+      is_preset: false,
+      source: 'mine',
+      readonly: false,
+    }
+    items.value = [fallback, ...items.value.filter((p) => p.id !== result.id)]
+    emit('copiedItem', fallback)
+  }
   selectedLoadedItem.value = null
   tempItem.value = null
   emit('update:modelValue', result.profile_ref || result.id)

@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import date, datetime
 
 import pandas as pd
@@ -69,15 +70,25 @@ class BacktestService:
         return [self.tenant_id, self.owner_user_id]
 
     def _new_id(self, kind: str) -> str:
-        return f"bt_{kind}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        # 秒级时间戳 + 短 UUID：同一用户并发/多标签/重试同秒启动会得到不同 id，避免互相覆盖（P1-5）。
+        return f"bt_{kind}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
     def _persist_run(self, run_id: str, kind: str, params: dict, status: str,
                      detail: str = "", finished: bool = False,
                      versions: dict | None = None, signature: str | None = None) -> None:
         v = versions or {}
-        self.pg.execute(
-            "DELETE FROM backtest_run WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
-            [run_id, *self._op])
+        # 状态转换用 UPDATE（同一条 run：running → done/failed），不再「先 DELETE 再 INSERT」。
+        # 唯一性由 _new_id 保证；同条件去重由 _purge_signature 负责，不靠删除承担 ID 生成。
+        updated = self.pg.execute(
+            "UPDATE backtest_run SET status=%s, detail=%s, finished_at=%s, params=%s, "
+            "score_profile_version=%s, profile_version=%s, trade_profile_version=%s, signature=%s "
+            "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+            [status, detail, datetime.now() if finished else None,
+             json.dumps(params, ensure_ascii=False, default=str),
+             v.get("score_profile_version"), v.get("profile_version"), v.get("trade_profile_version"), signature,
+             run_id, *self._op])
+        if updated:
+            return
         self.pg.execute(
             "INSERT INTO backtest_run (id, tenant_id, owner_user_id, kind, profile_id, model_id, "
             "score_profile_id, trade_profile_id, score_profile_version, profile_version, "
@@ -226,8 +237,23 @@ class BacktestService:
                 "date_start": str(r["date_start"])[:10], "date_end": str(r["date_end"])[:10],
                 "created_at": str(r["created_at"])}
 
+    def _ensure_explicit_deps_visible(self, params: dict) -> None:
+        """显式依赖 fail-closed（P1-4）：请求提供了 ref 而当前用户不可见/不存在即拒绝，
+        禁止持久化和审计（防止方案失效/下架/跨租户竞态时静默改用默认评分/方案重跑）。
+        任一显式 ref 解析不到 → ValueError（API 转 400）。"""
+        checks = [
+            ("profile_id", "选股方案", self._visible_screen_profile),
+            ("score_profile_id", "评分方案", self._visible_score_profile),
+            ("trade_profile_id", "买卖方案", self._visible_trade_profile),
+        ]
+        for field, label, resolver in checks:
+            ref = params.get(field)
+            if ref and not resolver(ref):
+                raise ValueError(f"{label}不存在或不可见: {ref}")
+
     def prepare(self, kind: str, params: dict) -> dict:
         """运行前预备：解析版本 + 算签名 + 查同条件历史（供前端弹框询问加载/重跑）。"""
+        self._ensure_explicit_deps_visible(params)
         versions = self._resolve_versions(params)
         sig = self._signature(kind, params, versions)
         return {"signature": sig, "versions": versions, "duplicate": self.find_duplicate(sig)}
@@ -293,6 +319,7 @@ class BacktestService:
 
     # ── 评分验证（信号质量分析）──
     def run_signal(self, params: dict, persist: bool = True) -> dict:
+        self._ensure_explicit_deps_visible(params)  # fail-closed：显式失效方案拒绝（不落库不审计）
         run_id = self._new_id("score_check")
         versions = self._resolve_versions(params)
         sig = self._signature("score_check", params, versions)
@@ -324,6 +351,7 @@ class BacktestService:
 
     # ── 完整策略回测 ──
     def run_strategy(self, params: dict, persist: bool = True) -> dict:
+        self._ensure_explicit_deps_visible(params)  # fail-closed：显式失效方案拒绝（不落库不审计）
         run_id = self._new_id("strategy")
         versions = self._resolve_versions(params)
         sig = self._signature("strategy", params, versions)
