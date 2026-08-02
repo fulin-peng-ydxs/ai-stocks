@@ -148,8 +148,13 @@ def list_runs(
         pg = page or 1
         ps = page_size or 20
         offset = (pg - 1) * ps
-        runs = svc.list_runs(ps, kind=kind, source=source, q=q, offset=offset)
-        total = svc.count_runs(kind=kind, source=source, q=q)
+        runs, total = svc.list_runs_page(
+            limit=ps,
+            offset=offset,
+            kind=kind,
+            source=source,
+            q=q,
+        )
     else:
         # 兼容模式（平铺下拉 listRuns）：不传分页，按 limit 直传、limit=None 全列，不返回 total
         runs = svc.list_runs(limit, kind=kind, source=source, q=q)

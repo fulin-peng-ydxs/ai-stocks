@@ -44,6 +44,11 @@ def test_backtest_list_q_matches_profile_name_and_kind(pg, market):
         assert "q_run_score" in by_kind
         assert "q_run_named" not in by_kind and "q_run_plain" not in by_kind
 
+        # 中文页面文案同样可检索，不要求用户知道内部枚举。
+        by_kind_cn = {r["id"] for r in svc.list_runs(q="评分验证")}
+        assert "q_run_score" in by_kind_cn
+        assert "q_run_named" not in by_kind_cn and "q_run_plain" not in by_kind_cn
+
         # 无 q → 三条都在（不受过滤）
         all_ids = {r["id"] for r in svc.list_runs()}
         assert {"q_run_named", "q_run_plain", "q_run_score"} <= all_ids
@@ -113,6 +118,34 @@ def test_backtest_pagination_offset_and_total(pg, market):
             stitched.extend(page)
             off += step
         assert stitched == all_ids  # 顺序一致、不漏不重
+    finally:
+        for table in ("backtest_trade", "backtest_equity", "backtest_metrics", "backtest_run"):
+            pg.execute(f"DELETE FROM {table} WHERE owner_user_id=%s", [TEST_OWNER])
+        pg.execute("DELETE FROM screen_profile WHERE owner_user_id=%s", [TEST_OWNER])
+        pg.execute("DELETE FROM screen_profile_version WHERE owner_user_id=%s", [TEST_OWNER])
+
+
+def test_backtest_q_page_decorates_visible_rows_only_once(pg, market, monkeypatch):
+    """分页 q 同时返回 items/total，不得为 list 与 count 重复做两次全量装饰。"""
+    svc = BacktestService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    screen = ProfileRepo(pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    calls = 0
+    original = svc._query_runs_decorated  # noqa: SLF001
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(svc, "_query_runs_decorated", counted)
+    try:
+        screen.save("one_scan", "一次扫描方案", _EXPR)
+        for rid in ("one_scan_1", "one_scan_2", "one_scan_3"):
+            _mk_run(pg, rid, "strategy", profile_id="one_scan")
+        items, total = svc.list_runs_page(limit=2, q="一次扫描")
+        assert len(items) == 2
+        assert total == 3
+        assert calls == 1
     finally:
         for table in ("backtest_trade", "backtest_equity", "backtest_metrics", "backtest_run"):
             pg.execute(f"DELETE FROM {table} WHERE owner_user_id=%s", [TEST_OWNER])

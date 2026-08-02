@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import type {
   AssetBrowseParams,
   AssetBrowseResult,
+  BacktestRunSummary,
   ProfileSummary,
 } from '@/components/asset-search/types'
 
@@ -152,9 +153,7 @@ describe('AssetSearchDrawer', () => {
     const copyItem = vi.fn(async () => ({ id: 'new_id', profile_ref: 'ref_new', name: '趋势龙头·基础评分 副本', version: 1 }))
     const { wrapper } = mountDrawer({ copyItem })
     await flush()
-    // el-table 幻影行（数据到达前空 scope）也渲染同 testId 按钮但已 disabled；须点真实数据行的可用按钮
-    const copyBtn = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="asset-search-drawer-copy"]'))
-      .find((b) => !(b as HTMLButtonElement).disabled)
+    const copyBtn = document.querySelector<HTMLElement>('[data-testid="asset-search-drawer-copy"]')
     expect(copyBtn).toBeTruthy()
     copyBtn!.click()
     await flush()
@@ -176,14 +175,29 @@ describe('AssetSearchDrawer', () => {
   it('加载查看：发出 load 并关闭抽屉', async () => {
     const { wrapper } = mountDrawer()
     await flush()
-    // 同上：跳过 el-table 幻影行的 disabled 按钮，点真实数据行的「加载查看」
-    const loadBtn = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="asset-search-drawer-load"]'))
-      .find((b) => !(b as HTMLButtonElement).disabled)
+    const loadBtn = document.querySelector<HTMLElement>('[data-testid="asset-search-drawer-load"]')
     expect(loadBtn).toBeTruthy()
     loadBtn!.click()
     await flush()
     expect(wrapper.emitted('load')).toBeTruthy()
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
+    wrapper.unmount()
+  })
+
+  it('数据请求完成前不渲染空 scope 幻影操作，完成后每行仅一组操作', async () => {
+    let resolveBrowse!: (value: AssetBrowseResult) => void
+    const browse = vi.fn(() => new Promise<AssetBrowseResult>((resolve) => {
+      resolveBrowse = resolve
+    }))
+    const { wrapper } = mountDrawer({ browse })
+    await flush()
+    expect(document.querySelectorAll('[data-testid="asset-search-drawer-load"]')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-testid="asset-search-drawer-copy"]')).toHaveLength(0)
+
+    resolveBrowse({ items: [presetItem], total: 1, page: 1, page_size: 20, source: 'preset' })
+    await flush()
+    expect(document.querySelectorAll('[data-testid="asset-search-drawer-load"]')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-testid="asset-search-drawer-copy"]')).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -201,6 +215,26 @@ describe('AssetSearchDrawer', () => {
     expect(browse).toHaveBeenCalledWith({ source: 'public', q: '', page: 1, pageSize: 20 })
     expect(document.querySelector('[data-testid="asset-search-drawer-segment-preset"]')).toBeNull()
     expect(document.querySelector('[data-testid="asset-search-drawer-segment-public"]')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('回测类型与状态显示中文业务文案，不暴露内部枚举', async () => {
+    const item: BacktestRunSummary = {
+      id: 'bt_public', run_ref: 'run_ref_public', kind: 'score_check', status: 'done',
+      date_start: '2024-01-01', date_end: '2024-06-30', created_at: '2024-07-01',
+      finished_at: '2024-07-01', visibility: 'public', source: 'public', readonly: true,
+    }
+    const browse = vi.fn(async (params: AssetBrowseParams): Promise<AssetBrowseResult> => ({
+      items: [item], total: 1, page: params.page, page_size: params.pageSize, source: params.source,
+    }))
+    const { wrapper } = mountDrawer({
+      kind: 'backtest', assetLabel: '回测', browse, rerunItem: vi.fn(), copyItem: undefined,
+    })
+    await flush()
+    const text = document.body.textContent || ''
+    expect(text).toContain('评分验证')
+    expect(text).toContain('已完成')
+    expect(text).not.toContain('score_check')
     wrapper.unmount()
   })
 

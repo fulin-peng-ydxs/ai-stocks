@@ -18,6 +18,8 @@ import type { AppRowAction } from '@/components/rowActions'
 import { getErrorMessage } from '@/utils/error'
 import {
   assetItemKey,
+  formatBacktestKind,
+  formatBacktestStatus,
   formatAssetTime,
   isProfileSummary,
   type AssetBrowseItem,
@@ -231,15 +233,11 @@ async function onRerun(item: AssetBrowseItem) {
 
 function rowActions(item: AssetBrowseItem): AppRowAction[] {
   const key = assetItemKey(item)
-  // 幻影行守卫：el-table 在数据到达前用空 scope 先渲染 body，此行 item={}、key=undefined；
-  // 禁用操作避免点到绑定空对象的「加载查看」（真实数据加载后此行即被替换）。
-  const ghost = !key
   const actions: AppRowAction[] = [
     {
       key: 'load',
       label: '加载查看',
       testId: `${props.testId}-load`,
-      disabled: ghost,
       onClick: () => onLoad(item),
     },
   ]
@@ -251,7 +249,6 @@ function rowActions(item: AssetBrowseItem): AppRowAction[] {
         testId: `${props.testId}-rerun`,
         permission: props.rerunPermission || undefined,
         loading: rerunningKey.value === key,
-        disabled: ghost,
         onClick: () => void onRerun(item),
       })
     }
@@ -264,7 +261,6 @@ function rowActions(item: AssetBrowseItem): AppRowAction[] {
       testId: `${props.testId}-copy`,
       permission: props.copyPermission || undefined,
       loading: copyingKey.value === key,
-      disabled: ghost,
       onClick: () => void onCopy(item),
     })
   }
@@ -367,7 +363,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
               <template #default="{ row }">
                 <template v-if="backtestOf(row)">
                   <span class="asset-search__run app-data-text">
-                    {{ backtestOf(row)!.kind || '回测' }}
+                    {{ formatBacktestKind(backtestOf(row)!.kind) }}
                     <span class="asset-search__run-range app-caption-text">
                       {{ backtestOf(row)!.date_start || '—' }} ~ {{ backtestOf(row)!.date_end || '—' }}
                     </span>
@@ -377,7 +373,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
             </AppTableColumn>
             <AppTableColumn label="状态" prop="status">
               <template #default="{ row }">
-                {{ backtestOf(row)?.status || '—' }}
+                {{ formatBacktestStatus(backtestOf(row)?.status) }}
               </template>
             </AppTableColumn>
             <AppTableColumn label="来源">
@@ -404,7 +400,12 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
 
           <AppTableColumn label="操作" role="action" fixed="right">
             <template #default="{ row }">
-              <AppRowActions :actions="rowActions(row)" :aria-label="`${assetLabel}行操作`" />
+              <!-- Element Plus 初始化列 slot 时可能传空 scope；无稳定资产 key 时不渲染操作占位。 -->
+              <AppRowActions
+                v-if="assetItemKey(row)"
+                :actions="rowActions(row)"
+                :aria-label="`${assetLabel}行操作`"
+              />
             </template>
           </AppTableColumn>
 

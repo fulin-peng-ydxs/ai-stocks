@@ -39,6 +39,28 @@ export interface BacktestRunSummary {
   trade_profile_name?: string | null
 }
 
+const BACKTEST_KIND_LABELS: Record<string, string> = {
+  strategy: '策略回测',
+  score_check: '评分验证',
+  signal: '评分验证',
+}
+
+const BACKTEST_STATUS_LABELS: Record<string, string> = {
+  running: '运行中',
+  done: '已完成',
+  failed: '失败',
+}
+
+export function formatBacktestKind(value?: string | null): string {
+  if (!value) return '回测'
+  return BACKTEST_KIND_LABELS[value] ?? value
+}
+
+export function formatBacktestStatus(value?: string | null): string {
+  if (!value) return '—'
+  return BACKTEST_STATUS_LABELS[value] ?? value
+}
+
 export type AssetBrowseItem = ProfileSummary | BacktestRunSummary
 
 export interface AssetBrowseParams {

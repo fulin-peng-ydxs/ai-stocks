@@ -356,6 +356,7 @@ type RunViewSnapshot = {
 }
 let beforeExternalRun: RunViewSnapshot | null = null
 let runLoadSequence = 0
+let historyLoadSequence = 0
 type RunViewOperationKind = 'run' | 'load'
 const activeRunOperation = ref<{ sequence: number; kind: RunViewOperationKind } | null>(null)
 const runningRun = computed(() => activeRunOperation.value?.kind === 'run')
@@ -734,14 +735,24 @@ function onScreenSelect() { clearTemp('screen') }
 function onTradeSelect() { clearTemp('trade') }
 
 async function loadHistory(sequence?: number): Promise<boolean> {
+  const requestSequence = ++historyLoadSequence
+  const requestedKind = kind.value
   historyError.value = ''
   try {
-    const runs = (await listRuns(kind.value, 'mine')).runs
-    if (sequence !== undefined && sequence !== runLoadSequence) return false
+    const runs = (await listRuns(requestedKind, 'mine')).runs
+    if (
+      requestSequence !== historyLoadSequence
+      || requestedKind !== kind.value
+      || (sequence !== undefined && sequence !== runLoadSequence)
+    ) return false
     runHistory.value = runs
     return true
   } catch (error) {
-    if (sequence !== undefined && sequence !== runLoadSequence) return false
+    if (
+      requestSequence !== historyLoadSequence
+      || requestedKind !== kind.value
+      || (sequence !== undefined && sequence !== runLoadSequence)
+    ) return false
     historyError.value = getErrorMessage(error, '历史回测加载失败')
     return false
   }
@@ -1010,10 +1021,34 @@ function onRunLoaded(item: AssetBrowseItem) {
   void loadRun(key, summary)
 }
 
-function onMineRunSelected(id: string) {
-  beforeExternalRun = null
-  externalRunSummary.value = null
-  void loadRun(id)
+async function onMineRunSelected(id: string) {
+  if (!id) return
+  // 普通 mine→mine 切换沿用既有 loadRun；从公开查看态退出必须先成功取得详情，
+  // 否则网络失败会提前销毁公开摘要和进入公开态前的可恢复快照。
+  if (!externalRunSummary.value) {
+    void loadRun(id)
+    return
+  }
+  const sequence = beginRunViewOperation('load')
+  loading.value = true
+  resultError.value = ''
+  try {
+    const detail = await fetchRunDetail(id)
+    if (sequence !== runLoadSequence) return
+    loadingRun.value = true
+    commitMineRun()
+    applyRunDetail(id, detail)
+    clearDirtySoon()
+  } catch (error) {
+    if (sequence !== runLoadSequence) return
+    selectedRun.value = ''
+    resultErrorContext.value = 'history'
+    resultError.value = getErrorMessage(error, '历史回测载入失败')
+    ElMessage.error(resultError.value)
+    loadingRun.value = false
+  } finally {
+    finishRunViewOperation(sequence)
+  }
 }
 
 // 统一状态转换（P1-1）：mine 新结果成为当前结果时，同时退出「公开查看态」——
@@ -1890,7 +1925,7 @@ async function openTradeChart(row: TradeRow) {
         </el-card>
         <el-card shadow="never" class="block">
           <div class="block-title">资金曲线（组合 vs 基准 + 回撤）</div>
-          <EquityChart :points="strat.equity" :benchmark-code="strat.benchmark_code" />
+          <EquityChart :points="strat.equity" :benchmark-code="strat.benchmark_code || '000905.SH'" />
         </el-card>
 
         <!-- 稳健性测试（即跑即看，不入历史）：用当前表单参数为基准 -->

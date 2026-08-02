@@ -304,7 +304,7 @@
 ### 阶段 5 · 回测专属接入
 
 #### 6.8 任务 T5：回测页选择器 + 历史浏览 + 同步重跑
-- 状态：已完成（2026-08-01 落地；经 2026-08-01/08-02 十轮 Request Changes 复审逐项整改后重验通过，第四次 5 P1+2 P2 见 §6.8.12、第五次 1 P1+2 P2 见 §6.8.13、第六次 2 P1+1 P2 见 §6.8.14、第七次 1 P1 见 §6.8.15、第八次 2 P1 见 §6.8.16、第九次 1 P1+1 P2 见 §6.8.17、第十次 2 P1 见 §6.8.18）　依赖：T3,T2C
+- 状态：已完成（2026-08-01 落地；经 2026-08-01/08-02 十二轮 Request Changes 复审逐项整改并本地提交固化，第四至第十二次记录见 §6.8.12–§6.8.20；验证维度按“测试/构建、浏览器已验证、浏览器未验证”分别登记）　依赖：T3,T2C
 - 涉及（按组件/函数定位，不用易漂移行号）：`BacktestView.vue` 三个方案选择器（test-id `backtest-score-select`/`backtest-screen-select`/`backtest-trade-select`）、历史区「浏览公开回测」抽屉（`AssetSearchDrawer kind="backtest"`）与 `onRunLoaded/onRunRerunDone/run()/doRun/loadRun/fetchRunDetail/applyRunDetail`；**后端** `services/backtest_service.py::list_runs/count_runs` + `api/backtest.py::list_runs`
 - 目标：**3 个方案选择器**（评分/选股/买卖）各带搜索入口（方案有系统内置段）+ 历史回测浏览入口（tenant/public，无系统内置，默认全体）+「复用参数重跑」（同步，按钮 loading）。
 - 操作：**4 个入口**（3 方案 + 1 历史）按 §7.2；方案选择器临时只读；历史浏览只读，仅同步重跑产生自己的新 run。
@@ -314,8 +314,8 @@
 - **loadProfileOptions 删除**：组件为列表唯一事实源（P2-1），三选择器 `ready` 回调喂页面级 ref 并补 normalize；删聚合错误块（v-loading + AppStateBlock profileOptionsError），错误由组件内联 errorMine + AppStateBlock 重试承接。
 - 验证（**首轮登记含不实结论，经 2026-08-01 复审 Request Changes 后整改、重新验证，见 §6.8.1**）：首轮登记「538/538 全绿、全部真实通过」**不成立**——实测当时 `npm test` 78 文件断言全过但报 10 个 unhandled errors、退出码 1（假绿）。整改后真实验证见 §6.8.1。后端 `test_backtest_browse_q.py` 3 passed（含新增 `test_backtest_pagination_offset_and_total`）+ 回归 40 passed 仍成立。真实浏览器 5181 复验（debug_system）与决策1/2 临时种子点验为首轮所做，决策1 语义经重裁后已于 §6.8.1 重新复验。
 - **本轮不补回测 Playwright E2E，留 T6（决策4，用户拍板）**。
-- **遗留候选（T6，不阻塞）**：`AssetSearchDrawer` 幻影行守卫——el-table 数据到达前以空 scope 渲染 body 留下一个 disabled 同名按钮副本（真实数据行按钮正常 enabled），建议 T6 评估用 `:key` 或 v-if 杜绝残留副本。
-- **遗留候选（T6，不阻塞，P2-6 复审登记）**：回测 q 分页双查——`list_runs(q=...)` 与 `count_runs(q=...)` 对同一请求各跑一遍 `_query_runs_decorated` 全量读取+装饰（`backtest_service.py:556` 全量过滤切片 + `:518` 再全量），数据量小暂未构成瓶颈。**遗留方案**：一次全量过滤同时产出 page items + total（消除双查），或落实冗余搜索列/keyset 分页。当前不称规模化优化已闭环。
+- **原遗留已闭环（§6.8.20）**：`AssetSearchDrawer` 操作 slot 只在存在稳定资产 key 时渲染 `AppRowActions`，数据到达前不再出现 disabled 幻影按钮；组件测试断言 pending 时 0 个、单行 ready 后每类操作恰好 1 个。
+- **原遗留已闭环（§6.8.19）**：回测带 q 分页改由 `list_runs_page()` 一次全量解析/装饰同时产出 page items 与 total；无 q 继续使用 SQL 分页 + COUNT。若未来数据规模需要 SQL 搜索列/keyset，另立性能任务，不再把当前双查列为 T6 遗留。
 - 完成标准：回测交互符合 §7.2（4 入口）。
 
 #### 6.8.1 T5 复审整改（2026-08-01，Request Changes 后逐项修复重验）
@@ -468,13 +468,31 @@
 - 【P1-1·已整改】运行操作改为 token 所有权模型：`beginRunViewOperation('run')` 在 `prepareBacktest` 前建立并持有 active operation，贯穿查重确认、详情加载、真实回测与历史刷新；所有影响 `buildBody` 的参数 watcher 只要发现 active operation 就调用 `invalidateRunViewOperation()`，同时置脏、递增序列、释放当前 loading。`loadingRun` 仅用于详情成功后同步应用历史参数的静默窗口，不再表示网络在途。由此覆盖 prepare pending、确认框 pending、runBacktest pending 与 loadHistory pending 全阶段。
 - 【P1-2·已整改】loading 不再由任意旧请求自由复位：`finishRunViewOperation(sequence)` 仅允许当前 active token 清除 operation/loading；已过期请求的 catch/finally 不得触碰新操作状态。`loadHistory(sequence)` 先取局部结果、校验 token 后才写历史列表与错误态，避免旧 kind 的历史请求晚到覆盖当前页面。**回归测试**新增 3 例：prepare pending→改参立即取消且旧响应不启动回测；查重确认框 pending→改参后迟到确认不加载也不重跑；旧运行晚于新运行返回时旧 finally 不得清除新 operation 的 loading，最终仅新记录按 opaque `run_ref` 选中。另补既有 pending 用例的真实事件 tick 边界，避免同一 tick 直接赋值产生非用户态 watcher 干扰。
 
+#### 6.8.19 T5 十一次复审整改（2026-08-02，第十一次 Request Changes 后统一修复重验）
+
+- **状态：已完成代码、回归测试、构建与文档同步；可用数据范围内的浏览器验证见 §8。** 本轮修复 4 个 P1、3 个 P2，其中 q 双查从 T6 遗留中闭环。
+- 【P1·已整改】同签名真并发：新增 PG 会话级 `pg_try_advisory_lock`，锁覆盖清旧记录、running、计算和 done/failed 全生命周期；重复并发请求快速失败，避免等待式长事务占满连接池。新增双线程真实 PG 回归，验证重复请求未进入计算、释放后重试正常且最终 run/metrics 各唯一一条。
+- 【P1·已整改】`source_run_ref` 与审计 fail-open：运行和 prepare 前统一要求来源为当前用户可见、非本人、已完成的 tenant/public 回测；运行前冻结规范化来源，期间撤回不再静默丢审计。安全审计写入返回明确成功状态，复用审计失败使 run 失败并补偿清理结果子表，不返回伪成功。
+- 【P1·已整改】策略/评分历史列表倒序覆盖：`loadHistory` 增加独立 `historyLoadSequence` + requestedKind 快照，只有最新且 kind 未变化的响应可写列表/错误态；补两请求逆序完成回归。
+- 【P1·已整改】公开查看态切 mine 详情失败丢现场：`onMineRunSelected` 在公开态下先取详情，成功后才 `commitMineRun + applyRunDetail`；失败恢复未选中并保留公开摘要/进入前快照。补失败可恢复与成功原子退出测试。
+- 【P2·已整改】公开回测类型/状态改为共享格式化函数，显示「策略回测/评分验证」「运行中/已完成/失败」，后端 q 同时支持中文业务别名；【P2·已整改】分页 API 改 `list_runs_page`，带 q 时一次装饰同时返回 items/total；【P2·已整改】净值图 benchmark 缺省到 `000905.SH`，全量 BacktestView 测试不再产生该 prop warning。
+- **验证**：后端目标 8 文件 **68 passed**；前端全量 **80 文件 596/596、退出码 0**，`BacktestView.spec.ts` 53/53、`AssetSearchDrawer.spec.ts` 12/12；`npm run build`（vue-tsc + Vite）通过。后端停服测试后已恢复 `/api/health=200`。
+
+#### 6.8.20 T5 十二次复审整改（2026-08-02，对抗性复审后逐项核证、补漏与提交闭环）
+
+- **提交与状态口径**：认可 §6.8.19 当时仅存在于工作树却写“已完成”的留痕风险；§6.8.19 的代码、测试与文档连同本节整改统一纳入本轮本地提交，不再把未提交工作树描述成已固化版本。历史“重验通过”统一只代表其后紧随的测试/构建结果；浏览器维度以各条明确的“已验证/未验证”为准。
+- **浏览器验证真空整改**：使用明确 `AI_STOCKS_ENV=dev` 的固定调试账号与可清理临时公开评分验证记录，在 5181 实测非空公开行：中文类型/状态、单行操作各 1 个、加载查看、关闭恢复进入前日期、复用重跑 loading 禁用、新 private run 选中并展示结果，以及 `source_run_ref` 审计落库；`debug_backtest_view` 实测无运行/重跑/删除入口但保留加载查看。临时来源 run、重跑 run 与审计记录均已精确删除并确认剩余 0 条。真实网络倒序返回、策略型公开回测和双标签同签名并发拒绝的浏览器反馈仍未验证，列为 T6 硬验证项；不以 Vitest/pytest 替代浏览器结论。
+- **幻影行 P2 闭环**：操作列增加稳定资产 key 门禁，无 key 的 Element Plus 初始化空 scope 不渲染 `AppRowActions`；删除“渲染后禁用”的过渡方案并新增 pending/ready 按钮数量回归。
+- **复核补漏 P1**：发现 §6.8.19 advisory lock 使用业务连接池连接，多个不同签名长运行达到 `pool_max` 时会各占一条锁连接并等待第二条业务连接，存在池耗尽自锁。锁改用独立 autocommit PG 会话，业务 `running/results/audit` 继续使用原池；新增 `pool_max=1` 回归证明持锁期间仍能完成写入。
+- **验证口径**：最终结果登记在 §8；本节不使用“整体复验通过”概括浏览器未覆盖项。需求范围、路由、菜单、权限码、配置、DDL/SQL 与页面原型均未改变，无对应迁移或上线配套新增。
+
 ### 阶段 6 · 全链路验收
 
 #### 6.9 任务 T6：验收、测试与构建
 - 状态：待开始　依赖：T3,T4,T5,T1B
 - 涉及：Vitest、E2E、stage6 测试、`DESIGN.md` 组件矩阵、`frontend/dist`
 - 目标：多租户/多角色 E2E、路由守卫、组件测试、关键视口、构建同步。
-- 操作：跑 `pytest backend/tests/`、`npm run test:e2e`、`npm run build`；DESIGN 登记新组件；更新 stage6 断言；**整改 T4 自审查登记项**（§6.7：ConfigView 详情吞错、save/copy 丢 profile_ref、契约测试盲区，及各项 P2）；**补回测 Playwright E2E（T5 决策4 留项：4 入口计数、加载查看不运行、复用重跑归属+loading+source_run_ref 审计）**；**评估 T5 遗留的幻影行守卫残留副本（§6.8）**。
+- 操作：跑 `pytest backend/tests/`、`npm run test:e2e`、`npm run build`；DESIGN 登记新组件；更新 stage6 断言；**整改 T4 自审查登记项**（§6.7：ConfigView 详情吞错、save/copy 丢 profile_ref、契约测试盲区，及各项 P2）；**补回测 Playwright E2E（T5 决策4硬验证项）**：自动创建并清理跨 owner 公开策略/评分记录，覆盖 4 入口、加载查看不运行、关闭恢复、复用重跑归属+loading+source_run_ref 审计、两标签同签名并发拒绝反馈、请求倒序不覆盖当前页面；其中评分验证非空行的加载/关闭/重跑/权限态已于 §6.8.20 人工浏览器验证，仍须沉淀稳定 E2E，策略型与真实倒序/并发页面链路尚未验证。
 - 验证：全绿 + build 成功 + dist 同步 + 三视口。
 - 完成标准：交付红线满足（AGENTS 端口/构建）。
 - 实际落地情况：待实施。
@@ -506,6 +524,8 @@
 > **前端（2026-08-02，§6.8.16 第八次复审 2 P1 统一整改）**：Vitest 全量 **80 文件 586/586、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。本轮纯前端（未改后端）。`BacktestView.spec.ts` 增至 **44/44**：新增 P1-1 三例（runBacktest pending→切换历史旧结果不覆盖结果/选中项、pending→关闭公开查看不清已恢复现场、旧请求失败不显示过期错误）+ P1-2 三例（策略/评分验证成功后 `selectedRun===run_ref` 且 `!==run_id`、列表刷新失败保持未选中+提示）。整改：doRun 显式接收 operation token、runBacktest 结果先入局部变量校验后写回、选中改 run_ref 经 runHistory 归一化。浏览器侧：公开回测 0 条、本地运行落库链路浏览器未验证，由上述页面级测试覆盖。
 > **前端（2026-08-02，§6.8.17 第九次复审 1 P1+1 P2 统一整改）**：Vitest 全量 **80 文件 590/590、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。本轮纯前端（未改后端）。`BacktestView.spec.ts` 增至 **48/48**：新增 P1-1 三例（runBacktest pending→改日期旧结果不写回+`runLoadSequence` 递增+保持 `dirty=true`、pending→改方案 ref 旧结果不写回+用户改动保留、pending→切策略/评分模式旧 strategy 结果不写入 score_check 模式）+ P2-1 一例（listRuns 成功但不含新 ID→`selectedRun=''`+「新记录尚未出现」提示）。整改：拆出独立 `runningRun` 标记「真实回测请求在途」与 `loadingRun`（程序化恢复参数静默期）分离（复审方向b 双状态拆分）；`loadingRun` 在 `run()` 收紧为只覆盖 `saveParams()` 同步窗口、不再贯穿在途期；dirty watcher 在 `runningRun=true` 时递增 `runLoadSequence` 使在途 token 失效，`dirty=false` 因 token 失效被跳过；「新项暂缺」成功分支补「新记录尚未出现在列表中」提示。浏览器侧：公开回测 0 条、运行期间改参真实链路浏览器未验证，由上述页面级测试覆盖。
 > **前端（2026-08-02，§6.8.18 第十次复审 2 P1 统一整改）**：Vitest 全量 **80 文件 593/593、退出码 0**；`BacktestView.spec.ts` **51/51**、`BacktestView.real-component.spec.ts` **5/5**；`npm run build`（vue-tsc + Vite）通过。本轮纯前端（未改后端）。整改将运行/历史加载改为 token 所有权模型：active run 从 `prepareBacktest` 前持有至历史刷新结束，改参统一取消当前 operation 并释放 loading；旧请求只能由匹配 token 收尾，且历史列表写回也受序列保护。新增 3 例覆盖 prepare pending 改参、查重确认框 pending 改参、旧运行晚于新运行返回不清新 loading。5181 浏览器可正常打开登录页，但当前环境未显式标记 `dev/test/local`，`./start.sh dev-users --list` 被安全守卫拒绝；未绕过环境保护、未占用日常 5173。故登录后回测页与 prepare/confirm/run 三阶段竞态真实交互均标记为**未验证**，不以页面级测试冒充浏览器通过。
+> **前后端（2026-08-02，§6.8.19 第十一次复审 4 P1+3 P2 统一整改）**：后端目标 8 文件 **68 passed**（含同签名真并发互斥、来源 fail-closed、审计失败补偿、q 单次装饰）；前端全量 **80 文件 596/596、退出码 0**，`BacktestView.spec.ts` **53/53**、`AssetSearchDrawer.spec.ts` **12/12**；`npm run build`（vue-tsc + Vite）通过，原 BacktestView `benchmarkCode=undefined` 告警已消除。后端停服运行后按原状态恢复，`/api/health=200`。5181 使用 `debug_normal` 复验首屏、4 个入口、本人历史空态、公开回测 tenant/public 分段与 0 条空态；本地仍无公开回测，因此中文有数据行、加载查看、关闭恢复、复用重跑及真实网络倒序/同签名并发页面链路标为**未验证**，分别由新增组件/页面/真实 PG 并发回归覆盖，不冒充浏览器通过。
+> **前后端（2026-08-02，§6.8.20 第十二次对抗性复审整改与提交闭环）**：后端停服独立重跑目标 8 文件 **70 passed、退出码 0**（新增 `pool_max=1` 持 advisory lock 仍可完成业务写入，以及底层锁连接错误不泄露驱动详情）；前端定向 `BacktestView.spec.ts` 53/53 + `AssetSearchDrawer.spec.ts` 13/13 = **66/66**，全量 **80 文件 597/597、退出码 0**；`npm run build`（vue-tsc + Vite）通过。5181 以 `debug_normal` + 临时外部 public 评分验证记录实测：中文非空行、加载/重跑按钮各唯一 1 个、加载查看不写 mine、关闭恢复原日期、重跑中按钮禁用、完成后新 private run 选中并展示结果，PG 审计含 `source_run_ref`；`debug_backtest_view` 实测运行/重跑/删除入口为 0、加载查看入口为 1。临时来源、新 run、审计均精确清理且数据库确认剩余 0 条。**未验证**：策略型公开记录、真实网络倒序、双浏览器标签同签名并发拒绝页面反馈；T6 必须用可清理数据沉淀 Playwright E2E。Ruff 本机未安装，未执行；`py_compile` 与 `git diff --check` 通过。后端测试后已恢复 `/api/health=200`。
 > **前后端（2026-08-02，§6.8.12 第四次复审 5 P1+2 P2 统一整改）**：Vitest 全量 **80 文件 569/569、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。后端 8 文件 **61 passed**（停服跑、已 `./start.sh dev` 重启 `/api/health=200`），含新增 `test_backtest_review4_failclosed.py` **7/7**（P1-4 五例：不存在/跨租户私有/失效 screen、score、trade ref 均 `ValueError` 拒绝且不落库；P1-5 两例：同秒 200 次 `_new_id` 全唯一、`_persist_run` 状态转换 UPDATE 单行不丢记录）。前端 `BacktestView.real-component.spec.ts` 增至 **3/3**（新增 P1-3「复制成功但 mine 刷新失败不写 opaque ref」）。本轮改动前端 2 文件（BacktestView/AssetProfileSelect）+ 后端 1 文件（backtest_service）+ 测试 2 文件。浏览器侧：公开回测抽屉仍为 0 条，真实「加载→复用→运行→再次查看/关闭」与「复制成功但刷新失败」链路浏览器未验证，由上述前端真实组件测试 + 后端 fail-closed/唯一性回归覆盖。
 > **前端（2026-08-02，§6.8.6 回测控件语义收敛）**：`BacktestView.spec.ts` **20/20**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **552/552、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖页头仅请求 `source=mine`、不再渲染重复来源下拉、公开浏览入口保留、选股方案空值语义更新，以及重跑完成后单次刷新并按 `run_id` 精确选中。5181 真实页面验证：页头只显示「回测记录」和精确记录选择器，未再出现「全部/我的/租户公开/全体公开」来源下拉；空记录显示「暂无我的回测」；选股方案显示「不使用选股方案（默认）」；点击「浏览公开回测」后抽屉正常显示「租户公开/全体公开」来源段及空态。
 > **前端（2026-08-02，§6.8.7 控件语义复核整改）**：`BacktestView.spec.ts` **23/23**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **555/555、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖重跑刷新失败/目标缺失均不误选旧记录、公开加载使用独立只读快照且不污染 mine 候选、失效偏好提示聚合去重、mine 列表限制最近 100 条。5181 真实页面验证：页头仍只显示 mine 记录选择器，控件 title 明示最近 100 条；失效评分/买卖偏好合并为**一次**提示；公开抽屉的租户/全体来源段及空态正常。本地无公开回测，故「真实公开行加载 → 选择器外只读快照」浏览器链路记为**未验证**，由页面级真实状态测试覆盖。

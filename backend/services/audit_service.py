@@ -265,9 +265,9 @@ class AuditService:
         error_summary: str | None = None,
         context: dict[str, Any] | None = None,
         changes: list[dict[str, Any]] | None = None,
-    ) -> None:
+    ) -> bool:
         try:
-            self.repo.record(
+            return self.repo.record(
                 event_category="security",
                 event_type=event_type,
                 action=action,
@@ -286,9 +286,10 @@ class AuditService:
                 error_summary=error_summary,
                 context=context or {},
                 changes=self._sanitize_changes(changes),
-            )
+            ) is not None
         except Exception as e:  # noqa: BLE001
             log.warning("安全审计写入失败，已降级忽略: %s", e)
+            return False
 
     def record_task_event(
         self,

@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import json
 import uuid
+from contextlib import contextmanager, nullcontext
 from datetime import date, datetime
+from typing import Iterator
 
 import pandas as pd
+import psycopg
 
 from backend.backtest.engine import BacktestEngine
 from backend.backtest.metrics import compute_metrics
@@ -237,7 +240,7 @@ class BacktestService:
                 "date_start": str(r["date_start"])[:10], "date_end": str(r["date_end"])[:10],
                 "created_at": str(r["created_at"])}
 
-    def _ensure_explicit_deps_visible(self, params: dict) -> None:
+    def _ensure_explicit_deps_visible(self, params: dict) -> dict | None:
         """显式依赖 fail-closed（P1-4）：请求提供了 ref 而当前用户不可见/不存在即拒绝，
         禁止持久化和审计（防止方案失效/下架/跨租户竞态时静默改用默认评分/方案重跑）。
         任一显式 ref 解析不到 → ValueError（API 转 400）。"""
@@ -250,6 +253,20 @@ class BacktestService:
             ref = params.get(field)
             if ref and not resolver(ref):
                 raise ValueError(f"{label}不存在或不可见: {ref}")
+        source_run_ref = params.get("source_run_ref")
+        if not source_run_ref:
+            return None
+        source_run = self._visible_run_row(str(source_run_ref), include_owner=True)
+        # source_run_ref 只表达“复用外部公开回测”：本人的私有/公开记录应走普通再次运行，
+        # 不能伪装成跨资产复用；来源在运行前失效时也不得静默落一条无审计的新记录。
+        if (
+            source_run is None
+            or not source_run.get("readonly")
+            or source_run.get("visibility") not in {VISIBILITY_TENANT, VISIBILITY_PUBLIC}
+            or source_run.get("status") != "done"
+        ):
+            raise ValueError(f"来源回测不存在、不可复用或不可见: {source_run_ref}")
+        return source_run
 
     def prepare(self, kind: str, params: dict) -> dict:
         """运行前预备：解析版本 + 算签名 + 查同条件历史（供前端弹框询问加载/重跑）。"""
@@ -257,6 +274,53 @@ class BacktestService:
         versions = self._resolve_versions(params)
         sig = self._signature(kind, params, versions)
         return {"signature": sig, "versions": versions, "duplicate": self.find_duplicate(sig)}
+
+    @contextmanager
+    def _signature_run_lock(self, signature: str) -> Iterator[None]:
+        """互斥保护同 owner、同签名的完整运行生命周期。
+
+        锁必须覆盖“清旧记录 → running → 计算 → done/failed”全过程；若只保护清理和插入，
+        后来的同签名请求仍能在前一请求计算期间删除其 running 行，最终被前一请求复活成重复记录。
+        使用会话级 try-lock 让重复请求快速失败；等待式事务锁会让大量同步长请求占满连接池，
+        导致持锁请求反而借不到连接写入结果。
+        """
+        scope = f"backtest:{self.tenant_id}:{self.owner_user_id}"
+        # 锁连接不能占用业务连接池：运行过程中 _persist_run/_persist/审计还需从该池借连接；
+        # 若每个长运行都先占一条池连接，并发数达到 pool_max 时会集体等待第二条连接而自锁。
+        # 独立 autocommit 会话只持 advisory lock，不开启长事务，退出时连接关闭也会兜底释放锁。
+        try:
+            conn = psycopg.connect(
+                self.pg.conninfo,
+                autocommit=True,
+                connect_timeout=10,
+            )
+        except psycopg.Error as exc:
+            raise RuntimeError("回测并发锁连接失败，请稍后重试") from exc
+        try:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(
+                        "SELECT pg_try_advisory_lock(hashtext(%s), hashtext(%s))",
+                        [scope, signature],
+                    )
+                    locked = bool(cur.fetchone()[0])
+                except psycopg.Error as exc:
+                    raise RuntimeError("回测并发锁获取失败，请稍后重试") from exc
+                if not locked:
+                    raise ValueError("相同条件的回测正在运行，请稍后重试")
+                try:
+                    yield
+                finally:
+                    try:
+                        cur.execute(
+                            "SELECT pg_advisory_unlock(hashtext(%s), hashtext(%s))",
+                            [scope, signature],
+                        )
+                    except psycopg.Error as exc:
+                        # 会话关闭仍会释放 advisory lock；此处不覆盖原业务异常。
+                        log.warning("回测并发锁显式释放失败，将随会话关闭释放: %s", exc)
+        finally:
+            conn.close()
 
     def _purge_signature(self, signature: str | None) -> None:
         """覆盖语义：删除同签名旧记录（含曲线/逐笔/绩效），保证每个条件组合历史唯一。"""
@@ -319,87 +383,93 @@ class BacktestService:
 
     # ── 评分验证（信号质量分析）──
     def run_signal(self, params: dict, persist: bool = True) -> dict:
-        self._ensure_explicit_deps_visible(params)  # fail-closed：显式失效方案拒绝（不落库不审计）
+        source_run = self._ensure_explicit_deps_visible(params)  # fail-closed：显式失效引用拒绝
         run_id = self._new_id("score_check")
         versions = self._resolve_versions(params)
         sig = self._signature("score_check", params, versions)
-        if persist:
-            self._purge_signature(sig)  # 覆盖同条件旧记录（唯一）
-            self._persist_run(run_id, "score_check", params, "running", versions=versions, signature=sig)
-        try:
-            res = SignalAnalyzer(self.c).analyze(
-                date.fromisoformat(params["date_start"]) if isinstance(params["date_start"], str) else params["date_start"],
-                date.fromisoformat(params["date_end"]) if isinstance(params["date_end"], str) else params["date_end"],
-                horizons=params.get("horizons"), thresholds=params.get("thresholds"),
-                min_samples=params.get("min_samples", 30),
-                score_profile=self._load_score_profile(params),
-            )
-            res["run_id"] = run_id
+        guard = self._signature_run_lock(sig) if persist else nullcontext()
+        with guard:
             if persist:
-                self.assets.upsert("backtest_metrics", pd.DataFrame([{
-                    "run_id": run_id, "hit_rate_by_grade": json.dumps(res, ensure_ascii=False),
-                }]))
-                self._persist_run(run_id, "score_check", params, "done", finished=True,
-                                  versions=versions, signature=sig)
-                self._record_reuse_if_needed(params, run_id)
-            return res
-        except Exception as e:  # noqa: BLE001
-            if persist:
-                self._persist_run(run_id, "score_check", params, "failed", detail=str(e), finished=True,
-                                  versions=versions, signature=sig)
-            raise
+                self._purge_signature(sig)  # 锁内覆盖同条件旧记录（唯一）
+                self._persist_run(run_id, "score_check", params, "running", versions=versions, signature=sig)
+            try:
+                res = SignalAnalyzer(self.c).analyze(
+                    date.fromisoformat(params["date_start"]) if isinstance(params["date_start"], str) else params["date_start"],
+                    date.fromisoformat(params["date_end"]) if isinstance(params["date_end"], str) else params["date_end"],
+                    horizons=params.get("horizons"), thresholds=params.get("thresholds"),
+                    min_samples=params.get("min_samples", 30),
+                    score_profile=self._load_score_profile(params),
+                )
+                res["run_id"] = run_id
+                if persist:
+                    self.assets.upsert("backtest_metrics", pd.DataFrame([{
+                        "run_id": run_id, "hit_rate_by_grade": json.dumps(res, ensure_ascii=False),
+                    }]))
+                    self._persist_run(run_id, "score_check", params, "done", finished=True,
+                                      versions=versions, signature=sig)
+                    self._record_reuse_if_needed(params, run_id, source_run)
+                return res
+            except Exception as e:  # noqa: BLE001
+                if persist:
+                    self._delete_run_results(run_id)
+                    self._persist_run(run_id, "score_check", params, "failed", detail=str(e), finished=True,
+                                      versions=versions, signature=sig)
+                raise
 
     # ── 完整策略回测 ──
     def run_strategy(self, params: dict, persist: bool = True) -> dict:
-        self._ensure_explicit_deps_visible(params)  # fail-closed：显式失效方案拒绝（不落库不审计）
+        source_run = self._ensure_explicit_deps_visible(params)  # fail-closed：显式失效引用拒绝
         run_id = self._new_id("strategy")
         versions = self._resolve_versions(params)
         sig = self._signature("strategy", params, versions)
-        if persist:
-            self._purge_signature(sig)  # 覆盖同条件旧记录（唯一）
-            self._persist_run(run_id, "strategy", params, "running", versions=versions, signature=sig)
-        try:
-            # 共享一个 IndicatorEngine：策略回测与分层分析复用同一区间快照缓存（性能：避免重算）
-            from backend.indicators.engine import IndicatorEngine
-            shared_ind = IndicatorEngine(self.c)
-            out = BacktestEngine(
-                self.c,
-                ind=shared_ind,
-                tenant_id=self.tenant_id,
-                owner_user_id=self.owner_user_id,
-            ).run(params)
-            if "error" in out:
+        guard = self._signature_run_lock(sig) if persist else nullcontext()
+        with guard:
+            if persist:
+                self._purge_signature(sig)  # 锁内覆盖同条件旧记录（唯一）
+                self._persist_run(run_id, "strategy", params, "running", versions=versions, signature=sig)
+            try:
+                # 共享一个 IndicatorEngine：策略回测与分层分析复用同一区间快照缓存（性能：避免重算）
+                from backend.indicators.engine import IndicatorEngine
+                shared_ind = IndicatorEngine(self.c)
+                out = BacktestEngine(
+                    self.c,
+                    ind=shared_ind,
+                    tenant_id=self.tenant_id,
+                    owner_user_id=self.owner_user_id,
+                ).run(params)
+                if "error" in out:
+                    if persist:
+                        self._persist_run(run_id, "strategy", params, "failed", detail=out["error"], finished=True,
+                                          versions=versions, signature=sig)
+                    return {"run_id": run_id, **out}
+                eq = out["equity"]
+                metrics = compute_metrics(
+                    eq.set_index("trade_date")["equity"],
+                    eq.set_index("trade_date")["benchmark_equity"] if "benchmark_equity" in eq else None,
+                    out["trades"],
+                )
+                # 分层（同区间信号质量），附在 metrics 里
+                layers = SignalAnalyzer(self.c, ind=shared_ind).analyze(
+                    date.fromisoformat(params["date_start"]) if isinstance(params["date_start"], str) else params["date_start"],
+                    date.fromisoformat(params["date_end"]) if isinstance(params["date_end"], str) else params["date_end"],
+                    horizons=params.get("horizons"), thresholds=params.get("thresholds"),
+                    score_profile=self._load_score_profile(params),
+                )
+                result = {"run_id": run_id, "metrics": metrics, "layers": layers,
+                          "trades": out["trades"], "equity": eq.to_dict("records"),
+                          "benchmark_code": out["benchmark_code"], "initial_capital": out["initial_capital"]}
                 if persist:
-                    self._persist_run(run_id, "strategy", params, "failed", detail=out["error"], finished=True,
+                    self._persist(run_id, eq, out["trades"], metrics, layers)
+                    self._persist_run(run_id, "strategy", params, "done", finished=True,
                                       versions=versions, signature=sig)
-                return {"run_id": run_id, **out}
-            eq = out["equity"]
-            metrics = compute_metrics(
-                eq.set_index("trade_date")["equity"],
-                eq.set_index("trade_date")["benchmark_equity"] if "benchmark_equity" in eq else None,
-                out["trades"],
-            )
-            # 分层（同区间信号质量），附在 metrics 里
-            layers = SignalAnalyzer(self.c, ind=shared_ind).analyze(
-                date.fromisoformat(params["date_start"]) if isinstance(params["date_start"], str) else params["date_start"],
-                date.fromisoformat(params["date_end"]) if isinstance(params["date_end"], str) else params["date_end"],
-                horizons=params.get("horizons"), thresholds=params.get("thresholds"),
-                score_profile=self._load_score_profile(params),
-            )
-            result = {"run_id": run_id, "metrics": metrics, "layers": layers,
-                      "trades": out["trades"], "equity": eq.to_dict("records"),
-                      "benchmark_code": out["benchmark_code"], "initial_capital": out["initial_capital"]}
-            if persist:
-                self._persist(run_id, eq, out["trades"], metrics, layers)
-                self._persist_run(run_id, "strategy", params, "done", finished=True,
-                                  versions=versions, signature=sig)
-                self._record_reuse_if_needed(params, run_id)
-            return result
-        except Exception as e:  # noqa: BLE001
-            if persist:
-                self._persist_run(run_id, "strategy", params, "failed", detail=str(e), finished=True,
-                                  versions=versions, signature=sig)
-            raise
+                    self._record_reuse_if_needed(params, run_id, source_run)
+                return result
+            except Exception as e:  # noqa: BLE001
+                if persist:
+                    self._delete_run_results(run_id)
+                    self._persist_run(run_id, "strategy", params, "failed", detail=str(e), finished=True,
+                                      versions=versions, signature=sig)
+                raise
 
     def _persist(self, run_id: str, eq: pd.DataFrame, trades: list[dict],
                  metrics: dict, layers: dict) -> None:
@@ -419,6 +489,14 @@ class BacktestService:
         row = {"run_id": run_id, **{k: v for k, v in metrics.items()},
                "hit_rate_by_grade": json.dumps(layers, ensure_ascii=False), "extra": None}
         self.assets.upsert("backtest_metrics", pd.DataFrame([row]))
+
+    def _delete_run_results(self, run_id: str) -> None:
+        """失败补偿：清理可能已写入的结果子表，保留 run 失败记录与错误详情。"""
+        for table in ("backtest_trade", "backtest_equity", "backtest_metrics"):
+            self.pg.execute(
+                f"DELETE FROM {table} WHERE run_id=%s AND tenant_id=%s AND owner_user_id=%s",
+                [run_id, *self._op],
+            )
 
     def delete_run(self, run_id: str) -> bool:
         """删除某次回测的全部数据（run + equity + trade + metrics）。"""
@@ -512,12 +590,45 @@ class BacktestService:
         """q 名称过滤：发布态回测的方案引用列已被改写成 opaque ref，SQL JOIN 裸 id 取不到方案名，
         只能在解析 ref、补全方案名之后于 Python 侧按三类引用方案名 + kind 过滤。"""
         def _hit(row: dict) -> bool:
-            for key in ("profile_name", "score_profile_name", "trade_profile_name", "kind"):
+            for key in ("profile_name", "score_profile_name", "trade_profile_name"):
                 val = row.get(key)
                 if val and q_norm in str(val).lower():
                     return True
+            kind = str(row.get("kind") or "").lower()
+            aliases = {
+                "strategy": ("strategy", "策略", "策略回测"),
+                "score_check": ("score_check", "signal", "评分", "评分验证"),
+                "signal": ("score_check", "signal", "评分", "评分验证"),
+            }.get(kind, (kind,))
+            if any(q_norm in alias for alias in aliases):
+                return True
             return False
         return _hit
+
+    def list_runs_page(
+        self,
+        *,
+        limit: int,
+        offset: int = 0,
+        kind: str | None = None,
+        source: str | None = None,
+        q: str | None = None,
+    ) -> tuple[list[dict], int]:
+        """返回分页记录与同口径 total；带 q 时只做一次全量解析和装饰。"""
+        limit = max(1, limit)
+        offset = max(0, offset)
+        q_norm = q.strip().lower() if q and q.strip() else None
+        if q_norm is None:
+            return (
+                self.list_runs(limit, kind=kind, source=source, offset=offset),
+                self.count_runs(kind=kind, source=source),
+            )
+        where, args = self._runs_where(kind, source)
+        order_by, owner_args = self._runs_order()
+        rows = self._query_runs_decorated(where, order_by, "", [*args, *owner_args])
+        hit = self._runs_q_filter(q_norm)
+        matched = [row for row in rows if hit(row)]
+        return matched[offset:offset + limit], len(matched)
 
     def _runs_order(self) -> tuple[str, list]:
         # 「我的」置顶,与方案 list_visible 口径一致;末位补**完整主键** (tenant_id, owner_user_id, id)
@@ -647,14 +758,20 @@ class BacktestService:
                     row["trade_profile_version"] = prof["version"]
         return rows
 
-    def _record_reuse_if_needed(self, params: dict, run_id: str) -> None:
+    def _record_reuse_if_needed(
+        self,
+        params: dict,
+        run_id: str,
+        source_run: dict | None = None,
+    ) -> None:
         source_run_ref = params.get("source_run_ref")
         if not source_run_ref:
             return
-        source_run = self._visible_run_row(str(source_run_ref), include_owner=True)
+        # 运行前已 fail-closed 校验并冻结来源；此处不二次查询，避免长回测期间来源撤回导致审计静默丢失。
         if source_run is None:
-            return
-        record_backtest_reuse_audit(source_run, run_id)
+            raise ValueError(f"来源回测不存在、不可复用或不可见: {source_run_ref}")
+        if not record_backtest_reuse_audit(source_run, run_id):
+            raise RuntimeError("回测复用审计写入失败")
 
     def _normalize_run_dependencies_for_visibility(
         self,

@@ -79,11 +79,11 @@ def record_asset_copy_audit(
     )
 
 
-def record_backtest_reuse_audit(source_run: dict[str, Any], new_run_id: str) -> None:
+def record_backtest_reuse_audit(source_run: dict[str, Any], new_run_id: str) -> bool:
     ctx = get_current_context()
     if ctx is None:
-        return
-    AuditService().record_security_event(
+        return False
+    return AuditService().record_security_event(
         event_type="asset_reuse",
         action="backtest_run_reuse",
         result="success",

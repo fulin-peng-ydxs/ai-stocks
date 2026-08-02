@@ -300,6 +300,30 @@ describe('BacktestView 三方案选择器（T5）', () => {
     wrapper.unmount()
   })
 
+  it('策略/评分历史请求倒序返回时只保留当前模式列表', async () => {
+    const wrapper = await mountView()
+    let resolveStrategy!: (value: { runs: any[] }) => void
+    let resolveScore!: (value: { runs: any[] }) => void
+    vi.mocked(backtestApi.listRuns)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveStrategy = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveScore = resolve }))
+
+    void (wrapper.vm as any).loadHistory()
+    await flushPromises()
+    ;(wrapper.vm as any).kind = 'score_check'
+    await nextTick()
+    await flushPromises()
+
+    resolveScore({ runs: [{ id: 'score-new', run_ref: 'run_ref_score', kind: 'score_check' }] })
+    await flushPromises()
+    resolveStrategy({ runs: [{ id: 'strategy-old', run_ref: 'run_ref_strategy', kind: 'strategy' }] })
+    await flushPromises()
+
+    expect((wrapper.vm as any).kind).toBe('score_check')
+    expect((wrapper.vm as any).runHistory.map((row: any) => row.id)).toEqual(['score-new'])
+    wrapper.unmount()
+  })
+
   it('公开回测加载查看使用独立只读快照，不混入我的记录下拉', async () => {
     const wrapper = await mountView()
     vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
@@ -888,6 +912,35 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     expect((wrapper.vm as any).dateStart).toBe('2023-01-01')
     expect((wrapper.vm as any).scoreProfileId).toBe('avr_score_1')
     expect((wrapper.vm as any).strat).toStrictEqual(prevResult)
+    wrapper.unmount()
+  })
+
+  it('公开查看态选择 mine：详情失败保留公开快照，成功后才原子退出', async () => {
+    const wrapper = await mountView()
+    const { prevResult } = await enterPublicRun(wrapper)
+    vi.mocked(backtestApi.getRun).mockRejectedValueOnce(new Error('网络瞬时失败'))
+    ;(wrapper.vm as any).selectedRun = 'run_ref_mine'
+    await (wrapper.vm as any).onMineRunSelected('run_ref_mine')
+    await flushPromises()
+
+    expect((wrapper.vm as any).externalRunSummary?.run_ref).toBe('run_ref_public_a')
+    expect((wrapper.vm as any).selectedRun).toBe('')
+    ;(wrapper.vm as any).clearExternalRun()
+    await flushPromises()
+    expect((wrapper.vm as any).strat).toStrictEqual(prevResult)
+
+    await enterPublicRun(wrapper)
+    vi.mocked(backtestApi.getRun).mockResolvedValueOnce(getRunDetail(
+      { date_start: '2025-01-01', date_end: '2025-06-30', score_profile_id: 'avr_score_1' },
+      { id: 'mine-run', run_ref: 'run_ref_mine' },
+    ))
+    ;(wrapper.vm as any).selectedRun = 'run_ref_mine'
+    await (wrapper.vm as any).onMineRunSelected('run_ref_mine')
+    await flushPromises()
+
+    expect((wrapper.vm as any).externalRunSummary).toBeNull()
+    expect((wrapper.vm as any).selectedRun).toBe('run_ref_mine')
+    expect((wrapper.vm as any).dateStart).toBe('2025-01-01')
     wrapper.unmount()
   })
 
