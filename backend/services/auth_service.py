@@ -104,7 +104,7 @@ class AuthService:
     # ── 登录 / 登出 / 刷新 ──
     def login(self, account: str, password: str, *, ip: str = "unknown",
               captcha_id: str | None = None, captcha_code: str | None = None) -> dict:
-        # E2E 套件并发豁免（三重门控：环境白名单 + E2E_WRITE + YAML 开关，见 environment_guard）。
+        # E2E 套件并发豁免（三重门控：环境白名单 + E2E_WRITE + E2E_LOGIN_BYPASS 环境变量，见 environment_guard）。
         # 全量 Playwright 三视口并行时多 worker 各自密集登录（同源 IP），不豁免会撞单 IP 限流。
         if not e2e_login_rate_bypass_enabled() and not ss.rate_limit_ok(
             "login", ip, self.cfg.login_rate_per_min, 60
