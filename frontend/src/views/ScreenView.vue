@@ -314,6 +314,13 @@ async function loadSelectedProfile(id: string) {
 watch(loadId, (id) => {
   void loadSelectedProfile(id)
 })
+// 「加载查看」（R5/§7.0）：组件只设临时只读项 + emit loaded、不联动 update:modelValue（规避 ElSelect
+// 锁非持久 option 递归），故 loadId 不变、上方 watch 不触发。此处直接按 profile_ref 走 loadSelectedProfile
+// 页面级载入该公开方案详情（getProfile→get_visible 解析 opaque ref），readonly 由详情 readonly 字段驱动、
+// 构建区只读展示，不写入 mine 列表、不改 loadId（选择器外只读，同 ConfigView onScoreLoaded 口径）。
+function onProfileLoaded(item: ProfileSummary) {
+  void loadSelectedProfile(item.profile_ref || item.id)
+}
 function clearAll() {
   rows.value = []
   complexAst.value = null
@@ -350,7 +357,11 @@ async function run() {
   // 不清空 result：让旧结果留在 loading 遮罩下，避免闪回空态（结果区盒子保持不变）
   try {
     const r = await runScreen({
-      ...(profileReadonly.value && loadId.value ? { profile_id: loadId.value } : { expression: ast }),
+      // 只读公开态（含「加载查看」，不改 loadId）按所查看方案的 profile_ref 运行，保证跑的是该方案口径
+      // 而非当前可能脏改的表达式；get_visible 解析 opaque ref 后后端 fail-closed 校验可见性。
+      ...(profileReadonly.value && loadedProfile.value
+        ? { profile_id: loadedProfile.value.profile_ref || loadedProfile.value.id }
+        : { expression: ast }),
       run_date: runDate.value || undefined,
       exclude_st: excludeSt.value,
     })
@@ -527,6 +538,7 @@ onMounted(initializeScreen)
           view-permission="screen-profile:view"
           placeholder="选我的筛选方案（可选）"
           style="width: 400px"
+          @loaded="onProfileLoaded"
         />
         <span class="ver-link" v-if="loadedProfile" title="点击查看历史版本" @click="openVersions">v{{ loadedProfile.version }}</span>
         <AssetVisibilityActions

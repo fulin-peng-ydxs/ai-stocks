@@ -98,9 +98,8 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
     await expect(select).toContainText(`${marker} 副本`)
     await expect(select.locator('.asset-visibility-tag')).toHaveCount(0)
 
-    // 加载查看（§6.8.2 契约）：组件只设 tempItem + emit loaded，**不联动选中、不自动跑筛选**。
-    // ScreenView 未接 @loaded（页面级载入缺陷已登记为独立任务），故加载查看后 select 保持原 mine
-    // 选中项、不切换、不新建 run/筛选请求——此处只断言抽屉关闭且无新增网络运行，构建区载入留待缺陷修复后补断言。
+    // 加载查看（§6.8.2 契约 + T6 缺陷修复）：组件只设 tempItem + emit loaded、不联动选中；ScreenView 现经
+    // @loaded 直接按 profile_ref 页面级载入该公开方案详情（getProfile），构建区载入其条件、readonly 只读。
     await page.keyboard.press('Escape')
     await expect(drawer).toBeHidden()
     await page.getByTestId('asset-profile-select-search').click()
@@ -110,6 +109,9 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
     await expect(rowAgain).toBeVisible()
     await rowAgain.getByTestId('asset-search-drawer-load').click()
     await expect(drawer).toBeHidden()
+    // 页面级载入生效：版本链接出现（loadedProfile 已设为该公开方案 v1）、条件构建区载入其条件行（.b-cond 非空）。
+    await expect(page.locator('.ver-link')).toContainText('v1')
+    await expect(page.locator('.cond-card .b-cond').first()).toBeVisible()
     // 不联动选中：select 仍显示先前复制的 mine 副本项（非临时只读项），且 mine 项按 §6.8.9 无来源标签。
     await expect(select).toContainText(`${marker} 副本`)
     await expect(select.locator('.asset-visibility-tag')).toHaveCount(0)

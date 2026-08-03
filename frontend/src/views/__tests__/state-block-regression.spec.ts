@@ -96,6 +96,7 @@ vi.mock('@/api/screening', () => ({
   getProfile: vi.fn(),
   getProfileVersions: vi.fn(),
   listProfiles: vi.fn(),
+  browseProfiles: vi.fn(),
   runScreen: vi.fn(),
   saveProfile: vi.fn(),
   setProfileVisibility: vi.fn(),
@@ -482,6 +483,74 @@ describe('代表性页面四态回归', () => {
     const wrapper = await mountView(ScreenView)
     expect(wrapper.text()).toContain('筛选配置加载失败')
     expect(wrapper.text()).toContain('registry failed')
+  })
+
+  // 「加载查看」（R5/§7.0）：组件 emit loaded 不联动选中，页面须直接按 profile_ref 页面级载入该公开
+  // 方案详情做只读展示（回归 T6 登记的 ScreenView 未接 @loaded 缺陷修复）。
+  it('筛选页加载查看公开方案：按 profile_ref 页面级载入只读详情，不改 loadId', async () => {
+    ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'pub1',
+      profile_ref: 'ref_pub1',
+      name: '公开筛选方案',
+      version: 3,
+      is_preset: false,
+      visibility: 'public',
+      readonly: true,
+      expression: { op: 'AND', children: [{ type: 'col', field: 'bull_arrange', cmp: '==', value: true }] },
+    })
+    const wrapper = await mountView(ScreenView)
+    const selector = wrapper.findComponent(AssetProfileSelect)
+    expect(selector.exists()).toBe(true)
+    selector.vm.$emit('loaded', {
+      id: 'pub1',
+      profile_ref: 'ref_pub1',
+      name: '公开筛选方案',
+      version: 3,
+      source: 'public',
+      readonly: true,
+    })
+    await flushPromises()
+    // 直接调 getProfile(profile_ref) 页面级载入；不经过 loadId watch
+    expect(screeningApi.getProfile).toHaveBeenCalledWith('ref_pub1')
+    // 载入后 loadedProfile 只读 → 运行按 profile_ref 而非脏表达式
+    const run = wrapper.findAll('button').find((button) => button.text().includes('运行筛选'))
+    await run!.trigger('click')
+    await flushPromises()
+    expect(screeningApi.runScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ profile_id: 'ref_pub1' }),
+    )
+    expect(screeningApi.runScreen).not.toHaveBeenCalledWith(
+      expect.objectContaining({ expression: expect.anything() }),
+    )
+  })
+
+  it('筛选页只读公开态运行按所查看方案 profile_ref，不用当前脏表达式', async () => {
+    ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'pub2',
+      profile_ref: 'ref_pub2',
+      name: '另一公开方案',
+      version: 1,
+      is_preset: false,
+      visibility: 'tenant',
+      readonly: true,
+      expression: { op: 'AND', children: [{ type: 'col', field: 'bull_arrange', cmp: '==', value: true }] },
+    })
+    const wrapper = await mountView(ScreenView)
+    wrapper.findComponent(AssetProfileSelect).vm.$emit('loaded', {
+      id: 'pub2',
+      profile_ref: 'ref_pub2',
+      name: '另一公开方案',
+      version: 1,
+      source: 'tenant',
+      readonly: true,
+    })
+    await flushPromises()
+    const run = wrapper.findAll('button').find((button) => button.text().includes('运行筛选'))
+    await run!.trigger('click')
+    await flushPromises()
+    expect(screeningApi.runScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ profile_id: 'ref_pub2' }),
+    )
   })
 
   it('回测运行失败落到结果区错误态', async () => {
