@@ -255,6 +255,24 @@ def test_backtest_run_visibility_list_detail_and_owner_guards(client, pg):
         _rm_user(pg, outsider, otid, outsider_role)
 
 
+def test_backtest_list_runs_kind_whitelist_400(client, pg):
+    """P3：kind 与 source 口径一致做白名单校验——非枚举值返回 400，不透传服务层静默「不过滤」。"""
+    tenant = "bt_kind_tenant_" + uuid.uuid4().hex[:8]
+    user, tid, role = _mk_user(pg, ["backtest:view"], tenant=tenant)
+    try:
+        for bad in ("unknown", "STRATEGY", "score-check", "'; DROP TABLE--"):
+            resp = client.get(f"/api/backtest/runs?kind={bad}", headers=_auth(user, tid))
+            assert resp.status_code == 200, bad
+            assert resp.json()["code"] == 400, bad
+        # 合法值（含历史 signal）与缺省不 400
+        for good in ("strategy", "score_check", "signal"):
+            resp = client.get(f"/api/backtest/runs?kind={good}", headers=_auth(user, tid))
+            assert resp.json()["code"] != 400, good
+        assert client.get("/api/backtest/runs", headers=_auth(user, tid)).json()["code"] != 400
+    finally:
+        _rm_user(pg, user, tid, role)
+
+
 def test_viewer_reuses_public_backtest_params_into_own_run(pg, market, monkeypatch):
     from backend.auth.context import AuthContext, reset_context, set_context
     from backend.screening.profile import ProfileRepo

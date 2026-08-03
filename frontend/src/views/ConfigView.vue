@@ -399,8 +399,6 @@ async function submitNewDef() {
 // 「搜索」入口打开共享搜索抽屉（系统内置/租户公开/全体公开），「加载查看」注入临时只读项、
 // 「复制为我的」由后端生成唯一 id 并自动刷新选中；本页不再维护前端撞库/列表来源逻辑。
 const profiles = ref<ScoreProfileSummary[]>([])
-const profilesLoading = ref(false)
-const profilesError = ref(false)
 // 方案详情加载（选中→编辑器）独立状态：加载态/错误态/竞态守卫（P1-2）
 const profileDetailLoading = ref(false)
 const profileDetailError = ref('')
@@ -446,18 +444,8 @@ function copyAnyScoreProfile(item: ProfileSummary) {
   return copyScoreProfile(item.profile_ref || item.id)
 }
 
-async function loadProfiles() {
-  profilesLoading.value = true
-  profilesError.value = false
-  try {
-    profiles.value = canViewScoreProfiles.value ? await listScoreProfiles('mine') : []
-  } catch (e) {
-    profilesError.value = true
-    throw e
-  } finally {
-    profilesLoading.value = false
-  }
-}
+// 评分 mine 列表由选择器组件唯一拉取（onMounted 与 save/delete/publish/copy 后均只经组件 reload 一次），
+// 回写经组件 ready 事件进入 onScoreReady → profiles.value；本页不再保留私有直连拉取（P2-1）。
 
 // 供「加载查看」临时只读项回显：注入侧栏顶部，点击/选中后走统一 selectProfile 载入编辑器。
 // P1-2：原子应用详情 + 失败回滚选中值 + seq 竞态守卫，保证「选中项 == 编辑器内容」不错位。
@@ -662,7 +650,8 @@ async function save() {
     isNew.value = false
     editId.value = r.id
     curId.value = r.id
-    await loadProfiles()
+    // 组件为列表唯一事实源（P2-1）：只经组件 reload 拉一次 mine 并回写 profiles.value（内部已 emit ready），
+    // 不再并行调 loadProfiles() 直连 API（避免 save 后产生双份 source=mine 请求）。
     const list = await scoreSelectRef.value?.reload()
     const saved = (list as ScoreProfileSummary[] | undefined)?.find((p) => p.id === r.id)
     curRef.value = saved ? (saved.profile_ref || saved.id) : r.id
@@ -677,7 +666,8 @@ async function remove() {
   await deleteScoreProfile(curRef.value)
   ElMessage.success('已删除')
   newProfile()
-  await loadProfiles()
+  // 删除后只经组件 reload 刷新 mine 列表并回写（内部 emit ready → onScoreReady → profiles.value），不再并行 loadProfiles()。
+  await scoreSelectRef.value?.reload()
 }
 
 async function publishScoreProfile(visibility: 'private' | 'tenant' | 'public') {
@@ -696,7 +686,7 @@ async function publishScoreProfile(visibility: 'private' | 'tenant' | 'public') 
     const p = await setScoreProfileVisibility(curRef.value, visibility)
     profileVisibility.value = p.visibility || visibility
     ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
-    await loadProfiles()
+    // 发布后只经组件 reload 刷新 mine 列表并回写，不再并行 loadProfiles()。
     await scoreSelectRef.value?.reload()
   } finally {
     visibilitySaving.value = false
@@ -708,7 +698,7 @@ async function copyCurrentScoreProfile() {
   if (!curRef.value) return
   const r = await copyScoreProfile(curRef.value)
   ElMessage.success('已复制为我的方案')
-  await loadProfiles()
+  // 复制后只经组件 reload 刷新 mine 列表并回写，不再并行 loadProfiles()。
   const list = await scoreSelectRef.value?.reload()
   const copied = (list as ScoreProfileSummary[] | undefined)?.find((p) => p.id === r.id)
   curRef.value = copied ? (copied.profile_ref || copied.id) : (r.profile_ref || r.id)
@@ -767,8 +757,6 @@ import {
 } from '@/api/tradeProfile'
 
 const tProfiles = ref<TradeProfileSummary[]>([])
-const tProfilesLoading = ref(false)
-const tProfilesError = ref(false)
 // 买卖方案详情加载（选中→编辑器）独立状态：加载态/错误态/竞态守卫（P1-2）
 const tDetailLoading = ref(false)
 const tDetailError = ref('')
@@ -819,18 +807,8 @@ function browseTrade(params: AssetBrowseParams) {
 function copyAnyTradeProfile(item: ProfileSummary) {
   return copyTradeProfile(item.profile_ref || item.id)
 }
-async function loadTradeProfiles() {
-  tProfilesLoading.value = true
-  tProfilesError.value = false
-  try {
-    tProfiles.value = canViewTradeProfiles.value ? await listTradeProfiles('mine') : []
-  } catch (e) {
-    tProfilesError.value = true
-    throw e
-  } finally {
-    tProfilesLoading.value = false
-  }
-}
+// 买卖 mine 列表由选择器组件唯一拉取（onMounted 与 save/delete/publish/copy 后均只经组件 reload 一次），
+// 回写经组件 ready 事件进入 onTradeReady → tProfiles.value；本页不再保留私有直连拉取（P2-1）。
 function condListOf(side: 'buy' | 'sell') {
   return side === 'buy' ? buyConds : sellConds
 }
@@ -992,7 +970,8 @@ async function saveTrade() {
     tIsNew.value = false
     tEditId.value = r.id
     tCurId.value = r.id
-    await loadTradeProfiles()
+    // 组件为列表唯一事实源（P2-1）：只经组件 reload 拉一次 mine 并回写 tProfiles.value（内部已 emit ready），
+    // 不再并行调 loadTradeProfiles() 直连 API。
     const list = await tradeSelectRef.value?.reload()
     const saved = (list as TradeProfileSummary[] | undefined)?.find((p) => p.id === r.id)
     tCurRef.value = saved ? tradeProfileKey(saved) : r.id
@@ -1002,7 +981,9 @@ async function removeTrade() {
   if (!tCurRef.value || tReadonly.value) return
   await ElMessageBox.confirm(`确认删除买卖方案「${tEditName.value}」？`, '提示', { type: 'warning' })
   await deleteTradeProfile(tCurRef.value)
-  ElMessage.success('已删除'); newTradeProfile(); await loadTradeProfiles()
+  ElMessage.success('已删除'); newTradeProfile()
+  // 删除后只经组件 reload 刷新 mine 列表并回写（内部 emit ready → onTradeReady → tProfiles.value），不再并行 loadTradeProfiles()。
+  await tradeSelectRef.value?.reload()
 }
 
 async function publishTradeProfile(visibility: 'private' | 'tenant' | 'public') {
@@ -1021,7 +1002,7 @@ async function publishTradeProfile(visibility: 'private' | 'tenant' | 'public') 
     const p = await setTradeProfileVisibility(tCurRef.value, visibility)
     tVisibility.value = p.visibility || visibility
     ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
-    await loadTradeProfiles()
+    // 发布后只经组件 reload 刷新 mine 列表并回写，不再并行 loadTradeProfiles()。
     await tradeSelectRef.value?.reload()
   } finally {
     tVisibilitySaving.value = false
@@ -1032,7 +1013,7 @@ async function copyCurrentTradeProfile() {
   if (!tCurRef.value) return
   const r = await copyTradeProfile(tCurRef.value)
   ElMessage.success('已复制为我的方案')
-  await loadTradeProfiles()
+  // 复制后只经组件 reload 刷新 mine 列表并回写，不再并行 loadTradeProfiles()。
   const list = await tradeSelectRef.value?.reload()
   const copied = (list as TradeProfileSummary[] | undefined)?.find((p) => p.id === r.id)
   tCurRef.value = copied ? tradeProfileKey(copied) : (r.profile_ref || r.id)
@@ -1132,20 +1113,14 @@ async function initTradePage() {
   })
 }
 
-async function retryScoreProfiles() {
-  try {
-    await initScorePage()
-  } catch (e) {
-    console.error('[config] 评分方案重试失败', e)
-  }
+// 列表加载失败兜底：选择器组件内部已显示可重试错误态并保留旧列表（P1-3 契约）；父级仅需确保权限就绪，
+// 不再维护「组件失败 → 页面自己直连重试」的旁路（避免与组件双份拉取）。
+function onScoreLoadFailed() {
+  void auth.ensureLoaded().catch((e) => console.error('[config] 评分方案加载失败兜底', e))
 }
 
-async function retryTradeProfiles() {
-  try {
-    await initTradePage()
-  } catch (e) {
-    console.error('[config] 买卖方案重试失败', e)
-  }
+function onTradeLoadFailed() {
+  void auth.ensureLoaded().catch((e) => console.error('[config] 买卖方案加载失败兜底', e))
 }
 
 async function ensureBaseReady() {
@@ -1210,22 +1185,12 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <template v-if="activeTab === 'score'">
         <div class="score-layout pane-fill">
           <!-- 方案列表（R3/R5/R7：统一选择器 list 形态，仅我的 + 搜索系统内置/租户/全体公开） -->
-          <aside class="prof-list" v-loading="profilesLoading">
+          <aside class="prof-list">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建方案
             </el-button>
-            <AppStateBlock
-              v-if="profilesError"
-              state="error"
-              size="tiny"
-              title="方案加载失败"
-              class="profile-error"
-              retry
-              @retry="retryScoreProfiles"
-            />
             <AssetProfileSelect
-              v-else
               ref="scoreSelectRef"
               mode="list"
               :model-value="curRef"
@@ -1240,6 +1205,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               @loaded="onScoreLoaded"
               @ready="onScoreReady"
               @copied-item="onScoreCopied"
+              @load-failed="onScoreLoadFailed"
             />
           </aside>
 
@@ -1584,22 +1550,12 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <!-- ============ 买卖指标 ============ -->
       <template v-else-if="activeTab === 'trade'">
         <div class="score-layout pane-fill">
-          <aside class="prof-list" v-loading="tProfilesLoading">
+          <aside class="prof-list">
             <el-button type="primary" plain size="small" style="width: 100%" @click="newTradeProfile">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建方案
             </el-button>
-            <AppStateBlock
-              v-if="tProfilesError"
-              state="error"
-              size="tiny"
-              title="方案加载失败"
-              class="profile-error"
-              retry
-              @retry="retryTradeProfiles"
-            />
             <AssetProfileSelect
-              v-else
               ref="tradeSelectRef"
               mode="list"
               :model-value="tCurRef"
@@ -1614,6 +1570,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               @loaded="onTradeLoaded"
               @ready="onTradeReady"
               @copied-item="onTradeCopied"
+              @load-failed="onTradeLoadFailed"
             />
           </aside>
 
@@ -1983,12 +1940,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   justify-content: center;
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-body);
-}
-.profile-error {
-  padding: 12px 0;
-}
-.profile-error :deep(.el-result__title p) {
-  font-size: var(--app-font-size-table);
 }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }

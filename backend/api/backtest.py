@@ -141,6 +141,10 @@ def list_runs(
 ) -> ApiResponse:
     if source not in (None, "mine", "tenant", "public"):
         return err(400, "source 必须是 mine、tenant 或 public")
+    # kind 与 source 口径一致做白名单 400：服务层 _runs_where 只对 score_check/strategy 加过滤，
+    # 其他值不加条件等同「不过滤」，语义不清，故在 API 层拒绝（含历史值 signal）。
+    if kind not in (None, "strategy", "score_check", "signal"):
+        return err(400, "kind 必须是 strategy、score_check 或 signal")
     # 回测无系统内置段（无 is_preset）：搜索弹窗仅 tenant/public；q 按三类引用方案名 + kind 过滤
     svc = BacktestService()
     if page is not None or page_size is not None:
