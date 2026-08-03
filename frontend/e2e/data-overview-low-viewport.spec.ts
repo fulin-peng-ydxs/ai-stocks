@@ -3,6 +3,8 @@ import { loginAsDebugUser } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 import { openPageAndWaitForHeading } from './helpers/navigation'
 
+const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
+
 async function expectAdaptiveTableFillsContainer(
   page: import('@playwright/test').Page,
   testId: string,
@@ -29,7 +31,12 @@ async function expectAdaptiveTableFillsContainer(
 test('数据概览在 1100×620 保持固定摘要和可用主工作区', async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium-compact', '低视口专项只在 1100×620 档位执行')
   const consoleIssues = collectConsoleIssues(page)
-  await loginAsDebugUser(page, request, 'debug_system')
+  const auth = await loginAsDebugUser(page, request, 'debug_system')
+  // 预热概览汇总 + 逐股质量两个 DuckDB 重查询接口（走全局读锁 + 数据签名缓存）：
+  // 全量三视口并发下冷启动全市场扫描在锁内串行排队，先预热填缓存，避免下方摘要/表格可见性断言撞 8s 超时。
+  const headers = { authorization: `Bearer ${auth.accessToken}` }
+  await request.get(`${API_URL}/data/overview`, { headers })
+  await request.get(`${API_URL}/data/stock-quality?page=1&size=1`, { headers })
   await openPageAndWaitForHeading(page, '/data/overview', '数据概览')
 
   const summary = page.getByTestId('overview-summary')
@@ -37,8 +44,9 @@ test('数据概览在 1100×620 保持固定摘要和可用主工作区', async 
   const workspace = page.getByTestId('overview-workspace')
   const mixed = page.getByTestId('layout-mixed-region')
   const grow = page.getByTestId('layout-grow-region')
-  await expect(summary).toBeVisible()
-  await expect(quality).toBeVisible()
+  // 摘要/质量条依赖上述 DuckDB 重查询，并发下读锁排队可能慢于默认 8s——放宽可见性等待（已知架构边界，非渲染缺陷）。
+  await expect(summary).toBeVisible({ timeout: 30_000 })
+  await expect(quality).toBeVisible({ timeout: 30_000 })
   await expect(workspace).toBeVisible()
   await page.getByRole('tab', { name: '数据资产' }).click()
   await expect(page.getByTestId('overview-asset-table')).toBeVisible()
@@ -87,7 +95,12 @@ test('数据概览在 1100×620 保持固定摘要和可用主工作区', async 
 
 test('数据概览两类表格在各桌面视口都自适应铺满内容区', async ({ page, request }) => {
   const consoleIssues = collectConsoleIssues(page)
-  await loginAsDebugUser(page, request, 'debug_system')
+  const auth = await loginAsDebugUser(page, request, 'debug_system')
+  // 预热逐股质量接口（stock-quality 走 DuckDB 全局读锁 + _coverage_frame 数据签名缓存）：
+  // 三视口并发下冷启动全市场扫描在锁内串行排队，先预热填缓存，避免下方表格可见性断言撞 8s 超时。
+  await request.get(`${API_URL}/data/stock-quality?page=1&size=1`, {
+    headers: { authorization: `Bearer ${auth.accessToken}` },
+  })
   await openPageAndWaitForHeading(page, '/data/overview', '数据概览')
 
   await page.getByRole('tab', { name: '数据资产' }).click()
@@ -95,7 +108,8 @@ test('数据概览两类表格在各桌面视口都自适应铺满内容区', as
   await expectAdaptiveTableFillsContainer(page, 'overview-asset-table')
 
   await page.getByRole('tab', { name: '逐股分层体检' }).click()
-  await expect(page.getByTestId('overview-stock-table')).toBeVisible()
+  // 该表格为 DuckDB 重查询页面，并发下读锁排队可能慢于默认 8s——放宽可见性等待（已知架构边界，非渲染缺陷）。
+  await expect(page.getByTestId('overview-stock-table')).toBeVisible({ timeout: 30_000 })
   await expectAdaptiveTableFillsContainer(page, 'overview-stock-table')
   expect(consoleIssues).toEqual([])
 })

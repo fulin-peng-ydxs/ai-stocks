@@ -254,7 +254,9 @@ async function installFixedStockListEndpoint(page: Page, samples: StockSample[])
 }
 
 async function installFixedBoardEndpoints(page: Page, samples: StockSample[]) {
-  await page.route('**/api/board/profiles', async (route) => {
+  // T5 起榜单方案选择器走 listBoardProfiles('mine')（?source=mine，只拉我的方案），
+  // 故 mock 必须给 mine 来源方案，否则 profiles 空 → 页面「暂无可用评分方案」不渲染榜单行。
+  await page.route('**/api/board/profiles*', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -263,10 +265,11 @@ async function installFixedBoardEndpoints(page: Page, samples: StockSample[]) {
         msg: 'ok',
         data: [{
           id: 'e2e-board-profile',
+          profile_ref: 'e2e-board-profile',
           name: 'E2E 榜单方案',
           version: 1,
-          source: 'preset',
-          is_preset: true,
+          source: 'mine',
+          is_preset: false,
         }],
       }),
     })
