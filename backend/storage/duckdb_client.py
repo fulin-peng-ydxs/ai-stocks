@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
@@ -119,8 +120,13 @@ _client: DuckDBClient | None = None
 
 
 def get_client() -> DuckDBClient:
-    """模块级单例客户端（读写）。"""
+    """模块级单例客户端（默认读写；`AI_STOCKS_DUCKDB_READ_ONLY=1` 时只读）。
+
+    只读用于 E2E/多进程并存：被测后端以只读启动后不再持有 DuckDB 写锁，受控夹具进程
+    才能短暂以写连接种子数据。DuckDB 写锁本就互斥，生产单进程服务保持默认读写。
+    """
     global _client
     if _client is None:
-        _client = DuckDBClient()
+        read_only = os.environ.get("AI_STOCKS_DUCKDB_READ_ONLY") == "1"
+        _client = DuckDBClient(read_only=read_only)
     return _client

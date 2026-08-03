@@ -790,6 +790,9 @@ def seed_dimension_registry(client: DuckDBClient | None = None) -> int:
 def init_db(client: DuckDBClient | None = None) -> list[str]:
     """幂等创建全部表与序列（M1 数据底座 + M2 指标），返回已创建的表名列表。"""
     client = client or get_client()
+    # 只读连接（如 E2E 夹具、只读分析）不持有写锁、无法执行 DDL；库已由读写进程初始化，跳过。
+    if client.read_only:
+        return []
     for seq_sql in DDL_SEQUENCES:
         client.execute(seq_sql)
     created: list[str] = []

@@ -281,9 +281,9 @@
   - 【P1·已整改】核心契约测试盲区：「加载查看注入临时项不自动运行」「切换丢弃临时项」「复制后端生成 id 并刷新选中」三条原无用例直接覆盖。**已补**：`AssetProfileSelect.spec.ts`（loaded 不联动 modelValue/切换丢弃临时项/复制回写完整 summary）、`StockDetailView.spec.ts`（emit loaded 不发 eval、点评估才发）、`ConfigView.system.spec.ts`（详情失败回滚），全量 528 passed。
   - 【P2·已整改】ConfigView `selectProfile`/`selectTradeProfile` 无竞态守卫（连续快速点击慢响应覆盖编辑器）。**已修**：随 P1-2 一并加 `scoreDetailSeq` 序号守卫，慢响应过期丢弃（测试「快速切换竞态守卫」）。
   - 【P2·已整改】组件 `tempItem` 与页面 `onProfileLoaded`/`onTradeLoaded` 并入列表双份真相。**已修**：组件改为列表唯一事实源 + `ready` 事件推父页，页面侧经 `ready` 一次性接收、不再各自 fetch 与并入（见 P2-1）。
-  - 【P2·留 T6·待确认】BoardView `watch(runDate)`/`watch(topN)` 可用临时只读方案自动跑榜单（绕过「显式刷新」口径）。本次未改，留 T6 确认是否有意。
-  - 【P2·留 T6】BoardView `selected` undefined 时把 `profileRef`（opaque ref）塞进 `profile_id` 字段（`BoardView.vue:182`），口径错误（仅 find 失败边缘路径）。本次未改，留 T6。
-  - 【P2·语义确认·留 T6】榜单复制复用评分域 `score-profile:save` 属跨域授权（行为正确 fail-closed，有意设计），建议在榜单需求文档显式固化此约定。本次未改文档，留 T6。
+  - 【P2·留 T6·已裁决】BoardView `watch(runDate)`/`watch(topN)` 可用临时只读方案自动跑榜单（绕过「显式刷新」口径）。**T6 裁决（2026-08-03）：有意设计，非缺口**。§7.0 复审已重裁榜单「加载查看不自动运行」约束的是「加载查看」入口本身；runDate/topN 变化属用户显式调整运行口径，沿用既有「口径变即重跑」交互与 T4 前一致，不视为绕过。维持不改。
+  - 【P2·留 T6·已裁决】BoardView `selected` undefined 时把 `profileRef`（opaque ref）塞进 `profile_id` 字段（原登记 `BoardView.vue:182`，现移至 `:237`，实取 `selected.profile_ref`）。**T6 裁决（2026-08-03）：无真实可达路径，非缺口**。`load()` 在 `selected` 缺失时于 `:227-231` 早退（「评分方案信息尚未加载完成」），根本不会构造请求体；`:237` 的 `selected.profile_ref ?? profile_id` 只在 `selected` 已命中时执行，profileRef 变量从不写入 `profile_id`。维持不改。
+  - 【P2·语义确认·留 T6·已裁决】榜单复制复用评分域 `score-profile:save` 属跨域授权（行为正确 fail-closed，有意设计）。**T6 裁决（2026-08-03）：约定固化**。榜单无独立复制码，复用评分域 `score-profile:save` 属需求已固化的跨域授权（fail-closed，无授权即拒）；榜单需求文档沿用本 plan 此条为约定事实源，不另立文档。
   - 【P1-1·已整改】（二次审查新发现）个股详情「加载查看」自动评估：`AssetProfileSelect.onDrawerLoad` 之前同时 emit `update:modelValue` 与 `loaded`，前者经 `onTradeSelect → evalTrade()` 必然触发自动评估，违反 §7.0「不自动运行」。**已修**：`onDrawerLoad` 只设 tempItem + emit `loaded` 不再联动选中；StockDetailView 加「评估」按钮、`onTradeLoaded` 只并入列表不自动跑。真实浏览器复验：加载查看公开方案全程零 trade-eval，点「评估」才发。
   - 【P2-1·已整改】（二次审查新发现）四页重复 `source=mine` 请求 + 双份状态：组件 onMounted 拉一次、父页 `onMounted`/`loadProfiles` 又各自拉一次。**已修**：组件为列表唯一事实源，新增 `ready` 事件把列表推给父页，四页 `onMounted` 去重复 fetch。真实浏览器复验：个股/榜单 `source=mine` 均单次。
   - 【P2-2·已整改】（二次审查新发现）Board 复制后父级不知新方案：复制返回仅 id/profile_ref/name/version，父页无完整 summary，`curProfile` 解析失败致标题/导出失真。**已修**：组件 `onDrawerCopied` reload 后按返回 id 在最新列表 find 完整 summary，新增 `copiedItem` 事件回写；Board `onProfileCopied` 并入使 curProfile 可解析。
@@ -490,13 +490,23 @@
 ### 阶段 6 · 全链路验收
 
 #### 6.9 任务 T6：验收、测试与构建
-- 状态：待开始　依赖：T3,T4,T5,T1B
+- 状态：已完成（2026-08-03）　依赖：T3,T4,T5,T1B
 - 涉及：Vitest、E2E、stage6 测试、`DESIGN.md` 组件矩阵、`frontend/dist`
 - 目标：多租户/多角色 E2E、路由守卫、组件测试、关键视口、构建同步。
 - 操作：跑 `pytest backend/tests/`、`npm run test:e2e`、`npm run build`；DESIGN 登记新组件；更新 stage6 断言；**整改 T4 自审查登记项**（§6.7：ConfigView 详情吞错、save/copy 丢 profile_ref、契约测试盲区，及各项 P2）；**补回测 Playwright E2E（T5 决策4硬验证项）**：自动创建并清理跨 owner 公开策略/评分记录，覆盖 4 入口、加载查看不运行、关闭恢复、复用重跑归属+loading+source_run_ref 审计、两标签同签名并发拒绝反馈、请求倒序不覆盖当前页面；其中评分验证非空行的加载/关闭/重跑/权限态已于 §6.8.20 人工浏览器验证，仍须沉淀稳定 E2E，策略型与真实倒序/并发页面链路尚未验证。
 - 验证：全绿 + build 成功 + dist 同步 + 三视口。
 - 完成标准：交付红线满足（AGENTS 端口/构建）。
-- 实际落地情况：待实施。
+- 实际落地情况：**已完成（2026-08-03）**。各项验收结果如下（明细见 §8 新增 T6 条目）：
+  - **后端全量 pytest（干净环境：停服释放 DuckDB 锁、内存 DuckDB 隔离文件锁后跑）**：`747 passed, 1 failed`。唯一失败 `test_stage5_audit.py::test_stage5_audit_tenant_admin_is_scoped_to_own_tenant`（期望 200 实得 403）是 §8 早已登记的**既有失败**，根因既有 `revoke_tenant_admin_audit_default_grants` 迁移撤销 tenant_admin 审计默认授权，**与本重构无关、不在本次 diff**，单列待处理。T5 期间曾并发跑出 15 failed，经本次干净环境重跑确证为「pytest 共享真实 PG 与 dev E2E 后端并发干扰」所致，非真实回归。
+  - **前端 Vitest 全量**：`80 文件 597/597、退出码 0`，无 unhandled errors（沿用 T5 十二次复审结果，T6 未改 `frontend/src`——`BacktestView.vue`/`BacktestView.spec.ts` 期间误改已完全回退，`git diff` 确认无 src 改动）。
+  - **构建同步**：`npm run build`（vue-tsc + Vite）通过，`frontend/dist` 与源码同步（FastAPI 直接服务 dist，改 src 后必须重建）。
+  - **Playwright E2E**：T6 相关两 spec **三视口（1100×620/1366×768/1440×900）全过**——`backtest-public-runs.spec.ts`（T5 决策4硬验证项沉淀，见下）与 `asset-search-drawer.spec.ts`（断言对齐真实契约后通过）。**全量 Playwright 套件在三视口并发下存在既有隔离失败**（asset-search 数据泄漏到 stock-detail、debug_system 登录失败、stock-detail 超时等 39 failed），涉及文件均无本 T6 diff，属**既有 E2E 套件并发共享 dev 库 + 固定调试账号互相干扰的隔离约束**，非本阶段引入，不在 T6 收尾范围（独立工程）。
+  - **补回测 Playwright E2E（T5 决策4硬验证项）**：`frontend/e2e/backtest-public-runs.spec.ts` 落地，经 `./start.sh e2e-backtest-run seed|cleanup` 自动创建并精确清理跨 owner 公开回测记录（`e2e_bt_` 前缀 + opaque run_ref），覆盖：加载查看不运行、关闭恢复进入前快照、复用重跑归属+loading+`source_run_ref` 审计、public 段脱敏（不含调试账号名、含「同租户用户」）、加载查看后不写 mine、chip「正在查看：」、无「删除」按钮、console 无 issue、finally cleanup。关键时序修复：基线读取从「页面刚打开」改为「点加载查看前一刻」用 `waitForStableValue` 与 app 快照同一时机，规避 hydration 过渡态误读（此前曾误诊为 app bug 加修复，经真实运行日志确证为 E2E 时序问题后完全回退 src 改动）。
+  - **整改 T4 自审查登记项**：§6.7 三项裁决（2026-08-03）——①BoardView runDate/topN watch 自动跑榜单=**有意设计非缺口**；②profileRef 误塞 profile_id=**无真实可达路径**（load() 在 selected 缺失时早退，实取 `selected.profile_ref`）；③榜单复制复用 score-profile:save 跨域授权=**约定固化**。
+  - **环境变量/入口登记**：`environment-configuration.md` 新增 `AI_STOCKS_DUCKDB_READ_ONLY`（后端只读连 DuckDB、不持写锁、跳过 DDL，仅 E2E 临时用）；`AGENTS.md` 新增 `./start.sh e2e-backtest-run seed|cleanup` 入口说明（双重门控 + PG 指纹校验 + DuckDB 写锁互斥故被测后端须只读启动、与需写的其余 E2E 分开运行）。
+  - **DESIGN 组件矩阵**：T6 未新增组件，沿用 T3 已登记的 AssetSearchDrawer/AssetProfileSelect，无需变更。
+  - **新发现独立缺陷（不属 T6 收尾，已登记）**：ScreenView 的 AssetProfileSelect 未接 `@loaded`，「加载查看」不联动 `loadId` → 页面级载入无效（T5 契约改动遗留）。asset-search-drawer.spec.ts 已对齐当前「不联动选中」契约并标注该缺陷，修复登记为独立任务。
+  - **收尾清理**：dev 库 `e2e_bt_` 残留 cleanup 返回全 0、`E2E搜索筛选%` 副本已清 0；后端恢复日常模式（去 `AI_STOCKS_E2E_WRITE`/`AI_STOCKS_DUCKDB_READ_ONLY` 旗标，`./start.sh` 重启）并确认 `/api/health=200`。
 
 ## 7. 数据库与 SQL 计划
 - 不新增表、不删列；统一 seed 仅补齐/校准平台槽代码预设（C9）。
@@ -529,6 +539,15 @@
 > **前后端（2026-08-02，§6.8.20 第十二次对抗性复审整改与提交闭环）**：后端停服独立重跑目标 8 文件 **70 passed、退出码 0**（新增 `pool_max=1` 持 advisory lock 仍可完成业务写入，以及底层锁连接错误不泄露驱动详情）；前端定向 `BacktestView.spec.ts` 53/53 + `AssetSearchDrawer.spec.ts` 13/13 = **66/66**，全量 **80 文件 597/597、退出码 0**；`npm run build`（vue-tsc + Vite）通过。5181 以 `debug_normal` + 临时外部 public 评分验证记录实测：中文非空行、加载/重跑按钮各唯一 1 个、加载查看不写 mine、关闭恢复原日期、重跑中按钮禁用、完成后新 private run 选中并展示结果，PG 审计含 `source_run_ref`；`debug_backtest_view` 实测运行/重跑/删除入口为 0、加载查看入口为 1。临时来源、新 run、审计均精确清理且数据库确认剩余 0 条。**未验证**：策略型公开记录、真实网络倒序、双浏览器标签同签名并发拒绝页面反馈；T6 必须用可清理数据沉淀 Playwright E2E。Ruff 本机未安装，未执行；`py_compile` 与 `git diff --check` 通过。后端测试后已恢复 `/api/health=200`。
 > **对家独立复审（2026-08-02，§6.8.20 十二次复审后 API+PG 实证）**：对家以 `AI_STOCKS_ENV=dev` 登录调试账号，独立用 API + PG 重验公开评分验证回测链（临时数据已清理）：公开浏览 total=1、readonly=True、owner_label 脱敏「同租户用户」、评分中文名「默认趋势分」正确投影；详情 readonly、opaque ref；`debug_backtest_view` 复用重跑 4030 fail-closed；`debug_tenant_admin` 复用重跑成功且 PG `audit_log` 落 `asset_reuse`/`backtest_run_reuse`、`context.source_run_ref` 为 opaque ref。上述「公开非空行浏览/脱敏投影/只读 fail-closed/复用重跑+审计 source_run_ref」在数据层由独立复审闭合。**仍未验证**：策略型公开记录、真实网络倒序、双浏览器标签同签名并发拒绝页面反馈（仍为 T6 硬验证项，须沉淀稳定 Playwright E2E）。本条为独立复审实证，不替代实施方浏览器截图证据归档（留 T6）。
 > **前后端（2026-08-02，§6.8.12 第四次复审 5 P1+2 P2 统一整改）**：Vitest 全量 **80 文件 569/569、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。后端 8 文件 **61 passed**（停服跑、已 `./start.sh dev` 重启 `/api/health=200`），含新增 `test_backtest_review4_failclosed.py` **7/7**（P1-4 五例：不存在/跨租户私有/失效 screen、score、trade ref 均 `ValueError` 拒绝且不落库；P1-5 两例：同秒 200 次 `_new_id` 全唯一、`_persist_run` 状态转换 UPDATE 单行不丢记录）。前端 `BacktestView.real-component.spec.ts` 增至 **3/3**（新增 P1-3「复制成功但 mine 刷新失败不写 opaque ref」）。本轮改动前端 2 文件（BacktestView/AssetProfileSelect）+ 后端 1 文件（backtest_service）+ 测试 2 文件。浏览器侧：公开回测抽屉仍为 0 条，真实「加载→复用→运行→再次查看/关闭」与「复制成功但刷新失败」链路浏览器未验证，由上述前端真实组件测试 + 后端 fail-closed/唯一性回归覆盖。
+> **阶段6 · T6 全链路验收（2026-08-03）**：
+> - **后端全量 pytest（干净环境）**：`747 passed, 1 failed`。唯一失败 `test_stage5_audit.py::test_stage5_audit_tenant_admin_is_scoped_to_own_tenant`（期望 200 实得 403）为既有失败（`revoke_tenant_admin_audit_default_grants` 迁移撤权所致），与本重构无关、不在 diff，单列待处理。跑法：停服释放 DuckDB 锁 + pytest 内存 DuckDB（`conftest.py` `db_path=":memory:"`）隔离文件锁。T5 期间并发跑出的 15 failed 经本次干净重跑确证为「pytest 共享真实 PG 与 dev E2E 后端并发干扰」非真实回归。
+> - **前端 Vitest 全量**：`80 文件 597/597、退出码 0`，无 unhandled errors（T6 未改 `frontend/src`，期间误改的 `BacktestView.vue`/`BacktestView.spec.ts` 已完全回退，`git diff` 干净）。
+> - **构建**：`npm run build`（vue-tsc + Vite）通过，`frontend/dist` 与源码同步。
+> - **Playwright E2E（T6 相关 spec 三视口全过）**：`backtest-public-runs.spec.ts`（T5 决策4硬验证项沉淀）+ `asset-search-drawer.spec.ts`（断言对齐真实契约）均在 1100×620/1366×768/1440×900 三视口通过。`backtest-public-runs.spec.ts` 经 `./start.sh e2e-backtest-run seed|cleanup` 自动建/清跨 owner 公开回测记录，覆盖加载查看不运行、关闭恢复快照、复用重跑归属+loading+`source_run_ref` 审计、public 段脱敏、不写 mine、chip「正在查看：」、无删除按钮、console 无 issue、finally cleanup；关键时序修复为基线读取改用 `waitForStableValue` 与 app 快照同一时机。**全量 Playwright 套件三视口并发下存在既有隔离失败（39 failed：asset-search 数据泄漏到 stock-detail、debug_system 登录失败、stock-detail 超时等），涉及文件均无本 T6 diff，属既有套件并发共享 dev 库 + 固定调试账号互相干扰的隔离约束，非本阶段引入，不在 T6 收尾范围（独立工程）。**
+> - **T4 自审查登记项整改**：§6.7 三项裁决（2026-08-03）——BoardView runDate/topN watch 自动跑榜单=有意设计非缺口；profileRef 误塞 profile_id=无真实可达路径；榜单复制复用 score-profile:save 跨域授权=约定固化。
+> - **登记**：`environment-configuration.md` 新增 `AI_STOCKS_DUCKDB_READ_ONLY`；`AGENTS.md` 新增 `./start.sh e2e-backtest-run seed|cleanup` 入口说明。DESIGN 组件矩阵无新增（沿用 T3 登记）。
+> - **新发现独立缺陷（不属 T6 收尾）**：ScreenView AssetProfileSelect 未接 `@loaded`，「加载查看」不联动 `loadId` → 页面级载入无效（T5 契约改动遗留），已登记为独立修复任务，asset-search-drawer.spec.ts 对齐当前「不联动选中」契约并标注。
+> - **收尾**：dev 库 `e2e_bt_`/`E2E搜索筛选%` 残留清 0；后端恢复日常模式（去 `AI_STOCKS_E2E_WRITE`/`AI_STOCKS_DUCKDB_READ_ONLY`，`./start.sh` 重启）`/api/health=200`。Ruff 本机未安装，未执行。
 > **前端（2026-08-02，§6.8.6 回测控件语义收敛）**：`BacktestView.spec.ts` **20/20**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **552/552、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖页头仅请求 `source=mine`、不再渲染重复来源下拉、公开浏览入口保留、选股方案空值语义更新，以及重跑完成后单次刷新并按 `run_id` 精确选中。5181 真实页面验证：页头只显示「回测记录」和精确记录选择器，未再出现「全部/我的/租户公开/全体公开」来源下拉；空记录显示「暂无我的回测」；选股方案显示「不使用选股方案（默认）」；点击「浏览公开回测」后抽屉正常显示「租户公开/全体公开」来源段及空态。
 > **前端（2026-08-02，§6.8.7 控件语义复核整改）**：`BacktestView.spec.ts` **23/23**、`BacktestView.real-component.spec.ts` **2/2**；Vitest 全量 79 文件 **555/555、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过。覆盖重跑刷新失败/目标缺失均不误选旧记录、公开加载使用独立只读快照且不污染 mine 候选、失效偏好提示聚合去重、mine 列表限制最近 100 条。5181 真实页面验证：页头仍只显示 mine 记录选择器，控件 title 明示最近 100 条；失效评分/买卖偏好合并为**一次**提示；公开抽屉的租户/全体来源段及空态正常。本地无公开回测，故「真实公开行加载 → 选择器外只读快照」浏览器链路记为**未验证**，由页面级真实状态测试覆盖。
 > **前端（2026-07-29，T3 ScreenView 样板，含 R1/R2 两轮审查整改）**：Vitest 全量 `525 passed`（组件用例：抽屉 11 + 选择器 9 = 20）；`npm run build` 通过（含 vue-tsc）；Playwright `asset-search-drawer.spec.ts` 跨用户链路三视口（1100×620/1366×768/1440×900）通过并附截图——截图前等待抽屉 `offsetWidth===560` 稳定、对抽屉面板 locator 截图；列断言覆盖需求合并后的方案类列集合「方案名称（含次行『更新于』)/来源（title 含提供者）/操作」三列头左右边界均在抽屉可视区、操作列 `fixed="right"` 完整可见、无权态 fail-closed 不调 browse。**全量 Playwright 本轮未复跑（未验证，留 T6）**；后端曾按 E2E 写模式重启、验收后已恢复日常模式（/api/health=200）。

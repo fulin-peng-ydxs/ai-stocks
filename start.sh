@@ -11,6 +11,7 @@
 #   ./start.sh logs       跟踪日志（Ctrl-C 退出跟踪，不影响服务）
 #   ./start.sh dev-users [参数]  在统一本机环境下维护调试账号
 #   ./start.sh e2e-user [参数]   Playwright 临时用户内部入口
+#   ./start.sh e2e-backtest-run [参数]  Playwright 公开回测内部入口
 #
 # 设计要点：
 #   - 独立 session 脱离会话：AI 跑别的命令 / 终端关闭 / 对话结束都不会误杀（解决"老挂"）。
@@ -154,8 +155,12 @@ case "${1:-dev}" in
     shift
     "$PY" -m backend.devtools.e2e_test_users "$@"
     ;;
+  e2e-backtest-run)
+    shift
+    "$PY" -m backend.devtools.e2e_backtest_runs "$@"
+    ;;
   *)
-    echo "用法: ./start.sh [dev|prod|stop|restart|status|logs|dev-users|e2e-user]"
+    echo "用法: ./start.sh [dev|prod|stop|restart|status|logs|dev-users|e2e-user|e2e-backtest-run]"
     exit 1
     ;;
 esac
