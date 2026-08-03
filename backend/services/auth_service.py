@@ -28,6 +28,7 @@ from backend.common.exceptions import AuthError, RateLimitError, ValidationError
 from backend.common.logging import get_logger
 from backend.common.mailer import MailError, send_email
 from backend.config import get_effective_settings
+from backend.devtools.environment_guard import e2e_login_rate_bypass_enabled
 from backend.services.audit_service import AuditService
 from backend.storage.menu_repository import MenuRepository
 from backend.storage.tenant_repository import TenantRepository
@@ -103,7 +104,11 @@ class AuthService:
     # ── 登录 / 登出 / 刷新 ──
     def login(self, account: str, password: str, *, ip: str = "unknown",
               captcha_id: str | None = None, captcha_code: str | None = None) -> dict:
-        if not ss.rate_limit_ok("login", ip, self.cfg.login_rate_per_min, 60):
+        # E2E 套件并发豁免（三重门控：环境白名单 + E2E_WRITE + YAML 开关，见 environment_guard）。
+        # 全量 Playwright 三视口并行时多 worker 各自密集登录（同源 IP），不豁免会撞单 IP 限流。
+        if not e2e_login_rate_bypass_enabled() and not ss.rate_limit_ok(
+            "login", ip, self.cfg.login_rate_per_min, 60
+        ):
             self._record_security(
                 event_type="rate_limit",
                 action="login",

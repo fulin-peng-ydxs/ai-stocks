@@ -36,3 +36,18 @@ def e2e_write_environment() -> str | None:
         return require_e2e_write_enabled()
     except RuntimeError:
         return None
+
+
+def e2e_login_rate_bypass_enabled() -> bool:
+    """E2E 套件并发登录豁免判定（非抛错）。
+
+    仅当进程同时满足三重门控才放行：①本地/测试环境白名单（`AI_STOCKS_ENV` ∈ dev/test/local）；
+    ②显式 `AI_STOCKS_E2E_WRITE=1`；③显式 `AI_STOCKS_E2E_LOGIN_BYPASS=1`。三者均为进程级环境变量，
+    不入库、不污染日常 dev；生产（`start.sh prod` 强制移除 E2E_WRITE）永不满足。
+    用于全量 Playwright 三视口并行：多 worker 进程各自密集 `POST /auth/login`（同源 127.0.0.1），
+    不豁免会撞 `login_rate_per_min` 单 IP 上限导致大面积登录失败。仅放开 login 的 IP 限流，
+    账号锁定/失败计数/验证码等其余防滥用逻辑不受影响。
+    """
+    if e2e_write_environment() is None:
+        return False
+    return os.environ.get("AI_STOCKS_E2E_LOGIN_BYPASS") == "1"

@@ -9,6 +9,7 @@ import pytest
 
 from backend.api.health import e2e_health
 from backend.devtools.environment_guard import (
+    e2e_login_rate_bypass_enabled,
     require_e2e_write_enabled,
     require_local_test_environment,
 )
@@ -60,6 +61,30 @@ def test_e2e_health_only_exposes_fingerprint_in_explicit_write_environment(
     response = e2e_health()
     assert response.code == 0
     assert response.data == {"environment": "dev", "pgFingerprint": "a" * 64}
+
+
+def test_e2e_login_rate_bypass_requires_triple_gate(monkeypatch) -> None:
+    """E2E 登录限流豁免的三重门控：环境白名单 + E2E_WRITE + E2E_LOGIN_BYPASS，缺一即关。"""
+    for var in ("AI_STOCKS_ENV", "ENV", "AI_STOCKS_E2E_WRITE", "AI_STOCKS_E2E_LOGIN_BYPASS"):
+        monkeypatch.delenv(var, raising=False)
+    # 全不设置：关
+    assert e2e_login_rate_bypass_enabled() is False
+    # 仅环境：关
+    monkeypatch.setenv("AI_STOCKS_ENV", "dev")
+    assert e2e_login_rate_bypass_enabled() is False
+    # 环境 + WRITE，无 BYPASS：关
+    monkeypatch.setenv("AI_STOCKS_E2E_WRITE", "1")
+    assert e2e_login_rate_bypass_enabled() is False
+    # 三重全开：开
+    monkeypatch.setenv("AI_STOCKS_E2E_LOGIN_BYPASS", "1")
+    assert e2e_login_rate_bypass_enabled() is True
+    # 生产环境即使三旗标都在：环境白名单拦截，关
+    monkeypatch.setenv("AI_STOCKS_ENV", "production")
+    assert e2e_login_rate_bypass_enabled() is False
+    # BYPASS 非精确 "1"：关
+    monkeypatch.setenv("AI_STOCKS_ENV", "test")
+    monkeypatch.setenv("AI_STOCKS_E2E_LOGIN_BYPASS", "true")
+    assert e2e_login_rate_bypass_enabled() is False
 
 
 def test_shared_local_env_loader_applies_pg_overrides(tmp_path) -> None:
