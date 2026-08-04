@@ -536,6 +536,15 @@
 - **验证**：核验 SQL 在本地 dev 库 `psql -f` 预跑 4 段全部正常返回（分布 5 行 / R14 命中 1·5·2 / 泄露探针 0 行 / 规模计数 1 行）。**未执行**：生产库实跑（无生产连接串，运维动作）；本轮无代码改动，故未重跑 Vitest/构建/E2E。
 - **纠正核查的两处不准确**：①M-2「策略型未验证」与已沉淀 spec 不符（实为策略型，剩两项）；②plan §6.0 旧快照称「筛选空态」，但统一 seed 后本地 dev 筛选段已非空（5 条），已在 §6.0 注明避免误导生产预期。
 
+#### 6.9.3 设计/UX 合规核查整改（2026-08-03，1×P3 + 风格统一复核）
+
+- **性质**：对共享组件 `AssetSearchDrawer`/`AssetProfileSelect` 的设计合规核查。结论「风格统一全部符合、无偏离」予以认可——PageDrawer xl=560px、AppDataTable+AppTableColumn 语义自适应列宽、方案类合并三列契约、回测六列契约、AppRowActions 首个动作主色+操作列 fixed=right、AppStateBlock 四态与 403 permission 态、PageSegmented 三来源段（回测隐藏 preset）、AssetVisibilityTag 来源徽标 + mine 不重复来源（assetDisplaySource）、加载查看只发 loaded 不联动选中（避 ElSelect 递归），均与 §4.5/§4.6/DESIGN 一致。
+- 【P3·已整改】空态下冗余分页控件：`AssetSearchDrawer.vue:418` footer 原仅 `v-if="canBrowse"`，某来源段无数据（total=0）时仍渲染「共 0 条…」+ `AppPagination`（「20条/页 1」），与表格 `#empty` 的「暂无{来源}{资产}」空态**同一信息两处出现**、分页控件无意义。**已修**：footer 改 `v-if="canBrowse && total > 0"`——非空才渲染计数+分页；total=0 时只留空态，且错误/无权态（total=0）同样不再出现「共 0 条」。**涉及**：`frontend/src/components/asset-search/AssetSearchDrawer.vue`（1 行 v-if + 注释）、`frontend/src/components/__tests__/AssetSearchDrawer.spec.ts`（新增 2 回归）。
+- **回归测试**：`AssetSearchDrawer.spec.ts` 新增「total=0 空态不渲染 footer（无『共 0 条』）」「total>0 非空渲染 footer 显示真实计数」两例；定向 **15/15**（13 原有 + 2 新增）。
+- **验证**：抽屉定向 15/15；前端全量 Vitest **601/601、退出码 0**，无 unhandled errors；`npm run build`（vue-tsc + Vite）通过、`dist` 同步。
+- **未执行项及原因**：Playwright E2E 未复跑——本轮为 footer 在空态下的显隐（纯条件渲染），由组件 Vitest 直接断言 `.asset-search__footer` 存在性，无交互/布局结构变更；`asset-search-drawer.spec.ts` 的空态/分页断言不受影响。浏览器亲验未做——条件渲染的正确性由 jsdom DOM 断言充分覆盖。
+- **影响同步**：需求范围/路由/菜单/权限/配置/DDL/原型均未改变；仅前端 1 组件 1 行 + 测试 2 例 + plan 本节。DESIGN 组件矩阵无变更。
+
 ## 7. 数据库与 SQL 计划
 - 不新增表、不删列；统一 seed 仅补齐/校准平台槽代码预设（C9）。
 - 权限授权回填（Python 迁移 + 新 marker，遵循 `pg_ddl.py` seed 模式）。

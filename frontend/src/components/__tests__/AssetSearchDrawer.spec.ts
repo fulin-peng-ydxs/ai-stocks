@@ -134,6 +134,25 @@ describe('AssetSearchDrawer', () => {
     wrapper.unmount()
   })
 
+  it('P3：total=0 空态不渲染分页 footer（计数与分页控件不重复出现）', async () => {
+    const { wrapper } = mountDrawer({ browse: makeBrowse({ preset: [] }) })
+    await flush()
+    // 空态由表格 #empty 显示；footer（共 0 条 + AppPagination）整体隐藏
+    expect(document.body.textContent).toContain('暂无系统内置评分方案')
+    expect(document.querySelector('.asset-search__footer')).toBeNull()
+    expect(document.body.textContent).not.toContain('共 0 条')
+    wrapper.unmount()
+  })
+
+  it('P3：total>0 非空时渲染分页 footer 并显示真实计数', async () => {
+    const { wrapper } = mountDrawer({ browse: makeBrowse({ preset: [presetItem] }) })
+    await flush()
+    const footer = document.querySelector('.asset-search__footer')
+    expect(footer).toBeTruthy()
+    expect(footer!.textContent).toContain('共 1 条')
+    wrapper.unmount()
+  })
+
   it('加载失败显示错误态并可重试', async () => {
     const browse = vi.fn()
       .mockRejectedValueOnce(new Error('network down'))
