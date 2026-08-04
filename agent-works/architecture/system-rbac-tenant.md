@@ -62,6 +62,12 @@ RBAC 主数据落 PostgreSQL，核心表由 `backend/storage/pg_ddl.py` 创建�
 - 方案类公开资产对非 owner 只读，可复制为 viewer 自己的 private；公开回测记录只读可见，可复用参数重跑，新的运行结果仍归当前执行者；公开回测记录发布前需校验引用方案不低于目标公开范围，并把历史 legacy id 依赖写回真实 owner 的 opaque ref。
 - 其他资产类型如需开放租户可见或全局公开，应复用“显式可见性 + 引用解析 + 权限码”的模型，不直接放宽所有权查询。
 
+#### 发布权放开与来源分段（资产归属重构 asset-ownership-refactor，已落地）
+
+- **发布权放开（C4/R4）**：8 个 `*:publish-tenant` / `*:publish-public` 发布码已由「仅管理员持有」放开为 normal / tenant_admin 的普通业务授权（`backend/auth/constants.py`）；存量库经 marker `migration.asset_publish_open_v2` 一次性回填并同事务 bump `perm_ver`（受影响用户重新登录）。守卫不变——可见性接口仍 owner-only，放开的是「能否发布」，不能改他人资产。回滚走确定性基线恢复 + tombstone（见 `agent-works/asset-ownership-refactor/asset-publish-open.sql`），与所有默认策略迁移一致，不保留迁移后经角色页的人工增删。
+- **来源分段取数**：各资产下拉固定 `source=mine`（纯 owner，排除平台槽全部预设）；搜索抽屉按 `preset / tenant / public` 四来源互斥浏览——`preset` 严格 `is_preset AND visibility=public AND 平台槽 PUBLIC_BOARD_OWNER`（只读、永不泄露 private），`tenant / public` 排除自己且 `public` 强制补集排除平台槽公开预设。取数在 `visible_sql` 之上叠加来源条件，全程归属键 + opaque ref，owner 脱敏不回显真实 user_id。
+- 事实源与发布门禁（T0 生产预设归属核验、perm_ver 低峰窗口等）见 [agent-works/asset-ownership-refactor/](../asset-ownership-refactor/)。
+
 ## 业务架构
 
 ```mermaid
