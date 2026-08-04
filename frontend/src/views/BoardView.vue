@@ -22,6 +22,7 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTradeDates } from '@/composables/useTradeDates'
+import { useUserPreference } from '@/composables/useUserPreference'
 import { downloadCsv } from '@/utils/csv'
 import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -104,6 +105,38 @@ const profileRef = ref('')
 function profileKey(p: ScoreProfileSummary): string {
   return p.profile_ref || p.id
 }
+
+// 「默认加载方案」偏好：在资产抽屉里把某个可见评分方案设为默认后，
+// 下次进入本页且自己没有评分方案时，自动装载该方案进下拉框并刷新榜单（前提：没有自己的方案）。
+// 复用既有 user_preference 通道（scope=feature / pageKey=board），不新建表/端点/权限。
+interface BoardDefaultProfile {
+  profile_ref: string
+  id: string
+  name: string
+  version: number
+  is_preset: boolean
+  source: string | null
+  owner_label: string | null
+  readonly: boolean
+}
+const boardDefaultProfileDefaults: BoardDefaultProfile = {
+  profile_ref: '',
+  id: '',
+  name: '',
+  version: 0,
+  is_preset: false,
+  source: null,
+  owner_label: null,
+  readonly: true,
+}
+const defaultPref = useUserPreference<BoardDefaultProfile>({
+  scope: 'feature',
+  pageKey: 'board',
+  prefKey: 'default-score-profile',
+  defaults: boardDefaultProfileDefaults,
+  localStorageKey: 'ai-stocks-board-default-profile',
+})
+const defaultItemKey = computed(() => defaultPref.value.profile_ref || defaultPref.value.id || '')
 const curProfile = computed(() => profiles.value.find((p) => profileKey(p) === profileRef.value))
 const cacheStatus = ref('')
 const canViewBoardProfiles = computed(() =>
@@ -144,6 +177,9 @@ const tradeDatesReady = ref(false)
 let initialLoadStarted = false
 async function maybeLoadInitialBoard() {
   if (initialLoadStarted || !profilesReady.value || !tradeDatesReady.value) return
+  // 自己无方案且可能已设默认但偏好尚未 hydrated 时，先等远端偏好合并，别急着落空态；
+  // 待 hydrated watch 触发后再走（tryApplyDefault 装载默认，或确认无默认后落空态）。
+  if (!profiles.value.length && !defaultPref.hydrated.value && canViewBoardProfiles.value) return
   initialLoadStarted = true
   if (profileRef.value) await load()
   else loading.value = false
@@ -163,9 +199,16 @@ async function onProfilesReady(list: ProfileSummary[]) {
   }
   profilesReady.value = true
   error.value = ''
+  // 自己无方案时尝试装载默认（偏好已 hydrated 则立即生效；否则由下方 watch 兜底）
+  tryApplyDefault()
   if (recoveredFromError && profileRef.value) await load()
   else await maybeLoadInitialBoard()
 }
+// 偏好 hydrated 可能晚于 mine 列表 ready：任一就绪都重试默认装载与首屏汇合
+watch([profilesReady, defaultPref.hydrated], () => {
+  tryApplyDefault()
+  void maybeLoadInitialBoard()
+})
 function onProfilesLoadFailed(message: string) {
   // 刷新失败时保留已成功加载的摘要与榜单；首屏本来为空，仍会自然进入全页错误态。
   profilesReady.value = true
@@ -178,6 +221,52 @@ function onProfileCopied(item: ProfileSummary) {
   if (!profiles.value.some((p) => profileKey(p) === profileKey(summary))) {
     profiles.value = [summary, ...profiles.value]
   }
+}
+
+// 设为/取消默认加载方案：写入用户偏好（reactive 逐字段赋值触发 useUserPreference 双写持久化）。
+function onSetDefault(item: ProfileSummary | null) {
+  if (!item) {
+    defaultPref.reset()
+    ElMessage.info('已取消默认加载方案')
+    return
+  }
+  defaultPref.value.profile_ref = item.profile_ref || ''
+  defaultPref.value.id = item.id
+  defaultPref.value.name = item.name
+  defaultPref.value.version = item.version
+  defaultPref.value.is_preset = item.is_preset
+  defaultPref.value.source = item.source ?? null
+  defaultPref.value.owner_label = item.owner_label ?? null
+  defaultPref.value.readonly = true
+  ElMessage.success(`已将「${item.name}」设为默认加载方案`)
+}
+
+// 首屏默认装载：仅当自己没有评分方案（mine 空）+ 已设默认 + 偏好已 hydrated 时，
+// 经选择器 applyLoaded 复用 selectLoaded 链路装载并触发榜单刷新。每次进入只尝试一次。
+let defaultApplied = false
+let pendingDefaultKey = ''
+function tryApplyDefault() {
+  if (defaultApplied) return
+  if (!canViewBoardProfiles.value) return
+  if (!profilesReady.value) return
+  if (profiles.value.length) return
+  if (!defaultPref.hydrated.value) return
+  const snap = defaultPref.value
+  const key = snap.profile_ref || snap.id
+  if (!key) return
+  defaultApplied = true
+  pendingDefaultKey = key
+  const item: ProfileSummary = {
+    id: snap.id,
+    profile_ref: snap.profile_ref || undefined,
+    name: snap.name,
+    version: snap.version,
+    is_preset: snap.is_preset,
+    source: (snap.source as ProfileSummary['source']) ?? undefined,
+    owner_label: snap.owner_label,
+    readonly: true,
+  }
+  boardSelectRef.value?.applyLoaded(item)
 }
 
 // 指标注册表：用于把指标 key 映射成中文名（分项达标分徽章）
@@ -246,8 +335,21 @@ async function load() {
     await nextTick()
     syncingRunDate.value = false
     if (!res.list.length) ElMessage.info('无结果（可能该日无数据）')
+    if (sequence === loadSequence && pendingDefaultKey === profileRef.value) pendingDefaultKey = ''
   } catch (e) {
     if (sequence !== loadSequence) return
+    // 默认方案失效兜底：本次 load 由默认装载触发且失败（被 owner 取消公开/删除，后端 get_visible 403/404），
+    // 自清偏好避免下次进入再报错，并落回空态。普通手动选公开方案失败不清默认（用户可能重试）。
+    if (pendingDefaultKey && pendingDefaultKey === profileRef.value) {
+      pendingDefaultKey = ''
+      defaultPref.reset()
+      profileRef.value = ''
+      rows.value = []
+      cacheStatus.value = ''
+      loading.value = false
+      ElMessage.warning('默认加载方案已不可见（可能已被取消公开或删除），已清除默认设置')
+      return
+    }
     error.value = (e as Error).message
   } finally {
     if (sequence === loadSequence) loading.value = false
@@ -332,6 +434,7 @@ onMounted(async () => {
             view-permission="board:view"
             placeholder="请选择评分方案"
             select-loaded
+            :default-item-key="defaultItemKey"
             test-id="board-profile-select"
             style="width: 300px"
             @update:model-value="onProfileSelect"
@@ -339,6 +442,7 @@ onMounted(async () => {
             @ready="onProfilesReady"
             @load-failed="onProfilesLoadFailed"
             @copied-item="onProfileCopied"
+            @set-default="onSetDefault"
           />
           <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
           <span class="lbl">Top</span>

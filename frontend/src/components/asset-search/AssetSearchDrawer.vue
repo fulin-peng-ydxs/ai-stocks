@@ -42,6 +42,10 @@ const props = withDefaults(defineProps<{
   copyPermission?: string
   rerunItem?: (item: AssetBrowseItem) => Promise<unknown>
   rerunPermission?: string
+  /** 当前默认加载方案的资产 key（仅榜单页评分方案传）；配合 setDefaultItem 做行内互斥高亮 */
+  defaultItemKey?: string
+  /** 设为/取消默认加载方案（仅榜单页评分方案传）；回调存在才渲染「设为默认」动作，其它页不传则不出现 */
+  setDefaultItem?: (item: AssetBrowseItem | null) => void
   /** 是否具备浏览（查看）权限；false 时显示无权态、不调 browse（DESIGN 权限态，§307） */
   canBrowse?: boolean
   testId?: string
@@ -51,6 +55,8 @@ const props = withDefaults(defineProps<{
   copyPermission: '',
   rerunItem: undefined,
   rerunPermission: '',
+  defaultItemKey: '',
+  setDefaultItem: undefined,
   canBrowse: true,
   testId: 'asset-search-drawer',
 })
@@ -263,6 +269,28 @@ function rowActions(item: AssetBrowseItem): AppRowAction[] {
       loading: copyingKey.value === key,
       onClick: () => void onCopy(item),
     })
+  }
+  // 「设为默认加载方案」仅榜单页评分方案传入 setDefaultItem 时渲染（其它页不传则不出现）。
+  // 互斥靠 defaultItemKey === 本行 key 行级比较；改写偏好后所有行 reactive 重算，旧默认行自动复原。
+  if (props.setDefaultItem) {
+    const isDefault = !!props.defaultItemKey && key === props.defaultItemKey
+    actions.push(isDefault
+      ? {
+          key: 'default',
+          label: '取消默认',
+          testId: `${props.testId}-default`,
+          type: 'info',
+          title: '当前默认加载方案；进入榜单页且没有自己的方案时自动装载，点击取消默认',
+          onClick: () => props.setDefaultItem!(null),
+        }
+      : {
+          key: 'default',
+          label: '设为默认加载方案',
+          testId: `${props.testId}-default`,
+          type: 'primary',
+          title: '设为默认后，进入榜单页且自己没有评分方案时自动装载该方案',
+          onClick: () => props.setDefaultItem!(item),
+        })
   }
   return actions
 }

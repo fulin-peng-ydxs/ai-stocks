@@ -294,4 +294,34 @@ describe('AssetSearchDrawer', () => {
       vi.useRealTimers()
     }
   })
+
+  it('未传 setDefaultItem 时不渲染默认动作（仅榜单页生效）', async () => {
+    const { wrapper } = mountDrawer()
+    await flush()
+    expect(document.querySelector('[data-testid="asset-search-drawer-default"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('设为默认加载方案：传入 setDefaultItem 渲染动作，点击上送行并互斥切换为取消默认', async () => {
+    const setDefaultItem = vi.fn()
+    const { wrapper } = mountDrawer({ setDefaultItem, defaultItemKey: '' })
+    await flush()
+    const btn = document.querySelector<HTMLElement>('[data-testid="asset-search-drawer-default"]')
+    expect(btn).toBeTruthy()
+    expect(btn!.textContent).toContain('设为默认加载方案')
+    btn!.click()
+    await flush()
+    expect(setDefaultItem).toHaveBeenCalledTimes(1)
+    expect((setDefaultItem.mock.calls[0][0] as ProfileSummary).id).toBe('preset_score')
+    // 父级回写 defaultItemKey 后，本行互斥切换为「取消默认」
+    await wrapper.setProps({ defaultItemKey: 'ref_preset_score' })
+    await flush()
+    const cancelBtn = document.querySelector<HTMLElement>('[data-testid="asset-search-drawer-default"]')
+    expect(cancelBtn!.textContent).toContain('取消默认')
+    cancelBtn!.click()
+    await flush()
+    expect(setDefaultItem).toHaveBeenCalledTimes(2)
+    expect(setDefaultItem.mock.calls[1][0]).toBeNull()
+    wrapper.unmount()
+  })
 })

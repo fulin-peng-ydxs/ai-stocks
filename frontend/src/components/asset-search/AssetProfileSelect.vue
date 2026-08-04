@@ -41,6 +41,8 @@ const props = withDefaults(defineProps<{
   testId?: string
   /** 加载查看后直接选中：适用于“选择即执行/展示”的消费页；默认仍只发 loaded，由页面决定展示方式。 */
   selectLoaded?: boolean
+  /** 当前默认加载方案的资产 key（仅榜单页评分方案传）；透传给抽屉做行内互斥高亮 */
+  defaultItemKey?: string
 }>(), {
   mode: 'select',
   copyPermission: '',
@@ -49,6 +51,7 @@ const props = withDefaults(defineProps<{
   labelMine: '我的方案',
   testId: 'asset-profile-select',
   selectLoaded: false,
+  defaultItemKey: '',
 })
 
 const emit = defineEmits<{
@@ -65,6 +68,8 @@ const emit = defineEmits<{
   copied: [result: AssetCopyResult]
   /** 复用重跑完成（回测形态）：透传抽屉 rerunDone，回传 rerunItem 返回值 + 原行，供父级选中新 run */
   rerunDone: [result: unknown, item: ProfileSummary]
+  /** 设为/取消默认加载方案（仅榜单页评分方案）：透传抽屉行操作，item=null 表示取消默认 */
+  setDefault: [item: ProfileSummary | null]
 }>()
 
 const items = ref<ProfileSummary[]>([])
@@ -130,7 +135,17 @@ function openSearch(source?: AssetBrowseSource) {
   drawerRef.value?.openWith(source)
 }
 
-defineExpose({ reload, openSearch })
+// 命令式装载（不进抽屉）：与 onDrawerLoad 的 selectLoaded 分支同构，供榜单页「默认加载方案」
+// 在页面进入时复用已验证的 selectedLoadedItem 链路（选中项始终在 options 内，规避 ElSelect 递归陷阱）。
+function applyLoaded(item: ProfileSummary) {
+  if (!props.selectLoaded) return
+  tempItem.value = null
+  selectedLoadedItem.value = item
+  emit('loaded', item)
+  emit('update:modelValue', assetItemKey(item))
+}
+
+defineExpose({ reload, openSearch, applyLoaded })
 
 // 「加载查看」= 临时只读预览对象：注入候选顶部 + emit loaded，**不设为当前选中**（不 emit update:modelValue）。
 // 关键：若同步选中，el-select 会把 selectedItem 锁到不在持久 items 的 tempItem 上，#label/option/watch 形成
@@ -323,6 +338,8 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
       :copy-item="(item) => copyItem(item as ProfileSummary)"
       :copy-permission="copyPermission"
       :can-browse="canBrowse"
+      :default-item-key="defaultItemKey"
+      :set-default-item="defaultItemKey !== undefined ? (item) => emit('setDefault', (item as ProfileSummary | null)) : undefined"
       @load="onDrawerLoad"
       @copied="onDrawerCopied"
     />

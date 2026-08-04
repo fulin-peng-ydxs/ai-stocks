@@ -59,7 +59,7 @@
   - 评分方案 CRUD/版本/试算：`backend/api/score_profiles.py`（`/score-profiles*`、`/score-profiles/run`）。
   - 榜单查询：`backend/api/board.py`（`/scores`、`/scores/top`、`/board/compute`）。
 - **可见性**：筛选方案和评分方案均支持 `private / tenant / public`。API 使用 opaque `profile_ref` 解析真实 owner；非 owner 公开方案只读，可复制为自己的 private；**复制后运行/筛选**结果归当前执行者。**例外——榜单快照相反**：其结果归**方案 owner** 的缓存槽（非执行者），凡对该方案有可见性者共读同一份（见上「评分快照惰性物化与失效」共享语义）。
-- **前端**：`ScreenView.vue` 条件构建器（指标/表达式行 ↔ AST 互转、方案存取/版本恢复、公开范围标签/发布/复制、命中列表导出）；`BoardView.vue` 选评分方案+日期+TopN 拉榜单（调 `/score-profiles/run`，展示综合分/评级/分项徽章）。
+- **前端**：`ScreenView.vue` 条件构建器（指标/表达式行 ↔ AST 互转、方案存取/版本恢复、公开范围标签/发布/复制、命中列表导出）；`BoardView.vue` 选评分方案+日期+TopN 拉榜单（调 `/score-profiles/run`，展示综合分/评级/分项徽章）。榜单方案选择走 `AssetProfileSelect`（`select-loaded` 选择即刷新），支持「默认加载方案」偏好（见下「每日榜单页 · 默认加载方案」）。
 
 ## 页面使用说明书
 
@@ -94,6 +94,15 @@ flowchart LR
 - 想理解"强在哪里"，看分项达标分和评级。
 - 想把榜单逻辑拿去历史验证，去回测页选择同一个评分方案。
 - 如果最新榜单提示未生成，不需要手动预跑；打开对应日期会按需计算。
+
+#### 默认加载方案（无自己的评分方案时自动装载）
+
+面向「还没有自己评分方案」的用户，免去每次进榜单页都要手动去抽屉选方案：
+
+- **设置入口**：`AssetSearchDrawer`（浏览评分方案抽屉）行操作新增「设为默认加载方案 / 取消默认」。该动作由 `setDefaultItem` 回调控制渲染——**仅榜单页经 `AssetProfileSelect` 传入才出现**，筛选/配置/个股详情等其它消费页不传则不显示。单值互斥：以 `defaultItemKey === assetItemKey(item)` 行级比较，改设后其它行自动复原。
+- **持久化**：复用既有 `user_preference` 通道（`scope=feature / page_key=board / pref_key=default-score-profile`），前端经 `useUserPreference` 双写（localStorage 即时 + 远端 300ms 防抖），value 存方案 summary 快照（profile_ref/name/version/is_preset/source/owner_label）。**不新建表/端点/权限**（沿用 `user-preference:manage`）。
+- **装载时机**：进入榜单页时，**仅当「我的」评分方案列表为空**（`profiles.length===0`）且远端偏好已 `hydrated`，才经 `AssetProfileSelect.applyLoaded`（`selectLoaded` 同构、不开抽屉）把默认方案注入下拉并触发榜单刷新；若用户已有自己的方案，则维持「自动选中我的第一个」，默认偏好被忽略（不删除）。装载等 `hydrated` 完成再判定，避免远端偏好慢于 mine 列表时被过早置空态。
+- **失效兜底**：默认方案被 owner 取消公开或删除后，`runBoardProfile` 经 `get_visible` 返回 403/404；仅当本次 load 由默认装载触发（`pendingDefaultKey` 命中）且失败时，自动清除该偏好并提示，落回空态，下次进入不再报错。普通手动选公开方案失败不清默认。
 
 ### 2. 策略筛选页
 
