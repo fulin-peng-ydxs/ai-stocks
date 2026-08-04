@@ -33,7 +33,8 @@
 - 旧固定模型 `ScoreModel`（`backend/scoring/model.py`）：固定 6 维（位置/趋势/量/换手/RS/资金流）、配置权重，资金流默认权重 0 自动从归一中排除。仍用于不带评分方案的榜单口径。
 
 ### 评分快照惰性物化与失效（`backend/scoring/snapshot.py`）
-- 物化键 = `(trade_date, profile_id, profile_version)`。`get_board`（snapshot.py:67）：meta 命中且未 stale → 直接读 `score_snapshot` 缓存；否则 `_materialize` 当场重算（`score_day` 全市场排除 ST 打分降序排名）覆盖明细 + 写 meta(stale=false)。
+- 物化键 = `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)`——**含方案 owner 归属维度**（`snapshot.py:113-115/121-123` 读缓存 WHERE 强制带 `tenant_id + owner_user_id`，物化时 `board.py:201-204` 把二者设为**方案 owner**）。`get_board`（snapshot.py:67）：meta 命中且未 stale → 直接读 `score_snapshot` 缓存；否则 `_materialize` 当场重算（`score_day` 全市场排除 ST 打分降序排名）覆盖明细 + 写 meta(stale=false)。
+- **榜单结果的共享语义（区别于「资产复用」）**：榜单不是可拥有的资产，没有「我的榜单」、**无复制/复用入口**。其结果是**一份物理快照，落在方案 owner 的缓存槽**（不属任何查看者）；凡对该评分方案有可见性（`get_visible`）且具 `board:view` 权限的人，对同一 `(方案,版本,交易日)` **共读这同一份快照**——首个请求者触发物化（`materialized`），后续命中同一份缓存（`cached`）。「所有人可见」受方案可见性约束：public 方案才接近全员共享，tenant 限同租户，private 仅 owner。
 - `score_day`（snapshot.py:25）口径与回测 `_decision_data`、`/board/compute` 一致：`wide_snapshot` 单日 → 排除名称含 ST → `attach_columns` 补表达式型指标列 → `ScoreProfileModel` 打分。
 - 失效触发器（只标 meta、不重算，便宜）：
   - `mark_stale_dates`（snapshot.py:116）：指定交易日的所有方案版本标 stale。
@@ -57,7 +58,7 @@
   - 筛选方案 CRUD/版本/发布/复制/跑筛选：`backend/api/profiles.py`（`/profiles*`、`/profiles/{ref}/visibility`、`/profiles/{ref}/copy`、`/screen/run`）。
   - 评分方案 CRUD/版本/试算：`backend/api/score_profiles.py`（`/score-profiles*`、`/score-profiles/run`）。
   - 榜单查询：`backend/api/board.py`（`/scores`、`/scores/top`、`/board/compute`）。
-- **可见性**：筛选方案和评分方案均支持 `private / tenant / public`。API 使用 opaque `profile_ref` 解析真实 owner；非 owner 公开方案只读，可复制为自己的 private；公开方案运行结果仍归当前执行者，不污染方案 owner 槽。
+- **可见性**：筛选方案和评分方案均支持 `private / tenant / public`。API 使用 opaque `profile_ref` 解析真实 owner；非 owner 公开方案只读，可复制为自己的 private；**复制后运行/筛选**结果归当前执行者。**例外——榜单快照相反**：其结果归**方案 owner** 的缓存槽（非执行者），凡对该方案有可见性者共读同一份（见上「评分快照惰性物化与失效」共享语义）。
 - **前端**：`ScreenView.vue` 条件构建器（指标/表达式行 ↔ AST 互转、方案存取/版本恢复、公开范围标签/发布/复制、命中列表导出）；`BoardView.vue` 选评分方案+日期+TopN 拉榜单（调 `/score-profiles/run`，展示综合分/评级/分项徽章）。
 
 ## 页面使用说明书

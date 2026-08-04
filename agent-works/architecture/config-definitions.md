@@ -98,7 +98,7 @@
 | 配置生效 | `backend/api/config.py`、`backend/api/data_admin.py` | YAML 基线 reload 与 Web 系统设置；加载优先级见 [environment-configuration.md](environment-configuration.md) |
 
 - 评分试算 `/api/score-profiles/run`（score_profiles.py:56-107）：已保存方案走**评分快照层**（`ScoreSnapshotRepo.get_board`，命中即用/失效重算），未保存的 inline 方案当场 `score_day` 实时算不入库。
-- 评分快照 `ScoreSnapshotRepo`（snapshot.py:57-147）按 `(trade_date, profile_id, profile_version)` 惰性物化到 `score_snapshot`+`score_snapshot_meta`：首读物化、行情变更只标 `stale=true` 不立即重算、下次读到 stale 才重算覆盖。
+- 评分快照 `ScoreSnapshotRepo`（snapshot.py:57-147）按 `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)` 惰性物化到 `score_snapshot`+`score_snapshot_meta`（结果归方案 owner 缓存槽，可见者共读，详见 screening-and-board.md「评分快照惰性物化与失效」）：首读物化、行情变更只标 `stale=true` 不立即重算、下次读到 stale 才重算覆盖。
 
 ### 前端配置中心
 
