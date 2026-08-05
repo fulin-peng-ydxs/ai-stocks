@@ -266,8 +266,15 @@ function onSubmit() {
   >
     <section class="login-brand" data-testid="login-brand-surface">
       <header class="login-brand-head">
-        <div class="login-logo">
-          <BrandMark :tone="isDark ? 'dark' : 'light'" />
+        <div class="login-brand-id">
+          <div class="login-logo">
+            <BrandMark :tone="isDark ? 'dark' : 'light'" />
+          </div>
+          <ul class="login-brand-points">
+            <li>龙头梯队识别</li>
+            <li>盘感训练</li>
+            <li>点时回测验证</li>
+          </ul>
         </div>
         <div class="login-system-state"><span />SYSTEM ONLINE</div>
       </header>
@@ -286,16 +293,35 @@ function onSubmit() {
               <feGaussianBlur stdDeviation="7" result="blur" />
               <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
             </filter>
+            <linearGradient id="track-area-gradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="currentColor" stop-opacity=".16" />
+              <stop offset="0.72" stop-color="currentColor" stop-opacity=".04" />
+              <stop offset="1" stop-color="currentColor" stop-opacity="0" />
+            </linearGradient>
           </defs>
+          <path class="market-track-echo" d="M-20 378C96 362 150 392 226 350C302 308 348 336 414 300C488 260 524 296 586 238C644 186 700 226 760 164C808 114 852 132 920 78" />
+          <path class="market-track-area" d="M-20 350C80 334 128 366 205 320C284 273 324 305 390 268C466 226 497 265 558 204C614 148 675 193 733 126C782 70 832 92 920 30L920 440L-20 440Z" />
           <path class="market-track-shadow" d="M-20 350C80 334 128 366 205 320C284 273 324 305 390 268C466 226 497 265 558 204C614 148 675 193 733 126C782 70 832 92 920 30" />
           <path class="market-track-line" d="M-20 350C80 334 128 366 205 320C284 273 324 305 390 268C466 226 497 265 558 204C614 148 675 193 733 126C782 70 832 92 920 30" />
           <circle class="market-track-node node-one" cx="390" cy="268" r="5" />
           <circle class="market-track-node node-two" cx="558" cy="204" r="5" />
           <circle class="market-track-node node-three" cx="733" cy="126" r="7" />
         </svg>
-        <span class="market-index index-one">SH · 000001</span>
-        <span class="market-index index-two">TREND · LEADER</span>
-        <span class="market-index index-three">EOD · SIGNAL</span>
+        <div class="market-readout readout-one">
+          <span class="mr-label">龙头梯队</span>
+          <span class="mr-value">42<i>只</i></span>
+          <span class="mr-delta up">▲ 6</span>
+        </div>
+        <div class="market-readout readout-two">
+          <span class="mr-label">晋级率</span>
+          <span class="mr-value">38.2<i>%</i></span>
+          <span class="mr-delta up">▲ 2.1</span>
+        </div>
+        <div class="market-readout readout-three">
+          <span class="mr-label">趋势强度</span>
+          <span class="mr-value">71</span>
+          <span class="mr-delta down">▼ 3</span>
+        </div>
       </div>
 
       <div class="login-brand-copy">
@@ -304,11 +330,29 @@ function onSubmit() {
         <p>为趋势交易者构建的每日复盘与龙头研究系统。</p>
       </div>
 
-      <footer class="login-brandmeta">
-        <span>缅A市场</span><i />
-        <span>EOD 研究</span><i />
-        <span>点时回测</span>
-      </footer>
+      <div class="market-ticker" aria-hidden="true">
+        <div class="market-ticker-track">
+          <div class="ticker-group">
+            <span class="t-item"><em>SH 000001</em>上证指数<b class="up">3,247.18 ▲0.42%</b></span>
+            <span class="t-item"><em>SZ 399001</em>深证成指<b class="up">10,562.4 ▲0.68%</b></span>
+            <span class="t-item"><em>SZ 399006</em>创业板指<b class="down">2,118.9 ▼0.15%</b></span>
+            <span class="t-item"><em>SH 000688</em>科创50<b class="up">986.52 ▲1.03%</b></span>
+            <span class="t-item"><em>LEAD</em>龙头梯队<b class="up">42只 ▲6</b></span>
+            <span class="t-item"><em>ADV</em>晋级率<b class="up">38.2% ▲2.1</b></span>
+            <span class="t-item"><em>TREND</em>趋势强度<b class="down">71 ▼3</b></span>
+          </div>
+          <div class="ticker-group">
+            <span class="t-item"><em>SH 000001</em>上证指数<b class="up">3,247.18 ▲0.42%</b></span>
+            <span class="t-item"><em>SZ 399001</em>深证成指<b class="up">10,562.4 ▲0.68%</b></span>
+            <span class="t-item"><em>SZ 399006</em>创业板指<b class="down">2,118.9 ▼0.15%</b></span>
+            <span class="t-item"><em>SH 000688</em>科创50<b class="up">986.52 ▲1.03%</b></span>
+            <span class="t-item"><em>LEAD</em>龙头梯队<b class="up">42只 ▲6</b></span>
+            <span class="t-item"><em>ADV</em>晋级率<b class="up">38.2% ▲2.1</b></span>
+            <span class="t-item"><em>TREND</em>趋势强度<b class="down">71 ▼3</b></span>
+          </div>
+        </div>
+      </div>
+
     </section>
 
     <section class="login-auth" data-testid="login-auth-surface">
@@ -541,8 +585,14 @@ function onSubmit() {
   position: relative;
   z-index: 3;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: var(--app-space-4);
+}
+.login-brand-id {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-3);
 }
 .login-logo {
   display: flex;
@@ -556,6 +606,8 @@ function onSubmit() {
   font-family: var(--app-font-family-mono);
   font-size: var(--app-font-size-tiny);
   letter-spacing: 0.14em;
+  white-space: nowrap;
+  flex: none;
 }
 .login-system-state span {
   width: 6px;
@@ -591,6 +643,19 @@ function onSubmit() {
   stroke-width: 14;
   filter: url(#track-glow);
 }
+/* 趋势实体感：曲线下的渐变面积 + 一条平行虚影，让轨迹从「一根虚线」变成「一片趋势」 */
+.market-track-area {
+  fill: url(#track-area-gradient);
+  stroke: none;
+  color: var(--login-track);
+}
+.market-track-echo {
+  fill: none;
+  stroke: color-mix(in srgb, var(--login-track) 20%, transparent);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-dasharray: 2 7;
+}
 .market-track-line {
   fill: none;
   stroke: url(#track-gradient);
@@ -616,11 +681,113 @@ function onSubmit() {
 .index-one { left: 38%; top: 64%; }
 .index-two { left: 58%; top: 43%; }
 .index-three { right: 7%; top: 19%; }
+
+/* 数据标注：挂在轨迹节点旁，沿用 market-index 的 tick 线语言，但承载真实指标，与场景同源而非浮层 */
+.market-readout {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-1);
+  padding-left: 13px;
+  border-left: 1px solid color-mix(in srgb, var(--login-track) 52%, transparent);
+}
+.market-readout::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--login-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--login-accent) 56%, transparent);
+}
+.readout-one { left: 37.5%; top: 41%; }
+.readout-two { left: 57.5%; top: 31%; }
+.readout-three { left: 79%; top: 6%; }
+.mr-label {
+  color: var(--login-brand-muted);
+  font-size: var(--app-font-size-ornament);
+  letter-spacing: 0.14em;
+}
+.mr-value {
+  color: var(--login-brand-text);
+  font-family: var(--app-font-family-mono);
+  font-size: clamp(24px, 1.9vw, 30px);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.mr-value i {
+  margin-left: 2px;
+  color: var(--login-brand-muted);
+  font-size: var(--app-font-size-micro);
+  font-style: normal;
+  font-weight: 400;
+}
+.mr-delta {
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-font-size-ornament);
+  letter-spacing: 0.04em;
+}
+.mr-delta.up { color: var(--login-accent); }
+.mr-delta.down { color: var(--login-danger); }
+
+
+/* 行情跑马灯：横穿左栏底部的数据带，把横向的「虚」填实，与底部留白融合 */
+.market-ticker {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-top: 1px solid var(--login-divider);
+  background: color-mix(in srgb, var(--login-panel-bg) 78%, var(--login-accent) 3%);
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.market-ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll 34s linear infinite;
+}
+.ticker-group {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+.t-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--app-space-2);
+  padding: 9px 26px;
+  color: var(--login-brand-muted);
+  font-size: var(--app-font-size-table);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.t-item em {
+  color: var(--login-track);
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-icon-size-xs);
+  font-style: normal;
+  letter-spacing: 0.1em;
+}
+.t-item b {
+  font-family: var(--app-font-family-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.t-item b.up { color: var(--login-accent); }
+.t-item b.down { color: var(--login-danger); }
+@keyframes ticker-scroll { to { transform: translateX(-50%); } }
+
 .login-brand-copy {
   position: absolute;
   z-index: 2;
   left: clamp(36px, 5vw, 76px);
-  bottom: 112px;
+  bottom: 132px;
 }
 .login-eyebrow {
   display: flex;
@@ -648,20 +815,36 @@ function onSubmit() {
   font-size: var(--app-font-size-body);
   letter-spacing: 0.06em;
 }
-.login-brandmeta {
-  position: absolute;
-  z-index: 3;
-  left: clamp(36px, 5vw, 76px);
-  right: clamp(36px, 5vw, 76px);
-  bottom: 32px;
+/* 品牌能力卖点：挂在「复盘啦」字标下方，与左下主视觉分离，避免扎堆 */
+.login-brand-points {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--app-space-3);
-  color: var(--login-brand-muted);
-  font-size: var(--app-font-size-micro);
-  letter-spacing: 0.12em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.login-brandmeta i { width: 3px; height: 3px; border-radius: 50%; background: var(--login-track); }
+.login-brand-points li {
+  position: relative;
+  padding-left: 18px;
+  color: var(--login-brand-muted);
+  font-size: var(--app-font-size-table);
+  letter-spacing: 0.08em;
+}
+.login-brand-points li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--login-track);
+  border-radius: 50%;
+  transform: translateY(-50%);
+  box-shadow: inset 0 0 0 2px var(--login-card-opaque-bg);
+  background: var(--login-accent);
+}
 
 .login-auth {
   position: relative;
@@ -1017,7 +1200,9 @@ function onSubmit() {
   .login-brand-head { align-items: flex-start; }
   .login-system-state { display: none; }
   .login-brand-copy,
-  .login-brandmeta { display: none; }
+  .login-brand-points,
+  .market-readout,
+  .market-ticker { display: none; }
   .market-stage { inset: 26% -35% 0 -20%; opacity: 0.38; }
   .login-auth {
     z-index: 2;
@@ -1054,11 +1239,14 @@ function onSubmit() {
   .login-card { padding-top: 28px; padding-bottom: 24px; }
   .login-tabs { margin-top: 18px; margin-bottom: 16px; }
   .login-footnote { margin-top: 18px; padding-top: 14px; }
-  .login-brand-copy { bottom: 88px; }
+  .login-brand-copy { bottom: 92px; }
+  .login-brand-points { display: none; }
+  .market-readout { transform: scale(0.92); transform-origin: left top; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .market-track-line { animation: none; }
+  .market-ticker-track { animation: none; }
   .send-spinner { animation-duration: 1.6s; }
   .login-theme,
   .login-primary { transition: none; }
