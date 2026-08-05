@@ -64,7 +64,7 @@ function optionTestId(value: OptionValue): string | undefined {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--app-space-control-gap);
   transition: background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 .seg-btn:hover:not(.active) {

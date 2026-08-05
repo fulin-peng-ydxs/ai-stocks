@@ -307,6 +307,22 @@ function applyPreset(key: string) {
   root.style.setProperty('--page-settings-footer-btn-bg', t.surfaceHover)
   root.style.setProperty('--page-settings-footer-btn-hover-bg', t.activeBg)
 
+  // 状态文本/评分档色统一从预设语义色派生（批次 A：消除 global.css 里 Element/AntD 默认橙绿红的平行硬编码）。
+  // 亮色文本用 dark-2 工艺（向黑收敛）保证白底对比与鲜明；夜间沿用预设主色（已偏亮）。
+  // 防御非法后端覆盖：非 #RRGGBB 时回落内置安全值，避免 blendHex 静默落黑。
+  const statusText = (color: string, fallback: string) => {
+    const base = isHexColor(color) ? color : fallback
+    return mode === 'dark' ? base : blendHex(base, '#000000', 0.8)
+  }
+  const statusBg = (color: string, fallback: string, alpha: number) =>
+    rgbaFromHex(isHexColor(color) ? color : fallback, alpha)
+  root.style.setProperty('--app-warning-text', statusText(t.warning, '#d97706'))
+  root.style.setProperty('--app-danger-text', statusText(t.danger, '#d9363e'))
+  root.style.setProperty('--score-high-text', statusText(t.success, '#168f63'))
+  root.style.setProperty('--score-high-bg', statusBg(t.success, '#168f63', mode === 'dark' ? 0.18 : 0.14))
+  root.style.setProperty('--score-mid-text', statusText(t.warning, '#d97706'))
+  root.style.setProperty('--score-mid-bg', statusBg(t.warning, '#d97706', mode === 'dark' ? 0.2 : 0.16))
+
   setCssVar(t, 'cardRadius', '--layout-card-radius', 'px')
   setCssVar(t, 'controlRadius', '--layout-control-radius', 'px')
   setCssVar(t, 'pageGap', '--layout-page-gap', 'px')
