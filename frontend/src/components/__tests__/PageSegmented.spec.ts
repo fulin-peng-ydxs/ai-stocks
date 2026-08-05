@@ -50,4 +50,28 @@ describe('PageSegmented', () => {
     expect(wrapper.attributes('aria-label')).toBe('显示范围')
     expect(wrapper.attributes('aria-labelledby')).toBe('source-mode-label')
   })
+
+  it('可选 icon slot 注入前置图标并接收 option/active 上下文，缺省保持纯文字', () => {
+    const withIcon = mount(PageSegmented, {
+      props: {
+        modelValue: 'dark',
+        options: [
+          { label: '白天', value: 'light' },
+          { label: '夜间', value: 'dark' },
+        ],
+      },
+      slots: {
+        icon: `<template #icon="{ option, active }"><i :class="'orb-' + option.value + (active ? ' on' : '')" /></template>`,
+      },
+    })
+    expect(withIcon.find('.orb-light').exists()).toBe(true)
+    expect(withIcon.find('.orb-dark').classes()).toContain('on')
+    expect(withIcon.find('.orb-light').classes()).not.toContain('on')
+
+    const plain = mount(PageSegmented, {
+      props: { modelValue: 'a', options: [{ label: '甲', value: 'a' }] },
+    })
+    expect(plain.find('.seg-btn i').exists()).toBe(false)
+    expect(plain.get('.seg-btn').text()).toBe('甲')
+  })
 })

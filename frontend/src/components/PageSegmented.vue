@@ -33,7 +33,9 @@ function optionTestId(value: OptionValue): string | undefined {
       :data-testid="optionTestId(option.value)"
       @click="$emit('update:modelValue', option.value)"
     >
-      {{ option.label }}
+      <!-- 可选前置图标（如明暗模式的日/夜/系统状态图形）；不传则保持纯文字。 -->
+      <slot name="icon" :option="option" :active="option.value === props.modelValue" />
+      <span class="seg-label">{{ option.label }}</span>
     </button>
   </div>
 </template>
@@ -59,6 +61,10 @@ function optionTestId(value: OptionValue): string | undefined {
   font-size: var(--app-font-size-table);
   font-weight: var(--app-font-weight-section);
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   transition: background-color .15s ease, color .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
 .seg-btn:hover:not(.active) {

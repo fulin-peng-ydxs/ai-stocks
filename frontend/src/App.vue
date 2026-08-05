@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Calendar, Clock, Close, Refresh, Select } from '@element-plus/icons-vue'
-import { useTheme, toggleTheme } from '@/composables/useTheme'
+import { useTheme, type ThemeMode } from '@/composables/useTheme'
 import {
   useAppNavigation,
   type NavigationMode,
@@ -33,8 +33,9 @@ import TopNavigation from '@/components/TopNavigation.vue'
 import WorkspaceTabs from '@/components/WorkspaceTabs.vue'
 import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import PageSegmented from '@/components/PageSegmented.vue'
 
-const { isDark, syncThemePreference } = useTheme()
+const { isDark, themeMode, setThemeMode, syncThemePreference } = useTheme()
 const { navigationMode, setNavigationMode, syncNavigationPreference } = useAppNavigation()
 const { activePresetKey, options: presetOptions, setLayoutPreset } = useLayoutPreset()
 const userDrawerVisible = ref(false)
@@ -121,6 +122,11 @@ const navigationOptions: Array<{
   { value: 'sidebar-tabs', label: '侧栏标签', description: '层级清晰，适合多页面并行研究' },
   { value: 'dual-topbar', label: '双层顶栏', description: '一级在上，二级与子页紧随其下' },
 ]
+const themeModeOptions: Array<{ value: ThemeMode; label: string }> = [
+  { value: 'light', label: '白天' },
+  { value: 'dark', label: '夜间' },
+  { value: 'system', label: '跟随系统' },
+]
 
 async function syncGlobalPreferences() {
   if (!auth.isLoggedIn) return
@@ -154,9 +160,11 @@ function goTo(path: string) {
   void router.push(path)
 }
 
-function selectThemeMode(dark: boolean) {
-  if (isDark.value !== dark) toggleTheme()
-}
+// PageSegmented 受控桥：读取当前明暗意图，写入走 setThemeMode（持久化 + 写回账号）。
+const themeModeModel = computed<ThemeMode>({
+  get: () => themeMode.value,
+  set: (mode) => { if (themeMode.value !== mode) setThemeMode(mode) },
+})
 
 function selectPreset(key: string) {
   setLayoutPreset(key)
@@ -526,16 +534,24 @@ async function onLogout() {
         </header>
 
         <div class="drawer-body">
-          <div class="appearance-mode-switch" aria-label="明暗模式">
-            <button class="appearance-mode-option" type="button" :class="{ 'is-active': !isDark }" :aria-pressed="!isDark" @click="selectThemeMode(false)">
-              <span class="mode-orb mode-orb--day" />
-              <span><strong>白天</strong><small>清晰阅读</small></span>
-            </button>
-            <button class="appearance-mode-option" type="button" :class="{ 'is-active': isDark }" :aria-pressed="isDark" @click="selectThemeMode(true)">
-              <span class="mode-orb mode-orb--night" />
-              <span><strong>夜间</strong><small>低照沉浸</small></span>
-            </button>
-          </div>
+          <section class="theme-card">
+            <div class="theme-card-head">
+              <div>
+                <div class="theme-card-title">明暗模式</div>
+                <div class="theme-card-sub">跟随系统时随系统浅色/深色自动切换</div>
+              </div>
+            </div>
+            <PageSegmented
+              v-model="themeModeModel"
+              aria-label="明暗模式"
+              test-id="appearance-theme-mode"
+              :options="themeModeOptions"
+            >
+              <template #icon="{ option }">
+                <span class="mode-orb" :class="`mode-orb--${option.value}`" aria-hidden="true" />
+              </template>
+            </PageSegmented>
+          </section>
 
           <section class="theme-card">
             <div class="theme-card-head">
@@ -1112,56 +1128,18 @@ button.topbar-status:focus-visible {
   font-size: var(--app-font-size-caption);
   color: var(--page-settings-text-muted);
 }
-.appearance-mode-switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--app-space-control-gap);
-  padding: 5px;
-  border: 1px solid var(--page-settings-section-border);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--page-settings-section-bg) 72%, transparent);
-}
-.appearance-mode-switch button {
-  min-height: 58px;
-  padding: 8px 12px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--page-settings-text-muted);
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-  cursor: pointer;
-  text-align: left;
-  transition: background-color .18s ease, border-color .18s ease, color .18s ease;
-}
-.appearance-mode-switch button:hover {
-  color: var(--page-settings-text);
-  background: color-mix(in srgb, var(--page-settings-bg) 68%, transparent);
-}
-.appearance-mode-switch button.is-active {
-  color: var(--page-settings-text);
-  border-color: color-mix(in srgb, var(--page-settings-accent) 34%, var(--page-settings-border));
-  background: var(--page-settings-bg);
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--page-settings-shadow) 46%, transparent);
-}
-.appearance-mode-switch button > span:last-child {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-space-1);
-}
-.appearance-mode-switch strong { font-size: var(--app-font-size-table); line-height: var(--app-line-height-micro); }
-.appearance-mode-switch small { color: var(--page-settings-text-muted); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
+/* 明暗模式分段控件的内联状态图形：日=冷白亮蓝、夜=深蓝、系统=半明半暗（DESIGN.md §39）。 */
 .mode-orb {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
   flex: none;
   border-radius: 50%;
   border: 1px solid var(--page-settings-border);
-  box-shadow: inset 0 0 0 4px color-mix(in srgb, var(--page-settings-bg) 58%, transparent);
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--page-settings-bg) 58%, transparent);
 }
-.mode-orb--day { background: radial-gradient(circle at 38% 35%, #ffffff 0 20%, #9ec5ff 22% 48%, #3b82f6 51% 100%); }
-.mode-orb--night { background: radial-gradient(circle at 60% 38%, #dbeafe 0 16%, #4b7bbd 18% 40%, #172554 43% 100%); }
+.mode-orb--light { background: radial-gradient(circle at 38% 35%, #ffffff 0 20%, #9ec5ff 22% 48%, #3b82f6 51% 100%); }
+.mode-orb--dark { background: radial-gradient(circle at 60% 38%, #dbeafe 0 16%, #4b7bbd 18% 40%, #172554 43% 100%); }
+.mode-orb--system { background: linear-gradient(115deg, #3b82f6 0 50%, #172554 50% 100%); }
 .theme-card {
   border: 0;
   background: transparent;

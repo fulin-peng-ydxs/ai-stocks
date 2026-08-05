@@ -91,7 +91,7 @@ function readLegacyDrawerSize(key: string): DrawerSize | undefined {
 
 function readThemePreference(): SaveUserPreferencePayload | null {
   const mode = localStorage.getItem('ai-stocks-theme')
-  if (mode !== 'dark' && mode !== 'light') return null
+  if (mode !== 'dark' && mode !== 'light' && mode !== 'system') return null
   return {
     scope: 'global',
     prefKey: 'theme',
