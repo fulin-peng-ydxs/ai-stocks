@@ -35,7 +35,7 @@ typography:
 Key Characteristics：
 
 - 信息密度偏高，但通过表格内滚、抽屉分段、字段收纳和提示悬浮保持可扫读。
-- 默认气质为明亮、清晰的金融科技研究终端；主交互蓝保持鲜明，不通过低饱和暖灰、金棕或泛黄底色营造所谓护眼感。金融数据场景允许红绿涨跌色，但不以过度紧凑和控件堆叠表达专业。
+- 默认气质为明亮、清晰的金融科技研究终端；主交互蓝保持鲜明，不通过低饱和暖灰、金棕或泛黄底色营造所谓护眼感。**亮色模式一切信号色（成功/警告/危险/金融涨跌/状态与评分文本）走提彩提亮、与主交互蓝同亮档，禁止 dark-2 式向黑收敛或 blend 向白稀释造成的哑光/发灰。**金融数据场景允许红绿涨跌色，但不以过度紧凑和控件堆叠表达专业。
 - 明暗模式缩略图、外观预览和装饰性状态图形也必须使用冷白、亮蓝、深蓝与中性灰；不得用金黄、棕灰或泛黄色模拟“白天”，避免预览层与真实页面色彩语言脱节。
 - 页面首屏直接呈现业务工具，不做大 hero、不做营销式空白、不做卡片堆叠式装饰。
 - 所有业务页面通过布局系统组织，页面结构由 schema 和测试约束，不依赖临时 CSS 猜高度。
@@ -43,7 +43,7 @@ Key Characteristics：
 
 ## 2. Color Palette & Roles
 
-颜色以 Element Plus 变量、`global.css` 的 `--chrome-*` / `--page-settings-*` 变量和 `LAYOUT_PRESETS` 为事实源。内置视觉只保留 `balanced` 一个稳定 key，对外名称为“澄空蓝”；历史内置项统一迁移到该默认项。预设管理仍可新增自定义预设，启用项会自动进入外观抽屉并真实驱动强调色、形态和组件默认策略。
+颜色以 Element Plus 变量、`global.css` 的 `--chrome-*` / `--page-settings-*` 变量和 `LAYOUT_PRESETS` 为事实源。**金融涨跌色（`--market-up-color` / `--market-down-color`）与状态/评分文本色（`--app-warning-text` / `--app-danger-text` / `--score-high-*` / `--score-mid-*`）唯一事实源是 `LAYOUT_PRESETS` 的 `marketUp` / `marketDown` / `success` / `warning` / `danger` token，由 `useLayoutPreset.applyPreset()` 统一写入，禁止在 `global.css`、页面或组件内平行硬编码第二套色值（含 Element/AntD 默认蓝绿橙红）。**内置视觉只保留 `balanced` 一个稳定 key，对外名称为“澄空蓝”；历史内置项统一迁移到该默认项。预设管理仍可新增自定义预设，启用项会自动进入外观抽屉并真实驱动强调色、形态和组件默认策略。
 
 | 角色 | 默认值 | 使用规则 |
 |---|---:|---|
@@ -57,11 +57,13 @@ Key Characteristics：
 | 次要文字 | 白天 `#73757d` / 夜间 `#9a9a9a` | 提示、辅助说明、弱化信息 |
 | 边框 | 白天 `#e5e5e5` / 夜间 `#353535` | 卡片、表格、分割线、输入框 |
 | 强边框 | 白天 `#c9c9c9` / 夜间 `#545454` | 选中、强调分区、高对比控件 |
-| 成功 | 白天 `#168f63` / 夜间 `#35c48d` | 健康状态、成功提示、部分下跌色 |
-| 警告 | 白天 `#d97706` / 夜间 `#f0a43c` | 异常但未失败、样本不足、风险提示 |
-| 危险 | 白天 `#d9363e` / 夜间 `#ff6670` | 失败、删除、风险、金融上涨色 |
+| 成功 | 白天 `#0ea968` / 夜间 `#3ecf8e` | 健康状态、成功提示、评分高档 |
+| 警告 | 白天 `#f58a07` / 夜间 `#f5a623` | 异常但未失败、样本不足、风险提示、评分中档 |
+| 危险 | 白天 `#f04438` / 夜间 `#ff6b66` | 失败、删除、风险 |
+| 金融上涨 | 白天 `#f66055` / 夜间 `#ff7a72` | 涨/正收益；感知亮度恒高于危险红一档，区分金融与主体语义 |
+| 金融下跌 | 白天 `#1ec96e` / 夜间 `#3fdd90` | 跌/负收益；感知亮度恒高于成功绿一档 |
 
-金融涨跌色遵循当前项目口径：上涨/正收益多用红色，下跌/负收益多用绿色；不要套用海外红跌绿涨习惯。
+金融涨跌色遵循当前项目口径：上涨/正收益多用红色，下跌/负收益多用绿色；不要套用海外红跌绿涨习惯。**金融色（`marketUp`/`marketDown`）与同名主体信号色（`danger`/`success`）是两个独立 token：金融色更鲜亮（亮色模式感知亮度约高 25%~47%），用于涨跌数据、K线、净值等金融语境；主体信号色用于状态、提示、评分档。二者不得互相替代或合并。**
 
 语义 token 规则：
 
@@ -71,10 +73,11 @@ Key Characteristics：
 - 股票 MA/VMA/MACD 折线的序列身份色统一以 `stock-chart/chartUtils.ts::trainingChartSeriesPalette()` 为事实源：MA5/VMA5/DIFF 使用橙色 `#e28a35`，MA10/VMA10/DEA 使用蓝色 `#418af5`，MA20 浅色使用洋红 `#9f3793`、暗色使用 `#c53c92`，MA30 使用青色 `#56c3df`，MA60 使用橙红 `#e56023`。K线和量能均线的周期、标题、ECharts 名称与色板键分别由 `KLINE_MA_DEFINITIONS`、`VOLUME_MA_DEFINITIONS` 唯一声明，序列、有数据标题和空数据标题必须共同消费，不得复制周期数组、标签映射或颜色。盘感训练、回测和个股详情必须共同消费该色板；序列色只表达指标身份，不表达涨跌方向。K 线 tooltip 的收盘与涨幅才按相对昨收使用涨跌色，平盘保持中性。
 - `StockChartWorkspace` 与兼容 `CandleChart` 的 Canvas 不会随 CSS 变量自动重绘；两者必须只通过 `stock-chart/useStockChartTheme.ts::useStockChartTheme()` 消费响应式股票画布主题，不得分别组合 `useTheme`、`useLayoutPreset`、`themeRevision` 和 `stockChartTheme()`。该入口统一覆盖明暗切换、预设 key 切换和当前预设同 key 后端覆盖更新。本条适用于个股详情、盘感训练和回测的股票画布；其它图表不会自动继承，扩大适用范围时必须同步完成运行时改造和独立回归。
 - 非股票 ECharts 统一通过 `components/chartTheme.ts::useEChartsTheme()` 消费画布背景、坐标、文字、tooltip 和序列语义色；该入口与股票主题共同复用 `useResponsiveEChartsTheme()`，覆盖明暗、预设 key 和同 key 后端覆盖更新。`EquityChart`、`GrowthChart` 已纳入，不再作为固定明暗色板例外；新增 Canvas 主题消费者不得只监听 `isDark` 或在组件内维护第二套基础色板。
-- 分项评分徽章使用 `--score-high-*` / `--score-mid-*`，低分使用弱底色和占位文字色。
+- 分项评分徽章使用 `--score-high-*` / `--score-mid-*`，低分使用弱底色和占位文字色；评分热力格（`SubScoreBars`）、训练评级、买卖标记等**内联 style 颜色的组件统一经 `components/chartTheme.ts::useStatusColorPalette()` 消费当前生效 token**（强弱梯度=跌绿→成功→警示→危险→涨红；买卖=主色蓝/警示橙；评级 S/A/B/C/D=警示/成功/主色/中性/危险），不得在该组件内维护私有绿橙红色阶或 Element 默认色。
 - 页面提示、弱文本、占位文本优先使用 `--app-warning-text`、`--app-muted-text`、`--app-placeholder-text`；确属 Element Plus 标准状态时可直接用 `var(--el-color-*)`。
+- **颜色单一事实源**：任何状态/金融/评分/评级/买卖颜色只允许来自 `LAYOUT_PRESETS` token（经 `--el-color-*`、`--market-*`、`--app-*-text`、`--score-*` 或 `useStatusColorPalette()` 消费）；页面、组件、Canvas fallback 一律与 `balanced` 预设同值，禁止出现 `global.css` 或组件内平行硬编码的第二套色板。图表 fallback（`chartTheme.ts`/`chartUtils.ts`）也必须与预设当前值保持一致并随色板演进同步更新。
 - 普通操作文字与禁用操作文字分别使用 `text`、`textMuted`；二者按 WCAG 线性相对亮度计算的差值必须 `≥ 0.06`。这是文字层级阈值的唯一数值事实源，预设保存和运行时合并均须守卫。
-- 预设运行时必须同步覆盖 Element Plus 语义色的基础色、RGB 通道、`light-3/5/7/8/9` 与 `dark-2` 派生色；`error` 与项目危险色同源。按钮、链接、提示、分段控件、焦点和禁用态不得回退到组件库默认蓝绿橙红色阶。
+- 预设运行时必须同步覆盖 Element Plus 语义色的基础色、RGB 通道、`light-3/5/7/8/9` 与 `dark-2` 派生色；`error` 与项目危险色同源。按钮、链接、提示、分段控件、焦点和禁用态不得回退到组件库默认蓝绿橙红色阶。**金融涨跌色与状态/评分文本色不走 el 的 light-*/dark-2 派生，而是直接消费预设 `marketUp`/`marketDown`/`success`/`warning`/`danger` 主色（亮色模式该主色即为提彩后的鲜亮值），避免派生工艺造成哑光。**
 
 预设规则：
 

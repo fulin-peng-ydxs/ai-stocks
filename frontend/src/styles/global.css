@@ -140,9 +140,7 @@ body {
   --app-empty-icon-opacity: 0.72;
   --app-muted-text: #909399;
   --app-placeholder-text: #c0c4cc;
-  --market-up-color: #ef4d4d;
-  --market-down-color: #22b573;
-  /* --app-warning-text / --app-danger-text / --score-high/mid 已由 useLayoutPreset 按预设语义色派生，不在此硬编码。 */
+  /* --market-up/down、--app-warning-text、--app-danger-text、--score-high/mid 统一由 useLayoutPreset 按预设语义色写入，不在此硬编码。 */
   --perm-group-color: #64748b;
   --perm-feature-color: #7c3aed;
 }
@@ -320,9 +318,7 @@ html.dark {
   --app-empty-icon-opacity: 0.55;
   --app-muted-text: #8c96a8;
   --app-placeholder-text: #687386;
-  --market-up-color: #ff6b6b;
-  --market-down-color: #45c486;
-  /* --app-warning-text / --app-danger-text / --score-high/mid 已由 useLayoutPreset 按预设语义色派生，不在此硬编码。 */
+  /* --market-up/down、--app-warning-text、--app-danger-text、--score-high/mid 统一由 useLayoutPreset 按预设语义色写入，不在此硬编码。 */
   --perm-group-color: #94a3b8;
   --perm-feature-color: #a78bfa;
 }

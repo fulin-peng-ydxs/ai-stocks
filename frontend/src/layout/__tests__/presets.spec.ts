@@ -210,4 +210,48 @@ describe('布局风格预设（M2 / M9 双模式）', () => {
       /AssetProfileLabel[\s\S]*消费页包括[^|\n]*StockDetailView/,
     )
   })
+
+  it('金融涨跌色为独立 token 且感知亮度恒高于同名主体信号色一档', () => {
+    for (const preset of Object.values(LAYOUT_PRESETS)) {
+      for (const mode of MODES) {
+        const t = preset.tokens[mode]
+        // 独立 token，不与主体色合并
+        expect(t.marketUp, `${mode}.marketUp`).not.toBe(t.danger)
+        expect(t.marketDown, `${mode}.marketDown`).not.toBe(t.success)
+        // 感知亮度：金融色恒高于同名主体信号色（涨红>危险红、跌绿>成功绿）
+        expect(relativeLuminanceFromHex(t.marketUp), `${mode} 涨红>危险红`)
+          .toBeGreaterThan(relativeLuminanceFromHex(t.danger))
+        expect(relativeLuminanceFromHex(t.marketDown), `${mode} 跌绿>成功绿`)
+          .toBeGreaterThan(relativeLuminanceFromHex(t.success))
+      }
+    }
+  })
+
+  it('亮色模式信号色为提彩鲜亮色，不回退到暗哑色板', () => {
+    const t = LAYOUT_PRESETS.balanced.tokens.light
+    // 旧哑光色板（深色/Element 默认灰调）禁回归
+    const staleDull = ['#168f63', '#d97706', '#d9363e', '#52c41a', '#d48806', '#e6a23c', '#f56c6c', '#67c23a']
+    for (const key of ['success', 'warning', 'danger', 'marketUp', 'marketDown'] as const) {
+      expect(staleDull, `light.${key}=${t[key]} 不得为旧哑光色`).not.toContain(t[key].toLowerCase())
+    }
+    // 鲜亮信号色白底仍需可读（成功/危险/涨红对比度下限）
+    expect(contrastRatioFromHex(t.danger, '#ffffff'), '危险红白底').toBeGreaterThanOrEqual(3)
+    expect(contrastRatioFromHex(t.success, '#ffffff'), '成功绿白底').toBeGreaterThanOrEqual(2.4)
+    expect(contrastRatioFromHex(t.warning, '#ffffff'), '警告橙白底').toBeGreaterThanOrEqual(2)
+  })
+
+  it('金融/状态/评分色无 global.css 或组件内平行硬编码色板', () => {
+    const globalCss = readFileSync(join(SRC_DIR, 'styles/global.css'), 'utf8')
+    // market/app-warning/app-danger/score 事实源已移交预设，global.css 不再硬编码具体色值
+    expect(globalCss).not.toMatch(/--market-up-color:\s*#/)
+    expect(globalCss).not.toMatch(/--market-down-color:\s*#/)
+    expect(globalCss).not.toMatch(/--app-warning-text:\s*#/)
+    expect(globalCss).not.toMatch(/--app-danger-text:\s*#/)
+    expect(globalCss).not.toMatch(/--score-high-text:\s*#/)
+    expect(globalCss).not.toMatch(/--score-mid-text:\s*#/)
+    // 内联 style 颜色组件经统一快照消费，无私有色阶
+    const subScoreBars = readFileSync(join(SRC_DIR, 'components/SubScoreBars.vue'), 'utf8')
+    expect(subScoreBars).toContain('useStatusColorPalette')
+    expect(subScoreBars).not.toMatch(/#[0-9a-fA-F]{6}/)
+  })
 })

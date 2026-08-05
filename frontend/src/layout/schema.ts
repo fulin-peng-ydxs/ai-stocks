@@ -56,6 +56,9 @@ export interface StyleTokenConfig {
   success: string
   warning: string
   danger: string
+  /** 金融涨跌色：涨红 / 跌绿。感知亮度恒高于同名主体信号色一档，区分主体与金融语义。 */
+  marketUp: string
+  marketDown: string
   pageBg: string
   surfaceBg: string
   surfaceHover: string

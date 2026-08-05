@@ -891,7 +891,7 @@ onMounted(initializeScreen)
   gap: var(--app-space-3);
   margin-top: 14px;
   padding-top: 14px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 .run-hint {
   color: var(--app-placeholder-text);
@@ -920,6 +920,6 @@ onMounted(initializeScreen)
   cursor: pointer;
 }
 .clickable :deep(.st-row) {
-  background: #fef0f0;
+  background: var(--el-color-danger-light-9);
 }
 </style>

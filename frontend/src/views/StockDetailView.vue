@@ -548,7 +548,7 @@ const visibleSelectedGroups = computed(() => selectedGroups.value.slice(0, 2))
 const hiddenSelectedGroupCount = computed(() => Math.max(0, selectedGroups.value.length - visibleSelectedGroups.value.length))
 let syncingGroupSelect = false
 function tagStyle(color?: string) {
-  const c = color || '#909399'
+  const c = color || '#73757d'
   return { color: c, borderColor: c, backgroundColor: `${c}14` }
 }
 async function loadGroups() {

@@ -15,6 +15,7 @@ import { ArrowRight } from '@element-plus/icons-vue'
 import CandleChart from '@/components/CandleChart.vue'
 import EquityChart from '@/components/EquityChart.vue'
 import GrowthChart from '@/components/GrowthChart.vue'
+import { useStatusColorPalette } from '@/components/chartTheme'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -320,7 +321,15 @@ function roundEquityPoints(rd: DetailRound, initCap: number) {
 const pct = (v: number | null | undefined) => v == null ? '--' : (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%'
 const money = (v: number | null | undefined) => v == null ? '--' : Math.round(v).toLocaleString('zh-CN')
 const modeText = (m: string) => m === 'single' ? '单股' : '多股'
-const gradeColor = (g: string | null) => ({ S: '#e6a23c', A: '#67c23a', B: '#409eff', C: '#909399', D: '#f56c6c' } as Record<string, string>)[g || ''] || '#909399'
+const gradePalette = useStatusColorPalette()
+// 评级色统一消费语义色板：S=警示金、A=成功绿、B=主色蓝、C=中性灰、D=危险红。
+const gradeColor = (g: string | null) => ({
+  S: gradePalette.value.warning,
+  A: gradePalette.value.success,
+  B: gradePalette.value.primary,
+  C: gradePalette.value.muted,
+  D: gradePalette.value.danger,
+} as Record<string, string>)[g || ''] || gradePalette.value.muted
 
 // ── 键盘快捷键 ──
 function onKey(e: KeyboardEvent) {

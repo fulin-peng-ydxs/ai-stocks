@@ -10,6 +10,7 @@ import {
   VOLUME_MA_DEFINITIONS,
 } from '@/components/stock-chart/chartUtils'
 import { useStockChartTheme } from '@/components/stock-chart/useStockChartTheme'
+import { useStatusColorPalette } from '@/components/chartTheme'
 
 // 交易标记：在 K 线上标出买卖点（date=交易日, kind=买/卖, label=多行说明文本）
 export interface TradeMarker {
@@ -29,10 +30,11 @@ const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 let resizeListening = false
 const chartTheme = useStockChartTheme()
+const statusPalette = useStatusColorPalette()
 
-// 买卖标记色（刻意避开蜡烛红绿，免混淆）：买=蓝、卖=橙
-const BUY_COLOR = '#3b82f6'
-const SELL_COLOR = '#f5a623'
+// 买卖标记色（刻意避开蜡烛红绿，免混淆）：买=主色蓝、卖=警示橙，统一消费语义色板。
+const BUY_COLOR = computed(() => statusPalette.value.primary)
+const SELL_COLOR = computed(() => statusPalette.value.warning)
 
 // 主题色板
 const T = computed(() => {
@@ -135,7 +137,7 @@ function render() {
       if (i == null) return null
       const b = bars[i]
       const isBuy = m.kind === 'buy'
-      const color = isBuy ? BUY_COLOR : SELL_COLOR
+      const color = isBuy ? BUY_COLOR.value : SELL_COLOR.value
       return {
         coord: [i, isBuy ? b.low * 0.985 : b.high * 1.015],
         symbol: 'triangle', symbolRotate: isBuy ? 0 : 180, symbolSize: 12,

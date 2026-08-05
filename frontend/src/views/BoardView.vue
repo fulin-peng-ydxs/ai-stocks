@@ -594,7 +594,7 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .ops .lbl {
-  color: #606266;
+  color: var(--el-text-color-regular);
   font-size: var(--app-font-size-table);
 }
 .score {

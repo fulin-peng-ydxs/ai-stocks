@@ -1374,7 +1374,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <AppTableColumn prop="code" label="代码" />
               <AppTableColumn prop="name" label="名称" />
               <AppTableColumn label="综合分">
-                <template #default="{ row }"><b style="color: #d92626">{{ row.total_score }}</b></template>
+                <template #default="{ row }"><b style="color: var(--el-color-danger)">{{ row.total_score }}</b></template>
               </AppTableColumn>
               <AppTableColumn label="评级">
                 <template #default="{ row }">
@@ -2258,16 +2258,16 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   font-variant-numeric: tabular-nums;
 }
 .subchip.score.hi {
-  background: rgba(82, 196, 26, 0.14);
+  background: var(--score-high-bg);
 }
 .subchip.score.hi b {
-  color: #52c41a;
+  color: var(--score-high-text);
 }
 .subchip.score.mid {
-  background: rgba(250, 173, 20, 0.16);
+  background: var(--score-mid-bg);
 }
 .subchip.score.mid b {
-  color: #d48806;
+  color: var(--score-mid-text);
 }
 .subchip.score.lo {
   background: var(--el-fill-color);

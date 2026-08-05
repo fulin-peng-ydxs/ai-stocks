@@ -2285,8 +2285,8 @@ async function openTradeChart(row: TradeRow) {
 .history-run-option .opt-range { flex: 0 0 auto; float: none; margin-left: 0; }
 .opt-range { float: right; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); margin-left: 18px; }
 .dlg-legend { display: flex; align-items: center; gap: var(--app-space-4); margin-bottom: 8px; font-size: var(--app-font-size-caption); }
-.dlg-legend .lg.buy { color: #3b82f6; font-weight: var(--app-font-weight-section); }
-.dlg-legend .lg.sell { color: #f5a623; font-weight: var(--app-font-weight-section); }
+.dlg-legend .lg.buy { color: var(--el-color-primary); font-weight: var(--app-font-weight-section); }
+.dlg-legend .lg.sell { color: var(--el-color-warning); font-weight: var(--app-font-weight-section); }
 .dlg-legend .dlg-hint { color: var(--el-text-color-secondary); }
 .dlg-trades { margin-top: 8px; }
 .dlg-summary {

@@ -48,6 +48,8 @@ const PRESET_COLOR_KEYS = new Set<keyof StyleTokenConfig>([
   'success',
   'warning',
   'danger',
+  'marketUp',
+  'marketDown',
 ])
 
 function setCssVar(tokens: StyleTokenConfig, key: keyof StyleTokenConfig, cssName: string, unit = '') {
@@ -307,21 +309,24 @@ function applyPreset(key: string) {
   root.style.setProperty('--page-settings-footer-btn-bg', t.surfaceHover)
   root.style.setProperty('--page-settings-footer-btn-hover-bg', t.activeBg)
 
-  // 状态文本/评分档色统一从预设语义色派生（批次 A：消除 global.css 里 Element/AntD 默认橙绿红的平行硬编码）。
-  // 亮色文本用 dark-2 工艺（向黑收敛）保证白底对比与鲜明；夜间沿用预设主色（已偏亮）。
-  // 防御非法后端覆盖：非 #RRGGBB 时回落内置安全值，避免 blendHex 静默落黑。
-  const statusText = (color: string, fallback: string) => {
-    const base = isHexColor(color) ? color : fallback
-    return mode === 'dark' ? base : blendHex(base, '#000000', 0.8)
-  }
-  const statusBg = (color: string, fallback: string, alpha: number) =>
-    rgbaFromHex(isHexColor(color) ? color : fallback, alpha)
-  root.style.setProperty('--app-warning-text', statusText(t.warning, '#d97706'))
-  root.style.setProperty('--app-danger-text', statusText(t.danger, '#d9363e'))
-  root.style.setProperty('--score-high-text', statusText(t.success, '#168f63'))
-  root.style.setProperty('--score-high-bg', statusBg(t.success, '#168f63', mode === 'dark' ? 0.18 : 0.14))
-  root.style.setProperty('--score-mid-text', statusText(t.warning, '#d97706'))
-  root.style.setProperty('--score-mid-bg', statusBg(t.warning, '#d97706', mode === 'dark' ? 0.2 : 0.16))
+  // 金融涨跌色（涨红/跌绿）：感知亮度恒高于同名主体信号色一档，由预设统一提供并随明暗/预设联动。
+  const marketUp = isHexColor(t.marketUp) ? t.marketUp : t.danger
+  const marketDown = isHexColor(t.marketDown) ? t.marketDown : t.success
+  root.style.setProperty('--market-up-color', marketUp)
+  root.style.setProperty('--market-down-color', marketDown)
+
+  // 状态文本/评分档色统一消费预设语义主色（统一：同一语义同一值，不再 dark-2 压暗或 blend 提彩的第二套派生）。
+  // 防御非法后端覆盖：非 #RRGGBB 时回落到预设主色，避免 blendHex 静默落黑。
+  const ok = (c: string, fb: string) => (isHexColor(c) ? c : fb)
+  const warn = ok(t.warning, '#f58a07')
+  const dgr = ok(t.danger, '#f04438')
+  const okc = ok(t.success, '#0ea968')
+  root.style.setProperty('--app-warning-text', warn)
+  root.style.setProperty('--app-danger-text', dgr)
+  root.style.setProperty('--score-high-text', okc)
+  root.style.setProperty('--score-high-bg', rgbaFromHex(okc, mode === 'dark' ? 0.18 : 0.14))
+  root.style.setProperty('--score-mid-text', warn)
+  root.style.setProperty('--score-mid-bg', rgbaFromHex(warn, mode === 'dark' ? 0.2 : 0.16))
 
   setCssVar(t, 'cardRadius', '--layout-card-radius', 'px')
   setCssVar(t, 'controlRadius', '--layout-control-radius', 'px')

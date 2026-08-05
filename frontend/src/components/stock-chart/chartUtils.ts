@@ -94,8 +94,8 @@ export function trainingChartSeriesPalette(isDark: boolean): StockChartSeriesPal
 
 export function stockChartTheme(isDark: boolean): StockChartTheme {
   const base = echartsTheme(isDark)
-  const up = chartCssVariable('--market-up-color', isDark ? '#ff6b6b' : '#ef4d4d')
-  const down = chartCssVariable('--market-down-color', isDark ? '#45c486' : '#22b573')
+  const up = chartCssVariable('--market-up-color', isDark ? '#ff7a72' : '#f66055')
+  const down = chartCssVariable('--market-down-color', isDark ? '#3fdd90' : '#1ec96e')
 
   return {
     ...base,

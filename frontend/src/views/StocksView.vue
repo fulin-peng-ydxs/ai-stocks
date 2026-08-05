@@ -360,7 +360,7 @@ function pctClass(v: number | null | undefined): string {
   return v > 0 ? 'up' : v < 0 ? 'down' : ''
 }
 function tagStyle(color?: string) {
-  const c = color || '#909399'
+  const c = color || '#73757d'
   return {
     color: c,
     borderColor: c,
@@ -470,11 +470,11 @@ function viewCartOneByOne() {
 
 // ── 存为新分组 ──
 const createVisible = ref(false)
-const createForm = ref<{ name: string; group_date: string; description: string; color: string }>({ name: '', group_date: '', description: '', color: '#909399' })
+const createForm = ref<{ name: string; group_date: string; description: string; color: string }>({ name: '', group_date: '', description: '', color: '#73757d' })
 const creating = ref(false)
 function openCreate() {
   if (!cartCodes.value.length) return ElMessage.warning('请先勾选股票')
-  createForm.value = { name: '', group_date: dataMax.value || '', description: '', color: '#909399' }
+  createForm.value = { name: '', group_date: dataMax.value || '', description: '', color: '#73757d' }
   createVisible.value = true
 }
 async function doCreate() {
@@ -535,10 +535,10 @@ async function removeFromGroup() {
 
 // ── 编辑 / 删除分组 ──
 const editVisible = ref(false)
-const editForm = ref<{ name: string; group_date: string; description: string; color: string }>({ name: '', group_date: '', description: '', color: '#909399' })
+const editForm = ref<{ name: string; group_date: string; description: string; color: string }>({ name: '', group_date: '', description: '', color: '#73757d' })
 function openEdit() {
   if (!groupDetail.value) return
-  editForm.value = { name: groupDetail.value.name, group_date: groupDetail.value.group_date || '', description: groupDetail.value.description || '', color: groupDetail.value.color || '#909399' }
+  editForm.value = { name: groupDetail.value.name, group_date: groupDetail.value.group_date || '', description: groupDetail.value.description || '', color: groupDetail.value.color || '#73757d' }
   editVisible.value = true
 }
 async function doEdit() {
@@ -884,7 +884,7 @@ onBeforeUnmount(() => {
           <el-input v-model="createForm.description" type="textarea" :rows="2" placeholder="可选" />
         </el-form-item>
         <el-form-item label="颜色">
-          <el-color-picker v-model="createForm.color" :predefine="['#f56c6c', '#e6a23c', '#409eff', '#67c23a', '#909399', '#b882ff']" />
+          <el-color-picker v-model="createForm.color" :predefine="['#f66055', '#f58a07', '#1677ff', '#0ea968', '#73757d', '#b882ff']" />
           <span class="f-hint">用于列表标签和分组状态识别</span>
         </el-form-item>
       </el-form>
@@ -922,7 +922,7 @@ onBeforeUnmount(() => {
         <el-form-item label="建组日期"><TradeDatePicker v-model="editForm.group_date" clearable style="width: 200px" /></el-form-item>
         <el-form-item label="分组说明"><el-input v-model="editForm.description" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="颜色">
-          <el-color-picker v-model="editForm.color" :disabled="groupDetail?.is_default" :predefine="['#f56c6c', '#e6a23c', '#409eff', '#67c23a', '#909399', '#b882ff']" />
+          <el-color-picker v-model="editForm.color" :disabled="groupDetail?.is_default" :predefine="['#f66055', '#f58a07', '#1677ff', '#0ea968', '#73757d', '#b882ff']" />
           <span class="f-hint">{{ groupDetail?.is_default ? '默认自选固定为红色' : '用于列表标签和分组状态识别' }}</span>
         </el-form-item>
       </el-form>

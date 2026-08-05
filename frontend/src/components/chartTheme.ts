@@ -21,25 +21,25 @@ export function chartCssVariable(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
 }
 
-/** 非股票 ECharts 的语义主题；只读取预设系统已经提交完成的 CSS token。 */
+/** 非股票 ECharts 的语义主题；只读取预设系统已经提交完成的 CSS token。fallback 与 balanced 预设同值，避免预设未就绪时回退到旧色。 */
 export function echartsTheme(isDark: boolean): EChartsTheme {
   return {
-    background: chartCssVariable('--el-bg-color', isDark ? '#0b0e16' : '#ffffff'),
-    axis: chartCssVariable('--el-border-color', isDark ? '#2b3550' : '#dcdfe6'),
-    split: chartCssVariable('--el-border-color-lighter', isDark ? '#161c28' : '#ebeef5'),
-    label: chartCssVariable('--el-text-color-secondary', isDark ? '#8b94a7' : '#909399'),
-    text: chartCssVariable('--el-text-color-primary', isDark ? '#c9d1d9' : '#303133'),
+    background: chartCssVariable('--el-bg-color', isDark ? '#171717' : '#ffffff'),
+    axis: chartCssVariable('--el-border-color', isDark ? '#353535' : '#e5e5e5'),
+    split: chartCssVariable('--el-border-color-lighter', isDark ? '#353535' : '#e5e5e5'),
+    label: chartCssVariable('--el-text-color-secondary', isDark ? '#9a9a9a' : '#73757d'),
+    text: chartCssVariable('--el-text-color-primary', isDark ? '#f4f4f4' : '#17181c'),
     tooltipBackground: chartCssVariable(
       '--el-bg-color-overlay',
-      isDark ? 'rgba(13,17,26,0.96)' : 'rgba(255,255,255,0.96)',
+      isDark ? 'rgba(23,23,23,0.96)' : 'rgba(255,255,255,0.96)',
     ),
-    tooltipBorder: chartCssVariable('--el-border-color', isDark ? '#2b3550' : '#dcdfe6'),
-    focus: chartCssVariable('--el-color-primary', '#409eff'),
-    accent: chartCssVariable('--el-color-warning', '#e6a23c'),
-    muted: chartCssVariable('--el-text-color-placeholder', isDark ? '#687386' : '#a8abb2'),
+    tooltipBorder: chartCssVariable('--el-border-color', isDark ? '#353535' : '#e5e5e5'),
+    focus: chartCssVariable('--el-color-primary', isDark ? '#3b8cff' : '#1677ff'),
+    accent: chartCssVariable('--el-color-warning', isDark ? '#f5a623' : '#f58a07'),
+    muted: chartCssVariable('--el-text-color-placeholder', isDark ? '#9a9a9a' : '#73757d'),
     area: chartCssVariable(
       '--el-color-primary-light-9',
-      isDark ? 'rgba(64,158,255,0.18)' : 'rgba(64,158,255,0.10)',
+      isDark ? 'rgba(59,140,255,0.18)' : 'rgba(22,119,255,0.10)',
     ),
   }
 }
@@ -61,4 +61,34 @@ export function useResponsiveEChartsTheme<T>(
 
 export function useEChartsTheme(): ComputedRef<EChartsTheme> {
   return useResponsiveEChartsTheme(echartsTheme)
+}
+
+/**
+ * 语义状态/金融色快照：供内联 style 的组件（评分热力、评级、买卖标记等）消费当前生效 token。
+ * 与 Canvas 一致监听 themeRevision，预设/明暗切换后自动重取；fallback 与 balanced 预设同值。
+ */
+export interface StatusColorPalette {
+  primary: string
+  success: string
+  warning: string
+  danger: string
+  marketUp: string
+  marketDown: string
+  muted: string
+}
+
+export function statusColorPalette(isDark: boolean): StatusColorPalette {
+  return {
+    primary: chartCssVariable('--el-color-primary', isDark ? '#3b8cff' : '#1677ff'),
+    success: chartCssVariable('--el-color-success', isDark ? '#3ecf8e' : '#0ea968'),
+    warning: chartCssVariable('--el-color-warning', isDark ? '#f5a623' : '#f58a07'),
+    danger: chartCssVariable('--el-color-danger', isDark ? '#ff6b66' : '#f04438'),
+    marketUp: chartCssVariable('--market-up-color', isDark ? '#ff7a72' : '#f66055'),
+    marketDown: chartCssVariable('--market-down-color', isDark ? '#3fdd90' : '#1ec96e'),
+    muted: chartCssVariable('--el-text-color-secondary', isDark ? '#9a9a9a' : '#73757d'),
+  }
+}
+
+export function useStatusColorPalette(): ComputedRef<StatusColorPalette> {
+  return useResponsiveEChartsTheme(statusColorPalette)
 }

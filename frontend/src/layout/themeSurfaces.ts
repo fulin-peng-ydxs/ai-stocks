@@ -5,6 +5,8 @@ export const STYLE_COLOR_TOKEN_KEYS = [
   'success',
   'warning',
   'danger',
+  'marketUp',
+  'marketDown',
   'pageBg',
   'surfaceBg',
   'surfaceHover',

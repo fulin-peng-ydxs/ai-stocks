@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { SCORE_DIMS, type SubScores } from '@/api/board'
+import { useStatusColorPalette } from './chartTheme'
 
 const props = defineProps<{ sub: SubScores | null }>()
 
-// 每个维度按各自满分归一成强弱比例 → 颜色（深绿强 → 黄中 → 橙/红弱）
+// 强弱热力统一消费语义色板：强=金融跌绿/成功绿 → 中=警示橙 → 弱=危险红/金融涨红。
+const palette = useStatusColorPalette()
 function heatColor(r: number): string {
-  if (r >= 0.85) return '#2e9e5b' // 强
-  if (r >= 0.65) return '#5cb85c'
-  if (r >= 0.45) return '#e0a030' // 中
-  if (r >= 0.25) return '#e8833a'
-  return '#d9534f' // 弱
+  const p = palette.value
+  if (r >= 0.85) return p.marketDown // 强
+  if (r >= 0.65) return p.success
+  if (r >= 0.45) return p.warning // 中
+  if (r >= 0.25) return p.danger
+  return p.marketUp // 弱
 }
 
 const cells = computed(() =>

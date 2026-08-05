@@ -24,7 +24,8 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
     tokens: tokens(
       { cardRadius: 10, controlRadius: 6, pageGap: 14, cardPadding: 18, tableCellPaddingY: 10 },
       {
-        primary: '#1677ff', success: '#168f63', warning: '#d97706', danger: '#d9363e',
+        primary: '#1677ff', success: '#0ea968', warning: '#f58a07', danger: '#f04438',
+        marketUp: '#f66055', marketDown: '#1ec96e',
         pageBg: THEME_SURFACE_SPECS.light.pageBg,
         surfaceBg: THEME_SURFACE_SPECS.light.surfaceBg,
         surfaceHover: '#f3f3f3',
@@ -34,7 +35,8 @@ export const LAYOUT_PRESETS: Record<LayoutPresetKey, LayoutPreset> = {
         shadow: 'rgba(20, 24, 32, 0.10)',
       },
       {
-        primary: '#3b8cff', success: '#35c48d', warning: '#f0a43c', danger: '#ff6670',
+        primary: '#3b8cff', success: '#3ecf8e', warning: '#f5a623', danger: '#ff6b66',
+        marketUp: '#ff7a72', marketDown: '#3fdd90',
         pageBg: THEME_SURFACE_SPECS.dark.pageBg,
         surfaceBg: THEME_SURFACE_SPECS.dark.surfaceBg,
         surfaceHover: '#292929',
