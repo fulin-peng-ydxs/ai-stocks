@@ -422,7 +422,7 @@ onMounted(() => { loadTree() })
       <div class="lh-action">
         <div class="page-head">
           <h2>
-            菜单与功能
+            菜单功能
             <HelpTip title="菜单与功能管理说明" :width="440">
               左侧菜单树可新增 / 拖拽排序 / 删除；选中节点后在右侧维护其属性与功能点。<br /><br />
               菜单 icon 存 Element Plus 图标名，从图标选择器中选；分组不导航、无需路由。<br /><br />
@@ -620,7 +620,6 @@ onMounted(() => { loadTree() })
                       />
                       <div v-else class="mr-code-cell">
                         <span class="mono">{{ r.code }}</span>
-                        <SystemBuiltinTag v-if="r.is_builtin" />
                       </div>
                     </template>
                   </AppTableColumn>

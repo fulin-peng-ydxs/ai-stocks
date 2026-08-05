@@ -132,7 +132,7 @@ describe('角色页 loadAll error+retry 闭环', () => {
 describe('菜单页 loadResources error+retry 闭环', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
-  it('系统内置标签统一展示在菜单名称和功能码后面', async () => {
+  it('系统内置标签展示在菜单名称后；功能码行不再重复打内置标签', async () => {
     ;(menuApi.listMenus as ReturnType<typeof vi.fn>).mockResolvedValue([
       { ...MENU, id: 'builtin', title: '系统菜单', is_builtin: true },
     ])
@@ -143,7 +143,7 @@ describe('菜单页 loadResources error+retry 闭环', () => {
       w.get(selector).element.textContent?.replace(/\s+/g, '')
 
     expect(normalizedText('.mname')).toBe('系统菜单系统内置')
-    expect(normalizedText('.el-table__body .mr-code-cell')).toBe('menu:view系统内置')
+    expect(normalizedText('.el-table__body .mr-code-cell')).toBe('menu:view')
   })
 
   it('快速切换菜单时忽略较早返回的功能点响应', async () => {
