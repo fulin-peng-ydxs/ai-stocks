@@ -219,4 +219,17 @@ describe('AssetProfileSelect', () => {
     expect(wrapper.find('[data-testid="asset-profile-select-search"]').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('未传 defaultItemKey 时抽屉不渲染「设为默认」动作（仅榜单页生效）', async () => {
+    const { wrapper } = mountSelect({
+      browse: async () => ({ items: [publicItem], total: 1, page: 1, page_size: 20, source: 'preset' }),
+    })
+    await flush()
+    await wrapper.find('[data-testid="asset-profile-select-search"]').trigger('click')
+    await flush()
+    // 默认场景未传 defaultItemKey：抽屉操作列不应出现「设为默认加载方案」
+    const btn = document.querySelector<HTMLElement>('[data-testid="asset-profile-select-default"]')
+    expect(btn).toBeNull()
+    wrapper.unmount()
+  })
 })

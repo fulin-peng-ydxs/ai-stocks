@@ -51,7 +51,7 @@ const props = withDefaults(defineProps<{
   labelMine: '我的方案',
   testId: 'asset-profile-select',
   selectLoaded: false,
-  defaultItemKey: '',
+  defaultItemKey: undefined,
 })
 
 const emit = defineEmits<{
