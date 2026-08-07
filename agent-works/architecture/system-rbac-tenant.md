@@ -30,6 +30,8 @@ RBAC 主数据落 PostgreSQL，核心表由 `backend/storage/pg_ddl.py` 创建�
 
 `perm_resolver.resolve(user_id)` 是有效权限解析入口：system 角色拥有全量菜单和功能点；非 system 用户取所有角色菜单与功能点并集；无角色用户返回空权限。登录基线共享读码由后端在解析时强制并入，角色页不持久化这类基线授权。
 
+**system 判定认结构标记而非具体账号**：解析时以 `sys_role.code='system' OR sys_role.kind='system'` 识别系统角色（`backend/auth/constants.py` 的 `ROLE_SYSTEM` 是唯一角色常量），命中即短路返回全量菜单 + 全量功能点，不查 `sys_role_menu` / `sys_role_resource`。也就是说「系统角色」是一种结构化语义——把任一角色 `kind` 置为 `system` 即获得该特权，而非写死某个角色 ID 或账号；这是设计上唯一的固定特权边界，全系统没有其他按角色名 / 角色 ID 写死放行的分支。
+
 ### 3. 接口级授权
 
 接口授权在 FastAPI 依赖层完成，入口在 `backend/auth/deps.py`：
@@ -41,6 +43,8 @@ RBAC 主数据落 PostgreSQL，核心表由 `backend/storage/pg_ddl.py` 创建�
 | `require_system_perm(code)` | system-only 端点的精确资源码标注 | 运行时等同 system 守卫，同时给路由扫描和审计保留资源码 |
 
 权限码精确匹配，不使用通配符。用户状态、租户状态、角色授权、菜单资源变更会让受影响用户 `perm_ver` 自增；业务写入和 `perm_ver` 自增在同一 PG 事务提交，Redis 清缓存只是提交后的优化。旧 token 下次请求因 `perm_ver` 不一致失效。
+
+system-only 边界在数据层还有一道防线：`role_repository` 的 `system_only_resource_ids()` 归集 `visible='system'` 菜单下挂的全部资源码，角色授权（`PUT /api/roles/{id}/perms`）落库时拦下这些码、防止被误授予非 system 角色——即「接口守卫 + 数据层拦截」双保险，即使前端或服务层绕过，特权功能码也无法经授权表外泄到普通角色。
 
 ### 4. 前端授权消费
 
