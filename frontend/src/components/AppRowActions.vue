@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { getActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
-import type { AppRowAction, AppRowActionType } from './rowActions'
+import {
+  computeRowLayout,
+  type AppRowAction,
+  type AppRowActionMeasure,
+  type AppRowActionType,
+} from './rowActions'
 
 const props = withDefaults(defineProps<{
   actions: AppRowAction[]
@@ -29,6 +34,15 @@ const menuStyle = ref<Record<string, string>>({})
 let listening = false
 let positionFrame: number | null = null
 
+// ── 宽度自适应折叠 ──
+const rootEl = ref<HTMLElement | null>(null)
+const measureEl = ref<HTMLElement | null>(null)
+const moreMeasureBtn = ref<ButtonRef>(null)
+const widthMap = ref<Record<string, number>>({})
+const availableWidth = ref(0)
+const moreWidth = ref(0)
+let observer: ResizeObserver | null = null
+
 function isAllowed(action: AppRowAction): boolean {
   if (action.visible === false) return false
   if (!action.permission) return true
@@ -38,18 +52,95 @@ function isAllowed(action: AppRowAction): boolean {
 
 const visibleActions = computed(() => props.actions.filter(isAllowed))
 
-const inlineActions = computed(() => {
-  const limit = Math.max(0, props.inlineLimit)
-  return visibleActions.value
-    .filter((action) => action.placement !== 'more')
-    .slice(0, limit)
+const measuredActions = computed<AppRowActionMeasure[]>(() =>
+  visibleActions.value.map((action) => {
+    const width = widthMap.value[action.key]
+    return { ...action, measured: width, measuredOk: width !== undefined }
+  }),
+)
+
+const widthModeReady = computed(() => {
+  if (visibleActions.value.length === 0 || availableWidth.value <= 0) return false
+  const fillable = visibleActions.value.filter((action) => action.placement !== 'more')
+  if (fillable.length && fillable.some((action) => widthMap.value[action.key] === undefined)) {
+    return false
+  }
+  return true
 })
+
+const layout = computed(() => {
+  const limit = Math.max(0, props.inlineLimit)
+  if (widthModeReady.value) {
+    return computeRowLayout(measuredActions.value, availableWidth.value, limit, moreWidth.value)
+  }
+  // 兜底：无实测宽度（jsdom / 测量不可用）时退化为纯数量逻辑
+  const fillable = visibleActions.value.filter((action) => action.placement !== 'more')
+  const inlineCount = Math.max(0, Math.min(fillable.length, limit))
+  const hasMore =
+    inlineCount < fillable.length ||
+    visibleActions.value.some((action) => action.placement === 'more')
+  return { inlineCount, hasMore }
+})
+
+const inlineMeasureActions = computed(() =>
+  measuredActions.value.filter((action) => action.placement !== 'more').slice(0, layout.value.inlineCount),
+)
+
+const inlineActions = computed(() =>
+  visibleActions.value.filter((action) => action.placement !== 'more').slice(0, layout.value.inlineCount),
+)
 
 const moreActions = computed(() => {
   const inlineKeys = new Set(inlineActions.value.map((action) => action.key))
   return visibleActions.value.filter((action) => (
     action.placement === 'more' || !inlineKeys.has(action.key)
   ))
+})
+
+function measure(): void {
+  const parent = rootEl.value?.parentElement
+  if (parent) {
+    const cs = getComputedStyle(parent)
+    const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
+    availableWidth.value = Math.max(0, parent.clientWidth - padX)
+  } else {
+    availableWidth.value = 0
+  }
+
+  const buttons = measureEl.value?.querySelectorAll('.app-row-actions__button') ?? []
+  const next: Record<string, number> = {}
+  visibleActions.value.forEach((action, index) => {
+    const btn = buttons[index] as HTMLElement | undefined
+    if (btn && btn.offsetWidth > 0) next[action.key] = btn.offsetWidth
+  })
+  const moreEl = moreMeasureBtn.value
+  const moreNode = moreEl
+    ? moreEl instanceof HTMLElement ? moreEl : moreEl.$el ?? null
+    : null
+  if (moreNode && moreNode.offsetWidth > 0) moreWidth.value = moreNode.offsetWidth
+
+  widthMap.value = next
+}
+
+function setupObserver(): void {
+  const parent = rootEl.value?.parentElement
+  if (!parent || typeof ResizeObserver === 'undefined') return
+  observer = new ResizeObserver(() => measure())
+  observer.observe(parent)
+}
+
+function teardownObserver(): void {
+  observer?.disconnect()
+  observer = null
+}
+
+watch(visibleActions, () => { void nextTick(measure) })
+
+onMounted(() => {
+  void nextTick(() => {
+    measure()
+    setupObserver()
+  })
 })
 
 function actionTone(action: AppRowAction, inlineIndex?: number): AppRowActionType {
@@ -173,14 +264,23 @@ function runMenuAction(action: AppRowAction, event: MouseEvent): void {
   closeMenu()
 }
 
-onBeforeUnmount(removeListeners)
+onBeforeUnmount(() => {
+  teardownObserver()
+  removeListeners()
+})
 </script>
 
 <template>
-  <div class="app-row-actions" role="group" :aria-label="ariaLabel" :data-testid="testId">
+  <div
+    ref="rootEl"
+    class="app-row-actions"
+    role="group"
+    :aria-label="ariaLabel"
+    :data-testid="testId"
+  >
     <template v-if="visibleActions.length">
       <el-button
-        v-for="(action, index) in inlineActions"
+        v-for="(action, index) in inlineMeasureActions"
         :key="action.key"
         class="app-row-actions__button"
         :class="actionClass(action, index)"
@@ -212,6 +312,34 @@ onBeforeUnmount(removeListeners)
       </span>
     </template>
     <span v-else class="app-row-actions__empty">{{ emptyText }}</span>
+    <span
+      v-if="visibleActions.length"
+      ref="measureEl"
+      class="app-row-actions__measure"
+      aria-hidden="true"
+      :data-testid="testId ? `${testId}-measure` : undefined"
+    >
+      <el-button
+        v-for="(action, index) in measuredActions"
+        :key="action.key"
+        class="app-row-actions__button"
+        :class="actionClass(action, index)"
+        link
+        size="small"
+      >
+        {{ action.label }}
+      </el-button>
+      <el-button
+        v-if="visibleActions.length"
+        ref="moreMeasureBtn"
+        class="app-row-actions__button app-row-actions__more"
+        link
+        size="small"
+      >
+        {{ moreLabel }}
+        <el-icon class="app-row-actions__more-icon"><ArrowDown /></el-icon>
+      </el-button>
+    </span>
     <Teleport to="body">
       <div
         v-if="menuOpen"
@@ -314,6 +442,21 @@ onBeforeUnmount(removeListeners)
 
 .app-row-actions__empty {
   color: var(--el-text-color-secondary);
+}
+
+.app-row-actions__measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--app-space-2);
+  max-width: none;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: -1;
 }
 
 .app-row-actions-menu {

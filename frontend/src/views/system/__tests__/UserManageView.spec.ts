@@ -225,7 +225,9 @@ describe('UserManageView 系统管理员保护', () => {
   it('租户管理员不能操作系统管理员用户', async () => {
     const wrapper = await mountView('tenant_admin')
     const rowActions = wrapper.get('[data-testid="user-row-actions-debug_system"]')
-    const buttons = rowActions.findAll('button')
+    const buttons = rowActions.findAll('button').filter((button) => {
+      return !(button.element as HTMLElement).closest('.app-row-actions__measure')
+    })
     expect(buttons.map((button) => button.text())).toEqual(['编辑', '重置密码', '解锁', '更多'])
     expect(buttons.slice(0, 3).every((button) => button.attributes('disabled') !== undefined)).toBe(true)
   })

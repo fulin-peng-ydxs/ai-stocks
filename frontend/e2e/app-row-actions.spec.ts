@@ -42,4 +42,30 @@ test.describe('列表操作组件', () => {
     await page.getByRole('heading', { name: '用户管理' }).click()
     await expect(menu).toBeHidden()
   })
+
+  test('可见操作按钮不超出操作列边界（宽度折叠保证不硬截断）', async ({ page }) => {
+    await expect(page.getByRole('table', { name: '用户列表', exact: true }))
+      .toHaveAttribute('aria-busy', 'false')
+    const actions = page.getByTestId('user-row-actions-debug_system')
+    await expect(actions).toBeVisible()
+
+    const result = await actions.evaluate((el) => {
+      const cell = el.closest('td')
+      if (!cell) return { ok: false, reason: 'no cell' }
+      const cellRect = cell.getBoundingClientRect()
+      const visibleButtons = Array.from(el.querySelectorAll('.app-row-actions__button'))
+        .filter((b) => !(b as HTMLElement).closest('.app-row-actions__measure'))
+      const overflowed = visibleButtons.filter((b) => {
+        const r = b.getBoundingClientRect()
+        return r.right > cellRect.right + 0.5 || r.left < cellRect.left - 0.5
+      })
+      return {
+        ok: overflowed.length === 0,
+        cellWidth: Math.round(cellRect.width),
+        buttonTexts: visibleButtons.map((b) => b.textContent?.trim()),
+      }
+    })
+    // 任一可见按钮超出操作列边界即说明发生了硬截断（宽度折叠应把它们收进更多）
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+  })
 })
