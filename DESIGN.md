@@ -194,7 +194,7 @@ Key Characteristics：
 |---|---|---|---|---|
 | `PageSettingsDrawer` | `frontend/src/components/PageSettingsDrawer.vue` | 统一页面设置抽屉运行时组件 | 对应 `settings-drawer` 种类；`size/defaultCollapsed` 的用户偏好走 PG `user_preference`，`bodyScroll/collapsibleSections` 只允许 preset/page 层 | `supportsPageSettings !== false` 的 registry 页面统一使用，禁止页面另写第二套设置抽屉 |
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
-| `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉边界组件 | 无直接系统组件种类 | 页面打开的设置、详情、日志抽屉统一挂载到 `LayoutHost` 内容区；宽度只传 `sm/md/lg/xl/wide` 语义档位，禁止页面私传 px/%；`wide` 仅供日志、字段差异和长 JSON 等宽内容；禁止直接覆盖应用顶栏与导航 |
+| `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉边界组件 | 无直接系统组件种类 | 页面打开的设置、详情、日志抽屉统一挂载到 `LayoutHost` 内容区；宽度只传 `sm/md/lg/xl/xxl/wide` 语义档位，禁止页面私传 px/%；`wide` 仅供日志、字段差异和长 JSON 等宽内容，`xxl` 供资产搜索等需更宽横向空间的复杂详情；禁止直接覆盖应用顶栏与导航 |
 | `LayoutHost` | `frontend/src/layout/components/LayoutHost.vue` | registry 页面统一布局、slot、滚动和 overlay 运行时宿主 | 消费 `PageLayout` 中登记的系统组件种类与区域 | 所有 registry 业务页面统一消费；页面不得绕过宿主手写页面外壳、主成长区、滚动归属或 overlay 边界 |
 | `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 消费 `pageRegistry.consumedComponentFields`、`componentMeta` 和 `COMPONENT_FIELD_DEFS` | 设置抽屉 user 层与页面布局编辑器 page 层共用；候选项可由页面按当前业务上下文传入运行时 meta 覆盖，避免不同面板的分区混显；枚举候选较多而使用下拉框时，输入框必须与 `PageSegmented` 共用连续底板、基础边框和明确聚焦态 |
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉的分组容器 | 无直接系统组件种类 | 页面设置抽屉分组优先复用；不直接用于主内容区配置面板 |
@@ -529,7 +529,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 单个大表、大图、大列表不靠多列重排解决高度问题，优先内部滚动。
 - 多组件平级块只有在都允许重排、无强阅读顺序且最小宽度满足时才进入 `columns`。
 - `workbench` 类页面采用固定分析块 + 主成长区，放不下时由主区域兜底滚动。
-- 抽屉宽度使用 `PageDrawer` 的受控档位：`sm=320px`、`md=360px`、`lg=440px`、`xl=560px`、`wide=clamp(560px, 46%, 760px)`。`wide` 只用于日志、字段差异、长 JSON 等需要横向阅读且应随页面内容区增长的场景；`xl` 用于固定宽度的复杂详情和组件预览。页面只传语义档位，不得私传 px 或百分比；页面设置抽屉只开放 `sm/md/lg`。
+- 抽屉宽度使用 `PageDrawer` 的受控档位：`sm=320px`、`md=360px`、`lg=440px`、`xl=560px`、`xxl=clamp(640px, 60%, 820px)`、`wide=clamp(560px, 46%, 760px)`。`wide` 只用于日志、字段差异、长 JSON 等需要横向阅读且应随页面内容区增长的场景；`xl` 用于固定宽度的复杂详情和组件预览；`xxl` 用于资产搜索等需要比 `xl` 更宽横向空间的复杂详情，窄屏下仍有限度下探。页面只传语义档位，不得私传 px 或百分比；页面设置抽屉只开放 `sm/md/lg`。
 - 弹窗和抽屉允许 `max-height` 作为视口安全上限，但不能用视口高度驱动页面主体布局。
 
 ## 9. AI 开发入口

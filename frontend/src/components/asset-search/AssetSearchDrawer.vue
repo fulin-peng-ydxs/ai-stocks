@@ -287,7 +287,6 @@ function rowActions(item: AssetBrowseItem): AppRowAction[] {
           key: 'default',
           label: '设为默认加载方案',
           testId: `${props.testId}-default`,
-          type: 'primary',
           title: '设为默认后，进入榜单页且自己没有评分方案时自动装载该方案',
           onClick: () => props.setDefaultItem!(item),
         })
@@ -298,8 +297,8 @@ function rowActions(item: AssetBrowseItem): AppRowAction[] {
 const emptyText = computed(() => `暂无${SOURCE_LABEL[source.value]}${props.assetLabel}`)
 const searchPlaceholder = computed(() => (
   props.kind === 'backtest'
-    ? '按引用方案名/回测类型搜索（留空显示该来源全部）'
-    : `按${props.assetLabel}名称搜索（留空显示该来源全部）`
+    ? '按引用方案名/回测类型搜索'
+    : `按${props.assetLabel}名称搜索`
 ))
 
 function profileOf(item: AssetBrowseItem): ProfileSummary | null {
@@ -311,7 +310,7 @@ function backtestOf(item: AssetBrowseItem): BacktestRunSummary | null {
 </script>
 
 <template>
-  <PageDrawer v-model="open" size="xl" :title="`浏览${assetLabel}`" class="asset-search-drawer">
+  <PageDrawer v-model="open" size="xxl" :title="`浏览${assetLabel}`" class="asset-search-drawer">
     <div class="asset-search" :data-testid="testId">
       <div v-if="canBrowse" class="asset-search__toolbar">
         <PageSegmented

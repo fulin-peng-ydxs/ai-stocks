@@ -109,6 +109,7 @@ describe('PageDrawer 页面边界', () => {
       md: '360px',
       lg: '440px',
       xl: '560px',
+      xxl: 'clamp(640px, 60%, 820px)',
       wide: 'clamp(560px, 46%, 760px)',
     })
   })
