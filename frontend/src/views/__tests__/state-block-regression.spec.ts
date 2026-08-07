@@ -93,6 +93,7 @@ vi.mock('@/api/data', () => ({
 }))
 vi.mock('@/api/screening', () => ({
   copyProfile: vi.fn(),
+  deleteProfile: vi.fn(),
   getProfile: vi.fn(),
   getProfileVersions: vi.fn(),
   listProfiles: vi.fn(),
@@ -551,6 +552,56 @@ describe('代表性页面四态回归', () => {
     expect(screeningApi.runScreen).toHaveBeenCalledWith(
       expect.objectContaining({ profile_id: 'ref_pub2' }),
     )
+  })
+
+  it('筛选页载入自己的可写方案显示删除按钮', async () => {
+    ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'mine1',
+      name: '我的筛选方案',
+      version: 2,
+      is_preset: false,
+      visibility: 'private',
+      readonly: false,
+      expression: { op: 'AND', children: [{ type: 'col', field: 'bull_arrange', cmp: '==', value: true }] },
+    })
+    const wrapper = await mountView(ScreenView)
+    wrapper.findComponent(AssetProfileSelect).vm.$emit('loaded', {
+      id: 'mine1',
+      name: '我的筛选方案',
+      version: 2,
+      source: 'mine',
+      readonly: false,
+    })
+    await flushPromises()
+    // 限定「载入方案」行作用域：页面另有条件行的行内删除按钮，不能按全页文本匹配
+    const loadRow = wrapper.find('.load-row')
+    expect(loadRow.findAll('button').find((b) => b.text().trim() === '删除')).toBeTruthy()
+  })
+
+  it('筛选页载入只读公开方案不显示删除按钮', async () => {
+    ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'pub1',
+      profile_ref: 'ref_pub1',
+      name: '公开筛选方案',
+      version: 3,
+      is_preset: false,
+      visibility: 'public',
+      readonly: true,
+      expression: { op: 'AND', children: [{ type: 'col', field: 'bull_arrange', cmp: '==', value: true }] },
+    })
+    const wrapper = await mountView(ScreenView)
+    wrapper.findComponent(AssetProfileSelect).vm.$emit('loaded', {
+      id: 'pub1',
+      profile_ref: 'ref_pub1',
+      name: '公开筛选方案',
+      version: 3,
+      source: 'public',
+      readonly: true,
+    })
+    await flushPromises()
+    // 只读公开态：载入区不应出现删除按钮（条件行的行内删除按钮属另一作用域，不参与断言）
+    const loadRow = wrapper.find('.load-row')
+    expect(loadRow.findAll('button').find((b) => b.text().trim() === '删除')).toBeFalsy()
   })
 
   it('回测运行失败落到结果区错误态', async () => {

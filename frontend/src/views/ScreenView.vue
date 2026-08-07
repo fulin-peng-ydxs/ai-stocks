@@ -2,11 +2,12 @@
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
   browseProfiles,
   copyProfile,
+  deleteProfile,
   getProfile,
   getProfileVersions,
   listProfiles,
@@ -437,6 +438,17 @@ async function copyCurrentProfile() {
   loadId.value = copied ? (copied.profile_ref || copied.id) : (r.profile_ref || r.id)
 }
 
+// 删除自己的方案（readonly/公开态不可删，后端亦按归属 403）；删后清空编辑区并刷新 mine 列表
+async function removeCurrentProfile() {
+  if (!loadId.value || !loadedProfile.value || profileReadonly.value) return
+  await ElMessageBox.confirm(`确认删除方案「${loadedProfile.value.name}」？`, '提示', { type: 'warning' })
+  await deleteProfile(loadId.value)
+  ElMessage.success('已删除')
+  // 先经组件 reload 刷新 mine 列表，再清空载入态（避免 watch(loadId) 误拉已删详情）
+  await profileSelectRef.value?.reload()
+  clearAll()
+}
+
 // ── 历史版本 ──
 const verVisible = ref(false)
 const versions = ref<ProfileVersion[]>([])
@@ -553,6 +565,14 @@ onMounted(initializeScreen)
           @publish="publishProfile"
           @copy="copyCurrentProfile"
         />
+        <el-button
+          v-if="loadedProfile && !profileReadonly && !loadedProfile.is_preset"
+          v-permission="'screen-profile:delete'"
+          type="danger"
+          plain
+          size="small"
+          @click="removeCurrentProfile"
+        >删除</el-button>
         <el-button text size="small" @click="clearAll">清空</el-button>
       </div>
       <AppStateBlock
@@ -652,14 +672,14 @@ onMounted(initializeScreen)
             <template #icon><el-icon><Plus /></el-icon></template>
             表达式条件
           </el-button>
+          <HelpTip title="表达式语法" :width="400">
+            <p style="margin:0">算子：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C 收 / O 开 / H 高 / L 低 / V 量 / TURN 换手。</p>
+            <p style="margin:6px 0 0">点时安全：仅用 ≤ 当日数据，无未来函数。</p>
+          </HelpTip>
           <el-button v-permission="'screen-profile:save'" text type="primary" size="small" :disabled="profileReadonly" @click="openSave">
             <template #icon><el-icon><Plus /></el-icon></template>
             保存为方案
           </el-button>
-        </div>
-        <div class="dsl-help">
-          表达式算子：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C 收 O 开 H 高 L 低 V 量 TURN 换手。
-          点时安全（仅用 ≤ 当日数据，无未来函数）。
         </div>
         <pre v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</pre>
       </template>
@@ -839,14 +859,14 @@ onMounted(initializeScreen)
 }
 .b-actions {
   display: flex;
+  align-items: center;
   gap: var(--app-space-2);
   margin-top: 4px;
 }
-.dsl-help {
-  margin-top: 10px;
-  color: var(--app-muted-text);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-reading);
+/* 按钮组内的帮助图标：去掉自带左间距（由 flex gap 统一），并取消 inline 基线偏移以对齐按钮 */
+.b-actions :deep(.help-icon) {
+  margin-left: 0;
+  vertical-align: baseline;
 }
 .ast {
   margin: 12px 0 0;

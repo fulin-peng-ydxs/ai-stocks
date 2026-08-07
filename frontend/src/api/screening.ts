@@ -94,6 +94,11 @@ export function setProfileVisibility(
   return http.post(`/profiles/${pid}/visibility`, { visibility })
 }
 
+// 删除自己的筛选方案（连带版本历史）；后端对 readonly/他人方案 403（screen-profile:delete）
+export function deleteProfile(pid: string): Promise<{ msg: string }> {
+  return http.delete(`/profiles/${pid}`)
+}
+
 // C8：前端不再传 id，后端生成唯一 id、名称默认「原名 副本」，返回新标识供刷新选中
 export function copyProfile(
   pid: string,
