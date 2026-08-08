@@ -46,9 +46,9 @@
 - **筛选↔评分↔榜单**：
   - 筛选页 `/screen/run` → `ScreenScoreService.screen_scored`：跑筛选得命中票，再用固定 `ScoreModel` 给命中票打分排序、标/排 ST。
   - 每日榜单页 `/score-profiles/run` 与回测“查看当日榜单” `/board/compute` → 走评分快照层 `ScoreSnapshotRepo.get_board`，对全市场按评分方案排序，不依赖筛选。
-  - `/scores`、`/scores/top` 读 `score_result`（`rank_board` 落库的固定模型榜单）。
+  - 旧固定模型公共读 `/scores`、`/scores/top`（读 `score_result`）**已废弃删除**（前端无调用方，产品已切到评分快照层）。
 - **统一基座**：指标统一从指标注册表/`wide_snapshot` 取，筛选的 `ind` 叶子与评分项的 `indicator` 都经 `resolve_indicator`/`IndicatorDefRepo` 解析，表达式型指标动态算后 attach 成列。
-- **涉及表**（`backend/storage/ddl.py`）：
+- **涉及表**（`backend/storage/pg_ddl.py`；`ddl.py` 为迁移保留的旧 DuckDB 定义）：
   - `screen_profile` / `screen_profile_version`（ddl.py:196/291）：筛选方案 + 版本归档。
   - `score_profile` / `score_profile_version`（ddl.py:210/223）：评分方案（items+grade_thresholds）+ 版本归档。
   - `screen_result`（ddl.py:235）：筛选命中落库（run_date+profile_id+code）。
@@ -57,7 +57,7 @@
 - **涉及 API**：
   - 筛选方案 CRUD/版本/发布/复制/跑筛选：`backend/api/profiles.py`（`/profiles*`、`/profiles/{ref}/visibility`、`/profiles/{ref}/copy`、`/screen/run`）。
   - 评分方案 CRUD/版本/试算：`backend/api/score_profiles.py`（`/score-profiles*`、`/score-profiles/run`）。
-  - 榜单查询：`backend/api/board.py`（`/scores`、`/scores/top`、`/board/compute`）。
+  - 榜单查询：`backend/api/board.py`（`/board/run`、`/board/profiles`、`/board/compute`）。
 - **可见性**：筛选方案和评分方案均支持 `private / tenant / public`。API 使用 opaque `profile_ref` 解析真实 owner；非 owner 公开方案只读，可复制为自己的 private；**复制后运行/筛选**结果归当前执行者。**例外——榜单快照相反**：其结果归**方案 owner** 的缓存槽（非执行者），凡对该方案有可见性者共读同一份（见上「评分快照惰性物化与失效」共享语义）。
 - **前端**：`ScreenView.vue` 条件构建器（指标/表达式行 ↔ AST 互转、方案存取/版本恢复、公开范围标签/发布/复制、命中列表导出）；`BoardView.vue` 选评分方案+日期+TopN 拉榜单（调 `/score-profiles/run`，展示综合分/评级/分项徽章）。榜单方案选择走 `AssetProfileSelect`（`select-loaded` 选择即刷新），支持「默认加载方案」偏好（见下「每日榜单页 · 默认加载方案」）。
 

@@ -486,6 +486,89 @@ def bare_asset_id(ref_or_id: str) -> str:
         return ref_or_id
 
 
+# 方案资产类型 → backtest_run 引用列（_assert_no_own_refs / 收回拦截 / 删除级联共用）
+_PROFILE_BACKTEST_REF_COL: dict[str, str] = {
+    ASSET_SCREEN_PROFILE: "profile_id",
+    ASSET_SCORE_PROFILE: "score_profile_id",
+    ASSET_TRADE_PROFILE: "trade_profile_id",
+}
+
+
+def backtest_ref_column(asset_type: str) -> str:
+    """返回某方案资产类型在 backtest_run 中的引用列名。"""
+    col = _PROFILE_BACKTEST_REF_COL.get(normalize_asset_type(asset_type))
+    if col is None:
+        raise ValueError(f"资产类型 {asset_type} 无回测引用列")
+    return col
+
+
+def _ref_and_pid(asset_type: str, ref: str, tenant_id: str, owner_user_id: str) -> tuple[str, str]:
+    """统一构造该方案的 opaque ref 与裸 id（他人 ref 引用 / 本 owner 裸 id 存量引用两种形态）。"""
+    col_ref = make_asset_ref(asset_type, tenant_id, owner_user_id, bare_asset_id(ref))
+    return col_ref, bare_asset_id(col_ref)
+
+
+def referencing_backtest_runs(pg, *, asset_type: str, ref: str,
+                              tenant_id: str, owner_user_id: str) -> bool:
+    """是否有**本 owner**的回测记录引用该方案（裸 id 存量 + opaque ref）。
+
+    用于删除前拦截（P1 防悬空）：本 owner 的记录 owner 可自行处置（先删回测再删方案），
+    故删除仍拦。他人引用走 `referencing_backtest_runs_by_others` + 级联降级。
+    """
+    col = backtest_ref_column(asset_type)
+    col_ref, pid = _ref_and_pid(asset_type, ref, tenant_id, owner_user_id)
+    hit = pg.query_df(
+        f"SELECT 1 FROM backtest_run WHERE {col}=%s AND tenant_id=%s AND owner_user_id=%s "
+        f"OR ({col}=%s AND tenant_id=%s AND owner_user_id=%s) LIMIT 1",
+        [col_ref, tenant_id, owner_user_id, pid, tenant_id, owner_user_id])
+    return not hit.empty
+
+
+def referencing_backtest_runs_by_others(pg, *, asset_type: str, ref: str,
+                                        tenant_id: str, owner_user_id: str,
+                                        conn=None) -> bool:
+    """是否有**他人**的回测记录（opaque ref 形态）引用该方案。
+
+    公开方案被他人引用后 owner 无法删除的死锁根因：ref 编码真实归属、全局唯一，
+    backtest_run 引用列存他人 ref 时不受本 owner 归属限定。存在他人引用 → 删除需先级联降级。
+    传 `conn` 时并入调用方事务内查询（与删除同事务，避免查-删窗口竞态）。
+    """
+    col = backtest_ref_column(asset_type)
+    col_ref, _ = _ref_and_pid(asset_type, ref, tenant_id, owner_user_id)
+    sql = (
+        f"SELECT 1 FROM backtest_run WHERE {col}=%s "
+        f"AND NOT (tenant_id=%s AND owner_user_id=%s) LIMIT 1"
+    )
+    if conn is not None:
+        with pg.cursor_in(conn) as cur:
+            cur.execute(sql, [col_ref, tenant_id, owner_user_id])
+            return cur.fetchone() is not None
+    hit = pg.query_df(sql, [col_ref, tenant_id, owner_user_id])
+    return not hit.empty
+
+
+def downgrade_backtest_runs_referencing(pg, *, asset_type: str, ref: str,
+                                        tenant_id: str, owner_user_id: str,
+                                        conn=None) -> int:
+    """删除方案前，把引用它的**他人**公开/租户回测降级为 private 并清发布字段。
+
+    只降级他人引用的 run（本 owner 的 run 由 `_assert_no_own_refs` 拦截，owner 应先删回测）。
+    返回受影响行数。传 `conn` 时并入调用方事务（须与删除主表/版本表同事务原子提交，
+    避免降级成功但删除失败留下半更新）；否则自建事务自动提交。
+    """
+    col = backtest_ref_column(asset_type)
+    col_ref, _ = _ref_and_pid(asset_type, ref, tenant_id, owner_user_id)
+    sql = (
+        f"UPDATE backtest_run SET visibility='private', published_at=NULL, published_by=NULL "
+        f"WHERE {col}=%s AND NOT (tenant_id=%s AND owner_user_id=%s) AND visibility<>'private'"
+    )
+    if conn is not None:
+        with pg.cursor_in(conn) as cur:
+            cur.execute(sql, [col_ref, tenant_id, owner_user_id])
+            return max(cur.rowcount or 0, 0)
+    return pg.execute(sql, [col_ref, tenant_id, owner_user_id])
+
+
 def restore_backtest_private_dependencies(run: dict) -> dict | None:
     """回测收回 private 时还原方案引用列并重算 signature。
 

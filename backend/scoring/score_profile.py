@@ -36,6 +36,8 @@ from backend.services.asset_visibility import (
     resolve_asset_ref_or_legacy_id,
     scoped_query,
     summarize_asset_row,
+    referencing_backtest_runs_by_others,
+    downgrade_backtest_runs_referencing,
 )
 
 log = get_logger("scoring.score_profile")
@@ -414,6 +416,13 @@ class ScoreProfileRepo:
         )
         if ref.tenant_id != self.tenant_id or ref.owner_user_id != self.owner_user_id:
             raise PermissionError("只能修改自己的评分方案可见性")
+        # 收回为私有：他人引用的方案不可收回（会破坏引用它的公开回测的依赖可见性）；
+        # 本人引用不拦（owner 可先删回测再收回），与 _assert_no_own_refs 语义对齐。
+        if visibility == VISIBILITY_PRIVATE and referencing_backtest_runs_by_others(
+            self.pg, asset_type=ASSET_SCORE_PROFILE, ref=profile_ref_or_id,
+            tenant_id=self.tenant_id, owner_user_id=self.owner_user_id,
+        ):
+            raise ValueError("该方案被其他用户的回测记录引用，无法收回为私有，请先删除相关回测")
         now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
         self.pg.execute(
             "UPDATE score_profile SET visibility=%s, published_at=%s, published_by=%s, updated_at=%s "
@@ -503,28 +512,72 @@ class ScoreProfileRepo:
         return {"id": prof["id"], "profile_ref": prof["profile_ref"], "versions": out}
 
     def delete(self, pid: str) -> None:
-        self._assert_deletable(pid)
-        self.pg.execute(
-            f"DELETE FROM score_profile WHERE id=%s AND {self._own}", [pid, *self._op])
-        self.pg.execute(
-            f"DELETE FROM score_profile_version WHERE id=%s AND {self._own}", [pid, *self._op])
+        """删除方案及其版本历史（PG，按归属）。
 
-    def _assert_deletable(self, pid: str) -> None:
-        """删除前拦截,防悬空引用(P1)。"""
-        cur = self.pg.query_df(
-            f"SELECT visibility FROM score_profile WHERE id=%s AND {self._own}", [pid, *self._op])
-        if cur.empty:
+        单事务原子执行（评审 P2）：① 本人引用检查**恒执行**（无论是否他人引用，防悬空引用指向
+        已删 profile）；② 存在他人引用时级联降级其公开/租户 run 为 private（逃生口，跳过
+        "先收回 private" 可见性限制——他人 run 不是 owner 的，owner 处置不了）；③ 删除主表+版本表。
+        校验在事务外执行（直接抛 ValueError），数据变更在事务内原子提交，任一失败整体回滚。
+        """
+        # 校验（事务外，ValueError 原样抛给 API 层）：本人引用恒拦；无他人引用则须先收回 private
+        self._assert_no_own_refs(pid)
+        by_others = referencing_backtest_runs_by_others(
+            self.pg, asset_type=ASSET_SCORE_PROFILE, ref=pid,
+            tenant_id=self.tenant_id, owner_user_id=self.owner_user_id)
+        if not by_others:
+            self._assert_private(pid)
+        # 数据变更（单事务原子）：级联降级他人 run（如有）→ 删除主表 + 版本表
+        with self.pg.transaction() as conn:
+            if by_others:
+                downgrade_backtest_runs_referencing(
+                    self.pg, asset_type=ASSET_SCORE_PROFILE, ref=pid,
+                    tenant_id=self.tenant_id, owner_user_id=self.owner_user_id, conn=conn)
+            with self.pg.cursor_in(conn) as cur:
+                cur.execute(
+                    f"DELETE FROM score_profile WHERE id=%s AND {self._own}", [pid, *self._op])
+                cur.execute(
+                    f"DELETE FROM score_profile_version WHERE id=%s AND {self._own}", [pid, *self._op])
+
+    def _assert_private(self, pid: str, *, conn=None) -> None:
+        """删除前拦截：公开/租户态方案须先收回 private（无他人引用时生效）。"""
+        if conn is not None:
+            with self.pg.cursor_in(conn) as cur:
+                cur.execute(
+                    f"SELECT visibility FROM score_profile WHERE id=%s AND {self._own}",
+                    [pid, *self._op])
+                r = cur.fetchone()
+            vis = r[0] if r else None
+        else:
+            df = self.pg.query_df(
+                f"SELECT visibility FROM score_profile WHERE id=%s AND {self._own}",
+                [pid, *self._op])
+            vis = df.iloc[0]["visibility"] if not df.empty else None
+        if vis is None:
             return
-        if normalize_visibility(cur.iloc[0]["visibility"]) != VISIBILITY_PRIVATE:
+        if normalize_visibility(vis) != VISIBILITY_PRIVATE:
             raise ValueError("请先将方案收回为私有再删除")
-        # ref 全局唯一(编码 tenant/owner/id),裸 id 仅在本 owner 内唯一,须限归属避免误挡他人同名 id
+
+    def _assert_no_own_refs(self, pid: str, *, conn=None) -> None:
+        """本人回测引用检查（恒执行，P1 防悬空）：本人引用须先删回测。
+
+        本人引用（新 ref 形态 + 旧裸 id 存量）无论是否他人引用都拦，防止悬空引用指向已删 profile。
+        他人引用不在此拦（opaque ref 编码真实归属，无法按 owner 过滤排除；由 delete 级联降级）。
+        """
         ref = make_asset_ref(ASSET_SCORE_PROFILE, self.tenant_id, self.owner_user_id, pid)
-        hit = self.pg.query_df(
-            "SELECT 1 FROM backtest_run WHERE score_profile_id=%s "
-            "OR (score_profile_id=%s AND tenant_id=%s AND owner_user_id=%s) LIMIT 1",
-            [ref, pid, self.tenant_id, self.owner_user_id])
-        if not hit.empty:
-            raise ValueError("该方案被回测记录引用，无法删除，请先删除相关回测")
+        if conn is not None:
+            with self.pg.cursor_in(conn) as cur:
+                cur.execute(
+                    "SELECT 1 FROM backtest_run WHERE (score_profile_id=%s OR score_profile_id=%s) "
+                    "AND tenant_id=%s AND owner_user_id=%s LIMIT 1",
+                    [ref, pid, self.tenant_id, self.owner_user_id])
+                hit = cur.fetchone() is not None
+        else:
+            hit = not self.pg.query_df(
+                "SELECT 1 FROM backtest_run WHERE (score_profile_id=%s OR score_profile_id=%s) "
+                "AND tenant_id=%s AND owner_user_id=%s LIMIT 1",
+                [ref, pid, self.tenant_id, self.owner_user_id]).empty
+        if hit:
+            raise ValueError("该方案仍被回测记录引用，无法删除，请先删除相关回测")
 
     def seed_defaults(self) -> int:
         for p in DEFAULT_SCORE_PROFILES:

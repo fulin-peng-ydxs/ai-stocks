@@ -230,6 +230,9 @@ class ScreenScoreService:
             sig = self.compute_signals(run_date, scored["code"].tolist())
 
         if persist:
+            # 历史遗留：score_result 公共读端点（/scores、/scores/top）已废弃（前端无调用方，
+            # 产品已切到评分快照层 score_snapshot）。此分支仅 CLI cmd_rank 调试用，写当前 owner
+            # 槽，不再作为任何公共读的数据源。勿复用为生产榜单路径。
             dims = list(self.model.weights.keys())
 
             def _merged_risk(code: str) -> list[str]:

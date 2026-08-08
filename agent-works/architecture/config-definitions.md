@@ -28,7 +28,7 @@
 
 ### 3. 方案的版本化存储
 
-三类方案均为"主表存当前版本 + version 表存历史"双表结构（DDL 见 `backend/storage/ddl.py`）：
+三类方案均为"主表存当前版本 + version 表存历史"双表结构（DDL 见 `backend/storage/pg_ddl.py`；`ddl.py` 为迁移保留的旧 DuckDB 定义）：
 
 | 方案 | 主表 | 历史表 | 核心 JSON 字段 |
 |------|------|--------|---------------|

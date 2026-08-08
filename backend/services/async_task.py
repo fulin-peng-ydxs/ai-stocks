@@ -494,6 +494,8 @@ def _row(r) -> dict:
 
 # ── 任务处理器：(params, ctx) → result dict ─────────────────────────
 def _mark_snapshots_stale() -> int:
+    """标全量评分快照失效。兜底：IngestionService 编排方法收尾已标 stale（见 ingest.py
+    _mark_snapshots_stale），此处幂等重复 UPDATE 无害，保留作 handler 级保证。"""
     from backend.scoring.snapshot import ScoreSnapshotRepo
     return ScoreSnapshotRepo(get_client()).mark_stale_all()
 
@@ -577,6 +579,7 @@ def _h_ingest_date(params: dict, ctx: TaskContext) -> dict:
     ctx.progress(0.9, "刷新受影响日期的评分缓存…")
     from backend.scoring.snapshot import ScoreSnapshotRepo
     days = res.get("dates", [])
+    # 服务层已按 dates 细粒度标 stale（ingest_date 收尾）；此处幂等兜底，保证 handler 级覆盖
     stale = ScoreSnapshotRepo(get_client()).mark_stale_dates(
         [_date.fromisoformat(x) for x in days]) if days else 0
     ctx.log(f"阶段 3/3：指定日期采集收尾，受影响交易日 {len(days)} 天，已标记 {stale} 项评分快照失效")

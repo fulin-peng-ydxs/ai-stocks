@@ -59,7 +59,7 @@
 - 默认自选分组：只有具备分组权限的业务链路才构造 `StockGroupRepo`；仓库按 `tenant_id + owner_user_id` 确保每个归属者存在 `grp_default_{owner_user_id}`，固定为“自选”和项目默认色，不可改名/改色/删除。
 
 ### 涉及表
-- `stock_group`（`storage/ddl.py:304`）：分组元信息 id/name/group_date/description/color/is_default。
+- `stock_group`（`storage/pg_ddl.py`；`ddl.py` 为迁移保留的旧 DuckDB 定义）：分组元信息 id/name/group_date/description/color/is_default。
 - `stock_group_member`（`ddl.py:317`）：主键 `(group_id, code)`，`add_date` 为该股加入日期即涨幅基准，`note` 备注。
 - 读：`stock_basic`（板块/退市/名称）、`daily_bar`（行情/复权）。
 

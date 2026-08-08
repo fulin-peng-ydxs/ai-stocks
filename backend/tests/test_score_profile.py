@@ -372,6 +372,85 @@ def test_delete_not_blocked_by_other_owner_same_id_run(market, pg):
         pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s AND id=%s", [TEST_OWNER, same_id])
 
 
+def test_delete_cascades_others_opaque_ref_reference(market, pg):
+    """Fix4：公开方案被**他人**以 opaque ref 引用后，owner 删除时级联降级该 run 为 private 再放行删除。
+
+    回归"公开方案被他人回测引用后 owner 永久无法删除"的死锁：他人 run 不是 owner 的，owner 处置不了。
+    删除应把引用它的他人公开/租户 run 降级为 private，再删除方案。
+    """
+    from datetime import date, datetime
+
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    mine = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    try:
+        mine.save("del_other_ref", "被他人引用", items)
+        mine.set_visibility("del_other_ref", "public", published_by=TEST_OWNER)
+        # 他人（pytest_other）回测记录引用本方案的 opaque ref（含 owner 归属）
+        ref = ScoreProfileRepo.make_ref(TEST_TENANT, TEST_OWNER, "del_other_ref")
+        pg.execute(
+            "INSERT INTO backtest_run (id,tenant_id,owner_user_id,kind,score_profile_id,visibility,"
+            "date_start,date_end,params,status,created_at,finished_at) "
+            "VALUES ('bt_other_ref',%s,'pytest_other','strategy',%s,'public',%s,%s,'{}','done',%s,%s)",
+            [TEST_TENANT, ref, date(2024, 1, 1), date(2024, 1, 31),
+             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+        )
+        # 公开态删除：先级联降级他人 run → 再收回 private（无他人引用）→ 删除成功
+        mine.delete("del_other_ref")
+        assert mine.get("del_other_ref") is None
+        # 他人的 run 被降级为 private（引用悬挂不再对外服务）
+        vis = pg.query_df(
+            "SELECT visibility FROM backtest_run WHERE id='bt_other_ref'").iloc[0]["visibility"]
+        assert vis == "private"
+    finally:
+        pg.execute("DELETE FROM backtest_run WHERE id='bt_other_ref'")
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s AND id='del_other_ref'", [TEST_OWNER])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s AND id='del_other_ref'", [TEST_OWNER])
+
+
+def test_delete_own_ref_blocks_even_with_others_ref(market, pg):
+    """评审2：本人引用 + 他人引用同时存在时，删除仍被本人引用拦截（防悬空）。
+
+    delete 的"他人引用逃生口"只跳过"先收回 private"，**不绕过本人引用检查**——本人
+    backtest_run 引用该方案时，无论是否还有他人引用，都必须先删除本人回测才能删方案。
+    """
+    from datetime import date, datetime
+
+    items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]
+    mine = ScoreProfileRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    try:
+        mine.save("del_both_ref", "双引用", items)
+        mine.set_visibility("del_both_ref", "public", published_by=TEST_OWNER)
+        ref = ScoreProfileRepo.make_ref(TEST_TENANT, TEST_OWNER, "del_both_ref")
+        # 本人回测引用（opaque ref 形态）
+        pg.execute(
+            "INSERT INTO backtest_run (id,tenant_id,owner_user_id,kind,score_profile_id,"
+            "date_start,date_end,params,status,created_at,finished_at) "
+            "VALUES ('bt_own_ref',%s,%s,'strategy',%s,%s,%s,'{}','done',%s,%s)",
+            [TEST_TENANT, TEST_OWNER, ref, date(2024, 1, 1), date(2024, 1, 31),
+             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+        )
+        # 他人回测引用（同一 opaque ref）
+        pg.execute(
+            "INSERT INTO backtest_run (id,tenant_id,owner_user_id,kind,score_profile_id,visibility,"
+            "date_start,date_end,params,status,created_at,finished_at) "
+            "VALUES ('bt_other_ref2',%s,'pytest_other','strategy',%s,'public',%s,%s,'{}','done',%s,%s)",
+            [TEST_TENANT, ref, date(2024, 1, 1), date(2024, 1, 31),
+             datetime(2024, 2, 1), datetime(2024, 2, 1)],
+        )
+        # 本人引用存在 → 删除必须被拦（即使他人引用也存在）
+        with pytest.raises(ValueError, match="被回测记录引用"):
+            mine.delete("del_both_ref")
+        # 方案未被删除（事务回滚），他人 run 未被降级
+        assert mine.get("del_both_ref") is not None
+        vis = pg.query_df(
+            "SELECT visibility FROM backtest_run WHERE id='bt_other_ref2'").iloc[0]["visibility"]
+        assert vis == "public"
+    finally:
+        pg.execute("DELETE FROM backtest_run WHERE id IN ('bt_own_ref','bt_other_ref2')")
+        pg.execute("DELETE FROM score_profile WHERE owner_user_id=%s AND id='del_both_ref'", [TEST_OWNER])
+        pg.execute("DELETE FROM score_profile_version WHERE owner_user_id=%s AND id='del_both_ref'", [TEST_OWNER])
+
+
 def test_copy_visible_backend_generates_id_and_default_name(market, pg):
     """C8：score.copy_visible 后端生成唯一 id；不传 name 默认「原名 副本」，与 screen/trade 口径一致。"""
     items = [{"indicator": "rs_pct", "weight": 1.0, "scoring": {"type": "linear", "min": 0, "max": 100}}]

@@ -463,6 +463,13 @@ def quality_mark_delisted(issue_id: int, body: MarkDelistedIn) -> ApiResponse:
     except (ValueError, TypeError):
         return err(400, f"退市日期非法: {body.delist_date}（需 YYYY-MM-DD）")
     c.execute("UPDATE stock_basic SET delist_date=? WHERE code=?", [dl, code])
+    # 退市口径已变 → 标评分快照失效（惰性；退市股影响排除口径）
+    try:
+        from backend.scoring.snapshot import ScoreSnapshotRepo
+        ScoreSnapshotRepo(get_client()).mark_stale_all()
+    except Exception as e:  # noqa: BLE001
+        from backend.common.logging import get_logger
+        get_logger("api.data_admin").warning("标记退市后评分快照失效失败: %s", e)
     now = datetime.now()
     affected = int(c.query_df(
         "SELECT count(*) AS n FROM data_quality_issue WHERE code=? "

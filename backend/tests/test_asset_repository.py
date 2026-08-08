@@ -54,16 +54,21 @@ def test_asset_upsert_empty_noop(pg):
 def test_snapshot_fresh_stale_stats(market, pg):
     repo = ScoreSnapshotRepo(market=market, pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
     d, pid, ver = date(2026, 1, 5), "pf1", 1
-    # 手写一条 meta（stale=false）
+    # 当前指标参数指纹（与打分口径同源）
+    from backend.indicators.compute import build_params, param_hash
+    ph = param_hash(build_params())
+    # 手写一条 meta（stale=false + 当前指纹）
     pg.execute(
         "INSERT INTO score_snapshot_meta "
-        "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-        [d, pid, ver, TEST_TENANT, TEST_OWNER, datetime.now(), False, 2])
-    assert repo._fresh(d, pid, ver) is True
+        "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes,param_hash) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        [d, pid, ver, TEST_TENANT, TEST_OWNER, datetime.now(), False, 2, ph])
+    assert repo._fresh(d, pid, ver, ph) is True
+    # 指纹不匹配（参数变更场景）→ 视为失效，触发重算自愈
+    assert repo._fresh(d, pid, ver, "another-hash") is False
     # 失效（全局）→ 不再 fresh
     assert repo.mark_stale_dates([d]) >= 1
-    assert repo._fresh(d, pid, ver) is False
+    assert repo._fresh(d, pid, ver, ph) is False
     s = repo.stats()
     assert s["materialized_day_profiles"] >= 1 and s["stale"] >= 1
 

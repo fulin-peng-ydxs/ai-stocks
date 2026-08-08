@@ -55,8 +55,8 @@ INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, s
   --   读 PUBLIC_BOARD_OWNER 公共预设+公共评分、全员共享一份；缺失/失效不由 board:view 触发物化。
   --   score:run(POST /score-profiles/run) 现只服务配置页个人试算/compute(写调用者私有归属)、非榜单页主加载；
   --   但 score:run 仍是业务码、菜单锚保持 /board(login) 方可授普通用户，勿挂 system-only 菜单。
-  --   board:compute 由回测页消费；/scores/top·/scores(board:view) 为前端暂未接入的固定模型公共榜单预留码。
-  ('board:view',           '/board',  'board:view',           '查看每日榜单',   'api', 'GET',  '/api/scores/top',      30, TRUE),
+  --   board:compute 由回测页消费；旧固定模型公共读 /scores/top·/scores 已废弃删除（见 pg_ddl.py seed）。
+  ('board:view',           '/board',  'board:view',           '查看每日榜单',   'api', 'POST', '/api/board/run',      30, TRUE),
   ('board:compute',        '/board',  'board:compute',        '榜单即时计算',   'api', 'GET',  '/api/board/compute',   40, TRUE),
   ('score:run',            '/board',  'score:run',            '评分方案打分',   'api', 'POST', '/api/score-profiles/run', 50, TRUE),
   ('layout:user-config',   '/board',  'layout:user-config',   '保存个人页面偏好', 'api', 'POST', '/api/layout/users/{page_key}', 60, TRUE),

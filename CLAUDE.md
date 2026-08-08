@@ -4,7 +4,7 @@
 
 ## 入口职责
 
-- 本文件只提供 Claude Code 的项目入口；仓库级规则以 [AGENTS.md](AGENTS.md) 为准。
+- 本文件只提供 Claude Code 的项目入口；仓库级开发规则以 [AGENTS.md](AGENTS.md) 为准。
 - 产品概览和模块入口见 [README.md](README.md)。
 - 模块技术细节见 [`agent-works/architecture/`](agent-works/architecture/)。
 - 环境变量、变量文件和配置覆盖层见 [`environment-configuration.md`](agent-works/architecture/environment-configuration.md)。

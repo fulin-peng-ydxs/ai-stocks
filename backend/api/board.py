@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from datetime import date
 
-import pandas as pd
 from fastapi import APIRouter, Depends, Query
 
 from backend.api.response import ApiResponse, err, ok
@@ -16,67 +15,6 @@ from backend.storage import get_client, get_pg_client
 from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
 router = APIRouter(prefix="/api", tags=["scores"])
-
-# 每日榜单 score_result 的**公共读**：有意固定平台公共归属（PUBLIC_BOARD_OWNER=default/admin 平台槽），
-# 全员登录用户看同一份、不按当前用户过滤（stage4·C1 平台公共榜单特例；铁律见 pg_ddl.PUBLIC_BOARD_OWNER
-# 与 CLAUDE.md「资产归属与隔离」）。非 stage1 遗留默认，勿"纠正"为 get_current_owner()。
-_OWN = list(PUBLIC_BOARD_OWNER)
-
-
-def _resolve_date(d: str | None, c) -> date:
-    if d:
-        return date.fromisoformat(d)
-    # 最新榜单日：score_result 在 PG；无则回落行情最新日（DuckDB）
-    r = get_pg_client().query_df(
-        "SELECT max(trade_date) AS d FROM score_result WHERE tenant_id=%s AND owner_user_id=%s",
-        _OWN).iloc[0]["d"]
-    if r is None or pd.isna(r):
-        r = c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]
-    return pd.Timestamp(r).date()
-
-
-def _query_scores(trade_date: date, model_id: str, limit: int | None) -> list[dict]:
-    # 跨库编排：评分结果取 PG（资产），股票名取 DuckDB（行情），内存按 code 合并（禁跨库 JOIN）
-    sql = (
-        "SELECT trade_date, code, total_score, rank, grade, sub_scores, buy_point, risk_flags "
-        "FROM score_result WHERE trade_date=%s AND model_id=%s "
-        "AND tenant_id=%s AND owner_user_id=%s ORDER BY rank"
-    )
-    if limit:
-        sql += f" LIMIT {int(limit)}"
-    df = get_pg_client().query_df(sql, [trade_date, model_id, *_OWN])
-    rows = df.to_dict("records")
-    if rows:
-        codes = [r["code"] for r in rows]
-        ph = ",".join("?" * len(codes))
-        names_df = get_client().query_df(
-            f"SELECT code, name FROM stock_basic WHERE code IN ({ph})", codes)
-        names = dict(zip(names_df["code"], names_df["name"]))
-    else:
-        names = {}
-    for r in rows:
-        r["name"] = names.get(r["code"])
-        r["trade_date"] = str(r["trade_date"])
-        if r.get("sub_scores"):
-            r["sub_scores"] = json.loads(r["sub_scores"])
-        if r.get("risk_flags"):
-            try:
-                r["risk_flags"] = json.loads(r["risk_flags"])
-            except (TypeError, ValueError):
-                pass
-    return rows
-
-
-@router.get("/scores/top", response_model=ApiResponse,
-            dependencies=[Depends(require_perm("board:view"))])
-def scores_top(
-    date_: str | None = Query(None, alias="date"),
-    model_id: str = "default",
-    top: int = 20,
-) -> ApiResponse:
-    c = get_client()
-    d = _resolve_date(date_, c)
-    return ok({"trade_date": str(d), "top": top, "list": _query_scores(d, model_id, top)})
 
 
 def _board_by_profile(c, run_date: date, top: int, profile_ref_or_id: str) -> ApiResponse:
@@ -208,7 +146,8 @@ def board_run(body: dict) -> ApiResponse:
     ctx = get_current_context()
     if force and not (ctx and (ctx.is_system or "board:compute" in ctx.resources)):
         return err(403, "强制刷新需要 board:compute 权限")
-    was_fresh = snapshot_repo._fresh(run_date, pid, version)  # noqa: SLF001
+    from backend.scoring.snapshot import _current_param_hash
+    was_fresh = snapshot_repo._fresh(run_date, pid, version, _current_param_hash())  # noqa: SLF001
     if force:
         pg.execute(
             "UPDATE score_snapshot_meta SET stale=true WHERE trade_date=%s AND profile_id=%s "
@@ -250,22 +189,4 @@ def board_run(body: dict) -> ApiResponse:
         "profile_version": version,
         "cache_status": "cached" if was_fresh and not force else "materialized",
         "list": rows,
-    })
-
-
-@router.get("/scores", response_model=ApiResponse,
-            dependencies=[Depends(require_perm("board:view"))])
-def scores(
-    date_: str | None = Query(None, alias="date"),
-    model_id: str = "default",
-    page: int = 1,
-    size: int = 50,
-) -> ApiResponse:
-    c = get_client()
-    d = _resolve_date(date_, c)
-    all_rows = _query_scores(d, model_id, None)
-    start = (page - 1) * size
-    return ok({
-        "trade_date": str(d), "total": len(all_rows),
-        "page": page, "size": size, "list": all_rows[start:start + size],
     })

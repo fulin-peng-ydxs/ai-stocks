@@ -29,7 +29,7 @@ _PUBLIC_PREFIXES = ("/api/health", "/api/auth/")
 _MANAGE_PREFIXES = ("/api/users", "/api/roles", "/api/menus", "/api/resources", "/api/tenants")
 # stage4 13 存量业务/数据模块前缀（每端点须有精确资源码）。
 _STAGE4_PREFIXES = (
-    "/api/stocks", "/api/scores", "/api/board", "/api/profiles", "/api/screen",
+    "/api/stocks", "/api/board", "/api/profiles", "/api/screen",
     "/api/score-profiles", "/api/trade-profiles", "/api/stock-groups", "/api/backtest",
     "/api/training", "/api/layout", "/api/config", "/api/indicators", "/api/data",
 )

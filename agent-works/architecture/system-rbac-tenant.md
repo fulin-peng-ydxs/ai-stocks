@@ -154,6 +154,18 @@ flowchart LR
 3. 提交后尽力清理 Redis 权限缓存。
 4. 受影响用户旧 token 在下一次请求时失效，重新登录后加载新权限。
 
+### 缓存职责边界（Redis / PG 评分快照 / 进程内 LRU）
+
+> 本项目的缓存分三层，职责互不重叠；**Redis 不承载任何计算类结果缓存**。
+
+| 层 | 载体 | 用途 | 失效方式 |
+|---|---|---|---|
+| 短状态缓存 | Redis | 仅认证/鉴权域：token 黑名单、`perm_ver` 权限缓存、验证码、限流计数（`backend/auth/session_store.py`、`perm_resolver.py`） | `perm_ver` 自增即失效；TTL 见 `agent-works/multi-tenant-rbac/stage3-rbac-tenant/plan.md` §4.2（`auth:perms:{user_id}` 等，`TTL=access_ttl`） |
+| 评分快照（唯一落库计算缓存） | PostgreSQL `score_snapshot` + `score_snapshot_meta` | 每日榜单按 `(tenant, owner, trade_date, profile_id, profile_version, param_hash)` 惰性物化 | 惰性失效：行情/基础信息变更 `mark_stale_*` 标 `stale`；**指标参数变更由 `param_hash` 指纹比较触发重算**（见 `screening-and-board.md` 评分快照节） |
+| 指标进程内缓存 | `IndicatorEngine._cache`（LRU 上限 6） | 单次运行内对相同 `(codes, lo, hi, param_hash)` 复用 | 参数/算法版本变 → `param_hash` 变 → 不命中；跨请求不共享（每请求新建实例） |
+
+**约定**：新增计算类缓存一律优先复用评分快照层或进程内 LRU；Redis 只用于认证短状态，不塞计算结果。`data_report._coverage_frame` 另有"数据变更签名"内存缓存（概览页同页多次调用复用），属于统计口径缓存，与上表并列。
+
 ### 系统管理对象操作闭环
 
 #### 用户

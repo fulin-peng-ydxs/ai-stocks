@@ -11,49 +11,6 @@ export interface SubScores {
   fund_flow: number
 }
 
-export interface ScoreRow {
-  trade_date: string
-  code: string
-  name: string | null
-  total_score: number
-  rank: number
-  grade: string
-  sub_scores: SubScores | null
-  buy_point: string | null
-  risk_flags: string[] | null
-}
-
-export interface ScoresTop {
-  trade_date: string
-  top: number
-  list: ScoreRow[]
-}
-
-export interface ScoresPage {
-  trade_date: string
-  total: number
-  page: number
-  size: number
-  list: ScoreRow[]
-}
-
-export function getScoresTop(params?: {
-  date?: string
-  model_id?: string
-  top?: number
-}): Promise<ScoresTop> {
-  return http.get('/scores/top', { params })
-}
-
-export function getScores(params?: {
-  date?: string
-  model_id?: string
-  page?: number
-  size?: number
-}): Promise<ScoresPage> {
-  return http.get('/scores', { params })
-}
-
 // 按需计算某交易日的每日榜单 Top N（回测"查看买入当日榜单"用）
 export interface BoardRow {
   rank: number

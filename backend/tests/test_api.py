@@ -66,11 +66,6 @@ def test_profiles_list():
     assert "preset_trend_leader" in ids
 
 
-def test_scores_top():
-    data = _data(client.get("/api/scores/top?top=10"))
-    assert "list" in data and len(data["list"]) <= 10
-
-
 def test_stocks_list_and_bars():
     lst = _data(client.get("/api/stocks?q=600000"))
     assert lst["total"] >= 1
@@ -120,7 +115,7 @@ def test_concurrent_queries():
     from concurrent.futures import ThreadPoolExecutor
 
     paths = ["/api/data/status", "/api/data/quality?size=10",
-             "/api/scores/top?top=5", "/api/stocks?q=600000"]
+             "/api/board/compute?date=2099-01-01&top=5", "/api/stocks?q=600000"]
     with ThreadPoolExecutor(max_workers=4) as ex:
         codes = list(ex.map(lambda p: client.get(p).status_code, paths * 3))
     assert all(c == 200 for c in codes), codes

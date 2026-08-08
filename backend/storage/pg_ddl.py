@@ -444,6 +444,7 @@ CREATE TABLE IF NOT EXISTS score_snapshot_meta (
     computed_at     TIMESTAMP,
     stale           BOOLEAN,
     n_codes         INTEGER,
+    param_hash      TEXT,
     PRIMARY KEY (tenant_id, owner_user_id, trade_date, profile_id, profile_version)
 );
 """
@@ -849,7 +850,7 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/board",  "trade-calendar:view", "交易日历读（全站基线）",     "api", "GET", "/api/data/trade-dates"),
     ("/screen", "indicator:registry",  "指标目录读（研究基线）",     "api", "GET", "/api/indicators/registry"),
     # B) 每日榜单（/board，login）
-    ("/board", "board:view",         "查看每日榜单",     "api", "GET",  "/api/scores/top"),
+    ("/board", "board:view",         "查看每日榜单",     "api", "POST", "/api/board/run"),
     ("/board", "board:compute",      "榜单即时计算",     "api", "GET",  "/api/board/compute"),
     ("/system/config/score", "score:run", "评分方案打分", "api", "POST", "/api/score-profiles/run"),
     # B) 策略筛选（/screen，login）
@@ -1021,6 +1022,9 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     revoke_tenant_admin_audit_default_grants(client)
     seed_stage6_asset_visibility(client)
     _backfill_asset_publish_open_v1(client)
+    # 评分快照 meta 参数指纹列（既有库补列，幂等）：指标参数变更后读取时按指纹判定失效，见 scoring/snapshot.py
+    client.execute(
+        "ALTER TABLE score_snapshot_meta ADD COLUMN IF NOT EXISTS param_hash TEXT")
     return created
 
 

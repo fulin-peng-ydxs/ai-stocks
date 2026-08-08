@@ -62,6 +62,18 @@ class IngestionService:
             self._bao = get_source(self.s.datasource.fallback)
         return self._bao
 
+    def _mark_snapshots_stale(self, dates: list[date] | None = None) -> int:
+        """行情/基础信息变更后标记评分快照失效（惰性，不重算）。
+
+        下沉到服务层：CLI 命令与 async_task 处理器共享同一批 IngestionService 方法，
+        一处覆盖 CLI + 任务中心 + DailyPipeline，避免 CLI 运维后旧榜单被当 fresh 读取。
+        dates 为 None → 全量标 stale；否则按受影响交易日细粒度标。
+        """
+        from backend.scoring.snapshot import ScoreSnapshotRepo
+        if dates:
+            return ScoreSnapshotRepo(get_client()).mark_stale_dates(dates)
+        return ScoreSnapshotRepo(get_client()).mark_stale_all()
+
     def _source_for(self, capability: str) -> DataSource:
         """按能力选源：主源支持→主源；否则补源支持→补源；都不支持→报错。
 
@@ -863,6 +875,11 @@ class IngestionService:
         # 入库后自动校验（全市场回填才跑契约检查，避免部分加载误报）
         if codes is None:
             self._post_ingest_validate()
+        # 行情已变 → 标评分快照失效（惰性）。skip 全量或 rows=0 也标（回填可能只是幂等跳过，但基础信息/因子仍可能变）。
+        try:
+            result["snapshots_marked_stale"] = self._mark_snapshots_stale()
+        except Exception as e:  # noqa: BLE001
+            log.warning("回填后标记评分快照失效失败: %s", e)
         return result
 
     def _post_ingest_validate(self) -> None:
@@ -1238,6 +1255,11 @@ class IngestionService:
                 ctx.log(f"补市值估值失败（不影响行情更新）：{e}", "warn")
         if ctx:
             ctx.log(f"■ 增量更新完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{n} 只）")
+        # 行情/市值/复权因子已变 → 标评分快照失效（惰性，下次读取重算）。skipped 早退分支已在上方直接返回，不走到这里。
+        try:
+            result["snapshots_marked_stale"] = self._mark_snapshots_stale()
+        except Exception as e:  # noqa: BLE001  失效标记失败不影响采集结果
+            log.warning("增量更新后标记评分快照失效失败: %s", e)
         log.info("增量更新完成: %s", result)
         return result
 
@@ -1480,6 +1502,12 @@ class IngestionService:
         dates = [str(pd.Timestamp(d).date()) for d in days]
         result = {"target": n, "ok": ok, "fail": fail, "rows": total_rows,
                   "range": [str(start), str(end)], "dates": dates}
+        # 指定日期行情已变 → 按受影响交易日标评分快照失效（细粒度，惰性）
+        try:
+            result["snapshots_marked_stale"] = self._mark_snapshots_stale(
+                [date.fromisoformat(x) for x in dates] if dates else None)
+        except Exception as e:  # noqa: BLE001
+            log.warning("指定日期采集后标记评分快照失效失败: %s", e)
         if ctx:
             ctx.log(f"■ 指定日期采集完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{start}~{end}）")
         log.info("指定日期采集完成: %s", {k: v for k, v in result.items() if k != "dates"})
@@ -1555,6 +1583,11 @@ class IngestionService:
                                   current_item=code, factor_done_codes=sorted(done_codes))
                     ctx.log(f"[{i}/{n}] {code} {verb}失败: {e}", "warn")
         result = {"target": n, "ok": ok, "fail": fail, "rows": rows}
+        # 复权因子/前收盘/涨跌停标记已重算 → 标评分快照失效（惰性，K线与打分口径都可能受影响）
+        try:
+            result["snapshots_marked_stale"] = self._mark_snapshots_stale()
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s后标记评分快照失效失败: %s", verb, e)
         log.info("%s完成: %s", verb, result)
         if ctx:
             ctx.log(f"■ {verb}完成：成功 {ok}、失败 {fail}，共处理 {rows} 行")
@@ -1681,6 +1714,12 @@ class IngestionService:
         n = self.repo.upsert_stock_basic(out)
         self.repo.log_update("stock_basic", dates_src.name, None, None, n, "success", "补上市/退市日+行业")
         log.info("%s 补全基础信息 %d 只（含退市股+行业）", dates_src.name, n)
+        # 基础信息（退市/上市日/板块）已变 → 标评分快照失效（影响退市股排除口径）
+        if n > 0:
+            try:
+                self._mark_snapshots_stale()
+            except Exception as e:  # noqa: BLE001
+                log.warning("补全基础信息后标记评分快照失效失败: %s", e)
         if ctx:
             ctx.log(f"子任务：上市/退市日与行业入库完成，写入/更新 {n} 只")
         return n
@@ -1747,6 +1786,11 @@ class IngestionService:
                     ctx.log(f"退市股 {code} 灌入失败：{e}", "warn")
                 self.repo.log_update("daily_bar", bao.name, start, None, 0, "failed", f"{code}: {e}")
         result = {"target": len(dl), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
+        # 退市股历史已变 → 标评分快照失效（退市股影响幸存者偏差口径）
+        try:
+            result["snapshots_marked_stale"] = self._mark_snapshots_stale()
+        except Exception as e:  # noqa: BLE001
+            log.warning("退市股灌入后标记评分快照失效失败: %s", e)
         log.info("退市股灌入完成: %s", result)
         if ctx:
             ctx.log(f"子任务：退市股历史灌入完成，成功{ok} 跳过{skip} 失败{fail}，写入 {total_rows} 行")

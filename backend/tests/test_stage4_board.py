@@ -2,8 +2,9 @@
 
 覆盖：
 - `board:view` / `board:compute` 守卫（无码 → 403，权限分离）；
-- **公共读专项**：不同租户/用户读 `GET /api/scores/top` 得到**同一份**平台公共榜单（`PUBLIC_BOARD_OWNER`
+- **公共读专项**：不同租户/用户读 `POST /api/board/run`（评分快照公共榜单，`PUBLIC_BOARD_OWNER`
   固定归属、不按当前用户过滤）——区别于私有资产的「跨账号不可见」隔离用例，故独立成文。
+  注：旧固定模型公共读 `/api/scores/top`、`/api/scores`（读 `score_result`）已废弃删除。
 """
 
 from __future__ import annotations
@@ -57,48 +58,6 @@ def _rm_user(pg, uid: str, tid: str, rid: str) -> None:
     pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])       # CASCADE 清 user_role
     pg.execute("DELETE FROM sys_role WHERE id=%s", [rid])       # CASCADE 清 role_resource
     pg.execute("DELETE FROM sys_tenant WHERE id=%s", [tid])
-
-
-@pytest.fixture()
-def public_board(pg):
-    """在 PUBLIC_BOARD_OWNER（平台公共槽）下写一条公共榜单结果；用后清理。"""
-    ptid, pown = PUBLIC_BOARD_OWNER
-    pg.execute(
-        "INSERT INTO score_result (trade_date, tenant_id, owner_user_id, model_id, code, "
-        "total_score, sub_scores, rank, grade, buy_point, risk_flags) "
-        "VALUES (%s,%s,%s,%s,'T3B000.SZ',88.0,NULL,1,'A',NULL,NULL) ON CONFLICT DO NOTHING",
-        [_PUB_DATE, ptid, pown, _MODEL])
-    yield
-    pg.execute("DELETE FROM score_result WHERE model_id=%s", [_MODEL])
-
-
-def test_scores_top_requires_board_view(client, pg):
-    """无 board:view 的登录业务用户读榜单 → 403（baseline 注入不含 board:view）。"""
-    uid, tid, rid = _mk_user(pg, codes=[])   # 仅 baseline，无 board:view
-    try:
-        r = client.get("/api/scores/top", headers=_auth(uid, tid))
-        assert r.status_code == 403 and r.json()["code"] == 4030
-    finally:
-        _rm_user(pg, uid, tid, rid)
-
-
-def test_board_public_read_shared_across_tenants(client, pg, public_board):
-    """公共读专项：两个**不同租户**用户读同一 model_id → 都看到同一份平台公共榜单（非私有隔离）。"""
-    ua, ta, ra = _mk_user(pg, codes=["board:view"])
-    ub, tb, rb = _mk_user(pg, codes=["board:view"])
-    assert ta != tb
-    try:
-        qa = client.get(f"/api/scores/top?date={_PUB_DATE}&model_id={_MODEL}&top=10", headers=_auth(ua, ta))
-        qb = client.get(f"/api/scores/top?date={_PUB_DATE}&model_id={_MODEL}&top=10", headers=_auth(ub, tb))
-        assert qa.status_code == 200 and qb.status_code == 200
-        la = qa.json()["data"]["list"]
-        lb = qb.json()["data"]["list"]
-        # 有意不带用户归属过滤：两租户看到**同一份**公共结果（含刚写入的 T3B000.SZ）
-        assert [x["code"] for x in la] == ["T3B000.SZ"]
-        assert [x["code"] for x in lb] == ["T3B000.SZ"]
-    finally:
-        _rm_user(pg, ua, ta, ra)
-        _rm_user(pg, ub, tb, rb)
 
 
 def test_board_compute_separate_from_view(client, pg):
@@ -237,11 +196,13 @@ def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
     ptid, pown = PUBLIC_BOARD_OWNER
     uid, tid, rid = _mk_user(pg, codes=["board:view"])
     try:
+        from backend.indicators.compute import build_params, param_hash
+        ph = param_hash(build_params())
         pg.execute(
             "INSERT INTO score_snapshot_meta "
-            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes) "
-            "VALUES (%s,%s,1,%s,%s,%s,FALSE,1)",
-            [_PUB_DATE, preset_id, ptid, pown, datetime.now()])
+            "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,computed_at,stale,n_codes,param_hash) "
+            "VALUES (%s,%s,1,%s,%s,%s,FALSE,1,%s)",
+            [_PUB_DATE, preset_id, ptid, pown, datetime.now(), ph])
         pg.execute(
             "INSERT INTO score_snapshot "
             "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "

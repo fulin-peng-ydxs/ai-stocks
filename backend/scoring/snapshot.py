@@ -25,6 +25,12 @@ log = get_logger("scoring.snapshot")
 _COLS = ["code", "total_score", "grade", "rank", "sub_scores"]
 
 
+def _current_param_hash() -> str:
+    """当前指标计算参数指纹（与 IndicatorEngine 内存缓存同源）。"""
+    from backend.indicators.compute import build_params, param_hash
+    return param_hash(build_params())
+
+
 def score_day(c, run_date: date, profile: dict) -> pd.DataFrame:
     """对某交易日全市场（排除 ST）按评分方案打分 → DataFrame[code,total_score,grade,rank,sub_scores]（降序）。
 
@@ -93,10 +99,11 @@ class ScoreSnapshotRepo:
         if not prof:
             return pd.DataFrame(columns=_COLS)
         version = int(prof.get("version") or 1)
-        if self._fresh(run_date, profile_id, version):
+        ph = _current_param_hash()
+        if self._fresh(run_date, profile_id, version, ph):
             rows = self._read_board(run_date, profile_id, version)
         else:
-            rows = self._materialize_locked(run_date, profile_id, version, prof)
+            rows = self._materialize_locked(run_date, profile_id, version, prof, ph)
         return rows.head(top) if top else rows
 
     def get_board_cached(self, run_date: date, profile_id: str, top: int | None = None,
@@ -106,7 +113,7 @@ class ScoreSnapshotRepo:
         if not prof:
             return pd.DataFrame(columns=_COLS)
         version = int(prof.get("version") or 1)
-        if not self._fresh(run_date, profile_id, version):
+        if not self._fresh(run_date, profile_id, version, _current_param_hash()):
             return pd.DataFrame(columns=_COLS)
         rows = self.pg.query_df(
             "SELECT code, total_score, grade, rank, sub_scores FROM score_snapshot "
@@ -131,37 +138,44 @@ class ScoreSnapshotRepo:
         cols = [d.name if hasattr(d, "name") else d[0] for d in cur.description]
         return pd.DataFrame(cur.fetchall(), columns=cols)
 
-    def _fresh(self, run_date: date, profile_id: str, version: int) -> bool:
+    def _fresh(self, run_date: date, profile_id: str, version: int, ph: str) -> bool:
         m = self.pg.query_df(
-            "SELECT stale FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
+            "SELECT stale, param_hash FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
             "AND profile_version=%s AND tenant_id=%s AND owner_user_id=%s",
             [run_date, profile_id, version, *self._op])
-        return (not m.empty) and (not bool(m.iloc[0]["stale"]))
+        if m.empty or bool(m.iloc[0]["stale"]):
+            return False
+        # 指标参数指纹：历史行 param_hash IS NULL（补列前）视为不匹配 → 触发一次重算自愈
+        return m.iloc[0]["param_hash"] == ph
 
-    def _fresh_cur(self, cur, run_date: date, profile_id: str, version: int) -> bool:
+    def _fresh_cur(self, cur, run_date: date, profile_id: str, version: int, ph: str) -> bool:
         cur.execute(
-            "SELECT stale FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
+            "SELECT stale, param_hash FROM score_snapshot_meta WHERE trade_date=%s AND profile_id=%s "
             "AND profile_version=%s AND tenant_id=%s AND owner_user_id=%s",
             [run_date, profile_id, version, *self._op])
         row = cur.fetchone()
-        return row is not None and not bool(row[0])
+        if row is None or bool(row[0]):
+            return False
+        return row[1] == ph
 
-    def _materialize_locked(self, run_date: date, profile_id: str, version: int, profile: dict) -> pd.DataFrame:
-        """锁内重算该日该方案 → 覆盖 score_snapshot 明细 + upsert meta(stale=false)。"""
+    def _materialize_locked(self, run_date: date, profile_id: str, version: int, profile: dict,
+                            ph: str) -> pd.DataFrame:
+        """锁内重算该日该方案 → 覆盖 score_snapshot 明细 + upsert meta(stale=false, param_hash=ph)。"""
         lock_scope = f"{self.tenant_id}:{self.owner_user_id}"
         lock_key = f"{run_date}:{profile_id}:{version}"
         with self.pg.transaction() as conn, conn.cursor() as cur:
             cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))", [lock_scope, lock_key])
             # 等锁后再查一次：其它请求可能已经完成同一快照物化。
-            if self._fresh_cur(cur, run_date, profile_id, version):
+            if self._fresh_cur(cur, run_date, profile_id, version, ph):
                 return self._read_board_cur(cur, run_date, profile_id, version)
 
             df = score_day(self.mkt, run_date, profile)
-            self._replace_snapshot_cur(cur, run_date, profile_id, version, df)
+            self._replace_snapshot_cur(cur, run_date, profile_id, version, df, ph)
             log.info("评分快照物化 %s/%s v%d → %d 只", run_date, profile_id, version, len(df))
             return df
 
-    def _replace_snapshot_cur(self, cur, run_date: date, profile_id: str, version: int, df: pd.DataFrame) -> None:
+    def _replace_snapshot_cur(self, cur, run_date: date, profile_id: str, version: int,
+                              df: pd.DataFrame, ph: str) -> None:
         cur.execute(
             "DELETE FROM score_snapshot WHERE trade_date=%s AND profile_id=%s AND profile_version=%s "
             "AND tenant_id=%s AND owner_user_id=%s",
@@ -194,12 +208,13 @@ class ScoreSnapshotRepo:
             )
         cur.execute(
             "INSERT INTO score_snapshot_meta "
-            "(trade_date, profile_id, profile_version, tenant_id, owner_user_id, computed_at, stale, n_codes) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+            "(trade_date, profile_id, profile_version, tenant_id, owner_user_id, computed_at, stale, n_codes, param_hash) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (tenant_id, owner_user_id, trade_date, profile_id, profile_version) "
-            "DO UPDATE SET computed_at=EXCLUDED.computed_at, stale=EXCLUDED.stale, n_codes=EXCLUDED.n_codes",
+            "DO UPDATE SET computed_at=EXCLUDED.computed_at, stale=EXCLUDED.stale, "
+            "n_codes=EXCLUDED.n_codes, param_hash=EXCLUDED.param_hash",
             [run_date, profile_id, version, self.tenant_id, self.owner_user_id,
-             datetime.now(), False, int(len(df))])
+             datetime.now(), False, int(len(df)), ph])
 
     # ── 失效（惰性标记，不重算）；行情共享 → 全局失效，不按归属过滤 ──
     def mark_stale_dates(self, trade_dates: list[date]) -> int:
