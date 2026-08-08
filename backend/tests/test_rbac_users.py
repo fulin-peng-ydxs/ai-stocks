@@ -213,6 +213,22 @@ def test_list_users_sort_by_account(client, env):
     assert accounts == sorted(accounts)
 
 
+def test_list_users_sort_by_tenant_name(client, env):
+    """system 全局列表按租户名排序：join 系统租户表按名称 order，而非租户 id。"""
+    t_b = env.mk_tenant(); env.pg.execute("UPDATE sys_tenant SET name='租户B' WHERE id=%s", [t_b])
+    t_a = env.mk_tenant(); env.pg.execute("UPDATE sys_tenant SET name='租户A' WHERE id=%s", [t_a])
+    t_c = env.mk_tenant(); env.pg.execute("UPDATE sys_tenant SET name='租户C' WHERE id=%s", [t_c])
+    env.mk_user(t_b, ROLE_TENANT_ADMIN)
+    env.mk_user(t_a, ROLE_TENANT_ADMIN)
+    env.mk_user(t_c, ROLE_TENANT_ADMIN)
+    r = client.get("/api/users?sort_by=tenant&sort_order=asc", headers=env.sys_headers())
+    items = r.json()["data"]["items"]
+    # 列表按全局 scope 返回（可能混入持久 tenant 的用户），只对本次创建的 3 个租户用户断言相对顺序
+    order = [u["tenant_id"] for u in items]
+    idx = {t: order.index(t) for t in (t_a, t_b, t_c)}
+    assert idx[t_a] < idx[t_b] < idx[t_c]
+
+
 def test_tenant_admin_cannot_touch_other_tenant_user(client, env):
     tid = env.mk_tenant()
     ta = env.mk_user(tid, ROLE_TENANT_ADMIN)

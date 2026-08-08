@@ -140,7 +140,7 @@ const page = ref(1)
 const size = ref(DEFAULT_PAGE_SIZE)
 const filters = ref<{ tenant: string; role: string; status: string; q: string }>(
   { tenant: '', role: '', status: '', q: '' })
-const USER_SORT_FIELDS = ['created', 'lastLogin', 'account'] as const
+const USER_SORT_FIELDS = ['created', 'lastLogin', 'account', 'tenant'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof USER_SORT_FIELDS)[number]>({
   slotId: 'table',
   defaultSort: 'created:desc',
@@ -485,8 +485,8 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
               <span v-if="!row.roles?.length" class="muted">—</span>
             </template>
           </AppTableColumn>
-          <AppTableColumn v-if="isSystem && colVisible('tenant')" label="租户"
-                           show-overflow-tooltip>
+          <AppTableColumn v-if="isSystem && colVisible('tenant')" label="租户" prop="tenant"
+                           sortable="custom" show-overflow-tooltip>
             <template #default="{ row }">{{ tenantName(row.tenant_id) }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('status')" label="状态">

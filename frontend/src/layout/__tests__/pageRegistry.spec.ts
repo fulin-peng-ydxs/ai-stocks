@@ -40,6 +40,73 @@ function stringValue(object: ts.ObjectLiteralExpression, name: string): string |
   return initializer && ts.isStringLiteral(initializer) ? initializer.text : undefined
 }
 
+/** 提取 <script setup> 内容（与 runtimeComponentImports 同源正则）。 */
+function scriptOf(source: string): string {
+  return source.match(/<script\b[^>]*\bsetup\b[^>]*>([\s\S]*?)<\/script>/)?.[1] ?? source
+}
+
+/** 解包 `as const` 等后缀断言后，收集数组字面量的字符串元素。 */
+function arrayLiteralStrings(initializer: ts.Expression | undefined): string[] {
+  if (!initializer) return []
+  let expr = initializer
+  while (ts.isAsExpression(expr)) expr = expr.expression
+  if (!ts.isArrayLiteralExpression(expr)) return []
+  return expr.elements
+    .filter((el): el is ts.StringLiteral => ts.isStringLiteral(el))
+    .map((el) => el.text)
+}
+
+/**
+ * 从页面脚本解析 useTableSort(slotId) 绑定的 allowedFields 白名单。
+ * 返回白名单数组；找不到匹配调用点或白名单常量时返回 undefined。
+ */
+function whitelistForSlot(script: string, fileName: string, slotId: string): string[] | undefined {
+  const sourceFile = ts.createSourceFile(fileName, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+
+  const constArrays = new Map<string, string[]>()
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name)) continue
+      const values = arrayLiteralStrings(declaration.initializer)
+      if (values.length) constArrays.set(declaration.name.text, values)
+    }
+  }
+
+  let whitelistName: string | undefined
+  const visit = (node: ts.Node): void => {
+    if (whitelistName) return
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'useTableSort') {
+      const arg = node.arguments[0]
+      if (arg && ts.isObjectLiteralExpression(arg)) {
+        const slotProp = property(arg, 'slotId')?.initializer
+        if (slotProp && ts.isStringLiteral(slotProp) && slotProp.text === slotId) {
+          const af = property(arg, 'allowedFields')?.initializer
+          if (af && ts.isIdentifier(af)) whitelistName = af.text
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+
+  if (!whitelistName) return undefined
+  const values = constArrays.get(whitelistName)
+  return values ? [...values] : undefined
+}
+
+/** StocksView 专用：收集模板中 `sortable="custom"` 列的 prop（原生 sortable 不在范围）。 */
+function customSortableProps(source: string): string[] {
+  const props: string[] = []
+  for (const match of source.matchAll(/<AppTableColumn\b([^>]*)>/g)) {
+    const attrs = match[1]
+    if (!/\bsortable="custom"\b/.test(attrs)) continue
+    const prop = /prop="([^"]+)"/.exec(attrs)?.[1]
+    if (prop) props.push(prop)
+  }
+  return props
+}
+
 function routeViewEntries(source: string): RouteViewEntry[] {
   const sourceFile = ts.createSourceFile(
     'router.ts',
@@ -470,6 +537,62 @@ describe('组件消费关系与配置一致性（P4）', () => {
             source,
             `${entry.pageKey}.${slotId} sortFields.${field.key} 未在页面源码中出现，可能只是抽屉候选但表头不可操作`,
           ).toContain(field.key)
+        }
+      }
+    }
+  })
+
+  it('页面可排序列白名单与 sortFields 双向一致（列头能排序必须登记到抽屉候选）', () => {
+    // 反向契约：设置抽屉「默认排序」下拉由 componentMeta.sortFields 驱动，页面列头可排序列白名单
+    // （useTableSort 的 allowedFields / StocksView 的默认排序字段）必须与其双向一致。
+    // 豁免：sortHasDirection:false 的模式枚举 slot（key 是排序模式不直接对列 prop）。
+    const STOCKS_SORT_EXPECTATION: Record<string, string[]> = {
+      table: ['pct_chg', 'close', 'code', 'name', 'industry'],
+      groupTable: ['add_date', 'code', 'name', 'price', 'pct_chg', 'ret', 'last_date'],
+    }
+
+    for (const entry of PAGE_REGISTRY) {
+      const sortableSlots = Object.entries(entry.componentMeta ?? {})
+        .filter(([, meta]) => meta.sortFields?.length)
+      if (!sortableSlots.length) continue
+
+      const source = sourceForPage(entry.pageKey)
+      expect(source, `${entry.pageKey} 声明 sortFields 但无法从 router 定位 Vue 页面源码`).not.toBe('')
+      const script = scriptOf(source)
+
+      for (const [slotId, meta] of sortableSlots) {
+        if (meta.sortHasDirection === false) continue
+        const sortKeys = (meta.sortFields ?? []).map((field) => field.key)
+
+        if (entry.pageKey === 'stocks') {
+          const expected = STOCKS_SORT_EXPECTATION[slotId]
+          expect(expected, `stocks.${slotId} 缺少权威期望表登记`).toBeTruthy()
+          expect(
+            sortKeys.slice().sort(),
+            `stocks.${slotId} sortFields 与权威期望表不一致`,
+          ).toEqual([...expected].sort())
+          continue
+        }
+
+        const whitelist = whitelistForSlot(script, `${entry.pageKey}.vue`, slotId)
+        expect(
+          whitelist,
+          `${entry.pageKey}.${slotId} 声明 sortFields 但页面没有 useTableSort 白名单绑定（allowedFields）`,
+        ).toBeTruthy()
+        expect(
+          whitelist!.slice().sort(),
+          `${entry.pageKey}.${slotId} 页面可排序列白名单与 sortFields 双向漂移：列头可排序的字段必须登记到抽屉默认排序候选，反之亦然`,
+        ).toEqual(sortKeys.slice().sort())
+      }
+
+      // stocks 兜底：任何 `sortable="custom"` 列都必须能在某个 slot 的 sortFields 里找到登记。
+      if (entry.pageKey === 'stocks') {
+        const registeredKeys = new Set(sortableSlots.flatMap(([, meta]) => (meta.sortFields ?? []).map((f) => f.key)))
+        for (const prop of customSortableProps(source)) {
+          expect(
+            registeredKeys.has(prop),
+            `stocks 列 prop="${prop}" 标记 sortable="custom" 但未登记到任何 slot 的 sortFields`,
+          ).toBe(true)
         }
       }
     }

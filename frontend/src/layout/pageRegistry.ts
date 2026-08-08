@@ -52,7 +52,9 @@ export interface PageRegistryEntry {
   /**
    * 组件配置自动渲染元数据（slotId -> 列/可交互排序字段），驱动设置抽屉「组件设置」段自动生成
    * （列显隐开关、默认排序下拉），并作为页面列头排序能力的事实源。
-   * 登记 sortFields 的 slot 必须消费 defaultSort，页面表格也必须接入列头排序。
+   * 登记 sortFields 的 slot 必须消费 defaultSort，页面表格也必须接入列头排序；
+   * sortFields 须与页面侧可排序列白名单（useTableSort 的 allowedFields 等）双向一致，
+   * 反向漂移由 pageRegistry.spec.ts 契约测试拦截。
    */
   componentMeta?: Record<string, SlotConfigMeta>
 }
@@ -464,6 +466,7 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'created', label: '创建时间' },
           { key: 'lastLogin', label: '最后登录' },
           { key: 'account', label: '账号' },
+          { key: 'tenant', label: '租户' },
         ],
       },
     },

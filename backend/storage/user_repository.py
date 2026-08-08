@@ -23,6 +23,7 @@ _USER_SORT_COLS = {
     "created": "u.created_at",
     "lastLogin": "u.last_login_at",
     "account": "lower(u.account)",
+    "tenant": "(SELECT lower(name) FROM sys_tenant t WHERE t.id = u.tenant_id)",
 }
 
 
