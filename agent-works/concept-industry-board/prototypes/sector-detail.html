@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>板块详情页原型</title>
+<style>
+  .proto-note {
+    border: 1px dashed #c9c9c9;
+    background: #f8f9fb;
+    color: #44464d;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin: 6px 0;
+    font-size: 11px;
+    line-height: 16px;
+  }
+  .proto-note b { color: #1677ff; }
+  .proto-demo {
+    border: 1px solid #1677ff; color: #1677ff; background: #fff; border-radius: 4px;
+    padding: 2px 8px; font-size: 12px; cursor: pointer;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei UI', sans-serif; background: #fff; color: #17181c; }
+  .page { display: flex; flex-direction: column; height: 100vh; }
+  .shell { display: flex; flex: 1; min-height: 0; }
+  .sidebar { width: 208px; background: #fcfcfc; border-right: 1px solid #e5e5e5; padding: 16px 12px; flex-shrink: 0; }
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 20px 24px; position: relative; overflow-y: auto; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .crumb { font-size: 13px; color: #73757d; }
+  .crumb .link { color: #1677ff; cursor: pointer; }
+  .settings-trigger { border: 1px solid #c9c9c9; background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #44464d; }
+  .detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .detail-title { font-size: 22px; font-weight: 700; line-height: 30px; }
+  .badge { display: inline-block; padding: 2px 10px; font-size: 12px; border-radius: 4px; background: #e6f0ff; color: #1677ff; }
+  .stat-row { display: flex; gap: 24px; flex-wrap: wrap; padding: 14px 16px; background: #f8f9fb; border: 1px solid #e5e5e5; border-radius: 4px; margin-bottom: 12px; }
+  .stat-item { display: flex; flex-direction: column; gap: 2px; }
+  .stat-label { font-size: 12px; color: #73757d; }
+  .stat-value { font-size: 18px; font-weight: 600; }
+  .stat-value .unit { font-size: 12px; color: #73757d; font-weight: 400; }
+  .up { color: #f66055; }
+  .down { color: #1ec96e; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .detail-body { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+  .chart-section { display: flex; flex-direction: column; flex-shrink: 0; }
+  .chart-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; gap: 8px; }
+  .chart-title { font-size: 15px; font-weight: 600; }
+  .seg-group { display: inline-flex; border: 1px solid #c9c9c9; border-radius: 6px; overflow: hidden; }
+  .seg-item { padding: 4px 12px; font-size: 12px; cursor: pointer; background: #fff; color: #44464d; border: 0; font-family: inherit; }
+  .seg-item[aria-pressed="true"] { background: #1677ff; color: #fff; font-weight: 600; }
+  /* 日期控件（对齐 TradeDatePicker 简化示意） */
+  .date-input { border: 1px solid #c9c9c9; border-radius: 6px; padding: 5px 10px; font-size: 13px; color: #44464d; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; background: #fff; }
+  .chart-box { height: clamp(100px, 20vh, 220px); border: 1px solid #e5e5e5; border-radius: 4px; display: flex; align-items: center; justify-content: center; background: linear-gradient(#fcfcfc 1px, transparent 1px), linear-gradient(90deg, #fcfcfc 1px, transparent 1px); background-size: 40px 40px; position: relative; overflow: hidden; }
+  .chart-placeholder { color: #73757d; font-size: 13px; }
+  .chart-line { position: absolute; left: 0; right: 0; bottom: 20px; height: calc(100% - 40px); }
+  .chart-line svg { width: 100%; height: 100%; }
+  .table-section { flex: 1; display: flex; flex-direction: column; }
+  .table-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .table-wrap { flex: 1; min-height: 160px; border: 1px solid #e5e5e5; border-radius: 4px; display: flex; flex-direction: column; }
+  .table-head, .table-row { display: flex; align-items: center; padding: 0 12px; }
+  .table-head { background: #f3f3f3; font-size: 13px; font-weight: 600; color: #44464d; min-height: 38px; border-bottom: 1px solid #e5e5e5; flex-shrink: 0; }
+  .table-head .sortable { cursor: pointer; user-select: none; }
+  .table-head .sortable:hover { color: #1677ff; }
+  .table-head .sort-active { color: #1677ff; }
+  .table-head .no-sort { cursor: default; }
+  .table-body { flex: 1; min-height: 0; overflow-y: auto; }
+  .table-row { min-height: 38px; border-bottom: 1px solid #f3f3f3; font-size: 13px; color: #44464d; }
+  .table-row:hover { background: #f3f3f3; }
+  .c-code { width: 16%; }
+  .c-name { width: 24%; font-weight: 600; }
+  .c-price { width: 16%; text-align: right; }
+  .c-pct { width: 16%; text-align: right; }
+  .c-turn { width: 28%; text-align: right; }
+  .name-link { color: #1677ff; cursor: pointer; }
+  .name-disabled { color: #73757d; cursor: not-allowed; text-decoration: none; }
+  .pager { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 8px 12px; font-size: 13px; color: #44464d; flex-shrink: 0; }
+  .pager button { border: 1px solid #c9c9c9; background: #fff; border-radius: 4px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+  .pager .cur { background: #1677ff; color: #fff; border-color: #1677ff; }
+  .pager .disabled { color: #c9c9c9; cursor: not-allowed; }
+  .state-block { flex: 1; border: 1px solid #e5e5e5; border-radius: 4px; padding: 32px; text-align: center; color: #73757d; font-size: 13px; display: none; }
+  .state-block .retry { margin-top: 12px; border: 1px solid #1677ff; color: #1677ff; background: #fff; border-radius: 4px; padding: 6px 18px; font-size: 13px; cursor: pointer; }
+  .state-block .permission { margin-top: 12px; border: 1px solid #f5a623; color: #f58a07; background: #fff; border-radius: 4px; padding: 6px 18px; font-size: 13px; }
+  .drawer-mask { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.32); display: none; z-index: 10; }
+  .drawer { position: absolute; top: 0; right: 0; bottom: 0; width: 360px; background: #fff; box-shadow: 0 10px 30px rgba(0,0,0,0.15); display: none; flex-direction: column; z-index: 11; }
+  .drawer.open, .drawer-mask.open { display: flex; }
+  .drawer-head { padding: 16px; font-size: 15px; font-weight: 600; border-bottom: 1px solid #e5e5e5; }
+  .drawer-body { flex: 1; padding: 16px; font-size: 13px; color: #44464d; overflow-y: auto; }
+  .drawer-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f3f3; }
+  .drawer-item select { border: 1px solid #c9c9c9; border-radius: 4px; padding: 3px 6px; font-size: 13px; }
+  .drawer-foot { padding: 12px 16px; border-top: 1px solid #e5e5e5; display: flex; justify-content: space-between; }
+  .drawer-foot button { border: 1px solid #c9c9c9; background: #fff; border-radius: 4px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  .tooltip { position: fixed; background: #17181c; color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 4px; display: none; z-index: 20; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="shell">
+    <aside class="sidebar">
+      <div style="font-size:15px;font-weight:600;margin-bottom:16px;">复盘啦</div>
+      <div style="font-size:13px;color:#73757d;line-height:26px;">
+        <div>· 最新行情</div>
+        <div style="padding-left:16px;">&nbsp;&nbsp;个股行情</div>
+        <div style="padding-left:16px;">&nbsp;&nbsp;每日榜单</div>
+        <div style="padding-left:16px;color:#1677ff;font-weight:600;">&nbsp;&nbsp;▍板块行情</div>
+        <div>策略筛选</div>
+        <div>策略回测</div>
+        <div>盘感训练</div>
+        <div>数据管理</div>
+      </div>
+    </aside>
+    <main class="main" id="contentArea">
+      <div class="topbar">
+        <div class="crumb"><span class="link" id="backLink">板块行情</span> / AI PC</div>
+        <button class="settings-trigger" id="settingsBtn" aria-haspopup="dialog">页面设置</button>
+      </div>
+
+      <!-- 摘要区：无来源/代码副标题 -->
+      <div class="detail-header">
+        <span class="detail-title">AI PC</span>
+        <span class="badge">概念板块</span>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-item"><span class="stat-label">成分股数</span><span class="stat-value">25<span class="unit"> 只</span></span></div>
+        <div class="stat-item"><span class="stat-label">今日涨跌幅</span><span class="stat-value up">+5.62%</span></div>
+        <div class="stat-item"><span class="stat-label">上涨 / 下跌家数</span><span class="stat-value"><span class="up">42</span> / <span class="down">8</span></span></div>
+        <div class="stat-item"><span class="stat-label">今日净流入<span class="unit">（数据日 08-08）</span></span><span class="stat-value up">+23.5<span class="unit"> 亿</span></span></div>
+        <div class="stat-item"><span class="stat-label">领涨股</span><span class="stat-value" style="font-size:14px;">胜宏科技 <span class="up mono">+12.0%</span></span></div>
+      </div>
+
+      <div class="proto-note">
+        <b>原型说明</b>：detail 原型 · 走势图(useEChartsTheme)+ 成分股表（统一分页，无展开/收起）· 日期控件（TradeDatePicker，默认最新交易日可回看）。
+        <button class="proto-demo" id="permOnBtn">原型演示：有个股权限</button>
+        <button class="proto-demo" id="permOffBtn">原型演示：无个股权限</button>
+        <button class="proto-demo" id="stateReadyBtn">原型演示：数据态</button>
+        <button class="proto-demo" id="stateEmptyBtn">原型演示：空态</button>
+        <button class="proto-demo" id="stateErrorBtn">原型演示：错误态</button>
+        <button class="proto-demo" id="stateLoadingBtn">原型演示：加载态</button>
+        <button class="proto-demo" id="statePermBtn">原型演示：无权态</button>
+      </div>
+
+      <div class="detail-body" id="detailBody">
+        <div class="chart-section" id="chartSection">
+          <div class="chart-toolbar">
+            <span class="chart-title">板块指数走势</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <!-- 日期控件（TradeDatePicker 简化示意：默认最新交易日，可回看） -->
+              <span class="date-input" id="datePicker">📅 2026-08-08</span>
+              <div class="seg-group" role="tablist" id="chartSeg">
+                <button class="seg-item" aria-pressed="false" data-period="1m">近1月</button>
+                <button class="seg-item" aria-pressed="true" data-period="3m">近3月</button>
+                <button class="seg-item" aria-pressed="false" data-period="6m">近半年</button>
+                <button class="seg-item" aria-pressed="false" data-period="1y">近1年</button>
+              </div>
+            </div>
+          </div>
+          <div class="chart-box">
+            <div class="chart-line">
+              <svg viewBox="0 0 700 180" preserveAspectRatio="none">
+                <polyline id="line" points="0,150 60,140 120,130 180,120 240,125 300,100 360,90 420,80 480,85 540,60 600,50 660,40 700,35" fill="none" stroke="#1677ff" stroke-width="2" />
+                <polyline id="lineArea" points="0,150 60,140 120,130 180,120 240,125 300,100 360,90 420,80 480,85 540,60 600,50 660,40 700,35 700,180 0,180" fill="#1677ff" opacity="0.08" stroke="none" />
+              </svg>
+            </div>
+            <span class="chart-placeholder">（正式实现为 ECharts，此处为占位示意）</span>
+          </div>
+        </div>
+
+        <div class="table-section" id="tableSection">
+          <div class="table-title">成分股 <span style="font-size:12px;color:#73757d;font-weight:400;" id="memberCountLabel">共 25 只</span></div>
+          <div class="table-wrap" id="tableWrap">
+            <div class="table-head">
+              <span class="c-code sortable" data-sort="code">代码</span>
+              <span class="c-name no-sort">名称</span>
+              <span class="c-price no-sort">现价</span>
+              <span class="c-pct sortable sort-active" data-sort="pct">涨跌幅 ▼</span>
+              <span class="c-turn no-sort">换手率</span>
+            </div>
+            <div class="table-body" id="memberBody"></div>
+            <div class="pager" id="pager"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="state-block" id="stateBlock">
+        <div id="stateBlockMsg">暂无数据</div>
+        <button class="retry" id="stateRetry" style="display:none;">重试</button>
+        <button class="permission" id="statePerm" style="display:none;">请联系系统管理员调整权限</button>
+      </div>
+
+      <div class="drawer-mask" id="drawerMask"></div>
+      <div class="drawer" id="drawer" role="dialog" aria-label="页面设置">
+        <div class="drawer-head">页面设置</div>
+        <div class="drawer-body">
+          <div class="drawer-item"><span>布局</span><span style="color:#73757d;">密度：舒适</span></div>
+          <div class="drawer-item"><span>组件设置 · 每页条数</span>
+            <select id="pageSizeSelect">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+          <div class="drawer-item"><span>组件设置 · 默认排序</span><span style="color:#73757d;">涨跌幅 ↓</span></div>
+          <div class="drawer-item"><span>组件设置 · 列显隐</span><span style="color:#73757d;">全部显示</span></div>
+          <div class="drawer-item"><span>业务选项 · 图表周期</span><span style="color:#73757d;">近3月</span></div>
+        </div>
+        <div class="drawer-foot">
+          <button id="drawerReset">恢复默认</button>
+          <button id="drawerClose">完成</button>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="tooltip" id="tooltip">无个股行情查看权限</div>
+
+<script>
+  // 25 只成分股：code 全库唯一
+  const MEMBERS = [
+    { code: '300476', name: '胜宏科技', price: 280.20, pct: 12.01, turn: 8.38 },
+    { code: '603936', name: '博敏电子', price: 15.93, pct: 10.01, turn: 9.95 },
+    { code: '002913', name: '奥士康', price: 32.40, pct: 6.85, turn: 5.12 },
+    { code: '603228', name: '景旺电子', price: 28.76, pct: 5.30, turn: 3.87 },
+    { code: '300684', name: '中石科技', price: 45.60, pct: 4.80, turn: 6.15 },
+    { code: '301312', name: '智立方', price: 120.50, pct: 3.60, turn: 7.42 },
+    { code: '002938', name: '鹏鼎控股', price: 58.90, pct: 2.95, turn: 2.88 },
+    { code: '002579', name: '中京电子', price: 18.22, pct: -2.14, turn: 4.20 },
+    { code: '300822', name: '沪电股份', price: 35.10, pct: 8.20, turn: 5.55 },
+    { code: '603986', name: '兆易创新', price: 95.30, pct: 6.50, turn: 3.12 },
+    { code: '688385', name: '复旦微电', price: 65.20, pct: 7.10, turn: 4.45 },
+    { code: '688111', name: '金山办公', price: 320.10, pct: 5.80, turn: 2.20 },
+    { code: '002230', name: '科大讯飞', price: 55.30, pct: 4.20, turn: 3.60 },
+    { code: '300308', name: '中际旭创', price: 145.60, pct: 9.30, turn: 6.80 },
+    { code: '688008', name: '澜起科技', price: 78.40, pct: 6.90, turn: 4.10 },
+    { code: '002475', name: '立讯精密', price: 42.80, pct: 3.50, turn: 2.90 },
+    { code: '688041', name: '海光信息', price: 88.20, pct: 7.80, turn: 5.20 },
+    { code: '603019', name: '中科曙光', price: 52.10, pct: 4.60, turn: 3.40 },
+    { code: '300454', name: '深信服', price: 68.90, pct: 2.80, turn: 2.10 },
+    { code: '002415', name: '海康威视', price: 35.40, pct: 1.90, turn: 1.80 },
+    { code: '688012', name: '中微公司', price: 175.30, pct: 8.90, turn: 5.90 },
+    { code: '688126', name: '沪硅产业', price: 22.60, pct: 5.10, turn: 4.30 },
+    { code: '002049', name: '紫光国微', price: 62.80, pct: 3.30, turn: 2.50 },
+    { code: '600584', name: '长电科技', price: 38.50, pct: 2.20, turn: 3.05 },
+    { code: '603501', name: '韦尔股份', price: 108.40, pct: 7.40, turn: 4.70 },
+  ];
+
+  const memberBody = document.getElementById('memberBody');
+  const detailBody = document.getElementById('detailBody');
+  const stateBlock = document.getElementById('stateBlock');
+  const pager = document.getElementById('pager');
+  const memberCountLabel = document.getElementById('memberCountLabel');
+  const pageSizeSelect = document.getElementById('pageSizeSelect');
+  let hasStockPerm = true;
+  let sortKey = 'pct';
+  let sortOrder = 'desc';
+  let currentPage = 1;
+  let pageSize = 20;
+
+  function getSortedMembers() {
+    return MEMBERS.slice().sort((a, b) => sortOrder === 'desc' ? (b[sortKey] - a[sortKey]) : (a[sortKey] - b[sortKey]));
+  }
+
+  function nameHtml(m) {
+    if (hasStockPerm) return `<span class="c-name name-link">${m.name}</span>`;
+    return `<span class="c-name name-disabled" title="无个股行情查看权限">${m.name}</span>`;
+  }
+
+  function render() {
+    const sorted = getSortedMembers();
+    const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+    if (currentPage > totalPages) currentPage = totalPages;
+    const shown = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    memberCountLabel.textContent = `共 ${sorted.length} 只`;
+    memberBody.innerHTML = shown.map(m => `
+      <div class="table-row" data-code="${m.code}">
+        <span class="c-code mono">${m.code}</span>
+        ${nameHtml(m)}
+        <span class="c-price">${m.price}</span>
+        <span class="c-pct ${m.pct>=0?'up':'down'}">${m.pct>=0?'+':''}${m.pct}%</span>
+        <span class="c-turn">${m.turn}%</span>
+      </div>`).join('');
+    renderPager(totalPages);
+  }
+
+  function renderPager(totalPages) {
+    const prevDisabled = currentPage === 1;
+    const nextDisabled = currentPage === totalPages;
+    const pages = Array.from({ length: totalPages }, (_, i) => i + 1).map(p =>
+      `<button class="${p === currentPage ? 'cur' : ''}" data-page="${p}">${p}</button>`).join('');
+    pager.innerHTML = `
+      <button data-page="prev" ${prevDisabled ? 'class="disabled" disabled aria-disabled="true"' : ''}>上一页</button>
+      ${pages}
+      <button data-page="next" ${nextDisabled ? 'class="disabled" disabled aria-disabled="true"' : ''}>下一页</button>
+      <span style="color:#73757d;">共 ${MEMBERS.length} 条 · 每页 ${pageSize}</span>`;
+  }
+
+  // 排序
+  function setMemberSort(key, order) {
+    sortKey = key; sortOrder = order;
+    document.querySelectorAll('#tableWrap .sortable').forEach(el => {
+      el.classList.remove('sort-active');
+      el.textContent = el.textContent.replace(/ [▼▲]$/, '');
+    });
+    const target = document.querySelector(`[data-sort="${key}"]`);
+    target.classList.add('sort-active');
+    target.textContent = target.textContent + ' ' + (order === 'desc' ? '▼' : '▲');
+    currentPage = 1;
+    render();
+  }
+  document.querySelector('#tableWrap .table-head').addEventListener('click', (e) => {
+    const th = e.target.closest('.sortable');
+    if (!th) return;
+    const key = th.dataset.sort;
+    const wasActive = th.classList.contains('sort-active');
+    const wasDesc = th.textContent.includes('▼');
+    setMemberSort(key, (wasActive && wasDesc) ? 'asc' : 'desc');
+  });
+
+  // 分页
+  pager.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-page]');
+    if (!btn || btn.hasAttribute('disabled')) return;
+    const totalPages = Math.max(1, Math.ceil(MEMBERS.length / pageSize));
+    if (btn.dataset.page === 'prev') { if (currentPage > 1) currentPage--; else return; }
+    else if (btn.dataset.page === 'next') { if (currentPage < totalPages) currentPage++; else return; }
+    else currentPage = parseInt(btn.dataset.page, 10);
+    render();
+  });
+
+  // 每页条数抽屉可配（对齐组件 pageSize）
+  pageSizeSelect.addEventListener('change', () => {
+    pageSize = parseInt(pageSizeSelect.value, 10);
+    currentPage = 1;
+    render();
+  });
+
+  // 权限
+  function setPerm(on) { hasStockPerm = on; render(); }
+  document.getElementById('permOnBtn').addEventListener('click', () => setPerm(true));
+  document.getElementById('permOffBtn').addEventListener('click', () => setPerm(false));
+
+  memberBody.addEventListener('click', (e) => {
+    const name = e.target.closest('.c-name');
+    if (!name || !name.classList.contains('name-link')) return;
+    const code = name.closest('.table-row').dataset.code;
+    alert('原型演示：跳转个股详情 /stocks/' + code);
+  });
+  memberBody.addEventListener('mouseover', (e) => {
+    const name = e.target.closest('.name-disabled');
+    if (name) {
+      const rect = name.getBoundingClientRect();
+      const tip = document.getElementById('tooltip');
+      tip.style.display = 'block';
+      tip.style.left = rect.left + 'px';
+      tip.style.top = (rect.top - 28) + 'px';
+    }
+  });
+  memberBody.addEventListener('mouseout', () => { document.getElementById('tooltip').style.display = 'none'; });
+
+  // 日期控件（演示：切换日期）
+  document.getElementById('datePicker').addEventListener('click', () => {
+    alert('原型演示：TradeDatePicker 选择交易日（默认最新 2026-08-08，可回看历史交易日）');
+  });
+
+  // 图表周期
+  const segs = document.querySelectorAll('#chartSeg .seg-item');
+  segs.forEach(btn => btn.addEventListener('click', () => {
+    segs.forEach(b => b.setAttribute('aria-pressed', 'false'));
+    btn.setAttribute('aria-pressed', 'true');
+    const line = document.getElementById('line');
+    const area = document.getElementById('lineArea');
+    const pts = '0,150 60,145 120,135 180,125 240,120 300,110 360,95 420,100 480,70 540,65 600,55 660,45 700,38';
+    line.setAttribute('points', pts);
+    area.setAttribute('points', pts + ' 700,180 0,180');
+  }));
+
+  // 状态切换
+  function showState(msg, opts) {
+    detailBody.style.display = 'none';
+    stateBlock.style.display = 'block';
+    document.getElementById('stateBlockMsg').textContent = msg;
+    document.getElementById('stateRetry').style.display = opts.retry ? '' : 'none';
+    document.getElementById('statePerm').style.display = opts.perm ? '' : 'none';
+  }
+  function showData() { detailBody.style.display = 'flex'; stateBlock.style.display = 'none'; }
+  document.getElementById('stateReadyBtn').addEventListener('click', showData);
+  document.getElementById('stateEmptyBtn').addEventListener('click', () => showState('暂无板块数据，请先在数据采集页运行板块采集', {retry:false, perm:false}));
+  document.getElementById('stateErrorBtn').addEventListener('click', () => showState('板块详情加载失败', {retry:true, perm:false}));
+  document.getElementById('stateLoadingBtn').addEventListener('click', () => showState('正在加载板块详情…', {retry:false, perm:false}));
+  document.getElementById('statePermBtn').addEventListener('click', () => showState('无权限查看板块详情', {retry:false, perm:true}));
+  document.getElementById('stateRetry').addEventListener('click', showData);
+
+  // 面包屑返回
+  document.getElementById('backLink').addEventListener('click', () => {
+    alert('原型演示：返回板块列表 /sectors（显式跳转 + 来源 query 还原筛选态）');
+  });
+
+  // 设置抽屉
+  const drawer = document.getElementById('drawer');
+  const mask = document.getElementById('drawerMask');
+  document.getElementById('settingsBtn').addEventListener('click', () => { drawer.classList.add('open'); mask.classList.add('open'); });
+  document.getElementById('drawerClose').addEventListener('click', () => { drawer.classList.remove('open'); mask.classList.remove('open'); });
+  mask.addEventListener('click', () => { drawer.classList.remove('open'); mask.classList.remove('open'); });
+  document.getElementById('drawerReset').addEventListener('click', () => { pageSize = 20; pageSizeSelect.value = '20'; currentPage = 1; render(); alert('原型演示：恢复默认设置'); });
+
+  render();
+</script>
+</body>
+</html>
