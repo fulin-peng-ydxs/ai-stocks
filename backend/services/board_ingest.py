@@ -355,9 +355,19 @@ class BoardIngestService:
             pass
 
     def _write_unmatched_quality(self, names: list[str], sdate: date) -> None:
-        """未匹配资金流板块写质检（name 记录，无伪造代码）。"""
+        """未匹配资金流板块写质检（name 记录，无伪造代码）。
+
+        收敛语义：写入前**清除历史误报**——已能匹配字典的旧 open `board_fund_unmatched`
+        （板块名现已存在 board_dict，说明上次采集时字典不完整/匹配失败，本次已可匹配，
+        不应再作为未匹配）。随后只对当次仍无法匹配的板块名幂等建 issue（去重 name）。
+        """
         if not names:
             return
+        # 清理历史误报：板块名现在字典里能匹配的旧 open issue
+        self.c.execute(
+            "DELETE FROM data_quality_issue WHERE issue_type='board_fund_unmatched' "
+            "AND status='open' AND json_extract_string(detail, '$.name') IN "
+            "(SELECT name FROM board_dict)")
         seen: dict[str, None] = {}
         for n in names:
             seen.setdefault(n, None)
