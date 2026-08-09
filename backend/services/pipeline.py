@@ -36,17 +36,20 @@ class DailyPipeline:
         return None if pd.isna(d) else pd.Timestamp(d).date()
 
     def run(self, skip_update: bool = False, verify: bool = False, quality: bool = True,
-            codes: list[str] | None = None, ctx=None) -> dict:
-        """每日流程（v2.0 精简版）：更新行情（含补市值）→ 数据质检 →（可选）数据体检。
+            board: bool = True, codes: list[str] | None = None, ctx=None) -> dict:
+        """每日流程（v2.0 精简 + 板块）：更新行情（含补市值）→ 板块采集 → 数据质检 →（可选）数据体检。
 
         评分榜单/预设筛选不在本流程预跑；榜单页只读已生产的公共 fresh 快照。
         最新公共榜单由评分维护任务或 public-board CLI 生产——故移除原步骤4（打分榜单）、
         步骤5（预设筛选）。
         补市值已并入 IngestionService.update()，不再单列步骤。
+        板块采集（板块概念需求 R21）：board=True 默认执行；skip_update=True 仍采集板块
+        （板块独立于行情更新）；板块步骤失败不提前 return、继续质检，但最终 ok=false。
         """
         steps: list[dict] = []
-        # 已知总步数（更新/质检），用于实时日志的"步骤 i/N"分段。
-        total_steps = (1 if not skip_update else 0) + (1 if quality else 0) + (1 if verify else 0)
+        # 已知总步数（更新/板块/质检/体检），用于实时日志的"步骤 i/N"分段。
+        total_steps = ((1 if not skip_update else 0) + (1 if board else 0)
+                       + (1 if quality else 0) + (1 if verify else 0))
         idx = {"n": 0}
 
         def step(name: str, fn) -> bool:
@@ -83,7 +86,14 @@ class DailyPipeline:
             steps.append({"step": "定位最新交易日", "status": "failed", "secs": 0, "detail": "无行情数据"})
             return {"ok": False, "steps": steps}
 
-        # 2. 数据质检（M2.9 DM-D14）：扫异常涨跌/复权跳变写 data_quality_issue（幂等，每日自动监控）。
+        # 2. 板块采集（板块概念需求 R21）：板块独立于行情更新；失败不阻塞后续质检。
+        if board:
+            def _board():
+                from backend.services.ingest import IngestionService
+                return IngestionService().ingest_board(ctx=ctx)
+            step("板块采集", _board)
+
+        # 3. 数据质检（M2.9 DM-D14）：扫异常涨跌/复权跳变写 data_quality_issue（幂等，每日自动监控）。
         if quality:
             def _quality():
                 from backend.services.data_report import DataIntegrityReport
@@ -92,7 +102,7 @@ class DailyPipeline:
 
         # 评分榜单 / 预设筛选不在此预跑；公共榜单生产见评分维护任务与 public-board CLI。
 
-        # 3. 可选：数据体检（不联网交叉验证）
+        # 4. 可选：数据体检（不联网交叉验证）
         if verify:
             def _verify():
                 from backend.services.data_verify import DataVerifier

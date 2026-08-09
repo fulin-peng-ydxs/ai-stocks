@@ -415,12 +415,30 @@ def cmd_backtest(args: argparse.Namespace) -> int:
 def cmd_daily(args: argparse.Namespace) -> int:
     from backend.services.pipeline import DailyPipeline
 
-    res = DailyPipeline().run(skip_update=args.skip_update, verify=args.verify)
+    res = DailyPipeline().run(skip_update=args.skip_update, verify=args.verify,
+                              board=not args.skip_board)
     print(f"=== 一键日常流程 {'✓' if res['ok'] else '✗'}  run_date={res.get('run_date','-')} ===")
     for s in res["steps"]:
         mark = "✓" if s["status"] == "ok" else "✗"
         print(f"  {mark} {s['step']:14s} {s['secs']:6.1f}s  {s['detail']}")
     return 0 if res["ok"] else 1
+
+
+def cmd_board(args: argparse.Namespace) -> int:
+    """板块采集 CLI（板块概念需求 R21）：--backfill 全量回填 / --update 增量。"""
+    from backend.services.ingest import IngestionService
+
+    svc = IngestionService()
+    res = svc.ingest_board()
+    failed = res.get("failed") or []
+    print(f"=== 板块采集 {'✓' if not failed else '✗'} ===")
+    print(f"  字典: {res.get('dict')}")
+    print(f"  成分快照: {len(res.get('members', {}))} 个板块")
+    print(f"  指数: {res.get('bar')}")
+    print(f"  资金流: {res.get('fund_flow')}")
+    if failed:
+        print(f"  失败项: {failed}")
+    return 0 if not failed else 1
 
 
 def cmd_robust(args: argparse.Namespace) -> int:
@@ -655,10 +673,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_vf = sub.add_parser("verify-data", help="数据正确性+完整性系统性核查（M1）")
     p_vf.add_argument("--no-cross", action="store_true", help="跳过独立数据源交叉验证（不联网）")
     p_vf.set_defaults(func=cmd_verify_data)
-    p_daily = sub.add_parser("daily", help="一键日常流程：更新行情(含补市值)→数据质检→（可选）数据体检")
+    p_daily = sub.add_parser("daily", help="一键日常流程：更新行情(含补市值)→板块采集→数据质检→（可选）数据体检")
     p_daily.add_argument("--skip-update", action="store_true", help="跳过增量更新（数据已最新时，最省时）")
+    p_daily.add_argument("--skip-board", action="store_true", help="跳过板块采集步骤（板块独立于行情更新）")
     p_daily.add_argument("--verify", action="store_true", help="末尾跑数据体检")
     p_daily.set_defaults(func=cmd_daily)
+
+    p_board = sub.add_parser("board", help="板块采集（板块概念）：全量回填/增量")
+    p_board.add_argument("--backfill", action="store_true",
+                         help="全量回填（指数历史 + 首次成分快照 + 资金流全周期）")
+    p_board.add_argument("--update", action="store_true", help="增量（仅补今日）")
+    p_board.set_defaults(func=cmd_board)
 
     p_bt = sub.add_parser("backtest", help="运行回测（M5）：信号质量分析 / 完整策略回测")
     p_bt.add_argument("--kind", choices=["signal", "strategy"], default="strategy", help="回测类型")

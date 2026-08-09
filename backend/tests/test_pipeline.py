@@ -90,3 +90,118 @@ def test_scheduled_job_crud():
         svc.delete(cleanup["id"])
         svc.delete(job["id"])
         assert svc.list() == []
+
+
+# ── 板块采集步骤集成（R21，T6）───────────────────────────────
+
+
+def _seed_market_with_latest(c: DuckDBClient) -> None:
+    """种一条行情数据使 _latest_date() 有值（空库会中止流程）。"""
+    c.execute("INSERT INTO daily_bar (code, trade_date, close) "
+              "VALUES ('600000.SH', DATE '2026-01-05', 10.0)")
+
+
+def test_pipeline_board_default_runs(tmp_path, monkeypatch):
+    """board=True 默认执行：daily 含「板块采集」步骤且 ok。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.pipeline import DailyPipeline
+
+    called = {"n": 0}
+
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None):
+        called["n"] += 1
+        return {"dict": {"total": 465}, "members": {}, "bar": {"rows": 0},
+                "fund_flow": {"rows": 0}, "failed": []}
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", fake_ingest_board, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "update", lambda self, codes=None, ctx=None: {"ok": 1}, raising=True)
+    monkeypatch.setattr("backend.services.pipeline.get_client", lambda: None)  # 不触发真实库
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_market_with_latest(c)
+        res = DailyPipeline(c).run(skip_update=True)  # board 默认 True
+        assert called["n"] == 1                       # 板块步骤执行
+        assert any(s["step"] == "板块采集" and s["status"] == "ok" for s in res["steps"])
+
+
+def test_pipeline_board_skipped_with_board_false(tmp_path, monkeypatch):
+    """board=False：daily 不含板块采集步骤。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.pipeline import DailyPipeline
+
+    called = {"n": 0}
+
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None):
+        called["n"] += 1
+        return {}
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", fake_ingest_board, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "update", lambda self, codes=None, ctx=None: {"ok": 1}, raising=True)
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_market_with_latest(c)
+        res = DailyPipeline(c).run(skip_update=True, board=False)
+        assert called["n"] == 0                       # 板块不执行
+        assert not any(s["step"] == "板块采集" for s in res["steps"])
+
+
+def test_pipeline_board_failure_continues_quality(tmp_path, monkeypatch):
+    """板块失败不阻塞：继续执行数据质检，但最终 ok=False（R21 失败隔离语义）。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.data_report import DataIntegrityReport
+    from backend.services.pipeline import DailyPipeline
+
+    def boom_board(self, ctx=None, board_type=None, board_codes=None):
+        raise RuntimeError("板块采集失败")
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", boom_board, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "update", lambda self, codes=None, ctx=None: {"ok": 1}, raising=True)
+    monkeypatch.setattr(DataIntegrityReport, "scan_quality_issues", lambda self: {"abnormal_change_rows": 0}, raising=True)
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_market_with_latest(c)
+        res = DailyPipeline(c).run(skip_update=True)
+        # 板块失败但质检步骤执行了
+        steps = {s["step"]: s["status"] for s in res["steps"]}
+        assert steps["板块采集"] == "failed"
+        assert steps["数据质检"] == "ok"          # 失败不阻塞后续步骤
+        assert res["ok"] is False                 # 但整体失败
+
+
+def test_pipeline_board_total_steps_count(tmp_path, monkeypatch):
+    """total_steps 正确：skip_update + board + quality = 3 步（不出现 3/2）。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.data_report import DataIntegrityReport
+    from backend.services.pipeline import DailyPipeline
+
+    ctx_logs: list[str] = []
+
+    class _Ctx:
+        def check_cancel(self):
+            pass
+
+        def log(self, msg, level="info"):
+            ctx_logs.append(msg)
+
+        def progress(self, p, msg):
+            pass
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board",
+                        lambda self, ctx=None, board_type=None, board_codes=None: {}, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "update", lambda self, codes=None, ctx=None: {"ok": 1}, raising=True)
+    monkeypatch.setattr(DataIntegrityReport, "scan_quality_issues", lambda self: {"abnormal_change_rows": 0}, raising=True)
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_market_with_latest(c)
+        DailyPipeline(c).run(skip_update=True, ctx=_Ctx())
+        # 步骤日志应含「1/2」「2/2」（skip_update=True → 板块+质检=2 步，不出现 2/1 之类错误分段）
+        assert any("1/2" in m and "板块采集" in m for m in ctx_logs)
+        assert any("2/2" in m and "数据质检" in m for m in ctx_logs)
