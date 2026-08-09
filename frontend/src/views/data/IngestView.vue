@@ -209,7 +209,7 @@ function taskDuration(t: AsyncTask): string {
 const optDlg = ref(false)
 const optType = ref<TaskType>('ingest_date')
 const optForm = ref<{ codes: string[]; date_start: string; date_end: string; years: number | null; mode: 'backfill' | 'update' }>(
-  { codes: [], date_start: '', date_end: '', years: null, mode: 'backfill' })
+  { codes: [], date_start: '', date_end: '', years: null, mode: 'update' })
 
 // 指定股票/板块：下拉多选，输入代码或名称远程搜索（DM-D17）。
 // optType=board 搜板块（board_dict 代码/名称）；其余搜股票。
@@ -233,7 +233,7 @@ async function remoteCode(q: string) {
 
 function openOptions(type: TaskType) {
   optType.value = type
-  optForm.value = { codes: [], date_start: '', date_end: '', years: null, mode: 'backfill' }
+  optForm.value = { codes: [], date_start: '', date_end: '', years: null, mode: 'update' }
   codeOptions.value = []
   optDlg.value = true
 }
@@ -276,7 +276,7 @@ async function submitOptions() {
   } else if (optType.value === 'ingest_codes') {
     if (!codes.length) { ElMessage.warning('请填写股票代码'); return }
   } else if (optType.value === 'board') {
-    params.mode = f.mode  // 板块采集：回填（默认）/ 增量
+    params.mode = f.mode  // 板块采集：增量（默认）/ 全量回填
   }
   optDlg.value = false
   await submit(optType.value, params)
@@ -818,10 +818,10 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item v-if="optType === 'board'" label="采集模式">
           <el-radio-group v-model="optForm.mode" data-testid="ingest-board-mode">
-            <el-radio value="backfill">全量回填</el-radio>
             <el-radio value="update">增量</el-radio>
+            <el-radio value="backfill">全量回填</el-radio>
           </el-radio-group>
-          <span class="hint">全量回填：指数补 2024 起、资金流全周期；增量：只补最近交易日、资金流只采即时</span>
+          <span class="hint">增量：只补最近交易日、资金流只采即时；全量回填：指数补 2024 起、资金流全周期</span>
         </el-form-item>
         <el-form-item :label="optType === 'board' ? '指定板块' : '指定股票'">
           <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags

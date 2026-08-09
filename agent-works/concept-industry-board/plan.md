@@ -66,7 +66,7 @@ R1、R2、R3、R4、R5、R6、R7、R8、R9、R10、R21、R22、R23（逐项映�
 - **权限策略**：`sectors:view` 进 `BUSINESS_RESOURCE_CODES`（业务授权，非登录基线）；后端 `require_perm('sectors:view')` 守卫；采集操作 system-only（`data-task:manage` / `data-quality:view|fix`）；既有库一次性回填授权 + 同事务 bump `perm_ver`（marker 幂等）。
 - **兼容策略**：`board_bar` 存原值不套复权链；`stock_basic.concept` 不写；新增表与 seed 全部幂等；`ThsBoardSource` 限速 ≥1s/次 + 分批断点。
 - **关键取舍**：资金流无稳定代码时按名称匹配，未匹配写 `board_fund_unmatched` 质检不伪造代码；成分「只进不出」累积，完整快照才落库，候选机制废弃（2026-08-09 只进不出改造）。
-- **表达式唯一索引可行性（2026-08-09 实测复核）**：`CREATE UNIQUE INDEX ... (CASE WHEN status='applied' THEN 1 ELSE NULL END)` 在本机 DuckDB 1.5.3 实测**创建成功且强制生效**——INSERT 与 UPDATE 路径均拦截第二条 applied（ConstraintException），多条 pending/discarded（表达式值为 NULL）同日并存，跨日/跨板块 applied 互不影响。设计可行，T3 单测作为版本回归验证点。**降级方案（仅当部署环境 DuckDB 版本拒绝表达式索引时启用）**：退化为纯事务内先查后写 + 明确接受无 DB 层兜底（并在此记录版本事实）；生成列 + UNIQUE 约束、部分索引（WHERE）两条替代路径经实测分别为 BinderException/NotImplementedException 不支持，不可用。
+- **🔴 表达式唯一索引已废弃（2026-08-09 只进不出改造）**：本条为候选机制时期的历史可行性记录（`CREATE UNIQUE INDEX ... (CASE WHEN status='applied' ...)` 控制每板块每日最多一个 applied 候选），随候选表删除已无对应索引，不再适用。保留仅作历史留档。
 
 ### 前端页面设计闭环
 
@@ -223,7 +223,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 边界与异常：契约变更需回到本任务修订。
 - 验证方式：计划评审确认。
 - 完成标准：契约无待确认阻塞项。
-- 实际落地情况：已核验（2026-08-09 T1 执行）——5 表 DDL/接口/权限/配置契约逐项对照代码现状成立；补 1 处契约：R12 阈值需 `Settings` 模型加子模型字段（Pydantic default_factory），与 settings.yaml 节、CONFIG_GROUPS 白名单三者配套（见 §7.4）。
+- 实际落地情况：已核验（2026-08-09 T1 执行）——5 表 DDL/接口/权限/配置契约逐项对照代码现状成立；补 1 处契约：R12 阈值需 `Settings` 模型加子模型字段（Pydantic default_factory），与 settings.yaml 节、CONFIG_GROUPS 白名单三者配套（见 §7.4）。**🔴 只进不出改造后契约为 4 表**（候选表删除），本条为 T1 当时快照。
 
 ### 6.2 任务 T2：`ThsBoardSource` 数据源适配器
 
@@ -243,15 +243,15 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 - 状态：已完成（2026-08-09 T3 执行；只进不出改造后删候选表）
 - 依赖：T1
-- 涉及文件/模块：[ddl.py](../../backend/storage/ddl.py)（5 表 + `_DIMENSION_SEED` 加 `board` 行）、`backend/tests/`（DDL 幂等与约束测试）
-- 目标：落地 `board_dict`/`board_member`/`board_bar`/`board_fund_flow`/`board_member_candidate`（字段按需求 §6.1，含 `payload_hash VARCHAR(64) CHECK (regexp_full_match(payload_hash, '[0-9a-f]{64}'))`、候选唯一约束 `(board_code, snapshot_date, payload_hash)`、表达式唯一索引 `uq_board_member_candidate_one_applied`）；`board` 维度 status=collected、tables=4 表。
-- 操作：按 ddl.py 既有建表模式新增；DDL 幂等（重复 init 不报错，索引用 `CREATE UNIQUE INDEX IF NOT EXISTS`）；维度 seed 幂等。表达式唯一索引已于 2026-08-09 在 DuckDB 1.5.3 实测可行（含 UPDATE 路径强制），本任务单测作为版本回归验证点；若目标环境 DuckDB 版本拒绝该索引，按 §4「降级方案」执行（纯事务内先查后写 + 记录无 DB 层兜底），并在本任务「实际落地情况」记录版本事实。
-- 产出：DDL + 单测（建表幂等、CHECK 拒绝大写/63/65 位/Base64、表达式唯一索引允许同日多 pending/discarded 但拒绝第二条 applied——INSERT 与 UPDATE 两路径都要测、维度行存在）。
+- 涉及文件/模块：[ddl.py](../../backend/storage/ddl.py)（4 表 + `_DIMENSION_SEED` 加 `board` 行）、`backend/tests/`（DDL 幂等与约束测试）
+- 目标：落地 `board_dict`/`board_member`/`board_bar`/`board_fund_flow` 4 表（字段按需求 §6.1；`board_member` 为只进不出 `(board_code, code)` 主键，候选表已废弃删除）+ `member_snapshot_at` 列；`board` 维度 status=collected、tables=4 表。
+- 操作：按 ddl.py 既有建表模式新增；DDL 幂等（重复 init 不报错）；维度 seed 幂等。候选机制（payload_hash/表达式唯一索引）已废弃，见版本注记「只进不出改造」。
+- 产出：DDL + 单测（建表幂等、board_member `(board_code, code)` 主键冲突拒绝、维度行存在）。
 - 影响范围：DuckDB schema；数据概览「数据资产表」新增一行。
 - 边界与异常：无既有数据迁移（全新表）。
 - 验证方式：单测 + 启动后数据概览接口可见 board 维度。
-- 完成标准：5 表创建成功、约束生效、维度注册可见。
-- 实际落地情况：已实施（2026-08-09 T3 执行）——`backend/storage/ddl.py` 新增 `M_BOARD_TABLES`（5 表：board_dict/board_member/board_bar/board_fund_flow/board_member_candidate，含 payload_hash CHECK `regexp_full_match`、候选唯一约束、表达式唯一索引 `uq_board_member_candidate_one_applied`）+ `_DIMENSION_SEED` 加 board 行 + `init_db` 注册；`backend/tests/test_ddl.py` 新增 7 个板块用例（建表幂等/维度行/CHECK 拒非法/同日同 hash 唯一/表达式索引 INSERT+UPDATE 两路径拦截/跨板块跨日 applied/双表 PK），共 17 用例全绿。**实测确认**：DuckDB 1.5.3 多语句 execute（表+索引）OK、表达式唯一索引 INSERT 与 UPDATE 两路径均拦截第二条 applied、pending/discarded 同日并存、跨日/跨板块 applied 互不影响（与 §4 支柱一致）；DuckDBClient `execute` 异常后 `_conn=None` 重建连接（:memory: 重建即空库，文件库不受影响），T9 事务需注意约束冲突后连接重建语义。
+- 完成标准：4 表创建成功、主键约束生效、维度注册可见。
+- 实际落地情况：已实施（2026-08-09 T3 执行）——`backend/storage/ddl.py` 新增 `M_BOARD_TABLES`（5 表：board_dict/board_member/board_bar/board_fund_flow/board_member_candidate，含 payload_hash CHECK `regexp_full_match`、候选唯一约束、表达式唯一索引 `uq_board_member_candidate_one_applied`）+ `_DIMENSION_SEED` 加 board 行 + `init_db` 注册；`backend/tests/test_ddl.py` 新增 7 个板块用例（建表幂等/维度行/CHECK 拒非法/同日同 hash 唯一/表达式索引 INSERT+UPDATE 两路径拦截/跨板块跨日 applied/双表 PK），共 17 用例全绿。**🔴 2026-08-09 只进不出改造后本任务产物已变更**：`board_member` 改 `(board_code, code)` 主键、`board_member_candidate` 表删除、候选约束/表达式索引移除，当前为 4 表（见版本注记）；本条为 T3 当时的历史快照。
 
 ### 6.4 任务 T4：板块采集服务（字典/成分快照/指数/资金流）
 
@@ -433,7 +433,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 用途：板块 4 表与维度注册。
 - 执行时机：后端启动 DDL init 幂等执行（T3 随代码上线）。
 - 影响范围：DuckDB schema 新增；无既有表变更、无数据迁移。
-- 回滚方式：`DROP TABLE IF EXISTS board_dict, board_member, board_bar, board_fund_flow, board_member_candidate` + 删除维度 seed 行（新表无外部依赖，可安全回滚）。
+- 回滚方式：`DROP TABLE IF EXISTS board_dict, board_member, board_bar, board_fund_flow` + 删除维度 seed 行（新表无外部依赖，可安全回滚）。
 
 ### 7.2 PG seed（代码内幂等 seed）
 
@@ -482,7 +482,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 计划：`python -m pytest backend/tests/ -q` 全量（先 `./start.sh status`→`./start.sh stop`，结束后按原状态恢复并确认 `/api/health=200`）；`npm test`；相关既有 E2E 回归。
   - 具体完成情况：待验证
 - 异常与边界测试：
-  - 计划：不完整快照不退出 diff、同 hash 幂等、同日第二候选 409 + 索引竞态兜底（INSERT 与 UPDATE 两路径）、payload_hash 非法格式、401 cookie 刷新、单板块失败继续与失败清单、历史不足「—」、空值列「—」、`transaction()` 原子性（中途失败整体回滚）、写锁冲突 `duckdb_write_unavailable`（候选状态不变可重试、**锁释放后重试可恢复**）、**member_count 双应用路径刷新与未应用不刷新**、**T7 收敛不误删 `member_surge_shrink` open issue**。
+  - 计划：只进不出落库幂等（ON CONFLICT）、不完整快照不落库、401 cookie 刷新、单板块失败继续与失败清单、历史不足「—」、空值列「—」、`transaction()` 原子性（中途失败整体回滚）、写锁冲突 `duckdb_write_unavailable`（锁释放后重试可恢复）、**member_count/member_snapshot_at 完整快照路径刷新**、**完整快照后旧 incomplete issue 自动 resolved**。
   - 具体完成情况：待验证
 - 图示与原型一致性验证：P1/P2 实现对照 `prototypes/sector-board.html`/`prototypes/sector-detail.html` 的主要区域（action 筛选区/主表/分页/设置抽屉；摘要区/走势图工具条/图表/成分股表/抽屉/tooltip）、操作入口、关键状态（数据/空/错误/加载/无权/个股权限两态）与低高度退化；P3 无原型，按 QualityView 现状扩展核对。
 - 配置闭环验证：`defaultPeriod/defaultType/chartPeriod` 偏好与 `pageSize/defaultSort/hiddenColumns` 组件字段可展示、保存、读取、实际生效、恢复默认、非法值回落并兼容旧值。
