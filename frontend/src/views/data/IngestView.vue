@@ -200,8 +200,8 @@ function taskDuration(t: AsyncTask): string {
 // ── 更多选项对话框 ──
 const optDlg = ref(false)
 const optType = ref<TaskType>('ingest_date')
-const optForm = ref<{ codes: string[]; date_start: string; date_end: string; years: number | null }>(
-  { codes: [], date_start: '', date_end: '', years: null })
+const optForm = ref<{ codes: string[]; date_start: string; date_end: string; years: number | null; mode: 'backfill' | 'update' }>(
+  { codes: [], date_start: '', date_end: '', years: null, mode: 'backfill' })
 
 // 指定股票：下拉多选，输入代码或名称远程搜索（DM-D17）
 const codeOptions = ref<{ code: string; label: string }[]>([])
@@ -219,7 +219,7 @@ async function remoteCode(q: string) {
 
 function openOptions(type: TaskType) {
   optType.value = type
-  optForm.value = { codes: [], date_start: '', date_end: '', years: null }
+  optForm.value = { codes: [], date_start: '', date_end: '', years: null, mode: 'backfill' }
   codeOptions.value = []
   optDlg.value = true
 }
@@ -232,7 +232,7 @@ function openFromQuery() {
   const start = typeof q.start === 'string' ? q.start : ''
   const end = typeof q.end === 'string' ? q.end : start
   optType.value = 'ingest_date'
-  optForm.value = { codes: [code], date_start: start, date_end: end, years: null }
+  optForm.value = { codes: [code], date_start: start, date_end: end, years: null, mode: 'backfill' }
   codeOptions.value = [{ code, label: code }]   // 让多选框显示该代码
   optDlg.value = true
   if (start) ElMessage.info(`已带入 ${code} 的待补区间 ${start}~${end}，点「执行」即重采`)
@@ -251,6 +251,8 @@ async function submitOptions() {
     if (f.years) params.years = f.years
   } else if (optType.value === 'ingest_codes') {
     if (!codes.length) { ElMessage.warning('请填写股票代码'); return }
+  } else if (optType.value === 'board') {
+    params.mode = f.mode  // 板块采集：回填（默认）/ 增量
   }
   optDlg.value = false
   await submit(optType.value, params)
@@ -552,9 +554,9 @@ onMounted(async () => {
           </div>
           <div class="act">
             <div class="act-t">板块采集</div>
-            <div class="act-d">板块字典/成分/指数/资金流（回填或增量）</div>
+            <div class="act-d">板块字典/成分/指数/资金流（执行=全量回填，更多选项可选增量）</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
-                       @click="submit('board', undefined, '板块采集耗时可能较长，确认开始？')">执行</el-button>
+                       @click="submit('board', undefined, '板块采集（全量回填）耗时可能较长，确认开始？')">执行</el-button>
             <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('board')">更多选项…</el-button>
           </div>
         </div>
@@ -785,10 +787,16 @@ onMounted(async () => {
         <el-form-item v-if="optType === 'backfill'" label="回填年限">
           <el-input-number v-model="optForm.years" :min="1" :max="30" placeholder="留空=默认" />
         </el-form-item>
-        <el-form-item label="指定股票">
+        <el-form-item v-if="optType === 'board'" label="采集模式">
+          <el-radio-group v-model="optForm.mode">
+            <el-radio value="backfill">全量回填（指数补 2024 起，资金流全周期）</el-radio>
+            <el-radio value="update">增量（只补最近交易日，资金流只采即时）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="optType === 'board' ? '指定板块' : '指定股票'">
           <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags
                      :remote-method="remoteCode" :loading="codeOptLoading" :reserve-keyword="false"
-                     placeholder="输入代码或名称搜索，可多选（留空=全市场）" style="width: 100%">
+                     :placeholder="optType === 'board' ? '输入板块代码或名称搜索，可多选（留空=全部板块）' : '输入代码或名称搜索，可多选（留空=全市场）'" style="width: 100%">
             <el-option v-for="o in codeOptions" :key="o.code" :label="o.label" :value="o.code" />
           </el-select>
         </el-form-item>
