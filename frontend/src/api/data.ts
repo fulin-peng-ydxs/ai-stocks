@@ -245,7 +245,7 @@ export function runSchedule(id: string): Promise<{ task_id: string }> {
 // ── 数据源状态（FR-DM-5）──
 export interface SourceStatus {
   source: string
-  role: 'primary' | 'fallback'
+  role: 'primary' | 'fallback' | 'board'
   up: boolean | null
   last_success_at: string | null
   timeout_sec: number

@@ -457,7 +457,8 @@ def test_recheck_keeps_open_if_unfixed(client, monkeypatch):
 
 def test_fix_failure_resets_fixing_and_reports_not_ok(client, monkeypatch):
     """恢复中途抛异常（如源端取数失败）→ 问题必复位 open（不留 fixing 孤儿），
-    任务虽 done 但 result.ok=False、failed=1——杜绝"日志失败/状态修复中/弹成功"的假闭环。"""
+    任务标 failed（带 checkpoint 可续跑）且 result.ok=False、failed=1——
+    杜绝"日志失败/状态修复中/弹成功"的假闭环。"""
     rep = DataIntegrityReport(client)
     client.execute("INSERT INTO stock_basic (code, name, price_limit_pct) VALUES ('C.SH','丙', 0.10)")
     client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) "
@@ -479,7 +480,7 @@ def test_fix_failure_resets_fixing_and_reports_not_ok(client, monkeypatch):
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
     svc = AsyncTaskService(client)
     t = _wait(svc, svc.create("fix", {"issue_id": iid}))
-    assert t["status"] == "done"                       # 任务正常收尾（不崩）
+    assert t["status"] == "failed"                      # 部分失败任务标 failed（可续跑）
     assert t["result"]["ok"] is False and t["result"]["failed"] == 1
     # 关键：绝不留 fixing；fix_task_id 已清
     row = client.query_df("SELECT status, fix_task_id FROM data_quality_issue WHERE id=?", [iid]).iloc[0]

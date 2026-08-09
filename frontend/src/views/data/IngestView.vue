@@ -578,9 +578,9 @@ onMounted(async () => {
           </div>
           <div class="act">
             <div class="act-t">板块采集</div>
-            <div class="act-d">板块字典/成分/指数/资金流（执行=全量回填，更多选项可选增量）</div>
+            <div class="act-d">板块字典/成分/指数/资金流（执行=增量，更多选项可选回填）</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
-                       @click="submit('board', { mode: 'backfill' }, '板块采集（全量回填）耗时可能较长，确认开始？')">执行</el-button>
+                       @click="submit('board', { mode: 'update' }, '板块采集（增量）开始？')">执行</el-button>
             <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('board')">更多选项…</el-button>
           </div>
         </div>
