@@ -304,3 +304,76 @@ def test_validate_board_type():
         _make_source({}).get_board_dict("bad_type")
     with pytest.raises(ValueError):
         _make_source({}).get_board_fund_flow("concept", "7日")
+
+
+# ── 登录态（解除翻页登录墙）──────────────────────────────────
+
+
+def test_login_cookie_from_env(monkeypatch):
+    monkeypatch.delenv("AI_STOCKS_THS_COOKIE", raising=False)
+    monkeypatch.delenv("AI_STOCKS_THS_COOKIE_FILE", raising=False)
+    assert tb._login_cookie_from_env() is None
+
+    monkeypatch.setenv("AI_STOCKS_THS_COOKIE", "user=1; ticket=abc")
+    assert tb._login_cookie_from_env() == "user=1; ticket=abc"
+
+    # FILE 优先于空 COOKIE
+    monkeypatch.delenv("AI_STOCKS_THS_COOKIE")
+    import tempfile
+    import os
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+        f.write("file-cookie=xyz")
+        p = f.name
+    monkeypatch.setenv("AI_STOCKS_THS_COOKIE_FILE", p)
+    try:
+        assert tb._login_cookie_from_env() == "file-cookie=xyz"
+    finally:
+        os.unlink(p)
+
+
+def test_headers_login_cookie_uses_login_v():
+    """登录态：非 data_host 时 Cookie 直接用登录 cookie（含登录凭证 + v），不再拼独立 v。"""
+    s = _make_source({})
+    s._login_cookie = "user=1; ticket=abc; v=loginv"
+    h = s._headers()
+    assert h["Cookie"] == "user=1; ticket=abc; v=loginv"
+
+    # 无登录态：拼接独立生成的 v
+    s2 = _make_source({})
+    s2._v_code = "genv"
+    h2 = s2._headers()
+    assert h2["Cookie"] == "v=genv"
+
+
+def test_get_board_members_login_breaks_wall():
+    """登录态下：第 6 页返回真实数据（非登录墙）→ 正常拼接，空尾页才终止。"""
+    p1 = _member_page(["300476", "603936"])
+    p2 = _member_page(["002913", "688449"])
+    p3 = _LOGIN_WALL  # 登录态下若仍出现登录墙（极端），仍应标不完整
+    s = _make_source({
+        "/field/199112/order/desc/page/1/ajax/1/": p1,
+        "/field/199112/order/desc/page/2/ajax/1/": p2,
+        "/page/1/ajax/1/": p1,
+        "/page/2/ajax/1/": p2,
+        "/page/3/ajax/1/": p3,
+    })
+    s._login_cookie = "user=1; ticket=abc"  # 模拟登录态
+    m = s.get_board_members("309121", "concept")
+    # 两页并集全拿到；第 3 页登录墙（极端情形）→ 不完整兜底
+    assert set(m["codes"]) == {"300476", "603936", "002913", "688449"}
+    assert m["complete"] is False  # 登录墙兜底仍生效
+
+
+def test_get_board_members_login_true_end():
+    """登录态下：正常空表格=真实尾页，complete=True。"""
+    p1 = _member_page(["300476"])
+    s = _make_source({
+        "/field/199112/order/desc/page/1/ajax/1/": p1,
+        "/field/199112/order/desc/page/2/ajax/1/": "<table class='m-table'></table>",
+        "/page/1/ajax/1/": p1,
+        "/page/2/ajax/1/": "<table class='m-table'></table>",
+    })
+    s._login_cookie = "user=1; ticket=abc"
+    m = s.get_board_members("309121", "concept")
+    assert set(m["codes"]) == {"300476"}
+    assert m["complete"] is True

@@ -70,6 +70,27 @@ def _ths_js_path() -> "str":
     return str(resources.files("akshare.data").joinpath("ths.js"))
 
 
+def _login_cookie_from_env() -> str | None:
+    """从环境变量读取登录态 cookie（浏览器同花顺登录后复制，非硬编码、不入库）。
+
+    `AI_STOCKS_THS_COOKIE` 为完整 Cookie 头字符串；也可指向存有 cookie 的文件路径
+    （`AI_STOCKS_THS_COOKIE_FILE`）。登录态可解除详情页翻页的登录墙（第 6 页起无登录
+    必返回登录墙，登录后正常翻页，见 get_board_members docstring）。
+    """
+    import os
+
+    raw = os.environ.get("AI_STOCKS_THS_COOKIE", "")
+    if not raw:
+        f = os.environ.get("AI_STOCKS_THS_COOKIE_FILE", "")
+        if f:
+            try:
+                with open(f, encoding="utf-8") as fh:
+                    raw = fh.read().strip()
+            except OSError:
+                return None
+    return raw or None
+
+
 class ThsBoardSource:
     """同花顺板块数据适配器（独立普通类，见模块 docstring）。"""
 
@@ -78,10 +99,11 @@ class ThsBoardSource:
     def __init__(
         self,
         session: requests.Session | None = None,
-        min_interval_sec: float = 1.0,
+        min_interval_sec: float = 2.0,
         timeout: float = 10.0,
         max_retries: int = 3,
         retry_backoff_sec: float = 2.0,
+        login_cookie: str | None = None,
     ):
         self._session = session or requests.Session()
         # 与 base.py 装饰器契约一致：实例属性优先级 > 装饰器入参（运行时可按生效配置注入）
@@ -90,6 +112,8 @@ class ThsBoardSource:
         self._max_retries = max_retries
         self._retry_backoff_sec = retry_backoff_sec
         self._v_code: str | None = None
+        # 可选登录态（环境变量注入，不硬编码）：解除详情页翻页登录墙
+        self._login_cookie = login_cookie if login_cookie is not None else _login_cookie_from_env()
 
     # ── v cookie（反爬校验）──────────────────────────────────
 
@@ -121,8 +145,15 @@ class ThsBoardSource:
                 "X-Requested-With": "XMLHttpRequest",
                 "Referer": "http://data.10jqka.com.cn/funds/gnzjl/",
             })
+            if self._login_cookie:
+                base["Cookie"] = self._login_cookie
         else:
-            base["Cookie"] = f"v={v}"
+            if self._login_cookie:
+                # 登录态：用登录 cookie（含 user/ticket/sess_tk 等登录凭证 + 有效 v），
+                # 解除详情页翻页登录墙；不再拼接独立 v（登录 cookie 已带 v）
+                base["Cookie"] = self._login_cookie
+            else:
+                base["Cookie"] = f"v={v}"
         return base
 
     # ── 底层 HTTP ────────────────────────────────────────────
@@ -205,11 +236,12 @@ class ThsBoardSource:
 
         排序参数敏感（research.md §2）：无排序参数与 `field/199112/order/desc` 两种请求都试，
         取代码集合的并集（避免某一种被源端少返回）。
-        **源端翻页硬限制（2026-08-09 实测）**：详情页翻页第 6 页起必返回登录墙
-        （HTTP 200 但内容为 `upass...login` 跳转壳），单发第 6 页同样命中——因此单板块最多稳定
-        取 5 页（概念 50 只/行业 100 只）。遇到登录墙时若此前已有数据，标记 `complete=False`
-        （数据可能被截断），供采集层走 R2 不完整快照保护；只有取到正常空表格（非登录墙）才视为
-        真实尾页终止。返回：
+        **翻页限制（2026-08-09 实测，登录态可解除）**：无登录态时详情页翻页第 6 页起必返回登录墙
+        （HTTP 200 但内容为 `upass...login` 跳转壳，单发第 6 页同样命中），单板块最多稳定取 5 页
+        （概念 50 只/行业 100 只）；**提供登录 cookie（`login_cookie`/`AI_STOCKS_THS_COOKIE`）后
+        登录墙解除**——第 6 页起正常返回数据、空页即真实尾页（实测半导体完整 120 只），`complete`
+        判定回归正确。遇到登录墙时若此前已有数据，标记 `complete=False`（数据可能被截断），供
+        采集层走 R2 不完整快照保护。返回：
         {"codes": [6 位代码...], "complete": bool, "pages": int}
         """
         _validate_board_type(board_type)
@@ -230,7 +262,7 @@ class ThsBoardSource:
                     complete = False
                     break
                 if _is_login_wall(html):
-                    # 第 6 页起必登录墙：数据可能被截断（大板块取不全），保守标不完整
+                    # 登录墙仅无登录态出现：数据可能被截断（大板块取不全），保守标不完整
                     if got_any or page > 1:
                         complete = False
                     break
