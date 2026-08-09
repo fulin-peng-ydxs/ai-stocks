@@ -1795,3 +1795,48 @@ class IngestionService:
         if ctx:
             ctx.log(f"子任务：退市股历史灌入完成，成功{ok} 跳过{skip} 失败{fail}，写入 {total_rows} 行")
         return result
+
+    # ── 板块概念采集（R1-R4/R2 候选保存，板块概念需求）─────────────────
+    def ingest_board(self, ctx=None, board_type: str | None = None,
+                     board_codes: list[str] | None = None) -> dict:
+        """板块数据全量编排：字典两阶段 → 成分快照（含候选保存）→ 指数 → 资金流。
+
+        承接 plan §6.4 T4：单步骤失败记日志不中断（返回失败清单），供 T5/T6 失败隔离与续跑。
+        board_type 预留（本期全量）；ctx 提供任务中心进度日志。
+        """
+        from backend.services.board_ingest import BoardIngestService
+
+        svc = BoardIngestService()
+        result: dict = {"dict": None, "members": {}, "bar": None, "fund_flow": None, "failed": []}
+        if ctx:
+            ctx.log("板块采集开始：字典 → 成分快照 → 指数 → 资金流")
+            ctx.flush()
+        try:
+            result["dict"] = svc.ingest_board_dict()
+        except Exception as e:  # noqa: BLE001
+            log.warning("板块字典采集失败: %s", e)
+            result["failed"].append(f"dict: {e}")
+        try:
+            result["members"] = svc.ingest_board_members(board_codes=board_codes)
+            result["failed"] += [c for c, r in result["members"].items() if "error" in r]
+        except Exception as e:  # noqa: BLE001
+            log.warning("板块成分快照采集失败: %s", e)
+            result["failed"].append(f"members: {e}")
+        # 指数回填：从最早可用年份到今天（T6 board --backfill 可指定区间）
+        from datetime import date as _d
+        try:
+            result["bar"] = svc.ingest_board_bar(_d(2021, 1, 1), board_codes=board_codes)
+        except Exception as e:  # noqa: BLE001
+            log.warning("板块指数采集失败: %s", e)
+            result["failed"].append(f"bar: {e}")
+        try:
+            result["fund_flow"] = svc.ingest_board_fund_flow()
+        except Exception as e:  # noqa: BLE001
+            log.warning("板块资金流采集失败: %s", e)
+            result["failed"].append(f"fund_flow: {e}")
+        if ctx:
+            ctx.log(f"板块采集完成：字典{result['dict']} 成分{len(result['members'])} 板块 "
+                    f"指数{result['bar']} 资金流{result['fund_flow']} 失败{result['failed']}")
+            ctx.flush()
+        return result
+
