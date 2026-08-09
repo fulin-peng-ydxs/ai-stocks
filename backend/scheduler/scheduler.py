@@ -26,7 +26,7 @@ _DEFAULT_AUDIT_CLEANUP_TIME = "03:30"
 # 可配成定时任务的类型：原子采集/维护/质检 + 按问题类型动态恢复。
 SCHEDULABLE_TASK_TYPES = (
     "update", "backfill", "ingest_date", "recompute", "verify", "checkup", "fix", "enrich_basic",
-    "audit_cleanup",
+    "audit_cleanup", "board",
 )
 _WEEKDAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]   # 1..7 → APScheduler 名称
 _WEEKDAY_CN = ["一", "二", "三", "四", "五", "六", "日"]

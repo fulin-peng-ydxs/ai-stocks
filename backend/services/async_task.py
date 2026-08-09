@@ -956,7 +956,10 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
         ctx.log(f"板块采集开始，共 {len(all_codes)} 个板块")
     ctx.progress(0.05, "板块采集进行中…")
     ctx.check_cancel()
-    result = IngestionService().ingest_board(ctx=ctx, board_codes=remaining, mode="update")
+    # 任务中心发起默认全量回填（对齐 plan §9「任务中心创建板块采集」= 初始化回填）；
+    # 若 params.mode='update' 可切增量（daily 已显式传 update，见 pipeline）
+    mode = str(params.get("mode") or "backfill")
+    result = IngestionService().ingest_board(ctx=ctx, board_codes=remaining, mode=mode)
     done = sorted(set(all_codes) - set(remaining))
     ctx.set_checkpoint(done_codes=sorted(done_codes | set(done)))
     if result.get("failed"):

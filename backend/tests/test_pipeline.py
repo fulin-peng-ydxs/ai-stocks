@@ -234,3 +234,28 @@ def test_pipeline_quality_includes_board_scan(tmp_path, monkeypatch):
         DailyPipeline(c).run(skip_update=True)
         assert called["base"] == 1   # 基础四层质检跑了
         assert called["board"] == 1  # 板块扫描也跑了（接线验证）
+
+
+def test_board_schedulable_and_catalog(tmp_path):
+    """审计修复验证：board 可配定时任务 + catalog 数据目录含板块表。"""
+    from backend.scheduler.scheduler import SCHEDULABLE_TASK_TYPES, ScheduledJobService
+    from backend.storage.catalog import build_catalog
+    from backend.storage.ddl import init_db
+    from backend.storage.duckdb_client import DuckDBClient
+
+    # 1. board 可配定时（审计问题1）
+    assert "board" in SCHEDULABLE_TASK_TYPES
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        job = svc.create(name="板块定时采集", task_type="board", params={},
+                         freq_type="daily", freq_config={"time": "15:30"},
+                         trading_day_only=True, enabled=False)
+        assert job["task_type"] == "board"
+        # 2. catalog 含板块表（审计问题4）
+        cat = build_catalog(c)
+        tables = {x["table"] for x in cat}
+        assert {"board_dict", "board_member", "board_bar", "board_fund_flow",
+                "board_member_candidate"} <= tables
+        bd = next(x for x in cat if x["table"] == "board_dict")
+        assert bd["name_cn"] == "板块字典"

@@ -6,7 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
   getDataStatus, getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, getStockQuality,
-  TASK_LABEL, STATUS_LABEL, taskDisplayLabel,
+  TASK_LABEL, STATUS_LABEL, taskDisplayLabel, SOURCE_LABEL,
   type DataStatus, type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
 } from '@/api/data'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -118,7 +118,7 @@ function tableBorder(slotId: string): boolean {
 }
 const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
   'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
-  'recompute', 'verify', 'checkup', 'fix', 'enrich_basic',
+  'recompute', 'verify', 'checkup', 'fix', 'enrich_basic', 'board',
 ].map((v) => ({ v: v as TaskType, l: TASK_LABEL[v as TaskType] }))
 const TASK_STATUS_OPTIONS: { v: TaskStatus; l: string }[] = (
   ['pending', 'running', 'done', 'failed', 'interrupted'] as TaskStatus[]).map((v) => ({ v, l: STATUS_LABEL[v] }))
@@ -169,7 +169,7 @@ function logRowClass({ row }: { row: { status: string } }): string {
 const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
     && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
-      'verify', 'fix', 'enrich_basic'].includes(t.task_type)))
+      'verify', 'fix', 'enrich_basic', 'board'].includes(t.task_type)))
 
 // 总耗时：进行中=开始到现在(随 now 每秒刷新)；已结束/人工终止=开始到截止时间(updated_at)。
 const now = ref(Date.now())
@@ -550,6 +550,13 @@ onMounted(async () => {
             <div class="act-d">补单日 / 区间行情，可选指定股票（重采缺口即走这里）</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning" @click="openOptions('ingest_date')">设置并执行</el-button>
           </div>
+          <div class="act">
+            <div class="act-t">板块采集</div>
+            <div class="act-d">板块字典/成分/指数/资金流（回填或增量）</div>
+            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
+                       @click="submit('board', undefined, '板块采集耗时可能较长，确认开始？')">执行</el-button>
+            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('board')">更多选项…</el-button>
+          </div>
         </div>
       </el-card>
 
@@ -736,7 +743,7 @@ onMounted(async () => {
               <template #default="{ row }">{{ row.table_name }}</template>
             </AppTableColumn>
             <AppTableColumn label="数据源">
-              <template #default="{ row }">{{ row.source === 'akshare' ? 'AKShare' : row.source === 'baostock' ? 'BaoStock' : row.source }}</template>
+              <template #default="{ row }">{{ (SOURCE_LABEL as Record<string, string>)[row.source] ?? row.source }}</template>
             </AppTableColumn>
             <AppTableColumn label="结果" prop="status" sortable="custom">
               <template #default="{ row }">

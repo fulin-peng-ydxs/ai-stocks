@@ -365,11 +365,14 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 // 当前在用的问题类型（下拉筛选用此顺序；missing_or_suspended 已废弃，不再产出/不再列出）。
 export const ISSUE_TYPES_ACTIVE = [
   'null_close', 'ohl_repaired', 'mv_missing', 'mv_gap', 'abnormal_change', 'adj_jump', 'data_gap', 'stale',
+  'member_surge_shrink', 'board_member_wave', 'board_index_gap', 'board_fund_unmatched',
 ] as const
 export const ISSUE_TYPE_LABEL: Record<string, string> = {
   null_close: '收盘价非法(丢弃)', ohl_repaired: '开高低修补', mv_missing: '市值缺失',
   mv_gap: '市值缺口(近端)', abnormal_change: '异常涨跌幅', adj_jump: '复权跳变',
   data_gap: '行情缺口(疑似漏采)', stale: '数据滞后',
+  member_surge_shrink: '板块成分波动(候选)', board_member_wave: '板块成分波动',
+  board_index_gap: '板块指数缺口', board_fund_unmatched: '板块资金流未匹配',
 }
 
 /** 任务列表/调度/顶栏共用的展示口径：fix 任务带上动态恢复的质检问题类型。 */
@@ -387,12 +390,16 @@ export function taskDisplayLabel(
 export const ISSUE_LAYER: Record<string, string> = {
   null_close: 'L1', ohl_repaired: 'L1', mv_missing: 'L2', mv_gap: 'L2',
   abnormal_change: 'L3', adj_jump: 'L3', data_gap: 'L4', stale: 'L4',
+  member_surge_shrink: '板块', board_member_wave: '板块', board_index_gap: '板块',
+  board_fund_unmatched: '板块',
 }
 // 各问题类型的恢复动作文案（DM-D22）：按类型分派，不再统一“重拉/重算”。
 export const RECOVER_ACTION_LABEL: Record<string, string> = {
   null_close: '重采该日', ohl_repaired: '重采该日', mv_missing: '补市值', mv_gap: '补市值缺口',
   abnormal_change: '重采该日', adj_jump: '重采整段重算复权',
   data_gap: '重采缺口', stale: '增量补尾',
+  member_surge_shrink: '候选确认', board_member_wave: '重采成分', board_index_gap: '重采指数',
+  board_fund_unmatched: '重采资金流',
 }
 export const LAYER_LABEL: Record<string, string> = {
   L1: 'L1 入库闸门', L2: 'L2 字段契约', L3: 'L3 正确性', L4: 'L4 覆盖鲜活',
@@ -409,4 +416,4 @@ export const SEVERITY_LABEL: Record<string, string> = { high: '高', mid: '中',
 export const ISSUE_STATUS_LABEL: Record<string, string> = {
   open: '未处理', fixing: '修复中', resolved: '已解决', ignored: '已忽略',
 }
-export const SOURCE_LABEL: Record<string, string> = { akshare: 'AKShare', baostock: 'BaoStock' }
+export const SOURCE_LABEL: Record<string, string> = { akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }

@@ -431,8 +431,17 @@ def quality_recover_batch(body: dict) -> ApiResponse:
         conds.append(f"severity IN ({','.join('?' * len(sevs))})"); params += sevs
     if body.get("code"):
         kw = f"%{str(body['code']).lower()}%"
-        conds.append("code IN (SELECT code FROM stock_basic WHERE lower(code) LIKE ? OR lower(name) LIKE ?)")
-        params += [kw, kw]
+        # code 过滤同时匹配股票（stock_basic）与板块（board_dict，板块 issue 的 code=board_code）；
+        # board_dict 表不存在（板块未初始化）时只按股票过滤
+        has_board = "board_dict" in set(
+            c.query_df("SELECT table_name FROM information_schema.tables "
+                       "WHERE table_schema='main'").get("table_name", []))
+        conds.append(
+            "code IN (SELECT code FROM stock_basic WHERE lower(code) LIKE ? OR lower(name) LIKE ?)"
+            + (" OR code IN (SELECT board_code FROM board_dict WHERE lower(board_code) LIKE ? OR lower(name) LIKE ?)"
+               if has_board else "")
+        )
+        params += [kw, kw] + ([kw, kw] if has_board else [])
     ids = c.query_df(
         f"SELECT id FROM data_quality_issue WHERE {' AND '.join(conds)} ORDER BY id", params)["id"].tolist()
     if not ids:
