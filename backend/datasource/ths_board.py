@@ -231,20 +231,23 @@ class ThsBoardSource:
             df = pd.DataFrame({"board_code": [c for c, _ in pairs], "name": [n for _, n in pairs]})
             df = df.drop_duplicates(subset="board_code").reset_index(drop=True)
             return df
-        # 概念：分类页全量 + gn/index 补充（遇到登录墙空页即停）
+        # 概念：分类页全量 + gn/index 补充。gn/index 概念数量远超分类页（375+），
+        # 且新概念按 addtime 倒序排在最前——必须**翻到空页/登录墙才停**。
+        # 不能按「连续 N 页无净增」提前停：gn/index 与分类页排序不同，中间会长段重复，
+        # 但后面仍有新概念（2026-08-10 实测 CRO概念 在 16 页、NMN 24 页、HJT电池 21 页）。
         seen: dict[str, str] = {}
         cate_html = self._http_get(_DETAIL_URLS["concept"].format(code="307822"),
                                    referer="https://q.10jqka.com.cn/")
         for code, name in _parse_board_links(cate_html):
             seen.setdefault(code, name)
-        for page in range(1, 6):  # 实测前 3 页即净增完；护栏 5 页防无限
+        for page in range(1, _MAX_PAGES + 1):  # 护栏=页码上限，正常翻到空页/登录墙即停
             html = self._http_get(_CONCEPT_INDEX_PAGE.format(page=page),
                                   referer="https://q.10jqka.com.cn/")
             if _is_login_wall(html):
                 break  # 登录墙：后续页不再有新概念，停止
             pairs = _parse_board_links(html)
             if not pairs:
-                break
+                break  # 空页 = 索引末尾
             for code, name in pairs:
                 seen.setdefault(code, name)
         df = pd.DataFrame({"board_code": list(seen), "name": [seen[c] for c in seen]})

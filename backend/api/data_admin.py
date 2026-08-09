@@ -428,12 +428,34 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         f"ORDER BY {sort_expr} {direction} NULLS LAST, q.detected_at DESC NULLS LAST, q.id "
         f"LIMIT {int(size)} OFFSET {int((page-1)*size)}", params)
     rows = df.to_dict("records")
+    # 板块问题名称：board_member_incomplete 的 code=board_code → board_dict.name；
+    # board_fund_unmatched 的 code=NULL → detail JSON 里的 name。避免名称列空。
+    board_issue_codes = {str(x) for x in df["code"].tolist() if x is not None} if not df.empty else set()
+    board_names: dict[str, str] = {}
+    if board_issue_codes:
+        bdf = c.query_df(
+            f"SELECT board_code, name FROM board_dict WHERE board_code IN "
+            f"({','.join('?' * len(board_issue_codes))})", sorted(board_issue_codes))
+        board_names = {str(r["board_code"]): str(r["name"]) for _, r in bdf.iterrows()}
     for r in rows:
         for k in ("trade_date", "detected_at", "resolved_at"):
             v = r.get(k)
             r[k] = None if v is None or pd.isna(v) else str(v)
         nm = r.get("name")
-        r["name"] = "" if nm is None or pd.isna(nm) else str(nm)
+        it = r.get("issue_type")
+        detail = r.get("detail")
+        if nm is None or pd.isna(nm) or not str(nm).strip():
+            if it == "board_member_incomplete" and r.get("code"):
+                nm = board_names.get(str(r["code"]), "")
+            elif it == "board_fund_unmatched" and isinstance(detail, str) and detail.strip():
+                try:
+                    import json as _json
+                    nm = str(_json.loads(detail).get("name") or "")
+                except (ValueError, TypeError):
+                    nm = ""
+            else:
+                nm = ""
+        r["name"] = str(nm)
         r["id"] = int(r["id"])
     return ok({"summary": summary, "total": total, "page": page, "size": size, "list": rows})
 
