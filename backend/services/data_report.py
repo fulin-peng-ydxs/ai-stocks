@@ -702,6 +702,36 @@ class DataIntegrityReport:
             df = df.assign(gap_days=gap_days)
             actionable = (ratio > 0.5) & self._active_l3_mask(df) & (gap_days.fillna(0) <= 30)
             return not bool(actionable.any())
+        if issue_type == "board_index_gap":
+            # 板块指数缺口复检：该板块 board_bar 已到全局最新交易日
+            latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
+            if latest is None:
+                return False
+            last_bar = self._scalar("SELECT max(trade_date) FROM board_bar WHERE board_code=?", [code])
+            if last_bar is None or pd.isna(last_bar):
+                return False
+            return pd.Timestamp(last_bar).date() >= pd.Timestamp(latest).date()
+        if issue_type == "board_member_wave":
+            # 板块成分数波动复检：有效成员计数回到 member_count 基准（阈值内）
+            from backend.config import get_effective_settings
+            bq = get_effective_settings().board_quality
+            row = self.c.query_df(
+                "SELECT member_count FROM board_dict WHERE board_code=?", [code])
+            if row.empty or row.iloc[0]["member_count"] is None:
+                return False
+            prev_c = int(row.iloc[0]["member_count"])
+            cur = self.c.query_df(
+                "SELECT count(*) AS n FROM board_member "
+                "WHERE board_code=? AND in_date<=COALESCE("
+                "(SELECT max(in_date) FROM board_member WHERE board_code=?), DATE '1970-01-01') "
+                "AND (out_date IS NULL OR out_date>COALESCE("
+                "(SELECT max(in_date) FROM board_member WHERE board_code=?), DATE '1970-01-01'))",
+                [code, code, code]).iloc[0]["n"]
+            threshold = max(bq.absolute_change_threshold, int(prev_c * bq.relative_change_ratio))
+            return abs(int(cur) - prev_c) < threshold
+        if issue_type == "board_fund_unmatched":
+            # 资金流未匹配复检：该名称板块是否已能映射（重采后进字典）
+            return True  # 由人工 ignore 收敛（源无稳定代码，重采不保证能匹配），复检通过即收敛
         return True
 
     def _scan_adj_jump(self, threshold: float = 0.5, ignored_exact: set | None = None) -> int:

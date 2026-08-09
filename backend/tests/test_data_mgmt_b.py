@@ -545,3 +545,63 @@ def test_ingest_board_only_selects_tables(client, monkeypatch):
 
     IngestionService().ingest_board(mode="update", only=["bar"])
     assert called == {"dict": 0, "members": 0, "bar": 1, "fund": 0}  # 只跑指数
+
+
+# ── 候选接口（T9，R2 恢复闭环）───────────────────────────────
+
+
+def _seed_candidate(client, code="309121", n=50, status="pending"):
+    """种一条候选 + 关联 issue + 板块字典。"""
+    import json
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+                   "VALUES (?,?,?,TRUE)", [code, "AI PC" if code == "309121" else "半导体", "concept"])
+    h = "a" * 64
+    client.execute(
+        "INSERT INTO board_member_candidate (candidate_id, issue_id, board_code, snapshot_date, "
+        "codes_json, payload_hash, status) VALUES ('c-test', 9001, ?, DATE '2026-08-09', ?, ?, ?)",
+        [code, json.dumps([f"code{i:06d}" for i in range(n)]), h, status])
+    client.execute(
+        "INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
+        "VALUES (9001, ?, 'member_surge_shrink', 'high', 'open', now())", [code])
+
+
+def test_apply_candidate_applies_diff_and_member_count(client):
+    """候选 apply（事务②）：diff 落库 + 候选 applied + issue resolved + member_count 刷新。"""
+    from backend.api.board_candidates import apply_candidate
+    _seed_candidate(client, n=3)
+    resp = apply_candidate("c-test")
+    assert resp.code == 0, resp.msg
+    # 候选 applied
+    st = client.query_df("SELECT status FROM board_member_candidate WHERE candidate_id='c-test'").iloc[0]["status"]
+    assert st == "applied"
+    # board_member 落库 3 条
+    n = client.query_df("SELECT count(*) n FROM board_member").iloc[0]["n"]
+    assert int(n) == 3
+    # member_count 刷新
+    mc = client.query_df("SELECT member_count FROM board_dict WHERE board_code='309121'").iloc[0]["member_count"]
+    assert int(mc) == 3
+    # issue resolved
+    iss = client.query_df("SELECT status FROM data_quality_issue WHERE id=9001").iloc[0]["status"]
+    assert iss == "resolved"
+
+
+def test_discard_candidate(client):
+    """候选 discard（事务③）：候选 discarded + issue ignored，board_member 不变。"""
+    from backend.api.board_candidates import discard_candidate
+    _seed_candidate(client, n=3)
+    resp = discard_candidate("c-test")
+    assert resp.code == 0
+    st = client.query_df("SELECT status FROM board_member_candidate WHERE candidate_id='c-test'").iloc[0]["status"]
+    assert st == "discarded"
+    iss = client.query_df("SELECT status FROM data_quality_issue WHERE id=9001").iloc[0]["status"]
+    assert iss == "ignored"
+    assert int(client.query_df("SELECT count(*) n FROM board_member").iloc[0]["n"]) == 0  # 不落库
+
+
+def test_apply_candidate_already_processed_409(client):
+    """候选已 applied/discarded → 409 already_processed。"""
+    from backend.api.board_candidates import apply_candidate
+    _seed_candidate(client, status="discarded")
+    resp = apply_candidate("c-test")
+    assert resp.code == 409
+    assert resp.data.get("error_code") == "already_processed"

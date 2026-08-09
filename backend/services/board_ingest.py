@@ -183,11 +183,14 @@ class BoardIngestService:
         return {"total": len(cur_set), "added": diff["added"], "removed": diff["removed"]}
 
     def _apply_member_diff(self, code: str, sdate: date, cur_set: set[str],
-                           member_count: int | None = None) -> dict:
+                           member_count: int | None = None,
+                           in_transaction: bool = False) -> dict:
         """完整快照 diff：新股 in_date=sdate/out_date=NULL；缺席股 out_date=sdate（[in_date,out_date)）。
 
         同一事务内落 diff + 刷新 board_dict.member_count（冗余值）与 member_history_start_date（首次写入），
         保证「member_count 与有效成员数一致」原子成立（R2 验收）。
+        in_transaction=True：调用方已开事务（如 T9 候选 apply 外层事务），本方法不自行 BEGIN/COMMIT
+        （DuckDB 不支持嵌套事务），只执行 SQL，由调用方统一提交/回滚。
         """
         # 当前有效成员
         eff = self.c.query_df(
@@ -197,7 +200,8 @@ class BoardIngestService:
         eff_set = set(eff["code"].tolist())
         added = sorted(cur_set - eff_set)
         removed = sorted(eff_set - cur_set)
-        with self.c.transaction():
+
+        def _exec() -> None:
             for c in added:
                 self.c.execute(
                     "INSERT INTO board_member (board_code, code, in_date, out_date) "
@@ -216,6 +220,12 @@ class BoardIngestService:
                     "UPDATE board_dict SET member_history_start_date="
                     "COALESCE(member_history_start_date, ?), updated_at=now() WHERE board_code=?",
                     [sdate, code])
+
+        if in_transaction:
+            _exec()   # 调用方已开事务，直接执行
+        else:
+            with self.c.transaction():
+                _exec()
         return {"added": len(added), "removed": len(removed)}
 
     def _payload_hash(self, sdate: date, codes: set[str]) -> str:

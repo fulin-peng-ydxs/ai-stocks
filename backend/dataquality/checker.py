@@ -164,6 +164,7 @@ L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale")
 # 避免新增质量层问题后只能手工处理。
 QUALITY_ISSUE_TYPES: tuple[str, ...] = (
     L1_ISSUE_TYPES + L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES
+    + ("board_index_gap", "board_member_wave", "board_fund_unmatched")
 )
 # 质检（scan_quality_issues）每次重扫并幂等覆盖的"自动问题"类型（L2/L3/L4）；
 # L1 由入库闸门即时记录，质检只做防御性补扫，不在此清表。

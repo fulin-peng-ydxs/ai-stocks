@@ -794,6 +794,33 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 ing.ingest_one_daily(code, lo, hi, ctx=ctx)
             else:
                 note = "无行情可重算"
+        elif issue_type == "board_index_gap":
+            # 板块指数缺口：重采该板块指数（指定板块），数据补齐后重扫收敛
+            from backend.services.board_ingest import BoardIngestService
+            from datetime import date as _d
+            ctx.log(f"恢复(板块指数缺口)：重采板块 {code} 指数")
+            bsvc = BoardIngestService()
+            res = bsvc.ingest_board_bar(_d(2024, 1, 1), board_codes=[code])
+            note = f"重采指数 {res.get('rows', 0)} 行"
+            ctx.log(note)
+        elif issue_type == "board_member_wave":
+            # 板块成分数波动：重采该板块成分快照（会走候选保护），数据正常后收敛
+            from backend.services.board_ingest import BoardIngestService
+            ctx.log(f"恢复(板块成分波动)：重采板块 {code} 成分快照")
+            bsvc = BoardIngestService()
+            res = bsvc.ingest_board_members(board_codes=[code])
+            r = res.get(code, {})
+            note = (f"成分 {r.get('total', 0)} 只"
+                    + (f"（拦截候选 {r.get('candidate_id', '')}）" if r.get("blocked") else ""))
+            ctx.log(note)
+        elif issue_type == "board_fund_unmatched":
+            # 资金流未匹配：重采资金流（名称匹配映射），重扫收敛
+            from backend.services.board_ingest import BoardIngestService
+            ctx.log("恢复(资金流未匹配)：重采板块资金流")
+            bsvc = BoardIngestService()
+            res = bsvc.ingest_board_fund_flow(periods=("即时",))
+            note = f"重采资金流 {res.get('rows', 0)} 行（未匹配 {res.get('unmatched', 0)}）"
+            ctx.log(note)
         else:
             ctx.log(f"未知问题类型 {issue_type}，仅复检", "warn")
 
