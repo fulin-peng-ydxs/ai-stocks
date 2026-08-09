@@ -612,17 +612,6 @@ onMounted(load)
                   <strong>{{ ov.board.open_issues > 0 ? ov.board.open_issues : '正常' }}</strong>
                   <span>{{ ov.board.open_issues > 0 ? '项需要恢复' : '暂无板块问题' }}</span>
                 </div>
-                <div class="board-hero-actions">
-                  <el-button size="small" type="primary" @click="gotoBoard()">采集板块</el-button>
-                  <el-button
-                    size="small"
-                    :type="ov.board.open_issues ? 'warning' : 'primary'"
-                    plain
-                    @click="gotoQuality(undefined, 'board_index_gap,board_member_incomplete,board_fund_unmatched')"
-                  >
-                    查看质量问题
-                  </el-button>
-                </div>
               </div>
 
               <div class="board-layout">
@@ -632,8 +621,15 @@ onMounted(load)
                       <span class="panel-title">覆盖进度</span>
                       <span class="hint">先确认成分、指数、资金流三条链路是否齐备</span>
                     </div>
-                    <el-tag size="small" effect="plain" :type="boardOverallCoverage >= 100 ? 'success' : 'warning'">
-                      {{ boardOverallCoverage >= 100 ? '已完成' : '补采中' }}
+                    <el-tag
+                      size="small"
+                      effect="plain"
+                      class="board-coverage-tag"
+                      :type="boardOverallCoverage >= 100 ? 'success' : 'warning'"
+                      :clickable="boardOverallCoverage < 100"
+                      @click="boardOverallCoverage < 100 && gotoBoard()"
+                    >
+                      {{ boardOverallCoverage >= 100 ? '已完成' : '补采中，点击采集' }}
                     </el-tag>
                   </div>
                   <div class="board-coverage-grid">
@@ -961,17 +957,6 @@ onMounted(load)
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-regular);
 }
-.board-hero-actions {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--app-space-2);
-}
-.board-hero-actions :deep(.el-button) {
-  width: 124px;
-  margin-left: 0;
-  justify-content: center;
-}
 .board-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
@@ -1001,6 +986,16 @@ onMounted(load)
 .board-section-head .hint,
 .board-side-title .hint {
   margin-left: var(--app-space-2);
+}
+/* 补采中标签可点击：未完成时点击跳采集页弹板块采集框 */
+.board-coverage-tag {
+  cursor: default;
+}
+.board-coverage-tag:not(.el-tag--success) {
+  cursor: pointer;
+}
+.board-coverage-tag:not(.el-tag--success):hover {
+  filter: brightness(0.95);
 }
 .board-coverage-grid {
   display: grid;
@@ -1179,10 +1174,6 @@ onMounted(load)
 @media (max-width: 1100px) {
   .board-hero {
     grid-template-columns: 1fr;
-  }
-  .board-hero-actions {
-    flex-direction: row;
-    justify-content: flex-start;
   }
   .board-layout {
     grid-template-columns: 1fr;
