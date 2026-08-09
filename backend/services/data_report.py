@@ -522,6 +522,81 @@ class DataIntegrityReport:
                 "mv_missing_rows": l2, "mv_gap_rows": l2_gap,
                 "data_gap_rows": l4_gap, "stale_rows": l4_stale}
 
+    # ── 板块维度质检（板块概念需求 R12，T7）──────────────────
+    def scan_board_quality(self) -> dict:
+        """板块数据质检：成分数波动扫描 + 板块指数缺口扫描，写 data_quality_issue。
+
+        收敛语义（承接 data_report 收敛模式）：板块自动扫描类（board_index_gap）在扫描前清
+        上轮未解决 open 问题（SCAN_ISSUE_TYPES 已含），反复跑不堆积；**member_surge_shrink
+        绝不清**（候选事务②③驱动生命周期）。已 ignored 的不再上报。
+        """
+        from backend.config import get_effective_settings
+        bq = get_effective_settings().board_quality
+        ratio = bq.relative_change_ratio
+        absolute = bq.absolute_change_threshold
+
+        # 成分数波动：比对 board_dict.member_count（最近已应用基准）与当前有效 board_member 计数
+        # 阈值 formula：threshold = max(absolute, prev*ratio)，abs(cur-prev) >= threshold 触发
+        rows = self.c.query_df(
+            """
+            SELECT b.board_code, b.name, b.board_type, b.member_count AS prev_count,
+                   (SELECT count(*) FROM board_member m
+                    WHERE m.board_code = b.board_code
+                      AND m.in_date <= (SELECT max(trade_date) FROM board_bar)
+                      AND (m.out_date IS NULL OR m.out_date > (SELECT max(trade_date) FROM board_bar))
+                   ) AS cur_count
+            FROM board_dict b
+            WHERE b.has_members AND b.member_count IS NOT NULL
+            """)
+        issues = []
+        for _, r in rows.iterrows():
+            prev_c = int(r["prev_count"])
+            cur_c = int(r["cur_count"]) if r["cur_count"] is not None else 0
+            threshold = max(absolute, int(prev_c * ratio))
+            if prev_c and abs(cur_c - prev_c) >= threshold:
+                issues.append({
+                    "code": r["board_code"], "trade_date": None,
+                    "issue_type": "board_member_wave",
+                    "detail": f"板块 {r['name']}（{r['board_code']}）成分数波动："
+                              f"基准 {prev_c} → 当前 {cur_c}（阈值 {threshold}）",
+                })
+        self._insert_issues(issues)
+
+        # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日
+        latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
+        if latest is None:
+            return {"member_wave": len(issues), "index_gap": 0}
+        latest = pd.Timestamp(latest).date()
+        # 已 ignored 的板块豁免（按 (code, type) 整体豁免）
+        ig = set()
+        igdf = self.c.query_df(
+            "SELECT code FROM data_quality_issue WHERE issue_type='board_index_gap' AND status='ignored'")
+        for _, r in igdf.iterrows():
+            ig.add(str(r["code"]))
+        gap_df = self.c.query_df(
+            """
+            SELECT b.board_code, b.name, max(bar.trade_date) AS last_bar
+            FROM board_dict b
+            LEFT JOIN board_bar bar ON bar.board_code = b.board_code
+            WHERE b.has_bar
+            GROUP BY b.board_code, b.name
+            """)
+        gap_issues = []
+        for _, r in gap_df.iterrows():
+            code = str(r["board_code"])
+            if code in ig:
+                continue
+            last_bar = r["last_bar"]
+            if last_bar is None or pd.Timestamp(last_bar).date() < latest:
+                gap_issues.append({
+                    "code": code, "trade_date": latest,
+                    "issue_type": "board_index_gap",
+                    "detail": f"板块 {r['name']}（{code}）指数缺口：最近指数 {last_bar or '无'}，"
+                              f"全局最新交易日 {latest}",
+                })
+        self._insert_issues(gap_issues)
+        return {"member_wave": len(issues), "index_gap": len(gap_issues)}
+
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
     def recheck_clean(self, issue_type: str, code: str, trade_date: date | None,
                       window_days: int = GAP_WINDOW_DAYS) -> bool:

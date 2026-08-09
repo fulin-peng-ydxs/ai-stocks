@@ -47,6 +47,10 @@ CONFIG_GROUPS: list[dict] = [
     {"key": "audit", "label": "审计设置", "desc": "控制审计查询默认窗口和保留期自动清理。", "fields": [
         {"path": "audit.retention_days", "label": "审计保留期/默认查询窗口(天)", "type": "int", "min": 7, "max": 365, "desc": "审计页未选择时间时默认查询最近多少天，同时用于自动清理超期审计日志。"},
     ]},
+    {"key": "board_quality", "label": "板块质检", "desc": "板块数据质量校验阈值（成分数波动/指数缺口扫描）。", "fields": [
+        {"path": "board_quality.relative_change_ratio", "label": "成分数相对变化比例", "type": "number", "min": 0, "max": 5, "desc": "成分数波动判定：abs(cur-prev) >= max(absolute, prev*ratio) 触发。"},
+        {"path": "board_quality.absolute_change_threshold", "label": "成分数绝对变化阈值", "type": "int", "min": 0, "max": 500, "desc": "成分数波动判定的绝对阈值下限。"},
+    ]},
     # 定时调度（遗留）：调度系统重构后改用 scheduled_job 表 + 「任务调度」页，旧的单一每日配置
     # 已不再作为运行态。这些白名单项仅供启动时一次性迁移读取旧值（读后即删，见 scheduler._migrate_legacy_config），
     # 不在表单渲染（hidden_in_form）。迁移消费完即从 app_config 删除，正常运行期不会再出现。

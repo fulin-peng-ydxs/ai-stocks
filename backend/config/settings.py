@@ -216,6 +216,18 @@ class AuditConfig(BaseModel):
     retention_days: int = Field(default=90, ge=1)  # 默认查询窗口/保留期提示；自动清理留后续阶段
 
 
+class BoardQualityConfig(BaseModel):
+    """板块数据质检阈值（板块概念需求 R12，T7）。
+
+    阈值公式：threshold = max(absolute_change_threshold, previous_member_count * relative_change_ratio)
+    触发条件：abs(cur - prev) >= threshold。YAML 基线 + CONFIG_GROUPS 白名单 + Settings 模型三环配套
+    （T1 契约核验补充），消费端 get_effective_settings()。
+    """
+
+    relative_change_ratio: float = Field(default=0.5, ge=0.0)    # 相对变化比例
+    absolute_change_threshold: int = Field(default=20, ge=0)      # 绝对变化阈值（成分数）
+
+
 class MailConfig(BaseModel):
     """邮件发送（SMTP）配置。用于注册邮箱验证码等系统通知。
 
@@ -254,6 +266,7 @@ class Settings(BaseModel):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    board_quality: BoardQualityConfig = Field(default_factory=BoardQualityConfig)
     mail: MailConfig = Field(default_factory=MailConfig)
 
     # ── 派生：绝对路径辅助 ──

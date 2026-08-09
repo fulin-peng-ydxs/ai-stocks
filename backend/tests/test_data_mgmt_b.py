@@ -384,3 +384,84 @@ def test_board_task_resume_skips_done(client, monkeypatch):
     t = _wait(svc, "board_x")
     assert t["status"] == "done"
     assert received.get("board_codes") == ["309121"]   # 只处理未完成板块
+
+
+# ── 板块质检（R12，T7）───────────────────────────────────────
+
+
+def _seed_board_scan(client):
+    """种板块质检所需数据：板块字典 + 成分 + 指数 + 全局最新交易日。"""
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, member_count) "
+                   "VALUES ('309121','AI PC','concept',TRUE,TRUE,50)")
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, member_count) "
+                   "VALUES ('881121','半导体','industry',TRUE,TRUE,120)")
+    # 全局最新交易日（daily_bar 有数据 → 指数缺口判定基准）
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-07', 10.0)")
+    # AI PC 指数到 08-07（正常），半导体指数滞后到 08-06（缺口）
+    client.execute("INSERT INTO board_bar (board_code, trade_date, close) VALUES ('309121', DATE '2026-08-07', 100.0)")
+    client.execute("INSERT INTO board_bar (board_code, trade_date, close) VALUES ('881121', DATE '2026-08-06', 200.0)")
+
+
+def test_scan_board_quality_member_wave(client, monkeypatch):
+    """成分数波动扫描：member_count 基准 vs 有效成员计数，超阈值写 issue。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    # AI PC 有效成员 20（基准 50 → 波动 30 >= threshold 20）→ 触发
+    for i in range(20):
+        client.execute("INSERT INTO board_member (board_code, code, in_date) "
+                       "VALUES ('309121', ?, DATE '2026-01-05')", [f"code{i:06d}"])
+    # 半导体有效成员 120（基准 120 → 无波动）
+    for i in range(120):
+        client.execute("INSERT INTO board_member (board_code, code, in_date) "
+                       "VALUES ('881121', ?, DATE '2026-01-05')", [f"8{i:05d}"])
+    r = DataIntegrityReport(client).scan_board_quality()
+    assert r["member_wave"] >= 1
+    waves = client.query_df(
+        "SELECT code, issue_type FROM data_quality_issue WHERE issue_type='board_member_wave'")
+    assert "309121" in waves["code"].tolist()   # AI PC 波动被报
+    assert "881121" not in waves["code"].tolist()  # 半导体稳定不报
+
+
+def test_scan_board_quality_index_gap(client, monkeypatch):
+    """板块指数缺口扫描：board_bar 滞后全局最新交易日写 issue。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    r = DataIntegrityReport(client).scan_board_quality()
+    assert r["index_gap"] >= 1
+    gaps = client.query_df(
+        "SELECT code, issue_type FROM data_quality_issue WHERE issue_type='board_index_gap'")
+    assert "881121" in gaps["code"].tolist()   # 半导体滞后被报
+    assert "309121" not in gaps["code"].tolist()  # AI PC 指数正常不报
+
+
+def test_scan_board_quality_config_override(client, monkeypatch):
+    """阈值配置覆盖生效：Settings 模型字段 + CONFIG_GROUPS 白名单三环配套。"""
+    from backend.config.settings import Settings
+    # 默认值（Settings 模型）
+    s = Settings()
+    assert s.board_quality.relative_change_ratio == 0.5
+    assert s.board_quality.absolute_change_threshold == 20
+    # CONFIG_GROUPS 白名单允许该字段（T1 契约：三环配套可被 app_config 覆盖）
+    from backend.storage.app_config import WHITELIST
+    assert "board_quality.relative_change_ratio" in WHITELIST
+    assert "board_quality.absolute_change_threshold" in WHITELIST
+
+
+def test_scan_board_quality_convergence_keeps_member_surge(client, monkeypatch):
+    """收敛不误删 member_surge_shrink：扫描后候选关联的 open issue 仍保留。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    # 预置一条 member_surge_shrink open（候选关联，模拟 T4 候选保存）
+    client.execute(
+        "INSERT INTO board_member_candidate (candidate_id, issue_id, board_code, snapshot_date, "
+        "payload_hash, status) VALUES ('c1', 999, '309121', DATE '2026-08-09', ?, 'pending')",
+        ["a" * 64])
+    client.execute(
+        "INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at, fix_task_id) "
+        "VALUES (999, '309121', 'member_surge_shrink', 'high', 'open', now(), NULL)")
+    # 跑板块扫描（会触发收敛 DELETE open 且 IN SCAN_ISSUE_TYPES）
+    DataIntegrityReport(client).scan_board_quality()
+    # member_surge_shrink 不在 SCAN_ISSUE_TYPES → 不被删
+    left = client.query_df(
+        "SELECT count(*) n FROM data_quality_issue WHERE issue_type='member_surge_shrink'")
+    assert int(left.iloc[0]["n"]) == 1
