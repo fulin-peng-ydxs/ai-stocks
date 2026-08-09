@@ -9,7 +9,8 @@
   不参与价格排序）。
 - **领涨股默认取 `board_fund_flow.leader_stock/leader_pct` 且与「即时净流入」同一
   `(snapshot_date, period='即时')` 行**；无资金流数据的板块该列空值「—」。
-- **成分数** = `board_member` 该板块当前有效成员数（只进不出模型每板块一行累积）。
+- **成分数** = `board_dict.member_count` 最近完整源快照的当前成分数；成员分页的 `total`
+  才是 `board_member` 累计出现过的关系数，两种口径不得混称。
 - **上涨/下跌家数** = 该交易日有效成分股个股 `close` vs `pre_close`；平盘/停牌/缺行情不计入。
 
 所有日期/空值口径：涨幅与资金流数据日期分别显式返回；空值统一 None（前端「—」）。
@@ -84,12 +85,11 @@ class BoardQueryService:
 
     def _sector_rows(self, bar_date: date | None, fund_date: date | None) -> list[dict]:
         """板块列表全量行（<600 单次全查内存合并）。"""
-        # 1. board_dict 基础 + 成分数（board_member 每板块累积）
+        # 1. board_dict 基础 + 最近完整源快照成分数
         df = self.c.query_df(
             """
             SELECT d.board_code, d.app_code, d.name, d.board_type,
-                   d.has_members, d.has_bar, d.has_fund_flow, d.member_count,
-                   (SELECT count(*) FROM board_member m WHERE m.board_code = d.board_code) AS member_n
+                   d.has_members, d.has_bar, d.has_fund_flow, d.member_count
             FROM board_dict d
             WHERE d.has_members OR d.has_bar
             """)
@@ -97,6 +97,7 @@ class BoardQueryService:
         bar_ts = self._bar_close_series(bar_date)
         # 3. board_fund_flow 即时净流入 + 领涨股（最新 snapshot_date period='即时'）
         fund_df = self._immediate_fund_flow(fund_date)
+        advance_decline = self._advance_decline_by_board(bar_date)
 
         rows = []
         for _, r in df.iterrows():
@@ -107,7 +108,9 @@ class BoardQueryService:
                 "app_code": str(r["app_code"]) if r["app_code"] is not None and str(r["app_code"]) != "nan" else None,
                 "name": str(r["name"]),
                 "board_type": str(r["board_type"]),
-                "member_count": int(r["member_n"]) if r["member_n"] is not None else None,
+                "member_count": (int(r["member_count"])
+                                 if r["member_count"] is not None and not pd.isna(r["member_count"])
+                                 else None),
                 "has_members": bool(r["has_members"]),
                 "has_bar": bool(r["has_bar"]),
                 "has_fund_flow": bool(r["has_fund_flow"]),
@@ -129,8 +132,8 @@ class BoardQueryService:
                 row["net_inflow"] = None
                 row["leader_stock"] = None
                 row["leader_pct"] = None
-            # 涨跌家数（该交易日有效成分股 close vs pre_close）
-            row["up_count"], row["down_count"] = self._board_advance_decline(code, bar_date)
+            # 涨跌家数（累计成分关系中，该交易日有行情者的 close vs pre_close）
+            row["up_count"], row["down_count"] = advance_decline.get(code, (0, 0))
             rows.append(row)
         return rows
 
@@ -138,9 +141,15 @@ class BoardQueryService:
         """每板块指数收盘序列（升序），key=board_code。bar_date None → 空。"""
         if bar_date is None:
             return {}
+        # 各周期最长只需要最近 21 个收盘点，不加载每个板块全部历史。
         df = self.c.query_df(
-            "SELECT board_code, trade_date, close FROM board_bar "
-            "WHERE trade_date <= ? ORDER BY board_code, trade_date", [bar_date])
+            """
+            SELECT board_code, trade_date, close FROM (
+                SELECT board_code, trade_date, close,
+                       row_number() OVER (PARTITION BY board_code ORDER BY trade_date DESC) AS rn
+                FROM board_bar WHERE trade_date <= ?
+            ) t WHERE rn <= 21 ORDER BY board_code, trade_date
+            """, [bar_date])
         out: dict[str, pd.Series] = {}
         for code, g in df.groupby("board_code"):
             out[str(code)] = g["close"].reset_index(drop=True)
@@ -162,23 +171,23 @@ class BoardQueryService:
             }
         return out
 
-    def _board_advance_decline(self, board_code: str, bar_date: date | None) -> tuple[int | None, int | None]:
-        """板块涨跌家数：该交易日有效成分股 close vs pre_close。bar_date None → (None, None)。"""
+    def _advance_decline_by_board(self, bar_date: date | None) -> dict[str, tuple[int, int]]:
+        """一次聚合全部板块涨跌家数，避免列表逐板块 N+1 查询。"""
         if bar_date is None:
-            return None, None
+            return {}
         df = self.c.query_df(
             """
-            SELECT count(*) FILTER (WHERE b.close > b.pre_close) AS up,
+            SELECT m.board_code,
+                   count(*) FILTER (WHERE b.close > b.pre_close) AS up,
                    count(*) FILTER (WHERE b.close < b.pre_close) AS down
             FROM board_member m
             JOIN daily_bar b ON b.code = m.code AND b.trade_date = ?
-            WHERE m.board_code = ?
-            """, [bar_date, board_code])
-        if df.empty:
-            return None, None
-        up = int(df.iloc[0]["up"]) if df.iloc[0]["up"] is not None else 0
-        down = int(df.iloc[0]["down"]) if df.iloc[0]["down"] is not None else 0
-        return up, down
+            GROUP BY m.board_code
+            """, [bar_date])
+        return {
+            str(r["board_code"]): (int(r["up"] or 0), int(r["down"] or 0))
+            for _, r in df.iterrows()
+        }
 
     def _latest_bar_date(self) -> date | None:
         """board_bar 全局最新交易日。"""
@@ -204,14 +213,15 @@ class BoardQueryService:
         fund_date = self._latest_fund_date()
         bar = self._bar_close_series(bar_date).get(code)
         ff = self._immediate_fund_flow(fund_date).get(code)
-        up, down = self._board_advance_decline(code, bar_date)
+        up, down = self._advance_decline_by_board(bar_date).get(code, (0, 0))
         out = {
             "board_code": str(r["board_code"]),
             "app_code": str(r["app_code"]) if r["app_code"] is not None and str(r["app_code"]) != "nan" else None,
             "name": str(r["name"]),
             "board_type": str(r["board_type"]),
-            "member_count": int(self.c.query_df(
-                "SELECT count(*) AS n FROM board_member WHERE board_code=?", [code]).iloc[0]["n"]),
+            "member_count": (int(r["member_count"])
+                             if r["member_count"] is not None and not pd.isna(r["member_count"])
+                             else None),
             "has_members": bool(r["has_members"]),
             "has_bar": bool(r["has_bar"]),
             "has_fund_flow": bool(r["has_fund_flow"]),

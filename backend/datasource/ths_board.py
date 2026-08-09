@@ -122,6 +122,7 @@ class ThsBoardSource:
             self._retry_backoff_sec = retry_backoff_sec if retry_backoff_sec is not None else 2.0
         self._session = session or requests.Session()
         self._v_code: str | None = None
+        self._clid_cache: dict[tuple[str, str], str] = {}
         # 可选登录态（环境变量注入，不硬编码）：解除详情页翻页登录墙
         self._login_cookie = login_cookie if login_cookie is not None else _login_cookie_from_env()
 
@@ -306,21 +307,26 @@ class ThsBoardSource:
         _validate_board_type(board_type)
         clid = self._get_clid(code, board_type)
         rows: list[dict] = []
+        failed_years: list[int] = []
         for year in range(start.year, end.year + 1):
             url = _BAR_LINE_URL.format(clid=clid, year=year)
             try:
                 text = self._http_get(url, referer="https://q.10jqka.com.cn/")
             except Exception as e:  # noqa: BLE001 —— 单年失败跳过（指数缺口由 T7 质检扫描发现）
                 log.warning("板块 %s 指数 %d 年取数失败: %s", code, year, e)
+                failed_years.append(year)
                 continue
             for row in _parse_bar_js(text, year):
                 rows.append(row)
         df = pd.DataFrame(rows)
+        df.attrs["failed_years"] = failed_years
         if df.empty:
             return df
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
         df = df[(df["trade_date"] >= start) & (df["trade_date"] <= end)]
-        return df.reset_index(drop=True)
+        out = df.reset_index(drop=True)
+        out.attrs["failed_years"] = failed_years
+        return out
 
     @rate_limited(1.0)
     def get_board_fund_flow(self, board_type: str, period: str = "即时") -> pd.DataFrame:
@@ -354,16 +360,26 @@ class ThsBoardSource:
                .reset_index(drop=True))
         return out
 
+    def get_board_app_code(self, code: str, board_type: str) -> str:
+        """返回板块在同花顺 App 使用的 clid，供字典采集持久化双代码映射。"""
+        _validate_board_type(board_type)
+        return self._get_clid(code, board_type)
+
     def _get_clid(self, code: str, board_type: str) -> str:
         """详情页隐藏字段 clid：概念=App 内部码（88xxxx），行业=路径 code。"""
+        cache_key = (board_type, code)
+        if cache_key in self._clid_cache:
+            return self._clid_cache[cache_key]
         if board_type == "industry":
+            self._clid_cache[cache_key] = code
             return code
         url = _DETAIL_URLS[board_type].format(code=code)
         html = self._http_get(url, referer="https://q.10jqka.com.cn/")
         m = re.search(r'<input[^>]+id="clid"[^>]+value=[\'"](\d+)[\'"]', html)
         if not m:
             raise ValueError(f"板块 {code} 详情页无 clid（疑似代码失效）")
-        return m.group(1)
+        self._clid_cache[cache_key] = m.group(1)
+        return self._clid_cache[cache_key]
 
 
 # ── 解析工具 ─────────────────────────────────────────────────

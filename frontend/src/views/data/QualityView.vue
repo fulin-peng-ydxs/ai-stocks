@@ -7,7 +7,8 @@ import { ElMessage } from 'element-plus'
 import {
   getDataQuality, fixQualityIssue, ignoreQualityIssue, resetQualityIssue, recoverQualityBatch,
   markDelisted, createTask, getTask,
-  ISSUE_TYPE_LABEL, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL, RECOVER_ACTION_LABEL,
+  ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE, SEVERITY_LABEL, ISSUE_STATUS_LABEL, ISSUE_LAYER, LAYER_LABEL,
+  RECOVER_ACTION_LABEL,
   type DataQuality, type QualityIssue, type CheckupReport,
 } from '@/api/data'
 import { ElMessageBox } from 'element-plus'
@@ -320,6 +321,10 @@ onMounted(() => {
   if (typeof sev === 'string' && ['high', 'mid', 'low'].includes(sev)) filters.value.severity = [sev]
   const code = route.query.code
   if (typeof code === 'string' && code) { filters.value.code = code; filters.value.status = [] }
+  const issueType = route.query.issue_type
+  if (typeof issueType === 'string') {
+    filters.value.issue_type = issueType.split(',').filter((x) => ISSUE_TYPES_ACTIVE.includes(x as any))
+  }
   load()
 })
 </script>

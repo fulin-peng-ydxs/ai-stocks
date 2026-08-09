@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import pandas as pd
@@ -534,11 +535,10 @@ class DataIntegrityReport:
     def scan_board_quality(self) -> dict:
         """板块数据质检：板块指数缺口扫描，写 data_quality_issue。
 
-        收敛语义（承接 data_report 收敛模式）：板块自动扫描类（board_index_gap）在扫描前清
-        上轮未解决 open 问题（SCAN_ISSUE_TYPES 已含），反复跑不堆积。已 ignored 的不再上报。
+        收敛语义：先完整计算本轮结果，再在一个事务内替换 open 的 board_index_gap；扫描失败时
+        事务不提交，旧问题不会消失。已 ignored 的不再上报。
 
-        🔴 2026-08-09 修订：成分数波动不再质检（只进不出模型下成分变化是源端真实重组，
-        非数据错误；成分采集完整性由采集层「完整快照才落库」保证，见 board_ingest）。
+        成分数波动不做质量判断；成分采集完整性由采集层“完整快照才落库”保证。
         """
         # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
@@ -572,12 +572,16 @@ class DataIntegrityReport:
                     "detail": f"板块 {r['name']}（{code}）指数缺口：最近指数 {last_bar or '无'}，"
                               f"全局最新交易日 {latest}",
                 })
-        self._insert_issues(gap_issues)
+        with self.c.transaction():
+            self.c.execute(
+                "DELETE FROM data_quality_issue "
+                "WHERE status='open' AND issue_type='board_index_gap'")
+            self._insert_issues(gap_issues)
         return {"index_gap": len(gap_issues)}
 
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
-    def recheck_clean(self, issue_type: str, code: str, trade_date: date | None,
-                      window_days: int = GAP_WINDOW_DAYS) -> bool:
+    def recheck_clean(self, issue_type: str, code: str | None, trade_date: date | None,
+                      window_days: int = GAP_WINDOW_DAYS, detail: str | dict | None = None) -> bool:
         """复检：该 (类型,股,日期) 的问题现在是否已不存在。True=已恢复，可置 resolved。"""
         if issue_type == "mv_missing":
             # L2 契约：总市值与流通市值都须有
@@ -684,15 +688,35 @@ class DataIntegrityReport:
                 return False
             return pd.Timestamp(last_bar).date() >= pd.Timestamp(latest).date()
         if issue_type == "board_member_incomplete":
-            # 成分快照采集不完整：重采后该板块已有完整成分（member_count 非空）即视为恢复
+            # 完整采集会原子更新 member_snapshot_at 并关闭 active issue；历史 member_count 不能证明
+            # 本次问题已经修复，否则旧快照会造成假解决。
             row = self.c.query_df(
-                "SELECT member_count FROM board_dict WHERE board_code=?", [code])
-            if row.empty or row.iloc[0]["member_count"] is None:
+                "SELECT member_snapshot_at FROM board_dict WHERE board_code=?", [code])
+            if row.empty or row.iloc[0]["member_snapshot_at"] is None:
                 return False
-            return int(row.iloc[0]["member_count"]) > 0
+            active = self._scalar(
+                "SELECT count(*) FROM data_quality_issue "
+                "WHERE issue_type='board_member_incomplete' AND code=? "
+                "AND status IN ('open','fixing')", [code])
+            return int(active) == 0
         if issue_type == "board_fund_unmatched":
-            # 资金流未匹配复检：该名称板块是否已能映射（重采后进字典）
-            return True  # 由人工 ignore 收敛（源无稳定代码，重采不保证能匹配），复检通过即收敛
+            # 只有问题里的名称现在确实能映射到同类型字典，才算修复；源仍无稳定代码时保持 open。
+            payload = detail if isinstance(detail, dict) else {}
+            if not payload and isinstance(detail, str):
+                try:
+                    payload = json.loads(detail)
+                except (TypeError, ValueError):
+                    payload = {"name": detail}
+            name = str(payload.get("name") or "").strip()
+            if not name:
+                return False
+            board_type = str(payload.get("board_type") or "").strip()
+            sql = "SELECT count(*) FROM board_dict WHERE name=?"
+            params: list = [name]
+            if board_type:
+                sql += " AND board_type=?"
+                params.append(board_type)
+            return int(self._scalar(sql, params)) > 0
         return True
 
     def _scan_adj_jump(self, threshold: float = 0.5, ignored_exact: set | None = None) -> int:

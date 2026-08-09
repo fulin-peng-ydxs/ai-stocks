@@ -332,17 +332,26 @@ def test_login_cookie_from_env(monkeypatch):
 
 
 def test_headers_login_cookie_uses_login_v():
-    """登录态：非 data_host 时 Cookie 直接用登录 cookie（含登录凭证 + v），不再拼独立 v。"""
+    """登录态：保留登录凭证，但必须用本机生成的动态 v 替换复制来的旧 v。"""
     s = _make_source({})
     s._login_cookie = "user=1; ticket=abc; v=loginv"
     h = s._headers()
-    assert h["Cookie"] == "user=1; ticket=abc; v=loginv"
+    assert h["Cookie"] == "user=1; ticket=abc; v=fake-v-cookie"
 
     # 无登录态：拼接独立生成的 v
     s2 = _make_source({})
     s2._v_code = "genv"
     h2 = s2._headers()
     assert h2["Cookie"] == "v=genv"
+
+
+def test_get_board_app_code_uses_clid_and_cache():
+    """双代码：概念从详情页取 clid，重复读取命中缓存；行业直接使用路径 code。"""
+    s = _make_source({"/gn/detail/code/309121": '<input id="clid" value="886071">'})
+    assert s.get_board_app_code("309121", "concept") == "886071"
+    assert s.get_board_app_code("309121", "concept") == "886071"
+    assert s.get_board_app_code("881121", "industry") == "881121"
+    assert sum("/gn/detail/code/309121" in x for x in s._session.calls) == 1
 
 
 def test_get_board_members_login_breaks_wall():

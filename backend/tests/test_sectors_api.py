@@ -124,6 +124,18 @@ def test_get_sector_detail(c):
     assert d["has_members"] and d["has_bar"] and d["has_fund_flow"]
 
 
+def test_member_count_is_latest_snapshot_not_cumulative_relation_count(c):
+    """摘要成分数取最近完整源快照；成员分页 total 才是累计关系数。"""
+    c.execute("INSERT INTO board_member (board_code, code) VALUES ('309121', '000003.SZ')")
+    c.execute("INSERT INTO stock_basic (code, name) VALUES ('000003.SZ', '历史成分')")
+    svc = _svc(c)
+
+    rows = {x["board_code"]: x for x in svc.list_sectors()["list"]}
+    assert rows["309121"]["member_count"] == 2
+    assert svc.get_sector("309121")["member_count"] == 2
+    assert svc.get_members("309121")["total"] == 3
+
+
 def test_get_sector_not_found(c):
     """不存在板块 → None。"""
     assert _svc(c).get_sector("999999") is None

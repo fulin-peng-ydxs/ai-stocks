@@ -136,6 +136,10 @@ const PHASE_LABEL: Record<string, string> = {
   valuation_gap: '市值缺口回补',
   price_factor: '价格因子',
   fix_issue: '问题修复',
+  board_dict: '板块字典',
+  board_members: '板块成分',
+  board_bar: '板块指数',
+  board_fund_flow: '板块资金流',
 }
 function taskPhaseText(t: AsyncTask): string {
   const cap = t.capability
@@ -154,7 +158,9 @@ function canCancelTask(t: AsyncTask): boolean {
   return (t.status === 'pending' || t.status === 'running') && Boolean(t.capability?.can_cancel)
 }
 function canResumeTask(t: AsyncTask): boolean {
-  return t.status === 'interrupted' && Boolean(t.capability?.can_resume)
+  if (!t.capability?.can_resume) return false
+  if (t.status === 'interrupted') return true
+  return t.status === 'failed' && Boolean(t.capability?.checkpoint)
 }
 function taskStatusLabel(t: AsyncTask): string {
   return isCancellingTask(t) ? '终止中' : (STATUS_LABEL[t.status as TaskStatus] ?? t.status)
@@ -162,9 +168,11 @@ function taskStatusLabel(t: AsyncTask): string {
 function taskStatusType(t: AsyncTask): 'success' | 'danger' | 'info' | 'warning' {
   return isCancellingTask(t) ? 'warning' : (statusType[t.status as TaskStatus] ?? 'info')
 }
-const updateLogType: Record<string, 'success' | 'danger' | 'info'> = { success: 'success', failed: 'danger' }
+const updateLogType: Record<string, 'success' | 'danger' | 'info' | 'warning'> = {
+  success: 'success', failed: 'danger', partial: 'warning',
+}
 function logRowClass({ row }: { row: { status: string } }): string {
-  return row.status === 'failed' ? 'row-fail' : ''
+  return row.status === 'failed' ? 'row-fail' : row.status === 'partial' ? 'row-partial' : ''
 }
 const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
@@ -233,6 +241,16 @@ function openOptions(type: TaskType) {
 // 从概览/质量页带 ?code=&start=&end= 跳来 → 预填「指定日期采集」对话框（重采该股缺口区间）
 function openFromQuery() {
   const q = route.query
+  if (q.task_type === 'board') {
+    optType.value = 'board'
+    optForm.value = {
+      codes: [], date_start: '', date_end: '', years: null,
+      mode: q.mode === 'backfill' ? 'backfill' : 'update',
+    }
+    codeOptions.value = []
+    optDlg.value = true
+    return
+  }
   const code = typeof q.code === 'string' ? q.code : ''
   if (!code) return
   const start = typeof q.start === 'string' ? q.start : ''
@@ -537,7 +555,7 @@ onMounted(async () => {
       <el-card shadow="never" class="blk">
         <template #header>
           <div class="blk-head"><span>数据采集</span>
-            <span class="hint">采集对象＝数据资产表中的：日线行情 / 市值指标 / 指数 / 交易日历。同类采集任务不可并发。</span></div>
+            <span class="hint">采集对象＝数据资产表中的：日线行情 / 市值指标 / 指数 / 交易日历 / 概念与行业板块。同类采集任务不可并发。</span></div>
         </template>
         <div class="act-grid">
           <div class="act">
@@ -562,7 +580,7 @@ onMounted(async () => {
             <div class="act-t">板块采集</div>
             <div class="act-d">板块字典/成分/指数/资金流（执行=全量回填，更多选项可选增量）</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
-                       @click="submit('board', undefined, '板块采集（全量回填）耗时可能较长，确认开始？')">执行</el-button>
+                       @click="submit('board', { mode: 'backfill' }, '板块采集（全量回填）耗时可能较长，确认开始？')">执行</el-button>
             <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('board')">更多选项…</el-button>
           </div>
         </div>
@@ -766,7 +784,7 @@ onMounted(async () => {
             </AppTableColumn>
             <AppTableColumn label="详情 / 失败原因" show-overflow-tooltip>
               <template #default="{ row }">
-                <span :class="{ 'fail-detail': row.status === 'failed' }">{{ row.detail || (row.status === 'success' ? '—' : '') }}</span>
+                <span :class="{ 'fail-detail': row.status === 'failed', 'partial-detail': row.status === 'partial' }">{{ row.detail || (row.status === 'success' ? '—' : '') }}</span>
               </template>
             </AppTableColumn>
             <AppTableColumn label="时间" prop="time" sortable="custom">
@@ -782,7 +800,12 @@ onMounted(async () => {
 
     <template #overlays>
     <!-- 更多选项对话框 -->
-    <el-dialog v-model="optDlg" :title="`${TASK_LABEL[optType]} · 更多选项`" width="460px">
+    <el-dialog
+      v-model="optDlg"
+      :title="`${TASK_LABEL[optType]} · 更多选项`"
+      width="460px"
+      data-testid="ingest-options-dialog"
+    >
       <el-form label-width="92px">
         <el-form-item v-if="optType === 'ingest_date'" label="起始日期">
           <TradeDatePicker v-model="optForm.date_start" placeholder="必填，仅可选交易日" />
@@ -794,7 +817,7 @@ onMounted(async () => {
           <el-input-number v-model="optForm.years" :min="1" :max="30" placeholder="留空=默认" />
         </el-form-item>
         <el-form-item v-if="optType === 'board'" label="采集模式">
-          <el-radio-group v-model="optForm.mode">
+          <el-radio-group v-model="optForm.mode" data-testid="ingest-board-mode">
             <el-radio value="backfill">全量回填</el-radio>
             <el-radio value="update">增量</el-radio>
           </el-radio-group>
@@ -938,7 +961,9 @@ onMounted(async () => {
 .log-line.error { color: var(--app-danger-text); }
 .lt { color: var(--el-text-color-secondary); flex-shrink: 0; }
 :deep(.row-fail) { background: var(--el-color-danger-light-9); }
+:deep(.row-partial) { background: var(--el-color-warning-light-9); }
 .fail-detail { color: var(--app-danger-text); }
+.partial-detail { color: var(--app-warning-text); }
 @media (max-width: 1280px) {
   .ingest-bottom {
     grid-template-columns: 1fr;

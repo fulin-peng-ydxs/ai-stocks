@@ -229,6 +229,12 @@ function gotoQuality(severity?: string) {
   router.push(severity ? `/data/quality?severity=${severity}` : '/data/quality')
 }
 function gotoGap() { router.push('/data/ingest') }
+function gotoBoard() {
+  router.push({ path: '/data/ingest', query: { task_type: 'board', mode: 'update' } })
+}
+function coverageText(ready: number | undefined, total: number | undefined): string {
+  return `${ready ?? 0}/${total ?? 0}`
+}
 
 onMounted(load)
 </script>
@@ -281,13 +287,25 @@ onMounted(load)
             </el-tooltip>
             <div class="stat-val">{{ ov?.bar_rows?.toLocaleString() ?? '—' }}</div>
           </el-card>
-          <el-card v-if="settings.kpi.board" shadow="never" class="stat clickable" @click="gotoGap()">
-            <el-tooltip content="板块数据：字典/成分/指数/资金流表行数（板块概念）" placement="top">
+          <el-card
+            v-if="settings.kpi.board"
+            shadow="never"
+            class="stat clickable"
+            data-testid="overview-board-card"
+            @click="gotoBoard()"
+          >
+            <el-tooltip content="板块字典规模、成分/指数/资金流覆盖和质量问题；点击进入板块增量采集" placement="top">
               <div class="stat-label">板块数据 <span class="qm">?</span></div>
             </el-tooltip>
             <div class="stat-val">{{ ov?.board ? (ov.board.board_dict ?? 0) + ' 板块' : '—' }}</div>
             <div class="stat-foot" v-if="ov?.board">
-              指数 {{ (ov.board.board_bar ?? 0).toLocaleString() }} 行 · 成分 {{ (ov.board.board_member ?? 0).toLocaleString() }} 行
+              概念 {{ ov.board.concept_count }} · 行业 {{ ov.board.industry_count }} · 待处理 {{ ov.board.open_issues }}
+              <br>
+              覆盖 成分 {{ coverageText(ov.board.member_ready, ov.board.member_target) }} ·
+              指数 {{ coverageText(ov.board.bar_ready, ov.board.bar_target) }} ·
+              资金 {{ coverageText(ov.board.fund_ready, ov.board.fund_target) }}
+              <br>
+              最新 指数 {{ ov.board.latest_bar_date || '—' }} · 资金 {{ ov.board.latest_fund_date || '—' }}
             </div>
           </el-card>
           <el-card v-if="settings.kpi.score" shadow="never" class="stat">

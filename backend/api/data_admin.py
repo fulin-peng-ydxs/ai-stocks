@@ -103,14 +103,7 @@ def overview() -> ApiResponse:
     last_scan = c.query_df(
         "SELECT max(detected_at) AS t FROM data_quality_issue").iloc[0]["t"]
     last_scan_s = None if last_scan is None or str(last_scan) == "NaT" else str(last_scan)[:19]
-    # 板块数据（板块概念需求 R6/R21）：4 表行数（总览闭环含板块）
-    board = None
-    try:
-        bt = {k: int(ov["row_counts"].get(k, 0)) for k in
-              ("board_dict", "board_member", "board_bar", "board_fund_flow")}
-        board = bt
-    except Exception:  # noqa: BLE001
-        board = None
+    board = _board_stage(c)
     return ok({
         "latest_trade_date": qm["latest_trade_date"],
         "codes": {"active": ov["stock_basic_live"], "delisted": ov["stock_basic_delisted"]},
@@ -204,17 +197,69 @@ def hub() -> ApiResponse:
 
 
 def _board_stage(c) -> dict | None:
-    """板块数据闭环环节（板块概念 R6/R21）：4 表行数 + 板块质检问题数。"""
+    """板块数据闭环环节：规模、覆盖、鲜活、质量问题与最近采集状态。"""
     try:
         from backend.storage.ddl import list_tables
         have = set(list_tables(c))
         bt = {k: (int(c.query_df(f"SELECT count(*) AS n FROM {k}").iloc[0]["n"]) if k in have else 0)
               for k in ("board_dict", "board_member", "board_bar", "board_fund_flow")}
-        open_issues = int(c.query_df(
-            "SELECT count(*) AS n FROM data_quality_issue WHERE status='open' "
-            "AND issue_type IN ('board_index_gap','board_member_incomplete','board_fund_unmatched')").iloc[0]["n"]) \
-            if "data_quality_issue" in have else 0
-        return {**bt, "open_issues": open_issues}
+        dims = c.query_df(
+            "SELECT count(*) FILTER (WHERE board_type='concept') AS concept, "
+            "count(*) FILTER (WHERE board_type='industry') AS industry, "
+            "count(*) FILTER (WHERE has_members) AS member_target, "
+            "count(*) FILTER (WHERE has_members AND member_snapshot_at IS NOT NULL) AS member_ready, "
+            "count(*) FILTER (WHERE has_bar) AS bar_target "
+            "FROM board_dict").iloc[0]
+        latest_market = c.query_df("SELECT max(trade_date) AS t FROM daily_bar").iloc[0]["t"]
+        latest_bar = c.query_df("SELECT max(trade_date) AS t FROM board_bar").iloc[0]["t"]
+        latest_fund = c.query_df("SELECT max(snapshot_date) AS t FROM board_fund_flow").iloc[0]["t"]
+        bar_ready = 0
+        if latest_market is not None and str(latest_market) != "NaT":
+            bar_ready = int(c.query_df(
+                "SELECT count(DISTINCT b.board_code) AS n FROM board_bar b "
+                "JOIN board_dict d ON d.board_code=b.board_code AND d.has_bar "
+                "WHERE b.trade_date=?", [latest_market]).iloc[0]["n"])
+        fund_ready = 0
+        if latest_fund is not None and str(latest_fund) != "NaT":
+            fund_ready = int(c.query_df(
+                "SELECT count(DISTINCT board_code) AS n FROM board_fund_flow "
+                "WHERE snapshot_date=? AND period='即时'", [latest_fund]).iloc[0]["n"])
+        issues_by_type: dict[str, int] = {}
+        if "data_quality_issue" in have:
+            issues = c.query_df(
+                "SELECT issue_type, count(*) AS n FROM data_quality_issue "
+                "WHERE status IN ('open','fixing') "
+                "AND issue_type IN ('board_index_gap','board_member_incomplete','board_fund_unmatched') "
+                "GROUP BY issue_type")
+            issues_by_type = {str(r["issue_type"]): int(r["n"]) for _, r in issues.iterrows()}
+        last_update = None
+        if "data_update_log" in have:
+            lu = c.query_df(
+                "SELECT table_name, status, detail, updated_at FROM data_update_log "
+                "WHERE table_name IN ('board_dict','board_member','board_bar','board_fund_flow') "
+                "ORDER BY updated_at DESC LIMIT 1")
+            if not lu.empty:
+                r = lu.iloc[0]
+                last_update = {
+                    "table_name": str(r["table_name"]), "status": str(r["status"]),
+                    "detail": None if r["detail"] is None else str(r["detail"]),
+                    "updated_at": str(r["updated_at"])[:19],
+                }
+        def _date_text(value):
+            return None if value is None or str(value) == "NaT" else str(value)[:10]
+
+        return {
+            **bt,
+            "concept_count": int(dims["concept"]), "industry_count": int(dims["industry"]),
+            "member_target": int(dims["member_target"]), "member_ready": int(dims["member_ready"]),
+            "bar_target": int(dims["bar_target"]), "bar_ready": bar_ready,
+            "fund_target": bt["board_dict"], "fund_ready": fund_ready,
+            "latest_bar_date": _date_text(latest_bar),
+            "latest_fund_date": _date_text(latest_fund),
+            "open_issues": sum(issues_by_type.values()),
+            "issues_by_type": issues_by_type,
+            "last_update": last_update,
+        }
     except Exception:  # noqa: BLE001
         return None
 
@@ -454,17 +499,25 @@ def quality_recover_batch(body: dict) -> ApiResponse:
         conds.append(f"severity IN ({','.join('?' * len(sevs))})"); params += sevs
     if body.get("code"):
         kw = f"%{str(body['code']).lower()}%"
-        # code 过滤同时匹配股票（stock_basic）与板块（board_dict，板块 issue 的 code=board_code）；
-        # board_dict 表不存在（板块未初始化）时只按股票过滤
+        # 名称/代码过滤同时覆盖股票、带 board_code 的板块问题和 code=NULL 的资金流未匹配问题。
+        # 整组 OR 必须加括号，否则 SQL 的 AND 优先级会让板块分支越过状态/类型/严重级别筛选。
         has_board = "board_dict" in set(
             c.query_df("SELECT table_name FROM information_schema.tables "
                        "WHERE table_schema='main'").get("table_name", []))
-        conds.append(
-            "code IN (SELECT code FROM stock_basic WHERE lower(code) LIKE ? OR lower(name) LIKE ?)"
-            + (" OR code IN (SELECT board_code FROM board_dict WHERE lower(board_code) LIKE ? OR lower(name) LIKE ?)"
-               if has_board else "")
-        )
-        params += [kw, kw] + ([kw, kw] if has_board else [])
+        code_conds = [
+            "code IN (SELECT code FROM stock_basic WHERE lower(code) LIKE ? OR lower(name) LIKE ?)",
+        ]
+        params += [kw, kw]
+        if has_board:
+            code_conds.append(
+                "code IN (SELECT board_code FROM board_dict "
+                "WHERE lower(board_code) LIKE ? OR lower(name) LIKE ?)")
+            params += [kw, kw]
+        code_conds.append(
+            "(issue_type='board_fund_unmatched' "
+            "AND lower(COALESCE(json_extract_string(try_cast(detail AS JSON), '$.name'), '')) LIKE ?)")
+        params.append(kw)
+        conds.append(f"({' OR '.join(code_conds)})")
     ids = c.query_df(
         f"SELECT id FROM data_quality_issue WHERE {' AND '.join(conds)} ORDER BY id", params)["id"].tolist()
     if not ids:

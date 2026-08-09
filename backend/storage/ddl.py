@@ -717,6 +717,7 @@ CREATE TABLE IF NOT EXISTS board_dict (
     has_fund_flow BOOLEAN DEFAULT FALSE,   -- 是否有资金流
     member_count  BIGINT,                  -- 最近一次已应用完整快照的冗余成分数；页面仍以有效 board_member 实时统计为准
     member_history_start_date DATE,        -- 成分快照首次完整采集日（板块级）
+    member_snapshot_at TIMESTAMP,          -- 最近一次完整成分快照成功落库时间（修复复检与概览口径）
     last_seen_at  DATE,                    -- 最近一次在任意源出现
     updated_at    TIMESTAMP
 );
@@ -837,6 +838,8 @@ _MIGRATIONS: list[str] = [
     "UPDATE async_task SET trigger_source='manual' WHERE trigger_source IS NULL",
     # 废弃 daily 复合任务：旧库残留的每日任务记录改标为 update（语义上等价于其首步增量更新）
     "UPDATE async_task SET task_type='update' WHERE task_type='daily'",
+    # 成分修复需证明问题检出后发生过新的完整快照，不能只看历史 member_count。
+    "ALTER TABLE board_dict ADD COLUMN IF NOT EXISTS member_snapshot_at TIMESTAMP",
 ]
 
 

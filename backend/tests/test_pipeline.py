@@ -174,6 +174,31 @@ def test_pipeline_board_failure_continues_quality(tmp_path, monkeypatch):
         assert res["ok"] is False                 # 但整体失败
 
 
+def test_pipeline_board_partial_result_continues_quality(tmp_path, monkeypatch):
+    """板块服务未抛异常但返回 failed 列表时，流水线仍必须标失败并继续质检。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.data_report import DataIntegrityReport
+
+    monkeypatch.setattr(
+        ingest_mod.IngestionService, "ingest_board",
+        lambda self, ctx=None, board_type=None, board_codes=None, mode="update": {
+            "ok": False, "failed": ["bar:309121: timeout"],
+        }, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__",
+                        lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(DataIntegrityReport, "scan_quality_issues",
+                        lambda self: {"abnormal_change_rows": 0}, raising=True)
+    monkeypatch.setattr(DataIntegrityReport, "scan_board_quality",
+                        lambda self: {"index_gap": 0}, raising=True)
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_market_with_latest(c)
+        res = DailyPipeline(c).run(skip_update=True)
+    steps = {s["step"]: s["status"] for s in res["steps"]}
+    assert steps == {"板块采集": "failed", "数据质检": "ok"}
+    assert res["ok"] is False
+
+
 def test_pipeline_board_total_steps_count(tmp_path, monkeypatch):
     """total_steps 正确：skip_update + board + quality = 3 步（不出现 3/2）。"""
     from backend.services import ingest as ingest_mod
@@ -252,9 +277,29 @@ def test_board_schedulable_and_catalog(tmp_path):
                          freq_type="daily", freq_config={"time": "15:30"},
                          trading_day_only=True, enabled=False)
         assert job["task_type"] == "board"
+        assert job["params"] == {"mode": "update"}
+        with pytest.raises(ValueError, match="update/backfill"):
+            svc.create(name="非法板块模式", task_type="board", params={"mode": "daily"},
+                       freq_type="daily", freq_config={"time": "15:30"},
+                       trading_day_only=True, enabled=False)
         # 2. catalog 含板块表（审计问题4）
         cat = build_catalog(c)
         tables = {x["table"] for x in cat}
         assert {"board_dict", "board_member", "board_bar", "board_fund_flow"} <= tables
         bd = next(x for x in cat if x["table"] == "board_dict")
         assert bd["name_cn"] == "板块字典"
+
+
+def test_source_status_includes_board_source(monkeypatch):
+    """数据源健康列表把同花顺标为独立板块源，不混入行情主备源。"""
+    from types import SimpleNamespace
+    from backend.services import data_sources
+
+    monkeypatch.setattr(
+        data_sources, "get_effective_settings",
+        lambda: SimpleNamespace(datasource=SimpleNamespace(
+            primary="akshare", fallback="baostock", socket_timeout_sec=3)),
+    )
+    result = data_sources.source_status(do_ping=False)
+    roles = {item["source"]: item["role"] for item in result["sources"]}
+    assert roles == {"akshare": "primary", "baostock": "fallback", "ths_board": "board"}

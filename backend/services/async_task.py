@@ -92,8 +92,8 @@ TASK_CAPABILITIES: dict[str, dict] = {
     },
     "board": {
         "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
-        "resume_granularity": "board_code",
-        "cancel_message": "会在当前板块取数完成后的检查点停止",
+        "resume_granularity": "board_code_or_fund_period",
+        "cancel_message": "会在当前板块或资金流类型/周期取数完成后的检查点停止",
     },
 }
 
@@ -259,22 +259,25 @@ class AsyncTaskService:
         return tid
 
     def resume(self, tid: str) -> str:
-        """续跑被中断的任务：读 checkpoint，重新拉起处理器（按 checkpoint 跳过已完成）。"""
+        """续跑中断或带 checkpoint 的失败任务，跳过已经成功的工作单元。"""
         t = self.get(tid)
         if not t:
             raise ValueError("任务不存在")
-        if t["status"] != "interrupted":
-            raise ValueError(f"仅可续跑中断任务，当前状态: {t['status']}")
+        if t["status"] not in ("interrupted", "failed"):
+            raise ValueError(f"仅可续跑中断或失败任务，当前状态: {t['status']}")
         task_type = t["task_type"]
         cap = TASK_CAPABILITIES.get(task_type, {})
         if not cap.get("can_resume"):
             raise ValueError(f"该任务类型不支持续跑: {task_type}")
+        checkpoint = (t.get("result") or {}).get("checkpoint") \
+            if isinstance(t.get("result"), dict) else None
+        if t["status"] == "failed" and not checkpoint:
+            raise ValueError("失败任务没有可用 checkpoint，请重新创建任务")
         if task_type in WRITE_TASK_TYPES:
             busy = self._running_write()
             if busy:
                 raise ConcurrentTaskError(busy[1], busy[0])
         params = t.get("params") or {}
-        checkpoint = (t.get("result") or {}).get("checkpoint") if isinstance(t.get("result"), dict) else None
         self._set(tid, status="pending", progress=0.0, message="续跑排队…")
         self._audit_task(
             action="resume",
@@ -310,6 +313,21 @@ class AsyncTaskService:
         ctx.flush()
         try:
             result = _HANDLERS[task_type](params, ctx)
+            if result.get("ok") is False:
+                message = result.get("message", "任务部分失败")
+                ctx.log(f"■ 任务失败：{message}", "error")
+                ctx.flush()
+                # 部分失败不是全量回滚：保留成功工作单元 checkpoint，失败任务可从剩余单元续跑。
+                result_payload = dict(result)
+                if ctx.checkpoint:
+                    result_payload["checkpoint"] = ctx.checkpoint
+                self._set(tid, status="failed", progress=1.0, message=message,
+                          result=json.dumps(result_payload, ensure_ascii=False, default=str))
+                self._audit_task(
+                    action="finish", result="failed", status="failed",
+                    task_id=tid, task_type=task_type, error_summary=message,
+                )
+                return
             ctx.log(f"■ 任务完成：{result.get('message', '完成')}")
             ctx.flush()
             self._set(tid, status="done", progress=1.0,
@@ -658,11 +676,8 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     ctx.log("数据质检：扫描市值缺失 / 异常涨跌 / 复权跳变 / 缺口 / 滞后，写入质量台账")
     rep = DataIntegrityReport()
     q = rep.scan_quality_issues()
-    # 板块维度质检（成分数波动/指数缺口，R12）同一质检内跑
-    try:
-        q["board"] = rep.scan_board_quality()
-    except Exception as e:  # noqa: BLE001
-        q["board"] = {"error": str(e)}
+    # 板块维度质检（指数缺口）同一质检内跑；采集即时问题由采集层写台账。
+    q["board"] = rep.scan_board_quality()
     n = sum(int(q.get(k, 0)) for k in
             ("abnormal_change_rows", "adj_jump_rows", "mv_missing_rows", "mv_gap_rows",
              "data_gap_rows", "stale_rows"))
@@ -746,10 +761,11 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
     """恢复单条质检问题 → 复检 → 回写状态。返回 (复检是否通过, 受影响日期, 文案)。"""
     import pandas as pd
     df = c.query_df(
-        "SELECT code, trade_date, issue_type FROM data_quality_issue WHERE id=?", [issue_id])
+        "SELECT code, trade_date, issue_type, detail FROM data_quality_issue WHERE id=?", [issue_id])
     if df.empty:
         raise ValueError(f"质检问题不存在: id={issue_id}")
     code, trade_date, issue_type = df.iloc[0]["code"], df.iloc[0]["trade_date"], df.iloc[0]["issue_type"]
+    issue_detail = df.iloc[0]["detail"]
     td = None if trade_date is None or (isinstance(trade_date, float) and pd.isna(trade_date)) \
         else pd.Timestamp(trade_date).date()
     # 进入 fixing 并绑定本任务 id：任务失败/中断/重启时据 fix_task_id 复位，不留孤儿（DM 修复中闭环）
@@ -799,31 +815,51 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             from backend.services.board_ingest import BoardIngestService
             from datetime import date as _d
             ctx.log(f"恢复(板块指数缺口)：重采板块 {code} 指数")
-            bsvc = BoardIngestService()
-            res = bsvc.ingest_board_bar(_d(2024, 1, 1), board_codes=[code])
+            bsvc = BoardIngestService(c)
+            res = _call_with_ctx(
+                bsvc.ingest_board_bar, _d(2024, 1, 1), board_codes=[code], ctx=ctx)
+            if res.get("failed"):
+                raise RuntimeError(f"板块指数重采失败：{res['failed']}")
             note = f"重采指数 {res.get('rows', 0)} 行"
             ctx.log(note)
         elif issue_type == "board_member_incomplete":
             # 成分快照采集不完整/失败：重采该板块成分快照（只进不出，完整才落库）
             from backend.services.board_ingest import BoardIngestService
             ctx.log(f"恢复(成分快照不完整)：重采板块 {code} 成分快照")
-            bsvc = BoardIngestService()
-            res = bsvc.ingest_board_members(board_codes=[code])
+            bsvc = BoardIngestService(c)
+            res = _call_with_ctx(bsvc.ingest_board_members, board_codes=[code], ctx=ctx)
             r = res.get(code, {})
-            note = f"成分 {r.get('total', 0)} 只" if "error" not in r else f"仍失败：{r['error']}"
+            if "error" in r:
+                raise RuntimeError(f"板块成分重采失败：{r['error']}")
+            if not r:
+                raise RuntimeError(f"板块成分重采失败：字典中不存在 {code}")
+            note = f"成分 {r.get('total', 0)} 只，新增 {r.get('added', 0)} 只"
             ctx.log(note)
         elif issue_type == "board_fund_unmatched":
             # 资金流未匹配：重采资金流（名称匹配映射），重扫收敛
+            import json as _json
             from backend.services.board_ingest import BoardIngestService
             ctx.log("恢复(资金流未匹配)：重采板块资金流")
-            bsvc = BoardIngestService()
-            res = bsvc.ingest_board_fund_flow(periods=("即时",))
+            issue_payload = {}
+            if isinstance(issue_detail, str):
+                try:
+                    issue_payload = _json.loads(issue_detail)
+                except (TypeError, ValueError):
+                    issue_payload = {}
+            repair_board_type = issue_payload.get("board_type")
+            bsvc = BoardIngestService(c)
+            _call_with_ctx(bsvc.ingest_board_dict, board_type=repair_board_type, ctx=ctx)
+            res = _call_with_ctx(
+                bsvc.ingest_board_fund_flow, periods=("即时",),
+                board_type=repair_board_type, ctx=ctx)
+            if res.get("failed"):
+                raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
             note = f"重采资金流 {res.get('rows', 0)} 行（未匹配 {res.get('unmatched', 0)}）"
             ctx.log(note)
         else:
             ctx.log(f"未知问题类型 {issue_type}，仅复检", "warn")
 
-        clean = rep.recheck_clean(issue_type, code, td)
+        clean = rep.recheck_clean(issue_type, code, td, detail=issue_detail)
     except Exception:
         # 恢复中途失败：复位为待处理（清绑定）再上抛，由 _h_fix 计入失败、不污染状态
         c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE id=?", [issue_id])
@@ -887,18 +923,24 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
         ctx.progress(1.0, message)
         return {"message": message, "ok": True, "resolved": 0, "failed": 0, "total": 0,
                 "snapshots_marked_stale": 0}
+    issue_types = set()
+    if ids:
+        issue_types = set(c.query_df(
+            f"SELECT DISTINCT issue_type FROM data_quality_issue "
+            f"WHERE id IN ({','.join('?' for _ in ids)})", ids)["issue_type"].astype(str))
     resolved = 0
     all_affected: list = []
     failed = 0
     last_msg = ""
     last_err = ""
-    ctx.set_phase("fix_issue", done=len(done_ids), total=len(done_ids) + n,
-                  phase_total=len(done_ids) + n, phase_done=len(done_ids),
+    phase_total = len(done_ids) + n
+    ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
+                  phase_total=phase_total, phase_done=len(done_ids),
                   current_item=None, issue_done_ids=sorted(done_ids))
     for i, iid in enumerate(ids, 1):
         ctx.check_cancel()
-        ctx.set_phase("fix_issue", done=len(done_ids), total=len(done_ids) + n,
-                      phase_total=len(done_ids) + n, phase_done=len(done_ids),
+        ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
+                      phase_total=phase_total, phase_done=len(done_ids),
                       current_item=iid, issue_done_ids=sorted(done_ids))
         ctx.progress(min(0.1 + 0.8 * (i - 1) / n, 0.9), f"恢复 {i}/{n}…")
         try:
@@ -906,22 +948,27 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             resolved += int(clean)
             all_affected += affected
             last_msg = msg
-            done_ids.add(iid)
-            ctx.set_phase("fix_issue", done=len(done_ids), total=len(done_ids) + n,
-                          phase_total=len(done_ids) + n, phase_done=len(done_ids),
+            if clean:
+                done_ids.add(iid)
+            ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
+                          phase_total=phase_total, phase_done=len(done_ids),
                           current_item=iid, issue_done_ids=sorted(done_ids))
             ctx.log(f"[{i}/{n}] {msg}")
         except Exception as e:  # noqa: BLE001
             failed += 1
             last_err = str(e)
-            done_ids.add(iid)
-            ctx.set_phase("fix_issue", done=len(done_ids), total=len(done_ids) + n,
-                          phase_total=len(done_ids) + n, phase_done=len(done_ids),
+            ctx.set_phase("fix_issue", done=len(done_ids), total=phase_total,
+                          phase_total=phase_total, phase_done=len(done_ids),
                           current_item=iid, issue_done_ids=sorted(done_ids))
             ctx.log(f"[{i}/{n}] 恢复失败 id={iid}: {e}（已退回待处理）", "error")
     ctx.progress(0.95, "刷新评分缓存…")
-    stale = (ScoreSnapshotRepo(c).mark_stale_dates(sorted(set(all_affected)))
-             if all_affected else _mark_snapshots_stale())
+    if all_affected:
+        stale = ScoreSnapshotRepo(c).mark_stale_dates(sorted(set(all_affected)))
+    elif resolved and issue_types.intersection({"mv_missing", "mv_gap", "adj_jump"}):
+        stale = _mark_snapshots_stale()
+    else:
+        # 板块字典/成分/指数/资金流不参与个股评分，修复成功后无需让全部评分快照失效。
+        stale = 0
     # 诚实文案：区分 已解决 / 复检未通过(仍 open) / 恢复失败(异常退回 open)。单条直接给原因。
     if n == 1:
         msg = (last_msg if not failed
@@ -939,40 +986,38 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
 def _h_board(params: dict, ctx: TaskContext) -> dict:
     """板块采集（板块概念需求 R5）：字典→成分快照→指数→资金流。
 
-    params.mode=backfill/update（默认 backfill）；params.codes 指定板块子集（采集页
-    「指定板块」/重采用），未传则全量。checkpoint 粒度 board_code：中断后续跑只处理
-    未完成板块（done_codes 过滤）。
+    params.mode=backfill/update（默认 update）；params.codes 指定板块子集（采集页
+    「指定板块」/重采用），未传则全量。中断后续跑会按字典类型、板块代码和资金流周期的
+    阶段 checkpoint 跳过已经成功的工作单元。
     """
     from backend.services.ingest import IngestionService
-    from backend.storage.duckdb_client import get_client
-    done_codes = set((ctx.checkpoint or {}).get("done_codes") or [])
-    # 目标板块：params.codes 指定子集；未传则全部（board_dict 有成分/指数者）
-    c = get_client()
     spec_codes = [str(x).strip() for x in (params.get("codes") or []) if str(x).strip()]
     if spec_codes:
-        all_codes = spec_codes
         ctx.log(f"板块采集指定 {len(spec_codes)} 个板块：{spec_codes[:5]}{'…' if len(spec_codes) > 5 else ''}")
     else:
-        df = c.query_df("SELECT board_code FROM board_dict WHERE has_members OR has_bar")
-        all_codes = [str(x) for x in df["board_code"].tolist()]
-        ctx.log(f"板块采集开始，共 {len(all_codes)} 个板块")
-    remaining = [x for x in all_codes if x not in done_codes]
-    if done_codes:
-        ctx.log(f"续跑：已完成 {len(done_codes)} 个板块，待处理 {len(remaining)} 个")
+        ctx.log("板块采集开始：全量板块")
     ctx.progress(0.05, "板块采集进行中…")
     ctx.check_cancel()
-    # 任务中心发起默认全量回填（对齐 plan §9「任务中心创建板块采集」= 初始化回填）；
-    # 若 params.mode='update' 可切增量（daily 已显式传 update，见 pipeline）
-    mode = str(params.get("mode") or "backfill")
-    result = IngestionService().ingest_board(ctx=ctx, board_codes=remaining, mode=mode)
-    done = sorted(set(all_codes) - set(remaining))
-    ctx.set_checkpoint(done_codes=sorted(done_codes | set(done)))
+    mode = str(params.get("mode") or "update")
+    only = params.get("only")
+    if isinstance(only, str):
+        only = [x.strip() for x in only.split(",") if x.strip()]
+    ingest_kwargs = {
+        "ctx": ctx, "board_type": params.get("board_type"),
+        "board_codes": spec_codes or None, "mode": mode,
+    }
+    if only:
+        ingest_kwargs["only"] = only
+    if params.get("limit") is not None:
+        ingest_kwargs["limit"] = params["limit"]
+    result = IngestionService().ingest_board(**ingest_kwargs)
     if result.get("failed"):
         ctx.log(f"板块采集完成，失败项：{result['failed']}")
-        return {"message": f"板块采集部分失败：{result['failed']}", "result": result}
+        return {"message": f"板块采集部分失败：{result['failed']}",
+                "result": result, "ok": False}
     ctx.log("板块采集完成")
     ctx.progress(1.0, "板块采集完成")
-    return {"message": "板块采集完成", "result": result}
+    return {"message": "板块采集完成", "result": result, "ok": True}
 
 
 _HANDLERS = {

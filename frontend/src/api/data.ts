@@ -17,7 +17,15 @@ export interface Overview {
   latest_trade_date: string | null
   codes: { active: number; delisted: number }
   bar_rows: number
-  board?: { board_dict: number; board_member: number; board_bar: number; board_fund_flow: number }
+  board?: {
+    board_dict: number; board_member: number; board_bar: number; board_fund_flow: number
+    concept_count: number; industry_count: number
+    member_target: number; member_ready: number; bar_target: number; bar_ready: number
+    fund_target: number; fund_ready: number
+    latest_bar_date: string | null; latest_fund_date: string | null
+    open_issues: number; issues_by_type: Record<string, number>
+    last_update: { table_name: string; status: string; detail: string | null; updated_at: string } | null
+  }
   quality: { open: number; by_severity: Record<string, number>; score: number; by_layer: QualityLayer[] }
   gaps: { stocks_with_gap: number; gap_days_total: number; latest_trade_date: string | null }
   last_scan_at: string | null
@@ -391,7 +399,9 @@ export function taskDisplayLabel(
   const issueType = taskType === 'fix' && typeof params?.issue_type === 'string'
     ? params.issue_type
     : ''
-  return issueType ? `${base}·${ISSUE_TYPE_LABEL[issueType] ?? issueType}` : base
+  if (issueType) return `${base}·${ISSUE_TYPE_LABEL[issueType] ?? issueType}`
+  if (taskType === 'board') return `${base}·${params?.mode === 'backfill' ? '全量回填' : '增量'}`
+  return base
 }
 // 各问题类型归属的质量层（M2.9 DM-D15 / M2.9.2 DM-D20），用于质量页/概览按层归类。
 export const ISSUE_LAYER: Record<string, string> = {

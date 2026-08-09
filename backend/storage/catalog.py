@@ -15,7 +15,15 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 
 # 时序数据表：其"最新数据时间"应跟上全局最新交易日，据此判鲜活（M2.9 DM-D15）。
 # 非时序表（日历/日志/质检台账）鲜活度无意义，fresh=None。
-_TIMESERIES_TABLES: frozenset[str] = frozenset({"daily_bar", "daily_metrics", "index_bar"})
+_TIMESERIES_TABLES: frozenset[str] = frozenset(
+    {"daily_bar", "daily_metrics", "index_bar", "board_bar", "board_fund_flow"})
+
+_BOARD_ISSUES_BY_TABLE: dict[str, tuple[str, ...]] = {
+    "board_dict": ("board_index_gap", "board_member_incomplete", "board_fund_unmatched"),
+    "board_member": ("board_member_incomplete",),
+    "board_bar": ("board_index_gap",),
+    "board_fund_flow": ("board_fund_unmatched",),
+}
 
 # 每张基础数据表的元信息。
 # - date_col：用于取"最新数据时间"的列（None 表示该表无时间维度，取 NULL）。
@@ -147,6 +155,7 @@ TABLE_CATALOG: dict[str, dict] = {
             {"name": "name", "type": "VARCHAR", "name_cn": "板块名", "desc": ""},
             {"name": "board_type", "type": "VARCHAR", "name_cn": "板块类型", "desc": "concept / industry"},
             {"name": "member_count", "type": "BIGINT", "name_cn": "成分数", "desc": "最近已应用快照的冗余成分数"},
+            {"name": "member_snapshot_at", "type": "TIMESTAMP", "name_cn": "最近完整成分快照", "desc": "最近一次完整快照成功落库时间"},
             {"name": "has_members", "type": "BOOLEAN", "name_cn": "有成分", "desc": ""},
             {"name": "has_bar", "type": "BOOLEAN", "name_cn": "有指数", "desc": ""},
             {"name": "has_fund_flow", "type": "BOOLEAN", "name_cn": "有资金流", "desc": ""},
@@ -232,13 +241,22 @@ def build_catalog(client: DuckDBClient | None = None) -> list[dict]:
             open_issues = int(client.query_df(
                 "SELECT count(*) AS n FROM data_quality_issue WHERE status='open'"
             ).iloc[0]["n"])
+        elif table in _BOARD_ISSUES_BY_TABLE and _table_exists(client, "data_quality_issue"):
+            issue_types = _BOARD_ISSUES_BY_TABLE[table]
+            ph = ",".join("?" * len(issue_types))
+            open_issues = int(client.query_df(
+                f"SELECT count(*) AS n FROM data_quality_issue "
+                f"WHERE status IN ('open','fixing') AND issue_type IN ({ph})",
+                list(issue_types)).iloc[0]["n"])
         # 鲜活度：仅时序数据表参与判定；最新时间为空 → False（不再误判"正常"）。
         fresh = None
         if table in _TIMESERIES_TABLES:
-            if latest_time is None:
+            if latest_time is None or global_latest is None:
                 fresh = False
             else:
-                fresh = str(pd.Timestamp(latest_time).date()) == global_latest
+                latest_date = str(pd.Timestamp(latest_time).date())
+                fresh = (latest_date >= global_latest if table == "board_fund_flow"
+                         else latest_date == global_latest)
         out.append({
             "table": table,
             "name_cn": meta["name_cn"],

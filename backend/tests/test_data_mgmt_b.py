@@ -23,6 +23,8 @@ def client(tmp_path, monkeypatch):
     c = DuckDBClient(db_path=str(tmp_path / "t.duckdb"))
     init_db(c)
     monkeypatch.setattr(dc, "_client", c)   # get_client() → 本临时库
+    # 本模块验证 DuckDB 数据管理闭环，不依赖 PostgreSQL 审计库；避免本地 PG 状态污染单测。
+    monkeypatch.setattr(AsyncTaskService, "_audit_task", lambda *args, **kwargs: None)
     yield c
     c.close()
 
@@ -308,7 +310,7 @@ def test_board_task_registered():
     assert "board" in WRITE_TASK_TYPES          # 写任务：与其他写任务互斥
     assert TASK_CAPABILITIES["board"]["can_cancel"] is True
     assert TASK_CAPABILITIES["board"]["can_resume"] is True
-    assert TASK_CAPABILITIES["board"]["resume_granularity"] == "board_code"
+    assert TASK_CAPABILITIES["board"]["resume_granularity"] == "board_code_or_fund_period"
     assert "board" in _HANDLERS
 
 
@@ -354,8 +356,8 @@ def test_board_task_write_mutex(client, monkeypatch):
     _wait(svc, t1)
 
 
-def test_board_task_resume_skips_done(client, monkeypatch):
-    """续跑：有 checkpoint done_codes 时跳过已完成板块（传给 ingest_board 的 board_codes=剩余）。"""
+def test_board_task_resume_preserves_phase_checkpoint(client, monkeypatch):
+    """续跑把逐阶段 checkpoint 原样交给采集服务，由成员/指数循环跳过已完成板块。"""
     from backend.services import ingest as ingest_mod
     from backend.services.async_task import AsyncTaskService
     from datetime import datetime
@@ -364,12 +366,13 @@ def test_board_task_resume_skips_done(client, monkeypatch):
 
     def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None, mode="update"):
         received["board_codes"] = board_codes
+        received["checkpoint"] = dict(ctx.checkpoint)
         return {"dict": {"total": 465}, "members": {}, "bar": {"rows": 0},
                 "fund_flow": {"rows": 0}, "failed": []}
 
     monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", fake_ingest_board, raising=True)
     monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
-    # 种 2 个板块：B 已完成，续跑应只传 A
+    # 种 2 个板块；成员阶段已完成 B，真实循环会按 member_done_codes 跳过。
     client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
                    "VALUES ('309121','AI PC','concept',TRUE)")
     client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
@@ -379,11 +382,79 @@ def test_board_task_resume_skips_done(client, monkeypatch):
     client.execute(
         "INSERT INTO async_task (id, task_type, params, status, progress, message, result, created_at, updated_at) "
         "VALUES ('board_x','board','{}','interrupted',0.5,'中断',?, ?, ?)",
-        ['{"checkpoint": {"done_codes": ["881121"]}}', now, now])
+        ['{"checkpoint": {"phase": "board_members", "member_done_codes": ["881121"]}}', now, now])
     svc.resume("board_x")
     t = _wait(svc, "board_x")
     assert t["status"] == "done"
-    assert received.get("board_codes") == ["309121"]   # 只处理未完成板块
+    assert received.get("board_codes") is None
+    assert received["checkpoint"]["member_done_codes"] == ["881121"]
+
+
+def test_board_task_partial_result_is_failed_and_resumable(client, monkeypatch):
+    """局部失败必须保留 checkpoint；续跑只处理剩余单元并可最终完成。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.async_task import AsyncTaskService
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__",
+                        lambda self, source=None: None, raising=True)
+    calls = {"n": 0}
+
+    def partial_then_ok(self, ctx=None, board_type=None, board_codes=None, mode="update"):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            ctx.set_phase("board_bar", done=1, total=2,
+                          bar_done_codes=["881121"], current_item="309121")
+            return {"failed": ["bar:309121: timeout"], "ok": False}
+        assert ctx.checkpoint["bar_done_codes"] == ["881121"]
+        return {"failed": [], "ok": True}
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", partial_then_ok, raising=True)
+    svc = AsyncTaskService(client)
+    tid = svc.create("board", {"mode": "update"})
+    task = _wait(svc, tid)
+    assert task["status"] == "failed"
+    assert "部分失败" in task["message"]
+    assert task["result"]["checkpoint"]["bar_done_codes"] == ["881121"]
+
+    svc.resume(tid)
+    task = _wait(svc, tid)
+    assert task["status"] == "done"
+    assert calls["n"] == 2
+
+
+def test_quality_recover_batch_code_filter_keeps_other_conditions(client, monkeypatch):
+    """板块名称 OR 分支不能越过 status/type；未匹配问题可按 detail.name 搜索。"""
+    from backend.api.data_admin import quality_recover_batch
+
+    client.execute("INSERT INTO board_dict (board_code, name, board_type) "
+                   "VALUES ('309121','AI PC','concept')")
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, issue_type, severity, status, detail, detected_at) VALUES "
+        "(11, '309121', 'board_member_incomplete', 'mid', 'open', '{}', now()), "
+        "(12, '309121', 'board_member_incomplete', 'mid', 'resolved', '{}', now()), "
+        "(13, '309121', 'board_index_gap', 'mid', 'open', '{}', now()), "
+        "(14, NULL, 'board_fund_unmatched', 'mid', 'open', "
+        "'{\"name\":\"新概念\",\"board_type\":\"concept\"}', now())")
+    captured: list[dict] = []
+
+    def fake_create(self, task_type, params=None, **kwargs):
+        captured.append({"task_type": task_type, "params": params})
+        return f"task_{len(captured)}"
+
+    monkeypatch.setattr(AsyncTaskService, "create", fake_create, raising=True)
+
+    r1 = quality_recover_batch({
+        "issue_type": "board_member_incomplete", "code": "AI PC",
+    })
+    assert r1.code == 0
+    assert captured[-1]["params"]["issue_ids"] == [11]
+
+    r2 = quality_recover_batch({
+        "issue_type": "board_fund_unmatched", "code": "新概念",
+    })
+    assert r2.code == 0
+    assert captured[-1]["params"]["issue_ids"] == [14]
 
 
 # ── 板块质检（R12，T7）───────────────────────────────────────
@@ -426,6 +497,33 @@ def test_scan_board_quality_index_gap(client, monkeypatch):
     assert "309121" not in gaps["code"].tolist()  # AI PC 指数正常不报
 
 
+def test_board_scan_failure_keeps_previous_open_issue(client, monkeypatch):
+    """板块扫描替换必须原子化：新问题写入失败时保留上轮 open 问题。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, severity, status, detected_at) "
+                   "VALUES (999, 'old-board', 'board_index_gap', 'mid', 'open', now())")
+    rep = DataIntegrityReport(client)
+    monkeypatch.setattr(rep, "_insert_issues", lambda issues: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(Exception):
+        rep.scan_board_quality()
+    old = client.query_df("SELECT status FROM data_quality_issue WHERE id=999")
+    assert not old.empty and old.iloc[0]["status"] == "open"
+
+
+def test_board_recheck_does_not_accept_historical_member_count(client):
+    """旧 member_count 不是修复证据；没有新完整快照时必须保持未解决。"""
+    from backend.services.data_report import DataIntegrityReport
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, member_count) "
+                   "VALUES ('309121','AI PC','concept',50)")
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, severity, status, detected_at) "
+                   "VALUES (998, '309121', 'board_member_incomplete', 'mid', 'fixing', now())")
+    assert DataIntegrityReport(client).recheck_clean(
+        "board_member_incomplete", "309121", None) is False
+
+
 
 def test_ths_board_config_overridable(client, monkeypatch):
     """同花顺请求参数走覆盖层：Settings 模型字段 + CONFIG_GROUPS 白名单，可被 app_config 覆盖。"""
@@ -450,6 +548,8 @@ def test_board_member_incomplete_fix_reingests(client, monkeypatch):
 
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "__init__",
+                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_members",
                         lambda self, snapshot_date=None, board_codes=None, ctx=None:
                         {"309121": {"total": 50}}, raising=True)
@@ -458,7 +558,7 @@ def test_board_member_incomplete_fix_reingests(client, monkeypatch):
     client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
                    "VALUES (2, '309121', 'board_member_incomplete', 'mid', 'open', now())")
     monkeypatch.setattr("backend.services.data_report.DataIntegrityReport.recheck_clean",
-                        lambda self, issue_type, code, td: True, raising=True)
+                        lambda self, issue_type, code, td, **kwargs: True, raising=True)
     tid = svc.create("fix", {"issue_id": 2})
     _wait(svc, tid)
     row = client.query_df("SELECT status FROM data_quality_issue WHERE id=2").iloc[0]
@@ -474,18 +574,25 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
 
     captured = {}
 
-    def fake_ingest_board_dict(self, snapshot_date=None, ctx=None):
+    def fake_ingest_board_dict(self, snapshot_date=None, board_type=None, ctx=None):
+        captured["dict_type"] = board_type
         return {"concept": 375, "industry": 90, "total": 465}
 
-    def fake_ingest_board_members(self, snapshot_date=None, board_codes=None, ctx=None):
+    def fake_ingest_board_members(self, snapshot_date=None, board_codes=None,
+                                  board_type=None, ctx=None):
+        captured["member_type"] = board_type
         return {}
 
-    def fake_ingest_board_bar(self, start, end=None, board_codes=None, ctx=None):
+    def fake_ingest_board_bar(self, start, end=None, board_codes=None,
+                              board_type=None, ctx=None):
+        captured["bar_type"] = board_type
         captured["start"] = start
         captured["end"] = end
         return {"rows": 0, "boards": 0}
 
-    def fake_ingest_board_fund_flow(self, snapshot_date=None, periods=None, ctx=None):
+    def fake_ingest_board_fund_flow(self, snapshot_date=None, periods=None, board_codes=None,
+                                    board_type=None, ctx=None):
+        captured["fund_type"] = board_type
         captured["periods"] = periods
         return {"rows": 0, "unmatched": 0}
 
@@ -499,12 +606,17 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
     monkeypatch.setattr(ingest_mod.IngestionService, "_latest_open_day",
                         lambda self: date(2026, 8, 7), raising=True)
 
-    IngestionService().ingest_board(mode="update")
+    IngestionService().ingest_board(mode="update", board_type="concept")
     # 指数区间：start = 最近交易日 - 7 天 = 07-31；end = 最近交易日
     assert captured["start"] == date(2026, 8, 7) - timedelta(days=7)
     assert captured["end"] == date(2026, 8, 7)
     # 资金流：update 只采即时
     assert captured["periods"] == ("即时",)
+    assert {captured[x] for x in ("dict_type", "member_type", "bar_type", "fund_type")} == {
+        "concept",
+    }
+    with pytest.raises(ValueError, match="concept/industry"):
+        IngestionService().ingest_board(board_type="theme")
 
 
 def test_scan_board_quality_no_false_wave_without_bar(client, monkeypatch):
@@ -559,13 +671,18 @@ def test_ingest_board_only_selects_tables(client, monkeypatch):
     called = {"dict": 0, "members": 0, "bar": 0, "fund": 0}
 
     monkeypatch.setattr(BoardIngestService, "ingest_board_dict",
-                        lambda self, snapshot_date=None, ctx=None: called.__setitem__("dict", 1) or {"total": 0}, raising=True)
+                        lambda self, snapshot_date=None, board_type=None, ctx=None:
+                        called.__setitem__("dict", 1) or {"total": 0}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_members",
-                        lambda self, snapshot_date=None, board_codes=None, ctx=None: called.__setitem__("members", 1) or {}, raising=True)
+                        lambda self, snapshot_date=None, board_codes=None, board_type=None, ctx=None:
+                        called.__setitem__("members", 1) or {}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
-                        lambda self, start, end=None, board_codes=None, ctx=None: called.__setitem__("bar", 1) or {"rows": 0, "boards": 0}, raising=True)
+                        lambda self, start, end=None, board_codes=None, board_type=None, ctx=None:
+                        called.__setitem__("bar", 1) or {"rows": 0, "boards": 0}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
-                        lambda self, snapshot_date=None, periods=None, ctx=None: called.__setitem__("fund", 1) or {"rows": 0, "unmatched": 0}, raising=True)
+                        lambda self, snapshot_date=None, periods=None, board_codes=None,
+                        board_type=None, ctx=None:
+                        called.__setitem__("fund", 1) or {"rows": 0, "unmatched": 0}, raising=True)
     monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr(ingest_mod.IngestionService, "_latest_open_day",
                         lambda self: __import__("datetime").date(2026, 8, 7), raising=True)
@@ -575,7 +692,7 @@ def test_ingest_board_only_selects_tables(client, monkeypatch):
 
 
 def test_overview_includes_board_stats(client, monkeypatch):
-    """数据总览 overview 含板块表行数（板块闭环进总览）。"""
+    """数据概览含板块规模、覆盖、鲜活和问题分项。"""
     from backend.services.data_report import DataIntegrityReport
     client.execute("INSERT INTO board_dict (board_code, name, board_type) VALUES ('309121','AI PC','concept')")
     ov = DataIntegrityReport(client).overview()
@@ -584,7 +701,11 @@ def test_overview_includes_board_stats(client, monkeypatch):
     from backend.api.data_admin import overview
     resp = overview()
     assert resp.code == 0
-    assert resp.data["board"]["board_dict"] == 1
+    board = resp.data["board"]
+    assert board["board_dict"] == 1
+    assert board["concept_count"] == 1 and board["industry_count"] == 0
+    assert board["member_target"] == 0 and board["member_ready"] == 0
+    assert board["open_issues"] == 0
 
 
 def test_hub_includes_board_stage(client, monkeypatch):
@@ -598,6 +719,7 @@ def test_hub_includes_board_stage(client, monkeypatch):
     board = resp.data["stages"]["board"]
     assert board["board_dict"] == 1
     assert board["open_issues"] == 1
+    assert board["issues_by_type"] == {"board_member_incomplete": 1}
 
 
 # ── 板块 fix 分派（_h_fix 板块类型，审计后补测）───────────────
@@ -611,6 +733,8 @@ def test_board_index_gap_fix_reingests_and_resolves(client, monkeypatch):
 
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "__init__",
+                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
     # mock 板块重采：把 board_bar 补到全局最新交易日，使复检通过
     monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
                         lambda self, start, end=None, board_codes=None: {"rows": 1, "boards": 1}, raising=True)
@@ -621,7 +745,7 @@ def test_board_index_gap_fix_reingests_and_resolves(client, monkeypatch):
                    "VALUES (1, '309121', 'board_index_gap', 'mid', 'open', now())")
 
     # 重采后 board_bar 有数据到最新交易日 → 复检通过
-    def fake_recheck(self, issue_type, code, td):
+    def fake_recheck(self, issue_type, code, td, **kwargs):
         if issue_type == "board_index_gap":
             # 模拟重采后 board_bar 已到 08-07（全局最新）
             self.c.execute("INSERT INTO board_bar (board_code, trade_date, close) "
@@ -636,20 +760,30 @@ def test_board_index_gap_fix_reingests_and_resolves(client, monkeypatch):
     assert row["status"] == "resolved"
 
 
-def test_board_fund_unmatched_fix_ignored(client, monkeypatch):
-    """board_fund_unmatched fix：重采资金流 → 复检（人工 ignore 收敛）→ resolved。"""
+def test_board_fund_unmatched_fix_resolves_only_after_mapping(client, monkeypatch):
+    """board_fund_unmatched 修复会先刷新字典，名称真实可映射后才 resolved。"""
     svc = AsyncTaskService(client)
     from backend.services import ingest
     from backend.services.board_ingest import BoardIngestService
 
     monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "__init__",
+                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+    def refresh_dict(self, snapshot_date=None, board_type=None, ctx=None):
+        client.execute("INSERT INTO board_dict (board_code, name, board_type) "
+                       "VALUES ('309121','AI PC','concept') ON CONFLICT DO NOTHING")
+        return {"concept": 1, "industry": 0, "total": 1, "failed": []}
+
+    monkeypatch.setattr(BoardIngestService, "ingest_board_dict", refresh_dict, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
-                        lambda self, snapshot_date=None, periods=None: {"rows": 1, "unmatched": 0}, raising=True)
-    client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
-                   "VALUES (3, '309121', 'board_fund_unmatched', 'mid', 'open', now())")
-    monkeypatch.setattr("backend.services.data_report.DataIntegrityReport.recheck_clean",
-                        lambda self, issue_type, code, td: True, raising=True)
+                        lambda self, snapshot_date=None, periods=None, board_codes=None,
+                        board_type=None, ctx=None:
+                        {"rows": 1, "unmatched": 0, "failed": []}, raising=True)
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, severity, status, detail, detected_at) "
+                   "VALUES (3, NULL, 'board_fund_unmatched', 'mid', 'open', "
+                   "'{\"name\":\"AI PC\",\"board_type\":\"concept\"}', now())")
     tid = svc.create("fix", {"issue_id": 3})
     _wait(svc, tid)
     row = client.query_df("SELECT status FROM data_quality_issue WHERE id=3").iloc[0]

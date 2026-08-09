@@ -30,12 +30,13 @@ class _FakeSource:
     """mock ThsBoardSource：按 board_code 返回预置成分/完整标记。"""
 
     def __init__(self, members: dict, complete: dict | None = None, fund_flow=None, bar=None,
-                 board_dict=None):
+                 board_dict=None, app_codes=None):
         self._members = members          # {code: [6位codes]}
         self._complete = complete or {}  # {code: bool}，缺省 True
         self._fund_flow = fund_flow or {}
         self._bar = bar or {}
         self._board_dict = board_dict or {}
+        self._app_codes = app_codes or {}
 
     def get_board_members(self, code, board_type="concept"):
         codes = self._members.get(code, [])
@@ -43,6 +44,9 @@ class _FakeSource:
 
     def get_board_dict(self, board_type):
         return self._board_dict.get(board_type, _EMPTY_MEMBER_DF)
+
+    def get_board_app_code(self, code, board_type):
+        return self._app_codes.get(code, code if board_type == "industry" else f"88{code[2:]}")
 
     def get_board_bar(self, code, board_type, start, end):
         return self._bar.get(code, _EMPTY_BAR_DF)
@@ -84,6 +88,75 @@ def test_board_codes_filter_in_clause(tmp_path):
     assert "boards" in bar
 
 
+def test_empty_code_scope_never_expands_to_all_boards(tmp_path):
+    """显式空代码集合表示空范围，不能因 Python 假值判断退化成全量采集。"""
+    src = _FakeSource({"309121": ["300476"]})
+    svc, c = _make_service(tmp_path, src)
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar) "
+              "VALUES ('309121','AI PC','concept',TRUE,TRUE)")
+    assert svc.ingest_board_members(board_codes=[]) == {}
+    assert svc.ingest_board_bar(date(2026, 1, 1), board_codes=[]) == {
+        "rows": 0, "boards": 0, "failed": [],
+    }
+    assert svc.ingest_board_fund_flow(board_codes=[]) == {
+        "rows": 0, "unmatched": 0, "failed": [],
+    }
+    assert c.query_df("SELECT * FROM board_member").empty
+
+
+def test_board_type_limits_dictionary_and_members(tmp_path):
+    """board_type 是真实作用域：只拉取并处理指定的概念或行业。"""
+    src = _FakeSource(
+        {"309121": ["300476"], "881121": ["600000"]},
+        board_dict={
+            "concept": pd.DataFrame([{"board_code": "309121", "name": "AI PC"}]),
+            "industry": pd.DataFrame([{"board_code": "881121", "name": "半导体"}]),
+        },
+    )
+    svc, c = _make_service(tmp_path, src)
+    result = svc.ingest_board_dict(board_type="concept")
+    assert result["concept"] == 1 and result["industry"] == 0
+    assert c.query_df("SELECT board_type FROM board_dict")["board_type"].tolist() == ["concept"]
+    svc.ingest_board_dict(board_type="industry")
+    members = svc.ingest_board_members(board_type="industry")
+    assert set(members) == {"881121"}
+
+
+def test_member_checkpoint_and_resume_skip_completed(tmp_path):
+    """逐板块成功后立即写 checkpoint；中断续跑只处理未完成板块。"""
+    src = _FakeSource({"309121": ["300476"], "881121": ["600000"]})
+    svc, c = _make_service(tmp_path, src)
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) VALUES "
+              "('309121','AI PC','concept',TRUE),('881121','半导体','industry',TRUE)")
+
+    class _Ctx:
+        def __init__(self, checkpoint=None, cancel_at=None):
+            self.checkpoint = checkpoint or {}
+            self.cancel_at = cancel_at
+            self.checks = 0
+
+        def check_cancel(self):
+            self.checks += 1
+            if self.cancel_at == self.checks:
+                raise RuntimeError("cancel")
+
+        def set_phase(self, phase, **data):
+            self.checkpoint.update({"phase": phase, **data})
+
+        def log(self, *args, **kwargs):
+            pass
+
+    first = _Ctx(cancel_at=2)
+    with pytest.raises(RuntimeError, match="cancel"):
+        svc.ingest_board_members(board_codes=["309121", "881121"], ctx=first)
+    assert first.checkpoint["member_done_codes"] == ["309121"]
+
+    resumed = _Ctx(checkpoint=dict(first.checkpoint))
+    result = svc.ingest_board_members(board_codes=["309121", "881121"], ctx=resumed)
+    assert set(result) == {"881121"}
+    assert resumed.checkpoint["member_done_codes"] == ["309121", "881121"]
+
+
 # ── 成分快照（只进不出）与 member_count ─────────────────────
 
 
@@ -100,6 +173,7 @@ def test_member_only_append_no_delete(tmp_path):
     assert set(df["code"]) == {"300476.SZ", "603936.SH", "002913.SZ"}
     # member_count 刷新为当前成分数
     assert int(_member_count(c, "309121")) == 3
+    assert r["added"] == 3
     # 第二次快照：新股 300750 新增，缺席股 002913 保留（不删除）
     src2 = _FakeSource({"309121": ["300476", "603936", "300750"]})
     svc2, c2 = _make_service(tmp_path.parent / "t2.duckdb", src2)
@@ -113,6 +187,7 @@ def test_member_only_append_no_delete(tmp_path):
     df2 = c2.query_df("SELECT code FROM board_member")
     assert set(df2["code"]) == {"300476.SZ", "603936.SH", "002913.SZ", "300750.SZ"}
     assert int(_member_count(c2, "309121")) == 3  # 当前快照成分数
+    assert r2["added"] == 1
 
 
 def test_incomplete_snapshot_not_applied(tmp_path):
@@ -189,6 +264,45 @@ def test_fund_flow_mapping_and_unmatched(tmp_path):
     hf_row = c.query_df("SELECT has_fund_flow FROM board_dict WHERE board_code='309121'")
     hf = hf_row.iloc[0]["has_fund_flow"]
     assert bool(hf) is True
+
+
+def test_board_dict_persists_app_code(tmp_path):
+    """板块字典持久化路径 code ↔ App clid，幂等重跑不丢既有映射。"""
+    src = _FakeSource(
+        {},
+        board_dict={
+            "concept": pd.DataFrame([{"board_code": "309121", "name": "AI PC"}]),
+            "industry": pd.DataFrame([{"board_code": "881121", "name": "半导体"}]),
+        },
+        app_codes={"309121": "886071"},
+    )
+    svc, c = _make_service(tmp_path, src)
+    res = svc.ingest_board_dict(date(2026, 1, 5))
+    assert res["failed"] == []
+    rows = c.query_df("SELECT board_code, app_code FROM board_dict ORDER BY board_code")
+    assert dict(zip(rows["board_code"], rows["app_code"])) == {
+        "309121": "886071", "881121": "881121",
+    }
+
+
+def test_unmatched_quality_idempotent_and_net_validation(tmp_path):
+    """未匹配问题不重复；净流入不满足流入-流出时跳过并如实返回失败。"""
+    ff = {("concept", "即时"): pd.DataFrame([
+        {"name": "不存在", "inflow": 1.0, "outflow": 1.0, "net_inflow": 0.0,
+         "net_ratio": 0.0, "leader_stock": None, "leader_pct": None},
+        {"name": "AI PC", "inflow": 10.0, "outflow": 3.0, "net_inflow": 99.0,
+         "net_ratio": 1.0, "leader_stock": "x", "leader_pct": 1.0},
+    ])}
+    svc, c = _make_service(tmp_path, _FakeSource({}, fund_flow=ff))
+    c.execute("INSERT INTO board_dict (board_code, name, board_type) "
+              "VALUES ('309121','AI PC','concept')")
+    first = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",))
+    second = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",))
+    assert first["failed"] and second["failed"]
+    assert c.query_df("SELECT * FROM board_fund_flow").empty
+    issues = c.query_df(
+        "SELECT * FROM data_quality_issue WHERE issue_type='board_fund_unmatched' AND status='open'")
+    assert len(issues) == 1
 
 
 # ── 事务原子性 ────────────────────────────────────────────────

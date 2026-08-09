@@ -168,9 +168,9 @@ QUALITY_ISSUE_TYPES: tuple[str, ...] = (
 )
 # 质检（scan_quality_issues）每次重扫并幂等覆盖的"自动问题"类型（L2/L3/L4）；
 # L1 由入库闸门即时记录，质检只做防御性补扫，不在此清表。
-# 板块自动扫描类型（board_index_gap）加入以支持反复跑收敛。
+# 板块自动扫描由 scan_board_quality 在同一事务内独立替换，避免扫描失败时先删旧问题。
 SCAN_ISSUE_TYPES: tuple[str, ...] = (
-    L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ("board_index_gap",)
+    L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES
 )
 
 

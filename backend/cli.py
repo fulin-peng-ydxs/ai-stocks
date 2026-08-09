@@ -434,9 +434,10 @@ def cmd_board(args: argparse.Namespace) -> int:
             (("dict", args.only_dict), ("members", args.only_members),
              ("bar", args.only_bar), ("fund", args.only_fund)) if flag]
     only = only or None
-    codes = args.codes.split(",") if args.codes else None
+    codes = [x.strip() for x in args.codes.split(",") if x.strip()] if args.codes else None
     svc = IngestionService()
-    res = svc.ingest_board(mode=mode, ctx=CliTaskContext(), board_codes=codes, only=only)
+    res = svc.ingest_board(mode=mode, ctx=CliTaskContext(), board_type=args.board_type,
+                           board_codes=codes, only=only, limit=args.limit)
     failed = res.get("failed") or []
     scope = f" only={only}" if only else ""
     print(f"=== 板块采集（{mode}{scope}）{'✓' if not failed else '✗'} ===")
@@ -688,9 +689,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_daily.set_defaults(func=cmd_daily)
 
     p_board = sub.add_parser("board", help="板块采集（板块概念）：全量回填/增量/分表")
-    p_board.add_argument("--backfill", action="store_true",
-                         help="全量回填（指数历史 + 首次成分快照 + 资金流全周期）")
-    p_board.add_argument("--update", action="store_true", help="增量（仅补今日；默认模式）")
+    board_mode = p_board.add_mutually_exclusive_group()
+    board_mode.add_argument("--backfill", action="store_true",
+                            help="全量回填（指数历史 + 首次成分快照 + 资金流全周期）")
+    board_mode.add_argument("--update", action="store_true", help="增量（仅补今日；默认模式）")
     p_board.add_argument("--dict", action="store_true", dest="only_dict",
                          help="只采板块字典（board_dict）")
     p_board.add_argument("--members", action="store_true", dest="only_members",
@@ -700,6 +702,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_board.add_argument("--fund", action="store_true", dest="only_fund",
                          help="只采板块资金流（board_fund_flow）")
     p_board.add_argument("--codes", help="逗号分隔板块代码子集（如 309121,881121）")
+    p_board.add_argument("--type", dest="board_type", choices=("concept", "industry"),
+                         help="只采概念或行业板块")
     p_board.add_argument("--limit", type=int, help="只取字典前 N 个板块（小批量验证）")
     p_board.set_defaults(func=cmd_board)
 

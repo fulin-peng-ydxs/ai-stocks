@@ -19,14 +19,19 @@ _last_success: dict[str, str] = {}
 
 
 def _ping(name: str, timeout: float) -> bool:
-    """轻量探活：拉最近 7 天交易日历。成功即视为连通。"""
+    """轻量探活：行情源拉近 7 天日历；板块源拉一页行业字典。"""
     import socket
     old = socket.getdefaulttimeout()
     socket.setdefaulttimeout(timeout)
     try:
-        src = get_source(name)
-        end = date.today()
-        df = src.get_trade_calendar(end - timedelta(days=7), end)
+        if name == "ths_board":
+            from backend.datasource.ths_board import ThsBoardSource
+
+            df = ThsBoardSource(timeout=timeout, max_retries=1).get_board_dict("industry")
+        else:
+            src = get_source(name)
+            end = date.today()
+            df = src.get_trade_calendar(end - timedelta(days=7), end)
         ok = df is not None and not df.empty
         if ok:
             _last_success[name] = str(datetime.now())
@@ -42,7 +47,7 @@ def source_status(do_ping: bool = True) -> dict:
     """返回各数据源状态。do_ping=False 时只回配置 + 缓存的最近成功时间（不真打）。"""
     s = get_effective_settings().datasource
     timeout = float(s.socket_timeout_sec)
-    roles = [(s.primary, "primary"), (s.fallback, "fallback")]
+    roles = [(s.primary, "primary"), (s.fallback, "fallback"), ("ths_board", "board")]
     out = []
     seen = set()
     for name, role in roles:

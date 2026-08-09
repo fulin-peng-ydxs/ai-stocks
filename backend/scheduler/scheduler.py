@@ -327,35 +327,42 @@ class ScheduledJobService:
         return None if df.empty else self._row(df.iloc[0])
 
     def _validate(self, task_type: str, params: dict | None,
-                  freq_type: str, freq_config: dict | None) -> None:
+                  freq_type: str, freq_config: dict | None) -> dict:
+        normalized_params = dict(params or {})
         if task_type not in SCHEDULABLE_TASK_TYPES:
             raise ValueError(f"该任务类型不支持定时: {task_type}（可选 {SCHEDULABLE_TASK_TYPES}）")
         if task_type == "fix":
             from backend.dataquality.checker import QUALITY_ISSUE_TYPES
 
-            fix_params = params or {}
+            fix_params = normalized_params
             issue_type = str(fix_params.get("issue_type") or "").strip()
             if issue_type not in QUALITY_ISSUE_TYPES:
                 raise ValueError(f"质检问题恢复需选择问题类型（可选 {QUALITY_ISSUE_TYPES}）")
             if fix_params.get("issue_id") is not None or fix_params.get("issue_ids"):
                 raise ValueError("定时恢复按问题类型动态取数，不接受固定问题 ID")
+        if task_type == "board":
+            mode = str(normalized_params.get("mode") or "update")
+            if mode not in ("update", "backfill"):
+                raise ValueError("板块定时采集模式仅支持 update/backfill")
+            normalized_params["mode"] = mode
         if freq_type not in _FREQ_TYPES:
             raise ValueError(f"未知频率类型: {freq_type}（可选 {_FREQ_TYPES}）")
         compile_trigger(freq_type, freq_config)   # 提前校验频率配置合法
+        return normalized_params
 
     def create(self, *, name: str, task_type: str, params: dict | None,
                freq_type: str, freq_config: dict | None,
                trading_day_only: bool, enabled: bool) -> dict:
         if not (name or "").strip():
             raise ValueError("任务名称不能为空")
-        self._validate(task_type, params, freq_type, freq_config)
+        params = self._validate(task_type, params, freq_type, freq_config)
         jid = f"job_{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         now = datetime.now()
         self.c.execute(
             "INSERT INTO scheduled_job (id, name, task_type, params, freq_type, freq_config, "
             "trading_day_only, enabled, last_run_at, last_task_id, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            [jid, name.strip(), task_type, json.dumps(params or {}, ensure_ascii=False, default=str),
+            [jid, name.strip(), task_type, json.dumps(params, ensure_ascii=False, default=str),
              freq_type, json.dumps(freq_config or {}, ensure_ascii=False, default=str),
              bool(trading_day_only), bool(enabled), None, None, now, now])
         job = self.get(jid)
@@ -370,11 +377,11 @@ class ScheduledJobService:
             raise ValueError("定时任务不存在")
         if not (name or "").strip():
             raise ValueError("任务名称不能为空")
-        self._validate(task_type, params, freq_type, freq_config)
+        params = self._validate(task_type, params, freq_type, freq_config)
         self.c.execute(
             "UPDATE scheduled_job SET name=?, task_type=?, params=?, freq_type=?, freq_config=?, "
             "trading_day_only=?, enabled=?, updated_at=? WHERE id=?",
-            [name.strip(), task_type, json.dumps(params or {}, ensure_ascii=False, default=str),
+            [name.strip(), task_type, json.dumps(params, ensure_ascii=False, default=str),
              freq_type, json.dumps(freq_config or {}, ensure_ascii=False, default=str),
              bool(trading_day_only), bool(enabled), datetime.now(), jid])
         job = self.get(jid)

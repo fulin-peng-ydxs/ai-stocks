@@ -1796,26 +1796,38 @@ class IngestionService:
             ctx.log(f"子任务：退市股历史灌入完成，成功{ok} 跳过{skip} 失败{fail}，写入 {total_rows} 行")
         return result
 
-    # ── 板块概念采集（R1-R4/R2 候选保存，板块概念需求）─────────────────
+    # ── 板块概念采集（字典 / 完整成分快照 / 指数 / 资金流）─────────────────
     def ingest_board(self, ctx=None, board_type: str | None = None,
                      board_codes: list[str] | None = None, mode: str = "update",
-                     only: list[str] | None = None) -> dict:
-        """板块数据编排：字典 → 成分快照（含候选保存）→ 指数 → 资金流。
+                     only: list[str] | None = None, limit: int | None = None) -> dict:
+        """板块数据编排：字典 → 成分快照 → 指数 → 资金流。
 
         承接 plan §6.4 T4：单步骤失败记日志不中断（返回失败清单），供 T5/T6 失败隔离与续跑。
         - mode="backfill"（初始化）：指数全量回填（源端可用起始年 2024 起）+ 资金流全周期。
         - mode="update"（每日增量）：指数只补最近交易日 + 资金流只采「即时」；
-          成分股始终全量拉快照 + diff 落库（源只给全量，diff 落库即增量存储）。
+          成分股始终拉完整快照，按只进不出关系幂等合并。
         - only：可选子集（"dict"/"members"/"bar"/"fund"），CLI --dict 等分表运行用。
-        board_type 预留（本期全量）；ctx 提供任务中心进度日志。
+        board_type 可限制 concept/industry；ctx 提供任务中心进度日志。
         """
         from backend.services.board_ingest import BoardIngestService
         from datetime import date as _d, timedelta as _td
 
+        if mode not in ("backfill", "update"):
+            raise ValueError("板块采集模式仅支持 backfill/update")
+        if board_type not in (None, "concept", "industry"):
+            raise ValueError("板块类型仅支持 concept/industry")
+        if limit is not None and limit <= 0:
+            raise ValueError("板块采集 limit 必须大于 0")
         svc = BoardIngestService()
-        result: dict = {"dict": None, "members": {}, "bar": None, "fund_flow": None, "failed": []}
+        result: dict = {
+            "dict": None, "members": {}, "bar": None, "fund_flow": None,
+            "failed": [], "ok": True,
+        }
         # 分表选择：only 非空时只跑指定表（CLI --dict 等）；空则全量
         steps = ["dict", "members", "bar", "fund"] if not only else list(only)
+        unknown_steps = sorted(set(steps) - {"dict", "members", "bar", "fund"})
+        if unknown_steps:
+            raise ValueError(f"未知板块采集步骤: {unknown_steps}")
         # 阶段日志对齐现有采集（阶段 i/N + 进度推进，前端任务中心实时可见）
         total = len(steps)
         idx = {"n": 0}
@@ -1826,21 +1838,35 @@ class IngestionService:
         if "dict" in steps:
             idx["n"] += 1
             try:
-                result["dict"] = svc.ingest_board_dict(ctx=ctx)
+                result["dict"] = svc.ingest_board_dict(board_type=board_type, ctx=ctx)
+                result["failed"] += [f"dict:{x}" for x in result["dict"].get("failed", [])]
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块字典：概念 {result['dict'].get('concept', 0)} / "
                             f"行业 {result['dict'].get('industry', 0)}")
             except Exception as e:  # noqa: BLE001
                 log.warning("板块字典采集失败: %s", e)
                 result["failed"].append(f"dict: {e}")
+        if limit is not None and not board_codes:
+            limited = svc.c.query_df(
+                "SELECT board_code FROM board_dict "
+                "WHERE (has_members OR has_bar) "
+                + ("AND board_type=? " if board_type else "")
+                + "ORDER BY board_type, board_code LIMIT ?",
+                [board_type, limit] if board_type else [limit])
+            board_codes = [str(x) for x in limited["board_code"].tolist()]
+            result["scope_codes"] = board_codes
+            if not board_codes:
+                result["failed"].append("scope:no_boards")
         if "members" in steps:
             idx["n"] += 1
             if ctx:
                 ctx.progress(round(0.05 + 0.25 * idx["n"] / total, 3), "板块成分快照…")
                 ctx.flush()
             try:
-                result["members"] = svc.ingest_board_members(board_codes=board_codes, ctx=ctx)
-                errs = [c for c, r in result["members"].items() if "error" in r]
+                result["members"] = svc.ingest_board_members(
+                    board_codes=board_codes, board_type=board_type, ctx=ctx)
+                errs = [f"members:{c}: {r['error']}" for c, r in result["members"].items()
+                        if "error" in r]
                 result["failed"] += errs
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 成分快照：{len(result['members'])} 个板块"
@@ -1856,16 +1882,20 @@ class IngestionService:
             try:
                 if mode == "backfill":
                     # 全量回填：源端可用起始年到今天（实测 `d.` 域仅近 3 年、2021-2023 404，故 2024 起）
-                    result["bar"] = svc.ingest_board_bar(_d(2024, 1, 1), board_codes=board_codes, ctx=ctx)
+                    result["bar"] = svc.ingest_board_bar(
+                        _d(2024, 1, 1), board_codes=board_codes,
+                        board_type=board_type, ctx=ctx)
                 else:
                     # 增量：复用现有采集交易日语义——截止到最近交易日（非交易日回退），
                     # 区间起点往前取 7 个自然日缓冲覆盖跨周末/长假缺口
                     end = self._latest_open_day()   # 与行情 update 同一交易日口径
                     result["bar"] = svc.ingest_board_bar(end - _td(days=7), end=end,
-                                                         board_codes=board_codes, ctx=ctx)
+                                                         board_codes=board_codes,
+                                                         board_type=board_type, ctx=ctx)
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块指数：{result['bar'].get('rows', 0)} 行 / "
                             f"{result['bar'].get('boards', 0)} 板块")
+                result["failed"] += [f"bar:{x}" for x in result["bar"].get("failed", [])]
             except Exception as e:  # noqa: BLE001
                 log.warning("板块指数采集失败: %s", e)
                 result["failed"].append(f"bar: {e}")
@@ -1876,15 +1906,31 @@ class IngestionService:
                 ctx.flush()
             try:
                 if mode == "backfill":
-                    result["fund_flow"] = svc.ingest_board_fund_flow(ctx=ctx)
+                    result["fund_flow"] = svc.ingest_board_fund_flow(
+                        board_codes=board_codes, board_type=board_type, ctx=ctx)
                 else:
-                    result["fund_flow"] = svc.ingest_board_fund_flow(periods=("即时",), ctx=ctx)
+                    result["fund_flow"] = svc.ingest_board_fund_flow(
+                        periods=("即时",), board_codes=board_codes,
+                        board_type=board_type, ctx=ctx)
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块资金流：{result['fund_flow'].get('rows', 0)} 行"
                             f"（未匹配 {result['fund_flow'].get('unmatched', 0)}）")
+                result["failed"] += [f"fund_flow:{x}"
+                                     for x in result["fund_flow"].get("failed", [])]
             except Exception as e:  # noqa: BLE001
                 log.warning("板块资金流采集失败: %s", e)
                 result["failed"].append(f"fund_flow: {e}")
+        if board_codes and any(x in steps for x in ("members", "bar", "fund")):
+            type_clause = " AND board_type=?" if board_type else ""
+            known = svc.c.query_df(
+                f"SELECT board_code FROM board_dict WHERE board_code IN "
+                f"({','.join('?' for _ in board_codes)}){type_clause}",
+                [*board_codes, board_type] if board_type else board_codes)
+            known_codes = {str(x) for x in known["board_code"].tolist()}
+            result["failed"] += [f"unknown_board:{code}" for code in board_codes
+                                 if code not in known_codes]
+        result["failed"] = list(dict.fromkeys(result["failed"]))
+        result["ok"] = not result["failed"]
         if ctx:
             ctx.progress(1.0, "板块采集完成")
             ctx.log(f"板块采集完成（{mode}）：字典{result['dict']} 成分{len(result['members'])} 板块 "

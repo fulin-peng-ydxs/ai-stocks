@@ -62,6 +62,11 @@ const pinging = ref(false)
 const sourceLoading = ref(true)
 const sourceError = ref('')
 const displaySources = computed(() => settings.sourceMode === 'primary' ? sources.value.filter((s) => s.role === 'primary') : sources.value)
+function sourceRoleLabel(role: string): string {
+  if (role === 'primary') return '主源'
+  if (role === 'board') return '板块源'
+  return '备用源'
+}
 
 const FREQ_OPTIONS: { label: string; value: FreqType }[] = [
   { label: '每日', value: 'daily' }, { label: '每周', value: 'weekly' },
@@ -89,6 +94,7 @@ const saving = ref(false)
 const form = reactive({
   name: '', task_type: 'update' as TaskType,
   issue_type: 'null_close',
+  board_mode: 'update' as 'update' | 'backfill',
   date_start: '', date_end: '', years: null as number | null, concurrency: null as number | null,
   freq_type: 'daily' as FreqType,
   time: '15:30', weekdays: [1, 2, 3, 4, 5] as number[], day: 1, cron: '',
@@ -106,6 +112,7 @@ function openCreate() {
   editingId.value = ''
   Object.assign(form, {
     name: '', task_type: 'update', issue_type: qualityIssueTypes.value[0] || 'null_close',
+    board_mode: 'update',
     date_start: '', date_end: '', years: null, concurrency: null,
     freq_type: 'daily', time: '15:30', weekdays: [1, 2, 3, 4, 5], day: 1, cron: '',
     trading_day_only: true, enabled: true,
@@ -118,6 +125,7 @@ function openEdit(j: ScheduledJob) {
   Object.assign(form, {
     name: j.name, task_type: j.task_type,
     issue_type: j.params?.issue_type || qualityIssueTypes.value[0] || 'null_close',
+    board_mode: j.params?.mode === 'backfill' ? 'backfill' : 'update',
     date_start: j.params?.date_start || '', date_end: j.params?.date_end || '',
     years: j.params?.years ?? null, concurrency: j.params?.concurrency ?? null,
     freq_type: j.freq_type,
@@ -142,6 +150,8 @@ function buildPayload(): ScheduledJobInput | null {
   } else if (form.task_type === 'fix') {
     if (!form.issue_type) { ElMessage.warning('质检问题恢复需选择问题类型'); return null }
     params.issue_type = form.issue_type
+  } else if (form.task_type === 'board') {
+    params.mode = form.board_mode
   }
   if (needsConcurrency.value && form.concurrency) params.concurrency = form.concurrency
   const fc: Record<string, unknown> = {}
@@ -265,7 +275,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           ① <b>定时任务</b>——自定义多条定时任务（数据采集 / 评分维护 / 数据质检 / 按问题类型恢复 / 审计清理），
           各自设置频率（每日/每周/每月/cron）、是否仅交易日执行，可启停、立即执行；触发记录在「数据采集」任务中心，
           标注「定时·任务名」。<br />
-          ② <b>数据源健康</b>——AKShare / BaoStock 的连通性。
+          ② <b>数据源健康</b>——AKShare / BaoStock / 同花顺板块源的连通性。
         </HelpTip>
       </h2>
       <div class="page-head-actions">
@@ -379,12 +389,12 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <span class="dot" :class="s.up === true ? 'up' : s.up === false ? 'down' : 'unknown'" />
           <span class="src-name">{{ SOURCE_LABEL[s.source] ?? s.source }}</span>
           <el-tag size="small" effect="plain" :type="s.role === 'primary' ? 'primary' : 'info'">
-            {{ s.role === 'primary' ? '主源' : '备用' }}
+            {{ sourceRoleLabel(s.role) }}
           </el-tag>
           <span class="src-state">{{ s.up === true ? '连通' : s.up === false ? '不可达' : '未测试' }}</span>
           <span class="src-meta">最近成功 {{ fmtTime(s.last_success_at) }} · 超时 {{ s.timeout_sec }}s</span>
         </div>
-        <div v-if="!displaySources.length" class="app-empty-inline">点「测试连通」检查 AKShare / BaoStock 可达性</div>
+        <div v-if="!displaySources.length" class="app-empty-inline">点「测试连通」检查行情源与板块源可达性</div>
         </div>
       </el-card>
     </div>
@@ -419,6 +429,18 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             />
           </el-select>
           <span class="hint">每次触发时动态恢复该类型当前所有“未处理”问题，无问题时正常结束</span>
+        </el-form-item>
+        <el-form-item v-if="form.task_type === 'board'" label="采集模式">
+          <PageSegmented
+            v-model="form.board_mode"
+            test-id="schedule-board-mode"
+            :options="[
+              { label: '增量', value: 'update' },
+              { label: '全量回填', value: 'backfill' },
+            ]"
+            aria-label="板块采集模式"
+          />
+          <span class="hint">日常定时推荐增量；全量回填会重拉 2024 年以来指数和全部资金流周期</span>
         </el-form-item>
         <template v-if="form.task_type === 'ingest_date'">
           <el-form-item label="起始日期">

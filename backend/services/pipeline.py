@@ -62,6 +62,14 @@ class DailyPipeline:
             try:
                 detail = fn()
                 secs = round(time.time() - t0, 1)
+                if isinstance(detail, dict) and detail.get("ok") is False:
+                    reason = detail.get("failed") or detail.get("message") or "步骤部分失败"
+                    steps.append({"step": name, "status": "failed", "secs": secs,
+                                  "detail": detail})
+                    log.error("[daily] %s ✗ %.1fs %s", name, secs, reason)
+                    if ctx:
+                        ctx.log(f"步骤「{name}」失败：{reason}", "error")
+                    return False
                 steps.append({"step": name, "status": "ok", "secs": secs, "detail": detail})
                 log.info("[daily] %s ✓ %.1fs %s", name, secs, detail)
                 if ctx:
@@ -99,11 +107,8 @@ class DailyPipeline:
                 from backend.services.data_report import DataIntegrityReport
                 rep = DataIntegrityReport(self.c)
                 base = rep.scan_quality_issues()
-                # 板块维度质检（成分数波动/指数缺口，R12）同一质检步骤内跑
-                try:
-                    base["board"] = rep.scan_board_quality()
-                except Exception as e:  # noqa: BLE001
-                    base["board"] = {"error": str(e)}
+                # 板块扫描失败必须让质检步骤失败，保留旧问题并暴露给任务状态。
+                base["board"] = rep.scan_board_quality()
                 return base
             step("数据质检", _quality)
 
