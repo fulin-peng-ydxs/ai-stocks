@@ -592,8 +592,8 @@ onMounted(load)
             </div>
           </el-tab-pane>
 
-          <el-tab-pane label="板块数据" name="board" lazy>
-            <div class="overview-panel" v-if="ov?.board">
+          <el-tab-pane label="板块数据" name="board" lazy class="board-pane">
+            <div class="overview-panel board-panel" v-if="ov?.board">
               <div class="board-hero">
                 <div class="board-hero-main">
                   <span class="board-eyebrow">同花顺板块源</span>
@@ -863,6 +863,15 @@ onMounted(load)
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 /* ── 板块数据 tab ── */
+/* 板块面板承接内部滚动：el-tabs 内容区 overflow:hidden 会裁掉超高内容，
+   低高度下 hero 已占满面板，board-layout 无剩余高度可滚，故让 pane 整体滚动兜底。 */
+.board-pane {
+  overflow-y: auto;
+}
+.board-pane > .overview-panel {
+  height: auto;
+  min-height: 100%;
+}
 .board-hero {
   flex: 0 0 auto;
   display: grid;
@@ -877,7 +886,7 @@ onMounted(load)
 .cov-card,
 .fresh-cell {
   border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--el-bg-color);
 }
 .board-hero-main {
@@ -1100,7 +1109,7 @@ onMounted(load)
   gap: var(--app-space-3);
   padding: var(--app-space-2) var(--app-space-3);
   border: 1px solid var(--el-color-warning-light-7);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--el-color-warning-light-9);
   color: inherit;
   cursor: pointer;
@@ -1135,7 +1144,7 @@ onMounted(load)
   gap: var(--app-space-2);
   padding: var(--app-space-3);
   border: 1px solid var(--el-color-success-light-7);
-  border-radius: 6px;
+  border-radius: 4px;
   color: var(--el-color-success);
   font-size: var(--app-font-size-table);
 }
