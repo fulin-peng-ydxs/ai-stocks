@@ -102,6 +102,7 @@ class BoardIngestService:
                              "success" if len(rows) else "failed",
                              f"{board_type} 字典")
         result["total"] = result["concept"] + result["industry"]
+        log.info("板块字典入库 %d 个（概念 %d + 行业 %d）", result["total"], result["concept"], result["industry"])
         return result
 
     def _upsert_board_dict(self, rows: list[dict]) -> None:
@@ -154,6 +155,7 @@ class BoardIngestService:
         # 更新留痕（聚合：一次运行一条日志，避免逐板块刷屏）
         self._log_update("board_member", sdate, sdate, len(results), "success" if not n_err else "partial",
                          f"{len(results)} 个板块成分快照（失败 {n_err}）")
+        log.info("板块成分快照 %d 个板块（失败 %d）", len(results), n_err)
         return results
 
     def _ingest_one_member(self, code: str, board_type: str, sdate: date) -> dict:
@@ -313,6 +315,7 @@ class BoardIngestService:
             except Exception as e:  # noqa: BLE001
                 log.warning("板块 %s 指数取数失败: %s", code, e)
         self._log_update("board_bar", start, end, total_rows, "success", f"{boards} 个板块")
+        log.info("板块指数入库 %d 行 / %d 个板块（%s ~ %s）", total_rows, boards, start, end)
         return {"rows": total_rows, "boards": boards}
 
     def _upsert_board_bar(self, df: pd.DataFrame) -> None:
@@ -381,6 +384,7 @@ class BoardIngestService:
             "WHERE board_code IN (SELECT DISTINCT board_code FROM board_fund_flow)")
         self._log_update("board_fund_flow", sdate, sdate, rows, "success",
                          f"未匹配 {len(unmatched)}")
+        log.info("板块资金流入库 %d 行（未匹配 %d）", rows, len(unmatched))
         return {"rows": rows, "unmatched": len(unmatched)}
 
     def _upsert_board_fund_flow(self, rows: list[dict]) -> None:
