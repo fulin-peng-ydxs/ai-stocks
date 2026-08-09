@@ -220,12 +220,28 @@ class BoardQualityConfig(BaseModel):
     """板块数据质检阈值（板块概念需求 R12，T7）。
 
     阈值公式：threshold = max(absolute_change_threshold, previous_member_count * relative_change_ratio)
-    触发条件：abs(cur - prev) >= threshold。YAML 基线 + CONFIG_GROUPS 白名单 + Settings 模型三环配套
-    （T1 契约核验补充），消费端 get_effective_settings()。
+    触发条件：abs(cur - prev) >= threshold。这是**低频稳定参数**（源端成分数口径长期稳定），
+    仅作 YAML 基线，不进 Web 系统设置表单、不入 CONFIG_GROUPS 覆盖层白名单（即不可被 app_config
+    在线覆盖）；确需调整改 YAML 后 reload_settings() 生效。消费端 get_effective_settings()。
     """
 
     relative_change_ratio: float = Field(default=0.5, ge=0.0)    # 相对变化比例
     absolute_change_threshold: int = Field(default=20, ge=0)      # 绝对变化阈值（成分数）
+
+
+class ThsBoardConfig(BaseModel):
+    """同花顺板块数据源请求参数（板块概念需求 R1-R4，独立于 datasource 通用行情源）。
+
+    同花顺是**独立反爬直连源**（q/data/d.10jqka.com.cn，v cookie 反爬），频率限制比
+    akshare/baostock 更敏感，因此限流/重试/超时**单独配置**，不复用 datasource.* 通用项
+    （避免板块采集把通用行情源限流误调）。min_interval_sec 为相邻两次请求最小间隔秒数
+    （实测 1.0s 稳定，风控收紧时可调大）；YAML 基线 + CONFIG_GROUPS 白名单可 Web 覆盖。
+    """
+
+    min_interval_sec: float = Field(default=1.0, ge=0.05)   # 相邻请求最小间隔（秒），越小请求越快
+    timeout_sec: float = Field(default=10.0, ge=1)           # 单请求超时（秒）
+    max_retries: int = Field(default=3, ge=1, le=10)         # 失败重试次数
+    retry_backoff_sec: float = Field(default=2.0, ge=0, le=60)  # 重试退避基数（秒，指数退避）
 
 
 class MailConfig(BaseModel):
@@ -267,6 +283,7 @@ class Settings(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     board_quality: BoardQualityConfig = Field(default_factory=BoardQualityConfig)
+    ths_board: ThsBoardConfig = Field(default_factory=ThsBoardConfig)
     mail: MailConfig = Field(default_factory=MailConfig)
 
     # ── 派生：绝对路径辅助 ──

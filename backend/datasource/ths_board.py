@@ -33,6 +33,7 @@ from importlib import resources
 
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
+from backend.config import get_effective_settings
 from backend.datasource.base import rate_limited, with_retry
 
 log = get_logger("datasource.ths_board")
@@ -99,18 +100,27 @@ class ThsBoardSource:
     def __init__(
         self,
         session: requests.Session | None = None,
-        min_interval_sec: float = 1.0,
-        timeout: float = 10.0,
-        max_retries: int = 3,
-        retry_backoff_sec: float = 2.0,
+        min_interval_sec: float | None = None,
+        timeout: float | None = None,
+        max_retries: int | None = None,
+        retry_backoff_sec: float | None = None,
         login_cookie: str | None = None,
     ):
+        # 读"生效配置"(YAML ⊕ 前端 app_config 覆盖)注入同花顺专属限流/重试/超时，
+        # 对齐 akshare/baostock 同款模式：前端改「数据治理·同花顺板块」后新建实例即生效。
+        # 显式入参优先（测试直接传）；未传才回落生效配置；配置异常回落参数默认。
+        try:
+            eff = get_effective_settings().ths_board
+            self._min_interval_sec = min_interval_sec if min_interval_sec is not None else eff.min_interval_sec
+            self._timeout = timeout if timeout is not None else eff.timeout_sec
+            self._max_retries = max_retries if max_retries is not None else eff.max_retries
+            self._retry_backoff_sec = retry_backoff_sec if retry_backoff_sec is not None else eff.retry_backoff_sec
+        except Exception:  # noqa: BLE001 —— 配置/DB 异常时回落参数默认
+            self._min_interval_sec = min_interval_sec if min_interval_sec is not None else 1.0
+            self._timeout = timeout if timeout is not None else 10.0
+            self._max_retries = max_retries if max_retries is not None else 3
+            self._retry_backoff_sec = retry_backoff_sec if retry_backoff_sec is not None else 2.0
         self._session = session or requests.Session()
-        # 与 base.py 装饰器契约一致：实例属性优先级 > 装饰器入参（运行时可按生效配置注入）
-        self._min_interval_sec = min_interval_sec
-        self._timeout = timeout
-        self._max_retries = max_retries
-        self._retry_backoff_sec = retry_backoff_sec
         self._v_code: str | None = None
         # 可选登录态（环境变量注入，不硬编码）：解除详情页翻页登录墙
         self._login_cookie = login_cookie if login_cookie is not None else _login_cookie_from_env()

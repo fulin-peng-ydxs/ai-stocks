@@ -435,16 +435,31 @@ def test_scan_board_quality_index_gap(client, monkeypatch):
 
 
 def test_scan_board_quality_config_override(client, monkeypatch):
-    """阈值配置覆盖生效：Settings 模型字段 + CONFIG_GROUPS 白名单三环配套。"""
+    """阈值走 YAML 基线，不再 Web 覆盖：Settings 模型字段在，但不在覆盖层白名单。"""
     from backend.config.settings import Settings
-    # 默认值（Settings 模型）
+    # 默认值（Settings 模型 + settings.yaml 基线）
     s = Settings()
     assert s.board_quality.relative_change_ratio == 0.5
     assert s.board_quality.absolute_change_threshold == 20
-    # CONFIG_GROUPS 白名单允许该字段（T1 契约：三环配套可被 app_config 覆盖）
+    # 低频稳定参数不入覆盖层白名单（不在 CONFIG_GROUPS 登记），不可被 app_config 覆盖
     from backend.storage.app_config import WHITELIST
-    assert "board_quality.relative_change_ratio" in WHITELIST
-    assert "board_quality.absolute_change_threshold" in WHITELIST
+    assert "board_quality.relative_change_ratio" not in WHITELIST
+    assert "board_quality.absolute_change_threshold" not in WHITELIST
+
+
+def test_ths_board_config_overridable(client, monkeypatch):
+    """同花顺请求参数走覆盖层：Settings 模型字段 + CONFIG_GROUPS 白名单，可被 app_config 覆盖。"""
+    from backend.config.settings import Settings
+    s = Settings()
+    assert s.ths_board.min_interval_sec == 1.0
+    assert s.ths_board.timeout_sec == 10.0
+    assert s.ths_board.max_retries == 3
+    assert s.ths_board.retry_backoff_sec == 2.0
+    from backend.storage.app_config import WHITELIST
+    assert "ths_board.min_interval_sec" in WHITELIST
+    assert "ths_board.timeout_sec" in WHITELIST
+    assert "ths_board.max_retries" in WHITELIST
+    assert "ths_board.retry_backoff_sec" in WHITELIST
 
 
 def test_scan_board_quality_convergence_keeps_member_surge(client, monkeypatch):

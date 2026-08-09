@@ -31,13 +31,14 @@ export interface ConfigPanelCollapseSection {
 
 export const CONFIG_SYSTEM_GROUP_TABS: ConfigSystemGroupTab[] = [
   { key: 'access', label: '访问安全', groupKeys: ['auth'] },
-  { key: 'data-governance', label: '数据治理', groupKeys: ['datasource', 'audit'] },
+  { key: 'data-governance', label: '数据治理', groupKeys: ['datasource', 'ths_board', 'audit'] },
   { key: 'research-runtime', label: '研究运行', groupKeys: ['cost'] },
 ]
 
 export const CONFIG_SYSTEM_GROUPS: ConfigPanelGroupSummary[] = [
   { key: 'auth', label: '认证与防滥用' },
   { key: 'datasource', label: '数据源' },
+  { key: 'ths_board', label: '同花顺板块' },
   { key: 'audit', label: '审计设置' },
   { key: 'cost', label: '回测成本' },
 ]
@@ -95,6 +96,19 @@ export const CONFIG_SYSTEM_GROUP_SECTIONS: Record<string, ConfigFieldSection[]> 
         'datasource.socket_timeout_sec',
         'datasource.max_retries',
         'datasource.retry_backoff_sec',
+      ],
+    },
+  ],
+  ths_board: [
+    {
+      key: 'request',
+      title: '同花顺请求',
+      hint: '控制同花顺板块直连源的请求间隔、超时、重试和退避（独立于通用行情源，频率限制更敏感）。',
+      fieldPaths: [
+        'ths_board.min_interval_sec',
+        'ths_board.timeout_sec',
+        'ths_board.max_retries',
+        'ths_board.retry_backoff_sec',
       ],
     },
   ],
