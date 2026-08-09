@@ -402,24 +402,16 @@ def _seed_board_scan(client):
     client.execute("INSERT INTO board_bar (board_code, trade_date, close) VALUES ('881121', DATE '2026-08-06', 200.0)")
 
 
-def test_scan_board_quality_member_wave(client, monkeypatch):
-    """成分数波动扫描：member_count 基准 vs 有效成员计数，超阈值写 issue。"""
+def test_scan_board_quality_no_member_wave(client, monkeypatch):
+    """只进不出模型：成分数波动不再质检（源端真实重组非错误），扫描不产 board_member_wave。"""
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
-    # AI PC 有效成员 20（基准 50 → 波动 30 >= threshold 20）→ 触发
-    for i in range(20):
-        client.execute("INSERT INTO board_member (board_code, code, in_date) "
-                       "VALUES ('309121', ?, DATE '2026-01-05')", [f"code{i:06d}"])
-    # 半导体有效成员 120（基准 120 → 无波动）
-    for i in range(120):
-        client.execute("INSERT INTO board_member (board_code, code, in_date) "
-                       "VALUES ('881121', ?, DATE '2026-01-05')", [f"8{i:05d}"])
+    # 即使 member_count 与当前成员数差异巨大，也不再报波动
     r = DataIntegrityReport(client).scan_board_quality()
-    assert r["member_wave"] >= 1
+    assert r["member_wave"] == 0
     waves = client.query_df(
-        "SELECT code, issue_type FROM data_quality_issue WHERE issue_type='board_member_wave'")
-    assert "309121" in waves["code"].tolist()   # AI PC 波动被报
-    assert "881121" not in waves["code"].tolist()  # 半导体稳定不报
+        "SELECT count(*) n FROM data_quality_issue WHERE issue_type='board_member_wave'")
+    assert int(waves.iloc[0]["n"]) == 0
 
 
 def test_scan_board_quality_index_gap(client, monkeypatch):
@@ -462,24 +454,27 @@ def test_ths_board_config_overridable(client, monkeypatch):
     assert "ths_board.retry_backoff_sec" in WHITELIST
 
 
-def test_scan_board_quality_convergence_keeps_member_surge(client, monkeypatch):
-    """收敛不误删 member_surge_shrink：扫描后候选关联的 open issue 仍保留。"""
-    from backend.services.data_report import DataIntegrityReport
-    _seed_board_scan(client)
-    # 预置一条 member_surge_shrink open（候选关联，模拟 T4 候选保存）
-    client.execute(
-        "INSERT INTO board_member_candidate (candidate_id, issue_id, board_code, snapshot_date, "
-        "payload_hash, status) VALUES ('c1', 999, '309121', DATE '2026-08-09', ?, 'pending')",
-        ["a" * 64])
-    client.execute(
-        "INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at, fix_task_id) "
-        "VALUES (999, '309121', 'member_surge_shrink', 'high', 'open', now(), NULL)")
-    # 跑板块扫描（会触发收敛 DELETE open 且 IN SCAN_ISSUE_TYPES）
-    DataIntegrityReport(client).scan_board_quality()
-    # member_surge_shrink 不在 SCAN_ISSUE_TYPES → 不被删
-    left = client.query_df(
-        "SELECT count(*) n FROM data_quality_issue WHERE issue_type='member_surge_shrink'")
-    assert int(left.iloc[0]["n"]) == 1
+def test_board_member_incomplete_fix_reingests(client, monkeypatch):
+    """board_member_incomplete fix：重采成分快照 → 复检通过 → resolved。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+    from backend.services.board_ingest import BoardIngestService
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "ingest_board_members",
+                        lambda self, snapshot_date=None, board_codes=None, ctx=None:
+                        {"309121": {"total": 50}}, raising=True)
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+                   "VALUES ('309121','AI PC','concept',TRUE)")
+    client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
+                   "VALUES (2, '309121', 'board_member_incomplete', 'mid', 'open', now())")
+    monkeypatch.setattr("backend.services.data_report.DataIntegrityReport.recheck_clean",
+                        lambda self, issue_type, code, td: True, raising=True)
+    tid = svc.create("fix", {"issue_id": 2})
+    _wait(svc, tid)
+    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=2").iloc[0]
+    assert row["status"] == "resolved"
 
 
 def test_board_update_uses_latest_open_day(client, monkeypatch):
@@ -525,17 +520,46 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
 
 
 def test_scan_board_quality_no_false_wave_without_bar(client, monkeypatch):
-    """board_bar 空（指数未采）时，稳定板块成分数波动不误报（此前 max(trade_date) NULL → cur=0）。"""
+    """只进不出模型：成分数波动不再质检，扫描只报指数缺口（member_wave 恒 0）。"""
     from backend.services.data_report import DataIntegrityReport
     c = client
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, member_count) "
               "VALUES ('309121','AI PC','concept',TRUE,TRUE,50)")
     for i in range(50):
-        c.execute("INSERT INTO board_member (board_code, code, in_date) "
-                  "VALUES ('309121', ?, DATE '2026-01-05')", [f"c{i:05d}"])
-    # board_bar 无数据
+        c.execute("INSERT INTO board_member (board_code, code) "
+                  "VALUES ('309121', ?)", [f"c{i:05d}"])
+    # board_bar 无数据；无全局最新交易日（daily_bar 空）→ index_gap 不报，member_wave 恒 0
     r = DataIntegrityReport(c).scan_board_quality()
-    assert r["member_wave"] == 0   # 稳定 50 只不误报
+    assert r["member_wave"] == 0   # 波动质检已移除
+
+
+def test_search_boards_by_code_and_name(client):
+    """板块搜索：代码/名称模糊匹配（名称用 lower 不区分大小写），返回 code/name/board_type。"""
+    from backend.api.data_admin import search_boards
+    c = client
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE)")
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('881121','半导体','industry',TRUE)")
+    # 名称模糊（DuckDB LIKE 大小写敏感，lower(name) 匹配）
+    r = search_boards(keyword="AI")
+    assert r.data["total"] == 1
+    assert r.data["list"][0]["code"] == "309121"
+    assert r.data["list"][0]["board_type"] == "concept"
+    # 名称含空格也能命中
+    r = search_boards(keyword="ai pc")
+    assert r.data["total"] == 1
+    # 代码模糊
+    r = search_boards(keyword="881")
+    assert r.data["total"] == 1
+    assert r.data["list"][0]["name"] == "半导体"
+    # 类型过滤
+    r = search_boards(board_type="industry")
+    assert r.data["total"] == 1
+    assert r.data["list"][0]["code"] == "881121"
+    # 无结果
+    r = search_boards(keyword="不存在板块")
+    assert r.data["total"] == 0
 
 
 def test_ingest_board_only_selects_tables(client, monkeypatch):
@@ -562,100 +586,30 @@ def test_ingest_board_only_selects_tables(client, monkeypatch):
     assert called == {"dict": 0, "members": 0, "bar": 1, "fund": 0}  # 只跑指数
 
 
-# ── 候选接口（T9，R2 恢复闭环）───────────────────────────────
-
-
-def _seed_candidate(client, code="309121", n=50, status="pending"):
-    """种一条候选 + 关联 issue + 板块字典。"""
-    import json
-    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
-                   "VALUES (?,?,?,TRUE)", [code, "AI PC" if code == "309121" else "半导体", "concept"])
-    h = "a" * 64
-    client.execute(
-        "INSERT INTO board_member_candidate (candidate_id, issue_id, board_code, snapshot_date, "
-        "codes_json, payload_hash, status) VALUES ('c-test', 9001, ?, DATE '2026-08-09', ?, ?, ?)",
-        [code, json.dumps([f"code{i:06d}" for i in range(n)]), h, status])
-    client.execute(
-        "INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
-        "VALUES (9001, ?, 'member_surge_shrink', 'high', 'open', now())", [code])
-
-
-def test_apply_candidate_applies_diff_and_member_count(client):
-    """候选 apply（事务②）：diff 落库 + 候选 applied + issue resolved + member_count 刷新。"""
-    from backend.api.board_candidates import apply_candidate
-    _seed_candidate(client, n=3)
-    resp = apply_candidate("c-test")
-    assert resp.code == 0, resp.msg
-    # 候选 applied
-    st = client.query_df("SELECT status FROM board_member_candidate WHERE candidate_id='c-test'").iloc[0]["status"]
-    assert st == "applied"
-    # board_member 落库 3 条
-    n = client.query_df("SELECT count(*) n FROM board_member").iloc[0]["n"]
-    assert int(n) == 3
-    # member_count 刷新
-    mc = client.query_df("SELECT member_count FROM board_dict WHERE board_code='309121'").iloc[0]["member_count"]
-    assert int(mc) == 3
-    # issue resolved
-    iss = client.query_df("SELECT status FROM data_quality_issue WHERE id=9001").iloc[0]["status"]
-    assert iss == "resolved"
-
-
-def test_discard_candidate(client):
-    """候选 discard（事务③）：候选 discarded + issue ignored，board_member 不变。"""
-    from backend.api.board_candidates import discard_candidate
-    _seed_candidate(client, n=3)
-    resp = discard_candidate("c-test")
-    assert resp.code == 0
-    st = client.query_df("SELECT status FROM board_member_candidate WHERE candidate_id='c-test'").iloc[0]["status"]
-    assert st == "discarded"
-    iss = client.query_df("SELECT status FROM data_quality_issue WHERE id=9001").iloc[0]["status"]
-    assert iss == "ignored"
-    assert int(client.query_df("SELECT count(*) n FROM board_member").iloc[0]["n"]) == 0  # 不落库
-
-
-def test_apply_candidate_already_processed_409(client):
-    """候选已 applied/discarded → 409 already_processed。"""
-    from backend.api.board_candidates import apply_candidate
-    _seed_candidate(client, status="discarded")
-    resp = apply_candidate("c-test")
-    assert resp.code == 409
-    assert resp.data.get("error_code") == "already_processed"
-
-
 def test_overview_includes_board_stats(client, monkeypatch):
-    """数据总览 overview 含板块表行数 + 待处理候选（板块闭环进总览）。"""
+    """数据总览 overview 含板块表行数（板块闭环进总览）。"""
     from backend.services.data_report import DataIntegrityReport
-    # 板块表有数据 + 一条 pending 候选
     client.execute("INSERT INTO board_dict (board_code, name, board_type) VALUES ('309121','AI PC','concept')")
-    client.execute("INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-                   "payload_hash, status) VALUES ('c1','309121',DATE '2026-08-09',?, 'pending')", ["a" * 64])
     ov = DataIntegrityReport(client).overview()
     assert int(ov["row_counts"]["board_dict"]) == 1
-    assert "board_member_candidate" in ov["row_counts"]
     # overview API 也带 board 统计
     from backend.api.data_admin import overview
     resp = overview()
     assert resp.code == 0
     assert resp.data["board"]["board_dict"] == 1
-    assert resp.data["board"]["candidate_pending"] == 1
 
 
 def test_hub_includes_board_stage(client, monkeypatch):
-    """hub 闭环图含 board 环节（5 表行数 + 待处理候选 + 板块问题数）。"""
+    """hub 闭环图含 board 环节（4 表行数 + 板块问题数）。"""
     from backend.api.data_admin import hub
     client.execute("INSERT INTO board_dict (board_code, name, board_type) VALUES ('309121','AI PC','concept')")
-    client.execute("INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-                   "payload_hash, status) VALUES ('c1','309121',DATE '2026-08-09',?, 'pending')", ["a" * 64])
     client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
-                   "VALUES (1, '309121', 'board_member_wave', 'mid', 'open', now())")
+                   "VALUES (1, '309121', 'board_member_incomplete', 'mid', 'open', now())")
     resp = hub()
     assert resp.code == 0
     board = resp.data["stages"]["board"]
     assert board["board_dict"] == 1
-    assert board["candidate_pending"] == 1
     assert board["open_issues"] == 1
-    # 风险列表含候选待处理提示
-    assert any("候选待确认" in r["text"] for r in resp.data["risk"])
 
 
 # ── 板块 fix 分派（_h_fix 板块类型，审计后补测）───────────────
@@ -691,31 +645,6 @@ def test_board_index_gap_fix_reingests_and_resolves(client, monkeypatch):
     tid = svc.create("fix", {"issue_id": 1})
     _wait(svc, tid)
     row = client.query_df("SELECT status FROM data_quality_issue WHERE id=1").iloc[0]
-    assert row["status"] == "resolved"
-
-
-def test_board_member_wave_fix_reingests_and_resolves(client, monkeypatch):
-    """board_member_wave fix：重采成分快照 → 复检通过 → resolved。"""
-    svc = AsyncTaskService(client)
-    from backend.services import ingest
-    from backend.services.board_ingest import BoardIngestService
-
-    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
-    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
-    monkeypatch.setattr(BoardIngestService, "ingest_board_members",
-                        lambda self, snapshot_date=None, board_codes=None: {"309121": {"total": 50, "blocked": False}}, raising=True)
-    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, member_count) "
-                   "VALUES ('309121','AI PC','concept',TRUE,50)")
-    for i in range(50):
-        client.execute("INSERT INTO board_member (board_code, code, in_date) "
-                       "VALUES ('309121', ?, DATE '2026-08-07')", [f"c{i:04d}"])
-    client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
-                   "VALUES (2, '309121', 'board_member_wave', 'mid', 'open', now())")
-    monkeypatch.setattr("backend.services.data_report.DataIntegrityReport.recheck_clean",
-                        lambda self, issue_type, code, td: True, raising=True)
-    tid = svc.create("fix", {"issue_id": 2})
-    _wait(svc, tid)
-    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=2").iloc[0]
     assert row["status"] == "resolved"
 
 

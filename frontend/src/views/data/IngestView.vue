@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
-  getDataStatus, getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, getStockQuality,
+  getDataStatus, getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, getStockQuality, searchBoards,
   TASK_LABEL, STATUS_LABEL, taskDisplayLabel, SOURCE_LABEL,
   type DataStatus, type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
 } from '@/api/data'
@@ -203,15 +203,21 @@ const optType = ref<TaskType>('ingest_date')
 const optForm = ref<{ codes: string[]; date_start: string; date_end: string; years: number | null; mode: 'backfill' | 'update' }>(
   { codes: [], date_start: '', date_end: '', years: null, mode: 'backfill' })
 
-// 指定股票：下拉多选，输入代码或名称远程搜索（DM-D17）
+// 指定股票/板块：下拉多选，输入代码或名称远程搜索（DM-D17）。
+// optType=board 搜板块（board_dict 代码/名称）；其余搜股票。
 const codeOptions = ref<{ code: string; label: string }[]>([])
 const codeOptLoading = ref(false)
 async function remoteCode(q: string) {
   if (!q) { codeOptions.value = []; return }
   codeOptLoading.value = true
   try {
-    const r = await getStockQuality({ keyword: q, size: 30 })
-    codeOptions.value = r.list.map((x) => ({ code: x.code, label: `${x.code} ${x.name}` }))
+    if (optType.value === 'board') {
+      const r = await searchBoards({ keyword: q, size: 30 })
+      codeOptions.value = r.list.map((x) => ({ code: x.code, label: `${x.code} ${x.name}` }))
+    } else {
+      const r = await getStockQuality({ keyword: q, size: 30 })
+      codeOptions.value = r.list.map((x) => ({ code: x.code, label: `${x.code} ${x.name}` }))
+    }
   } finally {
     codeOptLoading.value = false
   }
@@ -789,16 +795,18 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item v-if="optType === 'board'" label="采集模式">
           <el-radio-group v-model="optForm.mode">
-            <el-radio value="backfill">全量回填（指数补 2024 起，资金流全周期）</el-radio>
-            <el-radio value="update">增量（只补最近交易日，资金流只采即时）</el-radio>
+            <el-radio value="backfill">全量回填</el-radio>
+            <el-radio value="update">增量</el-radio>
           </el-radio-group>
+          <span class="hint">全量回填：指数补 2024 起、资金流全周期；增量：只补最近交易日、资金流只采即时</span>
         </el-form-item>
         <el-form-item :label="optType === 'board' ? '指定板块' : '指定股票'">
           <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags
                      :remote-method="remoteCode" :loading="codeOptLoading" :reserve-keyword="false"
-                     :placeholder="optType === 'board' ? '输入板块代码或名称搜索，可多选（留空=全部板块）' : '输入代码或名称搜索，可多选（留空=全市场）'" style="width: 100%">
+                     :placeholder="optType === 'board' ? '输入板块代码或名称搜索' : '输入代码或名称搜索'" style="width: 100%">
             <el-option v-for="o in codeOptions" :key="o.code" :label="o.label" :value="o.code" />
           </el-select>
+          <span class="hint">可多选；留空={{ optType === 'board' ? '全部板块' : '全市场' }}</span>
         </el-form-item>
       </el-form>
       <template #footer>

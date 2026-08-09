@@ -255,7 +255,6 @@ def test_board_schedulable_and_catalog(tmp_path):
         # 2. catalog 含板块表（审计问题4）
         cat = build_catalog(c)
         tables = {x["table"] for x in cat}
-        assert {"board_dict", "board_member", "board_bar", "board_fund_flow",
-                "board_member_candidate"} <= tables
+        assert {"board_dict", "board_member", "board_bar", "board_fund_flow"} <= tables
         bd = next(x for x in cat if x["table"] == "board_dict")
         assert bd["name_cn"] == "板块字典"

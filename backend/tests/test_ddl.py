@@ -191,98 +191,11 @@ def test_board_init_idempotent():
         init_db(client)
         init_db(client)
         tables = list_tables(client)
-        assert "board_member_candidate" in tables
-
-
-def test_board_payload_hash_check():
-    """payload_hash CHECK：仅接受 64 位小写 hex，拒绝大写/63/65 位/Base64/非法字符。
-
-    每个非法值用独立连接验证（DuckDBClient 异常后重建 :memory: 连接为空库）。
-    """
-    with DuckDBClient(db_path=":memory:") as client:
-        init_db(client)
-        ok = "a" * 64
-        client.execute(
-            "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-            "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
-            ["c1", "309121", ok])
-    for bad, desc in [("A" * 64, "大写"), (ok[:-1], "63位"), (ok + "a", "65位"),
-                      ("SGVsbG8=" * 8 + "ab", "Base64"), (ok[:-1] + "Z", "非法字符")]:
-        with DuckDBClient(db_path=":memory:") as c:
-            init_db(c)
-            with pytest.raises(Exception):  # CHECK 拒绝（ConstraintException/其他）
-                c.execute(
-                    "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-                    "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
-                    ["bad-" + desc, "309121", bad])
-
-
-def test_board_candidate_unique_same_day_same_hash():
-    """候选唯一约束 (board_code, snapshot_date, payload_hash)：同板块同日同 hash 第二行被拦。"""
-    with DuckDBClient(db_path=":memory:") as client:
-        init_db(client)
-        h = "b" * 64
-        client.execute(
-            "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-            "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
-            ["c1", "309121", h])
-        with pytest.raises(Exception):
-            client.execute(
-                "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-                "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
-                ["c2", "309121", h])
-
-
-def test_board_one_applied_expression_index():
-    """表达式唯一索引：同日多 pending/discarded 并存，但拒绝第二条 applied（INSERT 与 UPDATE 两路径）。"""
-    with DuckDBClient(db_path=":memory:") as client:
-        init_db(client)
-        h1, h2, h3 = "a" * 64, "b" * 64, "c" * 64
-        for cid, h in [("c1", h1), ("c2", h2), ("c3", h3)]:
-            client.execute(
-                "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-                "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
-                [cid, "309121", h])
-        # 首个 applied 成功
-        client.execute(
-            "UPDATE board_member_candidate SET status='applied' WHERE candidate_id='c1'")
-        # 同板块同日第二条 applied：UPDATE 路径被拦（此后连接重建为空库，不再复用）
-        with pytest.raises(Exception):
-            client.execute(
-                "UPDATE board_member_candidate SET status='applied' WHERE candidate_id='c2'")
-    # 独立连接：pending/discarded 并存 + 跨板块/跨日 applied + INSERT 路径拦截
-    with DuckDBClient(db_path=":memory:") as client2:
-        init_db(client2)
-        h1, h2, h3 = "a" * 64, "b" * 64, "c" * 64
-        for cid, h in [("c1", h1), ("c2", h2), ("c3", h3)]:
-            client2.execute(
-                "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-                "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
-                [cid, "309121", h])
-        client2.execute(
-            "UPDATE board_member_candidate SET status='applied' WHERE candidate_id='c1'")
-        # 其余 pending/discarded 可并存
-        client2.execute(
-            "UPDATE board_member_candidate SET status='discarded' WHERE candidate_id='c3'")
-        # 跨板块/跨日 applied 互不影响
-        client2.execute(
-            "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-            "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'applied')",
-            ["c4", "881121", h2])
-        client2.execute(
-            "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-            "payload_hash, status) VALUES (?, ?, DATE '2026-01-06', ?, 'applied')",
-            ["c5", "309121", h3])
-        # 第二条 applied 的 INSERT 路径：直接 INSERT applied 同日被拦（此后连接重建）
-        with pytest.raises(Exception):
-            client2.execute(
-                "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-                "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'applied')",
-                ["c6", "309121", "d" * 64])
+        assert {"board_dict", "board_member", "board_bar", "board_fund_flow"} <= set(tables)
 
 
 def test_board_fund_flow_pk_and_board_member_pk():
-    """board_fund_flow 与 board_member 主键（board_code,snapshot_date,period / board_code,code,in_date）。
+    """board_fund_flow 与 board_member 主键（board_code,snapshot_date,period / board_code,code）。
 
     注意：DuckDBClient.execute 异常后置 `_conn=None` 并重建连接——对 `:memory:` 库重建即空库，
     因此冲突断言后不得再依赖表存在（每个冲突用独立连接验证）。
@@ -297,13 +210,13 @@ def test_board_fund_flow_pk_and_board_member_pk():
             client.execute(
                 "INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
                 "VALUES ('309121', DATE '2026-01-05', '即时', 20.0)")
-    # 独立连接验证 board_member 主键
+    # 独立连接验证 board_member 主键（只进不出：(board_code, code)）
     with DuckDBClient(db_path=":memory:") as client2:
         init_db(client2)
         client2.execute(
-            "INSERT INTO board_member (board_code, code, in_date) "
-            "VALUES ('309121', '300476.SZ', DATE '2026-01-05')")
+            "INSERT INTO board_member (board_code, code) "
+            "VALUES ('309121', '300476.SZ')")
         with pytest.raises(Exception):
             client2.execute(
-                "INSERT INTO board_member (board_code, code, in_date) "
-                "VALUES ('309121', '300476.SZ', DATE '2026-01-05')")
+                "INSERT INTO board_member (board_code, code) "
+                "VALUES ('309121', '300476.SZ')")

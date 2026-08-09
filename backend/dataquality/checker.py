@@ -128,7 +128,7 @@ SEVERITY_BY_TYPE: dict[str, str] = {
     "data_gap": "mid",         # 存续期缺口（疑似漏采，待重采反向确认）（M2.9.2 L4）
     "stale": "mid",            # 尾部鲜活滞后（最新<全局最新交易日）（M2.9.2 L4）
     "board_index_gap": "mid",  # 板块指数缺口（board_bar 滞后全局最新交易日）（板块概念 R12）
-    "board_member_wave": "mid",  # 板块成分数波动（member_count 基准 vs 有效成员计数）（板块概念 R12）
+    "board_member_incomplete": "mid",  # 成分快照采集不完整/失败（只进不出模型完整性闸门，待重采）
 }
 
 
@@ -164,15 +164,13 @@ L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale")
 # 避免新增质量层问题后只能手工处理。
 QUALITY_ISSUE_TYPES: tuple[str, ...] = (
     L1_ISSUE_TYPES + L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES
-    + ("board_index_gap", "board_member_wave", "board_fund_unmatched")
+    + ("board_index_gap", "board_member_incomplete", "board_fund_unmatched")
 )
 # 质检（scan_quality_issues）每次重扫并幂等覆盖的"自动问题"类型（L2/L3/L4）；
 # L1 由入库闸门即时记录，质检只做防御性补扫，不在此清表。
-# 板块自动扫描类型（board_index_gap / board_member_wave）加入以支持反复跑收敛；
-# member_surge_shrink 由候选事务②③驱动（applied→resolved / discarded→ignored），
-# **绝不加入本集合**（否则收敛会误删候选关联 open issue）。
+# 板块自动扫描类型（board_index_gap）加入以支持反复跑收敛。
 SCAN_ISSUE_TYPES: tuple[str, ...] = (
-    L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ("board_index_gap", "board_member_wave")
+    L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES + ("board_index_gap",)
 )
 
 

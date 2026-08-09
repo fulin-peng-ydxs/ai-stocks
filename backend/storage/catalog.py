@@ -154,14 +154,12 @@ TABLE_CATALOG: dict[str, dict] = {
     },
     "board_member": {
         "name_cn": "板块成分股",
-        "purpose": "板块↔成分股多对多关系，快照 diff 累积，区间语义 [in_date, out_date)。",
-        "date_col": "in_date",
+        "purpose": "板块↔成分股多对多关系，只进不出累积（每行一只成分股，不删除）。",
+        "date_col": None,
         "relations": ["board_code → board_dict", "code → stock_basic"],
         "fields": [
             {"name": "board_code", "type": "VARCHAR", "name_cn": "板块代码", "desc": ""},
             {"name": "code", "type": "VARCHAR", "name_cn": "成分股代码", "desc": "含交易所后缀"},
-            {"name": "in_date", "type": "DATE", "name_cn": "加入日", "desc": "首次完整快照观察到"},
-            {"name": "out_date", "type": "DATE", "name_cn": "退出日", "desc": "NULL=仍在；区间 [in_date, out_date)"},
         ],
     },
     "board_bar": {
@@ -194,20 +192,6 @@ TABLE_CATALOG: dict[str, dict] = {
             {"name": "net_inflow", "type": "DOUBLE", "name_cn": "净流入", "desc": ""},
             {"name": "leader_stock", "type": "VARCHAR", "name_cn": "领涨股", "desc": ""},
             {"name": "leader_pct", "type": "DOUBLE", "name_cn": "领涨股涨幅", "desc": ""},
-        ],
-    },
-    "board_member_candidate": {
-        "name_cn": "板块成分候选",
-        "purpose": "被拦截成分快照暂存（不完整/波动），数据质量页人工确认应用/丢弃（R2 恢复闭环）。",
-        "date_col": "snapshot_date",
-        "relations": ["board_code → board_dict", "issue_id → data_quality_issue"],
-        "fields": [
-            {"name": "candidate_id", "type": "VARCHAR", "name_cn": "候选ID", "desc": "主键"},
-            {"name": "issue_id", "type": "VARCHAR", "name_cn": "关联质检", "desc": "member_surge_shrink 问题"},
-            {"name": "board_code", "type": "VARCHAR", "name_cn": "板块代码", "desc": ""},
-            {"name": "snapshot_date", "type": "DATE", "name_cn": "快照日", "desc": ""},
-            {"name": "payload_hash", "type": "VARCHAR", "name_cn": "快照指纹", "desc": "SHA-256，幂等去重"},
-            {"name": "status", "type": "VARCHAR", "name_cn": "状态", "desc": "pending/applied/discarded"},
         ],
     },
 }

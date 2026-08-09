@@ -51,8 +51,7 @@ class DataIntegrityReport:
             have = set(list_tables(self.c))
         except Exception:  # noqa: BLE001
             have = set()
-        for bt in ("board_dict", "board_member", "board_bar", "board_fund_flow",
-                   "board_member_candidate"):
+        for bt in ("board_dict", "board_member", "board_bar", "board_fund_flow"):
             counts[bt] = int(self._scalar(f"SELECT count(*) FROM {bt}")) if bt in have else 0
         span = self.c.query_df(
             "SELECT min(trade_date) lo, max(trade_date) hi, count(DISTINCT code) codes FROM daily_bar"
@@ -533,54 +532,18 @@ class DataIntegrityReport:
 
     # ── 板块维度质检（板块概念需求 R12，T7）──────────────────
     def scan_board_quality(self) -> dict:
-        """板块数据质检：成分数波动扫描 + 板块指数缺口扫描，写 data_quality_issue。
+        """板块数据质检：板块指数缺口扫描，写 data_quality_issue。
 
         收敛语义（承接 data_report 收敛模式）：板块自动扫描类（board_index_gap）在扫描前清
-        上轮未解决 open 问题（SCAN_ISSUE_TYPES 已含），反复跑不堆积；**member_surge_shrink
-        绝不清**（候选事务②③驱动生命周期）。已 ignored 的不再上报。
+        上轮未解决 open 问题（SCAN_ISSUE_TYPES 已含），反复跑不堆积。已 ignored 的不再上报。
+
+        🔴 2026-08-09 修订：成分数波动不再质检（只进不出模型下成分变化是源端真实重组，
+        非数据错误；成分采集完整性由采集层「完整快照才落库」保证，见 board_ingest）。
         """
-        from backend.config import get_effective_settings
-        bq = get_effective_settings().board_quality
-        ratio = bq.relative_change_ratio
-        absolute = bq.absolute_change_threshold
-
-        # 成分数波动：比对 board_dict.member_count（最近已应用基准）与当前有效 board_member 计数
-        # 阈值 formula：threshold = max(absolute, prev*ratio)，abs(cur-prev) >= threshold 触发
-        # 有效成员截止日用 board_member 自身最新 in_date（不依赖 board_bar——板块可能指数未采，
-        # board_bar 空时 max(trade_date) 为 NULL 会把 cur_count 误算为 0 → 稳定板块误报波动）
-        rows = self.c.query_df(
-            """
-            SELECT b.board_code, b.name, b.board_type, b.member_count AS prev_count,
-                   (SELECT count(*) FROM board_member m
-                    WHERE m.board_code = b.board_code
-                      AND m.in_date <= COALESCE(
-                          (SELECT max(in_date) FROM board_member WHERE board_code = b.board_code),
-                          DATE '1970-01-01')
-                      AND (m.out_date IS NULL OR m.out_date > COALESCE(
-                          (SELECT max(in_date) FROM board_member WHERE board_code = b.board_code),
-                          DATE '1970-01-01'))
-                   ) AS cur_count
-            FROM board_dict b
-            WHERE b.has_members AND b.member_count IS NOT NULL
-            """)
-        issues = []
-        for _, r in rows.iterrows():
-            prev_c = int(r["prev_count"])
-            cur_c = int(r["cur_count"]) if r["cur_count"] is not None else 0
-            threshold = max(absolute, int(prev_c * ratio))
-            if prev_c and abs(cur_c - prev_c) >= threshold:
-                issues.append({
-                    "code": r["board_code"], "trade_date": None,
-                    "issue_type": "board_member_wave",
-                    "detail": f"板块 {r['name']}（{r['board_code']}）成分数波动："
-                              f"基准 {prev_c} → 当前 {cur_c}（阈值 {threshold}）",
-                })
-        self._insert_issues(issues)
-
         # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
         if latest is None:
-            return {"member_wave": len(issues), "index_gap": 0}
+            return {"member_wave": 0, "index_gap": 0}
         latest = pd.Timestamp(latest).date()
         # 已 ignored 的板块豁免（按 (code, type) 整体豁免）
         ig = set()
@@ -610,7 +573,7 @@ class DataIntegrityReport:
                               f"全局最新交易日 {latest}",
                 })
         self._insert_issues(gap_issues)
-        return {"member_wave": len(issues), "index_gap": len(gap_issues)}
+        return {"member_wave": 0, "index_gap": len(gap_issues)}
 
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
     def recheck_clean(self, issue_type: str, code: str, trade_date: date | None,
@@ -720,24 +683,13 @@ class DataIntegrityReport:
             if last_bar is None or pd.isna(last_bar):
                 return False
             return pd.Timestamp(last_bar).date() >= pd.Timestamp(latest).date()
-        if issue_type == "board_member_wave":
-            # 板块成分数波动复检：有效成员计数回到 member_count 基准（阈值内）
-            from backend.config import get_effective_settings
-            bq = get_effective_settings().board_quality
+        if issue_type == "board_member_incomplete":
+            # 成分快照采集不完整：重采后该板块已有完整成分（member_count 非空）即视为恢复
             row = self.c.query_df(
                 "SELECT member_count FROM board_dict WHERE board_code=?", [code])
             if row.empty or row.iloc[0]["member_count"] is None:
                 return False
-            prev_c = int(row.iloc[0]["member_count"])
-            cur = self.c.query_df(
-                "SELECT count(*) AS n FROM board_member "
-                "WHERE board_code=? AND in_date<=COALESCE("
-                "(SELECT max(in_date) FROM board_member WHERE board_code=?), DATE '1970-01-01') "
-                "AND (out_date IS NULL OR out_date>COALESCE("
-                "(SELECT max(in_date) FROM board_member WHERE board_code=?), DATE '1970-01-01'))",
-                [code, code, code]).iloc[0]["n"]
-            threshold = max(bq.absolute_change_threshold, int(prev_c * bq.relative_change_ratio))
-            return abs(int(cur) - prev_c) < threshold
+            return int(row.iloc[0]["member_count"]) > 0
         if issue_type == "board_fund_unmatched":
             # 资金流未匹配复检：该名称板块是否已能映射（重采后进字典）
             return True  # 由人工 ignore 收敛（源无稳定代码，重采不保证能匹配），复检通过即收敛

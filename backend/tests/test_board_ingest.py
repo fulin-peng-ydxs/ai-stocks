@@ -1,8 +1,8 @@
 """板块采集服务单测（T4，mock ThsBoardSource + 文件 DuckDB，不触网）。
 
-覆盖 plan §6.4 产出断言：diff 区间语义 / 不完整快照不执行退出 diff / payload_hash 规范化与
-幂等四态 / 同日多候选冻结 / 资金流映射与未匹配质检 / member_count 刷新时机（完整路径刷新、
-被拦截未应用不刷新）/ 事务原子性（中途失败整体回滚）/ 写锁冲突归类（跨进程独立测试）。
+覆盖 plan §6.4 产出断言：只进不出落库（ON CONFLICT 幂等）/ 不完整快照不落库 /
+资金流映射与未匹配质检 / member_count 刷新（完整快照刷新）/ 事务原子性（中途失败整体回滚）
+/ 写锁冲突归类（跨进程独立测试）。
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 from backend.common.exceptions import StorageError
-from backend.services.board_ingest import BoardIngestService, ISSUE_TYPE_MEMBER_SURGE_SHRINK
+from backend.services.board_ingest import BoardIngestService
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
@@ -84,119 +84,60 @@ def test_board_codes_filter_in_clause(tmp_path):
     assert "boards" in bar
 
 
-def test_payload_hash_normalization():
-    """payload_hash：SHA-256(ISO日期 + \\n + sorted(set).join(\\n))，代码集换序/重复 → 同 hash。"""
-    svc, c = _make_service(Path(tempfile.mkdtemp()), _FakeSource({}))
-    h1 = svc._payload_hash(date(2026, 1, 5), {"600000.SH", "000001.SZ"})
-    h2 = svc._payload_hash(date(2026, 1, 5), {"000001.SZ", "600000.SH", "600000.SH"})  # 换序+重复
-    assert h1 == h2
-    assert len(h1) == 64
-    assert h1 == h1.lower()
-    # 不同日期 → 不同 hash
-    h3 = svc._payload_hash(date(2026, 1, 6), {"600000.SH", "000001.SZ"})
-    assert h1 != h3
+# ── 成分快照（只进不出）与 member_count ─────────────────────
 
 
-def test_payload_hash_rejects_invalid():
-    """payload_hash 输出必须 64 位小写 hex（生产由 DB CHECK 拦截非法，此处验证输出合法）。"""
-    svc, c = _make_service(Path(tempfile.mkdtemp()), _FakeSource({}))
-    h = svc._payload_hash(date(2026, 1, 5), {"600000.SH"})
-    import re
-    assert re.fullmatch(r"[0-9a-f]{64}", h)
-
-
-# ── 成分快照 diff 与 member_count ─────────────────────────────
-
-
-def test_member_diff_and_member_count(tmp_path):
-    """完整快照 diff 落库 [in_date,out_date) + member_count 刷新（已应用路径）。"""
+def test_member_only_append_no_delete(tmp_path):
+    """只进不出：完整快照落库 (board_code, code)，重复采集只新增不删除不重复。"""
     src = _FakeSource({"309121": ["300476", "603936", "002913"]})
     svc, c = _make_service(tmp_path, src)
-    # 先种字典
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
               "VALUES ('309121','AI PC','concept',TRUE)")
     r = svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
-    assert r["added"] == 3
-    df = c.query_df("SELECT code, in_date, out_date FROM board_member")
+    assert r["total"] == 3
+    df = c.query_df("SELECT board_code, code FROM board_member")
     assert len(df) == 3
-    assert all(pd.isna(df["out_date"]))
-    # member_count 刷新
-    mc = _member_count(c, "309121")
-    assert int(mc) == 3
-    # 第二次快照：新股 + 缺席股退出
+    assert set(df["code"]) == {"300476.SZ", "603936.SH", "002913.SZ"}
+    # member_count 刷新为当前成分数
+    assert int(_member_count(c, "309121")) == 3
+    # 第二次快照：新股 300750 新增，缺席股 002913 保留（不删除）
     src2 = _FakeSource({"309121": ["300476", "603936", "300750"]})
     svc2, c2 = _make_service(tmp_path.parent / "t2.duckdb", src2)
     c2.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, member_count) "
                "VALUES ('309121','AI PC','concept',TRUE, 3)")
-    # 先给 board_member 种 3 条（后缀对齐 to_full_code）
     for code in ["300476.SZ", "603936.SH", "002913.SZ"]:
-        c2.execute("INSERT INTO board_member VALUES ('309121',?,DATE '2026-01-05',NULL)", [code])
+        c2.execute("INSERT INTO board_member (board_code, code) VALUES ('309121',?)", [code])
     r2 = svc2._ingest_one_member("309121", "concept", date(2026, 1, 6))
-    # 300476/603936 保留（in_date 已有），300750 新增，002913 退出
-    assert r2["added"] == 1  # 300750
-    df2 = c2.query_df("SELECT code, out_date FROM board_member WHERE code='002913.SZ'")
-    assert pd.Timestamp(df2.iloc[0]["out_date"]).date() == date(2026, 1, 6)  # 退出标记
-    df3 = c2.query_df("SELECT in_date FROM board_member WHERE code='300750.SZ'")
-    assert pd.Timestamp(df3.iloc[0]["in_date"]).date() == date(2026, 1, 6)  # 新增
+    # 300750 新增，002913 保留（只进不出）
+    assert r2["total"] == 3
+    df2 = c2.query_df("SELECT code FROM board_member")
+    assert set(df2["code"]) == {"300476.SZ", "603936.SH", "002913.SZ", "300750.SZ"}
+    assert int(_member_count(c2, "309121")) == 3  # 当前快照成分数
 
 
-def test_incomplete_snapshot_no_exit_diff(tmp_path):
-    """不完整快照（complete=False）→ 不执行退出 diff，写候选 + issue，member_count 不刷新。"""
+def test_incomplete_snapshot_not_applied(tmp_path):
+    """不完整快照（complete=False）→ 抛错不落库，member_count 不刷新，写 board_member_incomplete issue。"""
     src = _FakeSource({"309121": ["300476", "603936"]}, complete={"309121": False})
     svc, c = _make_service(tmp_path, src)
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, member_count) "
               "VALUES ('309121','AI PC','concept',TRUE, 10)")
-    r = svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
-    assert r["blocked"] is True
-    assert r["reason"] == "incomplete"
-    # 候选与 issue 已写
-    cand = c.query_df("SELECT candidate_id, status, payload_hash FROM board_member_candidate")
-    assert len(cand) == 1
-    assert cand.iloc[0]["status"] == "pending"
-    iss = c.query_df("SELECT issue_type, status FROM data_quality_issue")
-    assert len(iss) == 1
-    assert iss.iloc[0]["issue_type"] == ISSUE_TYPE_MEMBER_SURGE_SHRINK
-    assert iss.iloc[0]["status"] == "open"
-    # member_count 不刷新（仍 10），board_member 无 diff
-    mc = _member_count(c, "309121")
-    assert int(mc) == 10
+    with pytest.raises(Exception):
+        svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
+    # board_member 不落库，member_count 不刷新
     assert len(c.query_df("SELECT 1 FROM board_member")) == 0
+    assert int(_member_count(c, "309121")) == 10
 
 
-def test_same_hash_idempotent(tmp_path):
-    """同 hash 幂等四态：同 hash+pending 返回已有不新开；+applied/discarded 跳过。"""
-    src = _FakeSource({"309121": ["300476"]}, complete={"309121": False})  # 强制候选路径
+def test_member_upsert_idempotent_on_conflict(tmp_path):
+    """ON CONFLICT 幂等：同板块同股重复采集不产生重复行。"""
+    src = _FakeSource({"309121": ["300476", "603936"]})
     svc, c = _make_service(tmp_path, src)
-    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, member_count) "
-              "VALUES ('309121','AI PC','concept',TRUE, 10)")
-    r1 = svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
-    assert r1["blocked"] is True
-    r2 = svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
-    assert r2["reason"] == "same_hash_pending"
-    assert r2["candidate_id"] == r1["candidate_id"]
-    assert len(c.query_df("SELECT 1 FROM board_member_candidate")) == 1
-    # 置 applied 后重跑 → 跳过
-    c.execute(
-        "UPDATE board_member_candidate SET status='applied' "
-        "WHERE candidate_id=?", [r1["candidate_id"]])
-    r3 = svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
-    assert r3["reason"] == "same_hash_applied"
-    assert len(c.query_df("SELECT 1 FROM board_member_candidate")) == 1
-
-
-def test_wave_blocked_candidate(tmp_path):
-    """成分数波动超阈值 → 候选 + issue（wave），不落库不刷新 member_count。"""
-    codes = [f"3000{i:02d}" for i in range(30)]  # 30 只不同代码 vs 前次 10
-    src = _FakeSource({"309121": codes})
-    svc, c = _make_service(tmp_path, src)
-    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, member_count) "
-              "VALUES ('309121','AI PC','concept',TRUE, 10)")
-    r = svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
-    assert r["blocked"] is True
-    assert r["reason"] == "wave"
-    mc = _member_count(c, "309121")
-    assert int(mc) == 10  # 未刷新
-    assert len(c.query_df("SELECT 1 FROM board_member")) == 0  # 不落库
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE)")
+    svc._ingest_one_member("309121", "concept", date(2026, 1, 5))
+    svc._ingest_one_member("309121", "concept", date(2026, 1, 6))  # 同股重复
+    df = c.query_df("SELECT code FROM board_member")
+    assert len(df) == 2  # 不重复
 
 
 def test_member_history_start_date_first_only(tmp_path):
@@ -253,31 +194,21 @@ def test_fund_flow_mapping_and_unmatched(tmp_path):
 # ── 事务原子性 ────────────────────────────────────────────────
 
 
-def test_candidate_transaction_atomicity(tmp_path):
-    """候选保存事务①：中途失败整体回滚（候选与 issue 都不落）。"""
-    src = _FakeSource({"309121": ["300476"]}, complete={"309121": False})
+def test_member_upsert_transaction_atomicity(tmp_path):
+    """成分落库事务原子性：中途失败整体回滚（board_member 与 member_count 都不写）。"""
+    src = _FakeSource({"309121": ["300476"]})
     svc, c = _make_service(tmp_path, src)
-    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, member_count) "
-              "VALUES ('309121','AI PC','concept',TRUE, 10)")
-    # 用真实 transaction() 验证：先在事务内写候选，再抛错 → 回滚
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE)")
+    # 事务内先写成分，再抛错 → 回滚（board_member 与 member_count 都不落）
     try:
         with c.transaction():
-            c.execute(
-                "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-                "payload_hash, status) VALUES ('tx-fail','309121',DATE '2026-01-05',?, 'pending')",
-                ["a" * 64])
+            c.execute("INSERT INTO board_member (board_code, code) VALUES ('309121','300476.SZ')")
             raise RuntimeError("注入失败")
     except StorageError:
         pass
-    # 回滚后候选与 issue 均无
-    assert len(c.query_df("SELECT 1 FROM board_member_candidate WHERE candidate_id='tx-fail'")) == 0
-    # 事务外单独写候选 → 成功（验证连接恢复）
-    h = svc._payload_hash(date(2026, 1, 5), {"300476.SH"})
-    with c.transaction():
-        c.execute(
-            "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
-            "payload_hash, status) VALUES ('ok1','309121',DATE '2026-01-05',?, 'pending')", [h])
-    assert len(c.query_df("SELECT 1 FROM board_member_candidate WHERE candidate_id='ok1'")) == 1
+    assert len(c.query_df("SELECT 1 FROM board_member WHERE board_code='309121'")) == 0
+    assert int(_member_count(c, "309121")) == 0
 
 
 def test_write_lock_classification():
@@ -288,17 +219,16 @@ def test_write_lock_classification():
     assert not _LOCK_CONFLICT_RE.search("普通事务错误")
 
 
-def test_member_diff_member_count_atomic(tmp_path):
-    """diff 与 member_count 同事务：中途失败整体回滚，member_count 不残留（R2 原子性）。"""
+def test_member_upsert_member_count_atomic(tmp_path):
+    """成分落库与 member_count 同事务：中途失败整体回滚，member_count 不残留（R2 原子性）。"""
     src = _FakeSource({"309121": ["300476", "603936", "002913"]})
     svc, c = _make_service(tmp_path, src)
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
               "VALUES ('309121','AI PC','concept',TRUE)")
-    # 直接调 _apply_member_diff：注入失败（第 3 条 added 前抛错）→ 整体回滚
+    # 事务内先写成分 + member_count，再抛错 → 整体回滚
     with pytest.raises(StorageError):
         with c.transaction():
-            c.execute("INSERT INTO board_member (board_code, code, in_date, out_date) "
-                      "VALUES ('309121','300476.SZ',DATE '2026-01-05',NULL)")
+            c.execute("INSERT INTO board_member (board_code, code) VALUES ('309121','300476.SZ')")
             c.execute("UPDATE board_dict SET member_count=1 WHERE board_code='309121'")
             raise RuntimeError("注入失败")
     # 回滚后：board_member 无新增行、member_count 无残留（仍 NULL/原值）

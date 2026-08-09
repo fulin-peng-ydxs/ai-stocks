@@ -282,12 +282,12 @@ onMounted(load)
             <div class="stat-val">{{ ov?.bar_rows?.toLocaleString() ?? '—' }}</div>
           </el-card>
           <el-card v-if="settings.kpi.board" shadow="never" class="stat clickable" @click="gotoGap()">
-            <el-tooltip content="板块数据：字典/成分/指数/资金流表行数 + 待确认候选（板块概念）" placement="top">
+            <el-tooltip content="板块数据：字典/成分/指数/资金流表行数（板块概念）" placement="top">
               <div class="stat-label">板块数据 <span class="qm">?</span></div>
             </el-tooltip>
             <div class="stat-val">{{ ov?.board ? (ov.board.board_dict ?? 0) + ' 板块' : '—' }}</div>
             <div class="stat-foot" v-if="ov?.board">
-              指数 {{ (ov.board.board_bar ?? 0).toLocaleString() }} 行 · 待确认候选 {{ ov.board.candidate_pending ?? 0 }}
+              指数 {{ (ov.board.board_bar ?? 0).toLocaleString() }} 行 · 成分 {{ (ov.board.board_member ?? 0).toLocaleString() }} 行
             </div>
           </el-card>
           <el-card v-if="settings.kpi.score" shadow="never" class="stat">

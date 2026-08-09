@@ -103,14 +103,12 @@ def overview() -> ApiResponse:
     last_scan = c.query_df(
         "SELECT max(detected_at) AS t FROM data_quality_issue").iloc[0]["t"]
     last_scan_s = None if last_scan is None or str(last_scan) == "NaT" else str(last_scan)[:19]
-    # 板块数据（板块概念需求 R6/R21）：5 表行数 + 待处理候选数（总览闭环含板块）
+    # 板块数据（板块概念需求 R6/R21）：4 表行数（总览闭环含板块）
     board = None
     try:
         bt = {k: int(ov["row_counts"].get(k, 0)) for k in
-              ("board_dict", "board_member", "board_bar", "board_fund_flow", "board_member_candidate")}
-        pending = int(c.query_df(
-            "SELECT count(*) AS n FROM board_member_candidate WHERE status='pending'").iloc[0]["n"])
-        board = {**bt, "candidate_pending": pending}
+              ("board_dict", "board_member", "board_bar", "board_fund_flow")}
+        board = bt
     except Exception:  # noqa: BLE001
         board = None
     return ok({
@@ -187,11 +185,6 @@ def hub() -> ApiResponse:
         risk.append({"level": "warning", "text": "尚未做过数据质检", "link": "/data/quality"})
     elif days_since_scan > 3:
         risk.append({"level": "warning", "text": f"已 {days_since_scan} 天未做数据质检", "link": "/data/quality"})
-    # 板块候选待处理（板块概念 R2 恢复闭环）：有 pending 候选 → 提示去数据质量页处理
-    if stages.get("board") and stages["board"].get("candidate_pending"):
-        risk.append({"level": "warning",
-                     "text": f"{stages['board']['candidate_pending']} 个板块成分候选待确认（被拦截快照需人工应用/丢弃）",
-                     "link": "/data/quality"})
     for s in down:
         risk.append({"level": "danger", "text": f"数据源 {s} 不可达", "link": "/data/schedule"})
     if not sched.get("enabled"):
@@ -211,21 +204,17 @@ def hub() -> ApiResponse:
 
 
 def _board_stage(c) -> dict | None:
-    """板块数据闭环环节（板块概念 R6/R21）：5 表行数 + 待处理候选 + 板块质检问题数。"""
+    """板块数据闭环环节（板块概念 R6/R21）：4 表行数 + 板块质检问题数。"""
     try:
         from backend.storage.ddl import list_tables
         have = set(list_tables(c))
         bt = {k: (int(c.query_df(f"SELECT count(*) AS n FROM {k}").iloc[0]["n"]) if k in have else 0)
-              for k in ("board_dict", "board_member", "board_bar", "board_fund_flow",
-                        "board_member_candidate")}
-        pending = int(c.query_df(
-            "SELECT count(*) AS n FROM board_member_candidate WHERE status='pending'").iloc[0]["n"]) \
-            if "board_member_candidate" in have else 0
+              for k in ("board_dict", "board_member", "board_bar", "board_fund_flow")}
         open_issues = int(c.query_df(
             "SELECT count(*) AS n FROM data_quality_issue WHERE status='open' "
-            "AND issue_type IN ('member_surge_shrink','board_member_wave','board_index_gap')").iloc[0]["n"]) \
+            "AND issue_type IN ('board_index_gap','board_member_incomplete','board_fund_unmatched')").iloc[0]["n"]) \
             if "data_quality_issue" in have else 0
-        return {**bt, "candidate_pending": pending, "open_issues": open_issues}
+        return {**bt, "open_issues": open_issues}
     except Exception:  # noqa: BLE001
         return None
 
@@ -306,6 +295,40 @@ def stock_quality(codes: str | None = None, keyword: str | None = None,
     code_list = [c.strip() for c in codes.split(",") if c.strip()] if codes else None
     kw = keyword.strip() if keyword and keyword.strip() else None
     return ok(DataIntegrityReport().stock_quality(code_list, kw, page, size))
+
+
+@router.get("/boards", response_model=ApiResponse, dependencies=_OVERVIEW)
+def search_boards(keyword: str | None = None, board_type: str | None = None,
+                  size: int = 30) -> ApiResponse:
+    """板块搜索（采集页「指定板块」下拉用）：板块代码/名称模糊匹配，返回 {code, name, board_type}。
+
+    board_dict 未初始化时返回空列表（前端引导先采字典）。
+    """
+    from backend.storage import get_client
+    c = get_client()
+    have = "board_dict" in set(
+        c.query_df("SELECT table_name FROM information_schema.tables WHERE table_schema='main'")
+        ["table_name"].tolist())
+    if not have:
+        return ok({"list": [], "total": 0})
+    conds, params = ["1=1"], []
+    kw = keyword.strip() if keyword and keyword.strip() else None
+    if kw:
+        # board_code 原样模糊；name 用小写匹配 lower(name)（DuckDB LIKE 大小写敏感）
+        conds.append("(board_code LIKE ? OR lower(name) LIKE ?)")
+        params += [f"%{kw}%", f"%{kw.lower()}%"]
+    if board_type:
+        conds.append("board_type=?")
+        params.append(board_type)
+    where = " AND ".join(conds)
+    total = int(c.query_df(
+        f"SELECT count(*) AS n FROM board_dict WHERE {where}", params).iloc[0]["n"])
+    df = c.query_df(
+        f"SELECT board_code, name, board_type FROM board_dict WHERE {where} "
+        f"ORDER BY board_code LIMIT ?", params + [int(size)])
+    rows = [{"code": str(r["board_code"]), "name": str(r["name"]),
+             "board_type": str(r["board_type"])} for _, r in df.iterrows()]
+    return ok({"list": rows, "total": total})
 
 
 # ── 质量修复（FR-DM-4）─────────────────────────────────────

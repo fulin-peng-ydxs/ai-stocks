@@ -102,7 +102,7 @@ export const CONFIG_SYSTEM_GROUP_SECTIONS: Record<string, ConfigFieldSection[]> 
   ths_board: [
     {
       key: 'request',
-      title: '同花顺请求',
+      title: '请求容错',
       hint: '控制同花顺板块直连源的请求间隔、超时、重试和退避（独立于通用行情源，频率限制更敏感）。',
       fieldPaths: [
         'ths_board.min_interval_sec',

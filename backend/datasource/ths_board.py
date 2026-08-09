@@ -156,15 +156,24 @@ class ThsBoardSource:
                 "Referer": "http://data.10jqka.com.cn/funds/gnzjl/",
             })
             if self._login_cookie:
-                base["Cookie"] = self._login_cookie
+                base["Cookie"] = self._replace_v(self._login_cookie, v)
         else:
             if self._login_cookie:
-                # 登录态：用登录 cookie（含 user/ticket/sess_tk 等登录凭证 + 有效 v），
-                # 解除详情页翻页登录墙；不再拼接独立 v（登录 cookie 已带 v）
-                base["Cookie"] = self._login_cookie
+                # 登录态：用登录 cookie（含 user/ticket/sess_tk 等登录凭证）解除详情页翻页登录墙，
+                # 但 cookie 里复制的 v 是**浏览器当时生成的、可能已过期**（v 与 IP/时间动态绑定），
+                # 必须用本机新生成的 v 覆盖，否则 q. 域详情页 401（实测 2026-08-09）。
+                base["Cookie"] = self._replace_v(self._login_cookie, v)
             else:
                 base["Cookie"] = f"v={v}"
         return base
+
+    @staticmethod
+    def _replace_v(cookie: str, new_v: str) -> str:
+        """把 Cookie 头里的旧 `v=...` 替换为新生成的 v（v 与 IP/时间动态绑定，复制的会过期）。
+
+        保留其余登录凭证（user/ticket/sess_tk 等）；cookie 里无 v 项时原样返回（data. 域 hexin-v 头兜底）。
+        """
+        return re.sub(r"(^|;\s*)v=[^;]*", rf"\g<1>v={new_v}", cookie)
 
     # ── 底层 HTTP ────────────────────────────────────────────
 

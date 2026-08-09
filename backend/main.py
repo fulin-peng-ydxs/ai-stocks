@@ -25,7 +25,6 @@ from backend.auth.middleware import AuthMiddleware, SecurityMiddleware
 from backend.api.auth import router as auth_router
 from backend.api.backtest import router as backtest_router
 from backend.api.board import router as board_router
-from backend.api.board_candidates import router as board_candidates_router
 from backend.api.config import router as config_router
 from backend.api.health import router as health_router
 from backend.api.indicators import router as indicators_router
@@ -99,7 +98,6 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(profiles_router)
     app.include_router(board_router)
-    app.include_router(board_candidates_router)
     app.include_router(stocks_router)
     app.include_router(backtest_router)
     app.include_router(config_router)

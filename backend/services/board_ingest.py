@@ -1,12 +1,12 @@
-"""板块概念数据采集服务（板块概念需求 R1-R4/R2 候选保存，agent-works/concept-industry-board/）。
+"""板块概念数据采集服务（板块概念需求 R1-R4，agent-works/concept-industry-board/）。
 
 编排逻辑（承接 plan §6.4 T4）：
 1. 字典两阶段：概念/行业字典 upsert（阶段一）→ 资金流并集补充 + has_fund_flow（阶段二）
    → 能力字段与 last_seen_at 收口。
-2. 成分快照：逐板块 `ThsBoardSource.get_board_members` → 完整性判定（缺页/失败/登录墙/波动超阈值）
-   → 完整快照 diff 落库（[in_date,out_date)）+ 刷新 member_count/member_history_start_date（已应用路径）；
-   被拦截快照 → payload_hash（SHA-256）→ 同 hash 幂等四态 → 同一 DuckDB 事务写
-   board_member_candidate + data_quality_issue（事务①）。
+2. 成分快照（只进不出）：逐板块 `ThsBoardSource.get_board_members` → 完整性判定（完整才落库）
+   → 完整快照 INSERT ON CONFLICT DO NOTHING（(board_code, code) 单行累积，不删除不 diff）
+   + 刷新 member_count/member_history_start_date；不完整快照整趟不落库、
+   data_update_log 记 failed + 写 board_member_incomplete issue（供质量页逐板块重采）。
 3. 指数：board_bar 幂等 upsert 原值。
 4. 资金流：board_fund_flow 全周期 upsert + 名称匹配映射、未匹配写质检不伪造代码。
 
@@ -18,12 +18,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
+from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 from backend.datasource.akshare_source import to_full_code
 from backend.datasource.ths_board import ThsBoardSource
@@ -31,12 +31,6 @@ from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("services.board_ingest")
-
-# 成分数异常波动阈值（R12）读生效配置 get_effective_settings().board_quality
-# （与 T7 scan_board_quality 同一口径，避免双口径；默认值 0.5/20 见 Settings BoardQualityConfig）
-
-# issue 类型（候选恢复闭环）
-ISSUE_TYPE_MEMBER_SURGE_SHRINK = "member_surge_shrink"
 
 
 def _asia_date() -> date:
@@ -128,15 +122,15 @@ class BoardIngestService:
                       has_fund_flow=EXCLUDED.has_fund_flow, last_seen_at=EXCLUDED.last_seen_at,
                       updated_at=now()""")
 
-    # ── 2. 成分快照（diff + 候选保存事务①）───────────────────
+    # ── 2. 成分快照（只进不出：完整快照落库）───────────────
 
     def ingest_board_members(self, snapshot_date: date | None = None,
                              board_codes: list[str] | None = None,
                              ctx: object | None = None) -> dict:
-        """逐板块成分快照：完整快照 diff 落库；被拦截快照写候选 + issue（事务①）。
+        """逐板块成分快照：完整快照 INSERT ON CONFLICT DO NOTHING 落库（只进不出）。
 
         board_codes=None → 全量（从 board_dict 读取有成分数据的板块）。单板块失败记日志不中断，
-        返回 {board_code: {"total"/"added"/"removed"/"blocked"/"candidate_id"...}}。
+        返回 {board_code: {"total"/"added"/"error"...}}。
         ctx：任务上下文（TaskContext/CliTaskContext 鸭子类型），逐板块打实时日志。
         """
         sdate = snapshot_date or _asia_date()
@@ -158,17 +152,13 @@ class BoardIngestService:
                 results[code] = self._ingest_one_member(code, board_type, sdate)
                 r = results[code]
                 if ctx:
-                    # 逐板块实时日志（对齐现有采集「指数 X 完成：N 行」模式，任务中心实时可见）
-                    if r.get("blocked"):
-                        ctx.log(f"成分 {i}/{n_total} {code}：完整 {r.get('total', 0)} 只"
-                                f"（拦截候选 {r.get('candidate_id', '')}）", "warn")
-                    else:
-                        ctx.log(f"成分 {i}/{n_total} {code}：{r.get('total', 0)} 只"
-                                f"（+{r.get('added', 0)} -{r.get('removed', 0)}）")
-            except Exception as e:  # noqa: BLE001 —— 单板块失败跳过不中断
+                    ctx.log(f"成分 {i}/{n_total} {code}：完整 {r.get('total', 0)} 只落库")
+            except Exception as e:  # noqa: BLE001 —— 单板块失败跳过不中断，记 data_update_log failed
                 log.warning("板块 %s 成分快照失败: %s", code, e)
                 results[code] = {"error": str(e)}
                 n_err += 1
+                self._log_update("board_member", sdate, sdate, 0, "failed", f"{code} {e}")
+                self._write_incomplete_quality(code, sdate, str(e))
                 if ctx:
                     ctx.log(f"成分 {i}/{n_total} {code}：失败 {e}", "error")
         # 更新留痕（聚合：一次运行一条日志，避免逐板块刷屏）
@@ -178,132 +168,39 @@ class BoardIngestService:
         return results
 
     def _ingest_one_member(self, code: str, board_type: str, sdate: date) -> dict:
+        """单板块成分快照（只进不出模型）：完整快照 INSERT ON CONFLICT DO NOTHING，不 diff 不删除。
+
+        - complete=True → 快照内每个 code `INSERT ... ON CONFLICT (board_code, code) DO NOTHING`
+          （已在表的不动、新出现的插入），同步刷新 board_dict.member_count（当前成分数）。
+        - complete=False（分页不完整/登录墙/401/异常）→ 抛 DataSourceError，整趟不落库，
+          上层 ingest_board_members 记失败、data_update_log 记 failed 待重采；已采旧数据原样保留。
+        """
         m = self.src.get_board_members(code, board_type)
         codes_full = [to_full_code(c) for c in m["codes"]]
         cur_set = set(codes_full)
-        # 波动阈值判定（R12 公式；读生效配置，与 T7 scan_board_quality 同一口径，避免双口径）
-        from backend.config import get_effective_settings
-        bq = get_effective_settings().board_quality
-        prev = self.c.query_df(
-            "SELECT member_count FROM board_dict WHERE board_code=?", [code])
-        prev_count = 0
-        if not prev.empty:
-            mc = prev.iloc[0]["member_count"]
-            if mc is not None and not pd.isna(mc):
-                prev_count = int(mc)
-        threshold = max(bq.absolute_change_threshold, int(prev_count * bq.relative_change_ratio))
-        wave_blocked = bool(prev_count) and abs(len(cur_set) - prev_count) >= threshold
-
-        if not m["complete"] or wave_blocked:
-            # 不完整快照 / 异常波动 → 不执行退出 diff，写候选 + issue（事务①）
-            return self._save_candidate(code, board_type, sdate, cur_set, wave_blocked)
-
-        # 完整快照 → diff 落库 + 刷新 member_count/member_history_start_date
-        # （同事务：member_count 冗余值与有效成员关系原子一致，违反 R2 验收）
-        diff = self._apply_member_diff(code, sdate, cur_set, member_count=len(cur_set))
-        return {"total": len(cur_set), "added": diff["added"], "removed": diff["removed"]}
-
-    def _apply_member_diff(self, code: str, sdate: date, cur_set: set[str],
-                           member_count: int | None = None,
-                           in_transaction: bool = False) -> dict:
-        """完整快照 diff：新股 in_date=sdate/out_date=NULL；缺席股 out_date=sdate（[in_date,out_date)）。
-
-        同一事务内落 diff + 刷新 board_dict.member_count（冗余值）与 member_history_start_date（首次写入），
-        保证「member_count 与有效成员数一致」原子成立（R2 验收）。
-        in_transaction=True：调用方已开事务（如 T9 候选 apply 外层事务），本方法不自行 BEGIN/COMMIT
-        （DuckDB 不支持嵌套事务），只执行 SQL，由调用方统一提交/回滚。
-        """
-        # 当前有效成员
-        eff = self.c.query_df(
-            "SELECT code FROM board_member WHERE board_code=? AND in_date<=? "
-            "AND (out_date IS NULL OR out_date>?)",
-            [code, sdate, sdate])
-        eff_set = set(eff["code"].tolist())
-        added = sorted(cur_set - eff_set)
-        removed = sorted(eff_set - cur_set)
-
-        def _exec() -> None:
-            for c in added:
-                self.c.execute(
-                    "INSERT INTO board_member (board_code, code, in_date, out_date) "
-                    "VALUES (?, ?, ?, NULL)",
-                    [code, c, sdate])
-            for c in removed:
-                self.c.execute(
-                    "UPDATE board_member SET out_date=? WHERE board_code=? AND code=? "
-                    "AND out_date IS NULL",
-                    [sdate, code, c])
-            if member_count is not None:
-                self.c.execute(
-                    "UPDATE board_dict SET member_count=?, updated_at=now() WHERE board_code=?",
-                    [member_count, code])
-                self.c.execute(
-                    "UPDATE board_dict SET member_history_start_date="
-                    "COALESCE(member_history_start_date, ?), updated_at=now() WHERE board_code=?",
-                    [sdate, code])
-
-        if in_transaction:
-            _exec()   # 调用方已开事务，直接执行
-        else:
-            with self.c.transaction():
-                _exec()
-        return {"added": len(added), "removed": len(removed)}
-
-    def _payload_hash(self, sdate: date, codes: set[str]) -> str:
-        """payload_hash = SHA-256(ISO日期 + "\\n" + sorted(set(归一化代码)).join("\\n"))（UTF-8 小写 hex）。"""
-        norm = sorted(codes)
-        payload = f"{sdate.isoformat()}\n" + "\n".join(norm)
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-    def _save_candidate(self, code: str, board_type: str, sdate: date,
-                        cur_set: set[str], wave_blocked: bool) -> dict:
-        """被拦截快照 → 同 hash 幂等四态 → 事务①写候选 + issue。"""
-        h = self._payload_hash(sdate, cur_set)
-        # 幂等四态：同 hash + pending → 返回已有；+ applied/discarded → 跳过；不同 hash → 新候选
-        existing = self.c.query_df(
-            "SELECT candidate_id, status FROM board_member_candidate "
-            "WHERE board_code=? AND snapshot_date=? AND payload_hash=?",
-            [code, sdate, h])
-        if not existing.empty:
-            st = str(existing.iloc[0]["status"])
-            if st in ("applied", "discarded"):
-                return {"blocked": True, "reason": f"same_hash_{st}", "total": len(cur_set)}
-            return {"blocked": True, "reason": "same_hash_pending",
-                    "candidate_id": existing.iloc[0]["candidate_id"], "total": len(cur_set)}
-        # 同日多候选：同日已有 applied → 新候选 apply_allowed=false（接口层判定）；入库允许 pending 并存
-        cid = f"bc_{code}_{sdate.strftime('%Y%m%d')}_{h[:8]}"
-        issue_id = int(self.c.query_df("SELECT nextval('seq_quality_issue') AS v").iloc[0]["v"])
-        diff = self._candidate_diff_summary(code, sdate, cur_set)
+        if not m["complete"]:
+            # 完整性即闸门：不完整快照整趟不落库（含完全没取到的空快照），抛错走失败留痕
+            raise DataSourceError(
+                f"板块 {code} 成分快照不完整（complete=False，取到 {len(cur_set)} 只），不落库待重采")
+        if not cur_set:
+            # 完整但空快照：源端返回空成分（罕见，如板块成分为空），记失败
+            raise DataSourceError(f"板块 {code} 成分快照完整但为空，记失败待重采")
+        # 完整快照 → 只进不出落库（已有不动、新增插入），同事务刷新 member_count
         with self.c.transaction():
+            ph = _in_placeholders(len(cur_set))
             self.c.execute(
-                "INSERT INTO board_member_candidate "
-                "(candidate_id, issue_id, board_code, snapshot_date, codes_json, payload_hash, "
-                "diff_summary, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
-                [cid, issue_id, code, sdate,
-                 json.dumps(sorted(cur_set)), h,
-                 json.dumps(diff, ensure_ascii=False)])
+                f"INSERT INTO board_member (board_code, code) "
+                f"SELECT ?, code FROM (VALUES {','.join(f'(?)' for _ in cur_set)}) t(code) "
+                f"ON CONFLICT (board_code, code) DO NOTHING",
+                [code, *sorted(cur_set)])
             self.c.execute(
-                "INSERT INTO data_quality_issue "
-                "(id, code, trade_date, issue_type, severity, status, "
-                "detail, detected_at, fix_task_id) "
-                "VALUES (?, ?, ?, ?, 'high', 'open', ?, now(), NULL)",
-                [issue_id, code, sdate, ISSUE_TYPE_MEMBER_SURGE_SHRINK,
-                 json.dumps({"reason": "wave" if wave_blocked else "incomplete",
-                             "snapshot_date": sdate.isoformat(),
-                             "diff": diff}, ensure_ascii=False)])
-        return {"blocked": True, "reason": "wave" if wave_blocked else "incomplete",
-                "candidate_id": cid, "issue_id": issue_id, "total": len(cur_set)}
-
-    def _candidate_diff_summary(self, code: str, sdate: date, cur_set: set[str]) -> dict:
-        """候选 diff 摘要：新增/退出/净变化（相对当前有效成员）。"""
-        eff = self.c.query_df(
-            "SELECT code FROM board_member WHERE board_code=? AND in_date<=? "
-            "AND (out_date IS NULL OR out_date>?)",
-            [code, sdate, sdate])
-        eff_set = set(eff["code"].tolist())
-        added = len(cur_set - eff_set)
-        removed = len(eff_set - cur_set)
-        return {"added": added, "removed": removed, "net": len(cur_set) - len(eff_set)}
+                "UPDATE board_dict SET member_count=?, updated_at=now() WHERE board_code=?",
+                [len(cur_set), code])
+            self.c.execute(
+                "UPDATE board_dict SET member_history_start_date=COALESCE(member_history_start_date, ?), "
+                "updated_at=now() WHERE board_code=?",
+                [sdate, code])
+        return {"total": len(cur_set), "added": len(cur_set)}
 
     # ── 3. 指数 ──────────────────────────────────────────────
 
@@ -474,3 +371,26 @@ class BoardIngestService:
                 "VALUES (?, ?, ?, 'board_fund_unmatched', 'mid', "
                 "'open', ?, now(), NULL)",
                 [issue_id, None, sdate, json.dumps({"name": name}, ensure_ascii=False)])
+
+    def _write_incomplete_quality(self, code: str, sdate: date, reason: str) -> None:
+        """成分快照采集不完整/失败写质检（board_member_incomplete），供数据质量页逐板块重采。
+
+        幂等：同板块未解决（open）的 board_member_incomplete 不重复建（采集失败会反复触发，
+        避免刷屏；重采成功/复检通过后 resolved 收敛）。
+        """
+        existing = self.c.query_df(
+            "SELECT count(*) AS n FROM data_quality_issue "
+            "WHERE issue_type='board_member_incomplete' AND code=? AND status='open'",
+            [code])
+        if int(existing.iloc[0]["n"]) > 0:
+            return
+        issue_id = int(self.c.query_df(
+            "SELECT nextval('seq_quality_issue') AS v").iloc[0]["v"])
+        self.c.execute(
+            "INSERT INTO data_quality_issue "
+            "(id, code, trade_date, issue_type, severity, status, "
+            "detail, detected_at, fix_task_id) "
+            "VALUES (?, ?, ?, 'board_member_incomplete', 'mid', "
+            "'open', ?, now(), NULL)",
+            [issue_id, code, sdate, json.dumps({"reason": reason, "snapshot_date": sdate.isoformat()},
+                                               ensure_ascii=False)])
