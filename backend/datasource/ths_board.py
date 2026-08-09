@@ -99,7 +99,7 @@ class ThsBoardSource:
     def __init__(
         self,
         session: requests.Session | None = None,
-        min_interval_sec: float = 2.0,
+        min_interval_sec: float = 1.0,
         timeout: float = 10.0,
         max_retries: int = 3,
         retry_backoff_sec: float = 2.0,
