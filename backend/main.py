@@ -31,6 +31,7 @@ from backend.api.indicators import router as indicators_router
 from backend.api.layout import router as layout_router
 from backend.api.profiles import router as profiles_router
 from backend.api.score_profiles import router as score_profiles_router
+from backend.api.sectors import router as sectors_router
 from backend.api.trade_profiles import router as trade_profiles_router
 from backend.api.user_preferences import router as user_preferences_router
 from backend.api.stock_groups import router as stock_groups_router
@@ -104,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(indicators_router)
     app.include_router(layout_router)
     app.include_router(score_profiles_router)
+    app.include_router(sectors_router)
     app.include_router(trade_profiles_router)
     app.include_router(user_preferences_router)
     app.include_router(stock_groups_router)

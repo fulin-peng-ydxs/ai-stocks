@@ -41,6 +41,7 @@ BUSINESS_RESOURCE_CODES: tuple[str, ...] = (
     "trade-profile:view", "trade-profile:save", "trade-profile:delete", "trade-profile:preview",
     "screen-profile:view", "screen-profile:save", "screen-profile:delete", "screen:run",
     "stocks:view", "stocks:trade-eval",
+    "sectors:view",  # 板块行情列表/详情（板块概念 R22，T10a）
     "stock-group:view", "stock-group:create", "stock-group:update", "stock-group:delete",
     "stock-group:member-update",
     "backtest:view", "backtest:run", "backtest:robust", "backtest:delete",

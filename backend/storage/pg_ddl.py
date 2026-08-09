@@ -780,6 +780,7 @@ _SEED_ROLES: tuple[tuple[str, str, str, bool, str], ...] = (
 _SEED_MENU_TREE: list = [
     ("quotes", "最新行情", "TrendCharts", "login", [
         ("/stocks", "个股行情", None, "login", []),
+        ("/sectors", "板块行情", None, "login", []),
         ("/board", "每日榜单", None, "login", []),
     ]),
     ("/screen", "策略筛选", "Filter", "login", []),
@@ -868,6 +869,8 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/stocks", "stock-group:update",        "编辑自选分组", "api", "PATCH",  "/api/stock-groups/{gid}"),
     ("/stocks", "stock-group:delete",        "删除自选分组", "api", "DELETE", "/api/stock-groups/{gid}"),
     ("/stocks", "stock-group:member-update", "维护分组成员", "api", "POST",   "/api/stock-groups/{gid}/members"),
+    # 板块行情（/sectors，login，板块概念 R22/T10a）
+    ("/sectors", "sectors:view",             "查看板块行情", "api", "GET",    "/api/sectors"),
     # B) 策略回测（/backtest，login）
     ("/backtest", "backtest:view",   "查看回测记录", "api", "GET",    "/api/backtest/runs"),
     ("/backtest", "backtest:run",    "运行回测",     "api", "POST",   "/api/backtest/run"),
@@ -919,7 +922,7 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
 
 # 默认授权：业务页所有登录用户可用；用户管理授予租户管理员（管本租户用户）；system 由 resolver 判全量。
 _BUSINESS_MENU_CODES: tuple[str, ...] = (
-    "quotes", "/stocks", "/board", "/screen", "/backtest", "/training",
+    "quotes", "/stocks", "/sectors", "/board", "/screen", "/backtest", "/training",
     "system", "/system/config", "/system/config/score", "/system/config/trade")
 _TENANT_ADMIN_EXTRA_MENUS: tuple[str, ...] = (
     "system", "permission", "/system/users")
