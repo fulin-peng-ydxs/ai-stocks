@@ -465,3 +465,45 @@ def test_scan_board_quality_convergence_keeps_member_surge(client, monkeypatch):
     left = client.query_df(
         "SELECT count(*) n FROM data_quality_issue WHERE issue_type='member_surge_shrink'")
     assert int(left.iloc[0]["n"]) == 1
+
+
+def test_board_update_uses_latest_open_day(client, monkeypatch):
+    """板块 update 指数区间复用现有交易日语义（_latest_open_day），非裸 today。"""
+    from datetime import date, timedelta
+    from backend.services import ingest as ingest_mod
+    from backend.services.ingest import IngestionService
+    from backend.services.board_ingest import BoardIngestService
+
+    captured = {}
+
+    def fake_ingest_board_dict(self, snapshot_date=None):
+        return {"concept": 375, "industry": 90, "total": 465}
+
+    def fake_ingest_board_members(self, snapshot_date=None, board_codes=None):
+        return {}
+
+    def fake_ingest_board_bar(self, start, end=None, board_codes=None):
+        captured["start"] = start
+        captured["end"] = end
+        return {"rows": 0, "boards": 0}
+
+    def fake_ingest_board_fund_flow(self, snapshot_date=None, periods=None):
+        captured["periods"] = periods
+        return {"rows": 0, "unmatched": 0}
+
+    # mock BoardIngestService 子方法 + _latest_open_day 返回固定交易日
+    monkeypatch.setattr(BoardIngestService, "ingest_board_dict", fake_ingest_board_dict, raising=True)
+    monkeypatch.setattr(BoardIngestService, "ingest_board_members", fake_ingest_board_members, raising=True)
+    monkeypatch.setattr(BoardIngestService, "ingest_board_bar", fake_ingest_board_bar, raising=True)
+    monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow", fake_ingest_board_fund_flow, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    # _latest_open_day 返回 2026-08-07（周五交易日）
+    monkeypatch.setattr(ingest_mod.IngestionService, "_latest_open_day",
+                        lambda self: date(2026, 8, 7), raising=True)
+
+    IngestionService().ingest_board(mode="update")
+    # 指数区间：start = 最近交易日 - 7 天 = 07-31；end = 最近交易日
+    assert captured["start"] == date(2026, 8, 7) - timedelta(days=7)
+    assert captured["end"] == date(2026, 8, 7)
+    # 资金流：update 只采即时
+    assert captured["periods"] == ("即时",)

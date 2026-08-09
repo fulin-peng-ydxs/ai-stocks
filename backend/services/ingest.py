@@ -1812,42 +1812,68 @@ class IngestionService:
 
         svc = BoardIngestService()
         result: dict = {"dict": None, "members": {}, "bar": None, "fund_flow": None, "failed": []}
+        # 阶段日志对齐现有采集（阶段 i/4 + 进度推进，前端任务中心实时可见）
         if ctx:
             ctx.log(f"板块采集开始（{mode}）：字典 → 成分快照 → 指数 → 资金流")
+            ctx.progress(0.05, f"板块采集（{mode}）…")
             ctx.flush()
         try:
             result["dict"] = svc.ingest_board_dict()
+            if ctx:
+                ctx.log(f"步骤 1/4 板块字典：概念 {result['dict'].get('concept', 0)} / "
+                        f"行业 {result['dict'].get('industry', 0)}")
         except Exception as e:  # noqa: BLE001
             log.warning("板块字典采集失败: %s", e)
             result["failed"].append(f"dict: {e}")
+        if ctx:
+            ctx.progress(0.3, "板块成分快照…")
+            ctx.flush()
         try:
             result["members"] = svc.ingest_board_members(board_codes=board_codes)
-            result["failed"] += [c for c, r in result["members"].items() if "error" in r]
+            errs = [c for c, r in result["members"].items() if "error" in r]
+            result["failed"] += errs
+            if ctx:
+                ctx.log(f"步骤 2/4 成分快照：{len(result['members'])} 个板块"
+                        f"（失败 {len(errs)}）")
         except Exception as e:  # noqa: BLE001
             log.warning("板块成分快照采集失败: %s", e)
             result["failed"].append(f"members: {e}")
+        if ctx:
+            ctx.progress(0.6, "板块指数…")
+            ctx.flush()
         try:
             if mode == "backfill":
                 # 全量回填：源端可用起始年到今天（实测 `d.` 域仅近 3 年、2021-2023 404，故 2024 起）
                 result["bar"] = svc.ingest_board_bar(_d(2024, 1, 1), board_codes=board_codes)
             else:
-                # 增量：只补最近交易日（往前取 5 天缓冲，覆盖跨周末）
-                end = _d.today()
-                result["bar"] = svc.ingest_board_bar(end - _td(days=5), board_codes=board_codes)
+                # 增量：复用现有采集交易日语义——截止到最近交易日（非交易日回退），
+                # 区间起点往前取 7 个自然日缓冲覆盖跨周末/长假缺口
+                end = self._latest_open_day()   # 与行情 update 同一交易日口径
+                result["bar"] = svc.ingest_board_bar(end - _td(days=7), end=end,
+                                                     board_codes=board_codes)
+            if ctx:
+                ctx.log(f"步骤 3/4 板块指数：{result['bar'].get('rows', 0)} 行 / "
+                        f"{result['bar'].get('boards', 0)} 板块")
         except Exception as e:  # noqa: BLE001
             log.warning("板块指数采集失败: %s", e)
             result["failed"].append(f"bar: {e}")
+        if ctx:
+            ctx.progress(0.85, "板块资金流…")
+            ctx.flush()
         try:
             if mode == "backfill":
                 result["fund_flow"] = svc.ingest_board_fund_flow()
             else:
                 result["fund_flow"] = svc.ingest_board_fund_flow(periods=("即时",))
+            if ctx:
+                ctx.log(f"步骤 4/4 板块资金流：{result['fund_flow'].get('rows', 0)} 行"
+                        f"（未匹配 {result['fund_flow'].get('unmatched', 0)}）")
         except Exception as e:  # noqa: BLE001
             log.warning("板块资金流采集失败: %s", e)
             result["failed"].append(f"fund_flow: {e}")
         if ctx:
+            ctx.progress(1.0, "板块采集完成")
             ctx.log(f"板块采集完成（{mode}）：字典{result['dict']} 成分{len(result['members'])} 板块 "
                     f"指数{result['bar']} 资金流{result['fund_flow']} 失败{result['failed']}")
             ctx.flush()
         return result
-
