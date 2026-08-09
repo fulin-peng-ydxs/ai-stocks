@@ -593,7 +593,7 @@ onMounted(load)
           </el-tab-pane>
 
           <el-tab-pane label="板块数据" name="board" lazy class="board-pane">
-            <div class="overview-panel board-panel" v-if="ov?.board">
+            <div class="overview-panel" v-if="ov?.board">
               <div class="board-hero">
                 <div class="board-hero-main">
                   <span class="board-eyebrow">同花顺板块源</span>
@@ -863,8 +863,7 @@ onMounted(load)
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 /* ── 板块数据 tab ── */
-/* 板块面板承接内部滚动：el-tabs 内容区 overflow:hidden 会裁掉超高内容，
-   低高度下 hero 已占满面板，board-layout 无剩余高度可滚，故让 pane 整体滚动兜底。 */
+/* el-tabs 内容区 overflow:hidden 会裁超高内容，板块面板须自行承接滚动。 */
 .board-pane {
   overflow-y: auto;
 }
