@@ -703,6 +703,96 @@ M_TRAINING_TABLES: dict[str, str] = {
     "training_trade": DDL_TRAINING_TRADE,
 }
 
+# ── 板块概念数据（agent-works/concept-industry-board/，R1-R6）──────────────
+# 同花顺板块四块数据（字典/成分/指数/资金流）+ 成分快照候选（R2 合法异常恢复）。
+# 字段契约按需求 §6.1；表达式唯一索引（候选「每板块每日最多一个 applied」）实测
+# DuckDB 1.5.3 创建与强制均生效（INSERT/UPDATE 两路径拦截，见 T3 单测）。
+DDL_BOARD_DICT = """
+CREATE TABLE IF NOT EXISTS board_dict (
+    board_code VARCHAR PRIMARY KEY,        -- 同花顺路径 code（概念 30xxxx / 行业 88xxxx），取数/跳转统一用它
+    app_code   VARCHAR,                    -- 同花顺 App 内部代码（概念 clid 88xxxx；行业 clid=路径 code）
+    name       VARCHAR NOT NULL,
+    board_type VARCHAR NOT NULL,           -- concept | industry
+    source     VARCHAR NOT NULL DEFAULT 'ths',  -- 来源系统（非能力标记）
+    has_members  BOOLEAN DEFAULT FALSE,    -- 是否有成分股数据
+    has_bar      BOOLEAN DEFAULT FALSE,    -- 是否有板块指数
+    has_fund_flow BOOLEAN DEFAULT FALSE,   -- 是否有资金流
+    member_count  BIGINT,                  -- 最近一次已应用完整快照的冗余成分数；页面仍以有效 board_member 实时统计为准
+    member_history_start_date DATE,        -- 成分快照首次完整采集日（板块级）
+    last_seen_at  DATE,                    -- 最近一次在任意源出现
+    updated_at    TIMESTAMP
+);
+"""
+
+# 成分股多对多（快照 diff 累积）；区间语义 [in_date, out_date)
+DDL_BOARD_MEMBER = """
+CREATE TABLE IF NOT EXISTS board_member (
+    board_code VARCHAR,
+    code       VARCHAR,                    -- 6 位代码补交易所后缀对齐 stock_basic.code（如 600000.SH）
+    in_date    DATE,
+    out_date   DATE,                       -- NULL=仍有效
+    PRIMARY KEY (board_code, code, in_date)
+);
+"""
+
+# 板块指数日线（原始连续指数，原值不套个股复权链）
+DDL_BOARD_BAR = """
+CREATE TABLE IF NOT EXISTS board_bar (
+    board_code VARCHAR,
+    trade_date DATE,
+    open  DOUBLE,
+    high  DOUBLE,
+    low   DOUBLE,
+    close DOUBLE,
+    volume DOUBLE,
+    amount DOUBLE,
+    PRIMARY KEY (board_code, trade_date)
+);
+"""
+
+# 板块资金流（概念+行业，多周期）
+DDL_BOARD_FUND_FLOW = """
+CREATE TABLE IF NOT EXISTS board_fund_flow (
+    board_code    VARCHAR,
+    snapshot_date DATE,
+    period        VARCHAR,                 -- 即时 | 3日 | 5日 | 10日 | 20日
+    inflow    DOUBLE,
+    outflow   DOUBLE,
+    net_inflow DOUBLE,
+    net_ratio DOUBLE,                      -- 涨跌幅/阶段涨跌幅（%）
+    leader_stock VARCHAR,                  -- 领涨股（资金流源自带）
+    leader_pct   DOUBLE,                   -- 领涨股涨幅（%）
+    PRIMARY KEY (board_code, snapshot_date, period)
+);
+"""
+
+# 成分快照候选（R2 合法异常恢复：被拦截板块暂存，人工确认应用/丢弃）
+DDL_BOARD_MEMBER_CANDIDATE = """
+CREATE TABLE IF NOT EXISTS board_member_candidate (
+    candidate_id  VARCHAR PRIMARY KEY,
+    issue_id      VARCHAR,                 -- 关联 data_quality_issue（DuckDB 同库）
+    board_code    VARCHAR,
+    snapshot_date DATE,
+    codes_json    VARCHAR,                 -- 全量成分代码（JSON 数组）
+    payload_hash  VARCHAR(64) NOT NULL CHECK (regexp_full_match(payload_hash, '[0-9a-f]{64}')),
+    diff_summary  VARCHAR,                 -- 新增/退出/净变化数（JSON）
+    status        VARCHAR NOT NULL,        -- pending | applied | discarded
+    applied_at    TIMESTAMP,
+    UNIQUE (board_code, snapshot_date, payload_hash)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_board_member_candidate_one_applied
+ON board_member_candidate(board_code, snapshot_date,
+  (CASE WHEN status='applied' THEN 1 ELSE NULL END));
+"""
+
+M_BOARD_TABLES: dict[str, str] = {
+    "board_dict": DDL_BOARD_DICT,
+    "board_member": DDL_BOARD_MEMBER,
+    "board_bar": DDL_BOARD_BAR,
+    "board_fund_flow": DDL_BOARD_FUND_FLOW,
+    "board_member_candidate": DDL_BOARD_MEMBER_CANDIDATE,
+}
+
 # 数据维度注册表 seed（DM-D4/D5）：已采集维度 + 规划中占位（股东数/筹码峰）。
 # 幂等 ON CONFLICT DO NOTHING：已存在则保留（允许后续人工调整 status）。
 _DIMENSION_SEED: list[tuple] = [
@@ -720,6 +810,9 @@ _DIMENSION_SEED: list[tuple] = [
      "股东户数/十大股东等，规划中，暂未采集"),
     ("chip_peak",    "筹码分布",   "planned",   "待定（需逐笔/分价成交）",     '[]',
      "筹码峰/成本分布，规划中，暂未采集"),
+    ("board", "板块数据", "collected", "同花顺(ThsBoardSource)",
+     '["board_dict","board_member","board_bar","board_fund_flow"]',
+     "概念/行业板块字典、成分关系、指数与资金流，支撑板块行情页"),
 ]
 
 # 轻量迁移：给已存在的旧表补列（CREATE TABLE IF NOT EXISTS 不会改既有表结构）
@@ -797,7 +890,7 @@ def init_db(client: DuckDBClient | None = None) -> list[str]:
         client.execute(seq_sql)
     created: list[str] = []
     all_tables = {**M1_TABLES, **M2_TABLES, **M3_TABLES, **M4_TABLES, **M5_TABLES, **M6_TABLES,
-                  **M28_TABLES, **M_TRAINING_TABLES}
+                  **M28_TABLES, **M_TRAINING_TABLES, **M_BOARD_TABLES}
     for name, sql in all_tables.items():
         client.execute(sql)
         created.append(name)

@@ -14,6 +14,8 @@ from backend.storage.ddl import (
     M6_TABLES,
     M28_TABLES,
     M_TRAINING_TABLES,
+    M_BOARD_TABLES,
+    _DIMENSION_SEED,
     init_db,
     list_tables,
 )
@@ -32,6 +34,7 @@ def test_init_db_creates_all_tables():
             **M6_TABLES,
             **M28_TABLES,
             **M_TRAINING_TABLES,
+            **M_BOARD_TABLES,
         }
         assert set(created) == set(expected.keys())
         tables = list_tables(client)
@@ -153,3 +156,154 @@ def test_source_capabilities_and_contract():
         bao.get_valuation("600000.SH", date(2024, 1, 1), date(2024, 1, 2))
     with pytest.raises(NotImplementedError):
         ak.get_industry()
+
+
+# ── 板块概念表（T3，R1-R6 数据层）─────────────────────────────
+
+
+def test_board_tables_created():
+    """5 张板块表 + board 维度行。"""
+    with DuckDBClient(db_path=":memory:") as client:
+        init_db(client)
+        tables = list_tables(client)
+        for t in M_BOARD_TABLES:
+            assert t in tables
+        # board 维度行存在
+        df = client.query_df(
+            "SELECT dimension, status, tables FROM data_dimension_registry WHERE dimension='board'")
+        assert len(df) == 1
+        assert df.iloc[0]["status"] == "collected"
+        assert "board_dict" in df.iloc[0]["tables"]
+
+
+def test_board_dimension_seed_registered():
+    """_DIMENSION_SEED 含 board 行（契约：tables 指向 4 张采集表）。"""
+    row = [r for r in _DIMENSION_SEED if r[0] == "board"]
+    assert row, "board 维度必须注册"
+    assert row[0][2] == "collected"
+    assert "board_dict" in row[0][4] and "board_member" in row[0][4]
+    assert "board_bar" in row[0][4] and "board_fund_flow" in row[0][4]
+
+
+def test_board_init_idempotent():
+    """重复 init_db 不报错（IF NOT EXISTS + 索引 IF NOT EXISTS）。"""
+    with DuckDBClient(db_path=":memory:") as client:
+        init_db(client)
+        init_db(client)
+        tables = list_tables(client)
+        assert "board_member_candidate" in tables
+
+
+def test_board_payload_hash_check():
+    """payload_hash CHECK：仅接受 64 位小写 hex，拒绝大写/63/65 位/Base64/非法字符。
+
+    每个非法值用独立连接验证（DuckDBClient 异常后重建 :memory: 连接为空库）。
+    """
+    with DuckDBClient(db_path=":memory:") as client:
+        init_db(client)
+        ok = "a" * 64
+        client.execute(
+            "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+            "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
+            ["c1", "309121", ok])
+    for bad, desc in [("A" * 64, "大写"), (ok[:-1], "63位"), (ok + "a", "65位"),
+                      ("SGVsbG8=" * 8 + "ab", "Base64"), (ok[:-1] + "Z", "非法字符")]:
+        with DuckDBClient(db_path=":memory:") as c:
+            init_db(c)
+            with pytest.raises(Exception):  # CHECK 拒绝（ConstraintException/其他）
+                c.execute(
+                    "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+                    "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
+                    ["bad-" + desc, "309121", bad])
+
+
+def test_board_candidate_unique_same_day_same_hash():
+    """候选唯一约束 (board_code, snapshot_date, payload_hash)：同板块同日同 hash 第二行被拦。"""
+    with DuckDBClient(db_path=":memory:") as client:
+        init_db(client)
+        h = "b" * 64
+        client.execute(
+            "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+            "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
+            ["c1", "309121", h])
+        with pytest.raises(Exception):
+            client.execute(
+                "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+                "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
+                ["c2", "309121", h])
+
+
+def test_board_one_applied_expression_index():
+    """表达式唯一索引：同日多 pending/discarded 并存，但拒绝第二条 applied（INSERT 与 UPDATE 两路径）。"""
+    with DuckDBClient(db_path=":memory:") as client:
+        init_db(client)
+        h1, h2, h3 = "a" * 64, "b" * 64, "c" * 64
+        for cid, h in [("c1", h1), ("c2", h2), ("c3", h3)]:
+            client.execute(
+                "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+                "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
+                [cid, "309121", h])
+        # 首个 applied 成功
+        client.execute(
+            "UPDATE board_member_candidate SET status='applied' WHERE candidate_id='c1'")
+        # 同板块同日第二条 applied：UPDATE 路径被拦（此后连接重建为空库，不再复用）
+        with pytest.raises(Exception):
+            client.execute(
+                "UPDATE board_member_candidate SET status='applied' WHERE candidate_id='c2'")
+    # 独立连接：pending/discarded 并存 + 跨板块/跨日 applied + INSERT 路径拦截
+    with DuckDBClient(db_path=":memory:") as client2:
+        init_db(client2)
+        h1, h2, h3 = "a" * 64, "b" * 64, "c" * 64
+        for cid, h in [("c1", h1), ("c2", h2), ("c3", h3)]:
+            client2.execute(
+                "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+                "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'pending')",
+                [cid, "309121", h])
+        client2.execute(
+            "UPDATE board_member_candidate SET status='applied' WHERE candidate_id='c1'")
+        # 其余 pending/discarded 可并存
+        client2.execute(
+            "UPDATE board_member_candidate SET status='discarded' WHERE candidate_id='c3'")
+        # 跨板块/跨日 applied 互不影响
+        client2.execute(
+            "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+            "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'applied')",
+            ["c4", "881121", h2])
+        client2.execute(
+            "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+            "payload_hash, status) VALUES (?, ?, DATE '2026-01-06', ?, 'applied')",
+            ["c5", "309121", h3])
+        # 第二条 applied 的 INSERT 路径：直接 INSERT applied 同日被拦（此后连接重建）
+        with pytest.raises(Exception):
+            client2.execute(
+                "INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+                "payload_hash, status) VALUES (?, ?, DATE '2026-01-05', ?, 'applied')",
+                ["c6", "309121", "d" * 64])
+
+
+def test_board_fund_flow_pk_and_board_member_pk():
+    """board_fund_flow 与 board_member 主键（board_code,snapshot_date,period / board_code,code,in_date）。
+
+    注意：DuckDBClient.execute 异常后置 `_conn=None` 并重建连接——对 `:memory:` 库重建即空库，
+    因此冲突断言后不得再依赖表存在（每个冲突用独立连接验证）。
+    """
+    with DuckDBClient(db_path=":memory:") as client:
+        init_db(client)
+        client.execute(
+            "INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
+            "VALUES ('309121', DATE '2026-01-05', '即时', 10.0)")
+        # PK 冲突（此连接随后被重建为空库，不再复用）
+        with pytest.raises(Exception):
+            client.execute(
+                "INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
+                "VALUES ('309121', DATE '2026-01-05', '即时', 20.0)")
+    # 独立连接验证 board_member 主键
+    with DuckDBClient(db_path=":memory:") as client2:
+        init_db(client2)
+        client2.execute(
+            "INSERT INTO board_member (board_code, code, in_date) "
+            "VALUES ('309121', '300476.SZ', DATE '2026-01-05')")
+        with pytest.raises(Exception):
+            client2.execute(
+                "INSERT INTO board_member (board_code, code, in_date) "
+                "VALUES ('309121', '300476.SZ', DATE '2026-01-05')")
