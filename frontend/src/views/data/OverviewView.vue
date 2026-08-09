@@ -238,6 +238,65 @@ function gotoBoard() {
 function gotoBoardTab() {
   activeWorkspaceTab.value = 'board'
 }
+const boardCoverageItems = computed(() => {
+  const board = ov.value?.board
+  return [
+    {
+      key: 'member',
+      label: '成分覆盖',
+      desc: '板块字典已匹配成分股的覆盖进度',
+      ready: board?.member_ready,
+      target: board?.member_target,
+    },
+    {
+      key: 'bar',
+      label: '指数覆盖',
+      desc: '板块指数行情可用于趋势对照的覆盖进度',
+      ready: board?.bar_ready,
+      target: board?.bar_target,
+    },
+    {
+      key: 'fund',
+      label: '资金流覆盖',
+      desc: '资金流快照可用于板块热度跟踪的覆盖进度',
+      ready: board?.fund_ready,
+      target: board?.fund_target,
+    },
+  ].map((item) => ({ ...item, pct: coveragePct(item.ready, item.target) }))
+})
+const boardOverallCoverage = computed(() => {
+  const totals = boardCoverageItems.value.reduce((acc, item) => ({
+    ready: acc.ready + (item.ready ?? 0),
+    target: acc.target + (item.target ?? 0),
+  }), { ready: 0, target: 0 })
+  return coveragePct(totals.ready, totals.target)
+})
+const boardIssueItems = computed(() => {
+  const issues = ov.value?.board?.issues_by_type ?? {}
+  return [
+    { key: 'board_member_incomplete', label: '成分不完整', hint: '待重采成分' },
+    { key: 'board_index_gap', label: '指数缺口', hint: '补齐行情缺口' },
+    { key: 'board_fund_unmatched', label: '资金流未匹配', hint: '检查资金流归属' },
+  ].map((item) => ({ ...item, count: issues[item.key] ?? 0 })).filter((item) => item.count > 0)
+})
+const boardFreshnessItems = computed(() => {
+  const board = ov.value?.board
+  const latest = ov.value?.latest_trade_date || ''
+  return [
+    { key: 'trade', label: '最新交易日', value: ov.value?.latest_trade_date, stale: false },
+    { key: 'bar', label: '板块指数', value: board?.latest_bar_date, stale: Boolean(board?.latest_bar_date && board.latest_bar_date < latest) },
+    { key: 'fund', label: '资金流快照', value: board?.latest_fund_date, stale: Boolean(board?.latest_fund_date && board.latest_fund_date < latest) },
+  ]
+})
+function dateOnly(value?: string | null): string {
+  return (value || '—').slice(0, 10)
+}
+function boardUpdateStatus(status?: string): { label: string; type: 'success' | 'danger' | 'warning' | 'info' } {
+  if (status === 'success') return { label: '成功', type: 'success' }
+  if (status === 'failed') return { label: '失败', type: 'danger' }
+  if (status === 'running') return { label: '运行中', type: 'warning' }
+  return { label: status || '未知', type: 'info' }
+}
 function coverageText(ready: number | undefined, total: number | undefined): string {
   return `${ready ?? 0}/${total ?? 0}`
 }
@@ -535,100 +594,134 @@ onMounted(load)
 
           <el-tab-pane label="板块数据" name="board" lazy>
             <div class="overview-panel" v-if="ov?.board">
-              <div class="panel-head">
-                <span class="panel-title">板块数据总览</span>
-                <span class="hint">概念/行业板块的采集规模、覆盖进度、质量与最近采集状态</span>
+              <div class="board-hero">
+                <div class="board-hero-main">
+                  <span class="board-eyebrow">同花顺板块源</span>
+                  <div class="board-title-line">
+                    <span class="board-total">{{ ov.board.board_dict }}</span>
+                    <span class="board-title-text">个概念 / 行业板块</span>
+                  </div>
+                  <div class="board-type-row" aria-label="板块类型分布">
+                    <span>概念 <b>{{ ov.board.concept_count }}</b></span>
+                    <span>行业 <b>{{ ov.board.industry_count }}</b></span>
+                    <span>综合覆盖 <b>{{ boardOverallCoverage }}%</b></span>
+                  </div>
+                </div>
+                <div class="board-hero-status" :class="{ 'is-warning': ov.board.open_issues > 0 }">
+                  <span class="board-status-label">{{ ov.board.open_issues > 0 ? '待处理问题' : '质量状态' }}</span>
+                  <strong>{{ ov.board.open_issues > 0 ? ov.board.open_issues : '正常' }}</strong>
+                  <span>{{ ov.board.open_issues > 0 ? '项需要恢复' : '暂无板块问题' }}</span>
+                </div>
+                <div class="board-hero-actions">
+                  <el-button size="small" type="primary" @click="gotoBoard()">采集板块</el-button>
+                  <el-button
+                    size="small"
+                    :type="ov.board.open_issues ? 'warning' : 'primary'"
+                    plain
+                    @click="gotoQuality(undefined, 'board_index_gap,board_member_incomplete,board_fund_unmatched')"
+                  >
+                    查看质量问题
+                  </el-button>
+                </div>
               </div>
 
-              <!-- 主体：两列（覆盖进度 + 次要信息） -->
               <div class="board-layout">
-                <!-- 左列：规模 + 覆盖进度 -->
                 <div class="board-main">
-                  <div class="board-scale-card">
-                    <div class="board-scale-num">{{ ov.board.board_dict }}<span class="bs-sub">个板块</span></div>
-                    <div class="board-scale-types">
-                      <span class="btype">概念 <b>{{ ov.board.concept_count }}</b></span>
-                      <span class="btype-sep"></span>
-                      <span class="btype">行业 <b>{{ ov.board.industry_count }}</b></span>
+                  <div class="board-section-head">
+                    <div>
+                      <span class="panel-title">覆盖进度</span>
+                      <span class="hint">先确认成分、指数、资金流三条链路是否齐备</span>
+                    </div>
+                    <el-tag size="small" effect="plain" :type="boardOverallCoverage >= 100 ? 'success' : 'warning'">
+                      {{ boardOverallCoverage >= 100 ? '已完成' : '补采中' }}
+                    </el-tag>
+                  </div>
+                  <div class="board-coverage-grid">
+                    <div v-for="item in boardCoverageItems" :key="item.key" class="cov-card">
+                      <div class="cov-card-top">
+                        <div>
+                          <div class="cov-label">{{ item.label }}</div>
+                          <div class="cov-desc">{{ item.desc }}</div>
+                        </div>
+                        <div class="cov-pct" :class="{ done: item.pct >= 100 }">{{ item.pct }}%</div>
+                      </div>
+                      <el-progress
+                        :percentage="item.pct"
+                        :status="item.pct >= 100 ? 'success' : ''"
+                        :stroke-width="9"
+                        :show-text="false"
+                      />
+                      <div class="cov-foot">
+                        <span>{{ coverageText(item.ready, item.target) }}</span>
+                        <span>{{ item.pct >= 100 ? '覆盖完成' : '仍需补齐' }}</span>
+                      </div>
                     </div>
                   </div>
-                  <div class="board-coverage">
-                    <div class="cov-item">
-                      <div class="cov-head"><span class="cov-label">成分覆盖</span><span class="cov-num">{{ coverageText(ov.board.member_ready, ov.board.member_target) }}</span></div>
-                      <el-progress :percentage="coveragePct(ov.board.member_ready, ov.board.member_target)"
-                                   :status="coveragePct(ov.board.member_ready, ov.board.member_target) >= 100 ? 'success' : ''"
-                                   :stroke-width="8" />
-                    </div>
-                    <div class="cov-item">
-                      <div class="cov-head"><span class="cov-label">指数覆盖</span><span class="cov-num">{{ coverageText(ov.board.bar_ready, ov.board.bar_target) }}</span></div>
-                      <el-progress :percentage="coveragePct(ov.board.bar_ready, ov.board.bar_target)"
-                                   :status="coveragePct(ov.board.bar_ready, ov.board.bar_target) >= 100 ? 'success' : ''"
-                                   :stroke-width="8" />
-                    </div>
-                    <div class="cov-item">
-                      <div class="cov-head"><span class="cov-label">资金流覆盖</span><span class="cov-num">{{ coverageText(ov.board.fund_ready, ov.board.fund_target) }}</span></div>
-                      <el-progress :percentage="coveragePct(ov.board.fund_ready, ov.board.fund_target)"
-                                   :status="coveragePct(ov.board.fund_ready, ov.board.fund_target) >= 100 ? 'success' : ''"
-                                   :stroke-width="8" />
+
+                  <div class="board-freshness-strip">
+                    <div v-for="item in boardFreshnessItems" :key="item.key" class="fresh-cell" :class="{ stale: item.stale }">
+                      <span class="fresh-label">{{ item.label }}</span>
+                      <strong>{{ dateOnly(item.value) }}</strong>
+                      <span>{{ item.stale ? '滞后' : '同步' }}</span>
                     </div>
                   </div>
                 </div>
 
-                <!-- 右列：鲜活度 + 质量问题 + 最近采集 -->
                 <div class="board-side">
-                  <div class="board-side-block">
-                    <div class="board-side-title">数据鲜活度</div>
-                    <div class="board-meta-grid">
-                      <div class="meta-cell"><div class="mc-label">最新交易日</div><div class="mc-value">{{ (ov.latest_trade_date || '—').slice(0, 10) }}</div></div>
-                      <div class="meta-cell"><div class="mc-label">板块指数</div><div class="mc-value" :class="{ warn: ov.board.latest_bar_date && ov.board.latest_bar_date < (ov.latest_trade_date || '') }">{{ ov.board.latest_bar_date || '—' }}</div></div>
-                      <div class="meta-cell"><div class="mc-label">资金流快照</div><div class="mc-value" :class="{ warn: ov.board.latest_fund_date && ov.board.latest_fund_date < (ov.latest_trade_date || '') }">{{ ov.board.latest_fund_date || '—' }}</div></div>
+                  <div class="board-side-block issue-panel">
+                    <div class="board-side-title">
+                      <span>质量问题</span>
+                      <span class="hint">点击进入对应问题列表</span>
                     </div>
-                  </div>
-                  <div class="board-side-block">
-                    <div class="board-side-title">质量问题</div>
-                    <div class="board-issue-list">
-                      <div class="issue-cell" v-if="ov.board.issues_by_type?.board_member_incomplete">
-                        <span class="issue-tag warn">成分不完整</span>
-                        <span class="issue-num">{{ ov.board.issues_by_type.board_member_incomplete }}</span>
-                        <span class="issue-hint">待重采</span>
-                      </div>
-                      <div class="issue-cell" v-if="ov.board.issues_by_type?.board_index_gap">
-                        <span class="issue-tag warn">指数缺口</span>
-                        <span class="issue-num">{{ ov.board.issues_by_type.board_index_gap }}</span>
-                      </div>
-                      <div class="issue-cell" v-if="ov.board.issues_by_type?.board_fund_unmatched">
-                        <span class="issue-tag warn">资金流未匹配</span>
-                        <span class="issue-num">{{ ov.board.issues_by_type.board_fund_unmatched }}</span>
-                      </div>
-                      <div class="issue-cell" v-if="!ov.board.open_issues">
-                        <span class="issue-ok">无待处理板块问题</span>
+                    <div v-if="boardIssueItems.length" class="board-issue-list">
+                      <div
+                        v-for="item in boardIssueItems"
+                        :key="item.key"
+                        role="button"
+                        tabindex="0"
+                        class="issue-card"
+                        @click="gotoQuality(undefined, item.key)"
+                        @keyup.enter="gotoQuality(undefined, item.key)"
+                      >
+                        <span class="issue-copy">
+                          <span class="issue-tag">{{ item.label }}</span>
+                          <span class="issue-hint">{{ item.hint }}</span>
+                        </span>
+                        <strong>{{ item.count }}</strong>
                       </div>
                     </div>
+                    <div v-else class="issue-ok-card">
+                      <span class="issue-ok-dot"></span>
+                      <span>无待处理板块问题</span>
+                    </div>
                   </div>
+
                   <div class="board-side-block" v-if="ov.board.last_update">
-                    <div class="board-side-title">最近采集</div>
-                    <div class="board-meta-grid">
-                      <div class="meta-cell"><div class="mc-label">目标表</div><div class="mc-value mono">{{ ov.board.last_update.table_name }}</div></div>
-                      <div class="meta-cell"><div class="mc-label">状态</div><div class="mc-value">
-                        <el-tag size="small" effect="plain"
-                                :type="ov.board.last_update.status === 'success' ? 'success' : ov.board.last_update.status === 'failed' ? 'danger' : 'warning'">
-                          {{ ov.board.last_update.status }}
-                        </el-tag>
-                      </div></div>
-                      <div class="meta-cell"><div class="mc-label">时间</div><div class="mc-value">{{ (ov.board.last_update.updated_at || '').slice(0, 19) }}</div></div>
+                    <div class="board-side-title">
+                      <span>最近采集</span>
+                      <el-tag size="small" effect="plain" :type="boardUpdateStatus(ov.board.last_update.status).type">
+                        {{ boardUpdateStatus(ov.board.last_update.status).label }}
+                      </el-tag>
                     </div>
-                    <div class="board-last-detail" v-if="ov.board.last_update.detail"><span class="hint">{{ ov.board.last_update.detail }}</span></div>
+                    <div class="board-update-card">
+                      <span class="mono">{{ ov.board.last_update.table_name }}</span>
+                      <strong>{{ (ov.board.last_update.updated_at || '').slice(0, 19) }}</strong>
+                      <span v-if="ov.board.last_update.detail" class="hint">{{ ov.board.last_update.detail }}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              <!-- 操作条 -->
-              <div class="board-actions">
-                <el-button size="small" type="primary" plain @click="gotoBoard()">去采集板块</el-button>
-                <el-button size="small" text type="primary" @click="gotoQuality(undefined, 'board_index_gap,board_member_incomplete,board_fund_unmatched')">板块质量问题</el-button>
               </div>
             </div>
-            <el-empty v-else class="app-empty" description="暂无板块数据，请先在数据采集页运行板块采集" />
+            <AppStateBlock
+              v-else
+              state="empty"
+              title="暂无板块数据"
+              description="请先在数据采集页运行板块采集"
+            >
+              <template #extra>
+                <el-button size="small" type="primary" @click="gotoBoard()">去采集板块</el-button>
+              </template>
+            </AppStateBlock>
           </el-tab-pane>
         </el-tabs>
       </el-card>
@@ -774,54 +867,298 @@ onMounted(load)
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 /* ── 板块数据 tab ── */
-.board-layout { display: flex; gap: var(--app-space-3); align-items: stretch; flex: 1 1 auto; min-height: 0; }
-.board-main { flex: 1 1 55%; min-width: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
-.board-side { flex: 1 1 45%; min-width: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
-
-/* 规模卡（左侧首卡） */
-.board-scale-card {
-  padding: var(--app-space-4) var(--app-space-3);
-  background: var(--el-fill-color-light);
-  border-radius: 6px;
-  display: flex; align-items: baseline; justify-content: space-between;
+.board-hero {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, auto) auto;
+  align-items: stretch;
+  gap: var(--app-space-3);
+  margin-bottom: var(--app-space-3);
 }
-.board-scale-num { font-size: var(--app-font-size-kpi-lg); font-weight: var(--app-font-weight-strong); color: var(--el-text-color-primary); line-height: var(--app-line-height-compact); }
-.board-scale-num .bs-sub { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); margin-left: var(--app-space-1); }
-.board-scale-types { display: flex; align-items: center; gap: var(--app-space-3); }
-.board-scale-types .btype { font-size: var(--app-font-size-table); color: var(--el-text-color-regular); }
-.board-scale-types .btype b { color: var(--el-text-color-primary); font-size: var(--app-font-size-data); }
-.board-scale-types .btype-sep { width: 1px; height: 16px; background: var(--el-border-color); }
-
-/* 覆盖进度 */
-.board-coverage { display: flex; flex-direction: column; gap: var(--app-space-2); padding: var(--app-space-3); border: 1px solid var(--el-border-color-lighter); border-radius: 6px; flex: 1 1 auto; justify-content: center; }
-.cov-item { display: flex; flex-direction: column; gap: var(--app-space-1); }
-.cov-head { display: flex; justify-content: space-between; align-items: baseline; }
-.cov-label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.cov-num { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); color: var(--el-text-color-primary); }
-
-/* 右侧信息块 */
-.board-side-block { padding: var(--app-space-3); border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
-.board-side-title { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); color: var(--el-text-color-primary); margin-bottom: var(--app-space-2); }
-.board-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--app-space-2); }
-.board-meta-grid .meta-cell { min-width: 0; }
-.board-meta-grid .mc-label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.board-meta-grid .mc-value { font-size: var(--app-font-size-table); color: var(--el-text-color-primary); margin-top: var(--app-space-1); }
-.board-meta-grid .mc-value.warn { color: var(--app-warning-text); }
-.board-meta-grid .mc-value.mono { font-family: var(--app-font-family-mono); }
-
-/* 质量问题列表 */
-.board-issue-list { display: flex; flex-direction: column; gap: var(--app-space-2); }
-.issue-cell { display: flex; align-items: center; gap: var(--app-space-2); }
-.issue-cell .issue-tag { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: var(--app-font-size-caption); background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
-.issue-cell .issue-num { font-size: var(--app-font-size-data); font-weight: var(--app-font-weight-strong); color: var(--el-text-color-primary); }
-.issue-cell .issue-hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.issue-cell .issue-ok { color: var(--el-color-success); font-size: var(--app-font-size-table); }
-
-/* 最近采集详情 */
-.board-last-detail { margin-top: var(--app-space-2); }
-
-/* 操作条 */
-.board-actions { display: flex; gap: var(--app-space-2); margin-top: var(--app-space-3); }
+.board-hero-main,
+.board-hero-status,
+.board-side-block,
+.cov-card,
+.fresh-cell {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-bg-color);
+}
+.board-hero-main {
+  position: relative;
+  min-width: 0;
+  padding: var(--app-space-4);
+  overflow: hidden;
+}
+.board-hero-main::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--el-color-primary);
+}
+.board-eyebrow {
+  display: block;
+  font-size: var(--app-font-size-caption);
+  color: var(--el-text-color-secondary);
+  line-height: var(--app-line-height-caption);
+}
+.board-title-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
+  margin-top: var(--app-space-1);
+}
+.board-total {
+  font-size: var(--app-font-size-kpi-lg);
+  line-height: var(--app-line-height-compact);
+  font-weight: var(--app-font-weight-strong);
+  color: var(--el-text-color-primary);
+}
+.board-title-text {
+  font-size: var(--app-font-size-body);
+  color: var(--el-text-color-regular);
+}
+.board-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-space-2) var(--app-space-4);
+  margin-top: var(--app-space-3);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-table);
+}
+.board-type-row b {
+  color: var(--el-text-color-primary);
+  font-size: var(--app-font-size-data);
+}
+.board-hero-status {
+  min-width: 150px;
+  padding: var(--app-space-3);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--app-space-1);
+  border-color: var(--el-color-success-light-7);
+}
+.board-hero-status.is-warning {
+  border-color: var(--el-color-warning-light-5);
+  background: var(--el-color-warning-light-9);
+}
+.board-status-label,
+.cov-desc,
+.fresh-label,
+.issue-hint {
+  font-size: var(--app-font-size-caption);
+  color: var(--el-text-color-secondary);
+}
+.board-hero-status strong {
+  font-size: var(--app-font-size-data);
+  line-height: var(--app-line-height-compact);
+  color: var(--el-text-color-primary);
+}
+.board-hero-status span:last-child {
+  font-size: var(--app-font-size-caption);
+  color: var(--el-text-color-regular);
+}
+.board-hero-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--app-space-2);
+}
+.board-hero-actions :deep(.el-button) {
+  width: 124px;
+  margin-left: 0;
+  justify-content: center;
+}
+.board-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr);
+  gap: var(--app-space-3);
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.board-main,
+.board-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-3);
+  min-height: 0;
+}
+.board-section-head,
+.board-side-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-2);
+}
+.board-section-head {
+  flex: 0 0 auto;
+}
+.board-section-head .hint,
+.board-side-title .hint {
+  margin-left: var(--app-space-2);
+}
+.board-coverage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--app-space-3);
+}
+.cov-card {
+  min-width: 0;
+  padding: var(--app-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-2);
+}
+.cov-card-top,
+.cov-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--app-space-2);
+}
+.cov-card-top {
+  align-items: flex-start;
+}
+.cov-label {
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
+  color: var(--el-text-color-primary);
+}
+.cov-desc {
+  margin-top: var(--app-space-1);
+  line-height: var(--app-line-height-caption);
+}
+.cov-pct {
+  flex: 0 0 auto;
+  font-size: var(--app-font-size-data);
+  font-weight: var(--app-font-weight-strong);
+  color: var(--app-warning-text);
+}
+.cov-pct.done {
+  color: var(--el-color-success);
+}
+.cov-foot {
+  align-items: center;
+  font-size: var(--app-font-size-caption);
+  color: var(--el-text-color-secondary);
+}
+.cov-foot span:first-child {
+  color: var(--el-text-color-primary);
+  font-weight: var(--app-font-weight-section);
+}
+.board-freshness-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--app-space-3);
+}
+.fresh-cell {
+  min-width: 0;
+  padding: var(--app-space-3);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--app-space-1) var(--app-space-2);
+  align-items: baseline;
+}
+.fresh-cell strong {
+  font-size: var(--app-font-size-table);
+  color: var(--el-text-color-primary);
+}
+.fresh-cell span:last-child {
+  justify-self: end;
+  font-size: var(--app-font-size-caption);
+  color: var(--el-color-success);
+}
+.fresh-cell.stale {
+  border-color: var(--el-color-warning-light-5);
+}
+.fresh-cell.stale span:last-child,
+.fresh-cell.stale strong {
+  color: var(--app-warning-text);
+}
+.board-side-block {
+  padding: var(--app-space-3);
+}
+.issue-panel {
+  flex: 1 1 auto;
+}
+.board-side-title {
+  margin-bottom: var(--app-space-2);
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
+  color: var(--el-text-color-primary);
+}
+.board-issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-2);
+}
+.issue-card {
+  width: 100%;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+  padding: var(--app-space-2) var(--app-space-3);
+  border: 1px solid var(--el-color-warning-light-7);
+  border-radius: 6px;
+  background: var(--el-color-warning-light-9);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.issue-card:hover,
+.issue-card:focus-visible {
+  border-color: var(--app-warning-text);
+  box-shadow: 0 0 0 2px var(--el-color-warning-light-8);
+  outline: none;
+}
+.issue-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-1);
+}
+.issue-tag {
+  font-size: var(--app-font-size-table);
+  font-weight: var(--app-font-weight-section);
+  color: var(--el-text-color-primary);
+}
+.issue-card strong {
+  flex: 0 0 auto;
+  font-size: var(--app-font-size-data);
+  color: var(--app-warning-text);
+}
+.issue-ok-card {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  padding: var(--app-space-3);
+  border: 1px solid var(--el-color-success-light-7);
+  border-radius: 6px;
+  color: var(--el-color-success);
+  font-size: var(--app-font-size-table);
+}
+.issue-ok-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--el-color-success);
+}
+.board-update-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-space-1);
+}
+.board-update-card strong {
+  color: var(--el-text-color-primary);
+  font-size: var(--app-font-size-table);
+}
 
 @media (max-height: 700px) {
   .stat :deep(.el-card__body) { padding: 7px 6px; }
@@ -837,5 +1174,22 @@ onMounted(load)
   .panel-head { margin-bottom: 5px; }
   .overview-workspace-card :deep(.el-card__body) { padding: 6px 10px 8px; }
   .overview-tabs :deep(.el-tabs__header) { margin-bottom: 5px; }
+}
+
+@media (max-width: 1100px) {
+  .board-hero {
+    grid-template-columns: 1fr;
+  }
+  .board-hero-actions {
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+  .board-layout {
+    grid-template-columns: 1fr;
+  }
+  .board-coverage-grid,
+  .board-freshness-strip {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

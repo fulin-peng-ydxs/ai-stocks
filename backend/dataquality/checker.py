@@ -154,6 +154,10 @@ ISSUE_LAYER: dict[str, str] = {
     "adj_jump": "L3",
     "data_gap": "L4",
     "stale": "L4",
+    # 板块维度独立层（板块概念）：不混入个股 L1-L4 打分，仅质量页/概览按层归类展示。
+    "board_index_gap": "板块",
+    "board_member_incomplete": "板块",
+    "board_fund_unmatched": "板块",
 }
 # 各层落 data_quality_issue 表的离散异常类型（M2.9.2：四层都落表，质检可反复扫并幂等覆盖）。
 L1_ISSUE_TYPES: tuple[str, ...] = ("null_close", "ohl_repaired")

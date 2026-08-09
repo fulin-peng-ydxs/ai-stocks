@@ -418,6 +418,7 @@ export const RECOVER_ACTION_LABEL: Record<string, string> = {
 }
 export const LAYER_LABEL: Record<string, string> = {
   L1: 'L1 入库闸门', L2: 'L2 字段契约', L3: 'L3 正确性', L4: 'L4 覆盖鲜活',
+  板块: '板块维度',  // 板块 issue 独立层（不混入个股 L1-L4 打分）
 }
 // 四层质量模型的权威说明（单一出处）：质量页 HelpTip / 概览逐股列等处统一引用此处，
 // 以后调整口径或新增层/指标只改这里，不再各页各写一份（避免漏改）。
@@ -426,6 +427,7 @@ export const LAYER_DESC: Record<string, string> = {
   L2: 'L2 字段契约：市值字段（总市值 / 流通市值）完整',
   L3: 'L3 正确性：无复权跳变 / 异常涨跌',
   L4: 'L4 覆盖鲜活：无缺口且更新到最新交易日',
+  板块: '板块维度：指数缺口 / 成分采集完整 / 资金流映射（独立于个股四层质量，概览板块专区展示）',
 }
 export const SEVERITY_LABEL: Record<string, string> = { high: '高', mid: '中', low: '低' }
 export const ISSUE_STATUS_LABEL: Record<string, string> = {
