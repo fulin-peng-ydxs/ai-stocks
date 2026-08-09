@@ -49,8 +49,8 @@ const {
 
 // 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
-const activeWorkspaceTab = computed<'assets' | 'stocks'>({
-  get: () => componentValueOf('workspace', 'defaultActive') === 'stocks' ? 'stocks' : 'assets',
+const activeWorkspaceTab = computed<'assets' | 'stocks' | 'board'>({
+  get: () => componentValueOf('workspace', 'defaultActive') as 'assets' | 'stocks' | 'board' || 'assets',
   set: (value) => setComponentKnob('workspace', 'defaultActive', value),
 })
 function tableBorder(slotId: string): boolean {
@@ -225,15 +225,25 @@ function onSqPaste(e: ClipboardEvent) {
   onSqSelect()
 }
 
-function gotoQuality(severity?: string) {
-  router.push(severity ? `/data/quality?severity=${severity}` : '/data/quality')
+function gotoQuality(severity?: string, issueType?: string) {
+  const q: Record<string, string> = {}
+  if (severity) q.severity = severity
+  if (issueType) q.issue_type = issueType
+  router.push(Object.keys(q).length ? { path: '/data/quality', query: q } : '/data/quality')
 }
 function gotoGap() { router.push('/data/ingest') }
 function gotoBoard() {
   router.push({ path: '/data/ingest', query: { task_type: 'board', mode: 'update' } })
 }
+function gotoBoardTab() {
+  activeWorkspaceTab.value = 'board'
+}
 function coverageText(ready: number | undefined, total: number | undefined): string {
   return `${ready ?? 0}/${total ?? 0}`
+}
+function coveragePct(ready: number | undefined, total: number | undefined): number {
+  if (!total) return 0
+  return Math.round(((ready ?? 0) / total) * 100)
 }
 
 onMounted(load)
@@ -292,20 +302,14 @@ onMounted(load)
             shadow="never"
             class="stat clickable"
             data-testid="overview-board-card"
-            @click="gotoBoard()"
+            @click="gotoBoardTab()"
           >
-            <el-tooltip content="板块字典规模、成分/指数/资金流覆盖和质量问题；点击进入板块增量采集" placement="top">
+            <el-tooltip content="板块规模、覆盖与质量问题概览；点击进入下方「板块数据」专区" placement="top">
               <div class="stat-label">板块数据 <span class="qm">?</span></div>
             </el-tooltip>
             <div class="stat-val">{{ ov?.board ? (ov.board.board_dict ?? 0) + ' 板块' : '—' }}</div>
             <div class="stat-foot" v-if="ov?.board">
               概念 {{ ov.board.concept_count }} · 行业 {{ ov.board.industry_count }} · 待处理 {{ ov.board.open_issues }}
-              <br>
-              覆盖 成分 {{ coverageText(ov.board.member_ready, ov.board.member_target) }} ·
-              指数 {{ coverageText(ov.board.bar_ready, ov.board.bar_target) }} ·
-              资金 {{ coverageText(ov.board.fund_ready, ov.board.fund_target) }}
-              <br>
-              最新 指数 {{ ov.board.latest_bar_date || '—' }} · 资金 {{ ov.board.latest_fund_date || '—' }}
             </div>
           </el-card>
           <el-card v-if="settings.kpi.score" shadow="never" class="stat">
@@ -528,6 +532,107 @@ onMounted(load)
               </template>
             </div>
           </el-tab-pane>
+
+          <el-tab-pane label="板块数据" name="board" lazy>
+            <div class="overview-panel" v-if="ov?.board">
+              <div class="panel-head">
+                <span class="panel-title">板块数据总览</span>
+                <span class="hint">概念/行业板块的采集规模、覆盖进度、质量与最近采集状态；点击「去采集」进入板块增量采集</span>
+              </div>
+
+              <!-- 采集总览：规模 + 覆盖进度 -->
+              <div class="board-section">
+                <div class="board-stat-row">
+                  <div class="board-stat">
+                    <div class="bs-label">板块规模</div>
+                    <div class="bs-value">{{ ov.board.board_dict }}<span class="bs-sub">个</span></div>
+                    <div class="bs-foot">概念 {{ ov.board.concept_count }} · 行业 {{ ov.board.industry_count }}</div>
+                  </div>
+                  <div class="board-stat">
+                    <div class="bs-label">成分覆盖</div>
+                    <div class="bs-value">{{ coverageText(ov.board.member_ready, ov.board.member_target) }}</div>
+                    <el-progress :percentage="coveragePct(ov.board.member_ready, ov.board.member_target)"
+                                 :status="coveragePct(ov.board.member_ready, ov.board.member_target) >= 100 ? 'success' : ''"
+                                 :stroke-width="8" />
+                    <div class="bs-foot">已有完整成分快照的板块</div>
+                  </div>
+                  <div class="board-stat">
+                    <div class="bs-label">指数覆盖</div>
+                    <div class="bs-value">{{ coverageText(ov.board.bar_ready, ov.board.bar_target) }}</div>
+                    <el-progress :percentage="coveragePct(ov.board.bar_ready, ov.board.bar_target)"
+                                 :status="coveragePct(ov.board.bar_ready, ov.board.bar_target) >= 100 ? 'success' : ''"
+                                 :stroke-width="8" />
+                    <div class="bs-foot">指数到最新交易日</div>
+                  </div>
+                  <div class="board-stat">
+                    <div class="bs-label">资金流覆盖</div>
+                    <div class="bs-value">{{ coverageText(ov.board.fund_ready, ov.board.fund_target) }}</div>
+                    <el-progress :percentage="coveragePct(ov.board.fund_ready, ov.board.fund_target)"
+                                 :status="coveragePct(ov.board.fund_ready, ov.board.fund_target) >= 100 ? 'success' : ''"
+                                 :stroke-width="8" />
+                    <div class="bs-foot">有即时资金流</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 鲜活度 -->
+              <div class="board-section">
+                <div class="board-subtitle">数据鲜活度</div>
+                <div class="board-meta-row">
+                  <span class="bm-item">最新交易日 <b>{{ (ov.latest_trade_date || '—').slice(0, 10) }}</b></span>
+                  <span class="bm-item">板块指数最新 <b :class="{ warn: ov.board.latest_bar_date && ov.board.latest_bar_date < (ov.latest_trade_date || '') }">{{ ov.board.latest_bar_date || '—' }}</b></span>
+                  <span class="bm-item">资金流快照 <b :class="{ warn: ov.board.latest_fund_date && ov.board.latest_fund_date < (ov.latest_trade_date || '') }">{{ ov.board.latest_fund_date || '—' }}</b></span>
+                </div>
+              </div>
+
+              <!-- 质量问题 -->
+              <div class="board-section">
+                <div class="board-subtitle">质量问题</div>
+                <div class="board-issue-row">
+                  <span class="bi-item" v-if="ov.board.issues_by_type?.board_member_incomplete">
+                    <el-tag size="small" effect="plain" type="warning">成分不完整</el-tag>
+                    <b>{{ ov.board.issues_by_type.board_member_incomplete }}</b>
+                    <span class="bi-hint">待重采</span>
+                  </span>
+                  <span class="bi-item" v-if="ov.board.issues_by_type?.board_index_gap">
+                    <el-tag size="small" effect="plain" type="warning">指数缺口</el-tag>
+                    <b>{{ ov.board.issues_by_type.board_index_gap }}</b>
+                  </span>
+                  <span class="bi-item" v-if="ov.board.issues_by_type?.board_fund_unmatched">
+                    <el-tag size="small" effect="plain" type="warning">资金流未匹配</el-tag>
+                    <b>{{ ov.board.issues_by_type.board_fund_unmatched }}</b>
+                  </span>
+                  <span class="bi-item" v-if="!ov.board.open_issues">
+                    <span class="bi-ok">无待处理板块问题</span>
+                  </span>
+                  <el-button size="small" text type="primary" @click="gotoQuality()">去处理</el-button>
+                </div>
+              </div>
+
+              <!-- 最近采集 -->
+              <div class="board-section" v-if="ov.board.last_update">
+                <div class="board-subtitle">最近采集</div>
+                <div class="board-meta-row">
+                  <span class="bm-item">表 <b>{{ ov.board.last_update.table_name }}</b></span>
+                  <span class="bm-item">状态
+                    <el-tag size="small" effect="plain"
+                            :type="ov.board.last_update.status === 'success' ? 'success' : ov.board.last_update.status === 'failed' ? 'danger' : 'warning'">
+                      {{ ov.board.last_update.status }}
+                    </el-tag>
+                  </span>
+                  <span class="bm-item">时间 <b>{{ (ov.board.last_update.updated_at || '').slice(0, 19) }}</b></span>
+                  <span class="bm-item" v-if="ov.board.last_update.detail"><span class="hint">{{ ov.board.last_update.detail }}</span></span>
+                </div>
+              </div>
+
+              <!-- 操作 -->
+              <div class="board-section board-actions">
+                <el-button size="small" type="primary" plain @click="gotoBoard()">去采集板块</el-button>
+                <el-button size="small" text @click="gotoQuality(undefined, 'board_index_gap,board_member_incomplete,board_fund_unmatched')">板块质量问题</el-button>
+              </div>
+            </div>
+            <el-empty v-else class="app-empty" description="暂无板块数据，请先在数据采集页运行板块采集" />
+          </el-tab-pane>
         </el-tabs>
       </el-card>
     </template>
@@ -670,6 +775,28 @@ onMounted(load)
 .sq-bar .el-select { width: min(460px, 100%); }
 .txt-warn { color: var(--app-warning-text); font-weight: var(--app-font-weight-section); }
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+/* ── 板块数据 tab ── */
+.board-section { margin-bottom: 14px; }
+.board-section:last-child { margin-bottom: 0; }
+.board-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--app-space-3); }
+.board-stat {
+  padding: 10px 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px;
+  display: flex; flex-direction: column; gap: var(--app-space-1);
+}
+.board-stat .bs-label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.board-stat .bs-value { font-size: var(--app-font-size-data); font-weight: var(--app-font-weight-strong); color: var(--el-text-color-primary); }
+.board-stat .bs-sub { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: var(--app-space-1); }
+.board-stat .bs-foot { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.board-subtitle { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); margin-bottom: var(--app-space-2); color: var(--el-text-color-primary); }
+.board-meta-row { display: flex; flex-wrap: wrap; gap: var(--app-space-2) var(--app-space-5); font-size: var(--app-font-size-table); color: var(--el-text-color-regular); }
+.board-meta-row .bm-item b { color: var(--el-text-color-primary); }
+.board-meta-row .bm-item b.warn { color: var(--app-warning-text); }
+.board-issue-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--app-space-2) var(--app-space-4); font-size: var(--app-font-size-table); }
+.board-issue-row .bi-item b { margin: 0 var(--app-space-1); color: var(--el-text-color-primary); }
+.board-issue-row .bi-item .bi-hint { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
+.board-issue-row .bi-item .bi-ok { color: var(--el-color-success); }
+.board-actions { display: flex; gap: var(--app-space-2); }
 
 @media (max-height: 700px) {
   .stat :deep(.el-card__body) { padding: 7px 6px; }
