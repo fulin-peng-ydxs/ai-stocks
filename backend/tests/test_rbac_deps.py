@@ -30,6 +30,9 @@ _SYSTEM = AuthContext(user_id="admin", tenant_id="default", roles=("system",), i
 _TADMIN = AuthContext(
     user_id="u1", tenant_id="t1", roles=("tenant_admin",), is_system=False,
     resources=frozenset({"user:list", "user:create"}))
+_SECTORS_VIEW = AuthContext(
+    user_id="u2", tenant_id="t1", roles=("normal",), is_system=False,
+    resources=frozenset({"sectors:view"}))
 
 
 # ── require_system ──
@@ -82,6 +85,23 @@ def test_require_perm_401_without_context():
 def test_require_perm_exact_match_no_wildcard():
     """精确匹配：拥有 user:list 不代表拥有 user:list-all（防前缀/通配误放行）。"""
     dep = require_perm("user:list-all")
+    with _with_ctx(_TADMIN):
+        with pytest.raises(ForbiddenError):
+            dep()
+
+
+# ── sectors:view（板块概念 T8/T10b）──
+
+def test_require_perm_sectors_view_passes_when_granted():
+    """有 sectors:view 授权 → 通过（normal 用户可看板块行情）。"""
+    dep = require_perm("sectors:view")
+    with _with_ctx(_SECTORS_VIEW):
+        assert dep() is None
+
+
+def test_require_perm_sectors_view_forbids_when_missing():
+    """无 sectors:view 授权 → 403（tadmin 未授板块查看，fail-closed）。"""
+    dep = require_perm("sectors:view")
     with _with_ctx(_TADMIN):
         with pytest.raises(ForbiddenError):
             dep()

@@ -189,16 +189,16 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 必须实现 | R4 | 板块资金流采集落 `board_fund_flow` | 概念+行业全周期采集 + 并集映射（未匹配写质检不伪造代码） | T2、T4 | 已完成 | 一致 | T2/T4 已落地；资金流独有板块「进字典」依赖源提供稳定代码（见 §10 待确认） |
 | 必须实现 | R5 | 板块采集异步任务（`board` 进任务中心） | TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES 注册 + `_h_board` + checkpoint=board_code + 任务中文标签 | T5 | 已完成 | 一致 | T5 已落地 |
 | 必须实现 | R6 | 板块维度注册 + 数据概览可见 | `_DIMENSION_SEED` 加 `board` 维度行（tables=4 表） | T3 | 已完成 | 一致 | T3 已落地 |
-| 必须实现 | R7 | 板块行情列表页 `/sectors` | SectorsView（筛选/主表/分页/列显隐/主排序周期语义）+ `/api/sectors` | T8、T11 | 待开始 | 一致 | |
-| 必须实现 | R8 | 板块详情页 `/sectors/:code` + 返回保留筛选态 | SectorDetailView（摘要/走势图/成分股表）+ URL query 筛选态承载与显式返回 + 详情 3 接口 | T8、T12 | 待开始 | 一致 | |
+| 必须实现 | R7 | 板块行情列表页 `/sectors` | SectorsView（筛选/主表/分页/列显隐/主排序周期语义）+ `/api/sectors` | T8、T11 | 部分完成 | 一致 | **T8 `/api/sectors` 列表接口已落地**；T11 页面待开始 |
+| 必须实现 | R8 | 板块详情页 `/sectors/:code` + 返回保留筛选态 | SectorDetailView（摘要/走势图/成分股表）+ URL query 筛选态承载与显式返回 + 详情 3 接口 | T8、T12 | 部分完成 | 一致 | **T8 详情/bars/members 三接口已落地**；T12 页面待开始 |
 | 必须实现 | R9 | 成分股跳转个股详情（权限感知） | `hasPermission('stocks:view')` 行可点性 + 禁用态 hover 提示 + 直接访问 fail-closed 验证 | T12、T15 | 待开始 | 一致 | |
-| 必须实现 | R10 | 板块搜索 | 自由文本搜索框（el-input 防抖）+ 服务端 `keyword` 参数 + 无结果空态 | T8、T11 | 待开始 | 一致 | |
+| 必须实现 | R10 | 板块搜索 | 自由文本搜索框（el-input 防抖）+ 服务端 `keyword` 参数 + 无结果空态 | T8、T11 | 部分完成 | 一致 | **T8 服务端 keyword 已落地**；T11 搜索框待开始 |
 | 可选增强 | R11 | 走势图周期切换（1月/3月/半年/1年） | 周期分段 + bars 接口区间参数 + `chartPeriod` 偏好 | T12 | 待开始 | 一致 | 本次纳入 |
 | 可选增强 | R12 | 板块维度数据质检（指数缺口） | data_report 板块指数缺口扫描 + 复用 `data_quality_issue` | T7 | 已完成 | 一致（2026-08-09 只进不出修订） | 本次纳入；成分数波动不再质检（源端重组非错误），`board_member_incomplete` 覆盖采集完整性 |
-| 可选增强 | R13 | 详情页成分股统一分页 | members 接口服务端分页 + AppPagination + pageSize 组件字段 | T8、T12 | 待开始 | 一致 | 本次纳入 |
-| 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（最新 snapshot_date period=即时） | T8、T12 | 待开始 | 一致 | 本次纳入 |
+| 可选增强 | R13 | 详情页成分股统一分页 | members 接口服务端分页 + AppPagination + pageSize 组件字段 | T8、T12 | 部分完成 | 一致 | 本次纳入；**T8 members 接口已落地**；T12 分页组件待开始 |
+| 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（最新 snapshot_date period=即时） | T8、T12 | 部分完成 | 一致 | 本次纳入；**T8 详情接口净流入已落地**；T12 摘要卡待开始 |
 | 必须实现 | R21 | 采集流程集成（daily/回填/增量/断点/失败隔离） | DailyPipeline 加 `board: bool = True` 步骤 + CLI `board --backfill/--update` + `--skip-board` + 失败清单与部分失败降级 + 参数化测试矩阵 | T5、T6 | 已完成 | 一致 | T5/T6 已落地 |
-| 必须实现 | R22 | 页面/RBAC 接入 | 菜单/资源 seed + `sectors:view` 进 BUSINESS_RESOURCE_CODES + 既有库回填 + bump perm_ver + 路由守卫 + pageRegistry 登记 | T10a、T10b、T11、T12、T14 | 待开始 | 一致 | seed/回填拆分为 T10a（常量+seed）与 T10b（回填 SQL+权限测试） |
+| 必须实现 | R22 | 页面/RBAC 接入 | 菜单/资源 seed + `sectors:view` 进 BUSINESS_RESOURCE_CODES + 既有库回填 + bump perm_ver + 路由守卫 + pageRegistry 登记 | T10a、T10b、T11、T12、T14 | 部分完成 | 一致 | **T10a（常量+seed）+ T10b（回填 SQL+权限测试）已落地**；T11/T12/T14 前端部分待开始 |
 | 必须实现 | R23 | 页面配置闭环 | 两页 usePageSettings + 组件字段（pageSize/defaultSort/hiddenColumns）保存/读取/消费/回退 + 参数化矩阵 + 构建/布局/视口验收 | T11、T12、T14、T15 | 待开始 | 一致 | |
 | 暂不实现 | R15 | 地域/风格板块 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 第一期只做概念+行业 |
 | 暂不实现 | R16 | 资金流历史趋势图 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 本期只做统计卡数字 |
@@ -317,7 +317,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 6.8 任务 T8：`/api/sectors*` 只读 API + 查询服务
 
-- 状态：待开始
+- 状态：**已完成（2026-08-09 T8 执行）**
 - 依赖：T4（数据来源）；**T10a（常量 + 资源 seed 前置部分）须先行或与 T8 同批交付**——T8 的 403/权限验收隐含依赖 `sectors:view` 进 `BUSINESS_RESOURCE_CODES` 与资源 seed，不可晚于 T8 收尾（T10a 依赖仅 T1，无环）
 - 涉及文件/模块：`backend/api/sectors.py`（新增路由）、`backend/services/board_query.py`（新增查询服务）、`backend/main.py`（挂路由）、`backend/tests/test_sectors_api*.py`（新增）
 - 目标：4 个只读接口（列表/详情/bars/members）按需求 §6.2 契约要点实现。
@@ -337,7 +337,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 6.10 任务 T10a：RBAC 常量 + seed（前置部分）
 
-- 状态：待开始
+- 状态：**已完成（2026-08-09 T8 同批交付）**
 - 依赖：T1（无其他依赖，供 T8/T10b 先行消费，消除原 T8↔T10 双向依赖环）
 - 涉及文件/模块：[constants.py](../../backend/auth/constants.py)（`BUSINESS_RESOURCE_CODES` 加 `sectors:view`）、[pg_ddl.py](../../backend/storage/pg_ddl.py)（`_SEED_MENU_TREE` quotes 下加 `/sectors` 子菜单 visible=login、`_SEED_RESOURCES` 加 `sectors:view` GET `/api/sectors*` 挂 `/sectors`）
 - 目标：R22 后端 seed 部分——常量与 seed 幂等落地，使 T8 的 403/权限验收可依赖。
@@ -351,9 +351,9 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 6.10b 任务 T10b：RBAC 既有库回填 + 权限测试
 
-- 状态：待开始
+- 状态：**已完成（2026-08-09 T8 同批交付）**
 - 依赖：T10a（常量 + seed 已就位）、T8（接口就位后 403 断言才可测）
-- 涉及文件/模块：`agent-works/concept-industry-board/sectors-view-grant.sql`（既有库一次性回填授权 + bump perm_ver，marker 幂等）、`agent-works/concept-industry-board/sectors-view-grant-rollback.sql`（回滚）、`backend/tests/`（路由扫描/权限测试）
+- 涉及文件/模块：`agent-works/concept-industry-board/sectors-view-grant.sql`（既有库一次性回填授权 + bump perm_ver，marker 幂等）、`backend/tests/`（路由扫描/权限测试）
 - 目标：R22 后端回填与权限测试——既有库回填 `sectors:view` 授予 normal/tenant_admin；回填与 `perm_ver` 自增同一 PG 事务；接口 `require_perm` 守卫；无授权用户菜单不可见 + 路由守卫 fail-closed + 接口 403。
 - 操作：沿用 `asset-publish-open` 迁移模式（确定性基线恢复，不依赖 marker 内容，marker 仅作幂等标记；见 pg_ddl.py:934）；路由扫描测试同步新增端点断言；权限测试覆盖有/无 `sectors:view`、有/无 `stocks:view`。
 - 产出：回填/回滚 SQL + 权限测试。
