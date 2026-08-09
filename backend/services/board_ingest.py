@@ -151,20 +151,18 @@ class BoardIngestService:
             # 不完整快照 / 异常波动 → 不执行退出 diff，写候选 + issue（事务①）
             return self._save_candidate(code, board_type, sdate, cur_set, wave_blocked)
 
-        # 完整快照 → diff 落库 + 刷新 member_count（已应用路径）
-        diff = self._apply_member_diff(code, sdate, cur_set)
-        self.c.execute(
-            "UPDATE board_dict SET member_count=?, updated_at=now() WHERE board_code=?",
-            [len(cur_set), code])
-        # 首次完整采集：写 member_history_start_date
-        self.c.execute(
-            "UPDATE board_dict SET member_history_start_date="
-            "COALESCE(member_history_start_date, ?), updated_at=now() WHERE board_code=?",
-            [sdate, code])
+        # 完整快照 → diff 落库 + 刷新 member_count/member_history_start_date
+        # （同事务：member_count 冗余值与有效成员关系原子一致，违反 R2 验收）
+        diff = self._apply_member_diff(code, sdate, cur_set, member_count=len(cur_set))
         return {"total": len(cur_set), "added": diff["added"], "removed": diff["removed"]}
 
-    def _apply_member_diff(self, code: str, sdate: date, cur_set: set[str]) -> dict:
-        """完整快照 diff：新股 in_date=sdate/out_date=NULL；缺席股 out_date=sdate（[in_date,out_date)）。"""
+    def _apply_member_diff(self, code: str, sdate: date, cur_set: set[str],
+                           member_count: int | None = None) -> dict:
+        """完整快照 diff：新股 in_date=sdate/out_date=NULL；缺席股 out_date=sdate（[in_date,out_date)）。
+
+        同一事务内落 diff + 刷新 board_dict.member_count（冗余值）与 member_history_start_date（首次写入），
+        保证「member_count 与有效成员数一致」原子成立（R2 验收）。
+        """
         # 当前有效成员
         eff = self.c.query_df(
             "SELECT code FROM board_member WHERE board_code=? AND in_date<=? "
@@ -184,6 +182,14 @@ class BoardIngestService:
                     "UPDATE board_member SET out_date=? WHERE board_code=? AND code=? "
                     "AND out_date IS NULL",
                     [sdate, code, c])
+            if member_count is not None:
+                self.c.execute(
+                    "UPDATE board_dict SET member_count=?, updated_at=now() WHERE board_code=?",
+                    [member_count, code])
+                self.c.execute(
+                    "UPDATE board_dict SET member_history_start_date="
+                    "COALESCE(member_history_start_date, ?), updated_at=now() WHERE board_code=?",
+                    [sdate, code])
         return {"added": len(added), "removed": len(removed)}
 
     def _payload_hash(self, sdate: date, codes: set[str]) -> str:
@@ -306,25 +312,22 @@ class BoardIngestService:
                 if df.empty:
                     continue
                 # 名称匹配映射到 board_code；未匹配记录（写质检）
+                matched = []
                 for _, r in df.iterrows():
                     name = str(r["name"])
                     code = name_to_code.get((board_type, name))
                     if not code:
                         unmatched.append(name)
                         continue
-                    self.c.execute(
-                        "INSERT INTO board_fund_flow "
-                        "(board_code, snapshot_date, period, inflow, outflow, "
-                        "net_inflow, net_ratio, leader_stock, leader_pct) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                        "ON CONFLICT (board_code, snapshot_date, period) DO UPDATE SET "
-                        "inflow=EXCLUDED.inflow, outflow=EXCLUDED.outflow, "
-                        "net_inflow=EXCLUDED.net_inflow, "
-                        "net_ratio=EXCLUDED.net_ratio, leader_stock=EXCLUDED.leader_stock, "
-                        "leader_pct=EXCLUDED.leader_pct",
-                        [code, sdate, period, r["inflow"], r["outflow"], r["net_inflow"],
-                         r["net_ratio"], r["leader_stock"], r["leader_pct"]])
-                    rows += 1
+                    matched.append({
+                        "board_code": code, "snapshot_date": sdate, "period": period,
+                        "inflow": r["inflow"], "outflow": r["outflow"],
+                        "net_inflow": r["net_inflow"], "net_ratio": r["net_ratio"],
+                        "leader_stock": r["leader_stock"], "leader_pct": r["leader_pct"],
+                    })
+                if matched:
+                    self._upsert_board_fund_flow(matched)
+                    rows += len(matched)
                 # 阶段二：资金流独有板块补充进字典（has_fund_flow=true，has_members/bar=false）
                 self._fund_flow_union_supplement(board_type, df, sdate, name_to_code)
         # 未匹配写质检（不伪造代码）
@@ -335,15 +338,37 @@ class BoardIngestService:
             "WHERE board_code IN (SELECT DISTINCT board_code FROM board_fund_flow)")
         return {"rows": rows, "unmatched": len(unmatched)}
 
+    def _upsert_board_fund_flow(self, rows: list[dict]) -> None:
+        """资金流批量 upsert（temp_view 单条 INSERT SELECT，替代逐条写入）。"""
+        if not rows:
+            return
+        df = pd.DataFrame(rows)
+        with self.c.temp_view(df, "bflow") as v:
+            self.c.execute(
+                f"""INSERT INTO board_fund_flow
+                    (board_code, snapshot_date, period, inflow, outflow,
+                     net_inflow, net_ratio, leader_stock, leader_pct)
+                    SELECT board_code, snapshot_date, period, inflow, outflow,
+                           net_inflow, net_ratio, leader_stock, leader_pct FROM {v}
+                    ON CONFLICT (board_code, snapshot_date, period) DO UPDATE SET
+                      inflow=EXCLUDED.inflow, outflow=EXCLUDED.outflow,
+                      net_inflow=EXCLUDED.net_inflow,
+                      net_ratio=EXCLUDED.net_ratio, leader_stock=EXCLUDED.leader_stock,
+                      leader_pct=EXCLUDED.leader_pct""")
+
     def _fund_flow_union_supplement(self, board_type: str, df: pd.DataFrame,
                                     sdate: date, name_to_code: dict) -> None:
-        """资金流独有板块（字典无）补充进 board_dict：has_fund_flow=true 其余能力 false。"""
+        """资金流独有板块（字典无）补充进 board_dict：has_fund_flow=true 其余能力 false。
+
+        资金流源无稳定代码、仅名称 → 无法生成路径 code 主键，**不能伪造代码**；
+        按 R4「未匹配写质检」语义，独有板块不新增字典行，仅由 _write_unmatched_quality 记录质检
+        （需求 §2.5「可进入 board_dict」依赖资金流源提供稳定代码，当前源无此能力，见 §10 待确认）。
+        """
         for _, r in df.iterrows():
             name = str(r["name"])
             if (board_type, name) in name_to_code:
                 continue
-            # 无稳定代码、仅名称 → 不能伪造代码；不新增（避免无主键板块）。仅记录未匹配。
-            # 注：资金流源无稳定代码，无法生成路径 code；R4 语义为「未匹配写质检、不伪造代码」。
+            # 无稳定代码 → 不新增（避免无主键板块）；未匹配由 _write_unmatched_quality 写质检。
             pass
 
     def _write_unmatched_quality(self, names: list[str], sdate: date) -> None:

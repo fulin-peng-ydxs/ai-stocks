@@ -12,6 +12,7 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from backend.common.exceptions import StorageError
 from backend.services.board_ingest import BoardIngestService, ISSUE_TYPE_MEMBER_SURGE_SHRINK
@@ -269,3 +270,47 @@ def test_write_lock_classification():
     assert _LOCK_CONFLICT_RE.search("Could not set lock on file ... Conflicting lock is held")
     assert _LOCK_CONFLICT_RE.search("IO Error: Conflicting lock is held")
     assert not _LOCK_CONFLICT_RE.search("普通事务错误")
+
+
+def test_member_diff_member_count_atomic(tmp_path):
+    """diff 与 member_count 同事务：中途失败整体回滚，member_count 不残留（R2 原子性）。"""
+    import pandas as pd
+    src = _FakeSource({"309121": ["300476", "603936", "002913"]})
+    svc, c = _make_service(tmp_path, src)
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE)")
+    # 直接调 _apply_member_diff：注入失败（第 3 条 added 前抛错）→ 整体回滚
+    with pytest.raises(StorageError):
+        with c.transaction():
+            c.execute("INSERT INTO board_member (board_code, code, in_date, out_date) "
+                      "VALUES ('309121','300476.SZ',DATE '2026-01-05',NULL)")
+            c.execute("UPDATE board_dict SET member_count=1 WHERE board_code='309121'")
+            raise RuntimeError("注入失败")
+    # 回滚后：board_member 无新增行、member_count 无残留（仍 NULL/原值）
+    assert len(c.query_df("SELECT 1 FROM board_member")) == 0
+    mc = _member_count(c, "309121")
+    assert mc == 0  # 未写入残留值
+
+
+def test_fund_flow_batch_not_single_insert(tmp_path):
+    """资金流批量 upsert（非逐条）：多板块多周期一次 temp_view INSERT。"""
+    import pandas as pd
+    # 构造 2 板块 × 1 周期
+    ff = {
+        ("concept", "即时"): pd.DataFrame([
+            {"name": "AI PC", "inflow": 10.0, "outflow": 5.0, "net_inflow": 5.0,
+             "net_ratio": 2.5, "leader_stock": "胜宏科技", "leader_pct": 12.0},
+            {"name": "人工智能", "inflow": 20.0, "outflow": 8.0, "net_inflow": 12.0,
+             "net_ratio": 3.0, "leader_stock": "国科微", "leader_pct": 10.0},
+        ]),
+    }
+    src = _FakeSource({}, fund_flow=ff)
+    svc, c = _make_service(tmp_path, src)
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE)")
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('302035','人工智能','concept',TRUE)")
+    svc.ingest_board_fund_flow(date(2026, 1, 5))
+    rows = c.query_df("SELECT board_code, period FROM board_fund_flow")
+    assert len(rows) == 2
+    assert set(rows["board_code"]) == {"309121", "302035"}

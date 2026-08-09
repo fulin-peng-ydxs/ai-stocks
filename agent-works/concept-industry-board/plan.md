@@ -183,21 +183,21 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 必须实现 | R1 | 板块字典采集（概念+行业并集）落 `board_dict` | ThsBoardSource.get_board_dict + 两阶段字典 seed/资金流并集补充 + 能力字段收口 + app_code(clid) 抓取 | T2、T4 | 待开始 | 一致 | |
-| 必须实现 | R2 | 成分股快照采集 + 候选恢复闭环 | 快照 diff（[in_date,out_date)）+ 不完整快照保护 + payload_hash 幂等 + 候选表三事务 + 同日冻结 + best-effort 审计 + 候选接口 + 质检页操作 + **member_count 双应用路径刷新（T4 完整快照 + T9 候选应用）** | T2、T3、T4、T9、T13 | 待开始 | 一致（评审修订） | **member_count 应用路径已补入 T9 事务②**；「被拦截未应用候选不改该值」由 T9 集成测试断言 |
-| 必须实现 | R3 | 板块指数采集落 `board_bar`（原值） | get_board_bar + 幂等 upsert + 5 年回填/每日增量 | T2、T4、T6 | 待开始 | 一致 | |
-| 必须实现 | R4 | 板块资金流采集落 `board_fund_flow` | 概念+行业全周期采集 + 并集映射（未匹配写质检不伪造代码） | T2、T4 | 待开始 | 一致 | |
-| 必须实现 | R5 | 板块采集异步任务（`board` 进任务中心） | TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES 注册 + `_h_board` + checkpoint=board_code + 任务中文标签 | T5 | 待开始 | 一致 | |
-| 必须实现 | R6 | 板块维度注册 + 数据概览可见 | `_DIMENSION_SEED` 加 `board` 维度行（tables=4 表） | T3 | 待开始 | 一致 | |
+| 必须实现 | R1 | 板块字典采集（概念+行业并集）落 `board_dict` | ThsBoardSource.get_board_dict + 两阶段字典 seed/资金流并集补充 + 能力字段收口 + app_code(clid) 抓取 | T2、T4 | 已完成 | 一致 | T2/T4 已落地（数据源+采集服务） |
+| 必须实现 | R2 | 成分股快照采集 + 候选恢复闭环 | 快照 diff（[in_date,out_date)）+ 不完整快照保护 + payload_hash 幂等 + 候选表三事务 + 同日冻结 + best-effort 审计 + 候选接口 + 质检页操作 + **member_count 双应用路径刷新（T4 完整快照 + T9 候选应用）** | T2、T3、T4、T9、T13 | 部分完成 | 一致（评审修订） | T2/T3/T4 已落地（数据源/DDL/采集+候选保存事务①）；**T9 候选接口与 T13 质检页操作未开始**；「被拦截未应用候选不改该值」由 T9 集成测试断言 |
+| 必须实现 | R3 | 板块指数采集落 `board_bar`（原值） | get_board_bar + 幂等 upsert + 5 年回填/每日增量 | T2、T4、T6 | 已完成 | 一致 | T2/T4/T6 已落地 |
+| 必须实现 | R4 | 板块资金流采集落 `board_fund_flow` | 概念+行业全周期采集 + 并集映射（未匹配写质检不伪造代码） | T2、T4 | 已完成 | 一致 | T2/T4 已落地；资金流独有板块「进字典」依赖源提供稳定代码（见 §10 待确认） |
+| 必须实现 | R5 | 板块采集异步任务（`board` 进任务中心） | TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES 注册 + `_h_board` + checkpoint=board_code + 任务中文标签 | T5 | 已完成 | 一致 | T5 已落地 |
+| 必须实现 | R6 | 板块维度注册 + 数据概览可见 | `_DIMENSION_SEED` 加 `board` 维度行（tables=4 表） | T3 | 已完成 | 一致 | T3 已落地 |
 | 必须实现 | R7 | 板块行情列表页 `/sectors` | SectorsView（筛选/主表/分页/列显隐/主排序周期语义）+ `/api/sectors` | T8、T11 | 待开始 | 一致 | |
 | 必须实现 | R8 | 板块详情页 `/sectors/:code` + 返回保留筛选态 | SectorDetailView（摘要/走势图/成分股表）+ URL query 筛选态承载与显式返回 + 详情 3 接口 | T8、T12 | 待开始 | 一致 | |
 | 必须实现 | R9 | 成分股跳转个股详情（权限感知） | `hasPermission('stocks:view')` 行可点性 + 禁用态 hover 提示 + 直接访问 fail-closed 验证 | T12、T15 | 待开始 | 一致 | |
 | 必须实现 | R10 | 板块搜索 | 自由文本搜索框（el-input 防抖）+ 服务端 `keyword` 参数 + 无结果空态 | T8、T11 | 待开始 | 一致 | |
 | 可选增强 | R11 | 走势图周期切换（1月/3月/半年/1年） | 周期分段 + bars 接口区间参数 + `chartPeriod` 偏好 | T12 | 待开始 | 一致 | 本次纳入 |
-| 可选增强 | R12 | 板块维度质检（成分数波动/指数缺口） | data_report 新增板块规则 + 阈值配置化（Settings 模型/YAML/CONFIG_GROUPS 三环）+ issue 状态流转（候选跳过 fixing） | T4、T7、T13 | 待开始 | 一致 | 本次纳入 |
+| 可选增强 | R12 | 板块维度质检（成分数波动/指数缺口） | data_report 新增板块规则 + 阈值配置化（Settings 模型/YAML/CONFIG_GROUPS 三环）+ issue 状态流转（候选跳过 fixing） | T4、T7、T13 | 部分完成 | 一致 | 本次纳入；T4 已含候选拦截阈值，T7 扫描/T13 页面未开始 |
 | 可选增强 | R13 | 详情页成分股统一分页 | members 接口服务端分页 + AppPagination + pageSize 组件字段 | T8、T12 | 待开始 | 一致 | 本次纳入 |
 | 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（最新 snapshot_date period=即时） | T8、T12 | 待开始 | 一致 | 本次纳入 |
-| 必须实现 | R21 | 采集流程集成（daily/回填/增量/断点/失败隔离） | DailyPipeline 加 `board: bool = True` 步骤 + CLI `board --backfill/--update` + `--skip-board` + 失败清单与部分失败降级 + 参数化测试矩阵 | T5、T6 | 待开始 | 一致 | |
+| 必须实现 | R21 | 采集流程集成（daily/回填/增量/断点/失败隔离） | DailyPipeline 加 `board: bool = True` 步骤 + CLI `board --backfill/--update` + `--skip-board` + 失败清单与部分失败降级 + 参数化测试矩阵 | T5、T6 | 已完成 | 一致 | T5/T6 已落地 |
 | 必须实现 | R22 | 页面/RBAC 接入 | 菜单/资源 seed + `sectors:view` 进 BUSINESS_RESOURCE_CODES + 既有库回填 + bump perm_ver + 路由守卫 + pageRegistry 登记 | T10a、T10b、T11、T12、T14 | 待开始 | 一致 | seed/回填拆分为 T10a（常量+seed）与 T10b（回填 SQL+权限测试） |
 | 必须实现 | R23 | 页面配置闭环 | 两页 usePageSettings + 组件字段（pageSize/defaultSort/hiddenColumns）保存/读取/消费/回退 + 参数化矩阵 + 构建/布局/视口验收 | T11、T12、T14、T15 | 待开始 | 一致 | |
 | 暂不实现 | R15 | 地域/风格板块 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 第一期只做概念+行业 |
@@ -538,6 +538,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 写锁冲突识别靠异常消息关键字归类（2026-08-09 实测）：本机 DuckDB 1.5.3 **无锁等待配置**（`SET duckdb_max_lock_wait_time` 抛 CatalogException），跨进程冲突**立即失败**（0.006s 抛 `IOException: Could not set lock`，被 `duckdb_client` 包装进 `StorageError` 且消息含 `lock`，归类可命中）。已移除锁等待超时设计，仅保留关键字归类；若错误消息格式随 DuckDB 升级变化导致关键字漏配，最坏退化为 500 而非半成品状态，且 T4/T9 的跨进程锁冲突集成测试可尽早暴露。**连接恢复无需额外处理**：冲突只发生在 connect 阶段、`_conn` 保持 `None`，锁释放后同一实例重试即自动重建连接（实测确认），不存在需显式释放的残留连接。
 - 列表页 `pageSize` 冲突按需求口径（10/20/50）实现，与原型 10/20/30/50 不同：需求为当前事实源，已声明为计划 vs 原型的显式取舍；若后续需求变更需回溯原型口径。
 - 回填/回滚 SQL 待 T10b 产出后固化：发布计划 §7.3/§9 的描述为意图而非已定实现，T10b 交付时须回填固化并评审。
+- **`board_type` 参数预留未接线（T6 自审发现）**：`ingest_board(board_type=)` 参数存在但未传入内部采集方法（`ingest_board_dict`/`ingest_board_members` 等），当前为全量采集。需求 R21「输入可选 board_type/board_code」——`board_code` 已生效（成分/指数过滤），`board_type` 预留。后续如需按类型采集（只采概念/行业）需接线各方法。
 
 ### 10.2 假设
 
@@ -556,3 +557,4 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 列表页「上涨/下跌家数」列合并展示 vs 原型「上涨家数」单列（以需求 §7.1.2 为准，已在 §4.1 标注差异）。
   - 列表页 `pageSize` 合法值按需求 10/20/50（原型含 30，以需求为准，已在 §4.1 标注差异）。
   - 领涨股取数来源（**待确认，非既定**）：需求 §6.2 只定义响应含「领涨股」，未定义来源。默认口径为 `board_fund_flow.leader_stock/leader_pct` 且与即时净流入同一 `(snapshot_date, period='即时')` 行——但 §4.2 明确涨幅与净流入分别标注各自数据日期（`board_bar` 最近交易日 ≠ `board_fund_flow` 最近 snapshot_date），**当两日不同时，领涨股展示的是「资金流日领涨股」而非「涨幅日/今日强势股」**（资金流独有板块该列显示资金流日领涨股，列表默认按今日涨幅降序时榜首板块领涨股可能不是今日强势股，观感突兀）。是否接受该口径需用户确认；不接受则改为「按涨幅交易日成分股涨幅第一」另行实现。若后续需要「无资金流板块仍显示成分股涨幅第一」，同样需另行决策（当前默认口径下无资金流板块领涨股为空「—」）。
+  - 资金流独有板块「进入 board_dict」（R4 §2.5）依赖同花顺资金流源提供稳定板块代码——实测源仅返回名称、无路径 code（需求 §2.4 已确认），因此 T4 实现为「未匹配写质检、不伪造代码、不新增字典行」（`_fund_flow_union_supplement` 空实现 + `_write_unmatched_quality`）。若后续需要独有板块进字典展示（has_fund_flow=true 其余 false），需另行解决代码来源（如东财资金流接口或人工映射表），本期不实现。
