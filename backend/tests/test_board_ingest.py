@@ -365,3 +365,23 @@ def test_ingest_board_mode_update_vs_backfill(tmp_path, monkeypatch):
     calls["fund_periods"].clear()
     svc.ingest_board_fund_flow()
     assert set(calls["fund_periods"]) == {"即时", "3日", "5日", "10日", "20日"}  # backfill 全周期
+
+
+def test_ingest_writes_update_log(tmp_path):
+    """板块采集各步骤写 data_update_log（对齐现有数据管理更新留痕）。"""
+    src = _FakeSource(
+        {"309121": ["300476", "603936"]},
+        board_dict={"concept": pd.DataFrame([{"board_code": "309121", "name": "AI PC"}])},
+    )
+    svc, c = _make_service(tmp_path, src)
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar) "
+              "VALUES ('309121','AI PC','concept',TRUE,TRUE)")
+    # 字典 + 成分 + 指数 + 资金流都触发 log_update
+    svc.ingest_board_dict(date(2026, 8, 9))
+    svc.ingest_board_members(snapshot_date=date(2026, 8, 9), board_codes=["309121"])
+    svc.ingest_board_bar(date(2026, 8, 1), board_codes=["309121"])
+    svc.ingest_board_fund_flow(date(2026, 8, 9))
+    logs = c.query_df("SELECT table_name, source, status FROM data_update_log ORDER BY id")
+    tables = set(logs["table_name"])
+    assert {"board_dict", "board_member", "board_bar", "board_fund_flow"} <= tables
+    assert set(logs["source"]) == {"ths_board"}

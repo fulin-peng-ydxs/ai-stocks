@@ -57,6 +57,16 @@ class BoardIngestService:
         init_db(self.c)
         self.src = source or ThsBoardSource()
 
+    def _log_update(self, table_name: str, date_start: date | None, date_end: date | None,
+                    row_count: int, status: str, detail: str = "") -> None:
+        """写 data_update_log（对齐现有采集的更新留痕，供数据概览/运维查看板块采集进度）。"""
+        from datetime import datetime
+        self.c.execute(
+            "INSERT INTO data_update_log "
+            "(id, table_name, source, date_start, date_end, row_count, status, detail, updated_at) "
+            "VALUES (nextval('seq_update_log'), ?, 'ths_board', ?, ?, ?, ?, ?, ?)",
+            [table_name, date_start, date_end, row_count, status, detail, datetime.now()])
+
     # ── 1. 字典两阶段 ─────────────────────────────────────────
 
     def ingest_board_dict(self, snapshot_date: date | None = None) -> dict:
@@ -87,6 +97,10 @@ class BoardIngestService:
                 })
             self._upsert_board_dict(rows)
             result[board_type] = len(rows)
+            # 更新留痕（对齐现有采集）
+            self._log_update("board_dict", sdate, sdate, len(rows),
+                             "success" if len(rows) else "failed",
+                             f"{board_type} 字典")
         result["total"] = result["concept"] + result["industry"]
         return result
 
@@ -128,6 +142,7 @@ class BoardIngestService:
             df_boards = self.c.query_df(
                 "SELECT board_code, board_type FROM board_dict WHERE has_members")
         results: dict[str, dict] = {}
+        n_err = 0
         for _, b in df_boards.iterrows():
             code, board_type = str(b["board_code"]), str(b["board_type"])
             try:
@@ -135,6 +150,10 @@ class BoardIngestService:
             except Exception as e:  # noqa: BLE001 —— 单板块失败跳过不中断
                 log.warning("板块 %s 成分快照失败: %s", code, e)
                 results[code] = {"error": str(e)}
+                n_err += 1
+        # 更新留痕（聚合：一次运行一条日志，避免逐板块刷屏）
+        self._log_update("board_member", sdate, sdate, len(results), "success" if not n_err else "partial",
+                         f"{len(results)} 个板块成分快照（失败 {n_err}）")
         return results
 
     def _ingest_one_member(self, code: str, board_type: str, sdate: date) -> dict:
@@ -283,6 +302,7 @@ class BoardIngestService:
                 boards += 1
             except Exception as e:  # noqa: BLE001
                 log.warning("板块 %s 指数取数失败: %s", code, e)
+        self._log_update("board_bar", start, end, total_rows, "success", f"{boards} 个板块")
         return {"rows": total_rows, "boards": boards}
 
     def _upsert_board_bar(self, df: pd.DataFrame) -> None:
@@ -349,6 +369,8 @@ class BoardIngestService:
         self.c.execute(
             "UPDATE board_dict SET has_fund_flow=true, updated_at=now() "
             "WHERE board_code IN (SELECT DISTINCT board_code FROM board_fund_flow)")
+        self._log_update("board_fund_flow", sdate, sdate, rows, "success",
+                         f"未匹配 {len(unmatched)}")
         return {"rows": rows, "unmatched": len(unmatched)}
 
     def _upsert_board_fund_flow(self, rows: list[dict]) -> None:
