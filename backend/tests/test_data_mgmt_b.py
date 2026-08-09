@@ -491,18 +491,18 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
 
     captured = {}
 
-    def fake_ingest_board_dict(self, snapshot_date=None):
+    def fake_ingest_board_dict(self, snapshot_date=None, ctx=None):
         return {"concept": 375, "industry": 90, "total": 465}
 
-    def fake_ingest_board_members(self, snapshot_date=None, board_codes=None):
+    def fake_ingest_board_members(self, snapshot_date=None, board_codes=None, ctx=None):
         return {}
 
-    def fake_ingest_board_bar(self, start, end=None, board_codes=None):
+    def fake_ingest_board_bar(self, start, end=None, board_codes=None, ctx=None):
         captured["start"] = start
         captured["end"] = end
         return {"rows": 0, "boards": 0}
 
-    def fake_ingest_board_fund_flow(self, snapshot_date=None, periods=None):
+    def fake_ingest_board_fund_flow(self, snapshot_date=None, periods=None, ctx=None):
         captured["periods"] = periods
         return {"rows": 0, "unmatched": 0}
 
@@ -547,13 +547,13 @@ def test_ingest_board_only_selects_tables(client, monkeypatch):
     called = {"dict": 0, "members": 0, "bar": 0, "fund": 0}
 
     monkeypatch.setattr(BoardIngestService, "ingest_board_dict",
-                        lambda self, snapshot_date=None: called.__setitem__("dict", 1) or {"total": 0}, raising=True)
+                        lambda self, snapshot_date=None, ctx=None: called.__setitem__("dict", 1) or {"total": 0}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_members",
-                        lambda self, snapshot_date=None, board_codes=None: called.__setitem__("members", 1) or {}, raising=True)
+                        lambda self, snapshot_date=None, board_codes=None, ctx=None: called.__setitem__("members", 1) or {}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
-                        lambda self, start, end=None, board_codes=None: called.__setitem__("bar", 1) or {"rows": 0, "boards": 0}, raising=True)
+                        lambda self, start, end=None, board_codes=None, ctx=None: called.__setitem__("bar", 1) or {"rows": 0, "boards": 0}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
-                        lambda self, snapshot_date=None, periods=None: called.__setitem__("fund", 1) or {"rows": 0, "unmatched": 0}, raising=True)
+                        lambda self, snapshot_date=None, periods=None, ctx=None: called.__setitem__("fund", 1) or {"rows": 0, "unmatched": 0}, raising=True)
     monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
     monkeypatch.setattr(ingest_mod.IngestionService, "_latest_open_day",
                         lambda self: __import__("datetime").date(2026, 8, 7), raising=True)

@@ -1826,7 +1826,7 @@ class IngestionService:
         if "dict" in steps:
             idx["n"] += 1
             try:
-                result["dict"] = svc.ingest_board_dict()
+                result["dict"] = svc.ingest_board_dict(ctx=ctx)
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块字典：概念 {result['dict'].get('concept', 0)} / "
                             f"行业 {result['dict'].get('industry', 0)}")
@@ -1839,7 +1839,7 @@ class IngestionService:
                 ctx.progress(round(0.05 + 0.25 * idx["n"] / total, 3), "板块成分快照…")
                 ctx.flush()
             try:
-                result["members"] = svc.ingest_board_members(board_codes=board_codes)
+                result["members"] = svc.ingest_board_members(board_codes=board_codes, ctx=ctx)
                 errs = [c for c, r in result["members"].items() if "error" in r]
                 result["failed"] += errs
                 if ctx:
@@ -1856,13 +1856,13 @@ class IngestionService:
             try:
                 if mode == "backfill":
                     # 全量回填：源端可用起始年到今天（实测 `d.` 域仅近 3 年、2021-2023 404，故 2024 起）
-                    result["bar"] = svc.ingest_board_bar(_d(2024, 1, 1), board_codes=board_codes)
+                    result["bar"] = svc.ingest_board_bar(_d(2024, 1, 1), board_codes=board_codes, ctx=ctx)
                 else:
                     # 增量：复用现有采集交易日语义——截止到最近交易日（非交易日回退），
                     # 区间起点往前取 7 个自然日缓冲覆盖跨周末/长假缺口
                     end = self._latest_open_day()   # 与行情 update 同一交易日口径
                     result["bar"] = svc.ingest_board_bar(end - _td(days=7), end=end,
-                                                         board_codes=board_codes)
+                                                         board_codes=board_codes, ctx=ctx)
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块指数：{result['bar'].get('rows', 0)} 行 / "
                             f"{result['bar'].get('boards', 0)} 板块")
@@ -1876,9 +1876,9 @@ class IngestionService:
                 ctx.flush()
             try:
                 if mode == "backfill":
-                    result["fund_flow"] = svc.ingest_board_fund_flow()
+                    result["fund_flow"] = svc.ingest_board_fund_flow(ctx=ctx)
                 else:
-                    result["fund_flow"] = svc.ingest_board_fund_flow(periods=("即时",))
+                    result["fund_flow"] = svc.ingest_board_fund_flow(periods=("即时",), ctx=ctx)
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块资金流：{result['fund_flow'].get('rows', 0)} 行"
                             f"（未匹配 {result['fund_flow'].get('unmatched', 0)}）")

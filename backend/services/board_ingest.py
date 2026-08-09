@@ -69,12 +69,13 @@ class BoardIngestService:
 
     # ── 1. 字典两阶段 ─────────────────────────────────────────
 
-    def ingest_board_dict(self, snapshot_date: date | None = None) -> dict:
+    def ingest_board_dict(self, snapshot_date: date | None = None,
+                          ctx: object | None = None) -> dict:
         """字典两阶段：概念/行业字典 upsert → 资金流并集补充 + 能力字段收口。
 
         阶段一（本方法）：概念 + 行业字典全量 upsert 进 board_dict（能力字段按各自接口初判，
         has_fund_flow 暂 false）；阶段二由 ingest_board_fund_flow 补充资金流独有板块与 has_fund_flow。
-        返回 {"concept": n, "industry": n, "total": n}。
+        返回 {"concept": n, "industry": n, "total": n}。ctx：任务上下文，按类型打实时日志。
         """
         sdate = snapshot_date or _asia_date()
         result = {"concept": 0, "industry": 0, "total": 0}
@@ -82,6 +83,8 @@ class BoardIngestService:
             df = self.src.get_board_dict(board_type)
             if df.empty:
                 log.warning("字典 %s 为空，跳过", board_type)
+                if ctx:
+                    ctx.log(f"字典 {board_type}：为空，跳过", "warn")
                 continue
             rows = []
             for _, r in df.iterrows():
@@ -97,6 +100,8 @@ class BoardIngestService:
                 })
             self._upsert_board_dict(rows)
             result[board_type] = len(rows)
+            if ctx:
+                ctx.log(f"字典 {board_type}：{len(rows)} 个板块")
             # 更新留痕（对齐现有采集）
             self._log_update("board_dict", sdate, sdate, len(rows),
                              "success" if len(rows) else "failed",
@@ -126,11 +131,13 @@ class BoardIngestService:
     # ── 2. 成分快照（diff + 候选保存事务①）───────────────────
 
     def ingest_board_members(self, snapshot_date: date | None = None,
-                             board_codes: list[str] | None = None) -> dict:
+                             board_codes: list[str] | None = None,
+                             ctx: object | None = None) -> dict:
         """逐板块成分快照：完整快照 diff 落库；被拦截快照写候选 + issue（事务①）。
 
         board_codes=None → 全量（从 board_dict 读取有成分数据的板块）。单板块失败记日志不中断，
         返回 {board_code: {"total"/"added"/"removed"/"blocked"/"candidate_id"...}}。
+        ctx：任务上下文（TaskContext/CliTaskContext 鸭子类型），逐板块打实时日志。
         """
         sdate = snapshot_date or _asia_date()
         # 读取板块清单
@@ -144,14 +151,26 @@ class BoardIngestService:
                 "SELECT board_code, board_type FROM board_dict WHERE has_members")
         results: dict[str, dict] = {}
         n_err = 0
-        for _, b in df_boards.iterrows():
+        n_total = len(df_boards)
+        for i, (_, b) in enumerate(df_boards.iterrows(), 1):
             code, board_type = str(b["board_code"]), str(b["board_type"])
             try:
                 results[code] = self._ingest_one_member(code, board_type, sdate)
+                r = results[code]
+                if ctx:
+                    # 逐板块实时日志（对齐现有采集「指数 X 完成：N 行」模式，任务中心实时可见）
+                    if r.get("blocked"):
+                        ctx.log(f"成分 {i}/{n_total} {code}：完整 {r.get('total', 0)} 只"
+                                f"（拦截候选 {r.get('candidate_id', '')}）", "warn")
+                    else:
+                        ctx.log(f"成分 {i}/{n_total} {code}：{r.get('total', 0)} 只"
+                                f"（+{r.get('added', 0)} -{r.get('removed', 0)}）")
             except Exception as e:  # noqa: BLE001 —— 单板块失败跳过不中断
                 log.warning("板块 %s 成分快照失败: %s", code, e)
                 results[code] = {"error": str(e)}
                 n_err += 1
+                if ctx:
+                    ctx.log(f"成分 {i}/{n_total} {code}：失败 {e}", "error")
         # 更新留痕（聚合：一次运行一条日志，避免逐板块刷屏）
         self._log_update("board_member", sdate, sdate, len(results), "success" if not n_err else "partial",
                          f"{len(results)} 个板块成分快照（失败 {n_err}）")
@@ -289,8 +308,10 @@ class BoardIngestService:
     # ── 3. 指数 ──────────────────────────────────────────────
 
     def ingest_board_bar(self, start: date, end: date | None = None,
-                         board_codes: list[str] | None = None) -> dict:
-        """板块指数日线：幂等 upsert 原值。end 缺省=今天。返回 {"rows": n, "boards": n}。"""
+                         board_codes: list[str] | None = None,
+                         ctx: object | None = None) -> dict:
+        """板块指数日线：幂等 upsert 原值。end 缺省=今天。返回 {"rows": n, "boards": n}。
+        ctx：任务上下文，逐板块打实时日志（对齐现有采集「指数 X 完成」模式）。"""
         end = end or _asia_date()
         if board_codes:
             df_boards = self.c.query_df(
@@ -302,18 +323,25 @@ class BoardIngestService:
                 "SELECT board_code, board_type FROM board_dict WHERE has_bar")
         total_rows = 0
         boards = 0
-        for _, b in df_boards.iterrows():
+        n_total = len(df_boards)
+        for i, (_, b) in enumerate(df_boards.iterrows(), 1):
             code, board_type = str(b["board_code"]), str(b["board_type"])
             try:
                 df = self.src.get_board_bar(code, board_type, start, end)
                 if df.empty:
+                    if ctx:
+                        ctx.log(f"指数 {i}/{n_total} {code}：无数据")
                     continue
                 df["board_code"] = code
                 self._upsert_board_bar(df)
                 total_rows += len(df)
                 boards += 1
+                if ctx:
+                    ctx.log(f"指数 {i}/{n_total} {code}：{len(df)} 行")
             except Exception as e:  # noqa: BLE001
                 log.warning("板块 %s 指数取数失败: %s", code, e)
+                if ctx:
+                    ctx.log(f"指数 {i}/{n_total} {code}：失败 {e}", "warn")
         self._log_update("board_bar", start, end, total_rows, "success", f"{boards} 个板块")
         log.info("板块指数入库 %d 行 / %d 个板块（%s ~ %s）", total_rows, boards, start, end)
         return {"rows": total_rows, "boards": boards}
@@ -334,10 +362,12 @@ class BoardIngestService:
     # ── 4. 资金流（并集映射）─────────────────────────────────
 
     def ingest_board_fund_flow(self, snapshot_date: date | None = None,
-                               periods: tuple[str, ...] | None = None) -> dict:
+                               periods: tuple[str, ...] | None = None,
+                               ctx: object | None = None) -> dict:
         """资金流 upsert + 名称匹配映射；未匹配写质检不伪造代码（R4）。
 
         periods=None → 全周期（"即时","3日","5日","10日","20日"）；update 模式只传 ("即时",)。
+        ctx：任务上下文，按类型×周期打实时日志。
         """
         sdate = snapshot_date or _asia_date()
         periods = periods or ("即时", "3日", "5日", "10日", "20日")
@@ -354,8 +384,12 @@ class BoardIngestService:
                     df = self.src.get_board_fund_flow(board_type, period)
                 except Exception as e:  # noqa: BLE001
                     log.warning("资金流 %s/%s 取数失败: %s", board_type, period, e)
+                    if ctx:
+                        ctx.log(f"资金流 {board_type}/{period}：失败 {e}", "warn")
                     continue
                 if df.empty:
+                    if ctx:
+                        ctx.log(f"资金流 {board_type}/{period}：无数据")
                     continue
                 # 名称匹配映射到 board_code；未匹配记录（写质检）
                 matched = []
@@ -374,6 +408,9 @@ class BoardIngestService:
                 if matched:
                     self._upsert_board_fund_flow(matched)
                     rows += len(matched)
+                if ctx:
+                    ctx.log(f"资金流 {board_type}/{period}：匹配 {len(matched)} 行"
+                            f"（未匹配 {len(unmatched)}）")
                 # 阶段二：资金流独有板块补充进字典（has_fund_flow=true，has_members/bar=false）
                 self._fund_flow_union_supplement(board_type, df, sdate, name_to_code)
         # 未匹配写质检（不伪造代码）
