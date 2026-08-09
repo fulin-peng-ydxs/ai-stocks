@@ -97,7 +97,14 @@ class DailyPipeline:
         if quality:
             def _quality():
                 from backend.services.data_report import DataIntegrityReport
-                return DataIntegrityReport(self.c).scan_quality_issues()
+                rep = DataIntegrityReport(self.c)
+                base = rep.scan_quality_issues()
+                # 板块维度质检（成分数波动/指数缺口，R12）同一质检步骤内跑
+                try:
+                    base["board"] = rep.scan_board_quality()
+                except Exception as e:  # noqa: BLE001
+                    base["board"] = {"error": str(e)}
+                return base
             step("数据质检", _quality)
 
         # 评分榜单 / 预设筛选不在此预跑；公共榜单生产见评分维护任务与 public-board CLI。

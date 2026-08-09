@@ -656,13 +656,21 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     from backend.services.data_report import DataIntegrityReport
     ctx.progress(0.3, "全市场四层数据质检中…")
     ctx.log("数据质检：扫描市值缺失 / 异常涨跌 / 复权跳变 / 缺口 / 滞后，写入质量台账")
-    q = DataIntegrityReport().scan_quality_issues()
+    rep = DataIntegrityReport()
+    q = rep.scan_quality_issues()
+    # 板块维度质检（成分数波动/指数缺口，R12）同一质检内跑
+    try:
+        q["board"] = rep.scan_board_quality()
+    except Exception as e:  # noqa: BLE001
+        q["board"] = {"error": str(e)}
     n = sum(int(q.get(k, 0)) for k in
             ("abnormal_change_rows", "adj_jump_rows", "mv_missing_rows", "mv_gap_rows",
              "data_gap_rows", "stale_rows"))
+    b = q.get("board") or {}
     ctx.log(f"质检完成：异常涨跌 {q.get('abnormal_change_rows', 0)}、复权跳变 {q.get('adj_jump_rows', 0)}、"
             f"市值缺失 {q.get('mv_missing_rows', 0)}、市值缺口 {q.get('mv_gap_rows', 0)}、"
-            f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}")
+            f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}、"
+            f"板块波动 {b.get('member_wave', 0)}、板块指数缺口 {b.get('index_gap', 0)}")
     return {"message": f"质检完成：发现 {n} 项问题" if n else "质检完成：未发现新问题", "quality": q}
 
 

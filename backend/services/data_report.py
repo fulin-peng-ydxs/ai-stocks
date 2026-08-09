@@ -537,13 +537,19 @@ class DataIntegrityReport:
 
         # 成分数波动：比对 board_dict.member_count（最近已应用基准）与当前有效 board_member 计数
         # 阈值 formula：threshold = max(absolute, prev*ratio)，abs(cur-prev) >= threshold 触发
+        # 有效成员截止日用 board_member 自身最新 in_date（不依赖 board_bar——板块可能指数未采，
+        # board_bar 空时 max(trade_date) 为 NULL 会把 cur_count 误算为 0 → 稳定板块误报波动）
         rows = self.c.query_df(
             """
             SELECT b.board_code, b.name, b.board_type, b.member_count AS prev_count,
                    (SELECT count(*) FROM board_member m
                     WHERE m.board_code = b.board_code
-                      AND m.in_date <= (SELECT max(trade_date) FROM board_bar)
-                      AND (m.out_date IS NULL OR m.out_date > (SELECT max(trade_date) FROM board_bar))
+                      AND m.in_date <= COALESCE(
+                          (SELECT max(in_date) FROM board_member WHERE board_code = b.board_code),
+                          DATE '1970-01-01')
+                      AND (m.out_date IS NULL OR m.out_date > COALESCE(
+                          (SELECT max(in_date) FROM board_member WHERE board_code = b.board_code),
+                          DATE '1970-01-01'))
                    ) AS cur_count
             FROM board_dict b
             WHERE b.has_members AND b.member_count IS NOT NULL

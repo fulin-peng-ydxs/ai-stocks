@@ -507,3 +507,17 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
     assert captured["end"] == date(2026, 8, 7)
     # 资金流：update 只采即时
     assert captured["periods"] == ("即时",)
+
+
+def test_scan_board_quality_no_false_wave_without_bar(client, monkeypatch):
+    """board_bar 空（指数未采）时，稳定板块成分数波动不误报（此前 max(trade_date) NULL → cur=0）。"""
+    from backend.services.data_report import DataIntegrityReport
+    c = client
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, member_count) "
+              "VALUES ('309121','AI PC','concept',TRUE,TRUE,50)")
+    for i in range(50):
+        c.execute("INSERT INTO board_member (board_code, code, in_date) "
+                  "VALUES ('309121', ?, DATE '2026-01-05')", [f"c{i:05d}"])
+    # board_bar 无数据
+    r = DataIntegrityReport(c).scan_board_quality()
+    assert r["member_wave"] == 0   # 稳定 50 只不误报

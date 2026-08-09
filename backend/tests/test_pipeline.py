@@ -205,3 +205,32 @@ def test_pipeline_board_total_steps_count(tmp_path, monkeypatch):
         # 步骤日志应含「1/2」「2/2」（skip_update=True → 板块+质检=2 步，不出现 2/1 之类错误分段）
         assert any("1/2" in m and "板块采集" in m for m in ctx_logs)
         assert any("2/2" in m and "数据质检" in m for m in ctx_logs)
+
+
+def test_pipeline_quality_includes_board_scan(tmp_path, monkeypatch):
+    """daily 质检步骤同时跑板块扫描（scan_board_quality 已接线，非孤立方法）。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.data_report import DataIntegrityReport
+    from backend.services.pipeline import DailyPipeline
+
+    called = {"board": 0, "base": 0}
+
+    def fake_scan_board(self):
+        called["board"] += 1
+        return {"member_wave": 1, "index_gap": 2}
+
+    monkeypatch.setattr(DataIntegrityReport, "scan_board_quality", fake_scan_board, raising=True)
+    monkeypatch.setattr(DataIntegrityReport, "scan_quality_issues",
+                        lambda self: (called.__setitem__("base", called["base"] + 1) or
+                                      {"abnormal_change_rows": 0}), raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board",
+                        lambda self, ctx=None, board_type=None, board_codes=None, mode="update": {}, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "update", lambda self, codes=None, ctx=None: {"ok": 1}, raising=True)
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_market_with_latest(c)
+        DailyPipeline(c).run(skip_update=True)
+        assert called["base"] == 1   # 基础四层质检跑了
+        assert called["board"] == 1  # 板块扫描也跑了（接线验证）
