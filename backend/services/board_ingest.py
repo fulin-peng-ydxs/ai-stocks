@@ -13,7 +13,7 @@
 关键语义：
 - 快照日期 = Asia/Shanghai 实际成功采集日期（需求 R2）。
 - 成分股代码补交易所后缀对齐 stock_basic.code（复用 akshare_source.to_full_code）。
-- member_count 仅「已应用」路径刷新：T4 完整快照直接落库路径；T9 候选确认应用路径。
+- member_count 每板块完整快照落库时刷新（只进不出模型当前成分数）。
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def _in_placeholders(n: int) -> str:
 
 
 class BoardIngestService:
-    """板块数据采集编排（R1-R4 + R2 候选保存）。"""
+    """板块数据采集编排（R1-R4，只进不出模型）。"""
 
     def __init__(self, client: DuckDBClient | None = None, source: ThsBoardSource | None = None):
         self.c = client or get_client()

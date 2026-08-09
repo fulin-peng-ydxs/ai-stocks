@@ -670,7 +670,7 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
     ctx.log(f"质检完成：异常涨跌 {q.get('abnormal_change_rows', 0)}、复权跳变 {q.get('adj_jump_rows', 0)}、"
             f"市值缺失 {q.get('mv_missing_rows', 0)}、市值缺口 {q.get('mv_gap_rows', 0)}、"
             f"缺口 {q.get('data_gap_rows', 0)}、滞后 {q.get('stale_rows', 0)}、"
-            f"板块波动 {b.get('member_wave', 0)}、板块指数缺口 {b.get('index_gap', 0)}")
+            f"板块指数缺口 {b.get('index_gap', 0)}")
     return {"message": f"质检完成：发现 {n} 项问题" if n else "质检完成：未发现新问题", "quality": q}
 
 
@@ -939,20 +939,26 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
 def _h_board(params: dict, ctx: TaskContext) -> dict:
     """板块采集（板块概念需求 R5）：字典→成分快照→指数→资金流。
 
-    checkpoint 粒度 board_code：中断后续跑只处理未完成板块（done_codes 过滤）。
+    params.mode=backfill/update（默认 backfill）；params.codes 指定板块子集（采集页
+    「指定板块」/重采用），未传则全量。checkpoint 粒度 board_code：中断后续跑只处理
+    未完成板块（done_codes 过滤）。
     """
     from backend.services.ingest import IngestionService
     from backend.storage.duckdb_client import get_client
     done_codes = set((ctx.checkpoint or {}).get("done_codes") or [])
-    # 全部板块代码（board_dict 有成分/指数者）；未完成 = 全量 - 已完成
+    # 目标板块：params.codes 指定子集；未传则全部（board_dict 有成分/指数者）
     c = get_client()
-    df = c.query_df("SELECT board_code FROM board_dict WHERE has_members OR has_bar")
-    all_codes = [str(x) for x in df["board_code"].tolist()]
+    spec_codes = [str(x).strip() for x in (params.get("codes") or []) if str(x).strip()]
+    if spec_codes:
+        all_codes = spec_codes
+        ctx.log(f"板块采集指定 {len(spec_codes)} 个板块：{spec_codes[:5]}{'…' if len(spec_codes) > 5 else ''}")
+    else:
+        df = c.query_df("SELECT board_code FROM board_dict WHERE has_members OR has_bar")
+        all_codes = [str(x) for x in df["board_code"].tolist()]
+        ctx.log(f"板块采集开始，共 {len(all_codes)} 个板块")
     remaining = [x for x in all_codes if x not in done_codes]
     if done_codes:
         ctx.log(f"续跑：已完成 {len(done_codes)} 个板块，待处理 {len(remaining)} 个")
-    else:
-        ctx.log(f"板块采集开始，共 {len(all_codes)} 个板块")
     ctx.progress(0.05, "板块采集进行中…")
     ctx.check_cancel()
     # 任务中心发起默认全量回填（对齐 plan §9「任务中心创建板块采集」= 初始化回填）；

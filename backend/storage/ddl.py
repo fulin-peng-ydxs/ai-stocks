@@ -704,9 +704,7 @@ M_TRAINING_TABLES: dict[str, str] = {
 }
 
 # ── 板块概念数据（agent-works/concept-industry-board/，R1-R6）──────────────
-# 同花顺板块四块数据（字典/成分/指数/资金流）+ 成分快照候选（R2 合法异常恢复）。
-# 字段契约按需求 §6.1；表达式唯一索引（候选「每板块每日最多一个 applied」）实测
-# DuckDB 1.5.3 创建与强制均生效（INSERT/UPDATE 两路径拦截，见 T3 单测）。
+# 同花顺板块四块数据（字典/成分/指数/资金流），字段契约按需求 §6.1。
 DDL_BOARD_DICT = """
 CREATE TABLE IF NOT EXISTS board_dict (
     board_code VARCHAR PRIMARY KEY,        -- 同花顺路径 code（概念 30xxxx / 行业 88xxxx），取数/跳转统一用它

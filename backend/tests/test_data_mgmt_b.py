@@ -406,9 +406,9 @@ def test_scan_board_quality_no_member_wave(client, monkeypatch):
     """只进不出模型：成分数波动不再质检（源端真实重组非错误），扫描不产 board_member_wave。"""
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
-    # 即使 member_count 与当前成员数差异巨大，也不再报波动
+    # 即使 member_count 与当前成员数差异巨大，也不再报波动；返回值无 member_wave 键
     r = DataIntegrityReport(client).scan_board_quality()
-    assert r["member_wave"] == 0
+    assert "member_wave" not in r
     waves = client.query_df(
         "SELECT count(*) n FROM data_quality_issue WHERE issue_type='board_member_wave'")
     assert int(waves.iloc[0]["n"]) == 0
@@ -425,18 +425,6 @@ def test_scan_board_quality_index_gap(client, monkeypatch):
     assert "881121" in gaps["code"].tolist()   # 半导体滞后被报
     assert "309121" not in gaps["code"].tolist()  # AI PC 指数正常不报
 
-
-def test_scan_board_quality_config_override(client, monkeypatch):
-    """阈值走 YAML 基线，不再 Web 覆盖：Settings 模型字段在，但不在覆盖层白名单。"""
-    from backend.config.settings import Settings
-    # 默认值（Settings 模型 + settings.yaml 基线）
-    s = Settings()
-    assert s.board_quality.relative_change_ratio == 0.5
-    assert s.board_quality.absolute_change_threshold == 20
-    # 低频稳定参数不入覆盖层白名单（不在 CONFIG_GROUPS 登记），不可被 app_config 覆盖
-    from backend.storage.app_config import WHITELIST
-    assert "board_quality.relative_change_ratio" not in WHITELIST
-    assert "board_quality.absolute_change_threshold" not in WHITELIST
 
 
 def test_ths_board_config_overridable(client, monkeypatch):
@@ -520,7 +508,7 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
 
 
 def test_scan_board_quality_no_false_wave_without_bar(client, monkeypatch):
-    """只进不出模型：成分数波动不再质检，扫描只报指数缺口（member_wave 恒 0）。"""
+    """只进不出模型：成分数波动不再质检，扫描无 member_wave 键。"""
     from backend.services.data_report import DataIntegrityReport
     c = client
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, member_count) "
@@ -528,9 +516,9 @@ def test_scan_board_quality_no_false_wave_without_bar(client, monkeypatch):
     for i in range(50):
         c.execute("INSERT INTO board_member (board_code, code) "
                   "VALUES ('309121', ?)", [f"c{i:05d}"])
-    # board_bar 无数据；无全局最新交易日（daily_bar 空）→ index_gap 不报，member_wave 恒 0
+    # board_bar 无数据；无全局最新交易日（daily_bar 空）→ index_gap 不报，无 member_wave 键
     r = DataIntegrityReport(c).scan_board_quality()
-    assert r["member_wave"] == 0   # 波动质检已移除
+    assert "member_wave" not in r   # 波动质检已移除
 
 
 def test_search_boards_by_code_and_name(client):

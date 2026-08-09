@@ -217,7 +217,7 @@ def test_pipeline_quality_includes_board_scan(tmp_path, monkeypatch):
 
     def fake_scan_board(self):
         called["board"] += 1
-        return {"member_wave": 1, "index_gap": 2}
+        return {"index_gap": 2}
 
     monkeypatch.setattr(DataIntegrityReport, "scan_board_quality", fake_scan_board, raising=True)
     monkeypatch.setattr(DataIntegrityReport, "scan_quality_issues",

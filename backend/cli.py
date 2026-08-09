@@ -694,7 +694,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_board.add_argument("--dict", action="store_true", dest="only_dict",
                          help="只采板块字典（board_dict）")
     p_board.add_argument("--members", action="store_true", dest="only_members",
-                         help="只采成分快照（board_member，含候选保存）")
+                         help="只采成分快照（board_member，只进不出落库）")
     p_board.add_argument("--bar", action="store_true", dest="only_bar",
                          help="只采板块指数（board_bar）")
     p_board.add_argument("--fund", action="store_true", dest="only_fund",

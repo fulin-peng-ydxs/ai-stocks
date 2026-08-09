@@ -543,7 +543,7 @@ class DataIntegrityReport:
         # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
         if latest is None:
-            return {"member_wave": 0, "index_gap": 0}
+            return {"index_gap": 0}
         latest = pd.Timestamp(latest).date()
         # 已 ignored 的板块豁免（按 (code, type) 整体豁免）
         ig = set()
@@ -573,7 +573,7 @@ class DataIntegrityReport:
                               f"全局最新交易日 {latest}",
                 })
         self._insert_issues(gap_issues)
-        return {"member_wave": 0, "index_gap": len(gap_issues)}
+        return {"index_gap": len(gap_issues)}
 
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
     def recheck_clean(self, issue_type: str, code: str, trade_date: date | None,

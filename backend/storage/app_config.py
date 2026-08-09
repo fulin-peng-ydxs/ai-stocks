@@ -53,9 +53,6 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "ths_board.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10, "desc": "同花顺请求失败后的最多重试次数。"},
         {"path": "ths_board.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60, "desc": "同花顺请求连续重试之间的退避时间。"},
     ]},
-    # 板块质检阈值（board_quality）：低频稳定参数，仅存 YAML 基线（Settings 模型 + settings.yaml），
-    # **不入系统设置 Web 表单、不入覆盖层白名单**——不在 CONFIG_GROUPS 登记即不可被 app_config 覆盖，
-    # 确需调整改 settings.yaml 后 reload_settings() 生效。对齐「不频繁变化的参数不设配置选项」的口径。
     # 定时调度（遗留）：调度系统重构后改用 scheduled_job 表 + 「任务调度」页，旧的单一每日配置
     # 已不再作为运行态。这些白名单项仅供启动时一次性迁移读取旧值（读后即删，见 scheduler._migrate_legacy_config），
     # 不在表单渲染（hidden_in_form）。迁移消费完即从 app_config 删除，正常运行期不会再出现。

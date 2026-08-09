@@ -170,13 +170,6 @@ mail:
   sender: ""                   # 留空则回落 username；可用 AI_STOCKS_SMTP_SENDER 覆盖显示名
   timeout_sec: 10
 
-# 板块数据质检阈值（板块概念需求 R12，T7）：threshold=max(absolute, prev*ratio)，abs(cur-prev)>=threshold 触发。
-# 低频稳定参数，仅作 YAML 基线，不入系统设置 Web 表单、不入 CONFIG_GROUPS 覆盖层白名单（不可在线覆盖）；
-# 确需调整改此处后 reload_settings() 生效。
-board_quality:
-  relative_change_ratio: 0.5     # 成分数相对变化比例
-  absolute_change_threshold: 20  # 成分数绝对变化阈值
-
 # 同花顺板块直连源请求参数（板块概念 R1-R4；独立于 datasource 通用行情源——同花顺是独立反爬直连源，
 # 频率限制比 akshare/baostock 更敏感，故限流/超时/重试单独配置、单独 Web 可调（数据治理·同花顺板块）。
 # min_interval_sec 为相邻两次请求最小间隔：实测 1.0s 稳定，风控收紧（如 401 频发）时调大到 2.0~3.0。

@@ -120,7 +120,7 @@ class DuckDBClient:
 
         背景：现有 execute()/query_df() 按调用各自持 RLock——多语句 BEGIN..COMMIT 块之间
         会被其他线程 SQL 插入（同一连接交替执行，破坏事务原子性）。本助手在整个事务块内持
-        RLock，保证候选保存事务①/应用/丢弃事务②③等多语句块原子执行。
+        RLock，保证多语句写块（如板块成分落库 + member_count 刷新）原子执行。
 
         - 成功：COMMIT（异常则 ROLLBACK 并释放连接）。
         - 写锁冲突（跨进程，如 CLI 采集持文件锁）：connect/execute 立即抛 IOException 被包进

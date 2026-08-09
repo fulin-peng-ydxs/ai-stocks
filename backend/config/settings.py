@@ -216,19 +216,6 @@ class AuditConfig(BaseModel):
     retention_days: int = Field(default=90, ge=1)  # 默认查询窗口/保留期提示；自动清理留后续阶段
 
 
-class BoardQualityConfig(BaseModel):
-    """板块数据质检阈值（板块概念需求 R12，T7）。
-
-    阈值公式：threshold = max(absolute_change_threshold, previous_member_count * relative_change_ratio)
-    触发条件：abs(cur - prev) >= threshold。这是**低频稳定参数**（源端成分数口径长期稳定），
-    仅作 YAML 基线，不进 Web 系统设置表单、不入 CONFIG_GROUPS 覆盖层白名单（即不可被 app_config
-    在线覆盖）；确需调整改 YAML 后 reload_settings() 生效。消费端 get_effective_settings()。
-    """
-
-    relative_change_ratio: float = Field(default=0.5, ge=0.0)    # 相对变化比例
-    absolute_change_threshold: int = Field(default=20, ge=0)      # 绝对变化阈值（成分数）
-
-
 class ThsBoardConfig(BaseModel):
     """同花顺板块数据源请求参数（板块概念需求 R1-R4，独立于 datasource 通用行情源）。
 
@@ -282,7 +269,6 @@ class Settings(BaseModel):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
-    board_quality: BoardQualityConfig = Field(default_factory=BoardQualityConfig)
     ths_board: ThsBoardConfig = Field(default_factory=ThsBoardConfig)
     mail: MailConfig = Field(default_factory=MailConfig)
 
