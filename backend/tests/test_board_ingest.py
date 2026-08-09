@@ -68,6 +68,22 @@ def _member_count(c: DuckDBClient, board_code: str) -> int:
 # ── payload_hash 规范化与幂等四态 ─────────────────────────────
 
 
+def test_board_codes_filter_in_clause(tmp_path):
+    """board_codes 过滤走 IN (?,?,...) 占位符展开（DuckDB 对 IN (?) 传 list 会 Conversion Error）。"""
+    src = _FakeSource({"309121": ["300476"], "881121": ["600000"]})
+    svc, c = _make_service(tmp_path, src)
+    for code, name, bt in [("309121", "AI PC", "concept"), ("881121", "半导体", "industry")]:
+        c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+                  "VALUES (?,?,?,TRUE)", [code, name, bt])
+    # ingest_board_members 指定 board_codes → 不崩且只处理指定板块
+    r = svc.ingest_board_members(snapshot_date=date(2026, 1, 5), board_codes=["309121"])
+    assert set(r.keys()) == {"309121"}
+    assert "881121" not in r
+    # ingest_board_bar 指定 board_codes（空 bar 返回不崩）
+    bar = svc.ingest_board_bar(date(2026, 1, 1), board_codes=["881121"])
+    assert "boards" in bar
+
+
 def test_payload_hash_normalization():
     """payload_hash：SHA-256(ISO日期 + \\n + sorted(set).join(\\n))，代码集换序/重复 → 同 hash。"""
     svc, c = _make_service(Path(tempfile.mkdtemp()), _FakeSource({}))
@@ -274,7 +290,6 @@ def test_write_lock_classification():
 
 def test_member_diff_member_count_atomic(tmp_path):
     """diff 与 member_count 同事务：中途失败整体回滚，member_count 不残留（R2 原子性）。"""
-    import pandas as pd
     src = _FakeSource({"309121": ["300476", "603936", "002913"]})
     svc, c = _make_service(tmp_path, src)
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
@@ -314,3 +329,39 @@ def test_fund_flow_batch_not_single_insert(tmp_path):
     rows = c.query_df("SELECT board_code, period FROM board_fund_flow")
     assert len(rows) == 2
     assert set(rows["board_code"]) == {"309121", "302035"}
+
+
+def test_ingest_board_mode_update_vs_backfill(tmp_path, monkeypatch):
+    """增量/全量语义：update 只采即时资金流，backfill 全周期；指数区间不同。"""
+    import pandas as pd
+    from backend.services.board_ingest import BoardIngestService
+
+    # 用真实 BoardIngestService + 假源
+    calls = {"fund_periods": [], "bar_start": []}
+
+    class _ModeSource(_FakeSource):
+        def get_board_fund_flow(self, board_type, period):
+            calls["fund_periods"].append(period)
+            return pd.DataFrame([{"name": "AI PC", "inflow": 1, "outflow": 0,
+                                  "net_inflow": 1, "net_ratio": 1, "leader_stock": "x", "leader_pct": 1}])
+
+        def get_board_bar(self, code, board_type, start, end):
+            calls["bar_start"].append(start)
+            return pd.DataFrame(columns=["trade_date", "open", "high", "low", "close", "volume", "amount"])
+
+        def get_board_dict(self, board_type):
+            return pd.DataFrame([{"board_code": "309121", "name": "AI PC"}])
+
+    src = _ModeSource({})
+    svc = BoardIngestService(client=_make_service(tmp_path, src)[1], source=src)
+
+    # update 模式
+    svc.ingest_board_dict()
+    svc.ingest_board_members(board_codes=["309121"])
+    svc.ingest_board_bar(date(2026, 8, 1), board_codes=["309121"])
+    svc.ingest_board_fund_flow(periods=("即时",))
+    assert set(calls["fund_periods"]) == {"即时"}    # update 只采即时（概念+行业各一次）
+    # backfill 模式（直接调 fund_flow 全周期）
+    calls["fund_periods"].clear()
+    svc.ingest_board_fund_flow()
+    assert set(calls["fund_periods"]) == {"即时", "3日", "5日", "10日", "20日"}  # backfill 全周期

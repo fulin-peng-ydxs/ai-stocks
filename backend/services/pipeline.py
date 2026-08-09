@@ -86,11 +86,11 @@ class DailyPipeline:
             steps.append({"step": "定位最新交易日", "status": "failed", "secs": 0, "detail": "无行情数据"})
             return {"ok": False, "steps": steps}
 
-        # 2. 板块采集（板块概念需求 R21）：板块独立于行情更新；失败不阻塞后续质检。
+        # 2. 板块采集（板块概念需求 R21）：板块独立于行情更新；失败不阻塞后续质检。每日增量 mode。
         if board:
             def _board():
                 from backend.services.ingest import IngestionService
-                return IngestionService().ingest_board(ctx=ctx)
+                return IngestionService().ingest_board(ctx=ctx, mode="update")
             step("板块采集", _board)
 
         # 3. 数据质检（M2.9 DM-D14）：扫异常涨跌/复权跳变写 data_quality_issue（幂等，每日自动监控）。

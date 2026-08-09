@@ -1798,18 +1798,22 @@ class IngestionService:
 
     # ── 板块概念采集（R1-R4/R2 候选保存，板块概念需求）─────────────────
     def ingest_board(self, ctx=None, board_type: str | None = None,
-                     board_codes: list[str] | None = None) -> dict:
-        """板块数据全量编排：字典两阶段 → 成分快照（含候选保存）→ 指数 → 资金流。
+                     board_codes: list[str] | None = None, mode: str = "update") -> dict:
+        """板块数据编排：字典 → 成分快照（含候选保存）→ 指数 → 资金流。
 
         承接 plan §6.4 T4：单步骤失败记日志不中断（返回失败清单），供 T5/T6 失败隔离与续跑。
+        - mode="backfill"（初始化）：指数全量回填（源端可用起始年 2024 起）+ 资金流全周期。
+        - mode="update"（每日增量）：指数只补最近交易日 + 资金流只采「即时」；
+          成分股始终全量拉快照 + diff 落库（源只给全量，diff 落库即增量存储）。
         board_type 预留（本期全量）；ctx 提供任务中心进度日志。
         """
         from backend.services.board_ingest import BoardIngestService
+        from datetime import date as _d, timedelta as _td
 
         svc = BoardIngestService()
         result: dict = {"dict": None, "members": {}, "bar": None, "fund_flow": None, "failed": []}
         if ctx:
-            ctx.log("板块采集开始：字典 → 成分快照 → 指数 → 资金流")
+            ctx.log(f"板块采集开始（{mode}）：字典 → 成分快照 → 指数 → 资金流")
             ctx.flush()
         try:
             result["dict"] = svc.ingest_board_dict()
@@ -1822,21 +1826,27 @@ class IngestionService:
         except Exception as e:  # noqa: BLE001
             log.warning("板块成分快照采集失败: %s", e)
             result["failed"].append(f"members: {e}")
-        # 指数回填：从源端可用起始年到今天（2026-08-09 实测 `d.` 域指数历史仅近 3 年、
-        # 2021-2023 返回 404，故从 2024 起；各板块实际最早日按源返回各异属正常，404 年跳过）
-        from datetime import date as _d
         try:
-            result["bar"] = svc.ingest_board_bar(_d(2024, 1, 1), board_codes=board_codes)
+            if mode == "backfill":
+                # 全量回填：源端可用起始年到今天（实测 `d.` 域仅近 3 年、2021-2023 404，故 2024 起）
+                result["bar"] = svc.ingest_board_bar(_d(2024, 1, 1), board_codes=board_codes)
+            else:
+                # 增量：只补最近交易日（往前取 5 天缓冲，覆盖跨周末）
+                end = _d.today()
+                result["bar"] = svc.ingest_board_bar(end - _td(days=5), board_codes=board_codes)
         except Exception as e:  # noqa: BLE001
             log.warning("板块指数采集失败: %s", e)
             result["failed"].append(f"bar: {e}")
         try:
-            result["fund_flow"] = svc.ingest_board_fund_flow()
+            if mode == "backfill":
+                result["fund_flow"] = svc.ingest_board_fund_flow()
+            else:
+                result["fund_flow"] = svc.ingest_board_fund_flow(periods=("即时",))
         except Exception as e:  # noqa: BLE001
             log.warning("板块资金流采集失败: %s", e)
             result["failed"].append(f"fund_flow: {e}")
         if ctx:
-            ctx.log(f"板块采集完成：字典{result['dict']} 成分{len(result['members'])} 板块 "
+            ctx.log(f"板块采集完成（{mode}）：字典{result['dict']} 成分{len(result['members'])} 板块 "
                     f"指数{result['bar']} 资金流{result['fund_flow']} 失败{result['failed']}")
             ctx.flush()
         return result

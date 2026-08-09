@@ -428,10 +428,11 @@ def cmd_board(args: argparse.Namespace) -> int:
     """板块采集 CLI（板块概念需求 R21）：--backfill 全量回填 / --update 增量。"""
     from backend.services.ingest import IngestionService
 
+    mode = "backfill" if args.backfill else "update"
     svc = IngestionService()
-    res = svc.ingest_board()
+    res = svc.ingest_board(mode=mode)
     failed = res.get("failed") or []
-    print(f"=== 板块采集 {'✓' if not failed else '✗'} ===")
+    print(f"=== 板块采集（{mode}）{'✓' if not failed else '✗'} ===")
     print(f"  字典: {res.get('dict')}")
     print(f"  成分快照: {len(res.get('members', {}))} 个板块")
     print(f"  指数: {res.get('bar')}")

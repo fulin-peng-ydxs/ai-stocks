@@ -921,7 +921,7 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
         ctx.log(f"板块采集开始，共 {len(all_codes)} 个板块")
     ctx.progress(0.05, "板块采集进行中…")
     ctx.check_cancel()
-    result = IngestionService().ingest_board(ctx=ctx, board_codes=remaining)
+    result = IngestionService().ingest_board(ctx=ctx, board_codes=remaining, mode="update")
     done = sorted(set(all_codes) - set(remaining))
     ctx.set_checkpoint(done_codes=sorted(done_codes | set(done)))
     if result.get("failed"):

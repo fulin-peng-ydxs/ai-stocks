@@ -32,9 +32,8 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("services.board_ingest")
 
-# 成分数异常波动阈值（R12 配置化，此处为代码内兜底默认；T7 接配置覆盖层后优先配置）
-_DEFAULT_RELATIVE_RATIO = 0.5
-_DEFAULT_ABSOLUTE_THRESHOLD = 20
+# 成分数异常波动阈值（R12）读生效配置 get_effective_settings().board_quality
+# （与 T7 scan_board_quality 同一口径，避免双口径；默认值 0.5/20 见 Settings BoardQualityConfig）
 
 # issue 类型（候选恢复闭环）
 ISSUE_TYPE_MEMBER_SURGE_SHRINK = "member_surge_shrink"
@@ -43,6 +42,11 @@ ISSUE_TYPE_MEMBER_SURGE_SHRINK = "member_surge_shrink"
 def _asia_date() -> date:
     """Asia/Shanghai 当前日期（快照日期语义）。"""
     return datetime.now(timezone.utc).astimezone(tz=timezone(timedelta(hours=8))).date()
+
+
+def _in_placeholders(n: int) -> str:
+    """DuckDB `IN (?,?,...)` 占位符串（DuckDB 对 `IN (?)` 传 list 会 Conversion Error，须展开）。"""
+    return ",".join(["?"] * n)
 
 
 class BoardIngestService:
@@ -117,8 +121,9 @@ class BoardIngestService:
         # 读取板块清单
         if board_codes:
             df_boards = self.c.query_df(
-                "SELECT board_code, board_type FROM board_dict WHERE board_code IN (?)",
-                [board_codes])
+                f"SELECT board_code, board_type FROM board_dict "
+                f"WHERE board_code IN ({_in_placeholders(len(board_codes))})",
+                board_codes)
         else:
             df_boards = self.c.query_df(
                 "SELECT board_code, board_type FROM board_dict WHERE has_members")
@@ -136,7 +141,9 @@ class BoardIngestService:
         m = self.src.get_board_members(code, board_type)
         codes_full = [to_full_code(c) for c in m["codes"]]
         cur_set = set(codes_full)
-        # 波动阈值判定（R12 公式；T7 接配置后此处读生效配置）
+        # 波动阈值判定（R12 公式；读生效配置，与 T7 scan_board_quality 同一口径，避免双口径）
+        from backend.config import get_effective_settings
+        bq = get_effective_settings().board_quality
         prev = self.c.query_df(
             "SELECT member_count FROM board_dict WHERE board_code=?", [code])
         prev_count = 0
@@ -144,7 +151,7 @@ class BoardIngestService:
             mc = prev.iloc[0]["member_count"]
             if mc is not None and not pd.isna(mc):
                 prev_count = int(mc)
-        threshold = max(_DEFAULT_ABSOLUTE_THRESHOLD, int(prev_count * _DEFAULT_RELATIVE_RATIO))
+        threshold = max(bq.absolute_change_threshold, int(prev_count * bq.relative_change_ratio))
         wave_blocked = bool(prev_count) and abs(len(cur_set) - prev_count) >= threshold
 
         if not m["complete"] or wave_blocked:
@@ -256,8 +263,9 @@ class BoardIngestService:
         end = end or _asia_date()
         if board_codes:
             df_boards = self.c.query_df(
-                "SELECT board_code, board_type FROM board_dict WHERE board_code IN (?)",
-                [board_codes])
+                f"SELECT board_code, board_type FROM board_dict "
+                f"WHERE board_code IN ({_in_placeholders(len(board_codes))})",
+                board_codes)
         else:
             df_boards = self.c.query_df(
                 "SELECT board_code, board_type FROM board_dict WHERE has_bar")
@@ -292,9 +300,14 @@ class BoardIngestService:
 
     # ── 4. 资金流（并集映射）─────────────────────────────────
 
-    def ingest_board_fund_flow(self, snapshot_date: date | None = None) -> dict:
-        """资金流全周期 upsert + 名称匹配映射；未匹配写质检不伪造代码（R4）。"""
+    def ingest_board_fund_flow(self, snapshot_date: date | None = None,
+                               periods: tuple[str, ...] | None = None) -> dict:
+        """资金流 upsert + 名称匹配映射；未匹配写质检不伪造代码（R4）。
+
+        periods=None → 全周期（"即时","3日","5日","10日","20日"）；update 模式只传 ("即时",)。
+        """
         sdate = snapshot_date or _asia_date()
+        periods = periods or ("即时", "3日", "5日", "10日", "20日")
         # 字典 code→name 映射
         d = self.c.query_df("SELECT board_code, name, board_type FROM board_dict")
         name_to_code: dict[tuple[str, str], str] = {}
@@ -303,7 +316,7 @@ class BoardIngestService:
         rows = 0
         unmatched: list[str] = []
         for board_type in ("concept", "industry"):
-            for period in ("即时", "3日", "5日", "10日", "20日"):
+            for period in periods:
                 try:
                     df = self.src.get_board_fund_flow(board_type, period)
                 except Exception as e:  # noqa: BLE001

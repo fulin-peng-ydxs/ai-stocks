@@ -319,7 +319,7 @@ def test_board_task_create_and_run(client, monkeypatch):
 
     calls = {"n": 0}
 
-    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None):
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None, mode="update"):
         calls["n"] += 1
         return {"dict": {"total": 465}, "members": {}, "bar": {"rows": 0},
                 "fund_flow": {"rows": 0}, "failed": []}
@@ -340,7 +340,7 @@ def test_board_task_write_mutex(client, monkeypatch):
     from backend.services import ingest as ingest_mod
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
 
-    def slow_board(self, ctx=None, board_type=None, board_codes=None):
+    def slow_board(self, ctx=None, board_type=None, board_codes=None, mode="update"):
         time.sleep(0.4)
         return {"dict": {"total": 0}, "members": {}, "bar": {"rows": 0},
                 "fund_flow": {"rows": 0}, "failed": []}
@@ -362,7 +362,7 @@ def test_board_task_resume_skips_done(client, monkeypatch):
 
     received = {}
 
-    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None):
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None, mode="update"):
         received["board_codes"] = board_codes
         return {"dict": {"total": 465}, "members": {}, "bar": {"rows": 0},
                 "fund_flow": {"rows": 0}, "failed": []}
