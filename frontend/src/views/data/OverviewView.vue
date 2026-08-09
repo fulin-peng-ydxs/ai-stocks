@@ -537,98 +537,95 @@ onMounted(load)
             <div class="overview-panel" v-if="ov?.board">
               <div class="panel-head">
                 <span class="panel-title">板块数据总览</span>
-                <span class="hint">概念/行业板块的采集规模、覆盖进度、质量与最近采集状态；点击「去采集」进入板块增量采集</span>
+                <span class="hint">概念/行业板块的采集规模、覆盖进度、质量与最近采集状态</span>
               </div>
 
-              <!-- 采集总览：规模 + 覆盖进度 -->
-              <div class="board-section">
-                <div class="board-stat-row">
-                  <div class="board-stat">
-                    <div class="bs-label">板块规模</div>
-                    <div class="bs-value">{{ ov.board.board_dict }}<span class="bs-sub">个</span></div>
-                    <div class="bs-foot">概念 {{ ov.board.concept_count }} · 行业 {{ ov.board.industry_count }}</div>
+              <!-- 主体：两列（覆盖进度 + 次要信息） -->
+              <div class="board-layout">
+                <!-- 左列：规模 + 覆盖进度 -->
+                <div class="board-main">
+                  <div class="board-scale-card">
+                    <div class="board-scale-num">{{ ov.board.board_dict }}<span class="bs-sub">个板块</span></div>
+                    <div class="board-scale-types">
+                      <span class="btype">概念 <b>{{ ov.board.concept_count }}</b></span>
+                      <span class="btype-sep"></span>
+                      <span class="btype">行业 <b>{{ ov.board.industry_count }}</b></span>
+                    </div>
                   </div>
-                  <div class="board-stat">
-                    <div class="bs-label">成分覆盖</div>
-                    <div class="bs-value">{{ coverageText(ov.board.member_ready, ov.board.member_target) }}</div>
-                    <el-progress :percentage="coveragePct(ov.board.member_ready, ov.board.member_target)"
-                                 :status="coveragePct(ov.board.member_ready, ov.board.member_target) >= 100 ? 'success' : ''"
-                                 :stroke-width="8" />
-                    <div class="bs-foot">已有完整成分快照的板块</div>
+                  <div class="board-coverage">
+                    <div class="cov-item">
+                      <div class="cov-head"><span class="cov-label">成分覆盖</span><span class="cov-num">{{ coverageText(ov.board.member_ready, ov.board.member_target) }}</span></div>
+                      <el-progress :percentage="coveragePct(ov.board.member_ready, ov.board.member_target)"
+                                   :status="coveragePct(ov.board.member_ready, ov.board.member_target) >= 100 ? 'success' : ''"
+                                   :stroke-width="8" />
+                    </div>
+                    <div class="cov-item">
+                      <div class="cov-head"><span class="cov-label">指数覆盖</span><span class="cov-num">{{ coverageText(ov.board.bar_ready, ov.board.bar_target) }}</span></div>
+                      <el-progress :percentage="coveragePct(ov.board.bar_ready, ov.board.bar_target)"
+                                   :status="coveragePct(ov.board.bar_ready, ov.board.bar_target) >= 100 ? 'success' : ''"
+                                   :stroke-width="8" />
+                    </div>
+                    <div class="cov-item">
+                      <div class="cov-head"><span class="cov-label">资金流覆盖</span><span class="cov-num">{{ coverageText(ov.board.fund_ready, ov.board.fund_target) }}</span></div>
+                      <el-progress :percentage="coveragePct(ov.board.fund_ready, ov.board.fund_target)"
+                                   :status="coveragePct(ov.board.fund_ready, ov.board.fund_target) >= 100 ? 'success' : ''"
+                                   :stroke-width="8" />
+                    </div>
                   </div>
-                  <div class="board-stat">
-                    <div class="bs-label">指数覆盖</div>
-                    <div class="bs-value">{{ coverageText(ov.board.bar_ready, ov.board.bar_target) }}</div>
-                    <el-progress :percentage="coveragePct(ov.board.bar_ready, ov.board.bar_target)"
-                                 :status="coveragePct(ov.board.bar_ready, ov.board.bar_target) >= 100 ? 'success' : ''"
-                                 :stroke-width="8" />
-                    <div class="bs-foot">指数到最新交易日</div>
+                </div>
+
+                <!-- 右列：鲜活度 + 质量问题 + 最近采集 -->
+                <div class="board-side">
+                  <div class="board-side-block">
+                    <div class="board-side-title">数据鲜活度</div>
+                    <div class="board-meta-grid">
+                      <div class="meta-cell"><div class="mc-label">最新交易日</div><div class="mc-value">{{ (ov.latest_trade_date || '—').slice(0, 10) }}</div></div>
+                      <div class="meta-cell"><div class="mc-label">板块指数</div><div class="mc-value" :class="{ warn: ov.board.latest_bar_date && ov.board.latest_bar_date < (ov.latest_trade_date || '') }">{{ ov.board.latest_bar_date || '—' }}</div></div>
+                      <div class="meta-cell"><div class="mc-label">资金流快照</div><div class="mc-value" :class="{ warn: ov.board.latest_fund_date && ov.board.latest_fund_date < (ov.latest_trade_date || '') }">{{ ov.board.latest_fund_date || '—' }}</div></div>
+                    </div>
                   </div>
-                  <div class="board-stat">
-                    <div class="bs-label">资金流覆盖</div>
-                    <div class="bs-value">{{ coverageText(ov.board.fund_ready, ov.board.fund_target) }}</div>
-                    <el-progress :percentage="coveragePct(ov.board.fund_ready, ov.board.fund_target)"
-                                 :status="coveragePct(ov.board.fund_ready, ov.board.fund_target) >= 100 ? 'success' : ''"
-                                 :stroke-width="8" />
-                    <div class="bs-foot">有即时资金流</div>
+                  <div class="board-side-block">
+                    <div class="board-side-title">质量问题</div>
+                    <div class="board-issue-list">
+                      <div class="issue-cell" v-if="ov.board.issues_by_type?.board_member_incomplete">
+                        <span class="issue-tag warn">成分不完整</span>
+                        <span class="issue-num">{{ ov.board.issues_by_type.board_member_incomplete }}</span>
+                        <span class="issue-hint">待重采</span>
+                      </div>
+                      <div class="issue-cell" v-if="ov.board.issues_by_type?.board_index_gap">
+                        <span class="issue-tag warn">指数缺口</span>
+                        <span class="issue-num">{{ ov.board.issues_by_type.board_index_gap }}</span>
+                      </div>
+                      <div class="issue-cell" v-if="ov.board.issues_by_type?.board_fund_unmatched">
+                        <span class="issue-tag warn">资金流未匹配</span>
+                        <span class="issue-num">{{ ov.board.issues_by_type.board_fund_unmatched }}</span>
+                      </div>
+                      <div class="issue-cell" v-if="!ov.board.open_issues">
+                        <span class="issue-ok">无待处理板块问题</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="board-side-block" v-if="ov.board.last_update">
+                    <div class="board-side-title">最近采集</div>
+                    <div class="board-meta-grid">
+                      <div class="meta-cell"><div class="mc-label">目标表</div><div class="mc-value mono">{{ ov.board.last_update.table_name }}</div></div>
+                      <div class="meta-cell"><div class="mc-label">状态</div><div class="mc-value">
+                        <el-tag size="small" effect="plain"
+                                :type="ov.board.last_update.status === 'success' ? 'success' : ov.board.last_update.status === 'failed' ? 'danger' : 'warning'">
+                          {{ ov.board.last_update.status }}
+                        </el-tag>
+                      </div></div>
+                      <div class="meta-cell"><div class="mc-label">时间</div><div class="mc-value">{{ (ov.board.last_update.updated_at || '').slice(0, 19) }}</div></div>
+                    </div>
+                    <div class="board-last-detail" v-if="ov.board.last_update.detail"><span class="hint">{{ ov.board.last_update.detail }}</span></div>
                   </div>
                 </div>
               </div>
 
-              <!-- 鲜活度 -->
-              <div class="board-section">
-                <div class="board-subtitle">数据鲜活度</div>
-                <div class="board-meta-row">
-                  <span class="bm-item">最新交易日 <b>{{ (ov.latest_trade_date || '—').slice(0, 10) }}</b></span>
-                  <span class="bm-item">板块指数最新 <b :class="{ warn: ov.board.latest_bar_date && ov.board.latest_bar_date < (ov.latest_trade_date || '') }">{{ ov.board.latest_bar_date || '—' }}</b></span>
-                  <span class="bm-item">资金流快照 <b :class="{ warn: ov.board.latest_fund_date && ov.board.latest_fund_date < (ov.latest_trade_date || '') }">{{ ov.board.latest_fund_date || '—' }}</b></span>
-                </div>
-              </div>
-
-              <!-- 质量问题 -->
-              <div class="board-section">
-                <div class="board-subtitle">质量问题</div>
-                <div class="board-issue-row">
-                  <span class="bi-item" v-if="ov.board.issues_by_type?.board_member_incomplete">
-                    <el-tag size="small" effect="plain" type="warning">成分不完整</el-tag>
-                    <b>{{ ov.board.issues_by_type.board_member_incomplete }}</b>
-                    <span class="bi-hint">待重采</span>
-                  </span>
-                  <span class="bi-item" v-if="ov.board.issues_by_type?.board_index_gap">
-                    <el-tag size="small" effect="plain" type="warning">指数缺口</el-tag>
-                    <b>{{ ov.board.issues_by_type.board_index_gap }}</b>
-                  </span>
-                  <span class="bi-item" v-if="ov.board.issues_by_type?.board_fund_unmatched">
-                    <el-tag size="small" effect="plain" type="warning">资金流未匹配</el-tag>
-                    <b>{{ ov.board.issues_by_type.board_fund_unmatched }}</b>
-                  </span>
-                  <span class="bi-item" v-if="!ov.board.open_issues">
-                    <span class="bi-ok">无待处理板块问题</span>
-                  </span>
-                  <el-button size="small" text type="primary" @click="gotoQuality()">去处理</el-button>
-                </div>
-              </div>
-
-              <!-- 最近采集 -->
-              <div class="board-section" v-if="ov.board.last_update">
-                <div class="board-subtitle">最近采集</div>
-                <div class="board-meta-row">
-                  <span class="bm-item">表 <b>{{ ov.board.last_update.table_name }}</b></span>
-                  <span class="bm-item">状态
-                    <el-tag size="small" effect="plain"
-                            :type="ov.board.last_update.status === 'success' ? 'success' : ov.board.last_update.status === 'failed' ? 'danger' : 'warning'">
-                      {{ ov.board.last_update.status }}
-                    </el-tag>
-                  </span>
-                  <span class="bm-item">时间 <b>{{ (ov.board.last_update.updated_at || '').slice(0, 19) }}</b></span>
-                  <span class="bm-item" v-if="ov.board.last_update.detail"><span class="hint">{{ ov.board.last_update.detail }}</span></span>
-                </div>
-              </div>
-
-              <!-- 操作 -->
-              <div class="board-section board-actions">
+              <!-- 操作条 -->
+              <div class="board-actions">
                 <el-button size="small" type="primary" plain @click="gotoBoard()">去采集板块</el-button>
-                <el-button size="small" text @click="gotoQuality(undefined, 'board_index_gap,board_member_incomplete,board_fund_unmatched')">板块质量问题</el-button>
+                <el-button size="small" text type="primary" @click="gotoQuality(undefined, 'board_index_gap,board_member_incomplete,board_fund_unmatched')">板块质量问题</el-button>
               </div>
             </div>
             <el-empty v-else class="app-empty" description="暂无板块数据，请先在数据采集页运行板块采集" />
@@ -777,26 +774,54 @@ onMounted(load)
 .pager { display: flex; justify-content: flex-end; margin-top: 12px; }
 
 /* ── 板块数据 tab ── */
-.board-section { margin-bottom: 14px; }
-.board-section:last-child { margin-bottom: 0; }
-.board-stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--app-space-3); }
-.board-stat {
-  padding: 10px 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 6px;
-  display: flex; flex-direction: column; gap: var(--app-space-1);
+.board-layout { display: flex; gap: var(--app-space-3); align-items: stretch; flex: 1 1 auto; min-height: 0; }
+.board-main { flex: 1 1 55%; min-width: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
+.board-side { flex: 1 1 45%; min-width: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
+
+/* 规模卡（左侧首卡） */
+.board-scale-card {
+  padding: var(--app-space-4) var(--app-space-3);
+  background: var(--el-fill-color-light);
+  border-radius: 6px;
+  display: flex; align-items: baseline; justify-content: space-between;
 }
-.board-stat .bs-label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.board-stat .bs-value { font-size: var(--app-font-size-data); font-weight: var(--app-font-weight-strong); color: var(--el-text-color-primary); }
-.board-stat .bs-sub { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: var(--app-space-1); }
-.board-stat .bs-foot { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.board-subtitle { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); margin-bottom: var(--app-space-2); color: var(--el-text-color-primary); }
-.board-meta-row { display: flex; flex-wrap: wrap; gap: var(--app-space-2) var(--app-space-5); font-size: var(--app-font-size-table); color: var(--el-text-color-regular); }
-.board-meta-row .bm-item b { color: var(--el-text-color-primary); }
-.board-meta-row .bm-item b.warn { color: var(--app-warning-text); }
-.board-issue-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--app-space-2) var(--app-space-4); font-size: var(--app-font-size-table); }
-.board-issue-row .bi-item b { margin: 0 var(--app-space-1); color: var(--el-text-color-primary); }
-.board-issue-row .bi-item .bi-hint { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
-.board-issue-row .bi-item .bi-ok { color: var(--el-color-success); }
-.board-actions { display: flex; gap: var(--app-space-2); }
+.board-scale-num { font-size: var(--app-font-size-kpi-lg); font-weight: var(--app-font-weight-strong); color: var(--el-text-color-primary); line-height: var(--app-line-height-compact); }
+.board-scale-num .bs-sub { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); margin-left: var(--app-space-1); }
+.board-scale-types { display: flex; align-items: center; gap: var(--app-space-3); }
+.board-scale-types .btype { font-size: var(--app-font-size-table); color: var(--el-text-color-regular); }
+.board-scale-types .btype b { color: var(--el-text-color-primary); font-size: var(--app-font-size-data); }
+.board-scale-types .btype-sep { width: 1px; height: 16px; background: var(--el-border-color); }
+
+/* 覆盖进度 */
+.board-coverage { display: flex; flex-direction: column; gap: var(--app-space-2); padding: var(--app-space-3); border: 1px solid var(--el-border-color-lighter); border-radius: 6px; flex: 1 1 auto; justify-content: center; }
+.cov-item { display: flex; flex-direction: column; gap: var(--app-space-1); }
+.cov-head { display: flex; justify-content: space-between; align-items: baseline; }
+.cov-label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.cov-num { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); color: var(--el-text-color-primary); }
+
+/* 右侧信息块 */
+.board-side-block { padding: var(--app-space-3); border: 1px solid var(--el-border-color-lighter); border-radius: 6px; }
+.board-side-title { font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); color: var(--el-text-color-primary); margin-bottom: var(--app-space-2); }
+.board-meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--app-space-2); }
+.board-meta-grid .meta-cell { min-width: 0; }
+.board-meta-grid .mc-label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.board-meta-grid .mc-value { font-size: var(--app-font-size-table); color: var(--el-text-color-primary); margin-top: var(--app-space-1); }
+.board-meta-grid .mc-value.warn { color: var(--app-warning-text); }
+.board-meta-grid .mc-value.mono { font-family: var(--app-font-family-mono); }
+
+/* 质量问题列表 */
+.board-issue-list { display: flex; flex-direction: column; gap: var(--app-space-2); }
+.issue-cell { display: flex; align-items: center; gap: var(--app-space-2); }
+.issue-cell .issue-tag { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: var(--app-font-size-caption); background: var(--el-color-warning-light-9); color: var(--el-color-warning); }
+.issue-cell .issue-num { font-size: var(--app-font-size-data); font-weight: var(--app-font-weight-strong); color: var(--el-text-color-primary); }
+.issue-cell .issue-hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.issue-cell .issue-ok { color: var(--el-color-success); font-size: var(--app-font-size-table); }
+
+/* 最近采集详情 */
+.board-last-detail { margin-top: var(--app-space-2); }
+
+/* 操作条 */
+.board-actions { display: flex; gap: var(--app-space-2); margin-top: var(--app-space-3); }
 
 @media (max-height: 700px) {
   .stat :deep(.el-card__body) { padding: 7px 6px; }
