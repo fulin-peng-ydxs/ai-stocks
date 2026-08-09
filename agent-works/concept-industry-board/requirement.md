@@ -1,6 +1,6 @@
 # 需求文档:板块概念数据采集与展示
 
-> 需求文档版本：2026-08-08（评审修订版）
+> 需求文档版本：2026-08-08（评审修订版）；2026-08-09 同步当前实施事实与采集闭环复核结果
 > 上游闭环分析：[requirement-closure.md](requirement-closure.md)（已确认）
 > 数据源调研：[research.md](research.md)（同花顺主源）
 > 评审修订说明：本次修订吸收评审意见——编号冲突重排、上游结论对齐（TopN+展开、返回保留筛选态、统计卡字段）、权限基线修正（`sectors:view` 非登录基线，进业务授权集合 + 既有库回填）、数据口径闭环（6 位板块代码、375/387 并集、涨幅计算口径）、原型合规、验收可执行、配置化闭环、开发顺序补中间里程碑。
@@ -9,7 +9,7 @@
 
 ## 1. 背景与目标
 
-「复盘啦」是 EOD A 股趋势龙头研究系统。目前系统已覆盖个股行情、每日榜单、策略筛选、回测、盘感训练等能力，但**缺少板块维度数据**：`stock_basic.concept` 字段始终 NULL，DDL 无任何板块相关表（见 [research.md](research.md) §1）。投资者无法从「题材/板块」视角观察市场强弱、追踪题材轮动、甄别板块内龙头。
+「复盘啦」是 EOD A 股趋势龙头研究系统。需求提出时系统已覆盖个股行情、每日榜单、策略筛选、回测、盘感训练等能力，但**缺少板块维度数据**：`stock_basic.concept` 字段始终 NULL，DDL 无任何板块相关表（见 [research.md](research.md) §1）。当前采集与后端查询能力已经落地，仍待完成的是板块列表/详情前端业务页面。
 
 本需求把「同花顺板块概念数据」完整接入系统，实现两个目标：
 
@@ -18,26 +18,26 @@
 
 ## 2. 当前项目现状
 
-### 2.1 板块数据现状（缺口）
+### 2.1 板块数据现状（需求基线与当前校准）
 
 | 维度 | 现状 | 依据 |
 |---|---|---|
 | `stock_basic.industry` | ✅ 已采集（baostock 证监会行业） | [ddl.py:34](../../backend/storage/ddl.py:34) |
-| `stock_basic.concept` | 🟡 仅占位 NULL | [ddl.py:35](../../backend/storage/ddl.py:35) |
-| 板块字典/成分股/指数表 | 🔴 不存在 | 全代码无板块相关表 |
+| `stock_basic.concept` | 🟡 保持占位 NULL | 板块关系以 `board_member` 为事实源，不回写冗余字符串 |
+| 板块字典/成分股/指数/资金流 | ✅ 已落地 | `board_dict` / `board_member` / `board_bar` / `board_fund_flow` 4 表 |
 
 ### 2.2 数据采集闭环（复用基座）
 
-- **异步任务**：[async_task.py](../../backend/services/async_task.py) `TASK_TYPES` 注册任务类型、`WRITE_TASK_TYPES` 写任务互斥、`TASK_CAPABILITIES` 取消/续跑能力。新增板块任务类型 `board` 即纳入任务中心。
-- **采集编排**：[IngestionService](../../backend/services/ingest.py) 按能力选源（`_source_for`），[DailyPipeline](../../backend/services/pipeline.py) 每日流程串「更新→质检」。
-- **数据概览**：[ddl.py:706](../../backend/storage/ddl.py) `_DIMENSION_SEED` 注册已采集/规划维度，[data_admin.py:217](../../backend/api/data_admin.py) `/data/dimensions` 读取展示。新增 `board` 维度行即自动出现在数据概览「数据资产表」。
+- **异步任务**：[async_task.py](../../backend/services/async_task.py) 已注册 `board` 任务类型并纳入写任务互斥、取消/续跑能力；checkpoint 覆盖字典类型、成分/指数板块代码和资金流类型+周期。
+- **采集编排**：[IngestionService](../../backend/services/ingest.py) 已实现板块四阶段编排，[DailyPipeline](../../backend/services/pipeline.py) 已把板块作为默认步骤接入每日流程，并保持失败后继续质检、最终 `ok=false` 的真实状态。
+- **数据概览**：[ddl.py](../../backend/storage/ddl.py) 已注册 `board` 维度；[data_admin.py](../../backend/api/data_admin.py) 除维度行外还返回板块 4 表行数、类型数、三类覆盖、最新日期、活跃问题分类和最近更新状态。
 - **配置覆盖层**：[environment-configuration.md](../architecture/environment-configuration.md) YAML 基线 ⊕ `app_config` PG 覆盖，消费端用 `get_effective_settings()`。
-- **数据源抽象**：[base.py](../../backend/datasource/base.py) `DataSource` + `rate_limited`/`with_retry` 装饰器。板块数据是关系型（非个股时间序列），按 research.md 附录**单独封装 `ThsBoardSource`**，不进 `_source_for` 选源链。
+- **数据源抽象**：[base.py](../../backend/datasource/base.py) `DataSource` + `rate_limited`/`with_retry` 装饰器。板块数据是关系型（非个股时间序列），已按 research.md 附录**单独封装 `ThsBoardSource`**，不进 `_source_for` 选源链。
 
 ### 2.3 页面与权限基座
 
-- **菜单结构**：[pg_ddl.py:781](../../backend/storage/pg_ddl.py) `quotes`（最新行情）下已有 `/stocks`（个股行情）、`/board`（每日榜单）。板块行情新增为第三个子菜单。
-- **权限模型**：登录基线是 [auth/constants.py:27](../../backend/auth/constants.py) `SHARED_RESOURCE_CODES` 强制注入的共享读；普通业务权限须加入 `BUSINESS_RESOURCE_CODES`（constants.py:38）并做既有库一次性回填 + bump `perm_ver`。`sys_menu.visible` 仅 `login|system` 两值。
+- **菜单结构**：[pg_ddl.py](../../backend/storage/pg_ddl.py) `quotes`（最新行情）下的 `/sectors` 菜单和资源 seed 已落地；但对应前端路由/页面仍待 T11/T12/T14 完成，现阶段不得把后端 seed 误判为页面已交付。
+- **权限模型**：`sectors:view` 已加入 `BUSINESS_RESOURCE_CODES` 并完成既有库一次性回填 + bump `perm_ver`；后端 `/api/sectors*` 已 fail-closed。前端路由守卫仍随业务页面一并待实现。`sys_menu.visible` 仅 `login|system` 两值。
 - **设计规范**：[DESIGN.md](../../DESIGN.md) §5 可配置布局系统，所有 registry 页面走 `<LayoutHost>`；§7.3 组件字段治理；page-registry marker 机器契约。新页面执行流程见 [page-template.md](../configurable-layout-system/page-template.md)。
 - **页面样板**：`StocksView.vue`（list 原型）、`StockDetailView.vue`（detail 原型）。图表主题统一经 `components/chartTheme.ts::useEChartsTheme()` 消费。
 
@@ -129,7 +129,7 @@
 - **操作流程**（两阶段，避免采集顺序循环）：
   1. **阶段一 · 字典 seed**：`ThsBoardSource.get_board_dict('concept')` + `get_board_dict('industry')` → 幂等 upsert 概念/行业字典（此时能力字段仅 `has_members/has_bar` 按各自接口判定，`has_fund_flow` 暂置 false）。
   2. **阶段二 · 资金流补充并集**：资金流采集（R4）后，按名称匹配已有字典板块并更新 `has_fund_flow` 能力字段。**🔴 资金流独有板块不进 `board_dict`（2026-08-09 口径确认）**——资金流源无稳定代码、仅名称，无法生成路径 code 主键，不能伪造代码；未匹配板块写 `board_fund_unmatched` 质检（见 R4）。
-  3. **能力字段收口**：全部源采集完成后，按实际各接口返回刷新 `has_members/has_bar/has_fund_flow` 与 `last_seen_at`；最近一次完整成分快照成功应用后同步刷新冗余 `member_count`，页面展示仍以有效成员关系实时统计为准。
+  3. **能力字段收口**：全部源采集完成后，按实际各接口返回刷新 `has_members/has_bar/has_fund_flow` 与 `last_seen_at`；最近一次完整成分快照成功应用后同步刷新 `member_count` 与 `member_snapshot_at`。板块列表/详情的当前成分数取该完整快照口径；成分明细接口的 `total` 为只进不出累计关系数，两者不得混用。
 - **输入输出**：输入板块类型枚举 `concept|industry`；输出写入行数。
 - **校验规则**：
   - `board_code` 唯一，同花顺**路径 code**（概念 30xxxx / 行业 88xxxx），所有取数接口/跳转统一用它。
@@ -183,16 +183,16 @@
 
 - **功能描述**：新增 `board` 任务类型进任务中心，支持创建/进度/取消/续跑。
 - **前置条件**：`async_task` 基座。
-- **操作流程**：`async_task.py` 注册 `board` → `TASK_TYPES` + `WRITE_TASK_TYPES` + `TASK_CAPABILITIES`（可取消/可续跑，checkpoint 粒度 board_code）→ handler `_h_board` → `IngestionService.ingest_board(ctx)`。
+- **操作流程**：`async_task.py` 注册 `board` → `TASK_TYPES` + `WRITE_TASK_TYPES` + `TASK_CAPABILITIES`（可取消/可续跑，checkpoint 按字典类型、成分/指数板块代码、资金流类型+周期）→ handler `_h_board` → `IngestionService.ingest_board(ctx)`；部分失败保留成功 checkpoint，任务标 failed 后仍可续跑未成功工作单元。
 - **异常情况**：复用现有任务失败/中断/续跑机制。
 - **权限与数据范围**：system-only。
 - **对现有功能影响**：任务中心自动出现「板块采集」任务类型。
 
 ### R6 板块维度注册 + 数据概览
 
-- **功能描述**：`data_dimension_registry` 加 `board` 维度（status=collected，tables=board_dict/board_member/board_bar/board_fund_flow），数据概览自动出现「板块数据」行。
-- **操作流程**：`ddl.py` `_DIMENSION_SEED` 加行 + seed 幂等。
-- **对现有功能影响**：数据概览「数据资产表」多一行，无布局变化。
+- **功能描述**：`data_dimension_registry` 加 `board` 维度（status=collected，tables=board_dict/board_member/board_bar/board_fund_flow），数据概览出现「板块数据」维度，并在概览/闭环图展示板块规模、覆盖、鲜活度、未闭环问题和最近采集状态。
+- **操作流程**：`ddl.py` `_DIMENSION_SEED` 加行 + seed 幂等；数据管理概览聚合 4 表行数、概念/行业数量、成分/指数/资金流覆盖、指数/资金流最新日期、`board_index_gap`/`board_member_incomplete`/`board_fund_unmatched` 活跃问题与最近更新记录，并提供前往板块采集入口。
+- **对现有功能影响**：数据概览「数据资产表」多一行，并新增板块数据统计卡/闭环环节，不改变既有维度口径。
 
 ### R7 板块行情列表页 `/sectors`
 
@@ -257,7 +257,7 @@
   - **CLI `daily` 新增 `--skip-board`**：跳过板块步骤（对齐 `--skip-update` 语义）；`total_steps` 同步计入板块步骤（`(1 if not skip_update else 0) + (1 if board else 0) + ...`），避免进度异常。
   - **失败隔离语义（明确）**：板块步骤失败 → **不提前 return**（继续执行后续质检等步骤），但 `DailyPipeline` 最终 `ok=false`（pipeline.py:102 `ok = all(...)`）。「不阻塞」指**不阻断行情更新主流程执行**（板块是增强数据，其失败不污染已完成的更新步骤），而非任务整体成功。CLI/任务中心的「板块采集」失败会标 failed，可续跑。
   - CLI 新增 `board` 命令族：`board --backfill`（全量回填指数历史 + 首次成分快照 + 资金流全周期）、`board --update`（增量）。
-  - 异步任务 `board` 类型：可取消/续跑，checkpoint 粒度 board_code；断点续跑从上次 board_code 继续。
+  - 异步任务 `board` 类型：可取消/续跑；字典按 `board_type`、成分/指数按 `board_code`、资金流按 `board_type + period` 记录 checkpoint，断点续跑跳过已成功工作单元。
   - 单板块失败时记录失败板块并继续处理剩余板块；完成遍历后该采集步骤和对应异步任务最终标 `failed`，DailyPipeline 最终 `ok=false`，同时返回失败板块清单与断点，续跑仅重试失败项。
 - **输入输出**：输入可选 board_type/board_code；输出各步骤写入行数。
 - **异常情况**：整体失败直接标 `failed`；部分板块失败不提前中断，但步骤/任务最终仍标 `failed` 并保留失败清单，可针对失败项续跑。
@@ -305,7 +305,8 @@ board_dict        板块字典（概念+行业并集）
   has_members           -- 是否有成分股数据
   has_bar               -- 是否有板块指数
   has_fund_flow         -- 是否有资金流
-  member_count         -- 最近一次已应用完整快照的冗余成分数；页面仍以有效 board_member 实时统计为准
+  member_count         -- 最近一次完整快照的当前成分数，供板块列表/详情展示
+  member_snapshot_at   -- 最近一次完整成分快照成功应用时间；不完整采集不得刷新
   member_history_start_date -- 成分快照首次完整采集日（板块级，见 R2/R19）
   last_seen_at          -- 最近一次在任意源出现
   updated_at
@@ -543,8 +544,8 @@ board_fund_flow   板块资金流
 | R2 | `board_member` 为**只进不出**累积：`(board_code, code)` 主键每行一只成分股，完整快照 `INSERT ON CONFLICT DO NOTHING`（已有不动、新增插入），不删除、不做 diff、不写候选；完整快照落库后 `board_dict.member_count` = 当前成分数；**不完整快照（`complete=False`）整趟不落库**、`data_update_log` 记 failed 待重采，已采数据原样保留；重采完整后合并新增、既有行不丢 | 查询 + DDL/服务单测（构造缺页/失败/完整性闸门/重采合并场景） |
 | R3 | `board_bar` 指数日线完整，存原值无复权列 | 查询 + 单测 |
 | R4 | `board_fund_flow` 各周期可查询，净额=流入-流出；并集映射无伪造代码，未匹配项进质检 | 查询 + 单测 + 质检核对 |
-| R5 | 任务中心出现「板块采集」任务，可创建/看进度/取消/续跑；断点续跑从上次 board_code 继续 | 页面验收 + 单测 |
-| R6 | 数据概览「数据资产表」出现「板块数据」维度行 | 页面验收 |
+| R5 | 任务中心出现「板块采集」任务，可创建/看进度/取消/续跑；部分失败任务标 failed 且保留 checkpoint，按字典类型/板块代码/资金流周期只续跑未成功工作单元 | 页面验收 + 单测 |
+| R6 | 数据概览出现「板块数据」维度行和统计卡，能看到 4 表行数、概念/行业数、三类覆盖、最新日期、活跃问题分类、最近更新，并可跳转板块采集 | 页面验收 + 单测 |
 | R7 | `/sectors` 列表页概念/行业切换、主排序周期切换（涨跌幅列同步）、资金流列含数据日期、分页、列显隐正常 | Playwright + 页面 |
 | R8 | `/sectors/:code` 详情页摘要（含涨跌家数/领涨股/净流入）/走势图/成分股表正常；返回列表保留筛选态（面包屑/浏览器返回/刷新还原） | 页面验收 + Playwright |
 | R9 | 有 `stocks:view` 成分股可跳；无权限行禁用 + hover 提示，直接访问路由 fail-closed | Playwright + 权限测试 |
@@ -595,3 +596,10 @@ board_fund_flow   板块资金流
 - **阻塞确认项**：无。关键业务、数据、权限和状态决策均已确认。
 - **非阻塞未决确认项**：无。建议实现项 R11-R14 已决定本次纳入。
 - **后续范围**：R15-R20、R24、R25 均已确认暂不实现；原因和触发条件以 §4.3 为唯一事实源。
+
+## 14. 当前实施事实校准（2026-08-09）
+
+- **采集与数据管理闭环已实现**：R1-R6、R12、R21 的采集、调度、任务、失败续跑、质量扫描、问题修复和概览承接均已落地；采集支持 `backfill|update`、`concept|industry`、指定板块、阶段范围与限量。
+- **修复状态以复检为准**：`board_member_incomplete`、`board_index_gap`、`board_fund_unmatched` 均通过异步 fix 复用同一板块采集服务；采集失败或复检仍不通过时不得 resolved，也不得把失败工作单元写入完成 checkpoint。
+- **接口与权限已实现**：`/api/sectors*` 查询服务、`sectors:view` 后端守卫、资源/menu seed 与既有库授权回填已落地。
+- **板块业务前端仍未完成**：`/sectors`、`/sectors/:code` 页面、对应前端路由、pageRegistry、页面设置和完整业务页 E2E 仍按阶段五/T11-T15 推进。本轮已经完成的是数据管理侧板块采集、调度、任务、质量和概览 UI，不能据此把 R7-R11、R13-R14、R22 前端部分或 R23 标为完成。

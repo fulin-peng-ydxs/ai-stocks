@@ -5,6 +5,8 @@
 > 数据源选型（已定）：**同花顺**（唯一可独立闭环「板块字典 + 成分股 + 板块指数 + 资金流」的源，见 research.md）
 > 本文件是需求闭环文档，不是正式需求文档；正式 `requirement.md` 已生成并引用本文件确认结论。
 
+> **实施校准（2026-08-09）**：下文保留 2026-08-08 的需求推演过程；当前有效实现以本文件 §12 和 `requirement.md` §14 为准。成分模型已从区间 diff/候选恢复改为「只进不出 + 完整快照闸门」，现行库为 4 张板块表。
+
 ---
 
 ## 1. 需求理解
@@ -40,7 +42,7 @@
 DailyPipeline.run()
   └─ 新增步骤「板块数据」: IngestionService.ingest_board(ctx)
        ├─ 1. 板块字典刷新  board_dict   (概念+行业并集, 含路径code+app_code(clid)+能力字段)
-       ├─ 2. 成分股快照    board_member (逐板块分页取, 与存量 diff → in_date/out_date, 区间 [in_date, out_date))
+       ├─ 2. 成分股快照    board_member (逐板块分页取, 完整快照只进不出幂等新增)
        ├─ 3. 板块指数回填  board_bar    (同花顺原始连续指数, 首次全量 + 每日增量)
        └─ 4. 板块资金流    board_fund_flow (概念+行业, 即时/3日/5日/10日/20日全周期采集)
 ```
@@ -63,13 +65,13 @@ DailyPipeline.run()
 ### 状态流转
 
 - `board_dict` / `board_member` / `board_bar` / `board_fund_flow` 均幂等 upsert，PK 见 research.md §5.1。
-- 成分股区间语义 `[in_date, out_date)`：`in_date`=首次在完整快照观察到，`out_date`=首次确认缺席；查询 `in_date <= D AND (out_date IS NULL OR out_date > D)`。
-- **不完整快照保护**：单板块分页不完整/请求失败/成分数异常时，不执行退出 diff，写质检问题。
+- 成分股按 `(board_code, code)` 只进不出累积；完整快照仅新增从未出现的关系，不删除、不做退出 diff。
+- **不完整快照保护**：单板块分页不完整或请求失败时整趟不落库，写 `board_member_incomplete` 问题；完整采集时原子刷新 `member_count/member_snapshot_at` 并收敛该问题。
 
 ### 失败处理与回退
 
-- 采集失败：async_task 标 failed → 数据概览「板块」维度显示滞后 → 可在采集页重跑。
-- 单板块成分股/指数取数失败：跳过该板块记日志，不中断整体；不完整快照不执行退出 diff。
+- 采集失败：async_task 标 failed 并保留已成功工作单元 checkpoint → 数据概览显示板块覆盖/鲜活度/未闭环问题 → 可在采集页或任务中心续跑。
+- 单板块成分股/指数取数失败：跳过该板块记日志，不中断整体；不完整成分快照整趟不落库。
 - 页面数据缺失：板块列表空态「板块数据未采集，请先在数据采集页运行板块采集」。
 
 ## 5. 完整功能点清单
@@ -79,12 +81,12 @@ DailyPipeline.run()
 | 功能点 | 目标 | 入口 | 关键操作 | 系统反馈 | 状态变化 | 异常处理 |
 |---|---|---|---|---|---|---|
 | A1 板块字典采集 | 落 `board_dict`（概念+行业并集 + 能力字段） | 采集页/每日流程 | 拉同花顺概念+行业字典，与资金流源并集合并 | 写入N条 | 幂等 upsert | 失败记日志不中断 |
-| A2 成分股快照采集 | 落 `board_member` | 同上 | 逐板块翻页取成分，与存量 diff（区间 `[in_date, out_date)`） | 新增X/退出Y | in/out_date 累积 | 不完整快照不执行退出 diff |
+| A2 成分股快照采集 | 落 `board_member` | 同上 | 逐板块翻页取成分，完整快照 `ON CONFLICT DO NOTHING` | 本次新增X | `(board_code, code)` 只进不出累积 | 不完整快照整趟不落库并写 `board_member_incomplete` |
 | A3 板块指数采集 | 落 `board_bar`（同花顺原始指数） | 同上 | 首次全量回填+每日增量 | 写入N条 | 幂等 upsert | 单板块失败跳过 |
 | A4 板块资金流采集 | 落 `board_fund_flow`（概念+行业, 多周期） | 同上 | 拉概念/行业资金流排行；有稳定代码时按代码映射，概念资金流无代码时按名称映射 | 写入N条 | 幂等 upsert | 未匹配写质检, 不伪造代码 |
 | A5 异步任务 | 板块任务进任务中心 | 数据采集页 | 创建任务/看进度/取消/续跑 | 任务状态流转 | async_task | 复用现有机制 |
-| A6 维度注册 | 数据概览可见 | seed | `data_dimension_registry` 加 `board` 维度 | 概览出现「板块数据」行 | collected | — |
-| A7 数据质量校验 | 成分数波动/指数缺口监控 + **候选恢复闭环** | 质检流程 | 成分数异常(阈值配置化)/缺口扫描；被拦截板块写 `board_member_candidate`，质检「确认应用/丢弃」 | 写 `data_quality_issue` + 候选表 | 候选同步恢复固定 `open → resolved/ignored`（跳过 fixing）；候选 `pending → applied/discarded` | 复用质检闭环；board_member+候选+issue 同 DuckDB 事务，PG 审计 best-effort（失败不回滚） |
+| A6 维度注册 | 数据概览可见 | seed/概览页 | `data_dimension_registry` 加 `board` 维度并聚合板块统计 | 维度行 + 4 表行数、类型数、覆盖、最新日期、问题分类、最近更新 | collected | 统计失败降级，不影响其他维度 |
+| A7 数据质量与修复 | 指数缺口/成分不完整/资金流未匹配闭环 | 质检流程 | 扫描 `board_index_gap`；采集写 `board_member_incomplete`/`board_fund_unmatched`；fix 分派对应重采 | 写/更新 `data_quality_issue` + 异步修复任务 | `open → fixing → resolved`，仅复检通过才 resolved | 失败或复检未通过回 open；失败工作单元不记完成 checkpoint |
 
 ### B. 展示侧（业务授权集合，非登录基线）
 
@@ -139,9 +141,9 @@ DailyPipeline.run()
 | # | 决策项 | 结论 |
 |---|---|---|
 | 5 | 周期控件语义 | 今日/5日/10日/20日**仅控制涨跌幅主排序字段**（默认降序）；表格补对应 20日涨幅列；点击涨跌幅列头同步当前周期；资金流固定展示最新交易日「即时净流入」并标注数据日；资金流 3日/5日/10日/20日继续采集但不受本控件控制，避免一控件混合两套口径 |
-| 6 | 成分股日期 | 统一命名 `snapshot_date`（Asia/Shanghai 实际成功采集日）；`in_date`=首次在完整快照观察到，`out_date`=首次确认缺席；有效区间 `[in_date, out_date)`；查询 `in_date <= D AND (out_date IS NULL OR out_date > D)`；**单板块分页不完整/请求失败/成分数异常时不执行退出 diff** |
+| 6 | 成分股落库 | **2026-08-09 实施修订**：`board_member` 采用 `(board_code, code)` 只进不出累积；完整快照幂等新增，不完整快照整趟不落库；用 `member_snapshot_at` 标识最近一次完整采集 |
 | 7 | 字典与资金流集合差异 | 采用并集字典；`source` 恒为 `ths`（来源系统），能力差异用 `has_members`/`has_bar`/`has_fund_flow`/`member_history_start_date`/`last_seen_at` 字段；资金流独有板块可进字典但列表只展示有核心数据者；优先按稳定板块代码关联，只能名称匹配的未匹配项写质检，**不生成伪造代码** |
-| 8 | 异常波动阈值 | `threshold = max(absolute_change_threshold, previous_member_count * relative_change_ratio)`；默认 `relative_change_ratio=0.5`、`absolute_change_threshold=20`；触发 `abs(current-previous) >= threshold`；YAML 基线 + `CONFIG_GROUPS` 白名单 PG `app_config` 覆盖，消费端 `get_effective_settings()`；状态沿用 `open/fixing/resolved/ignored` |
+| 8 | 质量规则 | **2026-08-09 实施修订**：成分数变化不再作为异常；质量规则保留 `board_index_gap`，并由采集层产生 `board_member_incomplete`、`board_fund_unmatched`；状态沿用 `open/fixing/resolved/ignored` |
 | 9 | 历史不可回溯 | 本期**不改回测**；在 `board_dict.member_history_start_date` 保存板块级可信起始日（非每条成员重复字段）；接口可返回该字段；后续接入筛选/回测时再对早于该日期的查询拒绝或警告 |
 | 10 | 成分股跳转权限 | 无 `stocks:view` 时成分股数据仍可见，名称/代码渲染为不可点击文本 + hover 提示「无个股行情查看权限」，不执行路由跳转；直接输入 `/stocks/:code` 路由与接口仍 fail-closed |
 | 11 | 双代码体系 | 同花顺概念板块有两套代码：**路径 code（30xxxx，如 AI PC=309121，取数/跳转统一用它）** 与 **App clid（88xxxx，如 AI PC=886071，手机 App 显示）**。主键用路径 code；`board_dict.app_code` 存 clid（逐板块详情页抓取，375 概念需额外 1 请求/板块），供用户与手机 App 核对。行业板块 clid=路径 code。概念资金流接口只返回名称无代码，映射按名称匹配 |
@@ -153,9 +155,9 @@ DailyPipeline.run()
 | 1 | 列表默认排序 | 今日涨幅（情绪主线）为默认主排序周期，5日/10日/20日可切换 |
 | 2 | 概念375个分页 | 服务端分页（复用 `AppPagination`），配合搜索框 |
 | 3 | 详情页成分股展示 | 统一分页（`AppPagination` 默认每页 20，抽屉可配），用户要求改项目统一模式 |
-| 4 | 板块字典冗余成分数 | 采集时刷新 `member_count`，页面数据来源仍以实时 join 为准（单一事实源为页面查询） |
+| 4 | 板块字典当前成分数 | 完整快照时刷新 `member_count/member_snapshot_at`；列表/详情使用当前快照数，成分明细接口 `total` 是只进不出累计关系数 |
 | 5 | 采集频率 | 每日流程自动跑 + 手动「板块回填」全量重跑 |
-| 6 | 板块数据质量校验 | 成分数异常波动/指数缺口纳入质检，阈值配置化 |
+| 6 | 板块数据质量校验 | 指数缺口扫描 + 成分不完整/资金流未匹配采集问题纳入质检与异步修复；不做成分数波动质检 |
 | 7 | 页面风格 | **严格继承 DESIGN.md 全部规范**（用户要求"越统一越丰富越好"） |
 | 8 | 资金流 3日/5日/10日/20日 | 继续采集（`board_fund_flow` 全周期），页面本期只展示即时，后续可加筛选 |
 
@@ -180,7 +182,7 @@ DailyPipeline.run()
 - R19 板块成分作为筛选/回测条件：需回测层起点护栏，本期不改回测。
 - R20 板块强弱热力图：需图表组件扩展。
 - R24 审计可靠性提升：项目现无 outbox 设施，本期维持 best-effort。
-- R25 同日候选替换：本期冻结每日最多一个 applied，替换需 `superseded` 与 D-1 重建规则。
+- R25 同日候选替换：已随候选机制删除而废弃。
 
 ## 10. 推断依据与推断决策
 
@@ -190,9 +192,16 @@ DailyPipeline.run()
 - **页面架构**：严格按 DESIGN.md，新增页面走 `LayoutHost` + pageRegistry + page-template 闭环（用户红线）。
 - **权限边界**：采集侧 system-only（数据管理菜单 `visible=system`）；展示侧 `sectors:view` 进 `BUSINESS_RESOURCE_CODES` 业务授权集合（非登录基线），新库 seed 授予 normal/tenant_admin，既有库一次性回填 + bump `perm_ver`（依据 auth/constants.py + system-rbac-tenant.md）。
 - **页面配置契约**：业务偏好走 `usePageSettings`（`scope='page' + pref_key='settings'` 单个对象，对齐 usePageSettings.ts）；表格字段走 `layout_user_config`；`responsiveProfile` 用 `single-column`（pageRegistry 枚举，非 list/detail）；两页 `supportsPageSettings !== false` → `overlay:settings-drawer` 自动补登；偏好优先级 `URL query > 已保存偏好 > 默认值`。
-- **候选恢复事务**：`data_quality_issue` 是 DuckDB 表（非 PG）。**全同步模式 + payload_hash 幂等**：创建（issue+candidate）、应用（member+candidate+issue resolved）、丢弃（candidate discarded+issue ignored）均为同一 DuckDB 事务；不绑 `fix_task_id`、不起异步任务；`payload_hash = SHA-256(ISO日期 + "\n" + sorted(set(归一化代码)).join("\n"))`（不用 Python hash()；输入 UTF-8、输出小写 hex 64 字符、字段声明为 VARCHAR(64)，由服务层校验 + `CHECK (regexp_full_match(payload_hash, '[0-9a-f]{64}'))` 保证格式），同 hash+pending 返回已有、同 hash+applied/discarded 幂等跳过；**每板块每日最多一个 applied（DB 层用 `(board_code, snapshot_date, CASE WHEN status='applied' THEN 1 ELSE NULL END)` 表达式唯一索引兜底；DuckDB 不支持 `WHERE status='applied'` 部分索引），同日不同 hash 走异常处理**。PG 审计为 **best-effort**（对齐 audit_repository 现状，失败返回 None 不回滚 DuckDB），不引入 outbox；审计可靠性提升列后续需求。
+- **现行恢复事务**：候选恢复机制已废弃。完整成分快照落库、`member_count/member_snapshot_at` 刷新和活跃 `board_member_incomplete` 收敛在同一 DuckDB 事务中；指数缺口和资金流未匹配通过异步 fix 重采后复检，只有复检通过才 resolved。PG 审计仍为 best-effort，不引入 outbox。
 
 ## 11. 后续建议
 
 - **保存条件**：已满足（4 项基础决策 + 七项补充决策全部确认，权限边界已二修）。本文件即闭环文档。
 - **正式 `requirement.md` 已生成**：基于本文件确认结论，含 DDL、接口契约、权限 seed、页面原型 `prototypes/`。本文档与 `requirement.md` 保持同步。
+
+## 12. 当前闭环实施结论（2026-08-09）
+
+- 采集侧已对齐现有数据管理全链路：CLI、daily、异步任务、写互斥、采集页、调度、任务中心、数据源状态、维度目录、概览、质量扫描与修复均已承接板块类型。
+- 失败闭环已细化到真实工作单元：字典类型、成分/指数板块、资金流类型+周期；部分失败保持 failed 和 checkpoint，可只续跑未成功项。
+- 概览不再只有维度注册行，已展示板块规模、覆盖、最新日期、问题分类和最近更新，并可跳转采集。
+- 展示侧后端 `/api/sectors*` 与 RBAC 已完成；`/sectors`、`/sectors/:code` 前端页面及页面配置闭环仍未完成，继续按正式需求和开发计划实施。
