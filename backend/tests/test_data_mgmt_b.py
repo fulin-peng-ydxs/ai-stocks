@@ -605,3 +605,21 @@ def test_apply_candidate_already_processed_409(client):
     resp = apply_candidate("c-test")
     assert resp.code == 409
     assert resp.data.get("error_code") == "already_processed"
+
+
+def test_overview_includes_board_stats(client, monkeypatch):
+    """数据总览 overview 含板块表行数 + 待处理候选（板块闭环进总览）。"""
+    from backend.services.data_report import DataIntegrityReport
+    # 板块表有数据 + 一条 pending 候选
+    client.execute("INSERT INTO board_dict (board_code, name, board_type) VALUES ('309121','AI PC','concept')")
+    client.execute("INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+                   "payload_hash, status) VALUES ('c1','309121',DATE '2026-08-09',?, 'pending')", ["a" * 64])
+    ov = DataIntegrityReport(client).overview()
+    assert int(ov["row_counts"]["board_dict"]) == 1
+    assert "board_member_candidate" in ov["row_counts"]
+    # overview API 也带 board 统计
+    from backend.api.data_admin import overview
+    resp = overview()
+    assert resp.code == 0
+    assert resp.data["board"]["board_dict"] == 1
+    assert resp.data["board"]["candidate_pending"] == 1

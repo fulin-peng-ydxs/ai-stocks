@@ -45,6 +45,15 @@ class DataIntegrityReport:
         tables = ["stock_basic", "daily_bar", "daily_metrics", "index_bar",
                   "trade_calendar", "data_quality_issue", "data_update_log"]
         counts = {t: int(self._scalar(f"SELECT count(*) FROM {t}")) for t in tables}
+        # 板块表（板块概念需求 R6/R21）：仅当表已建才统计，避免未初始化时 COUNT 报错
+        try:
+            from backend.storage.ddl import list_tables
+            have = set(list_tables(self.c))
+        except Exception:  # noqa: BLE001
+            have = set()
+        for bt in ("board_dict", "board_member", "board_bar", "board_fund_flow",
+                   "board_member_candidate"):
+            counts[bt] = int(self._scalar(f"SELECT count(*) FROM {bt}")) if bt in have else 0
         span = self.c.query_df(
             "SELECT min(trade_date) lo, max(trade_date) hi, count(DISTINCT code) codes FROM daily_bar"
         ).iloc[0]

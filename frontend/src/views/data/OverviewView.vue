@@ -26,7 +26,7 @@ const settingsOpen = ref(false)
 const overviewDefaults = {
   sqSize: DEFAULT_PAGE_SIZE,
   focusLayer: 'all' as 'all' | 'L12' | 'L34',
-  kpi: { latestTradeDate: true, codes: true, barRows: true, score: true, quality: true, gaps: true },
+  kpi: { latestTradeDate: true, codes: true, barRows: true, board: true, score: true, quality: true, gaps: true },
 }
 const { settings, isDirty, reset } = usePageSettings('data-overview', overviewDefaults)
 
@@ -280,6 +280,15 @@ onMounted(load)
               <div class="stat-label">日线总行数 <span class="qm">?</span></div>
             </el-tooltip>
             <div class="stat-val">{{ ov?.bar_rows?.toLocaleString() ?? '—' }}</div>
+          </el-card>
+          <el-card v-if="settings.kpi.board" shadow="never" class="stat clickable" @click="gotoGap()">
+            <el-tooltip content="板块数据：字典/成分/指数/资金流表行数 + 待确认候选（板块概念）" placement="top">
+              <div class="stat-label">板块数据 <span class="qm">?</span></div>
+            </el-tooltip>
+            <div class="stat-val">{{ ov?.board ? (ov.board.board_dict ?? 0) + ' 板块' : '—' }}</div>
+            <div class="stat-foot" v-if="ov?.board">
+              指数 {{ (ov.board.board_bar ?? 0).toLocaleString() }} 行 · 待确认候选 {{ ov.board.candidate_pending ?? 0 }}
+            </div>
           </el-card>
           <el-card v-if="settings.kpi.score" shadow="never" class="stat">
             <el-tooltip content="在市股票中「四层质量全部达标」的占比（0~100），综合入库/契约/正确性/鲜活" placement="top">
@@ -537,6 +546,7 @@ onMounted(load)
           <PageToggleRow v-model="settings.kpi.latestTradeDate" label="最新交易日" />
           <PageToggleRow v-model="settings.kpi.codes" label="在市 / 退市" />
           <PageToggleRow v-model="settings.kpi.barRows" label="日线总行数" />
+          <PageToggleRow v-model="settings.kpi.board" label="板块数据" />
           <PageToggleRow v-model="settings.kpi.score" label="全局质量评分" />
           <PageToggleRow v-model="settings.kpi.quality" label="未解决质检" />
           <PageToggleRow v-model="settings.kpi.gaps" label="缺口 / 滞后" />

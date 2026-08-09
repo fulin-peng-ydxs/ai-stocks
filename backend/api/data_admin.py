@@ -103,10 +103,21 @@ def overview() -> ApiResponse:
     last_scan = c.query_df(
         "SELECT max(detected_at) AS t FROM data_quality_issue").iloc[0]["t"]
     last_scan_s = None if last_scan is None or str(last_scan) == "NaT" else str(last_scan)[:19]
+    # 板块数据（板块概念需求 R6/R21）：5 表行数 + 待处理候选数（总览闭环含板块）
+    board = None
+    try:
+        bt = {k: int(ov["row_counts"].get(k, 0)) for k in
+              ("board_dict", "board_member", "board_bar", "board_fund_flow", "board_member_candidate")}
+        pending = int(c.query_df(
+            "SELECT count(*) AS n FROM board_member_candidate WHERE status='pending'").iloc[0]["n"])
+        board = {**bt, "candidate_pending": pending}
+    except Exception:  # noqa: BLE001
+        board = None
     return ok({
         "latest_trade_date": qm["latest_trade_date"],
         "codes": {"active": ov["stock_basic_live"], "delisted": ov["stock_basic_delisted"]},
         "bar_rows": ov["row_counts"]["daily_bar"],
+        "board": board,
         "quality": {"open": int(sum(by_sev.values())), "by_severity": by_sev,
                     "score": qm["score"], "by_layer": qm["by_layer"]},
         "gaps": qm["gaps"],

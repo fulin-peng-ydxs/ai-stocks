@@ -17,6 +17,7 @@ export interface Overview {
   latest_trade_date: string | null
   codes: { active: number; delisted: number }
   bar_rows: number
+  board?: { board_dict: number; board_member: number; board_bar: number; board_fund_flow: number; board_member_candidate: number; candidate_pending: number }
   quality: { open: number; by_severity: Record<string, number>; score: number; by_layer: QualityLayer[] }
   gaps: { stocks_with_gap: number; gap_days_total: number; latest_trade_date: string | null }
   last_scan_at: string | null
