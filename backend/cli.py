@@ -425,14 +425,21 @@ def cmd_daily(args: argparse.Namespace) -> int:
 
 
 def cmd_board(args: argparse.Namespace) -> int:
-    """板块采集 CLI（板块概念需求 R21）：--backfill 全量回填 / --update 增量。"""
+    """板块采集 CLI（板块概念需求 R21）：--backfill/--update + 分表（--dict/--members/--bar/--fund）+ 子集（--codes/--limit）。"""
     from backend.services.ingest import IngestionService
 
     mode = "backfill" if args.backfill else "update"
+    # 分表选择：显式指定则只跑指定表；否则全量
+    only = [name for name, flag in
+            (("dict", args.only_dict), ("members", args.only_members),
+             ("bar", args.only_bar), ("fund", args.only_fund)) if flag]
+    only = only or None
+    codes = args.codes.split(",") if args.codes else None
     svc = IngestionService()
-    res = svc.ingest_board(mode=mode, ctx=CliTaskContext())  # CLI 实时日志（对齐现有命令）
+    res = svc.ingest_board(mode=mode, ctx=CliTaskContext(), board_codes=codes, only=only)
     failed = res.get("failed") or []
-    print(f"=== 板块采集（{mode}）{'✓' if not failed else '✗'} ===")
+    scope = f" only={only}" if only else ""
+    print(f"=== 板块采集（{mode}{scope}）{'✓' if not failed else '✗'} ===")
     print(f"  字典: {res.get('dict')}")
     print(f"  成分快照: {len(res.get('members', {}))} 个板块")
     print(f"  指数: {res.get('bar')}")
@@ -680,10 +687,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_daily.add_argument("--verify", action="store_true", help="末尾跑数据体检")
     p_daily.set_defaults(func=cmd_daily)
 
-    p_board = sub.add_parser("board", help="板块采集（板块概念）：全量回填/增量")
+    p_board = sub.add_parser("board", help="板块采集（板块概念）：全量回填/增量/分表")
     p_board.add_argument("--backfill", action="store_true",
                          help="全量回填（指数历史 + 首次成分快照 + 资金流全周期）")
-    p_board.add_argument("--update", action="store_true", help="增量（仅补今日）")
+    p_board.add_argument("--update", action="store_true", help="增量（仅补今日；默认模式）")
+    p_board.add_argument("--dict", action="store_true", dest="only_dict",
+                         help="只采板块字典（board_dict）")
+    p_board.add_argument("--members", action="store_true", dest="only_members",
+                         help="只采成分快照（board_member，含候选保存）")
+    p_board.add_argument("--bar", action="store_true", dest="only_bar",
+                         help="只采板块指数（board_bar）")
+    p_board.add_argument("--fund", action="store_true", dest="only_fund",
+                         help="只采板块资金流（board_fund_flow）")
+    p_board.add_argument("--codes", help="逗号分隔板块代码子集（如 309121,881121）")
+    p_board.add_argument("--limit", type=int, help="只取字典前 N 个板块（小批量验证）")
     p_board.set_defaults(func=cmd_board)
 
     p_bt = sub.add_parser("backtest", help="运行回测（M5）：信号质量分析 / 完整策略回测")

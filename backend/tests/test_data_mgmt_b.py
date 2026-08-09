@@ -521,3 +521,27 @@ def test_scan_board_quality_no_false_wave_without_bar(client, monkeypatch):
     # board_bar 无数据
     r = DataIntegrityReport(c).scan_board_quality()
     assert r["member_wave"] == 0   # 稳定 50 只不误报
+
+
+def test_ingest_board_only_selects_tables(client, monkeypatch):
+    """only 分表：only=["bar"] 时只跑指数，不跑字典/成分/资金流。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.ingest import IngestionService
+    from backend.services.board_ingest import BoardIngestService
+
+    called = {"dict": 0, "members": 0, "bar": 0, "fund": 0}
+
+    monkeypatch.setattr(BoardIngestService, "ingest_board_dict",
+                        lambda self, snapshot_date=None: called.__setitem__("dict", 1) or {"total": 0}, raising=True)
+    monkeypatch.setattr(BoardIngestService, "ingest_board_members",
+                        lambda self, snapshot_date=None, board_codes=None: called.__setitem__("members", 1) or {}, raising=True)
+    monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
+                        lambda self, start, end=None, board_codes=None: called.__setitem__("bar", 1) or {"rows": 0, "boards": 0}, raising=True)
+    monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
+                        lambda self, snapshot_date=None, periods=None: called.__setitem__("fund", 1) or {"rows": 0, "unmatched": 0}, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "_latest_open_day",
+                        lambda self: __import__("datetime").date(2026, 8, 7), raising=True)
+
+    IngestionService().ingest_board(mode="update", only=["bar"])
+    assert called == {"dict": 0, "members": 0, "bar": 1, "fund": 0}  # 只跑指数
