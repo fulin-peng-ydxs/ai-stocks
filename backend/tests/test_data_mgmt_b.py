@@ -623,3 +623,21 @@ def test_overview_includes_board_stats(client, monkeypatch):
     assert resp.code == 0
     assert resp.data["board"]["board_dict"] == 1
     assert resp.data["board"]["candidate_pending"] == 1
+
+
+def test_hub_includes_board_stage(client, monkeypatch):
+    """hub 闭环图含 board 环节（5 表行数 + 待处理候选 + 板块问题数）。"""
+    from backend.api.data_admin import hub
+    client.execute("INSERT INTO board_dict (board_code, name, board_type) VALUES ('309121','AI PC','concept')")
+    client.execute("INSERT INTO board_member_candidate (candidate_id, board_code, snapshot_date, "
+                   "payload_hash, status) VALUES ('c1','309121',DATE '2026-08-09',?, 'pending')", ["a" * 64])
+    client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
+                   "VALUES (1, '309121', 'board_member_wave', 'mid', 'open', now())")
+    resp = hub()
+    assert resp.code == 0
+    board = resp.data["stages"]["board"]
+    assert board["board_dict"] == 1
+    assert board["candidate_pending"] == 1
+    assert board["open_issues"] == 1
+    # 风险列表含候选待处理提示
+    assert any("候选待确认" in r["text"] for r in resp.data["risk"])

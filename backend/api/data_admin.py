@@ -163,6 +163,7 @@ def hub() -> ApiResponse:
         "quality": {"open": int(sum(by_sev.values())), "by_severity": by_sev,
                     "score": qm["score"], "days_since_scan": days_since_scan},
         "score": {"latest_board_date": _latest_board_date()},
+        "board": _board_stage(c),
     }
 
     # 风险摘要（已算好级别/文案/下钻链接）
@@ -186,6 +187,11 @@ def hub() -> ApiResponse:
         risk.append({"level": "warning", "text": "尚未做过数据质检", "link": "/data/quality"})
     elif days_since_scan > 3:
         risk.append({"level": "warning", "text": f"已 {days_since_scan} 天未做数据质检", "link": "/data/quality"})
+    # 板块候选待处理（板块概念 R2 恢复闭环）：有 pending 候选 → 提示去数据质量页处理
+    if stages.get("board") and stages["board"].get("candidate_pending"):
+        risk.append({"level": "warning",
+                     "text": f"{stages['board']['candidate_pending']} 个板块成分候选待确认（被拦截快照需人工应用/丢弃）",
+                     "link": "/data/quality"})
     for s in down:
         risk.append({"level": "danger", "text": f"数据源 {s} 不可达", "link": "/data/schedule"})
     if not sched.get("enabled"):
@@ -202,6 +208,26 @@ def hub() -> ApiResponse:
         "scheduler": {"enabled": sched.get("enabled"), "next_run_time": sched.get("next_run_time")},
         "sources": sources,
     })
+
+
+def _board_stage(c) -> dict | None:
+    """板块数据闭环环节（板块概念 R6/R21）：5 表行数 + 待处理候选 + 板块质检问题数。"""
+    try:
+        from backend.storage.ddl import list_tables
+        have = set(list_tables(c))
+        bt = {k: (int(c.query_df(f"SELECT count(*) AS n FROM {k}").iloc[0]["n"]) if k in have else 0)
+              for k in ("board_dict", "board_member", "board_bar", "board_fund_flow",
+                        "board_member_candidate")}
+        pending = int(c.query_df(
+            "SELECT count(*) AS n FROM board_member_candidate WHERE status='pending'").iloc[0]["n"]) \
+            if "board_member_candidate" in have else 0
+        open_issues = int(c.query_df(
+            "SELECT count(*) AS n FROM data_quality_issue WHERE status='open' "
+            "AND issue_type IN ('member_surge_shrink','board_member_wave','board_index_gap')").iloc[0]["n"]) \
+            if "data_quality_issue" in have else 0
+        return {**bt, "candidate_pending": pending, "open_issues": open_issues}
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _latest_board_date():
