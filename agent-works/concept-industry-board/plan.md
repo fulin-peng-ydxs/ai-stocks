@@ -1,6 +1,6 @@
 # 开发计划：板块概念数据采集与展示
 
-> 计划版本：2026-08-09（当日评审复核修订：表达式唯一索引可行性实测确认并补降级方案、候选 apply 写锁冲突语义、T8/T10 依赖收紧、菜单 seed 部署时序、审计文件路径修正、板块 E2E 数据夹具、两页 pageSize 合法值口径显式化、`DuckDBClient.transaction()` 原子性前置）
+> 计划版本：2026-08-09（当日评审复核修订：表达式唯一索引可行性实测确认并补降级方案、候选 apply 写锁冲突语义、T8/T10 依赖收紧、菜单 seed 部署时序、审计文件路径修正、板块 E2E 数据夹具、两页 pageSize 合法值口径显式化、`DuckDBClient.transaction()` 原子性前置、T2 适配器封装口径对齐 research 附录已确认决策）
 > 需求文档：[requirement.md](requirement.md)（2026-08-08 评审修订版，确认状态：无阻塞项）
 > 上游文档：[requirement-closure.md](requirement-closure.md)、[research.md](research.md)
 > 页面原型：[prototypes/sector-board.html](prototypes/sector-board.html)（列表页）、[prototypes/sector-detail.html](prototypes/sector-detail.html)（详情页），均已完整读取并作为前端拆解依据。
@@ -225,12 +225,12 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 - 状态：待开始
 - 依赖：T1
-- 涉及文件/模块：`backend/datasource/ths_board_source.py`（新增）、`backend/datasource/base.py`（复用）、`requirements.txt`/`pyproject.toml`（显式声明 `py_mini_racer`）、`backend/tests/test_ths_board_source.py`（新增）
+- 涉及文件/模块：`backend/datasource/ths_board.py`（新增，文件名对齐 research.md 附录建议结构）、`backend/datasource/base.py`（仅复用装饰器）、`requirements.txt`/`pyproject.toml`（显式声明 `py_mini_racer`）、`backend/tests/test_ths_board_source.py`（新增）
 - 目标：封装同花顺板块取数：字典（概念/行业）、成分股（AJAX 翻页 + v cookie + 两种排序策略取多者）、指数日线、资金流（概念/行业 × 5 周期）、app_code(clid) 详情页抓取。
-- 操作：继承 `DataSource`；`rate_limited(≥1s)` + `with_retry`；v cookie 经 `py_mini_racer` 执行 akshare 打包的 `ths.js` 生成，401 时刷新 cookie 重试；翻页走路径参数 `page/N/ajax/1/`；分页完整性检测（缺页/请求失败标记不完整）；请求超时注入。
+- 操作：新建**独立普通类** `ThsBoardSource`（**不继承 `DataSource`、不修改该抽象**——`DataSource` 的 5 个抽象方法全是个股时间序列接口，板块关系型数据硬塞会破坏抽象一致性；此口径承接 research.md 附录《同花顺板块适配器封装决策》与 requirement-closure.md §189 的已确认决策）；仅复用 base.py 的 `rate_limited(≥1s)`/`with_retry` 装饰器；由 `IngestionService` 直接持有实例，不进 `_source_for` 选源链。v cookie 经 `py_mini_racer` 执行 akshare 打包的 `ths.js` 生成（本机 akshare 1.18.64 实测含 `akshare/data/ths.js`、`akshare/stock_feature/ths.js`），401 时刷新 cookie 重试；翻页走路径参数 `page/N/ajax/1/`；分页完整性检测（缺页/请求失败标记不完整）；请求超时注入。
 - 产出：适配器 + 单测（mock HTTP：v cookie 生成/401 刷新/翻页/两种排序取多者/不完整快照标记/资金流解析）。
 - 影响范围：采集层（R1-R4 数据源）。
-- 边界与异常：不调用 akshare 板块公开函数；限流不低于 1s/次。
+- 边界与异常：不调用 akshare 板块公开函数；不继承 `DataSource`、不并入 `AKShareSource`（research 附录备选方案已明确否决）；限流不低于 1s/次。
 - 验证方式：`python -m pytest backend/tests/test_ths_board_source.py -q`。
 - 完成标准：单测全绿；实测可拉通一个概念板块全部分页（人工冒烟，只读外部源不涉及 DuckDB 锁）。
 - 实际落地情况：待实施
