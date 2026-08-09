@@ -1822,10 +1822,11 @@ class IngestionService:
         except Exception as e:  # noqa: BLE001
             log.warning("板块成分快照采集失败: %s", e)
             result["failed"].append(f"members: {e}")
-        # 指数回填：从最早可用年份到今天（T6 board --backfill 可指定区间）
+        # 指数回填：从源端可用起始年到今天（2026-08-09 实测 `d.` 域指数历史仅近 3 年、
+        # 2021-2023 返回 404，故从 2024 起；各板块实际最早日按源返回各异属正常，404 年跳过）
         from datetime import date as _d
         try:
-            result["bar"] = svc.ingest_board_bar(_d(2021, 1, 1), board_codes=board_codes)
+            result["bar"] = svc.ingest_board_bar(_d(2024, 1, 1), board_codes=board_codes)
         except Exception as e:  # noqa: BLE001
             log.warning("板块指数采集失败: %s", e)
             result["failed"].append(f"bar: {e}")
