@@ -89,7 +89,8 @@ def test_parse_fund_flow_immediate():
         '<table><thead><tr><th>序号</th><th>行业</th><th>行业指数</th><th>涨跌幅</th>'
         '<th>流入资金(亿)</th><th>流出资金(亿)</th><th>净额(亿)</th><th>公司家数</th>'
         '<th>领涨股</th><th>涨跌幅.1</th><th>当前价(元)</th></tr></thead><tbody>'
-        '<tr><td>1</td><td>CRO概念</td><td>970.0</td><td>8.05%</td><td>227.07</td>'
+        '<tr><td>1</td><td><a href="http://q.10jqka.com.cn/gn/detail/code/308734/" target="_blank">CRO概念</a></td>'
+        '<td>970.0</td><td>8.05%</td><td>227.07</td>'
         '<td>170.78</td><td>56.29</td><td>76</td><td>博腾股份</td><td>20.02%</td><td>20.44</td></tr>'
         '</tbody></table>'
     )
@@ -97,6 +98,7 @@ def test_parse_fund_flow_immediate():
     assert len(df) == 1
     r = df.iloc[0]
     assert r["name"] == "CRO概念"
+    assert r["board_code"] == "308734"   # 板块单元格链接里的路径 code 被抓到
     assert r["inflow"] == 227.07
     assert r["net_inflow"] == 56.29
     assert r["net_ratio"] == 8.05

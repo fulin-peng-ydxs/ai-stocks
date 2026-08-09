@@ -156,6 +156,31 @@ class BoardIngestService:
         log.info("板块字典入库 %d 个（概念 %d + 行业 %d）", result["total"], result["concept"], result["industry"])
         return result
 
+    def _upsert_fund_only_boards(self, items: list[tuple[str, str, str]], sdate: date) -> None:
+        """资金流独有板块补进字典：链接带真实路径 code（稳定主键），has_fund_flow=true。
+
+        与 _fund_flow_union_supplement（旧 no-op）不同：当时假设资金流源无稳定代码，
+        实测链接里带 code，故这些板块可安全入库（has_members/bar=false，列表页不展示，
+        仅 has_fund_flow=true 供资金流数据关联展示）。
+        """
+        if not items:
+            return
+        rows = [{"board_code": c, "app_code": None, "name": n, "board_type": t,
+                 "source": "ths", "has_members": False, "has_bar": False,
+                 "has_fund_flow": True, "last_seen_at": sdate}
+                for c, n, t in items]
+        df = pd.DataFrame(rows)
+        with self.c.temp_view(df, "bfund_dict") as v:
+            self.c.execute(
+                f"""INSERT INTO board_dict
+                    (board_code, app_code, name, board_type, source, has_members, has_bar,
+                     has_fund_flow, last_seen_at)
+                    SELECT board_code, app_code, name, board_type, source, has_members, has_bar,
+                           has_fund_flow, last_seen_at FROM {v}
+                    ON CONFLICT (board_code) DO UPDATE SET
+                      name=EXCLUDED.name, has_fund_flow=TRUE,
+                      last_seen_at=EXCLUDED.last_seen_at, updated_at=now()""")
+
     def _upsert_board_dict(self, rows: list[dict]) -> None:
         if not rows:
             return
@@ -401,11 +426,11 @@ class BoardIngestService:
         requested_types = set(_board_types(board_type))
         if board_codes is not None and not board_codes:
             return {"rows": 0, "unmatched": 0, "failed": []}
-        # 字典 code→name 映射
+        # 字典 code→name 映射（code 反向表供「优先 code 匹配」用）
         d = self.c.query_df("SELECT board_code, name, board_type FROM board_dict")
-        name_to_code: dict[tuple[str, str], str] = {}
+        code_to_meta: dict[str, tuple[str, str]] = {}
         for _, r in d.iterrows():
-            name_to_code[(str(r["board_type"]), str(r["name"]))] = str(r["board_code"])
+            code_to_meta[str(r["board_code"])] = (str(r["board_type"]), str(r["name"]))
         target_codes = ({str(x) for x in board_codes}
                         if board_codes is not None else None)
         target_types = requested_types
@@ -417,6 +442,7 @@ class BoardIngestService:
         rows = 0
         unmatched: list[dict[str, str]] = []
         failed: list[str] = []
+        newly_added_codes: list[tuple[str, str, str]] = []  # 资金流独有板块 (code, name, board_type)
         done_keys = set(getattr(ctx, "checkpoint", {}).get("fund_done_keys") or []) if ctx else set()
         valid_keys = {f"{bt}:{period}" for bt in target_types for period in periods}
         done_keys.intersection_update(valid_keys)
@@ -450,17 +476,36 @@ class BoardIngestService:
                     if ctx:
                         ctx.log(f"资金流 {board_type}/{period}：无数据，记失败", "error")
                     continue
-                # 名称匹配映射到 board_code；未匹配记录（写质检）
+                # 优先用资金流链接里抓到的路径 code 匹配；其次名称匹配。
+                # 资金流源板块单元格带链接（/gn/detail/code/308734/），code 真实存在。
                 matched = []
                 for _, r in df.iterrows():
                     name = str(r["name"])
-                    code = name_to_code.get((board_type, name))
+                    raw_code = str(r.get("board_code") or "").strip()
+                    code = ""
+                    bt = board_type
+                    if raw_code:
+                        meta = code_to_meta.get(raw_code)
+                        if meta:
+                            code, bt = raw_code, meta[0]
+                        elif target_codes is None:
+                            # 资金流独有板块但链接里有真实路径 code → 补进字典（有稳定主键，非伪造）
+                            code = raw_code
+                    if not code:
+                        # 无链接 code 回落名称匹配（行业资金流可能无链接）
+                        for existing_code, (ebt, ename) in code_to_meta.items():
+                            if ebt == board_type and ename == name:
+                                code = existing_code
+                                bt = ebt
+                                break
                     if not code:
                         if target_codes is None:
                             unmatched.append({"name": name, "board_type": board_type})
                         continue
                     if target_codes is not None and code not in target_codes:
                         continue
+                    if raw_code and raw_code not in code_to_meta and target_codes is None:
+                        newly_added_codes.append((raw_code, name, bt))
                     inflow, outflow, net = r["inflow"], r["outflow"], r["net_inflow"]
                     if not pd.isna(inflow) and not pd.isna(outflow):
                         expected = float(inflow) - float(outflow)
@@ -488,7 +533,11 @@ class BoardIngestService:
                         ctx.set_phase("board_fund_flow", done=len(done_keys), total=total_groups,
                                       phase_total=total_groups, phase_done=len(done_keys),
                                       current_item=group_key, fund_done_keys=sorted(done_keys))
-        # 未匹配写质检（不伪造代码）
+        # 资金流独有板块（链接带真实路径 code 但字典缺）补进 board_dict：有稳定主键，非伪造。
+        # 能力字段 has_fund_flow=true、has_members/bar=false；列表页只展示有核心数据的板块，故不影响展示。
+        if target_codes is None and newly_added_codes:
+            self._upsert_fund_only_boards(newly_added_codes, sdate)
+        # 未匹配写质检（无链接也无名称映射的板块——真无稳定代码才记）
         if target_codes is None:
             self._write_unmatched_quality(unmatched, sdate)
         # 能力字段收口：有资金流数据的板块 has_fund_flow=true

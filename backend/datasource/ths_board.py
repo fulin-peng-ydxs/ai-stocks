@@ -491,6 +491,10 @@ def _parse_fund_flow(html: str, *, board_type: str, period: str) -> pd.DataFrame
     if name_col is None:
         return pd.DataFrame(columns=_FUND_FLOW_COLS)
 
+    # 板块单元格真实带链接（http://q.10jqka.com.cn/gn/detail/code/308734/），路径 code 在 href 里。
+    # pd.read_html 只取文本会丢代码——单独从原始 HTML 抓「板块名 → code」映射补上（不伪造、无链接则空）。
+    name_to_code = _fund_flow_board_codes(html)
+
     # 列定位：按列名子串匹配（同花顺列名带单位括号/序号，跨版本有差异）
     def col(substr: str) -> str | None:
         for c in cols:
@@ -516,6 +520,7 @@ def _parse_fund_flow(html: str, *, board_type: str, period: str) -> pd.DataFrame
                      "period": period, "inflow": None, "outflow": None,
                      "net_inflow": None, "net_ratio": None,
                      "leader_stock": None, "leader_pct": None}
+        row["board_code"] = name_to_code.get(row["name"], "")
         row["inflow"] = _num(r[inflow_c]) if inflow_c else None
         row["outflow"] = _num(r[outflow_c]) if outflow_c else None
         row["net_inflow"] = _num(r[net_c]) if net_c else None
@@ -526,6 +531,24 @@ def _parse_fund_flow(html: str, *, board_type: str, period: str) -> pd.DataFrame
                 row["leader_pct"] = _pct(r[leader_pct_c])
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _fund_flow_board_codes(html: str) -> dict[str, str]:
+    """从资金流 HTML 抓「板块名 → 路径 code」映射（板块单元格带 /gn/detail/code/308734/ 链接）。
+
+    概念资金流页（data.10jqka.com.cn/funds/gnzjl）板块单元格是
+    `<a href="http://q.10jqka.com.cn/gn/detail/code/308734/">CRO概念</a>`——
+    路径 code 在 href 里。pd.read_html 只取文本会丢代码，本函数按原始 HTML 补抓；
+    无链接（如行业资金流可能不同结构）则该名无 code，由调用方按名称映射/写质检，不伪造。
+    """
+    out: dict[str, str] = {}
+    # 匹配 <a ... href=".../code/6位数字/...">名称</a>
+    for href, name in re.findall(
+            r'<a[^>]+href="[^"]*/code/(\d{6})/[^"]*"[^>]*>([^<]+)</a>', html):
+        code, nm = href, name.strip()
+        if nm and nm not in out:
+            out[nm] = code
+    return out
 
 
 def _num(value) -> float | None:
