@@ -21,6 +21,8 @@ data/*.duckdb.wal
 data/*.duckdb.bak*
 data/parquet/
 data/exports/
+# 同花顺登录 cookie（浏览器登录态，含凭证，仅本地运行采集使用，不入库不入 git）
+data/ths_cookie.txt
 
 # 前端
 frontend/node_modules/
