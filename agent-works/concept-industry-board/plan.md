@@ -1,6 +1,6 @@
 # 开发计划：板块概念数据采集与展示
 
-> 计划版本：2026-08-09（当日评审复核修订：表达式唯一索引可行性实测确认并补降级方案、候选 apply 写锁冲突语义、T8/T10 依赖收紧、菜单 seed 部署时序、审计文件路径修正、板块 E2E 数据夹具、两页 pageSize 合法值口径显式化、`DuckDBClient.transaction()` 原子性前置、T2 适配器封装口径对齐 research 附录已确认决策；二轮评审复核整改：T9 候选应用事务②补入 `member_count` 刷新、T10 拆分 T10a/T10b 消除 T8↔T10 双向依赖、T7 issue 判重与收敛策略补明确、T9 写锁冲突识别机制补明确、领涨股取数来源默认定为资金流 leader_stock（T8 明确，口径待确认）、列表页 pageSize 原型冲突差异说明补注、`board` 任务类型与既有榜单命名空间边界声明、§7.3 回滚基线内容与「回填 SQL 待 T10 产出后固化」声明、候选列表 board_type 过滤参数补入、板块字典核心能力展示口径承接、T7 不误删候选关联 open issue 的收敛边界；**三轮实测修正：`duckdb_max_lock_wait_time` 实测不存在（SET 抛 CatalogException）与跨进程写锁「立即失败」实测推翻锁等待模型，写锁冲突识别改为纯关键字归类；领涨股口径（资金流日 leader_stock 与涨幅日不一致的展示）转回待确认项；四轮实测修正「连接残留污染态」叙事不实——冲突仅发生在 connect 阶段、`_conn` 保持 None、锁释放后重试即自动恢复，无需显式释放连接**）
+> 计划版本：2026-08-09（当日评审复核修订：表达式唯一索引可行性实测确认并补降级方案、候选 apply 写锁冲突语义、T8/T10 依赖收紧、菜单 seed 部署时序、审计文件路径修正、板块 E2E 数据夹具、两页 pageSize 合法值口径显式化、`DuckDBClient.transaction()` 原子性前置、T2 适配器封装口径对齐 research 附录已确认决策；二轮评审复核整改：T9 候选应用事务②补入 `member_count` 刷新、T10 拆分 T10a/T10b 消除 T8↔T10 双向依赖、T7 issue 判重与收敛策略补明确、T9 写锁冲突识别机制补明确、领涨股取数来源默认定为资金流 leader_stock（T8 明确，口径待确认）、列表页 pageSize 原型冲突差异说明补注、`board` 任务类型与既有榜单命名空间边界声明、§7.3 回滚基线内容与「回填 SQL 待 T10 产出后固化」声明、候选列表 board_type 过滤参数补入、板块字典核心能力展示口径承接、T7 不误删候选关联 open issue 的收敛边界；**三轮实测修正：`duckdb_max_lock_wait_time` 实测不存在（SET 抛 CatalogException）与跨进程写锁「立即失败」实测推翻锁等待模型，写锁冲突识别改为纯关键字归类；领涨股口径（资金流日 leader_stock 与涨幅日不一致的展示）转回待确认项；四轮实测修正「连接残留污染态」叙事不实——冲突仅发生在 connect 阶段、`_conn` 保持 None、锁释放后重试即自动恢复，无需显式释放连接**；T1 执行（2026-08-09）：契约逐项对照代码现状核验成立，补 R12 阈值 `Settings` 模型子模型字段一环（§7.4/T7））
 > 需求文档：[requirement.md](requirement.md)（2026-08-08 评审修订版，确认状态：无阻塞项）
 > 上游文档：[requirement-closure.md](requirement-closure.md)、[research.md](research.md)
 > 页面原型：[prototypes/sector-board.html](prototypes/sector-board.html)（列表页）、[prototypes/sector-detail.html](prototypes/sector-detail.html)（详情页），均已完整读取并作为前端拆解依据。
@@ -193,7 +193,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 必须实现 | R9 | 成分股跳转个股详情（权限感知） | `hasPermission('stocks:view')` 行可点性 + 禁用态 hover 提示 + 直接访问 fail-closed 验证 | T12、T15 | 待开始 | 一致 | |
 | 必须实现 | R10 | 板块搜索 | 自由文本搜索框（el-input 防抖）+ 服务端 `keyword` 参数 + 无结果空态 | T8、T11 | 待开始 | 一致 | |
 | 可选增强 | R11 | 走势图周期切换（1月/3月/半年/1年） | 周期分段 + bars 接口区间参数 + `chartPeriod` 偏好 | T12 | 待开始 | 一致 | 本次纳入 |
-| 可选增强 | R12 | 板块维度质检（成分数波动/指数缺口） | data_report 新增板块规则 + 阈值配置化 + issue 状态流转（候选跳过 fixing） | T4、T7、T13 | 待开始 | 一致 | 本次纳入 |
+| 可选增强 | R12 | 板块维度质检（成分数波动/指数缺口） | data_report 新增板块规则 + 阈值配置化（Settings 模型/YAML/CONFIG_GROUPS 三环）+ issue 状态流转（候选跳过 fixing） | T4、T7、T13 | 待开始 | 一致 | 本次纳入 |
 | 可选增强 | R13 | 详情页成分股统一分页 | members 接口服务端分页 + AppPagination + pageSize 组件字段 | T8、T12 | 待开始 | 一致 | 本次纳入 |
 | 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（最新 snapshot_date period=即时） | T8、T12 | 待开始 | 一致 | 本次纳入 |
 | 必须实现 | R21 | 采集流程集成（daily/回填/增量/断点/失败隔离） | DailyPipeline 加 `board: bool = True` 步骤 + CLI `board --backfill/--update` + `--skip-board` + 失败清单与部分失败降级 + 参数化测试矩阵 | T5、T6 | 待开始 | 一致 | |
@@ -222,7 +222,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 边界与异常：契约变更需回到本任务修订。
 - 验证方式：计划评审确认。
 - 完成标准：契约无待确认阻塞项。
-- 实际落地情况：待实施
+- 实际落地情况：已核验（2026-08-09 T1 执行）——5 表 DDL/接口/权限/配置契约逐项对照代码现状成立；补 1 处契约：R12 阈值需 `Settings` 模型加子模型字段（Pydantic default_factory），与 settings.yaml 节、CONFIG_GROUPS 白名单三者配套（见 §7.4）。
 
 ### 6.2 任务 T2：`ThsBoardSource` 数据源适配器
 
@@ -303,7 +303,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 - 状态：待开始
 - 依赖：T4（候选/issue 写入链路）
-- 涉及文件/模块：[data_report.py](../../backend/services/data_report.py)（新增板块扫描规则）、`config/settings.yaml`（阈值基线：`relative_change_ratio=0.5`、`absolute_change_threshold=20`）、`CONFIG_GROUPS` 白名单（PG `app_config` 覆盖）、[settings.py](../../backend/config/settings.py)（`get_effective_settings()` 消费）、`backend/tests/`（质检规则与配置覆盖测试）
+- 涉及文件/模块：[data_report.py](../../backend/services/data_report.py)（新增板块扫描规则）、`config/settings.yaml`（阈值基线：`relative_change_ratio=0.5`、`absolute_change_threshold=20`）、[settings.py](../../backend/config/settings.py)（**`Settings` 加 `board_quality` 子模型字段，Pydantic default_factory，T1 契约核验补充**）、`CONFIG_GROUPS` 白名单（PG `app_config` 覆盖，见 §7.4）、[settings.py](../../backend/config/settings.py)（`get_effective_settings()` 消费）、`backend/tests/`（质检规则与配置覆盖测试）
 - 目标：R12——成分数异常波动扫描（`threshold = max(absolute, previous*ratio)`，`abs(cur-prev) >= threshold` 触发）与板块指数缺口扫描，写 `data_quality_issue`；候选流程状态流转 `open → resolved | ignored` 跳过 `fixing`。
 - 操作：
   1. 复用现有质检扫描框架新增板块维度规则；阈值经配置覆盖层读取。
@@ -477,15 +477,16 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 7.4 配置项
 
-- 路径：`config/settings.yaml`（板块质检阈值基线）+ `CONFIG_GROUPS` 白名单（PG `app_config` 在线覆盖）+ `get_effective_settings()` 消费（T7）。
+- 路径：`config/settings.yaml`（板块质检阈值基线）+ **`backend/config/settings.py` `Settings` 模型加子模型字段（Pydantic default_factory，与 YAML 节字段名对齐）** + `CONFIG_GROUPS` 白名单（`app_config.py`，PG `app_config` 在线覆盖）+ `get_effective_settings()` 消费（T7）。
 - 执行时机：T7 随代码上线；默认值 `relative_change_ratio=0.5`、`absolute_change_threshold=20`。
+- **契约要点（T1 核验补充）**：`get_effective_settings()` 先 YAML 再叠加 app_config 覆盖层，覆盖层按白名单 `CONFIG_GROUPS` 字段校验（`app_config.py:22-65`）；阈值须在 `Settings` 加子模型字段（如 `board_quality`），`settings.yaml` 加对应节、`CONFIG_GROUPS` 加对应 field 三个位置同步，缺任一环 `get_effective_settings()` 无法正确消费。
 - 影响范围：质检扫描阈值；不调整时纯 YAML 基线生效。
 - 回滚方式：删除 YAML 键与白名单项即回到无板块质检（规则代码同步移除）。
 
 ## 8. 测试与验证计划
 
 - 单元测试：
-  - 计划：T2 适配器单测；T3 DDL/约束单测；T4 采集逻辑单测（diff/hash/同日冻结/资金流映射/**member_count 刷新时机**/事务原子性/**写锁冲突关键字归类与重试恢复**）；T6 daily 参数化矩阵；T7 质检规则与配置覆盖（含收敛不误删 `member_surge_shrink`）；T8 统计口径（含领涨股来源）；前端 Vitest（筛选态、偏好优先级、memberTable 字段消费、返回 query 白名单校验）。
+  - 计划：T2 适配器单测；T3 DDL/约束单测；T4 采集逻辑单测（diff/hash/同日冻结/资金流映射/**member_count 刷新时机**/事务原子性/**写锁冲突关键字归类与重试恢复**）；T6 daily 参数化矩阵；T7 质检规则与配置覆盖（含收敛不误删 `member_surge_shrink`、**Settings 模型/YAML/CONFIG_GROUPS 三环覆盖生效**）；T8 统计口径（含领涨股来源）；前端 Vitest（筛选态、偏好优先级、memberTable 字段消费、返回 query 白名单校验）。
   - 具体完成情况：待验证
 - 接口测试：
   - 计划：T8 四接口口径对账（涨幅/净流入/成分数 vs DuckDB，含领涨股来源 `board_fund_flow.leader_stock` 与即时净流入同 snapshot 行，口径以 §10.3 待确认结果为准）；T9 候选三接口（409 两码、事务回滚、审计失败业务成功、写锁冲突 `duckdb_write_unavailable`、**应用后 member_count 一致 / member_history_start_date 首次写入 / 未应用候选不改值**）；T10a/T10b 权限（有/无 sectors:view、403）。**跨进程锁冲突集成测试（T4/T9 新增断言）**：独立子进程持写锁 → 被测进程写事务归类返回 `duckdb_write_unavailable` 且候选状态不变、锁释放后重试恢复。
