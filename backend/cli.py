@@ -430,7 +430,7 @@ def cmd_board(args: argparse.Namespace) -> int:
 
     mode = "backfill" if args.backfill else "update"
     svc = IngestionService()
-    res = svc.ingest_board(mode=mode)
+    res = svc.ingest_board(mode=mode, ctx=CliTaskContext())  # CLI 实时日志（对齐现有命令）
     failed = res.get("failed") or []
     print(f"=== 板块采集（{mode}）{'✓' if not failed else '✗'} ===")
     print(f"  字典: {res.get('dict')}")
