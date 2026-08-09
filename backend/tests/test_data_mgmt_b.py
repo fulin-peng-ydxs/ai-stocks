@@ -641,3 +641,84 @@ def test_hub_includes_board_stage(client, monkeypatch):
     assert board["open_issues"] == 1
     # 风险列表含候选待处理提示
     assert any("候选待确认" in r["text"] for r in resp.data["risk"])
+
+
+# ── 板块 fix 分派（_h_fix 板块类型，审计后补测）───────────────
+
+
+def test_board_index_gap_fix_reingests_and_resolves(client, monkeypatch):
+    """board_index_gap fix：重采板块指数 → 复检通过 → resolved。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+    from backend.services.board_ingest import BoardIngestService
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    # mock 板块重采：把 board_bar 补到全局最新交易日，使复检通过
+    monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
+                        lambda self, start, end=None, board_codes=None: {"rows": 1, "boards": 1}, raising=True)
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+                   "VALUES ('309121','AI PC','concept',TRUE)")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-07', 10.0)")
+    client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
+                   "VALUES (1, '309121', 'board_index_gap', 'mid', 'open', now())")
+
+    # 重采后 board_bar 有数据到最新交易日 → 复检通过
+    def fake_recheck(self, issue_type, code, td):
+        if issue_type == "board_index_gap":
+            # 模拟重采后 board_bar 已到 08-07（全局最新）
+            self.c.execute("INSERT INTO board_bar (board_code, trade_date, close) "
+                           "VALUES ('309121', DATE '2026-08-07', 100.0)")
+            return True
+        return True
+    monkeypatch.setattr("backend.services.data_report.DataIntegrityReport.recheck_clean",
+                        fake_recheck, raising=True)
+    tid = svc.create("fix", {"issue_id": 1})
+    _wait(svc, tid)
+    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=1").iloc[0]
+    assert row["status"] == "resolved"
+
+
+def test_board_member_wave_fix_reingests_and_resolves(client, monkeypatch):
+    """board_member_wave fix：重采成分快照 → 复检通过 → resolved。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+    from backend.services.board_ingest import BoardIngestService
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "ingest_board_members",
+                        lambda self, snapshot_date=None, board_codes=None: {"309121": {"total": 50, "blocked": False}}, raising=True)
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, member_count) "
+                   "VALUES ('309121','AI PC','concept',TRUE,50)")
+    for i in range(50):
+        client.execute("INSERT INTO board_member (board_code, code, in_date) "
+                       "VALUES ('309121', ?, DATE '2026-08-07')", [f"c{i:04d}"])
+    client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
+                   "VALUES (2, '309121', 'board_member_wave', 'mid', 'open', now())")
+    monkeypatch.setattr("backend.services.data_report.DataIntegrityReport.recheck_clean",
+                        lambda self, issue_type, code, td: True, raising=True)
+    tid = svc.create("fix", {"issue_id": 2})
+    _wait(svc, tid)
+    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=2").iloc[0]
+    assert row["status"] == "resolved"
+
+
+def test_board_fund_unmatched_fix_ignored(client, monkeypatch):
+    """board_fund_unmatched fix：重采资金流 → 复检（人工 ignore 收敛）→ resolved。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+    from backend.services.board_ingest import BoardIngestService
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
+                        lambda self, snapshot_date=None, periods=None: {"rows": 1, "unmatched": 0}, raising=True)
+    client.execute("INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
+                   "VALUES (3, '309121', 'board_fund_unmatched', 'mid', 'open', now())")
+    monkeypatch.setattr("backend.services.data_report.DataIntegrityReport.recheck_clean",
+                        lambda self, issue_type, code, td: True, raising=True)
+    tid = svc.create("fix", {"issue_id": 3})
+    _wait(svc, tid)
+    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=3").iloc[0]
+    assert row["status"] == "resolved"
