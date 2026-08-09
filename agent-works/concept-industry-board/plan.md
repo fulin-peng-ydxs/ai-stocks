@@ -1,6 +1,6 @@
 # 开发计划：板块概念数据采集与展示
 
-> 计划版本：2026-08-09（当日评审复核修订：表达式唯一索引可行性实测确认并补降级方案、候选 apply 写锁冲突语义、T8/T10 依赖收紧、菜单 seed 部署时序、审计文件路径修正、板块 E2E 数据夹具、两页 pageSize 合法值口径显式化、`DuckDBClient.transaction()` 原子性前置、T2 适配器封装口径对齐 research 附录已确认决策）
+> 计划版本：2026-08-09（当日评审复核修订：表达式唯一索引可行性实测确认并补降级方案、候选 apply 写锁冲突语义、T8/T10 依赖收紧、菜单 seed 部署时序、审计文件路径修正、板块 E2E 数据夹具、两页 pageSize 合法值口径显式化、`DuckDBClient.transaction()` 原子性前置、T2 适配器封装口径对齐 research 附录已确认决策；**二轮评审复核整改：T9 候选应用事务②补入 `member_count` 刷新、T10 拆分 T10a/T10b 消除 T8↔T10 双向依赖、T7 issue 判重与收敛策略补明确、T9 写锁冲突识别机制补明确、领涨股取数来源定为资金流 leader_stock（T8 明确）、列表页 pageSize 原型冲突差异说明补注、`board` 任务类型与既有榜单命名空间边界声明、§7.3 回滚基线内容与「回填 SQL 待 T10 产出后固化」声明、候选列表 board_type 过滤参数补入、板块字典核心能力展示口径承接、T7 不误删候选关联 open issue 的收敛边界**）
 > 需求文档：[requirement.md](requirement.md)（2026-08-08 评审修订版，确认状态：无阻塞项）
 > 上游文档：[requirement-closure.md](requirement-closure.md)、[research.md](research.md)
 > 页面原型：[prototypes/sector-board.html](prototypes/sector-board.html)（列表页）、[prototypes/sector-detail.html](prototypes/sector-detail.html)（详情页），均已完整读取并作为前端拆解依据。
@@ -10,7 +10,7 @@
 - 需求文档：`agent-works/concept-industry-board/requirement.md`
 - 功能目标：
   1. 数据采集：新增板块字典、板块成分股、板块指数、板块资金流四块数据采集（同花顺源），纳入现有采集闭环（CLI / 异步任务 / 每日流程 / 数据概览 / 数据质量）。
-  2. 页面展示：「最新行情」下新增「板块行情」列表页 `/sectors` 与详情页 `/sectors/:code`，支撑「题材 → 板块 → 成分股 → 龙头」研究链路；数据质量页承接成分快照候选确认/丢弃闭环。
+  2. 页面展示：「最新行情」下新增「板块行情」列表页 `/sectors` 与详情页 `/sectors/:code`，支撑「题材 → 板块 → 成分股 → 龙头」研究链路；数据质量页承接成分快照候选确认/丢弃闭环。列表/详情只展示具备核心数据（`has_members` 或 `has_bar`）的板块，资金流独有板块（仅 `has_fund_flow`）不进入展示（承接需求 §2.5 并集字典展示口径）。
 - 本次不做：R15-R20、R24、R25（见 §3.3，原因以需求文档 §4.3 为唯一事实源）。
 - 计划输出目录：`agent-works/concept-industry-board/plan.md`
 
@@ -60,8 +60,8 @@ R1、R2、R3、R4、R5、R6、R7、R8、R9、R10、R21、R22、R23（逐项映�
 整体按需求文档 §12 五阶段推进：契约 → 数据源与 DDL → 采集与质检 → API 与权限 → 页面。模块边界：
 
 - **数据流**：`ThsBoardSource`（直连 `q.10jqka.com.cn` / `data.10jqka.com.cn`，复用 akshare 打包的 `ths.js` 经 `py_mini_racer` 生成 v cookie，不调用 akshare 板块接口）→ `BoardIngestService`（字典两阶段 / 成分快照 diff / 指数 / 资金流并集映射）→ DuckDB 5 表 → `BoardQueryService`（只读聚合，单次全查内存合并，遵循双库边界）→ `/api/sectors*` → 前端页面。
-- **候选恢复闭环**（R2）：不完整快照/异常波动 → 同一 DuckDB 事务写 `board_member_candidate` + `data_quality_issue`（`member_surge_shrink`，open，跳过 fixing）→ 数据质量页确认应用（事务②：diff 落库 + 候选 applied + issue resolved）或丢弃（事务③：候选 discarded + issue ignored）→ PG 审计 best-effort。多语句原子事务依赖 T4 为 `DuckDBClient` 新增的 `transaction()` 上下文管理器（持进程内 RLock 跨 BEGIN..COMMIT，见 T4/T9）。
-- **接口契约**：`/api/sectors` 参数白名单（`trade_date/board_type/sort_by/order/keyword/page/size`），`sort_by` 字段码 `pct_today|pct_5d|pct_10d|pct_20d|net_inflow|up_count`；统计口径（涨幅按收盘价比对、历史不足显示「—」不缩短周期、涨跌家数按成分股 `close` vs `pre_close` 且平盘/停牌/缺行情不计入）严格按需求 §6.2 契约要点实现。
+- **候选恢复闭环**（R2）：不完整快照/异常波动 → 同一 DuckDB 事务写 `board_member_candidate` + `data_quality_issue`（`member_surge_shrink`，open，跳过 fixing）→ 数据质量页确认应用（事务②：diff 落库 + 候选 applied + issue resolved + **同步刷新 `board_dict.member_count` 与 `member_history_start_date`**）或丢弃（事务③：候选 discarded + issue ignored）→ PG 审计 best-effort。`member_count` 为最近一次已应用完整快照的冗余值，两条刷新路径都走「**已应用**」判定：T4 完整快照 diff 落库路径与 T9 候选应用路径各刷一次，被拦截未应用的候选不改该值（R2 验收标准「member_count 与有效成员数一致」）。多语句原子事务依赖 T4 为 `DuckDBClient` 新增的 `transaction()` 上下文管理器（持进程内 RLock 跨 BEGIN..COMMIT，见 T4/T9）。
+- **接口契约**：`/api/sectors` 参数白名单（`trade_date/board_type/sort_by/order/keyword/page/size`），`sort_by` 字段码 `pct_today|pct_5d|pct_10d|pct_20d|net_inflow|up_count`；统计口径（涨幅按收盘价比对、历史不足显示「—」不缩短周期、涨跌家数按成分股 `close` vs `pre_close` 且平盘/停牌/缺行情不计入）严格按需求 §6.2 契约要点实现；**领涨股及涨幅统一取 `board_fund_flow.leader_stock/leader_pct`，无资金流数据的板块该列显示「—」**（不走「当日成分股涨幅第一」另行计算，口径单一）。
 - **权限策略**：`sectors:view` 进 `BUSINESS_RESOURCE_CODES`（业务授权，非登录基线）；后端 `require_perm('sectors:view')` 守卫；采集/候选操作 system-only（`data-task:manage` / `data-quality:view|fix`）；既有库一次性回填授权 + 同事务 bump `perm_ver`（marker 幂等）。
 - **兼容策略**：`board_bar` 存原值不套复权链；`stock_basic.concept` 不写；新增表与 seed 全部幂等；`ThsBoardSource` 限速 ≥1s/次 + 分批断点。
 - **关键取舍**：资金流无稳定代码时按名称匹配，未匹配写质检不伪造代码；同日多候选冻结（表达式唯一索引兜底 + 事务内二次校验返回稳定错误码）；候选应用同步短事务不起异步任务。
@@ -134,7 +134,10 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 ### 4.1 页面 P1（板块行情列表页）技术实现
 
 - 原型文件：`prototypes/sector-board.html`。承接区域：顶部 action 筛选区（概念/行业分段 → 日期控件 → 主排序周期分段 → 搜索框）、主表（列 = 名称 link/成分股数/上涨/下跌家数/今日/5日/10日/20日涨幅/即时净流入 + 数据日/领涨股）、表体内部滚动 + 分页条、设置抽屉（布局/每页条数/默认排序/默认类型/默认周期/列显隐/恢复默认）、四态演示态（数据/空/错误/加载）。
-- 原型与需求差异说明：原型用「上涨家数」「数据日」独立列展示，正式实现按需求 §7.1 合并为「上涨/下跌家数」列与「即时净流入(含数据日期)」列提示，列序以需求 §7.1.2 为准。
+- 原型与需求差异说明：
+  1. 原型用「上涨家数」「数据日」独立列展示，正式实现按需求 §7.1 合并为「上涨/下跌家数」列与「即时净流入(含数据日期)」列提示，列序以需求 §7.1.2 为准。
+  2. **列表页 `pageSize` 合法值冲突**：原型 `sector-board.html` 设置抽屉每页条数选项为 **10/20/30/50**（含 30），需求 §7.1 配置表为 **10/20/50**（无 30）。正式实现按**需求口径 10/20/50**（列表页与详情页 10/20/30/50 不同口径，已在 §4.1 主表行加粗声明）；此取舍为计划 vs 原型的显式冲突，**按需求为准**，实施时无需再向用户确认（需求为当前事实源），但须在开发留痕中记录此差异。
+  3. **领涨股取数来源**：原型列「领涨股及涨幅」，正式实现取 `board_fund_flow.leader_stock/leader_pct`（与即时净流入同一 `(snapshot_date, period='即时')` 行）；无资金流板块该列「—」（与需求 §6.2 空值处理一致，原型数据态不区分该场景）。
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -171,7 +174,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 候选确认/丢弃 | R2、R12 | `member_surge_shrink` 待处理行提供「确认应用」「丢弃」；`apply_allowed=false` 禁用「确认应用」+ 提示「本期不支持同日替换」；确认弹窗展示 diff 摘要；完成后刷新列表 | QualityView.vue 扩展：候选经 `issue_id` 附着问题行内（不新增独立页面）；AppRowActions 两动作 + `:loading`；确认弹窗复用项目弹窗模式 | QualityView.vue、AppRowActions | `GET /api/data/board-candidates`、`POST .../{id}/apply`、`POST .../{id}/discard` | 409 按 `error_code` 区分提示（`already_processed` → 「候选已被应用/丢弃」并刷新；`same_day_snapshot_already_applied` → 「本期不支持同日替换」并刷新）；加载 v-loading、空态、错误 AppStateBlock 重试 | T13 |
+| 候选确认/丢弃 | R2、R12 | `member_surge_shrink` 待处理行提供「确认应用」「丢弃」；`apply_allowed=false` 禁用「确认应用」+ 提示「本期不支持同日替换」；确认弹窗展示 diff 摘要（含候选 `codes_json` 全量代码可展开明细）；完成后刷新列表 | QualityView.vue 扩展：候选经 `issue_id` 附着问题行内（不新增独立页面）；AppRowActions 两动作 + `:loading`；确认弹窗复用项目弹窗模式 | QualityView.vue、AppRowActions | `GET /api/data/board-candidates`（`status/board_type/page/size`）、`POST .../{id}/apply`、`POST .../{id}/discard` | 409 按 `error_code` 区分提示（`already_processed` → 「候选已被应用/丢弃」并刷新；`same_day_snapshot_already_applied` → 「本期不支持同日替换」并刷新）；`duckdb_write_unavailable` → 软失败提示不刷新；加载 v-loading、空态、错误 AppStateBlock 重试 | T13 |
 
 组件资产闭环（P3）：复用现有质检页全部组件；不新增 pageKey、不新增组件种类、不新增配置字段；设计规范无需更新（无布局变化）；真实消费验证归 T13/T15。
 
@@ -180,7 +183,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 范围类别 | 需求编号 | 需求内容/来源 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 必须实现 | R1 | 板块字典采集（概念+行业并集）落 `board_dict` | ThsBoardSource.get_board_dict + 两阶段字典 seed/资金流并集补充 + 能力字段收口 + app_code(clid) 抓取 | T2、T4 | 待开始 | 一致 | |
-| 必须实现 | R2 | 成分股快照采集 + 候选恢复闭环 | 快照 diff（[in_date,out_date)）+ 不完整快照保护 + payload_hash 幂等 + 候选表三事务 + 同日冻结 + best-effort 审计 + 候选接口 + 质检页操作 | T2、T3、T4、T9、T13 | 待开始 | 一致 | |
+| 必须实现 | R2 | 成分股快照采集 + 候选恢复闭环 | 快照 diff（[in_date,out_date)）+ 不完整快照保护 + payload_hash 幂等 + 候选表三事务 + 同日冻结 + best-effort 审计 + 候选接口 + 质检页操作 + **member_count 双应用路径刷新（T4 完整快照 + T9 候选应用）** | T2、T3、T4、T9、T13 | 待开始 | 一致（评审修订） | **member_count 应用路径已补入 T9 事务②**；「被拦截未应用候选不改该值」由 T9 集成测试断言 |
 | 必须实现 | R3 | 板块指数采集落 `board_bar`（原值） | get_board_bar + 幂等 upsert + 5 年回填/每日增量 | T2、T4、T6 | 待开始 | 一致 | |
 | 必须实现 | R4 | 板块资金流采集落 `board_fund_flow` | 概念+行业全周期采集 + 并集映射（未匹配写质检不伪造代码） | T2、T4 | 待开始 | 一致 | |
 | 必须实现 | R5 | 板块采集异步任务（`board` 进任务中心） | TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES 注册 + `_h_board` + checkpoint=board_code + 任务中文标签 | T5 | 待开始 | 一致 | |
@@ -194,7 +197,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 可选增强 | R13 | 详情页成分股统一分页 | members 接口服务端分页 + AppPagination + pageSize 组件字段 | T8、T12 | 待开始 | 一致 | 本次纳入 |
 | 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（最新 snapshot_date period=即时） | T8、T12 | 待开始 | 一致 | 本次纳入 |
 | 必须实现 | R21 | 采集流程集成（daily/回填/增量/断点/失败隔离） | DailyPipeline 加 `board: bool = True` 步骤 + CLI `board --backfill/--update` + `--skip-board` + 失败清单与部分失败降级 + 参数化测试矩阵 | T5、T6 | 待开始 | 一致 | |
-| 必须实现 | R22 | 页面/RBAC 接入 | 菜单/资源 seed + `sectors:view` 进 BUSINESS_RESOURCE_CODES + 既有库回填 + bump perm_ver + 路由守卫 + pageRegistry 登记 | T10、T11、T12、T14 | 待开始 | 一致 | |
+| 必须实现 | R22 | 页面/RBAC 接入 | 菜单/资源 seed + `sectors:view` 进 BUSINESS_RESOURCE_CODES + 既有库回填 + bump perm_ver + 路由守卫 + pageRegistry 登记 | T10a、T10b、T11、T12、T14 | 待开始 | 一致 | seed/回填拆分为 T10a（常量+seed）与 T10b（回填 SQL+权限测试） |
 | 必须实现 | R23 | 页面配置闭环 | 两页 usePageSettings + 组件字段（pageSize/defaultSort/hiddenColumns）保存/读取/消费/回退 + 参数化矩阵 + 构建/布局/视口验收 | T11、T12、T14、T15 | 待开始 | 一致 | |
 | 暂不实现 | R15 | 地域/风格板块 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 第一期只做概念+行业 |
 | 暂不实现 | R16 | 资金流历史趋势图 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 本期只做统计卡数字 |
@@ -257,11 +260,11 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 目标：实现 R1-R4 采集逻辑与 R2 候选保存（原子事务①）。
 - 操作：
   1. 字典两阶段：概念/行业字典 upsert（阶段一）→ 资金流并集补充 + `has_fund_flow`（阶段二）→ 能力字段与 `last_seen_at` 收口、`member_count` 在最近完整快照应用后刷新。
-  2. 成分快照：逐板块 `get_board_members` → 完整性判定（缺页/失败/波动超 R12 阈值）→ 完整快照 diff 落库（`[in_date, out_date)`）+ 刷新 `member_count`/`member_history_start_date`；被拦截快照 → 计算 `payload_hash`（SHA-256，UTF-8，小写 hex 64，归一化代码 set+sorted）→ 同 hash 幂等四态 → 同一 DuckDB 事务写 `board_member_candidate` + `data_quality_issue`（open，fix_task_id=NULL）。
+  2. 成分快照：逐板块 `get_board_members` → 完整性判定（缺页/失败/波动超 R12 阈值）→ 完整快照 diff 落库（`[in_date, out_date)`）+ 刷新 `member_count`/`member_history_start_date`（**仅「已应用」路径刷新，T4 负责完整快照直接落库路径，T9 负责候选确认应用路径**）；被拦截快照 → 计算 `payload_hash`（SHA-256，UTF-8，小写 hex 64，归一化代码 set+sorted）→ 同 hash 幂等四态 → 同一 DuckDB 事务写 `board_member_candidate` + `data_quality_issue`（open，fix_task_id=NULL）。
   3. 指数：幂等 upsert 原值；资金流：全周期 upsert + 名称匹配映射、未匹配写质检不伪造代码；净额=流入-流出校验。
   4. 单板块失败跳过记日志不中断，失败板块进入清单（供 T6）。
-  5. `DuckDBClient.transaction()`：现有 `execute()` 按调用持 RLock，多语句 BEGIN..COMMIT 块之间会被其他线程 SQL 插入（破坏原子性）；新增上下文管理器在整个事务块内持 RLock，候选保存事务①与 T9 应用/丢弃事务②③统一走它。现有同步短写先例（data_admin.py quality_reset/ignore）为单语句不受影响。
-- 产出：采集服务 + `transaction()` 助手 + 单测（diff 区间语义、不完整快照不执行退出 diff、payload_hash 规范化与非法格式、同日多候选冻结、资金流映射与未匹配质检、member_count 刷新时机、事务原子性——中途失败整体回滚）。
+  5. `DuckDBClient.transaction()`：现有 `execute()` 按调用持 RLock，多语句 BEGIN..COMMIT 块之间会被其他线程 SQL 插入（破坏原子性）；新增上下文管理器在整个事务块内持 RLock，候选保存事务①与 T9 应用/丢弃事务②③统一走它。事务块内设置 `duckdb_max_lock_wait_time` 锁等待超时并在异常包装层做写锁冲突归类（识别机制与 `duckdb_write_unavailable` 语义见 T9 操作 4）。现有同步短写先例（data_admin.py quality_reset/ignore）为单语句不受影响。
+- 产出：采集服务 + `transaction()` 助手 + 单测（diff 区间语义、不完整快照不执行退出 diff、payload_hash 规范化与非法格式、同日多候选冻结、资金流映射与未匹配质检、member_count 刷新时机——**完整快照路径刷新、被拦截未应用候选不刷新、T9 应用后刷新（跨事务职责在 T9 单测断言）**、事务原子性——中途失败整体回滚）。
 - 影响范围：DuckDB 5 表写入；`data_quality_issue` 新增 issue 类型 `member_surge_shrink`。
 - 边界与异常：快照日期 = Asia/Shanghai 实际成功采集日期；成分股代码补交易所后缀对齐 `stock_basic.code`。
 - 验证方式：`python -m pytest backend/tests/test_board_ingest*.py -q`（跑前先 `./start.sh status` 确认后端已停，结束按原状态恢复，遵守 DuckDB 锁规则）。
@@ -274,7 +277,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 依赖：T4
 - 涉及文件/模块：[async_task.py](../../backend/services/async_task.py)（TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES + `_h_board`）、[data.ts](../../frontend/src/api/data.ts)（任务类型中文标签「板块采集」）、`backend/tests/`（任务注册/取消/续跑测试）
 - 目标：`board` 任务可创建/看进度/取消/续跑，checkpoint 粒度 board_code，断点续跑从上次 board_code 继续；纳入 DuckDB 写任务互斥。
-- 操作：按现有任务类型同款模式注册；handler 调 `ingest_board(ctx)`；进度按 board_code 推进。
+- 操作：按现有任务类型同款模式注册；handler 调 `ingest_board(ctx)`；进度按 board_code 推进。**命名空间边界声明**：任务类型 `board` 与既有「每日榜单」的 `/board` 路由、`board:view`/`board:compute` 资源码、`board_bar` 等表名处于同一语义空间，但技术命名空间不同（task type vs resource code vs 表名），不构成功能冲突；代码/日志/运维中注意区分——任务类型用 `task.type='board'`，资源码用 `board:view`（榜单），接口用 `/api/sectors*`（板块行情），表用 `board_dict/board_member/...`（板块数据）。前端任务中文标签「板块采集」避免与「每日榜单」资源名混淆。
 - 产出：任务注册 + 单测 + 前端标签。
 - 影响范围：任务中心新增任务类型；无既有任务行为变化。
 - 边界与异常：复用现有失败/中断/续跑机制。
@@ -302,8 +305,12 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 依赖：T4（候选/issue 写入链路）
 - 涉及文件/模块：[data_report.py](../../backend/services/data_report.py)（新增板块扫描规则）、`config/settings.yaml`（阈值基线：`relative_change_ratio=0.5`、`absolute_change_threshold=20`）、`CONFIG_GROUPS` 白名单（PG `app_config` 覆盖）、[settings.py](../../backend/config/settings.py)（`get_effective_settings()` 消费）、`backend/tests/`（质检规则与配置覆盖测试）
 - 目标：R12——成分数异常波动扫描（`threshold = max(absolute, previous*ratio)`，`abs(cur-prev) >= threshold` 触发）与板块指数缺口扫描，写 `data_quality_issue`；候选流程状态流转 `open → resolved | ignored` 跳过 `fixing`。
-- 操作：复用现有质检扫描框架新增板块维度规则；阈值经配置覆盖层读取。
-- 产出：质检规则 + 配置项 + 单测（阈值生效、配置覆盖生效、状态枚举合法流转）。
+- 操作：
+  1. 复用现有质检扫描框架新增板块维度规则；阈值经配置覆盖层读取。
+  2. **issue 判重与收敛策略（明确，承接现有 data_report 收敛模式）**：板块自动扫描类问题沿用现有「扫描前清上轮**未解决**的同类 open 问题 + 已 resolved/ignored 不动」收敛模式（data_report.py:444-447），反复跑不堆积。
+  3. **边界（防止误删候选关联 issue）**：收敛 DELETE **只清板块自动扫描类**（如 `board_index_gap`），**绝不清理 `member_surge_shrink` 类 open issue**——`member_surge_shrink` 由采集拦截写入并关联 `pending` 候选，若被自动扫描清除会造成「候选 pending 而 issue 被删」的关联断裂。现有 data_report 收敛按 `issue_type` 集合白名单清理，新增板块自动扫描类型时保持该白名单排除 `member_surge_shrink`；`member_surge_shrink` 的生命周期只由候选事务②③驱动（applied→resolved / discarded→ignored）。
+  4. **波动拦截与扫描共用同一阈值判断**（避免双口径）：T4 候选保存与 T7 扫描对「成分数波动」用同一 `threshold` 计算函数（T7 抽公共函数或共享配置消费）。
+- 产出：质检规则 + 配置项 + 单测（阈值生效、配置覆盖生效、状态枚举合法流转、**收敛 DELETE 不误删 `member_surge_shrink` open issue、同板块同日同波动扫描不堆积新 issue**）。
 - 影响范围：数据质量页出现板块质检问题；配置覆盖层新增白名单项。
 - 边界与异常：波动拦截与 T4 候选保存共用同一阈值判断，避免双口径。
 - 验证方式：单测 + 配置测试。
@@ -313,10 +320,10 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 ### 6.8 任务 T8：`/api/sectors*` 只读 API + 查询服务
 
 - 状态：待开始
-- 依赖：T4（数据来源）；T10 的 seed/常量部分（`sectors:view` 进 `BUSINESS_RESOURCE_CODES` + 资源 seed）须先行或与 T8 同批交付——T8 的 403/权限验收隐含依赖该 seed，不可晚于 T8 收尾
+- 依赖：T4（数据来源）；**T10a（常量 + 资源 seed 前置部分）须先行或与 T8 同批交付**——T8 的 403/权限验收隐含依赖 `sectors:view` 进 `BUSINESS_RESOURCE_CODES` 与资源 seed，不可晚于 T8 收尾（T10a 依赖仅 T1，无环）
 - 涉及文件/模块：`backend/api/sectors.py`（新增路由）、`backend/services/board_query.py`（新增查询服务）、`backend/main.py`（挂路由）、`backend/tests/test_sectors_api*.py`（新增）
 - 目标：4 个只读接口（列表/详情/bars/members）按需求 §6.2 契约要点实现。
-- 操作：参数白名单校验（未知参数 400）；`sort_by` 稳定字段码；统计口径（涨幅收盘价对比、历史不足「—」、涨跌家数口径、最新交易日双口径显式返回）；`trade_date` 截面语义；空值「—」；404/400/403；members 服务端分页（size 默认 20）；板块数 <600 单次全查内存合并（双库边界：只读 DuckDB，成分股现价/涨跌幅/换手取个股行情表同库关联）。
+- 操作：参数白名单校验（未知参数 400）；`sort_by` 稳定字段码；统计口径（涨幅收盘价对比、历史不足「—」、涨跌家数口径、最新交易日双口径显式返回）；`trade_date` 截面语义；空值「—」；404/400/403；members 服务端分页（size 默认 20）；板块数 <600 单次全查内存合并（双库边界：只读 DuckDB，成分股现价/涨跌幅/换手取个股行情表同库关联）；**领涨股取数来源明确：`board_fund_flow.leader_stock/leader_pct`，且与「即时净流入」取自同一 `(snapshot_date, period='即时')` 行**（该表每周期行各带 leader_stock/leader_pct，见需求 §6.1 表设计）——无资金流数据的板块领涨股列显示「—」（空值口径，不走「当日成分股涨幅第一」另行计算，避免口径分裂）；列表只展示 `has_members` 或 `has_bar` 为 true 的板块（承接需求 §2.5 并集字典展示口径）。
 - 产出：接口 + 服务 + 单测/接口测试（口径与 DuckDB 对账）。
 - 影响范围：新增只读接口，无既有接口变化。
 - 边界与异常：不跨库 JOIN；资金流数据日期与涨幅数据日期分别返回。
@@ -330,32 +337,50 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 依赖：T4（候选表写入）、T7（issue 状态流转）
 - 涉及文件/模块：`backend/api/data_admin.py` 或新增 `backend/api/board_candidates.py`（按既有 data 域分层取舍）、`backend/services/`（候选应用/丢弃服务 + best-effort 审计复用 `audit_service`，`resource_code='data-quality:fix'`）、`backend/tests/`（接口与事务测试）
 - 目标：R2 恢复闭环 API——`GET /api/data/board-candidates`（默认 pending，可 status 过滤，字段含 `apply_allowed/block_reason`）、`POST .../{candidate_id}/apply`（事务② + 事务内二次校验）、`POST .../{candidate_id}/discard`（事务③）。
-- 操作：apply/discard 为同步短事务不起异步任务；409 `error_code` 区分 `already_processed`/`same_day_snapshot_already_applied`；审计 best-effort（失败 warning 不回滚业务）。**写锁冲突语义**：进程内并发由 `DuckDBClient` RLock 串行化（与 data_admin.py 既有同步短写先例一致），apply 经 T4 的 `transaction()` 持锁完成；跨进程占用（如 CLI `board --backfill` 独立进程持文件写锁）导致写入失败（StorageError）时，接口按软失败口径返回 `error_code=duckdb_write_unavailable` + 提示「数据库写入暂不可用（采集/回填进行中或外部进程占用），请稍后重试」，候选保持 `pending` 可重试，不产生半成品状态。
-- 产出：接口 + 集成测试（同日第二候选 409、表达式索引竞态兜底、审计失败业务仍成功、写锁冲突返回 `duckdb_write_unavailable` 且候选状态不变）。
+- 操作：
+  1. **事务②（apply）原子内容**：`board_member` diff 落库（`[in_date,out_date)`）+ 候选置 `applied, applied_at` + issue 置 `resolved, resolved_at` + **`board_dict` 同步刷新 `member_count = <候选代码数>`、`member_history_start_date` 仅在为空（板块首次应用）时写 `snapshot_date`、已存在则不覆盖**。任一失败整体回滚，候选保留可重试；`member_count` 刷新与 diff 落库同事务，保证 R2「member_count 与有效成员数一致」在应用后即刻成立。
+  2. **事务③（discard）原子内容**：候选置 `discarded` + issue 置 `ignored`，不触碰 `board_dict`。
+  3. apply/discard 为同步短事务不起异步任务；409 `error_code` 区分 `already_processed`/`same_day_snapshot_already_applied`；审计 best-effort（失败 warning 不回滚业务）。
+  4. **写锁冲突识别机制（明确，承接 T4 `transaction()`）**：DuckDB 写锁是**文件锁**，跨进程才会冲突；进程内由 `DuckDBClient` RLock 串行化（与 data_admin.py 既有同步短写先例一致）。因此 `transaction()` 上下文管理器在事务块内设置**锁等待超时**（`SET duckdb_max_lock_wait_time = <毫秒数>`，该配置在 DuckDB 中按毫秒整型取值，取一个远小于接口超时的值如 2000；仅当目标 DuckDB 版本支持该配置时设置，`SET` 失败时 catch 并跳过、不中断事务），并在捕获到 `StorageError` 时对异常消息做**锁冲突归类**（消息含 `lock`/`Cannot open`/`Another client`/`busy` 等关键字 → `duckdb_write_unavailable`；其余按普通 `StorageError` 500）。跨进程占用（如 CLI `board --backfill` 独立进程持文件写锁）导致写入失败时，接口按软失败口径返回 `error_code=duckdb_write_unavailable` + 提示「数据库写入暂不可用（采集/回填进行中或外部进程占用），请稍后重试」，候选保持 `pending` 可重试，不产生半成品状态。该归类逻辑落在 T4 `transaction()` 的异常包装层，T9 消费。
+- 产出：接口 + 集成测试（**候选应用后 member_count 与有效成员数一致、member_history_start_date 首次写入、被拦截未应用候选不改 member_count**、同日第二候选 409、表达式索引竞态兜底、审计失败业务仍成功、写锁冲突返回 `duckdb_write_unavailable` 且候选状态不变）。
 - 影响范围：数据管理域新增 3 个接口（system-only）。
 - 边界与异常：DuckDB 事务失败整体回滚；PG 审计失败不补偿业务；同步写不占 `WRITE_TASK_TYPES` 任务槽（短事务，对齐既有 quality_reset/ignore 同步写先例），写锁冲突按上述 `duckdb_write_unavailable` 语义返回。
 - 验证方式：接口/集成测试。
-- 完成标准：R2 验收标准中接口部分通过。
+- 完成标准：R2 验收标准中接口部分通过（含成员数一致性断言）。
 - 实际落地情况：待实施
 
-### 6.10 任务 T10：RBAC 后端接入（seed + 既有库回填 + perm_ver）
+### 6.10 任务 T10a：RBAC 常量 + seed（前置部分）
 
 - 状态：待开始
-- 依赖：T1；与 T8/T9 可并行
-- 涉及文件/模块：[pg_ddl.py](../../backend/storage/pg_ddl.py)（`_SEED_MENU_TREE` quotes 下加 `/sectors` 子菜单 visible=login、`_SEED_RESOURCES` 加 `sectors:view` GET `/api/sectors*` 挂 `/sectors`）、[constants.py](../../backend/auth/constants.py)（`BUSINESS_RESOURCE_CODES` 加 `sectors:view`）、`agent-works/concept-industry-board/sectors-view-grant.sql`（既有库一次性回填授权 + bump perm_ver，marker 幂等）、`agent-works/concept-industry-board/sectors-view-grant-rollback.sql`（回滚）、`backend/tests/`（路由扫描/权限测试）
-- 目标：R22 后端部分——菜单/资源 seed 幂等；`sectors:view` 授予 normal/tenant_admin；既有库回填与 `perm_ver` 自增同一 PG 事务；接口 `require_perm` 守卫；无授权用户菜单不可见 + 路由守卫 fail-closed + 接口 403。
-- 操作：沿用 `asset-publish-open` 迁移模式（确定性基线恢复，不依赖 marker 内容）；路由扫描测试同步新增端点断言。
-- 产出：seed 改动 + 回填/回滚 SQL + 权限测试。
-- 影响范围：PG sys_menu/sys_resource/角色授权；既有库需执行回填 SQL；全量用户 token 因 perm_ver 变化失效重登（预期行为）。**部署时序约束：菜单 seed 生效不得早于前端路由上线**——`_SEED_MENU_TREE` 加 `/sectors` 后，若前端未同批发布，菜单将指向不存在的路由；前后端必须同批发布（见 §9）。
-- 边界与异常：回填 SQL 幂等可重复执行；回滚 SQL 恢复授权基线并 bump perm_ver。
-- 验证方式：权限测试（有/无 `sectors:view`、有/无 `stocks:view`）+ seed 幂等重跑 + 路由扫描测试。
+- 依赖：T1（无其他依赖，供 T8/T9/T10b 先行消费，消除原 T8↔T10 双向依赖环）
+- 涉及文件/模块：[constants.py](../../backend/auth/constants.py)（`BUSINESS_RESOURCE_CODES` 加 `sectors:view`）、[pg_ddl.py](../../backend/storage/pg_ddl.py)（`_SEED_MENU_TREE` quotes 下加 `/sectors` 子菜单 visible=login、`_SEED_RESOURCES` 加 `sectors:view` GET `/api/sectors*` 挂 `/sectors`）
+- 目标：R22 后端 seed 部分——常量与 seed 幂等落地，使 T8 的 403/权限验收、T9 的 system-only 守卫可依赖。
+- 操作：`sectors:view` 进 `BUSINESS_RESOURCE_CODES`；`_SEED_MENU_TREE` 在 quotes 下加「板块行情」子菜单；`_SEED_RESOURCES` 加 `sectors:view` 资源行；沿用既有 `ON CONFLICT (id) DO NOTHING` 幂等插入方式。**部署时序约束：菜单 seed 生效不得早于前端路由上线**——`_SEED_MENU_TREE` 加 `/sectors` 后，若前端未同批发布，菜单将指向不存在的路由；前后端必须同批发布（见 §9）。本任务只改代码内 seed，不产生迁移 SQL。
+- 产出：常量 + seed 改动（随代码部署生效）。
+- 影响范围：新库 PG sys_menu/sys_resource 新增行；`BUSINESS_RESOURCE_CODES` 扩展。**不涉及既有库回填**（既有库授权由 T10b 回填 SQL 处理）。
+- 边界与异常：菜单 seed 对既有库仍须手动回填授权后才可见（T10b）。
+- 验证方式：seed 幂等重跑 + `BUSINESS_RESOURCE_CODES` 常量测试。
+- 完成标准：`sectors:view` 入业务授权集合；seed 幂等可重跑。
+- 实际落地情况：待实施
+
+### 6.10b 任务 T10b：RBAC 既有库回填 + 权限测试
+
+- 状态：待开始
+- 依赖：T10a（常量 + seed 已就位）、T8（接口就位后 403 断言才可测）
+- 涉及文件/模块：`agent-works/concept-industry-board/sectors-view-grant.sql`（既有库一次性回填授权 + bump perm_ver，marker 幂等）、`agent-works/concept-industry-board/sectors-view-grant-rollback.sql`（回滚）、`backend/tests/`（路由扫描/权限测试）
+- 目标：R22 后端回填与权限测试——既有库回填 `sectors:view` 授予 normal/tenant_admin；回填与 `perm_ver` 自增同一 PG 事务；接口 `require_perm` 守卫；无授权用户菜单不可见 + 路由守卫 fail-closed + 接口 403。
+- 操作：沿用 `asset-publish-open` 迁移模式（确定性基线恢复，不依赖 marker 内容，marker 仅作幂等标记；见 pg_ddl.py:934）；路由扫描测试同步新增端点断言；权限测试覆盖有/无 `sectors:view`、有/无 `stocks:view`。
+- 产出：回填/回滚 SQL + 权限测试。
+- 影响范围：既有库 sys_role_resource/sys_user_role 授权关系 + 受影响用户 `perm_ver`（旧 token 失效重登，预期行为）。**全量用户 token 因 perm_ver 变化失效重登为预期副作用**。
+- 边界与异常：回填 SQL 幂等可重复执行；回滚 SQL 恢复授权基线并 bump perm_ver。**回滚基线内容明确定义为**：执行前快照中 normal/tenant_admin 已持有的 `sectors:view` 授权（即回滚 SQL 只删除本回填新增的 `sectors:view` 授权行，不触碰其他既有授权；确定性基线为「无 `sectors:view` 授权的原始状态」，与 asset-publish-open 回滚同构）。**回滚 bump perm_ver 使全量受影响用户 token 二次失效**，属预期（与回填相同副作用），计划与回滚 SQL 注释中均需声明。
+- 验证方式：权限测试（有/无 `sectors:view`、有/无 `stocks:view`）+ 回填 SQL 幂等重跑 + 路由扫描测试。
 - 完成标准：R22 验收标准中后端部分通过。
 - 实际落地情况：待实施
 
 ### 6.11 任务 T11：板块行情列表页 `/sectors`
 
 - 状态：待开始
-- 依赖：T8（接口）、T10（权限）；开工前先按 page-template.md §1 把原型/组件选型结论同步用户（本计划 §4 已给推荐与理由）
+- 依赖：T8（接口）、T10a（常量 + seed）；开工前先按 page-template.md §1 把原型/组件选型结论同步用户（本计划 §4 已给推荐与理由）
 - 涉及文件/模块：`frontend/src/views/SectorsView.vue`（新增，优先 `npm run scaffold-page -- --pageKey sectors --label 板块行情 --archetype list`）、`frontend/src/router/index.ts`（`/sectors`）、[pageRegistry.ts](../../frontend/src/layout/pageRegistry.ts)（`sectors` pageKey：slots/consumedComponentFields/componentMeta sortFields）、`frontend/src/api/sectors.ts`（新增 API 封装）、[DESIGN.md](../../DESIGN.md)（page-registry 区块登记）
 - 目标：R7、R10 + R22/R23 列表页部分，逐项承接 §4.1 功能点表与原型区域。
 - 操作：action 区四控件；主表列与排序周期联动语义（含非涨幅排序取消周期高亮、URL 不保留无效 period、切回涨跌幅用最近合法周期）；筛选态写 URL query；进详情仅点板块名并携带来源 query；`usePageSettings('sectors', { defaultPeriod:'today', defaultType:'concept' })` + `componentValueOf('table', ...)`；四态与权限态。
@@ -369,7 +394,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 ### 6.12 任务 T12：板块详情页 `/sectors/:code`
 
 - 状态：待开始
-- 依赖：T8、T10、T11（列表页来源 query 契约）
+- 依赖：T8、T10a、T11（列表页来源 query 契约）
 - 涉及文件/模块：`frontend/src/views/SectorDetailView.vue`（新增，`--pageKey sectors-detail --label 板块详情 --archetype detail`）、`frontend/src/router/index.ts`（`/sectors/:code`）、[pageRegistry.ts](../../frontend/src/layout/pageRegistry.ts)（`sectors-detail` + `memberTable` 嵌套 slot，parentId=detail）、`frontend/src/api/sectors.ts`、[DESIGN.md](../../DESIGN.md)（page-registry 登记）
 - 目标：R8、R9、R11、R13、R14 + R22/R23 详情页部分，逐项承接 §4.2 功能点表与原型区域。
 - 操作：摘要卡（含双数据日期标注）；走势图 ECharts（`useEChartsTheme`）+ 周期分段 + TradeDatePicker + `chartPeriod` 偏好；成分股表统一分页（嵌套 slot `memberTable`，componentMeta sortFields=pct/code，consumedComponentFields=pageSize/defaultSort/hiddenColumns）；`hasPermission('stocks:view')` 行可点性与 hover 提示；返回筛选态（面包屑/返回 `router.replace` 显式跳列表 + 白名单校验来源 query，不用 `router.back()`；浏览器原生后退不拦截）；`usePageSettings('sectors-detail', { chartPeriod:'3m' })`；图表紧凑稳定、成分股表主成长区表体内滚、低高度整体滚动兜底。
@@ -386,7 +411,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 依赖：T9（候选接口）、T7
 - 涉及文件/模块：[QualityView.vue](../../frontend/src/views/data/QualityView.vue)（扩展）、`frontend/src/api/`（候选接口封装）、`frontend/src/views/__tests__/`（Vitest）
 - 目标：R2/R12 页面闭环——`member_surge_shrink` 行候选 diff 展示与「确认应用」「丢弃」操作，承接 §4.3 功能点表。
-- 操作：候选经 `issue_id` 附着问题行内；AppRowActions 两动作 + `:loading`；`apply_allowed=false` 禁用「确认应用」+ 提示；确认弹窗展示 diff 摘要；409 按 `error_code` 区分提示并刷新；`duckdb_write_unavailable` 软失败提示「数据库写入暂不可用，请稍后重试」（不刷新、候选仍 pending）。
+- 操作：候选经 `issue_id` 附着问题行内；AppRowActions 两动作 + `:loading`；`apply_allowed=false` 禁用「确认应用」+ 提示；确认弹窗展示 diff 摘要（候选 `codes_json` 全量代码可展开明细，板块名/快照日/新增/退出/净变化数）；候选列表按 `board_type` 过滤（`GET /api/data/board-candidates` 支持 `status/board_type/page/size` 参数，承接需求 §6.2 候选接口契约）；409 按 `error_code` 区分提示并刷新；`duckdb_write_unavailable` 软失败提示「数据库写入暂不可用，请稍后重试」（不刷新、候选仍 pending）。
 - 产出：页面扩展 + Vitest（动作可用性、409 两码提示、刷新行为）。
 - 影响范围：QualityView 新增列与操作，无布局重排。
 - 边界与异常：操作完成后刷新列表；PG 审计失败时接口返回业务成功 + warning，页面按成功处理。
@@ -397,13 +422,13 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 ### 6.14 任务 T14：RBAC 前端接入与配置闭环端到端核对
 
 - 状态：待开始
-- 依赖：T10、T11、T12、T13
+- 依赖：T10a、T10b、T11、T12、T13
 - 涉及文件/模块：`frontend/src/router/index.ts`（守卫 meta 权限）、菜单 seed 消费（侧栏）、两页 `v-permission`（如涉及按钮级权限）、[system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 验收清单
 - 目标：R22/R23 端到端核对——菜单可见性与授权一致；无授权用户路由守卫 fail-closed；pageRegistry 两处登记与路由一致；两页配置闭环（保存/读取/消费/非法回退/恢复默认同时重置业务偏好与组件字段）；DESIGN.md page-registry 登记完整。
 - 操作：按 system-rbac-tenant.md「新页面接入菜单和权限」清单逐项验收；组件字段契约测试；「恢复默认」同时调 `reset()` 与 `resetLayout`。
 - 产出：核对结论 + 缺失修补。
 - 影响范围：权限与配置正确性。
-- 边界与异常：默认角色授权决策以 T10 seed 为准。
+- 边界与异常：默认角色授权决策以 T10a seed 为准。
 - 验证方式：`npm test`（契约/布局测试）+ 权限场景人工验收（用最小权限调试账号，先读 `agent-works/multi-tenant-rbac/test-users.md`）。
 - 完成标准：R22、R23 验收标准中非 E2E 部分通过。
 - 实际落地情况：待实施
@@ -435,7 +460,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 ### 7.2 PG seed（代码内幂等 seed）
 
 - 路径：[pg_ddl.py](../../backend/storage/pg_ddl.py) `_SEED_MENU_TREE`/`_SEED_RESOURCES`（`/sectors` 菜单 + `sectors:view` 资源）。
-- 执行时机：PG DDL init 幂等执行（T10 随代码上线）；新库自动生效。
+- 执行时机：PG DDL init 幂等执行（T10a 随代码上线）；新库自动生效。
 - 影响范围：sys_menu/sys_resource 新增行；新角色授权集合。
 - 回滚方式：删除 seed 行 + 清理对应资源/菜单（须先执行 7.3 回滚 SQL 还原既有库授权）。
 
@@ -443,9 +468,11 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 - SQL 文件路径：`agent-works/concept-industry-board/sectors-view-grant.sql`（回填）、`agent-works/concept-industry-board/sectors-view-grant-rollback.sql`（回滚）。
 - 用途：既有库为 normal/tenant_admin 角色一次性补授 `sectors:view`，同一 PG 事务 bump `perm_ver`；marker 幂等（沿用 asset-publish-open 模式，确定性基线恢复，不依赖 marker 内容）。
-- 执行时机：T10 代码部署后、T14 权限验收前，一次性执行；重复执行幂等。
+- **产物时点**：本阶段 SQL 文件尚不存在，为 T10b 交付物；本节描述为意图，**待 T10b 产出后固化**（届时把本节路径/字段/语句落为真实文件并回填本节）。
+- 执行时机：T10a 代码部署后、T14 权限验收前，一次性执行；重复执行幂等。
+- **回填基线（确定性）**：normal/tenant_admin 角色在**无 `sectors:view` 授权**的原始状态上新增该资源授权 + bump perm_ver；仅当确有新增才 bump（沿用 asset-publish-open `_backfill_asset_publish_open_v1` 的「changed 才 bump」模式，pg_ddl.py:1697-1699），避免空跑污染 perm_ver。
 - 影响范围：sys_role_resource/sys_user_role 授权关系 + 受影响用户 `perm_ver`（旧 token 失效重登，预期行为）。
-- 回滚方式：执行 rollback SQL 恢复授权基线并 bump `perm_ver`；不回滚已新增的 sys_menu/sys_resource seed 行（无害残留，菜单随代码回退消失）。
+- 回滚方式：执行 rollback SQL **删除本回填新增的 `sectors:view` 授权行（恢复到「无该授权」的基线）+ bump `perm_ver`**，不触碰其他既有授权；**回滚 bump perm_ver 会使全量受影响用户 token 二次失效**（与回填相同副作用，预期且需在回滚 SQL 注释中声明）。不回滚已新增的 sys_menu/sys_resource seed 行（无害残留，菜单随代码回退消失）。
 - SQL 文件要求：含总体/字段/执行语句注释，说明用途、影响范围、前置条件、回滚方式（协作红线）。
 
 ### 7.4 配置项
@@ -458,10 +485,10 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 ## 8. 测试与验证计划
 
 - 单元测试：
-  - 计划：T2 适配器单测；T3 DDL/约束单测；T4 采集逻辑单测（diff/hash/同日冻结/资金流映射）；T6 daily 参数化矩阵；T7 质检规则与配置覆盖；T8 统计口径；前端 Vitest（筛选态、偏好优先级、memberTable 字段消费、返回 query 白名单校验）。
+  - 计划：T2 适配器单测；T3 DDL/约束单测；T4 采集逻辑单测（diff/hash/同日冻结/资金流映射/**member_count 刷新时机**/事务原子性）；T6 daily 参数化矩阵；T7 质检规则与配置覆盖（含收敛不误删 `member_surge_shrink`）；T8 统计口径（含领涨股来源）；前端 Vitest（筛选态、偏好优先级、memberTable 字段消费、返回 query 白名单校验）。
   - 具体完成情况：待验证
 - 接口测试：
-  - 计划：T8 四接口口径对账（涨幅/净流入/成分数 vs DuckDB）；T9 候选三接口（409 两码、事务回滚、审计失败业务成功、写锁冲突 `duckdb_write_unavailable`）；T10 权限（有/无 sectors:view、403）。
+  - 计划：T8 四接口口径对账（涨幅/净流入/成分数 vs DuckDB，含领涨股来源 `board_fund_flow.leader_stock` 与即时净流入同 snapshot 行）；T9 候选三接口（409 两码、事务回滚、审计失败业务成功、写锁冲突 `duckdb_write_unavailable`、**应用后 member_count 一致 / member_history_start_date 首次写入 / 未应用候选不改值**）；T10a/T10b 权限（有/无 sectors:view、403）。
   - 具体完成情况：待验证
 - 页面/交互测试：
   - 计划：T15 Playwright（列表筛选/排序联动/搜索/分页/列显隐、详情走势图周期/成分股统一分页、返回筛选态两路径、R9 权限两态、质检页候选操作）。
@@ -470,13 +497,13 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 计划：`sectors`/`sectors-detail` pageRegistry 契约测试（memberTable 嵌套 slot、consumedComponentFields 指向真实 slot）；两页组件字段保存/读取/非法回退/恢复默认参数化矩阵；DESIGN.md page-registry 登记核对。
   - 具体完成情况：待验证
 - 权限与数据范围测试：
-  - 计划：T10 后端权限测试 + T14 前端菜单/守卫验收（最小权限调试账号，先读 `agent-works/multi-tenant-rbac/test-users.md`）；候选接口 system-only。
+  - 计划：T10a/T10b 后端权限测试 + T14 前端菜单/守卫验收（最小权限调试账号，先读 `agent-works/multi-tenant-rbac/test-users.md`）；候选接口 system-only。
   - 具体完成情况：待验证
 - 回归测试：
   - 计划：`python -m pytest backend/tests/ -q` 全量（先 `./start.sh status`→`./start.sh stop`，结束后按原状态恢复并确认 `/api/health=200`）；`npm test`；相关既有 E2E 回归。
   - 具体完成情况：待验证
 - 异常与边界测试：
-  - 计划：不完整快照不退出 diff、同 hash 幂等、同日第二候选 409 + 索引竞态兜底（INSERT 与 UPDATE 两路径）、payload_hash 非法格式、401 cookie 刷新、单板块失败继续与失败清单、历史不足「—」、空值列「—」、`transaction()` 原子性（中途失败整体回滚）、写锁冲突 `duckdb_write_unavailable`（候选状态不变可重试）。
+  - 计划：不完整快照不退出 diff、同 hash 幂等、同日第二候选 409 + 索引竞态兜底（INSERT 与 UPDATE 两路径）、payload_hash 非法格式、401 cookie 刷新、单板块失败继续与失败清单、历史不足「—」、空值列「—」、`transaction()` 原子性（中途失败整体回滚）、写锁冲突 `duckdb_write_unavailable`（候选状态不变可重试）、**member_count 双应用路径刷新与未应用不刷新**、**T7 收敛不误删 `member_surge_shrink` open issue**。
   - 具体完成情况：待验证
 - 图示与原型一致性验证：P1/P2 实现对照 `prototypes/sector-board.html`/`prototypes/sector-detail.html` 的主要区域（action 筛选区/主表/分页/设置抽屉；摘要区/走势图工具条/图表/成分股表/抽屉/tooltip）、操作入口、关键状态（数据/空/错误/加载/无权/个股权限两态）与低高度退化；P3 无原型，按 QualityView 现状扩展核对。
 - 配置闭环验证：`defaultPeriod/defaultType/chartPeriod` 偏好与 `pageSize/defaultSort/hiddenColumns` 组件字段可展示、保存、读取、实际生效、恢复默认、非法值回落并兼容旧值。
@@ -488,12 +515,12 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 发布前检查：后端全量测试绿（DuckDB 锁规则）；`npm test` + `npm run build` 绿；E2E 通过；回填 SQL 已评审；`.env.local` 环境确认 `AI_STOCKS_ENV`。
 - 发布步骤：
   1. 部署后端代码（DDL/seed 幂等自动生效）→ `./start.sh restart` → `./start.sh status` 确认 `/api/health=200`。**注意：菜单 seed 生效不得早于前端路由上线，步骤 1 与步骤 3 必须同批发布**（否则菜单指向不存在的 `/sectors` 路由）。
-  2. 执行 `sectors-view-grant.sql`（既有库回填）。
+  2. 执行 `sectors-view-grant.sql`（既有库回填，T10b 产物）。
   3. 部署前端 `frontend/dist`（`npm run build` 产物，与步骤 1 同批）。
   4. 系统管理员触发 `python -m backend.cli board --backfill`（或任务中心创建板块采集），确认 5 表数据与任务进度。
   5. 冒烟：列表页/详情页/数据概览/数据质量页。
 - 配置或环境变量：无新增密钥；同花顺源为公开 HTTP，限速参数走代码常量；质检阈值走 YAML 基线（可选 app_config 覆盖）。
-- 回滚方案：代码回退（前端 dist + 后端）→ 执行 `sectors-view-grant-rollback.sql` → DuckDB 5 表可保留（只读接口随代码回退消失，数据无害残留）或按 §7.1 drop；维度 seed 行随代码回退消失。
+- 回滚方案：代码回退（前端 dist + 后端）→ 执行 `sectors-view-grant-rollback.sql`（删除本回填新增的 `sectors:view` 授权行 + bump perm_ver，恢复无该授权的基线；受影响用户 token 二次失效为预期）→ DuckDB 5 表可保留（只读接口随代码回退消失，数据无害残留）或按 §7.1 drop；维度 seed 行随代码回退消失。
 
 ## 10. 风险、假设与待确认项
 
@@ -505,6 +532,9 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 既有库回填执行遗漏会导致老用户菜单不可见：发布步骤强制包含 SQL 执行与权限验收。
 - E2E 全量回归的登录限流/DuckDB 读写锁门控配置遗漏：T15 操作步骤显式列出。
 - 表达式唯一索引依赖 DuckDB 版本能力：本机 1.5.3 实测创建与强制均生效（2026-08-09 复核）；若部署环境旧版本拒绝，T3 单测在开发期暴露，按 §4 降级方案执行，不会带病上线。
+- 写锁冲突识别依赖 `duckdb_max_lock_wait_time` 与异常关键字归类：目标 DuckDB 版本可能不支持该 pragma（T9 已声明不支持则跳过锁等待设置，仅保留关键字归类）；归类误判时最坏退化为 500 而非半成品状态，风险可控。
+- 列表页 `pageSize` 冲突按需求口径（10/20/50）实现，与原型 10/20/30/50 不同：需求为当前事实源，已声明为计划 vs 原型的显式取舍；若后续需求变更需回溯原型口径。
+- 回填/回滚 SQL 待 T10b 产出后固化：发布计划 §7.3/§9 的描述为意图而非已定实现，T10b 交付时须回填固化并评审。
 
 ### 10.2 假设
 
@@ -512,6 +542,8 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - `data_quality_issue` 无 `meta` 字段，候选经 `board_member_candidate.issue_id` 关联，不改既有 issue 表结构。
 - 质检页候选列表入口复用 `GET /api/data/board-candidates`，QualityView 以 issue 为主入口、候选附着行内（需求 §7.3 已明确）。
 - 任务中心「板块采集」前端中文标签改 `data.ts` 一处即可被任务中心各列表消费（与现有任务类型同款）。
+- 领涨股及涨幅取 `board_fund_flow.leader_stock/leader_pct`（与即时净流入同一 `(snapshot_date, period='即时')` 行），无资金流板块领涨股为「—」（不走成分股涨幅第一另行计算，口径单一）。
+- 列表/详情只展示 `has_members` 或 `has_bar` 为 true 的板块；仅 `has_fund_flow` 的资金流独有板块入字典但不进页面展示（承接需求 §2.5）。
 
 ### 10.3 待确认项
 
@@ -519,3 +551,5 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 采集服务落 `board_ingest.py` 新文件还是并入 `ingest.py`（T4 实施时按既有分层就近原则定，偏离时在开发留痕说明）。
   - 候选接口挂 `data_admin.py` 还是新建 `board_candidates.py`（T9 实施时同上）。
   - 列表页「上涨/下跌家数」列合并展示 vs 原型「上涨家数」单列（以需求 §7.1.2 为准，已在 §4.1 标注差异）。
+  - 列表页 `pageSize` 合法值按需求 10/20/50（原型含 30，以需求为准，已在 §4.1 标注差异）。
+  - 领涨股统一取资金流 `leader_stock`（与即时净流入同一 snapshot 行）：若后续需要「无资金流板块仍显示成分股涨幅第一」，需另行决策（当前口径下无资金流板块领涨股为空「—」）。
