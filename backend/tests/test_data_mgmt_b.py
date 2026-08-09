@@ -295,3 +295,92 @@ def test_settings_view_and_save(client):
     # 非法值被拒
     bad = save_settings({"updates": {"datasource.update_concurrency": 0}}, _fake_request())
     assert bad.code == 400
+
+
+# ── 板块采集任务（R5，T5）───────────────────────────────────
+
+
+def test_board_task_registered():
+    """board 任务类型四要素：TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES/_HANDLERS。"""
+    from backend.services.async_task import (
+        TASK_TYPES, WRITE_TASK_TYPES, TASK_CAPABILITIES, _HANDLERS)
+    assert "board" in TASK_TYPES
+    assert "board" in WRITE_TASK_TYPES          # 写任务：与其他写任务互斥
+    assert TASK_CAPABILITIES["board"]["can_cancel"] is True
+    assert TASK_CAPABILITIES["board"]["can_resume"] is True
+    assert TASK_CAPABILITIES["board"]["resume_granularity"] == "board_code"
+    assert "board" in _HANDLERS
+
+
+def test_board_task_create_and_run(client, monkeypatch):
+    """board 任务可创建并后台执行成功（桩掉采集，验证 handler 调 ingest_board）。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.async_task import AsyncTaskService
+
+    calls = {"n": 0}
+
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None):
+        calls["n"] += 1
+        return {"dict": {"total": 465}, "members": {}, "bar": {"rows": 0},
+                "fund_flow": {"rows": 0}, "failed": []}
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", fake_ingest_board, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    # _h_board 内部读 board_dict（空库无板块 → remaining 空），桩掉 query_df 的读取或容忍空
+    svc = AsyncTaskService(client)
+    tid = svc.create("board")
+    t = _wait(svc, tid)
+    assert t["status"] == "done"
+    assert calls["n"] == 1
+
+
+def test_board_task_write_mutex(client, monkeypatch):
+    """board 是写任务：运行中禁止并发创建其他写任务。"""
+    import time
+    from backend.services import ingest as ingest_mod
+    from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
+
+    def slow_board(self, ctx=None, board_type=None, board_codes=None):
+        time.sleep(0.4)
+        return {"dict": {"total": 0}, "members": {}, "bar": {"rows": 0},
+                "fund_flow": {"rows": 0}, "failed": []}
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", slow_board, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    svc = AsyncTaskService(client)
+    t1 = svc.create("board")
+    with pytest.raises(ConcurrentTaskError):
+        svc.create("update")            # board 运行中 → 其他写任务被拒
+    _wait(svc, t1)
+
+
+def test_board_task_resume_skips_done(client, monkeypatch):
+    """续跑：有 checkpoint done_codes 时跳过已完成板块（传给 ingest_board 的 board_codes=剩余）。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.async_task import AsyncTaskService
+    from datetime import datetime
+
+    received = {}
+
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None):
+        received["board_codes"] = board_codes
+        return {"dict": {"total": 465}, "members": {}, "bar": {"rows": 0},
+                "fund_flow": {"rows": 0}, "failed": []}
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", fake_ingest_board, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    # 种 2 个板块：B 已完成，续跑应只传 A
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+                   "VALUES ('309121','AI PC','concept',TRUE)")
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+                   "VALUES ('881121','半导体','industry',TRUE)")
+    svc = AsyncTaskService(client)
+    now = datetime.now()
+    client.execute(
+        "INSERT INTO async_task (id, task_type, params, status, progress, message, result, created_at, updated_at) "
+        "VALUES ('board_x','board','{}','interrupted',0.5,'中断',?, ?, ?)",
+        ['{"checkpoint": {"done_codes": ["881121"]}}', now, now])
+    svc.resume("board_x")
+    t = _wait(svc, "board_x")
+    assert t["status"] == "done"
+    assert received.get("board_codes") == ["309121"]   # 只处理未完成板块

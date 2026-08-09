@@ -26,10 +26,12 @@ log = get_logger("services.async_task")
 
 # 全部任务类型（原子任务：定时任务系统按需组合调度，不再有 daily 复合任务）
 TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_price_factors",
-              "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup")
+              "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup",
+              "board")
 # 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
 WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
-                              "rebuild_price_factors", "verify", "fix", "enrich_basic"})
+                              "rebuild_price_factors", "verify", "fix", "enrich_basic",
+                              "board"})
 
 # 日志保留（DM-D8）
 LOG_MAX_PER_TASK = 2000
@@ -87,6 +89,11 @@ TASK_CAPABILITIES: dict[str, dict] = {
     "audit_cleanup": {
         "can_cancel": False, "can_resume": False, "cancel_mode": "none",
         "resume_granularity": None, "cancel_message": "审计清理任务很短，不支持终止/续跑",
+    },
+    "board": {
+        "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
+        "resume_granularity": "board_code",
+        "cancel_message": "会在当前板块取数完成后的检查点停止",
     },
 }
 
@@ -895,6 +902,36 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
             "snapshots_marked_stale": stale}
 
 
+def _h_board(params: dict, ctx: TaskContext) -> dict:
+    """板块采集（板块概念需求 R5）：字典→成分快照→指数→资金流。
+
+    checkpoint 粒度 board_code：中断后续跑只处理未完成板块（done_codes 过滤）。
+    """
+    from backend.services.ingest import IngestionService
+    from backend.storage.duckdb_client import get_client
+    done_codes = set((ctx.checkpoint or {}).get("done_codes") or [])
+    # 全部板块代码（board_dict 有成分/指数者）；未完成 = 全量 - 已完成
+    c = get_client()
+    df = c.query_df("SELECT board_code FROM board_dict WHERE has_members OR has_bar")
+    all_codes = [str(x) for x in df["board_code"].tolist()]
+    remaining = [x for x in all_codes if x not in done_codes]
+    if done_codes:
+        ctx.log(f"续跑：已完成 {len(done_codes)} 个板块，待处理 {len(remaining)} 个")
+    else:
+        ctx.log(f"板块采集开始，共 {len(all_codes)} 个板块")
+    ctx.progress(0.05, "板块采集进行中…")
+    ctx.check_cancel()
+    result = IngestionService().ingest_board(ctx=ctx, board_codes=remaining)
+    done = sorted(set(all_codes) - set(remaining))
+    ctx.set_checkpoint(done_codes=sorted(done_codes | set(done)))
+    if result.get("failed"):
+        ctx.log(f"板块采集完成，失败项：{result['failed']}")
+        return {"message": f"板块采集部分失败：{result['failed']}", "result": result}
+    ctx.log("板块采集完成")
+    ctx.progress(1.0, "板块采集完成")
+    return {"message": "板块采集完成", "result": result}
+
+
 _HANDLERS = {
     "update": _h_update,
     "backfill": _h_backfill,
@@ -907,4 +944,5 @@ _HANDLERS = {
     "fix": _h_fix,
     "enrich_basic": _h_enrich_basic,
     "audit_cleanup": _h_audit_cleanup,
+    "board": _h_board,
 }

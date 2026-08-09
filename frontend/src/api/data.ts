@@ -276,7 +276,7 @@ export function resetSettings(paths: string[]): Promise<{ reset: number }> {
 export type TaskType =
   | 'update' | 'backfill' | 'ingest_date' | 'ingest_codes' | 'rebuild_price_factors'
   | 'recompute' | 'verify' | 'checkup' | 'fix'
-  | 'enrich_basic' | 'audit_cleanup'
+  | 'enrich_basic' | 'audit_cleanup' | 'board'
 
 // ── 数据结构体检报告（checkup 任务 result.checkup）──
 export interface CheckupCheck { name: string; ok: boolean; detail: string }
@@ -356,7 +356,7 @@ export const TASK_LABEL: Record<TaskType, string> = {
   ingest_codes: '指定股票采集', rebuild_price_factors: '重算价格因子',
   recompute: '评分维护', verify: '数据质检',
   checkup: '结构体检', fix: '质检问题恢复', enrich_basic: '退市标记刷新',
-  audit_cleanup: '审计日志清理',
+  audit_cleanup: '审计日志清理', board: '板块采集',
 }
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   pending: '排队中', running: '运行中', done: '已完成', failed: '失败', interrupted: '已中断',
