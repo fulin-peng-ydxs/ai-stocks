@@ -421,8 +421,17 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           retry
           @retry="loadSources(false)"
         />
-        <div v-else v-loading="sourceLoading" class="sources-body">
-        <AppDataTable :data="displaySources" size="small" class="srcs-tbl">
+        <div v-else v-loading="sourceLoading">
+        <AppStateBlock
+          v-if="sourceError"
+          state="error"
+          size="compact"
+          title="数据源健康刷新失败"
+          :description="sourceError"
+          retry
+          @retry="loadSources(false)"
+        />
+        <AppDataTable :data="displaySources" size="small" class="srcs-tbl" embedded>
           <AppTableColumn label="数据源" prop="source">
             <template #default="{ row }">{{ SOURCE_LABEL[row.source] ?? row.source }}</template>
           </AppTableColumn>
@@ -646,12 +655,11 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
 .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: 10px; }
 .src-status { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
-.srcs-tbl :deep(.el-table__body) { min-height: 0; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .dot.up { background: var(--el-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-success) 18%, transparent); }
 .dot.down { background: var(--app-danger-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-danger-text) 18%, transparent); }
 .dot.unknown { background: var(--app-placeholder-text); }
 .cookie-note { margin: 10px 0 0; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
-.cookie-note code { font-family: var(--app-font-mono); color: var(--el-text-color-regular); }
+.cookie-note code { font-family: var(--app-font-family-mono); color: var(--el-text-color-regular); }
 .cookie-field-hint { display: block; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
 </style>

@@ -834,10 +834,15 @@ watch(
           <el-input-number v-model="optForm.years" :min="1" :max="30" placeholder="留空=默认" />
         </el-form-item>
         <el-form-item v-if="optType === 'board'" label="采集模式">
-          <el-radio-group v-model="optForm.mode" data-testid="ingest-board-mode">
-            <el-radio value="update">增量</el-radio>
-            <el-radio value="backfill">全量回填</el-radio>
-          </el-radio-group>
+          <PageSegmented
+            v-model="optForm.mode"
+            test-id="ingest-board-mode"
+            :options="[
+              { label: '增量', value: 'update' },
+              { label: '全量回填', value: 'backfill' },
+            ]"
+            aria-label="板块采集模式"
+          />
           <span class="hint">增量：指数补最近交易日、资金流只采即时、成分股按周频跳过未到期板块；全量回填：指数补 2024 起、资金流全周期、成分股强制全量</span>
         </el-form-item>
         <el-form-item v-if="optType === 'board'" label="成分刷新">

@@ -730,6 +730,7 @@ const REGISTRY: PageRegistryEntry[] = [
         tabs: [
           { key: 'assets', label: '数据资产' },
           { key: 'stocks', label: '逐股分层体检' },
+          { key: 'board', label: '板块数据' },
         ],
       },
     },
