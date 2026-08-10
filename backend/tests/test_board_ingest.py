@@ -229,6 +229,26 @@ def test_incomplete_snapshot_not_applied(tmp_path):
     assert int(_member_count(c, "309121")) == 10
 
 
+def test_member_incomplete_ignored_exempt(tmp_path):
+    """已忽略的 board_member_incomplete 不重复建（ignored 豁免对齐 fund/index_gap）。"""
+    src = _FakeSource({"309121": ["300476"]}, complete={"309121": False})
+    svc, c = _make_service(tmp_path, src)
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE)")
+    # 预置一条已忽略的 member issue
+    c.execute("INSERT INTO data_quality_issue "
+              "(id, code, issue_type, severity, status, detected_at) "
+              "VALUES (7, '309121', 'board_member_incomplete', 'mid', 'ignored', now())")
+    # 走完整 ingest_board_members：成分不完整 → 触发 _write_incomplete_quality，
+    # ignored 已存在则不重复建 open（豁免生效）
+    r = svc.ingest_board_members(board_codes=["309121"], force=True)
+    assert "error" in r["309121"]
+    issues = c.query_df(
+        "SELECT status FROM data_quality_issue WHERE issue_type='board_member_incomplete'")
+    assert len(issues) == 1
+    assert issues.iloc[0]["status"] == "ignored"  # 不翻回 open、不新增
+
+
 def test_member_upsert_idempotent_on_conflict(tmp_path):
     """ON CONFLICT 幂等：同板块同股重复采集不产生重复行。"""
     src = _FakeSource({"309121": ["300476", "603936"]})

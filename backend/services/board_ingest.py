@@ -676,12 +676,13 @@ class BoardIngestService:
     def _write_incomplete_quality(self, code: str, sdate: date, reason: str) -> None:
         """成分快照采集不完整/失败写质检（board_member_incomplete），供数据质量页逐板块重采。
 
-        幂等：同板块未解决（open）的 board_member_incomplete 不重复建（采集失败会反复触发，
-        避免刷屏；重采成功/复检通过后 resolved 收敛）。
+        幂等：同板块未解决（open/fixing）或已忽略（ignored）的 board_member_incomplete 不重复建
+        （采集失败会反复触发，避免刷屏；ignored 豁免对齐 fund/board_index_gap——用户标记正常后
+        重采不得翻回 open；重采成功/复检通过后 resolved 收敛）。
         """
         existing = self.c.query_df(
             "SELECT count(*) AS n FROM data_quality_issue "
-            "WHERE issue_type='board_member_incomplete' AND code=? AND status IN ('open','fixing')",
+            "WHERE issue_type='board_member_incomplete' AND code=? AND status IN ('open','fixing','ignored')",
             [code])
         if int(existing.iloc[0]["n"]) > 0:
             return

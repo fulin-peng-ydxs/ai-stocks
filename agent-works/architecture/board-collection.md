@@ -41,7 +41,7 @@
 
 | mode | 字典 | 成分 | 指数 | 资金流 |
 |------|------|------|------|--------|
-| `update`（每日增量） | 全量 upsert | 周频跳过逻辑 | 只补最近 7 个交易日 | 只采「即时」 |
+| `update`（每日增量） | 全量 upsert | 周频跳过逻辑 | 截止最近交易日、区间起点往前取 **7 个自然日**缓冲（覆盖跨周末/长假缺口，非"7 个交易日"） | 只采「即时」 |
 | `backfill`（初始化） | 全量 upsert | 强制全量（绕周频） | 源端可用年限（2024 起） | 全周期 |
 
 `force_members` 解析（`ingest.py:1823`）：未显式传值时，`mode=backfill` **或** 显式指定 `board_codes` → 强制全量；否则默认 update 走周频。**显式传 `False` 会覆盖自动解析**（历史教训：CLI 曾始终传 `args.force_members` 默认 False，导致指定板块重采被周频挡住，已修为仅显式 `--force-members` 才传）。
@@ -139,3 +139,38 @@
 - `--force-members`：绕过成分周频跳过，强制全量拉成分
 
 `daily` 集成：`DailyPipeline.run(board=True)` 每日跑板块增量（`--skip-board` 跳过），板块步骤失败不阻塞后续质检。
+
+## API / 权限矩阵
+
+板块能力贯穿数据管理域与板块行情域，权限分三类（`backend/api/*.py` + `backend/auth/deps.py`）：
+
+| 接口 | 权限 | 用途 |
+|------|------|------|
+| `GET /api/data/overview`、`/hub` | `data:overview` | 数据概览含板块规模/覆盖/鲜活/问题分项（`_board_stage`） |
+| `GET /api/data/boards` | `data:overview` | 板块搜索（采集页「指定板块」下拉） |
+| `GET /api/data/stock-quality` 等 | `data:overview` | 逐股/质量口径（板块 issue 按层归类展示） |
+| `GET /api/data/quality` | `data-quality:view` | 质检台账（板块三类 issue，名称从 board_dict/detail 补全） |
+| `POST /api/data/quality/{id}/fix`、`/fix-batch`、`/recover-batch`、`/{id}/reset`、`/{id}/ignore` | `data-quality:fix` | 板块 issue 的修复/批量恢复/复位/忽略 |
+| `POST /api/data/tasks`、`GET /tasks/{id}`、`/resume`、`/cancel` | `data-task:manage` | 板块采集任务创建/进度/续跑/取消（`task_type=board`） |
+| `GET/POST /api/data/schedules` 及子端点 | `data-schedule:manage` | 板块定时采集任务 CRUD/启停/立即触发 |
+| `GET/POST /api/data/settings` | `data-settings:manage` | `ths_board` 配置段读写（限流/超时/成分更新间隔） |
+| `GET/POST /api/data/sources`、`/test` | `data-source:test` | 数据源状态含 `ths_board`（`role='board'`） |
+| `GET /api/sectors`、`/{code}`、`/{code}/bars`、`/{code}/members` | `sectors:view`（业务授权码） | 板块行情只读（列表/详情/指数/成分） |
+
+数据管理 router 整体在 `main.py` 挂 `require_system` 硬守卫（system-only）；`sectors` 用 `require_perm("sectors:view")`（普通用户经业务授权可读）。
+
+## 验证矩阵
+
+板块闭环的关键测试文件与覆盖能力：
+
+| 文件 | 覆盖 |
+|------|------|
+| `backend/tests/test_board_ingest.py`（19 用例） | 字典/成分/指数/资金流采集、只进不出幂等、不完整快照不落库、周频跳过、**ignored 豁免（fund + member）**、fund checkpoint 范围签名与旧格式迁移、update/backfill 语义、留痕、写锁归类、事务原子性 |
+| `backend/tests/test_data_mgmt_b.py` 板块用例（~20） | board 任务注册/互斥/续跑/部分失败、force_members 透传、scan_board_quality 扫描与事务替换、recheck_clean 复检、三类 issue 修复闭环、搜索、概览/hub 板块统计 |
+| `backend/tests/test_sectors_api.py`（9 用例） | `/api/sectors*` 只读接口、权限、涨幅口径 |
+| `backend/tests/test_pipeline.py` | `DailyPipeline.run(board=True)` 集成、`--skip-board` |
+| `backend/tests/test_ddl.py` | board 四表 DDL、维度注册 |
+| 前端 `frontend/src/layout/__tests__/` 等 | 页面契约（按钮/组件/布局规范不因板块改动回归） |
+
+运行命令：`python -m pytest backend/tests/test_board_ingest.py backend/tests/test_data_mgmt_b.py backend/tests/test_sectors_api.py -q`；前端 `cd frontend && npx vitest run`。
+
