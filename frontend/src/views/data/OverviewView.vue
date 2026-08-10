@@ -902,13 +902,6 @@ onMounted(load)
   padding: var(--app-space-4);
   overflow: hidden;
 }
-.board-hero-main::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: var(--el-color-primary);
-}
 .board-eyebrow {
   display: block;
   font-size: var(--app-font-size-caption);
