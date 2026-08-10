@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
@@ -29,6 +29,7 @@ import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
 
 const route = useRoute()
+const router = useRouter()
 const settingsOpen = ref(false)
 const ingestDefaults = {
   taskStatus: 'active' as 'all' | 'active' | 'failed',
@@ -522,13 +523,15 @@ onMounted(async () => {
 
 // 概览「补采中」/质量页缺口跳转会改 route.query；keep-alive 缓存下二次跳转不重挂载，
 // 须 watch query 变化重新消费参数弹采集框（onMounted 仅覆盖首次冷打开）。
+// 消费后清理 query：避免参数残留，用户关闭弹框再切页回来重复弹框。
 watch(
   () => route.query,
-  (q, old) => {
+  (q) => {
     if (!pageInitialized) return
     // 仅当 query 实际带本次跳转参数时弹框；避免页面内其他 query 变化误弹
     if (q.task_type === 'board' || (typeof q.code === 'string' && q.code)) {
       openFromQuery()
+      router.replace({ query: {} }).catch(() => {})
     }
   },
 )

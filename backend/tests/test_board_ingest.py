@@ -401,6 +401,53 @@ def test_fund_flow_batch_not_single_insert(tmp_path):
     assert set(rows["board_code"]) == {"309121", "302035"}
 
 
+def test_fund_checkpoint_legacy_and_scope(tmp_path):
+    """fund checkpoint：旧格式（无 scope 前缀）全量续跑兼容；改范围续跑不误命中旧组。"""
+    import pandas as pd
+    ff = {
+        ("concept", "即时"): pd.DataFrame([
+            {"name": "AI PC", "inflow": 1, "outflow": 0, "net_inflow": 1,
+             "net_ratio": 1, "leader_stock": "x", "leader_pct": 1},
+            {"name": "人工智能", "inflow": 2, "outflow": 1, "net_inflow": 1,
+             "net_ratio": 1, "leader_stock": "y", "leader_pct": 2},
+        ]),
+    }
+    src = _FakeSource({}, fund_flow=ff)
+    svc, c = _make_service(tmp_path, src)
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE),('302035','人工智能','concept',TRUE)")
+
+    class _Ctx:
+        def __init__(self, checkpoint=None):
+            self.checkpoint = checkpoint or {}
+            self.logs = []
+        def check_cancel(self): pass
+        def set_phase(self, phase, **data): self.checkpoint.update(data)
+        def log(self, *args, **kwargs): self.logs.append(args)
+
+    # 旧格式全量续跑：done_keys="concept:即时" 无前缀 → 平移为 ALL:concept:即时 → 命中跳过
+    legacy = _Ctx({"fund_done_keys": ["concept:即时"]})
+    r = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",), ctx=legacy)
+    assert r["rows"] == 0
+    assert "ALL:concept:即时" in legacy.checkpoint["fund_done_keys"]
+
+    # 新格式指定子集：scope=md5(309121)，done_keys 与之匹配 → 跳过
+    from hashlib import md5
+    scope = md5("309121".encode()).hexdigest()[:8]
+    scoped = _Ctx({"fund_done_keys": [f"{scope}:concept:即时"]})
+    r2 = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",),
+                                    board_codes=["309121"], ctx=scoped)
+    assert r2["rows"] == 0
+
+    # 改范围续跑：旧 scope 键（309121）与新区间（302035）不交 → 重拉 302035 范围资金流
+    other_scope = md5("302035".encode()).hexdigest()[:8]
+    changed = _Ctx({"fund_done_keys": [f"{scope}:concept:即时"]})
+    r3 = svc.ingest_board_fund_flow(date(2026, 1, 5), periods=("即时",),
+                                    board_codes=["302035"], ctx=changed)
+    assert r3["rows"] == 1
+    assert f"{other_scope}:concept:即时" in changed.checkpoint["fund_done_keys"]
+
+
 def test_ingest_board_mode_update_vs_backfill(tmp_path, monkeypatch):
     """增量/全量语义：update 只采即时资金流，backfill 全周期；指数区间不同。"""
     import pandas as pd

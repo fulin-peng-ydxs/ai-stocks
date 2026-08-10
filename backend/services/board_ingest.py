@@ -503,6 +503,12 @@ class BoardIngestService:
             ",".join(sorted(board_codes)).encode()).hexdigest()[:8]
         done_keys = set(getattr(ctx, "checkpoint", {}).get("fund_done_keys") or []) if ctx else set()
         valid_keys = {f"{scope_tag}:{bt}:{period}" for bt in target_types for period in periods}
+        # 旧格式兼容：改动前 checkpoint 的 fund_done_keys 无 scope 前缀（如 "concept:即时"）。
+        # 全量范围（scope_tag=ALL）下旧键等价于当前签名键，平移后保留跳过；指定子集范围下旧键
+        # 无法确认来源范围，不信任（丢弃重拉），避免漏采。
+        if scope_tag == "ALL":
+            legacy_pairs = {f"{bt}:{period}" for bt in target_types for period in periods}
+            done_keys = {f"ALL:{k}" if k in legacy_pairs else k for k in done_keys}
         done_keys.intersection_update(valid_keys)
         total_groups = len(target_types) * len(periods)
         for board_type in ("concept", "industry"):
