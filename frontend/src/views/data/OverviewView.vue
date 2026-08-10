@@ -262,7 +262,7 @@ const boardCoverageItems = computed(() => {
       ready: board?.fund_ready,
       target: board?.fund_target,
     },
-  ].map((item) => ({ ...item, pct: coveragePct(item.ready, item.target) }))
+  ].map((item) => ({ ...item, pct: coveragePct(item.ready, item.target), status: coverageStatus(item.ready, item.target) }))
 })
 const boardOverallCoverage = computed(() => {
   const totals = boardCoverageItems.value.reduce((acc, item) => ({
@@ -303,6 +303,14 @@ function coverageText(ready: number | undefined, total: number | undefined): str
 function coveragePct(ready: number | undefined, total: number | undefined): number {
   if (!total) return 0
   return Math.round(((ready ?? 0) / total) * 100)
+}
+// 与分层质量模型同阈值的状态档：ready/total ≥ 99% 绿、≥ 90% 橙、其余红。
+function coverageStatus(ready: number | undefined, total: number | undefined): 'success' | 'warning' | 'exception' {
+  if (!total) return 'exception'
+  const rate = (ready ?? 0) / total
+  if (rate >= 0.99) return 'success'
+  if (rate >= 0.9) return 'warning'
+  return 'exception'
 }
 
 onMounted(load)
@@ -639,11 +647,11 @@ onMounted(load)
                           <div class="cov-label">{{ item.label }}</div>
                           <div class="cov-desc">{{ item.desc }}</div>
                         </div>
-                        <div class="cov-pct" :class="{ done: item.pct >= 100 }">{{ item.pct }}%</div>
+                        <div class="cov-pct" :class="[item.status === 'success' ? 'done' : item.status]">{{ item.pct }}%</div>
                       </div>
                       <el-progress
                         :percentage="item.pct"
-                        :status="item.pct >= 100 ? 'success' : ''"
+                        :status="item.status"
                         :stroke-width="9"
                         :show-text="false"
                       />
@@ -1043,6 +1051,9 @@ onMounted(load)
 }
 .cov-pct.done {
   color: var(--el-color-success);
+}
+.cov-pct.exception {
+  color: var(--app-danger-text);
 }
 .cov-foot {
   align-items: center;
