@@ -230,6 +230,7 @@ class ThsBoardConfig(BaseModel):
     max_retries: int = Field(default=3, ge=1, le=10)         # 失败重试次数
     retry_backoff_sec: float = Field(default=2.0, ge=0, le=60)  # 重试退避基数（秒，指数退避）
     member_update_interval_days: int = Field(default=7, ge=1, le=30)  # 成分快照更新间隔（天）：默认周频，达标后按此跳过
+    login_cookie: str = Field(default="")  # 登录态 Cookie（解除翻页登录墙取全深页板块/成分）；环境变量优先，页面配置兜底
 
 
 class MailConfig(BaseModel):

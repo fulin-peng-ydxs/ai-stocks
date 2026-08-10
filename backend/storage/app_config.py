@@ -53,6 +53,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "ths_board.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10, "desc": "同花顺请求失败后的最多重试次数。"},
         {"path": "ths_board.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60, "desc": "同花顺请求连续重试之间的退避时间。"},
         {"path": "ths_board.member_update_interval_days", "label": "成分快照更新间隔(天)", "type": "int", "min": 1, "max": 30, "desc": "成分股快照多久全量拉取一次；未达间隔且上次完整时跳过（默认 7=周频）。"},
+        {"path": "ths_board.login_cookie", "label": "登录 Cookie", "type": "password", "desc": "浏览器同花顺登录后复制的 Cookie 头；解除翻页登录墙取全深页板块/成分。留空不修改；环境变量 AI_STOCKS_THS_COOKIE 优先。"},
     ]},
     # 定时调度（遗留）：调度系统重构后改用 scheduled_job 表 + 「任务调度」页，旧的单一每日配置
     # 已不再作为运行态。这些白名单项仅供启动时一次性迁移读取旧值（读后即删，见 scheduler._migrate_legacy_config），
@@ -100,6 +101,10 @@ def _coerce(field: dict, value):
         if "max" in field and num > field["max"]:
             raise ConfigValidationError(f"{path} 不能大于 {field['max']}")
         return num
+    if t in ("string", "password"):
+        if not isinstance(value, str):
+            raise ConfigValidationError(f"{path} 需为字符串")
+        return value
     raise ConfigValidationError(f"{path} 未知类型 {t}")
 
 

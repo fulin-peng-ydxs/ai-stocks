@@ -262,11 +262,12 @@ export interface SettingField {
   path: string
   label: string
   desc?: string
-  type: 'int' | 'number' | 'bool' | 'enum'
+  type: 'int' | 'number' | 'bool' | 'enum' | 'string' | 'password'
   value: any
   default: any
   overridden: boolean
   options?: string[]
+  placeholder?: string
   min?: number
   max?: number
 }

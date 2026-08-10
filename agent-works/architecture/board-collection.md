@@ -16,11 +16,13 @@
 
 反爬与稳定性关键事实：
 - **v cookie**：详情页 AJAX 必须带 `v=...`，否则 401；由 `py_mini_racer` 执行 `ths.js` 动态生成，401 时自动刷新重试一次。
-- **登录态**（可选，`AI_STOCKS_THS_COOKIE` 环境变量注入）：解除详情页翻页登录墙（第 6 页起无登录必命中），但 cookie 里的 `v` 会过期，须用新生成的 `v` 覆盖。
+- **登录态**（可选）：解除详情页/字典翻页登录墙（第 6 页起无登录必命中），但 cookie 里的 `v` 会过期，须用新生成的 `v` 覆盖。Cookie 来源优先级：环境变量 `AI_STOCKS_THS_COOKIE` / `AI_STOCKS_THS_COOKIE_FILE` > 数据治理「同花顺板块·登录 Cookie」页面配置（`ths_board.login_cookie`，密码输入框、读接口脱敏）。
 - **翻页终止**：翻页是路径参数 `page/N/ajax/1/`，每页行数不固定（概念 10/行业 20），用「该页无行」终止翻页并做页码上限护栏。
 - **排序参数敏感**：部分板块带 `field/199112/order/desc` 才能取全，部分不带反而更多；鲁棒策略是两种请求都试、取代码集合的并集。
 - **限流/超时/重试走配置**（见下文「配置」），`rate_limited` 装饰器优先读实例属性 `_min_interval_sec`，前端改配置后新建实例即生效。
 - **完整性判定**：单板块分页不完整（登录墙/翻页失败/401）时 `get_board_members` 返回 `complete=False`，采集层据此不落库。
+
+**概念字典数量口径**：无登录态时 `gn/index` 第 6 页起撞登录墙，概念停在约 **375**（深页板块如 CRO概念/NMN/HJT电池 取不到）；配置/注入登录 Cookie 解除登录墙后可翻到深页取全（约 **390**）。375 是登录墙截断值而非全量。
 
 ## 四张表（`backend/storage/ddl.py`）
 
@@ -127,6 +129,7 @@
 | `max_retries` | 3 | 失败重试次数 |
 | `retry_backoff_sec` | 2.0 | 重试退避基数 |
 | `member_update_interval_days` | 7 | 成分快照更新间隔（周频跳过） |
+| `login_cookie` | 空 | 同花顺登录 Cookie（解除登录墙取全深页板块/成分）；密码框编辑、读接口脱敏，留空不修改；环境变量 `AI_STOCKS_THS_COOKIE` 优先 |
 
 `get_effective_settings()` 每次调用重新合并 YAML ⊕ app_config 覆盖层（不缓存），Web 改参后新建实例即生效。
 

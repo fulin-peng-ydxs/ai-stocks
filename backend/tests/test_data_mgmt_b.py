@@ -299,6 +299,40 @@ def test_settings_view_and_save(client):
     assert bad.code == 400
 
 
+def test_ths_login_cookie_config_masked(client):
+    """同花顺登录 Cookie 配置：password 字段读接口脱敏、掩码不被当真实值入库。"""
+    from backend.api.data_admin import get_settings_view, save_settings
+    from backend.config import get_effective_settings
+
+    # 1) ths_board 分组含 login_cookie 字段且 type=password
+    view = get_settings_view().data
+    ths = next(g for g in view["groups"] if g["key"] == "ths_board")
+    cookie_field = next(f for f in ths["fields"] if f["path"] == "ths_board.login_cookie")
+    assert cookie_field["type"] == "password"
+
+    # 2) 保存真实 cookie → 生效配置读到明文
+    resp = save_settings({"updates": {"ths_board.login_cookie": "user=xxx; v=yyy"}}, _fake_request())
+    assert resp.code == 0
+    assert get_effective_settings().ths_board.login_cookie == "user=xxx; v=yyy"
+
+    # 3) 读接口脱敏：返回掩码而非明文
+    view2 = get_settings_view().data
+    ths2 = next(g for g in view2["groups"] if g["key"] == "ths_board")
+    f2 = next(f for f in ths2["fields"] if f["path"] == "ths_board.login_cookie")
+    assert f2["value"] == "••••••已设置"
+    assert "user=xxx" not in f2["value"]
+
+    # 4) 掩码回传不入库：提交掩码 → 数据库明文不变
+    resp3 = save_settings({"updates": {"ths_board.login_cookie": "••••••已设置"}}, _fake_request())
+    assert resp3.code == 0
+    assert get_effective_settings().ths_board.login_cookie == "user=xxx; v=yyy"
+
+    # 5) 留空字符串写入 = 清空（前端清空动作）
+    resp4 = save_settings({"updates": {"ths_board.login_cookie": ""}}, _fake_request())
+    assert resp4.code == 0
+    assert get_effective_settings().ths_board.login_cookie == ""
+
+
 # ── 板块采集任务（R5，T5）───────────────────────────────────
 
 

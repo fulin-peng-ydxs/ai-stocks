@@ -735,10 +735,18 @@ def get_settings_view() -> ApiResponse:
             continue
         fields = []
         for f in g["fields"]:
+            val = _dig_config_value(eff, f["path"])
+            default_val = _dig_config_value(default, f["path"])
+            # 敏感字段（password 型）不回显明文：value 与 default 都只返回「是否已设置」掩码，
+            # 避免前端拿到 Cookie。前端保存时留空不提交（draft 等于掩码 → 不纳入 updates），
+            # 因此不会误清空已存值。
+            if f.get("type") == "password":
+                val = "••••••已设置" if val else ""
+                default_val = "••••••已设置" if default_val else ""
             fields.append({**{k: f[k] for k in f if k != "path"},
                            "path": f["path"],
-                           "value": _dig_config_value(eff, f["path"]),
-                           "default": _dig_config_value(default, f["path"]),
+                           "value": val,
+                           "default": default_val,
                            "overridden": f["path"] in overrides})
         groups.append({
             "key": g["key"],
@@ -752,8 +760,14 @@ def get_settings_view() -> ApiResponse:
 @router.post("/settings", response_model=ApiResponse, dependencies=_SETTINGS)
 def save_settings(body: dict, request: Request) -> ApiResponse:
     """保存覆盖值（写 app_config 即时生效）。body={updates:{path:value}} 或直接 {path:value}。"""
-    from backend.storage.app_config import AppConfigRepo, ConfigValidationError
-    updates = body.get("updates", body)
+    from backend.storage.app_config import CONFIG_GROUPS, AppConfigRepo, ConfigValidationError
+    updates = dict(body.get("updates", body))
+    # 敏感字段防御：掩码占位符（如前端异常回传「••••••已设置」）不得作为真实值入库——
+    # 前端正常路径不会提交未修改的密码字段，此处兜底避免掩码被当成 Cookie 存进配置。
+    password_fields = {f["path"] for g in CONFIG_GROUPS for f in g["fields"] if f.get("type") == "password"}
+    for path in list(updates):
+        if path in password_fields and isinstance(updates[path], str) and updates[path].startswith("••••••"):
+            updates.pop(path)
     keys = sorted(str(k) for k in updates)
     repo = AppConfigRepo()
     before = _effective_setting_values(keys)

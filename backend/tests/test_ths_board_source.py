@@ -314,6 +314,9 @@ def test_validate_board_type():
 def test_login_cookie_from_env(monkeypatch):
     monkeypatch.delenv("AI_STOCKS_THS_COOKIE", raising=False)
     monkeypatch.delenv("AI_STOCKS_THS_COOKIE_FILE", raising=False)
+    # 环境变量与配置兜底都为空 → None
+    monkeypatch.setattr("backend.datasource.ths_board.get_effective_settings",
+                        lambda: _NoCookieSettings())
     assert tb._login_cookie_from_env() is None
 
     monkeypatch.setenv("AI_STOCKS_THS_COOKIE", "user=1; ticket=abc")
@@ -331,6 +334,27 @@ def test_login_cookie_from_env(monkeypatch):
         assert tb._login_cookie_from_env() == "file-cookie=xyz"
     finally:
         os.unlink(p)
+
+
+class _NoCookieSettings:
+    class ths_board:
+        login_cookie = ""
+
+
+def test_login_cookie_config_fallback(monkeypatch):
+    """环境变量为空时回落数据治理页面配置的登录 Cookie。"""
+    monkeypatch.delenv("AI_STOCKS_THS_COOKIE", raising=False)
+    monkeypatch.delenv("AI_STOCKS_THS_COOKIE_FILE", raising=False)
+
+    class _Cfg:
+        class ths_board:
+            login_cookie = "cfg-cookie=abc"
+    monkeypatch.setattr("backend.datasource.ths_board.get_effective_settings", lambda: _Cfg())
+    assert tb._login_cookie_from_env() == "cfg-cookie=abc"
+
+    # 环境变量存在时优先（覆盖配置）
+    monkeypatch.setenv("AI_STOCKS_THS_COOKIE", "env-cookie=123")
+    assert tb._login_cookie_from_env() == "env-cookie=123"
 
 
 def test_headers_login_cookie_uses_login_v():

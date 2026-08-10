@@ -72,11 +72,12 @@ def _ths_js_path() -> "str":
 
 
 def _login_cookie_from_env() -> str | None:
-    """从环境变量读取登录态 cookie（浏览器同花顺登录后复制，非硬编码、不入库）。
+    """读取登录态 cookie（浏览器同花顺登录后复制）。
 
-    `AI_STOCKS_THS_COOKIE` 为完整 Cookie 头字符串；也可指向存有 cookie 的文件路径
-    （`AI_STOCKS_THS_COOKIE_FILE`）。登录态可解除详情页翻页的登录墙（第 6 页起无登录
-    必返回登录墙，登录后正常翻页，见 get_board_members docstring）。
+    优先级：环境变量 `AI_STOCKS_THS_COOKIE` / `AI_STOCKS_THS_COOKIE_FILE`（运维可强制覆盖）
+    > 数据治理「同花顺板块·登录 Cookie」页面配置（app_config 覆盖层，可 Web 编辑）。
+    登录态可解除详情页/字典翻页的登录墙（第 6 页起无登录必返回登录墙，登录后正常翻页，
+    见 get_board_members docstring）。
     """
     import os
 
@@ -89,7 +90,13 @@ def _login_cookie_from_env() -> str | None:
                     raw = fh.read().strip()
             except OSError:
                 return None
-    return raw or None
+    if not raw:
+        # 页面配置兜底：数据治理「同花顺板块」tab 编辑的登录 Cookie
+        try:
+            raw = get_effective_settings().ths_board.login_cookie or ""
+        except Exception:  # noqa: BLE001 —— 配置/DB 异常回落无 cookie
+            raw = ""
+    return raw.strip() or None
 
 
 class ThsBoardSource:
@@ -218,10 +225,12 @@ class ThsBoardSource:
     def get_board_dict(self, board_type: str) -> pd.DataFrame:
         """板块字典：同花顺概念/行业全量板块（name, board_code 6 位路径 code）。
 
-        概念 = 分类页全量（351，`/gn/detail/code/` 链接直接抓，不截断 cate_inner）∪
-        `gn/index` 分页前几页净增（24 个新概念，实测 375 全量；`gn/index` 翻页到第 6 页起
-        触发同花顺登录墙——HTTP 200 但返回登录跳转壳，此时应停止而非继续翻页）。
-        行业：分类页 cate_inner 含全量 90 条。返回列：board_code, name。
+        概念 = 分类页全量（351，`/gn/detail/code/` 链接直接抓）∪ `gn/index` 翻页净增。
+        无登录态时 `gn/index` 第 6 页起返回登录墙（HTTP 200 但 `upass...login` 跳转壳），
+        停在登录墙前 → 概念约 375（深页板块如 CRO概念 16页/NMN 24页/HJT电池 21页 取不到）；
+        配置/注入登录 Cookie（`ths_board.login_cookie` 或 `AI_STOCKS_THS_COOKIE`）解除登录墙后
+        才能翻到深页取全（约 390）。行业：分类页 cate_inner 含全量 90 条。
+        返回列：board_code, name。
         """
         _validate_board_type(board_type)
         if board_type == "industry":

@@ -168,7 +168,7 @@ function collapsed(key: string): boolean {
               <el-option v-for="opt in field.options ?? []" :key="opt" :label="opt" :value="opt" />
             </el-select>
             <el-input-number
-              v-else
+              v-else-if="field.type === 'number' || field.type === 'int'"
               :model-value="Number(valueOf(field.path))"
               :min="field.min"
               :max="field.max"
@@ -176,6 +176,23 @@ function collapsed(key: string): boolean {
               :controls="field.type === 'int'"
               :disabled="disabled"
               @update:model-value="(value: number | undefined) => setValue(field.path, value)"
+            />
+            <el-input
+              v-else-if="field.type === 'password'"
+              :model-value="String(valueOf(field.path) ?? '')"
+              :disabled="disabled"
+              type="password"
+              show-password
+              :placeholder="field.placeholder || (valueOf(field.path) ? '已设置，留空不修改' : '请输入')"
+              autocomplete="off"
+              @update:model-value="(value: string) => setValue(field.path, value)"
+            />
+            <el-input
+              v-else-if="field.type === 'string'"
+              :model-value="String(valueOf(field.path) ?? '')"
+              :disabled="disabled"
+              :placeholder="field.placeholder || ''"
+              @update:model-value="(value: string) => setValue(field.path, value)"
             />
           </div>
 

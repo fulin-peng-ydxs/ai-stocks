@@ -7,7 +7,7 @@ import { useRouter } from 'vue-router'
 import {
   listSchedules, createSchedule, updateSchedule, setScheduleEnabled, deleteSchedule, runSchedule,
   getSources, testSources, SOURCE_LABEL, TASK_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE,
-  taskDisplayLabel,
+  taskDisplayLabel, getSettingsView, saveSettings,
   type ScheduledJob, type ScheduledJobInput, type SourceStatus, type TaskType, type FreqType,
 } from '@/api/data'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -247,6 +247,44 @@ async function loadSources(ping = false) {
   }
 }
 
+// 同花顺登录 Cookie 配置（数据源健康区块「配置登录」）：读掩码状态，保存到 ths_board.login_cookie。
+const cookieDlg = ref(false)
+const cookieSaving = ref(false)
+const cookieValue = ref('')
+const cookieSet = ref(false)
+const cookieHint = ref('')
+async function openCookieConfig() {
+  cookieDlg.value = true
+  cookieSaving.value = false
+  cookieValue.value = ''
+  cookieHint.value = '加载中…'
+  try {
+    const view = await getSettingsView()
+    const ths = view.groups.find((g) => g.key === 'ths_board')
+    const field = ths?.fields.find((f) => f.path === 'ths_board.login_cookie')
+    cookieSet.value = Boolean(field?.value)
+    cookieHint.value = cookieSet.value
+      ? '已配置登录 Cookie，留空保存不修改；输入新值覆盖，输入空串可清除。'
+      : '未配置登录 Cookie；配置后可解除登录墙取全深页板块（概念 375→390）。'
+  } catch {
+    cookieHint.value = '加载配置失败'
+  }
+}
+async function saveCookie() {
+  if (cookieSaving.value) return
+  cookieSaving.value = true
+  try {
+    await saveSettings({ 'ths_board.login_cookie': cookieValue.value })
+    ElMessage.success(cookieValue.value ? '登录 Cookie 已更新' : '登录 Cookie 已清除')
+    cookieDlg.value = false
+    void loadSources(false)
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '保存登录 Cookie 失败'))
+  } finally {
+    cookieSaving.value = false
+  }
+}
+
 async function load() {
   loading.value = true
   loadError.value = ''
@@ -393,6 +431,15 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </el-tag>
           <span class="src-state">{{ s.up === true ? '连通' : s.up === false ? '不可达' : '未测试' }}</span>
           <span class="src-meta">最近成功 {{ fmtTime(s.last_success_at) }} · 超时 {{ s.timeout_sec }}s</span>
+          <el-button
+            v-if="s.source === 'ths_board'"
+            v-permission="'data-settings:manage'"
+            size="small"
+            text
+            type="primary"
+            data-testid="ths-login-cookie-btn"
+            @click="openCookieConfig"
+          >配置登录 Cookie</el-button>
         </div>
         <div v-if="!displaySources.length" class="app-empty-inline">点「测试连通」检查行情源与板块源可达性</div>
         </div>
@@ -401,6 +448,34 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
     </template>
 
     <template #overlays>
+    <!-- 同花顺登录 Cookie 配置（数据源健康·ths_board 行） -->
+    <el-dialog v-model="cookieDlg" title="配置同花顺登录 Cookie" width="480px" data-testid="ths-login-cookie-dialog">
+      <el-form label-width="92px">
+        <el-form-item label="登录 Cookie">
+          <el-input
+            v-model="cookieValue"
+            type="password"
+            show-password
+            autocomplete="off"
+            :placeholder="cookieSet ? '已设置，留空不修改' : '粘贴浏览器同花顺登录后的 Cookie 头'"
+            data-testid="ths-login-cookie-input"
+          />
+        </el-form-item>
+        <p class="cookie-hint">{{ cookieHint }}</p>
+        <p class="cookie-tip">
+          如何获取：浏览器登录同花顺（10jqka.com.cn）后，F12 → Network → 复制请求 Cookie 头。
+          配置后可解除详情页/字典翻页登录墙，取全深页板块（概念 375→390）与完整成分股。
+          环境变量 <code>AI_STOCKS_THS_COOKIE</code> 优先级更高（运维可覆盖）。
+        </p>
+      </el-form>
+      <template #footer>
+        <el-button @click="cookieDlg = false">取消</el-button>
+        <el-button type="primary" :loading="cookieSaving" data-testid="ths-login-cookie-save" @click="saveCookie">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 新建/编辑对话框 -->
     <el-dialog v-model="dlg" :title="dlgTitle" width="520px" data-testid="schedule-dialog">
       <el-form label-width="92px">
@@ -567,4 +642,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .src-name { font-weight: var(--app-font-weight-section); min-width: 78px; }
 .src-state { font-size: var(--app-font-size-table); }
 .src-meta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: auto; }
+.cookie-hint { margin: 0 0 8px; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-regular); }
+.cookie-tip { margin: 0; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
+.cookie-tip code { font-family: var(--app-font-mono); background: var(--el-fill-color-light); padding: 0 4px; border-radius: 3px; }
 </style>

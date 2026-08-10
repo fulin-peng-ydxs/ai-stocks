@@ -57,6 +57,11 @@ function mountForm(extraProps: Record<string, unknown> = {}) {
         ElSelect: { template: '<div><slot /></div>' },
         ElOption: true,
         ElInputNumber: { props: ['modelValue'], template: '<input :value="modelValue" />' },
+        ElInput: {
+          props: ['modelValue', 'type'],
+          emits: ['update:modelValue'],
+          template: '<input :value="modelValue" :type="type" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+        },
         ElIcon: { template: '<i><slot /></i>' },
       },
     },
@@ -137,5 +142,55 @@ describe('ConfigGroupForm', () => {
       .find((node) => node.text().includes('登录保护'))
     expect(blockSection?.classes()).not.toContain('is-closed')
     expect(wrapper.text()).toContain('图形验证码强制失败次数')
+  })
+
+  it('password 型字段渲染密码输入框并透传值', async () => {
+    const groupWithPwd: SettingGroup = {
+      ...group,
+      fields: [
+        ...group.fields,
+        {
+          path: 'ths_board.login_cookie',
+          label: '登录 Cookie',
+          desc: '同花顺登录态 Cookie。',
+          type: 'password',
+          value: '••••••已设置',
+          default: '',
+          overridden: true,
+          placeholder: '已设置，留空不修改',
+        },
+      ],
+    }
+    const wrapper = mount(ConfigGroupForm as Component, {
+      props: {
+        group: groupWithPwd,
+        modelValue: { 'ths_board.login_cookie': '••••••已设置' },
+      },
+      global: {
+        stubs: {
+          HelpHint: { template: '<span />' },
+          ElForm: { template: '<form><slot /></form>' },
+          ElFormItem: { template: '<div><slot name="label" /><slot /></div>' },
+          ElSwitch: { template: '<button />' },
+          ElSelect: { template: '<div><slot /></div>' },
+          ElOption: true,
+          ElInputNumber: { template: '<input />' },
+          ElInput: {
+            props: ['modelValue', 'type'],
+            emits: ['update:modelValue'],
+            template: '<input :value="modelValue" :type="type" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+          ElIcon: { template: '<i><slot /></i>' },
+        },
+      },
+    })
+    const pwdInput = wrapper.find('input[type="password"]')
+    expect(pwdInput.exists()).toBe(true)
+    expect(pwdInput.attributes('value')).toBe('••••••已设置')
+    // 触发输入 → 发 update-field 事件携带新值
+    await pwdInput.setValue('user=newcookie')
+    const emitted = wrapper.emitted('update-field')
+    expect(emitted).toBeTruthy()
+    expect(emitted![0]).toEqual(['ths_board.login_cookie', 'user=newcookie'])
   })
 })
