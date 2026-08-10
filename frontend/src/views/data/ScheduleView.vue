@@ -430,7 +430,6 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             {{ sourceRoleLabel(s.role) }}
           </el-tag>
           <span class="src-state">{{ s.up === true ? '连通' : s.up === false ? '不可达' : '未测试' }}</span>
-          <span class="src-meta">最近成功 {{ fmtTime(s.last_success_at) }} · 超时 {{ s.timeout_sec }}s</span>
           <el-button
             v-if="s.source === 'ths_board'"
             v-permission="'data-settings:manage'"
@@ -440,6 +439,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             data-testid="ths-login-cookie-btn"
             @click="openCookieConfig"
           >配置登录 Cookie</el-button>
+          <span class="src-meta">最近成功 {{ fmtTime(s.last_success_at) }} · 超时 {{ s.timeout_sec }}s</span>
         </div>
         <div v-if="!displaySources.length" class="app-empty-inline">点「测试连通」检查行情源与板块源可达性</div>
         </div>
