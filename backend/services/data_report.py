@@ -567,8 +567,10 @@ class DataIntegrityReport:
 
         gap_issues: list[dict] = []
         latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
+        fund_date = None
         if latest is not None:
             latest = pd.Timestamp(latest).date()
+            fund_date = latest
             ig_gap = _ignored_codes("board_index_gap")
             gap_df = self.c.query_df(
                 """
@@ -599,9 +601,15 @@ class DataIntegrityReport:
             SELECT board_code, name FROM board_dict
             WHERE (has_members OR has_bar) AND NOT has_fund_flow
             """)
+        # 资金流缺失日期：优先全局最新交易日（该日应有资金流但源未收录）；系统未初始化（无 daily_bar）
+        # 时用检测日兜底，保证质量页日期列有值。
+        if fund_date is None:
+            from datetime import date as _date
+            fund_date = _date.today()
         fund_issues = [
             {
                 "code": str(r["board_code"]),
+                "trade_date": fund_date,
                 "issue_type": "board_fund_missing",
                 "detail": f"板块 {r['name']}（{r['board_code']}）资金流缺失："
                           f"数据源资金流榜单未收录该板块",

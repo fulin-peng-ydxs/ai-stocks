@@ -575,8 +575,10 @@ def test_scan_board_quality_fund_missing(client, monkeypatch):
     r = DataIntegrityReport(client).scan_board_quality()
     assert r["fund_missing"] == 2
     missing = client.query_df(
-        "SELECT code, issue_type FROM data_quality_issue WHERE issue_type='board_fund_missing'")
+        "SELECT code, issue_type, trade_date FROM data_quality_issue WHERE issue_type='board_fund_missing'")
     assert set(missing["code"].tolist()) == {"309121", "881121"}
+    # 日期列：资金流缺失带全局最新交易日（质量页日期列不空）
+    assert set(missing["trade_date"].astype(str)) == {"2026-08-07"}
 
 
 def test_scan_board_quality_fund_missing_ignored_and_converge(client, monkeypatch):
