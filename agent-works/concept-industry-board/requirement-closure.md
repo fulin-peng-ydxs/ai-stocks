@@ -142,7 +142,7 @@ DailyPipeline.run()
 |---|---|---|
 | 5 | 周期控件语义 | 今日/5日/10日/20日**仅控制涨跌幅主排序字段**（默认降序）；表格补对应 20日涨幅列；点击涨跌幅列头同步当前周期；资金流固定展示最新交易日「即时净流入」并标注数据日；资金流 3日/5日/10日/20日继续采集但不受本控件控制，避免一控件混合两套口径 |
 | 6 | 成分股落库 | **2026-08-09 实施修订**：`board_member` 采用 `(board_code, code)` 只进不出累积；完整快照幂等新增，不完整快照整趟不落库；用 `member_snapshot_at` 标识最近一次完整采集 |
-| 7 | 字典与资金流集合差异 | **2026-08-09 实施修订**：不采用并集字典——资金流源无稳定代码，资金流独有板块不进 `board_dict`，未匹配写 `board_fund_unmatched` 质检不伪造代码（见 requirement.md §2.5/R4）；`source` 恒为 `ths`，能力差异用 `has_members`/`has_bar`/`has_fund_flow`/`member_history_start_date`/`last_seen_at` 字段 |
+| 7 | 字典与资金流集合差异 | **2026-08-09 实施修订 + 2026-08-10 口径更新**：不采用并集字典——链接带真实路径 code 的独有板块补进 `board_dict`（`has_fund_flow=true`，列表页不展示）；仍无稳定代码的未匹配写 `board_fund_unmatched` 质检不伪造代码（见 requirement.md §2.5/R4）；`source` 恒为 `ths`，能力差异用 `has_members`/`has_bar`/`has_fund_flow`/`member_history_start_date`/`last_seen_at` 字段 |
 | 8 | 质量规则 | **2026-08-09 实施修订**：成分数变化不再作为异常；质量规则保留 `board_index_gap`，并由采集层产生 `board_member_incomplete`、`board_fund_unmatched`；状态沿用 `open/fixing/resolved/ignored` |
 | 9 | 历史不可回溯 | 本期**不改回测**；在 `board_dict.member_history_start_date` 保存板块级可信起始日（非每条成员重复字段）；接口可返回该字段；后续接入筛选/回测时再对早于该日期的查询拒绝或警告 |
 | 10 | 成分股跳转权限 | 无 `stocks:view` 时成分股数据仍可见，名称/代码渲染为不可点击文本 + hover 提示「无个股行情查看权限」，不执行路由跳转；直接输入 `/stocks/:code` 路由与接口仍 fail-closed |

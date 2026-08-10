@@ -64,7 +64,7 @@
 
 ### 2.5 板块字典与资金流集合差异（评审新增）
 
-实测概念字典 375 个、概念资金流 387 个——**资金流源含字典没有的板块**（无成分股/无指数，仅资金流）。**🔴 2026-08-09 口径确认：不采用并集字典**；**2026-08-10 修订**：资金流源板块单元格带链接，含真实路径 code（如 `/gn/detail/code/308734/`）即稳定主键，此类独有板块**可补进 `board_dict`**（`has_fund_flow=true`、`has_members/has_bar=false`，列表页不展示，供资金流数据关联）；仍无稳定代码的未匹配项写 `board_fund_unmatched` 质检（见 R1/R4）。
+实测概念字典 375 个、概念资金流 387 个——**资金流源含字典没有的板块**（无成分股/无指数，仅资金流）。**当前口径（2026-08-10 修订）**：资金流源板块单元格带链接含真实路径 code（如 `/gn/detail/code/308734/`）即稳定主键，此类独有板块**可补进 `board_dict`**（`has_fund_flow=true`、`has_members/has_bar=false`，列表页不展示，供资金流数据关联）；仍无稳定代码的未匹配项写 `board_fund_unmatched` 质检（见 R1/R4）。
 
 ## 3. 用户角色与使用场景
 
@@ -128,7 +128,7 @@
 - **前置条件**：`ThsBoardSource` 可用；DuckDB 写锁可用。
 - **操作流程**（两阶段，避免采集顺序循环）：
   1. **阶段一 · 字典 seed**：`ThsBoardSource.get_board_dict('concept')` + `get_board_dict('industry')` → 幂等 upsert 概念/行业字典（此时能力字段仅 `has_members/has_bar` 按各自接口判定，`has_fund_flow` 暂置 false）。
-  2. **阶段二 · 资金流补充并集**：资金流采集（R4）后，按名称匹配已有字典板块并更新 `has_fund_flow` 能力字段。**🔴 资金流独有板块的字典策略（2026-08-09 口径 + 2026-08-10 修订）**——资金流源板块单元格带链接含真实路径 code（如 `/gn/detail/code/308734/`），此类独有板块**有稳定主键可补进 `board_dict`**（`has_fund_flow=true`、`has_members/has_bar=false`，列表页不展示）；仍无稳定代码（无链接 code 且名称匹配不到字典）的板块写 `board_fund_unmatched` 质检、不伪造代码（见 R4）。
+  2. **阶段二 · 资金流补充并集**：资金流采集（R4）后，按名称匹配已有字典板块并更新 `has_fund_flow` 能力字段。**资金流独有板块的字典策略（当前口径，2026-08-10 修订）**：资金流源板块单元格带链接含真实路径 code（如 `/gn/detail/code/308734/`），此类独有板块**有稳定主键可补进 `board_dict`**（`has_fund_flow=true`、`has_members/has_bar=false`，列表页不展示）；仍无稳定代码（无链接 code 且名称匹配不到字典）的板块写 `board_fund_unmatched` 质检、不伪造代码（见 R4）。
   3. **能力字段收口**：全部源采集完成后，按实际各接口返回刷新 `has_members/has_bar/has_fund_flow` 与 `last_seen_at`；最近一次完整成分快照成功应用后同步刷新 `member_count` 与 `member_snapshot_at`。板块列表/详情的当前成分数取该完整快照口径；成分明细接口的 `total` 为只进不出累计关系数，两者不得混用。
 - **输入输出**：输入板块类型枚举 `concept|industry`；输出写入行数。
 - **校验规则**：
@@ -172,8 +172,8 @@
 - **前置条件**：`board_dict` 已采集。
 - **操作流程**：`get_board_fund_flow(board_type, period)` → 与字典按**同花顺稳定板块代码**关联 → 幂等 upsert。
 - **🔴 并集映射规则**：
-  - 资金流源含字典没有的板块（375 vs 387）：按名称匹配已有字典板块关联；
-  - 资金流接口**无稳定代码、只能名称匹配**时，未匹配项写 `board_fund_unmatched` 质检问题，**不生成伪造代码、不新增字典行**（2026-08-09 口径确认：资金流源无稳定代码无法生成路径 code 主键）。
+  - 资金流源含字典没有的板块（375 vs 387）：先按名称匹配已有字典板块关联；链接带真实路径 code 的独有板块补进字典（见 §2.5）；
+  - 仍无稳定代码（无链接 code 且名称匹配不到字典）的板块，写 `board_fund_unmatched` 质检问题，**不生成伪造代码、不新增字典行**。
 - **输入输出**：字段含流入/流出/净额/领涨股等。
 - **校验规则**：PK `(board_code, snapshot_date, period)`；净额 = 流入 - 流出 校验。
 - **异常情况**：失败记日志。
