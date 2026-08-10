@@ -992,7 +992,11 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
     阶段 checkpoint 跳过已经成功的工作单元。
     """
     from backend.services.ingest import IngestionService
-    spec_codes = [str(x).strip() for x in (params.get("codes") or []) if str(x).strip()]
+    # codes 兼容数组与逗号分隔字符串（对齐 only 参数的处理，避免字符串被逐字符拆散）
+    raw_codes = params.get("codes") or []
+    if isinstance(raw_codes, str):
+        raw_codes = [x for x in raw_codes.split(",") if x.strip()]
+    spec_codes = [str(x).strip() for x in raw_codes if str(x).strip()]
     if spec_codes:
         ctx.log(f"板块采集指定 {len(spec_codes)} 个板块：{spec_codes[:5]}{'…' if len(spec_codes) > 5 else ''}")
     else:
@@ -1013,8 +1017,10 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
         ingest_kwargs["limit"] = params["limit"]
     result = IngestionService().ingest_board(**ingest_kwargs)
     if result.get("failed"):
-        ctx.log(f"板块采集完成，失败项：{result['failed']}")
-        return {"message": f"板块采集部分失败：{result['failed']}",
+        # 部分失败保留 checkpoint 供续跑补齐（未完成板块后续重跑）；失败项已在 data_update_log
+        # 记 failed 并在日志可见。任务标 failed 但可续跑（对齐数据管理文档「失败任务可续跑」语义）。
+        ctx.log(f"板块采集部分完成，失败项：{result['failed']}")
+        return {"message": f"板块采集部分完成（{len(result['failed'])} 项失败，可续跑补齐）：{result['failed']}",
                 "result": result, "ok": False}
     ctx.log("板块采集完成")
     ctx.progress(1.0, "板块采集完成")

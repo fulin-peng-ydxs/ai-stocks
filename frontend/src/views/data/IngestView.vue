@@ -519,6 +519,19 @@ onMounted(async () => {
   openFromQuery()
   pageInitialized = true
 })
+
+// 概览「补采中」/质量页缺口跳转会改 route.query；keep-alive 缓存下二次跳转不重挂载，
+// 须 watch query 变化重新消费参数弹采集框（onMounted 仅覆盖首次冷打开）。
+watch(
+  () => route.query,
+  (q, old) => {
+    if (!pageInitialized) return
+    // 仅当 query 实际带本次跳转参数时弹框；避免页面内其他 query 变化误弹
+    if (q.task_type === 'board' || (typeof q.code === 'string' && q.code)) {
+      openFromQuery()
+    }
+  },
+)
 </script>
 
 <template>

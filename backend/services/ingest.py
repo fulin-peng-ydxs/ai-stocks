@@ -1820,9 +1820,10 @@ class IngestionService:
             raise ValueError("板块类型仅支持 concept/industry")
         if limit is not None and limit <= 0:
             raise ValueError("板块采集 limit 必须大于 0")
-        # backfill 初始化默认绕过周频（未传显式值时）；update 默认走周频跳过。
+        # force_members 未显式指定时：backfill 初始化、或显式指定板块子集（手动重采语义）→ 绕过周频；
+        # 默认全量 update 走周频跳过（避免每日增量全量重拉已完整板块）。
         if force_members is None:
-            force_members = mode == "backfill"
+            force_members = mode == "backfill" or bool(board_codes)
         svc = BoardIngestService()
         result: dict = {
             "dict": None, "members": {}, "bar": None, "fund_flow": None,
@@ -1848,6 +1849,8 @@ class IngestionService:
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块字典：概念 {result['dict'].get('concept', 0)} / "
                             f"行业 {result['dict'].get('industry', 0)}")
+            except TaskCancelled:  # 终止穿透：板块采集被终止应转可续跑中断，而非记为失败后跑完
+                raise
             except Exception as e:  # noqa: BLE001
                 log.warning("板块字典采集失败: %s", e)
                 result["failed"].append(f"dict: {e}")
@@ -1878,6 +1881,8 @@ class IngestionService:
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 成分快照：处理 {len(result['members']) - skipped} 个板块"
                             f"（跳过 {skipped}，失败 {len(errs)}）")
+            except TaskCancelled:  # 终止穿透：成分快照阶段被终止应转可续跑中断
+                raise
             except Exception as e:  # noqa: BLE001
                 log.warning("板块成分快照采集失败: %s", e)
                 result["failed"].append(f"members: {e}")
@@ -1903,6 +1908,8 @@ class IngestionService:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块指数：{result['bar'].get('rows', 0)} 行 / "
                             f"{result['bar'].get('boards', 0)} 板块")
                 result["failed"] += [f"bar:{x}" for x in result["bar"].get("failed", [])]
+            except TaskCancelled:  # 终止穿透：板块指数阶段被终止应转可续跑中断
+                raise
             except Exception as e:  # noqa: BLE001
                 log.warning("板块指数采集失败: %s", e)
                 result["failed"].append(f"bar: {e}")
@@ -1924,6 +1931,8 @@ class IngestionService:
                             f"（未匹配 {result['fund_flow'].get('unmatched', 0)}）")
                 result["failed"] += [f"fund_flow:{x}"
                                      for x in result["fund_flow"].get("failed", [])]
+            except TaskCancelled:  # 终止穿透：板块资金流阶段被终止应转可续跑中断
+                raise
             except Exception as e:  # noqa: BLE001
                 log.warning("板块资金流采集失败: %s", e)
                 result["failed"].append(f"fund_flow: {e}")

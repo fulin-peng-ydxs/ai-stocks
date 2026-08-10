@@ -391,7 +391,7 @@ def test_board_task_resume_preserves_phase_checkpoint(client, monkeypatch):
 
 
 def test_board_task_partial_result_is_failed_and_resumable(client, monkeypatch):
-    """局部失败必须保留 checkpoint；续跑只处理剩余单元并可最终完成。"""
+    """局部失败保留 checkpoint 供续跑；续跑只处理剩余单元并可最终完成。"""
     from backend.services import ingest as ingest_mod
     from backend.services.async_task import AsyncTaskService
 
@@ -412,8 +412,9 @@ def test_board_task_partial_result_is_failed_and_resumable(client, monkeypatch):
     svc = AsyncTaskService(client)
     tid = svc.create("board", {"mode": "update"})
     task = _wait(svc, tid)
+    # 部分失败标 failed 但保留 checkpoint（对齐数据管理文档「失败任务可续跑」），不丢成功单元
     assert task["status"] == "failed"
-    assert "部分失败" in task["message"]
+    assert "部分完成" in task["message"]
     assert task["result"]["checkpoint"]["bar_done_codes"] == ["881121"]
 
     svc.resume(tid)

@@ -129,6 +129,7 @@ SEVERITY_BY_TYPE: dict[str, str] = {
     "stale": "mid",            # 尾部鲜活滞后（最新<全局最新交易日）（M2.9.2 L4）
     "board_index_gap": "mid",  # 板块指数缺口（board_bar 滞后全局最新交易日）（板块概念 R12）
     "board_member_incomplete": "mid",  # 成分快照采集不完整/失败（只进不出模型完整性闸门，待重采）
+    "board_fund_unmatched": "mid",  # 板块资金流未匹配到字典（源无稳定代码，待源侧收敛）
 }
 
 

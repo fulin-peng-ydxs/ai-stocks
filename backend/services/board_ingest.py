@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import date, datetime, timedelta, timezone
 
@@ -24,6 +25,7 @@ import pandas as pd
 
 from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
+from backend.dataquality.checker import severity_for
 from backend.datasource.akshare_source import to_full_code
 from backend.datasource.ths_board import ThsBoardSource
 from backend.storage.ddl import init_db
@@ -495,36 +497,41 @@ class BoardIngestService:
         unmatched: list[dict[str, str]] = []
         failed: list[str] = []
         newly_added_codes: list[tuple[str, str, str]] = []  # 资金流独有板块 (code, name, board_type)
+        # fund checkpoint 键带采集范围签名：改 board_codes 子集后续跑不会误命中旧范围的已完成组
+        # （否则首跑 codes=[A] 记 "concept:即时"，改 codes=[B] 续跑会跳过 B 的资金流）。
+        scope_tag = "ALL" if board_codes is None else hashlib.md5(
+            ",".join(sorted(board_codes)).encode()).hexdigest()[:8]
         done_keys = set(getattr(ctx, "checkpoint", {}).get("fund_done_keys") or []) if ctx else set()
-        valid_keys = {f"{bt}:{period}" for bt in target_types for period in periods}
+        valid_keys = {f"{scope_tag}:{bt}:{period}" for bt in target_types for period in periods}
         done_keys.intersection_update(valid_keys)
         total_groups = len(target_types) * len(periods)
         for board_type in ("concept", "industry"):
             if board_type not in target_types:
                 continue
             for period in periods:
-                group_key = f"{board_type}:{period}"
+                display_key = f"{board_type}:{period}"
+                group_key = f"{scope_tag}:{display_key}"
                 if group_key in done_keys:
                     continue
                 if ctx:
                     ctx.check_cancel()
                     ctx.set_phase("board_fund_flow", done=len(done_keys), total=total_groups,
                                   phase_total=total_groups, phase_done=len(done_keys),
-                                  current_item=group_key, fund_done_keys=sorted(done_keys))
+                                  current_item=display_key, fund_done_keys=sorted(done_keys))
                 try:
                     df = self.src.get_board_fund_flow(board_type, period)
                 except Exception as e:  # noqa: BLE001
                     log.warning("资金流 %s/%s 取数失败: %s", board_type, period, e)
-                    failed.append(f"{group_key}: {e}")
+                    failed.append(f"{display_key}: {e}")
                     self._log_update("board_fund_flow", sdate, sdate, 0, "failed",
-                                     f"{group_key} {e}")
+                                     f"{display_key} {e}")
                     if ctx:
                         ctx.log(f"资金流 {board_type}/{period}：失败 {e}", "error")
                     continue
                 if df.empty:
-                    failed.append(f"{group_key}: empty")
+                    failed.append(f"{display_key}: empty")
                     self._log_update("board_fund_flow", sdate, sdate, 0, "failed",
-                                     f"{group_key} 资金流为空")
+                                     f"{display_key} 资金流为空")
                     if ctx:
                         ctx.log(f"资金流 {board_type}/{period}：无数据，记失败", "error")
                     continue
@@ -565,7 +572,7 @@ class BoardIngestService:
                             net = expected
                         elif abs(float(net) - expected) > 0.05:
                             failed.append(
-                                f"{group_key}:{name}: net_inflow={net} != inflow-outflow={expected:.4f}")
+                                f"{display_key}:{name}: net_inflow={net} != inflow-outflow={expected:.4f}")
                             continue
                     matched.append({
                         "board_code": code, "snapshot_date": sdate, "period": period,
@@ -579,7 +586,7 @@ class BoardIngestService:
                 if ctx:
                     ctx.log(f"资金流 {board_type}/{period}：匹配 {len(matched)} 行"
                             f"（未匹配 {len(unmatched)}）")
-                if not any(x.startswith(group_key + ":") for x in failed):
+                if not any(x.startswith(display_key + ":") for x in failed):
                     done_keys.add(group_key)
                     if ctx:
                         ctx.set_phase("board_fund_flow", done=len(done_keys), total=total_groups,
@@ -639,9 +646,11 @@ class BoardIngestService:
             "'$.board_type')))")
         seen = {(x["board_type"], x["name"]) for x in items}
         for board_type, name in seen:
+            # 幂等：同名同类型的未匹配 issue 已存在（open/fixing/ignored）不重复建——
+            # ignored 豁免对齐 board_index_gap/member_incomplete：用户标记正常后重采不得翻回 open。
             existing = int(self.c.query_df(
                 "SELECT count(*) AS n FROM data_quality_issue "
-                "WHERE issue_type='board_fund_unmatched' AND status IN ('open','fixing') "
+                "WHERE issue_type='board_fund_unmatched' AND status IN ('open','fixing','ignored') "
                 "AND json_extract_string(try_cast(detail AS JSON), '$.name')=? "
                 "AND COALESCE(json_extract_string(try_cast(detail AS JSON), '$.board_type'), ?)=?",
                 [name, board_type, board_type]).iloc[0]["n"])
@@ -653,9 +662,9 @@ class BoardIngestService:
                 "INSERT INTO data_quality_issue "
                 "(id, code, trade_date, issue_type, severity, status, "
                 "detail, detected_at, fix_task_id) "
-                "VALUES (?, ?, ?, 'board_fund_unmatched', 'mid', "
+                "VALUES (?, ?, ?, 'board_fund_unmatched', ?, "
                 "'open', ?, now(), NULL)",
-                [issue_id, None, sdate,
+                [issue_id, None, sdate, severity_for("board_fund_unmatched"),
                  json.dumps({"name": name, "board_type": board_type}, ensure_ascii=False)])
 
     def _write_incomplete_quality(self, code: str, sdate: date, reason: str) -> None:
@@ -676,7 +685,8 @@ class BoardIngestService:
             "INSERT INTO data_quality_issue "
             "(id, code, trade_date, issue_type, severity, status, "
             "detail, detected_at, fix_task_id) "
-            "VALUES (?, ?, ?, 'board_member_incomplete', 'mid', "
+            "VALUES (?, ?, ?, 'board_member_incomplete', ?, "
             "'open', ?, now(), NULL)",
-            [issue_id, code, sdate, json.dumps({"reason": reason, "snapshot_date": sdate.isoformat()},
-                                               ensure_ascii=False)])
+            [issue_id, code, sdate, severity_for("board_member_incomplete"),
+             json.dumps({"reason": reason, "snapshot_date": sdate.isoformat()},
+                        ensure_ascii=False)])

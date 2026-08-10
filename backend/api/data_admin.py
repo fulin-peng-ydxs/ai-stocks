@@ -445,7 +445,7 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         it = r.get("issue_type")
         detail = r.get("detail")
         if nm is None or pd.isna(nm) or not str(nm).strip():
-            if it == "board_member_incomplete" and r.get("code"):
+            if it in ("board_member_incomplete", "board_index_gap") and r.get("code"):
                 nm = board_names.get(str(r["code"]), "")
             elif it == "board_fund_unmatched" and isinstance(detail, str) and detail.strip():
                 try:

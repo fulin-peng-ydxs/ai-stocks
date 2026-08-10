@@ -345,6 +345,10 @@ class ScheduledJobService:
             if mode not in ("update", "backfill"):
                 raise ValueError("板块定时采集模式仅支持 update/backfill")
             normalized_params["mode"] = mode
+            # board_type 提前白名单校验（避免非法值留到运行期才在 ingest_board 抛错）
+            bt = normalized_params.get("board_type")
+            if bt is not None and bt not in ("concept", "industry"):
+                raise ValueError("板块定时采集的 board_type 仅支持 concept/industry")
         if freq_type not in _FREQ_TYPES:
             raise ValueError(f"未知频率类型: {freq_type}（可选 {_FREQ_TYPES}）")
         compile_trigger(freq_type, freq_config)   # 提前校验频率配置合法

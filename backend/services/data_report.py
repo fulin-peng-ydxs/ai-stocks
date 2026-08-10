@@ -96,12 +96,15 @@ class DataIntegrityReport:
         cols = ["code", "name", "latest_date", "is_fresh", "mv_ok", "mv_detail",
                 "mv_gap_days", "mv_gap_lo", "mv_gap_hi", "gap_days", "gap_lo",
                 "gap_hi", "stale_days", "stale_lo", "l1_open", "l3_open", "open_total"]
-        # 数据变更签名缓存：同一页多接口复用，任一数据变更即失效
+        # 数据变更签名缓存：同一页多接口复用，任一数据变更即失效。
+        # openi 只数个股 issue 类型（L1-L4），排除板块 issue（code=board_code 不参与个股 frame）——
+        # 板块采集写 fund/member 问题不应击穿个股覆盖帧缓存。
         sig = self.c.query_df(
             "SELECT (SELECT max(trade_date) FROM daily_bar) latest, "
             "(SELECT count(*) FROM daily_bar) bars, "
             "(SELECT count(*) FROM daily_metrics) metrics, "
-            "(SELECT count(*) FROM data_quality_issue WHERE status='open') openi, "
+            "(SELECT count(*) FROM data_quality_issue WHERE status='open' "
+            "   AND issue_type NOT IN ('board_index_gap','board_member_incomplete','board_fund_unmatched')) openi, "
             "(SELECT count(*) FROM stock_suspension) susp, "
             "(SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL OR float_mv IS NULL) mvnull"
         ).iloc[0]
@@ -159,7 +162,9 @@ class DataIntegrityReport:
             "SELECT code, count(*) tot, "
             "count(*) FILTER (WHERE issue_type IN ('null_close','ohl_repaired')) l1, "
             "count(*) FILTER (WHERE issue_type IN ('abnormal_change','adj_jump')) l3 "
-            "FROM data_quality_issue WHERE status='open' GROUP BY code")
+            "FROM data_quality_issue WHERE status='open' "
+            "AND issue_type NOT IN ('board_index_gap','board_member_incomplete','board_fund_unmatched') "
+            "GROUP BY code")
         iss_map = {r["code"]: (int(r["tot"]), int(r["l1"]), int(r["l3"])) for _, r in iss.iterrows()}
         stocks = self.c.query_df("SELECT code, name, list_date FROM stock_basic WHERE delist_date IS NULL")
         bars = self.c.query_df("SELECT code, trade_date FROM daily_bar WHERE trade_date >= ?", [win_lo])
@@ -446,14 +451,15 @@ class DataIntegrityReport:
         """四层统一质检：L2 字段契约 / L3 正确性 / L4 覆盖鲜活，写 data_quality_issue。
 
         L1（入库闸门）由采集即时记录，质检不重复扫；这里覆盖立即质检 + 每日自动任务质检步（同一方法）。
-        幂等（DM-D20）：每次扫描前清掉上轮 **未解决** 的自动扫描类问题（L2/L3/L4），再写当前快照；
+        幂等（DM-D20）：扫描把上轮 **未解决** 的自动扫描类问题（L2/L3/L4）替换为当前快照，
         已 resolved/ignored 的不动 → 反复跑收敛不堆积。停牌（已确认入 stock_suspension）不计入缺口。
+
+        失败保留语义（对齐 scan_board_quality）：DELETE + 全部 INSERT 在同一事务内原子执行，
+        扫描中途失败不提交，旧问题保留。事务块内计算持写锁——质检扫描本身全局互斥（verify
+        任务独占，无并发写），与板块 scan 的事务替换语义一致。
         """
         from backend.dataquality.checker import SCAN_ISSUE_TYPES
         ph = ",".join("?" * len(SCAN_ISSUE_TYPES))
-        self.c.execute(
-            f"DELETE FROM data_quality_issue WHERE status='open' AND issue_type IN ({ph})",
-            list(SCAN_ISSUE_TYPES))
         # 已「标记为正常/忽略」的不再上报（DM-D22）：L3 按 (股,类型,日期) 精确豁免；
         # L2/L4 按 (股,类型) 整体豁免（缺口/滞后/市值是状态而非单日事件）。
         ig = self.c.query_df(
@@ -463,70 +469,75 @@ class DataIntegrityReport:
             ig_coarse.add((r["code"], r["issue_type"]))
             td = None if pd.isna(r["trade_date"]) else str(pd.Timestamp(r["trade_date"]).date())
             ig_exact.add((r["code"], r["issue_type"], td))
-        # L3：异常涨跌幅（向量化，关联板块上限）
-        df = self.c.query_df(
-            """
-            SELECT *
-            FROM (
-                SELECT b.code, b.trade_date, b.pre_close,
-                       abs(b.close / b.pre_close - 1) AS chg,
-                       COALESCE(sb.price_limit_pct, 0.10) AS lim,
-                       sb.name,
-                       sb.delist_date,
-                       b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
-                           AS gap_days,
-                       CASE
-                           WHEN sb.list_date IS NOT NULL
-                                AND min(b.trade_date) OVER (PARTITION BY b.code)
-                                    <= sb.list_date + INTERVAL 30 DAY
-                           THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
-                           ELSE NULL
-                       END AS listing_trade_seq
-                FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
-                WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
-            ) t
-            """)
-        df = df[self._active_l3_mask(df)]
-        bad = df[df["chg"] > df["lim"] + (0.011 / df["pre_close"]).clip(lower=0.005)]
-        ab_rows = [
-            {"code": r["code"], "trade_date": r["trade_date"], "issue_type": "abnormal_change",
-             "detail": f"涨跌幅 {r['chg']*100:.1f}% 超上限 {r['lim']*100:.0f}%"}
-            for _, r in bad.iterrows()
-            if (r["code"], "abnormal_change", str(pd.Timestamp(r["trade_date"]).date())) not in ig_exact]
-        self._insert_issues(ab_rows)
-        adj = self._scan_adj_jump(ignored_exact=ig_exact)
-        # L2 + L4：来自统一的覆盖鲜活全景（与 quality_model/stock_quality 同口径）
-        frame, _ = self._coverage_frame(gap_window_days)
-        l2 = l4_gap = l4_stale = 0
-        rows = []
-        for _, r in frame.iterrows():
-            code = r["code"]
-            if not r["mv_ok"] and (code, "mv_missing") not in ig_coarse:
-                rows.append({"code": code, "issue_type": "mv_missing",
-                             "detail": f"{r['mv_detail']}（字段契约不全，需补估值/市值数据）"})
-                l2 += 1
-            if int(r["gap_days"]) > 0 and (code, "data_gap") not in ig_coarse:
-                rows.append({"code": code, "trade_date": r["gap_lo"], "issue_type": "data_gap",
-                             "detail": f"近{gap_window_days}个交易日内 {int(r['gap_days'])} 天无行情"
-                                       f"（疑似漏采，待重采确认）：{r['gap_lo']}~{r['gap_hi']}"})
-                l4_gap += 1
-            if int(r["stale_days"]) > 0 and (code, "stale") not in ig_coarse:
-                rows.append({"code": code, "trade_date": r["latest_date"], "issue_type": "stale",
-                             "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
-                                       f"（自 {r['stale_lo']} 起）"})
-                l4_stale += 1
-        # L2 逐日市值缺口：在市股「有日线但市值字段为空/缺行」的近端缺口，按 code 聚合一条
-        # （detail 写缺失区间）。直接读同一份 frame 的 mv_gap_days（与概览/逐股 L2 完全统一，
-        # 同窗口同数据），命中多少写多少——与概览口径一致，台账不再静默。
-        l2_gap = 0
-        for _, r in frame.iterrows():
-            code = r["code"]
-            if bool(r["mv_ok"]) and int(r["mv_gap_days"]) > 0 and (code, "mv_gap") not in ig_coarse:
-                rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
-                             "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天市值字段缺口"
-                                       f"（需补市值）：{r['mv_detail']}"})
-                l2_gap += 1
-        self._insert_issues(rows)
+        with self.c.transaction():
+            # 原子替换：DELETE 与后续 INSERT 同一事务，失败回滚保留旧问题（对齐 scan_board_quality）
+            self.c.execute(
+                f"DELETE FROM data_quality_issue WHERE status='open' AND issue_type IN ({ph})",
+                list(SCAN_ISSUE_TYPES))
+            # L3：异常涨跌幅（向量化，关联板块上限）
+            df = self.c.query_df(
+                """
+                SELECT *
+                FROM (
+                    SELECT b.code, b.trade_date, b.pre_close,
+                           abs(b.close / b.pre_close - 1) AS chg,
+                           COALESCE(sb.price_limit_pct, 0.10) AS lim,
+                           sb.name,
+                           sb.delist_date,
+                           b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                               AS gap_days,
+                           CASE
+                               WHEN sb.list_date IS NOT NULL
+                                    AND min(b.trade_date) OVER (PARTITION BY b.code)
+                                        <= sb.list_date + INTERVAL 30 DAY
+                               THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                               ELSE NULL
+                           END AS listing_trade_seq
+                    FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
+                    WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
+                ) t
+                """)
+            df = df[self._active_l3_mask(df)]
+            bad = df[df["chg"] > df["lim"] + (0.011 / df["pre_close"]).clip(lower=0.005)]
+            ab_rows = [
+                {"code": r["code"], "trade_date": r["trade_date"], "issue_type": "abnormal_change",
+                 "detail": f"涨跌幅 {r['chg']*100:.1f}% 超上限 {r['lim']*100:.0f}%"}
+                for _, r in bad.iterrows()
+                if (r["code"], "abnormal_change", str(pd.Timestamp(r["trade_date"]).date())) not in ig_exact]
+            self._insert_issues(ab_rows)
+            adj = self._scan_adj_jump(ignored_exact=ig_exact)
+            # L2 + L4：来自统一的覆盖鲜活全景（与 quality_model/stock_quality 同口径）
+            frame, _ = self._coverage_frame(gap_window_days)
+            l2 = l4_gap = l4_stale = 0
+            rows = []
+            for _, r in frame.iterrows():
+                code = r["code"]
+                if not r["mv_ok"] and (code, "mv_missing") not in ig_coarse:
+                    rows.append({"code": code, "issue_type": "mv_missing",
+                                 "detail": f"{r['mv_detail']}（字段契约不全，需补估值/市值数据）"})
+                    l2 += 1
+                if int(r["gap_days"]) > 0 and (code, "data_gap") not in ig_coarse:
+                    rows.append({"code": code, "trade_date": r["gap_lo"], "issue_type": "data_gap",
+                                 "detail": f"近{gap_window_days}个交易日内 {int(r['gap_days'])} 天无行情"
+                                           f"（疑似漏采，待重采确认）：{r['gap_lo']}~{r['gap_hi']}"})
+                    l4_gap += 1
+                if int(r["stale_days"]) > 0 and (code, "stale") not in ig_coarse:
+                    rows.append({"code": code, "trade_date": r["latest_date"], "issue_type": "stale",
+                                 "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
+                                           f"（自 {r['stale_lo']} 起）"})
+                    l4_stale += 1
+            # L2 逐日市值缺口：在市股「有日线但市值字段为空/缺行」的近端缺口，按 code 聚合一条
+            # （detail 写缺失区间）。直接读同一份 frame 的 mv_gap_days（与概览/逐股 L2 完全统一，
+            # 同窗口同数据），命中多少写多少——与概览口径一致，台账不再静默。
+            l2_gap = 0
+            for _, r in frame.iterrows():
+                code = r["code"]
+                if bool(r["mv_ok"]) and int(r["mv_gap_days"]) > 0 and (code, "mv_gap") not in ig_coarse:
+                    rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
+                                 "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天市值字段缺口"
+                                           f"（需补市值）：{r['mv_detail']}"})
+                    l2_gap += 1
+            self._insert_issues(rows)
         return {"abnormal_change_rows": len(ab_rows), "adj_jump_rows": adj,
                 "mv_missing_rows": l2, "mv_gap_rows": l2_gap,
                 "data_gap_rows": l4_gap, "stale_rows": l4_stale}
@@ -679,7 +690,13 @@ class DataIntegrityReport:
             actionable = (ratio > 0.5) & self._active_l3_mask(df) & (gap_days.fillna(0) <= 30)
             return not bool(actionable.any())
         if issue_type == "board_index_gap":
-            # 板块指数缺口复检：该板块 board_bar 已到全局最新交易日
+            # 板块指数缺口复检：与 scan_board_quality 扫描口径一致——只针对 has_bar 板块。
+            # has_bar=false（源端无该板块指数能力）说明本就不该有指数，问题可收敛为已解决；
+            # has_bar=true 才要求 board_bar 已到全局最新交易日。
+            has_bar = self._scalar(
+                "SELECT has_bar FROM board_dict WHERE board_code=?", [code])
+            if has_bar is None or not bool(has_bar):
+                return True
             latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
             if latest is None:
                 return False
