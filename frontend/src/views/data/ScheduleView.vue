@@ -47,8 +47,15 @@ const {
   componentLayerValuesOf,
 } = useRemoteLayoutConfig(scheduleLayout)
 
-// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+// 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+
+// 表格列显隐/边框消费（对齐 QualityView 模式）：字段由 pageRegistry.componentMeta.columns 提供候选
+const jobHiddenColumns = computed<string[]>(() => (componentValueOf('jobTable', 'hiddenColumns') as string[]) ?? [])
+const sourceHiddenColumns = computed<string[]>(() => (componentValueOf('sourceTable', 'hiddenColumns') as string[]) ?? [])
+function jobColVisible(key: string): boolean { return !jobHiddenColumns.value.includes(key) }
+function sourceColVisible(key: string): boolean { return !sourceHiddenColumns.value.includes(key) }
+function tableBorder(slotId: string): boolean { return componentValueOf(slotId, 'border') === true }
 
 const loading = ref(true)
 const loadError = ref('')
@@ -368,28 +375,28 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           retry
           @retry="load"
         />
-        <AppDataTable :data="jobs" size="small" class="jobs-tbl" :loading="loading">
-          <AppTableColumn label="名称" prop="name" show-overflow-tooltip />
-          <AppTableColumn label="任务类型">
+        <AppDataTable :data="jobs" size="small" class="jobs-tbl" :loading="loading" :border="tableBorder('jobTable')">
+          <AppTableColumn v-if="jobColVisible('name')" label="名称" prop="name" show-overflow-tooltip />
+          <AppTableColumn v-if="jobColVisible('taskType')" label="任务类型">
             <template #default="{ row }">{{ taskDisplayLabel(row.task_type, row.params) }}</template>
           </AppTableColumn>
-          <AppTableColumn label="频率" prop="freq_text" show-overflow-tooltip />
-          <AppTableColumn label="仅交易日" align="center">
+          <AppTableColumn v-if="jobColVisible('freq')" label="频率" prop="freq_text" show-overflow-tooltip />
+          <AppTableColumn v-if="jobColVisible('tradingDay')" label="仅交易日" align="center">
             <template #default="{ row }">
               <el-tag :type="row.trading_day_only ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.trading_day_only ? '是' : '否' }}
               </el-tag>
             </template>
           </AppTableColumn>
-          <AppTableColumn label="启用" align="center">
+          <AppTableColumn v-if="jobColVisible('enabled')" label="启用" align="center">
             <template #default="{ row }">
               <el-switch v-permission="'data-schedule:manage'" :model-value="row.enabled" :loading="togglingId === row.id" @change="toggleEnabled(row)" />
             </template>
           </AppTableColumn>
-          <AppTableColumn label="下次触发">
+          <AppTableColumn v-if="jobColVisible('nextRun')" label="下次触发">
             <template #default="{ row }">{{ row.enabled ? fmtTime(row.next_run_time) : '—' }}</template>
           </AppTableColumn>
-          <AppTableColumn label="最近触发">
+          <AppTableColumn v-if="jobColVisible('lastRun')" label="最近触发">
             <template #default="{ row }">{{ fmtTime(row.last_run_at) }}</template>
           </AppTableColumn>
           <AppTableColumn label="操作" fixed="right">
@@ -431,18 +438,18 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           retry
           @retry="loadSources(false)"
         />
-        <AppDataTable :data="displaySources" size="small" class="srcs-tbl" embedded>
-          <AppTableColumn label="数据源" prop="source">
+        <AppDataTable :data="displaySources" size="small" class="srcs-tbl" embedded :border="tableBorder('sourceTable')">
+          <AppTableColumn v-if="sourceColVisible('source')" label="数据源" prop="source">
             <template #default="{ row }">{{ SOURCE_LABEL[row.source] ?? row.source }}</template>
           </AppTableColumn>
-          <AppTableColumn label="角色" align="center">
+          <AppTableColumn v-if="sourceColVisible('role')" label="角色" align="center">
             <template #default="{ row }">
               <el-tag size="small" effect="plain" :type="row.role === 'primary' ? 'primary' : 'info'">
                 {{ sourceRoleLabel(row.role) }}
               </el-tag>
             </template>
           </AppTableColumn>
-          <AppTableColumn label="状态" align="center">
+          <AppTableColumn v-if="sourceColVisible('status')" label="状态" align="center">
             <template #default="{ row }">
               <span class="src-status">
                 <span class="dot" :class="row.up === true ? 'up' : row.up === false ? 'down' : 'unknown'" />
@@ -450,10 +457,10 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
               </span>
             </template>
           </AppTableColumn>
-          <AppTableColumn label="最近成功">
+          <AppTableColumn v-if="sourceColVisible('lastSuccess')" label="最近成功">
             <template #default="{ row }">{{ fmtTime(row.last_success_at) }}</template>
           </AppTableColumn>
-          <AppTableColumn label="超时">
+          <AppTableColumn v-if="sourceColVisible('timeout')" label="超时">
             <template #default="{ row }">{{ row.timeout_sec }}s</template>
           </AppTableColumn>
           <AppTableColumn label="操作" fixed="right">

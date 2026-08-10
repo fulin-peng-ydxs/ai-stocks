@@ -758,7 +758,33 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/data/schedule',
     archetype: 'detail',
     responsiveProfile: 'single-column',
-    supportsComponentConfig: false,
+    supportsComponentConfig: true,
+    consumedComponentFields: {
+      jobTable: ['border', 'hiddenColumns'],
+      sourceTable: ['border', 'hiddenColumns'],
+    },
+    componentMeta: {
+      jobTable: {
+        columns: [
+          { key: 'name', label: '名称' },
+          { key: 'taskType', label: '任务类型' },
+          { key: 'freq', label: '频率' },
+          { key: 'tradingDay', label: '仅交易日' },
+          { key: 'enabled', label: '启用' },
+          { key: 'nextRun', label: '下次触发' },
+          { key: 'lastRun', label: '最近触发' },
+        ],
+      },
+      sourceTable: {
+        columns: [
+          { key: 'source', label: '数据源' },
+          { key: 'role', label: '角色' },
+          { key: 'status', label: '状态' },
+          { key: 'lastSuccess', label: '最近成功' },
+          { key: 'timeout', label: '超时' },
+        ],
+      },
+    },
     layout: {
       pageKey: 'data-schedule',
       archetype: 'detail',
@@ -768,6 +794,8 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', order: 1 },
+        { id: 'jobTable', component: 'data-table', region: 'main', parentId: 'body', label: '定时任务', order: 2 },
+        { id: 'sourceTable', component: 'data-table', region: 'main', parentId: 'body', label: '数据源健康', order: 3 },
       ],
       editable: [densityKnob()],
     },
