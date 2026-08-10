@@ -1015,6 +1015,13 @@ def _h_board(params: dict, ctx: TaskContext) -> dict:
         ingest_kwargs["only"] = only
     if params.get("limit") is not None:
         ingest_kwargs["limit"] = params["limit"]
+    # force_members 透传（任务 API/调度参数指定时强制刷新全量成分，绕过周频跳过）：
+    # None=按 mode/board_codes 自动；bool/字符串（"1"/"true"）规范化。
+    fm = params.get("force_members")
+    if fm is not None:
+        if isinstance(fm, str):
+            fm = fm.strip().lower() in ("1", "true", "yes", "on")
+        ingest_kwargs["force_members"] = bool(fm)
     result = IngestionService().ingest_board(**ingest_kwargs)
     if result.get("failed"):
         # 部分失败保留 checkpoint 供续跑补齐（未完成板块后续重跑）；失败项已在 data_update_log

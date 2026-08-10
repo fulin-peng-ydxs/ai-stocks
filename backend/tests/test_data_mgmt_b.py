@@ -336,6 +336,41 @@ def test_board_task_create_and_run(client, monkeypatch):
     assert calls["n"] == 1
 
 
+def test_board_task_force_members_passthrough(client, monkeypatch):
+    """force_members 参数从任务 params 透传到 ingest_board（异步强制刷新成分）。"""
+    from backend.services import ingest as ingest_mod
+    from backend.services.async_task import AsyncTaskService
+
+    captured: dict = {}
+
+    def fake_ingest_board(self, ctx=None, board_type=None, board_codes=None,
+                          mode="update", force_members=None):
+        captured["force_members"] = force_members
+        return {"dict": {"total": 465}, "members": {}, "bar": {"rows": 0},
+                "fund_flow": {"rows": 0}, "failed": []}
+
+    monkeypatch.setattr(ingest_mod.IngestionService, "ingest_board", fake_ingest_board, raising=True)
+    monkeypatch.setattr(ingest_mod.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    svc = AsyncTaskService(client)
+    # 显式传 force_members=true → 透传 True；未传 → 不设该键（None 语义由 ingest_board 按 mode/codes 解析）
+    tid = svc.create("board", {"force_members": True})
+    t = _wait(svc, tid)
+    assert t["status"] == "done"
+    assert captured["force_members"] is True
+
+    captured.clear()
+    tid2 = svc.create("board", {"force_members": "true"})  # 字符串规范化
+    t2 = _wait(svc, tid2)
+    assert t2["status"] == "done"
+    assert captured["force_members"] is True
+
+    captured.clear()
+    tid3 = svc.create("board", {})
+    t3 = _wait(svc, tid3)
+    assert t3["status"] == "done"
+    assert captured["force_members"] is None  # 未传 → 不设键，ingest_board 按 mode/codes 自动解析
+
+
 def test_board_task_write_mutex(client, monkeypatch):
     """board 是写任务：运行中禁止并发创建其他写任务。"""
     import time

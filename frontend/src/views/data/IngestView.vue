@@ -209,8 +209,8 @@ function taskDuration(t: AsyncTask): string {
 // ── 更多选项对话框 ──
 const optDlg = ref(false)
 const optType = ref<TaskType>('ingest_date')
-const optForm = ref<{ codes: string[]; date_start: string; date_end: string; years: number | null; mode: 'backfill' | 'update' }>(
-  { codes: [], date_start: '', date_end: '', years: null, mode: 'update' })
+const optForm = ref<{ codes: string[]; date_start: string; date_end: string; years: number | null; mode: 'backfill' | 'update'; force_members: boolean }>(
+  { codes: [], date_start: '', date_end: '', years: null, mode: 'update', force_members: false })
 
 // 指定股票/板块：下拉多选，输入代码或名称远程搜索（DM-D17）。
 // optType=board 搜板块（board_dict 代码/名称）；其余搜股票。
@@ -234,7 +234,7 @@ async function remoteCode(q: string) {
 
 function openOptions(type: TaskType) {
   optType.value = type
-  optForm.value = { codes: [], date_start: '', date_end: '', years: null, mode: 'update' }
+  optForm.value = { codes: [], date_start: '', date_end: '', years: null, mode: 'update', force_members: false }
   codeOptions.value = []
   optDlg.value = true
 }
@@ -246,7 +246,7 @@ function openFromQuery() {
     optType.value = 'board'
     optForm.value = {
       codes: [], date_start: '', date_end: '', years: null,
-      mode: q.mode === 'backfill' ? 'backfill' : 'update',
+      mode: q.mode === 'backfill' ? 'backfill' : 'update', force_members: false,
     }
     codeOptions.value = []
     optDlg.value = true
@@ -257,7 +257,7 @@ function openFromQuery() {
   const start = typeof q.start === 'string' ? q.start : ''
   const end = typeof q.end === 'string' ? q.end : start
   optType.value = 'ingest_date'
-  optForm.value = { codes: [code], date_start: start, date_end: end, years: null, mode: 'backfill' }
+  optForm.value = { codes: [code], date_start: start, date_end: end, years: null, mode: 'backfill', force_members: false }
   codeOptions.value = [{ code, label: code }]   // 让多选框显示该代码
   optDlg.value = true
   if (start) ElMessage.info(`已带入 ${code} 的待补区间 ${start}~${end}，点「执行」即重采`)
@@ -278,6 +278,7 @@ async function submitOptions() {
     if (!codes.length) { ElMessage.warning('请填写股票代码'); return }
   } else if (optType.value === 'board') {
     params.mode = f.mode  // 板块采集：增量（默认）/ 全量回填
+    if (f.force_members) params.force_members = true  // 强制刷新全部成分（绕过周频跳过）
   }
   optDlg.value = false
   await submit(optType.value, params)
@@ -838,6 +839,12 @@ watch(
             <el-radio value="backfill">全量回填</el-radio>
           </el-radio-group>
           <span class="hint">增量：指数补最近交易日、资金流只采即时、成分股按周频跳过未到期板块；全量回填：指数补 2024 起、资金流全周期、成分股强制全量</span>
+        </el-form-item>
+        <el-form-item v-if="optType === 'board'" label="成分刷新">
+          <el-checkbox v-model="optForm.force_members" data-testid="ingest-board-force-members">
+            强制刷新全部板块成分（绕过周频间隔）
+          </el-checkbox>
+          <span class="hint">默认按周频跳过未到期板块；勾选后即使未满间隔也全量重拉成分快照</span>
         </el-form-item>
         <el-form-item :label="optType === 'board' ? '指定板块' : '指定股票'">
           <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags
