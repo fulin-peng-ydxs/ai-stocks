@@ -83,6 +83,7 @@
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) |
 | 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
 | 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
+| 🧩 **板块采集** | `views/data/*`（板块数据 tab / 采集 / 质量 / 调度） | `/api/sectors/*`, `/api/data/*` | 同花顺板块数据（概念/行业）直连采集：字典/成分/指数/资金流，只进不出成分模型 + 周频控制 + 三类质检修复闭环；`/sectors` 只读 API 已交付（`sectors:view` 权限），前端板块行情页待建 | [board-collection.md](agent-works/architecture/board-collection.md) |
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线 + T+1 真实撮合买卖；一局产出评分/评级/资金曲线；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
 > `/system/*` 是系统管理域，包含配置管理、布局配置、用户、角色、菜单/功能点和租户。评分规则与买卖指标是业务可授权子页；技术指标、系统设置、角色、菜单/功能点、租户和全局布局配置保持 system-only；用户管理可按 `user:*` 功能码授权给租户管理员，但服务层仍把非 system 用户限制在本租户。
