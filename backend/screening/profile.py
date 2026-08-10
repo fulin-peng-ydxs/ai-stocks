@@ -80,10 +80,14 @@ class ProfileRepo:
         out["published_at"] = str(out["published_at"]) if out.get("published_at") else None
         return out
 
-    def save(self, pid: str, name: str, expression: dict, params: dict | None = None,
+    def save(self, pid: str | None, name: str, expression: dict, params: dict | None = None,
              is_preset: bool = False) -> int:
         """保存/更新方案。**仅当条件/名称实质变更才 version+1 并归档历史**；
         内容未变则原版本返回（避免重复保存/重跑 seed 导致版本虚增）。返回当前版本号。"""
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("请填写方案名称")
+        pid = (pid or "").strip() or self._make_id(name)
         validate_ast(expression)
         expr_json = json.dumps(expression, ensure_ascii=False)
         cur = self.pg.query_df(
@@ -264,7 +268,7 @@ class ProfileRepo:
             return None
         return self.get_visible(profile_ref_or_id)
 
-    def _make_copy_id(self, name: str) -> str:
+    def _make_id(self, name: str) -> str:
         base = prefixed_readable_id(name, prefix="screen_")
         new_id = base
         seq = 2
@@ -272,6 +276,17 @@ class ProfileRepo:
             new_id = f"{base}_{seq}"
             seq += 1
         return new_id
+
+    def save_with_id(self, pid: str | None, name: str, expression: dict, params: dict | None = None,
+                     is_preset: bool = False) -> tuple[str, int]:
+        """保存/更新并返回 (id, version)；新建时 id 为空由名称自动生成（与评分/买卖一致）。"""
+        name = (name or "").strip()
+        pid = (pid or "").strip() or self._make_id(name)
+        version = self.save(pid, name, expression, params, is_preset=is_preset)
+        return pid, version
+
+    def _make_copy_id(self, name: str) -> str:
+        return self._make_id(name)
 
     def _insert_copy(self, new_id: str, name: str, expression: dict, params: dict) -> bool:
         """原子插入一条全新 private 副本（version=1）；id 已存在则不写并返回 False，交上层换 id 重试。

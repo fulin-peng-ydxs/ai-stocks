@@ -41,3 +41,26 @@ def test_screen_profile_isolation_and_same_id(pg):
         for o in (TEST_OWNER, "pytest_other"):
             pg.execute("DELETE FROM screen_profile WHERE id='DUP' AND owner_user_id=%s", [o])
             pg.execute("DELETE FROM screen_profile_version WHERE id='DUP' AND owner_user_id=%s", [o])
+
+
+def test_screen_profile_save_with_id_auto_generates(pg):
+    """新建时 id 为空由名称自动生成（与评分/买卖一致）；显式传 id 仍走原语义。"""
+    repo = ProfileRepo(pg=pg, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    pid, v = repo.save_with_id(None, "自动生成方案", _EXPR)
+    assert pid.startswith("screen_") and v == 1
+    got = repo.get(pid)
+    assert got is not None and got["name"] == "自动生成方案"
+    # 同名再存 → 撞库自动后缀
+    pid2, v2 = repo.save_with_id(None, "自动生成方案", _EXPR)
+    assert pid2 != pid and pid2.startswith("screen_") and v2 == 1
+    # 明确传 id 仍走原语义
+    assert repo.save_with_id("fixed_id", "固定标识", _EXPR)[0] == "fixed_id"
+    try:
+        pg.execute("DELETE FROM screen_profile_version WHERE id=%s AND owner_user_id=%s", [pid, TEST_OWNER])
+        pg.execute("DELETE FROM screen_profile WHERE id=%s AND owner_user_id=%s", [pid, TEST_OWNER])
+        pg.execute("DELETE FROM screen_profile_version WHERE id=%s AND owner_user_id=%s", [pid2, TEST_OWNER])
+        pg.execute("DELETE FROM screen_profile WHERE id=%s AND owner_user_id=%s", [pid2, TEST_OWNER])
+        pg.execute("DELETE FROM screen_profile WHERE id='fixed_id' AND owner_user_id=%s", [TEST_OWNER])
+    except Exception:
+        pass
+

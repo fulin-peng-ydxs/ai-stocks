@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api", tags=["screening"])
 
 
 class ProfileIn(BaseModel):
-    id: str
+    id: str | None = None
     name: str
     expression: dict
     params: dict | None = None
@@ -110,8 +110,11 @@ def upsert_profile(body: ProfileIn) -> ApiResponse:
         validate_ast(body.expression)
     except ConditionError as e:
         raise ValidationError(f"条件非法: {e}") from e
-    version = ProfileRepo().save(body.id, body.name, body.expression, body.params)
-    return ok({"id": body.id, "version": version}, msg="已保存")
+    try:
+        pid, version = ProfileRepo().save_with_id(body.id, body.name, body.expression, body.params)
+    except ValueError as e:
+        return err(400, str(e))
+    return ok({"id": pid, "version": version}, msg="已保存")
 
 
 @router.delete("/profiles/{pid}", response_model=ApiResponse,

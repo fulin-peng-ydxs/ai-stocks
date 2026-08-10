@@ -16,7 +16,7 @@ const TOOLBARS: Record<string, string> = {
   // 业务页（策略筛选）：运行 screen:run / 保存方案 screen-profile:save / 取消(非受控)
   business: `<div>
     <button class="b-run" v-permission="'screen:run'">运行筛选</button>
-    <button class="b-save" v-permission="'screen-profile:save'">保存为方案</button>
+    <button class="b-save" v-permission="'screen-profile:save'">保存</button>
     <button class="b-cancel">取消</button>
   </div>`,
   // 数据页（数据质量）：恢复 data-quality:fix / 质检 data-task:manage / 刷新(非受控)

@@ -1748,7 +1748,7 @@ async function openTradeChart(row: TradeRow) {
               选股方案
               <HelpTip title="选股方案 = 自定义策略入口" :width="360">
                 <p>决定<b>每天从哪些股票里挑</b>：选择方案后，只在命中该方案的股票里按评分取前 N 只；不选择时不额外限制范围，但仍会排除 ST，并继续执行评分和买入条件。</p>
-                <p style="margin:6px 0 0">想自定义策略？去<b>「策略筛选」页</b>写规则并「保存为方案」，这里就会出现可选。</p>
+                <p style="margin:6px 0 0">想自定义策略？去<b>「策略筛选」页</b>写规则并「保存」，这里就会出现可选。</p>
               </HelpTip>
             </template>
             <!-- 悬浮显示方案具体选股条件 -->

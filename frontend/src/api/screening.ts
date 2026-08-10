@@ -78,9 +78,9 @@ export function runScreen(body: {
   return http.post('/screen/run', body)
 }
 
-// 保存/更新筛选方案（实质变更才 版本+1）
+// 保存/更新筛选方案（实质变更才 版本+1）；id 为空则后端自动生成（新建）
 export function saveProfile(body: {
-  id: string
+  id?: string | null
   name: string
   expression: Record<string, unknown>
 }): Promise<{ id: string; version: number }> {

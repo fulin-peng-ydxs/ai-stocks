@@ -247,17 +247,26 @@ function parseAst(ast: Record<string, unknown>): { op: 'AND' | 'OR'; rows: Row[]
   return single ? { op: 'AND', rows: [single] } : null
 }
 
-// ── 已存/系统内置方案：载入到构建器 ──
-// R3/R5：方案选择统一走 AssetProfileSelect——下拉只加载「我的」（source=mine 纯 owner），
+// ── 已存/系统内置方案：载入到编辑器（R3/R5，list 形态与评分页对齐）──
+// R3/R5：方案选择统一走 AssetProfileSelect——列表只加载「我的」（source=mine 纯 owner），
 // 「搜索」入口打开共享搜索抽屉（系统内置/租户公开/全体公开），「加载查看」注入临时只读、
 // 「复制为我的」自动刷新并选中（组件内部闭环，本页不再维护列表/复制逻辑）。
-const loadId = ref('')
 const loadedProfile = ref<Profile | null>(null)
 const initLoading = ref(true)
 const initError = ref('')
 const profileLoading = ref(false)
 const profileError = ref('')
-let profileLoadSeq = 0
+let profileDetailSeq = 0
+// 详情加载失败时的目标项（错误块重试）
+let profileDetailAttempt = ''
+// 最后一次成功载入编辑器的方案 ref（失败回滚的目标）
+let profileLastAppliedRef = ''
+const curRef = ref('')
+const curId = ref('')
+const curVersion = ref<number | null>(null)
+const editId = ref('')
+const editName = ref('')
+const isNew = ref(false)
 const auth = useAuthStore()
 const visibilitySaving = ref(false)
 const profileReadonly = computed(() => !!loadedProfile.value?.readonly)
@@ -281,19 +290,23 @@ function browseScreenProfiles(params: AssetBrowseParams) {
 function copyAnyProfile(item: ProfileSummary) {
   return copyProfile(item.profile_ref || item.id)
 }
-async function loadSelectedProfile(id: string) {
-  const seq = ++profileLoadSeq
-  if (!id) {
-    loadedProfile.value = null
-    profileError.value = ''
-    profileLoading.value = false
-    return
-  }
+
+// 载入方案详情进编辑器（原子应用 + seq 竞态守卫 + 失败回滚，对齐评分页 selectProfile）。
+// 成功才整体写入编辑器，保证「选中项 == 编辑器内容」不错位。
+async function selectProfile(profileKey: string) {
+  if (!profileKey) return
+  const seq = ++profileDetailSeq
+  profileDetailAttempt = profileKey
   profileLoading.value = true
   profileError.value = ''
   try {
-    const p = await getProfile(id)
-    if (seq !== profileLoadSeq) return
+    const p = await getProfile(profileKey)
+    if (seq !== profileDetailSeq) return
+    curRef.value = p.profile_ref || profileKey
+    curId.value = p.id
+    curVersion.value = p.version
+    editId.value = p.id
+    editName.value = p.name
     loadedProfile.value = p
     const parsed = parseAst(p.expression || {})
     if (parsed) {
@@ -304,29 +317,50 @@ async function loadSelectedProfile(id: string) {
       complexAst.value = p.expression || {} // 嵌套结构：只读运行
       rows.value = []
     }
+    profileLastAppliedRef = curRef.value
+    isNew.value = false
   } catch (error) {
-    if (seq !== profileLoadSeq) return
-    loadedProfile.value = null
+    if (seq !== profileDetailSeq) return
+    // 失败回滚到最后成功载入的项，编辑器保留旧内容（避免「选中新方案、保存到旧方案」）
+    curRef.value = profileLastAppliedRef
     profileError.value = getErrorMessage(error, '筛选方案详情加载失败')
   } finally {
-    if (seq === profileLoadSeq) profileLoading.value = false
+    if (seq === profileDetailSeq) profileLoading.value = false
   }
 }
-watch(loadId, (id) => {
-  void loadSelectedProfile(id)
-})
-// 「加载查看」（R5/§7.0）：组件只设临时只读项 + emit loaded、不联动 update:modelValue（规避 ElSelect
-// 锁非持久 option 递归），故 loadId 不变、上方 watch 不触发。此处直接按 profile_ref 走 loadSelectedProfile
-// 页面级载入该公开方案详情（getProfile→get_visible 解析 opaque ref），readonly 由详情 readonly 字段驱动、
-// 构建区只读展示，不写入 mine 列表、不改 loadId（选择器外只读，同 ConfigView onScoreLoaded 口径）。
-function onProfileLoaded(item: ProfileSummary) {
-  void loadSelectedProfile(item.profile_ref || item.id)
+// 侧栏选择器选中变化（含「加载查看」注入的临时只读项）→ 载入编辑器
+function onScreenSelect(key: string) {
+  curRef.value = key
+  if (!key) return
+  void selectProfile(key)
 }
-function clearAll() {
+// 列表就绪（组件为列表唯一事实源）：有方案自动选中第一个；无方案进入新建态（保留初始化默认条件）
+function onScreenReady(list: ProfileSummary[]) {
+  if (list.length && !curRef.value) onScreenSelect(list[0].profile_ref || list[0].id)
+  else if (!list.length && !curRef.value) enterNewSession()
+}
+// 「加载查看」（R5/§7.0）：注入临时只读项 → 页面级载入编辑器只读展示（seq 守卫 + 失败回滚）
+function onScreenLoaded(item: ProfileSummary) {
+  onScreenSelect(item.profile_ref || item.id)
+}
+// 进入「新建」态：清空方案身份，保留当前构建器条件（列表为空时的初始态）
+function enterNewSession() {
+  curRef.value = ''
+  curId.value = ''
+  curVersion.value = null
+  editId.value = ''
+  editName.value = ''
+  loadedProfile.value = null
+  isNew.value = true
+  profileLastAppliedRef = ''
+  profileDetailAttempt = ''
+  profileError.value = ''
+}
+// 「新建方案」按钮：完全清空（身份 + 条件），从空白开始
+function newProfile() {
+  enterNewSession()
   rows.value = []
   complexAst.value = null
-  loadId.value = ''
-  loadedProfile.value = null
 }
 
 // ── 运行 / 结果 ──
@@ -358,7 +392,7 @@ async function run() {
   // 不清空 result：让旧结果留在 loading 遮罩下，避免闪回空态（结果区盒子保持不变）
   try {
     const r = await runScreen({
-      // 只读公开态（含「加载查看」，不改 loadId）按所查看方案的 profile_ref 运行，保证跑的是该方案口径
+      // 只读公开态（含「加载查看」，不改选中）按所查看方案的 profile_ref 运行，保证跑的是该方案口径
       // 而非当前可能脏改的表达式；get_visible 解析 opaque ref 后后端 fail-closed 校验可见性。
       ...(profileReadonly.value && loadedProfile.value
         ? { profile_id: loadedProfile.value.profile_ref || loadedProfile.value.id }
@@ -375,41 +409,40 @@ async function run() {
   }
 }
 
-// ── 保存为方案（实质变更才版本+1；载入的自定义方案可覆盖更新）──
-const saveVisible = ref(false)
-const saveName = ref('')
+// ── 保存（实质变更才版本+1；载入的自定义方案可覆盖更新；id 为空由后端自动生成）──
 const saving = ref(false)
-const canOverwrite = computed(() => !!loadedProfile.value && !loadedProfile.value.is_preset && !profileReadonly.value)
-const overwrite = ref(false)
-function openSave() {
-  if (profileReadonly.value) return ElMessage.warning('公开方案为只读，请先复制为自己的方案')
-  if (!buildAst()) return ElMessage.warning('请先添加条件')
-  saveName.value = canOverwrite.value ? loadedProfile.value!.name : ''
-  overwrite.value = canOverwrite.value
-  saveVisible.value = true
-}
-async function doSave() {
+async function save() {
+  if (profileReadonly.value) {
+    ElMessage.warning('公开方案为只读，请先复制为自己的方案')
+    return
+  }
   const expr = buildAst()
-  if (!saveName.value.trim()) return ElMessage.warning('请输入方案名称')
-  if (!expr) return ElMessage.warning('条件为空')
+  if (!editName.value.trim()) return ElMessage.warning('请填写方案名称')
+  if (!expr) return ElMessage.warning('请先添加条件')
   saving.value = true
   try {
-    const id = overwrite.value && canOverwrite.value && loadedProfile.value ? loadedProfile.value.id : 'custom_' + Date.now()
-    const r = await saveProfile({ id, name: saveName.value.trim(), expression: expr })
+    const r = await saveProfile({
+      id: editId.value || null,
+      name: editName.value.trim(),
+      expression: expr,
+    })
+    curVersion.value = r.version
     ElMessage.success(`已保存（v${r.version}）`)
-    saveVisible.value = false
+    isNew.value = false
+    editId.value = r.id
+    curId.value = r.id
+    // 先落到新标识再刷新列表：避免 reload→ready 在 curRef 为空时自动选中列表首项覆盖新建态
+    curRef.value = r.id
     const list = await profileSelectRef.value?.reload()
-    const saved = list?.find((p) => p.id === id)
-    loadId.value = saved ? (saved.profile_ref || saved.id) : id
-  } catch {
-    /* 统一弹错 */
+    const saved = list?.find((p) => p.id === r.id)
+    if (saved) curRef.value = saved.profile_ref || saved.id
   } finally {
     saving.value = false
   }
 }
 
 async function publishProfile(visibility: 'private' | 'tenant' | 'public') {
-  if (!loadId.value || profileReadonly.value || visibilitySaving.value) return
+  if (!curRef.value || profileReadonly.value || visibilitySaving.value) return
   if (visibility === profileVisibility.value) return
   if (visibility === 'tenant' && !canPublishTenant.value) {
     ElMessage.warning('无权公开到租户')
@@ -421,7 +454,7 @@ async function publishProfile(visibility: 'private' | 'tenant' | 'public') {
   }
   visibilitySaving.value = true
   try {
-    loadedProfile.value = await setProfileVisibility(loadId.value, visibility)
+    loadedProfile.value = await setProfileVisibility(curRef.value, visibility)
     ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
     await profileSelectRef.value?.reload()
   } finally {
@@ -430,31 +463,30 @@ async function publishProfile(visibility: 'private' | 'tenant' | 'public') {
 }
 // C8：复制由后端生成唯一 id、名称默认「原名 副本」，返回新标识供选中
 async function copyCurrentProfile() {
-  if (!loadId.value || !loadedProfile.value) return
-  const r = await copyProfile(loadId.value)
+  if (!curRef.value || !loadedProfile.value) return
+  const r = await copyProfile(curRef.value)
   ElMessage.success('已复制为我的方案')
   const list = await profileSelectRef.value?.reload()
   const copied = list?.find((p) => p.id === r.id)
-  loadId.value = copied ? (copied.profile_ref || copied.id) : (r.profile_ref || r.id)
+  onScreenSelect(copied ? (copied.profile_ref || copied.id) : (r.profile_ref || r.id))
 }
 
-// 删除自己的方案（readonly/公开态不可删，后端亦按归属 403）；删后清空编辑区并刷新 mine 列表
-async function removeCurrentProfile() {
-  if (!loadId.value || !loadedProfile.value || profileReadonly.value) return
-  await ElMessageBox.confirm(`确认删除方案「${loadedProfile.value.name}」？`, '提示', { type: 'warning' })
-  await deleteProfile(loadId.value)
+// 删除自己的方案（readonly/公开态不可删，后端亦按归属 403）；删后清空编辑器并刷新 mine 列表
+async function remove() {
+  if (!curRef.value || !loadedProfile.value || profileReadonly.value) return
+  await ElMessageBox.confirm(`确认删除方案「${editName.value}」？`, '提示', { type: 'warning' })
+  await deleteProfile(curRef.value)
   ElMessage.success('已删除')
-  // 先经组件 reload 刷新 mine 列表，再清空载入态（避免 watch(loadId) 误拉已删详情）
+  newProfile()
   await profileSelectRef.value?.reload()
-  clearAll()
 }
 
 // ── 历史版本 ──
 const verVisible = ref(false)
 const versions = ref<ProfileVersion[]>([])
 async function openVersions() {
-  if (!loadId.value) return
-  versions.value = (await getProfileVersions(loadId.value)).versions
+  if (!curRef.value) return
+  versions.value = (await getProfileVersions(curRef.value)).versions
   verVisible.value = true
 }
 // 恢复=仅把该历史版本载入编辑器（不写库）；用户确认后点「保存」才生成新版本
@@ -507,7 +539,6 @@ onMounted(initializeScreen)
 <template>
   <LayoutHost :layout="screenEffective">
     <template #action>
-    <div class="lh-action">
     <div class="page-head">
       <div class="page-head-actions" style="width: 100%; justify-content: space-between;">
         <h2 class="title-row">
@@ -521,7 +552,9 @@ onMounted(initializeScreen)
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
+    </template>
 
+    <template #main>
     <AppStateBlock
       v-if="initLoading"
       state="loading"
@@ -535,227 +568,233 @@ onMounted(initializeScreen)
       retry
       @retry="initializeScreen"
     />
-    <el-card v-else shadow="never" class="cond-card">
-      <!-- 载入我的方案 + 搜索系统内置/租户/全体公开（R3/R5/R14） -->
-      <div class="load-row">
-        <span class="hint">载入方案</span>
-        <AssetProfileSelect
-          ref="profileSelectRef"
-          v-model="loadId"
-          asset-label="筛选方案"
-          :fetch-mine="fetchMineProfiles"
-          :browse="browseScreenProfiles"
-          :copy-item="copyAnyProfile"
-          copy-permission="screen-profile:save"
-          view-permission="screen-profile:view"
-          placeholder="选我的筛选方案（可选）"
-          style="width: 400px"
-          @loaded="onProfileLoaded"
-        />
-        <span class="ver-link" v-if="loadedProfile" title="点击查看历史版本" @click="openVersions">v{{ loadedProfile.version }}</span>
-        <AssetVisibilityActions
-          v-if="loadedProfile"
-          :visibility="profileVisibility"
-          :readonly="profileReadonly"
-          :can-publish-tenant="canPublishTenant"
-          :can-publish-public="canPublishPublic"
-          :saving="visibilitySaving"
-          :copy-visible="profileReadonly"
-          copy-permission="screen-profile:save"
-          @publish="publishProfile"
-          @copy="copyCurrentProfile"
-        />
-        <el-button
-          v-if="loadedProfile && !profileReadonly && !loadedProfile.is_preset"
-          v-permission="'screen-profile:delete'"
-          type="danger"
-          plain
-          size="small"
-          @click="removeCurrentProfile"
-        >删除</el-button>
-        <el-button text size="small" @click="clearAll">清空</el-button>
-      </div>
-      <AppStateBlock
-        v-if="profileError"
-        state="error"
-        size="inline"
-        title="筛选方案详情加载失败"
-        :description="profileError"
-        retry
-        @retry="loadSelectedProfile(loadId)"
-      />
+    <div v-else class="screen-body">
+      <div class="screen-layout">
+        <!-- 方案列表（R3/R5/R7：统一选择器 list 形态，仅我的 + 搜索系统内置/租户/全体公开） -->
+        <aside class="prof-list">
+          <el-button type="primary" plain size="small" style="width: 100%" @click="newProfile">
+            <template #icon><el-icon><Plus /></el-icon></template>
+            新建方案
+          </el-button>
+          <AssetProfileSelect
+            ref="profileSelectRef"
+            mode="list"
+            :model-value="curRef"
+            asset-label="筛选方案"
+            :fetch-mine="fetchMineProfiles"
+            :browse="browseScreenProfiles"
+            :copy-item="copyAnyProfile"
+            copy-permission="screen-profile:save"
+            view-permission="screen-profile:view"
+            test-id="screen-profile-select"
+            @update:model-value="onScreenSelect"
+            @loaded="onScreenLoaded"
+            @ready="onScreenReady"
+          />
+        </aside>
 
-      <!-- 复杂嵌套方案：只读运行 -->
-      <el-alert
-        v-if="complexAst"
-        type="info"
-        :closable="false"
-        show-icon
-        title="该方案含嵌套分组，构建器暂以只读方式运行；如需改写请清空后重建。"
-        style="margin: 10px 0"
-      />
-      <pre v-if="complexAst" class="ast">{{ JSON.stringify(complexAst, null, 2) }}</pre>
-
-      <!-- 融合构建器 -->
-      <template v-else>
-        <div class="b-group">
-          <span class="hint">组合方式</span>
-          <el-radio-group v-model="groupOp" size="small">
-            <el-radio-button value="AND">满足全部（且）</el-radio-button>
-            <el-radio-button value="OR">满足任一（或）</el-radio-button>
-          </el-radio-group>
-        </div>
-
-        <div class="b-conds" :class="{ 'readonly-builder': profileReadonly }">
-        <div v-for="(c, i) in rows" :key="i" class="b-cond">
-          <!-- 指标条件 -->
-          <template v-if="c.kind === 'ind'">
-            <el-tag size="small" type="success" effect="plain" class="kind-tag">指标</el-tag>
-            <el-select v-model="c.key" filterable size="small" style="width: 180px" :disabled="profileReadonly" @change="onIndKey(c)">
-              <el-option v-for="d in enabledInds" :key="d.key" :value="d.key" :label="d.name_cn" />
-            </el-select>
-            <!-- 动态参数 -->
-            <template v-for="p in defOf(c.key)?.params ?? []" :key="p.name">
-              <span class="param-lb">{{ p.label }}</span>
-              <el-input-number
-                v-model="c.params[p.name]"
-                :disabled="profileReadonly"
-                :controls="false"
-                :min="p.min ?? undefined"
-                :max="p.max ?? undefined"
-                size="small"
-                style="width: 70px"
-              />
-            </template>
-            <!-- 布尔：成立/不成立 -->
-            <template v-if="defOf(c.key)?.dtype === 'bool'">
-              <el-select v-model="c.boolVal" size="small" style="width: 104px" :disabled="profileReadonly">
-                <el-option :value="true" label="成立" />
-                <el-option :value="false" label="不成立" />
-              </el-select>
-            </template>
-            <!-- 数值：比较符 + 阈值 -->
-            <template v-else>
-              <el-select v-model="c.cmp" size="small" style="width: 84px" :disabled="profileReadonly">
-                <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
-              </el-select>
-              <el-input-number v-model="c.value" :disabled="profileReadonly" :controls="false" size="small" style="width: 86px" />
-              <template v-if="c.cmp === 'between'">
-                <span>~</span>
-                <el-input-number v-model="c.value2" :disabled="profileReadonly" :controls="false" size="small" style="width: 86px" />
-              </template>
-            </template>
-          </template>
-
-          <!-- 表达式条件 -->
-          <template v-else>
-            <el-tag size="small" type="warning" effect="plain" class="kind-tag">表达式</el-tag>
-            <el-input
-              v-model="c.expr"
-              :disabled="profileReadonly"
-              size="small"
-              placeholder="如：COUNT(C > REF(C,1), 5) == 5"
-              style="flex: 1; min-width: 260px"
+        <!-- 编辑器 -->
+        <section class="editor editor-screen">
+          <div class="ed-head">
+            <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
+            <span v-if="editId && !isNew" class="id-badge mono">{{ editId }}</span>
+            <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openVersions">v{{ curVersion }}</span>
+            <AssetVisibilityActions
+              v-if="!isNew"
+              :visibility="profileVisibility"
+              :readonly="profileReadonly"
+              :can-publish-tenant="canPublishTenant"
+              :can-publish-public="canPublishPublic"
+              :saving="visibilitySaving"
+              :copy-visible="profileReadonly"
+              copy-permission="screen-profile:save"
+              @publish="publishProfile"
+              @copy="copyCurrentProfile"
             />
+            <div class="spacer" />
+            <el-button v-permission="'screen-profile:save'" :disabled="profileReadonly" :loading="saving" type="primary" @click="save">保存</el-button>
+            <el-button v-permission="'screen-profile:delete'" v-if="curId && !isNew && !profileReadonly" type="danger" plain @click="remove">删除</el-button>
+          </div>
+
+          <!-- 详情加载态/失败态（原子应用 + seq 守卫）：失败已回滚选中值，编辑器保留旧内容 -->
+          <AppStateBlock
+            v-if="profileError"
+            state="error"
+            size="compact"
+            title="筛选方案详情加载失败"
+            :description="profileError"
+            retry
+            @retry="onScreenSelect(profileDetailAttempt || curRef)"
+          />
+          <AppStateBlock
+            v-else-if="profileLoading"
+            state="loading"
+            size="compact"
+            title="正在加载方案详情…"
+          />
+
+          <!-- 复杂嵌套方案：只读运行 -->
+          <el-alert
+            v-if="complexAst"
+            type="info"
+            :closable="false"
+            show-icon
+            title="该方案含嵌套分组，构建器暂以只读方式运行；如需改写请新建方案。"
+            style="margin: 10px 0"
+          />
+          <pre v-if="complexAst" class="ast">{{ JSON.stringify(complexAst, null, 2) }}</pre>
+
+          <!-- 融合构建器 -->
+          <template v-else>
+            <div class="b-group">
+              <span class="hint">组合方式</span>
+              <el-radio-group v-model="groupOp" size="small">
+                <el-radio-button value="AND">满足全部（且）</el-radio-button>
+                <el-radio-button value="OR">满足任一（或）</el-radio-button>
+              </el-radio-group>
+            </div>
+
+            <div class="b-conds" :class="{ 'readonly-builder': profileReadonly }">
+            <div v-for="(c, i) in rows" :key="i" class="b-cond">
+              <!-- 指标条件 -->
+              <template v-if="c.kind === 'ind'">
+                <el-tag size="small" type="success" effect="plain" class="kind-tag">指标</el-tag>
+                <el-select v-model="c.key" filterable size="small" style="width: 180px" :disabled="profileReadonly" @change="onIndKey(c)">
+                  <el-option v-for="d in enabledInds" :key="d.key" :value="d.key" :label="d.name_cn" />
+                </el-select>
+                <!-- 动态参数 -->
+                <template v-for="p in defOf(c.key)?.params ?? []" :key="p.name">
+                  <span class="param-lb">{{ p.label }}</span>
+                  <el-input-number
+                    v-model="c.params[p.name]"
+                    :disabled="profileReadonly"
+                    :controls="false"
+                    :min="p.min ?? undefined"
+                    :max="p.max ?? undefined"
+                    size="small"
+                    style="width: 70px"
+                  />
+                </template>
+                <!-- 布尔：成立/不成立 -->
+                <template v-if="defOf(c.key)?.dtype === 'bool'">
+                  <el-select v-model="c.boolVal" size="small" style="width: 104px" :disabled="profileReadonly">
+                    <el-option :value="true" label="成立" />
+                    <el-option :value="false" label="不成立" />
+                  </el-select>
+                </template>
+                <!-- 数值：比较符 + 阈值 -->
+                <template v-else>
+                  <el-select v-model="c.cmp" size="small" style="width: 84px" :disabled="profileReadonly">
+                    <el-option v-for="o in NUM_CMP" :key="o.v" :value="o.v" :label="o.t" />
+                  </el-select>
+                  <el-input-number v-model="c.value" :disabled="profileReadonly" :controls="false" size="small" style="width: 86px" />
+                  <template v-if="c.cmp === 'between'">
+                    <span>~</span>
+                    <el-input-number v-model="c.value2" :disabled="profileReadonly" :controls="false" size="small" style="width: 86px" />
+                  </template>
+                </template>
+              </template>
+
+              <!-- 表达式条件 -->
+              <template v-else>
+                <el-tag size="small" type="warning" effect="plain" class="kind-tag">表达式</el-tag>
+                <el-input
+                  v-model="c.expr"
+                  :disabled="profileReadonly"
+                  size="small"
+                  placeholder="如：COUNT(C > REF(C,1), 5) == 5"
+                  style="flex: 1; min-width: 260px"
+                />
+              </template>
+
+              <AppRowActions :actions="conditionRowActions(i)" :inline-limit="1" />
+            </div>
+            </div>
+
+            <div class="b-actions">
+              <el-button size="small" :disabled="profileReadonly" @click="addIndRow">
+                <template #icon><el-icon><Plus /></el-icon></template>
+                指标条件
+              </el-button>
+              <el-button size="small" :disabled="profileReadonly" @click="addExprRow">
+                <template #icon><el-icon><Plus /></el-icon></template>
+                表达式条件
+              </el-button>
+              <HelpTip title="表达式语法" :width="400">
+                <p style="margin:0">算子：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C 收 / O 开 / H 高 / L 低 / V 量 / TURN 换手。</p>
+                <p style="margin:6px 0 0">点时安全：仅用 ≤ 当日数据，无未来函数。</p>
+              </HelpTip>
+            </div>
+            <pre v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</pre>
           </template>
 
-          <AppRowActions :actions="conditionRowActions(i)" :inline-limit="1" />
-        </div>
-        </div>
+          <!-- 运行筛选 -->
+          <div class="run-head">
+            <span class="run-title">筛选结果</span>
+            <el-tag v-if="result && result.hits.length" type="info" size="small" round>共 {{ result.count }} 只</el-tag>
+            <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest style="width: 160px" />
+            <el-button v-permission="'screen:run'" :loading="loading" @click="run">运行筛选</el-button>
+            <el-button v-if="result && result.hits.length" size="small" @click="exportCsv">导出 CSV</el-button>
+            <span class="run-hint">含表达式/带参指标需全市场逐股求值，约十几秒</span>
+          </div>
 
-        <div class="b-actions">
-          <el-button size="small" :disabled="profileReadonly" @click="addIndRow">
-            <template #icon><el-icon><Plus /></el-icon></template>
-            指标条件
-          </el-button>
-          <el-button size="small" :disabled="profileReadonly" @click="addExprRow">
-            <template #icon><el-icon><Plus /></el-icon></template>
-            表达式条件
-          </el-button>
-          <HelpTip title="表达式语法" :width="400">
-            <p style="margin:0">算子：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C 收 / O 开 / H 高 / L 低 / V 量 / TURN 换手。</p>
-            <p style="margin:6px 0 0">点时安全：仅用 ≤ 当日数据，无未来函数。</p>
-          </HelpTip>
-          <el-button v-permission="'screen-profile:save'" text type="primary" size="small" :disabled="profileReadonly" @click="openSave">
-            <template #icon><el-icon><Plus /></el-icon></template>
-            保存为方案
-          </el-button>
-        </div>
-        <pre v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</pre>
-      </template>
-
-      <!-- 运行栏 -->
-      <div class="run-bar">
-        <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest style="width: 160px" />
-        <el-button v-permission="'screen:run'" type="primary" :loading="loading" @click="run">运行筛选</el-button>
-        <span class="run-hint">含表达式/带参指标需全市场逐股求值，约十几秒</span>
+          <!-- 筛选结果表 -->
+          <div class="run-table-wrap">
+            <AppStateBlock
+              v-if="resultError && !result"
+              state="error"
+              title="筛选运行失败"
+              :description="resultError"
+              retry
+              @retry="run"
+            />
+            <AppStateBlock
+              v-else-if="resultError"
+              state="error"
+              size="compact"
+              title="筛选结果刷新失败"
+              :description="resultError"
+              retry
+              @retry="run"
+            />
+            <AppDataTable
+              v-else-if="result && result.hits.length"
+              :data="displayHits"
+              :border="tableBorder('result')"
+              :default-sort="elementDefaultSort"
+              :row-class-name="rowClass"
+              size="small"
+              height="100%"
+              clickable
+              @sort-change="onResultSortChange"
+              @row-click="(r: ScreenHit) => router.push(`/stocks/${r.code}`)"
+            >
+              <AppTableColumn label="#" type="index" />
+              <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />
+              <AppTableColumn v-if="colVisible('name')" label="名称" sortable :sort-by="(r:any)=>r.name || ''">
+                <template #default="{ row }">
+                  <span>{{ row.name || '—' }}</span>
+                  <el-tag v-if="colVisible('st') && row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
+                </template>
+              </AppTableColumn>
+              <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
+                <template #default="{ row }">
+                  <strong class="score">{{ row.total_score ?? '—' }}</strong>
+                </template>
+              </AppTableColumn>
+              <AppTableColumn v-if="colVisible('grade')" label="评级">
+                <template #default="{ row }">
+                  <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" effect="light">{{ row.grade }}</el-tag>
+                  <span v-else class="muted">—</span>
+                </template>
+              </AppTableColumn>
+            </AppDataTable>
+            <el-empty v-else-if="result" class="app-empty" description="无命中" />
+            <el-empty v-else class="app-empty" description="运行后在这里展示筛选结果" />
+          </div>
+        </section>
       </div>
-    </el-card>
     </div>
-    </template>
-
-    <template #main>
-    <el-card shadow="never" class="result-card" v-loading="loading">
-      <template #header>
-        <span v-if="result">
-          命中 <strong class="cnt">{{ result.count }}</strong> 只 · 交易日 {{ result.date }} ·
-          已按综合分排序{{ excludeSt ? ' · 已排除 ST' : '' }}
-        </span>
-        <span v-else>筛选结果</span>
-        <el-button v-if="result && result.hits.length" size="small" style="float:right" @click="exportCsv">导出 CSV</el-button>
-      </template>
-      <AppStateBlock
-        v-if="resultError && !result"
-        state="error"
-        title="筛选运行失败"
-        :description="resultError"
-        retry
-        @retry="run"
-      />
-      <template v-else>
-      <AppStateBlock
-        v-if="resultError"
-        state="error"
-        size="compact"
-        title="筛选结果刷新失败"
-        :description="resultError"
-        retry
-        @retry="run"
-      />
-      <AppDataTable
-        v-if="result && result.hits.length"
-        :data="displayHits"
-        :border="tableBorder('result')"
-        :default-sort="elementDefaultSort"
-        :row-class-name="rowClass"
-        clickable
-        @sort-change="onResultSortChange"
-        @row-click="(r: ScreenHit) => router.push(`/stocks/${r.code}`)"
-      >
-        <AppTableColumn label="#" type="index" />
-        <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />
-        <AppTableColumn v-if="colVisible('name')" label="名称" sortable :sort-by="(r:any)=>r.name || ''">
-          <template #default="{ row }">
-            <span>{{ row.name || '—' }}</span>
-            <el-tag v-if="colVisible('st') && row.is_st" type="danger" size="small" effect="dark" style="margin-left: 6px">ST</el-tag>
-          </template>
-        </AppTableColumn>
-        <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score ?? -Infinity">
-          <template #default="{ row }">
-            <strong class="score">{{ row.total_score ?? '—' }}</strong>
-          </template>
-        </AppTableColumn>
-        <AppTableColumn v-if="colVisible('grade')" label="评级">
-          <template #default="{ row }">
-            <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" effect="light">{{ row.grade }}</el-tag>
-            <span v-else class="muted">—</span>
-          </template>
-        </AppTableColumn>
-      </AppDataTable>
-      <el-empty v-else-if="result" class="app-empty" description="无命中" />
-      <el-empty v-else class="app-empty" description="运行后在这里展示筛选结果" />
-      </template>
-    </el-card>
     </template>
 
     <template #overlays>
@@ -770,19 +809,6 @@ onMounted(initializeScreen)
         </div>
         <pre class="ast">{{ JSON.stringify(v.expression, null, 2) }}</pre>
       </div>
-    </el-dialog>
-
-    <!-- 保存方案 -->
-    <el-dialog v-model="saveVisible" title="保存为筛选方案" width="440px">
-      <el-input v-model="saveName" placeholder="方案名称，如：我的连涨策略" maxlength="30" show-word-limit />
-      <el-checkbox v-if="canOverwrite" v-model="overwrite" style="margin-top: 10px">
-        覆盖更新当前方案「{{ loadedProfile?.name }}」（版本 +1）
-      </el-checkbox>
-      <pre class="ast" style="margin-top: 12px">{{ JSON.stringify(buildAst(), null, 2) }}</pre>
-      <template #footer>
-        <el-button @click="saveVisible = false">取消</el-button>
-        <el-button v-permission="'screen-profile:save'" type="primary" :loading="saving" @click="doSave">保存</el-button>
-      </template>
     </el-dialog>
 
     <PageSettingsDrawer
@@ -819,17 +845,78 @@ onMounted(initializeScreen)
   max-height: 220px;
   overflow-y: auto;
 }
-/* 空态/无命中在结果卡内居中，不再切换外层盒子（避免状态切换抖动）*/
-.result-card :deep(.el-card__body) > .el-empty {
+/* 空态/无命中在结果区内居中，不再切换外层盒子（避免状态切换抖动）*/
+.run-table-wrap :deep(.el-empty) {
   margin: auto;
 }
-.load-row {
+.screen-body {
+  flex: 1 1 auto;   /* 填满 LayoutHost 的条件成长区，页面内容在本区域内滚动 */
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.screen-layout {
+  display: flex;
+  gap: var(--app-space-4);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.prof-list {
+  width: 190px;
+  flex-shrink: 0;
+}
+/* 方案列表限高内滚：不会随方案数量无限增高、挤压下方结果区 */
+.prof-list :deep(.asset-profile-select__list),
+.prof-list :deep(.asset-profile-select__empty) {
+  max-height: 360px;
+  overflow-y: auto;
+}
+.editor {
+  flex: 1;
+  min-width: 0;
+}
+.editor-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ed-head {
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
-  padding-bottom: 12px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.spacer {
+  flex: 1;
+}
+.ver-badge {
+  font-size: var(--app-font-size-caption);
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-weight: var(--app-font-weight-section);
+  cursor: pointer;
+  user-select: none;
+}
+.ver-badge:hover {
+  background: var(--el-color-primary-light-7);
+}
+.id-badge {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: var(--app-font-size-caption);
+}
+.mono {
+  font-family: var(--app-font-family-mono);
 }
 .hint {
   color: var(--app-muted-text);
@@ -839,7 +926,7 @@ onMounted(initializeScreen)
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
-  margin-bottom: 10px;
+  margin: 12px 0 10px;
 }
 .b-cond {
   display: flex;
@@ -878,19 +965,6 @@ onMounted(initializeScreen)
   max-height: 200px;
   overflow: auto;
 }
-.ver-link {
-  font-size: var(--app-font-size-caption);
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  border-radius: 10px;
-  padding: 1px 8px;
-  font-weight: var(--app-font-weight-section);
-  cursor: pointer;
-  user-select: none;
-}
-.ver-link:hover {
-  background: var(--el-color-primary-light-7);
-}
 .readonly-builder {
   opacity: 0.82;
 }
@@ -905,17 +979,31 @@ onMounted(initializeScreen)
   align-items: center;
   gap: var(--app-space-2);
 }
-.run-bar {
+.run-head {
   display: flex;
   align-items: center;
   gap: var(--app-space-3);
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--el-border-color-lighter);
+  margin: 22px 0 10px;
+  flex: none;
+}
+.run-title {
+  font-weight: var(--app-font-weight-section);
+  font-size: var(--app-font-size-section-title);
+}
+.run-table-wrap {
+  flex: 1 1 auto;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+}
+.run-table-wrap .el-table {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .run-hint {
   color: var(--app-placeholder-text);
   font-size: var(--app-font-size-caption);
+  margin-left: auto;
 }
 .setting-item {
   display: flex;
@@ -925,10 +1013,6 @@ onMounted(initializeScreen)
 .setting-label {
   font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
-}
-.cnt {
-  color: var(--app-danger-text);
-  font-size: var(--app-font-size-data);
 }
 .score {
   color: var(--app-danger-text);

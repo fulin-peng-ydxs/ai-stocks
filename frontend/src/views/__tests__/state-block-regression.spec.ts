@@ -486,9 +486,9 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('registry failed')
   })
 
-  // 「加载查看」（R5/§7.0）：组件 emit loaded 不联动选中，页面须直接按 profile_ref 页面级载入该公开
-  // 方案详情做只读展示（回归 T6 登记的 ScreenView 未接 @loaded 缺陷修复）。
-  it('筛选页加载查看公开方案：按 profile_ref 页面级载入只读详情，不改 loadId', async () => {
+  // 「加载查看」（R5/§7.0）：组件 emit loaded 后页面经 onScreenSelect 载入该公开方案详情进编辑器
+  // 做只读展示（list 形态临时项高亮为选中态，与评分页同口径）。
+  it('筛选页加载查看公开方案：按 profile_ref 页面级载入只读详情', async () => {
     ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'pub1',
       profile_ref: 'ref_pub1',
@@ -511,7 +511,7 @@ describe('代表性页面四态回归', () => {
       readonly: true,
     })
     await flushPromises()
-    // 直接调 getProfile(profile_ref) 页面级载入；不经过 loadId watch
+    // 直接调 getProfile(profile_ref) 页面级载入
     expect(screeningApi.getProfile).toHaveBeenCalledWith('ref_pub1')
     // 载入后 loadedProfile 只读 → 运行按 profile_ref 而非脏表达式
     const run = wrapper.findAll('button').find((button) => button.text().includes('运行筛选'))
@@ -573,9 +573,9 @@ describe('代表性页面四态回归', () => {
       readonly: false,
     })
     await flushPromises()
-    // 限定「载入方案」行作用域：页面另有条件行的行内删除按钮，不能按全页文本匹配
-    const loadRow = wrapper.find('.load-row')
-    expect(loadRow.findAll('button').find((b) => b.text().trim() === '删除')).toBeTruthy()
+    // 限定编辑器头作用域：页面另有条件行的行内删除按钮，不能按全页文本匹配
+    const edHead = wrapper.find('.ed-head')
+    expect(edHead.findAll('button').find((b) => b.text().trim() === '删除')).toBeTruthy()
   })
 
   it('筛选页载入只读公开方案不显示删除按钮', async () => {
@@ -599,9 +599,9 @@ describe('代表性页面四态回归', () => {
       readonly: true,
     })
     await flushPromises()
-    // 只读公开态：载入区不应出现删除按钮（条件行的行内删除按钮属另一作用域，不参与断言）
-    const loadRow = wrapper.find('.load-row')
-    expect(loadRow.findAll('button').find((b) => b.text().trim() === '删除')).toBeFalsy()
+    // 只读公开态：编辑器头不应出现删除按钮（条件行的行内删除按钮属另一作用域，不参与断言）
+    const edHead = wrapper.find('.ed-head')
+    expect(edHead.findAll('button').find((b) => b.text().trim() === '删除')).toBeFalsy()
   })
 
   it('回测运行失败落到结果区错误态', async () => {
