@@ -547,7 +547,18 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/system/menus',
     archetype: 'master-detail',
     responsiveProfile: 'single-column',
-    supportsComponentConfig: false,
+    supportsComponentConfig: true,
+    consumedComponentFields: { resourceTable: ['border', 'hiddenColumns'] },
+    componentMeta: {
+      resourceTable: {
+        columns: [
+          { key: 'code', label: '功能码' },
+          { key: 'name', label: '名称' },
+          { key: 'type', label: '类型' },
+          { key: 'apiPath', label: '绑定接口' },
+        ],
+      },
+    },
     layout: {
       pageKey: 'menu-manage',
       archetype: 'master-detail',
@@ -557,6 +568,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'head', component: 'toolbar', region: 'action', order: 1 },
         { id: 'content', component: 'master-detail', region: 'main', minH: 360, label: '菜单与功能工作台', order: 1 },
+        { id: 'resourceTable', component: 'wide-table', region: 'main', parentId: 'content', label: '功能点表', order: 2 },
       ],
       editable: [densityKnob()],
     },

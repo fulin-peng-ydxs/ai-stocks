@@ -489,6 +489,31 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
+  it('页面源码使用 AppDataTable 时必须登记 data-table/wide-table slot（反向契约）', () => {
+    // 反向契约：已登记的表格 slot 由上方正向测试校验 border 接入；
+    // 这里堵住「页面用了表格却未登记」——开放组件配置的业务页面，其数据表必须作为 slot
+    // 进入组件配置层（DESIGN §7.3 受控字段 hiddenColumns/border 以 slot 登记为前提）。
+    // 豁免：configEntry 生成的配置编辑器页（config-score/config-trade 共享 ConfigView，
+    // 表格是编辑器内部 embedded 结构，非独立业务数据表）；config-tech 是独立列表页已单独登记。
+    // 豁免：config-* 页共享 ConfigView 视图（score/trade/tech/system 四个 tab 在单一源码），
+    // `source.includes('<AppDataTable')` 无法区分具体 tab 的表格；其中 techTable 已单独登记为
+    // 独立列表 slot，其余 tab 的表格是配置编辑器内部 embedded 结构，非独立业务数据表。
+    for (const entry of PAGE_REGISTRY) {
+      if (!entry.supportsComponentConfig) continue
+      if (entry.pageKey.startsWith('config-')) continue
+      const source = sourceForPage(entry.pageKey)
+      if (!source) continue  // 非 registry 消费页面（如平台布局工作台）跳过
+      if (!source.includes('<AppDataTable')) continue  // 页面未用表格
+      const tableSlots = entry.layout.slots.filter(
+        (slot) => slot.component === 'data-table' || slot.component === 'wide-table')
+      expect(
+        tableSlots.length,
+        `${entry.pageKey} 页面源码使用 <AppDataTable> 但 layout 未登记 data-table/wide-table slot——`
+        + `开放组件配置的页面，业务数据表必须登记为 slot（border/列显隐/DESIGN §7.3）`,
+      ).toBeGreaterThan(0)
+    }
+  })
+
   it('可交互排序字段必须进入 defaultSort 配置闭环', () => {
     for (const entry of PAGE_REGISTRY) {
       for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {

@@ -42,6 +42,7 @@ const {
   componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf,
 } = useRemoteLayoutConfig(menuLayout)
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+function tableBorder(slotId: string): boolean { return componentValueOf(slotId, 'border') === true }
 const { reset: resetBiz } = usePageSettings('menu-manage', {})
 const settingsOpen = ref(false)
 
@@ -608,6 +609,7 @@ onMounted(() => { loadTree() })
                   empty-text="该菜单暂无功能点"
                   :row-class-name="resourceRowClassName"
                   aria-label="功能点"
+                  :border="tableBorder('resourceTable')"
                 >
                   <AppTableColumn label="功能码" prop="code" role="key">
                     <template #default="{ row: r }">
