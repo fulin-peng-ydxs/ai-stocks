@@ -456,14 +456,14 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             :placeholder="cookieSet ? '已设置，留空不修改' : '粘贴同花顺登录 Cookie 头'"
             data-testid="ths-login-cookie-input"
           />
-          <span class="cookie-field-hint">{{ cookieSet ? '已配置：输入新值覆盖、空串清除、留空不修改' : '未配置：配置后可解除登录墙取全深页板块（概念 375→390）与完整成分股' }}</span>
+          <span class="cookie-field-hint">{{ cookieSet ? '已配置：输入新值覆盖、空串清除、留空不修改' : '未配置：配置后可解除登录墙取全深页板块与完整成分股' }}</span>
         </el-form-item>
       </el-form>
-      <div class="cookie-note">
+      <p class="cookie-note">
         * 获取方式：浏览器登录同花顺（10jqka.com.cn）后按 F12 → Network → 复制请求的 Cookie 头。
         <br>
         * 环境变量 <code>AI_STOCKS_THS_COOKIE</code> 优先级更高（运维可覆盖页面配置）。
-      </div>
+      </p>
       <template #footer>
         <el-button @click="cookieDlg = false">取消</el-button>
         <el-button type="primary" :loading="cookieSaving" data-testid="ths-login-cookie-save" @click="saveCookie">
@@ -638,7 +638,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .src-name { font-weight: var(--app-font-weight-section); min-width: 78px; }
 .src-state { font-size: var(--app-font-size-table); }
 .src-meta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: auto; }
-.cookie-note { margin-top: 4px; padding: 8px 12px; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); background: var(--el-fill-color-light); border-radius: 4px; }
-.cookie-note code { font-family: var(--app-font-mono); background: var(--el-fill-color-blank); padding: 0 4px; border-radius: 3px; }
+.cookie-note { margin: 10px 0 0; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
+.cookie-note code { font-family: var(--app-font-mono); color: var(--el-text-color-regular); }
 .cookie-field-hint { display: block; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
 </style>
