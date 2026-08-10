@@ -445,49 +445,24 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 
     <template #overlays>
     <!-- 同花顺登录 Cookie 配置（数据源健康·ths_board 行） -->
-    <el-dialog v-model="cookieDlg" title="配置同花顺登录 Cookie" width="500px" data-testid="ths-login-cookie-dialog">
-      <div class="cookie-body">
-        <el-alert
-          :type="cookieSet ? 'success' : 'warning'"
-          :closable="false"
-          show-icon
-          :title="cookieSet ? '已配置登录 Cookie' : '未配置登录 Cookie'"
-          class="cookie-status"
-        />
-        <el-form label-position="top">
-          <el-form-item label="登录 Cookie">
-            <el-input
-              v-model="cookieValue"
-              type="password"
-              show-password
-              autocomplete="off"
-              :placeholder="cookieSet ? '已设置，留空不修改' : '粘贴浏览器同花顺登录后的 Cookie 头'"
-              data-testid="ths-login-cookie-input"
-            />
-          </el-form-item>
-        </el-form>
-        <div class="cookie-sections">
-          <div class="cookie-section">
-            <h4 class="cookie-section-title">作用</h4>
-            <p class="cookie-section-text">解除同花顺详情页/字典翻页登录墙，取全深页板块（概念 375→390）与完整成分股。</p>
-          </div>
-          <div class="cookie-section">
-            <h4 class="cookie-section-title">如何获取</h4>
-            <p class="cookie-section-text">浏览器登录同花顺（<code>10jqka.com.cn</code>）后，按 F12 → Network → 复制请求的 Cookie 头。</p>
-          </div>
-          <div class="cookie-section">
-            <h4 class="cookie-section-title">保存规则</h4>
-            <ul class="cookie-rule-list">
-              <li>输入新值保存 = 覆盖</li>
-              <li>留空保存 = 不修改（保留已存值）</li>
-              <li>输入空串保存 = 清除</li>
-            </ul>
-          </div>
-          <div class="cookie-section">
-            <h4 class="cookie-section-title">优先级</h4>
-            <p class="cookie-section-text">环境变量 <code>AI_STOCKS_THS_COOKIE</code> 优先级更高（运维可覆盖页面配置）。</p>
-          </div>
-        </div>
+    <el-dialog v-model="cookieDlg" title="配置同花顺登录 Cookie" width="480px" data-testid="ths-login-cookie-dialog">
+      <el-form label-width="92px">
+        <el-form-item label="登录 Cookie">
+          <el-input
+            v-model="cookieValue"
+            type="password"
+            show-password
+            autocomplete="off"
+            :placeholder="cookieSet ? '已设置，留空不修改' : '粘贴同花顺登录 Cookie 头'"
+            data-testid="ths-login-cookie-input"
+          />
+          <span class="cookie-field-hint">{{ cookieSet ? '已配置：输入新值覆盖、空串清除、留空不修改' : '未配置：配置后可解除登录墙取全深页板块（概念 375→390）与完整成分股' }}</span>
+        </el-form-item>
+      </el-form>
+      <div class="cookie-note">
+        * 获取方式：浏览器登录同花顺（10jqka.com.cn）后按 F12 → Network → 复制请求的 Cookie 头。
+        <br>
+        * 环境变量 <code>AI_STOCKS_THS_COOKIE</code> 优先级更高（运维可覆盖页面配置）。
       </div>
       <template #footer>
         <el-button @click="cookieDlg = false">取消</el-button>
@@ -663,13 +638,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .src-name { font-weight: var(--app-font-weight-section); min-width: 78px; }
 .src-state { font-size: var(--app-font-size-table); }
 .src-meta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: auto; }
-.cookie-status { margin-bottom: 14px; }
-.cookie-sections { display: flex; flex-direction: column; gap: var(--app-space-3); margin-top: 2px; }
-.cookie-section { padding: 10px 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 4px; background: var(--el-fill-color-blank); }
-.cookie-section-title { margin: 0 0 4px; font-size: var(--app-font-size-table); font-weight: var(--app-font-weight-section); color: var(--el-text-color-primary); }
-.cookie-section-text { margin: 0; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
-.cookie-section-text code { font-family: var(--app-font-mono); background: var(--el-fill-color-light); padding: 0 4px; border-radius: 3px; }
-.cookie-rule-list { margin: 0; padding-left: 16px; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
-.cookie-rule-list li { margin-bottom: 2px; }
-.cookie-rule-list li:last-child { margin-bottom: 0; }
+.cookie-note { margin-top: 4px; padding: 8px 12px; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); background: var(--el-fill-color-light); border-radius: 4px; }
+.cookie-note code { font-family: var(--app-font-mono); background: var(--el-fill-color-blank); padding: 0 4px; border-radius: 3px; }
+.cookie-field-hint { display: block; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
 </style>
