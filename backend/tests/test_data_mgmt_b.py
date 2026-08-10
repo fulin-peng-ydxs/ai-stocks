@@ -567,6 +567,57 @@ def test_scan_board_quality_index_gap(client, monkeypatch):
     assert "309121" not in gaps["code"].tolist()  # AI PC 指数正常不报
 
 
+def test_scan_board_quality_fund_missing(client, monkeypatch):
+    """资金流缺失扫描：字典中有成分/指数但源未收录资金流的板块写 issue。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    # AI PC 有成分/指数但无资金流 → 缺失；半导体同样
+    r = DataIntegrityReport(client).scan_board_quality()
+    assert r["fund_missing"] == 2
+    missing = client.query_df(
+        "SELECT code, issue_type FROM data_quality_issue WHERE issue_type='board_fund_missing'")
+    assert set(missing["code"].tolist()) == {"309121", "881121"}
+
+
+def test_scan_board_quality_fund_missing_ignored_and_converge(client, monkeypatch):
+    """资金流缺失：ignored 豁免 + 资金流采到后重扫收敛。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, severity, status, detected_at) "
+                   "VALUES (998, '309121', 'board_fund_missing', 'mid', 'ignored', now())")
+    rep = DataIntegrityReport(client)
+    r = rep.scan_board_quality()
+    # ignored 的 309121 豁免：本轮不再上报为 open，只剩 881121
+    assert r["fund_missing"] == 1
+    missing = client.query_df(
+        "SELECT code FROM data_quality_issue "
+        "WHERE issue_type='board_fund_missing' AND status='open'")
+    assert missing["code"].tolist() == ["881121"]
+    # 资金流采到：has_fund_flow=true → 重扫不再上报
+    client.execute("UPDATE board_dict SET has_fund_flow=TRUE WHERE board_code='881121'")
+    r2 = rep.scan_board_quality()
+    assert r2["fund_missing"] == 0
+    left = client.query_df(
+        "SELECT count(*) n FROM data_quality_issue "
+        "WHERE issue_type='board_fund_missing' AND status='open'")
+    assert int(left.iloc[0]["n"]) == 0
+
+
+def test_board_recheck_fund_missing(client, monkeypatch):
+    """资金流缺失复检：has_fund_flow 未满足前保持未解决，满足或板块移除后收敛。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    rep = DataIntegrityReport(client)
+    # 未采到资金流 → 复检 False（问题仍 open）
+    assert rep.recheck_clean("board_fund_missing", "309121", None) is False
+    # 资金流采到 → True
+    client.execute("UPDATE board_dict SET has_fund_flow=TRUE WHERE board_code='309121'")
+    assert rep.recheck_clean("board_fund_missing", "309121", None) is True
+    # 板块不在字典 → True（已被移除，无可修复对象）
+    assert rep.recheck_clean("board_fund_missing", "no-such-board", None) is True
+
+
 def test_board_scan_failure_keeps_previous_open_issue(client, monkeypatch):
     """板块扫描替换必须原子化：新问题写入失败时保留上轮 open 问题。"""
     from backend.services.data_report import DataIntegrityReport

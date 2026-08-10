@@ -277,6 +277,7 @@ const boardIssueItems = computed(() => {
     { key: 'board_member_incomplete', label: '成分不完整', hint: '待重采成分' },
     { key: 'board_index_gap', label: '指数缺口', hint: '补齐行情缺口' },
     { key: 'board_fund_unmatched', label: '资金流未匹配', hint: '检查资金流归属' },
+    { key: 'board_fund_missing', label: '资金流缺失', hint: '源未收录待上线' },
   ].map((item) => ({ ...item, count: issues[item.key] ?? 0 })).filter((item) => item.count > 0)
 })
 const boardFreshnessItems = computed(() => {

@@ -104,7 +104,8 @@ class DataIntegrityReport:
             "(SELECT count(*) FROM daily_bar) bars, "
             "(SELECT count(*) FROM daily_metrics) metrics, "
             "(SELECT count(*) FROM data_quality_issue WHERE status='open' "
-            "   AND issue_type NOT IN ('board_index_gap','board_member_incomplete','board_fund_unmatched')) openi, "
+            "   AND issue_type NOT IN ('board_index_gap','board_member_incomplete',"
+            "'board_fund_unmatched','board_fund_missing')) openi, "
             "(SELECT count(*) FROM stock_suspension) susp, "
             "(SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL OR float_mv IS NULL) mvnull"
         ).iloc[0]
@@ -163,7 +164,8 @@ class DataIntegrityReport:
             "count(*) FILTER (WHERE issue_type IN ('null_close','ohl_repaired')) l1, "
             "count(*) FILTER (WHERE issue_type IN ('abnormal_change','adj_jump')) l3 "
             "FROM data_quality_issue WHERE status='open' "
-            "AND issue_type NOT IN ('board_index_gap','board_member_incomplete','board_fund_unmatched') "
+            "AND issue_type NOT IN ('board_index_gap','board_member_incomplete',"
+            "'board_fund_unmatched','board_fund_missing') "
             "GROUP BY code")
         iss_map = {r["code"]: (int(r["tot"]), int(r["l1"]), int(r["l3"])) for _, r in iss.iterrows()}
         stocks = self.c.query_df("SELECT code, name, list_date FROM stock_basic WHERE delist_date IS NULL")
@@ -544,51 +546,76 @@ class DataIntegrityReport:
 
     # ── 板块维度质检（板块概念需求 R12，T7）──────────────────
     def scan_board_quality(self) -> dict:
-        """板块数据质检：板块指数缺口扫描，写 data_quality_issue。
+        """板块数据质检：板块指数缺口 + 资金流缺失扫描，写 data_quality_issue。
 
-        收敛语义：先完整计算本轮结果，再在一个事务内替换 open 的 board_index_gap；扫描失败时
-        事务不提交，旧问题不会消失。已 ignored 的不再上报。
+        收敛语义：先完整计算本轮两类结果，再在一个事务内替换 open 的
+        board_index_gap / board_fund_missing；扫描失败时事务不提交，旧问题不会消失。
+        已 ignored 的板块按 (code, type) 整体豁免。
 
         成分数波动不做质量判断；成分采集完整性由采集层“完整快照才落库”保证。
         """
         # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日
-        latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
-        if latest is None:
-            return {"index_gap": 0}
-        latest = pd.Timestamp(latest).date()
         # 已 ignored 的板块豁免（按 (code, type) 整体豁免）
-        ig = set()
-        igdf = self.c.query_df(
-            "SELECT code FROM data_quality_issue WHERE issue_type='board_index_gap' AND status='ignored'")
-        for _, r in igdf.iterrows():
-            ig.add(str(r["code"]))
-        gap_df = self.c.query_df(
+        def _ignored_codes(issue_type: str) -> set[str]:
+            ig = set()
+            igdf = self.c.query_df(
+                "SELECT code FROM data_quality_issue WHERE issue_type=? AND status='ignored'",
+                [issue_type])
+            for _, r in igdf.iterrows():
+                ig.add(str(r["code"]))
+            return ig
+
+        gap_issues: list[dict] = []
+        latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
+        if latest is not None:
+            latest = pd.Timestamp(latest).date()
+            ig_gap = _ignored_codes("board_index_gap")
+            gap_df = self.c.query_df(
+                """
+                SELECT b.board_code, b.name, max(bar.trade_date) AS last_bar
+                FROM board_dict b
+                LEFT JOIN board_bar bar ON bar.board_code = b.board_code
+                WHERE b.has_bar
+                GROUP BY b.board_code, b.name
+                """)
+            for _, r in gap_df.iterrows():
+                code = str(r["board_code"])
+                if code in ig_gap:
+                    continue
+                last_bar = r["last_bar"]
+                if last_bar is None or pd.Timestamp(last_bar).date() < latest:
+                    gap_issues.append({
+                        "code": code, "trade_date": latest,
+                        "issue_type": "board_index_gap",
+                        "detail": f"板块 {r['name']}（{code}）指数缺口：最近指数 {last_bar or '无'}，"
+                                  f"全局最新交易日 {latest}",
+                    })
+        # 资金流缺失：字典中真正参与展示的板块（有成分或指数）却无资金流数据。
+        # 来源是数据源资金流榜单未收录该板块（区别于 board_fund_unmatched：源多出而字典缺）。
+        # 源侧榜单一经上线，重采资金流会置 has_fund_flow=true，重扫即收敛。
+        ig_fund = _ignored_codes("board_fund_missing")
+        fund_df = self.c.query_df(
             """
-            SELECT b.board_code, b.name, max(bar.trade_date) AS last_bar
-            FROM board_dict b
-            LEFT JOIN board_bar bar ON bar.board_code = b.board_code
-            WHERE b.has_bar
-            GROUP BY b.board_code, b.name
+            SELECT board_code, name FROM board_dict
+            WHERE (has_members OR has_bar) AND NOT has_fund_flow
             """)
-        gap_issues = []
-        for _, r in gap_df.iterrows():
-            code = str(r["board_code"])
-            if code in ig:
-                continue
-            last_bar = r["last_bar"]
-            if last_bar is None or pd.Timestamp(last_bar).date() < latest:
-                gap_issues.append({
-                    "code": code, "trade_date": latest,
-                    "issue_type": "board_index_gap",
-                    "detail": f"板块 {r['name']}（{code}）指数缺口：最近指数 {last_bar or '无'}，"
-                              f"全局最新交易日 {latest}",
-                })
+        fund_issues = [
+            {
+                "code": str(r["board_code"]),
+                "issue_type": "board_fund_missing",
+                "detail": f"板块 {r['name']}（{r['board_code']}）资金流缺失："
+                          f"数据源资金流榜单未收录该板块",
+            }
+            for _, r in fund_df.iterrows()
+            if str(r["board_code"]) not in ig_fund
+        ]
         with self.c.transaction():
-            self.c.execute(
-                "DELETE FROM data_quality_issue "
-                "WHERE status='open' AND issue_type='board_index_gap'")
-            self._insert_issues(gap_issues)
-        return {"index_gap": len(gap_issues)}
+            for issue_type in ("board_index_gap", "board_fund_missing"):
+                self.c.execute(
+                    "DELETE FROM data_quality_issue "
+                    "WHERE status='open' AND issue_type=?", [issue_type])
+            self._insert_issues(gap_issues + fund_issues)
+        return {"index_gap": len(gap_issues), "fund_missing": len(fund_issues)}
 
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
     def recheck_clean(self, issue_type: str, code: str | None, trade_date: date | None,
@@ -734,6 +761,14 @@ class DataIntegrityReport:
                 sql += " AND board_type=?"
                 params.append(board_type)
             return int(self._scalar(sql, params)) > 0
+        if issue_type == "board_fund_missing":
+            # 资金流缺失：与 scan_board_quality 扫描口径一致——只有该板块现在确实具备资金流数据
+            # （has_fund_flow=true，源侧已收录并采到）或已不在字典（被移除）才算收敛。
+            row = self.c.query_df(
+                "SELECT has_fund_flow FROM board_dict WHERE board_code=?", [code])
+            if row.empty:
+                return True
+            return bool(row.iloc[0]["has_fund_flow"])
         return True
 
     def _scan_adj_jump(self, threshold: float = 0.5, ignored_exact: set | None = None) -> int:
