@@ -113,6 +113,35 @@ def test_catalog_open_issue_count():
         assert cat["data_quality_issue"]["open_issues"] == 1
 
 
+def test_catalog_board_fresh_and_issue_ownership():
+    """板块时序表鲜活判定与资金流缺失问题归属：
+    1) 板块指数/资金流领先个股行情不算滞后（>= 判定）；
+    2) 资金流缺失/滞后只归 board_fund_flow，不挂在 board_dict 名下。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        # 个股行情停在 2024-01-03（全局最新交易日基准）
+        c.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES "
+                  "('600000.SH', DATE '2024-01-03', 10.0)")
+        # 板块指数/资金流领先到 2024-01-05 → 领先不算滞后
+        c.execute("INSERT INTO board_bar (board_code, trade_date, close) VALUES "
+                  "('309121', DATE '2024-01-05', 100.0)")
+        c.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+                  "VALUES ('309121', DATE '2024-01-05', '即时', 1.0, 0.5, 0.5)")
+        # 资金流缺失 2 条（源未收录）
+        c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, has_fund_flow) "
+                  "VALUES ('309121','AI PC','concept',TRUE,TRUE,FALSE), "
+                  "('881121','半导体','industry',TRUE,TRUE,FALSE)")
+        c.execute("INSERT INTO data_quality_issue (id, code, issue_type, status, detected_at) "
+                  "VALUES (1, '309121', 'board_fund_missing', 'open', ?), "
+                  "(2, '881121', 'board_fund_missing', 'open', ?)", [datetime.now(), datetime.now()])
+        cat = {x["table"]: x for x in build_catalog(c)}
+        assert cat["board_bar"]["fresh"] is True       # 领先个股行情 → 不滞后
+        assert cat["board_fund_flow"]["fresh"] is True  # 领先个股行情 → 不滞后
+        assert cat["board_fund_flow"]["open_issues"] == 2   # 资金流缺失归资金流表
+        assert cat["board_dict"]["open_issues"] == 0         # 字典表不挂资金流问题
+
+
+
 def test_dimension_registry_seeded_idempotent():
     with DuckDBClient(db_path=":memory:") as c:
         init_db(c)  # 已 seed 一次

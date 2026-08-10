@@ -19,7 +19,7 @@ _TIMESERIES_TABLES: frozenset[str] = frozenset(
     {"daily_bar", "daily_metrics", "index_bar", "board_bar", "board_fund_flow"})
 
 _BOARD_ISSUES_BY_TABLE: dict[str, tuple[str, ...]] = {
-    "board_dict": ("board_index_gap", "board_member_incomplete", "board_fund_unmatched", "board_fund_missing", "board_fund_stale"),
+    "board_dict": ("board_index_gap", "board_member_incomplete", "board_fund_unmatched"),
     "board_member": ("board_member_incomplete",),
     "board_bar": ("board_index_gap",),
     "board_fund_flow": ("board_fund_unmatched", "board_fund_missing", "board_fund_stale"),
@@ -255,7 +255,9 @@ def build_catalog(client: DuckDBClient | None = None) -> list[dict]:
                 fresh = False
             else:
                 latest_date = str(pd.Timestamp(latest_time).date())
-                fresh = (latest_date >= global_latest if table == "board_fund_flow"
+                # 板块源（指数/资金流）采集节奏可能领先个股行情（如周末已采到下周一的板块数据），
+                # 最新时间不早于全局最新交易日即算新鲜；个股时序表须严格等于最新交易日。
+                fresh = (latest_date >= global_latest if table in ("board_fund_flow", "board_bar")
                          else latest_date == global_latest)
         out.append({
             "table": table,
