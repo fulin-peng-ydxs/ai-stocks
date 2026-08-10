@@ -146,7 +146,7 @@ DailyPipeline.run()
 | 8 | 质量规则 | **2026-08-09 实施修订**：成分数变化不再作为异常；质量规则保留 `board_index_gap`，并由采集层产生 `board_member_incomplete`、`board_fund_unmatched`；状态沿用 `open/fixing/resolved/ignored` |
 | 9 | 历史不可回溯 | 本期**不改回测**；在 `board_dict.member_history_start_date` 保存板块级可信起始日（非每条成员重复字段）；接口可返回该字段；后续接入筛选/回测时再对早于该日期的查询拒绝或警告 |
 | 10 | 成分股跳转权限 | 无 `stocks:view` 时成分股数据仍可见，名称/代码渲染为不可点击文本 + hover 提示「无个股行情查看权限」，不执行路由跳转；直接输入 `/stocks/:code` 路由与接口仍 fail-closed |
-| 11 | 双代码体系 | 同花顺概念板块有两套代码：**路径 code（30xxxx，如 AI PC=309121，取数/跳转统一用它）** 与 **App clid（88xxxx，如 AI PC=886071，手机 App 显示）**。主键用路径 code；`board_dict.app_code` 存 clid（逐板块详情页抓取，375 概念需额外 1 请求/板块），供用户与手机 App 核对。行业板块 clid=路径 code。概念资金流接口只返回名称无代码，映射按名称匹配 |
+| 11 | 双代码体系 | 同花顺概念板块有两套代码：**路径 code（30xxxx，如 AI PC=309121，取数/跳转统一用它）** 与 **App clid（88xxxx，如 AI PC=886071，手机 App 显示）**。主键用路径 code；`board_dict.app_code` 存 clid（逐板块详情页抓取，375 概念需额外 1 请求/板块），供用户与手机 App 核对。行业板块 clid=路径 code。**资金流映射（2026-08-10 口径更新）**：资金流源板块单元格带链接含真实路径 code（如 `/gn/detail/code/308734/`）→ 优先按 code 匹配、链接 code 的独有板块补进字典；仍无链接 code 才回落名称匹配、无稳定代码写 `board_fund_unmatched` 质检 |
 
 ## 8. 已确认的非阻塞设计结论（无剩余确认项）
 
@@ -205,3 +205,10 @@ DailyPipeline.run()
 - 失败闭环已细化到真实工作单元：字典类型、成分/指数板块、资金流类型+周期；部分失败保持 failed 和 checkpoint，可只续跑未成功项。
 - 概览不再只有维度注册行，已展示板块规模、覆盖、最新日期、问题分类和最近更新，并可跳转采集。
 - 展示侧后端 `/api/sectors*` 与 RBAC 已完成；`/sectors`、`/sectors/:code` 前端页面及页面配置闭环仍未完成，继续按正式需求和开发计划实施。
+
+### 12.1 2026-08-10 补充（登录 Cookie / 周频 / 闭环整改）
+
+- **登录 Cookie 管理已实施**：`ths_board.login_cookie` 配置（数据治理「同花顺板块」tab）+ 数据源健康「配置登录 Cookie」入口（脱敏、留空不修改、空串清除）；环境变量 `AI_STOCKS_THS_COOKIE`/`_FILE` 优先。配置后可解除登录墙取全深页板块（概念 375→390）与完整成分股。
+- **成分周频已实施**：`member_update_interval_days`（默认 7），未达间隔记 `skipped` 不计失败；`force`（质量修复/backfill/CLI `--force-members`/前端开关）绕过。
+- **全链路闭环整改已实施**：取消穿透、部分失败可续跑语义、scan 事务原子替换、frame 缓存解耦、fund checkpoint 范围签名+旧格式迁移、member/fund ignored 豁免、复检口径统一等。
+

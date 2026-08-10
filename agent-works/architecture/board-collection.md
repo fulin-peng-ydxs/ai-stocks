@@ -201,7 +201,7 @@
 
 | 文件 | 覆盖 |
 |------|------|
-| `backend/tests/test_board_ingest.py`（19 用例） | 字典/成分/指数/资金流采集、只进不出幂等、不完整快照不落库、周频跳过、**ignored 豁免（fund + member）**、fund checkpoint 范围签名与旧格式迁移、update/backfill 语义、留痕、写锁归类、事务原子性 |
+| `backend/tests/test_board_ingest.py`（20 用例） | 字典/成分/指数/资金流采集、只进不出幂等、不完整快照不落库、周频跳过、**ignored 豁免（fund + member）**、fund checkpoint 范围签名与旧格式迁移、update/backfill 语义、留痕、写锁归类、事务原子性 |
 | `backend/tests/test_data_mgmt_b.py` 板块用例（~20） | board 任务注册/互斥/续跑/部分失败、force_members 透传、scan_board_quality 扫描与事务替换、recheck_clean 复检、三类 issue 修复闭环、搜索、概览/hub 板块统计 |
 | `backend/tests/test_sectors_api.py`（9 用例） | `/api/sectors*` 只读接口、权限、涨幅口径 |
 | `backend/tests/test_pipeline.py` | `DailyPipeline.run(board=True)` 集成、`--skip-board` |

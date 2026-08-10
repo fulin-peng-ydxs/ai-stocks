@@ -45,6 +45,8 @@ flowchart TD
 | `AI_STOCKS_SMTP_USERNAME` | `Settings.mail_config()` | SMTP 登录账号/发信邮箱 | 真实发信必填；覆盖 YAML `mail.username`（基线留空） | 同上 |
 | `AI_STOCKS_SMTP_SENDER` | `Settings.mail_config()` | From 显示地址；留空回落 `username` | 可选；覆盖 YAML `mail.sender` | 同上 |
 | `AI_STOCKS_SMTP_PASSWORD` | `Settings.smtp_password()`、`backend/common/mailer.py` | SMTP 登录密码/授权码（Gmail 等用应用专用密码） | 真实发信必填；无弱默认 | 真实发信时读取 |
+| `AI_STOCKS_THS_COOKIE` | `backend/datasource/ths_board.py::_login_cookie_from_env()` | 同花顺板块登录态 Cookie 头（浏览器登录后复制），解除翻页登录墙取全深页板块/成分；优先级高于数据治理页面配置 `ths_board.login_cookie` | 可选；不配置也能采集，只是被登录墙截断（概念 375→390） | 新建 `ThsBoardSource` 实例时读取（`_login_cookie_from_env`） |
+| `AI_STOCKS_THS_COOKIE_FILE` | 同上 | 指向存有 Cookie 的文件路径；仅当 `AI_STOCKS_THS_COOKIE` 为空时读取 | 可选；优先级低于 `AI_STOCKS_THS_COOKIE`、高于页面配置 | 同上 |
 | `AI_STOCKS_ADMIN_PASSWORD` | `backend/storage/pg_ddl.py::seed_default_tenant()` | 首次 seed 或补齐 `admin` 密码哈希 | 生产/共享环境必须显式设置；缺失会随机生成并只在日志告警一次 | 仅在 `admin` 不存在或 `password_hash` 为空时使用；不会覆盖已有密码 |
 | `AI_STOCKS_TEST_USER_PASSWORD` | `backend/devtools/rbac_test_users.py`、`frontend/e2e/helpers/auth.ts` | `debug_*` 本地调试账号与 Playwright 登录统一密码 | 可选；本地开发未设置时回落测试默认值 | 执行 `./start.sh dev-users` 创建/校准及 `npm run test:e2e(:ui)` 启动时读取 |
 | `AI_STOCKS_ENV` / `ENV` | `backend/devtools/environment_guard.py` | 调试账号与 E2E 临时数据写入的环境白名单 | 执行调试数据写入时必填；仅 `dev/development/local/test/testing` 放行，空值、未知值和生产值全部拒绝 | `dev-users`、后端 E2E 健康检查和临时用户夹具每次执行时读取 |

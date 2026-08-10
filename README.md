@@ -137,7 +137,7 @@ backend/
                   · pipeline（一键日常 DailyPipeline）· async_task（异步任务底座）
                   · auth_service / user_admin / role_admin / menu_admin / tenant_admin
                   · data_report / data_verify / data_sources · training（盘感训练）
-  datasource/     数据源适配（akshare / baostock；限流·重试·超时·兜底·溯源）
+  datasource/     数据源适配（akshare / baostock / ths_board 同花顺板块直连；限流·重试·超时·兜底·溯源）
   storage/        DuckDB 连接 / DDL / 点时安全仓库 / PG DDL / RBAC 仓库 / 资产归属仓库
                   / 配置覆盖层 / 布局配置(layout_config) / 数据目录
   dataquality/    入库清洗 + 四层质检（checker）
