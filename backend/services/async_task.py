@@ -827,7 +827,8 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             from backend.services.board_ingest import BoardIngestService
             ctx.log(f"恢复(成分快照不完整)：重采板块 {code} 成分快照")
             bsvc = BoardIngestService(c)
-            res = _call_with_ctx(bsvc.ingest_board_members, board_codes=[code], ctx=ctx)
+            # force=True：质量修复必须绕过周频跳过，否则修复会被跳过逻辑挡住
+            res = _call_with_ctx(bsvc.ingest_board_members, board_codes=[code], ctx=ctx, force=True)
             r = res.get(code, {})
             if "error" in r:
                 raise RuntimeError(f"板块成分重采失败：{r['error']}")

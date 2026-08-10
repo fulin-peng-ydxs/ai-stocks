@@ -1799,13 +1799,15 @@ class IngestionService:
     # ── 板块概念采集（字典 / 完整成分快照 / 指数 / 资金流）─────────────────
     def ingest_board(self, ctx=None, board_type: str | None = None,
                      board_codes: list[str] | None = None, mode: str = "update",
-                     only: list[str] | None = None, limit: int | None = None) -> dict:
+                     only: list[str] | None = None, limit: int | None = None,
+                     force_members: bool | None = None) -> dict:
         """板块数据编排：字典 → 成分快照 → 指数 → 资金流。
 
         承接 plan §6.4 T4：单步骤失败记日志不中断（返回失败清单），供 T5/T6 失败隔离与续跑。
-        - mode="backfill"（初始化）：指数全量回填（源端可用起始年 2024 起）+ 资金流全周期。
+        - mode="backfill"（初始化）：指数全量回填（源端可用起始年 2024 起）+ 资金流全周期；
+          成分快照默认绕过周频全量拉（force_members 默认 True）。
         - mode="update"（每日增量）：指数只补最近交易日 + 资金流只采「即时」；
-          成分股始终拉完整快照，按只进不出关系幂等合并。
+          成分股按周频跳过逻辑拉完整快照（只进不出关系幂等合并），force_members=True 时绕过间隔。
         - only：可选子集（"dict"/"members"/"bar"/"fund"），CLI --dict 等分表运行用。
         board_type 可限制 concept/industry；ctx 提供任务中心进度日志。
         """
@@ -1818,6 +1820,9 @@ class IngestionService:
             raise ValueError("板块类型仅支持 concept/industry")
         if limit is not None and limit <= 0:
             raise ValueError("板块采集 limit 必须大于 0")
+        # backfill 初始化默认绕过周频（未传显式值时）；update 默认走周频跳过。
+        if force_members is None:
+            force_members = mode == "backfill"
         svc = BoardIngestService()
         result: dict = {
             "dict": None, "members": {}, "bar": None, "fund_flow": None,
@@ -1864,13 +1869,15 @@ class IngestionService:
                 ctx.flush()
             try:
                 result["members"] = svc.ingest_board_members(
-                    board_codes=board_codes, board_type=board_type, ctx=ctx)
+                    board_codes=board_codes, board_type=board_type, ctx=ctx,
+                    force=force_members)
                 errs = [f"members:{c}: {r['error']}" for c, r in result["members"].items()
                         if "error" in r]
+                skipped = sum(1 for r in result["members"].values() if r.get("skipped"))
                 result["failed"] += errs
                 if ctx:
-                    ctx.log(f"步骤 {idx['n']}/{total} 成分快照：{len(result['members'])} 个板块"
-                            f"（失败 {len(errs)}）")
+                    ctx.log(f"步骤 {idx['n']}/{total} 成分快照：处理 {len(result['members']) - skipped} 个板块"
+                            f"（跳过 {skipped}，失败 {len(errs)}）")
             except Exception as e:  # noqa: BLE001
                 log.warning("板块成分快照采集失败: %s", e)
                 result["failed"].append(f"members: {e}")

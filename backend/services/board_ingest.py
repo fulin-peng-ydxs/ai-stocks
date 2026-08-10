@@ -53,10 +53,22 @@ def _board_types(board_type: str | None) -> tuple[str, ...]:
 class BoardIngestService:
     """板块数据采集编排（R1-R4，只进不出模型）。"""
 
-    def __init__(self, client: DuckDBClient | None = None, source: ThsBoardSource | None = None):
+    def __init__(self, client: DuckDBClient | None = None, source: ThsBoardSource | None = None,
+                 member_interval_days: int | None = None):
         self.c = client or get_client()
         init_db(self.c)
         self.src = source or ThsBoardSource()
+        # 成分快照更新间隔（天，周频控制）：显式入参优先；未传读生效配置；配置异常回落 7 天。
+        # 对齐 ThsBoardSource 同款「显式入参 → 生效配置 → 参数默认」模式，便于测试注入与 Web 配置生效。
+        if member_interval_days is None:
+            try:
+                from backend.config.settings import get_effective_settings
+                self._member_interval_days = int(
+                    get_effective_settings().ths_board.member_update_interval_days)
+            except Exception:  # noqa: BLE001 —— 配置/DB 异常回落默认
+                self._member_interval_days = 7
+        else:
+            self._member_interval_days = member_interval_days
 
     def _log_update(self, table_name: str, date_start: date | None, date_end: date | None,
                     row_count: int, status: str, detail: str = "") -> None:
@@ -206,12 +218,18 @@ class BoardIngestService:
     def ingest_board_members(self, snapshot_date: date | None = None,
                              board_codes: list[str] | None = None,
                              board_type: str | None = None,
-                             ctx: object | None = None) -> dict:
+                             ctx: object | None = None,
+                             force: bool = False) -> dict:
         """逐板块成分快照：完整快照 INSERT ON CONFLICT DO NOTHING 落库（只进不出）。
 
         board_codes=None → 全量（从 board_dict 读取有成分数据的板块）。单板块失败记日志不中断，
-        返回 {board_code: {"total"/"added"/"error"...}}。
+        返回 {board_code: {"total"/"added"/"error"/"skipped"...}}。
         ctx：任务上下文（TaskContext/CliTaskContext 鸭子类型），逐板块打实时日志。
+
+        周频更新（板块概念 R 深化）：成分股不随每日增量更新。默认模式只重拉「上次完整快照
+        距今 >= member_update_interval_days 天」或「从未完整落库（member_snapshot_at IS NULL）」
+        的板块，未达间隔的记 skipped 跳过（不计失败、不打日志 failed、不写 incomplete issue）。
+        force=True 绕过间隔直接全量（质量页修复重采 / backfill 初始化 / CLI --force-members 用）。
         """
         sdate = snapshot_date or _asia_date()
         # 读取板块清单
@@ -236,9 +254,38 @@ class BoardIngestService:
         done_codes.intersection_update({str(x) for x in df_boards["board_code"].tolist()})
         if done_codes:
             df_boards = df_boards[~df_boards["board_code"].astype(str).isin(done_codes)]
+        # 周频跳过（force 时不过滤）：只拉「上次完整快照过久」或「从未完整落库」的板块。
+        # 间隔比较与写入同源：member_snapshot_at 由 now() 写入 TIMESTAMP 列（DuckDB 会话时区
+        # 默认为 Asia/Shanghai，读出 naive 墙钟）；cutoff 取 DB 会话 now() - 间隔折 naive 墙钟，
+        # 不引入 Python 时区假设，任何会话时区下判定都与写入一致。
+        skipped_codes: set[str] = set()
+        if not force and len(df_boards):
+            db_now = self.c.query_df("SELECT now() AS n").iloc[0]["n"]
+            cutoff = (pd.Timestamp(db_now) - pd.Timedelta(days=self._member_interval_days)) \
+                .tz_localize(None).to_pydatetime()
+            snap = self.c.query_df(
+                f"SELECT board_code, member_snapshot_at FROM board_dict "
+                f"WHERE board_code IN ({_in_placeholders(len(df_boards))})",
+                [str(x) for x in df_boards["board_code"].tolist()])
+            snap_map = dict(zip(snap["board_code"].astype(str), snap["member_snapshot_at"]))
+            keep: list[bool] = []
+            for bc in df_boards["board_code"].astype(str):
+                at = snap_map.get(bc)
+                # member_snapshot_at 缺失/NaT（从未完整落库）→ 必须拉；存在且距今不足间隔 → 跳过。
+                # TIMESTAMP 列读出为 naive 墙钟，与 naive cutoff 一致直接比较。
+                if at is None or pd.isna(at):
+                    keep.append(True)
+                else:
+                    keep.append(pd.Timestamp(at).to_pydatetime() < cutoff)
+            skip_mask = pd.Series(keep, index=df_boards.index)
+            skipped_codes = {str(x) for x in df_boards.loc[~skip_mask, "board_code"].tolist()}
+            df_boards = df_boards[skip_mask]
+            if skipped_codes:
+                results.update({c: {"skipped": True, "interval_days": self._member_interval_days}
+                                for c in skipped_codes})
         n_err = 0
         n_total = len(df_boards)
-        phase_total = len(done_codes) + n_total
+        phase_total = len(done_codes) + n_total + len(skipped_codes)
         for i, (_, b) in enumerate(df_boards.iterrows(), 1):
             code, board_type = str(b["board_code"]), str(b["board_type"])
             if ctx:
@@ -266,12 +313,17 @@ class BoardIngestService:
                 self._write_incomplete_quality(code, sdate, str(e))
                 if ctx:
                     ctx.log(f"成分 {i}/{n_total} {code}：失败 {e}", "error")
+        if skipped_codes and ctx:
+            ctx.log(f"成分：{len(skipped_codes)} 个板块未达更新间隔（{self._member_interval_days} 天），跳过")
         # 更新留痕（聚合：一次运行一条日志，避免逐板块刷屏）
-        written = sum(int(r.get("added", 0)) for r in results.values() if "error" not in r)
+        written = sum(int(r.get("added", 0)) for r in results.values() if "error" not in r and not r.get("skipped"))
+        skip_detail = f"，跳过 {len(skipped_codes)} 个未到期板块" if skipped_codes else ""
         self._log_update("board_member", sdate, sdate, written,
                          "success" if not n_err else "partial",
-                         f"处理 {len(results)} 个板块，新增 {written} 条成员关系（失败 {n_err}）")
-        log.info("板块成分快照 %d 个板块（失败 %d）", len(results), n_err)
+                         f"处理 {len(results) - len(skipped_codes)} 个板块，新增 {written} 条成员关系"
+                         f"（失败 {n_err}）{skip_detail}")
+        log.info("板块成分快照 %d 个板块（跳过 %d，失败 %d）",
+                 len(results) - len(skipped_codes), len(skipped_codes), n_err)
         return results
 
     def _ingest_one_member(self, code: str, board_type: str, sdate: date) -> dict:

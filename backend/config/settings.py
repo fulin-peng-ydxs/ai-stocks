@@ -229,6 +229,7 @@ class ThsBoardConfig(BaseModel):
     timeout_sec: float = Field(default=10.0, ge=1)           # 单请求超时（秒）
     max_retries: int = Field(default=3, ge=1, le=10)         # 失败重试次数
     retry_backoff_sec: float = Field(default=2.0, ge=0, le=60)  # 重试退避基数（秒，指数退避）
+    member_update_interval_days: int = Field(default=7, ge=1, le=30)  # 成分快照更新间隔（天）：默认周频，达标后按此跳过
 
 
 class MailConfig(BaseModel):

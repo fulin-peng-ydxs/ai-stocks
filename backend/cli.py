@@ -437,12 +437,16 @@ def cmd_board(args: argparse.Namespace) -> int:
     codes = [x.strip() for x in args.codes.split(",") if x.strip()] if args.codes else None
     svc = IngestionService()
     res = svc.ingest_board(mode=mode, ctx=CliTaskContext(), board_type=args.board_type,
-                           board_codes=codes, only=only, limit=args.limit)
+                           board_codes=codes, only=only, limit=args.limit,
+                           force_members=args.force_members)
     failed = res.get("failed") or []
     scope = f" only={only}" if only else ""
     print(f"=== 板块采集（{mode}{scope}）{'✓' if not failed else '✗'} ===")
     print(f"  字典: {res.get('dict')}")
     print(f"  成分快照: {len(res.get('members', {}))} 个板块")
+    skipped = sum(1 for r in res.get('members', {}).values() if r.get('skipped'))
+    if skipped:
+        print(f"    跳过未到期板块: {skipped} 个（周频控制，--force-members 可强制全量）")
     print(f"  指数: {res.get('bar')}")
     print(f"  资金流: {res.get('fund_flow')}")
     if failed:
@@ -705,6 +709,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_board.add_argument("--type", dest="board_type", choices=("concept", "industry"),
                          help="只采概念或行业板块")
     p_board.add_argument("--limit", type=int, help="只取字典前 N 个板块（小批量验证）")
+    p_board.add_argument("--force-members", action="store_true",
+                         help="绕过成分周频跳过，强制全量拉成分快照（质量修复/手动补采用）")
     p_board.set_defaults(func=cmd_board)
 
     p_bt = sub.add_parser("backtest", help="运行回测（M5）：信号质量分析 / 完整策略回测")

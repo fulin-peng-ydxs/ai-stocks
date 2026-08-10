@@ -52,6 +52,7 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "ths_board.timeout_sec", "label": "请求超时(秒)", "type": "number", "min": 1, "max": 120, "desc": "单个同花顺请求的等待上限。"},
         {"path": "ths_board.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10, "desc": "同花顺请求失败后的最多重试次数。"},
         {"path": "ths_board.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60, "desc": "同花顺请求连续重试之间的退避时间。"},
+        {"path": "ths_board.member_update_interval_days", "label": "成分快照更新间隔(天)", "type": "int", "min": 1, "max": 30, "desc": "成分股快照多久全量拉取一次；未达间隔且上次完整时跳过（默认 7=周频）。"},
     ]},
     # 定时调度（遗留）：调度系统重构后改用 scheduled_job 表 + 「任务调度」页，旧的单一每日配置
     # 已不再作为运行态。这些白名单项仅供启动时一次性迁移读取旧值（读后即删，见 scheduler._migrate_legacy_config），

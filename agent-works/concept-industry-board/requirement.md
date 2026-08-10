@@ -148,7 +148,8 @@
 - **操作流程**：对每个板块 → `get_board_members(code)`（两种排序策略取多者）→ **完整快照**（`complete=True`）时对快照内每个 code 执行 `INSERT ... ON CONFLICT (board_code, code) DO NOTHING`——已在表内的不动、新出现的插入；同步刷新 `board_dict.member_count`（当前成分数）。
 - **只进不出语义**：表 = 该板块**所有曾经进入过的成分股**累积。退出的股票**永远保留在表内**（不标记退出、不删除），不做逐次快照 diff。重采天然安全——完整快照只新增不覆盖，缺了某股也不影响既有行。
 - **🔴 完整性即闸门（成功/失败判定）**：单板块分页不完整（登录墙/翻页失败/401）或请求异常时，`get_board_members` 返回 `complete=False` → **整趟快照不落库**，`data_update_log` 记 failed 待重采；已采集的旧数据原样保留，不受失败影响。**不做 diff 比对、不做波动阈值判断**——成分波动是源端真实重组，不是数据错误。
-- **可重采性**：数据质量页「重采」= 重新拉该板块完整快照，`complete=True` 则 `ON CONFLICT DO NOTHING` 合并新增；不完整则不落库。既有数据永不因重采而丢失。
+- **🔴 更新间隔（周频，2026-08-10 新增）**：成分股不随每日增量更新，按 `member_update_interval_days`（默认 7 天，系统设置「同花顺板块·成分快照更新间隔」可配）跳过未到期板块。默认模式只重拉「**上次完整快照距今 ≥ 间隔**」或「**从未完整落库**（`member_snapshot_at IS NULL`）」的板块；未达间隔的板块记 `skipped` 跳过——不计失败、不打 `data_update_log` failed、不写 `board_member_incomplete` 质检。**跳过 ≠ 失败**，周频不会产生虚假质量问题。`force=True`（质量修复重采、`backfill` 初始化、CLI `--force-members`）绕过间隔直接全量拉。
+- **可重采性**：数据质量页「重采」= 重新拉该板块完整快照（`force=True` 绕过周频），`complete=True` 则 `ON CONFLICT DO NOTHING` 合并新增；不完整则不落库。既有数据永不因重采而丢失。
 - **输入输出**：输入板块代码；输出本次快照新增成分股数（成功）或失败原因。
 - **校验规则**：成分股 6 位代码补交易所后缀对齐 `stock_basic.code`；PK `(board_code, code)`。
 - **异常情况**：单板块失败跳过记日志（`data_update_log` failed + 失败清单），不中断整体采集。

@@ -58,7 +58,7 @@ class _FakeSource:
 def _make_service(tmp_path, source=None, **kw) -> tuple[BoardIngestService, DuckDBClient]:
     c = DuckDBClient(db_path=str(tmp_path / "test.duckdb"))
     init_db(c)
-    svc = BoardIngestService(client=c, source=source)
+    svc = BoardIngestService(client=c, source=source, **kw)
     return svc, c
 
 
@@ -80,7 +80,7 @@ def test_board_codes_filter_in_clause(tmp_path):
         c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
                   "VALUES (?,?,?,TRUE)", [code, name, bt])
     # ingest_board_members 指定 board_codes → 不崩且只处理指定板块
-    r = svc.ingest_board_members(snapshot_date=date(2026, 1, 5), board_codes=["309121"])
+    r = svc.ingest_board_members(snapshot_date=date(2026, 1, 5), board_codes=["309121"], force=True)
     assert set(r.keys()) == {"309121"}
     assert "881121" not in r
     # ingest_board_bar 指定 board_codes（空 bar 返回不崩）
@@ -118,7 +118,7 @@ def test_board_type_limits_dictionary_and_members(tmp_path):
     assert result["concept"] == 1 and result["industry"] == 0
     assert c.query_df("SELECT board_type FROM board_dict")["board_type"].tolist() == ["concept"]
     svc.ingest_board_dict(board_type="industry")
-    members = svc.ingest_board_members(board_type="industry")
+    members = svc.ingest_board_members(board_type="industry", force=True)
     assert set(members) == {"881121"}
 
 
@@ -148,13 +148,39 @@ def test_member_checkpoint_and_resume_skip_completed(tmp_path):
 
     first = _Ctx(cancel_at=2)
     with pytest.raises(RuntimeError, match="cancel"):
-        svc.ingest_board_members(board_codes=["309121", "881121"], ctx=first)
+        svc.ingest_board_members(board_codes=["309121", "881121"], ctx=first, force=True)
     assert first.checkpoint["member_done_codes"] == ["309121"]
 
     resumed = _Ctx(checkpoint=dict(first.checkpoint))
-    result = svc.ingest_board_members(board_codes=["309121", "881121"], ctx=resumed)
+    result = svc.ingest_board_members(board_codes=["309121", "881121"], ctx=resumed, force=True)
     assert set(result) == {"881121"}
     assert resumed.checkpoint["member_done_codes"] == ["309121", "881121"]
+
+
+def test_member_weekly_skip_within_interval(tmp_path):
+    """周频跳过：已完整落库且距今不足间隔的板块默认跳过，force 才全量拉。
+
+    前提是「成分完整」= member_snapshot_at 存在；从未完整落库的板块必须拉（不跳过）。
+    """
+    src = _FakeSource({"309121": ["300476"], "881121": ["600000"]})
+    svc, c = _make_service(tmp_path, src, member_interval_days=7)
+
+    # 板块 A 从未完整落库（member_snapshot_at IS NULL）→ 必须拉；板块 B 刚完整拉过 → 跳过
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE),('881121','半导体','industry',TRUE)")
+    c.execute("UPDATE board_dict SET member_snapshot_at=now() WHERE board_code='881121'")
+
+    r = svc.ingest_board_members(board_codes=["309121", "881121"])
+    assert r["309121"]["total"] == 1          # 从未完整 → 拉了
+    assert r["881121"]["skipped"] is True     # 刚拉过 → 跳过
+    # 跳过不写 failed、不写 incomplete issue
+    issues = c.query_df("SELECT count(*) AS n FROM data_quality_issue "
+                        "WHERE issue_type='board_member_incomplete'")
+    assert int(issues.iloc[0]["n"]) == 0
+
+    # force=True → 全量拉（质量修复/backfill 用）
+    r2 = svc.ingest_board_members(board_codes=["881121"], force=True)
+    assert r2["881121"]["total"] == 1
 
 
 # ── 成分快照（只进不出）与 member_count ─────────────────────
@@ -401,7 +427,7 @@ def test_ingest_board_mode_update_vs_backfill(tmp_path, monkeypatch):
 
     # update 模式
     svc.ingest_board_dict()
-    svc.ingest_board_members(board_codes=["309121"])
+    svc.ingest_board_members(board_codes=["309121"], force=True)
     svc.ingest_board_bar(date(2026, 8, 1), board_codes=["309121"])
     svc.ingest_board_fund_flow(periods=("即时",))
     assert set(calls["fund_periods"]) == {"即时"}    # update 只采即时（概念+行业各一次）
@@ -422,7 +448,7 @@ def test_ingest_writes_update_log(tmp_path):
               "VALUES ('309121','AI PC','concept',TRUE,TRUE)")
     # 字典 + 成分 + 指数 + 资金流都触发 log_update
     svc.ingest_board_dict(date(2026, 8, 9))
-    svc.ingest_board_members(snapshot_date=date(2026, 8, 9), board_codes=["309121"])
+    svc.ingest_board_members(snapshot_date=date(2026, 8, 9), board_codes=["309121"], force=True)
     svc.ingest_board_bar(date(2026, 8, 1), board_codes=["309121"])
     svc.ingest_board_fund_flow(date(2026, 8, 9))
     logs = c.query_df("SELECT table_name, source, status FROM data_update_log ORDER BY id")

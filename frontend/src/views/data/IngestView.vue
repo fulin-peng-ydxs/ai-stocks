@@ -821,7 +821,7 @@ onMounted(async () => {
             <el-radio value="update">增量</el-radio>
             <el-radio value="backfill">全量回填</el-radio>
           </el-radio-group>
-          <span class="hint">增量：只补最近交易日、资金流只采即时；全量回填：指数补 2024 起、资金流全周期</span>
+          <span class="hint">增量：指数补最近交易日、资金流只采即时、成分股按周频跳过未到期板块；全量回填：指数补 2024 起、资金流全周期、成分股强制全量</span>
         </el-form-item>
         <el-form-item :label="optType === 'board' ? '指定板块' : '指定股票'">
           <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags

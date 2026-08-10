@@ -551,7 +551,7 @@ def test_board_member_incomplete_fix_reingests(client, monkeypatch):
     monkeypatch.setattr(BoardIngestService, "__init__",
                         lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_members",
-                        lambda self, snapshot_date=None, board_codes=None, ctx=None:
+                        lambda self, snapshot_date=None, board_codes=None, ctx=None, **kwargs:
                         {"309121": {"total": 50}}, raising=True)
     client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
                    "VALUES ('309121','AI PC','concept',TRUE)")
@@ -579,7 +579,7 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
         return {"concept": 375, "industry": 90, "total": 465}
 
     def fake_ingest_board_members(self, snapshot_date=None, board_codes=None,
-                                  board_type=None, ctx=None):
+                                  board_type=None, ctx=None, **kwargs):
         captured["member_type"] = board_type
         return {}
 
@@ -674,7 +674,7 @@ def test_ingest_board_only_selects_tables(client, monkeypatch):
                         lambda self, snapshot_date=None, board_type=None, ctx=None:
                         called.__setitem__("dict", 1) or {"total": 0}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_members",
-                        lambda self, snapshot_date=None, board_codes=None, board_type=None, ctx=None:
+                        lambda self, snapshot_date=None, board_codes=None, board_type=None, ctx=None, **kwargs:
                         called.__setitem__("members", 1) or {}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
                         lambda self, start, end=None, board_codes=None, board_type=None, ctx=None:
