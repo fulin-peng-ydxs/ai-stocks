@@ -489,28 +489,34 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
-  it('页面源码使用 AppDataTable 时必须登记 data-table/wide-table slot（反向契约）', () => {
-    // 反向契约：已登记的表格 slot 由上方正向测试校验 border 接入；
-    // 这里堵住「页面用了表格却未登记」——开放组件配置的业务页面，其数据表必须作为 slot
-    // 进入组件配置层（DESIGN §7.3 受控字段 hiddenColumns/border 以 slot 登记为前提）。
-    // 豁免：configEntry 生成的配置编辑器页（config-score/config-trade 共享 ConfigView，
-    // 表格是编辑器内部 embedded 结构，非独立业务数据表）；config-tech 是独立列表页已单独登记。
-    // 豁免：config-* 页共享 ConfigView 视图（score/trade/tech/system 四个 tab 在单一源码），
-    // `source.includes('<AppDataTable')` 无法区分具体 tab 的表格；其中 techTable 已单独登记为
-    // 独立列表 slot，其余 tab 的表格是配置编辑器内部 embedded 结构，非独立业务数据表。
+  it('页面源码渲染受控组件时须登记对应 slot（反向契约，通用）', () => {
+    // 反向契约：已登记的 slot 由正向测试校验字段接入；这里堵住「用了受控组件却未登记」——
+    // 开放组件配置的页面，业务组件必须作为 slot 进入组件配置层（DESIGN §7.3 以 slot 登记为前提）。
+    // 仅对「有唯一运行时组件、语义明确」的种类启用反向拦截：
+    // - data-table/wide-table 共享 AppDataTable 运行时，渲染 AppDataTable 须有任一表格 slot
+    //   （kind 属性区分两种，不要求同时登记）
+    // - settings-drawer 由注册表自动注入 settings slot（injectSettingsDrawer），反向无意义
+    // - config-panel / tabs 的运行时组件可出现在配置面板内部（ConfigGroupForm/el-tabs），
+    //   无法区分「独立业务组件」与「面板内子结构」，反向判定会产生误报
+    // 未来新增「有唯一运行时组件且需独立登记」的受控种类时，扩 REVERSE_CONTRACT_KINDS 即可。
+    const REVERSE_CONTRACT_KINDS: { kinds: ComponentKind[]; runtimeNames: string[] }[] = [
+      { kinds: ['data-table', 'wide-table'], runtimeNames: ['AppDataTable', 'AppTableColumn'] },
+    ]
     for (const entry of PAGE_REGISTRY) {
       if (!entry.supportsComponentConfig) continue
-      if (entry.pageKey.startsWith('config-')) continue
+      if (entry.pageKey.startsWith('config-')) continue  // config 共享视图，无法区分 tab 内结构
       const source = sourceForPage(entry.pageKey)
-      if (!source) continue  // 非 registry 消费页面（如平台布局工作台）跳过
-      if (!source.includes('<AppDataTable')) continue  // 页面未用表格
-      const tableSlots = entry.layout.slots.filter(
-        (slot) => slot.component === 'data-table' || slot.component === 'wide-table')
-      expect(
-        tableSlots.length,
-        `${entry.pageKey} 页面源码使用 <AppDataTable> 但 layout 未登记 data-table/wide-table slot——`
-        + `开放组件配置的页面，业务数据表必须登记为 slot（border/列显隐/DESIGN §7.3）`,
-      ).toBeGreaterThan(0)
+      if (!source) continue
+      for (const { kinds, runtimeNames } of REVERSE_CONTRACT_KINDS) {
+        const rendersRuntime = runtimeNames.some((name) => source.includes(name))
+        if (!rendersRuntime) continue
+        const hasSlot = entry.layout.slots.some((slot) => kinds.includes(slot.component as ComponentKind))
+        expect(
+          hasSlot,
+          `${entry.pageKey} 渲染 <${runtimeNames[0]}> 但 layout 未登记 ${kinds.join('/')} slot——`
+          + `开放组件配置的页面，业务组件必须登记为 slot（DESIGN §7.3）`,
+        ).toBe(true)
+      }
     }
   })
 
