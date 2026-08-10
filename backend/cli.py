@@ -436,9 +436,15 @@ def cmd_board(args: argparse.Namespace) -> int:
     only = only or None
     codes = [x.strip() for x in args.codes.split(",") if x.strip()] if args.codes else None
     svc = IngestionService()
-    res = svc.ingest_board(mode=mode, ctx=CliTaskContext(), board_type=args.board_type,
-                           board_codes=codes, only=only, limit=args.limit,
-                           force_members=args.force_members)
+    ingest_kwargs: dict = {
+        "ctx": CliTaskContext(), "board_type": args.board_type,
+        "board_codes": codes, "only": only, "limit": args.limit,
+    }
+    # 仅显式 --force-members 时传 True；否则不传（None 由 ingest_board 按 mode/board_codes 自动解析，
+    # 避免 CLI 指定板块重采被周频跳过挡住）
+    if args.force_members:
+        ingest_kwargs["force_members"] = True
+    res = svc.ingest_board(mode=mode, **ingest_kwargs)
     failed = res.get("failed") or []
     scope = f" only={only}" if only else ""
     print(f"=== 板块采集（{mode}{scope}）{'✓' if not failed else '✗'} ===")
