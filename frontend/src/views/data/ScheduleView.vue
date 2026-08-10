@@ -456,7 +456,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             :placeholder="cookieSet ? '已设置，留空不修改' : '粘贴同花顺登录 Cookie 头'"
             data-testid="ths-login-cookie-input"
           />
-          <span class="cookie-field-hint">{{ cookieSet ? '已配置：输入新值覆盖、空串清除、留空不修改' : '未配置：配置后可解除登录墙取全深页板块与完整成分股' }}</span>
+          <span class="cookie-field-hint">{{ cookieSet ? '输入新值覆盖、空串清除、留空不修改' : '配置后可解除登录墙取全深页板块与完整成分股' }}</span>
         </el-form-item>
       </el-form>
       <p class="cookie-note">
