@@ -456,6 +456,20 @@ def quality(issue_type: str | None = None, severity: str | None = None,
             else:
                 nm = ""
         r["name"] = str(nm)
+        # 板块 issue 的 detail 可读化：采集层写的是 JSON（{reason,snapshot_date} 或 {name,board_type}），
+        # 直接返回 JSON 字符串对用户不友好；转成自然语言文案。recheck/修复链路用 DB 原始 detail，不受此影响。
+        if it in ("board_member_incomplete", "board_fund_unmatched") and isinstance(detail, str) and detail.strip():
+            try:
+                import json as _json
+                payload = _json.loads(detail)
+                if it == "board_member_incomplete":
+                    r["detail"] = str(payload.get("reason") or detail)
+                elif it == "board_fund_unmatched":
+                    nm2 = str(payload.get("name") or "").strip()
+                    bt2 = str(payload.get("board_type") or "").strip()
+                    r["detail"] = f"未匹配到字典：{nm2}（{bt2}）" if nm2 else detail
+            except (ValueError, TypeError):
+                pass  # 非法 JSON 保留原样
         r["id"] = int(r["id"])
     return ok({"summary": summary, "total": total, "page": page, "size": size, "list": rows})
 

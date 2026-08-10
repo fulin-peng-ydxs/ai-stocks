@@ -187,6 +187,8 @@ const sysDirty = computed(() => {
 function systemFieldInvalid(field: SettingGroup['fields'][number], value: unknown): boolean {
   if (field.type === 'bool') return typeof value !== 'boolean'
   if (field.type === 'enum') return !(field.options ?? []).includes(String(value))
+  // string/password：文本字段无数值范围校验，直接放行
+  if (field.type === 'string' || field.type === 'password') return false
   const n = Number(value)
   if (!Number.isFinite(n)) return true
   if (field.type === 'int' && !Number.isInteger(n)) return true

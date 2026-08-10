@@ -67,6 +67,18 @@ function sourceRoleLabel(role: string): string {
   if (role === 'board') return '板块源'
   return '备用源'
 }
+// 数据源健康·同花顺板块行的操作项（当前仅「授权配置」登录 Cookie）
+function boardSourceRowActions(): AppRowAction[] {
+  return [
+    {
+      key: 'cookie',
+      label: '授权配置',
+      permission: 'data-settings:manage',
+      testId: 'ths-login-cookie-btn',
+      onClick: () => openCookieConfig(),
+    },
+  ]
+}
 
 const FREQ_OPTIONS: { label: string; value: FreqType }[] = [
   { label: '每日', value: 'daily' }, { label: '每周', value: 'weekly' },
@@ -410,34 +422,38 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           @retry="loadSources(false)"
         />
         <div v-else v-loading="sourceLoading" class="sources-body">
-        <AppStateBlock
-          v-if="sourceError"
-          state="error"
-          size="compact"
-          title="数据源健康刷新失败"
-          :description="sourceError"
-          retry
-          @retry="loadSources(false)"
-        />
-        <div v-for="s in displaySources" :key="s.source" class="src">
-          <span class="dot" :class="s.up === true ? 'up' : s.up === false ? 'down' : 'unknown'" />
-          <span class="src-name">{{ SOURCE_LABEL[s.source] ?? s.source }}</span>
-          <el-tag size="small" effect="plain" :type="s.role === 'primary' ? 'primary' : 'info'">
-            {{ sourceRoleLabel(s.role) }}
-          </el-tag>
-          <span class="src-state">{{ s.up === true ? '连通' : s.up === false ? '不可达' : '未测试' }}</span>
-          <el-button
-            v-if="s.source === 'ths_board'"
-            v-permission="'data-settings:manage'"
-            size="small"
-            text
-            type="primary"
-            data-testid="ths-login-cookie-btn"
-            @click="openCookieConfig"
-          >配置登录 Cookie</el-button>
-          <span class="src-meta">最近成功 {{ fmtTime(s.last_success_at) }} · 超时 {{ s.timeout_sec }}s</span>
-        </div>
-        <div v-if="!displaySources.length" class="app-empty-inline">点「测试连通」检查行情源与板块源可达性</div>
+        <AppDataTable :data="displaySources" size="small" class="srcs-tbl">
+          <AppTableColumn label="数据源" prop="source">
+            <template #default="{ row }">{{ SOURCE_LABEL[row.source] ?? row.source }}</template>
+          </AppTableColumn>
+          <AppTableColumn label="角色" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain" :type="row.role === 'primary' ? 'primary' : 'info'">
+                {{ sourceRoleLabel(row.role) }}
+              </el-tag>
+            </template>
+          </AppTableColumn>
+          <AppTableColumn label="状态" align="center">
+            <template #default="{ row }">
+              <span class="src-status">
+                <span class="dot" :class="row.up === true ? 'up' : row.up === false ? 'down' : 'unknown'" />
+                {{ row.up === true ? '连通' : row.up === false ? '不可达' : '未测试' }}
+              </span>
+            </template>
+          </AppTableColumn>
+          <AppTableColumn label="最近成功">
+            <template #default="{ row }">{{ fmtTime(row.last_success_at) }}</template>
+          </AppTableColumn>
+          <AppTableColumn label="超时">
+            <template #default="{ row }">{{ row.timeout_sec }}s</template>
+          </AppTableColumn>
+          <AppTableColumn label="操作" fixed="right">
+            <template #default="{ row }">
+              <AppRowActions v-if="row.source === 'ths_board'" :actions="boardSourceRowActions()" :inline-limit="1" />
+            </template>
+          </AppTableColumn>
+          <template #empty>点「测试连通」检查行情源与板块源可达性</template>
+        </AppDataTable>
         </div>
       </el-card>
     </div>
@@ -629,15 +645,12 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .blk:last-child { margin-bottom: 0; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
 .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: 10px; }
-.src { display: flex; align-items: center; gap: var(--app-space-2); padding: 9px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
-.src:last-child { border-bottom: none; }
-.dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.src-status { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
+.srcs-tbl :deep(.el-table__body) { min-height: 0; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .dot.up { background: var(--el-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-success) 18%, transparent); }
 .dot.down { background: var(--app-danger-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-danger-text) 18%, transparent); }
 .dot.unknown { background: var(--app-placeholder-text); }
-.src-name { font-weight: var(--app-font-weight-section); min-width: 78px; }
-.src-state { font-size: var(--app-font-size-table); }
-.src-meta { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: auto; }
 .cookie-note { margin: 10px 0 0; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
 .cookie-note code { font-family: var(--app-font-mono); color: var(--el-text-color-regular); }
 .cookie-field-hint { display: block; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
