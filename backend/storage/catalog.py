@@ -19,10 +19,10 @@ _TIMESERIES_TABLES: frozenset[str] = frozenset(
     {"daily_bar", "daily_metrics", "index_bar", "board_bar", "board_fund_flow"})
 
 _BOARD_ISSUES_BY_TABLE: dict[str, tuple[str, ...]] = {
-    "board_dict": ("board_index_gap", "board_member_incomplete", "board_fund_unmatched", "board_fund_missing"),
+    "board_dict": ("board_index_gap", "board_member_incomplete", "board_fund_unmatched", "board_fund_missing", "board_fund_stale"),
     "board_member": ("board_member_incomplete",),
     "board_bar": ("board_index_gap",),
-    "board_fund_flow": ("board_fund_unmatched", "board_fund_missing"),
+    "board_fund_flow": ("board_fund_unmatched", "board_fund_missing", "board_fund_stale"),
 }
 
 # 每张基础数据表的元信息。

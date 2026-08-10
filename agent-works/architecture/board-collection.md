@@ -122,7 +122,7 @@
 
 ## 质检（`backend/services/data_report.py` + `dataquality/checker.py`）
 
-板块四类 issue 独立于个股 L1-L4 打分，归入「板块」层（`ISSUE_LAYER` 映射）：
+板块五类 issue 独立于个股 L1-L4 打分，归入「板块」层（`ISSUE_LAYER` 映射）：
 
 | issue_type | 产生方 | 含义 | 修复动作 |
 |-----------|--------|------|----------|
@@ -130,19 +130,21 @@
 | `board_member_incomplete` | 采集层 `_write_incomplete_quality` | 成分快照采集不完整/失败 | 重采成分（force 绕周频） |
 | `board_fund_unmatched` | 采集层 `_write_unmatched_quality` | 资金流未匹配到字典 | 重采资金流 |
 | `board_fund_missing` | `scan_board_quality` 扫描 | 资金流源未收录该板块（字典有成分/指数但无资金流） | 重采资金流（源上线后收敛） |
+| `board_fund_stale` | `scan_board_quality` 扫描 | 全源资金流快照滞后全局最新交易日（源级单条，code=NULL） | 重采全源资金流 |
 
 关键语义：
-- `scan_board_quality` 先完整计算再**事务内替换** open 的 `board_index_gap` / `board_fund_missing`，扫描失败不丢旧问题；已 ignored 的板块按 `(code, type)` 整体豁免。指数缺口复检与扫描口径一致（先判 `has_bar`，false 视为可收敛）；资金流缺失复检看 `has_fund_flow`（true 或板块已移除视为收敛）。
+- `scan_board_quality` 先完整计算再**事务内替换** open 的 `board_index_gap` / `board_fund_missing` / `board_fund_stale`，扫描失败不丢旧问题；已 ignored 的板块按 `(code, type)` 整体豁免。指数缺口复检与扫描口径一致（先判 `has_bar`，false 视为可收敛）；资金流缺失复检看 `has_fund_flow`（true 或板块已移除视为收敛）；资金流滞后复检看全源快照是否追平最新交易日。
 - `board_fund_missing` 与 `board_fund_unmatched` 方向相反：前者是「字典有、源缺」，后者是「源有、字典缺」。前者在源榜单未收录期间保持 open，源上线后重采置 `has_fund_flow=true`，重扫自动收敛。
+- `board_fund_stale` 与 `board_index_gap` 等价：资金流是整体批量采集，停摆时所有板块一起滞后，故记单条源级 issue（code=NULL），修复动作重采全源，不拆逐板块。
 - `board_member_incomplete` / `board_fund_unmatched` 由采集事件写入，幂等判重含 `ignored`（标记正常后重采不翻回 open）。
-- severity 走 `SEVERITY_BY_TYPE` 统一映射（四类均 `mid`），不硬编码。
+- severity 走 `SEVERITY_BY_TYPE` 统一映射（五类均 `mid`），不硬编码。
 - 个股 `scan_quality_issues` 的 DELETE+INSERT 也包事务（对齐板块 scan 失败保留语义）；个股覆盖帧缓存签名排除板块 issue，板块写入不击穿个股 frame 缓存。
 
 ## 修复闭环（`backend/services/async_task.py`）
 
-四类板块 issue 走统一的 fix 任务机制（与个股同链路）：
+五类板块 issue 走统一的 fix 任务机制（与个股同链路）：
 1. 创建 fix 任务 → issue 置 `fixing` + 绑定 `fix_task_id`；
-2. `_recover_one` 按 issue_type 分派重采（指数重采 2024 起 / 成分 `force=True` 绕周频 / 资金流带 `board_type` 或 `board_codes` 定向重采）；
+2. `_recover_one` 按 issue_type 分派重采（指数重采 2024 起 / 成分 `force=True` 绕周频 / 资金流按缺失定向 `board_codes`、按滞后全源重采）；
 3. `recheck_clean` 真检查该问题是否消失（如成分查 `member_snapshot_at` 非空且无 active 同类 issue）；
 4. 通过 → `resolved`；未通过 → 保持 open；任务失败/中断 → `fixing` 复位 `open`。
 

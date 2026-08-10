@@ -541,6 +541,9 @@ def _seed_board_scan(client):
     # AI PC 指数到 08-07（正常），半导体指数滞后到 08-06（缺口）
     client.execute("INSERT INTO board_bar (board_code, trade_date, close) VALUES ('309121', DATE '2026-08-07', 100.0)")
     client.execute("INSERT INTO board_bar (board_code, trade_date, close) VALUES ('881121', DATE '2026-08-06', 200.0)")
+    # 资金流快照整体停留在 08-06（滞后全局最新交易日 08-07 → 触发源级资金流滞后）
+    client.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+                   "VALUES ('309121', DATE '2026-08-06', '即时', 1.0, 0.5, 0.5)")
 
 
 def test_scan_board_quality_no_member_wave(client, monkeypatch):
@@ -618,6 +621,47 @@ def test_board_recheck_fund_missing(client, monkeypatch):
     assert rep.recheck_clean("board_fund_missing", "309121", None) is True
     # 板块不在字典 → True（已被移除，无可修复对象）
     assert rep.recheck_clean("board_fund_missing", "no-such-board", None) is True
+
+
+def test_scan_board_quality_fund_stale(client, monkeypatch):
+    """资金流滞后扫描：全源快照停留早于全局最新交易日记单条源级 issue。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    r = DataIntegrityReport(client).scan_board_quality()
+    assert r["fund_stale"] == 1
+    stale = client.query_df(
+        "SELECT code, trade_date, detail FROM data_quality_issue WHERE issue_type='board_fund_stale'")
+    assert len(stale) == 1
+    assert stale.iloc[0]["code"] is None   # 源级单条，无 code
+    assert str(stale.iloc[0]["trade_date"])[:10] == "2026-08-07"  # 日期 = 全局最新交易日
+    assert "滞后 1 天" in str(stale.iloc[0]["detail"])
+
+
+def test_scan_board_quality_fund_stale_converge(client, monkeypatch):
+    """资金流滞后收敛：快照追平最新交易日 + ignored 豁免后重扫不再上报。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    rep = DataIntegrityReport(client)
+    # 快照追平：补 08-07 快照 → 滞后消除
+    client.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+                   "VALUES ('309121', DATE '2026-08-07', '即时', 2.0, 1.0, 1.0)")
+    r = rep.scan_board_quality()
+    assert r["fund_stale"] == 0
+    left = client.query_df(
+        "SELECT count(*) n FROM data_quality_issue WHERE issue_type='board_fund_stale' AND status='open'")
+    assert int(left.iloc[0]["n"]) == 0
+
+
+def test_board_recheck_fund_stale(client, monkeypatch):
+    """资金流滞后复检：快照未追平保持未解决，追平后收敛。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    rep = DataIntegrityReport(client)
+    assert rep.recheck_clean("board_fund_stale", None, None) is False
+    client.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+                   "VALUES ('309121', DATE '2026-08-07', '即时', 2.0, 1.0, 1.0)")
+    assert rep.recheck_clean("board_fund_stale", None, None) is True
+
 
 
 def test_board_scan_failure_keeps_previous_open_issue(client, monkeypatch):

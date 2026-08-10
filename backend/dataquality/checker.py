@@ -131,6 +131,7 @@ SEVERITY_BY_TYPE: dict[str, str] = {
     "board_member_incomplete": "mid",  # 成分快照采集不完整/失败（只进不出模型完整性闸门，待重采）
     "board_fund_unmatched": "mid",  # 板块资金流未匹配到字典（源无稳定代码，待源侧收敛）
     "board_fund_missing": "mid",  # 板块资金流缺失（源未收录该板块，待源侧上线后重采收敛）
+    "board_fund_stale": "mid",  # 板块资金流滞后（全源快照停留早于全局最新交易日，源停采/漏采）
 }
 
 
@@ -161,6 +162,7 @@ ISSUE_LAYER: dict[str, str] = {
     "board_member_incomplete": "板块",
     "board_fund_unmatched": "板块",
     "board_fund_missing": "板块",
+    "board_fund_stale": "板块",
 }
 # 各层落 data_quality_issue 表的离散异常类型（M2.9.2：四层都落表，质检可反复扫并幂等覆盖）。
 L1_ISSUE_TYPES: tuple[str, ...] = ("null_close", "ohl_repaired")
@@ -171,7 +173,8 @@ L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale")
 # 避免新增质量层问题后只能手工处理。
 QUALITY_ISSUE_TYPES: tuple[str, ...] = (
     L1_ISSUE_TYPES + L2_ISSUE_TYPES + L3_ISSUE_TYPES + L4_ISSUE_TYPES
-    + ("board_index_gap", "board_member_incomplete", "board_fund_unmatched", "board_fund_missing")
+    + ("board_index_gap", "board_member_incomplete", "board_fund_unmatched",
+       "board_fund_missing", "board_fund_stale")
 )
 # 质检（scan_quality_issues）每次重扫并幂等覆盖的"自动问题"类型（L2/L3/L4）；
 # L1 由入库闸门即时记录，质检只做防御性补扫，不在此清表。

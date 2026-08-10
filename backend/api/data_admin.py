@@ -230,7 +230,7 @@ def _board_stage(c) -> dict | None:
                 "SELECT issue_type, count(*) AS n FROM data_quality_issue "
                 "WHERE status IN ('open','fixing') "
                 "AND issue_type IN ('board_index_gap','board_member_incomplete',"
-                "'board_fund_unmatched','board_fund_missing') "
+                "'board_fund_unmatched','board_fund_missing','board_fund_stale') "
                 "GROUP BY issue_type")
             issues_by_type = {str(r["issue_type"]): int(r["n"]) for _, r in issues.iterrows()}
         last_update = None
@@ -454,6 +454,8 @@ def quality(issue_type: str | None = None, severity: str | None = None,
                     nm = str(_json.loads(detail).get("name") or "")
                 except (ValueError, TypeError):
                     nm = ""
+            elif it == "board_fund_stale":
+                nm = "资金流（全源）"
             else:
                 nm = ""
         r["name"] = str(nm)

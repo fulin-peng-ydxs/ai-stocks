@@ -278,6 +278,7 @@ const boardIssueItems = computed(() => {
     { key: 'board_index_gap', label: '指数缺口', hint: '补齐行情缺口' },
     { key: 'board_fund_unmatched', label: '资金流未匹配', hint: '检查资金流归属' },
     { key: 'board_fund_missing', label: '资金流缺失', hint: '源未收录待上线' },
+    { key: 'board_fund_stale', label: '资金流滞后', hint: '快照停留早于最新交易日' },
   ].map((item) => ({ ...item, count: issues[item.key] ?? 0 })).filter((item) => item.count > 0)
 })
 const boardFreshnessItems = computed(() => {

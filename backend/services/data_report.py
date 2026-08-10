@@ -105,7 +105,7 @@ class DataIntegrityReport:
             "(SELECT count(*) FROM daily_metrics) metrics, "
             "(SELECT count(*) FROM data_quality_issue WHERE status='open' "
             "   AND issue_type NOT IN ('board_index_gap','board_member_incomplete',"
-            "'board_fund_unmatched','board_fund_missing')) openi, "
+            "'board_fund_unmatched','board_fund_missing','board_fund_stale')) openi, "
             "(SELECT count(*) FROM stock_suspension) susp, "
             "(SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL OR float_mv IS NULL) mvnull"
         ).iloc[0]
@@ -165,7 +165,7 @@ class DataIntegrityReport:
             "count(*) FILTER (WHERE issue_type IN ('abnormal_change','adj_jump')) l3 "
             "FROM data_quality_issue WHERE status='open' "
             "AND issue_type NOT IN ('board_index_gap','board_member_incomplete',"
-            "'board_fund_unmatched','board_fund_missing') "
+            "'board_fund_unmatched','board_fund_missing','board_fund_stale') "
             "GROUP BY code")
         iss_map = {r["code"]: (int(r["tot"]), int(r["l1"]), int(r["l3"])) for _, r in iss.iterrows()}
         stocks = self.c.query_df("SELECT code, name, list_date FROM stock_basic WHERE delist_date IS NULL")
@@ -617,13 +617,29 @@ class DataIntegrityReport:
             for _, r in fund_df.iterrows()
             if str(r["board_code"]) not in ig_fund
         ]
+        # 资金流滞后：全源快照整体停留早于全局最新交易日（资金流整体停采/漏采）。
+        # 与逐板块指数缺口不同，资金流是整体批量采集，停摆时所有板块一起滞后，
+        # 故记单条源级 issue（code=NULL），修复动作重采全源资金流。
+        stale_issues: list[dict] = []
+        if latest is not None and not _ignored_codes("board_fund_stale"):
+            last_fund = self._scalar("SELECT max(snapshot_date) FROM board_fund_flow")
+            if last_fund is not None and not pd.isna(last_fund):
+                last_fund = pd.Timestamp(last_fund).date()
+                if last_fund < latest:
+                    stale_issues.append({
+                        "code": None, "trade_date": latest,
+                        "issue_type": "board_fund_stale",
+                        "detail": f"资金流快照停留在 {last_fund}，全局最新交易日 {latest}，"
+                                  f"滞后 {(latest - last_fund).days} 天，待重采资金流",
+                    })
         with self.c.transaction():
-            for issue_type in ("board_index_gap", "board_fund_missing"):
+            for issue_type in ("board_index_gap", "board_fund_missing", "board_fund_stale"):
                 self.c.execute(
                     "DELETE FROM data_quality_issue "
                     "WHERE status='open' AND issue_type=?", [issue_type])
-            self._insert_issues(gap_issues + fund_issues)
-        return {"index_gap": len(gap_issues), "fund_missing": len(fund_issues)}
+            self._insert_issues(gap_issues + fund_issues + stale_issues)
+        return {"index_gap": len(gap_issues), "fund_missing": len(fund_issues),
+                "fund_stale": len(stale_issues)}
 
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
     def recheck_clean(self, issue_type: str, code: str | None, trade_date: date | None,
@@ -777,6 +793,16 @@ class DataIntegrityReport:
             if row.empty:
                 return True
             return bool(row.iloc[0]["has_fund_flow"])
+        if issue_type == "board_fund_stale":
+            # 资金流滞后：全局资金流快照已追平全局最新交易日即收敛（源级单条 issue，无 code）。
+            latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
+            if latest is None:
+                return False
+            latest = pd.Timestamp(latest).date()
+            last_fund = self._scalar("SELECT max(snapshot_date) FROM board_fund_flow")
+            if last_fund is None or pd.isna(last_fund):
+                return False
+            return pd.Timestamp(last_fund).date() >= latest
         return True
 
     def _scan_adj_jump(self, threshold: float = 0.5, ignored_exact: set | None = None) -> int:

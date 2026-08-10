@@ -870,6 +870,17 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
             note = f"重采资金流 {res.get('rows', 0)} 行"
             ctx.log(note)
+        elif issue_type == "board_fund_stale":
+            # 资金流滞后（源级单条）：全源重采资金流（即时周期），快照追平后重扫收敛。
+            from backend.services.board_ingest import BoardIngestService
+            ctx.log("恢复(板块资金流滞后)：重采全源资金流")
+            bsvc = BoardIngestService(c)
+            res = _call_with_ctx(
+                bsvc.ingest_board_fund_flow, periods=("即时",), ctx=ctx)
+            if res.get("failed"):
+                raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
+            note = f"重采资金流 {res.get('rows', 0)} 行"
+            ctx.log(note)
         else:
             ctx.log(f"未知问题类型 {issue_type}，仅复检", "warn")
 
