@@ -137,6 +137,7 @@
 关键语义：
 - `scan_board_quality` 先完整计算再**事务内替换**扫描型 open 问题，扫描失败不丢旧台账；已 ignored 的板块按 `(code, type)` 整体豁免。指数完整性与字段合法性分开复检；资金流缺失逐板块检查最新即时快照是否追平全局最新交易日，不使用不会回退的 `has_fund_flow` 做当前质量证据，也不会因单板块当日补采而误报全市场。
 - `board_index_gap` 与 `board_index_gap_daily` 共存：前者定位「最新交易日没追上」，后者定位「历史窗口内具体某天缺失」。修复后者时使用缺失日作为 `start=end` 的窄窗口重采，`get_board_bar` 返回前按 `[start, end]` 过滤，故只幂等 upsert 该缺失日当天数据（**不回填全年**，源端虽按年拉取但在请求侧已截断）；缺一整段连续历史（如板块成立前的整段）不靠逐日修复补，须走 `board_index_gap` 重采（2024 年起）或 `ingest_board_bar(2024-01-01, …)` 全量回填。
+- **晚成立板块豁免**：逐日缺口扫描以各板块 `min(board_bar.trade_date)` 为数据起点锚，起点（板块成立日）之前的缺失属源端本无数据、不报；起点之后的缺失照报漏采。新板块（如每季「xx一季报预增」）首次进字典即自动豁免成立前缺口，不靠人工 ignore；若其成立后被漏采（起点之后空洞）仍会报。源端 2024 起才有板块指数，`backfill` 后 `min` 即真实起点；老板块漏采补采后 `min` 回填 2024-01-02，豁免自动失效。
 - `board_fund_missing` 与 `board_fund_unmatched` 方向相反：前者是「字典目标板块当前无新鲜快照」，后者是「源有、字典缺」。
 - `board_fund_stale` 与 `board_index_gap` 等价：资金流是整体批量采集，停摆时所有板块一起滞后，故记单条源级 issue（code=NULL），修复动作重采全源，不拆逐板块。
 - `board_member_incomplete` / `board_fund_unmatched` 由采集事件写入，幂等判重含 `ignored`（标记正常后重采不翻回 open）。
