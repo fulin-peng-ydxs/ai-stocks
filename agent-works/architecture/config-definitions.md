@@ -39,7 +39,7 @@
 - 版本递增逻辑（以 `ScoreProfileRepo.save` 为例，score_profile.py:176-208）：保存时比对当前主表的 name/items/grade_thresholds，**完全相同则返回原版本号不写新版**；有实质变更才 `version+1`，同时 upsert 主表与 version 表。`created_at` 在多次保存间保留。
 - JSON 字段统一以 VARCHAR 存 `json.dumps` 字符串，不依赖 DuckDB JSON 扩展。
 - `is_preset` 标记内置预设方案；`seed_defaults` 把默认方案（`DEFAULT_SCORE_PROFILES`/`DEFAULT_TRADE_PROFILES`）入库。
-- 评分方案、买卖方案和筛选方案均支持 `visibility=private|tenant|public`、`published_at`、`published_by`。API 返回 opaque `profile_ref`、`source`、`readonly`、`owner_label`，非 owner 公开方案只读，可复制为当前用户自己的 private；跨租户 public 资产的 `owner_label` 使用脱敏占位，不暴露原始 owner_user_id。
+- 评分方案、买卖方案和筛选方案均支持 `visibility=private|tenant|public`、`published_at`、`published_by`。API 返回 opaque `profile_ref`、`source`、`readonly`、`owner_label`，非 owner 公开方案只读，可复制当前版本或指定历史版本为当前用户自己的 private；跨租户 public 资产的 `owner_label` 使用脱敏占位，不暴露原始 owner_user_id。可见性收窄会保留历史结果并同步收窄引用该方案的公开回测，响应返回 `affected_run_count`。
 
 ### 4. 配置覆盖层与即时生效
 
@@ -99,6 +99,8 @@
 
 - 评分试算 `/api/score-profiles/run`（score_profiles.py:56-107）：已保存方案走**评分快照层**（`ScoreSnapshotRepo.get_board`，命中即用/失效重算），未保存的 inline 方案当场 `score_day` 实时算不入库。
 - 评分快照 `ScoreSnapshotRepo`（snapshot.py:57-147）按 `(tenant_id, owner_user_id, profile_id, profile_version, trade_date)` 惰性物化到 `score_snapshot`+`score_snapshot_meta`（结果归方案 owner 缓存槽，可见者共读，详见 screening-and-board.md「评分快照惰性物化与失效」）：首读物化、行情变更只标 `stale=true` 不立即重算、下次读到 stale 才重算覆盖。
+- 三类方案 `/copy` 请求体可传 `version`；后端在可见性校验后按来源真实 `tenant_id + owner_user_id + id + version` 读取版本快照，副本固定从 v1、private 开始。只读公开方案的历史版本操作只能“复制此版本为我的”，不得把历史内容载入为可写原方案。
+- 配置页和筛选页的外部“加载查看”状态不进入 mine 数组。行内“×”只移除临时预览，不调用删除接口；方案删除只由编辑区右上角独立按钮承接。移除事件以临时项身份为准，不依赖 `readonly`（本人名下系统内置资产也可能可编辑）；收到事件后先取消在途详情并清空方案身份、参数、只读态、试算/筛选结果和错误，再刷新 mine，刷新失败仍保持空白新建态。
 
 ### 前端配置中心
 

@@ -24,19 +24,23 @@ from typing import Iterator
 import pandas as pd
 import psycopg
 
+from backend.auth.context import get_current_owner
 from backend.backtest.engine import BacktestEngine
 from backend.backtest.metrics import compute_metrics
 from backend.backtest.signal import SignalAnalyzer
-from backend.auth.context import get_current_owner
 from backend.common.logging import get_logger
+from backend.services.asset_audit import record_backtest_reuse_audit
 from backend.services.asset_visibility import (
     ASSET_BACKTEST_RUN,
+    ASSET_SCORE_PROFILE,
     ASSET_SCREEN_PROFILE,
     ASSET_TRADE_PROFILE,
     BACKTEST_SIGNATURE_KEYS,
     VISIBILITY_PRIVATE,
     VISIBILITY_PUBLIC,
     VISIBILITY_TENANT,
+    AssetRef,
+    asset_visibility_locks,
     backtest_signature,
     decorate_asset_row,
     is_asset_visible,
@@ -47,7 +51,6 @@ from backend.services.asset_visibility import (
     visible_params,
     visible_sql,
 )
-from backend.services.asset_audit import record_backtest_reuse_audit
 from backend.storage.asset_repository import AssetRepository
 from backend.storage.duckdb_client import get_client
 from backend.storage.pg_client import get_pg_client
@@ -527,43 +530,87 @@ class BacktestService:
             raise PermissionError("只能修改自己的回测记录可见性")
         if run.get("status") != "done" and visibility != VISIBILITY_PRIVATE:
             raise ValueError("仅已完成回测记录可公开")
-        normalized = self._normalize_run_dependencies_for_visibility(run, visibility)
-        now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
-        params = normalized["params"] if normalized else run.get("params")
-        params_json = (
-            json.dumps(params, ensure_ascii=False, default=str)
-            if isinstance(params, dict)
-            else params
+        lock_refs = (
+            self._run_profile_refs(run) if visibility != VISIBILITY_PRIVATE else []
         )
-        affected = self.pg.execute(
-            "UPDATE backtest_run SET visibility=%s, published_at=%s, published_by=%s, "
-            "params=%s, profile_id=%s, score_profile_id=%s, trade_profile_id=%s, "
-            "profile_version=%s, score_profile_version=%s, trade_profile_version=%s, "
-            "signature=%s "
-            "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
-            [
-                visibility,
-                now,
-                published_by if visibility != VISIBILITY_PRIVATE else None,
-                params_json,
-                normalized["profile_id"] if normalized else run.get("profile_id"),
-                normalized["score_profile_id"] if normalized else run.get("score_profile_id"),
-                normalized["trade_profile_id"] if normalized else run.get("trade_profile_id"),
-                normalized["profile_version"] if normalized else run.get("profile_version"),
-                normalized["score_profile_version"] if normalized else run.get("score_profile_version"),
-                normalized["trade_profile_version"] if normalized else run.get("trade_profile_version"),
-                normalized["signature"] if normalized else run.get("signature"),
-                run["id"],
-                run["tenant_id"],
-                run["owner_user_id"],
-            ],
-        )
+        with asset_visibility_locks(self.pg, lock_refs):
+            # 等锁期间方案可能已收回，必须重新读取回测并在锁内重做依赖可见性校验。
+            run = self._visible_run_row(run_ref_or_id, include_owner=True)
+            if run is None:
+                return None
+            if run.get("readonly"):
+                raise PermissionError("只能修改自己的回测记录可见性")
+            if run.get("status") != "done" and visibility != VISIBILITY_PRIVATE:
+                raise ValueError("仅已完成回测记录可公开")
+            normalized = self._normalize_run_dependencies_for_visibility(run, visibility)
+            now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
+            params = normalized["params"] if normalized else run.get("params")
+            params_json = (
+                json.dumps(params, ensure_ascii=False, default=str)
+                if isinstance(params, dict)
+                else params
+            )
+            affected = self.pg.execute(
+                "UPDATE backtest_run SET visibility=%s, published_at=%s, published_by=%s, "
+                "params=%s, profile_id=%s, score_profile_id=%s, trade_profile_id=%s, "
+                "profile_version=%s, score_profile_version=%s, trade_profile_version=%s, "
+                "signature=%s "
+                "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s",
+                [
+                    visibility,
+                    now,
+                    published_by if visibility != VISIBILITY_PRIVATE else None,
+                    params_json,
+                    normalized["profile_id"] if normalized else run.get("profile_id"),
+                    normalized["score_profile_id"] if normalized else run.get("score_profile_id"),
+                    normalized["trade_profile_id"] if normalized else run.get("trade_profile_id"),
+                    normalized["profile_version"] if normalized else run.get("profile_version"),
+                    normalized["score_profile_version"] if normalized else run.get("score_profile_version"),
+                    normalized["trade_profile_version"] if normalized else run.get("trade_profile_version"),
+                    normalized["signature"] if normalized else run.get("signature"),
+                    run["id"],
+                    run["tenant_id"],
+                    run["owner_user_id"],
+                ],
+            )
         if affected == 0:
             return None
         # 仅发布时按新签名清理等价旧记录;收回 private 不清理,避免误删同签名的另一条私有回测
         if normalized and visibility != VISIBILITY_PRIVATE:
             self._purge_signature_except(normalized.get("signature"), run["id"])
         return self._visible_run_row(run["run_ref"])
+
+    def _run_profile_refs(self, run: dict) -> list[AssetRef]:
+        """提取回测依赖的真实方案归属，供发布与方案收回共享同一并发锁。"""
+        raw_params = run.get("params") or "{}"
+        if isinstance(raw_params, dict):
+            params = raw_params
+        else:
+            try:
+                params = json.loads(raw_params)
+            except (TypeError, ValueError):
+                params = {}
+        specs = (
+            ("profile_id", ASSET_SCREEN_PROFILE),
+            ("score_profile_id", ASSET_SCORE_PROFILE),
+            ("trade_profile_id", ASSET_TRADE_PROFILE),
+        )
+        refs = []
+        for key, asset_type in specs:
+            value = params.get(key) or run.get(key)
+            if not value:
+                continue
+            try:
+                refs.append(resolve_asset_ref_or_legacy_id(
+                    str(value),
+                    asset_type=asset_type,
+                    tenant_id=run["tenant_id"],
+                    owner_user_id=run["owner_user_id"],
+                ))
+            except ValueError:
+                # 无效引用由锁内的标准依赖校验返回既有业务错误；这里没有可锁定的真实资产。
+                continue
+        return refs
 
     # ── 读取 ──
     def _runs_where(self, kind: str | None, source: str | None) -> tuple[str, list]:

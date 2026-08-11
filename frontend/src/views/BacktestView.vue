@@ -189,6 +189,9 @@ const historyProfileUnavailable = ref<Record<ProfileKind, boolean>>({
 // 三类 mine 列表就绪屏障（P1-1）：列表 ready 与偏好 hydration 两个时点都可能写入 ref，
 // 任一到齐后统一 reconcileProfileRefs() 校验并清掉非 mine/非临时残留，杜绝 opaque ref 回弹。
 const readyFlags = ref({ screen: false, score: false, trade: false })
+const screenProfileSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
+const scoreProfileSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
+const tradeProfileSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
 
 // 偏好 hydration 可能早于 mine 列表 ready；ready 前只向选择器暴露空值，避免 ElSelect 短暂回显 opaque ref。
 function guardedProfileModel(kind: ProfileKind, model: typeof profileId) {
@@ -435,28 +438,50 @@ function restoreRunView(snapshot: RunViewSnapshot) {
   })
 }
 
+const loadingRun = ref(false)
+const dirty = ref(true)
+
+/** 当前输入上下文变化后，旧结果及其历史归属必须一起失效。 */
+function clearDisplayedRunResult() {
+  strat.value = null
+  sig.value = null
+  selectedRun.value = ''
+  externalRunSummary.value = null
+  resultScoreRef.value = ''
+  runTime.value = ''
+  fromHistory.value = false
+  resultError.value = ''
+}
+
 // 切换"策略/信号"标签 → 清空下方结果（避免显示与当前模式不符的旧结果）
 // loadingRun 期间由程序设置参数，不触发清空 / 不置脏
-const loadingRun = ref(false)
 // loadingRun 只保护同步的程序化参数应用；网络等待由 activeRunOperation 持有。
 // 用户改任一影响 buildBody 的参数时取消当前 operation 并释放其 loading，旧响应只能静默落库，不能回写页面。
 watch(kind, () => {
   if (loadingRun.value) return
   invalidateRunViewOperation()
   beforeExternalRun = null
-  strat.value = null; sig.value = null; selectedRun.value = ''; externalRunSummary.value = null
+  clearDisplayedRunResult()
+  dirty.value = true
   loadHistory()  // 历史按 kind 分别加载，策略与评分验证不混展
-})
+}, { flush: 'sync' })
 
 // 运行按钮状态机：dirty=true 蓝色可点；出结果/载入历史后置 false（灰、不可点）；改任一参数恢复
-const dirty = ref(true)
 watch(
-  [kind, dateStart, dateEnd, profileId, scoreProfileId, tradeProfileId, topN, initCap, industryOn, industryPct],
+  [
+    dateStart, dateEnd, profileId, scoreProfileId, tradeProfileId, topN, initCap, industryOn, industryPct,
+    () => effectiveProfileRefs().screen,
+    () => effectiveProfileRefs().score,
+    () => effectiveProfileRefs().trade,
+  ],
   () => {
     if (loadingRun.value) return // 程序化恢复参数：不置脏、不使 token 失效
     dirty.value = true
     if (activeRunOperation.value) invalidateRunViewOperation()
+    clearDisplayedRunResult()
+    beforeExternalRun = null
   },
+  { flush: 'sync' },
 )
 watch(() => settings.kind, (value) => { kind.value = value })
 watch(() => settings.topN, (value) => { topN.value = Number(value) })
@@ -476,17 +501,20 @@ function clearDirtySoon() {
 // 切换/清空选择即丢弃对应临时只读项（P1-2）：当前 key 不等于临时项 key 立即清除，
 // 避免「加载公开方案→切到自己的方案」后仍把有效选择当临时剔除（saveParams 写空）。
 watch(profileId, (v) => {
+  if (loadingRun.value) return
   if (historyProfileDisplays.value.screen) return
   if (tempSelected.value.screen && screenProfileKey(tempSelected.value.screen) !== v) tempSelected.value.screen = null
-})
+}, { flush: 'sync' })
 watch(scoreProfileId, (v) => {
+  if (loadingRun.value) return
   if (historyProfileDisplays.value.score) return
   if (tempSelected.value.score && scoreProfileKey(tempSelected.value.score) !== v) tempSelected.value.score = null
-})
+}, { flush: 'sync' })
 watch(tradeProfileId, (v) => {
+  if (loadingRun.value) return
   if (historyProfileDisplays.value.trade) return
   if (tempSelected.value.trade && tradeProfileKey(tempSelected.value.trade) !== v) tempSelected.value.trade = null
-})
+}, { flush: 'sync' })
 
 // 方案(版本) 文本：名字带版本号，空则占位
 function nameVer(name?: string | null, ver?: number | null, fallback = ''): string {
@@ -726,6 +754,12 @@ function clearTemp(kind: 'screen' | 'score' | 'trade') {
   tempSelected.value[kind] = null
   historyProfileDisplays.value[kind] = null
   historyProfileUnavailable.value[kind] = false
+  const selector = {
+    screen: screenProfileSelectRef,
+    score: scoreProfileSelectRef,
+    trade: tradeProfileSelectRef,
+  }[kind]
+  selector.value?.clearTransient?.()
 }
 // 用户在选择器里做出选择（含重选同一值）即丢弃对应临时只读快照：watch(profileId) 只在值变化时触发，
 // 覆盖不了「已选 mine-A → 加载公开 → 重选同一 mine-A」这一边界；故在 update:modelValue 回调里无条件清。
@@ -926,26 +960,29 @@ async function removeCurrentRun() {
   }
   const desc = cur ? `${cur.kind === 'strategy' ? '策略' : '评分验证'} ${cur.date_start?.slice(0, 10)}~${cur.date_end?.slice(0, 10)}` : selectedRun.value
   try {
-    await ElMessageBox.confirm(`确认删除这次回测记录？\n${desc}`, '删除历史回测', {
+    await ElMessageBox.confirm(`确认删除这次回测记录？\n${desc}\n删除后保留当前参数，便于重新运行。`, '删除历史回测', {
       type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
     })
   } catch { return /* 取消 */ }
   try {
     const deletedRef = selectedRun.value
     await deleteRun(deletedRef)
-    ElMessage.success('已删除')
-    strat.value = null; sig.value = null
-    selectedRun.value = ''
+    invalidateRunViewOperation()
+    clearDisplayedRunResult()
+    nextRunSourceRef.value = ''
+    dirty.value = true
     runHistory.value = runHistory.value.filter((r) => runKey(r) !== deletedRef && r.id !== deletedRef)
     if (!(await loadHistory())) {
       ElMessage.warning('记录已删除，但列表刷新失败，请稍后重试')
       return
     }
     if (runHistory.value.length) {
+      ElMessage.success('已删除')
       selectedRun.value = runKey(runHistory.value[0])
       await loadRun(selectedRun.value)
     } else {
       selectedRun.value = ''
+      ElMessage.success('记录已删除，参数已保留，可重新运行')
     }
   } catch (e) {
     ElMessage.error((e as Error).message || '删除失败')
@@ -1706,11 +1743,13 @@ async function openTradeChart(row: TradeRow) {
             </HelpTip>
           </template>
           <AssetProfileSelect
+            ref="scoreProfileSelectRef"
             v-model="guardedScoreProfileId"
             asset-label="评分方案"
             :fetch-mine="fetchMineScoreProfiles"
             :browse="browseScore"
             :copy-item="copyAnyScoreProfile"
+            loaded-mode="external"
             copy-permission="score-profile:save"
             view-permission="score-profile:view"
             placeholder="请选择评分方案（必选）"
@@ -1759,11 +1798,13 @@ async function openTradeChart(row: TradeRow) {
                 </div>
               </template>
               <AssetProfileSelect
+                ref="screenProfileSelectRef"
                 v-model="guardedScreenProfileId"
                 asset-label="选股方案"
                 :fetch-mine="fetchMineScreenProfiles"
                 :browse="browseScreen"
                 :copy-item="copyAnyScreenProfile"
+                loaded-mode="external"
                 copy-permission="screen-profile:save"
                 view-permission="screen-profile:view"
                 placeholder="不使用选股方案（默认）"
@@ -1816,11 +1857,13 @@ async function openTradeChart(row: TradeRow) {
               </HelpTip>
             </template>
             <AssetProfileSelect
+              ref="tradeProfileSelectRef"
               v-model="guardedTradeProfileId"
               asset-label="买卖方案"
               :fetch-mine="fetchMineTradeProfiles"
               :browse="browseTrade"
               :copy-item="copyAnyTradeProfile"
+              loaded-mode="external"
               copy-permission="trade-profile:save"
               view-permission="trade-profile:view"
               placeholder="请选择买卖方案（必选）"

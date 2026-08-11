@@ -20,12 +20,14 @@ from backend.services.asset_visibility import (
     ASSET_SCREEN_PROFILE,
     SCOPE_MINE,
     VISIBILITY_PRIVATE,
+    asset_visibility_locks,
     decorate_asset_row,
     downgrade_backtest_runs_referencing,
     is_asset_visible,
     make_asset_ref,
     normalize_visibility,
     publish_platform_presets,
+    reconcile_backtest_runs_for_profile_visibility,
     referencing_backtest_runs_by_others,
     resolve_asset_ref_or_legacy_id,
     scoped_query,
@@ -243,30 +245,33 @@ class ProfileRepo:
         )
         if ref.tenant_id != self.tenant_id or ref.owner_user_id != self.owner_user_id:
             raise PermissionError("只能修改自己的筛选方案可见性")
-        # 收回为私有：他人引用的方案不可收回（会破坏引用它的公开回测的依赖可见性）；
-        # 本人引用不拦（owner 可先删回测再收回），与 _assert_no_own_refs 语义对齐。
-        if visibility == VISIBILITY_PRIVATE and referencing_backtest_runs_by_others(
-            self.pg, asset_type=ASSET_SCREEN_PROFILE, ref=profile_ref_or_id,
-            tenant_id=self.tenant_id, owner_user_id=self.owner_user_id,
-        ):
-            raise ValueError("该方案被其他用户的回测记录引用，无法收回为私有，请先删除相关回测")
         now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
-        affected = self.pg.execute(
-            "UPDATE screen_profile SET visibility=%s, published_at=%s, published_by=%s, updated_at=%s "
-            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
-            [
-                visibility,
-                now,
-                published_by if visibility != VISIBILITY_PRIVATE else None,
-                datetime.now(),
-                ref.tenant_id,
-                ref.owner_user_id,
-                ref.asset_id,
-            ],
-        )
-        if affected == 0:
-            return None
-        return self.get_visible(profile_ref_or_id)
+        with asset_visibility_locks(self.pg, [ref]), self.pg.transaction() as conn:
+            with self.pg.cursor_in(conn) as cur:
+                cur.execute(
+                    "SELECT 1 FROM screen_profile "
+                    "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s FOR UPDATE",
+                    [ref.tenant_id, ref.owner_user_id, ref.asset_id],
+                )
+                if cur.fetchone() is None:
+                    return None
+            affected_runs = reconcile_backtest_runs_for_profile_visibility(
+                self.pg, asset_type=ASSET_SCREEN_PROFILE, ref=ref.asset_id,
+                tenant_id=self.tenant_id, owner_user_id=self.owner_user_id,
+                target_visibility=visibility, conn=conn,
+            )
+            with self.pg.cursor_in(conn) as cur:
+                cur.execute(
+                    "UPDATE screen_profile SET visibility=%s, published_at=%s, "
+                    "published_by=%s, updated_at=%s "
+                    "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                    [visibility, now, published_by if visibility != VISIBILITY_PRIVATE else None,
+                     datetime.now(), ref.tenant_id, ref.owner_user_id, ref.asset_id],
+                )
+        result = self.get_visible(profile_ref_or_id)
+        if result is not None:
+            result["affected_run_count"] = affected_runs
+        return result
 
     def _make_id(self, name: str) -> str:
         base = prefixed_readable_id(name, prefix="screen_")
@@ -316,12 +321,30 @@ class ProfileRepo:
             )
         return True
 
-    def copy_visible(self, profile_ref_or_id: str, new_name: str | None = None) -> dict:
+    def copy_visible(
+        self,
+        profile_ref_or_id: str,
+        new_name: str | None = None,
+        version: int | None = None,
+    ) -> dict:
         """复制可见方案为「我的」private（C8）：后端生成唯一 id、名称默认「原名 副本」，
         撞库/并发有限次重试；仅真正插入成功才返回新 id/profile_ref/name/version。"""
         src = self.get_visible(profile_ref_or_id, include_owner=True)
         if not src:
             raise ValueError("方案不存在")
+        if version is not None:
+            version = int(version)
+            if version <= 0:
+                raise ValueError("版本号必须大于 0")
+            snap = self.pg.query_df(
+                "SELECT name, expression FROM screen_profile_version "
+                "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s AND version=%s",
+                [src["id"], src["tenant_id"], src["owner_user_id"], version],
+            )
+            if snap.empty:
+                raise ValueError(f"方案版本不存在: v{version}")
+            row = snap.iloc[0].to_dict()
+            src = {**src, "name": row["name"], "expression": json.loads(row["expression"])}
         base_name = (new_name or "").strip() or f"{src['name']} 副本"
         for _ in range(5):
             new_id = self._make_copy_id(base_name)
@@ -332,6 +355,7 @@ class ProfileRepo:
                         ASSET_SCREEN_PROFILE, self.tenant_id, self.owner_user_id, new_id),
                     "name": base_name,
                     "version": 1,
+                    "source_version": version,
                 }
         raise ValueError("复制失败：目标 id 冲突，请重试")
 

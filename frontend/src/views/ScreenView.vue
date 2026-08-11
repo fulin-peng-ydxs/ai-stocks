@@ -39,6 +39,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
+import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
 
 const router = useRouter()
@@ -277,6 +278,9 @@ const canPublishTenant = computed(() =>
 const canPublishPublic = computed(() =>
   hasPermission(auth.role, auth.permissions, 'screen-profile:publish-public'),
 )
+const canSaveProfile = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'screen-profile:save'),
+)
 const profileSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
 async function fetchMineProfiles(): Promise<Profile[]> {
   // 次级加载按自身 view 码优雅降级：无 screen-profile:view 的部分授权角色（如只授 screen:run）
@@ -302,6 +306,7 @@ async function selectProfile(profileKey: string) {
   try {
     const p = await getProfile(profileKey)
     if (seq !== profileDetailSeq) return
+    clearScreenResult()
     curRef.value = p.profile_ref || profileKey
     curId.value = p.id
     curVersion.value = p.version
@@ -343,28 +348,18 @@ function onScreenReady(list: ProfileSummary[]) {
 function onScreenLoaded(item: ProfileSummary) {
   onScreenSelect(item.profile_ref || item.id)
 }
-// 行内「×」移除「加载查看」临时预览项：仅当编辑器正查看该外来方案时收尾——
-// 清掉它的只读身份/运行口径/结果（否则移除后仍按其 ref 运行、仍锁只读），回到「我的」上下文或新建态。
+// 行内「×」只移除「加载查看」临时预览项，不删除资产；组件只会为当前 tempItem 发出此事件。
+// 页面必须无条件清掉对应身份/参数/运行口径/结果，不能用 readonly 推断是否为临时项：
+// 平台内置资产对其物理 owner 可能是 readonly=false，但仍属于 source=preset 的临时加载项。
 async function onScreenTempRemoved(item: ProfileSummary) {
-  const removedRef = item.profile_ref || item.id
-  // curRef 对「加载查看」项是后端 getProfile 规范化的 opaque ref（≠明文 profile_ref），直接比必然不等；
-  // 可靠判据：当前只读查看项的明文 ref 与移除项一致（加载查看必为只读，mine 项根本不会出现在 tempItem）。
-  const viewingRef = loadedProfile.value?.profile_ref || loadedProfile.value?.id || ''
-  if (!profileReadonly.value || viewingRef !== removedRef) return // 移除的不是当前查看项，编辑器不受影响
   ElMessage.info(`已移除预览的方案「${item.name}」`)
-  curRef.value = ''
-  loadedProfile.value = null
-  result.value = null
-  resultError.value = ''
-  profileLastAppliedRef = ''
-  profileDetailAttempt = ''
-  // 回到「我的」上下文：有我的方案选第一个，无则进新建态（列表已不含临时项，第一即「我的」首项）
-  const list = (await profileSelectRef.value?.reload()) ?? []
-  if (list.length) onScreenSelect(list[0].profile_ref || list[0].id)
-  else enterNewSession()
+  // 先清空外部身份、条件和结果，再刷新 mine；即使刷新失败也不会残留已移除方案的参数。
+  newProfile()
+  await profileSelectRef.value?.reload()
 }
 // 进入「新建」态：清空方案身份，保留当前构建器条件（列表为空时的初始态）
 function enterNewSession() {
+  profileDetailSeq += 1
   curRef.value = ''
   curId.value = ''
   curVersion.value = null
@@ -375,6 +370,7 @@ function enterNewSession() {
   profileLastAppliedRef = ''
   profileDetailAttempt = ''
   profileError.value = ''
+  clearScreenResult()
 }
 // 「新建方案」按钮：完全清空（身份 + 条件），从空白开始
 function newProfile() {
@@ -389,6 +385,10 @@ const excludeSt = ref(Boolean(settings.excludeSt))
 const loading = ref(false)
 const resultError = ref('')
 const result = ref<{ date: string; count: number; hits: ScreenHit[] } | null>(null)
+function clearScreenResult() {
+  result.value = null
+  resultError.value = ''
+}
 const gradeTag: Record<string, '' | 'success' | 'warning' | 'info'> = {
   主升浪核心: 'success', 龙头候选: 'warning', 观察: 'info',
 }
@@ -474,20 +474,29 @@ async function publishProfile(visibility: 'private' | 'tenant' | 'public') {
     ElMessage.warning('无权公开到全体用户')
     return
   }
+  if (!await confirmProfileVisibilityReduction(
+    editName.value || loadedProfile.value?.name || '当前方案',
+    profileVisibility.value,
+    visibility,
+  )) return
   visibilitySaving.value = true
   try {
     loadedProfile.value = await setProfileVisibility(curRef.value, visibility)
-    ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
+    const affected = loadedProfile.value.affected_run_count || 0
+    ElMessage.success(affected
+      ? `可见性已更新，并同步收窄 ${affected} 条关联回测`
+      : visibility === 'private' ? '已设为私有' : '公开设置已更新')
     await profileSelectRef.value?.reload()
   } finally {
     visibilitySaving.value = false
   }
 }
 // C8：复制由后端生成唯一 id、名称默认「原名 副本」，返回新标识供选中
-async function copyCurrentProfile() {
+async function copyCurrentProfile(version?: number) {
   if (!curRef.value || !loadedProfile.value) return
-  const r = await copyProfile(curRef.value)
-  ElMessage.success('已复制为我的方案')
+  const r = await copyProfile(curRef.value, version ? { version } : undefined)
+  ElMessage.success(version ? `已将 v${version} 复制为我的方案` : '已复制为我的方案')
+  verVisible.value = false
   const list = await profileSelectRef.value?.reload()
   const copied = list?.find((p) => p.id === r.id)
   onScreenSelect(copied ? (copied.profile_ref || copied.id) : (r.profile_ref || r.id))
@@ -521,6 +530,12 @@ function restoreVersion(v: ProfileVersion) {
 }
 
 function versionRowActions(v: ProfileVersion): AppRowAction[] {
+  if (!canSaveProfile.value) return []
+  if (profileReadonly.value) {
+    return [
+      { key: 'copy', label: '复制此版本为我的', onClick: () => { void copyCurrentProfile(v.version) } },
+    ]
+  }
   return [
     { key: 'restore', label: '载入此版本', onClick: () => restoreVersion(v) },
   ]

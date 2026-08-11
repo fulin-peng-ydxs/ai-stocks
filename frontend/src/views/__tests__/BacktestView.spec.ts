@@ -689,6 +689,38 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     wrapper.unmount()
   })
 
+  it('删除最后一条历史记录后保留参数、清空结果归属并允许重新运行', async () => {
+    const wrapper = await mountView()
+    const summary = {
+      id: 'mine-last', run_ref: 'run_ref_last', kind: 'strategy', readonly: false,
+      date_start: '2024-01-01', date_end: '2024-12-31', visibility: 'private', status: 'done',
+    } as any
+    ;(wrapper.vm as any).runHistory = [summary]
+    ;(wrapper.vm as any).dateStart = '2024-02-01'
+    ;(wrapper.vm as any).selectedRun = 'run_ref_last'
+    ;(wrapper.vm as any).strat = { run_id: 'mine-last', metrics: {}, layers: validLayers(), trades: [], equity: [] }
+    ;(wrapper.vm as any).resultScoreRef = 'avr_score_1'
+    ;(wrapper.vm as any).fromHistory = true
+    ;(wrapper.vm as any).runTime = '2025-01-01 10:00:00'
+    ;(wrapper.vm as any).dirty = false
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
+    vi.mocked(backtestApi.deleteRun).mockResolvedValue({ msg: '已删除' } as any)
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({ runs: [] })
+
+    await (wrapper.vm as any).removeCurrentRun()
+    await flushPromises()
+
+    expect(backtestApi.deleteRun).toHaveBeenCalledWith('run_ref_last')
+    expect((wrapper.vm as any).dateStart).toBe('2024-02-01')
+    expect((wrapper.vm as any).selectedRun).toBe('')
+    expect((wrapper.vm as any).strat).toBeNull()
+    expect((wrapper.vm as any).resultScoreRef).toBe('')
+    expect((wrapper.vm as any).fromHistory).toBe(false)
+    expect((wrapper.vm as any).runTime).toBe('')
+    expect((wrapper.vm as any).dirty).toBe(true)
+    wrapper.unmount()
+  })
+
   it('历史回测快速切换时只允许最后一次请求写入页面', async () => {
     const wrapper = await mountView()
     let resolveFirst!: (value: any) => void
@@ -978,10 +1010,12 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
     ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
     await nextTick()
+    // 用户修改有效参数即退出旧公开结果上下文，避免“旧结果 + 新参数”错配。
+    expect((wrapper.vm as any).externalRunSummary).toBeNull()
 
     await (wrapper.vm as any).run()
     await flushPromises()
-    expect((wrapper.vm as any).externalRunSummary?.run_ref).toBe('run_ref_public_a')
+    expect((wrapper.vm as any).externalRunSummary).toBeNull()
     expect((wrapper.vm as any).selectedRun).toBe('')
 
     // 成功分支：getRun 恢复成功 → 原子提交
@@ -1482,8 +1516,11 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
   it('runBacktest pending 期间关闭公开查看：旧结果晚到不清公开快照已恢复的现场、不写结果（八次复审 P1-1）', async () => {
     const wrapper = await mountView()
     const { prevResult } = await enterPublicRun(wrapper)
+    // 补齐测试必填项时模拟程序化历史投影；真实用户手改参数会按新契约退出旧结果上下文。
+    ;(wrapper.vm as any).loadingRun = true
     ;(wrapper.vm as any).scoreProfileId = 'avr_score_1'
     ;(wrapper.vm as any).tradeProfileId = 'avr_trade_1'
+    ;(wrapper.vm as any).loadingRun = false
     await nextTick()
     let resolveRun!: (v: any) => void
     vi.mocked(backtestApi.runBacktest).mockImplementation(

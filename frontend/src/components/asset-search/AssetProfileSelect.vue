@@ -42,6 +42,8 @@ const props = withDefaults(defineProps<{
   testId?: string
   /** 加载查看后直接选中：适用于“选择即执行/展示”的消费页；默认仍只发 loaded，由页面决定展示方式。 */
   selectLoaded?: boolean
+  /** option=临时项注入本组件候选；external=仅通知父级，由父级在选择器外展示。 */
+  loadedMode?: 'option' | 'external'
   /** 当前默认加载方案的资产 key（仅榜单页评分方案传）；透传给抽屉做行内互斥高亮 */
   defaultItemKey?: string
   /** list 形态给「加载查看」注入的临时项显示行内「×」：仅从列表移除该预览（不删数据、不碰我的方案） */
@@ -54,6 +56,7 @@ const props = withDefaults(defineProps<{
   labelMine: '我的方案',
   testId: 'asset-profile-select',
   selectLoaded: false,
+  loadedMode: 'option',
   defaultItemKey: undefined,
   removableTemp: true,
 })
@@ -74,7 +77,7 @@ const emit = defineEmits<{
   rerunDone: [result: unknown, item: ProfileSummary]
   /** 设为/取消默认加载方案（仅榜单页评分方案）：透传抽屉行操作，item=null 表示取消默认 */
   setDefault: [item: ProfileSummary | null]
-  /** 行内「×」移除了「加载查看」临时预览项：页面据此清掉该外来方案在编辑器的身份（只读/结果），回到「我的」上下文 */
+  /** 行内「×」移除了「加载查看」临时预览项：只卸载预览、不删除资产；页面据此清掉编辑器身份/参数/结果 */
   tempRemoved: [item: ProfileSummary]
 }>()
 
@@ -151,7 +154,13 @@ function applyLoaded(item: ProfileSummary) {
   emit('update:modelValue', assetItemKey(item))
 }
 
-defineExpose({ reload, openSearch, applyLoaded })
+/** 清理所有会话内加载项；父级移除外部快照时用同一入口同步组件内部状态。 */
+function clearTransient() {
+  tempItem.value = null
+  selectedLoadedItem.value = null
+}
+
+defineExpose({ reload, openSearch, applyLoaded, clearTransient })
 
 // 「加载查看」= 临时只读预览对象：注入候选顶部 + emit loaded，**不设为当前选中**（不 emit update:modelValue）。
 // 关键：若同步选中，el-select 会把 selectedItem 锁到不在持久 items 的 tempItem 上，#label/option/watch 形成
@@ -164,7 +173,7 @@ function onDrawerLoad(raw: AssetBrowseItem) {
     selectedLoadedItem.value = item
   } else {
     selectedLoadedItem.value = null
-    tempItem.value = item
+    tempItem.value = props.loadedMode === 'option' ? item : null
   }
   emit('loaded', item)
   if (props.selectLoaded) emit('update:modelValue', assetItemKey(item))
@@ -207,6 +216,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
 
 // 行内「×」：仅给「加载查看」注入的临时预览项（tempItem，含系统内置/别人的非「我的」方案）显示；
 // 仅从列表移除该预览、丢弃临时选中，不删数据、不调 API、不碰「我的」方案。
+// 删除资产始终由消费页右上角的独立删除按钮承接，不得复用此入口。
 function isTempRow(p: ProfileSummary): boolean {
   return props.removableTemp && !!tempItem.value && assetItemKey(p) === assetItemKey(tempItem.value)
 }

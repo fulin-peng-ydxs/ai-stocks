@@ -27,6 +27,7 @@ export interface TradeProfile {
   source?: 'mine' | 'tenant' | 'public' | 'preset'
   readonly?: boolean
   owner_label?: string
+  affected_run_count?: number
   buy_tree: CondTree
   sell_tree: CondTree | Record<string, never>
   backstop: Backstop
@@ -43,6 +44,7 @@ export interface TradeProfileSummary {
   readonly?: boolean
   owner_label?: string
   updated_at?: string | null
+  affected_run_count?: number
 }
 
 // browse 分页结果（后端 repo.browse：items/total/page/page_size/source）
@@ -99,8 +101,8 @@ export function setTradeProfileVisibility(
 // C8：前端不再传 id，后端生成唯一 id、名称默认「原名 副本」，返回新标识供刷新选中
 export function copyTradeProfile(
   pid: string,
-  body?: { name?: string },
-): Promise<{ id: string; profile_ref?: string; name: string; version: number }> {
+  body?: { name?: string; version?: number },
+): Promise<{ id: string; profile_ref?: string; name: string; version: number; source_version?: number }> {
   return http.post(`/trade-profiles/${pid}/copy`, body ?? {})
 }
 

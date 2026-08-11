@@ -48,7 +48,8 @@ const emit = defineEmits<{
 const canEdit = computed(() =>
   props.showVisibility
   && !props.readonly
-  && (props.canPublishTenant || props.canPublishPublic),
+  // 已发布资产即使后来撤销发布权限，owner 仍必须保留“收回私有”的逃生口。
+  && (props.visibility !== 'private' || props.canPublishTenant || props.canPublishPublic),
 )
 
 function onCommand(command: string | number | object) {

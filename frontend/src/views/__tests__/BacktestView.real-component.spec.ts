@@ -135,8 +135,8 @@ describe('BacktestView + 真实 AssetProfileSelect（递归契约 + 完整 onDra
     const pub = { id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true }
     await drawerLoad(score, pub)
 
-    // 真实组件内部 tempItem 已被 onDrawerLoad 设置
-    expect((score.vm as any).tempItem?.profile_ref).toBe('avr_score_pub')
+    // 回测使用 external 模式：组件内部不残留临时 option，快照只由页面 chip 承接。
+    expect((score.vm as any).tempItem).toBeNull()
     // 递归契约：选择器 modelValue 不被设为临时项；selectedItem 解析不到（modelValue 为空），不锁 tempItem
     expect(score.props('modelValue')).toBe('')
     expect((score.vm as any).selectedItem ?? null).toBeNull()
@@ -162,7 +162,7 @@ describe('BacktestView + 真实 AssetProfileSelect（递归契约 + 完整 onDra
 
     // 对公开方案点「加载查看」（完整 onDrawerLoad 链路）
     await drawerLoad(score, { id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true })
-    expect((score.vm as any).tempItem?.profile_ref).toBe('avr_score_pub')
+    expect((score.vm as any).tempItem).toBeNull()
     expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(true)
     // 快照优先：已有 mine 选择时运行仍用公开快照（三次复审 P1）
     expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_pub')

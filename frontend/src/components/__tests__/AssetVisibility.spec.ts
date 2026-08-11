@@ -79,4 +79,30 @@ describe('AssetVisibilityActions', () => {
     expect(w.text()).toContain('复制为我的方案')
     expect(w.text()).toContain('复用参数')
   })
+
+  it('发布权限被撤销后，owner 仍可打开下拉收回已发布资产', () => {
+    const w = mount(AssetVisibilityActions, {
+      props: {
+        visibility: 'public',
+        readonly: false,
+        canPublishTenant: false,
+        canPublishPublic: false,
+      },
+      global: { plugins: [ElementPlus], directives: { permission } },
+    })
+    expect(w.find('.el-dropdown').exists()).toBe(true)
+  })
+
+  it('私有资产且无发布权限时不显示无效下拉', () => {
+    const w = mount(AssetVisibilityActions, {
+      props: {
+        visibility: 'private',
+        readonly: false,
+        canPublishTenant: false,
+        canPublishPublic: false,
+      },
+      global: { plugins: [ElementPlus], directives: { permission } },
+    })
+    expect(w.find('.el-dropdown').exists()).toBe(false)
+  })
 })

@@ -56,6 +56,7 @@ import {
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
+import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 
@@ -430,6 +431,9 @@ const canPublishPublic = computed(() =>
 const canViewScoreProfiles = computed(() =>
   hasPermission(auth.role, auth.permissions, 'score-profile:view'),
 )
+const canSaveScoreProfiles = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'score-profile:save'),
+)
 const weightSum = computed(() =>
   Math.round(items.value.reduce((s, it) => s + (it.weight || 0), 0) * 100),
 )
@@ -461,6 +465,7 @@ async function selectProfile(profileKey: string) {
   try {
     const p = await getScoreProfile(profileKey)
     if (seq !== scoreDetailSeq) return
+    clearScoreRunResult()
     // 成功才整体写入编辑器（原子应用，不写一半）
     curRef.value = p.profile_ref || profileKey
     curId.value = p.id
@@ -506,6 +511,12 @@ function restoreScoreVersion(v: ScoreProfileVersion) {
 }
 
 function scoreVersionRowActions(v: ScoreProfileVersion): AppRowAction[] {
+  if (!canSaveScoreProfiles.value) return []
+  if (profileReadonly.value) {
+    return [
+      { key: 'copy', label: '复制此版本为我的', onClick: () => { void copyCurrentScoreProfile(v.version) } },
+    ]
+  }
   return [
     { key: 'restore', label: '载入此版本', onClick: () => restoreScoreVersion(v) },
   ]
@@ -521,6 +532,7 @@ function ensureParams(item: ScoreItem) {
 }
 
 function newProfile() {
+  scoreDetailSeq += 1
   curRef.value = ''
   curId.value = ''
   curVersion.value = null
@@ -534,6 +546,7 @@ function newProfile() {
   scoreLastAppliedRef = ''
   scoreDetailAttempt = ''
   profileDetailError.value = ''
+  clearScoreRunResult()
 }
 
 // 新增评分项（默认 bool / 平均分配权重）
@@ -684,11 +697,19 @@ async function publishScoreProfile(visibility: 'private' | 'tenant' | 'public') 
     ElMessage.warning('无权公开到全体用户')
     return
   }
+  if (!await confirmProfileVisibilityReduction(
+    editName.value || '当前方案',
+    profileVisibility.value,
+    visibility,
+  )) return
   visibilitySaving.value = true
   try {
     const p = await setScoreProfileVisibility(curRef.value, visibility)
     profileVisibility.value = p.visibility || visibility
-    ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
+    const affected = p.affected_run_count || 0
+    ElMessage.success(affected
+      ? `可见性已更新，并同步收窄 ${affected} 条关联回测`
+      : visibility === 'private' ? '已设为私有' : '公开设置已更新')
     // 发布后只经组件 reload 刷新 mine 列表并回写，不再并行 loadProfiles()。
     await scoreSelectRef.value?.reload()
   } finally {
@@ -697,10 +718,11 @@ async function publishScoreProfile(visibility: 'private' | 'tenant' | 'public') 
 }
 
 // C8：复制由后端生成唯一 id、名称默认「原名 副本」，返回新标识供选中
-async function copyCurrentScoreProfile() {
+async function copyCurrentScoreProfile(version?: number) {
   if (!curRef.value) return
-  const r = await copyScoreProfile(curRef.value)
-  ElMessage.success('已复制为我的方案')
+  const r = await copyScoreProfile(curRef.value, version ? { version } : undefined)
+  ElMessage.success(version ? `已将 v${version} 复制为我的方案` : '已复制为我的方案')
+  sVerVisible.value = false
   // 复制后只经组件 reload 刷新 mine 列表并回写，不再并行 loadProfiles()。
   const list = await scoreSelectRef.value?.reload()
   const copied = (list as ScoreProfileSummary[] | undefined)?.find((p) => p.id === r.id)
@@ -712,6 +734,10 @@ const runDate = ref<string>('')
 const runRows = ref<ScoreRunRow[]>([])
 const running = ref(false)
 const runError = ref('')
+function clearScoreRunResult() {
+  runRows.value = []
+  runError.value = ''
+}
 const subKeys = computed(() => items.value.map((i) => i.indicator))
 
 function scoreLevel(v: number | undefined): string {
@@ -800,6 +826,9 @@ const canTradePublishPublic = computed(() =>
 )
 const canViewTradeProfiles = computed(() =>
   hasPermission(auth.role, auth.permissions, 'trade-profile:view'),
+)
+const canSaveTradeProfiles = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'trade-profile:save'),
 )
 function tradeProfileKey(p: TradeProfileSummary): string {
   return p.profile_ref || p.id
@@ -890,6 +919,7 @@ async function selectTradeProfile(pid: string) {
   try {
     const p = await getTradeProfile(pid)
     if (seq !== tradeDetailSeq) return
+    clearTradePreview()
     tCurRef.value = p.profile_ref || pid
     tCurId.value = p.id; tCurVersion.value = p.version; tEditId.value = p.id; tEditName.value = p.name; tIsNew.value = false
     tReadonly.value = !!p.readonly
@@ -918,6 +948,7 @@ function onTradeSelect(key: string) {
   void selectTradeProfile(key)
 }
 function newTradeProfile() {
+  tradeDetailSeq += 1
   tCurRef.value = ''
   tCurId.value = ''; tCurVersion.value = null; tEditId.value = ''; tEditName.value = ''; tIsNew.value = true
   tReadonly.value = false
@@ -928,6 +959,7 @@ function newTradeProfile() {
   tradeLastAppliedRef = ''
   tradeDetailAttempt = ''
   tDetailError.value = ''
+  clearTradePreview()
 }
 
 // ── 买卖方案历史版本（回看/载入；载入仅写入编辑器，保存后才生成新版本）──
@@ -951,6 +983,12 @@ function restoreTradeVersion(v: TradeProfileVersion) {
 }
 
 function tradeVersionRowActions(v: TradeProfileVersion): AppRowAction[] {
+  if (!canSaveTradeProfiles.value) return []
+  if (tReadonly.value) {
+    return [
+      { key: 'copy', label: '复制此版本为我的', onClick: () => { void copyCurrentTradeProfile(v.version) } },
+    ]
+  }
   return [
     { key: 'restore', label: '载入此版本', onClick: () => restoreTradeVersion(v) },
   ]
@@ -1005,11 +1043,19 @@ async function publishTradeProfile(visibility: 'private' | 'tenant' | 'public') 
     ElMessage.warning('无权公开到全体用户')
     return
   }
+  if (!await confirmProfileVisibilityReduction(
+    tEditName.value || '当前方案',
+    tVisibility.value,
+    visibility,
+  )) return
   tVisibilitySaving.value = true
   try {
     const p = await setTradeProfileVisibility(tCurRef.value, visibility)
     tVisibility.value = p.visibility || visibility
-    ElMessage.success(visibility === 'private' ? '已设为私有' : '公开设置已更新')
+    const affected = p.affected_run_count || 0
+    ElMessage.success(affected
+      ? `可见性已更新，并同步收窄 ${affected} 条关联回测`
+      : visibility === 'private' ? '已设为私有' : '公开设置已更新')
     // 发布后只经组件 reload 刷新 mine 列表并回写，不再并行 loadTradeProfiles()。
     await tradeSelectRef.value?.reload()
   } finally {
@@ -1017,10 +1063,11 @@ async function publishTradeProfile(visibility: 'private' | 'tenant' | 'public') 
   }
 }
 // C8：复制由后端生成唯一 id、名称默认「原名 副本」，返回新标识供选中
-async function copyCurrentTradeProfile() {
+async function copyCurrentTradeProfile(version?: number) {
   if (!tCurRef.value) return
-  const r = await copyTradeProfile(tCurRef.value)
-  ElMessage.success('已复制为我的方案')
+  const r = await copyTradeProfile(tCurRef.value, version ? { version } : undefined)
+  ElMessage.success(version ? `已将 v${version} 复制为我的方案` : '已复制为我的方案')
+  tVerVisible.value = false
   // 复制后只经组件 reload 刷新 mine 列表并回写，不再并行 loadTradeProfiles()。
   const list = await tradeSelectRef.value?.reload()
   const copied = (list as TradeProfileSummary[] | undefined)?.find((p) => p.id === r.id)
@@ -1031,6 +1078,10 @@ async function copyCurrentTradeProfile() {
 const previewHit = ref<{ buy: number | null; sell: number | null }>({ buy: null, sell: null })
 const previewDate = ref<{ buy: string | null; sell: string | null }>({ buy: null, sell: null })
 const previewing = ref('')
+function clearTradePreview() {
+  previewHit.value = { buy: null, sell: null }
+  previewDate.value = { buy: null, sell: null }
+}
 async function previewSide(side: 'buy' | 'sell') {
   const conds = condListOf(side).value
   if (!conds.length) { ElMessage.warning('该侧无条件'); return }
@@ -1085,36 +1136,21 @@ function onScoreCopied(item: ProfileSummary) {
     profiles.value = [summary, ...profiles.value]
   }
 }
-// 「加载查看」（R5/§7.0）：并入列表 + 载入编辑器只读展示（页面级状态，不经组件选中态——
+// 「加载查看」（R5/§7.0）：载入编辑器只读展示（页面级状态，不污染 mine 列表，也不经组件选中态——
 // 组件刻意不把临时项设为选中，规避 el-select 把 selectedItem 锁到非持久 tempItem 的更新循环）。
 // 复用 onScoreSelect（seq 守卫 + 失败回滚），只读由 profileReadonly 控制、不自动试算。
 function onScoreLoaded(item: ProfileSummary) {
   const summary = item as ScoreProfileSummary
-  if (!profiles.value.some((p) => (p.profile_ref || p.id) === (summary.profile_ref || summary.id))) {
-    profiles.value = [summary, ...profiles.value]
-  }
   onScoreSelect(summary.profile_ref || summary.id)
 }
-// 行内「×」移除「加载查看」临时预览项：仅当编辑器正查看该外来方案时收尾——
-// 清掉它的只读身份/试算结果（否则移除后仍锁只读、结果还挂着它），回到「我的」上下文或新建态。
+// 行内「×」只移除「加载查看」临时预览项，不删除资产；组件只会为当前 tempItem 发出此事件。
+// 不用 readonly 推断临时项：平台内置资产对其物理 owner 可能是 readonly=false，仍须完整清理页面状态。
 async function onScoreTempRemoved(item: ProfileSummary) {
   const summary = item as ScoreProfileSummary
-  const removedRef = summary.profile_ref || summary.id
-  // curRef 对「加载查看」项是 getProfile 规范化的 opaque ref（≠明文 profile_ref），直接比必然不等；
-  // 判据：当前正处只读查看态（加载查看必只读，mine 项不进 tempItem）即认为编辑器在查看该外来方案，收尾。
-  if (!profileReadonly.value) return
   ElMessage.info(`已移除预览的方案「${summary.name}」`)
-  profiles.value = profiles.value.filter((p) => (p.profile_ref || p.id) !== removedRef)
-  curRef.value = ''
-  profileReadonly.value = false
-  runRows.value = []
-  runDate.value = ''
-  runError.value = ''
-  scoreLastAppliedRef = ''
-  scoreDetailAttempt = ''
-  const list = (await scoreSelectRef.value?.reload()) ?? []
-  if (list.length) onScoreSelect(list[0].profile_ref || list[0].id)
-  else newProfile()
+  // 先同步清空外部身份、参数和试算，再刷新 mine；刷新失败也不会留下“来源已移除、参数仍可编辑”的假新建态。
+  newProfile()
+  await scoreSelectRef.value?.reload()
 }
 function onTradeReady(list: ProfileSummary[]) {
   tProfiles.value = list as TradeProfileSummary[]
@@ -1127,32 +1163,18 @@ function onTradeCopied(item: ProfileSummary) {
     tProfiles.value = [summary, ...tProfiles.value]
   }
 }
-// 「加载查看」（R5/§7.0）：并入列表 + 载入编辑器只读展示（同 onScoreLoaded，页面级状态不经组件选中态）。
+// 「加载查看」（R5/§7.0）：载入编辑器只读展示（同 onScoreLoaded，页面级状态不污染 mine 列表）。
 function onTradeLoaded(item: ProfileSummary) {
   const summary = item as TradeProfileSummary
-  if (!tProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileKey(summary))) {
-    tProfiles.value = [summary, ...tProfiles.value]
-  }
   onTradeSelect(tradeProfileKey(summary))
 }
-// 行内「×」移除「加载查看」临时预览项：仅当编辑器正查看该外来方案时收尾——
-// 清掉它的只读身份/试算命中结果，回到「我的」上下文或新建态。
+// 行内「×」只移除「加载查看」临时预览项，不删除资产；清理契约与评分方案一致。
 async function onTradeTempRemoved(item: ProfileSummary) {
   const summary = item as TradeProfileSummary
-  const removedRef = tradeProfileKey(summary)
-  // 判据同评分：当前正处只读查看态（加载查看必只读）即认为编辑器在查看该外来方案，收尾。
-  if (!tReadonly.value) return
   ElMessage.info(`已移除预览的方案「${summary.name}」`)
-  tProfiles.value = tProfiles.value.filter((p) => tradeProfileKey(p) !== removedRef)
-  tCurRef.value = ''
-  tReadonly.value = false
-  previewHit.value = { buy: null, sell: null }
-  previewDate.value = { buy: null, sell: null }
-  tradeLastAppliedRef = ''
-  tradeDetailAttempt = ''
-  const list = (await tradeSelectRef.value?.reload()) ?? []
-  if (list.length) onTradeSelect(tradeProfileKey(list[0] as TradeProfileSummary))
-  else newTradeProfile()
+  // 与评分方案一致：移除即同步丢弃外部参数；mine 刷新失败时仍保持干净的新建态。
+  newTradeProfile()
+  await tradeSelectRef.value?.reload()
 }
 
 async function initScorePage() {

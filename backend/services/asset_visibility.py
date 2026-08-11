@@ -10,8 +10,12 @@ import base64
 import binascii
 import hashlib
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
+
+import psycopg
 
 VISIBILITY_PRIVATE = "private"
 VISIBILITY_TENANT = "tenant"
@@ -567,6 +571,106 @@ def downgrade_backtest_runs_referencing(pg, *, asset_type: str, ref: str,
             cur.execute(sql, [col_ref, tenant_id, owner_user_id])
             return max(cur.rowcount or 0, 0)
     return pg.execute(sql, [col_ref, tenant_id, owner_user_id])
+
+
+@contextmanager
+def asset_visibility_locks(pg, refs: list[AssetRef]) -> Iterator[None]:
+    """串行化同一方案的“可见性变更”和“依赖回测发布”。
+
+    锁按稳定顺序获取，覆盖跨仓库的校验与写入窗口；使用独立短连接，避免占用业务事务连接后
+    再向连接池借连接形成自锁。会话结束会兜底释放 advisory lock。
+    """
+    keys = sorted({
+        f"{ref.asset_type}:{ref.tenant_id}:{ref.owner_user_id}:{ref.asset_id}"
+        for ref in refs
+    })
+    if not keys:
+        yield
+        return
+    try:
+        conn = psycopg.connect(pg.conninfo, autocommit=True, connect_timeout=10)
+    except psycopg.Error as exc:
+        raise RuntimeError("资产可见性并发锁连接失败，请稍后重试") from exc
+    try:
+        with conn.cursor() as cur:
+            for key in keys:
+                cur.execute(
+                    "SELECT pg_advisory_lock(hashtext(%s), hashtext(%s))",
+                    ["asset-visibility", key],
+                )
+            try:
+                yield
+            finally:
+                for key in reversed(keys):
+                    try:
+                        cur.execute(
+                            "SELECT pg_advisory_unlock(hashtext(%s), hashtext(%s))",
+                            ["asset-visibility", key],
+                        )
+                    except psycopg.Error:
+                        # 关闭会话仍会释放锁；不覆盖原业务异常。
+                        pass
+    finally:
+        conn.close()
+
+
+def reconcile_backtest_runs_for_profile_visibility(
+    pg,
+    *,
+    asset_type: str,
+    ref: str,
+    tenant_id: str,
+    owner_user_id: str,
+    target_visibility: str,
+    conn=None,
+) -> int:
+    """收窄方案可见性时，同步收窄引用它的已发布回测。
+
+    private：所有非私有引用回测降为 private；tenant：同租户 public 回测降为 tenant，
+    跨租户引用回测降为 private。历史结果保留，只清理不再成立的发布范围。
+    裸 id 只匹配方案 owner 自己的历史回测，避免误伤其他 owner 的同名资产。
+    """
+    target_visibility = normalize_visibility(target_visibility)
+    if target_visibility == VISIBILITY_PUBLIC:
+        return 0
+    col = backtest_ref_column(asset_type)
+    col_ref, pid = _ref_and_pid(asset_type, ref, tenant_id, owner_user_id)
+    ref_where = (
+        f"({col}=%s OR ({col}=%s AND tenant_id=%s AND owner_user_id=%s))"
+    )
+    ref_params = [col_ref, pid, tenant_id, owner_user_id]
+    if target_visibility == VISIBILITY_PRIVATE:
+        sql = (
+            "UPDATE backtest_run SET visibility='private', published_at=NULL, published_by=NULL "
+            f"WHERE {ref_where} AND visibility<>'private'"
+        )
+        params = ref_params
+    else:
+        sql = (
+            "UPDATE backtest_run SET "
+            "visibility=CASE WHEN tenant_id=%s THEN 'tenant' ELSE 'private' END, "
+            "published_at=CASE WHEN tenant_id=%s THEN published_at ELSE NULL END, "
+            "published_by=CASE WHEN tenant_id=%s THEN published_by ELSE NULL END "
+            f"WHERE {ref_where} AND ("
+            "(tenant_id=%s AND visibility='public') OR "
+            "(tenant_id<>%s AND visibility<>'private'))"
+        )
+        params = [tenant_id, tenant_id, tenant_id, *ref_params, tenant_id, tenant_id]
+
+    if conn is not None:
+        with pg.cursor_in(conn) as cur:
+            cur.execute(sql, params)
+            return max(cur.rowcount or 0, 0)
+    with pg.transaction() as tx:
+        return reconcile_backtest_runs_for_profile_visibility(
+            pg,
+            asset_type=asset_type,
+            ref=ref,
+            tenant_id=tenant_id,
+            owner_user_id=owner_user_id,
+            target_visibility=target_visibility,
+            conn=tx,
+        )
 
 
 def restore_backtest_private_dependencies(run: dict) -> dict | None:

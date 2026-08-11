@@ -16,6 +16,7 @@ def record_asset_visibility_audit(
     target_type: str,
     ref_key: str,
     fallback_resource_prefix: str,
+    affected_count: int = 0,
 ) -> None:
     ctx = get_current_context()
     if ctx is None:
@@ -38,6 +39,7 @@ def record_asset_visibility_audit(
         context={
             "action": action,
             "profile_ref": after.get(ref_key),
+            "affected_count": affected_count,
         },
         changes=AuditService.build_changes(before, after, fields=("visibility",)),
     )
@@ -51,6 +53,7 @@ def record_asset_copy_audit(
     target_type: str,
     resource_code: str,
     ref_key: str,
+    source_version: int | None = None,
 ) -> None:
     ctx = get_current_context()
     if ctx is None:
@@ -69,6 +72,7 @@ def record_asset_copy_audit(
         context={
             "action": action,
             "profile_ref": source.get(ref_key),
+            "source_version": source_version,
             "affected_count": 1,
         },
         changes=[

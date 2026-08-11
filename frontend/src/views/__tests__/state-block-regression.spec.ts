@@ -554,6 +554,65 @@ describe('代表性页面四态回归', () => {
     )
   })
 
+  it('筛选页移除本人名下系统内置预览后同步清空条件与结果，列表刷新失败也不残留参数', async () => {
+    ;(screeningApi.listProfiles as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('刷新失败'))
+    const summary = {
+      id: 'pub-remove', profile_ref: 'ref_pub_remove', name: '待移除筛选方案', version: 1,
+      is_preset: true, source: 'preset', readonly: false,
+    }
+    ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...summary,
+      is_preset: true, visibility: 'public',
+      expression: { op: 'AND', children: [{ type: 'col', field: 'bull_arrange', cmp: '==', value: true }] },
+    })
+    const wrapper = await mountView(ScreenView)
+    const selector = wrapper.findComponent(AssetProfileSelect)
+    selector.vm.$emit('loaded', summary)
+    await flushPromises()
+    expect((wrapper.vm as any).rows).toHaveLength(1)
+
+    selector.vm.$emit('tempRemoved', summary)
+    await flushPromises()
+    expect((wrapper.vm as any).curRef).toBe('')
+    expect((wrapper.vm as any).loadedProfile).toBeNull()
+    expect((wrapper.vm as any).rows).toEqual([])
+    expect((wrapper.vm as any).complexAst).toBeNull()
+    expect((wrapper.vm as any).result).toBeNull()
+  })
+
+  it('筛选方案切换成功后清除上一方案结果，详情失败则不提前清除', async () => {
+    ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'a', profile_ref: 'ref_a', name: '方案A', version: 1, is_preset: false,
+      visibility: 'private', readonly: false,
+      expression: { op: 'AND', children: [{ type: 'col', field: 'bull_arrange', cmp: '==', value: true }] },
+    })
+    ;(screeningApi.runScreen as ReturnType<typeof vi.fn>).mockResolvedValue({
+      run_date: '2026-08-01', count: 1, exclude_st: true,
+      hits: [{ code: '000001.SZ', name: '旧结果股票', total_score: 90, grade: '观察', is_st: false }],
+    })
+    const wrapper = await mountView(ScreenView)
+    const selector = wrapper.findComponent(AssetProfileSelect)
+    selector.vm.$emit('loaded', { id: 'a', profile_ref: 'ref_a', name: '方案A', version: 1, readonly: false })
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text().includes('运行筛选'))!.trigger('click')
+    await flushPromises()
+    expect((wrapper.vm as any).result?.hits).toHaveLength(1)
+
+    ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('切换失败'))
+    selector.vm.$emit('loaded', { id: 'b', profile_ref: 'ref_b', name: '方案B', version: 1, readonly: true })
+    await flushPromises()
+    expect((wrapper.vm as any).result?.hits).toHaveLength(1)
+
+    ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'b', profile_ref: 'ref_b', name: '方案B', version: 1, is_preset: false,
+      visibility: 'public', readonly: true,
+      expression: { op: 'AND', children: [{ type: 'col', field: 'bull_arrange', cmp: '==', value: true }] },
+    })
+    selector.vm.$emit('loaded', { id: 'b', profile_ref: 'ref_b', name: '方案B', version: 1, readonly: true })
+    await flushPromises()
+    expect((wrapper.vm as any).result).toBeNull()
+  })
+
   it('筛选页载入自己的可写方案显示删除按钮', async () => {
     ;(screeningApi.getProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'mine1',

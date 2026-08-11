@@ -504,6 +504,27 @@ describe('ConfigView trade tab', () => {
     expect(select.props('modelValue')).toBe('ref_t2')
   })
 
+  it('买卖方案切换成功后清空上一方案试算命中结果', async () => {
+    routeState.meta.configTab = 'trade'
+    ;(tradeApi.listTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(tradeApi.getTradeProfile as ReturnType<typeof vi.fn>).mockImplementation((ref: string) => Promise.resolve({
+      id: ref, profile_ref: ref, name: ref, version: 1,
+      is_preset: false, visibility: 'private', source: 'mine', readonly: false,
+      buy_tree: { op: 'AND', children: [] }, sell_tree: { op: 'OR', children: [] }, backstop: {},
+    }))
+    const wrapper = await mountView('normal', ['trade-profile:view'])
+    const select = wrapper.findComponent({ name: 'AssetProfileSelect' })
+    select.vm.$emit('update:modelValue', 'ref_t1')
+    await flushPromises()
+    ;(wrapper.vm as any).previewHit = { buy: 8, sell: 3 }
+    ;(wrapper.vm as any).previewDate = { buy: '2026-08-01', sell: '2026-08-01' }
+
+    select.vm.$emit('update:modelValue', 'ref_t2')
+    await flushPromises()
+    expect((wrapper.vm as any).previewHit).toEqual({ buy: null, sell: null })
+    expect((wrapper.vm as any).previewDate).toEqual({ buy: null, sell: null })
+  })
+
   it('「加载查看」注入临时只读项并以 profile_ref 载入编辑器只读展示（P1-1 接入 @loaded）', async () => {
     routeState.meta.configTab = 'trade'
     ;(tradeApi.listTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
@@ -536,6 +557,36 @@ describe('ConfigView trade tab', () => {
     expect((nameInput.element as HTMLInputElement).disabled).toBe(true)
     wrapper.unmount()
   })
+
+  it('移除本人名下系统内置买卖方案预览时同步清空外部参数，刷新失败也保持干净新建态', async () => {
+    routeState.meta.configTab = 'trade'
+    ;(tradeApi.listTradeProfiles as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('刷新失败'))
+    const summary = {
+      id: 'tp-remove', profile_ref: 'avr_trade_remove', name: '待移除买卖方案', version: 1,
+      is_preset: true, visibility: 'public', source: 'preset', readonly: true,
+    }
+    ;(tradeApi.getTradeProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...summary,
+      buy_tree: { op: 'AND', children: [{ indicator: 'rs_pct', cmp: '>=', value: 5 }] },
+      sell_tree: { op: 'OR', children: [] }, backstop: { max_hold_days: 20 },
+    })
+    const wrapper = await mountView('normal', ['trade-profile:view'])
+    const selector = wrapper.findComponent({ name: 'AssetProfileSelect' })
+    selector.vm.$emit('loaded', summary)
+    await flushPromises()
+    expect((wrapper.vm as any).buyConds).toHaveLength(1)
+
+    // 模拟平台内置资产对物理 owner 的详情口径：source=preset，但 readonly=false。
+    // 同一 tick 内触发移除，避免 jsdom 重渲染完整可编辑条件表导致 Element Plus 自身递归噪声。
+    ;(wrapper.vm as any).tReadonly = false
+    selector.vm.$emit('tempRemoved', summary)
+    await flushPromises()
+    expect((wrapper.vm as any).tCurRef).toBe('')
+    expect((wrapper.vm as any).tReadonly).toBe(false)
+    expect((wrapper.vm as any).buyConds).toEqual([])
+    expect((wrapper.vm as any).backstop).toEqual({ tp: null, sl: null, hold: null })
+    wrapper.unmount()
+  })
 })
 
 describe('ConfigView score tab 加载查看', () => {
@@ -566,6 +617,34 @@ describe('ConfigView score tab 加载查看', () => {
     const nameInput = wrapper.find('input[placeholder="方案名称"]')
     expect((nameInput.element as HTMLInputElement).value).toBe('默认趋势分')
     expect((nameInput.element as HTMLInputElement).disabled).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('移除本人名下系统内置评分方案预览时同步清空外部评分项，刷新失败也保持干净新建态', async () => {
+    routeState.meta.configTab = 'score'
+    ;(scoreApi.listScoreProfiles as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('刷新失败'))
+    const summary = {
+      id: 'sp-remove', profile_ref: 'avr_score_remove', name: '待移除评分方案', version: 1,
+      is_preset: true, visibility: 'public', source: 'preset', readonly: true,
+    }
+    ;(scoreApi.getScoreProfile as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...summary,
+      items: [{ indicator: 'rs_pct', weight: 1, scoring: { type: 'linear', min: 0, max: 100 } }],
+    })
+    const wrapper = await mountView('normal', ['score-profile:view'])
+    const selector = wrapper.findComponent({ name: 'AssetProfileSelect' })
+    selector.vm.$emit('loaded', summary)
+    await flushPromises()
+    expect((wrapper.vm as any).items).toHaveLength(1)
+
+    // 模拟平台内置资产对物理 owner 的详情口径：source=preset，但 readonly=false。
+    ;(wrapper.vm as any).profileReadonly = false
+    selector.vm.$emit('tempRemoved', summary)
+    await flushPromises()
+    expect((wrapper.vm as any).curRef).toBe('')
+    expect((wrapper.vm as any).profileReadonly).toBe(false)
+    expect((wrapper.vm as any).items).toEqual([])
+    expect((wrapper.vm as any).runRows).toEqual([])
     wrapper.unmount()
   })
 })

@@ -307,13 +307,9 @@ function onTradeSelect(key: string) {
   tradeId.value = key
   void evalTrade()
 }
-// 「加载查看」临时只读项（R10）：并入 tradeProfiles 并设为当前选中回显，但**不自动评估**——
-// 清空旧结果，由用户点「评估」按钮显式运行。组件「加载查看」不再联动 update:modelValue，此为本路径唯一入口。
+// 「加载查看」临时只读项由选择器组件持有，mine 列表保持纯净；页面只保存有效 ref，不自动评估。
 function onTradeLoaded(item: ProfileSummary) {
   const summary = item as TradeProfileSummary
-  if (!tradeProfiles.value.some((p) => tradeProfileKey(p) === tradeProfileKey(summary))) {
-    tradeProfiles.value = [summary, ...tradeProfiles.value]
-  }
   tradeId.value = tradeProfileKey(summary)
   cancelRequest(tradeRequest)
   tradeEval.value = null

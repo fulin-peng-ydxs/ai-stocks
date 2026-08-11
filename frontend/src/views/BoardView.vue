@@ -101,6 +101,7 @@ function onTableSortChange({ prop }: { prop: string; order: string | null }): vo
 // 榜单属于“选择即查看”页面，加载公开方案后直接形成只读选项并自动刷新。
 const auth = useAuthStore()
 const profiles = ref<ScoreProfileSummary[]>([])
+const externalProfile = ref<ScoreProfileSummary | null>(null)
 const profileRef = ref('')
 function profileKey(p: ScoreProfileSummary): string {
   return p.profile_ref || p.id
@@ -137,7 +138,11 @@ const defaultPref = useUserPreference<BoardDefaultProfile>({
   localStorageKey: 'ai-stocks-board-default-profile',
 })
 const defaultItemKey = computed(() => defaultPref.value.profile_ref || defaultPref.value.id || '')
-const curProfile = computed(() => profiles.value.find((p) => profileKey(p) === profileRef.value))
+const curProfile = computed(() => (
+  profiles.value.find((p) => profileKey(p) === profileRef.value)
+  ?? (externalProfile.value && profileKey(externalProfile.value) === profileRef.value
+    ? externalProfile.value : null)
+))
 const cacheStatus = ref('')
 const canViewBoardProfiles = computed(() =>
   hasPermission(auth.role, auth.permissions, 'board:view'),
@@ -158,6 +163,9 @@ function onProfileSelect(key: string) {
   // 任何选择变化（包括清空）都先让旧请求失效，避免无选中时被迟到响应重新写回榜单。
   loadSequence += 1
   profileRef.value = key
+  if (externalProfile.value && profileKey(externalProfile.value) !== key) {
+    externalProfile.value = null
+  }
   if (key) void load()
   else {
     rows.value = []
@@ -165,12 +173,9 @@ function onProfileSelect(key: string) {
     loading.value = false
   }
 }
-// 加载的只读项并入页面侧摘要列表，使执行参数与标题都按 opaque profile_ref 解析。
+// 外部只读项与 mine 列表分离，避免清除后影响默认方案和空状态判断。
 function onProfileLoaded(item: ProfileSummary) {
-  const summary = item as ScoreProfileSummary
-  if (!profiles.value.some((p) => profileKey(p) === profileKey(summary))) {
-    profiles.value = [summary, ...profiles.value]
-  }
+  externalProfile.value = item as ScoreProfileSummary
 }
 const profilesReady = ref(false)
 const tradeDatesReady = ref(false)
@@ -188,12 +193,7 @@ async function maybeLoadInitialBoard() {
 // 组件为列表唯一事实源：经 ready 接收「我的」列表；与交易日初始化汇合后只发起一次首屏请求。
 async function onProfilesReady(list: ProfileSummary[]) {
   const recoveredFromError = profilesReady.value && !!error.value
-  // 搜索抽屉可能比 mine 列表先返回；ready 不得把已加载的当前只读方案覆盖掉。
-  const selectedBeforeReady = profiles.value.find((p) => profileKey(p) === profileRef.value)
   profiles.value = list as ScoreProfileSummary[]
-  if (selectedBeforeReady && !profiles.value.some((p) => profileKey(p) === profileKey(selectedBeforeReady))) {
-    profiles.value = [selectedBeforeReady, ...profiles.value]
-  }
   if (profiles.value.length && !profileRef.value) {
     profileRef.value = profileKey(profiles.value[0])
   }
@@ -289,7 +289,7 @@ const displaySubKeys = computed(() => {
   return subKeys.value
 })
 const tableEmptyText = computed(() =>
-  profiles.value.length ? '当前条件暂无榜单数据' : '暂无可用评分方案',
+  profileRef.value ? '当前条件暂无榜单数据' : '暂无可用评分方案',
 )
 
 watch(runDate, () => {

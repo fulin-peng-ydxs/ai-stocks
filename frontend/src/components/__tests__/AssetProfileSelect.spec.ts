@@ -113,6 +113,33 @@ describe('AssetProfileSelect', () => {
     wrapper.unmount()
   })
 
+  it('external 模式只通知父级，不向候选注入临时项', async () => {
+    const { wrapper } = mountSelect({ loadedMode: 'external' })
+    await flush()
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
+    await flush()
+
+    expect(wrapper.emitted('loaded')?.at(-1)).toEqual([publicItem])
+    expect((wrapper.vm as unknown as { tempItem: ProfileSummary | null }).tempItem).toBeNull()
+    await wrapper.find('[data-testid="asset-profile-select-select"]').trigger('click')
+    await flush()
+    const options = Array.from(document.querySelectorAll('.el-select-dropdown__item'))
+    expect(options).toHaveLength(1)
+    expect(options[0]?.textContent).toContain('我的筛选方案A')
+    wrapper.unmount()
+  })
+
+  it('clearTransient 同步清理组件内临时候选', async () => {
+    const { wrapper } = mountSelect()
+    await flush()
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', publicItem)
+    await flush()
+    ;(wrapper.vm as unknown as { clearTransient: () => void }).clearTransient()
+    await flush()
+    expect((wrapper.vm as unknown as { tempItem: ProfileSummary | null }).tempItem).toBeNull()
+    wrapper.unmount()
+  })
+
   it('切换到其他对象即丢弃临时只读项', async () => {
     const { wrapper } = mountSelect()
     await flush()
@@ -196,6 +223,37 @@ describe('AssetProfileSelect', () => {
     const list = wrapper.find('.asset-profile-select__list')
     expect(list.exists()).toBe(true)
     expect(list.text()).toContain('我的筛选方案A')
+    wrapper.unmount()
+  })
+
+  it('list 行内×只移除临时预览，不影响我的方案或触发持久操作', async () => {
+    const fetchMine = vi.fn(async () => [mineItem])
+    const copyItem = vi.fn(async () => ({ id: 'copy', name: '副本', version: 1 }))
+    const presetOwnerItem: ProfileSummary = {
+      ...publicItem,
+      id: 'preset_owner',
+      profile_ref: 'ref_preset_owner',
+      name: '本人名下系统内置方案',
+      is_preset: true,
+      source: 'preset',
+      readonly: false,
+      owner_label: '我',
+    }
+    const { wrapper } = mountSelect({ mode: 'list', fetchMine, copyItem })
+    await flush()
+    expect(wrapper.find('[data-testid="asset-profile-select-remove"]').exists()).toBe(false)
+
+    wrapper.findComponent(AssetSearchDrawer).vm.$emit('load', presetOwnerItem)
+    await flush()
+    expect(wrapper.text()).toContain('本人名下系统内置方案')
+    await wrapper.find('[data-testid="asset-profile-select-remove"]').trigger('click')
+    await flush()
+
+    expect(wrapper.emitted('tempRemoved')?.at(-1)).toEqual([presetOwnerItem])
+    expect(wrapper.text()).not.toContain('本人名下系统内置方案')
+    expect(wrapper.text()).toContain('我的筛选方案A')
+    expect(fetchMine).toHaveBeenCalledTimes(1)
+    expect(copyItem).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

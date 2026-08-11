@@ -40,6 +40,7 @@ class ScoreProfileVisibilityBody(BaseModel):
 class ScoreProfileCopyBody(BaseModel):
     # C8：前端不再传 id，后端自动生成唯一 id + 名称「原名 副本」；name 可选（一般也不传）
     name: str | None = None
+    version: int | None = None
 
 
 def _has_perm(code: str) -> bool:
@@ -141,6 +142,7 @@ def set_score_profile_visibility(pid: str, body: ScoreProfileVisibilityBody) -> 
         target_type="score_profile",
         ref_key="profile_ref",
         fallback_resource_prefix="score-profile",
+        affected_count=int(p.get("affected_run_count") or 0),
     )
     return ok(p)
 
@@ -153,7 +155,7 @@ def copy_score_profile(pid: str, body: ScoreProfileCopyBody) -> ApiResponse:
     if not source:
         return err(404, "方案不存在")
     try:
-        result = repo.copy_visible(pid, body.name)
+        result = repo.copy_visible(pid, body.name, body.version)
     except ValueError as e:
         msg = str(e)
         return err(409 if ("已存在" in msg or "冲突" in msg) else 404, msg)
@@ -165,12 +167,14 @@ def copy_score_profile(pid: str, body: ScoreProfileCopyBody) -> ApiResponse:
         target_type="score_profile",
         resource_code="score-profile:save",
         ref_key="profile_ref",
+        source_version=body.version,
     )
     return ok({
         "id": result["id"],
         "profile_ref": result["profile_ref"],
         "name": result["name"],
         "version": result["version"],
+        "source_version": result.get("source_version"),
         "msg": "已复制",
     })
 

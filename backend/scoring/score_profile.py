@@ -17,28 +17,30 @@ from datetime import datetime
 
 import pandas as pd
 
+from backend.auth.context import get_current_owner
 from backend.common.ids import prefixed_readable_id
 from backend.common.logging import get_logger
 from backend.config import get_effective_settings
-from backend.storage.duckdb_client import get_client
-from backend.storage.pg_client import get_pg_client
-from backend.auth.context import get_current_owner
-from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 from backend.services.asset_visibility import (
     ASSET_SCORE_PROFILE,
     SCOPE_MINE,
+    asset_visibility_locks,
     decorate_asset_row,
+    downgrade_backtest_runs_referencing,
     is_asset_visible,
     make_asset_ref,
     normalize_visibility,
     parse_asset_ref,
     publish_platform_presets,
+    reconcile_backtest_runs_for_profile_visibility,
+    referencing_backtest_runs_by_others,
     resolve_asset_ref_or_legacy_id,
     scoped_query,
     summarize_asset_row,
-    referencing_backtest_runs_by_others,
-    downgrade_backtest_runs_referencing,
 )
+from backend.storage.duckdb_client import get_client
+from backend.storage.pg_client import get_pg_client
+from backend.storage.pg_ddl import PUBLIC_BOARD_OWNER
 
 log = get_logger("scoring.score_profile")
 
@@ -416,23 +418,33 @@ class ScoreProfileRepo:
         )
         if ref.tenant_id != self.tenant_id or ref.owner_user_id != self.owner_user_id:
             raise PermissionError("只能修改自己的评分方案可见性")
-        # 收回为私有：他人引用的方案不可收回（会破坏引用它的公开回测的依赖可见性）；
-        # 本人引用不拦（owner 可先删回测再收回），与 _assert_no_own_refs 语义对齐。
-        if visibility == VISIBILITY_PRIVATE and referencing_backtest_runs_by_others(
-            self.pg, asset_type=ASSET_SCORE_PROFILE, ref=profile_ref_or_id,
-            tenant_id=self.tenant_id, owner_user_id=self.owner_user_id,
-        ):
-            raise ValueError("该方案被其他用户的回测记录引用，无法收回为私有，请先删除相关回测")
         now = datetime.now() if visibility != VISIBILITY_PRIVATE else None
-        self.pg.execute(
-            "UPDATE score_profile SET visibility=%s, published_at=%s, published_by=%s, updated_at=%s "
-            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
-            [
-                visibility, now, published_by if visibility != VISIBILITY_PRIVATE else None,
-                datetime.now(), ref.tenant_id, ref.owner_user_id, ref.asset_id,
-            ],
-        )
-        return self.get_visible(profile_ref_or_id)
+        with asset_visibility_locks(self.pg, [ref]), self.pg.transaction() as conn:
+            with self.pg.cursor_in(conn) as cur:
+                cur.execute(
+                    "SELECT 1 FROM score_profile "
+                    "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s FOR UPDATE",
+                    [ref.tenant_id, ref.owner_user_id, ref.asset_id],
+                )
+                if cur.fetchone() is None:
+                    return None
+            affected_runs = reconcile_backtest_runs_for_profile_visibility(
+                self.pg, asset_type=ASSET_SCORE_PROFILE, ref=ref.asset_id,
+                tenant_id=self.tenant_id, owner_user_id=self.owner_user_id,
+                target_visibility=visibility, conn=conn,
+            )
+            with self.pg.cursor_in(conn) as cur:
+                cur.execute(
+                    "UPDATE score_profile SET visibility=%s, published_at=%s, "
+                    "published_by=%s, updated_at=%s "
+                    "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s",
+                    [visibility, now, published_by if visibility != VISIBILITY_PRIVATE else None,
+                     datetime.now(), ref.tenant_id, ref.owner_user_id, ref.asset_id],
+                )
+        result = self.get_visible(profile_ref_or_id)
+        if result is not None:
+            result["affected_run_count"] = affected_runs
+        return result
 
     def _insert_copy(self, new_id: str, name: str, items: list[dict],
                      grade_thresholds: dict | None) -> bool:
@@ -464,21 +476,49 @@ class ScoreProfileRepo:
             )
         return True
 
-    def copy_visible(self, profile_ref_or_id: str, new_name: str | None = None) -> dict:
+    def copy_visible(
+        self,
+        profile_ref_or_id: str,
+        new_name: str | None = None,
+        version: int | None = None,
+    ) -> dict:
         """复制可见方案为「我的」private（C8）：后端生成唯一 id、名称默认「原名 副本」，
         撞库/并发有限次重试；仅真正插入成功才返回新 id/profile_ref/name/version。"""
         src = self.get_visible(profile_ref_or_id, include_owner=True)
         if not src:
             raise ValueError("方案不存在")
+        if version is not None:
+            version = int(version)
+            if version <= 0:
+                raise ValueError("版本号必须大于 0")
+            snap = self.pg.query_df(
+                "SELECT name, items, grade_thresholds FROM score_profile_version "
+                "WHERE id=%s AND tenant_id=%s AND owner_user_id=%s AND version=%s",
+                [src["id"], src["tenant_id"], src["owner_user_id"], version],
+            )
+            if snap.empty:
+                raise ValueError(f"方案版本不存在: v{version}")
+            row = snap.iloc[0].to_dict()
+            src = {
+                **src,
+                "name": row["name"],
+                "items": json.loads(row["items"]),
+                "grade_thresholds": (
+                    json.loads(row["grade_thresholds"]) if row.get("grade_thresholds") else {}
+                ),
+            }
         base_name = (new_name or "").strip() or f"{src['name']} 副本"
         for _ in range(5):
             new_id = self._make_id(base_name)
-            if self._insert_copy(new_id, base_name, src["items"], src["grade_thresholds"]):
+            if self._insert_copy(
+                new_id, base_name, src["items"], src["grade_thresholds"]
+            ):
                 return {
                     "id": new_id,
                     "profile_ref": self.make_ref(self.tenant_id, self.owner_user_id, new_id),
                     "name": base_name,
                     "version": 1,
+                    "source_version": version,
                 }
         raise ValueError("复制失败：目标 id 冲突，请重试")
 
