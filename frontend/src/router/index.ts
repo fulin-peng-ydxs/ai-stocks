@@ -164,6 +164,12 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/views/data/ScheduleView.vue'),
     meta: { title: '任务调度' },
   },
+  {
+    path: '/sectors',
+    name: 'sectors',
+    component: () => import('@/views/SectorsView.vue'),
+    meta: { title: '板块行情' },
+  },
   // 兜底：未匹配路径（含已废弃的 /config、/layout-config/* 旧链接与误输）回动态首页，避免空白页。
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

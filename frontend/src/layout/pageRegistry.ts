@@ -875,6 +875,50 @@ const REGISTRY: PageRegistryEntry[] = [
       editable: [],
     },
   },
+  {
+    pageKey: 'sectors',
+    label: '板块行情',
+    path: '/sectors',
+    archetype: 'list',
+    responsiveProfile: 'single-column',
+    supportsComponentConfig: true,
+    consumedComponentFields: { table: ['defaultSort', 'pageSize', 'hiddenColumns'] },
+    componentMeta: {
+      table: {
+        columns: [
+          { key: 'name', label: '板块名称' },
+          { key: 'member_count', label: '成分股数' },
+          { key: 'updown', label: '上涨/下跌' },
+          { key: 'pct_today', label: '今日涨幅' },
+          { key: 'pct_5d', label: '5日涨幅' },
+          { key: 'pct_10d', label: '10日涨幅' },
+          { key: 'pct_20d', label: '20日涨幅' },
+          { key: 'net_inflow', label: '即时净流入' },
+          { key: 'leader', label: '领涨股' },
+        ],
+        sortFields: [
+          { key: 'pct_today', label: '今日涨幅' },
+          { key: 'pct_5d', label: '5日涨幅' },
+          { key: 'pct_10d', label: '10日涨幅' },
+          { key: 'pct_20d', label: '20日涨幅' },
+          { key: 'net_inflow', label: '即时净流入' },
+          { key: 'up_count', label: '上涨家数' },
+        ],
+      },
+    },
+    layout: {
+      pageKey: 'sectors',
+      archetype: 'list',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'filter', component: 'filter-bar', region: 'action', order: 1 },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '板块列表', order: 2, config: { defaultSort: 'pct_today:desc', pageSize: 20 } },
+      ],
+      editable: [densityKnob()],
+    },
+  },
 ]
 
 // P13 overlay 纳管：开放个人设置的业务页面统一补登 settings-drawer；平台布局管理页
