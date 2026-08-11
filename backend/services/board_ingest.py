@@ -33,6 +33,25 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("services.board_ingest")
 
+BOARD_INGEST_STAGES: tuple[str, ...] = ("dict", "members", "bar", "fund")
+
+
+def normalize_board_stages(value) -> list[str] | None:
+    """规范化板块采集阶段；None 表示默认全阶段，显式空数组属于非法配置。"""
+    if value is None:
+        return None
+    try:
+        raw = value.split(",") if isinstance(value, str) else list(value)
+    except TypeError as exc:
+        raise ValueError("板块采集内容必须是数组或逗号分隔字符串") from exc
+    stages = list(dict.fromkeys(str(x).strip() for x in raw if str(x).strip()))
+    if not stages:
+        raise ValueError("板块采集内容至少选择一项")
+    unknown = sorted(set(stages) - set(BOARD_INGEST_STAGES))
+    if unknown:
+        raise ValueError(f"未知板块采集步骤: {unknown}")
+    return stages
+
 
 def _asia_date() -> date:
     """Asia/Shanghai 当前日期（快照日期语义）。"""

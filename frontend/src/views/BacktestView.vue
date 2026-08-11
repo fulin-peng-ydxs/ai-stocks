@@ -19,6 +19,7 @@ import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -58,7 +59,6 @@ const backtestDefaults = {
   kind: 'strategy' as 'strategy' | 'score_check',
   topN: 10,
   initCap: 1_000_000,
-  autoLoadHistory: true,
   robustExpanded: false,
 }
 const { settings, isDirty, reset } = usePageSettings('backtest', backtestDefaults)
@@ -309,9 +309,6 @@ const sig = ref<Layers | null>(null)
 const runTime = ref('')          // 当前展示结果的回测运行时间（加载历史时显示；刚跑完为空）
 const fromHistory = ref(false)   // 当前结果是否来自加载历史
 
-const gradeTag: Record<string, '' | 'success' | 'warning' | 'info'> = {
-  主升浪核心: 'success', 龙头候选: 'warning', 观察: 'info',
-}
 const robustPanels = ref<string[]>(settings.robustExpanded ? ['robust'] : [])
 const tradeRows = computed(() => {
   const list = [...(strat.value?.trades ?? [])]
@@ -588,6 +585,7 @@ function toRunOption(r: RunSummary) {
   }
 }
 const runOptions = computed(() => runHistory.value.map(toRunOption))
+const historyPlaceholder = computed(() => runOptions.value.length ? '请选择回测记录（可选）' : '暂无我的回测')
 const externalRunOption = computed(() =>
   externalRunSummary.value ? toRunOption(externalRunSummary.value) : null,
 )
@@ -976,14 +974,8 @@ async function removeCurrentRun() {
       ElMessage.warning('记录已删除，但列表刷新失败，请稍后重试')
       return
     }
-    if (runHistory.value.length) {
-      ElMessage.success('已删除')
-      selectedRun.value = runKey(runHistory.value[0])
-      await loadRun(selectedRun.value)
-    } else {
-      selectedRun.value = ''
-      ElMessage.success('记录已删除，参数已保留，可重新运行')
-    }
+    selectedRun.value = ''
+    ElMessage.success('记录已删除，参数已保留，可重新运行或选择其他记录')
   } catch (e) {
     ElMessage.error((e as Error).message || '删除失败')
   }
@@ -1215,11 +1207,6 @@ onMounted(async () => {
   initCap.value = Number(settings.initCap)
   robustPanels.value = settings.robustExpanded ? ['robust'] : []
   await loadHistory()
-  // 默认载入最近一次回测结果，避免空屏、不用反复重跑
-  if (settings.autoLoadHistory && runHistory.value.length) {
-    selectedRun.value = runKey(runHistory.value[0])
-    await loadRun(selectedRun.value)
-  }
 })
 
 const HORIZONS = [10, 20]
@@ -1659,7 +1646,7 @@ async function openTradeChart(row: TradeRow) {
             placement="bottom-start"
             @change="onMineRunSelected(selectedRun)"
             size="default"
-            placeholder="暂无我的回测"
+            :placeholder="historyPlaceholder"
             title="显示最近 100 条我的回测记录"
           >
             <el-option v-for="o in runOptions" :key="o.id" :value="o.id" :label="o.label">
@@ -1922,7 +1909,7 @@ async function openTradeChart(row: TradeRow) {
       </div>
     </el-card>
 
-    <div v-loading="loading" class="results">
+    <div v-loading="loading && !!(strat || sig)" class="results">
       <AppStateBlock
         v-if="historyError"
         state="error"
@@ -1933,7 +1920,12 @@ async function openTradeChart(row: TradeRow) {
         @retry="loadHistory"
       />
       <AppStateBlock
-        v-if="resultError && !strat && !sig"
+        v-if="loading && !strat && !sig"
+        state="loading"
+        title="正在加载回测结果…"
+      />
+      <AppStateBlock
+        v-else-if="resultError && !strat && !sig"
         state="error"
         :title="resultErrorContext === 'history' ? '历史回测载入失败' : '回测运行失败'"
         :description="resultError"
@@ -2126,7 +2118,7 @@ async function openTradeChart(row: TradeRow) {
           </AppTableColumn>
           <AppTableColumn v-if="tradeColVisible('grade')" label="买入档">
             <template #default="{ row }">
-              <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" size="small" effect="light">{{ row.grade }}</el-tag>
+              <ScoreGradeTag v-if="row.grade" :grade="row.grade" size="small" />
               <span v-else-if="row.entry_score != null" class="muted" title="综合分未达「观察」档阈值，但因候选池内排名靠前而买入">无评级·{{ row.entry_score.toFixed(0) }}分</span>
               <span v-else class="muted">—</span>
             </template>
@@ -2138,7 +2130,7 @@ async function openTradeChart(row: TradeRow) {
         </div>
       </el-card>
 
-      <el-empty v-if="!loading && !strat && !sig" class="app-empty" description="设置参数后点「运行回测」" />
+      <AppStateBlock v-if="!strat && !sig" state="empty" title="设置参数后点「运行回测」" />
       </template>
     </div>
     </div>
@@ -2168,7 +2160,9 @@ async function openTradeChart(row: TradeRow) {
               方案内第 {{ dlgSummary.pickRank || '—' }}<span class="ds-sub"> / 命中 {{ dlgSummary.pool || '—' }} 只</span>
             </span>
             <span class="ds-rank2">
-              全市场榜单 <b>#{{ dlgSummary.rank || '—' }}</b> · {{ dlgSummary.grade || '—' }}
+              全市场榜单 <b>#{{ dlgSummary.rank || '—' }}</b> ·
+              <ScoreGradeTag v-if="dlgSummary.grade" :grade="dlgSummary.grade" size="small" />
+              <span v-else>—</span>
               <el-button link type="primary" size="small" @click="openDayBoard(dlgSummary.entry, dlgCode)">查看当日榜单</el-button>
             </span>
           </div>
@@ -2201,7 +2195,7 @@ async function openTradeChart(row: TradeRow) {
           </AppTableColumn>
           <AppTableColumn label="买入档">
             <template #default="{ row }">
-              <span v-if="row.grade">{{ row.grade }}</span>
+              <ScoreGradeTag v-if="row.grade" :grade="row.grade" size="small" />
               <span v-else-if="row.entry_score != null" class="muted">无评级·{{ row.entry_score.toFixed(0) }}分</span>
               <span v-else class="muted">—</span>
             </template>
@@ -2240,7 +2234,12 @@ async function openTradeChart(row: TradeRow) {
             <template #default="{ row }">{{ row.name || '—' }}</template>
           </AppTableColumn>
           <AppTableColumn label="综合分" prop="total_score" />
-          <AppTableColumn label="评级" prop="grade" />
+          <AppTableColumn label="评级" prop="grade">
+            <template #default="{ row }">
+              <ScoreGradeTag v-if="row.grade" :grade="row.grade" size="small" />
+              <span v-else>—</span>
+            </template>
+          </AppTableColumn>
         </AppDataTable>
       </div>
     </el-dialog>
@@ -2292,7 +2291,6 @@ async function openTradeChart(row: TradeRow) {
               { label: '300万', value: 3000000 },
             ]" />
           </div>
-          <PageToggleRow v-model="settings.autoLoadHistory" label="自动加载最近历史回测" />
           <PageToggleRow v-model="settings.robustExpanded" label="默认展开稳健性测试" />
         </PageSettingSection>
       </template>

@@ -15,14 +15,21 @@ test.describe('板块数据管理闭环', () => {
 
     const card = page.getByTestId('overview-board-card')
     await expect(card).toBeVisible({ timeout: 30_000 })
-    await expect(card).toContainText('概念')
-    await expect(card).toContainText('覆盖 成分')
-    await expect(card).toContainText('最新 指数')
+    // 三视口并发时后端会串行 DuckDB 查询，等待概览真实完成而非对初始占位断言。
+    await expect(card.locator('.stat-val')).not.toHaveText('—', { timeout: 30_000 })
     await card.click()
+    await expect(page.getByText('覆盖进度', { exact: true })).toBeVisible()
+    await expect(page.getByText('成分覆盖', { exact: true })).toBeVisible()
+    await expect(page.getByText('指数覆盖', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('overview-board-ingest')).toBeVisible()
+    await page.getByTestId('overview-board-ingest').click()
 
     await expect(page).toHaveURL(/\/data\/ingest\?task_type=board&mode=update/)
     await expect(page.getByTestId('ingest-options-dialog')).toBeVisible()
-    await expect(page.getByRole('radio', { name: '增量' })).toBeChecked()
+    await expect(page.getByTestId('ingest-board-mode-update')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('ingest-board-type')).toBeVisible()
+    await expect(page.getByTestId('ingest-board-stages')).toContainText('字典')
+    await expect(page.getByTestId('ingest-board-stages')).toContainText('资金流')
     expect(consoleIssues).toEqual([])
   })
 
@@ -41,6 +48,9 @@ test.describe('板块数据管理闭环', () => {
 
       await expect(page.getByTestId('schedule-board-mode')).toBeVisible()
       await page.getByTestId('schedule-board-mode-backfill').click()
+      await page.getByTestId('schedule-board-type-concept').click()
+      await page.getByTestId('schedule-board-stages').getByText('字典', { exact: true }).click()
+      await page.getByTestId('schedule-board-stages').getByText('成分', { exact: true }).click()
       await page.getByTestId('schedule-enabled').click()
       await page.getByTestId('schedule-save').click()
 
@@ -50,7 +60,9 @@ test.describe('板块数据管理闭环', () => {
       expect(response.ok()).toBe(true)
       const body = await response.json()
       const job = body.data.jobs.find((item: { name: string }) => item.name === jobName)
-      expect(job?.params).toEqual({ mode: 'backfill' })
+      expect(job?.params).toEqual({
+        mode: 'backfill', board_type: 'concept', only: ['bar', 'fund'],
+      })
       expect(job?.enabled).toBe(false)
       expect(consoleIssues).toEqual([])
     } finally {

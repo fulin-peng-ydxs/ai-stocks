@@ -30,6 +30,7 @@ import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -734,19 +735,17 @@ const runDate = ref<string>('')
 const runRows = ref<ScoreRunRow[]>([])
 const running = ref(false)
 const runError = ref('')
+const scoreRunCompleted = ref(false)
 function clearScoreRunResult() {
   runRows.value = []
   runError.value = ''
+  scoreRunCompleted.value = false
 }
 const subKeys = computed(() => items.value.map((i) => i.indicator))
 
 function scoreLevel(v: number | undefined): string {
   const n = v ?? 0
   return n >= 80 ? 'hi' : n >= 50 ? 'mid' : 'lo'
-}
-
-function gradeType(g: string): string {
-  return g === '主升浪核心' ? 'danger' : g === '龙头候选' ? 'warning' : g === '观察' ? 'success' : 'info'
 }
 
 async function tryRun() {
@@ -763,8 +762,8 @@ async function tryRun() {
       top: 30,
     })
     runRows.value = res.list
+    scoreRunCompleted.value = true
     runDate.value = res.run_date
-    if (!res.list.length) ElMessage.info('无结果（可能该日无数据）')
   } catch (e) {
     runError.value = getErrorMessage(e, '试算运行失败')
     ElMessage.error(runError.value)
@@ -1445,17 +1444,28 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 用当前配置试算
               </el-button>
             </div>
+            <template v-if="settings.previewExpanded">
+            <AppStateBlock v-if="running && !runRows.length" state="loading" title="正在试算评分结果…" />
             <AppStateBlock
-              v-if="runError"
+              v-else-if="runError && !runRows.length"
               state="error"
-              size="compact"
               title="试算运行失败"
               :description="runError"
               retry
               @retry="tryRun"
             />
-            <div v-if="settings.previewExpanded && runRows.length" class="run-table-wrap">
-            <AppDataTable :data="runRows" size="small" border height="100%" class="run-table">
+            <template v-else>
+            <AppStateBlock
+              v-if="runError"
+              state="error"
+              size="compact"
+              title="试算结果刷新失败"
+              :description="runError"
+              retry
+              @retry="tryRun"
+            />
+            <div v-if="runRows.length" class="run-table-wrap">
+            <AppDataTable :data="runRows" :loading="running" size="small" border height="100%" class="run-table">
               <AppTableColumn label="#">
                 <template #default="{ row }">{{ row.rank }}</template>
               </AppTableColumn>
@@ -1466,9 +1476,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </AppTableColumn>
               <AppTableColumn label="评级">
                 <template #default="{ row }">
-                  <el-tag v-if="row.grade" :type="gradeType(row.grade)" size="small" effect="light">
-                    {{ row.grade }}
-                  </el-tag>
+                  <ScoreGradeTag v-if="row.grade" :grade="row.grade" size="small" />
                   <span v-else>—</span>
                 </template>
               </AppTableColumn>
@@ -1488,6 +1496,14 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </AppTableColumn>
             </AppDataTable>
             </div>
+            <AppStateBlock
+              v-else-if="scoreRunCompleted"
+              state="empty"
+              title="当前配置在该交易日暂无评分结果"
+            />
+            <AppStateBlock v-else state="empty" title="配置评分规则后点「用当前配置试算」" />
+            </template>
+            </template>
           </section>
         </div>
       </template>

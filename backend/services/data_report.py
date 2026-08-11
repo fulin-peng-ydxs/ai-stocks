@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -27,6 +27,10 @@ log = get_logger("services.data_report")
 # 缺口/鲜活判定的近端窗口（DM-D21）：只在近 N 个开市日内判缺口与滞后；
 # 更早的历史空洞默认即停牌（老数据稳定，真漏采早暴露），不反复上报、不扣分。
 GAP_WINDOW_DAYS = 90
+
+
+def _shanghai_today() -> date:
+    return datetime.now(timezone(timedelta(hours=8))).date()
 
 # 覆盖鲜活全景缓存（M2.9.4）：概览页一次会连打 overview/stock-quality/hub 三个接口，
 # 各自都要 _coverage_frame（全市场扫描）。用「数据变更签名」做单条缓存，让同一页的多次调用复用；
@@ -546,14 +550,16 @@ class DataIntegrityReport:
 
     # ── 板块维度质检（板块概念需求 R12，T7）──────────────────
     def scan_board_quality(self) -> dict:
-        """板块数据质检：板块指数缺口 + 指数逐日缺口 + 资金流缺失扫描，写 data_quality_issue。
+        """板块数据质检：成分覆盖、板块指数缺口/非法值和资金流覆盖扫描。
 
         收敛语义：先完整计算本轮结果，再在一个事务内替换 open 的
-        board_index_gap / board_index_gap_daily / board_fund_missing / board_fund_stale；
+        board_index_gap / board_index_gap_daily / board_index_invalid /
+        board_fund_missing / board_fund_stale；
         扫描失败时事务不提交，旧问题不会消失。
         已 ignored 的板块按 (code, type) 整体豁免。
 
-        成分数波动不做质量判断；成分采集完整性由采集层“完整快照才落库”保证。
+        成分数波动不做质量判断；但 has_members=true 且从未形成完整快照必须进入台账，
+        否则概览只能显示覆盖不足、质量页却没有恢复入口。
         """
         # 板块指数缺口：board_bar 最近交易日滞后于 daily_bar 全局最新交易日
         # 已 ignored 的板块豁免（按 (code, type) 整体豁免）
@@ -626,27 +632,86 @@ class DataIntegrityReport:
                             "detail": f"板块 {info['name']}（{code}）指数逐日缺口："
                                       f"{md} 无日线数据",
                         })
-        # 资金流缺失：字典中真正参与展示的板块（有成分或指数）却无资金流数据。
-        # 来源是数据源资金流榜单未收录该板块（区别于 board_fund_unmatched：源多出而字典缺）。
-        # 源侧榜单一经上线，重采资金流会置 has_fund_flow=true，重扫即收敛。
+        else:
+            daily_gap_issues = []
+
+        # 板块指数内容合法性：记录存在不代表可用于行情展示，坏 OHLC/负成交字段必须可发现、可重采。
+        ig_invalid = _ignored_codes("board_index_invalid")
+        invalid_df = self.c.query_df(
+            """
+            SELECT d.board_code, d.name, b.trade_date, b.open, b.high, b.low, b.close,
+                   b.volume, b.amount
+            FROM board_bar b
+            JOIN board_dict d ON d.board_code=b.board_code AND d.has_bar
+            WHERE b.close IS NULL OR b.close<=0 OR b.high IS NULL OR b.low IS NULL
+               OR b.high<b.low
+               OR (b.open IS NOT NULL AND (b.open>b.high OR b.open<b.low))
+               OR (b.close IS NOT NULL AND (b.close>b.high OR b.close<b.low))
+               OR COALESCE(b.volume, 0)<0 OR COALESCE(b.amount, 0)<0
+            """)
+        invalid_issues = [
+            {
+                "code": str(r["board_code"]),
+                "trade_date": pd.Timestamp(r["trade_date"]).date(),
+                "issue_type": "board_index_invalid",
+                "detail": f"板块 {r['name']}（{r['board_code']}）指数数据非法："
+                          f"O={r['open']} H={r['high']} L={r['low']} C={r['close']} "
+                          f"V={r['volume']} A={r['amount']}",
+            }
+            for _, r in invalid_df.iterrows()
+            if str(r["board_code"]) not in ig_invalid
+        ]
+
+        # 从未形成完整成分快照也属于不可用状态。采集中途失败仍由采集层即时写同一类型，
+        # 这里仅补齐“从未采集/历史初始化漏跑”的静态盲区，并尊重 active/ignored 去重。
+        active_member_codes = _ignored_codes("board_member_incomplete")
+        active_member_df = self.c.query_df(
+            "SELECT code FROM data_quality_issue "
+            "WHERE issue_type='board_member_incomplete' AND status IN ('open','fixing')")
+        active_member_codes.update(str(x) for x in active_member_df["code"].tolist())
+        member_df = self.c.query_df(
+            "SELECT board_code, name FROM board_dict "
+            "WHERE has_members AND member_snapshot_at IS NULL")
+        member_issues = [
+            {
+                "code": str(r["board_code"]),
+                "trade_date": _shanghai_today(),
+                "issue_type": "board_member_incomplete",
+                "detail": json.dumps({
+                    "reason_type": "never_collected",
+                    "reason": f"板块 {r['name']}（{r['board_code']}）尚未形成完整成分快照",
+                }, ensure_ascii=False),
+            }
+            for _, r in member_df.iterrows()
+            if str(r["board_code"]) not in active_member_codes
+        ]
+
+        # 资金流缺失按“逐板块最新即时快照 >= 最新交易日”判断，不能使用
+        # 历史粘性的 has_fund_flow，也不能要求等于全局最新快照日：定向补采可能只会产生
+        # 少量当日记录，若按当日全量覆盖判断会误报其他已追平的板块。
         ig_fund = _ignored_codes("board_fund_missing")
+        latest_fund = self._scalar(
+            "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
+        latest_fund = None if latest_fund is None or pd.isna(latest_fund) \
+            else pd.Timestamp(latest_fund).date()
+        fund_date = latest or latest_fund or fund_date or _shanghai_today()
         fund_df = self.c.query_df(
             """
-            SELECT board_code, name FROM board_dict
-            WHERE (has_members OR has_bar) AND NOT has_fund_flow
-            """)
-        # 资金流缺失日期：优先全局最新交易日（该日应有资金流但源未收录）；系统未初始化（无 daily_bar）
-        # 时用检测日兜底，保证质量页日期列有值。
-        if fund_date is None:
-            from datetime import date as _date
-            fund_date = _date.today()
+            SELECT b.board_code, b.name
+            FROM board_dict b
+            WHERE (b.has_members OR b.has_bar)
+              AND NOT EXISTS (
+                SELECT 1 FROM board_fund_flow f
+                WHERE f.board_code=b.board_code AND f.snapshot_date>=? AND f.period='即时'
+              )
+            """, [fund_date])
         fund_issues = [
             {
                 "code": str(r["board_code"]),
                 "trade_date": fund_date,
                 "issue_type": "board_fund_missing",
-                "detail": f"板块 {r['name']}（{r['board_code']}）资金流缺失："
-                          f"数据源资金流榜单未收录该板块",
+                "detail": f"板块 {r['name']}（{r['board_code']}）无不早于 "
+                          f"{fund_date} 的即时资金流快照",
             }
             for _, r in fund_df.iterrows()
             if str(r["board_code"]) not in ig_fund
@@ -656,7 +721,8 @@ class DataIntegrityReport:
         # 故记单条源级 issue（code=NULL），修复动作重采全源资金流。
         stale_issues: list[dict] = []
         if latest is not None and not _ignored_codes("board_fund_stale"):
-            last_fund = self._scalar("SELECT max(snapshot_date) FROM board_fund_flow")
+            last_fund = self._scalar(
+                "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
             if last_fund is not None and not pd.isna(last_fund):
                 last_fund = pd.Timestamp(last_fund).date()
                 if last_fund < latest:
@@ -667,13 +733,17 @@ class DataIntegrityReport:
                                   f"滞后 {(latest - last_fund).days} 天，待重采资金流",
                     })
         with self.c.transaction():
-            for issue_type in ("board_index_gap", "board_index_gap_daily",
+            for issue_type in ("board_index_gap", "board_index_gap_daily", "board_index_invalid",
                                "board_fund_missing", "board_fund_stale"):
                 self.c.execute(
                     "DELETE FROM data_quality_issue "
                     "WHERE status='open' AND issue_type=?", [issue_type])
-            self._insert_issues(gap_issues + daily_gap_issues + fund_issues + stale_issues)
+            self._insert_issues(
+                gap_issues + daily_gap_issues + invalid_issues + member_issues
+                + fund_issues + stale_issues)
         return {"index_gap": len(gap_issues), "index_gap_daily": len(daily_gap_issues),
+                "index_invalid": len(invalid_issues),
+                "member_incomplete": len(member_issues),
                 "fund_missing": len(fund_issues), "fund_stale": len(stale_issues)}
 
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
@@ -803,6 +873,22 @@ class DataIntegrityReport:
                 "SELECT count(*) FROM board_bar WHERE board_code=? AND trade_date=?",
                 [code, trade_date])
             return int(n) > 0
+        if issue_type == "board_index_invalid":
+            has_bar = self._scalar(
+                "SELECT has_bar FROM board_dict WHERE board_code=?", [code])
+            if has_bar is None or not bool(has_bar):
+                return True
+            if trade_date is None:
+                return False
+            valid = self._scalar(
+                """SELECT count(*) FROM board_bar
+                   WHERE board_code=? AND trade_date=?
+                     AND NOT (close IS NULL OR close<=0 OR high IS NULL OR low IS NULL OR high<low
+                       OR (open IS NOT NULL AND (open>high OR open<low))
+                       OR (close IS NOT NULL AND (close>high OR close<low))
+                       OR COALESCE(volume, 0)<0 OR COALESCE(amount, 0)<0)""",
+                [code, trade_date])
+            return int(valid) > 0
         if issue_type == "board_member_incomplete":
             # 完整采集会原子更新 member_snapshot_at 并关闭 active issue；历史 member_count 不能证明
             # 本次问题已经修复，否则旧快照会造成假解决。
@@ -834,20 +920,30 @@ class DataIntegrityReport:
                 params.append(board_type)
             return int(self._scalar(sql, params)) > 0
         if issue_type == "board_fund_missing":
-            # 资金流缺失：与 scan_board_quality 扫描口径一致——只有该板块现在确实具备资金流数据
-            # （has_fund_flow=true，源侧已收录并采到）或已不在字典（被移除）才算收敛。
+            # 与扫描同口径：板块的最新即时快照追平市场最新交易日才算恢复。
             row = self.c.query_df(
-                "SELECT has_fund_flow FROM board_dict WHERE board_code=?", [code])
+                "SELECT 1 FROM board_dict WHERE board_code=?", [code])
             if row.empty:
                 return True
-            return bool(row.iloc[0]["has_fund_flow"])
+            expected = self._scalar("SELECT max(trade_date) FROM daily_bar")
+            if expected is None or pd.isna(expected):
+                expected = self._scalar(
+                    "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
+            if expected is None or pd.isna(expected):
+                return False
+            present = self._scalar(
+                "SELECT count(*) FROM board_fund_flow "
+                "WHERE board_code=? AND snapshot_date>=? AND period='即时'",
+                [code, pd.Timestamp(expected).date()])
+            return int(present) > 0
         if issue_type == "board_fund_stale":
             # 资金流滞后：全局资金流快照已追平全局最新交易日即收敛（源级单条 issue，无 code）。
             latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
             if latest is None:
                 return False
             latest = pd.Timestamp(latest).date()
-            last_fund = self._scalar("SELECT max(snapshot_date) FROM board_fund_flow")
+            last_fund = self._scalar(
+                "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
             if last_fund is None or pd.isna(last_fund):
                 return False
             return pd.Timestamp(last_fund).date() >= latest

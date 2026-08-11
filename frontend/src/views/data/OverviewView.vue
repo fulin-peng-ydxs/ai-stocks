@@ -4,7 +4,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  getOverview, getCatalog, getDimensions, getStockQuality, LAYER_DESC,
+  getOverview, getCatalog, getDimensions, getStockQuality, LAYER_DESC, BOARD_ISSUE_ITEMS,
   type Overview, type CatalogTable, type Dimension, type StockQuality,
 } from '@/api/data'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -273,13 +273,14 @@ const boardOverallCoverage = computed(() => {
 })
 const boardIssueItems = computed(() => {
   const issues = ov.value?.board?.issues_by_type ?? {}
-  return [
-    { key: 'board_member_incomplete', label: '成分不完整', hint: '待重采成分' },
-    { key: 'board_index_gap', label: '指数缺口', hint: '补齐行情缺口' },
-    { key: 'board_fund_unmatched', label: '资金流未匹配', hint: '检查资金流归属' },
-    { key: 'board_fund_missing', label: '资金流缺失', hint: '源未收录待上线' },
-    { key: 'board_fund_stale', label: '资金流滞后', hint: '快照停留早于最新交易日' },
-  ].map((item) => ({ ...item, count: issues[item.key] ?? 0 })).filter((item) => item.count > 0)
+  const known = BOARD_ISSUE_ITEMS
+    .map((item) => ({ ...item, count: issues[item.key] ?? 0 }))
+    .filter((item) => item.count > 0)
+  const knownCount = known.reduce((sum, item) => sum + item.count, 0)
+  const otherCount = Math.max(0, (ov.value?.board?.open_issues ?? 0) - knownCount)
+  return otherCount
+    ? [...known, { key: '', label: '其他板块问题', hint: '前往质量台账查看', count: otherCount }]
+    : known
 })
 const boardFreshnessItems = computed(() => {
   const board = ov.value?.board
@@ -631,16 +632,19 @@ onMounted(load)
                       <span class="panel-title">覆盖进度</span>
                       <span class="hint">先确认成分、指数、资金流三条链路是否齐备</span>
                     </div>
-                    <el-tag
-                      size="small"
-                      effect="plain"
-                      class="board-coverage-tag"
-                      :type="boardOverallCoverage >= 100 ? 'success' : 'warning'"
-                      :clickable="boardOverallCoverage < 100"
-                      @click="boardOverallCoverage < 100 && gotoBoard()"
-                    >
-                      {{ boardOverallCoverage >= 100 ? '已完成' : '补采中，点击采集' }}
-                    </el-tag>
+                    <div class="board-section-actions">
+                      <el-tag
+                        size="small"
+                        effect="plain"
+                        class="board-coverage-tag"
+                        :type="boardOverallCoverage >= 100 ? 'success' : 'warning'"
+                      >
+                        {{ boardOverallCoverage >= 100 ? '已完成' : '待补采' }}
+                      </el-tag>
+                      <el-button data-testid="overview-board-ingest" size="small" type="primary" @click="gotoBoard()">
+                        去采集板块
+                      </el-button>
+                    </div>
                   </div>
                   <div class="board-coverage-grid">
                     <div v-for="item in boardCoverageItems" :key="item.key" class="cov-card">
@@ -725,7 +729,9 @@ onMounted(load)
               description="请先在数据采集页运行板块采集"
             >
               <template #extra>
-                <el-button size="small" type="primary" @click="gotoBoard()">去采集板块</el-button>
+                <el-button data-testid="overview-board-ingest" size="small" type="primary" @click="gotoBoard()">
+                  去采集板块
+                </el-button>
               </template>
             </AppStateBlock>
           </el-tab-pane>
@@ -998,15 +1004,13 @@ onMounted(load)
 .board-side-title .hint {
   margin-left: var(--app-space-2);
 }
-/* 补采中标签可点击：未完成时点击跳采集页弹板块采集框 */
+.board-section-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-2);
+}
 .board-coverage-tag {
   cursor: default;
-}
-.board-coverage-tag:not(.el-tag--success) {
-  cursor: pointer;
-}
-.board-coverage-tag:not(.el-tag--success):hover {
-  filter: brightness(0.95);
 }
 .board-coverage-grid {
   display: grid;

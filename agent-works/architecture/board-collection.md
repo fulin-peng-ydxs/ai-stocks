@@ -108,7 +108,7 @@
 
 ### 部分失败语义
 
-板块采集单板块/单步骤失败保留 checkpoint 供续跑，任务标 failed 但 message 明示「部分完成，可续跑补齐」（对齐数据管理文档「失败任务可续跑」语义）。`ok=False` 保留成功工作单元 checkpoint，失败任务可从剩余单元续跑。
+板块采集单板块/单步骤失败保留 checkpoint 供重试，任务标 failed 且 message 明示「部分完成，可重试未完成项」。`ok=False` 保留成功工作单元 checkpoint，重试时从剩余单元继续；中断状态的用户操作文案为「继续任务」，避免把失败与中断混为同一状态。
 
 ### 终止穿透
 
@@ -122,39 +122,40 @@
 
 ## 质检（`backend/services/data_report.py` + `dataquality/checker.py`）
 
-板块六类 issue 独立于个股 L1-L4 打分，归入「板块」层（`ISSUE_LAYER` 映射）：
+板块专项 issue 独立于个股 L1-L4 打分，归入「板块」层（`ISSUE_LAYER` 映射）：
 
 | issue_type | 产生方 | 含义 | 修复动作 |
 |-----------|--------|------|----------|
 | `board_index_gap` | `scan_board_quality` 扫描 | 板块指数最新日线滞后全局最新交易日 | 重采该板块指数（2024 年起） |
 | `board_index_gap_daily` | `scan_board_quality` 扫描 | 板块指数近 `GAP_WINDOW_DAYS` 个开市日内某具体交易日缺失 | 按缺失日窄窗口重采该板块指数 |
-| `board_member_incomplete` | 采集层 `_write_incomplete_quality` | 成分快照采集不完整/失败 | 重采成分（force 绕周频） |
+| `board_index_invalid` | `scan_board_quality` 扫描 | 指数 OHLC 缺失/越界、价格非正或成交量额为负 | 按异常日窄窗口重采该板块指数 |
+| `board_member_incomplete` | 采集层 + `scan_board_quality` | 成分快照采集不完整/失败，或宣称支持成分但从未形成完整快照 | 重采成分（force 绕周频） |
 | `board_fund_unmatched` | 采集层 `_write_unmatched_quality` | 资金流未匹配到字典 | 重采资金流 |
-| `board_fund_missing` | `scan_board_quality` 扫描 | 资金流源未收录该板块（字典有成分/指数但无资金流） | 重采资金流（源上线后收敛） |
+| `board_fund_missing` | `scan_board_quality` 扫描 | 板块无不早于全局最新交易日的即时资金流快照 | 定向重采资金流 |
 | `board_fund_stale` | `scan_board_quality` 扫描 | 全源资金流快照滞后全局最新交易日（源级单条，code=NULL） | 重采全源资金流 |
 
 关键语义：
-- `scan_board_quality` 先完整计算再**事务内替换** open 的 `board_index_gap` / `board_index_gap_daily` / `board_fund_missing` / `board_fund_stale`，扫描失败不丢旧问题；已 ignored 的板块按 `(code, type)` 整体豁免。指数缺口复检与扫描口径一致（先判 `has_bar`，false 视为可收敛）；指数逐日缺口复检查该具体 `(board_code, trade_date)` 是否已有 `board_bar` 记录；资金流缺失复检看 `has_fund_flow`（true 或板块已移除视为收敛）；资金流滞后复检看全源快照是否追平最新交易日。
+- `scan_board_quality` 先完整计算再**事务内替换**扫描型 open 问题，扫描失败不丢旧台账；已 ignored 的板块按 `(code, type)` 整体豁免。指数完整性与字段合法性分开复检；资金流缺失逐板块检查最新即时快照是否追平全局最新交易日，不使用不会回退的 `has_fund_flow` 做当前质量证据，也不会因单板块当日补采而误报全市场。
 - `board_index_gap` 与 `board_index_gap_daily` 共存：前者定位「最新交易日没追上」，后者定位「历史窗口内具体某天缺失」。修复后者时使用缺失日作为 `start=end` 的窄窗口，源端按年返回 K 线会顺带回填该年数据，幂等 upsert。
-- `board_fund_missing` 与 `board_fund_unmatched` 方向相反：前者是「字典有、源缺」，后者是「源有、字典缺」。前者在源榜单未收录期间保持 open，源上线后重采置 `has_fund_flow=true`，重扫自动收敛。
+- `board_fund_missing` 与 `board_fund_unmatched` 方向相反：前者是「字典目标板块当前无新鲜快照」，后者是「源有、字典缺」。
 - `board_fund_stale` 与 `board_index_gap` 等价：资金流是整体批量采集，停摆时所有板块一起滞后，故记单条源级 issue（code=NULL），修复动作重采全源，不拆逐板块。
 - `board_member_incomplete` / `board_fund_unmatched` 由采集事件写入，幂等判重含 `ignored`（标记正常后重采不翻回 open）。
-- severity 走 `SEVERITY_BY_TYPE` 统一映射（五类均 `mid`），不硬编码。
+- severity 走 `SEVERITY_BY_TYPE` 统一映射（板块专项均为 `mid`），不硬编码。
 - 个股 `scan_quality_issues` 的 DELETE+INSERT 也包事务（对齐板块 scan 失败保留语义）；个股覆盖帧缓存签名排除板块 issue，板块写入不击穿个股 frame 缓存。
 
 ## 修复闭环（`backend/services/async_task.py`）
 
-五类板块 issue 走统一的 fix 任务机制（与个股同链路）：
+板块 issue 走统一的 fix 任务机制（与个股同链路）：
 1. 创建 fix 任务 → issue 置 `fixing` + 绑定 `fix_task_id`；
 2. `_recover_one` 按 issue_type 分派重采（指数重采 2024 起 / 指数逐日缺口按缺失日窄窗口重采 / 成分 `force=True` 绕周频 / 资金流按缺失定向 `board_codes`、按滞后全源重采）；
 3. `recheck_clean` 真检查该问题是否消失（如成分查 `member_snapshot_at` 非空且无 active 同类 issue，逐日缺口查该日 `board_bar` 记录是否存在）；
-4. 通过 → `resolved`；未通过 → 保持 open；任务失败/中断 → `fixing` 复位 `open`。
+4. 通过 → `resolved`；未通过 → 保持 open；任务失败/中断 → `fixing` 复位 `open`；扫描型板块问题修复后立即重扫，同一底层缺口产生的关联台账同步收敛。
 
 ## 概览 / 调度 / 手动采集 / 前端接入
 
 - **数据概览**（`/data/overview` → `_board_stage`）：板块规模（字典数/概念/行业）、覆盖进度（成分 ready/target、指数、资金流）、鲜活度（最新交易日对照板块指数/资金流快照）、质量问题分项、最近采集状态。板块数据 tab 展示 hero 卡 + 两列布局（覆盖进度/鲜活度 + 质量问题/最近采集），低高度由面板承接滚动。
-- **任务调度**（`/data/schedules` → `SCHEDULABLE_TASK_TYPES` 含 `board`）：创建/编辑校验 `mode ∈ {update,backfill}`、`board_type ∈ {concept,industry}`；触发走同一异步任务互斥闸。
-- **手动采集**（`/data/ingest`）：板块采集入口（增量/全量回填 + 指定板块搜索 + 强制刷新成分开关），`openFromQuery` 支持从概览「补采中」跳转带参弹框。
+- **任务调度**（`/data/schedules` → `SCHEDULABLE_TASK_TYPES` 含 `board`）：创建/编辑校验 `mode ∈ {update,backfill}`、`board_type ∈ {concept,industry}`、`only ⊆ {dict,members,bar,fund}` 和 `force_members`；触发走同一异步任务互斥闸。
+- **手动采集**（`/data/ingest`）：与调度页共用 `BoardTaskScopeFields`，对齐采集模式、板块类型、分阶段 `only`、成分强刷；手动入口额外支持指定板块代码/名称。
 - **板块行情页**（`/api/sectors`，权限 `sectors:view`）：4 个只读接口（列表/详情/bars/members），涨幅从 `board_bar` 实时计算，领涨股取资金流 `leader_stock`；列表只展示 `has_members` 或 `has_bar` 为 true 的板块。
 
 ## 配置（`backend/config/settings.py` + `storage/app_config.py`）
@@ -191,7 +192,7 @@
 | `GET /api/data/overview`、`/hub` | `data:overview` | 数据概览含板块规模/覆盖/鲜活/问题分项（`_board_stage`） |
 | `GET /api/data/boards` | `data:overview` | 板块搜索（采集页「指定板块」下拉） |
 | `GET /api/data/stock-quality` 等 | `data:overview` | 逐股/质量口径（板块 issue 按层归类展示） |
-| `GET /api/data/quality` | `data-quality:view` | 质检台账（板块三类 issue，名称从 board_dict/detail 补全） |
+| `GET /api/data/quality` | `data-quality:view` | 质检台账（板块 issue 名称从 board_dict/detail 补全，支持板块代码/名称搜索） |
 | `POST /api/data/quality/{id}/fix`、`/fix-batch`、`/recover-batch`、`/{id}/reset`、`/{id}/ignore` | `data-quality:fix` | 板块 issue 的修复/批量恢复/复位/忽略 |
 | `POST /api/data/tasks`、`GET /tasks/{id}`、`/resume`、`/cancel` | `data-task:manage` | 板块采集任务创建/进度/续跑/取消（`task_type=board`） |
 | `GET/POST /api/data/schedules` 及子端点 | `data-schedule:manage` | 板块定时采集任务 CRUD/启停/立即触发 |
@@ -215,4 +216,3 @@
 | 前端 `frontend/src/layout/__tests__/` 等 | 页面契约（按钮/组件/布局规范不因板块改动回归） |
 
 运行命令：`python -m pytest backend/tests/test_board_ingest.py backend/tests/test_data_mgmt_b.py backend/tests/test_sectors_api.py -q`；前端 `cd frontend && npx vitest run`。
-

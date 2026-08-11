@@ -90,14 +90,11 @@ def test_tenant_admin_me_filtered(svc, env):
     ta = env.mk_user(tid, ROLE_TENANT_ADMIN)
     me = svc.me(ta)
     idx = _indexes(me["menus"])
-    # 业务全含 + 系统>配置管理/权限管理可达
-    assert {"quotes", "/stocks", "/screen", "/backtest", "/training"} <= idx
+    # 业务叶子与租户用户管理可达。内置菜单允许在管理页重排，不能把父分组层级写死进断言。
+    assert {"/stocks", "/board", "/screen", "/backtest", "/training"} <= idx
     assert {
-        "system",
-        "/system/config",
         "/system/config/score",
         "/system/config/trade",
-        "permission",
         "/system/users",
     } <= idx
     # 系统专属分支隐藏：数据管理、技术指标、系统设置、角色/菜单/租户管理均不可见
@@ -126,8 +123,8 @@ def test_normal_me_business_only(svc, env):
     nu = env.mk_user(tid, ROLE_NORMAL)
     me = svc.me(nu)
     idx = _indexes(me["menus"])
-    assert {"quotes", "/stocks", "/board", "/screen", "/backtest", "/training"} <= idx
-    assert {"system", "/system/config", "/system/config/score", "/system/config/trade"} <= idx
+    assert {"/stocks", "/board", "/screen", "/backtest", "/training"} <= idx
+    assert {"/system/config/score", "/system/config/trade"} <= idx
     assert "permission" not in idx and "data" not in idx
     assert {"/system/config/tech", "/system/config/system"} & idx == set()
     # stage4·R21：baseline 基线共享读对非 system 业务用户**强制注入**（与 role_resource 授权无关，恒有）

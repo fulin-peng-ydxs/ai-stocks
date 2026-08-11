@@ -527,6 +527,48 @@ def test_quality_recover_batch_code_filter_keeps_other_conditions(client, monkey
     assert captured[-1]["params"]["issue_ids"] == [14]
 
 
+def test_quality_list_searches_board_code_and_name(client):
+    """质量列表的对象搜索与批量恢复共用口径，板块名称不再搜不到。"""
+    from backend.api.data_admin import quality
+
+    client.execute(
+        "INSERT INTO board_dict (board_code, name, board_type) "
+        "VALUES ('309121','AI PC','concept')")
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, issue_type, severity, status, detected_at) "
+        "VALUES (21, '309121', 'board_index_invalid', 'mid', 'open', now())")
+
+    by_name = quality(code="AI PC", status="open")
+    by_code = quality(code="309121", status="open")
+    assert by_name.code == 0 and by_name.data["total"] == 1
+    assert by_code.code == 0 and by_code.data["total"] == 1
+    assert by_name.data["list"][0]["name"] == "AI PC"
+
+
+def test_quality_actions_reject_conflicting_status_transitions(client):
+    """已解决不能再恢复，运行中的 fixing 不能被忽略或手工复位。"""
+    from backend.api.data_admin import quality_fix, quality_ignore, quality_reset
+
+    now = datetime.now()
+    client.execute(
+        "INSERT INTO async_task "
+        "(id, task_type, params, status, progress, created_at, updated_at) "
+        "VALUES ('fix_running', 'fix', '{}', 'running', 0.5, ?, ?)", [now, now])
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, issue_type, severity, status, fix_task_id, detected_at) VALUES "
+        "(31, '309121', 'board_index_gap', 'mid', 'resolved', NULL, now()), "
+        "(32, '309121', 'board_index_gap', 'mid', 'fixing', 'fix_running', now())")
+
+    assert quality_fix(31).code == 400
+    assert quality_ignore(32).code == 409
+    assert quality_reset(32).code == 409
+    state = client.query_df(
+        "SELECT status, fix_task_id FROM data_quality_issue WHERE id=32").iloc[0]
+    assert state["status"] == "fixing" and state["fix_task_id"] == "fix_running"
+
+
 # ── 板块质检（R12，T7）───────────────────────────────────────
 
 
@@ -539,8 +581,12 @@ def _seed_board_scan(client):
     # 全局最新交易日（daily_bar 有数据 → 指数缺口判定基准）
     client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-07', 10.0)")
     # AI PC 指数到 08-07（正常），半导体指数滞后到 08-06（缺口）
-    client.execute("INSERT INTO board_bar (board_code, trade_date, close) VALUES ('309121', DATE '2026-08-07', 100.0)")
-    client.execute("INSERT INTO board_bar (board_code, trade_date, close) VALUES ('881121', DATE '2026-08-06', 200.0)")
+    client.execute(
+        "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+        "VALUES ('309121', DATE '2026-08-07', 99, 101, 98, 100, 1000, 100000)")
+    client.execute(
+        "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+        "VALUES ('881121', DATE '2026-08-06', 199, 201, 198, 200, 1000, 200000)")
     # 资金流快照整体停留在 08-06（滞后全局最新交易日 08-07 → 触发源级资金流滞后）
     client.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, inflow, outflow, net_inflow) "
                    "VALUES ('309121', DATE '2026-08-06', '即时', 1.0, 0.5, 0.5)")
@@ -623,6 +669,49 @@ def test_board_recheck_index_gap_daily(client, monkeypatch):
     assert rep.recheck_clean("board_index_gap_daily", "881121", date(2026, 8, 7)) is True
 
 
+def test_scan_and_recheck_board_index_invalid(client):
+    """板块指数有记录不等于可用：OHLC 越界会入台账，覆盖正常值后收敛。"""
+    from backend.services.data_report import DataIntegrityReport
+
+    _seed_board_scan(client)
+    client.execute(
+        "UPDATE board_bar SET open=220, high=210, low=190, close=200 "
+        "WHERE board_code='881121' AND trade_date=DATE '2026-08-06'")
+    rep = DataIntegrityReport(client)
+    result = rep.scan_board_quality()
+    assert result["index_invalid"] == 1
+    invalid = client.query_df(
+        "SELECT code, trade_date FROM data_quality_issue "
+        "WHERE issue_type='board_index_invalid' AND status='open'")
+    assert invalid["code"].tolist() == ["881121"]
+    assert rep.recheck_clean(
+        "board_index_invalid", "881121", date(2026, 8, 6)) is False
+
+    client.execute(
+        "UPDATE board_bar SET open=200, high=210, low=190, close=200 "
+        "WHERE board_code='881121' AND trade_date=DATE '2026-08-06'")
+    assert rep.recheck_clean(
+        "board_index_invalid", "881121", date(2026, 8, 6)) is True
+    client.execute(
+        "DELETE FROM board_bar WHERE board_code='881121' AND trade_date=DATE '2026-08-06'")
+    assert rep.recheck_clean(
+        "board_index_invalid", "881121", date(2026, 8, 6)) is False
+
+
+def test_scan_board_quality_member_never_collected(client):
+    """字典声明支持成分但从未形成完整快照时，主动补建质检问题。"""
+    from backend.services.data_report import DataIntegrityReport
+
+    _seed_board_scan(client)
+    result = DataIntegrityReport(client).scan_board_quality()
+    assert result["member_incomplete"] == 2
+    issues = client.query_df(
+        "SELECT code, detail FROM data_quality_issue "
+        "WHERE issue_type='board_member_incomplete' AND status='open'")
+    assert set(issues["code"].tolist()) == {"309121", "881121"}
+    assert all('"reason_type": "never_collected"' in str(x) for x in issues["detail"])
+
+
 def test_scan_board_quality_fund_missing(client, monkeypatch):
     """资金流缺失扫描：字典中有成分/指数但源未收录资金流的板块写 issue。"""
     from backend.services.data_report import DataIntegrityReport
@@ -652,8 +741,11 @@ def test_scan_board_quality_fund_missing_ignored_and_converge(client, monkeypatc
         "SELECT code FROM data_quality_issue "
         "WHERE issue_type='board_fund_missing' AND status='open'")
     assert missing["code"].tolist() == ["881121"]
-    # 资金流采到：has_fund_flow=true → 重扫不再上报
-    client.execute("UPDATE board_dict SET has_fund_flow=TRUE WHERE board_code='881121'")
+    # 资金流追平最新交易日 → 重扫不再上报；不依赖粘性能力标记。
+    client.execute(
+        "INSERT INTO board_fund_flow "
+        "(board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+        "VALUES ('881121', DATE '2026-08-07', '即时', 1.0, 0.5, 0.5)")
     r2 = rep.scan_board_quality()
     assert r2["fund_missing"] == 0
     left = client.query_df(
@@ -663,14 +755,19 @@ def test_scan_board_quality_fund_missing_ignored_and_converge(client, monkeypatc
 
 
 def test_board_recheck_fund_missing(client, monkeypatch):
-    """资金流缺失复检：has_fund_flow 未满足前保持未解决，满足或板块移除后收敛。"""
+    """资金流缺失复检：只有该板块的即时快照追平最新交易日才收敛。"""
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
     rep = DataIntegrityReport(client)
     # 未采到资金流 → 复检 False（问题仍 open）
     assert rep.recheck_clean("board_fund_missing", "309121", None) is False
-    # 资金流采到 → True
+    # 能力标记不能让历史快照假解决
     client.execute("UPDATE board_dict SET has_fund_flow=TRUE WHERE board_code='309121'")
+    assert rep.recheck_clean("board_fund_missing", "309121", None) is False
+    client.execute(
+        "INSERT INTO board_fund_flow "
+        "(board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+        "VALUES ('309121', DATE '2026-08-07', '即时', 2.0, 1.0, 1.0)")
     assert rep.recheck_clean("board_fund_missing", "309121", None) is True
     # 板块不在字典 → True（已被移除，无可修复对象）
     assert rep.recheck_clean("board_fund_missing", "no-such-board", None) is True

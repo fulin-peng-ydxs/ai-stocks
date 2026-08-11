@@ -440,7 +440,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     wrapper.unmount()
   })
 
-  it('自动载入含系统方案的历史记录时显示中文名称，不把内部 id 写入 mine-only 选择器', async () => {
+  it('首屏不默认选择历史；用户主动选择后显示系统方案中文名称且不泄露内部 id', async () => {
     vi.mocked(backtestApi.listRuns).mockResolvedValue({
       runs: [{
         id: 'r-system', run_ref: 'run_ref_system', kind: 'strategy',
@@ -458,6 +458,14 @@ describe('BacktestView 三方案选择器（T5）', () => {
 
     const wrapper = await mountView()
     await emitAllReady(wrapper)
+
+    expect((wrapper.vm as any).selectedRun).toBe('')
+    expect(backtestApi.getRun).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(false)
+
+    ;(wrapper.vm as any).selectedRun = 'run_ref_system'
+    await (wrapper.vm as any).onMineRunSelected('run_ref_system')
+    await flushPromises()
 
     expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
     expect(findSelect(wrapper, 'backtest-screen-select')!.props('modelValue')).toBe('')
@@ -492,6 +500,9 @@ describe('BacktestView 三方案选择器（T5）', () => {
 
     const wrapper = await mountView()
     await emitAllReady(wrapper)
+    ;(wrapper.vm as any).selectedRun = 'run_ref_stale'
+    await (wrapper.vm as any).onMineRunSelected('run_ref_stale')
+    await flushPromises()
 
     expect(wrapper.text()).toContain('历史评分方案已不可用')
     expect(wrapper.text()).toContain('历史选股方案已不可用')
@@ -689,7 +700,7 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     wrapper.unmount()
   })
 
-  it('删除最后一条历史记录后保留参数、清空结果归属并允许重新运行', async () => {
+  it('删除历史记录后保留参数并回到未选择态，不自动载入下一条', async () => {
     const wrapper = await mountView()
     const summary = {
       id: 'mine-last', run_ref: 'run_ref_last', kind: 'strategy', readonly: false,
@@ -705,7 +716,9 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     ;(wrapper.vm as any).dirty = false
     vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as any)
     vi.mocked(backtestApi.deleteRun).mockResolvedValue({ msg: '已删除' } as any)
-    vi.mocked(backtestApi.listRuns).mockResolvedValue({ runs: [] })
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({
+      runs: [{ id: 'mine-next', run_ref: 'run_ref_next', kind: 'strategy' } as any],
+    })
 
     await (wrapper.vm as any).removeCurrentRun()
     await flushPromises()
@@ -718,6 +731,7 @@ describe('BacktestView 历史区「浏览公开回测」（T5）', () => {
     expect((wrapper.vm as any).fromHistory).toBe(false)
     expect((wrapper.vm as any).runTime).toBe('')
     expect((wrapper.vm as any).dirty).toBe(true)
+    expect(backtestApi.getRun).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

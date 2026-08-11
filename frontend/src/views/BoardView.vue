@@ -12,6 +12,7 @@ import {
 import { browseBoardProfiles, listBoardProfiles, runBoardProfile } from '@/api/board'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -305,10 +306,6 @@ function scoreLevel(v: number | undefined): string {
   const n = v ?? 0
   return n >= 80 ? 'hi' : n >= 50 ? 'mid' : 'lo'
 }
-function gradeType(g: string): string {
-  return g === '主升浪核心' ? 'danger' : g === '龙头候选' ? 'warning' : g === '观察' ? 'success' : 'info'
-}
-
 let loadSequence = 0
 async function load() {
   if (!profileRef.value) return
@@ -510,7 +507,7 @@ onMounted(async () => {
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('grade')" label="评级">
           <template #default="{ row }">
-            <el-tag v-if="row.grade" :type="gradeType(row.grade)" effect="light">{{ row.grade }}</el-tag>
+            <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
             <span v-else class="muted">—</span>
           </template>
         </AppTableColumn>

@@ -382,13 +382,16 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 // 当前在用的问题类型（下拉筛选用此顺序；missing_or_suspended 已废弃，不再产出/不再列出）。
 export const ISSUE_TYPES_ACTIVE = [
   'null_close', 'ohl_repaired', 'mv_missing', 'mv_gap', 'abnormal_change', 'adj_jump', 'data_gap', 'stale',
-  'board_index_gap', 'board_index_gap_daily', 'board_member_incomplete', 'board_fund_unmatched', 'board_fund_missing', 'board_fund_stale',
+  'board_index_gap', 'board_index_gap_daily', 'board_index_invalid', 'board_member_incomplete',
+  'board_fund_unmatched', 'board_fund_missing', 'board_fund_stale',
 ] as const
 export const ISSUE_TYPE_LABEL: Record<string, string> = {
   null_close: '收盘价非法(丢弃)', ohl_repaired: '开高低修补', mv_missing: '市值缺失',
   mv_gap: '市值缺口(近端)', abnormal_change: '异常涨跌幅', adj_jump: '复权跳变',
   data_gap: '行情缺口(疑似漏采)', stale: '数据滞后',
-  board_index_gap: '板块指数缺口', board_index_gap_daily: '板块指数逐日缺口', board_member_incomplete: '板块成分采集不完整', board_fund_unmatched: '板块资金流未匹配',
+  board_index_gap: '板块指数缺口', board_index_gap_daily: '板块指数逐日缺口',
+  board_index_invalid: '板块指数数据异常', board_member_incomplete: '板块成分采集不完整',
+  board_fund_unmatched: '板块资金流未匹配',
   board_fund_missing: '板块资金流缺失', board_fund_stale: '板块资金流滞后',
 }
 
@@ -402,14 +405,24 @@ export function taskDisplayLabel(
     ? params.issue_type
     : ''
   if (issueType) return `${base}·${ISSUE_TYPE_LABEL[issueType] ?? issueType}`
-  if (taskType === 'board') return `${base}·${params?.mode === 'backfill' ? '全量回填' : '增量'}`
+  if (taskType === 'board') {
+    const parts = [params?.mode === 'backfill' ? '全量回填' : '增量']
+    if (params?.board_type === 'concept') parts.push('概念')
+    if (params?.board_type === 'industry') parts.push('行业')
+    if (Array.isArray(params?.only) && params.only.length > 0 && params.only.length < 4) {
+      const labels: Record<string, string> = { dict: '字典', members: '成分', bar: '指数', fund: '资金流' }
+      parts.push(params.only.map((stage: string) => labels[stage] ?? stage).join('+'))
+    }
+    return `${base}·${parts.join('·')}`
+  }
   return base
 }
 // 各问题类型归属的质量层（M2.9 DM-D15 / M2.9.2 DM-D20），用于质量页/概览按层归类。
 export const ISSUE_LAYER: Record<string, string> = {
   null_close: 'L1', ohl_repaired: 'L1', mv_missing: 'L2', mv_gap: 'L2',
   abnormal_change: 'L3', adj_jump: 'L3', data_gap: 'L4', stale: 'L4',
-  board_index_gap: '板块', board_index_gap_daily: '板块', board_member_incomplete: '板块', board_fund_unmatched: '板块',
+  board_index_gap: '板块', board_index_gap_daily: '板块', board_index_invalid: '板块',
+  board_member_incomplete: '板块', board_fund_unmatched: '板块',
   board_fund_missing: '板块', board_fund_stale: '板块',
 }
 // 各问题类型的恢复动作文案（DM-D22）：按类型分派，不再统一“重拉/重算”。
@@ -417,7 +430,9 @@ export const RECOVER_ACTION_LABEL: Record<string, string> = {
   null_close: '重采该日', ohl_repaired: '重采该日', mv_missing: '补市值', mv_gap: '补市值缺口',
   abnormal_change: '重采该日', adj_jump: '重采整段重算复权',
   data_gap: '重采缺口', stale: '增量补尾',
-  board_index_gap: '重采指数', board_index_gap_daily: '重采指数(逐日)', board_member_incomplete: '重采成分', board_fund_unmatched: '重采资金流',
+  board_index_gap: '重采指数', board_index_gap_daily: '重采缺失日指数',
+  board_index_invalid: '重采异常日指数', board_member_incomplete: '重采成分',
+  board_fund_unmatched: '重采资金流',
   board_fund_missing: '重采资金流', board_fund_stale: '重采资金流',
 }
 export const LAYER_LABEL: Record<string, string> = {
@@ -431,10 +446,29 @@ export const LAYER_DESC: Record<string, string> = {
   L2: 'L2 字段契约：市值字段（总市值 / 流通市值）完整',
   L3: 'L3 正确性：无复权跳变 / 异常涨跌',
   L4: 'L4 覆盖鲜活：无缺口且更新到最新交易日',
-  板块: '板块维度：指数缺口 / 成分采集完整 / 资金流映射（独立于个股四层质量，概览板块专区展示）',
+  板块: '板块维度：指数覆盖与字段合法、成分快照完整、资金流覆盖与映射（独立于个股四层质量）',
 }
 export const SEVERITY_LABEL: Record<string, string> = { high: '高', mid: '中', low: '低' }
 export const ISSUE_STATUS_LABEL: Record<string, string> = {
   open: '未处理', fixing: '修复中', resolved: '已解决', ignored: '已忽略',
 }
 export const SOURCE_LABEL: Record<string, string> = { akshare: 'AKShare', baostock: 'BaoStock', ths_board: '同花顺板块' }
+
+export type BoardTypeScope = '' | 'concept' | 'industry'
+export type BoardIngestStage = 'dict' | 'members' | 'bar' | 'fund'
+export const BOARD_TYPE_OPTIONS: { label: string; value: BoardTypeScope }[] = [
+  { label: '全部', value: '' }, { label: '概念', value: 'concept' }, { label: '行业', value: 'industry' },
+]
+export const BOARD_STAGE_OPTIONS: { label: string; value: BoardIngestStage }[] = [
+  { label: '字典', value: 'dict' }, { label: '成分', value: 'members' },
+  { label: '指数', value: 'bar' }, { label: '资金流', value: 'fund' },
+]
+export const BOARD_ISSUE_ITEMS = [
+  { key: 'board_member_incomplete', label: '成分不完整', hint: '重采成分快照' },
+  { key: 'board_index_gap', label: '指数尾部缺口', hint: '补齐至最新交易日' },
+  { key: 'board_index_gap_daily', label: '指数逐日缺口', hint: '补齐具体缺失日' },
+  { key: 'board_index_invalid', label: '指数数据异常', hint: '重采 OHLC/成交异常日' },
+  { key: 'board_fund_unmatched', label: '资金流未匹配', hint: '重采全源并检查归属' },
+  { key: 'board_fund_missing', label: '资金流缺失', hint: '补齐最新交易日覆盖' },
+  { key: 'board_fund_stale', label: '资金流滞后', hint: '重采全源即时快照' },
+] as const

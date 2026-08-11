@@ -208,11 +208,13 @@ def _board_stage(c) -> dict | None:
             "count(*) FILTER (WHERE board_type='industry') AS industry, "
             "count(*) FILTER (WHERE has_members) AS member_target, "
             "count(*) FILTER (WHERE has_members AND member_snapshot_at IS NOT NULL) AS member_ready, "
-            "count(*) FILTER (WHERE has_bar) AS bar_target "
+            "count(*) FILTER (WHERE has_bar) AS bar_target, "
+            "count(*) FILTER (WHERE has_members OR has_bar) AS fund_target "
             "FROM board_dict").iloc[0]
         latest_market = c.query_df("SELECT max(trade_date) AS t FROM daily_bar").iloc[0]["t"]
         latest_bar = c.query_df("SELECT max(trade_date) AS t FROM board_bar").iloc[0]["t"]
-        latest_fund = c.query_df("SELECT max(snapshot_date) AS t FROM board_fund_flow").iloc[0]["t"]
+        latest_fund = c.query_df(
+            "SELECT max(snapshot_date) AS t FROM board_fund_flow WHERE period='即时'").iloc[0]["t"]
         bar_ready = 0
         if latest_market is not None and str(latest_market) != "NaT":
             bar_ready = int(c.query_df(
@@ -220,16 +222,22 @@ def _board_stage(c) -> dict | None:
                 "JOIN board_dict d ON d.board_code=b.board_code AND d.has_bar "
                 "WHERE b.trade_date=?", [latest_market]).iloc[0]["n"])
         fund_ready = 0
-        if latest_fund is not None and str(latest_fund) != "NaT":
+        fund_expected = latest_market
+        if fund_expected is None or str(fund_expected) == "NaT":
+            fund_expected = latest_fund
+        if fund_expected is not None and str(fund_expected) != "NaT":
             fund_ready = int(c.query_df(
-                "SELECT count(DISTINCT board_code) AS n FROM board_fund_flow "
-                "WHERE snapshot_date=? AND period='即时'", [latest_fund]).iloc[0]["n"])
+                "SELECT count(*) AS n FROM board_dict b "
+                "WHERE (b.has_members OR b.has_bar) AND EXISTS ("
+                "SELECT 1 FROM board_fund_flow f WHERE f.board_code=b.board_code "
+                "AND f.snapshot_date>=? AND f.period='即时')",
+                [fund_expected]).iloc[0]["n"])
         issues_by_type: dict[str, int] = {}
         if "data_quality_issue" in have:
             issues = c.query_df(
                 "SELECT issue_type, count(*) AS n FROM data_quality_issue "
                 "WHERE status IN ('open','fixing') "
-                "AND issue_type IN ('board_index_gap','board_index_gap_daily','board_member_incomplete',"
+                "AND issue_type IN ('board_index_gap','board_index_gap_daily','board_index_invalid','board_member_incomplete',"
                 "'board_fund_unmatched','board_fund_missing','board_fund_stale') "
                 "GROUP BY issue_type")
             issues_by_type = {str(r["issue_type"]): int(r["n"]) for _, r in issues.iterrows()}
@@ -254,14 +262,17 @@ def _board_stage(c) -> dict | None:
             "concept_count": int(dims["concept"]), "industry_count": int(dims["industry"]),
             "member_target": int(dims["member_target"]), "member_ready": int(dims["member_ready"]),
             "bar_target": int(dims["bar_target"]), "bar_ready": bar_ready,
-            "fund_target": bt["board_dict"], "fund_ready": fund_ready,
+            "fund_target": int(dims["fund_target"]), "fund_ready": fund_ready,
             "latest_bar_date": _date_text(latest_bar),
             "latest_fund_date": _date_text(latest_fund),
             "open_issues": sum(issues_by_type.values()),
             "issues_by_type": issues_by_type,
             "last_update": last_update,
         }
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        from backend.common.logging import get_logger
+
+        get_logger("api.data_admin").exception("板块概览统计失败: %s", exc)
         return None
 
 
@@ -378,6 +389,29 @@ def search_boards(keyword: str | None = None, board_type: str | None = None,
 
 
 # ── 质量修复（FR-DM-4）─────────────────────────────────────
+def _quality_keyword_clause(c, keyword: str, alias: str = "q") -> tuple[str, list[str]]:
+    """质量台账对象搜索单一口径：股票、板块及无 code 的未匹配资金流名称。"""
+    kw = f"%{keyword.strip().lower()}%"
+    clauses = [
+        (f"{alias}.code IN (SELECT code FROM stock_basic "
+         "WHERE lower(code) LIKE ? OR lower(name) LIKE ?)"),
+    ]
+    params = [kw, kw]
+    have = set(c.query_df(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema='main'"
+    ).get("table_name", []))
+    if "board_dict" in have:
+        clauses.append(
+            f"{alias}.code IN (SELECT board_code FROM board_dict "
+            "WHERE lower(board_code) LIKE ? OR lower(name) LIKE ?)")
+        params += [kw, kw]
+    clauses.append(
+        f"({alias}.issue_type='board_fund_unmatched' AND "
+        f"lower(COALESCE(json_extract_string(try_cast({alias}.detail AS JSON), '$.name'), '')) LIKE ?)")
+    params.append(kw)
+    return f"({' OR '.join(clauses)})", params
+
+
 @router.get("/quality", response_model=ApiResponse, dependencies=_QUALITY_VIEW)
 def quality(issue_type: str | None = None, severity: str | None = None,
             status: str | None = None, code: str | None = None,
@@ -401,10 +435,10 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         if vals:
             base_conds.append(f"q.{col} IN ({','.join('?' * len(vals))})")
             base_params += vals
-    if code:  # 代码或名称模糊匹配（M2.9 DM-D17）
-        kw = f"%{code.strip().lower()}%"
-        base_conds.append("q.code IN (SELECT code FROM stock_basic WHERE lower(code) LIKE ? OR lower(name) LIKE ?)")
-        base_params += [kw, kw]
+    if code:  # 股票/板块代码或名称模糊匹配（M2.9 DM-D17）
+        clause, values = _quality_keyword_clause(c, code)
+        base_conds.append(clause)
+        base_params += values
     base_where = " AND ".join(base_conds)
     summary = c.query_df(
         f"SELECT issue_type, count(*) AS n FROM data_quality_issue q WHERE {base_where} "
@@ -447,6 +481,7 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         detail = r.get("detail")
         if nm is None or pd.isna(nm) or not str(nm).strip():
             if it in ("board_member_incomplete", "board_index_gap", "board_index_gap_daily",
+                      "board_index_invalid",
                       "board_fund_missing") and r.get("code"):
                 nm = board_names.get(str(r["code"]), "")
             elif it == "board_fund_unmatched" and isinstance(detail, str) and detail.strip():
@@ -488,9 +523,15 @@ class FixIn(BaseModel):
 def quality_fix(issue_id: int) -> ApiResponse:
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
     row = get_client().query_df(
-        "SELECT issue_type FROM data_quality_issue WHERE id=?", [issue_id])
+        "SELECT issue_type, status, fix_task_id FROM data_quality_issue WHERE id=?", [issue_id])
     if row.empty:
         return err(404, f"质检问题不存在: id={issue_id}")
+    status = str(row.iloc[0]["status"])
+    if status == "fixing":
+        return err(409, "该问题正在恢复中，请等待任务完成或终止后复位",
+                   {"fix_task_id": row.iloc[0]["fix_task_id"]})
+    if status != "open":
+        return err(400, f"仅未处理问题可恢复，当前状态: {status}")
     try:
         # 带上 issue_type，任务中心可显示「问题修复·<类型>」
         tid = AsyncTaskService().create("fix", {"issue_id": issue_id, "issue_type": row.iloc[0]["issue_type"]})
@@ -505,9 +546,23 @@ def quality_fix(issue_id: int) -> ApiResponse:
 def quality_fix_batch(body: dict) -> ApiResponse:
     """批量恢复：一个 fix 任务内顺序恢复所有 issue_ids（单写者模型，逐条写实时日志 + 复检）。"""
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
-    ids = [int(x) for x in (body.get("issue_ids") or [])]
+    try:
+        ids = list(dict.fromkeys(int(x) for x in (body.get("issue_ids") or [])))
+    except (TypeError, ValueError):
+        return err(400, "issue_ids 必须是整数数组")
     if not ids:
         return err(400, "缺少 issue_ids")
+    c = get_client()
+    rows = c.query_df(
+        f"SELECT id, status FROM data_quality_issue WHERE id IN ({','.join('?' * len(ids))})",
+        ids)
+    found = {int(r["id"]): str(r["status"]) for _, r in rows.iterrows()}
+    missing = [x for x in ids if x not in found]
+    if missing:
+        return err(404, f"质检问题不存在: {missing}")
+    unavailable = {iid: status for iid, status in found.items() if status != "open"}
+    if unavailable:
+        return err(409, "批量恢复只接受未处理问题", {"unavailable": unavailable})
     try:
         tid = AsyncTaskService().create("fix", {"issue_ids": ids})
     except ConcurrentTaskError as e:
@@ -517,9 +572,9 @@ def quality_fix_batch(body: dict) -> ApiResponse:
 
 @router.post("/quality/recover-batch", response_model=ApiResponse, dependencies=_QUALITY_FIX)
 def quality_recover_batch(body: dict) -> ApiResponse:
-    """按当前筛选一键恢复：取匹配的「待处理(open/fixing)」问题，建一个 fix 任务顺序恢复+复检。
+    """按当前筛选一键恢复：取匹配的「待处理(open)」问题，建一个 fix 任务顺序恢复+复检。
 
-    只按 issue_type/severity/code 过滤（状态强制 open/fixing，恢复已解决/已忽略无意义）。
+    只按 issue_type/severity/code 过滤（状态强制 open；fixing 有任务归属，不能被另一任务接管）。
     """
     from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
     c = get_client()
@@ -529,7 +584,7 @@ def quality_recover_batch(body: dict) -> ApiResponse:
             return [str(x).strip() for x in val if str(x).strip()]
         return [x.strip() for x in str(val).split(",") if x.strip()] if val else []
 
-    conds = ["status IN ('open','fixing')"]
+    conds = ["status='open'"]
     params: list = []
     types = _multi(body.get("issue_type"))
     if types:
@@ -538,26 +593,9 @@ def quality_recover_batch(body: dict) -> ApiResponse:
     if sevs:
         conds.append(f"severity IN ({','.join('?' * len(sevs))})"); params += sevs
     if body.get("code"):
-        kw = f"%{str(body['code']).lower()}%"
-        # 名称/代码过滤同时覆盖股票、带 board_code 的板块问题和 code=NULL 的资金流未匹配问题。
-        # 整组 OR 必须加括号，否则 SQL 的 AND 优先级会让板块分支越过状态/类型/严重级别筛选。
-        has_board = "board_dict" in set(
-            c.query_df("SELECT table_name FROM information_schema.tables "
-                       "WHERE table_schema='main'").get("table_name", []))
-        code_conds = [
-            "code IN (SELECT code FROM stock_basic WHERE lower(code) LIKE ? OR lower(name) LIKE ?)",
-        ]
-        params += [kw, kw]
-        if has_board:
-            code_conds.append(
-                "code IN (SELECT board_code FROM board_dict "
-                "WHERE lower(board_code) LIKE ? OR lower(name) LIKE ?)")
-            params += [kw, kw]
-        code_conds.append(
-            "(issue_type='board_fund_unmatched' "
-            "AND lower(COALESCE(json_extract_string(try_cast(detail AS JSON), '$.name'), '')) LIKE ?)")
-        params.append(kw)
-        conds.append(f"({' OR '.join(code_conds)})")
+        clause, values = _quality_keyword_clause(c, str(body["code"]), alias="data_quality_issue")
+        conds.append(clause)
+        params += values
     ids = c.query_df(
         f"SELECT id FROM data_quality_issue WHERE {' AND '.join(conds)} ORDER BY id", params)["id"].tolist()
     if not ids:
@@ -578,11 +616,18 @@ def quality_reset(issue_id: int) -> ApiResponse:
     """手动复位「修复中」→「未处理」（DM 修复中闭环）：当绑定的修复任务已失败/中断/卡死，
     用户可一键解套，让该问题重新可被恢复。仅对 fixing 状态生效，并解除任务绑定。"""
     c = get_client()
-    row = c.query_df("SELECT status FROM data_quality_issue WHERE id=?", [issue_id])
+    row = c.query_df(
+        "SELECT status, fix_task_id FROM data_quality_issue WHERE id=?", [issue_id])
     if row.empty:
         return err(404, f"质检问题不存在: id={issue_id}")
     if row.iloc[0]["status"] != "fixing":
         return err(400, "仅「修复中」的问题可复位")
+    fix_task_id = row.iloc[0]["fix_task_id"]
+    if fix_task_id:
+        task = c.query_df("SELECT status FROM async_task WHERE id=?", [fix_task_id])
+        if not task.empty and str(task.iloc[0]["status"]) in ("pending", "running"):
+            return err(409, "恢复任务仍在运行，请先终止任务或等待完成",
+                       {"fix_task_id": str(fix_task_id)})
     c.execute("UPDATE data_quality_issue SET status='open', fix_task_id=NULL WHERE id=?", [issue_id])
     return ok({"id": issue_id, "status": "open"})
 
@@ -593,10 +638,18 @@ def quality_ignore(issue_id: int) -> ApiResponse:
     置 status='ignored'。质检幂等重扫不会再翻回 open（DELETE 只清 open）。"""
     c = get_client()
     from datetime import datetime
-    exists = c.query_df("SELECT 1 FROM data_quality_issue WHERE id=?", [issue_id])
-    if exists.empty:
+    row = c.query_df("SELECT status, fix_task_id FROM data_quality_issue WHERE id=?", [issue_id])
+    if row.empty:
         return err(404, f"质检问题不存在: id={issue_id}")
-    c.execute("UPDATE data_quality_issue SET status='ignored', resolved_at=? WHERE id=?",
+    status = str(row.iloc[0]["status"])
+    if status == "ignored":
+        return ok({"id": issue_id, "status": "ignored"})
+    if status == "fixing":
+        return err(409, "问题正在恢复中，不能同时标记正常",
+                   {"fix_task_id": row.iloc[0]["fix_task_id"]})
+    if status != "open":
+        return err(400, f"仅未处理问题可标记正常，当前状态: {status}")
+    c.execute("UPDATE data_quality_issue SET status='ignored', resolved_at=?, fix_task_id=NULL WHERE id=?",
               [datetime.now(), issue_id])
     return ok({"id": issue_id, "status": "ignored"})
 

@@ -24,6 +24,7 @@ import { hasPermission } from '@/utils/permission'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -388,9 +389,6 @@ const result = ref<{ date: string; count: number; hits: ScreenHit[] } | null>(nu
 function clearScreenResult() {
   result.value = null
   resultError.value = ''
-}
-const gradeTag: Record<string, '' | 'success' | 'warning' | 'info'> = {
-  主升浪核心: 'success', 龙头候选: 'warning', 观察: 'info',
 }
 const displayHits = computed(() => {
   const list = [...(result.value?.hits ?? [])]
@@ -787,15 +785,21 @@ onMounted(initializeScreen)
           <!-- 筛选结果表 -->
           <div class="run-table-wrap">
             <AppStateBlock
-              v-if="resultError && !result"
+              v-if="loading && (!result || !result.hits.length)"
+              state="loading"
+              title="正在运行筛选…"
+            />
+            <AppStateBlock
+              v-else-if="resultError && !result"
               state="error"
               title="筛选运行失败"
               :description="resultError"
               retry
               @retry="run"
             />
+            <template v-else>
             <AppStateBlock
-              v-else-if="resultError"
+              v-if="resultError"
               state="error"
               size="compact"
               title="筛选结果刷新失败"
@@ -804,8 +808,9 @@ onMounted(initializeScreen)
               @retry="run"
             />
             <AppDataTable
-              v-else-if="result && result.hits.length"
+              v-if="result && result.hits.length"
               :data="displayHits"
+              :loading="loading"
               :border="tableBorder('result')"
               :default-sort="elementDefaultSort"
               :row-class-name="rowClass"
@@ -830,13 +835,14 @@ onMounted(initializeScreen)
               </AppTableColumn>
               <AppTableColumn v-if="colVisible('grade')" label="评级">
                 <template #default="{ row }">
-                  <el-tag v-if="row.grade" :type="gradeTag[row.grade] ?? 'info'" effect="light">{{ row.grade }}</el-tag>
+                  <ScoreGradeTag v-if="row.grade" :grade="row.grade" />
                   <span v-else class="muted">—</span>
                 </template>
               </AppTableColumn>
             </AppDataTable>
-            <el-empty v-else-if="result" class="app-empty" description="无命中" />
-            <el-empty v-else class="app-empty" description="运行后在这里展示筛选结果" />
+            <AppStateBlock v-else-if="result" state="empty" title="当前条件暂无命中" />
+            <AppStateBlock v-else state="empty" title="运行后在这里展示筛选结果" />
+            </template>
           </div>
         </section>
       </div>

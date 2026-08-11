@@ -468,6 +468,28 @@ describe('代表性页面四态回归', () => {
     vi.useRealTimers()
   })
 
+  it('任务中心按失败和中断状态使用不同恢复动作', async () => {
+    const wrapper = await mountView(IngestView)
+    const failedActions = (wrapper.vm as any).taskRowActions({
+      id: 'failed-1', task_type: 'board', status: 'failed', params: {},
+      capability: { can_resume: true, checkpoint: { phase: 'members' } },
+    })
+    const interruptedActions = (wrapper.vm as any).taskRowActions({
+      id: 'interrupted-1', task_type: 'board', status: 'interrupted', params: {},
+      capability: { can_resume: true },
+    })
+
+    expect(failedActions.find((action: any) => action.key === 'resume')?.label).toBe('重试未完成项')
+    expect(interruptedActions.find((action: any) => action.key === 'resume')?.label).toBe('继续任务')
+    wrapper.unmount()
+  })
+
+  it('筛选结果区初始显示引导空态', async () => {
+    const wrapper = await mountView(ScreenView)
+    expect(wrapper.text()).toContain('运行后在这里展示筛选结果')
+    wrapper.unmount()
+  })
+
   it('筛选运行失败落到结果区错误态', async () => {
     ;(screeningApi.runScreen as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('screen failed'))
     const wrapper = await mountView(ScreenView)
@@ -477,6 +499,30 @@ describe('代表性页面四态回归', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('筛选运行失败')
     expect(wrapper.text()).toContain('screen failed')
+  })
+
+  it('筛选空结果再次运行时显示加载态', async () => {
+    let resolveRerun: ((value: unknown) => void) | undefined
+    ;(screeningApi.runScreen as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        run_date: '2026-08-01', count: 0, exclude_st: true, hits: [],
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRerun = resolve }))
+    const wrapper = await mountView(ScreenView)
+    const run = wrapper.findAll('button').find((button) => button.text().includes('运行筛选'))
+
+    await run!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前条件暂无命中')
+
+    await run!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('正在运行筛选')
+    expect(wrapper.text()).not.toContain('当前条件暂无命中')
+
+    resolveRerun?.({ run_date: '2026-08-01', count: 0, exclude_st: true, hits: [] })
+    await flushPromises()
+    wrapper.unmount()
   })
 
   it('筛选初始化失败显示配置错误态而不是空构建器', async () => {

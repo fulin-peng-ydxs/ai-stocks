@@ -341,6 +341,8 @@ class ScheduledJobService:
             if fix_params.get("issue_id") is not None or fix_params.get("issue_ids"):
                 raise ValueError("定时恢复按问题类型动态取数，不接受固定问题 ID")
         if task_type == "board":
+            from backend.services.board_ingest import normalize_board_stages
+
             mode = str(normalized_params.get("mode") or "update")
             if mode not in ("update", "backfill"):
                 raise ValueError("板块定时采集模式仅支持 update/backfill")
@@ -349,6 +351,14 @@ class ScheduledJobService:
             bt = normalized_params.get("board_type")
             if bt is not None and bt not in ("concept", "industry"):
                 raise ValueError("板块定时采集的 board_type 仅支持 concept/industry")
+            stages = normalize_board_stages(normalized_params.get("only"))
+            if stages is None:
+                normalized_params.pop("only", None)
+            else:
+                normalized_params["only"] = stages
+            force_members = normalized_params.get("force_members")
+            if force_members is not None and not isinstance(force_members, bool):
+                raise ValueError("板块定时采集的 force_members 必须是布尔值")
         if freq_type not in _FREQ_TYPES:
             raise ValueError(f"未知频率类型: {freq_type}（可选 {_FREQ_TYPES}）")
         compile_trigger(freq_type, freq_config)   # 提前校验频率配置合法

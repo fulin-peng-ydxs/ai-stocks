@@ -278,8 +278,26 @@ def test_board_schedulable_and_catalog(tmp_path):
                          trading_day_only=True, enabled=False)
         assert job["task_type"] == "board"
         assert job["params"] == {"mode": "update"}
+        scoped = svc.create(
+            name="概念指数资金流", task_type="board",
+            params={"mode": "update", "board_type": "concept", "only": ["bar", "fund"],
+                    "force_members": False},
+            freq_type="daily", freq_config={"time": "16:00"},
+            trading_day_only=True, enabled=False)
+        assert scoped["params"] == {
+            "mode": "update", "board_type": "concept", "only": ["bar", "fund"],
+            "force_members": False,
+        }
         with pytest.raises(ValueError, match="update/backfill"):
             svc.create(name="非法板块模式", task_type="board", params={"mode": "daily"},
+                       freq_type="daily", freq_config={"time": "15:30"},
+                       trading_day_only=True, enabled=False)
+        with pytest.raises(ValueError, match="至少选择一项"):
+            svc.create(name="空板块阶段", task_type="board", params={"only": []},
+                       freq_type="daily", freq_config={"time": "15:30"},
+                       trading_day_only=True, enabled=False)
+        with pytest.raises(ValueError, match="未知板块采集步骤"):
+            svc.create(name="非法板块阶段", task_type="board", params={"only": ["price"]},
                        freq_type="daily", freq_config={"time": "15:30"},
                        trading_day_only=True, enabled=False)
         # 2. catalog 含板块表（审计问题4）

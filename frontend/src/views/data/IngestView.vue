@@ -8,6 +8,7 @@ import {
   getDataStatus, getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, getStockQuality, searchBoards,
   TASK_LABEL, STATUS_LABEL, taskDisplayLabel, SOURCE_LABEL,
   type DataStatus, type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
+  type BoardIngestStage, type BoardTypeScope,
 } from '@/api/data'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -20,6 +21,7 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
+import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTableSort } from '@/composables/useTableSort'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -209,8 +211,21 @@ function taskDuration(t: AsyncTask): string {
 // ── 更多选项对话框 ──
 const optDlg = ref(false)
 const optType = ref<TaskType>('ingest_date')
-const optForm = ref<{ codes: string[]; date_start: string; date_end: string; years: number | null; mode: 'backfill' | 'update'; force_members: boolean }>(
-  { codes: [], date_start: '', date_end: '', years: null, mode: 'update', force_members: false })
+type OptionForm = {
+  codes: string[]
+  date_start: string
+  date_end: string
+  years: number | null
+  mode: 'backfill' | 'update'
+  board_type: BoardTypeScope
+  board_stages: BoardIngestStage[]
+  force_members: boolean
+}
+const defaultOptionForm = (): OptionForm => ({
+  codes: [], date_start: '', date_end: '', years: null, mode: 'update', board_type: '',
+  board_stages: ['dict', 'members', 'bar', 'fund'], force_members: false,
+})
+const optForm = ref<OptionForm>(defaultOptionForm())
 
 // 指定股票/板块：下拉多选，输入代码或名称远程搜索（DM-D17）。
 // optType=board 搜板块（board_dict 代码/名称）；其余搜股票。
@@ -234,7 +249,7 @@ async function remoteCode(q: string) {
 
 function openOptions(type: TaskType) {
   optType.value = type
-  optForm.value = { codes: [], date_start: '', date_end: '', years: null, mode: 'update', force_members: false }
+  optForm.value = defaultOptionForm()
   codeOptions.value = []
   optDlg.value = true
 }
@@ -244,10 +259,8 @@ function openFromQuery() {
   const q = route.query
   if (q.task_type === 'board') {
     optType.value = 'board'
-    optForm.value = {
-      codes: [], date_start: '', date_end: '', years: null,
-      mode: q.mode === 'backfill' ? 'backfill' : 'update', force_members: false,
-    }
+    optForm.value = defaultOptionForm()
+    optForm.value.mode = q.mode === 'backfill' ? 'backfill' : 'update'
     codeOptions.value = []
     optDlg.value = true
     return
@@ -257,7 +270,7 @@ function openFromQuery() {
   const start = typeof q.start === 'string' ? q.start : ''
   const end = typeof q.end === 'string' ? q.end : start
   optType.value = 'ingest_date'
-  optForm.value = { codes: [code], date_start: start, date_end: end, years: null, mode: 'backfill', force_members: false }
+  optForm.value = { ...defaultOptionForm(), codes: [code], date_start: start, date_end: end, mode: 'backfill' }
   codeOptions.value = [{ code, label: code }]   // 让多选框显示该代码
   optDlg.value = true
   if (start) ElMessage.info(`已带入 ${code} 的待补区间 ${start}~${end}，点「执行」即重采`)
@@ -277,8 +290,11 @@ async function submitOptions() {
   } else if (optType.value === 'ingest_codes') {
     if (!codes.length) { ElMessage.warning('请填写股票代码'); return }
   } else if (optType.value === 'board') {
-    params.mode = f.mode  // 板块采集：增量（默认）/ 全量回填
-    if (f.force_members) params.force_members = true  // 强制刷新全部成分（绕过周频跳过）
+    if (!f.board_stages.length) { ElMessage.warning('请至少选择一项板块采集内容'); return }
+    params.mode = f.mode
+    params.only = f.board_stages
+    if (f.board_type) params.board_type = f.board_type
+    if (f.force_members && f.board_stages.includes('members')) params.force_members = true
   }
   optDlg.value = false
   await submit(optType.value, params)
@@ -367,11 +383,11 @@ async function load() {
   await loadLogs()
 }
 
-// ── 续跑 ──
+// ── 中断后继续 / 失败后重试未完成项 ──
 async function resume(t: AsyncTask) {
   try {
     await resumeTask(t.id)
-    ElMessage.success('已续跑')
+    ElMessage.success(t.status === 'failed' ? '已重新开始，将跳过已完成部分' : '任务已继续')
     await refreshTasks()
     openLogs(t.id)
   } catch { /* 拦截器弹错 */ }
@@ -447,7 +463,7 @@ function taskRowActions(row: AsyncTask): AppRowAction[] {
     },
     {
       key: 'resume',
-      label: '续跑',
+      label: row.status === 'failed' ? '重试未完成项' : '继续任务',
       type: 'warning',
       visible: canResumeTask(row),
       onClick: () => resume(row),
@@ -546,7 +562,7 @@ watch(
         数据采集
         <HelpTip title="这页能做什么？" :width="420">
           手动触发数据采集 / 补数 / 评分维护，后台异步执行：可离开页面，回来在「任务中心」点开看实时日志、
-          断点续跑。定时任务触发的执行也会出现在任务中心（标注「定时·任务名」），同样可看每一步日志。
+          支持中断后继续、失败后重试未完成部分。定时任务触发的执行也会出现在任务中心（标注「定时·任务名」），同样可看每一步日志。
         </HelpTip>
       </h2>
       <div class="page-head-actions">
@@ -833,24 +849,14 @@ watch(
         <el-form-item v-if="optType === 'backfill'" label="回填年限">
           <el-input-number v-model="optForm.years" :min="1" :max="30" placeholder="留空=默认" />
         </el-form-item>
-        <el-form-item v-if="optType === 'board'" label="采集模式">
-          <PageSegmented
-            v-model="optForm.mode"
-            test-id="ingest-board-mode"
-            :options="[
-              { label: '增量', value: 'update' },
-              { label: '全量回填', value: 'backfill' },
-            ]"
-            aria-label="板块采集模式"
-          />
-          <span class="hint">增量：指数补最近交易日、资金流只采即时、成分股按周频跳过未到期板块；全量回填：指数补 2024 起、资金流全周期、成分股强制全量</span>
-        </el-form-item>
-        <el-form-item v-if="optType === 'board'" label="成分刷新">
-          <el-checkbox v-model="optForm.force_members" data-testid="ingest-board-force-members">
-            强制刷新全部板块成分（绕过周频间隔）
-          </el-checkbox>
-          <span class="hint">默认按周频跳过未到期板块；勾选后即使未满间隔也全量重拉成分快照</span>
-        </el-form-item>
+        <BoardTaskScopeFields
+          v-if="optType === 'board'"
+          v-model:mode="optForm.mode"
+          v-model:board-type="optForm.board_type"
+          v-model:stages="optForm.board_stages"
+          v-model:force-members="optForm.force_members"
+          test-id-prefix="ingest-board"
+        />
         <el-form-item :label="optType === 'board' ? '指定板块' : '指定股票'">
           <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags
                      :remote-method="remoteCode" :loading="codeOptLoading" :reserve-keyword="false"

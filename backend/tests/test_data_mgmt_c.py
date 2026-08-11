@@ -519,7 +519,8 @@ def test_daily_pipeline_includes_quality_step(client):
     from backend.services.pipeline import DailyPipeline
     client.execute("INSERT INTO daily_bar (code, trade_date, close, pre_close) "
                    "VALUES ('A.SH', DATE '2024-01-03', 10.0, 9.9)")
-    res = DailyPipeline(client).run(skip_update=True)
+    # 本用例只验证质检编排；关闭独立的板块联网采集，避免单测依赖外部行情源。
+    res = DailyPipeline(client).run(skip_update=True, board=False)
     names = [s["step"] for s in res["steps"]]
     assert "数据质检" in names
     # 评分榜单/预设筛选已不再作为每日流程步骤；公共榜单生产由评分维护/CLI 承担。

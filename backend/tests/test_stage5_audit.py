@@ -199,6 +199,14 @@ def test_stage5_audit_tenant_admin_is_scoped_to_own_tenant(client, pg):
     _clear_stage5_audit(pg)
     tenant_admin = _new_tenant_admin(pg)
     other_id = None
+    # tenant_admin 默认不再持有 audit:view；本用例验证“显式授权后仍只能看本租户”。
+    had_grant = not pg.query_df(
+        "SELECT 1 FROM sys_role_resource WHERE role_id='tenant_admin' AND resource_id='audit:view'"
+    ).empty
+    pg.execute(
+        "INSERT INTO sys_role_resource (role_id, resource_id) VALUES ('tenant_admin', 'audit:view') "
+        "ON CONFLICT DO NOTHING"
+    )
     try:
         own_id = AuditRepository(pg).record(
             event_category="api",
@@ -244,6 +252,11 @@ def test_stage5_audit_tenant_admin_is_scoped_to_own_tenant(client, pg):
         assert other_detail.status_code == 200
         assert other_detail.json()["code"] == 4004
     finally:
+        if not had_grant:
+            pg.execute(
+                "DELETE FROM sys_role_resource "
+                "WHERE role_id='tenant_admin' AND resource_id='audit:view'"
+            )
         _cleanup_user(pg, tenant_admin)
 
 

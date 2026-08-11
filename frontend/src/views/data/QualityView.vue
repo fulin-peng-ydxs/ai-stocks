@@ -337,12 +337,12 @@ onMounted(() => {
       <h2>
         数据质量
         <HelpTip title="数据质量怎么来的、怎么处理？" :width="480">
-          四层质量台账，每条问题按类型走对应恢复手段，<b>复检通过才标记「已解决」</b>（不会假装修好）。<br /><br />
-          <b>四层口径：</b>L1 入库闸门 / L2 字段契约 / L3 正确性 / L4 覆盖鲜活。<br /><br />
+          个股四层与板块专项质量台账，每条问题按类型走对应恢复手段，<b>复检通过才标记「已解决」</b>。<br /><br />
+          <b>质量口径：</b>L1 入库闸门 / L2 字段契约 / L3 正确性 / L4 覆盖鲜活；板块额外检查指数缺口与字段合法、成分快照、资金流覆盖与映射。<br /><br />
           <b>问题来源：</b><br />
           ① 采集入库时自动记录（L1）：收盘价非法被丢弃、开高低回填；<br />
           ② 数据质检（本页「立即质检」=定时「数据质检」任务，同一方法）：市值缺失(L2)、异常涨跌/复权跳变(L3)、缺口/滞后(L4)；<br />
-          ③ 恢复后复检通过 → 「已解决」。<br /><br />
+          ③ 恢复后复检通过 → 「已解决」，并重扫同类板块问题使关联台账同步收敛。<br /><br />
           <b>恢复 / 标记正常：</b>缺口先按漏采重采，源端确无数据则确认为停牌（不再上报）；真实极端值（如新股首日大涨）可「标记正常」。
         </HelpTip>
       </h2>
@@ -371,7 +371,7 @@ onMounted(() => {
                  collapse-tags-tooltip :max-collapse-tags="3" style="width: 280px">
         <el-option v-for="(l, k) in ISSUE_TYPE_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
-      <el-input v-model="filters.code" placeholder="股票代码或名称" clearable style="width: 180px"
+      <el-input v-model="filters.code" placeholder="股票/板块代码或名称" clearable style="width: 210px"
                 @keyup.enter="() => { page = 1; load() }" @clear="() => { page = 1; load() }" />
       <div class="summary">
         <el-tag

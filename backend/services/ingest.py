@@ -1811,7 +1811,11 @@ class IngestionService:
         - only：可选子集（"dict"/"members"/"bar"/"fund"），CLI --dict 等分表运行用。
         board_type 可限制 concept/industry；ctx 提供任务中心进度日志。
         """
-        from backend.services.board_ingest import BoardIngestService
+        from backend.services.board_ingest import (
+            BOARD_INGEST_STAGES,
+            BoardIngestService,
+            normalize_board_stages,
+        )
         from datetime import date as _d, timedelta as _td
 
         if mode not in ("backfill", "update"):
@@ -1829,11 +1833,9 @@ class IngestionService:
             "dict": None, "members": {}, "bar": None, "fund_flow": None,
             "failed": [], "ok": True,
         }
-        # 分表选择：only 非空时只跑指定表（CLI --dict 等）；空则全量
-        steps = ["dict", "members", "bar", "fund"] if not only else list(only)
-        unknown_steps = sorted(set(steps) - {"dict", "members", "bar", "fund"})
-        if unknown_steps:
-            raise ValueError(f"未知板块采集步骤: {unknown_steps}")
+        # 分表选择与任务 API/调度共用同一白名单和空值语义。
+        normalized_steps = normalize_board_stages(only)
+        steps = list(BOARD_INGEST_STAGES if normalized_steps is None else normalized_steps)
         # 阶段日志对齐现有采集（阶段 i/N + 进度推进，前端任务中心实时可见）
         total = len(steps)
         idx = {"n": 0}

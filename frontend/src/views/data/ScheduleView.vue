@@ -9,6 +9,7 @@ import {
   getSources, testSources, SOURCE_LABEL, TASK_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE,
   taskDisplayLabel, getSettingsView, saveSettings,
   type ScheduledJob, type ScheduledJobInput, type SourceStatus, type TaskType, type FreqType,
+  type BoardIngestStage, type BoardTypeScope,
 } from '@/api/data'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -24,6 +25,7 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
+import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -114,6 +116,9 @@ const form = reactive({
   name: '', task_type: 'update' as TaskType,
   issue_type: 'null_close',
   board_mode: 'update' as 'update' | 'backfill',
+  board_type: '' as BoardTypeScope,
+  board_stages: ['dict', 'members', 'bar', 'fund'] as BoardIngestStage[],
+  board_force_members: false,
   date_start: '', date_end: '', years: null as number | null, concurrency: null as number | null,
   freq_type: 'daily' as FreqType,
   time: '15:30', weekdays: [1, 2, 3, 4, 5] as number[], day: 1, cron: '',
@@ -131,7 +136,8 @@ function openCreate() {
   editingId.value = ''
   Object.assign(form, {
     name: '', task_type: 'update', issue_type: qualityIssueTypes.value[0] || 'null_close',
-    board_mode: 'update',
+    board_mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
+    board_force_members: false,
     date_start: '', date_end: '', years: null, concurrency: null,
     freq_type: 'daily', time: '15:30', weekdays: [1, 2, 3, 4, 5], day: 1, cron: '',
     trading_day_only: true, enabled: true,
@@ -145,6 +151,12 @@ function openEdit(j: ScheduledJob) {
     name: j.name, task_type: j.task_type,
     issue_type: j.params?.issue_type || qualityIssueTypes.value[0] || 'null_close',
     board_mode: j.params?.mode === 'backfill' ? 'backfill' : 'update',
+    board_type: j.params?.board_type === 'concept' || j.params?.board_type === 'industry'
+      ? j.params.board_type : '',
+    board_stages: Array.isArray(j.params?.only) && j.params.only.length
+      ? j.params.only.filter((x): x is BoardIngestStage => ['dict', 'members', 'bar', 'fund'].includes(x))
+      : ['dict', 'members', 'bar', 'fund'],
+    board_force_members: j.params?.force_members === true,
     date_start: j.params?.date_start || '', date_end: j.params?.date_end || '',
     years: j.params?.years ?? null, concurrency: j.params?.concurrency ?? null,
     freq_type: j.freq_type,
@@ -170,7 +182,11 @@ function buildPayload(): ScheduledJobInput | null {
     if (!form.issue_type) { ElMessage.warning('质检问题恢复需选择问题类型'); return null }
     params.issue_type = form.issue_type
   } else if (form.task_type === 'board') {
+    if (!form.board_stages.length) { ElMessage.warning('请至少选择一项板块采集内容'); return null }
     params.mode = form.board_mode
+    params.only = form.board_stages
+    if (form.board_type) params.board_type = form.board_type
+    if (form.board_force_members && form.board_stages.includes('members')) params.force_members = true
   }
   if (needsConcurrency.value && form.concurrency) params.concurrency = form.concurrency
   const fc: Record<string, unknown> = {}
@@ -533,18 +549,14 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </el-select>
           <span class="hint">每次触发时动态恢复该类型当前所有“未处理”问题，无问题时正常结束</span>
         </el-form-item>
-        <el-form-item v-if="form.task_type === 'board'" label="采集模式">
-          <PageSegmented
-            v-model="form.board_mode"
-            test-id="schedule-board-mode"
-            :options="[
-              { label: '增量', value: 'update' },
-              { label: '全量回填', value: 'backfill' },
-            ]"
-            aria-label="板块采集模式"
-          />
-          <span class="hint">日常定时推荐增量；全量回填会重拉 2024 年以来指数和全部资金流周期</span>
-        </el-form-item>
+        <BoardTaskScopeFields
+          v-if="form.task_type === 'board'"
+          v-model:mode="form.board_mode"
+          v-model:board-type="form.board_type"
+          v-model:stages="form.board_stages"
+          v-model:force-members="form.board_force_members"
+          test-id-prefix="schedule-board"
+        />
         <template v-if="form.task_type === 'ingest_date'">
           <el-form-item label="起始日期">
             <TradeDatePicker v-model="form.date_start" placeholder="必填，仅可选交易日" />
