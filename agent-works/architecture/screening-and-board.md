@@ -117,6 +117,13 @@ flowchart LR
 | 方案公开 | owner 可发布到同租户或全体；非 owner 公开方案只读、可复制 | 复用成熟筛选思路但保持个人资产隔离 |
 | 命中列表 | 展示命中股票，并附固定模型评分 | 用于快速看候选池质量 |
 
+**页面布局与方案编辑闭环**（`ScreenView.vue`，与评分/买卖配置页同构）：
+
+- **双栏结构**：左侧 `prof-list` 方案列表（`AssetProfileSelect(list)` + `新建方案`），右侧 `editor-screen` 编辑器（`ed-head` 名称/可见性/`保存`/`删除` + 条件构建器 `b-conds`），下方 `run-head` 运行区 + `run-table-wrap` 结果区。已从旧「单卡 + filter-bar + 保存弹窗」收敛为编辑器头直存，交互路径与评分页一致。
+- **选择态与编辑态分离**：`curId`（侧栏选中）与 `editId`/`editName`（编辑器当前身份）解耦，避免「选中新方案、误存到旧方案」；载入详情失败回滚到最后一次成功选中的方案并保留旧编辑器内容，新建走空身份由后端 `_make_id` 生成 id 后绑定。
+- **结果区四态**：未运行 `el-empty 运行后在这里展示筛选结果` / 运行中按钮 `:loading` 且**保留旧结果不闪空态** / 运行失败 `AppStateBlock error + 重试` / 命中走 `AppDataTable`、零命中 `el-empty 无命中`。ready 态补 `run-meta` 摘要行「交易日 {run_date} · 共 N 只 · 已排除 ST · 按方案「名称」运行」并回填 `runDate`，与评分试算口径一致（修复改造期丢失的交易日反馈）。
+- **运行主按钮**：`运行筛选` 统一为 primary + `VideoPlay` 图标，与评分试算、回测运行键视觉层级拉齐。
+
 **筛选条件三种叶子**：
 
 | 类型 | 适用场景 | 示例 |
@@ -175,6 +182,7 @@ flowchart LR
   - 失效：数据任务（`async_task.py`）变更行情后只标 stale——`_h_update`/`_h_backfill` 调 `mark_stale_all`，`_h_ingest_date` 按受影响日期调 `mark_stale_dates`；不立即重算。
   - 重算：下次 `get_board` 读到 meta 缺失或 stale → 当场重算覆盖、meta 置 false 再返回。
 - **方案版本化**：`ProfileRepo.save` / `ScoreProfileRepo.save` 仅在名称或内容实质变更时 version+1 并归档历史版本（内容未变返回原版本，避免重复 seed 致版本虚增）。
+- **方案 id 自动生成**：三类方案的 `save`/`save_with_id` 均接受空 `pid`——新建时由 `_make_id(name)` 用 `prefixed_readable_id(name, prefix="screen_")` 派生可读 id，撞库追加 `_2/_3…` 后缀（[profile.py:271](backend/screening/profile.py:271)、[profile.py:280](backend/screening/profile.py:280)）；`save_with_id` 返回 `(id, version)` 供 API 在新建响应里回传真实 id，前端据此把「编辑器身份」绑到新方案上。名称必填，空名 `save` 抛 `ValueError`。
 
 ## 风险事项
 

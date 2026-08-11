@@ -9,6 +9,7 @@ export type AdaptiveColumnRole =
   | 'datetime'
   | 'key'
   | 'action'
+  | 'action-compact'
   | 'text'
   | 'description'
 
@@ -40,6 +41,8 @@ export const ADAPTIVE_COLUMN_RULES: Record<AdaptiveColumnRole, AdaptiveColumnRul
   datetime: { minWidth: 168 },
   key: { minWidth: 160 },
   action: { minWidth: 232 },
+  // 单行少量操作的紧凑操作列：容纳「更多」按钮(~54px)测量层，又不像 action(232) 那样被 fit 算法拉伸挤压内容列
+  'action-compact': { width: 96 },
   text: { minWidth: 140 },
   description: { minWidth: 200 },
 }

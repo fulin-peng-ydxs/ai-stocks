@@ -3,7 +3,7 @@ import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, VideoPlay } from '@element-plus/icons-vue'
 import {
   browseProfiles,
   copyProfile,
@@ -343,6 +343,26 @@ function onScreenReady(list: ProfileSummary[]) {
 function onScreenLoaded(item: ProfileSummary) {
   onScreenSelect(item.profile_ref || item.id)
 }
+// 行内「×」移除「加载查看」临时预览项：仅当编辑器正查看该外来方案时收尾——
+// 清掉它的只读身份/运行口径/结果（否则移除后仍按其 ref 运行、仍锁只读），回到「我的」上下文或新建态。
+async function onScreenTempRemoved(item: ProfileSummary) {
+  const removedRef = item.profile_ref || item.id
+  // curRef 对「加载查看」项是后端 getProfile 规范化的 opaque ref（≠明文 profile_ref），直接比必然不等；
+  // 可靠判据：当前只读查看项的明文 ref 与移除项一致（加载查看必为只读，mine 项根本不会出现在 tempItem）。
+  const viewingRef = loadedProfile.value?.profile_ref || loadedProfile.value?.id || ''
+  if (!profileReadonly.value || viewingRef !== removedRef) return // 移除的不是当前查看项，编辑器不受影响
+  ElMessage.info(`已移除预览的方案「${item.name}」`)
+  curRef.value = ''
+  loadedProfile.value = null
+  result.value = null
+  resultError.value = ''
+  profileLastAppliedRef = ''
+  profileDetailAttempt = ''
+  // 回到「我的」上下文：有我的方案选第一个，无则进新建态（列表已不含临时项，第一即「我的」首项）
+  const list = (await profileSelectRef.value?.reload()) ?? []
+  if (list.length) onScreenSelect(list[0].profile_ref || list[0].id)
+  else enterNewSession()
+}
 // 进入「新建」态：清空方案身份，保留当前构建器条件（列表为空时的初始态）
 function enterNewSession() {
   curRef.value = ''
@@ -401,6 +421,8 @@ async function run() {
       exclude_st: excludeSt.value,
     })
     result.value = { date: r.run_date, count: r.count, hits: r.hits }
+    // 回填实际运行交易日（默认最新时让用户看到本次结果口径，与评分试算一致）
+    runDate.value = r.run_date
   } catch (error) {
     resultError.value = getErrorMessage(error, '筛选运行失败')
     ElMessage.error(resultError.value)
@@ -590,6 +612,7 @@ onMounted(initializeScreen)
             @update:model-value="onScreenSelect"
             @loaded="onScreenLoaded"
             @ready="onScreenReady"
+            @temp-removed="onScreenTempRemoved"
           />
         </aside>
 
@@ -644,8 +667,9 @@ onMounted(initializeScreen)
           />
           <pre v-if="complexAst" class="ast">{{ JSON.stringify(complexAst, null, 2) }}</pre>
 
-          <!-- 融合构建器 -->
+          <!-- 融合构建器（卡片包裹，与结果区/编辑器头区分边界，对齐买卖 cond-block） -->
           <template v-else>
+            <div class="cond-block">
             <div class="b-group">
               <span class="hint">组合方式</span>
               <el-radio-group v-model="groupOp" size="small">
@@ -726,16 +750,23 @@ onMounted(initializeScreen)
               </HelpTip>
             </div>
             <pre v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</pre>
+            </div>
           </template>
 
           <!-- 运行筛选 -->
           <div class="run-head">
             <span class="run-title">筛选结果</span>
-            <el-tag v-if="result && result.hits.length" type="info" size="small" round>共 {{ result.count }} 只</el-tag>
             <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest style="width: 160px" />
-            <el-button v-permission="'screen:run'" :loading="loading" @click="run">运行筛选</el-button>
+            <el-button v-permission="'screen:run'" type="primary" :loading="loading" @click="run">
+              <template #icon><el-icon><VideoPlay /></el-icon></template>
+              运行筛选
+            </el-button>
             <el-button v-if="result && result.hits.length" size="small" @click="exportCsv">导出 CSV</el-button>
             <span class="run-hint">含表达式/带参指标需全市场逐股求值，约十几秒</span>
+          </div>
+          <!-- ready 摘要：结果可回溯——命中数、是否排除 ST、按哪个只读方案口径跑的；交易日由日期选择器展示，不重复 -->
+          <div v-if="result" class="run-meta">
+            共 <b>{{ result.count }}</b> 只<template v-if="excludeSt"> · 已排除 ST</template><template v-if="profileReadonly && loadedProfile"> · 按方案「{{ loadedProfile.name }}」运行</template>
           </div>
 
           <!-- 筛选结果表 -->
@@ -922,11 +953,19 @@ onMounted(initializeScreen)
   color: var(--app-muted-text);
   font-size: var(--app-font-size-caption);
 }
+/* 条件构建区卡片包裹：与编辑器头/结果区区分边界（对齐买卖 cond-block） */
+.cond-block {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  background: var(--el-fill-color-blank);
+}
 .b-group {
   display: flex;
   align-items: center;
   gap: var(--app-space-2);
-  margin: 12px 0 10px;
+  margin: 0 0 10px;
 }
 .b-cond {
   display: flex;
@@ -989,6 +1028,15 @@ onMounted(initializeScreen)
 .run-title {
   font-weight: var(--app-font-weight-section);
   font-size: var(--app-font-size-section-title);
+}
+.run-meta {
+  margin: -4px 0 8px;
+  color: var(--app-muted-text);
+  font-size: var(--app-font-size-caption);
+}
+.run-meta b {
+  color: var(--el-text-color-regular);
+  font-weight: var(--app-font-weight-section);
 }
 .run-table-wrap {
   flex: 1 1 auto;

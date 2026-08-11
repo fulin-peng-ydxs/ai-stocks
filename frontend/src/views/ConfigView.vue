@@ -711,6 +711,7 @@ async function copyCurrentScoreProfile() {
 const runDate = ref<string>('')
 const runRows = ref<ScoreRunRow[]>([])
 const running = ref(false)
+const runError = ref('')
 const subKeys = computed(() => items.value.map((i) => i.indicator))
 
 function scoreLevel(v: number | undefined): string {
@@ -728,6 +729,7 @@ async function tryRun() {
     return
   }
   running.value = true
+  runError.value = ''
   try {
     const res = await runScoreProfile({
       items: items.value,
@@ -737,6 +739,9 @@ async function tryRun() {
     runRows.value = res.list
     runDate.value = res.run_date
     if (!res.list.length) ElMessage.info('无结果（可能该日无数据）')
+  } catch (e) {
+    runError.value = getErrorMessage(e, '试算运行失败')
+    ElMessage.error(runError.value)
   } finally {
     running.value = false
   }
@@ -1022,17 +1027,24 @@ async function copyCurrentTradeProfile() {
   tCurRef.value = copied ? tradeProfileKey(copied) : (r.profile_ref || r.id)
 }
 
+// 记录实际试算的交易日：previewConditions 不传 run_date 时后端回落最新交易日（非必然「今日」），文案需展示真实口径
 const previewHit = ref<{ buy: number | null; sell: number | null }>({ buy: null, sell: null })
+const previewDate = ref<{ buy: string | null; sell: string | null }>({ buy: null, sell: null })
 const previewing = ref('')
 async function previewSide(side: 'buy' | 'sell') {
   const conds = condListOf(side).value
   if (!conds.length) { ElMessage.warning('该侧无条件'); return }
   previewing.value = side
+  previewHit.value[side] = null
+  previewDate.value[side] = null
   try {
     const logic = side === 'buy' ? buyLogic.value : sellLogic.value
     const res = await previewConditions({ tree: toTree(logic, conds), top: 10 })
     previewHit.value[side] = res.hit
-    ElMessage.success(`${side === 'buy' ? '买入' : '卖出'}条件今日命中 ${res.hit} 只`)
+    previewDate.value[side] = res.run_date
+    ElMessage.success(`${side === 'buy' ? '买入' : '卖出'}条件命中 ${res.hit} 只（${res.run_date}）`)
+  } catch (e) {
+    ElMessage.error(getErrorMessage(e, `${side === 'buy' ? '买入' : '卖出'}条件试算失败`))
   } finally { previewing.value = '' }
 }
 
@@ -1083,6 +1095,27 @@ function onScoreLoaded(item: ProfileSummary) {
   }
   onScoreSelect(summary.profile_ref || summary.id)
 }
+// 行内「×」移除「加载查看」临时预览项：仅当编辑器正查看该外来方案时收尾——
+// 清掉它的只读身份/试算结果（否则移除后仍锁只读、结果还挂着它），回到「我的」上下文或新建态。
+async function onScoreTempRemoved(item: ProfileSummary) {
+  const summary = item as ScoreProfileSummary
+  const removedRef = summary.profile_ref || summary.id
+  // curRef 对「加载查看」项是 getProfile 规范化的 opaque ref（≠明文 profile_ref），直接比必然不等；
+  // 判据：当前正处只读查看态（加载查看必只读，mine 项不进 tempItem）即认为编辑器在查看该外来方案，收尾。
+  if (!profileReadonly.value) return
+  ElMessage.info(`已移除预览的方案「${summary.name}」`)
+  profiles.value = profiles.value.filter((p) => (p.profile_ref || p.id) !== removedRef)
+  curRef.value = ''
+  profileReadonly.value = false
+  runRows.value = []
+  runDate.value = ''
+  runError.value = ''
+  scoreLastAppliedRef = ''
+  scoreDetailAttempt = ''
+  const list = (await scoreSelectRef.value?.reload()) ?? []
+  if (list.length) onScoreSelect(list[0].profile_ref || list[0].id)
+  else newProfile()
+}
 function onTradeReady(list: ProfileSummary[]) {
   tProfiles.value = list as TradeProfileSummary[]
   if (tProfiles.value.length && !tCurRef.value) onTradeSelect(tradeProfileKey(tProfiles.value[0]))
@@ -1101,6 +1134,25 @@ function onTradeLoaded(item: ProfileSummary) {
     tProfiles.value = [summary, ...tProfiles.value]
   }
   onTradeSelect(tradeProfileKey(summary))
+}
+// 行内「×」移除「加载查看」临时预览项：仅当编辑器正查看该外来方案时收尾——
+// 清掉它的只读身份/试算命中结果，回到「我的」上下文或新建态。
+async function onTradeTempRemoved(item: ProfileSummary) {
+  const summary = item as TradeProfileSummary
+  const removedRef = tradeProfileKey(summary)
+  // 判据同评分：当前正处只读查看态（加载查看必只读）即认为编辑器在查看该外来方案，收尾。
+  if (!tReadonly.value) return
+  ElMessage.info(`已移除预览的方案「${summary.name}」`)
+  tProfiles.value = tProfiles.value.filter((p) => tradeProfileKey(p) !== removedRef)
+  tCurRef.value = ''
+  tReadonly.value = false
+  previewHit.value = { buy: null, sell: null }
+  previewDate.value = { buy: null, sell: null }
+  tradeLastAppliedRef = ''
+  tradeDetailAttempt = ''
+  const list = (await tradeSelectRef.value?.reload()) ?? []
+  if (list.length) onTradeSelect(tradeProfileKey(list[0] as TradeProfileSummary))
+  else newTradeProfile()
 }
 
 async function initScorePage() {
@@ -1209,6 +1261,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               @ready="onScoreReady"
               @copied-item="onScoreCopied"
               @load-failed="onScoreLoadFailed"
+              @temp-removed="onScoreTempRemoved"
             />
           </aside>
 
@@ -1347,7 +1400,8 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 </template>
               </AppTableColumn>
 
-              <AppTableColumn role="structural">
+              <!-- 操作列：单删除动作，用紧凑操作列 role；structural(48px) 会放不下「更多」按钮测量层造成横向滚动 -->
+              <AppTableColumn label="操作" role="action-compact">
                 <template #default="{ $index }">
                   <AppRowActions :actions="scoreItemRowActions($index)" :inline-limit="1" />
                 </template>
@@ -1364,11 +1418,20 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               <span class="run-title">试算榜单</span>
               <el-tag v-if="runRows.length" type="info" size="small" round>共 {{ runRows.length }} 只</el-tag>
               <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" default-latest />
-              <el-button v-permission="'score:run'" :loading="running" @click="tryRun">
+              <el-button v-permission="'score:run'" :loading="running" type="primary" @click="tryRun">
                 <template #icon><el-icon><VideoPlay /></el-icon></template>
                 用当前配置试算
               </el-button>
             </div>
+            <AppStateBlock
+              v-if="runError"
+              state="error"
+              size="compact"
+              title="试算运行失败"
+              :description="runError"
+              retry
+              @retry="tryRun"
+            />
             <div v-if="settings.previewExpanded && runRows.length" class="run-table-wrap">
             <AppDataTable :data="runRows" size="small" border height="100%" class="run-table">
               <AppTableColumn label="#">
@@ -1576,6 +1639,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               @ready="onTradeReady"
               @copied-item="onTradeCopied"
               @load-failed="onTradeLoadFailed"
+              @temp-removed="onTradeTempRemoved"
             />
           </aside>
 
@@ -1631,7 +1695,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   <template #icon><el-icon><VideoPlay /></el-icon></template>
                   试算
                 </el-button>
-                <el-tag v-if="previewHit.buy !== null" type="success" size="small" round>今日命中 {{ previewHit.buy }} 只</el-tag>
+                <el-tag v-if="previewHit.buy !== null" type="success" size="small" round>命中 {{ previewHit.buy }} 只{{ previewDate.buy ? ` · ${previewDate.buy}` : '' }}</el-tag>
               </div>
               <div v-for="(c, i) in buyConds" :key="'b' + i" class="cond-row">
                 <el-select v-model="c.indicator" size="small" filterable style="width: 150px" :disabled="tReadonly" @change="onCondIndicator(c)">
@@ -1681,7 +1745,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                   <template #icon><el-icon><VideoPlay /></el-icon></template>
                   试算
                 </el-button>
-                <el-tag v-if="previewHit.sell !== null" type="warning" size="small" round>今日命中 {{ previewHit.sell }} 只</el-tag>
+                <el-tag v-if="previewHit.sell !== null" type="warning" size="small" round>命中 {{ previewHit.sell }} 只{{ previewDate.sell ? ` · ${previewDate.sell}` : '' }}</el-tag>
               </div>
               <div v-for="(c, i) in sellConds" :key="'s' + i" class="cond-row">
                 <el-select v-model="c.indicator" size="small" filterable style="width: 150px" :disabled="tReadonly" @change="onCondIndicator(c)">

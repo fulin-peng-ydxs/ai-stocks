@@ -6,8 +6,9 @@
 // 权限态（§307）：配置 viewPermission 后，无权限角色不渲染搜索入口与复制引导，
 // 不调用 browse（避免 403），抽屉内显示「无权限查看」无权态——不把无权伪装成空态。
 import { computed, onMounted, ref, watch } from 'vue'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Close } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
 import AssetSearchDrawer from './AssetSearchDrawer.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -43,6 +44,8 @@ const props = withDefaults(defineProps<{
   selectLoaded?: boolean
   /** 当前默认加载方案的资产 key（仅榜单页评分方案传）；透传给抽屉做行内互斥高亮 */
   defaultItemKey?: string
+  /** list 形态给「加载查看」注入的临时项显示行内「×」：仅从列表移除该预览（不删数据、不碰我的方案） */
+  removableTemp?: boolean
 }>(), {
   mode: 'select',
   copyPermission: '',
@@ -52,6 +55,7 @@ const props = withDefaults(defineProps<{
   testId: 'asset-profile-select',
   selectLoaded: false,
   defaultItemKey: undefined,
+  removableTemp: true,
 })
 
 const emit = defineEmits<{
@@ -70,6 +74,8 @@ const emit = defineEmits<{
   rerunDone: [result: unknown, item: ProfileSummary]
   /** 设为/取消默认加载方案（仅榜单页评分方案）：透传抽屉行操作，item=null 表示取消默认 */
   setDefault: [item: ProfileSummary | null]
+  /** 行内「×」移除了「加载查看」临时预览项：页面据此清掉该外来方案在编辑器的身份（只读/结果），回到「我的」上下文 */
+  tempRemoved: [item: ProfileSummary]
 }>()
 
 const items = ref<ProfileSummary[]>([])
@@ -198,6 +204,21 @@ function onSelect(value: string) {
 }
 
 const emptyText = computed(() => `暂无我的${props.assetLabel}`)
+
+// 行内「×」：仅给「加载查看」注入的临时预览项（tempItem，含系统内置/别人的非「我的」方案）显示；
+// 仅从列表移除该预览、丢弃临时选中，不删数据、不调 API、不碰「我的」方案。
+function isTempRow(p: ProfileSummary): boolean {
+  return props.removableTemp && !!tempItem.value && assetItemKey(p) === assetItemKey(tempItem.value)
+}
+function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
+  event.stopPropagation()
+  if (!isTempRow(p)) return
+  // 若该预览项正是当前选中，先清空选中（watch 会随之丢弃 tempItem），再兜底复位。
+  if (props.modelValue === assetItemKey(p)) inner.value = ''
+  tempItem.value = null
+  // 通知页面收尾：清掉该外来方案在编辑器的只读身份/运行口径，回到「我的」上下文
+  emit('tempRemoved', p)
+}
 </script>
 
 <template>
@@ -294,6 +315,7 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
           @click="onSelect(assetItemKey(p))"
         >
           <AssetProfileLabel
+            class="asset-profile-select__item-label"
             :name="p.name"
             :version="p.version"
             :source="assetDisplaySource(p.source, p.is_preset)"
@@ -302,6 +324,16 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
             :readonly="p.readonly"
             :label-mine="labelMine"
           />
+          <AppIconButton
+            v-if="isTempRow(p)"
+            class="asset-profile-select__remove"
+            :label="`从列表移除「${p.name}」`"
+            size="xs"
+            :data-testid="`${testId}-remove`"
+            @click="onRemoveTemp(p, $event)"
+          >
+            <el-icon><Close /></el-icon>
+          </AppIconButton>
         </li>
       </ul>
       <div v-else class="asset-profile-select__empty" v-loading="loadingMine">
@@ -377,15 +409,27 @@ const emptyText = computed(() => `暂无我的${props.assetLabel}`)
   list-style: none;
 }
 .asset-profile-select__list li {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-1);
   padding: 6px 8px;
   border-radius: var(--layout-control-radius, 6px);
   cursor: pointer;
+}
+.asset-profile-select__item-label {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .asset-profile-select__list li:hover {
   background: var(--el-fill-color-light);
 }
 .asset-profile-select__list li.active {
   background: var(--el-color-primary-light-9);
+}
+/* 行内「×」：给「加载查看」临时预览项靠右放置，仅从列表移除预览（不删数据），用中性色区别于破坏性删除 */
+.asset-profile-select__remove {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 .asset-profile-select__empty {
   display: flex;
