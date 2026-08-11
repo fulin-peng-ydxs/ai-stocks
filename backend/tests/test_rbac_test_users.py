@@ -11,11 +11,27 @@ from backend.auth.constants import ROLE_NORMAL, ROLE_TENANT_ADMIN
 from backend.common.exceptions import StorageError
 from backend.devtools.e2e_test_users import _lock_temporary_user, destroy_temporary_user
 from backend.devtools.rbac_test_users import (
+    CUSTOM_ROLES,
+    DEBUG_USERS,
     UserSpec,
     _bump_user_permissions,
     _ensure_users,
 )
 from backend.storage.pg_identity import pg_fingerprint
+
+
+def test_sector_only_debug_identity_keeps_stock_permission_out() -> None:
+    role = next(item for item in CUSTOM_ROLES if item.id == "debug_role_sectors_only")
+    user = next(item for item in DEBUG_USERS if item.account == "debug_sectors_only")
+
+    assert role.menus == ("/sectors",)
+    assert set(role.resources) == {
+        "sectors:view",
+        "sector-watchlist:view",
+        "sector-watchlist:update",
+    }
+    assert "stocks:view" not in role.resources
+    assert user.role_ids == (role.id,)
 
 
 def test_ensure_users_reactivates_soft_deleted_account_in_postgres(pg) -> None:

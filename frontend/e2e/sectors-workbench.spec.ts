@@ -188,4 +188,47 @@ test.describe('板块行情工作台', () => {
       })
     }
   })
+
+  test('板块最小权限可用，自选写按钮受控且成分股跳转 fail-closed', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-standard', '权限矩阵仅在标准视口执行')
+    const consoleIssues = collectConsoleIssues(page)
+    const auth = await loginAsDebugUser(page, request, 'debug_sectors_only')
+    const meResponse = await request.get(`${API_URL}/auth/me`, {
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+    })
+    expect(meResponse.ok()).toBe(true)
+    const me = (await meResponse.json()).data as {
+      permissions: string[]
+    }
+    expect(me.permissions).toEqual(expect.arrayContaining([
+      'sectors:view',
+      'sector-watchlist:view',
+      'sector-watchlist:update',
+    ]))
+    expect(me.permissions).not.toContain('stocks:view')
+
+    await openPageAndWaitForHeading(page, '/sectors', '板块行情')
+    await expect(page.getByTestId('sectors-workspace')).toBeVisible({ timeout: 20_000 })
+    const firstSectorRow = page.locator('[data-testid^="sectors-row-"]').first()
+    await expect(firstSectorRow).toBeVisible({ timeout: 20_000 })
+    await expect(firstSectorRow.getByRole('button', { name: /板块自选/ })).toBeVisible()
+    await firstSectorRow.click()
+    await page.getByTestId('sectors-open-detail').click()
+    await expect(page).toHaveURL(/\/sectors\/[^/?]+/)
+    await expect(page.getByText('当前账号无个股行情查看权限', { exact: true })).toBeVisible()
+
+    const firstMember = page.locator('[data-testid^="sector-member-"]').first()
+    await firstMember.scrollIntoViewIfNeeded()
+    await expect(firstMember).toHaveClass(/stock-disabled/)
+    const detailUrl = page.url()
+    await firstMember.click()
+    await expect(page).toHaveURL(detailUrl)
+
+    await page.goto('/stocks/600000.SH')
+    await expect(page).toHaveURL(/\/sectors(?:\/[^/?]+)?(?:\?|$)/)
+    expect(consoleIssues).toEqual([])
+  })
 })

@@ -190,15 +190,15 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 必须实现 | R5 | 板块采集异步任务（`board` 进任务中心） | TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES 注册 + `_h_board` + 按字典类型/板块/资金流周期 checkpoint + 任务中文标签 | T5 | 已完成 | 一致 | T5 已落地；部分失败保留 checkpoint，失败任务可续跑 |
 | 必须实现 | R6 | 板块维度注册 + 数据概览可见 | `_DIMENSION_SEED` 加 `board` 维度行（tables=4 表）+ 数据管理概览板块统计卡 | T3 + 本轮复核修复 | 已完成 | 一致 | 除维度行外，概览已展示表行数、概念/行业数、成分/指数/资金流覆盖、最新日期、未闭环问题和最近更新 |
 | 必须实现 | R7 | 板块行情列表页 `/sectors` | SectorsView（筛选/主表/分页/列显隐/列头排序语义）+ `/api/sectors` | T8、T11 | 已完成 | 一致 | T8 `/api/sectors` 列表接口 + T11 SectorsView 页面均已落地；分页走全局 `PAGE_SIZE_OPTIONS`（2026-08-11 纠偏） |
-| 必须实现 | R8 | 板块详情页 `/sectors/:code` + 返回保留筛选态 | SectorDetailView（摘要/走势图/成分股表）+ URL query 筛选态承载与显式返回 + 详情 3 接口 | T8、T12 | 部分完成 | 一致 | **T8 详情/bars/members 三接口已落地**；T12 页面待开始 |
-| 必须实现 | R9 | 成分股跳转个股详情（权限感知） | `hasPermission('stocks:view')` 行可点性 + 禁用态 hover 提示 + 直接访问 fail-closed 验证 | T12、T15 | 待开始 | 一致 | |
+| 必须实现 | R8 | 板块详情页 `/sectors/:code` + 返回保留筛选态 | SectorDetailView（摘要/走势图/成分股表）+ URL query 筛选态承载与显式返回 + 详情 3 接口 | T8、T12 | 已完成 | 一致 | T8 接口与 T12 页面均已落地，显式返回、浏览器历史和菜单最近详情恢复已覆盖 |
+| 必须实现 | R9 | 成分股跳转个股详情（权限感知） | `hasPermission('stocks:view')` 行可点性 + 禁用态 hover 提示 + 直接访问 fail-closed 验证 | T12、T14、T15 | 已完成 | 一致 | T14 新增 `debug_sectors_only` 最小权限身份，真实浏览器验证成分股禁用且直达个股路由 fail-closed |
 | 必须实现 | R10 | 板块搜索 | 自由文本搜索框（el-input 防抖）+ 服务端 `keyword` 参数 + 无结果空态 | T8、T11 | 已完成 | 一致 | T8 服务端 keyword + T11 搜索框（≤50 字符防抖）均已落地 |
 | 可选增强 | R11 | 统一 K 线范围与高度拖拽 | 全局范围选项 + 行情多图工作区 + 高度比例持久化 | T12 | 已完成 | 一致 | 本次纳入 |
 | 可选增强 | R12 | 板块维度数据质检（指数缺口） | data_report 板块指数缺口扫描 + 复用 `data_quality_issue` | T7 | 已完成 | 一致（2026-08-09 只进不出修订） | 本次纳入；成分数波动不再质检（源端重组非错误），`board_member_incomplete` 覆盖采集完整性 |
-| 可选增强 | R13 | 详情页成分股统一分页 | members 接口服务端分页 + AppPagination + pageSize 组件字段 | T8、T12 | 部分完成 | 一致 | 本次纳入；**T8 members 接口已落地**；T12 分页组件待开始 |
-| 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（最新 snapshot_date period=即时） | T8、T12 | 部分完成 | 一致 | 本次纳入；**T8 详情接口净流入已落地**；T12 摘要卡待开始 |
+| 可选增强 | R13 | 详情页成分股统一分页 | members 接口服务端分页 + AppPagination + pageSize 组件字段 | T8、T12 | 已完成 | 一致 | members 服务端分页、AppPagination 与 pageSize 配置闭环已落地 |
+| 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（最新 snapshot_date period=即时） | T8、T12 | 已完成 | 一致 | 详情摘要已展示即时净流入及独立资金日期 |
 | 必须实现 | R21 | 采集流程集成（daily/回填/增量/断点/失败隔离） | DailyPipeline 加 `board: bool = True` 步骤 + CLI `board --backfill/--update` + `--skip-board` + 类型/指定板块/阶段范围 + 失败清单与部分失败降级 + 参数化测试矩阵 | T5、T6 + 本轮复核修复 | 已完成 | 一致 | daily、CLI、任务中心、采集页和调度页已对齐；`ok=false` 正确落 failed，成功单元不重复续跑 |
-| 必须实现 | R22 | 页面/RBAC 接入 | 菜单/资源 seed + `sectors:view` 进 BUSINESS_RESOURCE_CODES + 既有库回填 + bump perm_ver + 路由守卫 + pageRegistry 登记 | T10a、T10b、T11、T12、T14 | 部分完成 | 一致 | T10a（常量+seed）+ T10b（回填 SQL+权限测试）+ T11（列表页路由守卫 + pageRegistry 登记）已落地；T12/T14 详情页与端到端部分待开始 |
+| 必须实现 | R22 | 页面/RBAC 接入 | 菜单/资源 seed + `sectors:view` 进 BUSINESS_RESOURCE_CODES + 既有库回填 + bump perm_ver + 路由守卫 + pageRegistry 登记 | T10a、T10b、T11、T12、T14 | 已完成 | 一致 | 菜单、资源、接口守卫、默认授权、详情子路由、按钮 `v-permission` 与最小权限浏览器验收已闭环 |
 | 必须实现 | R23 | 页面配置闭环 | 两页业务偏好、全局 K 线范围、`chart.minHeight` 与表格组件字段保存/读取/消费/回退 + 构建/布局/三视口验收 | T11、T12、T14、T15 | 已完成 | 一致 | pageRegistry、前后端字段守门、抽屉渲染、页面真实消费、单测、构建和三视口 E2E 已闭环 |
 | 暂不实现 | R15 | 地域/风格板块 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 第一期只做概念+行业 |
 | 暂不实现 | R16 | 资金流历史趋势图 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 本期只做统计卡数字 |
@@ -379,7 +379,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 6.12 任务 T12：板块详情页 `/sectors/:code`
 
-- 状态：待开始
+- 状态：已完成（2026-08-11 T12 执行）
 - 依赖：T8、T10a、T11（列表页来源 query 契约）
 - 涉及文件/模块：`frontend/src/views/SectorDetailView.vue`（新增，`--pageKey sectors-detail --label 板块详情 --archetype detail`）、`frontend/src/router/index.ts`（`/sectors/:code`）、[pageRegistry.ts](../../frontend/src/layout/pageRegistry.ts)（`sectors-detail` + `memberTable` 嵌套 slot，parentId=detail）、`frontend/src/api/sectors.ts`、[DESIGN.md](../../DESIGN.md)（page-registry 登记）
 - 目标：R8、R9、R11、R13、R14 + R22/R23 详情页部分，逐项承接 §4.2 功能点表与原型区域。
@@ -390,7 +390,6 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 验证方式：Vitest + `npm test` 契约 + Playwright（T15）。
 - 完成标准：R8、R9、R11、R13、R14 验收通过；契约测试绿。
 - 实际落地情况：已实施（2026-08-11）。列表页保留点行切换走势，「查看详情」放在当前观察名称左侧身份区；详情完成摘要、自选、交易日、统一 K 线范围，并复用个股详情行情多图工作区实现 K 线/量能高度拖拽及比例保存；成分股服务端分页排序、权限两态和显式返回齐备。缓存详情 code 固定，避免返回列表时误请求 `/api/sectors/`；对比口径固定为“区间首日=0%”并补清晰说明，移除难理解的中点基准；走势和 K 线 tooltip 以行情红绿突出涨跌。
-- 实际落地情况：待实施
 
 ### 6.13 任务 T13：数据质量页候选操作列（废弃）
 
@@ -400,7 +399,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 6.14 任务 T14：RBAC 前端接入与配置闭环端到端核对
 
-- 状态：待开始
+- 状态：已完成（2026-08-11 T14 执行）
 - 依赖：T10a、T10b、T11、T12
 - 涉及文件/模块：`frontend/src/router/index.ts`（守卫 meta 权限）、菜单 seed 消费（侧栏）、两页 `v-permission`（如涉及按钮级权限）、[system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 验收清单
 - 目标：R22/R23 端到端核对——菜单可见性与授权一致；无授权用户路由守卫 fail-closed；pageRegistry 两处登记与路由一致；两页配置闭环（保存/读取/消费/非法回退/恢复默认同时重置业务偏好与组件字段）；DESIGN.md page-registry 登记完整。
@@ -410,7 +409,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 边界与异常：默认角色授权决策以 T10a seed 为准。
 - 验证方式：`npm test`（契约/布局测试）+ 权限场景人工验收（用最小权限调试账号，先读 `agent-works/multi-tenant-rbac/test-users.md`）。
 - 完成标准：R22、R23 验收标准中非 E2E 部分通过。
-- 实际落地情况：待实施
+- 实际落地情况：已按新页面接入清单逐项核对路由、菜单、资源、接口守卫、默认角色授权、pageRegistry 和恢复默认。板块自选写入口补 `v-permission="'sector-watchlist:update'"`；新增 `debug_sectors_only` 最小权限角色/账号，仅持板块菜单、查看与自选读写码，不含 `stocks:view`；路由单测覆盖 `/sectors/:code` 前缀归属，设置契约锁定列表/详情同时重置业务偏好与组件配置。后端权限聚焦 48 项、前端权限/布局聚焦 106 项通过；前端全量 84 文件 / 661 项通过并完成正式构建；标准视口真实浏览器验证板块可访问、自选按钮可见、成分股不可跳转且直达个股详情被守卫回板块页。
 
 ### 6.15 任务 T15：E2E、构建、视口与回归验收
 
@@ -472,13 +471,13 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 具体完成情况：T8 已落地——`test_sectors_api.py` 8 用例全绿（列表/详情/bars/members 口径、涨幅不读资金流周期表、涨跌家数、排序分页、404/400）；T10a/T10b 已落地——`test_rbac_deps.py` sectors:view 权限用例（有授权过/无授权 403）+ 回填 SQL 幂等（本地库执行 granted=2）。
 - 页面/交互测试：
   - 计划：T15 Playwright（列表筛选/排序/搜索/分页/列显隐、详情走势图周期/成分股统一分页、返回筛选态两路径、R9 权限两态、质检页 `board_member_incomplete` 重采）。
-  - 具体完成情况：待验证
+  - 具体完成情况：板块核心工作台三视口用例已覆盖列表、自选、走势/K 线、详情、返回与个股正向跳转；T14 新增标准视口最小权限用例，覆盖无 `stocks:view` 的成分股禁用及直达个股路由 fail-closed。T15 仍需补齐搜索/分页/列显隐、质量修复动作和发布级全量回归。
 - 组件资产闭环测试：
   - 计划：`sectors`/`sectors-detail` pageRegistry 契约测试（memberTable 嵌套 slot、consumedComponentFields 指向真实 slot）；两页组件字段保存/读取/非法回退/恢复默认参数化矩阵；DESIGN.md page-registry 登记核对。
-  - 具体完成情况：待验证
+  - 具体完成情况：pageRegistry、组件字段、数值范围、详情图表高度及列表/详情双重恢复默认契约已覆盖；前端全量 84 文件 / 661 项通过，正式构建通过。
 - 权限与数据范围测试：
   - 计划：T10a/T10b 后端权限测试 + T14 前端菜单/守卫验收（最小权限调试账号，先读 `agent-works/multi-tenant-rbac/test-users.md`）。
-  - 具体完成情况：待验证
+  - 具体完成情况：T14 已完成。新增并校准 `debug_sectors_only`，后端权限聚焦 48 项、前端权限/路由/布局聚焦 106 项和标准视口 Playwright 权限链路均通过。
 - 回归测试：
   - 计划：`python -m pytest backend/tests/ -q` 全量（先 `./start.sh status`→`./start.sh stop`，结束后按原状态恢复并确认 `/api/health=200`）；`npm test`；相关既有 E2E 回归。
   - 具体完成情况：待验证

@@ -57,6 +57,13 @@ CUSTOM_ROLES: tuple[RoleSpec, ...] = (
         "仅用于验证个股页主体可用且不拉自选分组。",
     ),
     RoleSpec(
+        "debug_role_sectors_only",
+        "调试-仅板块行情",
+        ("/sectors",),
+        ("sectors:view", "sector-watchlist:view", "sector-watchlist:update"),
+        "用于验证板块行情、自选及无个股查看权限的成分股禁用态。",
+    ),
+    RoleSpec(
         "debug_role_stocks_group",
         "调试-个股+自选分组",
         ("/stocks",),
@@ -84,6 +91,8 @@ DEBUG_USERS: tuple[UserSpec, ...] = (
              ("debug_role_board_only",), "每日榜单最小权限。"),
     UserSpec("debug_stocks_only", "debug_stocks_only", DEBUG_TENANT_ID, ROLE_NORMAL,
              ("debug_role_stocks_only",), "个股页无分组权限回归。"),
+    UserSpec("debug_sectors_only", "debug_sectors_only", DEBUG_TENANT_ID, ROLE_NORMAL,
+             ("debug_role_sectors_only",), "板块页无个股查看权限回归。"),
     UserSpec("debug_stocks_group", "debug_stocks_group", DEBUG_TENANT_ID, ROLE_NORMAL,
              ("debug_role_stocks_group",), "个股页分组链路调试。"),
     UserSpec("debug_backtest_view", "debug_backtest_view", DEBUG_TENANT_ID, ROLE_NORMAL,

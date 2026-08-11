@@ -25,6 +25,7 @@ const BUSINESS_BUTTON_CODES = [
   'screen-profile:save', 'screen:run',
   'backtest:run', 'backtest:robust', 'backtest:delete',
   'training:start', 'training:trade', 'training:review', 'training:delete',
+  'sector-watchlist:update',
   'stock-group:create', 'stock-group:update', 'stock-group:delete', 'stock-group:member-update',
 ]
 

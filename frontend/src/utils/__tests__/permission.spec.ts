@@ -9,6 +9,7 @@ import {
 const MENUS: MenuTreeNode[] = [
   { index: 'quotes', title: '最新行情', children: [
     { index: '/stocks', title: '个股行情' },
+    { index: '/sectors', title: '板块行情' },
     { index: '/board', title: '每日榜单' },
   ] },
   { index: '/screen', title: '策略筛选' },
@@ -21,7 +22,7 @@ const MENUS: MenuTreeNode[] = [
 
 describe('collectMenuPaths', () => {
   it('仅收集叶子路由路径，跳过分组 code', () => {
-    expect(collectMenuPaths(MENUS)).toEqual(['/stocks', '/board', '/screen', '/system/users'])
+    expect(collectMenuPaths(MENUS)).toEqual(['/stocks', '/sectors', '/board', '/screen', '/system/users'])
   })
   it('空菜单返回空数组', () => {
     expect(collectMenuPaths([])).toEqual([])
@@ -41,6 +42,8 @@ describe('菜单树导航口径', () => {
   it('详情子路由按最长前缀命中授权叶子', () => {
     expect(activeMenuPath(MENUS, '/stocks/600000.SH')).toBe('/stocks')
     expect(findMenuLeaf(MENUS, '/stocks/600000.SH')?.title).toBe('个股行情')
+    expect(activeMenuPath(MENUS, '/sectors/881121')).toBe('/sectors')
+    expect(findMenuLeaf(MENUS, '/sectors/881121')?.title).toBe('板块行情')
   })
 
   it('分组可判断当前路由归属并返回首个可导航页面', () => {
@@ -51,7 +54,7 @@ describe('菜单树导航口径', () => {
 })
 
 describe('isRouteAllowed', () => {
-  const allowed = ['/stocks', '/board', '/system/users']
+  const allowed = ['/stocks', '/sectors', '/board', '/system/users']
   it('system 恒过（即便 allowed 为空）', () => {
     expect(isRouteAllowed('/anything', [], true)).toBe(true)
   })
@@ -60,6 +63,7 @@ describe('isRouteAllowed', () => {
   })
   it('子路由按前缀命中（/stocks/600000 → /stocks）', () => {
     expect(isRouteAllowed('/stocks/600000.SH', allowed, false)).toBe(true)
+    expect(isRouteAllowed('/sectors/881121', allowed, false)).toBe(true)
   })
   it('未授权路由拒绝', () => {
     expect(isRouteAllowed('/system/tenants', allowed, false)).toBe(false)

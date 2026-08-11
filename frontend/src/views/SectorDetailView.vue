@@ -392,6 +392,7 @@ onMounted(async () => {
               <span class="sector-code">{{ code }}</span>
               <AppIconButton
                 v-if="canUpdateWatchlist"
+                v-permission="'sector-watchlist:update'"
                 :label="watchlisted ? '移出板块自选' : '加入板块自选'"
                 :loading="watchlistBusy"
                 :class="{ 'watchlist-active': watchlisted }"

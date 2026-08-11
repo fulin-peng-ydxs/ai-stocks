@@ -495,6 +495,15 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(sectorWorkbench.consumedComponentFields?.chart ?? []).not.toContain('minHeight')
   })
 
+  it('板块列表与详情恢复默认同时重置业务偏好和组件配置', () => {
+    const listSource = sourceForPage('sectors')
+    const detailSource = sourceForPage('sectors-detail')
+
+    expect(listSource).toContain('@reset="reset(); resetLayout()"')
+    expect(detailSource).toContain('@reset="resetSettings"')
+    expect(detailSource).toMatch(/function resetSettings\(\)[\s\S]*resetPageSettings\(\)[\s\S]*resetLayout\(\)/)
+  })
+
   it('data-table / wide-table 必须消费并真实接入 border 页面级配置', () => {
     for (const entry of PAGE_REGISTRY) {
       const tableSlots = entry.layout.slots.filter((slot) => slot.component === 'data-table' || slot.component === 'wide-table')

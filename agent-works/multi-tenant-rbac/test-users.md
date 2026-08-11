@@ -42,9 +42,10 @@ AI_STOCKS_ENV=dev ./start.sh dev-users --keep-password
 | --- | --- | --- | --- | --- |
 | `debug_system` | `default` | `system` | 系统管理员全量回归 | 全部系统页和业务页 |
 | `debug_tenant_admin` | `debug_tenant` | `tenant_admin` | 租户管理员调试 | 业务页 + 用户管理 |
-| `debug_normal` | `debug_tenant` | `normal` | 普通默认业务用户 | board/stocks/screen/backtest/training |
+| `debug_normal` | `debug_tenant` | `normal` | 普通默认业务用户 | board/stocks/sectors/screen/backtest/training |
 | `debug_board_only` | `debug_tenant` | `debug_role_board_only`：`board:view` | 每日榜单最小权限 | 仅每日榜单 |
 | `debug_stocks_only` | `debug_tenant` | `debug_role_stocks_only`：`stocks:view` | 个股页无分组权限回归 | 个股主体可用；不请求自选分组 |
+| `debug_sectors_only` | `debug_tenant` | `debug_role_sectors_only`：`sectors:view`、`sector-watchlist:view`、`sector-watchlist:update` | 板块页无个股权限回归 | 板块列表、详情和自选可用；成分股不可跳个股 |
 | `debug_stocks_group` | `debug_tenant` | `debug_role_stocks_group`：`stocks:view`、`stock-group:view`、`stock-group:member-update` | 个股页分组链路调试 | 个股 + 分组查看/成员维护 |
 | `debug_backtest_view` | `debug_tenant` | `debug_role_backtest_view`：`backtest:view` | 回测历史只读调试 | 可看历史，不能运行/删除 |
 
