@@ -661,6 +661,9 @@ def test_scan_board_quality_index_gap_daily_late_board(client, monkeypatch):
     """
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
+    client.execute(
+        "INSERT INTO trade_calendar (trade_date, is_open) VALUES (DATE '2026-08-07', TRUE) "
+        "ON CONFLICT DO NOTHING")
     # 晚成立板块：只有 08-07 一天指数（成立日），08-06 及更早源端无数据
     client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, member_count) "
                    "VALUES ('309265','2026一季报预增','concept',TRUE,TRUE,20)")
@@ -681,6 +684,9 @@ def test_scan_board_quality_index_gap_daily_post_start_missing(client, monkeypat
     """板块指数逐日缺口：数据起点之后的真实空洞不豁免，仍报缺采。"""
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
+    client.execute(
+        "INSERT INTO trade_calendar (trade_date, is_open) VALUES (DATE '2026-08-07', TRUE) "
+        "ON CONFLICT DO NOTHING")
     # 晚成立板块但起点之后出现空洞：08-03 成立，缺 08-07（起点后）→ 必须报
     client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, member_count) "
                    "VALUES ('309268','2026中报预增','concept',TRUE,TRUE,20)")
@@ -693,10 +699,9 @@ def test_scan_board_quality_index_gap_daily_post_start_missing(client, monkeypat
     daily = client.query_df(
         "SELECT code, trade_date FROM data_quality_issue "
         "WHERE issue_type='board_index_gap_daily' AND status='open'")
-    hit = daily[(daily["code"].astype(str) == "309268")
-                & (daily["trade_date"] == pd.Timestamp("2026-08-07"))]
-    assert len(hit) == 1                   # 起点之后缺失照报
-    assert not len(daily[daily["code"].astype(str) == "309268"]) > 1  # 只有起点后那一处
+    hits = daily[daily["code"].astype(str) == "309268"]
+    assert len(hits) == 1                  # 起点后只缺 08-07 这一处
+    assert pd.Timestamp(hits.iloc[0]["trade_date"]).date() == date(2026, 8, 7)
 
 
 def test_board_recheck_index_gap_daily(client, monkeypatch):
