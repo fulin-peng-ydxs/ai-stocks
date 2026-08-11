@@ -11,6 +11,23 @@ export interface SectorSourceQuery {
   date?: string
 }
 
+export interface SectorListPreferences {
+  defaultType?: BoardType | '' | string
+  defaultScope?: 'all' | 'watchlist' | string
+  defaultChartMode?: 'compare' | 'kline' | string
+  benchmarkCode?: string
+}
+
+export interface ResolvedSectorListState {
+  query: SectorSourceQuery
+  boardType: BoardType | ''
+  listScope: 'all' | 'watchlist'
+  chartMode: 'compare' | 'kline'
+  benchmarkCode: string
+  keyword: string
+  page: number
+}
+
 const SORT_FIELDS: readonly SectorSortField[] = ['pct_today', 'pct_5d', 'net_inflow']
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -40,4 +57,39 @@ export function sanitizeSectorSourceQuery(raw: LocationQuery): SectorSourceQuery
 
 export function toLocationQuery(query: SectorSourceQuery): LocationQueryRaw {
   return { ...query }
+}
+
+/** URL 来源态优先于已保存偏好；非法偏好按页面默认值回落。 */
+export function resolveSectorListState(
+  raw: LocationQuery,
+  preferences: SectorListPreferences,
+  canViewWatchlist: boolean,
+): ResolvedSectorListState {
+  const query = sanitizeSectorSourceQuery(raw)
+  const savedType = preferences.defaultType === 'concept' || preferences.defaultType === 'industry'
+    ? preferences.defaultType
+    : ''
+  const requestedScope = query.scope ?? (
+    preferences.defaultScope === 'watchlist' ? 'watchlist' : 'all'
+  )
+  const benchmarkCode = ['', '000905.SH', '000300.SH'].includes(preferences.benchmarkCode ?? '')
+    ? preferences.benchmarkCode ?? ''
+    : '000905.SH'
+  return {
+    query,
+    boardType: query.type ?? savedType,
+    listScope: canViewWatchlist && requestedScope === 'watchlist' ? 'watchlist' : 'all',
+    chartMode: preferences.defaultChartMode === 'kline' ? 'kline' : 'compare',
+    benchmarkCode,
+    keyword: query.keyword ?? '',
+    page: query.page ? Number(query.page) : 1,
+  }
+}
+
+/** 详情页显式返回列表时统一清洗来源参数，禁止透传任意 query。 */
+export function sectorListLocation(raw: LocationQuery): {
+  path: '/sectors'
+  query: LocationQueryRaw
+} {
+  return { path: '/sectors', query: toLocationQuery(sanitizeSectorSourceQuery(raw)) }
 }

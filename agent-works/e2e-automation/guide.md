@@ -43,15 +43,23 @@
 
 ```bash
 AI_STOCKS_ENV=dev ./start.sh dev-users
-AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 AI_STOCKS_E2E_LOGIN_BYPASS=1 ./start.sh restart
-cd frontend && npm run test:e2e:install   # 首次或浏览器缺失时
-cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e -- --grep-invert '回测页浏览公开回测'
+(cd frontend && npm run test:e2e:install)   # 首次或浏览器缺失时
+# 板块工作台聚焦回归：脚本负责停服、确定性 seed、启动被测后端、cleanup 和恢复原状态
+(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:sectors)
+# 普通全量回归前先在后端停服状态准备板块确定性数据
+./start.sh stop
+AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data cleanup
+AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data seed
+AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 AI_STOCKS_E2E_LOGIN_BYPASS=1 ./start.sh
+(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e -- --grep-invert '回测页浏览公开回测')
+# 普通回归后停服并精确清理板块夹具
+./start.sh stop
+AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data cleanup
 # 单独跑公开回测前，将后端按下文切换为 DuckDB 只读：
-cd .. && ./start.sh stop
 AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 AI_STOCKS_E2E_LOGIN_BYPASS=1 AI_STOCKS_DUCKDB_READ_ONLY=1 ./start.sh
-cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e -- e2e/backtest-public-runs.spec.ts --workers=1
+(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e -- e2e/backtest-public-runs.spec.ts --workers=1)
 # 回归结束后恢复日常后端，不保留 E2E 物理写开关：
-cd .. && AI_STOCKS_ENV=dev ./start.sh restart
+AI_STOCKS_ENV=dev ./start.sh restart
 ```
 
 Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；后端使用 `127.0.0.1:8000`，由 `./start.sh` 管理。
@@ -59,6 +67,9 @@ Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；�
 `backtest-public-runs.spec.ts` 必须与其余用例拆分：先用读写后端跑其余用例；再停止后端，以
 `AI_STOCKS_DUCKDB_READ_ONLY=1`、`AI_STOCKS_E2E_WRITE=1` 和登录限流豁免启动只读后端，单独执行该 spec。
 回归结束后始终按上方命令恢复日常后端，不能遗留只读、物理写或限流豁免开关。
+`sectors-workbench.spec.ts` 不读取开发者本地真实板块数据；`e2e_board_data.py` 只写入
+`E2E9*` 板块、`9999*.SZ` 股票及 2099 年固定行情，并在后端停服时 seed/cleanup。
+聚焦运行统一使用 `npm run test:e2e:sectors`，其退出 trap 会精确清理并恢复测试前后端状态。
 `npm run test:e2e` 和 `npm run test:e2e:ui` 均通过 `scripts/run-playwright.sh` 启动，
 并复用 `scripts/load-local-env.sh` 加载仓库根目录 `.env.local`；因此登录密码和 PG/E2E
 环境与后端使用相同的 `KEY=value` / `export KEY=value` 语义，不在 TypeScript helper 中二次解析变量文件。

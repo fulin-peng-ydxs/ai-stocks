@@ -45,7 +45,11 @@ import { useAuthStore } from '@/stores/auth'
 import { useStockSet } from '@/stores/stockSet'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { hasPermission } from '@/utils/permission'
-import { sanitizeSectorSourceQuery, toLocationQuery } from '@/utils/sectorNavigation'
+import {
+  sanitizeSectorSourceQuery,
+  sectorListLocation,
+  toLocationQuery,
+} from '@/utils/sectorNavigation'
 
 const route = useRoute()
 const router = useRouter()
@@ -250,7 +254,7 @@ async function loadAll(): Promise<void> {
 }
 
 function returnToList(): void {
-  void router.replace({ path: '/sectors', query: toLocationQuery(sourceQuery.value) })
+  void router.replace(sectorListLocation(route.query))
 }
 function openStock(row: SectorMember): void {
   if (!canViewStocks.value) return

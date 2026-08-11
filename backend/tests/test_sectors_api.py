@@ -82,9 +82,10 @@ def test_list_sectors_basic(c):
     assert ai["pct_today"] == pytest.approx(6.48, abs=0.01)
     # 5 日涨幅：历史不足（只有 5 天，需 6 个点）→ None
     assert ai["pct_5d"] is None
-    # 净流入 + 领涨（资金流即时行）
+    # 净流入取资金流即时行；领涨按行情日有效成分股计算，不采用源端资金流领涨字段。
     assert ai["net_inflow"] == pytest.approx(45.6)
-    assert ai["leader_stock"] == "胜宏科技"
+    assert ai["leader_stock"] == "平安银行"
+    assert ai["leader_pct"] == pytest.approx(5.26, abs=0.01)
     # 涨跌家数：000001 涨、000002 平 → up=1 down=0
     assert ai["up_count"] == 1
     assert ai["down_count"] == 0
@@ -211,7 +212,37 @@ def test_pct_not_from_fund_flow_period(c):
     svc = _svc(c)
     # 资金流只有即时行（无 5日 周期 net_ratio）——若涨幅误读资金流周期表会崩/错
     r = svc.list_sectors()
-    ai = [x for x in r["list"] if x["board_code"] == "309121"][0]
+    ai = next(x for x in r["list"] if x["board_code"] == "309121")
     # 今日涨幅 = 指数涨跌（6.48%），资金流即时净流入独立
     assert ai["pct_today"] == pytest.approx(6.48, abs=0.01)
     assert ai["net_inflow"] == pytest.approx(45.6)
+
+
+def test_leader_uses_selected_trade_date_and_stable_tiebreak(c):
+    """领涨股随行情截面变化；同涨幅按成交额降序、代码升序稳定决胜。"""
+    c.execute(
+        "INSERT INTO daily_bar (code, trade_date, close, pre_close, amount) "
+        "VALUES ('000001.SZ', DATE '2026-08-06', 10, 9, 100), "
+        "('000002.SZ', DATE '2026-08-06', 20, 18, 200)"
+    )
+    historical = _svc(c).get_sector("309121", date(2026, 8, 6))
+    assert historical["leader_stock"] == "万科A"
+    assert historical["leader_pct"] == pytest.approx(11.11, abs=0.01)
+
+    c.execute(
+        "UPDATE daily_bar SET close=10, pre_close=9.5, amount=300 "
+        "WHERE code='000002.SZ' AND trade_date=DATE '2026-08-07'"
+    )
+    latest = _svc(c).get_sector("309121", date(2026, 8, 7))
+    assert latest["leader_stock"] == "万科A"
+    assert latest["leader_pct"] == pytest.approx(5.26, abs=0.01)
+
+
+def test_leader_excludes_suspended_or_invalid_quotes(c):
+    """停牌、缺收盘或无有效前收的成分股不参与领涨排名。"""
+    c.execute(
+        "UPDATE daily_bar SET close=20, pre_close=10, is_suspended=true "
+        "WHERE code='000002.SZ' AND trade_date=DATE '2026-08-07'"
+    )
+    latest = _svc(c).get_sector("309121", date(2026, 8, 7))
+    assert latest["leader_stock"] == "平安银行"

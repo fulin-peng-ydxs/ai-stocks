@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeSectorSourceQuery } from '../sectorNavigation'
+import {
+  resolveSectorListState,
+  sanitizeSectorSourceQuery,
+  sectorListLocation,
+} from '../sectorNavigation'
 
 describe('sanitizeSectorSourceQuery', () => {
   it('保留板块列表可恢复的合法来源状态', () => {
@@ -32,5 +36,68 @@ describe('sanitizeSectorSourceQuery', () => {
       date: '2026/08/11',
       extra: 'ignored',
     })).toEqual({})
+  })
+})
+
+describe('resolveSectorListState', () => {
+  it('URL 来源态覆盖保存偏好，业务偏好继续控制图表默认项', () => {
+    expect(resolveSectorListState(
+      { type: 'concept', scope: 'watchlist', keyword: '算力', page: '3' },
+      {
+        defaultType: 'industry',
+        defaultScope: 'all',
+        defaultChartMode: 'kline',
+        benchmarkCode: '000300.SH',
+      },
+      true,
+    )).toMatchObject({
+      boardType: 'concept',
+      listScope: 'watchlist',
+      chartMode: 'kline',
+      benchmarkCode: '000300.SH',
+      keyword: '算力',
+      page: 3,
+    })
+  })
+
+  it('非法偏好回落默认，无自选权限时强制全市场', () => {
+    expect(resolveSectorListState(
+      { scope: 'watchlist' },
+      {
+        defaultType: 'invalid',
+        defaultScope: 'watchlist',
+        defaultChartMode: 'invalid',
+        benchmarkCode: 'invalid',
+      },
+      false,
+    )).toMatchObject({
+      boardType: '',
+      listScope: 'all',
+      chartMode: 'compare',
+      benchmarkCode: '000905.SH',
+      keyword: '',
+      page: 1,
+    })
+  })
+})
+
+describe('sectorListLocation', () => {
+  it('详情显式返回仅携带合法来源参数', () => {
+    expect(sectorListLocation({
+      type: 'industry',
+      sort: 'pct_5d',
+      page: '2',
+      injected: '/admin',
+    })).toEqual({
+      path: '/sectors',
+      query: { type: 'industry', sort: 'pct_5d', page: '2' },
+    })
+  })
+
+  it('无合法来源参数时返回默认列表', () => {
+    expect(sectorListLocation({ sort: 'name', page: '-1' })).toEqual({
+      path: '/sectors',
+      query: {},
+    })
   })
 })

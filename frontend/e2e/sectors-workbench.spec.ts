@@ -4,6 +4,7 @@ import { loginAsDebugUser } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 import { DEFAULT_E2E_API_URL } from './helpers/e2e-backend-health.mjs'
 import { openPageAndWaitForHeading } from './helpers/navigation'
+import { requireSeededSectors } from './helpers/sectorData'
 
 const API_URL = process.env.E2E_API_URL || DEFAULT_E2E_API_URL
 
@@ -18,15 +19,7 @@ test.describe('板块行情工作台', () => {
       }
     })
     const auth = await loginAsDebugUser(page, request, 'debug_system')
-    const response = await request.get(`${API_URL}/sectors`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` },
-      params: { page: 1, size: 4, sort_by: 'pct_today', order: 'desc' },
-    })
-    expect(response.ok()).toBe(true)
-    const body = await response.json()
-    expect(body.code, body.msg || '板块列表接口返回非 0 code').toBe(0)
-    const boards = body.data.list as Array<{ board_code: string; name: string }>
-    expect(boards.length).toBeGreaterThanOrEqual(4)
+    const boards = await requireSeededSectors(request, auth.accessToken)
     const projectIndex = ['chromium-compact', 'chromium-standard', 'chromium-default']
       .indexOf(testInfo.project.name)
     const watchlistBoard = boards[Math.max(projectIndex, 0)]!
@@ -35,7 +28,7 @@ test.describe('板块行情工作台', () => {
     })
 
     try {
-      await openPageAndWaitForHeading(page, '/sectors', '板块行情')
+      await openPageAndWaitForHeading(page, '/sectors?keyword=E2E板块', '板块行情')
       await expect(page.getByTestId('sectors-workspace')).toBeVisible({ timeout: 20_000 })
       await expect(page.getByTestId('sectors-chart-title')).toHaveText(boards[0]!.name)
       const compareChart = page.getByTestId('sectors-compare-chart')
@@ -129,6 +122,14 @@ test.describe('板块行情工作台', () => {
       expect((volumeBounds?.y ?? 0) + (volumeBounds?.height ?? 0))
         .toBeLessThanOrEqual((chartBounds?.y ?? 0) + (chartBounds?.height ?? 0))
 
+      // 原生历史返回与显式返回是两条独立契约：后退恢复列表现场，前进仍回到同一详情。
+      await page.goBack()
+      await expect(page).toHaveURL(/\/sectors(?:\?|$)/)
+      await expect(page.getByTestId('sectors-workspace')).toBeVisible()
+      await page.goForward()
+      await expect(page).toHaveURL(new RegExp(`/sectors/${boards[3]!.board_code}`))
+      await expect(page.getByTestId('sector-detail-page')).toBeVisible()
+
       await page.getByTestId('page-settings-trigger').click()
       const detailDrawer = page.getByTestId('page-settings-drawer')
       await expect(detailDrawer).toBeVisible()
@@ -210,17 +211,9 @@ test.describe('板块行情工作台', () => {
     ]))
     expect(me.permissions).not.toContain('stocks:view')
 
-    const sectorResponse = await request.get(`${API_URL}/sectors`, {
-      headers: { authorization: `Bearer ${auth.accessToken}` },
-      params: { page: 1, size: 1, sort_by: 'pct_today', order: 'desc' },
-    })
-    expect(sectorResponse.ok()).toBe(true)
-    const sample = (await sectorResponse.json()).data.list[0] as {
-      board_code: string
-      name: string
-    }
+    const sample = (await requireSeededSectors(request, auth.accessToken))[0]!
 
-    await openPageAndWaitForHeading(page, '/sectors', '板块行情')
+    await openPageAndWaitForHeading(page, '/sectors?keyword=E2E板块', '板块行情')
     await expect(page.getByTestId('sectors-workspace')).toBeVisible({ timeout: 20_000 })
     const nextPage = page.getByRole('button', { name: '下一页' })
     await expect(nextPage).toBeEnabled()
@@ -233,7 +226,7 @@ test.describe('板块行情工作台', () => {
     await page.getByTestId('sectors-keyword').press('Enter')
     await expect(page.getByTestId(`sectors-row-${sample.board_code}`)).toBeVisible()
     await expect(page).toHaveURL(new RegExp(`keyword=${encodeURIComponent(sample.name)}`))
-    await page.getByTestId('sectors-keyword').fill('')
+    await page.getByTestId('sectors-keyword').fill('E2E板块')
     await page.getByTestId('sectors-keyword').press('Enter')
 
     await page.getByTestId('page-settings-trigger').click()
@@ -270,5 +263,62 @@ test.describe('板块行情工作台', () => {
     await page.goto('/stocks/600000.SH')
     await expect(page).toHaveURL(/\/sectors(?:\/[^/?]+)?(?:\?|$)/)
     expect(consoleIssues).toEqual([])
+  })
+
+  test('板块列表空态与错误重试使用确定性接口场景', async ({ page, request }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-standard', '状态分支仅在标准视口执行')
+    const auth = await loginAsDebugUser(page, request, 'debug_system')
+    const seeded = await requireSeededSectors(request, auth.accessToken)
+
+    let mode: 'empty' | 'error' | 'real' = 'empty'
+    await page.route('**/api/sectors**', async (route) => {
+      const url = new URL(route.request().url())
+      if (route.request().method() !== 'GET' || ![
+        '/api/sectors',
+        '/api/sectors/watchlist/markets',
+      ].includes(url.pathname)) {
+        await route.fallback()
+        return
+      }
+      if (mode === 'error') {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 500, msg: 'E2E 板块列表故障' }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: {
+            list: mode === 'real' ? seeded : [],
+            total: mode === 'real' ? seeded.length : 0,
+            page: 1,
+            size: 20,
+            trade_date: '2099-07-17',
+            fund_flow_date: '2099-07-17',
+          },
+        }),
+      })
+    })
+
+    await openPageAndWaitForHeading(page, '/sectors?keyword=E2E板块', '板块行情')
+    await expect(page.getByText('没有匹配板块，换个关键词试试', { exact: true })).toBeVisible()
+
+    mode = 'error'
+    await page.reload()
+    await expect(page.getByText('板块行情加载失败', { exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('main').getByText('E2E 板块列表故障', { exact: true }),
+    ).toBeVisible()
+
+    mode = 'real'
+    await page.getByRole('button', { name: '重试', exact: true }).click()
+    await expect(page.getByTestId('sectors-workspace')).toBeVisible()
+    await expect(page.locator('[data-testid^="sectors-row-"]').first()).toBeVisible()
   })
 })

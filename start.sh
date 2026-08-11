@@ -12,6 +12,7 @@
 #   ./start.sh dev-users [参数]  在统一本机环境下维护调试账号
 #   ./start.sh e2e-user [参数]   Playwright 临时用户内部入口
 #   ./start.sh e2e-backtest-run [参数]  Playwright 公开回测内部入口
+#   ./start.sh e2e-board-data seed|cleanup  Playwright 板块行情 DuckDB 夹具
 #
 # 设计要点：
 #   - 独立 session 脱离会话：AI 跑别的命令 / 终端关闭 / 对话结束都不会误杀（解决"老挂"）。
@@ -159,8 +160,12 @@ case "${1:-dev}" in
     shift
     "$PY" -m backend.devtools.e2e_backtest_runs "$@"
     ;;
+  e2e-board-data)
+    shift
+    "$PY" -m backend.devtools.e2e_board_data "$@"
+    ;;
   *)
-    echo "用法: ./start.sh [dev|prod|stop|restart|status|logs|dev-users|e2e-user|e2e-backtest-run]"
+    echo "用法: ./start.sh [dev|prod|stop|restart|status|logs|dev-users|e2e-user|e2e-backtest-run|e2e-board-data]"
     exit 1
     ;;
 esac

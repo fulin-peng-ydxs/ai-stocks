@@ -7,8 +7,9 @@
 - **涨幅 pct_today/pct_5d/pct_10d/pct_20d 从 `board_bar` 实时计算**（最近交易日收盘 vs
   N 个交易日前收盘），不从 `board_fund_flow` 周期表读（资金流周期 net_ratio 是资金面数据，
   不参与价格排序）。
-- **领涨股默认取 `board_fund_flow.leader_stock/leader_pct` 且与「即时净流入」同一
-  `(snapshot_date, period='即时')` 行**；无资金流数据的板块该列空值「—」。
+- **领涨股** = 行情截面日有效成分股中 `pct_chg` 最大者；停牌、缺收盘或缺有效前收者排除，
+  同涨幅按成交额降序、股票代码升序稳定决胜。资金流源自带的领涨字段仅保留原始数据，
+  不参与页面口径。
 - **成分数** = `board_dict.member_count` 最近完整源快照的当前成分数；成员分页的 `total`
   才是 `board_member` 累计出现过的关系数，两种口径不得混称。
 - **上涨/下跌家数** = 该交易日有效成分股个股 `close` vs `pre_close`；平盘/停牌/缺行情不计入。
@@ -107,9 +108,9 @@ class BoardQueryService:
             """)
         # 2. board_bar 涨幅（最近 vs N 交易日前收盘，截面 bar_date）
         bar_ts = self._bar_close_series(bar_date)
-        # 3. board_fund_flow 即时净流入 + 领涨股（最新 snapshot_date period='即时'）
+        # 3. board_fund_flow 即时净流入（最新 snapshot_date period='即时'）
         fund_df = self._immediate_fund_flow(fund_date)
-        advance_decline = self._advance_decline_by_board(bar_date)
+        member_market = self._member_market_by_board(bar_date)
 
         rows = []
         for _, r in df.iterrows():
@@ -134,18 +135,17 @@ class BoardQueryService:
             else:
                 for key in _PCT_WINDOW:
                     row[key] = None
-            # 即时资金流 + 领涨股（同一 snapshot 行）
+            # 即时资金流只承载资金面指标；领涨股按行情截面从有效成分股计算。
             ff = fund_df.get(code)
             if ff is not None:
                 row["net_inflow"] = ff["net_inflow"]
-                row["leader_stock"] = ff["leader_stock"]
-                row["leader_pct"] = ff["leader_pct"]
             else:
                 row["net_inflow"] = None
-                row["leader_stock"] = None
-                row["leader_pct"] = None
-            # 涨跌家数（累计成分关系中，该交易日有行情者的 close vs pre_close）
-            row["up_count"], row["down_count"] = advance_decline.get(code, (0, 0))
+            market = member_market.get(code)
+            row["up_count"] = market["up_count"] if market else 0
+            row["down_count"] = market["down_count"] if market else 0
+            row["leader_stock"] = market["leader_stock"] if market else None
+            row["leader_pct"] = market["leader_pct"] if market else None
             rows.append(row)
         return rows
 
@@ -168,36 +168,64 @@ class BoardQueryService:
         return out
 
     def _immediate_fund_flow(self, fund_date: date | None) -> dict[str, dict]:
-        """最新 snapshot_date 的 period='即时' 行（净流入 + 领涨股），key=board_code。"""
+        """最新 snapshot_date 的 period='即时' 净流入，key=board_code。"""
         if fund_date is None:
             return {}
         df = self.c.query_df(
-            "SELECT board_code, net_inflow, leader_stock, leader_pct "
+            "SELECT board_code, net_inflow "
             "FROM board_fund_flow WHERE snapshot_date = ? AND period = '即时'", [fund_date])
         out: dict[str, dict] = {}
         for _, r in df.iterrows():
             out[str(r["board_code"])] = {
                 "net_inflow": r["net_inflow"],
-                "leader_stock": None if r["leader_stock"] is None or str(r["leader_stock"]) == "nan" else str(r["leader_stock"]),
-                "leader_pct": r["leader_pct"],
             }
         return out
 
-    def _advance_decline_by_board(self, bar_date: date | None) -> dict[str, tuple[int, int]]:
-        """一次聚合全部板块涨跌家数，避免列表逐板块 N+1 查询。"""
+    def _member_market_by_board(self, bar_date: date | None) -> dict[str, dict]:
+        """一次聚合涨跌家数与当日领涨股，避免列表逐板块 N+1 查询。"""
         if bar_date is None:
             return {}
         df = self.c.query_df(
             """
-            SELECT m.board_code,
-                   count(*) FILTER (WHERE b.close > b.pre_close) AS up,
-                   count(*) FILTER (WHERE b.close < b.pre_close) AS down
-            FROM board_member m
-            JOIN daily_bar b ON b.code = m.code AND b.trade_date = ?
-            GROUP BY m.board_code
+            WITH quotes AS (
+                SELECT m.board_code, b.code, s.name, b.close, b.pre_close, b.amount,
+                       CASE
+                         WHEN b.close IS NOT NULL AND b.pre_close IS NOT NULL
+                              AND b.pre_close > 0 AND NOT coalesce(b.is_suspended, false)
+                         THEN (b.close / b.pre_close - 1) * 100
+                       END AS pct_chg
+                FROM board_member m
+                JOIN daily_bar b ON b.code = m.code AND b.trade_date = ?
+                LEFT JOIN stock_basic s ON s.code = b.code
+            ), ranked AS (
+                SELECT *, row_number() OVER (
+                    PARTITION BY board_code
+                    ORDER BY pct_chg DESC NULLS LAST, amount DESC NULLS LAST, code ASC
+                ) AS leader_rank
+                FROM quotes
+            )
+            SELECT board_code,
+                   count(*) FILTER (WHERE pct_chg IS NOT NULL AND close > pre_close) AS up,
+                   count(*) FILTER (WHERE pct_chg IS NOT NULL AND close < pre_close) AS down,
+                   max(CASE WHEN leader_rank = 1 AND pct_chg IS NOT NULL
+                            THEN coalesce(nullif(trim(name), ''), code) END) AS leader_stock,
+                   max(CASE WHEN leader_rank = 1 THEN pct_chg END) AS leader_pct
+            FROM ranked
+            GROUP BY board_code
             """, [bar_date])
         return {
-            str(r["board_code"]): (int(r["up"] or 0), int(r["down"] or 0))
+            str(r["board_code"]): {
+                "up_count": int(r["up"] or 0),
+                "down_count": int(r["down"] or 0),
+                "leader_stock": (
+                    None if r["leader_stock"] is None or str(r["leader_stock"]) == "nan"
+                    else str(r["leader_stock"])
+                ),
+                "leader_pct": (
+                    None if r["leader_pct"] is None or pd.isna(r["leader_pct"])
+                    else round(float(r["leader_pct"]), 2)
+                ),
+            }
             for _, r in df.iterrows()
         }
 
@@ -225,7 +253,7 @@ class BoardQueryService:
         fund_date = self._latest_fund_date()
         bar = self._bar_close_series(bar_date).get(code)
         ff = self._immediate_fund_flow(fund_date).get(code)
-        up, down = self._advance_decline_by_board(bar_date).get(code, (0, 0))
+        market = self._member_market_by_board(bar_date).get(code)
         out = {
             "board_code": str(r["board_code"]),
             "app_code": str(r["app_code"]) if r["app_code"] is not None and str(r["app_code"]) != "nan" else None,
@@ -239,7 +267,8 @@ class BoardQueryService:
             "has_fund_flow": bool(r["has_fund_flow"]),
             "trade_date": str(bar_date) if bar_date else None,
             "fund_flow_date": str(fund_date) if fund_date else None,
-            "up_count": up, "down_count": down,
+            "up_count": market["up_count"] if market else 0,
+            "down_count": market["down_count"] if market else 0,
         }
         if bar is not None:
             for key, lookback in _PCT_WINDOW.items():
@@ -249,12 +278,10 @@ class BoardQueryService:
                 out[key] = None
         if ff is not None:
             out["net_inflow"] = ff["net_inflow"]
-            out["leader_stock"] = ff["leader_stock"]
-            out["leader_pct"] = ff["leader_pct"]
         else:
             out["net_inflow"] = None
-            out["leader_stock"] = None
-            out["leader_pct"] = None
+        out["leader_stock"] = market["leader_stock"] if market else None
+        out["leader_pct"] = market["leader_pct"] if market else None
         return out
 
     # ── 指数区间序列 ─────────────────────────────────────────

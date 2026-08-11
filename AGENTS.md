@@ -99,13 +99,14 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 - 涉及页面、组件、样式、表格、弹窗、抽屉时，计划必须说明是否触发页面设计闭环和组件/布局维护矩阵。
 - 涉及真实用户点击链路的页面改动，应按 `agent-works/e2e-automation/guide.md` 判断是否必须复用、更新或新增 Playwright E2E。E2E 只使用稳定 `data-testid`、可访问名称或项目 helper，不使用坐标、脆弱 CSS 层级或临时中文正文匹配作为长期选择器。
 - `./start.sh e2e-backtest-run seed|cleanup` 是回测 Playwright E2E 的可清理公开回测夹具（`backend/devtools/e2e_backtest_runs.py`，经 `frontend/e2e/helpers/backtestRuns.ts` 调用）：以固定调试账号显式归属真实跑一条跨 owner 公开策略回测（`e2e_bt_` 前缀 + opaque run_ref）或按前缀精确清理（含 backtest_run_reuse 审计）。同 `dev-users` 受 `AI_STOCKS_ENV=dev|test|local` + `AI_STOCKS_E2E_WRITE=1` 双重门控，并经 `/api/health/e2e` 的 PG 指纹校验防误写他库。因 DuckDB 单文件写锁互斥，夹具进程独占写锁时被测后端必须以 `AI_STOCKS_DUCKDB_READ_ONLY=1` 只读启动；该 spec 与需 DuckDB 写的其余 E2E 须分开运行（读写模式跑全量排除此 spec，只读模式单跑此 spec）。
+- `./start.sh e2e-board-data seed|cleanup` 是板块工作台的确定性 DuckDB 夹具，仅写 `E2E9*` 板块、`9999*.SZ` 股票和 2099 年固定行情；同样受本地环境 + `AI_STOCKS_E2E_WRITE=1` 双重门控。seed/cleanup 时必须先停后端，聚焦回归统一使用 `cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:sectors`，脚本负责停服、夹具生命周期和恢复原后端状态。
 - 跑**全量 Playwright**（多 spec 三视口并行）时，被测后端还须额外 `AI_STOCKS_E2E_LOGIN_BYPASS=1`：三视口为独立 worker 进程，各自密集 `POST /auth/login`（同源 127.0.0.1），不豁免会撞 `login_rate_per_min`（默认 10/min）单 IP 限流导致大面积登录失败。该豁免三重门控（环境白名单 + `AI_STOCKS_E2E_WRITE=1` + 本变量），仅放开 login 的 IP 限流，回归结束后重启后端移除。
 
 ## 协作与提交
 
 - 除命令、代码、日志和原文外，面向用户输出使用简体中文。
 - 改代码前先读同类实现并优先复用；偏离既有分层、命名、返回结构、异常、日志或配置方式时说明理由。
-- 最近一次 `git pull` 操作时间：2026-08-11 18:33:49 CST。
+- 最近一次 `git pull` 操作时间：2026-08-12 00:01:45 CST。
 - 技术方案、交互设计或关键业务规则不确定时，先给推荐方案与理由让用户确认。
 - 不在用户未要求时提交或推送；提交信息使用中文语义化风格，例如 `Agent 新增(基础功能): ...`。
 - 不提交 `data/` 本地数据库、`logs/`、个人环境配置或密钥。`prod` 绑定 `0.0.0.0:8000`，公网部署必须配合反向代理、TLS、限流和运维访问控制。

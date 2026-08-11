@@ -343,8 +343,8 @@ board_fund_flow   板块资金流
 - **参数白名单**：`/api/sectors` 允许 `trade_date`（可选，指定交易日；缺省=最新交易日）、`board_type(concept|industry)`、`sort_by`（**稳定字段码**：`pct_today|pct_5d|pct_10d|pct_20d|net_inflow|up_count`，中文标签仅 UI 层映射）、`order(asc|desc)`、`keyword`、`page`、`size`；未知参数拒绝。
 - **响应字段**：板块名、**路径 code + App code(clid)**、类型、成分数、今日/5日/10日/20日涨幅、即时净流入及数据日期、领涨股、能力字段、`trade_date`（本次查询实际生效交易日）。
 - **日期口径**：`trade_date` 指定时，涨幅/成分数/净流入均按该交易日截面计算（`board_bar`/`board_member`/`board_fund_flow` 按 `trade_date <= D` 最近有效值）；缺省=最新交易日。
-- **用户可见统计口径**：今日涨幅按板块最近交易日收盘价相对上一交易日收盘价计算；5/10/20 日涨幅分别按最近交易日收盘价相对 5/10/20 个交易日前收盘价计算，历史不足时显示「—」，不得缩窗代算。上涨/下跌家数按该交易日有效成分股的个股 `close` 与 `pre_close` 比较；平盘、停牌或缺少有效行情不计入上涨/下跌，成分股总数仍按有效成员关系统计。
-- **最新交易日口径**：涨幅和上涨/下跌家数基于 `board_bar` 最近交易日；资金流基于 `board_fund_flow` 最近 snapshot_date；两处日期在响应中显式返回。
+- **用户可见统计口径**：今日涨幅按板块最近交易日收盘价相对上一交易日收盘价计算；5/10/20 日涨幅分别按最近交易日收盘价相对 5/10/20 个交易日前收盘价计算，历史不足时显示「—」，不得缩窗代算。上涨/下跌家数按该交易日有效成分股的个股 `close` 与 `pre_close` 比较；平盘、停牌或缺少有效行情不计入上涨/下跌。领涨股取同一行情交易日有效成分股中 `pct_chg` 最大者，停牌、缺收盘或缺有效前收者排除；同涨幅按成交额降序、股票代码升序稳定决胜。成分股总数仍按最近完整源快照统计。
+- **最新交易日口径**：涨幅、上涨/下跌家数和领涨股基于用户所选或 `board_bar` 最近交易日；资金流基于 `board_fund_flow` 最近 snapshot_date；两处日期在响应中显式返回。资金流源自带 `leader_stock/leader_pct` 仅保留原始数据，不作为页面领涨股。
 - **空值处理**：无 `board_bar` 的板块涨幅列为空；无资金流则净流入列为空；页面按空值显示「—」。
 - **错误码**：404 板块不存在；400 非法参数；403 无权限。
 - **排序字段契约**：`sortFields` 登记 `pct_today/pct_5d/pct_10d/pct_20d/net_inflow/up_count` 等字段码并接入 `defaultSort`；接口 `sort_by` 与 `sortFields` 字段码一致（中文仅 UI 展示）。
@@ -367,12 +367,12 @@ board_fund_flow   板块资金流
 - **页面布局**：
   - 布局事实源：对齐 `prototypes/sector-board.html`
   - 页面区域：
-    - action 区（`AppControlRow`）：**板块类型筛选下拉**（全部/概念/行业，`el-select`，对齐列表筛选范式）、**日期控件（`TradeDatePicker`，默认最新交易日可回看历史）**、**名称搜索框**（自由文本检索，`el-input` + 防抖，非 `AppFilterSelect`——`AppFilterSelect` 是下拉多选，不承载自由文本检索）、**查询主命令按钮**（`el-button type="primary"`）
-    - main 区（`AppDataTable` growMain）：板块列表，服务端分页 + 排序 + 列显隐
-  - 主次关系：筛选区在上、主表成长区占主体；无侧栏。
-  - 核心模块与数据区：主表列 = 板块名称(link) | 成分股数 | 上涨/下跌家数 | **今日涨幅 | 5日涨幅 | 10日涨幅 | 20日涨幅** | 即时净流入(含数据日期) | 领涨股及涨幅；涨跌幅用 `--market-up/down-color`，数字右对齐。
+    - action 区：页面标题、设置入口、全市场/自选分段、板块类型、交易日期和名称搜索。
+    - main 区：左侧板块排行表，右侧当前板块走势/K 线分析；列表与图表同屏联动。
+  - 主次关系：板块排行负责选择观察对象，图表负责走势分析；窄视口降级为单列。
+  - 核心模块与数据区：排行表列 = 板块（名称下方合并类型/成分数）| 今日涨幅 | 5日涨幅 | 即时净流入（表头标数据日）；当前观察摘要补充 20 日涨幅、涨跌家数和领涨股。
   - **排序口径（2026-08-11 修订）**：排序走通用**列头排序** + `defaultSort` 配置（对齐 StocksView，sortable 列 = 各涨跌幅/净流入/上涨家数，默认今日涨幅降序）。**不单设「主排序周期」控件**——周期属数据窗口、与列头排序重复；详情页范围统一走 `KlineRangeSelect`。资金流固定展示最新交易日即时净流入，列名/提示标注数据日期；资金流周期数据继续采集但不参与价格排序。
-  - **行交互口径**：**仅点板块名称**进详情；点击行其他区域不跳转（与上游确认一致）。
+  - **行交互口径**：点击行或名称切换当前观察板块，勾选框只管理附加对比；「查看详情」按钮进入当前板块详情。
   - 弹窗/抽屉/设置入口：`PageSettingsDrawer`（布局/组件设置/业务选项；业务选项含默认板块类型偏好）。
   - 关键状态与退化：empty→引导去采集页；error→`AppStateBlock` 重试；loading→`v-loading`；无权限→permission 无权态；窄视口→主表内部滚动。
 - **数据来源**：`/api/sectors`（join board_dict + board_bar 涨幅 + board_fund_flow 即时净流入 + board_member 成分计数）。
@@ -394,7 +394,7 @@ board_fund_flow   板块资金流
 **偏好优先级**：**URL query > 已保存偏好 > 默认值**。URL 带筛选参数（含来自详情的来源 query）优先；无 URL query 时用 `usePageSettings` 已保存偏好；均无则默认值。
 
 **pageRegistry/组件契约（列表页，正文登记）**：
-- `sectors` pageKey：`getPageLayout('sectors')`，原型 `list`，`responsiveProfile: 'single-column'`，slot `action(filter-bar) + main(data-table)`（`data-table` 为 growMain），`supportsPageSettings !== false` → **`overlay:settings-drawer` 自动补登**（pageRegistry 对开放个人设置的页面自动补，见 pageRegistry.ts P13 注释）。
+- `sectors` pageKey：`getPageLayout('sectors')`，原型 `master-detail`，`responsiveProfile: 'single-column'`，slot `action(filter-bar) + main(workspace) + workspace/table + workspace/chart`，`supportsPageSettings !== false` → **`overlay:settings-drawer` 自动补登**。
 - `componentMeta['table'].columns`：`name/pct_today/pct_5d/net_inflow`；`sortFields`：`pct_today/pct_5d/net_inflow`（与当前表格和接口排序字段一致）。
 - `consumedComponentFields`：`sectors` 消费 `data-table` 的 `pageSize/defaultSort/hiddenColumns`（`border` 自动补登）。
 - `minWidth=0` 基础断点；主表内滚兜底。
@@ -412,14 +412,14 @@ board_fund_flow   板块资金流
 - 错误状态：`AppStateBlock` error 带重试。
 - 权限不足状态：`AppStateBlock` permission 无权态。
 - 数据刷新：筛选/排序/翻页变化自动查询。
-- 与其他功能点联动：**点板块名**进详情页；点行其他区域不跳转。
+- 与其他功能点联动：点行切换观察对象；「查看详情」进入当前板块详情。
 - 验收标准：R7、R10
 
 #### 7.1.2 页面功能点：板块列表主表
 
 - 对应需求编号：R7
-- 默认展示：列 = 名称/成分数/涨跌家数/今日/5日/10日/20日涨幅/即时净流入/领涨股。
-- 用户操作：列头排序（涨跌幅列头同步当前周期控件）、翻页、**点板块名进详情**、列显隐（设置抽屉）。
+- 默认展示：列 = 板块（类型/成分数合并展示）/今日/5日/即时净流入；20日涨幅、涨跌家数和领涨股在当前观察摘要展示。
+- 用户操作：今日/5日/净流入列头排序、翻页、点行切换观察对象、勾选附加对比、通过当前观察区「查看详情」进入详情、列显隐（设置抽屉）。
 - 状态变化：排序/分页触发查询。
 - 验收标准：R7（主表排序/分页/列显隐；不含详情成分股分页 R13，R13 归详情页）
 

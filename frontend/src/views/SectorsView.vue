@@ -47,7 +47,11 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { hasPermission } from '@/utils/permission'
-import { sanitizeSectorSourceQuery, toLocationQuery } from '@/utils/sectorNavigation'
+import {
+  resolveSectorListState,
+  sanitizeSectorSourceQuery,
+  toLocationQuery,
+} from '@/utils/sectorNavigation'
 
 const route = useRoute()
 const router = useRouter()
@@ -477,23 +481,17 @@ function fmtFlowDate(value: string | null): string {
 onMounted(async () => {
   await whenHydrated()
   await ensureLoaded().catch(() => undefined)
-  const query = sanitizeSectorSourceQuery(route.query)
+  const resolved = resolveSectorListState(route.query, settings, canViewWatchlist.value)
+  const query = resolved.query
   restoring = true
   if (!tradeDate.value) tradeDate.value = dataMax.value || ''
-  boardType.value = query.type ?? (TYPE_OPTIONS.some((option) => option.value === settings.defaultType)
-    ? settings.defaultType
-    : '')
-  const savedScope = settings.defaultScope === 'watchlist' ? 'watchlist' : 'all'
-  listScope.value = canViewWatchlist.value && (query.scope ?? savedScope) === 'watchlist'
-    ? 'watchlist'
-    : 'all'
-  chartMode.value = settings.defaultChartMode === 'kline' ? 'kline' : 'compare'
-  benchmarkCode.value = BENCHMARK_OPTIONS.some((option) => option.value === settings.benchmarkCode)
-    ? settings.benchmarkCode
-    : '000905.SH'
+  boardType.value = resolved.boardType
+  listScope.value = resolved.listScope
+  chartMode.value = resolved.chartMode
+  benchmarkCode.value = resolved.benchmarkCode
   if (query.date) tradeDate.value = query.date
-  keyword.value = query.keyword ?? ''
-  page.value = query.page ? Number(query.page) : 1
+  keyword.value = resolved.keyword
+  page.value = resolved.page
   size.value = defaultSize.value
   if (query.sort) {
     onTableSortChange({

@@ -61,7 +61,7 @@ R1、R2、R3、R4、R5、R6、R7、R8、R9、R10、R21、R22、R23（逐项映�
 
 - **数据流**：`ThsBoardSource`（直连 `q.10jqka.com.cn` / `data.10jqka.com.cn`，复用 akshare 打包的 `ths.js` 经 `py_mini_racer` 生成 v cookie，不调用 akshare 板块接口）→ `BoardIngestService`（字典两阶段 / 成分快照只进不出 / 指数 / 资金流名称映射）→ DuckDB 4 表 → `BoardQueryService`（只读聚合，单次全查内存合并，遵循双库边界）→ `/api/sectors*` → 前端页面。
 - **成分采集完整性闭环**（R2，只进不出）：完整快照（`complete=True`）`INSERT ON CONFLICT DO NOTHING` 落库 + 刷新 `member_count`；不完整快照（`complete=False`）整趟不落库 → `data_update_log` failed + 写 `board_member_incomplete` issue → 数据质量页「重采成分」（fix 分派重采该板块，完整后合并）。**候选机制已废弃**（2026-08-09 只进不出改造，见 T9/T13）。
-- **接口契约**：`/api/sectors` 参数白名单（`trade_date/board_type/sort_by/order/keyword/page/size`），`sort_by` 字段码 `pct_today|pct_5d|pct_10d|pct_20d|net_inflow|up_count`；统计口径（涨幅按收盘价比对、历史不足显示「—」不缩短周期、涨跌家数按成分股 `close` vs `pre_close` 且平盘/停牌/缺行情不计入）严格按需求 §6.2 契约要点实现；**领涨股及涨幅默认口径取 `board_fund_flow.leader_stock/leader_pct` 且与「即时净流入」同一 `(snapshot_date, period='即时')` 行（口径待确认项，见 §10.3）——无资金流数据的板块该列显示「—」**（不走「当日成分股涨幅第一」另行计算，口径单一）。
+- **接口契约**：`/api/sectors` 参数白名单（`trade_date/board_type/sort_by/order/keyword/page/size`），`sort_by` 字段码 `pct_today|pct_5d|pct_10d|pct_20d|net_inflow|up_count`；统计口径（涨幅按收盘价比对、历史不足显示「—」不缩短周期、涨跌家数按成分股 `close` vs `pre_close` 且平盘/停牌/缺行情不计入）严格按需求 §6.2 契约要点实现；**领涨股及涨幅按行情截面日有效成分股 `pct_chg` 最大者计算，停牌/缺有效前收排除，同涨幅按成交额降序、股票代码升序决胜；资金流源自带领涨字段仅原始留存**。
 - **双口径边界（T8 必须遵守）**：列表/详情页的 **5日/10日/20日涨幅列与可排序涨跌幅字段（`pct_5d/pct_10d/pct_20d`）= 板块指数价格涨跌幅，T8 查询时从 `board_bar` 日线实时计算**（最近交易日收盘 vs N 个交易日前收盘，`trade_date <= D` 截面语义），**不是**从 `board_fund_flow` 周期表读取；`board_fund_flow` 的 3日/5日/10日/20日周期（含 `net_ratio` 阶段涨跌幅）是资金面数据、本期页面只展示「即时」、不参与价格排序（需求 §7.1「资金流 3/5/10/20 日数据继续采集但不参与价格排序」）。严禁把资金流周期表的 `net_ratio` 当价格涨幅用。
 - **权限策略**：`sectors:view` 进 `BUSINESS_RESOURCE_CODES`（业务授权，非登录基线）；后端 `require_perm('sectors:view')` 守卫；采集操作 system-only（`data-task:manage` / `data-quality:view|fix`）；既有库一次性回填授权 + 同事务 bump `perm_ver`（marker 幂等）。
 - **兼容策略**：`board_bar` 存原值不套复权链；`stock_basic.concept` 不写；新增表与 seed 全部幂等；`ThsBoardSource` 限速 ≥1s/次 + 分批断点。
@@ -73,7 +73,7 @@ R1、R2、R3、R4、R5、R6、R7、R8、R9、R10、R21、R22、R23（逐项映�
 #### 页面定位
 
 - 页面类型：P1 板块行情列表页（新增，list 原型）；P2 板块详情页（新增，detail 原型）。**P3 数据质量页候选操作列已废弃（2026-08-09 只进不出改造，见 T13）**——质量页经 `board_member_incomplete` 重采闭环恢复成分采集。
-- 用户主流程：列表筛选/排序/搜索 → 点板块名进详情 → 看指数走势与成分股 → 跳个股行情；系统管理员在数据质量页对 `board_member_incomplete` 行「重采成分」。
+- 用户主流程：列表筛选/排序/搜索 → 点行切换观察板块 → 当前观察区查看详情 → 看指数走势与成分股 → 跳个股行情；系统管理员在数据质量页对 `board_member_incomplete` 行「重采成分」。
 - 是否新页面：P1/P2 是；P3 改造已有页面（QualityView）。
 - 是否改造已有页面：P3 是（仅表格列与操作扩展）。
 
@@ -117,7 +117,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 #### 控件与操作规范
 
-- 主操作：P1 列头排序/翻页/点板块名；P2 周期切换/日期控件/翻页/返回；P3 对 `board_member_incomplete` / `board_index_gap` / `board_fund_unmatched` 问题复用质量页「修复」动作（异步 `:loading`）。
+- 主操作：P1 列头排序/翻页/点行切换/勾选附加对比/查看当前板块详情；P2 周期切换/日期控件/翻页/返回；P3 对 `board_member_incomplete` / `board_index_gap` / `board_fund_unmatched` 问题复用质量页「修复」动作（异步 `:loading`）。
 - 纯图标操作：本期无新增纯图标操作；如有图标按钮一律 `AppIconButton`。
 - 专用原生按钮例外：无。
 - 自检结论：无随机按钮样式，无 Unicode 图标。
@@ -136,14 +136,14 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 - 原型文件：`prototypes/sector-board.html`。当前承接区域：顶部筛选区（全市场/自选、板块类型、日期、搜索）、板块排行（板块/今日/5日/净流入）、同屏走势区、表体内部滚动与分页、设置抽屉和数据/空/错误/加载四态。原型只提供信息架构参考，当前重构后的同屏列表与图表交互为实现事实源。
 - 原型与需求差异说明：
-  1. 原型用「上涨家数」「数据日」独立列展示，正式实现按需求 §7.1 合并为「上涨/下跌家数」列与「即时净流入(含数据日期)」列提示，列序以需求 §7.1.2 为准。
-  2. **列表页 `pageSize` 合法值冲突**：原型 `sector-board.html` 设置抽屉每页条数选项为 **10/20/30/50**（含 30），需求 §7.1 配置表为 **10/20/50**（无 30）。正式实现按**需求口径 10/20/50**（列表页与详情页 10/20/30/50 不同口径，已在 §4.1 主表行加粗声明）；此取舍为计划 vs 原型的显式冲突，**按需求为准**，实施时无需再向用户确认（需求为当前事实源），但须在开发留痕中记录此差异。
-  3. **领涨股取数来源**：原型列「领涨股及涨幅」，默认口径取 `board_fund_flow.leader_stock/leader_pct`（与即时净流入同一 `(snapshot_date, period='即时')` 行）；无资金流板块该列「—」（与需求 §6.2 空值处理一致，原型数据态不区分该场景）。**该口径在资金流日期 ≠ 涨幅日期时「展示资金流日领涨股」是否可接受为待确认项（见 §10.3）**。
+  1. 重构后的排行表只保留板块/今日/5日/净流入，类型与成分数合并到名称单元格，20日/涨跌家数/领涨股进入当前观察摘要；列表与图表同屏，点行只切换观察对象。
+  2. 列表页 `pageSize` 使用全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`；详情成分股保持业务专属 10/20/30/50。
+  3. **领涨股取数来源**：按所选行情交易日有效成分股 `pct_chg` 最大者计算；停牌、缺收盘或缺有效前收者排除，同涨幅按成交额降序、代码升序稳定决胜。资金流源字段不参与页面口径。
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 板块列表筛选（7.1.1） | R7、R10 | 默认全部板块 + 今日涨幅降序；切类型/排序/搜索（≤50 字符防抖） | action 区板块类型 `el-select`（全部/概念/行业）+ `TradeDatePicker` + `el-input` 防抖 + 查询主命令按钮；筛选态写 URL query（`type/sort/order/keyword/page`，`type` 为全部时省略）；偏好优先级 URL query > 已保存偏好 > 默认值 | SectorsView.vue、AppControlRow、TradeDatePicker、usePageSettings | `GET /api/sectors`（白名单参数） | 加载 `v-loading`；空态引导去采集页；错误 AppStateBlock 重试；无权限 permission 态 | T11 |
-| 板块列表主表（7.1.2） | R7 | 列头排序、服务端分页、仅点板块名进详情、列显隐 | AppDataTable growMain + AppTableColumn（语义角色，不声明宽度）+ AppPagination；排序走通用列头排序 + defaultSort 配置（与 StocksView 同链路，不另设周期控件）；`defaultSort/pageSize/hiddenColumns` 走 `componentValueOf('table', ...)`；**pageSize 走全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`（2026-08-11 用户裁定与通用组件一致，需求 §7.1 的 10/20/50 列表页专属口径作废）**；仅名称列渲染 router-link（携带来源 query 进详情 URL） | AppDataTable、AppTableColumn、AppPagination、pageRegistry `sectors` | `GET /api/sectors` | 空值列显示「—」；资金流列标注数据日期；分页越界回落 | T11 |
+| 板块排行与观察联动（7.1.2） | R7 | 列头排序、服务端分页、点行切换当前板块、勾选附加对比、列显隐 | AppDataTable + AppPagination 与右侧走势图组成 master-detail；`defaultSort/pageSize/hiddenColumns` 走 `componentValueOf('table', ...)`；pageSize 走全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`；「查看详情」位于当前观察身份区 | AppDataTable、AppPagination、SectorCompareChart、pageRegistry `sectors` | `GET /api/sectors` | 空值列显示「—」；资金流列标注数据日期；分页越界回落 | T11 |
 
 组件资产闭环（P1）：
 
@@ -157,9 +157,9 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 板块摘要卡（7.2.1） | R8、R14 | 名称/类型/成分数/今日涨幅/涨跌家数/即时净流入(含数据日期)/领涨股及涨幅；随路由 code 刷新 | 摘要区（DESIGN 统计项语义）；涨幅与净流入分别标注各自数据日期（board_bar 最近交易日 / fund_flow 最近 snapshot_date）；**领涨股默认取资金流同 snapshot 行 leader_stock（口径待确认，见 §10.3）** | SectorDetailView.vue | `GET /api/sectors/{code}` | 板块不存在 → error 态「板块不存在或数据未采集」；空值显示「—」 | T12 |
+| 板块摘要卡（7.2.1） | R8、R14 | 名称/类型/成分数/今日涨幅/涨跌家数/即时净流入(含数据日期)/领涨股及涨幅；随路由 code 刷新 | 摘要区（DESIGN 统计项语义）；涨幅与净流入分别标注各自数据日期；领涨股按行情截面日有效成分股涨幅第一计算 | SectorDetailView.vue | `GET /api/sectors/{code}` | 板块不存在 → error 态「板块不存在或数据未采集」；空值显示「—」 | T12 |
 | 板块指数走势图（7.2.2） | R8、R11 | 默认近 120 日；范围与个股统一；横向缩放限制在当前周期；走势默认对比中证 500，可切沪深 300/不对比；K 线高度可调整 | 列表/详情复用 `klineRangeQueryStart` 预取并按交易点精确截断，板块走势与指数基准共享截断日期；`SectorCompareChart` 以虚线区分市场指数并在 tooltip 计算超额涨跌；详情复用 `StockChartWorkspace` + `KlineRangeSelect` + `useStockChartPreferences`，K 线与量能联动，高度比例单独持久化 | SectorsView.vue、SectorDetailView.vue、StockChartWorkspace、SectorCompareChart、KlineRangeSelect、AppFilterSelect | `GET /api/sectors/{code}/bars`、`GET /api/sectors/benchmarks/{index_code}/bars` | 板块走势失败进入图表错误态；基准失败降级显示板块走势并在图表脚注明 | T12 |
-| 成分股表（7.2.3） | R8、R9、R13 | 统一分页（默认 20，抽屉可配 10/20/30/50，**与列表页 10/20/50 口径不同**）；列头排序（默认涨跌幅降序）；有 `stocks:view` 点行跳 `/stocks/:code`，无权限行禁用 + hover 提示；从个股返回原板块详情 | AppDataTable（嵌套 slot `memberTable`，parentId=detail）+ AppPagination；进入个股前通过共享 `stockSet` 写入当前成分股集合及 `route.fullPath` 返回地址，覆盖其它页面遗留集合；`componentValueOf('memberTable', ...)` 消费 pageSize/defaultSort/hiddenColumns | AppDataTable、AppPagination、stockSet、pageRegistry `sectors-detail` | `GET /api/sectors/{code}/members?page=&size=`（size 默认 20） | 空态/错误重试；直接访问 `/stocks/:code` 路由守卫 fail-closed（现有机制） | T12 |
+| 成分股表（7.2.3） | R8、R9、R13 | 统一分页（默认 20，抽屉可配 10/20/30/50）；列头排序（默认涨跌幅降序）；有 `stocks:view` 点行跳 `/stocks/:code`，无权限行禁用 + hover 提示；从个股返回原板块详情 | AppDataTable（嵌套 slot `memberTable`，parentId=detail）+ AppPagination；进入个股前通过共享 `stockSet` 写入当前成分股集合及 `route.fullPath` 返回地址，覆盖其它页面遗留集合；`componentValueOf('memberTable', ...)` 消费 pageSize/defaultSort/hiddenColumns | AppDataTable、AppPagination、stockSet、pageRegistry `sectors-detail` | `GET /api/sectors/{code}/members?page=&size=`（size 默认 20） | 空态/错误重试；直接访问 `/stocks/:code` 路由守卫 fail-closed（现有机制） | T12 |
 | 返回列表保留筛选态（R8） | R8 | 面包屑/返回按钮始终 `router.replace` 显式跳列表并带白名单校验后的来源 query；无/非法来源 query 落默认；不使用 `router.back()`；浏览器原生后退按 history 还原 | 列表 URL query 承载筛选态；进详情时来源 query 透传进详情 URL；返回前白名单校验（`type/sort/order/keyword/page`） | vue-router、SectorsView/SectorDetailView | - | 非法 query 逐字段丢弃落默认 | T12 |
 
 组件资产闭环（P2）：
@@ -321,13 +321,13 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 依赖：T4（数据来源）；**T10a（常量 + 资源 seed 前置部分）须先行或与 T8 同批交付**——T8 的 403/权限验收隐含依赖 `sectors:view` 进 `BUSINESS_RESOURCE_CODES` 与资源 seed，不可晚于 T8 收尾（T10a 依赖仅 T1，无环）
 - 涉及文件/模块：`backend/api/sectors.py`（新增路由）、`backend/services/board_query.py`（新增查询服务）、`backend/main.py`（挂路由）、`backend/tests/test_sectors_api*.py`（新增）
 - 目标：板块列表/详情/bars/members 四类只读接口及市场指数基准 bars 按需求 §6.2 契约要点实现。
-- 操作：参数白名单校验（未知参数 400）；`sort_by` 稳定字段码；统计口径（涨幅收盘价对比、历史不足「—」、涨跌家数口径、最新交易日双口径显式返回）；`trade_date` 截面语义；空值「—」；404/400/403；members 服务端分页（size 默认 20）；板块数 <600 单次全查内存合并（双库边界：只读 DuckDB，成分股现价/涨跌幅/换手取个股行情表同库关联）；**涨幅（pct_today/pct_5d/pct_10d/pct_20d）T8 查询时从 `board_bar` 实时计算，不从资金流周期表读（双口径边界见 §4）**；**领涨股默认取 `board_fund_flow.leader_stock/leader_pct` 且与「即时净流入」同一 `(snapshot_date, period='即时')` 行（该表每周期行各带 leader_stock/leader_pct，见需求 §6.1 表设计；口径待确认，见 §10.3）——无资金流数据的板块领涨股列显示「—」（空值口径，不走「当日成分股涨幅第一」另行计算，避免口径分裂）**；列表只展示 `has_members` 或 `has_bar` 为 true 的板块（承接需求 §2.5 并集字典展示口径）。
+- 操作：参数白名单校验（未知参数 400）；`sort_by` 稳定字段码；统计口径（涨幅收盘价对比、历史不足「—」、涨跌家数口径、最新交易日双口径显式返回）；`trade_date` 截面语义；空值「—」；404/400/403；members 服务端分页（size 默认 20）；板块数 <600 单次全查内存合并（双库边界：只读 DuckDB，成分股现价/涨跌幅/换手取个股行情表同库关联）；涨幅从 `board_bar` 实时计算，不从资金流周期表读；领涨股按行情截面日有效成分股 `pct_chg` 最大者计算，并在同一次聚合中得到涨跌家数；列表只展示 `has_members` 或 `has_bar` 为 true 的板块。
 - 产出：接口 + 服务 + 单测/接口测试（口径与 DuckDB 对账）。
 - 影响范围：新增只读接口，无既有接口变化。
 - 边界与异常：不跨库 JOIN；资金流数据日期与涨幅数据日期分别返回。
 - 验证方式：接口测试 + 与 DuckDB 抽验对账（涨幅/净流入/成分数）。
 - 完成标准：R7-R10、R13、R14 的数据层验收通过。
-- 实际落地情况：已实施（2026-08-09 T8 执行）——`backend/services/board_query.py` 新建 `BoardQueryService`（列表/详情/bars/members 四查询，单次全查内存合并；涨幅从 `board_bar` 实时计算、净流入+领涨股取资金流最新即时行、涨跌家数按成分股 close vs pre_close、分页排序过滤）；`backend/api/sectors.py` 新建 4 只读接口（`require_perm('sectors:view')` + 参数白名单 + 404/400）；`backend/main.py` 挂路由；`backend/tests/test_sectors_api.py` 8 用例全绿（涨幅口径/涨跌家数/排序分页/404/400/双口径边界——涨幅不读资金流周期表）。端到端实测：465 板块列表、详情/bars/members 数据正确、normal 用户可查、无授权 403 fail-closed。
+- 实际落地情况：`BoardQueryService` 提供列表/详情/bars/members 四查询；涨幅从 `board_bar` 实时计算，净流入取资金流最新即时行，领涨股与涨跌家数在一次成分股行情聚合中按所选交易日计算，避免 N+1；同涨幅按成交额/代码稳定决胜。接口参数白名单、404/400/403 与分页排序均有测试覆盖。
 
 ### 6.9 任务 T9：候选成分快照接口（查询/确认应用/丢弃）
 
@@ -413,17 +413,17 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 6.15 任务 T15：E2E、构建、视口与回归验收
 
-- 状态：已完成（2026-08-11 T15 执行）
+- 状态：已完成（2026-08-12 复核）
 - 依赖：T11、T12、T14
 - 涉及文件/模块：`frontend/e2e/`（新增 `sectors-*.spec.ts` 等）、[e2e guide](../e2e-automation/guide.md)、`frontend/dist`
 - 目标：R7-R14、R22、R23 的页面级验收与全量回归。
-- 操作：**板块 E2E 数据夹具先行**——测试 DuckDB 默认无板块数据，需按 `e2e_backtest_runs` 同款模式（`backend/devtools/` + `frontend/e2e/helpers/` + `AI_STOCKS_E2E_WRITE=1` 门控 + `/api/health/e2e` PG 指纹校验）提供板块列表/详情/成分的可清理 seed/cleanup 夹具；涉及 DuckDB 写的夹具与被测后端的读写模式拆分遵守 AGENTS.md E2E 门控规则。随后新增 Playwright 用例（稳定 `data-testid`/可访问名称/helper，不用坐标与脆弱 CSS）：列表切换/排序/搜索/分页/列显隐；详情摘要/走势图周期/成分股统一分页与排序；返回筛选态（面包屑显式跳列表还原 + 浏览器原生后退）；R9 权限两态（有/无 `stocks:view`）；质检页 `board_member_incomplete` 重采动作；空态/错误态。`npm run build`；关键视口 1100×620 / 1366×768 / 1440×900 无文本溢出且详情表体可读；按 e2e guide 判断是否并入回归集。跑全量 E2E 前后按 AGENTS.md 端口/锁/限流门控规则准备后端（5181、`AI_STOCKS_E2E_LOGIN_BYPASS=1` 等）。
+- 操作：**板块 E2E 数据夹具先行**——测试 DuckDB 默认无板块数据，通过 `backend/devtools/e2e_board_data.py`、`frontend/e2e/helpers/sectorData.ts` 与 `scripts/run-sector-e2e.sh` 提供列表/详情/成分/指数的可清理确定性夹具；受 `AI_STOCKS_ENV=dev|test|local` + `AI_STOCKS_E2E_WRITE=1` 双重门控，seed/cleanup 只在后端停服时执行并使用 E2E 专属主键。Playwright 覆盖列表切换/排序/搜索/分页/列显隐；详情摘要/走势图周期/成分股分页与排序；显式返回和浏览器原生后退/前进；R9 权限两态；质检重采；空态/错误重试。构建与三视口回归按 AGENTS.md 门控执行。
 - 产出：E2E 用例 + 构建产物 + 视口验收记录 + 回归结果。
 - 影响范围：交付质量门禁。
 - 边界与异常：E2E 选择器只用稳定契约；回归结束后重启后端移除限流豁免。
 - 验证方式：`cd frontend && npm run test:e2e`（含新用例与相关回归）+ `npm run build` + `python -m pytest backend/tests/ -q` 全量（遵守 DuckDB 锁规则）。
 - 完成标准：需求文档 §11 验收标准全部通过；`npm run build` 与后端全量测试绿。
-- 实际落地情况：扩展 `sectors-workbench.spec.ts`，补齐列表分页、5 日排序、关键字检索、列显隐与恢复默认，并保留三视口排行/指数基准/周期缩放/自选/对比/K 线/详情/量能/高度分隔条/返回链路；新增 `sector-quality-recovery.spec.ts`，以确定性接口夹具覆盖 `board_member_incomplete` 重采、任务完成和问题收敛。复用组件补充列开关稳定 test id，并将 E2E 基线同步到自动化指南。板块工作台集成链路继续读取本地真实板块数据（后端接口与 DuckDB 口径另有全量后端测试），质量恢复链路不写库；本轮未引入额外 DuckDB 写夹具，避免与被测后端争锁。发布验收中同时修正了三个与板块无关但被全量回归发现的陈旧契约：筛选资产侧栏 test id/xxl 抽屉宽度/只读标识、菜单功能点去冗余标签、个股主题按钮 test id。最终前端全量 84 文件 / 661 项通过，正式构建通过；普通读写 E2E 75 通过 / 24 按视口条件跳过，公开回测只读 E2E 3 通过；后端全量 861 项通过。回归结束后已恢复日常 dev 后端并确认 `/api/health=200`。
+- 实际落地情况：`backend/devtools/e2e_board_data.py` + `frontend/e2e/helpers/sectorData.ts` + `scripts/run-sector-e2e.sh` 提供受本地环境与 `AI_STOCKS_E2E_WRITE=1` 门控的确定性 seed/cleanup；只写 E2E 专属主键并在后端停服时写入。`sectors-workbench.spec.ts` 覆盖三视口排行、指数基准、周期缩放、自选、对比、K 线、量能、高度分隔条、菜单/个股/显式返回、浏览器原生后退/前进、列表空态与错误重试；`sector-quality-recovery.spec.ts` 覆盖成分重采收敛。工作台不再依赖本地真实板块数据。
 
 ## 7. 数据库与 SQL 计划
 
@@ -467,7 +467,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 计划：T2 适配器单测；T3 DDL/约束单测；T4 采集逻辑单测（diff/hash/同日冻结/资金流映射/**member_count 刷新时机**/事务原子性/**写锁冲突关键字归类与重试恢复**）；T6 daily 参数化矩阵；T7 质检规则与配置覆盖（含收敛不误删 `member_surge_shrink`、**Settings 模型/YAML/CONFIG_GROUPS 三环覆盖生效**）；T8 统计口径（含领涨股来源）；前端 Vitest（筛选态、偏好优先级、memberTable 字段消费、返回 query 白名单校验）。
   - 具体完成情况：T2 已落地——`test_ths_board_source.py` 20 用例全绿（含登录态 4 例，2026-08-09）；T3 已落地——`test_ddl.py` 17 用例全绿（含板块表/CHECK/表达式唯一索引 7 例，2026-08-09）；T4 已落地——`test_board_ingest.py` 13 用例全绿（diff/hash 幂等/候选/事务原子性/写锁归类/IN 占位符，2026-08-09）；T5 已落地——`test_data_mgmt_b.py` 板块任务 4 用例全绿（注册/执行/互斥/续跑，2026-08-09）；T6 已落地——`test_pipeline.py` 板块集成 4 用例全绿（默认执行/跳过/失败隔离/total_steps，2026-08-09）；T7 已落地——`test_data_mgmt_b.py` 板块质检 4 用例全绿（成分数波动/指数缺口/配置三环/收敛不误删，2026-08-09）
 - 接口测试：
-  - 计划：T8 四接口口径对账（涨幅/净流入/成分数 vs DuckDB，含领涨股来源 `board_fund_flow.leader_stock` 与即时净流入同 snapshot 行，口径以 §10.3 待确认结果为准）；T10a/T10b 权限（有/无 sectors:view、403）。**跨进程锁冲突集成测试（T4 新增断言）**：独立子进程持写锁 → 被测进程写事务归类返回 `duckdb_write_unavailable`、锁释放后重试恢复。
+  - 计划：T8 四接口口径对账（涨幅/净流入/成分数 vs DuckDB，领涨股按行情截面有效成分股涨幅第一且覆盖稳定决胜）；T10a/T10b 权限（有/无 sectors:view、403）。**跨进程锁冲突集成测试（T4 新增断言）**：独立子进程持写锁 → 被测进程写事务归类返回 `duckdb_write_unavailable`、锁释放后重试恢复。
   - 具体完成情况：T8 已落地——`test_sectors_api.py` 8 用例全绿（列表/详情/bars/members 口径、涨幅不读资金流周期表、涨跌家数、排序分页、404/400）；T10a/T10b 已落地——`test_rbac_deps.py` sectors:view 权限用例（有授权过/无授权 403）+ 回填 SQL 幂等（本地库执行 granted=2）。
 - 页面/交互测试：
   - 计划：T15 Playwright（列表筛选/排序/搜索/分页/列显隐、详情走势图周期/成分股统一分页、返回筛选态两路径、R9 权限两态、质检页 `board_member_incomplete` 重采）。
@@ -480,7 +480,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 具体完成情况：T14 已完成。新增并校准 `debug_sectors_only`，后端权限聚焦 48 项、前端权限/路由/布局聚焦 106 项和标准视口 Playwright 权限链路均通过。
 - 回归测试：
   - 计划：`python -m pytest backend/tests/ -q` 全量（先 `./start.sh status`→`./start.sh stop`，结束后按原状态恢复并确认 `/api/health=200`）；`npm test`；相关既有 E2E 回归。
-  - 具体完成情况：后端全量 861 项、前端全量 84 文件 / 661 项、正式构建均通过；普通读写 E2E 75 通过 / 24 按视口条件跳过，公开回测只读 E2E 3 项通过。全量回归发现的筛选资产、菜单标签和个股主题三个陈旧 E2E 契约已同步修正并纳入最终绿线。
+  - 具体完成情况：后端全量 866 项、前端全量 84 文件 / 665 项、正式构建均通过；板块确定性聚焦 E2E 5 通过 / 4 按视口条件跳过；普通读写 E2E 既有全量记录为 75 通过 / 24 按视口条件跳过，公开回测只读 E2E 3 项通过。全量回归发现的筛选资产、菜单标签和个股主题三个陈旧 E2E 契约已同步修正并纳入最终绿线。
 - 异常与边界测试：
   - 计划：只进不出落库幂等（ON CONFLICT）、不完整快照不落库、401 cookie 刷新、单板块失败继续与失败清单、历史不足「—」、空值列「—」、`transaction()` 原子性（中途失败整体回滚）、写锁冲突 `duckdb_write_unavailable`（锁释放后重试可恢复）、**member_count/member_snapshot_at 完整快照路径刷新**、**完整快照后旧 incomplete issue 自动 resolved**。
   - 具体完成情况：后端全量测试覆盖落库幂等、完整性、事务、权限与异常分支；页面 E2E 覆盖空/错误/权限状态、质量恢复成功收敛和无个股权限 fail-closed。DuckDB 写锁按读写回归与公开回测只读回归分离执行，结束后恢复日常后端。
@@ -514,7 +514,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - E2E 全量回归的登录限流/DuckDB 读写锁门控配置遗漏：T15 操作步骤显式列出。
 - 表达式唯一索引依赖 DuckDB 版本能力：本机 1.5.3 实测创建与强制均生效（2026-08-09 复核）；若部署环境旧版本拒绝，T3 单测在开发期暴露，按 §4 降级方案执行，不会带病上线。
 - 写锁冲突识别靠异常消息关键字归类（2026-08-09 实测）：本机 DuckDB 1.5.3 **无锁等待配置**（`SET duckdb_max_lock_wait_time` 抛 CatalogException），跨进程冲突**立即失败**（0.006s 抛 `IOException: Could not set lock`，被 `duckdb_client` 包装进 `StorageError` 且消息含 `lock`，归类可命中）。已移除锁等待超时设计，仅保留关键字归类；若错误消息格式随 DuckDB 升级变化导致关键字漏配，最坏退化为 500 而非半成品状态，且 T4 的跨进程锁冲突集成测试可尽早暴露。**连接恢复无需额外处理**：冲突只发生在 connect 阶段、`_conn` 保持 `None`，锁释放后同一实例重试即自动重建连接（实测确认），不存在需显式释放的残留连接。
-- 列表页 `pageSize` 冲突按需求口径（10/20/50）实现，与原型 10/20/30/50 不同：需求为当前事实源，已声明为计划 vs 原型的显式取舍；若后续需求变更需回溯原型口径。
+- 列表页 `pageSize` 统一使用全局 20/50/100/200；详情成分股使用 10/20/30/50。
 - 回填/回滚 SQL 待 T10b 产出后固化：发布计划 §7.3/§9 的描述为意图而非已定实现，T10b 交付时须回填固化并评审。
 - **`board_type` 参数接线（2026-08-09 复核修复）**：`ingest_board(board_type=)` 已向字典、成分、指数、资金流四阶段透传；采集页、调度、CLI/任务参数均可按 `concept|industry` 限定范围，非法值 fail-fast。
 - **`--update` 增量语义（2026-08-09 深度体检修复）**：此前 `--backfill` 与 `--update` 行为相同（指数/资金流都全量）。已修复：`ingest_board(mode=)` 区分 `backfill`（指数全量回填 2024 起 + 资金流全周期）与 `update`（指数只补最近 5 天 + 资金流只采「即时」）；成分股因源只提供当前全量清单，仍需拉取完整快照，但落库为只进不出的幂等新增。CLI `--backfill`/`--update`、daily、`_h_board` 均已接线 mode。
@@ -524,17 +524,17 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 板块成分股现价/涨跌幅/换手来自 DuckDB 个股行情表（与 `board_bar` 同库关联，不跨库 JOIN）；个股当日无行情时对应列显示「—」且不计入涨跌家数。
 - 质检页 `board_member_incomplete` 行触发「重采成分」（fix 分派重采该板块成分），QualityView 复用现有 fix 动作（需求 §7.3 修订）。
 - 任务中心「板块采集」前端中文标签改 `data.ts` 一处即可被任务中心各列表消费（与现有任务类型同款）。
-- 领涨股及涨幅默认取 `board_fund_flow.leader_stock/leader_pct`（与即时净流入同一 `(snapshot_date, period='即时')` 行），无资金流板块领涨股为「—」（不走成分股涨幅第一另行计算，口径单一）；**该口径在资金流日期 ≠ 涨幅日期时展示「资金流日领涨股」是否为可接受口径，作为待确认项（见 §10.3）**。
+- 领涨股按所选行情交易日有效成分股 `pct_chg` 最大者计算；停牌/缺收盘/缺有效前收排除，同涨幅按成交额降序、股票代码升序决胜。资金流源自带领涨字段仅作原始留存。
 - 列表/详情只展示 `has_members` 或 `has_bar` 为 true 的板块；仅 `has_fund_flow` 的资金流独有板块入字典但不进页面展示（承接需求 §2.5）。
 
 ### 10.3 待确认项
 
 - 无阻塞待确认项。以下非阻塞项在实施中按既定口径执行，如有异议随时回到用户确认：
   - 采集服务落 `board_ingest.py` 新文件还是并入 `ingest.py`（T4 实施时按既有分层就近原则定，偏离时在开发留痕说明）。
-  - 列表页「上涨/下跌家数」列合并展示 vs 原型「上涨家数」单列（以需求 §7.1.2 为准，已在 §4.1 标注差异）。
-  - 列表页 `pageSize` 合法值按需求 10/20/50（原型含 30，以需求为准，已在 §4.1 标注差异）。
+  - 列表排行采用当前重构后的精简列与同屏走势；旧原型仅保留信息架构参考。
+  - 列表页 `pageSize` 使用全局 20/50/100/200，详情成分股使用 10/20/30/50。
   - **成分快照完整性判定维持当前口径（2026-08-09 已拍板）**：`complete`（空页即尾页 + 登录墙识别标不完整）作为完整性唯一闸门，不完整快照整趟不落库 + 写 `board_member_incomplete` 待重采；**不引入「取到数 vs member_count/资金流公司家数」的完整性对账**（首次初始化无基准、无法识别假完整）。已知盲区（登录墙恰好截到等于基准数的「假完整」）接受为源端限制。
-  - 领涨股取数来源（**待确认，非既定**）：需求 §6.2 只定义响应含「领涨股」，未定义来源。默认口径为 `board_fund_flow.leader_stock/leader_pct` 且与即时净流入同一 `(snapshot_date, period='即时')` 行——但 §4.2 明确涨幅与净流入分别标注各自数据日期（`board_bar` 最近交易日 ≠ `board_fund_flow` 最近 snapshot_date），**当两日不同时，领涨股展示的是「资金流日领涨股」而非「涨幅日/今日强势股」**（资金流独有板块该列显示资金流日领涨股，列表默认按今日涨幅降序时榜首板块领涨股可能不是今日强势股，观感突兀）。是否接受该口径需用户确认；不接受则改为「按涨幅交易日成分股涨幅第一」另行实现。若后续需要「无资金流板块仍显示成分股涨幅第一」，同样需另行决策（当前默认口径下无资金流板块领涨股为空「—」）。
+  - 领涨股口径已确认（2026-08-12）：按行情截面日有效成分股涨幅第一计算；不再使用资金流快照日领涨字段。
   - 资金流独有板块「进入 board_dict」（R4 §2.5，**2026-08-10 口径更新**）：实测资金流源板块单元格**带链接含真实路径 code**（如 `/gn/detail/code/308734/`），故 T4 实现为「有链接 code 的独有板块经 `_upsert_fund_only_boards` 补进字典（`has_fund_flow=true`、`has_members/has_bar=false`，不进页面展示）；仍无稳定代码（无链接 code 且名称匹配不到字典）的板块写 `board_fund_unmatched` 质检、不伪造代码」。早期 `_fund_flow_union_supplement` 空实现（假设源无稳定代码）已废弃，由 `_upsert_fund_only_boards` 取代。
 
 ## 11. 数据采集闭环复核与修复结论（2026-08-09）
