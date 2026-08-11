@@ -26,11 +26,18 @@ TEST_TENANT = "pytest"
 TEST_OWNER = "pytest_owner"
 
 
-def clean_owner(pg: PostgresClient, owner: str = TEST_OWNER) -> None:
+def clean_owner(
+    pg: PostgresClient,
+    tenant: str = TEST_TENANT,
+    owner: str = TEST_OWNER,
+) -> None:
     """清理某归属者在全部资产表的数据（测试隔离）。"""
     for t in _ASSET_TABLES:
         try:
-            pg.execute(f"DELETE FROM {t} WHERE owner_user_id=%s", [owner])
+            pg.execute(
+                f"DELETE FROM {t} WHERE tenant_id=%s AND owner_user_id=%s",
+                [tenant, owner],
+            )
         except StorageError:
             pass
 

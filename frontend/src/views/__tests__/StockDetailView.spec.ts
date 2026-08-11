@@ -86,6 +86,7 @@ const StockChartWorkspaceStub = defineComponent({
     'slot2',
     'slot3',
     'heightRatios',
+    'minHeight',
     'adjustLabel',
     'macdState',
     'macdError',
@@ -94,6 +95,7 @@ const StockChartWorkspaceStub = defineComponent({
   setup(props, { emit }) {
     return () => h('section', {
       'data-testid': 'stock-chart-workspace',
+      'data-min-height': props.minHeight,
       'data-macd-state': props.macdState,
       'data-adjust-label': props.adjustLabel,
     }, [
@@ -487,6 +489,8 @@ describe('StockDetailView 三图数据协调', () => {
     expect(workspace.props('slot3')).toBe('macd')
     expect(workspace.props('macdState')).toBe('ready')
     expect(workspace.props('adjustLabel')).toBe('前复权')
+    expect(workspace.props('minHeight')).toBe(650)
+    expect(workspace.attributes('data-configured-height')).toBe('650')
     expect(wrapper.text()).toContain('12.34')
     expect(stocksApi.getTradeEval).toHaveBeenCalledWith(
       '600000.SH',

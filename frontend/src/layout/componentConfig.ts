@@ -70,6 +70,19 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
     { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], help: '字段:方向，如 event_time:desc（取值随页面而异）' },
     { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], help: '列 key 列表（随页面而异）' },
   ],
+  chart: [
+    {
+      key: 'minHeight',
+      label: '图表区域高度',
+      control: 'int',
+      layers: ['page', 'user'],
+      min: 480,
+      max: 900,
+      default: 560,
+      highFrequency: true,
+      help: '控制包含标题、K 线与量能的完整图表区域高度。',
+    },
+  ],
   tabs: [
     { key: 'defaultActive', label: '默认激活页', control: 'string', layers: ['page', 'user'], help: '激活的 tab name（随页面而异）' },
   ],
@@ -168,6 +181,34 @@ export function getComponentFieldDefs(kind: ComponentKind): ComponentFieldDef[] 
 /** 取某组件某字段定义。 */
 export function getComponentFieldDef(kind: ComponentKind, field: string): ComponentFieldDef | undefined {
   return FIELD_DEF_INDEX.get(`${kind}.${field}`)
+}
+
+/**
+ * 解析页面实际消费的数值组件字段，并统一按字段事实源做安全钳制。
+ * fallback 通常取当前 slot.config，避免消费页重复维护默认值和值域。
+ */
+export function resolveComponentNumberValue(
+  kind: ComponentKind,
+  field: string,
+  value: unknown,
+  fallback: number,
+): number {
+  const def = getComponentFieldDef(kind, field)
+  if (!def || (def.control !== 'int' && def.control !== 'number')) {
+    throw new ComponentConfigError(`${kind}.${field} 不是受控数值字段`)
+  }
+  const input = value == null || value === '' ? Number.NaN : Number(value)
+  const fallbackValue = Number(fallback)
+  const defaultValue = Number(def.default)
+  let resolved = Number.isFinite(input)
+    ? input
+    : Number.isFinite(fallbackValue)
+      ? fallbackValue
+      : defaultValue
+  if (!Number.isFinite(resolved)) throw new ComponentConfigError(`${def.label} 缺少有效默认值`)
+  if (def.min != null) resolved = Math.max(def.min, resolved)
+  if (def.max != null) resolved = Math.min(def.max, resolved)
+  return def.control === 'int' ? Math.round(resolved) : resolved
 }
 
 /** 组件配置覆盖路径：slots.<slotId>.config.<field>。 */

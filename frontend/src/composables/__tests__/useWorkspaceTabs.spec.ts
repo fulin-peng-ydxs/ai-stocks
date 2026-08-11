@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import {
   removeWorkspaceTab,
+  resolveWorkspaceMenuPath,
   resetWorkspaceTabs,
   useWorkspaceTabs,
   visitWorkspaceTab,
@@ -12,6 +13,7 @@ const menus: MenuTreeNode[] = [
   { index: 'market', title: '市场研究', children: [
     { index: '/board', title: '每日榜单' },
     { index: '/stocks', title: '个股查询' },
+    { index: '/sectors', title: '板块行情' },
   ] },
 ]
 
@@ -33,6 +35,14 @@ describe('工作标签页状态', () => {
     expect(useWorkspaceTabs().workspaceTabs.value.map((tab) => tab.title)).toEqual([
       '每日榜单', '个股详情 · 600000.SH',
     ])
+  })
+
+  it('菜单恢复最近停留的详情；显式返回列表后恢复目标同步为列表', () => {
+    visitWorkspaceTab(route('/sectors/881121', '板块详情', '881121'), menus)
+    expect(resolveWorkspaceMenuPath('/sectors')).toBe('/sectors/881121')
+
+    visitWorkspaceTab(route('/sectors', '板块行情'), menus)
+    expect(resolveWorkspaceMenuPath('/sectors')).toBe('/sectors')
   })
 
   it('关闭当前标签后返回相邻页面，唯一标签不可关闭', () => {

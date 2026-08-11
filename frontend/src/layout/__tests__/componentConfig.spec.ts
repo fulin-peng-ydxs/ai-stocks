@@ -1,6 +1,6 @@
 /**
  * 组件配置层（P2）——字段元数据完整性 + 分层合并 + 越权/非法丢弃 + 来源追踪。
- * 字段定义口径：只登记已被页面消费的字段（data-table/tabs/settings-drawer 首批字段）。
+ * 字段定义口径：只登记已被页面消费的字段。
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -12,6 +12,7 @@ import {
   isLayerAllowed,
   parseComponentConfigPath,
   resolveComponentConfig,
+  resolveComponentNumberValue,
   type ComponentConfigLayerInput,
 } from '../componentConfig'
 import type { PageLayout } from '../schema'
@@ -43,7 +44,8 @@ describe('组件字段元数据', () => {
   })
 
   it('字段定义只覆盖已消费字段，不预设无消费字段', () => {
-    expect(Object.keys(COMPONENT_FIELD_DEFS).sort()).toEqual(['config-panel', 'data-table', 'settings-drawer', 'tabs', 'wide-table'])
+    expect(Object.keys(COMPONENT_FIELD_DEFS).sort()).toEqual(['chart', 'config-panel', 'data-table', 'settings-drawer', 'tabs', 'wide-table'])
+    expect((COMPONENT_FIELD_DEFS.chart ?? []).map((d) => d.key)).toEqual(['minHeight'])
     expect((COMPONENT_FIELD_DEFS['config-panel'] ?? []).map((d) => d.key).sort()).toEqual([
       'collapsibleSections',
       'defaultCollapsed',
@@ -97,6 +99,20 @@ describe('组件字段元数据', () => {
     const border = getComponentFieldDef('data-table', 'border')!
     expect(coerceComponentValue(border, false)).toBe(false)
     expect(() => coerceComponentValue(border, 'false')).toThrow()
+    const chartHeight = getComponentFieldDef('chart', 'minHeight')!
+    expect(coerceComponentValue(chartHeight, 560)).toBe(560)
+    expect(() => coerceComponentValue(chartHeight, 479)).toThrow()
+    expect(() => coerceComponentValue(chartHeight, 901)).toThrow()
+  })
+
+  it('数值消费统一使用字段值域，并以 slot 默认值安全兜底', () => {
+    expect(resolveComponentNumberValue('chart', 'minHeight', 720, 650)).toBe(720)
+    expect(resolveComponentNumberValue('chart', 'minHeight', 300, 650)).toBe(480)
+    expect(resolveComponentNumberValue('chart', 'minHeight', 1200, 650)).toBe(900)
+    expect(resolveComponentNumberValue('chart', 'minHeight', undefined, 650)).toBe(650)
+    expect(resolveComponentNumberValue('chart', 'minHeight', null, 650)).toBe(650)
+    expect(resolveComponentNumberValue('chart', 'minHeight', 560.4, 650)).toBe(560)
+    expect(() => resolveComponentNumberValue('tabs', 'defaultActive', 1, 1)).toThrow()
   })
 })
 

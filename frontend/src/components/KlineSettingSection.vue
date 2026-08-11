@@ -25,7 +25,11 @@ function commitPeriods() {
 </script>
 
 <template>
-  <PageSettingSection title="K 线范围" desc="快捷范围选项与默认范围，所有看 K 线的页面统一生效。">
+  <PageSettingSection
+    title="K 线范围"
+    desc="快捷范围选项与默认范围，所有看 K 线的页面统一生效。"
+    data-testid="kline-setting-section"
+  >
     <div class="setting-item col">
       <div class="setting-label">快捷范围（交易日，逗号分隔，如 15,30,60）</div>
       <el-input v-model="periodsStr" placeholder="15,30,60" @blur="commitPeriods" @keyup.enter="commitPeriods" />

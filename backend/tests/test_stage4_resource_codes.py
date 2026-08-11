@@ -32,6 +32,7 @@ _STAGE4_PREFIXES = (
     "/api/stocks", "/api/board", "/api/profiles", "/api/screen",
     "/api/score-profiles", "/api/trade-profiles", "/api/stock-groups", "/api/backtest",
     "/api/training", "/api/layout", "/api/config", "/api/indicators", "/api/data",
+    "/api/sectors",
 )
 # 动态 scope 自守卫端点（函数体内按 payload scope 分流守卫，无静态资源码依赖；扫描白名单登记，见 layout.py）。
 _DYNAMIC_SCOPE_ROUTES = {"/api/layout/reset"}
@@ -189,6 +190,39 @@ def test_business_write_requires_code(client, pg):
     finally:
         _rm_user(pg, no_uid, no_tid, no_rid)
         _rm_user(pg, ok_uid, ok_tid, ok_rid)
+
+
+def test_sector_watchlist_view_and_update_permissions_are_independent(client, pg, monkeypatch):
+    """板块自选读写码独立：只授查看不能写，只授维护不能读。"""
+    def missing_board(_self, _board_code):
+        raise ValueError("板块不存在或尚未采集")
+
+    monkeypatch.setattr("backend.api.sectors.BoardWatchlistService.add", missing_board)
+    view_uid, view_tid, view_rid = _mk_user(pg, codes=["sector-watchlist:view"])
+    update_uid, update_tid, update_rid = _mk_user(pg, codes=["sector-watchlist:update"])
+    try:
+        assert client.get(
+            "/api/sectors/watchlist",
+            headers=_auth(view_uid, view_tid),
+        ).status_code == 200
+        assert client.post(
+            "/api/sectors/watchlist",
+            json={"board_code": "missing"},
+            headers=_auth(view_uid, view_tid),
+        ).status_code == 403
+
+        assert client.get(
+            "/api/sectors/watchlist",
+            headers=_auth(update_uid, update_tid),
+        ).status_code == 403
+        assert client.post(
+            "/api/sectors/watchlist",
+            json={"board_code": "missing"},
+            headers=_auth(update_uid, update_tid),
+        ).status_code == 404
+    finally:
+        _rm_user(pg, view_uid, view_tid, view_rid)
+        _rm_user(pg, update_uid, update_tid, update_rid)
 
 
 # ── ⑤ 动态 scope：system 两 scope 均通过 ───────────────────────────────────

@@ -13,12 +13,9 @@ export interface CompareSeries {
   bars: SectorBar[]
 }
 
-// 归一化基准：first=区间首根收盘=0；mid=区间中点收盘=0（看前半/后半段分化）
-export type CompareBasis = 'first' | 'mid'
-
 const props = defineProps<{
   series: CompareSeries[]
-  basis?: CompareBasis
+  benchmark?: CompareSeries | null
   fill?: boolean
 }>()
 const el = ref<HTMLDivElement | null>(null)
@@ -41,30 +38,40 @@ const lineColors = computed(() => [
 const dates = computed<string[]>(() => {
   const set = new Set<string>()
   for (const s of props.series) for (const b of s.bars) set.add(b.trade_date)
+  if (props.benchmark) for (const b of props.benchmark.bars) set.add(b.trade_date)
   return Array.from(set).sort()
 })
 
-const midIndex = computed(() => Math.floor(dates.value.length / 2))
-
-// 归一化：把每个板块的 close 序列映射到全量日期轴上，相对基准点收盘换算成累计涨跌幅（%）。
+// 归一化：把每条 close 序列映射到全量日期轴上，固定以区间首个有效收盘为 0%。
 function normalizedData(s: CompareSeries): (number | null)[] {
   const byDate = new Map(s.bars.map((b) => [b.trade_date, b.close]))
   const aligned = dates.value.map((d) => byDate.get(d) ?? null)
-  const baseIdx = props.basis === 'mid' ? midIndex.value : 0
-  // 基准点本身可能缺数据，向后找最近的有效收盘做基点。
+  // 区间首日可能缺数据，向后找该序列首个有效收盘作为归一化起点。
   let base: number | null = null
-  for (let i = baseIdx; i < aligned.length; i += 1) {
+  for (let i = 0; i < aligned.length; i += 1) {
     if (aligned[i] != null) { base = aligned[i]; break }
   }
   if (base == null || base === 0) return aligned.map(() => null)
   return aligned.map((c) => (c == null ? null : +(((c - base) / base) * 100).toFixed(2)))
 }
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 function render() {
   if (!chart) return
   const t = theme.value
   const colors = lineColors.value
-  const series = props.series.map((s, i) => ({
+  const upColor = chartCssVariable('--market-up-color', '#f66055')
+  const downColor = chartCssVariable('--market-down-color', '#1ec96e')
+  const benchmarkData = props.benchmark ? normalizedData(props.benchmark) : null
+  const sectorSeries = props.series.map((s, i) => ({
     name: s.name,
     type: 'line' as const,
     data: normalizedData(s),
@@ -75,13 +82,29 @@ function render() {
     itemStyle: { color: colors[i % colors.length] },
     emphasis: { focus: 'series' as const },
   }))
+  const benchmarkName = props.benchmark ? `基准 · ${props.benchmark.name}` : ''
+  const series = [
+    ...sectorSeries,
+    ...(props.benchmark ? [{
+      name: benchmarkName,
+      type: 'line' as const,
+      data: benchmarkData,
+      showSymbol: false,
+      connectNulls: false,
+      smooth: false,
+      lineStyle: { width: 1.5, type: 'dashed' as const, color: t.label },
+      itemStyle: { color: t.label },
+      emphasis: { focus: 'series' as const },
+      z: 1,
+    }] : []),
+  ]
   chart.setOption({
     animation: false,
     backgroundColor: t.background,
     color: colors,
     grid: { left: 56, right: 24, top: 40, bottom: 58 },
     legend: {
-      data: props.series.map((s) => s.name),
+      data: series.map((item) => item.name),
       top: 4, textStyle: { color: t.label, fontSize: 11 },
     },
     tooltip: {
@@ -89,7 +112,32 @@ function render() {
       backgroundColor: t.tooltipBackground, borderColor: t.tooltipBorder, borderWidth: 1,
       textStyle: { color: t.text, fontSize: 12 },
       axisPointer: { type: 'cross', label: { backgroundColor: t.axis } },
-      valueFormatter: (v: number | null) => (v == null ? '--' : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`),
+      formatter: (params: any) => {
+        const rows = (Array.isArray(params) ? params : [params]).filter(Boolean)
+        const date = escapeHtml(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
+        const content = rows.map((item: any) => {
+          const value = typeof item.value === 'number' ? item.value : Number(item.value)
+          const valid = Number.isFinite(value)
+          const color = !valid || value === 0 ? t.text : value > 0 ? upColor : downColor
+          const valueText = valid ? `${value > 0 ? '+' : ''}${value.toFixed(2)}%` : '--'
+          const isBenchmark = item.seriesName === benchmarkName
+          const benchmarkValue = benchmarkData?.[Number(item.dataIndex)]
+          const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
+            ? +(value - benchmarkValue).toFixed(2)
+            : null
+          const excessColor = excess == null || excess === 0 ? t.label : excess > 0 ? upColor : downColor
+          return `<div style="display:flex;justify-content:space-between;gap:18px">`
+            + `<span>${item.marker ?? ''}${escapeHtml(item.seriesName)}</span>`
+            + `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong>`
+            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
+            + '</span>'
+            + '</div>'
+        }).join('')
+        return `<div style="min-width:150px;line-height:1.7">`
+          + `<div style="color:${t.label};margin-bottom:2px">${date} · 区间涨跌</div>`
+          + content
+          + '</div>'
+      },
     },
     xAxis: {
       type: 'category', data: dates.value, boundaryGap: false,
@@ -103,9 +151,10 @@ function render() {
       splitLine: { lineStyle: { color: t.split } },
     },
     dataZoom: [
-      { type: 'inside' },
+      { type: 'inside', start: 0, end: 100 },
       {
         type: 'slider', bottom: 6, height: 18,
+        start: 0, end: 100,
         borderColor: t.axis, fillerColor: t.area,
         textStyle: { color: t.label },
       },
@@ -138,7 +187,7 @@ onMounted(() => {
 onActivated(() => { attachResize(); resize() })
 onDeactivated(detachResize)
 watch(() => props.series, render, { deep: true })
-watch(() => props.basis, render)
+watch(() => props.benchmark, render, { deep: true })
 watch(theme, render)
 onBeforeUnmount(() => {
   detachResize()
@@ -148,7 +197,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="cmp-wrap" :class="{ 'cmp-wrap--fill': fill }">
+  <div
+    class="cmp-wrap"
+    :class="{ 'cmp-wrap--fill': fill }"
+    :data-point-count="dates.length"
+    :data-benchmark-code="benchmark?.code ?? ''"
+    :data-benchmark-point-count="benchmark?.bars.length ?? 0"
+  >
     <div ref="el" class="cmp" />
   </div>
 </template>

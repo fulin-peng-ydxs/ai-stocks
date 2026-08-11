@@ -672,7 +672,10 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/stocks/:code',
     archetype: 'detail',
     responsiveProfile: 'single-column',
-    supportsComponentConfig: false,
+    supportsComponentConfig: true,
+    consumedComponentFields: {
+      chart: ['minHeight'],
+    },
     layout: {
       pageKey: 'stock-detail',
       archetype: 'detail',
@@ -682,6 +685,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'detail', component: 'detail', region: 'main', order: 1 },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'detail', label: '个股行情', order: 1, config: { minHeight: 650 } },
       ],
       editable: [densityKnob()],
     },
@@ -909,6 +913,47 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '板块强弱分析工作台', order: 1 },
         { id: 'table', component: 'data-table', region: 'main', parentId: 'workspace', label: '板块强弱排行', order: 1, config: { defaultSort: 'pct_today:desc', pageSize: 20 } },
         { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '板块走势分析', order: 2 },
+      ],
+      editable: [densityKnob()],
+    },
+  },
+  {
+    pageKey: 'sectors-detail',
+    label: '板块详情',
+    path: '/sectors/:code',
+    archetype: 'detail',
+    responsiveProfile: 'single-column',
+    supportsComponentConfig: true,
+    consumedComponentFields: {
+      chart: ['minHeight'],
+      memberTable: ['defaultSort', 'pageSize', 'hiddenColumns'],
+    },
+    componentMeta: {
+      memberTable: {
+        columns: [
+          { key: 'code', label: '代码' },
+          { key: 'name', label: '名称' },
+          { key: 'price', label: '现价' },
+          { key: 'pct', label: '涨跌幅' },
+          { key: 'turnover', label: '换手率' },
+        ],
+        sortFields: [
+          { key: 'pct', label: '涨跌幅' },
+          { key: 'code', label: '代码' },
+        ],
+      },
+    },
+    layout: {
+      pageKey: 'sectors-detail',
+      archetype: 'detail',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
+        { id: 'detail', component: 'detail', region: 'main', label: '板块详情', order: 1 },
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'detail', label: '板块指数', order: 1, config: { minHeight: 560 } },
+        { id: 'memberTable', component: 'data-table', region: 'main', parentId: 'detail', label: '成分股', order: 2, config: { defaultSort: 'pct:desc', pageSize: 20 } },
       ],
       editable: [densityKnob()],
     },

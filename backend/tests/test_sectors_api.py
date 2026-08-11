@@ -36,6 +36,10 @@ def _seed(c):
     _seed_bar(c, "309121", ["2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"],
               [100.0, 105.0, 110.0, 108.0, 115.0])
     _seed_bar(c, "881121", ["2026-08-07"], [200.0])  # 仅一天：历史不足「—」
+    for d, cl in zip(["2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"],
+                     [6000.0, 6060.0, 6030.0, 6120.0]):
+        c.execute("INSERT INTO index_bar (index_code, trade_date, close) "
+                  "VALUES ('000905.SH', CAST(? AS DATE), ?)", [d, cl])
     # 资金流（AI PC 即时）
     c.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow, "
               "leader_stock, leader_pct) VALUES ('309121', DATE '2026-08-09', '即时', 45.6, '胜宏科技', 8.5)")
@@ -154,6 +158,15 @@ def test_get_bars_range(c):
     assert bars[-1]["close"] == pytest.approx(115.0)
 
 
+def test_get_benchmark_bars_range(c):
+    """市场指数基准与板块走势使用同一日期和 OHLC 字段契约。"""
+    bars = _svc(c).get_benchmark_bars(
+        "000905.SH", date(2026, 8, 5), date(2026, 8, 7),
+    )
+    assert [row["trade_date"] for row in bars] == ["2026-08-05", "2026-08-06", "2026-08-07"]
+    assert bars[-1]["close"] == pytest.approx(6120.0)
+
+
 # ── members ───────────────────────────────────────────────
 
 
@@ -170,6 +183,18 @@ def test_get_members_paginated(c):
     m2 = svc.get_members("309121", size=1, page=2)
     assert len(m2["list"]) == 1
     assert m2["list"][0]["code"] != m["list"][0]["code"]
+
+
+def test_get_members_supports_server_sort(c):
+    """成分股分页排序由服务端完成，pct/code 均保持稳定次序。"""
+    svc = _svc(c)
+    pct_rows = svc.get_members("309121", sort_by="pct", order="desc")["list"]
+    assert pct_rows[0]["pct_chg"] >= pct_rows[1]["pct_chg"]
+
+    code_rows = svc.get_members("309121", sort_by="code", order="desc")["list"]
+    assert [row["code"] for row in code_rows] == sorted(
+        [row["code"] for row in code_rows], reverse=True
+    )
 
 
 def test_get_members_empty_board(c):

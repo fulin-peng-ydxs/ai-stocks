@@ -470,6 +470,31 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
+  it('独立详情行情统一消费 chart.minHeight，自适应工作台不机械套用固定高度', () => {
+    const stockDetail = getPageEntry('stock-detail')!
+    const sectorDetail = getPageEntry('sectors-detail')!
+    const sectorWorkbench = getPageEntry('sectors')!
+
+    expect(stockDetail.consumedComponentFields?.chart).toContain('minHeight')
+    expect(stockDetail.layout.slots.find((slot) => slot.id === 'chart')).toMatchObject({
+      component: 'chart',
+      parentId: 'detail',
+      config: { minHeight: 650 },
+    })
+    expect(sourceForPage('stock-detail')).toContain("componentValueOf('chart', 'minHeight')")
+
+    expect(sectorDetail.consumedComponentFields?.chart).toContain('minHeight')
+    expect(sectorDetail.layout.slots.find((slot) => slot.id === 'chart')).toMatchObject({
+      component: 'chart',
+      parentId: 'detail',
+      config: { minHeight: 560 },
+    })
+    expect(sourceForPage('sectors-detail')).toContain("componentValueOf('chart', 'minHeight')")
+
+    expect(sectorWorkbench.layout.slots.find((slot) => slot.id === 'chart')?.component).toBe('chart')
+    expect(sectorWorkbench.consumedComponentFields?.chart ?? []).not.toContain('minHeight')
+  })
+
   it('data-table / wide-table 必须消费并真实接入 border 页面级配置', () => {
     for (const entry of PAGE_REGISTRY) {
       const tableSlots = entry.layout.slots.filter((slot) => slot.component === 'data-table' || slot.component === 'wide-table')

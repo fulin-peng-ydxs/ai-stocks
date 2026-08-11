@@ -30,6 +30,7 @@ import {
   buildKlineOption,
   buildMacdOption,
   buildVolumeOption,
+  constrainWorkspaceRatios,
   klineMetrics,
   macdMetrics,
   normalizeWorkspaceRatios,
@@ -74,6 +75,8 @@ const props = withDefaults(defineProps<{
   macdError?: string
   zoomStart?: number
   zoomEnd?: number
+  minHeight?: number
+  ariaLabel?: string
 }>(), {
   warmupBars: () => [],
   indicators: () => [],
@@ -85,6 +88,8 @@ const props = withDefaults(defineProps<{
   macdError: '请检查网络或稍后重试',
   zoomStart: 0,
   zoomEnd: 100,
+  minHeight: WORKSPACE_MIN_HEIGHT,
+  ariaLabel: '行情多图联动工作区',
 })
 
 const emit = defineEmits<{
@@ -110,10 +115,18 @@ const panels = computed<PanelDescriptor[]>(() => {
   if (props.slot3 !== 'hidden') next.push({ key: 'slot3', type: props.slot3 })
   return next
 })
+const effectiveMinHeight = computed(() => {
+  const panelFloor = panels.value.reduce(
+    (total, panel) => total + panelMinHeight(panel.type),
+    Math.max(0, panels.value.length - 1) * SPLITTER_SIZE,
+  )
+  const requested = Number(props.minHeight)
+  return Math.max(panelFloor, Number.isFinite(requested) && requested > 0 ? requested : 0)
+})
 const rows = computed(() => alignStockChartRows(props.bars, props.indicators))
-const ratios = computed(() => normalizeWorkspaceRatios(
+const ratios = computed(() => constrainWorkspaceRatios(
   liveRatios.value.length ? liveRatios.value : props.heightRatios,
-  panels.value.length,
+  minimumRatios(),
 ))
 const lastIndex = computed(() => Math.max(0, rows.value.length - 1))
 const metricIndex = computed(() => activeIndex.value ?? lastIndex.value)
@@ -295,7 +308,7 @@ function stopObservingResize(): void {
 }
 
 function availableHeight(): number {
-  const height = workspaceEl.value?.getBoundingClientRect().height || WORKSPACE_MIN_HEIGHT
+  const height = workspaceEl.value?.getBoundingClientRect().height || effectiveMinHeight.value
   return Math.max(
     panels.value.reduce((total, panel) => total + panelMinHeight(panel.type), 0),
     height - (panels.value.length - 1) * SPLITTER_SIZE,
@@ -303,7 +316,9 @@ function availableHeight(): number {
 }
 
 function minimumRatios(): number[] {
-  const available = availableHeight()
+  // 以工作区允许的最小高度计算约束，确保历史保存占比在紧凑模式下也不会挤掉量能。
+  const available = effectiveMinHeight.value
+    - Math.max(0, panels.value.length - 1) * SPLITTER_SIZE
   return panels.value.map((panel) => panelMinHeight(panel.type) / available)
 }
 
@@ -483,10 +498,11 @@ onBeforeUnmount(() => {
   <section
     ref="workspaceEl"
     class="stock-chart-workspace"
-    :style="{ minHeight: `${WORKSPACE_MIN_HEIGHT}px` }"
+    :style="{ minHeight: `${effectiveMinHeight}px` }"
+    :data-min-height="effectiveMinHeight"
     :data-zoom-start="zoomRange.start"
     :data-zoom-end="zoomRange.end"
-    aria-label="个股多图联动工作区"
+    :aria-label="ariaLabel"
   >
     <template v-for="(panel, index) in panels" :key="panel.key">
       <article

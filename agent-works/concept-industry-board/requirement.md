@@ -104,7 +104,7 @@
 
 | 需求编号 | 需求项 | 来源/依据 | 纳入条件 | 处理状态 |
 | --- | --- | --- | --- | --- |
-| R11 | 板块指数周期切换（1月/3月/半年/1年） | 闭环页面周期查看需求 | 走势图周期切换 | 本次纳入 |
+| R11 | 板块指数统一 K 线范围（近 60/120/250 日/全部）与图表高度拖拽 | 对齐个股详情的行情阅读体验 | 全局范围选择 + 复用行情多图工作区 | 本次纳入 |
 | R12 | 板块维度数据质量校验（指数缺口；成分波动已移除） | 闭环 A7 | 复用 `data_quality_issue` | 本次纳入（2026-08-09 修订） |
 | R13 | 详情页成分股统一分页（无 TopN 展开，`AppPagination` 默认 20） | 用户要求改项目统一分页 | 本次纳入 |
 | R14 | 板块资金流统计卡（净流入额） | 闭环 B3 详情页 | 展示层数字 | 本次纳入 |
@@ -205,10 +205,10 @@
 见 §7.2 页面 P2。
 
 **返回列表保留筛选态**：
-- **保存状态**：板块类型（全部/concept/industry）、排序字段与方向、搜索关键词、页码。
-- **承载方式**：列表页筛选态写入 **URL query**（`?type=&sort=&order=&keyword=&page=`，`type` 为全部时省略）；**进入详情时把当前列表 query 一并带入详情 URL**（`/sectors/{code}?type=...`），刷新详情后返回仍可还原。不依赖内存态。
+- **保存状态**：板块范围（全市场/自选）、板块类型（全部/concept/industry）、交易日期、排序字段与方向、搜索关键词、页码。
+- **承载方式**：列表页筛选态写入 **URL query**（`?scope=&type=&date=&sort=&order=&keyword=&page=`，默认值省略）；**进入详情时把当前列表 query 一并带入详情 URL**，刷新详情后返回仍可还原。不依赖内存态。
 - **行为规则（两类分别处理、分别验收）**：
-  1. **面包屑 / 页面返回按钮**：**始终显式跳转** `router.replace({ path: '/sectors', query: validatedSourceQuery })`——`validatedSourceQuery` 是详情 URL query 中经白名单校验通过的筛选参数（`type/sort/order/keyword/page`）；**无来源 query 或非法 query 时 query 为空对象**，落到默认列表（全部板块 + 今日涨幅降序）。**不使用 `router.back()`**——无法保证上一条历史是列表页（可能直接打开/分享带 query 的详情 URL，或上一条是外站/其他页面）。
+  1. **面包屑 / 页面返回按钮**：**始终显式跳转** `router.replace({ path: '/sectors', query: validatedSourceQuery })`——`validatedSourceQuery` 是详情 URL query 中经白名单校验通过的筛选参数（`scope/type/date/sort/order/keyword/page`）；**无来源 query 或非法 query 时 query 为空对象**，落到默认列表（全市场 + 全部板块 + 最新交易日 + 今日涨幅降序）。**不使用 `router.back()`**。
   2. **浏览器原生后退/前进**：遵循浏览器 history 栈——详情 URL 携带来源 query，原生返回按 history 还原，不做额外拦截。
 - **承载表**：列表页在 URL 变更时同步更新 query；详情页仅透传来源 query、不持有独立筛选态。
 - **纳入 R8 验收**：面包屑/返回按钮在有/无来源 query 下均显式跳列表并正确还原或落默认；浏览器原生后退按 history 还原；均纳入 Playwright 用例。
@@ -227,10 +227,10 @@
 - **操作流程**：**自由文本搜索框（`el-input` + 防抖，非 `AppFilterSelect`）**输入名称 → 服务端查询带 `keyword` 参数。
 - **异常情况**：无结果空态。
 
-### R11 板块指数周期切换
+### R11 板块指数统一范围与高度调整
 
-- **功能描述**：详情页走势图周期切换（1月/3月/半年/1年），展示原始连续指数。
-- **实现**：前端 ECharts 区间切换，数据源 `board_bar` 原值。
+- **功能描述**：详情页复用个股行情统一的 K 线范围（近 60/120/250 日/全部），展示原始连续指数；K 线与量能之间可拖拽分隔线调整高度。
+- **实现**：列表与详情统一将 `KlineRangeSelect` 作为数据和横向缩放的硬边界；近 60/120/250 日精确保留末尾对应交易点，缩放条只能在该周期内查看，只有“全部”加载完整历史。多板块走势与所选市场指数按同一组交易日对齐截断。走势对比默认叠加中证 500 虚线，可切换沪深 300 或不对比指数；所有曲线仍以区间首日统一归一为 0%，悬浮同时展示板块区间涨跌和相对指数的超额涨跌。详情复用 `StockChartWorkspace` 呈现 K 线与量能，通过中间分隔线调整并保存高度比例。
 
 ### R12 板块维度数据质量校验
 
@@ -286,8 +286,8 @@
 - **功能描述**：列表/详情页业务偏好（`usePageSettings`）与组件字段（`layout_user_config`）的保存/读取/消费/回退闭环，及构建/布局/视口验收。
 - **前置条件**：阶段五页面实现。
 - **操作流程**：
-  - 列表页 `usePageSettings('sectors', {defaultType})` + `consumedComponentFields`（pageSize/defaultSort/hiddenColumns）。
-  - 详情页 `usePageSettings('sectors-detail', {chartPeriod})` + `memberTable` 组件字段。
+  - 列表页 `usePageSettings('sectors', {defaultType, defaultScope, defaultChartMode, benchmarkCode})` + `consumedComponentFields`（pageSize/defaultSort/hiddenColumns）。
+  - 详情页范围直接复用全局 `useKlinePrefs`，不再维护页面私有周期偏好；成分表设置走 `memberTable` 组件字段。
   - 设置抽屉「恢复默认」：同时重置业务偏好（`reset()`）与组件字段（`resetLayout`）。
   - 非法偏好值回落默认并提示；URL query > 已保存偏好 > 默认值优先级。
 - **异常情况**：偏好读取失败回落默认；恢复默认覆盖全部。
@@ -371,7 +371,7 @@ board_fund_flow   板块资金流
     - main 区（`AppDataTable` growMain）：板块列表，服务端分页 + 排序 + 列显隐
   - 主次关系：筛选区在上、主表成长区占主体；无侧栏。
   - 核心模块与数据区：主表列 = 板块名称(link) | 成分股数 | 上涨/下跌家数 | **今日涨幅 | 5日涨幅 | 10日涨幅 | 20日涨幅** | 即时净流入(含数据日期) | 领涨股及涨幅；涨跌幅用 `--market-up/down-color`，数字右对齐。
-  - **排序口径（2026-08-11 修订）**：排序走通用**列头排序** + `defaultSort` 配置（对齐 StocksView，sortable 列 = 各涨跌幅/净流入/上涨家数，默认今日涨幅降序）。**不单设「主排序周期」控件**——周期属数据窗口、与列头排序重复，周期语义保留给详情页图表（R11 chartPeriod）。资金流固定展示最新交易日即时净流入，列名/提示标注数据日期；资金流 3日/5日/10日/20日数据继续采集但**不参与价格排序**（避免与价格口径混合）。
+  - **排序口径（2026-08-11 修订）**：排序走通用**列头排序** + `defaultSort` 配置（对齐 StocksView，sortable 列 = 各涨跌幅/净流入/上涨家数，默认今日涨幅降序）。**不单设「主排序周期」控件**——周期属数据窗口、与列头排序重复；详情页范围统一走 `KlineRangeSelect`。资金流固定展示最新交易日即时净流入，列名/提示标注数据日期；资金流周期数据继续采集但不参与价格排序。
   - **行交互口径**：**仅点板块名称**进详情；点击行其他区域不跳转（与上游确认一致）。
   - 弹窗/抽屉/设置入口：`PageSettingsDrawer`（布局/组件设置/业务选项；业务选项含默认板块类型偏好）。
   - 关键状态与退化：empty→引导去采集页；error→`AppStateBlock` 重试；loading→`v-loading`；无权限→permission 无权态；窄视口→主表内部滚动。
@@ -379,14 +379,14 @@ board_fund_flow   板块资金流
 - **权限与可见性**：`sectors:view`（业务授权集合，非登录基线）。
 - **组件复用与通用能力**：
   - 已有通用能力：`AppDataTable`/`AppTableColumn`/`AppPagination`/`AppStateBlock`/`AppRowActions`/`PageSegmented`/`PageSettingsDrawer`、`usePageSettings`/`useRemoteLayoutConfig`/`getPageLayout`、`pageRegistry`、组件配置字段。
-  - 可能新增能力：无（全复用现有组件）。
-  - 配置化承载：`sectors` pageKey 进 `pageRegistry`；组件字段走 `COMPONENT_FIELD_DEFS`；板块类型筛选为页面业务偏好走 `usePageSettings`。
+  - 新增通用能力：无；复用并正式纳管既有 `chart.minHeight` 能力，数值字段由 `ComponentAutoSettings` 统一渲染。
+  - 配置化承载：`sectors` pageKey 进 `pageRegistry`；组件字段走 `COMPONENT_FIELD_DEFS`；默认类型、范围、图表模式和对比指数作为页面业务偏好走 `usePageSettings`。
 
 **配置项定义（列表页，谁保存/谁读取/谁消费/如何回退）**：
 
 | 配置项 | 保存位置 | 读取点 | 消费点 | 默认值 | 合法值 | 非法值处理 | 回退 |
 |---|---|---|---|---|---|---|---|
-| 业务偏好对象 `{ defaultType }` | PG `user_preference`（`usePageSettings('sectors', defaults)` → `scope='page' + page_key='sectors' + pref_key='settings'` 一个对象） | 页面加载 `usePageSettings` 的 `settings` | 列表页默认板块类型 | `{ defaultType:'' }` | `defaultType: ''/concept/industry`（`''`=全部） | 非法值回落全部 | 设置抽屉「恢复默认」调 `reset()` 置回默认对象 |
+| 业务偏好对象 `{ defaultType, defaultScope, defaultChartMode, benchmarkCode }` | PG `user_preference`（`usePageSettings('sectors', defaults)` → `scope='page' + page_key='sectors' + pref_key='settings'` 一个对象） | 页面加载 `usePageSettings` 的 `settings` | 列表页默认类型、默认范围、默认图表模式和默认对比指数 | 全部板块 / 全市场 / 走势对比 / 中证 500 | 已登记枚举；自选默认受权限约束 | 非法值回落默认；无自选权限强制全市场 | 设置抽屉「恢复默认」调 `reset()` 置回默认对象 |
 | 每页条数 `pageSize` | PG `layout_user_config`（sectors 页 data-table slot） | `componentValueOf('table','pageSize')` | `AppPagination` | 20 | 20/50/100/200（全局 `PAGE_SIZE_OPTIONS`，2026-08-11 与通用组件一致） | 回落 20 | 设置抽屉恢复默认 |
 | 默认排序 `defaultSort` | PG `layout_user_config`（同上） | `componentValueOf('table','defaultSort')` | 主表列头排序 | `pct_today:desc` | sortFields 字段码 + asc/desc | 回落 `pct_today:desc` | 设置抽屉恢复默认 |
 | 列显隐 `hiddenColumns` | PG `layout_user_config`（同上） | `componentValueOf('table','hiddenColumns')` | 主表列渲染 | 全部显示 | 合法列 key 子集 | 忽略未知列 key | 设置抽屉恢复默认 |
@@ -395,7 +395,7 @@ board_fund_flow   板块资金流
 
 **pageRegistry/组件契约（列表页，正文登记）**：
 - `sectors` pageKey：`getPageLayout('sectors')`，原型 `list`，`responsiveProfile: 'single-column'`，slot `action(filter-bar) + main(data-table)`（`data-table` 为 growMain），`supportsPageSettings !== false` → **`overlay:settings-drawer` 自动补登**（pageRegistry 对开放个人设置的页面自动补，见 pageRegistry.ts P13 注释）。
-- `componentMeta['table'].sortFields`：`pct_today/pct_5d/pct_10d/pct_20d/net_inflow/up_count`（与接口 `sort_by` 字段码一致）。
+- `componentMeta['table'].columns`：`name/pct_today/pct_5d/net_inflow`；`sortFields`：`pct_today/pct_5d/net_inflow`（与当前表格和接口排序字段一致）。
 - `consumedComponentFields`：`sectors` 消费 `data-table` 的 `pageSize/defaultSort/hiddenColumns`（`border` 自动补登）。
 - `minWidth=0` 基础断点；主表内滚兜底。
 
@@ -427,34 +427,35 @@ board_fund_flow   板块资金流
 
 - **对应需求编号**：R8、R9、R11、R14
 - **页面类型**：新增页面
-- **页面入口**：板块列表「仅点板块名」进 `/sectors/:code`
+- **页面入口**：板块列表保持“点行切换观察对象”；当前观察区「查看详情」进 `/sectors/:code`，避免与列表/图表联动手势冲突。
 - **原型文件**：`prototypes/sector-detail.html`
 - **页面布局**：
-  - 布局事实源：对齐 `prototypes/sector-detail.html`
+  - 布局事实源：对齐 `prototypes/sector-detail.html`；指数区复用个股详情的 `StockChartWorkspace`，以 K 线 + 量能双面板呈现，支持拖拽分隔线调整并保存高度比例。
   - 页面区域：
     - 摘要区：板块名称、类型标签、成分股数、今日涨跌幅、**上涨/下跌家数**、即时净流入额（含数据日期）、**领涨股及涨幅**（**不含来源/代码副标题**）
     - 主区 detail：板块指数走势图（ECharts，周期切换 + 日期控件）+ 成分股表（embedded，**统一分页**）
   - 主次关系：摘要在上、图表与成分股表并列/上下；图表为主视觉，成分股表支撑选股。
-  - 核心模块与数据区：走势图周期切换（1月/3月/半年/1年）+ **日期控件（`TradeDatePicker`，默认最新交易日可回看历史）**；成分股表列 = 代码 | 名称 | 现价 | 涨跌幅 | 换手，**统一分页（`AppPagination`，默认每页 20，抽屉可配），无 TopN 展开/收起**。
-  - 弹窗/抽屉/设置入口：`PageSettingsDrawer`（业务选项含图表周期；**成分股排序/分页/列显隐归组件设置，非业务选项**）。
+  - 核心模块与数据区：统一 K 线范围（近 60/120/250 日/全部）+ K 线/量能高度分隔拖拽 + **日期控件（`TradeDatePicker`）**；成分股表列 = 代码 | 名称 | 现价 | 涨跌幅 | 换手，统一分页，无 TopN 展开/收起。
+  - 弹窗/抽屉/设置入口：`PageSettingsDrawer`；K 线范围消费全局偏好，拖拽高度自动保存；成分股排序/分页/列显隐归组件设置。
   - 关键状态与退化：图表无数据→空态；成分股表空→空态；error→重试；常见桌面视口下摘要和图表保持稳定，成分股表占据剩余空间并由表体内部滚动；只有低高度空间不足时才允许主内容区整体滚动兜底。
 - **数据来源**：`/api/sectors/{code}`（摘要+能力字段）、`/api/sectors/{code}/bars`（指数）、`/api/sectors/{code}/members`（成分股）。
 - **权限与可见性**：`sectors:view` 查看；`stocks:view` 决定成分股跳转可点性（R9）。
 - **组件复用与通用能力**：
   - 已有通用能力：`AppDataTable`/`AppTableColumn`/`AppPagination`/`AppStateBlock`、`useEChartsTheme`、`LayoutHost`/`getPageLayout`。
-  - 可能新增能力：板块指数走势图需新增 ECharts 图（复用 `useEChartsTheme`，不引入新图表框架）。
-  - 配置化承载：`sectors-detail` pageKey 进 `pageRegistry`；图表周期业务偏好走 `usePageSettings`；**成分股表排序/分页/列显隐走 `memberTable` 组件字段（`layout_user_config`）**。
+  - 新增通用能力：无；板块指数复用 `StockChartWorkspace` 的 K 线/量能双面板与高度分隔线。
+  - 配置化承载：`sectors-detail` pageKey 进 `pageRegistry`；图表区域高度走 `chart.minHeight` 组件字段，内部高度比例走 `usePageSettings`；**成分股表排序/分页/列显隐走 `memberTable` 组件字段（`layout_user_config`）**。
 
 **配置项定义（详情页，谁保存/谁读取/谁消费/如何回退）**：
 
 | 配置项 | 保存位置 | 读取点 | 消费点 | 默认值 | 合法值 | 非法值处理 | 回退 |
 |---|---|---|---|---|---|---|---|
-| 业务偏好对象 `{ chartPeriod }` | PG `user_preference`（`usePageSettings('sectors-detail', defaults)` → `scope='page' + page_key='sectors-detail' + pref_key='settings'` 一个对象） | 页面加载 `usePageSettings` 的 `settings` | 走势图默认周期 | `{ chartPeriod:'3m' }` | `chartPeriod: 1m/3m/6m/1y` | 回落 `3m` | 设置抽屉「恢复默认」调 `reset()` 置回默认对象 |
+| 图表高度比例 `charts.heightRatios` | PG `user_preference`（`usePageSettings('sectors-detail')`） | `useStockChartPreferences` | K线/量能分隔线 | `kline|volume = 0.75/0.25` | 正数数组且总和为 1 | 归一化或回落默认比例 | 设置抽屉恢复默认 |
+| 图表区域高度 `minHeight` | PG `layout_user_config`（sectors-detail 页 chart slot） | `componentValueOf('chart','minHeight')` | 板块指数完整区域与内部工作区安全高度 | 560px | 480–900px 整数 | 前后端拒绝越界；页面兜底 560px | 设置抽屉恢复默认 |
 | 每页条数 `pageSize` | PG `layout_user_config`（sectors-detail 页 data-table slot） | `componentValueOf('memberTable','pageSize')` | 成分股统一分页 | 20 | 10/20/30/50 | 回落 20 | 设置抽屉恢复默认 |
 | 默认排序 `defaultSort` | PG `layout_user_config`（同上） | `componentValueOf('memberTable','defaultSort')` | 成分股表列头排序 | `pct:desc` | `pct`/`code` + asc/desc | 回落 `pct:desc` | 设置抽屉恢复默认 |
 | 列显隐 `hiddenColumns` | PG `layout_user_config`（同上） | `componentValueOf('memberTable','hiddenColumns')` | 成分股列渲染 | 全部显示 | 合法列 key 子集 | 忽略未知列 key | 设置抽屉恢复默认 |
 
-> **单一事实源**：成分股默认排序由组件字段 `defaultSort` 承载（`layout_user_config`），**不重复作为业务偏好**；业务偏好对象只含 `chartPeriod`，避免双事实源。
+> **单一事实源**：K 线范围来自全局 `useKlinePrefs`；高度比例由板块详情页面偏好承载；成分股默认排序由组件字段 `defaultSort` 承载，不建立第二套周期/排序偏好。
 
 **pageRegistry/组件契约（详情页，正文登记）**：
 - `sectors-detail` pageKey：`getPageLayout('sectors-detail')`，原型 `detail`，`responsiveProfile: 'single-column'`，slot `action(toolbar) + main(detail)`，`supportsPageSettings !== false` → **`overlay:settings-drawer` 自动补登**。
@@ -464,8 +465,8 @@ board_fund_flow   板块资金流
   ```
   消费契约经 `componentMeta['memberTable']`、`consumedComponentFields['memberTable']`、`componentValueOf('memberTable', ...)` 统一承载，**不落到 `main`/`detail` slot 上**（否则 pageRegistry.spec.ts 契约测试失败：消费字段必须指向真实 slot）。
 - `componentMeta['memberTable'].sortFields`：`pct/code`（成分股排序字段码）。
-- `consumedComponentFields['memberTable']`：`pageSize/defaultSort/hiddenColumns`（统一分页模式）。
-- 图表保持紧凑稳定，成分股表作为主成长区占据剩余高度并由表体内部滚动；低高度不足以容纳有效最小高度时，才由主内容区整体滚动兜底。
+- `consumedComponentFields['chart']`：`minHeight`；`memberTable`：`pageSize/defaultSort/hiddenColumns`（统一分页模式）。
+- 图表保持紧凑稳定，外层默认高度约 560px；内部 K 线与量能双面板完整可见，紧凑工作区最小高度 480px，不得通过裁切量能压缩高度。成分股表作为主成长区，最小高度约 420px，并由表体内部滚动；低高度不足以容纳有效最小高度时，才由主内容区整体滚动兜底。
 
 #### 7.2.1 页面功能点：板块摘要卡
 
@@ -478,9 +479,9 @@ board_fund_flow   板块资金流
 #### 7.2.2 页面功能点：板块指数走势图
 
 - 对应需求编号：R8、R11
-- 默认展示：近 3 月收盘线，原始连续指数。
-- 用户操作：周期切换（1月/3月/半年/1年）。
-- 状态变化：周期切换重新拉 `/bars`。
+- 默认展示：全局默认近 120 日，原始连续指数 K 线。
+- 用户操作：选择近 60/120/250 日/全部；拖拽 K 线与量能之间的分隔线调整高度，也可用方向键精细调整。
+- 状态变化：交易日期或范围变化时重新请求 `/bars`；快捷范围先按自然日预取，再精确截断末尾交易点，数据与横向缩放边界保持一致；高度调整即时重绘，结束后保存比例。
 - 加载/空/错误：图表 loading/空态/error 复用图表组件四态。
 - 验收标准：R8、R11
 
@@ -552,13 +553,13 @@ board_fund_flow   板块资金流
 | R8 | `/sectors/:code` 详情页摘要（含涨跌家数/领涨股/净流入）/走势图/成分股表正常；返回列表保留筛选态（面包屑/浏览器返回/刷新还原） | 页面验收 + Playwright |
 | R9 | 有 `stocks:view` 成分股可跳；无权限行禁用 + hover 提示，直接访问路由 fail-closed | Playwright + 权限测试 |
 | R10 | 名称搜索过滤正常，无结果空态 | 页面验收 |
-| R11 | 走势图周期切换（1月/3月/半年/1年）正常 | 页面验收 |
+| R11 | 统一 K 线范围正常；快捷周期的数据与横向缩放边界对齐，只有“全部”可查看完整历史；走势可切换中证 500/沪深 300/不对比指数，悬浮展示相对指数超额；K线/量能高度分隔线可拖拽、键盘调整并保存 | 页面验收 + Playwright |
 | R12 | 板块指数缺口质检可扫描并写 `data_quality_issue`（`board_index_gap`）；成分数波动不再质检（只进不出模型，见 R2 修订）；PG 可用时审计可查询、PG 失败时业务成功且记录 warning | 页面验收 + 配置测试 + 集成测试 |
 | R13 | 详情页成分股统一分页（无 TopN 展开）：默认每页 20、抽屉 pageSize 可配 10/20/30/50、分页/排序/权限态正确 | 页面验收 + Playwright |
 | R14 | 详情页摘要卡即时净流入数字正确（含数据日期） | 页面验收 |
 | R21 | 每日流程 `daily` 自动采集板块，失败不阻塞行情更新；`board` 任务支持回填/增量分流、断点续跑；单板块失败时继续剩余板块，最终步骤/任务 `failed`、DailyPipeline `ok=false`，返回失败板块清单并可仅续跑失败项；**参数化测试矩阵**：`board=True` 默认执行、`skip_update=True` 仍执行板块、`--skip-board` 确实跳过、板块失败后继续质检、最终状态和失败清单正确、`total_steps` 正确（不出现 `3/2`） | CLI + 集成测试 + 参数化矩阵 |
 | R22 | 菜单/资源 seed 幂等；`sectors:view` 加入业务授权集合并授予 normal/tenant_admin；既有库一次性回填 + bump `perm_ver`；路由守卫与 pageRegistry 登记一致 | 权限测试 + Playwright |
-| R23 | 页面设置偏好可保存/读取/回退（默认类型/图表周期）；**两页 `pageSize/defaultSort/hiddenColumns` 组件字段保存/读取/非法回退/恢复默认的参数化矩阵**；`npm run build` 通过；布局测试通过；关键视口 1100×620 / 1366×768 / 1440×900 无文本溢出且详情表体可读 | 前端测试 + 构建 + E2E + 参数化矩阵 |
+| R23 | 页面设置偏好可保存/读取/回退（默认类型/范围/图表模式/指数、全局 K 线范围、图表高度比例）；`chart.minHeight` 与两页表格字段保存、读取、非法回退、恢复默认闭环；`npm run build` 通过；关键视口 1100×620 / 1366×768 / 1440×900 无文本溢出且详情表体可读 | 前端测试 + 构建 + E2E + 参数化矩阵 |
 
 ## 12. 建议开发顺序
 

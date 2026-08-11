@@ -81,6 +81,31 @@ export function normalizeWorkspaceRatios(value: readonly number[], count: number
   return value.map((item) => item / total)
 }
 
+export function constrainWorkspaceRatios(
+  value: readonly number[],
+  minRatios: readonly number[],
+): number[] {
+  const normalized = normalizeWorkspaceRatios(value, minRatios.length)
+  const safeMinimums = minRatios.map((item) => (
+    Number.isFinite(item) && item > 0 ? item : 0
+  ))
+  const minimumTotal = safeMinimums.reduce((sum, item) => sum + item, 0)
+  if (minimumTotal >= 1) {
+    return normalizeWorkspaceRatios(safeMinimums, safeMinimums.length)
+  }
+
+  const surplus = normalized.map((item, index) => Math.max(0, item - safeMinimums[index]!))
+  const surplusTotal = surplus.reduce((sum, item) => sum + item, 0)
+  const availableSurplus = 1 - minimumTotal
+  if (surplusTotal <= 0) {
+    const evenShare = availableSurplus / Math.max(1, normalized.length)
+    return safeMinimums.map((item) => item + evenShare)
+  }
+  return safeMinimums.map(
+    (item, index) => item + surplus[index]! / surplusTotal * availableSurplus,
+  )
+}
+
 export function adjustAdjacentRatios(
   ratios: readonly number[],
   separatorIndex: number,

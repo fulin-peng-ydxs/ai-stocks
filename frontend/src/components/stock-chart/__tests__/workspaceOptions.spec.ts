@@ -329,6 +329,9 @@ describe('workspaceOptions', () => {
     }
     expect(content).toContain('style="color:#up">10.00</span>')
     expect(content).toContain('style="color:#up">+1.01%</span>')
+    expect(content).toContain('style="color:#down">9.80</span>')
+    expect(content).toContain('style="color:#up">10.40</span>')
+    expect(content).toContain('style="color:#down">9.50</span>')
     expect((buildVolumeOption(context).tooltip as { showContent?: boolean }).showContent)
       .toBe(false)
     const macdTooltip = buildMacdOption(context).tooltip as {

@@ -1,6 +1,6 @@
 # 板块数据采集闭环
 
-> 同花顺板块数据（概念/行业）的采集、质检、概览、调度、手动采集与修复全链路闭环。数据独立于个股行情源，由专属 `ThsBoardSource` 直连同花顺，经 `board_dict / board_member / board_bar / board_fund_flow` 四表落库，供板块行情页（`/sectors`）与数据管理各页消费。
+> 同花顺板块数据（概念/行业）的采集、质检、概览、调度、手动采集与修复全链路闭环。数据独立于个股行情源，由专属 `ThsBoardSource` 直连同花顺，经 `board_dict / board_member / board_bar / board_fund_flow` 四表落库，供板块行情页（`/sectors`）、详情页（`/sectors/:code`）与数据管理各页消费。
 
 <span style="color:#2563eb">●</span> 直连采集　<span style="color:#7c3aed">●</span> 只进不出　<span style="color:#16a34a">●</span> 周频控制　<span style="color:#dc2626">●</span> 质检修复闭环
 
@@ -156,7 +156,8 @@
 - **数据概览**（`/data/overview` → `_board_stage`）：板块规模（字典数/概念/行业）、覆盖进度（成分 ready/target、指数、资金流）、鲜活度（最新交易日对照板块指数/资金流快照）、质量问题分项、最近采集状态。板块数据 tab 展示 hero 卡 + 两列布局（覆盖进度/鲜活度 + 质量问题/最近采集），低高度由面板承接滚动。
 - **任务调度**（`/data/schedules` → `SCHEDULABLE_TASK_TYPES` 含 `board`）：创建/编辑校验 `mode ∈ {update,backfill}`、`board_type ∈ {concept,industry}`、`only ⊆ {dict,members,bar,fund}` 和 `force_members`；触发走同一异步任务互斥闸。
 - **手动采集**（`/data/ingest`）：与调度页共用 `BoardTaskScopeFields`，对齐采集模式、板块类型、分阶段 `only`、成分强刷；手动入口额外支持指定板块代码/名称。
-- **板块行情页**（`/api/sectors`，权限 `sectors:view`）：4 个只读接口（列表/详情/bars/members），涨幅从 `board_bar` 实时计算，领涨股取资金流 `leader_stock`；列表只展示 `has_members` 或 `has_bar` 为 true 的板块。
+- **板块行情页**（`/api/sectors`，权限 `sectors:view`）：列表/详情/bars/members 与市场指数基准 bars 均为只读接口，涨幅从 `board_bar` 实时计算，领涨股取资金流 `leader_stock`。列表采用排行与走势图主从联动，自选与对比队列分离；首屏只选择当前列表第一项，额外对比板块由用户主动勾选。所有走势统一以区间首日为 0%，可叠加系统配置的中证 500/沪深 300 指数虚线，并计算板块相对指数的超额涨跌。列表与详情的近 60/120/250 日是数据与横向缩放的共同硬边界，板块与指数按同一组末尾交易日对齐截断；只有“全部”加载完整历史。详情复用行情多图工作区呈现 K 线与量能，默认图表区 560px、成分股区最小 420px，支持拖拽分隔线调整和保存 K线/量能高度比例。成分股采用服务端分页排序，`stocks:view` 决定是否可跳个股页；进入个股前写入当前成分股集合与板块详情返回路径，避免继承每日榜单等旧集合。缓存详情实例固定自身 code，返回列表不再触发空 code 请求；来源状态通过 query 白名单显式恢复，应用菜单恢复最近停留的板块列表或详情子路由。
+- **板块自选**：`board_watchlist` 落 PostgreSQL，以 `tenant_id + owner_user_id + board_code` 隔离；加入时保存名称/类型快照。读取时由服务层分别查询 PG 自选与 DuckDB 板块行情后内存合并，禁止跨库 JOIN；板块字典失效时仍返回快照并标记 `available=false`，用户可主动移出。
 
 ## 配置（`backend/config/settings.py` + `storage/app_config.py`）
 
@@ -199,6 +200,9 @@
 | `GET/POST /api/data/settings` | `data-settings:manage` | `ths_board` 配置段读写（限流/超时/成分更新间隔） |
 | `GET/POST /api/data/sources`、`/test` | `data-source:test` | 数据源状态含 `ths_board`（`role='board'`） |
 | `GET /api/sectors`、`/{code}`、`/{code}/bars`、`/{code}/members` | `sectors:view`（业务授权码） | 板块行情只读（列表/详情/指数/成分） |
+| `GET /api/sectors/benchmarks/{index_code}/bars` | `sectors:view`（业务授权码） | 系统配置白名单内的市场指数基准行情，用于板块相对强弱与超额涨跌 |
+| `GET /api/sectors/watchlist`、`/watchlist/markets` | `sector-watchlist:view`（业务授权码） | 查看当前用户板块自选及对应行情 |
+| `POST /api/sectors/watchlist`、`DELETE /watchlist/{board_code}` | `sector-watchlist:update`（业务授权码） | 幂等加入或移出当前用户板块自选 |
 
 数据管理 router 整体在 `main.py` 挂 `require_system` 硬守卫（system-only）；`sectors` 用 `require_perm("sectors:view")`（普通用户经业务授权可读）。
 
@@ -210,7 +214,8 @@
 |------|------|
 | `backend/tests/test_board_ingest.py`（20 用例） | 字典/成分/指数/资金流采集、只进不出幂等、不完整快照不落库、周频跳过、**ignored 豁免（fund + member）**、fund checkpoint 范围签名与旧格式迁移、update/backfill 语义、留痕、写锁归类、事务原子性 |
 | `backend/tests/test_data_mgmt_b.py` 板块用例（~20） | board 任务注册/互斥/续跑/部分失败、force_members 透传、scan_board_quality 扫描与事务替换、recheck_clean 复检、三类 issue 修复闭环、搜索、概览/hub 板块统计 |
-| `backend/tests/test_sectors_api.py`（9 用例） | `/api/sectors*` 只读接口、权限、涨幅口径 |
+| `backend/tests/test_sectors_api.py`（10 用例） | `/api/sectors*` 只读接口、权限、涨幅口径、成分股排序 |
+| `backend/tests/test_board_watchlist.py` | 板块自选归属隔离、幂等增删、失效快照保留 |
 | `backend/tests/test_pipeline.py` | `DailyPipeline.run(board=True)` 集成、`--skip-board` |
 | `backend/tests/test_ddl.py` | board 四表 DDL、维度注册 |
 | 前端 `frontend/src/layout/__tests__/` 等 | 页面契约（按钮/组件/布局规范不因板块改动回归） |

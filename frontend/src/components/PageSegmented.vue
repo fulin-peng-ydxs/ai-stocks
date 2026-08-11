@@ -8,6 +8,8 @@ const props = defineProps<{
   testId?: string
   /** 紧凑控件行使用 small；设置抽屉与表单保持 default。 */
   size?: 'default' | 'small'
+  /** 页面级模式切换使用 primary；设置型枚举保持 neutral。 */
+  tone?: 'neutral' | 'primary'
 }>()
 
 defineEmits<{
@@ -22,7 +24,10 @@ function optionTestId(value: OptionValue): string | undefined {
 <template>
   <div
     class="page-segmented"
-    :class="{ 'page-segmented--small': props.size === 'small' }"
+    :class="{
+      'page-segmented--small': props.size === 'small',
+      'page-segmented--primary': props.tone === 'primary',
+    }"
     role="group"
     :data-testid="props.testId"
   >
@@ -83,6 +88,16 @@ function optionTestId(value: OptionValue): string | undefined {
   color: var(--page-settings-text);
   border-color: var(--page-settings-seg-active-border);
   box-shadow: 0 1px 2px rgba(31, 45, 70, 0.1);
+}
+.page-segmented--primary .seg-btn.active {
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary);
+  color: var(--el-color-white);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--el-color-primary) 28%, transparent);
+}
+.page-segmented--primary .seg-btn:hover:not(.active) {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
 }
 .page-segmented--small {
   padding: 2px;

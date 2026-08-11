@@ -120,6 +120,17 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
     }
   }
 
+  async function whenHydrated(): Promise<void> {
+    if (hydrated.value) return
+    await new Promise<void>((resolve) => {
+      const stop = watch(hydrated, (ready) => {
+        if (!ready) return
+        stop()
+        resolve()
+      })
+    })
+  }
+
   watch(
     value,
     () => {
@@ -147,6 +158,7 @@ export function useUserPreference<T extends object>(options: UseUserPreferenceOp
     isDirty,
     reset,
     loadRemote,
+    whenHydrated,
     saveRemoteNow,
   }
 }

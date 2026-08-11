@@ -55,6 +55,7 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     "pageSize": {"type": "int", "layers": {"preset", "page", "user"}, "min": 10, "max": 500},
     "defaultSort": {"type": "str", "layers": {"page", "user"}},
     "hiddenColumns": {"type": "str_list", "layers": {"page", "user"}},
+    "minHeight": {"type": "int", "layers": {"page", "user"}, "min": 480, "max": 900},
     "defaultActive": {"type": "str", "layers": {"page", "user"}},
     "size": {"type": "enum", "layers": {"preset", "page", "user"}, "options": {"sm", "md", "lg"}},
     "bodyScroll": {"type": "bool", "layers": {"preset", "page"}},
@@ -70,6 +71,7 @@ COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
 COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
     "data-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
     "wide-table": {"border", "pageSize", "defaultSort", "hiddenColumns"},
+    "chart": {"minHeight"},
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll", "collapsibleSections", "defaultCollapsed"},
     "config-panel": {"collapsibleSections", "defaultCollapsed", "showGroupDescription", "showSectionDescription"},

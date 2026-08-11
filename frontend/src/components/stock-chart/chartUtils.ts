@@ -145,6 +145,15 @@ function tooltipRow(label: string, value: string, palette: KlineTooltipPalette, 
     + '</div>'
 }
 
+function priceDirectionColor(
+  value: number | null | undefined,
+  reference: number | null | undefined,
+  palette: KlineTooltipPalette,
+): string {
+  if (value == null || reference == null || value === reference) return palette.text
+  return value > reference ? palette.up : palette.down
+}
+
 /** K线详情统一格式：固定字段、A股涨跌色和紧凑双列布局由新旧图表共同复用。 */
 export function klineTooltipHtml(bar: Bar, palette: KlineTooltipPalette): string {
   const pct = bar.pre_close ? ((bar.close - bar.pre_close) / bar.pre_close) * 100 : null
@@ -156,10 +165,19 @@ export function klineTooltipHtml(bar: Bar, palette: KlineTooltipPalette): string
 
   return '<div style="min-width:150px;line-height:1.6">'
     + tooltipRow('时间', bar.date, palette)
-    + tooltipRow('开盘', formatChartNumber(bar.open), palette)
+    + tooltipRow(
+      '开盘', formatChartNumber(bar.open), palette,
+      priceDirectionColor(bar.open, bar.pre_close, palette),
+    )
     + tooltipRow('收盘', formatChartNumber(bar.close), palette, directionColor)
-    + tooltipRow('最高', formatChartNumber(bar.high), palette)
-    + tooltipRow('最低', formatChartNumber(bar.low), palette)
+    + tooltipRow(
+      '最高', formatChartNumber(bar.high), palette,
+      priceDirectionColor(bar.high, bar.pre_close, palette),
+    )
+    + tooltipRow(
+      '最低', formatChartNumber(bar.low), palette,
+      priceDirectionColor(bar.low, bar.pre_close, palette),
+    )
     + tooltipRow('涨幅', pctText, palette, directionColor)
     + tooltipRow(
       '振幅',

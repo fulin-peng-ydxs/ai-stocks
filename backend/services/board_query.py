@@ -31,6 +31,15 @@ _PCT_WINDOW = {"pct_today": 1, "pct_5d": 5, "pct_10d": 10, "pct_20d": 20}
 # 列表可排序字段码（需求 §6.2 稳定字段码；前端中文标签仅 UI 映射）
 SORT_FIELDS = ("pct_today", "pct_5d", "pct_10d", "pct_20d", "net_inflow", "up_count")
 
+# 成分股表只开放页面真实消费的稳定字段码；SQL 表达式固定映射，禁止透传参数。
+MEMBER_SORT_FIELDS = {
+    "code": "m.code",
+    "pct": (
+        "CASE WHEN b.pre_close IS NOT NULL AND b.pre_close <> 0 "
+        "THEN (b.close / b.pre_close - 1) * 100 END"
+    ),
+}
+
 
 class BoardQueryService:
     """板块行情只读查询（板块概念 T8）。"""
@@ -49,6 +58,7 @@ class BoardQueryService:
         keyword: str | None = None,
         page: int = 1,
         size: int = 20,
+        board_codes: set[str] | None = None,
     ) -> dict:
         """板块列表：涨幅/成分数/即时净流入/领涨股 + 分页排序。
 
@@ -62,6 +72,8 @@ class BoardQueryService:
         rows = self._sector_rows(bar_date, fund_date)
 
         # 过滤
+        if board_codes is not None:
+            rows = [r for r in rows if r["board_code"] in board_codes]
         if board_type:
             rows = [r for r in rows if r["board_type"] == board_type]
         if keyword:
@@ -260,10 +272,24 @@ class BoardQueryService:
             for _, r in df.iterrows()
         ]
 
+    def get_benchmark_bars(self, index_code: str, start: date, end: date) -> list[dict]:
+        """市场基准指数区间序列，字段与板块指数序列保持一致以便前端对齐比较。"""
+        df = self.c.query_df(
+            "SELECT trade_date, open, high, low, close, volume, amount FROM index_bar "
+            "WHERE index_code = ? AND trade_date >= ? AND trade_date <= ? "
+            "ORDER BY trade_date", [index_code, start, end])
+        return [
+            {"trade_date": str(pd.Timestamp(r["trade_date"]).date()),
+             "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"],
+             "volume": r["volume"], "amount": r["amount"]}
+            for _, r in df.iterrows()
+        ]
+
     # ── 成分股分页 ───────────────────────────────────────────
 
     def get_members(self, code: str, trade_date: date | None = None,
-                    page: int = 1, size: int = 20) -> dict:
+                    page: int = 1, size: int = 20, sort_by: str = "pct",
+                    order: str = "desc") -> dict:
         """成分股统一分页：成分股 + 该交易日现价/涨跌幅/换手（个股行情表同库关联）。
 
         返回 {"list": [{code, name, close, pct_chg, turnover_rate}], "total": n}。
@@ -274,6 +300,8 @@ class BoardQueryService:
         if total == 0:
             return {"list": [], "total": 0, "trade_date": str(bar_date) if bar_date else None}
         cond = "b.trade_date = ?" if bar_date is not None else "1=0"
+        sort_expr = MEMBER_SORT_FIELDS.get(sort_by, MEMBER_SORT_FIELDS["pct"])
+        sort_order = "ASC" if order == "asc" else "DESC"
         df = self.c.query_df(
             f"""
             SELECT m.code, sb.name, b.close, b.pre_close, b.turnover_rate
@@ -281,7 +309,7 @@ class BoardQueryService:
             LEFT JOIN stock_basic sb ON sb.code = m.code
             LEFT JOIN daily_bar b ON b.code = m.code AND {cond}
             WHERE m.board_code = ?
-            ORDER BY m.code
+            ORDER BY {sort_expr} {sort_order} NULLS LAST, m.code ASC
             LIMIT ? OFFSET ?
             """, ([bar_date] if bar_date is not None else []) + [code, size, (page - 1) * size])
         rows = []

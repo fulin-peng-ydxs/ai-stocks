@@ -374,7 +374,7 @@ test.describe('个股详情三图工作区', () => {
     }, { code: sample.code, name: sample.name })
 
     await page.goto(`/stocks/${sample.code}`)
-    const workspace = page.getByLabel('个股多图联动工作区')
+    const workspace = page.getByLabel('行情多图联动工作区')
     await expect(workspace.locator('[data-panel-key]')).toHaveCount(3)
     await expect(workspace.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
     await expect(workspace.getByText('量能', { exact: true })).toBeVisible()
@@ -423,7 +423,7 @@ test.describe('个股详情三图工作区', () => {
     }])
 
     await page.goto(`/stocks/${sample.code}`)
-    const workspace = page.getByLabel('个股多图联动工作区')
+    const workspace = page.getByLabel('行情多图联动工作区')
     await expect(workspace.locator('[data-panel-key]')).toHaveCount(3)
     await expect(page.getByTestId('stock-indicator-snapshot-card')).toHaveCount(0)
     await expect(page.getByTestId('stock-trade-eval-card')).toHaveCount(0)
@@ -474,7 +474,7 @@ test.describe('个股详情三图工作区', () => {
     await page.goto(`/stocks/${sample.code}`)
     await expect(page).toHaveURL(/\/board$/)
     await expect(page.getByRole('heading', { name: '每日榜单' })).toBeVisible()
-    await expect(page.getByLabel('个股多图联动工作区')).toHaveCount(0)
+    await expect(page.getByLabel('行情多图联动工作区')).toHaveCount(0)
     expect(consoleIssues).toEqual([])
   })
 
@@ -594,7 +594,7 @@ test.describe('个股详情三图工作区', () => {
     await expect(page.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
     await expect(page.getByText('量能', { exact: true })).toBeVisible()
     await expect(page.getByText('MACD（12,26,9·前复权）', { exact: true })).toBeVisible()
-    const workspace = page.getByLabel('个股多图联动工作区')
+    const workspace = page.getByLabel('行情多图联动工作区')
     await expect(workspace.getByText('MACD 加载失败', { exact: true })).toBeVisible()
     await expect(workspace.getByText('E2E MACD 局部失败', { exact: true })).toBeVisible()
 
@@ -615,6 +615,12 @@ test.describe('个股详情三图工作区', () => {
     await page.getByTestId('page-settings-trigger').click()
     const detailSettingsDrawer = page.getByTestId('page-settings-drawer')
     await expect(detailSettingsDrawer).toBeVisible()
+    const chartHeightControl = detailSettingsDrawer.getByTestId('component-chart-minHeight')
+    if (!await chartHeightControl.isVisible()) {
+      await detailSettingsDrawer.getByRole('button', { name: '组件设置', exact: true }).click()
+    }
+    await expect(chartHeightControl).toBeVisible()
+    await expect(workspace).toHaveAttribute('data-configured-height', '650')
     await expect(detailSettingsDrawer.getByTestId('stock-detail-chart-slot1-kline')).toContainText(
       '固定，不可隐藏',
     )
@@ -795,8 +801,8 @@ test.describe('个股详情三图工作区', () => {
         normalPage.goto(`/stocks/${sample.code}`),
         secondaryPage.goto(`/stocks/${sample.code}`),
       ])
-      const normalWorkspace = normalPage.getByLabel('个股多图联动工作区')
-      const secondaryWorkspace = secondaryPage.getByLabel('个股多图联动工作区')
+      const normalWorkspace = normalPage.getByLabel('行情多图联动工作区')
+      const secondaryWorkspace = secondaryPage.getByLabel('行情多图联动工作区')
       await expect(normalWorkspace.locator('[data-panel-key]')).toHaveCount(3)
       await expect(normalWorkspace.locator('[data-panel-key="slot2"]')).toContainText('量能')
       await expect(secondaryWorkspace.locator('[data-panel-key]')).toHaveCount(3)
@@ -853,7 +859,7 @@ test.describe('个股详情三图工作区', () => {
     })
 
     await page.goto(`/stocks/${sample.code}`)
-    const workspace = page.getByLabel('个股多图联动工作区')
+    const workspace = page.getByLabel('行情多图联动工作区')
     await expect(workspace.locator('[data-panel-key]')).toHaveCount(2)
     await expect(workspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
 
@@ -891,7 +897,7 @@ test.describe('个股详情三图工作区', () => {
     }])
 
     await page.goto(`/stocks/${code}`)
-    const workspace = page.getByLabel('个股多图联动工作区')
+    const workspace = page.getByLabel('行情多图联动工作区')
     await expect(workspace.locator('[data-panel-key]')).toHaveCount(3)
     await expect(workspace.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
     await expect(workspace.getByText('量能', { exact: true })).toBeVisible()
@@ -1080,7 +1086,7 @@ test.describe('个股详情三图工作区', () => {
     })
 
     await page.goto(`/stocks/${code}`)
-    const workspace = page.getByLabel('个股多图联动工作区')
+    const workspace = page.getByLabel('行情多图联动工作区')
     await expect(workspace.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
     await expect(workspace.locator('.el-loading-mask')).toBeVisible()
     releaseBars()
@@ -1106,7 +1112,7 @@ test.describe('个股详情三图工作区', () => {
     await page.reload()
     await expect(page.getByText('当前股票在所选范围内没有可用行情', { exact: true }))
       .toBeVisible()
-    await expect(page.getByLabel('个股多图联动工作区')).toHaveCount(0)
+    await expect(page.getByLabel('行情多图联动工作区')).toHaveCount(0)
 
     await page.unroute('**/api/stocks/*/bars*')
     await page.route('**/api/stocks/*/bars*', async (route) => {
@@ -1125,7 +1131,7 @@ test.describe('个股详情三图工作区', () => {
     await expect(page.getByText('无权限查看个股详情', { exact: true })).toBeVisible()
     await expect(page.getByText('请联系系统管理员调整股票查看权限', { exact: true }))
       .toBeVisible()
-    await expect(page.getByLabel('个股多图联动工作区')).toHaveCount(0)
+    await expect(page.getByLabel('行情多图联动工作区')).toHaveCount(0)
     expect(consoleIssues).toEqual([])
   })
 })

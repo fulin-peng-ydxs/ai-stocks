@@ -388,10 +388,15 @@ onBeforeUnmount(detachKeyboard)
           <div class="cfg-grid">
             <div class="cfg-item">
               <label>训练模式</label>
-              <el-radio-group v-model="cfg.mode">
-                <el-radio-button value="single">单只随机</el-radio-button>
-                <el-radio-button value="multi">多只一轮</el-radio-button>
-              </el-radio-group>
+              <PageSegmented
+                v-model="cfg.mode"
+                tone="primary"
+                aria-label="训练模式"
+                :options="[
+                  { label: '单只随机', value: 'single' },
+                  { label: '多只一轮', value: 'multi' },
+                ]"
+              />
             </div>
             <div class="cfg-item wide">
               <label>随机交易日范围</label>
@@ -570,7 +575,7 @@ onBeforeUnmount(detachKeyboard)
 
           <template v-if="!isLast">
             <div class="ops order-input">
-              <PageSegmented v-model="cfg.orderMode" aria-label="本轮下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
+              <PageSegmented v-model="cfg.orderMode" tone="primary" size="small" aria-label="本轮下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
               <el-input-number v-model="order.qty" :min="inputMin" :max="inputMax" :step="inputStep" controls-position="right" style="width:160px" />
               <span class="unit">{{ isAmount ? '元' : '手' }}</span>
               <span class="hint" v-if="!isAmount">

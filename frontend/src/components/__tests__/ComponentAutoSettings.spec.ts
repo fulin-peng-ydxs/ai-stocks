@@ -56,6 +56,17 @@ vi.mock('@/layout/pageRegistry', () => ({
         },
       }
     }
+    if (pageKey === 'chart-demo') {
+      return {
+        layout: {
+          slots: [{ id: 'chart', component: 'chart', label: '板块指数' }],
+        },
+        consumedComponentFields: {
+          chart: ['minHeight'],
+        },
+        componentMeta: {},
+      }
+    }
     return {
       layout: {
         slots: [{ id: 'settings', component: 'settings-drawer', label: '设置抽屉' }],
@@ -70,7 +81,9 @@ vi.mock('@/layout/pageRegistry', () => ({
 
 vi.mock('@/layout/componentConfig', () => ({
   getComponentFieldDef: (_kind: string, field: string) => (
-    field === 'border'
+    field === 'minHeight'
+      ? { key: 'minHeight', label: '图表区域高度', control: 'int', layers: ['page', 'user'], min: 480, max: 900, default: 560 }
+      : field === 'border'
       ? { layers: ['page'] }
       : field === 'bodyScroll'
         ? { layers: ['preset', 'page'] }
@@ -100,6 +113,7 @@ function mountAuto(drawerBusinessVisible: boolean) {
         ElEmpty: true,
         ElSelect: { template: '<div><slot /></div>' },
         ElOption: { props: ['label'], template: '<span>{{ label }}</span>' },
+        ElInputNumber: true,
         ElCheckboxGroup: { template: '<div><slot /></div>' },
         ElCheckbox: { props: ['value'], template: '<label><slot /></label>' },
       },
@@ -131,6 +145,7 @@ function mountSortDemo() {
         ElCheckbox: { props: ['value'], template: '<label><slot /></label>' },
         ElSelect: { props: ['modelValue'], template: '<div class="select-stub"><slot /></div>' },
         ElOption: { props: ['label'], template: '<span class="option-stub">{{ label }}</span>' },
+        ElInputNumber: true,
       },
     },
   })
@@ -216,6 +231,41 @@ function mountConfigPanelDemo() {
   return { wrapper, setComponentKnob }
 }
 
+function mountChartDemo() {
+  const setComponentKnob = vi.fn()
+  const wrapper = mount(ComponentAutoSettings as Component, {
+    props: {
+      pageKey: 'chart-demo',
+      config: {
+        componentValueOf: vi.fn(() => 560),
+        setComponentKnob,
+      },
+    },
+    global: {
+      stubs: {
+        SettingsGroup: {
+          props: ['title'],
+          template: '<section><h3 v-if="title">{{ title }}</h3><slot /></section>',
+        },
+        SourceTag: true,
+        AppRowActions: true,
+        ElInputNumber: {
+          props: ['modelValue', 'min', 'max'],
+          emits: ['update:modelValue'],
+          template: '<button class="number-stub" :data-value="modelValue" :data-min="min" :data-max="max" @click="$emit(\'update:modelValue\', 620)" />',
+        },
+        ElSelect: true,
+        ElOption: true,
+        ElSwitch: true,
+        ElCheckboxGroup: true,
+        ElCheckbox: true,
+        ElEmpty: true,
+      },
+    },
+  })
+  return { wrapper, setComponentKnob }
+}
+
 describe('ComponentAutoSettings', () => {
   it('无业务设置 slot 时隐藏设置抽屉的业务折叠段选项', () => {
     const wrapper = mountAuto(false)
@@ -246,6 +296,18 @@ describe('ComponentAutoSettings', () => {
   it('表格边框是 page 层组件能力，不进入用户设置层', () => {
     expect(mountBorderDemo('page').text()).toContain('显示表格边框')
     expect(mountBorderDemo('user').text()).not.toContain('显示表格边框')
+  })
+
+  it('数值型组件字段按统一元数据渲染并写回', async () => {
+    const { wrapper, setComponentKnob } = mountChartDemo()
+    expect(wrapper.text()).toContain('图表区域高度')
+    expect(wrapper.find('.number-stub').attributes()).toMatchObject({
+      'data-value': '560',
+      'data-min': '480',
+      'data-max': '900',
+    })
+    await wrapper.find('.number-stub').trigger('click')
+    expect(setComponentKnob).toHaveBeenCalledWith('chart', 'minHeight', 620)
   })
 
   it('config-panel 默认折叠候选支持按当前业务覆盖并保留隐藏选中值', async () => {

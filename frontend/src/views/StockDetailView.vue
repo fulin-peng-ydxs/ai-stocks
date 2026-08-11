@@ -50,6 +50,7 @@ import {
 } from '@/composables/useStockChartPreferences'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
+import { resolveComponentNumberValue } from '@/layout/componentConfig'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const route = useRoute()
@@ -75,8 +76,19 @@ const {
   componentLayerValuesOf,
 } = useRemoteLayoutConfig(detailLayout)
 
-// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+// 抽屉的布局与图表区域高度由 PageSettingsDrawer 按 pageRegistry 元数据统一渲染。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const chartDefaultHeight = Number(
+  detailLayout.slots.find((slot) => slot.id === 'chart')?.config?.minHeight,
+)
+const configuredChartHeight = computed(() => {
+  return resolveComponentNumberValue(
+    'chart',
+    'minHeight',
+    componentValueOf('chart', 'minHeight'),
+    chartDefaultHeight,
+  )
+})
 const detailDefaults = {
   adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
   showTradeCard: true,
@@ -932,6 +944,8 @@ onBeforeUnmount(() => {
       />
       <StockChartWorkspace
         class="detail-chart-workspace"
+        :data-configured-height="configuredChartHeight"
+        :style="{ flexBasis: `${configuredChartHeight}px` }"
         v-loading="barsLoading"
         :bars="displayBars"
         :warmup-bars="warmupBars"
@@ -944,6 +958,7 @@ onBeforeUnmount(() => {
         :macd-error="indicatorError"
         :zoom-start="0"
         :zoom-end="100"
+        :min-height="configuredChartHeight"
         @ratio-draft="handleRatioDraft"
         @ratio-commit="handleRatioCommit"
         @retry-macd="loadIndicators"
@@ -1155,7 +1170,7 @@ onBeforeUnmount(() => {
 }
 
 .detail-chart-workspace {
-  flex: 1 0 650px;
+  flex: 1 0 auto;
 }
 
 .page-head {

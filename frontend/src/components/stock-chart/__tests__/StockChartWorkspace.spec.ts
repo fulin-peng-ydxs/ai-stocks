@@ -157,6 +157,29 @@ function pointerEvent(type: string, pointerId: number, clientY: number): Event {
 }
 
 describe('StockChartWorkspace', () => {
+  it('紧凑双图高度仍保留 K 线和量能，并对过小请求执行安全下限', async () => {
+    const compact = await mountWorkspace({
+      slot2: 'volume',
+      slot3: 'hidden',
+      minHeight: 480,
+    })
+    expect(compact.attributes('data-min-height')).toBe('480')
+    expect(compact.findAll('.stock-chart-panel')).toHaveLength(2)
+    expect(compact.find('.stock-chart-panel--volume').exists()).toBe(true)
+    const compactSplitter = compact.find('[role="separator"]')
+    expect(compactSplitter.attributes('aria-valuenow')).toBe('73')
+    expect(compactSplitter.attributes('aria-valuemax')).toBe('73')
+    compact.unmount()
+
+    const clamped = await mountWorkspace({
+      slot2: 'volume',
+      slot3: 'hidden',
+      minHeight: 100,
+    })
+    expect(clamped.attributes('data-min-height')).toBe('384')
+    clamped.unmount()
+  })
+
   const { isDark } = useTheme()
 
   beforeEach(() => {

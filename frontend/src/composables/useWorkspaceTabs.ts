@@ -21,6 +21,7 @@ export const WORKSPACE_TAB_LIMIT = 12
 const workspaceTabs = ref<WorkspaceTab[]>([])
 const cacheNames = new Map<string, string>()
 const cacheWrappers = new Map<string, Component>()
+const lastPathByMenu = new Map<string, string>()
 let cacheSequence = 0
 
 const workspaceCacheNames = computed(() => workspaceTabs.value.map((tab) => tab.cacheName))
@@ -38,6 +39,17 @@ function releaseCache(key: string) {
   cacheWrappers.delete(key)
 }
 
+function repairLastMenuPath(removedKey: string) {
+  for (const [menuPath, fullPath] of lastPathByMenu) {
+    if (fullPath.split('?')[0] !== removedKey) continue
+    const replacement = [...workspaceTabs.value].reverse().find(
+      (tab) => tab.key === menuPath || tab.key.startsWith(`${menuPath}/`),
+    )
+    if (replacement) lastPathByMenu.set(menuPath, replacement.path)
+    else lastPathByMenu.delete(menuPath)
+  }
+}
+
 function tabTitle(route: RouteLocationNormalizedLoaded, menus: MenuTreeNode[]): string {
   const leaf = findMenuLeaf(menus, route.path)
   const routeTitle = typeof route.meta.title === 'string' ? route.meta.title : ''
@@ -48,6 +60,8 @@ function tabTitle(route: RouteLocationNormalizedLoaded, menus: MenuTreeNode[]): 
 
 export function visitWorkspaceTab(route: RouteLocationNormalizedLoaded, menus: MenuTreeNode[]) {
   if (route.meta.fullscreen || route.path === '/') return
+  const menuPath = findMenuLeaf(menus, route.path)?.index
+  if (menuPath) lastPathByMenu.set(menuPath, route.fullPath)
   const next: WorkspaceTab = {
     key: route.path,
     path: route.fullPath,
@@ -61,7 +75,10 @@ export function visitWorkspaceTab(route: RouteLocationNormalizedLoaded, menus: M
   }
   if (workspaceTabs.value.length >= WORKSPACE_TAB_LIMIT) {
     const removed = workspaceTabs.value.shift()
-    if (removed) releaseCache(removed.key)
+    if (removed) {
+      releaseCache(removed.key)
+      repairLastMenuPath(removed.key)
+    }
   }
   workspaceTabs.value.push(next)
 }
@@ -72,6 +89,7 @@ export function removeWorkspaceTab(key: string, activeKey: string): string | und
   if (index < 0) return undefined
   workspaceTabs.value.splice(index, 1)
   releaseCache(key)
+  repairLastMenuPath(key)
   if (key !== activeKey) return undefined
   return workspaceTabs.value[Math.min(index, workspaceTabs.value.length - 1)]?.path
 }
@@ -80,6 +98,12 @@ export function resetWorkspaceTabs() {
   workspaceTabs.value = []
   cacheNames.clear()
   cacheWrappers.clear()
+  lastPathByMenu.clear()
+}
+
+/** 菜单再次进入时恢复该菜单最后停留的列表或详情子路由。 */
+export function resolveWorkspaceMenuPath(menuPath: string): string {
+  return lastPathByMenu.get(menuPath) ?? menuPath
 }
 
 /**

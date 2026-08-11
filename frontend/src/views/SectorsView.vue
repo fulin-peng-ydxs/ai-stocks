@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import type { Sort } from 'element-plus'
-import { Close } from '@element-plus/icons-vue'
-import { useRoute } from 'vue-router'
+import { ElMessage, type Sort } from 'element-plus'
+import { ArrowRight, Close, Star, StarFilled } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import CandleChart from '@/components/CandleChart.vue'
+import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -18,29 +20,53 @@ import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
+  addSectorWatchlist,
+  getSectorBenchmarkBars,
   getSectorBars,
+  listSectorWatchlist,
   listSectors,
+  listWatchlistSectors,
+  removeSectorWatchlist,
   type BoardType,
   type SectorBar,
   type SectorRow,
   type SectorSortField,
 } from '@/api/sectors'
 import type { Bar } from '@/api/stocks'
-import { ALL_DAYS, useKlinePrefs } from '@/composables/useKlinePrefs'
+import {
+  klineRangeQueryStart,
+  trimAlignedKlineRange,
+  useKlinePrefs,
+} from '@/composables/useKlinePrefs'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
+import { useAuthStore } from '@/stores/auth'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
+import { hasPermission } from '@/utils/permission'
+import { sanitizeSectorSourceQuery, toLocationQuery } from '@/utils/sectorNavigation'
 
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
 const { dataMin, dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
 
-const sectorsDefaults = { defaultType: '' as BoardType | '' }
-const { settings, isDirty, reset } = usePageSettings('sectors', sectorsDefaults)
+const BENCHMARK_OPTIONS = [
+  { label: '不对比指数', value: '' },
+  { label: '中证 500', value: '000905.SH' },
+  { label: '沪深 300', value: '000300.SH' },
+]
+const sectorsDefaults = {
+  defaultType: '' as BoardType | '',
+  defaultScope: 'all' as 'all' | 'watchlist',
+  defaultChartMode: 'compare' as 'compare' | 'kline',
+  benchmarkCode: '000905.SH',
+}
+const { settings, isDirty, reset, whenHydrated } = usePageSettings('sectors', sectorsDefaults)
 
 const sectorsLayout = getPageLayout('sectors')
 const {
@@ -90,8 +116,12 @@ const TYPE_OPTIONS: { label: string; value: BoardType | '' }[] = [
   { label: '行业', value: 'industry' },
 ]
 const CHART_MODE_OPTIONS = [
-  { label: '强弱对比', value: 'compare' },
-  { label: '指数 K 线', value: 'kline' },
+  { label: '走势对比', value: 'compare' },
+  { label: 'K 线', value: 'kline' },
+]
+const LIST_SCOPE_OPTIONS = [
+  { label: '全市场', value: 'all' },
+  { label: '自选', value: 'watchlist' },
 ]
 
 const defaultSize = computed<number>(() => {
@@ -114,6 +144,7 @@ const forbidden = ref(false)
 const tradeDate = ref<string | null>('')
 const marketDate = ref<string | null>(null)
 const boardType = ref<BoardType | ''>(settings.defaultType)
+const listScope = ref<'all' | 'watchlist'>(settings.defaultScope)
 const keyword = ref('')
 const page = ref(1)
 const size = ref(defaultSize.value)
@@ -121,6 +152,14 @@ const total = ref(0)
 const rows = ref<SectorRow[]>([])
 const fundFlowDate = ref<string | null>(null)
 const boardLookup = ref<Record<string, SectorRow>>({})
+const watchlistCodes = ref<Set<string>>(new Set())
+const watchlistBusyCodes = ref<Set<string>>(new Set())
+const canViewWatchlist = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'sector-watchlist:view'),
+)
+const canUpdateWatchlist = computed(() =>
+  hasPermission(auth.role, auth.permissions, 'sector-watchlist:update'),
+)
 
 let restoring = false
 let searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -131,11 +170,13 @@ const activeCode = ref('')
 const pinnedCodes = ref<string[]>([])
 const { validDefault: klineDefaultRange } = useKlinePrefs()
 const rangeDays = ref<number>(klineDefaultRange.value)
-const chartMode = ref<'compare' | 'kline'>('compare')
-const basis = ref<'first' | 'mid'>('first')
+const chartMode = ref<'compare' | 'kline'>(settings.defaultChartMode)
+const benchmarkCode = ref(settings.benchmarkCode)
 const chartLoading = ref(false)
 const chartError = ref('')
+const benchmarkError = ref('')
 const compareBars = ref<Record<string, SectorBar[]>>({})
+const benchmarkSeries = ref<{ code: string; name: string; bars: SectorBar[] } | null>(null)
 let chartRequestVersion = 0
 
 const activeRow = computed(() => boardLookup.value[activeCode.value] ?? null)
@@ -159,54 +200,68 @@ const compareSeries = computed(() =>
     })),
 )
 const klineBars = computed<Bar[]>(() =>
-  (compareBars.value[activeCode.value] ?? []).map((bar) => ({
+  (compareBars.value[activeCode.value] ?? []).map((bar, index, source) => ({
     date: bar.trade_date,
     open: bar.open,
     high: bar.high,
     low: bar.low,
     close: bar.close,
-    pre_close: null,
+    pre_close: index > 0 ? source[index - 1]!.close : null,
     volume: bar.volume,
     amount: bar.amount,
     turnover_rate: null,
   })),
 )
-
 function chartEnd(): string {
   return tradeDate.value || marketDate.value || dataMax.value || ''
 }
-function rangeStart(): string {
-  const endValue = chartEnd()
-  if (rangeDays.value === ALL_DAYS) return dataMin.value || endValue
-  const end = endValue ? new Date(`${endValue}T00:00:00`) : new Date()
-  const start = new Date(end)
-  start.setDate(start.getDate() - rangeDays.value)
-  return `${start.getFullYear()}-${`${start.getMonth() + 1}`.padStart(2, '0')}-${`${start.getDate()}`.padStart(2, '0')}`
-}
-
 async function loadChart(): Promise<void> {
   const codes = chartCodes.value
   if (!codes.length) {
     compareBars.value = {}
+    benchmarkSeries.value = null
     chartError.value = ''
+    benchmarkError.value = ''
     return
   }
-  const start = rangeStart()
-  const end = chartEnd() || start
+  const end = chartEnd()
+  const start = klineRangeQueryStart(end, rangeDays.value, dataMin.value || '2024-01-01')
   if (!start || !end) return
 
   const requestVersion = ++chartRequestVersion
   chartLoading.value = true
   chartError.value = ''
+  benchmarkError.value = ''
   try {
-    const results = await Promise.all(
+    const benchmarkPromise = chartMode.value === 'compare' && benchmarkCode.value
+      ? getSectorBenchmarkBars(benchmarkCode.value, start, end)
+          .catch((error) => {
+            if (requestVersion === chartRequestVersion) {
+              benchmarkError.value = getErrorMessage(error, '对比指数加载失败')
+            }
+            return null
+          })
+      : Promise.resolve(null)
+    const [results, benchmark] = await Promise.all([Promise.all(
       codes.map(async (code) => {
         const result = await getSectorBars(code, start, end)
         return [code, result.list] as const
       }),
-    )
+    ), benchmarkPromise])
     if (requestVersion !== chartRequestVersion) return
-    compareBars.value = Object.fromEntries(results)
+    const rawSeries: Record<string, SectorBar[]> = Object.fromEntries(results)
+    const benchmarkKey = benchmark ? `benchmark:${benchmark.index_code}` : ''
+    if (benchmark) rawSeries[benchmarkKey] = benchmark.list
+    const trimmed = trimAlignedKlineRange(rawSeries, rangeDays.value)
+    compareBars.value = Object.fromEntries(codes.map((code) => [code, trimmed[code] ?? []]))
+    if (benchmark && !benchmark.list.length) {
+      benchmarkError.value = `${benchmark.name}在当前区间暂无行情`
+    }
+    benchmarkSeries.value = benchmark?.list.length ? {
+      code: benchmark.index_code,
+      name: benchmark.name,
+      bars: trimmed[benchmarkKey] ?? [],
+    } : null
   } catch (error) {
     if (requestVersion !== chartRequestVersion) return
     chartError.value = getErrorMessage(error, '板块走势加载失败')
@@ -219,6 +274,7 @@ function isPinned(code: string): boolean {
   return pinnedCodes.value.includes(code)
 }
 function togglePinned(row: SectorRow, checked: boolean): void {
+  if (row.available === false) return
   boardLookup.value = { ...boardLookup.value, [row.board_code]: row }
   if (checked) {
     if (!isPinned(row.board_code)) {
@@ -232,28 +288,76 @@ function togglePinned(row: SectorRow, checked: boolean): void {
 }
 function removeCompared(code: string): void {
   if (code === activeCode.value) {
-    const next = pinnedCodes.value.find((item) => item !== code) || rows.value[0]?.board_code || ''
+    const next = pinnedCodes.value.find((item) => item !== code)
+      || rows.value.find((row) => row.available !== false)?.board_code
+      || ''
     activeCode.value = next
   }
   pinnedCodes.value = pinnedCodes.value.filter((item) => item !== code)
   void loadChart()
 }
 function selectRow(row: SectorRow): void {
+  if (row.available === false) return
   boardLookup.value = { ...boardLookup.value, [row.board_code]: row }
   if (activeCode.value === row.board_code) return
   activeCode.value = row.board_code
   void loadChart()
 }
 function rowClassName({ row }: { row: SectorRow }): string {
-  return row.board_code === activeCode.value ? 'sector-row--active' : ''
+  return [
+    row.board_code === activeCode.value ? 'sector-row--active' : '',
+    row.available === false ? 'sector-row--unavailable' : '',
+  ].filter(Boolean).join(' ')
+}
+
+function isWatchlisted(code: string): boolean {
+  return watchlistCodes.value.has(code)
+}
+
+function isWatchlistBusy(code: string): boolean {
+  return watchlistBusyCodes.value.has(code)
+}
+
+async function loadWatchlist(): Promise<void> {
+  if (!canViewWatchlist.value) return
+  try {
+    const data = await listSectorWatchlist()
+    watchlistCodes.value = new Set(data.list.map((row) => row.board_code))
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '板块自选加载失败'))
+  }
+}
+
+async function toggleWatchlist(row: SectorRow): Promise<void> {
+  if (!canUpdateWatchlist.value || isWatchlistBusy(row.board_code)) return
+  watchlistBusyCodes.value = new Set([...watchlistBusyCodes.value, row.board_code])
+  const removing = isWatchlisted(row.board_code)
+  try {
+    if (removing) await removeSectorWatchlist(row.board_code)
+    else await addSectorWatchlist(row.board_code)
+    const next = new Set(watchlistCodes.value)
+    if (removing) next.delete(row.board_code)
+    else next.add(row.board_code)
+    watchlistCodes.value = next
+    ElMessage.success(removing ? `已移出自选：${row.name}` : `已加入自选：${row.name}`)
+    if (removing && listScope.value === 'watchlist') await load()
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, removing ? '移出板块自选失败' : '加入板块自选失败'))
+  } finally {
+    const next = new Set(watchlistBusyCodes.value)
+    next.delete(row.board_code)
+    watchlistBusyCodes.value = next
+  }
 }
 
 async function load(): Promise<void> {
+  syncSourceQuery()
   loading.value = true
   loadError.value = ''
   forbidden.value = false
   try {
-    const data = await listSectors({
+    const listApi = listScope.value === 'watchlist' ? listWatchlistSectors : listSectors
+    const data = await listApi({
       trade_date: tradeDate.value || undefined,
       board_type: boardType.value || undefined,
       sort_by: sortBy.value,
@@ -278,9 +382,12 @@ async function load(): Promise<void> {
     }
 
     // 首屏直接呈现可用走势，避免必须先理解控件才能看到内容。
-    if (!activeCode.value && data.list.length) {
-      activeCode.value = data.list[0]!.board_code
-      pinnedCodes.value = data.list.slice(1, 3).map((row) => row.board_code)
+    const availableRows = data.list.filter((row) => row.available !== false)
+    const activeInCurrentList = availableRows.some((row) => row.board_code === activeCode.value)
+    if (!activeInCurrentList && availableRows.length) {
+      const initialSelection = !activeCode.value
+      activeCode.value = availableRows[0]!.board_code
+      if (initialSelection) pinnedCodes.value = []
       void loadChart()
     }
   } catch (error) {
@@ -292,6 +399,10 @@ async function load(): Promise<void> {
 }
 
 function search(): void {
+  page.value = 1
+  void load()
+}
+function changeListScope(): void {
   page.value = 1
   void load()
 }
@@ -319,35 +430,32 @@ watch(defaultSize, (value) => {
   page.value = 1
   void load()
 })
-watch([rangeDays, chartMode], () => {
+watch([rangeDays, chartMode, benchmarkCode], () => {
   if (restoring) return
   void loadChart()
 })
 
-interface SanitizedQuery {
-  type?: BoardType
-  sort?: SectorSortField
-  order?: 'asc' | 'desc'
-  keyword?: string
-  page?: string
-}
-function sanitizeQuery(raw: typeof route.query): SanitizedQuery {
-  const result: SanitizedQuery = {}
-  const get = (key: string): string => {
-    const value = raw[key]
-    return typeof value === 'string' ? value : ''
+function sourceQuery() {
+  return {
+    ...(boardType.value ? { type: boardType.value } : {}),
+    ...(sortBy.value !== 'pct_today' ? { sort: sortBy.value } : {}),
+    ...(sortOrder.value !== 'desc' ? { order: sortOrder.value } : {}),
+    ...(keyword.value.trim() ? { keyword: keyword.value.trim().slice(0, 50) } : {}),
+    ...(page.value > 1 ? { page: String(page.value) } : {}),
+    ...(listScope.value === 'watchlist' ? { scope: 'watchlist' as const } : {}),
+    ...(tradeDate.value ? { date: tradeDate.value } : {}),
   }
-  const type = get('type')
-  if (type === 'concept' || type === 'industry') result.type = type
-  const sort = get('sort')
-  if ((SORTABLE_FIELDS as readonly string[]).includes(sort)) result.sort = sort as SectorSortField
-  const order = get('order')
-  if (order === 'asc' || order === 'desc') result.order = order
-  const queryKeyword = get('keyword').slice(0, 50)
-  if (queryKeyword) result.keyword = queryKeyword
-  const pageNumber = Number(get('page'))
-  if (Number.isInteger(pageNumber) && pageNumber >= 1) result.page = String(pageNumber)
-  return result
+}
+function syncSourceQuery(): void {
+  if (restoring) return
+  void router.replace({ path: '/sectors', query: toLocationQuery(sourceQuery()) })
+}
+function openDetail(): void {
+  if (!activeCode.value || activeRow.value?.available === false) return
+  void router.push({
+    path: `/sectors/${encodeURIComponent(activeCode.value)}`,
+    query: toLocationQuery(sourceQuery()),
+  })
 }
 
 function fmtPct(value: number | null | undefined): string {
@@ -367,11 +475,23 @@ function fmtFlowDate(value: string | null): string {
 }
 
 onMounted(async () => {
+  await whenHydrated()
   await ensureLoaded().catch(() => undefined)
-  const query = sanitizeQuery(route.query)
+  const query = sanitizeSectorSourceQuery(route.query)
   restoring = true
   if (!tradeDate.value) tradeDate.value = dataMax.value || ''
-  boardType.value = query.type ?? settings.defaultType
+  boardType.value = query.type ?? (TYPE_OPTIONS.some((option) => option.value === settings.defaultType)
+    ? settings.defaultType
+    : '')
+  const savedScope = settings.defaultScope === 'watchlist' ? 'watchlist' : 'all'
+  listScope.value = canViewWatchlist.value && (query.scope ?? savedScope) === 'watchlist'
+    ? 'watchlist'
+    : 'all'
+  chartMode.value = settings.defaultChartMode === 'kline' ? 'kline' : 'compare'
+  benchmarkCode.value = BENCHMARK_OPTIONS.some((option) => option.value === settings.benchmarkCode)
+    ? settings.benchmarkCode
+    : '000905.SH'
+  if (query.date) tradeDate.value = query.date
   keyword.value = query.keyword ?? ''
   page.value = query.page ? Number(query.page) : 1
   size.value = defaultSize.value
@@ -382,6 +502,7 @@ onMounted(async () => {
     })
   }
   restoring = false
+  await loadWatchlist()
   void load()
 })
 </script>
@@ -402,11 +523,22 @@ onMounted(async () => {
         <el-card shadow="never" class="filter-card">
           <AppControlRow class="filter-row">
             <PageSegmented
+              v-if="canViewWatchlist"
+              v-model="listScope"
+              :options="LIST_SCOPE_OPTIONS"
+              aria-label="板块范围"
+              test-id="sectors-list-scope"
+              size="small"
+              tone="primary"
+              @update:model-value="changeListScope"
+            />
+            <PageSegmented
               v-model="boardType"
               :options="TYPE_OPTIONS"
               aria-label="板块类型"
               test-id="sectors-type"
               size="small"
+              tone="primary"
               @update:model-value="search"
             />
             <TradeDatePicker
@@ -425,15 +557,6 @@ onMounted(async () => {
               @input="scheduleSearch"
               @clear="search"
               @keyup.enter="search"
-            />
-            <div class="filter-divider" aria-hidden="true" />
-            <KlineRangeSelect v-model="rangeDays" test-id="sectors-range" />
-            <PageSegmented
-              v-model="chartMode"
-              :options="CHART_MODE_OPTIONS"
-              aria-label="图表模式"
-              test-id="sectors-chart-mode"
-              size="small"
             />
           </AppControlRow>
         </el-card>
@@ -464,7 +587,7 @@ onMounted(async () => {
               <h3 class="app-section-title">{{ marketDate || tradeDate || '最新交易日' }}</h3>
             </div>
             <div class="rank-meta app-caption-text">
-              <span>{{ total }} 个板块</span>
+              <span>{{ total }} 个{{ listScope === 'watchlist' ? '自选' : '板块' }}</span>
               <span>点击行切换走势</span>
             </div>
           </header>
@@ -501,7 +624,21 @@ onMounted(async () => {
                   class="sector-name-cell"
                   :data-testid="row?.board_code ? `sectors-row-${row.board_code}` : undefined"
                 >
+                  <AppIconButton
+                    v-if="canUpdateWatchlist"
+                    class="watchlist-button"
+                    :class="{ 'watchlist-button--active': isWatchlisted(row.board_code) }"
+                    :label="`${isWatchlisted(row.board_code) ? '移出' : '加入'}板块自选：${row.name}`"
+                    :loading="isWatchlistBusy(row.board_code)"
+                    :data-testid="`sectors-watchlist-${row.board_code}`"
+                    size="xs"
+                    :native-title="false"
+                    @click.stop="toggleWatchlist(row)"
+                  >
+                    <el-icon><StarFilled v-if="isWatchlisted(row.board_code)" /><Star v-else /></el-icon>
+                  </AppIconButton>
                   <el-checkbox
+                    :disabled="row.available === false"
                     :model-value="isPinned(row.board_code)"
                     :aria-label="`${isPinned(row.board_code) ? '移出' : '加入'}对比：${row.name}`"
                     :data-testid="row?.board_code ? `sectors-pin-${row.board_code}` : undefined"
@@ -509,10 +646,17 @@ onMounted(async () => {
                     @change="(checked: boolean) => togglePinned(row, checked)"
                   />
                   <div class="sector-name-copy">
-                    <el-button link type="primary" class="sector-select" @click.stop="selectRow(row)">
+                    <el-button
+                      link
+                      type="primary"
+                      class="sector-select"
+                      :disabled="row.available === false"
+                      @click.stop="selectRow(row)"
+                    >
                       {{ row.name }}
                     </el-button>
-                    <span>{{ row.board_type === 'concept' ? '概念' : '行业' }} · {{ row.member_count ?? '—' }}只</span>
+                    <span v-if="row.available === false">{{ row.board_type === 'concept' ? '概念' : '行业' }} · 已失效</span>
+                    <span v-else>{{ row.board_type === 'concept' ? '概念' : '行业' }} · {{ row.member_count ?? '—' }}只</span>
                   </div>
                 </div>
               </template>
@@ -557,7 +701,9 @@ onMounted(async () => {
               </template>
             </AppTableColumn>
             <template #empty>
-              <span>{{ keyword.trim() ? '没有匹配板块，换个关键词试试' : '暂无板块数据，请先运行板块采集' }}</span>
+              <span v-if="keyword.trim()">没有匹配板块，换个关键词试试</span>
+              <span v-else-if="listScope === 'watchlist'">还没有自选板块，请在“全市场”中点击星标添加</span>
+              <span v-else>暂无板块数据，请先运行板块采集</span>
             </template>
           </AppDataTable>
         </section>
@@ -569,15 +715,48 @@ onMounted(async () => {
               <div class="chart-title-line">
                 <h3 class="chart-title" data-testid="sectors-chart-title">{{ activeRow?.name || '等待选择板块' }}</h3>
                 <span v-if="activeRow" class="board-code">{{ activeRow.board_code }}</span>
+                <el-button
+                  v-if="activeRow"
+                  link
+                  type="primary"
+                  class="detail-link"
+                  :disabled="activeRow.available === false"
+                  data-testid="sectors-open-detail"
+                  @click="openDetail"
+                >
+                  查看详情
+                  <el-icon class="el-icon--right"><ArrowRight /></el-icon>
+                </el-button>
               </div>
-              <p>{{ chartMode === 'compare' ? `与 ${Math.max(0, chartCodes.length - 1)} 个板块对比区间强弱` : '查看板块指数开高低收与量能' }}</p>
+              <p>
+                {{ chartMode === 'compare' ? `与 ${Math.max(0, chartCodes.length - 1)} 个板块对比区间强弱` : '查看板块指数开高低收与量能' }}
+                <template v-if="activeRow?.leader_stock">
+                  · 领涨 {{ activeRow.leader_stock }}
+                  <strong :class="pctClass(activeRow.leader_pct)">{{ fmtPct(activeRow.leader_pct) }}</strong>
+                </template>
+              </p>
             </div>
-            <div v-if="activeRow" class="leader-summary app-caption-text">
-              <template v-if="activeRow.leader_stock">
-                领涨 {{ activeRow.leader_stock }}
-                <strong :class="pctClass(activeRow.leader_pct)">{{ fmtPct(activeRow.leader_pct) }}</strong>
-              </template>
-              <template v-else>成分 {{ activeRow.member_count ?? '—' }} 只</template>
+            <div class="chart-head-actions">
+              <div v-if="chartMode === 'compare'" class="benchmark-control">
+                <span>对比指数</span>
+                <AppFilterSelect
+                  v-model="benchmarkCode"
+                  :options="BENCHMARK_OPTIONS"
+                  :multiple="false"
+                  :clearable="false"
+                  :filterable="false"
+                  data-testid="sectors-benchmark"
+                />
+              </div>
+              <KlineRangeSelect v-model="rangeDays" width="112px" test-id="sectors-range" />
+              <PageSegmented
+                v-model="chartMode"
+                :options="CHART_MODE_OPTIONS"
+                aria-label="图表模式"
+                test-id="sectors-chart-mode"
+                size="small"
+                tone="primary"
+              />
             </div>
           </header>
 
@@ -604,7 +783,12 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div v-if="chartMode === 'compare' && chartCodes.length" class="compare-rail" aria-label="当前对比板块">
+          <div
+            v-if="chartMode === 'compare' && chartCodes.length"
+            class="compare-rail"
+            aria-label="当前对比板块"
+            data-testid="sectors-compare-rail"
+          >
             <span class="compare-label">对比队列</span>
             <div
               v-for="row in compareRows"
@@ -662,20 +846,28 @@ onMounted(async () => {
             />
             <SectorCompareChart
               v-else-if="chartMode === 'compare'"
+              data-testid="sectors-compare-chart"
               :series="compareSeries"
-              :basis="basis"
+              :benchmark="benchmarkSeries"
               fill
             />
-            <CandleChart v-else :bars="klineBars" fill />
+            <CandleChart
+              v-else
+              :bars="klineBars"
+              :zoom-start="0"
+              :zoom-end="100"
+              fill
+            />
           </div>
 
           <footer v-if="chartMode === 'compare'" class="chart-footer">
-            <span>基准</span>
-            <el-radio-group v-model="basis" size="small" aria-label="归一化基准" data-testid="sectors-compare-basis">
-              <el-radio-button value="first">区间首日 = 0</el-radio-button>
-              <el-radio-button value="mid">区间中点 = 0</el-radio-button>
-            </el-radio-group>
-            <span class="chart-note">仅比较相对涨跌，不比较指数点位</span>
+            <span v-if="benchmarkError" class="benchmark-warning">{{ benchmarkError }}，当前仅显示板块走势。</span>
+            <span v-else-if="!benchmarkCode" class="compare-explanation">
+              区间首日统一记为 0%；当前未选择市场指数，只比较板块之间的相对涨跌。
+            </span>
+            <span v-else class="compare-explanation">
+              区间首日统一记为 0%；虚线为{{ benchmarkSeries?.name || '所选指数' }}，悬浮可查看板块相对指数的超额涨跌。
+            </span>
           </footer>
         </section>
       </div>
@@ -693,6 +885,15 @@ onMounted(async () => {
       >
         <template #business>
           <PageSettingSection title="默认查询">
+            <div v-if="canViewWatchlist" class="setting-item">
+              <div class="setting-label">默认板块范围</div>
+              <PageSegmented
+                v-model="settings.defaultScope"
+                :options="LIST_SCOPE_OPTIONS"
+                aria-label="默认板块范围"
+                test-id="sectors-default-scope"
+              />
+            </div>
             <div class="setting-item">
               <div class="setting-label">默认类型</div>
               <PageSegmented
@@ -702,7 +903,27 @@ onMounted(async () => {
                 test-id="sectors-default-type"
               />
             </div>
+            <div class="setting-item">
+              <div class="setting-label">默认图表模式</div>
+              <PageSegmented
+                v-model="settings.defaultChartMode"
+                :options="CHART_MODE_OPTIONS"
+                aria-label="默认图表模式"
+                test-id="sectors-default-chart-mode"
+              />
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">默认对比指数</div>
+              <AppFilterSelect
+                v-model="settings.benchmarkCode"
+                :options="BENCHMARK_OPTIONS"
+                :multiple="false"
+                :clearable="false"
+                :filterable="false"
+              />
+            </div>
           </PageSettingSection>
+          <KlineSettingSection />
         </template>
       </PageSettingsDrawer>
     </template>
@@ -740,16 +961,10 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .date-picker {
-  width: 164px;
+  width: 150px;
 }
 .keyword-input {
-  width: 200px;
-}
-.filter-divider {
-  width: 1px;
-  height: var(--app-control-height-md);
-  margin: 0 var(--app-space-1);
-  background: var(--el-border-color-lighter);
+  width: 160px;
 }
 .sector-workspace {
   height: 100%;
@@ -808,6 +1023,16 @@ onMounted(async () => {
   align-items: center;
   gap: var(--app-space-2);
   min-width: 0;
+}
+.watchlist-button {
+  color: var(--el-text-color-placeholder);
+}
+.watchlist-button--active {
+  color: var(--el-color-primary);
+}
+.rank-panel :deep(.el-table__row.sector-row--unavailable > td.el-table__cell) {
+  background: var(--el-fill-color-extra-light);
+  color: var(--el-text-color-placeholder);
 }
 .sector-name-copy {
   display: flex;
@@ -875,18 +1100,43 @@ onMounted(async () => {
   font-family: var(--app-font-family-mono);
   font-size: var(--app-font-size-micro);
 }
+.detail-link {
+  flex: 0 0 auto;
+  height: auto;
+  padding: 0;
+  font-size: var(--app-font-size-caption);
+}
 .chart-identity p {
   margin: 0;
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-caption);
 }
-.leader-summary {
-  flex: 0 0 auto;
-  text-align: right;
+.chart-identity p strong {
+  font-variant-numeric: tabular-nums;
 }
-.leader-summary strong {
-  margin-left: var(--app-space-1);
+.chart-head-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--app-space-2);
+}
+.benchmark-control {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  white-space: nowrap;
+}
+.benchmark-control :deep(.app-filter-select) {
+  width: 124px;
+}
+.chart-head-actions :deep(.page-segmented) {
+  white-space: nowrap;
+}
+.chart-head-actions :deep(.seg-btn) {
+  min-width: 52px;
   font-variant-numeric: tabular-nums;
 }
 .market-strip {
@@ -978,7 +1228,7 @@ onMounted(async () => {
 .chart-stage {
   position: relative;
   flex: 1 1 auto;
-  min-height: 300px;
+  min-height: 0;
   overflow: hidden;
 }
 .chart-stage :deep(.cmp-wrap),
@@ -997,9 +1247,11 @@ onMounted(async () => {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }
-.chart-note {
-  margin-left: auto;
-  color: var(--el-text-color-placeholder);
+.compare-explanation {
+  color: var(--el-text-color-secondary);
+}
+.benchmark-warning {
+  color: var(--el-color-warning);
 }
 .setting-item {
   display: flex;
@@ -1020,12 +1272,23 @@ onMounted(async () => {
   color: var(--app-placeholder-text);
 }
 @media (max-width: 1180px) {
-  .page-subtitle,
-  .chart-note {
+  .page-subtitle {
     display: none;
   }
-  .filter-divider {
+  .chart-identity p {
     display: none;
+  }
+}
+@media (max-height: 700px) {
+  .market-strip {
+    display: none;
+  }
+  .chart-head {
+    min-height: 60px;
+  }
+  .chart-footer {
+    min-height: 36px;
+    padding-block: var(--app-space-1);
   }
 }
 @media (prefers-reduced-motion: reduce) {

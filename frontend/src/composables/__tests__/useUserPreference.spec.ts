@@ -84,6 +84,28 @@ describe('useUserPreference', () => {
     expect(JSON.parse(localStorage.getItem('pref:test') || '{}')).toEqual({ density: 'comfortable' })
   })
 
+  it('whenHydrated 等待远端偏好完成后再放行页面初始化', async () => {
+    login()
+    const remote = deferred<{ items: Array<{ value: { density: string } }> }>()
+    prefApi.listUserPreferences.mockReturnValue(remote.promise)
+    const pref = useUserPreference({
+      scope: 'page',
+      pageKey: 'board',
+      prefKey: 'settings',
+      defaults: { density: 'standard' },
+      localStorageKey: 'pref:test',
+    })
+    let released = false
+    const waiting = pref.whenHydrated().then(() => { released = true })
+    await flushPromises()
+    expect(released).toBe(false)
+
+    remote.resolve({ items: [{ value: { density: 'comfortable' } }] })
+    await waiting
+    expect(pref.value.density).toBe('comfortable')
+    expect(released).toBe(true)
+  })
+
   it('远端加载期间的本地编辑不会被覆盖，并会回写远端', async () => {
     login()
     const remote = deferred<{ items: Array<{ value: { density: string } }> }>()

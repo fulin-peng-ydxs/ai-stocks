@@ -2,13 +2,15 @@
 // 侧边导航（多租户 RBAC stage3·T15）：消费后端数据化菜单 auth.menus（按角色授权 ∩ 可见性双过滤）。
 // fail-closed：登录态未就绪显加载中、失败显错误+重试，**不回退静态全量菜单**（避免露越权入口；原 menuConfig.ts 已删）。
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
 import SideMenuItem from './SideMenuItem.vue'
 import { useAuthStore } from '@/stores/auth'
 import { activeMenuPath, type MenuTreeNode } from '@/utils/permission'
+import { resolveWorkspaceMenuPath } from '@/composables/useWorkspaceTabs'
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 
 const menus = computed<MenuTreeNode[]>(() => auth.menus)
@@ -28,12 +30,16 @@ function findOpenTrail(nodes: MenuTreeNode[], target: string, trail: string[] = 
   return []
 }
 const defaultOpeneds = computed(() => findOpenTrail(menus.value, activeMenu.value))
+
+function selectMenu(index: string) {
+  if (index.startsWith('/')) void router.push(resolveWorkspaceMenuPath(index))
+}
 </script>
 
 <template>
   <!-- 就绪：按后端菜单渲染 -->
   <el-menu v-if="auth.menusStatus === 'ready' && menus.length" :default-active="activeMenu"
-           :default-openeds="defaultOpeneds" unique-opened router class="menu">
+           :default-openeds="defaultOpeneds" unique-opened class="menu" @select="selectMenu">
     <SideMenuItem v-for="node in menus" :key="node.index" :node="node" />
   </el-menu>
 

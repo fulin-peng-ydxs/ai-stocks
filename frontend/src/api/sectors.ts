@@ -5,6 +5,7 @@ import http from './client'
 export type SectorSortField = 'pct_today' | 'pct_5d' | 'pct_10d' | 'pct_20d' | 'net_inflow' | 'up_count'
 export type SortOrder = 'asc' | 'desc'
 export type BoardType = 'concept' | 'industry'
+export type SectorMemberSortField = 'pct' | 'code'
 
 /** 板块列表行（涨幅 pct_* 从 board_bar 实时计算；领涨股/净流入取资金流最新即时行）。 */
 export interface SectorRow {
@@ -25,6 +26,9 @@ export interface SectorRow {
   leader_pct: number | null
   up_count: number
   down_count: number
+  /** 自选视图中表示板块事实是否仍可用；普通行情列表缺省即为可用。 */
+  available?: boolean
+  added_at?: string | null
 }
 
 export interface SectorListParams {
@@ -71,6 +75,14 @@ export interface SectorBars {
   list: SectorBar[]
 }
 
+export interface SectorBenchmarkBars {
+  index_code: string
+  name: string
+  start: string
+  end: string
+  list: SectorBar[]
+}
+
 export interface SectorMember {
   code: string
   name: string | null
@@ -89,6 +101,34 @@ export function listSectors(params?: SectorListParams): Promise<SectorList> {
   return http.get('/sectors', { params })
 }
 
+export interface SectorWatchlistEntry {
+  board_code: string
+  name: string
+  board_type: BoardType
+  added_at: string | null
+}
+
+export interface SectorWatchlist {
+  list: SectorWatchlistEntry[]
+  total: number
+}
+
+export function listSectorWatchlist(): Promise<SectorWatchlist> {
+  return http.get('/sectors/watchlist')
+}
+
+export function listWatchlistSectors(params?: SectorListParams): Promise<SectorList> {
+  return http.get('/sectors/watchlist/markets', { params })
+}
+
+export function addSectorWatchlist(boardCode: string): Promise<{ board_code: string; added: boolean }> {
+  return http.post('/sectors/watchlist', { board_code: boardCode })
+}
+
+export function removeSectorWatchlist(boardCode: string): Promise<{ board_code: string; removed: boolean }> {
+  return http.delete(`/sectors/watchlist/${encodeURIComponent(boardCode)}`)
+}
+
 export function getSector(code: string, tradeDate?: string): Promise<SectorDetail> {
   return http.get(`/sectors/${encodeURIComponent(code)}`, {
     params: tradeDate ? { trade_date: tradeDate } : undefined,
@@ -99,9 +139,25 @@ export function getSectorBars(code: string, start: string, end: string): Promise
   return http.get(`/sectors/${encodeURIComponent(code)}/bars`, { params: { start, end } })
 }
 
+export function getSectorBenchmarkBars(
+  indexCode: string,
+  start: string,
+  end: string,
+): Promise<SectorBenchmarkBars> {
+  return http.get(`/sectors/benchmarks/${encodeURIComponent(indexCode)}/bars`, {
+    params: { start, end },
+  })
+}
+
 export function getSectorMembers(
   code: string,
-  params?: { trade_date?: string; page?: number; size?: number },
+  params?: {
+    trade_date?: string
+    page?: number
+    size?: number
+    sort_by?: SectorMemberSortField
+    order?: SortOrder
+  },
 ): Promise<SectorMembers> {
   return http.get(`/sectors/${encodeURIComponent(code)}/members`, { params })
 }

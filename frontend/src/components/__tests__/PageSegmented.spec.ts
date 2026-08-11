@@ -16,6 +16,18 @@ describe('PageSegmented', () => {
     expect(wrapper.classes()).toContain('page-segmented--small')
   })
 
+  it('supports the shared primary tone for page-level mode switches', () => {
+    const wrapper = mount(PageSegmented, {
+      props: {
+        modelValue: 'all',
+        tone: 'primary',
+        options: [{ label: '全部', value: 'all' }],
+      },
+    })
+
+    expect(wrapper.classes()).toContain('page-segmented--primary')
+  })
+
   it('按需输出稳定 E2E 锚点，不影响原有分段选择行为', async () => {
     const wrapper = mount(PageSegmented, {
       props: {

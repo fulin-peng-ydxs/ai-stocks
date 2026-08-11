@@ -328,6 +328,16 @@ CREATE TABLE IF NOT EXISTS stock_group_member (
 );
 """
 
+DDL_BOARD_WATCHLIST = f"""
+CREATE TABLE IF NOT EXISTS board_watchlist (
+{_OWN}    board_code  TEXT,
+    board_name  TEXT NOT NULL,
+    board_type  TEXT NOT NULL,
+    added_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, owner_user_id, board_code)
+);
+"""
+
 
 # ── 回测结果（用户资产）────────────────────────────────────────────
 
@@ -670,6 +680,7 @@ ASSET_PK: dict[str, list[str]] = {
     "score_result": ["tenant_id", "owner_user_id", "trade_date", "model_id", "code"],
     "stock_group": ["tenant_id", "owner_user_id", "id"],
     "stock_group_member": ["tenant_id", "owner_user_id", "group_id", "code"],
+    "board_watchlist": ["tenant_id", "owner_user_id", "board_code"],
     "backtest_run": ["tenant_id", "owner_user_id", "id"],
     "backtest_trade": ["tenant_id", "owner_user_id", "run_id", "seq"],
     "backtest_equity": ["tenant_id", "owner_user_id", "run_id", "trade_date"],
@@ -695,6 +706,7 @@ _ASSET_TABLES: dict[str, str] = {
     "score_result": DDL_SCORE_RESULT,
     "stock_group": DDL_STOCK_GROUP,
     "stock_group_member": DDL_STOCK_GROUP_MEMBER,
+    "board_watchlist": DDL_BOARD_WATCHLIST,
     "backtest_run": DDL_BACKTEST_RUN,
     "backtest_trade": DDL_BACKTEST_TRADE,
     "backtest_equity": DDL_BACKTEST_EQUITY,
@@ -871,6 +883,8 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/stocks", "stock-group:member-update", "维护分组成员", "api", "POST",   "/api/stock-groups/{gid}/members"),
     # 板块行情（/sectors，login，板块概念 R22/T10a）
     ("/sectors", "sectors:view",             "查看板块行情", "api", "GET",    "/api/sectors"),
+    ("/sectors", "sector-watchlist:view",    "查看板块自选", "api", "GET",    "/api/sectors/watchlist"),
+    ("/sectors", "sector-watchlist:update", "维护板块自选", "api", "POST",   "/api/sectors/watchlist"),
     # B) 策略回测（/backtest，login）
     ("/backtest", "backtest:view",   "查看回测记录", "api", "GET",    "/api/backtest/runs"),
     ("/backtest", "backtest:run",    "运行回测",     "api", "POST",   "/api/backtest/run"),
@@ -932,6 +946,7 @@ _USER_RESOURCE_CODES: tuple[str, ...] = (
 _TENANT_ADMIN_EXTRA_RESOURCE_CODES: tuple[str, ...] = (
     *ASSET_TENANT_PUBLISH_RESOURCE_CODES,)
 _STAGE4_BUSINESS_GRANTS_MARKER = "migration.stage4_business_grants_v2"
+_SECTOR_WATCHLIST_GRANTS_MARKER = "migration.sector_watchlist_grants_v1"
 _STAGE5_PLATFORM_CAPABILITIES_MARKER = "migration.stage5_platform_capabilities_v1"
 _STAGE6_ASSET_VISIBILITY_MARKER = "migration.stage6_asset_visibility_v1"
 # 仅作「已应用」幂等标记；回滚采用确定性基线恢复（见 asset-publish-open.sql），不依赖 marker 内容。
@@ -1248,6 +1263,7 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
     _seed_role_grants(client, [m["code"] for m in menu_rows])
     _backfill_config_split_builtin_grants(client)
     _backfill_stage4_builtin_business_grants(client)
+    _backfill_sector_watchlist_grants(client)
     # 5) 仅为尚无任何角色的存量用户按遗留 role_code 补角色。sys_user_role 是权限事实源；
     # 已有自定义角色时不得再追加 role_code=normal，否则每次启动都会扩大最小权限账号的授权。
     client.execute(
@@ -1507,6 +1523,38 @@ def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
             "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
             [_STAGE4_BUSINESS_GRANTS_MARKER, '{"applied":true}'],
+        )
+
+
+def _backfill_sector_watchlist_grants(client: PostgresClient) -> None:
+    """为既有内置业务角色一次性补齐板块自选权限，并失效旧权限快照。"""
+    marker = client.query_df(
+        "SELECT 1 FROM app_config WHERE key=%s", [_SECTOR_WATCHLIST_GRANTS_MARKER])
+    if not marker.empty:
+        return
+
+    resource_codes = ["sector-watchlist:view", "sector-watchlist:update"]
+    changed = 0
+    with client.transaction() as conn, conn.cursor() as cur:
+        for role_id in (ROLE_TENANT_ADMIN, ROLE_NORMAL):
+            for resource_id in resource_codes:
+                cur.execute(
+                    "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                    "ON CONFLICT DO NOTHING",
+                    [role_id, resource_id],
+                )
+                changed += max(cur.rowcount or 0, 0)
+        if changed:
+            cur.execute(
+                "UPDATE sys_user u SET perm_ver=perm_ver+1 "
+                "WHERE EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id "
+                "AND ur.role_id IN (%s, %s))",
+                [ROLE_TENANT_ADMIN, ROLE_NORMAL],
+            )
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (key) DO NOTHING",
+            [_SECTOR_WATCHLIST_GRANTS_MARKER, '{"applied":true}'],
         )
 
 

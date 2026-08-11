@@ -10,13 +10,19 @@
  * 单字段为叶子不折叠。页面布局编辑器一次只聚焦一个 slot，slot 头作锚点不折叠（collapsibleSlot=false）。
  */
 import { computed, nextTick, ref, watch } from 'vue'
+import { ElInputNumber } from 'element-plus'
 import AppRowActions from './AppRowActions.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import PageSegmented from './PageSegmented.vue'
 import PageToggleRow from './PageToggleRow.vue'
 import SourceTag from './SourceTag.vue'
 import { getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
-import { getComponentFieldDef, type ComponentConfigLayer, type ComponentConfigSource } from '@/layout/componentConfig'
+import {
+  getComponentFieldDef,
+  type ComponentConfigLayer,
+  type ComponentConfigSource,
+  type ComponentFieldDef,
+} from '@/layout/componentConfig'
 import type { AppRowAction } from './rowActions'
 
 interface ComponentConfigAccess {
@@ -148,6 +154,12 @@ function strVal(slotId: string, field: string): string {
 function numVal(slotId: string, field: string, fallback: number): number {
   const v = props.config.componentValueOf(slotId, field)
   return typeof v === 'number' ? v : fallback
+}
+function numericFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
+  return slot.fields
+    .filter((field) => field !== 'pageSize')
+    .map((field) => getComponentFieldDef(slot.kind as never, field))
+    .filter((def): def is ComponentFieldDef => def?.control === 'int' || def?.control === 'number')
 }
 function boolVal(slotId: string, field: string, fallback: boolean): boolean {
   const v = props.config.componentValueOf(slotId, field)
@@ -365,6 +377,38 @@ function setSort(slotId: string, field: string, order: string): void {
           :aria-label="`${s.label}：每页条数`"
           @update:model-value="(v) => config.setComponentKnob(s.slotId, 'pageSize', Number(v))"
         />
+      </div>
+
+      <div v-for="field in numericFieldDefs(s)" :key="field.key" class="ca-item">
+        <div class="ca-label-row">
+          <span class="ca-label">{{ field.label }}</span>
+          <span class="ca-actions">
+            <SourceTag
+              v-if="srcOf(s.slotId, field.key)"
+              :source="srcOf(s.slotId, field.key)!"
+              :values="srcValuesOf(s.slotId, field.key)"
+            />
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, field.key)"
+              :actions="clearFieldActions(s.slotId, field.key)"
+              :inline-limit="1"
+            />
+          </span>
+        </div>
+        <el-input-number
+          class="ca-number"
+          :data-testid="`component-${s.slotId}-${field.key}`"
+          :model-value="numVal(s.slotId, field.key, Number(field.default ?? field.min ?? 0))"
+          :min="field.min"
+          :max="field.max"
+          :step="field.control === 'int' ? 10 : 0.1"
+          :precision="field.control === 'int' ? 0 : undefined"
+          controls-position="right"
+          @update:model-value="(value: number | undefined) => {
+            if (value != null) config.setComponentKnob(s.slotId, field.key, value)
+          }"
+        />
+        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
       </div>
 
       <div v-if="s.fields.includes('defaultActive') && s.meta.tabs?.length" class="ca-item">
@@ -593,6 +637,14 @@ function setSort(slotId: string, field: string, order: string): void {
 }
 .ca-select {
   width: 100%;
+}
+.ca-number {
+  width: 100%;
+}
+.ca-help {
+  color: var(--page-settings-text-subtle);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
 }
 .ca-select :deep(.el-select__wrapper) {
   min-height: 46px;

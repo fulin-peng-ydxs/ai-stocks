@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowDownBold } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppNavigation } from '@/composables/useAppNavigation'
+import { resolveWorkspaceMenuPath } from '@/composables/useWorkspaceTabs'
 import MenuIcon from '@/components/MenuIcon.vue'
 import {
   firstPathInMenu,
@@ -40,17 +41,17 @@ watch(
 function choosePrimary(node: MenuTreeNode) {
   selectedPrimaryMenuIndex.value = node.index
   if (!node.children?.length) {
-    if (node.index.startsWith('/')) void router.push(node.index)
+    if (node.index.startsWith('/')) void router.push(resolveWorkspaceMenuPath(node.index))
     return
   }
   if (!menuContainsPath(node, route.path)) {
     const path = firstPathInMenu(node)
-    if (path) void router.push(path)
+    if (path) void router.push(resolveWorkspaceMenuPath(path))
   }
 }
 
 function chooseLeaf(path: string) {
-  void router.push(path)
+  void router.push(resolveWorkspaceMenuPath(path))
 }
 
 function descendantLeaves(

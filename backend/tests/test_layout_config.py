@@ -344,6 +344,28 @@ def test_component_config_ownership_boundary(client):
             "board", {"values": {"slots.table.config.border": "false"}}, layout=board_layout
         )
 
+    chart_layout = {"slots": [{"id": "chart", "component": "chart"}]}
+    saved = repo.set_user_config(
+        "sectors-detail",
+        {"values": {"slots.chart.config.minHeight": 620}},
+        user_id="u1",
+        layout=chart_layout,
+    )
+    assert saved["config"]["values"]["slots.chart.config.minHeight"] == 620
+    with pytest.raises(LayoutConfigValidationError, match="不能小于"):
+        repo.set_user_config(
+            "sectors-detail",
+            {"values": {"slots.chart.config.minHeight": 479}},
+            user_id="u1",
+            layout=chart_layout,
+        )
+    with pytest.raises(LayoutConfigValidationError, match="不能大于"):
+        repo.set_page_config(
+            "sectors-detail",
+            {"values": {"slots.chart.config.minHeight": 901}},
+            layout=chart_layout,
+        )
+
 
 def test_validate_api_rejects_misplaced_component_field(client):
     api = TestClient(app)

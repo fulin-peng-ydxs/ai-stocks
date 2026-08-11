@@ -1,6 +1,6 @@
 """板块行情只读 API（板块概念需求 R7-R10/R13/R14，plan §6.8 T8）。
 
-4 个只读接口（列表/详情/bars/members），权限 `sectors:view`（业务授权码，T10a seed）。
+板块列表/详情/bars/members 与市场指数基准 bars，权限 `sectors:view`（业务授权码，T10a seed）。
 参数白名单：未知参数 400；`sort_by` 稳定字段码；`trade_date` 截面语义；
 空值「—」（前端）；404/400/403。
 """
@@ -10,14 +10,28 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_perm
-from backend.services.board_query import BoardQueryService, SORT_FIELDS
+from backend.config import get_effective_settings
+from backend.services.board_query import MEMBER_SORT_FIELDS, SORT_FIELDS, BoardQueryService
+from backend.services.board_watchlist import BoardWatchlistService
 
 router = APIRouter(prefix="/api/sectors", tags=["sectors"])
 
 _VIEW = [Depends(require_perm("sectors:view"))]
+_WATCHLIST_VIEW = [Depends(require_perm("sector-watchlist:view"))]
+_WATCHLIST_UPDATE = [Depends(require_perm("sector-watchlist:update"))]
+
+_BENCHMARK_NAMES = {
+    "000905.SH": "中证 500",
+    "000300.SH": "沪深 300",
+}
+
+
+class WatchlistBody(BaseModel):
+    board_code: str = Field(min_length=1, max_length=32)
 
 
 def _bad_params(msg: str) -> HTTPException:
@@ -41,6 +55,86 @@ def list_sectors(
         trade_date=trade_date, board_type=board_type, sort_by=sort_by,
         order=order, keyword=keyword, page=page, size=size)
     return ok(data)
+
+
+@router.get("/watchlist", response_model=ApiResponse, dependencies=_WATCHLIST_VIEW)
+def list_watchlist() -> ApiResponse:
+    """当前用户的板块自选代码与加入快照。"""
+    return ok(BoardWatchlistService().list())
+
+
+@router.get(
+    "/watchlist/markets",
+    response_model=ApiResponse,
+    dependencies=[*_VIEW, *_WATCHLIST_VIEW],
+)
+def list_watchlist_markets(
+    trade_date: date | None = Query(None),
+    board_type: str | None = Query(None, pattern="^(concept|industry)$"),
+    sort_by: str = Query("pct_today"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    keyword: str | None = Query(None, max_length=50),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+) -> ApiResponse:
+    """当前用户自选板块的行情截面，失效板块仍返回快照。"""
+    if sort_by not in SORT_FIELDS:
+        raise _bad_params(f"不支持的排序字段: {sort_by}（可选 {list(SORT_FIELDS)}）")
+    return ok(BoardWatchlistService().list_markets(
+        trade_date=trade_date,
+        board_type=board_type,
+        sort_by=sort_by,
+        order=order,
+        keyword=keyword,
+        page=page,
+        size=size,
+    ))
+
+
+@router.post("/watchlist", response_model=ApiResponse, dependencies=_WATCHLIST_UPDATE)
+def add_watchlist(body: WatchlistBody) -> ApiResponse:
+    """加入板块自选；重复加入保持幂等。"""
+    try:
+        return ok(BoardWatchlistService().add(body.board_code))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/watchlist/{board_code}",
+    response_model=ApiResponse,
+    dependencies=_WATCHLIST_UPDATE,
+)
+def remove_watchlist(board_code: str) -> ApiResponse:
+    """移出板块自选；成员不存在时保持幂等。"""
+    return ok(BoardWatchlistService().remove(board_code))
+
+
+@router.get(
+    "/benchmarks/{index_code}/bars",
+    response_model=ApiResponse,
+    dependencies=_VIEW,
+)
+def get_benchmark_bars(
+    index_code: str,
+    start: date = Query(..., description="区间起点"),
+    end: date = Query(..., description="区间终点"),
+) -> ApiResponse:
+    """板块相对强弱使用的市场指数基准，只开放系统已配置的回测基准。"""
+    if start > end:
+        raise _bad_params("start 不能晚于 end")
+    cfg = get_effective_settings().backtest
+    allowed = {cfg.benchmark_main, *cfg.benchmark_others}
+    if index_code not in allowed:
+        raise _bad_params(f"不支持的指数基准: {index_code}")
+    bars = BoardQueryService().get_benchmark_bars(index_code, start, end)
+    return ok({
+        "index_code": index_code,
+        "name": _BENCHMARK_NAMES.get(index_code, index_code),
+        "start": str(start),
+        "end": str(end),
+        "list": bars,
+    })
 
 
 @router.get("/{code}", response_model=ApiResponse, dependencies=_VIEW)
@@ -71,7 +165,13 @@ def get_sector_members(
     trade_date: date | None = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    sort_by: str = Query("pct"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
 ) -> ApiResponse:
     """成分股统一分页（size 默认 20，页面可配 10/20/30/50）。"""
-    data = BoardQueryService().get_members(code, trade_date, page, size)
+    if sort_by not in MEMBER_SORT_FIELDS:
+        raise _bad_params(
+            f"不支持的成分股排序字段: {sort_by}（可选 {list(MEMBER_SORT_FIELDS)}）"
+        )
+    data = BoardQueryService().get_members(code, trade_date, page, size, sort_by, order)
     return ok(data)

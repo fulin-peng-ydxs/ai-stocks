@@ -14,6 +14,7 @@ export function usePageSettings<T extends Record<string, unknown>>(pageKey: stri
     isDirty: pref.isDirty,
     reset: pref.reset,
     hydrated: pref.hydrated,
+    whenHydrated: pref.whenHydrated,
     remoteError: pref.remoteError,
   }
 }

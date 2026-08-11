@@ -14,6 +14,40 @@ interface KlinePrefs {
 
 const DEFAULTS: KlinePrefs = { periods: [60, 120, 250], includeAll: true, defaultPeriod: 120 }
 
+/** 周期是数据边界：快捷周期只保留末尾 N 个交易点，只有“全部”不截断。 */
+export function trimKlineRange<T>(rows: readonly T[], rangeDays: number): T[] {
+  if (rangeDays === ALL_DAYS || rows.length <= rangeDays) return [...rows]
+  return rows.slice(-rangeDays)
+}
+
+/** 多序列共用同一组末尾交易日，避免各自截断后横轴边界错位。 */
+export function trimAlignedKlineRange<T extends { trade_date: string }>(
+  series: Readonly<Record<string, readonly T[]>>,
+  rangeDays: number,
+): Record<string, T[]> {
+  const entries = Object.entries(series)
+  if (rangeDays === ALL_DAYS) {
+    return Object.fromEntries(entries.map(([code, rows]) => [code, [...rows]]))
+  }
+  const dates = Array.from(new Set(entries.flatMap(([, rows]) => rows.map((row) => row.trade_date))))
+    .sort()
+    .slice(-rangeDays)
+  const allowedDates = new Set(dates)
+  return Object.fromEntries(entries.map(([code, rows]) => [
+    code,
+    rows.filter((row) => allowedDates.has(row.trade_date)),
+  ]))
+}
+
+/** 为交易日周期预取足够自然日，返回后再按单序列或共同日期轴精确截断。 */
+export function klineRangeQueryStart(endValue: string, rangeDays: number, allStart: string): string {
+  if (rangeDays === ALL_DAYS || !endValue) return allStart || endValue
+  const end = new Date(`${endValue}T00:00:00`)
+  const start = new Date(end)
+  start.setDate(start.getDate() - rangeDays * 2)
+  return `${start.getFullYear()}-${`${start.getMonth() + 1}`.padStart(2, '0')}-${`${start.getDate()}`.padStart(2, '0')}`
+}
+
 function sanitize(list: number[]): number[] {
   const arr = Array.from(new Set(list.map(Number).filter((n) => Number.isFinite(n) && n > 0 && n < ALL_DAYS)))
   arr.sort((a, b) => a - b)
