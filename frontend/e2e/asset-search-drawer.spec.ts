@@ -43,13 +43,16 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
     await openPageAndWaitForHeading(page, '/screen', '策略筛选')
 
     // 打开搜索抽屉：默认系统内置段（§6.8.4 统一 seed 后 dev 库筛选预设为 public → 非空，带系统内置徽标）
-    await page.getByTestId('asset-profile-select-search').click()
+    await page.getByTestId('screen-profile-select-search').click()
     const drawer = page.getByTestId('asset-search-drawer')
     await expect(drawer).toBeVisible()
     await expect(drawer).toContainText('系统内置筛选方案')
-    // 视觉验收：等待抽屉进场动画结束、宽度稳定到语义档位 xl（560px）后再截图
+    // 视觉验收：等待抽屉进场动画结束，并锁定 xxl 语义档位的响应式上下限。
     const drawerPanel = page.locator('.el-drawer', { has: drawer })
-    await expect(drawerPanel).toHaveJSProperty('offsetWidth', 560)
+    await expect(drawerPanel).toHaveClass(/open/)
+    const drawerWidth = await drawerPanel.evaluate((element) => element.offsetWidth)
+    expect(drawerWidth).toBeGreaterThanOrEqual(640)
+    expect(drawerWidth).toBeLessThanOrEqual(820)
     await testInfo.attach(`asset-search-drawer-preset-${testInfo.project.name}`, {
       body: await drawerPanel.screenshot(),
       contentType: 'image/png',
@@ -94,27 +97,28 @@ test('筛选页资产搜索抽屉：三来源、复制为我的、临时只读�
     // §6.8.9 契约：mine-only 选择器选中 mine 项不渲染来源标签（assetDisplaySource 对 mine 返回 null），
     // 只显示「名称+版本」；来源标签仅在 tenant/public/preset 等非 mine 来源时出现。
     await row.getByTestId('asset-search-drawer-copy').click()
-    const select = page.getByTestId('asset-profile-select-select')
-    await expect(select).toContainText(`${marker} 副本`)
-    await expect(select.locator('.asset-visibility-tag')).toHaveCount(0)
+    const profileList = page.getByTestId('screen-profile-select')
+    const copiedRow = profileList.getByRole('listitem').filter({ hasText: `${marker} 副本` })
+    await expect(copiedRow).toBeVisible()
+    await expect(copiedRow.locator('.asset-visibility-tag')).toHaveCount(0)
 
     // 加载查看（§6.8.2 契约 + T6 缺陷修复）：组件只设 tempItem + emit loaded、不联动选中；ScreenView 现经
     // @loaded 直接按 profile_ref 页面级载入该公开方案详情（getProfile），构建区载入其条件、readonly 只读。
     await page.keyboard.press('Escape')
     await expect(drawer).toBeHidden()
-    await page.getByTestId('asset-profile-select-search').click()
+    await page.getByTestId('screen-profile-select-search').click()
     await expect(drawer).toBeVisible()
     await drawer.getByTestId('asset-search-drawer-segment-tenant').click()
     const rowAgain = drawer.getByRole('row').filter({ hasText: marker })
     await expect(rowAgain).toBeVisible()
     await rowAgain.getByTestId('asset-search-drawer-load').click()
     await expect(drawer).toBeHidden()
-    // 页面级载入生效：版本链接出现（loadedProfile 已设为该公开方案 v1）、条件构建区载入其条件行（.b-cond 非空）。
-    await expect(page.locator('.ver-link')).toContainText('v1')
-    await expect(page.locator('.cond-card .b-cond').first()).toBeVisible()
-    // 不联动选中：select 仍显示先前复制的 mine 副本项（非临时只读项），且 mine 项按 §6.8.9 无来源标签。
-    await expect(select).toContainText(`${marker} 副本`)
-    await expect(select.locator('.asset-visibility-tag')).toHaveCount(0)
+    // 页面级载入生效：版本标识出现（loadedProfile 已设为该公开方案 v1）、条件构建区载入其条件行。
+    await expect(page.getByTestId('screen-profile-version')).toContainText('v1')
+    await expect(page.getByTestId('screen-condition-row').first()).toBeVisible()
+    // 不联动选中：侧栏仍显示先前复制的 mine 副本项（非临时只读项），且 mine 项按 §6.8.9 无来源标签。
+    await expect(copiedRow).toBeVisible()
+    await expect(copiedRow.locator('.asset-visibility-tag')).toHaveCount(0)
 
     expect(consoleIssues).toEqual([])
   } finally {

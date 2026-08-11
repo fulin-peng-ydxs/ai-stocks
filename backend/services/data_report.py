@@ -601,6 +601,9 @@ class DataIntegrityReport:
                     })
             # 板块指数逐日缺口：近 GAP_WINDOW_DAYS 个开市日内，has_bar 板块具体缺了哪几天。
             # 与 board_index_gap 共存：后者只关心最新交易日是否追上，本类型定位历史窗口内逐日缺失。
+            # 板块成立前豁免：晚成立板块（如「xx一季报预增」）在源端成立日前本无数据，
+            # 数据起点 = min(board_bar.trade_date)（成立前不会有行），起点之前的缺失属正常、不报，
+            # 不靠人工 ignore（避免每季新板块重复豁免）。起点之后缺失即漏采/异常，照报。
             daily_gap_issues: list[dict] = []
             ig_gap_daily = _ignored_codes("board_index_gap_daily")
             recent_days, _ = self._recent_open_days(latest, GAP_WINDOW_DAYS)
@@ -615,6 +618,16 @@ class DataIntegrityReport:
                     WHERE b.has_bar
                     """,
                     [min(recent_set), max(recent_set)])
+                start_df = self.c.query_df(
+                    """
+                    SELECT board_code, min(trade_date) AS bar_start
+                    FROM board_bar
+                    GROUP BY board_code
+                    """)
+                bar_start_by_code: dict[str, date] = {
+                    str(r["board_code"]): pd.Timestamp(r["bar_start"]).date()
+                    for _, r in start_df.iterrows()
+                }
                 bar_by_code: dict[str, dict] = {}
                 for _, r in bar_df.iterrows():
                     code = str(r["board_code"])
@@ -625,7 +638,11 @@ class DataIntegrityReport:
                 for code, info in bar_by_code.items():
                     if code in ig_gap_daily:
                         continue
+                    bar_start = bar_start_by_code.get(code)
                     for md in sorted(recent_set - info["dates"]):
+                        # 成立前豁免：起点之前的缺失是板块成立前源端本无数据，不算缺口。
+                        if bar_start is not None and md < bar_start:
+                            continue
                         daily_gap_issues.append({
                             "code": code, "trade_date": md,
                             "issue_type": "board_index_gap_daily",

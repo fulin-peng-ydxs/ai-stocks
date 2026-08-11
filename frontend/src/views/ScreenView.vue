@@ -634,7 +634,13 @@ onMounted(initializeScreen)
           <div class="ed-head">
             <el-input v-model="editName" :disabled="profileReadonly" placeholder="方案名称" style="width: 200px" />
             <span v-if="editId && !isNew" class="id-badge mono">{{ editId }}</span>
-            <span v-if="curVersion && !isNew" class="ver-badge" title="点击查看历史版本" @click="openVersions">v{{ curVersion }}</span>
+            <span
+              v-if="curVersion && !isNew"
+              class="ver-badge"
+              title="点击查看历史版本"
+              data-testid="screen-profile-version"
+              @click="openVersions"
+            >v{{ curVersion }}</span>
             <AssetVisibilityActions
               v-if="!isNew"
               :visibility="profileVisibility"
@@ -691,8 +697,17 @@ onMounted(initializeScreen)
               </el-radio-group>
             </div>
 
-            <div class="b-conds" :class="{ 'readonly-builder': profileReadonly }">
-            <div v-for="(c, i) in rows" :key="i" class="b-cond">
+            <div
+              class="b-conds"
+              data-testid="screen-condition-builder"
+              :class="{ 'readonly-builder': profileReadonly }"
+            >
+            <div
+              v-for="(c, i) in rows"
+              :key="i"
+              class="b-cond"
+              data-testid="screen-condition-row"
+            >
               <!-- 指标条件 -->
               <template v-if="c.kind === 'ind'">
                 <el-tag size="small" type="success" effect="plain" class="kind-tag">指标</el-tag>

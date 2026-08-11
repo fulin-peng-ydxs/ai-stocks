@@ -413,7 +413,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 6.15 任务 T15：E2E、构建、视口与回归验收
 
-- 状态：待开始
+- 状态：已完成（2026-08-11 T15 执行）
 - 依赖：T11、T12、T14
 - 涉及文件/模块：`frontend/e2e/`（新增 `sectors-*.spec.ts` 等）、[e2e guide](../e2e-automation/guide.md)、`frontend/dist`
 - 目标：R7-R14、R22、R23 的页面级验收与全量回归。
@@ -423,7 +423,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 边界与异常：E2E 选择器只用稳定契约；回归结束后重启后端移除限流豁免。
 - 验证方式：`cd frontend && npm run test:e2e`（含新用例与相关回归）+ `npm run build` + `python -m pytest backend/tests/ -q` 全量（遵守 DuckDB 锁规则）。
 - 完成标准：需求文档 §11 验收标准全部通过；`npm run build` 与后端全量测试绿。
-- 实际落地情况：待实施
+- 实际落地情况：扩展 `sectors-workbench.spec.ts`，补齐列表分页、5 日排序、关键字检索、列显隐与恢复默认，并保留三视口排行/指数基准/周期缩放/自选/对比/K 线/详情/量能/高度分隔条/返回链路；新增 `sector-quality-recovery.spec.ts`，以确定性接口夹具覆盖 `board_member_incomplete` 重采、任务完成和问题收敛。复用组件补充列开关稳定 test id，并将 E2E 基线同步到自动化指南。板块工作台集成链路继续读取本地真实板块数据（后端接口与 DuckDB 口径另有全量后端测试），质量恢复链路不写库；本轮未引入额外 DuckDB 写夹具，避免与被测后端争锁。发布验收中同时修正了三个与板块无关但被全量回归发现的陈旧契约：筛选资产侧栏 test id/xxl 抽屉宽度/只读标识、菜单功能点去冗余标签、个股主题按钮 test id。最终前端全量 84 文件 / 661 项通过，正式构建通过；普通读写 E2E 75 通过 / 24 按视口条件跳过，公开回测只读 E2E 3 通过；后端全量 861 项通过。回归结束后已恢复日常 dev 后端并确认 `/api/health=200`。
 
 ## 7. 数据库与 SQL 计划
 
@@ -471,7 +471,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 具体完成情况：T8 已落地——`test_sectors_api.py` 8 用例全绿（列表/详情/bars/members 口径、涨幅不读资金流周期表、涨跌家数、排序分页、404/400）；T10a/T10b 已落地——`test_rbac_deps.py` sectors:view 权限用例（有授权过/无授权 403）+ 回填 SQL 幂等（本地库执行 granted=2）。
 - 页面/交互测试：
   - 计划：T15 Playwright（列表筛选/排序/搜索/分页/列显隐、详情走势图周期/成分股统一分页、返回筛选态两路径、R9 权限两态、质检页 `board_member_incomplete` 重采）。
-  - 具体完成情况：板块核心工作台三视口用例已覆盖列表、自选、走势/K 线、详情、返回与个股正向跳转；T14 新增标准视口最小权限用例，覆盖无 `stocks:view` 的成分股禁用及直达个股路由 fail-closed。T15 仍需补齐搜索/分页/列显隐、质量修复动作和发布级全量回归。
+  - 具体完成情况：板块核心工作台三视口已覆盖列表、自选、指数基准、周期缩放、走势/K 线、量能、详情、返回与个股正向跳转；标准视口覆盖搜索、排序、分页、列显隐/恢复默认、无 `stocks:view` 的成分股禁用及直达个股路由 fail-closed；质量页确定性用例覆盖 `board_member_incomplete` 重采与任务完成后收敛。
 - 组件资产闭环测试：
   - 计划：`sectors`/`sectors-detail` pageRegistry 契约测试（memberTable 嵌套 slot、consumedComponentFields 指向真实 slot）；两页组件字段保存/读取/非法回退/恢复默认参数化矩阵；DESIGN.md page-registry 登记核对。
   - 具体完成情况：pageRegistry、组件字段、数值范围、详情图表高度及列表/详情双重恢复默认契约已覆盖；前端全量 84 文件 / 661 项通过，正式构建通过。
@@ -480,10 +480,10 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 具体完成情况：T14 已完成。新增并校准 `debug_sectors_only`，后端权限聚焦 48 项、前端权限/路由/布局聚焦 106 项和标准视口 Playwright 权限链路均通过。
 - 回归测试：
   - 计划：`python -m pytest backend/tests/ -q` 全量（先 `./start.sh status`→`./start.sh stop`，结束后按原状态恢复并确认 `/api/health=200`）；`npm test`；相关既有 E2E 回归。
-  - 具体完成情况：待验证
+  - 具体完成情况：后端全量 861 项、前端全量 84 文件 / 661 项、正式构建均通过；普通读写 E2E 75 通过 / 24 按视口条件跳过，公开回测只读 E2E 3 项通过。全量回归发现的筛选资产、菜单标签和个股主题三个陈旧 E2E 契约已同步修正并纳入最终绿线。
 - 异常与边界测试：
   - 计划：只进不出落库幂等（ON CONFLICT）、不完整快照不落库、401 cookie 刷新、单板块失败继续与失败清单、历史不足「—」、空值列「—」、`transaction()` 原子性（中途失败整体回滚）、写锁冲突 `duckdb_write_unavailable`（锁释放后重试可恢复）、**member_count/member_snapshot_at 完整快照路径刷新**、**完整快照后旧 incomplete issue 自动 resolved**。
-  - 具体完成情况：待验证
+  - 具体完成情况：后端全量测试覆盖落库幂等、完整性、事务、权限与异常分支；页面 E2E 覆盖空/错误/权限状态、质量恢复成功收敛和无个股权限 fail-closed。DuckDB 写锁按读写回归与公开回测只读回归分离执行，结束后恢复日常后端。
 - 图示与原型一致性验证：P1/P2 实现对照 `prototypes/sector-board.html`/`prototypes/sector-detail.html` 的主要区域（action 筛选区/主表/分页/设置抽屉；摘要区/走势图工具条/图表/成分股表/抽屉/tooltip）、操作入口、关键状态（数据/空/错误/加载/无权/个股权限两态）与低高度退化；**P1 的「概念/行业分段」「主排序周期分段」两控件已按 2026-08-11 用户裁定移除，不纳入对照**；P3 无原型，按 QualityView 现状扩展核对。
 - 配置闭环验证：`defaultType/defaultScope/defaultChartMode/benchmarkCode`、全局 `kline-prefs` 与 `chart.minHeight`、`pageSize/defaultSort/hiddenColumns` 组件字段可展示、保存、读取、实际生效、恢复默认、非法值回落并兼容旧值。
 - 需求映射验证：§5 映射表逐项核对，R1-R14、R21-R23 均有任务与验证方式；R15-R20/R24/R25 均标跳过且有原因；无未解释的超范围开发内容。
@@ -547,6 +547,6 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 失败与续跑 | 已闭环 | 字典按类型、成分/指数按板块、资金流按类型+周期记录 checkpoint；部分失败使任务/流水线 `ok=false`，保留成功 checkpoint，可只重试未成功工作单元；显式空板块范围不会误扩成全量 |
 | 修复流程 | 已闭环 | `board_member_incomplete` 重采完整成分快照，`board_index_gap` 补采指数，`board_fund_unmatched` 刷新字典并重采资金流；仅真实复检通过后 resolved，失败或复检未通过保留 open，失败工作单元不写完成 checkpoint |
 | 数据概览 | 已补齐 | 除 `board` 维度行外，概览和闭环图展示 4 表行数、概念/行业数量、成分/指数/资金流覆盖、指数/资金流最新日期、未闭环问题分类和最近采集状态，并提供前往板块采集入口 |
-| 当前未完成范围 | 保留原计划 | `/sectors` 与 `/sectors/:code` 页面、pageRegistry、页面配置和板块核心 E2E 已完成；T14/T15 仅保留其余权限矩阵、质检动作与发布级全量验收 |
+| 当前未完成范围 | 无 | `/sectors` 与 `/sectors/:code` 页面、pageRegistry、页面配置、权限矩阵、质检动作与发布级全量验收均已完成 |
 
-验证基线：本轮代码复核完成后，后端聚焦用例 90 passed，前端 Vitest 81 files / 624 tests passed，前端构建通过，板块数据管理 Playwright 在 3 个视口共 6 项通过。Ruff 未安装，未执行 Ruff 校验。
+验证基线：2026-08-11 最终发布复核为后端全量 861 passed、前端 Vitest 84 files / 661 tests passed、前端构建通过；普通读写 Playwright 75 passed / 24 skipped，公开回测只读 Playwright 3 passed。后端已恢复日常 dev 模式并确认健康。

@@ -210,8 +210,48 @@ test.describe('板块行情工作台', () => {
     ]))
     expect(me.permissions).not.toContain('stocks:view')
 
+    const sectorResponse = await request.get(`${API_URL}/sectors`, {
+      headers: { authorization: `Bearer ${auth.accessToken}` },
+      params: { page: 1, size: 1, sort_by: 'pct_today', order: 'desc' },
+    })
+    expect(sectorResponse.ok()).toBe(true)
+    const sample = (await sectorResponse.json()).data.list[0] as {
+      board_code: string
+      name: string
+    }
+
     await openPageAndWaitForHeading(page, '/sectors', '板块行情')
     await expect(page.getByTestId('sectors-workspace')).toBeVisible({ timeout: 20_000 })
+    const nextPage = page.getByRole('button', { name: '下一页' })
+    await expect(nextPage).toBeEnabled()
+    await nextPage.click()
+    await expect(page).toHaveURL(/[?&]page=2(?:&|$)/)
+
+    await page.getByRole('columnheader', { name: /5日/ }).click()
+    await expect(page).toHaveURL(/[?&]sort=pct_5d(?:&|$)/)
+    await page.getByTestId('sectors-keyword').fill(sample.name)
+    await page.getByTestId('sectors-keyword').press('Enter')
+    await expect(page.getByTestId(`sectors-row-${sample.board_code}`)).toBeVisible()
+    await expect(page).toHaveURL(new RegExp(`keyword=${encodeURIComponent(sample.name)}`))
+    await page.getByTestId('sectors-keyword').fill('')
+    await page.getByTestId('sectors-keyword').press('Enter')
+
+    await page.getByTestId('page-settings-trigger').click()
+    const settingsDrawer = page.getByTestId('page-settings-drawer')
+    const netInflowVisibility = settingsDrawer.getByTestId(
+      'component-table-hiddenColumns-net_inflow',
+    )
+    if (!await netInflowVisibility.isVisible()) {
+      await settingsDrawer.getByRole('button', { name: '组件设置', exact: true }).click()
+    }
+    await settingsDrawer.getByTestId('component-table-hiddenColumns-net_inflow-switch').click()
+    await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
+    await expect(page.getByRole('columnheader', { name: /净流入/ })).toHaveCount(0)
+    await page.getByTestId('page-settings-trigger').click()
+    await settingsDrawer.getByTestId('page-settings-reset').click()
+    await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
+    await expect(page.getByRole('columnheader', { name: /净流入/ })).toBeVisible()
+
     const firstSectorRow = page.locator('[data-testid^="sectors-row-"]').first()
     await expect(firstSectorRow).toBeVisible({ timeout: 20_000 })
     await expect(firstSectorRow.getByRole('button', { name: /板块自选/ })).toBeVisible()

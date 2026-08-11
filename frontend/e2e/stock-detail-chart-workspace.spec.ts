@@ -1017,7 +1017,7 @@ test.describe('个股详情三图工作区', () => {
     })
 
     await page.getByRole('button', { name: '视觉环境' }).click()
-    await page.getByRole('button', { name: /^夜间 低照沉浸$/ }).click()
+    await page.getByTestId('appearance-theme-mode-dark').click()
     await expect(page.locator('html')).toHaveClass(/dark/)
     const darkBackground = await workspace.evaluate(
       (element) => getComputedStyle(element).backgroundColor,

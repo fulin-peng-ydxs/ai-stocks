@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { loginAsDebugUser } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
-import { openPageAndWaitForHeading, waitForNamedTableCells } from './helpers/navigation'
+import { openPageAndWaitForHeading } from './helpers/navigation'
 
 test('角色权限树支持键盘展开并提供唯一的读屏名称', async ({ page, request }) => {
   const consoleIssues = collectConsoleIssues(page)
@@ -57,10 +57,10 @@ test('角色权限树支持键盘展开并提供唯一的读屏名称', async ({
   expect(consoleIssues).toEqual([])
 })
 
-test('菜单和功能点的系统内置标签统一后置', async ({ page, request }) => {
+test('菜单系统内置标签后置且功能点不重复展示标签', async ({ page, request }) => {
   const consoleIssues = collectConsoleIssues(page)
   await loginAsDebugUser(page, request, 'debug_system')
-  await openPageAndWaitForHeading(page, '/system/menus', '菜单与功能')
+  await openPageAndWaitForHeading(page, '/system/menus', '菜单功能')
 
   await page.getByRole('treeitem', { name: '用户管理', exact: true }).click()
 
@@ -71,12 +71,8 @@ test('菜单和功能点的系统内置标签统一后置', async ({ page, reque
   await expect(menuTitle).toBeVisible()
   expect((await menuTitle.textContent())?.trim().endsWith('系统内置')).toBe(true)
 
-  const builtinResourceCodes = await waitForNamedTableCells(
-    page,
-    '功能点',
-    /系统内置\s*$/,
-  )
-  const resourceTexts = await builtinResourceCodes.allTextContents()
-  expect(resourceTexts.every((text) => text.trim().endsWith('系统内置'))).toBe(true)
+  const resourceTable = page.getByRole('table', { name: '功能点', exact: true })
+  await expect(resourceTable.getByRole('row').filter({ hasText: 'user:list' })).toBeVisible()
+  await expect(resourceTable.getByText('系统内置', { exact: true })).toHaveCount(0)
   expect(consoleIssues).toEqual([])
 })

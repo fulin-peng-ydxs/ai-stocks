@@ -23,6 +23,7 @@ defineEmits<{
     <el-switch
       :model-value="modelValue"
       class="ptr-switch"
+      :data-testid="testId ? `${testId}-switch` : undefined"
       inline-prompt
       :active-action-icon="undefined"
       @update:model-value="(value: boolean) => $emit('update:modelValue', value)"

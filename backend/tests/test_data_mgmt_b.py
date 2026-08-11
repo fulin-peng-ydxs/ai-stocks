@@ -653,6 +653,52 @@ def test_scan_board_quality_index_gap_daily_ignored(client, monkeypatch):
     assert "881121" not in daily["code"].astype(str).tolist()
 
 
+def test_scan_board_quality_index_gap_daily_late_board(client, monkeypatch):
+    """板块指数逐日缺口：晚成立板块在数据起点（最早 bar 日）之前的缺失不报。
+
+    板块成立前源端本无数据，起点之前的缺口属正常（不靠人工 ignore，
+    每季新板块如「xx一季报预增」自动豁免）；起点之后缺失照报漏采。
+    """
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    # 晚成立板块：只有 08-07 一天指数（成立日），08-06 及更早源端无数据
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, member_count) "
+                   "VALUES ('309265','2026一季报预增','concept',TRUE,TRUE,20)")
+    client.execute(
+        "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+        "VALUES ('309265', DATE '2026-08-07', 100, 101, 99, 100, 500, 50000)")
+    rep = DataIntegrityReport(client)
+    rep.scan_board_quality()
+    daily = client.query_df(
+        "SELECT code, trade_date FROM data_quality_issue "
+        "WHERE issue_type='board_index_gap_daily' AND status='open'")
+    codes = set(daily["code"].astype(str).tolist())
+    assert "309265" not in codes          # 成立前缺失豁免
+    assert "881121" in codes              # 老板块成立后缺失照报（半导体缺 08-07）
+
+
+def test_scan_board_quality_index_gap_daily_post_start_missing(client, monkeypatch):
+    """板块指数逐日缺口：数据起点之后的真实空洞不豁免，仍报缺采。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    # 晚成立板块但起点之后出现空洞：08-03 成立，缺 08-07（起点后）→ 必须报
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, member_count) "
+                   "VALUES ('309268','2026中报预增','concept',TRUE,TRUE,20)")
+    for d in ("2026-08-03", "2026-08-06"):
+        client.execute(
+            "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+            f"VALUES ('309268', DATE '{d}', 100, 101, 99, 100, 500, 50000)")
+    rep = DataIntegrityReport(client)
+    rep.scan_board_quality()
+    daily = client.query_df(
+        "SELECT code, trade_date FROM data_quality_issue "
+        "WHERE issue_type='board_index_gap_daily' AND status='open'")
+    hit = daily[(daily["code"].astype(str) == "309268")
+                & (daily["trade_date"] == pd.Timestamp("2026-08-07"))]
+    assert len(hit) == 1                   # 起点之后缺失照报
+    assert not len(daily[daily["code"].astype(str) == "309268"]) > 1  # 只有起点后那一处
+
+
 def test_board_recheck_index_gap_daily(client, monkeypatch):
     """板块指数逐日缺口复检：缺失日补齐后收敛，板块移除/无指数能力后也收敛。"""
     from backend.services.data_report import DataIntegrityReport

@@ -506,6 +506,7 @@ function setSort(slotId: string, field: string, order: string): void {
           v-for="c in s.meta.columns"
           :key="c.key"
           size="sm"
+          :test-id="`component-${s.slotId}-hiddenColumns-${c.key}`"
           :label="`显示${c.label}`"
           :model-value="colVisible(s.slotId, c.key)"
           @update:model-value="(v) => setColVisible(s.slotId, c.key, v)"
