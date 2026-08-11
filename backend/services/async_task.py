@@ -822,6 +822,22 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
                 raise RuntimeError(f"板块指数重采失败：{res['failed']}")
             note = f"重采指数 {res.get('rows', 0)} 行"
             ctx.log(note)
+        elif issue_type == "board_index_gap_daily":
+            # 板块指数逐日缺口：按缺失日窄窗口重采该板块指数。
+            # 源端按年返回 K 线，传入 start=end=缺失日即可触发该年数据回填；幂等 upsert。
+            from backend.services.board_ingest import BoardIngestService
+            from datetime import date as _d
+            if td is None:
+                note = "缺少日期，无法定向重采"
+            else:
+                ctx.log(f"恢复(板块指数逐日缺口)：重采板块 {code} {td} 指数")
+                bsvc = BoardIngestService(c)
+                res = _call_with_ctx(
+                    bsvc.ingest_board_bar, td, end=td, board_codes=[code], ctx=ctx)
+                if res.get("failed"):
+                    raise RuntimeError(f"板块指数重采失败：{res['failed']}")
+                note = f"重采指数 {res.get('rows', 0)} 行"
+                ctx.log(note)
         elif issue_type == "board_member_incomplete":
             # 成分快照采集不完整/失败：重采该板块成分快照（只进不出，完整才落库）
             from backend.services.board_ingest import BoardIngestService

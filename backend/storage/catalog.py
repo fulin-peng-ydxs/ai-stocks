@@ -21,7 +21,7 @@ _TIMESERIES_TABLES: frozenset[str] = frozenset(
 _BOARD_ISSUES_BY_TABLE: dict[str, tuple[str, ...]] = {
     "board_dict": ("board_index_gap", "board_member_incomplete", "board_fund_unmatched"),
     "board_member": ("board_member_incomplete",),
-    "board_bar": ("board_index_gap",),
+    "board_bar": ("board_index_gap", "board_index_gap_daily"),
     "board_fund_flow": ("board_fund_unmatched", "board_fund_missing", "board_fund_stale"),
 }
 

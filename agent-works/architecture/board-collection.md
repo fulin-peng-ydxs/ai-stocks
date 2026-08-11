@@ -122,18 +122,20 @@
 
 ## 质检（`backend/services/data_report.py` + `dataquality/checker.py`）
 
-板块五类 issue 独立于个股 L1-L4 打分，归入「板块」层（`ISSUE_LAYER` 映射）：
+板块六类 issue 独立于个股 L1-L4 打分，归入「板块」层（`ISSUE_LAYER` 映射）：
 
 | issue_type | 产生方 | 含义 | 修复动作 |
 |-----------|--------|------|----------|
-| `board_index_gap` | `scan_board_quality` 扫描 | 板块指数滞后全局最新交易日 | 重采该板块指数 |
+| `board_index_gap` | `scan_board_quality` 扫描 | 板块指数最新日线滞后全局最新交易日 | 重采该板块指数（2024 年起） |
+| `board_index_gap_daily` | `scan_board_quality` 扫描 | 板块指数近 `GAP_WINDOW_DAYS` 个开市日内某具体交易日缺失 | 按缺失日窄窗口重采该板块指数 |
 | `board_member_incomplete` | 采集层 `_write_incomplete_quality` | 成分快照采集不完整/失败 | 重采成分（force 绕周频） |
 | `board_fund_unmatched` | 采集层 `_write_unmatched_quality` | 资金流未匹配到字典 | 重采资金流 |
 | `board_fund_missing` | `scan_board_quality` 扫描 | 资金流源未收录该板块（字典有成分/指数但无资金流） | 重采资金流（源上线后收敛） |
 | `board_fund_stale` | `scan_board_quality` 扫描 | 全源资金流快照滞后全局最新交易日（源级单条，code=NULL） | 重采全源资金流 |
 
 关键语义：
-- `scan_board_quality` 先完整计算再**事务内替换** open 的 `board_index_gap` / `board_fund_missing` / `board_fund_stale`，扫描失败不丢旧问题；已 ignored 的板块按 `(code, type)` 整体豁免。指数缺口复检与扫描口径一致（先判 `has_bar`，false 视为可收敛）；资金流缺失复检看 `has_fund_flow`（true 或板块已移除视为收敛）；资金流滞后复检看全源快照是否追平最新交易日。
+- `scan_board_quality` 先完整计算再**事务内替换** open 的 `board_index_gap` / `board_index_gap_daily` / `board_fund_missing` / `board_fund_stale`，扫描失败不丢旧问题；已 ignored 的板块按 `(code, type)` 整体豁免。指数缺口复检与扫描口径一致（先判 `has_bar`，false 视为可收敛）；指数逐日缺口复检查该具体 `(board_code, trade_date)` 是否已有 `board_bar` 记录；资金流缺失复检看 `has_fund_flow`（true 或板块已移除视为收敛）；资金流滞后复检看全源快照是否追平最新交易日。
+- `board_index_gap` 与 `board_index_gap_daily` 共存：前者定位「最新交易日没追上」，后者定位「历史窗口内具体某天缺失」。修复后者时使用缺失日作为 `start=end` 的窄窗口，源端按年返回 K 线会顺带回填该年数据，幂等 upsert。
 - `board_fund_missing` 与 `board_fund_unmatched` 方向相反：前者是「字典有、源缺」，后者是「源有、字典缺」。前者在源榜单未收录期间保持 open，源上线后重采置 `has_fund_flow=true`，重扫自动收敛。
 - `board_fund_stale` 与 `board_index_gap` 等价：资金流是整体批量采集，停摆时所有板块一起滞后，故记单条源级 issue（code=NULL），修复动作重采全源，不拆逐板块。
 - `board_member_incomplete` / `board_fund_unmatched` 由采集事件写入，幂等判重含 `ignored`（标记正常后重采不翻回 open）。
@@ -144,8 +146,8 @@
 
 五类板块 issue 走统一的 fix 任务机制（与个股同链路）：
 1. 创建 fix 任务 → issue 置 `fixing` + 绑定 `fix_task_id`；
-2. `_recover_one` 按 issue_type 分派重采（指数重采 2024 起 / 成分 `force=True` 绕周频 / 资金流按缺失定向 `board_codes`、按滞后全源重采）；
-3. `recheck_clean` 真检查该问题是否消失（如成分查 `member_snapshot_at` 非空且无 active 同类 issue）；
+2. `_recover_one` 按 issue_type 分派重采（指数重采 2024 起 / 指数逐日缺口按缺失日窄窗口重采 / 成分 `force=True` 绕周频 / 资金流按缺失定向 `board_codes`、按滞后全源重采）；
+3. `recheck_clean` 真检查该问题是否消失（如成分查 `member_snapshot_at` 非空且无 active 同类 issue，逐日缺口查该日 `board_bar` 记录是否存在）；
 4. 通过 → `resolved`；未通过 → 保持 open；任务失败/中断 → `fixing` 复位 `open`。
 
 ## 概览 / 调度 / 手动采集 / 前端接入

@@ -104,7 +104,7 @@ class DataIntegrityReport:
             "(SELECT count(*) FROM daily_bar) bars, "
             "(SELECT count(*) FROM daily_metrics) metrics, "
             "(SELECT count(*) FROM data_quality_issue WHERE status='open' "
-            "   AND issue_type NOT IN ('board_index_gap','board_member_incomplete',"
+            "   AND issue_type NOT IN ('board_index_gap','board_index_gap_daily','board_member_incomplete',"
             "'board_fund_unmatched','board_fund_missing','board_fund_stale')) openi, "
             "(SELECT count(*) FROM stock_suspension) susp, "
             "(SELECT count(*) FROM daily_metrics WHERE total_mv IS NULL OR float_mv IS NULL) mvnull"
@@ -164,7 +164,7 @@ class DataIntegrityReport:
             "count(*) FILTER (WHERE issue_type IN ('null_close','ohl_repaired')) l1, "
             "count(*) FILTER (WHERE issue_type IN ('abnormal_change','adj_jump')) l3 "
             "FROM data_quality_issue WHERE status='open' "
-            "AND issue_type NOT IN ('board_index_gap','board_member_incomplete',"
+            "AND issue_type NOT IN ('board_index_gap','board_index_gap_daily','board_member_incomplete',"
             "'board_fund_unmatched','board_fund_missing','board_fund_stale') "
             "GROUP BY code")
         iss_map = {r["code"]: (int(r["tot"]), int(r["l1"]), int(r["l3"])) for _, r in iss.iterrows()}
@@ -546,10 +546,11 @@ class DataIntegrityReport:
 
     # ── 板块维度质检（板块概念需求 R12，T7）──────────────────
     def scan_board_quality(self) -> dict:
-        """板块数据质检：板块指数缺口 + 资金流缺失扫描，写 data_quality_issue。
+        """板块数据质检：板块指数缺口 + 指数逐日缺口 + 资金流缺失扫描，写 data_quality_issue。
 
-        收敛语义：先完整计算本轮两类结果，再在一个事务内替换 open 的
-        board_index_gap / board_fund_missing；扫描失败时事务不提交，旧问题不会消失。
+        收敛语义：先完整计算本轮结果，再在一个事务内替换 open 的
+        board_index_gap / board_index_gap_daily / board_fund_missing / board_fund_stale；
+        扫描失败时事务不提交，旧问题不会消失。
         已 ignored 的板块按 (code, type) 整体豁免。
 
         成分数波动不做质量判断；成分采集完整性由采集层“完整快照才落库”保证。
@@ -592,6 +593,39 @@ class DataIntegrityReport:
                         "detail": f"板块 {r['name']}（{code}）指数缺口：最近指数 {last_bar or '无'}，"
                                   f"全局最新交易日 {latest}",
                     })
+            # 板块指数逐日缺口：近 GAP_WINDOW_DAYS 个开市日内，has_bar 板块具体缺了哪几天。
+            # 与 board_index_gap 共存：后者只关心最新交易日是否追上，本类型定位历史窗口内逐日缺失。
+            daily_gap_issues: list[dict] = []
+            ig_gap_daily = _ignored_codes("board_index_gap_daily")
+            recent_days, _ = self._recent_open_days(latest, GAP_WINDOW_DAYS)
+            recent_set = set(recent_days)
+            if recent_set:
+                bar_df = self.c.query_df(
+                    """
+                    SELECT b.board_code, b.name, bar.trade_date
+                    FROM board_dict b
+                    LEFT JOIN board_bar bar ON bar.board_code = b.board_code
+                        AND bar.trade_date >= ? AND bar.trade_date <= ?
+                    WHERE b.has_bar
+                    """,
+                    [min(recent_set), max(recent_set)])
+                bar_by_code: dict[str, dict] = {}
+                for _, r in bar_df.iterrows():
+                    code = str(r["board_code"])
+                    if code not in bar_by_code:
+                        bar_by_code[code] = {"name": str(r["name"]), "dates": set()}
+                    if r["trade_date"] is not None:
+                        bar_by_code[code]["dates"].add(pd.Timestamp(r["trade_date"]).date())
+                for code, info in bar_by_code.items():
+                    if code in ig_gap_daily:
+                        continue
+                    for md in sorted(recent_set - info["dates"]):
+                        daily_gap_issues.append({
+                            "code": code, "trade_date": md,
+                            "issue_type": "board_index_gap_daily",
+                            "detail": f"板块 {info['name']}（{code}）指数逐日缺口："
+                                      f"{md} 无日线数据",
+                        })
         # 资金流缺失：字典中真正参与展示的板块（有成分或指数）却无资金流数据。
         # 来源是数据源资金流榜单未收录该板块（区别于 board_fund_unmatched：源多出而字典缺）。
         # 源侧榜单一经上线，重采资金流会置 has_fund_flow=true，重扫即收敛。
@@ -633,13 +667,14 @@ class DataIntegrityReport:
                                   f"滞后 {(latest - last_fund).days} 天，待重采资金流",
                     })
         with self.c.transaction():
-            for issue_type in ("board_index_gap", "board_fund_missing", "board_fund_stale"):
+            for issue_type in ("board_index_gap", "board_index_gap_daily",
+                               "board_fund_missing", "board_fund_stale"):
                 self.c.execute(
                     "DELETE FROM data_quality_issue "
                     "WHERE status='open' AND issue_type=?", [issue_type])
-            self._insert_issues(gap_issues + fund_issues + stale_issues)
-        return {"index_gap": len(gap_issues), "fund_missing": len(fund_issues),
-                "fund_stale": len(stale_issues)}
+            self._insert_issues(gap_issues + daily_gap_issues + fund_issues + stale_issues)
+        return {"index_gap": len(gap_issues), "index_gap_daily": len(daily_gap_issues),
+                "fund_missing": len(fund_issues), "fund_stale": len(stale_issues)}
 
     # ── 单条问题复检（恢复后判断问题是否真消失，DM-D22）──
     def recheck_clean(self, issue_type: str, code: str | None, trade_date: date | None,
@@ -755,6 +790,19 @@ class DataIntegrityReport:
             if last_bar is None or pd.isna(last_bar):
                 return False
             return pd.Timestamp(last_bar).date() >= pd.Timestamp(latest).date()
+        if issue_type == "board_index_gap_daily":
+            # 板块指数逐日缺口复检：该具体交易日现在是否有 board_bar 记录。
+            # has_bar=false/NULL 说明板块已移除或无指数能力，视为收敛。
+            has_bar = self._scalar(
+                "SELECT has_bar FROM board_dict WHERE board_code=?", [code])
+            if has_bar is None or not bool(has_bar):
+                return True
+            if trade_date is None:
+                return False
+            n = self._scalar(
+                "SELECT count(*) FROM board_bar WHERE board_code=? AND trade_date=?",
+                [code, trade_date])
+            return int(n) > 0
         if issue_type == "board_member_incomplete":
             # 完整采集会原子更新 member_snapshot_at 并关闭 active issue；历史 member_count 不能证明
             # 本次问题已经修复，否则旧快照会造成假解决。

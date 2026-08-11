@@ -229,7 +229,7 @@ def _board_stage(c) -> dict | None:
             issues = c.query_df(
                 "SELECT issue_type, count(*) AS n FROM data_quality_issue "
                 "WHERE status IN ('open','fixing') "
-                "AND issue_type IN ('board_index_gap','board_member_incomplete',"
+                "AND issue_type IN ('board_index_gap','board_index_gap_daily','board_member_incomplete',"
                 "'board_fund_unmatched','board_fund_missing','board_fund_stale') "
                 "GROUP BY issue_type")
             issues_by_type = {str(r["issue_type"]): int(r["n"]) for _, r in issues.iterrows()}
@@ -446,7 +446,8 @@ def quality(issue_type: str | None = None, severity: str | None = None,
         it = r.get("issue_type")
         detail = r.get("detail")
         if nm is None or pd.isna(nm) or not str(nm).strip():
-            if it in ("board_member_incomplete", "board_index_gap", "board_fund_missing") and r.get("code"):
+            if it in ("board_member_incomplete", "board_index_gap", "board_index_gap_daily",
+                      "board_fund_missing") and r.get("code"):
                 nm = board_names.get(str(r["code"]), "")
             elif it == "board_fund_unmatched" and isinstance(detail, str) and detail.strip():
                 try:

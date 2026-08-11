@@ -570,6 +570,59 @@ def test_scan_board_quality_index_gap(client, monkeypatch):
     assert "309121" not in gaps["code"].tolist()  # AI PC 指数正常不报
 
 
+def test_scan_board_quality_index_gap_daily(client, monkeypatch):
+    """板块指数逐日缺口扫描：近窗口内缺失的每个开市日都生成 issue。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    # 确保全局最新交易日在 trade_calendar 中被识别为开市日
+    client.execute(
+        "INSERT INTO trade_calendar (trade_date, is_open) VALUES (DATE '2026-08-07', TRUE) "
+        "ON CONFLICT DO NOTHING")
+    r = DataIntegrityReport(client).scan_board_quality()
+    assert r["index_gap_daily"] >= 1
+    daily = client.query_df(
+        "SELECT code, trade_date FROM data_quality_issue "
+        "WHERE issue_type='board_index_gap_daily' AND status='open'")
+    # 半导体只有 08-06，缺全局最新交易日 08-07；AI PC 正常
+    codes = set(daily["code"].astype(str).tolist())
+    assert "881121" in codes
+    assert "309121" not in codes
+
+
+def test_scan_board_quality_index_gap_daily_ignored(client, monkeypatch):
+    """板块指数逐日缺口：ignored 状态按 code 整体豁免。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    client.execute(
+        "INSERT INTO trade_calendar (trade_date, is_open) VALUES (DATE '2026-08-07', TRUE) "
+        "ON CONFLICT DO NOTHING")
+    client.execute(
+        "INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
+        "VALUES (990, '881121', 'board_index_gap_daily', 'mid', 'ignored', now())")
+    rep = DataIntegrityReport(client)
+    rep.scan_board_quality()
+    daily = client.query_df(
+        "SELECT code FROM data_quality_issue "
+        "WHERE issue_type='board_index_gap_daily' AND status='open'")
+    assert "881121" not in daily["code"].astype(str).tolist()
+
+
+def test_board_recheck_index_gap_daily(client, monkeypatch):
+    """板块指数逐日缺口复检：缺失日补齐后收敛，板块移除/无指数能力后也收敛。"""
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    rep = DataIntegrityReport(client)
+    # 半导体缺 08-07
+    assert rep.recheck_clean("board_index_gap_daily", "881121", date(2026, 8, 7)) is False
+    client.execute(
+        "INSERT INTO board_bar (board_code, trade_date, close) "
+        "VALUES ('881121', DATE '2026-08-07', 200.0)")
+    assert rep.recheck_clean("board_index_gap_daily", "881121", date(2026, 8, 7)) is True
+    # has_bar=false 视为收敛
+    client.execute("UPDATE board_dict SET has_bar=FALSE WHERE board_code='881121'")
+    assert rep.recheck_clean("board_index_gap_daily", "881121", date(2026, 8, 7)) is True
+
+
 def test_scan_board_quality_fund_missing(client, monkeypatch):
     """资金流缺失扫描：字典中有成分/指数但源未收录资金流的板块写 issue。"""
     from backend.services.data_report import DataIntegrityReport
@@ -925,6 +978,43 @@ def test_board_index_gap_fix_reingests_and_resolves(client, monkeypatch):
     _wait(svc, tid)
     row = client.query_df("SELECT status FROM data_quality_issue WHERE id=1").iloc[0]
     assert row["status"] == "resolved"
+
+
+def test_board_index_gap_daily_fix_reingests_and_resolves(client, monkeypatch):
+    """board_index_gap_daily fix：按缺失日窄窗口重采 → 复检通过 → resolved。"""
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+    from backend.services.board_ingest import BoardIngestService
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "__init__",
+                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+    captured = {}
+
+    def fake_ingest_board_bar(self, start, end=None, board_codes=None, board_type=None, ctx=None):
+        captured["start"] = start
+        captured["end"] = end
+        captured["board_codes"] = board_codes
+        # 补回缺失的 08-07，使逐日缺口复检通过
+        self.c.execute("INSERT INTO board_bar (board_code, trade_date, close) "
+                       "VALUES ('309121', DATE '2026-08-07', 100.0)")
+        return {"rows": 1, "boards": 1, "failed": []}
+
+    monkeypatch.setattr(BoardIngestService, "ingest_board_bar", fake_ingest_board_bar, raising=True)
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+                   "VALUES ('309121','AI PC','concept',TRUE)")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-07', 10.0)")
+    client.execute("INSERT INTO data_quality_issue (id, code, trade_date, issue_type, severity, status, detected_at) "
+                   "VALUES (1, '309121', DATE '2026-08-07', 'board_index_gap_daily', 'mid', 'open', now())")
+
+    tid = svc.create("fix", {"issue_id": 1})
+    _wait(svc, tid)
+    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=1").iloc[0]
+    assert row["status"] == "resolved"
+    assert captured["start"] == date(2026, 8, 7)
+    assert captured["end"] == date(2026, 8, 7)
+    assert captured["board_codes"] == ["309121"]
 
 
 def test_board_fund_unmatched_fix_resolves_only_after_mapping(client, monkeypatch):
