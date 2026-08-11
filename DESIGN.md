@@ -200,7 +200,7 @@ Key Characteristics：
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉的分组容器 | 无直接系统组件种类 | 页面设置抽屉分组优先复用；不直接用于主内容区配置面板 |
 | `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | `PageSettingsDrawer` 的业务选项统一复用；不得在页面内复制标题、说明和分区间距 |
 | `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组优先复用；配置项说明/默认值继续放 `HelpHint`，一级组说明在组头展示，二级分区说明随分区内容一起展开/收起 |
-| `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用；整组选项使用连续底板与基础边框，选中项在组内浮起，不把选项渲染成彼此分散的独立按钮；每个选项必须通过 `aria-pressed` 暴露程序化选中状态，多组并列使用时由消费页提供可访问名称 |
+| `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用；整组选项使用连续底板与基础边框，选中项在组内浮起，不把选项渲染成彼此分散的独立按钮；固定操作区使用 `small`，设置抽屉与表单使用默认尺寸；每个选项必须通过 `aria-pressed` 暴露程序化选中状态，多组并列使用时由消费页提供可访问名称 |
 | `BoardTaskScopeFields` | `frontend/src/components/data/BoardTaskScopeFields.vue` | 板块采集范围和分阶段参数组 | 无直接系统组件种类 | 数据采集与任务调度的板块任务统一复用；模式、板块类型、采集内容和成分强刷文案/参数不得在消费页再维护第二套 |
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用 |
 | `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 多个输入、选择器、按钮组成的横向行优先使用 `AppControlRow`；存在“说明文字 + 控件”时必须用 `AppControlItem` 包裹，避免标签和控件被拆到不同行；只有明确需要均分或撑满时才传 `fill` 或让具体 `AppControlItem` 设置 `grow` |
@@ -210,7 +210,7 @@ Key Characteristics：
 | `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；主列表默认成长，抽屉、展开行和局部明细等非主表显式使用 `embedded`；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
 | `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和中文标签推导语义角色，统一提供固定结构宽或弹性最小宽 | `data-table`、`wide-table` 的稳定列宽能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width`；确有歧义的动态标签只传 `role`，数值事实只维护在 `ADAPTIVE_COLUMN_RULES` |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
-| `CandleChart` | `frontend/src/components/CandleChart.vue` | 盘感训练和回测复用的 K线、量能、MA/VMA 与买卖标记画布 | 无系统组件种类；图表参数由消费页面管理 | 盘感训练和回测统一消费；保持单实例双网格与既有 props 契约，并与 `StockChartWorkspace` 共用 MA/VMA 定义、tooltip helper 和 `useStockChartTheme()`，不得复制股票画布基础能力 |
+| `CandleChart` | `frontend/src/components/CandleChart.vue` | 盘感训练、回测和板块行情复用的 K线、量能、MA/VMA 与买卖标记画布 | 无系统组件种类；图表参数由消费页面管理 | 独立使用保持默认画布高度，受控工作台通过 `fill` 填满父容器；保持单实例双网格与既有 props 契约，并与 `StockChartWorkspace` 共用 MA/VMA 定义、tooltip helper 和 `useStockChartTheme()`，不得复制股票画布基础能力 |
 | `StockChartWorkspace` | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | 个股 K线、量能和 MACD 的纵向联动工作区，统一日期轴、光标、显式缩放同步、局部状态和可访问高度分隔线 | 无系统组件种类；图表组合与高度属于 `stock-detail` 页面业务偏好，不进入布局字段 | 个股详情统一消费；行情与指标按交易日对齐，MACD 局部失败不得阻断 K线/量能；只有 K线显示固定在绘图区左上角的行情 tooltip 和唯一光标轴日期气泡，量能和 MACD 普通柱线只保留联动光标与标题当前值，不显示行情内容浮层、日期气泡或标题日期，MACD 信号 item 悬停例外显示信号类型与完整日期；三图标题值与实际序列必须复用盘感训练共享色板，柱宽按 K线、量能、MACD 明显递减，底部日期标签不得被缩放滑块遮挡；任一图的 `dataZoom` 必须显式同步给其余可见图并在主题重绘后保留；画布必须监听预设系统在完整 CSS token 写入后发布的主题修订版本，覆盖明暗、预设 key 和同 key 后端覆盖变化，分隔线遵守 reduced-motion；光标跟随指标值不得设置 `aria-live`，避免三组高频播报；页面不得再拼装第二套多图联动和分隔线逻辑 |
 | `AppPagination` | `frontend/src/components/AppPagination.vue` | 列表页统一分页 | 由 `data-table`/`wide-table` 的 `pageSize` 配置间接驱动 | 服务端分页页脚优先复用 |
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`；默认最多展示 3 个选中标签，溢出时提前折叠；筛选下拉优先复用 |
@@ -585,7 +585,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `layout-components` | `LayoutComponentsView`（系统组件） | `detail` | 暂无 | action:`toolbar` / main:`section(region)` |
 | `audit-log` | `AuditLogView`（审计日志） | `list` | `density` | action:`toolbar` / main:`kpi-grid` / main:`filter-bar` / main:`wide-table` / overlay:`detail` |
 | `data-dictionary` | `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`simple-list` / nested:`data-table` / overlay:`form` / overlay:`dialog` |
-| `sectors` | `SectorsView`（板块行情） | `list` | `density` | action:`filter-bar` / main:`chart` / main:`data-table(growMain)` |
+| `sectors` | `SectorsView`（板块行情） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`data-table` / nested:`chart` |
 <!-- page-registry:end -->
 
 除 `supportsPageSettings=false` 的预设管理、页面布局、系统组件三个平台管理页外，registry 页面必须有 `settings-drawer` overlay slot。三个管理页只管理系统配置，不开放或持久化个人页面设置。组件字段、slot 细节和候选项事实源在 `COMPONENT_FIELD_DEFS`、`pageRegistry.consumedComponentFields` 和 `componentMeta`，不要在本表重复维护。

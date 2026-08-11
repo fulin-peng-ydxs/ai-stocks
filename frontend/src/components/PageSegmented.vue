@@ -6,6 +6,8 @@ const props = defineProps<{
   options: { label: string; value: OptionValue }[]
   /** 稳定自动化测试锚点；只在需要 E2E 覆盖的关键控件上显式传入。 */
   testId?: string
+  /** 紧凑控件行使用 small；设置抽屉与表单保持 default。 */
+  size?: 'default' | 'small'
 }>()
 
 defineEmits<{
@@ -20,6 +22,7 @@ function optionTestId(value: OptionValue): string | undefined {
 <template>
   <div
     class="page-segmented"
+    :class="{ 'page-segmented--small': props.size === 'small' }"
     role="group"
     :data-testid="props.testId"
   >
@@ -80,5 +83,14 @@ function optionTestId(value: OptionValue): string | undefined {
   color: var(--page-settings-text);
   border-color: var(--page-settings-seg-active-border);
   box-shadow: 0 1px 2px rgba(31, 45, 70, 0.1);
+}
+.page-segmented--small {
+  padding: 2px;
+  border-radius: var(--layout-control-radius);
+}
+.page-segmented--small .seg-btn {
+  min-height: var(--app-control-height-md);
+  padding: 0 var(--app-space-2);
+  border-radius: calc(var(--layout-control-radius) - 1px);
 }
 </style>

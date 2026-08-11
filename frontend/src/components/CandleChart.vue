@@ -25,6 +25,8 @@ const props = defineProps<{
   markers?: TradeMarker[]
   zoomStart?: number
   zoomEnd?: number
+  /** 由受控工作台承接高度时填满父容器；默认保持独立图表的 480px 高度。 */
+  fill?: boolean
 }>()
 const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -298,7 +300,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="candle-wrap">
+  <div class="candle-wrap" :class="{ 'candle-wrap--fill': fill }">
     <!-- 顶部 MA 数值条（随光标更新） -->
     <div class="ma-bar">
       <span v-for="m in maLabels" :key="m.label" :style="{ color: m.color }">
@@ -329,6 +331,19 @@ onBeforeUnmount(() => {
   border-radius: 6px;
   padding: 6px 8px 2px;
 }
+.candle-wrap--fill {
+  display: flex;
+  height: 100%;
+  min-height: 300px;
+  flex-direction: column;
+}
+.candle-wrap--fill .chart-area {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.candle-wrap--fill .candle {
+  height: 100%;
+}
 .ma-bar {
   display: flex;
   gap: var(--app-space-4);
@@ -346,7 +361,7 @@ onBeforeUnmount(() => {
 }
 .vol-legend {
   position: absolute;
-  top: 350px; /* 量能区 grid top 74% × 480 ≈ 355，置于其上方 */
+  top: calc(74% - 6px);
   left: 12px;
   display: flex;
   gap: var(--app-space-3);

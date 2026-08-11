@@ -4,6 +4,18 @@ import { describe, expect, it } from 'vitest'
 import PageSegmented from '../PageSegmented.vue'
 
 describe('PageSegmented', () => {
+  it('supports a compact size for page control rows', () => {
+    const wrapper = mount(PageSegmented, {
+      props: {
+        modelValue: 'all',
+        size: 'small',
+        options: [{ label: '全部', value: 'all' }],
+      },
+    })
+
+    expect(wrapper.classes()).toContain('page-segmented--small')
+  })
+
   it('按需输出稳定 E2E 锚点，不影响原有分段选择行为', async () => {
     const wrapper = mount(PageSegmented, {
       props: {

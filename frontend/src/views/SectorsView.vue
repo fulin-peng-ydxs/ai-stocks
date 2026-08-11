@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import type { Sort } from 'element-plus'
-import { useRoute, useRouter } from 'vue-router'
+import { Close } from '@element-plus/icons-vue'
+import { useRoute } from 'vue-router'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import CandleChart from '@/components/CandleChart.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -24,29 +26,22 @@ import {
   type SectorSortField,
 } from '@/api/sectors'
 import type { Bar } from '@/api/stocks'
-import { useKlinePrefs, ALL_DAYS } from '@/composables/useKlinePrefs'
+import { ALL_DAYS, useKlinePrefs } from '@/composables/useKlinePrefs'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
-import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
-import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 
-const router = useRouter()
 const route = useRoute()
 const { dataMin, dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
 
-// 默认类型/默认视图属业务态偏好（页面记忆）；'' = 全部板块。默认排序、每页条数、列显隐迁入组件配置层 table slot。
-// defaultView：list=列表 / chart=对比图，对齐个股查询页「默认视图」切换语义。
-const sectorsDefaults = {
-  defaultType: '' as BoardType | '',
-  defaultView: 'list' as 'list' | 'chart',
-}
+const sectorsDefaults = { defaultType: '' as BoardType | '' }
 const { settings, isDirty, reset } = usePageSettings('sectors', sectorsDefaults)
 
-// 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const sectorsLayout = getPageLayout('sectors')
 const {
   effective,
@@ -62,13 +57,20 @@ const {
   componentSourceOf,
   componentLayerValuesOf,
 } = useRemoteLayoutConfig(sectorsLayout)
+const drawerConfig = {
+  knobs: layoutKnobs,
+  valueOf,
+  sourceOf,
+  layerValuesOf,
+  setKnob,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  componentLayerValuesOf,
+}
 
-// 设置抽屉的「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, layerValuesOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, componentLayerValuesOf }
-
-// 排序走通用列头排序 + defaultSort 配置（与 StocksView 同链路），不另设周期控件——周期属数据窗口，留给详情页图表。
 const DEFAULT_SORT = 'pct_today:desc'
-const SORTABLE_FIELDS = ['pct_today', 'pct_5d', 'pct_10d', 'pct_20d', 'net_inflow', 'up_count'] as const
+const SORTABLE_FIELDS = ['pct_today', 'pct_5d', 'net_inflow'] as const
 const {
   sortBy,
   sortOrder,
@@ -84,20 +86,21 @@ const {
 
 const TYPE_OPTIONS: { label: string; value: BoardType | '' }[] = [
   { label: '全部板块', value: '' },
-  { label: '概念板块', value: 'concept' },
-  { label: '行业板块', value: 'industry' },
+  { label: '概念', value: 'concept' },
+  { label: '行业', value: 'industry' },
 ]
-const VIEW_OPTIONS: { label: string; value: 'list' | 'chart' }[] = [
-  { label: '列表', value: 'list' },
-  { label: '对比图', value: 'chart' },
+const CHART_MODE_OPTIONS = [
+  { label: '强弱对比', value: 'compare' },
+  { label: '指数 K 线', value: 'kline' },
 ]
 
-// ── 组件配置消费的派生值 ──
 const defaultSize = computed<number>(() => {
-  const v = componentValueOf('table', 'pageSize')
-  return typeof v === 'number' ? v : 20
+  const value = componentValueOf('table', 'pageSize')
+  return typeof value === 'number' ? value : 20
 })
-const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
+const hiddenColumns = computed<string[]>(() =>
+  (componentValueOf('table', 'hiddenColumns') as string[]) ?? [],
+)
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
 }
@@ -105,11 +108,11 @@ function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
 
-// ── 筛选与列表状态 ──
 const loading = ref(false)
 const loadError = ref('')
 const forbidden = ref(false)
 const tradeDate = ref<string | null>('')
+const marketDate = ref<string | null>(null)
 const boardType = ref<BoardType | ''>(settings.defaultType)
 const keyword = ref('')
 const page = ref(1)
@@ -117,114 +120,133 @@ const size = ref(defaultSize.value)
 const total = ref(0)
 const rows = ref<SectorRow[]>([])
 const fundFlowDate = ref<string | null>(null)
+const boardLookup = ref<Record<string, SectorRow>>({})
 
 let restoring = false
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
-// ── 对比图视图（defaultView==='chart'）──
-// 板块多选（上限 6，保证折线可读）+ 周期窗口（KlineRangeSelect 全局偏好）+ 归一化基准。
+// 行点击只切换主观察对象；勾选“对比”会把板块固定在图中，跨分页仍保留。
 const COMPARE_MAX = 6
+const activeCode = ref('')
+const pinnedCodes = ref<string[]>([])
 const { validDefault: klineDefaultRange } = useKlinePrefs()
-const inChartMode = computed(() => settings.defaultView === 'chart')
-const selectedCodes = ref<string[]>([])
 const rangeDays = ref<number>(klineDefaultRange.value)
-const basis = ref<'first' | 'mid'>('first')
 const chartMode = ref<'compare' | 'kline'>('compare')
-const klineCode = ref('')
+const basis = ref<'first' | 'mid'>('first')
 const chartLoading = ref(false)
 const chartError = ref('')
 const compareBars = ref<Record<string, SectorBar[]>>({})
-// 多选候选全集：一次性拉全量板块（列表接口 size 上限内），供可搜索多选。
-const boardOptions = ref<SectorRow[]>([])
+let chartRequestVersion = 0
 
-const selectedRows = computed(() =>
-  selectedCodes.value
-    .map((c) => boardOptions.value.find((r) => r.board_code === c))
-    .filter((r): r is SectorRow => Boolean(r)),
+const activeRow = computed(() => boardLookup.value[activeCode.value] ?? null)
+const chartCodes = computed(() => {
+  if (!activeCode.value) return []
+  if (chartMode.value === 'kline') return [activeCode.value]
+  return Array.from(new Set([activeCode.value, ...pinnedCodes.value])).slice(0, COMPARE_MAX)
+})
+const compareRows = computed(() =>
+  chartCodes.value
+    .map((code) => boardLookup.value[code])
+    .filter((row): row is SectorRow => Boolean(row)),
 )
 const compareSeries = computed(() =>
-  selectedRows.value
-    .filter((r) => compareBars.value[r.board_code]?.length)
-    .map((r) => ({ code: r.board_code, name: r.name, bars: compareBars.value[r.board_code]! })),
+  compareRows.value
+    .filter((row) => compareBars.value[row.board_code]?.length)
+    .map((row) => ({
+      code: row.board_code,
+      name: row.name,
+      bars: compareBars.value[row.board_code]!,
+    })),
 )
-// 单板块 K 线模式：把 SectorBar 映射成 CandleChart 的 Bar（缺 pre_close/turnover 置 null）。
 const klineBars = computed<Bar[]>(() =>
-  (compareBars.value[klineCode.value] ?? []).map((b) => ({
-    date: b.trade_date,
-    open: b.open,
-    high: b.high,
-    low: b.low,
-    close: b.close,
+  (compareBars.value[activeCode.value] ?? []).map((bar) => ({
+    date: bar.trade_date,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
     pre_close: null,
-    volume: b.volume,
-    amount: b.amount,
+    volume: bar.volume,
+    amount: bar.amount,
     turnover_rate: null,
   })),
 )
 
-// 周期窗口 → 起止日期：近 N 日取日历倒数 N 天起，全部用数据最早日；止日=最新交易日。
+function chartEnd(): string {
+  return tradeDate.value || marketDate.value || dataMax.value || ''
+}
 function rangeStart(): string {
-  if (rangeDays.value === ALL_DAYS) return dataMin.value || dataMax.value || ''
-  const end = dataMax.value ? new Date(dataMax.value) : new Date()
-  const d = new Date(end)
-  d.setDate(d.getDate() - rangeDays.value)
-  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`
+  const endValue = chartEnd()
+  if (rangeDays.value === ALL_DAYS) return dataMin.value || endValue
+  const end = endValue ? new Date(`${endValue}T00:00:00`) : new Date()
+  const start = new Date(end)
+  start.setDate(start.getDate() - rangeDays.value)
+  return `${start.getFullYear()}-${`${start.getMonth() + 1}`.padStart(2, '0')}-${`${start.getDate()}`.padStart(2, '0')}`
 }
 
-async function loadBoardOptions(): Promise<void> {
-  try {
-    const data = await listSectors({ page: 1, size: 200, sort_by: 'pct_today', order: 'desc' })
-    boardOptions.value = data.list
-  } catch {
-    boardOptions.value = []
-  }
-}
-
-async function loadCompare(): Promise<void> {
-  if (!selectedCodes.value.length) {
+async function loadChart(): Promise<void> {
+  const codes = chartCodes.value
+  if (!codes.length) {
     compareBars.value = {}
     chartError.value = ''
     return
   }
+  const start = rangeStart()
+  const end = chartEnd() || start
+  if (!start || !end) return
+
+  const requestVersion = ++chartRequestVersion
   chartLoading.value = true
   chartError.value = ''
   try {
-    const start = rangeStart()
-    const end = dataMax.value || start
     const results = await Promise.all(
-      selectedCodes.value.map(async (code) => {
-        const r = await getSectorBars(code, start, end)
-        return [code, r.list] as const
+      codes.map(async (code) => {
+        const result = await getSectorBars(code, start, end)
+        return [code, result.list] as const
       }),
     )
+    if (requestVersion !== chartRequestVersion) return
     compareBars.value = Object.fromEntries(results)
   } catch (error) {
+    if (requestVersion !== chartRequestVersion) return
     chartError.value = getErrorMessage(error, '板块走势加载失败')
   } finally {
-    chartLoading.value = false
+    if (requestVersion === chartRequestVersion) chartLoading.value = false
   }
 }
 
-function onCompareSelect(codes: string[]): void {
-  // 超出上限时保留前 N 个并提示（collapse-tags 下不阻断已选）。
-  selectedCodes.value = codes.slice(0, COMPARE_MAX)
-  void loadCompare()
+function isPinned(code: string): boolean {
+  return pinnedCodes.value.includes(code)
 }
-function onKlineCodeChange(): void {
-  if (!klineBars.value.length) void loadCompare()
+function togglePinned(row: SectorRow, checked: boolean): void {
+  boardLookup.value = { ...boardLookup.value, [row.board_code]: row }
+  if (checked) {
+    if (!isPinned(row.board_code)) {
+      const capacity = activeCode.value && !isPinned(activeCode.value) ? COMPARE_MAX - 1 : COMPARE_MAX
+      pinnedCodes.value = [...pinnedCodes.value, row.board_code].slice(-capacity)
+    }
+  } else {
+    pinnedCodes.value = pinnedCodes.value.filter((code) => code !== row.board_code)
+  }
+  void loadChart()
 }
-
-watch([rangeDays, basis], () => {
-  if (restoring || !inChartMode.value) return
-  void loadCompare()
-})
-// 进入图表视图时确保候选与数据就绪；单板块 K 线默认跟第一个选中板块。
-watch(inChartMode, async (on) => {
-  if (!on) return
-  if (!boardOptions.value.length) await loadBoardOptions()
-  if (!klineCode.value && selectedCodes.value.length) klineCode.value = selectedCodes.value[0]!
-  await loadCompare()
-})
+function removeCompared(code: string): void {
+  if (code === activeCode.value) {
+    const next = pinnedCodes.value.find((item) => item !== code) || rows.value[0]?.board_code || ''
+    activeCode.value = next
+  }
+  pinnedCodes.value = pinnedCodes.value.filter((item) => item !== code)
+  void loadChart()
+}
+function selectRow(row: SectorRow): void {
+  boardLookup.value = { ...boardLookup.value, [row.board_code]: row }
+  if (activeCode.value === row.board_code) return
+  activeCode.value = row.board_code
+  void loadChart()
+}
+function rowClassName({ row }: { row: SectorRow }): string {
+  return row.board_code === activeCode.value ? 'sector-row--active' : ''
+}
 
 async function load(): Promise<void> {
   loading.value = true
@@ -242,12 +264,24 @@ async function load(): Promise<void> {
     })
     rows.value = data.list
     total.value = data.total
+    marketDate.value = data.trade_date
     fundFlowDate.value = data.fund_flow_date
-    // 分页越界回落（筛选/条数变化后总数缩小导致当前页超界）。
+    boardLookup.value = {
+      ...boardLookup.value,
+      ...Object.fromEntries(data.list.map((row) => [row.board_code, row])),
+    }
+
     const maxPage = Math.max(1, Math.ceil(data.total / size.value))
     if (page.value > maxPage) {
       page.value = maxPage
       return load()
+    }
+
+    // 首屏直接呈现可用走势，避免必须先理解控件才能看到内容。
+    if (!activeCode.value && data.list.length) {
+      activeCode.value = data.list[0]!.board_code
+      pinnedCodes.value = data.list.slice(1, 3).map((row) => row.board_code)
+      void loadChart()
     }
   } catch (error) {
     if (getErrorStatus(error) === 403) forbidden.value = true
@@ -256,6 +290,7 @@ async function load(): Promise<void> {
     loading.value = false
   }
 }
+
 function search(): void {
   page.value = 1
   void load()
@@ -268,7 +303,9 @@ function scheduleSearch(): void {
   }, 300)
 }
 function onDateChange(): void {
-  if (!restoring) search()
+  if (restoring) return
+  search()
+  void loadChart()
 }
 
 watch([sortBy, sortOrder], () => {
@@ -276,14 +313,17 @@ watch([sortBy, sortOrder], () => {
   page.value = 1
   void load()
 })
-watch(defaultSize, (v) => {
+watch(defaultSize, (value) => {
   if (restoring) return
-  size.value = v
+  size.value = value
   page.value = 1
   void load()
 })
+watch([rangeDays, chartMode], () => {
+  if (restoring) return
+  void loadChart()
+})
 
-// ── 筛选态 URL query（白名单）──
 interface SanitizedQuery {
   type?: BoardType
   sort?: SectorSortField
@@ -291,69 +331,55 @@ interface SanitizedQuery {
   keyword?: string
   page?: string
 }
-function currentQuery(): Record<string, string> {
-  const q: Record<string, string> = {}
-  if (boardType.value) q.type = boardType.value
-  q.sort = sortBy.value
-  q.order = sortOrder.value
-  if (keyword.value.trim()) q.keyword = keyword.value.trim()
-  if (page.value > 1) q.page = String(page.value)
-  return q
-}
 function sanitizeQuery(raw: typeof route.query): SanitizedQuery {
-  const out: SanitizedQuery = {}
-  const get = (k: string): string => {
-    const v = raw[k]
-    return typeof v === 'string' ? v : ''
+  const result: SanitizedQuery = {}
+  const get = (key: string): string => {
+    const value = raw[key]
+    return typeof value === 'string' ? value : ''
   }
   const type = get('type')
-  if (type === 'concept' || type === 'industry') out.type = type
+  if (type === 'concept' || type === 'industry') result.type = type
   const sort = get('sort')
-  if ((SORTABLE_FIELDS as readonly string[]).includes(sort)) out.sort = sort as SectorSortField
+  if ((SORTABLE_FIELDS as readonly string[]).includes(sort)) result.sort = sort as SectorSortField
   const order = get('order')
-  if (order === 'asc' || order === 'desc') out.order = order
-  const keyword = get('keyword').slice(0, 50)
-  if (keyword) out.keyword = keyword
-  const pageNum = Number(get('page'))
-  if (Number.isInteger(pageNum) && pageNum >= 1) out.page = String(pageNum)
-  return out
+  if (order === 'asc' || order === 'desc') result.order = order
+  const queryKeyword = get('keyword').slice(0, 50)
+  if (queryKeyword) result.keyword = queryKeyword
+  const pageNumber = Number(get('page'))
+  if (Number.isInteger(pageNumber) && pageNumber >= 1) result.page = String(pageNumber)
+  return result
 }
 
-// 仅点板块名进详情，携带来源筛选态 query。
-function enterDetail(row: SectorRow): void {
-  router.push({ path: `/sectors/${row.board_code}`, query: currentQuery() })
+function fmtPct(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—'
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
 }
-
-function fmtPct(v: number | null | undefined): string {
-  if (v === null || v === undefined) return '—'
-  return (v > 0 ? '+' : '') + v.toFixed(2) + '%'
+function fmtInflow(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '—'
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}亿`
 }
-function fmtInflow(v: number | null | undefined): string {
-  if (v === null || v === undefined) return '—'
-  return (v > 0 ? '+' : '') + v.toFixed(2) + '亿'
+function pctClass(value: number | null | undefined): string {
+  if (value === null || value === undefined) return 'muted'
+  return value > 0 ? 'up' : value < 0 ? 'down' : ''
 }
-function pctClass(v: number | null | undefined): string {
-  if (v === null || v === undefined) return 'muted'
-  return v > 0 ? 'up' : v < 0 ? 'down' : ''
-}
-function fmtFlowDate(v: string | null): string {
-  return v ? v.slice(5) : '—'
+function fmtFlowDate(value: string | null): string {
+  return value ? value.slice(5) : '—'
 }
 
 onMounted(async () => {
-  // 交易日默认选中最新交易日（而非留空靠占位提示）。
   await ensureLoaded().catch(() => undefined)
-  const q = sanitizeQuery(route.query)
+  const query = sanitizeQuery(route.query)
   restoring = true
   if (!tradeDate.value) tradeDate.value = dataMax.value || ''
-  // 优先级：URL query > 已保存偏好 > 默认值。
-  boardType.value = q.type ?? settings.defaultType
-  keyword.value = q.keyword ?? ''
-  page.value = q.page ? Number(q.page) : 1
+  boardType.value = query.type ?? settings.defaultType
+  keyword.value = query.keyword ?? ''
+  page.value = query.page ? Number(query.page) : 1
   size.value = defaultSize.value
-  // 主排序：query.sort/order 优先；否则组件配置默认排序（useTableSort 已生效）。
-  if (q.sort) {
-    onTableSortChange({ prop: q.sort, order: (q.order ?? 'desc') === 'desc' ? 'descending' : 'ascending' })
+  if (query.sort) {
+    onTableSortChange({
+      prop: query.sort,
+      order: (query.order ?? 'desc') === 'desc' ? 'descending' : 'ascending',
+    })
   }
   restoring = false
   void load()
@@ -365,26 +391,34 @@ onMounted(async () => {
     <template #action>
       <div class="lh-action">
         <div class="page-head">
-          <h2>板块行情</h2>
+          <div>
+            <!-- <div class="page-kicker">MARKET SECTORS</div> -->
+            <h2 class="app-page-title">板块行情</h2>
+            <p class="page-subtitle">从强弱排行定位主线，点选板块后在同一视野比较走势。</p>
+          </div>
           <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
         </div>
 
         <el-card shadow="never" class="filter-card">
-          <AppControlRow v-if="!inChartMode" class="filter-row">
-            <el-select
+          <AppControlRow class="filter-row">
+            <PageSegmented
               v-model="boardType"
-              placeholder="全部板块"
-              style="width: 130px"
-              data-testid="sectors-type"
-              @change="search"
-            >
-              <el-option v-for="opt in TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
-            </el-select>
-            <TradeDatePicker v-model="tradeDate" placeholder="交易日期" style="width: 180px" @update:model-value="onDateChange" />
+              :options="TYPE_OPTIONS"
+              aria-label="板块类型"
+              test-id="sectors-type"
+              size="small"
+              @update:model-value="search"
+            />
+            <TradeDatePicker
+              v-model="tradeDate"
+              placeholder="交易日期"
+              class="date-picker"
+              @update:model-value="onDateChange"
+            />
             <el-input
               v-model="keyword"
-              placeholder="搜索板块名称…"
-              style="width: 220px"
+              placeholder="搜索板块"
+              class="keyword-input"
               clearable
               maxlength="50"
               data-testid="sectors-keyword"
@@ -392,178 +426,259 @@ onMounted(async () => {
               @clear="search"
               @keyup.enter="search"
             />
-            <el-button type="primary" :loading="loading" data-testid="sectors-search" @click="search">查询</el-button>
-          </AppControlRow>
-
-          <!-- 对比图视图：多选板块 + 周期窗口 + 归一化基准 + 对比/单K线模式 -->
-          <AppControlRow v-else class="filter-row">
-            <el-select
-              :model-value="selectedCodes"
-              multiple
-              filterable
-              collapse-tags
-              collapse-tags-tooltip
-              :max-collapse-tags="3"
-              :multiple-limit="COMPARE_MAX"
-              placeholder="选择板块对比（最多 6 个）"
-              style="width: 340px"
-              data-testid="sectors-compare-select"
-              @update:model-value="onCompareSelect"
-            >
-              <el-option
-                v-for="r in boardOptions"
-                :key="r.board_code"
-                :value="r.board_code"
-                :label="r.name"
-              >
-                <span>{{ r.name }}</span>
-                <span class="opt-type muted">{{ r.board_type === 'concept' ? '概念' : '行业' }}</span>
-              </el-option>
-            </el-select>
-            <KlineRangeSelect v-model="rangeDays" test-id="sectors-compare-range" />
-            <template v-if="chartMode === 'compare'">
-              <el-radio-group v-model="basis" aria-label="归一化基准" data-testid="sectors-compare-basis">
-                <el-radio-button value="first">首日=0</el-radio-button>
-                <el-radio-button value="mid">中点=0</el-radio-button>
-              </el-radio-group>
-            </template>
-            <template v-if="chartMode === 'kline'">
-              <el-select
-                v-model="klineCode"
-                placeholder="选择单板块"
-                style="width: 180px"
-                data-testid="sectors-kline-code"
-                @change="onKlineCodeChange"
-              >
-                <el-option v-for="r in selectedRows" :key="r.board_code" :value="r.board_code" :label="r.name" />
-              </el-select>
-            </template>
-            <el-radio-group v-model="chartMode" aria-label="图表模式" data-testid="sectors-chart-mode">
-              <el-radio-button value="compare">对比走势</el-radio-button>
-              <el-radio-button value="kline">单板块K线</el-radio-button>
-            </el-radio-group>
+            <div class="filter-divider" aria-hidden="true" />
+            <KlineRangeSelect v-model="rangeDays" test-id="sectors-range" />
+            <PageSegmented
+              v-model="chartMode"
+              :options="CHART_MODE_OPTIONS"
+              aria-label="图表模式"
+              test-id="sectors-chart-mode"
+              size="small"
+            />
           </AppControlRow>
         </el-card>
       </div>
     </template>
 
     <template #main>
-      <!-- 对比图视图：归一化叠加走势 / 单板块 K 线 -->
-      <el-card v-if="inChartMode" shadow="never">
-        <AppStateBlock
-          v-if="chartError && !compareSeries.length"
-          state="error"
-          title="板块走势加载失败"
-          :description="chartError"
-          retry
-          @retry="loadCompare"
-        />
-        <AppStateBlock
-          v-else-if="!selectedCodes.length"
-          state="empty"
-          title="选择板块开始对比"
-          description="在上方选择 1~6 个板块，叠加归一化走势对比强弱与走势分化"
-        />
-        <template v-else>
-          <div v-loading="chartLoading" class="chart-host">
-            <SectorCompareChart v-if="chartMode === 'compare'" :series="compareSeries" :basis="basis" />
-            <template v-else>
-              <AppStateBlock
-                v-if="!klineBars.length && !chartLoading"
-                state="empty"
-                title="该板块暂无指数数据"
-                description="请先在数据采集页运行板块指数采集，或切换其他板块"
-              />
-              <CandleChart v-else :bars="klineBars" />
-            </template>
-          </div>
-        </template>
-      </el-card>
+      <AppStateBlock
+        v-if="forbidden"
+        state="error"
+        variant="permission"
+        title="无权限查看板块行情"
+        description="请联系系统管理员调整权限"
+      />
+      <AppStateBlock
+        v-else-if="loadError && !rows.length"
+        state="error"
+        title="板块行情加载失败"
+        :description="loadError"
+        retry
+        @retry="load"
+      />
+      <div v-else class="sector-workspace" data-testid="sectors-workspace">
+        <section class="rank-panel" aria-label="板块强弱排行">
+          <header class="panel-head rank-head">
+            <div>
+              <div class="panel-eyebrow">强弱排行</div>
+              <h3 class="app-section-title">{{ marketDate || tradeDate || '最新交易日' }}</h3>
+            </div>
+            <div class="rank-meta app-caption-text">
+              <span>{{ total }} 个板块</span>
+              <span>点击行切换走势</span>
+            </div>
+          </header>
 
-      <!-- 列表视图 -->
-      <el-card v-else shadow="never">
-        <AppStateBlock
-          v-if="forbidden"
-          state="error"
-          variant="permission"
-          title="无权限查看板块行情"
-          description="请联系系统管理员调整权限"
-        />
-        <AppStateBlock
-          v-else-if="loadError && !rows.length"
-          state="error"
-          title="板块列表加载失败"
-          :description="loadError"
-          retry
-          @retry="load"
-        />
-        <template v-else>
           <AppStateBlock
             v-if="loadError"
             state="error"
             size="compact"
-            title="板块列表刷新失败"
+            title="排行刷新失败"
             :description="loadError"
             retry
             @retry="load"
           />
+
           <AppDataTable
+            data-testid="sectors-table"
             :data="rows"
             :loading="loading"
             row-key="board_code"
+            :row-class-name="rowClassName"
             :border="tableBorder('table')"
             :default-sort="elementDefaultSort"
-            aria-label="板块行情列表"
-            :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
+            clickable
+            aria-label="板块强弱排行"
+            :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS, small: true }"
+            @row-click="selectRow"
             @sort-change="onTableSortChange"
-            @page-change="(p: number) => { page = p; void load() }"
-            @size-change="(s: number) => { size = s; page = 1; void load() }"
+            @page-change="(value: number) => { page = value; void load() }"
+            @size-change="(value: number) => { size = value; page = 1; void load() }"
           >
-            <AppTableColumn v-if="colVisible('name')" label="板块名称" prop="name" role="name">
+            <AppTableColumn v-if="colVisible('name')" label="板块" prop="name" role="name">
               <template #default="{ row }">
-                <el-link type="primary" :underline="false" @click="enterDetail(row)">{{ row.name }}</el-link>
+                <div
+                  class="sector-name-cell"
+                  :data-testid="row?.board_code ? `sectors-row-${row.board_code}` : undefined"
+                >
+                  <el-checkbox
+                    :model-value="isPinned(row.board_code)"
+                    :aria-label="`${isPinned(row.board_code) ? '移出' : '加入'}对比：${row.name}`"
+                    :data-testid="row?.board_code ? `sectors-pin-${row.board_code}` : undefined"
+                    @click.stop
+                    @change="(checked: boolean) => togglePinned(row, checked)"
+                  />
+                  <div class="sector-name-copy">
+                    <el-button link type="primary" class="sector-select" @click.stop="selectRow(row)">
+                      {{ row.name }}
+                    </el-button>
+                    <span>{{ row.board_type === 'concept' ? '概念' : '行业' }} · {{ row.member_count ?? '—' }}只</span>
+                  </div>
+                </div>
               </template>
             </AppTableColumn>
-            <AppTableColumn v-if="colVisible('member_count')" label="成分股数" prop="member_count" role="number" align="right">
-              <template #default="{ row }">{{ row.member_count ?? '—' }}</template>
-            </AppTableColumn>
-            <AppTableColumn v-if="colVisible('updown')" label="上涨/下跌" prop="up_count" sortable="custom" role="number" align="center">
+            <AppTableColumn
+              v-if="colVisible('pct_today')"
+              label="今日"
+              prop="pct_today"
+              sortable="custom"
+              role="number"
+              align="right"
+            >
               <template #default="{ row }">
-                <span class="up">{{ row.up_count }}</span> / <span class="down">{{ row.down_count }}</span>
+                <strong class="app-data-text" :class="pctClass(row.pct_today)">{{ fmtPct(row.pct_today) }}</strong>
               </template>
             </AppTableColumn>
-            <AppTableColumn v-if="colVisible('pct_today')" label="今日涨幅" prop="pct_today" sortable="custom" role="number" align="right">
-              <template #default="{ row }"><b :class="pctClass(row.pct_today)">{{ fmtPct(row.pct_today) }}</b></template>
-            </AppTableColumn>
-            <AppTableColumn v-if="colVisible('pct_5d')" label="5日涨幅" prop="pct_5d" sortable="custom" role="number" align="right">
-              <template #default="{ row }"><b :class="pctClass(row.pct_5d)">{{ fmtPct(row.pct_5d) }}</b></template>
-            </AppTableColumn>
-            <AppTableColumn v-if="colVisible('pct_10d')" label="10日涨幅" prop="pct_10d" sortable="custom" role="number" align="right">
-              <template #default="{ row }"><b :class="pctClass(row.pct_10d)">{{ fmtPct(row.pct_10d) }}</b></template>
-            </AppTableColumn>
-            <AppTableColumn v-if="colVisible('pct_20d')" label="20日涨幅" prop="pct_20d" sortable="custom" role="number" align="right">
-              <template #default="{ row }"><b :class="pctClass(row.pct_20d)">{{ fmtPct(row.pct_20d) }}</b></template>
-            </AppTableColumn>
-            <AppTableColumn v-if="colVisible('net_inflow')" label="即时净流入" prop="net_inflow" sortable="custom" role="number" align="right">
+            <AppTableColumn
+              v-if="colVisible('pct_5d')"
+              label="5日"
+              prop="pct_5d"
+              sortable="custom"
+              role="number"
+              align="right"
+            >
               <template #default="{ row }">
-                <b :class="pctClass(row.net_inflow)">{{ fmtInflow(row.net_inflow) }}</b>
-                <span class="flow-date muted">{{ fmtFlowDate(fundFlowDate) }}</span>
+                <span class="app-data-text" :class="pctClass(row.pct_5d)">{{ fmtPct(row.pct_5d) }}</span>
               </template>
             </AppTableColumn>
-            <AppTableColumn v-if="colVisible('leader')" label="领涨股" prop="leader_stock" role="name">
+            <AppTableColumn
+              v-if="colVisible('net_inflow')"
+              label="净流入"
+              prop="net_inflow"
+              sortable="custom"
+              role="number"
+              align="right"
+            >
+              <template #header>
+                <span>净流入</span><span class="header-date">{{ fmtFlowDate(fundFlowDate) }}</span>
+              </template>
               <template #default="{ row }">
-                <template v-if="row.leader_stock">
-                  {{ row.leader_stock }} <b :class="pctClass(row.leader_pct)">{{ fmtPct(row.leader_pct) }}</b>
-                </template>
-                <span v-else class="muted">—</span>
+                <span class="app-data-text" :class="pctClass(row.net_inflow)">{{ fmtInflow(row.net_inflow) }}</span>
               </template>
             </AppTableColumn>
             <template #empty>
-              <span>{{ keyword.trim() ? '无匹配板块，请调整搜索关键词' : '暂无板块数据，请先在数据采集页运行板块采集' }}</span>
+              <span>{{ keyword.trim() ? '没有匹配板块，换个关键词试试' : '暂无板块数据，请先运行板块采集' }}</span>
             </template>
           </AppDataTable>
-        </template>
-      </el-card>
+        </section>
+
+        <section class="chart-panel" aria-label="板块走势分析" data-testid="sectors-chart">
+          <header class="panel-head chart-head">
+            <div class="chart-identity">
+              <div class="panel-eyebrow">当前观察</div>
+              <div class="chart-title-line">
+                <h3 class="chart-title" data-testid="sectors-chart-title">{{ activeRow?.name || '等待选择板块' }}</h3>
+                <span v-if="activeRow" class="board-code">{{ activeRow.board_code }}</span>
+              </div>
+              <p>{{ chartMode === 'compare' ? `与 ${Math.max(0, chartCodes.length - 1)} 个板块对比区间强弱` : '查看板块指数开高低收与量能' }}</p>
+            </div>
+            <div v-if="activeRow" class="leader-summary app-caption-text">
+              <template v-if="activeRow.leader_stock">
+                领涨 {{ activeRow.leader_stock }}
+                <strong :class="pctClass(activeRow.leader_pct)">{{ fmtPct(activeRow.leader_pct) }}</strong>
+              </template>
+              <template v-else>成分 {{ activeRow.member_count ?? '—' }} 只</template>
+            </div>
+          </header>
+
+          <div v-if="activeRow" class="market-strip" aria-label="板块关键指标">
+            <div class="market-metric market-metric--lead">
+              <span>今日涨幅</span>
+              <strong :class="pctClass(activeRow.pct_today)">{{ fmtPct(activeRow.pct_today) }}</strong>
+            </div>
+            <div class="market-metric">
+              <span>5 日</span>
+              <strong :class="pctClass(activeRow.pct_5d)">{{ fmtPct(activeRow.pct_5d) }}</strong>
+            </div>
+            <div class="market-metric">
+              <span>20 日</span>
+              <strong :class="pctClass(activeRow.pct_20d)">{{ fmtPct(activeRow.pct_20d) }}</strong>
+            </div>
+            <div class="market-metric">
+              <span>即时净流入</span>
+              <strong :class="pctClass(activeRow.net_inflow)">{{ fmtInflow(activeRow.net_inflow) }}</strong>
+            </div>
+            <div class="market-metric">
+              <span>涨 / 跌</span>
+              <strong><i class="up">{{ activeRow.up_count }}</i> / <i class="down">{{ activeRow.down_count }}</i></strong>
+            </div>
+          </div>
+
+          <div v-if="chartMode === 'compare' && chartCodes.length" class="compare-rail" aria-label="当前对比板块">
+            <span class="compare-label">对比队列</span>
+            <div
+              v-for="row in compareRows"
+              :key="row.board_code"
+              class="compare-chip"
+              :class="{ active: row.board_code === activeCode }"
+              :data-testid="`sectors-compare-${row.board_code}`"
+              role="button"
+              tabindex="0"
+              @click="selectRow(row)"
+              @keydown.enter="selectRow(row)"
+            >
+              <span>{{ row.name }}</span>
+              <AppIconButton
+                v-if="row.board_code !== activeCode || compareRows.length > 1"
+                class="chip-remove"
+                :label="`移除对比：${row.name}`"
+                :data-testid="`sectors-remove-${row.board_code}`"
+                size="xs"
+                :native-title="false"
+                @click.stop="removeCompared(row.board_code)"
+              >
+                <el-icon><Close /></el-icon>
+              </AppIconButton>
+            </div>
+            <span v-if="chartCodes.length < COMPARE_MAX" class="compare-hint">勾选左侧板块加入，最多 {{ COMPARE_MAX }} 个</span>
+          </div>
+
+          <div class="chart-stage" v-loading="chartLoading">
+            <AppStateBlock
+              v-if="chartError"
+              state="error"
+              title="板块走势加载失败"
+              :description="chartError"
+              retry
+              @retry="loadChart"
+            />
+            <AppStateBlock
+              v-else-if="!activeCode"
+              state="empty"
+              title="选择一个板块"
+              description="点击左侧排行中的任意一行即可查看走势"
+            />
+            <AppStateBlock
+              v-else-if="!chartLoading && chartMode === 'compare' && !compareSeries.length"
+              state="empty"
+              title="暂无指数走势"
+              description="可切换其他板块，或先运行板块指数采集"
+            />
+            <AppStateBlock
+              v-else-if="!chartLoading && chartMode === 'kline' && !klineBars.length"
+              state="empty"
+              title="暂无 K 线数据"
+              description="可切换其他板块，或先运行板块指数采集"
+            />
+            <SectorCompareChart
+              v-else-if="chartMode === 'compare'"
+              :series="compareSeries"
+              :basis="basis"
+              fill
+            />
+            <CandleChart v-else :bars="klineBars" fill />
+          </div>
+
+          <footer v-if="chartMode === 'compare'" class="chart-footer">
+            <span>基准</span>
+            <el-radio-group v-model="basis" size="small" aria-label="归一化基准" data-testid="sectors-compare-basis">
+              <el-radio-button value="first">区间首日 = 0</el-radio-button>
+              <el-radio-button value="mid">区间中点 = 0</el-radio-button>
+            </el-radio-group>
+            <span class="chart-note">仅比较相对涨跌，不比较指数点位</span>
+          </footer>
+        </section>
+      </div>
     </template>
 
     <template #overlays>
@@ -578,15 +693,6 @@ onMounted(async () => {
       >
         <template #business>
           <PageSettingSection title="默认查询">
-            <div class="setting-item">
-              <div class="setting-label">默认视图</div>
-              <PageSegmented
-                v-model="settings.defaultView"
-                :options="VIEW_OPTIONS"
-                aria-label="默认视图"
-                test-id="sectors-default-view"
-              />
-            </div>
             <div class="setting-item">
               <div class="setting-label">默认类型</div>
               <PageSegmented
@@ -606,17 +712,294 @@ onMounted(async () => {
 <style scoped>
 .page-head {
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
-  align-items: center;
   gap: var(--app-space-3);
-  flex-wrap: wrap;
 }
-.page-head h2 {
-  margin: 0;
-  font-size: var(--app-font-size-page-title-sm);
+.page-kicker,
+.panel-eyebrow {
+  color: var(--el-color-primary);
+  font-size: var(--app-font-size-micro);
+  line-height: var(--app-line-height-micro);
+  font-weight: var(--app-font-weight-strong);
+  letter-spacing: 0.14em;
+}
+.page-subtitle {
+  margin: var(--app-space-1) 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
 }
 .filter-card {
   margin-bottom: 0;
+}
+.filter-card :deep(.el-card__body) {
+  padding: var(--app-space-3) var(--app-space-4);
+}
+.filter-row {
+  flex-wrap: wrap;
+}
+.date-picker {
+  width: 164px;
+}
+.keyword-input {
+  width: 200px;
+}
+.filter-divider {
+  width: 1px;
+  height: var(--app-control-height-md);
+  margin: 0 var(--app-space-1);
+  background: var(--el-border-color-lighter);
+}
+.sector-workspace {
+  height: 100%;
+  min-height: 0;
+  min-width: 860px;
+  display: grid;
+  grid-template-columns: minmax(360px, 0.82fr) minmax(500px, 1.18fr);
+  gap: var(--app-space-3);
+  overflow-x: auto;
+}
+.rank-panel,
+.chart-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--layout-card-radius);
+  background: var(--el-bg-color);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+}
+.rank-panel,
+.chart-panel {
+  display: flex;
+  flex-direction: column;
+}
+.panel-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+  padding: var(--app-space-3) var(--app-space-4);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.rank-head {
+  min-height: 64px;
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 42%, var(--el-bg-color));
+}
+.rank-meta {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+}
+.rank-panel :deep(.app-data-table) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.rank-panel :deep(.el-table__row.sector-row--active > td.el-table__cell) {
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 72%, var(--el-bg-color));
+}
+.rank-panel :deep(.el-table__row.sector-row--active > td:first-child) {
+  box-shadow: inset 3px 0 0 var(--el-color-primary);
+}
+.sector-name-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  min-width: 0;
+}
+.sector-name-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: var(--app-line-height-table);
+}
+.sector-select {
+  overflow: hidden;
+  padding: 0;
+  height: auto;
+  min-height: 0;
+  font-weight: var(--app-font-weight-section);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sector-select:hover {
+  color: var(--el-color-primary-dark-2);
+}
+.sector-select:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 1px;
+}
+.sector-name-copy > span {
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-micro);
+  line-height: var(--app-line-height-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.header-date {
+  margin-left: var(--app-space-1);
+  color: var(--el-text-color-placeholder);
+  font-size: var(--app-font-size-tiny);
+}
+.chart-panel {
+  position: relative;
+}
+.chart-head {
+  min-height: 72px;
+}
+.chart-identity {
+  min-width: 0;
+}
+.chart-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--app-space-2);
+}
+.chart-title {
+  overflow: hidden;
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: var(--app-font-size-title-md);
+  line-height: var(--app-line-height-title-md);
+  font-weight: var(--app-font-weight-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.board-code {
+  color: var(--el-text-color-placeholder);
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-font-size-micro);
+}
+.chart-identity p {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
+}
+.leader-summary {
+  flex: 0 0 auto;
+  text-align: right;
+}
+.leader-summary strong {
+  margin-left: var(--app-space-1);
+  font-variant-numeric: tabular-nums;
+}
+.market-strip {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(84px, 1fr));
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: color-mix(in srgb, var(--el-fill-color-light) 54%, var(--el-bg-color));
+}
+.market-metric {
+  min-width: 0;
+  padding: var(--app-space-2) var(--app-space-3);
+  border-right: 1px solid var(--el-border-color-lighter);
+}
+.market-metric:last-child {
+  border-right: 0;
+}
+.market-metric span {
+  display: block;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-micro);
+  line-height: var(--app-line-height-micro);
+}
+.market-metric strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: var(--app-font-size-data);
+  line-height: var(--app-line-height-data);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.market-metric strong i {
+  font-style: normal;
+}
+.market-metric--lead {
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 58%, transparent);
+}
+.compare-rail {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-control-gap);
+  min-height: 42px;
+  padding: var(--app-space-2) var(--app-space-3);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  white-space: nowrap;
+}
+.compare-label,
+.compare-hint {
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-micro);
+}
+.compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-space-1);
+  height: var(--app-control-height-sm);
+  padding: 0 var(--app-space-2);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--layout-control-radius);
+  background: var(--el-bg-color);
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--app-font-size-caption);
+}
+.compare-chip:hover,
+.compare-chip.active {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.compare-chip:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: 1px;
+}
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  --app-icon-button-size: 18px;
+  --app-icon-button-glyph: 11px;
+  border-radius: 50%;
+  color: var(--el-text-color-secondary);
+}
+.chart-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 300px;
+  overflow: hidden;
+}
+.chart-stage :deep(.cmp-wrap),
+.chart-stage :deep(.cmp),
+.chart-stage :deep(.candle-wrap) {
+  height: 100%;
+}
+.chart-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  min-height: 44px;
+  padding: var(--app-space-2) var(--app-space-3);
+  border-top: 1px solid var(--el-border-color-lighter);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+}
+.chart-note {
+  margin-left: auto;
+  color: var(--el-text-color-placeholder);
 }
 .setting-item {
   display: flex;
@@ -624,8 +1007,8 @@ onMounted(async () => {
   gap: var(--app-space-2);
 }
 .setting-label {
-  font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
+  font-size: var(--app-font-size-body);
 }
 .up {
   color: var(--market-up-color);
@@ -636,8 +1019,18 @@ onMounted(async () => {
 .muted {
   color: var(--app-placeholder-text);
 }
-.flow-date {
-  margin-left: 4px;
-  font-size: var(--app-font-size-caption);
+@media (max-width: 1180px) {
+  .page-subtitle,
+  .chart-note {
+    display: none;
+  }
+  .filter-divider {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .compare-chip {
+    transition: none;
+  }
 }
 </style>

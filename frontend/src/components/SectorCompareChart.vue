@@ -4,7 +4,7 @@
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { SectorBar } from '@/api/sectors'
-import { useEChartsTheme } from '@/components/chartTheme'
+import { chartCssVariable, useEChartsTheme } from '@/components/chartTheme'
 
 // 单个板块的序列：code/name 标识 + 该板块的日线 bars（升序）
 export interface CompareSeries {
@@ -19,6 +19,7 @@ export type CompareBasis = 'first' | 'mid'
 const props = defineProps<{
   series: CompareSeries[]
   basis?: CompareBasis
+  fill?: boolean
 }>()
 const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -26,9 +27,15 @@ let resizeListening = false
 const theme = useEChartsTheme()
 const wrapBg = computed(() => theme.value.background)
 
-// 多板块叠加配色：主题无关的固定色板（红/橙/蓝等已被涨跌语义占用，改用高区分度定色），
-// 深/浅主题下都可读。最多 6 条与页面上限一致。
-const LINE_COLORS = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272']
+// 对比线只消费当前主题的语义 token，避免固定色板在自定义预设或夜间模式下失真。
+const lineColors = computed(() => [
+  theme.value.focus,
+  theme.value.accent,
+  chartCssVariable('--el-color-success', theme.value.focus),
+  chartCssVariable('--el-color-danger', theme.value.accent),
+  chartCssVariable('--el-color-info', theme.value.label),
+  chartCssVariable('--shell-accent', theme.value.focus),
+])
 
 // 交易日并集（升序）：各板块可能有缺口，横轴取全量交易日，缺数据的点置 null 让折线断开。
 const dates = computed<string[]>(() => {
@@ -56,6 +63,7 @@ function normalizedData(s: CompareSeries): (number | null)[] {
 function render() {
   if (!chart) return
   const t = theme.value
+  const colors = lineColors.value
   const series = props.series.map((s, i) => ({
     name: s.name,
     type: 'line' as const,
@@ -63,14 +71,14 @@ function render() {
     showSymbol: false,
     connectNulls: false,
     smooth: false,
-    lineStyle: { width: 2, color: LINE_COLORS[i % LINE_COLORS.length] },
-    itemStyle: { color: LINE_COLORS[i % LINE_COLORS.length] },
+    lineStyle: { width: 2, color: colors[i % colors.length] },
+    itemStyle: { color: colors[i % colors.length] },
     emphasis: { focus: 'series' as const },
   }))
   chart.setOption({
     animation: false,
     backgroundColor: t.background,
-    color: LINE_COLORS,
+    color: colors,
     grid: { left: 56, right: 24, top: 40, bottom: 58 },
     legend: {
       data: props.series.map((s) => s.name),
@@ -98,12 +106,12 @@ function render() {
       { type: 'inside' },
       {
         type: 'slider', bottom: 6, height: 18,
-        borderColor: t.axis, fillerColor: 'rgba(64,158,255,0.18)',
+        borderColor: t.axis, fillerColor: t.area,
         textStyle: { color: t.label },
       },
     ],
     series,
-  })
+  }, { notMerge: true })
 }
 
 function resize() {
@@ -140,7 +148,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="cmp-wrap">
+  <div class="cmp-wrap" :class="{ 'cmp-wrap--fill': fill }">
     <div ref="el" class="cmp" />
   </div>
 </template>
@@ -150,6 +158,10 @@ onBeforeUnmount(() => {
   background: v-bind(wrapBg);
   border-radius: 6px;
   padding: 4px;
+}
+.cmp-wrap--fill,
+.cmp-wrap--fill .cmp {
+  height: 100%;
 }
 .cmp {
   width: 100%;
