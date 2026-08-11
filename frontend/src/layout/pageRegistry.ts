@@ -914,6 +914,8 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'filter', component: 'filter-bar', region: 'action', order: 1 },
+        // chart=板块对比图（视图切换为图表时渲染，与 table 互斥），建模为可寻址子槽（对齐 stocks groupTable）。
+        { id: 'chart', component: 'chart', region: 'main', label: '板块对比图', order: 1 },
         { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '板块列表', order: 2, config: { defaultSort: 'pct_today:desc', pageSize: 20 } },
       ],
       editable: [densityKnob()],

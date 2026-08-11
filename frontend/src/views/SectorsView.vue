@@ -6,13 +6,25 @@ import { useRoute, useRouter } from 'vue-router'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import CandleChart from '@/components/CandleChart.vue'
+import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
-import { listSectors, type BoardType, type SectorRow, type SectorSortField } from '@/api/sectors'
+import {
+  getSectorBars,
+  listSectors,
+  type BoardType,
+  type SectorBar,
+  type SectorRow,
+  type SectorSortField,
+} from '@/api/sectors'
+import type { Bar } from '@/api/stocks'
+import { useKlinePrefs, ALL_DAYS } from '@/composables/useKlinePrefs'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
@@ -23,12 +35,14 @@ import { getErrorMessage, getErrorStatus } from '@/utils/error'
 
 const router = useRouter()
 const route = useRoute()
-const { dataMax, ensureLoaded } = useTradeDates()
+const { dataMin, dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
 
-// 默认类型属业务态偏好（页面记忆）；'' = 全部板块。默认排序、每页条数、列显隐迁入组件配置层 table slot。
+// 默认类型/默认视图属业务态偏好（页面记忆）；'' = 全部板块。默认排序、每页条数、列显隐迁入组件配置层 table slot。
+// defaultView：list=列表 / chart=对比图，对齐个股查询页「默认视图」切换语义。
 const sectorsDefaults = {
   defaultType: '' as BoardType | '',
+  defaultView: 'list' as 'list' | 'chart',
 }
 const { settings, isDirty, reset } = usePageSettings('sectors', sectorsDefaults)
 
@@ -73,6 +87,10 @@ const TYPE_OPTIONS: { label: string; value: BoardType | '' }[] = [
   { label: '概念板块', value: 'concept' },
   { label: '行业板块', value: 'industry' },
 ]
+const VIEW_OPTIONS: { label: string; value: 'list' | 'chart' }[] = [
+  { label: '列表', value: 'list' },
+  { label: '对比图', value: 'chart' },
+]
 
 // ── 组件配置消费的派生值 ──
 const defaultSize = computed<number>(() => {
@@ -102,6 +120,111 @@ const fundFlowDate = ref<string | null>(null)
 
 let restoring = false
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+// ── 对比图视图（defaultView==='chart'）──
+// 板块多选（上限 6，保证折线可读）+ 周期窗口（KlineRangeSelect 全局偏好）+ 归一化基准。
+const COMPARE_MAX = 6
+const { validDefault: klineDefaultRange } = useKlinePrefs()
+const inChartMode = computed(() => settings.defaultView === 'chart')
+const selectedCodes = ref<string[]>([])
+const rangeDays = ref<number>(klineDefaultRange.value)
+const basis = ref<'first' | 'mid'>('first')
+const chartMode = ref<'compare' | 'kline'>('compare')
+const klineCode = ref('')
+const chartLoading = ref(false)
+const chartError = ref('')
+const compareBars = ref<Record<string, SectorBar[]>>({})
+// 多选候选全集：一次性拉全量板块（列表接口 size 上限内），供可搜索多选。
+const boardOptions = ref<SectorRow[]>([])
+
+const selectedRows = computed(() =>
+  selectedCodes.value
+    .map((c) => boardOptions.value.find((r) => r.board_code === c))
+    .filter((r): r is SectorRow => Boolean(r)),
+)
+const compareSeries = computed(() =>
+  selectedRows.value
+    .filter((r) => compareBars.value[r.board_code]?.length)
+    .map((r) => ({ code: r.board_code, name: r.name, bars: compareBars.value[r.board_code]! })),
+)
+// 单板块 K 线模式：把 SectorBar 映射成 CandleChart 的 Bar（缺 pre_close/turnover 置 null）。
+const klineBars = computed<Bar[]>(() =>
+  (compareBars.value[klineCode.value] ?? []).map((b) => ({
+    date: b.trade_date,
+    open: b.open,
+    high: b.high,
+    low: b.low,
+    close: b.close,
+    pre_close: null,
+    volume: b.volume,
+    amount: b.amount,
+    turnover_rate: null,
+  })),
+)
+
+// 周期窗口 → 起止日期：近 N 日取日历倒数 N 天起，全部用数据最早日；止日=最新交易日。
+function rangeStart(): string {
+  if (rangeDays.value === ALL_DAYS) return dataMin.value || dataMax.value || ''
+  const end = dataMax.value ? new Date(dataMax.value) : new Date()
+  const d = new Date(end)
+  d.setDate(d.getDate() - rangeDays.value)
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`
+}
+
+async function loadBoardOptions(): Promise<void> {
+  try {
+    const data = await listSectors({ page: 1, size: 200, sort_by: 'pct_today', order: 'desc' })
+    boardOptions.value = data.list
+  } catch {
+    boardOptions.value = []
+  }
+}
+
+async function loadCompare(): Promise<void> {
+  if (!selectedCodes.value.length) {
+    compareBars.value = {}
+    chartError.value = ''
+    return
+  }
+  chartLoading.value = true
+  chartError.value = ''
+  try {
+    const start = rangeStart()
+    const end = dataMax.value || start
+    const results = await Promise.all(
+      selectedCodes.value.map(async (code) => {
+        const r = await getSectorBars(code, start, end)
+        return [code, r.list] as const
+      }),
+    )
+    compareBars.value = Object.fromEntries(results)
+  } catch (error) {
+    chartError.value = getErrorMessage(error, '板块走势加载失败')
+  } finally {
+    chartLoading.value = false
+  }
+}
+
+function onCompareSelect(codes: string[]): void {
+  // 超出上限时保留前 N 个并提示（collapse-tags 下不阻断已选）。
+  selectedCodes.value = codes.slice(0, COMPARE_MAX)
+  void loadCompare()
+}
+function onKlineCodeChange(): void {
+  if (!klineBars.value.length) void loadCompare()
+}
+
+watch([rangeDays, basis], () => {
+  if (restoring || !inChartMode.value) return
+  void loadCompare()
+})
+// 进入图表视图时确保候选与数据就绪；单板块 K 线默认跟第一个选中板块。
+watch(inChartMode, async (on) => {
+  if (!on) return
+  if (!boardOptions.value.length) await loadBoardOptions()
+  if (!klineCode.value && selectedCodes.value.length) klineCode.value = selectedCodes.value[0]!
+  await loadCompare()
+})
 
 async function load(): Promise<void> {
   loading.value = true
@@ -247,7 +370,7 @@ onMounted(async () => {
         </div>
 
         <el-card shadow="never" class="filter-card">
-          <AppControlRow class="filter-row">
+          <AppControlRow v-if="!inChartMode" class="filter-row">
             <el-select
               v-model="boardType"
               placeholder="全部板块"
@@ -271,12 +394,94 @@ onMounted(async () => {
             />
             <el-button type="primary" :loading="loading" data-testid="sectors-search" @click="search">查询</el-button>
           </AppControlRow>
+
+          <!-- 对比图视图：多选板块 + 周期窗口 + 归一化基准 + 对比/单K线模式 -->
+          <AppControlRow v-else class="filter-row">
+            <el-select
+              :model-value="selectedCodes"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              :max-collapse-tags="3"
+              :multiple-limit="COMPARE_MAX"
+              placeholder="选择板块对比（最多 6 个）"
+              style="width: 340px"
+              data-testid="sectors-compare-select"
+              @update:model-value="onCompareSelect"
+            >
+              <el-option
+                v-for="r in boardOptions"
+                :key="r.board_code"
+                :value="r.board_code"
+                :label="r.name"
+              >
+                <span>{{ r.name }}</span>
+                <span class="opt-type muted">{{ r.board_type === 'concept' ? '概念' : '行业' }}</span>
+              </el-option>
+            </el-select>
+            <KlineRangeSelect v-model="rangeDays" test-id="sectors-compare-range" />
+            <template v-if="chartMode === 'compare'">
+              <el-radio-group v-model="basis" aria-label="归一化基准" data-testid="sectors-compare-basis">
+                <el-radio-button value="first">首日=0</el-radio-button>
+                <el-radio-button value="mid">中点=0</el-radio-button>
+              </el-radio-group>
+            </template>
+            <template v-if="chartMode === 'kline'">
+              <el-select
+                v-model="klineCode"
+                placeholder="选择单板块"
+                style="width: 180px"
+                data-testid="sectors-kline-code"
+                @change="onKlineCodeChange"
+              >
+                <el-option v-for="r in selectedRows" :key="r.board_code" :value="r.board_code" :label="r.name" />
+              </el-select>
+            </template>
+            <el-radio-group v-model="chartMode" aria-label="图表模式" data-testid="sectors-chart-mode">
+              <el-radio-button value="compare">对比走势</el-radio-button>
+              <el-radio-button value="kline">单板块K线</el-radio-button>
+            </el-radio-group>
+          </AppControlRow>
         </el-card>
       </div>
     </template>
 
     <template #main>
-      <el-card shadow="never">
+      <!-- 对比图视图：归一化叠加走势 / 单板块 K 线 -->
+      <el-card v-if="inChartMode" shadow="never">
+        <AppStateBlock
+          v-if="chartError && !compareSeries.length"
+          state="error"
+          title="板块走势加载失败"
+          :description="chartError"
+          retry
+          @retry="loadCompare"
+        />
+        <AppStateBlock
+          v-else-if="!selectedCodes.length"
+          state="empty"
+          title="选择板块开始对比"
+          description="在上方选择 1~6 个板块，叠加归一化走势对比强弱与走势分化"
+        />
+        <template v-else>
+          <div v-loading="chartLoading" class="chart-host">
+            <SectorCompareChart v-if="chartMode === 'compare'" :series="compareSeries" :basis="basis" />
+            <template v-else>
+              <AppStateBlock
+                v-if="!klineBars.length && !chartLoading"
+                state="empty"
+                title="该板块暂无指数数据"
+                description="请先在数据采集页运行板块指数采集，或切换其他板块"
+              />
+              <CandleChart v-else :bars="klineBars" />
+            </template>
+          </div>
+        </template>
+      </el-card>
+
+      <!-- 列表视图 -->
+      <el-card v-else shadow="never">
         <AppStateBlock
           v-if="forbidden"
           state="error"
@@ -373,6 +578,15 @@ onMounted(async () => {
       >
         <template #business>
           <PageSettingSection title="默认查询">
+            <div class="setting-item">
+              <div class="setting-label">默认视图</div>
+              <PageSegmented
+                v-model="settings.defaultView"
+                :options="VIEW_OPTIONS"
+                aria-label="默认视图"
+                test-id="sectors-default-view"
+              />
+            </div>
             <div class="setting-item">
               <div class="setting-label">默认类型</div>
               <PageSegmented
