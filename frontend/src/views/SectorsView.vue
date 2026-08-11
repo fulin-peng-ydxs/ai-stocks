@@ -12,7 +12,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
-import { listSectors, type BoardType, type SectorRow, type SectorSortField, type SortOrder } from '@/api/sectors'
+import { listSectors, type BoardType, type SectorRow, type SectorSortField } from '@/api/sectors'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
@@ -26,10 +26,9 @@ const route = useRoute()
 const { dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
 
-// 默认类型/默认周期属业务态偏好（页面记忆）；默认排序、每页条数、列显隐迁入组件配置层 table slot。
+// 默认类型属业务态偏好（页面记忆）；'' = 全部板块。默认排序、每页条数、列显隐迁入组件配置层 table slot。
 const sectorsDefaults = {
-  defaultType: 'concept' as BoardType,
-  defaultPeriod: 'today' as PeriodKey,
+  defaultType: '' as BoardType | '',
 }
 const { settings, isDirty, reset } = usePageSettings('sectors', sectorsDefaults)
 
@@ -53,39 +52,14 @@ const {
 // 设置抽屉的「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, layerValuesOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, componentLayerValuesOf }
 
-// ── 排序与周期联动 ──
-// 主排序周期（今日/5日/10日/20日）控制主排序涨跌幅字段；净流入/上涨家数为非涨幅排序。
-type PeriodKey = 'today' | '5d' | '10d' | '20d'
-const PERIOD_SORT: Record<PeriodKey, SectorSortField> = {
-  today: 'pct_today',
-  '5d': 'pct_5d',
-  '10d': 'pct_10d',
-  '20d': 'pct_20d',
-}
-const SORT_PERIOD: Partial<Record<SectorSortField, PeriodKey>> = {
-  pct_today: 'today',
-  pct_5d: '5d',
-  pct_10d: '10d',
-  pct_20d: '20d',
-}
-const PERIOD_OPTIONS: { label: string; value: PeriodKey }[] = [
-  { label: '今日', value: 'today' },
-  { label: '5日', value: '5d' },
-  { label: '10日', value: '10d' },
-  { label: '20日', value: '20d' },
-]
-const TYPE_OPTIONS: { label: string; value: BoardType }[] = [
-  { label: '概念板块', value: 'concept' },
-  { label: '行业板块', value: 'industry' },
-]
-
+// 排序走通用列头排序 + defaultSort 配置（与 StocksView 同链路），不另设周期控件——周期属数据窗口，留给详情页图表。
 const DEFAULT_SORT = 'pct_today:desc'
 const SORTABLE_FIELDS = ['pct_today', 'pct_5d', 'pct_10d', 'pct_20d', 'net_inflow', 'up_count'] as const
 const {
   sortBy,
   sortOrder,
   elementDefaultSort,
-  onSortChange: tableSortChange,
+  onSortChange: onTableSortChange,
 } = useTableSort<SectorSortField>({
   slotId: 'table',
   defaultSort: DEFAULT_SORT,
@@ -94,25 +68,11 @@ const {
   allowedFields: SORTABLE_FIELDS,
 })
 
-// 当前生效主排序周期：仅当主排序是涨跌幅字段时有高亮周期；净流入/上涨家数排序时不高亮。
-const activePeriod = computed<PeriodKey | ''>(() => SORT_PERIOD[sortBy.value] ?? '')
-// 最近一个合法涨跌幅周期（从涨幅排序切到净流入/上涨家数后保留，供切回涨幅时还原高亮）。
-const lastPeriod = ref<PeriodKey>(SORT_PERIOD[sortBy.value] ?? settings.defaultPeriod)
-function onPeriodChange(value: string | number | boolean): void {
-  const period = value as PeriodKey
-  lastPeriod.value = period
-  applySort(PERIOD_SORT[period], sortOrder.value)
-}
-function applySort(field: SectorSortField, order: SortOrder): void {
-  if (SORT_PERIOD[field]) lastPeriod.value = SORT_PERIOD[field]!
-  tableSortChange({ prop: field, order: order === 'desc' ? 'descending' : 'ascending' })
-}
-function onTableSortChange(event: Sort): void {
-  tableSortChange(event)
-  if (event.prop && SORT_PERIOD[event.prop as SectorSortField]) {
-    lastPeriod.value = SORT_PERIOD[event.prop as SectorSortField]!
-  }
-}
+const TYPE_OPTIONS: { label: string; value: BoardType | '' }[] = [
+  { label: '全部板块', value: '' },
+  { label: '概念板块', value: 'concept' },
+  { label: '行业板块', value: 'industry' },
+]
 
 // ── 组件配置消费的派生值 ──
 const defaultSize = computed<number>(() => {
@@ -132,7 +92,7 @@ const loading = ref(false)
 const loadError = ref('')
 const forbidden = ref(false)
 const tradeDate = ref<string | null>('')
-const boardType = ref<BoardType>(settings.defaultType)
+const boardType = ref<BoardType | ''>(settings.defaultType)
 const keyword = ref('')
 const page = ref(1)
 const size = ref(defaultSize.value)
@@ -150,7 +110,7 @@ async function load(): Promise<void> {
   try {
     const data = await listSectors({
       trade_date: tradeDate.value || undefined,
-      board_type: boardType.value,
+      board_type: boardType.value || undefined,
       sort_by: sortBy.value,
       order: sortOrder.value,
       keyword: keyword.value.trim() || undefined,
@@ -184,9 +144,6 @@ function scheduleSearch(): void {
     search()
   }, 300)
 }
-function onTypeChange(): void {
-  search()
-}
 function onDateChange(): void {
   if (!restoring) search()
 }
@@ -206,18 +163,14 @@ watch(defaultSize, (v) => {
 // ── 筛选态 URL query（白名单）──
 interface SanitizedQuery {
   type?: BoardType
-  period?: PeriodKey
   sort?: SectorSortField
-  order?: SortOrder
+  order?: 'asc' | 'desc'
   keyword?: string
   page?: string
 }
 function currentQuery(): Record<string, string> {
   const q: Record<string, string> = {}
-  q.type = boardType.value
-  // period 仅在主排序是涨跌幅字段时保留（非涨幅排序不保留无效 period）。
-  const period = activePeriod.value
-  if (period) q.period = period
+  if (boardType.value) q.type = boardType.value
   q.sort = sortBy.value
   q.order = sortOrder.value
   if (keyword.value.trim()) q.keyword = keyword.value.trim()
@@ -232,8 +185,6 @@ function sanitizeQuery(raw: typeof route.query): SanitizedQuery {
   }
   const type = get('type')
   if (type === 'concept' || type === 'industry') out.type = type
-  const period = get('period')
-  if (period === 'today' || period === '5d' || period === '10d' || period === '20d') out.period = period
   const sort = get('sort')
   if ((SORTABLE_FIELDS as readonly string[]).includes(sort)) out.sort = sort as SectorSortField
   const order = get('order')
@@ -277,13 +228,10 @@ onMounted(async () => {
   keyword.value = q.keyword ?? ''
   page.value = q.page ? Number(q.page) : 1
   size.value = defaultSize.value
-  // 主排序：query.sort 优先；否则 query.period 映射；否则组件配置默认排序（useTableSort 已生效）。
+  // 主排序：query.sort/order 优先；否则组件配置默认排序（useTableSort 已生效）。
   if (q.sort) {
-    applySort(q.sort, q.order ?? 'desc')
-  } else if (q.period) {
-    applySort(PERIOD_SORT[q.period], q.order ?? 'desc')
+    onTableSortChange({ prop: q.sort, order: (q.order ?? 'desc') === 'desc' ? 'descending' : 'ascending' })
   }
-  lastPeriod.value = SORT_PERIOD[sortBy.value] ?? (q.period ?? settings.defaultPeriod)
   restoring = false
   void load()
 })
@@ -300,21 +248,16 @@ onMounted(async () => {
 
         <el-card shadow="never" class="filter-card">
           <AppControlRow class="filter-row">
-            <PageSegmented
-              :model-value="boardType"
-              :options="TYPE_OPTIONS"
-              aria-label="板块类型"
-              test-id="sectors-type"
-              @update:model-value="(v) => { boardType = v as BoardType; onTypeChange() }"
-            />
+            <el-select
+              v-model="boardType"
+              placeholder="全部板块"
+              style="width: 130px"
+              data-testid="sectors-type"
+              @change="search"
+            >
+              <el-option v-for="opt in TYPE_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+            </el-select>
             <TradeDatePicker v-model="tradeDate" placeholder="交易日期" style="width: 180px" @update:model-value="onDateChange" />
-            <PageSegmented
-              :model-value="activePeriod"
-              :options="PERIOD_OPTIONS"
-              aria-label="主排序周期"
-              test-id="sectors-period"
-              @update:model-value="onPeriodChange"
-            />
             <el-input
               v-model="keyword"
               placeholder="搜索板块名称…"
@@ -326,6 +269,7 @@ onMounted(async () => {
               @clear="search"
               @keyup.enter="search"
             />
+            <el-button type="primary" :loading="loading" data-testid="sectors-search" @click="search">查询</el-button>
           </AppControlRow>
         </el-card>
       </div>
@@ -436,15 +380,6 @@ onMounted(async () => {
                 :options="TYPE_OPTIONS"
                 aria-label="默认类型"
                 test-id="sectors-default-type"
-              />
-            </div>
-            <div class="setting-item">
-              <div class="setting-label">默认周期</div>
-              <PageSegmented
-                v-model="settings.defaultPeriod"
-                :options="PERIOD_OPTIONS"
-                aria-label="默认周期"
-                test-id="sectors-default-period"
               />
             </div>
           </PageSettingSection>

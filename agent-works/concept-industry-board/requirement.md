@@ -92,7 +92,7 @@
 | R4 | 板块资金流采集落 `board_fund_flow`（概念+行业，多周期） | 闭环 A4 | 资金流数据可展示、并集映射无伪造代码 |
 | R5 | 板块采集异步任务（`board` 类型进任务中心） | 闭环 A5 | 可创建/看进度/取消/续跑 |
 | R6 | 板块维度注册 + 数据概览可见 | 闭环 A6 | 数据概览出现「板块数据」维度 |
-| R7 | 板块行情列表页 `/sectors` | 闭环 B1 | 概念/行业切换、主排序周期切换、资金流列、分页 |
+| R7 | 板块行情列表页 `/sectors` | 闭环 B1 | 板块类型筛选、排序、资金流列、分页 |
 | R8 | 板块详情页 `/sectors/:code` | 闭环 B3 | 指数走势图、统计卡、成分股表（统一分页） |
 | R9 | 成分股跳转个股详情（权限感知） | 闭环 B4 | 有权限可跳、无权限禁用链接 |
 | R10 | 板块搜索 | 闭环 B2（本次纳入） | 名称搜索过滤 |
@@ -205,10 +205,10 @@
 见 §7.2 页面 P2。
 
 **返回列表保留筛选态**：
-- **保存状态**：板块类型（concept/industry）、主排序周期（今日/5日/10日/20日）、排序字段与方向、搜索关键词、页码。
-- **承载方式**：列表页筛选态写入 **URL query**（`?type=&period=&sort=&order=&keyword=&page=`）；**进入详情时把当前列表 query 一并带入详情 URL**（`/sectors/{code}?type=...&period=...`），刷新详情后返回仍可还原。不依赖内存态。
+- **保存状态**：板块类型（全部/concept/industry）、排序字段与方向、搜索关键词、页码。
+- **承载方式**：列表页筛选态写入 **URL query**（`?type=&sort=&order=&keyword=&page=`，`type` 为全部时省略）；**进入详情时把当前列表 query 一并带入详情 URL**（`/sectors/{code}?type=...`），刷新详情后返回仍可还原。不依赖内存态。
 - **行为规则（两类分别处理、分别验收）**：
-  1. **面包屑 / 页面返回按钮**：**始终显式跳转** `router.replace({ path: '/sectors', query: validatedSourceQuery })`——`validatedSourceQuery` 是详情 URL query 中经白名单校验通过的筛选参数（`type/period/sort/order/keyword/page`）；**无来源 query 或非法 query 时 query 为空对象**，落到默认列表（概念板块 + 今日涨幅降序）。**不使用 `router.back()`**——无法保证上一条历史是列表页（可能直接打开/分享带 query 的详情 URL，或上一条是外站/其他页面）。
+  1. **面包屑 / 页面返回按钮**：**始终显式跳转** `router.replace({ path: '/sectors', query: validatedSourceQuery })`——`validatedSourceQuery` 是详情 URL query 中经白名单校验通过的筛选参数（`type/sort/order/keyword/page`）；**无来源 query 或非法 query 时 query 为空对象**，落到默认列表（全部板块 + 今日涨幅降序）。**不使用 `router.back()`**——无法保证上一条历史是列表页（可能直接打开/分享带 query 的详情 URL，或上一条是外站/其他页面）。
   2. **浏览器原生后退/前进**：遵循浏览器 history 栈——详情 URL 携带来源 query，原生返回按 history 还原，不做额外拦截。
 - **承载表**：列表页在 URL 变更时同步更新 query；详情页仅透传来源 query、不持有独立筛选态。
 - **纳入 R8 验收**：面包屑/返回按钮在有/无来源 query 下均显式跳列表并正确还原或落默认；浏览器原生后退按 history 还原；均纳入 Playwright 用例。
@@ -286,7 +286,7 @@
 - **功能描述**：列表/详情页业务偏好（`usePageSettings`）与组件字段（`layout_user_config`）的保存/读取/消费/回退闭环，及构建/布局/视口验收。
 - **前置条件**：阶段五页面实现。
 - **操作流程**：
-  - 列表页 `usePageSettings('sectors', {defaultPeriod, defaultType})` + `consumedComponentFields`（pageSize/defaultSort/hiddenColumns）。
+  - 列表页 `usePageSettings('sectors', {defaultType})` + `consumedComponentFields`（pageSize/defaultSort/hiddenColumns）。
   - 详情页 `usePageSettings('sectors-detail', {chartPeriod})` + `memberTable` 组件字段。
   - 设置抽屉「恢复默认」：同时重置业务偏好（`reset()`）与组件字段（`resetLayout`）。
   - 非法偏好值回落默认并提示；URL query > 已保存偏好 > 默认值优先级。
@@ -333,7 +333,7 @@ board_fund_flow   板块资金流
 
 | 接口 | 方法 | 权限 | 说明 |
 |---|---|---|---|
-| `/api/sectors` | GET | `sectors:view` | 板块列表（日期/类型/主排序周期/分页/搜索） |
+| `/api/sectors` | GET | `sectors:view` | 板块列表（日期/类型/排序/分页/搜索） |
 | `/api/sectors/{code}` | GET | `sectors:view` | 板块详情（摘要+能力字段，含指定交易日） |
 | `/api/sectors/{code}/bars` | GET | `sectors:view` | 板块指数区间序列（周期参数） |
 | `/api/sectors/{code}/members` | GET | `sectors:view` | 成分股统一分页（`page`/`size`，size 默认 20） |
@@ -343,7 +343,7 @@ board_fund_flow   板块资金流
 - **参数白名单**：`/api/sectors` 允许 `trade_date`（可选，指定交易日；缺省=最新交易日）、`board_type(concept|industry)`、`sort_by`（**稳定字段码**：`pct_today|pct_5d|pct_10d|pct_20d|net_inflow|up_count`，中文标签仅 UI 层映射）、`order(asc|desc)`、`keyword`、`page`、`size`；未知参数拒绝。
 - **响应字段**：板块名、**路径 code + App code(clid)**、类型、成分数、今日/5日/10日/20日涨幅、即时净流入及数据日期、领涨股、能力字段、`trade_date`（本次查询实际生效交易日）。
 - **日期口径**：`trade_date` 指定时，涨幅/成分数/净流入均按该交易日截面计算（`board_bar`/`board_member`/`board_fund_flow` 按 `trade_date <= D` 最近有效值）；缺省=最新交易日。
-- **用户可见统计口径**：今日涨幅按板块最近交易日收盘价相对上一交易日收盘价计算；5/10/20 日涨幅分别按最近交易日收盘价相对 5/10/20 个交易日前收盘价计算，历史不足时显示「—」，不得缩短周期代算。上涨/下跌家数按该交易日有效成分股的个股 `close` 与 `pre_close` 比较；平盘、停牌或缺少有效行情不计入上涨/下跌，成分股总数仍按有效成员关系统计。
+- **用户可见统计口径**：今日涨幅按板块最近交易日收盘价相对上一交易日收盘价计算；5/10/20 日涨幅分别按最近交易日收盘价相对 5/10/20 个交易日前收盘价计算，历史不足时显示「—」，不得缩窗代算。上涨/下跌家数按该交易日有效成分股的个股 `close` 与 `pre_close` 比较；平盘、停牌或缺少有效行情不计入上涨/下跌，成分股总数仍按有效成员关系统计。
 - **最新交易日口径**：涨幅和上涨/下跌家数基于 `board_bar` 最近交易日；资金流基于 `board_fund_flow` 最近 snapshot_date；两处日期在响应中显式返回。
 - **空值处理**：无 `board_bar` 的板块涨幅列为空；无资金流则净流入列为空；页面按空值显示「—」。
 - **错误码**：404 板块不存在；400 非法参数；403 无权限。
@@ -367,27 +367,27 @@ board_fund_flow   板块资金流
 - **页面布局**：
   - 布局事实源：对齐 `prototypes/sector-board.html`
   - 页面区域：
-    - action 区（`AppControlRow`）：**日期控件（`TradeDatePicker`，默认最新交易日可回看历史）**、概念/行业分段（`PageSegmented`）、**主排序周期分段**（今日/5日/10日/20日）、**名称搜索框**（自由文本检索，`el-input` + 防抖，非 `AppFilterSelect`——`AppFilterSelect` 是下拉多选，不承载自由文本检索）
+    - action 区（`AppControlRow`）：**板块类型筛选下拉**（全部/概念/行业，`el-select`，对齐列表筛选范式）、**日期控件（`TradeDatePicker`，默认最新交易日可回看历史）**、**名称搜索框**（自由文本检索，`el-input` + 防抖，非 `AppFilterSelect`——`AppFilterSelect` 是下拉多选，不承载自由文本检索）、**查询主命令按钮**（`el-button type="primary"`）
     - main 区（`AppDataTable` growMain）：板块列表，服务端分页 + 排序 + 列显隐
   - 主次关系：筛选区在上、主表成长区占主体；无侧栏。
   - 核心模块与数据区：主表列 = 板块名称(link) | 成分股数 | 上涨/下跌家数 | **今日涨幅 | 5日涨幅 | 10日涨幅 | 20日涨幅** | 即时净流入(含数据日期) | 领涨股及涨幅；涨跌幅用 `--market-up/down-color`，数字右对齐。
-  - **主排序周期语义**：`今日/5日/10日/20日` 控件控制涨跌幅**主排序字段**（默认降序）；点击涨跌幅列头**同步**当前周期控件高亮；改按净流入或上涨家数排序时取消周期高亮，URL 中不保留无效 `period`；切回涨跌幅排序时使用最近一次合法周期，无记录则使用默认周期。资金流固定展示最新交易日即时净流入，列名/提示标注数据日期；资金流 3日/5日/10日/20日数据继续采集但**不受本控件控制**（避免一个控件混合两套口径）。
+  - **排序口径（2026-08-11 修订）**：排序走通用**列头排序** + `defaultSort` 配置（对齐 StocksView，sortable 列 = 各涨跌幅/净流入/上涨家数，默认今日涨幅降序）。**不单设「主排序周期」控件**——周期属数据窗口、与列头排序重复，周期语义保留给详情页图表（R11 chartPeriod）。资金流固定展示最新交易日即时净流入，列名/提示标注数据日期；资金流 3日/5日/10日/20日数据继续采集但**不参与价格排序**（避免与价格口径混合）。
   - **行交互口径**：**仅点板块名称**进详情；点击行其他区域不跳转（与上游确认一致）。
-  - 弹窗/抽屉/设置入口：`PageSettingsDrawer`（布局/组件设置/业务选项；业务选项含默认板块类型和默认周期偏好）。
+  - 弹窗/抽屉/设置入口：`PageSettingsDrawer`（布局/组件设置/业务选项；业务选项含默认板块类型偏好）。
   - 关键状态与退化：empty→引导去采集页；error→`AppStateBlock` 重试；loading→`v-loading`；无权限→permission 无权态；窄视口→主表内部滚动。
 - **数据来源**：`/api/sectors`（join board_dict + board_bar 涨幅 + board_fund_flow 即时净流入 + board_member 成分计数）。
 - **权限与可见性**：`sectors:view`（业务授权集合，非登录基线）。
 - **组件复用与通用能力**：
   - 已有通用能力：`AppDataTable`/`AppTableColumn`/`AppPagination`/`AppStateBlock`/`AppRowActions`/`PageSegmented`/`PageSettingsDrawer`、`usePageSettings`/`useRemoteLayoutConfig`/`getPageLayout`、`pageRegistry`、组件配置字段。
   - 可能新增能力：无（全复用现有组件）。
-  - 配置化承载：`sectors` pageKey 进 `pageRegistry`；组件字段走 `COMPONENT_FIELD_DEFS`；周期/类型筛选为页面业务偏好走 `usePageSettings`。
+  - 配置化承载：`sectors` pageKey 进 `pageRegistry`；组件字段走 `COMPONENT_FIELD_DEFS`；板块类型筛选为页面业务偏好走 `usePageSettings`。
 
 **配置项定义（列表页，谁保存/谁读取/谁消费/如何回退）**：
 
 | 配置项 | 保存位置 | 读取点 | 消费点 | 默认值 | 合法值 | 非法值处理 | 回退 |
 |---|---|---|---|---|---|---|---|
-| 业务偏好对象 `{ defaultPeriod, defaultType }` | PG `user_preference`（`usePageSettings('sectors', defaults)` → `scope='page' + page_key='sectors' + pref_key='settings'` 一个对象） | 页面加载 `usePageSettings` 的 `settings` | 列表页默认主排序周期、默认类型 | `{ defaultPeriod:'today', defaultType:'concept' }` | `defaultPeriod: today/5d/10d/20d`；`defaultType: concept/industry` | 逐字段回落默认并提示 | 设置抽屉「恢复默认」调 `reset()` 置回默认对象 |
-| 每页条数 `pageSize` | PG `layout_user_config`（sectors 页 data-table slot） | `componentValueOf('table','pageSize')` | `AppPagination` | 20 | 10/20/50 | 回落 20 | 设置抽屉恢复默认 |
+| 业务偏好对象 `{ defaultType }` | PG `user_preference`（`usePageSettings('sectors', defaults)` → `scope='page' + page_key='sectors' + pref_key='settings'` 一个对象） | 页面加载 `usePageSettings` 的 `settings` | 列表页默认板块类型 | `{ defaultType:'' }` | `defaultType: ''/concept/industry`（`''`=全部） | 非法值回落全部 | 设置抽屉「恢复默认」调 `reset()` 置回默认对象 |
+| 每页条数 `pageSize` | PG `layout_user_config`（sectors 页 data-table slot） | `componentValueOf('table','pageSize')` | `AppPagination` | 20 | 20/50/100/200（全局 `PAGE_SIZE_OPTIONS`，2026-08-11 与通用组件一致） | 回落 20 | 设置抽屉恢复默认 |
 | 默认排序 `defaultSort` | PG `layout_user_config`（同上） | `componentValueOf('table','defaultSort')` | 主表列头排序 | `pct_today:desc` | sortFields 字段码 + asc/desc | 回落 `pct_today:desc` | 设置抽屉恢复默认 |
 | 列显隐 `hiddenColumns` | PG `layout_user_config`（同上） | `componentValueOf('table','hiddenColumns')` | 主表列渲染 | 全部显示 | 合法列 key 子集 | 忽略未知列 key | 设置抽屉恢复默认 |
 
@@ -402,11 +402,11 @@ board_fund_flow   板块资金流
 #### 7.1.1 页面功能点：板块列表筛选
 
 - 对应需求编号：R7
-- 默认展示：概念板块，今日涨幅降序。
-- 用户操作：切概念/行业、切主排序周期、选排序字段、搜索名称。
+- 默认展示：全部板块，今日涨幅降序。
+- 用户操作：切板块类型（全部/概念/行业）、点列头选排序字段、搜索名称、查询。
 - 输入与校验：搜索关键字 ≤ 50 字符。
-- 状态变化：筛选条件变化触发服务端查询；周期切换同步主排序字段。
-- 保存/提交/取消：无持久提交；周期偏好走页面设置。
+- 状态变化：筛选条件变化触发服务端查询。
+- 保存/提交/取消：无持久提交；类型偏好走页面设置。
 - 加载状态：`v-loading` 覆盖主表。
 - 空状态：`AppDataTable` 空态「暂无板块数据，请先在数据采集页运行板块采集」。
 - 错误状态：`AppStateBlock` error 带重试。
@@ -548,7 +548,7 @@ board_fund_flow   板块资金流
 | R4 | `board_fund_flow` 各周期可查询，净额=流入-流出；并集映射无伪造代码，未匹配项进质检 | 查询 + 单测 + 质检核对 |
 | R5 | 任务中心出现「板块采集」任务，可创建/看进度/取消/续跑；部分失败任务标 failed 且保留 checkpoint，按字典类型/板块代码/资金流周期只续跑未成功工作单元 | 页面验收 + 单测 |
 | R6 | 数据概览出现「板块数据」维度行和统计卡，能看到 4 表行数、概念/行业数、三类覆盖、最新日期、活跃问题分类、最近更新，并可跳转板块采集 | 页面验收 + 单测 |
-| R7 | `/sectors` 列表页概念/行业切换、主排序周期切换（涨跌幅列同步）、资金流列含数据日期、分页、列显隐正常 | Playwright + 页面 |
+| R7 | `/sectors` 列表页板块类型筛选（全部/概念/行业）、列头排序、资金流列含数据日期、分页、列显隐正常 | Playwright + 页面 |
 | R8 | `/sectors/:code` 详情页摘要（含涨跌家数/领涨股/净流入）/走势图/成分股表正常；返回列表保留筛选态（面包屑/浏览器返回/刷新还原） | 页面验收 + Playwright |
 | R9 | 有 `stocks:view` 成分股可跳；无权限行禁用 + hover 提示，直接访问路由 fail-closed | Playwright + 权限测试 |
 | R10 | 名称搜索过滤正常，无结果空态 | 页面验收 |
@@ -558,7 +558,7 @@ board_fund_flow   板块资金流
 | R14 | 详情页摘要卡即时净流入数字正确（含数据日期） | 页面验收 |
 | R21 | 每日流程 `daily` 自动采集板块，失败不阻塞行情更新；`board` 任务支持回填/增量分流、断点续跑；单板块失败时继续剩余板块，最终步骤/任务 `failed`、DailyPipeline `ok=false`，返回失败板块清单并可仅续跑失败项；**参数化测试矩阵**：`board=True` 默认执行、`skip_update=True` 仍执行板块、`--skip-board` 确实跳过、板块失败后继续质检、最终状态和失败清单正确、`total_steps` 正确（不出现 `3/2`） | CLI + 集成测试 + 参数化矩阵 |
 | R22 | 菜单/资源 seed 幂等；`sectors:view` 加入业务授权集合并授予 normal/tenant_admin；既有库一次性回填 + bump `perm_ver`；路由守卫与 pageRegistry 登记一致 | 权限测试 + Playwright |
-| R23 | 页面设置偏好可保存/读取/回退（默认周期/类型/图表周期）；**两页 `pageSize/defaultSort/hiddenColumns` 组件字段保存/读取/非法回退/恢复默认的参数化矩阵**；`npm run build` 通过；布局测试通过；关键视口 1100×620 / 1366×768 / 1440×900 无文本溢出且详情表体可读 | 前端测试 + 构建 + E2E + 参数化矩阵 |
+| R23 | 页面设置偏好可保存/读取/回退（默认类型/图表周期）；**两页 `pageSize/defaultSort/hiddenColumns` 组件字段保存/读取/非法回退/恢复默认的参数化矩阵**；`npm run build` 通过；布局测试通过；关键视口 1100×620 / 1366×768 / 1440×900 无文本溢出且详情表体可读 | 前端测试 + 构建 + E2E + 参数化矩阵 |
 
 ## 12. 建议开发顺序
 

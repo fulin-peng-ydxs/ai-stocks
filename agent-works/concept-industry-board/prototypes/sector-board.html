@@ -29,10 +29,9 @@
   .app-title { font-size: 22px; font-weight: 700; line-height: 30px; margin-bottom: 4px; }
   .app-sub { font-size: 12px; color: #73757d; margin-bottom: 16px; }
   .action-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid #e5e5e5; margin-bottom: 12px; }
-  .seg-group { display: inline-flex; border: 1px solid #c9c9c9; border-radius: 6px; overflow: hidden; }
-  .seg-item { padding: 6px 14px; font-size: 13px; cursor: pointer; background: #fff; color: #44464d; border: 0; font-family: inherit; }
-  .seg-item[aria-pressed="true"] { background: #1677ff; color: #fff; font-weight: 600; }
   .search-box { flex: 1; max-width: 260px; padding: 6px 10px; font-size: 13px; border: 1px solid #c9c9c9; border-radius: 6px; outline: none; }
+  .type-select { padding: 6px 10px; font-size: 13px; border: 1px solid #c9c9c9; border-radius: 6px; background: #fff; color: #44464d; font-family: inherit; outline: none; cursor: pointer; }
+  .query-btn { padding: 6px 16px; font-size: 13px; border: 1px solid #1677ff; border-radius: 6px; background: #1677ff; color: #fff; font-family: inherit; cursor: pointer; }
   .date-input { border: 1px solid #c9c9c9; border-radius: 6px; padding: 5px 10px; font-size: 13px; color: #44464d; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; background: #fff; }
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
   .settings-trigger { border: 1px solid #c9c9c9; background: #fff; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; color: #44464d; }
@@ -101,7 +100,7 @@
       </div>
 
       <div class="proto-note">
-        <b>原型说明</b>：list 原型 · 主排序周期控制涨跌幅 · 默认今日涨幅降序 · 可排序列=涨跌幅/净流入/上涨家数 · 点板块名进详情。
+        <b>原型说明</b>：list 原型 · 板块类型筛选下拉（默认全部）· 列头排序（默认今日涨幅降序）· 可排序列=涨跌幅/净流入/上涨家数 · 点板块名进详情。<span style="color:#b35c00;">（2026-08-11 修订：移除主排序周期分段控件——周期属数据窗口、与列头排序重复，周期语义留给详情页图表；类型分段改筛选下拉，对齐列表页范式）</span>
         <button class="proto-demo" id="stateReadyBtn">原型演示：数据态</button>
         <button class="proto-demo" id="stateEmptyBtn">原型演示：空态</button>
         <button class="proto-demo" id="stateErrorBtn">原型演示：错误态</button>
@@ -109,18 +108,14 @@
       </div>
 
       <div class="action-bar">
-        <div class="seg-group" role="tablist" id="typeSeg">
-          <button class="seg-item" aria-pressed="true" data-type="concept">概念板块</button>
-          <button class="seg-item" aria-pressed="false" data-type="industry">行业板块</button>
-        </div>
+        <select class="type-select" id="typeSel" aria-label="板块类型">
+          <option value="" selected>全部板块</option>
+          <option value="concept">概念板块</option>
+          <option value="industry">行业板块</option>
+        </select>
         <span class="date-input" id="datePicker">📅 2026-08-08</span>
-        <div class="seg-group" role="tablist" id="periodSeg">
-          <button class="seg-item" aria-pressed="true" data-period="today">今日</button>
-          <button class="seg-item" aria-pressed="false" data-period="5d">5日</button>
-          <button class="seg-item" aria-pressed="false" data-period="10d">10日</button>
-          <button class="seg-item" aria-pressed="false" data-period="20d">20日</button>
-        </div>
         <input class="search-box" id="searchInput" placeholder="搜索板块名称…" />
+        <button class="query-btn" id="queryBtn" type="button">查询</button>
       </div>
 
       <div class="table-wrap" id="tableWrap">
@@ -159,8 +154,7 @@
             </select>
           </div>
           <div class="drawer-item"><span>组件设置 · 默认排序</span><span style="color:#73757d;">今日涨幅 ↓</span></div>
-          <div class="drawer-item"><span>业务选项 · 默认类型</span><span style="color:#73757d;">概念板块</span></div>
-          <div class="drawer-item"><span>业务选项 · 默认周期</span><span style="color:#73757d;">今日</span></div>
+          <div class="drawer-item"><span>业务选项 · 默认类型</span><span style="color:#73757d;">全部板块</span></div>
           <div class="drawer-item"><span>组件设置 · 列显隐</span><span style="color:#73757d;">全部显示</span></div>
         </div>
         <div class="drawer-foot">
@@ -234,14 +228,16 @@
   const stateBlock = document.getElementById('stateBlock');
   const pager = document.getElementById('pager');
   const searchInput = document.getElementById('searchInput');
-  let currentType = 'concept';
+  let currentType = '';
   let currentPage = 1;
   let sortKey = 'pct_today';
   let sortOrder = 'desc';
 
   function getVisibleRows() {
     const kw = searchInput.value.trim().toLowerCase();
-    const rows = DEMO[currentType].filter(r => !kw || r.name.toLowerCase().includes(kw));
+    // 板块类型筛选：''=全部（概念+行业合并），否则按类型过滤
+    const pool = currentType ? DEMO[currentType] : [...(DEMO.concept || []), ...(DEMO.industry || [])];
+    const rows = pool.filter(r => !kw || r.name.toLowerCase().includes(kw));
     if (sortKey === 'name') return rows; // name 不可排序，保持原序
     return rows.slice().sort((a, b) => sortOrder === 'desc' ? (b[sortKey] - a[sortKey]) : (a[sortKey] - b[sortKey]));
   }
@@ -289,25 +285,17 @@
       <span style="color:#73757d;" id="pagerTotal">共 ${total} 条 · 第 ${currentPage} 页</span>`;
   }
 
-  // 类型切换：重置页码
-  document.querySelectorAll('#typeSeg .seg-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#typeSeg .seg-item').forEach(b => b.setAttribute('aria-pressed', 'false'));
-      btn.setAttribute('aria-pressed', 'true');
-      currentType = btn.dataset.type;
-      currentPage = 1;
-      render();
-    });
+  // 类型筛选下拉：切换即查（对齐列表筛选范式）
+  document.getElementById('typeSel').addEventListener('change', (e) => {
+    currentType = e.target.value;
+    currentPage = 1;
+    render();
   });
 
-  // 周期切换：切换主排序字段 + 高亮列头
-  document.querySelectorAll('#periodSeg .seg-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#periodSeg .seg-item').forEach(b => b.setAttribute('aria-pressed', 'false'));
-      btn.setAttribute('aria-pressed', 'true');
-      const periodMap = { today: 'pct_today', '5d': 'pct_5d', '10d': 'pct_10d', '20d': 'pct_20d' };
-      setSort(periodMap[btn.dataset.period], 'desc');
-    });
+  // 查询主命令：显式触发查询（与筛选下拉/搜索防抖同源）
+  document.getElementById('queryBtn').addEventListener('click', () => {
+    currentPage = 1;
+    render();
   });
 
   function setSort(key, order) {
@@ -319,16 +307,6 @@
     const target = document.querySelector(`[data-sort="${key}"]`);
     target.classList.add('sort-active');
     target.textContent = target.textContent + ' ' + (order === 'desc' ? '▼' : '▲');
-    const pctMap = { pct_today: 'today', pct_5d: '5d', pct_10d: '10d', pct_20d: '20d' };
-    if (pctMap[key]) {
-      // 涨幅排序：周期控件同步高亮
-      document.querySelectorAll('#periodSeg .seg-item').forEach(b => {
-        b.setAttribute('aria-pressed', b.dataset.period === pctMap[key] ? 'true' : 'false');
-      });
-    } else {
-      // 非涨幅排序（净流入/上涨家数）：取消周期选中，避免两个「当前排序」视觉状态
-      document.querySelectorAll('#periodSeg .seg-item').forEach(b => b.setAttribute('aria-pressed', 'false'));
-    }
     render();
   }
 

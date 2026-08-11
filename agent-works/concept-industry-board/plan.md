@@ -62,7 +62,7 @@ R1、R2、R3、R4、R5、R6、R7、R8、R9、R10、R21、R22、R23（逐项映�
 - **数据流**：`ThsBoardSource`（直连 `q.10jqka.com.cn` / `data.10jqka.com.cn`，复用 akshare 打包的 `ths.js` 经 `py_mini_racer` 生成 v cookie，不调用 akshare 板块接口）→ `BoardIngestService`（字典两阶段 / 成分快照只进不出 / 指数 / 资金流名称映射）→ DuckDB 4 表 → `BoardQueryService`（只读聚合，单次全查内存合并，遵循双库边界）→ `/api/sectors*` → 前端页面。
 - **成分采集完整性闭环**（R2，只进不出）：完整快照（`complete=True`）`INSERT ON CONFLICT DO NOTHING` 落库 + 刷新 `member_count`；不完整快照（`complete=False`）整趟不落库 → `data_update_log` failed + 写 `board_member_incomplete` issue → 数据质量页「重采成分」（fix 分派重采该板块，完整后合并）。**候选机制已废弃**（2026-08-09 只进不出改造，见 T9/T13）。
 - **接口契约**：`/api/sectors` 参数白名单（`trade_date/board_type/sort_by/order/keyword/page/size`），`sort_by` 字段码 `pct_today|pct_5d|pct_10d|pct_20d|net_inflow|up_count`；统计口径（涨幅按收盘价比对、历史不足显示「—」不缩短周期、涨跌家数按成分股 `close` vs `pre_close` 且平盘/停牌/缺行情不计入）严格按需求 §6.2 契约要点实现；**领涨股及涨幅默认口径取 `board_fund_flow.leader_stock/leader_pct` 且与「即时净流入」同一 `(snapshot_date, period='即时')` 行（口径待确认项，见 §10.3）——无资金流数据的板块该列显示「—」**（不走「当日成分股涨幅第一」另行计算，口径单一）。
-- **双口径边界（T8 必须遵守）**：列表/详情页的 **5日/10日/20日涨幅列与主排序周期（`pct_5d/pct_10d/pct_20d`）= 板块指数价格涨跌幅，T8 查询时从 `board_bar` 日线实时计算**（最近交易日收盘 vs N 个交易日前收盘，`trade_date <= D` 截面语义），**不是**从 `board_fund_flow` 周期表读取；`board_fund_flow` 的 3日/5日/10日/20日周期（含 `net_ratio` 阶段涨跌幅）是资金面数据、本期页面只展示「即时」、不参与价格排序（需求 §7.1「资金流 3/5/10/20 日数据继续采集但不受主排序控件控制」）。严禁把资金流周期表的 `net_ratio` 当价格涨幅用。
+- **双口径边界（T8 必须遵守）**：列表/详情页的 **5日/10日/20日涨幅列与可排序涨跌幅字段（`pct_5d/pct_10d/pct_20d`）= 板块指数价格涨跌幅，T8 查询时从 `board_bar` 日线实时计算**（最近交易日收盘 vs N 个交易日前收盘，`trade_date <= D` 截面语义），**不是**从 `board_fund_flow` 周期表读取；`board_fund_flow` 的 3日/5日/10日/20日周期（含 `net_ratio` 阶段涨跌幅）是资金面数据、本期页面只展示「即时」、不参与价格排序（需求 §7.1「资金流 3/5/10/20 日数据继续采集但不参与价格排序」）。严禁把资金流周期表的 `net_ratio` 当价格涨幅用。
 - **权限策略**：`sectors:view` 进 `BUSINESS_RESOURCE_CODES`（业务授权，非登录基线）；后端 `require_perm('sectors:view')` 守卫；采集操作 system-only（`data-task:manage` / `data-quality:view|fix`）；既有库一次性回填授权 + 同事务 bump `perm_ver`（marker 幂等）。
 - **兼容策略**：`board_bar` 存原值不套复权链；`stock_basic.concept` 不写；新增表与 seed 全部幂等；`ThsBoardSource` 限速 ≥1s/次 + 分批断点。
 - **关键取舍**：资金流无稳定代码时按名称匹配，未匹配写 `board_fund_unmatched` 质检不伪造代码；成分「只进不出」累积，完整快照才落库，候选机制废弃（2026-08-09 只进不出改造）。
@@ -90,7 +90,7 @@ P1 `sectors`（list，`responsiveProfile: 'single-column'`，`minWidth=0`）：
 
 | 区域 | slotId | 组件种类 | 是否 growMain | 滚动归属 | 是否可重排 | 说明 |
 |---|---|---|---|---|---|---|
-| action | filter-bar | filter-bar | 否 | 不滚动 | 否 | TradeDatePicker + 概念/行业 PageSegmented + 主排序周期 PageSegmented + 名称搜索框（`el-input` 防抖） |
+| action | filter-bar | filter-bar | 否 | 不滚动 | 否 | 板块类型 `el-select`（全部/概念/行业）+ TradeDatePicker + 名称搜索框（`el-input` 防抖）+ 查询主命令按钮 |
 | main | table | data-table | 是 | 表体内部滚动 | 否 | 板块列表主表 + AppPagination |
 | overlay | settings | settings-drawer | 否 | 抽屉内滚动 | 否 | 页面设置（布局/组件设置/业务选项） |
 
@@ -134,7 +134,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 4.1 页面 P1（板块行情列表页）技术实现
 
-- 原型文件：`prototypes/sector-board.html`。承接区域：顶部 action 筛选区（概念/行业分段 → 日期控件 → 主排序周期分段 → 搜索框）、主表（列 = 名称 link/成分股数/上涨/下跌家数/今日/5日/10日/20日涨幅/即时净流入 + 数据日/领涨股）、表体内部滚动 + 分页条、设置抽屉（布局/每页条数/默认排序/默认类型/默认周期/列显隐/恢复默认）、四态演示态（数据/空/错误/加载）。
+- 原型文件：`prototypes/sector-board.html`。承接区域：顶部 action 筛选区（板块类型筛选 + 日期控件 + 搜索框）、主表（列 = 名称 link/成分股数/上涨/下跌家数/今日/5日/10日/20日涨幅/即时净流入 + 数据日/领涨股）、表体内部滚动 + 分页条、设置抽屉（布局/每页条数/默认排序/默认类型/列显隐/恢复默认）、四态演示态（数据/空/错误/加载）。**注意：原型的「概念/行业分段」与「主排序周期分段」两控件已被 2026-08-11 用户裁定移除**——类型改走列表筛选下拉范式、周期控件属重复（排序走列头），页面实现以此为准、不照搬原型。
 - 原型与需求差异说明：
   1. 原型用「上涨家数」「数据日」独立列展示，正式实现按需求 §7.1 合并为「上涨/下跌家数」列与「即时净流入(含数据日期)」列提示，列序以需求 §7.1.2 为准。
   2. **列表页 `pageSize` 合法值冲突**：原型 `sector-board.html` 设置抽屉每页条数选项为 **10/20/30/50**（含 30），需求 §7.1 配置表为 **10/20/50**（无 30）。正式实现按**需求口径 10/20/50**（列表页与详情页 10/20/30/50 不同口径，已在 §4.1 主表行加粗声明）；此取舍为计划 vs 原型的显式冲突，**按需求为准**，实施时无需再向用户确认（需求为当前事实源），但须在开发留痕中记录此差异。
@@ -142,8 +142,8 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 板块列表筛选（7.1.1） | R7、R10 | 默认概念板块 + 今日涨幅降序；切类型/周期/排序/搜索（≤50 字符防抖）；周期切换同步主排序字段；非涨幅排序取消周期高亮且 URL 不保留无效 period | action 区 `TradeDatePicker` + 两个 `PageSegmented` + `el-input` 防抖；筛选态写 URL query（`type/period/sort/order/keyword/page`）；偏好优先级 URL query > 已保存偏好 > 默认值 | SectorsView.vue、AppControlRow、PageSegmented、TradeDatePicker、usePageSettings | `GET /api/sectors`（白名单参数） | 加载 `v-loading`；空态引导去采集页；错误 AppStateBlock 重试；无权限 permission 态 | T11 |
-| 板块列表主表（7.1.2） | R7 | 列头排序（涨跌幅列头同步周期控件）、服务端分页、仅点板块名进详情、列显隐 | AppDataTable growMain + AppTableColumn（语义角色，不声明宽度）+ AppPagination；`defaultSort/pageSize/hiddenColumns` 走 `componentValueOf('table', ...)`；**pageSize 走全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`（2026-08-11 用户裁定与通用组件一致，需求 §7.1 的 10/20/50 列表页专属口径作废）**；仅名称列渲染 router-link（携带来源 query 进详情 URL） | AppDataTable、AppTableColumn、AppPagination、pageRegistry `sectors` | `GET /api/sectors` | 空值列显示「—」；资金流列标注数据日期；分页越界回落 | T11 |
+| 板块列表筛选（7.1.1） | R7、R10 | 默认全部板块 + 今日涨幅降序；切类型/排序/搜索（≤50 字符防抖） | action 区板块类型 `el-select`（全部/概念/行业）+ `TradeDatePicker` + `el-input` 防抖 + 查询主命令按钮；筛选态写 URL query（`type/sort/order/keyword/page`，`type` 为全部时省略）；偏好优先级 URL query > 已保存偏好 > 默认值 | SectorsView.vue、AppControlRow、TradeDatePicker、usePageSettings | `GET /api/sectors`（白名单参数） | 加载 `v-loading`；空态引导去采集页；错误 AppStateBlock 重试；无权限 permission 态 | T11 |
+| 板块列表主表（7.1.2） | R7 | 列头排序、服务端分页、仅点板块名进详情、列显隐 | AppDataTable growMain + AppTableColumn（语义角色，不声明宽度）+ AppPagination；排序走通用列头排序 + defaultSort 配置（与 StocksView 同链路，不另设周期控件）；`defaultSort/pageSize/hiddenColumns` 走 `componentValueOf('table', ...)`；**pageSize 走全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`（2026-08-11 用户裁定与通用组件一致，需求 §7.1 的 10/20/50 列表页专属口径作废）**；仅名称列渲染 router-link（携带来源 query 进详情 URL） | AppDataTable、AppTableColumn、AppPagination、pageRegistry `sectors` | `GET /api/sectors` | 空值列显示「—」；资金流列标注数据日期；分页越界回落 | T11 |
 
 组件资产闭环（P1）：
 
@@ -160,7 +160,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 板块摘要卡（7.2.1） | R8、R14 | 名称/类型/成分数/今日涨幅/涨跌家数/即时净流入(含数据日期)/领涨股及涨幅；随路由 code 刷新 | 摘要区（DESIGN 统计项语义）；涨幅与净流入分别标注各自数据日期（board_bar 最近交易日 / fund_flow 最近 snapshot_date）；**领涨股默认取资金流同 snapshot 行 leader_stock（口径待确认，见 §10.3）** | SectorDetailView.vue | `GET /api/sectors/{code}` | 板块不存在 → error 态「板块不存在或数据未采集」；空值显示「—」 | T12 |
 | 板块指数走势图（7.2.2） | R8、R11 | 默认近 3 月收盘线，原始连续指数；周期切换重新拉数；日期控件默认最新交易日可回看 | ECharts 线图（`useEChartsTheme()`，不引入新图表框架）；周期分段 + TradeDatePicker；`chartPeriod` 业务偏好走 `usePageSettings('sectors-detail', { chartPeriod: '3m' })`，非法值回落 3m | SectorDetailView.vue、ECharts、PageSegmented、TradeDatePicker | `GET /api/sectors/{code}/bars` | 图表 loading/空态/error 复用图表四态 | T12 |
 | 成分股表（7.2.3） | R8、R9、R13 | 统一分页（默认 20，抽屉可配 10/20/30/50，**与列表页 10/20/50 口径不同**）；列头排序（默认涨跌幅降序）；有 `stocks:view` 点行跳 `/stocks/:code`，无权限行禁用 + hover 提示 | AppDataTable（嵌套 slot `memberTable`，parentId=detail）+ AppPagination；`componentValueOf('memberTable', ...)` 消费 pageSize/defaultSort/hiddenColumns；`hasPermission(auth, 'stocks:view')` 判定名称可点性，无权限渲染不可点文本 + tooltip | AppDataTable、AppPagination、pageRegistry `sectors-detail` | `GET /api/sectors/{code}/members?page=&size=`（size 默认 20） | 空态/错误重试；直接访问 `/stocks/:code` 路由守卫 fail-closed（现有机制） | T12 |
-| 返回列表保留筛选态（R8） | R8 | 面包屑/返回按钮始终 `router.replace` 显式跳列表并带白名单校验后的来源 query；无/非法来源 query 落默认；不使用 `router.back()`；浏览器原生后退按 history 还原 | 列表 URL query 承载筛选态；进详情时来源 query 透传进详情 URL；返回前白名单校验（`type/period/sort/order/keyword/page`） | vue-router、SectorsView/SectorDetailView | - | 非法 query 逐字段丢弃落默认 | T12 |
+| 返回列表保留筛选态（R8） | R8 | 面包屑/返回按钮始终 `router.replace` 显式跳列表并带白名单校验后的来源 query；无/非法来源 query 落默认；不使用 `router.back()`；浏览器原生后退按 history 还原 | 列表 URL query 承载筛选态；进详情时来源 query 透传进详情 URL；返回前白名单校验（`type/sort/order/keyword/page`） | vue-router、SectorsView/SectorDetailView | - | 非法 query 逐字段丢弃落默认 | T12 |
 
 组件资产闭环（P2）：
 
@@ -189,7 +189,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 必须实现 | R4 | 板块资金流采集落 `board_fund_flow` | 概念+行业全周期采集 + 并集映射（未匹配写质检不伪造代码） | T2、T4 | 已完成 | 一致（2026-08-10 口径更新） | T2/T4 已落地；资金流独有板块：链接带真实路径 code → `_upsert_fund_only_boards` 补字典（has_fund_flow=true，不进页面展示）；无稳定代码 → `board_fund_unmatched` 质检 |
 | 必须实现 | R5 | 板块采集异步任务（`board` 进任务中心） | TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES 注册 + `_h_board` + 按字典类型/板块/资金流周期 checkpoint + 任务中文标签 | T5 | 已完成 | 一致 | T5 已落地；部分失败保留 checkpoint，失败任务可续跑 |
 | 必须实现 | R6 | 板块维度注册 + 数据概览可见 | `_DIMENSION_SEED` 加 `board` 维度行（tables=4 表）+ 数据管理概览板块统计卡 | T3 + 本轮复核修复 | 已完成 | 一致 | 除维度行外，概览已展示表行数、概念/行业数、成分/指数/资金流覆盖、最新日期、未闭环问题和最近更新 |
-| 必须实现 | R7 | 板块行情列表页 `/sectors` | SectorsView（筛选/主表/分页/列显隐/主排序周期语义）+ `/api/sectors` | T8、T11 | 已完成 | 一致 | T8 `/api/sectors` 列表接口 + T11 SectorsView 页面均已落地；分页走全局 `PAGE_SIZE_OPTIONS`（2026-08-11 纠偏） |
+| 必须实现 | R7 | 板块行情列表页 `/sectors` | SectorsView（筛选/主表/分页/列显隐/列头排序语义）+ `/api/sectors` | T8、T11 | 已完成 | 一致 | T8 `/api/sectors` 列表接口 + T11 SectorsView 页面均已落地；分页走全局 `PAGE_SIZE_OPTIONS`（2026-08-11 纠偏） |
 | 必须实现 | R8 | 板块详情页 `/sectors/:code` + 返回保留筛选态 | SectorDetailView（摘要/走势图/成分股表）+ URL query 筛选态承载与显式返回 + 详情 3 接口 | T8、T12 | 部分完成 | 一致 | **T8 详情/bars/members 三接口已落地**；T12 页面待开始 |
 | 必须实现 | R9 | 成分股跳转个股详情（权限感知） | `hasPermission('stocks:view')` 行可点性 + 禁用态 hover 提示 + 直接访问 fail-closed 验证 | T12、T15 | 待开始 | 一致 | |
 | 必须实现 | R10 | 板块搜索 | 自由文本搜索框（el-input 防抖）+ 服务端 `keyword` 参数 + 无结果空态 | T8、T11 | 已完成 | 一致 | T8 服务端 keyword + T11 搜索框（≤50 字符防抖）均已落地 |
@@ -199,7 +199,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 可选增强 | R14 | 详情页资金流统计卡 | 摘要卡即时净流入（最新 snapshot_date period=即时） | T8、T12 | 部分完成 | 一致 | 本次纳入；**T8 详情接口净流入已落地**；T12 摘要卡待开始 |
 | 必须实现 | R21 | 采集流程集成（daily/回填/增量/断点/失败隔离） | DailyPipeline 加 `board: bool = True` 步骤 + CLI `board --backfill/--update` + `--skip-board` + 类型/指定板块/阶段范围 + 失败清单与部分失败降级 + 参数化测试矩阵 | T5、T6 + 本轮复核修复 | 已完成 | 一致 | daily、CLI、任务中心、采集页和调度页已对齐；`ok=false` 正确落 failed，成功单元不重复续跑 |
 | 必须实现 | R22 | 页面/RBAC 接入 | 菜单/资源 seed + `sectors:view` 进 BUSINESS_RESOURCE_CODES + 既有库回填 + bump perm_ver + 路由守卫 + pageRegistry 登记 | T10a、T10b、T11、T12、T14 | 部分完成 | 一致 | T10a（常量+seed）+ T10b（回填 SQL+权限测试）+ T11（列表页路由守卫 + pageRegistry 登记）已落地；T12/T14 详情页与端到端部分待开始 |
-| 必须实现 | R23 | 页面配置闭环 | 两页 usePageSettings + 组件字段（pageSize/defaultSort/hiddenColumns）保存/读取/消费/回退 + 参数化矩阵 + 构建/布局/视口验收 | T11、T12、T14、T15 | 部分完成 | 一致 | T11 列表页配置闭环已落地（defaultType/defaultPeriod 偏好 + table pageSize/defaultSort/hiddenColumns 组件字段，经 pageRegistry 契约测试校验）；T12/T14/T15 详情页与验收部分待开始 |
+| 必须实现 | R23 | 页面配置闭环 | 两页 usePageSettings + 组件字段（pageSize/defaultSort/hiddenColumns）保存/读取/消费/回退 + 参数化矩阵 + 构建/布局/视口验收 | T11、T12、T14、T15 | 部分完成 | 一致 | T11 列表页配置闭环已落地（defaultType 偏好 + table pageSize/defaultSort/hiddenColumns 组件字段，经 pageRegistry 契约测试校验）；T12/T14/T15 详情页与验收部分待开始 |
 | 暂不实现 | R15 | 地域/风格板块 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 第一期只做概念+行业 |
 | 暂不实现 | R16 | 资金流历史趋势图 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 本期只做统计卡数字 |
 | 暂不实现 | R17 | 题材联动图谱/重叠分析 | 暂不纳入本次 | - | 跳过 | 未覆盖 | 独立后续需求 |
@@ -369,13 +369,13 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 依赖：T8（接口）、T10a（常量 + seed）；开工前先按 page-template.md §1 把原型/组件选型结论同步用户（本计划 §4 已给推荐与理由）
 - 涉及文件/模块：`frontend/src/views/SectorsView.vue`（新增，优先 `npm run scaffold-page -- --pageKey sectors --label 板块行情 --archetype list`）、`frontend/src/router/index.ts`（`/sectors`）、[pageRegistry.ts](../../frontend/src/layout/pageRegistry.ts)（`sectors` pageKey：slots/consumedComponentFields/componentMeta sortFields）、`frontend/src/api/sectors.ts`（新增 API 封装）、[DESIGN.md](../../DESIGN.md)（page-registry 区块登记）
 - 目标：R7、R10 + R22/R23 列表页部分，逐项承接 §4.1 功能点表与原型区域。
-- 操作：action 区四控件；主表列与排序周期联动语义（含非涨幅排序取消周期高亮、URL 不保留无效 period、切回涨跌幅用最近合法周期）；筛选态写 URL query；进详情仅点板块名并携带来源 query；`usePageSettings('sectors', { defaultPeriod:'today', defaultType:'concept' })` + `componentValueOf('table', ...)`；四态与权限态。
-- 产出：页面 + 路由 + registry 登记 + API 封装 + Vitest（筛选态还原、排序周期联动、偏好优先级 URL>保存>默认、非法值回落）。
+- 操作：action 区板块类型筛选 + 交易日 + 搜索防抖 + 查询主命令；排序走通用列头排序（不另设周期控件，详见落地说明）；筛选态写 URL query；进详情仅点板块名并携带来源 query；`usePageSettings('sectors', { defaultType:'' })` + `componentValueOf('table', ...)`；四态与权限态。
+- 产出：页面 + 路由 + registry 登记 + API 封装 + Vitest（筛选态还原、偏好优先级 URL>保存>默认、非法值回落）。
 - 影响范围：新增页面与菜单可见入口；无既有页面变化。
 - 边界与异常：搜索关键字 ≤50 字符；空值列「—」；窄视口主表内滚。
 - 验证方式：Vitest + `npm test`（pageRegistry 契约）+ Playwright（T15）。
 - 完成标准：R7、R10 验收通过；契约测试绿。
-- 实际落地情况：SectorsView/route/pageRegistry `sectors` pageKey/`api/sectors.ts`/DESIGN.md page-registry 行已落地；action 区四控件、涨跌幅周期↔主排序联动、筛选态 URL query 白名单、仅点板块名进详情（T12 详情路由随详情页接入）、四态与权限态齐备。`npm test`（645 用例含 pageRegistry/layout-contract 契约）与 `npm run build` 绿。**分页纠偏（2026-08-11 用户裁定）**：pageSize 统一走全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`（`constants/pagination.ts`），不实现 §4.1 表内注记的 10/20/50 列表页专属口径，该注记作废。
+- 实际落地情况：SectorsView/route/pageRegistry `sectors` pageKey/`api/sectors.ts`/DESIGN.md page-registry 行已落地；action 区板块类型筛选/交易日/搜索防抖/查询、筛选态 URL query 白名单、仅点板块名进详情（T12 详情路由随详情页接入）、四态与权限态齐备。`npm test`（645 用例含 pageRegistry/layout-contract 契约）与 `npm run build` 绿。**分页纠偏（2026-08-11 用户裁定）**：pageSize 统一走全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`（`constants/pagination.ts`），不实现 §4.1 表内注记的 10/20/50 列表页专属口径，该注记作废。**控件纠偏（2026-08-11 用户裁定）**：①移除「主排序周期」分段控件——周期属数据窗口、与列头排序重复，排序收敛为通用列头排序 + defaultSort 配置，周期语义保留给 T12 详情页图表（chartPeriod）；②「概念/行业」类型筛选从 PageSegmented 改为列表筛选下拉范式（DESIGN.md：PageSegmented 定位页面设置/偏好，列表分类筛选走 `el-select`，对齐 StocksView「全部板块」），含「全部/概念/行业」、默认全部（后端 `board_type` 省略即全部）；③补查询主命令按钮（对齐列表页范式）；④设置抽屉业务偏好移除默认周期，仅留默认类型（全部/概念/行业）。
 
 ### 6.12 任务 T12：板块详情页 `/sectors/:code`
 
@@ -417,7 +417,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 依赖：T11、T12、T14
 - 涉及文件/模块：`frontend/e2e/`（新增 `sectors-*.spec.ts` 等）、[e2e guide](../e2e-automation/guide.md)、`frontend/dist`
 - 目标：R7-R14、R22、R23 的页面级验收与全量回归。
-- 操作：**板块 E2E 数据夹具先行**——测试 DuckDB 默认无板块数据，需按 `e2e_backtest_runs` 同款模式（`backend/devtools/` + `frontend/e2e/helpers/` + `AI_STOCKS_E2E_WRITE=1` 门控 + `/api/health/e2e` PG 指纹校验）提供板块列表/详情/成分的可清理 seed/cleanup 夹具；涉及 DuckDB 写的夹具与被测后端的读写模式拆分遵守 AGENTS.md E2E 门控规则。随后新增 Playwright 用例（稳定 `data-testid`/可访问名称/helper，不用坐标与脆弱 CSS）：列表切换/排序周期联动/搜索/分页/列显隐；详情摘要/走势图周期/成分股统一分页与排序；返回筛选态（面包屑显式跳列表还原 + 浏览器原生后退）；R9 权限两态（有/无 `stocks:view`）；质检页 `board_member_incomplete` 重采动作；空态/错误态。`npm run build`；关键视口 1100×620 / 1366×768 / 1440×900 无文本溢出且详情表体可读；按 e2e guide 判断是否并入回归集。跑全量 E2E 前后按 AGENTS.md 端口/锁/限流门控规则准备后端（5181、`AI_STOCKS_E2E_LOGIN_BYPASS=1` 等）。
+- 操作：**板块 E2E 数据夹具先行**——测试 DuckDB 默认无板块数据，需按 `e2e_backtest_runs` 同款模式（`backend/devtools/` + `frontend/e2e/helpers/` + `AI_STOCKS_E2E_WRITE=1` 门控 + `/api/health/e2e` PG 指纹校验）提供板块列表/详情/成分的可清理 seed/cleanup 夹具；涉及 DuckDB 写的夹具与被测后端的读写模式拆分遵守 AGENTS.md E2E 门控规则。随后新增 Playwright 用例（稳定 `data-testid`/可访问名称/helper，不用坐标与脆弱 CSS）：列表切换/排序/搜索/分页/列显隐；详情摘要/走势图周期/成分股统一分页与排序；返回筛选态（面包屑显式跳列表还原 + 浏览器原生后退）；R9 权限两态（有/无 `stocks:view`）；质检页 `board_member_incomplete` 重采动作；空态/错误态。`npm run build`；关键视口 1100×620 / 1366×768 / 1440×900 无文本溢出且详情表体可读；按 e2e guide 判断是否并入回归集。跑全量 E2E 前后按 AGENTS.md 端口/锁/限流门控规则准备后端（5181、`AI_STOCKS_E2E_LOGIN_BYPASS=1` 等）。
 - 产出：E2E 用例 + 构建产物 + 视口验收记录 + 回归结果。
 - 影响范围：交付质量门禁。
 - 边界与异常：E2E 选择器只用稳定契约；回归结束后重启后端移除限流豁免。
@@ -470,7 +470,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 计划：T8 四接口口径对账（涨幅/净流入/成分数 vs DuckDB，含领涨股来源 `board_fund_flow.leader_stock` 与即时净流入同 snapshot 行，口径以 §10.3 待确认结果为准）；T10a/T10b 权限（有/无 sectors:view、403）。**跨进程锁冲突集成测试（T4 新增断言）**：独立子进程持写锁 → 被测进程写事务归类返回 `duckdb_write_unavailable`、锁释放后重试恢复。
   - 具体完成情况：T8 已落地——`test_sectors_api.py` 8 用例全绿（列表/详情/bars/members 口径、涨幅不读资金流周期表、涨跌家数、排序分页、404/400）；T10a/T10b 已落地——`test_rbac_deps.py` sectors:view 权限用例（有授权过/无授权 403）+ 回填 SQL 幂等（本地库执行 granted=2）。
 - 页面/交互测试：
-  - 计划：T15 Playwright（列表筛选/排序联动/搜索/分页/列显隐、详情走势图周期/成分股统一分页、返回筛选态两路径、R9 权限两态、质检页 `board_member_incomplete` 重采）。
+  - 计划：T15 Playwright（列表筛选/排序/搜索/分页/列显隐、详情走势图周期/成分股统一分页、返回筛选态两路径、R9 权限两态、质检页 `board_member_incomplete` 重采）。
   - 具体完成情况：待验证
 - 组件资产闭环测试：
   - 计划：`sectors`/`sectors-detail` pageRegistry 契约测试（memberTable 嵌套 slot、consumedComponentFields 指向真实 slot）；两页组件字段保存/读取/非法回退/恢复默认参数化矩阵；DESIGN.md page-registry 登记核对。
@@ -484,8 +484,8 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 异常与边界测试：
   - 计划：只进不出落库幂等（ON CONFLICT）、不完整快照不落库、401 cookie 刷新、单板块失败继续与失败清单、历史不足「—」、空值列「—」、`transaction()` 原子性（中途失败整体回滚）、写锁冲突 `duckdb_write_unavailable`（锁释放后重试可恢复）、**member_count/member_snapshot_at 完整快照路径刷新**、**完整快照后旧 incomplete issue 自动 resolved**。
   - 具体完成情况：待验证
-- 图示与原型一致性验证：P1/P2 实现对照 `prototypes/sector-board.html`/`prototypes/sector-detail.html` 的主要区域（action 筛选区/主表/分页/设置抽屉；摘要区/走势图工具条/图表/成分股表/抽屉/tooltip）、操作入口、关键状态（数据/空/错误/加载/无权/个股权限两态）与低高度退化；P3 无原型，按 QualityView 现状扩展核对。
-- 配置闭环验证：`defaultPeriod/defaultType/chartPeriod` 偏好与 `pageSize/defaultSort/hiddenColumns` 组件字段可展示、保存、读取、实际生效、恢复默认、非法值回落并兼容旧值。
+- 图示与原型一致性验证：P1/P2 实现对照 `prototypes/sector-board.html`/`prototypes/sector-detail.html` 的主要区域（action 筛选区/主表/分页/设置抽屉；摘要区/走势图工具条/图表/成分股表/抽屉/tooltip）、操作入口、关键状态（数据/空/错误/加载/无权/个股权限两态）与低高度退化；**P1 的「概念/行业分段」「主排序周期分段」两控件已按 2026-08-11 用户裁定移除，不纳入对照**；P3 无原型，按 QualityView 现状扩展核对。
+- 配置闭环验证：`defaultType/chartPeriod` 偏好与 `pageSize/defaultSort/hiddenColumns` 组件字段可展示、保存、读取、实际生效、恢复默认、非法值回落并兼容旧值。
 - 需求映射验证：§5 映射表逐项核对，R1-R14、R21-R23 均有任务与验证方式；R15-R20/R24/R25 均标跳过且有原因；无未解释的超范围开发内容。
 - 页面功能点验证：§4.1/§4.2/§4.3 功能点表逐项有技术实现、任务编号、交互状态与异常处理验证。
 
