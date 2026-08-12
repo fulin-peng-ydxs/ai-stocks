@@ -27,7 +27,7 @@ from backend.common.exceptions import DataSourceError
 from backend.common.logging import get_logger
 from backend.dataquality.checker import severity_for
 from backend.datasource.akshare_source import to_full_code
-from backend.datasource.ths_board import ThsBoardSource
+from backend.datasource.ths_board import FUND_FLOW_PERIODS, ThsBoardSource
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
@@ -495,7 +495,7 @@ class BoardIngestService:
         ctx：任务上下文，按类型×周期打实时日志。
         """
         sdate = snapshot_date or _asia_date()
-        periods = periods or ("即时", "3日", "5日", "10日", "20日")
+        periods = periods or FUND_FLOW_PERIODS
         requested_types = set(_board_types(board_type))
         if board_codes is not None and not board_codes:
             return {"rows": 0, "unmatched": 0, "failed": []}

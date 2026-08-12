@@ -7,6 +7,8 @@
 - **涨幅 pct_today/pct_5d/pct_10d/pct_20d 从 `board_bar` 实时计算**（最近交易日收盘 vs
   N 个交易日前收盘），不从 `board_fund_flow` 周期表读（资金流周期 net_ratio 是资金面数据，
   不参与价格排序）。
+- **资金流净流入按周期读 `board_fund_flow` 最新 snapshot_date 行**：即时/3日/5日/10日/20日
+  对应 `net_inflow`/`net_inflow_3d`/`net_inflow_5d`/`net_inflow_10d`/`net_inflow_20d`。
 - **领涨股** = 行情截面日有效成分股中 `pct_chg` 最大者；停牌、缺收盘或缺有效前收者排除，
   同涨幅按成交额降序、股票代码升序稳定决胜。资金流源自带的领涨字段仅保留原始数据，
   不参与页面口径。
@@ -23,14 +25,26 @@ from datetime import date
 
 import pandas as pd
 
+from backend.datasource.ths_board import FUND_FLOW_PERIODS
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 # 周期 → 交易日回溯天数（含当日）：今日=当天、5日=5个交易日、10日=10、20日=20。
 # 板块指数为交易日序列，N 日涨幅 = 最近收盘 vs 往前 N 个交易日收盘（如 5 日 = 最近 vs 第 5 个交易日）。
 _PCT_WINDOW = {"pct_today": 1, "pct_5d": 5, "pct_10d": 10, "pct_20d": 20}
 
+# 资金流净流入字段 → board_fund_flow.period（单一事实源对齐 datasource.ths_board.FUND_FLOW_PERIODS）
+_FUND_FIELD_PERIOD = {
+    "net_inflow": "即时",
+    "net_inflow_3d": "3日",
+    "net_inflow_5d": "5日",
+    "net_inflow_10d": "10日",
+    "net_inflow_20d": "20日",
+}
+
 # 列表可排序字段码（需求 §6.2 稳定字段码；前端中文标签仅 UI 映射）
-SORT_FIELDS = ("pct_today", "pct_5d", "pct_10d", "pct_20d", "net_inflow", "up_count")
+SORT_FIELDS = ("pct_today", "pct_5d", "pct_10d", "pct_20d",
+               "net_inflow", "net_inflow_3d", "net_inflow_5d",
+               "net_inflow_10d", "net_inflow_20d", "up_count")
 
 # 成分股表只开放页面真实消费的稳定字段码；SQL 表达式固定映射，禁止透传参数。
 MEMBER_SORT_FIELDS = {
@@ -108,8 +122,8 @@ class BoardQueryService:
             """)
         # 2. board_bar 涨幅（最近 vs N 交易日前收盘，截面 bar_date）
         bar_ts = self._bar_close_series(bar_date)
-        # 3. board_fund_flow 即时净流入（最新 snapshot_date period='即时'）
-        fund_df = self._immediate_fund_flow(fund_date)
+        # 3. board_fund_flow 各周期净流入（最新 snapshot_date，多周期）
+        fund_map = self._latest_fund_flow(fund_date)
         member_market = self._member_market_by_board(bar_date)
 
         rows = []
@@ -135,12 +149,10 @@ class BoardQueryService:
             else:
                 for key in _PCT_WINDOW:
                     row[key] = None
-            # 即时资金流只承载资金面指标；领涨股按行情截面从有效成分股计算。
-            ff = fund_df.get(code)
-            if ff is not None:
-                row["net_inflow"] = ff["net_inflow"]
-            else:
-                row["net_inflow"] = None
+            # 各周期净流入；资金流周期列只承载资金面指标，领涨股按行情截面从有效成分股计算。
+            ff = fund_map.get(code)
+            for field in _FUND_FIELD_PERIOD:
+                row[field] = (ff.get(field) if ff else None)
             market = member_market.get(code)
             row["up_count"] = market["up_count"] if market else 0
             row["down_count"] = market["down_count"] if market else 0
@@ -167,18 +179,21 @@ class BoardQueryService:
             out[str(code)] = g["close"].reset_index(drop=True)
         return out
 
-    def _immediate_fund_flow(self, fund_date: date | None) -> dict[str, dict]:
-        """最新 snapshot_date 的 period='即时' 净流入，key=board_code。"""
+    def _latest_fund_flow(self, fund_date: date | None) -> dict[str, dict]:
+        """最新 snapshot_date 的各周期净流入，key=board_code → {net_inflow, net_inflow_3d, ...}。"""
         if fund_date is None:
             return {}
+        # 周期 → 字段名（与 _FUND_FIELD_PERIOD 同源反向）
+        period_field = {v: k for k, v in _FUND_FIELD_PERIOD.items()}
         df = self.c.query_df(
-            "SELECT board_code, net_inflow "
-            "FROM board_fund_flow WHERE snapshot_date = ? AND period = '即时'", [fund_date])
+            "SELECT board_code, period, net_inflow "
+            "FROM board_fund_flow WHERE snapshot_date = ?", [fund_date])
         out: dict[str, dict] = {}
         for _, r in df.iterrows():
-            out[str(r["board_code"])] = {
-                "net_inflow": r["net_inflow"],
-            }
+            field = period_field.get(str(r["period"]))
+            if field is None:
+                continue
+            out.setdefault(str(r["board_code"]), {})[field] = r["net_inflow"]
         return out
 
     def _member_market_by_board(self, bar_date: date | None) -> dict[str, dict]:
@@ -252,7 +267,7 @@ class BoardQueryService:
         bar_date = trade_date or self._latest_bar_date()
         fund_date = self._latest_fund_date()
         bar = self._bar_close_series(bar_date).get(code)
-        ff = self._immediate_fund_flow(fund_date).get(code)
+        ff = self._latest_fund_flow(fund_date).get(code)
         market = self._member_market_by_board(bar_date).get(code)
         out = {
             "board_code": str(r["board_code"]),
@@ -276,10 +291,8 @@ class BoardQueryService:
         else:
             for key in _PCT_WINDOW:
                 out[key] = None
-        if ff is not None:
-            out["net_inflow"] = ff["net_inflow"]
-        else:
-            out["net_inflow"] = None
+        for field in _FUND_FIELD_PERIOD:
+            out[field] = ff.get(field) if ff else None
         out["leader_stock"] = market["leader_stock"] if market else None
         out["leader_pct"] = market["leader_pct"] if market else None
         return out

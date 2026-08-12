@@ -107,6 +107,15 @@ function customSortableProps(source: string): string[] {
   return props
 }
 
+/** 收集页面真实用于列显隐判断的 key，避免 componentMeta 只生成设置项却没有业务渲染消费。 */
+function configurableColumnVisibilityKeys(source: string): Set<string> {
+  const keys = new Set<string>()
+  for (const match of source.matchAll(/\b[A-Za-z_$][\w$]*Visible\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    keys.add(match[1]!)
+  }
+  return keys
+}
+
 function routeViewEntries(source: string): RouteViewEntry[] {
   const sourceFile = ts.createSourceFile(
     'router.ts',
@@ -465,6 +474,26 @@ describe('组件消费关系与配置一致性（P4）', () => {
             getComponentFieldDef(slot!.component, field),
             `${entry.pageKey}.${slotId}.${field} 未在 componentConfig 登记`,
           ).toBeTruthy()
+        }
+      }
+    }
+  })
+
+  it('可配置列必须由页面真实消费显隐状态，禁止设置候选与表格渲染漂移', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const configurableSlots = Object.entries(entry.componentMeta ?? {}).filter(([slotId, meta]) =>
+        Boolean(meta.columns?.length)
+        && (entry.consumedComponentFields?.[slotId] ?? []).includes('hiddenColumns'))
+      if (!configurableSlots.length) continue
+
+      const source = sourceForPage(entry.pageKey)
+      const visibleKeys = configurableColumnVisibilityKeys(source)
+      for (const [slotId, meta] of configurableSlots) {
+        for (const column of meta.columns ?? []) {
+          expect(
+            visibleKeys.has(column.key),
+            `${entry.pageKey}.${slotId}.${column.key} 已登记为可配置列，但页面没有真实显隐判断`,
+          ).toBe(true)
         }
       }
     }

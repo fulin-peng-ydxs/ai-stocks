@@ -169,7 +169,7 @@
 
 ### R4 板块资金流采集
 
-- **功能描述**：采集同花顺概念 + 行业资金流排行，落 `board_fund_flow`。采集「即时/3日/5日/10日/20日」全部周期（本期页面只展示即时）。
+- **功能描述**：采集同花顺概念 + 行业资金流排行，落 `board_fund_flow`。采集「即时/3日/5日/10日/20日」全部周期；列表默认展示即时净流入，其余周期通过列显隐按需展示。
 - **前置条件**：`board_dict` 已采集。
 - **操作流程**：`get_board_fund_flow(board_type, period)` → 与字典按**同花顺稳定板块代码**关联 → 幂等 upsert。
 - **🔴 并集映射规则**：
@@ -324,7 +324,7 @@ board_bar         板块指数日线（原始连续指数）
 board_fund_flow   板块资金流
   board_code, snapshot_date, period, inflow, outflow, net_inflow,
   net_ratio, leader_stock, leader_pct  -- PK(board_code, snapshot_date, period)
-  -- period ∈ {即时, 3日, 5日, 10日, 20日}（全部采集，页面本期只展示即时）
+  -- period ∈ {即时, 3日, 5日, 10日, 20日}（全部采集，页面默认即时、其余周期按列配置展示）
 ```
 
 `stock_basic.concept` 不硬塞字段，由 `board_member` 反向关联查询。
@@ -368,36 +368,36 @@ board_fund_flow   板块资金流
   - 布局事实源：对齐 `prototypes/sector-board.html`
   - 页面区域：
     - action 区：页面标题、设置入口、全市场/自选分段、板块类型、交易日期和名称搜索。
-    - main 区：左侧板块排行表，右侧当前板块走势/K 线分析；列表与图表同屏联动。
-  - 主次关系：板块排行负责选择观察对象，图表负责走势分析；窄视口降级为单列。
-  - 核心模块与数据区：排行表列 = 板块（名称下方合并类型/成分数）| 今日涨幅 | 5日涨幅 | 即时净流入（表头标数据日）；当前观察摘要补充 20 日涨幅、涨跌家数和领涨股。
-  - **排序口径（2026-08-11 修订）**：排序走通用**列头排序** + `defaultSort` 配置（对齐 StocksView，sortable 列 = 各涨跌幅/净流入/上涨家数，默认今日涨幅降序）。**不单设「主排序周期」控件**——周期属数据窗口、与列头排序重复；详情页范围统一走 `KlineRangeSelect`。资金流固定展示最新交易日即时净流入，列名/提示标注数据日期；资金流周期数据继续采集但不参与价格排序。
+  - main 区：左侧板块排行宽表，右侧当前板块走势/K 线分析；列表与图表同屏联动。用户通过排行标题右上角的固定切换按钮收起右侧分析区，进入全宽“仅看排行”状态；展开按钮仍保持在原位置，避免操作入口跳动。
+  - 主次关系：板块排行负责选择观察对象，图表负责走势分析；收起分析区时排行独占主区，重新展开保留观察对象、对比队列和图表模式。
+  - 核心模块与数据区：默认排行表列 = 板块（名称下方合并类型/成分数）| 今日涨幅 | 5日涨幅 | 10日涨幅 | 即时净流入（标准同行表头标数据日）；20日涨幅与3/5/10/20日净流入可在页面设置中启用。所有列宽由全局 `AppTableColumn` 综合语义、表头长度、排序/筛选控件、可选 `header-meta` 和主内容前置控件推导，标准表头保持单行并与主内容对齐，页面不声明私有宽度。当前观察摘要展示今日/5/10/20日涨幅、即时净流入和涨跌家数。
+  - **排序口径（2026-08-12 修订）**：排序走通用**列头排序** + `defaultSort` 配置（对齐 StocksView，sortable 列 = 各涨跌幅/各周期净流入/上涨家数，默认今日涨幅降序）。**不单设「主排序周期」控件**——周期属列自身口径、与列头排序重复；详情页范围统一走 `KlineRangeSelect`。涨幅和净流入使用完整列名区分，资金列标注独立快照日期。
   - **行交互口径**：点击行或名称切换当前观察板块，勾选框只管理附加对比；「查看详情」按钮进入当前板块详情。
-  - 弹窗/抽屉/设置入口：`PageSettingsDrawer`（布局/组件设置/业务选项；业务选项含默认板块类型偏好）。
-  - 关键状态与退化：empty→引导去采集页；error→`AppStateBlock` 重试；loading→`v-loading`；无权限→permission 无权态；窄视口→主表内部滚动。
+  - 弹窗/抽屉/设置入口：标题旁 `HelpTip` 承载涨幅/资金口径和操作指引；`PageSettingsDrawer` 承载布局、组件设置和业务选项。
+  - 关键状态与退化：empty→引导去采集页；error→`AppStateBlock` 重试；loading→`v-loading`；无权限→permission 无权态；列总宽超过排行区域时由 `wide-table` 提供横向滚动。
 - **数据来源**：`/api/sectors`（join board_dict + board_bar 涨幅 + board_fund_flow 即时净流入 + board_member 成分计数）。
 - **权限与可见性**：`sectors:view`（业务授权集合，非登录基线）。
 - **组件复用与通用能力**：
   - 已有通用能力：`AppDataTable`/`AppTableColumn`/`AppPagination`/`AppStateBlock`/`AppRowActions`/`PageSegmented`/`PageSettingsDrawer`、`usePageSettings`/`useRemoteLayoutConfig`/`getPageLayout`、`pageRegistry`、组件配置字段。
   - 新增通用能力：无；复用并正式纳管既有 `chart.minHeight` 能力，数值字段由 `ComponentAutoSettings` 统一渲染。
-  - 配置化承载：`sectors` pageKey 进 `pageRegistry`；组件字段走 `COMPONENT_FIELD_DEFS`；默认类型、范围、图表模式和对比指数作为页面业务偏好走 `usePageSettings`。
+  - 配置化承载：`sectors` pageKey 进 `pageRegistry`；组件字段走 `COMPONENT_FIELD_DEFS`；默认类型、范围、图表模式、对比指数和分析区展开状态作为页面业务偏好走 `usePageSettings`。
 
 **配置项定义（列表页，谁保存/谁读取/谁消费/如何回退）**：
 
 | 配置项 | 保存位置 | 读取点 | 消费点 | 默认值 | 合法值 | 非法值处理 | 回退 |
 |---|---|---|---|---|---|---|---|
-| 业务偏好对象 `{ defaultType, defaultScope, defaultChartMode, benchmarkCode }` | PG `user_preference`（`usePageSettings('sectors', defaults)` → `scope='page' + page_key='sectors' + pref_key='settings'` 一个对象） | 页面加载 `usePageSettings` 的 `settings` | 列表页默认类型、默认范围、默认图表模式和默认对比指数 | 全部板块 / 全市场 / 走势对比 / 中证 500 | 已登记枚举；自选默认受权限约束 | 非法值回落默认；无自选权限强制全市场 | 设置抽屉「恢复默认」调 `reset()` 置回默认对象 |
-| 每页条数 `pageSize` | PG `layout_user_config`（sectors 页 data-table slot） | `componentValueOf('table','pageSize')` | `AppPagination` | 20 | 20/50/100/200（全局 `PAGE_SIZE_OPTIONS`，2026-08-11 与通用组件一致） | 回落 20 | 设置抽屉恢复默认 |
+| 业务偏好对象 `{ defaultType, defaultScope, defaultChartMode, benchmarkCode, showAnalysisPanel }` | PG `user_preference`（`usePageSettings('sectors', defaults)` → `scope='page' + page_key='sectors' + pref_key='settings'` 一个对象） | 页面加载 `usePageSettings` 的 `settings` | 列表页默认类型、默认范围、默认图表模式、默认对比指数和分析区展开状态 | 全部板块 / 全市场 / 走势对比 / 中证 500 / 展开 | 已登记枚举与布尔值；自选默认受权限约束 | 非法值回落默认；无自选权限强制全市场 | 设置抽屉「恢复默认」调 `reset()` 置回默认对象 |
+| 每页条数 `pageSize` | PG `layout_user_config`（sectors 页 wide-table slot） | `componentValueOf('table','pageSize')` | `AppPagination` | 20 | 20/50/100/200（全局 `PAGE_SIZE_OPTIONS`，2026-08-11 与通用组件一致） | 回落 20 | 设置抽屉恢复默认 |
 | 默认排序 `defaultSort` | PG `layout_user_config`（同上） | `componentValueOf('table','defaultSort')` | 主表列头排序 | `pct_today:desc` | sortFields 字段码 + asc/desc | 回落 `pct_today:desc` | 设置抽屉恢复默认 |
-| 列显隐 `hiddenColumns` | PG `layout_user_config`（同上） | `componentValueOf('table','hiddenColumns')` | 主表列渲染 | 全部显示 | 合法列 key 子集 | 忽略未知列 key | 设置抽屉恢复默认 |
+| 列显隐 `hiddenColumns` | PG `layout_user_config`（同上） | `componentValueOf('table','hiddenColumns')` | 主表列渲染 | 隐藏20日涨幅与3/5/10/20日净流入；展示板块、今日/5/10日涨幅和即时净流入 | 合法列 key 子集 | 忽略未知列 key | 设置抽屉恢复默认 |
 
 **偏好优先级**：**URL query > 已保存偏好 > 默认值**。URL 带筛选参数（含来自详情的来源 query）优先；无 URL query 时用 `usePageSettings` 已保存偏好；均无则默认值。
 
 **pageRegistry/组件契约（列表页，正文登记）**：
-- `sectors` pageKey：`getPageLayout('sectors')`，原型 `master-detail`，`responsiveProfile: 'single-column'`，slot `action(filter-bar) + main(workspace) + workspace/table + workspace/chart`，`supportsPageSettings !== false` → **`overlay:settings-drawer` 自动补登**。
-- `componentMeta['table'].columns`：`name/pct_today/pct_5d/net_inflow`；`sortFields`：`pct_today/pct_5d/net_inflow`（与当前表格和接口排序字段一致）。
-- `consumedComponentFields`：`sectors` 消费 `data-table` 的 `pageSize/defaultSort/hiddenColumns`（`border` 自动补登）。
-- `minWidth=0` 基础断点；主表内滚兜底。
+- `sectors` pageKey：`getPageLayout('sectors')`，原型 `master-detail`，`responsiveProfile: 'mixed-panel'`，slot `action(filter-bar) + main(workspace) + workspace/table + workspace/chart`，`supportsPageSettings !== false` → **`overlay:settings-drawer` 自动补登**。
+- `componentMeta['table'].columns`：`name/pct_today/pct_5d/pct_10d/pct_20d/net_inflow/net_inflow_3d/net_inflow_5d/net_inflow_10d/net_inflow_20d`；各候选必须进入页面真实显隐判断，`pageRegistry.spec.ts` 拦截候选与渲染漂移。`sortFields` 同步覆盖各涨幅、各周期净流入和上涨家数。
+- `consumedComponentFields`：`sectors` 消费 `wide-table` 的 `pageSize/defaultSort/hiddenColumns`（`border` 自动补登）。
+- `minWidth=0` 基础断点；主表横向滚动兜底。
 
 #### 7.1.1 页面功能点：板块列表筛选
 
@@ -418,8 +418,8 @@ board_fund_flow   板块资金流
 #### 7.1.2 页面功能点：板块列表主表
 
 - 对应需求编号：R7
-- 默认展示：列 = 板块（类型/成分数合并展示）/今日/5日/即时净流入；20日涨幅、涨跌家数和领涨股在当前观察摘要展示。
-- 用户操作：今日/5日/净流入列头排序、翻页、点行切换观察对象、勾选附加对比、通过当前观察区「查看详情」进入详情、列显隐（设置抽屉）。
+- 默认展示：列 = 板块（类型/成分数合并展示）/今日涨幅/5日涨幅/10日涨幅/即时净流入；20日涨幅和多周期净流入默认隐藏但可配置。当前观察摘要展示今日/5/10/20日涨幅、即时净流入和涨跌家数。
+- 用户操作：各涨幅/净流入列头排序、翻页、点行切换观察对象、勾选附加对比、收起/展开走势分析、通过当前观察区「查看详情」进入详情、列显隐（设置抽屉）。
 - 状态变化：排序/分页触发查询。
 - 验收标准：R7（主表排序/分页/列显隐；不含详情成分股分页 R13，R13 归详情页）
 
@@ -549,7 +549,7 @@ board_fund_flow   板块资金流
 | R4 | `board_fund_flow` 各周期可查询，净额=流入-流出；并集映射无伪造代码，未匹配项进质检 | 查询 + 单测 + 质检核对 |
 | R5 | 任务中心出现「板块采集」任务，可创建/看进度/取消/续跑；部分失败任务标 failed 且保留 checkpoint，按字典类型/板块代码/资金流周期只续跑未成功工作单元 | 页面验收 + 单测 |
 | R6 | 数据概览出现「板块数据」维度行和统计卡，能看到 4 表行数、概念/行业数、三类覆盖、最新日期、活跃问题分类、最近更新，并可跳转板块采集 | 页面验收 + 单测 |
-| R7 | `/sectors` 列表页板块类型筛选（全部/概念/行业）、列头排序、资金流列含数据日期、分页、列显隐正常 | Playwright + 页面 |
+| R7 | `/sectors` 列表页板块类型筛选（全部/概念/行业）、各涨幅与资金列列头排序、资金流列含数据日期、分页、列显隐正常；10日涨幅可真实显示；列总宽超出排行区域时常显横向滚动条且可真实滚动；右侧分析区可通过排行标题右上角的固定按钮收起为全宽排行并在原位恢复；标题说明可通过鼠标和键盘访问 | Playwright + 页面 + pageRegistry 契约测试 |
 | R8 | `/sectors/:code` 详情页摘要（含涨跌家数/领涨股/净流入）/走势图/成分股表正常；返回列表保留筛选态（面包屑/浏览器返回/刷新还原） | 页面验收 + Playwright |
 | R9 | 有 `stocks:view` 成分股可跳；无权限行禁用 + hover 提示，直接访问路由 fail-closed | Playwright + 权限测试 |
 | R10 | 名称搜索过滤正常，无结果空态 | 页面验收 |
@@ -559,7 +559,7 @@ board_fund_flow   板块资金流
 | R14 | 详情页摘要卡即时净流入数字正确（含数据日期） | 页面验收 |
 | R21 | 每日流程 `daily` 自动采集板块，失败不阻塞行情更新；`board` 任务支持回填/增量分流、断点续跑；单板块失败时继续剩余板块，最终步骤/任务 `failed`、DailyPipeline `ok=false`，返回失败板块清单并可仅续跑失败项；**参数化测试矩阵**：`board=True` 默认执行、`skip_update=True` 仍执行板块、`--skip-board` 确实跳过、板块失败后继续质检、最终状态和失败清单正确、`total_steps` 正确（不出现 `3/2`） | CLI + 集成测试 + 参数化矩阵 |
 | R22 | 菜单/资源 seed 幂等；`sectors:view` 加入业务授权集合并授予 normal/tenant_admin；既有库一次性回填 + bump `perm_ver`；路由守卫与 pageRegistry 登记一致 | 权限测试 + Playwright |
-| R23 | 页面设置偏好可保存/读取/回退（默认类型/范围/图表模式/指数、全局 K 线范围、图表高度比例）；`chart.minHeight` 与两页表格字段保存、读取、非法回退、恢复默认闭环；`npm run build` 通过；关键视口 1100×620 / 1366×768 / 1440×900 无文本溢出且详情表体可读 | 前端测试 + 构建 + E2E + 参数化矩阵 |
+| R23 | 页面设置偏好可保存/读取/回退（默认类型/范围/图表模式/指数、分析区展开状态、全局 K 线范围、图表高度比例）；`chart.minHeight` 与两页表格字段保存、读取、非法回退、恢复默认闭环；`npm run build` 通过；关键视口 1100×620 / 1366×768 / 1440×900 无文本溢出且详情表体可读 | 前端测试 + 构建 + E2E + 参数化矩阵 |
 
 ## 12. 建议开发顺序
 

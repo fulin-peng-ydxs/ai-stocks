@@ -60,6 +60,8 @@ _FUND_FLOW_URLS = {
 _FUND_FLOW_PERIODS = {
     "即时": "", "3日": "board/3/", "5日": "board/5/", "10日": "board/10/", "20日": "board/20/",
 }
+# 资金流周期元组（单一事实源：采集默认全周期、质检多周期检查、查询层字段映射共用）
+FUND_FLOW_PERIODS: tuple[str, ...] = tuple(_FUND_FLOW_PERIODS)
 # 指数日线 JS 模板（{clid}/{yyyy}）
 _BAR_LINE_URL = "https://d.10jqka.com.cn/v4/line/bk_{clid}/01/{year}.js"
 # 分页终止护栏（登录墙截断下的兜底；实测第 6 页起必登录墙，护栏远大于实际可达页数）

@@ -3,6 +3,7 @@ export type AdaptiveColumnRole =
   | 'rank'
   | 'code'
   | 'name'
+  | 'entity'
   | 'status'
   | 'number'
   | 'date'
@@ -18,11 +19,25 @@ interface AdaptiveColumnRule {
   width?: number
 }
 
+interface AdaptiveColumnSizing extends AdaptiveColumnRule {
+  headerCapped?: boolean
+  headerIndent?: number
+}
+
 export interface AdaptiveColumnDescriptor {
   role?: AdaptiveColumnRole
   type?: string
   label?: string
   prop?: string
+  headerMeta?: string
+  sortable?: boolean
+  filterable?: boolean
+  customHeader?: boolean
+  leadingControls?: number
+}
+
+interface AdaptiveColumnPolicy extends AdaptiveColumnRule {
+  maxAutoWidth?: number
 }
 
 /**
@@ -30,21 +45,82 @@ export interface AdaptiveColumnDescriptor {
  * 除结构列外只提供最小宽度，最终宽度由 Element Plus 的 fit 算法按容器余量同比分配；
  * 当最小宽度总和超过容器时，表体自然进入横向滚动。
  */
-export const ADAPTIVE_COLUMN_RULES: Record<AdaptiveColumnRole, AdaptiveColumnRule> = {
+export const ADAPTIVE_COLUMN_RULES: Record<AdaptiveColumnRole, AdaptiveColumnPolicy> = {
   structural: { width: 48 },
   rank: { width: 60 },
-  code: { minWidth: 112 },
-  name: { minWidth: 128 },
-  status: { minWidth: 96 },
-  number: { minWidth: 96 },
-  date: { minWidth: 120 },
-  datetime: { minWidth: 168 },
-  key: { minWidth: 160 },
-  action: { minWidth: 232 },
+  code: { minWidth: 112, maxAutoWidth: 192 },
+  name: { minWidth: 128, maxAutoWidth: 240 },
+  // 主副两行共同识别业务对象；前置控件占位由 leadingControls 统一叠加。
+  entity: { minWidth: 152, maxAutoWidth: 320 },
+  status: { minWidth: 96, maxAutoWidth: 192 },
+  number: { minWidth: 96, maxAutoWidth: 192 },
+  date: { minWidth: 120, maxAutoWidth: 192 },
+  datetime: { minWidth: 168, maxAutoWidth: 224 },
+  key: { minWidth: 160, maxAutoWidth: 240 },
+  action: { minWidth: 232, maxAutoWidth: 280 },
   // 单行少量操作的紧凑操作列：容纳「更多」按钮(~54px)测量层，又不像 action(232) 那样被 fit 算法拉伸挤压内容列
   'action-compact': { width: 96 },
-  text: { minWidth: 140 },
-  description: { minWidth: 200 },
+  text: { minWidth: 140, maxAutoWidth: 240 },
+  description: { minWidth: 200, maxAutoWidth: 320 },
+}
+
+const HEADER_FONT_SIZE = 14
+const HEADER_HORIZONTAL_SPACE = 32
+const HEADER_SORT_CONTROL_WIDTH = 24
+const HEADER_FILTER_CONTROL_WIDTH = 20
+const HEADER_CUSTOM_SLOT_RESERVE = 16
+const HEADER_META_GAP = 4
+const LEADING_CONTROL_SLOT_WIDTH = 28
+const MAX_LEADING_CONTROLS = 4
+const COLUMN_WIDTH_GRID = 8
+
+function glyphWidthInEm(char: string): number {
+  if (/\s/.test(char)) return 0.32
+  if (/[A-Z0-9]/.test(char)) return 0.66
+  if (/[a-z]/.test(char)) return 0.56
+  if (/[.,:;!|'`/\\()\[\]{}\-_+%]/.test(char)) return 0.46
+  // 中文、全角字符和 emoji 按完整字宽估算，避免混排表头被低估。
+  return 1
+}
+
+/**
+ * 使用稳定字符权重估算表头宽度，避免浏览器字体测量和数据变化引发列宽二次跳动。
+ */
+export function estimateHeaderTextWidth(text: string | undefined): number {
+  if (!text) return 0
+  const em = Array.from(text.trim()).reduce((total, char) => total + glyphWidthInEm(char), 0)
+  return Math.ceil(em * HEADER_FONT_SIZE)
+}
+
+function roundUpToGrid(width: number): number {
+  return Math.ceil(width / COLUMN_WIDTH_GRID) * COLUMN_WIDTH_GRID
+}
+
+function resolveLeadingControlsReserve(count: number | undefined): number {
+  const normalizedCount = Math.min(
+    MAX_LEADING_CONTROLS,
+    Math.max(0, Math.floor(Number.isFinite(count) ? count! : 0)),
+  )
+  return normalizedCount * LEADING_CONTROL_SLOT_WIDTH
+}
+
+function resolveHeaderSizing(
+  descriptor: AdaptiveColumnDescriptor,
+  maxAutoWidth: number,
+): { minWidth: number; capped: boolean } {
+  const titleWidth = estimateHeaderTextWidth(descriptor.label)
+  const metaWidth = estimateHeaderTextWidth(descriptor.headerMeta)
+  const contentWidth = titleWidth + metaWidth + (titleWidth && metaWidth ? HEADER_META_GAP : 0)
+  if (!contentWidth) return { minWidth: 0, capped: false }
+
+  const controlsWidth = (descriptor.sortable ? HEADER_SORT_CONTROL_WIDTH : 0)
+    + (descriptor.filterable ? HEADER_FILTER_CONTROL_WIDTH : 0)
+    + (descriptor.customHeader ? HEADER_CUSTOM_SLOT_RESERVE : 0)
+  const estimatedWidth = roundUpToGrid(contentWidth + HEADER_HORIZONTAL_SPACE + controlsWidth)
+  return {
+    minWidth: Math.min(maxAutoWidth, estimatedWidth),
+    capped: estimatedWidth > maxAutoWidth,
+  }
 }
 
 const DATETIME_PATTERN = /(时间|时刻|创建于|更新于|最近触发|下次触发|截止)/
@@ -87,7 +163,21 @@ export function inferAdaptiveColumnRole(
 
 export function resolveAdaptiveColumnWidth(
   descriptor: AdaptiveColumnDescriptor,
-): AdaptiveColumnRule & { role: AdaptiveColumnRole } {
+): AdaptiveColumnSizing & { role: AdaptiveColumnRole } {
   const role = inferAdaptiveColumnRole(descriptor)
-  return { role, ...ADAPTIVE_COLUMN_RULES[role] }
+  const policy = ADAPTIVE_COLUMN_RULES[role]
+  if (policy.width !== undefined) return { role, width: policy.width }
+
+  const headerIndent = resolveLeadingControlsReserve(descriptor.leadingControls)
+  const baseMinWidth = (policy.minWidth ?? 0) + headerIndent
+  const headerSizing = resolveHeaderSizing(
+    descriptor,
+    Math.max(0, (policy.maxAutoWidth ?? Number.POSITIVE_INFINITY) - headerIndent),
+  )
+  return {
+    role,
+    minWidth: Math.max(baseMinWidth, headerSizing.minWidth + headerIndent),
+    headerCapped: headerSizing.capped,
+    headerIndent,
+  }
 }

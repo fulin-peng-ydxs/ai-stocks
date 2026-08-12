@@ -20,6 +20,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.datasource.ths_board import FUND_FLOW_PERIODS
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("services.data_report")
@@ -703,52 +704,73 @@ class DataIntegrityReport:
             if str(r["board_code"]) not in active_member_codes
         ]
 
-        # 资金流缺失按“逐板块最新即时快照 >= 最新交易日”判断，不能使用
+        # 资金流缺失按“逐板块该周期最新快照 >= 基准日”判断，不能使用
         # 历史粘性的 has_fund_flow，也不能要求等于全局最新快照日：定向补采可能只会产生
         # 少量当日记录，若按当日全量覆盖判断会误报其他已追平的板块。
+        # 多周期：每个板块一条 issue、detail 列缺失周期列表（缺全部周期不刷 5 条）。
+        # 数据源不支持按日期回溯，故不检查历史某天缺口，只盯最新快照新鲜度。
         ig_fund = _ignored_codes("board_fund_missing")
         latest_fund = self._scalar(
             "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
         latest_fund = None if latest_fund is None or pd.isna(latest_fund) \
             else pd.Timestamp(latest_fund).date()
         fund_date = latest or latest_fund or fund_date or _shanghai_today()
-        fund_df = self.c.query_df(
-            """
-            SELECT b.board_code, b.name
-            FROM board_dict b
-            WHERE (b.has_members OR b.has_bar)
-              AND NOT EXISTS (
-                SELECT 1 FROM board_fund_flow f
-                WHERE f.board_code=b.board_code AND f.snapshot_date>=? AND f.period='即时'
-              )
-            """, [fund_date])
-        fund_issues = [
-            {
-                "code": str(r["board_code"]),
-                "trade_date": fund_date,
-                "issue_type": "board_fund_missing",
-                "detail": f"板块 {r['name']}（{r['board_code']}）无不早于 "
-                          f"{fund_date} 的即时资金流快照",
-            }
-            for _, r in fund_df.iterrows()
-            if str(r["board_code"]) not in ig_fund
-        ]
-        # 资金流滞后：全源快照整体停留早于全局最新交易日（资金流整体停采/漏采）。
-        # 与逐板块指数缺口不同，资金流是整体批量采集，停摆时所有板块一起滞后，
-        # 故记单条源级 issue（code=NULL），修复动作重采全源资金流。
+        fund_issues: list[dict] = []
+        if fund_date is not None:
+            boards = self.c.query_df(
+                "SELECT board_code, name FROM board_dict WHERE (has_members OR has_bar)")
+            # 一次聚合该板块 >= 基准日的全部周期覆盖，避免逐板块 N+1 查询
+            have_all = self.c.query_df(
+                "SELECT board_code, period FROM board_fund_flow WHERE snapshot_date>=?",
+                [fund_date])
+            have_map: dict[str, set[str]] = {}
+            for _, r in have_all.iterrows():
+                have_map.setdefault(str(r["board_code"]), set()).add(str(r["period"]))
+            for _, b in boards.iterrows():
+                bcode = str(b["board_code"])
+                if bcode in ig_fund:
+                    continue
+                missing = [p for p in FUND_FLOW_PERIODS
+                           if p not in have_map.get(bcode, set())]
+                if missing:
+                    fund_issues.append({
+                        "code": bcode, "trade_date": fund_date,
+                        "issue_type": "board_fund_missing",
+                        "detail": json.dumps({
+                            "periods": missing,
+                            "message": f"板块 {b['name']}（{bcode}）资金流缺周期"
+                                       f"{'、'.join(missing)}：无不早于 {fund_date} 的快照",
+                        }, ensure_ascii=False),
+                    })
+        # 资金流滞后：源级单条（code=NULL），判断任一周期是否整体落后于最新快照日。
+        # 资金流是整体批量采集，停摆/某周期连续失败时全源或该周期一起滞后，
+        # 记一条源级 issue 而非逐板块逐周期刷屏，修复动作重采对应滞后周期。
+        # 只把「有快照但滞后」的周期计入：从未有快照的周期（新板块/老数据模式）由
+        # board_fund_missing 按板块覆盖，这里不重复报源级滞后。
         stale_issues: list[dict] = []
         if latest is not None and not _ignored_codes("board_fund_stale"):
-            last_fund = self._scalar(
-                "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
-            if last_fund is not None and not pd.isna(last_fund):
-                last_fund = pd.Timestamp(last_fund).date()
-                if last_fund < latest:
-                    stale_issues.append({
-                        "code": None, "trade_date": latest,
-                        "issue_type": "board_fund_stale",
-                        "detail": f"资金流快照停留在 {last_fund}，全局最新交易日 {latest}，"
-                                  f"滞后 {(latest - last_fund).days} 天，待重采资金流",
-                    })
+            lag_parts: list[str] = []
+            lag_periods: list[str] = []
+            for period in FUND_FLOW_PERIODS:
+                pv = self._scalar(
+                    "SELECT max(snapshot_date) FROM board_fund_flow WHERE period=?", [period])
+                if pv is None or pd.isna(pv):
+                    continue
+                pd_date = pd.Timestamp(pv).date()
+                if pd_date < latest:
+                    lag_parts.append(f"{period}最新 {pd_date}（滞后 {(latest - pd_date).days} 天）")
+                    lag_periods.append(period)
+            if lag_parts:
+                stale_issues.append({
+                    "code": None, "trade_date": latest,
+                    "issue_type": "board_fund_stale",
+                    # 结构化 periods 供 fix 定向重采与复检口径复用（旧纯文本 detail 由兼容逻辑兜底）
+                    "detail": json.dumps({
+                        "periods": lag_periods,
+                        "message": f"资金流滞后：{'；'.join(lag_parts)}；"
+                                   f"全局最新交易日 {latest}，待重采资金流",
+                    }, ensure_ascii=False),
+                })
         with self.c.transaction():
             for issue_type in ("board_index_gap", "board_index_gap_daily", "board_index_invalid",
                                "board_fund_missing", "board_fund_stale"):
@@ -937,33 +959,78 @@ class DataIntegrityReport:
                 params.append(board_type)
             return int(self._scalar(sql, params)) > 0
         if issue_type == "board_fund_missing":
-            # 与扫描同口径：板块的最新即时快照追平市场最新交易日才算恢复。
+            # 与扫描同口径：该板块 issue 中列出的各周期，其最新快照均追平基准日才算恢复。
+            # 周期从 detail.periods 数组读取（多周期口径）；无 periods 字段回退即时（旧 issue 兼容）。
             row = self.c.query_df(
                 "SELECT 1 FROM board_dict WHERE board_code=?", [code])
             if row.empty:
                 return True
+            periods: list[str] = []
+            if isinstance(detail, dict):
+                periods = [str(p) for p in (detail.get("periods") or [])]
+            elif isinstance(detail, str):
+                try:
+                    payload = json.loads(detail)
+                    periods = [str(p) for p in (payload.get("periods") or [])]
+                except (TypeError, ValueError):
+                    periods = []
+            if not periods:
+                periods = ["即时"]
             expected = self._scalar("SELECT max(trade_date) FROM daily_bar")
             if expected is None or pd.isna(expected):
                 expected = self._scalar(
                     "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
             if expected is None or pd.isna(expected):
                 return False
-            present = self._scalar(
-                "SELECT count(*) FROM board_fund_flow "
-                "WHERE board_code=? AND snapshot_date>=? AND period='即时'",
-                [code, pd.Timestamp(expected).date()])
-            return int(present) > 0
+            expected_date = pd.Timestamp(expected).date()
+            for period in periods:
+                if period not in FUND_FLOW_PERIODS:
+                    continue
+                present = self._scalar(
+                    "SELECT count(*) FROM board_fund_flow "
+                    "WHERE board_code=? AND snapshot_date>=? AND period=?",
+                    [code, expected_date, period])
+                if int(present) <= 0:
+                    return False
+            return True
         if issue_type == "board_fund_stale":
-            # 资金流滞后：全局资金流快照已追平全局最新交易日即收敛（源级单条 issue，无 code）。
+            # 资金流滞后：当初报出的滞后周期现已追平全局最新交易日即收敛（源级单条 issue，无 code）。
+            # 只复检 detail.periods 列出的滞后周期（与扫描口径一致：从未有快照的周期由
+            # board_fund_missing 覆盖，不在 stale 判定内）；旧纯文本 detail 无 periods 时，
+            # 回退检查全部有快照的周期是否追平。
             latest = self._scalar("SELECT max(trade_date) FROM daily_bar")
             if latest is None:
                 return False
             latest = pd.Timestamp(latest).date()
-            last_fund = self._scalar(
-                "SELECT max(snapshot_date) FROM board_fund_flow WHERE period='即时'")
-            if last_fund is None or pd.isna(last_fund):
-                return False
-            return pd.Timestamp(last_fund).date() >= latest
+            periods: list[str] = []
+            if isinstance(detail, dict):
+                periods = [str(p) for p in (detail.get("periods") or [])]
+            elif isinstance(detail, str):
+                try:
+                    periods = [str(p) for p in (json.loads(detail).get("periods") or [])]
+                except (TypeError, ValueError):
+                    periods = []
+            if periods:
+                check_periods = [p for p in periods if p in FUND_FLOW_PERIODS]
+            else:
+                # 旧格式：检查每个「有快照」的周期是否追平（跳过从未有快照的周期）
+                check_periods = []
+                for period in FUND_FLOW_PERIODS:
+                    pv = self._scalar(
+                        "SELECT max(snapshot_date) FROM board_fund_flow WHERE period=?", [period])
+                    if pv is None or pd.isna(pv):
+                        continue
+                    check_periods.append(period)
+            if not check_periods:
+                return True  # 无任何已报滞后周期（全从未有快照）→ 无 stale 残留
+            for period in check_periods:
+                pv = self._scalar(
+                    "SELECT max(snapshot_date) FROM board_fund_flow WHERE period=?", [period])
+                if pv is None or pd.isna(pv):
+                    return False
+                if pd.Timestamp(pv).date() < latest:
+                    return False
+            return True
         return True
 
     def _scan_adj_jump(self, threshold: float = 0.5, ignored_exact: set | None = None) -> int:

@@ -777,6 +777,47 @@ def test_scan_board_quality_fund_missing(client, monkeypatch):
     assert set(missing["trade_date"].astype(str)) == {"2026-08-07"}
 
 
+def test_fix_board_fund_missing_targets_periods(client, monkeypatch):
+    """资金流缺失 fix：按 issue detail 里的周期列表定向重采，不拉全周期。"""
+    import json
+    from backend.services.async_task import TaskContext
+    from backend.services.board_ingest import BoardIngestService
+    from backend.services.data_report import DataIntegrityReport
+
+    _seed_board_scan(client)
+    captured: dict = {}
+
+    def fake_ingest_fund(self, snapshot_date=None, periods=None, board_codes=None,
+                         board_type=None, ctx=None):
+        captured["periods"] = periods
+        captured["board_codes"] = board_codes
+        # 模拟重采写入缺失周期（即时已存在，补 3日）
+        for period in periods or ():
+            self.c.execute(
+                "INSERT INTO board_fund_flow "
+                "(board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+                "VALUES ('309121', DATE '2026-08-07', ?, 1.0, 0.5, 0.5)", [period])
+        return {"rows": 3, "unmatched": 0}
+
+    monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow", fake_ingest_fund, raising=True)
+    rep = DataIntegrityReport(client)
+    # 插入一条缺 3日 周期的 issue（detail 带 periods）
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detail, detected_at) "
+        "VALUES (500, '309121', DATE '2026-08-07', 'board_fund_missing', 'mid', 'open', ?, now())",
+        [json.dumps({"periods": ["3日"], "message": "板块 AI PC（309121）资金流缺周期3日"})])
+    from backend.services.async_task import _recover_one
+    clean, affected, note = _recover_one(client, rep, None, TaskContext(
+        AsyncTaskService(client), "t_fix", {}), 500)
+    # 定向重采只传缺失周期与指定板块
+    assert captured["periods"] == ("3日",)
+    assert captured["board_codes"] == ["309121"]
+    # 重采后复检通过（3日 已追平）→ 可收敛
+    assert clean is True
+    assert "重采资金流" in note
+
+
 def test_scan_board_quality_fund_missing_ignored_and_converge(client, monkeypatch):
     """资金流缺失：ignored 豁免 + 资金流采到后重扫收敛。"""
     from backend.services.data_report import DataIntegrityReport
@@ -793,10 +834,12 @@ def test_scan_board_quality_fund_missing_ignored_and_converge(client, monkeypatc
         "WHERE issue_type='board_fund_missing' AND status='open'")
     assert missing["code"].tolist() == ["881121"]
     # 资金流追平最新交易日 → 重扫不再上报；不依赖粘性能力标记。
-    client.execute(
-        "INSERT INTO board_fund_flow "
-        "(board_code, snapshot_date, period, inflow, outflow, net_inflow) "
-        "VALUES ('881121', DATE '2026-08-07', '即时', 1.0, 0.5, 0.5)")
+    # 多周期口径：该板块 5 个周期都须追平才算不缺（任一周期缺仍报 missing）。
+    for period in ("即时", "3日", "5日", "10日", "20日"):
+        client.execute(
+            "INSERT INTO board_fund_flow "
+            "(board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+            "VALUES ('881121', DATE '2026-08-07', ?, 1.0, 0.5, 0.5)", [period])
     r2 = rep.scan_board_quality()
     assert r2["fund_missing"] == 0
     left = client.query_df(
@@ -806,7 +849,8 @@ def test_scan_board_quality_fund_missing_ignored_and_converge(client, monkeypatc
 
 
 def test_board_recheck_fund_missing(client, monkeypatch):
-    """资金流缺失复检：只有该板块的即时快照追平最新交易日才收敛。"""
+    """资金流缺失复检：issue 列出的各周期快照都追平最新交易日才收敛。"""
+    import json
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
     rep = DataIntegrityReport(client)
@@ -815,17 +859,29 @@ def test_board_recheck_fund_missing(client, monkeypatch):
     # 能力标记不能让历史快照假解决
     client.execute("UPDATE board_dict SET has_fund_flow=TRUE WHERE board_code='309121'")
     assert rep.recheck_clean("board_fund_missing", "309121", None) is False
+    # 无 detail 的旧 issue 默认按即时复检：补即时即收敛（旧格式兼容）
     client.execute(
         "INSERT INTO board_fund_flow "
         "(board_code, snapshot_date, period, inflow, outflow, net_inflow) "
         "VALUES ('309121', DATE '2026-08-07', '即时', 2.0, 1.0, 1.0)")
     assert rep.recheck_clean("board_fund_missing", "309121", None) is True
+    # 新格式 detail 带 periods：只补即时不够，须各周期都追平才收敛
+    client.execute("DELETE FROM board_fund_flow WHERE board_code='309121'")
+    detail = {"periods": ["即时", "3日", "5日", "10日", "20日"]}
+    assert rep.recheck_clean("board_fund_missing", "309121", None, detail=detail) is False
+    for period in ("即时", "3日", "5日", "10日", "20日"):
+        client.execute(
+            "INSERT INTO board_fund_flow "
+            "(board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+            "VALUES ('309121', DATE '2026-08-07', ?, 2.0, 1.0, 1.0)", [period])
+    assert rep.recheck_clean("board_fund_missing", "309121", None, detail=detail) is True
     # 板块不在字典 → True（已被移除，无可修复对象）
     assert rep.recheck_clean("board_fund_missing", "no-such-board", None) is True
 
 
 def test_scan_board_quality_fund_stale(client, monkeypatch):
-    """资金流滞后扫描：全源快照停留早于全局最新交易日记单条源级 issue。"""
+    """资金流滞后扫描：有快照但滞后的周期记单条源级 issue（detail 结构化列滞后周期）。"""
+    import json
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
     r = DataIntegrityReport(client).scan_board_quality()
@@ -835,7 +891,9 @@ def test_scan_board_quality_fund_stale(client, monkeypatch):
     assert len(stale) == 1
     assert stale.iloc[0]["code"] is None   # 源级单条，无 code
     assert str(stale.iloc[0]["trade_date"])[:10] == "2026-08-07"  # 日期 = 全局最新交易日
-    assert "滞后 1 天" in str(stale.iloc[0]["detail"])
+    payload = json.loads(stale.iloc[0]["detail"])
+    assert "滞后 1 天" in payload["message"]
+    assert payload["periods"] == ["即时"]  # seed 只有即时有快照且滞后
 
 
 def test_scan_board_quality_fund_stale_converge(client, monkeypatch):
@@ -854,14 +912,24 @@ def test_scan_board_quality_fund_stale_converge(client, monkeypatch):
 
 
 def test_board_recheck_fund_stale(client, monkeypatch):
-    """资金流滞后复检：快照未追平保持未解决，追平后收敛。"""
+    """资金流滞后复检：无 detail 旧格式检查所有有快照的周期；带 periods 只查报出的滞后周期。"""
+    import json
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
     rep = DataIntegrityReport(client)
+    # 无 detail（旧纯文本 issue 兼容）：seed 只有即时有快照（08-06 滞后）→ 未收敛
     assert rep.recheck_clean("board_fund_stale", None, None) is False
+    # 补即时到 08-07：唯一有快照的周期已追平 → 收敛（从未有快照的周期由 missing 覆盖，不算 stale）
     client.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, inflow, outflow, net_inflow) "
                    "VALUES ('309121', DATE '2026-08-07', '即时', 2.0, 1.0, 1.0)")
     assert rep.recheck_clean("board_fund_stale", None, None) is True
+    # 新格式 detail 带 periods：只复检报出的滞后周期。报 3日 滞后，即使即时已追平仍 False
+    stale_detail = json.dumps({"periods": ["3日"], "message": "资金流滞后"})
+    assert rep.recheck_clean("board_fund_stale", None, None, detail=stale_detail) is False
+    # 3日 追平 → 收敛
+    client.execute("INSERT INTO board_fund_flow (board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+                   "VALUES ('309121', DATE '2026-08-07', '3日', 2.0, 1.0, 1.0)")
+    assert rep.recheck_clean("board_fund_stale", None, None, detail=stale_detail) is True
 
 
 
@@ -978,8 +1046,8 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
     # 指数区间：start = 最近交易日 - 7 天 = 07-31；end = 最近交易日
     assert captured["start"] == date(2026, 8, 7) - timedelta(days=7)
     assert captured["end"] == date(2026, 8, 7)
-    # 资金流：update 只采即时
-    assert captured["periods"] == ("即时",)
+    # 资金流：update 每日刷新全周期（periods=None → 默认全周期）
+    assert captured["periods"] is None
     assert {captured[x] for x in ("dict_type", "member_type", "bar_type", "fund_type")} == {
         "concept",
     }

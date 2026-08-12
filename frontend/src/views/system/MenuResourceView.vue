@@ -43,6 +43,10 @@ const {
 } = useRemoteLayoutConfig(menuLayout)
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 function tableBorder(slotId: string): boolean { return componentValueOf(slotId, 'border') === true }
+const resourceHiddenColumns = computed<string[]>(() =>
+  (componentValueOf('resourceTable', 'hiddenColumns') as string[]) ?? [],
+)
+function resourceColVisible(key: string): boolean { return !resourceHiddenColumns.value.includes(key) }
 const { reset: resetBiz } = usePageSettings('menu-manage', {})
 const settingsOpen = ref(false)
 
@@ -611,7 +615,7 @@ onMounted(() => { loadTree() })
                   aria-label="功能点"
                   :border="tableBorder('resourceTable')"
                 >
-                  <AppTableColumn label="功能码" prop="code" role="key">
+                  <AppTableColumn v-if="resourceColVisible('code')" label="功能码" prop="code" role="key">
                     <template #default="{ row: r }">
                       <el-input
                         v-if="editingId === r.id"
@@ -625,13 +629,13 @@ onMounted(() => { loadTree() })
                       </div>
                     </template>
                   </AppTableColumn>
-                  <AppTableColumn label="名称" prop="name">
+                  <AppTableColumn v-if="resourceColVisible('name')" label="名称" prop="name">
                     <template #default="{ row: r }">
                       <el-input v-if="editingId === r.id" v-model="resDraft.name" size="small" placeholder="名称" />
                       <span v-else>{{ r.name }}</span>
                     </template>
                   </AppTableColumn>
-                  <AppTableColumn label="类型" prop="type" role="status">
+                  <AppTableColumn v-if="resourceColVisible('type')" label="类型" prop="type" role="status">
                     <template #default="{ row: r }">
                       <el-select v-if="editingId === r.id" v-model="resDraft.type" size="small">
                         <el-option label="接口" value="api" />
@@ -642,7 +646,7 @@ onMounted(() => { loadTree() })
                       </el-tag>
                     </template>
                   </AppTableColumn>
-                  <AppTableColumn label="绑定接口" prop="api_path" role="description">
+                  <AppTableColumn v-if="resourceColVisible('apiPath')" label="绑定接口" prop="api_path" role="description">
                     <template #default="{ row: r }">
                       <div v-if="editingId === r.id" class="mr-bind">
                         <el-select v-if="resDraft.type === 'api'" v-model="resDraft.apiMethod" size="small" class="mr-method-select">

@@ -359,7 +359,8 @@ class IngestionService:
         n = len(pending)
         if ctx:
             ctx.set_phase("valuation_history", phase_total=n, phase_done=0, current_item=None)
-            ctx.log(f"子任务：历史市值字段补采开始，目标 {len(live)} 只，跳过 {skip} 只，待补 {n} 只，区间 {start}~{end}")
+            ctx.log(f"子任务：历史市值字段补采开始，目标 {len(live)} 只，跳过 {skip} 只，待补 {n} 只，"
+                    f"区间 {start}~{end}（仅补整股从未有过 total_mv 的新票，历史缺口请走 `valuation --fill-gaps`）")
             ctx.flush()
 
         def _one(code: str, source) -> int:
@@ -855,7 +856,8 @@ class IngestionService:
             self._refresh_clean_factors(sorted(updated), ctx=ctx)
         result = {"target": len(target_codes), "ok": ok, "skip": skip, "fail": fail, "rows": total_rows}
         # 市值透明化：历史补数只采行情，total_mv 历史市值不在本任务内采（市值源是慢接口，单列）。
-        # 明确告知缺口去向，避免“市值盲区”不透明——新票历史市值由下次『增量更新』自动补全。
+        # 明确告知缺口去向，避免“市值盲区”不透明——增量更新只保最新交易日，历史全段缺口须靠
+        # ingest_valuation_gaps/`valuation --fill-gaps`（或质量页补修）一次性回补，增量不自动补历史。
         try:
             valued = set(self.repo.c.query_df(
                 "SELECT DISTINCT code FROM daily_metrics WHERE total_mv IS NOT NULL")["code"].tolist())
@@ -864,9 +866,10 @@ class IngestionService:
             if ctx:
                 if mv_missing:
                     ctx.log(f"说明：历史补数只采行情；其中 {len(mv_missing)} 只尚无任何 total_mv，"
-                            "历史市值将由下次『增量更新』自动补全，或运行 `cli valuation --fill-gaps` 一次性回补")
+                            "历史市值请运行 `valuation --fill-gaps` 一次性回补（增量更新只保最新交易日，不补历史缺口）")
                 else:
-                    ctx.log("说明：历史补数只采行情；目标股票均已具备 total_mv（历史市值由增量更新维护）")
+                    ctx.log("说明：历史补数只采行情；目标股票均已具备 total_mv（历史缺口如需回补请运行 "
+                            "`valuation --fill-gaps`）")
         except Exception as e:  # noqa: BLE001  统计失败不影响回填结果
             log.warning("回填后市值缺口统计失败（不影响结果）: %s", e)
         if ctx:
@@ -1224,9 +1227,11 @@ class IngestionService:
                   "reconcile": recon}
         # 补市值并入更新行情（容错子阶段）：更新即产出 L2 完整数据（float_mv 由日线自带 + total_mv）。
         # 幂等只补缺失股；失败仅记日志、不让整次更新失败（市值源是慢接口，单独容错隔离）。
+        # 注意 total_mv 的增量语义：这里只保「最新交易日」新鲜，历史中间缺口不归 update 管
+        # （日线每行写 float_mv、total_mv=None；历史 total_mv 由 ingest_valuation_gaps/--fill-gaps 清）。
         try:
             if ctx:
-                ctx.log("↻ 补市值估值（total_mv）…")
+                ctx.log("↻ 补市值估值（total_mv）：只补最新交易日，历史缺口走 `valuation --fill-gaps`…")
             # 治 P1（已采票新天补不到）：逐只取最新交易日的 total_mv（单只 stock_value_em）。
             # 失败独立隔离，不连累后面的历史补采。
             latest_val: dict = {}
@@ -1244,8 +1249,9 @@ class IngestionService:
                         if ctx else self.ingest_valuation(codes=codes, concurrency=concurrency))
             result["valuation"] = {**full_val, "latest": latest_val}
             if ctx:
-                ctx.log(f"■ 补市值完成：最新日 {latest_val.get('total_mv_rows', 0)} 行"
-                        f" + 历史补采 {full_val.get('total_mv_rows', 0)} 行")
+                ctx.log(f"■ 补市值完成：最新交易日 {latest_val.get('total_mv_rows', 0)} 行"
+                        f" + 新票历史补采 {full_val.get('total_mv_rows', 0)} 行"
+                        f"（历史中间缺口请跑 `valuation --fill-gaps` 一次性回补）")
         except TaskCancelled:  # 终止穿透：补市值阶段被终止应转可续跑中断，而非记为失败后跑完
             raise
         except Exception as e:  # noqa: BLE001  市值源异常不影响行情更新结果
@@ -1255,6 +1261,8 @@ class IngestionService:
                 ctx.log(f"补市值估值失败（不影响行情更新）：{e}", "warn")
         if ctx:
             ctx.log(f"■ 增量更新完成：成功 {ok}、失败 {fail}，共写入 {total_rows} 行（{n} 只）")
+            ctx.log("说明：本次已补最新交易日 total_mv；历史中间缺口未在本次覆盖，质检 `mv_gap` 仍显示属正常，"
+                    "需跑 `valuation --fill-gaps`（或质量页补修）一次性回补历史市值。")
         # 行情/市值/复权因子已变 → 标评分快照失效（惰性，下次读取重算）。skipped 早退分支已在上方直接返回，不走到这里。
         try:
             result["snapshots_marked_stale"] = self._mark_snapshots_stale()
@@ -1806,7 +1814,7 @@ class IngestionService:
         承接 plan §6.4 T4：单步骤失败记日志不中断（返回失败清单），供 T5/T6 失败隔离与续跑。
         - mode="backfill"（初始化）：指数全量回填（源端可用起始年 2024 起）+ 资金流全周期；
           成分快照默认绕过周频全量拉（force_members 默认 True）。
-        - mode="update"（每日增量）：指数只补最近交易日 + 资金流只采「即时」；
+        - mode="update"（每日增量）：指数只补最近交易日 + 资金流每日刷新全周期（即时/3日/5日/10日/20日）；
           成分股按周频跳过逻辑拉完整快照（只进不出关系幂等合并），force_members=True 时绕过间隔。
         - only：可选子集（"dict"/"members"/"bar"/"fund"），CLI --dict 等分表运行用。
         board_type 可限制 concept/industry；ctx 提供任务中心进度日志。
@@ -1925,9 +1933,10 @@ class IngestionService:
                     result["fund_flow"] = svc.ingest_board_fund_flow(
                         board_codes=board_codes, board_type=board_type, ctx=ctx)
                 else:
+                    # 增量资金流每日刷新全周期（即时/3日/5日/10日/20日）：
+                    # 滚动周期值每个交易日都会更新，只采即时会让多周期数据停在 backfill 当天。
                     result["fund_flow"] = svc.ingest_board_fund_flow(
-                        periods=("即时",), board_codes=board_codes,
-                        board_type=board_type, ctx=ctx)
+                        board_codes=board_codes, board_type=board_type, ctx=ctx)
                 if ctx:
                     ctx.log(f"步骤 {idx['n']}/{total} 板块资金流：{result['fund_flow'].get('rows', 0)} 行"
                             f"（未匹配 {result['fund_flow'].get('unmatched', 0)}）")

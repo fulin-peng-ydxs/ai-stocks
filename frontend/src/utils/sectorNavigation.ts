@@ -28,7 +28,11 @@ export interface ResolvedSectorListState {
   page: number
 }
 
-const SORT_FIELDS: readonly SectorSortField[] = ['pct_today', 'pct_5d', 'net_inflow']
+const SORT_FIELDS: readonly SectorSortField[] = [
+  'pct_today', 'pct_5d', 'pct_10d', 'pct_20d',
+  'net_inflow', 'net_inflow_3d', 'net_inflow_5d', 'net_inflow_10d', 'net_inflow_20d',
+  'up_count',
+]
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 /** 详情页与列表页共用来源参数白名单，非法字段逐项丢弃。 */

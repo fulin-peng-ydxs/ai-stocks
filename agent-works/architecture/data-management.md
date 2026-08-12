@@ -23,10 +23,12 @@
 ### total_mv 的四个采集入口（统一走单只 `_valuation_one`，口径一致，[ingest.py](../../backend/services/ingest.py)）
 | 入口 | 方法 | 场景 | 范围 |
 |------|------|------|------|
-| 日常补最新日 | `ingest_valuation_latest()` | 增量更新收尾 | 对"当日有日线但 total_mv 仍空"的在市股逐只取最新一天 |
-| 历史补采 | `ingest_valuation()` | 新上市/新入库 | 整股断点续跑（跳过已有 total_mv 的票），补全历史 |
+| 日常补最新日 | `ingest_valuation_latest()` | 增量更新收尾 | 对"当日有日线但 total_mv 仍空"的在市股逐只取**最新一天** |
+| 历史补采（新票） | `ingest_valuation()` | 新上市/新入库 | **整股从没采过 total_mv** 的票补全历史（跳过已有 total_mv 的票） |
 | 一次性回补 | `ingest_valuation_gaps()` (`cli valuation --fill-gaps`) | 清存量缺口 | 逐(code,缺失区间)驱动，不受整股跳过限制 |
 | 缺口收口 | `reconcile_gaps()` 内顺带 | 补回行情天 | 补回的天顺带补市值 |
+
+> **total_mv 增量语义（重要）**：`update` 收尾只保证**最新交易日**的 total_mv 新鲜；**历史中间缺口不归 update 管**——日线入库每行写 `float_mv`、`total_mv=None`（[ingest.py](../../backend/services/ingest.py)），历史 total_mv 缺口由 `ingest_valuation_gaps`/`valuation --fill-gaps`（或质量页补修）一次性清。所以"跑完增量更新，质检 `mv_gap` 仍显示历史缺口"属**正常**，需补修/`--fill-gaps` 收敛。
 
 `_valuation_one` 只写 `daily_bar` 已有交易日（杜绝游离行）；`total_mv` 覆盖写、`float_mv` 仅空缺回填（日线已写的更准值不覆盖）；最新总/流通股本写回 `stock_basic`。
 
@@ -62,7 +64,7 @@
 |------|--------------|--------------------|----------------------|
 | 目标日 | 自动取"今天"，过**就绪门**`_resolve_update_end`（今日主源未发布则整次跳过）；续跑用 `target_end` 锁定首跑目标日，不漂到今天 | `date.today()` 重算（历史区间，无就绪门，重算无害） | 用户显式 `start/end`（存 `params`，续跑天然不漂） |
 | 基础信息 | 读库不刷 | `ingest_stock_basic` 刷名册（建底路径） | 读库不刷 |
-| 补市值 | 收尾补最新日+历史 | 不补（只采行情）；结束报告缺 `total_mv` 数，由下次增量自动补全或 `valuation --fill-gaps` | 不补 |
+| 补市值 | 收尾补最新交易日 + 整股从没市值的票补历史；**历史中间缺口不归 update 管**（见上 `total_mv` 增量语义），需 `valuation --fill-gaps` | 不补（只采行情）；结束报告缺 `total_mv` 数，历史市值请 `valuation --fill-gaps` 一次性回补 | 不补 |
 | 收尾 | 缺口收口 + 刷因子 | 刷因子 + 全市场契约校验 | 刷因子 |
 
 > 就绪门/`target_end` 只 `update` 需要：它是唯一自动以"今天"为目标、可能在数据未发布时被定时触发的任务；历史/显式日期任务套就绪门反而会误跳过，故保持差异。
@@ -252,7 +254,8 @@ flowchart LR
 ### 2. 日常运维（`DailyPipeline.run()`，[pipeline.py](../../backend/services/pipeline.py)）
 ```
 增量更新 update(): 日历自愈 → 指数 → 全市场日线增量 → 缺口收口 reconcile_gaps
-                 → 刷干净复权因子 → 补最新日 total_mv(逐只) → 历史补采(新票)
+                 → 刷干净复权因子 → 补最新交易日 total_mv(逐只) → 历史补采(仅整股从没市值的
+                   新票)；历史中间缺口不自动补，跑 `valuation --fill-gaps` 一次性清
 → 数据质检 scan_quality_issues(四层写台账)
 → (可选) 数据体检 DataVerifier
 ```

@@ -112,6 +112,48 @@ def test_list_sectors_filter_sort_paginate(c):
     assert r["total"] == 2 and len(r["list"]) == 1
 
 
+def test_list_sectors_multi_period_inflow(c):
+    """列表返回各周期净流入字段（即时/3日/5日/10日/20日），并按 5 日净流入排序。"""
+    # 为 AI PC 补多周期资金流（最新 snapshot_date 同一天）
+    for period, net in (("3日", 12.3), ("5日", -5.6), ("10日", 30.0), ("20日", -2.1)):
+        c.execute(
+            "INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
+            "VALUES ('309121', DATE '2026-08-09', ?, ?)", [period, net])
+    svc = _svc(c)
+    r = svc.list_sectors()
+    ai = {x["board_code"]: x for x in r["list"]}["309121"]
+    # 各周期净流入字段映射正确
+    assert ai["net_inflow"] == pytest.approx(45.6)
+    assert ai["net_inflow_3d"] == pytest.approx(12.3)
+    assert ai["net_inflow_5d"] == pytest.approx(-5.6)
+    assert ai["net_inflow_10d"] == pytest.approx(30.0)
+    assert ai["net_inflow_20d"] == pytest.approx(-2.1)
+    # 无资金流的板块各周期字段均为 None
+    bd = {x["board_code"]: x for x in r["list"]}["881121"]
+    assert bd["net_inflow_5d"] is None
+    assert bd["net_inflow_20d"] is None
+    # 按 5 日净流入排序：AI PC(-5.6) 有值、半导体(None→-inf)，desc 时 AI PC 在前、半导体垫底
+    r_desc = svc.list_sectors(sort_by="net_inflow_5d", order="desc")
+    assert r_desc["list"][0]["board_code"] == "309121"
+    assert r_desc["list"][-1]["board_code"] == "881121"
+    r_asc = svc.list_sectors(sort_by="net_inflow_5d", order="asc")
+    assert r_asc["list"][0]["board_code"] == "881121"
+    assert r_asc["list"][-1]["board_code"] == "309121"
+
+
+def test_get_sector_detail_multi_period_inflow(c):
+    """详情同样返回各周期净流入字段。"""
+    for period, net in (("3日", 12.3), ("5日", -5.6)):
+        c.execute(
+            "INSERT INTO board_fund_flow (board_code, snapshot_date, period, net_inflow) "
+            "VALUES ('309121', DATE '2026-08-09', ?, ?)", [period, net])
+    d = _svc(c).get_sector("309121")
+    assert d["net_inflow"] == pytest.approx(45.6)
+    assert d["net_inflow_3d"] == pytest.approx(12.3)
+    assert d["net_inflow_5d"] == pytest.approx(-5.6)
+    assert d["net_inflow_10d"] is None
+
+
 # ── 详情 ──────────────────────────────────────────────────
 
 

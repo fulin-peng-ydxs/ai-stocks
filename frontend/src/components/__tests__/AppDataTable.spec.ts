@@ -6,13 +6,14 @@ import AppDataTable from '@/components/AppDataTable.vue'
 
 const ElTableStub = defineComponent({
   name: 'ElTable',
-  props: ['data', 'border', 'fit', 'height'],
+  props: ['data', 'border', 'fit', 'height', 'scrollbarAlwaysOn'],
   emits: ['sort-change', 'row-click'],
   setup(props, { slots, emit }) {
     return () => h('div', {
       class: 'el-table',
       'data-border': String(props.border),
       'data-fit': String(props.fit),
+      'data-scrollbar-always-on': String(props.scrollbarAlwaysOn),
     }, [
       h('table', { class: 'el-table__header' }),
       h('table', { class: 'el-table__body' }),
@@ -66,6 +67,7 @@ describe('AppDataTable', () => {
     expect(wrapper.classes()).toContain('app-data-table--clickable')
     expect(wrapper.find('.el-table').attributes('data-border')).toBe('false')
     expect(wrapper.find('.el-table').attributes('data-fit')).toBe('true')
+    expect(wrapper.find('.el-table').attributes('data-scrollbar-always-on')).toBe('true')
     expect(wrapper.find('.el-table').attributes('aria-busy')).toBe('false')
     expect(wrapper.find('.el-table__header').attributes('aria-label')).toBe('测试数据表头')
     expect(wrapper.find('.el-table__body').attributes('aria-label')).toBe('测试数据')
@@ -100,5 +102,6 @@ describe('AppDataTable', () => {
 
     expect(wrapper.classes()).toContain('app-data-table--embedded')
     expect(wrapper.classes()).not.toContain('app-data-table--fill')
+    expect(wrapper.find('.el-table').attributes('data-scrollbar-always-on')).toBe('false')
   })
 })

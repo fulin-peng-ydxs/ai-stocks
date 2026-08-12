@@ -2,12 +2,15 @@
 import http from './client'
 
 /** 列表可排序字段码（与 board_query.SORT_FIELDS 双向一致，前端中文标签仅 UI 映射）。 */
-export type SectorSortField = 'pct_today' | 'pct_5d' | 'pct_10d' | 'pct_20d' | 'net_inflow' | 'up_count'
+export type SectorSortField =
+  | 'pct_today' | 'pct_5d' | 'pct_10d' | 'pct_20d'
+  | 'net_inflow' | 'net_inflow_3d' | 'net_inflow_5d' | 'net_inflow_10d' | 'net_inflow_20d'
+  | 'up_count'
 export type SortOrder = 'asc' | 'desc'
 export type BoardType = 'concept' | 'industry'
 export type SectorMemberSortField = 'pct' | 'code'
 
-/** 板块列表行（涨幅 pct_* 从 board_bar 实时计算；领涨股/净流入取资金流最新即时行）。 */
+/** 板块列表行（涨幅 pct_* 从 board_bar 实时计算；各周期净流入取资金流最新快照行）。 */
 export interface SectorRow {
   board_code: string
   app_code: string | null
@@ -22,6 +25,10 @@ export interface SectorRow {
   pct_10d: number | null
   pct_20d: number | null
   net_inflow: number | null
+  net_inflow_3d: number | null
+  net_inflow_5d: number | null
+  net_inflow_10d: number | null
+  net_inflow_20d: number | null
   leader_stock: string | null
   leader_pct: number | null
   up_count: number

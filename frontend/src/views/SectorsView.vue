@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, type Sort } from 'element-plus'
-import { ArrowRight, Close, Star, StarFilled } from '@element-plus/icons-vue'
+import { ArrowRight, Close, DArrowLeft, DArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -10,6 +10,7 @@ import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import CandleChart from '@/components/CandleChart.vue'
+import HelpTip from '@/components/HelpTip.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -69,6 +70,7 @@ const sectorsDefaults = {
   defaultScope: 'all' as 'all' | 'watchlist',
   defaultChartMode: 'compare' as 'compare' | 'kline',
   benchmarkCode: '000905.SH',
+  showAnalysisPanel: true,
 }
 const { settings, isDirty, reset, whenHydrated } = usePageSettings('sectors', sectorsDefaults)
 
@@ -100,7 +102,11 @@ const drawerConfig = {
 }
 
 const DEFAULT_SORT = 'pct_today:desc'
-const SORTABLE_FIELDS = ['pct_today', 'pct_5d', 'net_inflow'] as const
+const SORTABLE_FIELDS = [
+  'pct_today', 'pct_5d', 'pct_10d', 'pct_20d',
+  'net_inflow', 'net_inflow_3d', 'net_inflow_5d', 'net_inflow_10d', 'net_inflow_20d',
+  'up_count',
+] as const
 const {
   sortBy,
   sortOrder,
@@ -220,6 +226,10 @@ function chartEnd(): string {
   return tradeDate.value || marketDate.value || dataMax.value || ''
 }
 async function loadChart(): Promise<void> {
+  if (!settings.showAnalysisPanel) {
+    chartLoading.value = false
+    return
+  }
   const codes = chartCodes.value
   if (!codes.length) {
     compareBars.value = {}
@@ -272,6 +282,17 @@ async function loadChart(): Promise<void> {
   } finally {
     if (requestVersion === chartRequestVersion) chartLoading.value = false
   }
+}
+
+/** 收起分析区时保留观察对象与对比队列；再次展开后按当前筛选状态刷新走势。 */
+function setAnalysisPanelVisible(visible: boolean): void {
+  settings.showAnalysisPanel = visible
+  if (visible) {
+    void loadChart()
+    return
+  }
+  chartRequestVersion += 1
+  chartLoading.value = false
 }
 
 function isPinned(code: string): boolean {
@@ -512,7 +533,15 @@ onMounted(async () => {
         <div class="page-head">
           <div>
             <!-- <div class="page-kicker">MARKET SECTORS</div> -->
-            <h2 class="app-page-title">板块行情</h2>
+            <h2 class="app-page-title page-title-row">
+              板块行情
+              <HelpTip title="板块行情怎么看？" :width="460" test-id="sectors-help-tip">
+                <p><b>涨幅口径</b>：今日涨幅相对上一交易日收盘；5/10/20日涨幅相对对应交易日前收盘，历史不足显示“—”。</p>
+                <p><b>资金口径</b>：即时及多日净流入来自资金流快照，单位为亿元；资金快照日可能与行情交易日不同，以净流入表头日期为准。</p>
+                <p><b>排行操作</b>：点击列头切换排序；列显隐在页面设置中管理；点击板块行切换当前观察对象。</p>
+                <p><b>对比操作</b>：勾选板块加入走势对比，最多 {{ COMPARE_MAX }} 个；收起右侧分析区后可专注查看排行，再次展开会保留当前观察状态。</p>
+              </HelpTip>
+            </h2>
             <p class="page-subtitle">从强弱排行定位主线，点选板块后在同一视野比较走势。</p>
           </div>
           <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
@@ -577,16 +606,33 @@ onMounted(async () => {
         retry
         @retry="load"
       />
-      <div v-else class="sector-workspace" data-testid="sectors-workspace">
+      <div
+        v-else
+        class="sector-workspace"
+        :class="{ 'sector-workspace--list-only': !settings.showAnalysisPanel }"
+        data-testid="sectors-workspace"
+      >
         <section class="rank-panel" aria-label="板块强弱排行">
           <header class="panel-head rank-head">
-            <div>
-              <div class="panel-eyebrow">强弱排行</div>
-              <h3 class="app-section-title">{{ marketDate || tradeDate || '最新交易日' }}</h3>
+            <div class="rank-head-primary">
+              <div>
+                <div class="panel-eyebrow">强弱排行</div>
+                <h3 class="app-section-title">{{ marketDate || tradeDate || '最新交易日' }}</h3>
+              </div>
             </div>
-            <div class="rank-meta app-caption-text">
-              <span>{{ total }} 个{{ listScope === 'watchlist' ? '自选' : '板块' }}</span>
-              <span>点击行切换走势</span>
+            <div class="rank-head-actions">
+              <div class="rank-meta app-caption-text">
+                <span>{{ total }} 个{{ listScope === 'watchlist' ? '自选' : '板块' }}</span>
+                <span>{{ settings.showAnalysisPanel ? '点击行切换走势' : '点击行选择板块' }}</span>
+              </div>
+              <AppIconButton
+                :label="settings.showAnalysisPanel ? '收起走势分析，仅看排行' : '显示走势分析'"
+                :data-testid="settings.showAnalysisPanel ? 'sectors-hide-analysis' : 'sectors-show-analysis'"
+                :native-title="false"
+                @click="setAnalysisPanelVisible(!settings.showAnalysisPanel)"
+              >
+                <el-icon><DArrowRight v-if="settings.showAnalysisPanel" /><DArrowLeft v-else /></el-icon>
+              </AppIconButton>
             </div>
           </header>
 
@@ -602,6 +648,7 @@ onMounted(async () => {
 
           <AppDataTable
             data-testid="sectors-table"
+            kind="wide-table"
             :data="rows"
             :loading="loading"
             row-key="board_code"
@@ -616,7 +663,13 @@ onMounted(async () => {
             @page-change="(value: number) => { page = value; void load() }"
             @size-change="(value: number) => { size = value; page = 1; void load() }"
           >
-            <AppTableColumn v-if="colVisible('name')" label="板块" prop="name" role="name">
+            <AppTableColumn
+              v-if="colVisible('name')"
+              label="板块"
+              prop="name"
+              role="entity"
+              :leading-controls="canUpdateWatchlist ? 2 : 1"
+            >
               <template #default="{ row }">
                 <div
                   class="sector-name-cell"
@@ -650,6 +703,7 @@ onMounted(async () => {
                       type="primary"
                       class="sector-select"
                       :disabled="row.available === false"
+                      :data-testid="row?.board_code ? `sectors-name-${row.board_code}` : undefined"
                       @click.stop="selectRow(row)"
                     >
                       {{ row.name }}
@@ -662,7 +716,7 @@ onMounted(async () => {
             </AppTableColumn>
             <AppTableColumn
               v-if="colVisible('pct_today')"
-              label="今日"
+              label="今日涨幅"
               prop="pct_today"
               sortable="custom"
               role="number"
@@ -674,7 +728,7 @@ onMounted(async () => {
             </AppTableColumn>
             <AppTableColumn
               v-if="colVisible('pct_5d')"
-              label="5日"
+              label="5日涨幅"
               prop="pct_5d"
               sortable="custom"
               role="number"
@@ -685,18 +739,88 @@ onMounted(async () => {
               </template>
             </AppTableColumn>
             <AppTableColumn
-              v-if="colVisible('net_inflow')"
-              label="净流入"
-              prop="net_inflow"
+              v-if="colVisible('pct_10d')"
+              label="10日涨幅"
+              prop="pct_10d"
               sortable="custom"
               role="number"
               align="right"
             >
-              <template #header>
-                <span>净流入</span><span class="header-date">{{ fmtFlowDate(fundFlowDate) }}</span>
+              <template #default="{ row }">
+                <span class="app-data-text" :class="pctClass(row.pct_10d)">{{ fmtPct(row.pct_10d) }}</span>
               </template>
+            </AppTableColumn>
+            <AppTableColumn
+              v-if="colVisible('pct_20d')"
+              label="20日涨幅"
+              prop="pct_20d"
+              sortable="custom"
+              role="number"
+              align="right"
+            >
+              <template #default="{ row }">
+                <span class="app-data-text" :class="pctClass(row.pct_20d)">{{ fmtPct(row.pct_20d) }}</span>
+              </template>
+            </AppTableColumn>
+            <AppTableColumn
+              v-if="colVisible('net_inflow')"
+              label="即时净流入"
+              prop="net_inflow"
+              sortable="custom"
+              role="number"
+              :header-meta="fmtFlowDate(fundFlowDate)"
+              align="right"
+            >
               <template #default="{ row }">
                 <span class="app-data-text" :class="pctClass(row.net_inflow)">{{ fmtInflow(row.net_inflow) }}</span>
+              </template>
+            </AppTableColumn>
+            <AppTableColumn
+              v-if="colVisible('net_inflow_3d')"
+              label="3日净流入"
+              prop="net_inflow_3d"
+              sortable="custom"
+              role="number"
+              align="right"
+            >
+              <template #default="{ row }">
+                <span class="app-data-text" :class="pctClass(row.net_inflow_3d)">{{ fmtInflow(row.net_inflow_3d) }}</span>
+              </template>
+            </AppTableColumn>
+            <AppTableColumn
+              v-if="colVisible('net_inflow_5d')"
+              label="5日净流入"
+              prop="net_inflow_5d"
+              sortable="custom"
+              role="number"
+              align="right"
+            >
+              <template #default="{ row }">
+                <span class="app-data-text" :class="pctClass(row.net_inflow_5d)">{{ fmtInflow(row.net_inflow_5d) }}</span>
+              </template>
+            </AppTableColumn>
+            <AppTableColumn
+              v-if="colVisible('net_inflow_10d')"
+              label="10日净流入"
+              prop="net_inflow_10d"
+              sortable="custom"
+              role="number"
+              align="right"
+            >
+              <template #default="{ row }">
+                <span class="app-data-text" :class="pctClass(row.net_inflow_10d)">{{ fmtInflow(row.net_inflow_10d) }}</span>
+              </template>
+            </AppTableColumn>
+            <AppTableColumn
+              v-if="colVisible('net_inflow_20d')"
+              label="20日净流入"
+              prop="net_inflow_20d"
+              sortable="custom"
+              role="number"
+              align="right"
+            >
+              <template #default="{ row }">
+                <span class="app-data-text" :class="pctClass(row.net_inflow_20d)">{{ fmtInflow(row.net_inflow_20d) }}</span>
               </template>
             </AppTableColumn>
             <template #empty>
@@ -707,7 +831,12 @@ onMounted(async () => {
           </AppDataTable>
         </section>
 
-        <section class="chart-panel" aria-label="板块走势分析" data-testid="sectors-chart">
+        <section
+          v-if="settings.showAnalysisPanel"
+          class="chart-panel"
+          aria-label="板块走势分析"
+          data-testid="sectors-chart"
+        >
           <header class="panel-head chart-head">
             <div class="chart-identity">
               <div class="panel-eyebrow">当前观察</div>
@@ -765,11 +894,15 @@ onMounted(async () => {
               <strong :class="pctClass(activeRow.pct_today)">{{ fmtPct(activeRow.pct_today) }}</strong>
             </div>
             <div class="market-metric">
-              <span>5 日</span>
+              <span>5日涨幅</span>
               <strong :class="pctClass(activeRow.pct_5d)">{{ fmtPct(activeRow.pct_5d) }}</strong>
             </div>
             <div class="market-metric">
-              <span>20 日</span>
+              <span>10日涨幅</span>
+              <strong :class="pctClass(activeRow.pct_10d)">{{ fmtPct(activeRow.pct_10d) }}</strong>
+            </div>
+            <div class="market-metric">
+              <span>20日涨幅</span>
               <strong :class="pctClass(activeRow.pct_20d)">{{ fmtPct(activeRow.pct_20d) }}</strong>
             </div>
             <div class="market-metric">
@@ -936,6 +1069,10 @@ onMounted(async () => {
   justify-content: space-between;
   gap: var(--app-space-3);
 }
+.page-title-row {
+  display: flex;
+  align-items: center;
+}
 .page-kicker,
 .panel-eyebrow {
   color: var(--el-color-primary);
@@ -974,6 +1111,10 @@ onMounted(async () => {
   gap: var(--app-space-3);
   overflow-x: auto;
 }
+.sector-workspace--list-only {
+  min-width: 640px;
+  grid-template-columns: minmax(0, 1fr);
+}
 .rank-panel,
 .chart-panel {
   min-width: 0;
@@ -1001,6 +1142,17 @@ onMounted(async () => {
 .rank-head {
   min-height: 64px;
   background: color-mix(in srgb, var(--el-color-primary-light-9) 42%, var(--el-bg-color));
+}
+.rank-head-primary {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  min-width: 0;
+}
+.rank-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
 }
 .rank-meta {
   display: flex;
@@ -1064,11 +1216,6 @@ onMounted(async () => {
   line-height: var(--app-line-height-micro);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.header-date {
-  margin-left: var(--app-space-1);
-  color: var(--el-text-color-placeholder);
-  font-size: var(--app-font-size-tiny);
 }
 .chart-panel {
   position: relative;
@@ -1141,7 +1288,7 @@ onMounted(async () => {
 .market-strip {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(5, minmax(84px, 1fr));
+  grid-template-columns: repeat(6, minmax(72px, 1fr));
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: color-mix(in srgb, var(--el-fill-color-light) 54%, var(--el-bg-color));
 }
@@ -1276,6 +1423,9 @@ onMounted(async () => {
   }
   .chart-identity p {
     display: none;
+  }
+  .market-strip {
+    grid-template-columns: repeat(3, minmax(84px, 1fr));
   }
 }
 @media (max-height: 700px) {

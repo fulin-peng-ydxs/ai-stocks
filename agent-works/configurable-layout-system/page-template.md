@@ -16,7 +16,7 @@
 2. 把推荐原型 + 理由告诉用户，确认后开发。
 3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；控件选型、图标按钮和系统组件种类边界按 DESIGN 执行。
 4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；脚手架中的 `data-scaffold-placeholder` 是未完成标记，接入真实组件和四态后必须删除，否则契约测试会失败。需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
-5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。页面业务抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`，页面禁止直接使用 `el-drawer`。数据表格使用 `AppDataTable + AppTableColumn`，列只声明语义角色，不声明 `width/min-width`；主表使用默认成长模式，只有抽屉、展开行和局部明细等非主表使用 `embedded`。
+5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。页面业务抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`，页面禁止直接使用 `el-drawer`。数据表格使用 `AppDataTable + AppTableColumn`，列只声明 `label/prop/role` 等语义，不声明 `width/min-width`；普通名称列使用 `name`，带前置控件和主副信息的对象识别列使用 `entity`；日期、单位或短口径摘要统一传 `header-meta` 并保持同行单行，主内容前有紧凑控件时传 `leading-controls` 由组件统一对齐，不在页面拼私有表头；主表使用默认成长模式，只有抽屉、展开行和局部明细等非主表使用 `embedded`。
 6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；若新增系统组件种类或配置字段，同步 `COMPONENT_CATALOG`、schema、后端规则、pageRegistry 消费和配置中心验证。
 7. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
 8. `npm run build`（含 vue-tsc 类型检查；改 `frontend/src` 后必构建）。
@@ -146,7 +146,7 @@
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段治理入口 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
-| 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑 | `pageRegistry.spec.ts`、页面交互验证 |
+| 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑；`componentMeta.columns` 每个候选 key 必须进入真实列显隐判断 | `pageRegistry.spec.ts` 正向消费契约、页面交互验证 |
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
@@ -154,7 +154,7 @@
 | 页面抽屉 | `#overlays`、`PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | `PageDrawer.spec.ts`、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 
-新增可配置能力必须同时具备三个事实源：组件能力事实源（`COMPONENT_CATALOG`）、字段配置事实源（`COMPONENT_FIELD_DEFS`）、页面消费事实源（`pageRegistry.consumedComponentFields` / `componentMeta`）。禁止新增页面不读取的“假配置”；禁止绕过 `LayoutHost`、绕过 `pageRegistry` 或另建并行配置体系。
+新增可配置能力必须同时具备三个事实源：组件能力事实源（`COMPONENT_CATALOG`）、字段配置事实源（`COMPONENT_FIELD_DEFS`）、页面消费事实源（`pageRegistry.consumedComponentFields` / `componentMeta`）。`componentMeta.columns` 只提供设置候选，不自动生成业务列；每个候选 key 都必须由页面真实消费显隐状态。禁止新增页面不读取的“假配置”；禁止绕过 `LayoutHost`、绕过 `pageRegistry` 或另建并行配置体系。
 新增真实复用组件不等于必须新增系统组件种类；只有当该组件需要被布局配置、系统组件页、页面设置抽屉或页面布局编辑器识别和调参时，才进入系统组件种类和组件配置字段闭环。
 
 ## 4. 原型决策
@@ -249,7 +249,7 @@ PageSettingsDrawer
 - 不得把页面业务结构放进用户级配置；不得把不可重排的大表放进多列重排——`validateLayout` 拦截。
 - 列表交互：分页/排序走服务端、筛选变更自动触发、多选跨页累积（见 [DESIGN.md](../../DESIGN.md) §4「表格与列表」）。
 - 真实组件：已有真实复用组件能覆盖的控件行为，不得继续在页面内复制手写；`data-table` / `wide-table`、`settings-drawer` 等逻辑种类由 `pageRegistry.spec.ts` 校验真实导入和渲染，`config-panel` 校验页面级入口 `ConfigGroupForm`，再由该组件复用 `ConfigPanelSection`；组合型 `toolbar` / `section` / `tabs` 不要求虚构同名空壳组件。
-- 表格列宽：页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，不得向 `AppTableColumn` 传 `width/min-width`；宽度统一由语义自适应规则推导。
+- 表格列宽：页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，不得向 `AppTableColumn` 传 `width/min-width`；宽度统一由语义基础宽、表头字符权重、排序/筛选控件和可选 `header-meta` 推导。
 - 高度与滚动：`list` 必须唯一 `growMain`；`LayoutHost` 统一应用组件有效 `minH`。剩余高度达到 `minH` 时由组件内部滚动，低于 `minH` 时才由主内容区滚动兜底。页面不得用 `fill`、私有视口高度或外层滚动覆盖该决策。
 - 四态反馈：registry 页面必须真实复用 `AppStateBlock` 承接非 ready 状态；ready / loading / empty / error 互斥，表格加载/空态可继续由 `AppDataTable` 承接；错误态必须可见且有重试或原因说明，具体分支由消费页测试或关键视口 E2E 验证。
 

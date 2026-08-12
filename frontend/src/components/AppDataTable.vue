@@ -34,6 +34,8 @@ const props = withDefaults(defineProps<{
   emptyText?: string
   ariaLabel?: string
   pagination?: PaginationConfig
+  /** 宽表默认常显滚动条；普通表格可按需显式开启。 */
+  scrollbarAlwaysOn?: boolean | null
   /** 仅用于抽屉、展开行、局部详情等非主成长表；页面主列表不得开启。 */
   embedded?: boolean
 }>(), {
@@ -44,10 +46,14 @@ const props = withDefaults(defineProps<{
   stripe: false,
   border: false,
   framed: false,
+  scrollbarAlwaysOn: null,
   embedded: false,
 })
 
 const resolvedHeight = computed(() => props.height ?? (!props.embedded ? '100%' : undefined))
+const resolvedScrollbarAlwaysOn = computed(
+  () => props.scrollbarAlwaysOn ?? props.kind === 'wide-table',
+)
 const tableRef = ref<{ $el?: HTMLElement } | null>(null)
 
 function syncSemanticTableLabels(): void {
@@ -103,6 +109,7 @@ const emit = defineEmits<{
       :row-class-name="rowClassName"
       :stripe="stripe"
       :border="border"
+      :scrollbar-always-on="resolvedScrollbarAlwaysOn"
       v-loading="loading"
       :class="['app-data-table__table', tableClass, { clickable }]"
       @sort-change="(value: Sort) => emit('sort-change', value)"
@@ -173,10 +180,6 @@ const emit = defineEmits<{
 
 .app-data-table :deep(th .caret-wrapper) {
   flex: 0 0 auto;
-}
-
-.app-data-table--wide-table :deep(.el-table__body-wrapper) {
-  overflow-x: auto;
 }
 
 .app-data-table--clickable :deep(.el-table__row) {

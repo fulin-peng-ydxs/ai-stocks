@@ -207,8 +207,8 @@ Key Characteristics：
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示、轻量“更多”菜单收纳和**宽度自适应折叠** | 无直接系统组件种类 | 表格 `label="操作"`、自绘表格行、列表项和编辑器条件行的行内按钮组优先复用；首个未显式指定语义色的行内高频动作使用主色，普通次要动作使用常规正文色，禁用态使用弱文本色并满足语义 token 规则定义的文字层级阈值，停用/禁用/终止/删除等破坏性动作使用危险色；动作始终清晰可见，不对整组做透明度弱显；低频或危险动作可设置 `placement: 'more'`，菜单命令继续使用 Element Plus 按钮并呈现真实 loading，不得在页面内手写多行按钮或原生命令按钮。**宽度折叠契约**：行内按钮按操作列实际可用宽度自适应折叠——宽度装不下的按钮自动收进“更多”菜单，不硬截断；`inline-limit` 退化为行内数量硬性上限（宽度能装下时仍不超过它）；显式 `placement: 'more'` 的动作恒入更多；可用宽度或按钮实测宽度不可用（如 jsdom）时退化为纯数量逻辑 |
 | `SystemBuiltinTag` | `frontend/src/components/SystemBuiltinTag.vue` | 全站“系统内置”来源标记，固定使用灰色文字、灰色描边和中性浅底 | 无直接系统组件种类 | 菜单、功能点、角色、租户、布局预设、技术指标和系统内置方案等来源标记统一复用；文案固定为“系统内置”，不追加对象名称或保护规则说明；与对象名称或标识并列时统一放在对象后面，独立的来源/类型字段保持标签单独展示 |
-| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；主列表默认成长，抽屉、展开行和局部明细等非主表显式使用 `embedded`；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
-| `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和中文标签推导语义角色，统一提供固定结构宽或弹性最小宽 | `data-table`、`wide-table` 的稳定列宽能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width`；确有歧义的动态标签只传 `role`，数值事实只维护在 `ADAPTIVE_COLUMN_RULES` |
+| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；主列表默认成长，抽屉、展开行和局部明细等非主表显式使用 `embedded`；`wide-table` 默认常显 Element Plus 内部滚动条，禁止页面再给 `el-table__body-wrapper` 添加第二层横向滚动；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
+| `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和标签推导语义角色，以稳定字符权重结合排序/筛选控件计算弹性最小宽，并统一渲染单行表头及同行元信息 | `data-table`、`wide-table` 的稳定列宽、内容对齐和表头能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width`；确有歧义的动态标签只传 `role`；日期、单位或短口径摘要传 `header-meta`；单元格主内容前存在紧凑控件时传 `leading-controls`，组件统一预留宽度并让表头对齐主内容；自定义 header slot 只用于复选、帮助入口等真实交互结构；数值事实只维护在 `ADAPTIVE_COLUMN_RULES` |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
 | `CandleChart` | `frontend/src/components/CandleChart.vue` | 盘感训练、回测和板块行情复用的 K线、量能、MA/VMA 与买卖标记画布 | 无系统组件种类；图表参数由消费页面管理 | 独立使用保持默认画布高度，受控工作台通过 `fill` 填满父容器；保持单实例双网格与既有 props 契约，并与 `StockChartWorkspace` 共用 MA/VMA 定义、tooltip helper 和 `useStockChartTheme()`，不得复制股票画布基础能力 |
 | `StockChartWorkspace` | `frontend/src/components/stock-chart/StockChartWorkspace.vue` | 行情 K线、量能和可选 MACD 的纵向联动工作区，统一日期轴、光标、显式缩放同步、局部状态和可访问高度分隔线 | `chart.minHeight`（由详情页 chart slot 消费） | 个股详情消费 K线/量能/MACD，板块详情消费 K线/量能；独立详情行情区域统一通过 `chart.minHeight` 配置整体高度，组件仍须以所有可见面板最小高度之和加分隔线作为硬下限，禁止用外层裁切换取紧凑；板块列表等随视口填充的主从工作台不套用固定高度字段；行情与指标按交易日对齐，MACD 局部失败不得阻断 K线/量能；只有 K线显示固定在绘图区左上角的行情 tooltip 和唯一光标轴日期气泡，量能和 MACD 普通柱线只保留联动光标与标题当前值，不显示行情内容浮层、日期气泡或标题日期，MACD 信号 item 悬停例外显示信号类型与完整日期；三图标题值与实际序列必须复用盘感训练共享色板，柱宽按 K线、量能、MACD 明显递减，底部日期标签不得被缩放滑块遮挡；任一图的 `dataZoom` 必须显式同步给其余可见图并在主题重绘后保留；画布必须监听预设系统在完整 CSS token 写入后发布的主题修订版本，覆盖明暗、预设 key 和同 key 后端覆盖变化，分隔线遵守 reduced-motion；光标跟随指标值不得设置 `aria-live`，避免三组高频播报；消费页面不得再拼装第二套多图联动和分隔线逻辑 |
@@ -267,8 +267,8 @@ Key Characteristics：
 - 主数据表应作为 `growMain` 占据剩余空间，使用 `height="100%"` 让表体内部滚动；当一个标签页工作区承载多个互斥主表时，由 `tabs` 作为唯一 `growMain`，当前面板内的表体承接滚动。
 - `list` 原型必须且只能有一个顶层 `growMain`；主列表不得使用 `embedded`。
 - 页面数据表格统一使用 `AppDataTable + AppTableColumn`。页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，也不得向列传 `width/min-width`。
-- 列宽采用语义自适应契约：选择、展开、序号等结构列保持稳定窄宽；代码、名称、状态、数值、日期、时间、标识、操作、正文和长说明使用各自语义最小宽度。容器有余量时由 Element Plus `fit` 按最小宽度权重分配并铺满，空间不足时保持最小可读宽度并由表体横向滚动。
-- 自适应列宽的角色、推导顺序和数值唯一维护在 `components/table/adaptiveColumnWidth.ts`；页面只在动态标签无法推导时声明语义 `role`，不得复制数值。
+- 列宽采用语义自适应契约：选择、展开、序号等结构列保持稳定窄宽；普通名称使用 `name`，含前置选择/收藏等控件并展示主副信息的对象识别列使用 `entity`；其余列取“语义内容基础宽度”和“表头标签 + 同行元信息 + 排序/筛选控件 + 主内容前置控件”估算宽度的较大值，并按 8px 网格取整。中英文混排使用稳定字符权重估算，不做运行时 DOM/数据采样，避免数据变化触发列宽跳动；异常长表头受角色上限保护并保留完整 `title`。容器有余量时由 Element Plus `fit` 按最小宽度权重分配并铺满，空间不足时保持最小可读宽度并由表体横向滚动。
+- 自适应列宽的角色、字符权重、控件预留、上限和数值唯一维护在 `components/table/adaptiveColumnWidth.ts`；页面只在动态标签无法推导时声明语义 `role`，不得复制数值。所有标准表头保持单行且不换行；日期、单位或短口径摘要使用 `header-meta` 在标签后同行弱化展示；主内容前存在紧凑控件时使用 `leading-controls` 让组件统一缩进表头并预留列宽。说明性长文本继续放 `HelpTip` / `HelpHint`，不得通过私有 header slot 拼接第二套样式。
 - 表头保持稳定，分页、批量操作和关键筛选不被表体滚动带走。
 - 不使用隔行变色作为默认识别手段；当前全局样式会取消 stripe 背景。
 - 列宽按信息类型分配：编号、状态、日期、操作列稳定窄列；名称、标题、描述、备注更宽；数字列保持易比较。
@@ -475,6 +475,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 后端 `layout_config.py` 同步字段规则和归属校验。
 - 消费页面在 `pageRegistry.consumedComponentFields` 登记。
 - 页面通过 `componentMeta` 提供安全枚举（列、可交互排序字段、tabs 等）。
+- `componentMeta.columns` 只声明列显隐候选，不负责生成业务表格列；每个候选 key 必须在消费页面进入真实显隐判断并控制对应列或列内业务片段。该正向消费关系由 `pageRegistry.spec.ts` 契约测试强制，禁止“设置里可勾选、页面没有可渲染节点”的假配置。
 - 页面实际读取并应用字段值。
 - 配置中心和设置抽屉可按层级渲染。
 - 测试覆盖合并、越权、类型和值域。
@@ -586,7 +587,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `layout-components` | `LayoutComponentsView`（系统组件） | `detail` | 暂无 | action:`toolbar` / main:`section(region)` |
 | `audit-log` | `AuditLogView`（审计日志） | `list` | `density` | action:`toolbar` / main:`kpi-grid` / main:`filter-bar` / main:`wide-table` / overlay:`detail` |
 | `data-dictionary` | `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`simple-list` / nested:`data-table` / overlay:`form` / overlay:`dialog` |
-| `sectors` | `SectorsView`（板块行情） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`data-table` / nested:`chart` |
+| `sectors` | `SectorsView`（板块行情） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`wide-table` / nested:`chart` |
 | `sectors-detail` | `SectorDetailView`（板块详情） | `detail` | `density` | action:`toolbar` / main:`detail` / nested:`chart` / nested:`data-table` |
 <!-- page-registry:end -->
 

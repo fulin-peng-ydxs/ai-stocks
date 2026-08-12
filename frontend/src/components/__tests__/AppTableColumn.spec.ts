@@ -4,6 +4,7 @@ import { defineComponent, h } from 'vue'
 import { describe, expect, it } from 'vitest'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import {
+  estimateHeaderTextWidth,
   inferAdaptiveColumnRole,
   resolveAdaptiveColumnWidth,
 } from '@/components/table/adaptiveColumnWidth'
@@ -17,7 +18,10 @@ const ElTableColumnStub = defineComponent({
       'data-type': props.type,
       'data-width': props.width,
       'data-min-width': props.minWidth,
-    }, slots.default?.({ row: { value: '测试值' }, $index: 0 }))
+    }, [
+      ...(slots.default?.({ row: { value: '测试值' }, $index: 0 }) ?? []),
+      ...(slots.header?.({ column: {} }) ?? []),
+    ])
   },
 })
 
@@ -58,5 +62,133 @@ describe('自适应表格列', () => {
     expect(inferAdaptiveColumnRole({ label: '股票代码', prop: 'code' })).toBe('code')
     expect(inferAdaptiveColumnRole({ label: '采集状态' })).toBe('status')
     expect(inferAdaptiveColumnRole({ label: '收益率' })).toBe('number')
+  })
+
+  it('复合实体列为前置控件和主副信息保留统一识别宽度', () => {
+    expect(resolveAdaptiveColumnWidth({
+      role: 'entity',
+      label: '板块',
+      prop: 'name',
+      leadingControls: 2,
+    })).toMatchObject({
+      role: 'entity',
+      minWidth: 208,
+      headerIndent: 56,
+    })
+  })
+
+  it.each([
+    ['中文字段', 56],
+    ['AB12', 37],
+    ['field', 40],
+    ['10日涨幅', 61],
+  ])('以稳定字符权重估算混排表头：%s', (label, width) => {
+    expect(estimateHeaderTextWidth(label)).toBe(width)
+  })
+
+  it('按表头文字、排序与筛选控件动态提高语义最小宽度', () => {
+    const plain = resolveAdaptiveColumnWidth({ role: 'number', label: '今日涨幅' })
+    const sortable = resolveAdaptiveColumnWidth({
+      role: 'number',
+      label: '今日涨幅',
+      sortable: true,
+    })
+    const sortableAndFilterable = resolveAdaptiveColumnWidth({
+      role: 'number',
+      label: '今日涨幅',
+      sortable: true,
+      filterable: true,
+    })
+    const longHeader = resolveAdaptiveColumnWidth({
+      role: 'number',
+      label: '累计收益贡献率',
+      sortable: true,
+    })
+
+    expect(plain.minWidth).toBe(96)
+    expect(sortable.minWidth).toBe(112)
+    expect(sortableAndFilterable.minWidth).toBe(136)
+    expect(longHeader.minWidth).toBe(160)
+  })
+
+  it('二级表头按两行较宽内容计算且遵守语义上限', () => {
+    expect(resolveAdaptiveColumnWidth({
+      role: 'number',
+      label: '即时净流入',
+      headerMeta: '08-12',
+      sortable: true,
+    }).minWidth).toBe(176)
+    expect(resolveAdaptiveColumnWidth({
+      role: 'number',
+      label: '这是一个异常长且不应该无限撑开表格的动态指标名称',
+      sortable: true,
+    }).minWidth).toBe(192)
+  })
+
+  it('统一渲染二级表头且完整可见时不制造冗余 title', () => {
+    const wrapper = mount(AppTableColumn, {
+      props: {
+        label: '即时净流入',
+        prop: 'net_inflow',
+        role: 'number',
+        headerMeta: '08-12',
+      },
+      attrs: { sortable: 'custom' },
+      global: {
+        stubs: { ElTableColumn: ElTableColumnStub },
+      },
+    })
+
+    expect(wrapper.get('.column').attributes('data-min-width')).toBe('176')
+    expect(wrapper.get('.app-table-column-header__label').text()).toBe('即时净流入')
+    expect(wrapper.get('.app-table-column-header__meta').text()).toBe('08-12')
+    expect(wrapper.get('.app-table-column-header').classes()).toContain('app-table-column-header')
+    expect(wrapper.get('.app-table-column-header').attributes('title')).toBeUndefined()
+  })
+
+  it('把前置控件缩进下沉到标准表头，不要求页面编写私有 header 样式', () => {
+    const wrapper = mount(AppTableColumn, {
+      props: {
+        label: '板块',
+        role: 'entity',
+        leadingControls: 2,
+      },
+      global: {
+        stubs: { ElTableColumn: ElTableColumnStub },
+      },
+    })
+
+    expect(wrapper.get('.column').attributes('data-min-width')).toBe('208')
+    expect(wrapper.get('.app-table-column-header').attributes('style')).toContain(
+      '--app-table-column-header-indent: 56px',
+    )
+  })
+
+  it('异常长表头达到角色宽度上限后保留完整 title', () => {
+    const label = '这是一个异常长且不应该无限撑开表格的动态指标名称'
+    const wrapper = mount(AppTableColumn, {
+      props: { label, role: 'number' },
+      attrs: { sortable: 'custom' },
+      global: {
+        stubs: { ElTableColumn: ElTableColumnStub },
+      },
+    })
+
+    expect(wrapper.get('.column').attributes('data-min-width')).toBe('192')
+    expect(wrapper.get('.app-table-column-header').attributes('title')).toBe(label)
+  })
+
+  it('自定义表头优先于标准表头且仍预留安全空间', () => {
+    const wrapper = mount(AppTableColumn, {
+      props: { label: '长期业务状态', role: 'status' },
+      slots: { header: '<span class="custom-header">业务表头</span>' },
+      global: {
+        stubs: { ElTableColumn: ElTableColumnStub },
+      },
+    })
+
+    expect(wrapper.get('.custom-header').text()).toBe('业务表头')
+    expect(wrapper.find('.app-table-column-header').exists()).toBe(false)
+    expect(wrapper.get('.column').attributes('data-min-width')).toBe('136')
   })
 })

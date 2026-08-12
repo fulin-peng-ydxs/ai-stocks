@@ -41,4 +41,5 @@ AI_STOCKS_ENV="$AI_STOCKS_ENV" AI_STOCKS_E2E_WRITE=1 \
   AI_STOCKS_E2E_LOGIN_BYPASS=1 ./start.sh
 
 cd "$PROJECT_ROOT/frontend"
-"$PROJECT_ROOT/scripts/run-playwright.sh" e2e/sectors-workbench.spec.ts "$@"
+# 三视口共享固定调试账号、板块自选和页面偏好，必须串行，避免跨 project 相互改写状态。
+"$PROJECT_ROOT/scripts/run-playwright.sh" e2e/sectors-workbench.spec.ts --workers=1 "$@"

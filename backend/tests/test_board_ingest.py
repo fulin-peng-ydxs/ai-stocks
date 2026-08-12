@@ -312,6 +312,57 @@ def test_fund_flow_mapping_and_unmatched(tmp_path):
     assert bool(hf) is True
 
 
+def test_fund_flow_all_periods_default(tmp_path):
+    """periods=None 默认采集全周期（即时/3日/5日/10日/20日），concept+industry 都落库。"""
+    import pandas as pd
+
+    def flow(name):
+        return pd.DataFrame([{
+            "name": name, "inflow": 10.0, "outflow": 5.0, "net_inflow": 5.0,
+            "net_ratio": 2.5, "leader_stock": None, "leader_pct": None}])
+
+    ff = {
+        (bt, period): flow("AI PC" if bt == "concept" else "半导体")
+        for bt in ("concept", "industry")
+        for period in ("即时", "3日", "5日", "10日", "20日")
+    }
+    src = _FakeSource({}, fund_flow=ff)
+    svc, c = _make_service(tmp_path, src)
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE),('881121','半导体','industry',TRUE)")
+    r = svc.ingest_board_fund_flow(date(2026, 1, 5))
+    assert r["failed"] == []
+    periods = set(c.query_df("SELECT DISTINCT period FROM board_fund_flow")["period"].tolist())
+    assert periods == {"即时", "3日", "5日", "10日", "20日"}
+    rows = c.query_df("SELECT board_code, period FROM board_fund_flow")
+    assert len(rows) == 10  # 2 板块 × 5 周期
+
+
+def test_fund_flow_upsert_same_date_and_append_next_date(tmp_path):
+    """同 snapshot_date 同周期覆盖；不同 snapshot_date 新增（不误删历史快照）。"""
+    import pandas as pd
+    ff = {
+        (bt, period): pd.DataFrame([{
+            "name": "AI PC", "inflow": 10.0, "outflow": 5.0, "net_inflow": 5.0,
+            "net_ratio": 2.5, "leader_stock": None, "leader_pct": None}])
+        for bt in ("concept",)
+        for period in ("即时", "3日", "5日", "10日", "20日")
+    }
+    src = _FakeSource({}, fund_flow=ff)
+    svc, c = _make_service(tmp_path, src)
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members) "
+              "VALUES ('309121','AI PC','concept',TRUE)")
+    # 第一天全周期
+    svc.ingest_board_fund_flow(date(2026, 1, 5), board_type="concept")
+    # 第二天再次全周期 → 不同 snapshot_date，各周期新增一行
+    svc.ingest_board_fund_flow(date(2026, 1, 6), board_type="concept")
+    rows = c.query_df("SELECT snapshot_date, period FROM board_fund_flow ORDER BY snapshot_date, period")
+    assert len(rows) == 10  # 2 天 × 5 周期
+    # 同一天同周期重复入库 → upsert 覆盖，行数不变
+    svc.ingest_board_fund_flow(date(2026, 1, 6), board_type="concept")
+    assert int(c.query_df("SELECT count(*) AS n FROM board_fund_flow").iloc[0]["n"]) == 10
+
+
 def test_board_dict_persists_app_code(tmp_path):
     """板块字典持久化路径 code ↔ App clid，幂等重跑不丢既有映射。"""
     src = _FakeSource(

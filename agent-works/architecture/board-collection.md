@@ -76,8 +76,10 @@
 
 | mode | 字典 | 成分 | 指数 | 资金流 |
 |------|------|------|------|--------|
-| `update`（每日增量） | 全量 upsert | 周频跳过逻辑 | 截止最近交易日、区间起点往前取 **7 个自然日**缓冲（覆盖跨周末/长假缺口，非"7 个交易日"） | 只采「即时」 |
+| `update`（每日增量） | 全量 upsert | 周频跳过逻辑 | 截止最近交易日、区间起点往前取 **7 个自然日**缓冲（覆盖跨周末/长假缺口，非"7 个交易日"） | 全周期（即时/3日/5日/10日/20日）每日刷新 |
 | `backfill`（初始化） | 全量 upsert | 强制全量（绕周频） | 源端可用年限（2024 起） | 全周期 |
+
+资金流增量全周期口径：滚动周期（3日/5日/10日/20日）是源端按最近 N 个交易日滚动重算的值，每日变化，只采「即时」会让多周期数据停在 backfill 当天。数据源不支持按日期回溯补采，故缺失的历史某天无法追回，质检只盯最新快照新鲜度（见下）。
 
 `force_members` 解析（`ingest.py:1823`）：未显式传值时，`mode=backfill` **或** 显式指定 `board_codes` → 强制全量；否则默认 update 走周频。**显式传 `False` 会覆盖自动解析**（历史教训：CLI 曾始终传 `args.force_members` 默认 False，导致指定板块重采被周频挡住，已修为仅显式 `--force-members` 才传）。
 
@@ -131,11 +133,12 @@
 | `board_index_invalid` | `scan_board_quality` 扫描 | 指数 OHLC 缺失/越界、价格非正或成交量额为负 | 按异常日窄窗口重采该板块指数 |
 | `board_member_incomplete` | 采集层 + `scan_board_quality` | 成分快照采集不完整/失败，或宣称支持成分但从未形成完整快照 | 重采成分（force 绕周频） |
 | `board_fund_unmatched` | 采集层 `_write_unmatched_quality` | 资金流未匹配到字典 | 重采资金流 |
-| `board_fund_missing` | `scan_board_quality` 扫描 | 板块无不早于全局最新交易日的即时资金流快照 | 定向重采资金流 |
-| `board_fund_stale` | `scan_board_quality` 扫描 | 全源资金流快照滞后全局最新交易日（源级单条，code=NULL） | 重采全源资金流 |
+| `board_fund_missing` | `scan_board_quality` 扫描 | 板块某周期无不早于基准日的资金流快照（每板块一条 issue，detail 列缺失周期） | 按缺失周期定向重采资金流 |
+| `board_fund_stale` | `scan_board_quality` 扫描 | 源级资金流某周期快照滞后全局最新交易日（源级单条，code=NULL，detail 列滞后周期） | 按滞后周期重采全源资金流 |
 
 关键语义：
-- `scan_board_quality` 先完整计算再**事务内替换**扫描型 open 问题，扫描失败不丢旧台账；已 ignored 的板块按 `(code, type)` 整体豁免。指数完整性与字段合法性分开复检；资金流缺失逐板块检查最新即时快照是否追平全局最新交易日，不使用不会回退的 `has_fund_flow` 做当前质量证据，也不会因单板块当日补采而误报全市场。
+- `scan_board_quality` 先完整计算再**事务内替换**扫描型 open 问题，扫描失败不丢旧台账；已 ignored 的板块按 `(code, type)` 整体豁免。指数完整性与字段合法性分开复检；资金流缺失逐板块检查**每个周期**最新快照是否追平基准日，不使用不会回退的 `has_fund_flow` 做当前质量证据，也不会因单板块当日补采而误报全市场。
+- 资金流质检**多周期口径**：update 已每日全周期刷新，任一周期单次失败会留下该周期缺口，`board_fund_missing`（detail.periods 列缺失周期）/ `board_fund_stale`（detail 列滞后周期）可定向重采修复；数据源**不支持按日期回溯补采**，故不检查历史某天缺口，只盯最新快照新鲜度。stale 只把「有快照但滞后」的周期计入，从未有快照的周期由 missing 按板块覆盖。
 - `board_index_gap` 与 `board_index_gap_daily` 共存：前者定位「最新交易日没追上」，后者定位「历史窗口内具体某天缺失」。修复后者时使用缺失日作为 `start=end` 的窄窗口重采，`get_board_bar` 返回前按 `[start, end]` 过滤，故只幂等 upsert 该缺失日当天数据（**不回填全年**，源端虽按年拉取但在请求侧已截断）；缺一整段连续历史（如板块成立前的整段）不靠逐日修复补，须走 `board_index_gap` 重采（2024 年起）或 `ingest_board_bar(2024-01-01, …)` 全量回填。
 - **晚成立板块豁免**：逐日缺口扫描以各板块 `min(board_bar.trade_date)` 为数据起点锚，起点（板块成立日）之前的缺失属源端本无数据、不报；起点之后的缺失照报漏采。新板块（如每季「xx一季报预增」）首次进字典即自动豁免成立前缺口，不靠人工 ignore；若其成立后被漏采（起点之后空洞）仍会报。源端 2024 起才有板块指数，`backfill` 后 `min` 即真实起点；老板块漏采补采后 `min` 回填 2024-01-02，豁免自动失效。
 - `board_fund_missing` 与 `board_fund_unmatched` 方向相反：前者是「字典目标板块当前无新鲜快照」，后者是「源有、字典缺」。
@@ -148,7 +151,7 @@
 
 板块 issue 走统一的 fix 任务机制（与个股同链路）：
 1. 创建 fix 任务 → issue 置 `fixing` + 绑定 `fix_task_id`；
-2. `_recover_one` 按 issue_type 分派重采（指数重采 2024 起 / 指数逐日缺口按缺失日窄窗口重采 / 成分 `force=True` 绕周频 / 资金流按缺失定向 `board_codes`、按滞后全源重采）；
+2. `_recover_one` 按 issue_type 分派重采（指数重采 2024 起 / 指数逐日缺口按缺失日窄窗口重采 / 成分 `force=True` 绕周频 / 资金流缺失按 detail 周期定向 `board_codes`+`periods`、滞后按 detail 周期全源重采、未匹配全周期重采）；
 3. `recheck_clean` 真检查该问题是否消失（如成分查 `member_snapshot_at` 非空且无 active 同类 issue，逐日缺口查该日 `board_bar` 记录是否存在）；
 4. 通过 → `resolved`；未通过 → 保持 open；任务失败/中断 → `fixing` 复位 `open`；扫描型板块问题修复后立即重扫，同一底层缺口产生的关联台账同步收敛。
 
@@ -213,9 +216,9 @@
 
 | 文件 | 覆盖 |
 |------|------|
-| `backend/tests/test_board_ingest.py`（20 用例） | 字典/成分/指数/资金流采集、只进不出幂等、不完整快照不落库、周频跳过、**ignored 豁免（fund + member）**、fund checkpoint 范围签名与旧格式迁移、update/backfill 语义、留痕、写锁归类、事务原子性 |
-| `backend/tests/test_data_mgmt_b.py` 板块用例（~20） | board 任务注册/互斥/续跑/部分失败、force_members 透传、scan_board_quality 扫描与事务替换、recheck_clean 复检、三类 issue 修复闭环、搜索、概览/hub 板块统计 |
-| `backend/tests/test_sectors_api.py`（10 用例） | `/api/sectors*` 只读接口、权限、涨幅口径、成分股排序 |
+| `backend/tests/test_board_ingest.py`（22 用例） | 字典/成分/指数/资金流采集、**全周期默认采集与多周期 upsert/append**、只进不出幂等、不完整快照不落库、周频跳过、**ignored 豁免（fund + member）**、fund checkpoint 范围签名与旧格式迁移、update/backfill 语义、留痕、写锁归类、事务原子性 |
+| `backend/tests/test_data_mgmt_b.py` 板块用例（~21） | board 任务注册/互斥/续跑/部分失败、force_members 透传、scan_board_quality 扫描与事务替换、**多周期 fund_missing/stale 检查与按周期定向重采**、recheck_clean 复检、三类 issue 修复闭环、搜索、概览/hub 板块统计 |
+| `backend/tests/test_sectors_api.py`（12 用例） | `/api/sectors*` 只读接口、权限、涨幅口径、成分股排序、**多周期净流入字段与排序** |
 | `backend/tests/test_board_watchlist.py` | 板块自选归属隔离、幂等增删、失效快照保留 |
 | `backend/tests/test_pipeline.py` | `DailyPipeline.run(board=True)` 集成、`--skip-board` |
 | `backend/tests/test_ddl.py` | board 四表 DDL、维度注册 |

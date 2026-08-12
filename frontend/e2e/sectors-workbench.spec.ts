@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { loginAsDebugUser } from './helpers/auth'
+import { loginAsDebugUser, saveUserPreference } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 import { DEFAULT_E2E_API_URL } from './helpers/e2e-backend-health.mjs'
 import { openPageAndWaitForHeading } from './helpers/navigation'
@@ -19,6 +19,19 @@ test.describe('板块行情工作台', () => {
       }
     })
     const auth = await loginAsDebugUser(page, request, 'debug_system')
+    // 三视口并行共用调试账号，首屏必须显式校准页面偏好，不能依赖上次回归残留状态。
+    await saveUserPreference(request, auth, {
+      scope: 'page',
+      pageKey: 'sectors',
+      prefKey: 'settings',
+      value: {
+        defaultType: '',
+        defaultScope: 'all',
+        defaultChartMode: 'compare',
+        benchmarkCode: '000905.SH',
+        showAnalysisPanel: true,
+      },
+    })
     const boards = await requireSeededSectors(request, auth.accessToken)
     const projectIndex = ['chromium-compact', 'chromium-standard', 'chromium-default']
       .indexOf(testInfo.project.name)
@@ -28,7 +41,11 @@ test.describe('板块行情工作台', () => {
     })
 
     try {
-      await openPageAndWaitForHeading(page, '/sectors?keyword=E2E板块', '板块行情')
+      await openPageAndWaitForHeading(
+        page,
+        '/sectors?keyword=E2E板块&sort=pct_today&order=desc',
+        '板块行情',
+      )
       await expect(page.getByTestId('sectors-workspace')).toBeVisible({ timeout: 20_000 })
       await expect(page.getByTestId('sectors-chart-title')).toHaveText(boards[0]!.name)
       const compareChart = page.getByTestId('sectors-compare-chart')
@@ -215,6 +232,86 @@ test.describe('板块行情工作台', () => {
 
     await openPageAndWaitForHeading(page, '/sectors?keyword=E2E板块', '板块行情')
     await expect(page.getByTestId('sectors-workspace')).toBeVisible({ timeout: 20_000 })
+    // 固定账号可能保留其它回归写入的 pageSize/hiddenColumns，先恢复页面默认再验收。
+    await page.getByTestId('page-settings-trigger').click()
+    const settingsDrawer = page.getByTestId('page-settings-drawer')
+    await settingsDrawer.getByTestId('page-settings-reset').click()
+    await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
+    await expect(page.getByRole('columnheader', { name: '今日涨幅' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '5日涨幅' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '10日涨幅' })).toBeVisible()
+    const inflowHeader = page.getByRole('columnheader', { name: /即时净流入/ })
+    await expect(inflowHeader.getByText('即时净流入', { exact: true })).toBeVisible()
+    await expect(inflowHeader.locator('.app-table-column-header__meta')).toHaveText('07-17')
+
+    const rankTable = page.getByTestId('sectors-table')
+    const firstSectorRow = page.locator('[data-testid^="sectors-row-"]').first()
+    await expect(firstSectorRow).toBeVisible()
+    const entityCellWidth = await firstSectorRow.evaluate((node) => (
+      node.closest('td')?.getBoundingClientRect().width ?? 0
+    ))
+    expect(entityCellWidth).toBeGreaterThanOrEqual(208)
+    const firstSectorName = page.locator('[data-testid^="sectors-name-"]').first()
+    await expect(firstSectorName).toBeVisible()
+    const entityHeaderLabel = page.getByRole('columnheader', { name: '板块' })
+      .locator('.app-table-column-header__label')
+    const [entityHeaderBox, entityNameBox] = await Promise.all([
+      entityHeaderLabel.boundingBox(),
+      firstSectorName.boundingBox(),
+    ])
+    expect(entityHeaderBox).not.toBeNull()
+    expect(entityNameBox).not.toBeNull()
+    expect(Math.abs(entityHeaderBox!.x - entityNameBox!.x)).toBeLessThanOrEqual(4)
+    const nameMetrics = await firstSectorName.evaluate((node) => ({
+      clientWidth: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+    }))
+    expect(nameMetrics.clientWidth).toBeGreaterThan(0)
+    expect(nameMetrics.scrollWidth).toBeLessThanOrEqual(nameMetrics.clientWidth)
+    const [inflowLabelBox, inflowMetaBox] = await Promise.all([
+      inflowHeader.getByText('即时净流入', { exact: true }).boundingBox(),
+      inflowHeader.locator('.app-table-column-header__meta').boundingBox(),
+    ])
+    expect(inflowLabelBox).not.toBeNull()
+    expect(inflowMetaBox).not.toBeNull()
+    expect(Math.abs(inflowLabelBox!.y - inflowMetaBox!.y)).toBeLessThanOrEqual(2)
+
+    await expect(rankTable).toHaveClass(/el-table--scrollable-x/)
+    const horizontalScrollbar = rankTable.locator('.el-scrollbar__bar.is-horizontal')
+    await expect(horizontalScrollbar).toBeVisible()
+    const scrollbarVisual = await horizontalScrollbar.evaluate((bar) => ({
+      opacity: Number(window.getComputedStyle(bar).opacity),
+      thumbWidth: bar.querySelector<HTMLElement>('.el-scrollbar__thumb')?.getBoundingClientRect().width ?? 0,
+    }))
+    expect(scrollbarVisual.opacity).toBeGreaterThan(0)
+    expect(scrollbarVisual.thumbWidth).toBeGreaterThan(0)
+    const scrollWrap = rankTable.locator('.el-scrollbar__wrap')
+    const scrollMetrics = await scrollWrap.evaluate((node) => ({
+      clientWidth: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+      before: node.scrollLeft,
+    }))
+    expect(scrollMetrics.scrollWidth).toBeGreaterThan(scrollMetrics.clientWidth)
+    await scrollWrap.evaluate((node) => { node.scrollLeft = 80 })
+    await expect.poll(() => scrollWrap.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0)
+
+    await page.getByTestId('sectors-help-tip').focus()
+    await expect(page.getByText('涨幅口径', { exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+
+    const hideAnalysis = page.getByTestId('sectors-hide-analysis')
+    const toggleBox = await hideAnalysis.boundingBox()
+    const rankTitleBox = await page.getByRole('heading', { name: /交易日|2099-/ }).boundingBox()
+    expect(toggleBox).not.toBeNull()
+    expect(rankTitleBox).not.toBeNull()
+    expect(toggleBox!.x).toBeGreaterThan(rankTitleBox!.x)
+    await hideAnalysis.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('sectors-chart')).toHaveCount(0)
+    await expect(page.getByTestId('sectors-workspace')).toHaveClass(/sector-workspace--list-only/)
+    await page.getByTestId('sectors-show-analysis').click()
+    await expect(page.getByTestId('sectors-chart')).toBeVisible()
+
     const nextPage = page.getByRole('button', { name: '下一页' })
     await expect(nextPage).toBeEnabled()
     await nextPage.click()
@@ -230,13 +327,16 @@ test.describe('板块行情工作台', () => {
     await page.getByTestId('sectors-keyword').press('Enter')
 
     await page.getByTestId('page-settings-trigger').click()
-    const settingsDrawer = page.getByTestId('page-settings-drawer')
     const netInflowVisibility = settingsDrawer.getByTestId(
       'component-table-hiddenColumns-net_inflow',
     )
     if (!await netInflowVisibility.isVisible()) {
       await settingsDrawer.getByRole('button', { name: '组件设置', exact: true }).click()
     }
+    await settingsDrawer.getByTestId('component-table-hiddenColumns-pct_10d-switch').click()
+    await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
+    await expect(page.getByRole('columnheader', { name: '10日涨幅' })).toHaveCount(0)
+    await page.getByTestId('page-settings-trigger').click()
     await settingsDrawer.getByTestId('component-table-hiddenColumns-net_inflow-switch').click()
     await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
     await expect(page.getByRole('columnheader', { name: /净流入/ })).toHaveCount(0)
@@ -244,8 +344,8 @@ test.describe('板块行情工作台', () => {
     await settingsDrawer.getByTestId('page-settings-reset').click()
     await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
     await expect(page.getByRole('columnheader', { name: /净流入/ })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: '10日涨幅' })).toBeVisible()
 
-    const firstSectorRow = page.locator('[data-testid^="sectors-row-"]').first()
     await expect(firstSectorRow).toBeVisible({ timeout: 20_000 })
     await expect(firstSectorRow.getByRole('button', { name: /板块自选/ })).toBeVisible()
     await firstSectorRow.click()

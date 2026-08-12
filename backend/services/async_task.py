@@ -872,7 +872,7 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             note = f"成分 {r.get('total', 0)} 只，新增 {r.get('added', 0)} 只"
             ctx.log(note)
         elif issue_type == "board_fund_unmatched":
-            # 资金流未匹配：重采资金流（名称匹配映射），重扫收敛
+            # 资金流未匹配：重采全周期资金流（字典补齐后所有周期都可能需要刷新），重扫收敛
             import json as _json
 
             from backend.services.board_ingest import BoardIngestService
@@ -887,32 +887,58 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
             bsvc = BoardIngestService(c)
             _call_with_ctx(bsvc.ingest_board_dict, board_type=repair_board_type, ctx=ctx)
             res = _call_with_ctx(
-                bsvc.ingest_board_fund_flow, periods=("即时",),
+                bsvc.ingest_board_fund_flow,
                 board_type=repair_board_type, ctx=ctx)
             if res.get("failed"):
                 raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
             note = f"重采资金流 {res.get('rows', 0)} 行（未匹配 {res.get('unmatched', 0)}）"
             ctx.log(note)
         elif issue_type == "board_fund_missing":
-            # 资金流缺失：定向重采该板块。采到不早于最新交易日的即时
-            # 快照后重扫自动收敛；源仍无则保持 open，不使用历史能力标记假解决。
+            # 资金流缺失：定向重采该板块缺失周期。采到不早于最新交易日的快照后重扫自动收敛；
+            # 源仍无则保持 open，不使用历史能力标记假解决。
+            import json as _json
+
             from backend.services.board_ingest import BoardIngestService
-            ctx.log(f"恢复(板块资金流缺失)：重采板块 {code} 资金流")
+            issue_payload = {}
+            if isinstance(issue_detail, str):
+                try:
+                    issue_payload = _json.loads(issue_detail)
+                except (TypeError, ValueError):
+                    issue_payload = {}
+            periods_list = issue_payload.get("periods") if isinstance(issue_payload, dict) else None
+            if not periods_list:
+                periods_list = ("即时",)
+            ctx.log(f"恢复(板块资金流缺失)：重采板块 {code} 周期 {list(periods_list)}")
             bsvc = BoardIngestService(c)
             res = _call_with_ctx(
-                bsvc.ingest_board_fund_flow, periods=("即时",),
+                bsvc.ingest_board_fund_flow, periods=tuple(periods_list),
                 board_codes=[code], ctx=ctx)
             if res.get("failed"):
                 raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
             note = f"重采资金流 {res.get('rows', 0)} 行"
             ctx.log(note)
         elif issue_type == "board_fund_stale":
-            # 资金流滞后（源级单条）：全源重采资金流（即时周期），快照追平后重扫收敛。
+            # 资金流滞后（源级单条）：从 detail.periods 解析滞后周期列表定向重采全源；
+            # detail 无 periods（旧纯文本 issue）回退全周期。快照追平后重扫收敛。
+            import json as _json
+
             from backend.services.board_ingest import BoardIngestService
-            ctx.log("恢复(板块资金流滞后)：重采全源资金流")
+            issue_payload = {}
+            if isinstance(issue_detail, str):
+                try:
+                    issue_payload = _json.loads(issue_detail)
+                except (TypeError, ValueError):
+                    issue_payload = {}
+            stale_periods = issue_payload.get("periods") if isinstance(issue_payload, dict) else None
+            if not stale_periods:
+                ctx.log("恢复(板块资金流滞后)：重采全源资金流全周期")
+                periods_arg = None
+            else:
+                ctx.log(f"恢复(板块资金流滞后)：重采全源资金流周期 {list(stale_periods)}")
+                periods_arg = tuple(stale_periods)
             bsvc = BoardIngestService(c)
             res = _call_with_ctx(
-                bsvc.ingest_board_fund_flow, periods=("即时",), ctx=ctx)
+                bsvc.ingest_board_fund_flow, periods=periods_arg, ctx=ctx)
             if res.get("failed"):
                 raise RuntimeError(f"板块资金流重采失败：{res['failed']}")
             note = f"重采资金流 {res.get('rows', 0)} 行"

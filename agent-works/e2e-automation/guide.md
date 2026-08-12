@@ -69,7 +69,7 @@ Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；�
 回归结束后始终按上方命令恢复日常后端，不能遗留只读、物理写或限流豁免开关。
 `sectors-workbench.spec.ts` 不读取开发者本地真实板块数据；`e2e_board_data.py` 只写入
 `E2E9*` 板块、`9999*.SZ` 股票及 2099 年固定行情，并在后端停服时 seed/cleanup。
-聚焦运行统一使用 `npm run test:e2e:sectors`，其退出 trap 会精确清理并恢复测试前后端状态。
+聚焦运行统一使用 `npm run test:e2e:sectors`，其退出 trap 会精确清理并恢复测试前后端状态；三视口共享固定调试账号、板块自选和页面偏好，因此脚本固定 `--workers=1` 串行执行，禁止并行改写状态。
 `npm run test:e2e` 和 `npm run test:e2e:ui` 均通过 `scripts/run-playwright.sh` 启动，
 并复用 `scripts/load-local-env.sh` 加载仓库根目录 `.env.local`；因此登录密码和 PG/E2E
 环境与后端使用相同的 `KEY=value` / `export KEY=value` 语义，不在 TypeScript helper 中二次解析变量文件。

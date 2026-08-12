@@ -86,12 +86,12 @@ R1、R2、R3、R4、R5、R6、R7、R8、R9、R10、R21、R22、R23（逐项映�
 
 #### Slot 与组件设计
 
-P1 `sectors`（list，`responsiveProfile: 'single-column'`，`minWidth=0`）：
+P1 `sectors`（master-detail，`responsiveProfile: 'mixed-panel'`，`minWidth=0`）：
 
 | 区域 | slotId | 组件种类 | 是否 growMain | 滚动归属 | 是否可重排 | 说明 |
 |---|---|---|---|---|---|---|
 | action | filter-bar | filter-bar | 否 | 不滚动 | 否 | 板块类型 `el-select`（全部/概念/行业）+ TradeDatePicker + 名称搜索框（`el-input` 防抖）+ 查询主命令按钮 |
-| main | table | data-table | 是 | 表体内部滚动 | 否 | 板块列表主表 + AppPagination |
+| main | table | wide-table | 是 | 表体纵向滚动、列超宽时横向滚动 | 否 | 板块排行宽表 + AppPagination |
 | overlay | settings | settings-drawer | 否 | 抽屉内滚动 | 否 | 页面设置（布局/组件设置/业务选项） |
 
 P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
@@ -134,16 +134,16 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 ### 4.1 页面 P1（板块行情列表页）技术实现
 
-- 原型文件：`prototypes/sector-board.html`。当前承接区域：顶部筛选区（全市场/自选、板块类型、日期、搜索）、板块排行（板块/今日/5日/净流入）、同屏走势区、表体内部滚动与分页、设置抽屉和数据/空/错误/加载四态。原型只提供信息架构参考，当前重构后的同屏列表与图表交互为实现事实源。
+- 原型文件：`prototypes/sector-board.html`。当前承接区域：顶部筛选区（全市场/自选、板块类型、日期、搜索）、板块排行（默认板块/今日涨幅/5日涨幅/10日涨幅/即时净流入）、可收起的同屏走势区、标题说明、表体内部滚动与分页、设置抽屉和数据/空/错误/加载四态。原型只提供信息架构参考，当前重构后的同屏列表与图表交互为实现事实源。
 - 原型与需求差异说明：
-  1. 重构后的排行表只保留板块/今日/5日/净流入，类型与成分数合并到名称单元格，20日/涨跌家数/领涨股进入当前观察摘要；列表与图表同屏，点行只切换观察对象。
+  1. 排行表默认展示板块/今日涨幅/5日涨幅/10日涨幅/即时净流入，类型与成分数合并到名称单元格；20日涨幅和多周期净流入通过设置启用，列总宽超过排行区域时由 `wide-table` 提供常显横向滚动条。当前观察摘要展示今日/5/10/20日涨幅、即时净流入和涨跌家数；列表与图表同屏，点行只切换观察对象，排行标题右上角的固定按钮可收起右侧分析区为全宽排行并保留上下文，同一位置负责再次展开。
   2. 列表页 `pageSize` 使用全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`；详情成分股保持业务专属 10/20/30/50。
   3. **领涨股取数来源**：按所选行情交易日有效成分股 `pct_chg` 最大者计算；停牌、缺收盘或缺有效前收者排除，同涨幅按成交额降序、代码升序稳定决胜。资金流源字段不参与页面口径。
 
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 板块列表筛选（7.1.1） | R7、R10 | 默认全部板块 + 今日涨幅降序；切类型/排序/搜索（≤50 字符防抖） | action 区板块类型 `el-select`（全部/概念/行业）+ `TradeDatePicker` + `el-input` 防抖 + 查询主命令按钮；筛选态写 URL query（`type/sort/order/keyword/page`，`type` 为全部时省略）；偏好优先级 URL query > 已保存偏好 > 默认值 | SectorsView.vue、AppControlRow、TradeDatePicker、usePageSettings | `GET /api/sectors`（白名单参数） | 加载 `v-loading`；空态引导去采集页；错误 AppStateBlock 重试；无权限 permission 态 | T11 |
-| 板块排行与观察联动（7.1.2） | R7 | 列头排序、服务端分页、点行切换当前板块、勾选附加对比、列显隐 | AppDataTable + AppPagination 与右侧走势图组成 master-detail；`defaultSort/pageSize/hiddenColumns` 走 `componentValueOf('table', ...)`；pageSize 走全局 `PAGE_SIZE_OPTIONS=[20,50,100,200]`；「查看详情」位于当前观察身份区 | AppDataTable、AppPagination、SectorCompareChart、pageRegistry `sectors` | `GET /api/sectors` | 空值列显示「—」；资金流列标注数据日期；分页越界回落 | T11 |
+| 板块排行与观察联动（7.1.2） | R7 | 列头排序、服务端分页、点行切换当前板块、勾选附加对比、列显隐、宽表横向滚动、收起/展开走势分析、标题说明 | `AppDataTable(kind=wide-table)` + AppPagination 与右侧走势图组成 master-detail；列宽由全局 `AppTableColumn` 根据语义、表头长度、排序控件、同行元信息与主内容前置控件推导，资金日期使用标准 `header-meta` 同行表头；`defaultSort/pageSize/hiddenColumns` 走 `componentValueOf('table', ...)`；每个 `componentMeta.columns` 候选必须进入真实显隐判断；分析区展开状态走 `usePageSettings`；切换按钮固定在排行标题右上角；说明复用 `HelpTip`；「查看详情」位于当前观察身份区 | AppDataTable、AppTableColumn、AppPagination、SectorCompareChart、HelpTip、pageRegistry `sectors` | `GET /api/sectors` | 空值列显示「—」；资金流列标注数据日期；表头不换行并与主内容对齐；列超宽时滚动条常显且可真实横移；分页越界回落；收起不清空观察和对比状态 | T11 |
 
 组件资产闭环（P1）：
 
@@ -423,7 +423,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 - 边界与异常：E2E 选择器只用稳定契约；回归结束后重启后端移除限流豁免。
 - 验证方式：`cd frontend && npm run test:e2e`（含新用例与相关回归）+ `npm run build` + `python -m pytest backend/tests/ -q` 全量（遵守 DuckDB 锁规则）。
 - 完成标准：需求文档 §11 验收标准全部通过；`npm run build` 与后端全量测试绿。
-- 实际落地情况：`backend/devtools/e2e_board_data.py` + `frontend/e2e/helpers/sectorData.ts` + `scripts/run-sector-e2e.sh` 提供受本地环境与 `AI_STOCKS_E2E_WRITE=1` 门控的确定性 seed/cleanup；只写 E2E 专属主键并在后端停服时写入。`sectors-workbench.spec.ts` 覆盖三视口排行、指数基准、周期缩放、自选、对比、K 线、量能、高度分隔条、菜单/个股/显式返回、浏览器原生后退/前进、列表空态与错误重试；`sector-quality-recovery.spec.ts` 覆盖成分重采收敛。工作台不再依赖本地真实板块数据。
+- 实际落地情况：`backend/devtools/e2e_board_data.py` + `frontend/e2e/helpers/sectorData.ts` + `scripts/run-sector-e2e.sh` 提供受本地环境与 `AI_STOCKS_E2E_WRITE=1` 门控的确定性 seed/cleanup；只写 E2E 专属主键并在后端停服时写入。三视口共享固定调试账号、自选和页面偏好，脚本固定 `--workers=1` 串行，避免跨 project 状态竞争。`sectors-workbench.spec.ts` 覆盖三视口排行、指数基准、周期缩放、自选、对比、K 线、量能、高度分隔条、10日涨幅列显隐、分析区收起/展开、标题说明、菜单/个股/显式返回、浏览器原生后退/前进、列表空态与错误重试；`pageRegistry.spec.ts` 强制可配置列候选必须由页面真实消费显隐状态；`sector-quality-recovery.spec.ts` 覆盖成分重采收敛。工作台不再依赖本地真实板块数据。
 
 ## 7. 数据库与 SQL 计划
 
