@@ -70,6 +70,23 @@ def _macd_cross_events(
     return golden.astype("boolean"), dead.astype("boolean")
 
 
+def compute_macd(close: pd.Series) -> pd.DataFrame:
+    """按交易日升序收盘价计算统一 MACD 原子指标（12/26/9，严格后向）。"""
+    numeric_close = pd.to_numeric(close, errors="coerce").astype("float64")
+    ema_fast = EMA(numeric_close, _MACD_FAST)
+    ema_slow = EMA(numeric_close, _MACD_SLOW)
+    diff = ema_fast - ema_slow
+    dea = EMA(diff, _MACD_SIGNAL)
+    golden, dead = _macd_cross_events(diff, dea)
+    return pd.DataFrame({
+        "macd_diff": diff,
+        "macd_dea": dea,
+        "macd_hist": 2.0 * (diff - dea),
+        "macd_golden_cross": golden,
+        "macd_dead_cross": dead,
+    })
+
+
 def compute_stock_indicators(df: pd.DataFrame, params: dict | None = None) -> pd.DataFrame:
     """对单只股票（升序前复权日线）计算全部指标列。"""
     params = params or build_params()
@@ -85,16 +102,9 @@ def compute_stock_indicators(df: pd.DataFrame, params: dict | None = None) -> pd
         out[f"ma{n}"] = ma[n]
 
     # ── MACD（固定 12/26/9，全部严格后向）──
-    ema_fast = EMA(close, _MACD_FAST)
-    ema_slow = EMA(close, _MACD_SLOW)
-    macd_diff = ema_fast - ema_slow
-    macd_dea = EMA(macd_diff, _MACD_SIGNAL)
-    out["macd_diff"] = macd_diff
-    out["macd_dea"] = macd_dea
-    out["macd_hist"] = 2.0 * (macd_diff - macd_dea)
-    out["macd_golden_cross"], out["macd_dead_cross"] = _macd_cross_events(
-        macd_diff, macd_dea
-    )
+    macd = compute_macd(close)
+    for column in macd.columns:
+        out[column] = macd[column]
 
     # ── 新高（位置）──
     hhv = {n: HHV(high, n) for n in (60, 120, 240, 480)}

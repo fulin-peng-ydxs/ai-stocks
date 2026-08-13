@@ -30,6 +30,12 @@ test.describe('板块行情工作台', () => {
         defaultChartMode: 'compare',
         benchmarkCode: '000905.SH',
         showAnalysisPanel: true,
+        compareMetrics: ['cum', 'roll_5d', 'roll_10d', 'roll_20d', 'inflow', 'breadth'],
+        defaultCompareMetric: 'cum',
+        charts: {
+          slot2: 'volume',
+          slot3: 'macd',
+        },
       },
     })
     const boards = await requireSeededSectors(request, auth.accessToken)
@@ -61,21 +67,24 @@ test.describe('板块行情工作台', () => {
       await page.getByTestId('sectors-benchmark').click()
       await page.getByRole('option', { name: '中证 500' }).click()
       await expect(compareChart).toHaveAttribute('data-benchmark-code', '000905.SH')
+      await page.getByTestId('sectors-compare-range').click()
+      await page.getByRole('option', { name: '120日', exact: true }).click()
       const pointCount = async () => Number(await compareChart.getAttribute('data-point-count'))
-      await expect.poll(pointCount).toBeGreaterThan(0)
+      await expect.poll(pointCount).toBeLessThanOrEqual(120)
       const defaultPointCount = await pointCount()
+      expect(defaultPointCount).toBeGreaterThan(0)
       expect(defaultPointCount).toBeLessThanOrEqual(120)
-      await page.getByTestId('sectors-range').click()
+      await page.getByTestId('sectors-compare-range').click()
       await page.getByRole('option', { name: '全部' }).click()
       await expect.poll(pointCount).toBeGreaterThan(defaultPointCount)
-      await page.getByTestId('sectors-range').click()
-      await page.getByRole('option', { name: '近 60 日' }).click()
+      await page.getByTestId('sectors-compare-range').click()
+      await page.getByRole('option', { name: '60日', exact: true }).click()
       await expect.poll(pointCount).toBeLessThanOrEqual(60)
       expect(await pointCount()).toBeGreaterThan(0)
-      await page.getByTestId('sectors-range').click()
-      await page.getByRole('option', { name: '近 120 日' }).click()
+      await page.getByTestId('sectors-compare-range').click()
+      await page.getByRole('option', { name: '120日', exact: true }).click()
       await expect.poll(pointCount).toBe(defaultPointCount)
-      await expect(page.getByText('区间首日统一记为 0%；虚线为中证 500', { exact: false }))
+      await expect(page.getByText('虚线为中证 500', { exact: false }))
         .toBeVisible()
 
       const watchlistButton = page.getByTestId(`sectors-watchlist-${watchlistBoard.board_code}`)
@@ -101,6 +110,9 @@ test.describe('板块行情工作台', () => {
       await page.getByTestId('sectors-chart-mode-kline').click()
       await expect(page.getByTestId('sectors-chart-mode-kline')).toHaveAttribute('aria-pressed', 'true')
       await expect(page.getByTestId('sectors-chart')).toBeVisible()
+      const listChart = page.getByTestId('sectors-chart')
+      await expect(listChart.locator('.stock-chart-panel--volume')).toBeVisible()
+      await expect(listChart.locator('.stock-chart-panel--macd')).toBeVisible()
 
       await page.getByTestId('page-settings-trigger').click()
       const listDrawer = page.getByTestId('page-settings-drawer')
@@ -112,7 +124,13 @@ test.describe('板块行情工作台', () => {
       await expect(listDrawer.getByTestId('sectors-default-scope')).toBeVisible()
       await expect(listDefaultMode).toBeVisible()
       await expect(listDrawer.getByTestId('kline-setting-section')).toBeVisible()
+      await expect(listDrawer.getByTestId('sectors-chart-slot2')).toBeVisible()
+      await expect(listDrawer.getByTestId('sectors-chart-slot3')).toBeVisible()
+      await listDrawer.getByTestId('sectors-chart-slot2-macd').click()
+      await listDrawer.getByTestId('sectors-chart-slot3-hidden').click()
       await listDrawer.getByRole('button', { name: '关闭页面设置' }).click()
+      await expect(listChart.locator('.stock-chart-panel--macd')).toBeVisible()
+      await expect(listChart.locator('.stock-chart-panel--volume')).toHaveCount(0)
 
       await page.getByTestId('sectors-open-detail').click()
       await expect(page).toHaveURL(new RegExp(`/sectors/${boards[3]!.board_code}`))
@@ -160,7 +178,13 @@ test.describe('板块行情工作台', () => {
         await detailDrawer.getByRole('button', { name: '业务选项', exact: true }).click()
       }
       await expect(detailKlineSettings).toBeVisible()
+      await expect(detailDrawer.getByTestId('sector-detail-chart-slot2')).toBeVisible()
+      await expect(detailDrawer.getByTestId('sector-detail-chart-slot3')).toBeVisible()
+      await detailDrawer.getByTestId('sector-detail-chart-slot2-volume').click()
+      await detailDrawer.getByTestId('sector-detail-chart-slot3-macd').click()
       await detailDrawer.getByRole('button', { name: '关闭页面设置' }).click()
+      await expect(chartSection.locator('.stock-chart-panel--volume')).toBeVisible()
+      await expect(chartSection.locator('.stock-chart-panel--macd')).toBeVisible()
 
       await page.locator('.menu').getByRole('menuitem', { name: '每日榜单', exact: true }).click()
       await expect(page).toHaveURL(/\/board$/)

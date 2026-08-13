@@ -201,6 +201,18 @@ def test_get_bars_range(c):
     assert bars[-1]["close"] == pytest.approx(115.0)
 
 
+def test_get_bar_indicators_reuses_macd_definition_and_keeps_nullable_warmup(c):
+    """板块 MACD 与统一指标定义同口径，历史不足时保持可空而不是伪造零值。"""
+    indicators = _svc(c).get_bar_indicators(
+        "309121", date(2026, 8, 4), date(2026, 8, 7),
+    )
+    assert [row["trade_date"] for row in indicators] == [
+        "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07",
+    ]
+    assert all(row["macd_diff"] is None for row in indicators)
+    assert all(row["macd_golden_cross"] is None for row in indicators)
+
+
 def test_get_benchmark_bars_range(c):
     """市场指数基准与板块走势使用同一日期和 OHLC 字段契约。"""
     bars = _svc(c).get_benchmark_bars(

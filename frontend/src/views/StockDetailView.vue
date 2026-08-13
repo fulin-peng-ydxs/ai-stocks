@@ -35,6 +35,7 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import type { MacdPanelState } from '@/components/stock-chart/workspaceOptions'
 import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
@@ -114,12 +115,6 @@ const chartSettings = computed({
   },
 })
 const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
-const auxiliaryChartOptions = [
-  { label: '量能', value: 'volume' },
-  { label: 'MACD', value: 'macd' },
-  { label: '隐藏', value: 'hidden' },
-]
-
 function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
   chartPreferences.setSlotType(slot, value)
 }
@@ -1085,7 +1080,13 @@ onBeforeUnmount(() => {
       @reset="resetDetailSettings"
     >
       <template #business>
-        <PageSettingSection title="图表设置" desc="图表类型、显隐和拖动后的高度会自动保存。">
+        <StockChartSettingSection
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          test-id-prefix="stock-detail-chart"
+          @change="setAuxiliaryChart"
+        >
+          <template #before>
           <div class="setting-item">
             <div class="setting-label">复权模式</div>
             <PageSegmented v-model="settings.adjustMode" aria-label="复权模式" :options="[
@@ -1094,33 +1095,8 @@ onBeforeUnmount(() => {
               { label: '后复权', value: 'hfq' },
             ]" />
           </div>
-          <div class="setting-item">
-            <div class="setting-label">图表一</div>
-            <div class="fixed-chart-value" data-testid="stock-detail-chart-slot1-kline">
-              K线（固定，不可隐藏）
-            </div>
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">图表二</div>
-            <PageSegmented
-              :model-value="chartPreferences.preferences.value.slot2"
-              :options="auxiliaryChartOptions"
-              aria-label="图表二类型"
-              test-id="stock-detail-chart-slot2"
-              @update:model-value="setAuxiliaryChart('slot2', $event)"
-            />
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">图表三</div>
-            <PageSegmented
-              :model-value="chartPreferences.preferences.value.slot3"
-              :options="auxiliaryChartOptions"
-              aria-label="图表三类型"
-              test-id="stock-detail-chart-slot3"
-              @update:model-value="setAuxiliaryChart('slot3', $event)"
-            />
-          </div>
-        </PageSettingSection>
+          </template>
+        </StockChartSettingSection>
 
         <KlineSettingSection />
 
@@ -1250,18 +1226,6 @@ onBeforeUnmount(() => {
 .setting-label {
   font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
-}
-.fixed-chart-value {
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-  border: 1px solid var(--page-settings-seg-active-border);
-  border-radius: 10px;
-  background: var(--page-settings-seg-active-bg);
-  color: var(--page-settings-text);
-  font-size: var(--app-font-size-table);
-  font-weight: var(--app-font-weight-section);
 }
 .nav-bar {
   display: flex;

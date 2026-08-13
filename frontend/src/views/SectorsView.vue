@@ -9,7 +9,6 @@ import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import CandleChart from '@/components/CandleChart.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
@@ -18,6 +17,8 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import SectorCompareChart from '@/components/SectorCompareChart.vue'
+import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
+import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
@@ -33,7 +34,7 @@ import {
   type SectorRow,
   type SectorSortField,
 } from '@/api/sectors'
-import type { Bar } from '@/api/stocks'
+import type { Bar, IndicatorRow } from '@/api/stocks'
 import {
   COMPARE_METRIC_META,
   COMPARE_METRIC_ORDER,
@@ -50,6 +51,11 @@ import {
 } from '@/composables/useKlinePrefs'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import {
+  createDefaultStockChartPreferences,
+  useStockChartPreferences,
+  type AuxiliaryChartSlot,
+} from '@/composables/useStockChartPreferences'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { getPageLayout } from '@/layout'
@@ -82,8 +88,14 @@ const sectorsDefaults = {
   showAnalysisPanel: true,
   compareMetrics: COMPARE_METRIC_ORDER as CompareMetric[],
   defaultCompareMetric: 'cum' as CompareMetric,
+  charts: createDefaultStockChartPreferences(),
 }
-const { settings, isDirty, reset, whenHydrated } = usePageSettings('sectors', sectorsDefaults)
+const { settings, isDirty, reset, hydrated, whenHydrated } = usePageSettings('sectors', sectorsDefaults)
+const chartSettings = computed({
+  get: () => settings.charts,
+  set: (value) => { settings.charts = value },
+})
+const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
 
 const sectorsLayout = getPageLayout('sectors')
 const {
@@ -199,6 +211,7 @@ const chartLoading = ref(false)
 const chartError = ref('')
 const benchmarkError = ref('')
 const compareBars = ref<Record<string, SectorBar[]>>({})
+const compareIndicators = ref<Record<string, IndicatorRow[]>>({})
 // 累计涨跌窗口的独立缓存：头部「累计涨跌」槽与其它固定指标（5/10/20日）的图表数据同用一个
 // compareBars 会导致切固定指标时覆盖掉累计窗口数据、数值漂移，故单独缓存，仅在累计被选中时刷新。
 const cumBars = ref<Record<string, SectorBar[]>>({})
@@ -238,6 +251,7 @@ const klineBars = computed<Bar[]>(() =>
     turnover_rate: null,
   })),
 )
+const klineIndicators = computed(() => compareIndicators.value[activeCode.value] ?? [])
 const compareMetricKind = computed(() => metricKind(compareMetric.value, compareWindow.value))
 // 头部槽位只展示用户配置的指标，顺序固定为指标池顺序（过滤掉历史遗留的失效指标，如 speed）。
 // 配置为空时回退全量，避免头部无槽可切。
@@ -324,12 +338,17 @@ async function loadChart(): Promise<void> {
       : Promise.resolve(null)
     const [results, benchmark] = await Promise.all([Promise.all(
       codes.map(async (code) => {
-        const result = await getSectorBars(code, start, end)
-        return [code, result.list] as const
+        const result = await getSectorBars(code, start, end, chartMode.value === 'kline')
+        return [code, result] as const
       }),
     ), benchmarkPromise])
     if (requestVersion !== chartRequestVersion) return
-    const rawSeries: Record<string, SectorBar[]> = Object.fromEntries(results)
+    const rawSeries: Record<string, SectorBar[]> = Object.fromEntries(
+      results.map(([code, result]) => [code, result.list]),
+    )
+    compareIndicators.value = Object.fromEntries(
+      results.map(([code, result]) => [code, result.indicators ?? []]),
+    )
     const benchmarkKey = benchmark ? `benchmark:${benchmark.index_code}` : ''
     if (benchmark) rawSeries[benchmarkKey] = benchmark.list
     const trimmed = trimAlignedKlineRange(rawSeries, effectiveRange.value)
@@ -574,6 +593,25 @@ function pctClass(value: number | null | undefined): string {
 }
 function fmtFlowDate(value: string | null): string {
   return value ? value.slice(5) : '—'
+}
+
+function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
+  chartPreferences.setSlotType(slot, value)
+}
+
+function handleRatioDraft(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+}
+
+function handleRatioCommit(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+  chartPreferences.commitRatioDraft()
+}
+
+function resetSettings(): void {
+  chartPreferences.cancelRatioDraft()
+  reset()
+  resetLayout()
 }
 // 头部槽快照与走势图严格同口径：趋势指标取当前板块已加载 bars 的最后一个指标值（= 图最右端点），
 // 截面指标取列表行快照字段。返回 { text, cls } 避免 value/class 两处重复 switch。
@@ -1115,12 +1153,21 @@ onMounted(async () => {
               :cross-section="crossSection"
               fill
             />
-            <CandleChart
+            <StockChartWorkspace
               v-else
+              class="sector-kline-workspace"
               :bars="klineBars"
+              :indicators="klineIndicators"
+              :slot2="chartPreferences.preferences.value.slot2"
+              :slot3="chartPreferences.preferences.value.slot3"
+              :height-ratios="chartPreferences.currentRatios.value"
+              adjust-label="板块指数"
+              :min-height="384"
               :zoom-start="0"
               :zoom-end="100"
-              fill
+              aria-label="板块指数多图联动工作区"
+              @ratio-draft="handleRatioDraft"
+              @ratio-commit="handleRatioCommit"
             />
           </div>
 
@@ -1151,9 +1198,15 @@ onMounted(async () => {
         page-key="sectors"
         :config="drawerConfig"
         :business-visible="true"
-        @reset="reset(); resetLayout()"
+        @reset="resetSettings"
       >
         <template #business>
+          <StockChartSettingSection
+            :slot2="chartPreferences.preferences.value.slot2"
+            :slot3="chartPreferences.preferences.value.slot3"
+            test-id-prefix="sectors-chart"
+            @change="setAuxiliaryChart"
+          />
           <PageSettingSection title="默认查询">
             <div v-if="canViewWatchlist" class="setting-item">
               <div class="setting-label">默认板块范围</div>
@@ -1566,7 +1619,7 @@ onMounted(async () => {
 }
 .chart-stage :deep(.cmp-wrap),
 .chart-stage :deep(.cmp),
-.chart-stage :deep(.candle-wrap) {
+.sector-kline-workspace {
   height: 100%;
 }
 .chart-footer {

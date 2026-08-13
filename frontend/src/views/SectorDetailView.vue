@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowLeft, Star, StarFilled } from '@element-plus/icons-vue'
 import { ElMessage, type Sort } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import type { Bar } from '@/api/stocks'
+import type { Bar, IndicatorRow } from '@/api/stocks'
 import {
   addSectorWatchlist,
   getSector,
@@ -23,6 +23,7 @@ import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import {
@@ -35,6 +36,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   createDefaultStockChartPreferences,
   useStockChartPreferences,
+  type AuxiliaryChartSlot,
 } from '@/composables/useStockChartPreferences'
 import { useTableSort } from '@/composables/useTableSort'
 import { useTradeDates } from '@/composables/useTradeDates'
@@ -88,10 +90,7 @@ const drawerConfig = {
   componentLayerValuesOf,
 }
 
-const sectorChartDefaults = createDefaultStockChartPreferences()
-sectorChartDefaults.slot2 = 'volume'
-sectorChartDefaults.slot3 = 'hidden'
-const detailDefaults = { charts: sectorChartDefaults }
+const detailDefaults = { charts: createDefaultStockChartPreferences() }
 const {
   settings,
   isDirty: settingsDirty,
@@ -153,6 +152,7 @@ const detailLoading = ref(false)
 const detailError = ref('')
 const forbidden = ref(false)
 const bars = ref<Bar[]>([])
+const indicators = ref<IndicatorRow[]>([])
 const chartLoading = ref(false)
 const chartError = ref('')
 const members = ref<SectorMember[]>([])
@@ -198,7 +198,7 @@ async function loadChart(): Promise<void> {
   chartError.value = ''
   try {
     const start = klineRangeQueryStart(end, viewDays.value, dataMin.value || '2024-01-01')
-    const data = await getSectorBars(code.value, start, end)
+    const data = await getSectorBars(code.value, start, end, true)
     if (version !== requestVersion) return
     const mapped = data.list.map((bar, index) => ({
       date: bar.trade_date,
@@ -213,8 +213,11 @@ async function loadChart(): Promise<void> {
     }))
     // 周期是数据与缩放的共同边界，不能在“近 N 日”下再缩放回周期外历史。
     bars.value = trimKlineRange(mapped, viewDays.value)
+    const visibleDates = new Set(bars.value.map((bar) => bar.date))
+    indicators.value = (data.indicators ?? []).filter((row) => visibleDates.has(row.trade_date))
   } catch (error) {
     if (version !== requestVersion) return
+    indicators.value = []
     chartError.value = getErrorMessage(error, '指数走势加载失败')
   } finally {
     if (version === requestVersion) chartLoading.value = false
@@ -320,6 +323,10 @@ function handleRatioDraft(ratios: number[]): void {
 function handleRatioCommit(ratios: number[]): void {
   chartPreferences.updateRatioDraft(ratios)
   chartPreferences.commitRatioDraft()
+}
+
+function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
+  chartPreferences.setSlotType(slot, value)
 }
 
 watch([sortBy, sortOrder], () => {
@@ -445,8 +452,9 @@ onMounted(async () => {
               v-else
               class="sector-chart-workspace"
               :bars="bars"
-              slot2="volume"
-              slot3="hidden"
+              :indicators="indicators"
+              :slot2="chartPreferences.preferences.value.slot2"
+              :slot3="chartPreferences.preferences.value.slot3"
               :height-ratios="chartPreferences.currentRatios.value"
               adjust-label="板块指数"
               :min-height="chartWorkspaceMinHeight"
@@ -525,6 +533,12 @@ onMounted(async () => {
         @reset="resetSettings"
       >
         <template #business>
+          <StockChartSettingSection
+            :slot2="chartPreferences.preferences.value.slot2"
+            :slot3="chartPreferences.preferences.value.slot3"
+            test-id-prefix="sector-detail-chart"
+            @change="setAuxiliaryChart"
+          />
           <KlineSettingSection />
         </template>
       </PageSettingsDrawer>

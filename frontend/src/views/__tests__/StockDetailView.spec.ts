@@ -268,6 +268,7 @@ function testGlobal(pinia: ReturnType<typeof createPinia>) {
         template: '<main><slot name="action"/><slot name="main"/><slot name="overlays"/></main>',
       },
       StockChartWorkspace: StockChartWorkspaceStub,
+      StockChartSettingSection: false,
       AppStateBlock: AppStateBlockStub,
       KlineRangeSelect: KlineRangeSelectStub,
       PageSettingsDrawer: PageSettingsDrawerStub,

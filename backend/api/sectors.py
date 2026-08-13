@@ -151,12 +151,21 @@ def get_sector_bars(
     code: str,
     start: date = Query(..., description="区间起点"),
     end: date = Query(..., description="区间终点"),
+    include_indicators: bool = Query(False, description="是否返回板块指数 MACD"),
 ) -> ApiResponse:
     """板块指数区间序列（原值，周期由前端区间参数控制）。"""
     if start > end:
         raise _bad_params("start 不能晚于 end")
-    data = BoardQueryService().get_bars(code, start, end)
-    return ok({"board_code": code, "start": str(start), "end": str(end), "list": data})
+    service = BoardQueryService()
+    data = service.get_bars(code, start, end)
+    indicators = service.get_bar_indicators(code, start, end) if include_indicators else []
+    return ok({
+        "board_code": code,
+        "start": str(start),
+        "end": str(end),
+        "list": data,
+        "indicators": indicators,
+    })
 
 
 @router.get("/{code}/members", response_model=ApiResponse, dependencies=_VIEW)

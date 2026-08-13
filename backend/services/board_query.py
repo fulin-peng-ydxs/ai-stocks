@@ -26,6 +26,7 @@ from datetime import date
 import pandas as pd
 
 from backend.datasource.ths_board import FUND_FLOW_PERIODS
+from backend.indicators.compute import compute_macd
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 # 周期 → 交易日回溯天数（含当日）：今日=当天、5日=5个交易日、10日=10、20日=20。
@@ -310,6 +311,30 @@ class BoardQueryService:
              "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"],
              "volume": r["volume"], "amount": r["amount"]}
             for _, r in df.iterrows()
+        ]
+
+    def get_bar_indicators(self, code: str, start: date, end: date) -> list[dict]:
+        """板块指数 MACD；从可用历史起算后再截取区间，避免短周期预热失真。"""
+        df = self.c.query_df(
+            "SELECT trade_date, close FROM board_bar "
+            "WHERE board_code = ? AND trade_date <= ? ORDER BY trade_date",
+            [code, end],
+        )
+        if df.empty:
+            return []
+        macd = compute_macd(df["close"])
+        rows = pd.concat([df[["trade_date"]].reset_index(drop=True), macd], axis=1)
+        rows = rows[pd.to_datetime(rows["trade_date"]).dt.date >= start]
+
+        def value_or_none(value):
+            return None if pd.isna(value) else value.item() if hasattr(value, "item") else value
+
+        return [
+            {
+                "trade_date": str(pd.Timestamp(row["trade_date"]).date()),
+                **{column: value_or_none(row[column]) for column in macd.columns},
+            }
+            for _, row in rows.iterrows()
         ]
 
     def get_benchmark_bars(self, index_code: str, start: date, end: date) -> list[dict]:

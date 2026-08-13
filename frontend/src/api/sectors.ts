@@ -1,5 +1,6 @@
 // 板块行情 API（对应 backend/api/sectors.py，板块概念需求 R7-R10/R13/R14）
 import http from './client'
+import type { IndicatorRow } from './stocks'
 
 /** 列表可排序字段码（与 board_query.SORT_FIELDS 双向一致，前端中文标签仅 UI 映射）。 */
 export type SectorSortField =
@@ -80,6 +81,8 @@ export interface SectorBars {
   start: string
   end: string
   list: SectorBar[]
+  /** includeIndicators=true 时返回；缺省请求保持仅行情的轻量契约。 */
+  indicators?: IndicatorRow[]
 }
 
 export interface SectorBenchmarkBars {
@@ -142,8 +145,15 @@ export function getSector(code: string, tradeDate?: string): Promise<SectorDetai
   })
 }
 
-export function getSectorBars(code: string, start: string, end: string): Promise<SectorBars> {
-  return http.get(`/sectors/${encodeURIComponent(code)}/bars`, { params: { start, end } })
+export function getSectorBars(
+  code: string,
+  start: string,
+  end: string,
+  includeIndicators = false,
+): Promise<SectorBars> {
+  return http.get(`/sectors/${encodeURIComponent(code)}/bars`, {
+    params: { start, end, include_indicators: includeIndicators },
+  })
 }
 
 export function getSectorBenchmarkBars(
