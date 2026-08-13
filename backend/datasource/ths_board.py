@@ -62,6 +62,8 @@ _FUND_FLOW_PERIODS = {
 }
 # 资金流周期元组（单一事实源：采集默认全周期、质检多周期检查、查询层字段映射共用）
 FUND_FLOW_PERIODS: tuple[str, ...] = tuple(_FUND_FLOW_PERIODS)
+# 资金流分页空壳重试次数：data.*/funds 偶发 200-无行空壳页，重试后再空才跳过该页（不截断后续页）
+_FUND_FLOW_EMPTY_RETRIES = 3
 # 指数日线 JS 模板（{clid}/{yyyy}）
 _BAR_LINE_URL = "https://d.10jqka.com.cn/v4/line/bk_{clid}/01/{year}.js"
 # 分页终止护栏（登录墙截断下的兜底；实测第 6 页起必登录墙，护栏远大于实际可达页数）
@@ -349,23 +351,44 @@ class ThsBoardSource:
         返回列（清洗后）：name, board_code(6 位路径 code), period, inflow, outflow,
         net_inflow, net_ratio, leader_stock, leader_pct。
         资金流源无稳定代码、只有名称时，board_code 由调用方按名称映射（未匹配写质检不伪造代码，见 R4）。
+
+        空壳页处理：`data.*/funds/*` 分页偶发返回 HTTP 200 但无数据行的空壳页（反爬），
+        直接 break 会把后续页一并截断、造成覆盖不全（实测即时周期集合在 350~387 间波动）。
+        首页空壳会连带丢 page_info 误判 total_pages=1，故首页与后续页都空壳重试，
+        重试后仍空只跳过该页、不截断后续页。
         """
         _validate_board_type(board_type)
         if period not in _FUND_FLOW_PERIODS:
             raise ValueError(f"非法资金流周期: {period}（可选 {list(_FUND_FLOW_PERIODS)}）")
         base = _FUND_FLOW_URLS[board_type]
         board_seg = _FUND_FLOW_PERIODS[period]
-        # 先探首页拿总页数（page_info「1/N」）
+        # 先探首页拿总页数（page_info「1/N」）；空壳重试至拿到含数据的首页
         first_url = f"{base}/{board_seg}field/tradezdf/order/desc/page/1/ajax/1/free/1/"
-        first = self._http_get(first_url, data_host=True)
-        total_pages = _fund_flow_total_pages(first)
-        frames: list[pd.DataFrame] = []
-        for page in range(1, total_pages + 1):
-            url = f"{base}/{board_seg}field/tradezdf/order/desc/page/{page}/ajax/1/free/1/"
-            text = first if page == 1 else self._http_get(url, data_host=True)
-            df = _parse_fund_flow(text, board_type=board_type, period=period)
-            if df.empty:
+        first_text = ""
+        first = pd.DataFrame(columns=_FUND_FLOW_COLS)
+        for attempt in range(_FUND_FLOW_EMPTY_RETRIES):
+            first_text = self._http_get(first_url, data_host=True)
+            first = _parse_fund_flow(first_text, board_type=board_type, period=period)
+            if not first.empty:
                 break
+            if attempt < _FUND_FLOW_EMPTY_RETRIES - 1:
+                time.sleep(self._retry_backoff_sec)
+        total_pages = _fund_flow_total_pages(first_text)
+        frames = [first] if not first.empty else []
+        for page in range(2, total_pages + 1):
+            url = f"{base}/{board_seg}field/tradezdf/order/desc/page/{page}/ajax/1/free/1/"
+            df = pd.DataFrame(columns=_FUND_FLOW_COLS)
+            for attempt in range(_FUND_FLOW_EMPTY_RETRIES):
+                text = self._http_get(url, data_host=True)
+                df = _parse_fund_flow(text, board_type=board_type, period=period)
+                if not df.empty:
+                    break
+                if attempt < _FUND_FLOW_EMPTY_RETRIES - 1:
+                    time.sleep(self._retry_backoff_sec)
+            if df.empty:
+                log.warning("资金流 %s/%s 第 %d/%d 页重试 %d 次仍空壳，跳过该页",
+                            board_type, period, page, total_pages, _FUND_FLOW_EMPTY_RETRIES)
+                continue
             frames.append(df)
         if not frames:
             return pd.DataFrame(columns=_FUND_FLOW_COLS)

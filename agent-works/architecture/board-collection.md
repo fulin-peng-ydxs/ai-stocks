@@ -18,6 +18,8 @@
 - **v cookie**：详情页 AJAX 必须带 `v=...`，否则 401；由 `py_mini_racer` 执行 `ths.js` 动态生成，401 时自动刷新重试一次。
 - **登录态**（可选）：解除详情页/字典翻页登录墙（第 6 页起无登录必命中），但 cookie 里的 `v` 会过期，须用新生成的 `v` 覆盖。Cookie 来源优先级：环境变量 `AI_STOCKS_THS_COOKIE` / `AI_STOCKS_THS_COOKIE_FILE` > 数据治理「同花顺板块·登录 Cookie」页面配置（`ths_board.login_cookie`，密码输入框、读接口脱敏）。
 - **翻页终止**：翻页是路径参数 `page/N/ajax/1/`，每页行数不固定（概念 10/行业 20），用「该页无行」终止翻页并做页码上限护栏。
+- **资金流空壳页**：`data.*/funds/*` 分页偶发返回 HTTP 200 但无数据行的空壳页（反爬）。`get_board_fund_flow` 对首页与后续页都空壳重试（`_FUND_FLOW_EMPTY_RETRIES=3`），重试后仍空只**跳过该页、不截断后续页**——修复前 `df.empty→break` 遇中间页空壳会截断后续所有页，造成即时周期覆盖在 350~387 间波动（2026-08-13 实测）。
+- **资金流源覆盖边界**：排行榜源（`funds/gnzjl`）覆盖约 350~387 个概念板块；**部分老板块（如 WiFi 6/AI PC/中国AI 50，K 线自 2024 起）排行榜源从不收录**（换排序参数也不出现），gnSection/详情页虽有资金流但为**不同口径**（同刻排行榜「净额」vs 详情页「资金净流入(亿)」系统性不同，diff -5.87~+3.63），不得混入 `board_fund_flow.net_inflow`。
 - **排序参数敏感**：部分板块带 `field/199112/order/desc` 才能取全，部分不带反而更多；鲁棒策略是两种请求都试、取代码集合的并集。
 - **限流/超时/重试走配置**（见下文「配置」），`rate_limited` 装饰器优先读实例属性 `_min_interval_sec`，前端改配置后新建实例即生效。
 - **完整性判定**：单板块分页不完整（登录墙/翻页失败/401）时 `get_board_members` 返回 `complete=False`，采集层据此不落库。
@@ -216,6 +218,7 @@
 
 | 文件 | 覆盖 |
 |------|------|
+| `backend/tests/test_ths_board_source.py`（24 用例） | 数据源层（mock HTTP 不触网）：v cookie/401 刷新、字典/成分/指数解析、资金流翻页、**资金流空壳页重试与跳过（不截断后续页）**、登录墙/登录态、限流参数注入 |
 | `backend/tests/test_board_ingest.py`（22 用例） | 字典/成分/指数/资金流采集、**全周期默认采集与多周期 upsert/append**、只进不出幂等、不完整快照不落库、周频跳过、**ignored 豁免（fund + member）**、fund checkpoint 范围签名与旧格式迁移、update/backfill 语义、留痕、写锁归类、事务原子性 |
 | `backend/tests/test_data_mgmt_b.py` 板块用例（~21） | board 任务注册/互斥/续跑/部分失败、force_members 透传、scan_board_quality 扫描与事务替换、**多周期 fund_missing/stale 检查与按周期定向重采**、recheck_clean 复检、三类 issue 修复闭环、搜索、概览/hub 板块统计 |
 | `backend/tests/test_sectors_api.py`（12 用例） | `/api/sectors*` 只读接口、权限、涨幅口径、成分股排序、**多周期净流入字段与排序** |

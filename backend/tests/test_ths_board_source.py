@@ -301,6 +301,81 @@ def test_get_board_fund_flow_paged():
     assert df["net_inflow"].tolist() == [56.29, 52.58]
 
 
+def test_get_board_fund_flow_empty_shell_retried_then_success():
+    """资金流：第 2 页偶发空壳（200-无行）重试后成功，不截断后续页。"""
+    p1 = (
+        '<span class="page_info">1/3</span>'
+        '<table><thead><tr><th>序号</th><th>行业</th><th>涨跌幅</th><th>流入资金(亿)</th>'
+        '<th>流出资金(亿)</th><th>净额(亿)</th><th>领涨股</th><th>涨跌幅.1</th></tr></thead><tbody>'
+        '<tr><td>1</td><td>CRO概念</td><td>8.05%</td><td>227.07</td><td>170.78</td><td>56.29</td>'
+        '<td>博腾股份</td><td>20.02%</td></tr>'
+        '</tbody></table>'
+    )
+    p2 = (
+        '<table><thead><tr><th>序号</th><th>行业</th><th>涨跌幅</th><th>流入资金(亿)</th>'
+        '<th>流出资金(亿)</th><th>净额(亿)</th><th>领涨股</th><th>涨跌幅.1</th></tr></thead><tbody>'
+        '<tr><td>2</td><td>减肥药</td><td>6.62%</td><td>174.41</td><td>121.83</td><td>52.58</td>'
+        '<td>博腾股份</td><td>20.02%</td></tr>'
+        '</tbody></table>'
+    )
+    p3 = (
+        '<table><thead><tr><th>序号</th><th>行业</th><th>涨跌幅</th><th>流入资金(亿)</th>'
+        '<th>流出资金(亿)</th><th>净额(亿)</th><th>领涨股</th><th>涨跌幅.1</th></tr></thead><tbody>'
+        '<tr><td>3</td><td>猴痘概念</td><td>5.1%</td><td>100.0</td><td>80.0</td><td>20.0</td>'
+        '<td>博腾股份</td><td>20.02%</td></tr>'
+        '</tbody></table>'
+    )
+    # 用计数器模拟：第 2 页第 1 次空壳（空 tbody），重试返回数据
+    class _FlakySession:
+        def __init__(self):
+            self.page2_hits = 0
+
+        def get(self, url, headers=None, timeout=None):
+            if "/page/2/ajax/1/free/1/" in url:
+                self.page2_hits += 1
+                if self.page2_hits == 1:
+                    return _FakeResp('<table class="m-table"><tbody></tbody></table>')
+                return _FakeResp(p2)
+            if "/page/3/ajax/1/free/1/" in url:
+                return _FakeResp(p3)
+            if "/funds/gnzjl/" in url:
+                return _FakeResp(p1)
+            return _FakeResp("", status=404)
+
+    s = _make_source({})
+    s._session = _FlakySession()  # type: ignore[assignment]
+    df = s.get_board_fund_flow("concept", "即时")
+    assert len(df) == 3
+    assert set(df["name"]) == {"CRO概念", "减肥药", "猴痘概念"}
+
+
+def test_get_board_fund_flow_persistent_empty_mid_page_skipped():
+    """资金流：中间页持续空壳（重试仍空）只跳过该页，不截断后续页。"""
+    p1 = (
+        '<span class="page_info">1/3</span>'
+        '<table><thead><tr><th>序号</th><th>行业</th><th>涨跌幅</th><th>流入资金(亿)</th>'
+        '<th>流出资金(亿)</th><th>净额(亿)</th><th>领涨股</th><th>涨跌幅.1</th></tr></thead><tbody>'
+        '<tr><td>1</td><td>CRO概念</td><td>8.05%</td><td>227.07</td><td>170.78</td><td>56.29</td>'
+        '<td>博腾股份</td><td>20.02%</td></tr>'
+        '</tbody></table>'
+    )
+    p3 = (
+        '<table><thead><tr><th>序号</th><th>行业</th><th>涨跌幅</th><th>流入资金(亿)</th>'
+        '<th>流出资金(亿)</th><th>净额(亿)</th><th>领涨股</th><th>涨跌幅.1</th></tr></thead><tbody>'
+        '<tr><td>3</td><td>猴痘概念</td><td>5.1%</td><td>100.0</td><td>80.0</td><td>20.0</td>'
+        '<td>博腾股份</td><td>20.02%</td></tr>'
+        '</tbody></table>'
+    )
+    s = _make_source({
+        "/page/2/ajax/1/free/1/": '<table class="m-table"><tbody></tbody></table>',  # 第 2 页持续空壳
+        "/page/3/ajax/1/free/1/": p3,  # 更具体，先匹配
+        "/funds/gnzjl/": p1,
+    })
+    df = s.get_board_fund_flow("concept", "即时")
+    assert len(df) == 2
+    assert set(df["name"]) == {"CRO概念", "猴痘概念"}
+
+
 def test_validate_board_type():
     with pytest.raises(ValueError):
         _make_source({}).get_board_dict("bad_type")
