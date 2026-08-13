@@ -1,10 +1,18 @@
 <script setup lang="ts">
-// 板块对比图：多板块归一化走势叠加。各板块指数量级差异大（几百~几千点），直接叠价格不可比，
-// 统一换算成相对基准点的累计涨跌幅（%）后同图叠加，用于横向对比不同板块的强弱与走势分化。
+// 板块对比图：多板块同图对比。趋势类指标（累计/单日/N 日滚动涨跌幅）以折线叠加，各板块指数
+// 量级差异大（几百~几千点），统一换算成涨跌幅（%）后同图比较；截面类指标（净流入、涨跌家数）
+// 只有最新快照，改用柱状对比。累计涨跌的基期由数据加载层决定（区间首日 vs 近一年），本组件
+// 只以输入 bars 的首个有效收盘为基准。
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { SectorBar } from '@/api/sectors'
 import { chartCssVariable, useEChartsTheme } from '@/components/chartTheme'
+import {
+  COMPARE_METRIC_META,
+  metricKind,
+  metricSeries,
+  type CompareMetric,
+} from '@/utils/sectorCompare'
 
 // 单个板块的序列：code/name 标识 + 该板块的日线 bars（升序）
 export interface CompareSeries {
@@ -13,16 +21,29 @@ export interface CompareSeries {
   bars: SectorBar[]
 }
 
+// 截面柱状数据（净流入/涨跌家数等只有最新快照的指标）。second 仅 breadth（下跌家数）使用。
+export interface CrossSectionDatum {
+  name: string
+  value: number
+  second?: number
+}
+
 const props = defineProps<{
   series: CompareSeries[]
   benchmark?: CompareSeries | null
   fill?: boolean
+  metric: CompareMetric
+  rangeDays: number
+  crossSection?: CrossSectionDatum[]
 }>()
 const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 let resizeListening = false
 const theme = useEChartsTheme()
 const wrapBg = computed(() => theme.value.background)
+
+const meta = computed(() => COMPARE_METRIC_META[props.metric])
+const isBar = computed(() => metricKind(props.metric, props.rangeDays) === 'bar')
 
 // 对比线只消费当前主题的语义 token，避免固定色板在自定义预设或夜间模式下失真。
 const lineColors = computed(() => [
@@ -42,17 +63,12 @@ const dates = computed<string[]>(() => {
   return Array.from(set).sort()
 })
 
-// 归一化：把每条 close 序列映射到全量日期轴上，固定以区间首个有效收盘为 0%。
-function normalizedData(s: CompareSeries): (number | null)[] {
-  const byDate = new Map(s.bars.map((b) => [b.trade_date, b.close]))
-  const aligned = dates.value.map((d) => byDate.get(d) ?? null)
-  // 区间首日可能缺数据，向后找该序列首个有效收盘作为归一化起点。
-  let base: number | null = null
-  for (let i = 0; i < aligned.length; i += 1) {
-    if (aligned[i] != null) { base = aligned[i]; break }
-  }
-  if (base == null || base === 0) return aligned.map(() => null)
-  return aligned.map((c) => (c == null ? null : +(((c - base) / base) * 100).toFixed(2)))
+// 把板块 bars 按指标换算后对齐到全量日期轴。换算在板块自身连续序列上进行（相邻/N 日关系不被
+// 日期轴上的 null 打断），再按日期映射到并集轴上。
+function alignedMetric(s: CompareSeries): (number | null)[] {
+  const vals = metricSeries(s.bars, props.metric)
+  const byDate = new Map(s.bars.map((b, i) => [b.trade_date, vals[i]]))
+  return dates.value.map((d) => byDate.get(d) ?? null)
 }
 
 function escapeHtml(value: unknown): string {
@@ -64,17 +80,17 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#39;')
 }
 
-function render() {
+function renderLine() {
   if (!chart) return
   const t = theme.value
   const colors = lineColors.value
   const upColor = chartCssVariable('--market-up-color', '#f66055')
   const downColor = chartCssVariable('--market-down-color', '#1ec96e')
-  const benchmarkData = props.benchmark ? normalizedData(props.benchmark) : null
+  const benchmarkData = props.benchmark ? alignedMetric(props.benchmark) : null
   const sectorSeries = props.series.map((s, i) => ({
     name: s.name,
     type: 'line' as const,
-    data: normalizedData(s),
+    data: alignedMetric(s),
     showSymbol: false,
     connectNulls: false,
     smooth: false,
@@ -134,7 +150,7 @@ function render() {
             + '</div>'
         }).join('')
         return `<div style="min-width:150px;line-height:1.7">`
-          + `<div style="color:${t.label};margin-bottom:2px">${date} · 区间涨跌</div>`
+          + `<div style="color:${t.label};margin-bottom:2px">${date} · ${meta.value.label}</div>`
           + content
           + '</div>'
       },
@@ -163,6 +179,86 @@ function render() {
   }, { notMerge: true })
 }
 
+function renderBar() {
+  if (!chart) return
+  const t = theme.value
+  const upColor = chartCssVariable('--market-up-color', '#f66055')
+  const downColor = chartCssVariable('--market-down-color', '#1ec96e')
+  const data = props.crossSection ?? []
+  const names = data.map((d) => d.name)
+  const unit = meta.value.unit
+  const isBreadth = props.metric === 'breadth'
+  const series = isBreadth
+    ? [
+        {
+          name: '上涨家数', type: 'bar' as const,
+          data: data.map((d) => d.value),
+          barMaxWidth: 28, itemStyle: { color: upColor },
+        },
+        {
+          name: '下跌家数', type: 'bar' as const,
+          data: data.map((d) => -(d.second ?? 0)),
+          barMaxWidth: 28, itemStyle: { color: downColor },
+        },
+      ]
+    : [{
+        name: meta.value.label, type: 'bar' as const,
+        data: data.map((d) => ({ value: d.value, itemStyle: { color: d.value > 0 ? upColor : downColor } })),
+        barMaxWidth: 28,
+      }]
+  chart.setOption({
+    animation: false,
+    backgroundColor: t.background,
+    grid: { left: 64, right: 24, top: 40, bottom: 40 },
+    legend: {
+      data: series.map((item) => item.name),
+      top: 4, textStyle: { color: t.label, fontSize: 11 },
+    },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: t.tooltipBackground, borderColor: t.tooltipBorder, borderWidth: 1,
+      textStyle: { color: t.text, fontSize: 12 },
+      axisPointer: { type: 'shadow' },
+      formatter: (params: any) => {
+        const rows = (Array.isArray(params) ? params : [params]).filter(Boolean)
+        const name = escapeHtml(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
+        const content = rows.map((item: any) => {
+          const value = typeof item.value === 'number' ? item.value : Number(item.value)
+          const valid = Number.isFinite(value)
+          const color = !valid || value === 0 ? t.text : value > 0 ? upColor : downColor
+          const valueText = valid ? `${value > 0 ? '+' : ''}${value.toFixed(2)}${unit}` : '--'
+          return `<div style="display:flex;justify-content:space-between;gap:18px">`
+            + `<span>${item.marker ?? ''}${escapeHtml(item.seriesName)}</span>`
+            + `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong></span>`
+            + '</div>'
+        }).join('')
+        return `<div style="min-width:150px;line-height:1.7">`
+          + `<div style="color:${t.label};margin-bottom:2px">${name}</div>`
+          + content
+          + '</div>'
+      },
+    },
+    xAxis: {
+      type: 'category', data: names,
+      axisLine: { lineStyle: { color: t.axis } },
+      axisLabel: { color: t.label, fontSize: 10, interval: 0, rotate: names.length > 4 ? 20 : 0 },
+    },
+    yAxis: {
+      scale: true,
+      axisLine: { show: false },
+      axisLabel: { color: t.label, fontSize: 10, formatter: `{value}${unit}` },
+      splitLine: { lineStyle: { color: t.split } },
+    },
+    series,
+  }, { notMerge: true })
+}
+
+function render() {
+  if (!chart) return
+  if (isBar.value) renderBar()
+  else renderLine()
+}
+
 function resize() {
   chart?.resize()
 }
@@ -188,6 +284,9 @@ onActivated(() => { attachResize(); resize() })
 onDeactivated(detachResize)
 watch(() => props.series, render, { deep: true })
 watch(() => props.benchmark, render, { deep: true })
+watch(() => props.metric, render)
+watch(() => props.rangeDays, render)
+watch(() => props.crossSection, render, { deep: true })
 watch(theme, render)
 onBeforeUnmount(() => {
   detachResize()
@@ -200,9 +299,9 @@ onBeforeUnmount(() => {
   <div
     class="cmp-wrap"
     :class="{ 'cmp-wrap--fill': fill }"
-    :data-point-count="dates.length"
-    :data-benchmark-code="benchmark?.code ?? ''"
-    :data-benchmark-point-count="benchmark?.bars.length ?? 0"
+    :data-point-count="isBar ? (crossSection?.length ?? 0) : dates.length"
+    :data-benchmark-code="isBar ? '' : (benchmark?.code ?? '')"
+    :data-benchmark-point-count="isBar ? 0 : (benchmark?.bars.length ?? 0)"
   >
     <div ref="el" class="cmp" />
   </div>

@@ -28,6 +28,7 @@ from backend.storage.pg_ddl import (
     _PUBLISH_STATE_ROLLED_BACK,
     _STAGE4_BUSINESS_GRANTS_MARKER,
     _STAGE6_ASSET_VISIBILITY_MARKER,
+    _SECTOR_MENU_GRANTS_MARKER,
     _SEED_MENU_TREE,
     _SEED_RESOURCES,
     _USER_RESOURCE_CODES,
@@ -563,6 +564,57 @@ def test_stage4_business_grants_backfilled_for_existing_builtin_roles(pg):
         _restore_role_grants(pg, ROLE_NORMAL, role_snapshot)
         _restore_app_config(pg, [marker_key], marker_snapshot)
         _restore_perm_versions(pg, perm_snapshot)
+
+
+def test_sector_menu_grants_backfilled_for_normal(pg):
+    """存量库 normal 缺 /sectors 菜单（仅资源码 sectors:view）时，迁移补菜单并 bump perm_ver。"""
+    uid = "sector_menu_backfill_user"
+    marker_key = _SECTOR_MENU_GRANTS_MARKER
+    marker_snapshot = _snapshot_app_config(pg, [marker_key])
+    role_snapshot = _snapshot_role_grants(pg, ROLE_NORMAL)
+    perm_snapshot = _snapshot_perm_versions(pg)
+    pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+    pg.execute(
+        "INSERT INTO sys_user (id, tenant_id, account, role_code, perm_ver, status) "
+        "VALUES (%s, 'pytest', %s, %s, 0, 'active')",
+        [uid, uid, ROLE_NORMAL],
+    )
+    pg.execute(
+        "INSERT INTO sys_user_role (user_id, role_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+        [uid, ROLE_NORMAL],
+    )
+    try:
+        # 模拟旧库：normal 已有其它菜单（_seed_role_grants 跳过），但 /sectors 菜单缺失。
+        pg.execute("DELETE FROM app_config WHERE key=%s", [marker_key])
+        pg.execute("DELETE FROM sys_role_menu WHERE role_id=%s AND menu_id=%s", [ROLE_NORMAL, "/sectors"])
+
+        seed_rbac(pg)
+
+        menus = set(pg.query_df(
+            "SELECT menu_id FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])["menu_id"])
+        perm_ver = int(pg.query_df(
+            "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        assert "/sectors" in menus
+        assert perm_ver == 1
+    finally:
+        pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
+        _restore_role_grants(pg, ROLE_NORMAL, role_snapshot)
+        _restore_app_config(pg, [marker_key], marker_snapshot)
+        _restore_perm_versions(pg, perm_snapshot)
+
+
+def test_sector_menu_grants_idempotent(pg):
+    """marker 已存在时迁移 no-op：不增行、不 bump。"""
+    marker_key = _SECTOR_MENU_GRANTS_MARKER
+    before = set(pg.query_df(
+        "SELECT menu_id FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])["menu_id"])
+    perm_snapshot = _snapshot_perm_versions(pg)
+    # 确保 marker 存在（seed 已写入），再跑一次 seed_rbac 应无变化。
+    seed_rbac(pg)
+    after = set(pg.query_df(
+        "SELECT menu_id FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])["menu_id"])
+    assert after == before
+    assert _snapshot_perm_versions(pg) == perm_snapshot
 
 
 def test_fk_delete_actions(pg):

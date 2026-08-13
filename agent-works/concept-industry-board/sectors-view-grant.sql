@@ -7,7 +7,9 @@
 --
 -- 影响：sys_role_resource（normal/tenant_admin 获得 sectors:view）+ 受影响用户 perm_ver 自增。
 --   sectors:view：GET /api/sectors*（板块行情列表/详情，板块概念 R22/T8）
--- 守卫：require_perm('sectors:view')；无授权用户接口 403 fail-closed、菜单不可见。
+-- 守卫：require_perm('sectors:view')；无授权用户接口 403 fail-closed。
+-- 注：本迁移只补接口资源码，不含 /sectors 菜单授权——存量库的菜单码由
+--   `sector-menu-grant.sql`（marker migration.sector_menu_grants_v1）单独补齐。
 --
 -- 可逆性（确定性基线恢复）：回滚基线 = 执行前快照中 normal/tenant_admin 已持有的
 -- `sectors:view` 授权（即回滚只删除本回填新增的 `sectors:view` 授权行，不触碰其他既有授权）。

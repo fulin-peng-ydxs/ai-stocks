@@ -35,6 +35,15 @@ import {
 } from '@/api/sectors'
 import type { Bar } from '@/api/stocks'
 import {
+  COMPARE_METRIC_META,
+  COMPARE_METRIC_ORDER,
+  COMPARE_RANGE_OPTIONS,
+  metricKind,
+  metricSeries,
+  metricWindow,
+  type CompareMetric,
+} from '@/utils/sectorCompare'
+import {
   klineRangeQueryStart,
   trimAlignedKlineRange,
   useKlinePrefs,
@@ -71,6 +80,8 @@ const sectorsDefaults = {
   defaultChartMode: 'compare' as 'compare' | 'kline',
   benchmarkCode: '000905.SH',
   showAnalysisPanel: true,
+  compareMetrics: COMPARE_METRIC_ORDER as CompareMetric[],
+  defaultCompareMetric: 'cum' as CompareMetric,
 }
 const { settings, isDirty, reset, whenHydrated } = usePageSettings('sectors', sectorsDefaults)
 
@@ -182,10 +193,15 @@ const { validDefault: klineDefaultRange } = useKlinePrefs()
 const rangeDays = ref<number>(klineDefaultRange.value)
 const chartMode = ref<'compare' | 'kline'>(settings.defaultChartMode)
 const benchmarkCode = ref(settings.benchmarkCode)
+const compareMetric = ref<CompareMetric>(settings.defaultCompareMetric)
+const compareWindow = ref<number>(250)
 const chartLoading = ref(false)
 const chartError = ref('')
 const benchmarkError = ref('')
 const compareBars = ref<Record<string, SectorBar[]>>({})
+// 累计涨跌窗口的独立缓存：头部「累计涨跌」槽与其它固定指标（5/10/20日）的图表数据同用一个
+// compareBars 会导致切固定指标时覆盖掉累计窗口数据、数值漂移，故单独缓存，仅在累计被选中时刷新。
+const cumBars = ref<Record<string, SectorBar[]>>({})
 const benchmarkSeries = ref<{ code: string; name: string; bars: SectorBar[] } | null>(null)
 let chartRequestVersion = 0
 
@@ -222,6 +238,44 @@ const klineBars = computed<Bar[]>(() =>
     turnover_rate: null,
   })),
 )
+const compareMetricKind = computed(() => metricKind(compareMetric.value, compareWindow.value))
+// 头部槽位只展示用户配置的指标，顺序固定为指标池顺序（过滤掉历史遗留的失效指标，如 speed）。
+// 配置为空时回退全量，避免头部无槽可切。
+const visibleCompareMetrics = computed<CompareMetric[]>(() => {
+  const configured = settings.compareMetrics as CompareMetric[]
+  const list = COMPARE_METRIC_ORDER.filter((m) => configured.includes(m))
+  return list.length ? list : [...COMPARE_METRIC_ORDER]
+})
+const metricStripStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${visibleCompareMetrics.value.length}, minmax(72px, 1fr))`,
+}))
+// 请求区间窗口：趋势指标窗口跟随周期（cum=compareWindow、固定滚动=自身窗口）。
+const effectiveRange = computed<number>(() =>
+  chartMode.value === 'compare' ? metricWindow(compareMetric.value, compareWindow.value) : rangeDays.value,
+)
+// 截面数据：净流入/涨跌家数取列表行快照；单日累计退化为「今日涨幅」柱状。
+const crossSection = computed(() => {
+  if (compareMetric.value === 'inflow') {
+    return compareRows.value.map((row) => ({
+      name: row.name,
+      value: row.net_inflow ?? 0,
+    }))
+  }
+  if (compareMetric.value === 'breadth') {
+    return compareRows.value.map((row) => ({
+      name: row.name,
+      value: row.up_count,
+      second: row.down_count,
+    }))
+  }
+  if (compareMetric.value === 'cum' && compareWindow.value === 1) {
+    return compareRows.value.map((row) => ({
+      name: row.name,
+      value: row.pct_today ?? 0,
+    }))
+  }
+  return []
+})
 function chartEnd(): string {
   return tradeDate.value || marketDate.value || dataMax.value || ''
 }
@@ -238,8 +292,17 @@ async function loadChart(): Promise<void> {
     benchmarkError.value = ''
     return
   }
+  // 柱状模式（截面指标 / 单日累计）无时间轴，直接消费列表行快照，无需请求 bars。
+  if (chartMode.value === 'compare' && compareMetricKind.value === 'bar') {
+    chartRequestVersion += 1
+    chartLoading.value = false
+    chartError.value = ''
+    benchmarkError.value = ''
+    benchmarkSeries.value = null
+    return
+  }
   const end = chartEnd()
-  const start = klineRangeQueryStart(end, rangeDays.value, dataMin.value || '2024-01-01')
+  const start = klineRangeQueryStart(end, effectiveRange.value, dataMin.value || '2024-01-01')
   if (!start || !end) return
 
   const requestVersion = ++chartRequestVersion
@@ -247,7 +310,10 @@ async function loadChart(): Promise<void> {
   chartError.value = ''
   benchmarkError.value = ''
   try {
-    const benchmarkPromise = chartMode.value === 'compare' && benchmarkCode.value
+    // 截面指标（净流入/涨跌家数）与价格基准指数无同口径可比性，跳过基准请求。
+    const needBenchmark = chartMode.value === 'compare'
+      && compareMetricKind.value === 'line' && benchmarkCode.value
+    const benchmarkPromise = needBenchmark
       ? getSectorBenchmarkBars(benchmarkCode.value, start, end)
           .catch((error) => {
             if (requestVersion === chartRequestVersion) {
@@ -266,8 +332,12 @@ async function loadChart(): Promise<void> {
     const rawSeries: Record<string, SectorBar[]> = Object.fromEntries(results)
     const benchmarkKey = benchmark ? `benchmark:${benchmark.index_code}` : ''
     if (benchmark) rawSeries[benchmarkKey] = benchmark.list
-    const trimmed = trimAlignedKlineRange(rawSeries, rangeDays.value)
+    const trimmed = trimAlignedKlineRange(rawSeries, effectiveRange.value)
     compareBars.value = Object.fromEntries(codes.map((code) => [code, trimmed[code] ?? []]))
+    // 累计涨跌被选中时同步刷新其独立缓存，供头部槽在切换到其它指标后仍能取到正确窗口的数值。
+    if (compareMetric.value === 'cum') {
+      cumBars.value = { ...compareBars.value }
+    }
     if (benchmark && !benchmark.list.length) {
       benchmarkError.value = `${benchmark.name}在当前区间暂无行情`
     }
@@ -455,9 +525,16 @@ watch(defaultSize, (value) => {
   page.value = 1
   void load()
 })
-watch([rangeDays, chartMode, benchmarkCode], () => {
+watch([rangeDays, chartMode, benchmarkCode, compareMetric, compareWindow], () => {
   if (restoring) return
   void loadChart()
+})
+// 抽屉里把当前指标从展示列表移除时，回退到首个可见指标，保持图与头部一致。
+watch(visibleCompareMetrics, (list) => {
+  if (restoring) return
+  if (list.length && !list.includes(compareMetric.value)) {
+    compareMetric.value = list[0]!
+  }
 })
 
 function sourceQuery() {
@@ -498,6 +575,45 @@ function pctClass(value: number | null | undefined): string {
 function fmtFlowDate(value: string | null): string {
   return value ? value.slice(5) : '—'
 }
+// 头部槽快照与走势图严格同口径：趋势指标取当前板块已加载 bars 的最后一个指标值（= 图最右端点），
+// 截面指标取列表行快照字段。返回 { text, cls } 避免 value/class 两处重复 switch。
+function metricSlot(metric: CompareMetric): { text: string; cls: string } {
+  if (!activeRow.value) return { text: '—', cls: 'muted' }
+  const row = activeRow.value
+  if (metric === 'breadth') return { text: `${row.up_count} / ${row.down_count}`, cls: '' }
+  if (metric === 'inflow') return { text: fmtInflow(row.net_inflow), cls: pctClass(row.net_inflow) }
+  // 单日累计：柱状口径与列表行今日涨幅一致。
+  if (metric === 'cum' && compareWindow.value === 1) {
+    return { text: fmtPct(row.pct_today), cls: pctClass(row.pct_today) }
+  }
+  // 固定滚动指标：直接用后端已算好的窗口涨幅字段（与列表行同口径）。
+  if (metric === 'roll_5d') return { text: fmtPct(row.pct_5d), cls: pctClass(row.pct_5d) }
+  if (metric === 'roll_10d') return { text: fmtPct(row.pct_10d), cls: pctClass(row.pct_10d) }
+  if (metric === 'roll_20d') return { text: fmtPct(row.pct_20d), cls: pctClass(row.pct_20d) }
+  // 累计涨跌：从独立缓存 cumBars 按当前周期窗口现算，避免被其它指标的数据覆盖导致数值漂移。
+  const bars = cumBars.value[activeCode.value]
+  if (!bars?.length) return { text: '—', cls: 'muted' }
+  const vals = metricSeries(bars, 'cum')
+  const last = vals[vals.length - 1] ?? null
+  return { text: last == null ? '—' : fmtPct(last), cls: pctClass(last) }
+}
+function metricSlotLabel(metric: CompareMetric): string {
+  const base = COMPARE_METRIC_META[metric].label
+  if (metric === 'cum') {
+    const opt = COMPARE_RANGE_OPTIONS.find((o) => o.value === compareWindow.value)
+    return opt ? `${base} · ${opt.label}` : base
+  }
+  return base
+}
+function sanitizeCompareMetric(value: unknown): CompareMetric {
+  const v = String(value ?? '')
+  return (COMPARE_METRIC_ORDER as string[]).includes(v) ? (v as CompareMetric) : 'cum'
+}
+// 切换指标：固定窗口指标（5/10/20日）不反向改动累计涨跌的周期窗口——累计窗口只由周期列表下拉决定。
+function selectCompareMetric(metric: CompareMetric): void {
+  if (compareMetric.value === metric) return
+  compareMetric.value = metric
+}
 
 onMounted(async () => {
   await whenHydrated()
@@ -510,6 +626,11 @@ onMounted(async () => {
   listScope.value = resolved.listScope
   chartMode.value = resolved.chartMode
   benchmarkCode.value = resolved.benchmarkCode
+  compareMetric.value = sanitizeCompareMetric(settings.defaultCompareMetric)
+  // 默认指标若被移出展示列表，回退到首个可见指标，避免图与头部高亮脱节。
+  if (!visibleCompareMetrics.value.includes(compareMetric.value)) {
+    compareMetric.value = visibleCompareMetrics.value[0] ?? 'cum'
+  }
   if (query.date) tradeDate.value = query.date
   keyword.value = resolved.keyword
   page.value = resolved.page
@@ -865,7 +986,7 @@ onMounted(async () => {
               </p>
             </div>
             <div class="chart-head-actions">
-              <div v-if="chartMode === 'compare'" class="benchmark-control">
+              <div v-if="chartMode === 'compare' && compareMetricKind === 'line'" class="benchmark-control">
                 <span>对比指数</span>
                 <AppFilterSelect
                   v-model="benchmarkCode"
@@ -876,7 +997,15 @@ onMounted(async () => {
                   data-testid="sectors-benchmark"
                 />
               </div>
-              <KlineRangeSelect v-model="rangeDays" width="112px" test-id="sectors-range" />
+              <KlineRangeSelect v-if="chartMode === 'kline'" v-model="rangeDays" width="112px" test-id="sectors-range" />
+              <el-select
+                v-else-if="chartMode === 'compare' && compareMetric === 'cum'"
+                v-model="compareWindow"
+                style="width: 96px"
+                data-testid="sectors-compare-range"
+              >
+                <el-option v-for="o in COMPARE_RANGE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
+              </el-select>
               <PageSegmented
                 v-model="chartMode"
                 :options="CHART_MODE_OPTIONS"
@@ -888,30 +1017,24 @@ onMounted(async () => {
             </div>
           </header>
 
-          <div v-if="activeRow" class="market-strip" aria-label="板块关键指标">
-            <div class="market-metric market-metric--lead">
-              <span>今日涨幅</span>
-              <strong :class="pctClass(activeRow.pct_today)">{{ fmtPct(activeRow.pct_today) }}</strong>
-            </div>
-            <div class="market-metric">
-              <span>5日涨幅</span>
-              <strong :class="pctClass(activeRow.pct_5d)">{{ fmtPct(activeRow.pct_5d) }}</strong>
-            </div>
-            <div class="market-metric">
-              <span>10日涨幅</span>
-              <strong :class="pctClass(activeRow.pct_10d)">{{ fmtPct(activeRow.pct_10d) }}</strong>
-            </div>
-            <div class="market-metric">
-              <span>20日涨幅</span>
-              <strong :class="pctClass(activeRow.pct_20d)">{{ fmtPct(activeRow.pct_20d) }}</strong>
-            </div>
-            <div class="market-metric">
-              <span>即时净流入</span>
-              <strong :class="pctClass(activeRow.net_inflow)">{{ fmtInflow(activeRow.net_inflow) }}</strong>
-            </div>
-            <div class="market-metric">
-              <span>涨 / 跌</span>
-              <strong><i class="up">{{ activeRow.up_count }}</i> / <i class="down">{{ activeRow.down_count }}</i></strong>
+          <div v-if="activeRow" class="market-strip" aria-label="板块对比指标" :style="metricStripStyle">
+            <div
+              v-for="(metric, index) in visibleCompareMetrics"
+              :key="metric"
+              class="market-metric"
+              :class="{
+                'market-metric--active': metric === compareMetric,
+                'market-metric--lead': index === 0,
+              }"
+              role="button"
+              tabindex="0"
+              :aria-pressed="metric === compareMetric"
+              :data-testid="`sectors-metric-${metric}`"
+              @click="selectCompareMetric(metric)"
+              @keydown.enter="selectCompareMetric(metric)"
+            >
+              <span>{{ metricSlotLabel(metric) }}</span>
+              <strong :class="metricSlot(metric).cls">{{ metricSlot(metric).text }}</strong>
             </div>
           </div>
 
@@ -965,10 +1088,16 @@ onMounted(async () => {
               description="点击左侧排行中的任意一行即可查看走势"
             />
             <AppStateBlock
-              v-else-if="!chartLoading && chartMode === 'compare' && !compareSeries.length"
+              v-else-if="!chartLoading && chartMode === 'compare' && compareMetricKind === 'line' && !compareSeries.length"
               state="empty"
               title="暂无指数走势"
               description="可切换其他板块，或先运行板块指数采集"
+            />
+            <AppStateBlock
+              v-else-if="!chartLoading && chartMode === 'compare' && compareMetricKind === 'bar' && !crossSection.length"
+              state="empty"
+              title="暂无对比数据"
+              description="对比队列暂无该指标快照"
             />
             <AppStateBlock
               v-else-if="!chartLoading && chartMode === 'kline' && !klineBars.length"
@@ -981,6 +1110,9 @@ onMounted(async () => {
               data-testid="sectors-compare-chart"
               :series="compareSeries"
               :benchmark="benchmarkSeries"
+              :metric="compareMetric"
+              :range-days="compareWindow"
+              :cross-section="crossSection"
               fill
             />
             <CandleChart
@@ -993,12 +1125,18 @@ onMounted(async () => {
           </div>
 
           <footer v-if="chartMode === 'compare'" class="chart-footer">
-            <span v-if="benchmarkError" class="benchmark-warning">{{ benchmarkError }}，当前仅显示板块走势。</span>
+            <span v-if="benchmarkError && compareMetricKind === 'line'" class="benchmark-warning">{{ benchmarkError }}，当前仅显示板块走势。</span>
+            <span v-else-if="compareMetricKind === 'bar' && (compareMetric === 'inflow' || compareMetric === 'breadth')" class="compare-explanation">
+              净流入与涨跌家数为最新截面快照，无法回溯，故以柱状对比，不叠加市场指数。
+            </span>
+            <span v-else-if="compareMetricKind === 'bar'" class="compare-explanation">
+              单日涨幅为截面快照，故以柱状对比。
+            </span>
             <span v-else-if="!benchmarkCode" class="compare-explanation">
-              区间首日统一记为 0%；当前未选择市场指数，只比较板块之间的相对涨跌。
+              {{ metricSlotLabel(compareMetric) }}；当前未选择市场指数，只比较板块之间的相对强弱。
             </span>
             <span v-else class="compare-explanation">
-              区间首日统一记为 0%；虚线为{{ benchmarkSeries?.name || '所选指数' }}，悬浮可查看板块相对指数的超额涨跌。
+              {{ metricSlotLabel(compareMetric) }}；虚线为{{ benchmarkSeries?.name || '所选指数' }}，悬浮可查看板块相对指数的超额涨跌。
             </span>
           </footer>
         </section>
@@ -1053,6 +1191,31 @@ onMounted(async () => {
                 :clearable="false"
                 :filterable="false"
               />
+            </div>
+          </PageSettingSection>
+          <PageSettingSection title="对比指标" desc="配置头部对比指标槽展示哪些指标与默认选中口径。">
+            <div class="setting-item">
+              <div class="setting-label">展示指标</div>
+              <el-checkbox-group v-model="settings.compareMetrics" class="compare-metric-checks">
+                <el-checkbox
+                  v-for="metric in COMPARE_METRIC_ORDER"
+                  :key="metric"
+                  :value="metric"
+                >
+                  {{ COMPARE_METRIC_META[metric].label }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">默认对比指标</div>
+              <el-select v-model="settings.defaultCompareMetric" style="width: 160px">
+                <el-option
+                  v-for="metric in COMPARE_METRIC_ORDER"
+                  :key="metric"
+                  :value="metric"
+                  :label="COMPARE_METRIC_META[metric].label"
+                />
+              </el-select>
             </div>
           </PageSettingSection>
           <KlineSettingSection />
@@ -1291,14 +1454,26 @@ onMounted(async () => {
   grid-template-columns: repeat(6, minmax(72px, 1fr));
   border-bottom: 1px solid var(--el-border-color-lighter);
   background: color-mix(in srgb, var(--el-fill-color-light) 54%, var(--el-bg-color));
-}
-.market-metric {
+}.market-metric {
   min-width: 0;
   padding: var(--app-space-2) var(--app-space-3);
   border-right: 1px solid var(--el-border-color-lighter);
+  cursor: pointer;
+  text-align: left;
 }
 .market-metric:last-child {
   border-right: 0;
+}
+.market-metric:hover,
+.market-metric--active {
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 70%, transparent);
+}
+.market-metric--active {
+  box-shadow: inset 0 -2px 0 var(--el-color-primary);
+}
+.market-metric:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-5);
+  outline-offset: -2px;
 }
 .market-metric span {
   display: block;
@@ -1321,6 +1496,18 @@ onMounted(async () => {
 }
 .market-metric--lead {
   background: color-mix(in srgb, var(--el-color-primary-light-9) 58%, transparent);
+}
+.market-metric--lead.market-metric--active {
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 70%, transparent);
+}
+.cum-base-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-control-gap);
+  min-height: 42px;
+  padding: var(--app-space-2) var(--app-space-3);
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .compare-rail {
   flex: 0 0 auto;

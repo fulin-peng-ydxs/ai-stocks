@@ -947,6 +947,7 @@ _TENANT_ADMIN_EXTRA_RESOURCE_CODES: tuple[str, ...] = (
     *ASSET_TENANT_PUBLISH_RESOURCE_CODES,)
 _STAGE4_BUSINESS_GRANTS_MARKER = "migration.stage4_business_grants_v2"
 _SECTOR_WATCHLIST_GRANTS_MARKER = "migration.sector_watchlist_grants_v1"
+_SECTOR_MENU_GRANTS_MARKER = "migration.sector_menu_grants_v1"
 _STAGE5_PLATFORM_CAPABILITIES_MARKER = "migration.stage5_platform_capabilities_v1"
 _STAGE6_ASSET_VISIBILITY_MARKER = "migration.stage6_asset_visibility_v1"
 # 仅作「已应用」幂等标记；回滚采用确定性基线恢复（见 asset-publish-open.sql），不依赖 marker 内容。
@@ -1264,6 +1265,7 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
     _backfill_config_split_builtin_grants(client)
     _backfill_stage4_builtin_business_grants(client)
     _backfill_sector_watchlist_grants(client)
+    _backfill_sector_menu_grants(client)
     # 5) 仅为尚无任何角色的存量用户按遗留 role_code 补角色。sys_user_role 是权限事实源；
     # 已有自定义角色时不得再追加 role_code=normal，否则每次启动都会扩大最小权限账号的授权。
     client.execute(
@@ -1555,6 +1557,43 @@ def _backfill_sector_watchlist_grants(client: PostgresClient) -> None:
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
             "ON CONFLICT (key) DO NOTHING",
             [_SECTOR_WATCHLIST_GRANTS_MARKER, '{"applied":true}'],
+        )
+
+
+def _backfill_sector_menu_grants(client: PostgresClient) -> None:
+    """为既有内置业务角色一次性补齐「板块行情」菜单授权，并失效旧权限快照。
+
+    板块概念 T8 把 `/sectors` 菜单加进 `_BUSINESS_MENU_CODES`，但存量库的 stage4 菜单回填
+    （migration.stage4_business_grants_v2）早已 applied，不会补授后加入的菜单；T10b 的
+    sectors_view_v1 迁移也只补了资源码 sectors:view、漏了菜单码 /sectors。结果 normal 有接口
+    权限却看不到「板块行情」菜单入口（路由守卫按授权菜单 fail-closed 重定向）。本迁移补菜单码、
+    幂等一次，与所有默认授权迁移一致：不保留迁移后角色管理页的人工增删（不删除任何既有授权）。
+    """
+    marker = client.query_df(
+        "SELECT 1 FROM app_config WHERE key=%s", [_SECTOR_MENU_GRANTS_MARKER])
+    if not marker.empty:
+        return
+
+    changed = 0
+    with client.transaction() as conn, conn.cursor() as cur:
+        for role_id in (ROLE_TENANT_ADMIN, ROLE_NORMAL):
+            cur.execute(
+                "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING",
+                [role_id, "/sectors"],
+            )
+            changed += max(cur.rowcount or 0, 0)
+        if changed:
+            cur.execute(
+                "UPDATE sys_user u SET perm_ver=perm_ver+1 "
+                "WHERE EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id "
+                "AND ur.role_id IN (%s, %s))",
+                [ROLE_TENANT_ADMIN, ROLE_NORMAL],
+            )
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (key) DO NOTHING",
+            [_SECTOR_MENU_GRANTS_MARKER, '{"applied":true}'],
         )
 
 

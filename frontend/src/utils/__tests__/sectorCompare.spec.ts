@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest'
+import { metricKind, metricSeries, metricWindow } from '@/utils/sectorCompare'
+import type { SectorBar } from '@/api/sectors'
+
+function bar(trade_date: string, close: number): SectorBar {
+  return { trade_date, open: close, high: close, low: close, close, volume: 1, amount: 1 }
+}
+
+describe('metricSeries（区间累计涨跌幅）', () => {
+  it('累计涨跌以首个有效收盘为基准', () => {
+    const bars = [bar('2026-08-04', 100), bar('2026-08-05', 105), bar('2026-08-06', 98)]
+    expect(metricSeries(bars, 'cum')).toEqual([0, 5, -2])
+  })
+
+  it('累计涨跌跳过首个无效收盘，以首个有效值为基准', () => {
+    const bars = [bar('2026-08-04', 0), bar('2026-08-05', 100), bar('2026-08-06', 110)]
+    expect(metricSeries(bars, 'cum')).toEqual([null, 0, 10])
+  })
+
+  it('固定窗口指标（5日涨幅）与累计涨跌同为区间累计口径', () => {
+    // roll_5d 现在也是「以该序列首有效收盘为基准」的区间累计，窗口由数据加载层决定
+    const bars = [bar('2026-08-04', 100), bar('2026-08-05', 105), bar('2026-08-06', 98)]
+    expect(metricSeries(bars, 'roll_5d')).toEqual([0, 5, -2])
+  })
+
+  it('截面指标返回全 null（由页面取快照，不在 bars 上计算）', () => {
+    const bars = [bar('2026-08-04', 100), bar('2026-08-05', 105)]
+    expect(metricSeries(bars, 'inflow')).toEqual([null, null])
+    expect(metricSeries(bars, 'breadth')).toEqual([null, null])
+  })
+})
+
+describe('metricWindow', () => {
+  it('累计涨跌窗口跟随周期选择器', () => {
+    expect(metricWindow('cum', 60)).toBe(60)
+    expect(metricWindow('cum', 1)).toBe(1)
+  })
+
+  it('固定滚动指标窗口返回自身，不受周期影响', () => {
+    expect(metricWindow('roll_5d', 250)).toBe(5)
+    expect(metricWindow('roll_20d', 60)).toBe(20)
+  })
+})
+
+describe('metricKind', () => {
+  it('累计涨跌窗口=1（单日）退化为柱状，其余折线', () => {
+    expect(metricKind('cum', 1)).toBe('bar')
+    expect(metricKind('cum', 5)).toBe('line')
+    expect(metricKind('cum', 250)).toBe('line')
+  })
+
+  it('截面指标恒为柱状', () => {
+    expect(metricKind('inflow', 60)).toBe('bar')
+    expect(metricKind('breadth', 60)).toBe('bar')
+  })
+
+  it('固定滚动指标恒为折线', () => {
+    expect(metricKind('roll_5d', 5)).toBe('line')
+    expect(metricKind('roll_20d', 250)).toBe('line')
+  })
+})
