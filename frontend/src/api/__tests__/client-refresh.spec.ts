@@ -116,4 +116,75 @@ describe('api client silent refresh', () => {
 
     expect(ElMessage.error).not.toHaveBeenCalled()
   })
+
+  it('HTTP 500 且无 msg 时弹统一中文兜底文案而非 axios 英文', async () => {
+    const adapter: AxiosAdapter = async (config) => Promise.reject({
+      config,
+      response: { status: 500, data: { detail: 'Internal Server Error' } },
+    })
+    http.defaults.adapter = adapter
+
+    await expect(http.get('/sectors')).rejects.toMatchObject({
+      uiMessage: '服务暂时不可用，请稍后重试',
+    })
+
+    expect(ElMessage.error).toHaveBeenCalledWith('服务暂时不可用，请稍后重试')
+  })
+
+  it('HTTP 500 后端兜底已给中文 msg 时优先展示 msg', async () => {
+    const adapter: AxiosAdapter = async (config) => Promise.reject({
+      config,
+      response: { status: 500, data: { code: 5000, msg: '服务内部错误，请稍后重试', data: null } },
+    })
+    http.defaults.adapter = adapter
+
+    await expect(http.get('/sectors')).rejects.toMatchObject({
+      uiMessage: '服务内部错误，请稍后重试',
+    })
+
+    expect(ElMessage.error).toHaveBeenCalledWith('服务内部错误，请稍后重试')
+  })
+
+  it('FastAPI 400 HTTPException 取 detail 中文文案而非 axios 英文', async () => {
+    const adapter: AxiosAdapter = async (config) => Promise.reject({
+      config,
+      response: { status: 400, data: { detail: '不支持的指标字段: xxx' } },
+    })
+    http.defaults.adapter = adapter
+
+    await expect(http.get('/stocks/bars')).rejects.toMatchObject({
+      uiMessage: '不支持的指标字段: xxx',
+    })
+
+    expect(ElMessage.error).toHaveBeenCalledWith('不支持的指标字段: xxx')
+  })
+
+  it('axios 超时（无 HTTP 响应）弹中文超时文案而非英文 timeout', async () => {
+    const adapter: AxiosAdapter = async (config) => Promise.reject({
+      config,
+      code: 'ECONNABORTED',
+      message: 'timeout of 30000ms exceeded',
+    })
+    http.defaults.adapter = adapter
+
+    await expect(http.get('/sectors')).rejects.toMatchObject({
+      uiMessage: '请求超时，请稍后重试',
+    })
+
+    expect(ElMessage.error).toHaveBeenCalledWith('请求超时，请稍后重试')
+  })
+
+  it('断网（Network Error，无 HTTP 响应）弹中文网络错误而非英文', async () => {
+    const adapter: AxiosAdapter = async (config) => Promise.reject({
+      config,
+      message: 'Network Error',
+    })
+    http.defaults.adapter = adapter
+
+    await expect(http.get('/sectors')).rejects.toMatchObject({
+      uiMessage: '网络错误，请检查网络后重试',
+    })
+
+    expect(ElMessage.error).toHaveBeenCalledWith('网络错误，请检查网络后重试')
+  })
 })

@@ -94,6 +94,17 @@ def create_app() -> FastAPI:
             content={"code": 5030, "msg": "服务暂时不可用（依赖 Redis），请稍后重试", "data": None},
         )
 
+    # 未捕获异常兜底（HTTP 500）：编程错误/存储故障等逃逸到这里的异常，转译为统一 {code,msg} 软失败，
+    # 避免 FastAPI 默认 {"detail":"Internal Server Error"} 把英文系统文本直接暴露给前端用户。
+    # 真实堆栈记入服务端日志，不回传给用户（内部错误细节不应外泄）。
+    @app.exception_handler(Exception)
+    async def _handle_uncaught_error(_: Request, exc: Exception) -> JSONResponse:
+        log.error("未捕获异常: %s", exc, exc_info=exc)
+        return JSONResponse(
+            status_code=500,
+            content={"code": 5000, "msg": "服务内部错误，请稍后重试", "data": None},
+        )
+
     # ── 路由注册 ──
     app.include_router(health_router)
     app.include_router(auth_router)

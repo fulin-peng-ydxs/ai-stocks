@@ -23,6 +23,13 @@ function decorateError<E>(error: E, message: string): E {
   return error
 }
 
+// axios 超时：无 HTTP 响应，code=ECONNABORTED 且 message 含 timeout。注意与主动取消
+// （isCancel/ERR_CANCELED）区分——取消在拦截器入口已单独拦截，不走到这里。
+function isTimeoutError(error: unknown): boolean {
+  const e = error as { code?: string; message?: string }
+  return e?.code === 'ECONNABORTED' && typeof e.message === 'string' && e.message.includes('timeout')
+}
+
 const http: AxiosInstance = axios.create({
   baseURL: '/api',
   timeout: 30000,
@@ -129,6 +136,8 @@ http.interceptors.response.use(
     // stage2·T7：按 HTTP 状态分流——401 清态跳登录、403 无权、429 限流、503 依赖不可用
     const status = error?.response?.status
     const msg = error?.response?.data?.msg
+    // FastAPI 未捕获异常返回 {"detail":"Internal Server Error"}，msg 缺失；detail 作为补充信息。
+    const detailMsg = error?.response?.data?.detail
     // skipGlobalError：调用方（如登录/注册页）要求关闭全局 toast，改由页面就地展示
     const skip = (error?.config as RetryableConfig | undefined)?.skipGlobalError
     if (status === 401) {
@@ -167,8 +176,18 @@ http.interceptors.response.use(
       message = msg || '请求过于频繁，请稍后再试'
     } else if (status === 503) {
       message = msg || '服务暂时不可用，请稍后重试'
+    } else if (status && status >= 500) {
+      // 5xx（未捕获异常 500 / 网关 502/504 等）：后端兜底 handler 保证返回 {code:5000,msg:中文}；
+      // 旧后端/网关可能返回 {"detail":"Internal Server Error"} 或 HTML，msg 缺失时统一中文兜底，
+      // 不把英文系统文本直接弹给用户。
+      message = msg || '服务暂时不可用，请稍后重试'
+    } else if (status === undefined) {
+      // 网络层错误（无 HTTP 响应）：axios 超时（timeout of 30000ms exceeded / ECONNABORTED）、
+      // 断网（Network Error）等只有英文 error.message，统一转中文，不直接展示系统文本。
+      message = isTimeoutError(error) ? '请求超时，请稍后重试' : '网络错误，请检查网络后重试'
     } else {
-      message = msg || error?.message || '网络错误'
+      // 4xx/其它：后端部分端点用 FastAPI HTTPException（detail 承载中文业务文案），msg 缺失时取 detail。
+      message = msg || detailMsg || error?.message || '网络错误'
     }
     decorateError(error, message)
     if (!skip) ElMessage.error(message)
