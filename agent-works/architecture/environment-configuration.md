@@ -37,6 +37,8 @@ flowchart TD
 |------|----------|------|--------------|----------|
 | `AI_STOCKS_CONFIG` | `backend/config/settings.py::_config_path()` | 覆盖 YAML 基线文件路径 | 可选；缺省为 `config/settings.yaml` | `get_settings()` 缓存后需 reload 或重启；`get_effective_settings()` 每次读原始 YAML |
 | `AI_STOCKS_JWT_SECRET` | `Settings.jwt_secret()`、`backend/auth/jwt_tokens.py`、`backend/main.py` startup | JWT HS256 签名密钥 | 后端启动必填；无弱默认 | 启动自检会校验；已运行服务变更后需重启确保一致 |
+| `AI_STOCKS_CONFIG_ENCRYPTION_KEY` | `backend/security/config_crypto.py`、`AppConfigRepo` | 页面敏感配置的 Fernet 主密钥；数据库只保存带 `enc:v1:` 前缀的密文 | 使用页面 Cookie 配置时必填；无弱默认，不得与 JWT 密钥复用 | 保存、解密及启动迁移时读取；轮换前须先完成密文重加密 |
+| `AI_STOCKS_CONFIG_ENCRYPTION_KEY_FILE` | 同上 | 指向仅后端进程可读的 Fernet 密钥文件；仅当直接变量为空时读取 | 可选；生产优先使用受控文件，权限必须为 `0600`，否则拒绝读取 | 同上 |
 | `AI_STOCKS_PG_DSN` | `Settings.pg_conninfo()` | PostgreSQL 完整连接串，优先级最高 | 可选；配置后覆盖 YAML 的 PG host/port/db/user 和 `AI_STOCKS_PG_PASSWORD` | 新建 `PostgresClient` 时读取；已创建连接池需重启或重建客户端 |
 | `AI_STOCKS_PG_PASSWORD` | `Settings.pg_conninfo()` | PostgreSQL 密码，配合 YAML 连接参数 | 可选；本机 trust 可不填 | 新建 `PostgresClient` 时读取 |
 | `AI_STOCKS_REDIS_URL` | `Settings.redis_url()` | Redis 完整 URL，优先级最高 | 可选；配置后覆盖 YAML 的 Redis host/port/db 和 `AI_STOCKS_REDIS_PASSWORD` | 新建 `RedisClient` 时读取；已创建客户端需重启或重建 |
@@ -45,7 +47,7 @@ flowchart TD
 | `AI_STOCKS_SMTP_USERNAME` | `Settings.mail_config()` | SMTP 登录账号/发信邮箱 | 真实发信必填；覆盖 YAML `mail.username`（基线留空） | 同上 |
 | `AI_STOCKS_SMTP_SENDER` | `Settings.mail_config()` | From 显示地址；留空回落 `username` | 可选；覆盖 YAML `mail.sender` | 同上 |
 | `AI_STOCKS_SMTP_PASSWORD` | `Settings.smtp_password()`、`backend/common/mailer.py` | SMTP 登录密码/授权码（Gmail 等用应用专用密码） | 真实发信必填；无弱默认 | 真实发信时读取 |
-| `AI_STOCKS_THS_COOKIE` | `backend/datasource/ths_board.py::_login_cookie_from_env()` | 同花顺板块登录态 Cookie 头（浏览器登录后复制），解除翻页登录墙取全深页板块/成分；只允许运行时注入，不进入 YAML/PG/审计明细 | 可选；不配置也能采集，只是被登录墙截断（概念 375→390） | 新建 `ThsBoardSource` 实例时读取；变更后重建实例或重启 |
+| `AI_STOCKS_THS_COOKIE` | `backend/datasource/ths_board.py::_login_cookie_from_config()` | 同花顺板块登录态 Cookie 头，优先覆盖页面加密配置；不进入审计明细 | 可选；不配置也能采集，只是被登录墙截断（概念 375→390） | 新建 `ThsBoardSource` 实例时读取；变更后重建实例或重启 |
 | `AI_STOCKS_THS_COOKIE_FILE` | 同上 | 指向权限受控的 Cookie 文件；仅当 `AI_STOCKS_THS_COOKIE` 为空时读取，生产优先使用受控文件避免凭证出现在进程环境导出中 | 可选；优先级低于 `AI_STOCKS_THS_COOKIE` | 同上 |
 | `AI_STOCKS_ADMIN_PASSWORD` | `backend/storage/pg_ddl.py::seed_default_tenant()` | 首次 seed 或补齐 `admin` 密码哈希 | 生产/共享环境必须显式设置；缺失会随机生成并只在日志告警一次 | 仅在 `admin` 不存在或 `password_hash` 为空时使用；不会覆盖已有密码 |
 | `AI_STOCKS_TEST_USER_PASSWORD` | `backend/devtools/rbac_test_users.py`、`frontend/e2e/helpers/auth.ts` | `debug_*` 本地调试账号与 Playwright 登录统一密码 | 可选；本地开发未设置时回落测试默认值 | 执行 `./start.sh dev-users` 创建/校准及 `npm run test:e2e(:ui)` 启动时读取 |

@@ -16,7 +16,7 @@
 
 反爬与稳定性关键事实：
 - **v cookie**：详情页 AJAX 必须带 `v=...`，否则 401；由 `py_mini_racer` 执行 `ths.js` 动态生成，401 时自动刷新重试一次。
-- **登录态**（可选）：解除详情页/字典翻页登录墙（第 6 页起无登录必命中），但 cookie 里的 `v` 会过期，须用新生成的 `v` 覆盖。Cookie 只允许通过 `AI_STOCKS_THS_COOKIE` / `AI_STOCKS_THS_COOKIE_FILE` 运行时注入，不进入 YAML、PG 或审计明细。
+- **登录态**（可选）：解除详情页/字典翻页登录墙（第 6 页起无登录必命中），但 cookie 里的 `v` 会过期，须用新生成的 `v` 覆盖。Cookie 可由页面加密配置或环境/受控文件注入；不进入 YAML，PG 只存密文，审计不存明文。
 - **翻页终止**：翻页是路径参数 `page/N/ajax/1/`，每页行数不固定（概念 10/行业 20），用「该页无行」终止翻页并做页码上限护栏。
 - **资金流空壳页**：`data.*/funds/*` 分页偶发返回 HTTP 200 但无数据行的空壳页（反爬）。`get_board_fund_flow` 对首页与后续页都空壳重试（`_FUND_FLOW_EMPTY_RETRIES=3`），重试后仍空只**跳过该页、不截断后续页**——修复前 `df.empty→break` 遇中间页空壳会截断后续所有页，造成即时周期覆盖在 350~387 间波动（2026-08-13 实测）。
 - **资金流源覆盖边界**：排行榜源（`funds/gnzjl`）覆盖约 350~387 个概念板块；**部分老板块（如 WiFi 6/AI PC/中国AI 50，K 线自 2024 起）排行榜源从不收录**（换排序参数也不出现），gnSection/详情页虽有资金流但为**不同口径**（同刻排行榜「净额」vs 详情页「资金净流入(亿)」系统性不同，diff -5.87~+3.63），不得混入 `board_fund_flow.net_inflow`。
@@ -30,24 +30,25 @@
 
 登录态 Cookie 用于解除同花顺详情页/字典翻页登录墙（第 6 页起无登录必返回 `upass...login` 跳转壳），是取全深页板块（375→390）与完整成分股（半导体无登录约 100 只，登录后 120~160 只）的前提。**不配置也能采集，只是被登录墙截断**。
 
-### 取数优先级（`ths_board.py:_login_cookie_from_env`）
+### 取数优先级（`ths_board.py:_login_cookie_from_config`）
 
 生效 Cookie 按以下顺序取第一个非空值，前序存在即生效、不继续回落：
 
 1. **环境变量 `AI_STOCKS_THS_COOKIE`**：完整 Cookie 头字符串（运维部署级，最高优先级）。
 2. **环境变量 `AI_STOCKS_THS_COOKIE_FILE`**：指向存有 Cookie 的文件路径（读取后 `strip`，仅当 `AI_STOCKS_THS_COOKIE` 为空时读取）。
+3. **页面加密配置 `ths_board.login_cookie`**：系统设置或任务调度的数据源「授权配置」入口写入；`AppConfigRepo` 解密后只在进程内消费。
 
 ### 安全与运维机制
 
-- **注入**：部署环境优先使用权限受控的 `AI_STOCKS_THS_COOKIE_FILE`；环境变量适合本地或受控进程环境。页面不提供写入入口。
-- **持久化防线**：`ths_board.login_cookie` 仅保留为 `runtime_only/password` 元数据，既不进入表单也不在 app_config 白名单；审计在写库前根据元数据脱敏。
-- **存量处置**：PG 初始化会幂等删除历史 `app_config` Cookie，并把历史审计 before/after 原位改为“已变更”；已暴露 Cookie 必须在同花顺侧轮换。
+- **注入**：页面配置保留，适合系统管理员在线更新；部署环境仍可用环境/文件覆盖。页面只回显“已设置”，不返回明文。
+- **持久化防线**：`ths_board.login_cookie` 标记为 `password + encrypted`；数据库保存 `enc:v1:` Fernet 密文，主密钥只来自 `AI_STOCKS_CONFIG_ENCRYPTION_KEY` / `_FILE`，审计 before/after 固定脱敏。
+- **存量处置**：PG 初始化发现历史明文时，有主密钥则原位加密，无主密钥则删除明文并告警；历史审计 before/after 原位改为“已变更”。已暴露 Cookie 仍须在同花顺侧轮换。
 
 ### 生效时机与失效
 
-- 新建 `ThsBoardSource` 实例时读取环境/文件；运行中变更后由新任务使用新值，常驻实例需重建或重启。
+- 新建 `ThsBoardSource` 实例时读取环境/文件/页面加密配置；运行中变更后由新任务使用新值，常驻实例需重建或重启。
 - Cookie 是**会话凭证**：同花顺登录过期/异地登录会失效；`v` 字段由请求侧动态生成并覆盖（`_replace_v`），不依赖复制时的旧 `v`。
-- 失效表现：采集日志中 `complete=False` 增多（成分不完整）、概念数回到 375 附近（深页板块缺失）→ 重新获取浏览器 Cookie 并更新运行时环境/文件。
+- 失效表现：采集日志中 `complete=False` 增多（成分不完整）、概念数回到 375 附近（深页板块缺失）→ 重新获取浏览器 Cookie 并更新页面配置或运行时环境/文件。
 
 ### 与 v cookie 的区别
 

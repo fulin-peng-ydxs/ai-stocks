@@ -41,6 +41,15 @@ test.describe('板块数据管理闭环', () => {
 
     try {
       await openPageAndWaitForHeading(page, '/data/schedule', '任务调度')
+      await expect(page.getByTestId('ths-login-cookie-btn')).toBeVisible()
+      await page.getByTestId('ths-login-cookie-btn').click()
+      const cookieDialog = page.getByTestId('ths-login-cookie-dialog')
+      await expect(cookieDialog).toBeVisible()
+      await expect(cookieDialog).toContainText('数据库和审计均不记录明文')
+      await page.getByTestId('ths-login-cookie-input').fill('e2e-ui-only-cookie')
+      await expect(page.getByTestId('ths-login-cookie-save')).toBeEnabled()
+      await cookieDialog.getByRole('button', { name: '取消' }).click()
+
       await page.getByTestId('schedule-create').click()
       await page.getByTestId('schedule-name').fill(jobName)
       await page.getByTestId('schedule-task-type').click()

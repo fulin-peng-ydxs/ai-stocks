@@ -799,7 +799,8 @@ def get_settings_view() -> ApiResponse:
 
     eff = get_effective_settings().model_dump()
     default = Settings.model_validate(_raw_yaml()).model_dump()  # yaml 基线（不含覆盖）
-    overrides = AppConfigRepo().get_overrides()
+    repo = AppConfigRepo()
+    override_keys = repo.get_override_keys()
     groups = []
     for g in CONFIG_GROUPS:
         if g.get("hidden_in_form"):   # 定时调度收敛到调度页，不在系统设置渲染（DM-D14）
@@ -814,13 +815,13 @@ def get_settings_view() -> ApiResponse:
             # 避免前端拿到 Cookie。前端保存时留空不提交（draft 等于掩码 → 不纳入 updates），
             # 因此不会误清空已存值。
             if f.get("type") == "password":
-                val = "••••••已设置" if val else ""
+                val = "••••••已设置" if f["path"] in override_keys or val else ""
                 default_val = "••••••已设置" if default_val else ""
             fields.append({**{k: f[k] for k in f if k != "path"},
                            "path": f["path"],
                            "value": val,
                            "default": default_val,
-                           "overridden": f["path"] in overrides})
+                           "overridden": f["path"] in override_keys})
         groups.append({
             "key": g["key"],
             "label": g["label"],
@@ -836,10 +837,9 @@ def save_settings(body: dict, request: Request) -> ApiResponse:
     from backend.storage.app_config import CONFIG_GROUPS, AppConfigRepo, ConfigValidationError
     updates = dict(body.get("updates", body))
     # 敏感字段防御：掩码占位符（如前端异常回传「••••••已设置」）不得作为真实值入库。
-    # 运行时凭证不在持久化白名单中；这里只兜底仍允许持久化的普通密码配置。
     password_fields = {
         f["path"] for g in CONFIG_GROUPS for f in g["fields"]
-        if f.get("type") == "password" and not f.get("runtime_only")
+        if f.get("type") == "password"
     }
     for path in list(updates):
         if path in password_fields and isinstance(updates[path], str) and updates[path].startswith("••••••"):

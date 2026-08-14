@@ -87,8 +87,9 @@ def test_stage6_audit_redacts_password_config_from_metadata():
     assert cookie not in json.dumps(changes, ensure_ascii=False)
 
 
-def test_stage6_runtime_secret_cleanup_redacts_legacy_audit_and_config(pg):
-    from backend.storage.pg_ddl import _purge_legacy_runtime_secrets
+def test_stage6_runtime_secret_cleanup_redacts_and_encrypts_legacy_config(pg):
+    from backend.security.config_crypto import decrypt_config_value, is_encrypted_config_value
+    from backend.storage.pg_ddl import _protect_legacy_config_secrets
 
     audit_id = f"stage6_secret_cleanup_{uuid.uuid4().hex[:8]}"
     cookie = "user=legacy-cookie; ticket=must-be-removed"
@@ -117,11 +118,15 @@ def test_stage6_runtime_secret_cleanup_redacts_legacy_audit_and_config(pg):
             ],
         )
 
-        _purge_legacy_runtime_secrets(pg)
+        _protect_legacy_config_secrets(pg)
 
-        assert pg.query_df(
-            "SELECT 1 FROM app_config WHERE key=%s", ["ths_board.login_cookie"]
-        ).empty
+        stored = pg.query_df(
+            "SELECT value FROM app_config WHERE key=%s", ["ths_board.login_cookie"]
+        ).iloc[0]["value"]
+        encrypted = json.loads(stored)
+        assert is_encrypted_config_value(encrypted)
+        assert decrypt_config_value(encrypted) == cookie
+        assert cookie not in stored
         changes = _decode(pg.query_df(
             "SELECT changes FROM audit_log WHERE id=%s", [audit_id]
         ).iloc[0]["changes"])
@@ -134,6 +139,24 @@ def test_stage6_runtime_secret_cleanup_redacts_legacy_audit_and_config(pg):
     finally:
         pg.execute("DELETE FROM audit_log WHERE id=%s", [audit_id])
         pg.execute("DELETE FROM app_config WHERE key=%s", ["ths_board.login_cookie"])
+
+
+def test_stage6_runtime_secret_cleanup_drops_plaintext_without_key(pg, monkeypatch):
+    from backend.storage.pg_ddl import _protect_legacy_config_secrets
+
+    monkeypatch.delenv("AI_STOCKS_CONFIG_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("AI_STOCKS_CONFIG_ENCRYPTION_KEY_FILE", raising=False)
+    pg.execute(
+        "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+        "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()",
+        ["ths_board.login_cookie", json.dumps("legacy-plaintext")],
+    )
+
+    _protect_legacy_config_secrets(pg)
+
+    assert pg.query_df(
+        "SELECT 1 FROM app_config WHERE key=%s", ["ths_board.login_cookie"]
+    ).empty
 
 
 def test_stage6_settings_audit_records_field_changes(client, pg, app_cfg):
@@ -166,6 +189,39 @@ def test_stage6_settings_audit_records_field_changes(client, pg, app_cfg):
     assert _decode(rows.iloc[0]["changes"]) == [
         {"field": key, "before": 31, "after": 32}
     ]
+
+
+def test_stage6_cookie_save_persists_ciphertext_and_redacted_audit(client, pg, app_cfg):
+    from backend.security.config_crypto import decrypt_config_value, is_encrypted_config_value
+
+    key = "ths_board.login_cookie"
+    cookie = "user=page-config; ticket=audit-must-redact"
+    app_cfg.reset(key)
+    pg.execute(
+        "DELETE FROM audit_log WHERE event_category='config' AND target_type='app_config' "
+        "AND target_id=%s",
+        [key],
+    )
+
+    resp = client.post(
+        "/api/data/settings",
+        headers=_admin_headers(pg),
+        json={"updates": {key: cookie}},
+    )
+
+    assert resp.status_code == 200
+    stored = pg.query_df("SELECT value FROM app_config WHERE key=%s", [key]).iloc[0]["value"]
+    encrypted = json.loads(stored)
+    assert is_encrypted_config_value(encrypted)
+    assert decrypt_config_value(encrypted) == cookie
+    assert cookie not in stored
+    changes = _decode(pg.query_df(
+        "SELECT changes FROM audit_log WHERE event_category='config' "
+        "AND target_type='app_config' AND target_id=%s ORDER BY event_time DESC LIMIT 1",
+        [key],
+    ).iloc[0]["changes"])
+    assert changes == [{"field": key, "before": "已变更", "after": "已变更"}]
+    assert cookie not in json.dumps(changes, ensure_ascii=False)
 
 
 def test_stage6_dict_update_audit_records_field_changes(client, pg):

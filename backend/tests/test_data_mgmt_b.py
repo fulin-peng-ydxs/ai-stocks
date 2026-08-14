@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import date, datetime
 
@@ -299,19 +300,55 @@ def test_settings_view_and_save(client):
     assert bad.code == 400
 
 
-def test_ths_login_cookie_is_runtime_only(client):
-    """同花顺登录 Cookie 不进入设置表单或 app_config 写入白名单。"""
+def test_ths_login_cookie_is_encrypted_and_masked(client, pg, app_cfg):
+    """同花顺登录 Cookie 可从页面配置，但数据库与响应都不得出现明文。"""
     from backend.api.data_admin import get_settings_view, save_settings
+    from backend.config import get_effective_settings
+    from backend.security.config_crypto import is_encrypted_config_value
 
-    # 运行时敏感字段保留在后端元数据中供审计识别，但不得暴露为 Web 配置项。
+    app_cfg.reset("ths_board.login_cookie")
     view = get_settings_view().data
     ths = next(g for g in view["groups"] if g["key"] == "ths_board")
-    assert all(f["path"] != "ths_board.login_cookie" for f in ths["fields"])
+    field = next(f for f in ths["fields"] if f["path"] == "ths_board.login_cookie")
+    assert field["value"] == ""
 
-    # 即便绕过前端直接请求，后端也 fail-closed，不能把凭证写入 PG。
-    resp = save_settings({"updates": {"ths_board.login_cookie": "user=xxx; v=yyy"}}, _fake_request())
-    assert resp.code == 400
-    assert "不允许覆盖" in resp.msg
+    cookie = "user=xxx; ticket=secret; v=yyy"
+    resp = save_settings({"updates": {"ths_board.login_cookie": cookie}}, _fake_request())
+    assert resp.code == 0
+    stored = pg.query_df(
+        "SELECT value FROM app_config WHERE key=%s", ["ths_board.login_cookie"]
+    ).iloc[0]["value"]
+    stored_value = json.loads(stored)
+    assert is_encrypted_config_value(stored_value)
+    assert cookie not in stored
+    assert get_effective_settings().ths_board.login_cookie == cookie
+
+    masked = get_settings_view().data
+    masked_ths = next(g for g in masked["groups"] if g["key"] == "ths_board")
+    masked_field = next(f for f in masked_ths["fields"] if f["path"] == "ths_board.login_cookie")
+    assert masked_field["value"] == "••••••已设置"
+
+
+def test_ths_login_cookie_save_without_key_is_rejected_before_other_writes(
+    client, pg, app_cfg, monkeypatch,
+):
+    from backend.storage.app_config import ConfigValidationError
+
+    app_cfg.reset("ths_board.login_cookie")
+    app_cfg.reset("audit.retention_days")
+    monkeypatch.delenv("AI_STOCKS_CONFIG_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("AI_STOCKS_CONFIG_ENCRYPTION_KEY_FILE", raising=False)
+
+    with pytest.raises(ConfigValidationError, match="缺少 AI_STOCKS_CONFIG_ENCRYPTION_KEY"):
+        app_cfg.set_many({
+            "audit.retention_days": 31,
+            "ths_board.login_cookie": "must-not-persist",
+        })
+
+    assert pg.query_df(
+        "SELECT 1 FROM app_config WHERE key = ANY(%s)",
+        [["audit.retention_days", "ths_board.login_cookie"]],
+    ).empty
 
 
 # ── 板块采集任务（R5，T5）───────────────────────────────────
@@ -831,7 +868,6 @@ def test_scan_board_quality_fund_missing_ignored_and_converge(client, monkeypatc
 
 def test_board_recheck_fund_missing(client, monkeypatch):
     """资金流缺失复检：issue 列出的各周期快照都追平最新交易日才收敛。"""
-    import json
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
     rep = DataIntegrityReport(client)

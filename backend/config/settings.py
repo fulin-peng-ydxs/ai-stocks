@@ -230,6 +230,8 @@ class ThsBoardConfig(BaseModel):
     max_retries: int = Field(default=3, ge=1, le=10)         # 失败重试次数
     retry_backoff_sec: float = Field(default=2.0, ge=0, le=60)  # 重试退避基数（秒，指数退避）
     member_update_interval_days: int = Field(default=7, ge=1, le=30)  # 成分快照更新间隔（天）：默认周频，达标后按此跳过
+    # 仅承接 AppConfigRepo 解密后的进程内值；YAML 中禁止配置，页面与接口只返回掩码。
+    login_cookie: str = ""
 
 
 class MailConfig(BaseModel):
@@ -372,7 +374,12 @@ def _raw_yaml() -> dict:
     if not path.exists():
         return {}
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+        raw = yaml.safe_load(f) or {}
+    # 登录 Cookie 只能来自环境/受控文件或 AppConfigRepo 解密值；即使误写 YAML 也不消费。
+    ths_board = raw.get("ths_board")
+    if isinstance(ths_board, dict):
+        ths_board.pop("login_cookie", None)
+    return raw
 
 
 @lru_cache(maxsize=1)

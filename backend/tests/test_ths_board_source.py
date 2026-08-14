@@ -386,14 +386,17 @@ def test_validate_board_type():
 # ── 登录态（解除翻页登录墙）──────────────────────────────────
 
 
-def test_login_cookie_from_env(monkeypatch):
+def test_login_cookie_source_priority(monkeypatch):
     monkeypatch.delenv("AI_STOCKS_THS_COOKIE", raising=False)
     monkeypatch.delenv("AI_STOCKS_THS_COOKIE_FILE", raising=False)
-    # 两个允许运行时注入的来源都为空 → None
-    assert tb._login_cookie_from_env() is None
+    monkeypatch.setattr(
+        "backend.datasource.ths_board.get_effective_settings",
+        lambda: type("Cfg", (), {"ths_board": type("Ths", (), {"login_cookie": ""})()})(),
+    )
+    assert tb._login_cookie_from_config() is None
 
     monkeypatch.setenv("AI_STOCKS_THS_COOKIE", "user=1; ticket=abc")
-    assert tb._login_cookie_from_env() == "user=1; ticket=abc"
+    assert tb._login_cookie_from_config() == "user=1; ticket=abc"
 
     # FILE 优先于空 COOKIE
     monkeypatch.delenv("AI_STOCKS_THS_COOKIE")
@@ -404,20 +407,26 @@ def test_login_cookie_from_env(monkeypatch):
         p = f.name
     monkeypatch.setenv("AI_STOCKS_THS_COOKIE_FILE", p)
     try:
-        assert tb._login_cookie_from_env() == "file-cookie=xyz"
+        assert tb._login_cookie_from_config() == "file-cookie=xyz"
     finally:
         os.unlink(p)
 
 
-def test_login_cookie_does_not_fallback_to_app_config(monkeypatch):
-    """环境注入为空时不读取页面/YAML 配置，避免凭证持久化回流。"""
+def test_login_cookie_falls_back_to_encrypted_app_config(monkeypatch):
+    """环境注入为空时消费 AppConfigRepo 已解密的页面配置。"""
     monkeypatch.delenv("AI_STOCKS_THS_COOKIE", raising=False)
     monkeypatch.delenv("AI_STOCKS_THS_COOKIE_FILE", raising=False)
-    assert tb._login_cookie_from_env() is None
+    monkeypatch.setattr(
+        "backend.datasource.ths_board.get_effective_settings",
+        lambda: type(
+            "Cfg", (), {"ths_board": type("Ths", (), {"login_cookie": "cfg-cookie=abc"})()}
+        )(),
+    )
+    assert tb._login_cookie_from_config() == "cfg-cookie=abc"
 
-    # 环境变量仍是受支持的最高优先级来源。
+    # 环境变量仍是最高优先级来源。
     monkeypatch.setenv("AI_STOCKS_THS_COOKIE", "env-cookie=123")
-    assert tb._login_cookie_from_env() == "env-cookie=123"
+    assert tb._login_cookie_from_config() == "env-cookie=123"
 
 
 def test_headers_login_cookie_uses_login_v():

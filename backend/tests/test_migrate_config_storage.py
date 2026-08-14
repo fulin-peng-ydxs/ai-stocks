@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 import backend.services.migrate_config_storage as mcs
@@ -47,7 +49,7 @@ def duck(tmp_path):
     )
     c.execute(
         "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
-        ["ths_board.login_cookie", "legacy-sensitive-cookie"],
+        ["ths_board.login_cookie", json.dumps("legacy-sensitive-cookie")],
     )
     yield c
     c.close()
@@ -83,8 +85,8 @@ def test_migrate_config_storage_dry_run_does_not_write(duck, pg_config_snapshot)
     assert report["_global"]["dry_run"] is True
     assert report["layout_preset"]["duck"] == 1
     assert report["layout_preset"]["pending"] == 1
-    assert "ths_board.login_cookie" not in report["app_config"]["source_keys"]
-    assert "ths_board.login_cookie" not in report["app_config"]["missing_keys"]
+    assert "ths_board.login_cookie" in report["app_config"]["source_keys"]
+    assert "ths_board.login_cookie" in report["app_config"]["missing_keys"]
     assert pg.query_df("SELECT 1 FROM layout_preset WHERE key=%s", ["duck-preset"]).empty
     assert pg.query_df("SELECT 1 FROM app_config WHERE key=%s", [CONFIG_STORAGE_MARKER]).empty
 
@@ -120,10 +122,14 @@ def test_migrate_config_storage_apply_migrates_layout_and_missing_app_config(duc
         "SELECT 1 FROM app_config WHERE key=%s",
         ["migration.layout_presets_three_theme_v1"],
     ).empty
-    assert pg.query_df(
-        "SELECT 1 FROM app_config WHERE key=%s",
-        ["ths_board.login_cookie"],
-    ).empty
+    from backend.security.config_crypto import decrypt_config_value, is_encrypted_config_value
+
+    stored = pg.query_df(
+        "SELECT value FROM app_config WHERE key=%s", ["ths_board.login_cookie"]
+    ).iloc[0]["value"]
+    encrypted = json.loads(stored)
+    assert is_encrypted_config_value(encrypted)
+    assert decrypt_config_value(encrypted) == "legacy-sensitive-cookie"
 
 
 def test_migrate_config_storage_marker_skips_unless_force(duck, pg_config_snapshot):

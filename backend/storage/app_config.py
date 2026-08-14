@@ -13,6 +13,12 @@ import json
 from datetime import datetime
 
 from backend.common.logging import get_logger
+from backend.security.config_crypto import (
+    ConfigEncryptionError,
+    decrypt_config_value,
+    encrypt_config_value,
+    is_encrypted_config_value,
+)
 from backend.storage.pg_client import PostgresClient, get_pg_client
 
 log = get_logger("storage.app_config")
@@ -53,11 +59,10 @@ CONFIG_GROUPS: list[dict] = [
         {"path": "ths_board.max_retries", "label": "失败重试次数", "type": "int", "min": 1, "max": 10, "desc": "同花顺请求失败后的最多重试次数。"},
         {"path": "ths_board.retry_backoff_sec", "label": "重试退避(秒)", "type": "number", "min": 0, "max": 60, "desc": "同花顺请求连续重试之间的退避时间。"},
         {"path": "ths_board.member_update_interval_days", "label": "成分快照更新间隔(天)", "type": "int", "min": 1, "max": 30, "desc": "成分股快照多久全量拉取一次；未达间隔且上次完整时跳过（默认 7=周频）。"},
-        # 运行时敏感字段只保留元数据，供审计脱敏和遗留数据清理识别；不得进入 Web 表单或
-        # app_config 白名单。真实值只能由 AI_STOCKS_THS_COOKIE / _FILE 注入。
         {"path": "ths_board.login_cookie", "label": "登录 Cookie", "type": "password",
-         "runtime_only": True, "hidden_in_form": True,
-         "desc": "仅允许通过环境变量或受控文件注入，不得持久化到平台配置。"},
+         "encrypted": True,
+         "placeholder": "粘贴登录后的完整 Cookie；数据库只保存加密密文",
+         "desc": "用于解除深页登录墙。页面只回显已设置状态，数据库使用独立主密钥加密存储；环境变量或受控文件仍可优先覆盖。"},
     ]},
     # 定时调度（遗留）：调度系统重构后改用 scheduled_job 表 + 「任务调度」页，旧的单一每日配置
     # 已不再作为运行态。这些白名单项仅供启动时一次性迁移读取旧值（读后即删，见 scheduler._migrate_legacy_config），
@@ -74,11 +79,9 @@ _FIELD_BY_PATH: dict[str, dict] = {
     f["path"]: {**f, "group": g["key"], "group_label": g["label"]}
     for g in CONFIG_GROUPS for f in g["fields"]
 }
-WHITELIST: frozenset[str] = frozenset(
-    path for path, field in _FIELD_BY_PATH.items() if not field.get("runtime_only")
-)
-SENSITIVE_RUNTIME_CONFIG_PATHS: frozenset[str] = frozenset(
-    path for path, field in _FIELD_BY_PATH.items() if field.get("runtime_only")
+WHITELIST: frozenset[str] = frozenset(_FIELD_BY_PATH)
+ENCRYPTED_CONFIG_PATHS: frozenset[str] = frozenset(
+    path for path, field in _FIELD_BY_PATH.items() if field.get("encrypted")
 )
 
 
@@ -86,6 +89,25 @@ def is_sensitive_config_path(path: str) -> bool:
     """配置元数据驱动的敏感字段判定，供写库前审计脱敏复用。"""
     field = _FIELD_BY_PATH.get(str(path))
     return bool(field and field.get("type") == "password")
+
+
+def protect_serialized_config_value(path: str, serialized: object) -> str | None:
+    """把迁移来源的 JSON 配置值转换为安全存储格式；无密钥时拒绝迁移敏感明文。"""
+    if path not in ENCRYPTED_CONFIG_PATHS:
+        return str(serialized)
+    try:
+        value = json.loads(serialized)
+    except (TypeError, ValueError):
+        return None
+    if is_encrypted_config_value(value):
+        return str(serialized)
+    if not isinstance(value, str):
+        return None
+    try:
+        return json.dumps(encrypt_config_value(value), ensure_ascii=False)
+    except ConfigEncryptionError as exc:
+        log.error("敏感配置迁移已跳过 %s: %s", path, exc)
+        return None
 
 
 class ConfigValidationError(ValueError):
@@ -134,7 +156,7 @@ class AppConfigRepo:
         self.pg = pg or get_pg_client()
 
     def get_overrides(self) -> dict[str, object]:
-        """返回 {点分路径: 值}（仅白名单内、可解析的项）。"""
+        """返回解密后的覆盖值；密钥缺失或密文非法时跳过敏感项，不把密文当配置消费。"""
         df = self.pg.query_df("SELECT key, value FROM app_config")
         out: dict[str, object] = {}
         for _, r in df.iterrows():
@@ -142,10 +164,25 @@ class AppConfigRepo:
             if key not in WHITELIST:
                 continue
             try:
-                out[key] = json.loads(r["value"])
+                value = json.loads(r["value"])
             except (ValueError, TypeError):
                 continue
+            if key in ENCRYPTED_CONFIG_PATHS:
+                if not is_encrypted_config_value(value):
+                    log.error("拒绝读取未加密的敏感配置: %s", key)
+                    continue
+                try:
+                    value = decrypt_config_value(value)
+                except ConfigEncryptionError as exc:
+                    log.error("敏感配置不可用 %s: %s", key, exc)
+                    continue
+            out[key] = value
         return out
+
+    def get_override_keys(self) -> set[str]:
+        """返回数据库中已持久化的白名单 key，不触碰或解密配置值。"""
+        df = self.pg.query_df("SELECT key FROM app_config")
+        return {str(key) for key in df["key"].tolist() if str(key) in WHITELIST}
 
     def set_many(self, updates: dict[str, object]) -> int:
         """校验并写入覆盖值。任一项非法则整批拒绝（不部分写入）。返回写入条数。"""
@@ -154,12 +191,24 @@ class AppConfigRepo:
         normalized: dict[str, object] = {}
         for path, value in updates.items():
             field = _FIELD_BY_PATH.get(path)
-            if field is None or field.get("runtime_only"):
+            if field is None:
                 raise ConfigValidationError(f"不允许覆盖的配置项: {path}")
             normalized[path] = _coerce(field, value)
         self._check_cross_field(normalized)
-        now = datetime.now()
+        stored_values = dict(normalized)
         for path, value in normalized.items():
+            if path not in ENCRYPTED_CONFIG_PATHS or value == "":
+                continue
+            try:
+                stored_values[path] = encrypt_config_value(str(value))
+            except ConfigEncryptionError as exc:
+                raise ConfigValidationError(str(exc)) from exc
+        now = datetime.now()
+        for path, value in stored_values.items():
+            if path in ENCRYPTED_CONFIG_PATHS:
+                if value == "":
+                    self.pg.execute("DELETE FROM app_config WHERE key=%s", [path])
+                    continue
             self.pg.execute(
                 "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s) "
                 "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",

@@ -1016,7 +1016,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         client.execute(idx_sql)
     for idx_sql in _STAGE5_INDEXES:
         client.execute(idx_sql)
-    _purge_legacy_runtime_secrets(client)
+    _protect_legacy_config_secrets(client)
     _upgrade_dict_item_color(client)
     _upgrade_score_profile_visibility(client)
     _upgrade_stage6_asset_visibility(client)
@@ -1048,20 +1048,34 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     return created
 
 
-def _purge_legacy_runtime_secrets(client: PostgresClient) -> None:
-    """清除历史误入 PG 的运行时凭证，并原位脱敏关联审计而不删除审计事件。
+def _protect_legacy_config_secrets(client: PostgresClient) -> None:
+    """把历史敏感明文升级为密文，并原位脱敏关联审计。
 
-    不使用一次性 marker：旧迁移工具或滚动升级实例可能在任意时点回灌遗留 key，启动时
-    幂等执行可持续守住“运行时凭证不得持久化”的边界。
+    有主密钥时自动加密迁移；没有主密钥时删除历史明文，避免为了兼容继续暴露凭证。已经
+    带版本前缀的密文保持不变。该检查不使用一次性 marker，可防滚动升级或旧工具回灌明文。
     """
-    from backend.storage.app_config import SENSITIVE_RUNTIME_CONFIG_PATHS
+    from backend.storage.app_config import (
+        ENCRYPTED_CONFIG_PATHS,
+        protect_serialized_config_value,
+    )
 
-    paths = sorted(SENSITIVE_RUNTIME_CONFIG_PATHS)
+    paths = sorted(ENCRYPTED_CONFIG_PATHS)
     if not paths:
         return
     lowered_paths = [path.lower() for path in paths]
+    rows = client.query_df("SELECT key, value FROM app_config WHERE key = ANY(%s)", [paths])
     with client.transaction() as conn, conn.cursor() as cur:
-        cur.execute("DELETE FROM app_config WHERE key = ANY(%s)", [paths])
+        for _, row in rows.iterrows():
+            key = str(row["key"])
+            protected = protect_serialized_config_value(key, row["value"])
+            if protected is None:
+                cur.execute("DELETE FROM app_config WHERE key=%s", [key])
+                log.warning("已删除无法安全迁移的敏感配置明文: %s", key)
+            elif protected != row["value"]:
+                cur.execute(
+                    "UPDATE app_config SET value=%s, updated_at=now() WHERE key=%s",
+                    [protected, key],
+                )
         cur.execute(
             """
             UPDATE audit_log AS audit

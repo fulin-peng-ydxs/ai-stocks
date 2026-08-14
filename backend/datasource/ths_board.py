@@ -75,11 +75,11 @@ def _ths_js_path() -> "str":
     return str(resources.files("akshare.data").joinpath("ths.js"))
 
 
-def _login_cookie_from_env() -> str | None:
+def _login_cookie_from_config() -> str | None:
     """读取登录态 cookie（浏览器同花顺登录后复制）。
 
-    优先级：环境变量 `AI_STOCKS_THS_COOKIE` > `AI_STOCKS_THS_COOKIE_FILE`。
-    Cookie 是可复用登录凭证，只允许运行时注入，不读取 YAML 或 app_config 持久层。
+    优先级：环境变量 `AI_STOCKS_THS_COOKIE` > `AI_STOCKS_THS_COOKIE_FILE` >
+    页面配置的加密 `app_config` 值。数据库密文由 AppConfigRepo 在进程内解密，YAML 禁止配置。
     登录态可解除详情页/字典翻页的登录墙（第 6 页起无登录必返回登录墙，登录后正常翻页，
     见 get_board_members docstring）。
     """
@@ -94,6 +94,11 @@ def _login_cookie_from_env() -> str | None:
                     raw = fh.read().strip()
             except OSError:
                 return None
+    if not raw:
+        try:
+            raw = get_effective_settings().ths_board.login_cookie
+        except Exception:  # noqa: BLE001 —— 配置/密钥/DB 异常时按无登录态降级
+            raw = ""
     return raw.strip() or None
 
 
@@ -128,8 +133,8 @@ class ThsBoardSource:
         self._session = session or requests.Session()
         self._v_code: str | None = None
         self._clid_cache: dict[tuple[str, str], str] = {}
-        # 可选登录态（环境变量注入，不硬编码）：解除详情页翻页登录墙
-        self._login_cookie = login_cookie if login_cookie is not None else _login_cookie_from_env()
+        # 可选登录态：显式入参 > 环境/文件 > 页面加密配置，不硬编码、不把明文写日志。
+        self._login_cookie = login_cookie if login_cookie is not None else _login_cookie_from_config()
 
     # ── v cookie（反爬校验）──────────────────────────────────
 
@@ -226,7 +231,7 @@ class ThsBoardSource:
         概念 = 分类页全量（351，`/gn/detail/code/` 链接直接抓）∪ `gn/index` 翻页净增。
         无登录态时 `gn/index` 第 6 页起返回登录墙（HTTP 200 但 `upass...login` 跳转壳），
         停在登录墙前 → 概念约 375（深页板块如 CRO概念 16页/NMN 24页/HJT电池 21页 取不到）；
-        注入登录 Cookie（构造参数或 `AI_STOCKS_THS_COOKIE` / `_FILE`）解除登录墙后
+        注入登录 Cookie（构造参数、环境/文件或页面加密配置）解除登录墙后
         才能翻到深页取全（约 390）。行业：分类页 cate_inner 含全量 90 条。
         返回列：board_code, name。
         """
@@ -268,7 +273,7 @@ class ThsBoardSource:
         取代码集合的并集（避免某一种被源端少返回）。
         **翻页限制（2026-08-09 实测，登录态可解除）**：无登录态时详情页翻页第 6 页起必返回登录墙
         （HTTP 200 但内容为 `upass...login` 跳转壳，单发第 6 页同样命中），单板块最多稳定取 5 页
-        （概念 50 只/行业 100 只）；**提供登录 cookie（`login_cookie`/`AI_STOCKS_THS_COOKIE`）后
+        （概念 50 只/行业 100 只）；**提供登录 cookie（显式入参、环境或页面配置）后
         登录墙解除**——第 6 页起正常返回数据、空页即真实尾页（实测半导体完整 120 只），`complete`
         判定回归正确。遇到登录墙时若此前已有数据，标记 `complete=False`（数据可能被截断），供
         采集层走 R2 不完整快照保护。返回：

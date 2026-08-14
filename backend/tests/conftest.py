@@ -15,6 +15,11 @@ import pytest
 # stage2·T5：鉴权中间件对 /api/** 默认 deny，测试需可签发 token。
 # 在模块导入期（早于各测试模块 import）设默认 JWT 密钥；个别用例仍可用 monkeypatch 覆盖/删除。
 os.environ.setdefault("AI_STOCKS_JWT_SECRET", "pytest-jwt-secret-0123456789-abcdefghij")
+# 仅测试使用的固定 Fernet 密钥，使敏感配置用例可验证“密文落库、进程内解密”。
+os.environ.setdefault(
+    "AI_STOCKS_CONFIG_ENCRYPTION_KEY",
+    "bsKvJrJKsi9lG2hlViiCnZimaUG5tyKh0Rbt5d3ngQU=",
+)
 
 from backend.common.exceptions import StorageError
 from backend.storage.ddl import init_db

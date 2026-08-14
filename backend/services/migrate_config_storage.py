@@ -156,10 +156,17 @@ def _insert_missing_app_config(cur, df: pd.DataFrame) -> int:
 
 
 def _app_config_source_df(duck: DuckDBClient) -> pd.DataFrame:
-    from backend.storage.app_config import SENSITIVE_RUNTIME_CONFIG_PATHS
+    from backend.storage.app_config import protect_serialized_config_value
 
     df = duck.query_df("SELECT key, value, updated_at FROM app_config")
-    return df[~df["key"].astype(str).isin(SENSITIVE_RUNTIME_CONFIG_PATHS)]
+    if df.empty:
+        return df
+    df = df.copy()
+    df["value"] = [
+        protect_serialized_config_value(str(row["key"]), row["value"])
+        for _, row in df.iterrows()
+    ]
+    return df[df["value"].notna()]
 
 
 def _marker_exists(pg: PostgresClient) -> bool:
