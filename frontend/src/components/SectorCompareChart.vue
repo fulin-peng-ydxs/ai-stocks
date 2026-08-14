@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 板块对比图：多板块同图对比。趋势类指标（累计/单日/N 日滚动涨跌幅）以折线叠加，各板块指数
-// 量级差异大（几百~几千点），统一换算成涨跌幅（%）后同图比较；截面类指标（净流入、涨跌家数）
-// 只有最新快照，改用柱状对比。累计涨跌的基期由数据加载层决定（区间首日 vs 近一年），本组件
+// 量级差异大（几百~几千点），统一换算成涨跌幅（%）后同图比较；截面类指标（最新资金净流入、
+// 所选行情日累计成员涨跌）改用柱状对比。累计涨跌的基期由数据加载层决定（区间首日 vs 近一年），本组件
 // 只以输入 bars 的首个有效收盘为基准。
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
@@ -21,7 +21,7 @@ export interface CompareSeries {
   bars: SectorBar[]
 }
 
-// 截面柱状数据（净流入/涨跌家数等只有最新快照的指标）。second 仅 breadth（下跌家数）使用。
+// 截面柱状数据。second 仅 breadth（累计成员下跌家数）使用。
 export interface CrossSectionDatum {
   name: string
   value: number

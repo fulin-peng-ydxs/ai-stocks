@@ -1,5 +1,6 @@
 // 板块对比指标口径：把 board_bar 收盘序列换算成「区间累计涨跌幅」（区间首日归 0）。
-// 截面指标（即时净流入、涨跌家数）只有最新快照，由页面直接取 SectorRow 字段，不做折线；
+// 截面指标由页面直接取 SectorRow 字段，不做折线：即时净流入取独立最新资金快照，
+// 累计成员涨跌取用户所选行情日截面；
 // 「单日」是累计窗口=1 的退化形态，同样只有截面快照（今日涨跌），由页面取 pct_today 做柱状。
 // 指标池与周期选项均为数据驱动（常量数组），便于后续把走势对比抽成可复用组件。
 import type { SectorBar } from '@/api/sectors'
@@ -28,7 +29,7 @@ export const COMPARE_METRIC_META: Record<CompareMetric, CompareMetricMeta> = {
   roll_10d: { label: '10日涨幅', kind: 'line', unit: '%', window: 10 },
   roll_20d: { label: '20日涨幅', kind: 'line', unit: '%', window: 20 },
   inflow: { label: '即时净流入', kind: 'bar', unit: '亿' },
-  breadth: { label: '涨/跌家数', kind: 'bar', unit: '家' },
+  breadth: { label: '累计成员涨/跌', kind: 'bar', unit: '家' },
 }
 
 /** 对比周期选项（数据驱动；「单日」窗口=1，仅累计涨跌可用，走柱状截面）。 */

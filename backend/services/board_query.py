@@ -9,12 +9,13 @@
   不参与价格排序）。
 - **资金流净流入按周期读 `board_fund_flow` 最新 snapshot_date 行**：即时/3日/5日/10日/20日
   对应 `net_inflow`/`net_inflow_3d`/`net_inflow_5d`/`net_inflow_10d`/`net_inflow_20d`。
-- **领涨股** = 行情截面日有效成分股中 `pct_chg` 最大者；停牌、缺收盘或缺有效前收者排除，
-  同涨幅按成交额降序、股票代码升序稳定决胜。资金流源自带的领涨字段仅保留原始数据，
-  不参与页面口径。
-- **成分数** = `board_dict.member_count` 最近完整源快照的当前成分数；成员分页的 `total`
-  才是 `board_member` 累计出现过的关系数，两种口径不得混称。
-- **上涨/下跌家数** = 该交易日有效成分股个股 `close` vs `pre_close`；平盘/停牌/缺行情不计入。
+- **领涨股** = `board_member` 历史累计成员中，行情截面日 `pct_chg` 最大者；停牌、缺收盘
+  或缺有效前收者排除，同涨幅按成交额降序、股票代码升序稳定决胜。资金流源自带的
+  领涨字段仅保留原始数据，不参与页面口径。
+- **快照返回数** = `board_dict.member_count` 最近一次完整源快照返回的成员数量；成员分页
+  `total` 是 `board_member` 历史累计关系数，两种口径必须分别标注。
+- **累计成员上涨/下跌家数** = 历史累计成员在该交易日的个股 `close` vs `pre_close`；
+  平盘、停牌或缺行情不计入。累计样本数允许大于最近完整快照返回数。
 
 所有日期/空值口径：涨幅与资金流数据日期分别显式返回；空值统一 None（前端「—」）。
 """
@@ -75,7 +76,7 @@ class BoardQueryService:
         size: int = 20,
         board_codes: set[str] | None = None,
     ) -> dict:
-        """板块列表：涨幅/成分数/即时净流入/领涨股 + 分页排序。
+        """板块列表：涨幅/最近快照返回数/即时净流入/累计成员领涨 + 分页排序。
 
         返回 {"list": [...], "total": n, "trade_date": 涨幅截面日期,
               "fund_flow_date": 资金流快照日, "page": p, "size": s}。
@@ -120,7 +121,7 @@ class BoardQueryService:
             return []
         codes = sorted(board_codes) if board_codes is not None else []
         code_clause = f" AND d.board_code IN ({','.join('?' for _ in codes)})" if codes else ""
-        # 1. board_dict 基础 + 最近完整源快照成分数
+        # 1. board_dict 基础 + 最近完整源快照返回数
         df = self.c.query_df(
             f"""
             SELECT d.board_code, d.app_code, d.name, d.board_type,
@@ -159,7 +160,7 @@ class BoardQueryService:
             else:
                 for key in _PCT_WINDOW:
                     row[key] = None
-            # 各周期净流入；资金流周期列只承载资金面指标，领涨股按行情截面从有效成分股计算。
+            # 各周期净流入；资金流周期列只承载资金面指标，领涨股按行情截面从历史累计成员计算。
             ff = fund_map.get(code)
             for field in _FUND_FIELD_PERIOD:
                 row[field] = (ff.get(field) if ff else None)
@@ -230,7 +231,7 @@ class BoardQueryService:
         *,
         board_codes: set[str] | None = None,
     ) -> dict[str, dict]:
-        """一次聚合涨跌家数与当日领涨股，避免列表逐板块 N+1 查询。"""
+        """一次聚合历史累计成员的涨跌家数与当日领涨股，避免列表逐板块 N+1 查询。"""
         if bar_date is None:
             return {}
         codes = sorted(board_codes) if board_codes is not None else []
@@ -388,12 +389,12 @@ class BoardQueryService:
             for _, r in df.iterrows()
         ]
 
-    # ── 成分股分页 ───────────────────────────────────────────
+    # ── 历史累计成分股分页 ───────────────────────────────────
 
     def get_members(self, code: str, trade_date: date | None = None,
                     page: int = 1, size: int = 20, sort_by: str = "pct",
                     order: str = "desc") -> dict:
-        """成分股统一分页：成分股 + 该交易日现价/涨跌幅/换手（个股行情表同库关联）。
+        """历史累计成分股分页：累计关系 + 该交易日现价/涨跌幅/换手（个股行情表同库关联）。
 
         返回 {"list": [{code, name, close, pct_chg, turnover_rate}], "total": n}。
         """

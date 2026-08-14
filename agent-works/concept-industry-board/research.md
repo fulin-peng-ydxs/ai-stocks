@@ -114,7 +114,7 @@ board_dict        板块字典（概念+行业并集）
   has_members           -- 是否有成分股数据
   has_bar               -- 是否有板块指数
   has_fund_flow         -- 是否有资金流
-  member_count          -- 调研阶段定义；现行口径为最近一次完整快照的当前成分数
+  member_count          -- 调研阶段定义；现行口径为最近一次完整快照返回数
   member_history_start_date -- 成分快照首次完整采集日（板块级）
   last_seen_at          -- 最近一次在任意源出现
   updated_at

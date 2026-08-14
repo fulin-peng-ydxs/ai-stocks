@@ -282,20 +282,31 @@ async function loadSources(ping = false) {
 const cookieDlg = ref(false)
 const cookieSaving = ref(false)
 const cookieValue = ref('')
-type SecretStatus = 'unset' | 'usable' | 'unavailable'
-const cookieStatus = ref<SecretStatus>('unset')
-async function openCookieConfig() {
-  cookieDlg.value = true
-  cookieSaving.value = false
-  cookieValue.value = ''
+type CookieDialogStatus = 'loading' | 'error' | 'unset' | 'usable' | 'unavailable'
+const cookieStatus = ref<CookieDialogStatus>('loading')
+const cookieStatusError = ref('')
+let cookieStatusRequestVersion = 0
+async function loadCookieStatus() {
+  const version = ++cookieStatusRequestVersion
+  cookieStatus.value = 'loading'
+  cookieStatusError.value = ''
   try {
     const view = await getSettingsView()
+    if (version !== cookieStatusRequestVersion) return
     const ths = view.groups.find((group) => group.key === 'ths_board')
     const field = ths?.fields.find((item) => item.path === 'ths_board.login_cookie')
     cookieStatus.value = field?.secret_status ?? 'unset'
-  } catch {
-    cookieStatus.value = 'unset'
+  } catch (error) {
+    if (version !== cookieStatusRequestVersion) return
+    cookieStatus.value = 'error'
+    cookieStatusError.value = getErrorMessage(error, '授权配置状态加载失败')
   }
+}
+function openCookieConfig() {
+  cookieDlg.value = true
+  cookieSaving.value = false
+  cookieValue.value = ''
+  void loadCookieStatus()
 }
 async function saveCookie() {
   const value = cookieValue.value.trim()
@@ -313,7 +324,7 @@ async function saveCookie() {
   }
 }
 async function clearCookie() {
-  if (cookieSaving.value || cookieStatus.value === 'unset') return
+  if (cookieSaving.value || !['usable', 'unavailable'].includes(cookieStatus.value)) return
   cookieSaving.value = true
   try {
     await resetSettings(['ths_board.login_cookie'])
@@ -504,7 +515,26 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 
     <template #overlays>
     <el-dialog v-model="cookieDlg" title="配置同花顺登录 Cookie" width="480px" data-testid="ths-login-cookie-dialog">
-      <el-form label-width="92px">
+      <AppStateBlock
+        v-if="cookieStatus === 'loading'"
+        data-testid="ths-login-cookie-status"
+        state="loading"
+        size="tiny"
+        title="正在确认授权配置状态"
+        :skeleton-rows="2"
+      />
+      <AppStateBlock
+        v-else-if="cookieStatus === 'error'"
+        data-testid="ths-login-cookie-status"
+        state="error"
+        size="tiny"
+        title="授权配置状态加载失败"
+        :description="`${cookieStatusError}。状态确认前不会修改或清除已有配置。`"
+        retry
+        retry-text="重新加载"
+        @retry="loadCookieStatus"
+      />
+      <el-form v-else label-width="92px">
         <el-form-item label="登录 Cookie">
           <el-input
             v-model="cookieValue"
@@ -527,14 +557,15 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </span>
         </el-form-item>
       </el-form>
-      <p class="cookie-note">
+      <p v-if="cookieStatus !== 'loading' && cookieStatus !== 'error'" class="cookie-note">
         获取方式：浏览器登录同花顺后，从开发者工具 Network 复制完整 Cookie 头。
         环境变量或受控文件仍优先于页面配置。
       </p>
       <template #footer>
-        <el-button v-if="cookieStatus !== 'unset'" :disabled="cookieSaving" @click="clearCookie">清除页面配置</el-button>
+        <el-button v-if="cookieStatus === 'usable' || cookieStatus === 'unavailable'" :disabled="cookieSaving" @click="clearCookie">清除页面配置</el-button>
         <el-button @click="cookieDlg = false">取消</el-button>
         <el-button
+          v-if="cookieStatus !== 'loading' && cookieStatus !== 'error'"
           type="primary"
           :loading="cookieSaving"
           :disabled="!cookieValue.trim()"

@@ -133,6 +133,7 @@ test.describe('板块行情工作台', () => {
       await listDrawer.getByRole('button', { name: '关闭页面设置' }).click()
       await expect(listChart.locator('.stock-chart-panel--macd')).toBeVisible()
       await expect(listChart.locator('.stock-chart-panel--volume')).toHaveCount(0)
+      await expect(page.getByText(/最近快照 \d+只/).first()).toBeVisible()
 
       await page.getByTestId('sectors-open-detail').click()
       await expect(page).toHaveURL(new RegExp(`/sectors/${boards[3]!.board_code}`))
@@ -145,6 +146,10 @@ test.describe('板块行情工作台', () => {
       const memberSection = page.getByTestId('sector-detail-member-section')
       await expect(chartSection).toBeVisible()
       await expect(memberSection).toBeVisible()
+      await expect(page.getByText('累计成员涨 / 跌', { exact: true })).toBeVisible()
+      await expect(page.getByText('最近快照返回', { exact: true })).toBeVisible()
+      await expect(page.getByText('累计成员领涨', { exact: true })).toBeVisible()
+      await expect(memberSection.getByRole('heading', { name: '历史累计成分股' })).toBeVisible()
       const configuredChartHeight = Number(await chartSection.getAttribute('data-configured-height'))
       expect(configuredChartHeight).toBeGreaterThanOrEqual(480)
       expect(configuredChartHeight).toBeLessThanOrEqual(900)

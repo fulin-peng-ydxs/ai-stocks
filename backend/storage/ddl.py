@@ -715,7 +715,7 @@ CREATE TABLE IF NOT EXISTS board_dict (
     has_members  BOOLEAN DEFAULT FALSE,    -- 是否有成分股数据
     has_bar      BOOLEAN DEFAULT FALSE,    -- 是否有板块指数
     has_fund_flow BOOLEAN DEFAULT FALSE,   -- 是否有资金流
-    member_count  BIGINT,                  -- 最近一次已应用完整快照的冗余成分数；页面仍以有效 board_member 实时统计为准
+    member_count  BIGINT,                  -- 最近一次完整快照返回数；行情统计另用 board_member 历史累计关系
     member_history_start_date DATE,        -- 成分快照首次完整采集日（板块级）
     member_snapshot_at TIMESTAMP,          -- 最近一次完整成分快照成功落库时间（修复复检与概览口径）
     last_seen_at  DATE,                    -- 最近一次在任意源出现

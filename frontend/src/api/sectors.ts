@@ -17,6 +17,7 @@ export interface SectorRow {
   app_code: string | null
   name: string
   board_type: BoardType
+  /** 最近一次完整成分快照返回数；不是历史累计关系数。 */
   member_count: number | null
   has_members: boolean
   has_bar: boolean
@@ -30,8 +31,10 @@ export interface SectorRow {
   net_inflow_5d: number | null
   net_inflow_10d: number | null
   net_inflow_20d: number | null
+  /** 历史累计成员中，行情截面日涨幅最高者。 */
   leader_stock: string | null
   leader_pct: number | null
+  /** 历史累计成员在行情截面日的上涨/下跌家数。 */
   up_count: number
   down_count: number
   /** 自选视图中表示板块事实是否仍可用；普通行情列表缺省即为可用。 */

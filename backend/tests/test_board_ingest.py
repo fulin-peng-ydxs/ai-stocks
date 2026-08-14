@@ -7,9 +7,7 @@
 
 from __future__ import annotations
 
-import tempfile
 from datetime import date
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -197,7 +195,7 @@ def test_member_only_append_no_delete(tmp_path):
     df = c.query_df("SELECT board_code, code FROM board_member")
     assert len(df) == 3
     assert set(df["code"]) == {"300476.SZ", "603936.SH", "002913.SZ"}
-    # member_count 刷新为当前成分数
+    # member_count 刷新为本次完整快照返回数
     assert int(_member_count(c, "309121")) == 3
     assert r["added"] == 3
     # 第二次快照：新股 300750 新增，缺席股 002913 保留（不删除）

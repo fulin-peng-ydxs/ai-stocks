@@ -82,7 +82,7 @@ def test_list_sectors_basic(c):
     assert ai["pct_today"] == pytest.approx(6.48, abs=0.01)
     # 5 日涨幅：历史不足（只有 5 天，需 6 个点）→ None
     assert ai["pct_5d"] is None
-    # 净流入取资金流即时行；领涨按行情日有效成分股计算，不采用源端资金流领涨字段。
+    # 净流入取资金流即时行；领涨按行情日历史累计成员计算，不采用源端资金流领涨字段。
     assert ai["net_inflow"] == pytest.approx(45.6)
     assert ai["leader_stock"] == "平安银行"
     assert ai["leader_pct"] == pytest.approx(5.26, abs=0.01)
@@ -202,15 +202,24 @@ def test_detail_and_subset_queries_push_board_codes_into_fact_sql(c, monkeypatch
     assert all("board_code IN (?)" in sql for sql, _ in scoped_queries)
 
 
-def test_member_count_is_latest_snapshot_not_cumulative_relation_count(c):
-    """摘要成分数取最近完整源快照；成员分页 total 才是累计关系数。"""
+def test_cumulative_member_market_is_distinct_from_latest_snapshot_count(c):
+    """行情统计消费历史累计关系；最近完整快照返回数保持独立口径。"""
     c.execute("INSERT INTO board_member (board_code, code) VALUES ('309121', '000003.SZ')")
-    c.execute("INSERT INTO stock_basic (code, name) VALUES ('000003.SZ', '历史成分')")
+    c.execute("INSERT INTO stock_basic (code, name) VALUES ('000003.SZ', '累计成员')")
+    c.execute(
+        "INSERT INTO daily_bar (code, trade_date, close, pre_close, amount) "
+        "VALUES ('000003.SZ', DATE '2026-08-07', 12, 10, 1000000)"
+    )
     svc = _svc(c)
 
     rows = {x["board_code"]: x for x in svc.list_sectors()["list"]}
     assert rows["309121"]["member_count"] == 2
-    assert svc.get_sector("309121")["member_count"] == 2
+    assert rows["309121"]["up_count"] == 2
+    assert rows["309121"]["leader_stock"] == "累计成员"
+    detail = svc.get_sector("309121")
+    assert detail["member_count"] == 2
+    assert detail["up_count"] == 2
+    assert detail["leader_stock"] == "累计成员"
     assert svc.get_members("309121")["total"] == 3
 
 

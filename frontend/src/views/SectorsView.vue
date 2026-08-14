@@ -853,7 +853,7 @@ onMounted(async () => {
                       {{ row.name }}
                     </el-button>
                     <span v-if="row.available === false">{{ row.board_type === 'concept' ? '概念' : '行业' }} · 已失效</span>
-                    <span v-else>{{ row.board_type === 'concept' ? '概念' : '行业' }} · {{ row.member_count ?? '—' }}只</span>
+                    <span v-else>{{ row.board_type === 'concept' ? '概念' : '行业' }} · 最近快照 {{ row.member_count ?? '—' }}只</span>
                   </div>
                 </div>
               </template>
@@ -1159,7 +1159,7 @@ onMounted(async () => {
           <footer v-if="chartMode === 'compare'" class="chart-footer">
             <span v-if="benchmarkError && compareMetricKind === 'line'" class="benchmark-warning">{{ benchmarkError }}，当前仅显示板块走势。</span>
             <span v-else-if="compareMetricKind === 'bar' && (compareMetric === 'inflow' || compareMetric === 'breadth')" class="compare-explanation">
-              净流入与涨跌家数为最新截面快照，无法回溯，故以柱状对比，不叠加市场指数。
+              净流入使用独立最新快照；累计成员涨跌按所选行情日计算。两者均为截面值，故以柱状对比，不叠加市场指数。
             </span>
             <span v-else-if="compareMetricKind === 'bar'" class="compare-explanation">
               单日涨幅为截面快照，故以柱状对比。

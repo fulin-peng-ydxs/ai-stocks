@@ -399,7 +399,7 @@ onMounted(async () => {
                 <el-icon><StarFilled v-if="watchlisted" /><Star v-else /></el-icon>
               </AppIconButton>
             </div>
-            <p>指数趋势与成分强弱联动观察</p>
+            <p>指数趋势与历史累计成员强弱联动观察</p>
           </div>
           <div class="hero-date app-caption-text">
             行情 {{ detail?.trade_date || '—' }} · 资金 {{ detail?.fund_flow_date || '—' }}
@@ -414,9 +414,9 @@ onMounted(async () => {
           <div class="metric"><span>5 日</span><strong :class="pctClass(detail?.pct_5d)">{{ fmtPct(detail?.pct_5d) }}</strong></div>
           <div class="metric"><span>20 日</span><strong :class="pctClass(detail?.pct_20d)">{{ fmtPct(detail?.pct_20d) }}</strong></div>
           <div class="metric"><span>即时净流入</span><strong :class="pctClass(detail?.net_inflow)">{{ fmtInflow(detail?.net_inflow) }}</strong></div>
-          <div class="metric"><span>涨 / 跌</span><strong><i class="up">{{ detail?.up_count ?? '—' }}</i> / <i class="down">{{ detail?.down_count ?? '—' }}</i></strong></div>
-          <div class="metric"><span>成分股</span><strong>{{ detail?.member_count ?? '—' }} <small>只</small></strong></div>
-          <div class="metric metric--leader"><span>领涨股</span><strong>{{ detail?.leader_stock || '—' }} <em :class="pctClass(detail?.leader_pct)">{{ fmtPct(detail?.leader_pct) }}</em></strong></div>
+          <div class="metric"><span>累计成员涨 / 跌</span><strong><i class="up">{{ detail?.up_count ?? '—' }}</i> / <i class="down">{{ detail?.down_count ?? '—' }}</i></strong></div>
+          <div class="metric"><span>最近快照返回</span><strong>{{ detail?.member_count ?? '—' }} <small>只</small></strong></div>
+          <div class="metric metric--leader"><span>累计成员领涨</span><strong>{{ detail?.leader_stock || '—' }} <em :class="pctClass(detail?.leader_pct)">{{ fmtPct(detail?.leader_pct) }}</em></strong></div>
         </section>
 
         <section
@@ -457,8 +457,8 @@ onMounted(async () => {
         <section class="content-panel member-section" data-testid="sector-detail-member-section">
           <header class="section-head">
             <div>
-              <h3 class="app-section-title">成分股</h3>
-              <p class="app-caption-text">{{ memberTradeDate || detail?.trade_date || '最新交易日' }} · {{ memberTotal }} 只历史成分关系</p>
+              <h3 class="app-section-title">历史累计成分股</h3>
+              <p class="app-caption-text">{{ memberTradeDate || detail?.trade_date || '最新交易日' }} · {{ memberTotal }} 条累计关系</p>
             </div>
             <span class="permission-hint">{{ canViewStocks ? '点击成分股进入个股行情' : '当前账号无个股行情查看权限' }}</span>
           </header>
@@ -471,7 +471,7 @@ onMounted(async () => {
             :default-sort="elementDefaultSort"
             :border="tableBorder('memberTable')"
             :clickable="canViewStocks"
-            aria-label="板块成分股"
+            aria-label="板块历史累计成分股"
             :pagination="{ currentPage: memberPage, pageSize: memberSize, total: memberTotal, pageSizes: MEMBER_PAGE_SIZES, small: true }"
             @row-click="openStock"
             @sort-change="(value: Sort) => onSortChange(value)"
