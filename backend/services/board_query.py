@@ -1,7 +1,7 @@
 """板块行情查询服务（板块概念需求 R7-R10/R13/R14，plan §6.8 T8）。
 
-只读聚合：单次全查内存合并（板块数 <600，符合 plan §4 双库边界——只读 DuckDB，
-成分股现价/涨跌幅/换手取个股行情表同库关联，不跨库 JOIN）。
+只读聚合：列表页单次全市场聚合；详情与关注列表把目标板块代码下推到各事实表，符合 plan §4
+双库边界——只读 DuckDB，成分股现价/涨跌幅/换手取个股行情表同库关联，不跨库 JOIN。
 
 口径（需求 §6.2 / plan §4 双口径边界）：
 - **涨幅 pct_today/pct_5d/pct_10d/pct_20d 从 `board_bar` 实时计算**（最近交易日收盘 vs
@@ -25,7 +25,6 @@ from datetime import date
 
 import pandas as pd
 
-from backend.datasource.ths_board import FUND_FLOW_PERIODS
 from backend.indicators.compute import compute_macd
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
@@ -85,11 +84,9 @@ class BoardQueryService:
         # 涨幅截面：指定交易日或最新；资金流快照日单独取
         bar_date = trade_date or self._latest_bar_date()
         fund_date = self._latest_fund_date()
-        rows = self._sector_rows(bar_date, fund_date)
+        rows = self._sector_rows(bar_date, fund_date, board_codes=board_codes)
 
         # 过滤
-        if board_codes is not None:
-            rows = [r for r in rows if r["board_code"] in board_codes]
         if board_type:
             rows = [r for r in rows if r["board_type"] == board_type]
         if keyword:
@@ -111,21 +108,33 @@ class BoardQueryService:
             "page": page, "size": size,
         }
 
-    def _sector_rows(self, bar_date: date | None, fund_date: date | None) -> list[dict]:
-        """板块列表全量行（<600 单次全查内存合并）。"""
+    def _sector_rows(
+        self,
+        bar_date: date | None,
+        fund_date: date | None,
+        *,
+        board_codes: set[str] | None = None,
+    ) -> list[dict]:
+        """板块行情行；全市场单次聚合，指定代码时把范围下推到各事实表。"""
+        if board_codes is not None and not board_codes:
+            return []
+        codes = sorted(board_codes) if board_codes is not None else []
+        code_clause = f" AND d.board_code IN ({','.join('?' for _ in codes)})" if codes else ""
         # 1. board_dict 基础 + 最近完整源快照成分数
         df = self.c.query_df(
-            """
+            f"""
             SELECT d.board_code, d.app_code, d.name, d.board_type,
                    d.has_members, d.has_bar, d.has_fund_flow, d.member_count
             FROM board_dict d
-            WHERE d.has_members OR d.has_bar
-            """)
+            WHERE (d.has_members OR d.has_bar){code_clause}
+            """,
+            codes,
+        )
         # 2. board_bar 涨幅（最近 vs N 交易日前收盘，截面 bar_date）
-        bar_ts = self._bar_close_series(bar_date)
+        bar_ts = self._bar_close_series(bar_date, board_codes=board_codes)
         # 3. board_fund_flow 各周期净流入（最新 snapshot_date，多周期）
-        fund_map = self._latest_fund_flow(fund_date)
-        member_market = self._member_market_by_board(bar_date)
+        fund_map = self._latest_fund_flow(fund_date, board_codes=board_codes)
+        member_market = self._member_market_by_board(bar_date, board_codes=board_codes)
 
         rows = []
         for _, r in df.iterrows():
@@ -162,33 +171,51 @@ class BoardQueryService:
             rows.append(row)
         return rows
 
-    def _bar_close_series(self, bar_date: date | None) -> dict[str, pd.Series]:
+    def _bar_close_series(
+        self,
+        bar_date: date | None,
+        *,
+        board_codes: set[str] | None = None,
+    ) -> dict[str, pd.Series]:
         """每板块指数收盘序列（升序），key=board_code。bar_date None → 空。"""
         if bar_date is None:
             return {}
         # 各周期最长只需要最近 21 个收盘点，不加载每个板块全部历史。
+        codes = sorted(board_codes) if board_codes is not None else []
+        if board_codes is not None and not codes:
+            return {}
+        code_clause = f" AND board_code IN ({','.join('?' for _ in codes)})" if codes else ""
         df = self.c.query_df(
-            """
+            f"""
             SELECT board_code, trade_date, close FROM (
                 SELECT board_code, trade_date, close,
                        row_number() OVER (PARTITION BY board_code ORDER BY trade_date DESC) AS rn
-                FROM board_bar WHERE trade_date <= ?
+                FROM board_bar WHERE trade_date <= ?{code_clause}
             ) t WHERE rn <= 21 ORDER BY board_code, trade_date
-            """, [bar_date])
+            """, [bar_date, *codes])
         out: dict[str, pd.Series] = {}
         for code, g in df.groupby("board_code"):
             out[str(code)] = g["close"].reset_index(drop=True)
         return out
 
-    def _latest_fund_flow(self, fund_date: date | None) -> dict[str, dict]:
+    def _latest_fund_flow(
+        self,
+        fund_date: date | None,
+        *,
+        board_codes: set[str] | None = None,
+    ) -> dict[str, dict]:
         """最新 snapshot_date 的各周期净流入，key=board_code → {net_inflow, net_inflow_3d, ...}。"""
         if fund_date is None:
             return {}
         # 周期 → 字段名（与 _FUND_FIELD_PERIOD 同源反向）
         period_field = {v: k for k, v in _FUND_FIELD_PERIOD.items()}
+        codes = sorted(board_codes) if board_codes is not None else []
+        if board_codes is not None and not codes:
+            return {}
+        code_clause = f" AND board_code IN ({','.join('?' for _ in codes)})" if codes else ""
         df = self.c.query_df(
             "SELECT board_code, period, net_inflow "
-            "FROM board_fund_flow WHERE snapshot_date = ?", [fund_date])
+            f"FROM board_fund_flow WHERE snapshot_date = ?{code_clause}", [fund_date, *codes])
         out: dict[str, dict] = {}
         for _, r in df.iterrows():
             field = period_field.get(str(r["period"]))
@@ -197,12 +224,21 @@ class BoardQueryService:
             out.setdefault(str(r["board_code"]), {})[field] = r["net_inflow"]
         return out
 
-    def _member_market_by_board(self, bar_date: date | None) -> dict[str, dict]:
+    def _member_market_by_board(
+        self,
+        bar_date: date | None,
+        *,
+        board_codes: set[str] | None = None,
+    ) -> dict[str, dict]:
         """一次聚合涨跌家数与当日领涨股，避免列表逐板块 N+1 查询。"""
         if bar_date is None:
             return {}
+        codes = sorted(board_codes) if board_codes is not None else []
+        if board_codes is not None and not codes:
+            return {}
+        code_clause = f" AND m.board_code IN ({','.join('?' for _ in codes)})" if codes else ""
         df = self.c.query_df(
-            """
+            f"""
             WITH quotes AS (
                 SELECT m.board_code, b.code, s.name, b.close, b.pre_close, b.amount,
                        CASE
@@ -213,6 +249,7 @@ class BoardQueryService:
                 FROM board_member m
                 JOIN daily_bar b ON b.code = m.code AND b.trade_date = ?
                 LEFT JOIN stock_basic s ON s.code = b.code
+                WHERE TRUE{code_clause}
             ), ranked AS (
                 SELECT *, row_number() OVER (
                     PARTITION BY board_code
@@ -228,7 +265,7 @@ class BoardQueryService:
                    max(CASE WHEN leader_rank = 1 THEN pct_chg END) AS leader_pct
             FROM ranked
             GROUP BY board_code
-            """, [bar_date])
+            """, [bar_date, *codes])
         return {
             str(r["board_code"]): {
                 "up_count": int(r["up"] or 0),
@@ -267,9 +304,10 @@ class BoardQueryService:
         r = df.iloc[0]
         bar_date = trade_date or self._latest_bar_date()
         fund_date = self._latest_fund_date()
-        bar = self._bar_close_series(bar_date).get(code)
-        ff = self._latest_fund_flow(fund_date).get(code)
-        market = self._member_market_by_board(bar_date).get(code)
+        target = {code}
+        bar = self._bar_close_series(bar_date, board_codes=target).get(code)
+        ff = self._latest_fund_flow(fund_date, board_codes=target).get(code)
+        market = self._member_market_by_board(bar_date, board_codes=target).get(code)
         out = {
             "board_code": str(r["board_code"]),
             "app_code": str(r["app_code"]) if r["app_code"] is not None and str(r["app_code"]) != "nan" else None,

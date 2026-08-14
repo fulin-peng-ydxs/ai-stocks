@@ -52,6 +52,12 @@ import {
   sectorListLocation,
   toLocationQuery,
 } from '@/utils/sectorNavigation'
+import {
+  formatSectorInflow,
+  formatSectorPercent,
+  sectorValueClass,
+  toBoardChartBars,
+} from '@/utils/sectorCompare'
 
 const route = useRoute()
 const router = useRouter()
@@ -200,17 +206,7 @@ async function loadChart(): Promise<void> {
     const start = klineRangeQueryStart(end, viewDays.value, dataMin.value || '2024-01-01')
     const data = await getSectorBars(code.value, start, end, true)
     if (version !== requestVersion) return
-    const mapped = data.list.map((bar, index) => ({
-      date: bar.trade_date,
-      open: bar.open,
-      high: bar.high,
-      low: bar.low,
-      close: bar.close,
-      pre_close: index > 0 ? data.list[index - 1]!.close : null,
-      volume: bar.volume,
-      amount: bar.amount,
-      turnover_rate: null,
-    }))
+    const mapped = toBoardChartBars(data.list)
     // 周期是数据与缩放的共同边界，不能在“近 N 日”下再缩放回周期外历史。
     bars.value = trimKlineRange(mapped, viewDays.value)
     const visibleDates = new Set(bars.value.map((bar) => bar.date))
@@ -295,21 +291,12 @@ async function toggleWatchlist(): Promise<void> {
   }
 }
 
-function fmtPct(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '—'
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
-}
+const fmtPct = formatSectorPercent
 function fmtNumber(value: number | null | undefined, digits = 2): string {
   return value === null || value === undefined ? '—' : value.toFixed(digits)
 }
-function fmtInflow(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '—'
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)} 亿`
-}
-function pctClass(value: number | null | undefined): string {
-  if (value === null || value === undefined) return 'muted'
-  return value > 0 ? 'up' : value < 0 ? 'down' : ''
-}
+const fmtInflow = formatSectorInflow
+const pctClass = sectorValueClass
 function resetSettings(): void {
   chartPreferences.cancelRatioDraft()
   resetPageSettings()
@@ -456,7 +443,7 @@ onMounted(async () => {
               :slot2="chartPreferences.preferences.value.slot2"
               :slot3="chartPreferences.preferences.value.slot3"
               :height-ratios="chartPreferences.currentRatios.value"
-              adjust-label="板块指数"
+              adjust-label="原始连续指数"
               :min-height="chartWorkspaceMinHeight"
               :zoom-start="0"
               :zoom-end="100"

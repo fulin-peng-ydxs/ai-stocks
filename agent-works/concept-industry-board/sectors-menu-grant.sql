@@ -11,8 +11,9 @@
 -- 结果 normal 有接口权限却看不到「板块行情」菜单入口（路由守卫按授权菜单 fail-closed 重定向）。
 --
 -- 影响：sys_role_menu（normal/tenant_admin 获得 /sectors）+ 受影响用户 perm_ver 自增。
--- 可逆性（确定性基线恢复）：本迁移只 INSERT 菜单码、不删除任何既有授权，回滚 = 删除本迁移
---   新增的 /sectors 菜单授权行；不保留迁移后角色管理页的人工增删（与所有默认授权迁移一致）。
+-- 可逆性：正向段把本次实际插入的角色写入 marker.inserted_roles；回滚只删除这些角色的
+-- `/sectors`。历史旧 marker 若没有 inserted_roles，安全回滚必须 no-op，并先从迁移前快照
+-- 人工恢复；禁止猜测并删除 normal/tenant_admin 的现存合法授权。
 
 -- ========== 正向：授予 /sectors 菜单（幂等，marker 已存在则 no-op）==========
 BEGIN;
@@ -23,14 +24,21 @@ DO $$
 DECLARE
     v_changed integer := 0;
     v_n integer;
+    v_inserted_roles text[];
 BEGIN
     IF EXISTS (SELECT 1 FROM app_config WHERE key = 'migration.sector_menu_grants_v1') THEN
         RETURN;  -- 已应用，整段 no-op
     END IF;
 
-    INSERT INTO sys_role_menu (role_id, menu_id)
-    SELECT ro.role_id, '/sectors'
+    SELECT coalesce(array_agg(ro.role_id), ARRAY[]::text[]) INTO v_inserted_roles
     FROM (VALUES ('normal'), ('tenant_admin')) AS ro(role_id)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM sys_role_menu rm
+        WHERE rm.role_id = ro.role_id AND rm.menu_id = '/sectors'
+    );
+
+    INSERT INTO sys_role_menu (role_id, menu_id)
+    SELECT unnest(v_inserted_roles), '/sectors'
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT;
     v_changed := v_changed + v_n;
@@ -44,7 +52,11 @@ BEGIN
     END IF;
 
     INSERT INTO app_config (key, value, updated_at)
-    VALUES ('migration.sector_menu_grants_v1', '{"applied":true}', now());
+    VALUES (
+        'migration.sector_menu_grants_v1',
+        jsonb_build_object('applied', true, 'inserted_roles', to_jsonb(v_inserted_roles))::text,
+        now()
+    );
 END $$;
 
 COMMIT;
@@ -58,13 +70,30 @@ COMMIT;
 -- DECLARE
 --     v_changed integer := 0;
 --     v_n integer;
+--     v_inserted_roles text[];
 -- BEGIN
 --     IF NOT EXISTS (SELECT 1 FROM app_config WHERE key = 'migration.sector_menu_grants_v1') THEN
 --         RETURN;  -- 未应用，整段 no-op
 --     END IF;
 --
+--     SELECT coalesce(array_agg(inserted.role_id), ARRAY[]::text[]) INTO v_inserted_roles
+--     FROM app_config cfg
+--     CROSS JOIN LATERAL jsonb_array_elements_text(
+--         coalesce(cfg.value::jsonb->'inserted_roles', '[]'::jsonb)
+--     ) AS inserted(role_id)
+--     WHERE cfg.key = 'migration.sector_menu_grants_v1';
+--
+--     IF NOT EXISTS (
+--         SELECT 1 FROM app_config
+--         WHERE key = 'migration.sector_menu_grants_v1'
+--           AND value::jsonb ? 'inserted_roles'
+--     ) THEN
+--         RAISE WARNING 'marker 缺少 inserted_roles，拒绝破坏性回滚；请使用迁移前快照';
+--         RETURN;
+--     END IF;
+--
 --     DELETE FROM sys_role_menu
---     WHERE role_id IN ('normal', 'tenant_admin') AND menu_id = '/sectors';
+--     WHERE role_id = ANY(v_inserted_roles) AND menu_id = '/sectors';
 --     GET DIAGNOSTICS v_n = ROW_COUNT; v_changed := v_changed + v_n;
 --
 --     IF v_changed > 0 THEN

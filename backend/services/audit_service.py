@@ -37,8 +37,8 @@ _CONTEXT_ALLOW_KEYS = {
     "item_count",
     "saved_count",
 }
-_SENSITIVE_TOKENS = ("password", "token", "secret", "captcha", "credential")
-_CHANGE_SENSITIVE_TOKENS = ("password", "token", "secret", "credential")
+_SENSITIVE_TOKENS = ("password", "token", "secret", "captcha", "credential", "cookie")
+_CHANGE_SENSITIVE_TOKENS = ("password", "token", "secret", "credential", "cookie")
 _REDACTED_CHANGE_VALUE = "已变更"
 _TARGET_TYPE_LABELS = {
     "api": "接口",
@@ -492,7 +492,13 @@ class AuditService:
     @classmethod
     def _sanitize_change_value(cls, field: str, value: Any) -> Any:
         lower = str(field).lower()
-        if any(token in lower for token in _CHANGE_SENSITIVE_TOKENS):
+        # 系统设置敏感性以配置 schema 的 password 类型为事实源；关键字仅作为其它审计对象
+        # 的纵深防御，避免新增密码型配置时遗漏手工维护 token 表。
+        from backend.storage.app_config import is_sensitive_config_path
+
+        if is_sensitive_config_path(field) or any(
+            token in lower for token in _CHANGE_SENSITIVE_TOKENS
+        ):
             return _REDACTED_CHANGE_VALUE
         if isinstance(value, dict):
             clean = {}

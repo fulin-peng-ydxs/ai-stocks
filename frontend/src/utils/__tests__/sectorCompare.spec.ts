@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { metricKind, metricSeries, metricWindow } from '@/utils/sectorCompare'
+import {
+  formatSectorInflow,
+  formatSectorPercent,
+  metricKind,
+  metricSeries,
+  metricWindow,
+  sectorValueClass,
+  toBoardChartBars,
+} from '@/utils/sectorCompare'
 import type { SectorBar } from '@/api/sectors'
 
 function bar(trade_date: string, close: number): SectorBar {
@@ -57,5 +65,24 @@ describe('metricKind', () => {
   it('固定滚动指标恒为折线', () => {
     expect(metricKind('roll_5d', 5)).toBe('line')
     expect(metricKind('roll_20d', 250)).toBe('line')
+  })
+})
+
+describe('板块图表适配与展示格式', () => {
+  it('两页共享同一原始指数到工作区映射，并只使用前一交易点作前收', () => {
+    const rows = [bar('2026-08-04', 100), bar('2026-08-05', 105)]
+    expect(toBoardChartBars(rows)).toEqual([
+      expect.objectContaining({ date: '2026-08-04', close: 100, pre_close: null }),
+      expect.objectContaining({ date: '2026-08-05', close: 105, pre_close: 100 }),
+    ])
+  })
+
+  it('百分比、资金流和涨跌样式统一处理空值、非有限值与正负号', () => {
+    expect(formatSectorPercent(1.2)).toBe('+1.20%')
+    expect(formatSectorPercent(Number.NaN)).toBe('—')
+    expect(formatSectorInflow(-2.5)).toBe('-2.50 亿')
+    expect(sectorValueClass(null)).toBe('muted')
+    expect(sectorValueClass(0)).toBe('')
+    expect(sectorValueClass(2)).toBe('up')
   })
 })

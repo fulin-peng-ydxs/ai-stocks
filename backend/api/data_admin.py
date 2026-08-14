@@ -795,7 +795,7 @@ def get_settings_view() -> ApiResponse:
     """分组配置表单：每字段含 当前值 / 默认值 / 是否已覆盖。"""
     from backend.config import get_effective_settings
     from backend.config.settings import Settings, _raw_yaml
-    from backend.storage.app_config import CONFIG_GROUPS, AppConfigRepo, apply_overrides
+    from backend.storage.app_config import CONFIG_GROUPS, AppConfigRepo
 
     eff = get_effective_settings().model_dump()
     default = Settings.model_validate(_raw_yaml()).model_dump()  # yaml 基线（不含覆盖）
@@ -806,6 +806,8 @@ def get_settings_view() -> ApiResponse:
             continue
         fields = []
         for f in g["fields"]:
+            if f.get("hidden_in_form"):
+                continue
             val = _dig_config_value(eff, f["path"])
             default_val = _dig_config_value(default, f["path"])
             # 敏感字段（password 型）不回显明文：value 与 default 都只返回「是否已设置」掩码，
@@ -833,9 +835,12 @@ def save_settings(body: dict, request: Request) -> ApiResponse:
     """保存覆盖值（写 app_config 即时生效）。body={updates:{path:value}} 或直接 {path:value}。"""
     from backend.storage.app_config import CONFIG_GROUPS, AppConfigRepo, ConfigValidationError
     updates = dict(body.get("updates", body))
-    # 敏感字段防御：掩码占位符（如前端异常回传「••••••已设置」）不得作为真实值入库——
-    # 前端正常路径不会提交未修改的密码字段，此处兜底避免掩码被当成 Cookie 存进配置。
-    password_fields = {f["path"] for g in CONFIG_GROUPS for f in g["fields"] if f.get("type") == "password"}
+    # 敏感字段防御：掩码占位符（如前端异常回传「••••••已设置」）不得作为真实值入库。
+    # 运行时凭证不在持久化白名单中；这里只兜底仍允许持久化的普通密码配置。
+    password_fields = {
+        f["path"] for g in CONFIG_GROUPS for f in g["fields"]
+        if f.get("type") == "password" and not f.get("runtime_only")
+    }
     for path in list(updates):
         if path in password_fields and isinstance(updates[path], str) and updates[path].startswith("••••••"):
             updates.pop(path)

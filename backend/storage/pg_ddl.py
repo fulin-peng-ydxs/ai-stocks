@@ -1016,6 +1016,7 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
         client.execute(idx_sql)
     for idx_sql in _STAGE5_INDEXES:
         client.execute(idx_sql)
+    _purge_legacy_runtime_secrets(client)
     _upgrade_dict_item_color(client)
     _upgrade_score_profile_visibility(client)
     _upgrade_stage6_asset_visibility(client)
@@ -1045,6 +1046,48 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     client.execute(
         "ALTER TABLE score_snapshot_meta ADD COLUMN IF NOT EXISTS param_hash TEXT")
     return created
+
+
+def _purge_legacy_runtime_secrets(client: PostgresClient) -> None:
+    """清除历史误入 PG 的运行时凭证，并原位脱敏关联审计而不删除审计事件。
+
+    不使用一次性 marker：旧迁移工具或滚动升级实例可能在任意时点回灌遗留 key，启动时
+    幂等执行可持续守住“运行时凭证不得持久化”的边界。
+    """
+    from backend.storage.app_config import SENSITIVE_RUNTIME_CONFIG_PATHS
+
+    paths = sorted(SENSITIVE_RUNTIME_CONFIG_PATHS)
+    if not paths:
+        return
+    lowered_paths = [path.lower() for path in paths]
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM app_config WHERE key = ANY(%s)", [paths])
+        cur.execute(
+            """
+            UPDATE audit_log AS audit
+            SET changes = (
+                SELECT coalesce(jsonb_agg(
+                    CASE
+                        WHEN lower(item.value->>'field') = ANY(%s)
+                        THEN item.value || jsonb_build_object(
+                            'before', '已变更',
+                            'after', '已变更'
+                        )
+                        ELSE item.value
+                    END
+                    ORDER BY item.ordinality
+                ), '[]'::jsonb) AS value
+                FROM jsonb_array_elements(coalesce(audit.changes, '[]'::jsonb))
+                     WITH ORDINALITY AS item(value, ordinality)
+            )
+            WHERE EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(coalesce(audit.changes, '[]'::jsonb)) AS entry
+                WHERE lower(entry->>'field') = ANY(%s)
+            )
+            """,
+            [lowered_paths, lowered_paths],
+        )
 
 
 def _upgrade_score_profile_visibility(client: PostgresClient) -> None:
@@ -1575,6 +1618,7 @@ def _backfill_sector_menu_grants(client: PostgresClient) -> None:
         return
 
     changed = 0
+    inserted_roles: list[str] = []
     with client.transaction() as conn, conn.cursor() as cur:
         for role_id in (ROLE_TENANT_ADMIN, ROLE_NORMAL):
             cur.execute(
@@ -1582,7 +1626,10 @@ def _backfill_sector_menu_grants(client: PostgresClient) -> None:
                 "ON CONFLICT DO NOTHING",
                 [role_id, "/sectors"],
             )
-            changed += max(cur.rowcount or 0, 0)
+            inserted = max(cur.rowcount or 0, 0)
+            changed += inserted
+            if inserted:
+                inserted_roles.append(role_id)
         if changed:
             cur.execute(
                 "UPDATE sys_user u SET perm_ver=perm_ver+1 "
@@ -1593,7 +1640,10 @@ def _backfill_sector_menu_grants(client: PostgresClient) -> None:
         cur.execute(
             "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
             "ON CONFLICT (key) DO NOTHING",
-            [_SECTOR_MENU_GRANTS_MARKER, '{"applied":true}'],
+            [_SECTOR_MENU_GRANTS_MARKER, json.dumps({
+                "applied": True,
+                "inserted_roles": inserted_roles,
+            })],
         )
 
 

@@ -3,6 +3,7 @@
 // 「单日」是累计窗口=1 的退化形态，同样只有截面快照（今日涨跌），由页面取 pct_today 做柱状。
 // 指标池与周期选项均为数据驱动（常量数组），便于后续把走势对比抽成可复用组件。
 import type { SectorBar } from '@/api/sectors'
+import type { Bar } from '@/api/stocks'
 import { ALL_DAYS } from '@/composables/useKlinePrefs'
 
 export type CompareMetric =
@@ -42,6 +43,36 @@ export const COMPARE_RANGE_OPTIONS: CompareRangeOption[] = [
   { label: '250日', value: 250 },
   { label: '全部', value: ALL_DAYS },
 ]
+
+/** 板块原始连续指数转换为共享行情工作区契约；前收只取序列内上一交易点。 */
+export function toBoardChartBars(bars: readonly SectorBar[]): Bar[] {
+  return bars.map((bar, index, source) => ({
+    date: bar.trade_date,
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    pre_close: index > 0 ? source[index - 1]!.close : null,
+    volume: bar.volume,
+    amount: bar.amount,
+    turnover_rate: null,
+  }))
+}
+
+export function formatSectorPercent(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+}
+
+export function formatSectorInflow(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)} 亿`
+}
+
+export function sectorValueClass(value: number | null | undefined): 'up' | 'down' | 'muted' | '' {
+  if (value == null || !Number.isFinite(value)) return 'muted'
+  return value > 0 ? 'up' : value < 0 ? 'down' : ''
+}
 
 function pct(last: number, ref: number): number | null {
   if (!Number.isFinite(last) || !Number.isFinite(ref) || ref === 0) return null

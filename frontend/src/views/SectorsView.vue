@@ -39,9 +39,13 @@ import {
   COMPARE_METRIC_META,
   COMPARE_METRIC_ORDER,
   COMPARE_RANGE_OPTIONS,
+  formatSectorInflow,
+  formatSectorPercent,
   metricKind,
   metricSeries,
   metricWindow,
+  sectorValueClass,
+  toBoardChartBars,
   type CompareMetric,
 } from '@/utils/sectorCompare'
 import {
@@ -239,17 +243,7 @@ const compareSeries = computed(() =>
     })),
 )
 const klineBars = computed<Bar[]>(() =>
-  (compareBars.value[activeCode.value] ?? []).map((bar, index, source) => ({
-    date: bar.trade_date,
-    open: bar.open,
-    high: bar.high,
-    low: bar.low,
-    close: bar.close,
-    pre_close: index > 0 ? source[index - 1]!.close : null,
-    volume: bar.volume,
-    amount: bar.amount,
-    turnover_rate: null,
-  })),
+  toBoardChartBars(compareBars.value[activeCode.value] ?? []),
 )
 const klineIndicators = computed(() => compareIndicators.value[activeCode.value] ?? [])
 const compareMetricKind = computed(() => metricKind(compareMetric.value, compareWindow.value))
@@ -579,18 +573,9 @@ function openDetail(): void {
   })
 }
 
-function fmtPct(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '—'
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
-}
-function fmtInflow(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '—'
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}亿`
-}
-function pctClass(value: number | null | undefined): string {
-  if (value === null || value === undefined) return 'muted'
-  return value > 0 ? 'up' : value < 0 ? 'down' : ''
-}
+const fmtPct = formatSectorPercent
+const fmtInflow = formatSectorInflow
+const pctClass = sectorValueClass
 function fmtFlowDate(value: string | null): string {
   return value ? value.slice(5) : '—'
 }
@@ -1161,7 +1146,7 @@ onMounted(async () => {
               :slot2="chartPreferences.preferences.value.slot2"
               :slot3="chartPreferences.preferences.value.slot3"
               :height-ratios="chartPreferences.currentRatios.value"
-              adjust-label="板块指数"
+              adjust-label="原始连续指数"
               :min-height="384"
               :zoom-start="0"
               :zoom-end="100"

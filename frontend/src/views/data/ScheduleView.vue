@@ -7,11 +7,12 @@ import { useRouter } from 'vue-router'
 import {
   listSchedules, createSchedule, updateSchedule, setScheduleEnabled, deleteSchedule, runSchedule,
   getSources, testSources, SOURCE_LABEL, TASK_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE,
-  taskDisplayLabel, getSettingsView, saveSettings,
+  taskDisplayLabel,
   type ScheduledJob, type ScheduledJobInput, type SourceStatus, type TaskType, type FreqType,
   type BoardIngestStage, type BoardTypeScope,
 } from '@/api/data'
 import AppRowActions from '@/components/AppRowActions.vue'
+import type { AppRowAction } from '@/components/rowActions'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
@@ -24,7 +25,6 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
-import type { AppRowAction } from '@/components/rowActions'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 
 const router = useRouter()
@@ -76,19 +76,6 @@ function sourceRoleLabel(role: string): string {
   if (role === 'board') return '板块源'
   return '备用源'
 }
-// 数据源健康·同花顺板块行的操作项（当前仅「授权配置」登录 Cookie）
-function boardSourceRowActions(): AppRowAction[] {
-  return [
-    {
-      key: 'cookie',
-      label: '授权配置',
-      permission: 'data-settings:manage',
-      testId: 'ths-login-cookie-btn',
-      onClick: () => openCookieConfig(),
-    },
-  ]
-}
-
 const FREQ_OPTIONS: { label: string; value: FreqType }[] = [
   { label: '每日', value: 'daily' }, { label: '每周', value: 'weekly' },
   { label: '每月', value: 'monthly' }, { label: '高级(cron)', value: 'cron' },
@@ -282,40 +269,6 @@ async function loadSources(ping = false) {
   }
 }
 
-// 同花顺登录 Cookie 配置（数据源健康区块「配置登录」）：读掩码状态，保存到 ths_board.login_cookie。
-const cookieDlg = ref(false)
-const cookieSaving = ref(false)
-const cookieValue = ref('')
-const cookieSet = ref(false)
-async function openCookieConfig() {
-  cookieDlg.value = true
-  cookieSaving.value = false
-  cookieValue.value = ''
-  try {
-    const view = await getSettingsView()
-    const ths = view.groups.find((g) => g.key === 'ths_board')
-    const field = ths?.fields.find((f) => f.path === 'ths_board.login_cookie')
-    cookieSet.value = Boolean(field?.value)
-  } catch {
-    // 加载配置失败时按未配置处理（弹窗仍可输入保存）
-    cookieSet.value = false
-  }
-}
-async function saveCookie() {
-  if (cookieSaving.value) return
-  cookieSaving.value = true
-  try {
-    await saveSettings({ 'ths_board.login_cookie': cookieValue.value })
-    ElMessage.success(cookieValue.value ? '登录 Cookie 已更新' : '登录 Cookie 已清除')
-    cookieDlg.value = false
-    void loadSources(false)
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error, '保存登录 Cookie 失败'))
-  } finally {
-    cookieSaving.value = false
-  }
-}
-
 async function load() {
   loading.value = true
   loadError.value = ''
@@ -479,11 +432,6 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <AppTableColumn v-if="sourceColVisible('timeout')" label="超时">
             <template #default="{ row }">{{ row.timeout_sec }}s</template>
           </AppTableColumn>
-          <AppTableColumn label="操作" fixed="right">
-            <template #default="{ row }">
-              <AppRowActions v-if="row.source === 'ths_board'" :actions="boardSourceRowActions()" :inline-limit="1" />
-            </template>
-          </AppTableColumn>
           <template #empty>点「测试连通」检查行情源与板块源可达性</template>
         </AppDataTable>
         </div>
@@ -492,34 +440,6 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
     </template>
 
     <template #overlays>
-    <!-- 同花顺登录 Cookie 配置（数据源健康·ths_board 行） -->
-    <el-dialog v-model="cookieDlg" title="配置同花顺登录 Cookie" width="480px" data-testid="ths-login-cookie-dialog">
-      <el-form label-width="92px">
-        <el-form-item label="登录 Cookie">
-          <el-input
-            v-model="cookieValue"
-            type="password"
-            show-password
-            autocomplete="off"
-            :placeholder="cookieSet ? '已设置，留空不修改' : '粘贴同花顺登录 Cookie 头'"
-            data-testid="ths-login-cookie-input"
-          />
-          <span class="cookie-field-hint">{{ cookieSet ? '输入新值覆盖、空串清除、留空不修改' : '配置后可解除登录墙取全深页板块与完整成分股' }}</span>
-        </el-form-item>
-      </el-form>
-      <p class="cookie-note">
-        * 获取方式：浏览器登录同花顺（10jqka.com.cn）后按 F12 → Network → 复制请求的 Cookie 头。
-        <br>
-        * 环境变量 <code>AI_STOCKS_THS_COOKIE</code> 优先级更高（运维可覆盖页面配置）。
-      </p>
-      <template #footer>
-        <el-button @click="cookieDlg = false">取消</el-button>
-        <el-button type="primary" :loading="cookieSaving" data-testid="ths-login-cookie-save" @click="saveCookie">
-          保存
-        </el-button>
-      </template>
-    </el-dialog>
-
     <!-- 新建/编辑对话框 -->
     <el-dialog v-model="dlg" :title="dlgTitle" width="520px" data-testid="schedule-dialog">
       <el-form label-width="92px">
@@ -678,7 +598,4 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .dot.up { background: var(--el-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-success) 18%, transparent); }
 .dot.down { background: var(--app-danger-text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-danger-text) 18%, transparent); }
 .dot.unknown { background: var(--app-placeholder-text); }
-.cookie-note { margin: 10px 0 0; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); }
-.cookie-note code { font-family: var(--app-font-family-mono); color: var(--el-text-color-regular); }
-.cookie-field-hint { display: block; font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); color: var(--el-text-color-secondary); margin-top: 4px; }
 </style>

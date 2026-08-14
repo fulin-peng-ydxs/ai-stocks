@@ -179,6 +179,9 @@ def migrate_rbac(dry_run: bool = True, recreate: bool = False) -> dict:
 
     # app_config（平台表，无归属）：DuckDB→PG，ON CONFLICT DO NOTHING（不清空、不覆盖）
     ac = duck.query_df("SELECT key, value, updated_at FROM app_config")
+    from backend.storage.app_config import SENSITIVE_RUNTIME_CONFIG_PATHS
+
+    ac = ac[~ac["key"].astype(str).isin(SENSITIVE_RUNTIME_CONFIG_PATHS)]
     if not dry_run and not ac.empty:
         with pg.transaction() as conn:
             with conn.cursor() as cur:

@@ -171,6 +171,37 @@ def test_get_sector_detail(c):
     assert d["has_members"] and d["has_bar"] and d["has_fund_flow"]
 
 
+def test_detail_and_subset_queries_push_board_codes_into_fact_sql(c, monkeypatch):
+    """详情与少量自选不能先聚合全市场再过滤，三张事实表都必须带板块谓词。"""
+    queries: list[tuple[str, list]] = []
+    original = c.query_df
+
+    def traced(sql, params=None):
+        queries.append((" ".join(str(sql).split()), list(params or [])))
+        return original(sql, params)
+
+    monkeypatch.setattr(c, "query_df", traced)
+    svc = _svc(c)
+
+    assert svc.get_sector("309121") is not None
+    fact_queries = [item for item in queries if any(
+        table in item[0] for table in ("FROM board_bar", "FROM board_fund_flow", "FROM board_member")
+    ) and not item[0].startswith("SELECT max(")]
+    assert len(fact_queries) == 3
+    assert all("board_code IN (?)" in sql for sql, _ in fact_queries)
+    assert all("309121" in params for _, params in fact_queries)
+
+    queries.clear()
+    subset = svc.list_sectors(board_codes={"309121"}, size=10)
+    assert [row["board_code"] for row in subset["list"]] == ["309121"]
+    scoped_queries = [item for item in queries if any(
+        table in item[0]
+        for table in ("FROM board_dict", "FROM board_bar", "FROM board_fund_flow", "FROM board_member")
+    ) and not item[0].startswith("SELECT max(")]
+    assert len(scoped_queries) == 4
+    assert all("board_code IN (?)" in sql for sql, _ in scoped_queries)
+
+
 def test_member_count_is_latest_snapshot_not_cumulative_relation_count(c):
     """摘要成分数取最近完整源快照；成员分页 total 才是累计关系数。"""
     c.execute("INSERT INTO board_member (board_code, code) VALUES ('309121', '000003.SZ')")

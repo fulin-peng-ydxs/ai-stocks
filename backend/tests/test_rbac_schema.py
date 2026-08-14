@@ -594,8 +594,13 @@ def test_sector_menu_grants_backfilled_for_normal(pg):
             "SELECT menu_id FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])["menu_id"])
         perm_ver = int(pg.query_df(
             "SELECT perm_ver FROM sys_user WHERE id=%s", [uid]).iloc[0]["perm_ver"])
+        marker_value = pg.query_df(
+            "SELECT value FROM app_config WHERE key=%s", [marker_key]
+        ).iloc[0]["value"]
+        marker = json.loads(marker_value) if isinstance(marker_value, str) else marker_value
         assert "/sectors" in menus
         assert perm_ver == 1
+        assert marker["inserted_roles"] == [ROLE_NORMAL]
     finally:
         pg.execute("DELETE FROM sys_user WHERE id=%s", [uid])
         _restore_role_grants(pg, ROLE_NORMAL, role_snapshot)

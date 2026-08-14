@@ -42,4 +42,9 @@ AI_STOCKS_ENV="$AI_STOCKS_ENV" AI_STOCKS_E2E_WRITE=1 \
 
 cd "$PROJECT_ROOT/frontend"
 # 三视口共享固定调试账号、板块自选和页面偏好，必须串行，避免跨 project 相互改写状态。
-"$PROJECT_ROOT/scripts/run-playwright.sh" e2e/sectors-workbench.spec.ts --workers=1 "$@"
+# 聚焦入口覆盖板块数据管理、质量恢复和业务工作台三条发布链路。
+"$PROJECT_ROOT/scripts/run-playwright.sh" \
+  e2e/board-data-management.spec.ts \
+  e2e/sector-quality-recovery.spec.ts \
+  e2e/sectors-workbench.spec.ts \
+  --workers=1 "$@"

@@ -113,6 +113,8 @@ test.describe('板块行情工作台', () => {
       const listChart = page.getByTestId('sectors-chart')
       await expect(listChart.locator('.stock-chart-panel--volume')).toBeVisible()
       await expect(listChart.locator('.stock-chart-panel--macd')).toBeVisible()
+      await expect(listChart).toContainText('K线（日线·原始连续指数）')
+      await expect(listChart).toContainText('MACD（12,26,9·原始连续指数）')
 
       await page.getByTestId('page-settings-trigger').click()
       const listDrawer = page.getByTestId('page-settings-drawer')
@@ -185,6 +187,7 @@ test.describe('板块行情工作台', () => {
       await detailDrawer.getByRole('button', { name: '关闭页面设置' }).click()
       await expect(chartSection.locator('.stock-chart-panel--volume')).toBeVisible()
       await expect(chartSection.locator('.stock-chart-panel--macd')).toBeVisible()
+      await expect(chartSection).toContainText('MACD（12,26,9·原始连续指数）')
 
       await page.locator('.menu').getByRole('menuitem', { name: '每日榜单', exact: true }).click()
       await expect(page).toHaveURL(/\/board$/)
@@ -193,7 +196,7 @@ test.describe('板块行情工作台', () => {
       await expect(page.getByTestId('sector-detail-page')).toBeVisible()
 
       const chartSplitter = page.getByRole('separator', {
-        name: '调整K线（日线·板块指数）与下一幅图高度',
+        name: '调整K线（日线·原始连续指数）与下一幅图高度',
       })
       await expect(chartSplitter).toBeVisible()
       const ratioBefore = Number(await chartSplitter.getAttribute('aria-valuenow'))

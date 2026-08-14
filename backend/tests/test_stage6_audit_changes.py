@@ -72,6 +72,70 @@ def test_stage6_audit_build_changes_skips_same_and_redacts_sensitive_fields():
     ]
 
 
+def test_stage6_audit_redacts_password_config_from_metadata():
+    cookie = "user=plain-cookie; ticket=must-not-persist"
+    changes = AuditService.build_changes(
+        {"ths_board.login_cookie": cookie},
+        {"ths_board.login_cookie": f"new-{cookie}"},
+    )
+
+    assert changes == [{
+        "field": "ths_board.login_cookie",
+        "before": "已变更",
+        "after": "已变更",
+    }]
+    assert cookie not in json.dumps(changes, ensure_ascii=False)
+
+
+def test_stage6_runtime_secret_cleanup_redacts_legacy_audit_and_config(pg):
+    from backend.storage.pg_ddl import _purge_legacy_runtime_secrets
+
+    audit_id = f"stage6_secret_cleanup_{uuid.uuid4().hex[:8]}"
+    cookie = "user=legacy-cookie; ticket=must-be-removed"
+    try:
+        pg.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()",
+            ["ths_board.login_cookie", json.dumps(cookie)],
+        )
+        pg.execute(
+            """
+            INSERT INTO audit_log (
+                id, event_category, event_type, action, target_type,
+                target_id, result, status, context, changes
+            ) VALUES (%s, 'config', 'config', 'update', 'app_config', %s,
+                      'success', 'completed', '{}'::jsonb, %s::jsonb)
+            """,
+            [
+                audit_id,
+                "ths_board.login_cookie",
+                json.dumps([{
+                    "field": "ths_board.login_cookie",
+                    "before": cookie,
+                    "after": f"new-{cookie}",
+                }]),
+            ],
+        )
+
+        _purge_legacy_runtime_secrets(pg)
+
+        assert pg.query_df(
+            "SELECT 1 FROM app_config WHERE key=%s", ["ths_board.login_cookie"]
+        ).empty
+        changes = _decode(pg.query_df(
+            "SELECT changes FROM audit_log WHERE id=%s", [audit_id]
+        ).iloc[0]["changes"])
+        assert changes == [{
+            "field": "ths_board.login_cookie",
+            "before": "已变更",
+            "after": "已变更",
+        }]
+        assert cookie not in json.dumps(changes, ensure_ascii=False)
+    finally:
+        pg.execute("DELETE FROM audit_log WHERE id=%s", [audit_id])
+        pg.execute("DELETE FROM app_config WHERE key=%s", ["ths_board.login_cookie"])
+
+
 def test_stage6_settings_audit_records_field_changes(client, pg, app_cfg):
     key = "audit.retention_days"
     app_cfg.set_many({key: 31})

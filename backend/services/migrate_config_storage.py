@@ -108,7 +108,7 @@ def _table_report(duck: DuckDBClient, pg: PostgresClient, table: str, columns: l
 
 
 def _app_config_report(duck: DuckDBClient, pg: PostgresClient) -> dict:
-    df = duck.query_df("SELECT key, value, updated_at FROM app_config")
+    df = _app_config_source_df(duck)
     pg_keys_df = pg.query_df("SELECT key FROM app_config")
     existing = set(pg_keys_df["key"].tolist()) if not pg_keys_df.empty else set()
     source_keys = [str(row["key"]) for _, row in df.iterrows()]
@@ -155,6 +155,13 @@ def _insert_missing_app_config(cur, df: pd.DataFrame) -> int:
     return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
 
 
+def _app_config_source_df(duck: DuckDBClient) -> pd.DataFrame:
+    from backend.storage.app_config import SENSITIVE_RUNTIME_CONFIG_PATHS
+
+    df = duck.query_df("SELECT key, value, updated_at FROM app_config")
+    return df[~df["key"].astype(str).isin(SENSITIVE_RUNTIME_CONFIG_PATHS)]
+
+
 def _marker_exists(pg: PostgresClient) -> bool:
     df = pg.query_df("SELECT 1 FROM app_config WHERE key=%s", [CONFIG_STORAGE_MARKER])
     return not df.empty
@@ -199,7 +206,7 @@ def migrate_config_storage(
             for table, columns in _LAYOUT_TABLES.items():
                 src = _source_df(duck, table, columns)
                 report[table]["migrated"] = _upsert_layout(cur, table, src, columns)
-            app_df = duck.query_df("SELECT key, value, updated_at FROM app_config")
+            app_df = _app_config_source_df(duck)
             report["app_config"]["migrated"] = _insert_missing_app_config(cur, app_df)
             # 明确保留旧三主题 seed marker：若旧库已有，app_config 缺失补迁会带过来；此处只补本次迁移 marker。
             cur.execute(

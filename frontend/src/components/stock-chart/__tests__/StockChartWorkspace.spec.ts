@@ -202,6 +202,10 @@ describe('StockChartWorkspace', () => {
     expect(wrapper.text()).toContain('K线（日线·前复权）')
     expect(wrapper.text()).toContain('量能')
     expect(wrapper.text()).toContain('MACD（12,26,9·前复权）')
+
+    await wrapper.setProps({ adjustLabel: '原始连续指数' })
+    expect(wrapper.text()).toContain('K线（日线·原始连续指数）')
+    expect(wrapper.text()).toContain('MACD（12,26,9·原始连续指数）')
     expect(wrapper.findAll('.stock-chart-panel__date')).toHaveLength(1)
     expect(wrapper.find('.stock-chart-panel--kline .stock-chart-panel__date').exists()).toBe(true)
     expect(wrapper.find('.stock-chart-panel--volume .stock-chart-panel__date').exists()).toBe(false)

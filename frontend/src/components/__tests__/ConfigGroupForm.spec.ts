@@ -150,9 +150,9 @@ describe('ConfigGroupForm', () => {
       fields: [
         ...group.fields,
         {
-          path: 'ths_board.login_cookie',
-          label: '登录 Cookie',
-          desc: '同花顺登录态 Cookie。',
+          path: 'example.password',
+          label: '示例密码',
+          desc: '验证通用 password 字段渲染。',
           type: 'password',
           value: '••••••已设置',
           default: '',
@@ -164,7 +164,7 @@ describe('ConfigGroupForm', () => {
     const wrapper = mount(ConfigGroupForm as Component, {
       props: {
         group: groupWithPwd,
-        modelValue: { 'ths_board.login_cookie': '••••••已设置' },
+        modelValue: { 'example.password': '••••••已设置' },
       },
       global: {
         stubs: {
@@ -188,9 +188,9 @@ describe('ConfigGroupForm', () => {
     expect(pwdInput.exists()).toBe(true)
     expect(pwdInput.attributes('value')).toBe('••••••已设置')
     // 触发输入 → 发 update-field 事件携带新值
-    await pwdInput.setValue('user=newcookie')
+    await pwdInput.setValue('new-secret')
     const emitted = wrapper.emitted('update-field')
     expect(emitted).toBeTruthy()
-    expect(emitted![0]).toEqual(['ths_board.login_cookie', 'user=newcookie'])
+    expect(emitted![0]).toEqual(['example.password', 'new-secret'])
   })
 })

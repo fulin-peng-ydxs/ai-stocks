@@ -9,11 +9,11 @@
 --   sectors:view：GET /api/sectors*（板块行情列表/详情，板块概念 R22/T8）
 -- 守卫：require_perm('sectors:view')；无授权用户接口 403 fail-closed。
 -- 注：本迁移只补接口资源码，不含 /sectors 菜单授权——存量库的菜单码由
---   `sector-menu-grant.sql`（marker migration.sector_menu_grants_v1）单独补齐。
+--   `sectors-menu-grant.sql`（marker migration.sector_menu_grants_v1）单独补齐。
 --
--- 可逆性（确定性基线恢复）：回滚基线 = 执行前快照中 normal/tenant_admin 已持有的
--- `sectors:view` 授权（即回滚只删除本回填新增的 `sectors:view` 授权行，不触碰其他既有授权）。
--- 与 asset-publish-open 同构：marker 仅作幂等标记，不依赖 marker 内容。
+-- 可逆性：正向段把本次实际插入的角色写入 marker.inserted_roles；回滚只删除这些角色的
+-- `sectors:view`。历史旧 marker 若没有 inserted_roles，安全回滚必须 no-op，并先从迁移前快照
+-- 人工恢复；禁止猜测并删除 normal/tenant_admin 的现存合法授权。
 --
 -- 并发安全：正向/回滚均先取同一把事务级 advisory lock 串行化；marker 缺失/已存在时整体 no-op；
 --           仅当确有增删才 bump perm_ver。
@@ -27,6 +27,7 @@ DO $$
 DECLARE
     v_changed integer := 0;
     v_n integer;
+    v_inserted_roles text[];
 BEGIN
     IF EXISTS (SELECT 1 FROM app_config WHERE key = 'migration.sectors_view_v1') THEN
         RETURN;  -- 已应用，整段 no-op
@@ -37,9 +38,15 @@ BEGIN
     SELECT 'sectors:view', '/sectors', 'sectors:view', '查看板块行情', 'api', 'GET', '/api/sectors', 9990, TRUE
     WHERE NOT EXISTS (SELECT 1 FROM sys_resource WHERE id = 'sectors:view');
 
-    INSERT INTO sys_role_resource (role_id, resource_id)
-    SELECT ro.role_id, 'sectors:view'
+    SELECT coalesce(array_agg(ro.role_id), ARRAY[]::text[]) INTO v_inserted_roles
     FROM (VALUES ('normal'), ('tenant_admin')) AS ro(role_id)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM sys_role_resource rr
+        WHERE rr.role_id = ro.role_id AND rr.resource_id = 'sectors:view'
+    );
+
+    INSERT INTO sys_role_resource (role_id, resource_id)
+    SELECT unnest(v_inserted_roles), 'sectors:view'
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT;
     v_changed := v_changed + v_n;
@@ -53,7 +60,11 @@ BEGIN
     END IF;
 
     INSERT INTO app_config (key, value, updated_at)
-    VALUES ('migration.sectors_view_v1', '{"applied":true}', now());
+    VALUES (
+        'migration.sectors_view_v1',
+        jsonb_build_object('applied', true, 'inserted_roles', to_jsonb(v_inserted_roles))::text,
+        now()
+    );
 END $$;
 
 COMMIT;
@@ -67,14 +78,31 @@ COMMIT;
 -- DECLARE
 --     v_changed integer := 0;
 --     v_n integer;
+--     v_inserted_roles text[];
 -- BEGIN
 --     IF NOT EXISTS (SELECT 1 FROM app_config WHERE key = 'migration.sectors_view_v1') THEN
 --         RETURN;  -- 未应用，整段 no-op
 --     END IF;
 --
---     -- 删除本回填新增的 sectors:view 授权（normal/tenant_admin）
+--     SELECT coalesce(array_agg(inserted.role_id), ARRAY[]::text[]) INTO v_inserted_roles
+--     FROM app_config cfg
+--     CROSS JOIN LATERAL jsonb_array_elements_text(
+--         coalesce(cfg.value::jsonb->'inserted_roles', '[]'::jsonb)
+--     ) AS inserted(role_id)
+--     WHERE cfg.key = 'migration.sectors_view_v1';
+--
+--     IF NOT EXISTS (
+--         SELECT 1 FROM app_config
+--         WHERE key = 'migration.sectors_view_v1'
+--           AND value::jsonb ? 'inserted_roles'
+--     ) THEN
+--         RAISE WARNING 'marker 缺少 inserted_roles，拒绝破坏性回滚；请使用迁移前快照';
+--         RETURN;
+--     END IF;
+--
+--     -- 只删除本回填实际新增的授权；迁移前已有授权不会进入 marker。
 --     DELETE FROM sys_role_resource
---     WHERE role_id IN ('normal', 'tenant_admin') AND resource_id = 'sectors:view';
+--     WHERE role_id = ANY(v_inserted_roles) AND resource_id = 'sectors:view';
 --     GET DIAGNOSTICS v_n = ROW_COUNT; v_changed := v_changed + v_n;
 --
 --     IF v_changed > 0 THEN

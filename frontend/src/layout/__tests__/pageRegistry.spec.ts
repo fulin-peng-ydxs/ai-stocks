@@ -528,7 +528,8 @@ describe('组件消费关系与配置一致性（P4）', () => {
     const listSource = sourceForPage('sectors')
     const detailSource = sourceForPage('sectors-detail')
 
-    expect(listSource).toContain('@reset="reset(); resetLayout()"')
+    expect(listSource).toContain('@reset="resetSettings"')
+    expect(listSource).toMatch(/function resetSettings\(\)[\s\S]*reset\(\)[\s\S]*resetLayout\(\)/)
     expect(detailSource).toContain('@reset="resetSettings"')
     expect(detailSource).toMatch(/function resetSettings\(\)[\s\S]*resetPageSettings\(\)[\s\S]*resetLayout\(\)/)
   })

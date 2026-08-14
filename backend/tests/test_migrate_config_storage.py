@@ -45,6 +45,10 @@ def duck(tmp_path):
         "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
         ["migration.layout_presets_three_theme_v1", '{"applied":true}'],
     )
+    c.execute(
+        "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+        ["ths_board.login_cookie", "legacy-sensitive-cookie"],
+    )
     yield c
     c.close()
 
@@ -79,6 +83,8 @@ def test_migrate_config_storage_dry_run_does_not_write(duck, pg_config_snapshot)
     assert report["_global"]["dry_run"] is True
     assert report["layout_preset"]["duck"] == 1
     assert report["layout_preset"]["pending"] == 1
+    assert "ths_board.login_cookie" not in report["app_config"]["source_keys"]
+    assert "ths_board.login_cookie" not in report["app_config"]["missing_keys"]
     assert pg.query_df("SELECT 1 FROM layout_preset WHERE key=%s", ["duck-preset"]).empty
     assert pg.query_df("SELECT 1 FROM app_config WHERE key=%s", [CONFIG_STORAGE_MARKER]).empty
 
@@ -113,6 +119,10 @@ def test_migrate_config_storage_apply_migrates_layout_and_missing_app_config(duc
     assert not pg.query_df(
         "SELECT 1 FROM app_config WHERE key=%s",
         ["migration.layout_presets_three_theme_v1"],
+    ).empty
+    assert pg.query_df(
+        "SELECT 1 FROM app_config WHERE key=%s",
+        ["ths_board.login_cookie"],
     ).empty
 
 

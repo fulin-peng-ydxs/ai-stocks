@@ -169,6 +169,7 @@ DailyPipeline.run()
 ### 必须实现
 - R1-R10：板块字典、成分关系、指数、资金流、采集任务、数据概览、列表、详情、权限感知跳转和搜索。
 - R21-R23：采集流程集成（daily/回填/断点）、页面/RBAC 接入（菜单/资源/授权回填/perm_ver）和页面配置闭环。
+- R26：板块原始连续指数 MACD 副图，复用统一多图工作区与指标定义，标题不得使用股票复权语义。
 - 菜单/路由/权限：`/sectors` 路由、`sectors:view` 进业务授权集合（非登录基线）+ 既有库回填 + bump `perm_ver`、page-registry 登记、菜单 seed、功能点 seed
 
 ### 建议实现（处理状态）
@@ -202,15 +203,16 @@ DailyPipeline.run()
 - **保存条件**：已满足（4 项基础决策 + 七项补充决策全部确认，权限边界已二修）。本文件即闭环文档。
 - **正式 `requirement.md` 已生成**：基于本文件确认结论，含 DDL、接口契约、权限 seed、页面原型 `prototypes/`。本文档与 `requirement.md` 保持同步。
 
-## 12. 当前闭环实施结论（2026-08-09）
+## 12. 当前闭环实施结论（2026-08-14）
 
 - 采集侧已对齐现有数据管理全链路：CLI、daily、异步任务、写互斥、采集页、调度、任务中心、数据源状态、维度目录、概览、质量扫描与修复均已承接板块类型。
 - 失败闭环已细化到真实工作单元：字典类型、成分/指数板块、资金流类型+周期；部分失败保持 failed 和 checkpoint，可只续跑未成功项。
 - 概览不再只有维度注册行，已展示板块规模、覆盖、最新日期、问题分类和最近更新，并可跳转采集。
-- 展示侧后端 `/api/sectors*` 与 RBAC 已完成；`/sectors`、`/sectors/:code` 前端页面及页面配置闭环仍未完成，继续按正式需求和开发计划实施。
+- 展示侧后端 `/api/sectors*`、RBAC、`/sectors`、`/sectors/:code`、页面配置和聚焦 E2E 均已落地；列表/详情统一消费 K 线、量能与可选 MACD 工作区。
 
 ### 12.1 2026-08-10 补充（登录 Cookie / 周频 / 闭环整改）
 
-- **登录 Cookie 管理已实施**：`ths_board.login_cookie` 配置（数据治理「同花顺板块」tab）+ 数据源健康「配置登录 Cookie」入口（脱敏、留空不修改、空串清除）；环境变量 `AI_STOCKS_THS_COOKIE`/`_FILE` 优先。配置后可解除登录墙取全深页板块（概念 375→390）与完整成分股。
+- **登录 Cookie 安全边界已收口**：Cookie 只允许通过 `AI_STOCKS_THS_COOKIE`/`_FILE` 运行时注入，页面入口和 `app_config` 写入能力已移除；配置 schema 自动驱动审计脱敏，启动迁移清除历史配置明文并原位脱敏历史审计。疑似暴露过的 Cookie 仍需在同花顺侧轮换。
+- **R26 已实施**：板块 MACD 直接基于 `board_bar` 原始连续指数计算，列表和详情标题统一显示“原始连续指数”，并纳入 Vitest 与聚焦 Playwright。
 - **成分周频已实施**：`member_update_interval_days`（默认 7），未达间隔记 `skipped` 不计失败；`force`（质量修复/backfill/CLI `--force-members`/前端开关）绕过。
 - **全链路闭环整改已实施**：取消穿透、部分失败可续跑语义、scan 事务原子替换、frame 缓存解耦、fund checkpoint 范围签名+旧格式迁移、member/fund ignored 豁免、复检口径统一等。

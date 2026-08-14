@@ -504,7 +504,7 @@ export function buildMacdOption(context: OptionContext) {
 export function panelTitle(type: ChartType, adjustLabel: string): string {
   if (type === 'kline') return `K线（日线·${adjustLabel}）`
   if (type === 'volume') return '量能'
-  return 'MACD（12,26,9·前复权）'
+  return `MACD（12,26,9·${adjustLabel}）`
 }
 
 export function klineMetrics(
