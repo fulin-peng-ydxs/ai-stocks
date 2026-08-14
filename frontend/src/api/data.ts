@@ -270,6 +270,7 @@ export interface SettingField {
   placeholder?: string
   min?: number
   max?: number
+  secret_status?: 'unset' | 'usable' | 'unavailable'
 }
 export interface SettingGroup { key: string; label: string; desc?: string; fields: SettingField[] }
 // 只读的邮件能力就绪状态（脱敏）：来自部署级环境变量，不可在页面编辑，仅用于开关旁提示底层是否真发。

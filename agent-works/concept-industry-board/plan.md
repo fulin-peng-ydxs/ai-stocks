@@ -1,7 +1,7 @@
 # 开发计划：板块概念数据采集与展示
 
 > 计划版本：2026-08-09（当日评审复核修订：表达式唯一索引可行性实测确认并补降级方案、候选 apply 写锁冲突语义、T8/T10 依赖收紧、菜单 seed 部署时序、审计文件路径修正、板块 E2E 数据夹具、两页 pageSize 合法值口径显式化、`DuckDBClient.transaction()` 原子性前置、T2 适配器封装口径对齐 research 附录已确认决策；二轮评审复核整改：T9 候选应用事务②补入 `member_count` 刷新、T10 拆分 T10a/T10b 消除 T8↔T10 双向依赖、T7 issue 判重与收敛策略补明确、T9 写锁冲突识别机制补明确、领涨股取数来源默认定为资金流 leader_stock（T8 明确，口径待确认）、列表页 pageSize 原型冲突差异说明补注、`board` 任务类型与既有榜单命名空间边界声明、§7.3 回滚基线内容与「回填 SQL 待 T10 产出后固化」声明、候选列表 board_type 过滤参数补入、板块字典核心能力展示口径承接、T7 不误删候选关联 open issue 的收敛边界；**三轮实测修正：`duckdb_max_lock_wait_time` 实测不存在（SET 抛 CatalogException）与跨进程写锁「立即失败」实测推翻锁等待模型，写锁冲突识别改为纯关键字归类；领涨股口径（资金流日 leader_stock 与涨幅日不一致的展示）转回待确认项；四轮实测修正「连接残留污染态」叙事不实——冲突仅发生在 connect 阶段、`_conn` 保持 None、锁释放后重试即自动恢复，无需显式释放连接**；T1 执行（2026-08-09）：契约逐项对照代码现状核验成立，补 R12 阈值 `Settings` 模型子模型字段一环（§7.4/T7）；**T2 执行（2026-08-09）：`ThsBoardSource` 适配器落地（16 单测绿 + 真源冒烟 375/90/成分/指数/资金流通过），实测发现成分股翻页第 6 页起必登录墙（`complete=False` 标不完整）与概念字典=分类页 351∪gn/index 前 3 页净增 24=375**；**登录态实测补充（2026-08-09 用户提供浏览器登录 cookie）：登录态解除详情页翻页登录墙（半导体取全 160 只 vs 无登录 100 只，登录后随日期在 120~160 间波动），适配器新增 `login_cookie` 参数 + `AI_STOCKS_THS_COOKIE` 环境变量支持、限速改走 `ths_board.min_interval_sec` 配置（默认 1.0s/次，早期中间态曾 ≥2s/次，配置化后统一为默认 1.0 可调）；数据中心 IP 连续请求仍触发动态风控（401/空页），`complete=False` 兜底保留**；**T3 执行（2026-08-09）：DuckDB 5 表 DDL + board 维度注册落地（`M_BOARD_TABLES` + `_DIMENSION_SEED`，17 用例全绿，表达式唯一索引 INSERT/UPDATE 两路径实测拦截，DuckDBClient 异常重建连接语义记录）**；**T4 执行（2026-08-09）：采集服务落地（`BoardIngestService` + `DuckDBClient.transaction()` + `ingest_board` 编排，10 用例全绿，diff/payload_hash 幂等/候选事务①/资金流映射/写锁归类）**；**T5 执行（2026-08-09）：`board` 异步任务类型注册（TASK_TYPES/WRITE_TASK_TYPES/TASK_CAPABILITIES + `_h_board` checkpoint=board_code + 前端「板块采集」标签，4 用例全绿）**；**T6 执行（2026-08-09）：CLI `board` 命令族 + daily 集成（`DailyPipeline.run(board=True)` + `--skip-board` + 失败隔离不阻塞主流程 + total_steps 同步，4 参数化用例全绿）**；**指数历史年限修正（2026-08-09 实测）：`d.` 域指数仅近 3 年（2024 起，2021-2023 404），R3「回填 5 年」修正为「回填源端可用年限」，`ingest_board` 回填起点 2021→2024；各板块起始日不同属正常**；**T7 执行（2026-08-09）：板块质检落地（`scan_board_quality` 成分数波动+指数缺口扫描，Settings/YAML/CONFIG_GROUPS 三环阈值配置，SCAN_ISSUE_TYPES 收敛含板块类型且不含 member_surge_shrink，4 用例全绿）**；**深度体检修复（2026-08-09）：①增量/全量语义 `ingest_board(mode=)` 区分 backfill/update（指数补 5 天/资金流只采即时 vs 全量回填/全周期）；②双口径阈值修复（T4 拦截与 T7 扫描统一读 get_effective_settings().board_quality，删除硬编码常量）**；**配置口径修订（2026-08-09 用户反馈）：①`board_quality`（板块质检阈值）为低频稳定参数，从系统设置 Web 表单移除——不再进 CONFIG_GROUPS 覆盖层白名单，仅 YAML 基线（Settings 模型 + settings.yaml），「其他」tab 随之消失；②同花顺限流配置化：新增 `ths_board` 配置段（min_interval_sec/timeout_sec/max_retries/retry_backoff_sec），独立于通用 `datasource.*` 限流（同花顺是独立反爬直连源，频率限制更敏感），挂「数据治理」tab 可 Web 覆盖，`ThsBoardSource` 从 `get_effective_settings().ths_board` 注入（对齐 akshare/baostock 模式，显式入参优先）**；**成分模型改为「只进不出」（2026-08-09 用户拍板）：①`board_member` 主键 `(board_code, code)`，每行一只成分股累积，完整快照 `INSERT ON CONFLICT DO NOTHING`，**不 diff、不删除、不候选**；②完整性即闸门——`complete=False` 整趟不落库、`data_update_log` 记 failed + 写 `board_member_incomplete` issue（数据质量页逐板块重采闭环）；③**整条候选机制删除**：`board_member_candidate` 表、`member_surge_shrink`/`board_member_wave` issue 类型、`/api/data/board-candidates` 接口、数据质量页候选确认/丢弃（T9/T13 取消）；④`scan_board_quality` 只保留指数缺口扫描；⑤采集页「指定板块」搜索修复为板块语义（新增 `/api/data/boards` 搜索接口）；⑥既有 103 板块成分数据保留并标 `board_member_incomplete` 待重采，362 未采板块由重采补齐，数据留痕标 failed；⑦需求文档 R2/R12/R25/验收/里程碑同步修订**；**T8 执行（2026-08-09）：`/api/sectors*` 只读 API 落地（`BoardQueryService` 四查询 + `sectors.py` 四接口，涨幅从 board_bar 实时计算、涨跌家数口径、404/400/403，test_sectors_api 8 用例全绿 + 端到端 465 板块实测）；T10a/T10b 同批交付（`sectors:view` 进业务授权 + `/sectors` 菜单/资源 seed + sectors-view-grant.sql 回填 + RBAC 权限测试，normal 用户 403→200）**；**成分更新周频（2026-08-10 用户拍板）：①成分股不随每日增量更新，按 `member_update_interval_days`（默认 7，`ths_board` 配置段新增字段 + 系统设置「同花顺板块」tab 可调）跳过未到期板块；②跳过条件 = `member_snapshot_at` 存在且距今 < 间隔（`member_snapshot_at IS NULL` 从未完整落库必须拉），跳过记 `skipped` 不计失败/不打 failed 日志/不写 `board_member_incomplete` 质检；③`force=True`（质量修复重采、`backfill` 初始化、CLI `--force-members`）绕过间隔；④`ingest_board_members`/`ingest_board` 增 force 参数，`ingest_board` 的 backfill 默认强制；⑤质量修复链路 async_task `board_member_incomplete` 重采改 force=True 防止被跳过；⑥测试适配：既有全量语义测试加 force=True，新增周频跳过单测（test_board_ingest 18 用例全绿）；⑦需求 R2 同步修订**；**自审复核整改（2026-08-10）：①全链路闭环 11 项偏差修复（取消穿透/部分失败语义/复检口径/severity 契约/scan 事务/缓存解耦/fund 忽略豁免/fund checkpoint 范围/指定板块绕周频/名称补全/前端 query 与调度校验）；②遗留治理：fund checkpoint 旧格式迁移 + 前端 query 清理；③资金流独有板块字典口径更新（R4 §2.5）：实测链接带真实路径 code → `_upsert_fund_only_boards` 补字典，需求/计划文档同步修订**）
-> 当前校准：2026-08-14，新增 T16/R26 与 T17 页面敏感配置加密恢复，并以 §11.1/§11.2 记录对应 HEAD 验证；上一行是历史实施流水，不作为当前状态事实源。
+> 当前校准：2026-08-14，新增 T16/R26 与 T17 页面敏感配置加密恢复；§11.1 仅归档失效验证，§11.2 是当前 HEAD 唯一验收事实；上一行是历史实施流水，不作为当前状态事实源。
 > 需求文档：[requirement.md](requirement.md)（2026-08-14 校准版，确认状态：无阻塞项）
 > 上游文档：[requirement-closure.md](requirement-closure.md)、[research.md](research.md)
 > 页面原型：[prototypes/sector-board.html](prototypes/sector-board.html)（列表页）、[prototypes/sector-detail.html](prototypes/sector-detail.html)（详情页），均已完整读取并作为前端拆解依据。
@@ -440,7 +440,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 - 状态：已完成，验证结果见 §11.2。
 - 纠偏原因：T16 把“消除明文存储”错误扩大为“移除页面配置”，破坏了管理员在线注入链路；用户确认应恢复功能，只收紧存储安全。
-- 实现：恢复系统设置字段与任务调度数据源「授权配置」入口；`AppConfigRepo` 保存前使用独立 Fernet 主密钥加密，读取时校验并在进程内解密，接口只回显掩码。环境变量/文件优先于页面值。
+- 实现：恢复系统设置字段与任务调度数据源「授权配置」入口；`AppConfigRepo` 保存前使用独立 Fernet 主密钥加密，读取时校验并在进程内解密，接口只回显掩码与 `unset|usable|unavailable` 状态。系统设置和任务调度入口都提示密文不可解密并允许重新加密覆盖或清除；环境变量/文件优先于页面值。
 - 安全闭环：密钥缺失、格式错误、密文篡改均 fail-closed；历史明文有密钥时原位加密、无密钥时删除；迁移工具只迁移加密后的敏感值；审计继续由配置元数据脱敏。
 - 发布配置：部署前生成并安全保存 `AI_STOCKS_CONFIG_ENCRYPTION_KEY`，或配置仅后端可读的 `_FILE`；不得复用 JWT 密钥。密钥轮换必须先重加密现有密文，不得直接替换。
 
@@ -568,25 +568,18 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 数据概览 | 已补齐 | 除 `board` 维度行外，概览和闭环图展示 4 表行数、概念/行业数量、成分/指数/资金流覆盖、指数/资金流最新日期、未闭环问题分类和最近采集状态，并提供前往板块采集入口 |
 | 当前未完成范围 | 无 | `/sectors` 与 `/sectors/:code` 页面、pageRegistry、页面配置、权限矩阵、质检动作与发布级全量验收均已完成 |
 
-验证基线：历史 2026-08-11 结果仅作留痕，不代表当前 HEAD；2026-08-14 整改后的验证结果与未执行项见下方 §11.1。
+验证基线：历史 2026-08-11 结果仅作留痕，不代表当前 HEAD；当前 HEAD 的单一验证事实与未执行项见下方 §11.2。
 
-### 11.1 2026-08-14 整改验证
+### 11.1 历史验证归档（已失效）
 
-- 后端全量：`python -m pytest backend/tests/ -q`，**882 passed**；仅有既有 FastAPI `on_event` 弃用警告。
-- 整体复核追加回归：`python -m pytest backend/tests/test_migrate_config_storage.py backend/tests/test_ths_board_source.py -q`，**28 passed**；覆盖敏感运行时配置不会进入迁移 dry-run 报告或实际写入。
-- 前端全量：`npm test`，**85 files / 701 tests passed**；DESIGN/pageRegistry、共享图表、板块适配与页面回归均在内。
-- 前端构建：`npm run build` 通过，`frontend/dist` 已重新生成；仅有既有 Rollup 注释和 chunk size 警告。
-- 板块聚焦 Playwright：`AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:sectors`，三份 spec 三视口合计 **12 passed / 6 skipped**（跳过项均为用例声明的视口条件）；确定性夹具已 cleanup。
-- 静态与脚本检查：本次变更 Python 文件执行 Ruff `F` 规则通过；`git diff --check`、`bash -n scripts/run-sector-e2e.sh` 通过。全规则 Ruff 仍有历史文件存量告警，本次未做无关大范围格式化。
-- 服务恢复：测试前后端为运行中；全量后端测试前按规则停服，全部验证后已恢复 dev 后端并确认 `/api/health=200`。
-- 首次命令异常：桌面非登录 shell 的 `npm`/`python` PATH 不完整，两次命令均在测试收集前退出；补齐固定 Node/Python 路径后已完整重跑并以上述结果为准。
-- 未执行：真实同花顺网络采集与外部数值逐项对账（避免使用/暴露真实 Cookie，且不属于本地回归）；生产 PostgreSQL 权限 SQL 正向/回滚演练（无生产变更授权）；全量跨模块 Playwright、公开回测只读 Playwright（本轮改动聚焦板块链路，已跑标准板块发布入口）；暗色主题、reduced-motion 和加载中间帧专项视觉截图（标准板块 E2E 不覆盖这些专项，未生成截图工件）。
+2026-08-14 早期整改的 882/889 后端用例数及“敏感配置不进入迁移”的中间态结论已被 T17 加密迁移方案和后续整改取代，不作为当前 HEAD 的验收证据。当前结果只维护在 §11.2，避免多套“最新事实”并存。
 
-### 11.2 2026-08-14 页面 Cookie 加密配置纠偏验证
+### 11.2 2026-08-14 当前 HEAD 单一验证事实
 
-- 后端聚焦：加密、配置、迁移、审计、数据源与数据管理相关 **92 passed**；覆盖随机密文、密钥文件、无密钥整批拒绝、篡改拒绝、YAML 误配忽略、PG 密文、进程内解密、接口掩码、审计脱敏和历史明文迁移。
-- 后端全量：`python -m pytest backend/tests/ -q`，**889 passed**；仅有既有 FastAPI `on_event` 弃用警告。
-- 前端全量：`npm test`，**85 files / 701 tests passed**；生产构建通过，仅有既有第三方注释与 chunk size 警告。
-- 板块聚焦 Playwright：**12 passed / 6 skipped**；任务调度页已验证授权配置入口、密码输入、密文说明与原有调度保存链路，未向数据库写入 E2E 假 Cookie。
-- 静态检查：本次 Python 变更 Ruff `F` 规则、`git diff --check`、E2E 脚本语法均通过。
-- 未执行：真实同花顺 Cookie 保存后联网采集（不使用用户真实凭证）；本机 `.env.local` 尚未配置新主密钥，因此未向本地真实 `app_config` 写入模拟 Cookie，保存/解密由隔离测试库验证；生产密钥管理系统接入与密钥轮换演练（无生产环境和变更授权）；全量跨模块 Playwright、暗色/reduced-motion 专项截图。
+- 后端聚焦：`python -m pytest backend/tests/test_data_mgmt_b.py -k 'ths_login_cookie' -q`，**5 passed**；覆盖未设置、正常加密可用、主密钥缺失、错误密钥、篡改密文和无密钥整批拒绝，接口状态与运行态一致且不返回明文。
+- 后端全量：`python -m pytest backend/tests/ -q`，**893 passed**；仅有既有 FastAPI `on_event` 弃用警告。复核报告中的 890 是本轮新增三种故障状态用例前的基线，不再作为当前 HEAD 结果。
+- 前端全量：`npm test`，**85 files / 702 tests passed**；`npm run build` 通过并同步 `frontend/dist`，仅有既有第三方 PURE 注释与 chunk size 警告。
+- 板块聚焦 Playwright：`AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:sectors`，三份 spec 三视口合计 **12 passed / 6 skipped**（跳过项均为用例声明的视口条件）；任务调度页验证“已存密文无法解密”提示、重新输入入口和原调度保存链路，未向数据库写入 E2E 假 Cookie；确定性夹具已 cleanup。
+- 静态与运行检查：本次 Python 变更 Ruff `F` 规则、`git diff --check` 通过；测试前按规则停服，验证后已恢复 dev 后端并确认 `/api/health=200`。
+- 命令异常：首次并行启动前端全量测试的子进程未继承 Node 路径，以 `npm: command not found` 在测试启动前退出；随后使用本机 npm 绝对路径完整重跑，以上 85/702 为有效结果。
+- 未执行：真实同花顺 Cookie 保存后联网采集及外部数值逐项对账（不使用用户真实凭证）；本机 `.env.local` 尚未配置新主密钥，因此未向本地真实 `app_config` 写入模拟 Cookie，保存/解密由隔离测试库验证；生产密钥管理系统接入与密钥轮换演练、生产 PostgreSQL 权限 SQL 正向/回滚演练（均无生产环境和变更授权）；全量跨模块 Playwright、公开回测只读 Playwright、暗色/reduced-motion 与加载中间帧专项截图。

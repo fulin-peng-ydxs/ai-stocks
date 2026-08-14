@@ -795,12 +795,18 @@ def get_settings_view() -> ApiResponse:
     """分组配置表单：每字段含 当前值 / 默认值 / 是否已覆盖。"""
     from backend.config import get_effective_settings
     from backend.config.settings import Settings, _raw_yaml
-    from backend.storage.app_config import CONFIG_GROUPS, AppConfigRepo
+    from backend.storage.app_config import (
+        CONFIG_GROUPS,
+        SECRET_STATUS_UNSET,
+        SECRET_STATUS_USABLE,
+        AppConfigRepo,
+    )
 
     eff = get_effective_settings().model_dump()
     default = Settings.model_validate(_raw_yaml()).model_dump()  # yaml 基线（不含覆盖）
     repo = AppConfigRepo()
     override_keys = repo.get_override_keys()
+    secret_statuses = repo.get_secret_statuses()
     groups = []
     for g in CONFIG_GROUPS:
         if g.get("hidden_in_form"):   # 定时调度收敛到调度页，不在系统设置渲染（DM-D14）
@@ -815,13 +821,17 @@ def get_settings_view() -> ApiResponse:
             # 避免前端拿到 Cookie。前端保存时留空不提交（draft 等于掩码 → 不纳入 updates），
             # 因此不会误清空已存值。
             if f.get("type") == "password":
-                val = "••••••已设置" if f["path"] in override_keys or val else ""
+                secret_status = secret_statuses.get(f["path"], SECRET_STATUS_UNSET)
+                val = "••••••已设置" if secret_status == SECRET_STATUS_USABLE else ""
                 default_val = "••••••已设置" if default_val else ""
-            fields.append({**{k: f[k] for k in f if k != "path"},
-                           "path": f["path"],
-                           "value": val,
-                           "default": default_val,
-                           "overridden": f["path"] in override_keys})
+            field_view = {**{k: f[k] for k in f if k != "path"},
+                          "path": f["path"],
+                          "value": val,
+                          "default": default_val,
+                          "overridden": f["path"] in override_keys}
+            if f.get("type") == "password":
+                field_view["secret_status"] = secret_status
+            fields.append(field_view)
         groups.append({
             "key": g["key"],
             "label": g["label"],

@@ -394,6 +394,28 @@ describe('ConfigView system tab', () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('验证码只写日志不真发')
   })
+
+  it('敏感配置密文无法解密时显示运行态不可用提示', async () => {
+    mockSettings([
+      {
+        key: 'ths_board',
+        label: '同花顺板块',
+        fields: [
+          {
+            path: 'ths_board.login_cookie',
+            label: '登录 Cookie',
+            type: 'password',
+            value: '',
+            default: '',
+            overridden: true,
+            secret_status: 'unavailable',
+          },
+        ],
+      },
+    ])
+    const wrapper = await mountView()
+    expect(wrapper.text()).toContain('已存密文无法解密，请检查主密钥或输入新值后保存')
+  })
 })
 
 describe('ConfigView trade tab', () => {

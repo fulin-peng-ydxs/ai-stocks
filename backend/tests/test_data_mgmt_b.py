@@ -311,6 +311,7 @@ def test_ths_login_cookie_is_encrypted_and_masked(client, pg, app_cfg):
     ths = next(g for g in view["groups"] if g["key"] == "ths_board")
     field = next(f for f in ths["fields"] if f["path"] == "ths_board.login_cookie")
     assert field["value"] == ""
+    assert field["secret_status"] == "unset"
 
     cookie = "user=xxx; ticket=secret; v=yyy"
     resp = save_settings({"updates": {"ths_board.login_cookie": cookie}}, _fake_request())
@@ -327,6 +328,44 @@ def test_ths_login_cookie_is_encrypted_and_masked(client, pg, app_cfg):
     masked_ths = next(g for g in masked["groups"] if g["key"] == "ths_board")
     masked_field = next(f for f in masked_ths["fields"] if f["path"] == "ths_board.login_cookie")
     assert masked_field["value"] == "••••••已设置"
+    assert masked_field["secret_status"] == "usable"
+
+
+@pytest.mark.parametrize("failure_mode", ["missing_key", "wrong_key", "tampered_ciphertext"])
+def test_ths_login_cookie_unavailable_status_matches_runtime(
+    client, pg, app_cfg, monkeypatch, failure_mode,
+):
+    """密钥缺失/错误或密文损坏时，接口不得把运行态不可用的 Cookie 显示为已设置。"""
+    from cryptography.fernet import Fernet
+
+    from backend.api.data_admin import get_settings_view
+
+    app_cfg.reset("ths_board.login_cookie")
+    app_cfg.set_many({"ths_board.login_cookie": "user=valid-before-failure"})
+    if failure_mode == "missing_key":
+        monkeypatch.delenv("AI_STOCKS_CONFIG_ENCRYPTION_KEY", raising=False)
+        monkeypatch.delenv("AI_STOCKS_CONFIG_ENCRYPTION_KEY_FILE", raising=False)
+    elif failure_mode == "wrong_key":
+        monkeypatch.setenv(
+            "AI_STOCKS_CONFIG_ENCRYPTION_KEY",
+            Fernet.generate_key().decode("ascii"),
+        )
+    else:
+        row = pg.query_df(
+            "SELECT value FROM app_config WHERE key=%s", ["ths_board.login_cookie"]
+        ).iloc[0]
+        stored = json.loads(row["value"])
+        pg.execute(
+            "UPDATE app_config SET value=%s WHERE key=%s",
+            [json.dumps(f"{stored[:-1]}X"), "ths_board.login_cookie"],
+        )
+
+    view = get_settings_view().data
+    ths = next(g for g in view["groups"] if g["key"] == "ths_board")
+    field = next(f for f in ths["fields"] if f["path"] == "ths_board.login_cookie")
+    assert field["secret_status"] == "unavailable"
+    assert field["value"] == ""
+    assert field["overridden"] is True
 
 
 def test_ths_login_cookie_save_without_key_is_rejected_before_other_writes(

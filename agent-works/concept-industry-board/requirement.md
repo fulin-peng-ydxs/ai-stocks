@@ -9,7 +9,7 @@
 
 ## 1. 背景与目标
 
-「复盘啦」是 EOD A 股趋势龙头研究系统。需求提出时系统已覆盖个股行情、每日榜单、策略筛选、回测、盘感训练等能力，但**缺少板块维度数据**：`stock_basic.concept` 字段始终 NULL，DDL 无任何板块相关表（见 [research.md](research.md) §1）。当前采集与后端查询能力已经落地，仍待完成的是板块列表/详情前端业务页面。
+「复盘啦」是 EOD A 股趋势龙头研究系统。以下是**需求提出时的历史基线**：系统已覆盖个股行情、每日榜单、策略筛选、回测、盘感训练等能力，但缺少板块维度数据，`stock_basic.concept` 字段始终 NULL，DDL 无任何板块相关表（见 [research.md](research.md) §1）。截至 2026-08-14，板块采集、查询、列表/详情页面、权限接入与发布验收均已完成；历史基线不代表当前实现状态。
 
 本需求把「同花顺板块概念数据」完整接入系统，实现两个目标：
 
@@ -36,10 +36,10 @@
 
 ### 2.3 页面与权限基座
 
-- **菜单结构**：[pg_ddl.py](../../backend/storage/pg_ddl.py) `quotes`（最新行情）下的 `/sectors` 菜单和资源 seed 已落地；但对应前端路由/页面仍待 T11/T12/T14 完成，现阶段不得把后端 seed 误判为页面已交付。
-- **权限模型**：`sectors:view` 已加入 `BUSINESS_RESOURCE_CODES` 并完成既有库一次性回填 + bump `perm_ver`；后端 `/api/sectors*` 已 fail-closed。前端路由守卫仍随业务页面一并待实现。`sys_menu.visible` 仅 `login|system` 两值。
+- **菜单与页面**：[pg_ddl.py](../../backend/storage/pg_ddl.py) 已在 `quotes`（最新行情）下 seed `/sectors` 菜单和资源；`/sectors`、`/sectors/:code` 路由及列表、详情、工作台页面均已落地，并通过标准板块 Playwright 入口验证。
+- **权限模型**：`sectors:view` 已加入 `BUSINESS_RESOURCE_CODES`，完成既有库一次性回填 + bump `perm_ver`；后端 `/api/sectors*` fail-closed，前端路由守卫、菜单消费和页面按钮权限态均已落地。`sys_menu.visible` 仅 `login|system` 两值。
 - **设计规范**：[DESIGN.md](../../DESIGN.md) §5 可配置布局系统，所有 registry 页面走 `<LayoutHost>`；§7.3 组件字段治理；page-registry marker 机器契约。新页面执行流程见 [page-template.md](../configurable-layout-system/page-template.md)。
-- **页面样板**：`StocksView.vue`（list 原型）、`StockDetailView.vue`（detail 原型）。图表主题统一经 `components/chartTheme.ts::useEChartsTheme()` 消费。
+- **页面登记与实现**：板块列表/详情已登记 pageRegistry 并消费 `<LayoutHost>`；图表主题统一经 `components/chartTheme.ts::useEChartsTheme()` 消费，格式化逻辑复用共享工具。
 
 ### 2.4 数据源可用性（已实测，见 [research.md](research.md)）
 
@@ -56,7 +56,7 @@
 **关键取数约束**（research.md §2 实测踩坑）：
 - **板块采集全部走自封装 `ThsBoardSource`（直连同花顺 `q.10jqka.com.cn` / `data.10jqka.com.cn`），不调用 akshare 公开函数**；akshare 仅调研验证时用于探测数据可用性，生产实现按相同 URL/参数自行请求解析。
 - 同花顺详情页必须带 `v` cookie（复用 akshare 打包的同花顺 `ths.js` 反爬校验脚本，经 `py_mini_racer` 执行生成，非调用 akshare 板块接口），否则 401。
-- **登录态 Cookie（2026-08-14 安全收口）**：详情页/字典翻页第 6 页起会命中登录墙，提供登录 Cookie 可解除登录墙取全深页板块与完整成分股。系统管理员可从页面配置，`app_config` 只保存带版本前缀的加密密文，接口仅回显掩码，审计 before/after 固定脱敏；环境变量/受控文件可优先覆盖，YAML 禁止配置。历史明文有主密钥时原位加密、无主密钥时删除；疑似暴露过的 Cookie 必须在同花顺侧轮换。
+- **登录态 Cookie（2026-08-14 安全收口）**：详情页/字典翻页第 6 页起会命中登录墙，提供登录 Cookie 可解除登录墙取全深页板块与完整成分股。系统管理员可从页面配置，`app_config` 只保存带版本前缀的加密密文，接口仅回显掩码及 `未设置 / 可用 / 无法解密` 状态，审计 before/after 固定脱敏；密钥缺失、错误或密文损坏时运行态跳过 Cookie，管理页面必须明确提示不可用并允许重新加密覆盖或清除。环境变量/受控文件可优先覆盖，YAML 禁止配置。历史明文有主密钥时原位加密、无主密钥时删除；疑似暴露过的 Cookie 必须在同花顺侧轮换。
 - 翻页是路径参数 `page/N/ajax/1/`，不是 URL query。
 - 排序参数敏感：部分板块带 `field/199112/order/desc` 才能取全，部分不带反而更多。鲁棒策略：两种都试、取多者。
 - 板块指数原始连续、无除权概念，直接展示原值；页面周期切换只改变查看区间，不代表复权处理，也不存复权字段。
@@ -616,5 +616,5 @@ board_fund_flow   板块资金流
 - **接口与权限已实现**：`/api/sectors*` 查询服务、`sectors:view` 后端守卫、资源/menu seed 与既有库授权回填已落地。
 - **页面与权限闭环已实现**：`/sectors`、`/sectors/:code`、前端路由、菜单/资源、pageRegistry、页面设置和业务页 E2E 均已落地；R7-R11、R13-R14、R22-R23 已进入回归维护状态。
 - **MACD 扩展已映射**：R26 对应列表 K 线模式、详情页、`StockChartWorkspace`、板块指标接口与标题语义测试；数据口径固定为原始连续指数。
-- **凭证安全已收口**：同花顺登录 Cookie 保留页面配置能力，平台只持久化可校验密文；环境/文件可优先覆盖，页面掩码、审计脱敏、历史明文迁移和独立密钥配置属于发布必做项。
+- **凭证安全已收口**：同花顺登录 Cookie 保留页面配置能力，平台只持久化可校验密文；环境/文件可优先覆盖，页面掩码与可用性三态、审计脱敏、历史明文迁移和独立密钥配置属于发布必做项。
 - **最新验证状态**：以同目录 `plan.md` §8/§11 的 2026-08-14 实际命令结果为准；历史绿色数量不再代表当前 HEAD。

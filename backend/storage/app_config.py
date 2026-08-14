@@ -83,6 +83,9 @@ WHITELIST: frozenset[str] = frozenset(_FIELD_BY_PATH)
 ENCRYPTED_CONFIG_PATHS: frozenset[str] = frozenset(
     path for path, field in _FIELD_BY_PATH.items() if field.get("encrypted")
 )
+SECRET_STATUS_UNSET = "unset"
+SECRET_STATUS_USABLE = "usable"
+SECRET_STATUS_UNAVAILABLE = "unavailable"
 
 
 def is_sensitive_config_path(path: str) -> bool:
@@ -183,6 +186,29 @@ class AppConfigRepo:
         """返回数据库中已持久化的白名单 key，不触碰或解密配置值。"""
         df = self.pg.query_df("SELECT key FROM app_config")
         return {str(key) for key in df["key"].tolist() if str(key) in WHITELIST}
+
+    def get_secret_statuses(self) -> dict[str, str]:
+        """返回敏感配置可用性，不返回明文或密文。
+
+        数据库无记录为 unset；密文能由当前主密钥成功解密为 usable；明文、未知格式、
+        密钥缺失/错误或密文损坏统一为 unavailable。该状态供管理页面准确反映运行态。
+        """
+        statuses = {path: SECRET_STATUS_UNSET for path in ENCRYPTED_CONFIG_PATHS}
+        df = self.pg.query_df("SELECT key, value FROM app_config")
+        for _, row in df.iterrows():
+            key = str(row["key"])
+            if key not in ENCRYPTED_CONFIG_PATHS:
+                continue
+            try:
+                value = json.loads(row["value"])
+                if not is_encrypted_config_value(value):
+                    raise ConfigEncryptionError("敏感配置不是受支持的加密格式")
+                decrypt_config_value(value)
+            except (ConfigEncryptionError, TypeError, ValueError):
+                statuses[key] = SECRET_STATUS_UNAVAILABLE
+            else:
+                statuses[key] = SECRET_STATUS_USABLE
+        return statuses
 
     def set_many(self, updates: dict[str, object]) -> int:
         """校验并写入覆盖值。任一项非法则整批拒绝（不部分写入）。返回写入条数。"""

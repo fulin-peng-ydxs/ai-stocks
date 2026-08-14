@@ -282,7 +282,8 @@ async function loadSources(ping = false) {
 const cookieDlg = ref(false)
 const cookieSaving = ref(false)
 const cookieValue = ref('')
-const cookieSet = ref(false)
+type SecretStatus = 'unset' | 'usable' | 'unavailable'
+const cookieStatus = ref<SecretStatus>('unset')
 async function openCookieConfig() {
   cookieDlg.value = true
   cookieSaving.value = false
@@ -291,9 +292,9 @@ async function openCookieConfig() {
     const view = await getSettingsView()
     const ths = view.groups.find((group) => group.key === 'ths_board')
     const field = ths?.fields.find((item) => item.path === 'ths_board.login_cookie')
-    cookieSet.value = Boolean(field?.value)
+    cookieStatus.value = field?.secret_status ?? 'unset'
   } catch {
-    cookieSet.value = false
+    cookieStatus.value = 'unset'
   }
 }
 async function saveCookie() {
@@ -312,7 +313,7 @@ async function saveCookie() {
   }
 }
 async function clearCookie() {
-  if (cookieSaving.value || !cookieSet.value) return
+  if (cookieSaving.value || cookieStatus.value === 'unset') return
   cookieSaving.value = true
   try {
     await resetSettings(['ths_board.login_cookie'])
@@ -510,11 +511,19 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             type="password"
             show-password
             autocomplete="off"
-            :placeholder="cookieSet ? '已设置，输入新值可覆盖' : '粘贴同花顺登录 Cookie 头'"
+            :placeholder="cookieStatus === 'usable' ? '已设置，输入新值可覆盖' : '粘贴同花顺登录 Cookie 头'"
             data-testid="ths-login-cookie-input"
           />
           <span class="cookie-field-hint">
-            {{ cookieSet ? '当前已有页面配置；明文不会回显，保存新值后覆盖密文。' : '保存后由后端加密，数据库和审计均不记录明文。' }}
+            <template v-if="cookieStatus === 'usable'">
+              当前页面配置可用；明文不会回显，保存新值后覆盖密文。
+            </template>
+            <template v-else-if="cookieStatus === 'unavailable'">
+              已存密文无法解密，当前采集不会使用它；请检查主密钥，或输入新 Cookie 重新加密覆盖。
+            </template>
+            <template v-else>
+              尚未设置；保存后由后端加密，数据库和审计均不记录明文。
+            </template>
           </span>
         </el-form-item>
       </el-form>
@@ -523,7 +532,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         环境变量或受控文件仍优先于页面配置。
       </p>
       <template #footer>
-        <el-button v-if="cookieSet" :disabled="cookieSaving" @click="clearCookie">清除页面配置</el-button>
+        <el-button v-if="cookieStatus !== 'unset'" :disabled="cookieSaving" @click="clearCookie">清除页面配置</el-button>
         <el-button @click="cookieDlg = false">取消</el-button>
         <el-button
           type="primary"

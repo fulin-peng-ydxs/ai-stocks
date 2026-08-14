@@ -42,10 +42,34 @@ test.describe('板块数据管理闭环', () => {
     try {
       await openPageAndWaitForHeading(page, '/data/schedule', '任务调度')
       await expect(page.getByTestId('ths-login-cookie-btn')).toBeVisible()
+      await page.route('**/api/data/settings', async (route) => {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 0,
+            msg: 'ok',
+            data: {
+              groups: [{
+                key: 'ths_board',
+                label: '同花顺板块',
+                fields: [{
+                  path: 'ths_board.login_cookie',
+                  label: '登录 Cookie',
+                  type: 'password',
+                  value: '',
+                  default: '',
+                  overridden: true,
+                  secret_status: 'unavailable',
+                }],
+              }],
+            },
+          }),
+        })
+      })
       await page.getByTestId('ths-login-cookie-btn').click()
       const cookieDialog = page.getByTestId('ths-login-cookie-dialog')
       await expect(cookieDialog).toBeVisible()
-      await expect(cookieDialog).toContainText('数据库和审计均不记录明文')
+      await expect(cookieDialog).toContainText('已存密文无法解密，当前采集不会使用它')
       await page.getByTestId('ths-login-cookie-input').fill('e2e-ui-only-cookie')
       await expect(page.getByTestId('ths-login-cookie-save')).toBeEnabled()
       await cookieDialog.getByRole('button', { name: '取消' }).click()

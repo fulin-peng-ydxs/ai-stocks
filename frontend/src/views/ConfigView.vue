@@ -166,14 +166,25 @@ type FieldStatus = { tone: 'ok' | 'warn'; text: string }
 const systemFieldStatus = computed<Record<string, FieldStatus>>(() => {
   const out: Record<string, FieldStatus> = {}
   const m = mailStatus.value
-  if (!m) return out
-  // 文案按 mode 精确对齐后端/mailer 真实分支：incomplete 会发码失败（非只写日志）。
-  if (m.mode === 'ready') {
-    out['auth.require_email_code'] = { tone: 'ok', text: `真实发信已就绪（${m.username_masked}）` }
-  } else if (m.mode === 'incomplete') {
-    out['auth.require_email_code'] = { tone: 'warn', text: '真实发信已开启但配置不完整，发码会失败（部署侧补全 AI_STOCKS_SMTP_*）' }
-  } else {
-    out['auth.require_email_code'] = { tone: 'warn', text: '真实发信未启用，验证码只写日志不真发（部署侧配 AI_STOCKS_SMTP_*）' }
+  if (m) {
+    // 文案按 mode 精确对齐后端/mailer 真实分支：incomplete 会发码失败（非只写日志）。
+    if (m.mode === 'ready') {
+      out['auth.require_email_code'] = { tone: 'ok', text: `真实发信已就绪（${m.username_masked}）` }
+    } else if (m.mode === 'incomplete') {
+      out['auth.require_email_code'] = { tone: 'warn', text: '真实发信已开启但配置不完整，发码会失败（部署侧补全 AI_STOCKS_SMTP_*）' }
+    } else {
+      out['auth.require_email_code'] = { tone: 'warn', text: '真实发信未启用，验证码只写日志不真发（部署侧配 AI_STOCKS_SMTP_*）' }
+    }
+  }
+  for (const group of sysGroups.value) {
+    for (const field of group.fields) {
+      if (field.secret_status === 'unavailable') {
+        out[field.path] = {
+          tone: 'warn',
+          text: '已存密文无法解密，请检查主密钥或输入新值后保存',
+        }
+      }
+    }
   }
   return out
 })
