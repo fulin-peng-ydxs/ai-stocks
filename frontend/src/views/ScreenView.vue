@@ -575,8 +575,8 @@ onMounted(initializeScreen)
   <LayoutHost :layout="screenEffective">
     <template #action>
     <div class="page-head">
-      <div class="page-head-actions" style="width: 100%; justify-content: space-between;">
-        <h2 class="title-row">
+      <div>
+        <h2 class="app-page-title page-title-row">
           策略筛选
           <HelpTip title="筛选 与 榜单 的区别" :width="400">
             <p><b>筛选</b>：给一组布尔条件，返回<b>所有满足</b>的股票（命中即入，无门槛排序）。</p>
@@ -584,6 +584,9 @@ onMounted(initializeScreen)
             <p style="margin:0">本页一套构建器即可：每条条件可选<b>注册表指标</b>（含动态参数）或手写<b>表达式</b>，用 且/或 组合。命中结果用榜单同款评分打分并按分排序，方便判断质量；可「排除 ST」、存为方案。</p>
           </HelpTip>
         </h2>
+        <p class="page-subtitle">组合技术指标条件筛选候选股，支持表达式与嵌套分组。</p>
+      </div>
+      <div class="page-head-actions">
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
@@ -898,11 +901,14 @@ onMounted(initializeScreen)
 </template>
 
 <style scoped>
-.page-head h2 {
-  margin: 0;
-  font-size: var(--app-font-size-page-title-sm);
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--app-space-2);
 }
-.title-row {
+.page-title-row {
   display: flex;
   align-items: center;
 }

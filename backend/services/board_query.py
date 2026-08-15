@@ -231,7 +231,7 @@ class BoardQueryService:
         *,
         board_codes: set[str] | None = None,
     ) -> dict[str, dict]:
-        """一次聚合历史累计成员的涨跌家数与当日领涨股，避免列表逐板块 N+1 查询。"""
+        """一次聚合历史累计成员的上涨/下跌家数与当日领涨股，避免列表逐板块 N+1 查询。"""
         if bar_date is None:
             return {}
         codes = sorted(board_codes) if board_codes is not None else []

@@ -78,6 +78,13 @@ const pageTitle = computed(() => {
   if (forcedTab.value === 'system') return '系统设置'
   return '配置管理'
 })
+const pageSubtitle = computed(() => {
+  if (forcedTab.value === 'score') return '按权重组合技术指标打分排序，权重自动归一到 100%。'
+  if (forcedTab.value === 'trade') return '买入/卖出各一组技术指标条件（且/或），止盈/止损/持仓为可选兜底。'
+  if (forcedTab.value === 'tech') return '系统内置指标不可删除仅可启停；自定义指标为一段带参数的表达式，供评分/筛选/买卖引用。'
+  if (forcedTab.value === 'system') return '保存后即时影响访问安全、数据采集、审计留存和研究运行参数。'
+  return ''
+})
 const configDefaults = {
   previewExpanded: true,
 }
@@ -1248,7 +1255,17 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   <LayoutHost :layout="configEffective">
     <template #action>
     <div class="page-head">
-      <h2 class="page-title app-page-title">{{ pageTitle }}</h2>
+      <div>
+        <h2 class="page-title app-page-title">
+          {{ pageTitle }}
+          <HelpTip v-if="activeTab === 'tech'" title="技术指标说明" :width="420" test-id="config-tech-help-tip">
+            <p style="margin:0">系统内置不可删除，仅可启停；自定义 = 一段带参数的表达式，供评分/筛选/买卖引用。</p>
+            <p style="margin:8px 0 0">表达式函数：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C / O / H / L / V / TURN。</p>
+            <p style="margin:8px 0 0">分类可多选/自定义命名（直接输入新名回车即可）。</p>
+          </HelpTip>
+        </h2>
+        <p class="page-subtitle">{{ pageSubtitle }}</p>
+      </div>
       <div class="page-head-actions">
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
@@ -1523,13 +1540,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <template v-else-if="activeTab === 'tech'">
         <div class="pane-fill tech-pane">
         <div class="tech-head">
-          <p class="hint" style="margin: 0">
-            <HelpTip title="技术指标说明" :width="420">
-              <p style="margin:0">系统内置不可删除，仅可启停；自定义 = 一段带参数的表达式，供评分/筛选/买卖引用。</p>
-              <p style="margin:8px 0 0">表达式函数：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C / O / H / L / V / TURN。</p>
-              <p style="margin:8px 0 0">分类可多选/自定义命名（直接输入新名回车即可）。</p>
-            </HelpTip>
-          </p>
           <div class="tech-actions">
             <el-input v-model="techSearch" placeholder="搜索名称/标识/说明/分类" clearable size="small" style="width: 220px" />
             <el-button v-permission="'indicator:def-manage'" type="primary" plain size="small" @click="openNewDef">
@@ -2035,7 +2045,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   gap: var(--app-space-3);
   min-width: 0;
 }
-.page-head { display: flex; justify-content: space-between; align-items: center; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .config-body {
   flex: 1 1 auto;   /* 填满 LayoutHost 的条件成长区，页面内容在本区域内滚动 */
   min-height: 0;
@@ -2061,10 +2071,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
 }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
-.page-title {
-  margin: 0;
-  font-size: var(--app-font-size-page-title-sm);
-}
 .hint {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-table);

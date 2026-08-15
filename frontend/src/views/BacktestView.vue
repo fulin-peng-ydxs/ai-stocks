@@ -1624,17 +1624,20 @@ async function openTradeChart(row: TradeRow) {
   <LayoutHost :layout="backtestEffective">
     <template #action>
     <div class="page-head">
-      <h2 class="title-row">
-        策略回测
-        <HelpTip title="回测在验证什么？" :width="460">
-          <p><b>两种模式</b>：</p>
-          <ul style="margin:0;padding-left:18px">
-            <li><b>策略回测</b>：逐日「先卖后买」事件驱动撮合——T 日选股、<b>T+1 开盘成交</b>，跌破 MA 卖出；含交易成本、涨跌停/停牌不可成交、退市强平。算真实资金曲线。</li>
-            <li><b>信号质量</b>：纯统计「分越高，N 日内摸到 X% 涨幅的概率是否越高」，并<b>减去全市场基线(base rate)</b>得超额——这才是评分的真实能力。</li>
-          </ul>
-          <p style="margin:6px 0 0;color:var(--app-warning-text)"><b>⚠️ 防坑</b>：① 用未来 N 日是「评估」非未来函数；② 短区间「年化/卡玛」会被放大，只看长周期；③ 样本量小(n小)的分档不可信。</p>
-        </HelpTip>
-      </h2>
+      <div>
+        <h2 class="app-page-title page-title-row">
+          策略回测
+          <HelpTip title="回测在验证什么？" :width="460">
+            <p><b>两种模式</b>：</p>
+            <ul style="margin:0;padding-left:18px">
+              <li><b>策略回测</b>：逐日「先卖后买」事件驱动撮合——T 日选股、<b>T+1 开盘成交</b>，跌破 MA 卖出；含交易成本、涨跌停/停牌不可成交、退市强平。算真实资金曲线。</li>
+              <li><b>信号质量</b>：纯统计「分越高，N 日内摸到 X% 涨幅的概率是否越高」，并<b>减去全市场基线(base rate)</b>得超额——这才是评分的真实能力。</li>
+            </ul>
+            <p style="margin:6px 0 0;color:var(--app-warning-text)"><b>⚠️ 防坑</b>：① 用未来 N 日是「评估」非未来函数；② 短区间「年化/卡玛」会被放大，只看长周期；③ 样本量小(n小)的分档不可信。</p>
+          </HelpTip>
+        </h2>
+        <p class="page-subtitle">用策略/评分方案做 T+1 开盘撮合回测，查看收益、交易与当日榜单。</p>
+      </div>
       <div class="page-head-actions">
         <div class="hist">
           <span class="lbl">回测记录</span>
@@ -2307,7 +2310,7 @@ async function openTradeChart(row: TradeRow) {
   gap: var(--app-space-2);
   min-width: 0;
 }
-.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
+.page-title-row { display: flex; align-items: center; }
 .page-head-actions { min-width: 0; max-width: 100%; }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
@@ -2365,7 +2368,6 @@ async function openTradeChart(row: TradeRow) {
 }
 .sell-tag { margin: 1px 2px 1px 0; }
 .dlg-tbl-title { margin: 14px 0 6px; font-weight: var(--app-font-weight-section); font-size: var(--app-font-size-table); }
-.title-row { display: flex; align-items: center; }
 .form-card { margin-bottom: 14px; flex: 0 0 auto; }  /* 操作区固定高，不被结果挤压（第一层级）*/
 .results {
   flex: 1 1 auto;
@@ -2437,8 +2439,6 @@ async function openTradeChart(row: TradeRow) {
 .unreliable { display: block; font-size: var(--app-font-size-caption); color: var(--app-warning-text); }
 .base { color: var(--el-text-color-secondary); }
 .legend-line { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-top: 8px; }
-.up { color: var(--market-up-color); } .down { color: var(--market-down-color); }
-.muted { color: var(--el-text-color-placeholder); }
 .clickable :deep(.el-table__row) { cursor: pointer; }
 
 @media (max-width: 720px) {

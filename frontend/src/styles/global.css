@@ -375,6 +375,27 @@ html.dark {
   font-weight: var(--app-font-weight-section);
   font-variant-numeric: tabular-nums;
 }
+
+/* 金融涨跌与弱化文字语义类：颜色唯一事实源 = LAYOUT_PRESETS token，页面禁止再私有定义同一色。 */
+.up { color: var(--market-up-color); }
+.down { color: var(--market-down-color); }
+.muted { color: var(--app-muted-text); }
+
+/* 页面标题下说明文案：全局统一结构，页面禁止再私有定义 .page-subtitle。 */
+.page-subtitle {
+  margin: var(--app-space-1) 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  line-height: var(--app-line-height-caption);
+}
+
+/* 列表页搜索/筛选行边框卡片：全局统一，页面禁止再私有定义 .filter-card。 */
+.filter-card {
+  margin-bottom: 0;
+}
+.filter-card :deep(.el-card__body) {
+  padding: var(--app-space-3) var(--app-space-4);
+}
 .app-stack-sm { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .app-stack-md { display: flex; flex-direction: column; gap: var(--app-space-3); }
 .app-stack-lg { display: flex; flex-direction: column; gap: var(--app-space-4); }

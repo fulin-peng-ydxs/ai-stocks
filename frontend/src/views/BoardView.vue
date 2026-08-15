@@ -403,7 +403,7 @@ onMounted(async () => {
     <div class="lh-action">
     <div class="page-head">
       <div>
-        <h2 class="title-row">
+        <h2 class="app-page-title page-title-row">
           每日榜单
           <HelpTip title="榜单是怎么排出来的？" :width="420">
             <p><b>不是筛选，是打分排序</b>：选一个<b>评分规则方案</b>，对全市场（仅排除 ST）每只股票按规则打分，按综合分降序取 Top N。</p>
@@ -411,11 +411,11 @@ onMounted(async () => {
             <p style="margin:6px 0 0;color:var(--app-warning-text)"><b>⚠️ 注意</b>：全市场排序、不设硬门槛，行情差时前排也是"矮个里的高个"，<b>要看分数高低而非排名</b>。</p>
           </HelpTip>
         </h2>
-        <span class="sub">
+        <p class="page-subtitle">
           <template v-if="runDate">交易日 {{ runDate }} · 已排除 ST</template>
           <template v-if="curProfile"> · 规则「{{ curProfile.name }}」 v{{ curProfile.version }}</template>
           <template v-if="cacheStatus"> · {{ cacheStatus === 'cached' ? '已缓存' : '已更新' }}</template>
-        </span>
+        </p>
       </div>
       <div class="page-head-actions">
         <div class="ops">
@@ -572,17 +572,9 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: var(--app-space-2);
 }
-.page-head h2 {
-  margin: 0;
-  font-size: var(--app-font-size-page-title-sm);
-}
-.title-row {
+.page-title-row {
   display: flex;
   align-items: center;
-}
-.sub {
-  color: var(--app-muted-text);
-  font-size: var(--app-font-size-table);
 }
 .ops {
   display: flex;

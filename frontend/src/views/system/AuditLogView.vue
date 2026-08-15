@@ -475,10 +475,12 @@ onBeforeUnmount(stopTimer)
     <template #action>
       <div class="audit-head">
         <div class="audit-title">
-          <h2>审计日志</h2>
-          <HelpTip title="审计日志说明" :width="420" test-id="audit-help-tip">
-            记录接口、任务、安全、权限、配置和字典事件。系统管理员查看全局，租户管理员仅查看本租户事件。
-          </HelpTip>
+          <h2 class="app-page-title">审计日志
+            <HelpTip title="审计日志说明" :width="420" test-id="audit-help-tip">
+              记录接口、任务、安全、权限、配置和字典事件。系统管理员查看全局，租户管理员仅查看本租户事件。
+            </HelpTip>
+          </h2>
+          <p class="page-subtitle">查询登录、配置变更、数据操作等审计记录。</p>
         </div>
         <div class="audit-actions">
           <el-switch v-model="settings.autoRefreshEnabled" size="small" active-text="自动刷新" />
@@ -512,53 +514,55 @@ onBeforeUnmount(stopTimer)
     </template>
 
     <template #filters>
-      <AppControlRow class="audit-filters">
-        <AppControlItem>
-          <el-date-picker
-            v-model="dateRange"
-            type="datetimerange"
-            start-placeholder="开始时间"
-            end-placeholder="结束时间"
-            value-format="YYYY-MM-DDTHH:mm:ss"
-            range-separator="至"
-            class="audit-date"
+      <el-card shadow="never" class="filter-card">
+        <AppControlRow class="audit-filters">
+          <AppControlItem>
+            <el-date-picker
+              v-model="dateRange"
+              type="datetimerange"
+              start-placeholder="开始时间"
+              end-placeholder="结束时间"
+              value-format="YYYY-MM-DDTHH:mm:ss"
+              range-separator="至"
+              class="audit-date"
+            />
+          </AppControlItem>
+          <AppFilterSelect
+            v-model="filters.event_category"
+            :options="eventOptions"
+            placeholder="事件类型"
+            class="w140"
+            @change="filterChanged"
           />
-        </AppControlItem>
-        <AppFilterSelect
-          v-model="filters.event_category"
-          :options="eventOptions"
-          placeholder="事件类型"
-          class="w140"
-          @change="filterChanged"
-        />
-        <AppFilterSelect
-          v-model="filters.result"
-          :options="resultOptions"
-          placeholder="结果"
-          class="w120"
-          @change="filterChanged"
-        />
-        <AppFilterSelect
-          v-model="filters.status"
-          :options="statusOptions"
-          placeholder="状态"
-          class="w120"
-          @change="filterChanged"
-        />
-        <el-input v-model="filters.resource_code" clearable placeholder="资源码" class="w160" />
-        <el-input v-model="filters.actor_keyword" clearable placeholder="处理人" class="w140" />
-        <el-input v-model="filters.target_keyword" clearable placeholder="目标对象" class="w160" />
-        <AppFilterSelect
-          v-if="auth.isSystem"
-          v-model="filters.tenant_id"
-          :options="tenantOptions"
-          placeholder="租户"
-          class="w180"
-          @change="filterChanged"
-        />
-        <el-button type="primary" @click="search">查询</el-button>
-        <el-button @click="resetFilters">重置</el-button>
-      </AppControlRow>
+          <AppFilterSelect
+            v-model="filters.result"
+            :options="resultOptions"
+            placeholder="结果"
+            class="w120"
+            @change="filterChanged"
+          />
+          <AppFilterSelect
+            v-model="filters.status"
+            :options="statusOptions"
+            placeholder="状态"
+            class="w120"
+            @change="filterChanged"
+          />
+          <el-input v-model="filters.resource_code" clearable placeholder="资源码" class="w160" />
+          <el-input v-model="filters.actor_keyword" clearable placeholder="处理人" class="w140" />
+          <el-input v-model="filters.target_keyword" clearable placeholder="目标对象" class="w160" />
+          <AppFilterSelect
+            v-if="auth.isSystem"
+            v-model="filters.tenant_id"
+            :options="tenantOptions"
+            placeholder="租户"
+            class="w180"
+            @change="filterChanged"
+          />
+          <el-button type="primary" @click="search">查询</el-button>
+          <el-button @click="resetFilters">重置</el-button>
+        </AppControlRow>
+      </el-card>
     </template>
 
     <template #auditTable>
@@ -756,14 +760,10 @@ onBeforeUnmount(stopTimer)
   gap: var(--app-space-3);
 }
 .audit-title {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-control-gap);
   min-width: 0;
 }
 .audit-title h2 {
   margin: 0;
-  font-size: var(--app-font-size-page-title-sm);
 }
 .audit-actions {
   display: flex;
@@ -777,6 +777,7 @@ onBeforeUnmount(stopTimer)
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--app-space-3);
 }
+.filter-card :deep(.el-card__body) { padding: var(--app-space-3) var(--app-space-4); }
 .metric {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
@@ -784,8 +785,8 @@ onBeforeUnmount(stopTimer)
   padding: 11px 12px;
   min-width: 0;
 }
-.metric span,
-.metric em {
+.metric > span,
+.metric > em {
   display: block;
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);

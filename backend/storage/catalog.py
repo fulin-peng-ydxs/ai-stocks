@@ -154,7 +154,7 @@ TABLE_CATALOG: dict[str, dict] = {
             {"name": "app_code", "type": "VARCHAR", "name_cn": "App代码", "desc": "同花顺 App clid"},
             {"name": "name", "type": "VARCHAR", "name_cn": "板块名", "desc": ""},
             {"name": "board_type", "type": "VARCHAR", "name_cn": "板块类型", "desc": "concept / industry"},
-            {"name": "member_count", "type": "BIGINT", "name_cn": "成分数", "desc": "最近已应用快照的冗余成分数"},
+            {"name": "member_count", "type": "BIGINT", "name_cn": "最近完整快照返回数", "desc": "最近一次完整成分快照返回的成员数量；行情统计另用 board_member 历史累计关系"},
             {"name": "member_snapshot_at", "type": "TIMESTAMP", "name_cn": "最近完整成分快照", "desc": "最近一次完整快照成功落库时间"},
             {"name": "has_members", "type": "BOOLEAN", "name_cn": "有成分", "desc": ""},
             {"name": "has_bar", "type": "BOOLEAN", "name_cn": "有指数", "desc": ""},

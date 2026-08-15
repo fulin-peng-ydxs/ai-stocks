@@ -137,12 +137,12 @@ span {
   grid-template-columns: repeat(4, 1fr);
   gap: var(--app-space-2);
 }
-.cp-tr span {
+.cp-tr > span {
   height: 12px;
   background: var(--el-fill-color);
   border-radius: 3px;
 }
-.cp-th span {
+.cp-th > span {
   height: 14px;
   background: var(--el-fill-color-dark);
   font-size: var(--app-font-size-micro);

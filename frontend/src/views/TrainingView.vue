@@ -368,7 +368,7 @@ onBeforeUnmount(detachKeyboard)
     <template #action>
     <div class="page-head">
         <div>
-          <h2 class="title-row">
+          <h2 class="app-page-title page-title-row">
             盘感训练
             <HelpTip title="盘感训练是什么？" :width="440">
               <p><b>针对个股的买卖手感训练</b>：系统在你指定的历史区间里随机抽一只个股、随机一个起点，<b>盲测</b>（隐藏股名/代码/真实日期）下逐日揭示 K 线，你负责买卖。</p>
@@ -376,7 +376,7 @@ onBeforeUnmount(detachKeyboard)
               <p style="margin:6px 0 0">一局可练单只或多只（每只一个回合），结束后揭晓身份、给出收益/胜率/回撤与综合评级，并沉淀到训练历史与成长曲线。</p>
             </HelpTip>
           </h2>
-          <span class="sub">盲测 · 逐日揭示 · 买 T+0 / 卖 T+1 · 回溯思路与成长</span>
+          <p class="page-subtitle">盲测 · 逐日揭示 · 买 T+0 / 卖 T+1 · 回溯思路与成长</p>
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -755,6 +755,7 @@ onBeforeUnmount(detachKeyboard)
 .training { gap: var(--app-space-2); }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: var(--app-space-2); padding-bottom: 4px; }
 .page-head .title-row { margin: 0; font-size: var(--app-font-size-page-title-sm); display: flex; align-items: center; gap: var(--app-space-control-gap); }
+.page-title-row { display: flex; align-items: center; }
 .page-head .sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
 .page-head .grade-big { font-size: var(--app-font-size-kpi-lg); font-weight: var(--app-font-weight-strong); margin-left: 4px; }
 .page-head .score-tip { font-size: var(--app-font-size-body); color: var(--el-text-color-secondary); margin-left: 6px; }
@@ -827,6 +828,5 @@ onBeforeUnmount(detachKeyboard)
 
 .up { color: var(--el-color-danger); }
 .down { color: var(--el-color-success); }
-.muted { color: var(--el-text-color-placeholder); }
 @media (max-width: 1100px) { .round-grid { grid-template-columns: 1fr; } }
 </style>

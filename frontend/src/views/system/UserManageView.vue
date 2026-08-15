@@ -405,15 +405,18 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
     <template #action>
       <div class="lh-action">
         <div class="page-head">
-          <h2>
-            用户管理
-            <HelpTip title="用户管理说明" :width="420">
-              系统管理员可跨租户查看与管理；租户管理员仅限本租户。<br /><br />
-              一个用户可挂<b>多个角色</b>，权限取并集；系统管理员可任命新的系统管理员，租户管理员只能分配租户级系统内置角色。<br /><br />
-              租户管理员可以看到本租户的系统管理员，但不能编辑、重置密码、启停或删除。<br /><br />
-              <b>禁用 / 锁定 / 重置密码</b>保存后，该用户下次校验即失效，需重新登录。
-            </HelpTip>
-          </h2>
+          <div>
+            <h2 class="app-page-title">
+              用户管理
+              <HelpTip title="用户管理说明" :width="420">
+                系统管理员可跨租户查看与管理；租户管理员仅限本租户。<br /><br />
+                一个用户可挂<b>多个角色</b>，权限取并集；系统管理员可任命新的系统管理员，租户管理员只能分配租户级系统内置角色。<br /><br />
+                租户管理员可以看到本租户的系统管理员，但不能编辑、重置密码、启停或删除。<br /><br />
+                <b>禁用 / 锁定 / 重置密码</b>保存后，该用户下次校验即失效，需重新登录。
+              </HelpTip>
+            </h2>
+            <p class="page-subtitle">管理系统用户、账号状态与租户归属。</p>
+          </div>
           <div class="page-head-actions">
             <el-button v-permission="'user:create'" type="primary" @click="openCreate">
               <template #icon><el-icon><Plus /></el-icon></template>
@@ -423,21 +426,23 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </div>
         </div>
 
-        <AppControlRow class="filter-bar">
-          <el-select v-if="isSystem" v-model="filters.tenant" placeholder="租户：全部" clearable
-                     :loading="dependencyLoading" style="width: 180px">
-            <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
-          <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable style="width: 170px">
-            <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
-          </el-select>
-          <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
-            <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
-          </el-select>
-          <el-input v-model="filters.q" placeholder="搜索账号 / 邮箱" clearable style="width: 220px"
-                    @keyup.enter="search" @clear="search" />
-          <el-button type="primary" @click="search">查询</el-button>
-        </AppControlRow>
+        <el-card shadow="never" class="filter-card">
+          <AppControlRow>
+            <el-select v-if="isSystem" v-model="filters.tenant" placeholder="租户：全部" clearable
+                       :loading="dependencyLoading" style="width: 180px">
+              <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
+            </el-select>
+            <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable style="width: 170px">
+              <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
+            </el-select>
+            <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
+              <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
+            </el-select>
+            <el-input v-model="filters.q" placeholder="搜索账号 / 邮箱" clearable style="width: 220px"
+                      @keyup.enter="search" @clear="search" />
+            <el-button type="primary" @click="search">查询</el-button>
+          </AppControlRow>
+        </el-card>
         <AppStateBlock
           v-if="dependencyError"
           state="error"
@@ -610,10 +615,9 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
-.filter-bar { margin-bottom: 12px; }
+.filter-card :deep(.el-card__body) { padding: var(--app-space-3) var(--app-space-4); }
 .role-tag { margin-right: 4px; }
 .muted { color: var(--el-text-color-secondary); }
 .locked-field { color: var(--el-text-color-regular); }

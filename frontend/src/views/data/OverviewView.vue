@@ -323,13 +323,16 @@ onMounted(load)
   <LayoutHost :layout="overviewEffective">
     <template #action>
     <div class="page-head">
-      <h2>
+      <div>
+      <h2 class="app-page-title">
         数据概览
         <HelpTip title="数据概览看什么？" :width="420">
           家底全景：核心 KPI（交易日 / 股票数 / 行数 / 质量评分 / 缺口）、按数据维度归并的「数据资产表」、
           四层质量达标率，以及逐股分层体检。所有质量/缺口数字均可点击，直达对应明细页处理。
         </HelpTip>
       </h2>
+      <p class="page-subtitle">家底全景：核心 KPI、数据资产表、四层质量达标率与逐股分层体检，数字可点击直达明细。</p>
+      </div>
       <div class="page-head-actions">
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
@@ -784,10 +787,8 @@ onMounted(load)
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
-.page-sub { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
 .overview-summary { min-width: 0; }
 .overview-workspace-card {
   height: 100%;

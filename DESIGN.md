@@ -117,9 +117,13 @@ Key Characteristics：
 排版规则：
 
 - 标题用于定位页面和分区，不用于装饰性大字。
+- 页面顶部标题区统一结构：`<h2 class="app-page-title">` 承载页面标题，说明性长文进 `HelpTip`（内嵌标题内，勿放工具栏/`<p>` 内避免下沉），标题下用一行 `<p class="page-subtitle">` 说明页面用途。`page-subtitle` 为全局语义类（`--el-text-color-secondary` + caption），禁止页面私有定义 `.page-subtitle`/`.page-sub`/`.sub` 颜色字号。
+- 页面顶部标题字号唯一来源是全局 `app-page-title`（22px），禁止页面用 `.page-head h2`/`.title h2`/`.title-row` 等私有选择器覆盖标题字号或边距；详情页对象标题（个股/板块名）同样走 `app-page-title`。
+- 标题内嵌 `HelpTip` 时，标题行使用 `align-items: center`（flex 或 `vertical-align: middle`）保证圆点与标题垂直居中，不随行高下沉。
 - 页面主体新增 `font-size`、`line-height`、`font-weight` 时必须引用上述 token 或语义类；直接写 px/数字只允许在以下特例：品牌字标、登录主视觉、图表 canvas/tooltip、第三方组件适配、极窄状态点/角标、图标尺寸。特例必须是局部私有，不得被复制为普通页面模式。
 - 10px 以下只允许使用 `--app-font-size-ornament` 或 `--app-icon-size-xs`，用于图标内部标记、红点角标或不可读正文之外的装饰性标尺；不得用于业务说明、表格、表单、按钮、筛选项。
 - 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
+- 微字号（`--app-font-size-micro`/`tiny`/`ornament`）不得通过无 `>` 限定的宽泛后代选择器（如 `.xx span`、`.xx strong`）声明——此类规则会把它误传给嵌套的数值、标题等本不该用小字号的元素。微字号只允许作用于语义类、`:global` 或 `>` 限定的直接子级；容器用常规字号，内部小字通过独立子级规则声明。该约束由 `typography-spacing-system.spec.ts` 强制，禁止用 `>` 缺失的选择器绕过。
 - 表格内长文本默认省略、tooltip 或详情承接，不默认自动换行撑高行高。
 - 说明性长文优先进入 `HelpTip` / `HelpHint`，页面上只保留必要短标签。
 - 组件内提示、说明、空状态、校验文案必须按容器宽度排版，避免长句硬塞一行；必要时分行、缩短文案或交给 tooltip / popover 承接，不得挤压主操作区或造成文本重叠。
@@ -375,6 +379,10 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 ```
 
 可复制流程、计划块和页面登记格式见 `agent-works/configurable-layout-system/page-template.md`。本文件只保留稳定原则、原型边界和机器登记区块。
+
+### 5.1.1 搜索/筛选行边框
+
+列表页的搜索/筛选交互行统一用卡片边框承载：`<el-card shadow="never" class="filter-card">` 包裹 `AppControlRow`，`filter-card` 使用全局样式（`margin-bottom: 0`，卡片体内边距 `var(--app-space-3) var(--app-space-4)`）。禁止搜索行裸 div 无边框散落在页面。工具栏/操作按钮行不强制套卡。
 
 ### 5.2 页面设计闭环触发条件
 

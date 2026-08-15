@@ -8,6 +8,7 @@ import { Edit } from '@element-plus/icons-vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import HelpTip from '@/components/HelpTip.vue'
 import { listStocks, type StockBasic, type StockListParams } from '@/api/stocks'
 import {
   addMembers,
@@ -616,7 +617,13 @@ onBeforeUnmount(() => {
     <template #action>
     <div class="lh-action">
     <div class="page-head">
-      <h2>个股查询</h2>
+      <div>
+      <h2 class="app-page-title">
+        个股查询
+        <HelpTip title="个股查询说明" :width="440">按代码/名称/板块筛选个股；支持分组查看与集合内翻页。</HelpTip>
+      </h2>
+      <p class="page-subtitle">按代码/名称/板块筛选个股行情，可跨分页勾选与分组管理。</p>
+      </div>
       <div class="page-head-actions">
         <el-select v-if="canViewGroups" v-model="activeGid" placeholder="查看分组" clearable filterable style="width: 220px">
           <el-option v-for="g in groups" :key="g.id" :value="g.id" :label="`${g.name}（${g.member_count}）`">
@@ -966,13 +973,9 @@ onBeforeUnmount(() => {
 .page-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--app-space-3);
   flex-wrap: wrap;
-}
-.page-head h2 {
-  margin: 0;
-  font-size: var(--app-font-size-page-title-sm);
 }
 .setting-item {
   display: flex;
@@ -982,9 +985,6 @@ onBeforeUnmount(() => {
 .setting-label {
   font-size: var(--app-font-size-body);
   color: var(--page-settings-text-subtle);
-}
-.filter-card {
-  margin-bottom: 0;
 }
 .group-option,
 .gb-name {
@@ -1074,15 +1074,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.up {
-  color: var(--market-up-color);
-}
-.down {
-  color: var(--market-down-color);
-}
-.muted {
-  color: var(--app-placeholder-text);
 }
 .cart-card {
   border: 1px solid var(--el-color-primary-light-7);

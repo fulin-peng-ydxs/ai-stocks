@@ -286,6 +286,8 @@ type CookieDialogStatus = 'loading' | 'error' | 'unset' | 'usable' | 'unavailabl
 const cookieStatus = ref<CookieDialogStatus>('loading')
 const cookieStatusError = ref('')
 let cookieStatusRequestVersion = 0
+// 与系统配置页同一掩码：已设置时输入框回显「已设置」占位，明文不回显，留空/掩码即不修改。
+const COOKIE_SET_MASK = '••••••已设置'
 async function loadCookieStatus() {
   const version = ++cookieStatusRequestVersion
   cookieStatus.value = 'loading'
@@ -296,6 +298,8 @@ async function loadCookieStatus() {
     const ths = view.groups.find((group) => group.key === 'ths_board')
     const field = ths?.fields.find((item) => item.path === 'ths_board.login_cookie')
     cookieStatus.value = field?.secret_status ?? 'unset'
+    // 对齐系统配置页：usable 时输入框回显掩码，避免「已设置」被显示成空白输入框。
+    cookieValue.value = cookieStatus.value === 'usable' ? COOKIE_SET_MASK : ''
   } catch (error) {
     if (version !== cookieStatusRequestVersion) return
     cookieStatus.value = 'error'
@@ -310,7 +314,7 @@ function openCookieConfig() {
 }
 async function saveCookie() {
   const value = cookieValue.value.trim()
-  if (cookieSaving.value || !value) return
+  if (cookieSaving.value || !value || value === COOKIE_SET_MASK) return
   cookieSaving.value = true
   try {
     await saveSettings({ 'ths_board.login_cookie': value })
@@ -360,7 +364,8 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
   <LayoutHost :layout="scheduleEffective">
     <template #action>
     <div class="page-head">
-      <h2>
+      <div>
+      <h2 class="app-page-title">
         任务调度
         <HelpTip title="这页管什么？" :width="440">
           ① <b>定时任务</b>——自定义多条定时任务（数据采集 / 评分维护 / 数据质检 / 按问题类型恢复 / 审计清理），
@@ -369,6 +374,8 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           ② <b>数据源健康</b>——AKShare / BaoStock / 同花顺板块源的连通性。
         </HelpTip>
       </h2>
+      <p class="page-subtitle">自定义定时任务（采集/评分/质检/恢复/审计清理），支持每日/每周/每月/cron，仅交易日可选。</p>
+      </div>
       <div class="page-head-actions">
         <el-button
           v-permission="'data-schedule:manage'"
@@ -541,25 +548,17 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             type="password"
             show-password
             autocomplete="off"
-            :placeholder="cookieStatus === 'usable' ? '已设置，输入新值可覆盖' : '粘贴同花顺登录 Cookie 头'"
+            placeholder="粘贴登录后的完整 Cookie；数据库只保存加密密文"
             data-testid="ths-login-cookie-input"
           />
-          <span class="cookie-field-hint">
-            <template v-if="cookieStatus === 'usable'">
-              当前页面配置可用；明文不会回显，保存新值后覆盖密文。
-            </template>
-            <template v-else-if="cookieStatus === 'unavailable'">
-              已存密文无法解密，当前采集不会使用它；请检查主密钥，或输入新 Cookie 重新加密覆盖。
-            </template>
-            <template v-else>
-              尚未设置；保存后由后端加密，数据库和审计均不记录明文。
-            </template>
+          <span v-if="cookieStatus === 'unavailable'" class="cookie-field-hint">
+            已存密文无法解密，当前采集不会使用它；请检查主密钥，或输入新 Cookie 重新加密覆盖。
           </span>
         </el-form-item>
       </el-form>
       <p v-if="cookieStatus !== 'loading' && cookieStatus !== 'error'" class="cookie-note">
-        获取方式：浏览器登录同花顺后，从开发者工具 Network 复制完整 Cookie 头。
-        环境变量或受控文件仍优先于页面配置。
+        浏览器登录同花顺后，从开发者工具 Network 复制完整 Cookie 头。
+        环境变量或受控文件仍优先于页面配置；数据库只保存加密密文，明文不会回显。
       </p>
       <template #footer>
         <el-button v-if="cookieStatus === 'usable' || cookieStatus === 'unavailable'" :disabled="cookieSaving" @click="clearCookie">清除页面配置</el-button>
@@ -568,7 +567,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           v-if="cookieStatus !== 'loading' && cookieStatus !== 'error'"
           type="primary"
           :loading="cookieSaving"
-          :disabled="!cookieValue.trim()"
+          :disabled="!cookieValue.trim() || cookieValue.trim() === COOKIE_SET_MASK"
           data-testid="ths-login-cookie-save"
           @click="saveCookie"
         >
@@ -706,7 +705,6 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
 .page-head-actions { display: flex; gap: var(--app-space-2); align-items: center; }
 /* 填满 LayoutHost 的条件成长区；放不下时整区内滚（兜底阶梯第 3 级） */
 .schedule-body { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; }

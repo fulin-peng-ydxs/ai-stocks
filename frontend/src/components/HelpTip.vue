@@ -30,6 +30,8 @@ defineProps<{ title?: string; width?: number; testId?: string }>()
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
   width: 16px;
   height: 16px;
   margin-left: 6px;

@@ -558,13 +558,16 @@ watch(
   <LayoutHost :layout="ingestEffective">
     <template #action>
     <div class="page-head">
-      <h2>
+      <div>
+      <h2 class="app-page-title">
         数据采集
         <HelpTip title="这页能做什么？" :width="420">
           手动触发数据采集 / 补数 / 评分维护，后台异步执行：可离开页面，回来在「任务中心」点开看实时日志、
           支持中断后继续、失败后重试未完成部分。定时任务触发的执行也会出现在任务中心（标注「定时·任务名」），同样可看每一步日志。
         </HelpTip>
       </h2>
+      <p class="page-subtitle">手动触发采集/补数/评分维护，后台异步执行，可在任务中心查看实时日志与续跑。</p>
+      </div>
       <div class="page-head-actions">
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
@@ -936,7 +939,6 @@ watch(
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
 /* 填满 LayoutHost 的条件成长区；内部「顶部固定卡 + 底部双栏成长表」，放不下时整区内滚 */
 .ingest-body {
   flex: 1 1 auto;
@@ -976,7 +978,6 @@ watch(
 }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
-.page-sub { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
 .blk { margin-bottom: 16px; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; gap: var(--app-space-3); }
 .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }

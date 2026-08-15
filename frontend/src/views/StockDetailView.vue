@@ -781,7 +781,7 @@ onBeforeUnmount(() => {
           <template #icon><el-icon><ArrowLeft /></el-icon></template>
           返回
         </el-button>
-        <h2>{{ name || '—' }}</h2>
+        <h2 class="app-page-title">{{ name || '—' }}</h2>
         <span class="code-sub">{{ code }}</span>
         <span
           class="quote-sub"
@@ -1165,10 +1165,6 @@ onBeforeUnmount(() => {
   gap: var(--app-space-2);
   flex-wrap: wrap;
 }
-.title h2 {
-  margin: 0;
-  font-size: var(--app-font-size-page-title-sm);
-}
 .code-sub {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-body);
@@ -1178,12 +1174,6 @@ onBeforeUnmount(() => {
   font-size: var(--app-font-size-body);
   font-weight: var(--app-font-weight-strong);
   font-variant-numeric: tabular-nums;
-}
-.up {
-  color: var(--market-up-color);
-}
-.down {
-  color: var(--market-down-color);
 }
 .page-head-actions {
   margin-left: auto;
@@ -1270,9 +1260,6 @@ onBeforeUnmount(() => {
 .box-tag {
   border-radius: 4px;
   font-weight: var(--app-font-weight-section);
-}
-.muted {
-  color: var(--el-text-color-placeholder);
 }
 .ind-card,
 .trade-card {

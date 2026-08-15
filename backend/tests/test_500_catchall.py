@@ -1,4 +1,4 @@
-"""未捕获异常兜底（HTTP 500 → {code:5000,msg}）与 AIStocksError 软失败测试。
+"""未捕获异常兜底（HTTP 500 → {code:5000,msg}）、AIStocksError 软失败与入参校验（422 → 4000）测试。
 
 用 create_app() + TestClient 且不进 lifespan，避免触发 DuckDB/PG/Redis 启动副作用；
 未捕获异常靠 `raise_server_exceptions=False` 走异常处理器而非直接重抛。
@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.testclient import TestClient
 
 from backend.common.exceptions import AIStocksError, NotFoundError
@@ -35,6 +35,10 @@ def _minimal_5xx_app() -> FastAPI:
     @app.get("/soft")
     def soft() -> None:
         raise AIStocksError("软失败")
+
+    @app.get("/bounded")
+    def bounded(size: int = Query(20, ge=1, le=100)) -> None:
+        return None
 
     return app
 
@@ -67,3 +71,16 @@ def test_soft_error_default_200():
     resp = client.get("/soft")
     assert resp.status_code == 200
     assert resp.json()["code"] == 5000
+
+
+def test_validation_error_maps_to_code_4000_chinese_msg():
+    """FastAPI 422 校验失败转译 {code:4000,msg:中文}，不把 pydantic 英文/数组 detail 回传。"""
+    client = TestClient(_minimal_5xx_app(), raise_server_exceptions=False)
+    resp = client.get("/bounded?size=200")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == 4000
+    assert body["msg"] == "参数 size 不合法"
+    assert body["data"] is None
+    assert "Input should be" not in resp.text
+    assert "[" not in resp.text  # 数组 detail 不再原样回传

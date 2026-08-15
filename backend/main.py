@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import redis
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -92,6 +93,26 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=503,
             content={"code": 5030, "msg": "服务暂时不可用（依赖 Redis），请稍后重试", "data": None},
+        )
+
+    # FastAPI 入参校验失败（422）：默认 detail 为 [{loc,msg,type}] 数组，前端拿数组当文案
+    # 会空白/变 "[object Object]"。转译为统一 {code:4000,msg:中文} 软失败；pydantic 的 msg
+    # 是英文系统文本（"Input should be..."），一律不展示，只带出字段名定位问题。
+    @app.exception_handler(RequestValidationError)
+    async def _handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+        errors: list = exc.errors()
+        field = ""
+        for error in errors:
+            loc = error.get("loc") or []
+            name = str(loc[-1]) if loc else ""
+            if name and name != "body":
+                field = name
+                break
+        message = f"参数 {field} 不合法" if field else "请求参数不合法"
+        log.warning("入参校验失败 %s: %s", field or "(整体)", errors)
+        return JSONResponse(
+            status_code=200,
+            content={"code": 4000, "msg": message, "data": None},
         )
 
     # 未捕获异常兜底（HTTP 500）：编程错误/存储故障等逃逸到这里的异常，转译为统一 {code,msg} 软失败，

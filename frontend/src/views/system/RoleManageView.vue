@@ -262,15 +262,18 @@ onMounted(loadAll)
     <template #action>
       <div class="lh-action">
         <div class="page-head">
-          <h2>
-            角色管理
-            <HelpTip title="角色管理说明" :width="440">
-              角色勾选菜单与功能点后保存，拥有该角色的用户权限即时生效（无权按钮消失 / 接口 403）。<br /><br />
-              授权按菜单分组展示，功能点默认收起；需要精细调整时再展开对应菜单，避免所有权限同时铺开。<br /><br />
-              「基线」是登录后的共享读权限，后端自动拥有、不可取消，也不作为角色授权保存。<br /><br />
-              系统管理员角色拥有全部菜单与功能点，页面仅展示已拥有且锁定；「仅系统管理员」资源不能授予其它角色。
-            </HelpTip>
-          </h2>
+          <div>
+            <h2 class="app-page-title">
+              角色管理
+              <HelpTip title="角色管理说明" :width="440">
+                角色勾选菜单与功能点后保存，拥有该角色的用户权限即时生效（无权按钮消失 / 接口 403）。<br /><br />
+                授权按菜单分组展示，功能点默认收起；需要精细调整时再展开对应菜单，避免所有权限同时铺开。<br /><br />
+                「基线」是登录后的共享读权限，后端自动拥有、不可取消，也不作为角色授权保存。<br /><br />
+                系统管理员角色拥有全部菜单与功能点，页面仅展示已拥有且锁定；「仅系统管理员」资源不能授予其它角色。
+              </HelpTip>
+            </h2>
+            <p class="page-subtitle">管理角色及其功能点/菜单授权，多角色可叠加权限。</p>
+          </div>
           <div class="page-head-actions">
             <el-button v-permission="'role:create'" type="primary" @click="openCreate">
               <template #icon><el-icon><Plus /></el-icon></template>
@@ -394,8 +397,7 @@ onMounted(loadAll)
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 .rm-error { height: 100%; }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */

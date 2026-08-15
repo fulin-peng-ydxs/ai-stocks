@@ -399,7 +399,7 @@ onMounted(async () => {
                 <el-icon><StarFilled v-if="watchlisted" /><Star v-else /></el-icon>
               </AppIconButton>
             </div>
-            <p>指数趋势与历史累计成员强弱联动观察</p>
+            <p class="page-subtitle">指数趋势与历史累计成员强弱联动观察</p>
           </div>
           <div class="hero-date app-caption-text">
             行情 {{ detail?.trade_date || '—' }} · 资金 {{ detail?.fund_flow_date || '—' }}
@@ -414,7 +414,7 @@ onMounted(async () => {
           <div class="metric"><span>5 日</span><strong :class="pctClass(detail?.pct_5d)">{{ fmtPct(detail?.pct_5d) }}</strong></div>
           <div class="metric"><span>20 日</span><strong :class="pctClass(detail?.pct_20d)">{{ fmtPct(detail?.pct_20d) }}</strong></div>
           <div class="metric"><span>即时净流入</span><strong :class="pctClass(detail?.net_inflow)">{{ fmtInflow(detail?.net_inflow) }}</strong></div>
-          <div class="metric"><span>累计成员涨 / 跌</span><strong><i class="up">{{ detail?.up_count ?? '—' }}</i> / <i class="down">{{ detail?.down_count ?? '—' }}</i></strong></div>
+          <div class="metric"><span>累计成员涨 / 跌</span><strong><span class="up">{{ detail?.up_count ?? '—' }}</span> / <span class="down">{{ detail?.down_count ?? '—' }}</span></strong></div>
           <div class="metric"><span>最近快照返回</span><strong>{{ detail?.member_count ?? '—' }} <small>只</small></strong></div>
           <div class="metric metric--leader"><span>累计成员领涨</span><strong>{{ detail?.leader_stock || '—' }} <em :class="pctClass(detail?.leader_pct)">{{ fmtPct(detail?.leader_pct) }}</em></strong></div>
         </section>
@@ -578,7 +578,7 @@ onMounted(async () => {
   justify-content: space-between;
   gap: var(--app-space-4);
   padding: var(--app-space-3) var(--app-space-4);
-  background: linear-gradient(115deg, color-mix(in srgb, var(--el-color-primary-light-9) 72%, var(--el-bg-color)), var(--el-bg-color) 62%);
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 42%, var(--el-bg-color));
 }
 .hero-kicker {
   color: var(--el-color-primary);
@@ -608,7 +608,7 @@ onMounted(async () => {
   font-size: var(--app-font-size-caption);
 }
 .watchlist-active {
-  color: var(--el-color-warning);
+  color: var(--el-color-primary);
 }
 .metric-strip {
   flex: 0 0 auto;
@@ -624,7 +624,7 @@ onMounted(async () => {
 .metric:last-child {
   border-right: 0;
 }
-.metric span {
+.metric > span {
   display: block;
   margin-bottom: var(--app-space-1);
   color: var(--el-text-color-secondary);
@@ -683,9 +683,14 @@ onMounted(async () => {
   color: var(--el-text-color-secondary);
   cursor: not-allowed;
 }
-.up { color: var(--market-up-color); }
-.down { color: var(--market-down-color); }
-.muted { color: var(--el-text-color-secondary); }
+.metric strong .up {
+  display: inline;
+  font-style: normal;
+}
+.metric strong .down {
+  display: inline;
+  font-style: normal;
+}
 @media (max-width: 1120px) {
   .metric-strip { grid-template-columns: repeat(4, minmax(132px, 1fr)); }
 }

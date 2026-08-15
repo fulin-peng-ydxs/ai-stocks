@@ -131,6 +131,25 @@ describe('api client silent refresh', () => {
     expect(ElMessage.error).toHaveBeenCalledWith('服务暂时不可用，请稍后重试')
   })
 
+  it('422 校验失败转软失败 {code:4000,msg:中文} 时弹 msg 而非空白', async () => {
+    // 后端 RequestValidationError 处理器把 422 转成 HTTP 200 + {code:4000,msg:'参数 size 不合法'}。
+    // 拦截器成功分支按业务 code !== 0 弹 msg；不得再出现空白 toast（数组 detail 已被后端消化）。
+    const adapter: AxiosAdapter = async (config) => ({
+      data: { code: 4000, msg: '参数 size 不合法', data: null },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    })
+    http.defaults.adapter = adapter
+
+    await expect(http.get('/sectors?size=200')).rejects.toMatchObject({
+      uiMessage: '参数 size 不合法',
+    })
+
+    expect(ElMessage.error).toHaveBeenCalledWith('参数 size 不合法')
+  })
+
   it('HTTP 500 后端兜底已给中文 msg 时优先展示 msg', async () => {
     const adapter: AxiosAdapter = async (config) => Promise.reject({
       config,

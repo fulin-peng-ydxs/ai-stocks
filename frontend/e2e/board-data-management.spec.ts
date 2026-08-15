@@ -85,7 +85,7 @@ test.describe('板块数据管理闭环', () => {
       await expect(cookieDialog.getByTestId('ths-login-cookie-input')).toHaveCount(0)
       await expect(cookieDialog.getByRole('button', { name: '清除页面配置' })).toHaveCount(0)
       await cookieDialog.getByRole('button', { name: '重新加载' }).click()
-      await expect(cookieDialog).toContainText('当前页面配置可用')
+      await expect(cookieDialog.getByTestId('ths-login-cookie-input')).toHaveValue('••••••已设置')
       await cookieDialog.getByRole('button', { name: '取消' }).click()
 
       // 失败状态关闭后重开必须重新请求，不能沿用上一次成功或把失败压成“未设置”。

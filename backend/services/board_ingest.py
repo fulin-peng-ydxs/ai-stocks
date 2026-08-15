@@ -12,7 +12,7 @@
 关键语义：
 - 快照日期 = Asia/Shanghai 实际成功采集日期（需求 R2）。
 - 成分股代码补交易所后缀对齐 stock_basic.code（复用 akshare_source.to_full_code）。
-- member_count 记录最近一次完整源快照的成分数；board_member 本身保留累计出现过的关系。
+- member_count 记录最近一次完整源快照返回的成员数量；board_member 本身保留累计出现过的关系。
 """
 
 from __future__ import annotations
@@ -351,7 +351,7 @@ class BoardIngestService:
         """单板块成分快照（只进不出模型）：完整快照 INSERT ON CONFLICT DO NOTHING，不 diff 不删除。
 
         - complete=True → 快照内每个 code `INSERT ... ON CONFLICT (board_code, code) DO NOTHING`
-          （已在表的不动、新出现的插入），同步刷新 board_dict.member_count（最近完整快照成分数）。
+          （已在表的不动、新出现的插入），同步刷新 board_dict.member_count（最近完整快照返回数）。
         - complete=False（分页不完整/登录墙/401/异常）→ 抛 DataSourceError，整趟不落库，
           上层 ingest_board_members 记失败、data_update_log 记 failed 待重采；已采旧数据原样保留。
         """

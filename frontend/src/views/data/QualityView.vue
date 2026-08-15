@@ -334,7 +334,8 @@ onMounted(() => {
     <template #action>
     <div class="lh-action">
     <div class="page-head">
-      <h2>
+      <div>
+      <h2 class="app-page-title">
         数据质量
         <HelpTip title="数据质量怎么来的、怎么处理？" :width="480">
           个股四层与板块专项质量台账，每条问题按类型走对应恢复手段，<b>复检通过才标记「已解决」</b>。<br /><br />
@@ -346,6 +347,8 @@ onMounted(() => {
           <b>恢复 / 标记正常：</b>缺口先按漏采重采，源端确无数据则确认为停牌（不再上报）；真实极端值（如新股首日大涨）可「标记正常」。
         </HelpTip>
       </h2>
+      <p class="page-subtitle">个股四层与板块专项质量台账，每条问题按类型恢复，复检通过才标记「已解决」。</p>
+      </div>
       <div class="page-head-actions">
         <el-button v-permission="'data-quality:fix'" type="warning" plain :loading="batching" :disabled="!canBatch"
                    :title="canBatch ? '' : '请先选择类型/严重度/代码再批量恢复'" @click="batchRecover">
@@ -358,7 +361,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <AppControlRow class="filter-bar">
+    <el-card shadow="never" class="filter-card">
+    <AppControlRow class="filter-row">
       <el-select v-model="filters.status" placeholder="状态" multiple clearable collapse-tags
                  collapse-tags-tooltip :max-collapse-tags="3" style="width: 240px">
         <el-option v-for="(l, k) in ISSUE_STATUS_LABEL" :key="k" :label="l" :value="k" />
@@ -393,6 +397,7 @@ onMounted(() => {
         </el-tag>
       </div>
     </AppControlRow>
+    </el-card>
     </div>
     </template>
 
@@ -546,13 +551,11 @@ onMounted(() => {
 
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
-.page-sub { margin: 4px 0 0; color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
 .qm { color: var(--el-color-primary); cursor: help; margin-left: 4px; }
 .layer-tag { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
-.filter-bar { margin-bottom: 12px; }
+.filter-row { flex-wrap: wrap; }
 .summary { margin-left: auto; }
 .sm-tag { margin-left: 6px; cursor: pointer; user-select: none; }
 .sm-tag:focus-visible {

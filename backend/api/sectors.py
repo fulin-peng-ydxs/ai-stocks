@@ -46,9 +46,9 @@ def list_sectors(
     order: str = Query("desc", pattern="^(asc|desc)$"),
     keyword: str | None = Query(None, max_length=50),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=200),
 ) -> ApiResponse:
-    """板块列表（涨幅/成分数/净流入/领涨股 + 分页排序）。"""
+    """板块列表（涨幅/最近快照返回数/净流入/累计成员领涨 + 分页排序）。"""
     if sort_by not in SORT_FIELDS:
         raise _bad_params(f"不支持的排序字段: {sort_by}（可选 {list(SORT_FIELDS)}）")
     data = BoardQueryService().list_sectors(
@@ -75,7 +75,7 @@ def list_watchlist_markets(
     order: str = Query("desc", pattern="^(asc|desc)$"),
     keyword: str | None = Query(None, max_length=50),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=200),
 ) -> ApiResponse:
     """当前用户自选板块的行情截面，失效板块仍返回快照。"""
     if sort_by not in SORT_FIELDS:
@@ -173,7 +173,7 @@ def get_sector_members(
     code: str,
     trade_date: date | None = Query(None),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=200),
     sort_by: str = Query("pct"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
 ) -> ApiResponse:

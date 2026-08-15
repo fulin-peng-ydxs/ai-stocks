@@ -91,7 +91,8 @@ describe('字体与间距设计契约', () => {
       for (const css of styleBlocks(file)) {
         for (const match of css.matchAll(/font-size\s*:\s*([^;\n]+)/g)) {
           const value = match[1].trim()
-          if (value.startsWith('var(')) continue
+          // inherit 是合法继承语义（继承父级字号），不构成新增游离字号。
+          if (value.startsWith('var(') || value === 'inherit') continue
           if (value.startsWith('clamp(') && allowedRawFontSizeFiles.has(rel)) continue
           if (!allowedRawFontSizeFiles.has(rel)) {
             violations.push(`${rel}:${lineOf(css, match.index ?? 0)} font-size: ${value}`)
@@ -99,7 +100,7 @@ describe('字体与间距设计契约', () => {
         }
         for (const match of css.matchAll(/line-height\s*:\s*([^;\n]+)/g)) {
           const value = match[1].trim()
-          if (!value.startsWith('var(') && !allowedRawLineHeightFiles.has(rel)) {
+          if (!value.startsWith('var(') && value !== 'inherit' && !allowedRawLineHeightFiles.has(rel)) {
             violations.push(`${rel}:${lineOf(css, match.index ?? 0)} line-height: ${value}`)
           }
         }
@@ -119,6 +120,42 @@ describe('字体与间距设计契约', () => {
           const value = match[1].trim()
           if (!value.startsWith('var(') && !allowedRawFontFamilyFiles.has(rel)) {
             violations.push(`${rel}:${lineOf(css, match.index ?? 0)} font-family: ${value}`)
+          }
+        }
+      }
+    }
+
+    expect(violations).toEqual([])
+  })
+
+  it('微字号（micro/tiny/ornament）不得通过宽泛后代选择器误传给嵌套元素', () => {
+    // 事故复盘：.market-metric span { font-size: var(--app-font-size-micro) } 把 11px
+    // 误传给 strong 内的数字 span。契约只检查「字号值是否来自 token」查不出这类问题——
+    // 值虽是 var()，选择器却是无 > 限定的后代选择器，会命中本不该用小字号的嵌套元素。
+    // 这里强制：微字号只允许作用在语义类、:global 或 > 限定的直接子级上。
+    const violations: string[] = []
+    const allowedRawFontSizeFiles = new Set([
+      'components/BrandMark.vue',
+      'views/LoginView.vue',
+    ])
+    const SMALL_FONT = /micro|tiny|ornament/
+    // 裸标签（含 span/strong/div/p/b/em/i/a），用于识别「未限定直接子级」的后代选择器
+    const LOOSE_TAG = /(?<![\w.-])(span|strong|div|td|p|b|em|i|a)(\s|,|:|\.|\[|$)/
+
+    for (const file of sourceFiles(SRC_DIR)) {
+      const rel = relative(SRC_DIR, file)
+      if (allowedRawFontSizeFiles.has(rel)) continue
+      for (const css of styleBlocks(file)) {
+        for (const match of css.matchAll(/([^{}]+)\{([^}]*?)\}/gs)) {
+          const selector = match[1].trim()
+          if (selector.includes(':global') || selector.includes(':deep') || selector.includes('@keyframes')) continue
+          if (selector.includes('>')) continue
+          const body = match[2]
+          const fontMatch = body.match(/font-size\s*:\s*([^;\n]+)/)
+          if (!fontMatch) continue
+          if (!SMALL_FONT.test(fontMatch[1])) continue
+          if (LOOSE_TAG.test(selector)) {
+            violations.push(`${rel}:${lineOf(css, match.index ?? 0)} ${selector} -> ${fontMatch[1].trim()}`)
           }
         }
       }

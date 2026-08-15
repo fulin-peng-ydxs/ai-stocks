@@ -463,10 +463,12 @@ onBeforeUnmount(() => {
     <template #action>
       <div class="dict-page-head">
         <div class="dict-title">
-          <h2>数据字典</h2>
-          <HelpTip title="数据字典说明" :width="420">
-            维护系统枚举与稳定业务枚举。字典类型和字典项 code 创建后不可修改，业务判断只使用 code。
-          </HelpTip>
+          <h2 class="app-page-title">数据字典
+            <HelpTip title="数据字典说明" :width="420">
+              维护系统枚举与稳定业务枚举。字典类型和字典项 code 创建后不可修改，业务判断只使用 code。
+            </HelpTip>
+          </h2>
+          <p class="page-subtitle">维护数据字段、类型与口径说明。</p>
         </div>
         <div class="dict-actions">
           <el-button v-permission="'dict:type-manage'" type="primary" @click="openCreateType">新建类型</el-button>
@@ -490,9 +492,11 @@ onBeforeUnmount(() => {
             <strong>字典类型</strong>
             <span class="muted">{{ typeTotal }} 类</span>
           </header>
-          <AppControlRow class="dict-type-tools">
-            <el-input v-model="settings.typeKeyword" clearable placeholder="搜索类型 / code" @input="scheduleSearchTypes" @keyup.enter="searchTypes" @clear="searchTypes" />
-          </AppControlRow>
+          <el-card shadow="never" class="filter-card dict-type-card">
+            <AppControlRow class="dict-type-tools">
+              <el-input v-model="settings.typeKeyword" clearable placeholder="搜索类型 / code" @input="scheduleSearchTypes" @keyup.enter="searchTypes" @clear="searchTypes" />
+            </AppControlRow>
+          </el-card>
           <div class="dict-type-list" v-loading="typeLoading">
             <AppStateBlock
               v-if="typeError"
@@ -704,14 +708,10 @@ onBeforeUnmount(() => {
   gap: var(--app-space-3);
 }
 .dict-title {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-control-gap);
   min-width: 0;
 }
 .dict-title h2 {
   margin: 0;
-  font-size: var(--app-font-size-page-title-sm);
 }
 .dict-actions {
   display: flex;
@@ -750,6 +750,17 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: var(--app-space-2);
 }
+.dict-type-card {
+  flex: none;
+  border: none;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+.dict-type-card :deep(.el-card__body) {
+  padding: var(--app-space-3) var(--app-space-4);
+}
 .dict-type-tools {
   flex: 0 0 auto;
 }
@@ -761,10 +772,6 @@ onBeforeUnmount(() => {
 }
 .dict-detail-bar {
   flex-wrap: wrap;
-}
-.dict-type-tools {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .dict-type-tools .el-input {
   min-width: 0;

@@ -426,15 +426,18 @@ onMounted(() => { loadTree() })
     <template #action>
       <div class="lh-action">
         <div class="page-head">
-          <h2>
-            菜单功能
-            <HelpTip title="菜单与功能管理说明" :width="440">
-              左侧菜单树可新增 / 拖拽排序 / 删除；选中节点后在右侧维护其属性与功能点。<br /><br />
-              菜单 icon 存 Element Plus 图标名，从图标选择器中选；分组不导航、无需路由。<br /><br />
-              功能点是角色授权的最小资源单位；「接口」类绑定后端接口路径，「按钮」类为前端动作。<br /><br />
-              「仅系统管理员」可见的菜单不会授予普通角色。
-            </HelpTip>
-          </h2>
+          <div>
+            <h2 class="app-page-title">
+              菜单功能
+              <HelpTip title="菜单与功能管理说明" :width="440">
+                左侧菜单树可新增 / 拖拽排序 / 删除；选中节点后在右侧维护其属性与功能点。<br /><br />
+                菜单 icon 存 Element Plus 图标名，从图标选择器中选；分组不导航、无需路由。<br /><br />
+                功能点是角色授权的最小资源单位；「接口」类绑定后端接口路径，「按钮」类为前端动作。<br /><br />
+                「仅系统管理员」可见的菜单不会授予普通角色。
+              </HelpTip>
+            </h2>
+            <p class="page-subtitle">维护菜单树、功能点与接口绑定，支持拖拽排序。</p>
+          </div>
           <div class="page-head-actions">
             <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
           </div>
@@ -742,8 +745,7 @@ onMounted(() => { loadTree() })
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
 /* master-detail：窄视口体内横滚，右栏不被压垮 */
 .mr-split { height: 100%; display: flex; gap: var(--app-space-4); min-height: 0; overflow-x: auto; }

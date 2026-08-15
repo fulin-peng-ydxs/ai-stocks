@@ -261,7 +261,7 @@ const metricStripStyle = computed(() => ({
 const effectiveRange = computed<number>(() =>
   chartMode.value === 'compare' ? metricWindow(compareMetric.value, compareWindow.value) : rangeDays.value,
 )
-// 截面数据：净流入/涨跌家数取列表行快照；单日累计退化为「今日涨幅」柱状。
+// 截面数据：即时净流入取列表行最新资金快照；累计成员涨跌取所选行情日截面；单日累计退化为「今日涨幅」柱状。
 const crossSection = computed(() => {
   if (compareMetric.value === 'inflow') {
     return compareRows.value.map((row) => ({
@@ -318,7 +318,7 @@ async function loadChart(): Promise<void> {
   chartError.value = ''
   benchmarkError.value = ''
   try {
-    // 截面指标（净流入/涨跌家数）与价格基准指数无同口径可比性，跳过基准请求。
+    // 截面指标（即时净流入/累计成员涨跌）与价格基准指数无同口径可比性，跳过基准请求。
     const needBenchmark = chartMode.value === 'compare'
       && compareMetricKind.value === 'line' && benchmarkCode.value
     const benchmarkPromise = needBenchmark
@@ -676,7 +676,6 @@ onMounted(async () => {
       <div class="lh-action">
         <div class="page-head">
           <div>
-            <!-- <div class="page-kicker">MARKET SECTORS</div> -->
             <h2 class="app-page-title page-title-row">
               板块行情
               <HelpTip title="板块行情怎么看？" :width="460" test-id="sectors-help-tip">
@@ -1057,7 +1056,16 @@ onMounted(async () => {
               @keydown.enter="selectCompareMetric(metric)"
             >
               <span>{{ metricSlotLabel(metric) }}</span>
-              <strong :class="metricSlot(metric).cls">{{ metricSlot(metric).text }}</strong>
+              <strong
+                v-if="metric === 'breadth'"
+                class="market-metric-value"
+                :class="metricSlot(metric).cls"
+              >
+                <span class="up">{{ metricSlot(metric).text.split(' / ')[0] }}</span>
+                <span class="metric-sep"> / </span>
+                <span class="down">{{ metricSlot(metric).text.split(' / ')[1] }}</span>
+              </strong>
+              <strong v-else :class="metricSlot(metric).cls">{{ metricSlot(metric).text }}</strong>
             </div>
           </div>
 
@@ -1274,25 +1282,12 @@ onMounted(async () => {
   display: flex;
   align-items: center;
 }
-.page-kicker,
 .panel-eyebrow {
   color: var(--el-color-primary);
   font-size: var(--app-font-size-micro);
   line-height: var(--app-line-height-micro);
   font-weight: var(--app-font-weight-strong);
   letter-spacing: 0.14em;
-}
-.page-subtitle {
-  margin: var(--app-space-1) 0 0;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-  line-height: var(--app-line-height-caption);
-}
-.filter-card {
-  margin-bottom: 0;
-}
-.filter-card :deep(.el-card__body) {
-  padding: var(--app-space-3) var(--app-space-4);
 }
 .filter-row {
   flex-wrap: wrap;
@@ -1513,7 +1508,7 @@ onMounted(async () => {
   outline: 2px solid var(--el-color-primary-light-5);
   outline-offset: -2px;
 }
-.market-metric span {
+.market-metric > span {
   display: block;
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-micro);
@@ -1529,6 +1524,23 @@ onMounted(async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.market-metric strong.market-metric-value {
+  display: flex;
+  align-items: baseline;
+  overflow: hidden;
+}
+.market-metric strong.market-metric-value span {
+  display: inline;
+}
+.market-metric strong.market-metric-value .up {
+  display: inline;
+}
+.market-metric strong.market-metric-value .down {
+  display: inline;
+}
+.market-metric strong.market-metric-value .metric-sep {
+  color: var(--el-text-color-secondary);
+}
 .market-metric strong i {
   font-style: normal;
 }
@@ -1537,15 +1549,6 @@ onMounted(async () => {
 }
 .market-metric--lead.market-metric--active {
   background: color-mix(in srgb, var(--el-color-primary-light-9) 70%, transparent);
-}
-.cum-base-row {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-control-gap);
-  min-height: 42px;
-  padding: var(--app-space-2) var(--app-space-3);
-  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 .compare-rail {
   flex: 0 0 auto;
@@ -1632,15 +1635,6 @@ onMounted(async () => {
 .setting-label {
   color: var(--page-settings-text-subtle);
   font-size: var(--app-font-size-body);
-}
-.up {
-  color: var(--market-up-color);
-}
-.down {
-  color: var(--market-down-color);
-}
-.muted {
-  color: var(--app-placeholder-text);
 }
 @media (max-width: 1180px) {
   .page-subtitle {

@@ -252,14 +252,17 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
     <template #action>
       <div class="lh-action">
         <div class="page-head">
-          <h2>
-            租户管理
-            <HelpTip title="租户管理说明" :width="420">
-              租户增删改、指定管理员、启停。<br /><br />
-              默认租户不可停用 / 删除；<b>停用</b>后其下用户立即不可登录（在线会话下次校验即失效）。<br /><br />
-              删除仅限无用户的租户；「查看用户」跳用户管理并按该租户过滤。
-            </HelpTip>
-          </h2>
+          <div>
+            <h2 class="app-page-title">
+              租户管理
+              <HelpTip title="租户管理说明" :width="420">
+                租户增删改、指定管理员、启停。<br /><br />
+                默认租户不可停用 / 删除；<b>停用</b>后其下用户立即不可登录（在线会话下次校验即失效）。<br /><br />
+                删除仅限无用户的租户；「查看用户」跳用户管理并按该租户过滤。
+              </HelpTip>
+            </h2>
+            <p class="page-subtitle">管理租户、默认套餐与租户级配置。</p>
+          </div>
           <div class="page-head-actions">
             <el-button v-permission="'tenant:create'" type="primary" @click="openCreate">
               <template #icon><el-icon><Plus /></el-icon></template>
@@ -269,14 +272,16 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           </div>
         </div>
 
-        <AppControlRow class="filter-bar">
-          <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
-            <el-option v-for="item in tenantStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
-          </el-select>
-          <el-input v-model="filters.q" placeholder="搜索租户名 / ID" clearable style="width: 220px"
-                    @keyup.enter="search" @clear="search" />
-          <el-button type="primary" @click="search">查询</el-button>
-        </AppControlRow>
+        <el-card shadow="never" class="filter-card">
+          <AppControlRow>
+            <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
+              <el-option v-for="item in tenantStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
+            </el-select>
+            <el-input v-model="filters.q" placeholder="搜索租户名 / ID" clearable style="width: 220px"
+                      @keyup.enter="search" @clear="search" />
+            <el-button type="primary" @click="search">查询</el-button>
+          </AppControlRow>
+        </el-card>
       </div>
     </template>
 
@@ -381,10 +386,9 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
-.page-head h2 { margin: 0; font-size: var(--app-font-size-page-title-sm); }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
-.filter-bar { margin-bottom: 12px; }
+.filter-card :deep(.el-card__body) { padding: var(--app-space-3) var(--app-space-4); }
 .builtin-tag { margin-left: 4px; }
 .mono { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
 .muted { color: var(--el-text-color-secondary); }
