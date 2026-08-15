@@ -21,6 +21,7 @@ import pandas as pd
 
 from backend.backtest.broker import can_buy_at_open, can_sell_at_open
 from backend.common.logging import get_logger
+from backend.indicators.compute import compute_macd
 from backend.config import get_effective_settings
 from backend.market_rules import price_limit_pct_for
 from backend.storage.duckdb_client import get_client
@@ -177,6 +178,18 @@ class TrainingService:
                 "amount": None if pd.isna(r["amount"]) else float(r["amount"]),
                 "turnover_rate": None if pd.isna(r["turnover_rate"]) else float(r["turnover_rate"]),
             })
+        # 训练 K 线附带 MACD：复用后端原子指标（12/26/9，严格后向），由脱敏前复权 close 算出，
+        # 训练中/结算回看共用，且不引用真实代码（防作弊）。暖机不足的行保留 null。
+        if bars:
+            closes = pd.Series([b["close"] for b in bars])
+            macd = compute_macd(closes)
+            for b, row in zip(bars, macd.to_dict("records")):
+                for key in ("macd_diff", "macd_dea", "macd_hist"):
+                    v = row.get(key)
+                    b[key] = None if v is None or pd.isna(v) else round(float(v), 3)
+                for key in ("macd_golden_cross", "macd_dead_cross"):
+                    v = row.get(key)
+                    b[key] = None if v is None or pd.isna(v) else bool(v)
         return bars, date_map
 
     def _disp_price(self, raw_price: float, factor: float, base: float) -> float:
@@ -360,6 +373,9 @@ class TrainingService:
                 "pending": rnd["pending"],
                 "bars": bars, "markers": markers, "trades": trades,
                 "lot_size": self.lot,
+                # 板块（主板/创业板/科创板）为宽泛分类，与训练选股过滤同口径，
+                # 不指向具体个股，盲测阶段同样返回供前端标注。
+                "board": self._stock_board(rnd["code"]),
             },
         }
 
@@ -734,6 +750,7 @@ class TrainingService:
                 "seq": rnd["seq"], "status": rnd["status"],
                 "code": rnd["code"] if completed else None,
                 "name": name,
+                "board": self._stock_board(rnd["code"]) if completed else None,
                 "start_date": rnd["start_date"].isoformat() if completed and rnd["start_date"] else None,
                 "end_date": rnd["end_date"].isoformat() if completed and rnd["end_date"] else None,
                 "window_days": rnd["window_days"], "cursor_idx": rnd["cursor_idx"],
@@ -771,6 +788,13 @@ class TrainingService:
     def _stock_name(self, code: str) -> str:
         df = self.c.query_df("SELECT name FROM stock_basic WHERE code = ?", [code])
         return "" if df.empty else str(df.iloc[0]["name"])
+
+    def _stock_board(self, code: str) -> str | None:
+        """所属板块（主板/创业板/科创板），与训练选股过滤 sb.board 同口径。"""
+        df = self.c.query_df("SELECT board FROM stock_basic WHERE code = ?", [code])
+        if df.empty or pd.isna(df.iloc[0]["board"]):
+            return None
+        return str(df.iloc[0]["board"])
 
     def list_sessions(self, page: int = 1, size: int = 20, status: str | None = None,
                       sort_by: str = "created_at", sort_order: str = "desc") -> dict:

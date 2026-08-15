@@ -509,4 +509,47 @@ describe('StockChartWorkspace', () => {
     expect(echartsMock.init).toHaveBeenCalledTimes(3)
     wrapper.unmount()
   })
+
+  it('传入 markers 时在 K 线 markPoint 渲染买卖点，买蓝▲/卖橙▼置于蜡烛外', async () => {
+    const source = bars()
+    const wrapper = await mountWorkspace({
+      markers: [
+        { date: source[10].date, kind: 'buy', label: '买入\n12.20' },
+        { date: source[20].date, kind: 'sell', label: '卖出\n14.20' },
+      ],
+    })
+    const klineInstance = echartsMock.instances[0]
+    const option = klineInstance.setOption.mock.calls.at(-1)?.[0]
+    const klineSeries = (option.series as Array<Record<string, unknown>>)
+      .find((series) => series.type === 'candlestick')
+    const points = (klineSeries?.markPoint as { data?: unknown[] })?.data ?? []
+
+    expect(points).toHaveLength(2)
+    const buy = (points as Array<Record<string, unknown>>)
+      .find((point) => point.kind === 'buy')
+    const sell = (points as Array<Record<string, unknown>>)
+      .find((point) => point.kind === 'sell')
+    const buyCoord = buy?.coord as [number, number]
+    const sellCoord = sell?.coord as [number, number]
+    expect(buyCoord[0]).toBe(10)
+    expect(sellCoord[0]).toBe(20)
+    // 买点钉在最低价下方、卖点钉在最高价上方。
+    expect(buyCoord[1]).toBeCloseTo(source[10].low * 0.985)
+    expect(sellCoord[1]).toBeCloseTo(source[20].high * 1.015)
+    expect((buy?.itemStyle as { color?: string }).color).toBeTruthy()
+    expect((sell?.itemStyle as { color?: string }).color).toBeTruthy()
+    expect((buy?.label as { formatter?: string }).formatter).toBe('买入\n12.20')
+    expect((sell?.label as { formatter?: string }).formatter).toBe('卖出\n14.20')
+    wrapper.unmount()
+  })
+
+  it('未传 markers 时 K 线 markPoint 为空，不影响个股详情等既有页面', async () => {
+    const wrapper = await mountWorkspace()
+    const klineInstance = echartsMock.instances[0]
+    const option = klineInstance.setOption.mock.calls.at(-1)?.[0]
+    const klineSeries = (option.series as Array<Record<string, unknown>>)
+      .find((series) => series.type === 'candlestick')
+    expect((klineSeries?.markPoint as { data?: unknown[] }).data ?? []).toEqual([])
+    wrapper.unmount()
+  })
 })

@@ -348,9 +348,9 @@ const REGISTRY: PageRegistryEntry[] = [
     path: '/training',
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
-    // 训练参数保留为业务态；训练历史表的排序进入组件配置层，与列头排序同源。
+    // 训练参数保留为业务态；训练历史表的排序/每页条数与图表区域高度进入组件配置层。
     supportsComponentConfig: true,
-    consumedComponentFields: { history: ['defaultSort'] },
+    consumedComponentFields: { history: ['defaultSort', 'pageSize'], chart: ['minHeight'] },
     componentMeta: {
       history: {
         sortFields: [
@@ -370,8 +370,12 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
+        // body 槽默认走成长区（config 阶段历史表吃满剩余高度）；running/result 长内容流由页面按 phase
+        // 派生为 scroll:region 整区滚动（见 TrainingView）。
         { id: 'body', component: 'section', region: 'main', order: 1 },
         { id: 'history', component: 'data-table', region: 'main', parentId: 'body', label: '训练历史', order: 2, config: { defaultSort: 'created_at:desc' } },
+        // 训练台/结算的 K 线工作区：进入统一可寻址模型（slots.chart.config.*），承载「图表区域高度」等组件特性。
+        { id: 'chart', component: 'chart', region: 'main', parentId: 'body', label: '训练图表', order: 3, config: { minHeight: 650 } },
         // 设置抽屉：overlay 区，进入统一可寻址模型，不参与主流渲染（由页面自行渲染抽屉）。
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],

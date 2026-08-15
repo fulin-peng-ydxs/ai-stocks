@@ -12,9 +12,10 @@ import {
 } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowRight } from '@element-plus/icons-vue'
-import CandleChart from '@/components/CandleChart.vue'
 import EquityChart from '@/components/EquityChart.vue'
 import GrowthChart from '@/components/GrowthChart.vue'
+import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
+import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import { useStatusColorPalette } from '@/components/chartTheme'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -27,17 +28,26 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
+import {
+  createDefaultStockChartPreferences,
+  useStockChartPreferences,
+  type AuxiliaryChartSlot,
+  type StockChartPreferences,
+} from '@/composables/useStockChartPreferences'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useTableSort } from '@/composables/useTableSort'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
-import { getPageLayout } from '@/layout'
+import { getPageLayout, type PageLayout } from '@/layout'
+import { resolveComponentNumberValue } from '@/layout/componentConfig'
+import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   startSession, getSession, listSessions, growth as fetchGrowth, revealNext,
   placeTrade, cancelIntent, settleRound, saveReview, deleteSession,
   type RunningView, type DetailView, type SessionRow, type GrowthPoint, type DetailRound,
 } from '@/api/training'
+import type { Bar, IndicatorRow } from '@/api/stocks'
 import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
 
@@ -50,7 +60,7 @@ const phase = computed<'config' | 'running' | 'result'>(() => {
 })
 
 // ── 页面设置（开局参数 + 快捷下单预设，均持久化）──
-const { settings: cfg, isDirty, reset } = usePageSettings('training', {
+const { settings: cfg, isDirty, reset, hydrated } = usePageSettings('training', {
   mode: 'single' as 'single' | 'multi',
   range_start: null as string | null,
   range_end: null as string | null,
@@ -63,7 +73,25 @@ const { settings: cfg, isDirty, reset } = usePageSettings('training', {
   orderMode: 'hands' as 'hands' | 'amount',
   handsPresetStr: '1,10,20',
   amountWanPresetStr: '1,10,20',
+  charts: createDefaultStockChartPreferences(),
 })
+const chartSettings = computed({
+  get: () => cfg.charts,
+  set: (value: StockChartPreferences) => {
+    cfg.charts = value
+  },
+})
+const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
+function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
+  chartPreferences.setSlotType(slot, value)
+}
+function handleRatioDraft(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+}
+function handleRatioCommit(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+  chartPreferences.commitRatioDraft()
+}
 const settingsOpen = ref(false)
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -86,6 +114,42 @@ const {
 // 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
+// 三阶段共用同一布局，但滚动归属按阶段区分：
+// - config（未开局）：body 槽走默认成长区，历史表吃满剩余高度、表内滚动（workbench 主表规范）。
+// - running/result（训练台/结算）：长内容流（固定高度图表 + 操作面板/多回合复盘），
+//   派生 body 槽为 scroll:region，整区滚动承接，避免内容被压缩到窄滚动条。
+const mainLayout = computed<PageLayout>(() => {
+  const base = trainingEffective.value
+  if (phase.value === 'config') return base
+  return {
+    ...base,
+    slots: base.slots.map((s) =>
+      s.id === 'body' ? { ...s, scroll: 'region' as const } : s,
+    ),
+  }
+})
+
+// 训练历史每页条数：走组件配置层（抽屉「组件设置」可调），与全站分页规范一致。
+const historyPageSize = computed(() => {
+  const raw = componentValueOf('history', 'pageSize')
+  return typeof raw === 'number' && Number.isFinite(raw)
+    ? Math.max(10, Math.min(200, raw))
+    : DEFAULT_PAGE_SIZE
+})
+
+// 训练台/结算 K 线工作区高度：与个股详情一致，来自组件配置层（chart.minHeight）。
+const chartDefaultHeight = Number(
+  trainingLayout.slots.find((slot) => slot.id === 'chart')?.config?.minHeight,
+)
+const configuredChartHeight = computed(() => {
+  return resolveComponentNumberValue(
+    'chart',
+    'minHeight',
+    componentValueOf('chart', 'minHeight'),
+    chartDefaultHeight,
+  )
+})
+
 // K 线显示范围：选项与默认值来自全局偏好（抽屉里可配，跨页同步）
 const { validDefault: klineDefault } = useKlinePrefs()
 const viewDays = ref(klineDefault.value)
@@ -98,7 +162,7 @@ const handsPresets = computed(() => parseList(cfg.handsPresetStr))
 const amountPresets = computed(() => parseList(cfg.amountWanPresetStr).map((w) => w * 10000))
 
 // ── 历史 & 成长 ──
-const history = reactive({ list: [] as SessionRow[], total: 0, page: 1, size: 10, sort_by: 'created_at', sort_order: 'desc' })
+const history = reactive({ list: [] as SessionRow[], total: 0, page: 1, sort_by: 'created_at', sort_order: 'desc' })
 const historyError = ref('')
 const HISTORY_SORT_FIELDS = ['created_at', 'completed_at', 'score', 'total_return', 'win_rate'] as const
 const {
@@ -133,7 +197,7 @@ async function loadHistory() {
   try {
     const r = await listSessions({
       page: history.page,
-      size: history.size,
+      size: historyPageSize.value,
       sort_by: historySortBy.value,
       sort_order: historySortOrder.value,
     })
@@ -144,6 +208,12 @@ async function loadHistory() {
   } finally {
     historyLoading.value = false
   }
+}
+function historySizeChanged(value: number) {
+  if (value === historyPageSize.value) return
+  setComponentKnob('history', 'pageSize', value)
+  history.page = 1
+  void loadHistory()
 }
 async function loadGrowth() {
   growthLoading.value = true
@@ -297,6 +367,20 @@ const warmupBars = computed(() => {
   const bs = allRoundBars.value
   return viewDays.value >= 99999 ? [] : bs.slice(0, -viewDays.value || undefined)
 })
+// 训练 MACD 由后端在 bars 内附带（防作弊不调 indicators 接口）；按 date 对齐成 IndicatorRow 供工作区消费。
+function barsToIndicatorRows(bs: readonly Bar[]): IndicatorRow[] {
+  return bs
+    .filter((bar) => bar.macd_diff != null || bar.macd_dea != null || bar.macd_hist != null)
+    .map((bar) => ({
+      trade_date: bar.date,
+      macd_diff: bar.macd_diff ?? null,
+      macd_dea: bar.macd_dea ?? null,
+      macd_hist: bar.macd_hist ?? null,
+      macd_golden_cross: bar.macd_golden_cross ?? null,
+      macd_dead_cross: bar.macd_dead_cross ?? null,
+    }))
+}
+const indicatorRows = computed(() => barsToIndicatorRows(allRoundBars.value))
 
 // ── 结算详情 ──
 const detail = computed(() => view.value as unknown as DetailView | null)
@@ -330,6 +414,14 @@ const gradeColor = (g: string | null) => ({
   C: gradePalette.value.muted,
   D: gradePalette.value.danger,
 } as Record<string, string>)[g || ''] || gradePalette.value.muted
+// 评级阈值与后端 _grade_of 的 GRADE_BANDS 逐字对齐（D 为其余，即 <60）。
+const gradeBands = [
+  { g: 'S', text: 'S ≥ 90', thr: 90 },
+  { g: 'A', text: 'A ≥ 80', thr: 80 },
+  { g: 'B', text: 'B ≥ 70', thr: 70 },
+  { g: 'C', text: 'C ≥ 60', thr: 60 },
+  { g: 'D', text: 'D < 60', thr: 0 },
+]
 
 // ── 键盘快捷键 ──
 function onKey(e: KeyboardEvent) {
@@ -364,7 +456,7 @@ onBeforeUnmount(detachKeyboard)
 
 <template>
   <!-- ══════════ 阶段一：未开局（配置 + 历史主表 + 成长）══════════ -->
-  <LayoutHost v-if="phase === 'config'" :layout="trainingEffective">
+  <LayoutHost v-if="phase === 'config'" :layout="mainLayout">
     <template #action>
     <div class="page-head">
         <div>
@@ -425,7 +517,7 @@ onBeforeUnmount(detachKeyboard)
         </el-card>
 
         <el-card v-if="growthLoading || growthData.length || growthError" shadow="never" class="growth-card">
-          <template #header><span class="card-title">成长曲线</span><span class="card-sub">历次评分 / 收益</span></template>
+          <template #header><span class="card-title">成长曲线</span><span class="card-sub">历次评分 / 收益</span><HelpTip title="成长曲线是什么？" :width="380"><p><b>横轴为完成局序</b>，纵轴左为历次综合评分（0~100），右为整局收益。</p><p style="margin:6px 0 0">用于观察盘感是否在<b>稳定进步</b>：评分趋势向上说明买卖时机与纪律在变好；收益为负会画在 0 下方。每次结算一局后自动沉淀一个点。</p></HelpTip></template>
           <AppStateBlock
             v-if="growthLoading && !growthData.length"
             state="loading"
@@ -488,7 +580,10 @@ onBeforeUnmount(detachKeyboard)
             :border="tableBorder('history')"
             clickable
             :default-sort="historyDefaultSort"
+            :pagination="{ currentPage: history.page, pageSize: historyPageSize, total: history.total, pageSizes: PAGE_SIZE_OPTIONS, small: true }"
             @sort-change="onHistorySortChange"
+            @page-change="(p: number) => { history.page = p; loadHistory() }"
+            @size-change="historySizeChanged"
             @row-click="(r:SessionRow)=>openSession(r.id)">
             <AppTableColumn label="模式">
               <template #default="{ row }">{{ modeText(row.mode) }}·{{ row.n_rounds }}</template>
@@ -521,16 +616,13 @@ onBeforeUnmount(detachKeyboard)
             </AppTableColumn>
           </AppDataTable>
           </template>
-          <el-pagination v-if="history.total > history.size" small layout="prev, pager, next"
-            :total="history.total" :page-size="history.size" :current-page="history.page"
-            @current-change="(p:number)=>{ history.page=p; loadHistory() }" class="pager" />
         </el-card>
     </div>
     </template>
   </LayoutHost>
 
   <!-- ══════════ 阶段二：训练中（混合成长区）══════════ -->
-  <LayoutHost v-else-if="phase === 'running' && round" :layout="trainingEffective">
+  <LayoutHost v-else-if="phase === 'running' && round" :layout="mainLayout">
     <template #action>
     <div class="page-head">
         <div>
@@ -541,7 +633,9 @@ onBeforeUnmount(detachKeyboard)
               <p style="margin:6px 0 0"><b>买 T+0</b>：买入当日按收盘价即时成交（收盘封涨停买不到）。<b>卖 T+1</b>：卖出登记后次日开盘成交（开盘跌停卖不出、停牌顺延）。窗口末日仍持仓将按收盘价强制清算。</p>
             </HelpTip>
           </h2>
-          <span class="sub">回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中</span>
+          <span class="sub">回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中
+            <el-tag v-if="round.board" size="small" effect="plain" class="board-tag">{{ round.board }}</el-tag>
+          </span>
         </div>
         <div class="page-head-actions">
           <div class="ops">
@@ -556,7 +650,23 @@ onBeforeUnmount(detachKeyboard)
     <template #main>
     <div class="run-body">
         <div class="chart-block">
-          <CandleChart :bars="displayBars" :warmup-bars="warmupBars" :markers="round.markers" :zoom-start="0" :zoom-end="100" />
+          <StockChartWorkspace
+            :data-configured-height="configuredChartHeight"
+            :style="{ flexBasis: `${configuredChartHeight}px` }"
+            :bars="displayBars"
+            :warmup-bars="warmupBars"
+            :indicators="indicatorRows"
+            :markers="round.markers"
+            :slot2="chartPreferences.preferences.value.slot2"
+            :slot3="chartPreferences.preferences.value.slot3"
+            :height-ratios="chartPreferences.currentRatios.value"
+            :zoom-start="0"
+            :zoom-end="100"
+            :min-height="configuredChartHeight"
+            :aria-label="'训练 K 线（盲测）工作区'"
+            @ratio-draft="handleRatioDraft"
+            @ratio-commit="handleRatioCommit"
+          />
         </div>
 
         <div v-permission="'training:trade'" class="action-panel">
@@ -633,18 +743,24 @@ onBeforeUnmount(detachKeyboard)
   </LayoutHost>
 
   <!-- ══════════ 阶段三：结算回看 ══════════ -->
-  <LayoutHost v-else-if="phase === 'result' && detail" :layout="trainingEffective">
+  <LayoutHost v-else-if="phase === 'result' && detail" :layout="mainLayout">
     <template #action>
     <div class="page-head">
         <div>
           <h2 class="title-row">
-            🎮 训练结算
+            训练结算
             <span class="grade-big app-data-emphasis" :style="{ color: gradeColor(detail.grade) }">{{ detail.grade }}</span>
             <span class="score-tip">综合评分 {{ detail.score?.toFixed(1) }}</span>
           </h2>
           <span class="sub">{{ modeText(detail.mode) }} · {{ detail.n_rounds }} 回合 · {{ detail.created_at?.slice(0, 16) }}</span>
         </div>
-        <el-button @click="backToConfig">返回</el-button>
+        <div class="page-head-actions">
+          <div class="ops">
+            <KlineRangeSelect v-model="viewDays" />
+          </div>
+          <el-button @click="backToConfig">返回</el-button>
+          <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
+        </div>
       </div>
     </template>
 
@@ -658,23 +774,56 @@ onBeforeUnmount(detachKeyboard)
           <div class="kpi"><label>回合数</label><b>{{ detail.n_rounds }}</b></div>
         </div>
 
+        <el-card shadow="never" class="score-rule-card">
+          <template #header>
+            <span class="card-title">评分规则</span>
+            <HelpTip title="综合评分怎么算？" :width="420">
+              <p><b>综合评分</b> 是四项维度分数的加权和（0~100）：<b>超额收益×40% + 绝对收益×25% + 回撤控制×20% + 胜率×15%</b>。</p>
+              <p style="margin:6px 0 2px"><b>超额</b> = (总收益 − 同期满仓持有收益 + 10%) ÷ 20%，截断 0~1；<b>绝对</b> = (总收益 + 20%) ÷ 40%，截断 0~1；<b>回撤控制</b> = (最大回撤 + 25%) ÷ 25%，截断 0~1；<b>胜率</b> = 盈利卖出笔数 ÷ 卖出总笔数。</p>
+              <p style="margin:6px 0 0"><b>评级</b>：S ≥ 90，A ≥ 80，B ≥ 70，C ≥ 60，其余 D。</p>
+            </HelpTip>
+          </template>
+          <div class="score-rule-grid">
+            <div class="rule-item"><span class="rule-key">综合评分</span><b class="rule-val">超额×40% + 绝对×25% + 回撤×20% + 胜率×15%</b></div>
+            <div class="rule-item"><span class="rule-key">超额收益</span><span class="rule-val">(总收益 − 基准 + 10%) ÷ 20%，截断 0~1</span></div>
+            <div class="rule-item"><span class="rule-key">绝对收益</span><span class="rule-val">(总收益 + 20%) ÷ 40%，截断 0~1</span></div>
+            <div class="rule-item"><span class="rule-key">回撤控制</span><span class="rule-val">(最大回撤 + 25%) ÷ 25%，截断 0~1</span></div>
+            <div class="rule-item"><span class="rule-key">胜率</span><span class="rule-val">盈利卖出笔 ÷ 卖出总笔</span></div>
+            <div class="rule-item"><span class="rule-key">评级阈值</span><span class="rule-val"><span v-for="(item, i) in gradeBands" :key="item.g" :class="{ 'grade-dot': true, 'grade-dot--last': i === gradeBands.length - 1 }" :style="{ color: gradeColor(item.g) }">{{ item.text }}</span></span></div>
+          </div>
+        </el-card>
+
         <el-card v-for="rd in detail.rounds" :key="rd.seq" shadow="never" class="round-card">
           <template #header>
             <div class="round-head">
-              <span class="rname">回合 {{ rd.seq + 1 }} · {{ rd.name }} <span class="muted">{{ rd.code }}</span></span>
+              <span class="rname">回合 {{ rd.seq + 1 }} · {{ rd.name }} <span class="muted">{{ rd.code }}</span>
+                <el-tag v-if="rd.board" size="small" effect="plain" class="board-tag">{{ rd.board }}</el-tag>
+              </span>
               <span class="muted">{{ rd.start_date }} ~ {{ rd.end_date }}</span>
               <span class="round-ret">你 <b :class="(rd.round_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(rd.round_return) }}</b> · 满仓持有 <b :class="(rd.benchmark_return ?? 0) >= 0 ? 'up' : 'down'">{{ pct(rd.benchmark_return) }}</b> · 回撤 <b class="down">{{ pct(rd.max_drawdown) }}</b></span>
             </div>
           </template>
           <div class="round-grid">
-            <div class="round-chart"><CandleChart
+            <div class="round-chart"><StockChartWorkspace
+              :data-configured-height="configuredChartHeight"
+              :style="{ flexBasis: `${configuredChartHeight}px` }"
               :bars="viewDays >= 99999 ? rd.bars : rd.bars.slice(-viewDays)"
               :warmup-bars="viewDays >= 99999 ? [] : rd.bars.slice(0, -viewDays || undefined)"
-              :markers="rd.markers" :zoom-start="0" :zoom-end="100"
+              :indicators="barsToIndicatorRows(rd.bars)"
+              :markers="rd.markers"
+              :slot2="chartPreferences.preferences.value.slot2"
+              :slot3="chartPreferences.preferences.value.slot3"
+              :height-ratios="chartPreferences.currentRatios.value"
+              :zoom-start="0"
+              :zoom-end="100"
+              :min-height="configuredChartHeight"
+              :aria-label="'结算回看 K 线工作区'"
+              @ratio-draft="handleRatioDraft"
+              @ratio-commit="handleRatioCommit"
             /></div>
             <div class="round-equity"><EquityChart :points="roundEquityPoints(rd, detail.initial_capital)" benchmark-code="满仓持有" /></div>
           </div>
-          <AppDataTable :data="rd.trades" size="small" class="round-trades" empty-text="本回合无成交" embedded>
+          <AppDataTable :data="rd.trades" size="small" class="round-trades" empty-text="本回合无成交" embedded max-height="240">
             <AppTableColumn label="决策日"><template #default="{ row }">{{ row.decide_date }}</template></AppTableColumn>
             <AppTableColumn label="成交日"><template #default="{ row }">{{ row.fill_date }}</template></AppTableColumn>
             <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
@@ -695,14 +844,16 @@ onBeforeUnmount(detachKeyboard)
     </template>
   </LayoutHost>
 
-  <!-- 设置抽屉：快捷下单预设（三阶段共享，作为根级兄弟，teleport 到 body）-->
+  <!-- 设置抽屉：开局默认/选股范围/快捷下单三阶段共享；图表与 K 线属性仅在训练台/回看（有图）时展示。
+       组件设置（图表区域高度等）通过 component-slot-ids 按阶段放行，config 阶段只留训练历史排序。 -->
   <PageSettingsDrawer
     v-model="settingsOpen"
     title="盘感训练"
     :dirty="isDirty || layoutDirty"
     page-key="training"
     :config="drawerConfig"
-    @reset="reset(); resetLayout()"
+    :component-slot-ids="phase === 'config' ? ['history'] : ['chart']"
+    @reset="reset(); chartPreferences.cancelRatioDraft(); resetLayout()"
   >
       <template #business>
       <PageSettingSection title="开局默认" desc="每次开局沿用的默认参数，开局前可临时改。">
@@ -719,7 +870,15 @@ onBeforeUnmount(detachKeyboard)
           <el-input-number v-model="cfg.initial_capital" :min="10000" :step="10000" size="small" style="width:160px" />
         </div>
       </PageSettingSection>
-      <KlineSettingSection />
+      <template v-if="phase !== 'config'">
+        <KlineSettingSection />
+        <StockChartSettingSection
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          test-id-prefix="training-chart"
+          @change="setAuxiliaryChart"
+        />
+      </template>
       <PageSettingSection title="选股范围" desc="控制随机选股时的股票池过滤条件。">
         <div class="setting-item">
           <div class="setting-label">排除 ST</div>
@@ -779,7 +938,6 @@ onBeforeUnmount(detachKeyboard)
 .hist-card { flex: 1 1 auto; min-height: 300px; display: flex; flex-direction: column; }
 .hist-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px; }
 .hist-table { cursor: pointer; flex: 1; }
-.pager { margin-top: 8px; }
 .grade-chip { color: #fff; padding: 1px 8px; border-radius: 10px; font-weight: var(--app-font-weight-strong); font-size: var(--app-font-size-caption); }
 .setting-item { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); padding: 6px 0; }
 .setting-item.col { flex-direction: column; align-items: stretch; }
@@ -818,11 +976,24 @@ onBeforeUnmount(detachKeyboard)
 .kpi { flex: 1 1 120px; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-1); }
 .kpi label { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .kpi b { font-size: var(--app-font-size-page-title-sm); font-variant-numeric: tabular-nums; }
+.score-rule-card { flex: 0 0 auto; }
+.score-rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--app-space-2) var(--app-space-4); }
+.rule-item { display: flex; align-items: baseline; gap: var(--app-space-2); font-size: var(--app-font-size-table); }
+.rule-key { flex: 0 0 auto; color: var(--el-text-color-secondary); }
+.rule-val { color: var(--el-text-color-regular); font-variant-numeric: tabular-nums; }
+.grade-dot { margin-right: var(--app-space-3); font-weight: var(--app-font-weight-strong); }
+.grade-dot--last { margin-right: 0; }
+.board-tag { margin-left: 8px; }
 .round-head { display: flex; align-items: baseline; gap: var(--app-space-4); flex-wrap: wrap; }
 .round-head .rname { font-weight: var(--app-font-weight-section); }
 .round-head .round-ret { margin-left: auto; font-size: var(--app-font-size-table); }
+/* 回合卡：不被 result-body 压缩（flex-shrink:0），长内容由整页滚动承载；el-card 默认 overflow 需放行给子内容。 */
+.round-card { flex: 0 0 auto; }
+.round-card :deep(.el-card__body) { overflow: visible; }
 .round-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--app-space-3); }
+.round-chart { min-width: 0; }
 .round-equity { min-width: 0; }
+/* 成交明细：长列表走内部滚动（上限 240px，AppDataTable max-height prop），避免撑爆整页；低于上限时随内容自适应高度。 */
 .round-trades { margin-top: 10px; }
 .review-actions { margin-top: 10px; text-align: right; }
 

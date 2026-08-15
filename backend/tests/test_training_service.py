@@ -6,8 +6,11 @@ delete/abort、跨归属隔离。完整开局→交易→结算的计算流逻�
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
+import pandas as pd
+
+from backend.indicators.compute import compute_macd
 from backend.services.training_service import TrainingService
 from backend.tests.conftest import TEST_OWNER, TEST_TENANT
 
@@ -18,6 +21,30 @@ def _mk_session(pg, sid, owner=TEST_OWNER, status="completed", score=80.0):
         "initial_capital,status,cur_round,total_return,score,grade,win_rate,created_at,completed_at) "
         "VALUES (%s,%s,%s,'single',1,20,100000,%s,0,0.1,%s,'A',0.6,%s,%s)",
         [sid, TEST_TENANT, owner, status, score, datetime.now(), datetime.now()])
+
+
+def _mk_round(pg, sid, code, start, end, owner=TEST_OWNER, status="completed"):
+    """构造一个 completed 回合（无成交，仅用于 bars/board 视图断言）。"""
+    pg.execute(
+        "INSERT INTO training_round (session_id,tenant_id,owner_user_id,seq,code,start_date,end_date,"
+        "window_days,base_factor,price_limit_pct,cursor_date,cursor_idx,status,cash,pos_shares,"
+        "pos_cost,pos_avg_price,pending,realized_pnl,round_return,benchmark_return,final_equity) "
+        "VALUES (%s,%s,%s,0,%s,%s,%s,5,1.0,0.10,%s,4,'completed',100000,0,0,0,NULL,0,0.1,0.1,100000)",
+        [sid, TEST_TENANT, owner, code, start, end, end])
+
+
+def _insert_bars(market, code, n=40):
+    """插入 n 个交易日的行情（升序，不复权 + 干净因子=1），返回首末日。"""
+    start = date(2026, 1, 5)
+    for i in range(n):
+        d = start + timedelta(days=i)
+        close = 10.0 + i * 0.1
+        market.execute(
+            "INSERT INTO daily_bar (code,trade_date,open,high,low,close,pre_close,volume,amount,"
+            "adj_factor,adj_factor_clean,turnover_rate) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            [code, d, close - 0.2, close + 0.4, close - 0.5, close, close - 0.1, 100000, 1000000,
+             1.0, 1.0, 1.0])
+    return start, start + timedelta(days=n - 1)
 
 
 def test_session_owner_gate(market, pg):
@@ -102,3 +129,75 @@ def test_same_session_id_different_owner_no_crossread(market, pg):
         assert other_pending is None                  # 他人的 pending 未被串改
     finally:
         _clean_ss()
+
+
+def test_bars_attach_macd_from_desensitized_close(market, pg):
+    """训练/回看 bars 附带 MACD：由脱敏前复权 close 计算，与 compute_macd 一致，暖机不足为 null。"""
+    code = "600000.SH"
+    n = 60
+    start, end = _insert_bars(market, code, n=n)
+    market.execute(
+        "INSERT INTO stock_basic (code, name, board) VALUES (?,?,?)", [code, "测试股", "主板"])
+    _mk_session(pg, "ts_macd", status="completed")
+    _mk_round(pg, "ts_macd", code, start, end)
+    svc = TrainingService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+
+    detail = svc.get_detail("ts_macd")
+    bars = detail["rounds"][0]["bars"]
+    assert len(bars) == n
+    closes = pd.Series([b["close"] for b in bars])
+    expected = compute_macd(closes)
+    for bar, row in zip(bars, expected.to_dict("records")):
+        for key in ("macd_diff", "macd_dea", "macd_hist"):
+            value = row[key]
+            assert bar[key] == (None if value is None or pd.isna(value) else round(float(value), 3))
+        for key in ("macd_golden_cross", "macd_dead_cross"):
+            value = row[key]
+            assert bar[key] == (None if value is None or pd.isna(value) else bool(value))
+    # 暖机期（DEA 需 diff 有效后 9 根，即 EMA26 起 +9）前为 null，其后为数值
+    assert bars[0]["macd_hist"] is None
+    assert bars[25]["macd_hist"] is None
+    assert bars[33]["macd_hist"] is not None
+    # 盲测视图（reveal_dates=False）同样附带 MACD，date 为相对日
+    running = TrainingService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    running.pg.execute(
+        "UPDATE training_session SET status='running', cur_round=0 WHERE id='ts_macd'")
+    running.pg.execute(
+        "UPDATE training_round SET status='running', cursor_date=%s, cursor_idx=3 "
+        "WHERE session_id='ts_macd'", [start + timedelta(days=3)])
+    run_view = running.get_view("ts_macd")
+    run_bars = run_view["round"]["bars"]
+    assert run_bars[0]["date"].startswith("D")
+    assert all("macd_hist" in b for b in run_bars)
+    assert all("macd_golden_cross" in b and "macd_dead_cross" in b for b in run_bars)
+
+
+def test_detail_round_carries_board(market, pg):
+    """结算详情每回合附 board（主板/创业板/科创板，与选股过滤同口径）；无 board 时 None。"""
+    code = "300001.SZ"
+    _insert_bars(market, code, n=40)
+    market.execute(
+        "INSERT INTO stock_basic (code, name, board) VALUES (?,?,?)", [code, "创业股", "创业板"])
+    _mk_session(pg, "ts_board", status="completed")
+    _mk_round(pg, "ts_board", code, date(2026, 1, 5), date(2026, 1, 30))
+    svc = TrainingService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+
+    detail = svc.get_detail("ts_board")
+    assert detail["rounds"][0]["board"] == "创业板"
+    assert detail["rounds"][0]["code"] == code
+    assert detail["rounds"][0]["name"] == "创业股"
+
+    # 板块缺失 → None（不报错）
+    _mk_session(pg, "ts_noboard", status="completed")
+    _mk_round(pg, "ts_noboard", code, date(2026, 1, 5), date(2026, 1, 30))
+    market.execute("UPDATE stock_basic SET board=NULL WHERE code=?", [code])
+    svc2 = TrainingService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    assert svc2.get_detail("ts_noboard")["rounds"][0]["board"] is None
+
+    # running 态返回板块（宽泛分类，防作弊不泄露具体身份）：主板/创业板/科创板
+    market.execute("UPDATE stock_basic SET board=? WHERE code=?", ["创业板", code])
+    _mk_session(pg, "ts_run_board", status="running")
+    _mk_round(pg, "ts_run_board", code, date(2026, 1, 5), date(2026, 1, 30), status="running")
+    running = TrainingService(market, tenant_id=TEST_TENANT, owner_user_id=TEST_OWNER)
+    run_view = running.get_view("ts_run_board")
+    assert run_view["round"]["board"] == "创业板"

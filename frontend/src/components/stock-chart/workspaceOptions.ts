@@ -18,6 +18,13 @@ export interface AlignedStockChartRow {
   indicator?: IndicatorRow
 }
 
+/** 买卖点标注：date=交易日（与 bars.date 对齐），kind=买/卖，label=标注文字。 */
+export interface TradeMarker {
+  date: string
+  kind: 'buy' | 'sell'
+  label: string
+}
+
 export interface SignalDatum {
   value: [number, number, 0 | 1]
   signalType: '金叉' | '死叉'
@@ -255,6 +262,42 @@ interface OptionContext {
   isBottom: boolean
   zoomStart: number
   zoomEnd: number
+  markers?: readonly TradeMarker[]
+  buyMarkerColor?: string
+  sellMarkerColor?: string
+}
+
+/** 买卖点 markPoint：买=蓝▲置于最低价下方，卖=橙▼置于最高价上方（语义色由组件按主题传入）。 */
+function buildTradeMarkPoints(context: OptionContext) {
+  if (!context.markers?.length) return []
+  const indexByDate = new Map(context.rows.map((row, index) => [row.bar.date, index]))
+  return context.markers
+    .map((marker) => {
+      const index = indexByDate.get(marker.date)
+      if (index == null) return null
+      const bar = context.rows[index].bar
+      const isBuy = marker.kind === 'buy'
+      const color = isBuy ? context.buyMarkerColor : context.sellMarkerColor
+      return {
+        name: marker.label,
+        kind: marker.kind,
+        coord: [index, isBuy ? bar.low * 0.985 : bar.high * 1.015],
+        symbol: 'triangle',
+        symbolRotate: isBuy ? 0 : 180,
+        symbolSize: 12,
+        itemStyle: { color, borderColor: '#fff', borderWidth: 1 },
+        label: {
+          show: true,
+          position: isBuy ? 'bottom' : 'top',
+          color,
+          fontSize: 10,
+          fontWeight: 600,
+          lineHeight: 13,
+          formatter: marker.label,
+        },
+      }
+    })
+    .filter(Boolean)
 }
 
 function commonAxes(context: OptionContext, showPointerDate: boolean) {
@@ -371,6 +414,10 @@ export function buildKlineOption(context: OptionContext) {
           color0: context.theme.down,
           borderColor: context.theme.up,
           borderColor0: context.theme.down,
+        },
+        markPoint: {
+          symbolSize: 0,
+          data: buildTradeMarkPoints(context),
         },
       },
       ...KLINE_MA_DEFINITIONS.map((definition) => {

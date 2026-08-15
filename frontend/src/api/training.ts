@@ -46,6 +46,8 @@ export interface RunningRound {
   markers: TrainTradeMarker[]
   trades: TrainTrade[]
   lot_size: number
+  // 板块（主板/创业板/科创板）为宽泛分类，与选股过滤同口径，盲测阶段同样返回。
+  board: string | null
 }
 
 export interface RunningView {
@@ -67,6 +69,7 @@ export interface DetailRound {
   status: string
   code: string | null
   name: string | null
+  board: string | null
   start_date: string | null
   end_date: string | null
   window_days: number

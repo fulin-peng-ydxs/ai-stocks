@@ -589,7 +589,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table` / overlay:`settings-drawer` |
 | `backtest` | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` |
-| `training` | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `training` | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |
 | `stock-detail` | `StockDetailView`（个股详情） | `detail` | `density` | action:`toolbar` / main:`detail` / nested:`chart` |
 | `config-score` | `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `config-trade` | `ConfigView`（买卖指标） | `workbench` | `density` | action:`toolbar` / main:`section` |

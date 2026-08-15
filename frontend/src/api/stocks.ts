@@ -44,6 +44,12 @@ export interface Bar {
   volume: number
   amount: number | null
   turnover_rate: number | null
+  // 盘感训练 K 线由后端在 bars 内附带（12/26/9，严格后向），未暖机为 null
+  macd_diff?: number | null
+  macd_dea?: number | null
+  macd_hist?: number | null
+  macd_golden_cross?: boolean | null
+  macd_dead_cross?: boolean | null
 }
 
 export interface Bars {

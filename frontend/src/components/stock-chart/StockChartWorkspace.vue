@@ -12,6 +12,7 @@ import {
 import * as echarts from 'echarts'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import { useStatusColorPalette } from '@/components/chartTheme'
 import type { AuxiliaryChartType, ChartType } from '@/composables/useStockChartPreferences'
 import {
   KLINE_MA_DEFINITIONS,
@@ -39,6 +40,7 @@ import {
   panelTitle,
   volumeMetrics,
   type MacdPanelState,
+  type TradeMarker,
   type WorkspacePanelKey,
 } from './workspaceOptions'
 
@@ -67,6 +69,7 @@ const props = withDefaults(defineProps<{
   bars: Bar[]
   warmupBars?: Bar[]
   indicators?: IndicatorRow[]
+  markers?: TradeMarker[]
   slot2?: AuxiliaryChartType
   slot3?: AuxiliaryChartType
   heightRatios?: number[]
@@ -80,6 +83,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   warmupBars: () => [],
   indicators: () => [],
+  markers: () => [],
   slot2: 'volume',
   slot3: 'macd',
   heightRatios: () => [0.6, 0.2, 0.2],
@@ -103,6 +107,7 @@ const workspaceEl = ref<HTMLElement | null>(null)
 const chartElements = new Map<WorkspacePanelKey, HTMLElement>()
 const charts = new Map<WorkspacePanelKey, echarts.ECharts>()
 const theme = useStockChartTheme()
+const statusPalette = useStatusColorPalette()
 const activeIndex = ref<number | null>(null)
 const liveRatios = ref<number[]>([])
 const zoomRange = ref<ZoomRange>(normalizeZoomRange(props.zoomStart, props.zoomEnd))
@@ -174,6 +179,9 @@ function chartOption(panel: PanelDescriptor, isBottom: boolean) {
     isBottom,
     zoomStart: zoomRange.value.start,
     zoomEnd: zoomRange.value.end,
+    markers: props.markers,
+    buyMarkerColor: statusPalette.value.primary,
+    sellMarkerColor: statusPalette.value.warning,
   }
   if (panel.type === 'kline') return buildKlineOption(context)
   if (panel.type === 'volume') return buildVolumeOption(context)
@@ -458,7 +466,7 @@ watch(
   },
 )
 watch(
-  [panels, rows, () => props.warmupBars, () => props.macdState, theme,
+  [panels, rows, () => props.warmupBars, () => props.macdState, () => props.markers, theme,
   ],
   async () => {
     activeIndex.value = null

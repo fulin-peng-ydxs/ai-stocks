@@ -362,6 +362,56 @@ describe('workspaceOptions', () => {
     expect(downContent).toContain('style="color:#down">-2.00%</span>')
   })
 
+  it('买卖点标注渲染到 K 线 markPoint，买=蓝▲置于最低价下方、卖=橙▼置于最高价上方', () => {
+    const rows = alignStockChartRows(
+      [bar('2026-07-22', 10), bar('2026-07-23', 11), bar('2026-07-24', 12)],
+      [],
+    )
+    const context = {
+      rows,
+      warmupBars: [],
+      theme,
+      isBottom: false,
+      zoomStart: 0,
+      zoomEnd: 100,
+      markers: [
+        { date: '2026-07-22', kind: 'buy' as const, label: '买入\n10.00' },
+        { date: '2026-07-24', kind: 'sell' as const, label: '卖出\n12.00' },
+      ],
+      buyMarkerColor: '#buy',
+      sellMarkerColor: '#sell',
+    }
+    const option = buildKlineOption(context)
+    const kline = option.series[0] as {
+      markPoint: { symbolSize: number, data: Array<Record<string, unknown>> }
+    }
+    const points = kline.markPoint.data
+    expect(points).toHaveLength(2)
+
+    const buy = points.find((point) => point.kind === 'buy') as typeof points[number]
+    const sell = points.find((point) => point.kind === 'sell') as typeof points[number]
+    const buyCoord = buy.coord as [number, number]
+    const sellCoord = sell.coord as [number, number]
+    expect(buyCoord[0]).toBe(0)
+    expect(sellCoord[0]).toBe(2)
+    // 买点钉在最低价下方、卖点钉在最高价上方，保证不与蜡烛重叠。
+    expect(buyCoord[1]).toBeCloseTo(9.5 * 0.985)
+    expect(sellCoord[1]).toBeCloseTo(12.4 * 1.015)
+    expect(buy).toMatchObject({ symbolRotate: 0, symbolSize: 12 })
+    expect(sell).toMatchObject({ symbolRotate: 180, symbolSize: 12 })
+    expect((buy.itemStyle as { color: string }).color).toBe('#buy')
+    expect((sell.itemStyle as { color: string }).color).toBe('#sell')
+    expect((buy.label as { formatter: string }).formatter).toBe('买入\n10.00')
+    expect((sell.label as { formatter: string }).formatter).toBe('卖出\n12.00')
+  })
+
+  it('未传 markers 时 K 线 markPoint 为空数组，不影响个股详情等既有页面', () => {
+    const rows = alignStockChartRows([bar('2026-07-22')], [])
+    const option = buildKlineOption({ rows, warmupBars: [], theme, isBottom: false, zoomStart: 0, zoomEnd: 100 })
+    const kline = option.series[0] as { markPoint: { data: unknown[] } }
+    expect(kline.markPoint.data).toEqual([])
+  })
+
   it('拖动只改变相邻比例并受最低高度比例约束', () => {
     expect(adjustAdjacentRatios(
       [0.6, 0.2, 0.2],

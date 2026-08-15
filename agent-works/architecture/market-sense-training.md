@@ -17,9 +17,11 @@
 
 `_settle_pending` 仍保留 buy 分支，仅兼容历史遗留的 buy pending（按次日开盘价结算），新会话买入不再走此路径（`training_service.py`）。
 
-**盲测脱敏（双层保护）**。① 服务层：`_bars_for_view(reveal_dates=False)`（`training_service.py:118`）将 `date` 字段替换为相对日标签 `D±N`，response 中不含 `code`/`name`/真实日期；`get_view`（running 态）固定走脱敏路径，仅 `get_detail`（completed 态）才展示真实身份。② API 层：`reveal` 接受 `cursor_idx` 乐观校验——前端已知的游标与服务端不符则拒绝，防多标签页并发推进导致状态错乱（`training_service.py:400`）。
+**盲测脱敏（双层保护）**。① 服务层：`_bars_for_view(reveal_dates=False)`（`training_service.py:118`）将 `date` 字段替换为相对日标签 `D±N`，response 中不含 `code`/`name`/真实日期；`get_view`（running 态）固定走脱敏路径，仅 `get_detail`（completed 态）才展示真实身份。② API 层：`reveal` 接受 `cursor_idx` 乐观校验——前端已知的游标与服务端不符则拒绝，防多标签页并发推进导致状态错乱（`training_service.py:400`）。盲测阶段仍返回回合所属**板块（主板/创业板/科创板）**：其为宽泛分类且与选股过滤同口径，不指向具体个股，供训练台标注用。
 
 **点时安全 K 线**。`_bars_for_view` 查询条件严格为 `trade_date <= cursor_date`（`training_service.py:128`），从不返回 cursor 之后的 bar；`adj_factor_clean` 用 `COALESCE(adj_factor_clean, adj_factor)` 兜底，与全系统口径一致（`qfq-factor-rootfix` 规范）。
+
+**训练 MACD 脱敏附带**。`_bars_for_view` 末尾对返回 bars 的脱敏前复权 close 直接计算 `compute_macd`（12/26/9，严格后向），每根 bar 附 `macd_diff/macd_dea/macd_hist`（保留 3 位小数，暖机不足为 null）与 `macd_golden_cross/macd_dead_cross`（金叉/死叉信号，个股详情 MACD 面板同款）。不在前端走 `/api/stocks/{code}/indicators`（会按真实 code 查询，泄盲测身份）；数值与真实 qfq 有基准差异但方向/形态一致，训练中与结算回看共用。
 
 **综合评分公式**（`_settle_session`，`training_service.py:610`）：
 ```
@@ -101,7 +103,7 @@ _settle_session()
 - `training_trade`：逐笔成交，含 decide_date（决策日）/ fill_date（成交日）/ rel_day（相对日，盲测展示用）/ 前复权展示价 / 手数 / 费用 / pnl / return_pct / reason / auto_close。
 
 **前端视图类型**（`frontend/src/api/training.ts`）：
-- `RunningView`：running 态视图，`round` 字段中含脱敏 bars（相对日标签）+ markers + 账户状态，无 code/name/真实日期。
+- `RunningView`：running 态视图，`round` 字段中含脱敏 bars（相对日标签）+ markers + 账户状态 + 板块（宽泛分类），无 code/name/真实日期。
 - `DetailView`：completed 态视图，`rounds` 数组含真实身份 + 真实日期 + equity_curve，交易记录含 decide_date/fill_date。
 
 ---
@@ -116,7 +118,7 @@ _settle_session()
 
 开局后进入盲测训练台：
 
-- **K 线区**：蜡烛图 + 成交量 + MA，横轴为相对日（D±N），买卖点以 ▲/▼ 标注。DataZoom 可拖动查看历史上下文。
+- **K 线区**：个股详情同款多图联动工作区（`StockChartWorkspace.vue`）——K 线 + 均线 + 可配置的量能/MACD 辅助图，横轴为相对日（D±N），买卖点以 ▲/▼ 标注（买=蓝▲在最低价下方、卖=橙▼在最高价上方）。图表类型、显隐与高度占比在设置抽屉配置，K 线范围用顶部范围选择器。**MACD 由后端在训练 bars 内附带**（复用 `compute_macd` 12/26/9，由脱敏前复权 close 计算，不引用真实代码，防作弊契约不变；训练中与结算回看共用），金叉/死叉以 MACD 面板标签标注。DataZoom 可拖动查看历史上下文。**图表区域高度**与个股详情一致，在设置抽屉「组件设置」调节。
 - **账户面板**：实时显示可用现金、持仓手数 / 成本 / 浮盈亏、总资产、当前进度（第 X 日 / 共 Y 日）。
 - **下单**：选手数（或按金额自动换算）→ 点「买」或「卖」；支持快捷手数/金额预设（在设置抽屉配置）。**买入当日按收盘价即时成交（T+0）**，立即反映到账户与成交明细；**卖出登记为 pending（T+1）**，次日开盘成交，点「撤单」可撤回尚未成交的卖出意图。
 - **推进**：点「下一日」（或按 `→`）揭示次日 K 线并结算 pending 卖出；成交失败（开盘跌停/停牌）会弹提示，账户不变。键盘快捷键：`B` = 买、`S` = 卖、`→` = 下一日。
@@ -125,14 +127,16 @@ _settle_session()
 ### 结算详情
 
 所有回合结束后：
-- 揭晓每回合真实股票名称、代码、日期区间，可点股票名跳转个股详情页。
-- 查看逐回合 K 线（含完整买卖点）、成交明细（含每笔理由与 decide/fill 日期）、资金曲线与回撤。
+- 揭晓每回合真实股票名称、代码、**所属板块（主板/创业板/科创板，与选股过滤同口径）**、日期区间，可点股票名跳转个股详情页。
+- 查看逐回合 K 线（含 MACD 与完整买卖点）、成交明细（含每笔理由与 decide/fill 日期）、资金曲线与回撤。回合卡在整页流内完整展开（不被视口压缩），逐回合成交明细表超出 240px 上限后表内滚动，避免撑爆整页。
+- 整局复盘与训练台/训练首页一样由页面 main 区整区滚动承接（`body` 槽 `scroll: 'region'`）：长内容自然撑高、内容不被压缩到窄滚动条，小视口下也可完整滚动浏览。
 - 整局评分（0~100）、评级（S~D）、总收益、胜率、最大回撤、交易次数。
+- **评分规则说明卡**：综合评分 = 超额收益×40% + 绝对收益×25% + 回撤控制×20% + 胜率×15%，四维度口径与评级阈值（S≥90/A≥80/B≥70/C≥60/D<60）逐字对齐后端公式。
 - 复盘笔记输入框，内容落库后历史回看时可继续编辑。
 
 ### 训练历史
 
-配置卡下方展示历次训练记录（服务端分页，默认按时间倒序），点击任意行进入历史回看（此时身份已揭晓，页面同结算详情）。删除按钮级联清除该局所有回合与成交记录。
+配置卡下方展示历次训练记录（服务端分页，默认按时间倒序），点击任意行进入历史回看（此时身份已揭晓，页面同结算详情）。删除按钮级联清除该局所有回合与成交记录。分页走全站 AppPagination 规范（默认 20 条/页，可选 20/50/100/200，与所有列表页一致），每页条数可在设置抽屉「组件设置」调节（`history.pageSize`，与列头排序同源）。config 阶段历史表吃满剩余高度、表内滚动；小视口内容超限时整区滚动兜底。
 
 成长曲线区（有历史数据后展示）：折线图跨局展示评分 / 总收益 / 胜率趋势，横轴按完成时间排列。
 
@@ -145,7 +149,7 @@ _settle_session()
 | `MarketRepository.get_universe_asof` | 随机抽样候选池（防幸存者偏差） | 未修改 |
 | `broker.can_buy_at_open` / `can_sell_at_open` | 涨跌停可成交性判定（买入复用判收盘封涨停，卖出判次日开盘跌停） | 未修改 |
 | `config.backtest.cost` | 佣金/印花/过户费/滑点费率 | 未修改 |
-| `CandleChart.vue` | K 线图（含 markers 买卖标注） | 未修改 |
+| `StockChartWorkspace.vue` | 训练 K 线工作区（多图联动，新增可选 `markers` 买卖点标注） | 新增 markers 支持 |
 | `EquityChart.vue` | 资金曲线（结算详情） | 未修改 |
 | `daily_bar` / `trade_calendar` / `stock_basic` | 行情/日历/股票基础信息 | 未修改（只读） |
 
