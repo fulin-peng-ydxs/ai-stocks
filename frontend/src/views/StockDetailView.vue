@@ -775,6 +775,7 @@ onBeforeUnmount(() => {
 <template>
   <LayoutHost :layout="detailEffective">
     <template #action>
+    <div class="lh-action">
     <div class="page-head">
       <div class="title">
         <el-button text @click="returnToCollection">
@@ -848,6 +849,7 @@ onBeforeUnmount(() => {
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
+    </div>
     </div>
     </template>
 
@@ -1155,7 +1157,6 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: var(--app-space-3);
   flex-wrap: wrap;
-  margin-bottom: var(--app-space-3);
 }
 .title {
   min-width: 0;

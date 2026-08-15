@@ -753,7 +753,7 @@ onBeforeUnmount(detachKeyboard)
 
 <style scoped>
 .training { gap: var(--app-space-2); }
-.page-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: var(--app-space-2); padding-bottom: 4px; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: var(--app-space-2); }
 .page-head .title-row { margin: 0; font-size: var(--app-font-size-page-title-sm); display: flex; align-items: center; gap: var(--app-space-control-gap); }
 .page-title-row { display: flex; align-items: center; }
 .page-head .sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }

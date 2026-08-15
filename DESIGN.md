@@ -384,6 +384,14 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 列表页的搜索/筛选交互行统一用卡片边框承载：`<el-card shadow="never" class="filter-card">` 包裹 `AppControlRow`，`filter-card` 使用全局样式（`margin-bottom: 0`，卡片体内边距 `var(--app-space-3) var(--app-space-4)`）。禁止搜索行裸 div 无边框散落在页面。工具栏/操作按钮行不强制套卡。
 
+### 5.1.2 页面间距承载
+
+页面标题行到主内容区的间距由布局系统统一承载，页面禁止叠加私有间距：
+
+- 操作区内块间距 = `.lh-action` 的 `gap: var(--app-space-3)`（12px）。
+- 页面级间距 = `.v-page` 的 `gap: var(--layout-page-gap)`，由预设 `pageGap`（默认 14px）运行时覆盖。
+- `.page-head` / `.page-title-row` / `.title-row` 等标题行选择器**禁止再声明 `margin-bottom` / `padding-bottom`**，否则与 `.lh-action` gap 叠加成双倍间距（曾出现 26px/28px）。标题行必须包在 `<div class="lh-action">` 内，间距交给 gap。该约束由 `typography-spacing-system.spec.ts` 强制。
+
 ### 5.2 页面设计闭环触发条件
 
 涉及新页面，或改造既有页面的布局、组件、设置抽屉、表格、弹窗/抽屉、页面设置入口时，开发计划必须包含页面设计闭环。只改后端、接口、文案或不影响布局的业务逻辑时，计划中写明“不涉及前端页面设计闭环”。

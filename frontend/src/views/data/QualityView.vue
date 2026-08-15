@@ -550,7 +550,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
 .qm { color: var(--el-color-primary); cursor: help; margin-left: 4px; }

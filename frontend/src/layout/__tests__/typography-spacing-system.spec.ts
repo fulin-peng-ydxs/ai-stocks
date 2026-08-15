@@ -184,6 +184,32 @@ describe('字体与间距设计契约', () => {
     ).toEqual([])
   })
 
+  it('页面标题行间距由布局系统承载，禁止 .page-head 叠加私有 margin/padding-bottom', () => {
+    // 事故复盘：QualityView/BoardView 的 .page-head { margin-bottom: 14px } 与 .lh-action 的
+    // gap(12px) 叠加成 26px，造成页面间距不一致。间距一律由布局系统承载：
+    //   - 操作区内块间距 = .lh-action gap(var(--app-space-3), 12px)
+    //   - 页面级间距 = .v-page gap(--layout-page-gap, 预设 pageGap=14px)
+    // 页面标题行(.page-head/.page-title-row/.title-row 等)禁止再声明 margin-bottom/padding-bottom。
+    const violations: string[] = []
+    for (const file of sourceFiles(SRC_DIR)) {
+      const rel = relative(SRC_DIR, file)
+      if (rel === 'styles/global.css') continue
+      for (const css of styleBlocks(file)) {
+        for (const match of css.matchAll(/([^{}]+)\{([^}]*?)\}/gs)) {
+          const selector = match[1].trim()
+          if (selector.includes(':global') || selector.includes(':deep') || selector.includes('@keyframes')) continue
+          if (!/(\.page-head|\.page-title-row|\.title-row)(\s|,|:|\.|\{|$)/.test(selector)) continue
+          const body = match[2]
+          if (/margin-bottom\s*:\s*[^;}]+/.test(body) || /padding-bottom\s*:\s*[^;}]+/.test(body)) {
+            violations.push(`${rel}:${lineOf(css, match.index ?? 0)} ${selector} -> ${body.trim().slice(0, 60)}`)
+          }
+        }
+      }
+    }
+
+    expect(violations).toEqual([])
+  })
+
   it('新页面脚手架直接消费排版/间距事实源，并显式标记未完成占位', () => {
     const scaffold = read(join(FRONTEND_DIR, 'scripts/scaffold-page.mjs'))
 
