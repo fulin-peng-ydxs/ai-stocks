@@ -102,7 +102,13 @@ class DataVerifier:
         neg_vol = self._count("SELECT count(*) FROM daily_bar WHERE volume<0 OR amount<0")
         self._check("成交量/额非负", neg_vol == 0, f"负值 {neg_vol}")
 
-        bad_factor = self._count("SELECT count(*) FROM daily_bar WHERE adj_factor IS NULL OR adj_factor<=0")
+        # 复权因子口径与业务一致：优先 adj_factor_clean（去抖），源 adj_factor 仅作审计。
+        # 源因子在个别除权日可能返回 NULL（akshare 源端缺陷），clean 已回填前段因子，
+        # 若判源列非空会误报"数据坏"——业务读因子一律 COALESCE(adj_factor_clean, adj_factor)。
+        bad_factor = self._count(
+            "SELECT count(*) FROM daily_bar "
+            "WHERE COALESCE(adj_factor_clean, adj_factor) IS NULL "
+            "OR COALESCE(adj_factor_clean, adj_factor)<=0")
         self._check("复权因子为正", bad_factor == 0, f"异常因子 {bad_factor}")
 
         # 涨跌幅越界（按板块口径；不套用当前 ST 状态——见 add_markers 的 ST 时变说明）。
@@ -198,13 +204,16 @@ class DataVerifier:
             ("daily_bar", "close", "", "日线·收盘"),
             ("daily_bar", "volume", "", "日线·成交量"),
             ("daily_bar", "amount", "", "日线·成交额"),
-            ("daily_bar", "adj_factor", "", "日线·复权因子"),
             ("daily_bar", "turnover_rate", "", "日线·换手率"),
         ]
         for table, col, where, label in required:
             w = f" AND {where}" if where else ""
             n_null = self._count(f"SELECT count(*) FROM {table} WHERE {col} IS NULL{w}")
             self._check(f"{label} 无缺失", n_null == 0, f"缺 {n_null}")
+        # 复权因子单独查：与业务口径一致（COALESCE clean→源），源列允许 NULL（仅审计）
+        adj_missing = self._count(
+            "SELECT count(*) FROM daily_bar WHERE COALESCE(adj_factor_clean, adj_factor) IS NULL")
+        self._check("日线·复权因子 无缺失", adj_missing == 0, f"缺 {adj_missing}")
         # 在市股流通市值必须有
         live_mv_null = self._count(
             "SELECT count(*) FROM daily_metrics m JOIN stock_basic sb ON sb.code=m.code "
