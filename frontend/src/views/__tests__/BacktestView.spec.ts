@@ -73,15 +73,28 @@ vi.mock('@/api/board', () => ({
   computeBoard: vi.fn(async () => ({ list: [] })),
 }))
 
+vi.mock('@/utils/benchmarkEquity', () => ({
+  BENCHMARK_OPTIONS: [
+    { label: '不对比指数', value: '' },
+    { label: '中证 500', value: '000905.SH' },
+    { label: '沪深 300', value: '000300.SH' },
+  ],
+  fetchBenchmarkEquity: vi.fn(async () => ({
+    code: '000905.SH', name: '中证 500', equity: [1_000_000, 1_020_000],
+  })),
+}))
+
 import * as backtestApi from '@/api/backtest'
 import * as screeningApi from '@/api/screening'
 import * as scoreApi from '@/api/scoreProfile'
 import * as tradeApi from '@/api/tradeProfile'
 import * as boardApi from '@/api/board'
+import * as benchApi from '@/utils/benchmarkEquity'
 import BacktestView from '@/views/BacktestView.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetSearchDrawer from '@/components/asset-search/AssetSearchDrawer.vue'
 import AssetProfileLabel from '@/components/AssetProfileLabel.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import type { Layers } from '@/api/backtest'
 
 // 合法 Layers fixture（P1-3）：layers 不可为 {}——渲染访问 grades_order/by_grade/base_rate，
@@ -150,7 +163,11 @@ const stubs = {
   PageSettingSection: { template: '<section><slot/></section>' },
   PageToggleRow: true,
   HelpTip: { template: '<span><slot/></span>' },
-  EquityChart: true,
+  EquityChart: {
+    name: 'EquityChart',
+    props: ['points', 'benchmarkCode', 'fill', 'extraBenchmark', 'showBenchmark'],
+    template: '<div class="equity-chart-stub" :data-benchmark="benchmarkCode" :data-extra="JSON.stringify(extraBenchmark)" :data-show-benchmark="showBenchmark"><slot/></div>',
+  },
   CandleChart: true,
   // 占位替代布尔 stub(true)：布尔 stub 在 el-option v-for 等结构下会触发 emitsOptions 空引用
   AssetVisibilityActions: { template: '<div />' },
@@ -1587,6 +1604,113 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
 
     expect(errSpy).not.toHaveBeenCalled()
     expect((wrapper.vm as any).resultError).toBe('')
+    wrapper.unmount()
+  })
+
+  it('净值图基准对比：默认中证 500 并拉取曲线传 extra-benchmark，run 基准不覆盖默认', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    // 主区 ref 从 settings 初始化：默认对比指数 = 中证 500（与板块行情同款设置）
+    expect((wrapper.vm as any).benchChoice).toBe('000905.SH')
+    expect((wrapper.vm as any).settings.benchmarkCode).toBe('000905.SH')
+
+    // 载入 run 带不同基准（沪深 300）→ 不覆盖用户的默认对比选择，只按当前区间重拉曲线
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-01-01', date_end: '2024-06-30', benchmark: '000300.SH' },
+      { id: 'r1', run_ref: 'run_ref_1' },
+    ))
+    await (wrapper.vm as any).loadRun('run_ref_1')
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+    expect((wrapper.vm as any).benchChoice).toBe('000905.SH')
+    expect(vi.mocked(benchApi.fetchBenchmarkEquity)).toHaveBeenCalledWith(
+      '000905.SH', '2024-01-01', '2024-06-30', 1_000_000,
+    )
+    const chart = wrapper.findComponent({ name: 'EquityChart' })
+    expect(chart.props('extraBenchmark')).toMatchObject({ code: '000905.SH', name: '中证 500' })
+
+    // 切换到不对比 → 置空回退默认实线
+    ;(wrapper.vm as any).benchChoice = ''
+    await flushPromises()
+    expect((wrapper.vm as any).benchmarkEquity).toBeNull()
+    // 不对比时不再回退显示 run 自带基准实线：showBenchmark 关掉，基准线整体隐藏
+    expect(chart.props('showBenchmark')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('净值图基准对比：主区选择不回写 settings（会话级，与板块行情/默认参数一致）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    expect((wrapper.vm as any).benchChoice).toBe('000905.SH')
+    // 主区改选沪深 300 → 仅本会话生效，不回写抽屉默认
+    ;(wrapper.vm as any).benchChoice = '000300.SH'
+    await flushPromises()
+    expect((wrapper.vm as any).settings.benchmarkCode).toBe('000905.SH')
+    wrapper.unmount()
+  })
+
+  it('净值图基准对比：抽屉「默认对比指数」改动单向同步主区并重拉曲线', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
+      { date_start: '2024-01-01', date_end: '2024-06-30', benchmark: '000905.SH' },
+      { id: 'r1', run_ref: 'run_ref_1' },
+    ))
+    await (wrapper.vm as any).loadRun('run_ref_1')
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+    expect((wrapper.vm as any).benchChoice).toBe('000905.SH')
+
+    // 改抽屉「默认对比指数」为沪深 300（settings 为权威）→ 单向同步主区并重拉曲线
+    ;(wrapper.vm as any).settings.benchmarkCode = '000300.SH'
+    await flushPromises()
+    await nextTick()
+    expect((wrapper.vm as any).benchChoice).toBe('000300.SH')
+    expect(vi.mocked(benchApi.fetchBenchmarkEquity)).toHaveBeenCalledWith(
+      '000300.SH', '2024-01-01', '2024-06-30', 1_000_000,
+    )
+    const chart = wrapper.findComponent({ name: 'EquityChart' })
+    expect(chart.props('extraBenchmark')).not.toBeNull()
+    // 主区运行期选择不回写 settings（会话级，与板块行情/默认参数一致）
+    ;(wrapper.vm as any).benchChoice = ''
+    await flushPromises()
+    expect((wrapper.vm as any).settings.benchmarkCode).toBe('000300.SH')
+    wrapper.unmount()
+  })
+
+  it('净值图基准对比：抽屉显式选「不对比」后重跑，保持不对比（run 基准不覆盖）', async () => {
+    const wrapper = await mountView()
+    await emitAllReady(wrapper)
+    vi.mocked(backtestApi.runBacktest).mockResolvedValue({
+      run_id: 'bt_new', metrics: {}, layers: validLayers(), trades: [], equity: [],
+      benchmark_code: '000905.SH',
+    } as any)
+    vi.mocked(backtestApi.listRuns).mockResolvedValue({ runs: [] })
+
+    // 默认中证 500 → 首次运行即拉取曲线
+    await (wrapper.vm as any).doRun({
+      kind: 'strategy', date_start: '2024-01-01', date_end: '2024-06-30',
+      score_profile_id: 'avr_score_1', trade_profile_id: 'avr_trade_1', benchmark: '000905.SH',
+    } as any)
+    await flushPromises()
+    expect((wrapper.vm as any).benchChoice).toBe('000905.SH')
+
+    // 抽屉选「不对比」（settings 写空）→ 单向同步主区并置空曲线
+    ;(wrapper.vm as any).settings.benchmarkCode = ''
+    await flushPromises()
+    expect((wrapper.vm as any).benchChoice).toBe('')
+    expect((wrapper.vm as any).benchmarkEquity).toBeNull()
+
+    // 重跑（run 仍带 000905.SH 基准）→ 显式不对比保持，run 基准不覆盖
+    await (wrapper.vm as any).doRun({
+      kind: 'strategy', date_start: '2024-01-01', date_end: '2024-06-30',
+      score_profile_id: 'avr_score_1', trade_profile_id: 'avr_trade_1', benchmark: '000905.SH',
+    } as any)
+    await flushPromises()
+    expect((wrapper.vm as any).benchChoice).toBe('') // 抽屉显式不对比不被 run 基准覆盖
+    expect((wrapper.vm as any).benchmarkEquity).toBeNull()
     wrapper.unmount()
   })
 })

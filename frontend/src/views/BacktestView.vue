@@ -12,11 +12,13 @@ import { listProfiles, getProfile, browseProfiles, copyProfile, type Profile } f
 import { listScoreProfiles, browseScoreProfiles, copyScoreProfile, type ScoreProfileSummary } from '@/api/scoreProfile'
 import { listTradeProfiles, browseTradeProfiles, copyTradeProfile, type TradeProfileSummary } from '@/api/tradeProfile'
 import { getBars, type Bar } from '@/api/stocks'
+import { fetchBenchmarkEquity, BENCHMARK_OPTIONS, type BenchmarkEquity } from '@/utils/benchmarkEquity'
 import EquityChart from '@/components/EquityChart.vue'
 import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
 import { Search, Close } from '@element-plus/icons-vue'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
@@ -60,6 +62,8 @@ const backtestDefaults = {
   topN: 10,
   initCap: 1_000_000,
   robustExpanded: false,
+  // 对比指数（净值图虚线基准）：业务选项层持久化，与板块行情 SectorsView 同款设置；默认中证 500（与板块行情默认一致）。
+  benchmarkCode: '000905.SH',
 }
 const { settings, isDirty, reset } = usePageSettings('backtest', backtestDefaults)
 type BacktestParamMemory = {
@@ -153,6 +157,20 @@ const topN = ref(Number(settings.topN))
 const initCap = ref(Number(settings.initCap))
 const industryOn = ref(false)
 const industryPct = ref(20)            // 单行业持仓上限 %
+// 基准指数选择（净值图虚线对比）：默认中证 500（与板块行情同款设置），可切换其它指数；fetch 结果注入 EquityChart。
+// 从业务设置层初始化（抽屉「默认对比指数」持久化）。主区运行期选择不回写 settings，与「默认参数」一致。
+const benchChoice = ref<string>(settings.benchmarkCode)
+const benchmarkEquity = ref<BenchmarkEquity | null>(null)
+let benchRequestVersion = 0
+async function loadBenchmarkEquity() {
+  const code = benchChoice.value
+  if (!code) { benchmarkEquity.value = null; return }
+  if (!strat.value) return
+  const version = ++benchRequestVersion
+  const initCapV = strat.value.initial_capital ?? initCap.value
+  const eq = await fetchBenchmarkEquity(code, dateStart.value, dateEnd.value, initCapV)
+  if (version === benchRequestVersion) benchmarkEquity.value = eq
+}
 const profiles = ref<Profile[]>([])
 const scoreProfiles = ref<ScoreProfileSummary[]>([])
 const tradeProfiles = ref<TradeProfileSummary[]>([])
@@ -483,6 +501,16 @@ watch(
 watch(() => settings.kind, (value) => { kind.value = value })
 watch(() => settings.topN, (value) => { topN.value = Number(value) })
 watch(() => settings.initCap, (value) => { initCap.value = Number(value) })
+// 抽屉「默认对比指数」→ 主区选择器单向同步：settings 为权威（同 kind/topN/initCap 模式），
+// 改抽屉即同步主区并触发基准重拉；主区运行期选择不回写 settings（会话级，与板块行情一致）。
+watch(() => settings.benchmarkCode, (value) => { if (benchChoice.value !== value) benchChoice.value = value })
+// 基准选择切换 → 重新拉指数曲线；无有效对比（不对比/无结果）时置空回退默认实线
+watch(benchChoice, () => { benchmarkEquity.value = null; loadBenchmarkEquity() })
+// 新回测结果出现（日期区间可能变化）→ 按当前区间重拉基准曲线；不覆盖用户的选择。
+watch(strat, (s) => {
+  if (s) loadBenchmarkEquity()
+  else benchmarkEquity.value = null
+})
 watch(() => settings.robustExpanded, (value) => { robustPanels.value = value ? ['robust'] : [] })
 watch(rememberedParamsHydrated, (ready) => {
   if (ready && !loadingRun.value) {
@@ -1962,8 +1990,21 @@ async function openTradeChart(row: TradeRow) {
           </div>
         </el-card>
         <el-card shadow="never" class="block">
-          <div class="block-title">资金曲线（组合 vs 基准 + 回撤）</div>
-          <EquityChart :points="strat.equity" :benchmark-code="strat.benchmark_code || '000905.SH'" />
+          <div class="block-title">资金曲线（组合 vs 基准 + 回撤）
+            <span class="bench-choice">
+              <span class="bench-choice-label">对比指数</span>
+              <AppFilterSelect
+                v-model="benchChoice"
+                :options="BENCHMARK_OPTIONS"
+                :multiple="false"
+                :clearable="false"
+                :filterable="false"
+                data-testid="backtest-benchmark"
+              />
+            </span>
+          </div>
+          <EquityChart :points="strat.equity" :benchmark-code="strat.benchmark_code || '000905.SH'"
+            :extra-benchmark="benchmarkEquity" :show-benchmark="benchChoice !== ''" />
         </el-card>
 
         <!-- 稳健性测试（即跑即看，不入历史）：用当前表单参数为基准 -->
@@ -2295,6 +2336,17 @@ async function openTradeChart(row: TradeRow) {
             ]" />
           </div>
           <PageToggleRow v-model="settings.robustExpanded" label="默认展开稳健性测试" />
+          <div class="setting-item">
+            <div class="setting-label">默认对比指数</div>
+            <AppFilterSelect
+              v-model="settings.benchmarkCode"
+              :options="BENCHMARK_OPTIONS"
+              :multiple="false"
+              :clearable="false"
+              :filterable="false"
+              data-testid="backtest-default-benchmark"
+            />
+          </div>
         </PageSettingSection>
       </template>
     </PageSettingsDrawer>
@@ -2425,6 +2477,8 @@ async function openTradeChart(row: TradeRow) {
 }
 .block-title { font-weight: var(--app-font-weight-section); margin-bottom: 10px; display: flex; align-items: baseline; gap: var(--app-space-2); }
 .block-title .sub { font-weight: var(--app-font-weight-regular); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.bench-choice { margin-left: auto; display: flex; align-items: center; gap: var(--app-space-2); font-weight: var(--app-font-weight-regular); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
+.bench-choice :deep(.app-filter-select) { width: 120px; }
 .export-btn { margin-left: auto; }
 .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--app-space-3); }
 .metric { background: var(--el-fill-color-light); border-radius: 8px; padding: 12px 14px; }

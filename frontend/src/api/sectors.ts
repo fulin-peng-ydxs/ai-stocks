@@ -1,5 +1,6 @@
 // 板块行情 API（对应 backend/api/sectors.py，板块概念需求 R7-R10/R13/R14）
 import http from './client'
+import type { AppRequestConfig } from './client'
 import type { IndicatorRow } from './stocks'
 
 /** 列表可排序字段码（与 board_query.SORT_FIELDS 双向一致，前端中文标签仅 UI 映射）。 */
@@ -164,9 +165,11 @@ export function getSectorBenchmarkBars(
   start: string,
   end: string,
 ): Promise<SectorBenchmarkBars> {
+  // 基准指数是可选对比数据（指数区间无行情/接口异常时回退默认基准线），不弹全局 toast。
   return http.get(`/sectors/benchmarks/${encodeURIComponent(indexCode)}/bars`, {
     params: { start, end },
-  })
+    skipGlobalError: true,
+  } as AppRequestConfig)
 }
 
 export function getSectorMembers(

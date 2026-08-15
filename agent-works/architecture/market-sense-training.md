@@ -150,7 +150,7 @@ _settle_session()
 | `broker.can_buy_at_open` / `can_sell_at_open` | 涨跌停可成交性判定（买入复用判收盘封涨停，卖出判次日开盘跌停） | 未修改 |
 | `config.backtest.cost` | 佣金/印花/过户费/滑点费率 | 未修改 |
 | `StockChartWorkspace.vue` | 训练 K 线工作区（多图联动，新增可选 `markers` 买卖点标注） | 新增 markers 支持 |
-| `EquityChart.vue` | 资金曲线（结算详情） | 新增 `fill` prop：结算详情等高列内图表随容器高度填满，回测页等默认用法不变 |
+| `EquityChart.vue` | 资金曲线（结算详情） | 新增 `fill` prop（等高列内填满）与 `extraBenchmark` prop（父页注入对比指数虚线，回测页使用；训练页基准保持「满仓持有」语义不启用） |
 | `daily_bar` / `trade_calendar` / `stock_basic` | 行情/日历/股票基础信息 | 未修改（只读） |
 
 训练模块**不修改**回测相关表与服务，与筛选 / 榜单 / 配置管理完全解耦，可独立上下线。
