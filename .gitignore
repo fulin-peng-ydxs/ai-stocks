@@ -31,6 +31,8 @@ frontend/.vite/
 frontend/*.tsbuildinfo
 frontend/test-results/
 frontend/playwright-report/
+# 根目录孤立 node_modules（在错误 cwd 下跑前端命令产生的缓存残留，正常前端依赖在 frontend/ 下）
+/node_modules/
 
 # OS
 .DS_Store
