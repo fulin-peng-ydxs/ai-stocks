@@ -114,20 +114,10 @@ const {
 // 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 
-// 三阶段共用同一布局，但滚动归属按阶段区分：
-// - config（未开局）：body 槽走默认成长区，历史表吃满剩余高度、表内滚动（workbench 主表规范）。
-// - running/result（训练台/结算）：长内容流（固定高度图表 + 操作面板/多回合复盘），
-//   派生 body 槽为 scroll:region，整区滚动承接，避免内容被压缩到窄滚动条。
-const mainLayout = computed<PageLayout>(() => {
-  const base = trainingEffective.value
-  if (phase.value === 'config') return base
-  return {
-    ...base,
-    slots: base.slots.map((s) =>
-      s.id === 'body' ? { ...s, scroll: 'region' as const } : s,
-    ),
-  }
-})
+// 三阶段共用同一布局：body 槽统一走默认成长区（grow 策略）。
+// grow 容器是视口高 + overflow:auto——余量足够时由收尾块（历史表/成交明细/复盘卡）吃满剩余高度，
+// 余量不足时整个主内容区滚动兜底，无需按阶段区分滚动归属（DESIGN §5.4）。
+const mainLayout = computed<PageLayout>(() => trainingEffective.value)
 
 // 训练历史每页条数：走组件配置层（抽屉「组件设置」可调），与全站分页规范一致。
 const historyPageSize = computed(() => {
@@ -821,7 +811,7 @@ onBeforeUnmount(detachKeyboard)
               @ratio-draft="handleRatioDraft"
               @ratio-commit="handleRatioCommit"
             /></div>
-            <div class="round-equity"><EquityChart :points="roundEquityPoints(rd, detail.initial_capital)" benchmark-code="满仓持有" /></div>
+            <div class="round-equity"><EquityChart :points="roundEquityPoints(rd, detail.initial_capital)" benchmark-code="满仓持有" fill /></div>
           </div>
           <AppDataTable :data="rd.trades" size="small" class="round-trades" empty-text="本回合无成交" embedded max-height="240">
             <AppTableColumn label="决策日"><template #default="{ row }">{{ row.decide_date }}</template></AppTableColumn>
@@ -970,7 +960,7 @@ onBeforeUnmount(detachKeyboard)
 .trades-card { flex: 1 1 auto; min-height: 160px; display: flex; flex-direction: column; }
 .trades-card :deep(.el-card__body) { flex: 1; min-height: 0; padding: 8px; }
 
-/* 结算：纯长内容流 → 整体内滚 */
+/* 结算：固定块（KPI/评分规则/回合卡）自然高，整局复盘卡吃满剩余高度；余量不足时整区滚动兜底 */
 .result-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--app-space-3); padding-right: 2px; }
 .kpi-row { display: flex; gap: var(--app-space-3); flex-wrap: wrap; }
 .kpi { flex: 1 1 120px; background: var(--el-fill-color-light); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: var(--app-space-1); }
@@ -991,11 +981,17 @@ onBeforeUnmount(detachKeyboard)
 .round-card { flex: 0 0 auto; }
 .round-card :deep(.el-card__body) { overflow: visible; }
 .round-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--app-space-3); }
-.round-chart { min-width: 0; }
-.round-equity { min-width: 0; }
+.round-chart { min-width: 0; display: flex; flex-direction: column; }
+.round-equity { min-width: 0; display: flex; flex-direction: column; }
 /* 成交明细：长列表走内部滚动（上限 240px，AppDataTable max-height prop），避免撑爆整页；低于上限时随内容自适应高度。 */
 .round-trades { margin-top: 10px; }
-.review-actions { margin-top: 10px; text-align: right; }
+/* 整局复盘：收尾块吃富余空间（视口剩余 > 内容自然高时填满复盘卡，不再固定矮）；
+   余量不足时靠 min-height 保住可用区，由 result-body 整区滚动兜底（DESIGN §5.4 阶梯）。 */
+.review-card { flex: 1 1 auto; min-height: 200px; display: flex; flex-direction: column; }
+.review-card :deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.review-card :deep(.el-textarea) { flex: 1 1 auto; min-height: 96px; }
+.review-card :deep(.el-textarea__inner) { height: 100%; resize: vertical; }
+.review-actions { margin-top: 10px; text-align: right; flex: 0 0 auto; }
 
 .up { color: var(--el-color-danger); }
 .down { color: var(--el-color-success); }

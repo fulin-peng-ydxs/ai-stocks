@@ -4,7 +4,7 @@ import * as echarts from 'echarts'
 import type { EquityPoint } from '@/api/backtest'
 import { useEChartsTheme } from '@/components/chartTheme'
 
-const props = defineProps<{ points: EquityPoint[]; benchmarkCode: string }>()
+const props = defineProps<{ points: EquityPoint[]; benchmarkCode: string; fill?: boolean }>()
 const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 let resizeListening = false
@@ -93,8 +93,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="eq-wrap">
-    <div ref="el" class="eq" />
+  <div class="eq-wrap" :class="{ 'eq-wrap--fill': fill }">
+    <div ref="el" class="eq" :class="{ 'eq--fill': fill }" />
   </div>
 </template>
 
@@ -107,5 +107,13 @@ onBeforeUnmount(() => {
 .eq {
   width: 100%;
   height: 420px;
+}
+/* 撑满容器模式：结算详情页等高列内图表随容器高度填满（无固定高度则退化 420px）。 */
+.eq-wrap--fill {
+  height: 100%;
+  box-sizing: border-box;
+}
+.eq--fill {
+  height: 100%;
 }
 </style>

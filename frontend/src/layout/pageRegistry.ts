@@ -370,8 +370,8 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        // body 槽默认走成长区（config 阶段历史表吃满剩余高度）；running/result 长内容流由页面按 phase
-        // 派生为 scroll:region 整区滚动（见 TrainingView）。
+        // body 槽统一走成长区（grow 策略）：各阶段收尾块（config 历史表 / running 成交明细 / result 复盘卡）
+        // 吃满剩余高度，余量不足时主内容区滚动兜底（见 TrainingView）。
         { id: 'body', component: 'section', region: 'main', order: 1 },
         { id: 'history', component: 'data-table', region: 'main', parentId: 'body', label: '训练历史', order: 2, config: { defaultSort: 'created_at:desc' } },
         // 训练台/结算的 K 线工作区：进入统一可寻址模型（slots.chart.config.*），承载「图表区域高度」等组件特性。
