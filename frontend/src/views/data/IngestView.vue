@@ -635,7 +635,7 @@ watch(
               </HelpTip>
             </div>
             <div class="act-d">刷新评分缓存，并生成最新交易日公共预设榜单快照</div>
-            <el-button v-permission="'data-task:manage'" plain size="small" @click="submit('recompute')">执行</el-button>
+            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" @click="submit('recompute')">执行</el-button>
           </div>
         </div>
       </el-card>

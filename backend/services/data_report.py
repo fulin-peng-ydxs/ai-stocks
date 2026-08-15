@@ -431,6 +431,74 @@ class DataIntegrityReport:
                 f"FROM {v}")
         return len(df)
 
+    def _upsert_scan_issues(self, issues: list[dict], issue_types: tuple[str, ...]) -> int:
+        """原地替换扫描型 open 问题：与已存在 open 同键（issue_type+code+trade_date）复用其 id。
+
+        不同于 DELETE+重建——后者每次扫描都会重排 open id，破坏修复任务持有的旧 id
+        （板块 fix 修完即重扫，批量任务后续条目会被作废）。本方法在同一事务内完成：
+        - 仍存在的逻辑问题：复用旧 open id，detail/severity/detected_at 原位刷新（id 稳定）；
+        - 本轮不再出现的旧 open 问题：收敛为 resolved（id 保留），不再 DELETE；
+        - 新出现的逻辑问题：插入新行（同键复用后自然新 id）。
+        收敛的旧行与 _recover_one 的复检语义一致：数据已追平、扫描不再上报 = 问题已消失。
+        """
+        from datetime import datetime
+
+        from backend.dataquality.checker import severity_for
+        ph = ",".join("?" * len(issue_types))
+        old = self.c.query_df(
+            f"SELECT id, code, trade_date, issue_type FROM data_quality_issue "
+            f"WHERE status='open' AND issue_type IN ({ph})", list(issue_types))
+        # code/trade_date 统一规范化：源级问题（如 fund_stale）code=NULL，须与扫描侧 None 同键
+        def _norm_code(v):
+            return None if v is None or pd.isna(v) else str(v)
+
+        def _norm_td(v):
+            return None if v is None or pd.isna(v) else str(pd.Timestamp(v).date())
+
+        key_old: dict[tuple, int] = {}
+        for _, r in old.iterrows():
+            key_old[(str(r["issue_type"]), _norm_code(r["code"]), _norm_td(r["trade_date"]))] = int(r["id"])
+        now = datetime.now()
+        new_rows: list[list] = []
+        upd_rows: list[list] = []
+        fresh_keys: set[tuple] = set()
+        for x in issues:
+            code = x["code"]
+            td_raw = x.get("trade_date")
+            key = (x["issue_type"], _norm_code(code), _norm_td(td_raw))
+            fresh_keys.add(key)
+            iid = key_old.get(key)
+            if iid is None:
+                new_rows.append([code, td_raw, x["issue_type"],
+                                 severity_for(x["issue_type"]), x.get("detail", ""), now])
+            else:
+                upd_rows.append([iid, severity_for(x["issue_type"]), x.get("detail", ""), now])
+        if new_rows:
+            self._insert_issues([
+                {"code": row[0], "trade_date": row[1], "issue_type": row[2],
+                 "detail": row[4]}
+                for row in new_rows
+            ])
+        if upd_rows:
+            udf = pd.DataFrame(upd_rows, columns=["id", "severity", "detail", "detected_at"])
+            with self.c.temp_view(udf, prefix="qs") as v:
+                self.c.execute(
+                    "UPDATE data_quality_issue "
+                    "SET severity=u.severity, detail=u.detail, status='open', detected_at=u.detected_at "
+                    f"FROM {v} u WHERE data_quality_issue.id=u.id")
+        # 已消失问题：同键复用 id 收敛为 resolved，避免重扫重建 id、保留修复审计链路
+        old_rows = old.copy()
+        old_rows["_td"] = old_rows["trade_date"].map(_norm_td)
+        old_rows["_code"] = old_rows["code"].map(_norm_code)
+        vanish = old_rows[~old_rows.apply(
+            lambda r: (str(r["issue_type"]), r["_code"], r["_td"]) in fresh_keys, axis=1)]
+        if not vanish.empty:
+            self.c.execute(
+                f"UPDATE data_quality_issue SET status='resolved', resolved_at=? "
+                f"WHERE status='open' AND id IN ({','.join('?' * len(vanish))})",
+                [now, *[int(v) for v in vanish["id"].tolist()]])
+        return len(new_rows)
+
     @staticmethod
     def _active_l3_mask(df: pd.DataFrame) -> pd.Series:
         """Rows that should be actionable for L3 quality checks."""
@@ -771,15 +839,18 @@ class DataIntegrityReport:
                                    f"全局最新交易日 {latest}，待重采资金流",
                     }, ensure_ascii=False),
                 })
+        scan_issue_types = ("board_index_gap", "board_index_gap_daily", "board_index_invalid",
+                            "board_fund_missing", "board_fund_stale")
         with self.c.transaction():
-            for issue_type in ("board_index_gap", "board_index_gap_daily", "board_index_invalid",
-                               "board_fund_missing", "board_fund_stale"):
-                self.c.execute(
-                    "DELETE FROM data_quality_issue "
-                    "WHERE status='open' AND issue_type=?", [issue_type])
-            self._insert_issues(
-                gap_issues + daily_gap_issues + invalid_issues + member_issues
-                + fund_issues + stale_issues)
+            # 扫描型替换复用 open id（type+code+trade_date 同键原地更新），保证 id 跨扫描稳定。
+            # 板块 fix 成功后立即重扫收敛兄弟问题；若 DELETE+重建，会把其他板块仍在 open、
+            # 待批量 fix 修复的 issue id 一并重排，循环后续按旧 id 查空而失败（2026-08-15 修复）。
+            # member 类不在此替换集内：由采集层即时写 + active/ignored 去重，扫描只补盲区。
+            self._upsert_scan_issues(
+                gap_issues + daily_gap_issues + invalid_issues + fund_issues + stale_issues,
+                scan_issue_types)
+            if member_issues:
+                self._insert_issues(member_issues)
         return {"index_gap": len(gap_issues), "index_gap_daily": len(daily_gap_issues),
                 "index_invalid": len(invalid_issues),
                 "member_incomplete": len(member_issues),

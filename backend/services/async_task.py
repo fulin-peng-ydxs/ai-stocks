@@ -767,6 +767,10 @@ def _recover_one(c, rep, ing, ctx: TaskContext, issue_id: int) -> tuple[bool, li
     if df.empty:
         raise ValueError(f"质检问题不存在: id={issue_id}")
     current_status = str(df.iloc[0]["status"])
+    if current_status == "resolved":
+        # 已被其它扫描/任务收敛为已解决（如板块 fix 修完重扫把兄弟 issue 一并收敛）：
+        # 视为已解决跳过，不报失败——批量任务里同板块兄弟问题会被重扫先收敛。
+        return True, [], "已被扫描收敛为已解决，无需再修"
     if current_status != "open":
         raise ValueError(f"仅未处理问题可恢复: id={issue_id}, status={current_status}")
     code, trade_date, issue_type = df.iloc[0]["code"], df.iloc[0]["trade_date"], df.iloc[0]["issue_type"]

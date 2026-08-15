@@ -334,7 +334,7 @@ onMounted(load)
       <p class="page-subtitle">家底全景：核心 KPI、数据资产表、四层质量达标率与逐股分层体检，数字可点击直达明细。</p>
       </div>
       <div class="page-head-actions">
-        <el-button :loading="loading" @click="load">刷新</el-button>
+        <el-button :loading="loading" type="primary" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
     </div>

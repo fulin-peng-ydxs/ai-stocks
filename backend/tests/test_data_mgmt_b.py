@@ -710,6 +710,71 @@ def test_scan_board_quality_index_gap_daily_ignored(client, monkeypatch):
     assert "881121" not in daily["code"].astype(str).tolist()
 
 
+def test_scan_board_quality_keeps_open_ids(client, monkeypatch):
+    """板块重扫复用 open id：同键（type+code+trade_date）问题原地更新，不 DELETE+重建。
+
+    回归 2026-08-15：旧实现每次扫描 DELETE open 再重建，id 全换——板块 fix 修完即重扫，
+    批量任务后续待修 issue 的旧 id 会被作废（'质检问题不存在'）。复用后 id 跨扫描稳定。
+    """
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    client.execute(
+        "INSERT INTO trade_calendar (trade_date, is_open) VALUES (DATE '2026-08-07', TRUE) "
+        "ON CONFLICT DO NOTHING")
+    # 预置 open 行须带与扫描同键的 trade_date：gap 键=全局最新交易日 08-07；daily 键=缺失日 08-07
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, trade_date, severity, status, detected_at) "
+                   "VALUES (901, '881121', 'board_index_gap', DATE '2026-08-07', 'mid', 'open', now())")
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, trade_date, severity, status, detected_at) "
+                   "VALUES (902, '881121', 'board_index_gap_daily', DATE '2026-08-07', 'mid', 'open', now())")
+    rep = DataIntegrityReport(client)
+    r1 = rep.scan_board_quality()
+    assert r1["index_gap"] == 1 and r1["index_gap_daily"] >= 1
+    first = client.query_df(
+        "SELECT id, code, trade_date, detail FROM data_quality_issue "
+        "WHERE issue_type='board_index_gap' AND status='open'").iloc[0]
+    assert int(first["id"]) == 901                 # 同键复用，id 不换
+    assert "半导体" in str(first["detail"])        # detail 原位刷新
+    daily_kept = client.query_df(
+        "SELECT id FROM data_quality_issue "
+        "WHERE issue_type='board_index_gap_daily' AND status='open' AND code='881121'")
+    assert len(daily_kept) == 1 and int(daily_kept.iloc[0]["id"]) == 902   # 同键复用，id 不换
+    r2 = rep.scan_board_quality()
+    second = client.query_df(
+        "SELECT id FROM data_quality_issue "
+        "WHERE issue_type='board_index_gap' AND status='open'").iloc[0]
+    assert int(second["id"]) == 901                # 连续扫描 id 保持稳定
+
+
+def test_scan_board_quality_resolves_missing_open_no_rebuild(client, monkeypatch):
+    """板块重扫对已修复的 open 问题不删不重建：同键复用收敛为 resolved（id 保留）。
+
+    数据追平后旧 open 行不再出现在扫描结果里 → 复用其 id 收敛为已解决，而非 DELETE。
+    id 跨扫描稳定；批量 fix 里后续条目即使已被重扫收敛，按旧 id 复检仍可走良性跳过闭环。
+    """
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    client.execute(
+        "INSERT INTO trade_calendar (trade_date, is_open) VALUES (DATE '2026-08-07', TRUE) "
+        "ON CONFLICT DO NOTHING")
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, trade_date, severity, status, detected_at) "
+                   "VALUES (903, '881121', 'board_index_gap_daily', DATE '2026-08-07', 'mid', 'open', now())")
+    rep = DataIntegrityReport(client)
+    rep.scan_board_quality()
+    # 数据追平最新交易日 08-07：缺漏消失
+    client.execute(
+        "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+        "VALUES ('881121', DATE '2026-08-07', 200, 201, 199, 200, 1000, 200000)")
+    rep.scan_board_quality()
+    row = client.query_df(
+        "SELECT id, status FROM data_quality_issue WHERE id=903")
+    assert not row.empty                       # 行保留（未 DELETE）
+    assert int(row.iloc[0]["id"]) == 903       # id 不变（未重建）
+    assert row.iloc[0]["status"] == "resolved" # 同键复用收敛为已解决
+
+
 def test_scan_board_quality_index_gap_daily_late_board(client, monkeypatch):
     """板块指数逐日缺口：晚成立板块在数据起点（最早 bar 日）之前的缺失不报。
 
@@ -950,6 +1015,30 @@ def test_scan_board_quality_fund_stale(client, monkeypatch):
     payload = json.loads(stale.iloc[0]["detail"])
     assert "滞后 1 天" in payload["message"]
     assert payload["periods"] == ["即时"]  # seed 只有即时有快照且滞后
+
+
+def test_scan_board_quality_fund_stale_keeps_null_code_id(client, monkeypatch):
+    """源级资金流滞后（code=NULL）重扫复用 id：同键收敛不因 NULL code 规范化漂移。
+
+    回归 2026-08-15：`str(None)`≠`None` 会导致 code=NULL 的 stale 问题每次扫描
+    都被当成"已消失"收敛又重建，id 仍漂移；规范化后同键稳定。
+    """
+    from backend.services.data_report import DataIntegrityReport
+    _seed_board_scan(client)
+    rep = DataIntegrityReport(client)
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, trade_date, severity, status, detected_at) "
+                   "VALUES (910, NULL, 'board_fund_stale', DATE '2026-08-07', 'mid', 'open', now())")
+    rep.scan_board_quality()
+    row = client.query_df(
+        "SELECT id, status FROM data_quality_issue "
+        "WHERE issue_type='board_fund_stale' AND status='open'")
+    assert len(row) == 1 and int(row.iloc[0]["id"]) == 910   # 同键复用，id 不换
+    rep.scan_board_quality()
+    row2 = client.query_df(
+        "SELECT id FROM data_quality_issue "
+        "WHERE issue_type='board_fund_stale' AND status='open'")
+    assert len(row2) == 1 and int(row2.iloc[0]["id"]) == 910  # 连续扫描 id 稳定
 
 
 def test_scan_board_quality_fund_stale_converge(client, monkeypatch):
@@ -1287,6 +1376,53 @@ def test_board_index_gap_daily_fix_reingests_and_resolves(client, monkeypatch):
     assert captured["start"] == date(2026, 8, 7)
     assert captured["end"] == date(2026, 8, 7)
     assert captured["board_codes"] == ["309121"]
+
+
+def test_board_index_batch_fix_survives_rescan_of_siblings(client, monkeypatch):
+    """批量板块修复：第一条修完触发重扫不再作废后续 open issue 的 id。
+
+    回归 2026-08-15：旧实现板块 fix 修完即重扫（DELETE+重建 open 板块问题），批量任务里
+    其余待修 issue 的旧 id 会被重扫重排，循环后续按旧 id 查空报「质检问题不存在」。
+    新实现同键复用 id，批量能跑完。
+    """
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+    from backend.services.board_ingest import BoardIngestService
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    monkeypatch.setattr(BoardIngestService, "__init__",
+                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+    # 重采一律把对应板块补到全局最新交易日，使复检通过（OHLC 完整，避免重扫报指数非法）
+    def fake_ingest_board_bar(self, start, end=None, board_codes=None, board_type=None, ctx=None):
+        for code in (board_codes or []):
+            self.c.execute(
+                "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+                "VALUES (?, DATE '2026-08-07', 100, 101, 99, 100, 1000, 100000)", [code])
+        return {"rows": len(board_codes or []), "boards": 1, "failed": []}
+    monkeypatch.setattr(BoardIngestService, "ingest_board_bar", fake_ingest_board_bar, raising=True)
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+                   "VALUES ('309121','AI PC','concept',TRUE)")
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+                   "VALUES ('309131','AI Agent','concept',TRUE)")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-07', 10.0)")
+    # 手动指定 id 前先推进序列，避免重扫 _insert_issues 复用 nextval 产生 id 冲突
+    client.execute("SELECT nextval('seq_quality_issue')")
+    client.execute("SELECT nextval('seq_quality_issue')")
+    # 两个板块各一条 gap open；第一条(1)修完重扫时，第二条(2)必须仍在批量循环内可修复
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, trade_date, severity, status, detected_at) "
+                   "VALUES (1, '309121', 'board_index_gap', DATE '2026-08-07', 'mid', 'open', now())")
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, trade_date, severity, status, detected_at) "
+                   "VALUES (2, '309131', 'board_index_gap', DATE '2026-08-07', 'mid', 'open', now())")
+
+    tid = svc.create("fix", {"issue_ids": [1, 2]})
+    t = _wait(svc, tid)
+    assert t["status"] == "done"
+    rows = client.query_df("SELECT id, status FROM data_quality_issue WHERE id IN (1,2)")
+    statuses = {int(r["id"]): str(r["status"]) for _, r in rows.iterrows()}
+    assert statuses == {1: "resolved", 2: "resolved"}
 
 
 def test_board_fund_unmatched_fix_resolves_only_after_mapping(client, monkeypatch):
