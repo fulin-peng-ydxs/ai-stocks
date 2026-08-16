@@ -73,7 +73,17 @@ const loading = ref(false)
 const loadError = ref('')
 const data = ref<DataQuality | null>(null)
 const page = ref(1)
-const size = ref(DEFAULT_PAGE_SIZE)
+// 每页条数走组件配置层（单一事实源）：只读 computed 消费，size-change 事件只写回；
+// watch 统一回到第 1 页并重载（抽屉改默认同样生效）。
+const size = computed<number>(() => (componentValueOf('table', 'pageSize') as number) ?? DEFAULT_PAGE_SIZE)
+function onSizeChange(s: number) {
+  if (s === size.value) return
+  setComponentKnob('table', 'pageSize', s)
+}
+watch(size, () => {
+  page.value = 1
+  void load()
+})
 // 类型/严重度/状态多选；默认勾选「未处理 + 修复中」（待办两态），code 为模糊文本
 const filters = ref<{ issue_type: string[]; severity: string[]; status: string[]; code: string }>(
   { issue_type: [], severity: [], status: ['open', 'fixing'], code: '' })
@@ -107,6 +117,18 @@ function applyDefaultFilters() {
       ? ['open']
       : ['open', 'fixing']
   filters.value.severity = settings.defaultSeverity === 'high' ? ['high'] : []
+}
+
+// 筛选改动联动写回抽屉默认（DESIGN「页面可改动属性双向联动」）。多选数组↔单选枚举有损反推：
+// status 空→'all'、仅 open→'open'、其余（含 open+fixing）→'todo'；severity 仅 high→'high'、其余→'all'。
+function onStatusFilterChange(values: string[]) {
+  settings.defaultStatus =
+    values.length === 0 ? 'all'
+    : (values.length === 1 && values[0] === 'open') ? 'open'
+    : 'todo'
+}
+function onSeverityFilterChange(values: string[]) {
+  settings.defaultSeverity = values.length === 1 && values[0] === 'high' ? 'high' : 'all'
 }
 
 async function load() {
@@ -364,11 +386,13 @@ onMounted(() => {
     <el-card shadow="never" class="filter-card">
     <AppControlRow class="filter-row">
       <el-select v-model="filters.status" placeholder="状态" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 240px">
+                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 240px"
+                 @change="onStatusFilterChange">
         <el-option v-for="(l, k) in ISSUE_STATUS_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
       <el-select v-model="filters.severity" placeholder="严重度" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 200px">
+                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 200px"
+                 @change="onSeverityFilterChange">
         <el-option v-for="(l, k) in SEVERITY_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
       <el-select v-model="filters.issue_type" placeholder="问题类型" multiple clearable collapse-tags
@@ -431,7 +455,7 @@ onMounted(() => {
         :pagination="{ currentPage: page, pageSize: size, total: data?.total ?? 0, pageSizes: PAGE_SIZE_OPTIONS }"
         @sort-change="onSortChange"
         @page-change="(p: number) => { page = p; load() }"
-        @size-change="(s: number) => { size = s; page = 1; load() }"
+        @size-change="onSizeChange"
       >
         <AppTableColumn v-if="colVisible('severity')" label="严重度" prop="severity" sortable="custom">
           <template #default="{ row }">

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
-import { reactive, ref, type Component } from 'vue'
+import { computed, reactive, ref, type Component } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useStockSet } from '@/stores/stockSet'
@@ -48,7 +48,10 @@ vi.mock('@/composables/useTradeDates', () => ({
 }))
 
 vi.mock('@/composables/useKlinePrefs', () => ({
-  useKlinePrefs: () => ({ validDefault: ref(120) }),
+  useKlinePrefs: () => {
+    const prefs = reactive({ defaultPeriod: 120 })
+    return { validDefault: computed(() => prefs.defaultPeriod), prefs }
+  },
 }))
 
 vi.mock('@/utils/csv', () => ({ downloadCsv: vi.fn() }))

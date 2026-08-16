@@ -16,6 +16,7 @@ import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
+import PageToggleRow from '@/components/PageToggleRow.vue'
 import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
@@ -92,6 +93,7 @@ const sectorsDefaults = {
   showAnalysisPanel: true,
   compareMetrics: COMPARE_METRIC_ORDER as CompareMetric[],
   defaultCompareMetric: 'cum' as CompareMetric,
+  compareWindow: 250,
   charts: createDefaultStockChartPreferences(),
 }
 const { settings, isDirty, reset, hydrated, whenHydrated } = usePageSettings('sectors', sectorsDefaults)
@@ -161,7 +163,7 @@ const LIST_SCOPE_OPTIONS = [
   { label: '自选', value: 'watchlist' },
 ]
 
-const defaultSize = computed<number>(() => {
+const configuredPageSize = computed<number>(() => {
   const value = componentValueOf('table', 'pageSize')
   return typeof value === 'number' ? value : 20
 })
@@ -180,11 +182,40 @@ const loadError = ref('')
 const forbidden = ref(false)
 const tradeDate = ref<string | null>('')
 const marketDate = ref<string | null>(null)
-const boardType = ref<BoardType | ''>(settings.defaultType)
-const listScope = ref<'all' | 'watchlist'>(settings.defaultScope)
+// 恢复/分享链接带入的会话态覆盖（null=无覆盖，用 settings 默认）。URL query 恢复属会话条件，不写回抽屉默认；
+// 只有用户主动改控件才联动写回（见 DESIGN「页面可改动属性双向联动」+「URL 恢复不联动」边界）。
+let restoring = false
+const sessionBoardType = ref<BoardType | '' | null>(null)
+const sessionScope = ref<'all' | 'watchlist' | null>(null)
+const sessionChartMode = ref<'compare' | 'kline' | null>(null)
+const sessionBenchmark = ref<string | null>(null)
+const sessionMetric = ref<CompareMetric | null>(null)
+
+const boardType = computed<BoardType | ''>({
+  get: () => sessionBoardType.value ?? (settings.defaultType === 'concept' || settings.defaultType === 'industry' ? settings.defaultType : ''),
+  set: (value) => {
+    const v = value === 'concept' || value === 'industry' ? value : ''
+    if (restoring) { sessionBoardType.value = v; return }
+    // 用户主动改动：写回默认并清掉会话覆盖，保持页面与抽屉同源（覆盖不清会断抽屉→页面方向）
+    sessionBoardType.value = null
+    settings.defaultType = v
+  },
+})
+// listScope 双向联动：无自选权限时主区控件是只读安全投影，任何点击都不能覆盖隐藏的原偏好（同 StocksView visibleDefaultView 守卫）。
+const listScope = computed<'all' | 'watchlist'>({
+  get: () => sessionScope.value ?? (canViewWatchlist.value && settings.defaultScope === 'watchlist' ? 'watchlist' : 'all'),
+  set: (value) => {
+    const v = canViewWatchlist.value && value === 'watchlist' ? 'watchlist' : 'all'
+    if (restoring) { sessionScope.value = v; return }
+    if (!canViewWatchlist.value) return
+    sessionScope.value = null
+    settings.defaultScope = v
+  },
+})
 const keyword = ref('')
 const page = ref(1)
-const size = ref(defaultSize.value)
+// 每页条数是组件配置属性，直通常态只读 computed；@size-change 里通过 setComponentKnob 写回。
+const size = configuredPageSize
 const total = ref(0)
 const rows = ref<SectorRow[]>([])
 const fundFlowDate = ref<string | null>(null)
@@ -198,19 +229,51 @@ const canUpdateWatchlist = computed(() =>
   hasPermission(auth.role, auth.permissions, 'sector-watchlist:update'),
 )
 
-let restoring = false
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 // 行点击只切换主观察对象；勾选“对比”会把板块固定在图中，跨分页仍保留。
 const COMPARE_MAX = 6
 const activeCode = ref('')
 const pinnedCodes = ref<string[]>([])
-const { validDefault: klineDefaultRange } = useKlinePrefs()
-const rangeDays = ref<number>(klineDefaultRange.value)
-const chartMode = ref<'compare' | 'kline'>(settings.defaultChartMode)
-const benchmarkCode = ref(settings.benchmarkCode)
-const compareMetric = ref<CompareMetric>(settings.defaultCompareMetric)
-const compareWindow = ref<number>(250)
+const { validDefault: klineDefaultRange, prefs: klinePrefs } = useKlinePrefs()
+// K 线范围双向联动全局偏好默认范围（改动即写回 prefs.defaultPeriod），见 DESIGN「页面可改动属性双向联动」。
+const rangeDays = computed<number>({
+  get: () => klineDefaultRange.value,
+  set: (value) => { klinePrefs.defaultPeriod = value },
+})
+// 图表模式/对比指数/对比指标：会话覆盖优先，否则用抽屉默认；set 侧白名单钳制，restoring（URL 恢复）不写回默认。
+const chartMode = computed<'compare' | 'kline'>({
+  get: () => sessionChartMode.value ?? (settings.defaultChartMode === 'kline' ? 'kline' : 'compare'),
+  set: (value) => {
+    const v = value === 'kline' ? 'kline' : 'compare'
+    if (restoring) { sessionChartMode.value = v; return }
+    sessionChartMode.value = null
+    settings.defaultChartMode = v
+  },
+})
+const benchmarkCode = computed<string>({
+  get: () => sessionBenchmark.value ?? (['', '000905.SH', '000300.SH'].includes(settings.benchmarkCode) ? settings.benchmarkCode : '000905.SH'),
+  set: (value) => {
+    const v = ['', '000905.SH', '000300.SH'].includes(value) ? value : '000905.SH'
+    if (restoring) { sessionBenchmark.value = v; return }
+    sessionBenchmark.value = null
+    settings.benchmarkCode = v
+  },
+})
+const compareMetric = computed<CompareMetric>({
+  get: () => sessionMetric.value ?? sanitizeCompareMetric(settings.defaultCompareMetric),
+  set: (value) => {
+    const v = sanitizeCompareMetric(value)
+    if (restoring) { sessionMetric.value = v; return }
+    sessionMetric.value = null
+    settings.defaultCompareMetric = v
+  },
+})
+// 累计涨跌周期：页面可改动属性，双向联动抽屉默认（白名单钳制到 COMPARE_RANGE_OPTIONS）。
+const compareWindow = computed<number>({
+  get: () => COMPARE_RANGE_OPTIONS.some((o) => o.value === settings.compareWindow) ? settings.compareWindow : 250,
+  set: (value) => { if (COMPARE_RANGE_OPTIONS.some((o) => o.value === value)) settings.compareWindow = value },
+})
 const chartLoading = ref(false)
 const chartError = ref('')
 const benchmarkError = ref('')
@@ -370,13 +433,16 @@ async function loadChart(): Promise<void> {
 /** 收起分析区时保留观察对象与对比队列；再次展开后按当前筛选状态刷新走势。 */
 function setAnalysisPanelVisible(visible: boolean): void {
   settings.showAnalysisPanel = visible
+}
+// 抽屉/主区任一侧改 showAnalysisPanel 都走同一副作用：展开时刷新走势，收起时作废旧图表请求。
+watch(() => settings.showAnalysisPanel, (visible) => {
   if (visible) {
     void loadChart()
     return
   }
   chartRequestVersion += 1
   chartLoading.value = false
-}
+})
 
 function isPinned(code: string): boolean {
   return pinnedCodes.value.includes(code)
@@ -532,9 +598,10 @@ watch([sortBy, sortOrder], () => {
   page.value = 1
   void load()
 })
-watch(defaultSize, (value) => {
+// 每页条数双向联动：分页器 size-change 只写回组件配置层（见模板），此处统一回到第 1 页并重载；
+// 抽屉改默认每页条数同样经此生效（抽屉→页面方向）。
+watch(size, () => {
   if (restoring) return
-  size.value = value
   page.value = 1
   void load()
 })
@@ -657,7 +724,6 @@ onMounted(async () => {
   if (query.date) tradeDate.value = query.date
   keyword.value = resolved.keyword
   page.value = resolved.page
-  size.value = defaultSize.value
   if (query.sort) {
     onTableSortChange({
       prop: query.sort,
@@ -804,7 +870,7 @@ onMounted(async () => {
             @row-click="selectRow"
             @sort-change="onTableSortChange"
             @page-change="(value: number) => { page = value; void load() }"
-            @size-change="(value: number) => { size = value; page = 1; void load() }"
+            @size-change="(value: number) => { setComponentKnob('table', 'pageSize', value) }"
           >
             <AppTableColumn
               v-if="colVisible('name')"
@@ -1238,6 +1304,7 @@ onMounted(async () => {
                 :filterable="false"
               />
             </div>
+            <PageToggleRow v-model="settings.showAnalysisPanel" label="显示走势分析区" />
           </PageSettingSection>
           <PageSettingSection title="对比指标" desc="配置头部对比指标槽展示哪些指标与默认选中口径。">
             <div class="setting-item">
@@ -1261,6 +1328,12 @@ onMounted(async () => {
                   :value="metric"
                   :label="COMPARE_METRIC_META[metric].label"
                 />
+              </el-select>
+            </div>
+            <div class="setting-item">
+              <div class="setting-label">默认涨跌周期</div>
+              <el-select v-model="settings.compareWindow" style="width: 160px">
+                <el-option v-for="o in COMPARE_RANGE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
               </el-select>
             </div>
           </PageSettingSection>

@@ -13,7 +13,7 @@
  */
 import type { Archetype, EditableKnob, PageLayout } from './schema'
 import { cloneLayout } from './path'
-import { CONFIG_SYSTEM_COLLAPSE_SECTIONS } from './configPanel'
+import { CONFIG_SYSTEM_COLLAPSE_SECTIONS, CONFIG_SYSTEM_GROUP_TABS } from './configPanel'
 
 /** 页面响应式策略（plan.md §14.3）。受控命名，不等于自由编辑断点。 */
 export type ResponsiveProfile =
@@ -202,7 +202,7 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
     // table=列表视图主表；groupTable=分组视图表（另一套列集，P7 迁入组件配置层，单独可寻址）。
-    consumedComponentFields: { table: ['defaultSort', 'pageSize', 'hiddenColumns'], groupTable: ['defaultSort', 'hiddenColumns'] },
+    consumedComponentFields: { table: ['defaultSort', 'pageSize', 'hiddenColumns'], groupTable: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       table: {
         columns: [
@@ -266,7 +266,7 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'list',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: { table: ['defaultSort', 'hiddenColumns'] },
+    consumedComponentFields: { table: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       table: {
         columns: [
@@ -427,10 +427,14 @@ const REGISTRY: PageRegistryEntry[] = [
     supportsComponentConfig: true,
     consumedComponentFields: {
       configPanel: ['collapsibleSections', 'defaultCollapsed', 'showGroupDescription', 'showSectionDescription'],
+      sysTabs: ['defaultActive'],
     },
     componentMeta: {
       configPanel: {
         collapseSections: CONFIG_SYSTEM_COLLAPSE_SECTIONS,
+      },
+      sysTabs: {
+        tabs: CONFIG_SYSTEM_GROUP_TABS.map((tab) => ({ key: tab.key, label: tab.label })),
       },
     },
     layout: {
@@ -443,6 +447,8 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', label: '系统设置', order: 1 },
         { id: 'configPanel', component: 'config-panel', region: 'main', parentId: 'body', label: '系统设置面板', order: 2 },
+        // 系统设置分组页签（访问安全/数据治理/研究运行）：defaultActive 进组件配置层，页面 el-tabs 联动。
+        { id: 'sysTabs', component: 'tabs', region: 'main', parentId: 'body', label: '系统设置分组页签', order: 3, config: { defaultActive: 'access' } },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
       editable: [densityKnob()],
@@ -701,7 +707,7 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: { taskTable: ['defaultSort'], logTable: ['defaultSort'] },
+    consumedComponentFields: { taskTable: ['defaultSort', 'pageSize'], logTable: ['defaultSort', 'pageSize'] },
     componentMeta: {
       taskTable: {
         sortFields: [

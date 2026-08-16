@@ -1639,18 +1639,18 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     wrapper.unmount()
   })
 
-  it('净值图基准对比：主区选择不回写 settings（会话级，与板块行情/默认参数一致）', async () => {
+  it('净值图基准对比：主区选择即写回 settings（双向联动，与板块行情/默认参数一致）', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     expect((wrapper.vm as any).benchChoice).toBe('000905.SH')
-    // 主区改选沪深 300 → 仅本会话生效，不回写抽屉默认
+    // 主区改选沪深 300 → 直写 settings.benchmarkCode（双向联动，同步进抽屉默认）
     ;(wrapper.vm as any).benchChoice = '000300.SH'
     await flushPromises()
-    expect((wrapper.vm as any).settings.benchmarkCode).toBe('000905.SH')
+    expect((wrapper.vm as any).settings.benchmarkCode).toBe('000300.SH')
     wrapper.unmount()
   })
 
-  it('净值图基准对比：抽屉「默认对比指数」改动单向同步主区并重拉曲线', async () => {
+  it('净值图基准对比：抽屉「默认对比指数」改动同步主区并重拉曲线（双向联动）', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     vi.mocked(backtestApi.getRun).mockResolvedValue(getRunDetail(
@@ -1663,7 +1663,7 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     await nextTick()
     expect((wrapper.vm as any).benchChoice).toBe('000905.SH')
 
-    // 改抽屉「默认对比指数」为沪深 300（settings 为权威）→ 单向同步主区并重拉曲线
+    // 改抽屉「默认对比指数」为沪深 300 → 主区 computed 跟随 settings，自动同步并重拉曲线
     ;(wrapper.vm as any).settings.benchmarkCode = '000300.SH'
     await flushPromises()
     await nextTick()
@@ -1673,10 +1673,10 @@ describe('BacktestView 公开查看态原子提交 + 冻结评分口径（五次
     )
     const chart = wrapper.findComponent({ name: 'EquityChart' })
     expect(chart.props('extraBenchmark')).not.toBeNull()
-    // 主区运行期选择不回写 settings（会话级，与板块行情/默认参数一致）
+    // 主区改动同样写回 settings（双向联动）
     ;(wrapper.vm as any).benchChoice = ''
     await flushPromises()
-    expect((wrapper.vm as any).settings.benchmarkCode).toBe('000300.SH')
+    expect((wrapper.vm as any).settings.benchmarkCode).toBe('')
     wrapper.unmount()
   })
 

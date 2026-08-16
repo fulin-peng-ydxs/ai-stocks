@@ -158,8 +158,12 @@ const initCap = ref(Number(settings.initCap))
 const industryOn = ref(false)
 const industryPct = ref(20)            // 单行业持仓上限 %
 // 基准指数选择（净值图虚线对比）：默认中证 500（与板块行情同款设置），可切换其它指数；fetch 结果注入 EquityChart。
-// 从业务设置层初始化（抽屉「默认对比指数」持久化）。主区运行期选择不回写 settings，与「默认参数」一致。
-const benchChoice = ref<string>(settings.benchmarkCode)
+// 双向联动：主区选择与抽屉「默认对比指数」共用 settings.benchmarkCode（computed 直写即持久化），
+// 见 DESIGN「页面可改动属性双向联动」。
+const benchChoice = computed<string>({
+  get: () => settings.benchmarkCode,
+  set: (value) => { settings.benchmarkCode = value },
+})
 const benchmarkEquity = ref<BenchmarkEquity | null>(null)
 let benchRequestVersion = 0
 async function loadBenchmarkEquity() {
@@ -327,7 +331,12 @@ const sig = ref<Layers | null>(null)
 const runTime = ref('')          // 当前展示结果的回测运行时间（加载历史时显示；刚跑完为空）
 const fromHistory = ref(false)   // 当前结果是否来自加载历史
 
-const robustPanels = ref<string[]>(settings.robustExpanded ? ['robust'] : [])
+// 稳健性测试展开态：折叠面板可点击（页面可改动属性），双向联动 settings.robustExpanded，
+// 见 DESIGN「页面可改动属性双向联动」。
+const robustPanels = computed<string[]>({
+  get: () => (settings.robustExpanded ? ['robust'] : []),
+  set: (value) => { settings.robustExpanded = value.includes('robust') },
+})
 const tradeRows = computed(() => {
   const list = [...(strat.value?.trades ?? [])]
   if (tradeSort.value === 'return') list.sort((a, b) => b.return_pct - a.return_pct)
@@ -501,17 +510,14 @@ watch(
 watch(() => settings.kind, (value) => { kind.value = value })
 watch(() => settings.topN, (value) => { topN.value = Number(value) })
 watch(() => settings.initCap, (value) => { initCap.value = Number(value) })
-// 抽屉「默认对比指数」→ 主区选择器单向同步：settings 为权威（同 kind/topN/initCap 模式），
-// 改抽屉即同步主区并触发基准重拉；主区运行期选择不回写 settings（会话级，与板块行情一致）。
-watch(() => settings.benchmarkCode, (value) => { if (benchChoice.value !== value) benchChoice.value = value })
-// 基准选择切换 → 重新拉指数曲线；无有效对比（不对比/无结果）时置空回退默认实线
+// 基准选择切换 → 重新拉指数曲线；无有效对比（不对比/无结果）时置空回退默认实线。
+// benchChoice 是直写 settings.benchmarkCode 的 computed（双向联动），主区/抽屉任一侧改动都会经此重拉。
 watch(benchChoice, () => { benchmarkEquity.value = null; loadBenchmarkEquity() })
 // 新回测结果出现（日期区间可能变化）→ 按当前区间重拉基准曲线；不覆盖用户的选择。
 watch(strat, (s) => {
   if (s) loadBenchmarkEquity()
   else benchmarkEquity.value = null
 })
-watch(() => settings.robustExpanded, (value) => { robustPanels.value = value ? ['robust'] : [] })
 watch(rememberedParamsHydrated, (ready) => {
   if (ready && !loadingRun.value) {
     restoreParams()
@@ -1233,7 +1239,6 @@ onMounted(async () => {
   kind.value = settings.kind
   topN.value = Number(settings.topN)
   initCap.value = Number(settings.initCap)
-  robustPanels.value = settings.robustExpanded ? ['robust'] : []
   await loadHistory()
 })
 

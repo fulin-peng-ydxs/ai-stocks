@@ -60,7 +60,11 @@ const stockSet = useStockSet()
 const loading = ref(true)
 const error = ref('')
 const runDate = ref<string>('')
-const topN = ref(50)
+// topN 双向联动：主区下拉与抽屉默认值共用 settings.topN（computed 直写即持久化），见 DESIGN「页面可改动属性双向联动」。
+const topN = computed<number>({
+  get: () => Number(settings.topN),
+  set: (value) => { settings.topN = value },
+})
 const rows = ref<ScoreRunRow[]>([])
 const syncingRunDate = ref(false)
 const settingsOpen = ref(false)
@@ -73,7 +77,6 @@ const boardDefaults = {
   subScoreMode: 'full' as 'full' | 'brief' | 'hidden',
 }
 const { settings, isDirty, reset } = usePageSettings('board', boardDefaults)
-topN.value = Number(settings.topN)
 
 // 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留渲染/排序要读的 getter（写值经组件配置层）。
 type BoardSort = 'score' | 'rank' | 'code'
@@ -297,8 +300,9 @@ watch(runDate, () => {
   if (!profileRef.value || syncingRunDate.value) return
   load()
 })
-watch(() => settings.topN, (value) => {
-  topN.value = Number(value)
+// topN 已是直写 settings 的 computed，抽屉/主区任一侧改动都会改 settings.topN；
+// 这里只监听 settings 变化触发重载（含抽屉改值方向），不再回写任何本地态。
+watch(() => settings.topN, () => {
   if (profileRef.value) load()
 })
 
@@ -443,7 +447,7 @@ onMounted(async () => {
           />
           <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
           <span class="lbl">Top</span>
-          <el-select v-model="topN" style="width: 88px" @change="load">
+          <el-select v-model="topN" style="width: 88px">
             <el-option :value="20" label="20" />
             <el-option :value="50" label="50" />
             <el-option :value="100" label="100" />

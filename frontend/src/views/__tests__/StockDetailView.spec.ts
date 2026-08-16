@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { defineComponent, h, KeepAlive, nextTick, reactive, ref } from 'vue'
+import { computed, defineComponent, h, KeepAlive, nextTick, reactive, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ElementPlus from 'element-plus'
 import type { Bar, IndicatorRow } from '@/api/stocks'
@@ -50,8 +50,12 @@ vi.mock('@/composables/usePageSettings', () => ({
   },
 }))
 
+// 每次调用返回独立 prefs：避免未卸载组件实例经共享单例串扰（真实单例行为对这些断言无意义）。
 vi.mock('@/composables/useKlinePrefs', () => ({
-  useKlinePrefs: () => ({ validDefault: ref(120) }),
+  useKlinePrefs: () => {
+    const prefs = reactive({ defaultPeriod: 120 })
+    return { validDefault: computed(() => prefs.defaultPeriod), prefs }
+  },
 }))
 
 vi.mock('@/api/stocks', () => ({

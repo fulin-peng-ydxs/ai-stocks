@@ -71,9 +71,13 @@ const sqOptions = ref<{ code: string; label: string }[]>([])
 const sqOptLoading = ref(false)
 const sqOptError = ref('')
 const sqPage = ref(1)
-const sqSize = ref(Number(settings.sqSize))
-watch(() => settings.sqSize, (value) => {
-  sqSize.value = Number(value)
+// sqSize 双向联动：分页器与抽屉默认值共用 settings.sqSize（computed 直写即持久化），
+// 见 DESIGN「页面可改动属性双向联动」；watch 统一做「回到第一页 + 重载」副作用，避免 size-change 与 watch 双触发。
+const sqSize = computed<number>({
+  get: () => Number(settings.sqSize),
+  set: (value) => { settings.sqSize = value },
+})
+watch(() => settings.sqSize, () => {
   sqPage.value = 1
   if (sq.value) loadSq()
 })
@@ -600,7 +604,7 @@ onMounted(load)
                   <el-pagination layout="total, sizes, prev, pager, next" :total="sq?.total ?? 0"
                                  :current-page="sqPage" :page-size="sqSize" :page-sizes="PAGE_SIZE_OPTIONS" background
                                  @current-change="(p: number) => { sqPage = p; loadSq() }"
-                                 @size-change="(s: number) => { sqSize = s; sqPage = 1; loadSq() }" />
+                                 @size-change="(s: number) => { sqSize = s }" />
                 </div>
               </template>
             </div>

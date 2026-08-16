@@ -210,9 +210,13 @@ const indicatorLoading = ref(true)
 const indicatorError = ref('')
 const indicatorRows = ref<IndicatorRow[]>([])
 const quoteLoading = ref(true)
-// 显示范围（缩放）：默认来自全局 K 线偏好，数据始终全量加载，可自由拖动看全部
-const { validDefault: klineDefault } = useKlinePrefs()
-const viewDays = ref(klineDefault.value)
+// 显示范围（缩放）：双向联动全局 K 线偏好默认范围（改动即写回 prefs.defaultPeriod），
+// 见 DESIGN「页面可改动属性双向联动」；数据始终全量加载，可自由拖动看全部
+const { validDefault: klineDefault, prefs: klinePrefs } = useKlinePrefs()
+const viewDays = computed<number>({
+  get: () => klineDefault.value,
+  set: (value) => { klinePrefs.defaultPeriod = value },
+})
 const bars = ref<Bar[]>([])
 const name = ref('')
 const latestQuote = ref<Bar | null>(null)

@@ -349,10 +349,14 @@ Key Characteristics：
 ### 设置抽屉
 
 - 页面设置抽屉三段**固定顺序**：`布局` → `组件设置` → `业务选项`；每段**仅在该页有对应内容时渲染**。`布局` 恒在，`组件设置` 仅当 registry 声明了可配置组件字段，`业务选项` 仅当页面提供 `#business` 插槽；不得为了形式完整强插空段。
+- 抽屉两条配置通道的分工：**组件设置段**收「组件展示能力」字段——列显隐、默认排序、每页条数、区域高度、默认 tab（判定：它改的是组件怎么展示）；**业务选项段**收「业务默认/偏好」——模式、口径、开关、筛选默认（判定：隔几天再来，用户希望它保持这样吗）。**持久化是进抽屉的必要条件而非充分条件**；「主区已有同义控件」也不是排除理由——真正的排除边界是语义：查询口径/本次研究对象（关键字、日期范围、方案选择、运行参数）属会话态，不进抽屉。
 - `布局` 和 `组件设置` 可由元数据自动渲染；`业务选项` 由页面声明，仅承载页面记忆或业务偏好。
 - 设置项必须有默认值、来源展示、合法值域和重置路径；页面设置抽屉 footer 的「恢复默认」必须同时重置页面业务偏好、页面布局/组件用户层，以及抽屉自身 `size/defaultCollapsed` 用户偏好。
 - 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`（抽屉=user 层、页面布局编辑器=page 层，经 `layer`/`slotIds`/`allowedLayersOf`/`collapsibleSlot`/`clearable` 适配），不得另写第二套组件特性表单。
 - 折叠规则统一：每个 slot 为可折叠组（`SettingsGroup` level 2；编辑器聚焦单 slot 时仅作标题锚点不折叠）；多行清单类特性（列显隐）为可折叠子组（level 3）；单字段为叶子不折叠。深层标题字号随层级递减但不低于正文。
+- **页面可改动属性双向联动**：页面主区可直接交互改动的属性，若其默认值已持久化（业务偏好在 `usePageSettings` 的 settings、组件字段在组件配置层），主区控件必须与持久层双向实时联动——改动即写回并同步进抽屉对应项，下次进页面沿用。实现上用可写 computed get/set 直写持久层（业务偏好正例 `StocksView.vue` 的 `visibleDefaultView`；组件字段正例 `OverviewView.vue` 的 `activeWorkspaceTab`），禁止「独立 ref 初始化自持久层 + watch 单向回灌」的影子态（影子态在远端回灌/恢复默认时会与持久层撕裂）。语义映射型（多选数组↔单选枚举）可在控件 change 事件反推写回。分页器 `pageSize` 绑定值必须消费 `componentValueOf(slot,'pageSize')`，`size-change` 统一 `setComponentKnob`（正例 `TrainingView.vue` 的 `historySizeChanged`）。
+  **不联动清单**：纯会话查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测表单 `rememberedParams` feature 通道「会话记忆优先于默认」）保持会话级，不写回默认。
+- **新增属性登记判断（开发闭环必经步骤）**：新增页面、改造页面或给页面/组件新增任何可交互属性后，必须逐一回答三个问题再收尾——①该属性是否需要跨会话记住（默认值/偏好）？②需要时登记到哪条链路（业务偏好进 `usePageSettings` defaults + `#business` 插槽；组件展示字段按 §7.3 进 `consumedComponentFields`/`componentMeta`/`COMPONENT_FIELD_DEFS`/后端规则）？③页面主区可改动时是否已按上条双向联动？三问任一答「是」却未落地，即视为本次改动未完成。反向同样成立：不再需要或语义失效的已登记项（如已被主区表单覆盖、关闭后无法再开启的开关）必须及时下线，不得在抽屉里堆积死项。
 
 ## 5. Layout Principles
 
@@ -520,6 +524,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 `usePageSettings` 只保留页面业务态/页面记忆，不承载通用组件展示能力。
 `settings-drawer` 的用户层只允许 `size/defaultCollapsed`；跨页面个人值写入 `user_preference(global/settings-drawer)`，不写伪页面的 `layout_user_config`。`bodyScroll/collapsibleSections` 只能由 preset/page 层控制。
+页面可改动的组件字段，页面侧写入口与抽屉共用 `setComponentKnob` 双向联动，规则见「设置抽屉」节「页面可改动属性双向联动」。
 
 ### 7.4 页面 / 组件 / 布局变更维护闭环
 

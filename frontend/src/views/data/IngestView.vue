@@ -37,7 +37,6 @@ const ingestDefaults = {
   taskStatus: 'active' as 'all' | 'active' | 'failed',
   logStatus: 'all' as 'all' | 'failed',
   autoScroll: true,
-  defaultTaskType: 'ingest_date' as TaskType,
 }
 const { settings, isDirty, reset } = usePageSettings('data-ingest', ingestDefaults)
 
@@ -70,7 +69,16 @@ const taskError = ref('')
 const taskLoading = ref(true)
 const taskTotal = ref(0)
 const taskPage = ref(1)
-const taskSize = ref(DEFAULT_PAGE_SIZE)
+// 每页条数：页面可改动属性，绑定走组件配置层（抽屉「组件设置」可调），只读 computed 直通；
+// size-change 只写回，watch 统一回到第 1 页并重载（抽屉改默认同样生效）。
+const taskSize = computed<number>(() => {
+  const raw = componentValueOf('taskTable', 'pageSize')
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : DEFAULT_PAGE_SIZE
+})
+watch(taskSize, () => {
+  taskPage.value = 1
+  void loadTasks()
+})
 const taskFilter = ref<{ status: string; task_type: string }>({ status: '', task_type: '' })
 const TASK_SORT_FIELDS = ['time', 'type', 'status'] as const
 const {
@@ -96,7 +104,15 @@ const logError = ref('')
 const logLoading = ref(true)
 const logTotal = ref(0)
 const logPage = ref(1)
-const logSize = ref(DEFAULT_PAGE_SIZE)
+// 每页条数：同 taskSize，只读 computed 直通组件配置层；size-change 只写回，watch 统一重载。
+const logSize = computed<number>(() => {
+  const raw = componentValueOf('logTable', 'pageSize')
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : DEFAULT_PAGE_SIZE
+})
+watch(logSize, () => {
+  logPage.value = 1
+  void loadLogs()
+})
 const logTables = ref<string[]>([])
 const logFilter = ref<{ status: string; table_name: string }>({ status: '', table_name: '' })
 const LOG_SORT_FIELDS = ['time', 'table', 'status'] as const
@@ -411,8 +427,12 @@ async function cancel(t: AsyncTask) {
 const logDrawer = ref(false)
 const logTask = ref<AsyncTask | null>(null)
 const logs = ref<TaskLogLine[]>([])
-const autoScroll = ref(Boolean(settings.autoScroll))
-watch(() => settings.autoScroll, (value) => { autoScroll.value = Boolean(value) })
+// autoScroll 双向联动：日志抽屉复选框与设置抽屉共用 settings.autoScroll（computed 直写即持久化），
+// 见 DESIGN「页面可改动属性双向联动」。
+const autoScroll = computed<boolean>({
+  get: () => Boolean(settings.autoScroll),
+  set: (value) => { settings.autoScroll = value },
+})
 function applyTaskPrefs() {
   taskFilter.value.status = settings.taskStatus === 'active'
     ? 'running'
@@ -427,11 +447,16 @@ function applyLogPrefs() {
   logPage.value = 1
   loadLogs()
 }
+// 筛选改动联动写回抽屉默认（DESIGN「页面可改动属性双向联动」）。单选字符串↔枚举反推：
+// 任务状态 ''→'all'、'running'→'active'、'failed'→'failed'；日志结果 'failed'→'failed'、其余→'all'。
+function onTaskStatusChange(value: string) {
+  settings.taskStatus = value === 'running' ? 'active' : value === 'failed' ? 'failed' : 'all'
+}
+function onLogStatusChange(value: string) {
+  settings.logStatus = value === 'failed' ? 'failed' : 'all'
+}
 watch(() => settings.taskStatus, () => { applyTaskPrefs() })
 watch(() => settings.logStatus, () => { applyLogPrefs() })
-watch(() => settings.defaultTaskType, (value) => {
-  if (!optDlg.value) optType.value = value
-})
 const logBody = ref<HTMLElement | null>(null)
 let logTimer: number | undefined
 let lastSeq = 0
@@ -529,7 +554,6 @@ onUnmounted(stopBackgroundWork)
 onMounted(async () => {
   pageActive = true
   startNowTimer()
-  optType.value = settings.defaultTaskType
   if (settings.taskStatus === 'active') taskFilter.value.status = 'running'
   else if (settings.taskStatus === 'failed') taskFilter.value.status = 'failed'
   if (settings.logStatus === 'failed') logFilter.value.status = 'failed'
@@ -653,7 +677,7 @@ watch(
                 <el-option v-for="o in TASK_TYPE_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
               <el-select v-model="taskFilter.status" placeholder="状态" clearable size="small" style="width: 110px"
-                         @change="() => { taskPage = 1; loadTasks() }">
+                         @change="(v: string) => { onTaskStatusChange(v); taskPage = 1; loadTasks() }">
                 <el-option v-for="o in TASK_STATUS_OPTIONS" :key="o.v" :label="o.l" :value="o.v" />
               </el-select>
             </div>
@@ -695,7 +719,7 @@ watch(
             @row-click="(r: AsyncTask) => openLogs(r.id)"
             @sort-change="onTaskSort"
             @page-change="(p: number) => { taskPage = p; loadTasks() }"
-            @size-change="(s: number) => { taskSize = s; taskPage = 1; loadTasks() }"
+            @size-change="(s: number) => { if (s !== taskSize) setComponentKnob('taskTable', 'pageSize', s) }"
           >
             <AppTableColumn label="任务ID" show-overflow-tooltip>
               <template #default="{ row }"><span class="task-id">{{ row.id }}</span></template>
@@ -757,7 +781,7 @@ watch(
                 <el-option v-for="t in logTables" :key="t" :label="t" :value="t" />
               </el-select>
               <el-select v-model="logFilter.status" placeholder="结果" clearable size="small" style="width: 100px"
-                         @change="() => { logPage = 1; loadLogs() }">
+                         @change="(v: string) => { onLogStatusChange(v); logPage = 1; loadLogs() }">
                 <el-option label="成功" value="success" />
                 <el-option label="失败" value="failed" />
                 <el-option label="部分" value="partial" />
@@ -799,7 +823,7 @@ watch(
             :pagination="{ currentPage: logPage, pageSize: logSize, total: logTotal, pageSizes: PAGE_SIZE_OPTIONS }"
             @sort-change="onLogSort"
             @page-change="(p: number) => { logPage = p; loadLogs() }"
-            @size-change="(s: number) => { logSize = s; logPage = 1; loadLogs() }"
+            @size-change="(s: number) => { if (s !== logSize) setComponentKnob('logTable', 'pageSize', s) }"
           >
             <AppTableColumn label="目标表" prop="table" sortable="custom">
               <template #default="{ row }">{{ row.table_name }}</template>
@@ -919,14 +943,6 @@ watch(
             <PageSegmented v-model="settings.logStatus" aria-label="采集日志筛选" :options="[
               { label: '全部', value: 'all' },
               { label: '仅失败', value: 'failed' },
-            ]" />
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">更多选项默认任务</div>
-            <PageSegmented v-model="settings.defaultTaskType" aria-label="更多选项默认任务" :options="[
-              { label: '指定日期', value: 'ingest_date' },
-              { label: '增量更新', value: 'update' },
-              { label: '历史补数', value: 'backfill' },
             ]" />
           </div>
           <PageToggleRow v-model="settings.autoScroll" label="日志默认自动滚动" />

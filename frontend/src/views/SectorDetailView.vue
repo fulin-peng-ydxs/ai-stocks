@@ -114,8 +114,12 @@ const pageDirty = computed(() => layoutDirty.value || settingsDirty.value)
 
 const MEMBER_PAGE_SIZES = [10, 20, 30, 50]
 const MEMBER_SORT_FIELDS = ['pct', 'code'] as const
-const { validDefault: defaultKlineRange } = useKlinePrefs()
-const viewDays = ref(defaultKlineRange.value)
+const { validDefault: defaultKlineRange, prefs: klinePrefs } = useKlinePrefs()
+// K 线范围双向联动全局偏好默认范围（改动即写回 prefs.defaultPeriod），见 DESIGN「页面可改动属性双向联动」。
+const viewDays = computed<number>({
+  get: () => defaultKlineRange.value,
+  set: (value) => { klinePrefs.defaultPeriod = value },
+})
 const {
   sortBy,
   sortOrder,
@@ -164,7 +168,8 @@ const chartError = ref('')
 const members = ref<SectorMember[]>([])
 const memberTotal = ref(0)
 const memberPage = ref(1)
-const memberSize = ref(configuredPageSize.value)
+// 每页条数是组件配置属性，直通常态只读 computed；@size-change 里通过 setComponentKnob 写回。
+const memberSize = configuredPageSize
 const memberTradeDate = ref<string | null>(null)
 const memberLoading = ref(false)
 const memberError = ref('')
@@ -321,8 +326,7 @@ watch([sortBy, sortOrder], () => {
   memberPage.value = 1
   void loadMembers()
 })
-watch(configuredPageSize, (value) => {
-  memberSize.value = value
+watch(configuredPageSize, () => {
   if (!initialized) return
   memberPage.value = 1
   void loadMembers()
@@ -411,8 +415,8 @@ onMounted(async () => {
             <span>今日涨幅</span>
             <strong :class="pctClass(detail?.pct_today)">{{ fmtPct(detail?.pct_today) }}</strong>
           </div>
-          <div class="metric"><span>5 日</span><strong :class="pctClass(detail?.pct_5d)">{{ fmtPct(detail?.pct_5d) }}</strong></div>
-          <div class="metric"><span>20 日</span><strong :class="pctClass(detail?.pct_20d)">{{ fmtPct(detail?.pct_20d) }}</strong></div>
+          <div class="metric"><span>5 日涨幅</span><strong :class="pctClass(detail?.pct_5d)">{{ fmtPct(detail?.pct_5d) }}</strong></div>
+          <div class="metric"><span>20 日涨幅</span><strong :class="pctClass(detail?.pct_20d)">{{ fmtPct(detail?.pct_20d) }}</strong></div>
           <div class="metric"><span>即时净流入</span><strong :class="pctClass(detail?.net_inflow)">{{ fmtInflow(detail?.net_inflow) }}</strong></div>
           <div class="metric"><span>累计成员涨 / 跌</span><strong><span class="up">{{ detail?.up_count ?? '—' }}</span> / <span class="down">{{ detail?.down_count ?? '—' }}</span></strong></div>
           <div class="metric"><span>最近快照返回</span><strong>{{ detail?.member_count ?? '—' }} <small>只</small></strong></div>
@@ -476,7 +480,7 @@ onMounted(async () => {
             @row-click="openStock"
             @sort-change="(value: Sort) => onSortChange(value)"
             @page-change="(value: number) => { memberPage = value; void loadMembers() }"
-            @size-change="(value: number) => { memberSize = value; memberPage = 1; void loadMembers() }"
+            @size-change="(value: number) => { setComponentKnob('memberTable', 'pageSize', value); memberPage = 1 }"
           >
             <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" role="code" sortable="custom">
               <template #default="{ row }">

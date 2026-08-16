@@ -37,10 +37,8 @@ import HelpTip from '@/components/HelpTip.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { getErrorMessage } from '@/utils/error'
-import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import PageToggleRow from '@/components/PageToggleRow.vue'
 import ConfigGroupForm from '@/components/config/ConfigGroupForm.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTableSort } from '@/composables/useTableSort'
@@ -85,10 +83,8 @@ const pageSubtitle = computed(() => {
   if (forcedTab.value === 'system') return '保存后即时影响访问安全、数据采集、审计留存和研究运行参数。'
   return ''
 })
-const configDefaults = {
-  previewExpanded: true,
-}
-const { settings, isDirty, reset } = usePageSettings(configPageKey, configDefaults)
+// 本页暂无业务偏好项（previewExpanded 已下线：试算结果区恒渲染，不再有显隐开关）。
+const { isDirty, reset } = usePageSettings(configPageKey, {})
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const configLayout = getPageLayout(configPageKey)
@@ -135,7 +131,12 @@ const sysDraft = ref<Record<string, unknown>>({})
 const sysLoading = ref(false)
 const sysSaving = ref(false)
 const sysSaveError = ref(false)
-const activeSysTab = ref('access')
+// 系统设置分组页签：defaultActive 进组件配置层（sysTabs slot），页面 el-tabs 双向联动（正例 OverviewView activeWorkspaceTab）。
+// set 侧钳制到已登记候选，防非法值写入配置层；'other' 动态兜底由 sysTabs 运行时补齐。
+const activeSysTab = computed<string>({
+  get: () => (componentValueOf('sysTabs', 'defaultActive') as string) || 'access',
+  set: (value) => setComponentKnob('sysTabs', 'defaultActive', value),
+})
 interface SystemGroupTab {
   key: string
   label: string
@@ -1472,7 +1473,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
                 用当前配置试算
               </el-button>
             </div>
-            <template v-if="settings.previewExpanded">
             <AppStateBlock v-if="running && !runRows.length" state="loading" title="正在试算评分结果…" />
             <AppStateBlock
               v-else-if="runError && !runRows.length"
@@ -1530,7 +1530,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               title="当前配置在该交易日暂无评分结果"
             />
             <AppStateBlock v-else state="empty" title="配置评分规则后点「用当前配置试算」" />
-            </template>
             </template>
           </section>
         </div>
@@ -1977,16 +1976,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       :dirty="isDirty || layoutDirty"
       :page-key="configPageKey"
       :config="drawerConfig"
-      :business-visible="activeTab === 'tech'"
       :component-meta-overrides="configPanelMetaOverrides"
       @reset="reset(); resetLayout()"
-    >
-      <template #business>
-        <PageSettingSection title="界面默认项">
-          <PageToggleRow v-model="settings.previewExpanded" label="默认显示试算结果区" />
-        </PageSettingSection>
-      </template>
-    </PageSettingsDrawer>
+    />
     </template>
   </LayoutHost>
 </template>

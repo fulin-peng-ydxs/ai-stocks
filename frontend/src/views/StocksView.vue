@@ -82,7 +82,10 @@ const tableElementDefaultSort = computed(() => ({
   prop: defaultSortBy.value,
   order: defaultSortOrder.value === 'desc' ? 'descending' : 'ascending',
 }))
-const defaultSize = computed<number>(() => (componentValueOf('table', 'pageSize') as number) ?? DEFAULT_PAGE_SIZE)
+const defaultSize = computed<number>(() => {
+  const value = Number(componentValueOf('table', 'pageSize'))
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_PAGE_SIZE
+})
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
@@ -98,6 +101,12 @@ const groupElementDefaultSort = computed(() => ({
   order: groupDefaultSortOrder.value === 'desc' ? 'descending' : 'ascending',
 }))
 const groupHidden = computed<string[]>(() => (componentValueOf('groupTable', 'hiddenColumns') as string[]) ?? [])
+const groupSizeCfg = computed<number>(() => {
+  const value = Number(componentValueOf('groupTable', 'pageSize'))
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_PAGE_SIZE
+})
+// 分组每页条数：只读直通组件配置层（写回走 size-change 的 setComponentKnob）。
+const groupSize = groupSizeCfg
 function groupColVisible(key: string): boolean {
   return !groupHidden.value.includes(key)
 }
@@ -115,7 +124,8 @@ const tradeDate = ref('')          // 交易日期（默认最新，展示当日
 const sortBy = ref(defaultSortBy.value)      // 服务端排序字段（默认涨跌幅，初值取组件配置默认排序）
 const sortOrder = ref<'asc' | 'desc'>(defaultSortOrder.value)  // 默认正序
 const page = ref(1)
-const size = ref(defaultSize.value)
+// 每页条数属页面可改动属性：绑定只读组件配置层（slot 'table'.pageSize），写回经 size-change 事件。
+const size = defaultSize
 const total = ref(0)
 const rows = ref<StockBasic[]>([])
 
@@ -143,9 +153,10 @@ watch(defaultSortOrder, (value) => {
   sortOrder.value = value
   search()
 })
-watch(defaultSize, (value) => {
+// 每页条数双触发：抽屉写配置层与分页器 size-change 写回都汇聚到 size（组件配置 computed），统一在这里回到第 1 页并加载。
+watch(size, () => {
   if (inGroupMode.value) return
-  size.value = Number(value)
+  if (restoringListState) return
   search()
 })
 watch(groupDefaultSortBy, (value) => {
@@ -158,6 +169,12 @@ watch(groupDefaultSortOrder, (value) => {
   if (!inGroupMode.value) return
   if (groupSortOrder.value === value) return
   groupSortOrder.value = value
+  groupSearch()
+})
+// 分组每页条数双触发：同 size 的汇聚策略，统一在这里回到第 1 页并加载。
+watch(groupSize, () => {
+  if (!inGroupMode.value) return
+  if (restoringListState) return
   groupSearch()
 })
 
@@ -211,7 +228,6 @@ const groupError = ref('')
 const groupListError = ref('')
 const inGroupMode = computed(() => !!activeGid.value)
 const groupPage = ref(1)
-const groupSize = ref(DEFAULT_PAGE_SIZE)
 const groupQ = ref('')
 const groupSortBy = ref(groupDefaultSortBy.value)
 const groupSortOrder = ref<'asc' | 'desc'>(groupDefaultSortOrder.value)
@@ -576,9 +592,9 @@ onMounted(async () => {
     sortBy.value = restore.sortBy
     sortOrder.value = restore.sortOrder
     page.value = restore.page
-    size.value = restore.size
+    // size/groupSize 现为只读组件配置 computed，恢复时不写回配置层：会话级恢复值与配置值不一致时直接忽略，
+    // 以组件配置层为唯一事实源（见 stockSet.listState 的字段说明）。
     groupPage.value = restore.groupPage
-    groupSize.value = restore.groupSize
     groupQ.value = restore.groupQ
     groupSortBy.value = restore.groupSortBy
     groupSortOrder.value = restore.groupSortOrder
@@ -595,7 +611,6 @@ onMounted(async () => {
   sortOrder.value = defaultSortOrder.value
   groupSortBy.value = groupDefaultSortBy.value
   groupSortOrder.value = groupDefaultSortOrder.value
-  size.value = defaultSize.value
   // 交易日默认直接选中最新交易日（而非留空靠占位提示）
   await ensureLoaded()
   restoringListState = true
@@ -728,7 +743,7 @@ onBeforeUnmount(() => {
           @row-click="(r: GroupMember) => enterDetail(r.code)"
           @sort-change="onGroupSortChange"
           @page-change="(p:number)=>{ groupPage=p; loadGroupDetail() }"
-          @size-change="(s:number)=>{ groupSize=s; groupPage=1; loadGroupDetail() }">
+          @size-change="(s:number)=>{ setComponentKnob('groupTable', 'pageSize', s) }">
           <AppTableColumn role="structural">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
@@ -788,7 +803,7 @@ onBeforeUnmount(() => {
           :default-sort="tableElementDefaultSort"
           @sort-change="onSortChange"
           @page-change="(p:number)=>{ page=p; load() }"
-          @size-change="(s:number)=>{ size=s; page=1; load() }">
+          @size-change="(s:number)=>{ setComponentKnob('table', 'pageSize', s) }">
           <AppTableColumn role="structural">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />

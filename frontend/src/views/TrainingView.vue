@@ -120,11 +120,16 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, component
 const mainLayout = computed<PageLayout>(() => trainingEffective.value)
 
 // 训练历史每页条数：走组件配置层（抽屉「组件设置」可调），与全站分页规范一致。
+// size-change 只写回，watch 统一回到第 1 页并重载（抽屉改默认同样生效）。
 const historyPageSize = computed(() => {
   const raw = componentValueOf('history', 'pageSize')
   return typeof raw === 'number' && Number.isFinite(raw)
     ? Math.max(10, Math.min(200, raw))
     : DEFAULT_PAGE_SIZE
+})
+watch(historyPageSize, () => {
+  history.page = 1
+  void loadHistory()
 })
 
 // 训练台/结算 K 线工作区高度：与个股详情一致，来自组件配置层（chart.minHeight）。
@@ -140,9 +145,13 @@ const configuredChartHeight = computed(() => {
   )
 })
 
-// K 线显示范围：选项与默认值来自全局偏好（抽屉里可配，跨页同步）
-const { validDefault: klineDefault } = useKlinePrefs()
-const viewDays = ref(klineDefault.value)
+// K 线显示范围：选项与默认值来自全局偏好（抽屉里可配，跨页同步）；
+// 双向联动：主区切换即写回全局默认范围 prefs.defaultPeriod，见 DESIGN「页面可改动属性双向联动」。
+const { validDefault: klineDefault, prefs: klinePrefs } = useKlinePrefs()
+const viewDays = computed<number>({
+  get: () => klineDefault.value,
+  set: (value) => { klinePrefs.defaultPeriod = value },
+})
 
 // 预设解析
 function parseList(s: string): number[] {
@@ -202,8 +211,6 @@ async function loadHistory() {
 function historySizeChanged(value: number) {
   if (value === historyPageSize.value) return
   setComponentKnob('history', 'pageSize', value)
-  history.page = 1
-  void loadHistory()
 }
 async function loadGrowth() {
   growthLoading.value = true
@@ -847,6 +854,26 @@ onBeforeUnmount(detachKeyboard)
   >
       <template #business>
       <PageSettingSection title="开局默认" desc="每次开局沿用的默认参数，开局前可临时改。">
+        <div class="setting-item">
+          <div class="setting-label">训练模式</div>
+          <PageSegmented
+            v-model="cfg.mode"
+            aria-label="训练模式"
+            :options="[
+              { label: '单只随机', value: 'single' },
+              { label: '多只一轮', value: 'multi' },
+            ]"
+          />
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">板块</div>
+          <el-select v-model="cfg.boards" placeholder="不限（全部板块）" multiple clearable
+                     collapse-tags collapse-tags-tooltip :max-collapse-tags="2" style="width:220px">
+            <el-option label="主板" value="主板" />
+            <el-option label="创业板" value="创业板" />
+            <el-option label="科创板" value="科创板" />
+          </el-select>
+        </div>
         <div v-if="cfg.mode === 'multi'" class="setting-item">
           <div class="setting-label">回合数（只）</div>
           <el-input-number v-model="cfg.n_rounds" :min="1" :max="20" size="small" style="width:140px" />

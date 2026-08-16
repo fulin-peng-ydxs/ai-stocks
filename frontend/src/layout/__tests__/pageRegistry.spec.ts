@@ -692,4 +692,32 @@ describe('组件消费关系与配置一致性（P4）', () => {
       }
     }
   })
+
+  it('pageSize 双向联动：登记 pageSize 的 slot，页面必须既消费又在分页器改动时 setComponentKnob 写回', () => {
+    // DESIGN「设置抽屉」节「页面可改动属性双向联动」：分页器 pageSize 是页面可改动属性，
+    // 只读 componentValueOf 不写回则页面改动不落组件配置层（断链）。用 sourceForPage 精确映射页面，
+    // 避免按 slotId 全局 grep 把不同页面同名 slot 误配。
+    for (const entry of PAGE_REGISTRY) {
+      const pageSizeSlots = Object.entries(entry.consumedComponentFields ?? {})
+        .filter(([, fields]) => (fields ?? []).includes('pageSize'))
+        .map(([slotId]) => slotId)
+      if (!pageSizeSlots.length) continue
+
+      const source = sourceForPage(entry.pageKey)
+      expect(source, `${entry.pageKey} 登记 pageSize 但无法从 router 定位 Vue 页面源码`).not.toBe('')
+      for (const slotId of pageSizeSlots) {
+        const consumes =
+          source.includes(`componentValueOf('${slotId}', 'pageSize'`)
+          || source.includes(`componentValueOf("${slotId}", "pageSize"`)
+        expect(consumes, `${entry.pageKey}.${slotId} 登记了 pageSize 但页面未 componentValueOf 消费`).toBe(true)
+        const writesBack =
+          source.includes(`setComponentKnob('${slotId}', 'pageSize'`)
+          || source.includes(`setComponentKnob("${slotId}", "pageSize"`)
+        expect(
+          writesBack,
+          `${entry.pageKey}.${slotId} 消费了 pageSize 但分页器改动未 setComponentKnob 写回（违反双向联动）`,
+        ).toBe(true)
+      }
+    }
+  })
 })
