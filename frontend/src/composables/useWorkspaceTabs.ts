@@ -42,8 +42,9 @@ function releaseCache(key: string) {
 function repairLastMenuPath(removedKey: string) {
   for (const [menuPath, fullPath] of lastPathByMenu) {
     if (fullPath.split('?')[0] !== removedKey) continue
+    // 只回补菜单主页标签（key 精确等于菜单路径）；详情子路由不进菜单记忆。
     const replacement = [...workspaceTabs.value].reverse().find(
-      (tab) => tab.key === menuPath || tab.key.startsWith(`${menuPath}/`),
+      (tab) => tab.key === menuPath,
     )
     if (replacement) lastPathByMenu.set(menuPath, replacement.path)
     else lastPathByMenu.delete(menuPath)
@@ -61,7 +62,10 @@ function tabTitle(route: RouteLocationNormalizedLoaded, menus: MenuTreeNode[]): 
 export function visitWorkspaceTab(route: RouteLocationNormalizedLoaded, menus: MenuTreeNode[]) {
   if (route.meta.fullscreen || route.path === '/') return
   const menuPath = findMenuLeaf(menus, route.path)?.index
-  if (menuPath) lastPathByMenu.set(menuPath, route.fullPath)
+  // 菜单记忆只记「菜单主页自身」的访问（含查询态，如 /stocks?restore=1）；
+  // 详情子路由（/stocks/:code、/sectors/:code）不覆盖菜单记忆——点菜单永远回主页，
+  // 详情现场只由工作标签恢复（DESIGN「工作标签」节）。
+  if (menuPath && route.path === menuPath) lastPathByMenu.set(menuPath, route.fullPath)
   const next: WorkspaceTab = {
     key: route.path,
     path: route.fullPath,
@@ -101,7 +105,7 @@ export function resetWorkspaceTabs() {
   lastPathByMenu.clear()
 }
 
-/** 菜单再次进入时恢复该菜单最后停留的列表或详情子路由。 */
+/** 菜单再次进入时恢复该菜单主页最后停留的访问（含查询态）；详情子路由不被菜单记忆，由工作标签恢复。 */
 export function resolveWorkspaceMenuPath(menuPath: string): string {
   return lastPathByMenu.get(menuPath) ?? menuPath
 }

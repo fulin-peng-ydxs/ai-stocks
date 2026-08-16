@@ -156,7 +156,9 @@ function gotoCode(c: string | null) {
   if (c && c !== '__more__' && c !== code.value) router.push(`/stocks/${c}`)
 }
 function returnToCollection() {
-  router.push(stockSet.returnPath || '/stocks?restore=1')
+  // returnPath 由来源页（榜单/板块等）进详情时写入，仅在当前 code 仍属于该集合时可信；
+  // 直接从菜单/标签/链接进入（code 不在集合中）时用残留 returnPath 会错回旧来源页，统一归位列表。
+  router.push(inSet.value ? (stockSet.returnPath || '/stocks?restore=1') : '/stocks?restore=1')
 }
 const collectionTotal = computed(() => stockSet.total || stockSet.items.length)
 const collectionTotalPages = computed(() => Math.max(1, Math.ceil(collectionTotal.value / Math.max(stockSet.pageSize || 20, 1))))
@@ -782,7 +784,7 @@ onBeforeUnmount(() => {
     <div class="lh-action">
     <div class="page-head">
       <div class="title">
-        <el-button text @click="returnToCollection">
+        <el-button text data-testid="stock-detail-back" @click="returnToCollection">
           <template #icon><el-icon><ArrowLeft /></el-icon></template>
           返回
         </el-button>

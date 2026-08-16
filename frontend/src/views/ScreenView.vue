@@ -35,6 +35,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useStockSet } from '@/stores/stockSet'
 import { downloadCsv } from '@/utils/csv'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -44,6 +45,7 @@ import { confirmProfileVisibilityReduction } from '@/utils/assetVisibility'
 import type { AppRowAction } from '@/components/rowActions'
 
 const router = useRouter()
+const stockSet = useStockSet()
 const settingsOpen = ref(false)
 // 排除 ST、AST 预览属业务态偏好，保留 usePageSettings；结果排序与列显隐迁入组件配置层（plan.md §13.3）。
 const screenDefaults = {
@@ -397,6 +399,15 @@ const displayHits = computed(() => {
   else list.sort((a, b) => (b.total_score ?? 0) - (a.total_score ?? 0))
   return list
 })
+
+// 进个股详情：登记筛选结果集合与来源路径，返回键据此回筛选页（工作标签缓存恢复现场），
+// 避免沿用上个来源（榜单/板块）的残留 returnPath 错回旧页面。
+function gotoStock(row: ScreenHit) {
+  stockSet.setSet('list', displayHits.value.map((h) => ({ code: h.code, name: h.name })), '策略筛选', '', {
+    returnPath: '/screen',
+  })
+  router.push(`/stocks/${row.code}`)
+}
 
 watch(() => settings.excludeSt, (value) => {
   excludeSt.value = Boolean(value)
@@ -836,7 +847,7 @@ onMounted(initializeScreen)
               height="100%"
               clickable
               @sort-change="onResultSortChange"
-              @row-click="(r: ScreenHit) => router.push(`/stocks/${r.code}`)"
+              @row-click="gotoStock"
             >
               <AppTableColumn label="#" type="index" />
               <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />

@@ -37,12 +37,19 @@ describe('工作标签页状态', () => {
     ])
   })
 
-  it('菜单恢复最近停留的详情；显式返回列表后恢复目标同步为列表', () => {
+  it('菜单再进入不记详情子路由：点菜单回主页，详情现场只由工作标签恢复', () => {
     visitWorkspaceTab(route('/sectors/881121', '板块详情', '881121'), menus)
-    expect(resolveWorkspaceMenuPath('/sectors')).toBe('/sectors/881121')
+    // 详情子路由不覆盖菜单记忆——点「板块行情」菜单回主页而非上次详情
+    expect(resolveWorkspaceMenuPath('/sectors')).toBe('/sectors')
 
+    // 主页访问（含查询态）会被记忆
     visitWorkspaceTab(route('/sectors', '板块行情'), menus)
     expect(resolveWorkspaceMenuPath('/sectors')).toBe('/sectors')
+
+    // 先看主页再进详情，菜单记忆仍是主页
+    visitWorkspaceTab(route('/stocks', '个股查询'), menus)
+    visitWorkspaceTab(route('/stocks/600000.SH', '个股详情', '600000.SH'), menus)
+    expect(resolveWorkspaceMenuPath('/stocks')).toBe('/stocks')
   })
 
   it('关闭当前标签后返回相邻页面，唯一标签不可关闭', () => {

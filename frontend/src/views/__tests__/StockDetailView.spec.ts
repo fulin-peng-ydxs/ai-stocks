@@ -1183,6 +1183,39 @@ describe('StockDetailView 三图数据协调', () => {
     wrapper.unmount()
   })
 
+  it('返回键：当前股票在集合内回来源页，不在集合（残留 returnPath）归位列表', async () => {
+    // 场景1：从榜单进入（code 在集合中，returnPath=/board）→ 返回回榜单
+    const pinia = await prepareAuth()
+    useStockSet().setSet(
+      'list',
+      [{ code: '600000.SH', name: '浦发银行' }],
+      '每日榜单',
+      '',
+      { returnPath: '/board' },
+    )
+    const pushSpy = vi.spyOn(router, 'push')
+    const wrapper = shallowMount(StockDetailView, { global: testGlobal(pinia) })
+    await flushPromises()
+    wrapper.get('[data-testid="stock-detail-back"]').trigger('click')
+    expect(pushSpy).toHaveBeenCalledWith('/board')
+    wrapper.unmount()
+
+    // 场景2：直接从菜单/链接进入（code 不在集合中）→ 残留 returnPath 不生效，归位列表
+    useStockSet().setSet(
+      'list',
+      [{ code: '000001.SZ', name: '平安银行' }],
+      '每日榜单',
+      '',
+      { returnPath: '/board' },
+    )
+    pushSpy.mockClear()
+    const wrapper2 = shallowMount(StockDetailView, { global: testGlobal(pinia) })
+    await flushPromises()
+    wrapper2.get('[data-testid="stock-detail-back"]').trigger('click')
+    expect(pushSpy).toHaveBeenCalledWith('/stocks?restore=1')
+    wrapper2.unmount()
+  })
+
   it('指标历史不足时只让 MACD 面板进入 insufficient', async () => {
     vi.mocked(stocksApi.getIndicators).mockResolvedValue({
       code: '600000.SH',
