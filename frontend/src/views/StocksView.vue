@@ -2,7 +2,7 @@
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
+import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Edit } from '@element-plus/icons-vue'
 import AppControlRow from '@/components/AppControlRow.vue'
@@ -28,6 +28,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useStockSet, type StockListState } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
@@ -50,7 +51,7 @@ const stocksDefaults = {
   defaultView: 'group' as 'list' | 'group',
   excludeSt: true,
 }
-const { settings, isDirty, reset } = usePageSettings('stocks', stocksDefaults)
+const { settings, isDirty, reset, whenHydrated } = usePageSettings('stocks', stocksDefaults)
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const stocksLayout = getPageLayout('stocks')
@@ -67,6 +68,7 @@ const {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf,
+  whenRemoteHydrated,
 } = useRemoteLayoutConfig(stocksLayout)
 
 // 设置抽屉的「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
@@ -83,8 +85,7 @@ const tableElementDefaultSort = computed(() => ({
   order: defaultSortOrder.value === 'desc' ? 'descending' : 'ascending',
 }))
 const defaultSize = computed<number>(() => {
-  const value = Number(componentValueOf('table', 'pageSize'))
-  return Number.isFinite(value) && value > 0 ? value : DEFAULT_PAGE_SIZE
+  return normalizePageSize(componentValueOf('table', 'pageSize'))
 })
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
@@ -102,11 +103,13 @@ const groupElementDefaultSort = computed(() => ({
 }))
 const groupHidden = computed<string[]>(() => (componentValueOf('groupTable', 'hiddenColumns') as string[]) ?? [])
 const groupSizeCfg = computed<number>(() => {
-  const value = Number(componentValueOf('groupTable', 'pageSize'))
-  return Number.isFinite(value) && value > 0 ? value : DEFAULT_PAGE_SIZE
+  return normalizePageSize(componentValueOf('groupTable', 'pageSize'))
 })
 // 分组每页条数：单向，组件配置层默认值 → 会话 ref（分页器改动不写回）。
-const groupSize = ref(groupSizeCfg.value)
+const groupSize = useDefaultedSessionValue(groupSizeCfg, {
+  shouldSync: () => inGroupMode.value && !restoringListState,
+  onSynced: () => groupSearch(),
+})
 function groupColVisible(key: string): boolean {
   return !groupHidden.value.includes(key)
 }
@@ -125,7 +128,10 @@ const sortBy = ref(defaultSortBy.value)      // 服务端排序字段（默认�
 const sortOrder = ref<'asc' | 'desc'>(defaultSortOrder.value)  // 默认正序
 const page = ref(1)
 // 每页条数：单向，组件配置层默认值（slot 'table'.pageSize）→ 会话 ref；分页器改动不写回。
-const size = ref(defaultSize.value)
+const size = useDefaultedSessionValue(defaultSize, {
+  shouldSync: () => !inGroupMode.value && !restoringListState,
+  onSynced: () => search(),
+})
 const total = ref(0)
 const rows = ref<StockBasic[]>([])
 
@@ -136,47 +142,38 @@ watch(board, (b) => {
 // 选交易日自动触发查询（初始化/恢复时设值不触发，避免重复加载）
 watch(tradeDate, () => { if (!restoringListState) search() })
 watch(() => settings.excludeSt, (value) => {
+  if (restoringListState) return
   if (inGroupMode.value) return
   if (board.value === 'ST' || board.value === '退市') return
   excludeSt.value = Boolean(value)
   search()
 })
 watch(defaultSortBy, (value) => {
+  if (restoringListState) return
   if (inGroupMode.value) return
   if (sortBy.value === String(value)) return
   sortBy.value = String(value)
   search()
 })
 watch(defaultSortOrder, (value) => {
+  if (restoringListState) return
   if (inGroupMode.value) return
   if (sortOrder.value === value) return
   sortOrder.value = value
   search()
 })
-// 每页条数单向：抽屉/配置层默认值 → 会话 ref 并重载；分页器改动只进会话态（见模板 size-change）。
-watch(defaultSize, (value) => {
-  if (inGroupMode.value) return
-  if (restoringListState) return
-  size.value = value
-  search()
-})
 watch(groupDefaultSortBy, (value) => {
+  if (restoringListState) return
   if (!inGroupMode.value) return
   if (groupSortBy.value === String(value)) return
   groupSortBy.value = String(value)
   groupSearch()
 })
 watch(groupDefaultSortOrder, (value) => {
+  if (restoringListState) return
   if (!inGroupMode.value) return
   if (groupSortOrder.value === value) return
   groupSortOrder.value = value
-  groupSearch()
-})
-// 分组每页条数单向：配置层默认值 → 会话 ref 并重载；分页器改动只进会话态。
-watch(groupSizeCfg, (value) => {
-  if (!inGroupMode.value) return
-  if (restoringListState) return
-  groupSize.value = value
   groupSearch()
 })
 
@@ -232,7 +229,8 @@ const groupQ = ref('')
 const groupSortBy = ref(groupDefaultSortBy.value)
 const groupSortOrder = ref<'asc' | 'desc'>(groupDefaultSortOrder.value)
 const groupTotal = computed(() => groupDetail.value?.members.total ?? 0)
-let restoringListState = false
+// 首屏在远端组件默认值水合完成前保持恢复态，避免 watcher 抢跑并覆盖返回列表态。
+let restoringListState = true
 let groupSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 const auth = useAuthStore()
@@ -578,7 +576,11 @@ async function doDeleteGroup() {
 }
 
 onMounted(async () => {
-  await auth.ensureLoaded().catch(() => undefined)
+  await Promise.all([
+    whenHydrated(),
+    whenRemoteHydrated(),
+    auth.ensureLoaded().catch(() => undefined),
+  ])
   await reloadGroups()
   const restore = route.query.restore === '1' ? stockSet.listState : null
   if (restore) {
@@ -591,8 +593,8 @@ onMounted(async () => {
     sortOrder.value = restore.sortOrder
     page.value = restore.page
     // size/groupSize 是组件配置层默认值派生的会话 ref，恢复上次浏览态时直接赋值会话值即可。
-    size.value = restore.size
-    groupSize.value = restore.groupSize
+    size.value = normalizePageSize(restore.size)
+    groupSize.value = normalizePageSize(restore.groupSize)
     groupPage.value = restore.groupPage
     groupQ.value = restore.groupQ
     groupSortBy.value = restore.groupSortBy

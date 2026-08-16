@@ -288,6 +288,20 @@ def test_invalid_config_rejected(client):
     # 组件配置：取值域
     with pytest.raises(LayoutConfigValidationError, match="不能小于"):
         repo.set_page_config("board", {"values": {"slots.table.config.pageSize": 5}})
+    with pytest.raises(LayoutConfigValidationError, match="不能大于"):
+        repo.set_page_config("board", {"values": {"slots.table.config.pageSize": 201}})
+    with pytest.raises(LayoutConfigValidationError, match="包含非法取值"):
+        repo.set_user_config(
+            "board",
+            {"values": {"slots.settings.config.defaultCollapsed": ["unknown"]}},
+            layout={"slots": [{"id": "settings", "component": "settings-drawer"}]},
+        )
+    # config-panel 的折叠 key 由页面动态登记，不套用 settings-drawer 的固定三段值域。
+    repo.set_user_config(
+        "config",
+        {"values": {"slots.panel.config.defaultCollapsed": ["page-specific-section"]}},
+        layout={"slots": [{"id": "panel", "component": "config-panel"}]},
+    )
     with pytest.raises(LayoutConfigValidationError, match="schemaVersion"):
         repo.set_user_config("board", {"schemaVersion": 999, "values": {"density": "compact"}})
     with pytest.raises(LayoutConfigValidationError, match="需为布尔值"):

@@ -616,7 +616,6 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
-.filter-card :deep(.el-card__body) { padding: var(--app-space-3) var(--app-space-4); }
 .role-tag { margin-right: 4px; }
 .muted { color: var(--el-text-color-secondary); }
 .locked-field { color: var(--el-text-color-regular); }

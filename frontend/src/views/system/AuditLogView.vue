@@ -6,6 +6,7 @@ import {
   onBeforeUnmount,
   onDeactivated,
   onMounted,
+  reactive,
   ref,
   watch,
 } from 'vue'
@@ -18,12 +19,14 @@ import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
+import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import { getAuditDetail, getAuditSummary, listAuditLogs, type AuditLog, type AuditQuery, type AuditSummary } from '@/api/audit'
 import { getPublicDictItems } from '@/api/dict'
 import { listTenants } from '@/api/tenant'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
 import { getPageLayout } from '@/layout'
@@ -32,6 +35,7 @@ import { useAuthStore } from '@/stores/auth'
 import { dictTagStyleByCode } from '@/utils/dictColor'
 import { getErrorStatus } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
+import { normalizePageSize } from '@/constants/pagination'
 
 const pageKey = 'audit-log'
 const AUTO_REFRESH_MS = 30_000
@@ -93,23 +97,21 @@ const drawerConfig = {
 
 const { settings, isDirty: bizDirty, reset: resetBiz } = usePageSettings(pageKey, {
   autoRefreshEnabled: false,
-  filters: {
-    start_time: '',
-    end_time: '',
-    event_category: [] as string[],
-    result: [] as string[],
-    status: [] as string[],
-    resource_code: '',
-    actor_keyword: '',
-    target_keyword: '',
-    tenant_id: [] as string[],
-  },
 })
 const settingsOpen = ref(false)
-const filters = settings.filters
-const dateRange = ref<[string, string] | null>(
-  filters.start_time && filters.end_time ? [filters.start_time, filters.end_time] : null,
-)
+const autoRefreshEnabled = ref(settings.autoRefreshEnabled)
+const filters = reactive({
+  start_time: '',
+  end_time: '',
+  event_category: [] as string[],
+  result: [] as string[],
+  status: [] as string[],
+  resource_code: '',
+  actor_keyword: '',
+  target_keyword: '',
+  tenant_id: [] as string[],
+})
+const dateRange = ref<[string, string] | null>(null)
 
 const rows = ref<AuditLog[]>([])
 const total = ref(0)
@@ -137,10 +139,14 @@ const tenantOptions = ref<OptionItem[]>([])
 
 // 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
 const pageSizeDefault = computed(() => {
-  const raw = componentValueOf('auditTable', 'pageSize')
-  return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(10, Math.min(200, raw)) : 50
+  return normalizePageSize(componentValueOf('auditTable', 'pageSize'), 50)
 })
-const pageSize = ref(pageSizeDefault.value)
+const pageSize = useDefaultedSessionValue(pageSizeDefault, {
+  onSynced: () => {
+    page.value = 1
+    void loadAll(true)
+  },
+})
 const AUDIT_SORT_FIELDS = ['event_time', 'event_category', 'result', 'status', 'duration_ms'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof AUDIT_SORT_FIELDS)[number]>({
   slotId: 'auditTable',
@@ -441,7 +447,7 @@ async function loadTenantOptions() {
 
 function startTimer() {
   stopTimer()
-  if (!settings.autoRefreshEnabled) return
+  if (!autoRefreshEnabled.value) return
   refreshTimer = window.setInterval(() => {
     void refresh(true)
   }, AUTO_REFRESH_MS)
@@ -454,12 +460,9 @@ function stopTimer() {
   }
 }
 
-watch(() => settings.autoRefreshEnabled, startTimer)
-// 抽屉改默认每页条数 → 同步会话 ref 并重载；分页器改动在 pageSizeChanged 里处理，不经此处。
-watch(pageSizeDefault, (value) => {
-  pageSize.value = value
-  page.value = 1
-  void loadAll(true)
+watch(autoRefreshEnabled, startTimer)
+watch(() => settings.autoRefreshEnabled, (value) => {
+  autoRefreshEnabled.value = value
 })
 
 onMounted(async () => {
@@ -486,7 +489,7 @@ onBeforeUnmount(stopTimer)
           <p class="page-subtitle">查询登录、配置变更、数据操作等审计记录。</p>
         </div>
         <div class="audit-actions">
-          <el-switch v-model="settings.autoRefreshEnabled" size="small" active-text="自动刷新" />
+          <el-switch v-model="autoRefreshEnabled" size="small" active-text="自动刷新" />
           <el-button :loading="tableLoading || summaryLoading" @click="refresh(false)">刷新</el-button>
           <el-tooltip content="导出能力不在本阶段范围" placement="bottom">
             <span><el-button disabled>导出</el-button></span>
@@ -750,7 +753,16 @@ onBeforeUnmount(stopTimer)
         :page-key="pageKey"
         :config="drawerConfig"
         @reset="resetBiz(); resetLayout()"
-      />
+      >
+        <template #business>
+          <PageSettingSection title="刷新偏好" desc="设置进入页面时是否默认自动刷新；页面顶部开关只影响本次访问。">
+            <div class="setting-item">
+              <div class="setting-label">默认自动刷新</div>
+              <el-switch v-model="settings.autoRefreshEnabled" />
+            </div>
+          </PageSettingSection>
+        </template>
+      </PageSettingsDrawer>
     </template>
   </LayoutHost>
 </template>
@@ -780,7 +792,6 @@ onBeforeUnmount(stopTimer)
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--app-space-3);
 }
-.filter-card :deep(.el-card__body) { padding: var(--app-space-3) var(--app-space-4); }
 .metric {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;

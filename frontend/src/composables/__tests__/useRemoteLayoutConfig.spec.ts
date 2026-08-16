@@ -114,4 +114,27 @@ describe('useRemoteLayoutConfig', () => {
       }),
     }))
   })
+
+  it('whenRemoteHydrated 在页面层与用户层配置都处理完成后才解除等待', async () => {
+    const pageReq = deferred<{
+      pageKey: string
+      presetKey: null
+      config: { schemaVersion: number; values: Record<string, unknown> }
+    }>()
+    layoutApi.getLayoutPageConfig.mockReturnValue(pageReq.promise)
+    const { config } = mountHarness(makeLayout())
+    let completed = false
+    void config.whenRemoteHydrated().then(() => { completed = true })
+    await flushPromises()
+    expect(completed).toBe(false)
+
+    pageReq.resolve({
+      pageKey: 'remote-page',
+      presetKey: null,
+      config: { schemaVersion: 1, values: {} },
+    })
+    await config.whenRemoteHydrated()
+    expect(config.remoteHydrated.value).toBe(true)
+    expect(completed).toBe(true)
+  })
 })

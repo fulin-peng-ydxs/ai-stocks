@@ -21,14 +21,15 @@ import {
   type DictItem,
   type DictType,
 } from '@/api/dict'
-import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useTableSort } from '@/composables/useTableSort'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { DICT_COLOR_PRESETS, dictColorSwatchStyle, dictTagStyle, normalizeDictColor } from '@/utils/dictColor'
 import type { AppRowAction } from '@/components/rowActions'
+import { normalizePageSize } from '@/constants/pagination'
 
 const pageKey = 'data-dictionary'
 
@@ -60,9 +61,7 @@ const drawerConfig = {
   componentLayerValuesOf,
 }
 
-const { settings, isDirty: bizDirty, reset: resetBiz } = usePageSettings(pageKey, {
-  typeKeyword: '',
-})
+const typeKeyword = ref('')
 // 当前选中字典类型：会话态（刷新/重进回到未选中），不持久化——它不是默认值，是主区点选状态。
 const selectedTypeCode = ref('')
 
@@ -100,7 +99,7 @@ const itemForm = reactive({
   sort: 100,
   remark: '',
 })
-const drawerDirty = computed(() => layoutDirty.value || bizDirty.value)
+const drawerDirty = computed(() => layoutDirty.value)
 const canManageDict = computed(() => auth.isSystem)
 const activeType = computed(() => typeRows.value.find((row) => row.code === selectedTypeCode.value) ?? null)
 let typeRequestSeq = 0
@@ -108,10 +107,14 @@ let itemRequestSeq = 0
 let typeSearchTimer: ReturnType<typeof setTimeout> | null = null
 // 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
 const pageSizeDefault = computed(() => {
-  const raw = componentValueOf('itemTable', 'pageSize')
-  return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(10, Math.min(200, raw)) : 50
+  return normalizePageSize(componentValueOf('itemTable', 'pageSize'), 50)
 })
-const pageSize = ref(pageSizeDefault.value)
+const pageSize = useDefaultedSessionValue(pageSizeDefault, {
+  onSynced: () => {
+    itemPage.value = 1
+    void loadItems()
+  },
+})
 const DICT_ITEM_SORT_FIELDS = ['sort', 'code', 'label', 'enabled', 'updated_at'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof DICT_ITEM_SORT_FIELDS)[number]>({
   slotId: 'itemTable',
@@ -183,7 +186,7 @@ async function loadTypes(keepSelection = true) {
   typeError.value = false
   permissionError.value = false
   try {
-    const data = await listDictTypes({ q: settings.typeKeyword || undefined, page: 1, size: 200 })
+    const data = await listDictTypes({ q: typeKeyword.value || undefined, page: 1, size: 200 })
     if (seq !== typeRequestSeq) return
     typeRows.value = data.list
     typeTotal.value = data.total
@@ -449,12 +452,6 @@ async function toggleItem(row: DictItem, value: boolean) {
   }
 }
 
-// 抽屉改默认每页条数 → 同步会话 ref 并重载；分页器改动在 pageSizeChanged 里处理，不经此处。
-watch(pageSizeDefault, (value) => {
-  pageSize.value = value
-  itemPage.value = 1
-  void loadItems()
-})
 
 onMounted(loadAll)
 onBeforeUnmount(() => {
@@ -498,7 +495,7 @@ onBeforeUnmount(() => {
           </header>
           <el-card shadow="never" class="filter-card dict-type-card">
             <AppControlRow class="dict-type-tools">
-              <el-input v-model="settings.typeKeyword" clearable placeholder="搜索类型 / code" @input="scheduleSearchTypes" @keyup.enter="searchTypes" @clear="searchTypes" />
+              <el-input v-model="typeKeyword" clearable placeholder="搜索类型 / code" @input="scheduleSearchTypes" @keyup.enter="searchTypes" @clear="searchTypes" />
             </AppControlRow>
           </el-card>
           <div class="dict-type-list" v-loading="typeLoading">
@@ -698,7 +695,7 @@ onBeforeUnmount(() => {
         :dirty="drawerDirty"
         :page-key="pageKey"
         :config="drawerConfig"
-        @reset="resetBiz(); resetLayout()"
+        @reset="resetLayout"
       />
     </template>
   </LayoutHost>
@@ -761,9 +758,6 @@ onBeforeUnmount(() => {
   background: transparent;
   box-shadow: none;
   border-radius: 0;
-}
-.dict-type-card :deep(.el-card__body) {
-  padding: var(--app-space-3) var(--app-space-4);
 }
 .dict-type-tools {
   flex: 0 0 auto;

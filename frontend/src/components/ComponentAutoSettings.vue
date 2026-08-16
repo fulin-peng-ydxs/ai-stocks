@@ -10,6 +10,7 @@
  * 单字段为叶子不折叠。页面布局编辑器一次只聚焦一个 slot，slot 头作锚点不折叠（collapsibleSlot=false）。
  */
 import { computed, nextTick, ref, watch } from 'vue'
+import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElInputNumber } from 'element-plus'
 import AppRowActions from './AppRowActions.vue'
 import SettingsGroup from './SettingsGroup.vue'
@@ -121,7 +122,6 @@ watch(
   },
 )
 
-const PAGE_SIZE_OPTIONS = [20, 50, 100, 200]
 const ORDER_OPTIONS = [
   { label: '升序', value: 'asc' },
   { label: '降序', value: 'desc' },

@@ -21,7 +21,7 @@ import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
-import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
+import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
 import {
   addSectorWatchlist,
   getSectorBenchmarkBars,
@@ -55,6 +55,7 @@ import {
   useKlinePrefs,
 } from '@/composables/useKlinePrefs'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   createDefaultStockChartPreferences,
@@ -117,6 +118,7 @@ const {
   setComponentKnob,
   componentSourceOf,
   componentLayerValuesOf,
+  whenRemoteHydrated,
 } = useRemoteLayoutConfig(sectorsLayout)
 const drawerConfig = {
   knobs: layoutKnobs,
@@ -163,8 +165,7 @@ const LIST_SCOPE_OPTIONS = [
 ]
 
 const configuredPageSize = computed<number>(() => {
-  const value = componentValueOf('table', 'pageSize')
-  return typeof value === 'number' ? value : 20
+  return normalizePageSize(componentValueOf('table', 'pageSize'))
 })
 const hiddenColumns = computed<string[]>(() =>
   (componentValueOf('table', 'hiddenColumns') as string[]) ?? [],
@@ -181,7 +182,8 @@ const loadError = ref('')
 const forbidden = ref(false)
 const tradeDate = ref<string | null>('')
 const marketDate = ref<string | null>(null)
-let restoring = false
+// 首屏先等待持久化默认值水合，再恢复 URL 会话态；期间禁止默认值 watcher 发起抢跑请求。
+let restoring = true
 // 五个筛选/图表口径均为单向：抽屉默认值 → 会话 ref；主区改动只进会话态，不写回默认。
 // URL query/分享链接恢复也只写会话 ref（restoring 区间），不触碰抽屉默认。见 DESIGN「设置抽屉」单向默认机制。
 const boardType = ref<BoardType | ''>(settings.defaultType === 'concept' || settings.defaultType === 'industry' ? settings.defaultType : '')
@@ -190,7 +192,13 @@ const listScope = ref<'all' | 'watchlist'>(settings.defaultScope)
 const keyword = ref('')
 const page = ref(1)
 // 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
-const size = ref(configuredPageSize.value)
+const size = useDefaultedSessionValue(configuredPageSize, {
+  shouldSync: () => !restoring,
+  onSynced: () => {
+    page.value = 1
+    void load()
+  },
+})
 const total = ref(0)
 const rows = ref<SectorRow[]>([])
 const fundFlowDate = ref<string | null>(null)
@@ -549,13 +557,6 @@ watch([sortBy, sortOrder], () => {
   page.value = 1
   void load()
 })
-// 每页条数单向：配置层默认值 → 会话 ref 并重载；分页器改动只进会话态（见模板 size-change）。
-watch(configuredPageSize, (value) => {
-  if (restoring) return
-  size.value = value
-  page.value = 1
-  void load()
-})
 watch([rangeDays, chartMode, benchmarkCode, compareMetric, compareWindow], () => {
   if (restoring) return
   void loadChart()
@@ -657,7 +658,8 @@ function selectCompareMetric(metric: CompareMetric): void {
 }
 
 onMounted(async () => {
-  await whenHydrated()
+  await Promise.all([whenHydrated(), whenRemoteHydrated()])
+  size.value = configuredPageSize.value
   await ensureLoaded().catch(() => undefined)
   const resolved = resolveSectorListState(route.query, settings, canViewWatchlist.value)
   const query = resolved.query

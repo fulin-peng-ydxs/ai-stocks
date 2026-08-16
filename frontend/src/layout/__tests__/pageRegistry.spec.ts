@@ -170,6 +170,56 @@ function pageSettingsFields(source: string, fileName: string): { fields: string[
   return { fields, aliases: [...aliases] }
 }
 
+/** 找出页面脚本对 useRemoteLayoutConfig 返回写方法的真实调用，覆盖解构别名和对象属性调用。 */
+function directComponentKnobWrites(source: string, fileName: string): string[] {
+  const sourceFile = ts.createSourceFile(fileName, scriptOf(source), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const writerAliases = new Set<string>()
+  const configObjects = new Set<string>()
+  const calls: string[] = []
+
+  const collectBindings = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node)
+      && node.initializer
+      && ts.isCallExpression(node.initializer)
+      && ts.isIdentifier(node.initializer.expression)
+      && node.initializer.expression.text === 'useRemoteLayoutConfig'
+    ) {
+      if (ts.isIdentifier(node.name)) configObjects.add(node.name.text)
+      if (ts.isObjectBindingPattern(node.name)) {
+        for (const element of node.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue
+          const exported = element.propertyName && ts.isIdentifier(element.propertyName)
+            ? element.propertyName.text
+            : element.name.text
+          if (exported === 'setComponentKnob') writerAliases.add(element.name.text)
+        }
+      }
+    }
+    ts.forEachChild(node, collectBindings)
+  }
+  collectBindings(sourceFile)
+
+  const collectCalls = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      if (ts.isIdentifier(node.expression) && writerAliases.has(node.expression.text)) {
+        calls.push(node.expression.text)
+      }
+      if (
+        ts.isPropertyAccessExpression(node.expression)
+        && ts.isIdentifier(node.expression.expression)
+        && configObjects.has(node.expression.expression.text)
+        && node.expression.name.text === 'setComponentKnob'
+      ) {
+        calls.push(node.expression.getText(sourceFile))
+      }
+    }
+    ts.forEachChild(node, collectCalls)
+  }
+  collectCalls(sourceFile)
+  return calls
+}
+
 function routeViewEntries(source: string): RouteViewEntry[] {
   const sourceFile = ts.createSourceFile(
     'router.ts',
@@ -778,10 +828,9 @@ describe('组件消费关系与配置一致性（P4）', () => {
       if (!entry.supportsComponentConfig) continue
       const source = sourceForPage(entry.pageKey)
       if (!source) continue
-      // 直调特征：setComponentKnob(' 或 setComponentKnob(" 带 slot 实参；属性传递（drawerConfig 里的 `setComponentKnob,`）不匹配
-      const pattern = /setComponentKnob\(\s*['"]/
-      if (pattern.test(source)) {
-        violations.push(`${entry.pageKey} 页面源码直接调用 setComponentKnob 写配置层（违反单向默认机制，字段无关）`)
+      const writes = directComponentKnobWrites(source, `${entry.pageKey}.vue`)
+      if (writes.length) {
+        violations.push(`${entry.pageKey} 页面源码直接调用 ${writes.join('/')} 写配置层（违反单向默认机制，字段无关）`)
       }
     }
     expect(violations, `以下页面把页面改动写回组件配置层：\n${violations.join('\n')}`).toEqual([])
@@ -805,5 +854,34 @@ describe('组件消费关系与配置一致性（P4）', () => {
         ).toBe(true)
       }
     }
+  })
+
+  it('业务偏好单向：持久化 settings 不得在业务插槽外被 v-model 直接写回', () => {
+    const violations: string[] = []
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      if (!source || !source.includes('usePageSettings(')) continue
+      const { fields, aliases } = pageSettingsFields(source, `${entry.pageKey}.vue`)
+      if (!fields.length) continue
+
+      // #business 是 PageSettingsDrawer 的最后一个具名插槽；移除到抽屉闭标签的整段，
+      // 避免业务段内部嵌套 template 时被非贪婪正则提前截断。
+      const outsideBusiness = source.replace(
+        /<template\s+#business\b[^>]*>[\s\S]*?<\/PageSettingsDrawer>/g,
+        '</PageSettingsDrawer>',
+      )
+      for (const alias of aliases) {
+        for (const field of fields) {
+          const directModel = new RegExp(`v-model(?:[:.][^=\\s]+)*\\s*=\\s*["'][^"']*\\b${alias}\\.${field}\\b`)
+          if (directModel.test(outsideBusiness)) {
+            violations.push(`${entry.pageKey}: 主区 v-model 直接绑定 ${alias}.${field}`)
+          }
+        }
+      }
+    }
+    expect(
+      violations,
+      `页面交互不得把会话改动写回长期默认；请改用独立会话 ref：\n${violations.join('\n')}`,
+    ).toEqual([])
   })
 })

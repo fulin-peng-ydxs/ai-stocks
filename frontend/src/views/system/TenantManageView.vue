@@ -387,7 +387,6 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
 <style scoped>
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--app-space-3); }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
-.filter-card :deep(.el-card__body) { padding: var(--app-space-3) var(--app-space-4); }
 .builtin-tag { margin-left: 4px; }
 .mono { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }
 .muted { color: var(--el-text-color-secondary); }

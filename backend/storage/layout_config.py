@@ -48,11 +48,12 @@ COMPONENT_CONFIG_PATH_RE = re.compile(r"^slots\.([A-Za-z0-9:_-]{1,80})\.config\.
 
 # 组件特性配置字段规则（后端最终守门：未登记字段、类型错误、越权层级一律拒绝）。
 # 与前端 componentConfig.ts 的 COMPONENT_FIELD_DEFS 保持一致：只登记已被页面真实消费的字段，
-# 不预设无消费的字段。首批字段均限 page/user 层（preset 层覆盖会被判越权）。按字段名建表（首批无冲突）。
+# 不预设无消费的字段。类型、层级和通用数值边界按字段名维护；组件专属静态值域另按
+# (component kind, field) 维护，避免同名字段在不同组件中的语义互相污染。
 COMPONENT_CONFIG_FIELD_RULES: dict[str, dict[str, Any]] = {
     # pageSize 放开 preset 层：预设可设某组件种类的默认分页大小（预设×组件默认，P11/D4）。
     "border": {"type": "bool", "layers": {"page"}},
-    "pageSize": {"type": "int", "layers": {"preset", "page", "user"}, "min": 10, "max": 500},
+    "pageSize": {"type": "int", "layers": {"preset", "page", "user"}, "min": 10, "max": 200},
     "defaultSort": {"type": "str", "layers": {"page", "user"}},
     "hiddenColumns": {"type": "str_list", "layers": {"page", "user"}},
     "minHeight": {"type": "int", "layers": {"page", "user"}, "min": 480, "max": 900},
@@ -75,6 +76,12 @@ COMPONENT_CONFIG_FIELDS_BY_KIND: dict[str, set[str]] = {
     "tabs": {"defaultActive"},
     "settings-drawer": {"size", "bodyScroll", "collapsibleSections", "defaultCollapsed"},
     "config-panel": {"collapsibleSections", "defaultCollapsed", "showGroupDescription", "showSectionDescription"},
+}
+
+# 同名字段可能因组件种类拥有不同静态值域；动态页面值域不在此表硬编码。
+COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD: dict[tuple[str, str], set[str]] = {
+    ("settings-drawer", "size"): {"sm", "md", "lg"},
+    ("settings-drawer", "defaultCollapsed"): {"layout", "components", "business"},
 }
 
 
@@ -124,6 +131,14 @@ def check_component_config_ownership(values: dict[str, Any], layout: dict[str, A
         allowed = COMPONENT_CONFIG_FIELDS_BY_KIND.get(kind)
         if not allowed or field not in allowed:
             errors.append(f"组件 {kind} 不支持配置字段 {field}（slot {slot_id}）")
+            continue
+        options = COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD.get((kind, field))
+        value = values[path]
+        if options and (
+            (isinstance(value, list) and any(item not in options for item in value))
+            or (not isinstance(value, list) and value not in options)
+        ):
+            errors.append(f"组件 {kind} 配置字段 {field} 包含非法取值（slot {slot_id}）")
     return errors
 
 

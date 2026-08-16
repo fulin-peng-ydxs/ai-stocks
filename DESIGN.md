@@ -355,7 +355,7 @@ Key Characteristics：
 - 设置项必须有默认值、来源展示、合法值域和重置路径；页面设置抽屉 footer 的「恢复默认」必须同时重置页面业务偏好、页面布局/组件用户层，以及抽屉自身 `size/defaultCollapsed` 用户偏好。
 - 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`（抽屉=user 层、页面布局编辑器=page 层，经 `layer`/`slotIds`/`allowedLayersOf`/`collapsibleSlot`/`clearable` 适配），不得另写第二套组件特性表单。
 - 折叠规则统一：每个 slot 为可折叠组（`SettingsGroup` level 2；编辑器聚焦单 slot 时仅作标题锚点不折叠）；多行清单类特性（列显隐）为可折叠子组（level 3）；单字段为叶子不折叠。深层标题字号随层级递减但不低于正文。
-- **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载，初始化自默认值并用单向 watch 把「默认→会话 ref」同步（含远端回灌/恢复默认），**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 直写持久层（那会把页面临时操作变成新默认）。URL query/分享链接恢复同样只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测表单 `rememberedParams` feature 通道「会话记忆优先于默认」）。
+- **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；重复的默认值投影统一复用 `composables/useDefaultedSessionValue.ts`，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 或主区 `v-model` 直写持久层。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测表单 `rememberedParams` feature 通道「会话记忆优先于默认」）。
 - **新增属性登记判断（开发闭环必经步骤）**：新增页面、改造页面或给页面/组件新增任何可交互属性后，必须逐一回答三个问题再收尾——①该属性是否需要跨会话记住（默认值/偏好）？②需要时登记到哪条链路（业务偏好进 `usePageSettings` defaults + `#business` 插槽；组件展示字段按 §7.3 进 `consumedComponentFields`/`componentMeta`/`COMPONENT_FIELD_DEFS`/后端规则）？③需要默认值时页面是否已按上条单向机制消费（读默认初始化会话 ref、不写回）？三问任一答「是」却未落地，即视为本次改动未完成。反向同样成立：不再需要或语义失效的已登记项（如已被主区表单覆盖、关闭后无法再开启的开关）必须及时下线，不得在抽屉里堆积死项。
 
 ## 5. Layout Principles
@@ -493,7 +493,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 - 字段在 `COMPONENT_FIELD_DEFS` 中声明 label、control、layers、默认值和值域。
 - `componentSchemas.ts` 接受该字段。
-- 后端 `layout_config.py` 同步字段规则和归属校验。
+- 后端 `layout_config.py` 同步字段规则和归属校验；同名字段在不同组件种类中值域不同时，静态值域必须按 `(component kind, field)` 维护，不得只按字段名合并。
 - 消费页面在 `pageRegistry.consumedComponentFields` 登记。
 - 页面通过 `componentMeta` 提供安全枚举（列、可交互排序字段、tabs 等）。
 - `componentMeta.columns` 只声明列显隐候选，不负责生成业务表格列；每个候选 key 必须在消费页面进入真实显隐判断并控制对应列或列内业务片段。该正向消费关系由 `pageRegistry.spec.ts` 契约测试强制，禁止“设置里可勾选、页面没有可渲染节点”的假配置。

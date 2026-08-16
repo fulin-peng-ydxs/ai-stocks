@@ -27,6 +27,8 @@ vi.mock('@/composables/useRemoteLayoutConfig', () => ({
     componentSourceOf: vi.fn(),
     layerValuesOf: vi.fn(),
     componentLayerValuesOf: vi.fn(),
+    remoteHydrated: ref(true),
+    whenRemoteHydrated: vi.fn().mockResolvedValue(undefined),
   }),
 }))
 
@@ -35,6 +37,8 @@ vi.mock('@/composables/usePageSettings', () => ({
     settings: reactive(structuredClone(defaults)),
     isDirty: ref(false),
     reset: vi.fn(),
+    hydrated: ref(true),
+    whenHydrated: vi.fn().mockResolvedValue(undefined),
   }),
 }))
 

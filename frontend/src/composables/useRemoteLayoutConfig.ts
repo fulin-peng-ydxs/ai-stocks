@@ -18,6 +18,10 @@ export function useRemoteLayoutConfig(base: PageLayout) {
   const remoteError = ref(false)
   const saving = ref(false)
   const saveError = ref(false)
+  let resolveRemoteHydrated!: () => void
+  const remoteHydratedPromise = new Promise<void>((resolve) => {
+    resolveRemoteHydrated = resolve
+  })
   let saveTimer: number | undefined
 
   async function saveNow(): Promise<void> {
@@ -73,6 +77,7 @@ export function useRemoteLayoutConfig(base: PageLayout) {
     }
 
     remoteHydrated.value = true
+    resolveRemoteHydrated()
     if (shouldFlushDirty) void saveNow()
   })
 
@@ -81,6 +86,7 @@ export function useRemoteLayoutConfig(base: PageLayout) {
   return {
     ...config,
     remoteHydrated: computed(() => remoteHydrated.value),
+    whenRemoteHydrated: () => remoteHydratedPromise,
     remoteError: computed(() => remoteError.value),
     remoteSaving: computed(() => saving.value),
     remoteSaveError: computed(() => saveError.value),

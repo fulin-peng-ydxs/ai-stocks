@@ -32,6 +32,7 @@ import {
   useKlinePrefs,
 } from '@/composables/useKlinePrefs'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   createDefaultStockChartPreferences,
@@ -165,7 +166,13 @@ const members = ref<SectorMember[]>([])
 const memberTotal = ref(0)
 const memberPage = ref(1)
 // 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
-const memberSize = ref(configuredPageSize.value)
+const memberSize = useDefaultedSessionValue(configuredPageSize, {
+  shouldSync: () => initialized,
+  onSynced: () => {
+    memberPage.value = 1
+    void loadMembers()
+  },
+})
 const memberTradeDate = ref<string | null>(null)
 const memberLoading = ref(false)
 const memberError = ref('')
@@ -319,12 +326,6 @@ function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | bo
 
 watch([sortBy, sortOrder], () => {
   if (!initialized) return
-  memberPage.value = 1
-  void loadMembers()
-})
-watch(configuredPageSize, (value) => {
-  if (!initialized) return
-  memberSize.value = value
   memberPage.value = 1
   void loadMembers()
 })

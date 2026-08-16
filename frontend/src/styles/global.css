@@ -393,7 +393,7 @@ html.dark {
 .filter-card {
   margin-bottom: 0;
 }
-.filter-card :deep(.el-card__body) {
+.filter-card .el-card__body {
   padding: var(--app-space-3) var(--app-space-4);
 }
 .app-stack-sm { display: flex; flex-direction: column; gap: var(--app-space-2); }

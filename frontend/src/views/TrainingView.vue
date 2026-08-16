@@ -35,12 +35,13 @@ import {
   type StockChartPreferences,
 } from '@/composables/useStockChartPreferences'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useTableSort } from '@/composables/useTableSort'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout, type PageLayout } from '@/layout'
 import { resolveComponentNumberValue } from '@/layout/componentConfig'
-import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
+import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   startSession, getSession, listSessions, growth as fetchGrowth, revealNext,
@@ -75,6 +76,25 @@ const { settings: cfg, isDirty, reset, hydrated } = usePageSettings('training', 
   amountWanPresetStr: '1,10,20',
   charts: createDefaultStockChartPreferences(),
 })
+// 主区只操作本次训练会话；cfg 仅承载设置抽屉里的长期默认，主区不反写。
+const sessionConfig = reactive({
+  mode: cfg.mode,
+  range_start: cfg.range_start,
+  range_end: cfg.range_end,
+  boards: [...cfg.boards],
+  orderMode: cfg.orderMode,
+})
+watch(
+  () => [cfg.mode, cfg.range_start, cfg.range_end, cfg.boards, cfg.orderMode] as const,
+  () => {
+    sessionConfig.mode = cfg.mode
+    sessionConfig.range_start = cfg.range_start
+    sessionConfig.range_end = cfg.range_end
+    sessionConfig.boards = [...cfg.boards]
+    sessionConfig.orderMode = cfg.orderMode
+  },
+  { deep: true },
+)
 const chartSettings = computed({
   get: () => cfg.charts,
   set: (value: StockChartPreferences) => {
@@ -121,16 +141,13 @@ const mainLayout = computed<PageLayout>(() => trainingEffective.value)
 
 // 训练历史每页条数单向：组件配置层（抽屉可调）默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
 const historyPageSizeDefault = computed(() => {
-  const raw = componentValueOf('history', 'pageSize')
-  return typeof raw === 'number' && Number.isFinite(raw)
-    ? Math.max(10, Math.min(200, raw))
-    : DEFAULT_PAGE_SIZE
+  return normalizePageSize(componentValueOf('history', 'pageSize'))
 })
-const historyPageSize = ref(historyPageSizeDefault.value)
-watch(historyPageSizeDefault, (value) => {
-  historyPageSize.value = value
-  history.page = 1
-  void loadHistory()
+const historyPageSize = useDefaultedSessionValue(historyPageSizeDefault, {
+  onSynced: () => {
+    history.page = 1
+    void loadHistory()
+  },
 })
 
 // 训练台/结算 K 线工作区高度：与个股详情一致，来自组件配置层（chart.minHeight）。
@@ -227,7 +244,7 @@ const order = reactive({ qty: 1, reason: '' })
 const round = computed(() => view.value?.round)
 const isLast = computed(() => !!round.value?.is_last_day)
 const feeOn = computed(() => !!view.value?.fee_enabled)
-const isAmount = computed(() => cfg.orderMode === 'amount')
+const isAmount = computed(() => sessionConfig.orderMode === 'amount')
 
 const pricePerHand = computed(() => (round.value ? round.value.cur_close * round.value.lot_size : 0))
 // 买入总费率预判：滑点0.2%+佣金万2.5+过户≈0.226%，取略保守 0.25% 估「全仓上限」，
@@ -269,15 +286,15 @@ function buyPresetDisabled(p: number): boolean { const h = presetHands(p); retur
 // 一键填入输入框（点 4：点高亮数字即填满仓位）
 function fillBuyMax() { order.qty = isAmount.value ? Math.round(cash.value) : maxBuyHands.value }
 // 切换下单方式时复位输入量，避免“手数/金额”量纲串味（如 10 万元被当成 10 万手）
-watch(() => cfg.orderMode, () => { order.qty = isAmount.value ? 0 : 1 })
+watch(() => sessionConfig.orderMode, () => { order.qty = isAmount.value ? 0 : 1 })
 
 async function start() {
   loading.value = true
   try {
     const filters: Record<string, unknown> = { exclude_st: cfg.exclude_st }
-    if (cfg.boards.length) filters.boards = [...cfg.boards]
+    if (sessionConfig.boards.length) filters.boards = [...sessionConfig.boards]
     view.value = await startSession({
-      mode: cfg.mode, range_start: cfg.range_start, range_end: cfg.range_end,
+      mode: sessionConfig.mode, range_start: sessionConfig.range_start, range_end: sessionConfig.range_end,
       n_rounds: cfg.n_rounds, window_days: cfg.window_days,
       initial_capital: cfg.initial_capital, fee_enabled: cfg.fee_enabled, filters,
     })
@@ -476,7 +493,7 @@ onBeforeUnmount(detachKeyboard)
             <div class="cfg-item">
               <label>训练模式</label>
               <PageSegmented
-                v-model="cfg.mode"
+                v-model="sessionConfig.mode"
                 tone="primary"
                 aria-label="训练模式"
                 :options="[
@@ -488,15 +505,15 @@ onBeforeUnmount(detachKeyboard)
             <div class="cfg-item wide">
               <label>随机交易日范围</label>
               <div class="range">
-                <TradeDatePicker v-model="cfg.range_start" placeholder="开始日" clearable />
+                <TradeDatePicker v-model="sessionConfig.range_start" placeholder="开始日" clearable />
                 <span>至</span>
-                <TradeDatePicker v-model="cfg.range_end" placeholder="结束日" clearable />
+                <TradeDatePicker v-model="sessionConfig.range_end" placeholder="结束日" clearable />
                 <span class="hint">留空 = 全部历史</span>
               </div>
             </div>
             <div class="cfg-item">
               <label>板块</label>
-              <el-select v-model="cfg.boards" placeholder="不限（全部板块）" multiple clearable
+              <el-select v-model="sessionConfig.boards" placeholder="不限（全部板块）" multiple clearable
                          collapse-tags collapse-tags-tooltip :max-collapse-tags="2" style="width:220px">
                 <el-option label="主板" value="主板" />
                 <el-option label="创业板" value="创业板" />
@@ -621,16 +638,16 @@ onBeforeUnmount(detachKeyboard)
     <template #action>
     <div class="page-head">
         <div>
-          <h2 class="title-row">
+          <h2 class="app-page-title title-row">
             盘感训练 · 进行中
             <HelpTip title="训练规则" :width="380">
               <p><b>盲测</b>：隐藏个股身份与真实日期，横轴用相对日（D±n）。</p>
               <p style="margin:6px 0 0"><b>买 T+0</b>：买入当日按收盘价即时成交（收盘封涨停买不到）。<b>卖 T+1</b>：卖出登记后次日开盘成交（开盘跌停卖不出、停牌顺延）。窗口末日仍持仓将按收盘价强制清算。</p>
             </HelpTip>
           </h2>
-          <span class="sub">回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中
+          <p class="page-subtitle">回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中
             <el-tag v-if="round.board" size="small" effect="plain" class="board-tag">{{ round.board }}</el-tag>
-          </span>
+          </p>
         </div>
         <div class="page-head-actions">
           <div class="ops">
@@ -680,7 +697,7 @@ onBeforeUnmount(detachKeyboard)
 
           <template v-if="!isLast">
             <div class="ops order-input">
-              <PageSegmented v-model="cfg.orderMode" tone="primary" size="small" aria-label="本轮下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
+              <PageSegmented v-model="sessionConfig.orderMode" tone="primary" size="small" aria-label="本轮下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
               <el-input-number v-model="order.qty" :min="inputMin" :max="inputMax" :step="inputStep" controls-position="right" style="width:160px" />
               <span class="unit">{{ isAmount ? '元' : '手' }}</span>
               <span class="hint" v-if="!isAmount">
@@ -742,12 +759,12 @@ onBeforeUnmount(detachKeyboard)
     <template #action>
     <div class="page-head">
         <div>
-          <h2 class="title-row">
+          <h2 class="app-page-title title-row">
             训练结算
             <span class="grade-big app-data-emphasis" :style="{ color: gradeColor(detail.grade) }">{{ detail.grade }}</span>
             <span class="score-tip">综合评分 {{ detail.score?.toFixed(1) }}</span>
           </h2>
-          <span class="sub">{{ modeText(detail.mode) }} · {{ detail.n_rounds }} 回合 · {{ detail.created_at?.slice(0, 16) }}</span>
+          <p class="page-subtitle">{{ modeText(detail.mode) }} · {{ detail.n_rounds }} 回合 · {{ detail.created_at?.slice(0, 16) }}</p>
         </div>
         <div class="page-head-actions">
           <div class="ops">
@@ -928,9 +945,8 @@ onBeforeUnmount(detachKeyboard)
 <style scoped>
 .training { gap: var(--app-space-2); }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: var(--app-space-2); }
-.page-head .title-row { margin: 0; font-size: var(--app-font-size-page-title-sm); display: flex; align-items: center; gap: var(--app-space-control-gap); }
+.page-head .title-row { margin: 0; display: flex; align-items: center; gap: var(--app-space-control-gap); }
 .page-title-row { display: flex; align-items: center; }
-.page-head .sub { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
 .page-head .grade-big { font-size: var(--app-font-size-kpi-lg); font-weight: var(--app-font-weight-strong); margin-left: 4px; }
 .page-head .score-tip { font-size: var(--app-font-size-body); color: var(--el-text-color-secondary); margin-left: 6px; }
 .page-head-actions { display: flex; align-items: center; gap: var(--app-space-2); }
