@@ -135,16 +135,17 @@ const resultOptions = ref<OptionItem[]>(FALLBACK_RESULTS)
 const statusOptions = ref<OptionItem[]>(STATUS_OPTIONS)
 const tenantOptions = ref<OptionItem[]>([])
 
-const pageSize = computed(() => {
+// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
+const pageSizeDefault = computed(() => {
   const raw = componentValueOf('auditTable', 'pageSize')
   return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(10, Math.min(200, raw)) : 50
 })
+const pageSize = ref(pageSizeDefault.value)
 const AUDIT_SORT_FIELDS = ['event_time', 'event_category', 'result', 'status', 'duration_ms'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof AUDIT_SORT_FIELDS)[number]>({
   slotId: 'auditTable',
   defaultSort: 'event_time:desc',
   componentValueOf,
-  setComponentKnob,
   allowedFields: AUDIT_SORT_FIELDS,
   onChanged: () => {
     page.value = 1
@@ -354,9 +355,9 @@ function pageChanged(value: number) {
 }
 
 function pageSizeChanged(value: number) {
-  if (value === pageSize.value) return
-  setComponentKnob('auditTable', 'pageSize', value)
+  pageSize.value = value
   page.value = 1
+  void loadAll(true)
 }
 
 async function refresh(silent = false) {
@@ -454,7 +455,9 @@ function stopTimer() {
 }
 
 watch(() => settings.autoRefreshEnabled, startTimer)
-watch(pageSize, () => {
+// 抽屉改默认每页条数 → 同步会话 ref 并重载；分页器改动在 pageSizeChanged 里处理，不经此处。
+watch(pageSizeDefault, (value) => {
+  pageSize.value = value
   page.value = 1
   void loadAll(true)
 })

@@ -114,12 +114,9 @@ const pageDirty = computed(() => layoutDirty.value || settingsDirty.value)
 
 const MEMBER_PAGE_SIZES = [10, 20, 30, 50]
 const MEMBER_SORT_FIELDS = ['pct', 'code'] as const
-const { validDefault: defaultKlineRange, prefs: klinePrefs } = useKlinePrefs()
-// K 线范围双向联动全局偏好默认范围（改动即写回 prefs.defaultPeriod），见 DESIGN「页面可改动属性双向联动」。
-const viewDays = computed<number>({
-  get: () => defaultKlineRange.value,
-  set: (value) => { klinePrefs.defaultPeriod = value },
-})
+const { validDefault: defaultKlineRange } = useKlinePrefs()
+// K 线范围单向：全局偏好默认范围 → 会话 ref；主区切换不写回全局默认。
+const viewDays = ref(defaultKlineRange.value)
 const {
   sortBy,
   sortOrder,
@@ -129,7 +126,6 @@ const {
   slotId: 'memberTable',
   defaultSort: 'pct:desc',
   componentValueOf,
-  setComponentKnob,
   allowedFields: MEMBER_SORT_FIELDS,
 })
 const configuredPageSize = computed(() => {
@@ -168,8 +164,8 @@ const chartError = ref('')
 const members = ref<SectorMember[]>([])
 const memberTotal = ref(0)
 const memberPage = ref(1)
-// 每页条数是组件配置属性，直通常态只读 computed；@size-change 里通过 setComponentKnob 写回。
-const memberSize = configuredPageSize
+// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
+const memberSize = ref(configuredPageSize.value)
 const memberTradeDate = ref<string | null>(null)
 const memberLoading = ref(false)
 const memberError = ref('')
@@ -326,8 +322,9 @@ watch([sortBy, sortOrder], () => {
   memberPage.value = 1
   void loadMembers()
 })
-watch(configuredPageSize, () => {
+watch(configuredPageSize, (value) => {
   if (!initialized) return
+  memberSize.value = value
   memberPage.value = 1
   void loadMembers()
 })
@@ -480,7 +477,7 @@ onMounted(async () => {
             @row-click="openStock"
             @sort-change="(value: Sort) => onSortChange(value)"
             @page-change="(value: number) => { memberPage = value; void loadMembers() }"
-            @size-change="(value: number) => { setComponentKnob('memberTable', 'pageSize', value); memberPage = 1 }"
+            @size-change="(value: number) => { memberSize = value; memberPage = 1; void loadMembers() }"
           >
             <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" role="code" sortable="custom">
               <template #default="{ row }">

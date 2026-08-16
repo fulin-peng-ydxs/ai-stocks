@@ -61,9 +61,10 @@ const drawerConfig = {
 }
 
 const { settings, isDirty: bizDirty, reset: resetBiz } = usePageSettings(pageKey, {
-  selectedTypeCode: '',
   typeKeyword: '',
 })
+// 当前选中字典类型：会话态（刷新/重进回到未选中），不持久化——它不是默认值，是主区点选状态。
+const selectedTypeCode = ref('')
 
 const settingsOpen = ref(false)
 const typeRows = ref<DictType[]>([])
@@ -101,20 +102,21 @@ const itemForm = reactive({
 })
 const drawerDirty = computed(() => layoutDirty.value || bizDirty.value)
 const canManageDict = computed(() => auth.isSystem)
-const activeType = computed(() => typeRows.value.find((row) => row.code === settings.selectedTypeCode) ?? null)
+const activeType = computed(() => typeRows.value.find((row) => row.code === selectedTypeCode.value) ?? null)
 let typeRequestSeq = 0
 let itemRequestSeq = 0
 let typeSearchTimer: ReturnType<typeof setTimeout> | null = null
-const pageSize = computed(() => {
+// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
+const pageSizeDefault = computed(() => {
   const raw = componentValueOf('itemTable', 'pageSize')
   return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(10, Math.min(200, raw)) : 50
 })
+const pageSize = ref(pageSizeDefault.value)
 const DICT_ITEM_SORT_FIELDS = ['sort', 'code', 'label', 'enabled', 'updated_at'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof DICT_ITEM_SORT_FIELDS)[number]>({
   slotId: 'itemTable',
   defaultSort: 'sort:asc',
   componentValueOf,
-  setComponentKnob,
   allowedFields: DICT_ITEM_SORT_FIELDS,
   defaultOrder: 'asc',
   onChanged: () => {
@@ -148,7 +150,7 @@ function resetTypeForm(row?: DictType) {
 }
 
 function resetItemForm(row?: DictItem) {
-  itemForm.type_code = row?.type_code ?? settings.selectedTypeCode
+  itemForm.type_code = row?.type_code ?? selectedTypeCode.value
   itemForm.code = row?.code ?? ''
   itemForm.label = row?.label ?? ''
   itemForm.color = row?.color ?? ''
@@ -159,14 +161,14 @@ function resetItemForm(row?: DictItem) {
 
 function normalizeTypeSelection() {
   if (!typeRows.value.length) {
-    settings.selectedTypeCode = ''
+    selectedTypeCode.value = ''
     itemRows.value = []
     itemTotal.value = 0
     itemRequestSeq += 1
     return false
   }
-  if (!typeRows.value.some((row) => row.code === settings.selectedTypeCode)) {
-    settings.selectedTypeCode = typeRows.value[0].code
+  if (!typeRows.value.some((row) => row.code === selectedTypeCode.value)) {
+    selectedTypeCode.value = typeRows.value[0].code
   }
   return true
 }
@@ -185,7 +187,7 @@ async function loadTypes(keepSelection = true) {
     if (seq !== typeRequestSeq) return
     typeRows.value = data.list
     typeTotal.value = data.total
-    if (!keepSelection) settings.selectedTypeCode = ''
+    if (!keepSelection) selectedTypeCode.value = ''
     normalizeTypeSelection()
   } catch {
     if (seq === typeRequestSeq) typeError.value = true
@@ -195,8 +197,8 @@ async function loadTypes(keepSelection = true) {
 }
 
 async function loadItems() {
-  const selectedTypeCode = settings.selectedTypeCode
-  if (!selectedTypeCode) {
+  const currentTypeCode = selectedTypeCode.value
+  if (!currentTypeCode) {
     itemRows.value = []
     itemTotal.value = 0
     itemRequestSeq += 1
@@ -207,13 +209,13 @@ async function loadItems() {
   itemError.value = false
   try {
     const data = await listDictItems({
-      type_code: selectedTypeCode,
+      type_code: currentTypeCode,
       page: itemPage.value,
       size: pageSize.value,
       sort_by: sortBy.value,
       sort_order: sortOrder.value,
     })
-    if (seq !== itemRequestSeq || selectedTypeCode !== settings.selectedTypeCode) return
+    if (seq !== itemRequestSeq || currentTypeCode !== selectedTypeCode.value) return
     itemRows.value = data.list
     itemTotal.value = data.total
     if (data.list.length === 0 && data.total > 0 && itemPage.value > 1) {
@@ -233,12 +235,12 @@ async function loadAll() {
     return
   }
   await loadTypes(true)
-  if (settings.selectedTypeCode) await loadItems()
+  if (selectedTypeCode.value) await loadItems()
 }
 
 async function selectType(code: string) {
-  if (settings.selectedTypeCode === code) return
-  settings.selectedTypeCode = code
+  if (selectedTypeCode.value === code) return
+  selectedTypeCode.value = code
   itemPage.value = 1
   await loadItems()
 }
@@ -248,7 +250,7 @@ async function searchTypes() {
   typeSearchTimer = null
   await loadTypes(true)
   itemPage.value = 1
-  if (settings.selectedTypeCode) await loadItems()
+  if (selectedTypeCode.value) await loadItems()
 }
 
 function scheduleSearchTypes() {
@@ -264,9 +266,9 @@ function pageChanged(value: number) {
 }
 
 function pageSizeChanged(value: number) {
-  if (value === pageSize.value) return
-  setComponentKnob('itemTable', 'pageSize', value)
+  pageSize.value = value
   itemPage.value = 1
+  void loadItems()
 }
 
 function openCreateType() {
@@ -283,7 +285,7 @@ function openEditType(row = activeType.value) {
 }
 
 function openCreateItem() {
-  if (!settings.selectedTypeCode) return
+  if (!selectedTypeCode.value) return
   itemDialogMode.value = 'create'
   resetItemForm()
   itemDialogOpen.value = true
@@ -320,7 +322,7 @@ async function saveType() {
     }
     if (typeDialogMode.value === 'create') {
       await createDictType({ ...body, code })
-      settings.selectedTypeCode = code
+      selectedTypeCode.value = code
     } else {
       await updateDictType(code, body)
     }
@@ -356,7 +358,7 @@ async function saveItem() {
       remark: itemForm.remark.trim() || null,
     }
     if (itemDialogMode.value === 'create') {
-      await createDictItem({ ...body, type_code: settings.selectedTypeCode, code })
+      await createDictItem({ ...body, type_code: selectedTypeCode.value, code })
     } else {
       await updateDictItem(itemForm.type_code, code, body)
     }
@@ -379,9 +381,9 @@ async function removeType(row = activeType.value) {
     cancelButtonText: '取消',
   })
   await deleteDictType(row.code)
-  settings.selectedTypeCode = ''
+  selectedTypeCode.value = ''
   await loadTypes(false)
-  if (settings.selectedTypeCode) await loadItems()
+  if (selectedTypeCode.value) await loadItems()
   ElMessage.success('已删除')
 }
 
@@ -447,7 +449,9 @@ async function toggleItem(row: DictItem, value: boolean) {
   }
 }
 
-watch(pageSize, () => {
+// 抽屉改默认每页条数 → 同步会话 ref 并重载；分页器改动在 pageSizeChanged 里处理，不经此处。
+watch(pageSizeDefault, (value) => {
+  pageSize.value = value
   itemPage.value = 1
   void loadItems()
 })
@@ -518,7 +522,7 @@ onBeforeUnmount(() => {
                 role="button"
                 tabindex="0"
                 class="dict-type-row"
-                :class="{ active: row.code === settings.selectedTypeCode }"
+                :class="{ active: row.code === selectedTypeCode }"
                 @click="selectType(row.code)"
                 @keydown.enter.prevent="selectType(row.code)"
                 @keydown.space.prevent="selectType(row.code)"

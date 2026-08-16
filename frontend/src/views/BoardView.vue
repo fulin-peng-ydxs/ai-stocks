@@ -61,11 +61,8 @@ const stockSet = useStockSet()
 const loading = ref(true)
 const error = ref('')
 const runDate = ref<string>('')
-// topN 双向联动：主区下拉与抽屉默认值共用 settings.topN（computed 直写即持久化），见 DESIGN「页面可改动属性双向联动」。
-const topN = computed<number>({
-  get: () => Number(settings.topN),
-  set: (value) => { settings.topN = value },
-})
+// topN 单向：抽屉默认值 → 页面会话 ref；主区改动只进会话态，不写回默认（DESIGN「设置抽屉」单向默认机制）。
+const topN = ref(50)
 const rows = ref<ScoreRunRow[]>([])
 const syncingRunDate = ref(false)
 const settingsOpen = ref(false)
@@ -78,14 +75,18 @@ const boardDefaults = {
   subScoreMode: 'full' as 'full' | 'brief' | 'hidden',
 }
 const { settings, isDirty, reset } = usePageSettings('board', boardDefaults)
+topN.value = Number(settings.topN)
 
-// 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留渲染/排序要读的 getter（写值经组件配置层）。
+// 排序单向：配置层 defaultSort 只提供默认值，列头排序只进会话覆盖（sessionSort），不写回配置层。
 type BoardSort = 'score' | 'rank' | 'code'
 const BOARD_SORT_PROPS: Record<string, BoardSort> = { total_score: 'score', rank: 'rank', code: 'code' }
-const sortBy = computed<BoardSort>(() => {
+const configuredSort = computed<BoardSort>(() => {
   const raw = componentValueOf('table', 'defaultSort')
   return raw === 'rank' || raw === 'code' ? raw : 'score'
 })
+const sessionSort = ref<BoardSort | null>(null)
+watch(configuredSort, () => { sessionSort.value = null }) // 抽屉改默认 → 清会话覆盖跟随
+const sortBy = computed<BoardSort>(() => sessionSort.value ?? configuredSort.value)
 const elementDefaultSort = computed(() => {
   if (sortBy.value === 'rank') return { prop: 'rank', order: 'ascending' }
   if (sortBy.value === 'code') return { prop: 'code', order: 'ascending' }
@@ -99,8 +100,9 @@ function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
 function onTableSortChange({ prop }: { prop: string; order: string | null }): void {
-  setComponentKnob('table', 'defaultSort', BOARD_SORT_PROPS[prop] ?? 'score')
+  sessionSort.value = BOARD_SORT_PROPS[prop] ?? 'score'
 }
+
 
 // 评分规则方案（R3/R5/R7）：下拉加载「我的」，搜索抽屉可浏览可见资产；
 // 榜单属于“选择即查看”页面，加载公开方案后直接形成只读选项并自动刷新。
@@ -301,9 +303,9 @@ watch(runDate, () => {
   if (!profileRef.value || syncingRunDate.value) return
   load()
 })
-// topN 已是直写 settings 的 computed，抽屉/主区任一侧改动都会改 settings.topN；
-// 这里只监听 settings 变化触发重载（含抽屉改值方向），不再回写任何本地态。
-watch(() => settings.topN, () => {
+// topN 单向：抽屉默认值 → 会话 ref；主区改动只进会话态，不写回默认。
+watch(() => settings.topN, (value) => {
+  topN.value = Number(value)
   if (profileRef.value) load()
 })
 
@@ -458,7 +460,7 @@ onMounted(async () => {
         />
         <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
         <span class="lbl">Top</span>
-        <el-select v-model="topN" style="width: 88px">
+        <el-select v-model="topN" style="width: 88px" @change="load">
           <el-option :value="20" label="20" />
           <el-option :value="50" label="50" />
           <el-option :value="100" label="100" />

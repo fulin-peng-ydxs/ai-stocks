@@ -73,7 +73,6 @@ const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(ty
   slotId: 'table',
   defaultSort: 'created:desc',
   componentValueOf,
-  setComponentKnob,
   allowedFields: TENANT_SORT_FIELDS,
   onChanged: () => {
     page.value = 1

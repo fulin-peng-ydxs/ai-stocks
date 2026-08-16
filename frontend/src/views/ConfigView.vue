@@ -116,7 +116,6 @@ const {
   slotId: 'techTable',
   defaultSort: 'catOrder:asc',
   componentValueOf,
-  setComponentKnob,
   allowedFields: TECH_SORT_FIELDS,
   defaultOrder: 'asc',
 })
@@ -131,12 +130,10 @@ const sysDraft = ref<Record<string, unknown>>({})
 const sysLoading = ref(false)
 const sysSaving = ref(false)
 const sysSaveError = ref(false)
-// 系统设置分组页签：defaultActive 进组件配置层（sysTabs slot），页面 el-tabs 双向联动（正例 OverviewView activeWorkspaceTab）。
-// set 侧钳制到已登记候选，防非法值写入配置层；'other' 动态兜底由 sysTabs 运行时补齐。
-const activeSysTab = computed<string>({
-  get: () => (componentValueOf('sysTabs', 'defaultActive') as string) || 'access',
-  set: (value) => setComponentKnob('sysTabs', 'defaultActive', value),
-})
+// 系统设置分组页签单向：组件配置层默认值（sysTabs.defaultActive）→ 会话 ref；页面切换不写回配置层。
+const sysTabDefault = computed<string>(() => (componentValueOf('sysTabs', 'defaultActive') as string) || 'access')
+const activeSysTab = ref(sysTabDefault.value)
+watch(sysTabDefault, (value) => { activeSysTab.value = value })
 interface SystemGroupTab {
   key: string
   label: string

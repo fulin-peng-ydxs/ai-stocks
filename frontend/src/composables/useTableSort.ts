@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 export type TableSortOrder = 'asc' | 'desc'
 type ElementSortOrder = 'ascending' | 'descending' | null
@@ -12,7 +12,6 @@ export interface UseTableSortOptions<Field extends string = string> {
   slotId: string
   defaultSort: `${Field}:${TableSortOrder}` | Field
   componentValueOf: (slotId: string, field: string) => unknown
-  setComponentKnob: (slotId: string, field: string, value: unknown) => void
   allowedFields?: readonly Field[]
   defaultOrder?: TableSortOrder
   onChanged?: () => void
@@ -33,6 +32,8 @@ function elementOrder(order: TableSortOrder): Exclude<ElementSortOrder, null> {
   return order === 'desc' ? 'descending' : 'ascending'
 }
 
+// 排序单向默认机制（DESIGN「设置抽屉」）：组件配置层 defaultSort 只提供默认值，列头点击排序
+// 只写会话覆盖（sessionSort），不回写配置层——页面临时排序不污染长期默认；抽屉改默认时清掉会话覆盖、页面跟随。
 export function useTableSort<Field extends string = string>(options: UseTableSortOptions<Field>) {
   const fallbackOrder = options.defaultOrder ?? 'desc'
   const allowed = computed(() => new Set<string>(options.allowedFields ?? []))
@@ -44,15 +45,20 @@ export function useTableSort<Field extends string = string>(options: UseTableSor
     return { field: field as Field, order: rawOrder }
   })
 
-  const sortBy = computed(() => configuredSort.value.field)
-  const sortOrder = computed(() => configuredSort.value.order)
+  // 会话覆盖：null=跟随配置层默认；列头排序只写这里，不写回 defaultSort。
+  const sessionSort = ref<{ field: Field; order: TableSortOrder } | null>(null)
+  // 抽屉改默认排序 → 清掉会话覆盖，页面跟随新默认（单向：默认→会话）。
+  watch(configuredSort, () => { sessionSort.value = null })
+
+  const sortBy = computed(() => sessionSort.value?.field ?? configuredSort.value.field)
+  const sortOrder = computed(() => sessionSort.value?.order ?? configuredSort.value.order)
   const elementDefaultSort = computed(() => ({
     prop: sortBy.value,
     order: elementOrder(sortOrder.value),
   }))
 
   function setSort(field: Field, order: TableSortOrder): void {
-    options.setComponentKnob(options.slotId, 'defaultSort', `${field}:${order}`)
+    sessionSort.value = { field, order }
     options.onChanged?.()
   }
 

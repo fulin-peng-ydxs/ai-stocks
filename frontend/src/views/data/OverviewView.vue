@@ -49,10 +49,12 @@ const {
 
 // 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
-const activeWorkspaceTab = computed<'assets' | 'stocks' | 'board'>({
-  get: () => componentValueOf('workspace', 'defaultActive') as 'assets' | 'stocks' | 'board' || 'assets',
-  set: (value) => setComponentKnob('workspace', 'defaultActive', value),
-})
+// 工作区 tab 单向：组件配置层默认值（workspace.defaultActive）→ 会话 ref；切换不写回配置层。
+const workspaceTabDefault = computed<'assets' | 'stocks' | 'board'>(() =>
+  (componentValueOf('workspace', 'defaultActive') as 'assets' | 'stocks' | 'board') || 'assets',
+)
+const activeWorkspaceTab = ref(workspaceTabDefault.value)
+watch(workspaceTabDefault, (value) => { activeWorkspaceTab.value = value })
 function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
@@ -71,13 +73,10 @@ const sqOptions = ref<{ code: string; label: string }[]>([])
 const sqOptLoading = ref(false)
 const sqOptError = ref('')
 const sqPage = ref(1)
-// sqSize 双向联动：分页器与抽屉默认值共用 settings.sqSize（computed 直写即持久化），
-// 见 DESIGN「页面可改动属性双向联动」；watch 统一做「回到第一页 + 重载」副作用，避免 size-change 与 watch 双触发。
-const sqSize = computed<number>({
-  get: () => Number(settings.sqSize),
-  set: (value) => { settings.sqSize = value },
-})
-watch(() => settings.sqSize, () => {
+// sqSize 单向：抽屉默认值 → 会话 ref；分页器改动只进会话态，不写回默认。
+const sqSize = ref(Number(settings.sqSize))
+watch(() => settings.sqSize, (value) => {
+  sqSize.value = Number(value)
   sqPage.value = 1
   if (sq.value) loadSq()
 })
@@ -604,7 +603,7 @@ onMounted(load)
                   <el-pagination layout="total, sizes, prev, pager, next" :total="sq?.total ?? 0"
                                  :current-page="sqPage" :page-size="sqSize" :page-sizes="PAGE_SIZE_OPTIONS" background
                                  @current-change="(p: number) => { sqPage = p; loadSq() }"
-                                 @size-change="(s: number) => { sqSize = s }" />
+                                 @size-change="(s: number) => { sqSize = s; sqPage = 1; loadSq() }" />
                 </div>
               </template>
             </div>

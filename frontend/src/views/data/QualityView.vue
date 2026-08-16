@@ -73,14 +73,16 @@ const loading = ref(false)
 const loadError = ref('')
 const data = ref<DataQuality | null>(null)
 const page = ref(1)
-// 每页条数走组件配置层（单一事实源）：只读 computed 消费，size-change 事件只写回；
-// watch 统一回到第 1 页并重载（抽屉改默认同样生效）。
-const size = computed<number>(() => (componentValueOf('table', 'pageSize') as number) ?? DEFAULT_PAGE_SIZE)
+// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
+const sizeDefault = computed<number>(() => (componentValueOf('table', 'pageSize') as number) ?? DEFAULT_PAGE_SIZE)
+const size = ref(sizeDefault.value)
 function onSizeChange(s: number) {
-  if (s === size.value) return
-  setComponentKnob('table', 'pageSize', s)
+  size.value = s
+  page.value = 1
+  void load()
 }
-watch(size, () => {
+watch(sizeDefault, (value) => {
+  size.value = value
   page.value = 1
   void load()
 })
@@ -92,7 +94,6 @@ const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(ty
   slotId: 'table',
   defaultSort: 'time:desc',
   componentValueOf,
-  setComponentKnob,
   allowedFields: QUALITY_SORT_FIELDS,
   onChanged: () => {
     page.value = 1
@@ -117,18 +118,6 @@ function applyDefaultFilters() {
       ? ['open']
       : ['open', 'fixing']
   filters.value.severity = settings.defaultSeverity === 'high' ? ['high'] : []
-}
-
-// 筛选改动联动写回抽屉默认（DESIGN「页面可改动属性双向联动」）。多选数组↔单选枚举有损反推：
-// status 空→'all'、仅 open→'open'、其余（含 open+fixing）→'todo'；severity 仅 high→'high'、其余→'all'。
-function onStatusFilterChange(values: string[]) {
-  settings.defaultStatus =
-    values.length === 0 ? 'all'
-    : (values.length === 1 && values[0] === 'open') ? 'open'
-    : 'todo'
-}
-function onSeverityFilterChange(values: string[]) {
-  settings.defaultSeverity = values.length === 1 && values[0] === 'high' ? 'high' : 'all'
 }
 
 async function load() {
@@ -386,13 +375,11 @@ onMounted(() => {
     <el-card shadow="never" class="filter-card">
     <AppControlRow class="filter-row">
       <el-select v-model="filters.status" placeholder="状态" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 240px"
-                 @change="onStatusFilterChange">
+                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 240px">
         <el-option v-for="(l, k) in ISSUE_STATUS_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
       <el-select v-model="filters.severity" placeholder="严重度" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 200px"
-                 @change="onSeverityFilterChange">
+                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 200px">
         <el-option v-for="(l, k) in SEVERITY_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
       <el-select v-model="filters.issue_type" placeholder="问题类型" multiple clearable collapse-tags

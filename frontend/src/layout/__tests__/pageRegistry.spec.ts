@@ -116,6 +116,60 @@ function configurableColumnVisibilityKeys(source: string): Set<string> {
   return keys
 }
 
+/** 对象字面量的顶层属性名（不展开嵌套对象/数组的子 key）。 */
+function topLevelKeys(object: ts.ObjectLiteralExpression): string[] {
+  return object.properties
+    .filter((p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p))
+    .map((p) => (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name) ? p.name.text : ''))
+    .filter(Boolean)
+}
+
+/**
+ * 解析页面 usePageSettings 的业务偏好 defaults 顶层字段 + settings 别名。
+ * defaults 可能是内联对象字面量或 const 引用；别名来自 `const { settings: cfg } = ...` 解构。
+ */
+function pageSettingsFields(source: string, fileName: string): { fields: string[]; aliases: string[] } {
+  const script = scriptOf(source)
+  const sourceFile = ts.createSourceFile(fileName, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+
+  // const 声明的对象字面量索引（供 defaults 用标识符引用时回溯）
+  const constObjects = new Map<string, ts.ObjectLiteralExpression>()
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name)) continue
+      const init = declaration.initializer
+      if (init && ts.isObjectLiteralExpression(init)) constObjects.set(declaration.name.text, init)
+    }
+  }
+
+  let fields: string[] = []
+  const aliases = new Set<string>(['settings'])
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'usePageSettings') {
+      const arg = node.arguments[1]
+      if (arg) {
+        if (ts.isObjectLiteralExpression(arg)) fields = topLevelKeys(arg)
+        else if (ts.isIdentifier(arg)) {
+          const resolved = constObjects.get(arg.text)
+          if (resolved) fields = topLevelKeys(resolved)
+        }
+      }
+      // 解构别名：const { settings: cfg } = usePageSettings(...)
+      if (ts.isVariableDeclaration(node.parent) && ts.isObjectBindingPattern(node.parent.name)) {
+        for (const el of node.parent.name.elements) {
+          if (ts.isIdentifier(el.name) && el.propertyName && ts.isIdentifier(el.propertyName) && el.propertyName.text === 'settings') {
+            aliases.add(el.name.text)
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return { fields, aliases: [...aliases] }
+}
+
 function routeViewEntries(source: string): RouteViewEntry[] {
   const sourceFile = ts.createSourceFile(
     'router.ts',
@@ -607,7 +661,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
-  it('声明 sortFields 的页面源码必须接入列头排序并回写 defaultSort', () => {
+  it('声明 sortFields 的页面源码必须接入列头排序（会话态，不回写 defaultSort）', () => {
     for (const entry of PAGE_REGISTRY) {
       const sortableSlots = Object.entries(entry.componentMeta ?? {}).filter(([, meta]) => meta.sortFields?.length)
       if (!sortableSlots.length) continue
@@ -617,14 +671,15 @@ describe('组件消费关系与配置一致性（P4）', () => {
       expect(source, `${entry.pageKey} 声明 sortFields 后页面必须接入 @sort-change`).toContain('@sort-change')
 
       for (const [slotId, meta] of sortableSlots) {
-        const writesDefaultSort =
-          source.includes(`setComponentKnob('${slotId}', 'defaultSort'`) ||
-          source.includes(`setComponentKnob("${slotId}", "defaultSort"`) ||
+        // 单向默认机制：页面用 componentValueOf 读默认排序初始化会话态，列头排序只进会话、不回写 defaultSort。
+        const readsDefaultSort =
+          source.includes(`componentValueOf('${slotId}', 'defaultSort'`) ||
+          source.includes(`componentValueOf("${slotId}", "defaultSort"`) ||
           (source.includes('useTableSort') && source.includes(`slotId: '${slotId}'`)) ||
           (source.includes('useTableSort') && source.includes(`slotId: "${slotId}"`))
         expect(
-          writesDefaultSort,
-          `${entry.pageKey}.${slotId} 声明 sortFields 后页面列头排序必须回写 slots.${slotId}.config.defaultSort`,
+          readsDefaultSort,
+          `${entry.pageKey}.${slotId} 声明 sortFields 后页面必须消费 slots.${slotId}.config.defaultSort 作为默认排序`,
         ).toBe(true)
 
         for (const field of meta.sortFields ?? []) {
@@ -693,10 +748,9 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
-  it('pageSize 双向联动：登记 pageSize 的 slot，页面必须既消费又在分页器改动时 setComponentKnob 写回', () => {
-    // DESIGN「设置抽屉」节「页面可改动属性双向联动」：分页器 pageSize 是页面可改动属性，
-    // 只读 componentValueOf 不写回则页面改动不落组件配置层（断链）。用 sourceForPage 精确映射页面，
-    // 避免按 slotId 全局 grep 把不同页面同名 slot 误配。
+  it('pageSize 单向默认：登记 pageSize 的 slot，页面必须 componentValueOf 消费其默认值', () => {
+    // DESIGN「设置抽屉」节单向默认机制：组件配置层只提供默认值，页面用 componentValueOf 读默认值
+    // 初始化会话态，分页器改动不回写配置层。用 sourceForPage 精确映射页面，避免按 slotId 全局 grep 误配。
     for (const entry of PAGE_REGISTRY) {
       const pageSizeSlots = Object.entries(entry.consumedComponentFields ?? {})
         .filter(([, fields]) => (fields ?? []).includes('pageSize'))
@@ -709,13 +763,45 @@ describe('组件消费关系与配置一致性（P4）', () => {
         const consumes =
           source.includes(`componentValueOf('${slotId}', 'pageSize'`)
           || source.includes(`componentValueOf("${slotId}", "pageSize"`)
-        expect(consumes, `${entry.pageKey}.${slotId} 登记了 pageSize 但页面未 componentValueOf 消费`).toBe(true)
-        const writesBack =
-          source.includes(`setComponentKnob('${slotId}', 'pageSize'`)
-          || source.includes(`setComponentKnob("${slotId}", "pageSize"`)
+        expect(consumes, `${entry.pageKey}.${slotId} 登记了 pageSize 但页面未 componentValueOf 消费默认值`).toBe(true)
+      }
+    }
+  })
+
+  it('单向默认反向拦截：registry 页面不得直接调用 setComponentKnob 写配置层（任何字段，页面改动只进会话态）', () => {
+    // DESIGN「设置抽屉」节单向默认机制：组件配置层只提供默认值，页面改动绝不写回。字段无关——
+    // 任何字段的写回都违规，不限于 defaultSort/pageSize/defaultActive。合法写入口只有两处：
+    // 抽屉渲染器 ComponentAutoSettings（经 drawerConfig 以属性接收，非页面直接调用）和配置中心编辑器
+    // （LayoutPagesView 用自有 setPageComponentValue）。页面源码出现 setComponentKnob(<slot>,...) 直调即拦截。
+    const violations: string[] = []
+    for (const entry of PAGE_REGISTRY) {
+      if (!entry.supportsComponentConfig) continue
+      const source = sourceForPage(entry.pageKey)
+      if (!source) continue
+      // 直调特征：setComponentKnob(' 或 setComponentKnob(" 带 slot 实参；属性传递（drawerConfig 里的 `setComponentKnob,`）不匹配
+      const pattern = /setComponentKnob\(\s*['"]/
+      if (pattern.test(source)) {
+        violations.push(`${entry.pageKey} 页面源码直接调用 setComponentKnob 写配置层（违反单向默认机制，字段无关）`)
+      }
+    }
+    expect(violations, `以下页面把页面改动写回组件配置层：\n${violations.join('\n')}`).toEqual([])
+  })
+
+  it('业务偏好不静默持久化：usePageSettings defaults 的每个顶层字段必须被页面消费（含 computed/别名）', () => {
+    // DESIGN「设置抽屉」节：defaults 里塞字段即持久化到 PG user_preference；若页面从不消费它，
+    // 就是「未配置进抽屉却私自持久化」的死项。只查顶层字段（不展开 indicators/filters 等嵌套子 key，
+    // 父级被引用即视为消费）；settings 的解构别名（如 cfg）同样算消费入口。
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      if (!source || !source.includes('usePageSettings(')) continue
+      const { fields, aliases } = pageSettingsFields(source, `${entry.pageKey}.vue`)
+      if (!fields.length) continue
+      for (const field of fields) {
+        const consumed = aliases.some((alias) => new RegExp(`\\b${alias}\\.${field}\\b`).test(source))
         expect(
-          writesBack,
-          `${entry.pageKey}.${slotId} 消费了 pageSize 但分页器改动未 setComponentKnob 写回（违反双向联动）`,
+          consumed,
+          `${entry.pageKey} 的 usePageSettings defaults 字段 '${field}' 未被任何地方消费（${aliases.join('/')}），`
+          + `属静默持久化死项——要么接进抽屉业务段，要么从 defaults 移除`,
         ).toBe(true)
       }
     }

@@ -77,10 +77,14 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, component
 // 抽屉写值由 ComponentAutoSettings 自动渲染；页面只保留排序/渲染要读的 getter。
 type ResultSort = 'score' | 'code' | 'name'
 const RESULT_SORT_PROPS: Record<string, ResultSort> = { total_score: 'score', code: 'code', name: 'name' }
-const resultSort = computed<ResultSort>(() => {
+// 排序单向：配置层默认值 → 会话覆盖；列头排序只写会话，不写回配置层。
+const configuredResultSort = computed<ResultSort>(() => {
   const raw = componentValueOf('result', 'defaultSort')
   return raw === 'code' || raw === 'name' ? raw : 'score'
 })
+const sessionResultSort = ref<ResultSort | null>(null)
+watch(configuredResultSort, () => { sessionResultSort.value = null })
+const resultSort = computed<ResultSort>(() => sessionResultSort.value ?? configuredResultSort.value)
 const elementDefaultSort = computed(() => {
   if (resultSort.value === 'code') return { prop: 'code', order: 'ascending' }
   if (resultSort.value === 'name') return { prop: 'name', order: 'ascending' }
@@ -94,7 +98,7 @@ function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
 function onResultSortChange({ prop }: { prop: string; order: string | null }): void {
-  setComponentKnob('result', 'defaultSort', RESULT_SORT_PROPS[prop] ?? 'score')
+  sessionResultSort.value = RESULT_SORT_PROPS[prop] ?? 'score'
 }
 
 // ── 指标注册表（融合：可视化条件直接从注册表取指标，支持动态传参）──

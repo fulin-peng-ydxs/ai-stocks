@@ -145,7 +145,6 @@ const {
   slotId: 'table',
   defaultSort: DEFAULT_SORT,
   componentValueOf,
-  setComponentKnob,
   allowedFields: SORTABLE_FIELDS,
 })
 
@@ -182,40 +181,16 @@ const loadError = ref('')
 const forbidden = ref(false)
 const tradeDate = ref<string | null>('')
 const marketDate = ref<string | null>(null)
-// 恢复/分享链接带入的会话态覆盖（null=无覆盖，用 settings 默认）。URL query 恢复属会话条件，不写回抽屉默认；
-// 只有用户主动改控件才联动写回（见 DESIGN「页面可改动属性双向联动」+「URL 恢复不联动」边界）。
 let restoring = false
-const sessionBoardType = ref<BoardType | '' | null>(null)
-const sessionScope = ref<'all' | 'watchlist' | null>(null)
-const sessionChartMode = ref<'compare' | 'kline' | null>(null)
-const sessionBenchmark = ref<string | null>(null)
-const sessionMetric = ref<CompareMetric | null>(null)
-
-const boardType = computed<BoardType | ''>({
-  get: () => sessionBoardType.value ?? (settings.defaultType === 'concept' || settings.defaultType === 'industry' ? settings.defaultType : ''),
-  set: (value) => {
-    const v = value === 'concept' || value === 'industry' ? value : ''
-    if (restoring) { sessionBoardType.value = v; return }
-    // 用户主动改动：写回默认并清掉会话覆盖，保持页面与抽屉同源（覆盖不清会断抽屉→页面方向）
-    sessionBoardType.value = null
-    settings.defaultType = v
-  },
-})
-// listScope 双向联动：无自选权限时主区控件是只读安全投影，任何点击都不能覆盖隐藏的原偏好（同 StocksView visibleDefaultView 守卫）。
-const listScope = computed<'all' | 'watchlist'>({
-  get: () => sessionScope.value ?? (canViewWatchlist.value && settings.defaultScope === 'watchlist' ? 'watchlist' : 'all'),
-  set: (value) => {
-    const v = canViewWatchlist.value && value === 'watchlist' ? 'watchlist' : 'all'
-    if (restoring) { sessionScope.value = v; return }
-    if (!canViewWatchlist.value) return
-    sessionScope.value = null
-    settings.defaultScope = v
-  },
-})
+// 五个筛选/图表口径均为单向：抽屉默认值 → 会话 ref；主区改动只进会话态，不写回默认。
+// URL query/分享链接恢复也只写会话 ref（restoring 区间），不触碰抽屉默认。见 DESIGN「设置抽屉」单向默认机制。
+const boardType = ref<BoardType | ''>(settings.defaultType === 'concept' || settings.defaultType === 'industry' ? settings.defaultType : '')
+// listScope 单向：会话 ref 初始化自默认；无自选权限的守卫在使用处（列表查询/展示），初始化不读 canViewWatchlist 避免 TDZ。
+const listScope = ref<'all' | 'watchlist'>(settings.defaultScope)
 const keyword = ref('')
 const page = ref(1)
-// 每页条数是组件配置属性，直通常态只读 computed；@size-change 里通过 setComponentKnob 写回。
-const size = configuredPageSize
+// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
+const size = ref(configuredPageSize.value)
 const total = ref(0)
 const rows = ref<SectorRow[]>([])
 const fundFlowDate = ref<string | null>(null)
@@ -235,45 +210,14 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null
 const COMPARE_MAX = 6
 const activeCode = ref('')
 const pinnedCodes = ref<string[]>([])
-const { validDefault: klineDefaultRange, prefs: klinePrefs } = useKlinePrefs()
-// K 线范围双向联动全局偏好默认范围（改动即写回 prefs.defaultPeriod），见 DESIGN「页面可改动属性双向联动」。
-const rangeDays = computed<number>({
-  get: () => klineDefaultRange.value,
-  set: (value) => { klinePrefs.defaultPeriod = value },
-})
-// 图表模式/对比指数/对比指标：会话覆盖优先，否则用抽屉默认；set 侧白名单钳制，restoring（URL 恢复）不写回默认。
-const chartMode = computed<'compare' | 'kline'>({
-  get: () => sessionChartMode.value ?? (settings.defaultChartMode === 'kline' ? 'kline' : 'compare'),
-  set: (value) => {
-    const v = value === 'kline' ? 'kline' : 'compare'
-    if (restoring) { sessionChartMode.value = v; return }
-    sessionChartMode.value = null
-    settings.defaultChartMode = v
-  },
-})
-const benchmarkCode = computed<string>({
-  get: () => sessionBenchmark.value ?? (['', '000905.SH', '000300.SH'].includes(settings.benchmarkCode) ? settings.benchmarkCode : '000905.SH'),
-  set: (value) => {
-    const v = ['', '000905.SH', '000300.SH'].includes(value) ? value : '000905.SH'
-    if (restoring) { sessionBenchmark.value = v; return }
-    sessionBenchmark.value = null
-    settings.benchmarkCode = v
-  },
-})
-const compareMetric = computed<CompareMetric>({
-  get: () => sessionMetric.value ?? sanitizeCompareMetric(settings.defaultCompareMetric),
-  set: (value) => {
-    const v = sanitizeCompareMetric(value)
-    if (restoring) { sessionMetric.value = v; return }
-    sessionMetric.value = null
-    settings.defaultCompareMetric = v
-  },
-})
-// 累计涨跌周期：页面可改动属性，双向联动抽屉默认（白名单钳制到 COMPARE_RANGE_OPTIONS）。
-const compareWindow = computed<number>({
-  get: () => COMPARE_RANGE_OPTIONS.some((o) => o.value === settings.compareWindow) ? settings.compareWindow : 250,
-  set: (value) => { if (COMPARE_RANGE_OPTIONS.some((o) => o.value === value)) settings.compareWindow = value },
-})
+const { validDefault: klineDefaultRange } = useKlinePrefs()
+// K 线范围单向：全局偏好默认范围 → 会话 ref；主区切换不写回全局默认。
+const rangeDays = ref<number>(klineDefaultRange.value)
+const chartMode = ref<'compare' | 'kline'>(settings.defaultChartMode === 'kline' ? 'kline' : 'compare')
+const benchmarkCode = ref<string>(['', '000905.SH', '000300.SH'].includes(settings.benchmarkCode) ? settings.benchmarkCode : '000905.SH')
+const compareMetric = ref<CompareMetric>(sanitizeCompareMetric(settings.defaultCompareMetric))
+// 累计涨跌周期单向：抽屉默认值 → 会话 ref（白名单钳制到 COMPARE_RANGE_OPTIONS）；主区改动不写回。
+const compareWindow = ref<number>(COMPARE_RANGE_OPTIONS.some((o) => o.value === settings.compareWindow) ? settings.compareWindow : 250)
 const chartLoading = ref(false)
 const chartError = ref('')
 const benchmarkError = ref('')
@@ -351,7 +295,7 @@ function chartEnd(): string {
   return tradeDate.value || marketDate.value || dataMax.value || ''
 }
 async function loadChart(): Promise<void> {
-  if (!settings.showAnalysisPanel) {
+  if (!analysisPanelVisible.value) {
     chartLoading.value = false
     return
   }
@@ -430,19 +374,26 @@ async function loadChart(): Promise<void> {
   }
 }
 
+// 走势分析区显隐单向：抽屉默认值 → 会话 ref；主区「》」收起/展开只进会话态，不写回默认。
+const analysisPanelVisible = ref(settings.showAnalysisPanel !== false)
 /** 收起分析区时保留观察对象与对比队列；再次展开后按当前筛选状态刷新走势。 */
 function setAnalysisPanelVisible(visible: boolean): void {
-  settings.showAnalysisPanel = visible
+  analysisPanelVisible.value = visible
+  applyAnalysisPanelSideEffect(visible)
 }
-// 抽屉/主区任一侧改 showAnalysisPanel 都走同一副作用：展开时刷新走势，收起时作废旧图表请求。
+// 抽屉改默认值 → 同步会话并套用同一副作用；主区动作只改会话 ref，不写回 settings。
 watch(() => settings.showAnalysisPanel, (visible) => {
+  analysisPanelVisible.value = visible !== false
+  applyAnalysisPanelSideEffect(visible !== false)
+})
+function applyAnalysisPanelSideEffect(visible: boolean): void {
   if (visible) {
     void loadChart()
     return
   }
   chartRequestVersion += 1
   chartLoading.value = false
-})
+}
 
 function isPinned(code: string): boolean {
   return pinnedCodes.value.includes(code)
@@ -598,10 +549,10 @@ watch([sortBy, sortOrder], () => {
   page.value = 1
   void load()
 })
-// 每页条数双向联动：分页器 size-change 只写回组件配置层（见模板），此处统一回到第 1 页并重载；
-// 抽屉改默认每页条数同样经此生效（抽屉→页面方向）。
-watch(size, () => {
+// 每页条数单向：配置层默认值 → 会话 ref 并重载；分页器改动只进会话态（见模板 size-change）。
+watch(configuredPageSize, (value) => {
   if (restoring) return
+  size.value = value
   page.value = 1
   void load()
 })
@@ -818,7 +769,7 @@ onMounted(async () => {
       <div
         v-else
         class="sector-workspace"
-        :class="{ 'sector-workspace--list-only': !settings.showAnalysisPanel }"
+        :class="{ 'sector-workspace--list-only': !analysisPanelVisible }"
         data-testid="sectors-workspace"
       >
         <section class="rank-panel" aria-label="板块强弱排行">
@@ -832,15 +783,15 @@ onMounted(async () => {
             <div class="rank-head-actions">
               <div class="rank-meta app-caption-text">
                 <span>{{ total }} 个{{ listScope === 'watchlist' ? '自选' : '板块' }}</span>
-                <span>{{ settings.showAnalysisPanel ? '点击行切换走势' : '点击行选择板块' }}</span>
+                <span>{{ analysisPanelVisible ? '点击行切换走势' : '点击行选择板块' }}</span>
               </div>
               <AppIconButton
-                :label="settings.showAnalysisPanel ? '收起走势分析，仅看排行' : '显示走势分析'"
-                :data-testid="settings.showAnalysisPanel ? 'sectors-hide-analysis' : 'sectors-show-analysis'"
+                :label="analysisPanelVisible ? '收起走势分析，仅看排行' : '显示走势分析'"
+                :data-testid="analysisPanelVisible ? 'sectors-hide-analysis' : 'sectors-show-analysis'"
                 :native-title="false"
-                @click="setAnalysisPanelVisible(!settings.showAnalysisPanel)"
+                @click="setAnalysisPanelVisible(!analysisPanelVisible)"
               >
-                <el-icon><DArrowRight v-if="settings.showAnalysisPanel" /><DArrowLeft v-else /></el-icon>
+                <el-icon><DArrowRight v-if="analysisPanelVisible" /><DArrowLeft v-else /></el-icon>
               </AppIconButton>
             </div>
           </header>
@@ -870,7 +821,7 @@ onMounted(async () => {
             @row-click="selectRow"
             @sort-change="onTableSortChange"
             @page-change="(value: number) => { page = value; void load() }"
-            @size-change="(value: number) => { setComponentKnob('table', 'pageSize', value) }"
+            @size-change="(value: number) => { size = value; page = 1; void load() }"
           >
             <AppTableColumn
               v-if="colVisible('name')"
@@ -1041,7 +992,7 @@ onMounted(async () => {
         </section>
 
         <section
-          v-if="settings.showAnalysisPanel"
+          v-if="analysisPanelVisible"
           class="chart-panel"
           aria-label="板块走势分析"
           data-testid="sectors-chart"

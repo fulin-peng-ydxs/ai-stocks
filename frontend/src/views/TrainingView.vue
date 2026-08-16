@@ -119,15 +119,16 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, component
 // 余量不足时整个主内容区滚动兜底，无需按阶段区分滚动归属（DESIGN §5.4）。
 const mainLayout = computed<PageLayout>(() => trainingEffective.value)
 
-// 训练历史每页条数：走组件配置层（抽屉「组件设置」可调），与全站分页规范一致。
-// size-change 只写回，watch 统一回到第 1 页并重载（抽屉改默认同样生效）。
-const historyPageSize = computed(() => {
+// 训练历史每页条数单向：组件配置层（抽屉可调）默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
+const historyPageSizeDefault = computed(() => {
   const raw = componentValueOf('history', 'pageSize')
   return typeof raw === 'number' && Number.isFinite(raw)
     ? Math.max(10, Math.min(200, raw))
     : DEFAULT_PAGE_SIZE
 })
-watch(historyPageSize, () => {
+const historyPageSize = ref(historyPageSizeDefault.value)
+watch(historyPageSizeDefault, (value) => {
+  historyPageSize.value = value
   history.page = 1
   void loadHistory()
 })
@@ -146,12 +147,9 @@ const configuredChartHeight = computed(() => {
 })
 
 // K 线显示范围：选项与默认值来自全局偏好（抽屉里可配，跨页同步）；
-// 双向联动：主区切换即写回全局默认范围 prefs.defaultPeriod，见 DESIGN「页面可改动属性双向联动」。
-const { validDefault: klineDefault, prefs: klinePrefs } = useKlinePrefs()
-const viewDays = computed<number>({
-  get: () => klineDefault.value,
-  set: (value) => { klinePrefs.defaultPeriod = value },
-})
+// 单向：主区切换只进会话态，不写回全局默认范围。
+const { validDefault: klineDefault } = useKlinePrefs()
+const viewDays = ref(klineDefault.value)
 
 // 预设解析
 function parseList(s: string): number[] {
@@ -173,7 +171,6 @@ const {
   slotId: 'history',
   defaultSort: 'created_at:desc',
   componentValueOf,
-  setComponentKnob,
   allowedFields: HISTORY_SORT_FIELDS,
   onChanged: () => {
     history.page = 1
@@ -209,8 +206,9 @@ async function loadHistory() {
   }
 }
 function historySizeChanged(value: number) {
-  if (value === historyPageSize.value) return
-  setComponentKnob('history', 'pageSize', value)
+  historyPageSize.value = value
+  history.page = 1
+  void loadHistory()
 }
 async function loadGrowth() {
   growthLoading.value = true
