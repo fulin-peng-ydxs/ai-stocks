@@ -11,6 +11,7 @@ import {
 } from '@/api/scoreProfile'
 import { browseBoardProfiles, listBoardProfiles, runBoardProfile } from '@/api/board'
 import AppDataTable from '@/components/AppDataTable.vue'
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
@@ -423,41 +424,47 @@ onMounted(async () => {
       </div>
       <div class="page-head-actions">
         <div class="ops">
-          <span class="lbl">评分规则</span>
-          <AssetProfileSelect
-            ref="boardSelectRef"
-            :model-value="profileRef"
-            asset-label="评分方案"
-            :fetch-mine="fetchMineBoardProfiles"
-            :browse="browseBoard"
-            :copy-item="copyAnyBoardProfile"
-            copy-permission="score-profile:save"
-            view-permission="board:view"
-            placeholder="请选择评分方案"
-            select-loaded
-            :default-item-key="defaultItemKey"
-            test-id="board-profile-select"
-            style="width: 300px"
-            @update:model-value="onProfileSelect"
-            @loaded="onProfileLoaded"
-            @ready="onProfilesReady"
-            @load-failed="onProfilesLoadFailed"
-            @copied-item="onProfileCopied"
-            @set-default="onSetDefault"
-          />
-          <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
-          <span class="lbl">Top</span>
-          <el-select v-model="topN" style="width: 88px">
-            <el-option :value="20" label="20" />
-            <el-option :value="50" label="50" />
-            <el-option :value="100" label="100" />
-          </el-select>
           <el-button :loading="loading" type="primary" @click="load">刷新</el-button>
           <el-button :disabled="!rows.length" @click="exportCsv">导出 CSV</el-button>
         </div>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
+
+    <!-- 筛选条件（独立一行居左，与全站列表页 filter-card 规范一致；操作按钮留页头） -->
+    <el-card shadow="never" class="filter-card">
+      <AppControlRow class="filter-row">
+        <span class="lbl">评分规则</span>
+        <AssetProfileSelect
+          ref="boardSelectRef"
+          :model-value="profileRef"
+          asset-label="评分方案"
+          :fetch-mine="fetchMineBoardProfiles"
+          :browse="browseBoard"
+          :copy-item="copyAnyBoardProfile"
+          copy-permission="score-profile:save"
+          view-permission="board:view"
+          placeholder="请选择评分方案"
+          select-loaded
+          :default-item-key="defaultItemKey"
+          test-id="board-profile-select"
+          style="width: 300px"
+          @update:model-value="onProfileSelect"
+          @loaded="onProfileLoaded"
+          @ready="onProfilesReady"
+          @load-failed="onProfilesLoadFailed"
+          @copied-item="onProfileCopied"
+          @set-default="onSetDefault"
+        />
+        <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
+        <span class="lbl">Top</span>
+        <el-select v-model="topN" style="width: 88px">
+          <el-option :value="20" label="20" />
+          <el-option :value="50" label="50" />
+          <el-option :value="100" label="100" />
+        </el-select>
+      </AppControlRow>
+    </el-card>
 
     <AppStateBlock
       v-if="error && rows.length"
