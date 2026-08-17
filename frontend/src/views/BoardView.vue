@@ -468,9 +468,9 @@ function gotoStock(row: ScoreRunRow) {
 
 function exportCsv() {
   if (!rows.value.length) return
-  const headers = ['排名', '代码', '名称', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
+  const headers = ['排名', '代码', '名称', '板块', '综合分', '评级', ...subKeys.value.map((k) => nameOf(k))]
   const data = rows.value.map((r) => [
-    r.rank, r.code, r.name ?? '', r.total_score, r.grade ?? '',
+    r.rank, r.code, r.name ?? '', r.board ?? '', r.total_score, r.grade ?? '',
     ...subKeys.value.map((k) => Math.round(r.sub_scores[k] ?? 0)),
   ])
   downloadCsv(`每日榜单_${curProfile.value?.name ?? ''}_${runDate.value || 'latest'}.csv`, headers, data)
@@ -625,6 +625,7 @@ onMounted(async () => {
             />
           </template>
         </AppTableColumn>
+        <AppTableColumn v-if="colVisible('board')" label="板块" prop="board" />
         <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score">
           <template #default="{ row }">
             <strong class="score">{{ row.total_score }}</strong>

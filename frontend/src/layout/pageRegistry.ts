@@ -131,6 +131,7 @@ const REGISTRY: PageRegistryEntry[] = [
         columns: [
           { key: 'code', label: '代码列' },
           { key: 'name', label: '名称列' },
+          { key: 'board', label: '板块' },
           { key: 'score', label: '综合分' },
           { key: 'grade', label: '评级' },
           { key: 'subScores', label: '分项达标分' },

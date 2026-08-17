@@ -37,10 +37,12 @@ def _board_by_profile(c, run_date: date, top: int, profile_ref_or_id: str) -> Ap
         return ok({"date": str(run_date), "top": top, "list": []})
     codes = board["code"].tolist()
     names = c.query_df(
-        f"SELECT code, name FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes)
+        f"SELECT code, name, board FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes)
     nm = dict(zip(names["code"], names["name"]))
+    bd = dict(zip(names["code"], names["board"]))
     rows = [{
         "rank": int(r["rank"]), "code": r["code"], "name": nm.get(r["code"]),
+        "board": bd.get(r["code"]),
         "total_score": round(float(r["total_score"]), 2), "grade": str(r["grade"]),
     } for _, r in board.iterrows()]
     return ok({"date": str(run_date), "top": top, "list": rows})
@@ -68,11 +70,13 @@ def board_compute(date_: str = Query(..., alias="date"), top: int = 50,
         return ok({"date": date_, "top": top, "list": []})
     codes = board["code"].tolist()
     name_df = c.query_df(
-        f"SELECT code, name FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes
+        f"SELECT code, name, board FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes
     )
     name_map = dict(zip(name_df["code"], name_df["name"]))
+    board_map = dict(zip(name_df["code"], name_df["board"]))
     rows = [{
         "rank": int(r["rank"]), "code": r["code"], "name": name_map.get(r["code"]),
+        "board": board_map.get(r["code"]),
         "total_score": round(float(r["total_score"]), 2), "grade": str(r["grade"]),
     } for _, r in board.iterrows()]
     return ok({"date": date_, "top": top, "list": rows})
@@ -165,8 +169,9 @@ def board_run(body: dict) -> ApiResponse:
         })
     codes = board["code"].tolist()
     names = c.query_df(
-        f"SELECT code, name FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes)
+        f"SELECT code, name, board FROM stock_basic WHERE code IN ({','.join('?' * len(codes))})", codes)
     nm = dict(zip(names["code"], names["name"]))
+    bd = dict(zip(names["code"], names["board"]))
 
     def _subs(v) -> dict:
         if isinstance(v, dict):
@@ -178,6 +183,7 @@ def board_run(body: dict) -> ApiResponse:
 
     rows = [{
         "rank": int(r["rank"]), "code": r["code"], "name": nm.get(r["code"]),
+        "board": bd.get(r["code"]),
         "total_score": float(r["total_score"]), "grade": r["grade"],
         "sub_scores": _subs(r.get("sub_scores")),
     } for _, r in board.iterrows()]

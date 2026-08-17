@@ -191,10 +191,12 @@ def test_board_run_requires_view_and_rejects_non_preset(client, pg, public_prese
 
 
 def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
-    """/board/run 对 fresh 快照直接读取，不重复物化。"""
+    """/board/run 对 fresh 快照直接读取，不重复物化；榜单行带 stock_basic 的名称与板块。"""
     preset_id, _priv_id = public_preset
     ptid, pown = PUBLIC_BOARD_OWNER
     uid, tid, rid = _mk_user(pg, codes=["board:view"])
+    from backend.storage import get_client
+    c = get_client()
     try:
         from backend.indicators.compute import build_params, param_hash
         ph = param_hash(build_params())
@@ -208,6 +210,9 @@ def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
             "(trade_date,profile_id,profile_version,tenant_id,owner_user_id,code,total_score,grade,rank,sub_scores) "
             "VALUES (%s,%s,1,%s,%s,'T3B001.SZ',91.5,'A',1,'{}')",
             [_PUB_DATE, preset_id, ptid, pown])
+        c.execute(
+            "INSERT INTO stock_basic (code, name, board) VALUES ('T3B001.SZ', '测试榜一股', '创业板')",
+        )
 
         r = client.post("/api/board/run",
                         json={"profile_id": preset_id, "run_date": _PUB_DATE, "top": 10},
@@ -216,7 +221,10 @@ def test_board_run_reads_fresh_public_snapshot_only(client, pg, public_preset):
         data = r.json()["data"]
         assert data["count"] == 1
         assert data["list"][0]["code"] == "T3B001.SZ"
+        assert data["list"][0]["name"] == "测试榜一股"
+        assert data["list"][0]["board"] == "创业板"
     finally:
+        c.execute("DELETE FROM stock_basic WHERE code='T3B001.SZ'")
         _rm_user(pg, uid, tid, rid)
 
 

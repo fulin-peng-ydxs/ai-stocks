@@ -106,6 +106,7 @@ export interface ScoreRunRow {
   rank: number
   code: string
   name: string | null
+  board: string | null
   total_score: number
   grade: string
   sub_scores: Record<string, number>
