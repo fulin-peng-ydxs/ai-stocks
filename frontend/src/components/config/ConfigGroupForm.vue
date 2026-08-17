@@ -184,7 +184,9 @@ function collapsed(key: string): boolean {
               type="password"
               show-password
               :placeholder="field.placeholder || (valueOf(field.path) ? '已设置，留空不修改' : '请输入')"
-              autocomplete="off"
+              autocomplete="new-password"
+              readonly
+              @focus="($event.target as HTMLInputElement).removeAttribute('readonly')"
               @update:model-value="(value: string) => setValue(field.path, value)"
             />
             <el-input

@@ -547,9 +547,11 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             v-model="cookieValue"
             type="password"
             show-password
-            autocomplete="off"
+            autocomplete="new-password"
+            readonly
             placeholder="粘贴登录后的完整 Cookie；数据库只保存加密密文"
             data-testid="ths-login-cookie-input"
+            @focus="($event.target as HTMLInputElement).removeAttribute('readonly')"
           />
           <span v-if="cookieStatus === 'unavailable'" class="cookie-field-hint">
             已存密文无法解密，当前采集不会使用它；请检查主密钥，或输入新 Cookie 重新加密覆盖。

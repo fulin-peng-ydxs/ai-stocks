@@ -144,7 +144,7 @@ describe('ConfigGroupForm', () => {
     expect(wrapper.text()).toContain('图形验证码强制失败次数')
   })
 
-  it('password 型字段渲染密码输入框并透传值', async () => {
+  it('password 型字段渲染密码输入框、初始只读防自动填充，聚焦后可编辑并透传值', async () => {
     const groupWithPwd: SettingGroup = {
       ...group,
       fields: [
@@ -187,6 +187,12 @@ describe('ConfigGroupForm', () => {
     const pwdInput = wrapper.find('input[type="password"]')
     expect(pwdInput.exists()).toBe(true)
     expect(pwdInput.attributes('value')).toBe('••••••已设置')
+    // 防浏览器自动填充（如把登录密码 Admin@12345 误填进同花顺 Cookie 输入框）：
+    // 初始 readonly + autocomplete=new-password，聚焦后才移除 readonly 允许输入。
+    expect(pwdInput.element.hasAttribute('readonly')).toBe(true)
+    expect(pwdInput.attributes('autocomplete')).toBe('new-password')
+    await pwdInput.trigger('focus')
+    expect(pwdInput.element.hasAttribute('readonly')).toBe(false)
     // 触发输入 → 发 update-field 事件携带新值
     await pwdInput.setValue('new-secret')
     const emitted = wrapper.emitted('update-field')

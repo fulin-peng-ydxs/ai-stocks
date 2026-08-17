@@ -86,6 +86,9 @@ test.describe('板块数据管理闭环', () => {
       await expect(cookieDialog.getByRole('button', { name: '清除页面配置' })).toHaveCount(0)
       await cookieDialog.getByRole('button', { name: '重新加载' }).click()
       await expect(cookieDialog.getByTestId('ths-login-cookie-input')).toHaveValue('••••••已设置')
+      // 防浏览器自动填充（登录密码 Admin@12345 不得误填进 Cookie 输入框）：初始只读 + new-password
+      await expect(cookieDialog.getByTestId('ths-login-cookie-input')).toHaveAttribute('readonly')
+      await expect(cookieDialog.getByTestId('ths-login-cookie-input')).toHaveAttribute('autocomplete', 'new-password')
       await cookieDialog.getByRole('button', { name: '取消' }).click()
 
       // 失败状态关闭后重开必须重新请求，不能沿用上一次成功或把失败压成“未设置”。
@@ -94,7 +97,13 @@ test.describe('板块数据管理闭环', () => {
       await cookieDialog.getByRole('button', { name: '取消' }).click()
       await page.getByTestId('ths-login-cookie-btn').click()
       await expect(cookieDialog).toContainText('已存密文无法解密，当前采集不会使用它')
-      await page.getByTestId('ths-login-cookie-input').fill('e2e-ui-only-cookie')
+      const cookieInput = cookieDialog.getByTestId('ths-login-cookie-input')
+      await expect(cookieInput).toHaveAttribute('readonly')
+      await expect(cookieInput).toHaveAttribute('autocomplete', 'new-password')
+      // fill 要求元素可编辑：先点击聚焦（触发 focus 移除 readonly，模拟真实用户先点击再输入）
+      await cookieInput.click()
+      await expect(cookieInput).not.toHaveAttribute('readonly')
+      await cookieInput.fill('e2e-ui-only-cookie')
       await expect(page.getByTestId('ths-login-cookie-save')).toBeEnabled()
       await cookieDialog.getByRole('button', { name: '取消' }).click()
 
