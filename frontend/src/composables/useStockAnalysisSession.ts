@@ -18,6 +18,7 @@ export interface StockAnalysisDefaults {
   benchmarkCode?: unknown
   compareMetrics?: unknown
   defaultCompareMetric?: unknown
+  adjustMode?: unknown
 }
 
 function normalizeCompareRange(value: unknown): number {
@@ -28,6 +29,10 @@ function normalizeCompareRange(value: unknown): number {
 function normalizeBenchmarkCode(value: unknown): string {
   const candidate = String(value ?? '')
   return ['', '000905.SH', '000300.SH'].includes(candidate) ? candidate : '000905.SH'
+}
+
+function normalizeAdjustMode(value: unknown): '' | 'qfq' | 'hfq' {
+  return value === 'hfq' || value === '' ? value : 'qfq'
 }
 
 /**
@@ -57,6 +62,7 @@ export function useStockAnalysisSession(
       : visibleCompareMetrics.value[0] ?? 'cum'
   })
   const configuredBenchmarkCode = computed(() => normalizeBenchmarkCode(settings.benchmarkCode))
+  const configuredAdjustMode = computed(() => normalizeAdjustMode(settings.adjustMode))
 
   return {
     analysisPanelVisible: useDefaultedSessionValue(configuredPanelVisible),
@@ -64,6 +70,7 @@ export function useStockAnalysisSession(
     compareRange: useDefaultedSessionValue(configuredCompareRange),
     compareMetric: useDefaultedSessionValue(configuredCompareMetric),
     benchmarkCode: useDefaultedSessionValue(configuredBenchmarkCode),
+    adjustMode: useDefaultedSessionValue(configuredAdjustMode),
     visibleCompareMetrics,
     klineRange: useDefaultedSessionValue(klineDefaultRange),
   }

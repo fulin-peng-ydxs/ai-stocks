@@ -181,6 +181,18 @@ describe('StockAnalysisPanel', () => {
     expect(wrapper.findComponent({ name: 'StockChartWorkspace' }).exists()).toBe(true)
   })
 
+  it('复权口径随 adjustMode 进入行情请求与界面文案', async () => {
+    const wrapper = mountPanel({ mode: 'kline', adjustMode: 'hfq' })
+    await flushPromises()
+
+    expect(stockApi.getBars).toHaveBeenCalledWith(
+      '000001.SZ',
+      expect.objectContaining({ adjust: 'hfq' }),
+      expect.any(AbortSignal),
+    )
+    expect(wrapper.text()).toContain('后复权行情')
+  })
+
   it('详情、队列切换和移除都向页面发出明确事件', async () => {
     const wrapper = mountPanel()
     await flushPromises()

@@ -53,11 +53,29 @@ describe('useStockAnalysisSession', () => {
       defaultChartMode: 'unknown',
       showAnalysisPanel: null,
       compareRange: 17,
+      adjustMode: 'bogus',
     })
     const session = useStockAnalysisSession(settings, ref(120))
 
     expect(session.chartMode.value).toBe('compare')
     expect(session.compareRange.value).toBe(60)
     expect(session.analysisPanelVisible.value).toBe(true)
+    expect(session.adjustMode.value).toBe('qfq')
+  })
+
+  it('复权口径随抽屉默认单向进入会话', async () => {
+    const settings = reactive({
+      defaultChartMode: 'kline',
+      showAnalysisPanel: true,
+      compareRange: 60,
+      adjustMode: '',
+    })
+    const session = useStockAnalysisSession(settings, ref(120))
+
+    expect(session.adjustMode.value).toBe('')
+    settings.adjustMode = 'hfq'
+    await nextTick()
+    expect(session.adjustMode.value).toBe('hfq')
+    expect(settings.adjustMode).toBe('hfq')
   })
 })

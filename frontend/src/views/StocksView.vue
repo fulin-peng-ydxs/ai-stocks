@@ -74,6 +74,7 @@ const stocksDefaults = {
   benchmarkCode: '000905.SH',
   compareMetrics: [...PRICE_COMPARE_METRIC_ORDER] as PriceCompareMetric[],
   defaultCompareMetric: 'cum' as PriceCompareMetric,
+  adjustMode: 'qfq' as '' | 'qfq' | 'hfq',
   charts: createDefaultStockChartPreferences(),
 }
 const { settings, isDirty, reset, hydrated, whenHydrated } = usePageSettings('stocks', stocksDefaults)
@@ -89,6 +90,7 @@ const {
   compareRange,
   compareMetric,
   benchmarkCode,
+  adjustMode,
   visibleCompareMetrics,
   klineRange,
 } = useStockAnalysisSession(
@@ -1002,6 +1004,7 @@ onBeforeUnmount(() => {
           :active="activeAnalysisItem"
           :items="analysisItems"
           :compare-metrics="visibleCompareMetrics"
+          :adjust-mode="adjustMode"
           :end-date="analysisEndDate"
           :slot2="chartPreferences.preferences.value.slot2"
           :slot3="chartPreferences.preferences.value.slot3"
@@ -1128,7 +1131,18 @@ onBeforeUnmount(() => {
           @change="setAuxiliaryChart"
           @save-default-ratios="chartPreferences.setDefaultHeightRatios"
           @save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"
-        />
+        >
+          <template #before>
+          <div class="setting-item">
+            <div class="setting-label">复权模式</div>
+            <PageSegmented v-model="settings.adjustMode" aria-label="复权模式" :options="[
+              { label: '不复权', value: '' },
+              { label: '前复权', value: 'qfq' },
+              { label: '后复权', value: 'hfq' },
+            ]" />
+          </div>
+          </template>
+        </StockChartSettingSection>
         <PageSettingSection title="默认查询">
           <div class="setting-item">
             <div class="setting-label">默认视图</div>

@@ -32,7 +32,7 @@ export interface StockAnalysisItem {
   name: string | null
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   active: StockAnalysisItem | null
   items: StockAnalysisItem[]
   endDate?: string | null
@@ -42,10 +42,13 @@ const props = defineProps<{
   compareMetrics: PriceCompareMetric[]
   benchmarkCode: string
   klineRange: number
+  adjustMode?: '' | 'qfq' | 'hfq'
   slot2: AuxiliaryChartType
   slot3: AuxiliaryChartType
   heightRatios: number[]
-}>()
+}>(), {
+  adjustMode: 'qfq',
+})
 
 const emit = defineEmits<{
   'update:mode': [value: 'compare' | 'kline']
@@ -122,6 +125,9 @@ const calendarPoints = computed(() => benchmarkBars.value.map((bar) => ({
   date: bar.date,
   close: bar.close,
 })))
+const adjustLabel = computed(() => (
+  props.adjustMode === 'hfq' ? '后复权' : props.adjustMode === 'qfq' ? '前复权' : '不复权'
+))
 
 function formatPercent(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return '—'
@@ -172,7 +178,7 @@ async function loadCompare(
   const lookback = priceCompareSetLookback(props.compareMetrics, props.compareRange)
   const entriesPromise = Promise.allSettled(targetItems.map(async (item) => {
     const result = await getBars(item.code, {
-      adjust: 'qfq',
+      adjust: props.adjustMode,
       lookback,
       end: props.endDate || undefined,
     }, signal)
@@ -240,7 +246,7 @@ async function loadKline(): Promise<void> {
   try {
     const [barsResult, indicatorResult] = await Promise.all([
       getBars(active.code, {
-        adjust: 'qfq',
+        adjust: props.adjustMode,
         lookback,
         end: props.endDate || undefined,
       }, controller.signal),
@@ -312,6 +318,7 @@ watch(
     props.compareMetrics.join(','),
     props.benchmarkCode,
     props.klineRange,
+    props.adjustMode,
   ],
   load,
   { immediate: true },
@@ -343,7 +350,7 @@ onBeforeUnmount(() => {
             <el-icon class="el-icon--right"><ArrowRight /></el-icon>
           </el-button>
         </div>
-        <p>{{ mode === 'compare' ? `与 ${Math.max(0, items.length - 1)} 只股票比较区间走势` : '查看前复权K线、量能与技术指标' }}</p>
+        <p>{{ mode === 'compare' ? `与 ${Math.max(0, items.length - 1)} 只股票比较区间走势` : `查看${adjustLabel}K线、量能与技术指标` }}</p>
       </div>
       <div class="stock-analysis-controls">
         <div v-if="mode === 'compare'" class="stock-benchmark-control">
@@ -467,7 +474,7 @@ onBeforeUnmount(() => {
         :slot2="slot2"
         :slot3="slot3"
         :height-ratios="heightRatios"
-        adjust-label="前复权"
+        :adjust-label="adjustLabel"
         :macd-state="indicatorError ? 'error' : 'ready'"
         :macd-error="indicatorError"
         :min-height="384"
@@ -485,7 +492,7 @@ onBeforeUnmount(() => {
         <template v-if="benchmarkError">{{ benchmarkError }}，统一交易日不可用，暂不展示对比结果。</template>
         <template v-else>各股票与指数按共同基期归零；{{ failedCount ? `${failedCount}只股票加载失败。` : '停牌期间沿用最后有效收盘。' }}</template>
       </span>
-      <span v-else>前复权行情；K线、量能和MACD按交易日联动。</span>
+      <span v-else>{{ adjustLabel }}行情；K线、量能和MACD按交易日联动。</span>
       <el-button
         v-if="mode === 'compare' && failedCount"
         link

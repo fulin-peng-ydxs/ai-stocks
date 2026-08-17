@@ -41,6 +41,24 @@ describe('StockChartSettingSection', () => {
     expect(wrapper.emitted('saveCurrentAsDefault')).toEqual([[]])
   })
 
+  it('before 插槽内容固定在图表设置首位（图表一之前）', () => {
+    const wrapper = mount(StockChartSettingSection, {
+      props: {
+        slot2: 'volume',
+        slot3: 'macd',
+        chartTypes: ['kline', 'volume', 'macd'],
+        defaultRatios: [0.6, 0.2, 0.2],
+        testIdPrefix: 'chart-test',
+      },
+      slots: { before: '<div data-testid="before-slot-marker">复权模式</div>' },
+      global: { plugins: [ElementPlus] },
+    })
+
+    const text = wrapper.text()
+    expect(text.indexOf('复权模式')).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf('复权模式')).toBeLessThan(text.indexOf('图表一'))
+  })
+
   it('只显示 K 线时固定为 100%，不提供无意义的比例保存入口', async () => {
     const wrapper = mountSection()
 
