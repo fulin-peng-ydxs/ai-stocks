@@ -9,6 +9,11 @@ import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import KlineSettingSection from '@/components/KlineSettingSection.vue'
+import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
+import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
+import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
+import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import { listStocks, type StockBasic, type StockListParams } from '@/api/stocks'
 import {
   addMembers,
@@ -33,6 +38,14 @@ import { useStockSet, type StockListState } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { useTradeDates } from '@/composables/useTradeDates'
+import { useKlinePrefs } from '@/composables/useKlinePrefs'
+import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
+import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
+import {
+  createDefaultStockChartPreferences,
+  useStockChartPreferences,
+  type AuxiliaryChartSlot,
+} from '@/composables/useStockChartPreferences'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageEntry, getPageLayout, type SlotConfigMeta } from '@/layout'
@@ -50,8 +63,22 @@ const settingsOpen = ref(false)
 const stocksDefaults = {
   defaultView: 'group' as 'list' | 'group',
   excludeSt: true,
+  defaultChartMode: 'compare' as 'compare' | 'kline',
+  showAnalysisPanel: true,
+  compareRange: 60,
+  charts: createDefaultStockChartPreferences(),
 }
-const { settings, isDirty, reset, whenHydrated } = usePageSettings('stocks', stocksDefaults)
+const { settings, isDirty, reset, hydrated, whenHydrated } = usePageSettings('stocks', stocksDefaults)
+const chartSettings = computed({
+  get: () => settings.charts,
+  set: (value) => { settings.charts = value },
+})
+const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
+const { validDefault: klineDefaultRange } = useKlinePrefs()
+const { analysisPanelVisible, chartMode, compareRange, klineRange } = useStockAnalysisSession(
+  settings,
+  klineDefaultRange,
+)
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const stocksLayout = getPageLayout('stocks')
@@ -148,7 +175,11 @@ watch(board, (b) => {
   excludeSt.value = b !== 'ST' && b !== '退市'
 })
 // 选交易日自动触发查询（初始化/恢复时设值不触发，避免重复加载）
-watch(tradeDate, () => { if (!restoringListState) search() })
+watch(tradeDate, () => {
+  if (restoringListState) return
+  clearAnalysisSelection()
+  search()
+})
 watch(() => settings.excludeSt, (value) => {
   if (restoringListState) return
   if (inGroupMode.value) return
@@ -401,9 +432,59 @@ function toggle(row: { code: string; name: string | null }) {
   if (i >= 0) cart.value.splice(i, 1)
   else cart.value.push({ code: row.code, name: row.name })
 }
-const curRows = computed<{ code: string; name: string | null }[]>(() =>
+type StockAnalysisRow = { code: string; name: string | null; last_date?: string | null }
+const curRows = computed<StockAnalysisRow[]>(() =>
   inGroupMode.value ? groupRows.value : rows.value,
 )
+const {
+  activeCode: activeAnalysisCode,
+  activeItem: activeAnalysisItem,
+  items: analysisItems,
+  isPinned: isAnalysisPinned,
+  togglePinned: toggleAnalysisPinned,
+  select: selectAnalysisItem,
+  activate: activateAnalysisCode,
+  remove: removeAnalysisCode,
+  clear: clearAnalysisSelection,
+} = useStockAnalysisSelection(curRows, {
+  onLimitReached: (limit) => ElMessage.warning(`最多对比${limit}只股票`),
+})
+const analysisEndDate = computed(() => (
+  inGroupMode.value ? activeAnalysisItem.value?.last_date || tradeDate.value : tradeDate.value
+))
+const analysisListTitle = computed(() => (
+  inGroupMode.value ? groupDetail.value?.name || '分组股票' : tradeDate.value || '最新交易日'
+))
+const analysisListMeta = computed(() => (
+  analysisPanelVisible.value ? '点击行切换走势' : '点击行查看详情'
+))
+
+function handleStockRowClick(item: StockAnalysisRow): void {
+  if (analysisPanelVisible.value) selectAnalysisItem(item)
+  else enterDetail(item.code)
+}
+
+function stockAnalysisRowClass({ row }: { row: { code: string } }): string {
+  return row.code === activeAnalysisCode.value ? 'stock-analysis-row--active' : ''
+}
+
+function openActiveAnalysisDetail(): void {
+  if (activeAnalysisCode.value) enterDetail(activeAnalysisCode.value)
+}
+
+function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
+  chartPreferences.setSlotType(slot, value)
+}
+
+function handleRatioDraft(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+}
+
+function handleRatioCommit(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+  chartPreferences.commitRatioDraft()
+}
+
 const allCurChecked = computed(() => curRows.value.length > 0 && curRows.value.every((r) => inCart(r.code)))
 const someCurChecked = computed(() => curRows.value.some((r) => inCart(r.code)) && !allCurChecked.value)
 function toggleAllCur(val: boolean) {
@@ -716,7 +797,15 @@ onBeforeUnmount(() => {
     </template>
 
     <template #main>
-    <el-card shadow="never">
+    <MarketMasterDetailWorkspace
+      v-model:analysis-visible="analysisPanelVisible"
+      eyebrow="股票列表"
+      :title="analysisListTitle"
+      :meta="analysisListMeta"
+      list-aria-label="个股行情列表"
+      data-testid="stocks-market-workspace"
+    >
+      <template #list>
       <AppStateBlock
         v-if="groupListError && !inGroupMode"
         state="error"
@@ -746,12 +835,13 @@ onBeforeUnmount(() => {
           retry
           @retry="loadGroupDetail"
         />
-        <AppDataTable :data="groupRows" :loading="groupLoading" row-key="code"
+        <AppDataTable kind="wide-table" :data="groupRows" :loading="groupLoading" row-key="code"
           :border="tableBorder('groupTable')"
           :default-sort="groupElementDefaultSort"
           clickable
           :pagination="{ currentPage: groupPage, pageSize: groupSize, total: groupTotal, pageSizes: PAGE_SIZE_OPTIONS }"
-          @row-click="(r: GroupMember) => enterDetail(r.code)"
+          :row-class-name="stockAnalysisRowClass"
+          @row-click="handleStockRowClick"
           @sort-change="onGroupSortChange"
           @page-change="(p:number)=>{ groupPage=p; loadGroupDetail() }"
           @size-change="changeGroupPageSize">
@@ -764,8 +854,15 @@ onBeforeUnmount(() => {
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('code')" label="代码" prop="code" sortable="custom" />
-          <AppTableColumn v-if="groupColVisible('name')" label="名称" prop="name" sortable="custom">
-            <template #default="{ row }">{{ row.name || '—' }}</template>
+          <AppTableColumn v-if="groupColVisible('name')" label="名称" prop="name" role="entity" :leading-controls="1" sortable="custom">
+            <template #default="{ row }">
+              <StockAnalysisNameCell
+                :code="row.code"
+                :name="row.name"
+                :pinned="isAnalysisPinned(row.code)"
+                @toggle="toggleAnalysisPinned(row)"
+              />
+            </template>
           </AppTableColumn>
           <AppTableColumn v-if="groupColVisible('price')" label="股价" prop="price" sortable="custom">
             <template #default="{ row }"><b :class="pctClass(row.pct_chg)">{{ fmtPrice(row.price) }}</b></template>
@@ -806,11 +903,12 @@ onBeforeUnmount(() => {
           retry
           @retry="load"
         />
-        <AppDataTable :data="rows" :loading="loading" row-key="code"
+        <AppDataTable kind="wide-table" :data="rows" :loading="loading" row-key="code"
           :border="tableBorder('table')"
           clickable
           :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
-          @row-click="(r: StockBasic) => enterDetail(r.code)"
+          :row-class-name="stockAnalysisRowClass"
+          @row-click="handleStockRowClick"
           :default-sort="tableElementDefaultSort"
           @sort-change="onSortChange"
           @page-change="(p:number)=>{ page=p; load() }"
@@ -824,10 +922,16 @@ onBeforeUnmount(() => {
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable="custom" />
-          <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" sortable="custom">
+          <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" role="entity" :leading-controls="1" sortable="custom">
             <template #default="{ row }">
-              <span>{{ row.name || '—' }}</span>
-              <el-tag v-if="row.is_st" type="danger" size="small" effect="plain" style="margin-left:6px">ST</el-tag>
+              <StockAnalysisNameCell
+                :code="row.code"
+                :name="row.name"
+                :pinned="isAnalysisPinned(row.code)"
+                @toggle="toggleAnalysisPinned(row)"
+              >
+                <el-tag v-if="row.is_st" type="danger" size="small" effect="plain">ST</el-tag>
+              </StockAnalysisNameCell>
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="colVisible('price')" label="股价" prop="close" sortable="custom">
@@ -871,7 +975,26 @@ onBeforeUnmount(() => {
         </AppDataTable>
         </template>
       </template>
-    </el-card>
+      </template>
+      <template #analysis>
+        <StockAnalysisPanel
+          v-model:mode="chartMode"
+          v-model:compare-range="compareRange"
+          v-model:kline-range="klineRange"
+          :active="activeAnalysisItem"
+          :items="analysisItems"
+          :end-date="analysisEndDate"
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          :height-ratios="chartPreferences.currentRatios.value"
+          @activate="activateAnalysisCode"
+          @remove="removeAnalysisCode"
+          @open-detail="openActiveAnalysisDetail"
+          @ratio-draft="handleRatioDraft"
+          @ratio-commit="handleRatioCommit"
+        />
+      </template>
+    </MarketMasterDetailWorkspace>
     </template>
 
     <template #footer>
@@ -977,6 +1100,12 @@ onBeforeUnmount(() => {
       @reset="reset(); resetLayout()"
     >
       <template #business>
+        <StockChartSettingSection
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          test-id-prefix="stocks-chart"
+          @change="setAuxiliaryChart"
+        />
         <PageSettingSection title="默认查询">
           <div class="setting-item">
             <div class="setting-label">默认视图</div>
@@ -988,7 +1117,26 @@ onBeforeUnmount(() => {
             />
           </div>
           <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
+          <div class="setting-item">
+            <div class="setting-label">默认图表模式</div>
+            <PageSegmented
+              v-model="settings.defaultChartMode"
+              aria-label="默认图表模式"
+              :options="[
+                { label: '走势对比', value: 'compare' },
+                { label: 'K线', value: 'kline' },
+              ]"
+            />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">默认对比周期</div>
+            <el-select v-model="settings.compareRange" style="width: 160px">
+              <el-option v-for="days in [5, 10, 20, 60, 120, 250]" :key="days" :value="days" :label="`${days}日`" />
+            </el-select>
+          </div>
+          <PageToggleRow v-model="settings.showAnalysisPanel" label="显示走势分析区" />
         </PageSettingSection>
+        <KlineSettingSection />
       </template>
     </PageSettingsDrawer>
     </template>

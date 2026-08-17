@@ -88,6 +88,7 @@ export interface Indicators {
 export interface IndicatorParams {
   lookback?: number
   fields?: readonly IndicatorField[]
+  end?: string
 }
 
 export function listStocks(params?: StockListParams): Promise<StockList> {

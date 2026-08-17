@@ -16,7 +16,7 @@ from backend.common.exceptions import ForbiddenError
 class _StubEngine:
     def __init__(self, frame: pd.DataFrame):
         self.frame = frame
-        self.calls: list[tuple[str, int | None]] = []
+        self.calls: list[tuple[str, object, int | None]] = []
 
     def compute_series(
         self,
@@ -24,7 +24,7 @@ class _StubEngine:
         end_date=None,
         lookback: int | None = None,
     ) -> pd.DataFrame:
-        self.calls.append((code, lookback))
+        self.calls.append((code, end_date, lookback))
         return self.frame.copy()
 
 
@@ -67,7 +67,7 @@ def test_indicators_without_fields_keeps_full_legacy_row(monkeypatch):
             "param_hash": "legacy-hash",
         }],
     }
-    assert engine.calls == [("600000.SH", 580)]
+    assert engine.calls == [("600000.SH", None, 580)]
 
 
 def test_indicators_fields_are_deduplicated_and_non_finite_values_become_null(monkeypatch):
@@ -120,7 +120,7 @@ def test_indicators_fields_are_deduplicated_and_non_finite_values_become_null(mo
             "macd_dead_cross": None,
         },
     ]
-    assert engine.calls == [("600000.SH", 522)]
+    assert engine.calls == [("600000.SH", None, 522)]
 
 
 @pytest.mark.parametrize(("lookback", "engine_lookback"), [(1, 521), (6000, 6520)])
@@ -132,7 +132,7 @@ def test_indicators_lookback_boundaries(monkeypatch, lookback, engine_lookback):
     ))
 
     assert data == {"code": "600000.SH", "indicators": []}
-    assert engine.calls == [("600000.SH", engine_lookback)]
+    assert engine.calls == [("600000.SH", None, engine_lookback)]
 
 
 @pytest.mark.parametrize("lookback", [0, 6001])
@@ -145,6 +145,17 @@ def test_indicators_rejects_out_of_range_lookback(monkeypatch, lookback):
 
     assert response.status_code == 422
     assert engine.calls == []
+
+
+def test_indicators_passes_historical_end_date_to_engine(monkeypatch):
+    engine = _StubEngine(pd.DataFrame())
+    data = _data(_client(monkeypatch, engine).get(
+        "/api/stocks/600000.SH/indicators",
+        params={"lookback": 120, "end": "2026-06-30"},
+    ))
+
+    assert data == {"code": "600000.SH", "indicators": []}
+    assert engine.calls == [("600000.SH", pd.Timestamp("2026-06-30").date(), 640)]
 
 
 def test_indicators_rejects_unknown_field_before_compute(monkeypatch):

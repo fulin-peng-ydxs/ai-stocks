@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from datetime import date
 from typing import Annotated
@@ -283,6 +282,7 @@ def stock_indicators(
     code: str,
     lookback: Annotated[int, Query(ge=1, le=6000)] = 60,
     fields: str | None = None,
+    end: date | None = None,
 ) -> ApiResponse:
     from backend.indicators.engine import IndicatorEngine
 
@@ -290,7 +290,11 @@ def stock_indicators(
     c = get_client()
     # v2.0：指标动态实时计算（无 indicator 表）。多取窗口暖机后裁末段 lookback 行。
     # 注：rs_pct 为横截面量，单股序列不填（个股查询页该列为空，M2.4 适配）。
-    df = IndicatorEngine(c).compute_series(code, lookback=int(lookback) + 520)
+    df = IndicatorEngine(c).compute_series(
+        code,
+        end_date=end,
+        lookback=int(lookback) + 520,
+    )
     if df.empty:
         return ok({"code": code, "indicators": []})
     df = df.sort_values("trade_date").tail(int(lookback))

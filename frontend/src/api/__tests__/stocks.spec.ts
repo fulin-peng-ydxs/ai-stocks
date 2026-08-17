@@ -21,6 +21,7 @@ describe('getIndicators', () => {
       {
         lookback: 6000,
         fields: ['macd_hist', 'macd_diff', 'macd_golden_cross'],
+        end: '2026-06-30',
       },
       controller.signal,
     )
@@ -29,6 +30,7 @@ describe('getIndicators', () => {
       params: {
         lookback: 6000,
         fields: 'macd_hist,macd_diff,macd_golden_cross',
+        end: '2026-06-30',
       },
       signal: controller.signal,
       skipGlobalError: true,

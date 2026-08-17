@@ -617,7 +617,9 @@ describe('页面注册表完整性', () => {
 describe('组件消费关系与配置一致性（P4）', () => {
   it('listComponentUsage 命中真实消费页面，未消费组件返回空', () => {
     const tableUsers = listComponentUsage('data-table').map((u) => u.pageKey)
-    expect(tableUsers).toEqual(expect.arrayContaining(['board', 'screen', 'stocks', 'data-quality']))
+    expect(tableUsers).toEqual(expect.arrayContaining(['screen', 'data-quality']))
+    const wideTableUsers = listComponentUsage('wide-table').map((u) => u.pageKey)
+    expect(wideTableUsers).toEqual(expect.arrayContaining(['board', 'stocks']))
     expect(listComponentUsage('tabs').map((u) => u.pageKey)).not.toContain('config-score')
     // 目录中存在但无页面消费的组件（如 kanban）应返回空数组而非报错。
     expect(listComponentUsage('kanban')).toEqual([])
@@ -965,5 +967,28 @@ describe('组件消费关系与配置一致性（P4）', () => {
       violations,
       `页面交互不得把会话改动写回长期默认；请改用独立会话 ref：\n${violations.join('\n')}`,
     ).toEqual([])
+  })
+
+  it('股票分析工作台统一消费默认会话投影与共享选择状态机', () => {
+    for (const pageKey of ['board', 'stocks']) {
+      const source = sourceForPage(pageKey)
+      expect(
+        source.includes('useStockAnalysisSession('),
+        `${pageKey} 必须通过 useStockAnalysisSession 消费抽屉和 K 线默认值`,
+      ).toBe(true)
+      expect(
+        source.includes('useStockAnalysisSelection('),
+        `${pageKey} 必须通过 useStockAnalysisSelection 维护当前观察和对比队列`,
+      ).toBe(true)
+      expect(source).not.toContain('analysisLookup = ref')
+      expect(source).not.toContain('pinnedAnalysisCodes = ref')
+    }
+
+    const stocksSource = sourceForPage('stocks')
+    expect(
+      stocksSource.includes('activeAnalysisItem.value?.last_date'),
+      'stocks 分组行情截止日必须取当前观察股票，而不是当前页第一行',
+    ).toBe(true)
+    expect(stocksSource).not.toContain('groupRows.value[0]?.last_date')
   })
 })

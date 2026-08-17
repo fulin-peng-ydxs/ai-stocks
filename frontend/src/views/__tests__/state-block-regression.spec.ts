@@ -52,6 +52,7 @@ vi.mock('@/composables/useTradeDates', () => ({
 }))
 
 vi.mock('@/composables/useKlinePrefs', () => ({
+  ALL_DAYS: 99999,
   useKlinePrefs: () => {
     const prefs = reactive({ defaultPeriod: 120 })
     return { validDefault: computed(() => prefs.defaultPeriod), prefs }
@@ -227,6 +228,7 @@ const stubs = {
   GrowthChart: true,
   KlineRangeSelect: true,
   KlineSettingSection: true,
+  StockAnalysisPanel: true,
   teleport: true,
 }
 
@@ -317,6 +319,13 @@ describe('代表性页面四态回归', () => {
     }))
     expect(boardApi.runBoardProfile).toHaveBeenCalledTimes(1)
 
+    // 分析区展开时行点击只切换走势，不改变路由。
+    await wrapper.get('.first-data-row').trigger('click')
+    expect(push).not.toHaveBeenCalledWith('/stocks/000001.SZ')
+
+    // 收起为整宽列表后恢复原有的详情跳转。
+    await wrapper.get('[data-testid="market-hide-analysis"]').trigger('click')
+    await wrapper.vm.$nextTick()
     await wrapper.get('.first-data-row').trigger('click')
 
     const stockSet = useStockSet()

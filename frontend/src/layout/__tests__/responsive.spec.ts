@@ -50,13 +50,22 @@ describe('自适应策略摘要（P8）', () => {
     expect(preview).toContain('目标 · {{ summary.profileLabel }}')
   })
 
-  it('单列页（board）：三档恒 1 列，主表归入不可重排（grow）', () => {
+  it('混合面板页（board）：三档保持单列布局契约，主从工作台归入不可重排', () => {
     const layout = getPageLayout('board')
-    const s = describeResponsive(layout, 'single-column')
+    const s = describeResponsive(layout, 'mixed-panel')
     expect(s.tiers.map((t) => t.columns)).toEqual([1, 1, 1])
     expect(s.reflowableSlots).toEqual([])
-    const locked = s.lockedSlots.find((x) => x.id === 'table')
-    expect(locked?.growMain).toBe(true)
+    expect(s.lockedSlots.map((slot) => slot.id)).toContain('workspace')
+  })
+
+  it('股票主从工作台最小列宽与容器宽度一致，不产生局部 12px 溢出', () => {
+    const workspace = readFileSync(
+      new URL('../../components/MarketMasterDetailWorkspace.vue', import.meta.url),
+      'utf8',
+    )
+    expect(workspace).toContain('grid-template-columns: minmax(360px, 0.82fr) minmax(0, 1.18fr)')
+    expect(workspace).toContain('min-width: 860px')
+    expect(workspace).not.toContain('minmax(500px, 1.18fr)')
   })
 
   it('嵌套/overlay slot 不进响应式摘要（只看顶层主区）', () => {

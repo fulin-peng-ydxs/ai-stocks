@@ -13,7 +13,12 @@ import { browseBoardProfiles, listBoardProfiles, runBoardProfile } from '@/api/b
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import KlineSettingSection from '@/components/KlineSettingSection.vue'
+import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
+import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
+import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
+import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -24,7 +29,15 @@ import PageToggleRow from '@/components/PageToggleRow.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTradeDates } from '@/composables/useTradeDates'
+import { useKlinePrefs } from '@/composables/useKlinePrefs'
+import { useStockAnalysisSelection } from '@/composables/useStockAnalysisSelection'
+import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
 import { useUserPreference } from '@/composables/useUserPreference'
+import {
+  createDefaultStockChartPreferences,
+  useStockChartPreferences,
+  type AuxiliaryChartSlot,
+} from '@/composables/useStockChartPreferences'
 import { downloadCsv } from '@/utils/csv'
 import { ElMessage } from 'element-plus'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
@@ -73,9 +86,23 @@ const { dataMax, ensureLoaded: ensureTradeDatesLoaded } = useTradeDates()
 const boardDefaults = {
   topN: 50,
   subScoreMode: 'full' as 'full' | 'brief' | 'hidden',
+  defaultChartMode: 'compare' as 'compare' | 'kline',
+  showAnalysisPanel: true,
+  compareRange: 60,
+  charts: createDefaultStockChartPreferences(),
 }
-const { settings, isDirty, reset } = usePageSettings('board', boardDefaults)
+const { settings, isDirty, reset, hydrated } = usePageSettings('board', boardDefaults)
 topN.value = Number(settings.topN)
+const chartSettings = computed({
+  get: () => settings.charts,
+  set: (value) => { settings.charts = value },
+})
+const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
+const { validDefault: klineDefaultRange } = useKlinePrefs()
+const { analysisPanelVisible, chartMode, compareRange, klineRange } = useStockAnalysisSession(
+  settings,
+  klineDefaultRange,
+)
 
 // 排序单向：配置层 defaultSort 只提供默认值，列头排序只进会话覆盖（sessionSort），不写回配置层。
 type BoardSort = 'score' | 'rank' | 'code'
@@ -169,6 +196,7 @@ function copyAnyBoardProfile(item: ProfileSummary) {
 function onProfileSelect(key: string) {
   // 任何选择变化（包括清空）都先让旧请求失效，避免无选中时被迟到响应重新写回榜单。
   loadSequence += 1
+  clearAnalysisSelection()
   profileRef.value = key
   if (externalProfile.value && profileKey(externalProfile.value) !== key) {
     externalProfile.value = null
@@ -290,6 +318,51 @@ const displayRows = computed(() => {
   else list.sort((a, b) => b.total_score - a.total_score)
   return list
 })
+const analysisSourceItems = computed(() => displayRows.value)
+const {
+  activeCode: activeAnalysisCode,
+  activeItem: activeAnalysisItem,
+  items: analysisItems,
+  isPinned: isAnalysisPinned,
+  togglePinned: toggleAnalysisPinned,
+  select: selectAnalysisItem,
+  activate: activateAnalysisCode,
+  remove: removeAnalysisCode,
+  clear: clearAnalysisSelection,
+} = useStockAnalysisSelection(analysisSourceItems, {
+  onLimitReached: (limit) => ElMessage.warning(`最多对比${limit}只股票`),
+})
+const boardListMeta = computed(() => (
+  analysisPanelVisible.value ? '点击行切换走势' : '点击行查看详情'
+))
+
+function handleBoardRowClick(item: ScoreRunRow): void {
+  if (analysisPanelVisible.value) selectAnalysisItem(item)
+  else gotoStock(item)
+}
+
+function boardAnalysisRowClass({ row }: { row: ScoreRunRow }): string {
+  return row.code === activeAnalysisCode.value ? 'stock-analysis-row--active' : ''
+}
+
+function openActiveAnalysisDetail(): void {
+  const row = rows.value.find((item) => item.code === activeAnalysisCode.value)
+  if (row) gotoStock(row)
+}
+
+function setAuxiliaryChart(slot: AuxiliaryChartSlot, value: string | number | boolean): void {
+  chartPreferences.setSlotType(slot, value)
+}
+
+function handleRatioDraft(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+}
+
+function handleRatioCommit(ratios: number[]): void {
+  chartPreferences.updateRatioDraft(ratios)
+  chartPreferences.commitRatioDraft()
+}
+
 const displaySubKeys = computed(() => {
   if (settings.subScoreMode === 'hidden') return []
   if (settings.subScoreMode === 'brief') return subKeys.value.slice(0, 3)
@@ -301,13 +374,20 @@ const tableEmptyText = computed(() =>
 
 watch(runDate, () => {
   if (!profileRef.value || syncingRunDate.value) return
+  clearAnalysisSelection()
   load()
 })
 // topN 单向：抽屉默认值 → 会话 ref；主区改动只进会话态，不写回默认。
 watch(() => settings.topN, (value) => {
   topN.value = Number(value)
+  clearAnalysisSelection()
   if (profileRef.value) load()
 })
+
+function onTopNChange(): void {
+  clearAnalysisSelection()
+  void load()
+}
 
 function scoreLevel(v: number | undefined): string {
   const n = v ?? 0
@@ -460,7 +540,7 @@ onMounted(async () => {
         />
         <TradeDatePicker v-model="runDate" placeholder="默认最新交易日" />
         <span class="lbl">Top</span>
-        <el-select v-model="topN" style="width: 88px" @change="load">
+        <el-select v-model="topN" style="width: 88px" @change="onTopNChange">
           <el-option :value="20" label="20" />
           <el-option :value="50" label="50" />
           <el-option :value="100" label="100" />
@@ -481,7 +561,15 @@ onMounted(async () => {
     </template>
 
     <template #main>
-    <el-card shadow="never">
+    <MarketMasterDetailWorkspace
+      v-model:analysis-visible="analysisPanelVisible"
+      eyebrow="评分榜单"
+      :title="runDate || '最新交易日'"
+      :meta="boardListMeta"
+      list-aria-label="每日榜单结果"
+      data-testid="board-market-workspace"
+    >
+      <template #list>
       <AppStateBlock
         v-if="loading && !rows.length"
         state="loading"
@@ -497,21 +585,30 @@ onMounted(async () => {
       />
       <AppDataTable
         v-else
+        kind="wide-table"
         :data="displayRows"
         :loading="loading"
         :empty-text="tableEmptyText"
         :border="tableBorder('table')"
         :default-sort="elementDefaultSort"
+        :row-class-name="boardAnalysisRowClass"
         clickable
         @sort-change="onTableSortChange"
-        @row-click="gotoStock"
+        @row-click="handleBoardRowClick"
       >
         <AppTableColumn label="#" prop="rank" sortable :sort-by="(r:any)=>r.rank">
           <template #default="{ row }">{{ row.rank }}</template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" sortable />
-        <AppTableColumn v-if="colVisible('name')" label="名称" prop="name">
-          <template #default="{ row }">{{ row.name || '—' }}</template>
+        <AppTableColumn v-if="colVisible('name')" label="名称" prop="name" role="entity" :leading-controls="1">
+          <template #default="{ row }">
+            <StockAnalysisNameCell
+              :code="row.code"
+              :name="row.name"
+              :pinned="isAnalysisPinned(row.code)"
+              @toggle="toggleAnalysisPinned(row)"
+            />
+          </template>
         </AppTableColumn>
         <AppTableColumn v-if="colVisible('score')" label="综合分" prop="total_score" sortable :sort-by="(r:any)=>r.total_score">
           <template #default="{ row }">
@@ -539,7 +636,26 @@ onMounted(async () => {
           </template>
         </AppTableColumn>
       </AppDataTable>
-    </el-card>
+      </template>
+      <template #analysis>
+        <StockAnalysisPanel
+          v-model:mode="chartMode"
+          v-model:compare-range="compareRange"
+          v-model:kline-range="klineRange"
+          :active="activeAnalysisItem"
+          :items="analysisItems"
+          :end-date="runDate"
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          :height-ratios="chartPreferences.currentRatios.value"
+          @activate="activateAnalysisCode"
+          @remove="removeAnalysisCode"
+          @open-detail="openActiveAnalysisDetail"
+          @ratio-draft="handleRatioDraft"
+          @ratio-commit="handleRatioCommit"
+        />
+      </template>
+    </MarketMasterDetailWorkspace>
     </template>
 
     <template #overlays>
@@ -552,6 +668,12 @@ onMounted(async () => {
       @reset="reset(); resetLayout()"
     >
       <template #business>
+        <StockChartSettingSection
+          :slot2="chartPreferences.preferences.value.slot2"
+          :slot3="chartPreferences.preferences.value.slot3"
+          test-id-prefix="board-chart"
+          @change="setAuxiliaryChart"
+        />
         <PageSettingSection title="默认结果">
           <div class="setting-item">
             <div class="setting-label">Top N</div>
@@ -569,7 +691,22 @@ onMounted(async () => {
               { label: '隐藏', value: 'hidden' },
             ]" />
           </div>
+          <div class="setting-item">
+            <div class="setting-label">默认图表模式</div>
+            <PageSegmented v-model="settings.defaultChartMode" aria-label="默认图表模式" :options="[
+              { label: '走势对比', value: 'compare' },
+              { label: 'K线', value: 'kline' },
+            ]" />
+          </div>
+          <div class="setting-item">
+            <div class="setting-label">默认对比周期</div>
+            <el-select v-model="settings.compareRange" style="width: 160px">
+              <el-option v-for="days in [5, 10, 20, 60, 120, 250]" :key="days" :value="days" :label="`${days}日`" />
+            </el-select>
+          </div>
+          <PageToggleRow v-model="settings.showAnalysisPanel" label="显示走势分析区" />
         </PageSettingSection>
+        <KlineSettingSection />
       </template>
     </PageSettingsDrawer>
     </template>

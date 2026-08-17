@@ -1,0 +1,50 @@
+import { nextTick, reactive, ref } from 'vue'
+import { describe, expect, it } from 'vitest'
+import { useStockAnalysisSession } from '@/composables/useStockAnalysisSession'
+
+describe('useStockAnalysisSession', () => {
+  it('远端水合和抽屉修改会单向更新会话，主区修改不反写默认值', async () => {
+    const settings = reactive({
+      defaultChartMode: 'compare',
+      showAnalysisPanel: true,
+      compareRange: 60,
+    })
+    const klineDefault = ref(120)
+    const session = useStockAnalysisSession(settings, klineDefault)
+
+    session.chartMode.value = 'kline'
+    session.compareRange.value = 20
+    session.analysisPanelVisible.value = false
+    session.klineRange.value = 60
+    expect(settings).toEqual({
+      defaultChartMode: 'compare',
+      showAnalysisPanel: true,
+      compareRange: 60,
+    })
+    expect(klineDefault.value).toBe(120)
+
+    settings.defaultChartMode = 'kline'
+    settings.compareRange = 250
+    settings.showAnalysisPanel = false
+    klineDefault.value = 250
+    await nextTick()
+
+    expect(session.chartMode.value).toBe('kline')
+    expect(session.compareRange.value).toBe(250)
+    expect(session.analysisPanelVisible.value).toBe(false)
+    expect(session.klineRange.value).toBe(250)
+  })
+
+  it('非法持久化值回落到稳定默认值', () => {
+    const settings = reactive({
+      defaultChartMode: 'unknown',
+      showAnalysisPanel: null,
+      compareRange: 17,
+    })
+    const session = useStockAnalysisSession(settings, ref(120))
+
+    expect(session.chartMode.value).toBe('compare')
+    expect(session.compareRange.value).toBe(60)
+    expect(session.analysisPanelVisible.value).toBe(true)
+  })
+})

@@ -321,7 +321,66 @@ async function loadStocksOnlyContext(page: Page, request: APIRequestContext) {
   return { auth, code: samples[0].code, samples }
 }
 
+async function clickStockCodeCell(page: Page, code: string): Promise<void> {
+  await page.getByRole('row').filter({ hasText: code })
+    .getByText(code, { exact: true })
+    .click()
+}
+
 test.describe('个股详情三图工作区', () => {
+  test('个股查询展开时切换走势，收起后行点击恢复详情跳转', async ({
+    page,
+    request,
+  }, testInfo) => {
+    runInStandardViewport(testInfo)
+    const consoleIssues = collectConsoleIssues(page)
+    const { samples } = await loadStocksOnlyContext(page, request)
+    const preferences = await installPreferenceEndpoint(page, [{
+      scope: 'page',
+      pageKey: 'stocks',
+      prefKey: 'settings',
+      value: {
+        defaultView: 'list',
+        excludeSt: true,
+        defaultChartMode: 'kline',
+        showAnalysisPanel: true,
+        compareRange: 120,
+        charts: stockDetailPreference().charts,
+      },
+    }])
+    await installFixedStockListEndpoint(page, samples)
+
+    await page.goto('/stocks')
+    const analysisPanel = page.getByTestId('stock-analysis-panel')
+    await expect(analysisPanel.getByLabel('股票K线多图联动工作区')).toBeVisible()
+
+    // 主区切换只改变本次会话，不反写抽屉默认。
+    await page.getByTestId('stock-analysis-mode-compare').click()
+    await expect(analysisPanel.getByText('对比队列')).toBeVisible()
+    await page.waitForTimeout(400)
+    const settingsKey = preferenceKey({ scope: 'page', pageKey: 'stocks', prefKey: 'settings' })
+    expect((preferences.store.get(settingsKey)?.value as { defaultChartMode?: string }).defaultChartMode).toBe('kline')
+
+    // 抽屉修改默认值会通过单向会话投影立即驱动主区。
+    await page.getByTestId('page-settings-trigger').click()
+    const drawer = page.getByTestId('page-settings-drawer')
+    const defaultMode = drawer.getByRole('group', { name: '默认图表模式' })
+    await defaultMode.getByRole('button', { name: '走势对比', exact: true }).click()
+    await defaultMode.getByRole('button', { name: 'K线', exact: true }).click()
+    await expect(analysisPanel.getByLabel('股票K线多图联动工作区')).toBeVisible()
+    await drawer.getByRole('button', { name: '关闭页面设置' }).click()
+
+    const target = samples[1]
+    await clickStockCodeCell(page, target.code)
+    await expect(page).toHaveURL(/\/stocks$/)
+    await expect(analysisPanel).toContainText(target.code)
+
+    await page.getByTestId('market-hide-analysis').click()
+    await clickStockCodeCell(page, target.code)
+    await expect(page).toHaveURL(new RegExp(`/stocks/${target.code.replace('.', '\\.')}$`))
+    expect(consoleIssues).toEqual([])
+  })
+
   test('每日榜单进入第二只股票后集合序号和返回来源保持一致', async ({
     page,
     request,
@@ -335,7 +394,14 @@ test.describe('个股详情三图工作区', () => {
     await installFixedStockListEndpoint(page, samples)
 
     await page.goto('/board')
-    await page.getByRole('row').filter({ hasText: samples[1].code }).click()
+    await clickStockCodeCell(page, samples[1].code)
+
+    await expect(page).toHaveURL(/\/board$/)
+    const analysisPanel = page.getByTestId('stock-analysis-panel')
+    await expect(analysisPanel).toContainText(samples[1].code)
+    await page.getByTestId('stock-analysis-mode-kline').click()
+    await expect(analysisPanel.getByLabel('股票K线多图联动工作区')).toBeVisible()
+    await page.getByTestId('stock-analysis-open-detail').click()
 
     await expect(page).toHaveURL(new RegExp(`/stocks/${samples[1].code.replace('.', '\\.')}$`))
     await expect(page.getByTestId('stock-set-navigation')).toContainText('每日榜单')
@@ -589,6 +655,9 @@ test.describe('个股详情三图工作区', () => {
     })
 
     await page.goto('/stocks')
+    await page.getByRole('cell', { name: code, exact: true }).click()
+    await expect(page).toHaveURL(/\/stocks$/)
+    await page.getByTestId('market-hide-analysis').click()
     await page.getByRole('cell', { name: code, exact: true }).click()
     await expect(page).toHaveURL(new RegExp(`/stocks/${code.replace('.', '\\.')}$`))
     await expect(page.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
