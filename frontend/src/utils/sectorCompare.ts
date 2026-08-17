@@ -29,7 +29,7 @@ export const COMPARE_METRIC_META: Record<CompareMetric, CompareMetricMeta> = {
   roll_10d: { label: '10日涨幅', kind: 'line', unit: '%', window: 10 },
   roll_20d: { label: '20日涨幅', kind: 'line', unit: '%', window: 20 },
   inflow: { label: '即时净流入', kind: 'bar', unit: '亿' },
-  breadth: { label: '累计成员涨/跌', kind: 'bar', unit: '家' },
+  breadth: { label: '成员涨/跌', kind: 'bar', unit: '家' },
 }
 
 /** 对比周期选项（数据驱动；「单日」窗口=1，仅累计涨跌可用，走柱状截面）。 */

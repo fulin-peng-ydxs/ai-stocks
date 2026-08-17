@@ -1187,7 +1187,7 @@ onMounted(async () => {
           <footer v-if="chartMode === 'compare'" class="chart-footer">
             <span v-if="benchmarkError && compareMetricKind === 'line'" class="benchmark-warning">{{ benchmarkError }}，当前仅显示板块走势。</span>
             <span v-else-if="compareMetricKind === 'bar' && (compareMetric === 'inflow' || compareMetric === 'breadth')" class="compare-explanation">
-              净流入使用独立最新快照；累计成员涨跌按所选行情日计算。两者均为截面值，故以柱状对比，不叠加市场指数。
+              净流入使用独立最新快照；成员涨跌按所选行情日计算。两者均为截面值，故以柱状对比，不叠加市场指数。
             </span>
             <span v-else-if="compareMetricKind === 'bar'" class="compare-explanation">
               单日涨幅为截面快照，故以柱状对比。
