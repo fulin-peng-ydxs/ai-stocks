@@ -14,21 +14,15 @@ from pydantic import BaseModel, Field
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.deps import require_perm
-from backend.config import get_effective_settings
 from backend.services.board_query import MEMBER_SORT_FIELDS, SORT_FIELDS, BoardQueryService
 from backend.services.board_watchlist import BoardWatchlistService
+from backend.services.market_benchmark import MarketBenchmarkService
 
 router = APIRouter(prefix="/api/sectors", tags=["sectors"])
 
 _VIEW = [Depends(require_perm("sectors:view"))]
 _WATCHLIST_VIEW = [Depends(require_perm("sector-watchlist:view"))]
 _WATCHLIST_UPDATE = [Depends(require_perm("sector-watchlist:update"))]
-
-_BENCHMARK_NAMES = {
-    "000905.SH": "中证 500",
-    "000300.SH": "沪深 300",
-}
-
 
 class WatchlistBody(BaseModel):
     board_code: str = Field(min_length=1, max_length=32)
@@ -123,14 +117,14 @@ def get_benchmark_bars(
     """板块相对强弱使用的市场指数基准，只开放系统已配置的回测基准。"""
     if start > end:
         raise _bad_params("start 不能晚于 end")
-    cfg = get_effective_settings().backtest
-    allowed = {cfg.benchmark_main, *cfg.benchmark_others}
-    if index_code not in allowed:
-        raise _bad_params(f"不支持的指数基准: {index_code}")
-    bars = BoardQueryService().get_benchmark_bars(index_code, start, end)
+    service = MarketBenchmarkService()
+    try:
+        bars = service.get_range(index_code, start, end)
+    except ValueError as exc:
+        raise _bad_params(str(exc)) from exc
     return ok({
         "index_code": index_code,
-        "name": _BENCHMARK_NAMES.get(index_code, index_code),
+        "name": service.name(index_code),
         "start": str(start),
         "end": str(end),
         "list": bars,

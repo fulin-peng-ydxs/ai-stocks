@@ -8,6 +8,9 @@ describe('useStockAnalysisSession', () => {
       defaultChartMode: 'compare',
       showAnalysisPanel: true,
       compareRange: 60,
+      benchmarkCode: '000905.SH',
+      compareMetrics: ['cum', 'roll_30d', 'roll_60d'],
+      defaultCompareMetric: 'cum',
     })
     const klineDefault = ref(120)
     const session = useStockAnalysisSession(settings, klineDefault)
@@ -16,16 +19,23 @@ describe('useStockAnalysisSession', () => {
     session.compareRange.value = 20
     session.analysisPanelVisible.value = false
     session.klineRange.value = 60
+    session.benchmarkCode.value = '000300.SH'
+    session.compareMetric.value = 'roll_60d'
     expect(settings).toEqual({
       defaultChartMode: 'compare',
       showAnalysisPanel: true,
       compareRange: 60,
+      benchmarkCode: '000905.SH',
+      compareMetrics: ['cum', 'roll_30d', 'roll_60d'],
+      defaultCompareMetric: 'cum',
     })
     expect(klineDefault.value).toBe(120)
 
     settings.defaultChartMode = 'kline'
     settings.compareRange = 250
     settings.showAnalysisPanel = false
+    settings.benchmarkCode = '000300.SH'
+    settings.defaultCompareMetric = 'roll_30d'
     klineDefault.value = 250
     await nextTick()
 
@@ -33,6 +43,9 @@ describe('useStockAnalysisSession', () => {
     expect(session.compareRange.value).toBe(250)
     expect(session.analysisPanelVisible.value).toBe(false)
     expect(session.klineRange.value).toBe(250)
+    expect(session.benchmarkCode.value).toBe('000300.SH')
+    expect(session.compareMetric.value).toBe('roll_30d')
+    expect(session.visibleCompareMetrics.value).toEqual(['cum', 'roll_30d', 'roll_60d'])
   })
 
   it('非法持久化值回落到稳定默认值', () => {

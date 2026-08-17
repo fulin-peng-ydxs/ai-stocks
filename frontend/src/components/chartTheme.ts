@@ -21,6 +21,11 @@ export function chartCssVariable(name: string, fallback: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
 }
 
+/** KeepAlive、v-show 与布局切换期间禁止在 0×0 容器创建 ECharts 实例。 */
+export function hasRenderableChartSize(element: HTMLElement): boolean {
+  return element.clientWidth > 0 && element.clientHeight > 0
+}
+
 /** 非股票 ECharts 的语义主题；只读取预设系统已经提交完成的 CSS token。fallback 与 balanced 预设同值，避免预设未就绪时回退到旧色。 */
 export function echartsTheme(isDark: boolean): EChartsTheme {
   return {

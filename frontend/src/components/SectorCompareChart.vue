@@ -1,18 +1,24 @@
 <script setup lang="ts">
 // 板块对比图：多板块同图对比。趋势类指标（累计/单日/N 日滚动涨跌幅）以折线叠加，各板块指数
 // 量级差异大（几百~几千点），统一换算成涨跌幅（%）后同图比较；截面类指标（最新资金净流入、
-// 所选行情日累计成员涨跌）改用柱状对比。累计涨跌的基期由数据加载层决定（区间首日 vs 近一年），本组件
-// 只以输入 bars 的首个有效收盘为基准。
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+// 所选行情日累计成员涨跌）改用柱状对比。趋势线统一按市场交易日对齐、停牌日前向延续，并从共同有效
+// 基期归零；固定 N 日必须具备 N+1 个收盘点，禁止用缩短区间代算。
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { SectorBar } from '@/api/sectors'
-import { chartCssVariable, useEChartsTheme } from '@/components/chartTheme'
+import AppStateBlock from '@/components/AppStateBlock.vue'
+import { chartCssVariable, hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
 import {
   COMPARE_METRIC_META,
   metricKind,
-  metricSeries,
   type CompareMetric,
 } from '@/utils/sectorCompare'
+import {
+  alignPriceComparison,
+  isPriceCompareMetric,
+  priceMetricWindow,
+  type PriceCompareSeries,
+} from '@/utils/marketCompare'
 
 // 单个板块的序列：code/name 标识 + 该板块的日线 bars（升序）
 export interface CompareSeries {
@@ -24,8 +30,8 @@ export interface CompareSeries {
 // 截面柱状数据。second 仅 breadth（累计成员下跌家数）使用。
 export interface CrossSectionDatum {
   name: string
-  value: number
-  second?: number
+  value: number | null
+  second?: number | null
 }
 
 const props = defineProps<{
@@ -39,6 +45,7 @@ const props = defineProps<{
 const el = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
 let resizeListening = false
+let resizeObserver: ResizeObserver | null = null
 const theme = useEChartsTheme()
 const wrapBg = computed(() => theme.value.background)
 
@@ -55,20 +62,32 @@ const lineColors = computed(() => [
   chartCssVariable('--shell-accent', theme.value.focus),
 ])
 
-// 交易日并集（升序）：各板块可能有缺口，横轴取全量交易日，缺数据的点置 null 让折线断开。
-const dates = computed<string[]>(() => {
-  const set = new Set<string>()
-  for (const s of props.series) for (const b of s.bars) set.add(b.trade_date)
-  if (props.benchmark) for (const b of props.benchmark.bars) set.add(b.trade_date)
-  return Array.from(set).sort()
-})
+function toPriceSeries(series: CompareSeries): PriceCompareSeries {
+  return {
+    code: series.code,
+    name: series.name,
+    bars: series.bars.map((bar) => ({ date: bar.trade_date, close: bar.close })),
+  }
+}
 
-// 把板块 bars 按指标换算后对齐到全量日期轴。换算在板块自身连续序列上进行（相邻/N 日关系不被
-// 日期轴上的 null 打断），再按日期映射到并集轴上。
-function alignedMetric(s: CompareSeries): (number | null)[] {
-  const vals = metricSeries(s.bars, props.metric)
-  const byDate = new Map(s.bars.map((b, i) => [b.trade_date, vals[i]]))
-  return dates.value.map((d) => byDate.get(d) ?? null)
+const lineComparison = computed(() => {
+  if (!isPriceCompareMetric(props.metric)) {
+    return { dates: [], valuesByCode: {}, closesByCode: {} }
+  }
+  const series = props.series.map(toPriceSeries)
+  const benchmark = props.benchmark ? toPriceSeries(props.benchmark) : null
+  return alignPriceComparison(
+    series,
+    priceMetricWindow(props.metric, props.rangeDays),
+    benchmark,
+    benchmark?.bars,
+  )
+})
+const dates = computed(() => lineComparison.value.dates)
+const hasComparableLine = computed(() => isBar.value || dates.value.length >= 2)
+
+function alignedMetric(series: CompareSeries): (number | null)[] {
+  return lineComparison.value.valuesByCode[series.code] ?? []
 }
 
 function escapeHtml(value: unknown): string {
@@ -197,13 +216,16 @@ function renderBar() {
         },
         {
           name: '下跌家数', type: 'bar' as const,
-          data: data.map((d) => -(d.second ?? 0)),
+          data: data.map((d) => d.second == null ? null : -d.second),
           barMaxWidth: 28, itemStyle: { color: downColor },
         },
       ]
     : [{
         name: meta.value.label, type: 'bar' as const,
-        data: data.map((d) => ({ value: d.value, itemStyle: { color: d.value > 0 ? upColor : downColor } })),
+          data: data.map((d) => ({
+            value: d.value,
+            itemStyle: { color: d.value == null ? t.label : d.value > 0 ? upColor : downColor },
+          })),
         barMaxWidth: 28,
       }]
   chart.setOption({
@@ -224,7 +246,7 @@ function renderBar() {
         const name = escapeHtml(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
         const content = rows.map((item: any) => {
           const value = typeof item.value === 'number' ? item.value : Number(item.value)
-          const valid = Number.isFinite(value)
+          const valid = item.value != null && Number.isFinite(value)
           const color = !valid || value === 0 ? t.text : value > 0 ? upColor : downColor
           const valueText = valid ? `${value > 0 ? '+' : ''}${value.toFixed(2)}${unit}` : '--'
           return `<div style="display:flex;justify-content:space-between;gap:18px">`
@@ -262,6 +284,11 @@ function render() {
 function resize() {
   chart?.resize()
 }
+function ensureChart() {
+  if (chart || !el.value || !hasComparableLine.value || !hasRenderableChartSize(el.value)) return
+  chart = echarts.init(el.value)
+  render()
+}
 function attachResize() {
   if (resizeListening) return
   window.addEventListener('resize', resize)
@@ -273,14 +300,19 @@ function detachResize() {
   resizeListening = false
 }
 
-onMounted(() => {
-  if (el.value) {
-    chart = echarts.init(el.value)
-    render()
-    attachResize()
+onMounted(async () => {
+  attachResize()
+  if (el.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      ensureChart()
+      resize()
+    })
+    resizeObserver.observe(el.value)
   }
+  await nextTick()
+  ensureChart()
 })
-onActivated(() => { attachResize(); resize() })
+onActivated(async () => { attachResize(); await nextTick(); ensureChart(); resize() })
 onDeactivated(detachResize)
 watch(() => props.series, render, { deep: true })
 watch(() => props.benchmark, render, { deep: true })
@@ -288,8 +320,11 @@ watch(() => props.metric, render)
 watch(() => props.rangeDays, render)
 watch(() => props.crossSection, render, { deep: true })
 watch(theme, render)
+watch(hasComparableLine, async () => { await nextTick(); ensureChart(); resize() })
 onBeforeUnmount(() => {
   detachResize()
+  resizeObserver?.disconnect()
+  resizeObserver = null
   chart?.dispose()
   chart = null
 })
@@ -303,7 +338,14 @@ onBeforeUnmount(() => {
     :data-benchmark-code="isBar ? '' : (benchmark?.code ?? '')"
     :data-benchmark-point-count="isBar ? 0 : (benchmark?.bars.length ?? 0)"
   >
-    <div ref="el" class="cmp" />
+    <AppStateBlock
+      v-if="!hasComparableLine"
+      class="cmp-empty"
+      state="empty"
+      title="无共同交易区间"
+      description="所选板块与指数没有足够的共同基期，请调整对比队列、指数或周期。"
+    />
+    <div ref="el" v-show="hasComparableLine" class="cmp" />
   </div>
 </template>
 
@@ -320,5 +362,8 @@ onBeforeUnmount(() => {
 .cmp {
   width: 100%;
   height: 440px;
+}
+.cmp-empty {
+  height: 100%;
 }
 </style>

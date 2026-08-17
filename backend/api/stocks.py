@@ -14,6 +14,7 @@ from backend.auth.context import get_current_context
 from backend.auth.deps import require_perm, require_system_perm
 from backend.groups.stock_group import StockGroupRepo
 from backend.indicators.engine import _IND_COLS
+from backend.services.market_benchmark import MarketBenchmarkService
 from backend.storage import get_client
 from backend.storage.repository import MarketRepository
 
@@ -174,6 +175,43 @@ def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
         "turnover_rate": _f(r["turnover_rate"], 2),   # 换手率 %
     } for _, r in df.iterrows()]
     return ok({"code": code, "name": name, "adjust": adjust, "bars": out})
+
+
+@router.get(
+    "/stocks/benchmarks/{index_code}/bars",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_perm("stocks:view"))],
+)
+def stock_benchmark_bars(
+    index_code: str,
+    lookback: Annotated[int, Query(ge=2, le=6000)] = 61,
+    end: str | None = None,
+) -> ApiResponse:
+    """个股相对强弱使用的市场交易日基准；与板块入口共享查询但保持 stocks 权限。"""
+    c = get_client()
+    end_date = date.fromisoformat(end) if end else pd.Timestamp(
+        c.query_df("SELECT max(trade_date) AS d FROM index_bar").iloc[0]["d"]
+    ).date()
+    service = MarketBenchmarkService(c)
+    try:
+        rows = service.get_lookback(index_code, end_date, int(lookback))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    bars = [
+        {
+            "date": row["trade_date"],
+            **{key: value for key, value in row.items() if key != "trade_date"},
+            "pre_close": None,
+            "turnover_rate": None,
+        }
+        for row in rows
+    ]
+    return ok({
+        "index_code": index_code,
+        "name": service.name(index_code),
+        "end": str(end_date),
+        "bars": bars,
+    })
 
 
 @router.get("/stocks/{code}/signal", response_model=ApiResponse,

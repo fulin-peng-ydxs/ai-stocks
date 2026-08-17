@@ -20,7 +20,7 @@ echartsMock.init.mockReturnValue({
 vi.mock('echarts', () => ({ init: echartsMock.init }))
 
 const bars = (closes: number[]) => closes.map((close, i) => ({
-  trade_date: `2026-08-0${6 + i}`,
+  trade_date: `2026-08-${String(6 + i).padStart(2, '0')}`,
   open: close, high: close, low: close, close,
   volume: 1, amount: 1,
 }))
@@ -30,20 +30,22 @@ describe('SectorCompareChart', () => {
     vi.clearAllMocks()
     document.documentElement.style.setProperty('--market-up-color', '#f04438')
     document.documentElement.style.setProperty('--market-down-color', '#0ea968')
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 440 })
   })
 
   it('累计涨跌折线：悬浮提示带指标名并按正负值使用行情语义色，含基准超额', async () => {
     const wrapper = mount(SectorCompareChart, {
       props: {
         metric: 'cum',
-        rangeDays: 60,
+        rangeDays: 5,
         series: [{
           code: '881175', name: '医疗服务',
-          bars: bars([100, 105]),
+          bars: bars([100, 100, 100, 100, 100, 105]),
         }],
         benchmark: {
           code: '000905.SH', name: '中证 500',
-          bars: bars([100, 102]),
+          bars: bars([100, 100, 100, 100, 100, 102]),
         },
       },
     })
@@ -54,12 +56,12 @@ describe('SectorCompareChart', () => {
       dataZoom: Array<{ start: number; end: number }>
     }
     const content = option.tooltip.formatter([
-      { axisValueLabel: '2026-08-07', seriesName: '上涨板块', value: 5, dataIndex: 1, marker: '' },
-      { axisValueLabel: '2026-08-07', seriesName: '下跌板块', value: -2, dataIndex: 1, marker: '' },
-      { axisValueLabel: '2026-08-07', seriesName: '基准 · 中证 500', value: 2, dataIndex: 1, marker: '' },
+      { axisValueLabel: '2026-08-11', seriesName: '上涨板块', value: 5, dataIndex: 5, marker: '' },
+      { axisValueLabel: '2026-08-11', seriesName: '下跌板块', value: -2, dataIndex: 5, marker: '' },
+      { axisValueLabel: '2026-08-11', seriesName: '基准 · 中证 500', value: 2, dataIndex: 5, marker: '' },
     ])
 
-    expect(content).toContain('2026-08-07 · 累计涨跌')
+    expect(content).toContain('2026-08-11 · 累计涨跌')
     expect(content).toContain('color:#f04438">+5.00%')
     expect(content).toContain('color:#0ea968">-2.00%')
     expect(content).toContain('超额 +3.00%')
@@ -69,9 +71,9 @@ describe('SectorCompareChart', () => {
       expect.objectContaining({ start: 0, end: 100 }),
       expect.objectContaining({ start: 0, end: 100 }),
     ])
-    expect(wrapper.attributes('data-point-count')).toBe('2')
+    expect(wrapper.attributes('data-point-count')).toBe('6')
     expect(wrapper.attributes('data-benchmark-code')).toBe('000905.SH')
-    expect(wrapper.attributes('data-benchmark-point-count')).toBe('2')
+    expect(wrapper.attributes('data-benchmark-point-count')).toBe('6')
     wrapper.unmount()
   })
 

@@ -25,7 +25,7 @@ import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
-import PageToggleRow from '@/components/PageToggleRow.vue'
+import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useTradeDates } from '@/composables/useTradeDates'
@@ -47,6 +47,10 @@ import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
+import {
+  PRICE_COMPARE_METRIC_ORDER,
+  type PriceCompareMetric,
+} from '@/utils/marketCompare'
 
 // 列表页布局（原型 A）：操作区=头部（标题+控件），主内容区=榜单表格（撑满·表体内滚）。
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -89,6 +93,9 @@ const boardDefaults = {
   defaultChartMode: 'compare' as 'compare' | 'kline',
   showAnalysisPanel: true,
   compareRange: 60,
+  benchmarkCode: '000905.SH',
+  compareMetrics: [...PRICE_COMPARE_METRIC_ORDER] as PriceCompareMetric[],
+  defaultCompareMetric: 'cum' as PriceCompareMetric,
   charts: createDefaultStockChartPreferences(),
 }
 const { settings, isDirty, reset, hydrated } = usePageSettings('board', boardDefaults)
@@ -99,7 +106,15 @@ const chartSettings = computed({
 })
 const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
 const { validDefault: klineDefaultRange } = useKlinePrefs()
-const { analysisPanelVisible, chartMode, compareRange, klineRange } = useStockAnalysisSession(
+const {
+  analysisPanelVisible,
+  chartMode,
+  compareRange,
+  compareMetric,
+  benchmarkCode,
+  visibleCompareMetrics,
+  klineRange,
+} = useStockAnalysisSession(
   settings,
   klineDefaultRange,
 )
@@ -641,9 +656,12 @@ onMounted(async () => {
         <StockAnalysisPanel
           v-model:mode="chartMode"
           v-model:compare-range="compareRange"
+          v-model:compare-metric="compareMetric"
+          v-model:benchmark-code="benchmarkCode"
           v-model:kline-range="klineRange"
           :active="activeAnalysisItem"
           :items="analysisItems"
+          :compare-metrics="visibleCompareMetrics"
           :end-date="runDate"
           :slot2="chartPreferences.preferences.value.slot2"
           :slot3="chartPreferences.preferences.value.slot3"
@@ -695,20 +713,14 @@ onMounted(async () => {
               { label: '隐藏', value: 'hidden' },
             ]" />
           </div>
-          <div class="setting-item">
-            <div class="setting-label">默认图表模式</div>
-            <PageSegmented v-model="settings.defaultChartMode" aria-label="默认图表模式" :options="[
-              { label: '走势对比', value: 'compare' },
-              { label: 'K线', value: 'kline' },
-            ]" />
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">默认对比周期</div>
-            <el-select v-model="settings.compareRange" style="width: 160px">
-              <el-option v-for="days in [5, 10, 20, 60, 120, 250]" :key="days" :value="days" :label="`${days}日`" />
-            </el-select>
-          </div>
-          <PageToggleRow v-model="settings.showAnalysisPanel" label="显示走势分析区" />
+          <StockAnalysisDefaultFields
+            v-model:default-chart-mode="settings.defaultChartMode"
+            v-model:compare-range="settings.compareRange"
+            v-model:benchmark-code="settings.benchmarkCode"
+            v-model:compare-metrics="settings.compareMetrics"
+            v-model:default-compare-metric="settings.defaultCompareMetric"
+            v-model:show-analysis-panel="settings.showAnalysisPanel"
+          />
         </PageSettingSection>
         <KlineSettingSection />
       </template>

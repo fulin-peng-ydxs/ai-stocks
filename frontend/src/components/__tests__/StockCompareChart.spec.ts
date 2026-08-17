@@ -43,12 +43,16 @@ describe('StockCompareChart', () => {
     vi.clearAllMocks()
     document.documentElement.style.setProperty('--market-up-color', '#f04438')
     document.documentElement.style.setProperty('--market-down-color', '#0ea968')
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 440 })
   })
 
-  it('按各股票首个有效收盘归一为100，并强化当前观察序列', async () => {
+  it('按共同基期归零，并强化当前观察序列', async () => {
     const wrapper = mount(StockCompareChart, {
       props: {
         activeCode: '000001.SZ',
+        metric: 'cum',
+        rangeDays: 1,
         series: [
           { code: '000001.SZ', name: '平安银行', bars: bars('000001.SZ', [10, 11]) },
           { code: '600000.SH', name: '浦发银行', bars: bars('600000.SH', [20, 19]) },
@@ -69,16 +73,50 @@ describe('StockCompareChart', () => {
       series: Array<{ data: number[]; lineStyle: { width: number } }>
       tooltip: { formatter: (params: unknown[]) => string }
     }
-    expect(option.series[0]?.data).toEqual([100, 110])
-    expect(option.series[1]?.data).toEqual([100, 95])
+    expect(option.series[0]?.data).toEqual([0, 10])
+    expect(option.series[1]?.data).toEqual([0, -5])
     expect(option.series[0]!.lineStyle.width).toBeGreaterThan(option.series[1]!.lineStyle.width)
     const content = option.tooltip.formatter([
-      { axisValueLabel: '2026-08-07', seriesIndex: 0, seriesName: '平安银行 · 000001.SZ', value: 110, marker: '' },
+      { axisValueLabel: '2026-08-07', dataIndex: 1, seriesIndex: 0, seriesName: '平安银行 · 000001.SZ', value: 10, marker: '' },
     ])
-    expect(content).toContain('2026-08-07 · 起点 100')
+    expect(content).toContain('2026-08-07 · 共同基期 0%')
     expect(content).toContain('前复权 11.00')
-    expect(content).toContain('color:#f04438">110.00')
+    expect(content).toContain('color:#f04438">+10.00%')
     expect(wrapper.attributes('data-point-count')).toBe('2')
+    wrapper.unmount()
+  })
+
+  it('使用独立市场日历补齐停牌日，并展示指数及超额收益', async () => {
+    const dates = ['2026-08-06', '2026-08-07', '2026-08-08']
+    const wrapper = mount(StockCompareChart, {
+      props: {
+        activeCode: '000001.SZ',
+        metric: 'cum',
+        rangeDays: 2,
+        series: [{
+          code: '000001.SZ',
+          name: '平安银行',
+          bars: datedBars('000001.SZ', [dates[0]!, dates[2]!], [10, 12]),
+        }],
+        benchmark: {
+          code: '000905.SH',
+          name: '中证500',
+          bars: datedBars('000905.SH', dates, [100, 101, 110]),
+        },
+        calendar: datedBars('000905.SH', dates, [100, 101, 110]),
+      },
+      global: { stubs: { AppStateBlock: true } },
+    })
+    await nextTick()
+
+    const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as any
+    expect(option.series[0].data).toEqual([0, 0, 20])
+    expect(option.series[1].data).toEqual([0, 1, 10])
+    expect(option.series[1].lineStyle.type).toBe('dashed')
+    const content = option.tooltip.formatter([
+      { axisValueLabel: dates[2], dataIndex: 2, seriesIndex: 0, seriesName: '平安银行 · 000001.SZ', value: 20, marker: '' },
+    ])
+    expect(content).toContain('超额 +10.00%')
     wrapper.unmount()
   })
 
@@ -86,6 +124,8 @@ describe('StockCompareChart', () => {
     const wrapper = mount(StockCompareChart, {
       props: {
         activeCode: '000001.SZ',
+        metric: 'cum',
+        rangeDays: 60,
         series: [
           { code: '000001.SZ', name: '平安银行', bars: datedBars('000001.SZ', ['2026-01-05'], [10]) },
           { code: '600000.SH', name: '浦发银行', bars: datedBars('600000.SH', ['2026-08-05'], [20]) },

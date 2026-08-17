@@ -13,6 +13,7 @@ import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
 import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
+import StockAnalysisDefaultFields from '@/components/StockAnalysisDefaultFields.vue'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import { listStocks, type StockBasic, type StockListParams } from '@/api/stocks'
 import {
@@ -51,6 +52,10 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageEntry, getPageLayout, type SlotConfigMeta } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
+import {
+  PRICE_COMPARE_METRIC_ORDER,
+  type PriceCompareMetric,
+} from '@/utils/marketCompare'
 
 const router = useRouter()
 const route = useRoute()
@@ -66,6 +71,9 @@ const stocksDefaults = {
   defaultChartMode: 'compare' as 'compare' | 'kline',
   showAnalysisPanel: true,
   compareRange: 60,
+  benchmarkCode: '000905.SH',
+  compareMetrics: [...PRICE_COMPARE_METRIC_ORDER] as PriceCompareMetric[],
+  defaultCompareMetric: 'cum' as PriceCompareMetric,
   charts: createDefaultStockChartPreferences(),
 }
 const { settings, isDirty, reset, hydrated, whenHydrated } = usePageSettings('stocks', stocksDefaults)
@@ -75,7 +83,15 @@ const chartSettings = computed({
 })
 const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
 const { validDefault: klineDefaultRange } = useKlinePrefs()
-const { analysisPanelVisible, chartMode, compareRange, klineRange } = useStockAnalysisSession(
+const {
+  analysisPanelVisible,
+  chartMode,
+  compareRange,
+  compareMetric,
+  benchmarkCode,
+  visibleCompareMetrics,
+  klineRange,
+} = useStockAnalysisSession(
   settings,
   klineDefaultRange,
 )
@@ -980,9 +996,12 @@ onBeforeUnmount(() => {
         <StockAnalysisPanel
           v-model:mode="chartMode"
           v-model:compare-range="compareRange"
+          v-model:compare-metric="compareMetric"
+          v-model:benchmark-code="benchmarkCode"
           v-model:kline-range="klineRange"
           :active="activeAnalysisItem"
           :items="analysisItems"
+          :compare-metrics="visibleCompareMetrics"
           :end-date="analysisEndDate"
           :slot2="chartPreferences.preferences.value.slot2"
           :slot3="chartPreferences.preferences.value.slot3"
@@ -1121,24 +1140,14 @@ onBeforeUnmount(() => {
             />
           </div>
           <PageToggleRow v-model="settings.excludeSt" label="默认排除 ST" />
-          <div class="setting-item">
-            <div class="setting-label">默认图表模式</div>
-            <PageSegmented
-              v-model="settings.defaultChartMode"
-              aria-label="默认图表模式"
-              :options="[
-                { label: '走势对比', value: 'compare' },
-                { label: 'K线', value: 'kline' },
-              ]"
-            />
-          </div>
-          <div class="setting-item">
-            <div class="setting-label">默认对比周期</div>
-            <el-select v-model="settings.compareRange" style="width: 160px">
-              <el-option v-for="days in [5, 10, 20, 60, 120, 250]" :key="days" :value="days" :label="`${days}日`" />
-            </el-select>
-          </div>
-          <PageToggleRow v-model="settings.showAnalysisPanel" label="显示走势分析区" />
+          <StockAnalysisDefaultFields
+            v-model:default-chart-mode="settings.defaultChartMode"
+            v-model:compare-range="settings.compareRange"
+            v-model:benchmark-code="settings.benchmarkCode"
+            v-model:compare-metrics="settings.compareMetrics"
+            v-model:default-compare-metric="settings.defaultCompareMetric"
+            v-model:show-analysis-panel="settings.showAnalysisPanel"
+          />
         </PageSettingSection>
         <KlineSettingSection />
       </template>

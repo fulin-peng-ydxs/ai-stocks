@@ -70,16 +70,16 @@ test.describe('板块行情工作台', () => {
       await page.getByTestId('sectors-compare-range').click()
       await page.getByRole('option', { name: '120日', exact: true }).click()
       const pointCount = async () => Number(await compareChart.getAttribute('data-point-count'))
-      await expect.poll(pointCount).toBeLessThanOrEqual(120)
+      await expect.poll(pointCount).toBeLessThanOrEqual(121)
       const defaultPointCount = await pointCount()
       expect(defaultPointCount).toBeGreaterThan(0)
-      expect(defaultPointCount).toBeLessThanOrEqual(120)
+      expect(defaultPointCount).toBeLessThanOrEqual(121)
       await page.getByTestId('sectors-compare-range').click()
       await page.getByRole('option', { name: '全部' }).click()
       await expect.poll(pointCount).toBeGreaterThan(defaultPointCount)
       await page.getByTestId('sectors-compare-range').click()
       await page.getByRole('option', { name: '60日', exact: true }).click()
-      await expect.poll(pointCount).toBeLessThanOrEqual(60)
+      await expect.poll(pointCount).toBeLessThanOrEqual(61)
       expect(await pointCount()).toBeGreaterThan(0)
       await page.getByTestId('sectors-compare-range').click()
       await page.getByRole('option', { name: '120日', exact: true }).click()
@@ -197,6 +197,10 @@ test.describe('板块行情工作台', () => {
       await page.locator('.menu').getByRole('menuitem', { name: '每日榜单', exact: true }).click()
       await expect(page).toHaveURL(/\/board$/)
       await page.locator('.menu').getByRole('menuitem', { name: '板块行情', exact: true }).click()
+      await expect(page).toHaveURL(/\/sectors(?:\?|$)/)
+      await page.getByRole('tab', {
+        name: new RegExp(`板块详情 · ${boards[3]!.board_code}`),
+      }).click()
       await expect(page).toHaveURL(new RegExp(`/sectors/${boards[3]!.board_code}`))
       await expect(page.getByTestId('sector-detail-page')).toBeVisible()
 
@@ -272,6 +276,16 @@ test.describe('板块行情工作台', () => {
     await expect(page.getByRole('columnheader', { name: '今日涨幅' })).toBeVisible()
     await expect(page.getByRole('columnheader', { name: '5日涨幅' })).toBeVisible()
     await expect(page.getByRole('columnheader', { name: '10日涨幅' })).toBeVisible()
+    const nonTodayReturn = page.locator('[data-testid^="sectors-pct-5d-"]').first()
+    await expect(nonTodayReturn).toBeVisible()
+    await expect.poll(() => nonTodayReturn.evaluate((node) => (
+      Number(window.getComputedStyle(node).fontWeight)
+    ))).toBeGreaterThanOrEqual(700)
+    const inflowValue = page.locator('[data-testid^="sectors-inflow-"]').first()
+    await expect(inflowValue).toBeVisible()
+    await expect.poll(() => inflowValue.evaluate((node) => (
+      Number(window.getComputedStyle(node).fontWeight)
+    ))).toBeGreaterThanOrEqual(700)
     const inflowHeader = page.getByRole('columnheader', { name: /即时净流入/ })
     await expect(inflowHeader.getByText('即时净流入', { exact: true })).toBeVisible()
     await expect(inflowHeader.locator('.app-table-column-header__meta')).toHaveText('07-17')
@@ -300,6 +314,24 @@ test.describe('板块行情工作台', () => {
     }))
     expect(nameMetrics.clientWidth).toBeGreaterThan(0)
     expect(nameMetrics.scrollWidth).toBeLessThanOrEqual(nameMetrics.clientWidth)
+
+    const metricStrip = page.getByTestId('sectors-metric-strip')
+    await expect(metricStrip).toBeVisible()
+    const metricLayout = await metricStrip.evaluate((node) => {
+      const cells = Array.from(node.children) as HTMLElement[]
+      return {
+        stacks: cells.map((cell) => {
+          const label = cell.querySelector<HTMLElement>('.market-metric-label')
+          const value = cell.querySelector<HTMLElement>('strong')
+          if (!label || !value) return false
+          const labelBox = label.getBoundingClientRect()
+          const valueBox = value.getBoundingClientRect()
+          return valueBox.top >= labelBox.bottom && Math.abs(valueBox.left - labelBox.left) <= 1
+        }),
+      }
+    })
+    expect(metricLayout.stacks.length).toBeGreaterThan(0)
+    expect(metricLayout.stacks.every(Boolean)).toBe(true)
     const [inflowLabelBox, inflowMetaBox] = await Promise.all([
       inflowHeader.getByText('即时净流入', { exact: true }).boundingBox(),
       inflowHeader.locator('.app-table-column-header__meta').boundingBox(),

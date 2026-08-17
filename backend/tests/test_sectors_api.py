@@ -11,6 +11,7 @@ from datetime import date
 import pytest
 
 from backend.services.board_query import BoardQueryService
+from backend.services.market_benchmark import MarketBenchmarkService
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
 
@@ -255,7 +256,7 @@ def test_get_bar_indicators_reuses_macd_definition_and_keeps_nullable_warmup(c):
 
 def test_get_benchmark_bars_range(c):
     """市场指数基准与板块走势使用同一日期和 OHLC 字段契约。"""
-    bars = _svc(c).get_benchmark_bars(
+    bars = MarketBenchmarkService(c).get_range(
         "000905.SH", date(2026, 8, 5), date(2026, 8, 7),
     )
     assert [row["trade_date"] for row in bars] == ["2026-08-05", "2026-08-06", "2026-08-07"]

@@ -335,19 +335,34 @@ test.describe('个股详情三图工作区', () => {
     runInStandardViewport(testInfo)
     const consoleIssues = collectConsoleIssues(page)
     const { samples } = await loadStocksOnlyContext(page, request)
-    const preferences = await installPreferenceEndpoint(page, [{
-      scope: 'page',
-      pageKey: 'stocks',
-      prefKey: 'settings',
-      value: {
-        defaultView: 'list',
-        excludeSt: true,
-        defaultChartMode: 'kline',
-        showAnalysisPanel: true,
-        compareRange: 120,
-        charts: stockDetailPreference().charts,
+    const preferences = await installPreferenceEndpoint(page, [
+      {
+        scope: 'page',
+        pageKey: 'stocks',
+        prefKey: 'settings',
+        value: {
+          defaultView: 'list',
+          excludeSt: true,
+          defaultChartMode: 'kline',
+          showAnalysisPanel: true,
+          compareRange: 120,
+          benchmarkCode: '000300.SH',
+          compareMetrics: ['cum', 'roll_30d', 'roll_60d'],
+          defaultCompareMetric: 'roll_30d',
+          charts: stockDetailPreference().charts,
+        },
       },
-    }])
+      {
+        scope: 'page',
+        pageKey: 'sectors',
+        prefKey: 'settings',
+        value: {
+          benchmarkCode: '000905.SH',
+          compareMetrics: ['cum', 'roll_5d'],
+          defaultCompareMetric: 'roll_5d',
+        },
+      },
+    ])
     await installFixedStockListEndpoint(page, samples)
 
     await page.goto('/stocks')
@@ -357,6 +372,13 @@ test.describe('个股详情三图工作区', () => {
     // 主区切换只改变本次会话，不反写抽屉默认。
     await page.getByTestId('stock-analysis-mode-compare').click()
     await expect(analysisPanel.getByText('对比队列')).toBeVisible()
+    await expect(page.getByTestId('stock-analysis-metric-roll_30d'))
+      .toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('stock-analysis-metric-roll_60d')).toBeVisible()
+    await expect(page.getByTestId('stock-analysis-metric-roll_5d')).toHaveCount(0)
+    await expect(page.getByTestId('stock-analysis-benchmark')).toContainText('沪深 300')
+    await expect(page.getByTestId('stock-compare-range')).toHaveCount(0)
+    await expect(page.getByTestId('stock-analysis-kline-range')).toHaveCount(0)
     await page.waitForTimeout(400)
     const settingsKey = preferenceKey({ scope: 'page', pageKey: 'stocks', prefKey: 'settings' })
     expect((preferences.store.get(settingsKey)?.value as { defaultChartMode?: string }).defaultChartMode).toBe('kline')

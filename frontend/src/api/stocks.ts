@@ -59,6 +59,13 @@ export interface Bars {
   bars: Bar[]
 }
 
+export interface StockBenchmarkBars {
+  index_code: string
+  name: string
+  end: string
+  bars: Bar[]
+}
+
 export type NumericIndicatorField =
   | 'ma5' | 'ma10' | 'ma20' | 'ma60' | 'ma250'
   | 'macd_diff' | 'macd_dea' | 'macd_hist'
@@ -101,6 +108,18 @@ export function getBars(
   signal?: AbortSignal,
 ): Promise<Bars> {
   return http.get(`/stocks/${code}/bars`, { params, signal })
+}
+
+export function getStockBenchmarkBars(
+  indexCode: string,
+  params?: { lookback?: number; end?: string },
+  signal?: AbortSignal,
+): Promise<StockBenchmarkBars> {
+  return http.get(`/stocks/benchmarks/${encodeURIComponent(indexCode)}/bars`, {
+    params,
+    signal,
+    skipGlobalError: true,
+  } as AppRequestConfig)
 }
 
 export function getIndicators(

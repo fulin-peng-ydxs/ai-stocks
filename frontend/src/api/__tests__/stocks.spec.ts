@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import http from '@/api/client'
-import { getIndicators } from '@/api/stocks'
+import { getIndicators, getStockBenchmarkBars } from '@/api/stocks'
 
 vi.mock('@/api/client', () => ({
   default: {
@@ -43,6 +43,23 @@ describe('getIndicators', () => {
     expect(http.get).toHaveBeenCalledWith('/stocks/600000.SH/indicators', {
       params: undefined,
       signal: undefined,
+      skipGlobalError: true,
+    })
+  })
+})
+
+describe('getStockBenchmarkBars', () => {
+  beforeEach(() => {
+    vi.mocked(http.get).mockReset()
+  })
+
+  it('通过股票权限域请求共享市场基准，并透传统一交易日窗口', () => {
+    const controller = new AbortController()
+    getStockBenchmarkBars('000905.SH', { lookback: 61, end: '2026-08-07' }, controller.signal)
+
+    expect(http.get).toHaveBeenCalledWith('/stocks/benchmarks/000905.SH/bars', {
+      params: { lookback: 61, end: '2026-08-07' },
+      signal: controller.signal,
       skipGlobalError: true,
     })
   })

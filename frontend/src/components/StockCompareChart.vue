@@ -3,7 +3,13 @@ import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMoun
 import * as echarts from 'echarts'
 import type { Bar } from '@/api/stocks'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import { chartCssVariable, useEChartsTheme } from '@/components/chartTheme'
+import { chartCssVariable, hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
+import {
+  alignPriceComparison,
+  priceMetricWindow,
+  type PriceCompareMetric,
+  type PriceCompareSeries,
+} from '@/utils/marketCompare'
 
 export interface StockCompareSeries {
   code: string
@@ -13,8 +19,12 @@ export interface StockCompareSeries {
 
 const props = defineProps<{
   series: StockCompareSeries[]
+  benchmark?: StockCompareSeries | null
+  calendar?: Bar[]
   activeCode?: string
   fill?: boolean
+  metric: PriceCompareMetric
+  rangeDays: number
 }>()
 
 const el = ref<HTMLDivElement | null>(null)
@@ -22,6 +32,7 @@ const theme = useEChartsTheme()
 const wrapBg = computed(() => theme.value.background)
 let chart: echarts.ECharts | null = null
 let resizeListening = false
+let resizeObserver: ResizeObserver | null = null
 
 const colors = computed(() => [
   theme.value.focus,
@@ -32,17 +43,26 @@ const colors = computed(() => [
   chartCssVariable('--shell-accent', theme.value.focus),
 ])
 
-const dates = computed(() => {
-  if (!props.series.length) return []
-  const validDateSets = props.series.map((item) => new Set(item.bars
-    .filter((bar) => Number.isFinite(bar.close) && bar.close > 0)
-    .map((bar) => bar.date)))
-  return Array.from(validDateSets[0] ?? [])
-    .filter((date) => validDateSets.every((values) => values.has(date)))
-    .sort()
+function toPriceSeries(item: StockCompareSeries): PriceCompareSeries {
+  return {
+    code: item.code,
+    name: item.name,
+    bars: item.bars.map((bar) => ({ date: bar.date, close: bar.close })),
+  }
+}
+
+const comparison = computed(() => {
+  const series = props.series.map(toPriceSeries)
+  const benchmark = props.benchmark ? toPriceSeries(props.benchmark) : null
+  return alignPriceComparison(
+    series,
+    priceMetricWindow(props.metric, props.rangeDays),
+    benchmark,
+    props.calendar?.map((bar) => ({ date: bar.date, close: bar.close })) ?? benchmark?.bars,
+  )
 })
-const comparisonStartDate = computed(() => dates.value[0] ?? '')
-const hasCommonInterval = computed(() => dates.value.length > 0)
+const dates = computed(() => comparison.value.dates)
+const hasCommonInterval = computed(() => dates.value.length >= 2)
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -54,22 +74,11 @@ function escapeHtml(value: unknown): string {
 }
 
 function relativeSeries(item: StockCompareSeries): (number | null)[] {
-  const base = item.bars.find((bar) => (
-    bar.date === comparisonStartDate.value && Number.isFinite(bar.close) && bar.close > 0
-  ))?.close
-  if (!base) return dates.value.map(() => null)
-  const byDate = new Map(item.bars.map((bar) => [
-    bar.date,
-    Number.isFinite(bar.close) && bar.close > 0
-      ? +((bar.close / base) * 100).toFixed(2)
-      : null,
-  ]))
-  return dates.value.map((date) => byDate.get(date) ?? null)
+  return comparison.value.valuesByCode[item.code] ?? []
 }
 
-function priceAt(item: StockCompareSeries, date: string): number | null {
-  const bar = item.bars.find((candidate) => candidate.date === date)
-  return bar && Number.isFinite(bar.close) ? bar.close : null
+function priceAt(code: string, index: number): number | null {
+  return comparison.value.closesByCode[code]?.[index] ?? null
 }
 
 function render(): void {
@@ -78,7 +87,7 @@ function render(): void {
   const palette = colors.value
   const upColor = chartCssVariable('--market-up-color', '#f66055')
   const downColor = chartCssVariable('--market-down-color', '#1ec96e')
-  const series = props.series.map((item, index) => {
+  const stockSeries = props.series.map((item, index) => {
     const active = item.code === props.activeCode
     return {
       name: `${item.name || item.code} · ${item.code}`,
@@ -93,6 +102,23 @@ function render(): void {
       z: active ? 3 : 2,
     }
   })
+  const benchmarkName = props.benchmark ? `基准 · ${props.benchmark.name}` : ''
+  const benchmarkData = props.benchmark ? relativeSeries(props.benchmark) : null
+  const series = [
+    ...stockSeries,
+    ...(props.benchmark ? [{
+      name: benchmarkName,
+      type: 'line' as const,
+      data: benchmarkData,
+      showSymbol: false,
+      connectNulls: false,
+      smooth: false,
+      lineStyle: { width: 1.5, type: 'dashed' as const, color: currentTheme.label },
+      itemStyle: { color: currentTheme.label },
+      emphasis: { focus: 'series' as const },
+      z: 1,
+    }] : []),
+  ]
   chart.setOption({
     animation: false,
     backgroundColor: currentTheme.background,
@@ -117,19 +143,26 @@ function render(): void {
         const content = rows.map((row: any) => {
           const item = props.series[row.seriesIndex]
           const relative = Number(row.value)
-          const relativeText = Number.isFinite(relative) ? relative.toFixed(2) : '--'
-          const delta = Number.isFinite(relative) ? relative - 100 : null
-          const color = delta == null || delta === 0 ? currentTheme.text : delta > 0 ? upColor : downColor
-          const price = item ? priceAt(item, date) : null
+          const valid = row.value != null && Number.isFinite(relative)
+          const relativeText = valid ? `${relative > 0 ? '+' : ''}${relative.toFixed(2)}%` : '--'
+          const color = !valid || relative === 0 ? currentTheme.text : relative > 0 ? upColor : downColor
+          const isBenchmark = row.seriesName === benchmarkName
+          const benchmarkValue = benchmarkData?.[Number(row.dataIndex)]
+          const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
+            ? +(relative - benchmarkValue).toFixed(2)
+            : null
+          const price = item ? priceAt(item.code, Number(row.dataIndex)) : null
           const priceText = price == null ? '--' : price.toFixed(2)
           return `<div style="display:flex;justify-content:space-between;gap:18px">`
             + `<span>${row.marker ?? ''}${escapeHtml(row.seriesName)}</span>`
             + `<span style="text-align:right"><strong style="color:${color}">${relativeText}</strong>`
-            + `<small style="display:block;color:${currentTheme.label}">前复权 ${priceText}</small></span>`
+            + (item ? `<small style="display:block;color:${currentTheme.label}">前复权 ${priceText}</small>` : '')
+            + (excess == null ? '' : `<small style="display:block;color:${currentTheme.label}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
+            + '</span>'
             + '</div>'
         }).join('')
         return `<div style="min-width:180px;line-height:1.7">`
-          + `<div style="color:${currentTheme.label};margin-bottom:2px">${escapeHtml(date)} · 起点 100</div>`
+          + `<div style="color:${currentTheme.label};margin-bottom:2px">${escapeHtml(date)} · 共同基期 0%</div>`
           + content
           + '</div>'
       },
@@ -144,7 +177,7 @@ function render(): void {
     yAxis: {
       scale: true,
       axisLine: { show: false },
-      axisLabel: { color: currentTheme.label, fontSize: 10 },
+      axisLabel: { color: currentTheme.label, fontSize: 10, formatter: '{value}%' },
       splitLine: { lineStyle: { color: currentTheme.split } },
     },
     dataZoom: [
@@ -169,7 +202,7 @@ function resize(): void {
 }
 
 function ensureChart(): void {
-  if (chart || !el.value || !hasCommonInterval.value) return
+  if (chart || !el.value || !hasCommonInterval.value || !hasRenderableChartSize(el.value)) return
   chart = echarts.init(el.value)
   render()
 }
@@ -187,13 +220,24 @@ function detachResize(): void {
 }
 
 onMounted(() => {
+  if (el.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      ensureChart()
+      resize()
+    })
+    resizeObserver.observe(el.value)
+  }
   ensureChart()
   attachResize()
 })
-onActivated(() => { attachResize(); resize() })
+onActivated(async () => { attachResize(); await nextTick(); ensureChart(); resize() })
 onDeactivated(detachResize)
 watch(() => props.series, render, { deep: true })
+watch(() => props.benchmark, render, { deep: true })
+watch(() => props.calendar, render, { deep: true })
 watch(() => props.activeCode, render)
+watch(() => props.metric, render)
+watch(() => props.rangeDays, render)
 watch(theme, render)
 watch(hasCommonInterval, async () => {
   await nextTick()
@@ -202,6 +246,8 @@ watch(hasCommonInterval, async () => {
 })
 onBeforeUnmount(() => {
   detachResize()
+  resizeObserver?.disconnect()
+  resizeObserver = null
   chart?.dispose()
   chart = null
 })
@@ -212,13 +258,14 @@ onBeforeUnmount(() => {
     class="stock-compare-wrap"
     :class="{ 'stock-compare-wrap--fill': fill }"
     :data-point-count="dates.length"
+    :data-benchmark-code="benchmark?.code ?? ''"
   >
     <AppStateBlock
-      v-if="series.length > 1 && !hasCommonInterval"
+      v-if="series.length && !hasCommonInterval"
       class="stock-compare-empty"
       state="empty"
       title="无共同交易区间"
-      description="所选股票没有重叠的有效交易日，无法按同一起点比较。"
+      description="所选股票与指数没有共同有效基期，请调整对比队列、指数或周期。"
     />
     <div ref="el" v-show="hasCommonInterval" class="stock-compare-chart" />
   </div>

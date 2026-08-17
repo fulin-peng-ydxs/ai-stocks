@@ -1,6 +1,11 @@
 import { computed, type Ref } from 'vue'
 import { ALL_DAYS } from '@/composables/useKlinePrefs'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import {
+  PRICE_COMPARE_METRIC_ORDER,
+  isPriceCompareMetric,
+  type PriceCompareMetric,
+} from '@/utils/marketCompare'
 
 export type StockAnalysisMode = 'compare' | 'kline'
 
@@ -10,11 +15,19 @@ export interface StockAnalysisDefaults {
   defaultChartMode: unknown
   showAnalysisPanel: unknown
   compareRange: unknown
+  benchmarkCode?: unknown
+  compareMetrics?: unknown
+  defaultCompareMetric?: unknown
 }
 
 function normalizeCompareRange(value: unknown): number {
   const candidate = Number(value)
   return (STOCK_COMPARE_RANGES as readonly number[]).includes(candidate) ? candidate : 60
+}
+
+function normalizeBenchmarkCode(value: unknown): string {
+  const candidate = String(value ?? '')
+  return ['', '000905.SH', '000300.SH'].includes(candidate) ? candidate : '000905.SH'
 }
 
 /**
@@ -30,11 +43,28 @@ export function useStockAnalysisSession(
   ))
   const configuredCompareRange = computed(() => normalizeCompareRange(settings.compareRange))
   const configuredPanelVisible = computed(() => settings.showAnalysisPanel !== false)
+  const visibleCompareMetrics = computed<PriceCompareMetric[]>(() => {
+    const configured = Array.isArray(settings.compareMetrics) ? settings.compareMetrics : []
+    const result = PRICE_COMPARE_METRIC_ORDER.filter((metric) => configured.includes(metric))
+    return result.length ? result : [...PRICE_COMPARE_METRIC_ORDER]
+  })
+  const configuredCompareMetric = computed<PriceCompareMetric>(() => {
+    const candidate = isPriceCompareMetric(settings.defaultCompareMetric)
+      ? settings.defaultCompareMetric
+      : 'cum'
+    return visibleCompareMetrics.value.includes(candidate)
+      ? candidate
+      : visibleCompareMetrics.value[0] ?? 'cum'
+  })
+  const configuredBenchmarkCode = computed(() => normalizeBenchmarkCode(settings.benchmarkCode))
 
   return {
     analysisPanelVisible: useDefaultedSessionValue(configuredPanelVisible),
     chartMode: useDefaultedSessionValue(configuredMode),
     compareRange: useDefaultedSessionValue(configuredCompareRange),
+    compareMetric: useDefaultedSessionValue(configuredCompareMetric),
+    benchmarkCode: useDefaultedSessionValue(configuredBenchmarkCode),
+    visibleCompareMetrics,
     klineRange: useDefaultedSessionValue(klineDefaultRange),
   }
 }

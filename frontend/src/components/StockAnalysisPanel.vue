@@ -3,7 +3,11 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowRight, Close } from '@element-plus/icons-vue'
 import type { Bar, IndicatorField, IndicatorRow } from '@/api/stocks'
 import { getBars, getIndicators } from '@/api/stocks'
+import { getStockBenchmarkBars } from '@/api/stocks'
+import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
+import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -13,6 +17,14 @@ import { ALL_DAYS } from '@/composables/useKlinePrefs'
 import { STOCK_COMPARE_RANGES } from '@/composables/useStockAnalysisSession'
 import type { AuxiliaryChartType } from '@/composables/useStockChartPreferences'
 import { getErrorMessage } from '@/utils/error'
+import {
+  PRICE_COMPARE_METRIC_META,
+  MARKET_BENCHMARK_OPTIONS,
+  priceCompareSetLookback,
+  priceMetricWindow,
+  priceReturn,
+  type PriceCompareMetric,
+} from '@/utils/marketCompare'
 
 export interface StockAnalysisItem {
   code: string
@@ -25,6 +37,9 @@ const props = defineProps<{
   endDate?: string | null
   mode: 'compare' | 'kline'
   compareRange: number
+  compareMetric: PriceCompareMetric
+  compareMetrics: PriceCompareMetric[]
+  benchmarkCode: string
   klineRange: number
   slot2: AuxiliaryChartType
   slot3: AuxiliaryChartType
@@ -34,6 +49,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:mode': [value: 'compare' | 'kline']
   'update:compareRange': [value: number]
+  'update:compareMetric': [value: PriceCompareMetric]
+  'update:benchmarkCode': [value: string]
   'update:klineRange': [value: number]
   activate: [code: string]
   remove: [code: string]
@@ -62,6 +79,9 @@ const loading = ref(false)
 const error = ref('')
 const partialErrors = ref<Record<string, string>>({})
 const barsByCode = ref<Record<string, Bar[]>>({})
+const benchmarkBars = ref<Bar[]>([])
+const benchmarkName = ref('')
+const benchmarkError = ref('')
 const klineBars = ref<Bar[]>([])
 const klineWarmupBars = ref<Bar[]>([])
 const klineIndicators = ref<IndicatorRow[]>([])
@@ -77,10 +97,48 @@ const compareSeries = computed(() => props.items
     bars: barsByCode.value[item.code]!,
   })))
 const failedCount = computed(() => Object.keys(partialErrors.value).length)
+const activeSeries = computed(() => {
+  const active = props.active
+  const bars = active ? barsByCode.value[active.code] : null
+  return active && bars?.length
+    ? { code: active.code, name: active.name || active.code, bars }
+    : null
+})
+const benchmarkSeries = computed(() => props.benchmarkCode && benchmarkBars.value.length
+  ? {
+      code: props.benchmarkCode,
+      name: benchmarkName.value || props.benchmarkCode,
+      bars: benchmarkBars.value,
+    }
+  : null)
+const calendarPoints = computed(() => benchmarkBars.value.map((bar) => ({
+  date: bar.date,
+  close: bar.close,
+})))
 
-function requestLookback(range: number): number {
-  return range === ALL_DAYS ? 6000 : Math.max(1, range)
+function formatPercent(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
 }
+
+function percentTone(value: number | null): 'up' | 'down' | 'muted' | 'neutral' {
+  if (value == null || !Number.isFinite(value)) return 'muted'
+  return value > 0 ? 'up' : value < 0 ? 'down' : 'neutral'
+}
+
+const metricStripItems = computed<MarketMetricStripItem[]>(() => props.compareMetrics.map((metric) => {
+  const window = priceMetricWindow(metric, props.compareRange)
+  const value = priceReturn(activeSeries.value, window, calendarPoints.value)
+  const rangeLabel = COMPARE_RANGE_OPTIONS.find((option) => option.value === props.compareRange)?.label
+  return {
+    key: metric,
+    label: metric === 'cum'
+      ? `${PRICE_COMPARE_METRIC_META[metric].label} · ${rangeLabel ?? `${props.compareRange}日`}`
+      : PRICE_COMPARE_METRIC_META[metric].label,
+    value: formatPercent(value),
+    tone: percentTone(value),
+  }
+}))
 
 function isAbort(errorValue: unknown): boolean {
   const candidate = errorValue as { code?: string; name?: string }
@@ -94,17 +152,35 @@ async function loadCompare(
   const version = ++requestVersion
   controller?.abort()
   controller = new AbortController()
+  const signal = controller.signal
   loading.value = true
   error.value = ''
-  if (!preserveLoaded) partialErrors.value = {}
-  const entries = await Promise.allSettled(targetItems.map(async (item) => {
+  if (!preserveLoaded) {
+    benchmarkError.value = ''
+    partialErrors.value = {}
+  }
+  const lookback = priceCompareSetLookback(props.compareMetrics, props.compareRange)
+  const entriesPromise = Promise.allSettled(targetItems.map(async (item) => {
     const result = await getBars(item.code, {
       adjust: 'qfq',
-      lookback: requestLookback(props.compareRange),
+      lookback,
       end: props.endDate || undefined,
-    }, controller!.signal)
+    }, signal)
     return [item.code, result.bars] as const
   }))
+  const calendarCode = props.benchmarkCode || '000905.SH'
+  const calendarPromise = preserveLoaded
+    ? null
+    : getStockBenchmarkBars(calendarCode, {
+        lookback,
+        end: props.endDate || undefined,
+      }, signal).catch((loadError) => {
+        if (!isAbort(loadError) && version === requestVersion) {
+          benchmarkError.value = getErrorMessage(loadError, '市场交易日加载失败')
+        }
+        return null
+      })
+  const [entries, calendarResult] = await Promise.all([entriesPromise, calendarPromise])
   if (version !== requestVersion) return
   const nextBars: Record<string, Bar[]> = preserveLoaded ? { ...barsByCode.value } : {}
   const nextErrors: Record<string, string> = preserveLoaded ? { ...partialErrors.value } : {}
@@ -119,6 +195,13 @@ async function loadCompare(
   })
   barsByCode.value = nextBars
   partialErrors.value = nextErrors
+  if (!preserveLoaded) {
+    benchmarkBars.value = calendarResult?.bars ?? []
+    benchmarkName.value = calendarResult?.name ?? ''
+    if (props.benchmarkCode && calendarResult && !calendarResult.bars.length) {
+      benchmarkError.value = `${calendarResult.name}在当前区间暂无行情`
+    }
+  }
   if (!Object.keys(nextBars).length && Object.keys(nextErrors).length) {
     error.value = '股票走势加载失败'
   }
@@ -185,6 +268,8 @@ function load(): void {
     loading.value = false
     error.value = ''
     barsByCode.value = {}
+    benchmarkBars.value = []
+    benchmarkError.value = ''
     klineBars.value = []
     return
   }
@@ -196,6 +281,12 @@ function updateMode(value: unknown): void {
   emit('update:mode', value === 'kline' ? 'kline' : 'compare')
 }
 
+function updateCompareMetric(value: string): void {
+  if (props.compareMetrics.includes(value as PriceCompareMetric)) {
+    emit('update:compareMetric', value as PriceCompareMetric)
+  }
+}
+
 watch(
   () => [
     props.mode,
@@ -203,6 +294,9 @@ watch(
     props.items.map((item) => item.code).join(','),
     props.endDate ?? '',
     props.compareRange,
+    props.compareMetric,
+    props.compareMetrics.join(','),
+    props.benchmarkCode,
     props.klineRange,
   ],
   load,
@@ -238,8 +332,20 @@ onBeforeUnmount(() => {
         <p>{{ mode === 'compare' ? `与 ${Math.max(0, items.length - 1)} 只股票比较区间走势` : '查看前复权K线、量能与技术指标' }}</p>
       </div>
       <div class="stock-analysis-controls">
+        <div v-if="mode === 'compare'" class="stock-benchmark-control">
+          <span>对比指数</span>
+          <AppFilterSelect
+            :model-value="benchmarkCode"
+            :options="MARKET_BENCHMARK_OPTIONS"
+            :multiple="false"
+            :clearable="false"
+            :filterable="false"
+            data-testid="stock-analysis-benchmark"
+            @update:model-value="emit('update:benchmarkCode', String($event))"
+          />
+        </div>
         <el-select
-          v-if="mode === 'compare'"
+          v-if="mode === 'compare' && compareMetric === 'cum'"
           :model-value="compareRange"
           style="width: 96px"
           data-testid="stock-compare-range"
@@ -248,7 +354,7 @@ onBeforeUnmount(() => {
           <el-option v-for="option in COMPARE_RANGE_OPTIONS" :key="option.value" :value="option.value" :label="option.label" />
         </el-select>
         <KlineRangeSelect
-          v-else
+          v-else-if="mode === 'kline'"
           :model-value="klineRange"
           width="112px"
           test-id="stock-analysis-kline-range"
@@ -265,6 +371,15 @@ onBeforeUnmount(() => {
         />
       </div>
     </header>
+
+    <MarketCompareMetricStrip
+      v-if="mode === 'compare' && active"
+      :items="metricStripItems"
+      :active-key="compareMetric"
+      ariaLabel="股票对比指标"
+      test-id-prefix="stock-analysis-metric"
+      @select="updateCompareMetric"
+    />
 
     <div v-if="mode === 'compare' && items.length" class="stock-compare-rail" aria-label="当前对比股票">
       <span class="stock-compare-label">对比队列</span>
@@ -327,7 +442,11 @@ onBeforeUnmount(() => {
       <StockCompareChart
         v-else-if="mode === 'compare'"
         :series="compareSeries"
+        :benchmark="benchmarkSeries"
+        :calendar="benchmarkBars"
         :active-code="active?.code"
+        :metric="compareMetric"
+        :range-days="compareRange"
         fill
       />
       <StockChartWorkspace
@@ -354,7 +473,8 @@ onBeforeUnmount(() => {
 
     <footer class="stock-analysis-footer">
       <span v-if="mode === 'compare'">
-        各股票按共同区间首个有效交易点归一为100；{{ failedCount ? `${failedCount}只股票加载失败。` : '用于比较相对强弱，不代表实际价格。' }}
+        <template v-if="benchmarkError">{{ benchmarkError }}，统一交易日不可用，暂不展示对比结果。</template>
+        <template v-else>各股票与指数按共同基期归零；{{ failedCount ? `${failedCount}只股票加载失败。` : '停牌期间沿用最后有效收盘。' }}</template>
       </span>
       <span v-else>前复权行情；K线、量能和MACD按交易日联动。</span>
       <el-button
@@ -440,6 +560,17 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: var(--app-space-2);
 }
+.stock-benchmark-control {
+  display: flex;
+  align-items: center;
+  gap: var(--app-space-2);
+  color: var(--el-text-color-secondary);
+  font-size: var(--app-font-size-caption);
+  white-space: nowrap;
+}
+.stock-benchmark-control :deep(.app-filter-select) {
+  width: 124px;
+}
 .stock-compare-rail {
   display: flex;
   flex: 0 0 auto;
@@ -520,6 +651,9 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 1180px) {
   .stock-analysis-identity p {
+    display: none;
+  }
+  .stock-benchmark-control > span {
     display: none;
   }
 }

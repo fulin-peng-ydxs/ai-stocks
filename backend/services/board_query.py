@@ -376,19 +376,6 @@ class BoardQueryService:
             for _, row in rows.iterrows()
         ]
 
-    def get_benchmark_bars(self, index_code: str, start: date, end: date) -> list[dict]:
-        """市场基准指数区间序列，字段与板块指数序列保持一致以便前端对齐比较。"""
-        df = self.c.query_df(
-            "SELECT trade_date, open, high, low, close, volume, amount FROM index_bar "
-            "WHERE index_code = ? AND trade_date >= ? AND trade_date <= ? "
-            "ORDER BY trade_date", [index_code, start, end])
-        return [
-            {"trade_date": str(pd.Timestamp(r["trade_date"]).date()),
-             "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"],
-             "volume": r["volume"], "amount": r["amount"]}
-            for _, r in df.iterrows()
-        ]
-
     # ── 历史累计成分股分页 ───────────────────────────────────
 
     def get_members(self, code: str, trade_date: date | None = None,

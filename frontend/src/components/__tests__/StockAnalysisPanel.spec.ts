@@ -7,6 +7,7 @@ import * as stockApi from '@/api/stocks'
 
 vi.mock('@/api/stocks', () => ({
   getBars: vi.fn(),
+  getStockBenchmarkBars: vi.fn(),
   getIndicators: vi.fn(),
 }))
 
@@ -33,6 +34,9 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
       endDate: '2026-08-07',
       mode: 'compare',
       compareRange: 60,
+      compareMetric: 'cum',
+      compareMetrics: ['cum', 'roll_5d', 'roll_10d', 'roll_20d', 'roll_30d', 'roll_60d'],
+      benchmarkCode: '000905.SH',
       klineRange: 120,
       slot2: 'volume',
       slot3: 'macd',
@@ -42,7 +46,7 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
     global: {
       plugins: [ElementPlus],
       stubs: {
-        StockCompareChart: { name: 'StockCompareChart', props: ['series', 'activeCode'], template: '<div class="stock-compare-chart-stub" />' },
+        StockCompareChart: { name: 'StockCompareChart', props: ['series', 'activeCode', 'benchmark', 'calendar', 'metric', 'rangeDays'], template: '<div class="stock-compare-chart-stub" />' },
         StockChartWorkspace: { name: 'StockChartWorkspace', props: ['bars', 'indicators'], template: '<div class="stock-chart-workspace-stub" />' },
         KlineRangeSelect: true,
       },
@@ -63,6 +67,15 @@ describe('StockAnalysisPanel', () => {
       code: '000001.SZ',
       indicators: [{ trade_date: '2026-08-07', macd_diff: 1, macd_dea: 0.8, macd_hist: 0.2 }],
     })
+    ;(stockApi.getStockBenchmarkBars as ReturnType<typeof vi.fn>).mockResolvedValue({
+      code: '000905.SH',
+      name: '中证500',
+      bars: Array.from({ length: 61 }, (_, index) => ({
+        ...bar,
+        date: `2026-${String(Math.floor(index / 28) + 5).padStart(2, '0')}-${String(index % 28 + 1).padStart(2, '0')}`,
+        close: 100 + index,
+      })),
+    })
   })
 
   it('对比模式并行加载队列股票，单只失败时保留可用序列', async () => {
@@ -80,7 +93,7 @@ describe('StockAnalysisPanel', () => {
     expect(stockApi.getBars).toHaveBeenCalledTimes(2)
     expect(stockApi.getBars).toHaveBeenCalledWith(
       '000001.SZ',
-      expect.objectContaining({ adjust: 'qfq', lookback: 60, end: '2026-08-07' }),
+      expect.objectContaining({ adjust: 'qfq', lookback: 61, end: '2026-08-07' }),
       expect.any(AbortSignal),
     )
     const chart = wrapper.findComponent({ name: 'StockCompareChart' })
@@ -91,11 +104,26 @@ describe('StockAnalysisPanel', () => {
     expect(stockApi.getBars).toHaveBeenCalledTimes(3)
     expect(stockApi.getBars).toHaveBeenLastCalledWith(
       '600000.SH',
-      expect.objectContaining({ adjust: 'qfq', lookback: 60, end: '2026-08-07' }),
+      expect.objectContaining({ adjust: 'qfq', lookback: 61, end: '2026-08-07' }),
       expect.any(AbortSignal),
     )
     expect(chart.props('series')).toHaveLength(2)
     expect(wrapper.find('[data-testid="stock-analysis-retry-partial"]').exists()).toBe(false)
+  })
+
+  it('加载统一市场日历，并将 30/60 日指标切换作为页面会话事件发出', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(stockApi.getStockBenchmarkBars).toHaveBeenCalledWith(
+      '000905.SH',
+      expect.objectContaining({ lookback: 61, end: '2026-08-07' }),
+      expect.any(AbortSignal),
+    )
+    expect(wrapper.findComponent({ name: 'StockCompareChart' }).props('calendar')).toHaveLength(61)
+    await wrapper.get('[data-testid="stock-analysis-metric-roll_30d"]').trigger('click')
+    await wrapper.get('[data-testid="stock-analysis-metric-roll_60d"]').trigger('click')
+    expect(wrapper.emitted('update:compareMetric')).toEqual([['roll_30d'], ['roll_60d']])
   })
 
   it('K线模式复用共享工作区并为均线预取暖机数据', async () => {

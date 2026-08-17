@@ -12,16 +12,22 @@ import AppTableColumn from '@/components/AppTableColumn.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
+import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
+import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import SectorCompareChart from '@/components/SectorCompareChart.vue'
+import type { CrossSectionDatum } from '@/components/SectorCompareChart.vue'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
+import {
+  MARKET_BENCHMARK_OPTIONS,
+} from '@/utils/marketCompare'
 import {
   addSectorWatchlist,
   getSectorBenchmarkBars,
@@ -50,12 +56,14 @@ import {
   type CompareMetric,
 } from '@/utils/sectorCompare'
 import {
+  ALL_DAYS,
   klineRangeQueryStart,
   trimAlignedKlineRange,
   useKlinePrefs,
 } from '@/composables/useKlinePrefs'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
+import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   createDefaultStockChartPreferences,
@@ -81,11 +89,6 @@ const auth = useAuthStore()
 const { dataMin, dataMax, ensureLoaded } = useTradeDates()
 const settingsOpen = ref(false)
 
-const BENCHMARK_OPTIONS = [
-  { label: '不对比指数', value: '' },
-  { label: '中证 500', value: '000905.SH' },
-  { label: '沪深 300', value: '000300.SH' },
-]
 const sectorsDefaults = {
   defaultType: '' as BoardType | '',
   defaultScope: 'all' as 'all' | 'watchlist',
@@ -221,12 +224,26 @@ const activeCode = ref('')
 const pinnedCodes = ref<string[]>([])
 const { validDefault: klineDefaultRange } = useKlinePrefs()
 // K 线范围单向：全局偏好默认范围 → 会话 ref；主区切换不写回全局默认。
-const rangeDays = ref<number>(klineDefaultRange.value)
-const chartMode = ref<'compare' | 'kline'>(settings.defaultChartMode === 'kline' ? 'kline' : 'compare')
-const benchmarkCode = ref<string>(['', '000905.SH', '000300.SH'].includes(settings.benchmarkCode) ? settings.benchmarkCode : '000905.SH')
-const compareMetric = ref<CompareMetric>(sanitizeCompareMetric(settings.defaultCompareMetric))
+const rangeDays = useDefaultedSessionValue(klineDefaultRange)
+const configuredChartMode = computed<'compare' | 'kline'>(() => (
+  settings.defaultChartMode === 'kline' ? 'kline' : 'compare'
+))
+const configuredBenchmarkCode = computed(() => (
+  ['', '000905.SH', '000300.SH'].includes(settings.benchmarkCode)
+    ? settings.benchmarkCode
+    : '000905.SH'
+))
+const configuredCompareMetric = computed(() => sanitizeCompareMetric(settings.defaultCompareMetric))
+const configuredCompareWindow = computed(() => (
+  COMPARE_RANGE_OPTIONS.some((option) => option.value === settings.compareWindow)
+    ? settings.compareWindow
+    : 250
+))
+const chartMode = useDefaultedSessionValue(configuredChartMode)
+const benchmarkCode = useDefaultedSessionValue(configuredBenchmarkCode)
+const compareMetric = useDefaultedSessionValue(configuredCompareMetric)
 // 累计涨跌周期单向：抽屉默认值 → 会话 ref（白名单钳制到 COMPARE_RANGE_OPTIONS）；主区改动不写回。
-const compareWindow = ref<number>(COMPARE_RANGE_OPTIONS.some((o) => o.value === settings.compareWindow) ? settings.compareWindow : 250)
+const compareWindow = useDefaultedSessionValue(configuredCompareWindow)
 const chartLoading = ref(false)
 const chartError = ref('')
 const benchmarkError = ref('')
@@ -270,19 +287,21 @@ const visibleCompareMetrics = computed<CompareMetric[]>(() => {
   const list = COMPARE_METRIC_ORDER.filter((m) => configured.includes(m))
   return list.length ? list : [...COMPARE_METRIC_ORDER]
 })
-const metricStripStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${visibleCompareMetrics.value.length}, minmax(72px, 1fr))`,
-}))
 // 请求区间窗口：趋势指标窗口跟随周期（cum=compareWindow、固定滚动=自身窗口）。
 const effectiveRange = computed<number>(() =>
   chartMode.value === 'compare' ? metricWindow(compareMetric.value, compareWindow.value) : rangeDays.value,
 )
+const requestedPointCount = computed(() => (
+  chartMode.value === 'compare' && effectiveRange.value !== ALL_DAYS
+    ? effectiveRange.value + 1
+    : effectiveRange.value
+))
 // 截面数据：即时净流入取列表行最新资金快照；累计成员涨跌取所选行情日截面；单日累计退化为「今日涨幅」柱状。
-const crossSection = computed(() => {
+const crossSection = computed<CrossSectionDatum[]>(() => {
   if (compareMetric.value === 'inflow') {
     return compareRows.value.map((row) => ({
       name: row.name,
-      value: row.net_inflow ?? 0,
+      value: row.net_inflow,
     }))
   }
   if (compareMetric.value === 'breadth') {
@@ -295,11 +314,14 @@ const crossSection = computed(() => {
   if (compareMetric.value === 'cum' && compareWindow.value === 1) {
     return compareRows.value.map((row) => ({
       name: row.name,
-      value: row.pct_today ?? 0,
+      value: row.pct_today,
     }))
   }
   return []
 })
+const hasCrossSectionData = computed(() => crossSection.value.some((item) => (
+  item.value != null || item.second != null
+)))
 function chartEnd(): string {
   return tradeDate.value || marketDate.value || dataMax.value || ''
 }
@@ -326,7 +348,7 @@ async function loadChart(): Promise<void> {
     return
   }
   const end = chartEnd()
-  const start = klineRangeQueryStart(end, effectiveRange.value, dataMin.value || '2024-01-01')
+  const start = klineRangeQueryStart(end, requestedPointCount.value, dataMin.value || '2024-01-01')
   if (!start || !end) return
 
   const requestVersion = ++chartRequestVersion
@@ -361,7 +383,7 @@ async function loadChart(): Promise<void> {
     )
     const benchmarkKey = benchmark ? `benchmark:${benchmark.index_code}` : ''
     if (benchmark) rawSeries[benchmarkKey] = benchmark.list
-    const trimmed = trimAlignedKlineRange(rawSeries, effectiveRange.value)
+    const trimmed = trimAlignedKlineRange(rawSeries, requestedPointCount.value)
     compareBars.value = Object.fromEntries(codes.map((code) => [code, trimmed[code] ?? []]))
     // 累计涨跌被选中时同步刷新其独立缓存，供头部槽在切换到其它指标后仍能取到正确窗口的数值。
     if (compareMetric.value === 'cum') {
@@ -581,16 +603,33 @@ function sourceQuery() {
     ...(tradeDate.value ? { date: tradeDate.value } : {}),
   }
 }
+let sourceQueryNavigation: Promise<void> = Promise.resolve()
+let leavingForDetail = false
 function syncSourceQuery(): void {
-  if (restoring) return
-  void router.replace({ path: '/sectors', query: toLocationQuery(sourceQuery()) })
+  if (restoring || leavingForDetail) return
+  const query = toLocationQuery(sourceQuery())
+  sourceQueryNavigation = sourceQueryNavigation
+    .then(async () => {
+      if (leavingForDetail || route.path !== '/sectors') return
+      const target = { path: '/sectors', query }
+      if (router.resolve(target).fullPath === route.fullPath) return
+      await router.replace(target)
+    })
+    .catch(() => undefined)
 }
-function openDetail(): void {
+async function openDetail(): Promise<void> {
   if (!activeCode.value || activeRow.value?.available === false) return
-  void router.push({
-    path: `/sectors/${encodeURIComponent(activeCode.value)}`,
-    query: toLocationQuery(sourceQuery()),
-  })
+  leavingForDetail = true
+  try {
+    await sourceQueryNavigation
+    if (route.path !== '/sectors') return
+    await router.push({
+      path: `/sectors/${encodeURIComponent(activeCode.value)}`,
+      query: toLocationQuery(sourceQuery()),
+    })
+  } finally {
+    leavingForDetail = false
+  }
 }
 
 const fmtPct = formatSectorPercent
@@ -648,12 +687,36 @@ function metricSlotLabel(metric: CompareMetric): string {
   }
   return base
 }
+const metricStripItems = computed<MarketMetricStripItem[]>(() => visibleCompareMetrics.value.map((metric) => {
+  const slot = metricSlot(metric)
+  if (metric === 'breadth') {
+    const [up = '—', down = '—'] = slot.text.split(' / ')
+    return {
+      key: metric,
+      label: metricSlotLabel(metric),
+      value: slot.text,
+      parts: [
+        { text: up, tone: 'up' },
+        { text: '/', tone: 'muted' },
+        { text: down, tone: 'down' },
+      ],
+    }
+  }
+  return {
+    key: metric,
+    label: metricSlotLabel(metric),
+    value: slot.text,
+    tone: slot.cls === 'up' || slot.cls === 'down' || slot.cls === 'muted' ? slot.cls : 'neutral',
+  }
+}))
 function sanitizeCompareMetric(value: unknown): CompareMetric {
   const v = String(value ?? '')
   return (COMPARE_METRIC_ORDER as string[]).includes(v) ? (v as CompareMetric) : 'cum'
 }
 // 切换指标：固定窗口指标（5/10/20日）不反向改动累计涨跌的周期窗口——累计窗口只由周期列表下拉决定。
-function selectCompareMetric(metric: CompareMetric): void {
+function selectCompareMetric(value: string): void {
+  if (!(COMPARE_METRIC_ORDER as string[]).includes(value)) return
+  const metric = value as CompareMetric
   if (compareMetric.value === metric) return
   compareMetric.value = metric
 }
@@ -898,7 +961,11 @@ onMounted(async () => {
               align="right"
             >
               <template #default="{ row }">
-                <span class="app-data-text" :class="pctClass(row.pct_5d)">{{ fmtPct(row.pct_5d) }}</span>
+                <strong
+                  class="app-data-text"
+                  :class="pctClass(row.pct_5d)"
+                  :data-testid="row?.board_code ? `sectors-pct-5d-${row.board_code}` : undefined"
+                >{{ fmtPct(row.pct_5d) }}</strong>
               </template>
             </AppTableColumn>
             <AppTableColumn
@@ -910,7 +977,11 @@ onMounted(async () => {
               align="right"
             >
               <template #default="{ row }">
-                <span class="app-data-text" :class="pctClass(row.pct_10d)">{{ fmtPct(row.pct_10d) }}</span>
+                <strong
+                  class="app-data-text"
+                  :class="pctClass(row.pct_10d)"
+                  :data-testid="row?.board_code ? `sectors-pct-10d-${row.board_code}` : undefined"
+                >{{ fmtPct(row.pct_10d) }}</strong>
               </template>
             </AppTableColumn>
             <AppTableColumn
@@ -922,7 +993,11 @@ onMounted(async () => {
               align="right"
             >
               <template #default="{ row }">
-                <span class="app-data-text" :class="pctClass(row.pct_20d)">{{ fmtPct(row.pct_20d) }}</span>
+                <strong
+                  class="app-data-text"
+                  :class="pctClass(row.pct_20d)"
+                  :data-testid="row?.board_code ? `sectors-pct-20d-${row.board_code}` : undefined"
+                >{{ fmtPct(row.pct_20d) }}</strong>
               </template>
             </AppTableColumn>
             <AppTableColumn
@@ -935,7 +1010,11 @@ onMounted(async () => {
               align="right"
             >
               <template #default="{ row }">
-                <span class="app-data-text" :class="pctClass(row.net_inflow)">{{ fmtInflow(row.net_inflow) }}</span>
+                <strong
+                  class="app-data-text"
+                  :class="pctClass(row.net_inflow)"
+                  :data-testid="row?.board_code ? `sectors-inflow-${row.board_code}` : undefined"
+                >{{ fmtInflow(row.net_inflow) }}</strong>
               </template>
             </AppTableColumn>
             <AppTableColumn
@@ -947,7 +1026,10 @@ onMounted(async () => {
               align="right"
             >
               <template #default="{ row }">
-                <span class="app-data-text" :class="pctClass(row.net_inflow_3d)">{{ fmtInflow(row.net_inflow_3d) }}</span>
+                <strong
+                  class="app-data-text"
+                  :class="pctClass(row.net_inflow_3d)"
+                >{{ fmtInflow(row.net_inflow_3d) }}</strong>
               </template>
             </AppTableColumn>
             <AppTableColumn
@@ -959,7 +1041,10 @@ onMounted(async () => {
               align="right"
             >
               <template #default="{ row }">
-                <span class="app-data-text" :class="pctClass(row.net_inflow_5d)">{{ fmtInflow(row.net_inflow_5d) }}</span>
+                <strong
+                  class="app-data-text"
+                  :class="pctClass(row.net_inflow_5d)"
+                >{{ fmtInflow(row.net_inflow_5d) }}</strong>
               </template>
             </AppTableColumn>
             <AppTableColumn
@@ -971,7 +1056,10 @@ onMounted(async () => {
               align="right"
             >
               <template #default="{ row }">
-                <span class="app-data-text" :class="pctClass(row.net_inflow_10d)">{{ fmtInflow(row.net_inflow_10d) }}</span>
+                <strong
+                  class="app-data-text"
+                  :class="pctClass(row.net_inflow_10d)"
+                >{{ fmtInflow(row.net_inflow_10d) }}</strong>
               </template>
             </AppTableColumn>
             <AppTableColumn
@@ -983,7 +1071,10 @@ onMounted(async () => {
               align="right"
             >
               <template #default="{ row }">
-                <span class="app-data-text" :class="pctClass(row.net_inflow_20d)">{{ fmtInflow(row.net_inflow_20d) }}</span>
+                <strong
+                  class="app-data-text"
+                  :class="pctClass(row.net_inflow_20d)"
+                >{{ fmtInflow(row.net_inflow_20d) }}</strong>
               </template>
             </AppTableColumn>
             <template #empty>
@@ -1032,7 +1123,7 @@ onMounted(async () => {
                 <span>对比指数</span>
                 <AppFilterSelect
                   v-model="benchmarkCode"
-                  :options="BENCHMARK_OPTIONS"
+                  :options="MARKET_BENCHMARK_OPTIONS"
                   :multiple="false"
                   :clearable="false"
                   :filterable="false"
@@ -1059,35 +1150,14 @@ onMounted(async () => {
             </div>
           </header>
 
-          <div v-if="activeRow" class="market-strip" aria-label="板块对比指标" :style="metricStripStyle">
-            <div
-              v-for="(metric, index) in visibleCompareMetrics"
-              :key="metric"
-              class="market-metric"
-              :class="{
-                'market-metric--active': metric === compareMetric,
-                'market-metric--lead': index === 0,
-              }"
-              role="button"
-              tabindex="0"
-              :aria-pressed="metric === compareMetric"
-              :data-testid="`sectors-metric-${metric}`"
-              @click="selectCompareMetric(metric)"
-              @keydown.enter="selectCompareMetric(metric)"
-            >
-              <span>{{ metricSlotLabel(metric) }}</span>
-              <strong
-                v-if="metric === 'breadth'"
-                class="market-metric-value"
-                :class="metricSlot(metric).cls"
-              >
-                <span class="up">{{ metricSlot(metric).text.split(' / ')[0] }}</span>
-                <span class="metric-sep"> / </span>
-                <span class="down">{{ metricSlot(metric).text.split(' / ')[1] }}</span>
-              </strong>
-              <strong v-else :class="metricSlot(metric).cls">{{ metricSlot(metric).text }}</strong>
-            </div>
-          </div>
+          <MarketCompareMetricStrip
+            v-if="activeRow"
+            :items="metricStripItems"
+            :active-key="compareMetric"
+            ariaLabel="板块对比指标"
+            test-id-prefix="sectors-metric"
+            @select="selectCompareMetric"
+          />
 
           <div
             v-if="chartMode === 'compare' && chartCodes.length"
@@ -1145,7 +1215,7 @@ onMounted(async () => {
               description="可切换其他板块，或先运行板块指数采集"
             />
             <AppStateBlock
-              v-else-if="!chartLoading && chartMode === 'compare' && compareMetricKind === 'bar' && !crossSection.length"
+              v-else-if="!chartLoading && chartMode === 'compare' && compareMetricKind === 'bar' && !hasCrossSectionData"
               state="empty"
               title="暂无对比数据"
               description="对比队列暂无该指标快照"
@@ -1256,7 +1326,7 @@ onMounted(async () => {
               <div class="setting-label">默认对比指数</div>
               <AppFilterSelect
                 v-model="settings.benchmarkCode"
-                :options="BENCHMARK_OPTIONS"
+                :options="MARKET_BENCHMARK_OPTIONS"
                 :multiple="false"
                 :clearable="false"
                 :filterable="false"
@@ -1512,75 +1582,6 @@ onMounted(async () => {
   min-width: 52px;
   font-variant-numeric: tabular-nums;
 }
-.market-strip {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(72px, 1fr));
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  background: color-mix(in srgb, var(--el-fill-color-light) 54%, var(--el-bg-color));
-}.market-metric {
-  min-width: 0;
-  padding: var(--app-space-2) var(--app-space-3);
-  border-right: 1px solid var(--el-border-color-lighter);
-  cursor: pointer;
-  text-align: left;
-}
-.market-metric:last-child {
-  border-right: 0;
-}
-.market-metric:hover,
-.market-metric--active {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 70%, transparent);
-}
-.market-metric--active {
-  box-shadow: inset 0 -2px 0 var(--el-color-primary);
-}
-.market-metric:focus-visible {
-  outline: 2px solid var(--el-color-primary-light-5);
-  outline-offset: -2px;
-}
-.market-metric > span {
-  display: block;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-micro);
-  line-height: var(--app-line-height-micro);
-}
-.market-metric strong {
-  display: block;
-  overflow: hidden;
-  margin-top: 2px;
-  font-size: var(--app-font-size-data);
-  line-height: var(--app-line-height-data);
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.market-metric strong.market-metric-value {
-  display: flex;
-  align-items: baseline;
-  overflow: hidden;
-}
-.market-metric strong.market-metric-value span {
-  display: inline;
-}
-.market-metric strong.market-metric-value .up {
-  display: inline;
-}
-.market-metric strong.market-metric-value .down {
-  display: inline;
-}
-.market-metric strong.market-metric-value .metric-sep {
-  color: var(--el-text-color-secondary);
-}
-.market-metric strong i {
-  font-style: normal;
-}
-.market-metric--lead {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 58%, transparent);
-}
-.market-metric--lead.market-metric--active {
-  background: color-mix(in srgb, var(--el-color-primary-light-9) 70%, transparent);
-}
 .compare-rail {
   flex: 0 0 auto;
   display: flex;
@@ -1674,14 +1675,8 @@ onMounted(async () => {
   .chart-identity p {
     display: none;
   }
-  .market-strip {
-    grid-template-columns: repeat(3, minmax(84px, 1fr));
-  }
 }
 @media (max-height: 700px) {
-  .market-strip {
-    display: none;
-  }
   .chart-head {
     min-height: 60px;
   }
