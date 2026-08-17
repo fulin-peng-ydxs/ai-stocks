@@ -79,8 +79,8 @@ describe('StockCompareChart', () => {
     const content = option.tooltip.formatter([
       { axisValueLabel: '2026-08-07', dataIndex: 1, seriesIndex: 0, seriesName: '平安银行 · 000001.SZ', value: 10, marker: '' },
     ])
-    expect(content).toContain('2026-08-07 · 共同基期 0%')
-    expect(content).toContain('前复权 11.00')
+    expect(content).toContain('2026-08-07 · 累计涨跌')
+    expect(content).not.toContain('前复权')
     expect(content).toContain('color:#f04438">+10.00%')
     expect(wrapper.attributes('data-point-count')).toBe('2')
     wrapper.unmount()
@@ -116,7 +116,7 @@ describe('StockCompareChart', () => {
     const content = option.tooltip.formatter([
       { axisValueLabel: dates[2], dataIndex: 2, seriesIndex: 0, seriesName: '平安银行 · 000001.SZ', value: 20, marker: '' },
     ])
-    expect(content).toContain('超额 +10.00%')
+    expect(content).toContain('color:#f04438">超额 +10.00%')
     wrapper.unmount()
   })
 

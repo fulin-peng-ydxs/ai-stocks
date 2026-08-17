@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ArrowRight, Close } from '@element-plus/icons-vue'
+import { ArrowRight } from '@element-plus/icons-vue'
 import type { Bar, IndicatorField, IndicatorRow } from '@/api/stocks'
 import { getBars, getIndicators } from '@/api/stocks'
 import { getStockBenchmarkBars } from '@/api/stocks'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
-import AppIconButton from '@/components/AppIconButton.vue'
+import CompareQueueRail from '@/components/CompareQueueRail.vue'
+import type { CompareQueueItem } from '@/components/CompareQueueRail.vue'
 import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
 import type { MarketMetricStripItem } from '@/components/MarketCompareMetricStrip.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -97,6 +98,12 @@ const compareSeries = computed(() => props.items
     bars: barsByCode.value[item.code]!,
   })))
 const failedCount = computed(() => Object.keys(partialErrors.value).length)
+const queueItems = computed<CompareQueueItem[]>(() => props.items.map((item) => ({
+  key: item.code,
+  label: item.name || item.code,
+  active: item.code === props.active?.code,
+  error: partialErrors.value[item.code] ?? null,
+})))
 const activeSeries = computed(() => {
   const active = props.active
   const bars = active ? barsByCode.value[active.code] : null
@@ -388,36 +395,15 @@ onBeforeUnmount(() => {
       @select="updateCompareMetric"
     />
 
-    <div v-if="mode === 'compare' && items.length" class="stock-compare-rail" aria-label="当前对比股票">
-      <span class="stock-compare-label">对比队列</span>
-      <div
-        v-for="item in items"
-        :key="item.code"
-        class="stock-compare-chip"
-        :class="{ active: item.code === active?.code, error: partialErrors[item.code] }"
-        :title="partialErrors[item.code] || undefined"
-      >
-        <el-button
-          text
-          class="stock-compare-activate"
-          :aria-pressed="item.code === active?.code"
-          @click="emit('activate', item.code)"
-        >
-          {{ item.name || item.code }}
-        </el-button>
-        <AppIconButton
-          v-if="item.code !== active?.code || items.length > 1"
-          class="stock-chip-remove"
-          :label="`移除对比：${item.name || item.code}`"
-          size="xs"
-          :native-title="false"
-          @click="emit('remove', item.code)"
-        >
-          <el-icon><Close /></el-icon>
-        </AppIconButton>
-      </div>
-      <span v-if="items.length < 6" class="stock-compare-hint">从左侧加入，最多6只</span>
-    </div>
+    <CompareQueueRail
+      v-if="mode === 'compare' && items.length"
+      :items="queueItems"
+      aria-label="当前对比股票"
+      hint="从左侧加入，最多6只"
+      :max="6"
+      @activate="(code) => emit('activate', code)"
+      @remove="(code) => emit('remove', code)"
+    />
 
     <div class="stock-analysis-stage" v-loading="loading">
       <AppStateBlock
@@ -594,59 +580,6 @@ onBeforeUnmount(() => {
 .stock-benchmark-control :deep(.app-filter-select) {
   width: 124px;
 }
-.stock-compare-rail {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: var(--app-space-control-gap);
-  min-height: 42px;
-  padding: var(--app-space-2) var(--app-space-3);
-  overflow-x: auto;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  white-space: nowrap;
-}
-.stock-compare-label,
-.stock-compare-hint {
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-micro);
-}
-.stock-compare-chip {
-  display: inline-flex;
-  align-items: center;
-  height: var(--app-control-height-sm);
-  padding-left: var(--app-space-2);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--layout-control-radius);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  font: inherit;
-  font-size: var(--app-font-size-caption);
-}
-.stock-compare-chip:hover,
-.stock-compare-chip.active,
-.stock-compare-chip:focus-within {
-  border-color: var(--el-color-primary-light-5);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-}
-.stock-compare-chip.error {
-  border-color: var(--el-color-warning);
-}
-.stock-compare-activate {
-  height: 100%;
-  padding: 0 var(--app-space-1) 0 0;
-  color: inherit;
-  font: inherit;
-}
-.stock-compare-activate:focus-visible {
-  outline: 2px solid var(--el-color-primary-light-5);
-  outline-offset: -2px;
-}
-.stock-chip-remove {
-  --app-icon-button-size: 18px;
-  --app-icon-button-glyph: 11px;
-  border-radius: 50%;
-}
 .stock-analysis-stage {
   position: relative;
   flex: 1 1 auto;
@@ -687,11 +620,6 @@ onBeforeUnmount(() => {
   .stock-analysis-footer {
     min-height: 36px;
     padding-block: var(--app-space-1);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .stock-compare-chip {
-    transition: none;
   }
 }
 </style>

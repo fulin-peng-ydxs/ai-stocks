@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, type Sort } from 'element-plus'
-import { ArrowRight, Close, DArrowLeft, DArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
+import { ArrowRight, DArrowLeft, DArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -9,6 +9,8 @@ import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
+import CompareQueueRail from '@/components/CompareQueueRail.vue'
+import type { CompareQueueItem } from '@/components/CompareQueueRail.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
@@ -266,6 +268,17 @@ const compareRows = computed(() =>
     .map((code) => boardLookup.value[code])
     .filter((row): row is SectorRow => Boolean(row)),
 )
+const compareQueueItems = computed<CompareQueueItem[]>(() =>
+  compareRows.value.map((row) => ({
+    key: row.board_code,
+    label: row.name,
+    active: row.board_code === activeCode.value,
+  })),
+)
+function activateCompared(code: string): void {
+  const row = boardLookup.value[code]
+  if (row) selectRow(row)
+}
 const compareSeries = computed(() =>
   compareRows.value
     .filter((row) => compareBars.value[row.board_code]?.length)
@@ -1159,39 +1172,16 @@ onMounted(async () => {
             @select="selectCompareMetric"
           />
 
-          <div
+          <CompareQueueRail
             v-if="chartMode === 'compare' && chartCodes.length"
-            class="compare-rail"
+            :items="compareQueueItems"
             aria-label="当前对比板块"
-            data-testid="sectors-compare-rail"
-          >
-            <span class="compare-label">对比队列</span>
-            <div
-              v-for="row in compareRows"
-              :key="row.board_code"
-              class="compare-chip"
-              :class="{ active: row.board_code === activeCode }"
-              :data-testid="`sectors-compare-${row.board_code}`"
-              role="button"
-              tabindex="0"
-              @click="selectRow(row)"
-              @keydown.enter="selectRow(row)"
-            >
-              <span>{{ row.name }}</span>
-              <AppIconButton
-                v-if="row.board_code !== activeCode || compareRows.length > 1"
-                class="chip-remove"
-                :label="`移除对比：${row.name}`"
-                :data-testid="`sectors-remove-${row.board_code}`"
-                size="xs"
-                :native-title="false"
-                @click.stop="removeCompared(row.board_code)"
-              >
-                <el-icon><Close /></el-icon>
-              </AppIconButton>
-            </div>
-            <span v-if="chartCodes.length < COMPARE_MAX" class="compare-hint">勾选左侧板块加入，最多 {{ COMPARE_MAX }} 个</span>
-          </div>
+            :hint="`勾选左侧板块加入，最多 ${COMPARE_MAX} 个`"
+            :max="COMPARE_MAX"
+            test-id-prefix="sectors"
+            @activate="activateCompared"
+            @remove="removeCompared"
+          />
 
           <div class="chart-stage" v-loading="chartLoading">
             <AppStateBlock
@@ -1582,55 +1572,6 @@ onMounted(async () => {
   min-width: 52px;
   font-variant-numeric: tabular-nums;
 }
-.compare-rail {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-control-gap);
-  min-height: 42px;
-  padding: var(--app-space-2) var(--app-space-3);
-  overflow-x: auto;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  white-space: nowrap;
-}
-.compare-label,
-.compare-hint {
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-micro);
-}
-.compare-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-space-1);
-  height: var(--app-control-height-sm);
-  padding: 0 var(--app-space-2);
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--layout-control-radius);
-  background: var(--el-bg-color);
-  color: var(--el-text-color-regular);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--app-font-size-caption);
-}
-.compare-chip:hover,
-.compare-chip.active {
-  border-color: var(--el-color-primary-light-5);
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-}
-.compare-chip:focus-visible {
-  outline: 2px solid var(--el-color-primary-light-5);
-  outline-offset: 1px;
-}
-.chip-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  --app-icon-button-size: 18px;
-  --app-icon-button-glyph: 11px;
-  border-radius: 50%;
-  color: var(--el-text-color-secondary);
-}
 .chart-stage {
   position: relative;
   flex: 1 1 auto;
@@ -1683,11 +1624,6 @@ onMounted(async () => {
   .chart-footer {
     min-height: 36px;
     padding-block: var(--app-space-1);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .compare-chip {
-    transition: none;
   }
 }
 </style>

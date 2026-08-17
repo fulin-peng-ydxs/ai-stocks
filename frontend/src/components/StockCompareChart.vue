@@ -6,6 +6,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import { chartCssVariable, hasRenderableChartSize, useEChartsTheme } from '@/components/chartTheme'
 import {
   alignPriceComparison,
+  PRICE_COMPARE_METRIC_META,
   priceMetricWindow,
   type PriceCompareMetric,
   type PriceCompareSeries,
@@ -63,6 +64,7 @@ const comparison = computed(() => {
 })
 const dates = computed(() => comparison.value.dates)
 const hasCommonInterval = computed(() => dates.value.length >= 2)
+const metricLabel = computed(() => PRICE_COMPARE_METRIC_META[props.metric].label)
 
 function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -75,10 +77,6 @@ function escapeHtml(value: unknown): string {
 
 function relativeSeries(item: StockCompareSeries): (number | null)[] {
   return comparison.value.valuesByCode[item.code] ?? []
-}
-
-function priceAt(code: string, index: number): number | null {
-  return comparison.value.closesByCode[code]?.[index] ?? null
 }
 
 function render(): void {
@@ -141,7 +139,6 @@ function render(): void {
         const rows = (Array.isArray(params) ? params : [params]).filter(Boolean)
         const date = String(rows[0]?.axisValueLabel ?? rows[0]?.name ?? '')
         const content = rows.map((row: any) => {
-          const item = props.series[row.seriesIndex]
           const relative = Number(row.value)
           const valid = row.value != null && Number.isFinite(relative)
           const relativeText = valid ? `${relative > 0 ? '+' : ''}${relative.toFixed(2)}%` : '--'
@@ -151,18 +148,16 @@ function render(): void {
           const excess = valid && !isBenchmark && typeof benchmarkValue === 'number'
             ? +(relative - benchmarkValue).toFixed(2)
             : null
-          const price = item ? priceAt(item.code, Number(row.dataIndex)) : null
-          const priceText = price == null ? '--' : price.toFixed(2)
+          const excessColor = excess == null || excess === 0 ? currentTheme.label : excess > 0 ? upColor : downColor
           return `<div style="display:flex;justify-content:space-between;gap:18px">`
             + `<span>${row.marker ?? ''}${escapeHtml(row.seriesName)}</span>`
             + `<span style="text-align:right"><strong style="color:${color}">${relativeText}</strong>`
-            + (item ? `<small style="display:block;color:${currentTheme.label}">前复权 ${priceText}</small>` : '')
-            + (excess == null ? '' : `<small style="display:block;color:${currentTheme.label}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
+            + (excess == null ? '' : `<small style="display:block;color:${excessColor}">超额 ${excess > 0 ? '+' : ''}${excess.toFixed(2)}%</small>`)
             + '</span>'
             + '</div>'
         }).join('')
         return `<div style="min-width:180px;line-height:1.7">`
-          + `<div style="color:${currentTheme.label};margin-bottom:2px">${escapeHtml(date)} · 共同基期 0%</div>`
+          + `<div style="color:${currentTheme.label};margin-bottom:2px">${escapeHtml(date)} · ${metricLabel.value}</div>`
           + content
           + '</div>'
       },
