@@ -126,6 +126,44 @@ describe('StockAnalysisPanel', () => {
     expect(wrapper.emitted('update:compareMetric')).toEqual([['roll_30d'], ['roll_60d']])
   })
 
+  it('市场交易日加载失败时留下可重试错误态，且重试不刷新已成功股票', async () => {
+    ;(stockApi.getStockBenchmarkBars as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('日历服务不可用'))
+      .mockResolvedValueOnce({
+        code: '000905.SH',
+        name: '中证500',
+        bars: [bar],
+      })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('市场交易日加载失败')
+    expect(wrapper.text()).toContain('日历服务不可用')
+    expect(wrapper.findComponent({ name: 'StockCompareChart' }).exists()).toBe(false)
+
+    await wrapper.get('[data-testid="stock-analysis-retry-calendar"]').trigger('click')
+    await flushPromises()
+
+    expect(stockApi.getBars).toHaveBeenCalledTimes(2)
+    expect(stockApi.getStockBenchmarkBars).toHaveBeenCalledTimes(2)
+    expect(wrapper.findComponent({ name: 'StockCompareChart' }).exists()).toBe(true)
+  })
+
+  it('不对比指数时仍将空市场日历呈现为可恢复错误态', async () => {
+    ;(stockApi.getStockBenchmarkBars as ReturnType<typeof vi.fn>).mockResolvedValue({
+      code: '000905.SH',
+      name: '中证500',
+      bars: [],
+    })
+    const wrapper = mountPanel({ benchmarkCode: '' })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('市场交易日加载失败')
+    expect(wrapper.text()).toContain('中证500在当前区间暂无行情')
+    expect(wrapper.find('[data-testid="stock-analysis-retry-calendar"]').exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'StockCompareChart' }).exists()).toBe(false)
+  })
+
   it('K线模式复用共享工作区并为均线预取暖机数据', async () => {
     const wrapper = mountPanel({ mode: 'kline' })
     await flushPromises()

@@ -148,6 +148,7 @@ function isAbort(errorValue: unknown): boolean {
 async function loadCompare(
   targetItems: StockAnalysisItem[] = props.items,
   preserveLoaded = false,
+  reloadCalendar = !preserveLoaded,
 ): Promise<void> {
   const version = ++requestVersion
   controller?.abort()
@@ -155,8 +156,10 @@ async function loadCompare(
   const signal = controller.signal
   loading.value = true
   error.value = ''
-  if (!preserveLoaded) {
+  if (reloadCalendar) {
     benchmarkError.value = ''
+  }
+  if (!preserveLoaded) {
     partialErrors.value = {}
   }
   const lookback = priceCompareSetLookback(props.compareMetrics, props.compareRange)
@@ -169,9 +172,8 @@ async function loadCompare(
     return [item.code, result.bars] as const
   }))
   const calendarCode = props.benchmarkCode || '000905.SH'
-  const calendarPromise = preserveLoaded
-    ? null
-    : getStockBenchmarkBars(calendarCode, {
+  const calendarPromise = reloadCalendar
+    ? getStockBenchmarkBars(calendarCode, {
         lookback,
         end: props.endDate || undefined,
       }, signal).catch((loadError) => {
@@ -180,6 +182,7 @@ async function loadCompare(
         }
         return null
       })
+    : null
   const [entries, calendarResult] = await Promise.all([entriesPromise, calendarPromise])
   if (version !== requestVersion) return
   const nextBars: Record<string, Bar[]> = preserveLoaded ? { ...barsByCode.value } : {}
@@ -195,10 +198,10 @@ async function loadCompare(
   })
   barsByCode.value = nextBars
   partialErrors.value = nextErrors
-  if (!preserveLoaded) {
+  if (reloadCalendar) {
     benchmarkBars.value = calendarResult?.bars ?? []
     benchmarkName.value = calendarResult?.name ?? ''
-    if (props.benchmarkCode && calendarResult && !calendarResult.bars.length) {
+    if (calendarResult && !calendarResult.bars.length) {
       benchmarkError.value = `${calendarResult.name}在当前区间暂无行情`
     }
   }
@@ -211,6 +214,10 @@ async function loadCompare(
 function retryFailedCompare(): void {
   const failedItems = props.items.filter((item) => partialErrors.value[item.code])
   if (failedItems.length) void loadCompare(failedItems, true)
+}
+
+function retryCalendar(): void {
+  void loadCompare([], true, true)
 }
 
 async function loadKline(): Promise<void> {
@@ -427,6 +434,22 @@ onBeforeUnmount(() => {
         title="选择一只股票"
         description="点击左侧列表中的任意一行即可查看走势"
       />
+      <AppStateBlock
+        v-else-if="!loading && mode === 'compare' && benchmarkError"
+        state="error"
+        title="市场交易日加载失败"
+        :description="benchmarkError"
+      >
+        <template #extra>
+          <el-button
+            type="primary"
+            data-testid="stock-analysis-retry-calendar"
+            @click="retryCalendar"
+          >
+            重试交易日
+          </el-button>
+        </template>
+      </AppStateBlock>
       <AppStateBlock
         v-else-if="!loading && mode === 'compare' && !compareSeries.length"
         state="empty"

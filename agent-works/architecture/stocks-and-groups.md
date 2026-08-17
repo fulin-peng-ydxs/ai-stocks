@@ -1,6 +1,6 @@
 # 个股与分组
 
-> 围绕单只股票的查询、K线与信号详情，以及用户手动圈定的股票篮子（分组）管理。
+> 围绕股票查询、多股走势对比、K 线分析、信号详情，以及用户手动圈定的股票篮子（分组）管理。
 
 <span style="color:#2563eb">●</span> 个股查询　<span style="color:#7c3aed">●</span> 信号详情　<span style="color:#16a34a">●</span> 分组跟踪　<span style="color:#dc2626">●</span> 性能风险
 
@@ -36,9 +36,15 @@
 
 - `StockChartWorkspace` 用三个独立 ECharts 实例组成纵向工作区，同一组件实例使用唯一 group 联动光标、日期和缩放；多个 KeepAlive 个股标签不会串联或互相 disconnect。
 - 图表一固定为 K线；图表二、三可选量能、MACD 或隐藏，选择已占用类型时自动交换。隐藏会释放面板和分隔线，不保留空白。
-- 默认组合为 K线/量能/MACD，比例 60/20/20；拖动和键盘分隔线调整只在提交时写偏好。图表类型及五种有序组合的相对高度保存在 `user_preference(page/stock-detail/settings).charts`，远端失败沿用 localStorage fallback。
-- 每幅图有名称和随共享光标更新的指标摘要；MACD 含正负柱、DIFF、DEA、零轴，以及锚定事件交易日的金叉/死叉标签、数据点和常驻引导线。
+- 默认组合为 K 线/量能/MACD，比例 60/20/20。主区拖动或键盘调整只修改当前会话；只有设置抽屉编辑默认值，或用户显式执行“设为默认”时才写入远端偏好，远端失败沿用 localStorage fallback。
+- 每幅图有名称和随共享光标更新的指标摘要；MACD 含正负柱、DIFF、DEA、零轴和金叉/死叉标签。信号标签只保留连接事件点的短三角指针，不显示贯穿面板的长引导线或独立圆形锚点。
 - 画布取色复用 `--market-up-color` / `--market-down-color` 和预设主题修订版本；明暗、预设 key 或同 key 后端 token 覆盖变化都会重绘现有实例。
+
+### 查询页共享行情分析工作台
+
+- `StocksView` 与 `BoardView` 共同消费 `MarketMasterDetailWorkspace` 和 `StockAnalysisPanel`，统一列表收起、当前观察、最多 6 只对比队列、走势对比与 K 线模式，消费页不复制图表状态机。
+- `useStockAnalysisSelection` 管理当前观察和对比队列；`useStockAnalysisSession` 将远端默认值单向投影为页面会话态，`stocks` 与 `board` 按页面键隔离。
+- 走势对比固定读前复权股票行情，通过 `GET /stocks/benchmarks/{index_code}/bars` 取显式市场交易日，所有序列以共同基期归零并在停牌日延用最后有效收盘。日历失败或为空时进入可重试错误态，重试只重拉日历；单只股票失败时保留已成功曲线，重试只请求失败股票。
 
 ### 分组篮子：跨页多选累积与导航
 - 选择购物车（`StocksView.vue:216` `cart`）在前端维护，按 code 去重，跨分页/跨搜索/跨普通查询与分组视图累积，切换上下文（切分组）才清空（`StocksView.vue:142`）。表头全选只对「当前页」做并/差集（`toggleAllCur`，`StocksView.vue:232`）。
@@ -48,7 +54,7 @@
 ## 业务架构
 
 ### 三块功能
-1. 个股查询（`StocksView.vue` 普通查询视图）：按交易日/板块/ST/退市/关键词筛选，服务端排序分页，行内显示涨跌幅与所属分组。
+1. 个股查询与行情分析（`StocksView.vue`）：按交易日/板块/ST/退市/关键词筛选，服务端排序分页；选中股票后在双栏工作台切换多股走势对比或 K 线分析。
 2. 个股详情（`StockDetailView.vue`）：K线/量能/MACD 三图工作区 + 最新指标快照 + 当前可见买卖方案在该股的买入/卖出信号与逐条成立明细 + 分组归属编辑 + 集合内上一只/下一只导航。
 3. 股票分组（`StocksView.vue` 分组视图 + `stock_groups.py`）：用户手动圈定的股票篮子，含成员加入日期与自加入日起的等权平均涨幅。
 
@@ -64,7 +70,7 @@
 - 读：`stock_basic`（板块/退市/名称）、`daily_bar`（行情/复权）。
 
 ### 主要 API
-- 个股：`GET /stocks`、`/stocks/{code}/bars`、`/stocks/{code}/indicators`、`/stocks/{code}/trade-eval`、`/stocks/{code}/signal`。
+- 个股：`GET /stocks`、`/stocks/{code}/bars`、`/stocks/benchmarks/{index_code}/bars`、`/stocks/{code}/indicators`、`/stocks/{code}/trade-eval`、`/stocks/{code}/signal`。
 - 分组：`GET/POST /stock-groups`、`GET/PATCH/DELETE /stock-groups/{gid}`、`POST/DELETE /stock-groups/{gid}/members`、`PATCH /stock-groups/{gid}/members/{code}`（改单股加入日）。
 
 ## 页面使用说明书
@@ -81,6 +87,7 @@
 | 排序 | 涨跌幅、名称、行业、代码 | 服务端排序，停牌 NULL 排后 |
 | 所属分组 | 显示该股票已加入哪些篮子 | 便于避免重复维护 |
 | 勾选框 | 加入当前选择购物车 | 支持跨页累积 |
+| 行情分析区 | 对当前观察与对比队列做走势对比或 K 线分析 | 可收起左侧列表；交易日和单股失败均可局部重试 |
 
 **使用路径**：筛选条件缩小范围 → 按涨跌幅或行业排序 → 跨页勾选 → 存为新分组或加入已有分组 → 点击股票进入详情。
 
@@ -146,7 +153,7 @@ flowchart LR
 2. 点击某行进入详情：写入「当前集合」（含本页查询快照），跳 `/stocks/{code}`。
 3. 详情页分通道并发拉复权行情、指标序列和原始最新报价；默认三图按交易日对齐，MACD 局部失败不影响 K线/量能。
 4. 同时具备 `trade-profile:view` 与 `stocks:trade-eval` 时加载可见买卖方案并透传 opaque `profile_ref` 做评估；切换方案即重算信号。用上一只/下一只在集合内连续翻看，到边界自动续拉下一页。
-5. 图表二/三类型、隐藏状态及各有序组合高度自动保存；刷新、切股或 KeepAlive 往返后恢复。
+5. 图表二/三默认类型和默认高度由设置抽屉或显式“设为默认”保存；主区拖动和键盘调整只在当前会话生效。
 
 ### 建 / 用股票分组
 1. 普通查询中跨页/跨搜索勾选股票，累积进底部购物车。

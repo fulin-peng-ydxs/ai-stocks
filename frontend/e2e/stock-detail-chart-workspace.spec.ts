@@ -403,6 +403,67 @@ test.describe('个股详情三图工作区', () => {
     expect(consoleIssues).toEqual([])
   })
 
+  test('个股走势交易日失败可局部重试且不重拉已成功股票', async ({
+    page,
+    request,
+  }, testInfo) => {
+    runInStandardViewport(testInfo)
+    const consoleIssues = collectConsoleIssues(page)
+    const { samples } = await loadStocksOnlyContext(page, request)
+    await installPreferenceEndpoint(page, [{
+      scope: 'page',
+      pageKey: 'stocks',
+      prefKey: 'settings',
+      value: {
+        defaultView: 'list',
+        showAnalysisPanel: true,
+        defaultChartMode: 'compare',
+        benchmarkCode: '000905.SH',
+        compareMetrics: ['cum'],
+        defaultCompareMetric: 'cum',
+      },
+    }])
+    await installFixedStockListEndpoint(page, samples)
+
+    let calendarRequests = 0
+    let stockBarRequests = 0
+    let calendarAvailable = false
+    page.on('request', (routedRequest) => {
+      const pathname = new URL(routedRequest.url()).pathname
+      if (/\/api\/stocks\/[^/]+\/bars$/.test(pathname) && !pathname.includes('/benchmarks/')) {
+        stockBarRequests += 1
+      }
+    })
+    await page.route('**/api/stocks/benchmarks/*/bars*', async (route) => {
+      calendarRequests += 1
+      if (!calendarAvailable) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 5030, msg: '测试交易日暂时不可用', data: null }),
+        })
+        return
+      }
+      await route.continue()
+    })
+
+    await page.goto('/stocks')
+    const analysisPanel = page.getByTestId('stock-analysis-panel')
+    await expect(analysisPanel.getByText('市场交易日加载失败', { exact: true })).toBeVisible()
+    await expect(analysisPanel).toContainText('测试交易日暂时不可用')
+    const initialStockBarRequests = stockBarRequests
+    const initialCalendarRequests = calendarRequests
+    calendarAvailable = true
+
+    await page.getByTestId('stock-analysis-retry-calendar').click()
+
+    await expect(page.getByTestId('stock-analysis-retry-calendar')).toHaveCount(0)
+    await expect(analysisPanel.locator('.stock-compare-chart')).toBeVisible()
+    expect(calendarRequests).toBe(initialCalendarRequests + 1)
+    expect(stockBarRequests).toBe(initialStockBarRequests)
+    expect(consoleIssues.filter((issue) => !issue.includes('status of 503'))).toEqual([])
+  })
+
   test('每日榜单进入第二只股票后集合序号和返回来源保持一致', async ({
     page,
     request,

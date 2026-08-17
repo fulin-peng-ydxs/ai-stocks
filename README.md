@@ -78,12 +78,12 @@
 | 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按用户可见**评分方案**全市场排序（自己的方案、租户公开、全体公开、平台内置预设；0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存、版本回看、按权限公开和复制 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率；历史记录可按权限公开，公开记录可复用参数重跑 | [backtest.md](agent-works/architecture/backtest.md) |
-| 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 列表（服务端排序/分页，含退市股）；详情（K 线 + 指标快照 + 当前买卖方案信号）；股票分组篮子 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
+| 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 服务端排序分页与跨页分组；查询页可在共享工作台中做多股走势对比和 K 线分析；详情页提供指标快照、买卖方案信号与连续翻看 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
 | ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) |
 | 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
 | 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
-| 🧩 **板块采集** | `views/data/*`（板块数据 tab / 采集 / 质量 / 调度） | `/api/sectors/*`, `/api/data/*` | 同花顺板块数据（概念/行业）直连采集：字典/成分/指数/资金流，只进不出成分模型 + 周频控制 + 板块专项质检修复闭环；`/sectors` 只读 API 已交付（`sectors:view` 权限），前端板块行情页待建 | [board-collection.md](agent-works/architecture/board-collection.md) |
+| 🧩 **板块行情与采集** | `SectorsView` / `SectorDetailView` / `views/data/*` | `/api/sectors/*`, `/api/data/*` | 板块工作台支持概念/行业查询、连续指数对比、资金流和成分股钻取；数据管理承接字典/成分/指数/资金流采集、周频控制和专项质检修复 | [board-collection.md](agent-works/architecture/board-collection.md) |
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线（含 MACD）+ T+1 真实撮合买卖；一局产出评分/评级/资金曲线，结算揭晓板块；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
 > `/system/*` 是系统管理域，包含配置管理、布局配置、用户、角色、菜单/功能点和租户。评分规则与买卖指标是业务可授权子页；技术指标、系统设置、角色、菜单/功能点、租户和全局布局配置保持 system-only；用户管理可按 `user:*` 功能码授权给租户管理员，但服务层仍把非 system 用户限制在本租户。
@@ -119,7 +119,7 @@ flowchart LR
 | 发现榜单异常 | 数据管理 → 概览/质量定位缺口 → 修复 → 回榜单重新打开对应日期 | 评分快照会被标记失效，下次打开按可见方案自动重算 |
 | 新建选股思路 | 配置管理 → 评分规则/买卖指标建方案 → 策略筛选试条件 → 每日榜单看排序 | 得到可保存、可版本回看、可按权限公开的评分方案 |
 | 验证策略能否交易 | 策略筛选 + 评分方案 + 买卖方案 → 回测验证 | 净值、回撤、逐笔成交、卖出原因、分层命中率 |
-| 跟踪一批股票 | 个股查询跨页勾选 → 存为分组 → 详情页连续翻看 | 分组篮子、组内涨幅、K线与买卖信号联动 |
+| 跟踪一批股票 | 个股查询跨页勾选 → 工作台走势对比/K 线分析 → 存为分组 → 详情页连续翻看 | 统一交易日相对走势、分组篮子、组内涨幅与买卖信号 |
 | 练盘感 / 验手感 | 盘感训练 → 配置窗口/资金 → 盲测随机股逐日买卖 → 结算看评级与成长曲线 | 成交明细、资金曲线、评分、身份揭晓、跨局成长轨迹 |
 
 ---

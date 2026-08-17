@@ -46,7 +46,7 @@ def _client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     for route in app.routes:
         for dependency in getattr(getattr(route, "dependant", None), "dependencies", []):
             call = getattr(dependency, "call", None)
-            if getattr(call, "resource_code", None) == "stocks:view":
+            if getattr(call, "resource_code", None) in {"stocks:view", "stocks:trade-eval"}:
                 app.dependency_overrides[call] = lambda: None
     return TestClient(app)
 
@@ -81,6 +81,23 @@ def test_stock_benchmark_route_rejects_invalid_lookback(monkeypatch, lookback):
         "/api/stocks/benchmarks/000905.SH/bars",
         params={"lookback": lookback, "end": "2026-08-07"},
     )
+
+    assert response.status_code == 422
+    assert _StubBenchmarkService.calls == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/stocks?trade_date=2026-02-30",
+        "/api/stocks/000001.SZ/bars?end=2026-02-30",
+        "/api/stocks/benchmarks/000905.SH/bars?end=2026-02-30",
+        "/api/stocks/000001.SZ/signal?date=2026-02-30",
+        "/api/stocks/000001.SZ/trade-eval?profile_id=private:test&date=2026-02-30",
+    ],
+)
+def test_stock_routes_reject_invalid_dates_before_business_queries(monkeypatch, path):
+    response = _client(monkeypatch).get(path)
 
     assert response.status_code == 422
     assert _StubBenchmarkService.calls == []

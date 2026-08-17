@@ -20,32 +20,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.auth.deps import require_system
 from backend.api.audit import router as audit_router
-from backend.auth.middleware import AuthMiddleware, SecurityMiddleware
 from backend.api.auth import router as auth_router
 from backend.api.backtest import router as backtest_router
 from backend.api.board import router as board_router
 from backend.api.config import router as config_router
+from backend.api.data_admin import router as data_admin_router
+from backend.api.data_tasks import router as data_tasks_router
+from backend.api.dicts import router as dict_router
 from backend.api.health import router as health_router
 from backend.api.indicators import router as indicators_router
 from backend.api.layout import router as layout_router
+from backend.api.menus import router as menus_router
 from backend.api.profiles import router as profiles_router
+from backend.api.resources import router as resources_router
+from backend.api.roles import router as roles_router
 from backend.api.score_profiles import router as score_profiles_router
 from backend.api.sectors import router as sectors_router
-from backend.api.trade_profiles import router as trade_profiles_router
-from backend.api.user_preferences import router as user_preferences_router
 from backend.api.stock_groups import router as stock_groups_router
 from backend.api.stocks import router as stocks_router
-from backend.api.data_tasks import router as data_tasks_router
-from backend.api.data_admin import router as data_admin_router
-from backend.api.dicts import router as dict_router
-from backend.api.training import router as training_router
-from backend.api.users import router as users_router
-from backend.api.roles import router as roles_router
-from backend.api.menus import router as menus_router
-from backend.api.resources import router as resources_router
 from backend.api.tenants import router as tenants_router
+from backend.api.trade_profiles import router as trade_profiles_router
+from backend.api.training import router as training_router
+from backend.api.user_preferences import router as user_preferences_router
+from backend.api.users import router as users_router
+from backend.auth.deps import require_system
+from backend.auth.middleware import AuthMiddleware, SecurityMiddleware
 from backend.common.exceptions import AIStocksError
 from backend.common.logging import get_logger
 from backend.config import PROJECT_ROOT, get_settings
@@ -96,7 +96,7 @@ def create_app() -> FastAPI:
         )
 
     # FastAPI 入参校验失败（422）：默认 detail 为 [{loc,msg,type}] 数组，前端拿数组当文案
-    # 会空白/变 "[object Object]"。转译为统一 {code:4000,msg:中文} 软失败；pydantic 的 msg
+    # 会空白/变 "[object Object]"。转译为统一 {code:4000,msg:中文}，pydantic 的 msg
     # 是英文系统文本（"Input should be..."），一律不展示，只带出字段名定位问题。
     @app.exception_handler(RequestValidationError)
     async def _handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -109,9 +109,14 @@ def create_app() -> FastAPI:
                 field = name
                 break
         message = f"参数 {field} 不合法" if field else "请求参数不合法"
-        log.warning("入参校验失败 %s: %s", field or "(整体)", errors)
+        # pydantic 的 error 会携带 input/ctx，其中可能包含密码或令牌；日志只保留定位元数据。
+        safe_errors = [
+            {"type": error.get("type"), "loc": error.get("loc")}
+            for error in errors
+        ]
+        log.warning("入参校验失败 %s: %s", field or "(整体)", safe_errors)
         return JSONResponse(
-            status_code=200,
+            status_code=422,
             content={"code": 4000, "msg": message, "data": None},
         )
 
@@ -195,7 +200,7 @@ def create_app() -> FastAPI:
             from backend.indicators.definition import IndicatorDefRepo
 
             builtin_count = IndicatorDefRepo(market).seed_builtins()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise RuntimeError(f"DuckDB 连通性或内置指标初始化失败：{e}") from e
         if not get_pg_client().ping():
             raise RuntimeError("PostgreSQL 连通性自检失败：ping 未返回预期结果")

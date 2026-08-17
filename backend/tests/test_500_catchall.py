@@ -6,11 +6,10 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, Query
+from fastapi import Body, FastAPI, Query
 from fastapi.testclient import TestClient
 
 from backend.common.exceptions import AIStocksError, NotFoundError
-from backend.main import create_app
 
 
 def _minimal_5xx_app() -> FastAPI:
@@ -38,6 +37,10 @@ def _minimal_5xx_app() -> FastAPI:
 
     @app.get("/bounded")
     def bounded(size: int = Query(20, ge=1, le=100)) -> None:
+        return None
+
+    @app.post("/sensitive")
+    def sensitive(password: int = Body(embed=True)) -> None:
         return None
 
     return app
@@ -77,10 +80,27 @@ def test_validation_error_maps_to_code_4000_chinese_msg():
     """FastAPI 422 校验失败转译 {code:4000,msg:中文}，不把 pydantic 英文/数组 detail 回传。"""
     client = TestClient(_minimal_5xx_app(), raise_server_exceptions=False)
     resp = client.get("/bounded?size=200")
-    assert resp.status_code == 200
+    assert resp.status_code == 422
     body = resp.json()
     assert body["code"] == 4000
     assert body["msg"] == "参数 size 不合法"
     assert body["data"] is None
     assert "Input should be" not in resp.text
     assert "[" not in resp.text  # 数组 detail 不再原样回传
+
+
+def test_validation_error_log_excludes_sensitive_input(monkeypatch):
+    """入参校验日志只保留错误类型与字段位置，不记录密码等原始输入。"""
+    warning_calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(
+        "backend.main.log.warning",
+        lambda *args, **_kwargs: warning_calls.append(args),
+    )
+    client = TestClient(_minimal_5xx_app(), raise_server_exceptions=False)
+
+    resp = client.post("/sensitive", json={"password": "secret-in-validation-log"})
+
+    assert resp.status_code == 422
+    assert warning_calls
+    assert "secret-in-validation-log" not in repr(warning_calls)
+    assert "input" not in repr(warning_calls)

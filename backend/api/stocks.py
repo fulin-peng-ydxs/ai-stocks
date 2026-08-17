@@ -87,7 +87,7 @@ def _serialize_indicator_rows(df: pd.DataFrame) -> list[dict]:
 @router.get("/stocks", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stocks:view"))])
 def list_stocks(q: str | None = None, board: str | None = None,
-                exclude_st: bool = False, trade_date: str | None = None,
+                exclude_st: bool = False, trade_date: date | None = None,
                 sort_by: str = "pct_chg", sort_order: str = "asc",
                 page: int = 1, size: int = 50) -> ApiResponse:
     """个股列表（按交易日展示当日涨跌幅 + 板块/ST/退市筛选 + 服务端排序）。
@@ -98,7 +98,7 @@ def list_stocks(q: str | None = None, board: str | None = None,
     sort_by ∈ {pct_chg,close,name,industry,code}，sort_order ∈ {asc,desc}；NULL（停牌）恒排末尾。
     """
     c = get_client()
-    td = (date.fromisoformat(trade_date) if trade_date else pd.Timestamp(
+    td = (trade_date if trade_date else pd.Timestamp(
         c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date())
     conds, params = ["1=1"], []
     if q:
@@ -152,9 +152,9 @@ def list_stocks(q: str | None = None, board: str | None = None,
 @router.get("/stocks/{code}/bars", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stocks:view"))])
 def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
-               end: str | None = None) -> ApiResponse:
+               end: date | None = None) -> ApiResponse:
     c = get_client()
-    end_date = date.fromisoformat(end) if end else pd.Timestamp(
+    end_date = end if end else pd.Timestamp(
         c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date()
     name_df = c.query_df("SELECT name FROM stock_basic WHERE code = ?", [code])
     name = str(name_df.iloc[0]["name"]) if not name_df.empty else None
@@ -185,11 +185,11 @@ def stock_bars(code: str, adjust: str = "qfq", lookback: int = 250,
 def stock_benchmark_bars(
     index_code: str,
     lookback: Annotated[int, Query(ge=2, le=6000)] = 61,
-    end: str | None = None,
+    end: date | None = None,
 ) -> ApiResponse:
     """个股相对强弱使用的市场交易日基准；与板块入口共享查询但保持 stocks 权限。"""
     c = get_client()
-    end_date = date.fromisoformat(end) if end else pd.Timestamp(
+    end_date = end if end else pd.Timestamp(
         c.query_df("SELECT max(trade_date) AS d FROM index_bar").iloc[0]["d"]
     ).date()
     service = MarketBenchmarkService(c)
@@ -216,12 +216,15 @@ def stock_benchmark_bars(
 
 @router.get("/stocks/{code}/signal", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stocks:view"))])
-def stock_signal(code: str, date_: str | None = Query(None, alias="date")) -> ApiResponse:
+def stock_signal(
+    code: str,
+    date_: Annotated[date | None, Query(alias="date")] = None,
+) -> ApiResponse:
     """个股当日买点 + 技术风险标签（按需计算，T-M6-3）。"""
     from backend.services.screen_score import ScreenScoreService
 
     c = get_client()
-    d = date.fromisoformat(date_) if date_ else pd.Timestamp(
+    d = date_ if date_ else pd.Timestamp(
         c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date()
     svc = ScreenScoreService(c)
     sig = svc.compute_signals(d, [code]).get(code, {})
@@ -268,8 +271,11 @@ def _describe_tree(tree: dict, snap: pd.DataFrame, name_map: dict) -> dict:
 
 @router.get("/stocks/{code}/trade-eval", response_model=ApiResponse,
             dependencies=[Depends(require_perm("stocks:trade-eval"))])
-def stock_trade_eval(code: str, profile_id: str,
-                     date_: str | None = Query(None, alias="date")) -> ApiResponse:
+def stock_trade_eval(
+    code: str,
+    profile_id: str,
+    date_: Annotated[date | None, Query(alias="date")] = None,
+) -> ApiResponse:
     """个股×买卖指标方案：当日买/卖条件是否触发 + 各条件成立明细（v2.0 替代固定买点引擎）。
 
     点时安全（仅用 ≤ 当日数据）。买卖方案所用指标均非横截面，单股快照求值即正确。
@@ -285,7 +291,7 @@ def stock_trade_eval(code: str, profile_id: str,
     prof = TradeProfileRepo(c).get_visible(profile_id)
     if not prof:
         return err(404, "买卖方案不存在")
-    d = date.fromisoformat(date_) if date_ else pd.Timestamp(
+    d = date_ if date_ else pd.Timestamp(
         c.query_df("SELECT max(trade_date) AS d FROM daily_bar").iloc[0]["d"]).date()
     eng = IndicatorEngine(c)
     snap = eng.wide_snapshot(d, d, codes=[code])
