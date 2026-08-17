@@ -3,7 +3,7 @@ import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
+import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
   getDataStatus, getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, getStockQuality, searchBoards,
   TASK_LABEL, STATUS_LABEL, taskDisplayLabel, SOURCE_LABEL,
@@ -23,7 +23,7 @@ import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -70,15 +70,12 @@ const taskError = ref('')
 const taskLoading = ref(true)
 const taskTotal = ref(0)
 const taskPage = ref(1)
-// 每页条数单向：组件配置层（抽屉可调）提供默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
-const taskSizeDefault = computed<number>(() => {
-  return normalizePageSize(componentValueOf('taskTable', 'pageSize'))
-})
-const taskSize = useDefaultedSessionValue(taskSizeDefault, {
-  onSynced: () => {
+const { pageSize: taskSize, changePageSize: changeTaskPageSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('taskTable', 'pageSize'),
+  resetPage: () => {
     taskPage.value = 1
-    void loadTasks()
   },
+  reload: loadTasks,
 })
 const taskFilter = ref<{ status: string; task_type: string }>({ status: '', task_type: '' })
 const TASK_SORT_FIELDS = ['time', 'type', 'status'] as const
@@ -104,15 +101,12 @@ const logError = ref('')
 const logLoading = ref(true)
 const logTotal = ref(0)
 const logPage = ref(1)
-// 每页条数：同 taskSize 单向，配置层默认值 → 会话 ref。
-const logSizeDefault = computed<number>(() => {
-  return normalizePageSize(componentValueOf('logTable', 'pageSize'))
-})
-const logSize = useDefaultedSessionValue(logSizeDefault, {
-  onSynced: () => {
+const { pageSize: logSize, changePageSize: changeLogPageSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('logTable', 'pageSize'),
+  resetPage: () => {
     logPage.value = 1
-    void loadLogs()
   },
+  reload: loadLogs,
 })
 const logTables = ref<string[]>([])
 const logFilter = ref<{ status: string; table_name: string }>({ status: '', table_name: '' })
@@ -708,7 +702,7 @@ watch(
             @row-click="(r: AsyncTask) => openLogs(r.id)"
             @sort-change="onTaskSort"
             @page-change="(p: number) => { taskPage = p; loadTasks() }"
-            @size-change="(s: number) => { taskSize = s; taskPage = 1; loadTasks() }"
+            @size-change="changeTaskPageSize"
           >
             <AppTableColumn label="任务ID" show-overflow-tooltip>
               <template #default="{ row }"><span class="task-id">{{ row.id }}</span></template>
@@ -812,7 +806,7 @@ watch(
             :pagination="{ currentPage: logPage, pageSize: logSize, total: logTotal, pageSizes: PAGE_SIZE_OPTIONS }"
             @sort-change="onLogSort"
             @page-change="(p: number) => { logPage = p; loadLogs() }"
-            @size-change="(s: number) => { logSize = s; logPage = 1; loadLogs() }"
+            @size-change="changeLogPageSize"
           >
             <AppTableColumn label="目标表" prop="table" sortable="custom">
               <template #default="{ row }">{{ row.table_name }}</template>

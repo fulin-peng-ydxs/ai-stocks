@@ -21,7 +21,7 @@ import SectorCompareChart from '@/components/SectorCompareChart.vue'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
-import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
+import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
   addSectorWatchlist,
   getSectorBenchmarkBars,
@@ -55,7 +55,7 @@ import {
   useKlinePrefs,
 } from '@/composables/useKlinePrefs'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   createDefaultStockChartPreferences,
@@ -164,9 +164,6 @@ const LIST_SCOPE_OPTIONS = [
   { label: '自选', value: 'watchlist' },
 ]
 
-const configuredPageSize = computed<number>(() => {
-  return normalizePageSize(componentValueOf('table', 'pageSize'))
-})
 const hiddenColumns = computed<string[]>(() =>
   (componentValueOf('table', 'hiddenColumns') as string[]) ?? [],
 )
@@ -191,13 +188,17 @@ const boardType = ref<BoardType | ''>(settings.defaultType === 'concept' || sett
 const listScope = ref<'all' | 'watchlist'>(settings.defaultScope)
 const keyword = ref('')
 const page = ref(1)
-// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
-const size = useDefaultedSessionValue(configuredPageSize, {
+const {
+  defaultPageSize: configuredPageSize,
+  pageSize: size,
+  changePageSize,
+} = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('table', 'pageSize'),
   shouldSync: () => !restoring,
-  onSynced: () => {
+  resetPage: () => {
     page.value = 1
-    void load()
   },
+  reload: load,
 })
 const total = ref(0)
 const rows = ref<SectorRow[]>([])
@@ -823,7 +824,7 @@ onMounted(async () => {
             @row-click="selectRow"
             @sort-change="onTableSortChange"
             @page-change="(value: number) => { page = value; void load() }"
-            @size-change="(value: number) => { size = value; page = 1; void load() }"
+            @size-change="changePageSize"
           >
             <AppTableColumn
               v-if="colVisible('name')"

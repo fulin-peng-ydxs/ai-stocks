@@ -192,7 +192,9 @@ function routeEntry({ route, pageKey, label, viewFile }) {
 }
 
 function designRow({ pageKey, viewName, label, archetype, slots }) {
-  const components = slots.map((slot) => `${slot.region}:${slot.component}${slot.grow ? '(growMain)' : ''}`).join(' / ')
+  const components = slots
+    .map((slot) => `${slot.parentId ? 'nested' : slot.region}:\`${slot.component}${slot.grow ? '(growMain)' : ''}\``)
+    .join(' / ')
   return `| \`${pageKey}\` | \`${viewName}\`（${label}） | \`${archetype}\` | \`density\` 信息密度 | 组件清单：${components}；由 scaffold-page 生成骨架，需补业务内容并完成视口验证 |`
 }
 
@@ -226,6 +228,21 @@ function main() {
     design: join(repoRoot, 'DESIGN.md'),
   }
   if (existsSync(files.view)) throw new Error(`View already exists: ${files.view}`)
+  const registrySource = readFileSync(files.registry, 'utf-8')
+  const routerSource = readFileSync(files.router, 'utf-8')
+  const designSource = readFileSync(files.design, 'utf-8')
+  const designRegistry = designSource.match(
+    /<!-- page-registry:start -->([\s\S]*?)<!-- page-registry:end -->/,
+  )?.[1] ?? ''
+  if (registrySource.includes(`pageKey: '${pageKey}'`)) throw new Error(`pageKey already exists in pageRegistry: ${pageKey}`)
+  if (routerSource.includes(`name: '${pageKey}'`)) throw new Error(`pageKey already exists in router: ${pageKey}`)
+  const designPageKeys = designRegistry
+    .split('\n')
+    .map((line) => line.match(/^\|\s*`([^`]+)`\s*\|/)?.[1])
+    .filter(Boolean)
+  if (designPageKeys.includes(pageKey)) {
+    throw new Error(`pageKey already exists in DESIGN marker: ${pageKey}`)
+  }
 
   const plan = [
     `create ${files.view}`,
@@ -242,17 +259,17 @@ function main() {
   writeFileSync(files.view, viewTemplate({ pageKey, label, slots }), 'utf-8')
   writeFileSync(
     files.registry,
-    insertBefore(readFileSync(files.registry, 'utf-8'), ']\n\n// P13 overlay', registryEntry({ pageKey, label, route, archetype, slots })),
+    insertBefore(registrySource, ']\n\n// P13 overlay', registryEntry({ pageKey, label, route, archetype, slots })),
     'utf-8',
   )
   writeFileSync(
     files.router,
-    insertBefore(readFileSync(files.router, 'utf-8'), '  // 兜底：未匹配路径', routeEntry({ route, pageKey, label, viewFile })),
+    insertBefore(routerSource, '  // 兜底：未匹配路径', routeEntry({ route, pageKey, label, viewFile })),
     'utf-8',
   )
   writeFileSync(
     files.design,
-    insertBefore(readFileSync(files.design, 'utf-8'), DESIGN_REGISTRY_END, `${designRow({ pageKey, viewName, label, archetype, slots })}\n`),
+    insertBefore(designSource, DESIGN_REGISTRY_END, `${designRow({ pageKey, viewName, label, archetype, slots })}\n`),
     'utf-8',
   )
   console.log(plan.join('\n'))

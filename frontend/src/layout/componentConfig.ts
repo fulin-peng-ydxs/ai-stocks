@@ -15,6 +15,8 @@ import type { ComponentKind, PageLayout, SlotSpec } from './schema'
 export type ComponentConfigLayer = 'preset' | 'page' | 'user'
 /** 含 default 的来源标记（用于来源追踪展示）。 */
 export type ComponentConfigSource = 'default' | ComponentConfigLayer
+/** user 层值的持久化目标；默认随页面布局保存，跨页面偏好走全局偏好。 */
+export type ComponentUserPersistence = 'layout' | 'global-preference'
 
 /** Web 配置控件类型。 */
 export type ComponentControl = 'enum' | 'int' | 'number' | 'bool' | 'string' | 'string[]' | 'object'
@@ -30,6 +32,8 @@ export interface ComponentFieldDef {
   control: ComponentControl
   /** 允许覆盖该字段的层级（从低到高的子集）。 */
   layers: ComponentConfigLayer[]
+  /** 仅在包含 user 层时有意义；未声明时默认为 layout。 */
+  userPersistence?: ComponentUserPersistence
   /** enum 选项。 */
   options?: (string | number)[]
   /** enum 选项中文名（按 String(value) 取）。 */
@@ -92,6 +96,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       label: '抽屉尺寸',
       control: 'enum',
       layers: ['preset', 'page', 'user'],
+      userPersistence: 'global-preference',
       options: ['sm', 'md', 'lg'],
       optionLabels: { sm: '小', md: '中', lg: '大' },
       default: 'md',
@@ -121,6 +126,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       label: '默认折叠段',
       control: 'string[]',
       layers: ['preset', 'page', 'user'],
+      userPersistence: 'global-preference',
       options: ['layout', 'components', 'business'],
       optionLabels: { layout: '布局', components: '组件设置', business: '业务选项' },
       default: [],

@@ -4,6 +4,7 @@ import { Close } from '@element-plus/icons-vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
 import { getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
+import { getComponentFieldDef } from '@/layout/componentConfig'
 import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
 import PageDrawer from './PageDrawer.vue'
@@ -48,41 +49,48 @@ const emit = defineEmits<{
 const slots = useSlots()
 const drawerPreferences = useDrawerPreferences()
 
+function usesGlobalPreference(slotId: string, field: string): boolean {
+  const slot = props.pageKey
+    ? getPageEntry(props.pageKey)?.layout.slots.find((candidate) => candidate.id === slotId)
+    : undefined
+  return !!slot && getComponentFieldDef(slot.component, field)?.userPersistence === 'global-preference'
+}
+
 const activeConfig = computed<DrawerConfig | undefined>(() => {
   if (!props.config) return undefined
   return {
     ...props.config,
     componentValueOf(slotId: string, field: string) {
-      if (slotId === 'settings' && field === 'size') {
+      if (usesGlobalPreference(slotId, field) && field === 'size') {
         return drawerPreferences.size.value ?? props.config?.componentValueOf(slotId, field)
       }
-      if (slotId === 'settings' && field === 'defaultCollapsed') {
+      if (usesGlobalPreference(slotId, field) && field === 'defaultCollapsed') {
         return drawerPreferences.defaultCollapsed.value ?? props.config?.componentValueOf(slotId, field)
       }
       return props.config?.componentValueOf(slotId, field)
     },
     setComponentKnob(slotId: string, field: string, value: unknown) {
-      if (slotId === 'settings' && field === 'size') {
+      if (usesGlobalPreference(slotId, field) && field === 'size') {
         drawerPreferences.setSize(value)
         return
       }
-      if (slotId === 'settings' && field === 'defaultCollapsed') {
+      if (usesGlobalPreference(slotId, field) && field === 'defaultCollapsed') {
         drawerPreferences.setDefaultCollapsed(value)
         return
       }
       props.config?.setComponentKnob(slotId, field, value)
     },
     componentSourceOf(slotId: string, field: string) {
-      if (slotId === 'settings' && field === 'size' && drawerPreferences.size.value) return 'user'
-      if (slotId === 'settings' && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) return 'user'
+      if (usesGlobalPreference(slotId, field) && field === 'size' && drawerPreferences.size.value) return 'user'
+      if (usesGlobalPreference(slotId, field) && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) return 'user'
       return props.config?.componentSourceOf?.(slotId, field) ?? 'default'
     },
     componentLayerValuesOf(slotId: string, field: string) {
       const values = props.config?.componentLayerValuesOf?.(slotId, field) ?? {}
-      if (slotId === 'settings' && field === 'size' && drawerPreferences.size.value) {
+      if (usesGlobalPreference(slotId, field) && field === 'size' && drawerPreferences.size.value) {
         return { ...values, user: drawerPreferences.size.value }
       }
-      if (slotId === 'settings' && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) {
+      if (usesGlobalPreference(slotId, field) && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) {
         return { ...values, user: drawerPreferences.defaultCollapsed.value }
       }
       return values

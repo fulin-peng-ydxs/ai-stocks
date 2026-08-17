@@ -28,7 +28,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useStockSet, type StockListState } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
@@ -84,9 +84,6 @@ const tableElementDefaultSort = computed(() => ({
   prop: defaultSortBy.value,
   order: defaultSortOrder.value === 'desc' ? 'descending' : 'ascending',
 }))
-const defaultSize = computed<number>(() => {
-  return normalizePageSize(componentValueOf('table', 'pageSize'))
-})
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
 function colVisible(key: string): boolean {
   return !hiddenColumns.value.includes(key)
@@ -102,13 +99,17 @@ const groupElementDefaultSort = computed(() => ({
   order: groupDefaultSortOrder.value === 'desc' ? 'descending' : 'ascending',
 }))
 const groupHidden = computed<string[]>(() => (componentValueOf('groupTable', 'hiddenColumns') as string[]) ?? [])
-const groupSizeCfg = computed<number>(() => {
-  return normalizePageSize(componentValueOf('groupTable', 'pageSize'))
-})
-// 分组每页条数：单向，组件配置层默认值 → 会话 ref（分页器改动不写回）。
-const groupSize = useDefaultedSessionValue(groupSizeCfg, {
+const {
+  defaultPageSize: groupSizeCfg,
+  pageSize: groupSize,
+  changePageSize: changeGroupPageSize,
+} = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('groupTable', 'pageSize'),
   shouldSync: () => inGroupMode.value && !restoringListState,
-  onSynced: () => groupSearch(),
+  resetPage: () => {
+    groupPage.value = 1
+  },
+  reload: groupSearch,
 })
 function groupColVisible(key: string): boolean {
   return !groupHidden.value.includes(key)
@@ -127,10 +128,17 @@ const tradeDate = ref('')          // 交易日期（默认最新，展示当日
 const sortBy = ref(defaultSortBy.value)      // 服务端排序字段（默认涨跌幅，初值取组件配置默认排序）
 const sortOrder = ref<'asc' | 'desc'>(defaultSortOrder.value)  // 默认正序
 const page = ref(1)
-// 每页条数：单向，组件配置层默认值（slot 'table'.pageSize）→ 会话 ref；分页器改动不写回。
-const size = useDefaultedSessionValue(defaultSize, {
+const {
+  defaultPageSize: defaultSize,
+  pageSize: size,
+  changePageSize,
+} = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('table', 'pageSize'),
   shouldSync: () => !inGroupMode.value && !restoringListState,
-  onSynced: () => search(),
+  resetPage: () => {
+    page.value = 1
+  },
+  reload: load,
 })
 const total = ref(0)
 const rows = ref<StockBasic[]>([])
@@ -746,7 +754,7 @@ onBeforeUnmount(() => {
           @row-click="(r: GroupMember) => enterDetail(r.code)"
           @sort-change="onGroupSortChange"
           @page-change="(p:number)=>{ groupPage=p; loadGroupDetail() }"
-          @size-change="(s:number)=>{ groupSize=s; groupPage=1; loadGroupDetail() }">
+          @size-change="changeGroupPageSize">
           <AppTableColumn role="structural">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />
@@ -806,7 +814,7 @@ onBeforeUnmount(() => {
           :default-sort="tableElementDefaultSort"
           @sort-change="onSortChange"
           @page-change="(p:number)=>{ page=p; load() }"
-          @size-change="(s:number)=>{ size=s; page=1; load() }">
+          @size-change="changePageSize">
           <AppTableColumn role="structural">
             <template #header>
               <el-checkbox :model-value="allCurChecked" :indeterminate="someCurChecked" @change="toggleAllCur" />

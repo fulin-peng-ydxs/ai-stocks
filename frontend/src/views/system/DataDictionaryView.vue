@@ -22,14 +22,13 @@ import {
   type DictType,
 } from '@/api/dict'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
-import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import { DICT_COLOR_PRESETS, dictColorSwatchStyle, dictTagStyle, normalizeDictColor } from '@/utils/dictColor'
 import type { AppRowAction } from '@/components/rowActions'
-import { normalizePageSize } from '@/constants/pagination'
 
 const pageKey = 'data-dictionary'
 
@@ -105,15 +104,13 @@ const activeType = computed(() => typeRows.value.find((row) => row.code === sele
 let typeRequestSeq = 0
 let itemRequestSeq = 0
 let typeSearchTimer: ReturnType<typeof setTimeout> | null = null
-// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
-const pageSizeDefault = computed(() => {
-  return normalizePageSize(componentValueOf('itemTable', 'pageSize'), 50)
-})
-const pageSize = useDefaultedSessionValue(pageSizeDefault, {
-  onSynced: () => {
+const { pageSize, changePageSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('itemTable', 'pageSize'),
+  fallback: 50,
+  resetPage: () => {
     itemPage.value = 1
-    void loadItems()
   },
+  reload: loadItems,
 })
 const DICT_ITEM_SORT_FIELDS = ['sort', 'code', 'label', 'enabled', 'updated_at'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof DICT_ITEM_SORT_FIELDS)[number]>({
@@ -268,11 +265,6 @@ function pageChanged(value: number) {
   void loadItems()
 }
 
-function pageSizeChanged(value: number) {
-  pageSize.value = value
-  itemPage.value = 1
-  void loadItems()
-}
 
 function openCreateType() {
   typeDialogMode.value = 'create'
@@ -577,7 +569,7 @@ onBeforeUnmount(() => {
               :pagination="{ currentPage: itemPage, pageSize, total: itemTotal }"
               @sort-change="onSortChange"
               @page-change="pageChanged"
-              @size-change="pageSizeChanged"
+              @size-change="changePageSize"
             >
               <AppTableColumn v-if="colVisible('code')" label="code" prop="code" show-overflow-tooltip sortable="custom">
                 <template #default="{ row }"><span class="mono">{{ row.code }}</span></template>

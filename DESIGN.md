@@ -167,7 +167,7 @@ Key Characteristics：
 - 表格列、筛选项、弹窗/抽屉结构、空态/加载/错误态、操作按钮组第二次出现时，也纳入复用判断。
 - 不抽取时必须有明确理由，例如领域语义不同、生命周期明显不同、抽象后反而增加调用复杂度。
 - 复用单元形成后，后续同类实现必须消费该组件、composable 或 helper，禁止继续复制同类代码。
-- 用户偏好同步只能消费既有偏好骨架：全局 singleton 偏好使用 `useGlobalPreferenceSync`，页面/feature 级实例偏好使用 `useUserPreference`；禁止在页面或业务 composable 内另写 token 守卫、身份重同步、debounce、PG 读写和 localStorage fallback 的并行实现。
+- 用户偏好同步只能消费既有偏好骨架：全局 singleton 偏好使用 `useGlobalPreferenceSync`，由它统一 token/身份守卫、PG `user_preference` 读写、debounce、加载失败回调和本地 fallback，调用方只保留值归一化、DOM 副作用和本地 key 差异；页面/feature 级实例偏好使用 `useUserPreference`，由它统一默认值合并、scope/pageKey/prefKey、PG 与本地回退、hydrate 前 dirty 保护和重置入口，页面只声明业务字段。禁止在页面或业务 composable 内复制这些同步流程。
 
 ### 组件资产分层
 
@@ -181,7 +181,7 @@ Key Characteristics：
 - 页面外壳、slot、滚动归属、可配置字段必须走系统组件种类和 `pageRegistry`。
 - 真实 UI 行为优先复用真实复用组件；当同类控件在两个及以上页面出现，或承载全局交互规则时，必须登记到下方“真实复用组件清单”。
 - 真实组件只有需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器时，才新增或关联系统组件种类。
-- 禁止只在 `COMPONENT_CATALOG` 登记但页面不读取的“假配置”；也禁止已有真实复用组件时继续在页面内复制同类控件行为。
+- `COMPONENT_CATALOG` 是系统允许的组件种类与能力词汇表，允许先登记当前尚无页面消费者的 kind，供 schema、预览和后续布局选型复用；“假配置”指 `COMPONENT_FIELD_DEFS` / `pageRegistry.consumedComponentFields` 暴露了页面并未真实读取应用的 Web 字段。已有真实复用组件时仍禁止页面复制同类控件行为。
 
 系统组件页信息维护规则：
 
@@ -226,21 +226,9 @@ Key Characteristics：
 | `SideMenu` / `TopNavigation` / `WorkspaceTabs` / `WorkspaceRouteView` / `MenuIcon` | `frontend/src/components/SideMenu.vue`、`frontend/src/components/TopNavigation.vue`、`frontend/src/components/WorkspaceTabs.vue`、`frontend/src/components/WorkspaceRouteView.vue`、`frontend/src/components/MenuIcon.vue` | 应用级菜单树、双层顶栏、保留现场的工作标签页、路由缓存与统一菜单图标渲染 | 无直接系统组件种类 | 菜单统一消费 `/me` 授权树和 `utils/permission.ts` 的路由归属口径；工作页面统一由 `WorkspaceRouteView` 渲染并按标签独立缓存，禁止业务页私建 KeepAlive；关闭标签必须同步移除对应缓存；侧栏、双层顶栏和菜单管理页统一用 `MenuIcon` 消费后端图标名；新增导航模式时复用 `useAppNavigation` 持久化偏好 |
 | `AssetVisibilityTag` / `AssetProfileLabel` / `AssetVisibilityActions` | `frontend/src/components/AssetVisibilityTag.vue`、`frontend/src/components/AssetProfileLabel.vue`、`frontend/src/components/AssetVisibilityActions.vue` | 公开资产来源、可见范围、只读状态、方案名称+版本+归属标签、发布/收回、复制为我的方案和复用参数动作 | 无直接系统组件种类 | 评分、筛选、买卖、回测等公开资产页面必须复用；方案选择/列表入口统一用 `AssetProfileLabel`，消费页包括 `BoardView`、`ScreenView`、`StockDetailView`、`ConfigView` 评分 tab、`ConfigView` 买卖 tab、`BacktestView` |
 | `ScoreGradeTag` | `frontend/src/components/ScoreGradeTag.vue` | 统一综合评分评级标签：主升浪核心=`danger`、龙头候选=`warning`、观察=`success`、未知评级=`info` | 无直接系统组件种类 | 每日榜单、策略筛选、评分试算、回测交易及回测当日榜单统一复用；训练模块的 S/A/B/C/D 属于另一套评级，不套用本组件 |
-| `AssetSearchDrawer` / `AssetProfileSelect` | `frontend/src/components/asset-search/AssetSearchDrawer.vue`、`frontend/src/components/asset-search/AssetProfileSelect.vue` | 统一资产搜索抽屉（系统内置/租户公开/全体公开来源分段、防抖关键字、服务端分页、加载查看/复制为我的，回测形态为复用参数重跑）与统一资产方案选择器（`select` 下拉 / `list` 侧栏双形态、只加载「我的」、临时预览对象注入、复制后刷新选中） | 无直接系统组件种类 | 评分、筛选、买卖、榜单、个股详情、回测等公开资产页面的方案选择/搜索统一消费；抽屉内部复用 `PageDrawer`(xl)/`AppDataTable`/`AppTableColumn`/`AppRowActions`/`AppStateBlock`/`AppPagination`，选择器复用 `AssetProfileLabel`；页面不得再保留私有方案选择器或搜索弹窗逻辑。**权限态**：选择器经 `viewPermission`（缺省可浏览）判定，无权限时不渲染搜索入口与复制引导、不调 browse；抽屉经 `canBrowse` 显示 `AppStateBlock state="error" variant="permission"` 无权态并整体隐藏工具栏与分页页脚——不得把无权伪装成空态。抽屉操作列 `role="action" fixed="right"`，固定右缘保持核心操作可见；操作 slot 收到无稳定资产 key 的初始化空 scope 时不得渲染禁用按钮或占位操作。**已知约束（ElSelect 递归）**：「加载查看」的临时预览项不得同步设为当前选中（不 emit `update:modelValue`）——临时项不在持久 `items` 中，一旦同步选中，el-select 会把 `selectedItem` 锁到非持久 option 上并形成递归更新。默认 `loadedMode=option` 只把临时项作为可移除候选并 emit `loaded`，由消费页在页面状态中载入详情；需要选择器外展示的页面必须使用 `loadedMode=external`，组件只 emit `loaded`、不注入 `tempItem`，页面用只读 chip 展示快照。`clearTransient()` 是父页清除外部快照时同步复位组件内部临时状态的唯一命令式入口。**移除闭环**：行内“×”只移除当前临时预览，不调用删除接口、不删除任何资产；资产删除只由消费页右上角独立删除按钮承接。移除事件由 `tempItem` 身份保证，不得用 `readonly` 二次判断，因为本人名下系统内置资产仍可能是可编辑态；消费页收到事件后必须先使详情请求失效，并同步清空资产身份、外部参数、只读态、结果与错误，再刷新 mine 列表。刷新失败时保持干净新建态，禁止出现“来源已移除但参数仍可编辑”的假新建态。**选择即展示例外**：仅榜单可启用 `selectLoaded`，加载项存入独立稳定 `selectedLoadedItem` 后再回写 `modelValue`。**历史参数投影**：mine ref 才写入选择器；系统/公开 ref 只在选择器外显示历史名称与版本；不可解析 ref 明示失效并阻止运行。后续消费页不得把外部资产并入自己的 mine 数组，也不得依赖页面数组等同组件 options |
-| `BacktestView` 回测记录入口 | `frontend/src/views/BacktestView.vue` | 页头精确选择本人最近 100 条回测记录，公开记录通过统一资产搜索抽屉浏览 | `AssetSearchDrawer` / `AssetProfileSelect` / `AssetVisibilityTag` / `AppIconButton` | 页头「回测记录」只加载 `source=mine` 且限制最近 100 条，但首屏不得默认选中或载入任何记录，用户可主动选记录或直接手动配置策略；删除当前历史记录后保留参数并回到未选择态，不得自动跳到下一条。租户公开/全体公开记录统一由抽屉承接。「加载查看」公开记录必须在选择器外以单个只读快照展示，不得写入 mine 候选或把 opaque ref 写入 ElSelect。历史记录候选文本较长，下拉层必须与输入框同宽并优先从控件下方展开，候选名称省略、日期与收益固定可见，禁止因内容宽度把弹层翻转到页面左侧。从公开查看态切换 mine 记录时必须先成功取得详情再原子退出，失败保留公开快照；策略/评分历史列表请求使用独立代次与 kind 快照，迟到响应不得混入当前模式。公开回测抽屉的类型与状态必须显示中文业务文案，不暴露 `strategy/score_check/done` 等内部枚举。选股方案空值文案须表达“不额外使用选股方案”，不得写成“全市场候选”，因为基础股票池仍有 ST 等过滤口径 |
+| `AssetSearchDrawer` / `AssetProfileSelect` | `frontend/src/components/asset-search/AssetSearchDrawer.vue`、`frontend/src/components/asset-search/AssetProfileSelect.vue` | 统一跨来源资产搜索抽屉与“我的资产”选择器，支持 `select` / `list` 形态、服务端搜索分页、加载查看、复制或复用 | 无直接系统组件种类 | 公开资产页面统一消费，禁止私建同类选择器或搜索弹窗。无浏览权限时隐藏入口并显示明确无权态，不伪装成空态；加载查看默认不改变当前选择，需要外部展示时使用只读快照，只有“加载即展示结果”的场景才启用 `selectLoaded`。移除临时预览不等于删除资产，消费页必须同步清理对应请求和外部状态。mine-only 候选不显示“我的”，外部只读项保留来源；列表失败发 `loadFailed`，消费页结束等待并提供错误反馈和重试。mine ref 才进入选择器，系统或公开 ref 使用外部只读展示，不可解析时明示失效并阻止执行。具体 props、emits 和状态机以组件类型、实现及 `AssetProfileSelect.spec.ts` 为准 |
 | `ConfigGroupForm` | `frontend/src/components/config/ConfigGroupForm.vue` | 系统设置配置组表单 | 消费 `config-panel` 的折叠与说明展示配置 | 动态配置组字段渲染优先复用 |
 | `HelpTip` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpHint.vue` | 页面说明和短提示 | 无直接系统组件种类 | 说明性长文收进提示组件，不在页面堆长文 |
-
-`AssetProfileSelect` 的来源标签遵循“只在有区分价值时显示”：组件的 mine-only 候选和当前选中不显示“我的”，系统内置、租户公开、全体公开等外部只读 option 必须保留来源标签；页面自定义的 mine-only 资产下拉（当前为回测记录）也必须复用 `assetDisplaySource()` 执行同一规则，不得无条件渲染来源标签。默认 `selectLoaded=false` 继续遵守上表的临时项递归边界；仅“选择即展示结果”的消费页可显式启用 `selectLoaded`，组件将加载项存入独立稳定 `selectedLoadedItem` 后再回写 `modelValue`，不得复用一次性 `tempItem` 作为选中项。当前仅每日榜单启用该模式，并须在方案、日期或 Top N 变化后自动刷新；回测等编辑/执行页仍沿用选择器外快照或显式执行按钮。
-
-`AssetProfileSelect` 的 mine 列表加载四态同样属于共享契约：`ready` 只表示成功，失败必须发 `loadFailed`；需要首屏汇合的消费页据此结束 pending、展示错误并保留重试，禁止长期停在 loading。`BacktestView` 关闭公开记录快照时必须恢复进入公开查看前的表单、结果和运行按钮状态；任一影响运行口径的输入变化都必须清除旧结果及历史归属。删除历史记录时可保留当前参数便于重跑，但确认文案和成功反馈必须明确说明“参数保留”；这与“移除外部方案预览必须清参数”是两种不同语义。历史记录快速切换、加载中关闭与复用参数请求共用请求代次守卫，迟到响应不得覆盖当前状态。策略回测与评分验证复用后再次运行都必须透传 `source_run_ref`。
-
-核心 composable 复用清单：
-
-| Composable | 路径 | 用途 | 使用规则 |
-|---|---|---|---|
-| `useGlobalPreferenceSync` | `frontend/src/composables/useGlobalPreferenceSync.ts` | 全局 singleton 用户偏好同步内核，统一 token/身份守卫、PG `user_preference` 读写、debounce、加载失败回调和本地 fallback 钩子 | 主题、导航模式、跨页面设置抽屉等全局偏好必须消费；调用方只保留值归一化、DOM 副作用和本地存储 key 差异，不得复制远端同步流程 |
-| `useUserPreference` | `frontend/src/composables/useUserPreference.ts` | 页面或 feature 实例级用户偏好骨架，统一默认值合并、PG `user_preference` 读写、本地 fallback、dirty-before-hydrate 保护和重置入口 | 页面业务选项、K 线偏好、回测参数记忆等按页面或功能隔离的偏好必须消费；页面只声明 defaults、scope、pageKey/prefKey 和业务字段 |
 
 ### 应用外壳
 
@@ -355,7 +343,7 @@ Key Characteristics：
 - 设置项必须有默认值、来源展示、合法值域和重置路径；页面设置抽屉 footer 的「恢复默认」必须同时重置页面业务偏好、页面布局/组件用户层，以及抽屉自身 `size/defaultCollapsed` 用户偏好。
 - 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`（抽屉=user 层、页面布局编辑器=page 层，经 `layer`/`slotIds`/`allowedLayersOf`/`collapsibleSlot`/`clearable` 适配），不得另写第二套组件特性表单。
 - 折叠规则统一：每个 slot 为可折叠组（`SettingsGroup` level 2；编辑器聚焦单 slot 时仅作标题锚点不折叠）；多行清单类特性（列显隐）为可折叠子组（level 3）；单字段为叶子不折叠。深层标题字号随层级递减但不低于正文。
-- **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；重复的默认值投影统一复用 `composables/useDefaultedSessionValue.ts`，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 或主区 `v-model` 直写持久层。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测表单 `rememberedParams` feature 通道「会话记忆优先于默认」）。
+- **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；重复的默认值投影统一复用 `composables/useDefaultedSessionValue.ts`，组件配置分页统一经 `composables/useComponentPageSizeSession.ts` 完成默认值解析、会话投影、归页和重载，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 或主区 `v-model` 直写持久层。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测表单 `rememberedParams` feature 通道「会话记忆优先于默认」）。
 - **新增属性登记判断（开发闭环必经步骤）**：新增页面、改造页面或给页面/组件新增任何可交互属性后，必须逐一回答三个问题再收尾——①该属性是否需要跨会话记住（默认值/偏好）？②需要时登记到哪条链路（业务偏好进 `usePageSettings` defaults + `#business` 插槽；组件展示字段按 §7.3 进 `consumedComponentFields`/`componentMeta`/`COMPONENT_FIELD_DEFS`/后端规则）？③需要默认值时页面是否已按上条单向机制消费（读默认初始化会话 ref、不写回）？三问任一答「是」却未落地，即视为本次改动未完成。反向同样成立：不再需要或语义失效的已登记项（如已被主区表单覆盖、关闭后无法再开启的开关）必须及时下线，不得在抽屉里堆积死项。
 
 ## 5. Layout Principles
@@ -466,7 +454,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 普通命令使用 `el-button`，纯图标操作使用 `AppIconButton`；同一操作组只保留一个主按钮，并保持尺寸、图标和状态反馈一致。
 - 页面主体字体、字号、行高、字重和间距必须优先消费 `global.css` 的 `--app-font-*`、`--app-line-height-*`、`--app-space-*` token 或 `.app-*` 语义类；新增 px 值必须属于文档允许的局部特例。
 - 说明性/描述性文字只要不是极短标签或必要操作指引/实时状态说明，收进 `HelpTip` / `HelpHint`。
-- 新增可配置能力必须同时具备组件能力事实源、字段配置事实源、页面消费事实源。
+- 新增系统组件 kind 必须维护组件能力事实源；新增 Web 配置字段必须同时维护字段配置事实源和页面消费事实源。只有 kind 语义能力发生变化时才同步修改 `COMPONENT_CATALOG`，不得为凑登记机械添加能力 key。
 
 ### 7.2 禁止事项
 
@@ -517,13 +505,13 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `wide-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
 | `chart` | `minHeight` | page/user | 由独立详情行情的图表 slot 登记；控制包含标题和完整画布的区域高度，页面必须保留内部图表安全下限；随视口填充的主从工作台和流程内局部图表不机械套用 |
 | `tabs` | `defaultActive` | page/user | 仅在页面登记 tabs slot 且 `componentMeta.tabs` 提供候选时渲染 |
-| `settings-drawer` | `size`、`defaultCollapsed` | preset/page/user | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot |
+| `settings-drawer` | `size`、`defaultCollapsed` | preset/page/user（全局偏好持久化） | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot；具体 slotId 不作为存储判定条件 |
 | `settings-drawer` | `bodyScroll`、`collapsibleSections` | preset/page | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot |
 | `config-panel` | `collapsibleSections` | preset/page | `config-system.configPanel` |
 | `config-panel` | `defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | preset/page/user | `config-system.configPanel`；分区候选以 `componentMeta.collapseSections` 为准 |
 
 `usePageSettings` 只保留页面业务态/页面记忆，不承载通用组件展示能力。
-`settings-drawer` 的用户层只允许 `size/defaultCollapsed`；跨页面个人值写入 `user_preference(global/settings-drawer)`，不写伪页面的 `layout_user_config`。`bodyScroll/collapsibleSections` 只能由 preset/page 层控制。
+`settings-drawer` 的用户层只允许 `size/defaultCollapsed`；字段元数据将其 `userPersistence` 标为 `global-preference`，跨页面个人值写入 `user_preference(global/settings-drawer)`。后端布局写接口按 `(component kind, field)` 反向拒绝这两项进入 `layout_user_config`，不绑定具体 pageKey 或 slotId。`bodyScroll/collapsibleSections` 只能由 preset/page 层控制。其他未声明 `userPersistence` 的 user 字段默认写页面布局用户层。
 页面可改动的组件字段，组件配置层只提供默认值，页面读默认初始化会话态、改动不回写，规则见「设置抽屉」节「页面可改动属性单向默认机制」。
 
 ### 7.4 页面 / 组件 / 布局变更维护闭环
@@ -590,25 +578,25 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `screen` | `ScreenView`（策略筛选） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `stocks` | `StocksView`（个股查询） | `list` | `density` | action:`filter-bar` / main:`data-table` / nested:`data-table` / footer |
 | `data-quality` | `QualityView`（数据质量） | `list` | `density` | action:`filter-bar` / main:`data-table` |
-| `data-schedule` | `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`section` |
-| `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table` / overlay:`settings-drawer` |
+| `data-schedule` | `ScheduleView`（任务调度） | `detail` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`data-table` |
+| `data-ingest` | `IngestView`（数据采集） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`data-table` |
+| `data-overview` | `OverviewView`（数据概览） | `workbench` | `density` | action:`toolbar` / main:`kpi-grid` / main:`stat-strip` / main:`tabs` / nested:`wide-table` / nested:`data-table` |
 | `backtest` | `BacktestView`（策略回测） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` |
 | `training` | `TrainingView`（盘感训练） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` / nested:`chart` |
 | `stock-detail` | `StockDetailView`（个股详情） | `detail` | `density` | action:`toolbar` / main:`detail` / nested:`chart` |
 | `config-score` | `ConfigView`（评分规则） | `workbench` | `density` | action:`toolbar` / main:`section` |
 | `config-trade` | `ConfigView`（买卖指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `config-tech` | `ConfigView`（技术指标） | `workbench` | `density` | action:`toolbar` / main:`section` |
-| `config-system` | `ConfigView`（系统设置） | `workbench` | `density` | action:`toolbar` / main:`section` |
+| `config-tech` | `ConfigView`（技术指标） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`data-table` |
+| `config-system` | `ConfigView`（系统设置） | `workbench` | `density` | action:`toolbar` / main:`section` / nested:`tabs` / nested:`config-panel` |
 | `user-manage` | `UserManageView`（用户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `role-manage` | `RoleManageView`（角色管理） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
-| `menu-manage` | `MenuResourceView`（菜单与功能） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` |
+| `menu-manage` | `MenuResourceView`（菜单与功能） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`wide-table` |
 | `tenant-manage` | `TenantManageView`（租户管理） | `list` | `density` | action:`filter-bar` / main:`data-table` |
 | `layout-presets` | `LayoutPresetsView`（预设管理） | `list` | 暂无 | action:`toolbar` / main:`data-table(growMain)` |
 | `layout-pages` | `LayoutPagesView`（页面布局） | `workbench` | 暂无 | action:`toolbar` / main:`tabs(growMain)` |
-| `layout-components` | `LayoutComponentsView`（系统组件） | `detail` | 暂无 | action:`toolbar` / main:`section(region)` |
+| `layout-components` | `LayoutComponentsView`（系统组件） | `detail` | 暂无 | action:`toolbar` / main:`section` |
 | `audit-log` | `AuditLogView`（审计日志） | `list` | `density` | action:`toolbar` / main:`kpi-grid` / main:`filter-bar` / main:`wide-table` / overlay:`detail` |
-| `data-dictionary` | `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`simple-list` / nested:`data-table` / overlay:`form` / overlay:`dialog` |
+| `data-dictionary` | `DataDictionaryView`（数据字典） | `master-detail` | `density` | action:`toolbar` / main:`master-detail` / nested:`simple-list` / nested:`data-table` / overlay:`form` / overlay:`form` / overlay:`dialog` |
 | `sectors` | `SectorsView`（板块行情） | `master-detail` | `density` | action:`filter-bar` / main:`master-detail` / nested:`wide-table` / nested:`chart` |
 | `sectors-detail` | `SectorDetailView`（板块详情） | `detail` | `density` | action:`toolbar` / main:`detail` / nested:`chart` / nested:`data-table` |
 <!-- page-registry:end -->

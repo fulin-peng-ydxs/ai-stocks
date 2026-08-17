@@ -32,7 +32,7 @@ import {
   useKlinePrefs,
 } from '@/composables/useKlinePrefs'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   createDefaultStockChartPreferences,
@@ -114,6 +114,10 @@ const chartPreferences = useStockChartPreferences(chartSettings, hydrated)
 const pageDirty = computed(() => layoutDirty.value || settingsDirty.value)
 
 const MEMBER_PAGE_SIZES = [10, 20, 30, 50]
+const normalizeMemberPageSize = (value: unknown) => {
+  const numeric = Number(value)
+  return MEMBER_PAGE_SIZES.includes(numeric) ? numeric : 20
+}
 const MEMBER_SORT_FIELDS = ['pct', 'code'] as const
 const { validDefault: defaultKlineRange } = useKlinePrefs()
 // K 线范围单向：全局偏好默认范围 → 会话 ref；主区切换不写回全局默认。
@@ -128,10 +132,6 @@ const {
   defaultSort: 'pct:desc',
   componentValueOf,
   allowedFields: MEMBER_SORT_FIELDS,
-})
-const configuredPageSize = computed(() => {
-  const value = Number(componentValueOf('memberTable', 'pageSize'))
-  return MEMBER_PAGE_SIZES.includes(value) ? value : 20
 })
 const hiddenColumns = computed<string[]>(() =>
   (componentValueOf('memberTable', 'hiddenColumns') as string[]) ?? [],
@@ -165,13 +165,14 @@ const chartError = ref('')
 const members = ref<SectorMember[]>([])
 const memberTotal = ref(0)
 const memberPage = ref(1)
-// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
-const memberSize = useDefaultedSessionValue(configuredPageSize, {
+const { pageSize: memberSize, changePageSize: changeMemberSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('memberTable', 'pageSize'),
+  normalize: normalizeMemberPageSize,
   shouldSync: () => initialized,
-  onSynced: () => {
+  resetPage: () => {
     memberPage.value = 1
-    void loadMembers()
   },
+  reload: loadMembers,
 })
 const memberTradeDate = ref<string | null>(null)
 const memberLoading = ref(false)
@@ -478,7 +479,7 @@ onMounted(async () => {
             @row-click="openStock"
             @sort-change="(value: Sort) => onSortChange(value)"
             @page-change="(value: number) => { memberPage = value; void loadMembers() }"
-            @size-change="(value: number) => { memberSize = value; memberPage = 1; void loadMembers() }"
+            @size-change="changeMemberSize"
           >
             <AppTableColumn v-if="colVisible('code')" label="代码" prop="code" role="code" sortable="custom">
               <template #default="{ row }">

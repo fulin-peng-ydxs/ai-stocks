@@ -71,4 +71,24 @@ describe('useLayoutConfig 远端用户层', () => {
     expect(config.exportUserConfig().values).not.toHaveProperty('slots.settings.config.size')
     expect(config.exportUserConfig().values).not.toHaveProperty('slots.settings.config.defaultCollapsed')
   })
+
+  it('专用 user 持久化目标不依赖固定 slotId，并拒绝旧远端值与直接写入', () => {
+    const layout = testLayout('custom-drawer-slot')
+    const settings = layout.slots.find((slot) => slot.id === 'settings')!
+    settings.id = 'preferencesOverlay'
+    const config = useLayoutConfig(layout)
+
+    config.applyUserConfig({
+      values: {
+        'slots.preferencesOverlay.config.size': 'lg',
+        'slots.preferencesOverlay.config.defaultCollapsed': ['layout'],
+      },
+    })
+
+    expect(config.componentValueOf('preferencesOverlay', 'size')).toBe('md')
+    expect(config.componentValueOf('preferencesOverlay', 'defaultCollapsed')).toEqual([])
+    expect(config.exportUserConfig().values).not.toHaveProperty('slots.preferencesOverlay.config.size')
+    expect(() => config.setComponentKnob('preferencesOverlay', 'size', 'sm'))
+      .toThrow('必须通过全局偏好入口修改')
+  })
 })

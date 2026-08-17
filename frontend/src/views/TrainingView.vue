@@ -35,13 +35,13 @@ import {
   type StockChartPreferences,
 } from '@/composables/useStockChartPreferences'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import { useTableSort } from '@/composables/useTableSort'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout, type PageLayout } from '@/layout'
 import { resolveComponentNumberValue } from '@/layout/componentConfig'
-import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
+import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import {
   startSession, getSession, listSessions, growth as fetchGrowth, revealNext,
@@ -139,15 +139,15 @@ const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, component
 // 余量不足时整个主内容区滚动兜底，无需按阶段区分滚动归属（DESIGN §5.4）。
 const mainLayout = computed<PageLayout>(() => trainingEffective.value)
 
-// 训练历史每页条数单向：组件配置层（抽屉可调）默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
-const historyPageSizeDefault = computed(() => {
-  return normalizePageSize(componentValueOf('history', 'pageSize'))
-})
-const historyPageSize = useDefaultedSessionValue(historyPageSizeDefault, {
-  onSynced: () => {
+const {
+  pageSize: historyPageSize,
+  changePageSize: changeHistoryPageSize,
+} = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('history', 'pageSize'),
+  resetPage: () => {
     history.page = 1
-    void loadHistory()
   },
+  reload: loadHistory,
 })
 
 // 训练台/结算 K 线工作区高度：与个股详情一致，来自组件配置层（chart.minHeight）。
@@ -221,11 +221,6 @@ async function loadHistory() {
   } finally {
     historyLoading.value = false
   }
-}
-function historySizeChanged(value: number) {
-  historyPageSize.value = value
-  history.page = 1
-  void loadHistory()
 }
 async function loadGrowth() {
   growthLoading.value = true
@@ -595,7 +590,7 @@ onBeforeUnmount(detachKeyboard)
             :pagination="{ currentPage: history.page, pageSize: historyPageSize, total: history.total, pageSizes: PAGE_SIZE_OPTIONS, small: true }"
             @sort-change="onHistorySortChange"
             @page-change="(p: number) => { history.page = p; loadHistory() }"
-            @size-change="historySizeChanged"
+            @size-change="changeHistoryPageSize"
             @row-click="(r:SessionRow)=>openSession(r.id)">
             <AppTableColumn label="模式">
               <template #default="{ row }">{{ modeText(row.mode) }}·{{ row.n_rounds }}</template>

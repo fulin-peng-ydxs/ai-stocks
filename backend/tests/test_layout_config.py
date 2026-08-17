@@ -416,42 +416,44 @@ def test_component_config_page_user_priority(client):
 
 
 def test_settings_drawer_component_config_layers(client):
-    """P11/P13：settings-drawer 默认折叠态进入四层组件配置，页面默认 + 个人折叠可覆盖。"""
+    """settings-drawer 页面默认可保存；跨页面个人偏好不得混入 layout_user_config。"""
     repo = LayoutConfigRepo(client)
-    layout = {"slots": [{"id": "settings", "component": "settings-drawer"}]}
+    layout = {"slots": [{"id": "preferencesOverlay", "component": "settings-drawer"}]}
     repo.set_page_config(
         "board",
         config={
             "values": {
-                "slots.settings.config.size": "lg",
-                "slots.settings.config.bodyScroll": False,
-                "slots.settings.config.collapsibleSections": True,
-                "slots.settings.config.defaultCollapsed": ["components"],
+                "slots.preferencesOverlay.config.size": "lg",
+                "slots.preferencesOverlay.config.bodyScroll": False,
+                "slots.preferencesOverlay.config.collapsibleSections": True,
+                "slots.preferencesOverlay.config.defaultCollapsed": ["components"],
             }
         },
         layout=layout,
     )
-    repo.set_user_config(
-        "board",
-        {"values": {"slots.settings.config.defaultCollapsed": ["layout", "business"]}},
-        user_id="u1",
-        layout=layout,
-    )
+    for field, value in (("size", "sm"), ("defaultCollapsed", ["layout", "business"])):
+        with pytest.raises(LayoutConfigValidationError, match="不允许写入 layout_user_config"):
+            repo.set_user_config(
+                "board",
+                {"values": {f"slots.preferencesOverlay.config.{field}": value}},
+                user_id="u1",
+                layout=layout,
+            )
     with pytest.raises(LayoutConfigValidationError, match="不允许在 user 层"):
         repo.set_user_config(
             "board",
-            {"values": {"slots.settings.config.bodyScroll": False}},
+            {"values": {"slots.preferencesOverlay.config.bodyScroll": False}},
             user_id="u2",
             layout=layout,
         )
 
     eff = repo.effective_config("board", user_id="u1")
-    assert eff["values"]["slots.settings.config.size"] == "lg"
-    assert eff["values"]["slots.settings.config.bodyScroll"] is False
-    assert eff["values"]["slots.settings.config.collapsibleSections"] is True
-    assert eff["source"]["slots.settings.config.collapsibleSections"] == "page"
-    assert eff["values"]["slots.settings.config.defaultCollapsed"] == ["layout", "business"]
-    assert eff["source"]["slots.settings.config.defaultCollapsed"] == "user"
+    assert eff["values"]["slots.preferencesOverlay.config.size"] == "lg"
+    assert eff["values"]["slots.preferencesOverlay.config.bodyScroll"] is False
+    assert eff["values"]["slots.preferencesOverlay.config.collapsibleSections"] is True
+    assert eff["source"]["slots.preferencesOverlay.config.collapsibleSections"] == "page"
+    assert eff["values"]["slots.preferencesOverlay.config.defaultCollapsed"] == ["components"]
+    assert eff["source"]["slots.preferencesOverlay.config.defaultCollapsed"] == "page"
 
 
 def test_effective_config_filters_stale_user_component_layer(client):

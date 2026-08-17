@@ -84,6 +84,13 @@ COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD: dict[tuple[str, str], set[str]] = {
     ("settings-drawer", "defaultCollapsed"): {"layout", "components", "business"},
 }
 
+# user 层并不等于一律写 layout_user_config。跨页面共享的个人偏好由专用偏好存储承接；
+# 此表是布局写接口的反向拦截事实源，按 (kind, field) 判断，避免绑定具体 pageKey/slotId。
+COMPONENT_CONFIG_USER_PERSISTENCE_BY_KIND_FIELD: dict[tuple[str, str], str] = {
+    ("settings-drawer", "size"): "global-preference",
+    ("settings-drawer", "defaultCollapsed"): "global-preference",
+}
+
 
 ALL_COMPONENT_LAYERS = ("preset", "page", "user")
 
@@ -151,6 +158,30 @@ def _enforce_component_ownership(values: dict[str, Any], layout: dict[str, Any] 
     errors = check_component_config_ownership(values, layout)
     if errors:
         raise LayoutConfigValidationError(errors[0])
+
+
+def _enforce_component_persistence_target(
+    values: dict[str, Any], layout: dict[str, Any] | None, layer: str
+) -> None:
+    """拒绝把有专用持久化目标的 user 值写进页面布局存储。"""
+    if layer != "user" or not has_component_config_path(values) or not isinstance(layout, dict):
+        return
+    slot_kind = {
+        slot["id"]: str(slot.get("component"))
+        for slot in layout.get("slots", [])
+        if isinstance(slot, dict) and isinstance(slot.get("id"), str)
+    }
+    for path in values:
+        match = COMPONENT_CONFIG_PATH_RE.fullmatch(path)
+        if not match:
+            continue
+        slot_id, field = match.group(1), match.group(2)
+        kind = slot_kind.get(slot_id)
+        target = COMPONENT_CONFIG_USER_PERSISTENCE_BY_KIND_FIELD.get((kind, field))
+        if target and target != "layout":
+            raise LayoutConfigValidationError(
+                f"{kind}.{field} 的 user 层应写入 {target}，不允许写入 layout_user_config"
+            )
 TOKEN_COLOR_FIELDS = {
     "primary",
     "success",
@@ -946,6 +977,7 @@ class LayoutConfigRepo:
             raise LayoutConfigValidationError("user_id 不能为空")
         cfg = normalize_override(config, schema_version, layer="user")
         _enforce_component_ownership(cfg["values"], layout)
+        _enforce_component_persistence_target(cfg["values"], layout, "user")
         self._enforce_field_policy(cfg["values"], layout, "user")
         # user_id 即归属键；owner_user_id 同步写入以对齐隔离模型，tenant_id 取仓库租户
         self.pg.execute(

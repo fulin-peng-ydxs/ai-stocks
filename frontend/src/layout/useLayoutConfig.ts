@@ -90,8 +90,11 @@ export function readStoredOverlay(storageKey: string, knobs: Map<string, Editabl
 /** 组件配置覆盖：路径(slots.<id>.config.<field>) -> 值。 */
 type ComponentOverlay = Record<string, ComponentFieldValue>
 
-export function isDrawerGlobalPreferencePath(path: string): boolean {
-  return path === 'slots.settings.config.size' || path === 'slots.settings.config.defaultCollapsed'
+export function isNonLayoutUserPersistencePath(path: string, slotKindById: Map<string, string>): boolean {
+  const parsed = parseComponentConfigPath(path)
+  if (!parsed) return false
+  const kind = slotKindById.get(parsed.slotId)
+  return !!kind && getComponentFieldDef(kind as never, parsed.field)?.userPersistence === 'global-preference'
 }
 
 /** 读 localStorage 中的用户层组件配置覆盖，逐项按字段定义守门，非法项丢弃。 */
@@ -103,8 +106,8 @@ export function readStoredComponentOverlay(storageKey: string, slotKindById: Map
     const parsed = JSON.parse(raw) as { schemaVersion?: number; values?: Record<string, unknown> }
     if (parsed.schemaVersion && parsed.schemaVersion !== LAYOUT_CONFIG_SCHEMA_VERSION) return overlay
     for (const [path, value] of Object.entries(parsed.values ?? {})) {
-      // settings-drawer 自身个人偏好是跨页面全局偏好，T7 起不再从页面级 localStorage 自动恢复。
-      if (isDrawerGlobalPreferencePath(path)) continue
+      // 有专用持久化目标的 user 值不从页面级 localStorage 恢复。
+      if (isNonLayoutUserPersistencePath(path, slotKindById)) continue
       const parsedPath = parseComponentConfigPath(path)
       if (!parsedPath) continue
       const kind = slotKindById.get(parsedPath.slotId)
@@ -262,7 +265,7 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
   }
 
   function assignComponentOverlay(path: string, value: unknown, target: ComponentOverlay): boolean {
-    if (isDrawerGlobalPreferencePath(path)) return false
+    if (isNonLayoutUserPersistencePath(path, slotKindById)) return false
     const parsedPath = parseComponentConfigPath(path)
     if (!parsedPath) return false
     const kind = slotKindById.get(parsedPath.slotId)
@@ -282,6 +285,9 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     const def = kind ? getComponentFieldDef(kind as never, field) : undefined
     if (!def) throw new Error(`未登记的组件配置项: ${slotId}.${field}`)
     if (!isLayerAllowed(def, 'user')) throw new Error(`该字段不允许用户层修改: ${slotId}.${field}`)
+    if (def.userPersistence === 'global-preference') {
+      throw new Error(`该字段必须通过全局偏好入口修改: ${slotId}.${field}`)
+    }
     const path = `slots.${slotId}.config.${field}`
     userComponentOverlay[path] = coerceComponentValue(def, value)
     markUserPathDirty(path)

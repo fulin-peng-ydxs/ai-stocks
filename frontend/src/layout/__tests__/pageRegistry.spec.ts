@@ -3,7 +3,7 @@
  * 每个登记布局都过校验器、pageKey 自洽、无重复、editable 路径合法、getPageLayout 返回深拷贝。
  */
 import { describe, expect, it } from 'vitest'
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -279,21 +279,31 @@ function vueFiles(dir: string): string[] {
   })
 }
 
-function coreComponentNames(markdown: string): Set<string> {
+interface CoreComponentRow {
+  names: string[]
+  paths: string[]
+}
+
+function coreComponentRows(markdown: string): CoreComponentRow[] {
   const heading = /^核心真实复用组件清单：\s*$/m.exec(markdown)
-  if (heading?.index == null) return new Set()
+  if (heading?.index == null) return []
   const afterHeading = markdown.slice(heading.index + heading[0].length)
-  const nextSection = /^核心 composable 复用清单：\s*$/m.exec(afterHeading)
-  const table = nextSection?.index == null
-    ? afterHeading
-    : afterHeading.slice(0, nextSection.index)
-  const names = new Set<string>()
-  for (const line of table.split('\n')) {
-    if (!line.startsWith('|')) continue
-    const firstColumn = line.split('|')[1] ?? ''
-    for (const match of firstColumn.matchAll(/`([^`]+)`/g)) names.add(match[1])
+  const lines = afterHeading.split('\n')
+  const tableStart = lines.findIndex((line) => line.trimStart().startsWith('|'))
+  if (tableStart < 0) return []
+  const rows: CoreComponentRow[] = []
+  for (const line of lines.slice(tableStart)) {
+    if (!line.trimStart().startsWith('|')) break
+    const columns = line.split('|')
+    const names = [...(columns[1] ?? '').matchAll(/`([^`]+)`/g)].map((match) => match[1]!)
+    const paths = [...(columns[2] ?? '').matchAll(/`([^`]+)`/g)].map((match) => match[1]!)
+    if (names.length) rows.push({ names, paths })
   }
-  return names
+  return rows
+}
+
+function coreComponentNames(markdown: string): Set<string> {
+  return new Set(coreComponentRows(markdown).flatMap((row) => row.names))
 }
 
 function runtimeComponentImports(source: string, fileName = 'component.vue'): Set<string> {
@@ -323,12 +333,25 @@ function runtimeComponentImports(source: string, fileName = 'component.vue'): Se
 }
 
 const DESIGN_CORE_COMPONENTS = coreComponentNames(DESIGN_MD)
-const DESIGN_PAGE_KEYS = new Set(
-  DESIGN_PAGE_SECTION
-    .split('\n')
-    .map((line) => line.match(/^\|\s*`([^`]+)`\s*\|/)?.[1])
-    .filter((value): value is string => Boolean(value && value !== 'pageKey')),
-)
+const DESIGN_PAGE_KEY_ROWS = DESIGN_PAGE_SECTION
+  .split('\n')
+  .map((line) => line.match(/^\|\s*`([^`]+)`\s*\|/)?.[1])
+  .filter((value): value is string => Boolean(value && value !== 'pageKey'))
+const DESIGN_PAGE_KEYS = new Set(DESIGN_PAGE_KEY_ROWS)
+
+function designPageRows(): Map<string, { archetype: string; components: string[] }> {
+  const rows = new Map<string, { archetype: string; components: string[] }>()
+  for (const line of DESIGN_PAGE_SECTION.split('\n')) {
+    const columns = line.split('|')
+    const pageKey = /`([^`]+)`/.exec(columns[1] ?? '')?.[1]
+    const archetype = /`([^`]+)`/.exec(columns[3] ?? '')?.[1]
+    if (!pageKey || !archetype || pageKey === 'pageKey') continue
+    const components = [...(columns[5] ?? '').matchAll(/(?:action|main|nested|overlay):`([^`]+)`/g)]
+      .map((match) => match[1]!.replace(/\(growMain\)$/, ''))
+    rows.set(pageKey, { archetype, components })
+  }
+  return rows
+}
 
 const SLOT_RUNTIME_COMPONENTS: Partial<Record<ComponentKind, string[]>> = {
   'data-table': ['AppDataTable', 'AppTableColumn'],
@@ -351,6 +374,31 @@ describe('页面注册表完整性', () => {
       expect(entry.layout.archetype).toBe(entry.archetype)
       expect(RESPONSIVE_PROFILES.has(entry.responsiveProfile)).toBe(true)
     }
+  })
+
+  it('DESIGN 页面登记 marker 不得出现重复 pageKey', () => {
+    expect(DESIGN_PAGE_KEYS.size, '重复 pageKey 会被 Set 吞掉，导致双向一致性测试假通过')
+      .toBe(DESIGN_PAGE_KEY_ROWS.length)
+  })
+
+  it('DESIGN 页面索引中的原型和组件摘要与 pageRegistry 一致', () => {
+    const rows = designPageRows()
+    const errors: string[] = []
+    for (const entry of PAGE_REGISTRY) {
+      const row = rows.get(entry.pageKey)
+      if (row?.archetype !== entry.archetype) {
+        errors.push(`${entry.pageKey} 原型: DESIGN=${row?.archetype} registry=${entry.archetype}`)
+      }
+      const registered = entry.layout.slots
+        .filter((slot) => slot.component !== 'settings-drawer')
+        .map((slot) => slot.component)
+        .sort()
+      const documented = [...(row?.components ?? [])].sort()
+      if (JSON.stringify(documented) !== JSON.stringify(registered)) {
+        errors.push(`${entry.pageKey} 组件: DESIGN=${documented.join(',')} registry=${registered.join(',')}`)
+      }
+    }
+    expect(errors, errors.join('\n')).toEqual([])
   })
 
   it('每个登记布局都通过校验器（无 error 级问题）', () => {
@@ -475,15 +523,41 @@ describe('页面注册表完整性', () => {
 
 | 真实组件 | 路径 |
 |---|---|
-| \`InsideTable\` / \`InsidePair\` | \`OutsidePathMention\` |
+| \`InsideTable\` / \`InsidePair\` | \`frontend/src/components/InsideTable.vue\`、\`frontend/src/components/InsidePair.vue\` |
 
-核心 composable 复用清单：
+### 后续章节
 
 | Composable | 路径 |
 |---|---|
 | \`OutsideSection\` | x |
     `)
     expect([...components].sort()).toEqual(['InsidePair', 'InsideTable'])
+  })
+
+  it('DESIGN 核心真实组件登记必须指向同名运行时 Vue 文件', () => {
+    const errors: string[] = []
+    for (const row of coreComponentRows(DESIGN_MD)) {
+      const vuePaths = row.paths.filter((path) => path.endsWith('.vue'))
+      if (row.names.length !== vuePaths.length) {
+        errors.push(`${row.names.join('/')} 的组件名与路径数量不一致`)
+        continue
+      }
+      row.names.forEach((name, index) => {
+        const path = vuePaths[index]!
+        if (!/^frontend\/src\/(components|layout\/components)\/.+\.vue$/.test(path)) {
+          errors.push(`${name} 路径不属于真实复用组件目录: ${path}`)
+          return
+        }
+        if (basename(path, '.vue') !== name) errors.push(`${name} 与文件名不一致: ${path}`)
+        if (!existsSync(new URL(`../../../../${path}`, import.meta.url))) errors.push(`${name} 文件不存在: ${path}`)
+      })
+      for (const path of row.paths.filter((candidate) => !candidate.endsWith('.vue'))) {
+        if (!path.startsWith('frontend/src/') || !existsSync(new URL(`../../../../${path}`, import.meta.url))) {
+          errors.push(`${row.names.join('/')} 的辅助路径不存在: ${path}`)
+        }
+      }
+    }
+    expect(errors, errors.join('\n')).toEqual([])
   })
 
   it('只有真实消费个人设置的页面登记 settings-drawer，布局管理页显式排除', () => {
@@ -798,9 +872,10 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
-  it('pageSize 单向默认：登记 pageSize 的 slot，页面必须 componentValueOf 消费其默认值', () => {
+  it('pageSize 单向默认：登记 pageSize 的 slot 必须通过分页会话 composable 消费默认值', () => {
     // DESIGN「设置抽屉」节单向默认机制：组件配置层只提供默认值，页面用 componentValueOf 读默认值
-    // 初始化会话态，分页器改动不回写配置层。用 sourceForPage 精确映射页面，避免按 slotId 全局 grep 误配。
+    // 并统一交给 useComponentPageSizeSession 初始化会话态，分页器改动不回写配置层。
+    // 用 sourceForPage 精确映射页面，避免按 slotId 全局 grep 误配。
     for (const entry of PAGE_REGISTRY) {
       const pageSizeSlots = Object.entries(entry.consumedComponentFields ?? {})
         .filter(([, fields]) => (fields ?? []).includes('pageSize'))
@@ -809,11 +884,18 @@ describe('组件消费关系与配置一致性（P4）', () => {
 
       const source = sourceForPage(entry.pageKey)
       expect(source, `${entry.pageKey} 登记 pageSize 但无法从 router 定位 Vue 页面源码`).not.toBe('')
+      expect(
+        source.includes('useComponentPageSizeSession('),
+        `${entry.pageKey} 登记了 pageSize 但未消费统一分页会话 composable`,
+      ).toBe(true)
       for (const slotId of pageSizeSlots) {
-        const consumes =
-          source.includes(`componentValueOf('${slotId}', 'pageSize'`)
-          || source.includes(`componentValueOf("${slotId}", "pageSize"`)
-        expect(consumes, `${entry.pageKey}.${slotId} 登记了 pageSize 但页面未 componentValueOf 消费默认值`).toBe(true)
+        const consumesThroughSession =
+          source.includes(`resolveDefault: () => componentValueOf('${slotId}', 'pageSize'`)
+          || source.includes(`resolveDefault: () => componentValueOf("${slotId}", "pageSize"`)
+        expect(
+          consumesThroughSession,
+          `${entry.pageKey}.${slotId} 登记了 pageSize 但未通过统一分页会话 composable 消费默认值`,
+        ).toBe(true)
       }
     }
   })

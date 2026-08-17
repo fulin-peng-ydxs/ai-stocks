@@ -2,7 +2,7 @@
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
+import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import { ElMessage } from 'element-plus'
 import {
   getDataQuality, fixQualityIssue, ignoreQualityIssue, resetQualityIssue, recoverQualityBatch,
@@ -23,7 +23,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -74,19 +74,13 @@ const loading = ref(false)
 const loadError = ref('')
 const data = ref<DataQuality | null>(null)
 const page = ref(1)
-// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
-const sizeDefault = computed<number>(() => normalizePageSize(componentValueOf('table', 'pageSize')))
-const size = useDefaultedSessionValue(sizeDefault, {
-  onSynced: () => {
+const { pageSize: size, changePageSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('table', 'pageSize'),
+  resetPage: () => {
     page.value = 1
-    void load()
   },
+  reload: load,
 })
-function onSizeChange(s: number) {
-  size.value = s
-  page.value = 1
-  void load()
-}
 // 类型/严重度/状态多选；默认勾选「未处理 + 修复中」（待办两态），code 为模糊文本
 const filters = ref<{ issue_type: string[]; severity: string[]; status: string[]; code: string }>(
   { issue_type: [], severity: [], status: ['open', 'fixing'], code: '' })
@@ -443,7 +437,7 @@ onMounted(() => {
         :pagination="{ currentPage: page, pageSize: size, total: data?.total ?? 0, pageSizes: PAGE_SIZE_OPTIONS }"
         @sort-change="onSortChange"
         @page-change="(p: number) => { page = p; load() }"
-        @size-change="onSizeChange"
+        @size-change="changePageSize"
       >
         <AppTableColumn v-if="colVisible('severity')" label="严重度" prop="severity" sortable="custom">
           <template #default="{ row }">

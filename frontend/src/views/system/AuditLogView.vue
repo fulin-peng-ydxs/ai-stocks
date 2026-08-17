@@ -26,7 +26,7 @@ import { getAuditDetail, getAuditSummary, listAuditLogs, type AuditLog, type Aud
 import { getPublicDictItems } from '@/api/dict'
 import { listTenants } from '@/api/tenant'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
 import { getPageLayout } from '@/layout'
@@ -35,7 +35,6 @@ import { useAuthStore } from '@/stores/auth'
 import { dictTagStyleByCode } from '@/utils/dictColor'
 import { getErrorStatus } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
-import { normalizePageSize } from '@/constants/pagination'
 
 const pageKey = 'audit-log'
 const AUTO_REFRESH_MS = 30_000
@@ -137,15 +136,13 @@ const resultOptions = ref<OptionItem[]>(FALLBACK_RESULTS)
 const statusOptions = ref<OptionItem[]>(STATUS_OPTIONS)
 const tenantOptions = ref<OptionItem[]>([])
 
-// 每页条数单向：组件配置层默认值 → 会话 ref；分页器改动只进会话态，不写回配置层。
-const pageSizeDefault = computed(() => {
-  return normalizePageSize(componentValueOf('auditTable', 'pageSize'), 50)
-})
-const pageSize = useDefaultedSessionValue(pageSizeDefault, {
-  onSynced: () => {
+const { pageSize, changePageSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('auditTable', 'pageSize'),
+  fallback: 50,
+  resetPage: () => {
     page.value = 1
-    void loadAll(true)
   },
+  reload: () => loadAll(true),
 })
 const AUDIT_SORT_FIELDS = ['event_time', 'event_category', 'result', 'status', 'duration_ms'] as const
 const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof AUDIT_SORT_FIELDS)[number]>({
@@ -360,11 +357,6 @@ function pageChanged(value: number) {
   void loadAll()
 }
 
-function pageSizeChanged(value: number) {
-  pageSize.value = value
-  page.value = 1
-  void loadAll(true)
-}
 
 async function refresh(silent = false) {
   await loadAll(silent)
@@ -604,7 +596,7 @@ onBeforeUnmount(stopTimer)
           @sort-change="onSortChange"
           @row-click="openDetail"
           @page-change="pageChanged"
-          @size-change="pageSizeChanged"
+          @size-change="changePageSize"
         >
           <AppTableColumn v-if="colVisible('event_time')" label="时间" prop="event_time" sortable="custom">
             <template #default="{ row }">{{ formatTime(row.event_time) }}</template>

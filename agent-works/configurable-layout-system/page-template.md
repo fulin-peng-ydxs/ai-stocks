@@ -17,10 +17,10 @@
 3. 检查 DESIGN.md “真实复用组件清单”和 `frontend/src/components/**`，先复用已有真实组件；控件选型、图标按钮和系统组件种类边界按 DESIGN 执行。
 4. 优先运行 `npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型>` 生成骨架；脚手架中的 `data-scaffold-placeholder` 是未完成标记，接入真实组件和四态后必须删除，否则契约测试会失败。需要手写时再用 `createLayout(archetype, pageKey)` 起默认 `PageLayout`，按需覆盖 `slots`/`editable`/`responsive`。
 5. 模板用 `<LayoutHost :layout="effective">` + 具名插槽（`slot.id`）填业务组件；弹窗/抽屉放 `#overlays`。页面业务抽屉使用 `PageDrawer`，页面设置使用 `PageSettingsDrawer`，页面禁止直接使用 `el-drawer`。数据表格使用 `AppDataTable + AppTableColumn`，列只声明 `label/prop/role` 等语义，不声明 `width/min-width`；普通名称列使用 `name`，带前置控件和主副信息的对象识别列使用 `entity`；日期、单位或短口径摘要统一传 `header-meta` 并保持同行单行，主内容前有紧凑控件时传 `leading-controls` 由组件统一对齐，不在页面拼私有表头；主表使用默认成长模式，只有抽屉、展开行和局部明细等非主表使用 `embedded`。
-6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；若新增系统组件种类或配置字段，同步 `COMPONENT_CATALOG`、schema、后端规则、pageRegistry 消费和配置中心验证。
+6. 若新增真实复用组件，补 DESIGN.md 清单、至少一个消费页面和测试；新增系统组件种类时同步 `COMPONENT_CATALOG`、schema 和预览；新增 Web 配置字段时同步字段定义、后端规则、pageRegistry 真实消费和配置中心验证。两类登记按职责维护，不机械捆绑。
 7. 跑校验：`npm test`（validator + 契约测试）；DEV 期 `LayoutHost` 会 `assertLayout` 直接抛。
 8. `npm run build`（含 vue-tsc 类型检查；改 `frontend/src` 后必构建）。
-9. 在 DESIGN.md 的 `page-registry` 区块补一行，并填写下方 §8 登记块。
+9. 核对 DESIGN.md 的 `page-registry` 区块已有唯一同名行：脚手架会自动写入；仅未使用脚手架时按下方 §8 手工补一行，禁止重复登记。
 10. 新页面如需要出现在侧栏或有受控 API / 按钮动作，同步菜单 seed、功能点 seed、后端守卫、`v-permission`、默认角色授权决策，并按 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 验收。
 
 ## 2. 开发计划页面设计块（复制到计划里）
@@ -146,7 +146,7 @@
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
 | 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段治理入口 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
-| 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/写入逻辑；`componentMeta.columns` 每个候选 key 必须进入真实列显隐判断 | `pageRegistry.spec.ts` 正向消费契约、页面交互验证 |
+| 页面消费已有字段 | `pageRegistry.consumedComponentFields`、`componentMeta`、页面读取/应用逻辑；需要会话交互时走“配置默认值 → session state”，页面操作不反写默认值；`componentMeta.columns` 每个候选 key 必须进入真实列显隐判断 | `pageRegistry.spec.ts` 正向消费与禁止页面直写契约、页面交互验证 |
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
 | 字体 / 间距体系 | `global.css` typography/spacing token、DESIGN 排版与节奏规范；新增语义层级时同步 token、文档和消费点 | 相关样式契约测试、build、关键页面视觉验收 |
@@ -154,7 +154,8 @@
 | 页面抽屉 | `#overlays`、`PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | `PageDrawer.spec.ts`、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 
-新增可配置能力必须同时具备三个事实源：组件能力事实源（`COMPONENT_CATALOG`）、字段配置事实源（`COMPONENT_FIELD_DEFS`）、页面消费事实源（`pageRegistry.consumedComponentFields` / `componentMeta`）。`componentMeta.columns` 只提供设置候选，不自动生成业务列；每个候选 key 都必须由页面真实消费显隐状态。禁止新增页面不读取的“假配置”；禁止绕过 `LayoutHost`、绕过 `pageRegistry` 或另建并行配置体系。
+新增系统组件 kind 必须维护组件能力事实源（`COMPONENT_CATALOG`、schema、预览），即使当前尚无页面消费者也可作为受控能力词汇存在。新增 Web 配置字段必须维护字段配置事实源（`COMPONENT_FIELD_DEFS`、后端规则）和页面消费事实源（`pageRegistry.consumedComponentFields` / `componentMeta`）；只有 kind 的语义能力摘要变化时才同步 `COMPONENT_CATALOG.configCapabilities`。`componentMeta.columns` 只提供设置候选，不自动生成业务列；每个候选 key 都必须由页面真实消费显隐状态。禁止新增页面不读取的 Web“假配置”；禁止绕过 `LayoutHost`、绕过 `pageRegistry` 或另建并行配置体系。
+字段允许 `user` 层不代表一定写 `layout_user_config`：跨页面偏好必须在字段定义声明专用 `userPersistence`，前端统一路由到对应偏好存储，后端布局写接口按 `(component kind, field)` 拒绝误写；未声明时才按页面布局用户层处理。不得用 pageKey 或固定 slotId 判断存储目标。
 新增真实复用组件不等于必须新增系统组件种类；只有当该组件需要被布局配置、系统组件页、页面设置抽屉或页面布局编辑器识别和调参时，才进入系统组件种类和组件配置字段闭环。
 
 ## 4. 原型决策

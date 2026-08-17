@@ -11,7 +11,7 @@
  * C. 前端字段集合、类型、层级、通用边界及组件专属静态值域与后端双向一致；
  *    否则可能出现前端可配但后端拒收、后端私自放行，或同名字段值域互相污染。
  *
- * 注：pageSize 默认值消费和页面不反写配置层的断言在 pageRegistry.spec.ts（复用其
+ * 注：pageSize 统一分页会话消费和页面不反写配置层的断言在 pageRegistry.spec.ts（复用其
  * sourceForPage 精确映射，避免按 slotId 全局 grep 把不同页面同名 slot 误配）。
  */
 import { describe, expect, it } from 'vitest'
@@ -82,6 +82,15 @@ function backendOptionsByKindField(): Record<string, string[]> {
   const block = pythonBlock('COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD')
   for (const match of block.matchAll(/^    \("([^"]+)",\s*"([^"]+)"\):\s*\{([^}]*)\},/gm)) {
     result[`${match[1]}.${match[2]}`] = quotedValues(match[3]!).sort()
+  }
+  return result
+}
+
+function backendUserPersistenceByKindField(): Record<string, string> {
+  const result: Record<string, string> = {}
+  const block = pythonBlock('COMPONENT_CONFIG_USER_PERSISTENCE_BY_KIND_FIELD')
+  for (const match of block.matchAll(/^    \("([^"]+)",\s*"([^"]+)"\):\s*"([^"]+)",/gm)) {
+    result[`${match[1]}.${match[2]}`] = match[3]!
   }
   return result
 }
@@ -166,6 +175,19 @@ describe('组件配置字段注册契约', () => {
       }
     }
     expect(backendOptionsByKindField()).toEqual(frontendOptions)
+  })
+
+  it('非布局 user 持久化目标前后端双向一致', () => {
+    const frontendTargets: Record<string, string> = {}
+    for (const [kind, defs] of Object.entries(COMPONENT_FIELD_DEFS)) {
+      for (const def of defs ?? []) {
+        if (def.userPersistence && def.userPersistence !== 'layout') {
+          expect(def.layers).toContain('user')
+          frontendTargets[`${kind}.${def.key}`] = def.userPersistence
+        }
+      }
+    }
+    expect(backendUserPersistenceByKindField()).toEqual(frontendTargets)
   })
 
   it('pageSize 上限与分页器可选值、后端校验一致', () => {
