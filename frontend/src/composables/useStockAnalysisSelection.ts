@@ -1,4 +1,11 @@
 import { computed, ref, watch, type Ref } from 'vue'
+import {
+  activateCompareCode,
+  emptyCompareQueue,
+  removeCompareCode,
+  toggleComparePin,
+  type CompareQueueState,
+} from '@/utils/compareQueue'
 
 export interface StockAnalysisSelectable {
   code: string
@@ -10,40 +17,61 @@ export interface StockAnalysisSelectionOptions {
   onLimitReached?: (limit: number) => void
 }
 
-/** 股票行情工作台共享的当前观察与跨页对比队列状态机。 */
+/** 股票行情工作台共享的当前观察与跨页对比队列状态机。队列顺序稳定,激活只移动高亮不重排。 */
 export function useStockAnalysisSelection<T extends StockAnalysisSelectable>(
   sourceItems: Readonly<Ref<readonly T[]>>,
   options: StockAnalysisSelectionOptions = {},
 ) {
   const limit = options.maxItems ?? 6
   const lookup = ref<Record<string, T>>({})
-  const activeCode = ref('')
-  const pinnedCodes = ref<string[]>([])
+  const queue = ref<CompareQueueState>(emptyCompareQueue())
 
+  const currentState = (): CompareQueueState => queue.value
+  function applyState(next: CompareQueueState): void {
+    queue.value = {
+      queueCodes: [...next.queueCodes],
+      pinnedCodes: [...next.pinnedCodes],
+      activeCode: next.activeCode,
+    }
+  }
+
+  const activeCode = computed(() => queue.value.activeCode)
   const activeItem = computed(() => lookup.value[activeCode.value] ?? null)
+  const pinnedCodes = computed(() => [...queue.value.pinnedCodes])
   const items = computed(() => {
     if (!activeCode.value) return []
-    return Array.from(new Set([activeCode.value, ...pinnedCodes.value]))
-      .slice(0, limit)
+    return queue.value.queueCodes
       .map((code) => lookup.value[code])
       .filter((item): item is T => Boolean(item))
   })
 
   watch(sourceItems, (nextItems) => {
-    const retainedPinned = Object.fromEntries(pinnedCodes.value
-      .map((code) => [code, lookup.value[code]] as const)
-      .filter((entry): entry is readonly [string, T] => Boolean(entry[1])))
-    // 跨页只保留固定对比项和当前页，避免遍历大量分页后 lookup 无界增长。
+    // 跨页只保留固定对比项和当前观察，避免遍历大量分页后 lookup 无界增长。
+    const retained = Object.fromEntries(
+      [...queue.value.pinnedCodes, queue.value.activeCode]
+        .map((code) => [code, lookup.value[code]] as const)
+        .filter((entry): entry is readonly [string, T] => Boolean(entry[1])),
+    )
     lookup.value = {
-      ...retainedPinned,
+      ...retained,
       ...Object.fromEntries(nextItems.map((item) => [item.code, item])),
     }
+    // 队列剔除已失效项并保持既有插入序；激活项失效则回退到首个源项。
+    applyState({
+      ...queue.value,
+      queueCodes: queue.value.queueCodes.filter((code) => lookup.value[code]),
+    })
     if (!nextItems.length) {
-      activeCode.value = ''
+      applyState({ ...queue.value, activeCode: '' })
       return
     }
     if (!nextItems.some((item) => item.code === activeCode.value)) {
-      activeCode.value = nextItems[0]!.code
+      applyState(activateCompareCode(currentState(), nextItems[0]!.code, limit))
+    } else if (activeCode.value && !queue.value.queueCodes.includes(activeCode.value)) {
+      applyState({
+        ...queue.value,
+        queueCodes: [activeCode.value, ...queue.value.queueCodes],
+      })
     }
   }, { immediate: true })
 
@@ -52,42 +80,36 @@ export function useStockAnalysisSelection<T extends StockAnalysisSelectable>(
   }
 
   function isPinned(code: string): boolean {
-    return pinnedCodes.value.includes(code)
+    return queue.value.pinnedCodes.includes(code)
   }
 
   function togglePinned(item: T): boolean {
     remember(item)
-    if (isPinned(item.code)) {
-      pinnedCodes.value = pinnedCodes.value.filter((code) => code !== item.code)
-      return true
-    }
-    const occupied = new Set([activeCode.value, ...pinnedCodes.value].filter(Boolean))
-    if (!occupied.has(item.code) && occupied.size >= limit) {
+    const result = toggleComparePin(currentState(), item.code, limit)
+    if (result.limitReached) {
       options.onLimitReached?.(limit)
       return false
     }
-    pinnedCodes.value = [...pinnedCodes.value, item.code]
+    applyState(result.state)
     return true
   }
 
   function select(item: T): void {
     remember(item)
-    activeCode.value = item.code
+    applyState(activateCompareCode(currentState(), item.code, limit))
   }
 
   function activate(code: string): void {
-    if (lookup.value[code]) activeCode.value = code
+    if (lookup.value[code]) applyState(activateCompareCode(currentState(), code, limit))
   }
 
   function remove(code: string): void {
-    pinnedCodes.value = pinnedCodes.value.filter((item) => item !== code)
-    if (code !== activeCode.value) return
-    activeCode.value = pinnedCodes.value[0] || sourceItems.value[0]?.code || ''
+    applyState(removeCompareCode(currentState(), code, sourceItems.value[0]?.code || ''))
   }
 
   function clear(): void {
-    pinnedCodes.value = []
-    activeCode.value = sourceItems.value[0]?.code || ''
+    const active = sourceItems.value[0]?.code || ''
+    applyState({ queueCodes: active ? [active] : [], pinnedCodes: [], activeCode: active })
   }
 
   return {

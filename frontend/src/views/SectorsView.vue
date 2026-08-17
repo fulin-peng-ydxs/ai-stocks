@@ -28,6 +28,12 @@ import StockChartWorkspace from '@/components/stock-chart/StockChartWorkspace.vu
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
+  activateCompareCode,
+  removeCompareCode,
+  toggleComparePin,
+  type CompareQueueState,
+} from '@/utils/compareQueue'
+import {
   MARKET_BENCHMARK_OPTIONS,
 } from '@/utils/marketCompare'
 import {
@@ -221,9 +227,20 @@ const canUpdateWatchlist = computed(() =>
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 // 行点击只切换主观察对象；勾选“对比”会把板块固定在图中，跨分页仍保留。
+// 队列顺序稳定（进入先后），激活只移动高亮不重排，由共享 compareQueue 状态机维护。
 const COMPARE_MAX = 6
 const activeCode = ref('')
 const pinnedCodes = ref<string[]>([])
+const queueCodes = ref<string[]>([])
+
+function currentQueue(): CompareQueueState {
+  return { queueCodes: queueCodes.value, pinnedCodes: pinnedCodes.value, activeCode: activeCode.value }
+}
+function applyQueue(next: CompareQueueState): void {
+  queueCodes.value = [...next.queueCodes]
+  pinnedCodes.value = [...next.pinnedCodes]
+  activeCode.value = next.activeCode
+}
 const { validDefault: klineDefaultRange } = useKlinePrefs()
 // K 线范围单向：全局偏好默认范围 → 会话 ref；主区切换不写回全局默认。
 const rangeDays = useDefaultedSessionValue(klineDefaultRange)
@@ -261,7 +278,7 @@ const activeRow = computed(() => boardLookup.value[activeCode.value] ?? null)
 const chartCodes = computed(() => {
   if (!activeCode.value) return []
   if (chartMode.value === 'kline') return [activeCode.value]
-  return Array.from(new Set([activeCode.value, ...pinnedCodes.value])).slice(0, COMPARE_MAX)
+  return queueCodes.value
 })
 const compareRows = computed(() =>
   chartCodes.value
@@ -445,31 +462,24 @@ function isPinned(code: string): boolean {
 function togglePinned(row: SectorRow, checked: boolean): void {
   if (row.available === false) return
   boardLookup.value = { ...boardLookup.value, [row.board_code]: row }
-  if (checked) {
-    if (!isPinned(row.board_code)) {
-      const capacity = activeCode.value && !isPinned(activeCode.value) ? COMPARE_MAX - 1 : COMPARE_MAX
-      pinnedCodes.value = [...pinnedCodes.value, row.board_code].slice(-capacity)
-    }
-  } else {
-    pinnedCodes.value = pinnedCodes.value.filter((code) => code !== row.board_code)
+  const result = toggleComparePin(currentQueue(), row.board_code, COMPARE_MAX)
+  if (result.limitReached) {
+    ElMessage.warning(`对比队列已满，最多 ${COMPARE_MAX} 个`)
+    return
   }
+  applyQueue(result.state)
   void loadChart()
 }
 function removeCompared(code: string): void {
-  if (code === activeCode.value) {
-    const next = pinnedCodes.value.find((item) => item !== code)
-      || rows.value.find((row) => row.available !== false)?.board_code
-      || ''
-    activeCode.value = next
-  }
-  pinnedCodes.value = pinnedCodes.value.filter((item) => item !== code)
+  const fallback = rows.value.find((row) => row.available !== false)?.board_code || ''
+  applyQueue(removeCompareCode(currentQueue(), code, fallback))
   void loadChart()
 }
 function selectRow(row: SectorRow): void {
   if (row.available === false) return
   boardLookup.value = { ...boardLookup.value, [row.board_code]: row }
   if (activeCode.value === row.board_code) return
-  activeCode.value = row.board_code
+  applyQueue(activateCompareCode(currentQueue(), row.board_code, COMPARE_MAX))
   void loadChart()
 }
 function rowClassName({ row }: { row: SectorRow }): string {
@@ -554,9 +564,14 @@ async function load(): Promise<void> {
     const availableRows = data.list.filter((row) => row.available !== false)
     const activeInCurrentList = availableRows.some((row) => row.board_code === activeCode.value)
     if (!activeInCurrentList && availableRows.length) {
-      const initialSelection = !activeCode.value
-      activeCode.value = availableRows[0]!.board_code
-      if (initialSelection) pinnedCodes.value = []
+      const first = availableRows[0]!.board_code
+      if (!activeCode.value) {
+        // 首次进入：以首个可用项重建空队列。
+        applyQueue({ queueCodes: [first], pinnedCodes: [], activeCode: first })
+      } else {
+        // 翻页/筛选导致观察项离开当前列表：回退到首个可用项，队列顺序保持稳定。
+        applyQueue(activateCompareCode(currentQueue(), first, COMPARE_MAX))
+      }
       void loadChart()
     }
   } catch (error) {

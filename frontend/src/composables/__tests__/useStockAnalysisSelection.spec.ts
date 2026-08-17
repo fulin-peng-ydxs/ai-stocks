@@ -31,4 +31,22 @@ describe('useStockAnalysisSelection', () => {
     selection.clear()
     expect(selection.items.value.map((item) => item.code)).toEqual(['300001.SZ'])
   })
+
+  it('激活队列中已有项只移动高亮,队列顺序不变', () => {
+    const source = ref([
+      { code: 'A', name: '甲' },
+      { code: 'B', name: '乙' },
+      { code: 'C', name: '丙' },
+    ])
+    const selection = useStockAnalysisSelection(source, { maxItems: 6 })
+
+    selection.togglePinned(source.value[0]!)
+    selection.togglePinned(source.value[1]!)
+    selection.togglePinned(source.value[2]!)
+    expect(selection.items.value.map((item) => item.code)).toEqual(['A', 'B', 'C'])
+
+    selection.activate('C')
+    expect(selection.activeCode.value).toBe('C')
+    expect(selection.items.value.map((item) => item.code)).toEqual(['A', 'B', 'C'])
+  })
 })
