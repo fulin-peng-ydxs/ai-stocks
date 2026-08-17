@@ -902,8 +902,12 @@ onBeforeUnmount(detachKeyboard)
         <StockChartSettingSection
           :slot2="chartPreferences.preferences.value.slot2"
           :slot3="chartPreferences.preferences.value.slot3"
+          :chart-types="chartPreferences.visibleTypes.value"
+          :default-ratios="chartPreferences.defaultRatios.value"
           test-id-prefix="training-chart"
           @change="setAuxiliaryChart"
+          @save-default-ratios="chartPreferences.setDefaultHeightRatios"
+          @save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"
         />
       </template>
       <PageSettingSection title="选股范围" desc="控制随机选股时的股票池过滤条件。">

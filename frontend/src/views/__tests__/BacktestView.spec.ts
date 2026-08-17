@@ -528,7 +528,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     wrapper.unmount()
   })
 
-  it('快照优先（三次复审 P1）：已选 mine → 加载公开 chip 后 buildBody 用公开快照、saveParams 仍保存 mine', async () => {
+  it('快照优先：已选 mine → 加载公开 chip 后 buildBody 只用本次会话公开快照', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     // 用户先选自己的评分方案 mine-A
@@ -539,7 +539,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     await emitLoaded(wrapper, 'backtest-score-select', {
       id: 'pub-x', profile_ref: 'avr_score_pub', name: '公开评分', version: 3, source: 'public', readonly: true,
     })
-    // 选择器仍是 mine-A（不动选择器与持久偏好），chip 同时显示 public-B 且标「本次运行：」
+    // 选择器仍是 mine-A，chip 同时显示 public-B 且标「本次运行：」。
     expect(score.props('modelValue')).toBe('avr_score_1')
     const chip = wrapper.find('[data-testid="backtest-score-select-temp"]')
     expect(chip.exists()).toBe(true)
@@ -548,9 +548,6 @@ describe('BacktestView 三方案选择器（T5）', () => {
     // buildBody 用公开快照（快照优先于 mine 选择器值），不是 mine-A
     const body = (wrapper.vm as any).buildBody()
     expect(body.score_profile_id).toBe('avr_score_pub')
-    // 持久偏好仍是 mine-A，不被临时快照覆盖
-    ;(wrapper.vm as any).saveParams()
-    expect((wrapper.vm as any).rememberedParams.scoreProfileId).toBe('avr_score_1')
     wrapper.unmount()
   })
 
@@ -573,7 +570,7 @@ describe('BacktestView 三方案选择器（T5）', () => {
     wrapper.unmount()
   })
 
-  it('临时→mine 切换即丢弃临时项：chip 消失、保存偏好写的是 mine 选择（P1-2 路径1）', async () => {
+  it('临时→mine 切换即丢弃临时项，buildBody 使用新的会话选择', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     await emitLoaded(wrapper, 'backtest-score-select', {
@@ -586,15 +583,12 @@ describe('BacktestView 三方案选择器（T5）', () => {
     await flushPromises()
     // 临时项被清除（chip 消失）
     expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(false)
-    // 保存偏好写的是有效 mine 选择，不被误剔除为空（rememberedParams 经 watcher 持久化到 localStorage）
-    ;(wrapper.vm as any).saveParams()
-    expect((wrapper.vm as any).rememberedParams.scoreProfileId).toBe('avr_score_1')
     // 改选 mine 后临时快照已清，buildBody 用新 mine（覆盖「改选另一个 mine → 用新 mine」）
     expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_1')
     wrapper.unmount()
   })
 
-  it('复制为我的→不标临时、保存偏好可恢复（P1-2 路径2：copiedItem 不复用 onXLoaded）', async () => {
+  it('复制为我的→不标临时，当前会话直接使用新 mine 项', async () => {
     const wrapper = await mountView()
     await emitAllReady(wrapper)
     const score = findSelect(wrapper, 'backtest-score-select')!
@@ -606,52 +600,25 @@ describe('BacktestView 三方案选择器（T5）', () => {
     await flushPromises()
     // 复制结果不标临时：无 chip
     expect(wrapper.find('[data-testid="backtest-score-select-temp"]').exists()).toBe(false)
-    // 保存偏好写的是新 mine 选择（不被当临时剔除），刷新可恢复
-    ;(wrapper.vm as any).saveParams()
-    expect((wrapper.vm as any).rememberedParams.scoreProfileId).toBe('avr_score_copy')
+    expect((wrapper.vm as any).buildBody().score_profile_id).toBe('avr_score_copy')
     wrapper.unmount()
   })
 
-  it('旧 public/preset ref：ready 后偏好 hydration 再 restore，最终清空不回弹（P1-1 时序屏障）', async () => {
+  it('旧参数记忆不再恢复到新会话，日期和方案使用页面初始值', async () => {
     localStorage.setItem('ai-stocks-backtest-params', JSON.stringify({
-      kind: 'strategy', dateStart: '2024-01-01', dateEnd: '2024-12-31',
+      kind: 'score_check', dateStart: '2020-01-01', dateEnd: '2020-12-31',
       profileId: '', scoreProfileId: 'avr_score_old', tradeProfileId: 'avr_trade_old',
-      topN: 10, initCap: 1000000, industryOn: false, industryPct: 20,
+      topN: 20, initCap: 3000000, industryOn: true, industryPct: 40,
     }))
     const wrapper = await mountView()
-    // hydration 已写入页面内部状态、mine 列表尚未 ready 时，也不得把 opaque ref 暴露给 ElSelect。
-    expect((wrapper.vm as any).scoreProfileId).toBe('avr_score_old')
-    expect((wrapper.vm as any).tradeProfileId).toBe('avr_trade_old')
+    expect((wrapper.vm as any).dateStart).toBe('2024-01-01')
+    expect((wrapper.vm as any).dateEnd).toBe('2024-12-31')
+    expect((wrapper.vm as any).scoreProfileId).toBe('')
+    expect((wrapper.vm as any).tradeProfileId).toBe('')
+    expect((wrapper.vm as any).topN).toBe(10)
+    expect((wrapper.vm as any).initCap).toBe(1_000_000)
     expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
     expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
-    await emitAllReady(wrapper) // 列表 ready（reconcile 清掉非 mine 残留）
-    expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
-    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
-    // 模拟偏好稍后 hydration：再次触发 restore + reconcile（rememberedParamsHydrated watcher 路径）
-    pageSettingsState.current = null // 强制重置；restoreParams 从 localStorage 再读旧 ref
-    ;(wrapper.vm as any).restoreParams()
-    ;(wrapper.vm as any).reconcileProfileRefs()
-    await flushPromises()
-    // 旧 ref 最终为空、不回弹（readyFlags 屏障 + reconcile 兜底）
-    expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
-    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
-    wrapper.unmount()
-  })
-
-  it('旧 public/preset ref 恢复后 ready 清空并提示重新选择（R3 下拉仅 mine）', async () => {
-    localStorage.setItem('ai-stocks-backtest-params', JSON.stringify({
-      kind: 'strategy', dateStart: '2024-01-01', dateEnd: '2024-12-31',
-      profileId: '', scoreProfileId: 'avr_score_old', tradeProfileId: 'avr_trade_old',
-      topN: 10, initCap: 1000000, industryOn: false, industryPct: 20,
-    }))
-    const wrapper = await mountView()
-    const warning = vi.spyOn(ElMessage, 'warning')
-    await emitAllReady(wrapper) // ready 列表落地后清掉非 mine 残留
-    expect(findSelect(wrapper, 'backtest-score-select')!.props('modelValue')).toBe('')
-    expect(findSelect(wrapper, 'backtest-trade-select')!.props('modelValue')).toBe('')
-    const staleWarnings = warning.mock.calls.filter(([message]) => String(message).includes('方案已不可用'))
-    expect(staleWarnings).toHaveLength(1)
-    expect(String(staleWarnings[0][0])).toContain('评分/买卖')
     wrapper.unmount()
   })
 })

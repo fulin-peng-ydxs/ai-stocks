@@ -671,8 +671,12 @@ onMounted(async () => {
         <StockChartSettingSection
           :slot2="chartPreferences.preferences.value.slot2"
           :slot3="chartPreferences.preferences.value.slot3"
+          :chart-types="chartPreferences.visibleTypes.value"
+          :default-ratios="chartPreferences.defaultRatios.value"
           test-id-prefix="board-chart"
           @change="setAuxiliaryChart"
+          @save-default-ratios="chartPreferences.setDefaultHeightRatios"
+          @save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"
         />
         <PageSettingSection title="默认结果">
           <div class="setting-item">

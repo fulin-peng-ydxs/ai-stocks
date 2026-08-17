@@ -44,7 +44,6 @@ import {
   type BacktestRunSummary,
 } from '@/components/asset-search/types'
 import { usePageSettings } from '@/composables/usePageSettings'
-import { useUserPreference } from '@/composables/useUserPreference'
 import { useTradeDates } from '@/composables/useTradeDates'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
@@ -53,7 +52,6 @@ import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage } from '@/utils/error'
 
-const PARAMS_KEY = 'ai-stocks-backtest-params' // 表单参数持久化 fallback / 迁移源
 type Visibility = 'private' | 'tenant' | 'public'
 const auth = useAuthStore()
 const settingsOpen = ref(false)
@@ -66,37 +64,6 @@ const backtestDefaults = {
   benchmarkCode: '000905.SH',
 }
 const { settings, isDirty, reset } = usePageSettings('backtest', backtestDefaults)
-type BacktestParamMemory = {
-  kind: 'strategy' | 'score_check'
-  dateStart: string
-  dateEnd: string
-  profileId: string
-  scoreProfileId: string
-  tradeProfileId: string
-  topN: number
-  initCap: number
-  industryOn: boolean
-  industryPct: number
-}
-const backtestParamDefaults: BacktestParamMemory = {
-  kind: 'strategy',
-  dateStart: '2024-01-01',
-  dateEnd: '2024-12-31',
-  profileId: '',
-  scoreProfileId: '',
-  tradeProfileId: '',
-  topN: 10,
-  initCap: 1_000_000,
-  industryOn: false,
-  industryPct: 20,
-}
-const { value: rememberedParams, hydrated: rememberedParamsHydrated } = useUserPreference({
-  scope: 'feature',
-  pageKey: 'backtest',
-  prefKey: 'params',
-  defaults: backtestParamDefaults,
-  localStorageKey: PARAMS_KEY,
-})
 
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
 const backtestLayout = getPageLayout('backtest')
@@ -208,14 +175,14 @@ const historyProfileUnavailable = ref<Record<ProfileKind, boolean>>({
   score: false,
   trade: false,
 })
-// 三类 mine 列表就绪屏障（P1-1）：列表 ready 与偏好 hydration 两个时点都可能写入 ref，
-// 任一到齐后统一 reconcileProfileRefs() 校验并清掉非 mine/非临时残留，杜绝 opaque ref 回弹。
+// 三类 mine 列表就绪屏障：历史记录等程序化来源可能先写入 ref；列表 ready 后统一
+// reconcileProfileRefs() 校验并清掉非 mine/非临时残留，避免 opaque ref 暴露给选择器。
 const readyFlags = ref({ screen: false, score: false, trade: false })
 const screenProfileSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
 const scoreProfileSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
 const tradeProfileSelectRef = ref<InstanceType<typeof AssetProfileSelect> | null>(null)
 
-// 偏好 hydration 可能早于 mine 列表 ready；ready 前只向选择器暴露空值，避免 ElSelect 短暂回显 opaque ref。
+// mine 列表 ready 前只向选择器暴露空值，避免程序化加载的 opaque ref 短暂回显。
 function guardedProfileModel(kind: ProfileKind, model: typeof profileId) {
   return computed({
     get: () => readyFlags.value[kind] ? model.value : '',
@@ -517,19 +484,13 @@ watch(strat, (s) => {
 })
 // 抽屉「默认展开稳健性测试」→ 会话 ref 单向同步；面板点击不写回默认。
 watch(() => settings.robustExpanded, (value) => { robustPanels.value = value ? ['robust'] : [] })
-watch(rememberedParamsHydrated, (ready) => {
-  if (ready && !loadingRun.value) {
-    restoreParams()
-    reconcileProfileRefs() // P1-1：hydration 再 restore 后须重校验，清掉晚到的旧 opaque ref（防回弹）
-  }
-})
 // 程序化改参（运行/载入历史）后清脏：等参数 watcher 跑完再置 false
 function clearDirtySoon() {
   nextTick(() => { dirty.value = false; loadingRun.value = false })
 }
 
 // 切换/清空选择即丢弃对应临时只读项（P1-2）：当前 key 不等于临时项 key 立即清除，
-// 避免「加载公开方案→切到自己的方案」后仍把有效选择当临时剔除（saveParams 写空）。
+// 避免「加载公开方案→切到自己的方案」后仍把有效选择当作临时项。
 watch(profileId, (v) => {
   if (loadingRun.value) return
   if (historyProfileDisplays.value.screen) return
@@ -659,42 +620,8 @@ const profileDesc = computed(() =>
   selectedProfile.value ? astToText(selectedProfile.value.expression) : '',
 )
 
-// —— 表单参数持久化（localStorage）：下次进来沿用上次设置 ——
-function saveParams() {
-  rememberedParams.kind = kind.value
-  rememberedParams.dateStart = dateStart.value
-  rememberedParams.dateEnd = dateEnd.value
-  // 持久化选择器的真实 mine 选择。临时只读项在选择器外、不进选择器 modelValue，故无需剔除——
-  // 选择器值本就是有效 mine 选择；临时快照（tempSelected）从不写入偏好，刷新即弃。
-  rememberedParams.profileId = profileId.value
-  rememberedParams.scoreProfileId = scoreProfileId.value
-  rememberedParams.tradeProfileId = tradeProfileId.value
-  rememberedParams.topN = topN.value
-  rememberedParams.initCap = initCap.value
-  rememberedParams.industryOn = industryOn.value
-  rememberedParams.industryPct = industryPct.value
-}
-function restoreParams() {
-  try {
-    const p = rememberedParams
-    const rawKind = (rememberedParams as unknown as { kind?: string }).kind
-    kind.value = (rawKind === 'signal' ? 'score_check' : rawKind as 'strategy' | 'score_check' | undefined) ?? kind.value
-    dateStart.value = p.dateStart ?? dateStart.value
-    dateEnd.value = p.dateEnd ?? dateEnd.value
-    // 新会话从偏好恢复，不含任何临时只读项；恢复的非 mine 残留由 ready 兜底清空（此处列表尚未落地，不能误判）
-    tempSelected.value = { screen: null, score: null, trade: null }
-    profileId.value = normalizeScreenProfileKey(p.profileId ?? profileId.value)
-    scoreProfileId.value = p.scoreProfileId ?? scoreProfileId.value
-    tradeProfileId.value = normalizeTradeProfileKey(p.tradeProfileId ?? tradeProfileId.value)
-    topN.value = p.topN ?? topN.value
-    initCap.value = p.initCap ?? initCap.value
-    industryOn.value = !!p.industryOn; industryPct.value = p.industryPct ?? industryPct.value
-  } catch { /* ignore */ }
-}
-
-// 统一归属校验（P1-1 时序竞态修复）：列表 ready 与偏好 hydration 两个时点都可能写入 ref，
-// 每次任一发生后都对「已 ready 的类」做一次校验，清掉既不在 mine 列表、也不是本次会话临时只读项的残留
-// （R3 下拉仅 mine）。否则 ready 后 hydration 再次 restore 会把旧 opaque ref 写回且不再校验（复审实证回弹）。
+// 统一归属校验：列表 ready 后校验程序化加载的历史方案引用，清掉既不在 mine 列表、
+// 也不是本次会话临时只读项的残留（R3 下拉仅 mine）。
 const staleProfileNoticeKeys = new Set<string>()
 const pendingStaleProfileKinds = new Set<string>()
 function queueStaleProfileNotice(kind: string, refValue: string) {
@@ -705,8 +632,7 @@ function queueStaleProfileNotice(kind: string, refValue: string) {
   }
 }
 function flushStaleProfileNotice() {
-  if (!rememberedParamsHydrated.value || !Object.values(readyFlags.value).every(Boolean)
-    || !pendingStaleProfileKinds.size) return
+  if (!Object.values(readyFlags.value).every(Boolean) || !pendingStaleProfileKinds.size) return
   ElMessage.warning(`原${[...pendingStaleProfileKinds].join('/')}方案已不可用（非「我的」方案），请重新选择`)
   pendingStaleProfileKinds.clear()
 }
@@ -729,8 +655,7 @@ function reconcileProfileRefs() {
   flushStaleProfileNotice()
 }
 
-// 组件 ready：列表落地后置就绪标记、normalize 纠偏（restoreParams 早期写入的裸 id → profile_ref 稳定键），
-// 再统一 reconcile（onMounted restore 早于 ready、偏好 hydration 晚于 ready 都被这道屏障兜住）。
+// 组件 ready：列表落地后置就绪标记、规范化引用，再统一校验程序化加载的历史方案。
 function onScreenReady(items: ProfileSummary[]) {
   profiles.value = items as Profile[]
   readyFlags.value.screen = true
@@ -1234,7 +1159,6 @@ function exportTradesCsv() {
 }
 
 onMounted(async () => {
-  restoreParams()
   kind.value = settings.kind
   topN.value = Number(settings.topN)
   initCap.value = Number(settings.initCap)
@@ -1358,8 +1282,6 @@ async function run() {
   // prepare 请求/查重确认框 pending 期间，用户关闭公开查看或切换历史会递增 runLoadSequence；
   // 之后每个写状态/发请求的节点都校验，旧操作晚到即弃，不得覆盖新页面状态（含不得用旧参数 doRun 落库）。
   const sequence = beginRunViewOperation('run')
-  // 保存偏好不修改表单 ref，无需占用程序化参数静默状态；operation 从 prepare 开始覆盖到历史刷新结束。
-  saveParams()
   const frozen = buildBody()
   try {
     const pre = await prepareBacktest(body)

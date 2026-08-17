@@ -620,7 +620,7 @@ describe('StockDetailView 三图数据协调', () => {
     expect(wrapper.findComponent(StockChartWorkspaceStub).props('slot3')).toBe('hidden')
   })
 
-  it('设置抽屉即时交换和隐藏辅助图，高度只在 commit 后保存且恢复默认完整重置', async () => {
+  it('设置抽屉即时交换和隐藏辅助图，主区高度只改会话并可显式设为默认', async () => {
     const wrapper = await mountView()
     const initialBars = vi.mocked(stocksApi.getBars).mock.calls.length
     const initialIndicators = vi.mocked(stocksApi.getIndicators).mock.calls.length
@@ -660,6 +660,12 @@ describe('StockDetailView 三图数据协调', () => {
     await wrapper.get('[data-testid="stock-detail-chart-slot3-volume"]').trigger('click')
     await nextTick()
     await wrapper.get('[data-testid="ratio-commit"]').trigger('click')
+    await nextTick()
+    expect(workspace.props('heightRatios')).toEqual([0.5, 0.3, 0.2])
+    expect(pageSettingsState.current.charts.heightRatios['kline|macd|volume'])
+      .toEqual([0.6, 0.2, 0.2])
+
+    await wrapper.get('[data-testid="stock-detail-chart-save-current-ratios"]').trigger('click')
     await nextTick()
     expect(pageSettingsState.current.charts.heightRatios['kline|macd|volume'])
       .toEqual([0.5, 0.3, 0.2])

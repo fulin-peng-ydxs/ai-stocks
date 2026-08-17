@@ -136,12 +136,21 @@ export function useStockChartPreferences(
 ) {
   const normalized = computed(() => normalizeStockChartPreferences(source.value))
   const composition = computed(() => chartCompositionKey(normalized.value))
+  const sessionRatios = ref<Record<ChartCompositionKey, number[]>>(
+    cloneHeightRatios(normalized.value.heightRatios),
+  )
+  const sessionOverrideKeys = new Set<ChartCompositionKey>()
+  let defaultsSnapshot = cloneHeightRatios(normalized.value.heightRatios)
+  let defaultsHydrated = false
   const draftKey = ref<ChartCompositionKey | null>(null)
   const draftRatios = ref<number[] | null>(null)
+  const defaultRatios = computed(() => (
+    [...normalized.value.heightRatios[composition.value]]
+  ))
   const currentRatios = computed(() => (
     draftKey.value === composition.value && draftRatios.value
       ? [...draftRatios.value]
-      : [...normalized.value.heightRatios[composition.value]]
+      : [...sessionRatios.value[composition.value]]
   ))
 
   function clearDraft(): void {
@@ -157,7 +166,7 @@ export function useStockChartPreferences(
 
   function beginRatioDraft(): number[] {
     draftKey.value = composition.value
-    draftRatios.value = [...normalized.value.heightRatios[composition.value]]
+    draftRatios.value = [...sessionRatios.value[composition.value]]
     return [...draftRatios.value]
   }
 
@@ -168,7 +177,7 @@ export function useStockChartPreferences(
     return [...draftRatios.value]
   }
 
-  function commitHeightRatios(
+  function setDefaultHeightRatios(
     value: unknown,
     key: ChartCompositionKey = composition.value,
   ): void {
@@ -180,15 +189,51 @@ export function useStockChartPreferences(
         [key]: normalizeHeightRatios(value, key),
       },
     }
+    sessionOverrideKeys.delete(key)
+    sessionRatios.value = {
+      ...sessionRatios.value,
+      [key]: [...next.heightRatios[key]],
+    }
     if (!samePreferences(source.value, next)) source.value = next
   }
 
   function commitRatioDraft(): void {
     if (draftKey.value && draftRatios.value && draftKey.value === composition.value) {
-      commitHeightRatios(draftRatios.value, draftKey.value)
+      sessionRatios.value = {
+        ...sessionRatios.value,
+        [draftKey.value]: normalizeHeightRatios(draftRatios.value, draftKey.value),
+      }
+      sessionOverrideKeys.add(draftKey.value)
     }
     clearDraft()
   }
+
+  function saveCurrentRatiosAsDefault(): void {
+    setDefaultHeightRatios(currentRatios.value)
+  }
+
+  // 远端默认完成水合时只初始化尚未被用户操作的组合；水合后的抽屉编辑或重置仅同步
+  // 实际变化的默认组合，不能顺带清除其它组合在本次会话里的临时比例。
+  watch(
+    [() => JSON.stringify(normalized.value.heightRatios), hydrated],
+    ([, isHydrated]) => {
+      if (!isHydrated) return
+      clearDraft()
+      const nextDefaults = cloneHeightRatios(normalized.value.heightRatios)
+      const nextSession = cloneHeightRatios(sessionRatios.value)
+      for (const key of COMPOSITION_KEYS) {
+        const changed = JSON.stringify(defaultsSnapshot[key]) !== JSON.stringify(nextDefaults[key])
+        if ((!defaultsHydrated && !sessionOverrideKeys.has(key)) || (defaultsHydrated && changed)) {
+          nextSession[key] = [...nextDefaults[key]]
+          sessionOverrideKeys.delete(key)
+        }
+      }
+      defaultsSnapshot = nextDefaults
+      defaultsHydrated = true
+      sessionRatios.value = nextSession
+    },
+    { immediate: true },
+  )
 
   // 远端同步完成前只提供安全派生值，不写 source，避免本地修复误触 dirty-before-hydrate。
   watch(
@@ -205,6 +250,7 @@ export function useStockChartPreferences(
     preferences: normalized,
     visibleTypes: computed(() => visibleChartTypes(normalized.value)),
     compositionKey: composition,
+    defaultRatios,
     currentRatios,
     draftRatios,
     setSlotType,
@@ -212,6 +258,15 @@ export function useStockChartPreferences(
     updateRatioDraft,
     commitRatioDraft,
     cancelRatioDraft: clearDraft,
-    commitHeightRatios,
+    setDefaultHeightRatios,
+    saveCurrentRatiosAsDefault,
   }
+}
+
+function cloneHeightRatios(
+  value: Record<ChartCompositionKey, number[]>,
+): Record<ChartCompositionKey, number[]> {
+  return Object.fromEntries(
+    COMPOSITION_KEYS.map((key) => [key, [...value[key]]]),
+  ) as Record<ChartCompositionKey, number[]>
 }

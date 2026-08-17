@@ -969,6 +969,31 @@ describe('组件消费关系与配置一致性（P4）', () => {
     ).toEqual([])
   })
 
+  it('页面不得直接创建私有持久化通道，长期偏好必须进入可审查的页面设置或专用共享契约', () => {
+    const violations: string[] = []
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      if (!source) continue
+      if (/\buseUserPreference\s*\(/.test(source)) {
+        violations.push(`${entry.pageKey}: 页面直接调用 useUserPreference，可能绕过抽屉登记与单向默认契约`)
+      }
+    }
+    expect(
+      violations,
+      `页面不得私建静默持久化；全局偏好应封装为共享 composable，页面默认应走 usePageSettings + 抽屉：\n${violations.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('多图工作区统一声明默认比例编辑和显式设为默认入口', () => {
+    for (const entry of PAGE_REGISTRY) {
+      const source = sourceForPage(entry.pageKey)
+      if (!source.includes('<StockChartSettingSection')) continue
+      expect(source).toContain(':default-ratios="chartPreferences.defaultRatios.value"')
+      expect(source).toContain('@save-default-ratios="chartPreferences.setDefaultHeightRatios"')
+      expect(source).toContain('@save-current-as-default="chartPreferences.saveCurrentRatiosAsDefault"')
+    }
+  })
+
   it('股票分析工作台统一消费默认会话投影与共享选择状态机', () => {
     for (const pageKey of ['board', 'stocks']) {
       const source = sourceForPage(pageKey)

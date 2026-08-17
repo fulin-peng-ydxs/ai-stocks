@@ -726,15 +726,14 @@ describe('代表性页面四态回归', () => {
   })
 
   it('回测运行失败落到结果区错误态', async () => {
-    localStorage.setItem('ai-stocks-backtest-params', JSON.stringify({
-      kind: 'strategy',
-      dateStart: '2024-01-01',
-      dateEnd: '2024-12-31',
-      scoreProfileId: 'score1',
-      tradeProfileId: 'trade1',
-    }))
     ;(backtestApi.runBacktest as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('backtest failed'))
     const wrapper = await mountView(BacktestView)
+    const selectors = wrapper.findAllComponents(AssetProfileSelect)
+    selectors.find((select) => select.props('testId') === 'backtest-score-select')!
+      .vm.$emit('update:modelValue', 'score1')
+    selectors.find((select) => select.props('testId') === 'backtest-trade-select')!
+      .vm.$emit('update:modelValue', 'trade1')
+    await flushPromises()
     const run = wrapper.findAll('button').find((button) => button.text().includes('运行回测'))
     expect(run).toBeTruthy()
     await run!.trigger('click')

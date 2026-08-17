@@ -224,7 +224,7 @@ Key Characteristics：
 | `AppFilterSelect` | `frontend/src/components/AppFilterSelect.vue` | 列表页筛选下拉 | 无直接系统组件种类 | 默认多选、可搜索、可清空；业务只允许单选时必须传 `multiple=false`；默认最多展示 3 个选中标签，溢出时提前折叠；筛选下拉优先复用 |
 | `TradeDatePicker` | `frontend/src/components/TradeDatePicker.vue` | 交易日选择器 | 无直接系统组件种类 | 回测、筛选、训练和数据任务等交易日输入统一复用；不得退回普通日期选择后自行补交易日校验。单日查询类页面若语义是“默认最新、允许回看”，统一使用 `defaultLatest` 显示数据最新交易日；训练区间、回测区间和数据任务边界等显式范围不得擅自默认 |
 | `KlineRangeSelect` / `KlineSettingSection` | `frontend/src/components/KlineRangeSelect.vue`、`frontend/src/components/KlineSettingSection.vue` | K线范围快捷选择与共享设置分区 | 无系统组件种类；消费全局 K线偏好 | 个股详情、盘感训练等 K线页面统一复用，不复制范围选项或偏好写入逻辑 |
-| `StockChartSettingSection` | `frontend/src/components/StockChartSettingSection.vue` | 多图行情工作区的图表二/图表三选择和高度比例设置 | 无系统组件种类；消费 `useStockChartPreferences` | 个股详情、板块行情和板块详情统一复用；辅助图选择、比例草稿/提交/取消与恢复默认不得在消费页维护第二套 |
+| `StockChartSettingSection` | `frontend/src/components/StockChartSettingSection.vue` | 多图行情工作区的图表二/图表三选择、默认高度比例编辑和“将当前比例设为默认”显式操作 | 无系统组件种类；消费 `useStockChartPreferences` | 每日榜单、个股查询、个股详情、板块行情、板块详情和盘感训练统一复用；主区拖动只改会话比例，抽屉编辑默认比例或显式将当前比例设为默认时才允许持久化；辅助图选择、比例草稿/提交/取消与恢复默认不得在消费页维护第二套 |
 | `EquityChart` / `GrowthChart` | `frontend/src/components/EquityChart.vue`、`frontend/src/components/GrowthChart.vue` | 回测/训练净值与成长曲线 | 无直接系统组件种类 | 保持各自数据与布局职责；画布主题统一消费 `useEChartsTheme()`，不得私有维护明暗基础色板。净值图「对比指数」虚线由父页注入 `extraBenchmark`（父页按各自日期区间拉指数行情并归一成资金净值），组件不内建数据获取；`fill` 撑满等高列仅在结算详情等需要时启用。基准可见性由 `showBenchmark` 控制：缺省 true 渲染基准线（无 `extraBenchmark` 时用 points 自带 `benchmark_equity` 实线，如训练「满仓持有」），显式 false（回测选「不对比指数」）整条隐藏。`setOption` 用 `notMerge: true` 整图重建，切「不对比」时基准 series 彻底移除不残留。配色：组合=focus 蓝，基准=`t.label` 灰（与板块行情对比图基准一致），回撤=`--el-color-danger` 红（面积用 `light-9` 浅红）；各 series 的 `color`/`itemStyle.color` 与线色同值，保证图例/悬浮圆点与线色一致。悬浮 tooltip 按「相对首日涨跌幅 %」展示组合/基准，并在基准可见时给组合一行「超额」（组合涨跌幅−基准涨跌幅），与板块行情对比图悬浮口径一致；回撤子图仍按 % 原值展示 |
 | `BrandMark` | `frontend/src/components/BrandMark.vue` | 应用品牌图形与「复盘啦」字标 | 无直接系统组件种类 | 应用外壳、登录页等品牌露出直接复用同一外观；禁止场景变体、消费侧 `--brand-*` 覆盖、私有 logo 或第二套字标；窄容器只允许等比缩放 |
 | `SideMenu` / `TopNavigation` / `WorkspaceTabs` / `WorkspaceRouteView` / `MenuIcon` | `frontend/src/components/SideMenu.vue`、`frontend/src/components/TopNavigation.vue`、`frontend/src/components/WorkspaceTabs.vue`、`frontend/src/components/WorkspaceRouteView.vue`、`frontend/src/components/MenuIcon.vue` | 应用级菜单树、双层顶栏、保留现场的工作标签页、路由缓存与统一菜单图标渲染 | 无直接系统组件种类 | 菜单统一消费 `/me` 授权树和 `utils/permission.ts` 的路由归属口径；工作页面统一由 `WorkspaceRouteView` 渲染并按标签独立缓存，禁止业务页私建 KeepAlive；关闭标签必须同步移除对应缓存；侧栏、双层顶栏和菜单管理页统一用 `MenuIcon` 消费后端图标名；新增导航模式时复用 `useAppNavigation` 持久化偏好 |
@@ -347,7 +347,7 @@ Key Characteristics：
 - 设置项必须有默认值、来源展示、合法值域和重置路径；页面设置抽屉 footer 的「恢复默认」必须同时重置页面业务偏好、页面布局/组件用户层，以及抽屉自身 `size/defaultCollapsed` 用户偏好。
 - 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`（抽屉=user 层、页面布局编辑器=page 层，经 `layer`/`slotIds`/`allowedLayersOf`/`collapsibleSlot`/`clearable` 适配），不得另写第二套组件特性表单。
 - 折叠规则统一：每个 slot 为可折叠组（`SettingsGroup` level 2；编辑器聚焦单 slot 时仅作标题锚点不折叠）；多行清单类特性（列显隐）为可折叠子组（level 3）；单字段为叶子不折叠。深层标题字号随层级递减但不低于正文。
-- **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；重复的默认值投影统一复用 `composables/useDefaultedSessionValue.ts`，组件配置分页统一经 `composables/useComponentPageSizeSession.ts` 完成默认值解析、会话投影、归页和重载，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 或主区 `v-model` 直写持久层。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测表单 `rememberedParams` feature 通道「会话记忆优先于默认」）。
+- **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；重复的默认值投影统一复用 `composables/useDefaultedSessionValue.ts`，组件配置分页统一经 `composables/useComponentPageSizeSession.ts` 完成默认值解析、会话投影、归页和重载，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 或主区 `v-model` 直写持久层；设置抽屉内的默认值编辑，以及带有明确“设为默认”语义的显式操作，才是默认值持久化入口。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测日期、所选方案和当次执行参数）。
 - **新增属性登记判断（开发闭环必经步骤）**：新增页面、改造页面或给页面/组件新增任何可交互属性后，必须逐一回答三个问题再收尾——①该属性是否需要跨会话记住（默认值/偏好）？②需要时登记到哪条链路（业务偏好进 `usePageSettings` defaults + `#business` 插槽；组件展示字段按 §7.3 进 `consumedComponentFields`/`componentMeta`/`COMPONENT_FIELD_DEFS`/后端规则）？③需要默认值时页面是否已按上条单向机制消费（读默认初始化会话 ref、不写回）？三问任一答「是」却未落地，即视为本次改动未完成。反向同样成立：不再需要或语义失效的已登记项（如已被主区表单覆盖、关闭后无法再开启的开关）必须及时下线，不得在抽屉里堆积死项。
 
 ## 5. Layout Principles
@@ -363,7 +363,7 @@ Key Characteristics：
 | `page` | 单页面默认布局旋钮与组件默认值 | 系统管理 → 布局配置 → 页面布局 |
 | `user` | 当前登录用户的布局、组件和业务偏好 | 页面设置抽屉；PG `layout_user_config`、PG `user_preference` |
 
-用户层以 PostgreSQL 为权威：页面布局和组件字段写入真实 pageKey 的 `layout_user_config`，页面业务偏好、主题、导航模式、K 线偏好、回测参数记忆和跨页面设置抽屉偏好写入 `user_preference`。localStorage 只允许作为未登录/离线 fallback、旧偏好迁移源、登录前主题读取和临时交互态，不得作为登录用户配置权威。
+用户层以 PostgreSQL 为权威：页面布局和组件字段写入真实 pageKey 的 `layout_user_config`，页面业务偏好、主题、导航模式、K 线偏好和跨页面设置抽屉偏好写入 `user_preference`。回测日期、方案选择和当次运行参数只属于会话态，不得写入用户偏好。localStorage 只允许作为未登录/离线 fallback、旧偏好迁移源、登录前主题读取和临时交互态，不得作为登录用户配置权威。
 
 ### 5.1 新建或改造页面
 

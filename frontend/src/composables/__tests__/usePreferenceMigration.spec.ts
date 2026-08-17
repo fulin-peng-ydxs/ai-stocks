@@ -130,13 +130,12 @@ describe('usePreferenceMigration', () => {
         prefKey: 'kline-prefs',
         value: { periods: [30, 90], includeAll: false, defaultPeriod: 90 },
       }),
-      expect.objectContaining({
-        scope: 'feature',
-        pageKey: 'backtest',
-        prefKey: 'params',
-        value: { kind: 'signal', limit: 20 },
-      }),
     ]))
+    expect(bulkItems).not.toContainEqual(expect.objectContaining({
+      scope: 'feature',
+      pageKey: 'backtest',
+      prefKey: 'params',
+    }))
     expect(bulkItems.find((item: { prefKey: string }) => item.prefKey === 'settings-drawer').value)
       .not.toHaveProperty('defaultCollapsed')
     expect(localStorage.getItem(CONFIG_STORAGE_MIGRATION_MARKER)).toBeTruthy()

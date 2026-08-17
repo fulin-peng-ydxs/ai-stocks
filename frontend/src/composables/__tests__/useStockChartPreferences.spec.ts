@@ -127,12 +127,12 @@ describe('useStockChartPreferences draft state', () => {
     model.setSlotType('slot2', 'volume')
     model.beginRatioDraft()
     model.commitRatioDraft()
-    model.commitHeightRatios([0.6, 0.2, 0.2])
+    model.setDefaultHeightRatios([0.6, 0.2, 0.2])
 
     expect(writeSource).not.toHaveBeenCalled()
   })
 
-  it('拖动草稿只更新内存，commit 后才写入持久偏好源', async () => {
+  it('主区拖动提交只更新会话比例，显式设为默认后才写持久偏好源', async () => {
     const persisted = ref<StockChartPreferences>(createDefaultStockChartPreferences())
     const source = computed({
       get: () => persisted.value,
@@ -149,7 +149,77 @@ describe('useStockChartPreferences draft state', () => {
 
     model.commitRatioDraft()
     await nextTick()
+    expect(model.currentRatios.value).toEqual([0.5, 0.3, 0.2])
+    expect(persisted.value.heightRatios['kline|volume|macd']).toEqual([0.6, 0.2, 0.2])
+
+    model.saveCurrentRatiosAsDefault()
+    await nextTick()
     expect(persisted.value.heightRatios['kline|volume|macd']).toEqual([0.5, 0.3, 0.2])
+  })
+
+  it('抽屉编辑默认比例会同步当前会话，后续主区改动仍不反写默认', async () => {
+    const persisted = ref<StockChartPreferences>(createDefaultStockChartPreferences())
+    const source = computed({
+      get: () => persisted.value,
+      set: (value) => { persisted.value = value },
+    })
+    const model = useStockChartPreferences(source, ref(true))
+
+    model.setDefaultHeightRatios([0.5, 0.25, 0.25])
+    await nextTick()
+    expect(model.defaultRatios.value).toEqual([0.5, 0.25, 0.25])
+    expect(model.currentRatios.value).toEqual([0.5, 0.25, 0.25])
+
+    model.updateRatioDraft([0.4, 0.3, 0.3])
+    model.commitRatioDraft()
+    expect(model.currentRatios.value).toEqual([0.4, 0.3, 0.3])
+    expect(model.defaultRatios.value).toEqual([0.5, 0.25, 0.25])
+  })
+
+  it('修改当前组合默认比例不清除其他组合的会话比例', async () => {
+    const persisted = ref<StockChartPreferences>(createDefaultStockChartPreferences())
+    const source = computed({
+      get: () => persisted.value,
+      set: (value) => { persisted.value = value },
+    })
+    const model = useStockChartPreferences(source, ref(true))
+
+    model.updateRatioDraft([0.5, 0.3, 0.2])
+    model.commitRatioDraft()
+    model.setSlotType('slot3', 'hidden')
+    await nextTick()
+    model.setDefaultHeightRatios([0.7, 0.3])
+    await nextTick()
+    model.setSlotType('slot3', 'macd')
+    await nextTick()
+
+    expect(model.currentRatios.value).toEqual([0.5, 0.3, 0.2])
+    expect(model.defaultRatios.value).toEqual([0.6, 0.2, 0.2])
+  })
+
+  it('远端默认迟到时不覆盖水合前已发生的主区会话操作', async () => {
+    const persisted = ref<StockChartPreferences>(createDefaultStockChartPreferences())
+    const hydrated = ref(false)
+    const source = computed({
+      get: () => persisted.value,
+      set: (value) => { persisted.value = value },
+    })
+    const model = useStockChartPreferences(source, hydrated)
+
+    model.updateRatioDraft([0.5, 0.3, 0.2])
+    model.commitRatioDraft()
+    persisted.value = {
+      ...createDefaultStockChartPreferences(),
+      heightRatios: {
+        ...createDefaultStockChartPreferences().heightRatios,
+        'kline|volume|macd': [0.7, 0.15, 0.15],
+      },
+    }
+    hydrated.value = true
+    await nextTick()
+
+    expect(model.currentRatios.value).toEqual([0.5, 0.3, 0.2])
+    expect(model.defaultRatios.value).toEqual([0.7, 0.15, 0.15])
   })
 
   it('偏好尚未 hydrate 时只派生安全值，不主动改写源', async () => {

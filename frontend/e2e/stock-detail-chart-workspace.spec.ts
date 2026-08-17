@@ -622,7 +622,7 @@ test.describe('个股详情三图工作区', () => {
     expect(consoleIssues).toEqual([])
   })
 
-  test('MACD 局部失败隔离，图表组合和高度偏好可自动保存与重置', async (
+  test('MACD 局部失败隔离，图表组合持久化且高度比例按会话或显式默认生效', async (
     { page, request },
     testInfo,
   ) => {
@@ -760,13 +760,13 @@ test.describe('个股详情三图工作区', () => {
     )
     await page.mouse.up()
     await expect(draggedSeparator).not.toHaveAttribute('aria-valuenow', ratioBeforePointer || '')
-    const ratioAfterPointer = await draggedSeparator.getAttribute('aria-valuenow')
+    // 主区拖动只改变当前会话，不写回页面默认比例。
     await expect.poll(() => {
       const value = preferences.store.get(stockDetailPreferenceKey)?.value as {
         charts?: { heightRatios?: Record<string, number[]> }
       } | undefined
       return value?.charts?.heightRatios?.['kline|macd']
-    }).not.toEqual([0.75, 0.25])
+    }).toEqual([0.75, 0.25])
     const panelHeights = await workspace.locator('[data-panel-key]').evaluateAll((panels) => (
       panels.map((panel) => panel.getBoundingClientRect().height)
     ))
@@ -778,29 +778,42 @@ test.describe('个股详情三图工作区', () => {
     await expect(page).toHaveURL(new RegExp(`/stocks/${nextSample.code.replace('.', '\\.')}$`))
     await expect(workspace.getByRole('separator').first()).toHaveAttribute(
       'aria-valuenow',
-      ratioAfterPointer || '',
+      ratioBeforePointer || '',
     )
     await page.reload()
     await expect(workspace.locator('[data-panel-key="slot2"]')).toContainText('MACD')
     await expect(workspace.getByRole('separator').first()).toHaveAttribute(
       'aria-valuenow',
-      ratioAfterPointer || '',
+      ratioBeforePointer || '',
     )
-    const indicatorRequestsAfterPersistenceChecks = indicatorRequests
-
     const firstSeparator = workspace.getByRole('separator').first()
     const ratioBeforeKeyboard = await firstSeparator.getAttribute('aria-valuenow')
     await firstSeparator.press('ArrowDown')
     await expect(firstSeparator).not.toHaveAttribute('aria-valuenow', ratioBeforeKeyboard || '')
+    const ratioAfterKeyboard = await firstSeparator.getAttribute('aria-valuenow')
+    await expect.poll(() => {
+      const value = preferences.store.get(stockDetailPreferenceKey)?.value as {
+        charts?: { heightRatios?: Record<string, number[]> }
+      } | undefined
+      return value?.charts?.heightRatios?.['kline|macd']
+    }).toEqual([0.75, 0.25])
+
+    await page.getByTestId('page-settings-trigger').click()
+    const resetDrawer = page.getByTestId('page-settings-drawer')
+    await resetDrawer.getByTestId('stock-detail-chart-save-current-ratios').click()
     await expect.poll(() => {
       const value = preferences.store.get(stockDetailPreferenceKey)?.value as {
         charts?: { heightRatios?: Record<string, number[]> }
       } | undefined
       return value?.charts?.heightRatios?.['kline|macd']
     }).not.toEqual([0.75, 0.25])
-
+    await page.reload()
+    await expect(workspace.getByRole('separator').first()).toHaveAttribute(
+      'aria-valuenow',
+      ratioAfterKeyboard || '',
+    )
+    const indicatorRequestsAfterPersistenceChecks = indicatorRequests
     await page.getByTestId('page-settings-trigger').click()
-    const resetDrawer = page.getByTestId('page-settings-drawer')
     await resetDrawer.getByTestId('page-settings-reset').click()
     await expect(page.locator('[data-panel-key]')).toHaveCount(3)
     await expect(resetDrawer.getByTestId('stock-detail-chart-slot2-volume')).toHaveClass(/active/)

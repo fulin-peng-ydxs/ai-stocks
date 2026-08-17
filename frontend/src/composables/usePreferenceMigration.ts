@@ -122,18 +122,6 @@ function readKlinePreference(): SaveUserPreferencePayload | null {
   }
 }
 
-function readBacktestPreference(): SaveUserPreferencePayload | null {
-  const value = readJsonObject('ai-stocks-backtest-params')
-  if (!value) return null
-  return {
-    scope: 'feature',
-    pageKey: 'backtest',
-    prefKey: 'params',
-    value,
-    schemaVersion: 1,
-  }
-}
-
 function collectPageSettingsPreferences(): SaveUserPreferencePayload[] {
   const prefix = 'ai-stocks:page-settings:'
   const items: SaveUserPreferencePayload[] = []
@@ -201,7 +189,6 @@ function collectUserPreferences(): SaveUserPreferencePayload[] {
     readThemePreference(),
     readNavigationPreference(),
     readKlinePreference(),
-    readBacktestPreference(),
   ]) {
     if (item) items.push(item)
   }
