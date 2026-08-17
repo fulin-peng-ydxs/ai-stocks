@@ -111,8 +111,20 @@ class BoardIngestService:
         result = {"concept": 0, "industry": 0, "total": 0, "failed": []}
         done_types = set(getattr(ctx, "checkpoint", {}).get("dict_done_types") or []) if ctx else set()
         types = _board_types(board_type)
+        fetched = False  # 本次是否真实拉取过字典（区分全新入库与 checkpoint 跳过）
         for current_type in types:
             if current_type in done_types:
+                # 续跑命中 checkpoint：本次不拉取，回查库内数量回填，避免日志误报「概念 0 / 行业 0」
+                existing = self.c.query_df(
+                    "SELECT count(*) AS n FROM board_dict WHERE board_type=?", [current_type])
+                result[current_type] = int(existing["n"].iloc[0]) if not existing.empty else 0
+                if ctx:
+                    done_in_scope = len(done_types.intersection(types))
+                    ctx.set_phase("board_dict", done=done_in_scope, total=len(types),
+                                  phase_total=len(types), phase_done=done_in_scope,
+                                  current_item=current_type,
+                                  dict_done_types=sorted(done_types))
+                    ctx.log(f"字典 {current_type}：上次已完成，本次跳过（库内 {result[current_type]} 个）")
                 continue
             if ctx:
                 ctx.check_cancel()
@@ -171,6 +183,7 @@ class BoardIngestService:
                 })
             self._upsert_board_dict(rows)
             result[current_type] = len(rows)
+            fetched = True
             if ctx:
                 ctx.log(f"字典 {current_type}：{len(rows)} 个板块")
             # 更新留痕（对齐现有采集）
@@ -186,7 +199,12 @@ class BoardIngestService:
                               current_item=current_type,
                               dict_done_types=sorted(done_types))
         result["total"] = result["concept"] + result["industry"]
-        log.info("板块字典入库 %d 个（概念 %d + 行业 %d）", result["total"], result["concept"], result["industry"])
+        if not fetched and done_types.issuperset(types):
+            log.info("板块字典本次跳过（checkpoint 已完成）：概念 %d + 行业 %d（库内现有）",
+                     result["concept"], result["industry"])
+        else:
+            log.info("板块字典入库 %d 个（概念 %d + 行业 %d）",
+                     result["total"], result["concept"], result["industry"])
         return result
 
     def _upsert_fund_only_boards(self, items: list[tuple[str, str, str]], sdate: date) -> None:
@@ -421,8 +439,11 @@ class BoardIngestService:
         failed: list[str] = []
         done_codes = set(getattr(ctx, "checkpoint", {}).get("bar_done_codes") or []) if ctx else set()
         done_codes.intersection_update({str(x) for x in df_boards["board_code"].tolist()})
+        resumed_done = len(done_codes)  # 续跑命中 checkpoint 的板块数（done_codes 循环中会继续增长）
         if done_codes:
             df_boards = df_boards[~df_boards["board_code"].astype(str).isin(done_codes)]
+            if ctx:
+                ctx.log(f"指数：{resumed_done} 个板块上次已完成，本次跳过")
         n_total = len(df_boards)
         phase_total = len(done_codes) + n_total
         for i, (_, b) in enumerate(df_boards.iterrows(), 1):
@@ -465,8 +486,9 @@ class BoardIngestService:
         status = "partial" if failed else "success"
         self._log_update("board_bar", start, end, total_rows, status,
                          f"{boards} 个板块（失败 {len(failed)}）")
-        log.info("板块指数入库 %d 行 / %d 个板块（失败 %d，%s ~ %s）",
-                 total_rows, boards, len(failed), start, end)
+        skip_detail = f"，续跑跳过已完成 {resumed_done}" if resumed_done else ""
+        log.info("板块指数入库 %d 行 / %d 个板块（失败 %d%s，%s ~ %s）",
+                 total_rows, boards, len(failed), skip_detail, start, end)
         return {"rows": total_rows, "boards": boards, "failed": failed}
 
     def _upsert_board_bar(self, df: pd.DataFrame) -> None:
@@ -529,6 +551,9 @@ class BoardIngestService:
             legacy_pairs = {f"{bt}:{period}" for bt in target_types for period in periods}
             done_keys = {f"ALL:{k}" if k in legacy_pairs else k for k in done_keys}
         done_keys.intersection_update(valid_keys)
+        resumed_groups = len(done_keys)  # 续跑命中的类型×周期组数（done_keys 循环中会继续增长）
+        if resumed_groups and ctx:
+            ctx.log(f"资金流：{resumed_groups} 个类型×周期组上次已完成，本次跳过")
         total_groups = len(target_types) * len(periods)
         for board_type in ("concept", "industry"):
             if board_type not in target_types:
@@ -631,8 +656,9 @@ class BoardIngestService:
         status = "partial" if failed else "success"
         self._log_update("board_fund_flow", sdate, sdate, rows, status,
                          f"未匹配 {len(unmatched)}，失败 {len(failed)}")
-        log.info("板块资金流入库 %d 行（未匹配 %d，失败 %d）",
-                 rows, len(unmatched), len(failed))
+        skip_detail = f"，续跑跳过已完成组 {resumed_groups}" if resumed_groups else ""
+        log.info("板块资金流入库 %d 行（未匹配 %d，失败 %d%s）",
+                 rows, len(unmatched), len(failed), skip_detail)
         return {"rows": rows, "unmatched": len(unmatched), "failed": failed}
 
     def _upsert_board_fund_flow(self, rows: list[dict]) -> None:

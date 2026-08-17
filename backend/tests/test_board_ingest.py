@@ -155,6 +155,42 @@ def test_member_checkpoint_and_resume_skip_completed(tmp_path):
     assert resumed.checkpoint["member_done_codes"] == ["309121", "881121"]
 
 
+def test_dict_checkpoint_resume_backfills_counts(tmp_path):
+    """续跑命中 dict checkpoint：跳过拉取但按库内数量回填计数，日志不再误报 0。"""
+    src = _FakeSource(
+        {},
+        board_dict={
+            "concept": pd.DataFrame([{"board_code": "309121", "name": "AI PC"}]),
+            "industry": pd.DataFrame([{"board_code": "881121", "name": "半导体"}]),
+        },
+    )
+    svc, c = _make_service(tmp_path, src)
+    first = svc.ingest_board_dict()
+    assert first["concept"] == 1 and first["industry"] == 1
+
+    class _Ctx:
+        def __init__(self):
+            self.checkpoint = {"dict_done_types": ["concept", "industry"]}
+            self.logs = []
+
+        def check_cancel(self):
+            pass
+
+        def set_phase(self, phase, **data):
+            self.checkpoint.update({"phase": phase, **data})
+
+        def log(self, msg, *args, **kwargs):
+            self.logs.append(msg)
+
+    ctx = _Ctx()
+    resumed = svc.ingest_board_dict(ctx=ctx)
+    assert resumed["concept"] == 1 and resumed["industry"] == 1 and resumed["total"] == 2
+    assert resumed["failed"] == []
+    assert any("跳过" in m for m in ctx.logs)
+    # 续跑跳过不重拉、不改库：字典数据保持首跑结果
+    assert c.query_df("SELECT count(*) AS n FROM board_dict")["n"].iloc[0] == 2
+
+
 def test_member_weekly_skip_within_interval(tmp_path):
     """周频跳过：已完整落库且距今不足间隔的板块默认跳过，force 才全量拉。
 
