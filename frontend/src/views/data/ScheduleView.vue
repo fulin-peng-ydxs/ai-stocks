@@ -21,6 +21,7 @@ import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useTableSort } from '@/composables/useTableSort'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
@@ -58,6 +59,26 @@ const sourceHiddenColumns = computed<string[]>(() => (componentValueOf('sourceTa
 function jobColVisible(key: string): boolean { return !jobHiddenColumns.value.includes(key) }
 function sourceColVisible(key: string): boolean { return !sourceHiddenColumns.value.includes(key) }
 function tableBorder(slotId: string): boolean { return componentValueOf(slotId, 'border') === true }
+
+// 列头排序（单向默认机制）：任务列表全量在前端，排序走本地 computed，不回源。
+const JOB_SORT_FIELDS = ['name', 'freq'] as const
+const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(typeof JOB_SORT_FIELDS)[number]>({
+  slotId: 'jobTable',
+  defaultSort: 'name:asc',
+  componentValueOf,
+  allowedFields: JOB_SORT_FIELDS,
+  defaultOrder: 'asc',
+})
+// 频率按触发疏密排序（每日→每周→每月→cron），同档再按名称稳定次序。
+const FREQ_RANK: Record<FreqType, number> = { daily: 0, weekly: 1, monthly: 2, cron: 3 }
+const sortedJobs = computed(() => {
+  const factor = sortOrder.value === 'desc' ? -1 : 1
+  const byName = (a: ScheduledJob, b: ScheduledJob) => a.name.localeCompare(b.name, 'zh')
+  return [...jobs.value].sort((a, b) => {
+    const primary = sortBy.value === 'freq' ? FREQ_RANK[a.freq_type] - FREQ_RANK[b.freq_type] : byName(a, b)
+    return (primary || byName(a, b)) * factor
+  })
+})
 
 const loading = ref(true)
 const loadError = ref('')
@@ -420,12 +441,22 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           retry
           @retry="load"
         />
-        <AppDataTable :data="jobs" size="small" class="jobs-tbl" :loading="loading" :border="tableBorder('jobTable')">
-          <AppTableColumn v-if="jobColVisible('name')" label="名称" prop="name" show-overflow-tooltip />
+        <AppDataTable
+          :data="sortedJobs"
+          size="small"
+          class="jobs-tbl"
+          :loading="loading"
+          :border="tableBorder('jobTable')"
+          :default-sort="elementDefaultSort"
+          @sort-change="onSortChange"
+        >
+          <AppTableColumn v-if="jobColVisible('name')" label="名称" prop="name" show-overflow-tooltip sortable="custom" />
           <AppTableColumn v-if="jobColVisible('taskType')" label="任务类型">
             <template #default="{ row }">{{ taskDisplayLabel(row.task_type, row.params) }}</template>
           </AppTableColumn>
-          <AppTableColumn v-if="jobColVisible('freq')" label="频率" prop="freq_text" show-overflow-tooltip />
+          <AppTableColumn v-if="jobColVisible('freq')" label="频率" prop="freq" show-overflow-tooltip sortable="custom">
+            <template #default="{ row }">{{ row.freq_text }}</template>
+          </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('tradingDay')" label="仅交易日" align="center">
             <template #default="{ row }">
               <el-tag :type="row.trading_day_only ? 'success' : 'info'" size="small" effect="plain">

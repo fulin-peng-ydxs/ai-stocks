@@ -791,7 +791,7 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
     consumedComponentFields: {
-      jobTable: ['border', 'hiddenColumns'],
+      jobTable: ['defaultSort', 'border', 'hiddenColumns'],
       sourceTable: ['border', 'hiddenColumns'],
     },
     componentMeta: {
@@ -804,6 +804,10 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'enabled', label: '启用' },
           { key: 'nextRun', label: '下次触发' },
           { key: 'lastRun', label: '最近触发' },
+        ],
+        sortFields: [
+          { key: 'name', label: '名称' },
+          { key: 'freq', label: '频率' },
         ],
       },
       sourceTable: {
@@ -825,7 +829,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', order: 1 },
-        { id: 'jobTable', component: 'data-table', region: 'main', parentId: 'body', label: '定时任务', order: 2 },
+        { id: 'jobTable', component: 'data-table', region: 'main', parentId: 'body', label: '定时任务', order: 2, config: { defaultSort: 'name:asc' } },
         { id: 'sourceTable', component: 'data-table', region: 'main', parentId: 'body', label: '数据源健康', order: 3 },
       ],
       editable: [densityKnob()],
