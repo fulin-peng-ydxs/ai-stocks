@@ -1165,8 +1165,9 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
         return {}
 
     def fake_ingest_board_bar(self, start, end=None, board_codes=None,
-                              board_type=None, ctx=None):
+                              board_type=None, probe_ready=False, ctx=None):
         captured["bar_type"] = board_type
+        captured["probe_ready"] = probe_ready
         captured["start"] = start
         captured["end"] = end
         return {"rows": 0, "boards": 0}
@@ -1191,6 +1192,8 @@ def test_board_update_uses_latest_open_day(client, monkeypatch):
     # 指数区间：start = 最近交易日 - 7 天 = 07-31；end = 最近交易日
     assert captured["start"] == date(2026, 8, 7) - timedelta(days=7)
     assert captured["end"] == date(2026, 8, 7)
+    # 全量增量开启源端就绪探测（指定板块重采才关）
+    assert captured["probe_ready"] is True
     # 资金流：update 每日刷新全周期（periods=None → 默认全周期）
     assert captured["periods"] is None
     assert {captured[x] for x in ("dict_type", "member_type", "bar_type", "fund_type")} == {
@@ -1258,7 +1261,8 @@ def test_ingest_board_only_selects_tables(client, monkeypatch):
                         lambda self, snapshot_date=None, board_codes=None, board_type=None, ctx=None, **kwargs:
                         called.__setitem__("members", 1) or {}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_bar",
-                        lambda self, start, end=None, board_codes=None, board_type=None, ctx=None:
+                        lambda self, start, end=None, board_codes=None, board_type=None,
+                        probe_ready=False, ctx=None:
                         called.__setitem__("bar", 1) or {"rows": 0, "boards": 0}, raising=True)
     monkeypatch.setattr(BoardIngestService, "ingest_board_fund_flow",
                         lambda self, snapshot_date=None, periods=None, board_codes=None,

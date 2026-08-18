@@ -1909,14 +1909,26 @@ class IngestionService:
                         board_type=board_type, ctx=ctx)
                 else:
                     # 增量：复用现有采集交易日语义——截止到最近交易日（非交易日回退），
-                    # 区间起点往前取 7 个自然日缓冲覆盖跨周末/长假缺口
+                    # 区间起点往前取 7 个自然日缓冲覆盖跨周末/长假缺口；
+                    # 全量增量开启源端当日就绪探测（指定板块重采尊重用户意图不探测）
                     end = self._latest_open_day()   # 与行情 update 同一交易日口径
                     result["bar"] = svc.ingest_board_bar(end - _td(days=7), end=end,
                                                          board_codes=board_codes,
-                                                         board_type=board_type, ctx=ctx)
+                                                         board_type=board_type,
+                                                         probe_ready=board_codes is None,
+                                                         ctx=ctx)
                 if ctx:
-                    ctx.log(f"步骤 {idx['n']}/{total} 板块指数：{result['bar'].get('rows', 0)} 行 / "
-                            f"{result['bar'].get('boards', 0)} 板块")
+                    bar = result["bar"]
+                    rng = f"区间 {bar.get('start')} ~ {bar.get('end')}"
+                    if bar.get("skipped"):
+                        # 就绪门拦截：不算失败、不落半成品，下轮定时自动补
+                        ctx.log(f"步骤 {idx['n']}/{total} 板块指数（{rng}）："
+                                f"源端当日数据未就绪（已出 {bar.get('at_end', 0)}/{bar.get('scope_total', 0)}），"
+                                f"本次跳过")
+                    else:
+                        ctx.log(f"步骤 {idx['n']}/{total} 板块指数（{rng}）："
+                                f"{bar.get('rows', 0)} 行 / {bar.get('boards', 0)} 板块"
+                                f"（已出截止日 {bar.get('at_end', 0)}/{bar.get('scope_total', 0)}）")
                 result["failed"] += [f"bar:{x}" for x in result["bar"].get("failed", [])]
             except TaskCancelled:  # 终止穿透：板块指数阶段被终止应转可续跑中断
                 raise

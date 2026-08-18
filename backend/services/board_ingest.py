@@ -35,6 +35,12 @@ log = get_logger("services.board_ingest")
 
 BOARD_INGEST_STAGES: tuple[str, ...] = ("dict", "members", "bar", "fund")
 
+# 源端当日就绪探测（对齐行情 update 的 _UPDATE_READY_* 就绪门）：板块指数源端分板块陆续发布，
+# 采早了会落一批"停在昨天"的半成品还报成功（实测 2026-08-18 晚 480 板块仅 27 个已出当日）。
+# 全量增量且截止日=今天时先抽样探测，未达阈值整阶段跳过，不拿旧数据冒充成功。
+_BAR_READY_SAMPLE = 10
+_BAR_READY_RATIO = 0.5
+
 
 def normalize_board_stages(value) -> list[str] | None:
     """规范化板块采集阶段；None 表示默认全阶段，显式空数组属于非法配置。"""
@@ -414,14 +420,21 @@ class BoardIngestService:
     def ingest_board_bar(self, start: date, end: date | None = None,
                          board_codes: list[str] | None = None,
                          board_type: str | None = None,
+                         probe_ready: bool = False,
                          ctx: object | None = None) -> dict:
         """板块指数日线：幂等 upsert 原值。end 缺省=今天。返回 {"rows": n, "boards": n}。
-        ctx：任务上下文，逐板块打实时日志（对齐现有采集「指数 X 完成」模式）。"""
+
+        ctx：任务上下文，逐板块打实时日志（对齐现有采集「指数 X 完成」模式）。
+        probe_ready：仅每日增量（ingest_board update 分支）传 True——全量且截止日=今天时
+        先抽样探测源端当日数据是否就绪，未就绪整阶段跳过；backfill/指定板块/缺口重采不传，
+        尊重调用方意图直接采。"""
         end = end or _asia_date()
         types = _board_types(board_type)
         if board_codes is not None:
             if not board_codes:
-                return {"rows": 0, "boards": 0, "failed": []}
+                return {"rows": 0, "boards": 0, "failed": [],
+                        "start": start.isoformat(), "end": end.isoformat(),
+                        "at_end": 0, "scope_total": 0}
             type_clause = " AND board_type=?" if board_type else ""
             df_boards = self.c.query_df(
                 f"SELECT board_code, board_type FROM board_dict "
@@ -437,6 +450,7 @@ class BoardIngestService:
         total_rows = 0
         boards = 0
         failed: list[str] = []
+        scope_codes = [str(x) for x in df_boards["board_code"].tolist()]  # 本轮全量范围（含续跑已完成）
         done_codes = set(getattr(ctx, "checkpoint", {}).get("bar_done_codes") or []) if ctx else set()
         done_codes.intersection_update({str(x) for x in df_boards["board_code"].tolist()})
         resumed_done = len(done_codes)  # 续跑命中 checkpoint 的板块数（done_codes 循环中会继续增长）
@@ -446,6 +460,23 @@ class BoardIngestService:
                 ctx.log(f"指数：{resumed_done} 个板块上次已完成，本次跳过")
         n_total = len(df_boards)
         phase_total = len(done_codes) + n_total
+        if ctx and n_total:
+            tail = f"（续跑跳过已完成 {resumed_done}）" if resumed_done else ""
+            ctx.log(f"板块指数采集区间 {start} ~ {end}，待采 {n_total} 个板块{tail}")
+        if probe_ready and board_codes is None and n_total and end >= _asia_date():
+            # 就绪探测：仅「每日增量全量 + 截止日=今天（即今天是交易日）」。backfill/指定板块/
+            # 缺口窄窗口重采不传 probe_ready，尊重调用方意图；非交易日 end<今天，数据必已发布。
+            ready, sampled = self._probe_bar_ready(df_boards, end)
+            if ready / max(sampled, 1) < _BAR_READY_RATIO:
+                msg = (f"板块指数源端当日数据未就绪：抽样 {ready}/{sampled} 个板块已出 {end}，"
+                       f"本次跳过指数采集（区间 {start} ~ {end}），下轮定时自动补齐")
+                log.warning(msg)
+                if ctx:
+                    ctx.log(msg, "warn")
+                return {"rows": 0, "boards": 0, "failed": [], "skipped": True,
+                        "reason": "source_not_ready",
+                        "start": start.isoformat(), "end": end.isoformat(),
+                        "at_end": ready, "scope_total": len(scope_codes)}
         for i, (_, b) in enumerate(df_boards.iterrows(), 1):
             code, board_type = str(b["board_code"]), str(b["board_type"])
             if ctx:
@@ -484,12 +515,47 @@ class BoardIngestService:
                 if ctx:
                     ctx.log(f"指数 {i}/{n_total} {code}：失败 {e}", "error")
         status = "partial" if failed else "success"
+        # 新鲜度透出：成功不代表源端已发截止日（源端分板块陆续发布），汇总里给出已出截止日的覆盖数，
+        # 避免「成功 480 板块」掩盖「大部分停在昨天」；缺口仍由质检扫描兜底发现。
+        at_end = self._count_at_end(scope_codes, end) if scope_codes else 0
+        fresh = f"，已出 {end}：{at_end}/{len(scope_codes)}"
         self._log_update("board_bar", start, end, total_rows, status,
-                         f"{boards} 个板块（失败 {len(failed)}）")
+                         f"{boards} 个板块（失败 {len(failed)}{fresh}）")
         skip_detail = f"，续跑跳过已完成 {resumed_done}" if resumed_done else ""
-        log.info("板块指数入库 %d 行 / %d 个板块（失败 %d%s，%s ~ %s）",
-                 total_rows, boards, len(failed), skip_detail, start, end)
-        return {"rows": total_rows, "boards": boards, "failed": failed}
+        log.info("板块指数入库 %d 行 / %d 个板块（失败 %d%s，%s ~ %s%s）",
+                 total_rows, boards, len(failed), skip_detail, start, end, fresh)
+        return {"rows": total_rows, "boards": boards, "failed": failed,
+                "start": start.isoformat(), "end": end.isoformat(),
+                "at_end": at_end, "scope_total": len(scope_codes)}
+
+    def _probe_bar_ready(self, df_boards: pd.DataFrame, end: date) -> tuple[int, int]:
+        """抽样探测源端是否已发布 end 当日板块指数，返回 (已出数板块数, 抽样数)。
+
+        均匀抽样（对齐行情 update 的就绪探测）；单点异常按未就绪计，整体由阈值兜底，
+        探测本身不中断采集。
+        """
+        n = len(df_boards)
+        step = max(n // _BAR_READY_SAMPLE, 1)
+        sample = df_boards.iloc[::step].head(_BAR_READY_SAMPLE)
+        ready = 0
+        for _, b in sample.iterrows():
+            code, board_type = str(b["board_code"]), str(b["board_type"])
+            try:
+                df = self.src.get_board_bar(code, board_type, end, end)
+                if not df.empty and pd.to_datetime(df["trade_date"]).max().date() >= end:
+                    ready += 1
+            except Exception as e:  # noqa: BLE001 —— 探测失败按未就绪计，不掩盖为就绪
+                log.debug("板块 %s 指数就绪探测失败: %s", code, e)
+        return ready, len(sample)
+
+    def _count_at_end(self, scope_codes: list[str], end: date) -> int:
+        """本轮范围内库内已覆盖到 end 的板块数（含续跑已完成的板块，反映落库后的真实新鲜度）。"""
+        df = self.c.query_df(
+            f"SELECT count(*) AS n FROM board_dict b "
+            f"JOIN board_bar bar ON bar.board_code = b.board_code AND bar.trade_date = ? "
+            f"WHERE b.board_code IN ({_in_placeholders(len(scope_codes))})",
+            [end, *scope_codes])
+        return int(df.iloc[0]["n"])
 
     def _upsert_board_bar(self, df: pd.DataFrame) -> None:
         cols = ["board_code", "trade_date", "open", "high", "low", "close", "volume", "amount"]

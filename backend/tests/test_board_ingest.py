@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import pytest
@@ -93,9 +93,8 @@ def test_empty_code_scope_never_expands_to_all_boards(tmp_path):
     c.execute("INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar) "
               "VALUES ('309121','AI PC','concept',TRUE,TRUE)")
     assert svc.ingest_board_members(board_codes=[]) == {}
-    assert svc.ingest_board_bar(date(2026, 1, 1), board_codes=[]) == {
-        "rows": 0, "boards": 0, "failed": [],
-    }
+    r = svc.ingest_board_bar(date(2026, 1, 1), board_codes=[])
+    assert r["rows"] == 0 and r["boards"] == 0 and r["failed"] == []
     assert svc.ingest_board_fund_flow(board_codes=[]) == {
         "rows": 0, "unmatched": 0, "failed": [],
     }
@@ -607,3 +606,130 @@ def test_ingest_writes_update_log(tmp_path):
     tables = set(logs["table_name"])
     assert {"board_dict", "board_member", "board_bar", "board_fund_flow"} <= tables
     assert set(logs["source"]) == {"ths_board"}
+
+
+# ── 指数增量：源端就绪探测与日志区间/新鲜度透出 ─────────────
+
+
+def _bar_df(dates: list[date]) -> pd.DataFrame:
+    """构造指数日线 DataFrame（仅需 trade_date 有区分度，OHLCV 给占位值）。"""
+    n = len(dates)
+    return pd.DataFrame({
+        "trade_date": dates, "open": [1.0] * n, "high": [1.0] * n, "low": [1.0] * n,
+        "close": [1.0] * n, "volume": [1.0] * n, "amount": [1.0] * n,
+    })
+
+
+class _LogCtx:
+    """捕获 ctx.log 内容的最小任务上下文（bar 阶段用到 log/set_phase/check_cancel）。"""
+
+    def __init__(self):
+        self.checkpoint: dict = {}
+        self.logs: list[tuple[str, str]] = []
+
+    def check_cancel(self):
+        pass
+
+    def set_phase(self, phase, **data):
+        self.checkpoint.update({"phase": phase, **data})
+
+    def log(self, msg, level="info"):
+        self.logs.append((level, str(msg)))
+
+
+def _two_boards(c: DuckDBClient) -> None:
+    c.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) VALUES "
+              "('309121','AI PC','concept',TRUE),('881121','半导体','industry',TRUE)")
+
+
+def test_bar_ready_probe_skips_when_source_lagging(tmp_path):
+    """全量增量且截止日=今天：源端没出当日数据时整阶段跳过，不落半成品、不记成功。"""
+    from backend.services.board_ingest import _asia_date
+    today = _asia_date()
+    yesterday = today - timedelta(days=1)
+    src = _FakeSource({}, bar={
+        "309121": _bar_df([yesterday]),
+        "881121": _bar_df([yesterday]),
+    })
+    svc, c = _make_service(tmp_path, src)
+    _two_boards(c)
+    ctx = _LogCtx()
+    r = svc.ingest_board_bar(yesterday - timedelta(days=6), end=today, probe_ready=True, ctx=ctx)
+    assert r["skipped"] is True and r["reason"] == "source_not_ready"
+    assert r["rows"] == 0 and r["boards"] == 0 and r["failed"] == []
+    assert r["start"] and r["end"] == today.isoformat()
+    # 不落库、不写 data_update_log（跳过 ≠ 成功也不是失败）
+    assert c.query_df("SELECT * FROM board_bar").empty
+    assert c.query_df("SELECT * FROM data_update_log WHERE table_name='board_bar'").empty
+    warns = [m for lv, m in ctx.logs if lv == "warn"]
+    assert any("未就绪" in m and str(today) in m for m in warns)
+
+
+def test_bar_ready_probe_passes_and_logs_window_freshness(tmp_path):
+    """源端已出当日数据：正常采集，日志带采集区间与「已出截止日 K/N」新鲜度。"""
+    from backend.services.board_ingest import _asia_date
+    today = _asia_date()
+    src = _FakeSource({}, bar={
+        "309121": _bar_df([today]),
+        "881121": _bar_df([today]),
+    })
+    svc, c = _make_service(tmp_path, src)
+    _two_boards(c)
+    ctx = _LogCtx()
+    start = today - timedelta(days=7)
+    r = svc.ingest_board_bar(start, end=today, probe_ready=True, ctx=ctx)
+    assert "skipped" not in r
+    assert r["rows"] == 2 and r["boards"] == 2
+    assert r["at_end"] == 2 and r["scope_total"] == 2
+    assert r["start"] == start.isoformat() and r["end"] == today.isoformat()
+    # 任务日志：起始行带采集区间
+    assert any("采集区间" in m and str(start) in m and str(today) in m
+               for _, m in ctx.logs)
+    # 更新留痕：成功汇总透出已出截止日覆盖数
+    detail = c.query_df("SELECT detail FROM data_update_log WHERE table_name='board_bar' "
+                        "AND status='success'").iloc[0]["detail"]
+    assert f"已出 {today}：2/2" in detail
+
+
+def test_bar_probe_bypassed_for_explicit_board_codes(tmp_path):
+    """指定板块（手动重采/缺口窄窗口修复）尊重调用方意图，即使开了就绪探测开关也不探测。"""
+    from backend.services.board_ingest import _asia_date
+    today = _asia_date()
+    yesterday = today - timedelta(days=1)
+    src = _FakeSource({}, bar={"309121": _bar_df([yesterday])})
+    svc, c = _make_service(tmp_path, src)
+    _two_boards(c)
+    r = svc.ingest_board_bar(yesterday, end=today, board_codes=["309121"], probe_ready=True)
+    assert "skipped" not in r and r["rows"] == 1
+    assert r["at_end"] == 0 and r["scope_total"] == 1
+
+
+def test_bar_probe_off_by_default_for_backfill(tmp_path):
+    """backfill/直接调用默认不就绪探测：全量+截止日=今天但源端滞后也照常采集已有部分。"""
+    from backend.services.board_ingest import _asia_date
+    today = _asia_date()
+    yesterday = today - timedelta(days=1)
+    src = _FakeSource({}, bar={
+        "309121": _bar_df([yesterday]),
+        "881121": _bar_df([yesterday]),
+    })
+    svc, c = _make_service(tmp_path, src)
+    _two_boards(c)
+    r = svc.ingest_board_bar(today - timedelta(days=365), end=today)  # 未传 probe_ready
+    assert "skipped" not in r and r["boards"] == 2
+    assert r["at_end"] == 0
+
+
+def test_bar_probe_bypassed_for_past_end(tmp_path):
+    """截止日早于今天（非交易日回退/历史窗口）：数据必已发布，不探测直接采。"""
+    from backend.services.board_ingest import _asia_date
+    end = _asia_date() - timedelta(days=1)
+    src = _FakeSource({}, bar={
+        "309121": _bar_df([end]),
+        "881121": _bar_df([end]),
+    })
+    svc, c = _make_service(tmp_path, src)
+    _two_boards(c)
+    r = svc.ingest_board_bar(end - timedelta(days=6), end=end)
+    assert "skipped" not in r and r["boards"] == 2
+    assert r["at_end"] == 2
