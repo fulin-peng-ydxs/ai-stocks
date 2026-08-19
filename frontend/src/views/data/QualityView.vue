@@ -106,6 +106,19 @@ const displayList = computed(() => {
   return list
 })
 
+// 详情列展示文案：部分 issue_type 的 detail 是结构化 JSON（修复链路解析 periods/board_type 等
+// 字段定向重采用），展示层只取人读文案（message/reason），非 JSON 或缺文案时原样显示。
+function detailText(detail: string): string {
+  const s = (detail ?? '').trim()
+  if (!s.startsWith('{')) return detail
+  try {
+    const payload = JSON.parse(s)
+    const msg = payload?.message ?? payload?.reason
+    if (typeof msg === 'string' && msg) return msg
+  } catch { /* 非 JSON，原样显示 */ }
+  return detail
+}
+
 function applyDefaultFilters() {
   filters.value.status = settings.defaultStatus === 'all'
     ? []
@@ -459,7 +472,9 @@ onMounted(() => {
         <AppTableColumn v-if="colVisible('type')" label="类型">
           <template #default="{ row }">{{ ISSUE_TYPE_LABEL[row.issue_type] ?? row.issue_type }}</template>
         </AppTableColumn>
-        <AppTableColumn v-if="colVisible('detail')" label="详情" prop="detail" show-overflow-tooltip />
+        <AppTableColumn v-if="colVisible('detail')" label="详情" show-overflow-tooltip>
+          <template #default="{ row }">{{ detailText(row.detail) }}</template>
+        </AppTableColumn>
         <AppTableColumn v-if="colVisible('status')" label="状态">
           <template #default="{ row }">
             <el-tag :type="statType[row.status] ?? 'info'" size="small" effect="plain">{{ ISSUE_STATUS_LABEL[row.status] ?? row.status }}</el-tag>
