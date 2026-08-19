@@ -98,6 +98,20 @@ def test_list_sectors_basic(c):
     assert bd["net_inflow"] is None  # 无资金流
 
 
+def test_list_sectors_pct_today_none_when_board_missing_selected_date(c):
+    """所选交易日板块无指数数据时，今日涨跌幅置空（前端「—」），不回退用旧收盘代算。"""
+    svc = _svc(c)
+    r = svc.list_sectors(trade_date=date(2026, 8, 8))
+    assert r["trade_date"] == "2026-08-08"
+    rows = {x["board_code"]: x for x in r["list"]}
+    # AI PC 最近指数数据在 08-07，08-08 无数据 → 今日涨跌幅 None，但行仍保留
+    assert rows["309121"]["pct_today"] is None
+    # 有当日数据的交易日仍正常计算（08-06：108 vs 08-05 的 110）
+    r_ok = svc.list_sectors(trade_date=date(2026, 8, 6))
+    ai = {x["board_code"]: x for x in r_ok["list"]}["309121"]
+    assert ai["pct_today"] == pytest.approx(-1.82, abs=0.01)
+
+
 def test_list_sectors_filter_sort_paginate(c):
     """过滤（类型/关键词）+ 排序 + 分页。"""
     svc = _svc(c)

@@ -6,7 +6,8 @@
 口径（需求 §6.2 / plan §4 双口径边界）：
 - **涨幅 pct_today/pct_5d/pct_10d/pct_20d 从 `board_bar` 实时计算**（最近交易日收盘 vs
   N 个交易日前收盘），不从 `board_fund_flow` 周期表读（资金流周期 net_ratio 是资金面数据，
-  不参与价格排序）。
+  不参与价格排序）。列表口径下，所选交易日该板块无指数数据时 pct_today 置空，
+  不回退用旧收盘代算今日涨幅。
 - **资金流净流入按周期读 `board_fund_flow` 最新 snapshot_date 行**：即时/3日/5日/10日/20日
   对应 `net_inflow`/`net_inflow_3d`/`net_inflow_5d`/`net_inflow_10d`/`net_inflow_20d`。
 - **领涨股** = `board_member` 历史累计成员中，行情截面日 `pct_chg` 最大者；停牌、缺收盘
@@ -140,7 +141,7 @@ class BoardQueryService:
         rows = []
         for _, r in df.iterrows():
             code = str(r["board_code"])
-            bar = bar_ts.get(code)
+            bar_entry = bar_ts.get(code)
             row: dict = {
                 "board_code": code,
                 "app_code": str(r["app_code"]) if r["app_code"] is not None and str(r["app_code"]) != "nan" else None,
@@ -154,9 +155,14 @@ class BoardQueryService:
                 "has_fund_flow": bool(r["has_fund_flow"]),
             }
             # 涨幅：历史不足该周期 → None（前端「—」，不缩短周期代算）
-            if bar is not None:
+            if bar_entry is not None:
+                bar_last_date, bar = bar_entry
                 for key, lookback in _PCT_WINDOW.items():
                     row[key] = _pct_change(bar, lookback)
+                # 所选交易日该板块无指数数据（序列最新日早于截面日）时，今日涨跌幅置空，
+                # 不回退用旧收盘代算今日涨幅；N 日涨幅仍按既有截至截面日的口径计算。
+                if bar_last_date != bar_date:
+                    row["pct_today"] = None
             else:
                 for key in _PCT_WINDOW:
                     row[key] = None
@@ -177,8 +183,12 @@ class BoardQueryService:
         bar_date: date | None,
         *,
         board_codes: set[str] | None = None,
-    ) -> dict[str, pd.Series]:
-        """每板块指数收盘序列（升序），key=board_code。bar_date None → 空。"""
+    ) -> dict[str, tuple[date, pd.Series]]:
+        """每板块指数收盘序列（升序）+ 序列最新交易日，key=board_code。bar_date None → 空。
+
+        最新交易日用于判断所选截面日是否真有该板块指数数据：序列按 trade_date <= 截面日
+        截取，最新日早于截面日即表示截面日当天无数据。
+        """
         if bar_date is None:
             return {}
         # 各周期最长只需要最近 21 个收盘点，不加载每个板块全部历史。
@@ -194,9 +204,10 @@ class BoardQueryService:
                 FROM board_bar WHERE trade_date <= ?{code_clause}
             ) t WHERE rn <= 21 ORDER BY board_code, trade_date
             """, [bar_date, *codes])
-        out: dict[str, pd.Series] = {}
+        out: dict[str, tuple[date, pd.Series]] = {}
         for code, g in df.groupby("board_code"):
-            out[str(code)] = g["close"].reset_index(drop=True)
+            last_date = pd.Timestamp(g["trade_date"].iloc[-1]).date()
+            out[str(code)] = (last_date, g["close"].reset_index(drop=True))
         return out
 
     def _latest_fund_flow(
@@ -306,7 +317,8 @@ class BoardQueryService:
         bar_date = trade_date or self._latest_bar_date()
         fund_date = self._latest_fund_date()
         target = {code}
-        bar = self._bar_close_series(bar_date, board_codes=target).get(code)
+        bar_entry = self._bar_close_series(bar_date, board_codes=target).get(code)
+        bar = bar_entry[1] if bar_entry is not None else None
         ff = self._latest_fund_flow(fund_date, board_codes=target).get(code)
         market = self._member_market_by_board(bar_date, board_codes=target).get(code)
         out = {
