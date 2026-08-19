@@ -1429,6 +1429,64 @@ def test_board_index_batch_fix_survives_rescan_of_siblings(client, monkeypatch):
     assert statuses == {1: "resolved", 2: "resolved"}
 
 
+def test_board_index_gap_daily_fix_retries_on_empty_rows(client, monkeypatch):
+    """板块指数逐日缺口修复：单日重采返回 0 行时按 ths_board 配置重试。
+
+    源端按年返回 K 线，盘后单点请求可能因数据暂未发布返回 0 行；重试可避免因偶发延迟误失败。
+    """
+    from types import SimpleNamespace
+
+    svc = AsyncTaskService(client)
+    from backend.services import ingest
+    from backend.services.board_ingest import BoardIngestService
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", lambda self, source=None: None, raising=True)
+    monkeypatch.setattr("backend.services.async_task._mark_snapshots_stale", lambda: 0)
+    # 缩短重试配置，避免测试耗时
+    fake_cfg = SimpleNamespace(ths_board=SimpleNamespace(max_retries=2, retry_backoff_sec=0.01))
+    monkeypatch.setattr("backend.config.get_effective_settings", lambda: fake_cfg)
+    monkeypatch.setattr(BoardIngestService, "__init__",
+                        lambda self, client=None, source=None: setattr(self, "c", client), raising=True)
+
+    calls = []
+
+    def fake_ingest_board_bar(self, start, end=None, board_codes=None, board_type=None, ctx=None):
+        calls.append({"start": start, "end": end, "codes": board_codes,
+                      "bar_done_codes": ctx.checkpoint.get("bar_done_codes") if ctx else None})
+        # 模拟真实 ingest_board_bar：调用结束后会把当前板块写入 checkpoint
+        if ctx:
+            ctx.set_phase("board_bar", bar_done_codes=["300037"])
+        # 第一次返回 0 行，第二次返回 1 行（模拟源端延迟后恢复）
+        if len(calls) == 1:
+            return {"rows": 0, "boards": 0, "failed": []}
+        for code in (board_codes or []):
+            self.c.execute(
+                "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+                "VALUES (?, DATE '2026-08-18', 100, 101, 99, 100, 1000, 100000)", [code])
+        return {"rows": len(board_codes or []), "boards": 1, "failed": []}
+
+    monkeypatch.setattr(BoardIngestService, "ingest_board_bar", fake_ingest_board_bar, raising=True)
+    client.execute("INSERT INTO board_dict (board_code, name, board_type, has_bar) "
+                   "VALUES ('300037','智能电网','concept',TRUE)")
+    client.execute("INSERT INTO daily_bar (code, trade_date, close) VALUES ('600000.SH', DATE '2026-08-18', 10.0)")
+    client.execute("SELECT nextval('seq_quality_issue')")
+    client.execute("INSERT INTO data_quality_issue "
+                   "(id, code, issue_type, trade_date, severity, status, detected_at) "
+                   "VALUES (100, '300037', 'board_index_gap_daily', DATE '2026-08-18', 'mid', 'open', now())")
+
+    tid = svc.create("fix", {"issue_ids": [100]})
+    t = _wait(svc, tid)
+    assert t["status"] == "done"
+    row = client.query_df("SELECT status FROM data_quality_issue WHERE id=100").iloc[0]
+    assert row["status"] == "resolved"
+    # 第一次 0 行触发重试，共调用 2 次
+    assert len(calls) == 2
+    assert calls[0]["start"] == calls[0]["end"] == date(2026, 8, 18)
+    assert calls[1]["start"] == calls[1]["end"] == date(2026, 8, 18)
+    # 关键：第 2 次调用前必须清掉上次的 bar_done_codes，否则会被续跑跳过
+    assert calls[1]["bar_done_codes"] is None
+
+
 def test_board_fund_unmatched_fix_resolves_only_after_mapping(client, monkeypatch):
     """board_fund_unmatched 修复会先刷新字典，名称真实可映射后才 resolved。"""
     svc = AsyncTaskService(client)
