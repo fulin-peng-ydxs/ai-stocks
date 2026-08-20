@@ -423,24 +423,15 @@ onMounted(() => {
     <template #main>
     <el-card shadow="never">
       <AppStateBlock
-        v-if="loadError && !data"
-        state="error"
-        title="数据质量加载失败"
-        :description="loadError"
-        retry
-        @retry="load"
-      />
-      <template v-else>
-      <AppStateBlock
         v-if="loadError"
         state="error"
-        size="compact"
-        title="数据质量刷新失败"
+        :title="data ? '数据质量刷新失败' : '数据质量加载失败'"
         :description="loadError"
         retry
         @retry="load"
       />
       <AppDataTable
+        v-else
         :data="displayList"
         size="small"
         :loading="loading"
@@ -489,7 +480,6 @@ onMounted(() => {
           </template>
         </AppTableColumn>
       </AppDataTable>
-      </template>
     </el-card>
     </template>
 

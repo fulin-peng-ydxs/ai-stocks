@@ -490,7 +490,7 @@ onBeforeUnmount(() => {
               <el-input v-model="typeKeyword" clearable placeholder="搜索类型 / code" @input="scheduleSearchTypes" @keyup.enter="searchTypes" @clear="searchTypes" />
             </AppControlRow>
           </el-card>
-          <div class="dict-type-list" v-loading="typeLoading">
+          <div class="dict-type-list" v-loading="typeLoading && typeRows.length > 0">
             <AppStateBlock
               v-if="typeError"
               state="error"
@@ -500,6 +500,12 @@ onBeforeUnmount(() => {
               class="compact-state"
               retry
               @retry="loadTypes(true)"
+            />
+            <AppStateBlock
+              v-else-if="typeLoading && !typeRows.length"
+              state="loading"
+              size="compact"
+              title="正在加载字典类型…"
             />
             <el-empty v-else-if="!typeRows.length" class="app-empty app-empty--compact" description="暂无字典类型">
               <el-button v-permission="'dict:type-manage'" type="primary" @click="openCreateType">新建类型</el-button>
@@ -610,9 +616,10 @@ onBeforeUnmount(() => {
                 </template>
               </AppTableColumn>
               <template #empty>
-                <el-empty class="app-empty" :description="activeType ? '暂无字典项' : '请选择字典类型'">
+                <div class="app-table-empty">
+                  <span class="app-table-empty__description">{{ activeType ? '暂无字典项' : '请选择字典类型' }}</span>
                   <el-button v-if="activeType" v-permission="'dict:item-manage'" type="success" plain @click="openCreateItem">新建字典项</el-button>
-                </el-empty>
+                </div>
               </template>
             </AppDataTable>
           </div>

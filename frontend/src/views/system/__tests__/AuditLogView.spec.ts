@@ -286,9 +286,12 @@ describe('AuditLogView', () => {
     )
     const wrapper = await mountView()
     const initialCalls = (auditApi.listAuditLogs as ReturnType<typeof vi.fn>).mock.calls.length
+    ;(auditApi.getAuditSummary as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('silent refresh failed'))
     await vi.advanceTimersByTimeAsync(30_000)
     await flushPromises()
     expect(auditApi.listAuditLogs).toHaveBeenCalledTimes(initialCalls + 1)
+    expect(wrapper.text()).toContain('范围事件')
+    expect(wrapper.text()).not.toContain('审计摘要加载失败')
     wrapper.unmount()
     await vi.advanceTimersByTimeAsync(30_000)
     expect(auditApi.listAuditLogs).toHaveBeenCalledTimes(initialCalls + 1)

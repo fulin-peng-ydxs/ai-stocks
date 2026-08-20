@@ -288,7 +288,7 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
           retry
           @retry="loadPolicies"
         />
-        <el-collapse v-model="activeNames">
+        <el-collapse v-else v-model="activeNames">
           <el-collapse-item v-for="group in groups" :key="group.category" :name="group.category">
             <template #title>
               <span class="cat-title">{{ group.label }}</span>

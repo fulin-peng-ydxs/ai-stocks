@@ -565,20 +565,20 @@ onMounted(async () => {
       </AppControlRow>
     </el-card>
 
-    <AppStateBlock
-      v-if="error && rows.length"
-      state="error"
-      size="compact"
-      title="榜单刷新失败"
-      :description="error"
-      retry
-      @retry="load"
-    />
     </div>
     </template>
 
     <template #main>
+    <AppStateBlock
+      v-if="error"
+      state="error"
+      :title="rows.length ? '榜单刷新失败' : '榜单加载失败'"
+      :description="error"
+      retry
+      @retry="load"
+    />
     <MarketMasterDetailWorkspace
+      v-else
       v-model:analysis-visible="analysisPanelVisible"
       eyebrow="评分榜单"
       :title="runDate || '最新交易日'"
@@ -591,14 +591,6 @@ onMounted(async () => {
         v-if="loading && !rows.length"
         state="loading"
         title="正在加载榜单…"
-      />
-      <AppStateBlock
-        v-else-if="error && !rows.length"
-        state="error"
-        title="榜单加载失败"
-        :description="error"
-        retry
-        @retry="load"
       />
       <AppDataTable
         v-else

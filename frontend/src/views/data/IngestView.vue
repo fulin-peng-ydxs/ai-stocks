@@ -5,9 +5,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
-  getDataStatus, getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, getStockQuality, searchBoards,
+  getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, getStockQuality, searchBoards,
   TASK_LABEL, STATUS_LABEL, taskDisplayLabel, SOURCE_LABEL,
-  type DataStatus, type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
+  type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
   type BoardIngestStage, type BoardTypeScope,
 } from '@/api/data'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -61,8 +61,6 @@ const {
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
 const loading = ref(false)
-const statusError = ref('')
-const status = ref<DataStatus | null>(null)
 
 // ── 任务中心：服务端分页 / 排序 / 筛选（M2.9.5）──
 const tasks = ref<AsyncTask[]>([])
@@ -332,7 +330,7 @@ function activeCount() {
 async function loadTasks(silent = false) {
   const before = activeCount()
   if (!silent) taskLoading.value = true
-  taskError.value = ''
+  if (!silent) taskError.value = ''
   try {
     const r = await listTasks({
       page: taskPage.value, size: taskSize.value,
@@ -342,19 +340,14 @@ async function loadTasks(silent = false) {
     tasks.value = r.tasks
     taskTotal.value = r.total ?? r.tasks.length
   } catch (error) {
-    taskError.value = getErrorMessage(error, '任务中心加载失败')
+    // 自动轮询失败不把仍可使用的旧任务列表切成整区 error；用户主动请求仍由四态接管。
+    if (!silent) taskError.value = getErrorMessage(error, '任务中心加载失败')
   } finally {
     if (!silent) taskLoading.value = false
   }
   const after = activeCount()
   if (before > 0 && after === 0) {
     await loadLogs()
-    try {
-      statusError.value = ''
-      status.value = await getDataStatus()
-    } catch (error) {
-      statusError.value = getErrorMessage(error, '数据状态刷新失败')
-    }
   }
   if (taskTimer) { clearTimeout(taskTimer); taskTimer = undefined }
   // 自动轮询只更新任务数据，不反复触发表格 loading 遮罩，避免页面每两秒闪烁。
@@ -383,14 +376,11 @@ async function loadLogs() {
 }
 async function load() {
   loading.value = true
-  statusError.value = ''
   try {
-    status.value = await getDataStatus()
-  } catch (error) {
-    statusError.value = getErrorMessage(error, '数据状态刷新失败')
-  } finally { loading.value = false }
-  await loadTasks()
-  await loadLogs()
+    await Promise.all([loadTasks(), loadLogs()])
+  } finally {
+    loading.value = false
+  }
 }
 
 // ── 中断后继续 / 失败后重试未完成项 ──
@@ -584,15 +574,6 @@ watch(
 
     <template #main>
     <div class="ingest-body">
-      <AppStateBlock
-        v-if="statusError"
-        state="error"
-        size="compact"
-        title="数据状态刷新失败"
-        :description="statusError"
-        retry
-        @retry="load"
-      />
       <div class="ingest-top">
       <!-- 采集区 -->
       <el-card shadow="never" class="blk">
@@ -673,24 +654,15 @@ watch(
             title="正在加载任务中心…"
           />
           <AppStateBlock
-            v-else-if="taskError && !tasks.length"
+            v-else-if="taskError"
             state="error"
-            title="任务中心加载失败"
-            :description="taskError"
-            retry
-            @retry="loadTasks"
-          />
-          <template v-else>
-          <AppStateBlock
-            v-if="taskError"
-            state="error"
-            size="compact"
-            title="任务中心刷新失败"
+            :title="tasks.length ? '任务中心刷新失败' : '任务中心加载失败'"
             :description="taskError"
             retry
             @retry="loadTasks"
           />
           <AppDataTable
+            v-else
             :data="tasks"
             :loading="taskLoading"
             size="small"
@@ -748,7 +720,6 @@ watch(
               </template>
             </AppTableColumn>
           </AppDataTable>
-          </template>
         </div>
       </el-card>
 
@@ -779,24 +750,15 @@ watch(
             title="正在加载采集日志…"
           />
           <AppStateBlock
-            v-else-if="logError && !updateLogList.length"
+            v-else-if="logError"
             state="error"
-            title="采集日志加载失败"
-            :description="logError"
-            retry
-            @retry="loadLogs"
-          />
-          <template v-else>
-          <AppStateBlock
-            v-if="logError"
-            state="error"
-            size="compact"
-            title="采集日志刷新失败"
+            :title="updateLogList.length ? '采集日志刷新失败' : '采集日志加载失败'"
             :description="logError"
             retry
             @retry="loadLogs"
           />
           <AppDataTable
+            v-else
             :data="updateLogList"
             :loading="logLoading"
             size="small"
@@ -834,7 +796,6 @@ watch(
               <template #default="{ row }">{{ (row.updated_at || '').slice(0, 19) }}</template>
             </AppTableColumn>
           </AppDataTable>
-          </template>
         </div>
       </el-card>
       </div>

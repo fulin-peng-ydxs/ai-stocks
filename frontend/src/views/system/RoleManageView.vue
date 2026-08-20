@@ -301,7 +301,14 @@ onMounted(loadAll)
           <div class="rm-col-head">
             <span class="rm-head-title">角色 <span class="mini">{{ roles.length }}</span></span>
           </div>
-          <div class="rm-col-body" v-loading="rolesLoading">
+          <div class="rm-col-body" v-loading="rolesLoading && roles.length > 0">
+            <AppStateBlock
+              v-if="rolesLoading && !roles.length"
+              state="loading"
+              size="compact"
+              title="正在加载角色…"
+            />
+            <template v-else>
             <div
               v-for="r in roles"
               :key="r.id"
@@ -316,6 +323,7 @@ onMounted(loadAll)
               <div v-if="r.member_count != null" class="role-desc">关联用户 {{ r.member_count }} 名</div>
             </div>
             <el-empty v-if="!rolesLoading && !roles.length" class="app-empty app-empty--compact" description="暂无角色" />
+            </template>
           </div>
         </div>
 

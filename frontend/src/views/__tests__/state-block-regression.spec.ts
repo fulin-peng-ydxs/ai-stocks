@@ -450,9 +450,38 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('quality failed')
   })
 
-  it('任务中心自动轮询静默刷新，不重复显示表格加载态', async () => {
+  it('数据质量已有列表刷新失败后由错误态接管，不继续展示旧表格', async () => {
+    ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
+      list: [{
+        id: 1,
+        severity: 'high',
+        code: '600000.SH',
+        name: '浦发银行',
+        trade_date: '2026-08-20',
+        issue_type: 'data_gap',
+        detail: '缺少行情',
+        status: 'open',
+        detected_at: '2026-08-20 12:00:00',
+      }],
+      total: 1,
+      summary: [],
+    })
+    const wrapper = await mountView(QualityView)
+    expect(wrapper.find('.app-data-table').exists()).toBe(true)
+
+    ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('refresh failed'))
+    const refresh = wrapper.findAll('button').find((button) => button.text().trim() === '刷新')
+    expect(refresh).toBeTruthy()
+    await refresh!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('数据质量刷新失败')
+    expect(wrapper.text()).toContain('refresh failed')
+    expect(wrapper.find('.app-data-table').exists()).toBe(false)
+  })
+
+  it('任务中心自动轮询静默失败时保留 ready 列表，不切换整区错误态', async () => {
     vi.useFakeTimers()
-    let resolvePolling!: (value: unknown) => void
     const activeResult = {
       tasks: [{
         id: 'task-1',
@@ -468,18 +497,19 @@ describe('代表性页面四态回归', () => {
     }
     ;(dataApi.listTasks as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(activeResult)
-      .mockImplementationOnce(() => new Promise((resolve) => { resolvePolling = resolve }))
+      .mockRejectedValueOnce(new Error('poll failed'))
 
     const wrapper = await mountView(IngestView)
     const taskTables = wrapper.findAll('.app-data-table')
     expect(taskTables[0].attributes('data-loading')).toBe('false')
 
     await vi.advanceTimersByTimeAsync(2_000)
+    await flushPromises()
     expect(dataApi.listTasks).toHaveBeenCalledTimes(2)
     expect(taskTables[0].attributes('data-loading')).toBe('false')
+    expect(wrapper.text()).not.toContain('任务中心刷新失败')
+    expect(wrapper.findAll('.app-data-table').length).toBeGreaterThan(0)
 
-    resolvePolling(activeResult)
-    await flushPromises()
     wrapper.unmount()
     vi.useRealTimers()
   })

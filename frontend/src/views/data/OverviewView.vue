@@ -344,17 +344,13 @@ onMounted(load)
     </template>
 
     <template #summary>
-      <div v-if="!error || ov" class="overview-summary" data-testid="overview-summary">
+      <div v-if="!error" class="overview-summary" data-testid="overview-summary">
         <AppStateBlock
-          v-if="error"
-          state="error"
-          size="compact"
-          title="数据概览刷新失败"
-          :description="error"
-          retry
-          @retry="load"
+          v-if="loading && !ov"
+          state="loading"
+          title="正在加载数据概览…"
         />
-        <div class="stat-grid" data-testid="overview-kpi-grid" v-loading="loading">
+        <div v-else class="stat-grid" data-testid="overview-kpi-grid" v-loading="loading && !!ov">
           <el-card v-if="settings.kpi.latestTradeDate" shadow="never" class="stat">
             <el-tooltip content="库内 daily_bar 的最大交易日，全局鲜活度的基准日" placement="top">
               <div class="stat-label">最新交易日 <span class="qm">?</span></div>
@@ -425,7 +421,7 @@ onMounted(load)
 
     <template #quality>
       <el-card
-        v-if="ov?.quality.by_layer?.length"
+        v-if="!error && ov?.quality.by_layer?.length"
         shadow="never"
         class="quality-summary"
         data-testid="overview-quality-summary"
@@ -448,9 +444,9 @@ onMounted(load)
 
     <template #workspace>
       <AppStateBlock
-        v-if="error && !ov"
+        v-if="error"
         state="error"
-        title="数据概览加载失败"
+        :title="ov ? '数据概览刷新失败' : '数据概览加载失败'"
         :description="error"
         retry
         @retry="load"
@@ -553,23 +549,14 @@ onMounted(load)
                 title="正在加载逐股质量…"
               />
               <AppStateBlock
-                v-else-if="sqError && !sq"
+                v-else-if="sqError"
                 state="error"
-                title="逐股质量加载失败"
+                :title="sq ? '逐股质量刷新失败' : '逐股质量加载失败'"
                 :description="sqError"
                 retry
                 @retry="loadSq"
               />
               <template v-else>
-                <AppStateBlock
-                  v-if="sqError"
-                  state="error"
-                  size="compact"
-                  title="逐股质量刷新失败"
-                  :description="sqError"
-                  retry
-                  @retry="loadSq"
-                />
                 <AppDataTable
                   :data="sq?.list ?? []"
                   size="small"

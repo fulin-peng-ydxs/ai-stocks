@@ -758,6 +758,15 @@ onBeforeUnmount(() => {
             </span>
           </el-option>
         </el-select>
+        <AppStateBlock
+          v-if="groupListError"
+          state="error"
+          size="inline"
+          title="分组列表加载失败"
+          :description="groupListError"
+          retry
+          @retry="reloadGroups"
+        />
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
@@ -824,36 +833,17 @@ onBeforeUnmount(() => {
       data-testid="stocks-market-workspace"
     >
       <template #list>
-      <AppStateBlock
-        v-if="groupListError && !inGroupMode"
-        state="error"
-        size="compact"
-        title="分组列表加载失败"
-        :description="groupListError"
-        retry
-        @retry="reloadGroups"
-      />
       <!-- 分组视图 -->
       <template v-if="inGroupMode">
         <AppStateBlock
-          v-if="groupError && !groupDetail"
-          state="error"
-          title="分组明细加载失败"
-          :description="groupError"
-          retry
-          @retry="loadGroupDetail"
-        />
-        <template v-else>
-        <AppStateBlock
           v-if="groupError"
           state="error"
-          size="compact"
-          title="分组明细刷新失败"
+          :title="groupDetail ? '分组明细刷新失败' : '分组明细加载失败'"
           :description="groupError"
           retry
           @retry="loadGroupDetail"
         />
-        <AppDataTable kind="wide-table" :data="groupRows" :loading="groupLoading" row-key="code"
+        <AppDataTable v-else kind="wide-table" :data="groupRows" :loading="groupLoading" row-key="code"
           :border="tableBorder('groupTable')"
           :default-sort="groupElementDefaultSort"
           clickable
@@ -898,30 +888,19 @@ onBeforeUnmount(() => {
             <template #default="{ row }">{{ row.add_date || '—' }}</template>
           </AppTableColumn>
         </AppDataTable>
-        </template>
       </template>
 
       <!-- 普通查询 -->
       <template v-else>
         <AppStateBlock
-          v-if="loadError && !rows.length"
-          state="error"
-          title="个股列表加载失败"
-          :description="loadError"
-          retry
-          @retry="load"
-        />
-        <template v-else>
-        <AppStateBlock
           v-if="loadError"
           state="error"
-          size="compact"
-          title="个股列表刷新失败"
+          :title="rows.length ? '个股列表刷新失败' : '个股列表加载失败'"
           :description="loadError"
           retry
           @retry="load"
         />
-        <AppDataTable kind="wide-table" :data="rows" :loading="loading" row-key="code"
+        <AppDataTable v-else kind="wide-table" :data="rows" :loading="loading" row-key="code"
           :border="tableBorder('table')"
           clickable
           :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
@@ -991,7 +970,6 @@ onBeforeUnmount(() => {
             </template>
           </AppTableColumn>
         </AppDataTable>
-        </template>
       </template>
       </template>
       <template #analysis>

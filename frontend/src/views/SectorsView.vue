@@ -352,6 +352,12 @@ const crossSection = computed<CrossSectionDatum[]>(() => {
 const hasCrossSectionData = computed(() => crossSection.value.some((item) => (
   item.value != null || item.second != null
 )))
+const hasChartContent = computed(() => {
+  if (chartMode.value === 'kline') return klineBars.value.length > 0
+  return compareMetricKind.value === 'line'
+    ? compareSeries.value.length > 0
+    : hasCrossSectionData.value
+})
 function chartEnd(): string {
   return tradeDate.value || marketDate.value || dataMax.value || ''
 }
@@ -853,9 +859,9 @@ onMounted(async () => {
         description="请联系系统管理员调整权限"
       />
       <AppStateBlock
-        v-else-if="loadError && !rows.length"
+        v-else-if="loadError"
         state="error"
-        title="板块行情加载失败"
+        :title="rows.length ? '板块排行刷新失败' : '板块行情加载失败'"
         :description="loadError"
         retry
         @retry="load"
@@ -889,16 +895,6 @@ onMounted(async () => {
               </AppIconButton>
             </div>
           </header>
-
-          <AppStateBlock
-            v-if="loadError"
-            state="error"
-            size="compact"
-            title="排行刷新失败"
-            :description="loadError"
-            retry
-            @retry="load"
-          />
 
           <AppDataTable
             data-testid="sectors-table"
@@ -1198,7 +1194,7 @@ onMounted(async () => {
             @remove="removeCompared"
           />
 
-          <div class="chart-stage" v-loading="chartLoading">
+          <div class="chart-stage" v-loading="chartLoading && hasChartContent">
             <AppStateBlock
               v-if="chartError"
               state="error"
@@ -1214,19 +1210,24 @@ onMounted(async () => {
               description="点击左侧排行中的任意一行即可查看走势"
             />
             <AppStateBlock
-              v-else-if="!chartLoading && chartMode === 'compare' && compareMetricKind === 'line' && !compareSeries.length"
+              v-else-if="chartLoading && !hasChartContent"
+              state="loading"
+              title="正在加载板块走势…"
+            />
+            <AppStateBlock
+              v-else-if="chartMode === 'compare' && compareMetricKind === 'line' && !compareSeries.length"
               state="empty"
               title="暂无指数走势"
               description="可切换其他板块，或先运行板块指数采集"
             />
             <AppStateBlock
-              v-else-if="!chartLoading && chartMode === 'compare' && compareMetricKind === 'bar' && !hasCrossSectionData"
+              v-else-if="chartMode === 'compare' && compareMetricKind === 'bar' && !hasCrossSectionData"
               state="empty"
               title="暂无对比数据"
               description="对比队列暂无该指标快照"
             />
             <AppStateBlock
-              v-else-if="!chartLoading && chartMode === 'kline' && !klineBars.length"
+              v-else-if="chartMode === 'kline' && !klineBars.length"
               state="empty"
               title="暂无 K 线数据"
               description="可切换其他板块，或先运行板块指数采集"

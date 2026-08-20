@@ -108,9 +108,10 @@ Playwright 统一读取 `E2E_API_URL`。
 
 ## 当前基线用例
 
+- `frontend/e2e/component-state-preview.spec.ts`：三视口验证系统组件四态预览共用稳定容器、非 ready 态真实复用 `AppStateBlock`，并通过审计空表接口夹具确认表格只呈现一套全局空态图标、业务文案与操作，不嵌套第二套 `el-empty`。
 - `frontend/e2e/login-initial-render.spec.ts`：登录页首帧与表面回归。三项目刷新 `/login`，通过页面脚本记录真实 DOM 挂载过程，确保首次路由与鉴权守卫就绪前不会挂载工作台壳；同时验证登录品牌区、认证区和卡片在白天/夜间使用与工作台一致的固定中性底色。
 - `frontend/e2e/app-shell-surfaces.spec.ts`：应用外壳底色回归。三项目验证白天与夜间模式下侧栏、顶栏和主工作区使用原型固定中性色，并通过真实视觉环境切换确认预设不会改写基础背景。
 - `frontend/e2e/page-settings-drawer.spec.ts`：验证每日榜单页面设置抽屉「恢复默认」会清除 `user_preference(global/settings-drawer)` 中的抽屉自身偏好，并回到默认尺寸。
 - `frontend/e2e/sectors-workbench.spec.ts`：板块行情与详情长期回归。三视口覆盖首屏排行、指数基准、周期缩放、自选、对比、K 线、量能、详情高度与分隔条、跨菜单状态保持、成分股跳转及返回；标准视口额外覆盖搜索、排序、分页、列显隐/恢复默认和 `debug_sectors_only` 最小权限 fail-closed。
-- `frontend/e2e/sector-quality-recovery.spec.ts`：标准视口以确定性接口夹具覆盖 `board_member_incomplete`「重采成分」提交、任务成功轮询和问题列表收敛。
+- `frontend/e2e/sector-quality-recovery.spec.ts`：标准视口以确定性接口夹具覆盖数据质量主动刷新失败后由错误态接管且不残留旧记录，以及 `board_member_incomplete`「重采成分」提交、任务成功轮询和问题列表收敛。
 - `frontend/e2e/stock-detail-chart-workspace.spec.ts`：个股行情分析与详情三图长期回归。标准视口先覆盖个股查询远端业务默认值水合、抽屉默认值单向驱动主区、主区切换不反写长期默认、展开分析区时行点击切换当前股票及收起后恢复详情跳转，并覆盖每日榜单走势对比/K线模式切换和显式详情入口；详情页继续串行覆盖默认 K线/量能/MACD、图名、最小权限与路由守卫、MACD 局部失败/重试、辅助图交换/隐藏、指标快照模块显隐与图表自适应填满、pointer 与键盘调高、切股/刷新/重置恢复、偏好 403 本地 fallback，以及每次运行创建并销毁两名 UUID 化普通临时用户的真实 PG 隔离；三项目共同覆盖 1100×620、1366×768、1440×900 的布局、主题、reduced-motion、状态图层和截图附件，并断言柱宽按 K线、量能、MACD 递减、底部日期不被缩放滑块遮挡、标题颜色与折线一致、MA/VMA/MACD 折线消费盘感训练共享色相且在实际明暗背景可辨、任一图缩放后三图窗口同步、光标轴交易日气泡只在 K线显示一次、只有 K线显示固定左上角且具备涨跌色的行情 tooltip，以及真实画布悬停金叉/死叉标签时显示信号类型和完整交易日期。涉及临时用户的场景必须使用上文双重环境授权与 PG 指纹守卫，结束后确认 `e2e_%` 用户残留为 0。

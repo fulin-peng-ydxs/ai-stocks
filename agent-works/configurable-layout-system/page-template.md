@@ -252,7 +252,7 @@ PageSettingsDrawer
 - 真实组件：已有真实复用组件能覆盖的控件行为，不得继续在页面内复制手写；`data-table` / `wide-table`、`settings-drawer` 等逻辑种类由 `pageRegistry.spec.ts` 校验真实导入和渲染，`config-panel` 校验页面级入口 `ConfigGroupForm`，再由该组件复用 `ConfigPanelSection`；组合型 `toolbar` / `section` / `tabs` 不要求虚构同名空壳组件。
 - 表格列宽：页面不得直接使用原生 `<table>`、`el-table`、`el-table-column`，不得向 `AppTableColumn` 传 `width/min-width`；宽度统一由语义基础宽、表头字符权重、排序/筛选控件和可选 `header-meta` 推导。
 - 高度与滚动：`list` 必须唯一 `growMain`；`LayoutHost` 统一应用组件有效 `minH`。剩余高度达到 `minH` 时由组件内部滚动，低于 `minH` 时才由主内容区滚动兜底。页面不得用 `fill`、私有视口高度或外层滚动覆盖该决策。
-- 四态反馈：registry 页面必须真实复用 `AppStateBlock` 承接非 ready 状态；ready / loading / empty / error 互斥，表格加载/空态可继续由 `AppDataTable` 承接；错误态必须可见且有重试或原因说明，具体分支由消费页测试或关键视口 E2E 验证。
+- 四态反馈：registry 页面必须真实复用 `AppStateBlock` 承接非 ready 状态；ready / loading / empty / error 互斥。无旧内容首次加载使用 `AppStateBlock loading` 骨架，已有内容刷新才使用 `v-loading` 遮罩；表格由 `AppDataTable` 自动完成该分流并承接空态，`#empty` 只能补充 `app-table-empty*` 文案和操作，禁止嵌套 `el-empty`。用户主动刷新、筛选、分页、排序或切换查询口径失败后，`error` 必须接管受影响区域并隐藏旧 ready 内容，禁止“紧凑异常块 + 旧表格/图表/摘要”并存；自动轮询等静默刷新只有在旧内容仍明确可用时才可保持 ready 并给轻量提示，且不得同时渲染整区异常态。错误态必须可见且有重试或原因说明，具体分支由消费页测试或关键视口 E2E 验证。
 
 ## 8. 页面登记块（填好贴进 DESIGN.md `page-registry` 表格）
 

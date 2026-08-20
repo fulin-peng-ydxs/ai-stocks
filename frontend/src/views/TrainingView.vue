@@ -531,27 +531,16 @@ onBeforeUnmount(detachKeyboard)
             title="正在加载成长曲线…"
           />
           <AppStateBlock
-            v-else-if="growthError && !growthData.length"
+            v-else-if="growthError"
             state="error"
-            title="成长曲线加载失败"
+            :title="growthData.length ? '成长曲线刷新失败' : '成长曲线加载失败'"
             :description="growthError"
             retry
             @retry="loadGrowth"
           />
-          <template v-else>
-          <AppStateBlock
-            v-if="growthError"
-            state="error"
-            size="compact"
-            title="成长曲线刷新失败"
-            :description="growthError"
-            retry
-            @retry="loadGrowth"
-          />
-          <div v-loading="growthLoading">
+          <div v-else v-loading="growthLoading">
             <GrowthChart :data="growthData" />
           </div>
-          </template>
         </el-card>
 
         <el-card shadow="never" class="hist-card">
@@ -562,24 +551,15 @@ onBeforeUnmount(detachKeyboard)
             title="正在加载训练历史…"
           />
           <AppStateBlock
-            v-else-if="historyError && !history.list.length"
+            v-else-if="historyError"
             state="error"
-            title="训练历史加载失败"
-            :description="historyError"
-            retry
-            @retry="loadHistory"
-          />
-          <template v-else>
-          <AppStateBlock
-            v-if="historyError"
-            state="error"
-            size="compact"
-            title="训练历史刷新失败"
+            :title="history.list.length ? '训练历史刷新失败' : '训练历史加载失败'"
             :description="historyError"
             retry
             @retry="loadHistory"
           />
           <AppDataTable
+            v-else
             :data="history.list"
             :loading="historyLoading"
             size="small"
@@ -622,7 +602,6 @@ onBeforeUnmount(detachKeyboard)
               </template>
             </AppTableColumn>
           </AppDataTable>
-          </template>
         </el-card>
     </div>
     </template>

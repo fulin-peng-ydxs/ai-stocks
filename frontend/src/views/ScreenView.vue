@@ -823,25 +823,15 @@ onMounted(initializeScreen)
               title="正在运行筛选…"
             />
             <AppStateBlock
-              v-else-if="resultError && !result"
+              v-else-if="resultError"
               state="error"
-              title="筛选运行失败"
-              :description="resultError"
-              retry
-              @retry="run"
-            />
-            <template v-else>
-            <AppStateBlock
-              v-if="resultError"
-              state="error"
-              size="compact"
-              title="筛选结果刷新失败"
+              :title="result ? '筛选结果刷新失败' : '筛选运行失败'"
               :description="resultError"
               retry
               @retry="run"
             />
             <AppDataTable
-              v-if="result && result.hits.length"
+              v-else-if="result && result.hits.length"
               :data="displayHits"
               :loading="loading"
               :border="tableBorder('result')"
@@ -875,7 +865,6 @@ onMounted(initializeScreen)
             </AppDataTable>
             <AppStateBlock v-else-if="result" state="empty" title="当前条件暂无命中" />
             <AppStateBlock v-else state="empty" title="运行后在这里展示筛选结果" />
-            </template>
           </div>
         </section>
       </div>

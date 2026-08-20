@@ -1472,24 +1472,14 @@ watch(activeTab, (tab) => { initActivePage(tab) })
             </div>
             <AppStateBlock v-if="running && !runRows.length" state="loading" title="正在试算评分结果…" />
             <AppStateBlock
-              v-else-if="runError && !runRows.length"
+              v-else-if="runError"
               state="error"
-              title="试算运行失败"
+              :title="runRows.length ? '试算结果刷新失败' : '试算运行失败'"
               :description="runError"
               retry
               @retry="tryRun"
             />
-            <template v-else>
-            <AppStateBlock
-              v-if="runError"
-              state="error"
-              size="compact"
-              title="试算结果刷新失败"
-              :description="runError"
-              retry
-              @retry="tryRun"
-            />
-            <div v-if="runRows.length" class="run-table-wrap">
+            <div v-else-if="runRows.length" class="run-table-wrap">
             <AppDataTable :data="runRows" :loading="running" size="small" border height="100%" class="run-table">
               <AppTableColumn label="#">
                 <template #default="{ row }">{{ row.rank }}</template>
@@ -1527,7 +1517,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               title="当前配置在该交易日暂无评分结果"
             />
             <AppStateBlock v-else state="empty" title="配置评分规则后点「用当前配置试算」" />
-            </template>
           </section>
         </div>
       </template>
@@ -1861,7 +1850,13 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           description="系统设置仅系统管理员可编辑"
           class="config-error"
         />
-        <div v-else class="sys-wrap" v-loading="sysLoading">
+        <AppStateBlock
+          v-else-if="sysLoading && !sysGroups.length"
+          state="loading"
+          title="正在加载系统设置…"
+          class="config-error"
+        />
+        <div v-else class="sys-wrap" v-loading="sysLoading && sysGroups.length > 0">
           <div class="sys-head">
             <div class="sys-summary">
               <span>保存后即时影响访问安全、数据采集、审计留存和研究运行参数。</span>

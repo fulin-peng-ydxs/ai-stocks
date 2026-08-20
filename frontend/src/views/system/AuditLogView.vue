@@ -285,14 +285,15 @@ async function loadSummary(silent = false) {
     summaryLoading.value = true
     summaryLoadingSeq = seq
   }
-  summaryError.value = false
+  if (!silent) summaryError.value = false
   const { page: _page, page_size: _size, sort_by: _sortBy, sort_order: _sortOrder, ...query } = buildQuery()
   try {
     const data = await getAuditSummary(query)
     if (seq !== summaryRequestSeq) return
     summary.value = data
+    summaryError.value = false
   } catch {
-    if (seq === summaryRequestSeq) summaryError.value = true
+    if (seq === summaryRequestSeq && !silent) summaryError.value = true
   } finally {
     if (!silent && summaryLoadingSeq === seq) summaryLoading.value = false
   }
@@ -308,11 +309,15 @@ async function loadList(silent = false) {
     tableLoading.value = true
     listLoadingSeq = seq
   }
-  loadError.value = false
-  permissionError.value = false
+  if (!silent) {
+    loadError.value = false
+    permissionError.value = false
+  }
   try {
     const data = await listAuditLogs(buildQuery())
     if (seq !== listRequestSeq) return
+    loadError.value = false
+    permissionError.value = false
     rows.value = data.list
     total.value = data.total
     if (data.list.length === 0 && page.value > 1) {
@@ -492,7 +497,21 @@ onBeforeUnmount(stopTimer)
     </template>
 
     <template #summary>
-      <div class="audit-summary" v-loading="summaryLoading">
+      <AppStateBlock
+        v-if="summaryLoading && !summary"
+        state="loading"
+        title="正在加载审计摘要…"
+      />
+      <AppStateBlock
+        v-else-if="summaryError"
+        state="error"
+        size="compact"
+        title="审计摘要加载失败"
+        description="请稍后重试"
+        retry
+        @retry="loadSummary(false)"
+      />
+      <div v-else class="audit-summary" v-loading="summaryLoading && !!summary">
         <div class="metric">
           <span>范围事件</span>
           <b>{{ summary?.total ?? 0 }}</b>
@@ -501,7 +520,7 @@ onBeforeUnmount(stopTimer)
         <div class="metric">
           <span>失败 / 拒绝</span>
           <b class="warn">{{ summary?.failed ?? 0 }}</b>
-          <em>{{ summaryError ? '摘要读取失败' : '含失败、拒绝和异常' }}</em>
+          <em>含失败、拒绝和异常</em>
         </div>
         <div class="metric">
           <span>安全事件</span>
@@ -641,9 +660,10 @@ onBeforeUnmount(stopTimer)
             </template>
           </AppTableColumn>
           <template #empty>
-            <el-empty class="app-empty" description="暂无审计记录">
+            <div class="app-table-empty">
+              <span class="app-table-empty__description">暂无审计记录</span>
               <el-button @click="resetFilters">重置筛选</el-button>
-            </el-empty>
+            </div>
           </template>
         </AppDataTable>
       </div>

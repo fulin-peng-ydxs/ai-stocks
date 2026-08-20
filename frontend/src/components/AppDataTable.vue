@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppPagination from '@/components/AppPagination.vue'
 import type { Sort } from 'element-plus'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -32,6 +33,7 @@ const props = withDefaults(defineProps<{
   border?: boolean
   framed?: boolean
   emptyText?: string
+  loadingText?: string
   ariaLabel?: string
   pagination?: PaginationConfig
   /** 宽表默认常显滚动条；普通表格可按需显式开启。 */
@@ -46,11 +48,17 @@ const props = withDefaults(defineProps<{
   stripe: false,
   border: false,
   framed: false,
+  loadingText: '正在加载数据…',
   scrollbarAlwaysOn: null,
   embedded: false,
 })
 
 const resolvedHeight = computed(() => props.height ?? (!props.embedded ? '100%' : undefined))
+const initialLoading = computed(() => props.loading && props.data.length === 0)
+const initialLoadingStyle = computed(() => {
+  if (props.height == null) return undefined
+  return { height: typeof props.height === 'number' ? `${props.height}px` : props.height }
+})
 const resolvedScrollbarAlwaysOn = computed(
   () => props.scrollbarAlwaysOn ?? props.kind === 'wide-table',
 )
@@ -71,7 +79,7 @@ function syncSemanticTableLabels(): void {
 }
 
 onMounted(syncSemanticTableLabels)
-watch(() => [props.ariaLabel, props.loading], syncSemanticTableLabels)
+watch(() => [props.ariaLabel, props.loading, props.data.length], syncSemanticTableLabels)
 
 const emit = defineEmits<{
   'sort-change': [value: Sort]
@@ -84,6 +92,7 @@ const emit = defineEmits<{
 <template>
   <div
     class="app-data-table"
+    :aria-busy="loading"
     :class="[
       `app-data-table--${kind}`,
       {
@@ -95,7 +104,16 @@ const emit = defineEmits<{
       },
     ]"
   >
+    <AppStateBlock
+      v-if="initialLoading"
+      state="loading"
+      :size="embedded ? 'compact' : 'default'"
+      :title="loadingText"
+      :style="initialLoadingStyle"
+      data-testid="app-data-table-initial-loading"
+    />
     <el-table
+      v-else
       ref="tableRef"
       v-bind="$attrs"
       :data="data"
@@ -123,7 +141,7 @@ const emit = defineEmits<{
       </template>
     </el-table>
 
-    <div v-if="pagination" class="app-data-table__pager">
+    <div v-if="pagination && !initialLoading" class="app-data-table__pager">
       <AppPagination
         :current-page="pagination.currentPage"
         :page-size="pagination.pageSize"

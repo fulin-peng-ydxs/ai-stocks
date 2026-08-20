@@ -383,6 +383,18 @@ async function loadPageConfig(options: { clearCurrent?: boolean } = {}) {
   }
 }
 
+const pageRegionError = computed(() => pageLoadError.value || presetLoadError.value || fieldPolicyError.value)
+const pageRegionErrorTitle = computed(() => {
+  if (pageLoadError.value) return pageConfig.value ? '页面布局配置刷新失败' : '页面布局配置加载失败'
+  if (presetLoadError.value) return '布局预设加载失败'
+  return '组件字段策略加载失败'
+})
+
+/** 依赖任一失败时整区由 error 接管；重试统一恢复页面配置及其两个必要依赖。 */
+async function retryPageRegion() {
+  await Promise.all([loadPageConfig(), reloadPresets(), reloadFieldPolicies()])
+}
+
 async function savePageConfig() {
   pageSaving.value = true
   try {
@@ -561,41 +573,14 @@ onMounted(async () => {
           title="正在加载页面布局配置…"
         />
         <AppStateBlock
-          v-else-if="pageLoadError && !pageConfig"
+          v-else-if="pageRegionError"
           state="error"
-          title="页面布局配置加载失败"
-          :description="pageLoadError"
+          :title="pageRegionErrorTitle"
+          :description="pageRegionError"
           retry
-          @retry="loadPageConfig"
+          @retry="retryPageRegion"
         />
         <template v-else>
-        <AppStateBlock
-          v-if="pageLoadError"
-          state="error"
-          size="compact"
-          title="页面布局配置刷新失败"
-          :description="pageLoadError"
-          retry
-          @retry="loadPageConfig"
-        />
-        <AppStateBlock
-          v-if="presetLoadError"
-          state="error"
-          size="compact"
-          title="布局预设加载失败"
-          :description="presetLoadError"
-          retry
-          @retry="reloadPresets(true)"
-        />
-        <AppStateBlock
-          v-if="fieldPolicyError"
-          state="error"
-          size="compact"
-          title="组件字段策略加载失败"
-          :description="fieldPolicyError"
-          retry
-          @retry="reloadFieldPolicies"
-        />
         <el-tabs v-model="tab" class="config-tabs" @tab-change="onTabChange">
           <el-tab-pane label="预览与配置" name="workbench">
             <div class="workbench-pane">
@@ -823,20 +808,19 @@ onMounted(async () => {
               </div>
             </div>
 
-            <div class="report-grid">
+            <AppStateBlock
+              v-if="reportError"
+              state="error"
+              title="校验报告加载失败"
+              :description="reportError"
+              retry
+              @retry="runValidationReport"
+            />
+            <div v-else class="report-grid">
               <section class="plain-panel">
                 <div class="section-title">错误项</div>
-                <AppStateBlock
-                  v-if="reportError"
-                  state="error"
-                  size="compact"
-                  title="校验报告加载失败"
-                  :description="reportError"
-                  retry
-                  @retry="runValidationReport"
-                />
                 <el-alert
-                  v-if="!reportError && !pageValidationErrors.length && !userValidationErrors.length"
+                  v-if="!pageValidationErrors.length && !userValidationErrors.length"
                   type="success"
                   title="当前页面配置和用户覆盖均通过校验"
                   :closable="false"

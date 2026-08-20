@@ -1595,6 +1595,16 @@ async function openTradeChart(row: TradeRow) {
       <div class="page-head-actions">
         <div class="hist">
           <span class="lbl">回测记录</span>
+          <AppStateBlock
+            v-if="historyError"
+            state="error"
+            size="inline"
+            title="历史回测加载失败"
+            :description="historyError"
+            retry
+            @retry="loadHistory"
+          />
+          <template v-else>
           <el-select
             v-model="selectedRun"
             class="history-run-select"
@@ -1656,6 +1666,7 @@ async function openTradeChart(row: TradeRow) {
             title="浏览租户/全体公开的历史回测，可加载查看或复用参数重跑"
             @click="runBrowseOpen = true"
           >浏览公开回测</el-button>
+          </template>
         </div>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -1868,37 +1879,19 @@ async function openTradeChart(row: TradeRow) {
 
     <div v-loading="loading && !!(strat || sig)" class="results">
       <AppStateBlock
-        v-if="historyError"
-        state="error"
-        size="compact"
-        title="历史回测加载失败"
-        :description="historyError"
-        retry
-        @retry="loadHistory"
-      />
-      <AppStateBlock
         v-if="loading && !strat && !sig"
         state="loading"
         title="正在加载回测结果…"
       />
       <AppStateBlock
-        v-else-if="resultError && !strat && !sig"
+        v-else-if="resultError"
         state="error"
-        :title="resultErrorContext === 'history' ? '历史回测载入失败' : '回测运行失败'"
+        :title="resultErrorContext === 'history' ? '历史回测载入失败' : ((strat || sig) ? '回测结果刷新失败' : '回测运行失败')"
         :description="resultError"
         retry
         @retry="retryResult"
       />
       <template v-else>
-      <AppStateBlock
-        v-if="resultError"
-        state="error"
-        size="compact"
-        :title="resultErrorContext === 'history' ? '历史回测载入失败' : '回测结果刷新失败'"
-        :description="resultError"
-        retry
-        @retry="retryResult"
-      />
       <div class="results-top">
       <!-- 加载历史时：显示这次回测的运行时间 -->
       <div v-if="fromHistory && runTime && (strat || sig)" class="run-time-banner">
@@ -2191,13 +2184,13 @@ async function openTradeChart(row: TradeRow) {
 
     <!-- 查看买入当日的每日榜单（全市场评分 Top 50，高亮本笔买入的票）-->
     <el-dialog v-model="boardDlg" class="board-dlg" :title="`${boardDate}（选股信号日）每日榜单 · 全市场评分 Top 50`" width="640px" top="6vh">
-      <div v-loading="boardLoading">
+      <div>
         <div class="dlg-hint" style="margin-bottom:8px">
           这是<b>选股信号日</b>（买入日的前一交易日）全市场按评分排序的榜单；<b class="bd-hit-legend">高亮行</b>=本笔买入的票，能看清它在大盘里的相对位置。
         </div>
         <el-alert v-if="boardMissing && boardRows.length" type="warning" :closable="false" show-icon style="margin-bottom:8px"
                   title="本笔买入的票不在 Top 50 内（榜单名次更靠后）——它因选股方案命中且方案内排名靠前而被买入，并非综合分靠前。" />
-        <AppDataTable :data="boardRows" size="small" height="460" :row-class-name="boardRowClass" embedded>
+        <AppDataTable :data="boardRows" :loading="boardLoading" loading-text="正在加载每日榜单…" size="small" height="460" :row-class-name="boardRowClass" embedded>
           <AppTableColumn label="#" prop="rank" />
           <AppTableColumn label="代码" prop="code" />
           <AppTableColumn label="名称" prop="name">

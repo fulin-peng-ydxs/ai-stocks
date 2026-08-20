@@ -915,10 +915,10 @@ onBeforeUnmount(() => {
     </div>
 
     <AppStateBlock
-      v-if="barsPermissionDenied || (barsError && !bars.length)"
+      v-if="barsPermissionDenied || barsError"
       state="error"
       :variant="barsPermissionDenied ? 'permission' : undefined"
-      :title="barsPermissionDenied ? '无权限查看个股详情' : '个股详情加载失败'"
+      :title="barsPermissionDenied ? '无权限查看个股详情' : (bars.length ? '个股详情刷新失败' : '个股详情加载失败')"
       :description="barsPermissionDenied ? '请联系系统管理员调整股票查看权限' : barsError"
       :retry="!barsPermissionDenied"
       @retry="loadBars"
@@ -932,21 +932,17 @@ onBeforeUnmount(() => {
     />
 
     <template v-else>
-      <div class="stock-detail-ready">
       <AppStateBlock
-        v-if="barsError"
-        state="error"
-        size="compact"
-        title="个股详情刷新失败"
-        :description="barsError"
-        retry
-        @retry="loadBars"
+        v-if="barsLoading && !bars.length"
+        state="loading"
+        title="正在加载个股行情…"
       />
+      <div v-show="!barsLoading || bars.length" class="stock-detail-ready">
       <StockChartWorkspace
         class="detail-chart-workspace"
         :data-configured-height="configuredChartHeight"
         :style="{ flexBasis: `${configuredChartHeight}px` }"
-        v-loading="barsLoading"
+        v-loading="barsLoading && bars.length > 0"
         :bars="displayBars"
         :warmup-bars="warmupBars"
         :indicators="indicatorRows"
@@ -1019,7 +1015,7 @@ onBeforeUnmount(() => {
             <span class="hint" v-if="tradeEval">交易日 {{ tradeEval.date }} · v{{ tradeEval.version }}</span>
           </div>
         </template>
-        <div v-loading="tradeLoading">
+        <div v-loading="tradeLoading && !!tradeEval">
           <AppStateBlock
             v-if="tradeError"
             state="error"
@@ -1028,6 +1024,12 @@ onBeforeUnmount(() => {
             :description="tradeError"
             retry
             @retry="evalTrade()"
+          />
+          <AppStateBlock
+            v-else-if="tradeLoading && !tradeEval"
+            state="loading"
+            size="compact"
+            title="正在加载买卖信号…"
           />
           <el-empty v-else-if="!tradeEval" class="app-empty app-empty--compact" description="选择买卖方案以评估当日信号" />
           <div v-else class="trade-body">

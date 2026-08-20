@@ -463,7 +463,7 @@ onMounted(() => { loadTree() })
               <Plus />
             </AppIconButton>
           </div>
-          <div class="mr-col-body" v-loading="treeLoading">
+          <div class="mr-col-body" v-loading="treeLoading && tree.length > 0">
             <AppStateBlock
               v-if="treeError"
               state="error"
@@ -471,6 +471,12 @@ onMounted(() => { loadTree() })
               description="请重试"
               retry
               @retry="loadTree()"
+            />
+            <AppStateBlock
+              v-else-if="treeLoading && !tree.length"
+              state="loading"
+              size="compact"
+              title="正在加载菜单…"
             />
             <el-tree
               v-else
@@ -507,7 +513,7 @@ onMounted(() => { loadTree() })
                 </span>
               </template>
             </el-tree>
-            <el-empty v-if="!treeLoading && !tree.length" class="app-empty app-empty--compact" description="暂无菜单" />
+            <el-empty v-if="!treeLoading && !treeError && !tree.length" class="app-empty app-empty--compact" description="暂无菜单" />
           </div>
         </div>
 

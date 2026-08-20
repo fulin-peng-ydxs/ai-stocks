@@ -211,7 +211,7 @@ Key Characteristics：
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示、轻量“更多”菜单收纳和**宽度自适应折叠** | 无直接系统组件种类 | 表格 `label="操作"`、自绘表格行、列表项和编辑器条件行的行内按钮组优先复用；首个未显式指定语义色的行内高频动作使用主色，普通次要动作使用常规正文色，禁用态使用弱文本色并满足语义 token 规则定义的文字层级阈值，停用/禁用/终止/删除等破坏性动作使用危险色；动作始终清晰可见，不对整组做透明度弱显；低频或危险动作可设置 `placement: 'more'`，菜单命令继续使用 Element Plus 按钮并呈现真实 loading，不得在页面内手写多行按钮或原生命令按钮。**宽度折叠契约**：行内按钮按操作列实际可用宽度自适应折叠——宽度装不下的按钮自动收进“更多”菜单，不硬截断；`inline-limit` 退化为行内数量硬性上限（宽度能装下时仍不超过它）；显式 `placement: 'more'` 的动作恒入更多；可用宽度或按钮实测宽度不可用（如 jsdom）时退化为纯数量逻辑 |
 | `SystemBuiltinTag` | `frontend/src/components/SystemBuiltinTag.vue` | 全站“系统内置”来源标记，固定使用灰色文字、灰色描边和中性浅底 | 无直接系统组件种类 | 菜单、功能点、角色、租户、布局预设、技术指标和系统内置方案等来源标记统一复用；文案固定为“系统内置”，不追加对象名称或保护规则说明；与对象名称或标识并列时统一放在对象后面，独立的来源/类型字段保持标签单独展示 |
-| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；主列表默认成长，抽屉、展开行和局部明细等非主表显式使用 `embedded`；`wide-table` 默认常显 Element Plus 内部滚动条，禁止页面再给 `el-table__body-wrapper` 添加第二层横向滚动；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
+| `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、加载分流、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；`loading && data.length === 0` 自动显示 `AppStateBlock` 骨架，有旧数据刷新时保留表格并使用 `v-loading` 遮罩；主列表默认成长，抽屉、展开行和局部明细等非主表显式使用 `embedded`；`#empty` 只补充业务文案与操作并复用 `app-table-empty*`，禁止嵌套 `el-empty` 形成双图；`wide-table` 默认常显 Element Plus 内部滚动条，禁止页面再给 `el-table__body-wrapper` 添加第二层横向滚动；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
 | `AppTableColumn` | `frontend/src/components/AppTableColumn.vue`、`frontend/src/components/table/adaptiveColumnWidth.ts` | 表格列运行时组件，根据结构类型、字段名和标签推导语义角色，以稳定字符权重结合排序/筛选控件计算弹性最小宽，并统一渲染单行表头及同行元信息 | `data-table`、`wide-table` 的稳定列宽、内容对齐和表头能力；不是用户可配置字段 | 页面表格列统一复用，禁止传 `width/min-width`；确有歧义的动态标签只传 `role`；日期、单位或短口径摘要传 `header-meta`；单元格主内容前存在紧凑控件时传 `leading-controls`，组件统一预留宽度并让表头对齐主内容；自定义 header slot 只用于复选、帮助入口等真实交互结构；数值事实只维护在 `ADAPTIVE_COLUMN_RULES` |
 | `AppStateBlock` | `frontend/src/components/AppStateBlock.vue` | 页面和组件的加载、空、异常、无权反馈块，统一 `ready / loading / empty / error` 四态中的非 ready 呈现、重试入口和尺寸档位 | 对应布局系统中的 `loading-state`、`empty-state`、`error-state`、`skeleton` 语义，但作为真实运行时复用组件消费 | 主加载失败、局部列表失败、无权态、非表格空态和稳定骨架占位优先复用；表格数据的 loading/empty 仍优先由 `AppDataTable` / `el-table` 承接，不在页面手写第二套错误块、空态图标或重试布局 |
 | `CandleChart` | `frontend/src/components/CandleChart.vue` | 盘感训练、回测复用的 K线、量能、MA/VMA 与买卖标记画布 | 无系统组件种类；图表参数由消费页面管理 | 独立使用保持默认画布高度，受控工作台通过 `fill` 填满父容器；保持单实例双网格与既有 props 契约，并与 `StockChartWorkspace` 共用 MA/VMA 定义、tooltip helper 和 `useStockChartTheme()`，不得复制股票画布基础能力 |
@@ -287,14 +287,16 @@ Key Characteristics：
 | 状态 | 中文口径 | 使用场景 | 组件和图标 | 文案模板 |
 |---|---|---|---|---|
 | `ready` | 价值态 / 有数据态 | 接口或本地计算已返回可行动内容 | 不额外加状态图标；价值由表格、KPI、图表、详情、状态 tag 自身承载 | 标题或摘要写清范围、日期、数量、来源，例如“2026-07-10 · 预设榜单 · 320 条” |
-| `loading` | 加载态 | 首次加载、刷新、保存、运行、远程下拉 | 区域用 `v-loading` 或 `el-skeleton`；按钮用 `:loading`；小型导航可用 Element Plus `Loading` 图标 | 页面级“正在加载{对象}…”，按钮级“{动作}中…”，下拉级“加载中…” |
+| `loading` | 加载态 | 首次加载、刷新、保存、运行、远程下拉 | 无旧内容的独立区域用 `AppStateBlock loading` / `el-skeleton`；已有内容刷新用 `v-loading`；按钮用 `:loading`；小型导航可用 Element Plus `Loading` 图标 | 页面级“正在加载{对象}…”，按钮级“{动作}中…”，下拉级“加载中…” |
 | `empty` | 空态 | 请求成功但当前条件下没有可展示数据，或用户尚未完成前置选择 | 表格走全局 `el-table` 空态；非表格走 `el-empty.app-empty*`；很小区域走 `app-empty-inline` | “暂无{对象}”“请选择{对象}”“运行后在这里展示{结果}”“当前条件无命中” |
 | `error` | 异常态 / 无权态 | 主请求失败、局部依赖失败、403/权限失败、详情读取失败 | 整区用 `el-result icon="warning"`；表格局部失败可用表内错误行。两变体二选一：**异常态**必须提供重试入口；**无权态**不提供重试（重试无意义），以「请联系系统管理员调整权限」说明不可重试原因（见 §312、§219；`AppStateBlock variant="permission"` 默认 `retry:false`） | 异常态“{对象}加载失败”+“请检查网络或稍后重试”；无权态“无权限{操作/查看对象}”+“请联系系统管理员调整权限” |
 
 状态互斥与降级规则：
 
-- 首次进入页面时，`loading` 不和 `empty` 同时出现；已有数据刷新时保留旧 `ready` 内容并覆盖 `v-loading`，避免闪回空态。
+- 每个独立数据区域同一时间只能有一个顶层状态；`ready / loading / empty / error` 不得在同一区域并排或叠加渲染。刷新按钮的 loading、`v-loading` 遮罩等属于当前请求的操作反馈，不扩展顶层状态。
+- 首次进入或当前区域没有可复用旧内容时，使用 `AppStateBlock loading` 的骨架占位，不在空白内容上只放转圈遮罩，也不和 `empty` 同时出现；已有数据刷新过程中可以暂时保留旧 `ready` 内容并覆盖 `v-loading`，避免闪回空态，但请求失败后必须由 `error` 接管受影响区域并隐藏旧内容，不能继续显示“异常态 + 旧 ready 内容”。表格由 `AppDataTable` 统一执行该分流，消费页不得重复实现。
 - `error` 不只依赖全局 toast；主内容、侧栏列表、详情面板、表格局部依赖失败时，失败区域必须留下页内错误态和“重试”或明确原因。
+- 自动轮询、后台保鲜等非用户发起的静默刷新失败，若当前内容仍有明确时间范围且可继续使用，可以保持 `ready` 并使用轻量更新提示；此时不得同时渲染整区 `AppStateBlock error`。用户主动刷新、筛选、分页、排序或切换查询口径失败不属于该例外。
 - 无权限是 `error` 的语义变体，运行时使用 `AppStateBlock state="error" variant="permission"`，不得扩展为第五种顶层状态。
 - `empty` 表示“成功返回但无数据”，不能混用来表达接口失败、无权限或加载中。
 - `ready` 必须呈现业务价值：至少有主体数据、摘要指标、当前过滤条件或来源说明之一；不要用大段说明文字替代真实数据展示。
@@ -304,7 +306,7 @@ Key Characteristics：
 
 空状态的视觉事实源在 `frontend/src/styles/global.css`，后续新页面必须复用同一套类名和全局表格空态，不允许临时手写不同图标、不同字号或不同位置。
 
-- `el-table` 无数据时默认使用全局表格空态：居中图标 + 当前表格文案。新页面优先使用表格默认空态或 `<template #empty>` 只提供业务文案，不再自绘图标和布局。
+- `el-table` 无数据时默认使用全局表格空态：居中图标 + 当前表格文案。新页面优先使用表格默认空态；需要补充操作时，`<template #empty>` 使用 `app-table-empty` / `app-table-empty__description` 只提供业务文案和按钮，不得嵌套 `el-empty`、自绘图标或另一套布局。该规则由 `table-system.spec.ts` 契约测试拦截。
 - 非表格的大区域空态使用 `<el-empty class="app-empty" description="..." />`。
 - 小面板、抽屉、弹窗内空态使用 `<el-empty class="app-empty app-empty--compact" description="..." />`。
 - 很小的内嵌区域使用 `<el-empty class="app-empty app-empty--tiny" description="..." />`。
@@ -315,6 +317,7 @@ Key Characteristics：
 ### 加载态与异常态
 
 - 页面级初始化失败用 `el-result icon="warning"`，标题使用“{页面对象}加载失败”，副标题说明“请检查网络或稍后重试”，`#extra` 放一个主按钮“重试”。
+- 用户主动刷新、筛选、分页、排序或切换查询口径失败时，受影响区域使用同一 `error` 结构接管并隐藏旧内容；标题可按动作使用“{对象}刷新失败”，但不得把紧凑错误块堆在旧表格、旧图表或旧摘要上方。
 - 局部依赖失败只阻断该区域，不阻断已可用的其他区域；例如主表可加载但摘要失败时，摘要区显示局部错误态，主表保持可用。
 - 403 / 无权限态不能伪装为空态；标题使用“无权限查看{对象}”或“无权限维护{对象}”，副标题说明联系管理员或切换账号（即不可重试原因）；不放“重试”按钮（重试对无权无意义，实现见 `AppStateBlock variant="permission"` 默认 `retry:false`）。
 - 运行、保存、删除、发布等动作使用按钮 `:loading` 和禁用重复提交；动作失败用 `ElMessage.error`，若失败会影响当前区域继续使用，还要同步页内错误态。

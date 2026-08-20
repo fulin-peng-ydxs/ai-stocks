@@ -424,24 +424,15 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           title="正在加载定时任务…"
         />
         <AppStateBlock
-          v-else-if="loadError && !jobs.length"
+          v-else-if="loadError"
           state="error"
-          title="定时任务加载失败"
-          :description="loadError"
-          retry
-          @retry="load"
-        />
-        <template v-else>
-        <AppStateBlock
-          v-if="loadError"
-          state="error"
-          size="compact"
-          title="定时任务刷新失败"
+          :title="jobs.length ? '定时任务刷新失败' : '定时任务加载失败'"
           :description="loadError"
           retry
           @retry="load"
         />
         <AppDataTable
+          v-else
           :data="sortedJobs"
           size="small"
           class="jobs-tbl"
@@ -482,7 +473,6 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </AppTableColumn>
           <template #empty>暂无定时任务，点右上「新建定时任务」添加</template>
         </AppDataTable>
-        </template>
       </el-card>
 
       <!-- ② 数据源健康 -->
@@ -497,23 +487,14 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           title="正在加载数据源健康…"
         />
         <AppStateBlock
-          v-else-if="sourceError && !displaySources.length"
+          v-else-if="sourceError"
           state="error"
-          title="数据源健康加载失败"
+          :title="displaySources.length ? '数据源健康刷新失败' : '数据源健康加载失败'"
           :description="sourceError"
           retry
           @retry="loadSources(false)"
         />
         <div v-else v-loading="sourceLoading">
-        <AppStateBlock
-          v-if="sourceError"
-          state="error"
-          size="compact"
-          title="数据源健康刷新失败"
-          :description="sourceError"
-          retry
-          @retry="loadSources(false)"
-        />
         <AppDataTable :data="displaySources" size="small" class="srcs-tbl" embedded :border="tableBorder('sourceTable')">
           <AppTableColumn v-if="sourceColVisible('source')" label="数据源" prop="source">
             <template #default="{ row }">{{ SOURCE_LABEL[row.source] ?? row.source }}</template>

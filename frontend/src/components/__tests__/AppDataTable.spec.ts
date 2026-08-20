@@ -2,6 +2,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h } from 'vue'
+import ElementPlus from 'element-plus'
 import AppDataTable from '@/components/AppDataTable.vue'
 
 const ElTableStub = defineComponent({
@@ -37,6 +38,38 @@ const AppPaginationStub = defineComponent({
 })
 
 describe('AppDataTable', () => {
+  it('无旧数据加载时显示骨架，有旧数据刷新时保留表格遮罩', async () => {
+    const wrapper = mount(AppDataTable, {
+      props: {
+        data: [],
+        loading: true,
+        loadingText: '正在加载审计记录…',
+        height: 460,
+        pagination: { currentPage: 1, pageSize: 50, total: 0 },
+      },
+      global: {
+        plugins: [ElementPlus],
+        stubs: {
+          ElTable: ElTableStub,
+          AppPagination: AppPaginationStub,
+        },
+      },
+    })
+
+    expect(wrapper.find('[data-testid="app-data-table-initial-loading"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('正在加载审计记录…')
+    expect(wrapper.find('.el-table').exists()).toBe(false)
+    expect(wrapper.find('.app-pagination-stub').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-data-table-initial-loading"]').attributes('style')).toContain('height: 460px')
+    expect(wrapper.attributes('aria-busy')).toBe('true')
+
+    await wrapper.setProps({ data: [{ code: '000001' }] })
+    expect(wrapper.find('[data-testid="app-data-table-initial-loading"]').exists()).toBe(false)
+    expect(wrapper.find('.el-table').exists()).toBe(true)
+    expect(wrapper.find('.el-table').attributes('aria-busy')).toBe('true')
+    expect(wrapper.find('.app-pagination-stub').exists()).toBe(true)
+  })
+
   it('渲染真实表格外壳并透传表格与分页事件', async () => {
     const wrapper = mount(AppDataTable, {
       props: {

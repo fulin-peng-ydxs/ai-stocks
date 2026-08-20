@@ -309,24 +309,15 @@ onMounted(reloadPresets)
     <template #main>
       <section class="plain-panel preset-list-panel">
         <AppStateBlock
-          v-if="loadError && !presets.length"
-          state="error"
-          title="布局预设加载失败"
-          :description="loadError"
-          retry
-          @retry="reloadPresets"
-        />
-        <template v-else>
-        <AppStateBlock
           v-if="loadError"
           state="error"
-          size="compact"
-          title="布局预设刷新失败"
+          :title="presets.length ? '布局预设刷新失败' : '布局预设加载失败'"
           :description="loadError"
           retry
           @retry="reloadPresets"
         />
         <AppDataTable
+          v-else
           :data="presets"
           :loading="loading"
           row-key="key"
@@ -366,7 +357,6 @@ onMounted(reloadPresets)
             </template>
           </AppTableColumn>
         </AppDataTable>
-        </template>
       </section>
     </template>
 

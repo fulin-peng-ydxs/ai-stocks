@@ -5,6 +5,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
 const VIEWS_DIR = resolve(process.cwd(), 'src/views')
+const COMPONENTS_DIR = resolve(process.cwd(), 'src/components')
 
 function vueFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -23,6 +24,7 @@ interface ElementFinding {
   line: number
   forbiddenProps: string[]
   missingColumnSemantics: boolean
+  nestedTableEmpty: boolean
 }
 
 function inspectTemplate(file: string): ElementFinding[] {
@@ -32,7 +34,7 @@ function inspectTemplate(file: string): ElementFinding[] {
 
   const findings: ElementFinding[] = []
   const root = parseTemplate(template, { comments: false })
-  const walk = (node: any) => {
+  const walk = (node: any, ancestors: any[] = []) => {
     if (node.type === 1) {
       const forbiddenProps = node.props
         .map((prop: any) => prop.type === 6 ? prop.name : prop.arg?.content)
@@ -46,10 +48,16 @@ function inspectTemplate(file: string): ElementFinding[] {
         .filter(Boolean)
       const missingColumnSemantics = node.tag === 'AppTableColumn'
         && !['label', 'prop', 'type', 'role'].some((name) => propNames.includes(name))
+      const nestedTableEmpty = ['el-empty', 'ElEmpty'].includes(node.tag)
+        && ancestors.some((ancestor) => ancestor.tag === 'AppDataTable')
+        && ancestors.some((ancestor) => ancestor.tag === 'template' && ancestor.props.some(
+          (prop: any) => prop.type === 7 && prop.name === 'slot' && prop.arg?.content === 'empty',
+        ))
       if (
         ['table', 'el-table', 'el-table-column'].includes(node.tag)
         || (['AppTableColumn', 'AppDataTable'].includes(node.tag)
           && (forbiddenProps.length || missingColumnSemantics))
+        || nestedTableEmpty
       ) {
         findings.push({
           file: relative(VIEWS_DIR, file).split('\\').join('/'),
@@ -57,11 +65,13 @@ function inspectTemplate(file: string): ElementFinding[] {
           line: node.loc.start.line,
           forbiddenProps,
           missingColumnSemantics,
+          nestedTableEmpty,
         })
       }
+      ancestors = [...ancestors, node]
     }
-    for (const child of node.children ?? []) walk(child)
-    for (const branch of node.branches ?? []) walk(branch)
+    for (const child of node.children ?? []) walk(child, ancestors)
+    for (const branch of node.branches ?? []) walk(branch, ancestors)
   }
   walk(root)
   return findings
@@ -108,6 +118,17 @@ describe('统一自适应表格契约', () => {
     expect(
       findings,
       `无 label/prop/type 的自定义列无法可靠推导宽度，必须声明 role：\n${findings.map((item) =>
+        `${item.file}:${item.line}`).join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('表格空态插槽不得嵌套第二套 el-empty 图形', () => {
+    const findings = [...vueFiles(VIEWS_DIR), ...vueFiles(COMPONENTS_DIR)]
+      .flatMap(inspectTemplate)
+      .filter((item) => item.nestedTableEmpty)
+    expect(
+      findings,
+      `表格已由全局样式提供空态图标，#empty 只能补充文案和操作：\n${findings.map((item) =>
         `${item.file}:${item.line}`).join('\n')}`,
     ).toEqual([])
   })

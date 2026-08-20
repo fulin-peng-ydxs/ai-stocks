@@ -323,6 +323,9 @@ watch(
   load,
   { immediate: true },
 )
+const hasChartContent = computed(() => (
+  props.mode === 'compare' ? compareSeries.value.length > 0 : klineBars.value.length > 0
+))
 
 onBeforeUnmount(() => {
   requestVersion += 1
@@ -412,7 +415,7 @@ onBeforeUnmount(() => {
       @remove="(code) => emit('remove', code)"
     />
 
-    <div class="stock-analysis-stage" v-loading="loading">
+    <div class="stock-analysis-stage" v-loading="loading && hasChartContent">
       <AppStateBlock
         v-if="error"
         state="error"
@@ -426,6 +429,11 @@ onBeforeUnmount(() => {
         state="empty"
         title="选择一只股票"
         description="点击左侧列表中的任意一行即可查看走势"
+      />
+      <AppStateBlock
+        v-else-if="loading && !hasChartContent"
+        state="loading"
+        :title="mode === 'compare' ? '正在加载股票走势…' : '正在加载K线数据…'"
       />
       <AppStateBlock
         v-else-if="!loading && mode === 'compare' && benchmarkError"

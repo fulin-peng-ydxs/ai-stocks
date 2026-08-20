@@ -317,7 +317,16 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
           搜索{{ assetLabel }}
         </el-button>
       </div>
-      <ul v-if="options.length" class="asset-profile-select__list" v-loading="loadingMine">
+      <AppStateBlock
+        v-if="errorMine"
+        state="error"
+        size="inline"
+        :title="`${assetLabel}加载失败`"
+        :description="errorMine"
+        retry
+        @retry="reload"
+      />
+      <ul v-else-if="options.length" class="asset-profile-select__list" v-loading="loadingMine">
         <li
           v-for="p in options"
           :key="assetItemKey(p)"
@@ -346,23 +355,26 @@ function onRemoveTemp(p: ProfileSummary, event: MouseEvent) {
           </AppIconButton>
         </li>
       </ul>
-      <div v-else class="asset-profile-select__empty" v-loading="loadingMine">
-        <span>{{ emptyText }}</span>
-        <el-button
-          v-if="canBrowse"
-          link
-          type="primary"
-          size="small"
-          :data-testid="`${testId}-empty-search`"
-          @click="openSearch('preset')"
-        >
-          去“系统内置”搜索复制
-        </el-button>
+      <div v-else class="asset-profile-select__empty">
+        <AppStateBlock v-if="loadingMine" state="loading" size="tiny" :title="`正在加载${assetLabel}…`" />
+        <template v-else>
+          <span>{{ emptyText }}</span>
+          <el-button
+            v-if="canBrowse"
+            link
+            type="primary"
+            size="small"
+            :data-testid="`${testId}-empty-search`"
+            @click="openSearch('preset')"
+          >
+            去“系统内置”搜索复制
+          </el-button>
+        </template>
       </div>
     </template>
 
     <AppStateBlock
-      v-if="errorMine"
+      v-if="errorMine && mode === 'select'"
       state="error"
       size="inline"
       :title="`${assetLabel}加载失败`"

@@ -381,7 +381,12 @@ onMounted(async () => {
         retry
         @retry="loadAll"
       />
-      <div v-else class="sector-detail" v-loading="detailLoading" data-testid="sector-detail-page">
+      <AppStateBlock
+        v-else-if="detailLoading && !detail"
+        state="loading"
+        title="正在加载板块详情…"
+      />
+      <div v-else class="sector-detail" v-loading="detailLoading && !!detail" data-testid="sector-detail-page">
         <section class="hero-panel">
           <div class="hero-copy">
             <div class="hero-kicker">SECTOR INTELLIGENCE</div>
@@ -435,9 +440,10 @@ onMounted(async () => {
             </div>
             <KlineRangeSelect v-model="viewDays" width="112px" test-id="sector-detail-range" />
           </header>
-          <div class="chart-stage" v-loading="chartLoading">
+          <div class="chart-stage" v-loading="chartLoading && bars.length > 0">
             <AppStateBlock v-if="chartError" state="error" size="compact" title="指数走势加载失败" :description="chartError" retry @retry="loadChart" />
-            <AppStateBlock v-else-if="!chartLoading && !bars.length" state="empty" size="compact" title="暂无指数走势" description="请先运行板块指数采集，或切换交易日期" />
+            <AppStateBlock v-else-if="chartLoading && !bars.length" state="loading" size="compact" title="正在加载指数走势…" />
+            <AppStateBlock v-else-if="!bars.length" state="empty" size="compact" title="暂无指数走势" description="请先运行板块指数采集，或切换交易日期" />
             <StockChartWorkspace
               v-else
               class="sector-chart-workspace"

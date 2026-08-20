@@ -566,15 +566,14 @@ describe('StockDetailView 三图数据协调', () => {
     expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
   })
 
-  it('已有行情刷新失败保留旧图并显示紧凑错误态', async () => {
+  it('已有行情刷新失败后由错误态接管并隐藏旧图', async () => {
     const wrapper = await mountView()
     vi.mocked(stocksApi.getBars).mockRejectedValueOnce(new Error('范围刷新失败'))
 
     await wrapper.get('[data-testid="range-250"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(true)
-    expect(wrapper.get('[data-testid="workspace-close"]').text()).toBe('10.5')
+    expect(wrapper.findComponent(StockChartWorkspaceStub).exists()).toBe(false)
     expect(wrapper.text()).toContain('个股详情刷新失败')
     expect(wrapper.text()).toContain('范围刷新失败')
   })

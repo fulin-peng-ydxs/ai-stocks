@@ -3,6 +3,41 @@ import { loginAsDebugUser } from './helpers/auth'
 import { collectConsoleIssues } from './helpers/console'
 
 test.describe('系统组件四态预览', () => {
+  test('审计空表只渲染一套全局空态', async ({ page, request }) => {
+    await loginAsDebugUser(page, request, 'debug_system')
+    await page.route('**/api/audit**', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.pathname === '/api/audit/summary') {
+        await route.fulfill({
+          json: {
+            total: 0,
+            success: 0,
+            failed: 0,
+            retention_days: 90,
+            by_category: {},
+            by_type: {},
+            by_result: {},
+            by_status: {},
+          },
+        })
+        return
+      }
+      if (url.pathname === '/api/audit') {
+        await route.fulfill({ json: { list: [], total: 0, page: 1, page_size: 50 } })
+        return
+      }
+      await route.continue()
+    })
+
+    await page.goto('/system/audit')
+    const empty = page.locator('.el-table__empty-text')
+    await expect(empty).toContainText('暂无审计记录')
+    await expect(empty.locator('.app-table-empty')).toHaveCount(1)
+    await expect(empty.locator('.el-empty, .el-empty__image')).toHaveCount(0)
+    const pseudoContent = await empty.evaluate((element) => getComputedStyle(element, '::before').content)
+    expect(pseudoContent).not.toBe('none')
+  })
+
   test('四态共用稳定容器，非 ready 态消费统一状态组件', async ({ page, request }) => {
     const consoleIssues = collectConsoleIssues(page)
 
