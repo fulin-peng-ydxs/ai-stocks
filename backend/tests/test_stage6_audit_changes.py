@@ -14,6 +14,12 @@ from backend.storage.audit_repository import AuditRepository
 _SECRET = "unit-test-stage6-audit-changes-0123456789-abcdef"
 
 
+@pytest.fixture(autouse=True)
+def _preserve_platform_config(app_cfg):
+    """本模块会直接改平台 app_config；统一快照恢复，防止异常或漏清理抹掉真实配置。"""
+    yield
+
+
 @pytest.fixture()
 def client(monkeypatch, pg, redis_cli):
     monkeypatch.setenv("AI_STOCKS_JWT_SECRET", _SECRET)

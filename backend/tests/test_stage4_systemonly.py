@@ -2,7 +2,7 @@
 
 覆盖：
 - 每类 system-only 端点（config / indicators 写 / layout 平台 / data_admin / data_tasks / data 读）
-  非 system → 403，system → 非 401/403（业务是否 200 不在本测范围）；
+  非 system → 403，system → 通过守卫且不得出现 5xx；
 - **硬守卫不降级铁律**：`require_system_perm` ≠ `require_perm`——即便把 system-only 资源码直接授予
   自定义角色（绕过 system_only_resource_ids 服务层拦截，直插授权行），非 system 用户仍 403；
 - 本次新补守卫的 `POST /api/layout/validate`（此前裸露）非 system → 403。
@@ -15,14 +15,49 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.storage import duckdb_client
+
 _SECRET = "test-secret-stage4-systemonly-0123456789ab"   # ≥32B 免 HMAC 长度告警
+_TEST_PLATFORM_KEY = "pytest_stage4_systemonly"
 
 
 @pytest.fixture()
-def client(monkeypatch, pg, redis_cli):
+def client(monkeypatch, pg, redis_cli, market):
+    # create_app 内部仓库默认调用全局 get_client；必须切到内存行情库，避免 system 成功路径
+    # 把测试指标写进项目 data/ai_stocks.duckdb。
+    monkeypatch.setattr(duckdb_client, "_client", market)
     monkeypatch.setenv("AI_STOCKS_JWT_SECRET", _SECRET)
     from backend.main import create_app
     return TestClient(create_app())
+
+
+@pytest.fixture(autouse=True)
+def _restore_platform_layout_rows(pg):
+    """恢复本模块成功路径可能覆盖的平台布局行，避免权限测试污染真实平台配置。"""
+    targets = {
+        "layout_preset": ("key", _TEST_PLATFORM_KEY),
+        "layout_page_config": ("page_key", "board"),
+    }
+    snapshots = {
+        table: pg.query_df(f"SELECT * FROM {table} WHERE {column}=%s", [value])
+        for table, (column, value) in targets.items()
+    }
+    yield
+    # 先删引用方、再删主体；恢复时反向执行，兼容未来补充的外键约束。
+    for table in ("layout_page_config", "layout_preset"):
+        column, value = targets[table]
+        pg.execute(f"DELETE FROM {table} WHERE {column}=%s", [value])
+    for table in ("layout_preset", "layout_page_config"):
+        snapshot = snapshots[table]
+        if snapshot.empty:
+            continue
+        columns = list(snapshot.columns)
+        placeholders = ",".join(["%s"] * len(columns))
+        for _, row in snapshot.iterrows():
+            pg.execute(
+                f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})",
+                [row[col] for col in columns],
+            )
 
 
 def _auth(uid: str, tid: str, pv: int = 0) -> dict:
@@ -62,8 +97,21 @@ def _admin_auth(pg) -> dict:
 _SYSTEM_ONLY_ENDPOINTS = [
     ("GET", "/api/config", None),                                   # config:view
     ("POST", "/api/config/reload", {}),                             # config:reload
-    ("POST", "/api/indicators/def", {"key": "x", "name_cn": "x", "dtype": "bool", "expression": "close>0"}),  # indicator:def-manage
-    ("POST", "/api/layout/presets", {"key": "x", "name": "x"}),     # layout:preset-manage
+    (
+        "POST",
+        "/api/indicators/def",
+        {
+            "key": _TEST_PLATFORM_KEY,
+            "name_cn": "权限测试指标",
+            "dtype": "bool",
+            "expression": "close>0",
+        },
+    ),  # indicator:def-manage
+    (
+        "POST",
+        "/api/layout/presets",
+        {"key": _TEST_PLATFORM_KEY, "name": "权限测试布局"},
+    ),  # layout:preset-manage
     ("POST", "/api/layout/pages/board", {"config": {}}),           # layout:page-manage
     ("POST", "/api/layout/validate", {"config": {}}),              # layout:page-manage（本次新补守卫）
     ("GET", "/api/layout/field-policies", None),                   # layout:field-policy
@@ -88,9 +136,10 @@ def test_system_only_endpoint_forbidden_for_non_system(client, pg, method, path,
 
 @pytest.mark.parametrize("method,path,body", _SYSTEM_ONLY_ENDPOINTS)
 def test_system_only_endpoint_allows_system(client, pg, method, path, body):
-    """system（admin）→ 过守卫（非 401/403）；业务是否 200 不在本测范围。"""
+    """system（admin）→ 过守卫，且不得用 5xx 掩盖测试环境或真实业务错误。"""
     r = client.request(method, path, json=body, headers=_admin_auth(pg))
     assert r.status_code not in (401, 403), f"{path} 误挡 system"
+    assert r.status_code < 500, f"{path} 虽通过权限守卫，但业务执行失败: {r.text}"
 
 
 def test_hard_guard_not_downgraded_by_grant(client, pg):
