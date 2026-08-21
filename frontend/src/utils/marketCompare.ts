@@ -83,7 +83,8 @@ function calendarDates(series: readonly PriceCompareSeries[], calendar?: readonl
 
 /**
  * 按统一市场日期轴前向延续停牌期间的最后有效收盘；上市前保持 null。
- * 所有曲线随后从首个共同有效日期归零，避免不同基期计算伪超额。
+ * 相对涨跌归零基准随对比模式划分：对比指数时统一到首个共同有效日期，
+ * 纯股票/板块间对比时各自从自身首个有效值起算（见 alignPriceComparison）。
  */
 function alignCloses(bars: readonly PricePoint[], dates: readonly string[]): (number | null)[] {
   const ordered = [...bars]
@@ -100,6 +101,15 @@ function alignCloses(bars: readonly PricePoint[], dates: readonly string[]): (nu
   })
 }
 
+/** 每序列从自身首个有效收盘起算的 ×100% 相对涨跌；首个有效值之前留空（gap），停牌期冻结（0%）。 */
+function computeRelativeValues(closes: readonly (number | null)[]): (number | null)[] {
+  const firstIndex = closes.findIndex((close) => close != null)
+  const base = firstIndex >= 0 ? closes[firstIndex] : null
+  return base == null || base === 0
+    ? closes.map(() => null)
+    : closes.map((close) => close == null ? null : +((close / base - 1) * 100).toFixed(2))
+}
+
 export function alignPriceComparison(
   series: readonly PriceCompareSeries[],
   window: number,
@@ -114,29 +124,38 @@ export function alignPriceComparison(
     item.code,
     alignCloses(item.bars, requestedDates),
   ])) as Record<string, (number | null)[]>
-  const commonStart = requestedDates.findIndex((_, index) => (
-    participants.every((item) => aligned[item.code]?.[index] != null)
-  ))
-  const requiresCompleteWindow = window !== ALL_DAYS
-  if (
-    commonStart < 0
-    || (requiresCompleteWindow && requestedDates.length < window + 1)
-    || (requiresCompleteWindow && commonStart !== 0)
-  ) {
-    return { dates: [], valuesByCode: {}, closesByCode: {} }
+
+  // 对比指数：超额收益须统一基期，基期不同会算出伪超额。统一从首个共同有效日期起算，
+  // 个别序列上市较晚只缩短基准期、不否决整体；只有连一个共同有效日期都没有才判不可比。
+  if (benchmark) {
+    const activeParticipants = participants.filter((item) =>
+      (aligned[item.code] ?? []).some((value) => value != null))
+    if (!activeParticipants.length) return { dates: [], valuesByCode: {}, closesByCode: {} }
+    const commonStart = requestedDates.findIndex((_, index) => (
+      activeParticipants.every((item) => aligned[item.code]?.[index] != null)
+    ))
+    if (commonStart < 0) return { dates: [], valuesByCode: {}, closesByCode: {} }
+    const dates = requestedDates.slice(commonStart)
+    const closesByCode: Record<string, (number | null)[]> = {}
+    const valuesByCode: Record<string, (number | null)[]> = {}
+    for (const item of participants) {
+      const closes = (aligned[item.code] ?? []).slice(commonStart)
+      closesByCode[item.code] = closes
+      valuesByCode[item.code] = computeRelativeValues(closes)
+    }
+    return { dates, valuesByCode, closesByCode }
   }
-  const dates = requestedDates.slice(commonStart)
+
+  // 纯股票/板块间对比：无超额概念，各序列从自身首个有效值起算，
+  // 上市前/缺数据留空（gap），停牌前向延续（0% 涨幅）。不因个别序列缺起点而否决整体。
   const closesByCode: Record<string, (number | null)[]> = {}
   const valuesByCode: Record<string, (number | null)[]> = {}
   for (const item of participants) {
-    const closes = (aligned[item.code] ?? []).slice(commonStart)
-    const base = closes[0]
+    const closes = aligned[item.code] ?? []
     closesByCode[item.code] = closes
-    valuesByCode[item.code] = base == null || base === 0
-      ? closes.map(() => null)
-      : closes.map((close) => close == null ? null : +((close / base - 1) * 100).toFixed(2))
+    valuesByCode[item.code] = computeRelativeValues(closes)
   }
-  return { dates, valuesByCode, closesByCode }
+  return { dates: requestedDates, valuesByCode, closesByCode }
 }
 
 /** 当前观察对象在统一市场日期轴上的 N 日收益；历史不足不缩短周期代算。 */

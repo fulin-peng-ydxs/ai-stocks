@@ -44,7 +44,7 @@
 
 - `StocksView` 与 `BoardView` 共同消费 `MarketMasterDetailWorkspace` 和 `StockAnalysisPanel`，统一列表收起、当前观察、最多 6 只对比队列、走势对比与 K 线模式，消费页不复制图表状态机。
 - `useStockAnalysisSelection` 管理当前观察和对比队列；`useStockAnalysisSession` 将远端默认值单向投影为页面会话态，`stocks` 与 `board` 按页面键隔离。
-- 走势对比固定读前复权股票行情，通过 `GET /stocks/benchmarks/{index_code}/bars` 取显式市场交易日，所有序列以共同基期归零并在停牌日延用最后有效收盘。日历失败或为空时进入可重试错误态，重试只重拉日历；单只股票失败时保留已成功曲线，重试只请求失败股票。
+- 走势对比固定读前复权股票行情，通过 `GET /stocks/benchmarks/{index_code}/bars` 取显式市场交易日，停牌日延用最后有效收盘。对比指数时统一从首个共同有效日期起算并据此计算超额，个别序列上市较晚只缩短基准期、不否决整体；纯股票间对比时各序列从自身首个有效值起算、上市前留空，不因个别序列缺起点而否决整体。日历失败或为空时进入可重试错误态，重试只重拉日历；单只股票失败时保留已成功曲线，重试只请求失败股票。
 
 ### 分组篮子：跨页多选累积与导航
 - 选择购物车（`StocksView.vue:216` `cart`）在前端维护，按 code 去重，跨分页/跨搜索/跨普通查询与分组视图累积，切换上下文（切分组）才清空（`StocksView.vue:142`）。表头全选只对「当前页」做并/差集（`toggleAllCur`，`StocksView.vue:232`）。

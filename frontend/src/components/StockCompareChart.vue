@@ -260,7 +260,9 @@ onBeforeUnmount(() => {
       class="stock-compare-empty"
       state="empty"
       title="无共同交易区间"
-      description="所选股票与指数没有共同有效基期，请调整对比队列、指数或周期。"
+      :description="benchmark
+        ? '所选股票与指数没有共同有效基期，请调整对比队列、指数或周期。'
+        : '所选股票在所选区间没有可用行情。'"
     />
     <div ref="el" v-show="hasCommonInterval" class="stock-compare-chart" />
   </div>

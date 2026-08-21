@@ -47,7 +47,7 @@ describe('StockCompareChart', () => {
     Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 440 })
   })
 
-  it('按共同基期归零，并强化当前观察序列', async () => {
+  it('纯股票间对比时各序列从自身首个有效值起算，并强化当前观察序列', async () => {
     const wrapper = mount(StockCompareChart, {
       props: {
         activeCode: '000001.SZ',
@@ -120,7 +120,7 @@ describe('StockCompareChart', () => {
     wrapper.unmount()
   })
 
-  it('股票没有共同有效交易日时不生成不同起点的伪对比曲线', async () => {
+  it('纯股票间对比（不对比指数）时个别股票缺起始数据只留空，不否决整体', async () => {
     const wrapper = mount(StockCompareChart, {
       props: {
         activeCode: '000001.SZ',
@@ -131,21 +131,16 @@ describe('StockCompareChart', () => {
           { code: '600000.SH', name: '浦发银行', bars: datedBars('600000.SH', ['2026-08-05'], [20]) },
         ],
       },
-      global: {
-        stubs: {
-          AppStateBlock: {
-            props: ['title', 'description'],
-            template: '<div>{{ title }} {{ description }}</div>',
-          },
-        },
-      },
+      global: { stubs: { AppStateBlock: true } },
     })
     await nextTick()
 
-    expect(wrapper.text()).toContain('无共同交易区间')
-    expect(wrapper.attributes('data-point-count')).toBe('0')
-    expect(echartsMock.init).not.toHaveBeenCalled()
-    expect(echartsMock.setOption).not.toHaveBeenCalled()
+    expect(wrapper.attributes('data-point-count')).toBe('2')
+    const option = echartsMock.setOption.mock.calls.at(-1)?.[0] as {
+      series: Array<{ data: (number | null)[] }>
+    }
+    expect(option.series[0]?.data).toEqual([0, 0])     // 平安银行：有数据序列自首值为 0%
+    expect(option.series[1]?.data).toEqual([null, 0])  // 浦发银行：上市前留空，自首个有效值 0%
     wrapper.unmount()
   })
 })

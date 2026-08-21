@@ -343,7 +343,9 @@ onBeforeUnmount(() => {
       class="cmp-empty"
       state="empty"
       title="无共同交易区间"
-      description="所选板块与指数没有足够的共同基期，请调整对比队列、指数或周期。"
+      :description="benchmark
+        ? '所选板块与指数没有足够的共同基期，请调整对比队列、指数或周期。'
+        : '所选板块在所选区间没有可用行情。'"
     />
     <div ref="el" v-show="hasComparableLine" class="cmp" />
   </div>

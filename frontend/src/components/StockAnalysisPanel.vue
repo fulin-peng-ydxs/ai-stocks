@@ -498,7 +498,10 @@ onBeforeUnmount(() => {
     <footer class="stock-analysis-footer">
       <span v-if="mode === 'compare'">
         <template v-if="benchmarkError">{{ benchmarkError }}，统一交易日不可用，暂不展示对比结果。</template>
-        <template v-else>各股票与指数按共同基期归零；{{ failedCount ? `${failedCount}只股票加载失败。` : '停牌期间沿用最后有效收盘。' }}</template>
+        <template v-else>{{ benchmarkCode
+          ? '各股票与指数按共同基期归零；'
+          : '各股票从各自首个有效值起算；'
+        }}{{ failedCount ? `${failedCount}只股票加载失败。` : '停牌期间沿用最后有效收盘。' }}</template>
       </span>
       <span v-else>{{ adjustLabel }}行情；K线、量能和MACD按交易日联动。</span>
       <el-button
