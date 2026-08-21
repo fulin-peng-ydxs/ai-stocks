@@ -394,7 +394,8 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 - 操作区内块间距 = `.lh-action` 的 `gap: var(--app-space-3)`（12px）。
 - 页面级间距 = `.v-page` 的 `gap: var(--layout-page-gap)`，由预设 `pageGap`（默认 14px）运行时覆盖。
-- `.page-head` / `.page-title-row` / `.title-row` 等标题行选择器**禁止再声明 `margin-bottom` / `padding-bottom`**，否则与 `.lh-action` gap 叠加成双倍间距（曾出现 26px/28px）。标题行必须包在 `<div class="lh-action">` 内，间距交给 gap。该约束由 `typography-spacing-system.spec.ts` 强制。
+- `.page-head` / `.page-title-row` / `.title-row` 等标题行选择器**禁止再声明 `margin-bottom` / `padding-bottom`**，否则与 `.lh-action` gap 叠加成双倍间距（曾出现 26px/28px）。标题行必须包在 `<div class="lh-action">` 内，间距交给 gap。
+- 页头容器（`.page-head` / `.page-toolbar`，以及页头同义换名宿主 `.audit-head` / `.dict-page-head`）统一 `align-items: flex-start`：动作按钮（按钮组、设置抽屉触发钮）与标题顶部平齐，锚定标题顶这条固定水平线，避免随副标题有无或长短浮动。禁止用 `flex-end` / `center` 让动作区随「标题+副标题」整块下沉或居中（曾造成跨页按钮高度不一致）。页头右侧子容器 `.page-head-actions`（承载 32px 控件组）保持 `align-items: center` 不变。内嵌 `HelpTip` 的标题行选择器 `.page-title-row` / `.title-row` 按 §3 保持 `align-items: center`，不在本条范围内。无页面标题的导航工具栏（如板块详情的 `.detail-nav`）不适用本条。该约束由 `typography-spacing-system.spec.ts` 强制。
 
 ### 5.2 页面设计闭环触发条件
 

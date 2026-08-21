@@ -150,7 +150,7 @@ ${mainSlots.map((slot) => `    <template #${mainSlots.length === 1 ? 'main' : sl
 <style scoped>
 .page-toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--app-space-3);
 }

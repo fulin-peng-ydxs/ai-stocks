@@ -1371,7 +1371,7 @@ onMounted(async () => {
 <style scoped>
 .page-head {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--app-space-3);
 }

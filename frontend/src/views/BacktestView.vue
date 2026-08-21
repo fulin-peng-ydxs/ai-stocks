@@ -2277,7 +2277,7 @@ async function openTradeChart(row: TradeRow) {
 .page-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: var(--app-space-2);
   min-width: 0;
 }

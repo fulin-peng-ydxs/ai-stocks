@@ -73,6 +73,7 @@
 
 - 新增或复用的语义类 / token：
 - 排版或间距特例：
+- 页头容器对齐：`.page-head` / `.page-toolbar` 是否 `align-items: flex-start`（动作区钉标题顶）——禁止 `flex-end` / `center` 使抽屉触发钮跨页高度不一致；内嵌标题行 `.page-title-row` / `.title-row` 与右侧 `.page-head-actions` 不属此列。
 - 自检结论：
 
 ### 主题底色规范

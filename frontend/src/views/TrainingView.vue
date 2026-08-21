@@ -922,7 +922,7 @@ onBeforeUnmount(detachKeyboard)
 
 <style scoped>
 .training { gap: var(--app-space-2); }
-.page-head { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: var(--app-space-2); }
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: var(--app-space-2); }
 .page-head .title-row { margin: 0; display: flex; align-items: center; gap: var(--app-space-control-gap); }
 .page-title-row { display: flex; align-items: center; }
 .page-head .grade-big { font-size: var(--app-font-size-kpi-lg); font-weight: var(--app-font-weight-strong); margin-left: 4px; }

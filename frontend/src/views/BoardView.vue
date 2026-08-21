@@ -740,7 +740,7 @@ onMounted(async () => {
 .page-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: var(--app-space-2);
 }

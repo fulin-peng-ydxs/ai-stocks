@@ -210,6 +210,33 @@ describe('字体与间距设计契约', () => {
     expect(violations).toEqual([])
   })
 
+  it('页头容器对齐钉标题顶：.page-head/.page-toolbar 禁止 flex-end/center，避免跨页抽屉按钮高度不一致', () => {
+    // 事故复盘：各页把「标题+副标题」整块设为 .page-head，但 align-items 各自为政 —
+    // flex-end 让动作区随副标题下沉、center 让动作区随文本块高度浮动，导致设置抽屉触发钮
+    // 在不同页面高度不齐。统一钉标题顶：外层页头容器 align-items: flex-start。
+    // 仅约束外层页头宿主（.page-head/.page-toolbar）；内嵌标题行 .page-title-row/.title-row
+    // 负责标题与 HelpTip 居中（见 DESIGN §3），右侧子容器 .page-head-actions 对齐 32px 控件组，均不在此列。
+    const violations: string[] = []
+    for (const file of sourceFiles(SRC_DIR)) {
+      const rel = relative(SRC_DIR, file)
+      if (rel === 'styles/global.css') continue
+      for (const css of styleBlocks(file)) {
+        for (const match of css.matchAll(/([^{}]+)\{([^}]*?)\}/gs)) {
+          const selector = match[1].trim()
+          if (selector.includes(':global') || selector.includes(':deep') || selector.includes('@keyframes')) continue
+          if (!/(\.page-head|\.page-toolbar|\.audit-head|\.dict-page-head)(\s|,|:|\.|\{|$)/.test(selector)) continue
+          if (/(\.page-head-actions|\.page-title-row|\.title-row)/.test(selector)) continue
+          const body = match[2]
+          if (/(?:align-items|align-self)\s*:\s*(flex-end|center)/.test(body)) {
+            violations.push(`${rel}:${lineOf(css, match.index ?? 0)} ${selector} -> ${body.trim().slice(0, 60)}`)
+          }
+        }
+      }
+    }
+
+    expect(violations).toEqual([])
+  })
+
   it('新页面脚手架直接消费排版/间距事实源，并显式标记未完成占位', () => {
     const scaffold = read(join(FRONTEND_DIR, 'scripts/scaffold-page.mjs'))
 
