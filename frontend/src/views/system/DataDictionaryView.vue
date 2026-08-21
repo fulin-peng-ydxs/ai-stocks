@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -103,7 +104,6 @@ const canManageDict = computed(() => auth.isSystem)
 const activeType = computed(() => typeRows.value.find((row) => row.code === selectedTypeCode.value) ?? null)
 let typeRequestSeq = 0
 let itemRequestSeq = 0
-let typeSearchTimer: ReturnType<typeof setTimeout> | null = null
 const { pageSize, changePageSize } = useComponentPageSizeSession({
   resolveDefault: () => componentValueOf('itemTable', 'pageSize'),
   fallback: 50,
@@ -246,19 +246,11 @@ async function selectType(code: string) {
 }
 
 async function searchTypes() {
-  if (typeSearchTimer) clearTimeout(typeSearchTimer)
-  typeSearchTimer = null
   await loadTypes(true)
   itemPage.value = 1
   if (selectedTypeCode.value) await loadItems()
 }
 
-function scheduleSearchTypes() {
-  if (typeSearchTimer) clearTimeout(typeSearchTimer)
-  typeSearchTimer = setTimeout(() => {
-    void searchTypes()
-  }, 300)
-}
 
 function pageChanged(value: number) {
   itemPage.value = value
@@ -446,9 +438,6 @@ async function toggleItem(row: DictItem, value: boolean) {
 
 
 onMounted(loadAll)
-onBeforeUnmount(() => {
-  if (typeSearchTimer) clearTimeout(typeSearchTimer)
-})
 </script>
 
 <template>
@@ -487,7 +476,7 @@ onBeforeUnmount(() => {
           </header>
           <el-card shadow="never" class="filter-card dict-type-card">
             <AppControlRow class="dict-type-tools">
-              <el-input v-model="typeKeyword" clearable placeholder="搜索类型 / code" @input="scheduleSearchTypes" @keyup.enter="searchTypes" @clear="searchTypes" />
+              <AppSearchInput v-model="typeKeyword" placeholder="搜索类型 / code" @search="searchTypes" />
             </AppControlRow>
           </el-card>
           <div class="dict-type-list" v-loading="typeLoading && typeRows.length > 0">

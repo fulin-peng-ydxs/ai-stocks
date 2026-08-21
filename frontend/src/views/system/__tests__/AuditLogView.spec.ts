@@ -154,10 +154,9 @@ describe('AuditLogView', () => {
 
   it('查询时把筛选条件透传给审计列表和摘要', async () => {
     const wrapper = await mountView()
-    await wrapper.find('input[placeholder="处理人"]').setValue('admin')
-    const query = wrapper.findAll('button').find((button) => button.text() === '查询')
-    expect(query).toBeTruthy()
-    await query!.trigger('click')
+    const actorInput = wrapper.find('input[placeholder="处理人"]')
+    await actorInput.setValue('admin')
+    await actorInput.trigger('keyup', { key: 'Enter' })
     await flushPromises()
     expect(auditApi.listAuditLogs).toHaveBeenLastCalledWith(expect.objectContaining({ actor_keyword: 'admin' }))
     expect(auditApi.getAuditSummary).toHaveBeenLastCalledWith(expect.objectContaining({ actor_keyword: 'admin' }))

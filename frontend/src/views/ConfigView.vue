@@ -32,6 +32,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
@@ -1526,7 +1527,7 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <div class="pane-fill tech-pane">
         <div class="tech-head">
           <div class="tech-actions">
-            <el-input v-model="techSearch" placeholder="搜索名称/标识/说明/分类" clearable size="small" style="width: 220px" />
+            <AppSearchInput v-model="techSearch" placeholder="搜索名称/标识/说明/分类" :debounce-ms="0" size="small" style="width: 220px" />
             <el-button v-permission="'indicator:def-manage'" type="primary" plain size="small" @click="openNewDef">
               <template #icon><el-icon><Plus /></el-icon></template>
               新建自定义指标

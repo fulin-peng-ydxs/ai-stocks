@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import AppTableColumn from '@/components/AppTableColumn.vue'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { PAGE_SIZE_OPTIONS, normalizePageSize } from '@/constants/pagination'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Edit } from '@element-plus/icons-vue'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -288,7 +289,6 @@ const groupSortOrder = ref<'asc' | 'desc'>(groupDefaultSortOrder.value)
 const groupTotal = computed(() => groupDetail.value?.members.total ?? 0)
 // 首屏在远端组件默认值水合完成前保持恢复态，避免 watcher 抢跑并覆盖返回列表态。
 let restoringListState = true
-let groupSearchTimer: ReturnType<typeof setTimeout> | null = null
 
 const auth = useAuthStore()
 const canViewGroups = computed(() => hasPermission(auth.role, auth.permissions, 'stock-group:view'))
@@ -390,16 +390,8 @@ async function loadGroupDetail() {
 }
 const groupRows = computed<GroupMember[]>(() => groupDetail.value?.members.list ?? [])
 function groupSearch() {
-  if (groupSearchTimer) clearTimeout(groupSearchTimer)
-  groupSearchTimer = null
   groupPage.value = 1
   loadGroupDetail()
-}
-function scheduleGroupSearch() {
-  if (groupSearchTimer) clearTimeout(groupSearchTimer)
-  groupSearchTimer = setTimeout(() => {
-    groupSearch()
-  }, 300)
 }
 function onGroupSortChange({ prop, order }: { prop: string; order: string | null }) {
   if (!order) {
@@ -732,9 +724,6 @@ onMounted(async () => {
     await load()
   }
 })
-onBeforeUnmount(() => {
-  if (groupSearchTimer) clearTimeout(groupSearchTimer)
-})
 </script>
 
 <template>
@@ -775,7 +764,7 @@ onBeforeUnmount(() => {
     <el-card v-if="!inGroupMode" shadow="never" class="filter-card">
       <AppControlRow class="filter-row">
         <TradeDatePicker v-model="tradeDate" placeholder="交易日期" clearable style="width: 180px" />
-        <el-input v-model="q" placeholder="代码 / 名称" style="width: 220px" clearable @keyup.enter="search" @clear="search" />
+        <AppSearchInput v-model="q" placeholder="代码 / 名称" style="width: 220px" @search="search" />
         <el-select v-model="board" placeholder="全部板块" style="width: 130px" clearable @change="search">
           <el-option label="主板" value="主板" />
           <el-option label="创业板" value="创业板" />
@@ -783,7 +772,6 @@ onBeforeUnmount(() => {
           <el-option label="ST 板块" value="ST" />
           <el-option label="退市板块" value="退市" />
         </el-select>
-        <el-button type="primary" :loading="loading" @click="search">查询</el-button>
       </AppControlRow>
     </el-card>
 
@@ -806,16 +794,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="gb-ops">
           <span v-if="groupDetail.description" class="gb-desc">{{ groupDetail.description }}</span>
-          <el-input
-            v-model="groupQ"
-            placeholder="组内搜索"
-            size="small"
-            clearable
-            style="width: 160px"
-            @input="scheduleGroupSearch"
-            @keyup.enter="groupSearch"
-            @clear="groupSearch"
-          />
+          <AppSearchInput v-model="groupQ" placeholder="组内搜索" size="small" style="width: 160px" @search="groupSearch" />
           <el-button v-permission="'stock-group:delete'" size="small" type="danger" plain :disabled="groupDetail.is_default" @click="doDeleteGroup">删除分组</el-button>
         </div>
       </div>

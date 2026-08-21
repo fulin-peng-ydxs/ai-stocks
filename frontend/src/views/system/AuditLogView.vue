@@ -13,6 +13,7 @@ import {
 import { ElMessage } from 'element-plus'
 import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -565,9 +566,9 @@ onBeforeUnmount(stopTimer)
             class="w120"
             @change="filterChanged"
           />
-          <el-input v-model="filters.resource_code" clearable placeholder="资源码" class="w160" />
-          <el-input v-model="filters.actor_keyword" clearable placeholder="处理人" class="w140" />
-          <el-input v-model="filters.target_keyword" clearable placeholder="目标对象" class="w160" />
+          <AppSearchInput v-model="filters.resource_code" placeholder="资源码" style="width: 160px" @search="search" />
+          <AppSearchInput v-model="filters.actor_keyword" placeholder="处理人" style="width: 140px" @search="search" />
+          <AppSearchInput v-model="filters.target_keyword" placeholder="目标对象" style="width: 160px" @search="search" />
           <AppFilterSelect
             v-if="auth.isSystem"
             v-model="filters.tenant_id"
@@ -576,7 +577,6 @@ onBeforeUnmount(stopTimer)
             class="w180"
             @change="filterChanged"
           />
-          <el-button type="primary" @click="search">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
         </AppControlRow>
       </el-card>

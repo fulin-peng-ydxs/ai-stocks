@@ -8,6 +8,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -276,9 +277,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
               <el-option v-for="item in tenantStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
             </el-select>
-            <el-input v-model="filters.q" placeholder="搜索租户名 / ID" clearable style="width: 220px"
-                      @keyup.enter="search" @clear="search" />
-            <el-button type="primary" @click="search">查询</el-button>
+            <AppSearchInput v-model="filters.q" placeholder="搜索租户名 / ID" style="width: 220px" @search="search" />
           </AppControlRow>
         </el-card>
       </div>

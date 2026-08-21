@@ -470,9 +470,9 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.find('.app-data-table').exists()).toBe(true)
 
     ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('refresh failed'))
-    const refresh = wrapper.findAll('button').find((button) => button.text().trim() === '刷新')
-    expect(refresh).toBeTruthy()
-    await refresh!.trigger('click')
+    const search = wrapper.find('input[placeholder="股票/板块代码或名称"]')
+    await search.setValue('600000')
+    await search.trigger('keyup', { key: 'Enter' })
     await flushPromises()
 
     expect(wrapper.text()).toContain('数据质量刷新失败')

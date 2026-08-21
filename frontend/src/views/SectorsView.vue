@@ -4,6 +4,7 @@ import { ElMessage, type Sort } from 'element-plus'
 import { ArrowRight, DArrowLeft, DArrowRight, Star, StarFilled } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
@@ -224,7 +225,6 @@ const canUpdateWatchlist = computed(() =>
   hasPermission(auth.role, auth.permissions, 'sector-watchlist:update'),
 )
 
-let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 // 行点击只切换主观察对象；勾选“对比”会把板块固定在图中，跨分页仍保留。
 // 队列顺序稳定（进入先后），激活只移动高亮不重排，由共享 compareQueue 状态机维护。
@@ -596,13 +596,6 @@ function changeListScope(): void {
   page.value = 1
   void load()
 }
-function scheduleSearch(): void {
-  if (searchTimer) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    searchTimer = null
-    search()
-  }, 300)
-}
 function onDateChange(): void {
   if (restoring) return
   search()
@@ -834,16 +827,13 @@ onMounted(async () => {
               class="date-picker"
               @update:model-value="onDateChange"
             />
-            <el-input
+            <AppSearchInput
               v-model="keyword"
               placeholder="搜索板块"
               class="keyword-input"
-              clearable
               maxlength="50"
               data-testid="sectors-keyword"
-              @input="scheduleSearch"
-              @clear="search"
-              @keyup.enter="search"
+              @search="search"
             />
           </AppControlRow>
         </el-card>

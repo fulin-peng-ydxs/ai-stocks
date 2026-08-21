@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -428,18 +429,16 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
         <el-card shadow="never" class="filter-card">
           <AppControlRow>
             <el-select v-if="isSystem" v-model="filters.tenant" placeholder="租户：全部" clearable
-                       :loading="dependencyLoading" style="width: 180px">
+                       :loading="dependencyLoading" style="width: 180px" @change="search">
               <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
             </el-select>
-            <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable style="width: 170px">
+            <el-select v-model="filters.role" :loading="dependencyLoading" placeholder="角色：全部" clearable style="width: 170px" @change="search">
               <el-option v-for="r in assignableRoles" :key="r.id" :label="r.name" :value="r.code" />
             </el-select>
-            <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px">
+            <el-select v-model="filters.status" placeholder="状态：全部" clearable style="width: 140px" @change="search">
               <el-option v-for="item in userStatusOptions" :key="item.code" :label="item.label" :value="item.code" />
             </el-select>
-            <el-input v-model="filters.q" placeholder="搜索账号 / 邮箱" clearable style="width: 220px"
-                      @keyup.enter="search" @clear="search" />
-            <el-button type="primary" @click="search">查询</el-button>
+            <AppSearchInput v-model="filters.q" placeholder="搜索账号 / 邮箱" style="width: 220px" @search="search" />
           </AppControlRow>
         </el-card>
         <AppStateBlock

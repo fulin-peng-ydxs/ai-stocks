@@ -42,6 +42,7 @@ import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { usePageSettings } from '@/composables/usePageSettings'
+import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import { useKlinePrefs } from '@/composables/useKlinePrefs'
 import {
@@ -617,8 +618,9 @@ const dropdownLoading = ref(false)
 const dropdownLoadedPages = ref<number[]>(
   stockSet.loadedPages.length ? [...stockSet.loadedPages] : (stockSet.items.length ? [1] : []),
 )
-let dropdownSearchTimer: ReturnType<typeof setTimeout> | null = null
 let dropdownRequestSeq = 0
+const collectionKeyword = ref('')
+const collectionSearch = useDebouncedQuery(() => resetDropdown(collectionKeyword.value.trim()), 180)
 
 const dropdownHasMore = computed(() => dropdownItems.value.length < dropdownTotal.value)
 const currentDropdownItem = computed(() => {
@@ -719,10 +721,8 @@ async function resetDropdown(keyword = '') {
 }
 
 function onCollectionSearch(query: string) {
-  if (dropdownSearchTimer) clearTimeout(dropdownSearchTimer)
-  dropdownSearchTimer = setTimeout(() => {
-    resetDropdown(query.trim())
-  }, 180)
+  collectionKeyword.value = query
+  collectionSearch.schedule()
 }
 
 function onCollectionSelect(c: string | null) {
@@ -771,7 +771,6 @@ onActivated(() => {
 
 onBeforeUnmount(() => {
   cancelDetailRequests()
-  if (dropdownSearchTimer) clearTimeout(dropdownSearchTimer)
 })
 </script>
 

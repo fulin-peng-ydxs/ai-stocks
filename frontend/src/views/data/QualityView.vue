@@ -13,6 +13,7 @@ import {
 } from '@/api/data'
 import { ElMessageBox } from 'element-plus'
 import AppControlRow from '@/components/AppControlRow.vue'
+import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
@@ -74,6 +75,10 @@ const loading = ref(false)
 const loadError = ref('')
 const data = ref<DataQuality | null>(null)
 const page = ref(1)
+const applyFilter = () => {
+  page.value = 1
+  void load()
+}
 const { pageSize: size, changePageSize } = useComponentPageSizeSession({
   resolveDefault: () => componentValueOf('table', 'pageSize'),
   resetPage: () => {
@@ -383,19 +388,18 @@ onMounted(() => {
     <el-card shadow="never" class="filter-card">
     <AppControlRow class="filter-row">
       <el-select v-model="filters.status" placeholder="状态" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 240px">
+                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 240px" @change="applyFilter">
         <el-option v-for="(l, k) in ISSUE_STATUS_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
       <el-select v-model="filters.severity" placeholder="严重度" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 200px">
+                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 200px" @change="applyFilter">
         <el-option v-for="(l, k) in SEVERITY_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
       <el-select v-model="filters.issue_type" placeholder="问题类型" multiple clearable collapse-tags
-                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 280px">
+                 collapse-tags-tooltip :max-collapse-tags="3" style="width: 280px" @change="applyFilter">
         <el-option v-for="(l, k) in ISSUE_TYPE_LABEL" :key="k" :label="l" :value="k" />
       </el-select>
-      <el-input v-model="filters.code" placeholder="股票/板块代码或名称" clearable style="width: 210px"
-                @keyup.enter="() => { page = 1; load() }" @clear="() => { page = 1; load() }" />
+      <AppSearchInput v-model="filters.code" placeholder="股票/板块代码或名称" style="width: 210px" @search="applyFilter" />
       <div class="summary">
         <el-tag
           v-for="s in data?.summary ?? []"
