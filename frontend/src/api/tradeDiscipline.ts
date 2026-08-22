@@ -145,6 +145,102 @@ export interface StockOption {
   industry: string | null
 }
 
+export interface StockOptionPage {
+  q: string
+  limit: number
+  list: StockOption[]
+}
+
+export interface ViolationReason {
+  code: string | null
+  id: string | null
+  name: string
+  builtin: boolean
+}
+
+export interface CheckinOperation {
+  client_key?: string
+  id?: string | null
+  stock_code: string
+  stock_name_snapshot: string
+  side: ActionType
+  stock_rule_id: string
+  action_rule_id: string
+  price: string | number | null
+  quantity: string | number | null
+  amount: string | number | null
+  fee: string | number | null
+  operated_at: string | null
+  note: string | null
+  display_order: number
+  stock_rule_name?: string | null
+  action_rule_name?: string | null
+  action_subtype?: ActionSubtype | null
+  financial_complete?: boolean
+}
+
+export interface TradeDisciplineCheckin {
+  checkin_id: string
+  revision_no: number
+  current_revision_no: number
+  rule_id: string
+  rule_name: string
+  version_no: number
+  trade_date: string
+  checkin_status: 'submitted' | 'amended'
+  assessment: CheckinAssessment
+  no_operation: boolean
+  reason_code: string | null
+  reason_id: string | null
+  reason_name_snapshot: string | null
+  violation_detail: string | null
+  review_note: string | null
+  operations: CheckinOperation[]
+  financial_complete: boolean
+}
+
+export interface CheckinContext {
+  trade_date: string
+  version: RuleVersionDetail
+  checkin: TradeDisciplineCheckin | null
+}
+
+export interface CheckinContentPayload {
+  assessment: CheckinAssessment
+  no_operation: boolean
+  reason_code: string | null
+  reason_id: string | null
+  reason_text: string | null
+  violation_detail: string | null
+  review_note: string | null
+  operations: CheckinOperation[]
+}
+
+export interface SubmitCheckinPayload extends CheckinContentPayload {
+  rule_id: string
+  trade_date: string
+}
+
+export interface CheckinSummaryRule {
+  rule_id: string
+  rule_name: string
+  version_no: number
+  effective_from_trade_date: string
+  checkin_id: string | null
+  current_revision_no: number | null
+  status: 'submitted' | 'amended' | null
+  assessment: CheckinAssessment | null
+  no_operation: boolean | null
+}
+
+export interface CheckinSummary {
+  trade_date: string
+  total: number
+  completed: number
+  pending: number
+  rules: CheckinSummaryRule[]
+}
+
 export function listTradeDisciplineRules(
   tradeDate?: string | null,
 ): Promise<TradeDisciplineRule[]> {
@@ -219,6 +315,44 @@ export function listTradeDisciplineCheckins(
   return http.get('/trade-discipline/checkins', { params })
 }
 
-export function searchTradeDisciplineStocks(q: string, limit = 20): Promise<StockOption[]> {
-  return http.get('/trade-discipline/stock-options', { params: { q, limit } })
+export function getTradeDisciplineCheckinContext(
+  ruleId: string,
+  tradeDate: string,
+): Promise<CheckinContext> {
+  return http.get('/trade-discipline/checkins/current', {
+    params: { rule_id: ruleId, trade_date: tradeDate },
+  })
+}
+
+export function getTradeDisciplineSummary(tradeDate: string): Promise<CheckinSummary> {
+  return http.get('/trade-discipline/summary', { params: { trade_date: tradeDate } })
+}
+
+export function submitTradeDisciplineCheckin(
+  payload: SubmitCheckinPayload,
+): Promise<TradeDisciplineCheckin> {
+  return http.post('/trade-discipline/checkins', payload)
+}
+
+export function amendTradeDisciplineCheckin(
+  checkinId: string,
+  payload: CheckinContentPayload & { expected_revision: number },
+): Promise<TradeDisciplineCheckin> {
+  return http.post(`/trade-discipline/checkins/${checkinId}/amendments`, payload)
+}
+
+export function listTradeDisciplineReasons(): Promise<ViolationReason[]> {
+  return http.get('/trade-discipline/reasons')
+}
+
+export function deleteTradeDisciplineReason(reasonId: string): Promise<{ reason_id: string }> {
+  return http.delete(`/trade-discipline/reasons/${reasonId}`)
+}
+
+export function searchTradeDisciplineStocks(
+  q: string,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<StockOptionPage> {
+  return http.get('/trade-discipline/stock-options', { params: { q, limit }, signal })
 }

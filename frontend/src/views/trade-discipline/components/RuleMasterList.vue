@@ -3,13 +3,14 @@ import { computed, ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import type { TradeDisciplineRule } from '@/api/tradeDiscipline'
+import type { CheckinSummaryRule, TradeDisciplineRule } from '@/api/tradeDiscipline'
 
 const props = defineProps<{
   rules: TradeDisciplineRule[]
   selectedId: string
   loading?: boolean
   canManage: boolean
+  checkinStates?: CheckinSummaryRule[] | null
 }>()
 
 const emit = defineEmits<{
@@ -24,6 +25,9 @@ const filteredRules = computed(() => {
   return props.rules.filter((rule) =>
     (rule.proposed_name || rule.name || '').toLocaleLowerCase('zh-CN').includes(normalized))
 })
+const checkinByRule = computed(() => new Map(
+  (props.checkinStates ?? []).map((item) => [item.rule_id, item]),
+))
 
 function effectiveLabel(rule: TradeDisciplineRule): string {
   if (rule.effective_status === 'active') {
@@ -33,6 +37,13 @@ function effectiveLabel(rule: TradeDisciplineRule): string {
 }
 
 function managementLabel(rule: TradeDisciplineRule): string {
+  const checkin = checkinByRule.value.get(rule.id)
+  if (checkin) {
+    if (!checkin.checkin_id) return '待打卡'
+    return checkin.assessment === 'complied'
+      ? `已履约 · r${checkin.current_revision_no}`
+      : `未履约 · r${checkin.current_revision_no}`
+  }
   const event = rule.latest_management_event
   if (rule.has_pending_management_action && event) {
     const action = event.event_type === 'archive'
@@ -88,7 +99,7 @@ function managementLabel(rule: TradeDisciplineRule): string {
           <el-tag v-if="rule.draft_revision" size="small" type="warning" effect="plain">草稿</el-tag>
         </div>
         <div class="rule-master__states">
-          <span>{{ effectiveLabel(rule) }}</span>
+          <span>{{ checkinByRule.get(rule.id) ? `履约版本 v${checkinByRule.get(rule.id)?.version_no}` : effectiveLabel(rule) }}</span>
           <small>{{ managementLabel(rule) }}</small>
         </div>
       </div>

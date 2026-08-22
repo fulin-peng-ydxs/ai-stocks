@@ -24,11 +24,14 @@ import {
   listTradeDisciplineCheckins,
   listTradeDisciplineRules,
   createTradeDisciplineRule,
+  getTradeDisciplineSummary,
+  type CheckinSummary,
   type CheckinHistoryRow,
   type TradeDisciplineRule,
 } from '@/api/tradeDiscipline'
 import RuleMasterList from '@/views/trade-discipline/components/RuleMasterList.vue'
 import TradeRuleEditor from '@/views/trade-discipline/components/TradeRuleEditor.vue'
+import TradeCheckinForm from '@/views/trade-discipline/components/TradeCheckinForm.vue'
 
 type PanelKey = 'checkin' | 'rules' | 'history'
 
@@ -47,6 +50,9 @@ const canManageRules = computed(
 )
 const canViewCheckins = computed(
   () => auth.isSystem || auth.permissions.includes('trade-discipline:checkin-view'),
+)
+const canSubmitCheckins = computed(
+  () => auth.isSystem || auth.permissions.includes('trade-discipline:checkin-submit'),
 )
 
 const pageLayout = getPageLayout(PAGE_KEY)
@@ -91,15 +97,30 @@ const {
 const rules = ref<TradeDisciplineRule[]>([])
 const rulesLoading = ref(false)
 const rulesError = ref(false)
+const checkinSummary = ref<CheckinSummary | null>(null)
+const summaryLoading = ref(false)
+const summaryError = ref(false)
+const checkinTradeDate = ref('')
 const selectedRuleId = ref('')
+const checkinRuleIds = computed(() => new Set(checkinSummary.value?.rules.map((item) => item.rule_id) ?? []))
+const displayRules = computed(() => activePanel.value === 'checkin'
+  ? rules.value.filter((rule) => checkinRuleIds.value.has(rule.id))
+  : rules.value)
 const selectedRule = computed(
-  () => rules.value.find((rule) => rule.id === selectedRuleId.value) ?? rules.value[0] ?? null,
+  () => displayRules.value.find((rule) => rule.id === selectedRuleId.value) ?? displayRules.value[0] ?? null,
 )
 const ruleEditorRef = ref<{
   isDirty: () => boolean
   requestLeave: () => Promise<boolean>
 } | null>(null)
+const checkinFormRef = ref<{
+  isDirty: () => boolean
+  requestLeave: () => Promise<boolean>
+  load: () => Promise<void>
+} | null>(null)
 let unregisterUnsavedHandler: (() => void) | undefined
+let rulesLoadSeq = 0
+let summaryLoadSeq = 0
 
 const historyRows = ref<CheckinHistoryRow[]>([])
 const historyTotal = ref(0)
@@ -128,23 +149,54 @@ function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
 
-async function loadRules(): Promise<void> {
+async function loadRules(tradeDate = dataMax.value): Promise<void> {
+  const seq = ++rulesLoadSeq
   rulesLoading.value = true
   rulesError.value = false
   try {
-    rules.value = await listTradeDisciplineRules(dataMax.value)
-    if (!rules.value.some((rule) => rule.id === selectedRuleId.value)) {
+    const result = await listTradeDisciplineRules(tradeDate)
+    if (seq !== rulesLoadSeq) return
+    rules.value = result
+    if (activePanel.value !== 'checkin' && !rules.value.some((rule) => rule.id === selectedRuleId.value)) {
       selectedRuleId.value = rules.value[0]?.id ?? ''
     }
   } catch {
+    if (seq !== rulesLoadSeq) return
     rulesError.value = true
   } finally {
-    rulesLoading.value = false
+    if (seq === rulesLoadSeq) rulesLoading.value = false
   }
 }
 
 async function refreshRules(): Promise<void> {
-  await loadRules()
+  await loadRules(activePanel.value === 'checkin' ? checkinTradeDate.value : dataMax.value)
+}
+
+async function loadCheckinSummary(): Promise<void> {
+  if (!canViewCheckins.value || !checkinTradeDate.value) return
+  const seq = ++summaryLoadSeq
+  summaryLoading.value = true
+  summaryError.value = false
+  try {
+    const result = await getTradeDisciplineSummary(checkinTradeDate.value)
+    if (seq !== summaryLoadSeq) return
+    checkinSummary.value = result
+    const candidates = checkinSummary.value.rules
+    if (!candidates.some((item) => item.rule_id === selectedRuleId.value)) {
+      selectedRuleId.value = candidates.find((item) => !item.checkin_id)?.rule_id
+        ?? candidates[0]?.rule_id ?? ''
+    }
+  } catch {
+    if (seq !== summaryLoadSeq) return
+    summaryError.value = true
+  } finally {
+    if (seq === summaryLoadSeq) summaryLoading.value = false
+  }
+}
+
+async function loadCheckinWorkspace(): Promise<void> {
+  checkinSummary.value = null
+  await Promise.all([loadRules(checkinTradeDate.value), loadCheckinSummary()])
 }
 
 async function loadHistory(): Promise<void> {
@@ -168,7 +220,9 @@ async function loadHistory(): Promise<void> {
 async function loadPage(): Promise<void> {
   await ensureTradeDatesLoaded()
   if (tradeDateStatus.value !== 'ready') return
-  await loadRules()
+  checkinTradeDate.value ||= dataMax.value || ''
+  if (activePanel.value === 'checkin') await loadCheckinWorkspace()
+  else await loadRules()
   if (activePanel.value === 'history') await loadHistory()
 }
 
@@ -178,6 +232,8 @@ async function switchPanel(value: string | number | boolean): Promise<void> {
   if (!(await confirmLeave(route.path, 'context-change'))) return
   activePanel.value = next
   await router.replace({ query: { ...route.query, tab: next } })
+  if (next === 'checkin') await loadCheckinWorkspace()
+  else if (next === 'rules') await loadRules()
 }
 
 async function selectRule(ruleId: string): Promise<void> {
@@ -191,7 +247,7 @@ async function createRule(): Promise<void> {
   if (!(await confirmLeave(route.path, 'context-change'))) return
   try {
     const created = await createTradeDisciplineRule()
-    await loadRules()
+    await loadRules(dataMax.value)
     selectedRuleId.value = created.id
     ElMessage.success('已创建草稿（未发布）')
   } catch { /* 统一请求层已反馈 */ }
@@ -204,12 +260,24 @@ async function createRuleFromCheckin(): Promise<void> {
 
 async function handleRuleDeleted(): Promise<void> {
   selectedRuleId.value = ''
-  await loadRules()
+  await loadRules(dataMax.value)
 }
 
 async function handleRuleCopied(ruleId: string): Promise<void> {
-  await loadRules()
+  await loadRules(dataMax.value)
   selectedRuleId.value = ruleId
+}
+
+async function changeCheckinTradeDate(value: string): Promise<void> {
+  if (value === checkinTradeDate.value) return
+  if (!(await confirmLeave(route.path, 'context-change'))) return
+  checkinTradeDate.value = value
+  selectedRuleId.value = ''
+  await loadCheckinWorkspace()
+}
+
+async function handleCheckinSubmitted(): Promise<void> {
+  await Promise.all([loadCheckinSummary(), loadRules(checkinTradeDate.value)])
 }
 
 function changeHistoryPage(page: number): void {
@@ -225,8 +293,12 @@ watch(activePanel, (panel) => {
 
 onMounted(() => {
   unregisterUnsavedHandler = registerUnsavedHandler(route.path, {
-    isDirty: () => ruleEditorRef.value?.isDirty() ?? false,
-    requestLeave: () => ruleEditorRef.value?.requestLeave() ?? true,
+    isDirty: () => activePanel.value === 'checkin'
+      ? checkinFormRef.value?.isDirty() ?? false
+      : ruleEditorRef.value?.isDirty() ?? false,
+    requestLeave: () => activePanel.value === 'checkin'
+      ? checkinFormRef.value?.requestLeave() ?? true
+      : ruleEditorRef.value?.requestLeave() ?? true,
   })
   void loadPage()
 })
@@ -285,9 +357,16 @@ onUnmounted(() => unregisterUnsavedHandler?.())
             @update:model-value="switchPanel"
           />
           <div class="discipline-summary app-caption-text">
-            <span>规则 {{ rules.length }}</span>
-            <span>待生效 {{ pendingRuleCount }}</span>
-            <span>历史每页 {{ historyPageSize }} 条</span>
+            <template v-if="activePanel === 'checkin'">
+              <span>规则 {{ checkinSummary?.total ?? '—' }}</span>
+              <span>已完成 {{ checkinSummary?.completed ?? '—' }}</span>
+              <span>待打卡 {{ checkinSummary?.pending ?? '—' }}</span>
+            </template>
+            <template v-else>
+              <span>规则 {{ displayRules.length }}</span>
+              <span>待生效 {{ pendingRuleCount }}</span>
+              <span>历史每页 {{ historyPageSize }} 条</span>
+            </template>
           </div>
         </div>
 
@@ -298,7 +377,16 @@ onUnmounted(() => unregisterUnsavedHandler?.())
             variant="permission"
             title="无权限查看履约打卡"
           />
-          <AppStateBlock v-else-if="!rules.length" state="empty" title="暂无交易规则">
+          <AppStateBlock
+            v-else-if="summaryError"
+            state="error"
+            title="履约摘要加载失败"
+            description="已停止展示和提交，重试后继续"
+            retry
+            @retry="loadCheckinWorkspace"
+          />
+          <AppStateBlock v-else-if="summaryLoading" state="loading" title="正在解析当日履约状态…" />
+          <AppStateBlock v-else-if="!displayRules.length" state="empty" title="该交易日暂无生效规则">
             <template #extra>
               <el-button v-if="canManageRules" v-permission="'trade-discipline:rule-manage'" type="primary" @click="createRuleFromCheckin">
                 创建第一套规则
@@ -307,22 +395,22 @@ onUnmounted(() => unregisterUnsavedHandler?.())
           </AppStateBlock>
           <div v-else class="master-detail-shell">
             <RuleMasterList
-              :rules="rules"
+              :rules="displayRules"
               :selected-id="selectedRuleId"
               :can-manage="canManageRules"
+              :checkin-states="checkinSummary?.rules"
               @select="selectRule"
               @create="createRuleFromCheckin"
             />
-            <div class="panel-detail">
-              <div class="detail-kicker">今日履约 · {{ latestTradeDateText }}</div>
-              <h3 class="app-section-title">{{ selectedRule?.name || selectedRule?.proposed_name }}</h3>
-              <AppStateBlock
-                state="empty"
-                size="compact"
-                title="履约表单尚未填写"
-                description="当前规则和交易日已就绪，可在后续打卡区记录执行事实"
-              />
-            </div>
+            <TradeCheckinForm
+              v-if="selectedRule"
+              ref="checkinFormRef"
+              :rule-id="selectedRule.id"
+              :trade-date="checkinTradeDate"
+              :can-submit="canSubmitCheckins"
+              @request-date-change="changeCheckinTradeDate"
+              @submitted="handleCheckinSubmitted"
+            />
           </div>
         </section>
 

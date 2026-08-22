@@ -10,12 +10,14 @@ import { permission } from '@/directives/permission'
 
 const listRules = vi.fn()
 const listCheckins = vi.fn()
+const getSummary = vi.fn()
 const ensureTradeDates = vi.fn(async () => undefined)
 const tradeDateStatus = { value: 'ready' }
 
 vi.mock('@/api/tradeDiscipline', () => ({
   listTradeDisciplineRules: (...args: unknown[]) => listRules(...args),
   listTradeDisciplineCheckins: (...args: unknown[]) => listCheckins(...args),
+  getTradeDisciplineSummary: (...args: unknown[]) => getSummary(...args),
 }))
 vi.mock('@/composables/useTradeDates', async () => {
   const { ref } = await import('vue')
@@ -69,6 +71,9 @@ describe('交易纪律 T5 工作台壳', () => {
     tradeDateStatus.value = 'ready'
     listRules.mockResolvedValue([])
     listCheckins.mockResolvedValue({ total: 0, page: 1, page_size: 20, list: [] })
+    getSummary.mockResolvedValue({
+      trade_date: '2026-08-22', total: 0, completed: 0, pending: 0, rules: [],
+    })
   })
 
   it('加载交易日和规则，并提供三段业务页签与设置入口', async () => {
@@ -79,6 +84,7 @@ describe('交易纪律 T5 工作台壳', () => {
     ])
     expect(ensureTradeDates).toHaveBeenCalled()
     expect(listRules).toHaveBeenCalledWith('2026-08-22')
+    expect(getSummary).toHaveBeenCalledWith('2026-08-22')
     expect(wrapper.get('[data-testid="trade-discipline-tabs"]')).toBeTruthy()
     expect(wrapper.text()).toContain('今日打卡')
     expect(wrapper.text()).toContain('规则管理')
@@ -98,5 +104,13 @@ describe('交易纪律 T5 工作台壳', () => {
     expect(wrapper.text()).toContain('交易纪律加载失败')
     expect(wrapper.text()).toContain('重试')
     expect(listRules).not.toHaveBeenCalled()
+  })
+
+  it('履约摘要失败由打卡区局部接管并停止伪装为空态', async () => {
+    getSummary.mockRejectedValue(new Error('summary unavailable'))
+    const wrapper = await mountPage(['trade-discipline:view', 'trade-discipline:checkin-view'])
+    expect(wrapper.text()).toContain('履约摘要加载失败')
+    expect(wrapper.text()).not.toContain('该交易日暂无生效规则')
+    expect(listRules).toHaveBeenCalled()
   })
 })
