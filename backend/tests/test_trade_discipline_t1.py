@@ -117,12 +117,21 @@ def test_trade_discipline_foreign_keys_include_owner_and_indexes_exist(pg):
             "td_rule_lifecycle_consistency_check",
             "td_checkin_status_time_check",
             "td_revision_kind_no_check",
-            "td_rule_name_claim_rule_unique",
             "td_rule_latest_version_fk",
             "td_checkin_current_revision_fk",
         ]],
     )["conname"])
-    assert len(checks) == 6
+    assert len(checks) == 5
+
+    obsolete_name_uniques = pg.query_df(
+        "SELECT c.conname FROM pg_constraint c "
+        "WHERE c.conrelid='trade_discipline_rule_name_claim'::regclass AND c.contype='u' "
+        "AND (SELECT array_agg(a.attname ORDER BY k.ordinality) "
+        "FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ordinality) "
+        "JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum)="
+        "ARRAY['tenant_id','owner_user_id','rule_id']::name[]"
+    )
+    assert obsolete_name_uniques.empty
 
     with pytest.raises(StorageError):
         pg.execute(

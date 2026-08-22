@@ -373,7 +373,6 @@ CREATE TABLE IF NOT EXISTS trade_discipline_rule_name_claim (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (btrim(normalized_name) <> ''),
     PRIMARY KEY (tenant_id, owner_user_id, normalized_name),
-    UNIQUE (tenant_id, owner_user_id, rule_id),
     FOREIGN KEY (tenant_id, owner_user_id, rule_id)
         REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE CASCADE
 );
@@ -1166,11 +1165,15 @@ _TRADE_DISCIPLINE_POINTER_CONSTRAINTS: tuple[str, ...] = (
      "ADD CONSTRAINT td_revision_kind_no_check "
      "CHECK ((revision_kind='initial' AND revision_no=1) "
      "OR (revision_kind='amendment' AND revision_no>1)); END IF; END $$;"),
-    ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
-     "WHERE conname='td_rule_name_claim_rule_unique') THEN "
-     "ALTER TABLE trade_discipline_rule_name_claim "
-     "ADD CONSTRAINT td_rule_name_claim_rule_unique "
-     "UNIQUE (tenant_id, owner_user_id, rule_id); END IF; END $$;"),
+    ("DO $$ DECLARE item RECORD; BEGIN FOR item IN "
+     "SELECT c.conname FROM pg_constraint c WHERE c.conrelid="
+     "'trade_discipline_rule_name_claim'::regclass AND c.contype='u' AND "
+     "(SELECT array_agg(a.attname ORDER BY k.ordinality) "
+     "FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ordinality) "
+     "JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum)="
+     "ARRAY['tenant_id','owner_user_id','rule_id']::name[] LOOP "
+     "EXECUTE format('ALTER TABLE trade_discipline_rule_name_claim DROP CONSTRAINT %%I', "
+     "item.conname); END LOOP; END $$;"),
     ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
      "WHERE conname='td_rule_latest_version_fk') THEN "
      "ALTER TABLE trade_discipline_rule ADD CONSTRAINT td_rule_latest_version_fk "

@@ -11,14 +11,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Any
 
 import pandas as pd
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from backend.common.exceptions import StorageError
+from backend.common.exceptions import AIStocksError, StorageError
 from backend.common.logging import get_logger
 from backend.config import get_settings
 
@@ -53,35 +54,31 @@ class PostgresClient:
                     timeout=10,  # 借连接最长等待，避免 PG 不可达时长时间挂起
                     open=True,
                 )
-                log.info(
-                    "PostgreSQL pool opened (min=%s max=%s)", self._min, self._max
-                )
-            except Exception as e:  # noqa: BLE001
+                log.info("PostgreSQL pool opened (min=%s max=%s)", self._min, self._max)
+            except Exception as e:
                 raise StorageError(f"PostgreSQL 连接失败: {e}") from e
         return self._pool
 
     def execute(self, sql: str, params: list[Any] | None = None) -> int:
         """执行单条 DDL/DML，自动提交，返回受影响行数（-1 表示不可知）。"""
         try:
-            with self.pool.connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(sql, params or [])
-                    return cur.rowcount
-        except Exception as e:  # noqa: BLE001
+            with self.pool.connection() as conn, conn.cursor() as cur:
+                cur.execute(sql, params or [])
+                return cur.rowcount
+        except Exception as e:
             raise StorageError(f"SQL 执行失败: {e}\nSQL: {sql[:200]}") from e
 
     def query_df(self, sql: str, params: list[Any] | None = None) -> pd.DataFrame:
         """查询并返回 pandas DataFrame（无结果集返回空 DataFrame）。"""
         try:
-            with self.pool.connection() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(sql, params or [])
-                    if cur.description is None:
-                        return pd.DataFrame()
-                    cols = [d.name for d in cur.description]
-                    rows = cur.fetchall()
+            with self.pool.connection() as conn, conn.cursor() as cur:
+                cur.execute(sql, params or [])
+                if cur.description is None:
+                    return pd.DataFrame()
+                cols = [d.name for d in cur.description]
+                rows = cur.fetchall()
             return pd.DataFrame(rows, columns=cols)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise StorageError(f"查询失败: {e}\nSQL: {sql[:200]}") from e
 
     @contextmanager
@@ -94,10 +91,11 @@ class PostgresClient:
                     cur.execute(...); cur.execute(...)
         """
         try:
-            with self.pool.connection() as conn:
-                with conn.transaction():
-                    yield conn
-        except Exception as e:  # noqa: BLE001
+            with self.pool.connection() as conn, conn.transaction():
+                yield conn
+        except AIStocksError:
+            raise
+        except Exception as e:
             raise StorageError(f"事务执行失败: {e}") from e
 
     @contextmanager

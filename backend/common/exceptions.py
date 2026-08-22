@@ -65,6 +65,13 @@ class ValidationError(AIStocksError):
     code = 4000
 
 
+class ConflictError(AIStocksError):
+    """资源状态或乐观锁冲突。"""
+
+    code = 4090
+    http_status = 409
+
+
 # ── 认证与鉴权（多租户 RBAC stage2；映射真实 HTTP 状态码）──
 class AuthError(AIStocksError):
     """认证失败：未登录 / token 缺失·无效·过期·被吊销 / perm_ver 失配。"""
