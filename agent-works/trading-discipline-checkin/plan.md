@@ -20,12 +20,15 @@
 | `backend/api/stocks.py`、DuckDB `stock_basic` | `/api/stocks` 含行情能力且受 `stocks:view` 保护 | 新建 R31 轻量端点，只复用 `stock_basic` 查询，不复用原权限或完整响应 |
 | DuckDB `daily_bar`、`trade_calendar` | 已有行情日期与未来开市日是两套口径 | 打卡日期继续读 `/api/data/trade-dates`；生命周期生效日只读未来 `trade_calendar` |
 | `frontend/src/router/index.ts`、`SideMenu.vue` | 静态路由 + 后端授权菜单双重接入 | 新增 `/trade-discipline` 路由；菜单继续由 `/me` 下发 |
+| `WorkspaceTabs.vue`、`useWorkspaceTabs.ts`、`WorkspaceRouteView.vue` | 当前关闭标签会先删 tab/KeepAlive 缓存再导航，页面守卫无法挽回现场；达到 12 个标签时还会同步淘汰最旧缓存 | 新增应用壳层未保存协议，任何显式关闭、容量淘汰、路由离开或注销都必须先决策，获准后才能删 tab/cache |
 | `frontend/src/layout/pageRegistry.ts`、`LayoutHost.vue` | 非公开 View 必须登记并真实消费布局 | 登记 `trade-discipline` workbench，使用 `LayoutHost` 和 overlay 设置抽屉 |
 | `PageSettingsDrawer`、`useRemoteLayoutConfig`、`usePageSettings` | 已有 page/user 配置保存、读取、重置链路 | 密度走布局配置；历史 `pageSize` 走现有组件字段，不新增尺寸偏好 |
 | `AppDataTable`、`AppTableColumn`、`AppPagination`、`AppStateBlock`、`PageDrawer` | 已有表格、分页、四态和页面内抽屉 | 历史列表、修订详情、四态直接复用，不手写平行实现 |
 | `frontend/src/App.vue` | 已有 440px 视口级用户中心抽屉 | 仅增加快捷卡片、头像状态点和确认动作，不创建第二个全局抽屉 |
 | `DESIGN.md`、`page-template.md` | 页头 `flex-start`、查询自动触发、页面登记和三视口为硬约束 | 页面实现与 E2E 逐项验证；同步 DESIGN page-registry marker |
-| 测试体系 | pytest、Vitest、Playwright；前端源码改动后必须 build | 分层补仓库/服务/API/组件/E2E，并遵守 DuckDB 锁和 5181 端口规则 |
+| `agent-works/architecture/system-rbac-tenant.md` | 新页面需静态路由、菜单/资源 seed、默认角色回填、按钮守卫和 `perm_ver` 原子失效 | T1 使用独立 marker 状态机接入，冲突/非法状态 fail-closed |
+| `agent-works/e2e-automation/guide.md`、`test-users.md` | E2E 固定 5181；物理写需环境门控和 PG 指纹；长期用例复用 helper；固定调试账号是页面权限事实源 | T12 建独立、可清理、串行的交易纪律夹具与聚焦运行入口，失败由 trap 精确清理并恢复后端 |
+| 测试体系 | pytest、Vitest、Playwright；前端源码改动后必须 build | 分层补仓库/服务/API/组件/E2E，并遵守 DuckDB 锁、PG 指纹、5181 端口和三视口规则 |
 
 当前无法直接证明生产 PG 中是否已有自定义角色或人工授权，故存量授权迁移必须记录“实际插入行”，回滚不得猜测删除既有合法授权。
 
@@ -35,39 +38,39 @@
 
 | 需求编号 | 实施内容 | 对应任务 | 状态 | 验证方式 |
 | --- | --- | --- | --- | --- |
-| R1 | 私人规则生命周期、名称唯一、明细启用/顺序/换行 | T1、T2、T6、T10-T12 | 待开始 | DDL/服务单测 + 页面 E2E |
+| R1 | 私人规则生命周期、名称唯一、明细启用/顺序/换行 | T1、T2、T6、T10-T13 | 待开始 | DDL/服务单测 + 页面 E2E |
 | R2 | 本金与启用选股规则资金上限校验 | T2、T6、T10-T11 | 待开始 | 金额边界参数化测试 |
 | R3 | 正式版本连续生成且历史不可变 | T1、T2、T6、T10 | 待开始 | 发布事务与历史快照测试 |
 | R4 | 规则 + 交易日唯一打卡 | T1、T3、T7、T10 | 待开始 | 唯一性/幂等测试 |
-| R5 | 四种履约/操作组合 | T3、T7、T10-T12 | 待开始 | 服务组合测试 + E2E |
-| R6 | 多笔同股操作与股票关联 | T3、T4、T7、T10-T12 | 待开始 | API/页面操作行测试 |
-| R7 | 每笔分别关联具体选股与方向匹配买卖规则 | T3、T7、T10-T12 | 待开始 | 候选 0/1/多条测试 |
+| R5 | 四种履约/操作组合 | T3、T7、T10-T13 | 待开始 | 服务组合测试 + E2E |
+| R6 | 多笔同股操作与股票关联 | T3、T4、T7、T10-T13 | 待开始 | API/页面操作行测试 |
+| R7 | 每笔分别关联具体选股与方向匹配买卖规则 | T3、T7、T10-T13 | 待开始 | 候选 0/1/多条测试 |
 | R8 | 可选成交事实与完整度 | T1、T3、T7、T10-T11 | 待开始 | 字段边界与展示测试 |
-| R9 | 历史筛选、详情、不可变修订 | T1、T3、T8、T10-T12 | 待开始 | 分页/修订/API/E2E |
-| R10 | 真实交易日选择与校验 | T3、T4、T5、T7、T10-T12 | 待开始 | 空日历/非交易日/未来日测试 |
-| R11 | 私人归属和跨用户隔离 | T1-T4、T8、T10、T12 | 待开始 | 跨用户/跨租户 403/404 测试 |
-| R12 | 用户中心摘要、状态点与跳转 | T4、T9、T11-T12 | 待开始 | App 组件测试 + 三视口 E2E |
-| R13 | 快捷无操作已履约 | T3、T4、T9、T10-T12 | 待开始 | 幂等/冲突/API/E2E |
+| R9 | 历史筛选、详情、不可变修订 | T1、T3、T8、T10-T13 | 待开始 | 分页/修订/API/E2E |
+| R10 | 真实交易日选择与校验 | T3、T4、T5、T7、T10-T13 | 待开始 | 空日历/非交易日/未来日测试 |
+| R11 | 私人归属和跨用户隔离 | T1-T4、T8、T10、T12-T13 | 待开始 | 跨用户/跨租户 403/404 测试 |
+| R12 | 用户中心摘要、状态点与跳转 | T4、T9、T11-T13 | 待开始 | App 组件测试 + 三视口 E2E |
+| R13 | 快捷无操作已履约 | T3、T4、T9、T10-T13 | 待开始 | 幂等/冲突/API/E2E |
 | R14 | 原始事实稳定、派生能力不反写 | T1-T3、T10 | 待开始 | 外键/不可变仓库测试与数据契约审查 |
-| R15 | 三页签、主从布局和响应式闭环 | T5-T8、T11-T12 | 待开始 | 布局契约 + 三视口 Playwright |
-| R26 | 单选可输入原因、自动新增、行内删除 | T1、T3、T7、T10-T12 | 待开始 | 原因事务/交互 E2E |
-| R27 | 未履约详细说明必填并保留换行 | T1、T3、T7-T8、T10-T12 | 待开始 | API/页面/历史展示测试 |
-| R28 | 路由、菜单、四功能码、默认角色授权 | T1、T4-T9、T10-T12 | 待开始 | seed/扫描/守卫/按钮权限测试 |
-| R29 | pageRegistry、LayoutHost、维护矩阵 | T5、T11-T12 | 待开始 | pageRegistry/layout contract |
-| R30 | 补录按履约日有效版本解析 | T1-T4、T7、T10、T12 | 待开始 | 激活事件边界测试 + E2E |
-| R31 | 专用轻量股票搜索 | T4、T7-T8、T10-T12 | 待开始 | 权限、上限、防抖、迟到请求测试 |
-| R32 | 页面设置保存、读取、消费、恢复默认 | T5、T8、T11-T12 | 待开始 | 偏好/组件/E2E |
-| R33 | 通用表格、分页、状态、抽屉复用 | T5、T8、T11-T12 | 待开始 | 组件依赖与布局契约审查 |
-| R34 | 加载、空、错误、无权限四态 | T5-T9、T11-T12 | 待开始 | 独立状态组件测试 + E2E |
-| R35 | 每主体至多一个规则草稿、乐观锁、放弃/发布 | T1、T2、T6、T10-T12 | 待开始 | 并发 409/事务/恢复 E2E |
-| R36 | 激活时间、下一真实交易日、双状态展示 | T1-T4、T6-T7、T10-T12 | 待开始 | 时间参数化 + 双状态 E2E |
+| R15 | 三页签、主从布局和响应式闭环 | T5-T8、T11、T13 | 待开始 | 布局契约 + 三视口 Playwright |
+| R26 | 单选可输入原因、自动新增、行内删除 | T1、T3、T7、T10-T13 | 待开始 | 原因事务/交互 E2E |
+| R27 | 未履约详细说明必填并保留换行 | T1、T3、T7-T8、T10-T13 | 待开始 | API/页面/历史展示测试 |
+| R28 | 路由、菜单、四功能码、默认角色授权 | T1、T4-T9、T10-T13 | 待开始 | seed/扫描/守卫/按钮权限测试 |
+| R29 | pageRegistry、LayoutHost、维护矩阵 | T5、T11、T13 | 待开始 | pageRegistry/layout contract |
+| R30 | 补录按履约日有效版本解析 | T1-T4、T7、T10、T12-T13 | 待开始 | 激活事件边界测试 + E2E |
+| R31 | 专用轻量股票搜索 | T4、T7-T8、T10-T13 | 待开始 | 权限、上限、防抖、迟到请求测试 |
+| R32 | 页面设置保存、读取、消费、恢复默认 | T5、T8、T11、T13 | 待开始 | 偏好/组件/E2E |
+| R33 | 通用表格、分页、状态、抽屉复用 | T5、T8、T11、T13 | 待开始 | 组件依赖与布局契约审查 |
+| R34 | 加载、空、错误、无权限四态 | T5-T9、T11、T13 | 待开始 | 独立状态组件测试 + E2E |
+| R35 | 每主体至多一个规则草稿、乐观锁、放弃/发布 | T1、T2、T6、T10-T13 | 待开始 | 并发 409/事务/恢复 E2E |
+| R36 | 激活时间、下一真实交易日、双状态展示 | T1-T4、T6-T7、T10-T13 | 待开始 | 时间参数化 + 双状态 E2E |
 
 ### 3.2 可选增强
 
 | 需求编号 | 增强内容 | 需求阶段处理状态 | 开发状态 | 对应任务 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| R16 | 复制规则 | 本次纳入 | 待开始 | T2、T6、T10-T12 | 副本为无版本号的新主体草稿，可选复制正式版或草稿内容 |
-| R17 | 页面离开前未保存提醒 | 本次纳入 | 待开始 | T5-T8、T11-T12 | 打卡无服务端草稿；规则可保存工作草稿 |
+| R16 | 复制规则 | 本次纳入 | 待开始 | T2、T6、T10-T13 | 副本为无版本号的新主体草稿，可选复制正式版或草稿内容 |
+| R17 | 页面离开前未保存提醒 | 本次纳入 | 待开始 | T5-T8、T11、T13 | 应用壳先决策再改变标签/缓存；打卡二选、规则三选，浏览器刷新使用原生提示 |
 | R18 | 打卡服务端自动保存草稿 | 后续建议 | 跳过 | - | 创建、过期、冲突与清理策略未进入本期，且 D9 明确本期不建 |
 | R19 | 账户每日快照与入金/出金流水 | 后续建议 | 跳过 | - | 待收益曲线需求启动后独立设计，避免误称本期数据足以算完整收益 |
 | R20 | AI/规则引擎评估实体与生成链路 | 后续建议 | 跳过 | - | 本期仅提供稳定关联键和不可变事实，不接模型或判断器 |
@@ -91,22 +94,23 @@
 - DuckDB 只读两类参考事实：`stock_basic` 用于 R31，`trade_calendar` 用于下一真实交易日；PG 与 DuckDB 分开查询后在服务层组合，禁止跨库 JOIN。
 - 页面通过 `frontend/src/api/tradeDiscipline.ts` 访问统一契约；`useTradeDisciplineSummary.ts` 提供页面与 `App.vue` 共享的按需摘要刷新/失效，不做轮询。
 - 同一规则草稿按 `draft_revision` 乐观锁；打卡修正按当前 `revision_no` 乐观锁；冲突统一返回 HTTP 409 和机器可识别错误码，前端保留输入。
+- 新增应用级 `useUnsavedChangesGuard.ts`：以现有 workspace tab key 为索引暴露 `registerUnsavedHandler(tabKey, { isDirty, requestLeave })`（返回注销函数）、`confirmLeave(tabKey, reason)`、`confirmAll(reason)`；`reason` 区分 route/tab-close/tab-evict/logout/context-change。router、`WorkspaceTabs`、标签容量淘汰和注销共享同一 async preflight，显式关闭通过一次性 permit 避免随后的 router guard 重复询问。preflight 返回允许后，才调用 `removeWorkspaceTab`/释放 KeepAlive；非当前缓存页也能被询问。打卡决策为“放弃修改/继续编辑”，规则编辑为“保存草稿/放弃修改/继续编辑”，保存失败保持当前标签和现场。`beforeunload` 受浏览器限制只使用原生确认，不能伪造三按钮；用户留下后再在页内保存草稿。
 
 ### 4.2 数据模型
 
 | 表/约束 | 关键设计 |
 | --- | --- |
-| `trade_discipline_rule` | 主体状态、最新正式版本指针、时间、软删除；复合主键含归属 |
+| `trade_discipline_rule` | 主体状态、最新正式版本指针、`next_activation_seq`、时间、软删除；复合主键含归属；生命周期写入在主体行锁内原子递增序号 |
 | `trade_discipline_rule_name_claim` | 以 `(tenant_id, owner_user_id, normalized_name)` 唯一占用正式名/草稿拟用名；解决跨 `rule`/`draft` 表并发重名，发布时原子换名，归档仍占名 |
 | `trade_discipline_rule_draft` + 两类 draft 明细 | 每主体唯一草稿、修订号、来源版本；保存启用态、顺序与原始换行 |
 | `trade_discipline_rule_version` + 两类正式明细 | `(归属, rule_id, version_no)` 唯一；正式行不可更新；启用明细顺序唯一且类型受 CHECK 约束 |
-| `trade_discipline_rule_activation` | `publish/archive/restore` 不可变事件，保留 `occurred_at`、`activated_at`、`effective_from_trade_date` 与版本引用 |
+| `trade_discipline_rule_activation` | `publish/archive/restore` 不可变事件，保留稳定事件 ID、每主体单调 `event_seq`、`occurred_at`、`activated_at`、`effective_from_trade_date` 与版本引用；`(归属, rule_id, event_seq)` 唯一 |
 | `trade_discipline_checkin` | `(归属, rule_id, trade_date)` 唯一，保存当前修订指针 |
 | `trade_discipline_checkin_revision` | 规则版本、自评、无操作、详细说明、复盘说明、首次/修正时间；不可变 |
 | `trade_discipline_reason`、`trade_discipline_violation` | 个人原因软删除；修订保存原因码/引用和名称快照，每个 breached 修订恰好一条 |
 | `trade_discipline_operation` | 每修订多条、稳定顺序、股票名快照、方向、两个具体规则引用及可空财务字段；复合外键锁定同一规则版本 |
 
-金额使用 `NUMERIC` 定点数；交易日用 `DATE`；服务端事件时间用 `TIMESTAMPTZ`。索引覆盖归属下规则列表、激活事件解析、历史日期倒序、股票/原因筛选和修订详情。正文只按普通文本序列化，不渲染 HTML。
+金额使用 `NUMERIC` 定点数；交易日用 `DATE`；服务端事件时间用 `TIMESTAMPTZ`。生命周期事务先以 `(tenant_id, owner_user_id, rule_id) FOR UPDATE` 锁主体，再通过 `next_activation_seq + 1` 分配序号，并用锁后 `clock_timestamp()` 生成事件时间；主体计数器与事件同事务提交，回滚不得留下事件或提前推进已提交序号。有效状态只按 `(effective_from_trade_date, event_seq)` 全序解析，时间戳不参与胜负，因此等时间戳、长事务或并发提交仍有唯一结果。索引覆盖该全序、归属下规则列表、历史日期倒序、股票/原因筛选和修订详情。正文只按普通文本序列化，不渲染 HTML。
 
 ### 4.3 接口与权限契约
 
@@ -116,7 +120,7 @@
 | --- | --- | --- | --- |
 | 摘要 | `GET /api/trade-discipline/summary` | `view` + `checkin-view` | 日历为空返回可区分错误，不泄露正文 |
 | 规则读写 | `GET/POST /rules`、`GET /rules/{ref}`、`PUT/DELETE /rules/{ref}/draft` | 读用 `view`，维护用 `rule-manage` | 名称/草稿冲突 409；输入保留 |
-| 生命周期 | `POST /rules/{ref}/publish|archive|restore|copy`、`DELETE /rules/{ref}` | `rule-manage` | 发布/事件/指针/草稿删除同事务；日历缺失不提交 |
+| 生命周期 | `POST /rules/{ref}/publish\|archive\|restore\|copy`、`DELETE /rules/{ref}` | `rule-manage` | 发布/事件/指针/草稿删除同事务；日历缺失不提交 |
 | 打卡 | `GET /checkins/current`、`POST /checkins`、`POST /checkins/{ref}/amendments` | 读 `checkin-view`，写 `checkin-submit` | 修订及明细同事务；版本/修订冲突 409 |
 | 历史 | `GET /checkins`、`GET /checkins/{ref}/revisions/{no}` | `checkin-view` | 服务端筛选、排序、分页；归属不匹配不泄露存在性 |
 | 原因 | `GET /reasons`、`DELETE /reasons/{ref}` | 读 `checkin-view`，删 `checkin-submit` | 自定义原因随打卡事务新增；删除为软删除 |
@@ -128,12 +132,13 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 ### 4.4 页面 P1：交易纪律工作台
 
 - 原型文件：`prototypes/trading-discipline-workbench.html`。
-- 页面结构：`workbench` 外层三页签；今日打卡与规则管理共用 feature-scoped 左侧规则轨道 + 右侧工作区；历史为列表；页头动作区与标题顶部对齐。
-- 滚动：`LayoutHost` 管页面主区；主从区在 1100px 提前变为上下结构；表单不横向滚动，只有历史表格内部横向滚动；详情抽屉正文内滚。
+- 页面结构：`workbench` 外层三页签；pageRegistry 登记 `workspaceTabs`（`tabs`）为唯一 `growMain`，下挂 `checkinPanel`、`rulesPanel`、`historyPanel` 三个互斥业务面板；今日打卡与规则管理共用 feature-scoped 左侧规则轨道 + 右侧工作区；页头动作区与标题顶部对齐。
+- 页签配置：`workspaceTabs` 只表达结构，不登记 `componentMeta.tabs`、不消费 `defaultActive`、不写 page/user 配置；页面会话默认 `checkin`，URL `tab` 只恢复当前访问。三个面板是真实消费者，切换前先执行 R17 preflight。
+- 滚动：`workspaceTabs` 承担主成长和面板切换；当前面板内部承接滚动。主从区在 1100px 提前变为上下结构；表单不横向滚动，只有历史表格内部横向滚动；详情抽屉正文内滚。
 
 | 页面功能点/原型区域 | 对应需求 | 技术实现 | 组件/模块 | 数据、状态与异常 | 任务 |
 | --- | --- | --- | --- | --- | --- |
-| 页头、最新交易日、三页签、页面设置 | R15、R29、R32、R34 | registry slots：`toolbar/body/history/settings`；tab 为会话态 | `LayoutHost`、`PageSettingsTrigger/Drawer` | 初载四态互斥；设置失败保留当前内容 | T5 |
+| 页头、最新交易日、三页签、页面设置 | R15、R17、R29、R32、R34 | registry slots：`toolbar` + `workspaceTabs(tabs,growMain)` + 三个嵌套 panel + `historyDetail/settings` overlays；tab 为会话态 | `LayoutHost`、`PageSettingsTrigger/Drawer` | 初载四态互斥；切 tab 先走未保存协议；设置失败保留当前内容 | T5 |
 | 今日规则状态轨道 | R4、R15、R30、R36 | 按目标交易日解析有效版本和待打卡状态，不按管理状态猜测 | `RuleMasterList`（feature 共享） | 摘要局部加载/错误/重试；无规则引导新建 | T5、T7 |
 | 履约日期与自评/无操作 | R4、R5、R10、R17 | 复用交易日能力并扩展可观察加载错误；上下文切换走脏确认 | `TradeDatePicker`、`PageSegmented` | 无日历/无有效版本阻止提交；切无操作二次确认清行 | T7 |
 | 未履约原因与详细说明 | R26、R27 | `el-select` filterable/allow-create 单选；个人行带删除；独立 textarea | `ViolationReasonCombobox` | 内置不可删；当前项删除后清空；失败保留输入 | T7 |
@@ -145,7 +150,23 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 | 复制、归档、恢复、删除 | R1、R16、R35、R36 | 命令按钮权限化；复制草稿/正式版先选择；待生效双状态 | 规则命令区、`ElMessageBox` | 归档前处理草稿；日历缺失/冲突不改变原状态 | T6 |
 | 历史筛选和表格 | R9-R11、R31-R34 | 输入/改选自动查询并重置第 1 页；仅保留重置 | `AppSearchInput`、`AppDataTable`、`AppPagination` | 保留筛选；局部 loading/empty/error/permission | T8 |
 | 修订详情与发起修正 | R9、R17、R27、R33 | 页面内 `PageDrawer` 展示任意修订并跳转打卡页加载修正 | `PageDrawer` | 原始换行和两个规则快照完整展示；加载失败可重试 | T8 |
-| 响应式与低高度 | R15、R34 | 1100×620 上下主从；1366/1440 双栏；无固定视口高度 | 页面样式/token | 无整页横向溢出、动作始终可达 | T5-T8、T12 |
+| 响应式与低高度 | R15、R34 | 1100×620 上下主从；1366/1440 双栏；无固定视口高度 | 页面样式/token | 无整页横向溢出、动作始终可达 | T5-T8、T13 |
+
+逐区域数据/API 与事件流：
+
+| 原型/页面区域 | 调用契约（关键输入 → 输出） | 刷新与联动 |
+| --- | --- | --- |
+| 页头/日期 | `GET /api/data/trade-dates` → `min/max/dates`；`GET /api/layout/effective/trade-discipline` → effective layout | 首次进入并行加载；日历失败只接管日期相关区域并禁止提交 |
+| 今日规则轨道 | `GET /api/trade-discipline/summary?trade_date=` → 目标日规则、有效 vN、管理待生效动作、打卡状态/计数 | 日期变化、提交/修正、规则生命周期成功后刷新；同步全局摘要缓存 |
+| 打卡表单读取 | `GET /api/trade-discipline/checkins/current?rule_ref=&trade_date=` → 绑定版本、启用选股/买卖明细、当前修订和表单事实 | 规则/日期切换前 R17 preflight；无记录返回可补录模型，无有效版本返回阻断原因 |
+| 原因下拉 | `GET /api/trade-discipline/reasons` → 内置+本人个人原因；`DELETE /reasons/{ref}` | 删除成功移除候选；当前选中项被删则清空；提交自定义文本由打卡响应返回新 reason_ref 并并入候选 |
+| 操作股票搜索 | `GET /api/trade-discipline/stock-options?q=&limit=20` → code/name/board/industry | 300ms 防抖、取消迟到请求；只更新当前操作行候选，不清其他输入 |
+| 打卡提交/修正 | `POST /checkins` 或 `POST /checkins/{ref}/amendments`，输入 expected revision、用户自评、原因文本/引用、说明和操作 → 新 revision | 成功清脏并刷新 current、summary、history 和全局卡；409 保留表单并提示读取最新修订 |
+| 规则列表/详情 | `GET /rules?status=&q=` → 主体/双状态/草稿提示；`GET /rules/{ref}` → 正式版本、工作草稿、明细和 draft_revision | 切规则前 R17 preflight；列表失败不清右侧；生命周期成功刷新列表、详情、summary |
+| 规则草稿 | `POST /rules` 创建主体+草稿；`PUT /rules/{ref}/draft` 输入 expected draft_revision；`DELETE /rules/{ref}/draft` | 保存成功更新基线并清未保存态；放弃草稿恢复正式版；409 保留前端输入 |
+| 规则生命周期 | `POST /rules/{ref}/publish\|archive\|restore\|copy`、`DELETE /rules/{ref}` → 主体状态、当前有效状态、待生效日、版本/草稿信息 | 成功刷新规则列表/详情/今日轨道/全局摘要；失败不提前改本地状态 |
+| 历史筛选/分页 | `GET /checkins?date_from=&date_to=&rule_ref=&result=&has_operation=&stock_q=&reason_q=&amended=&page=&size=` → total/list | 任一筛选改动重置 page=1；分页只换页；修正成功保留条件重查当前页 |
+| 修订详情 | `GET /checkins/{ref}/revisions/{no}` → 规则版本快照、原因/说明、操作及两个规则关联 | 切 revision 只刷新抽屉正文；发起修正关闭抽屉并以 ref/revision 加载打卡面板 |
 
 逐项权限与验证补充：
 
@@ -178,39 +199,54 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 
 逐项验证：头像点和卡片展示要求 `view + checkin-view`，快捷按钮再要求 `checkin-submit`；分别使用全权限、仅查看、缺少 checkin-view、缺少 submit 和无角色账号验证。Playwright 逐项断言抽屉加载/空/完成/待办/错误/无权状态、查询参数跳转、确认内容、重复提交幂等、冲突转正式页以及失败后可重试。
 
+P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipline/summary`，输入默认最新数据交易日，输出完成/待办计数与规则行；“去打卡/管理规则”只生成 `/trade-discipline?tab=&rule_ref=&trade_date=` 会话 URL；快捷确认调用 `POST /api/trade-discipline/checkins/quick-no-operation`，只传 `rule_ref + trade_date`，成功后刷新共享 summary 并通知已打开工作台刷新 current/history，409/已有记录则保留抽屉并跳正式表单。
+
 ### 4.6 组件资产与配置闭环
 
 | 页面/区域 | 运行时组件 | 布局/配置种类 | 注册与字段 | 规范更新 | 真实消费与验证 | 任务 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 工作台壳 | 复用 `LayoutHost`、`AppStateBlock` | 复用 workbench/toolbar/section/settings-drawer | 新增 pageRegistry 页面；复用 `density` | 同步 DESIGN marker | 页面读取 effective layout 并渲染设置入口 | T5、T11 |
+| 工作台壳 | 复用 `LayoutHost`、`AppStateBlock` | 复用 workbench/toolbar/tabs/section/settings-drawer | 新增 pageRegistry 页面；`workspaceTabs` 是唯一 `growMain`；复用 `density`，明确不消费 tabs.defaultActive | 同步 DESIGN marker | 页面真实渲染三页签/三 panel，页签只存会话态 | T5、T11 |
 | 历史列表 | 复用表格、列、分页、搜索 | 复用 data-table | `history` 消费 `pageSize`、`border` | 不新增字段定义 | 保存、重载、分页真实应用，非法值回退 20 | T5、T8、T11 |
 | 修订详情 | 复用 `PageDrawer` | overlay detail | registry overlay，不新增 kind | 否，已有清单 | 页面边界、正文内滚、关闭与修正跳转 | T8、T11 |
 | 规则轨道/操作编辑/原因下拉 | 新增 feature-scoped 组件并在两个页签消除重复 | 不登记系统组件种类 | 不新增通用组件配置字段 | 不进入全局组件清单；仅本业务内部复用 | View/组件测试覆盖事件与状态契约 | T6-T8、T11 |
-| 用户快捷卡 | 新增业务组件，由现有 `App.vue` 全局抽屉消费 | 不涉及页面布局种类 | 不写页面偏好 | 不改变全局抽屉组件边界 | App 组件测试与任意页面 E2E | T9、T11-T12 |
+| 用户快捷卡 | 新增业务组件，由现有 `App.vue` 全局抽屉消费 | 不涉及页面布局种类 | 不写页面偏好 | 不改变全局抽屉组件边界 | App 组件测试与任意页面 E2E | T9、T11、T13 |
 
-本期不新增布局原型、系统组件 kind、`COMPONENT_FIELD_DEFS` 字段或后端布局字段规则；规则编辑宽度/高度绝不进入配置或 `user_preference`。
+本期不新增布局原型、系统组件 kind、`COMPONENT_FIELD_DEFS` 字段或后端布局字段规则；`tabs` 是现有种类，仅登记结构而不开放长期默认页签设置；规则编辑宽度/高度绝不进入配置或 `user_preference`。
+
+### 4.7 RBAC 正向迁移与确定性回滚契约
+
+- 稳定常量：marker key 为 `migration.trade_discipline_default_grants_v1`，事务 advisory lock 为 `8410010005`；Python 和 SQL 留痕必须引用同一常量，不另写近似版本。
+- 稳定 seed 身份：菜单 `id=code=route_path='/trade-discipline'`、`title='交易纪律'`、`type='leaf'`、`visible='login'`；四个资源均 `id=code` 且 `menu_id='/trade-discipline'`，代表 method/path 固定为 `trade-discipline:view → GET /api/trade-discipline/summary`、`trade-discipline:rule-manage → POST /api/trade-discipline/rules`、`trade-discipline:checkin-view → GET /api/trade-discipline/checkins`、`trade-discipline:checkin-submit → POST /api/trade-discipline/checkins`。同一功能码可守卫该接口组其他端点，路由扫描以每个实际端点的守卫为准。
+- seed 顺序：`seed_rbac()` 先确保内置角色存在，再调用专用 `_seed_trade_discipline_rbac()`；通用 `_SEED_MENU_TREE/_SEED_RESOURCES` 循环对 `/trade-discipline` 和四个资源码跳过，由专用状态机唯一写入，避免 tombstone 后被通用 seed 复活。
+- marker 状态：缺失才允许正向；合法 applied 重启 no-op 并核验目标行仍与契约一致；合法 rolled_back/tombstone 永久 no-op；JSON 损坏、版本未知或 applied/rolled_back 冲突均为 invalid 并抛错，禁止补菜单、资源或授权。
+- 正向冲突：marker 缺失但 `sys_menu.id`、`code` 或 `route_path` 任一命中 `/trade-discipline`，或 `sys_resource.id/code` 任一命中上述四个固定功能码时，均视为身份占用并使整事务 fail-closed；不因字段恰好相同就收编旧行，不覆盖、不改名、不授予角色权限，由运维先判定冲突来源。
+- applied JSON 固定为 `{"version":1,"applied":true,"rolled_back":false,"inserted_menu_ids":[...],"inserted_resource_ids":[...],"inserted_role_menus":[[role_id,menu_id],...],"inserted_role_resources":[[role_id,resource_id],...]}`；数组只记录本事务 `RETURNING` 的实际新增行。
+- 正向事务：取得 lock，校验状态/冲突，插入一级 leaf 菜单和四资源，给 normal/tenant_admin 插入菜单与四资源授权，写 applied marker，并对这两个角色成员及全部 system 用户同事务 `perm_ver + 1`；提交后 best-effort 清权限缓存。
+- 回滚事务：`_rollback_trade_discipline_rbac()` 与 SQL 回滚段取得同一 lock，只接受合法 applied；按 marker 账本删除本次角色资源/菜单授权，再删本次资源和菜单，bump 同一受影响用户，最后把 marker 改为保留原账本的 `{"version":1,"applied":false,"rolled_back":true,...}` tombstone。marker 缺失/invalid 拒绝破坏性回滚，tombstone 重复回滚 no-op。
+- 上线回滚顺序：先回滚前端 `dist`（移除静态路由，避免 system 直达失效页），在本版本后端代码和 SQL 工件仍可用时执行 `python -m backend.cli trade-discipline-rbac rollback --confirm-marker migration.trade_discipline_default_grants_v1` 完成 RBAC 回滚并核验 tombstone，最后才回滚后端 API；CLI 非零退出、tombstone 不正确或目标菜单/资源仍存在时必须停止，禁止继续切换后端版本。不得只“隐藏菜单”或只撤角色授权；后端回滚并重启后必须断言菜单、资源和授权均未复活。
+- 显式重新启用：只能由运维确认后删除 tombstone，再重新执行正向迁移；普通应用重启不得自动重新启用。
 
 ## 5. 需求与开发内容映射和开发状态
 
 | 范围类别 | 需求编号 | 计划开发内容 | 对应任务 | 状态 | 偏差判断 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 必须实现 | R1 | 规则主体、明细、生命周期与页面管理 | T1、T2、T6、T10-T12 | 待开始 | 一致 | 含名称唯一、启用态、顺序、换行 |
+| 必须实现 | R1 | 规则主体、明细、生命周期与页面管理 | T1、T2、T6、T10-T13 | 待开始 | 一致 | 含名称唯一、启用态、顺序、换行 |
 | 必须实现 | R2 | 前后端定点资金校验 | T2、T6、T10-T11 | 待开始 | 一致 | 仅启用选股项参与 |
-| 必须实现 | R3 | 不可变正式版本与连续版本号 | T1、T2、T10 | 待开始 | 一致 | 无实质变化不发新版 |
+| 必须实现 | R3 | 不可变正式版本与连续版本号 | T1、T2、T6、T10 | 待开始 | 一致 | 无实质变化不发新版 |
 | 必须实现 | R4 | 规则日唯一打卡身份 | T1、T3、T7、T10 | 待开始 | 一致 | 修正不新增平行记录 |
-| 必须实现 | R5 | 四种组合 | T3、T7、T10、T12 | 待开始 | 一致 | 全部正式提交 |
-| 必须实现 | R6 | 多操作与股票关联 | T3、T4、T7 | 待开始 | 一致 | 同股不去重 |
-| 必须实现 | R7 | 两个具体规则单选关联 | T3、T7、T10-T12 | 待开始 | 一致 | 0/1/多候选闭环 |
-| 必须实现 | R8 | 可选成交字段和完整度 | T1、T3、T7 | 待开始 | 一致 | 不伪造收益精度 |
-| 必须实现 | R9 | 历史、详情、修正 | T1、T3、T8、T10-T12 | 待开始 | 一致 | 旧修订不可变 |
-| 必须实现 | R10 | 真实交易日 | T3-T5、T7、T10-T12 | 待开始 | 一致 | 日历失败时禁止打卡 |
-| 必须实现 | R11 | 私人归属 | T1-T4、T10 | 待开始 | 一致 | 管理员也不扩大范围 |
-| 必须实现 | R12 | 全局摘要与跳转 | T4、T9、T11-T12 | 待开始 | 一致 | 复用现有抽屉 |
-| 必须实现 | R13 | 快捷无操作履约 | T3、T4、T9、T10-T12 | 待开始 | 一致 | 服务端固定语义 |
+| 必须实现 | R5 | 四种组合 | T3、T7、T10、T12-T13 | 待开始 | 一致 | 全部正式提交 |
+| 必须实现 | R6 | 多操作与股票关联 | T3、T4、T7、T10-T13 | 待开始 | 一致 | 同股不去重 |
+| 必须实现 | R7 | 两个具体规则单选关联 | T3、T7、T10-T13 | 待开始 | 一致 | 0/1/多候选闭环 |
+| 必须实现 | R8 | 可选成交字段和完整度 | T1、T3、T7、T10-T11 | 待开始 | 一致 | 不伪造收益精度 |
+| 必须实现 | R9 | 历史、详情、修正 | T1、T3、T8、T10-T13 | 待开始 | 一致 | 旧修订不可变 |
+| 必须实现 | R10 | 真实交易日 | T3-T5、T7、T10-T13 | 待开始 | 一致 | 日历失败时禁止打卡 |
+| 必须实现 | R11 | 私人归属 | T1-T4、T8、T10、T12-T13 | 待开始 | 一致 | 管理员也不扩大范围 |
+| 必须实现 | R12 | 全局摘要与跳转 | T4、T9、T11、T13 | 待开始 | 一致 | 复用现有抽屉 |
+| 必须实现 | R13 | 快捷无操作履约 | T3、T4、T9、T10-T13 | 待开始 | 一致 | 服务端固定语义 |
 | 必须实现 | R14 | 原始事实/派生边界 | T1-T3、T10 | 待开始 | 一致 | 不创建 AI 调用链 |
-| 必须实现 | R15 | 工作台主从与三页签 | T5-T8、T12 | 待开始 | 一致 | 规则编辑不用抽屉 |
-| 可选增强 | R16 | 复制正式版或草稿为新未发布主体 | T2、T6、T10-T12 | 待开始 | 一致 | 本次纳入 |
-| 可选增强 | R17 | 打卡/规则未保存保护 | T5-T8、T11-T12 | 待开始 | 一致 | 本次纳入 |
+| 必须实现 | R15 | 工作台主从与三页签 | T5-T8、T11、T13 | 待开始 | 一致 | 规则编辑不用抽屉 |
+| 可选增强 | R16 | 复制正式版或草稿为新未发布主体 | T2、T6、T10-T13 | 待开始 | 一致 | 本次纳入 |
+| 可选增强 | R17 | 应用级未保存协议覆盖路由、工作标签、浏览器和业务上下文 | T5-T8、T11、T13 | 待开始 | 一致 | 先决策后删除标签/缓存；打卡二选、规则三选 |
 | 可选增强 | R18 | 暂不纳入 | - | 跳过 | 未覆盖 | D9 明确无服务端打卡草稿 |
 | 可选增强 | R19 | 暂不纳入 | - | 跳过 | 未覆盖 | 收益域另立需求 |
 | 可选增强 | R20 | 暂不纳入 | - | 跳过 | 未覆盖 | AI/规则引擎另立需求 |
@@ -219,17 +255,17 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 | 暂不实现 | R23 | 不开发图表 | - | 跳过 | 未覆盖 | 数据成熟后另做 |
 | 暂不实现 | R24 | 不接券商 | - | 跳过 | 未覆盖 | 外部授权未确认 |
 | 暂不实现 | R25 | 不公开/分享/监督 | - | 跳过 | 未覆盖 | 私人资产范围 |
-| 必须实现 | R26 | 单选可输入原因与行内删除 | T1、T3、T7、T10-T12 | 待开始 | 一致 | 新原因随打卡事务新增 |
-| 必须实现 | R27 | 独立详细说明 | T1、T3、T7-T8 | 待开始 | 一致 | 必填且保留换行 |
-| 必须实现 | R28 | 路由/RBAC/默认角色闭环 | T1、T4-T9、T10-T12 | 待开始 | 一致 | 存量授权可回滚 |
-| 必须实现 | R29 | 页面登记与 LayoutHost | T5、T11-T12 | 待开始 | 一致 | 同步维护矩阵 |
-| 必须实现 | R30 | 历史日有效版本解析 | T1-T4、T7、T10-T12 | 待开始 | 一致 | 草稿/未生效/归档不可绑定 |
-| 必须实现 | R31 | 轻量股票端点 | T4、T7-T8、T10-T12 | 待开始 | 一致 | 不扩大 stocks:view |
-| 必须实现 | R32 | 设置闭环 | T5、T8、T11-T12 | 待开始 | 一致 | 密度 + 历史分页真实消费 |
-| 必须实现 | R33 | 通用组件复用 | T5、T8、T11-T12 | 待开始 | 一致 | 无页面私有表格/抽屉体系 |
-| 必须实现 | R34 | 四态 | T5-T9、T11-T12 | 待开始 | 一致 | permission 为 error 变体 |
-| 必须实现 | R35 | 工作草稿生命周期 | T1、T2、T6、T10-T12 | 待开始 | 一致 | 正式版继续履约 |
-| 必须实现 | R36 | 下一交易日生效与双状态 | T1-T4、T6-T7、T10-T12 | 待开始 | 一致 | 发布/归档/恢复均覆盖 |
+| 必须实现 | R26 | 单选可输入原因与行内删除 | T1、T3、T7、T10-T13 | 待开始 | 一致 | 新原因随打卡事务新增 |
+| 必须实现 | R27 | 独立详细说明 | T1、T3、T7-T8、T10-T13 | 待开始 | 一致 | 必填且保留换行 |
+| 必须实现 | R28 | 路由/RBAC/默认角色闭环 | T1、T4-T9、T10-T13 | 待开始 | 一致 | 存量授权可回滚 |
+| 必须实现 | R29 | 页面登记与 LayoutHost | T5、T11、T13 | 待开始 | 一致 | 同步维护矩阵 |
+| 必须实现 | R30 | 历史日有效版本解析 | T1-T4、T7、T10、T12-T13 | 待开始 | 一致 | 草稿/未生效/归档不可绑定 |
+| 必须实现 | R31 | 轻量股票端点 | T4、T7-T8、T10-T13 | 待开始 | 一致 | 不扩大 stocks:view |
+| 必须实现 | R32 | 设置闭环 | T5、T8、T11、T13 | 待开始 | 一致 | 密度 + 历史分页真实消费 |
+| 必须实现 | R33 | 通用组件复用 | T5、T8、T11、T13 | 待开始 | 一致 | 无页面私有表格/抽屉体系 |
+| 必须实现 | R34 | 四态 | T5-T9、T11、T13 | 待开始 | 一致 | permission 为 error 变体 |
+| 必须实现 | R35 | 工作草稿生命周期 | T1、T2、T6、T10-T13 | 待开始 | 一致 | 正式版继续履约 |
+| 必须实现 | R36 | 下一交易日生效与双状态 | T1-T4、T6-T7、T10-T13 | 待开始 | 一致 | 发布/归档/恢复均覆盖 |
 
 ## 6. 详细实施步骤与进度追踪
 
@@ -237,13 +273,13 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 
 - 状态：待开始
 - 依赖：无。
-- 涉及文件：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`agent-works/trading-discipline-checkin/trading-discipline-schema.sql`。
+- 涉及文件：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/cli.py`、`agent-works/trading-discipline-checkin/trading-discipline-schema.sql`。
 - 目标：落地第 4.2 节实体、复合外键/CHECK/唯一索引，并完成菜单、四资源码、新库默认授权和存量 normal/tenant_admin 回填。
-- 操作：新增 DDL/ASSET_PK/索引；seed 一级菜单 `/trade-discipline`；新增 marker 化授权迁移，记录实际插入的菜单和资源授权并同事务 bump `perm_ver`。
+- 操作：新增 DDL/ASSET_PK/索引；生命周期表加入 `event_seq` 且主体加入 `next_activation_seq`；seed 一级菜单 `/trade-discipline`；实现 `_seed_trade_discipline_rbac` 与 `_rollback_trade_discipline_rbac` 的 marker 状态机，记录实际插入行并同事务 bump `perm_ver`；新增受控 CLI `python -m backend.cli trade-discipline-rbac rollback --confirm-marker migration.trade_discipline_default_grants_v1`，确认值不完全匹配即拒绝，成功时输出 marker/删除计数供发布流程核验。
 - 产出：可重复启动的 schema/seed 与等价人工复核 SQL（含确定性回滚）。
 - 影响范围：PG public schema、RBAC 默认角色；不改 DuckDB 数据。
-- 边界与异常：表间 FK 全带归属；不覆盖自定义角色；已存在 marker 整体 no-op；禁止浮点金额。
-- 验证方式：DDL/CHECK/FK/索引测试、seed 幂等、存量授权与回滚测试。
+- 边界与异常：表间 FK 全带归属；不覆盖自定义角色；marker 非法、编码/路由冲突或未知状态全部 fail-closed；tombstone 下任何启动 seed 均不得复活菜单/资源/授权；禁止浮点金额。
+- 验证方式：DDL/CHECK/FK/索引测试、seed 幂等、冲突原子回滚、marker 四态、正向/回滚后重启测试。
 - 完成标准：新库和既有库均得到正确表/菜单/资源；无角色仍 fail-closed。
 - 实际落地情况：待实施。
 
@@ -253,11 +289,11 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 - 依赖：T1。
 - 涉及文件：新增 `backend/storage/trade_discipline_repository.py`、`backend/services/trade_discipline_service.py`。
 - 目标：实现 R1-R3、R11、R14、R16、R35、R36 的名称占用、草稿、发布、归档、恢复、复制和有效版本解析。
-- 操作：事务锁主体；规范化名称；保存草稿覆盖并递增修订；发布比对实质变化；查询 DuckDB 下一开市日；写不可变事件；同生效日取最晚事件；复制不带历史。
+- 操作：事务锁主体；规范化名称；保存草稿覆盖并递增修订；发布比对实质变化；查询 DuckDB 下一开市日；锁内递增 `next_activation_seq` 并用 `clock_timestamp()` 写不可变事件；严格按 `(effective_from_trade_date, event_seq)` 解析；复制不带历史。
 - 产出：可被 API 调用的规则领域方法和稳定 DTO。
 - 影响范围：规则相关 PG 表与只读交易日历。
 - 边界与异常：日历缺失、已归档、重名、草稿修订冲突、无实质变化、同日多动作均有确定结果。
-- 验证方式：仓库/服务参数化单测与事务失败注入。
+- 验证方式：仓库/服务参数化单测与事务失败注入；增加完全相同 `occurred_at`、长事务、并发发布/归档/恢复，以及序号分配事务回滚后无幽灵事件/无计数器误推进测试。
 - 完成标准：草稿与正式版本职责不混淆，任何生命周期动作均不倒灌。
 - 实际落地情况：待实施。
 
@@ -293,13 +329,13 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 
 - 状态：待开始
 - 依赖：T4。
-- 涉及文件：新增 `frontend/src/views/TradeDisciplineView.vue`、`frontend/src/api/tradeDiscipline.ts`；修改 router、pageRegistry、DESIGN marker；按需扩展 `useTradeDates` 的非破坏性状态暴露。
-- 目标：搭建三页签、LayoutHost slots、四态、权限只读态、设置抽屉和脏状态导航框架。
-- 操作：登记 `trade-discipline`；密度/历史 pageSize 配置默认、保存、读取、消费、重置与非法回退；query 参数仅恢复会话；页头 `flex-start`。
+- 涉及文件：新增 `frontend/src/views/TradeDisciplineView.vue`、`frontend/src/api/tradeDiscipline.ts`、`frontend/src/composables/useUnsavedChangesGuard.ts`；修改 router、`WorkspaceTabs.vue`、`useWorkspaceTabs.ts`、`WorkspaceRouteView.vue`、`App.vue`、pageRegistry、DESIGN marker；按需扩展 `useTradeDates` 的非破坏性状态暴露。
+- 目标：搭建三页签、LayoutHost slots、四态、权限只读态、设置抽屉和应用壳层未保存协议。
+- 操作：登记 `workspaceTabs` 现有 `tabs` kind 为唯一 `growMain`，三个业务 panel 为子 slot，明确不消费 `defaultActive`；密度/历史 pageSize 配置闭环；query 参数仅恢复会话；页头 `flex-start`。实现按 tab key 注册/注销处理器、单标签/全局 preflight 和一次性导航 permit；把 `addWorkspaceTab` 的容量淘汰与 `removeWorkspaceTab` 的显式关闭改成先 await 决策、后改变 tab/KeepAlive，路由切换和注销复用同一协议；全 dirty 无安全淘汰目标时阻止新导航。注册 `beforeunload` 原生保护。
 - 产出：可联调的页面骨架与 API 类型。
 - 影响范围：新增一级业务页和 DESIGN 页面索引；不新增配置字段。
-- 边界与异常：无权不伪装空态；交易日加载错误可观察且本页 fail-closed；旧页面行为不变。
-- 验证方式：router/pageRegistry/layout/config 单测。
+- 边界与异常：无权不伪装空态；交易日加载错误可观察且本页 fail-closed；保存草稿失败/用户继续编辑时标签、缓存和路由均不变；干净页面保持既有关闭行为。
+- 验证方式：router/pageRegistry/layout/config 单测；WorkspaceTabs 当前/非当前关闭、容量淘汰、注销和 beforeunload 协议测试。
 - 完成标准：页面通过布局机器契约且设置没有假消费。
 - 实际落地情况：待实施。
 
@@ -309,7 +345,7 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 - 依赖：T5、T2、T4。
 - 涉及文件：`TradeDisciplineView.vue`、新增 `views/trade-discipline/components/RuleMasterList.vue`、`TradeRuleEditor.vue` 等 feature 组件。
 - 目标：完整承接原型规则管理主从区和 R1-R3、R16-R17、R35-R36。
-- 操作：规则筛选/切换；明细增删启停排序；多行自动换行；资金实时汇总；草稿/发布/放弃/复制/归档/恢复/删除；双状态展示。
+- 操作：规则筛选/切换；明细增删启停排序；多行自动换行；资金实时汇总；草稿/发布/放弃/复制/归档/恢复/删除；双状态展示；向应用协议注册规则三选项处理器，只有保存成功或明确放弃才允许离开。
 - 产出：不使用编辑抽屉的规则管理闭环。
 - 影响范围：工作台规则页签与共享规则轨道。
 - 边界与异常：停用项不帮助发布；草稿冲突保留输入；待生效动作不提前替换今日版本。
@@ -323,7 +359,7 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 - 依赖：T5、T3、T4、T6 的规则轨道。
 - 涉及文件：新增 `TradeCheckinForm.vue`、`TradeOperationEditor.vue`、`ViolationReasonCombobox.vue`、`StockOptionSelect.vue`。
 - 目标：承接原型打卡区、四种组合、原因、操作、补录和修正入口。
-- 操作：上下文选择、候选 0/1/多处理、方向联动、远程搜索取消迟到请求、原因行内删除、脏确认、提交刷新联动。
+- 操作：上下文选择、候选 0/1/多处理、方向联动、远程搜索取消迟到请求、原因行内删除、提交刷新联动；向应用协议注册打卡二选项处理器，并复用于页签/规则/日期切换。
 - 产出：完整今日/历史补录表单。
 - 影响范围：今日打卡页签与共享摘要。
 - 边界与异常：局部加载失败保留已填内容；无有效版本阻止；409 不清表单。
@@ -378,8 +414,8 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 - 状态：待开始
 - 依赖：T5-T9。
 - 涉及文件：新增页面/feature 组件测试，更新 router/pageRegistry/App 相关测试。
-- 目标：覆盖配置消费、权限、四态、脏保护、原因单选、规则候选、双状态和摘要联动。
-- 操作：使用真实通用组件浅/实挂载组合；断言不直接使用 `el-table/el-drawer`；验证设置重载和恢复默认。
+- 目标：覆盖配置消费、权限、四态、应用级脏保护、原因单选、规则候选、双状态和摘要联动。
+- 操作：使用真实通用组件浅/实挂载组合；断言不直接使用 `el-table/el-drawer`；验证设置重载和恢复默认；模拟当前/非当前标签、路由、注销和容量淘汰，分别断言打卡二选与规则三选以及保存失败不丢缓存。
 - 产出：Vitest 与布局契约回归。
 - 影响范围：前端测试。
 - 边界与异常：不以临时中文正文或脆弱 CSS 层级作为长期选择器。
@@ -387,17 +423,39 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 - 完成标准：组件、路由、布局和 DESIGN 契约均通过。
 - 实际落地情况：待实施。
 
-### 6.12 任务 T12：Playwright、构建与发布验收
+### 6.12 任务 T12：交易纪律确定性 E2E 夹具与运行入口
 
 - 状态：待开始
-- 依赖：T10、T11。
-- 涉及文件：新增 `frontend/e2e/trade-discipline.spec.ts` 及必要的本地可清理夹具/helper；同步相关事实文档入口（仅真实变化）。
+- 依赖：T1-T4、T10。
+- 涉及文件：新增 `backend/devtools/e2e_trade_discipline.py`、`frontend/e2e/helpers/tradeDiscipline.ts`、`scripts/run-trade-discipline-e2e.sh`；修改 `start.sh`、`frontend/package.json`、`backend/devtools/rbac_test_users.py`、`agent-works/multi-tenant-rbac/test-users.md`、`agent-works/e2e-automation/guide.md`。
+- 目标：提供不依赖开发者真实数据、可重复 seed/cleanup、失败必清理的 PG + DuckDB 夹具，并固化权限账号和执行命令。
+- 操作：
+  - `./start.sh e2e-trade-discipline seed --expected-pg-fingerprint <64位十六进制>` 与 `./start.sh e2e-trade-discipline cleanup --expected-pg-fingerprint <64位十六进制>` 调用 Python 夹具，`--expected-pg-fingerprint` 对两个动作均为必填；缺失、格式非法或与夹具进程直连 PG 计算值不一致时，必须在任何 PG/DuckDB 写入前 fail-closed。`npm run test:e2e:trade-discipline` 调用聚焦脚本并自动管理该参数。
+  - 所有夹具物理写同时要求 `AI_STOCKS_ENV=dev|test|local`、`AI_STOCKS_E2E_WRITE=1` 和停服前从 `/api/health/e2e` 取得的 PG 指纹一致，任一不满足即 fail-closed；保存的指纹只存在聚焦脚本进程变量中，不写仓库或长期临时文件。
+  - 固定账号：`debug_normal` 验证默认全功能；新增 `debug_trade_discipline_view`（菜单 + view/checkin-view）验证只读；新增 `debug_trade_discipline_submit`（菜单 + view/checkin-view/checkin-submit、无 rule-manage、无 stocks:view）验证 R31；`debug_board_only` 验证无权；`debug_tenant_admin/debug_system` 验证默认角色。账号均由 `dev-users` 幂等校准，不写密码。
+  - PG 夹具归属固定 `debug_tenant + 对应 debug_* owner`，所有业务 ID 使用 `e2e_td_` 前缀，规则名使用 `E2E纪律-` 前缀；seed v1-v3、待生效 v4、发布/归档/恢复事件（含等时间戳不同 event_seq）、四种打卡、历史修订、自定义原因和多笔操作。
+  - DuckDB 只写 `9988*.SZ` 股票及一段专属固定交易日/行情；seed/cleanup 前停止后端以独占写锁，测试后端以正常读写模式启动。cleanup 只按专属代码、日期和 PG 归属+前缀逆 FK 顺序删除，不碰真实数据。
+  - 聚焦脚本先记录测试前后端状态，再取得指纹：若当前 `/api/health/e2e` 已返回合法值则直接保存；若后端未运行或未以 E2E 写模式启动，则受控停止现有后端（如有），以 `AI_STOCKS_ENV` + `AI_STOCKS_E2E_WRITE=1` 临时启动后端，等待健康后读取并校验 64 位指纹。只有成功保存指纹后才停止后端，并把同一值显式传给 cleanup、seed 和退出清理。
+  - 完整顺序固定为“记录原状态 → 确保 E2E 后端可用并获取指纹 → stop → cleanup/seed（均传 expected fingerprint）→ 以 `AI_STOCKS_E2E_LOGIN_BYPASS=1` 启动被测后端 → 再读 `/api/health/e2e` 并断言指纹未变化 → 三视口 `--workers=1` 运行”。EXIT trap 无论通过、失败或中断均先 stop，再以已保存指纹精确 cleanup，最后恢复原后端运行/停止状态；若尚未取得指纹则禁止尝试物理清理，不遗留写开关或登录豁免。
+  - 人工直接执行 seed/cleanup 时不自动猜测 PG：调用者必须先以相同本地配置和 E2E 写门控启动后端，从 `/api/health/e2e` 取得指纹，停止后端，再通过必填参数执行；夹具进程随后以 `pg_fingerprint(pg)` 常量时间比对。需要自动流程时只使用聚焦脚本，不复制一套隐式取值逻辑。
+- 产出：确定性数据构造器、TS fail-fast helper、固定测试账号、`start.sh`/npm 命令和同步后的 E2E 事实文档。
+- 影响范围：仅本地 dev/test/local PG 与 DuckDB 专属前缀数据；生产/共享环境拒绝运行。
+- 边界与异常：重复 seed 先用同一已验证指纹精确 cleanup；部分 seed 失败由事务回滚；cleanup 可幂等重复；取得指纹后若 `.env.local`/PG 目标发生变化，后续直连比对或重启后的健康复核必须拒绝写入/测试；PG/DuckDB 任一清理失败使脚本非零退出并明确列出残留，不静默恢复成功状态。
+- 验证方式：夹具单测、seed→查询计数→cleanup→零残留、重复 seed/cleanup、缺少/非法/错误/停服前后变化的 PG 指纹、后端原本运行/未运行、后端持锁拒绝和 trap 状态恢复测试。
+- 完成标准：T13 不再依赖临时手工造数，固定命令可独立复现版本、生效、权限和历史修订场景。
+- 实际落地情况：待实施。
+
+### 6.13 任务 T13：Playwright、构建与发布验收
+
+- 状态：待开始
+- 依赖：T10-T12。
+- 涉及文件：新增 `frontend/e2e/trade-discipline.spec.ts`，更新 WorkspaceTabs/路由/页面设置相关长期用例；同步相关事实文档入口（仅真实变化）。
 - 目标：以真实点击链路验收全部纳入需求和原型一致性。
-- 操作：覆盖首次建规则、草稿/发布/待生效、四类打卡、原因新增删除、历史修正、快捷入口、权限和三视口；运行 build 和回归。
+- 操作：使用 T12 专用命令覆盖首次建规则、草稿/发布/待生效、等时间戳事件全序、四类打卡、原因新增删除、历史修正、快捷入口、权限和三视口；覆盖路由离开、当前/非当前工作标签关闭、容量淘汰、注销和浏览器刷新保护，分别验证打卡二选项、规则三选项及保存失败不丢现场；运行 build 和回归。
 - 产出：E2E、构建产物和上线核对结果。
 - 影响范围：本地测试 PG/DuckDB、`frontend/dist`。
-- 边界与异常：固定 5181；夹具受 dev/test/local 与写入门控并可精确清理；不得污染真实用户数据。
-- 验证方式：`npm run build`、聚焦 E2E、必要时全量 E2E、`git diff --check`。
+- 边界与异常：固定 5181、`--workers=1`；普通全量 E2E 明确排除需专属夹具的 spec，随后必须单独运行 `npm run test:e2e:trade-discipline`；不得污染真实用户数据。
+- 验证方式：`cd frontend && npm test`、`npm run build`、`AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline`、其余全量 E2E、`git diff --check`。
 - 完成标准：R1-R17、R26-R36 验收可观察且无未解释偏差。
 - 实际落地情况：待实施。
 
@@ -405,32 +463,35 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 
 | 路径/类别 | 用途 | 执行时机 | 影响范围 | 回滚方式 |
 | --- | --- | --- | --- | --- |
-| `backend/storage/pg_ddl.py` | 业务表、索引、菜单/资源 seed、存量默认授权迁移 | 新库首次启动及既有环境受控重启时由 `init_pg_db()` 幂等执行 | PG schema、`sys_menu/sys_resource/sys_role_*`、`perm_ver` | 无业务数据时按 FK 逆序删表；已有数据时只回滚代码和授权，保留事实表，禁止破坏性删数 |
+| `backend/storage/pg_ddl.py` + `backend/cli.py` | 业务表、索引，以及专用 `_seed/_rollback_trade_discipline_rbac` 状态机和 `trade-discipline-rbac rollback` CLI；使用 marker `migration.trade_discipline_default_grants_v1` 和 advisory lock `8410010005` | 新库首次启动及既有环境受控重启时由 `init_pg_db()` 幂等执行；后端版本切换前由受控发布回滚显式调用 CLI | PG schema、`sys_menu/sys_resource/sys_role_*`、`app_config` marker、受影响用户 `perm_ver` | 有业务事实时保留业务表；RBAC 按 marker 实际插入账本逆序删除并写 tombstone，重启不得补回；marker 缺失/损坏/冲突时 fail-closed |
 | `backend/auth/constants.py` | 新库 normal/tenant_admin 默认业务功能码 | 与 seed 同时 | 默认角色新装授权 | 代码回滚；既有授权由 marker 账本处理 |
-| `agent-works/trading-discipline-checkin/trading-discipline-schema.sql` | 与运行时代码等价的 DDL、RBAC 回填、核验查询和确定性回滚留痕 | 开发/评审时生成；生产默认不与启动迁移重复执行，仅用于人工复核或应急 | 同上 | marker 保存本迁移实际插入的 role-menu/resource；回滚只删这些行、同事务 bump `perm_ver` 并写 tombstone |
+| `agent-works/trading-discipline-checkin/trading-discipline-schema.sql` | 与运行时代码等价的 DDL、冲突核验、正向迁移和回滚 SQL；marker JSON 固定记录 inserted menu/resource/role grants | 开发/评审时生成；生产默认不与启动迁移重复执行，仅用于人工复核或应急回滚 | 同上 | 取得同一 advisory lock，按账本删授权→资源→菜单，同事务 bump `perm_ver` 并把原账本改为 rolled_back tombstone |
 | `backend/services/trade_discipline_service.py` 内置原因常量 | 返回八个只读内置原因；不写 `sys_dict`，个人原因才进入业务表 | 后端部署即生效 | 所有授权用户的原因候选，不修改历史快照 | 随代码回滚；已由用户创建的个人原因和历史违规事实保留 |
 | `frontend/src/layout/pageRegistry.ts` + 既有 layout/user preference 表 | 页面密度、历史 pageSize 元数据与个人值 | 前端发布后，用户首次保存设置时写既有 PG 链路 | 当前用户当前 pageKey | 恢复默认删除/重置用户覆盖；不新增 SQL 列或 app_config |
+| `backend/devtools/e2e_trade_discipline.py` + `start.sh e2e-trade-discipline` | T12 确定性 PG/DuckDB seed/cleanup；两个动作均要求 `--expected-pg-fingerprint`；PG 使用 `e2e_td_`/`E2E纪律-` 与固定 owner，DuckDB 仅用 `9988*.SZ` 和专属日期 | 仅在聚焦 E2E 前后执行；要求 `AI_STOCKS_ENV=dev\|test\|local`、`AI_STOCKS_E2E_WRITE=1`、停服前健康端点指纹与进程直连 PG 指纹一致，且 seed/cleanup 时后端已停 | 本地/测试 PG 的固定调试账号私有数据与 DuckDB 专属代码/日期；不触碰生产和开发者真实数据 | EXIT trap 使用停服前保存的同一指纹，按 FK 逆序和专属归属/前缀精确删除，恢复测试前后端状态；无指纹不清理，任一残留使命令失败并报告 |
+| `frontend/e2e/helpers/tradeDiscipline.ts` + `scripts/run-trade-discipline-e2e.sh` + `frontend/package.json` | 调用 seed/cleanup、校验夹具引用并以 5181/单 worker 执行三视口 spec | T13 聚焦验收时；普通全量 E2E 排除此专属 spec | 测试进程、临时登录豁免和 `frontend/dist`（构建时） | trap 清理、移除运行时环境变量并恢复原后端；脚本失败保持非零退出 |
 
-生产步骤先备份 PG 并核验未来 `trade_calendar` 可用，再在低流量窗口部署/重启。若应用代码回滚，保留新增业务表避免丢失已提交事实；隐藏菜单并按 marker 撤销本迁移新增的默认授权。待数据保留期和导出策略另行确认前，不提供生产删表回滚。
+生产步骤先备份 PG 并核验未来 `trade_calendar` 可用，再在低流量窗口部署/重启。若应用代码回滚，保留新增业务表避免丢失已提交事实；必须先回滚前端 `dist`，再趁本版本 CLI/SQL 尚未随代码切换移除时执行专用 RBAC 回滚，核验 tombstone、删除计数和 `perm_ver`，最后回滚后端 API。后端回滚并重启后验证 seed 不会复活任何目标行；不得以“隐藏菜单”代替完整回滚。待数据保留期和导出策略另行确认前，不提供生产删表回滚。
 
 ## 8. 测试与验证计划
 
-- 单元测试：规则名称归一化、金额定点、版本实质变化、激活事件解析、原因匹配、操作规则候选与完整度。具体完成情况：待验证。
+- 单元测试：规则名称归一化、金额定点、版本实质变化、原因匹配、操作规则候选与完整度；生命周期覆盖相同 `occurred_at`、长事务、并发发布/归档/恢复和事务回滚，断言无幽灵事件或计数器误推进，并严格按 `(effective_from_trade_date,event_seq)` 得到唯一结果。具体完成情况：待验证。
 - 接口测试：所有端点成功/422/403/404/409、分页筛选、快捷幂等、R31 限流边界。具体完成情况：待验证。
-- 页面/交互测试：三页签、主从区、全部命令、脏保护、四种打卡、修订抽屉、全局快捷卡。具体完成情况：待验证。
-- 组件资产闭环测试：验证通用组件真实导入/渲染、feature 组件事件契约、pageRegistry、密度/pageSize 保存读取消费与重置；确认没有新增未消费字段。具体完成情况：待验证。
+- 页面/交互测试：三页签、主从区、全部命令、四种打卡、修订抽屉、全局快捷卡；未保存保护逐项覆盖路由、当前/非当前工作标签关闭、容量淘汰、注销、浏览器刷新以及页签/规则/日期切换，分别断言打卡二选、规则三选、保存失败不放行且标签/KeepAlive/输入均未先删除。具体完成情况：待验证。
+- 组件资产闭环测试：验证通用组件真实导入/渲染、feature 组件事件契约、pageRegistry、密度/pageSize 保存读取消费与重置；断言 `workspaceTabs` 使用真实 `tabs` kind 且唯一 `growMain`，三个业务 panel 是实际消费者，`defaultActive` 未进入长期偏好，滚动由活动 panel 承接；确认没有新增未消费字段。具体完成情况：待验证。
 - 权限与数据范围测试：system/normal/tenant_admin/自定义最小权限/无角色；跨 owner/tenant；有 submit 无 stocks:view；按钮和接口一致。具体完成情况：待验证。
-- 回归测试：后端全量 pytest、前端 Vitest、build、相关 Playwright；测试前后恢复服务状态。具体完成情况：待验证。
-- 异常与边界测试：日历空/滞后、周末发布、同日多事件、草稿与修订并发、规则被归档、网络失败、原因删除、规则候选为零、财务字段不完整。具体完成情况：待验证。
+- 确定性夹具测试：覆盖必填指纹缺失/格式非法/不匹配、后端原本运行和未运行两种取值路径、停服前后 PG 目标变化及后端持锁拒绝；再执行两轮 `获取指纹→stop→seed→计数与引用核验→cleanup→零残留`，模拟取值前、取值后、seed 后和测试中断验证 trap 只在已有可信指纹时清理并恢复原服务状态。具体完成情况：待验证。
+- 回归测试：按锁规则运行后端聚焦及全量 pytest；运行前端 Vitest、build、普通全量 Playwright（排除专属 spec），再执行 `AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline`；测试前后核验服务状态。具体完成情况：待验证。
+- 异常与边界测试：日历空/滞后、周末发布、同日等时间戳多事件、并发生命周期、草稿与修订并发、规则被归档、网络失败、原因删除、规则候选为零、财务字段不完整。具体完成情况：待验证。
 - 原型一致性：逐区对照 HTML 的页头、三页签、两套主从区、操作/原因/双状态、历史抽屉、设置抽屉、用户快捷卡和 1100×620/1366×768/1440×900 退化；原型批注和演示数据不得进入线上文案。具体完成情况：待验证。
 - 需求映射验证：用脚本核对 requirement 的 R1-R36 范围编号均在第 5 章出现，纳入项均有任务/状态/验证，跳过项均有原因。具体完成情况：待验证。
 
 ## 9. 发布与回滚
 
 - 发布前检查：确认 PG 备份、迁移 marker 未冲突、DuckDB 未来开市日存在、默认角色/自定义角色授权方案、无明文或本地数据进入 Git；按测试前状态停服/恢复。
-- 发布步骤：先部署幂等 DDL/seed 与后端 API并验证健康/权限，再发布前端和 `dist`，最后以 normal、tenant_admin、最小权限账号跑冒烟；存量自定义角色由管理员按需授权，不自动扩大。
-- 配置或环境变量：无新增环境变量和 `app_config` 业务配置；页面设置复用现有 layout/user preference 链路。
-- 回滚方案：应用回滚到前版本；按 SQL marker 精确撤销本次默认菜单/资源授权并 bump `perm_ver`；保留业务表与用户事实。仅确认从未写入生产事实时才允许逆序删表。
+- 发布步骤：先部署幂等 DDL/专用 RBAC seed 与后端 API并验证健康、marker 和权限，再发布前端源码及同步后的 `dist`，最后以 normal、tenant_admin、仅查看、仅提交、无权限账号跑冒烟；存量自定义角色由管理员按需授权，不自动扩大。
+- 配置或环境变量：生产无新增环境变量和业务 `app_config`；RBAC 仅新增稳定 migration marker。T12 只复用既有 `AI_STOCKS_ENV`、`AI_STOCKS_E2E_WRITE`、`AI_STOCKS_E2E_LOGIN_BYPASS` 测试门控，不能进入生产启动配置；页面设置复用现有 layout/user preference 链路。
+- 回滚方案：先回滚前端 `dist` 以移除静态路由；随后在当前后端版本和 SQL 工件仍存在时执行 `python -m backend.cli trade-discipline-rbac rollback --confirm-marker migration.trade_discipline_default_grants_v1`，在同一 advisory lock 下按 marker 账本撤销本次 role grants、资源和菜单，bump `perm_ver`、写 rolled_back tombstone 并核验输出；只有 CLI 成功且 tombstone/目标行核验通过，才回滚后端 API 并重启验证不会重新 seed，否则停止回滚流程并保留当前后端工件供修复。保留业务表与用户事实，仅确认从未写入生产事实时才允许逆序删表。
 
 ## 10. 风险、假设与待确认项
 
@@ -438,6 +499,7 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 
 - 生命周期动作依赖 DuckDB 已同步未来交易日；缺失时按需求 fail-closed，可能暂时阻止发布/归档/恢复，页面必须给出同步指引。
 - 新功能表和事件较多，事务与复合外键实现复杂；以 T1-T3 的仓库测试先锁定不变量，再开放 API。
+- 应用级未保存协议会经过全局工作标签与注销链路；仅注册脏页面参与拦截，干净页面保持原行为，并用现有页面回归防止壳层改动误伤其他模块。
 - 用户中心摘要会增加一次按需请求；仅打开抽屉时加载并共享缓存失效，不轮询，避免全局性能回退。
 - 历史股票/原因模糊筛选可能增长；首期通过归属前缀索引、分页和受控查询观察，实际数据量不足以支持更重的全文索引决策。
 
@@ -450,4 +512,4 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 
 ### 10.3 待确认项
 
-- 无阻塞待确认项。开发中若发现生产数据库存在与计划 marker 同名的外部迁移，必须停止迁移并更换稳定 marker/锁键；该问题不影响当前计划启动。
+- 无阻塞待确认项。开发中若发现生产数据库存在与计划 marker、菜单 ID/code/route 或资源 ID/code 冲突的外部数据，专用迁移必须原子失败并停止发布，由运维先确认来源；不得在执行时临时改 marker、锁键或覆盖既有行。
