@@ -211,8 +211,17 @@ async function submit(): Promise<void> {
   finally { submitting.value = false }
 }
 
-function startAmend(): void {
-  if (props.canSubmit) editing.value = true
+async function startAmend(): Promise<boolean> {
+  if (!props.canSubmit) return false
+  // 历史页跳转时组件可能刚挂载；等待最新上下文，避免加载完成后覆盖编辑态。
+  await load()
+  if (!existing.value) return false
+  editing.value = true
+  return true
+}
+
+function enterEditing(): void {
+  if (props.canSubmit && existing.value) editing.value = true
 }
 
 function isDirty(): boolean {
@@ -236,7 +245,7 @@ function requestDateChange(value: string | null): void {
 }
 
 watch(() => [props.ruleId, props.tradeDate] as const, load, { immediate: true })
-defineExpose({ isDirty, requestLeave, load })
+defineExpose({ isDirty, requestLeave, load, startAmend })
 </script>
 
 <template>
@@ -293,7 +302,7 @@ defineExpose({ isDirty, requestLeave, load })
           <el-button
             v-if="existing && !editing && canSubmit"
             v-permission="'trade-discipline:checkin-submit'"
-            @click="startAmend"
+            @click="enterEditing"
           >修正打卡</el-button>
           <el-button
             v-else-if="canSubmit"

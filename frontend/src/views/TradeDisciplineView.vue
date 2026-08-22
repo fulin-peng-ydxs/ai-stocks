@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import HelpTip from '@/components/HelpTip.vue'
-import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
-import AppTableColumn from '@/components/AppTableColumn.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
@@ -21,17 +19,17 @@ import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
-  listTradeDisciplineCheckins,
   listTradeDisciplineRules,
   createTradeDisciplineRule,
   getTradeDisciplineSummary,
   type CheckinSummary,
-  type CheckinHistoryRow,
+  type CheckinHistoryQuery,
   type TradeDisciplineRule,
 } from '@/api/tradeDiscipline'
 import RuleMasterList from '@/views/trade-discipline/components/RuleMasterList.vue'
 import TradeRuleEditor from '@/views/trade-discipline/components/TradeRuleEditor.vue'
 import TradeCheckinForm from '@/views/trade-discipline/components/TradeCheckinForm.vue'
+import TradeDisciplineHistory from '@/views/trade-discipline/components/TradeDisciplineHistory.vue'
 
 type PanelKey = 'checkin' | 'rules' | 'history'
 
@@ -117,21 +115,21 @@ const checkinFormRef = ref<{
   isDirty: () => boolean
   requestLeave: () => Promise<boolean>
   load: () => Promise<void>
+  startAmend: () => Promise<boolean>
 } | null>(null)
 let unregisterUnsavedHandler: (() => void) | undefined
 let rulesLoadSeq = 0
 let summaryLoadSeq = 0
 
-const historyRows = ref<CheckinHistoryRow[]>([])
-const historyTotal = ref(0)
 const historyPage = ref(1)
-const historyLoading = ref(false)
-const historyError = ref(false)
+const historyQuery = ref<CheckinHistoryQuery>({})
+const historyRef = ref<{ reload: () => Promise<void> } | null>(null)
+const returnToHistoryAfterAmend = ref(false)
 const { pageSize: historyPageSize, changePageSize } = useComponentPageSizeSession({
   resolveDefault: () => componentValueOf('history', 'pageSize'),
   fallback: 20,
   resetPage: () => { historyPage.value = 1 },
-  reload: () => loadHistory(),
+  reload: () => historyRef.value?.reload(),
 })
 
 const pageLoading = computed(
@@ -199,37 +197,19 @@ async function loadCheckinWorkspace(): Promise<void> {
   await Promise.all([loadRules(checkinTradeDate.value), loadCheckinSummary()])
 }
 
-async function loadHistory(): Promise<void> {
-  if (!canViewCheckins.value) return
-  historyLoading.value = true
-  historyError.value = false
-  try {
-    const result = await listTradeDisciplineCheckins({
-      page: historyPage.value,
-      page_size: historyPageSize.value,
-    })
-    historyRows.value = result.list
-    historyTotal.value = result.total
-  } catch {
-    historyError.value = true
-  } finally {
-    historyLoading.value = false
-  }
-}
-
 async function loadPage(): Promise<void> {
   await ensureTradeDatesLoaded()
   if (tradeDateStatus.value !== 'ready') return
   checkinTradeDate.value ||= dataMax.value || ''
   if (activePanel.value === 'checkin') await loadCheckinWorkspace()
   else await loadRules()
-  if (activePanel.value === 'history') await loadHistory()
 }
 
 async function switchPanel(value: string | number | boolean): Promise<void> {
   const next = String(value) as PanelKey
   if (next === activePanel.value) return
   if (!(await confirmLeave(route.path, 'context-change'))) return
+  if (activePanel.value === 'checkin' && next !== 'checkin') returnToHistoryAfterAmend.value = false
   activePanel.value = next
   await router.replace({ query: { ...route.query, tab: next } })
   if (next === 'checkin') await loadCheckinWorkspace()
@@ -239,6 +219,7 @@ async function switchPanel(value: string | number | boolean): Promise<void> {
 async function selectRule(ruleId: string): Promise<void> {
   if (ruleId === selectedRuleId.value) return
   if (!(await confirmLeave(route.path, 'context-change'))) return
+  if (activePanel.value === 'checkin') returnToHistoryAfterAmend.value = false
   selectedRuleId.value = ruleId
 }
 
@@ -271,6 +252,7 @@ async function handleRuleCopied(ruleId: string): Promise<void> {
 async function changeCheckinTradeDate(value: string): Promise<void> {
   if (value === checkinTradeDate.value) return
   if (!(await confirmLeave(route.path, 'context-change'))) return
+  returnToHistoryAfterAmend.value = false
   checkinTradeDate.value = value
   selectedRuleId.value = ''
   await loadCheckinWorkspace()
@@ -278,18 +260,39 @@ async function changeCheckinTradeDate(value: string): Promise<void> {
 
 async function handleCheckinSubmitted(): Promise<void> {
   await Promise.all([loadCheckinSummary(), loadRules(checkinTradeDate.value)])
+  if (returnToHistoryAfterAmend.value) {
+    returnToHistoryAfterAmend.value = false
+    activePanel.value = 'history'
+    await router.replace({ query: { ...route.query, tab: 'history' } })
+    await nextTick()
+  }
 }
 
 function changeHistoryPage(page: number): void {
   historyPage.value = page
-  void loadHistory()
 }
 
-watch(activePanel, (panel) => {
-  if (panel === 'history' && !historyRows.value.length && !historyLoading.value) {
-    void loadHistory()
+function updateHistoryQuery(value: CheckinHistoryQuery): void {
+  historyQuery.value = value
+}
+
+async function amendFromHistory(value: { ruleId: string; tradeDate: string }): Promise<void> {
+  if (!canSubmitCheckins.value) return
+  checkinTradeDate.value = value.tradeDate
+  selectedRuleId.value = value.ruleId
+  returnToHistoryAfterAmend.value = true
+  activePanel.value = 'checkin'
+  await router.replace({ query: { ...route.query, tab: 'checkin' } })
+  await loadCheckinWorkspace()
+  await nextTick()
+  const started = await checkinFormRef.value?.startAmend()
+  if (!started) {
+    returnToHistoryAfterAmend.value = false
+    ElMessage.error('当前修订未能载入，无法发起修正')
+    return
   }
-})
+  ElMessage.info('已载入当前修订，提交后将生成新修订并返回历史记录')
+}
 
 onMounted(() => {
   unregisterUnsavedHandler = registerUnsavedHandler(route.path, {
@@ -449,43 +452,20 @@ onUnmounted(() => unregisterUnsavedHandler?.())
             variant="permission"
             title="无权限查看履约历史"
           />
-          <AppStateBlock
-            v-else-if="historyError"
-            state="error"
-            title="履约历史加载失败"
-            retry
-            @retry="loadHistory"
-          />
-          <AppDataTable
+          <TradeDisciplineHistory
             v-else
-            :data="historyRows"
-            :loading="historyLoading"
-            row-key="id"
-            aria-label="履约历史"
-            empty-text="暂无履约记录"
+            ref="historyRef"
+            :query="historyQuery"
+            :page="historyPage"
+            :page-size="historyPageSize"
+            :rules="rules"
             :border="tableBorder('history')"
-            :pagination="{
-              currentPage: historyPage,
-              pageSize: historyPageSize,
-              total: historyTotal,
-            }"
+            :can-submit="canSubmitCheckins"
+            @update:query="updateHistoryQuery"
             @page-change="changeHistoryPage"
             @size-change="changePageSize"
-          >
-            <AppTableColumn prop="trade_date" label="交易日" role="date" />
-            <AppTableColumn prop="rule_name" label="规则" role="name" />
-            <AppTableColumn prop="assessment" label="履约结果">
-              <template #default="{ row }">
-                <el-tag :type="row.assessment === 'complied' ? 'success' : 'danger'" effect="plain">
-                  {{ row.assessment === 'complied' ? '已履约' : '未履约' }}
-                </el-tag>
-              </template>
-            </AppTableColumn>
-            <AppTableColumn prop="operation_count" label="操作数" align="right" />
-            <AppTableColumn prop="current_revision_no" label="修订" align="right">
-              <template #default="{ row }">r{{ row.current_revision_no }}</template>
-            </AppTableColumn>
-          </AppDataTable>
+            @amend="amendFromHistory"
+          />
         </section>
       </div>
     </template>

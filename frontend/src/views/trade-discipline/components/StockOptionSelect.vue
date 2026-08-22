@@ -5,6 +5,7 @@ import { searchTradeDisciplineStocks, type StockOption } from '@/api/tradeDiscip
 const props = defineProps<{
   modelValue: StockOption | null
   disabled?: boolean
+  clearable?: boolean
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: StockOption | null] }>()
 
@@ -69,6 +70,7 @@ onUnmounted(() => {
     :remote-method="search"
     :loading="loading"
     :disabled="disabled"
+    :clearable="clearable"
     placeholder="输入代码或名称搜索"
     no-data-text="没有匹配股票"
     @update:model-value="select"

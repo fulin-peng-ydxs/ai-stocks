@@ -120,6 +120,17 @@ describe('TradeCheckinForm', () => {
     expect(amendedOperation).not.toHaveProperty('financial_complete')
   })
 
+  it('历史入口可等待上下文加载完成后直接进入当前修订编辑态', async () => {
+    getContext.mockResolvedValue({ ...emptyContext, checkin: saved })
+    const wrapper = mountForm()
+    await (wrapper.vm as any).startAmend()
+    await flushPromises()
+    expect(getContext).toHaveBeenCalled()
+    expect(wrapper.findAll('button').some((button) => button.text() === '修正打卡')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === '提交修正')).toBe(true)
+    expect(wrapper.find('textarea').attributes('disabled')).toBeUndefined()
+  })
+
   it.each([
     { assessment: 'complied', breached: false },
     { assessment: 'breached', breached: true },

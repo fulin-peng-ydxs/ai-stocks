@@ -271,6 +271,30 @@ function sourceForPage(pageKey: string): string {
   return readFileSync(new URL(`../../${componentPath}`, import.meta.url), 'utf-8')
 }
 
+/**
+ * 页面通过业务子组件消费布局组件同样属于真实消费；递归收集 views 内静态 Vue 组件树，
+ * 避免为了满足契约而在路由页保留无用的直接导入。
+ */
+function sourceTreeForPage(pageKey: string): string {
+  const entryPath = ROUTE_COMPONENT_BY_NAME.get(pageKey)
+  if (!entryPath) return ''
+  const visited = new Set<string>()
+  const sources: string[] = []
+
+  const visit = (componentPath: string): void => {
+    if (visited.has(componentPath)) return
+    visited.add(componentPath)
+    const source = readFileSync(new URL(`../../${componentPath}`, import.meta.url), 'utf-8')
+    sources.push(source)
+    for (const match of source.matchAll(/import\s+\w+\s+from\s+['"]@\/(views\/[^'"]+\.vue)['"]/g)) {
+      visit(match[1]!)
+    }
+  }
+
+  visit(entryPath)
+  return `<script setup>${sources.map(scriptOf).join('\n')}</script>\n${sources.join('\n')}`
+}
+
 function vueFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name)
@@ -594,18 +618,18 @@ describe('页面注册表完整性', () => {
 
   it('具有稳定真实实现的逻辑组件必须由页面实际消费对应组件', () => {
     for (const entry of PAGE_REGISTRY) {
-      const source = sourceForPage(entry.pageKey)
+      const source = sourceTreeForPage(entry.pageKey)
       const imports = runtimeComponentImports(source)
       const kinds = new Set(entry.layout.slots.map((slot) => slot.component))
       for (const kind of kinds) {
         for (const component of SLOT_RUNTIME_COMPONENTS[kind] ?? []) {
           expect(
             imports.has(component),
-            `${entry.pageKey} 声明 ${kind}，但未导入真实组件 ${component}`,
+            `${entry.pageKey} 声明 ${kind}，但页面组件树未导入真实组件 ${component}`,
           ).toBe(true)
           expect(
             source.includes(`<${component}`),
-            `${entry.pageKey} 声明 ${kind}，但未真实渲染 <${component}>`,
+            `${entry.pageKey} 声明 ${kind}，但页面组件树未真实渲染 <${component}>`,
           ).toBe(true)
         }
       }

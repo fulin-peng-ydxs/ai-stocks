@@ -197,6 +197,11 @@ export interface TradeDisciplineCheckin {
   review_note: string | null
   operations: CheckinOperation[]
   financial_complete: boolean
+  revision_kind?: 'initial' | 'amendment'
+  submitted_at?: string
+  amended_at?: string | null
+  created_at?: string
+  rule_version?: RuleVersionDetail
 }
 
 export interface CheckinContext {
@@ -313,6 +318,13 @@ export function listTradeDisciplineCheckins(
   params: CheckinHistoryQuery,
 ): Promise<CheckinHistoryPage> {
   return http.get('/trade-discipline/checkins', { params })
+}
+
+export function getTradeDisciplineCheckinRevision(
+  checkinId: string,
+  revisionNo: number,
+): Promise<TradeDisciplineCheckin> {
+  return http.get(`/trade-discipline/checkins/${checkinId}/revisions/${revisionNo}`)
 }
 
 export function getTradeDisciplineCheckinContext(
