@@ -142,18 +142,19 @@ class AuthService:
                 or ss.login_failure_count(account) >= self.cfg.captcha_after_fails
             )
         )
-        if captcha_required:
-            if not (captcha_id and captcha_code and ss.take_captcha(captcha_id, captcha_code)):
-                self._record_security(
-                    event_type="captcha",
-                    action="login_captcha_verify",
-                    result="failed",
-                    status="blocked",
-                    actor_account=account,
-                    ip=ip,
-                    error_summary="登录图形验证码错误或缺失",
-                )
-                raise AuthError("请输入正确的图形验证码")
+        if captcha_required and not (
+            captcha_id and captcha_code and ss.take_captcha(captcha_id, captcha_code)
+        ):
+            self._record_security(
+                event_type="captcha",
+                action="login_captcha_verify",
+                result="failed",
+                status="blocked",
+                actor_account=account,
+                ip=ip,
+                error_summary="登录图形验证码错误或缺失",
+            )
+            raise AuthError("请输入正确的图形验证码")
 
         user = self.repo.get_by_account(account)
         if user is None or not verify_password(password, user.get("password_hash")):
