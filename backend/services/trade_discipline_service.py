@@ -9,6 +9,8 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+import psycopg
+
 from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
 from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.trade_discipline_repository import TradeDisciplineRepository
@@ -18,6 +20,16 @@ _ACTION_SUBTYPES = {
     "buy": {"open_position", "add_position"},
     "sell": {"liquidate", "do_t"},
 }
+BUILTIN_VIOLATION_REASONS: tuple[tuple[str, str], ...] = (
+    ("impulsive_trade", "冲动交易"),
+    ("stock_rule_violation", "未按选股规则"),
+    ("buy_rule_violation", "未按买入规则"),
+    ("sell_rule_violation", "未按卖出规则"),
+    ("capital_limit_exceeded", "超出资金上限"),
+    ("missed_required_action", "应执行但未执行"),
+    ("unplanned_operation", "计划外操作"),
+    ("other", "其他"),
+)
 
 
 def normalize_rule_name(value: str | None) -> tuple[str | None, str | None]:
@@ -449,3 +461,454 @@ class TradeDisciplineService:
         with self.repo.transaction() as conn:
             self.repo.lock_rule(conn, rule_id)
             self.repo.delete_unpublished(conn, rule_id)
+
+    # ── T3：打卡、原因、操作与历史 ────────────────────────────────
+
+    @staticmethod
+    def _decimal(
+        value: Any,
+        *,
+        places: int,
+        label: str,
+    ) -> Decimal | None:
+        if value is None or value == "":
+            return None
+        if isinstance(value, bool):
+            raise ValidationError(f"{label}格式不正确")
+        try:
+            result = Decimal(str(value))
+        except (InvalidOperation, ValueError) as exc:
+            raise ValidationError(f"{label}格式不正确") from exc
+        if not result.is_finite() or result < 0:
+            raise ValidationError(f"{label}不能为负数")
+        if result.as_tuple().exponent < -places:
+            raise ValidationError(f"{label}最多保留 {places} 位小数")
+        return result
+
+    def _require_trade_date(self, trade_date: date) -> None:
+        if not isinstance(trade_date, date) or isinstance(trade_date, datetime):
+            raise ValidationError("履约日期格式不正确")
+        exists = self.market.query_df(
+            "SELECT 1 FROM daily_bar WHERE trade_date=? LIMIT 1", [trade_date]
+        )
+        if exists.empty:
+            raise ValidationError("履约日期不是已有行情交易日")
+
+    @staticmethod
+    def _optional_text(value: Any, label: str) -> str | None:
+        if value is None or value == "":
+            return None
+        if not isinstance(value, str):
+            raise ValidationError(f"{label}必须为文本")
+        return value
+
+    def _prepare_operations(
+        self,
+        raw_operations: list[dict[str, Any]],
+        *,
+        trade_date: date,
+        version: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        enabled_stocks = {
+            str(item["detail_id"]): item for item in version["stock_rules"] if bool(item["enabled"])
+        }
+        enabled_actions = {
+            str(item["detail_id"]): item
+            for item in version["action_rules"]
+            if bool(item["enabled"])
+        }
+        prepared: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        seen_orders: set[int] = set()
+        for index, raw in enumerate(raw_operations, start=1):
+            if not isinstance(raw, dict):
+                raise ValidationError("操作记录格式不正确")
+            item = dict(raw)
+            operation_id = str(item.get("id") or self._id("tdo"))
+            if operation_id in seen_ids:
+                raise ValidationError("操作记录标识不能重复")
+            seen_ids.add(operation_id)
+            raw_order = item.get("display_order", index)
+            if isinstance(raw_order, bool):
+                raise ValidationError("操作顺序必须为正整数")
+            try:
+                display_order = int(raw_order)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("操作顺序必须为正整数") from exc
+            if display_order <= 0 or display_order in seen_orders:
+                raise ValidationError("操作顺序必须为互不重复的正整数")
+            seen_orders.add(display_order)
+            side = item.get("side")
+            if side not in _ACTION_SUBTYPES:
+                raise ValidationError("操作方向必须为 buy 或 sell")
+            stock_rule_id = str(item.get("stock_rule_id") or "")
+            action_rule_id = str(item.get("action_rule_id") or "")
+            if stock_rule_id not in enabled_stocks:
+                raise ValidationError("操作关联的选股规则不存在、未启用或不属于绑定版本")
+            action_rule = enabled_actions.get(action_rule_id)
+            if action_rule is None or action_rule["action_type"] != side:
+                raise ValidationError("操作关联的买卖规则不存在、未启用、方向错误或不属于绑定版本")
+            stock_code = unicodedata.normalize("NFKC", str(item.get("stock_code") or "")).strip()
+            stock_name = unicodedata.normalize(
+                "NFKC", str(item.get("stock_name_snapshot") or "")
+            ).strip()
+            if not stock_code or not stock_name:
+                raise ValidationError("股票代码和名称不能为空")
+            operated_at = item.get("operated_at")
+            if isinstance(operated_at, str):
+                try:
+                    operated_at = datetime.fromisoformat(operated_at)
+                except ValueError as exc:
+                    raise ValidationError("操作时间格式不正确") from exc
+            if operated_at is not None:
+                if not isinstance(operated_at, datetime):
+                    raise ValidationError("操作时间格式不正确")
+                if operated_at.tzinfo is None:
+                    operated_at = operated_at.replace(tzinfo=SHANGHAI)
+                if operated_at.astimezone(SHANGHAI).date() != trade_date:
+                    raise ValidationError("操作时间必须落在履约交易日")
+            prepared.append(
+                {
+                    "id": operation_id,
+                    "stock_code": stock_code,
+                    "stock_name_snapshot": stock_name,
+                    "side": side,
+                    "stock_rule_id": stock_rule_id,
+                    "action_rule_id": action_rule_id,
+                    "price": self._decimal(item.get("price"), places=4, label="成交价格"),
+                    "quantity": self._decimal(item.get("quantity"), places=4, label="成交数量"),
+                    "amount": self._decimal(item.get("amount"), places=2, label="成交金额"),
+                    "fee": self._decimal(item.get("fee"), places=2, label="交易费用"),
+                    "operated_at": operated_at,
+                    "note": self._optional_text(item.get("note"), "操作说明"),
+                    "display_order": display_order,
+                }
+            )
+        return prepared
+
+    def _prepare_checkin(
+        self,
+        payload: dict[str, Any],
+        *,
+        trade_date: date,
+        version: dict[str, Any],
+    ) -> dict[str, Any]:
+        assessment = payload.get("assessment")
+        if assessment not in {"complied", "breached"}:
+            raise ValidationError("用户自评必须为 complied 或 breached")
+        no_operation = payload.get("no_operation")
+        if not isinstance(no_operation, bool):
+            raise ValidationError("是否无操作必须为布尔值")
+        raw_operations = payload.get("operations") or []
+        if not isinstance(raw_operations, list):
+            raise ValidationError("操作记录必须为数组")
+        if no_operation and raw_operations:
+            raise ValidationError("今日无操作与操作记录互斥")
+        if not no_operation and not raw_operations:
+            raise ValidationError("未选择今日无操作时至少填写一条操作")
+        violation_detail = payload.get("violation_detail")
+        reason_values = []
+        for field in ("reason_code", "reason_id", "reason_text"):
+            value = payload.get(field)
+            if value is not None and not isinstance(value, str):
+                raise ValidationError("未履约原因必须是单个文本或原因标识")
+            reason_values.append(value)
+        selected_reasons = sum(
+            value is not None and str(value).strip() != "" for value in reason_values
+        )
+        if assessment == "breached":
+            if not isinstance(violation_detail, str) or not violation_detail.strip():
+                raise ValidationError("未履约时必须填写详细说明")
+            if selected_reasons != 1:
+                raise ValidationError("未履约时必须且只能选择一个原因")
+        else:
+            if selected_reasons or (violation_detail is not None and str(violation_detail).strip()):
+                raise ValidationError("已履约不能填写未履约原因或详细说明")
+            violation_detail = None
+        operations = self._prepare_operations(
+            raw_operations, trade_date=trade_date, version=version
+        )
+        return {
+            "assessment": assessment,
+            "no_operation": no_operation,
+            "violation_detail": violation_detail,
+            "review_note": self._optional_text(payload.get("review_note"), "复盘说明"),
+            "reason_code": payload.get("reason_code"),
+            "reason_id": payload.get("reason_id"),
+            "reason_text": payload.get("reason_text"),
+            "operations": operations,
+        }
+
+    def _resolve_reason(
+        self,
+        conn: psycopg.Connection,
+        prepared: dict[str, Any],
+    ) -> dict[str, str | None] | None:
+        if prepared["assessment"] != "breached":
+            return None
+        builtins = {code: name for code, name in BUILTIN_VIOLATION_REASONS}
+        normalized_builtins = {
+            normalize_rule_name(name)[1]: (code, name) for code, name in BUILTIN_VIOLATION_REASONS
+        }
+        if prepared.get("reason_code"):
+            code = str(prepared["reason_code"])
+            if code not in builtins:
+                raise ValidationError("内置未履约原因不存在")
+            return {"reason_code": code, "reason_id": None, "name": builtins[code]}
+        if prepared.get("reason_id"):
+            row = self.repo.get_active_reason(str(prepared["reason_id"]), conn=conn)
+            return {"reason_code": None, "reason_id": str(row["id"]), "name": str(row["name"])}
+        name, normalized = normalize_rule_name(str(prepared.get("reason_text") or ""))
+        if name is None or normalized is None:
+            raise ValidationError("未履约原因不能为空")
+        builtin = normalized_builtins.get(normalized)
+        if builtin is not None:
+            return {"reason_code": builtin[0], "reason_id": None, "name": builtin[1]}
+        row = self.repo.upsert_reason(
+            conn,
+            reason_id=self._id("tdreason"),
+            name=name,
+            normalized_name=normalized,
+        )
+        return {"reason_code": None, "reason_id": str(row["id"]), "name": str(row["name"])}
+
+    def _write_revision(
+        self,
+        conn: psycopg.Connection,
+        *,
+        checkin_id: str,
+        revision_no: int,
+        rule_id: str,
+        version_no: int,
+        prepared: dict[str, Any],
+    ) -> None:
+        reason = self._resolve_reason(conn, prepared)
+        self.repo.insert_revision(
+            conn,
+            checkin_id=checkin_id,
+            revision_no=revision_no,
+            rule_id=rule_id,
+            version_no=version_no,
+            assessment=prepared["assessment"],
+            no_operation=prepared["no_operation"],
+            violation_detail=prepared["violation_detail"],
+            review_note=prepared["review_note"],
+        )
+        if reason is not None:
+            self.repo.insert_violation(
+                conn,
+                checkin_id=checkin_id,
+                revision_no=revision_no,
+                reason_code=reason["reason_code"],
+                reason_id=reason["reason_id"],
+                reason_name=str(reason["name"]),
+            )
+        self.repo.insert_operations(
+            conn,
+            checkin_id=checkin_id,
+            revision_no=revision_no,
+            rule_id=rule_id,
+            version_no=version_no,
+            operations=prepared["operations"],
+        )
+
+    @staticmethod
+    def _decorate_revision(revision: dict[str, Any]) -> dict[str, Any]:
+        operations = revision.get("operations") or []
+        for operation in operations:
+            operation["financial_complete"] = all(
+                operation.get(field) is not None
+                for field in ("price", "quantity", "amount", "fee", "operated_at")
+            )
+        revision["financial_complete"] = bool(revision.get("no_operation")) or all(
+            operation["financial_complete"] for operation in operations
+        )
+        return revision
+
+    def submit_checkin(
+        self,
+        rule_id: str,
+        trade_date: date,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        self._require_trade_date(trade_date)
+        with self.repo.transaction() as conn:
+            self.repo.lock_rule(conn, rule_id)
+            existing = self.repo.get_checkin_by_rule_date(
+                rule_id, trade_date, conn=conn, for_update=True
+            )
+            if existing is not None:
+                raise ConflictError("该规则在此交易日已经提交过打卡，请使用修正")
+            event = self.repo.effective_activation(rule_id, trade_date, conn=conn)
+            if event is None or event["event_type"] == "archive":
+                raise ValidationError("该日期尚无生效规则版本")
+            version_no = int(event["version_no"])
+            version = self.repo.load_version(rule_id, version_no, conn=conn)
+            prepared = self._prepare_checkin(payload, trade_date=trade_date, version=version)
+            checkin_id = self._id("tdc")
+            self.repo.create_checkin(
+                conn,
+                checkin_id=checkin_id,
+                rule_id=rule_id,
+                trade_date=trade_date,
+            )
+            self._write_revision(
+                conn,
+                checkin_id=checkin_id,
+                revision_no=1,
+                rule_id=rule_id,
+                version_no=version_no,
+                prepared=prepared,
+            )
+            result = self.repo.load_revision(checkin_id, 1, conn=conn)
+        return self._decorate_revision(result)
+
+    def amend_checkin(
+        self,
+        checkin_id: str,
+        payload: dict[str, Any],
+        *,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        identity = self.repo.get_checkin_by_id(checkin_id)
+        trade_date = identity["trade_date"]
+        self._require_trade_date(trade_date)
+        with self.repo.transaction() as conn:
+            self.repo.lock_rule(conn, str(identity["rule_id"]))
+            checkin = self.repo.get_checkin_by_id(checkin_id, conn=conn, for_update=True)
+            if int(checkin["current_revision_no"]) != expected_revision:
+                raise ConflictError("打卡已被其他操作修正，请刷新后重试")
+            current = self.repo.load_revision(checkin_id, expected_revision, conn=conn)
+            version_no = int(current["version_no"])
+            version = self.repo.load_version(str(checkin["rule_id"]), version_no, conn=conn)
+            prepared = self._prepare_checkin(payload, trade_date=trade_date, version=version)
+            new_revision = expected_revision + 1
+            self._write_revision(
+                conn,
+                checkin_id=checkin_id,
+                revision_no=new_revision,
+                rule_id=str(checkin["rule_id"]),
+                version_no=version_no,
+                prepared=prepared,
+            )
+            self.repo.advance_checkin_revision(
+                conn,
+                checkin_id,
+                expected_revision=expected_revision,
+                new_revision=new_revision,
+            )
+            result = self.repo.load_revision(checkin_id, new_revision, conn=conn)
+        return self._decorate_revision(result)
+
+    def quick_no_operation(self, rule_id: str, trade_date: date) -> dict[str, Any]:
+        self._require_trade_date(trade_date)
+        with self.repo.transaction() as conn:
+            self.repo.lock_rule(conn, rule_id)
+            existing = self.repo.get_checkin_by_rule_date(
+                rule_id, trade_date, conn=conn, for_update=True
+            )
+            if existing is not None:
+                result = self.repo.load_revision(
+                    str(existing["id"]), int(existing["current_revision_no"]), conn=conn
+                )
+                result["idempotent"] = True
+                return self._decorate_revision(result)
+            event = self.repo.effective_activation(rule_id, trade_date, conn=conn)
+            if event is None or event["event_type"] == "archive":
+                raise ValidationError("该日期尚无生效规则版本")
+            checkin_id = self._id("tdc")
+            version_no = int(event["version_no"])
+            self.repo.create_checkin(
+                conn,
+                checkin_id=checkin_id,
+                rule_id=rule_id,
+                trade_date=trade_date,
+            )
+            prepared = {
+                "assessment": "complied",
+                "no_operation": True,
+                "violation_detail": None,
+                "review_note": None,
+                "reason_code": None,
+                "reason_id": None,
+                "reason_text": None,
+                "operations": [],
+            }
+            self._write_revision(
+                conn,
+                checkin_id=checkin_id,
+                revision_no=1,
+                rule_id=rule_id,
+                version_no=version_no,
+                prepared=prepared,
+            )
+            result = self.repo.load_revision(checkin_id, 1, conn=conn)
+            result["idempotent"] = False
+        return self._decorate_revision(result)
+
+    def get_checkin_context(self, rule_id: str, trade_date: date) -> dict[str, Any]:
+        self._require_trade_date(trade_date)
+        self.repo.get_rule(rule_id)
+        existing = self.repo.get_checkin_by_rule_date(rule_id, trade_date)
+        if existing is not None:
+            revision = self.repo.load_revision(
+                str(existing["id"]), int(existing["current_revision_no"])
+            )
+            version = self.repo.load_version(rule_id, int(revision["version_no"]))
+            return {
+                "trade_date": trade_date,
+                "version": version,
+                "checkin": self._decorate_revision(revision),
+            }
+        version = self.effective_version(rule_id, trade_date)
+        if version is None:
+            raise ValidationError("该日期尚无生效规则版本")
+        return {"trade_date": trade_date, "version": version, "checkin": None}
+
+    def get_revision(self, checkin_id: str, revision_no: int) -> dict[str, Any]:
+        checkin = self.repo.get_checkin_by_id(checkin_id)
+        revision = self.repo.load_revision(checkin_id, revision_no)
+        revision["rule_version"] = self.repo.load_version(
+            str(checkin["rule_id"]), int(revision["version_no"])
+        )
+        return self._decorate_revision(revision)
+
+    def list_checkins(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        **filters: Any,
+    ) -> dict[str, Any]:
+        page = max(1, int(page))
+        page_size = max(1, min(int(page_size), 100))
+        assessment = filters.get("assessment")
+        if assessment is not None and assessment not in {"complied", "breached"}:
+            raise ValidationError("履约结果筛选值不正确")
+        return self.repo.list_checkins(filters=filters, page=page, page_size=page_size)
+
+    def list_reasons(self) -> list[dict[str, Any]]:
+        builtins = [
+            {"code": code, "id": None, "name": name, "builtin": True}
+            for code, name in BUILTIN_VIOLATION_REASONS
+        ]
+        custom = [
+            {"code": None, "id": row["id"], "name": row["name"], "builtin": False}
+            for row in self.repo.list_active_reasons()
+        ]
+        return builtins + custom
+
+    def delete_reason(self, reason_id: str) -> None:
+        self.repo.delete_reason(reason_id)
+
+    def summary(self, trade_date: date) -> dict[str, Any]:
+        self._require_trade_date(trade_date)
+        rules = self.repo.checkin_summary(trade_date)
+        completed = sum(row.get("checkin_id") is not None for row in rules)
+        return {
+            "trade_date": trade_date,
+            "total": len(rules),
+            "completed": completed,
+            "pending": len(rules) - completed,
+            "rules": rules,
+        }

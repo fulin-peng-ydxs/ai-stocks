@@ -402,15 +402,26 @@ class TradeDisciplineRepository:
                 [status, name, normalized_name, latest_version_no, *self.owner, rule_id],
             )
 
-    def effective_activation(self, rule_id: str, trade_date: date) -> dict[str, Any] | None:
-        df = self.pg.query_df(
+    def effective_activation(
+        self,
+        rule_id: str,
+        trade_date: date,
+        *,
+        conn: psycopg.Connection | None = None,
+    ) -> dict[str, Any] | None:
+        sql = (
             "SELECT * FROM trade_discipline_rule_activation "
             "WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=%s "
             "AND effective_from_trade_date<=%s "
-            "ORDER BY effective_from_trade_date DESC,event_seq DESC LIMIT 1",
-            [*self.owner, rule_id, trade_date],
+            "ORDER BY effective_from_trade_date DESC,event_seq DESC LIMIT 1"
         )
-        return None if df.empty else df.iloc[0].to_dict()
+        params = [*self.owner, rule_id, trade_date]
+        if conn is None:
+            df = self.pg.query_df(sql, params)
+            return None if df.empty else df.iloc[0].to_dict()
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, params)
+            return self._one(cur)
 
     def delete_unpublished(self, conn: psycopg.Connection, rule_id: str) -> None:
         with conn.cursor() as cur:
@@ -426,3 +437,414 @@ class TradeDisciplineRepository:
             )
             if cur.rowcount != 1:
                 raise ConflictError("仅无正式版本、无打卡的未发布规则可删除")
+
+    # ── T3：打卡、不可变修订、原因与操作 ──────────────────────────
+
+    def get_checkin_by_rule_date(
+        self,
+        rule_id: str,
+        trade_date: date,
+        *,
+        conn: psycopg.Connection | None = None,
+        for_update: bool = False,
+    ) -> dict[str, Any] | None:
+        sql = (
+            "SELECT * FROM trade_discipline_checkin "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=%s AND trade_date=%s"
+            + (" FOR UPDATE" if for_update else "")
+        )
+        params = [*self.owner, rule_id, trade_date]
+        if conn is None:
+            df = self.pg.query_df(sql, params)
+            return None if df.empty else df.iloc[0].to_dict()
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, params)
+            return self._one(cur)
+
+    def get_checkin_by_id(
+        self,
+        checkin_id: str,
+        *,
+        conn: psycopg.Connection | None = None,
+        for_update: bool = False,
+    ) -> dict[str, Any]:
+        sql = (
+            "SELECT * FROM trade_discipline_checkin "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s"
+            + (" FOR UPDATE" if for_update else "")
+        )
+        params = [*self.owner, checkin_id]
+        if conn is None:
+            df = self.pg.query_df(sql, params)
+            row = None if df.empty else df.iloc[0].to_dict()
+        else:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql, params)
+                row = self._one(cur)
+        if row is None:
+            raise NotFoundError("履约打卡不存在")
+        return row
+
+    def create_checkin(
+        self,
+        conn: psycopg.Connection,
+        *,
+        checkin_id: str,
+        rule_id: str,
+        trade_date: date,
+    ) -> dict[str, Any]:
+        try:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    "INSERT INTO trade_discipline_checkin "
+                    "(id,tenant_id,owner_user_id,rule_id,trade_date,current_revision_no,status,"
+                    "submitted_at) VALUES (%s,%s,%s,%s,%s,1,'submitted',clock_timestamp()) "
+                    "RETURNING *",
+                    [checkin_id, *self.owner, rule_id, trade_date],
+                )
+                row = self._one(cur)
+        except errors.UniqueViolation as exc:
+            raise ConflictError("该规则在此交易日已经提交过打卡") from exc
+        if row is None:
+            raise ConflictError("打卡创建失败")
+        return row
+
+    def advance_checkin_revision(
+        self,
+        conn: psycopg.Connection,
+        checkin_id: str,
+        *,
+        expected_revision: int,
+        new_revision: int,
+    ) -> dict[str, Any]:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "UPDATE trade_discipline_checkin SET current_revision_no=%s,status='amended',"
+                "amended_at=clock_timestamp(),updated_at=now() "
+                "WHERE tenant_id=%s AND owner_user_id=%s AND id=%s "
+                "AND current_revision_no=%s RETURNING *",
+                [new_revision, *self.owner, checkin_id, expected_revision],
+            )
+            row = self._one(cur)
+        if row is None:
+            raise ConflictError("打卡已被其他操作修正，请刷新后重试")
+        return row
+
+    def insert_revision(
+        self,
+        conn: psycopg.Connection,
+        *,
+        checkin_id: str,
+        revision_no: int,
+        rule_id: str,
+        version_no: int,
+        assessment: str,
+        no_operation: bool,
+        violation_detail: str | None,
+        review_note: str | None,
+    ) -> dict[str, Any]:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "INSERT INTO trade_discipline_checkin_revision "
+                "(checkin_id,tenant_id,owner_user_id,revision_no,rule_id,version_no,"
+                "revision_kind,assessment,no_operation,violation_detail,review_note,created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,clock_timestamp()) RETURNING *",
+                [
+                    checkin_id,
+                    *self.owner,
+                    revision_no,
+                    rule_id,
+                    version_no,
+                    "initial" if revision_no == 1 else "amendment",
+                    assessment,
+                    no_operation,
+                    violation_detail,
+                    review_note,
+                ],
+            )
+            row = self._one(cur)
+        if row is None:
+            raise ConflictError("打卡修订创建失败")
+        return row
+
+    def insert_violation(
+        self,
+        conn: psycopg.Connection,
+        *,
+        checkin_id: str,
+        revision_no: int,
+        reason_code: str | None,
+        reason_id: str | None,
+        reason_name: str,
+    ) -> None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO trade_discipline_violation "
+                "(checkin_id,tenant_id,owner_user_id,revision_no,reason_code,reason_id,"
+                "reason_name_snapshot) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                [
+                    checkin_id,
+                    *self.owner,
+                    revision_no,
+                    reason_code,
+                    reason_id,
+                    reason_name,
+                ],
+            )
+
+    def insert_operations(
+        self,
+        conn: psycopg.Connection,
+        *,
+        checkin_id: str,
+        revision_no: int,
+        rule_id: str,
+        version_no: int,
+        operations: list[dict[str, Any]],
+    ) -> None:
+        with conn.cursor() as cur:
+            for item in operations:
+                cur.execute(
+                    "INSERT INTO trade_discipline_operation "
+                    "(id,tenant_id,owner_user_id,checkin_id,revision_no,rule_id,version_no,"
+                    "stock_code,stock_name_snapshot,side,stock_rule_id,action_rule_id,price,"
+                    "quantity,amount,fee,operated_at,note,display_order) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    [
+                        item["id"],
+                        *self.owner,
+                        checkin_id,
+                        revision_no,
+                        rule_id,
+                        version_no,
+                        item["stock_code"],
+                        item["stock_name_snapshot"],
+                        item["side"],
+                        item["stock_rule_id"],
+                        item["action_rule_id"],
+                        item.get("price"),
+                        item.get("quantity"),
+                        item.get("amount"),
+                        item.get("fee"),
+                        item.get("operated_at"),
+                        item.get("note"),
+                        item["display_order"],
+                    ],
+                )
+
+    def get_active_reason(self, reason_id: str, *, conn: psycopg.Connection) -> dict[str, Any]:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "SELECT * FROM trade_discipline_reason WHERE tenant_id=%s "
+                "AND owner_user_id=%s AND id=%s AND is_active",
+                [*self.owner, reason_id],
+            )
+            row = self._one(cur)
+        if row is None:
+            raise NotFoundError("自定义未履约原因不存在或已删除")
+        return row
+
+    def upsert_reason(
+        self,
+        conn: psycopg.Connection,
+        *,
+        reason_id: str,
+        name: str,
+        normalized_name: str,
+    ) -> dict[str, Any]:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "INSERT INTO trade_discipline_reason "
+                "(id,tenant_id,owner_user_id,name,normalized_name,is_active) "
+                "VALUES (%s,%s,%s,%s,%s,TRUE) "
+                "ON CONFLICT (tenant_id,owner_user_id,normalized_name) DO UPDATE SET "
+                "name=EXCLUDED.name,is_active=TRUE,deleted_at=NULL,updated_at=now() RETURNING *",
+                [reason_id, *self.owner, name, normalized_name],
+            )
+            row = self._one(cur)
+        if row is None:
+            raise ConflictError("自定义原因保存失败")
+        return row
+
+    def list_active_reasons(self) -> list[dict[str, Any]]:
+        df = self.pg.query_df(
+            "SELECT id,name,normalized_name,created_at,updated_at "
+            "FROM trade_discipline_reason WHERE tenant_id=%s AND owner_user_id=%s "
+            "AND is_active ORDER BY updated_at DESC,id",
+            list(self.owner),
+        )
+        return df.to_dict("records")
+
+    def delete_reason(self, reason_id: str) -> None:
+        with self.transaction() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE trade_discipline_reason SET is_active=FALSE,deleted_at=clock_timestamp(),"
+                "updated_at=now() WHERE tenant_id=%s AND owner_user_id=%s AND id=%s AND is_active",
+                [*self.owner, reason_id],
+            )
+            if cur.rowcount != 1:
+                raise NotFoundError("自定义未履约原因不存在或已删除")
+
+    def load_revision(
+        self,
+        checkin_id: str,
+        revision_no: int,
+        *,
+        conn: psycopg.Connection | None = None,
+    ) -> dict[str, Any]:
+        sql = (
+            "SELECT rv.*,c.trade_date,c.status AS checkin_status,c.current_revision_no,"
+            "c.submitted_at,c.amended_at,v.name AS rule_name,v.capital,"
+            "vio.reason_code,vio.reason_id,vio.reason_name_snapshot "
+            "FROM trade_discipline_checkin_revision rv "
+            "JOIN trade_discipline_checkin c ON c.tenant_id=rv.tenant_id "
+            "AND c.owner_user_id=rv.owner_user_id AND c.id=rv.checkin_id "
+            "JOIN trade_discipline_rule_version v ON v.tenant_id=rv.tenant_id "
+            "AND v.owner_user_id=rv.owner_user_id AND v.rule_id=rv.rule_id "
+            "AND v.version_no=rv.version_no "
+            "LEFT JOIN trade_discipline_violation vio ON vio.tenant_id=rv.tenant_id "
+            "AND vio.owner_user_id=rv.owner_user_id AND vio.checkin_id=rv.checkin_id "
+            "AND vio.revision_no=rv.revision_no "
+            "WHERE rv.tenant_id=%s AND rv.owner_user_id=%s "
+            "AND rv.checkin_id=%s AND rv.revision_no=%s"
+        )
+        params = [*self.owner, checkin_id, revision_no]
+        if conn is None:
+            df = self.pg.query_df(sql, params)
+            row = None if df.empty else df.iloc[0].to_dict()
+        else:
+            with conn.cursor(row_factory=dict_row) as cur:
+                cur.execute(sql, params)
+                row = self._one(cur)
+        if row is None:
+            raise NotFoundError("打卡修订不存在")
+        row["operations"] = self._load_operations(checkin_id, revision_no, conn=conn)
+        return row
+
+    def _load_operations(
+        self,
+        checkin_id: str,
+        revision_no: int,
+        *,
+        conn: psycopg.Connection | None = None,
+    ) -> list[dict[str, Any]]:
+        sql = (
+            "SELECT op.*,sr.name AS stock_rule_name,ar.name AS action_rule_name,"
+            "ar.action_subtype FROM trade_discipline_operation op "
+            "JOIN trade_discipline_stock_rule sr ON sr.tenant_id=op.tenant_id "
+            "AND sr.owner_user_id=op.owner_user_id AND sr.rule_id=op.rule_id "
+            "AND sr.version_no=op.version_no AND sr.detail_id=op.stock_rule_id "
+            "JOIN trade_discipline_action_rule ar ON ar.tenant_id=op.tenant_id "
+            "AND ar.owner_user_id=op.owner_user_id AND ar.rule_id=op.rule_id "
+            "AND ar.version_no=op.version_no AND ar.detail_id=op.action_rule_id "
+            "WHERE op.tenant_id=%s AND op.owner_user_id=%s "
+            "AND op.checkin_id=%s AND op.revision_no=%s ORDER BY op.display_order,op.id"
+        )
+        params = [*self.owner, checkin_id, revision_no]
+        if conn is None:
+            return self.pg.query_df(sql, params).to_dict("records")
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, params)
+            return [dict(row) for row in cur.fetchall()]
+
+    def list_checkins(
+        self,
+        *,
+        filters: dict[str, Any],
+        page: int,
+        page_size: int,
+    ) -> dict[str, Any]:
+        where = ["c.tenant_id=%s", "c.owner_user_id=%s"]
+        params: list[Any] = [*self.owner]
+        scalar_filters = {
+            "date_from": ("c.trade_date >= %s", filters.get("date_from")),
+            "date_to": ("c.trade_date <= %s", filters.get("date_to")),
+            "rule_id": ("c.rule_id = %s", filters.get("rule_id")),
+            "assessment": ("rv.assessment = %s", filters.get("assessment")),
+            "no_operation": ("rv.no_operation = %s", filters.get("no_operation")),
+        }
+        for clause, value in scalar_filters.values():
+            if value is not None:
+                where.append(clause)
+                params.append(value)
+        if filters.get("amended") is not None:
+            where.append("c.status = %s")
+            params.append("amended" if filters["amended"] else "submitted")
+        if filters.get("stock"):
+            where.append(
+                "EXISTS (SELECT 1 FROM trade_discipline_operation opf "
+                "WHERE opf.tenant_id=c.tenant_id AND opf.owner_user_id=c.owner_user_id "
+                "AND opf.checkin_id=c.id AND opf.revision_no=c.current_revision_no "
+                "AND (opf.stock_code ILIKE %s OR opf.stock_name_snapshot ILIKE %s))"
+            )
+            pattern = f"%{filters['stock']}%"
+            params.extend([pattern, pattern])
+        if filters.get("reason"):
+            where.append("vio.reason_name_snapshot ILIKE %s")
+            params.append(f"%{filters['reason']}%")
+        where_sql = " AND ".join(where)
+        from_sql = (
+            "FROM trade_discipline_checkin c "
+            "JOIN trade_discipline_checkin_revision rv ON rv.tenant_id=c.tenant_id "
+            "AND rv.owner_user_id=c.owner_user_id AND rv.checkin_id=c.id "
+            "AND rv.revision_no=c.current_revision_no "
+            "JOIN trade_discipline_rule_version v ON v.tenant_id=rv.tenant_id "
+            "AND v.owner_user_id=rv.owner_user_id AND v.rule_id=rv.rule_id "
+            "AND v.version_no=rv.version_no "
+            "LEFT JOIN trade_discipline_violation vio ON vio.tenant_id=rv.tenant_id "
+            "AND vio.owner_user_id=rv.owner_user_id AND vio.checkin_id=rv.checkin_id "
+            "AND vio.revision_no=rv.revision_no "
+        )
+        total = int(
+            self.pg.query_df(f"SELECT count(*) AS n {from_sql} WHERE {where_sql}", params).iloc[0][
+                "n"
+            ]
+        )
+        rows = self.pg.query_df(
+            "SELECT c.id,c.rule_id,c.trade_date,c.status,c.current_revision_no,c.submitted_at,"
+            "c.amended_at,c.updated_at,rv.version_no,rv.assessment,rv.no_operation,"
+            "v.name AS rule_name,vio.reason_name_snapshot,"
+            "(SELECT count(*) FROM trade_discipline_operation opc "
+            "WHERE opc.tenant_id=c.tenant_id AND opc.owner_user_id=c.owner_user_id "
+            "AND opc.checkin_id=c.id AND opc.revision_no=c.current_revision_no) AS operation_count "
+            f"{from_sql} WHERE {where_sql} "
+            "ORDER BY c.trade_date DESC,c.updated_at DESC,c.id DESC LIMIT %s OFFSET %s",
+            params + [page_size, (page - 1) * page_size],
+        )
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "list": rows.to_dict("records"),
+        }
+
+    def checkin_summary(self, trade_date: date) -> list[dict[str, Any]]:
+        df = self.pg.query_df(
+            "WITH latest_event AS (SELECT DISTINCT ON (a.rule_id) a.rule_id,a.version_no,"
+            "a.event_type,a.effective_from_trade_date,a.event_seq "
+            "FROM trade_discipline_rule_activation a WHERE a.tenant_id=%s "
+            "AND a.owner_user_id=%s AND a.effective_from_trade_date<=%s "
+            "ORDER BY a.rule_id,a.effective_from_trade_date DESC,a.event_seq DESC) "
+            "SELECT r.id AS rule_id,v.name AS rule_name,le.version_no,"
+            "le.effective_from_trade_date,c.id AS checkin_id,c.current_revision_no,c.status,"
+            "rv.assessment,rv.no_operation FROM latest_event le "
+            "JOIN trade_discipline_rule r ON r.tenant_id=%s AND r.owner_user_id=%s "
+            "AND r.id=le.rule_id AND r.deleted_at IS NULL "
+            "JOIN trade_discipline_rule_version v ON v.tenant_id=%s AND v.owner_user_id=%s "
+            "AND v.rule_id=le.rule_id AND v.version_no=le.version_no "
+            "LEFT JOIN trade_discipline_checkin c ON c.tenant_id=%s AND c.owner_user_id=%s "
+            "AND c.rule_id=le.rule_id AND c.trade_date=%s "
+            "LEFT JOIN trade_discipline_checkin_revision rv ON rv.tenant_id=c.tenant_id "
+            "AND rv.owner_user_id=c.owner_user_id AND rv.checkin_id=c.id "
+            "AND rv.revision_no=c.current_revision_no WHERE le.event_type<>'archive' "
+            "ORDER BY v.name,r.id",
+            [
+                *self.owner,
+                trade_date,
+                *self.owner,
+                *self.owner,
+                *self.owner,
+                trade_date,
+            ],
+        )
+        return df.to_dict("records")

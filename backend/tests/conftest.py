@@ -30,6 +30,23 @@ from backend.storage.pg_ddl import _ASSET_TABLES, init_pg_db
 TEST_TENANT = "pytest"
 TEST_OWNER = "pytest_owner"
 
+_TRADE_DISCIPLINE_CLEAN_ORDER = (
+    "trade_discipline_operation",
+    "trade_discipline_violation",
+    "trade_discipline_reason",
+    "trade_discipline_checkin_revision",
+    "trade_discipline_checkin",
+    "trade_discipline_rule_activation",
+    "trade_discipline_draft_action_rule",
+    "trade_discipline_draft_stock_rule",
+    "trade_discipline_rule_draft",
+    "trade_discipline_action_rule",
+    "trade_discipline_stock_rule",
+    "trade_discipline_rule_version",
+    "trade_discipline_rule_name_claim",
+    "trade_discipline_rule",
+)
+
 
 def clean_owner(
     pg: PostgresClient,
@@ -37,8 +54,25 @@ def clean_owner(
     owner: str = TEST_OWNER,
 ) -> None:
     """清理某归属者在全部资产表的数据（测试隔离）。"""
+    # 打卡主体的当前修订指针是延迟外键，修订又引用打卡主体，必须在同一事务中先删修订、
+    # 再删主体，提交时才会同时满足两侧约束；逐表自动提交无法清理这个合法外键环。
+    with pg.transaction() as conn, conn.cursor() as cur:
+        # 规则主体的 latest_version_no 与正式版本也构成双向 RESTRICT 引用；测试清理前先把
+        # 主体转回合法的未发布空指针状态，业务服务本身不提供这种历史数据删除能力。
+        cur.execute(
+            "UPDATE trade_discipline_rule SET status='unpublished',latest_version_no=NULL "
+            "WHERE tenant_id=%s AND owner_user_id=%s",
+            [tenant, owner],
+        )
+        for table in _TRADE_DISCIPLINE_CLEAN_ORDER:
+            cur.execute(
+                f"DELETE FROM {table} WHERE tenant_id=%s AND owner_user_id=%s",
+                [tenant, owner],
+            )
     # 带复合 FK 的资产域必须按建表逆序清理，先删明细/修订再删主体。
     for t in reversed(_ASSET_TABLES):
+        if t in _TRADE_DISCIPLINE_CLEAN_ORDER:
+            continue
         try:
             pg.execute(
                 f"DELETE FROM {t} WHERE tenant_id=%s AND owner_user_id=%s",
@@ -97,5 +131,7 @@ def app_cfg(pg):
     yield AppConfigRepo(pg)
     pg.execute("DELETE FROM app_config")
     for _, r in snap.iterrows():
-        pg.execute("INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s)",
-                   [r["key"], r["value"], r["updated_at"]])
+        pg.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s,%s,%s)",
+            [r["key"], r["value"], r["updated_at"]],
+        )
