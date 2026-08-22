@@ -6,6 +6,7 @@ import ElementPlus from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TradeDisciplineView from '@/views/TradeDisciplineView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { permission } from '@/directives/permission'
 
 const listRules = vi.fn()
 const listCheckins = vi.fn()
@@ -56,7 +57,7 @@ async function mountPage(permissions: string[]) {
   await router.push('/trade-discipline')
   await router.isReady()
   const wrapper = mount(TradeDisciplineView, {
-    global: { plugins: [pinia, router, ElementPlus] },
+    global: { plugins: [pinia, router, ElementPlus], directives: { permission } },
   })
   await flushPromises()
   return wrapper

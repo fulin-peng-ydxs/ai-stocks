@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import HelpTip from '@/components/HelpTip.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
@@ -12,16 +13,22 @@ import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeS
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTradeDates } from '@/composables/useTradeDates'
-import { confirmLeave } from '@/composables/useUnsavedChangesGuard'
+import {
+  confirmLeave,
+  registerUnsavedHandler,
+} from '@/composables/useUnsavedChangesGuard'
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   listTradeDisciplineCheckins,
   listTradeDisciplineRules,
+  createTradeDisciplineRule,
   type CheckinHistoryRow,
   type TradeDisciplineRule,
 } from '@/api/tradeDiscipline'
+import RuleMasterList from '@/views/trade-discipline/components/RuleMasterList.vue'
+import TradeRuleEditor from '@/views/trade-discipline/components/TradeRuleEditor.vue'
 
 type PanelKey = 'checkin' | 'rules' | 'history'
 
@@ -88,6 +95,11 @@ const selectedRuleId = ref('')
 const selectedRule = computed(
   () => rules.value.find((rule) => rule.id === selectedRuleId.value) ?? rules.value[0] ?? null,
 )
+const ruleEditorRef = ref<{
+  isDirty: () => boolean
+  requestLeave: () => Promise<boolean>
+} | null>(null)
+let unregisterUnsavedHandler: (() => void) | undefined
 
 const historyRows = ref<CheckinHistoryRow[]>([])
 const historyTotal = ref(0)
@@ -116,36 +128,6 @@ function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
 
-function statusLabel(rule: TradeDisciplineRule): string {
-  if (rule.has_pending_management_action) return '有待生效动作'
-  if (rule.effective_status === 'active') return '当前生效'
-  if (rule.effective_status === 'archived') return '已归档'
-  return '未发布'
-}
-
-function statusType(rule: TradeDisciplineRule): 'success' | 'warning' | 'info' {
-  if (rule.has_pending_management_action) return 'warning'
-  return rule.effective_status === 'active' ? 'success' : 'info'
-}
-
-function managementStatusLabel(rule: TradeDisciplineRule): string {
-  const labels: Record<TradeDisciplineRule['management_status'], string> = {
-    unpublished: '未发布',
-    active: '已启用',
-    archived: '已归档',
-  }
-  return labels[rule.management_status]
-}
-
-function effectiveStatusLabel(rule: TradeDisciplineRule): string {
-  const labels: Record<TradeDisciplineRule['effective_status'], string> = {
-    unpublished: '当日未生效',
-    active: '当日生效',
-    archived: '当日已归档',
-  }
-  return labels[rule.effective_status]
-}
-
 async function loadRules(): Promise<void> {
   rulesLoading.value = true
   rulesError.value = false
@@ -159,6 +141,10 @@ async function loadRules(): Promise<void> {
   } finally {
     rulesLoading.value = false
   }
+}
+
+async function refreshRules(): Promise<void> {
+  await loadRules()
 }
 
 async function loadHistory(): Promise<void> {
@@ -194,7 +180,35 @@ async function switchPanel(value: string | number | boolean): Promise<void> {
   await router.replace({ query: { ...route.query, tab: next } })
 }
 
-function selectRule(ruleId: string): void {
+async function selectRule(ruleId: string): Promise<void> {
+  if (ruleId === selectedRuleId.value) return
+  if (!(await confirmLeave(route.path, 'context-change'))) return
+  selectedRuleId.value = ruleId
+}
+
+async function createRule(): Promise<void> {
+  if (!canManageRules.value) return
+  if (!(await confirmLeave(route.path, 'context-change'))) return
+  try {
+    const created = await createTradeDisciplineRule()
+    await loadRules()
+    selectedRuleId.value = created.id
+    ElMessage.success('已创建草稿（未发布）')
+  } catch { /* 统一请求层已反馈 */ }
+}
+
+async function createRuleFromCheckin(): Promise<void> {
+  await switchPanel('rules')
+  if (activePanel.value === 'rules') await createRule()
+}
+
+async function handleRuleDeleted(): Promise<void> {
+  selectedRuleId.value = ''
+  await loadRules()
+}
+
+async function handleRuleCopied(ruleId: string): Promise<void> {
+  await loadRules()
   selectedRuleId.value = ruleId
 }
 
@@ -209,7 +223,14 @@ watch(activePanel, (panel) => {
   }
 })
 
-onMounted(loadPage)
+onMounted(() => {
+  unregisterUnsavedHandler = registerUnsavedHandler(route.path, {
+    isDirty: () => ruleEditorRef.value?.isDirty() ?? false,
+    requestLeave: () => ruleEditorRef.value?.requestLeave() ?? true,
+  })
+  void loadPage()
+})
+onUnmounted(() => unregisterUnsavedHandler?.())
 </script>
 
 <template>
@@ -279,31 +300,19 @@ onMounted(loadPage)
           />
           <AppStateBlock v-else-if="!rules.length" state="empty" title="暂无交易规则">
             <template #extra>
-              <el-button v-if="canManageRules" type="primary" @click="switchPanel('rules')">
+              <el-button v-if="canManageRules" v-permission="'trade-discipline:rule-manage'" type="primary" @click="createRuleFromCheckin">
                 创建第一套规则
               </el-button>
             </template>
           </AppStateBlock>
           <div v-else class="master-detail-shell">
-            <aside class="rule-rail" role="listbox" aria-label="规则选择">
-              <div
-                v-for="rule in rules"
-                :key="rule.id"
-                class="rule-item"
-                :class="{ active: selectedRule?.id === rule.id }"
-                role="option"
-                tabindex="0"
-                :aria-selected="selectedRule?.id === rule.id"
-                @click="selectRule(rule.id)"
-                @keydown.enter="selectRule(rule.id)"
-                @keydown.space.prevent="selectRule(rule.id)"
-              >
-                <span>{{ rule.name || rule.proposed_name || '未命名规则' }}</span>
-                <el-tag :type="statusType(rule)" effect="plain" size="small">
-                  {{ statusLabel(rule) }}
-                </el-tag>
-              </div>
-            </aside>
+            <RuleMasterList
+              :rules="rules"
+              :selected-id="selectedRuleId"
+              :can-manage="canManageRules"
+              @select="selectRule"
+              @create="createRuleFromCheckin"
+            />
             <div class="panel-detail">
               <div class="detail-kicker">今日履约 · {{ latestTradeDateText }}</div>
               <h3 class="app-section-title">{{ selectedRule?.name || selectedRule?.proposed_name }}</h3>
@@ -318,44 +327,31 @@ onMounted(loadPage)
         </section>
 
         <section v-else-if="activePanel === 'rules'" class="discipline-panel">
-          <div v-if="rules.length" class="master-detail-shell">
-            <aside class="rule-rail" role="listbox" aria-label="规则管理列表">
-              <div
-                v-for="rule in rules"
-                :key="rule.id"
-                class="rule-item"
-                :class="{ active: selectedRule?.id === rule.id }"
-                role="option"
-                tabindex="0"
-                :aria-selected="selectedRule?.id === rule.id"
-                @click="selectRule(rule.id)"
-                @keydown.enter="selectRule(rule.id)"
-                @keydown.space.prevent="selectRule(rule.id)"
-              >
-                <span>{{ rule.name || rule.proposed_name || '未命名规则' }}</span>
-                <small>{{ rule.draft_revision ? '有编辑中草稿' : statusLabel(rule) }}</small>
-              </div>
-            </aside>
-            <div class="panel-detail">
-              <div class="detail-kicker">规则状态</div>
-              <h3 class="app-section-title">{{ selectedRule?.name || selectedRule?.proposed_name }}</h3>
-              <dl class="rule-facts">
-                <div><dt>管理状态</dt><dd>{{ selectedRule ? managementStatusLabel(selectedRule) : '—' }}</dd></div>
-                <div><dt>当日有效</dt><dd>{{ selectedRule ? effectiveStatusLabel(selectedRule) : '—' }}</dd></div>
-                <div><dt>正式版本</dt><dd>{{ selectedRule?.effective_version?.version_no ? `v${selectedRule.effective_version.version_no}` : '—' }}</dd></div>
-                <div><dt>待生效动作</dt><dd>{{ selectedRule?.has_pending_management_action ? '是' : '否' }}</dd></div>
-              </dl>
-              <p v-if="!canManageRules" class="readonly-note app-caption-text">
-                当前账号只有查看权限，规则维护命令不会显示。
-              </p>
-            </div>
+          <div class="master-detail-shell">
+            <RuleMasterList
+              :rules="rules"
+              :selected-id="selectedRuleId"
+              :can-manage="canManageRules"
+              @select="selectRule"
+              @create="createRule"
+            />
+            <TradeRuleEditor
+              v-if="selectedRuleId"
+              ref="ruleEditorRef"
+              :rule-id="selectedRuleId"
+              :trade-date="dataMax"
+              :can-manage="canManageRules"
+              @changed="refreshRules"
+              @deleted="handleRuleDeleted"
+              @copied="handleRuleCopied"
+            />
+            <AppStateBlock
+              v-else
+              state="empty"
+              title="选择或新建一条规则"
+              description="规则草稿会保存在服务端，发布后才生成正式版本"
+            />
           </div>
-          <AppStateBlock
-            v-else
-            state="empty"
-            title="暂无交易规则"
-            description="规则创建与版本维护将在规则编辑阶段接入"
-          />
         </section>
 
         <section v-else class="discipline-panel history-panel">
@@ -449,33 +445,11 @@ onMounted(loadPage)
 .discipline-summary { gap: var(--app-space-3); color: var(--el-text-color-secondary); }
 .discipline-panel { min-height: 0; flex: 1 1 auto; overflow: hidden; }
 .master-detail-shell { height: 100%; min-height: 0; display: flex; gap: var(--app-space-4); overflow-x: auto; }
-.rule-rail,
 .panel-detail {
   border: 1px solid var(--el-border-color);
   border-radius: 8px;
   background: var(--el-bg-color-overlay);
 }
-.rule-rail { width: 288px; flex: none; min-height: 0; overflow: auto; padding: var(--app-space-2); }
-.rule-item {
-  width: 100%;
-  min-height: 52px;
-  padding: var(--app-space-2) var(--app-space-3);
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--el-text-color-primary);
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--app-space-2);
-  text-align: left;
-  cursor: pointer;
-}
-.rule-item:hover { background: var(--el-fill-color-light); }
-.rule-item:focus-visible { outline: 2px solid var(--el-color-primary-light-3); outline-offset: 1px; }
-.rule-item.active { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
-.rule-item > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rule-item > small { color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .panel-detail { min-width: 460px; flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--app-space-5); }
 .detail-kicker { color: var(--el-color-primary); font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-section); }
 .panel-detail .app-section-title { margin: var(--app-space-1) 0 var(--app-space-4); }
@@ -485,14 +459,15 @@ onMounted(loadPage)
 .rule-facts dd { margin: var(--app-space-1) 0 0; color: var(--el-text-color-primary); font-weight: var(--app-font-weight-section); }
 .readonly-note { margin-top: var(--app-space-4); color: var(--el-color-warning); }
 .history-panel { display: flex; }
+@media (max-width: 1100px) {
+  .master-detail-shell { flex-direction: column; overflow: auto; }
+  .panel-detail { min-width: 0; overflow: visible; }
+}
 @media (max-width: 900px) {
   .page-head,
   .discipline-rail { flex-direction: column; align-items: stretch; }
   .page-head-actions { justify-content: space-between; }
   .discipline-rail :deep(.page-segmented) { min-width: 0; }
   .discipline-summary { justify-content: space-between; }
-  .master-detail-shell { flex-direction: column; overflow: auto; }
-  .rule-rail { width: auto; max-height: 180px; }
-  .panel-detail { min-width: 0; overflow: visible; }
 }
 </style>
