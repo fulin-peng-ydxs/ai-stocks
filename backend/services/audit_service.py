@@ -57,6 +57,9 @@ _TARGET_TYPE_LABELS = {
     "screen_profile": "筛选方案",
     "trade_profile": "买卖方案",
     "backtest_run": "回测记录",
+    "trade_discipline_rule": "交易纪律规则",
+    "trade_discipline_checkin": "交易纪律打卡",
+    "trade_discipline_reason": "未履约原因",
 }
 
 
@@ -394,6 +397,37 @@ class AuditService:
             )
         except Exception as e:  # noqa: BLE001
             log.warning("RBAC 审计写入失败，已降级忽略: %s", e)
+
+    def record_domain_event(
+        self,
+        *,
+        event_type: str,
+        action: str,
+        target_type: str,
+        target_id: str,
+        resource_code: str | None = None,
+        tenant_id: str | None = None,
+        actor_user_id: str | None = None,
+        result: str = "success",
+        status: str = "completed",
+    ) -> None:
+        """记录业务写动作；只接收动作和对象引用，避免正文进入审计。"""
+        try:
+            self.repo.record(
+                event_category="business",
+                event_type=event_type,
+                action=action,
+                result=result,
+                status=status,
+                tenant_id=tenant_id,
+                actor_user_id=actor_user_id,
+                resource_code=resource_code,
+                target_type=target_type,
+                target_id=target_id,
+                context={"action": action, "affected_count": 1},
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("业务审计写入失败，已降级忽略: %s", e)
 
     def _scoped_filters(self, ctx: AuthContext | None, filters: dict[str, Any]) -> dict[str, Any]:
         if ctx is None:
