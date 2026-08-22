@@ -75,22 +75,73 @@ def _route_codes(route) -> set[str]:
 
 def test_trade_discipline_routes_are_openapi_visible_and_precisely_guarded(client):
     expected = {
-        "/api/trade-discipline/summary": {
+        ("GET", "/api/trade-discipline/summary"): {
             "trade-discipline:view",
             "trade-discipline:checkin-view",
         },
-        "/api/trade-discipline/stock-options": {"trade-discipline:checkin-submit"},
+        ("GET", "/api/trade-discipline/rules"): {"trade-discipline:view"},
+        ("POST", "/api/trade-discipline/rules"): {"trade-discipline:rule-manage"},
+        ("GET", "/api/trade-discipline/rules/{rule_id}"): {"trade-discipline:view"},
+        ("POST", "/api/trade-discipline/rules/{rule_id}/draft/open"): {
+            "trade-discipline:rule-manage"
+        },
+        ("PUT", "/api/trade-discipline/rules/{rule_id}/draft"): {
+            "trade-discipline:rule-manage"
+        },
+        ("DELETE", "/api/trade-discipline/rules/{rule_id}/draft"): {
+            "trade-discipline:rule-manage"
+        },
+        ("POST", "/api/trade-discipline/rules/{rule_id}/publish"): {
+            "trade-discipline:rule-manage"
+        },
+        ("POST", "/api/trade-discipline/rules/{rule_id}/archive"): {
+            "trade-discipline:rule-manage"
+        },
+        ("POST", "/api/trade-discipline/rules/{rule_id}/restore"): {
+            "trade-discipline:rule-manage"
+        },
+        ("POST", "/api/trade-discipline/rules/{rule_id}/copy"): {
+            "trade-discipline:rule-manage"
+        },
+        ("DELETE", "/api/trade-discipline/rules/{rule_id}"): {
+            "trade-discipline:rule-manage"
+        },
+        ("GET", "/api/trade-discipline/checkins/current"): {
+            "trade-discipline:checkin-view"
+        },
+        ("POST", "/api/trade-discipline/checkins"): {
+            "trade-discipline:checkin-submit"
+        },
+        ("POST", "/api/trade-discipline/checkins/quick-no-operation"): {
+            "trade-discipline:checkin-submit"
+        },
+        ("POST", "/api/trade-discipline/checkins/{checkin_id}/amendments"): {
+            "trade-discipline:checkin-submit"
+        },
+        ("GET", "/api/trade-discipline/checkins"): {
+            "trade-discipline:checkin-view"
+        },
+        ("GET", "/api/trade-discipline/checkins/{checkin_id}/revisions/{revision_no}"): {
+            "trade-discipline:checkin-view"
+        },
+        ("GET", "/api/trade-discipline/reasons"): {"trade-discipline:checkin-view"},
+        ("DELETE", "/api/trade-discipline/reasons/{reason_id}"): {
+            "trade-discipline:checkin-submit"
+        },
+        ("GET", "/api/trade-discipline/stock-options"): {
+            "trade-discipline:checkin-submit"
+        },
     }
-    found: dict[str, set[str]] = {}
+    found: dict[tuple[str, str], set[str]] = {}
     for route in client.app.routes:
         path = getattr(route, "path", "")
         methods = (getattr(route, "methods", set()) or set()) & _HTTP_VERBS
         if path.startswith("/api/trade-discipline") and methods:
             codes = _route_codes(route)
-            assert codes, f"交易纪律路由缺少精确权限守卫: {path}"
-            found[path] = codes
-    assert expected.items() <= found.items()
-    assert set(found) <= set(client.app.openapi()["paths"])
+            for method in methods:
+                found[(method, path)] = codes
+    assert found == expected
+    assert {path for _, path in found} <= set(client.app.openapi()["paths"])
 
 
 def test_permission_matrix_and_dedicated_stock_search(client, pg, market, monkeypatch):
@@ -107,6 +158,8 @@ def test_permission_matrix_and_dedicated_stock_search(client, pg, market, monkey
         ["trade-discipline:view", "trade-discipline:checkin-view"],
     )
     submitter = _make_user(pg, ["trade-discipline:checkin-submit"])
+    roleless = _make_user(pg, [])
+    pg.execute("DELETE FROM sys_user_role WHERE user_id=%s", [roleless[0]])
     try:
         assert client.get("/api/trade-discipline/rules").status_code == 401
         assert client.get(
@@ -139,10 +192,15 @@ def test_permission_matrix_and_dedicated_stock_search(client, pg, market, monkey
             "/api/trade-discipline/stock-options?q=平安&limit=21",
             headers=_auth(submitter[0], submitter[1]),
         ).status_code == 422
+        assert client.get(
+            "/api/trade-discipline/rules",
+            headers=_auth(roleless[0], roleless[1]),
+        ).status_code == 403
     finally:
         _remove_user(pg, viewer)
         _remove_user(pg, dual_viewer)
         _remove_user(pg, submitter)
+        _remove_user(pg, roleless)
 
 
 def test_api_status_mapping_owner_isolation_conflict_and_forbidden_fields(client, pg):
@@ -212,8 +270,20 @@ def test_all_trade_discipline_endpoint_contracts_return_unified_response(
         def summary(self, trade_date):
             return {"trade_date": trade_date, "total": 0, "completed": 0, "pending": 0, "rules": []}
 
-        def list_rules(self):
-            return [self._rule()]
+        def list_rules_with_state(self, trade_date):
+            return [{
+                **self._rule(),
+                "as_of_trade_date": trade_date,
+                "management_status": "active",
+                "latest_management_event": {
+                    "event_type": "publish",
+                    "event_seq": 1,
+                    "activated_at": "2025-01-01T10:00:00+08:00",
+                    "effective_from_trade_date": "2025-01-02",
+                },
+                "effective_status": "active",
+                "effective_version": {"version_no": 1},
+            }]
 
         def create_rule(self, payload=None):
             return self._rule()
@@ -221,8 +291,8 @@ def test_all_trade_discipline_endpoint_contracts_return_unified_response(
         def get_rule(self, rule_id):
             return self._rule(rule_id)
 
-        def effective_version(self, rule_id, trade_date):
-            return None
+        def get_rule_with_state(self, rule_id, trade_date):
+            return {**self._rule(rule_id), "as_of_trade_date": trade_date}
 
         def open_draft(self, rule_id):
             return {"rule_id": rule_id, "draft_revision": 1}
@@ -323,11 +393,49 @@ def test_all_trade_discipline_endpoint_contracts_return_unified_response(
             assert response.status_code == 200, (method, path, response.text)
             assert set(response.json()) == {"code", "msg", "data"}
             assert response.json()["code"] == 0
+            if method == "GET" and path.startswith("/api/trade-discipline/rules?"):
+                state = response.json()["data"][0]
+                assert state["latest_management_event"]["effective_from_trade_date"] == (
+                    "2025-01-02"
+                )
+                assert state["effective_status"] == "active"
 
         invalid_range = client.get(
             "/api/trade-discipline/checkins?date_from=2025-02-01&date_to=2025-01-01",
             headers=headers,
         )
         assert invalid_range.status_code == 422
+    finally:
+        _remove_user(pg, identity)
+
+
+def test_quick_conflict_response_contains_existing_opaque_reference(client, pg, monkeypatch):
+    from backend.common.exceptions import ConflictError
+
+    class ConflictService:
+        @staticmethod
+        def quick_no_operation(rule_id, trade_date):
+            conflict = ConflictError("已有正式记录")
+            conflict.data = {
+                "checkin_id": "tdc_opaque",
+                "rule_id": rule_id,
+                "trade_date": str(trade_date),
+            }
+            raise conflict
+
+    monkeypatch.setattr("backend.api.trade_discipline._service", ConflictService)
+    identity = _make_user(pg, ["trade-discipline:checkin-submit"])
+    try:
+        response = client.post(
+            "/api/trade-discipline/checkins/quick-no-operation",
+            headers=_auth(identity[0], identity[1]),
+            json={"rule_id": "tdr_opaque", "trade_date": "2025-01-02"},
+        )
+        assert response.status_code == 409
+        assert response.json()["data"] == {
+            "checkin_id": "tdc_opaque",
+            "rule_id": "tdr_opaque",
+            "trade_date": "2025-01-02",
+        }
     finally:
         _remove_user(pg, identity)

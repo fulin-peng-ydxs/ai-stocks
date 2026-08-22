@@ -533,12 +533,15 @@ CREATE TABLE IF NOT EXISTS trade_discipline_checkin (
     trade_date          DATE NOT NULL,
     current_revision_no INTEGER NOT NULL,
     status              TEXT NOT NULL DEFAULT 'submitted',
+    submission_source   TEXT NOT NULL DEFAULT 'workbench',
     submitted_at        TIMESTAMPTZ NOT NULL,
     amended_at          TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (current_revision_no > 0),
     CHECK (status IN ('submitted', 'amended')),
+    CONSTRAINT td_checkin_submission_source_check
+    CHECK (submission_source IN ('workbench', 'quick_no_operation')),
     CONSTRAINT td_checkin_status_time_check
     CHECK ((status = 'submitted' AND amended_at IS NULL)
         OR (status = 'amended' AND amended_at IS NOT NULL)),
@@ -1145,6 +1148,12 @@ _TRADE_DISCIPLINE_INDEXES: tuple[str, ...] = (
 )
 
 _TRADE_DISCIPLINE_POINTER_CONSTRAINTS: tuple[str, ...] = (
+    ("ALTER TABLE trade_discipline_checkin ADD COLUMN IF NOT EXISTS "
+     "submission_source TEXT NOT NULL DEFAULT 'workbench'"),
+    ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+     "WHERE conname='td_checkin_submission_source_check') THEN "
+     "ALTER TABLE trade_discipline_checkin ADD CONSTRAINT td_checkin_submission_source_check "
+     "CHECK (submission_source IN ('workbench','quick_no_operation')); END IF; END $$;"),
     ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
      "WHERE conname='td_rule_lifecycle_consistency_check') THEN "
      "ALTER TABLE trade_discipline_rule "
@@ -1764,21 +1773,21 @@ def _trade_discipline_marker_state(raw: object) -> tuple[str, dict | None]:
             return "invalid", None
     if len(value["inserted_role_menus"]) != 3 or len(value["inserted_role_resources"]) != 12:
         return "invalid", None
-    expected_roles = {ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL}
-    expected_resources = set(TRADE_DISCIPLINE_RESOURCE_CODES)
+    expected_roles = (ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL)
+    expected_resources = list(TRADE_DISCIPLINE_RESOURCE_CODES)
     if value["inserted_menu_ids"] != [_TRADE_DISCIPLINE_MENU_ID]:
         return "invalid", None
-    if set(value["inserted_resource_ids"]) != expected_resources:
+    if value["inserted_resource_ids"] != expected_resources:
         return "invalid", None
-    if set(map(tuple, value["inserted_role_menus"])) != {
-        (role_id, _TRADE_DISCIPLINE_MENU_ID) for role_id in expected_roles
-    }:
+    if value["inserted_role_menus"] != [
+        [role_id, _TRADE_DISCIPLINE_MENU_ID] for role_id in expected_roles
+    ]:
         return "invalid", None
-    if set(map(tuple, value["inserted_role_resources"])) != {
-        (role_id, resource_id)
+    if value["inserted_role_resources"] != [
+        [role_id, resource_id]
         for role_id in expected_roles
         for resource_id in expected_resources
-    }:
+    ]:
         return "invalid", None
     if value["applied"] is True and value["rolled_back"] is False:
         return "applied", value
@@ -1788,7 +1797,7 @@ def _trade_discipline_marker_state(raw: object) -> tuple[str, dict | None]:
 
 
 def _validate_trade_discipline_applied_cur(cur, ledger: dict) -> None:
-    """applied marker 必须与菜单、资源和实际授权账本完全自洽。"""
+    """applied marker 只校验迁移身份和不可变结构，不冻结可维护的默认授权。"""
     cur.execute(
         "SELECT id, code, title, type, route_path, visible FROM sys_menu WHERE id=%s",
         [_TRADE_DISCIPLINE_MENU_ID],
@@ -1814,31 +1823,19 @@ def _validate_trade_discipline_applied_cur(cur, ledger: dict) -> None:
         )
         if cur.fetchone() != (code, menu_id, code, name, rtype, method, path):
             raise RuntimeError(f"交易纪律 RBAC marker 已应用，但资源契约异常: {code}")
-    for role_id, menu_id in ledger["inserted_role_menus"]:
-        cur.execute(
-            "SELECT 1 FROM sys_role_menu WHERE role_id=%s AND menu_id=%s",
-            [role_id, menu_id],
-        )
-        if cur.fetchone() is None:
-            raise RuntimeError(f"交易纪律菜单授权账本缺失: {role_id}/{menu_id}")
-    for role_id, resource_id in ledger["inserted_role_resources"]:
-        cur.execute(
-            "SELECT 1 FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
-            [role_id, resource_id],
-        )
-        if cur.fetchone() is None:
-            raise RuntimeError(f"交易纪律资源授权账本缺失: {role_id}/{resource_id}")
+    # normal/tenant_admin 的初始行是“默认授权”，管理员可在角色页撤销；重启不得补回或失败。
+    # ledger 仍保留迁移最初插入的精确身份，供回滚时删除当前仍存在的同键行。
 
 
 def _validate_trade_discipline_rollback_grants_cur(cur, ledger: dict) -> None:
-    """回滚不得借资源/菜单级联删除迁移后新增的自定义角色授权。"""
+    """回滚允许默认授权被撤销，但不得级联删除账本外自定义角色授权。"""
     expected_menus = set(map(tuple, ledger["inserted_role_menus"]))
     cur.execute(
         "SELECT role_id, menu_id FROM sys_role_menu WHERE menu_id = ANY(%s)",
         [ledger["inserted_menu_ids"]],
     )
     actual_menus = set(cur.fetchall())
-    if actual_menus != expected_menus:
+    if not actual_menus <= expected_menus:
         raise RuntimeError("交易纪律菜单存在迁移账本外授权，拒绝级联回滚")
     expected_resources = set(map(tuple, ledger["inserted_role_resources"]))
     cur.execute(
@@ -1846,7 +1843,7 @@ def _validate_trade_discipline_rollback_grants_cur(cur, ledger: dict) -> None:
         [ledger["inserted_resource_ids"]],
     )
     actual_resources = set(cur.fetchall())
-    if actual_resources != expected_resources:
+    if not actual_resources <= expected_resources:
         raise RuntimeError("交易纪律资源存在迁移账本外授权，拒绝级联回滚")
 
 

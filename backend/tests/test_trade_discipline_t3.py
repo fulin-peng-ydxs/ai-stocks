@@ -61,6 +61,11 @@ def _service(pg, market, *, owner: str = TEST_OWNER) -> TradeDisciplineService:
 
 
 def _seed_market(market) -> tuple[date, date, date]:
+    market.execute(
+        "INSERT INTO stock_basic(code,name,board,industry) "
+        "VALUES ('600000.SH','浦发银行','主板','银行') "
+        "ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name"
+    )
     first = datetime.now(SHANGHAI).date() + timedelta(days=1)
     dates = (first, first + timedelta(days=1), first + timedelta(days=2))
     for current in dates:
@@ -301,6 +306,106 @@ def test_quick_no_operation_is_idempotent_under_concurrency(pg, market):
     summary = service.summary(trade_date)
     assert summary["total"] == summary["completed"] == 1
     assert summary["pending"] == 0
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"assessment": "complied", "no_operation": True, "operations": []},
+        {
+            "assessment": "breached",
+            "no_operation": True,
+            "reason_code": "other",
+            "violation_detail": "普通入口记录为未履约",
+            "operations": [],
+        },
+        {
+            "assessment": "complied",
+            "no_operation": False,
+            "operations": ["operation"],
+        },
+    ],
+)
+def test_quick_no_operation_conflicts_with_existing_workbench_record(pg, market, payload):
+    trade_date, _, _ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+    actual = dict(payload)
+    if actual["operations"] == ["operation"]:
+        actual["operations"] = [_operation(trade_date)]
+    existing = service.submit_checkin(rule_id, trade_date, actual)
+
+    with pytest.raises(ConflictError, match="已有正式记录") as raised:
+        service.quick_no_operation(rule_id, trade_date)
+    assert raised.value.data == {
+        "checkin_id": existing["checkin_id"],
+        "rule_id": rule_id,
+        "trade_date": str(trade_date),
+    }
+
+
+def test_quick_no_operation_conflicts_after_quick_record_was_amended(pg, market):
+    trade_date, _, _ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+    quick = service.quick_no_operation(rule_id, trade_date)
+    service.amend_checkin(
+        quick["checkin_id"],
+        {
+            "assessment": "breached",
+            "no_operation": True,
+            "reason_code": "other",
+            "violation_detail": "快捷记录已被修正",
+            "operations": [],
+        },
+        expected_revision=1,
+    )
+
+    with pytest.raises(ConflictError, match="已有正式记录"):
+        service.quick_no_operation(rule_id, trade_date)
+
+
+def test_operation_rejects_unknown_stock_code_in_one_batch(pg, market):
+    trade_date, _, _ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+    operation = _operation(trade_date)
+    operation["stock_code"] = "999999.SZ"
+    with pytest.raises(ValidationError, match="股票代码不存在：999999.SZ"):
+        service.submit_checkin(
+            rule_id,
+            trade_date,
+            {"assessment": "complied", "no_operation": False, "operations": [operation]},
+        )
+
+
+def test_multiple_operations_validate_stock_codes_with_one_market_query(pg, market, monkeypatch):
+    trade_date, _, _ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+    stock_queries = 0
+    original = market.query_df
+
+    def counted(sql, params=None):
+        nonlocal stock_queries
+        if "FROM stock_basic" in sql:
+            stock_queries += 1
+        return original(sql, params)
+
+    monkeypatch.setattr(market, "query_df", counted)
+    first = _operation(trade_date)
+    second = _operation(trade_date, side="sell")
+    second["display_order"] = 2
+    service.submit_checkin(
+        rule_id,
+        trade_date,
+        {
+            "assessment": "complied",
+            "no_operation": False,
+            "operations": [first, second],
+        },
+    )
+    assert stock_queries == 1
 
 
 def test_history_filters_pagination_and_owner_isolation(pg, market):

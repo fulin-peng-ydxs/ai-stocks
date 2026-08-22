@@ -162,6 +162,43 @@ def test_same_day_archive_restore_uses_event_sequence_even_if_timestamps_equal(p
     assert service.effective_version(rule_id, first) is not None
 
 
+def test_rule_state_dto_survives_refresh_and_list_is_single_pg_query(pg, market, monkeypatch):
+    first, _ = _seed_next_days(market)
+    service = _service(pg, market)
+    rule_id = service.create_rule(_payload())["id"]
+    published = service.publish_rule(rule_id, expected_revision=1)
+
+    calls = 0
+    original = service.repo.pg.query_df
+
+    def counted(sql, params=None):
+        nonlocal calls
+        calls += 1
+        return original(sql, params)
+
+    monkeypatch.setattr(service.repo.pg, "query_df", counted)
+    before = service.list_rules_with_state(first - timedelta(days=1))
+    assert calls == 1
+    assert before[0]["id"] == rule_id
+    assert before[0]["management_status"] == "active"
+    assert before[0]["effective_status"] == "unpublished"
+    assert before[0]["has_pending_management_action"] is True
+    management = before[0]["latest_management_event"]
+    assert management["event_type"] == "publish"
+    assert management["event_seq"] == published["event_seq"]
+    assert management["version_no"] == 1
+    assert management["occurred_at"] is not None
+    assert management["activated_at"] is not None
+    assert management["effective_from_trade_date"] == first
+
+    calls = 0
+    effective = service.list_rules_with_state(first)
+    assert calls == 1
+    assert effective[0]["effective_status"] == "active"
+    assert effective[0]["effective_version"]["version_no"] == 1
+    assert effective[0]["has_pending_management_action"] is False
+
+
 def test_calendar_failure_rolls_back_version_event_counter_and_keeps_draft(pg, market):
     service = _service(pg, market)
     rule_id = service.create_rule(_payload())["id"]

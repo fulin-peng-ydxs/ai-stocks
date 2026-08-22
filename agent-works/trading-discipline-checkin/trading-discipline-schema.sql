@@ -137,9 +137,12 @@ CREATE TABLE IF NOT EXISTS trade_discipline_checkin (
     id TEXT, tenant_id TEXT NOT NULL DEFAULT 'default', owner_user_id TEXT NOT NULL DEFAULT 'admin',
     rule_id TEXT NOT NULL, trade_date DATE NOT NULL, current_revision_no INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'submitted', submitted_at TIMESTAMPTZ NOT NULL,
+    submission_source TEXT NOT NULL DEFAULT 'workbench',
     amended_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (current_revision_no > 0), CHECK (status IN ('submitted','amended')),
+    CONSTRAINT td_checkin_submission_source_check
+    CHECK (submission_source IN ('workbench','quick_no_operation')),
     CONSTRAINT td_checkin_status_time_check
     CHECK ((status='submitted' AND amended_at IS NULL)
         OR (status='amended' AND amended_at IS NOT NULL)),
@@ -148,6 +151,15 @@ CREATE TABLE IF NOT EXISTS trade_discipline_checkin (
     FOREIGN KEY (tenant_id, owner_user_id, rule_id)
         REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE RESTRICT
 );
+
+ALTER TABLE trade_discipline_checkin
+    ADD COLUMN IF NOT EXISTS submission_source TEXT NOT NULL DEFAULT 'workbench';
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname='td_checkin_submission_source_check'
+) THEN
+    ALTER TABLE trade_discipline_checkin ADD CONSTRAINT td_checkin_submission_source_check
+        CHECK (submission_source IN ('workbench','quick_no_operation'));
+END IF; END $$;
 
 CREATE TABLE IF NOT EXISTS trade_discipline_checkin_revision (
     checkin_id TEXT, tenant_id TEXT NOT NULL DEFAULT 'default', owner_user_id TEXT NOT NULL DEFAULT 'admin',
@@ -307,15 +319,30 @@ BEGIN
             END IF;
             RAISE EXCEPTION '交易纪律 RBAC marker 非法，已 fail-closed';
         END IF;
+        IF v_marker <> '{"version":1,"applied":true,"rolled_back":false,"inserted_menu_ids":["/trade-discipline"],"inserted_resource_ids":["trade-discipline:view","trade-discipline:rule-manage","trade-discipline:checkin-view","trade-discipline:checkin-submit"],"inserted_role_menus":[["system","/trade-discipline"],["tenant_admin","/trade-discipline"],["normal","/trade-discipline"]],"inserted_role_resources":[["system","trade-discipline:view"],["system","trade-discipline:rule-manage"],["system","trade-discipline:checkin-view"],["system","trade-discipline:checkin-submit"],["tenant_admin","trade-discipline:view"],["tenant_admin","trade-discipline:rule-manage"],["tenant_admin","trade-discipline:checkin-view"],["tenant_admin","trade-discipline:checkin-submit"],["normal","trade-discipline:view"],["normal","trade-discipline:rule-manage"],["normal","trade-discipline:checkin-view"],["normal","trade-discipline:checkin-submit"]]}'::jsonb THEN
+            RAISE EXCEPTION '交易纪律 RBAC applied marker 账本结构非法';
+        END IF;
         -- applied 重启只核验，不覆盖运行期数据。
         IF NOT EXISTS (
             SELECT 1 FROM sys_menu WHERE id='/trade-discipline' AND code='/trade-discipline'
             AND route_path='/trade-discipline' AND title='交易纪律' AND type='leaf' AND visible='login'
-        ) OR (SELECT count(*) FROM sys_resource
-              WHERE id IN ('trade-discipline:view','trade-discipline:rule-manage',
-                           'trade-discipline:checkin-view','trade-discipline:checkin-submit')) <> 4 THEN
+        ) OR EXISTS (
+            SELECT 1 FROM (VALUES
+                ('trade-discipline:view','查看交易纪律','api','GET','/api/trade-discipline/summary'),
+                ('trade-discipline:rule-manage','维护交易规则','api','POST','/api/trade-discipline/rules'),
+                ('trade-discipline:checkin-view','查看履约记录','api','GET','/api/trade-discipline/checkins'),
+                ('trade-discipline:checkin-submit','提交履约记录','api','POST','/api/trade-discipline/checkins')
+            ) AS expected(id,name,type,api_method,api_path)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM sys_resource r WHERE r.id=expected.id
+                AND r.menu_id='/trade-discipline' AND r.code=expected.id
+                AND r.name=expected.name AND r.type=expected.type
+                AND r.api_method=expected.api_method AND r.api_path=expected.api_path
+            )
+        ) THEN
             RAISE EXCEPTION '交易纪律 RBAC applied 账本与目标行不一致';
         END IF;
+        -- 默认角色授权是迁移初始值，管理员后续可撤销；重启不补回也不失败。
         RETURN;
     END IF;
 
@@ -402,12 +429,12 @@ COMMIT;
 --        OR (v_marker->>'rolled_back')::boolean IS DISTINCT FROM FALSE THEN
 --         RAISE EXCEPTION 'marker 非法，拒绝破坏性回滚';
 --     END IF;
---     IF (SELECT count(*) FROM sys_role_menu WHERE menu_id='/trade-discipline') <> 3
---        OR EXISTS (SELECT 1 FROM sys_role_menu WHERE menu_id='/trade-discipline'
+--     IF v_marker <> '{"version":1,"applied":true,"rolled_back":false,"inserted_menu_ids":["/trade-discipline"],"inserted_resource_ids":["trade-discipline:view","trade-discipline:rule-manage","trade-discipline:checkin-view","trade-discipline:checkin-submit"],"inserted_role_menus":[["system","/trade-discipline"],["tenant_admin","/trade-discipline"],["normal","/trade-discipline"]],"inserted_role_resources":[["system","trade-discipline:view"],["system","trade-discipline:rule-manage"],["system","trade-discipline:checkin-view"],["system","trade-discipline:checkin-submit"],["tenant_admin","trade-discipline:view"],["tenant_admin","trade-discipline:rule-manage"],["tenant_admin","trade-discipline:checkin-view"],["tenant_admin","trade-discipline:checkin-submit"],["normal","trade-discipline:view"],["normal","trade-discipline:rule-manage"],["normal","trade-discipline:checkin-view"],["normal","trade-discipline:checkin-submit"]]}'::jsonb THEN
+--         RAISE EXCEPTION 'marker 账本结构非法，拒绝破坏性回滚';
+--     END IF;
+--     -- 默认授权允许管理员已撤销；只拒绝账本外角色，当前仍存在的账本内同键行会被删除。
+--     IF EXISTS (SELECT 1 FROM sys_role_menu WHERE menu_id='/trade-discipline'
 --                   AND role_id NOT IN ('system','tenant_admin','normal'))
---        OR (SELECT count(*) FROM sys_role_resource WHERE resource_id IN (
---              'trade-discipline:view','trade-discipline:rule-manage',
---              'trade-discipline:checkin-view','trade-discipline:checkin-submit')) <> 12
 --        OR EXISTS (SELECT 1 FROM sys_role_resource WHERE resource_id IN (
 --              'trade-discipline:view','trade-discipline:rule-manage',
 --              'trade-discipline:checkin-view','trade-discipline:checkin-submit')

@@ -242,7 +242,8 @@ flowchart LR
 
 - **system-only 页面**：菜单 `visible=system`，接口挂 system 守卫，只让 system 角色自动拥有。
 - **普通业务页面**：菜单 `visible=login`，资源码加入业务授权集合；新库会随 seed 拿到默认授权，已有库要通过角色页或一次性回填给既有角色补授权。
-- **需要确定性撤回的普通业务页面**：可使用独立 marker 状态机登记在 `_SEED_MENU_TREE/_SEED_RESOURCES`，但通用写入循环必须显式跳过，避免 rolled-back tombstone 后被启动 seed 复活。交易纪律模块采用 `migration.trade_discipline_default_grants_v1` + advisory lock `8410010005`，只在 marker 缺失且固定菜单/资源身份无冲突时原子创建并给 system/normal/tenant_admin 授权；marker 非法、目标身份冲突或 applied 账本与目标行不一致均 fail-closed。回滚入口为 `python -m backend.cli trade-discipline-rbac rollback --confirm-marker migration.trade_discipline_default_grants_v1`，按实际插入账本删除授权、资源和菜单，同事务自增受影响用户 `perm_ver` 并保留 tombstone。
+- **需要确定性撤回的普通业务页面**：可使用独立 marker 状态机登记在 `_SEED_MENU_TREE/_SEED_RESOURCES`，但通用写入循环必须显式跳过，避免 rolled-back tombstone 后被启动 seed 复活。交易纪律模块采用 `migration.trade_discipline_default_grants_v1` + advisory lock `8410010005`，只在 marker 缺失且固定菜单/资源身份无冲突时原子创建并给 system/normal/tenant_admin 初始授权；applied 重启只校验固定 marker 与菜单/资源结构，normal/tenant_admin 后续由管理员撤销的默认授权不补回也不导致启动失败。回滚删除当前仍存在的账本内同键行，允许默认授权已缺失，但发现账本外自定义角色授权时拒绝级联；成功后同事务自增受影响用户 `perm_ver` 并保留 tombstone。回滚入口为 `python -m backend.cli trade-discipline-rbac rollback --confirm-marker migration.trade_discipline_default_grants_v1`。
+- **跨阶段页面发布门控**：后端菜单/资源/API 先行、正式前端尚未闭环时，菜单码必须进入 `STAGED_FRONTEND_MENU_CODES`，使 `/me` 对包括 system 在内的所有角色隐藏入口。只有前端静态路由、页面、pageRegistry、DESIGN marker 和路由解析测试同批就绪后才能移除；授权不等于可导航发布。
 - **租户管理员页面**：上级菜单不能是 system-only；资源码只授给 tenant_admin 或指定自定义角色，服务层仍按本租户收口。
 - **临时或租户自定义菜单**：可以走菜单与功能点管理页维护，但它只控制已有前端路由和已有后端 API 的可见与授权，不生成代码。
 

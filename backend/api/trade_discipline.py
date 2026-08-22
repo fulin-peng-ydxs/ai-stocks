@@ -157,21 +157,6 @@ def _latest_market_date(service: TradeDisciplineService, *, required: bool) -> d
     return pd.Timestamp(value).date()
 
 
-def _decorate_rule(
-    service: TradeDisciplineService,
-    rule: dict[str, Any],
-    trade_date: date | None,
-) -> dict[str, Any]:
-    data = dict(rule)
-    data["as_of_trade_date"] = trade_date
-    data["effective_version"] = (
-        _call(service.effective_version, str(rule["id"]), trade_date)
-        if trade_date is not None
-        else None
-    )
-    return data
-
-
 @router.get(
     "/summary",
     response_model=ApiResponse,
@@ -187,8 +172,7 @@ def summary(trade_date: date | None = None) -> ApiResponse:
 def list_rules(trade_date: date | None = None) -> ApiResponse:
     service = _service()
     target_date = trade_date or _latest_market_date(service, required=False)
-    rules = _call(service.list_rules)
-    return ok([_decorate_rule(service, rule, target_date) for rule in rules])
+    return ok(_call(service.list_rules_with_state, target_date))
 
 
 @router.post(
@@ -206,7 +190,7 @@ def create_rule(body: RuleDraftBody | None = None) -> ApiResponse:
 def get_rule(rule_id: str, trade_date: date | None = None) -> ApiResponse:
     service = _service()
     target_date = trade_date or _latest_market_date(service, required=False)
-    return ok(_decorate_rule(service, _call(service.get_rule, rule_id), target_date))
+    return ok(_call(service.get_rule_with_state, rule_id, target_date))
 
 
 @router.post(

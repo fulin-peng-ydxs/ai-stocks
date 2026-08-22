@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
         log.warning("业务异常 code=%s msg=%s", exc.code, exc.msg)
         return JSONResponse(
             status_code=getattr(exc, "http_status", 200),
-            content={"code": exc.code, "msg": exc.msg, "data": None},
+            content={"code": exc.code, "msg": exc.msg, "data": getattr(exc, "data", None)},
         )
 
     # 鉴权关键依赖 Redis 故障兜底：任何逃逸到路由层的 redis 错误 → fail-closed 503（非 500）。

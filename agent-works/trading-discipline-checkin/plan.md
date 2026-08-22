@@ -8,7 +8,7 @@
 - 本次不做：R18-R25 所述打卡服务端草稿、账户快照/资金流水、AI 或规则引擎结果、自动裁决、图表、券商同步、公开分享。
 - 计划输出目录：`agent-works/trading-discipline-checkin/`。
 - 准入结论：无剩余阻塞项；需求和原型已明确流程、数据、权限、接口验收与上线边界。
-- 当前开发阶段：T4 已于 2026-08-22 完成、本地验证并独立提交；下一阶段为 T5，本次未连续开发。
+- 当前开发阶段：T1-T4 已完成，2026-08-23 根据独立审查意见完成闭环整改；下一阶段仍为 T5，本次未连续开发。
 
 ## 2. 当前项目依据
 
@@ -220,12 +220,14 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 稳定 seed 身份：菜单 `id=code=route_path='/trade-discipline'`、`title='交易纪律'`、`type='leaf'`、`visible='login'`；四个资源均 `id=code` 且 `menu_id='/trade-discipline'`，代表 method/path 固定为 `trade-discipline:view → GET /api/trade-discipline/summary`、`trade-discipline:rule-manage → POST /api/trade-discipline/rules`、`trade-discipline:checkin-view → GET /api/trade-discipline/checkins`、`trade-discipline:checkin-submit → POST /api/trade-discipline/checkins`。同一功能码可守卫该接口组其他端点，路由扫描以每个实际端点的守卫为准。
 - seed 顺序：`seed_rbac()` 先确保内置角色存在，再调用专用 `_seed_trade_discipline_rbac()`；通用 `_SEED_MENU_TREE/_SEED_RESOURCES` 循环对 `/trade-discipline` 和四个资源码跳过，由专用状态机唯一写入，避免 tombstone 后被通用 seed 复活。
 - marker 状态：缺失才允许正向；合法 applied 重启 no-op 并核验目标行仍与契约一致；合法 rolled_back/tombstone 永久 no-op；JSON 损坏、版本未知或 applied/rolled_back 冲突均为 invalid 并抛错，禁止补菜单、资源或授权。
+- 默认授权可维护性：applied 只持续校验 marker 固定账本结构以及菜单/资源不可变身份，不要求 normal/tenant_admin 的初始授权行永久存在；管理员后续撤销默认菜单或功能授权时，重启不得补回或失败。回滚允许账本内默认授权已缺失，只删除当前仍存在的同键行；发现账本外自定义角色授权仍拒绝级联回滚。
 - 正向冲突：marker 缺失但 `sys_menu.id`、`code` 或 `route_path` 任一命中 `/trade-discipline`，或 `sys_resource.id/code` 任一命中上述四个固定功能码时，均视为身份占用并使整事务 fail-closed；不因字段恰好相同就收编旧行，不覆盖、不改名、不授予角色权限，由运维先判定冲突来源。
 - applied JSON 固定为 `{"version":1,"applied":true,"rolled_back":false,"inserted_menu_ids":[...],"inserted_resource_ids":[...],"inserted_role_menus":[[role_id,menu_id],...],"inserted_role_resources":[[role_id,resource_id],...]}`；数组只记录本事务 `RETURNING` 的实际新增行。
 - 正向事务：取得 lock，校验状态/冲突，插入一级 leaf 菜单和四资源，给 normal/tenant_admin 插入菜单与四资源授权，写 applied marker，并对这两个角色成员及全部 system 用户同事务 `perm_ver + 1`；提交后 best-effort 清权限缓存。
 - 回滚事务：`_rollback_trade_discipline_rbac()` 与 SQL 回滚段取得同一 lock，只接受合法 applied；按 marker 账本删除本次角色资源/菜单授权，再删本次资源和菜单，bump 同一受影响用户，最后把 marker 改为保留原账本的 `{"version":1,"applied":false,"rolled_back":true,...}` tombstone。marker 缺失/invalid 拒绝破坏性回滚，tombstone 重复回滚 no-op。
 - 上线回滚顺序：先回滚前端 `dist`（移除静态路由，避免 system 直达失效页），在本版本后端代码和 SQL 工件仍可用时执行 `python -m backend.cli trade-discipline-rbac rollback --confirm-marker migration.trade_discipline_default_grants_v1` 完成 RBAC 回滚并核验 tombstone，最后才回滚后端 API；CLI 非零退出、tombstone 不正确或目标菜单/资源仍存在时必须停止，禁止继续切换后端版本。不得只“隐藏菜单”或只撤角色授权；后端回滚并重启后必须断言菜单、资源和授权均未复活。
 - 显式重新启用：只能由运维确认后删除 tombstone，再重新执行正向迁移；普通应用重启不得自动重新启用。
+- 跨阶段菜单门控：T5 正式页面完成前，`STAGED_FRONTEND_MENU_CODES` 对 system/tenant_admin/normal 全部隐藏 `/trade-discipline`；只有静态路由、pageRegistry、DESIGN marker、正式页面及对应测试同批落地后，T5 才能移除该门控。资源授权和后端 API 在门控期间继续用于开发验证，不形成坏导航入口。
 
 ## 5. 需求与开发内容映射和开发状态
 
@@ -282,7 +284,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 边界与异常：表间 FK 全带归属；不覆盖自定义角色；marker 非法、编码/路由冲突或未知状态全部 fail-closed；tombstone 下任何启动 seed 均不得复活菜单/资源/授权；禁止浮点金额。
 - 验证方式：DDL/CHECK/FK/索引测试、seed 幂等、冲突原子回滚、marker 四态、正向/回滚后重启测试。
 - 完成标准：新库和既有库均得到正确表/菜单/资源；无角色仍 fail-closed。
-- 实际落地情况：已新增 14 张带复合归属主键/外键的交易纪律业务表、两项后置指针外键、6 项查询索引与 `NUMERIC` 金额约束；四个功能码使用独立常量，不并入会绕过 tombstone 的通用业务授权集合。菜单、资源及 system/normal/tenant_admin 授权由 marker `migration.trade_discipline_default_grants_v1` 和 advisory lock `8410010005` 原子维护，applied 会核验契约，非法/冲突 fail-closed，回滚按实际账本删除并保留 tombstone。受控 CLI 和等价人工复核 SQL 已落地；专项 7 个 pytest、SQL 正向复跑、CLI help、Python 静态编译和 `/api/health=200` 已通过。
+- 实际落地情况：已新增 14 张带复合归属主键/外键的交易纪律业务表、两项后置指针外键、6 项查询索引、`NUMERIC` 金额约束及打卡来源 `submission_source=workbench|quick_no_operation`；历史存量默认回填为 `workbench`。四个功能码使用独立常量，不并入会绕过 tombstone 的通用业务授权集合。菜单、资源及 system/normal/tenant_admin 初始授权由 marker `migration.trade_discipline_default_grants_v1` 和 advisory lock `8410010005` 原子维护；applied 只核验固定 marker 与菜单/资源结构，允许管理员后续撤销默认授权且重启不补回、不失败。回滚允许账本内授权已缺失，但拒绝账本外自定义角色授权并保留 tombstone。Python 与人工 SQL 已同步固定 marker、资源字段、可撤销默认授权和回滚策略；T5 页面就绪前 `/me` 对所有角色隐藏阶段菜单。
 
 ### 6.2 任务 T2：规则仓库与生命周期服务
 
@@ -296,7 +298,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 边界与异常：日历缺失、已归档、重名、草稿修订冲突、无实质变化、同日多动作均有确定结果。
 - 验证方式：仓库/服务参数化单测与事务失败注入；增加完全相同 `occurred_at`、长事务、并发发布/归档/恢复，以及序号分配事务回滚后无幽灵事件/无计数器误推进测试。
 - 完成标准：草稿与正式版本职责不混淆，任何生命周期动作均不倒灌。
-- 实际落地情况：已实现全归属过滤的规则仓库和服务 DTO，覆盖 NFKC/trim/casefold 名称占用、未发布/启用/归档与工作草稿正交状态、草稿修订乐观锁、无实质变化去草稿、连续正式版本、复制正式版或草稿、受限物理删除，以及严格按 `(effective_from_trade_date,event_seq)` 的历史有效版本解析。生命周期动作均先锁主体，在同一 PG 事务内以 `clock_timestamp()` 分配事件时间和单调序号，再只读 DuckDB 求上海自然日后的首个开市日；日历缺失会回滚版本、事件、计数器与主体状态。为支持已启用规则改名草稿同时保留正式名称占用，升级迁移按列组合移除了 T1 的错误“一主体一名称占用”唯一约束，新旧约束名均可幂等清理。专项 T1+T2 共 22 个 pytest、扩展资产仓库回归共 26 个 pytest、Ruff、Python 静态编译、`git diff --check` 与人工 SQL 正向复跑均通过。
+- 实际落地情况：已实现全归属过滤的规则仓库和服务 DTO，覆盖 NFKC/trim/casefold 名称占用、未发布/启用/归档与工作草稿正交状态、草稿修订乐观锁、无实质变化去草稿、连续正式版本、复制正式版或草稿、受限物理删除，以及严格按 `(effective_from_trade_date,event_seq)` 的历史有效版本解析。生命周期动作均先锁主体，在同一 PG 事务内以 `clock_timestamp()` 分配事件时间和单调序号，再只读 DuckDB 求上海自然日后的首个开市日；日历缺失会回滚版本、事件、计数器与主体状态。规则列表使用单次 PG 批量查询同时返回最新管理事件（类型、序号、时间、生效日）、目标交易日有效状态和有效版本概要；详情返回完整有效版本，不再按规则产生 N+1。需求事实源已同步明确 `event_seq` 是唯一裁决顺序，时间戳只作审计和生效日计算。
 
 ### 6.3 任务 T3：打卡、原因、操作与历史服务
 
@@ -310,7 +312,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 边界与异常：未履约原因+详细说明必填；无操作与操作行互斥；已有打卡固定原版本；财务不完整允许但返回完整度。
 - 验证方式：组合、幂等、并发、归属、原因删除和规则关联单测。
 - 完成标准：一次提交的所有事实原子成功或全部回滚。
-- 实际落地情况：已实现首次提交、乐观锁修正、快捷无操作幂等提交、按规则/日期读取、摘要、服务端分页筛选、任意修订详情和原因候选/软删除。首次提交在规则主体锁内按履约日解析有效事件并绑定正式版本；修正始终复用原修订版本，不受后续发布或归档影响。四种“已/未履约 × 有/无操作”组合、两个启用规则引用、方向、交易日内时间、非负定点财务字段和完整度均由服务端校验；原因按 trim/NFKC/casefold 复用或同事务新增，内置原因只读，历史保存名称快照。打卡、修订、原因、违规快照、操作和当前指针任一步失败均整体回滚。测试清理器同步支持规则版本指针和打卡修订指针的合法外键环，避免跨用例残留。T3 专项 11 个、T1-T3 联合 33 个、含资产仓库扩展回归 37 个 pytest，以及 Ruff、Python 静态编译和 `git diff --check` 已通过。
+- 实际落地情况：已实现首次提交、乐观锁修正、快捷无操作幂等提交、按规则/日期读取、摘要、服务端分页筛选、任意修订详情和原因候选/软删除。首次提交在规则主体锁内按履约日解析有效事件并绑定正式版本；修正始终复用原修订版本，不受后续发布或归档影响。快捷端点只对仍为首次修订且来源/内容均为快捷无操作的既有记录幂等；工作台提交、未履约、有操作或已修正记录统一返回带既有打卡引用的 409。操作保存前以一次 DuckDB 查询批量验证全部股票代码存在，允许已退市代码承接历史场景，名称继续作为提交时快照。四种组合、具体规则引用、方向、交易日内时间、财务字段和完整度继续由服务端校验，写入仍保持全事务原子。
 
 ### 6.4 任务 T4：API、专用股票搜索与权限守卫
 
@@ -324,7 +326,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 边界与异常：空 q、limit 超限、401/403/404、409、422、日历缺失均可区分。
 - 验证方式：API 权限矩阵、路由扫描、契约与响应测试。
 - 完成标准：无 `stocks:view` 的 submit 用户能搜索，不能访问完整 stocks API。
-- 实际落地情况：已新增 `backend/api/trade_discipline.py` 并在 `backend/main.py` 注册 21 个 OpenAPI 端点；规则、生命周期、打卡、历史、原因、摘要和快捷动作均使用统一响应，API 边界将归属隐藏映射为真实 404、业务输入映射为 422，并保留乐观锁 409。摘要同时要求 `view + checkin-view`，其余端点逐项挂四个固定功能码；专用 `stock-options` 仅返回代码、名称、板块、行业，拒绝空查询、限制 `limit<=20`、转义 LIKE 通配符并只要求 `checkin-submit`，未扩大 `/api/stocks` 权限。写动作通过通用业务审计只记录动作、对象引用和功能码，不记录正文、操作清单或详细说明。新增 T4 API 测试覆盖全端点统一契约、OpenAPI/路由守卫扫描、双权限摘要、401/403/404/409/422、跨 owner 隐藏、审计脱敏，以及“有 submit 无 stocks:view”搜索边界；T1-T4 聚焦回归与全局裸路由扫描共 38 项通过。未进入 T5 前端开发。
+- 实际落地情况：已新增 `backend/api/trade_discipline.py` 并在 `backend/main.py` 注册 21 个 OpenAPI 端点；规则、生命周期、打卡、历史、原因、摘要和快捷动作均使用统一响应，API 边界将归属隐藏映射为真实 404、业务输入映射为 422，并保留携带安全对象引用的 409。规则列表/详情刷新后可直接消费管理状态、最新管理事件、待生效标记、目标交易日有效状态及版本。摘要同时要求 `view + checkin-view`，其余 20 个端点均以 `(method,path) → 精确功能码集合` 完整矩阵校验；无角色 fail-closed。专用 `stock-options` 仍只返回四个轻量字段且不扩大 `/api/stocks` 权限。写动作审计不记录正文、操作清单或详细说明。未进入 T5 前端开发。
 
 ### 6.5 任务 T5：前端路由、工作台壳与配置闭环
 
@@ -333,6 +335,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 涉及文件：新增 `frontend/src/views/TradeDisciplineView.vue`、`frontend/src/api/tradeDiscipline.ts`、`frontend/src/composables/useUnsavedChangesGuard.ts`；修改 router、`WorkspaceTabs.vue`、`useWorkspaceTabs.ts`、`WorkspaceRouteView.vue`、`App.vue`、pageRegistry、DESIGN marker；按需扩展 `useTradeDates` 的非破坏性状态暴露。
 - 目标：搭建三页签、LayoutHost slots、四态、权限只读态、设置抽屉和应用壳层未保存协议。
 - 操作：登记 `workspaceTabs` 现有 `tabs` kind 为唯一 `growMain`，三个业务 panel 为子 slot，明确不消费 `defaultActive`；密度/历史 pageSize 配置闭环；query 参数仅恢复会话；页头 `flex-start`。实现按 tab key 注册/注销处理器、单标签/全局 preflight 和一次性导航 permit；把 `addWorkspaceTab` 的容量淘汰与 `removeWorkspaceTab` 的显式关闭改成先 await 决策、后改变 tab/KeepAlive，路由切换和注销复用同一协议；全 dirty 无安全淘汰目标时阻止新导航。注册 `beforeunload` 原生保护。
+- 发布门控：只有静态路由、pageRegistry、DESIGN marker、正式 View 和路由解析测试全部同批完成后，才从 `STAGED_FRONTEND_MENU_CODES` 移除 `/trade-discipline`；禁止先解除门控再补页面。
 - 产出：可联调的页面骨架与 API 类型。
 - 影响范围：新增一级业务页和 DESIGN 页面索引；不新增配置字段。
 - 边界与异常：无权不伪装空态；交易日加载错误可观察且本页 fail-closed；保存草稿失败/用户继续编辑时标签、缓存和路由均不变；干净页面保持既有关闭行为。
@@ -464,7 +467,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 
 | 路径/类别 | 用途 | 执行时机 | 影响范围 | 回滚方式 |
 | --- | --- | --- | --- | --- |
-| `backend/storage/pg_ddl.py` + `backend/cli.py` | 业务表、索引，以及专用 `_seed/_rollback_trade_discipline_rbac` 状态机和 `trade-discipline-rbac rollback` CLI；使用 marker `migration.trade_discipline_default_grants_v1` 和 advisory lock `8410010005` | 新库首次启动及既有环境受控重启时由 `init_pg_db()` 幂等执行；后端版本切换前由受控发布回滚显式调用 CLI | PG schema、`sys_menu/sys_resource/sys_role_*`、`app_config` marker、受影响用户 `perm_ver` | 有业务事实时保留业务表；RBAC 按 marker 实际插入账本逆序删除并写 tombstone，重启不得补回；marker 缺失/损坏/冲突时 fail-closed |
+| `backend/storage/pg_ddl.py` + `backend/cli.py` | 业务表、索引、打卡来源升级，以及专用 `_seed/_rollback_trade_discipline_rbac` 状态机和 `trade-discipline-rbac rollback` CLI；使用 marker `migration.trade_discipline_default_grants_v1` 和 advisory lock `8410010005` | 新库首次启动及既有环境受控重启时由 `init_pg_db()` 幂等执行；既有打卡来源默认回填 `workbench`；后端版本切换前由受控发布回滚显式调用 CLI | PG schema、`sys_menu/sys_resource/sys_role_*`、`app_config` marker、受影响用户 `perm_ver` | 有业务事实时保留业务表；RBAC 删除当前仍存在的账本内行并写 tombstone，已被管理员撤销的默认授权允许缺失，账本外授权拒绝级联；marker 缺失/损坏/冲突时 fail-closed |
 | `backend/auth/constants.py` | 新库 normal/tenant_admin 默认业务功能码 | 与 seed 同时 | 默认角色新装授权 | 代码回滚；既有授权由 marker 账本处理 |
 | `agent-works/trading-discipline-checkin/trading-discipline-schema.sql` | 与运行时代码等价的 DDL、冲突核验、正向迁移和回滚 SQL；marker JSON 固定记录 inserted menu/resource/role grants | 开发/评审时生成；生产默认不与启动迁移重复执行，仅用于人工复核或应急回滚 | 同上 | 取得同一 advisory lock，按账本删授权→资源→菜单，同事务 bump `perm_ver` 并把原账本改为 rolled_back tombstone |
 | `backend/services/trade_discipline_service.py` 内置原因常量 | 返回八个只读内置原因；不写 `sys_dict`，个人原因才进入业务表 | 后端部署即生效 | 所有授权用户的原因候选，不修改历史快照 | 随代码回滚；已由用户创建的个人原因和历史违规事实保留 |
@@ -476,13 +479,13 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 
 ## 8. 测试与验证计划
 
-- 单元测试：规则名称归一化、金额定点、版本实质变化、原因匹配、操作规则候选与完整度；生命周期覆盖相同 `occurred_at`、长事务、并发发布/归档/恢复和事务回滚，断言无幽灵事件或计数器误推进，并严格按 `(effective_from_trade_date,event_seq)` 得到唯一结果。具体完成情况：T2 已覆盖规则生命周期；T3 已覆盖四种打卡组合、金额/时间/规则关联、原因归一化复用与删除快照、故障回滚、旧版本固定、快捷并发幂等、历史筛选分页和跨 owner 隔离。T1-T4 聚焦回归与全局裸路由扫描共 38 个 pytest 通过。
+- 单元测试：规则名称归一化、金额定点、版本实质变化、原因匹配、操作规则候选与完整度；生命周期覆盖相同 `occurred_at`、长事务、并发发布/归档/恢复和事务回滚，断言无幽灵事件或计数器误推进，并严格按 `(effective_from_trade_date,event_seq)` 得到唯一结果。具体完成情况：T2 已覆盖规则生命周期及列表单查询双状态；T3 已覆盖四种打卡组合、金额/时间/规则关联、批量股票代码校验、原因归一化复用与删除快照、故障回滚、旧版本固定、快捷来源/冲突/并发幂等、历史筛选分页和跨 owner 隔离。2026-08-23 整改后，T1-T4 + `/me` 菜单门控聚焦回归 51 个 pytest 通过，后端全量回归 967 个 pytest 通过。
 - 接口测试：所有端点成功/422/403/404/409、分页筛选、快捷幂等、R31 限流边界。具体完成情况：T4 已覆盖全部 21 个端点的统一成功响应契约、OpenAPI 可见性、权限矩阵、401/403/404/409/422、非法日期范围、专用股票搜索空值/上限/独立权限、跨 owner 隐藏和审计脱敏；分页筛选与快捷并发幂等已有 T3 服务测试，T10/T12-T13 继续扩充真实端到端回归。
 - 页面/交互测试：三页签、主从区、全部命令、四种打卡、修订抽屉、全局快捷卡；未保存保护逐项覆盖路由、当前/非当前工作标签关闭、容量淘汰、注销、浏览器刷新以及页签/规则/日期切换，分别断言打卡二选、规则三选、保存失败不放行且标签/KeepAlive/输入均未先删除。具体完成情况：待验证。
 - 组件资产闭环测试：验证通用组件真实导入/渲染、feature 组件事件契约、pageRegistry、密度/pageSize 保存读取消费与重置；断言 `workspaceTabs` 使用真实 `tabs` kind 且唯一 `growMain`，三个业务 panel 是实际消费者，`defaultActive` 未进入长期偏好，滚动由活动 panel 承接；确认没有新增未消费字段。具体完成情况：待验证。
-- 权限与数据范围测试：system/normal/tenant_admin/自定义最小权限/无角色；跨 owner/tenant；有 submit 无 stocks:view；按钮和接口一致。具体完成情况：T1 已验证 system/normal/tenant_admin 默认菜单与四资源授权、seed 幂等、冲突原子回滚、marker applied/rolled_back/invalid/未知版本、tombstone 重启不复活；T4 已验证自定义最小权限、未认证、摘要双权限、跨 owner 404 和 submit/stocks:view 独立边界；无角色及前端按钮边界留待 T5-T13。
+- 权限与数据范围测试：system/normal/tenant_admin/自定义最小权限/无角色；跨 owner/tenant；有 submit 无 stocks:view；按钮和接口一致。具体完成情况：T1 已验证默认授权、管理员撤销后重启不补回/不失败、seed 幂等、冲突原子回滚、marker 严格结构、tombstone 不复活及账本外授权拒绝回滚；T4 已验证全部 21 端点精确权限矩阵、自定义最小权限、未认证、无角色 fail-closed、摘要双权限、跨 owner 404 和 submit/stocks:view 独立边界；T5 前端按钮边界仍待实现和验证。
 - 确定性夹具测试：覆盖必填指纹缺失/格式非法/不匹配、后端原本运行和未运行两种取值路径、停服前后 PG 目标变化及后端持锁拒绝；再执行两轮 `获取指纹→stop→seed→计数与引用核验→cleanup→零残留`，模拟取值前、取值后、seed 后和测试中断验证 trap 只在已有可信指纹时清理并恢复原服务状态。具体完成情况：待验证。
-- 回归测试：按锁规则运行后端聚焦及全量 pytest；运行前端 Vitest、build、普通全量 Playwright（排除专属 spec），再执行 `AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline`；测试前后核验服务状态。具体完成情况：待验证。
+- 回归测试：按锁规则运行后端聚焦及全量 pytest；运行前端 Vitest、build、普通全量 Playwright（排除专属 spec），再执行 `AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline`；测试前后核验服务状态。具体完成情况：2026-08-23 已按测试前状态停服，完成聚焦 51/51、后端全量 967/967、Ruff、`py_compile`、`git diff --check`，并在项目本地 PG 上成功执行整份人工 SQL 正向幂等路径；测试后已恢复 dev 后端并确认 `/api/health=200`。回滚 SQL 为默认注释的破坏性应急路径，本次未实际执行，其等价行为由 Python 回滚测试覆盖。前端源码未改，且 T5 页面尚不存在，因此本阶段未执行 Vitest、前端 build、Playwright 或页面/原型验收，这些仍归 T5、T11、T13。
 - 异常与边界测试：日历空/滞后、周末发布、同日等时间戳多事件、并发生命周期、草稿与修订并发、规则被归档、网络失败、原因删除、规则候选为零、财务字段不完整。具体完成情况：待验证。
 - 原型一致性：逐区对照 HTML 的页头、三页签、两套主从区、操作/原因/双状态、历史抽屉、设置抽屉、用户快捷卡和 1100×620/1366×768/1440×900 退化；原型批注和演示数据不得进入线上文案。具体完成情况：待验证。
 - 需求映射验证：用脚本核对 requirement 的 R1-R36 范围编号均在第 5 章出现，纳入项均有任务/状态/验证，跳过项均有原因。具体完成情况：待验证。

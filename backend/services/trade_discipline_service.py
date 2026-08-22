@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import psycopg
 
 from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
@@ -255,6 +256,79 @@ class TradeDisciplineService:
 
     def list_rules(self) -> list[dict[str, Any]]:
         return self.repo.list_rules()
+
+    @staticmethod
+    def _lifecycle_state(row: dict[str, Any], trade_date: date | None) -> dict[str, Any]:
+        """把批量查询的扁平事件列整理为稳定的双状态 DTO。"""
+        def value(key: str) -> Any:
+            current = row.get(key)
+            return None if current is None or pd.isna(current) else current
+
+        management_seq = value("management_event_seq")
+        effective_seq = value("effective_event_seq")
+        effective_type = value("effective_event_type")
+        management_event = None
+        if management_seq is not None:
+            management_event = {
+                "event_type": value("management_event_type"),
+                "event_seq": int(management_seq),
+                "version_no": int(value("management_version_no")),
+                "occurred_at": value("management_occurred_at"),
+                "activated_at": value("management_activated_at"),
+                "effective_from_trade_date": value(
+                    "management_effective_from_trade_date"
+                ),
+            }
+        effective_version = None
+        effective_version_no = value("effective_version_no")
+        if effective_type is not None and effective_type != "archive":
+            effective_version = {
+                "version_no": int(effective_version_no),
+                "name": value("effective_version_name"),
+                "capital": value("effective_version_capital"),
+            }
+        return {
+            "as_of_trade_date": trade_date,
+            "management_status": row["status"],
+            "latest_management_event": management_event,
+            "has_pending_management_action": management_seq != effective_seq,
+            "effective_status": (
+                "unpublished" if effective_type is None
+                else "archived" if effective_type == "archive"
+                else "active"
+            ),
+            "effective_event_seq": int(effective_seq) if effective_seq is not None else None,
+            "effective_from_trade_date": value("effective_from_trade_date"),
+            "effective_version": effective_version,
+        }
+
+    def list_rules_with_state(self, trade_date: date | None) -> list[dict[str, Any]]:
+        rows = self.repo.list_rules_with_lifecycle(trade_date)
+        hidden = {
+            "management_event_type", "management_event_seq", "management_version_no",
+            "management_occurred_at", "management_activated_at",
+            "management_effective_from_trade_date", "effective_event_type",
+            "effective_event_seq", "effective_version_no", "effective_from_trade_date",
+            "effective_version_name", "effective_version_capital",
+        }
+        return [
+            {**{key: value for key, value in row.items() if key not in hidden},
+             **self._lifecycle_state(row, trade_date)}
+            for row in rows
+        ]
+
+    def get_rule_with_state(self, rule_id: str, trade_date: date | None) -> dict[str, Any]:
+        rows = self.repo.list_rules_with_lifecycle(trade_date, rule_id=rule_id)
+        if not rows:
+            raise NotFoundError("交易纪律规则不存在")
+        state = self._lifecycle_state(rows[0], trade_date)
+        detail = self.get_rule(rule_id)
+        effective = state["effective_version"]
+        if effective is not None:
+            state["effective_version"] = self.repo.load_version(
+                rule_id, int(effective["version_no"])
+            )
+        return {**detail, **state}
 
     def open_draft(self, rule_id: str) -> dict[str, Any]:
         with self.repo.transaction() as conn:
@@ -584,6 +658,17 @@ class TradeDisciplineService:
                     "display_order": display_order,
                 }
             )
+        codes = sorted({item["stock_code"] for item in prepared})
+        if codes:
+            placeholders = ",".join("?" for _ in codes)
+            existing = set(
+                self.market.query_df(
+                    f"SELECT code FROM stock_basic WHERE code IN ({placeholders})", codes
+                )["code"].astype(str)
+            )
+            missing = [code for code in codes if code not in existing]
+            if missing:
+                raise ValidationError(f"股票代码不存在：{'、'.join(missing)}")
         return prepared
 
     def _prepare_checkin(
@@ -751,6 +836,7 @@ class TradeDisciplineService:
                 checkin_id=checkin_id,
                 rule_id=rule_id,
                 trade_date=trade_date,
+                submission_source="workbench",
             )
             self._write_revision(
                 conn,
@@ -811,8 +897,24 @@ class TradeDisciplineService:
                 result = self.repo.load_revision(
                     str(existing["id"]), int(existing["current_revision_no"]), conn=conn
                 )
-                result["idempotent"] = True
-                return self._decorate_revision(result)
+                same_quick_submission = (
+                    existing.get("submission_source") == "quick_no_operation"
+                    and existing.get("status") == "submitted"
+                    and int(existing["current_revision_no"]) == 1
+                    and result.get("assessment") == "complied"
+                    and bool(result.get("no_operation"))
+                    and not result.get("operations")
+                )
+                if same_quick_submission:
+                    result["idempotent"] = True
+                    return self._decorate_revision(result)
+                conflict = ConflictError("该规则在此交易日已有正式记录，请进入工作台处理")
+                conflict.data = {
+                    "checkin_id": str(existing["id"]),
+                    "rule_id": rule_id,
+                    "trade_date": str(trade_date),
+                }
+                raise conflict
             event = self.repo.effective_activation(rule_id, trade_date, conn=conn)
             if event is None or event["event_type"] == "archive":
                 raise ValidationError("该日期尚无生效规则版本")
@@ -823,6 +925,7 @@ class TradeDisciplineService:
                 checkin_id=checkin_id,
                 rule_id=rule_id,
                 trade_date=trade_date,
+                submission_source="quick_no_operation",
             )
             prepared = {
                 "assessment": "complied",

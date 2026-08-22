@@ -119,9 +119,17 @@ def test_trade_discipline_foreign_keys_include_owner_and_indexes_exist(pg):
             "td_revision_kind_no_check",
             "td_rule_latest_version_fk",
             "td_checkin_current_revision_fk",
+            "td_checkin_submission_source_check",
         ]],
     )["conname"])
-    assert len(checks) == 5
+    assert len(checks) == 6
+
+    source = pg.query_df(
+        "SELECT column_default,is_nullable FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name='trade_discipline_checkin' "
+        "AND column_name='submission_source'"
+    ).iloc[0]
+    assert "workbench" in source["column_default"] and source["is_nullable"] == "NO"
 
     obsolete_name_uniques = pg.query_df(
         "SELECT c.conname FROM pg_constraint c "
@@ -158,6 +166,8 @@ def test_trade_discipline_marker_parser_rejects_unknown_and_conflicting_states(p
     assert _trade_discipline_marker_state({**ledger, "rolled_back": True})[0] == "invalid"
     duplicated = {**ledger, "inserted_resource_ids": ledger["inserted_resource_ids"] * 2}
     assert _trade_discipline_marker_state(duplicated)[0] == "invalid"
+    reordered = {**ledger, "inserted_resource_ids": list(reversed(ledger["inserted_resource_ids"]))}
+    assert _trade_discipline_marker_state(reordered)[0] == "invalid"
 
 
 def test_trade_discipline_seed_is_idempotent_and_rollback_tombstone_does_not_revive(
@@ -232,6 +242,32 @@ def test_trade_discipline_rollback_refuses_untracked_custom_role_grant(pg, td_rb
     finally:
         pg.execute("DELETE FROM sys_role_resource WHERE role_id=%s", [role_id])
         pg.execute("DELETE FROM sys_role WHERE id=%s", [role_id])
+
+
+def test_trade_discipline_default_grants_can_be_revoked_without_restart_failure(
+    pg, td_rbac_sandbox
+):
+    pg.execute(
+        "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
+        ["normal", "trade-discipline:checkin-submit"],
+    )
+    pg.execute(
+        "DELETE FROM sys_role_menu WHERE role_id=%s AND menu_id=%s",
+        ["tenant_admin", "/trade-discipline"],
+    )
+
+    assert _seed_trade_discipline_rbac(pg)["state"] == "applied"
+    assert pg.query_df(
+        "SELECT 1 FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
+        ["normal", "trade-discipline:checkin-submit"],
+    ).empty
+    assert pg.query_df(
+        "SELECT 1 FROM sys_role_menu WHERE role_id=%s AND menu_id=%s",
+        ["tenant_admin", "/trade-discipline"],
+    ).empty
+
+    report = _rollback_trade_discipline_rbac(pg)
+    assert report["state"] == "rolled_back"
 
 
 def test_trade_discipline_cli_requires_exact_marker(monkeypatch):

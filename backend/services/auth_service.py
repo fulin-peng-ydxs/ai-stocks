@@ -15,7 +15,9 @@ import secrets
 import time
 import uuid
 
-from backend.auth import perm_resolver, session_store as ss
+from backend.auth import perm_resolver
+from backend.auth import session_store as ss
+from backend.auth.constants import STAGED_FRONTEND_MENU_CODES
 from backend.auth.jwt_tokens import (
     TOKEN_ACCESS,
     TOKEN_REFRESH,
@@ -397,10 +399,11 @@ class AuthService:
         """
         is_system = perms["is_system"]
         granted = set(perms["menus"])
-
         def walk(nodes: list[dict]) -> list[dict]:
             out: list[dict] = []
             for n in nodes:
+                if n["code"] in STAGED_FRONTEND_MENU_CODES:
+                    continue  # 后端已部署但前端未形成可导航闭环，system 也不得看到坏入口
                 if not is_system and n["visible"] == "system":
                     continue                          # 系统专属分支对非 system 整体隐藏
                 kids = walk(n.get("children", []))

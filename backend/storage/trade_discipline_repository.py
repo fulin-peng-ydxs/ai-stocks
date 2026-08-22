@@ -81,6 +81,54 @@ class TradeDisciplineRepository:
         )
         return df.to_dict("records")
 
+    def list_rules_with_lifecycle(
+        self,
+        trade_date: date | None,
+        *,
+        rule_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """批量返回规则、最新管理事件和目标日有效事件，避免 API 按规则 N+1 查询。"""
+        rule_filter = " AND r.id=%s" if rule_id is not None else ""
+        params: list[Any] = [
+            *self.owner,
+            *self.owner,
+            trade_date,
+            *self.owner,
+        ]
+        if rule_id is not None:
+            params.append(rule_id)
+        df = self.pg.query_df(
+            "WITH latest_management AS ("
+            "SELECT DISTINCT ON (rule_id) rule_id,event_type,event_seq,version_no,"
+            "occurred_at,activated_at,effective_from_trade_date "
+            "FROM trade_discipline_rule_activation WHERE tenant_id=%s AND owner_user_id=%s "
+            "ORDER BY rule_id,event_seq DESC), effective AS ("
+            "SELECT DISTINCT ON (rule_id) rule_id,event_type,event_seq,version_no,"
+            "effective_from_trade_date FROM trade_discipline_rule_activation "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND effective_from_trade_date<=%s "
+            "ORDER BY rule_id,effective_from_trade_date DESC,event_seq DESC) "
+            "SELECT r.*,d.draft_revision,d.proposed_name,d.source_version_no,"
+            "lm.event_type AS management_event_type,lm.event_seq AS management_event_seq,"
+            "lm.version_no AS management_version_no,lm.occurred_at AS management_occurred_at,"
+            "lm.activated_at AS management_activated_at,"
+            "lm.effective_from_trade_date AS management_effective_from_trade_date,"
+            "ef.event_type AS effective_event_type,ef.event_seq AS effective_event_seq,"
+            "ef.version_no AS effective_version_no,"
+            "ef.effective_from_trade_date AS effective_from_trade_date,"
+            "ev.name AS effective_version_name,ev.capital AS effective_version_capital "
+            "FROM trade_discipline_rule r LEFT JOIN trade_discipline_rule_draft d "
+            "ON d.tenant_id=r.tenant_id AND d.owner_user_id=r.owner_user_id AND d.rule_id=r.id "
+            "LEFT JOIN latest_management lm ON lm.rule_id=r.id "
+            "LEFT JOIN effective ef ON ef.rule_id=r.id "
+            "LEFT JOIN trade_discipline_rule_version ev ON ev.tenant_id=r.tenant_id "
+            "AND ev.owner_user_id=r.owner_user_id AND ev.rule_id=r.id "
+            "AND ev.version_no=ef.version_no "
+            "WHERE r.tenant_id=%s AND r.owner_user_id=%s AND r.deleted_at IS NULL"
+            f"{rule_filter} ORDER BY r.updated_at DESC,r.id",
+            params,
+        )
+        return df.to_dict("records")
+
     def create_rule(self, conn: psycopg.Connection, rule_id: str) -> None:
         with conn.cursor() as cur:
             cur.execute(
@@ -492,15 +540,17 @@ class TradeDisciplineRepository:
         checkin_id: str,
         rule_id: str,
         trade_date: date,
+        submission_source: str = "workbench",
     ) -> dict[str, Any]:
         try:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
                     "INSERT INTO trade_discipline_checkin "
                     "(id,tenant_id,owner_user_id,rule_id,trade_date,current_revision_no,status,"
-                    "submitted_at) VALUES (%s,%s,%s,%s,%s,1,'submitted',clock_timestamp()) "
+                    "submission_source,submitted_at) "
+                    "VALUES (%s,%s,%s,%s,%s,1,'submitted',%s,clock_timestamp()) "
                     "RETURNING *",
-                    [checkin_id, *self.owner, rule_id, trade_date],
+                    [checkin_id, *self.owner, rule_id, trade_date, submission_source],
                 )
                 row = self._one(cur)
         except errors.UniqueViolation as exc:
