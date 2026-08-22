@@ -37,7 +37,8 @@ def clean_owner(
     owner: str = TEST_OWNER,
 ) -> None:
     """清理某归属者在全部资产表的数据（测试隔离）。"""
-    for t in _ASSET_TABLES:
+    # 带复合 FK 的资产域必须按建表逆序清理，先删明细/修订再删主体。
+    for t in reversed(_ASSET_TABLES):
         try:
             pg.execute(
                 f"DELETE FROM {t} WHERE tenant_id=%s AND owner_user_id=%s",

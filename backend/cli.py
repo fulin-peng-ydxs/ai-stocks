@@ -121,6 +121,31 @@ def cmd_audit_cleanup(_: argparse.Namespace) -> int:
     return 0 if result.get("ok") else 1
 
 
+def cmd_trade_discipline_rbac(args: argparse.Namespace) -> int:
+    """受控回滚交易纪律 RBAC；确认串必须与稳定 marker 完全一致。"""
+    import json
+
+    from backend.storage.pg_ddl import (
+        TRADE_DISCIPLINE_RBAC_MARKER,
+        _rollback_trade_discipline_rbac,
+    )
+
+    if args.confirm_marker != TRADE_DISCIPLINE_RBAC_MARKER:
+        print(
+            "拒绝执行：--confirm-marker 必须完全等于 "
+            f"{TRADE_DISCIPLINE_RBAC_MARKER}",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        report = _rollback_trade_discipline_rbac()
+    except Exception as exc:  # 存储层会把事务内拒绝包装成 StorageError
+        print(f"交易纪律 RBAC 回滚失败：{exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def _todo(name: str):
     def _run(_: argparse.Namespace) -> int:
         log.warning("命令 '%s' 尚未实现（见任务清单对应里程碑）", name)
@@ -461,8 +486,6 @@ def cmd_board(args: argparse.Namespace) -> int:
 
 
 def cmd_robust(args: argparse.Namespace) -> int:
-    import json
-
     from backend.backtest.robustness import RobustnessAnalyzer
     ra = RobustnessAnalyzer()
     base = {"date_start": args.start, "date_end": args.end, "top_n": args.top}
@@ -746,6 +769,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("audit-cleanup", help="按 audit.retention_days 清理超保留期审计日志").set_defaults(
         func=cmd_audit_cleanup
     )
+
+    p_td = sub.add_parser("trade-discipline-rbac", help="交易纪律 RBAC 受控运维")
+    td_sub = p_td.add_subparsers(dest="trade_discipline_rbac_action", required=True)
+    p_td_rollback = td_sub.add_parser("rollback", help="按迁移账本回滚菜单、资源和默认授权")
+    p_td_rollback.add_argument(
+        "--confirm-marker",
+        required=True,
+        help="必须精确传入 migration.trade_discipline_default_grants_v1",
+    )
+    p_td_rollback.set_defaults(func=cmd_trade_discipline_rbac)
 
     p_mig = sub.add_parser(
         "migrate-rbac",

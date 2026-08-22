@@ -8,6 +8,7 @@
 - 本次不做：R18-R25 所述打卡服务端草稿、账户快照/资金流水、AI 或规则引擎结果、自动裁决、图表、券商同步、公开分享。
 - 计划输出目录：`agent-works/trading-discipline-checkin/`。
 - 准入结论：无剩余阻塞项；需求和原型已明确流程、数据、权限、接口验收与上线边界。
+- 当前开发阶段：T1 已于 2026-08-22 完成并本地验证；下一阶段为 T2，本次未连续开发。
 
 ## 2. 当前项目依据
 
@@ -271,9 +272,9 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 
 ### 6.1 任务 T1：PG 模型、索引、SQL 与 RBAC 迁移
 
-- 状态：待开始
+- 状态：已完成（2026-08-22）
 - 依赖：无。
-- 涉及文件：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/cli.py`、`agent-works/trading-discipline-checkin/trading-discipline-schema.sql`。
+- 涉及文件：`backend/storage/pg_ddl.py`、`backend/auth/constants.py`、`backend/cli.py`、`backend/tests/conftest.py`、`backend/tests/test_trade_discipline_t1.py`、`agent-works/trading-discipline-checkin/trading-discipline-schema.sql`。
 - 目标：落地第 4.2 节实体、复合外键/CHECK/唯一索引，并完成菜单、四资源码、新库默认授权和存量 normal/tenant_admin 回填。
 - 操作：新增 DDL/ASSET_PK/索引；生命周期表加入 `event_seq` 且主体加入 `next_activation_seq`；seed 一级菜单 `/trade-discipline`；实现 `_seed_trade_discipline_rbac` 与 `_rollback_trade_discipline_rbac` 的 marker 状态机，记录实际插入行并同事务 bump `perm_ver`；新增受控 CLI `python -m backend.cli trade-discipline-rbac rollback --confirm-marker migration.trade_discipline_default_grants_v1`，确认值不完全匹配即拒绝，成功时输出 marker/删除计数供发布流程核验。
 - 产出：可重复启动的 schema/seed 与等价人工复核 SQL（含确定性回滚）。
@@ -281,7 +282,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 边界与异常：表间 FK 全带归属；不覆盖自定义角色；marker 非法、编码/路由冲突或未知状态全部 fail-closed；tombstone 下任何启动 seed 均不得复活菜单/资源/授权；禁止浮点金额。
 - 验证方式：DDL/CHECK/FK/索引测试、seed 幂等、冲突原子回滚、marker 四态、正向/回滚后重启测试。
 - 完成标准：新库和既有库均得到正确表/菜单/资源；无角色仍 fail-closed。
-- 实际落地情况：待实施。
+- 实际落地情况：已新增 14 张带复合归属主键/外键的交易纪律业务表、两项后置指针外键、6 项查询索引与 `NUMERIC` 金额约束；四个功能码使用独立常量，不并入会绕过 tombstone 的通用业务授权集合。菜单、资源及 system/normal/tenant_admin 授权由 marker `migration.trade_discipline_default_grants_v1` 和 advisory lock `8410010005` 原子维护，applied 会核验契约，非法/冲突 fail-closed，回滚按实际账本删除并保留 tombstone。受控 CLI 和等价人工复核 SQL 已落地；专项 7 个 pytest、SQL 正向复跑、CLI help、Python 静态编译和 `/api/health=200` 已通过。
 
 ### 6.2 任务 T2：规则仓库与生命周期服务
 
@@ -479,7 +480,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 接口测试：所有端点成功/422/403/404/409、分页筛选、快捷幂等、R31 限流边界。具体完成情况：待验证。
 - 页面/交互测试：三页签、主从区、全部命令、四种打卡、修订抽屉、全局快捷卡；未保存保护逐项覆盖路由、当前/非当前工作标签关闭、容量淘汰、注销、浏览器刷新以及页签/规则/日期切换，分别断言打卡二选、规则三选、保存失败不放行且标签/KeepAlive/输入均未先删除。具体完成情况：待验证。
 - 组件资产闭环测试：验证通用组件真实导入/渲染、feature 组件事件契约、pageRegistry、密度/pageSize 保存读取消费与重置；断言 `workspaceTabs` 使用真实 `tabs` kind 且唯一 `growMain`，三个业务 panel 是实际消费者，`defaultActive` 未进入长期偏好，滚动由活动 panel 承接；确认没有新增未消费字段。具体完成情况：待验证。
-- 权限与数据范围测试：system/normal/tenant_admin/自定义最小权限/无角色；跨 owner/tenant；有 submit 无 stocks:view；按钮和接口一致。具体完成情况：待验证。
+- 权限与数据范围测试：system/normal/tenant_admin/自定义最小权限/无角色；跨 owner/tenant；有 submit 无 stocks:view；按钮和接口一致。具体完成情况：T1 已验证 system/normal/tenant_admin 默认菜单与四资源授权、seed 幂等、冲突原子回滚、marker applied/rolled_back/invalid/未知版本、tombstone 重启不复活；自定义最小权限、无角色和接口/按钮边界留待 T4-T13。
 - 确定性夹具测试：覆盖必填指纹缺失/格式非法/不匹配、后端原本运行和未运行两种取值路径、停服前后 PG 目标变化及后端持锁拒绝；再执行两轮 `获取指纹→stop→seed→计数与引用核验→cleanup→零残留`，模拟取值前、取值后、seed 后和测试中断验证 trap 只在已有可信指纹时清理并恢复原服务状态。具体完成情况：待验证。
 - 回归测试：按锁规则运行后端聚焦及全量 pytest；运行前端 Vitest、build、普通全量 Playwright（排除专属 spec），再执行 `AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline`；测试前后核验服务状态。具体完成情况：待验证。
 - 异常与边界测试：日历空/滞后、周末发布、同日等时间戳多事件、并发生命周期、草稿与修订并发、规则被归档、网络失败、原因删除、规则候选为零、财务字段不完整。具体完成情况：待验证。

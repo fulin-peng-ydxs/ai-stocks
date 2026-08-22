@@ -32,6 +32,7 @@ from backend.auth.constants import (
     ROLE_NORMAL,
     ROLE_SYSTEM,
     ROLE_TENANT_ADMIN,
+    TRADE_DISCIPLINE_RESOURCE_CODES,
 )
 from backend.auth.security import hash_password
 from backend.common.logging import get_logger
@@ -335,6 +336,322 @@ CREATE TABLE IF NOT EXISTS board_watchlist (
     board_type  TEXT NOT NULL,
     added_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, owner_user_id, board_code)
+);
+"""
+
+
+# ── 交易纪律（私人规则、正式版本、生命周期事件与履约修订）──────────────
+
+DDL_TRADE_DISCIPLINE_RULE = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_rule (
+    id                  TEXT,
+{_OWN}    name                TEXT,
+    normalized_name     TEXT,
+    status              TEXT NOT NULL DEFAULT 'unpublished',
+    latest_version_no   INTEGER,
+    next_activation_seq BIGINT NOT NULL DEFAULT 0,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at          TIMESTAMPTZ,
+    CHECK (status IN ('unpublished', 'active', 'archived')),
+    CONSTRAINT td_rule_lifecycle_consistency_check
+    CHECK ((status = 'unpublished' AND latest_version_no IS NULL)
+        OR (status IN ('active', 'archived') AND latest_version_no > 0
+            AND btrim(coalesce(name, '')) <> ''
+            AND btrim(coalesce(normalized_name, '')) <> '')),
+    CHECK (next_activation_seq >= 0),
+    PRIMARY KEY (tenant_id, owner_user_id, id)
+);
+"""
+
+DDL_TRADE_DISCIPLINE_RULE_NAME_CLAIM = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_rule_name_claim (
+{_OWN}    normalized_name TEXT NOT NULL,
+    rule_id         TEXT NOT NULL,
+    claimed_name    TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (btrim(normalized_name) <> ''),
+    PRIMARY KEY (tenant_id, owner_user_id, normalized_name),
+    UNIQUE (tenant_id, owner_user_id, rule_id),
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id)
+        REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE CASCADE
+);
+"""
+
+DDL_TRADE_DISCIPLINE_RULE_VERSION = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_rule_version (
+    rule_id        TEXT,
+{_OWN}    version_no     INTEGER,
+    name            TEXT NOT NULL,
+    normalized_name TEXT NOT NULL,
+    capital         NUMERIC(20, 2) NOT NULL,
+    published_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (version_no > 0),
+    CHECK (btrim(name) <> '' AND btrim(normalized_name) <> ''),
+    CHECK (capital > 0),
+    PRIMARY KEY (tenant_id, owner_user_id, rule_id, version_no),
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id)
+        REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE RESTRICT
+);
+"""
+
+DDL_TRADE_DISCIPLINE_STOCK_RULE = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_stock_rule (
+    rule_id       TEXT,
+{_OWN}    version_no    INTEGER,
+    detail_id     TEXT,
+    name          TEXT NOT NULL,
+    max_capital   NUMERIC(20, 2),
+    content       TEXT NOT NULL,
+    display_order INTEGER NOT NULL,
+    enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+    CHECK (btrim(name) <> '' AND btrim(content) <> ''),
+    CHECK (display_order > 0),
+    CHECK (NOT enabled OR (max_capital IS NOT NULL AND max_capital > 0)),
+    PRIMARY KEY (tenant_id, owner_user_id, rule_id, version_no, detail_id),
+    UNIQUE (tenant_id, owner_user_id, rule_id, version_no, display_order),
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id, version_no)
+        REFERENCES trade_discipline_rule_version
+            (tenant_id, owner_user_id, rule_id, version_no) ON DELETE RESTRICT
+);
+"""
+
+DDL_TRADE_DISCIPLINE_ACTION_RULE = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_action_rule (
+    rule_id       TEXT,
+{_OWN}    version_no    INTEGER,
+    detail_id     TEXT,
+    name          TEXT NOT NULL,
+    action_type   TEXT NOT NULL,
+    action_subtype TEXT NOT NULL,
+    content       TEXT NOT NULL,
+    display_order INTEGER NOT NULL,
+    enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+    CHECK (btrim(name) <> '' AND btrim(content) <> ''),
+    CHECK ((action_type = 'buy' AND action_subtype IN ('open_position', 'add_position'))
+        OR (action_type = 'sell' AND action_subtype IN ('liquidate', 'do_t'))),
+    CHECK (display_order > 0),
+    PRIMARY KEY (tenant_id, owner_user_id, rule_id, version_no, detail_id),
+    UNIQUE (tenant_id, owner_user_id, rule_id, version_no, action_type, display_order),
+    UNIQUE (tenant_id, owner_user_id, rule_id, version_no, detail_id, action_type),
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id, version_no)
+        REFERENCES trade_discipline_rule_version
+            (tenant_id, owner_user_id, rule_id, version_no) ON DELETE RESTRICT
+);
+"""
+
+DDL_TRADE_DISCIPLINE_RULE_DRAFT = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_rule_draft (
+    rule_id        TEXT,
+{_OWN}    draft_revision INTEGER NOT NULL DEFAULT 1,
+    proposed_name  TEXT,
+    normalized_name TEXT,
+    capital         NUMERIC(20, 2),
+    source_version_no INTEGER,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (draft_revision > 0),
+    CHECK (capital IS NULL OR capital >= 0),
+    CHECK (source_version_no IS NULL OR source_version_no > 0),
+    PRIMARY KEY (tenant_id, owner_user_id, rule_id),
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id)
+        REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id, source_version_no)
+        REFERENCES trade_discipline_rule_version
+            (tenant_id, owner_user_id, rule_id, version_no) ON DELETE RESTRICT
+);
+"""
+
+DDL_TRADE_DISCIPLINE_DRAFT_STOCK_RULE = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_draft_stock_rule (
+    rule_id       TEXT,
+{_OWN}    detail_id     TEXT,
+    name          TEXT,
+    max_capital   NUMERIC(20, 2),
+    content       TEXT,
+    display_order INTEGER NOT NULL,
+    enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+    CHECK (max_capital IS NULL OR max_capital >= 0),
+    CHECK (display_order > 0),
+    PRIMARY KEY (tenant_id, owner_user_id, rule_id, detail_id),
+    UNIQUE (tenant_id, owner_user_id, rule_id, display_order),
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id)
+        REFERENCES trade_discipline_rule_draft
+            (tenant_id, owner_user_id, rule_id) ON DELETE CASCADE
+);
+"""
+
+DDL_TRADE_DISCIPLINE_DRAFT_ACTION_RULE = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_draft_action_rule (
+    rule_id       TEXT,
+{_OWN}    detail_id     TEXT,
+    name          TEXT,
+    action_type   TEXT,
+    action_subtype TEXT,
+    content       TEXT,
+    display_order INTEGER NOT NULL,
+    enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+    CHECK (action_type IS NULL OR action_type IN ('buy', 'sell')),
+    CHECK (action_subtype IS NULL OR action_subtype IN
+        ('open_position', 'add_position', 'liquidate', 'do_t')),
+    CHECK (action_type IS NULL OR action_subtype IS NULL
+        OR (action_type = 'buy' AND action_subtype IN ('open_position', 'add_position'))
+        OR (action_type = 'sell' AND action_subtype IN ('liquidate', 'do_t'))),
+    CHECK (display_order > 0),
+    PRIMARY KEY (tenant_id, owner_user_id, rule_id, detail_id),
+    UNIQUE (tenant_id, owner_user_id, rule_id, action_type, display_order),
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id)
+        REFERENCES trade_discipline_rule_draft
+            (tenant_id, owner_user_id, rule_id) ON DELETE CASCADE
+);
+"""
+
+DDL_TRADE_DISCIPLINE_RULE_ACTIVATION = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_rule_activation (
+    id            TEXT,
+{_OWN}    rule_id       TEXT NOT NULL,
+    event_seq     BIGINT NOT NULL,
+    event_type    TEXT NOT NULL,
+    version_no    INTEGER NOT NULL,
+    occurred_at   TIMESTAMPTZ NOT NULL,
+    activated_at  TIMESTAMPTZ NOT NULL,
+    effective_from_trade_date DATE NOT NULL,
+    CHECK (event_seq > 0),
+    CHECK (event_type IN ('publish', 'archive', 'restore')),
+    PRIMARY KEY (tenant_id, owner_user_id, id),
+    UNIQUE (tenant_id, owner_user_id, rule_id, event_seq),
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id, version_no)
+        REFERENCES trade_discipline_rule_version
+            (tenant_id, owner_user_id, rule_id, version_no) ON DELETE RESTRICT
+);
+"""
+
+DDL_TRADE_DISCIPLINE_CHECKIN = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_checkin (
+    id                  TEXT,
+{_OWN}    rule_id             TEXT NOT NULL,
+    trade_date          DATE NOT NULL,
+    current_revision_no INTEGER NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'submitted',
+    submitted_at        TIMESTAMPTZ NOT NULL,
+    amended_at          TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (current_revision_no > 0),
+    CHECK (status IN ('submitted', 'amended')),
+    CONSTRAINT td_checkin_status_time_check
+    CHECK ((status = 'submitted' AND amended_at IS NULL)
+        OR (status = 'amended' AND amended_at IS NOT NULL)),
+    PRIMARY KEY (tenant_id, owner_user_id, id),
+    UNIQUE (tenant_id, owner_user_id, rule_id, trade_date),
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id)
+        REFERENCES trade_discipline_rule (tenant_id, owner_user_id, id) ON DELETE RESTRICT
+);
+"""
+
+DDL_TRADE_DISCIPLINE_CHECKIN_REVISION = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_checkin_revision (
+    checkin_id      TEXT,
+{_OWN}    revision_no    INTEGER,
+    rule_id         TEXT NOT NULL,
+    version_no      INTEGER NOT NULL,
+    revision_kind   TEXT NOT NULL,
+    assessment      TEXT NOT NULL,
+    no_operation    BOOLEAN NOT NULL,
+    violation_detail TEXT,
+    review_note     TEXT,
+    created_at      TIMESTAMPTZ NOT NULL,
+    CHECK (revision_no > 0),
+    CHECK (revision_kind IN ('initial', 'amendment')),
+    CONSTRAINT td_revision_kind_no_check
+    CHECK ((revision_kind = 'initial' AND revision_no = 1)
+        OR (revision_kind = 'amendment' AND revision_no > 1)),
+    CHECK (assessment IN ('complied', 'breached')),
+    CHECK ((assessment = 'breached' AND btrim(coalesce(violation_detail, '')) <> '')
+        OR (assessment = 'complied' AND violation_detail IS NULL)),
+    PRIMARY KEY (tenant_id, owner_user_id, checkin_id, revision_no),
+    UNIQUE (tenant_id, owner_user_id, checkin_id, revision_no, rule_id, version_no),
+    FOREIGN KEY (tenant_id, owner_user_id, checkin_id)
+        REFERENCES trade_discipline_checkin (tenant_id, owner_user_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id, version_no)
+        REFERENCES trade_discipline_rule_version
+            (tenant_id, owner_user_id, rule_id, version_no) ON DELETE RESTRICT
+);
+"""
+
+DDL_TRADE_DISCIPLINE_REASON = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_reason (
+    id              TEXT,
+{_OWN}    name            TEXT NOT NULL,
+    normalized_name TEXT NOT NULL,
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at      TIMESTAMPTZ,
+    CHECK (btrim(name) <> '' AND btrim(normalized_name) <> ''),
+    CHECK ((is_active AND deleted_at IS NULL) OR (NOT is_active AND deleted_at IS NOT NULL)),
+    PRIMARY KEY (tenant_id, owner_user_id, id),
+    UNIQUE (tenant_id, owner_user_id, normalized_name)
+);
+"""
+
+DDL_TRADE_DISCIPLINE_VIOLATION = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_violation (
+    checkin_id    TEXT,
+{_OWN}    revision_no  INTEGER,
+    reason_code   TEXT,
+    reason_id     TEXT,
+    reason_name_snapshot TEXT NOT NULL,
+    CHECK ((reason_code IS NOT NULL AND reason_id IS NULL)
+        OR (reason_code IS NULL AND reason_id IS NOT NULL)),
+    CHECK (btrim(reason_name_snapshot) <> ''),
+    PRIMARY KEY (tenant_id, owner_user_id, checkin_id, revision_no),
+    FOREIGN KEY (tenant_id, owner_user_id, checkin_id, revision_no)
+        REFERENCES trade_discipline_checkin_revision
+            (tenant_id, owner_user_id, checkin_id, revision_no) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, owner_user_id, reason_id)
+        REFERENCES trade_discipline_reason (tenant_id, owner_user_id, id) ON DELETE RESTRICT
+);
+"""
+
+DDL_TRADE_DISCIPLINE_OPERATION = f"""
+CREATE TABLE IF NOT EXISTS trade_discipline_operation (
+    id             TEXT,
+{_OWN}    checkin_id     TEXT NOT NULL,
+    revision_no    INTEGER NOT NULL,
+    rule_id         TEXT NOT NULL,
+    version_no      INTEGER NOT NULL,
+    stock_code      TEXT NOT NULL,
+    stock_name_snapshot TEXT NOT NULL,
+    side            TEXT NOT NULL,
+    stock_rule_id   TEXT NOT NULL,
+    action_rule_id  TEXT NOT NULL,
+    price            NUMERIC(20, 4),
+    quantity         NUMERIC(20, 4),
+    amount           NUMERIC(20, 2),
+    fee              NUMERIC(20, 2),
+    operated_at      TIMESTAMPTZ,
+    note             TEXT,
+    display_order    INTEGER NOT NULL,
+    CHECK (side IN ('buy', 'sell')),
+    CHECK (btrim(stock_code) <> '' AND btrim(stock_name_snapshot) <> ''),
+    CHECK (price IS NULL OR price >= 0),
+    CHECK (quantity IS NULL OR quantity >= 0),
+    CHECK (amount IS NULL OR amount >= 0),
+    CHECK (fee IS NULL OR fee >= 0),
+    CHECK (display_order > 0),
+    PRIMARY KEY (tenant_id, owner_user_id, id),
+    UNIQUE (tenant_id, owner_user_id, checkin_id, revision_no, display_order),
+    FOREIGN KEY (tenant_id, owner_user_id, checkin_id, revision_no, rule_id, version_no)
+        REFERENCES trade_discipline_checkin_revision
+            (tenant_id, owner_user_id, checkin_id, revision_no, rule_id, version_no) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id, version_no, stock_rule_id)
+        REFERENCES trade_discipline_stock_rule
+            (tenant_id, owner_user_id, rule_id, version_no, detail_id) ON DELETE RESTRICT,
+    FOREIGN KEY (tenant_id, owner_user_id, rule_id, version_no, action_rule_id, side)
+        REFERENCES trade_discipline_action_rule
+            (tenant_id, owner_user_id, rule_id, version_no, detail_id, action_type) ON DELETE RESTRICT
 );
 """
 
@@ -681,6 +998,26 @@ ASSET_PK: dict[str, list[str]] = {
     "stock_group": ["tenant_id", "owner_user_id", "id"],
     "stock_group_member": ["tenant_id", "owner_user_id", "group_id", "code"],
     "board_watchlist": ["tenant_id", "owner_user_id", "board_code"],
+    "trade_discipline_rule": ["tenant_id", "owner_user_id", "id"],
+    "trade_discipline_rule_name_claim": ["tenant_id", "owner_user_id", "normalized_name"],
+    "trade_discipline_rule_version": ["tenant_id", "owner_user_id", "rule_id", "version_no"],
+    "trade_discipline_stock_rule": [
+        "tenant_id", "owner_user_id", "rule_id", "version_no", "detail_id"],
+    "trade_discipline_action_rule": [
+        "tenant_id", "owner_user_id", "rule_id", "version_no", "detail_id"],
+    "trade_discipline_rule_draft": ["tenant_id", "owner_user_id", "rule_id"],
+    "trade_discipline_draft_stock_rule": [
+        "tenant_id", "owner_user_id", "rule_id", "detail_id"],
+    "trade_discipline_draft_action_rule": [
+        "tenant_id", "owner_user_id", "rule_id", "detail_id"],
+    "trade_discipline_rule_activation": ["tenant_id", "owner_user_id", "id"],
+    "trade_discipline_checkin": ["tenant_id", "owner_user_id", "id"],
+    "trade_discipline_checkin_revision": [
+        "tenant_id", "owner_user_id", "checkin_id", "revision_no"],
+    "trade_discipline_reason": ["tenant_id", "owner_user_id", "id"],
+    "trade_discipline_violation": [
+        "tenant_id", "owner_user_id", "checkin_id", "revision_no"],
+    "trade_discipline_operation": ["tenant_id", "owner_user_id", "id"],
     "backtest_run": ["tenant_id", "owner_user_id", "id"],
     "backtest_trade": ["tenant_id", "owner_user_id", "run_id", "seq"],
     "backtest_equity": ["tenant_id", "owner_user_id", "run_id", "trade_date"],
@@ -707,6 +1044,20 @@ _ASSET_TABLES: dict[str, str] = {
     "stock_group": DDL_STOCK_GROUP,
     "stock_group_member": DDL_STOCK_GROUP_MEMBER,
     "board_watchlist": DDL_BOARD_WATCHLIST,
+    "trade_discipline_rule": DDL_TRADE_DISCIPLINE_RULE,
+    "trade_discipline_rule_name_claim": DDL_TRADE_DISCIPLINE_RULE_NAME_CLAIM,
+    "trade_discipline_rule_version": DDL_TRADE_DISCIPLINE_RULE_VERSION,
+    "trade_discipline_stock_rule": DDL_TRADE_DISCIPLINE_STOCK_RULE,
+    "trade_discipline_action_rule": DDL_TRADE_DISCIPLINE_ACTION_RULE,
+    "trade_discipline_rule_draft": DDL_TRADE_DISCIPLINE_RULE_DRAFT,
+    "trade_discipline_draft_stock_rule": DDL_TRADE_DISCIPLINE_DRAFT_STOCK_RULE,
+    "trade_discipline_draft_action_rule": DDL_TRADE_DISCIPLINE_DRAFT_ACTION_RULE,
+    "trade_discipline_rule_activation": DDL_TRADE_DISCIPLINE_RULE_ACTIVATION,
+    "trade_discipline_checkin": DDL_TRADE_DISCIPLINE_CHECKIN,
+    "trade_discipline_checkin_revision": DDL_TRADE_DISCIPLINE_CHECKIN_REVISION,
+    "trade_discipline_reason": DDL_TRADE_DISCIPLINE_REASON,
+    "trade_discipline_violation": DDL_TRADE_DISCIPLINE_VIOLATION,
+    "trade_discipline_operation": DDL_TRADE_DISCIPLINE_OPERATION,
     "backtest_run": DDL_BACKTEST_RUN,
     "backtest_trade": DDL_BACKTEST_TRADE,
     "backtest_equity": DDL_BACKTEST_EQUITY,
@@ -765,12 +1116,74 @@ _STAGE5_INDEXES: tuple[str, ...] = (
 )
 
 _STAGE6_VISIBILITY_INDEXES: tuple[str, ...] = (
-    "CREATE INDEX IF NOT EXISTS idx_screen_profile_visibility "
-    "ON screen_profile (visibility, tenant_id, owner_user_id)",
-    "CREATE INDEX IF NOT EXISTS idx_trade_profile_visibility "
-    "ON trade_profile (visibility, tenant_id, owner_user_id)",
-    "CREATE INDEX IF NOT EXISTS idx_backtest_run_visibility "
-    "ON backtest_run (visibility, tenant_id, owner_user_id)",
+    ("CREATE INDEX IF NOT EXISTS idx_screen_profile_visibility "
+     "ON screen_profile (visibility, tenant_id, owner_user_id)"),
+    ("CREATE INDEX IF NOT EXISTS idx_trade_profile_visibility "
+     "ON trade_profile (visibility, tenant_id, owner_user_id)"),
+    ("CREATE INDEX IF NOT EXISTS idx_backtest_run_visibility "
+     "ON backtest_run (visibility, tenant_id, owner_user_id)"),
+)
+
+_TRADE_DISCIPLINE_INDEXES: tuple[str, ...] = (
+    ("CREATE INDEX IF NOT EXISTS idx_td_rule_owner_status "
+     "ON trade_discipline_rule (tenant_id, owner_user_id, status, updated_at DESC) "
+     "WHERE deleted_at IS NULL"),
+    ("CREATE INDEX IF NOT EXISTS idx_td_activation_effective "
+     "ON trade_discipline_rule_activation "
+     "(tenant_id, owner_user_id, rule_id, effective_from_trade_date DESC, event_seq DESC)"),
+    ("CREATE INDEX IF NOT EXISTS idx_td_checkin_history "
+     "ON trade_discipline_checkin "
+     "(tenant_id, owner_user_id, trade_date DESC, updated_at DESC)"),
+    ("CREATE INDEX IF NOT EXISTS idx_td_revision_detail "
+     "ON trade_discipline_checkin_revision "
+     "(tenant_id, owner_user_id, checkin_id, revision_no DESC)"),
+    ("CREATE INDEX IF NOT EXISTS idx_td_operation_stock "
+     "ON trade_discipline_operation "
+     "(tenant_id, owner_user_id, stock_code, checkin_id, revision_no)"),
+    ("CREATE INDEX IF NOT EXISTS idx_td_violation_reason_name "
+     "ON trade_discipline_violation "
+     "(tenant_id, owner_user_id, lower(reason_name_snapshot), checkin_id, revision_no)"),
+)
+
+_TRADE_DISCIPLINE_POINTER_CONSTRAINTS: tuple[str, ...] = (
+    ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+     "WHERE conname='td_rule_lifecycle_consistency_check') THEN "
+     "ALTER TABLE trade_discipline_rule "
+     "ADD CONSTRAINT td_rule_lifecycle_consistency_check "
+     "CHECK ((status='unpublished' AND latest_version_no IS NULL) "
+     "OR (status IN ('active','archived') AND latest_version_no > 0 "
+     "AND btrim(coalesce(name,'')) <> '' "
+     "AND btrim(coalesce(normalized_name,'')) <> '')); END IF; END $$;"),
+    ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+     "WHERE conname='td_checkin_status_time_check') THEN "
+     "ALTER TABLE trade_discipline_checkin "
+     "ADD CONSTRAINT td_checkin_status_time_check "
+     "CHECK ((status='submitted' AND amended_at IS NULL) "
+     "OR (status='amended' AND amended_at IS NOT NULL)); END IF; END $$;"),
+    ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+     "WHERE conname='td_revision_kind_no_check') THEN "
+     "ALTER TABLE trade_discipline_checkin_revision "
+     "ADD CONSTRAINT td_revision_kind_no_check "
+     "CHECK ((revision_kind='initial' AND revision_no=1) "
+     "OR (revision_kind='amendment' AND revision_no>1)); END IF; END $$;"),
+    ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+     "WHERE conname='td_rule_name_claim_rule_unique') THEN "
+     "ALTER TABLE trade_discipline_rule_name_claim "
+     "ADD CONSTRAINT td_rule_name_claim_rule_unique "
+     "UNIQUE (tenant_id, owner_user_id, rule_id); END IF; END $$;"),
+    ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+     "WHERE conname='td_rule_latest_version_fk') THEN "
+     "ALTER TABLE trade_discipline_rule ADD CONSTRAINT td_rule_latest_version_fk "
+     "FOREIGN KEY (tenant_id, owner_user_id, id, latest_version_no) "
+     "REFERENCES trade_discipline_rule_version "
+     "(tenant_id, owner_user_id, rule_id, version_no) ON DELETE RESTRICT; END IF; END $$;"),
+    ("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint "
+     "WHERE conname='td_checkin_current_revision_fk') THEN "
+     "ALTER TABLE trade_discipline_checkin ADD CONSTRAINT td_checkin_current_revision_fk "
+     "FOREIGN KEY (tenant_id, owner_user_id, id, current_revision_no) "
+     "REFERENCES trade_discipline_checkin_revision "
+     "(tenant_id, owner_user_id, checkin_id, revision_no) "
+     "DEFERRABLE INITIALLY DEFERRED; END IF; END $$;"),
 )
 
 
@@ -798,6 +1211,7 @@ _SEED_MENU_TREE: list = [
     ("/screen", "策略筛选", "Filter", "login", []),
     ("/backtest", "策略回测", "DataLine", "login", []),
     ("/training", "盘感训练", "Aim", "login", []),
+    ("/trade-discipline", "交易纪律", "Checked", "login", []),
     ("data", "数据管理", "FolderOpened", "system", [
         ("/data/overview", "数据概览", None, "system", []),
         ("/data/quality", "数据质量", None, "system", []),
@@ -898,6 +1312,15 @@ _SEED_RESOURCES: tuple[tuple[str, str, str, str, str, str], ...] = (
     ("/training", "training:trade",  "训练过程操作", "api", "POST",   "/api/training/sessions/{sid}/trade"),
     ("/training", "training:review", "保存训练复盘", "api", "PATCH",  "/api/training/sessions/{sid}/review"),
     ("/training", "training:delete", "删除训练",     "api", "DELETE", "/api/training/sessions/{sid}"),
+    # 交易纪律由独立 marker 状态机创建和授权；通用 seed 循环会显式跳过这四项。
+    ("/trade-discipline", "trade-discipline:view", "查看交易纪律", "api", "GET",
+     "/api/trade-discipline/summary"),
+    ("/trade-discipline", "trade-discipline:rule-manage", "维护交易规则", "api", "POST",
+     "/api/trade-discipline/rules"),
+    ("/trade-discipline", "trade-discipline:checkin-view", "查看履约记录", "api", "GET",
+     "/api/trade-discipline/checkins"),
+    ("/trade-discipline", "trade-discipline:checkin-submit", "提交履约记录", "api", "POST",
+     "/api/trade-discipline/checkins"),
     # C) 配置管理拆页：评分/买卖为业务可授权，技术指标/系统设置仍 system-only
     ("/system/config/score", "score-profile:view",           "查看评分方案",       "api", "GET",    "/api/score-profiles"),
     ("/system/config/score", "score-profile:save",           "保存评分方案",       "api", "POST",   "/api/score-profiles"),
@@ -956,6 +1379,10 @@ _ASSET_PUBLISH_OPEN_MARKER = "migration.asset_publish_open_v2"
 _ASSET_PUBLISH_OPEN_LOCK = 8410010002
 _TENANT_ADMIN_AUDIT_REVOKE_MARKER = "migration.tenant_admin_audit_default_revoke_v1"
 _DICT_ITEM_COLOR_BACKFILL_MARKER = "migration.dict_item_color_defaults_v1"
+TRADE_DISCIPLINE_RBAC_MARKER = "migration.trade_discipline_default_grants_v1"
+TRADE_DISCIPLINE_RBAC_LOCK = 8410010005
+_TRADE_DISCIPLINE_MENU_ID = "/trade-discipline"
+_TRADE_DISCIPLINE_MARKER_VERSION = 1
 
 _STAGE5_APP_CONFIG_DEFAULTS: tuple[tuple[str, str], ...] = (
     ("auth.require_email_code", "true"),
@@ -1015,6 +1442,10 @@ def init_pg_db(client: PostgresClient | None = None) -> list[str]:
     for idx_sql in _RBAC_INDEXES:
         client.execute(idx_sql)
     for idx_sql in _STAGE5_INDEXES:
+        client.execute(idx_sql)
+    for constraint_sql in _TRADE_DISCIPLINE_POINTER_CONSTRAINTS:
+        client.execute(constraint_sql)
+    for idx_sql in _TRADE_DISCIPLINE_INDEXES:
         client.execute(idx_sql)
     _protect_legacy_config_secrets(client)
     _upgrade_dict_item_color(client)
@@ -1286,6 +1717,306 @@ def _flatten_menu_tree(tree: list, parent_code: str | None = None) -> list[dict]
     return rows
 
 
+def _trade_discipline_resource_rows() -> tuple[tuple[str, str, str, str, str, str], ...]:
+    """返回交易纪律固定资源契约，供独立 seed/校验共享。"""
+    codes = set(TRADE_DISCIPLINE_RESOURCE_CODES)
+    return tuple(row for row in _SEED_RESOURCES if row[1] in codes)
+
+
+def _trade_discipline_marker_state(raw: object) -> tuple[str, dict | None]:
+    """严格解析交易纪律 RBAC marker；未知结构一律判 invalid。"""
+    try:
+        value = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, ValueError):
+        return "invalid", None
+    if not isinstance(value, dict):
+        return "invalid", None
+    expected_keys = {
+        "version", "applied", "rolled_back", "inserted_menu_ids",
+        "inserted_resource_ids", "inserted_role_menus", "inserted_role_resources",
+    }
+    if (
+        set(value) != expected_keys
+        or type(value.get("version")) is not int
+        or value["version"] != _TRADE_DISCIPLINE_MARKER_VERSION
+    ):
+        return "invalid", None
+    if not isinstance(value.get("applied"), bool) or not isinstance(value.get("rolled_back"), bool):
+        return "invalid", None
+    list_keys = ("inserted_menu_ids", "inserted_resource_ids")
+    if any(not isinstance(value.get(key), list) for key in list_keys):
+        return "invalid", None
+    if any(not isinstance(item, str) for key in list_keys for item in value[key]):
+        return "invalid", None
+    if len(value["inserted_menu_ids"]) != 1 or len(value["inserted_resource_ids"]) != 4:
+        return "invalid", None
+    pair_keys = ("inserted_role_menus", "inserted_role_resources")
+    for key in pair_keys:
+        rows = value.get(key)
+        if not isinstance(rows, list) or any(
+            not isinstance(row, list) or len(row) != 2
+            or any(not isinstance(item, str) for item in row)
+            for row in rows
+        ):
+            return "invalid", None
+    if len(value["inserted_role_menus"]) != 3 or len(value["inserted_role_resources"]) != 12:
+        return "invalid", None
+    expected_roles = {ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL}
+    expected_resources = set(TRADE_DISCIPLINE_RESOURCE_CODES)
+    if value["inserted_menu_ids"] != [_TRADE_DISCIPLINE_MENU_ID]:
+        return "invalid", None
+    if set(value["inserted_resource_ids"]) != expected_resources:
+        return "invalid", None
+    if set(map(tuple, value["inserted_role_menus"])) != {
+        (role_id, _TRADE_DISCIPLINE_MENU_ID) for role_id in expected_roles
+    }:
+        return "invalid", None
+    if set(map(tuple, value["inserted_role_resources"])) != {
+        (role_id, resource_id)
+        for role_id in expected_roles
+        for resource_id in expected_resources
+    }:
+        return "invalid", None
+    if value["applied"] is True and value["rolled_back"] is False:
+        return "applied", value
+    if value["applied"] is False and value["rolled_back"] is True:
+        return "rolled_back", value
+    return "invalid", None
+
+
+def _validate_trade_discipline_applied_cur(cur, ledger: dict) -> None:
+    """applied marker 必须与菜单、资源和实际授权账本完全自洽。"""
+    cur.execute(
+        "SELECT id, code, title, type, route_path, visible FROM sys_menu WHERE id=%s",
+        [_TRADE_DISCIPLINE_MENU_ID],
+    )
+    menu = cur.fetchone()
+    expected_menu = (
+        _TRADE_DISCIPLINE_MENU_ID, _TRADE_DISCIPLINE_MENU_ID, "交易纪律",
+        "leaf", _TRADE_DISCIPLINE_MENU_ID, "login",
+    )
+    if menu != expected_menu:
+        raise RuntimeError("交易纪律 RBAC marker 已应用，但菜单契约缺失或被占用")
+    cur.execute(
+        "SELECT count(*) FROM sys_menu WHERE id=%s OR code=%s OR route_path=%s",
+        [_TRADE_DISCIPLINE_MENU_ID] * 3,
+    )
+    if cur.fetchone()[0] != 1:
+        raise RuntimeError("交易纪律 RBAC marker 已应用，但菜单身份存在额外占用")
+    for menu_id, code, name, rtype, method, path in _trade_discipline_resource_rows():
+        cur.execute(
+            "SELECT id, menu_id, code, name, type, api_method, api_path "
+            "FROM sys_resource WHERE id=%s",
+            [code],
+        )
+        if cur.fetchone() != (code, menu_id, code, name, rtype, method, path):
+            raise RuntimeError(f"交易纪律 RBAC marker 已应用，但资源契约异常: {code}")
+    for role_id, menu_id in ledger["inserted_role_menus"]:
+        cur.execute(
+            "SELECT 1 FROM sys_role_menu WHERE role_id=%s AND menu_id=%s",
+            [role_id, menu_id],
+        )
+        if cur.fetchone() is None:
+            raise RuntimeError(f"交易纪律菜单授权账本缺失: {role_id}/{menu_id}")
+    for role_id, resource_id in ledger["inserted_role_resources"]:
+        cur.execute(
+            "SELECT 1 FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
+            [role_id, resource_id],
+        )
+        if cur.fetchone() is None:
+            raise RuntimeError(f"交易纪律资源授权账本缺失: {role_id}/{resource_id}")
+
+
+def _validate_trade_discipline_rollback_grants_cur(cur, ledger: dict) -> None:
+    """回滚不得借资源/菜单级联删除迁移后新增的自定义角色授权。"""
+    expected_menus = set(map(tuple, ledger["inserted_role_menus"]))
+    cur.execute(
+        "SELECT role_id, menu_id FROM sys_role_menu WHERE menu_id = ANY(%s)",
+        [ledger["inserted_menu_ids"]],
+    )
+    actual_menus = set(cur.fetchall())
+    if actual_menus != expected_menus:
+        raise RuntimeError("交易纪律菜单存在迁移账本外授权，拒绝级联回滚")
+    expected_resources = set(map(tuple, ledger["inserted_role_resources"]))
+    cur.execute(
+        "SELECT role_id, resource_id FROM sys_role_resource WHERE resource_id = ANY(%s)",
+        [ledger["inserted_resource_ids"]],
+    )
+    actual_resources = set(cur.fetchall())
+    if actual_resources != expected_resources:
+        raise RuntimeError("交易纪律资源存在迁移账本外授权，拒绝级联回滚")
+
+
+def _clear_trade_discipline_perm_cache(_client: PostgresClient, user_ids: list[str]) -> None:
+    """提交后 best-effort 清权限缓存；权威失效边界仍是事务内 perm_ver。"""
+    if not user_ids:
+        return
+    try:
+        from backend.auth.perm_resolver import clear_perms_cache
+
+        clear_perms_cache(user_ids)
+    except Exception:
+        log.warning("交易纪律 RBAC 迁移清权限缓存失败（忽略）", exc_info=True)
+
+
+def _seed_trade_discipline_rbac(client: PostgresClient | None = None) -> dict:
+    """独立状态机写入交易纪律菜单、四资源和默认角色授权。"""
+    client = client or get_pg_client()
+    affected: list[str] = []
+    result = {"state": "unknown", "inserted": 0, "affected_users": 0}
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [TRADE_DISCIPLINE_RBAC_LOCK])
+        cur.execute("SELECT value FROM app_config WHERE key=%s", [TRADE_DISCIPLINE_RBAC_MARKER])
+        row = cur.fetchone()
+        if row is not None:
+            state, ledger = _trade_discipline_marker_state(row[0])
+            if state == "rolled_back":
+                return {"state": state, "inserted": 0, "affected_users": 0}
+            if state != "applied" or ledger is None:
+                raise RuntimeError("交易纪律 RBAC marker 非法，已 fail-closed")
+            _validate_trade_discipline_applied_cur(cur, ledger)
+            return {"state": state, "inserted": 0, "affected_users": 0}
+
+        cur.execute(
+            "SELECT id FROM sys_menu WHERE id=%s OR code=%s OR route_path=%s LIMIT 1",
+            [_TRADE_DISCIPLINE_MENU_ID] * 3,
+        )
+        if cur.fetchone() is not None:
+            raise RuntimeError("交易纪律菜单身份已被占用，拒绝自动收编")
+        resource_ids = list(TRADE_DISCIPLINE_RESOURCE_CODES)
+        cur.execute(
+            "SELECT id FROM sys_resource WHERE id = ANY(%s) OR code = ANY(%s) LIMIT 1",
+            [resource_ids, resource_ids],
+        )
+        if cur.fetchone() is not None:
+            raise RuntimeError("交易纪律资源身份已被占用，拒绝自动收编")
+
+        cur.execute(
+            "INSERT INTO sys_menu "
+            "(id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
+            "VALUES (%s, NULL, %s, '交易纪律', 'leaf', %s, 'Checked', 50, 'login', TRUE) "
+            "RETURNING id",
+            [_TRADE_DISCIPLINE_MENU_ID] * 3,
+        )
+        inserted_menu_ids = [cur.fetchone()[0]]
+        inserted_resource_ids: list[str] = []
+        for index, (menu_id, code, name, rtype, method, path) in enumerate(
+            _trade_discipline_resource_rows(), start=1
+        ):
+            cur.execute(
+                "INSERT INTO sys_resource "
+                "(id, menu_id, code, name, type, api_method, api_path, sort, is_builtin) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE) RETURNING id",
+                [code, menu_id, code, name, rtype, method, path, index * 10],
+            )
+            inserted_resource_ids.append(cur.fetchone()[0])
+
+        inserted_role_menus: list[list[str]] = []
+        inserted_role_resources: list[list[str]] = []
+        for role_id in (ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL):
+            cur.execute(
+                "INSERT INTO sys_role_menu (role_id, menu_id) VALUES (%s, %s) RETURNING role_id, menu_id",
+                [role_id, _TRADE_DISCIPLINE_MENU_ID],
+            )
+            inserted_role_menus.append(list(cur.fetchone()))
+            for resource_id in inserted_resource_ids:
+                cur.execute(
+                    "INSERT INTO sys_role_resource (role_id, resource_id) VALUES (%s, %s) "
+                    "RETURNING role_id, resource_id",
+                    [role_id, resource_id],
+                )
+                inserted_role_resources.append(list(cur.fetchone()))
+
+        ledger = {
+            "version": _TRADE_DISCIPLINE_MARKER_VERSION,
+            "applied": True,
+            "rolled_back": False,
+            "inserted_menu_ids": inserted_menu_ids,
+            "inserted_resource_ids": inserted_resource_ids,
+            "inserted_role_menus": inserted_role_menus,
+            "inserted_role_resources": inserted_role_resources,
+        }
+        cur.execute(
+            "UPDATE sys_user u SET perm_ver=perm_ver+1 WHERE "
+            "u.role_code=%s OR EXISTS (SELECT 1 FROM sys_user_role ur "
+            "WHERE ur.user_id=u.id AND ur.role_id = ANY(%s)) RETURNING u.id",
+            [ROLE_SYSTEM, [ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL]],
+        )
+        affected = [row[0] for row in cur.fetchall()]
+        cur.execute(
+            "INSERT INTO app_config (key, value, updated_at) VALUES (%s, %s, now())",
+            [TRADE_DISCIPLINE_RBAC_MARKER, json.dumps(ledger, ensure_ascii=False)],
+        )
+        result = {
+            "state": "applied",
+            "inserted": len(inserted_menu_ids) + len(inserted_resource_ids)
+            + len(inserted_role_menus) + len(inserted_role_resources),
+            "affected_users": len(affected),
+            "marker": ledger,
+        }
+    _clear_trade_discipline_perm_cache(client, affected)
+    return result
+
+
+def _rollback_trade_discipline_rbac(client: PostgresClient | None = None) -> dict:
+    """按 marker 实际插入账本确定性回滚交易纪律 RBAC，业务表保持不动。"""
+    client = client or get_pg_client()
+    affected: list[str] = []
+    result: dict = {}
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [TRADE_DISCIPLINE_RBAC_LOCK])
+        cur.execute("SELECT value FROM app_config WHERE key=%s", [TRADE_DISCIPLINE_RBAC_MARKER])
+        row = cur.fetchone()
+        if row is None:
+            raise RuntimeError("交易纪律 RBAC marker 不存在，拒绝破坏性回滚")
+        state, ledger = _trade_discipline_marker_state(row[0])
+        if state == "rolled_back" and ledger is not None:
+            return {"state": state, "deleted": 0, "affected_users": 0, "marker": ledger}
+        if state != "applied" or ledger is None:
+            raise RuntimeError("交易纪律 RBAC marker 非法，拒绝破坏性回滚")
+        _validate_trade_discipline_applied_cur(cur, ledger)
+        _validate_trade_discipline_rollback_grants_cur(cur, ledger)
+
+        deleted = 0
+        for role_id, resource_id in reversed(ledger["inserted_role_resources"]):
+            cur.execute(
+                "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
+                [role_id, resource_id],
+            )
+            deleted += max(cur.rowcount or 0, 0)
+        for role_id, menu_id in reversed(ledger["inserted_role_menus"]):
+            cur.execute(
+                "DELETE FROM sys_role_menu WHERE role_id=%s AND menu_id=%s",
+                [role_id, menu_id],
+            )
+            deleted += max(cur.rowcount or 0, 0)
+        for resource_id in reversed(ledger["inserted_resource_ids"]):
+            cur.execute("DELETE FROM sys_resource WHERE id=%s", [resource_id])
+            deleted += max(cur.rowcount or 0, 0)
+        for menu_id in reversed(ledger["inserted_menu_ids"]):
+            cur.execute("DELETE FROM sys_menu WHERE id=%s", [menu_id])
+            deleted += max(cur.rowcount or 0, 0)
+
+        cur.execute(
+            "UPDATE sys_user u SET perm_ver=perm_ver+1 WHERE "
+            "u.role_code=%s OR EXISTS (SELECT 1 FROM sys_user_role ur "
+            "WHERE ur.user_id=u.id AND ur.role_id = ANY(%s)) RETURNING u.id",
+            [ROLE_SYSTEM, [ROLE_SYSTEM, ROLE_TENANT_ADMIN, ROLE_NORMAL]],
+        )
+        affected = [row[0] for row in cur.fetchall()]
+        tombstone = {**ledger, "applied": False, "rolled_back": True}
+        cur.execute(
+            "UPDATE app_config SET value=%s, updated_at=now() WHERE key=%s",
+            [json.dumps(tombstone, ensure_ascii=False), TRADE_DISCIPLINE_RBAC_MARKER],
+        )
+        result = {
+            "state": "rolled_back", "deleted": deleted,
+            "affected_users": len(affected), "marker": tombstone,
+        }
+    _clear_trade_discipline_perm_cache(client, affected)
+    return result
+
+
 def seed_rbac(client: PostgresClient | None = None) -> None:
     """幂等 seed 内置角色 / 菜单树 / 功能点 / 默认授权，并为无角色存量用户补 sys_user_role。
 
@@ -1305,6 +2036,8 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
     # 2) 菜单树（父在子前）
     menu_rows = _flatten_menu_tree(_SEED_MENU_TREE)
     for m in menu_rows:
+        if m["code"] == _TRADE_DISCIPLINE_MENU_ID:
+            continue
         client.execute(
             "INSERT INTO sys_menu (id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) "
@@ -1313,6 +2046,8 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
              m["route_path"], m["icon"], m["sort"], m["visible"]])
     # 3) 功能点/资源（id=code）
     for i, (menu_code, code, name, rtype, method, path) in enumerate(_SEED_RESOURCES, start=1):
+        if code in TRADE_DISCIPLINE_RESOURCE_CODES:
+            continue
         client.execute(
             "INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
@@ -1330,6 +2065,7 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
         "SELECT u.id, r.id FROM sys_user u JOIN sys_role r ON r.code = u.role_code "
         "WHERE NOT EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id) "
         "ON CONFLICT (user_id, role_id) DO NOTHING")
+    _seed_trade_discipline_rbac(client)
 
 
 def _remove_legacy_paid_role(client: PostgresClient) -> None:
@@ -1508,7 +2244,7 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
             if affected:
                 from backend.auth.perm_resolver import clear_perms_cache
                 clear_perms_cache(affected)
-        except Exception:  # noqa: BLE001
+        except Exception:
             log.warning("_seed_role_grants: 清 perms 缓存失败（忽略，权威在 perm_ver）", exc_info=True)
 
 

@@ -49,6 +49,15 @@ BUSINESS_RESOURCE_CODES: tuple[str, ...] = (
     "training:view", "training:start", "training:trade", "training:review", "training:delete",
 )
 
+# 交易纪律默认授权由独立 marker 状态机维护，不能并入 BUSINESS_RESOURCE_CODES。
+# 否则通用业务授权回填会在显式回滚后把菜单/资源权限重新补回，破坏 tombstone 语义。
+TRADE_DISCIPLINE_RESOURCE_CODES: tuple[str, ...] = (
+    "trade-discipline:view",
+    "trade-discipline:rule-manage",
+    "trade-discipline:checkin-view",
+    "trade-discipline:checkin-submit",
+)
+
 # 资产公开权限码（asset-ownership-refactor C4/R4）：放开普通用户自主发布——
 # tenant/public publish 默认授予 normal 与 tenant_admin（system 恒有全量）。
 # 守卫仍是 owner-only（api/*_profiles.py、api/backtest.py 的可见性接口只允许改自己的资产），
