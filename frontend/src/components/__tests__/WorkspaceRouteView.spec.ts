@@ -56,7 +56,7 @@ describe('工作区路由缓存', () => {
 
     await router.push('/detail/two')
     await flushPromises()
-    expect(removeWorkspaceTab('/detail/one', '/detail/two')).toBeUndefined()
+    expect(await removeWorkspaceTab('/detail/one', '/detail/two')).toBeUndefined()
     await nextTick()
     expect(useWorkspaceTabs().workspaceTabs.value.map((tab) => tab.key)).toEqual(['/detail/two'])
 

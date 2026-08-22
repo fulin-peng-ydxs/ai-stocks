@@ -6,6 +6,8 @@ import { getTradeDates } from '@/api/backtest'
 const tradeDateSet = ref<Set<string>>(new Set())
 const dataMin = ref<string | null>(null)
 const dataMax = ref<string | null>(null)
+const status = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const loadError = ref<unknown>(null)
 let loaded = false
 let loading: Promise<void> | null = null
 
@@ -18,6 +20,8 @@ function fmtYmd(d: Date): string {
 async function ensureLoaded(): Promise<void> {
   if (loaded) return
   if (loading) return loading
+  status.value = 'loading'
+  loadError.value = null
   loading = (async () => {
     try {
       const td = await getTradeDates()
@@ -25,7 +29,10 @@ async function ensureLoaded(): Promise<void> {
       dataMin.value = td.min
       dataMax.value = td.max
       loaded = true
-    } catch {
+      status.value = 'ready'
+    } catch (error) {
+      status.value = 'error'
+      loadError.value = error
       /* 加载失败则不限制（fallback：不禁用任何日期）*/
     } finally {
       loading = null
@@ -49,5 +56,14 @@ function prevTradeDate(ymd: string): string {
 }
 
 export function useTradeDates() {
-  return { tradeDateSet, dataMin, dataMax, disabledTradeDate, prevTradeDate, ensureLoaded }
+  return {
+    tradeDateSet,
+    dataMin,
+    dataMax,
+    status,
+    loadError,
+    disabledTradeDate,
+    prevTradeDate,
+    ensureLoaded,
+  }
 }

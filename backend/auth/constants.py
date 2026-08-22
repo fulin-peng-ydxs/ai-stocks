@@ -60,7 +60,7 @@ TRADE_DISCIPLINE_RESOURCE_CODES: tuple[str, ...] = (
 
 # 后端分阶段先行交付、正式前端尚未接入的菜单。授权和 API 可先完成验证，但 /me 必须对所有角色
 # 隐藏这些入口；对应前端路由、pageRegistry、DESIGN marker 和页面同批就绪后才从此集合移除。
-STAGED_FRONTEND_MENU_CODES: frozenset[str] = frozenset({"/trade-discipline"})
+STAGED_FRONTEND_MENU_CODES: frozenset[str] = frozenset()
 
 # 资产公开权限码（asset-ownership-refactor C4/R4）：放开普通用户自主发布——
 # tenant/public publish 默认授予 normal 与 tenant_admin（system 恒有全量）。

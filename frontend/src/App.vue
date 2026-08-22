@@ -11,6 +11,10 @@ import { migrateLocalPreferencesToRemote } from '@/composables/usePreferenceMigr
 import { syncDrawerPreferences } from '@/composables/useDrawerPreferences'
 import { resetWorkspaceTabs } from '@/composables/useWorkspaceTabs'
 import {
+  confirmAll,
+  installUnsavedChangesBeforeUnload,
+} from '@/composables/useUnsavedChangesGuard'
+import {
   effectivePresetTokens,
   setRuntimePresetSources,
   useLayoutPreset,
@@ -72,6 +76,7 @@ let shellBootstrapping = false
 let presetOverridesLoaded = false
 let shellStatusRequestId = 0
 let shellStatusTimer: number | undefined
+let removeBeforeUnload: (() => void) | undefined
 
 const numberFormatter = new Intl.NumberFormat('zh-CN')
 const latestTradeDateText = computed(() =>
@@ -257,6 +262,7 @@ async function bootstrapAuthenticatedShell() {
 
 // 非全屏受控页渲染前后都以 /me 为身份事实源；登录页不再发受控布局接口，避免首登旧 401 清新 token。
 onMounted(() => {
+  removeBeforeUnload = installUnsavedChangesBeforeUnload()
   void syncGlobalPreferences()
 })
 watch(() => auth.isLoggedIn, (loggedIn) => {
@@ -270,9 +276,13 @@ watch(
   },
   { immediate: true },
 )
-onUnmounted(clearShellStatusTimer)
+onUnmounted(() => {
+  clearShellStatusTimer()
+  removeBeforeUnload?.()
+})
 
 async function onLogout() {
+  if (!(await confirmAll('logout'))) return
   loggingOut.value = true
   try {
     await auth.logout()

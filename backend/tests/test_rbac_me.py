@@ -81,7 +81,7 @@ def test_system_me_full_menus_and_perms(svc, env):
     assert {"permission", "/system/users", "/system/roles", "/system/menus", "/system/tenants"} <= idx
     # 功能码含系统专属码
     assert {"role:create", "tenant:create", "menu:create", "user:list"} <= set(me["permissions"])
-    assert "/trade-discipline" not in idx  # T5 正式页面接入前，对 system 也隐藏分阶段菜单
+    assert "/trade-discipline" in idx
 
 
 # ── tenant_admin 过滤 ──
@@ -98,7 +98,7 @@ def test_tenant_admin_me_filtered(svc, env):
         "/system/config/trade",
         "/system/users",
     } <= idx
-    assert "/trade-discipline" not in idx
+    assert "/trade-discipline" in idx
     # 系统专属分支隐藏：数据管理、技术指标、系统设置、角色/菜单/租户管理均不可见
     assert "data" not in idx
     assert {"/system/config/tech", "/system/config/system"} & idx == set()
@@ -128,7 +128,7 @@ def test_normal_me_business_only(svc, env):
     assert {"/stocks", "/board", "/screen", "/backtest", "/training"} <= idx
     assert {"/system/config/score", "/system/config/trade"} <= idx
     assert "permission" not in idx and "data" not in idx
-    assert "/trade-discipline" not in idx
+    assert "/trade-discipline" in idx
     assert {"/system/config/tech", "/system/config/system"} & idx == set()
     # stage4·R21：baseline 基线共享读对非 system 业务用户**强制注入**（与 role_resource 授权无关，恒有）
     perms = set(me["permissions"])

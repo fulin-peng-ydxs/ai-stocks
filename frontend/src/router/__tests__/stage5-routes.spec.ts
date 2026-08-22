@@ -3,7 +3,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { routes } from '../index'
 
 describe('阶段五前端路由', () => {
-  it('注册审计日志和数据字典静态路由', () => {
+  it('注册审计日志、数据字典和交易纪律静态路由', () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
     const audit = router.resolve('/system/audit')
     expect(audit.name).toBe('audit-log')
@@ -12,5 +12,9 @@ describe('阶段五前端路由', () => {
     const dicts = router.resolve('/system/dicts')
     expect(dicts.name).toBe('data-dictionary')
     expect(dicts.meta.title).toBe('数据字典')
+
+    const discipline = router.resolve('/trade-discipline')
+    expect(discipline.name).toBe('trade-discipline')
+    expect(discipline.meta.title).toBe('交易纪律')
   })
 })

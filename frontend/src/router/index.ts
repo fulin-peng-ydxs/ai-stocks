@@ -3,6 +3,11 @@ import { h } from 'vue'
 import { getAccessToken } from '@/api/authToken'
 import { useAuthStore } from '@/stores/auth'
 import { resolveMenuGuard } from '@/utils/permission'
+import {
+  confirmLeave,
+  consumeRouteLeavePermit,
+} from '@/composables/useUnsavedChangesGuard'
+import { prepareWorkspaceTabVisit } from '@/composables/useWorkspaceTabs'
 
 const HomeRedirect = { name: 'HomeRedirect', setup: () => () => h('div') }
 
@@ -127,6 +132,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: '盘感训练' },
   },
   {
+    path: '/trade-discipline',
+    name: 'trade-discipline',
+    component: () => import('@/views/TradeDisciplineView.vue'),
+    meta: { title: '交易纪律' },
+  },
+  {
     path: '/stocks',
     name: 'stocks',
     component: () => import('@/views/StocksView.vue'),
@@ -190,7 +201,7 @@ const router = createRouter({
 // ③ 已登录先确保 /me 就绪（fail-closed：菜单/权限加载后再放行），再按授权菜单校验目标路由——
 //    system 恒过；非 system 命中授权叶子（或其子路由）放行，否则重定向到首个授权页（无安全落点则放行、
 //    交由后端接口级守卫兜底，避免重定向死循环）。
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
   const loggedIn = !!getAccessToken()
   if (to.meta.public) {
     if (to.path === '/login' && loggedIn) return { path: '/' }
@@ -208,11 +219,20 @@ router.beforeEach(async (to) => {
   if (to.path === '/') return { path: auth.firstMenuPath || '/board' }
   // 菜单授权决策（fail-closed）：system 恒过；未授权（含 /me 失败致菜单空）→ 漏斗到安全落点，
   // 绝不放行到被请求的未授权页壳；已在落点则渲染首页壳（SideMenu 显错误/空态+重试）。
-  return resolveMenuGuard(to.path, {
+  const access = resolveMenuGuard(to.path, {
     isSystem: auth.isSystem,
     menuRoutePaths: auth.menuRoutePaths,
     firstMenuPath: auth.firstMenuPath,
   })
+  if (access !== true) return access
+  if (
+    from.path
+    && from.path !== to.path
+    && !consumeRouteLeavePermit(from.path)
+    && !(await confirmLeave(from.path, 'route'))
+  ) return false
+  if (!(await prepareWorkspaceTabVisit(to.path, from.path))) return false
+  return true
 })
 
 export default router

@@ -387,6 +387,41 @@ const REGISTRY: PageRegistryEntry[] = [
       editable: [densityKnob()],
     },
   },
+  {
+    pageKey: 'trade-discipline',
+    label: '交易纪律',
+    path: '/trade-discipline',
+    archetype: 'workbench',
+    responsiveProfile: 'mixed-panel',
+    supportsComponentConfig: true,
+    consumedComponentFields: { history: ['pageSize'] },
+    componentMeta: {
+      history: {
+        columns: [
+          { key: 'trade_date', label: '交易日' },
+          { key: 'rule_name', label: '规则' },
+          { key: 'assessment', label: '履约结果' },
+          { key: 'operation_count', label: '操作数' },
+          { key: 'current_revision_no', label: '修订' },
+        ],
+      },
+    },
+    layout: {
+      pageKey: 'trade-discipline',
+      archetype: 'workbench',
+      hasActionRegion: true,
+      density: 'standard',
+      responsive: singleColumn(),
+      slots: [
+        { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
+        { id: 'workspaceTabs', component: 'tabs', region: 'main', growMain: true, label: '交易纪律业务页签', order: 1 },
+        { id: 'checkinPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '今日打卡', order: 1 },
+        { id: 'rulesPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '规则管理', order: 2 },
+        { id: 'history', component: 'data-table', region: 'main', parentId: 'workspaceTabs', label: '历史记录', order: 3, config: { pageSize: 20 } },
+      ],
+      editable: [densityKnob()],
+    },
+  },
   configEntry('config-score', '评分规则', '/system/config/score'),
   configEntry('config-trade', '买卖指标', '/system/config/trade'),
   {

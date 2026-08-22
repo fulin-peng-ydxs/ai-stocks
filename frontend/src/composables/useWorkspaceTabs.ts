@@ -9,6 +9,10 @@ import {
 } from 'vue'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import { findMenuLeaf, type MenuTreeNode } from '@/utils/permission'
+import {
+  confirmLeave,
+  hasUnsavedChanges,
+} from '@/composables/useUnsavedChangesGuard'
 
 export interface WorkspaceTab {
   key: string
@@ -37,6 +41,17 @@ function cacheNameFor(key: string): string {
 function releaseCache(key: string) {
   cacheNames.delete(key)
   cacheWrappers.delete(key)
+}
+
+function discardWorkspaceTab(key: string, activeKey: string): string | undefined {
+  if (workspaceTabs.value.length <= 1) return undefined
+  const index = workspaceTabs.value.findIndex((tab) => tab.key === key)
+  if (index < 0) return undefined
+  workspaceTabs.value.splice(index, 1)
+  releaseCache(key)
+  repairLastMenuPath(key)
+  if (key !== activeKey) return undefined
+  return workspaceTabs.value[Math.min(index, workspaceTabs.value.length - 1)]?.path
 }
 
 function repairLastMenuPath(removedKey: string) {
@@ -78,24 +93,38 @@ export function visitWorkspaceTab(route: RouteLocationNormalizedLoaded, menus: M
     return
   }
   if (workspaceTabs.value.length >= WORKSPACE_TAB_LIMIT) {
-    const removed = workspaceTabs.value.shift()
-    if (removed) {
-      releaseCache(removed.key)
-      repairLastMenuPath(removed.key)
-    }
+    const removable = workspaceTabs.value.find((tab) => !hasUnsavedChanges(tab.key))
+    if (!removable) return
+    discardWorkspaceTab(removable.key, route.path)
   }
   workspaceTabs.value.push(next)
 }
 
-export function removeWorkspaceTab(key: string, activeKey: string): string | undefined {
+export async function removeWorkspaceTab(
+  key: string,
+  activeKey: string,
+): Promise<string | undefined> {
   if (workspaceTabs.value.length <= 1) return undefined
-  const index = workspaceTabs.value.findIndex((tab) => tab.key === key)
-  if (index < 0) return undefined
-  workspaceTabs.value.splice(index, 1)
-  releaseCache(key)
-  repairLastMenuPath(key)
-  if (key !== activeKey) return undefined
-  return workspaceTabs.value[Math.min(index, workspaceTabs.value.length - 1)]?.path
+  if (!(await confirmLeave(key, 'tab-close'))) return undefined
+  return discardWorkspaceTab(key, activeKey)
+}
+
+/**
+ * 新路由即将占用第 13 个标签时先完成淘汰决策：优先移除最旧干净页；全部有脏现场时
+ * 只询问最旧页，用户拒绝则阻止导航，绝不先销毁标签或 KeepAlive。
+ */
+export async function prepareWorkspaceTabVisit(
+  key: string,
+  activeKey: string,
+): Promise<boolean> {
+  if (workspaceTabs.value.some((tab) => tab.key === key)) return true
+  if (workspaceTabs.value.length < WORKSPACE_TAB_LIMIT) return true
+  const candidate = workspaceTabs.value.find((tab) => !hasUnsavedChanges(tab.key))
+    ?? workspaceTabs.value[0]
+  if (!candidate) return true
+  if (!(await confirmLeave(candidate.key, 'tab-evict'))) return false
+  discardWorkspaceTab(candidate.key, activeKey)
+  return true
 }
 
 export function resetWorkspaceTabs() {

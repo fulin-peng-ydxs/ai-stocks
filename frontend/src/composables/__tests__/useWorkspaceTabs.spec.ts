@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import {
+  prepareWorkspaceTabVisit,
   removeWorkspaceTab,
   resolveWorkspaceMenuPath,
   resetWorkspaceTabs,
   useWorkspaceTabs,
   visitWorkspaceTab,
 } from '@/composables/useWorkspaceTabs'
+import {
+  registerUnsavedHandler,
+  resetUnsavedChangesGuard,
+} from '@/composables/useUnsavedChangesGuard'
 import type { MenuTreeNode } from '@/utils/permission'
 
 const menus: MenuTreeNode[] = [
@@ -27,7 +32,10 @@ function route(path: string, title: string, code?: string): RouteLocationNormali
 }
 
 describe('工作标签页状态', () => {
-  beforeEach(resetWorkspaceTabs)
+  beforeEach(() => {
+    resetWorkspaceTabs()
+    resetUnsavedChangesGuard()
+  })
 
   it('同一路径更新既有标签，详情页带证券代码', () => {
     visitWorkspaceTab(route('/board', '每日榜单'), menus)
@@ -52,11 +60,11 @@ describe('工作标签页状态', () => {
     expect(resolveWorkspaceMenuPath('/stocks')).toBe('/stocks')
   })
 
-  it('关闭当前标签后返回相邻页面，唯一标签不可关闭', () => {
+  it('关闭当前标签后返回相邻页面，唯一标签不可关闭', async () => {
     visitWorkspaceTab(route('/board', '每日榜单'), menus)
-    expect(removeWorkspaceTab('/board', '/board')).toBeUndefined()
+    expect(await removeWorkspaceTab('/board', '/board')).toBeUndefined()
     visitWorkspaceTab(route('/stocks', '个股查询'), menus)
-    expect(removeWorkspaceTab('/stocks', '/stocks')).toBe('/board')
+    expect(await removeWorkspaceTab('/stocks', '/stocks')).toBe('/board')
     expect(useWorkspaceTabs().workspaceTabs.value).toHaveLength(1)
   })
 
@@ -68,5 +76,34 @@ describe('工作标签页状态', () => {
     expect(workspaceTabs.value).toHaveLength(12)
     expect(workspaceTabs.value[0].key).toBe('/stocks/2')
     expect(new Set(workspaceCacheNames.value).size).toBe(12)
+  })
+
+  it('关闭脏标签先确认，拒绝时标签与缓存均保持不变', async () => {
+    visitWorkspaceTab(route('/board', '每日榜单'), menus)
+    visitWorkspaceTab(route('/stocks', '个股查询'), menus)
+    registerUnsavedHandler('/stocks', {
+      isDirty: () => true,
+      requestLeave: async () => false,
+    })
+
+    expect(await removeWorkspaceTab('/stocks', '/stocks')).toBeUndefined()
+    expect(useWorkspaceTabs().workspaceTabs.value.map((tab) => tab.key)).toEqual([
+      '/board', '/stocks',
+    ])
+  })
+
+  it('容量满时优先淘汰干净标签；全部脏且拒绝时阻止新导航', async () => {
+    for (let index = 1; index <= 12; index += 1) {
+      visitWorkspaceTab(route(`/stocks/${index}`, `详情 ${index}`), menus)
+    }
+    for (let index = 1; index <= 12; index += 1) {
+      registerUnsavedHandler(`/stocks/${index}`, {
+        isDirty: () => true,
+        requestLeave: async () => false,
+      })
+    }
+    expect(await prepareWorkspaceTabVisit('/stocks/13', '/stocks/12')).toBe(false)
+    expect(useWorkspaceTabs().workspaceTabs.value).toHaveLength(12)
+    expect(useWorkspaceTabs().workspaceTabs.value[0].key).toBe('/stocks/1')
   })
 })

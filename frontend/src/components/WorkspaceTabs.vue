@@ -6,6 +6,7 @@ import {
   removeWorkspaceTab,
   useWorkspaceTabs,
 } from '@/composables/useWorkspaceTabs'
+import { permitNextRouteLeave } from '@/composables/useUnsavedChangesGuard'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,9 +30,12 @@ function activate(path: string) {
   if (path !== route.fullPath) void router.push(path)
 }
 
-function close(key: string) {
-  const nextPath = removeWorkspaceTab(key, route.path)
-  if (nextPath) void router.push(nextPath)
+async function close(key: string) {
+  const nextPath = await removeWorkspaceTab(key, route.path)
+  if (nextPath) {
+    permitNextRouteLeave(key)
+    void router.push(nextPath)
+  }
 }
 </script>
 
