@@ -346,6 +346,16 @@ export function submitTradeDisciplineCheckin(
   return http.post('/trade-discipline/checkins', payload)
 }
 
+export function quickNoOperationTradeDisciplineCheckin(
+  ruleId: string,
+  tradeDate: string,
+): Promise<TradeDisciplineCheckin & { idempotent: boolean }> {
+  return http.post('/trade-discipline/checkins/quick-no-operation', {
+    rule_id: ruleId,
+    trade_date: tradeDate,
+  })
+}
+
 export function amendTradeDisciplineCheckin(
   checkinId: string,
   payload: CheckinContentPayload & { expected_revision: number },

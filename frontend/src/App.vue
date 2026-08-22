@@ -31,6 +31,7 @@ import {
 } from '@/api/data'
 import { useAuthStore } from '@/stores/auth'
 import { useTradeDates } from '@/composables/useTradeDates'
+import { useTradeDisciplineSummary } from '@/composables/useTradeDisciplineSummary'
 import BrandMark from '@/components/BrandMark.vue'
 import SideMenu from '@/components/SideMenu.vue'
 import TopNavigation from '@/components/TopNavigation.vue'
@@ -38,6 +39,7 @@ import WorkspaceTabs from '@/components/WorkspaceTabs.vue'
 import WorkspaceRouteView from '@/components/WorkspaceRouteView.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
+import TradeDisciplineQuickCard from '@/components/trade-discipline/TradeDisciplineQuickCard.vue'
 
 const { isDark, themeMode, setThemeMode, syncThemePreference } = useTheme()
 const { navigationMode, setNavigationMode, syncNavigationPreference } = useAppNavigation()
@@ -71,7 +73,22 @@ const shellStatusLoading = ref(false)
 const canReadDataStatus = computed(() => auth.isSystem || auth.permissions.includes('data-status:view'))
 const canReadTradeCalendar = computed(() => auth.isSystem || auth.permissions.includes('trade-calendar:view'))
 const canReadTasks = computed(() => auth.isSystem || auth.permissions.includes('data-task:manage'))
+const canViewTradeDisciplineQuickCard = computed(() => auth.isSystem || (
+  auth.permissions.includes('trade-discipline:view')
+  && auth.permissions.includes('trade-discipline:checkin-view')
+))
+const canSubmitTradeDisciplineCheckin = computed(
+  () => auth.isSystem || auth.permissions.includes('trade-discipline:checkin-submit'),
+)
 const { dataMax: latestReadableTradeDate, ensureLoaded: ensureTradeDatesLoaded } = useTradeDates()
+const {
+  summary: tradeDisciplineSummary,
+  status: tradeDisciplineSummaryStatus,
+  changeVersion: tradeDisciplineChangeVersion,
+  latestChange: latestTradeDisciplineChange,
+  refreshSummary: refreshTradeDisciplineSummary,
+  resetSummary: resetTradeDisciplineSummary,
+} = useTradeDisciplineSummary()
 let shellBootstrapping = false
 let presetOverridesLoaded = false
 let shellStatusRequestId = 0
@@ -81,6 +98,14 @@ let removeBeforeUnload: (() => void) | undefined
 const numberFormatter = new Intl.NumberFormat('zh-CN')
 const latestTradeDateText = computed(() =>
   formatDateOnly(dataStatus.value?.latest_trade_date ?? latestReadableTradeDate.value))
+const latestTradeDisciplineDate = computed(
+  () => dataStatus.value?.latest_trade_date ?? latestReadableTradeDate.value ?? '',
+)
+const hasPendingTradeDiscipline = computed(() =>
+  canViewTradeDisciplineQuickCard.value
+  && tradeDisciplineSummaryStatus.value === 'ready'
+  && Boolean(tradeDisciplineSummary.value?.pending),
+)
 const qualityIssueCount = computed(() => dataStatus.value?.quality_issues ?? 0)
 const qualitySignalText = computed(() => {
   if (dataStatusFailed.value) return '!'
@@ -163,6 +188,18 @@ function taskStatusLabel(status: TaskStatus): string {
 
 function goTo(path: string) {
   void router.push(path)
+}
+
+function openTradeDiscipline(payload: {
+  tab: 'checkin' | 'rules'
+  ruleId?: string
+  tradeDate?: string
+}) {
+  userDrawerVisible.value = false
+  const query: Record<string, string> = { tab: payload.tab }
+  if (payload.ruleId) query.rule_ref = payload.ruleId
+  if (payload.tradeDate) query.trade_date = payload.tradeDate
+  void router.push({ path: '/trade-discipline', query })
 }
 
 // PageSegmented 受控桥：读取当前明暗意图，写入走 setThemeMode（持久化 + 写回账号）。
@@ -273,6 +310,27 @@ watch(
   () => [isFullscreen.value, auth.isLoggedIn, auth.menusStatus, auth.role, auth.permissions.join('|')],
   () => {
     void refreshShellStatus()
+  },
+  { immediate: true },
+)
+watch(
+  () => [
+    userDrawerVisible.value,
+    canViewTradeDisciplineQuickCard.value,
+    latestTradeDisciplineDate.value,
+    tradeDisciplineChangeVersion.value,
+  ] as const,
+  ([visible, permitted, tradeDate, version], previous) => {
+    if (!permitted) {
+      resetTradeDisciplineSummary()
+      return
+    }
+    const [wasVisible, wasPermitted, previousTradeDate, previousVersion] = previous ?? []
+    const shouldLoad = !wasPermitted
+      || tradeDate !== previousTradeDate
+      || (version !== previousVersion && latestTradeDisciplineChange.value?.source !== 'quick')
+      || (visible && !wasVisible)
+    if (tradeDate && shouldLoad) void refreshTradeDisciplineSummary(tradeDate)
   },
   { immediate: true },
 )
@@ -470,6 +528,7 @@ async function onLogout() {
 
         <AppIconButton class="user-entry" label="用户中心" @click="userDrawerVisible = true">
           <span class="user-avatar">{{ avatarText }}</span>
+          <span v-if="hasPendingTradeDiscipline" class="user-discipline-dot" aria-label="有待打卡交易纪律" />
         </AppIconButton>
       </div>
     </el-header>
@@ -523,6 +582,13 @@ async function onLogout() {
               <div class="drawer-user-sub">{{ userSubline || '登录态' }}</div>
             </div>
           </div>
+
+          <TradeDisciplineQuickCard
+            v-if="canViewTradeDisciplineQuickCard"
+            :can-submit="canSubmitTradeDisciplineCheckin"
+            :trade-date="latestTradeDisciplineDate"
+            @navigate="openTradeDiscipline"
+          />
 
           <el-button class="drawer-logout" type="danger" plain :loading="loggingOut" @click="onLogout">
             退出登录
@@ -867,6 +933,7 @@ button.topbar-status:focus-visible {
 .user-entry {
   color: var(--chrome-text);
   border-radius: 50%;
+  position: relative;
 }
 .user-entry:hover:not(:disabled) {
   border-color: transparent;
@@ -886,6 +953,17 @@ button.topbar-status:focus-visible {
   font-weight: var(--app-font-weight-strong);
   flex-shrink: 0;
   box-shadow: 0 3px 9px color-mix(in srgb, var(--shell-accent) 18%, transparent);
+}
+.user-discipline-dot {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--chrome-bg);
+  border-radius: 50%;
+  background: var(--el-color-warning);
+  box-sizing: content-box;
 }
 :global(.topbar-popover) {
   --el-popover-padding: 0;

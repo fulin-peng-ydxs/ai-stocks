@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import HelpTip from '@/components/HelpTip.vue'
@@ -11,6 +11,7 @@ import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeS
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTradeDates } from '@/composables/useTradeDates'
+import { useTradeDisciplineSummary } from '@/composables/useTradeDisciplineSummary'
 import {
   confirmLeave,
   registerUnsavedHandler,
@@ -88,10 +89,16 @@ const initialPanel = ['checkin', 'rules', 'history'].includes(String(route.query
 const activePanel = ref<PanelKey>(initialPanel)
 
 const {
+  tradeDateSet,
   dataMax,
   status: tradeDateStatus,
   ensureLoaded: ensureTradeDatesLoaded,
 } = useTradeDates()
+const {
+  changeVersion: tradeDisciplineChangeVersion,
+  latestChange: latestTradeDisciplineChange,
+  notifyTradeDisciplineChanged,
+} = useTradeDisciplineSummary()
 const rules = ref<TradeDisciplineRule[]>([])
 const rulesLoading = ref(false)
 const rulesError = ref(false)
@@ -120,6 +127,7 @@ const checkinFormRef = ref<{
 let unregisterUnsavedHandler: (() => void) | undefined
 let rulesLoadSeq = 0
 let summaryLoadSeq = 0
+let routeIntentReady = false
 
 const historyPage = ref(1)
 const historyQuery = ref<CheckinHistoryQuery>({})
@@ -200,9 +208,18 @@ async function loadCheckinWorkspace(): Promise<void> {
 async function loadPage(): Promise<void> {
   await ensureTradeDatesLoaded()
   if (tradeDateStatus.value !== 'ready') return
-  checkinTradeDate.value ||= dataMax.value || ''
+  const requestedTradeDate = typeof route.query.trade_date === 'string'
+    ? route.query.trade_date
+    : ''
+  checkinTradeDate.value ||= requestedTradeDate && tradeDateSet.value.has(requestedTradeDate)
+    ? requestedTradeDate
+    : dataMax.value || ''
   if (activePanel.value === 'checkin') await loadCheckinWorkspace()
   else await loadRules()
+  const requestedRuleId = typeof route.query.rule_ref === 'string' ? route.query.rule_ref : ''
+  if (requestedRuleId && displayRules.value.some((rule) => rule.id === requestedRuleId)) {
+    selectedRuleId.value = requestedRuleId
+  }
 }
 
 async function switchPanel(value: string | number | boolean): Promise<void> {
@@ -260,6 +277,13 @@ async function changeCheckinTradeDate(value: string): Promise<void> {
 
 async function handleCheckinSubmitted(): Promise<void> {
   await Promise.all([loadCheckinSummary(), loadRules(checkinTradeDate.value)])
+  if (selectedRuleId.value) {
+    notifyTradeDisciplineChanged({
+      ruleId: selectedRuleId.value,
+      tradeDate: checkinTradeDate.value,
+      source: 'workbench',
+    })
+  }
   if (returnToHistoryAfterAmend.value) {
     returnToHistoryAfterAmend.value = false
     activePanel.value = 'history'
@@ -303,9 +327,59 @@ onMounted(() => {
       ? checkinFormRef.value?.requestLeave() ?? true
       : ruleEditorRef.value?.requestLeave() ?? true,
   })
-  void loadPage()
+  void loadPage().finally(() => { routeIntentReady = true })
 })
 onUnmounted(() => unregisterUnsavedHandler?.())
+
+watch(
+  () => [route.query.tab, route.query.rule_ref, route.query.trade_date] as const,
+  async ([tab, ruleRef, tradeDate]) => {
+    if (!routeIntentReady) return
+    const nextPanel = ['checkin', 'rules', 'history'].includes(String(tab))
+      ? String(tab) as PanelKey
+      : 'checkin'
+    const nextTradeDate = typeof tradeDate === 'string' && tradeDateSet.value.has(tradeDate)
+      ? tradeDate
+      : checkinTradeDate.value || dataMax.value || ''
+    const nextRuleId = typeof ruleRef === 'string' ? ruleRef : ''
+    if (
+      nextPanel === activePanel.value
+      && (nextPanel !== 'checkin' || nextTradeDate === checkinTradeDate.value)
+      && (!nextRuleId || nextRuleId === selectedRuleId.value)
+    ) return
+    if (!(await confirmLeave(route.path, 'context-change'))) {
+      const restoredQuery: Record<string, string> = { tab: activePanel.value }
+      if (activePanel.value === 'checkin' && checkinTradeDate.value) {
+        restoredQuery.trade_date = checkinTradeDate.value
+      }
+      if (selectedRuleId.value) restoredQuery.rule_ref = selectedRuleId.value
+      await router.replace({ query: restoredQuery })
+      return
+    }
+    activePanel.value = nextPanel
+    if (nextPanel === 'checkin') {
+      checkinTradeDate.value = nextTradeDate
+      selectedRuleId.value = nextRuleId
+      await loadCheckinWorkspace()
+    } else {
+      await loadRules(dataMax.value)
+      if (nextRuleId && rules.value.some((rule) => rule.id === nextRuleId)) {
+        selectedRuleId.value = nextRuleId
+      }
+    }
+  },
+)
+
+watch(tradeDisciplineChangeVersion, async () => {
+  const change = latestTradeDisciplineChange.value
+  if (!change || change.source === 'workbench' || change.tradeDate !== checkinTradeDate.value) return
+  if (activePanel.value === 'checkin') {
+    await Promise.all([loadCheckinSummary(), loadRules(checkinTradeDate.value)])
+    if (selectedRuleId.value === change.ruleId) await checkinFormRef.value?.load()
+  } else if (activePanel.value === 'history') {
+    await historyRef.value?.reload()
+  }
+})
 </script>
 
 <template>

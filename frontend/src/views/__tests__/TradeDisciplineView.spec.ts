@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessageBox } from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import TradeDisciplineView from '@/views/TradeDisciplineView.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -11,6 +11,7 @@ import { permission } from '@/directives/permission'
 const listRules = vi.fn()
 const listCheckins = vi.fn()
 const getSummary = vi.fn()
+const getCheckinContext = vi.fn()
 const ensureTradeDates = vi.fn(async () => undefined)
 const tradeDateStatus = { value: 'ready' }
 
@@ -18,11 +19,13 @@ vi.mock('@/api/tradeDiscipline', () => ({
   listTradeDisciplineRules: (...args: unknown[]) => listRules(...args),
   listTradeDisciplineCheckins: (...args: unknown[]) => listCheckins(...args),
   getTradeDisciplineSummary: (...args: unknown[]) => getSummary(...args),
+  getTradeDisciplineCheckinContext: (...args: unknown[]) => getCheckinContext(...args),
 }))
 vi.mock('@/composables/useTradeDates', async () => {
   const { ref } = await import('vue')
   return {
     useTradeDates: () => ({
+      tradeDateSet: ref(new Set(['2026-08-22'])),
       dataMax: ref('2026-08-22'),
       status: tradeDateStatus,
       ensureLoaded: ensureTradeDates,
@@ -46,6 +49,8 @@ vi.mock('@/composables/usePageSettings', async () => {
   return { usePageSettings: () => ({ reset: vi.fn(), isDirty: ref(false) }) }
 })
 
+let mountedRouter: ReturnType<typeof createRouter>
+
 async function mountPage(permissions: string[]) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -56,6 +61,7 @@ async function mountPage(permissions: string[]) {
     history: createMemoryHistory(),
     routes: [{ path: '/trade-discipline', component: TradeDisciplineView }],
   })
+  mountedRouter = router
   await router.push('/trade-discipline')
   await router.isReady()
   const wrapper = mount(TradeDisciplineView, {
@@ -73,6 +79,14 @@ describe('交易纪律 T5 工作台壳', () => {
     listCheckins.mockResolvedValue({ total: 0, page: 1, page_size: 20, list: [] })
     getSummary.mockResolvedValue({
       trade_date: '2026-08-22', total: 0, completed: 0, pending: 0, rules: [],
+    })
+    getCheckinContext.mockResolvedValue({
+      trade_date: '2026-08-22',
+      version: {
+        rule_id: 'rule-1', version_no: 1, name: '纪律一', capital: '100000',
+        stock_rules: [], action_rules: [],
+      },
+      checkin: null,
     })
   })
 
@@ -112,5 +126,56 @@ describe('交易纪律 T5 工作台壳', () => {
     expect(wrapper.text()).toContain('履约摘要加载失败')
     expect(wrapper.text()).not.toContain('该交易日暂无生效规则')
     expect(listRules).toHaveBeenCalled()
+  })
+
+  it('同页快捷参数切换被未保存保护拒绝后恢复当前真实 URL', async () => {
+    const rules = ['rule-1', 'rule-2'].map((id, index) => ({
+      id,
+      name: `纪律${index + 1}`,
+      status: 'active',
+      latest_version_no: 1,
+      management_status: 'active',
+      latest_management_event: null,
+      has_pending_management_action: false,
+      effective_status: 'active',
+      effective_event_seq: index + 1,
+      effective_from_trade_date: '2026-08-22',
+      effective_version: { version_no: 1, name: `纪律${index + 1}`, capital: '100000' },
+    }))
+    listRules.mockResolvedValue(rules)
+    getSummary.mockResolvedValue({
+      trade_date: '2026-08-22', total: 2, completed: 0, pending: 2,
+      rules: rules.map((rule) => ({
+        rule_id: rule.id, rule_name: rule.name, version_no: 1,
+        effective_from_trade_date: '2026-08-22', checkin_id: null,
+        current_revision_no: null, status: null, assessment: null, no_operation: null,
+      })),
+    })
+    getCheckinContext.mockImplementation(async (ruleId: string) => ({
+      trade_date: '2026-08-22',
+      version: {
+        rule_id: ruleId, version_no: 1, name: ruleId === 'rule-1' ? '纪律一' : '纪律二',
+        capital: '100000', stock_rules: [], action_rules: [],
+      },
+      checkin: null,
+    }))
+    const wrapper = await mountPage([
+      'trade-discipline:view',
+      'trade-discipline:checkin-view',
+      'trade-discipline:checkin-submit',
+    ])
+    await wrapper.find('textarea').setValue('尚未提交的复盘内容')
+    vi.spyOn(ElMessageBox, 'confirm').mockRejectedValueOnce('cancel')
+
+    await mountedRouter.push({
+      path: '/trade-discipline',
+      query: { tab: 'checkin', rule_ref: 'rule-2', trade_date: '2026-08-22' },
+    })
+    await flushPromises()
+
+    expect(mountedRouter.currentRoute.value.query).toEqual({
+      tab: 'checkin', rule_ref: 'rule-1', trade_date: '2026-08-22',
+    })
+    expect(wrapper.get('h3').text()).toBe('纪律一')
   })
 })

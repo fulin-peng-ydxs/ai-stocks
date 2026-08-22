@@ -255,7 +255,9 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
     <template v-else-if="context">
       <div class="checkin-head">
         <div>
-          <div class="detail-kicker">履约版本 v{{ context.version.version_no }}</div>
+          <div class="detail-kicker" data-testid="checkin-version-kicker">
+            履约版本 v{{ context.version.version_no }}
+          </div>
           <h3 class="app-section-title">{{ context.version.name }}</h3>
         </div>
         <div class="checkin-head__facts">
