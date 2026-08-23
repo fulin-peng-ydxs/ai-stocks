@@ -70,3 +70,73 @@ def test_adj_factor_fail_when_both_null():
         factor = [(n, ok) for (n, ok, _) in v.results if "复权因子" in n]
         assert len(factor) == 2
         assert all(not ok for _, ok in factor)
+
+
+# ── E 组：板块数据 ──
+
+def _seed_board(c, *, bar: bool = True, member: bool = True, fund: bool = True):
+    """最小一致板块数据：字典标记、成分、指数、资金流四向对齐。"""
+    c.execute(
+        "INSERT INTO board_dict (board_code, name, board_type, has_members, has_bar, has_fund_flow) "
+        "VALUES ('301558', '测试概念', 'concept', ?, ?, ?)", [member, bar, fund])
+    c.execute(
+        "INSERT INTO stock_basic (code,name,exchange,board,list_date,price_limit_pct) "
+        "VALUES ('600000.SH','浦发','SH','主板',DATE '2000-01-01',0.10)")
+    c.execute("INSERT INTO trade_calendar (trade_date, is_open) VALUES (DATE '2026-08-21', TRUE)")
+    if member:
+        c.execute("INSERT INTO board_member (board_code, code) VALUES ('301558', '600000.SH')")
+    if bar:
+        c.execute(
+            "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+            "VALUES ('301558', DATE '2026-08-21', 100.0, 105.0, 99.0, 103.0, 1000.0, 2000.0)")
+    if fund:
+        c.execute(
+            "INSERT INTO board_fund_flow (board_code, snapshot_date, period, inflow, outflow, net_inflow) "
+            "VALUES ('301558', DATE '2026-08-21', '即时', 10.0, 8.0, 2.0)")
+
+
+def test_board_checks_pass_on_consistent_data():
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_board(c)
+        v = DataVerifier(c)
+        v.check_board()
+        assert v.fails() == []
+
+
+def test_board_orphan_bar_fails():
+    """board_bar 出现字典外板块 → 孤儿项应判 FAIL。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_board(c)
+        c.execute(
+            "INSERT INTO board_bar (board_code, trade_date, open, high, low, close, volume, amount) "
+            "VALUES ('309999', DATE '2026-08-21', 1.0, 1.0, 1.0, 1.0, 0.0, 0.0)")
+        v = DataVerifier(c)
+        v.check_board()
+        orphan = [(n, ok) for (n, ok, _) in v.results if "板块指数无孤儿" in n]
+        assert orphan and orphan[0][1] is False
+
+
+def test_board_flag_mismatch_fails():
+    """有指数数据但 has_bar 未标记 → 标记一致性项应判 FAIL。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_board(c)
+        c.execute("UPDATE board_dict SET has_bar = FALSE WHERE board_code = '301558'")
+        v = DataVerifier(c)
+        v.check_board()
+        flag = [(n, ok) for (n, ok, _) in v.results if "指数能力标记" in n]
+        assert flag and flag[0][1] is False
+
+
+def test_board_bj_member_exempt():
+    """北交所成分不在 stock_basic 属既定宇宙边界，不应判 FAIL。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        _seed_board(c)
+        c.execute("INSERT INTO board_member (board_code, code) VALUES ('301558', '920001.BJ')")
+        v = DataVerifier(c)
+        v.check_board()
+        member = [(n, ok) for (n, ok, _) in v.results if "成分股（沪深）" in n]
+        assert member and member[0][1] is True

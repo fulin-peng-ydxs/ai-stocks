@@ -546,7 +546,7 @@ onMounted(() => {
             {{ checkupReport.all_ok ? '全部通过' : `${checkupReport.fails.length} 项未通过` }}
           </el-tag>
           <span class="checkup-score">{{ checkupReport.passed }} / {{ checkupReport.total }} 项通过</span>
-          <span class="checkup-note">结构合法性 + 价格正确性 + 字段契约（本地核查，与质检台账互补，不写台账）</span>
+          <span class="checkup-note">结构合法性 + 价格正确性 + 字段契约 + 板块数据（本地核查，与质检台账互补，不写台账）</span>
         </div>
         <div v-for="g in checkupReport.groups" :key="g.group" class="checkup-group">
           <div class="checkup-group-title">{{ g.group }}</div>

@@ -691,7 +691,7 @@ def _h_verify(params: dict, ctx: TaskContext) -> dict:
 
 
 def _h_checkup(params: dict, ctx: TaskContext) -> dict:
-    """数据结构体检（DataVerifier）：本地 SQL 的结构/价格正确性/字段契约核查，返回结构化报告。
+    """数据结构体检（DataVerifier）：本地 SQL 的结构/价格正确性/字段契约/板块数据核查，返回结构化报告。
 
     与质检（_h_verify 写台账+修复闭环）互补：体检查结构合法性与整列/逐行缺失（含质检盲区的
     在市股逐行市值字段缺失），只读、不写台账。cross=True 时附加联网交叉验证（默认关闭）。
@@ -699,7 +699,7 @@ def _h_checkup(params: dict, ctx: TaskContext) -> dict:
     from backend.services.data_verify import DataVerifier
     cross = bool(params.get("cross", False))
     ctx.progress(0.3, "数据结构体检中…")
-    ctx.log("数据体检：结构/完整性 + 价格正确性 + 字段契约" + ("（含联网交叉验证）" if cross else ""))
+    ctx.log("数据体检：结构/完整性 + 价格正确性 + 字段契约 + 板块数据" + ("（含联网交叉验证）" if cross else ""))
     report = DataVerifier(quiet=True).run_structured(cross=cross)
     for g in report["groups"]:
         bad = [c["name"] for c in g["checks"] if not c["ok"]]

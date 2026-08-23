@@ -158,6 +158,8 @@
 - severity 走 `SEVERITY_BY_TYPE` 统一映射（板块专项均为 `mid`），不硬编码。
 - 个股 `scan_quality_issues` 的 DELETE+INSERT 也包事务（对齐板块 scan 失败保留语义）；个股覆盖帧缓存签名排除板块 issue，板块写入不击穿个股 frame 缓存。
 
+结构体检（`data_verify.py` E 组，只读不写台账）与本台账互补：体检查板块四表的结构合法性与字段/标记契约（孤儿板块、指数日历一致、OHLC/量额合法、`board_type`/`period` 枚举、`has_*` 能力标记与实际数据双向一致）；缺口/新鲜度只归上表 issue + 修复闭环，体检不重复检查。
+
 ## 修复闭环（`backend/services/async_task.py`）
 
 板块 issue 走统一的 fix 任务机制（与个股同链路）：

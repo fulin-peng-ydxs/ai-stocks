@@ -1,10 +1,12 @@
 """数据正确性 + 完整性 系统性核查器（全量，非抽样）。
 
-分三组：
+分五组：
 A. 结构/完整性（SQL 全表）：孤儿、键对齐、日历一致、重复。
 B. 价格正确性（SQL 全表）：OHLC 序关系、非负、复权因子、涨跌幅越界。
 C. 独立数据源交叉验证（联网）：随机若干股，本地存储 vs 实时重拉，
    校验不复权价 + 前复权价（验证 adj_factor / pre_close 逻辑）。
+D. 需求字段完整性契约：必填字段非空，已知数据源局限显式豁免。
+E. 板块数据：四表孤儿/日历一致/OHLC/枚举取值/能力标记与实际数据一致。
 
 每项给 PASS/FAIL + 明细，最后汇总。
 """
@@ -235,6 +237,75 @@ class DataVerifier:
             n = self._count(f"SELECT count(*) FROM {table} WHERE {col} IS NULL")
             self._say(f"  [豁免] {table}.{col} 缺 {n} 行 — {note}")
 
+    # ── E. 板块数据（结构 / 数值 / 契约）──
+    def check_board(self) -> None:
+        """板块四表（board_dict/board_member/board_bar/board_fund_flow）核查。
+
+        与质检台账分工：板块缺口/新鲜度（board_index_gap、board_fund_stale 等）由质检台账
+        +修复闭环负责；这里只查结构合法性、数值正确性与字段/标记契约（只读、不写台账）。
+        """
+        self._cur_group = "E. 板块数据"
+        self._say("\nE. 板块数据（结构/数值/契约）")
+
+        # 结构：孤儿板块（bar/member/fund 的 board_code 均须在字典）
+        for table, label in (("board_bar", "指数"), ("board_member", "成分"), ("board_fund_flow", "资金流")):
+            orphan = self._count(
+                f"SELECT count(*) FROM (SELECT DISTINCT board_code FROM {table} "
+                "WHERE board_code NOT IN (SELECT board_code FROM board_dict))")
+            self._check(f"板块{label}无孤儿（均在 board_dict）", orphan == 0, f"孤儿板块 {orphan}")
+
+        # 板块指数与个股同口径：须落在日历开市日
+        non_open = self._count(
+            "SELECT count(*) FROM board_bar b LEFT JOIN trade_calendar c "
+            "ON c.trade_date=b.trade_date WHERE c.is_open IS NOT TRUE")
+        self._check("板块指数日均为日历开市日", non_open == 0, f"非开市日 {non_open}")
+
+        # 成分股（沪深）须在 stock_basic；北交所成分属既定宇宙外（include_bse=false），仅提示
+        missing = self._count(
+            "SELECT count(*) FROM (SELECT DISTINCT code FROM board_member "
+            "WHERE code NOT LIKE '%.BJ' AND code NOT IN (SELECT code FROM stock_basic))")
+        self._check("成分股（沪深）均有基础信息", missing == 0, f"缺 {missing}")
+        bj = self._count(
+            "SELECT count(*) FROM (SELECT DISTINCT code FROM board_member WHERE code LIKE '%.BJ')")
+        self._say(f"  [INFO] 北交所成分 {bj} 只不在 stock_basic（宇宙剔除北交所，既定边界）")
+
+        # 数值正确性（与个股 B 组同口径）
+        nonpos = self._count(
+            "SELECT count(*) FROM board_bar WHERE close<=0 OR open<=0 OR high<=0 OR low<=0")
+        self._check("板块指数价格全为正", nonpos == 0, f"非正价行 {nonpos}")
+        ohlc_bad = self._count(
+            "SELECT count(*) FROM board_bar WHERE high < low OR high < open OR high < close "
+            "OR low > open OR low > close")
+        self._check("板块指数 OHLC 序关系正确", ohlc_bad == 0, f"违反 {ohlc_bad}")
+        neg_vol = self._count("SELECT count(*) FROM board_bar WHERE volume<0 OR amount<0")
+        self._check("板块指数成交量/额非负", neg_vol == 0, f"负值 {neg_vol}")
+
+        # 字段契约：枚举取值与必填字段
+        bad_type = self._count(
+            "SELECT count(*) FROM board_dict WHERE board_type NOT IN ('concept','industry')")
+        self._check("板块类型取值合法（concept/industry）", bad_type == 0, f"非法 {bad_type}")
+        bad_period = self._count(
+            "SELECT count(*) FROM board_fund_flow WHERE period NOT IN ('即时','3日','5日','10日','20日')")
+        self._check("资金流周期取值合法", bad_period == 0, f"非法 {bad_period}")
+        null_net = self._count("SELECT count(*) FROM board_fund_flow WHERE net_inflow IS NULL")
+        self._check("资金流·净流入 无缺失", null_net == 0, f"缺 {null_net}")
+
+        # 能力标记与实际数据双向一致（有标记须有数据、有数据须有标记）
+        for flag, table, label in (
+            ("has_bar", "board_bar", "指数"),
+            ("has_members", "board_member", "成分"),
+            ("has_fund_flow", "board_fund_flow", "资金流"),
+        ):
+            miss = self._count(
+                f"SELECT count(*) FROM board_dict d WHERE d.{flag} IS TRUE "
+                f"AND NOT EXISTS (SELECT 1 FROM {table} t WHERE t.board_code=d.board_code)")
+            extra = self._count(
+                f"SELECT count(*) FROM board_dict d WHERE d.{flag} IS NOT TRUE "
+                f"AND EXISTS (SELECT 1 FROM {table} t WHERE t.board_code=d.board_code)")
+            self._check(
+                f"{label}能力标记与实际数据一致", miss == 0 and extra == 0,
+                f"有标记无数据 {miss} / 有数据无标记 {extra}")
+
     def run(self, cross: bool = True) -> bool:
         print("=" * 64)
         print("数据正确性 + 完整性 系统性核查")
@@ -242,6 +313,7 @@ class DataVerifier:
         self.check_structure()
         self.check_prices()
         self.check_contract()
+        self.check_board()
         if cross:
             self.cross_validate()
         passed = sum(1 for _, ok, _ in self.results if ok)
@@ -265,6 +337,7 @@ class DataVerifier:
         self.check_structure()
         self.check_prices()
         self.check_contract()
+        self.check_board()
         if cross:
             self.cross_validate()
         groups: dict[str, list] = {}
