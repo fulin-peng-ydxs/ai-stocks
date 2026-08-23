@@ -25,8 +25,11 @@ async function expectHistoryLayout(page: Page): Promise<void> {
     const panel = document.querySelector<HTMLElement>('.history-panel')
     const workspace = document.querySelector<HTMLElement>('.history-workspace')
     const filterCard = document.querySelector<HTMLElement>('.history-filter-card .el-card__body')
-    const filters = document.querySelector<HTMLElement>('.history-filters')
-    const top = (selector: string) => document.querySelector<HTMLElement>(selector)?.getBoundingClientRect().top ?? 0
+    const filters = document.querySelector<HTMLElement>('.history-filter-card .filter-row')
+    const controlWidths = [
+      '.date-filter', '.rule-filter', '.assessment-filter', '.operation-filter',
+      '.amended-filter', '.stock-filter', '.reason-filter',
+    ].map((selector) => document.querySelector<HTMLElement>(selector)?.getBoundingClientRect().width ?? 0)
     return {
       panelWidth: panel?.getBoundingClientRect().width ?? 0,
       workspaceWidth: workspace?.getBoundingClientRect().width ?? 0,
@@ -34,21 +37,23 @@ async function expectHistoryLayout(page: Page): Promise<void> {
       filterCardRight: filterCard?.getBoundingClientRect().right ?? 0,
       filtersLeft: filters?.getBoundingClientRect().left ?? 0,
       filtersRight: filters?.getBoundingClientRect().right ?? 0,
-      filtersWidth: filters?.getBoundingClientRect().width ?? 0,
-      primaryTops: ['.date-filter', '.rule-filter', '.assessment-filter', '.history-filter-reset'].map(top),
-      secondaryTops: ['.operation-filter', '.amended-filter', '.stock-filter', '.reason-filter'].map(top),
+      filtersDisplay: filters ? getComputedStyle(filters).display : '',
+      filterCardPaddingLeft: filterCard ? Number.parseFloat(getComputedStyle(filterCard).paddingLeft) : 0,
+      filterCardPaddingRight: filterCard ? Number.parseFloat(getComputedStyle(filterCard).paddingRight) : 0,
+      controlWidths,
     }
   })
   expect(geometry.panelWidth).toBeGreaterThan(0)
   expect(Math.abs(geometry.panelWidth - geometry.workspaceWidth)).toBeLessThanOrEqual(1)
-  expect(geometry.filtersWidth).toBeLessThanOrEqual(1280)
+  expect(geometry.filtersDisplay).toBe('flex')
   expect(Math.abs(
-    (geometry.filtersLeft - geometry.filterCardLeft)
-    - (geometry.filterCardRight - geometry.filtersRight),
+    geometry.filtersLeft - geometry.filterCardLeft - geometry.filterCardPaddingLeft,
   )).toBeLessThanOrEqual(1)
-  expect(Math.max(...geometry.primaryTops) - Math.min(...geometry.primaryTops)).toBeLessThanOrEqual(1)
-  expect(Math.max(...geometry.secondaryTops) - Math.min(...geometry.secondaryTops)).toBeLessThanOrEqual(1)
-  expect(Math.min(...geometry.secondaryTops)).toBeGreaterThan(Math.max(...geometry.primaryTops))
+  expect(Math.abs(
+    geometry.filterCardRight - geometry.filtersRight - geometry.filterCardPaddingRight,
+  )).toBeLessThanOrEqual(1)
+  expect(Math.min(...geometry.controlWidths)).toBeGreaterThan(0)
+  expect(Math.max(...geometry.controlWidths)).toBeLessThanOrEqual(300)
 }
 
 test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历史与稳定布局', async ({ page, request }, testInfo) => {

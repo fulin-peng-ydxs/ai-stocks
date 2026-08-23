@@ -5,6 +5,7 @@ import ElementPlus from 'element-plus'
 import { createPinia } from 'pinia'
 import { defineComponent } from 'vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
+import AppTableColumn from '@/components/AppTableColumn.vue'
 import TradeDisciplineHistory from '@/views/trade-discipline/components/TradeDisciplineHistory.vue'
 import type { CheckinHistoryRow, TradeDisciplineRule } from '@/api/tradeDiscipline'
 
@@ -56,7 +57,8 @@ describe('TradeDisciplineHistory', () => {
     await flushPromises()
     const filterCard = wrapper.get('.filter-card')
     expect(filterCard.attributes('class')).toContain('history-filter-card')
-    expect(filterCard.find('[aria-label="履约历史筛选"]').exists()).toBe(true)
+    expect(filterCard.find('.filter-row[aria-label="履约历史筛选"]').exists()).toBe(true)
+    expect(wrapper.findAllComponents(AppTableColumn).at(-1)?.props('role')).toBe('action-compact')
     expect(wrapper.get('.history-workspace').attributes('class')).toContain('history-workspace')
     expect(listCheckins).toHaveBeenCalledWith({ page: 1, page_size: 20 })
     expect(wrapper.text()).toContain('趋势纪律 · v3')
