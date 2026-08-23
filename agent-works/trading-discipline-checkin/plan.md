@@ -474,6 +474,10 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 
   最终验证：交易纪律专项 Playwright `5 passed / 4 skipped`（三视口中写链路按设计只执行一次）；其余普通全量 Playwright `83 passed / 28 skipped`（排除交易纪律、公开回测和板块工作台三个独占夹具 spec，跳过均为视口/项目门控）；前端 Vitest `116 files / 879 tests`；后端全量 `990 passed`，本次最终精确清理收紧后聚焦 pytest `25 passed`；`npm run build`、Ruff、`py_compile`、`bash -n`、`git diff --check` 通过。构建仍只有既存第三方 PURE 注释和大 chunk 警告，Vitest 仍只有既存 PageDrawer 测试回退提示，后端全量仍只有既存 FastAPI `on_event` 弃用警告。聚焦脚本最终精确删除本轮 6 条规则及关联事实、21 行专属行情和 10 个专属交易日，并恢复 dev 后端健康。未执行生产 PG 备份、真实部署或 RBAC 回滚演练，原因是本任务只授权本地开发验收；不将它们记为已执行。
 
+  验收后页面复核整改（2026-08-23）：用户宽屏截图证明历史组件在 `.history-panel` 的 flex 布局中按内容固有宽度收缩，右侧出现大块无业务含义的空白；筛选行也未按 `DESIGN.md` §5.1.1 使用带明确边框的全局 `filter-card`。两项均认可并整改：`TradeDisciplineHistory` 根节点增加 `width: 100%` 与 flex 填充约束，筛选区复用 `<el-card shadow="never" class="filter-card">` 包裹既有 `AppControlRow`，没有新增私有边框 token 或重复筛选组件。测试新增筛选卡片结构断言，并把三视口 E2E 从单纯“无横向溢出”收紧为历史面板与工作区宽度差不超过 1px；举一反三扫描其他 `AppControlRow` 消费点，列表筛选均已有 `filter-card`，表单型控制行不属于该规则。该问题按计划仍然出现的原因主要是执行遗漏：计划已要求原型一致性和三视口页面验收，但原 E2E 只防溢出、未防主内容欠填充，最终改造后也没有重新人工检查宽屏历史空态；不是 DESIGN 或需求允许此布局。
+
+  本次复核验证：交易纪律视图/历史专项 `2 files / 13 tests`、前端全量 Vitest `116 files / 879 tests`、`npm run build`、交易纪律真实夹具三视口 Playwright `5 passed / 4 skipped` 均通过；另以标准视口和真实 `debug_normal` 登录夹具单跑 `1 passed` 并人工查看浏览器轨迹，确认筛选卡片边框可见、历史表格填满内容区。夹具两次均完成 PG/DuckDB 精确清理并恢复原 dev 后端。`npm run lint:design` 未执行，因为项目不存在该脚本；`npm run test:design` 仅运行环境前置检查后提示需显式测试变量，没有继续执行，其实际相关子项已由本轮全量 Vitest、build 和交易纪律真实 E2E 分别完成。未重跑后端 pytest/Ruff、普通全量 Playwright、生产部署、生产 PG 备份或 RBAC 回滚演练：本轮只修改历史页面布局、前端测试和计划事实，后端与其他页面行为未变。
+
 ## 7. 数据库与 SQL 计划
 
 | 路径/类别 | 用途 | 执行时机 | 影响范围 | 回滚方式 |

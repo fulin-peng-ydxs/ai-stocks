@@ -45,6 +45,18 @@ test('真实夹具在三视口呈现生命周期全序、四类历史与稳定�
   await expect(history.getByText('无操作', { exact: true }).first()).toBeVisible()
   await expect(history.getByText('2 笔', { exact: true }).first()).toBeVisible()
   await expect(history.getByText('r2 · 已修正', { exact: true }).first()).toBeVisible()
+  await expect(page.locator('.history-filter-card')).toBeVisible()
+
+  const geometry = await page.evaluate(() => {
+    const panel = document.querySelector<HTMLElement>('.history-panel')
+    const workspace = document.querySelector<HTMLElement>('.history-workspace')
+    return {
+      panelWidth: panel?.getBoundingClientRect().width ?? 0,
+      workspaceWidth: workspace?.getBoundingClientRect().width ?? 0,
+    }
+  })
+  expect(geometry.panelWidth).toBeGreaterThan(0)
+  expect(Math.abs(geometry.panelWidth - geometry.workspaceWidth)).toBeLessThanOrEqual(1)
 
   const overflow = await page.evaluate(() => ({
     document: document.documentElement.scrollWidth - document.documentElement.clientWidth,

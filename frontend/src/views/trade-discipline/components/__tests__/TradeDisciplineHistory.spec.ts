@@ -54,6 +54,10 @@ describe('TradeDisciplineHistory', () => {
   it('按服务端分页加载完整历史列并打开详情', async () => {
     const wrapper = mountHistory()
     await flushPromises()
+    const filterCard = wrapper.get('.filter-card')
+    expect(filterCard.attributes('class')).toContain('history-filter-card')
+    expect(filterCard.find('[aria-label="履约历史筛选"]').exists()).toBe(true)
+    expect(wrapper.get('.history-workspace').attributes('class')).toContain('history-workspace')
     expect(listCheckins).toHaveBeenCalledWith({ page: 1, page_size: 20 })
     expect(wrapper.text()).toContain('趋势纪律 · v3')
     expect(wrapper.text()).toContain('冲动交易')
