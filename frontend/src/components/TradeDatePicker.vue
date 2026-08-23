@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 全站统一的交易日日期选择器：中文格式 + 只能选真实交易日 + 交易日高亮（trade-cal 样式见 global.css）
 import { onMounted, watch } from 'vue'
+import type { Placement } from 'element-plus'
 import { useTradeDates } from '@/composables/useTradeDates'
 
 const props = defineProps<{
@@ -9,6 +10,10 @@ const props = defineProps<{
   clearable?: boolean
   /** 默认落到行情数据的最新交易日；仅用于“默认最新、仍可回看历史”的业务控件。 */
   defaultLatest?: boolean
+  /** 浮层首选位置；需要稳定留在触发器下方的紧凑工作区可覆盖默认值。 */
+  placement?: Placement
+  /** 浮层可回退位置；传入单一位置可避免空间不足时翻到触发器上方。 */
+  fallbackPlacements?: Placement[]
 }>()
 const emit = defineEmits<{ 'update:modelValue': [v: string | null] }>()
 
@@ -47,6 +52,8 @@ onMounted(() => { void ensureLatestLoaded() })
     :placeholder="placeholder"
     :clearable="clearable ?? false"
     :disabled-date="disabledTradeDate"
+    :placement="placement"
+    :fallback-placements="fallbackPlacements"
     popper-class="trade-cal"
     @update:model-value="(v: string | null) => emit('update:modelValue', v)"
     @visible-change="onVisibleChange"

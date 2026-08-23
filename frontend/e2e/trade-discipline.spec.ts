@@ -84,6 +84,57 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
   await expect(page.locator('.history-filter-card')).toBeVisible()
   await expectHistoryLayout(page)
 
+  const startDate = page.getByPlaceholder('开始交易日')
+  await startDate.click()
+  const calendar = page.locator('.trade-cal:visible')
+  await expect(calendar).toBeVisible()
+  const calendarGeometry = await page.evaluate(() => {
+    const input = document.querySelector<HTMLElement>('input[placeholder="开始交易日"]')
+    const panel = Array.from(document.querySelectorAll<HTMLElement>('.trade-cal'))
+      .find((element) => getComputedStyle(element).display !== 'none')
+    return {
+      inputBottom: input?.getBoundingClientRect().bottom ?? 0,
+      panelTop: panel?.getBoundingClientRect().top ?? 0,
+    }
+  })
+  expect(calendarGeometry.panelTop).toBeGreaterThanOrEqual(calendarGeometry.inputBottom - 1)
+  await page.keyboard.press('Escape')
+
+  const firstMainRow = page.locator('.history-workspace .el-table__body-wrapper tbody tr').first()
+  const latestDateBeforeSort = (await firstMainRow.locator('td').first().innerText()).trim()
+  const ascResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/trade-discipline/checkins'
+      && url.searchParams.get('sort_order') === 'asc'
+      && response.ok()
+  })
+  await page.getByRole('columnheader', { name: '交易日' }).click()
+  await ascResponse
+  await expect(firstMainRow).toContainText('2098-06-04')
+
+  const descResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return url.pathname === '/api/trade-discipline/checkins'
+      && url.searchParams.get('sort_order') === 'desc'
+      && response.ok()
+  })
+  await page.getByRole('columnheader', { name: '交易日' }).click()
+  await descResponse
+  await expect(firstMainRow.locator('td').first()).toHaveText(latestDateBeforeSort)
+
+  await page.getByTestId('page-settings-trigger').click()
+  const settingsDrawer = page.getByTestId('page-settings-drawer')
+  await expect(settingsDrawer.getByText('列显隐', { exact: true })).toBeVisible()
+  for (const column of [
+    'trade_date', 'rule_name', 'assessment', 'operation_count',
+    'reason_name_snapshot', 'current_revision_no', 'updated_at',
+  ]) {
+    await expect(settingsDrawer.getByTestId(
+      `component-history-hiddenColumns-${column}-switch`,
+    )).toBeVisible()
+  }
+  await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
+
   const overflow = await page.evaluate(() => ({
     document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     main: Math.max(...Array.from(document.querySelectorAll<HTMLElement>('[data-testid="app-main-surface"], .discipline-panel'))

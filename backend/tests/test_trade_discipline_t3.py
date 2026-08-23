@@ -463,6 +463,13 @@ def test_history_filters_pagination_and_owner_isolation(pg, market):
     assert page["list"][0]["amended_at"] is None
     assert '"amended_at":null' in ApiResponse(data=page).model_dump_json()
 
+    ascending = service.list_checkins(sort_by="trade_date", sort_order="asc")
+    assert [row["trade_date"] for row in ascending["list"]] == [first, second]
+    with pytest.raises(ValidationError, match="排序字段"):
+        service.list_checkins(sort_by="updated_at")
+    with pytest.raises(ValidationError, match="排序方向"):
+        service.list_checkins(sort_order="sideways")
+
     other_owner = f"{TEST_OWNER}_t3_other"
     clean_owner(pg, TEST_TENANT, other_owner)
     try:

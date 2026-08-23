@@ -988,6 +988,8 @@ class TradeDisciplineService:
         *,
         page: int = 1,
         page_size: int = 20,
+        sort_by: str = "trade_date",
+        sort_order: str = "desc",
         **filters: Any,
     ) -> dict[str, Any]:
         page = max(1, int(page))
@@ -995,7 +997,17 @@ class TradeDisciplineService:
         assessment = filters.get("assessment")
         if assessment is not None and assessment not in {"complied", "breached"}:
             raise ValidationError("履约结果筛选值不正确")
-        return self.repo.list_checkins(filters=filters, page=page, page_size=page_size)
+        if sort_by != "trade_date":
+            raise ValidationError("履约历史排序字段不正确")
+        if sort_order not in {"asc", "desc"}:
+            raise ValidationError("履约历史排序方向不正确")
+        return self.repo.list_checkins(
+            filters=filters,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
 
     def list_reasons(self) -> list[dict[str, Any]]:
         builtins = [

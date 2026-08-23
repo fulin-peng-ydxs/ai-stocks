@@ -409,9 +409,16 @@ describe('页面注册表完整性', () => {
     expect(slots.filter((slot) => slot.parentId === 'workspaceTabs').map((slot) => slot.id))
       .toEqual(['checkinPanel', 'rulesPanel', 'history'])
     expect(entry.consumedComponentFields).toEqual({
-      history: ['border', 'pageSize'],
+      history: ['border', 'defaultSort', 'pageSize', 'hiddenColumns'],
       settings: ['size', 'bodyScroll', 'collapsibleSections', 'defaultCollapsed'],
     })
+    expect(entry.componentMeta?.history?.sortFields).toEqual([
+      { key: 'trade_date', label: '交易日' },
+    ])
+    expect(entry.componentMeta?.history?.columns?.map((column) => column.key)).toEqual([
+      'trade_date', 'rule_name', 'assessment', 'operation_count',
+      'reason_name_snapshot', 'current_revision_no', 'updated_at',
+    ])
     expect(entry.componentMeta?.history?.tabs).toBeUndefined()
     expect(JSON.stringify(entry)).not.toContain('defaultActive')
 
@@ -421,6 +428,20 @@ describe('页面注册表完整性', () => {
     expect(`${view}\n${history}\n${drawer}`).not.toMatch(/<el-(?:table|drawer)\b/i)
     expect(history).toContain('<AppDataTable')
     expect(drawer).toContain('<PageDrawer')
+  })
+
+  it('登记列元数据的列表组件必须消费通用列显隐能力', () => {
+    for (const entry of PAGE_REGISTRY) {
+      for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {
+        if (!meta.columns?.length) continue
+        const slot = entry.layout.slots.find((candidate) => candidate.id === slotId)
+        if (!slot || !['data-table', 'wide-table'].includes(slot.component)) continue
+        expect(
+          entry.consumedComponentFields?.[slotId],
+          `${entry.pageKey}.${slotId} 已登记 columns，却未声明组件字段消费关系`,
+        ).toContain('hiddenColumns')
+      }
+    }
   })
 
   it('DESIGN 页面登记 marker 不得出现重复 pageKey', () => {
@@ -713,7 +734,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
         && (entry.consumedComponentFields?.[slotId] ?? []).includes('hiddenColumns'))
       if (!configurableSlots.length) continue
 
-      const source = sourceForPage(entry.pageKey)
+      const source = sourceTreeForPage(entry.pageKey)
       const visibleKeys = configurableColumnVisibilityKeys(source)
       for (const [slotId, meta] of configurableSlots) {
         for (const column of meta.columns ?? []) {

@@ -12,6 +12,7 @@ import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTradeDates } from '@/composables/useTradeDates'
 import { useTradeDisciplineSummary } from '@/composables/useTradeDisciplineSummary'
+import { useTableSort } from '@/composables/useTableSort'
 import {
   confirmLeave,
   registerUnsavedHandler,
@@ -38,6 +39,7 @@ import TradeDisciplineHistory from '@/views/trade-discipline/components/TradeDis
 type PanelKey = 'checkin' | 'rules' | 'history'
 
 const PAGE_KEY = 'trade-discipline'
+const HISTORY_SORT_FIELDS = ['trade_date'] as const
 const PANEL_OPTIONS = [
   { label: '今日打卡', value: 'checkin' },
   { label: '规则管理', value: 'rules' },
@@ -144,6 +146,22 @@ const historyRef = ref<{ reload: () => Promise<void> } | null>(null)
 const historyDetailOpen = ref(false)
 const historyDetailRow = ref<CheckinHistoryRow | null>(null)
 const returnToHistoryAfterAmend = ref(false)
+const historyHiddenColumns = computed<string[]>(() => {
+  const raw = componentValueOf('history', 'hiddenColumns')
+  return Array.isArray(raw) ? raw.map(String) : []
+})
+const {
+  sortBy: historySortBy,
+  sortOrder: historySortOrder,
+  elementDefaultSort: historyDefaultSort,
+  onSortChange: onHistorySortChange,
+} = useTableSort({
+  slotId: 'history',
+  defaultSort: 'trade_date:desc',
+  componentValueOf,
+  allowedFields: HISTORY_SORT_FIELDS,
+  onChanged: () => { historyPage.value = 1 },
+})
 const { pageSize: historyPageSize, changePageSize } = useComponentPageSizeSession({
   resolveDefault: () => componentValueOf('history', 'pageSize'),
   fallback: 20,
@@ -582,9 +600,14 @@ watch(tradeDisciplineChangeVersion, async () => {
             :page-size="historyPageSize"
             :rules="rules"
             :border="tableBorder('history')"
+            :sort-by="historySortBy"
+            :sort-order="historySortOrder"
+            :default-sort="historyDefaultSort"
+            :hidden-columns="historyHiddenColumns"
             @update:query="updateHistoryQuery"
             @page-change="changeHistoryPage"
             @size-change="changePageSize"
+            @sort-change="onHistorySortChange"
             @detail="openHistoryDetail"
           />
         </section>

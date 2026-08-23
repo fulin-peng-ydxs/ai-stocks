@@ -394,15 +394,18 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: { history: ['pageSize'] },
+    consumedComponentFields: { history: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       history: {
+        sortFields: [{ key: 'trade_date', label: '交易日' }],
         columns: [
           { key: 'trade_date', label: '交易日' },
           { key: 'rule_name', label: '规则' },
           { key: 'assessment', label: '履约结果' },
           { key: 'operation_count', label: '操作数' },
+          { key: 'reason_name_snapshot', label: '违规摘要' },
           { key: 'current_revision_no', label: '修订' },
+          { key: 'updated_at', label: '最后更新' },
         ],
       },
     },
@@ -417,7 +420,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'workspaceTabs', component: 'tabs', region: 'main', growMain: true, label: '交易纪律业务页签', order: 1 },
         { id: 'checkinPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '今日打卡', order: 1 },
         { id: 'rulesPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '规则管理', order: 2 },
-        { id: 'history', component: 'data-table', region: 'main', parentId: 'workspaceTabs', label: '历史记录', order: 3, config: { pageSize: 20 } },
+        { id: 'history', component: 'data-table', region: 'main', parentId: 'workspaceTabs', label: '历史记录', order: 3, config: { defaultSort: 'trade_date:desc', pageSize: 20 } },
         { id: 'historyDetail', component: 'detail', region: 'overlay', label: '履约修订详情抽屉', order: 1 },
       ],
       editable: [densityKnob()],

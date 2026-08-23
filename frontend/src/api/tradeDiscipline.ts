@@ -136,6 +136,8 @@ export interface CheckinHistoryQuery {
   amended?: boolean
   stock?: string
   reason?: string
+  sort_by?: 'trade_date'
+  sort_order?: 'asc' | 'desc'
 }
 
 export interface StockOption {

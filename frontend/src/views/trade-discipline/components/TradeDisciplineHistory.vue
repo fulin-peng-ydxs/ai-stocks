@@ -10,6 +10,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import type { AppRowAction } from '@/components/rowActions'
+import type { TableSortChange } from '@/composables/useTableSort'
 import {
   listTradeDisciplineCheckins,
   type CheckinHistoryQuery,
@@ -19,17 +20,27 @@ import {
 } from '@/api/tradeDiscipline'
 import StockOptionSelect from './StockOptionSelect.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   query: CheckinHistoryQuery
   page: number
   pageSize: number
   rules: TradeDisciplineRule[]
   border: boolean
-}>()
+  sortBy?: 'trade_date'
+  sortOrder?: 'asc' | 'desc'
+  defaultSort?: { prop: string; order: 'ascending' | 'descending' }
+  hiddenColumns?: string[]
+}>(), {
+  sortBy: 'trade_date',
+  sortOrder: 'desc',
+  defaultSort: () => ({ prop: 'trade_date', order: 'descending' }),
+  hiddenColumns: () => [],
+})
 const emit = defineEmits<{
   'update:query': [value: CheckinHistoryQuery]
   'page-change': [value: number]
   'size-change': [value: number]
+  'sort-change': [value: TableSortChange]
   detail: [row: CheckinHistoryRow]
 }>()
 
@@ -74,6 +85,8 @@ const querySignature = computed(() => JSON.stringify([
   props.query.amended,
   props.query.stock,
   props.query.reason,
+  props.sortBy,
+  props.sortOrder,
 ]))
 
 function updateQuery(patch: Partial<CheckinHistoryQuery>): void {
@@ -114,6 +127,10 @@ function formatTime(value: string | null | undefined): string {
   return value.replace('T', ' ').replace(/\.\d+/, '').replace(/\+.*$/, '').slice(0, 16)
 }
 
+function colVisible(key: string): boolean {
+  return !props.hiddenColumns.includes(key)
+}
+
 async function load(): Promise<void> {
   const seq = ++loadSeq
   loading.value = true
@@ -121,6 +138,8 @@ async function load(): Promise<void> {
   try {
     const result = await listTradeDisciplineCheckins({
       ...props.query,
+      sort_by: props.sortBy,
+      sort_order: props.sortOrder,
       page: props.page,
       page_size: props.pageSize,
     })
@@ -154,9 +173,9 @@ defineExpose({ reload: load })
       <AppControlRow class="filter-row" aria-label="履约历史筛选">
         <AppControlItem class="date-filter">
           <div class="date-range" aria-label="交易日期范围">
-            <TradeDatePicker :model-value="query.date_from || null" clearable placeholder="开始交易日" @update:model-value="updateQuery({ date_from: $event || undefined })" />
+            <TradeDatePicker :model-value="query.date_from || null" clearable placement="bottom-start" :fallback-placements="['bottom-start']" placeholder="开始交易日" @update:model-value="updateQuery({ date_from: $event || undefined })" />
             <span>至</span>
-            <TradeDatePicker :model-value="query.date_to || null" clearable placeholder="结束交易日" @update:model-value="updateQuery({ date_to: $event || undefined })" />
+            <TradeDatePicker :model-value="query.date_to || null" clearable placement="bottom-start" :fallback-placements="['bottom-start']" placeholder="结束交易日" @update:model-value="updateQuery({ date_to: $event || undefined })" />
           </div>
         </AppControlItem>
         <AppFilterSelect class="rule-filter" data-testid="history-rule-filter" :model-value="query.rule_id || ''" :options="ruleOptions" :multiple="false" placeholder="全部规则" @change="updateQuery({ rule_id: String($event) || undefined })" />
@@ -186,6 +205,7 @@ defineExpose({ reload: load })
       aria-label="履约历史"
       empty-text="暂无符合条件的履约记录"
       :border="border"
+      :default-sort="defaultSort"
       stripe
       framed
       clickable
@@ -193,18 +213,19 @@ defineExpose({ reload: load })
       @row-click="openDetail"
       @page-change="emit('page-change', $event)"
       @size-change="emit('size-change', $event)"
+      @sort-change="emit('sort-change', $event)"
     >
-      <AppTableColumn prop="trade_date" label="交易日" role="date" />
-      <AppTableColumn label="规则" role="name"><template #default="{ row }">{{ row.rule_name }} · v{{ row.version_no }}</template></AppTableColumn>
-      <AppTableColumn prop="assessment" label="用户自评">
+      <AppTableColumn v-if="colVisible('trade_date')" prop="trade_date" label="交易日" role="date" sortable="custom" :sort-orders="['descending', 'ascending']" />
+      <AppTableColumn v-if="colVisible('rule_name')" label="规则" role="name"><template #default="{ row }">{{ row.rule_name }} · v{{ row.version_no }}</template></AppTableColumn>
+      <AppTableColumn v-if="colVisible('assessment')" prop="assessment" label="用户自评">
         <template #default="{ row }"><el-tag :type="row.assessment === 'complied' ? 'success' : 'danger'" effect="plain">{{ row.assessment === 'complied' ? '已履约' : '未履约' }}</el-tag></template>
       </AppTableColumn>
-      <AppTableColumn label="操作"><template #default="{ row }">{{ row.no_operation ? '无操作' : `${row.operation_count} 笔` }}</template></AppTableColumn>
-      <AppTableColumn prop="reason_name_snapshot" label="违规摘要" role="description"><template #default="{ row }">{{ row.reason_name_snapshot || '—' }}</template></AppTableColumn>
-      <AppTableColumn label="修订">
+      <AppTableColumn v-if="colVisible('operation_count')" label="操作"><template #default="{ row }">{{ row.no_operation ? '无操作' : `${row.operation_count} 笔` }}</template></AppTableColumn>
+      <AppTableColumn v-if="colVisible('reason_name_snapshot')" prop="reason_name_snapshot" label="违规摘要" role="description"><template #default="{ row }">{{ row.reason_name_snapshot || '—' }}</template></AppTableColumn>
+      <AppTableColumn v-if="colVisible('current_revision_no')" label="修订">
         <template #default="{ row }"><el-tag :type="row.status === 'amended' ? 'warning' : 'info'" effect="plain">r{{ row.current_revision_no }}{{ row.status === 'amended' ? ' · 已修正' : '' }}</el-tag></template>
       </AppTableColumn>
-      <AppTableColumn prop="updated_at" label="最后更新"><template #default="{ row }">{{ formatTime(row.updated_at) }}</template></AppTableColumn>
+      <AppTableColumn v-if="colVisible('updated_at')" prop="updated_at" label="最后更新"><template #default="{ row }">{{ formatTime(row.updated_at) }}</template></AppTableColumn>
       <AppTableColumn label="操作" role="action-compact" fixed="right">
         <template #default="{ row }"><AppRowActions :actions="rowActions(row)" :inline-limit="1" /></template>
       </AppTableColumn>

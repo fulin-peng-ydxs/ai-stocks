@@ -14,13 +14,14 @@ vi.mock('@/composables/useTradeDates', () => ({
   }),
 }))
 
-function mountPicker(defaultLatest = false) {
+function mountPicker(defaultLatest = false, extraProps: Record<string, unknown> = {}) {
   return mount(TradeDatePicker, {
-    props: { modelValue: '', defaultLatest },
+    props: { modelValue: '', defaultLatest, ...extraProps },
     global: {
       stubs: {
         ElDatePicker: {
-          props: ['modelValue'],
+          name: 'ElDatePicker',
+          props: ['modelValue', 'placement', 'fallbackPlacements'],
           template: '<input :value="modelValue" />',
         },
       },
@@ -61,5 +62,15 @@ describe('TradeDatePicker', () => {
     dataMax.value = '2026-08-01'
     await nextTick()
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['2026-08-01'])
+  })
+
+  it('把业务页面指定的浮层位置与回退位置透传给统一日期控件', () => {
+    const wrapper = mountPicker(false, {
+      placement: 'bottom-start',
+      fallbackPlacements: ['bottom-start'],
+    })
+    const picker = wrapper.findComponent({ name: 'ElDatePicker' })
+    expect(picker.props('placement')).toBe('bottom-start')
+    expect(picker.props('fallbackPlacements')).toEqual(['bottom-start'])
   })
 })

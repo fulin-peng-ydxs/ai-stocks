@@ -60,7 +60,9 @@ describe('TradeDisciplineHistory', () => {
     expect(filterCard.find('.filter-row[aria-label="履约历史筛选"]').exists()).toBe(true)
     expect(wrapper.findAllComponents(AppTableColumn).at(-1)?.props('role')).toBe('action-compact')
     expect(wrapper.get('.history-workspace').attributes('class')).toContain('history-workspace')
-    expect(listCheckins).toHaveBeenCalledWith({ page: 1, page_size: 20 })
+    expect(listCheckins).toHaveBeenCalledWith({
+      page: 1, page_size: 20, sort_by: 'trade_date', sort_order: 'desc',
+    })
     expect(wrapper.text()).toContain('趋势纪律 · v3')
     expect(wrapper.text()).toContain('冲动交易')
     expect(wrapper.text()).toContain('r2 · 已修正')
@@ -84,8 +86,34 @@ describe('TradeDisciplineHistory', () => {
     await flushPromises()
     expect(listCheckins).toHaveBeenLastCalledWith({
       rule_id: 'rule-1', stock: '000001.SZ', no_operation: false, amended: true,
-      page: 1, page_size: 20,
+      page: 1, page_size: 20, sort_by: 'trade_date', sort_order: 'desc',
     })
+  })
+
+  it('交易日列排序切换后按服务端参数重新查询并上送排序事件', async () => {
+    const wrapper = mountHistory()
+    await flushPromises()
+    wrapper.findComponent({ name: 'AppDataTable' }).vm.$emit('sort-change', {
+      prop: 'trade_date', order: 'ascending',
+    })
+    expect(wrapper.emitted('sort-change')).toEqual([[
+      { prop: 'trade_date', order: 'ascending' },
+    ]])
+
+    await wrapper.setProps({ sortOrder: 'asc' })
+    await flushPromises()
+    expect(listCheckins).toHaveBeenLastCalledWith({
+      page: 1, page_size: 20, sort_by: 'trade_date', sort_order: 'asc',
+    })
+  })
+
+  it('按列表通用 hiddenColumns 配置隐藏历史字段且保留操作列', async () => {
+    const wrapper = mountHistory({ hiddenColumns: ['rule_name', 'updated_at'] })
+    await flushPromises()
+    const columns = wrapper.findAllComponents(AppTableColumn)
+    expect(columns.some((column) => column.props('prop') === 'updated_at')).toBe(false)
+    expect(wrapper.text()).not.toContain('趋势纪律 · v3')
+    expect(columns.at(-1)?.props('role')).toBe('action-compact')
   })
 
   it('查询失败由历史表格区接管且不保留旧数据', async () => {

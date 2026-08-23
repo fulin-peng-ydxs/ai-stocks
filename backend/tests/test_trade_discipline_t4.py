@@ -503,6 +503,11 @@ def test_all_trade_discipline_endpoint_contracts_return_unified_response(
             headers=headers,
         )
         assert invalid_range.status_code == 422
+        invalid_sort = client.get(
+            "/api/trade-discipline/checkins?sort_by=updated_at&sort_order=sideways",
+            headers=headers,
+        )
+        assert invalid_sort.status_code == 422
     finally:
         _remove_user(pg, identity)
 

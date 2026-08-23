@@ -812,6 +812,8 @@ class TradeDisciplineRepository:
         filters: dict[str, Any],
         page: int,
         page_size: int,
+        sort_by: str,
+        sort_order: str,
     ) -> dict[str, Any]:
         where = ["c.tenant_id=%s", "c.owner_user_id=%s"]
         params: list[Any] = [*self.owner]
@@ -859,6 +861,9 @@ class TradeDisciplineRepository:
                 "n"
             ]
         )
+        sort_columns = {"trade_date": "c.trade_date"}
+        sort_column = sort_columns[sort_by]
+        direction = "ASC" if sort_order == "asc" else "DESC"
         rows = self.pg.query_df(
             "SELECT c.id,c.rule_id,c.trade_date,c.status,c.current_revision_no,c.submitted_at,"
             "c.amended_at,c.updated_at,rv.version_no,rv.assessment,rv.no_operation,"
@@ -867,7 +872,8 @@ class TradeDisciplineRepository:
             "WHERE opc.tenant_id=c.tenant_id AND opc.owner_user_id=c.owner_user_id "
             "AND opc.checkin_id=c.id AND opc.revision_no=c.current_revision_no) AS operation_count "
             f"{from_sql} WHERE {where_sql} "
-            "ORDER BY c.trade_date DESC,c.updated_at DESC,c.id DESC LIMIT %s OFFSET %s",
+            f"ORDER BY {sort_column} {direction},c.updated_at {direction},c.id {direction} "
+            "LIMIT %s OFFSET %s",
             params + [page_size, (page - 1) * page_size],
         )
         return {

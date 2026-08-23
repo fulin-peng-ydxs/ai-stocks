@@ -366,6 +366,8 @@ def list_checkins(
     amended: bool | None = None,
     stock: str | None = None,
     reason: str | None = None,
+    sort_by: Literal["trade_date"] = "trade_date",
+    sort_order: Literal["asc", "desc"] = "desc",
 ) -> ApiResponse:
     if date_from is not None and date_to is not None and date_from > date_to:
         raise _ApiValidationError("开始日期不能晚于结束日期")
@@ -382,6 +384,8 @@ def list_checkins(
             amended=amended,
             stock=stock,
             reason=reason,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
     )
 
