@@ -92,6 +92,22 @@ describe('工作标签页状态', () => {
     ])
   })
 
+  it('关闭非当前脏标签被拒绝时不删除标签与 KeepAlive 身份', async () => {
+    visitWorkspaceTab(route('/board', '每日榜单'), menus)
+    visitWorkspaceTab(route('/stocks', '个股查询'), menus)
+    const beforeCacheNames = [...useWorkspaceTabs().workspaceCacheNames.value]
+    registerUnsavedHandler('/board', {
+      isDirty: () => true,
+      requestLeave: async () => false,
+    })
+
+    expect(await removeWorkspaceTab('/board', '/stocks')).toBeUndefined()
+    expect(useWorkspaceTabs().workspaceTabs.value.map((tab) => tab.key)).toEqual([
+      '/board', '/stocks',
+    ])
+    expect(useWorkspaceTabs().workspaceCacheNames.value).toEqual(beforeCacheNames)
+  })
+
   it('容量满时优先淘汰干净标签；全部脏且拒绝时阻止新导航', async () => {
     for (let index = 1; index <= 12; index += 1) {
       visitWorkspaceTab(route(`/stocks/${index}`, `详情 ${index}`), menus)

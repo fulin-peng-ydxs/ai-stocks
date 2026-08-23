@@ -6,8 +6,13 @@ import ElementPlus, { ElMessageBox } from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent } from 'vue'
 import TradeDisciplineView from '@/views/TradeDisciplineView.vue'
+import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import { useAuthStore } from '@/stores/auth'
 import { permission } from '@/directives/permission'
+import {
+  resetTradeDisciplineSummaryForTests,
+  useTradeDisciplineSummary,
+} from '@/composables/useTradeDisciplineSummary'
 
 const listRules = vi.fn()
 const listCheckins = vi.fn()
@@ -15,6 +20,11 @@ const getSummary = vi.fn()
 const getCheckinContext = vi.fn()
 const ensureTradeDates = vi.fn(async () => undefined)
 const tradeDateStatus = { value: 'ready' }
+const layoutHarness = vi.hoisted(() => ({
+  historyPageSize: null as { value: number } | null,
+  resetLayout: vi.fn(),
+  resetPageSettings: vi.fn(),
+}))
 
 vi.mock('@/api/tradeDiscipline', () => ({
   listTradeDisciplineRules: (...args: unknown[]) => listRules(...args),
@@ -35,11 +45,14 @@ vi.mock('@/composables/useTradeDates', async () => {
 })
 vi.mock('@/composables/useRemoteLayoutConfig', async () => {
   const { ref } = await import('vue')
+  layoutHarness.historyPageSize ??= ref(20)
   return {
     useRemoteLayoutConfig: (layout: unknown) => ({
       effective: ref(layout), knobs: [], setKnob: vi.fn(), valueOf: vi.fn(), sourceOf: vi.fn(),
-      isDirty: ref(false), resetAll: vi.fn(),
-      componentValueOf: (_slot: string, field: string) => field === 'pageSize' ? 20 : false,
+      isDirty: ref(false), resetAll: layoutHarness.resetLayout,
+      componentValueOf: (_slot: string, field: string) => field === 'pageSize'
+        ? layoutHarness.historyPageSize!.value
+        : false,
       setComponentKnob: vi.fn(), componentSourceOf: vi.fn(), layerValuesOf: vi.fn(),
       componentLayerValuesOf: vi.fn(),
     }),
@@ -47,7 +60,9 @@ vi.mock('@/composables/useRemoteLayoutConfig', async () => {
 })
 vi.mock('@/composables/usePageSettings', async () => {
   const { ref } = await import('vue')
-  return { usePageSettings: () => ({ reset: vi.fn(), isDirty: ref(false) }) }
+  return {
+    usePageSettings: () => ({ reset: layoutHarness.resetPageSettings, isDirty: ref(false) }),
+  }
 })
 
 let mountedRouter: ReturnType<typeof createRouter>
@@ -76,9 +91,27 @@ async function mountPage(
   return wrapper
 }
 
+function ruleState(id = 'rule-1', index = 0) {
+  return {
+    id,
+    name: `纪律${index + 1}`,
+    status: 'active',
+    latest_version_no: 1,
+    management_status: 'active',
+    latest_management_event: null,
+    has_pending_management_action: false,
+    effective_status: 'active',
+    effective_event_seq: index + 1,
+    effective_from_trade_date: '2026-08-22',
+    effective_version: { version_no: 1, name: `纪律${index + 1}`, capital: '100000' },
+  }
+}
+
 describe('交易纪律 T5 工作台壳', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetTradeDisciplineSummaryForTests()
+    layoutHarness.historyPageSize!.value = 20
     tradeDateStatus.value = 'ready'
     listRules.mockResolvedValue([])
     listCheckins.mockResolvedValue({ total: 0, page: 1, page_size: 20, list: [] })
@@ -149,13 +182,7 @@ describe('交易纪律 T5 工作台壳', () => {
   })
 
   it('脏编辑器触发规则列表刷新失败时只接管左侧列表并保留输入', async () => {
-    const rule = {
-      id: 'rule-1', name: '趋势纪律', status: 'active', latest_version_no: 1,
-      management_status: 'active', latest_management_event: null,
-      has_pending_management_action: false, effective_status: 'active', effective_event_seq: 1,
-      effective_from_trade_date: '2026-08-22',
-      effective_version: { version_no: 1, name: '趋势纪律', capital: '100000' },
-    }
+    const rule = ruleState()
     listRules.mockResolvedValueOnce([rule])
     const EditorStub = defineComponent({
       name: 'TradeRuleEditor', emits: ['changed'],
@@ -179,19 +206,7 @@ describe('交易纪律 T5 工作台壳', () => {
   })
 
   it('同页快捷参数切换被未保存保护拒绝后恢复当前真实 URL', async () => {
-    const rules = ['rule-1', 'rule-2'].map((id, index) => ({
-      id,
-      name: `纪律${index + 1}`,
-      status: 'active',
-      latest_version_no: 1,
-      management_status: 'active',
-      latest_management_event: null,
-      has_pending_management_action: false,
-      effective_status: 'active',
-      effective_event_seq: index + 1,
-      effective_from_trade_date: '2026-08-22',
-      effective_version: { version_no: 1, name: `纪律${index + 1}`, capital: '100000' },
-    }))
+    const rules = ['rule-1', 'rule-2'].map(ruleState)
     listRules.mockResolvedValue(rules)
     getSummary.mockResolvedValue({
       trade_date: '2026-08-22', total: 2, completed: 0, pending: 2,
@@ -227,5 +242,61 @@ describe('交易纪律 T5 工作台壳', () => {
       tab: 'checkin', rule_ref: 'rule-1', trade_date: '2026-08-22',
     })
     expect(wrapper.get('h3').text()).toBe('纪律一')
+  })
+
+  it('历史分页默认值重载并在恢复默认时同时重置页面与布局配置', async () => {
+    const reload = vi.fn(async () => undefined)
+    const HistoryStub = defineComponent({
+      name: 'TradeDisciplineHistory',
+      props: { pageSize: { type: Number, required: true } },
+      setup(_props, { expose }) {
+        expose({ reload })
+      },
+      template: '<div data-testid="history-page-size">{{ pageSize }}</div>',
+    })
+    const wrapper = await mountPage(
+      ['trade-discipline:view', 'trade-discipline:checkin-view'],
+      '/trade-discipline?tab=history',
+      { TradeDisciplineHistory: HistoryStub },
+    )
+
+    expect(wrapper.get('[data-testid="history-page-size"]').text()).toBe('20')
+    layoutHarness.historyPageSize!.value = 50
+    await flushPromises()
+    expect(wrapper.get('[data-testid="history-page-size"]').text()).toBe('50')
+    expect(reload).toHaveBeenCalledTimes(1)
+
+    wrapper.findComponent(PageSettingsDrawer).vm.$emit('reset')
+    await wrapper.vm.$nextTick()
+    expect(layoutHarness.resetPageSettings).toHaveBeenCalledTimes(1)
+    expect(layoutHarness.resetLayout).toHaveBeenCalledTimes(1)
+  })
+
+  it('快捷入口变更广播会刷新当前工作台摘要、规则和选中表单', async () => {
+    const rule = ruleState()
+    listRules.mockResolvedValue([rule])
+    getSummary.mockResolvedValue({
+      trade_date: '2026-08-22', total: 1, completed: 0, pending: 1,
+      rules: [{
+        rule_id: 'rule-1', rule_name: '纪律一', version_no: 1,
+        effective_from_trade_date: '2026-08-22', checkin_id: null,
+        current_revision_no: null, status: null, assessment: null, no_operation: null,
+      }],
+    })
+    await mountPage([
+      'trade-discipline:view',
+      'trade-discipline:checkin-view',
+      'trade-discipline:checkin-submit',
+    ])
+    vi.clearAllMocks()
+
+    useTradeDisciplineSummary().notifyTradeDisciplineChanged({
+      ruleId: 'rule-1', tradeDate: '2026-08-22', source: 'quick',
+    })
+    await flushPromises()
+
+    expect(getSummary).toHaveBeenCalledWith('2026-08-22')
+    expect(listRules).toHaveBeenCalledWith('2026-08-22')
+    expect(getCheckinContext).toHaveBeenCalledWith('rule-1', '2026-08-22')
   })
 })

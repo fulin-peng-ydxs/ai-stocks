@@ -400,6 +400,29 @@ describe('页面注册表完整性', () => {
     }
   })
 
+  it('交易纪律工作台登记唯一成长页签、三个业务面板和受控历史配置', () => {
+    const entry = getPageEntry('trade-discipline')!
+    const slots = entry.layout.slots
+    expect(slots.filter((slot) => slot.growMain).map((slot) => slot.id)).toEqual([
+      'workspaceTabs',
+    ])
+    expect(slots.filter((slot) => slot.parentId === 'workspaceTabs').map((slot) => slot.id))
+      .toEqual(['checkinPanel', 'rulesPanel', 'history'])
+    expect(entry.consumedComponentFields).toEqual({
+      history: ['border', 'pageSize'],
+      settings: ['size', 'bodyScroll', 'collapsibleSections', 'defaultCollapsed'],
+    })
+    expect(entry.componentMeta?.history?.tabs).toBeUndefined()
+    expect(JSON.stringify(entry)).not.toContain('defaultActive')
+
+    const view = sourceForPage('trade-discipline')
+    const history = readFileSync(join(VIEWS_DIR, 'trade-discipline/components/TradeDisciplineHistory.vue'), 'utf-8')
+    const drawer = readFileSync(join(VIEWS_DIR, 'trade-discipline/components/TradeCheckinRevisionDrawer.vue'), 'utf-8')
+    expect(`${view}\n${history}\n${drawer}`).not.toMatch(/<el-(?:table|drawer)\b/i)
+    expect(history).toContain('<AppDataTable')
+    expect(drawer).toContain('<PageDrawer')
+  })
+
   it('DESIGN 页面登记 marker 不得出现重复 pageKey', () => {
     expect(DESIGN_PAGE_KEYS.size, '重复 pageKey 会被 Set 吞掉，导致双向一致性测试假通过')
       .toBe(DESIGN_PAGE_KEY_ROWS.length)

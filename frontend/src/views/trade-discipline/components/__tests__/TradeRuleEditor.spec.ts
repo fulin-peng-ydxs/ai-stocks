@@ -62,6 +62,10 @@ function field(wrapper: ReturnType<typeof mount>, label: string) {
   return item
 }
 
+function leaveDecisionButtons(wrapper: ReturnType<typeof mount>) {
+  return wrapper.findComponent({ name: 'ElDialog' }).findAll('button')
+}
+
 describe('TradeRuleEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -89,13 +93,13 @@ describe('TradeRuleEditor', () => {
     await field(wrapper, '规则名称').get('input').setValue('临时名称')
     const continueResult = (wrapper.vm as any).requestLeave()
     await flushPromises()
-    await wrapper.get('.el-dialog__footer .el-button:first-child').trigger('click')
+    await leaveDecisionButtons(wrapper)[0].trigger('click')
     expect(await continueResult).toBe(false)
     expect((wrapper.vm as any).isDirty()).toBe(true)
 
     const discardResult = (wrapper.vm as any).requestLeave()
     await flushPromises()
-    const buttons = wrapper.findAll('.el-dialog__footer .el-button')
+    const buttons = leaveDecisionButtons(wrapper)
     expect(buttons.map((button) => button.text())).toEqual(['继续编辑', '放弃修改', '保存草稿'])
     await buttons[1].trigger('click')
     expect(await discardResult).toBe(true)
@@ -105,11 +109,30 @@ describe('TradeRuleEditor', () => {
     await field(wrapper, '规则名称').get('input').setValue('保存后离开')
     const saveResult = (wrapper.vm as any).requestLeave()
     await flushPromises()
-    await wrapper.findAll('.el-dialog__footer .el-button')[2].trigger('click')
+    await leaveDecisionButtons(wrapper)[2].trigger('click')
     expect(await saveResult).toBe(true)
     expect(api.save).toHaveBeenCalledWith('rule-1', expect.objectContaining({
       name: '保存后离开', expected_revision: 2,
     }))
+  })
+
+  it('三选中的保存草稿失败时不放行且保留当前输入', async () => {
+    api.save.mockRejectedValueOnce(new Error('save failed'))
+    const wrapper = await mountEditor()
+    await field(wrapper, '规则名称').get('input').setValue('保存失败也不能丢')
+    const leaveResult = (wrapper.vm as any).requestLeave()
+    await flushPromises()
+    await leaveDecisionButtons(wrapper)[2].trigger('click')
+    await flushPromises()
+
+    expect(api.save).toHaveBeenCalledTimes(1)
+    expect((wrapper.vm as any).isDirty()).toBe(true)
+    expect(field(wrapper, '规则名称').get('input').element.value).toBe('保存失败也不能丢')
+    expect(leaveDecisionButtons(wrapper).map((button) => button.text()))
+      .toEqual(['继续编辑', '放弃修改', '保存草稿'])
+
+    await leaveDecisionButtons(wrapper)[0].trigger('click')
+    await expect(leaveResult).resolves.toBe(false)
   })
 
   it('保存并启用先保存当前修改，再使用新修订号发布', async () => {
