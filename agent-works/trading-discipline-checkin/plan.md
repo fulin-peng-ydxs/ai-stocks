@@ -478,6 +478,10 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 
   本次复核验证：交易纪律视图/历史专项 `2 files / 13 tests`、前端全量 Vitest `116 files / 879 tests`、`npm run build`、交易纪律真实夹具三视口 Playwright `5 passed / 4 skipped` 均通过；另以标准视口和真实 `debug_normal` 登录夹具单跑 `1 passed` 并人工查看浏览器轨迹，确认筛选卡片边框可见、历史表格填满内容区。夹具两次均完成 PG/DuckDB 精确清理并恢复原 dev 后端。`npm run lint:design` 未执行，因为项目不存在该脚本；`npm run test:design` 仅运行环境前置检查后提示需显式测试变量，没有继续执行，其实际相关子项已由本轮全量 Vitest、build 和交易纪律真实 E2E 分别完成。未重跑后端 pytest/Ruff、普通全量 Playwright、生产部署、生产 PG 备份或 RBAC 回滚演练：本轮只修改历史页面布局、前端测试和计划事实，后端与其他页面行为未变。
 
+  筛选排版二次整改（2026-08-23）：首轮只关闭“裸筛选行”和“历史区未撑满”两个 correctness / DESIGN 问题，但保留了四列等分网格，导致超宽屏控件被无上限拉长、日期组与其余筛选失去比例、重置按钮落到孤立第三行；用户截图的“太丑”评价成立。现按交易研究工作台的高密扫描顺序改为十二列两行：第一行固定为日期范围、规则、结果和右对齐重置，第二行为操作状态、修订状态、股票和原因；内层上限 1280px 并在卡片内居中，超宽屏保持紧凑，900px 以下按两列语义顺序退化。继续复用 `filter-card`、`AppControlRow`、`AppControlItem`、`AppFilterSelect`、`AppSearchInput` 和既有间距 token，没有新增组件、全局样式或配置字段。E2E 抽取统一几何断言，锁定两行基线、居中、最大宽度和工作区填充，并在默认项目内追加 2560×1080 超宽屏回归。
+
+  最终验证：交易纪律视图/历史专项 `2 files / 13 tests`、前端全量 Vitest `116 files / 879 tests`、`npm run build`、真实夹具完整 Playwright `5 passed / 4 skipped` 通过；测试名称与超宽屏断言收紧后再聚焦复跑 `3 passed`。人工逐张复核 1100×620、1366×768、1440×900 和 2560×1080 登录态浏览器轨迹，确认日期组不拆散、两行基线对齐、重置不孤立、超宽屏控件不拉伸，PG/DuckDB 夹具精确清理并恢复 dev 后端。浅色主题未单独重新切换截图：本轮只改变 grid 几何并继续消费 Element Plus / 全局 token，用户提供的浅色截图作为问题态证据；颜色、边框和主题变量未修改。未重跑后端 pytest/Ruff、普通全量 Playwright、生产部署、生产 PG 备份或 RBAC 回滚演练，原因同上。
+
 ## 7. 数据库与 SQL 计划
 
 | 路径/类别 | 用途 | 执行时机 | 影响范围 | 回滚方式 |

@@ -159,13 +159,13 @@ defineExpose({ reload: load })
             <TradeDatePicker :model-value="query.date_to || null" clearable placeholder="结束交易日" @update:model-value="updateQuery({ date_to: $event || undefined })" />
           </div>
         </AppControlItem>
-        <AppControlItem><AppFilterSelect data-testid="history-rule-filter" :model-value="query.rule_id || ''" :options="ruleOptions" :multiple="false" placeholder="全部规则" @change="updateQuery({ rule_id: String($event) || undefined })" /></AppControlItem>
-        <AppControlItem><AppFilterSelect data-testid="history-assessment-filter" :model-value="query.assessment || ''" :options="assessmentOptions" :multiple="false" placeholder="全部结果" @change="updateQuery({ assessment: (String($event) || undefined) as CheckinHistoryQuery['assessment'] })" /></AppControlItem>
-        <AppControlItem><AppFilterSelect data-testid="history-operation-filter" :model-value="noOperationValue" :options="operationOptions" :multiple="false" placeholder="全部操作状态" @change="updateQuery({ no_operation: booleanValue($event) })" /></AppControlItem>
-        <AppControlItem><AppFilterSelect data-testid="history-amended-filter" :model-value="amendedValue" :options="amendedOptions" :multiple="false" placeholder="全部修订状态" @change="updateQuery({ amended: booleanValue($event) })" /></AppControlItem>
-        <AppControlItem><StockOptionSelect :model-value="selectedStock" clearable @update:model-value="selectStock" /></AppControlItem>
-        <AppControlItem><AppSearchInput v-model="reasonText" placeholder="违规原因" @search="updateQuery({ reason: reasonText.trim() || undefined })" /></AppControlItem>
-        <el-button :disabled="!hasFilters" @click="resetFilters">重置</el-button>
+        <AppControlItem class="rule-filter"><AppFilterSelect data-testid="history-rule-filter" :model-value="query.rule_id || ''" :options="ruleOptions" :multiple="false" placeholder="全部规则" @change="updateQuery({ rule_id: String($event) || undefined })" /></AppControlItem>
+        <AppControlItem class="assessment-filter"><AppFilterSelect data-testid="history-assessment-filter" :model-value="query.assessment || ''" :options="assessmentOptions" :multiple="false" placeholder="全部结果" @change="updateQuery({ assessment: (String($event) || undefined) as CheckinHistoryQuery['assessment'] })" /></AppControlItem>
+        <AppControlItem class="operation-filter"><AppFilterSelect data-testid="history-operation-filter" :model-value="noOperationValue" :options="operationOptions" :multiple="false" placeholder="全部操作状态" @change="updateQuery({ no_operation: booleanValue($event) })" /></AppControlItem>
+        <AppControlItem class="amended-filter"><AppFilterSelect data-testid="history-amended-filter" :model-value="amendedValue" :options="amendedOptions" :multiple="false" placeholder="全部修订状态" @change="updateQuery({ amended: booleanValue($event) })" /></AppControlItem>
+        <AppControlItem class="stock-filter"><StockOptionSelect :model-value="selectedStock" clearable @update:model-value="selectStock" /></AppControlItem>
+        <AppControlItem class="reason-filter"><AppSearchInput v-model="reasonText" placeholder="违规原因" @search="updateQuery({ reason: reasonText.trim() || undefined })" /></AppControlItem>
+        <el-button class="history-filter-reset" :disabled="!hasFilters" @click="resetFilters">重置</el-button>
       </AppControlRow>
     </el-card>
 
@@ -221,15 +221,38 @@ defineExpose({ reload: load })
 <style scoped>
 .history-workspace { width: 100%; height: 100%; min-height: 0; min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: var(--app-space-3); }
 .history-filter-card { flex: none; }
-.history-filters { flex: none; display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); }
+.history-filters {
+  width: min(100%, 1280px);
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-areas:
+    "date date date date rule rule rule assessment assessment . . reset"
+    "operation operation operation amended amended amended stock stock stock reason reason reason";
+  align-items: center;
+}
 .history-filters :deep(.app-control-item),
 .history-filters :deep(.app-control-item__body) { width: 100%; }
-.history-filters > .el-button { justify-self: start; }
-.date-filter { grid-column: span 2; }
+.date-filter { grid-area: date; }
+.rule-filter { grid-area: rule; }
+.assessment-filter { grid-area: assessment; }
+.operation-filter { grid-area: operation; }
+.amended-filter { grid-area: amended; }
+.stock-filter { grid-area: stock; }
+.reason-filter { grid-area: reason; }
+.history-filter-reset { grid-area: reset; justify-self: end; }
 .date-range { display: grid; grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr); align-items: center; gap: var(--app-space-2); }
 .date-range :deep(.el-date-editor) { width: 100%; }
 @media (max-width: 900px) {
-  .history-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .date-filter { grid-column: 1 / -1; }
+  .history-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "date date"
+      "rule assessment"
+      "operation amended"
+      "stock reason"
+      "reset .";
+  }
+  .history-filter-reset { justify-self: start; }
 }
 </style>

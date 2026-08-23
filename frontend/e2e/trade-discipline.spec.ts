@@ -20,7 +20,38 @@ async function chooseDialog(page: Page, label: string): Promise<void> {
   await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click()
 }
 
-test('真实夹具在三视口呈现生命周期全序、四类历史与稳定布局', async ({ page, request }) => {
+async function expectHistoryLayout(page: Page): Promise<void> {
+  const geometry = await page.evaluate(() => {
+    const panel = document.querySelector<HTMLElement>('.history-panel')
+    const workspace = document.querySelector<HTMLElement>('.history-workspace')
+    const filterCard = document.querySelector<HTMLElement>('.history-filter-card .el-card__body')
+    const filters = document.querySelector<HTMLElement>('.history-filters')
+    const top = (selector: string) => document.querySelector<HTMLElement>(selector)?.getBoundingClientRect().top ?? 0
+    return {
+      panelWidth: panel?.getBoundingClientRect().width ?? 0,
+      workspaceWidth: workspace?.getBoundingClientRect().width ?? 0,
+      filterCardLeft: filterCard?.getBoundingClientRect().left ?? 0,
+      filterCardRight: filterCard?.getBoundingClientRect().right ?? 0,
+      filtersLeft: filters?.getBoundingClientRect().left ?? 0,
+      filtersRight: filters?.getBoundingClientRect().right ?? 0,
+      filtersWidth: filters?.getBoundingClientRect().width ?? 0,
+      primaryTops: ['.date-filter', '.rule-filter', '.assessment-filter', '.history-filter-reset'].map(top),
+      secondaryTops: ['.operation-filter', '.amended-filter', '.stock-filter', '.reason-filter'].map(top),
+    }
+  })
+  expect(geometry.panelWidth).toBeGreaterThan(0)
+  expect(Math.abs(geometry.panelWidth - geometry.workspaceWidth)).toBeLessThanOrEqual(1)
+  expect(geometry.filtersWidth).toBeLessThanOrEqual(1280)
+  expect(Math.abs(
+    (geometry.filtersLeft - geometry.filterCardLeft)
+    - (geometry.filterCardRight - geometry.filtersRight),
+  )).toBeLessThanOrEqual(1)
+  expect(Math.max(...geometry.primaryTops) - Math.min(...geometry.primaryTops)).toBeLessThanOrEqual(1)
+  expect(Math.max(...geometry.secondaryTops) - Math.min(...geometry.secondaryTops)).toBeLessThanOrEqual(1)
+  expect(Math.min(...geometry.secondaryTops)).toBeGreaterThan(Math.max(...geometry.primaryTops))
+}
+
+test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历史与稳定布局', async ({ page, request }, testInfo) => {
   const consoleIssues = collectConsoleIssues(page)
   const auth = await authenticateDebugUser(request, 'debug_normal')
   const fixture = await requireTradeDisciplineFixture(request, auth.accessToken, {
@@ -46,17 +77,7 @@ test('真实夹具在三视口呈现生命周期全序、四类历史与稳定�
   await expect(history.getByText('2 笔', { exact: true }).first()).toBeVisible()
   await expect(history.getByText('r2 · 已修正', { exact: true }).first()).toBeVisible()
   await expect(page.locator('.history-filter-card')).toBeVisible()
-
-  const geometry = await page.evaluate(() => {
-    const panel = document.querySelector<HTMLElement>('.history-panel')
-    const workspace = document.querySelector<HTMLElement>('.history-workspace')
-    return {
-      panelWidth: panel?.getBoundingClientRect().width ?? 0,
-      workspaceWidth: workspace?.getBoundingClientRect().width ?? 0,
-    }
-  })
-  expect(geometry.panelWidth).toBeGreaterThan(0)
-  expect(Math.abs(geometry.panelWidth - geometry.workspaceWidth)).toBeLessThanOrEqual(1)
+  await expectHistoryLayout(page)
 
   const overflow = await page.evaluate(() => ({
     document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -65,6 +86,10 @@ test('真实夹具在三视口呈现生命周期全序、四类历史与稳定�
   }))
   expect(overflow.document).toBeLessThanOrEqual(1)
   expect(overflow.main).toBeLessThanOrEqual(1)
+  if (testInfo.project.name === 'chromium-default') {
+    await page.setViewportSize({ width: 2560, height: 1080 })
+    await expectHistoryLayout(page)
+  }
   expect(consoleIssues).toEqual([])
 })
 
