@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Literal, TypeVar
+from typing import Annotated, Any, Literal, TypeVar
 
 import pandas as pd
 from fastapi import APIRouter, Depends, Path, Query
@@ -68,10 +68,14 @@ class StrictBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+MoneyDecimal = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=2)]
+FourPlaceDecimal = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=4)]
+
+
 class StockRuleBody(StrictBody):
     detail_id: str | None = None
     name: str | None = None
-    max_capital: Decimal | None = None
+    max_capital: MoneyDecimal | None = None
     content: str | None = None
     display_order: int = Field(ge=1)
     enabled: bool = True
@@ -89,7 +93,7 @@ class ActionRuleBody(StrictBody):
 
 class RuleDraftBody(StrictBody):
     name: str | None = None
-    capital: Decimal | None = None
+    capital: MoneyDecimal | None = None
     stock_rules: list[StockRuleBody] = Field(default_factory=list)
     action_rules: list[ActionRuleBody] = Field(default_factory=list)
 
@@ -113,10 +117,10 @@ class OperationBody(StrictBody):
     side: Literal["buy", "sell"]
     stock_rule_id: str
     action_rule_id: str
-    price: Decimal | None = None
-    quantity: Decimal | None = None
-    amount: Decimal | None = None
-    fee: Decimal | None = None
+    price: FourPlaceDecimal | None = None
+    quantity: FourPlaceDecimal | None = None
+    amount: MoneyDecimal | None = None
+    fee: MoneyDecimal | None = None
     operated_at: datetime | None = None
     note: str | None = None
     display_order: int = Field(ge=1)

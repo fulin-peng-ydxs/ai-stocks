@@ -43,6 +43,8 @@ def normalize_rule_name(value: str | None) -> tuple[str | None, str | None]:
 
 
 class TradeDisciplineService:
+    _DECIMAL_MAX_DIGITS = 20
+
     def __init__(
         self,
         repo: TradeDisciplineRepository | None = None,
@@ -67,6 +69,8 @@ class TradeDisciplineService:
             raise ValidationError("金额格式不正确") from exc
         if not result.is_finite() or result < 0 or result.as_tuple().exponent < -2:
             raise ValidationError("金额必须为非负且最多保留两位小数")
+        if result >= Decimal(10) ** (TradeDisciplineService._DECIMAL_MAX_DIGITS - 2):
+            raise ValidationError("金额整数部分最多 18 位")
         return result
 
     def _prepare_draft(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -557,6 +561,9 @@ class TradeDisciplineService:
             raise ValidationError(f"{label}不能为负数")
         if result.as_tuple().exponent < -places:
             raise ValidationError(f"{label}最多保留 {places} 位小数")
+        integer_digits = TradeDisciplineService._DECIMAL_MAX_DIGITS - places
+        if result >= Decimal(10) ** integer_digits:
+            raise ValidationError(f"{label}整数部分最多 {integer_digits} 位")
         return result
 
     def _require_trade_date(self, trade_date: date) -> None:

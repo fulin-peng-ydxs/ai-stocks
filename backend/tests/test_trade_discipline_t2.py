@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -345,3 +346,16 @@ def test_draft_rejects_fractional_cent_and_non_boolean_enabled(pg, market):
     wrong_boolean["stock_rules"][0]["enabled"] = "false"
     with pytest.raises(ValidationError, match="布尔值"):
         service.create_rule(wrong_boolean)
+
+
+def test_money_enforces_postgres_numeric_20_2_range():
+    assert TradeDisciplineService._money("999999999999999999.99") == Decimal(
+        "999999999999999999.99"
+    )
+    for invalid in (
+        "1000000000000000000.00",
+        "1000000000000000000",
+        "1.001",
+    ):
+        with pytest.raises(ValidationError):
+            TradeDisciplineService._money(invalid)

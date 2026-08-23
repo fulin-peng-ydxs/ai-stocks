@@ -252,6 +252,104 @@ def test_api_status_mapping_owner_isolation_conflict_and_forbidden_fields(client
         _remove_user(pg, outsider)
 
 
+def test_decimal_request_bounds_return_422_before_service_or_postgres(
+    client, pg, monkeypatch
+):
+    class StubService:
+        def create_rule(self, payload=None):
+            return {"id": "tdr_decimal_stub"}
+
+        def submit_checkin(self, rule_id, trade_date, payload):
+            return {"checkin_id": "tdc_decimal_stub", "revision_no": 1}
+
+        def amend_checkin(self, checkin_id, payload, expected_revision):
+            return {"checkin_id": checkin_id, "revision_no": expected_revision + 1}
+
+    monkeypatch.setattr("backend.api.trade_discipline._service", StubService)
+    identity = _make_user(
+        pg,
+        ["trade-discipline:rule-manage", "trade-discipline:checkin-submit"],
+    )
+    headers = _auth(identity[0], identity[1])
+    operation = {
+        "stock_code": "000001.SZ",
+        "stock_name_snapshot": "平安银行",
+        "side": "buy",
+        "stock_rule_id": "stock-1",
+        "action_rule_id": "buy-1",
+        "price": "9999999999999999.9999",
+        "quantity": "9999999999999999.9999",
+        "amount": "999999999999999999.99",
+        "fee": "999999999999999999.99",
+        "display_order": 1,
+    }
+    try:
+        accepted_rule = client.post(
+            "/api/trade-discipline/rules",
+            headers=headers,
+            json={
+                "capital": "999999999999999999.99",
+                "stock_rules": [{
+                    "max_capital": "999999999999999999.99",
+                    "display_order": 1,
+                }],
+            },
+        )
+        assert accepted_rule.status_code == 200
+        accepted_checkin = client.post(
+            "/api/trade-discipline/checkins",
+            headers=headers,
+            json={
+                "rule_id": "tdr_decimal_stub",
+                "trade_date": "2026-08-22",
+                "assessment": "complied",
+                "no_operation": False,
+                "operations": [operation],
+            },
+        )
+        assert accepted_checkin.status_code == 200
+
+        invalid_requests = [
+            ("/api/trade-discipline/rules", {
+                "capital": "1000000000000000000.00",
+            }),
+            ("/api/trade-discipline/rules", {
+                "capital": "1.001",
+            }),
+            ("/api/trade-discipline/rules", {
+                "stock_rules": [{
+                    "max_capital": "1000000000000000000.00",
+                    "display_order": 1,
+                }],
+            }),
+            ("/api/trade-discipline/checkins", {
+                "rule_id": "tdr_decimal_stub", "trade_date": "2026-08-22",
+                "assessment": "complied", "no_operation": False,
+                "operations": [{**operation, "price": "10000000000000000.0000"}],
+            }),
+            ("/api/trade-discipline/checkins", {
+                "rule_id": "tdr_decimal_stub", "trade_date": "2026-08-22",
+                "assessment": "complied", "no_operation": False,
+                "operations": [{**operation, "price": "1.00001"}],
+            }),
+            ("/api/trade-discipline/checkins", {
+                "rule_id": "tdr_decimal_stub", "trade_date": "2026-08-22",
+                "assessment": "complied", "no_operation": False,
+                "operations": [{**operation, "amount": "1000000000000000000.00"}],
+            }),
+            ("/api/trade-discipline/checkins/tdc_decimal_stub/amendments", {
+                "expected_revision": 1, "assessment": "complied", "no_operation": False,
+                "operations": [{**operation, "fee": "1.001"}],
+            }),
+        ]
+        for path, payload in invalid_requests:
+            response = client.post(path, headers=headers, json=payload)
+            assert response.status_code == 422, (path, payload, response.text)
+            assert response.json()["code"] == 4000
+    finally:
+        _remove_user(pg, identity)
+
+
 def test_all_trade_discipline_endpoint_contracts_return_unified_response(
     client, pg, monkeypatch
 ):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -14,6 +15,25 @@ from backend.storage.trade_discipline_repository import TradeDisciplineRepositor
 from backend.tests.conftest import TEST_OWNER, TEST_TENANT, clean_owner
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def test_operation_decimals_enforce_postgres_numeric_ranges():
+    parse = TradeDisciplineService._decimal
+    assert parse(
+        "9999999999999999.9999", places=4, label="成交价格"
+    ) == Decimal("9999999999999999.9999")
+    assert parse(
+        "999999999999999999.99", places=2, label="成交金额"
+    ) == Decimal("999999999999999999.99")
+    for value, places, label in (
+        ("10000000000000000.0000", 4, "成交价格"),
+        ("10000000000000000", 4, "成交数量"),
+        ("1.00001", 4, "成交价格"),
+        ("1000000000000000000.00", 2, "成交金额"),
+        ("1.001", 2, "交易费用"),
+    ):
+        with pytest.raises(ValidationError):
+            parse(value, places=places, label=label)
 
 
 def _rule_payload(name: str = "履约纪律") -> dict:
