@@ -175,11 +175,6 @@ const pageLoading = computed(
 const pageError = computed(
   () => tradeDateStatus.value === 'error' || (rulesError.value && !rulesReady.value),
 )
-const latestTradeDateText = computed(() => dataMax.value || '暂无可用交易日')
-const pendingRuleCount = computed(
-  () => rules.value.filter((rule) => rule.has_pending_management_action).length,
-)
-
 function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
@@ -379,7 +374,8 @@ onUnmounted(() => unregisterUnsavedHandler?.())
 watch(
   () => [route.query.tab, route.query.rule_ref, route.query.trade_date] as const,
   async ([tab, ruleRef, tradeDate]) => {
-    if (!routeIntentReady) return
+    // KeepAlive 页面离开后仍会观察到其他路由的 query；只能消费属于本页面的会话参数。
+    if (!routeIntentReady || route.path !== '/trade-discipline') return
     const nextPanel = ['checkin', 'rules', 'history'].includes(String(tab))
       ? String(tab) as PanelKey
       : 'checkin'
@@ -401,6 +397,7 @@ watch(
       await router.replace({ query: restoredQuery })
       return
     }
+    if (route.path !== '/trade-discipline') return
     activePanel.value = nextPanel
     if (nextPanel === 'checkin') {
       checkinTradeDate.value = nextTradeDate
@@ -442,11 +439,6 @@ watch(tradeDisciplineChangeVersion, async () => {
             <p class="page-subtitle">把规则、执行和复盘留在同一条可追溯的纪律轨道上。</p>
           </div>
           <div class="page-head-actions">
-            <div class="trade-date-summary" role="status" aria-label="最新交易日">
-              <span>最新交易日</span>
-              <strong>{{ latestTradeDateText }}</strong>
-              <i :class="{ ready: tradeDateStatus === 'ready' }" />
-            </div>
             <PageSettingsTrigger :dirty="layoutDirty" @click="settingsOpen = true" />
           </div>
         </div>
@@ -485,18 +477,6 @@ watch(tradeDisciplineChangeVersion, async () => {
             aria-label="交易纪律功能区"
             @update:model-value="switchPanel"
           />
-          <div class="discipline-summary app-caption-text">
-            <template v-if="activePanel === 'checkin'">
-              <span>规则 {{ checkinSummary?.total ?? '—' }}</span>
-              <span>已完成 {{ checkinSummary?.completed ?? '—' }}</span>
-              <span>待打卡 {{ checkinSummary?.pending ?? '—' }}</span>
-            </template>
-            <template v-else>
-              <span>规则 {{ displayRules.length }}</span>
-              <span>待生效 {{ pendingRuleCount }}</span>
-              <span>历史每页 {{ historyPageSize }} 条</span>
-            </template>
-          </div>
         </div>
 
         <section v-if="activePanel === 'checkin'" class="discipline-panel">
@@ -641,26 +621,14 @@ watch(tradeDisciplineChangeVersion, async () => {
   gap: var(--app-space-4);
 }
 .page-head-actions,
-.trade-date-summary,
-.discipline-rail,
-.discipline-summary {
+.discipline-rail {
   display: flex;
   align-items: center;
 }
 .page-head-actions { gap: var(--app-space-2); }
-.trade-date-summary {
-  min-height: var(--app-control-height-md);
-  gap: var(--app-space-control-gap);
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
-}
-.trade-date-summary strong { color: var(--el-text-color-primary); font-weight: var(--app-font-weight-strong); }
-.trade-date-summary i { width: 5px; height: 5px; border-radius: 50%; background: var(--el-color-warning); }
-.trade-date-summary i.ready { background: var(--el-color-success); }
 .discipline-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
-.discipline-rail { flex: none; justify-content: space-between; gap: var(--app-space-4); }
+.discipline-rail { flex: none; }
 .discipline-rail :deep(.page-segmented) { min-width: 360px; }
-.discipline-summary { gap: var(--app-space-3); color: var(--el-text-color-secondary); }
 .discipline-panel { min-height: 0; flex: 1 1 auto; overflow: hidden; }
 .master-detail-shell { height: 100%; min-height: 0; display: flex; gap: var(--app-space-4); overflow-x: auto; }
 .panel-detail {
@@ -684,8 +652,7 @@ watch(tradeDisciplineChangeVersion, async () => {
 @media (max-width: 900px) {
   .page-head,
   .discipline-rail { flex-direction: column; align-items: stretch; }
-  .page-head-actions { justify-content: space-between; }
+  .page-head-actions { justify-content: flex-end; }
   .discipline-rail :deep(.page-segmented) { min-width: 0; }
-  .discipline-summary { justify-content: space-between; }
 }
 </style>

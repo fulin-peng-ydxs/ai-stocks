@@ -141,7 +141,7 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 
 | 页面功能点/原型区域 | 对应需求 | 技术实现 | 组件/模块 | 数据、状态与异常 | 任务 |
 | --- | --- | --- | --- | --- | --- |
-| 页头、最新交易日、三页签、页面设置 | R15、R17、R29、R32、R34 | registry slots：`toolbar` + `workspaceTabs(tabs,growMain)` + 三个嵌套 panel + `historyDetail/settings` overlays；tab 为会话态 | `LayoutHost`、`PageSettingsTrigger/Drawer` | 初载四态互斥；切 tab 先走未保存协议；设置失败保留当前内容 | T5 |
+| 页头、三页签、页面设置 | R15、R17、R29、R32、R34 | registry slots：`toolbar` + `workspaceTabs(tabs,growMain)` + 三个嵌套 panel + `historyDetail/settings` overlays；tab 为会话态 | `LayoutHost`、`PageSettingsTrigger/Drawer` | 初载四态互斥；切 tab 先走未保存协议；设置失败保留当前内容；KeepAlive 离开页面不得消费其他路由 query | T5 |
 | 今日规则状态轨道 | R4、R15、R30、R36 | 按目标交易日解析有效版本和待打卡状态，不按管理状态猜测 | `RuleMasterList`（feature 共享） | 摘要局部加载/错误/重试；无规则引导新建 | T5、T7 |
 | 履约日期与自评/无操作 | R4、R5、R10、R17 | 复用交易日能力并扩展可观察加载错误；上下文切换走脏确认 | `TradeDatePicker`、`PageSegmented` | 无日历/无有效版本阻止提交；切无操作二次确认清行 | T7 |
 | 未履约原因与详细说明 | R26、R27 | `el-select` filterable/allow-create 单选；个人行带删除；独立 textarea | `ViolationReasonCombobox` | 内置不可删；当前项删除后清空；失败保留输入 | T7 |
@@ -485,6 +485,10 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
   历史列表契约补齐（2026-08-23）：用户页面复核继续发现历史日期面板自动翻转到触发器上方、交易日列不能排序，以及历史 `data-table` 虽已登记列元数据却没有消费通用 `hiddenColumns`，三项均认可。日期选择器扩展共享 `placement/fallbackPlacements` 透传，历史筛选在项目最低目标高度内固定向下展开；交易日排序复用 `useTableSort` 和页面 `defaultSort`，由前端显式上送 `trade_date + asc/desc`，API 使用字面量约束，服务层再次校验，仓库通过白名单生成稳定的交易日、更新时间、ID 同向排序；历史七个业务列全部接入通用列显隐，操作列按表格契约永久保留。举一反三复核确认原“列元数据必须被页面消费”测试只扫描路由页源码，无法看见抽屉/页签子组件中的真实表格，现改为递归扫描页面组件树，并新增“登记了 columns 的 data-table/wide-table 必须声明 hiddenColumns 消费”契约，避免同类遗漏再次进入其他页面。本轮问题不是需求或 DESIGN 缺失：计划已要求服务端排序，DESIGN 已规定列显隐；根因是实现遗漏、仅验证关闭态页面，以及契约测试扫描边界过窄。
 
   本次最终验证：日期选择器、历史组件、工作台和页面登记聚焦 `4 files / 55 tests` 通过；前端全量串行复跑 `116 files / 883 tests` 通过（此前与后端全量、构建并发时有 2 项 5 秒超时，串行复跑证明为资源争用，未记作功能通过依据）；后端 T3-T4 聚焦 `24 passed`、后端全量 `990 passed`、目标文件 Ruff、`py_compile`、`vue-tsc -b`、`npm run build` 和 `git diff --check` 通过。真实 PG/DuckDB 交易纪律 Playwright `5 passed / 4 skipped`，覆盖三档目标视口和 2560×1080，实测日期弹层下沿展开、交易日升降序真实请求与首行变化、设置抽屉七个列开关可见；夹具精确清理并恢复 dev 后端，`/api/health=200`。未重跑普通全量 Playwright、生产部署、生产 PG 备份或 RBAC 回滚演练：本轮只修改交易纪律专项页面/API 查询及通用前端契约，普通全量 E2E 已在 T13 阶段通过，生产操作不在本地整改授权范围内。
+
+  三页签头部精简与跨模块导航整改（2026-08-23）：按用户页面复核结论，今日打卡、规则管理、历史记录共用头部删除“最新交易日”块和页签右侧规则/完成/待打卡等汇总块；全局顶栏已有交易日状态，各业务区已有规则轨道、状态和分页信息，重复摘要不再占据视觉层级，页面设置入口继续保留。同步修正需求、计划和 HTML 原型，不影响用户中心快捷卡的独立全局摘要职责。另确认从历史页切换系统管理时出现“履约日期不是已有行情交易日”并非后端误判，而是 `KeepAlive` 缓存页面在失活后继续消费其他路由的空 query，把它误解为切回今日打卡并发起隐藏请求；现将 query 消费限定在 `/trade-discipline` 路径内，并在异步未保存确认后再次核验页面归属。举一反三扫描其他使用 `route.query` 的页面，未发现第二个同类失活监听：其余候选均只在 `onMounted` 读取，或已有路径/激活状态守卫。本轮 UI 删除属于用户对原需求“页头显示最新交易日摘要”的明确调整；跨模块错误属于 KeepAlive 实现和验收用例遗漏，原计划虽覆盖路由离开保护，却没有断言失活页面零请求。
+
+  本次验证：工作台聚焦 Vitest `11 passed`，前端全量 `116 files / 884 tests`，`npm run build`（含 `vue-tsc`）通过；真实 PG/DuckDB 专项 Playwright `6 passed / 6 skipped`，三视口断言两块头部均不存在，并使用 `debug_tenant_admin` 从历史页真实进入系统管理，切换后交易纪律 API 请求数和错误提示数均为 0。专项前两轮失败分别来自新增用例只定位双层顶栏、以及临时改用具有个人升序偏好的账号破坏既有排序前置，均为测试假设错误；恢复原三视口账号、把系统导航拆为最小权限独立用例并兼容两种导航模式后最终通过。夹具每轮均精确清理并恢复 dev 后端健康。未重跑后端 pytest/Ruff、普通全量 Playwright、生产部署、生产 PG 备份或 RBAC 回滚演练：本轮没有修改后端、权限、SQL 或生产配置。
 
 ## 7. 数据库与 SQL 计划
 

@@ -79,7 +79,10 @@ async function mountPage(
   auth.permissions = permissions
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/trade-discipline', component: TradeDisciplineView }],
+    routes: [
+      { path: '/trade-discipline', component: TradeDisciplineView },
+      { path: '/system/users', component: defineComponent({ template: '<div>系统管理</div>' }) },
+    ],
   })
   mountedRouter = router
   await router.push(initialPath)
@@ -142,6 +145,28 @@ describe('交易纪律 T5 工作台壳', () => {
     expect(wrapper.text()).toContain('规则管理')
     expect(wrapper.text()).toContain('历史记录')
     expect(wrapper.text()).toContain('创建第一套规则')
+    expect(wrapper.text()).not.toContain('最新交易日')
+    expect(wrapper.text()).not.toContain('已完成')
+    expect(wrapper.text()).not.toContain('待打卡')
+  })
+
+  it('KeepAlive 页面离开到其他路由时不把目标页 query 误当交易纪律参数', async () => {
+    const rule = ruleState()
+    listRules.mockResolvedValue([rule])
+    const wrapper = await mountPage(
+      ['trade-discipline:view', 'trade-discipline:checkin-view'],
+      '/trade-discipline?tab=history&trade_date=2098-06-10',
+    )
+    vi.clearAllMocks()
+
+    await mountedRouter.push('/system/users')
+    await flushPromises()
+
+    expect(mountedRouter.currentRoute.value.path).toBe('/system/users')
+    expect(listRules).not.toHaveBeenCalled()
+    expect(getSummary).not.toHaveBeenCalled()
+    expect(getCheckinContext).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="trade-discipline-tabs"]').text()).toContain('历史记录')
   })
 
   it('缺少履约查看权限时显示无权限态而非空态', async () => {

@@ -20,6 +20,16 @@ async function chooseDialog(page: Page, label: string): Promise<void> {
   await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click()
 }
 
+async function navigateToSystemManagement(page: Page): Promise<void> {
+  const topEntry = page.getByRole('button', { name: '系统管理', exact: true })
+  if (await topEntry.isVisible()) {
+    await topEntry.click()
+    return
+  }
+  await page.getByRole('menuitem', { name: '系统管理', exact: true }).click()
+  await page.getByRole('menuitem', { name: '用户管理', exact: true }).click()
+}
+
 async function expectHistoryLayout(page: Page): Promise<void> {
   const geometry = await page.evaluate(() => {
     const panel = document.querySelector<HTMLElement>('.history-panel')
@@ -135,6 +145,9 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
   }
   await settingsDrawer.getByRole('button', { name: '关闭页面设置' }).click()
 
+  await expect(page.locator('.trade-date-summary')).toHaveCount(0)
+  await expect(page.locator('.discipline-summary')).toHaveCount(0)
+
   const overflow = await page.evaluate(() => ({
     document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     main: Math.max(...Array.from(document.querySelectorAll<HTMLElement>('[data-testid="app-main-surface"], .discipline-panel'))
@@ -146,6 +159,29 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
     await page.setViewportSize({ width: 2560, height: 1080 })
     await expectHistoryLayout(page)
   }
+  expect(consoleIssues).toEqual([])
+})
+
+test('从缓存的交易纪律历史切换系统管理不触发隐藏页面请求', async ({ page, request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromium-standard', '跨模块导航链路只需在一个桌面视口执行')
+  const consoleIssues = collectConsoleIssues(page)
+  const auth = await authenticateDebugUser(request, 'debug_tenant_admin')
+  await requireTradeDisciplineFixture(request, auth.accessToken)
+  await useAuth(page, auth)
+  await page.goto('/trade-discipline?tab=history&trade_date=2098-06-10')
+  await expect(page.getByRole('table', { name: '履约历史', exact: true })).toBeVisible()
+
+  const hiddenPageRequests: string[] = []
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname
+    if (pathname.startsWith('/api/trade-discipline/')) hiddenPageRequests.push(pathname)
+  })
+  await navigateToSystemManagement(page)
+  await expect(page).toHaveURL(/\/system\//)
+  await page.waitForTimeout(300)
+
+  expect(hiddenPageRequests).toEqual([])
+  await expect(page.getByText('履约日期不是已有行情交易日', { exact: true })).toHaveCount(0)
   expect(consoleIssues).toEqual([])
 })
 
