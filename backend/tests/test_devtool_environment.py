@@ -104,11 +104,13 @@ def test_shared_local_env_loader_applies_pg_overrides(tmp_path) -> None:
         [
             "bash",
             "-c",
-            "source scripts/load-local-env.sh; "
-            "load_project_local_env; "
-            "printf '%s|%s|%s|%s' "
-            "\"$AI_STOCKS_ENV\" \"$AI_STOCKS_PG_DSN\" \"$AI_STOCKS_PG_PASSWORD\" "
-            "\"$AI_STOCKS_TEST_USER_PASSWORD\"",
+            (
+                "source scripts/load-local-env.sh; "
+                "load_project_local_env; "
+                "printf '%s|%s|%s|%s' "
+                "\"$AI_STOCKS_ENV\" \"$AI_STOCKS_PG_DSN\" \"$AI_STOCKS_PG_PASSWORD\" "
+                "\"$AI_STOCKS_TEST_USER_PASSWORD\""
+            ),
         ],
         cwd=PROJECT_ROOT,
         env=env,
@@ -128,10 +130,50 @@ def test_playwright_npm_entry_reuses_shared_local_env_loader() -> None:
     )
     assert package["scripts"]["test:e2e"] == "../scripts/run-playwright.sh"
     assert package["scripts"]["test:e2e:ui"] == "../scripts/run-playwright.sh --ui"
+    assert (
+        package["scripts"]["test:e2e:trade-discipline"]
+        == "../scripts/run-trade-discipline-e2e.sh"
+    )
 
     launcher = (PROJECT_ROOT / "scripts/run-playwright.sh").read_text(encoding="utf-8")
     assert 'source "$PROJECT_ROOT/scripts/load-local-env.sh"' in launcher
     assert "load_project_local_env" in launcher
+
+
+def test_trade_discipline_e2e_entry_fails_closed_without_write_gate(tmp_path) -> None:
+    env_file = tmp_path / ".env.local"
+    env_file.write_text("AI_STOCKS_ENV=test\n", encoding="utf-8")
+    result = subprocess.run(
+        ["./scripts/run-trade-discipline-e2e.sh"],
+        cwd=PROJECT_ROOT,
+        env={"PATH": os.environ.get("PATH", ""), "AI_STOCKS_ENV_FILE": str(env_file)},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "AI_STOCKS_E2E_WRITE=1" in f"{result.stdout}\n{result.stderr}"
+
+
+@pytest.mark.parametrize("fingerprint", [None, "bad-fingerprint"])
+def test_trade_discipline_fixture_cli_requires_valid_fingerprint(tmp_path, fingerprint) -> None:
+    env_file = tmp_path / ".env.local"
+    env_file.write_text("AI_STOCKS_ENV=test\nAI_STOCKS_E2E_WRITE=1\n", encoding="utf-8")
+    command = ["./start.sh", "e2e-trade-discipline", "cleanup"]
+    if fingerprint is not None:
+        command.extend(["--expected-pg-fingerprint", fingerprint])
+    result = subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        env={"PATH": os.environ.get("PATH", ""), "AI_STOCKS_ENV_FILE": str(env_file)},
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    output = f"{result.stdout}\n{result.stderr}"
+    expected = "required" if fingerprint is None else "64 位 PostgreSQL 指纹"
+    assert expected in output
 
 
 @pytest.mark.parametrize("value", [None, "unknown", "production"])

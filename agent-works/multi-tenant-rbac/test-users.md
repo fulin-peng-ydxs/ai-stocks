@@ -5,7 +5,7 @@
 ## AI 使用指引
 
 - 页面或接口验收前，先明确设置 `AI_STOCKS_ENV=dev|test|local`，再执行 `./start.sh dev-users --list` 查看固定调试账号；账号缺失、角色漂移或权限异常时，执行 `./start.sh dev-users` 重新校准。该入口与后端统一加载 `.env.local`，避免连到另一套 PG。
-- 按测试场景选择最小权限账号：系统页用 system，租户管理用 tenant_admin，普通业务链路用 normal，权限边界用 board_only、stocks_only、stocks_group、backtest_view。
+- 按测试场景选择最小权限账号：系统页用 system，租户管理用 tenant_admin，普通业务链路用 normal，权限边界用 board_only、stocks_only、stocks_group、backtest_view、trade_discipline_view、trade_discipline_submit。
 - `admin` 是 README 中的本地开发系统管理员账号，归属 `default` 租户；密码来源和覆盖边界见 [environment-configuration.md](../architecture/environment-configuration.md)。它不属于本清单的 `debug_*` 调试账号，不用于替代最小权限或无权限场景。
 - 不把固定调试账号作为 pytest 依赖；自动化后端用例继续在用例内创建临时用户。
 - 不在生产、共享公网或不确定环境创建或使用这些账号，不把测试密码写入需求、计划、提交信息或测试结论。
@@ -48,6 +48,8 @@ AI_STOCKS_ENV=dev ./start.sh dev-users --keep-password
 | `debug_sectors_only` | `debug_tenant` | `debug_role_sectors_only`：`sectors:view`、`sector-watchlist:view`、`sector-watchlist:update` | 板块页无个股权限回归 | 板块列表、详情和自选可用；成分股不可跳个股 |
 | `debug_stocks_group` | `debug_tenant` | `debug_role_stocks_group`：`stocks:view`、`stock-group:view`、`stock-group:member-update` | 个股页分组链路调试 | 个股 + 分组查看/成员维护 |
 | `debug_backtest_view` | `debug_tenant` | `debug_role_backtest_view`：`backtest:view` | 回测历史只读调试 | 可看历史，不能运行/删除 |
+| `debug_trade_discipline_view` | `debug_tenant` | `debug_role_trade_discipline_view`：`trade-discipline:view`、`trade-discipline:checkin-view` | 交易纪律只读边界 | 可看规则与履约历史，不能维护规则或提交打卡 |
+| `debug_trade_discipline_submit` | `debug_tenant` | `debug_role_trade_discipline_submit`：`trade-discipline:view`、`trade-discipline:checkin-view`、`trade-discipline:checkin-submit` | R31 独立提交边界 | 可提交打卡和搜索候选股票；不能维护规则，且无 `stocks:view` |
 
 ## 维护规则
 

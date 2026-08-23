@@ -46,6 +46,8 @@ AI_STOCKS_ENV=dev ./start.sh dev-users
 (cd frontend && npm run test:e2e:install)   # 首次或浏览器缺失时
 # 板块发布链路聚焦回归：覆盖数据管理、质量恢复、工作台；脚本负责 seed/cleanup 与恢复服务
 (cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:sectors)
+# 交易纪律聚焦回归：脚本取得/锁定 PG 指纹，管理 PG + DuckDB 夹具并恢复服务
+(cd frontend && AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline)
 # 普通全量回归前先在后端停服状态准备板块确定性数据
 ./start.sh stop
 AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data cleanup
@@ -71,6 +73,13 @@ Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；�
 `E2E9*` 板块、`9999*.SZ` 股票及 2099 年固定行情，并在后端停服时 seed/cleanup。
 聚焦运行统一使用 `npm run test:e2e:sectors`，固定执行 `board-data-management.spec.ts`、
 `sector-quality-recovery.spec.ts`、`sectors-workbench.spec.ts`；退出 trap 会精确清理并恢复测试前后端状态。三视口共享固定调试账号、板块自选和页面偏好，因此脚本固定 `--workers=1` 串行执行，禁止并行改写状态。
+交易纪律聚焦运行统一使用 `npm run test:e2e:trade-discipline`。入口只在进程变量中保存
+`/api/health/e2e` 返回的 PG 指纹，停服后把同一值显式传给 cleanup/seed；夹具仅写
+`debug_tenant + debug_normal/debug_trade_discipline_view/debug_trade_discipline_submit/debug_tenant_admin`
+归属下的 `e2e_td_`/`E2E纪律-` 数据，以及 DuckDB 的 `9988*.SZ` 和 2098 年固定交易日。
+被测后端以登录限流豁免和正常 DuckDB 读写模式启动，重启后必须复核指纹未变化；三视口
+固定 `--workers=1`。无论通过、失败或中断，EXIT trap 都先停服、按可信指纹精确清理，
+再恢复测试前后端运行/停止状态；未取得指纹时禁止尝试物理清理。
 `npm run test:e2e` 和 `npm run test:e2e:ui` 均通过 `scripts/run-playwright.sh` 启动，
 并复用 `scripts/load-local-env.sh` 加载仓库根目录 `.env.local`；因此登录密码和 PG/E2E
 环境与后端使用相同的 `KEY=value` / `export KEY=value` 语义，不在 TypeScript helper 中二次解析变量文件。
@@ -96,7 +105,7 @@ Playwright 统一读取 `E2E_API_URL`。
 
 ## 调试账号
 
-- 页面权限验收使用 `debug_*` 账号，账号事实源为 `agent-works/multi-tenant-rbac/test-users.md`。
+- 页面权限验收使用 `debug_*` 账号，账号事实源为 `agent-works/multi-tenant-rbac/test-users.md`；交易纪律使用 `debug_normal`、`debug_trade_discipline_view`、`debug_trade_discipline_submit`、`debug_board_only`、`debug_tenant_admin` 和 `debug_system` 覆盖全功能、只读、独立提交、无权与默认管理员边界。
 - E2E 登录 helper 默认使用 `debug_normal`，密码读取顺序：Playwright 进程继承的 `AI_STOCKS_TEST_USER_PASSWORD`、本地 dev-users 默认值；`.env.local` 由统一启动脚本在 Playwright 进程创建前加载。
 - 账号不存在或权限漂移时，先执行 `AI_STOCKS_ENV=dev ./start.sh dev-users` 校准。
 

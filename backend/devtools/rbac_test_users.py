@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from backend.auth.constants import ROLE_NORMAL, ROLE_SYSTEM, ROLE_TENANT_ADMIN
 from backend.auth.perm_resolver import clear_perms_cache
@@ -77,6 +77,24 @@ CUSTOM_ROLES: tuple[RoleSpec, ...] = (
         ("backtest:view",),
         "仅用于验证回测历史只读权限。",
     ),
+    RoleSpec(
+        "debug_role_trade_discipline_view",
+        "调试-交易纪律只读",
+        ("/trade-discipline",),
+        ("trade-discipline:view", "trade-discipline:checkin-view"),
+        "用于验证交易纪律规则与履约历史只读边界。",
+    ),
+    RoleSpec(
+        "debug_role_trade_discipline_submit",
+        "调试-交易纪律提交",
+        ("/trade-discipline",),
+        (
+            "trade-discipline:view",
+            "trade-discipline:checkin-view",
+            "trade-discipline:checkin-submit",
+        ),
+        "用于验证可打卡但无规则维护、无 stocks:view 的独立提交边界。",
+    ),
 )
 
 
@@ -97,6 +115,22 @@ DEBUG_USERS: tuple[UserSpec, ...] = (
              ("debug_role_stocks_group",), "个股页分组链路调试。"),
     UserSpec("debug_backtest_view", "debug_backtest_view", DEBUG_TENANT_ID, ROLE_NORMAL,
              ("debug_role_backtest_view",), "回测历史只读调试。"),
+    UserSpec(
+        "debug_trade_discipline_view",
+        "debug_trade_discipline_view",
+        DEBUG_TENANT_ID,
+        ROLE_NORMAL,
+        ("debug_role_trade_discipline_view",),
+        "交易纪律规则与履约历史只读调试。",
+    ),
+    UserSpec(
+        "debug_trade_discipline_submit",
+        "debug_trade_discipline_submit",
+        DEBUG_TENANT_ID,
+        ROLE_NORMAL,
+        ("debug_role_trade_discipline_submit",),
+        "交易纪律可提交但不可维护规则、不可查看个股页调试。",
+    ),
 )
 
 
@@ -116,7 +150,7 @@ def _guard_local_test_environment() -> None:
 
 
 def _ensure_tenant(cur) -> None:
-    now = datetime.now()
+    now = datetime.now(UTC)
     cur.execute(
         "INSERT INTO sys_tenant (id,name,status,created_at,updated_at) "
         "VALUES (%s,%s,'active',%s,%s) "
@@ -126,7 +160,7 @@ def _ensure_tenant(cur) -> None:
 
 
 def _ensure_custom_roles(cur) -> None:
-    now = datetime.now()
+    now = datetime.now(UTC)
     for role in CUSTOM_ROLES:
         cur.execute(
             "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked,description,created_at,updated_at) "
@@ -159,7 +193,7 @@ def _ensure_users(
     reset_password: bool,
     users: tuple[UserSpec, ...] = DEBUG_USERS,
 ) -> None:
-    now = datetime.now()
+    now = datetime.now(UTC)
     for user in users:
         cur.execute(
             "SELECT id FROM sys_user WHERE account=%s AND id<>%s",

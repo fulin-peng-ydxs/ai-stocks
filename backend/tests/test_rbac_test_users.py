@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from threading import Event, Thread
 
 import pytest
@@ -34,6 +34,37 @@ def test_sector_only_debug_identity_keeps_stock_permission_out() -> None:
     assert user.role_ids == (role.id,)
 
 
+def test_trade_discipline_debug_identities_keep_manage_and_stocks_permissions_out() -> None:
+    view_role = next(
+        item for item in CUSTOM_ROLES if item.id == "debug_role_trade_discipline_view"
+    )
+    submit_role = next(
+        item for item in CUSTOM_ROLES if item.id == "debug_role_trade_discipline_submit"
+    )
+    view_user = next(
+        item for item in DEBUG_USERS if item.account == "debug_trade_discipline_view"
+    )
+    submit_user = next(
+        item for item in DEBUG_USERS if item.account == "debug_trade_discipline_submit"
+    )
+
+    assert view_role.menus == submit_role.menus == ("/trade-discipline",)
+    assert set(view_role.resources) == {
+        "trade-discipline:view",
+        "trade-discipline:checkin-view",
+    }
+    assert set(submit_role.resources) == {
+        "trade-discipline:view",
+        "trade-discipline:checkin-view",
+        "trade-discipline:checkin-submit",
+    }
+    for role in (view_role, submit_role):
+        assert "trade-discipline:rule-manage" not in role.resources
+        assert "stocks:view" not in role.resources
+    assert view_user.role_ids == (view_role.id,)
+    assert submit_user.role_ids == (submit_role.id,)
+
+
 def test_ensure_users_reactivates_soft_deleted_account_in_postgres(pg) -> None:
     suffix = uuid.uuid4().hex
     tenant_id = f"tt_seed_{suffix}"
@@ -57,7 +88,7 @@ def test_ensure_users_reactivates_soft_deleted_account_in_postgres(pg) -> None:
             "INSERT INTO sys_user "
             "(id,tenant_id,account,password_hash,role_code,perm_ver,status,deleted_at) "
             "VALUES (%s,%s,%s,%s,%s,7,'disabled',%s)",
-            [user_id, tenant_id, account, "old-hash", ROLE_TENANT_ADMIN, datetime.now()],
+            [user_id, tenant_id, account, "old-hash", ROLE_TENANT_ADMIN, datetime.now(UTC)],
         )
         pg.execute(
             "INSERT INTO sys_user_role (user_id,role_id) VALUES (%s,%s)",

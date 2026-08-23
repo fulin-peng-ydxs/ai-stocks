@@ -12,6 +12,7 @@
     "test:design": "node scripts/check-design-test-env.mjs && npm test && npm run build && npm run test:e2e -- --workers=1",
     "test:e2e": "../scripts/run-playwright.sh",
     "test:e2e:sectors": "../scripts/run-sector-e2e.sh",
+    "test:e2e:trade-discipline": "../scripts/run-trade-discipline-e2e.sh",
     "test:e2e:ui": "../scripts/run-playwright.sh --ui",
     "test:e2e:install": "playwright install chromium",
     "scaffold-page": "node scripts/scaffold-page.mjs"
