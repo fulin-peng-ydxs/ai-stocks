@@ -113,7 +113,7 @@ test('任意授权业务页可发现待打卡状态并完成快捷无操作履�
   await page.goto('/stocks')
 
   await expect(page.getByLabel('有待打卡交易纪律')).toBeVisible()
-  await page.getByRole('button', { name: '用户中心' }).click()
+  await page.getByTestId('app-topbar-surface').getByRole('button', { name: '用户中心', exact: true }).click()
   const card = page.getByTestId('trade-discipline-quick-card')
   await expect(card).toContainText('已完成')
   await expect(card).toContainText('0/2')
@@ -133,7 +133,7 @@ test('任意授权业务页可发现待打卡状态并完成快捷无操作履�
   await expect(page.getByRole('heading', { name: '防守纪律' })).toBeVisible()
   await expect(page.getByTestId('checkin-version-kicker')).toHaveText('履约版本 v1')
 
-  await page.getByRole('button', { name: '用户中心' }).click()
+  await page.getByTestId('app-topbar-surface').getByRole('button', { name: '用户中心', exact: true }).click()
   await page.getByTestId('trade-discipline-quick-card').getByRole('button', { name: '管理规则' }).click()
   await expect(page).toHaveURL(/\/trade-discipline\?tab=rules/)
   await expect(page.getByRole('button', { name: '规则管理' })).toHaveAttribute('aria-pressed', 'true')

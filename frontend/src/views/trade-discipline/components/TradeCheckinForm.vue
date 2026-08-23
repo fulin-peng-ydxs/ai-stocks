@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { getErrorMessage } from '@/utils/error'
+import { decimalToMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
 import TradeOperationEditor from './TradeOperationEditor.vue'
 import ViolationReasonCombobox, { type ReasonValue } from './ViolationReasonCombobox.vue'
 import {
@@ -133,7 +134,10 @@ function validate(): string | null {
     }
     for (const field of ['price', 'quantity', 'amount', 'fee'] as const) {
       const value = operation[field]
-      if (value !== null && value !== '' && Number(value) < 0) return `${prefix}：金额与数量不能为负数`
+      if (value === null || value === '') continue
+      const units = decimalToMinorUnits(value, field === 'price' || field === 'quantity' ? 4 : 2)
+      if (units === null) return `${prefix}：金额与数量格式不正确`
+      if (units < 0n) return `${prefix}：金额与数量不能为负数`
     }
   }
   return null
@@ -142,8 +146,9 @@ function validate(): string | null {
 function amountMismatchRows(): number[] {
   return form.operations.flatMap((operation, index) => {
     if (operation.price === null || operation.quantity === null || operation.amount === null) return []
-    const calculated = Math.round(Number(operation.price) * Number(operation.quantity) * 100) / 100
-    return Math.abs(calculated - Number(operation.amount)) >= 0.01 ? [index + 1] : []
+    const calculated = multiplyToMinorUnits(operation.price, operation.quantity)
+    const actual = decimalToMinorUnits(operation.amount)
+    return calculated !== null && actual !== null && calculated !== actual ? [index + 1] : []
   })
 }
 

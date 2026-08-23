@@ -68,28 +68,34 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <el-select
-    :model-value="modelValue?.code || ''"
-    filterable
-    remote
-    reserve-keyword
-    :remote-method="search"
-    :loading="loading"
-    :disabled="disabled"
-    :clearable="clearable"
-    placeholder="输入代码或名称搜索"
-    :no-data-text="searchError ? '搜索失败，请重新输入重试' : '没有匹配股票'"
-    @update:model-value="select"
-  >
-    <el-option v-for="item in options" :key="item.code" :label="`${item.code} ${item.name}`" :value="item.code">
-      <span>{{ item.code }} · {{ item.name }}</span>
-      <small v-if="item.industry">{{ item.industry }}</small>
-    </el-option>
-  </el-select>
+  <div class="stock-option-select">
+    <el-select
+      :model-value="modelValue?.code || ''"
+      filterable
+      remote
+      reserve-keyword
+      :remote-method="search"
+      :loading="loading"
+      :disabled="disabled"
+      :clearable="clearable"
+      placeholder="输入代码或名称搜索"
+      no-data-text="没有匹配股票"
+      @update:model-value="select"
+    >
+      <el-option v-for="item in options" :key="item.code" :label="`${item.code} ${item.name}`" :value="item.code">
+        <span>{{ item.code }} · {{ item.name }}</span>
+        <small v-if="item.industry">{{ item.industry }}</small>
+      </el-option>
+    </el-select>
+    <small v-if="searchError" class="stock-option-select__error" role="alert">
+      搜索失败，请重新输入重试
+    </small>
+  </div>
 </template>
 
 <style scoped>
-.el-select { width: 100%; }
+.stock-option-select, .el-select { width: 100%; }
 .el-select :deep(.el-select-dropdown__item) { display: flex; justify-content: space-between; gap: var(--app-space-3); }
 small { color: var(--el-text-color-secondary); }
+.stock-option-select__error { display: block; margin-top: var(--app-space-1); color: var(--el-color-danger); }
 </style>

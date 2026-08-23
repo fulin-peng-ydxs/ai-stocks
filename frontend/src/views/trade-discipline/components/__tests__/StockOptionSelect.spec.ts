@@ -72,6 +72,8 @@ describe('StockOptionSelect', () => {
 
     expect(wrapper.findAllComponents({ name: 'ElOption' })).toHaveLength(1)
     expect(wrapper.findComponent({ name: 'ElOption' }).props('value')).toBe('000001.SZ')
-    expect(select.props('noDataText')).toBe('搜索失败，请重新输入重试')
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.isVisible()).toBe(true)
+    expect(alert.text()).toBe('搜索失败，请重新输入重试')
   })
 })

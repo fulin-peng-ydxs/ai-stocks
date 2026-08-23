@@ -2,6 +2,8 @@
 import { computed, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import { decimalToMinorUnits, formatMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
+import FixedDecimalInput from './FixedDecimalInput.vue'
 import StockOptionSelect from './StockOptionSelect.vue'
 import type {
   CheckinOperation,
@@ -66,18 +68,15 @@ function changeSide(index: number, side: 'buy' | 'sell'): void {
   })
 }
 
-function computedAmount(operation: CheckinOperation): number | null {
-  const price = Number(operation.price)
-  const quantity = Number(operation.quantity)
-  return Number.isFinite(price) && Number.isFinite(quantity) && operation.price !== null && operation.quantity !== null
-    ? Math.round(price * quantity * 100) / 100
-    : null
+function computedAmount(operation: CheckinOperation): string | null {
+  const units = multiplyToMinorUnits(operation.price, operation.quantity)
+  return units === null ? null : formatMinorUnits(units)
 }
 
 function amountMismatch(operation: CheckinOperation): boolean {
-  const computed = computedAmount(operation)
-  if (computed === null || operation.amount === null || operation.amount === '') return false
-  return Math.abs(Number(operation.amount) - computed) >= 0.01
+  const computed = multiplyToMinorUnits(operation.price, operation.quantity)
+  const actual = decimalToMinorUnits(operation.amount)
+  return computed !== null && actual !== null && computed !== actual
 }
 
 watch(() => props.version.version_no, () => {
@@ -152,15 +151,15 @@ watch(() => props.version.version_no, () => {
           </el-select>
           <small v-if="!actionRules(operation.side).length" class="field-error">当前方向没有可用买卖规则</small>
         </el-form-item>
-        <el-form-item label="成交价"><el-input-number :model-value="operation.price as number | null" :min="0" :precision="4" :disabled="disabled" controls-position="right" @update:model-value="update(index, { price: $event })" /></el-form-item>
-        <el-form-item label="数量"><el-input-number :model-value="operation.quantity as number | null" :min="0" :precision="4" :disabled="disabled" controls-position="right" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
+        <el-form-item label="成交价"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
+        <el-form-item label="数量"><FixedDecimalInput :model-value="operation.quantity" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
         <el-form-item label="成交金额">
-          <el-input-number :model-value="operation.amount as number | null" :min="0" :precision="2" :disabled="disabled" controls-position="right" @update:model-value="update(index, { amount: $event })" />
+          <FixedDecimalInput :model-value="operation.amount" :disabled="disabled" @update:model-value="update(index, { amount: $event })" />
           <small v-if="computedAmount(operation) !== null" :class="{ 'field-error': amountMismatch(operation) }">
-            价 × 量 = {{ computedAmount(operation)?.toFixed(2) }}{{ amountMismatch(operation) ? '，与填写金额不一致' : '' }}
+            价 × 量 = {{ computedAmount(operation) }}{{ amountMismatch(operation) ? '，与填写金额不一致' : '' }}
           </small>
         </el-form-item>
-        <el-form-item label="费用"><el-input-number :model-value="operation.fee as number | null" :min="0" :precision="2" :disabled="disabled" controls-position="right" @update:model-value="update(index, { fee: $event })" /></el-form-item>
+        <el-form-item label="费用"><FixedDecimalInput :model-value="operation.fee" :disabled="disabled" @update:model-value="update(index, { fee: $event })" /></el-form-item>
         <el-form-item label="操作时间">
           <el-date-picker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
         </el-form-item>
@@ -177,7 +176,7 @@ watch(() => props.version.version_no, () => {
 .operation-empty { padding: var(--app-space-4); border: 1px dashed var(--el-border-color); border-radius: 8px; text-align: center; }
 .operation-card { padding: var(--app-space-4); border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-blank); }
 .operation-grid { margin-top: var(--app-space-3); display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); column-gap: var(--app-space-4); }
-.operation-grid :deep(.el-select), .operation-grid :deep(.el-input-number), .operation-grid :deep(.el-date-editor) { width: 100%; }
+.operation-grid :deep(.el-select), .operation-grid :deep(.el-input), .operation-grid :deep(.el-date-editor) { width: 100%; }
 .operation-grid :deep(.el-form-item__content) { display: block; }
 .operation-note { grid-column: 1 / -1; }
 .field-error { display: block; margin-top: var(--app-space-1); color: var(--el-color-danger); }

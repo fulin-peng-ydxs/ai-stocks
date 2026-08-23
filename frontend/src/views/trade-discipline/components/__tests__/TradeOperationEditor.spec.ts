@@ -40,4 +40,26 @@ describe('TradeOperationEditor', () => {
     const created = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
     expect(created[0].action_rule_id).toBe('')
   })
+
+  it('成交事实保持十进制字符串并以定点价量计算提示', async () => {
+    const operation = {
+      client_key: 'large-operation', stock_code: '000001.SZ', stock_name_snapshot: '平安银行',
+      side: 'buy' as const, stock_rule_id: 'stock-1', action_rule_id: 'buy-1',
+      price: '9007199254740992.0001', quantity: '1.0000', amount: '9007199254740992.00', fee: '0.01',
+      operated_at: null, note: null, display_order: 1,
+    }
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [operation], version, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+
+    expect(wrapper.text()).toContain('价 × 量 = 9007199254740992.00')
+    expect(wrapper.text()).not.toContain('与填写金额不一致')
+    const amountInput = wrapper.findAllComponents({ name: 'FixedDecimalInput' })[2]!
+    amountInput.vm.$emit('update:modelValue', '9007199254740991.99')
+    await flushPromises()
+
+    const changed = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
+    expect(changed[0].amount).toBe('9007199254740991.99')
+  })
 })

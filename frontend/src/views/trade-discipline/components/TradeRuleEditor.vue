@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
+import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
 import {
   archiveTradeDisciplineRule,
   copyTradeDisciplineRule,
@@ -80,21 +81,15 @@ function emptyPayload(): RuleDraftPayload {
   return { name: null, capital: null, stock_rules: [], action_rules: [] }
 }
 
-function formAmount(value: string | number | null): number | null {
-  if (value === null || value === '') return null
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
 function clonePayload(source: RuleDraftPayload | RuleVersionDetail | null): RuleDraftPayload {
   if (!source) return emptyPayload()
   return {
     name: source.name ?? null,
-    capital: formAmount(source.capital),
+    capital: source.capital,
     stock_rules: source.stock_rules.map((item, index) => ({
       detail_id: item.detail_id ?? null,
       name: item.name ?? null,
-      max_capital: formAmount(item.max_capital),
+      max_capital: item.max_capital,
       content: item.content ?? null,
       display_order: index + 1,
       enabled: Boolean(item.enabled),
@@ -457,7 +452,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
             <el-input v-model="form.name" maxlength="80" placeholder="例如：趋势突破纪律" />
           </el-form-item>
           <el-form-item label="总本金（元）">
-            <el-input-number v-model="form.capital" :min="0" :precision="2" :controls="false" placeholder="0.00" />
+            <FixedDecimalInput v-model="form.capital" />
           </el-form-item>
           <div class="capital-meter" :class="{ danger: capitalExceeded }">
             <span>启用规则已分配 {{ allocatedCapitalText }}</span>
@@ -479,7 +474,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
             </div>
             <div class="detail-card__grid">
               <el-form-item label="规则名称"><el-input v-model="item.name" maxlength="80" /></el-form-item>
-              <el-form-item label="资金上限（元）"><el-input-number v-model="item.max_capital" :min="0" :precision="2" :controls="false" /></el-form-item>
+              <el-form-item label="资金上限（元）"><FixedDecimalInput v-model="item.max_capital" /></el-form-item>
             </div>
             <el-form-item label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
           </article>
@@ -548,7 +543,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 .rule-state-track strong { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
 .readonly-banner { margin-bottom: var(--app-space-4); padding: var(--app-space-3); border-left: 3px solid var(--el-color-warning); background: var(--el-color-warning-light-9); color: var(--el-text-color-secondary); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
 .rule-editor__base { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.7fr) minmax(200px, 0.8fr); gap: var(--app-space-3); align-items: end; }
-.rule-editor__base :deep(.el-input-number) { width: 100%; }
+.rule-editor__base :deep(.el-input) { width: 100%; }
 .capital-meter { min-height: var(--app-control-height-md); margin-bottom: 18px; padding: 0 var(--app-space-3); border-radius: 6px; background: var(--el-color-success-light-9); color: var(--el-color-success-dark-2); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); }
 .capital-meter.danger { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
 .detail-group { margin-top: var(--app-space-5); }

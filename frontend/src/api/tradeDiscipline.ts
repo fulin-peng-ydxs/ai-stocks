@@ -24,7 +24,7 @@ export interface RuleLifecycleCommandResult {
 export interface RuleVersionSummary {
   version_no: number
   name: string
-  capital: string | number
+  capital: string
 }
 
 export interface TradeDisciplineRule {
@@ -49,7 +49,7 @@ export interface TradeDisciplineRule {
 export interface DraftStockRule {
   detail_id: string | null
   name: string | null
-  max_capital: string | number | null
+  max_capital: string | null
   content: string | null
   display_order: number
   enabled: boolean
@@ -73,7 +73,7 @@ export interface RuleDraft {
   draft_revision: number
   name: string | null
   proposed_name?: string | null
-  capital: string | number | null
+  capital: string | null
   source_version_no: number | null
   stock_rules: DraftStockRule[]
   action_rules: DraftActionRule[]
@@ -83,7 +83,7 @@ export interface RuleVersionDetail {
   rule_id: string
   version_no: number
   name: string
-  capital: string | number
+  capital: string
   stock_rules: DraftStockRule[]
   action_rules: DraftActionRule[]
 }
@@ -96,7 +96,7 @@ export interface TradeDisciplineRuleDetail extends TradeDisciplineRule {
 
 export interface RuleDraftPayload {
   name: string | null
-  capital: string | number | null
+  capital: string | null
   stock_rules: DraftStockRule[]
   action_rules: DraftActionRule[]
 }
@@ -166,10 +166,10 @@ export interface CheckinOperation {
   side: ActionType
   stock_rule_id: string
   action_rule_id: string
-  price: string | number | null
-  quantity: string | number | null
-  amount: string | number | null
-  fee: string | number | null
+  price: string | null
+  quantity: string | null
+  amount: string | null
+  fee: string | null
   operated_at: string | null
   note: string | null
   display_order: number

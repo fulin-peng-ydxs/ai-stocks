@@ -221,4 +221,28 @@ describe('TradeRuleEditor', () => {
     await flushPromises()
     expect(api.publish).toHaveBeenCalledWith('rule-1', 2)
   })
+
+  it('从接口展示到保存始终保留 NUMERIC(20,2) 大额十进制字符串', async () => {
+    const largeDraft = {
+      ...draft(), capital: '999999999999999999.99',
+      stock_rules: [
+        { ...draft().stock_rules[0], max_capital: '999999999999999999.98', enabled: true },
+      ],
+    }
+    api.get.mockResolvedValue({
+      ...detail(), draft: largeDraft, draft_revision: largeDraft.draft_revision,
+    })
+    const wrapper = await mountEditor()
+
+    expect(field(wrapper, '总本金').get('input').element.value).toBe('999999999999999999.99')
+    expect(wrapper.text()).toContain('剩余 0.01')
+    await field(wrapper, '资金上限').get('input').setValue('9007199254740992.01')
+    await wrapper.get('.rule-editor__footer .el-button:nth-last-child(2)').trigger('click')
+    await flushPromises()
+
+    expect(api.save).toHaveBeenCalledWith('rule-1', expect.objectContaining({
+      capital: '999999999999999999.99',
+      stock_rules: [expect.objectContaining({ max_capital: '9007199254740992.01' })],
+    }))
+  })
 })
