@@ -254,7 +254,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
 </script>
 
 <template>
-  <div class="checkin-detail panel-detail">
+  <div class="checkin-detail panel-detail" data-testid="checkin-form">
     <AppStateBlock v-if="loading" state="loading" title="正在加载打卡上下文…" />
     <AppStateBlock v-else-if="loadError" state="error" title="打卡上下文不可用" :description="loadError" retry @retry="load" />
     <template v-else-if="context">
@@ -277,23 +277,24 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
           <div class="assessment-row">
             <el-form-item label="履约自评" required>
               <el-segmented
+                data-testid="checkin-assessment"
                 v-model="form.assessment"
                 :disabled="readonly"
                 :options="[{ label: '已履约', value: 'complied' }, { label: '未履约', value: 'breached' }]"
               />
             </el-form-item>
-            <el-checkbox :model-value="form.no_operation" :disabled="readonly" @change="toggleNoOperation(Boolean($event))">今日无操作</el-checkbox>
+            <el-checkbox data-testid="checkin-no-operation" :model-value="form.no_operation" :disabled="readonly" @change="toggleNoOperation(Boolean($event))">今日无操作</el-checkbox>
           </div>
           <div v-if="form.assessment === 'breached'" class="breach-grid">
             <el-form-item label="未履约原因" required>
-              <ViolationReasonCombobox v-model="form.reason" :disabled="readonly" />
+              <ViolationReasonCombobox v-model="form.reason" data-testid="checkin-reason" :disabled="readonly" />
             </el-form-item>
             <el-form-item label="详细说明" required>
-              <el-input v-model="form.violation_detail" type="textarea" :rows="3" maxlength="1000" show-word-limit :disabled="readonly" />
+              <el-input v-model="form.violation_detail" data-testid="checkin-violation-detail" type="textarea" :rows="3" maxlength="1000" show-word-limit :disabled="readonly" />
             </el-form-item>
           </div>
           <el-form-item label="复盘说明">
-            <el-input v-model="form.review_note" type="textarea" :rows="2" maxlength="1000" show-word-limit :disabled="readonly" />
+            <el-input v-model="form.review_note" data-testid="checkin-review-note" type="textarea" :rows="2" maxlength="1000" show-word-limit :disabled="readonly" />
           </el-form-item>
         </section>
 

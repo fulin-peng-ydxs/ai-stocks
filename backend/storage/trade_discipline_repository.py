@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from datetime import date
 from typing import Any
 
+import pandas as pd
 import psycopg
 from psycopg import errors
 from psycopg.rows import dict_row
@@ -46,6 +47,14 @@ class TradeDisciplineRepository:
     def _one(cur: psycopg.Cursor) -> dict[str, Any] | None:
         row = cur.fetchone()
         return dict(row) if row is not None else None
+
+    @staticmethod
+    def _records(df: pd.DataFrame) -> list[dict[str, Any]]:
+        """把 pandas 为 SQL NULL 生成的 NaN/NaT 还原为 API 可序列化的 None。"""
+        return [
+            {key: None if value is None or pd.isna(value) else value for key, value in row.items()}
+            for row in df.to_dict("records")
+        ]
 
     def lock_rule(self, conn: psycopg.Connection, rule_id: str) -> dict[str, Any]:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -865,7 +874,7 @@ class TradeDisciplineRepository:
             "total": total,
             "page": page,
             "page_size": page_size,
-            "list": rows.to_dict("records"),
+            "list": self._records(rows),
         }
 
     def checkin_summary(self, trade_date: date) -> list[dict[str, Any]]:

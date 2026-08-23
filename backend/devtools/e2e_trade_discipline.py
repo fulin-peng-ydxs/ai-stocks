@@ -27,6 +27,7 @@ from backend.storage.pg_identity import pg_fingerprint
 FIXTURE_TENANT_ID = "debug_tenant"
 FIXTURE_ID_PREFIX = "e2e_td_"
 FIXTURE_NAME_PREFIX = "E2E纪律-"
+FIXTURE_REASON_PREFIX = "E2E原因-"
 FIXTURE_OWNER_ACCOUNTS = (
     "debug_normal",
     "debug_trade_discipline_view",
@@ -37,6 +38,8 @@ STOCK_CODES = ("998801.SZ", "998802.SZ", "998803.SZ")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 _PG_FINGERPRINT_RE = re.compile(r"^[a-f0-9]{64}$")
 _LIKE_ID_PREFIX = "e2e\\_td\\_%"
+_LIKE_NAME_PREFIX = f"{FIXTURE_NAME_PREFIX}%"
+_LIKE_REASON_PREFIX = f"{FIXTURE_REASON_PREFIX}%"
 
 
 def fixture_trade_dates() -> tuple[date, ...]:
@@ -92,50 +95,87 @@ def _assert_seed_owners(pg: PostgresClient) -> tuple[tuple[str, str], ...]:
 def _cleanup_pg(cur, owners: Iterable[tuple[str, str]]) -> dict[str, int]:
     removed: dict[str, int] = {}
     targets = tuple(owners)
+    labels = (
+        "operation", "violation", "reason", "checkin_revision", "checkin", "activation",
+        "draft_action", "draft_stock", "draft", "action_rule", "stock_rule", "rule_version",
+        "name_claim", "rule",
+    )
+    removed.update(dict.fromkeys(labels, 0))
     for tenant_id, owner_user_id in targets:
         cur.execute(
-            "UPDATE trade_discipline_rule SET status='unpublished',latest_version_no=NULL "
-            "WHERE tenant_id=%s AND owner_user_id=%s AND id LIKE %s ESCAPE '\\'",
-            [tenant_id, owner_user_id, _LIKE_ID_PREFIX],
+            "SELECT r.id FROM trade_discipline_rule r "
+            "WHERE r.tenant_id=%s AND r.owner_user_id=%s AND ("
+            "r.id LIKE %s ESCAPE '\\' OR r.name LIKE %s OR EXISTS ("
+            "SELECT 1 FROM trade_discipline_rule_draft d "
+            "WHERE d.tenant_id=r.tenant_id AND d.owner_user_id=r.owner_user_id "
+            "AND d.rule_id=r.id AND d.proposed_name LIKE %s))",
+            [tenant_id, owner_user_id, _LIKE_ID_PREFIX, _LIKE_NAME_PREFIX, _LIKE_NAME_PREFIX],
         )
-    delete_order = (
-        ("operation", "trade_discipline_operation", "id"),
-        ("violation", "trade_discipline_violation", "checkin_id"),
-        ("reason", "trade_discipline_reason", "id"),
-        ("checkin_revision", "trade_discipline_checkin_revision", "checkin_id"),
-        ("checkin", "trade_discipline_checkin", "id"),
-        ("activation", "trade_discipline_rule_activation", "id"),
-        ("draft_action", "trade_discipline_draft_action_rule", "rule_id"),
-        ("draft_stock", "trade_discipline_draft_stock_rule", "rule_id"),
-        ("draft", "trade_discipline_rule_draft", "rule_id"),
-        ("action_rule", "trade_discipline_action_rule", "rule_id"),
-        ("stock_rule", "trade_discipline_stock_rule", "rule_id"),
-        ("rule_version", "trade_discipline_rule_version", "rule_id"),
-        ("name_claim", "trade_discipline_rule_name_claim", "rule_id"),
-        ("rule", "trade_discipline_rule", "id"),
-    )
-    for label, table, prefix_column in delete_order:
-        total = 0
-        for tenant_id, owner_user_id in targets:
+        rule_ids = [str(row[0]) for row in cur.fetchall()]
+        cur.execute(
+            "SELECT id FROM trade_discipline_reason WHERE tenant_id=%s AND owner_user_id=%s "
+            "AND (id LIKE %s ESCAPE '\\' OR name LIKE %s)",
+            [tenant_id, owner_user_id, _LIKE_ID_PREFIX, _LIKE_REASON_PREFIX],
+        )
+        reason_ids = [str(row[0]) for row in cur.fetchall()]
+        if not rule_ids and not reason_ids:
+            continue
+        checkin_ids: list[str] = []
+        if rule_ids:
             cur.execute(
-                f"DELETE FROM {table} WHERE tenant_id=%s AND owner_user_id=%s "
-                f"AND {prefix_column} LIKE %s ESCAPE '\\'",
-                [tenant_id, owner_user_id, _LIKE_ID_PREFIX],
+                "SELECT id FROM trade_discipline_checkin WHERE tenant_id=%s "
+                "AND owner_user_id=%s AND rule_id=ANY(%s)",
+                [tenant_id, owner_user_id, rule_ids],
             )
-            total += max(cur.rowcount, 0)
-        removed[label] = total
+            checkin_ids = [str(row[0]) for row in cur.fetchall()]
+            cur.execute(
+                "UPDATE trade_discipline_rule SET status='unpublished',latest_version_no=NULL "
+                "WHERE tenant_id=%s AND owner_user_id=%s AND id=ANY(%s)",
+                [tenant_id, owner_user_id, rule_ids],
+            )
+
+        statements: tuple[tuple[str, str, list[object]], ...] = (
+            ("operation", "DELETE FROM trade_discipline_operation WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("violation", "DELETE FROM trade_discipline_violation WHERE tenant_id=%s AND owner_user_id=%s AND checkin_id=ANY(%s)", [tenant_id, owner_user_id, checkin_ids]),
+            ("checkin_revision", "DELETE FROM trade_discipline_checkin_revision WHERE tenant_id=%s AND owner_user_id=%s AND checkin_id=ANY(%s)", [tenant_id, owner_user_id, checkin_ids]),
+            ("checkin", "DELETE FROM trade_discipline_checkin WHERE tenant_id=%s AND owner_user_id=%s AND id=ANY(%s)", [tenant_id, owner_user_id, checkin_ids]),
+            ("reason", "DELETE FROM trade_discipline_reason WHERE tenant_id=%s AND owner_user_id=%s AND id=ANY(%s)", [tenant_id, owner_user_id, reason_ids]),
+            ("activation", "DELETE FROM trade_discipline_rule_activation WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("draft_action", "DELETE FROM trade_discipline_draft_action_rule WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("draft_stock", "DELETE FROM trade_discipline_draft_stock_rule WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("draft", "DELETE FROM trade_discipline_rule_draft WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("action_rule", "DELETE FROM trade_discipline_action_rule WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("stock_rule", "DELETE FROM trade_discipline_stock_rule WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("rule_version", "DELETE FROM trade_discipline_rule_version WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("name_claim", "DELETE FROM trade_discipline_rule_name_claim WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("rule", "DELETE FROM trade_discipline_rule WHERE tenant_id=%s AND owner_user_id=%s AND id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+        )
+        for label, sql, params in statements:
+            if not params[-1]:
+                continue
+            cur.execute(sql, params)
+            removed[label] += max(cur.rowcount, 0)
+
     residual: dict[str, int] = {}
-    for label, table, prefix_column in delete_order:
-        total = 0
-        for tenant_id, owner_user_id in targets:
-            cur.execute(
-                f"SELECT count(*) FROM {table} WHERE tenant_id=%s AND owner_user_id=%s "
-                f"AND {prefix_column} LIKE %s ESCAPE '\\'",
-                [tenant_id, owner_user_id, _LIKE_ID_PREFIX],
-            )
-            total += int(cur.fetchone()[0])
-        if total:
-            residual[label] = total
+    for tenant_id, owner_user_id in targets:
+        cur.execute(
+            "SELECT count(*) FROM trade_discipline_rule r WHERE r.tenant_id=%s "
+            "AND r.owner_user_id=%s AND (r.id LIKE %s ESCAPE '\\' OR r.name LIKE %s OR "
+            "EXISTS (SELECT 1 FROM trade_discipline_rule_draft d WHERE d.tenant_id=r.tenant_id "
+            "AND d.owner_user_id=r.owner_user_id AND d.rule_id=r.id AND d.proposed_name LIKE %s))",
+            [tenant_id, owner_user_id, _LIKE_ID_PREFIX, _LIKE_NAME_PREFIX, _LIKE_NAME_PREFIX],
+        )
+        rules_left = int(cur.fetchone()[0])
+        cur.execute(
+            "SELECT count(*) FROM trade_discipline_reason WHERE tenant_id=%s AND owner_user_id=%s "
+            "AND (id LIKE %s ESCAPE '\\' OR name LIKE %s)",
+            [tenant_id, owner_user_id, _LIKE_ID_PREFIX, _LIKE_REASON_PREFIX],
+        )
+        reasons_left = int(cur.fetchone()[0])
+        if rules_left:
+            residual[f"rule:{owner_user_id}"] = rules_left
+        if reasons_left:
+            residual[f"reason:{owner_user_id}"] = reasons_left
     if residual:
         raise RuntimeError(f"交易纪律 PostgreSQL 夹具清理后仍有残留：{residual}")
     return removed
@@ -337,7 +377,7 @@ def _insert_owner_fixture(cur, tenant_id: str, owner_user_id: str) -> dict[str, 
     )
     checkin_ids: list[str] = []
     for index, (assessment, no_operation) in enumerate(combinations, 1):
-        trade_date = FIXTURE_TRADE_DATES[index + 2]
+        trade_date = FIXTURE_TRADE_DATES[index + 1]
         checkin_id = f"{FIXTURE_ID_PREFIX}{slug}_checkin_{index}"
         checkin_ids.append(checkin_id)
         current_revision = 2 if index == 4 else 1

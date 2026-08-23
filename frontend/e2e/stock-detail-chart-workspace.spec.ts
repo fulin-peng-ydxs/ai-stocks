@@ -364,14 +364,13 @@ test.describe('个股详情三图工作区', () => {
       },
     ])
     await installFixedStockListEndpoint(page, samples)
-
     await page.goto('/stocks')
     const analysisPanel = page.getByTestId('stock-analysis-panel')
     await expect(analysisPanel.getByLabel('股票K线多图联动工作区')).toBeVisible()
 
     // 主区切换只改变本次会话，不反写抽屉默认。
     await page.getByTestId('stock-analysis-mode-compare').click()
-    await expect(analysisPanel.getByText('对比队列')).toBeVisible()
+    await expect(analysisPanel.getByText('对比队列', { exact: true })).toBeVisible()
     await expect(page.getByTestId('stock-analysis-metric-roll_30d'))
       .toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('stock-analysis-metric-roll_60d')).toBeVisible()
@@ -409,7 +408,7 @@ test.describe('个股详情三图工作区', () => {
   }, testInfo) => {
     runInStandardViewport(testInfo)
     const consoleIssues = collectConsoleIssues(page)
-    const { samples } = await loadStocksOnlyContext(page, request)
+    const { auth, samples } = await loadStocksOnlyContext(page, request)
     await installPreferenceEndpoint(page, [{
       scope: 'page',
       pageKey: 'stocks',
@@ -424,6 +423,14 @@ test.describe('个股详情三图工作区', () => {
       },
     }])
     await installFixedStockListEndpoint(page, samples)
+    const stockBarsResponse = await request.get(
+      `${API_URL}/stocks/${samples[0].code}/bars?adjust=qfq&lookback=1250`,
+      { headers: { authorization: `Bearer ${auth.accessToken}` } },
+    )
+    expect(stockBarsResponse.ok()).toBe(true)
+    const stockBarsBody = await stockBarsResponse.json()
+    expect(stockBarsBody.code, stockBarsBody.msg || '读取验收行情失败').toBe(0)
+    const benchmarkBars = stockBarsBody.data.bars
 
     let calendarRequests = 0
     let stockBarRequests = 0
@@ -444,7 +451,20 @@ test.describe('个股详情三图工作区', () => {
         })
         return
       }
-      await route.continue()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: {
+            index_code: '000905.SH',
+            name: 'E2E 中证 500',
+            end: benchmarkBars.at(-1)?.date || null,
+            bars: benchmarkBars,
+          },
+        }),
+      })
     })
 
     await page.goto('/stocks')
@@ -1251,11 +1271,11 @@ test.describe('个股详情三图工作区', () => {
     })
 
     await page.goto(`/stocks/${code}`)
+    await expect(page.getByText('正在加载个股行情…', { exact: true })).toBeVisible()
+    await expect(page.getByLabel('行情多图联动工作区')).toBeHidden()
+    releaseBars()
     const workspace = page.getByLabel('行情多图联动工作区')
     await expect(workspace.getByText('K线（日线·前复权）', { exact: true })).toBeVisible()
-    await expect(workspace.locator('.el-loading-mask')).toBeVisible()
-    releaseBars()
-    await expect(workspace.locator('.el-loading-mask')).toHaveCount(0)
 
     await page.unroute('**/api/stocks/*/bars*')
     await page.route('**/api/stocks/*/bars*', async (route) => {

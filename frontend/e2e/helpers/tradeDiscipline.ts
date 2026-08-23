@@ -35,7 +35,9 @@ async function fixtureGet<T>(
     headers: { authorization: `Bearer ${accessToken}` },
     params,
   })
-  expect(response.ok(), `交易纪律 E2E 夹具查询失败：${path}`).toBe(true)
+  if (!response.ok()) {
+    throw new Error(`交易纪律 E2E 夹具查询失败：${path} (${response.status()}) ${await response.text()}`)
+  }
   const body = await response.json() as ApiEnvelope<T>
   expect(body.code, body.msg || `交易纪律 E2E 夹具接口返回非 0 code：${path}`).toBe(0)
   return body.data
@@ -75,14 +77,17 @@ export async function requireTradeDisciplineFixture(
     total: number
     list: Array<Record<string, unknown>>
   }>(request, accessToken, '/trade-discipline/checkins', {
-    date_from: '2098-06-05',
+    date_from: '2098-06-04',
     date_to: TRADE_DISCIPLINE_FIXTURE.currentTradeDate,
     rule_id: String(rule.id),
     page: 1,
     page_size: 20,
   })
-  expect(history.total, '交易纪律夹具应包含四种履约组合').toBe(4)
-  const combinations = new Set(history.list.map((row) => `${row.assessment}:${row.no_operation}`))
+  const seededHistory = history.list.filter((row) => (
+    typeof row.id === 'string' && row.id.startsWith(TRADE_DISCIPLINE_FIXTURE.idPrefix)
+  ))
+  expect(seededHistory.length, '交易纪律夹具应包含四条专属历史').toBe(4)
+  const combinations = new Set(seededHistory.map((row) => `${row.assessment}:${row.no_operation}`))
   expect(combinations).toEqual(new Set([
     'complied:true',
     'complied:false',
@@ -104,6 +109,6 @@ export async function requireTradeDisciplineFixture(
     ruleId: String(rule.id),
     currentTradeDate: TRADE_DISCIPLINE_FIXTURE.currentTradeDate,
     pendingTradeDate: TRADE_DISCIPLINE_FIXTURE.pendingTradeDate,
-    checkinIds: history.list.map((row) => String(row.id)),
+    checkinIds: seededHistory.map((row) => String(row.id)),
   }
 }

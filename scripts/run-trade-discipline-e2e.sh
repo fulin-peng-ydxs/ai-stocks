@@ -51,6 +51,29 @@ fixture() {
       --expected-pg-fingerprint "$pg_fingerprint"
 }
 
+cleanup_fixture_with_retry() {
+  local attempt output status
+  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if output="$(fixture cleanup 2>&1)"; then
+      printf '%s\n' "$output"
+      return 0
+    else
+      status=$?
+    fi
+    if [[ "$output" != *"Conflicting lock is held"* ]]; then
+      printf '%s\n' "$output" >&2
+      return "$status"
+    fi
+    if [[ "$attempt" != "10" ]]; then
+      echo "DuckDB 仍在释放锁，1 秒后重试交易纪律夹具清理（$attempt/10）" >&2
+      sleep 1
+    else
+      printf '%s\n' "$output" >&2
+    fi
+  done
+  return "$status"
+}
+
 read_pg_fingerprint() {
   local body
   body="$(curl -fsS --max-time 3 http://127.0.0.1:8000/api/health/e2e)" || return 1
@@ -75,7 +98,7 @@ restore_and_cleanup() {
   set +e
   "$PROJECT_ROOT/start.sh" stop
   if [[ -n "$pg_fingerprint" ]]; then
-    fixture cleanup || cleanup_exit=$?
+    cleanup_fixture_with_retry || cleanup_exit=$?
     if [[ "$cleanup_exit" != "0" ]]; then
       echo "交易纪律 E2E 清理失败，可能存在专属前缀残留" >&2
     fi
@@ -114,7 +137,7 @@ AI_STOCKS_ENV_FILE=/dev/null AI_STOCKS_ENV="$AI_STOCKS_ENV" \
   "$PROJECT_ROOT/start.sh" dev-users --keep-password >/dev/null
 
 "$PROJECT_ROOT/start.sh" stop
-fixture cleanup
+cleanup_fixture_with_retry
 fixture seed
 start_e2e_backend
 

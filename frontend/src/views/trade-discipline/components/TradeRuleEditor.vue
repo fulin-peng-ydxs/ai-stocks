@@ -410,7 +410,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 </script>
 
 <template>
-  <section class="rule-editor" aria-label="规则编辑工作区">
+  <section class="rule-editor" aria-label="规则编辑工作区" data-testid="rule-editor">
     <AppStateBlock v-if="loading" state="loading" title="正在加载规则…" />
     <AppStateBlock v-else-if="loadError" state="error" title="规则详情加载失败" retry @retry="load" />
     <template v-else-if="detail">
@@ -449,10 +449,10 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
       <el-form class="rule-editor__form" label-position="top" :disabled="!editing || !canManage">
         <div class="rule-editor__base">
           <el-form-item label="规则名称">
-            <el-input v-model="form.name" maxlength="80" placeholder="例如：趋势突破纪律" />
+            <el-input v-model="form.name" data-testid="rule-name-input" maxlength="80" placeholder="例如：趋势突破纪律" />
           </el-form-item>
           <el-form-item label="总本金（元）">
-            <FixedDecimalInput v-model="form.capital" />
+            <FixedDecimalInput v-model="form.capital" data-testid="rule-capital-input" />
           </el-form-item>
           <div class="capital-meter" :class="{ danger: capitalExceeded }">
             <span>启用规则已分配 {{ allocatedCapitalText }}</span>
@@ -463,7 +463,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
         <section class="detail-group">
           <header><div><h4>选股规则</h4><p>仅启用项参与发布校验和资金汇总</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addStockRule">添加选股规则</el-button></header>
           <AppStateBlock v-if="!form.stock_rules.length" state="empty" size="tiny" title="尚未添加选股规则" />
-          <article v-for="(item, index) in form.stock_rules" :key="item.detail_id || `stock-${index}`" class="detail-card">
+          <article v-for="(item, index) in form.stock_rules" :key="item.detail_id || `stock-${index}`" class="detail-card" data-testid="stock-rule-card">
             <div class="detail-card__head">
               <el-switch v-model="item.enabled" :disabled="!canEditDetails" active-text="启用" inactive-text="停用" />
               <div v-if="canEditDetails" class="detail-card__moves">
@@ -473,8 +473,8 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
               </div>
             </div>
             <div class="detail-card__grid">
-              <el-form-item label="规则名称"><el-input v-model="item.name" maxlength="80" /></el-form-item>
-              <el-form-item label="资金上限（元）"><FixedDecimalInput v-model="item.max_capital" /></el-form-item>
+              <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
+              <el-form-item label="资金上限（元）"><FixedDecimalInput v-model="item.max_capital" data-testid="stock-rule-capital-input" /></el-form-item>
             </div>
             <el-form-item label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
           </article>
@@ -483,7 +483,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
         <section class="detail-group">
           <header><div><h4>买卖规则</h4><p>正式发布至少启用一条买入和一条卖出规则</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addActionRule">添加买卖规则</el-button></header>
           <AppStateBlock v-if="!form.action_rules.length" state="empty" size="tiny" title="尚未添加买卖规则" />
-          <article v-for="(item, index) in form.action_rules" :key="item.detail_id || `action-${index}`" class="detail-card">
+          <article v-for="(item, index) in form.action_rules" :key="item.detail_id || `action-${index}`" class="detail-card" data-testid="action-rule-card">
             <div class="detail-card__head">
               <el-switch v-model="item.enabled" :disabled="!canEditDetails" active-text="启用" inactive-text="停用" />
               <div v-if="canEditDetails" class="detail-card__moves">
@@ -493,8 +493,8 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
               </div>
             </div>
             <div class="detail-card__grid detail-card__grid--actions">
-              <el-form-item label="规则名称"><el-input v-model="item.name" maxlength="80" /></el-form-item>
-              <el-form-item label="方向"><el-select v-model="item.action_type" @change="changeActionType(item)"><el-option label="买入" value="buy" /><el-option label="卖出" value="sell" /></el-select></el-form-item>
+              <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>
+              <el-form-item label="方向"><el-select v-model="item.action_type" data-testid="action-rule-side-select" @change="changeActionType(item)"><el-option label="买入" value="buy" /><el-option label="卖出" value="sell" /></el-select></el-form-item>
               <el-form-item label="类型"><el-select v-model="item.action_subtype"><el-option v-for="option in item.action_type ? subtypeOptions[item.action_type] : []" :key="option.value" :label="option.label" :value="option.value" /></el-select></el-form-item>
             </div>
             <el-form-item label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>

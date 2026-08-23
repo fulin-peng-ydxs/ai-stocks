@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from backend.api.response import ApiResponse
 from backend.common.exceptions import ConflictError, NotFoundError, ValidationError
 from backend.services.trade_discipline_service import TradeDisciplineService
 from backend.storage.trade_discipline_repository import TradeDisciplineRepository
@@ -459,6 +460,8 @@ def test_history_filters_pagination_and_owner_isolation(pg, market):
     assert page["total"] == 1
     assert page["list"][0]["id"] == breached["checkin_id"]
     assert int(page["list"][0]["operation_count"]) == 1
+    assert page["list"][0]["amended_at"] is None
+    assert '"amended_at":null' in ApiResponse(data=page).model_dump_json()
 
     other_owner = f"{TEST_OWNER}_t3_other"
     clean_owner(pg, TEST_TENANT, other_owner)

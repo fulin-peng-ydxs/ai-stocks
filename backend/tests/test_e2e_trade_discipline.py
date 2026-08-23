@@ -119,6 +119,27 @@ def test_seed_is_deterministic_complete_and_cleanup_is_idempotent(pg, market, mo
     for (table, prefix_column), expected in expected_counts.items():
         assert _count_pg(pg, table, prefix_column) == expected
 
+    # 页面生成的 ID 没有夹具前缀；只能依据已保存的专属草稿名精确回收，不得清理其他匿名草稿。
+    pg.execute(
+        "INSERT INTO trade_discipline_rule (id,tenant_id,owner_user_id,status) "
+        "VALUES ('tdr_e2e_abandoned',%s,%s,'unpublished'),"
+        "('tdr_e2e_named',%s,%s,'unpublished')",
+        [TEST_TENANT, TEST_OWNER, TEST_TENANT, TEST_OWNER],
+    )
+    pg.execute(
+        "INSERT INTO trade_discipline_rule_draft "
+        "(rule_id,tenant_id,owner_user_id,draft_revision,proposed_name,normalized_name) "
+        "VALUES ('tdr_e2e_abandoned',%s,%s,1,NULL,NULL),"
+        "('tdr_e2e_named',%s,%s,1,'E2E纪律-页面保存','e2e纪律-页面保存')",
+        [TEST_TENANT, TEST_OWNER, TEST_TENANT, TEST_OWNER],
+    )
+    pg.execute(
+        "INSERT INTO trade_discipline_reason "
+        "(id,tenant_id,owner_user_id,name,normalized_name) "
+        "VALUES ('tdreason_e2e_generated',%s,%s,'E2E原因-页面新增','e2e原因-页面新增')",
+        [TEST_TENANT, TEST_OWNER],
+    )
+
     with pytest.raises(RuntimeError, match="PostgreSQL 与被测后端不一致"):
         fixture.cleanup_trade_discipline_data(
             expected_pg_fingerprint="0" * 64,
@@ -140,8 +161,12 @@ def test_seed_is_deterministic_complete_and_cleanup_is_idempotent(pg, market, mo
         market=market,
         owners=TEST_OWNERS,
     )
-    assert first["removedPg"]["rule"] == 1
+    assert first["removedPg"]["rule"] == 2
+    assert first["removedPg"]["reason"] == 2
     assert first["removedDuck"]["stock_basic"] == 3
+    assert int(pg.query_df(
+        "SELECT count(*) AS n FROM trade_discipline_rule WHERE id='tdr_e2e_abandoned'",
+    ).iloc[0]["n"]) == 1
     assert all(value == 0 for value in second["removedPg"].values())
     assert all(value == 0 for value in second["removedDuck"].values())
 

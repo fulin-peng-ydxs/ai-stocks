@@ -5,6 +5,21 @@ import { openPageAndWaitForHeading } from './helpers/navigation'
 
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
 
+function waitForOverviewLayoutHydration(page: import('@playwright/test').Page) {
+  const isLayoutRead = (response: import('@playwright/test').Response) => {
+    const pathname = new URL(response.url()).pathname
+    return response.request().method() === 'GET'
+      && (pathname.endsWith('/api/layout/pages/data-overview')
+        || pathname.endsWith('/api/layout/users/data-overview'))
+  }
+  return Promise.all([
+    page.waitForResponse((response) => isLayoutRead(response)
+      && new URL(response.url()).pathname.includes('/pages/')),
+    page.waitForResponse((response) => isLayoutRead(response)
+      && new URL(response.url()).pathname.includes('/users/')),
+  ])
+}
+
 async function expectAdaptiveTableFillsContainer(
   page: import('@playwright/test').Page,
   testId: string,
@@ -37,7 +52,12 @@ test('数据概览在 1100×620 保持固定摘要和可用主工作区', async 
   const headers = { authorization: `Bearer ${auth.accessToken}` }
   await request.get(`${API_URL}/data/overview`, { headers })
   await request.get(`${API_URL}/data/stock-quality?page=1&size=1`, { headers })
+  const layoutHydrated = waitForOverviewLayoutHydration(page)
   await openPageAndWaitForHeading(page, '/data/overview', '数据概览')
+  await layoutHydrated
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
 
   const summary = page.getByTestId('overview-summary')
   const quality = page.getByTestId('overview-quality-summary')
@@ -101,8 +121,16 @@ test('数据概览两类表格在各桌面视口都自适应铺满内容区', as
   await request.get(`${API_URL}/data/stock-quality?page=1&size=1`, {
     headers: { authorization: `Bearer ${auth.accessToken}` },
   })
+  const layoutHydrated = waitForOverviewLayoutHydration(page)
   await openPageAndWaitForHeading(page, '/data/overview', '数据概览')
+  await layoutHydrated
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  }))
 
+  // 远端布局水合会恢复默认 tab；先等配置落地，避免测试点击被异步恢复覆盖。
+  await expect(page.getByTestId('overview-summary')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('overview-workspace')).toBeVisible()
   await page.getByRole('tab', { name: '数据资产' }).click()
   await expect(page.getByTestId('overview-asset-table')).toBeVisible()
   await expectAdaptiveTableFillsContainer(page, 'overview-asset-table')
