@@ -47,4 +47,31 @@ describe('StockOptionSelect', () => {
     remote('新查询')
     expect(firstSignal.aborted).toBe(true)
   })
+
+  it('当前查询失败时清除旧结果、保留已选项并显示重试提示', async () => {
+    vi.useFakeTimers()
+    const selected = { code: '000001.SZ', name: '平安银行', board: '主板', industry: '银行' }
+    searchStocks
+      .mockResolvedValueOnce({ q: '旧', limit: 20, list: [
+        selected,
+        { code: '000002.SZ', name: '万科A', board: '主板', industry: '房地产' },
+      ] })
+      .mockRejectedValueOnce(new Error('unavailable'))
+    const wrapper = mount(StockOptionSelect, {
+      props: { modelValue: selected }, global: { plugins: [ElementPlus] },
+    })
+    const select = wrapper.findComponent({ name: 'ElSelect' })
+    select.props('remoteMethod')('旧')
+    await vi.advanceTimersByTimeAsync(250)
+    await flushPromises()
+    expect(wrapper.findAllComponents({ name: 'ElOption' })).toHaveLength(2)
+
+    select.props('remoteMethod')('新')
+    await vi.advanceTimersByTimeAsync(250)
+    await flushPromises()
+
+    expect(wrapper.findAllComponents({ name: 'ElOption' })).toHaveLength(1)
+    expect(wrapper.findComponent({ name: 'ElOption' }).props('value')).toBe('000001.SZ')
+    expect(select.props('noDataText')).toBe('搜索失败，请重新输入重试')
+  })
 })

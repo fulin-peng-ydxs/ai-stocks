@@ -9,6 +9,7 @@ const props = defineProps<{
   rules: TradeDisciplineRule[]
   selectedId: string
   loading?: boolean
+  error?: boolean
   canManage: boolean
   checkinStates?: CheckinSummaryRule[] | null
 }>()
@@ -16,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [ruleId: string]
   create: []
+  retry: []
 }>()
 
 const query = ref('')
@@ -68,20 +70,30 @@ function managementLabel(rule: TradeDisciplineRule): string {
         :icon="Plus"
         size="small"
         aria-label="新建规则"
+        :disabled="loading || error"
         @click="emit('create')"
       >
         新建
       </el-button>
     </div>
 
-    <AppStateBlock v-if="loading" state="loading" size="tiny" />
+    <AppStateBlock v-if="loading && !rules.length" state="loading" size="tiny" />
+    <AppStateBlock
+      v-else-if="error"
+      state="error"
+      size="compact"
+      title="规则列表刷新失败"
+      description="右侧内容已保留，重试后同步列表"
+      retry
+      @retry="emit('retry')"
+    />
     <AppStateBlock
       v-else-if="!filteredRules.length"
       state="empty"
       size="compact"
       :title="query ? '没有匹配的规则' : '暂无交易规则'"
     />
-    <div v-else class="rule-master__list" role="listbox" aria-label="选择交易规则">
+    <div v-else v-loading="loading" class="rule-master__list" role="listbox" aria-label="选择交易规则">
       <div
         v-for="rule in filteredRules"
         :key="rule.id"

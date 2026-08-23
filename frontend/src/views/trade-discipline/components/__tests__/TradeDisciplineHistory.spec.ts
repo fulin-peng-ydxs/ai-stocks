@@ -36,11 +36,11 @@ const StockStub = defineComponent({
 function mountHistory(props: Record<string, unknown> = {}) {
   return mount(TradeDisciplineHistory, {
     props: {
-      query: {}, page: 1, pageSize: 20, rules, border: false, canSubmit: true, ...props,
+      query: {}, page: 1, pageSize: 20, rules, border: false, ...props,
     },
     global: {
       plugins: [createPinia(), ElementPlus],
-      stubs: { StockOptionSelect: StockStub, TradeCheckinRevisionDrawer: true, TradeDatePicker: true },
+      stubs: { StockOptionSelect: StockStub, TradeDatePicker: true },
     },
   })
 }
@@ -59,7 +59,7 @@ describe('TradeDisciplineHistory', () => {
     expect(wrapper.text()).toContain('冲动交易')
     expect(wrapper.text()).toContain('r2 · 已修正')
     await wrapper.get('[data-testid="history-detail-checkin-1"]').trigger('click')
-    expect(wrapper.findComponent({ name: 'TradeCheckinRevisionDrawer' }).props('row')).toEqual(row)
+    expect(wrapper.emitted('detail')).toEqual([[row]])
   })
 
   it('筛选改选自动输出服务端查询条件并重置第一页', async () => {

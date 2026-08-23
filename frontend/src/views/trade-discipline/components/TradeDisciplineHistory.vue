@@ -18,7 +18,6 @@ import {
   type TradeDisciplineRule,
 } from '@/api/tradeDiscipline'
 import StockOptionSelect from './StockOptionSelect.vue'
-import TradeCheckinRevisionDrawer from './TradeCheckinRevisionDrawer.vue'
 
 const props = defineProps<{
   query: CheckinHistoryQuery
@@ -26,21 +25,18 @@ const props = defineProps<{
   pageSize: number
   rules: TradeDisciplineRule[]
   border: boolean
-  canSubmit: boolean
 }>()
 const emit = defineEmits<{
   'update:query': [value: CheckinHistoryQuery]
   'page-change': [value: number]
   'size-change': [value: number]
-  amend: [value: { ruleId: string; tradeDate: string }]
+  detail: [row: CheckinHistoryRow]
 }>()
 
 const rows = ref<CheckinHistoryRow[]>([])
 const total = ref(0)
 const loading = ref(false)
 const loadError = ref(false)
-const detailOpen = ref(false)
-const activeRow = ref<CheckinHistoryRow | null>(null)
 const selectedStock = ref<StockOption | null>(null)
 const reasonText = ref(props.query.reason || '')
 let loadSeq = 0
@@ -103,8 +99,7 @@ function resetFilters(): void {
 }
 
 function openDetail(row: CheckinHistoryRow): void {
-  activeRow.value = row
-  detailOpen.value = true
+  emit('detail', row)
 }
 
 function rowActions(row: CheckinHistoryRow): AppRowAction[] {
@@ -218,13 +213,6 @@ defineExpose({ reload: load })
         </div>
       </template>
     </AppDataTable>
-
-    <TradeCheckinRevisionDrawer
-      v-model="detailOpen"
-      :row="activeRow"
-      :can-submit="canSubmit"
-      @amend="emit('amend', $event)"
-    />
   </div>
 </template>
 

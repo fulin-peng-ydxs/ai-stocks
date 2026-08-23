@@ -19,17 +19,20 @@ import {
 import { getPageLayout } from '@/layout'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { useAuthStore } from '@/stores/auth'
+import { getErrorStatus } from '@/utils/error'
 import {
   listTradeDisciplineRules,
   createTradeDisciplineRule,
   getTradeDisciplineSummary,
   type CheckinSummary,
   type CheckinHistoryQuery,
+  type CheckinHistoryRow,
   type TradeDisciplineRule,
 } from '@/api/tradeDiscipline'
 import RuleMasterList from '@/views/trade-discipline/components/RuleMasterList.vue'
 import TradeRuleEditor from '@/views/trade-discipline/components/TradeRuleEditor.vue'
 import TradeCheckinForm from '@/views/trade-discipline/components/TradeCheckinForm.vue'
+import TradeCheckinRevisionDrawer from '@/views/trade-discipline/components/TradeCheckinRevisionDrawer.vue'
 import TradeDisciplineHistory from '@/views/trade-discipline/components/TradeDisciplineHistory.vue'
 
 type PanelKey = 'checkin' | 'rules' | 'history'
@@ -44,6 +47,9 @@ const PANEL_OPTIONS = [
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
+const canViewPage = computed(
+  () => auth.isSystem || auth.permissions.includes('trade-discipline:view'),
+)
 const canManageRules = computed(
   () => auth.isSystem || auth.permissions.includes('trade-discipline:rule-manage'),
 )
@@ -102,6 +108,9 @@ const {
 const rules = ref<TradeDisciplineRule[]>([])
 const rulesLoading = ref(false)
 const rulesError = ref(false)
+const rulesReady = ref(false)
+const rulesTradeDate = ref('')
+const pagePermissionDenied = ref(false)
 const checkinSummary = ref<CheckinSummary | null>(null)
 const summaryLoading = ref(false)
 const summaryError = ref(false)
@@ -132,6 +141,8 @@ let routeIntentReady = false
 const historyPage = ref(1)
 const historyQuery = ref<CheckinHistoryQuery>({})
 const historyRef = ref<{ reload: () => Promise<void> } | null>(null)
+const historyDetailOpen = ref(false)
+const historyDetailRow = ref<CheckinHistoryRow | null>(null)
 const returnToHistoryAfterAmend = ref(false)
 const { pageSize: historyPageSize, changePageSize } = useComponentPageSizeSession({
   resolveDefault: () => componentValueOf('history', 'pageSize'),
@@ -141,10 +152,10 @@ const { pageSize: historyPageSize, changePageSize } = useComponentPageSizeSessio
 })
 
 const pageLoading = computed(
-  () => tradeDateStatus.value === 'loading' || rulesLoading.value,
+  () => tradeDateStatus.value === 'loading' || (rulesLoading.value && !rulesReady.value),
 )
 const pageError = computed(
-  () => tradeDateStatus.value === 'error' || rulesError.value,
+  () => tradeDateStatus.value === 'error' || (rulesError.value && !rulesReady.value),
 )
 const latestTradeDateText = computed(() => dataMax.value || '暂无可用交易日')
 const pendingRuleCount = computed(
@@ -156,18 +167,27 @@ function tableBorder(slotId: string): boolean {
 }
 
 async function loadRules(tradeDate = dataMax.value): Promise<void> {
+  const targetTradeDate = tradeDate ?? ''
+  if (rulesTradeDate.value !== targetTradeDate) {
+    rulesTradeDate.value = targetTradeDate
+    rulesReady.value = false
+    rules.value = []
+  }
   const seq = ++rulesLoadSeq
   rulesLoading.value = true
   rulesError.value = false
   try {
-    const result = await listTradeDisciplineRules(tradeDate)
+    const result = await listTradeDisciplineRules(targetTradeDate)
     if (seq !== rulesLoadSeq) return
     rules.value = result
+    rulesReady.value = true
+    pagePermissionDenied.value = false
     if (activePanel.value !== 'checkin' && !rules.value.some((rule) => rule.id === selectedRuleId.value)) {
       selectedRuleId.value = rules.value[0]?.id ?? ''
     }
-  } catch {
+  } catch (error) {
     if (seq !== rulesLoadSeq) return
+    if (getErrorStatus(error) === 403) pagePermissionDenied.value = true
     rulesError.value = true
   } finally {
     if (seq === rulesLoadSeq) rulesLoading.value = false
@@ -206,6 +226,7 @@ async function loadCheckinWorkspace(): Promise<void> {
 }
 
 async function loadPage(): Promise<void> {
+  if (!canViewPage.value) return
   await ensureTradeDatesLoaded()
   if (tradeDateStatus.value !== 'ready') return
   const requestedTradeDate = typeof route.query.trade_date === 'string'
@@ -300,8 +321,14 @@ function updateHistoryQuery(value: CheckinHistoryQuery): void {
   historyQuery.value = value
 }
 
+function openHistoryDetail(row: CheckinHistoryRow): void {
+  historyDetailRow.value = row
+  historyDetailOpen.value = true
+}
+
 async function amendFromHistory(value: { ruleId: string; tradeDate: string }): Promise<void> {
   if (!canSubmitCheckins.value) return
+  historyDetailOpen.value = false
   checkinTradeDate.value = value.tradeDate
   selectedRuleId.value = value.ruleId
   returnToHistoryAfterAmend.value = true
@@ -410,7 +437,14 @@ watch(tradeDisciplineChangeVersion, async () => {
 
     <template #main>
       <AppStateBlock
-        v-if="pageLoading"
+        v-if="!canViewPage || pagePermissionDenied"
+        state="error"
+        variant="permission"
+        title="无权限查看交易纪律"
+        description="当前账号未获得交易纪律基础查看权限"
+      />
+      <AppStateBlock
+        v-else-if="pageLoading"
         state="loading"
         title="正在加载交易纪律…"
       />
@@ -463,6 +497,14 @@ watch(tradeDisciplineChangeVersion, async () => {
             @retry="loadCheckinWorkspace"
           />
           <AppStateBlock v-else-if="summaryLoading" state="loading" title="正在解析当日履约状态…" />
+          <AppStateBlock
+            v-else-if="rulesError && !displayRules.length"
+            state="error"
+            title="规则列表刷新失败"
+            description="当前交易日规则不可用，重试后继续"
+            retry
+            @retry="refreshRules"
+          />
           <AppStateBlock v-else-if="!displayRules.length" state="empty" title="该交易日暂无生效规则">
             <template #extra>
               <el-button v-if="canManageRules" v-permission="'trade-discipline:rule-manage'" type="primary" @click="createRuleFromCheckin">
@@ -474,10 +516,13 @@ watch(tradeDisciplineChangeVersion, async () => {
             <RuleMasterList
               :rules="displayRules"
               :selected-id="selectedRuleId"
+              :loading="rulesLoading"
+              :error="rulesError"
               :can-manage="canManageRules"
               :checkin-states="checkinSummary?.rules"
               @select="selectRule"
               @create="createRuleFromCheckin"
+              @retry="refreshRules"
             />
             <TradeCheckinForm
               v-if="selectedRule"
@@ -496,9 +541,12 @@ watch(tradeDisciplineChangeVersion, async () => {
             <RuleMasterList
               :rules="rules"
               :selected-id="selectedRuleId"
+              :loading="rulesLoading"
+              :error="rulesError"
               :can-manage="canManageRules"
               @select="selectRule"
               @create="createRule"
+              @retry="refreshRules"
             />
             <TradeRuleEditor
               v-if="selectedRuleId"
@@ -534,17 +582,22 @@ watch(tradeDisciplineChangeVersion, async () => {
             :page-size="historyPageSize"
             :rules="rules"
             :border="tableBorder('history')"
-            :can-submit="canSubmitCheckins"
             @update:query="updateHistoryQuery"
             @page-change="changeHistoryPage"
             @size-change="changePageSize"
-            @amend="amendFromHistory"
+            @detail="openHistoryDetail"
           />
         </section>
       </div>
     </template>
 
     <template #overlays>
+      <TradeCheckinRevisionDrawer
+        v-model="historyDetailOpen"
+        :row="historyDetailRow"
+        :can-submit="canSubmitCheckins"
+        @amend="amendFromHistory"
+      />
       <PageSettingsDrawer
         v-model="settingsOpen"
         title="交易纪律"

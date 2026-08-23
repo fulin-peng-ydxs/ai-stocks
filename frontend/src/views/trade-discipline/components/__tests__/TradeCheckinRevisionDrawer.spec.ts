@@ -32,7 +32,7 @@ const revision = {
 }
 
 const DrawerStub = defineComponent({
-  name: 'PageDrawer', props: ['modelValue'], emits: ['update:modelValue'],
+  name: 'PageDrawer', props: ['modelValue', 'size'], emits: ['update:modelValue'],
   template: '<div v-if="modelValue"><slot/><footer><slot name="footer"/></footer></div>',
 })
 
@@ -58,6 +58,7 @@ describe('TradeCheckinRevisionDrawer', () => {
     expect(wrapper.text()).toContain('规则版本快照')
     expect(wrapper.text()).toContain('只做龙头')
     expect(wrapper.text()).toContain('财务字段完整')
+    expect(wrapper.findComponent({ name: 'PageDrawer' }).props('size')).toBe('xl')
     await wrapper.findAll('button').find((button) => button.text() === '发起修正')!.trigger('click')
     expect(wrapper.emitted('amend')).toEqual([[{ ruleId: 'rule-1', tradeDate: '2026-08-22' }]])
   })

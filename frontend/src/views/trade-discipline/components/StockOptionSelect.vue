@@ -11,6 +11,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: StockOption | null] }>()
 
 const options = ref<StockOption[]>([])
 const loading = ref(false)
+const searchError = ref(false)
 let controller: AbortController | null = null
 let requestSeq = 0
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -22,16 +23,20 @@ watch(() => props.modelValue, (value) => {
 }, { immediate: true })
 
 async function runSearch(normalized: string, seq: number): Promise<void> {
-  controller = new AbortController()
+  const requestController = new AbortController()
+  controller = requestController
   try {
-    const result = await searchTradeDisciplineStocks(normalized, 20, controller.signal)
+    const result = await searchTradeDisciplineStocks(normalized, 20, requestController.signal)
     if (seq !== requestSeq) return
+    searchError.value = false
     const selected = props.modelValue
     options.value = selected && !result.list.some((item) => item.code === selected.code)
       ? [selected, ...result.list]
       : result.list
   } catch {
-    // 主动取消由请求层静默处理；其他错误已由统一请求层反馈。
+    if (seq !== requestSeq || requestController.signal.aborted) return
+    options.value = props.modelValue ? [props.modelValue] : []
+    searchError.value = true
   } finally {
     if (seq === requestSeq) loading.value = false
   }
@@ -42,6 +47,7 @@ function search(query: string): void {
   if (debounceTimer) clearTimeout(debounceTimer)
   controller?.abort()
   const seq = ++requestSeq
+  searchError.value = false
   if (!normalized) {
     options.value = props.modelValue ? [props.modelValue] : []
     loading.value = false
@@ -72,7 +78,7 @@ onUnmounted(() => {
     :disabled="disabled"
     :clearable="clearable"
     placeholder="输入代码或名称搜索"
-    no-data-text="没有匹配股票"
+    :no-data-text="searchError ? '搜索失败，请重新输入重试' : '没有匹配股票'"
     @update:model-value="select"
   >
     <el-option v-for="item in options" :key="item.code" :label="`${item.code} ${item.name}`" :value="item.code">

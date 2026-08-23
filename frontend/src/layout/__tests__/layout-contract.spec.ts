@@ -173,7 +173,6 @@ describe('布局契约守卫（M6）', () => {
     expect(consumers).toEqual([
       'data/IngestView.vue',
       'system/AuditLogView.vue',
-      'trade-discipline/components/TradeCheckinRevisionDrawer.vue',
     ])
   })
 })

@@ -144,6 +144,9 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
           {{ actionErrorMessage }}
         </div>
       </article>
+      <div class="quick-card-footer">
+        <el-button size="small" text @click="emit('navigate', { tab: 'rules' })">管理规则</el-button>
+      </div>
     </div>
   </section>
 </template>
@@ -192,6 +195,7 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
 .quick-rule-list { padding: 4px 12px 8px; }
 .quick-rule-row { padding: 10px 2px; border-bottom: 1px solid var(--page-settings-divider); }
 .quick-rule-row:last-child { border-bottom: 0; }
+.quick-card-footer { display: flex; justify-content: flex-end; padding-top: var(--app-space-1); }
 .quick-rule-main { min-width: 0; display: flex; align-items: center; gap: var(--app-space-2); }
 .quick-rule-main > div { min-width: 0; display: flex; flex-direction: column; gap: var(--app-space-1); }
 .quick-rule-main strong { color: var(--page-settings-text); font-size: var(--app-font-size-table); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

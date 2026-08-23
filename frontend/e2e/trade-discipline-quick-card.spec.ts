@@ -69,6 +69,25 @@ test('任意授权业务页可发现待打卡状态并完成快捷无操作履�
       ]))
       return
     }
+    if (/\/rules\/quick-rule-\d+$/.test(url.pathname) && req.method() === 'GET') {
+      const ruleId = url.pathname.split('/').at(-1)!
+      const isTrend = ruleId === 'quick-rule-1'
+      const versionNo = isTrend ? 2 : 1
+      const name = isTrend ? '趋势纪律' : '防守纪律'
+      const version = {
+        rule_id: ruleId, version_no: versionNo, name, capital: isTrend ? '100000' : '80000',
+        stock_rules: [], action_rules: [],
+      }
+      await route.fulfill(apiResponse({
+        id: ruleId, name, status: 'active', latest_version_no: versionNo,
+        draft_revision: null, proposed_name: name, management_status: 'active',
+        latest_management_event: null, has_pending_management_action: false,
+        effective_status: 'active', effective_event_seq: versionNo,
+        effective_from_trade_date: tradeDate, effective_version: version,
+        latest_version: version, draft: null,
+      }))
+      return
+    }
     if (url.pathname.endsWith('/checkins/current')) {
       await route.fulfill(apiResponse({
         trade_date: tradeDate,
@@ -113,5 +132,11 @@ test('任意授权业务页可发现待打卡状态并完成快捷无操作履�
   await expect(page).toHaveURL(/\/trade-discipline\?tab=checkin&rule_ref=quick-rule-2&trade_date=/)
   await expect(page.getByRole('heading', { name: '防守纪律' })).toBeVisible()
   await expect(page.getByTestId('checkin-version-kicker')).toHaveText('履约版本 v1')
+
+  await page.getByRole('button', { name: '用户中心' }).click()
+  await page.getByTestId('trade-discipline-quick-card').getByRole('button', { name: '管理规则' }).click()
+  await expect(page).toHaveURL(/\/trade-discipline\?tab=rules/)
+  await expect(page.getByRole('button', { name: '规则管理' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('listbox', { name: '选择交易规则' })).toBeVisible()
   expect(consoleIssues).toEqual([])
 })

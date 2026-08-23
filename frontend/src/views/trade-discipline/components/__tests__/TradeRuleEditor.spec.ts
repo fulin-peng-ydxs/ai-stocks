@@ -47,9 +47,9 @@ function detail() {
   }
 }
 
-async function mountEditor() {
+async function mountEditor(canManage = true) {
   const wrapper = mount(TradeRuleEditor, {
-    props: { ruleId: 'rule-1', tradeDate: '2026-08-21', canManage: true },
+    props: { ruleId: 'rule-1', tradeDate: '2026-08-21', canManage },
     global: { plugins: [ElementPlus], directives: { permission: {} } },
   })
   await flushPromises()
@@ -173,5 +173,52 @@ describe('TradeRuleEditor', () => {
     await flushPromises()
 
     expect(wrapper.get('.app-section-title').text()).toBe('第二条规则')
+  })
+
+  it.each([
+    ['当前正式版本', { management_status: 'active', effective_status: 'active' }],
+    ['归档版本', { management_status: 'archived', effective_status: 'archived' }],
+  ])('%s 不渲染明细增删和排序控件，启停开关保持禁用', async (_label, state) => {
+    api.get.mockResolvedValue({
+      ...detail(), ...state, draft: null, draft_revision: null,
+    })
+    const wrapper = await mountEditor()
+
+    expect(wrapper.find('[aria-label="上移选股规则"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="删除买卖规则"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('添加选股规则')
+    expect(wrapper.text()).not.toContain('添加买卖规则')
+    expect(wrapper.findAll('.el-switch').every((node) => node.classes().includes('is-disabled'))).toBe(true)
+  })
+
+  it('只有查看权限时即使存在工作草稿也不能修改明细结构或启停态', async () => {
+    const wrapper = await mountEditor(false)
+
+    expect(wrapper.text()).toContain('当前账号只有查看权限')
+    expect(wrapper.find('.detail-card__moves').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('添加选股规则')
+    expect(wrapper.findAll('.el-switch').every((node) => node.classes().includes('is-disabled'))).toBe(true)
+  })
+
+  it('以分为单位精确判断 0.10 + 0.20 恰好等于 0.30', async () => {
+    const decimalDraft = {
+      ...draft(), capital: '0.30',
+      stock_rules: [
+        { ...draft().stock_rules[0], max_capital: '0.10', enabled: true },
+        { ...draft().stock_rules[1], max_capital: '0.20', enabled: true },
+      ],
+    }
+    api.get.mockResolvedValue({
+      ...detail(), draft: decimalDraft, draft_revision: decimalDraft.draft_revision,
+    })
+    api.publish.mockResolvedValue({
+      changed: true, rule_id: 'rule-1', version_no: 2, effective_from_trade_date: '2026-08-24',
+    })
+    const wrapper = await mountEditor()
+
+    expect(wrapper.text()).toContain('剩余 0.00')
+    await wrapper.get('.rule-editor__footer .el-button:last-child').trigger('click')
+    await flushPromises()
+    expect(api.publish).toHaveBeenCalledWith('rule-1', 2)
   })
 })

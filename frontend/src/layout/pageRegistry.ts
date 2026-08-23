@@ -418,6 +418,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'checkinPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '今日打卡', order: 1 },
         { id: 'rulesPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '规则管理', order: 2 },
         { id: 'history', component: 'data-table', region: 'main', parentId: 'workspaceTabs', label: '历史记录', order: 3, config: { pageSize: 20 } },
+        { id: 'historyDetail', component: 'detail', region: 'overlay', label: '履约修订详情抽屉', order: 1 },
       ],
       editable: [densityKnob()],
     },

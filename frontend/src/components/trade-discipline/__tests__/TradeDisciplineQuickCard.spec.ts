@@ -55,6 +55,9 @@ describe('TradeDisciplineQuickCard', () => {
     const readonly = await mountCard(false)
     expect(readonly.text()).not.toContain('无操作履约')
     expect(readonly.text()).toContain('去打卡')
+    expect(readonly.text()).toContain('管理规则')
+    await readonly.findAll('button').find((button) => button.text() === '管理规则')!.trigger('click')
+    expect(readonly.emitted('navigate')?.at(-1)).toEqual([{ tab: 'rules' }])
   })
 
   it('确认后只提交规则和交易日，成功刷新摘要并广播跨入口变更', async () => {

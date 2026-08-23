@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
 import {
   archiveTradeDisciplineRule,
   copyTradeDisciplineRule,
@@ -49,14 +50,18 @@ let loadRequest = 0
 
 const dirty = computed(() => editing.value && fingerprint(form.value) !== baseline)
 const enabledStockRules = computed(() => form.value.stock_rules.filter((item) => item.enabled))
-const allocatedCapital = computed(() => enabledStockRules.value.reduce(
-  (sum, item) => sum + numeric(item.max_capital), 0,
+const allocatedCapitalUnits = computed(() => enabledStockRules.value.reduce(
+  (sum, item) => sum + (decimalToMinorUnits(item.max_capital) ?? 0n), 0n,
 ))
-const totalCapital = computed(() => numeric(form.value.capital))
-const remainingCapital = computed(() => totalCapital.value - allocatedCapital.value)
+const totalCapitalUnits = computed(() => decimalToMinorUnits(form.value.capital) ?? 0n)
+const remainingCapitalUnits = computed(() => totalCapitalUnits.value - allocatedCapitalUnits.value)
+const allocatedCapitalText = computed(() => formatMinorUnits(allocatedCapitalUnits.value))
+const remainingCapitalText = computed(() => formatMinorUnits(remainingCapitalUnits.value))
+const capitalExceeded = computed(() => remainingCapitalUnits.value < 0n)
 const hasSavedDraft = computed(() => Boolean(detail.value?.draft))
 const isArchived = computed(() => detail.value?.management_status === 'archived')
 const isUnpublished = computed(() => detail.value?.management_status === 'unpublished')
+const canEditDetails = computed(() => props.canManage && editing.value && !isArchived.value)
 const latestVersionLabel = computed(() => detail.value?.latest_version_no
   ? `当前正式 v${detail.value.latest_version_no}` : '尚无正式版本')
 
@@ -73,11 +78,6 @@ const subtypeOptions: Record<ActionType, Array<{ value: ActionSubtype; label: st
 
 function emptyPayload(): RuleDraftPayload {
   return { name: null, capital: null, stock_rules: [], action_rules: [] }
-}
-
-function numeric(value: string | number | null): number {
-  const parsed = Number(value ?? 0)
-  return Number.isFinite(parsed) ? parsed : 0
 }
 
 function formAmount(value: string | number | null): number | null {
@@ -246,10 +246,10 @@ async function discardSavedDraft(): Promise<void> {
 
 function validateForPublish(): boolean {
   if (!form.value.name?.trim()) return warn('发布前请填写规则名称')
-  if (totalCapital.value <= 0) return warn('发布前请填写大于 0 的总本金')
+  if (totalCapitalUnits.value <= 0n) return warn('发布前请填写大于 0 的总本金')
   if (!enabledStockRules.value.length) return warn('发布前至少启用一条选股规则')
-  if (remainingCapital.value < 0) return warn(`启用选股规则合计超出本金 ${Math.abs(remainingCapital.value).toFixed(2)} 元`)
-  if (!enabledStockRules.value.every((item) => numeric(item.max_capital) > 0)) {
+  if (capitalExceeded.value) return warn(`启用选股规则合计超出本金 ${formatMinorUnits(-remainingCapitalUnits.value)} 元`)
+  if (!enabledStockRules.value.every((item) => (decimalToMinorUnits(item.max_capital) ?? 0n) > 0n)) {
     return warn('启用的选股规则必须填写大于 0 的资金上限')
   }
   const actions = form.value.action_rules.filter((item) => item.enabled)
@@ -356,6 +356,7 @@ async function removeUnpublished(): Promise<void> {
 }
 
 function addStockRule(): void {
+  if (!canEditDetails.value) return
   form.value.stock_rules.push({
     detail_id: null, name: null, max_capital: null, content: null,
     display_order: form.value.stock_rules.length + 1, enabled: true,
@@ -363,6 +364,7 @@ function addStockRule(): void {
 }
 
 function addActionRule(): void {
+  if (!canEditDetails.value) return
   form.value.action_rules.push({
     detail_id: null, name: null, action_type: 'buy', action_subtype: 'open_position',
     content: null, display_order: form.value.action_rules.length + 1, enabled: true,
@@ -370,6 +372,7 @@ function addActionRule(): void {
 }
 
 function move<T>(items: T[], index: number, offset: -1 | 1): void {
+  if (!canEditDetails.value) return
   const target = index + offset
   if (target < 0 || target >= items.length) return
   const current = items[index]
@@ -377,8 +380,12 @@ function move<T>(items: T[], index: number, offset: -1 | 1): void {
   items[target] = current
 }
 
-function removeStock(index: number): void { form.value.stock_rules.splice(index, 1) }
-function removeAction(index: number): void { form.value.action_rules.splice(index, 1) }
+function removeStock(index: number): void {
+  if (canEditDetails.value) form.value.stock_rules.splice(index, 1)
+}
+function removeAction(index: number): void {
+  if (canEditDetails.value) form.value.action_rules.splice(index, 1)
+}
 
 function changeActionType(item: DraftActionRule): void {
   if (!item.action_type) { item.action_subtype = null; return }
@@ -452,19 +459,19 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
           <el-form-item label="总本金（元）">
             <el-input-number v-model="form.capital" :min="0" :precision="2" :controls="false" placeholder="0.00" />
           </el-form-item>
-          <div class="capital-meter" :class="{ danger: remainingCapital < 0 }">
-            <span>启用规则已分配 {{ allocatedCapital.toFixed(2) }}</span>
-            <strong>剩余 {{ remainingCapital.toFixed(2) }}</strong>
+          <div class="capital-meter" :class="{ danger: capitalExceeded }">
+            <span>启用规则已分配 {{ allocatedCapitalText }}</span>
+            <strong>剩余 {{ remainingCapitalText }}</strong>
           </div>
         </div>
 
         <section class="detail-group">
-          <header><div><h4>选股规则</h4><p>仅启用项参与发布校验和资金汇总</p></div><el-button v-if="editing" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addStockRule">添加选股规则</el-button></header>
+          <header><div><h4>选股规则</h4><p>仅启用项参与发布校验和资金汇总</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addStockRule">添加选股规则</el-button></header>
           <AppStateBlock v-if="!form.stock_rules.length" state="empty" size="tiny" title="尚未添加选股规则" />
           <article v-for="(item, index) in form.stock_rules" :key="item.detail_id || `stock-${index}`" class="detail-card">
             <div class="detail-card__head">
-              <el-switch v-model="item.enabled" active-text="启用" inactive-text="停用" />
-              <div class="detail-card__moves">
+              <el-switch v-model="item.enabled" :disabled="!canEditDetails" active-text="启用" inactive-text="停用" />
+              <div v-if="canEditDetails" class="detail-card__moves">
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="上移选股规则" size="sm" :disabled="index === 0" @click="move(form.stock_rules, index, -1)"><ArrowUp /></AppIconButton>
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="下移选股规则" size="sm" :disabled="index === form.stock_rules.length - 1" @click="move(form.stock_rules, index, 1)"><ArrowDown /></AppIconButton>
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除选股规则" size="sm" tone="danger" @click="removeStock(index)"><Delete /></AppIconButton>
@@ -479,12 +486,12 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
         </section>
 
         <section class="detail-group">
-          <header><div><h4>买卖规则</h4><p>正式发布至少启用一条买入和一条卖出规则</p></div><el-button v-if="editing" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addActionRule">添加买卖规则</el-button></header>
+          <header><div><h4>买卖规则</h4><p>正式发布至少启用一条买入和一条卖出规则</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addActionRule">添加买卖规则</el-button></header>
           <AppStateBlock v-if="!form.action_rules.length" state="empty" size="tiny" title="尚未添加买卖规则" />
           <article v-for="(item, index) in form.action_rules" :key="item.detail_id || `action-${index}`" class="detail-card">
             <div class="detail-card__head">
-              <el-switch v-model="item.enabled" active-text="启用" inactive-text="停用" />
-              <div class="detail-card__moves">
+              <el-switch v-model="item.enabled" :disabled="!canEditDetails" active-text="启用" inactive-text="停用" />
+              <div v-if="canEditDetails" class="detail-card__moves">
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="上移买卖规则" size="sm" :disabled="index === 0" @click="move(form.action_rules, index, -1)"><ArrowUp /></AppIconButton>
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="下移买卖规则" size="sm" :disabled="index === form.action_rules.length - 1" @click="move(form.action_rules, index, 1)"><ArrowDown /></AppIconButton>
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除买卖规则" size="sm" tone="danger" @click="removeAction(index)"><Delete /></AppIconButton>

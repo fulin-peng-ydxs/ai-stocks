@@ -104,7 +104,7 @@ watch(
   <PageDrawer
     :model-value="modelValue"
     title="履约修订详情"
-    size="wide"
+    size="xl"
     data-testid="checkin-revision-drawer"
     @update:model-value="emit('update:modelValue', $event)"
   >
