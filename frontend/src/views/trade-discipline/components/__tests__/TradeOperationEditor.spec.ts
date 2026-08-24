@@ -53,7 +53,7 @@ describe('TradeOperationEditor', () => {
       global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
     })
 
-    expect(wrapper.text()).toContain('价 × 量 = 9007199254740992.00')
+    expect(wrapper.text()).toContain('价 × 量 = 9,007,199,254,740,992.00')
     expect(wrapper.text()).not.toContain('与填写金额不一致')
     const amountInput = wrapper.findAllComponents({ name: 'FixedDecimalInput' })[2]!
     amountInput.vm.$emit('update:modelValue', '9007199254740991.99')

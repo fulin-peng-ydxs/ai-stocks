@@ -1,22 +1,25 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowDown, ArrowUp, Delete, Plus } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, CopyDocument, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
+import { formatMoney } from '@/utils/money'
 import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
+import RuleSummaryCard from '@/components/trade-discipline/RuleSummaryCard.vue'
 import {
   archiveTradeDisciplineRule,
   copyTradeDisciplineRule,
   deleteTradeDisciplineRule,
   discardTradeDisciplineRuleDraft,
   getTradeDisciplineRule,
+  listTradeDisciplineRuleTypes,
   openTradeDisciplineRuleDraft,
   publishTradeDisciplineRule,
   restoreTradeDisciplineRule,
   saveTradeDisciplineRuleDraft,
-  type ActionSubtype,
+  type ActionSubtypeOption,
   type ActionType,
   type DraftActionRule,
   type DraftStockRule,
@@ -45,6 +48,16 @@ const editing = ref(false)
 const draftRevision = ref<number | null>(null)
 const leaveDecisionVisible = ref(false)
 const form = ref<RuleDraftPayload>(emptyPayload())
+const expandedRule = ref<{
+  kind: 'stock' | 'action'
+  item: DraftStockRule | DraftActionRule
+} | null>(null)
+const actionSubtypeOptions = ref<ActionSubtypeOption[]>([
+  { name: 'open_position', label: '建仓', action_type: 'buy', builtin: true },
+  { name: 'add_position', label: '加仓', action_type: 'buy', builtin: true },
+  { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: true },
+  { name: 'do_t', label: '做 T', action_type: 'sell', builtin: true },
+])
 let baseline = ''
 let resolveLeaveDecision: ((allowLeave: boolean) => void) | null = null
 let loadRequest = 0
@@ -56,8 +69,12 @@ const allocatedCapitalUnits = computed(() => enabledStockRules.value.reduce(
 ))
 const totalCapitalUnits = computed(() => decimalToMinorUnits(form.value.capital) ?? 0n)
 const remainingCapitalUnits = computed(() => totalCapitalUnits.value - allocatedCapitalUnits.value)
-const allocatedCapitalText = computed(() => formatMinorUnits(allocatedCapitalUnits.value))
-const remainingCapitalText = computed(() => formatMinorUnits(remainingCapitalUnits.value))
+const allocatedCapitalText = computed(() => formatMoney(
+  formatMinorUnits(allocatedCapitalUnits.value),
+))
+const remainingCapitalText = computed(() => formatMoney(
+  formatMinorUnits(remainingCapitalUnits.value),
+))
 const capitalExceeded = computed(() => remainingCapitalUnits.value < 0n)
 const hasSavedDraft = computed(() => Boolean(detail.value?.draft))
 const isArchived = computed(() => detail.value?.management_status === 'archived')
@@ -66,15 +83,46 @@ const canEditDetails = computed(() => props.canManage && editing.value && !isArc
 const latestVersionLabel = computed(() => detail.value?.latest_version_no
   ? `当前正式 v${detail.value.latest_version_no}` : '尚无正式版本')
 
-const subtypeOptions: Record<ActionType, Array<{ value: ActionSubtype; label: string }>> = {
-  buy: [
-    { value: 'open_position', label: '建仓' },
-    { value: 'add_position', label: '加仓' },
-  ],
-  sell: [
-    { value: 'liquidate', label: '清仓' },
-    { value: 'do_t', label: '做 T' },
-  ],
+const actionGroups: Array<{ value: ActionType; label: string; hint: string }> = [
+  { value: 'buy', label: '买入规则', hint: '建仓与加仓条件' },
+  { value: 'sell', label: '卖出规则', hint: '止盈、止损与减仓条件' },
+]
+
+function subtypeOptions(side: ActionType): ActionSubtypeOption[] {
+  return actionSubtypeOptions.value.filter((option) => option.action_type === side)
+}
+
+function subtypeLabel(item: DraftActionRule): string {
+  const option = actionSubtypeOptions.value.find((candidate) => (
+    candidate.action_type === item.action_type && candidate.name === item.action_subtype
+  ))
+  return option?.label || item.action_subtype?.trim() || '未选择类型'
+}
+
+function stockCapitalMeta(item: DraftStockRule): string {
+  return item.max_capital ? `上限 · ${formatMoney(item.max_capital)} 元` : '未设置资金上限'
+}
+
+function cardTitle(item: DraftStockRule | DraftActionRule, fallback: string): string {
+  return item.name?.trim() || fallback
+}
+
+function cardIndex(index: number): string {
+  return String(index + 1).padStart(2, '0')
+}
+
+function isRuleExpanded(kind: 'stock' | 'action', item: DraftStockRule | DraftActionRule): boolean {
+  return expandedRule.value?.kind === kind && expandedRule.value.item === item
+}
+
+function toggleRule(kind: 'stock' | 'action', item: DraftStockRule | DraftActionRule): void {
+  expandedRule.value = isRuleExpanded(kind, item) ? null : { kind, item }
+}
+
+function groupedActionRules(side: ActionType) {
+  return form.value.action_rules
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.action_type === side)
 }
 
 function emptyPayload(): RuleDraftPayload {
@@ -112,6 +160,7 @@ function fingerprint(payload: RuleDraftPayload): string {
 
 function setEditorSource(source: RuleDraftPayload | RuleVersionDetail | null, revision: number | null) {
   form.value = clonePayload(source)
+  expandedRule.value = null
   draftRevision.value = revision
   baseline = fingerprint(form.value)
   editing.value = revision !== null
@@ -123,9 +172,13 @@ async function load(): Promise<void> {
   loading.value = true
   loadError.value = false
   try {
-    const result = await getTradeDisciplineRule(props.ruleId, props.tradeDate)
+    const [result, types] = await Promise.all([
+      getTradeDisciplineRule(props.ruleId, props.tradeDate),
+      listTradeDisciplineRuleTypes().catch(() => actionSubtypeOptions.value),
+    ])
     if (request !== loadRequest) return
     detail.value = result
+    actionSubtypeOptions.value = types
     if (result.draft) setEditorSource(result.draft, result.draft.draft_revision)
     else setEditorSource(result.latest_version, null)
   } catch {
@@ -170,6 +223,7 @@ function normalizedPayload(): RuleDraftPayload {
 
 async function saveDraft(showMessage = true): Promise<boolean> {
   if (!detail.value || draftRevision.value === null) return false
+  if (!validateSubtypeOwnership()) return false
   command.value = 'save'
   try {
     const saved = await saveTradeDisciplineRuleDraft(detail.value.id, {
@@ -178,6 +232,8 @@ async function saveDraft(showMessage = true): Promise<boolean> {
     })
     detail.value.draft = saved
     setEditorSource(saved, saved.draft_revision)
+    actionSubtypeOptions.value = await listTradeDisciplineRuleTypes()
+      .catch(() => actionSubtypeOptions.value)
     if (showMessage) ElMessage.success('草稿已保存，当前正式版本未改变')
     emit('changed')
     return true
@@ -243,7 +299,10 @@ function validateForPublish(): boolean {
   if (!form.value.name?.trim()) return warn('发布前请填写规则名称')
   if (totalCapitalUnits.value <= 0n) return warn('发布前请填写大于 0 的总本金')
   if (!enabledStockRules.value.length) return warn('发布前至少启用一条选股规则')
-  if (capitalExceeded.value) return warn(`启用选股规则合计超出本金 ${formatMinorUnits(-remainingCapitalUnits.value)} 元`)
+  if (capitalExceeded.value) {
+    const excess = formatMoney(formatMinorUnits(-remainingCapitalUnits.value))
+    return warn(`启用选股规则合计超出本金 ${excess} 元`)
+  }
   if (!enabledStockRules.value.every((item) => (decimalToMinorUnits(item.max_capital) ?? 0n) > 0n)) {
     return warn('启用的选股规则必须填写大于 0 的资金上限')
   }
@@ -256,6 +315,20 @@ function validateForPublish(): boolean {
 function warn(message: string): false {
   ElMessage.warning(message)
   return false
+}
+
+function validateSubtypeOwnership(): boolean {
+  const ownership = new Map<string, ActionType>()
+  for (const item of form.value.action_rules) {
+    if (!item.action_type || !item.action_subtype?.trim()) continue
+    const normalized = item.action_subtype.normalize('NFKC').trim().toLocaleLowerCase()
+    const existing = ownership.get(normalized)
+    if (existing && existing !== item.action_type) {
+      return warn(`类型“${item.action_subtype.trim()}”不能同时用于买入和卖出`)
+    }
+    ownership.set(normalized, item.action_type)
+  }
+  return true
 }
 
 async function publish(): Promise<void> {
@@ -352,18 +425,47 @@ async function removeUnpublished(): Promise<void> {
 
 function addStockRule(): void {
   if (!canEditDetails.value) return
-  form.value.stock_rules.push({
+  const item: DraftStockRule = {
     detail_id: null, name: null, max_capital: null, content: null,
     display_order: form.value.stock_rules.length + 1, enabled: true,
-  })
+  }
+  form.value.stock_rules.push(item)
+  expandedRule.value = { kind: 'stock', item }
 }
 
-function addActionRule(): void {
+function addActionRule(side: ActionType): void {
   if (!canEditDetails.value) return
-  form.value.action_rules.push({
-    detail_id: null, name: null, action_type: 'buy', action_subtype: 'open_position',
+  const firstSubtype = subtypeOptions(side)[0]?.name ?? null
+  const item: DraftActionRule = {
+    detail_id: null, name: null, action_type: side, action_subtype: firstSubtype,
     content: null, display_order: form.value.action_rules.length + 1, enabled: true,
-  })
+  }
+  form.value.action_rules.push(item)
+  expandedRule.value = { kind: 'action', item }
+}
+
+function copyStockRule(index: number): void {
+  if (!canEditDetails.value) return
+  const source = form.value.stock_rules[index]
+  const copied: DraftStockRule = {
+    ...source,
+    detail_id: null,
+    name: source.name ? `${source.name}-副本` : null,
+  }
+  form.value.stock_rules.splice(index + 1, 0, copied)
+  expandedRule.value = { kind: 'stock', item: copied }
+}
+
+function copyActionRule(index: number): void {
+  if (!canEditDetails.value) return
+  const source = form.value.action_rules[index]
+  const copied: DraftActionRule = {
+    ...source,
+    detail_id: null,
+    name: source.name ? `${source.name}-副本` : null,
+  }
+  form.value.action_rules.splice(index + 1, 0, copied)
+  expandedRule.value = { kind: 'action', item: copied }
 }
 
 function move<T>(items: T[], index: number, offset: -1 | 1): void {
@@ -376,18 +478,25 @@ function move<T>(items: T[], index: number, offset: -1 | 1): void {
 }
 
 function removeStock(index: number): void {
-  if (canEditDetails.value) form.value.stock_rules.splice(index, 1)
+  if (!canEditDetails.value) return
+  const [removed] = form.value.stock_rules.splice(index, 1)
+  if (expandedRule.value?.item === removed) expandedRule.value = null
 }
 function removeAction(index: number): void {
-  if (canEditDetails.value) form.value.action_rules.splice(index, 1)
+  if (!canEditDetails.value) return
+  const [removed] = form.value.action_rules.splice(index, 1)
+  if (expandedRule.value?.item === removed) expandedRule.value = null
 }
 
-function changeActionType(item: DraftActionRule): void {
-  if (!item.action_type) { item.action_subtype = null; return }
-  const available = subtypeOptions[item.action_type]
-  if (!available.some((option) => option.value === item.action_subtype)) {
-    item.action_subtype = available[0].value
-  }
+function moveAction(side: ActionType, groupIndex: number, offset: -1 | 1): void {
+  if (!canEditDetails.value) return
+  const grouped = groupedActionRules(side)
+  const current = grouped[groupIndex]
+  const target = grouped[groupIndex + offset]
+  if (!current || !target) return
+  const value = form.value.action_rules[current.index]
+  form.value.action_rules[current.index] = form.value.action_rules[target.index]
+  form.value.action_rules[target.index] = value
 }
 
 function managementText(): string {
@@ -452,7 +561,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
             <el-input v-model="form.name" data-testid="rule-name-input" maxlength="80" placeholder="例如：趋势突破纪律" />
           </el-form-item>
           <el-form-item label="总本金（元）">
-            <FixedDecimalInput v-model="form.capital" data-testid="rule-capital-input" />
+            <FixedDecimalInput v-model="form.capital" grouped data-testid="rule-capital-input" />
           </el-form-item>
           <div class="capital-meter" :class="{ danger: capitalExceeded }">
             <span>启用规则已分配 {{ allocatedCapitalText }}</span>
@@ -463,48 +572,90 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
         <section class="detail-group">
           <header><div><h4>选股规则</h4><p>仅启用项参与发布校验和资金汇总</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addStockRule">添加选股规则</el-button></header>
           <AppStateBlock v-if="!form.stock_rules.length" state="empty" size="tiny" title="尚未添加选股规则" />
-          <article v-for="(item, index) in form.stock_rules" :key="item.detail_id || `stock-${index}`" class="detail-card" data-testid="stock-rule-card">
-            <div class="detail-card__head">
-              <el-switch v-model="item.enabled" :disabled="!canEditDetails" active-text="启用" inactive-text="停用" />
-              <div v-if="canEditDetails" class="detail-card__moves">
+          <div v-else class="rule-card-grid">
+            <RuleSummaryCard
+              v-for="(item, index) in form.stock_rules"
+              :key="item.detail_id || `stock-${index}`"
+              :panel-id="`stock-rule-panel-${index}`"
+              :index-label="cardIndex(index)"
+              :title="cardTitle(item, `未命名选股规则 ${index + 1}`)"
+              :meta="stockCapitalMeta(item)"
+              :content="item.content"
+              :enabled="item.enabled"
+              :expanded="isRuleExpanded('stock', item)"
+              :editable="canEditDetails"
+              :class="{ 'rule-card--wide': isRuleExpanded('stock', item) }"
+              data-testid="stock-rule-card"
+              @toggle="toggleRule('stock', item)"
+              @update:enabled="item.enabled = $event"
+            >
+              <template #actions>
+                <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制选股规则" size="sm" @click="copyStockRule(index)"><CopyDocument /></AppIconButton>
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="上移选股规则" size="sm" :disabled="index === 0" @click="move(form.stock_rules, index, -1)"><ArrowUp /></AppIconButton>
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="下移选股规则" size="sm" :disabled="index === form.stock_rules.length - 1" @click="move(form.stock_rules, index, 1)"><ArrowDown /></AppIconButton>
                 <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除选股规则" size="sm" tone="danger" @click="removeStock(index)"><Delete /></AppIconButton>
+              </template>
+              <div class="rule-card-form rule-card-form--stock">
+                <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
+                <el-form-item label="资金上限（元）"><FixedDecimalInput v-model="item.max_capital" grouped data-testid="stock-rule-capital-input" /></el-form-item>
+                <el-form-item class="rule-card-form__content" label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
               </div>
-            </div>
-            <div class="detail-card__grid">
-              <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="stock-rule-name-input" maxlength="80" /></el-form-item>
-              <el-form-item label="资金上限（元）"><FixedDecimalInput v-model="item.max_capital" data-testid="stock-rule-capital-input" /></el-form-item>
-            </div>
-            <el-form-item label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
-          </article>
+            </RuleSummaryCard>
+          </div>
         </section>
 
         <section class="detail-group">
-          <header><div><h4>买卖规则</h4><p>正式发布至少启用一条买入和一条卖出规则</p></div><el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" @click="addActionRule">添加买卖规则</el-button></header>
+          <header><div><h4>买卖规则</h4><p>按方向分组，正式发布至少启用一条买入和一条卖出规则</p></div></header>
           <AppStateBlock v-if="!form.action_rules.length" state="empty" size="tiny" title="尚未添加买卖规则" />
-          <article v-for="(item, index) in form.action_rules" :key="item.detail_id || `action-${index}`" class="detail-card" data-testid="action-rule-card">
-            <div class="detail-card__head">
-              <el-switch v-model="item.enabled" :disabled="!canEditDetails" active-text="启用" inactive-text="停用" />
-              <div v-if="canEditDetails" class="detail-card__moves">
-                <AppIconButton v-permission="'trade-discipline:rule-manage'" label="上移买卖规则" size="sm" :disabled="index === 0" @click="move(form.action_rules, index, -1)"><ArrowUp /></AppIconButton>
-                <AppIconButton v-permission="'trade-discipline:rule-manage'" label="下移买卖规则" size="sm" :disabled="index === form.action_rules.length - 1" @click="move(form.action_rules, index, 1)"><ArrowDown /></AppIconButton>
-                <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除买卖规则" size="sm" tone="danger" @click="removeAction(index)"><Delete /></AppIconButton>
+          <div class="action-group-grid">
+            <section v-for="group in actionGroups" :key="group.value" class="action-group" :data-testid="`${group.value}-rule-group`">
+              <header class="action-group__head">
+                <div><h5>{{ group.label }}</h5><p>{{ group.hint }}</p></div>
+                <el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" size="small" @click="addActionRule(group.value)">添加</el-button>
+              </header>
+              <AppStateBlock v-if="!groupedActionRules(group.value).length" state="empty" size="tiny" :title="`尚未添加${group.label}`" />
+              <div v-else class="rule-card-grid rule-card-grid--single">
+                <RuleSummaryCard
+                  v-for="({ item, index }, groupIndex) in groupedActionRules(group.value)"
+                  :key="item.detail_id || `action-${index}`"
+                  :panel-id="`${group.value}-rule-panel-${groupIndex}`"
+                  :index-label="cardIndex(groupIndex)"
+                  :title="cardTitle(item, `未命名${group.label} ${groupIndex + 1}`)"
+                  :meta="`类型 · ${subtypeLabel(item)}`"
+                  :content="item.content"
+                  :enabled="item.enabled"
+                  :expanded="isRuleExpanded('action', item)"
+                  :editable="canEditDetails"
+                  data-testid="action-rule-card"
+                  @toggle="toggleRule('action', item)"
+                  @update:enabled="item.enabled = $event"
+                >
+                  <template #actions>
+                    <AppIconButton v-permission="'trade-discipline:rule-manage'" label="复制买卖规则" size="sm" @click="copyActionRule(index)"><CopyDocument /></AppIconButton>
+                    <AppIconButton v-permission="'trade-discipline:rule-manage'" label="上移买卖规则" size="sm" :disabled="groupIndex === 0" @click="moveAction(group.value, groupIndex, -1)"><ArrowUp /></AppIconButton>
+                    <AppIconButton v-permission="'trade-discipline:rule-manage'" label="下移买卖规则" size="sm" :disabled="groupIndex === groupedActionRules(group.value).length - 1" @click="moveAction(group.value, groupIndex, 1)"><ArrowDown /></AppIconButton>
+                    <AppIconButton v-permission="'trade-discipline:rule-manage'" label="删除买卖规则" size="sm" tone="danger" @click="removeAction(index)"><Delete /></AppIconButton>
+                  </template>
+                  <div class="rule-card-form rule-card-form--action">
+                    <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>
+                    <el-form-item label="类型">
+                      <el-select v-model="item.action_subtype" filterable allow-create default-first-option maxlength="40" placeholder="选择或输入类型" data-testid="action-rule-type-select">
+                        <el-option v-for="option in subtypeOptions(group.value)" :key="option.name" :label="option.label || option.name" :value="option.name" />
+                      </el-select>
+                      <small class="field-hint">输入新类型后保存草稿，即可在后续规则中复用</small>
+                    </el-form-item>
+                    <el-form-item class="rule-card-form__content" label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
+                  </div>
+                </RuleSummaryCard>
               </div>
-            </div>
-            <div class="detail-card__grid detail-card__grid--actions">
-              <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>
-              <el-form-item label="方向"><el-select v-model="item.action_type" data-testid="action-rule-side-select" @change="changeActionType(item)"><el-option label="买入" value="buy" /><el-option label="卖出" value="sell" /></el-select></el-form-item>
-              <el-form-item label="类型"><el-select v-model="item.action_subtype"><el-option v-for="option in item.action_type ? subtypeOptions[item.action_type] : []" :key="option.value" :label="option.label" :value="option.value" /></el-select></el-form-item>
-            </div>
-            <el-form-item label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
-          </article>
+            </section>
+          </div>
         </section>
       </el-form>
 
       <footer v-if="canManage && editing" class="rule-editor__footer">
         <span v-if="dirty" class="dirty-copy">有未保存修改</span>
-        <el-button v-permission="'trade-discipline:rule-manage'" @click="restoreBaseline">取消未保存修改</el-button>
+        <el-button v-permission="'trade-discipline:rule-manage'" @click="restoreBaseline">重置</el-button>
         <el-button v-if="hasSavedDraft && !isUnpublished" v-permission="'trade-discipline:rule-manage'" type="danger" plain :loading="command === 'discard'" @click="discardSavedDraft">放弃草稿</el-button>
         <el-button v-permission="'trade-discipline:rule-manage'" :loading="command === 'save'" @click="saveDraft()">保存草稿</el-button>
         <el-button v-permission="'trade-discipline:rule-manage'" type="primary" :loading="command === 'publish'" @click="publish">保存并启用</el-button>
@@ -532,10 +683,10 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 
 <style scoped>
 .rule-editor { min-width: 520px; min-height: 0; overflow: auto; flex: 1 1 auto; padding: var(--app-space-5); border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay); }
-.rule-editor__head, .rule-editor__commands, .detail-group > header, .detail-card__head, .detail-card__moves, .rule-editor__footer { display: flex; align-items: center; }
+.rule-editor__head, .rule-editor__commands, .detail-group > header, .rule-editor__footer { display: flex; align-items: center; }
 .rule-editor__head { justify-content: space-between; gap: var(--app-space-3); }
 .rule-editor__head .app-section-title { margin: var(--app-space-1) 0 0; }
-.rule-editor__commands, .detail-card__moves { gap: var(--app-space-1); }
+.rule-editor__commands { gap: var(--app-space-1); }
 .rule-state-track { margin: var(--app-space-4) 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--el-border-color-lighter); border-radius: 7px; overflow: hidden; }
 .rule-state-track > div { padding: var(--app-space-3); background: var(--el-fill-color-extra-light); }
 .rule-state-track > div + div { border-left: 1px solid var(--el-border-color-lighter); }
@@ -550,11 +701,19 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 .detail-group > header { justify-content: space-between; gap: var(--app-space-3); margin-bottom: var(--app-space-2); }
 .detail-group h4 { margin: 0; font-size: var(--app-font-size-section); }
 .detail-group p { margin: var(--app-space-1) 0 0; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
-.detail-card { padding: var(--app-space-3); border: 1px solid var(--el-border-color-lighter); border-radius: 7px; background: var(--el-bg-color); }
-.detail-card + .detail-card { margin-top: var(--app-space-2); }
-.detail-card__head { justify-content: space-between; margin-bottom: var(--app-space-2); }
-.detail-card__grid { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.65fr); gap: var(--app-space-3); }
-.detail-card__grid--actions { grid-template-columns: minmax(220px, 1fr) 120px 140px; }
+.rule-card-grid { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: var(--app-space-2); }
+.rule-card-grid--single { grid-template-columns: 1fr; }
+.rule-card--wide { grid-column: 1 / -1; }
+.rule-card-form { display: grid; row-gap: 0; column-gap: var(--app-space-3); }
+.rule-card-form--stock { grid-template-columns: minmax(180px, 1fr) minmax(180px, 0.7fr); }
+.rule-card-form--action { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+.rule-card-form__content { grid-column: 1 / -1; }
+.rule-card-form :deep(.el-select), .rule-card-form :deep(.el-input) { width: 100%; }
+.action-group-grid { display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); gap: var(--app-space-3); }
+.action-group { min-width: 0; padding: var(--app-space-2); border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-extra-light); }
+.action-group__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--app-space-2); margin-bottom: var(--app-space-3); }
+.action-group h5 { margin: 0; color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
+.field-hint { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-editor__footer { position: sticky; bottom: calc(var(--app-space-5) * -1); z-index: 2; justify-content: flex-end; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color-overlay); }
 .dirty-copy { margin-right: auto; color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 .leave-decision-copy { margin: 0; color: var(--el-text-color-regular); line-height: var(--app-line-height-longform); }
@@ -563,11 +722,13 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
   .rule-state-track, .rule-editor__base { grid-template-columns: 1fr; }
   .rule-state-track > div + div { border-left: 0; border-top: 1px solid var(--el-border-color-lighter); }
   .capital-meter { margin-bottom: 0; }
+  .rule-card-grid, .action-group-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
   .rule-editor__head, .detail-group > header { align-items: stretch; flex-direction: column; }
   .rule-editor__commands { flex-wrap: wrap; }
-  .detail-card__grid, .detail-card__grid--actions { grid-template-columns: 1fr; }
   .rule-editor__footer { flex-wrap: wrap; }
+  .rule-card-form--stock, .rule-card-form--action { grid-template-columns: 1fr; }
+  .rule-card-form__content { grid-column: auto; }
 }
 </style>

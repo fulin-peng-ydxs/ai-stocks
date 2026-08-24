@@ -11,6 +11,7 @@ import {
 } from '@/components/stock-chart/chartUtils'
 import { useStockChartTheme } from '@/components/stock-chart/useStockChartTheme'
 import { useStatusColorPalette } from '@/components/chartTheme'
+import { formatMoney } from '@/utils/money'
 
 // 交易标记：在 K 线上标出买卖点（date=交易日, kind=买/卖, label=多行说明文本）
 export interface TradeMarker {
@@ -83,7 +84,7 @@ const maLabels = computed(() =>
   maSeries.value.map((m) => ({
     label: m.label,
     color: m.color,
-    val: m.data[activeIdx.value] != null ? m.data[activeIdx.value]!.toFixed(2) : '--',
+    val: formatMoney(m.data[activeIdx.value], { empty: '--' }),
   })),
 )
 
@@ -241,7 +242,7 @@ function render() {
                   name: '最新', coord: [bars.length - 1, bars[bars.length - 1].close],
                   value: bars[bars.length - 1].close, symbol: 'rect', symbolSize: 0,
                   label: { show: true, position: 'right', color: t.mark, fontSize: 11,
-                           formatter: (pm: any) => '← ' + Number(pm.value).toFixed(2) },
+                           formatter: (pm: any) => '← ' + formatMoney(Number(pm.value), { empty: '--' }) },
                 }]
               : []),
             ...tradeMarks,

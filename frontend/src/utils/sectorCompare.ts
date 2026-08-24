@@ -6,6 +6,7 @@
 import type { SectorBar } from '@/api/sectors'
 import type { Bar } from '@/api/stocks'
 import { ALL_DAYS } from '@/composables/useKlinePrefs'
+import { formatMoney } from '@/utils/money'
 
 export type CompareMetric =
   | 'cum' | 'roll_5d' | 'roll_10d' | 'roll_20d' | 'inflow' | 'breadth'
@@ -67,7 +68,7 @@ export function formatSectorPercent(value: number | null | undefined): string {
 
 export function formatSectorInflow(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '—'
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)} 亿`
+  return `${formatMoney(value, { digits: 2, forceSign: true })} 亿`
 }
 
 export function sectorValueClass(value: number | null | undefined): 'up' | 'down' | 'muted' | '' {

@@ -48,6 +48,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useStockSet } from '@/stores/stockSet'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
 import { hasPermission } from '@/utils/permission'
+import { formatMoney } from '@/utils/money'
 import {
   sanitizeSectorSourceQuery,
   sectorListLocation,
@@ -302,7 +303,7 @@ async function toggleWatchlist(): Promise<void> {
 
 const fmtPct = formatSectorPercent
 function fmtNumber(value: number | null | undefined, digits = 2): string {
-  return value === null || value === undefined ? '—' : value.toFixed(digits)
+  return formatMoney(value, { digits })
 }
 const fmtInflow = formatSectorInflow
 const pctClass = sectorValueClass

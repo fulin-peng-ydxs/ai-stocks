@@ -60,14 +60,22 @@ CREATE TABLE IF NOT EXISTS trade_discipline_stock_rule (
             (tenant_id, owner_user_id, rule_id, version_no) ON DELETE RESTRICT
 );
 
+-- 买卖规则二级类型候选：仅在同一 tenant + owner 内共享，归一化名称唯一；用户保存草稿时登记。
+CREATE TABLE IF NOT EXISTS trade_discipline_action_subtype (
+    tenant_id TEXT NOT NULL DEFAULT 'default', owner_user_id TEXT NOT NULL DEFAULT 'admin',
+    normalized_name TEXT NOT NULL, name TEXT NOT NULL, action_type TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (btrim(name) <> ''), CHECK (action_type IN ('buy','sell')),
+    PRIMARY KEY (tenant_id, owner_user_id, normalized_name)
+);
+
 CREATE TABLE IF NOT EXISTS trade_discipline_action_rule (
     rule_id TEXT, tenant_id TEXT NOT NULL DEFAULT 'default', owner_user_id TEXT NOT NULL DEFAULT 'admin',
     version_no INTEGER, detail_id TEXT, name TEXT NOT NULL, action_type TEXT NOT NULL,
     action_subtype TEXT NOT NULL, content TEXT NOT NULL, display_order INTEGER NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     CHECK (btrim(name) <> '' AND btrim(content) <> ''),
-    CHECK ((action_type='buy' AND action_subtype IN ('open_position','add_position'))
-        OR (action_type='sell' AND action_subtype IN ('liquidate','do_t'))),
+    CHECK (btrim(action_subtype) <> ''),
     CHECK (display_order > 0),
     PRIMARY KEY (tenant_id, owner_user_id, rule_id, version_no, detail_id),
     UNIQUE (tenant_id, owner_user_id, rule_id, version_no, action_type, display_order),
@@ -108,17 +116,38 @@ CREATE TABLE IF NOT EXISTS trade_discipline_draft_action_rule (
     detail_id TEXT, name TEXT, action_type TEXT, action_subtype TEXT, content TEXT,
     display_order INTEGER NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE,
     CHECK (action_type IS NULL OR action_type IN ('buy','sell')),
-    CHECK (action_subtype IS NULL OR action_subtype IN
-        ('open_position','add_position','liquidate','do_t')),
-    CHECK (action_type IS NULL OR action_subtype IS NULL
-        OR (action_type='buy' AND action_subtype IN ('open_position','add_position'))
-        OR (action_type='sell' AND action_subtype IN ('liquidate','do_t'))),
+    CHECK (action_subtype IS NULL OR btrim(action_subtype) <> ''),
     CHECK (display_order > 0),
     PRIMARY KEY (tenant_id, owner_user_id, rule_id, detail_id),
     UNIQUE (tenant_id, owner_user_id, rule_id, action_type, display_order),
     FOREIGN KEY (tenant_id, owner_user_id, rule_id)
         REFERENCES trade_discipline_rule_draft (tenant_id, owner_user_id, rule_id) ON DELETE CASCADE
 );
+
+-- 存量升级：移除只允许四个内置值的旧约束，再恢复非空守卫。操作只改约束，不改历史规则值；
+-- 回滚只能重新加旧枚举约束，会拒绝已保存自定义类型，因此存在自定义事实后不可无损回滚。
+DO $$ DECLARE item RECORD; BEGIN
+    FOR item IN
+        SELECT c.conname,c.conrelid FROM pg_constraint c
+        WHERE c.contype='c'
+          AND c.conrelid IN ('trade_discipline_action_rule'::regclass,
+                             'trade_discipline_draft_action_rule'::regclass)
+          AND pg_get_constraintdef(c.oid) LIKE '%action_subtype%'
+    LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', item.conrelid::regclass, item.conname);
+    END LOOP;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='td_action_type_check') THEN
+        ALTER TABLE trade_discipline_action_rule ADD CONSTRAINT td_action_type_check
+            CHECK (action_type IN ('buy','sell'));
+    END IF;
+END $$;
+ALTER TABLE trade_discipline_action_rule
+    ADD CONSTRAINT td_action_subtype_nonblank_check CHECK (btrim(action_subtype) <> '');
+ALTER TABLE trade_discipline_draft_action_rule
+    ADD CONSTRAINT td_draft_action_subtype_nonblank_check
+    CHECK (action_subtype IS NULL OR btrim(action_subtype) <> '');
 
 CREATE TABLE IF NOT EXISTS trade_discipline_rule_activation (
     id TEXT, tenant_id TEXT NOT NULL DEFAULT 'default', owner_user_id TEXT NOT NULL DEFAULT 'admin',
@@ -468,5 +497,6 @@ COMMIT;
 --   trade_discipline_rule_activation, trade_discipline_draft_action_rule,
 --   trade_discipline_draft_stock_rule, trade_discipline_rule_draft,
 --   trade_discipline_action_rule, trade_discipline_stock_rule,
+--   trade_discipline_action_subtype,
 --   trade_discipline_rule_version, trade_discipline_rule_name_claim,
 --   trade_discipline_rule CASCADE;

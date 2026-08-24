@@ -41,6 +41,7 @@ import { useStockSet } from '@/stores/stockSet'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
+import { formatMoney } from '@/utils/money'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useDebouncedQuery } from '@/composables/useDebouncedQuery'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
@@ -791,7 +792,7 @@ onBeforeUnmount(() => {
           data-testid="stock-latest-quote"
           :class="pctClass(latestPct)"
         >
-          {{ latestClose == null ? '--' : latestClose.toFixed(2) }}
+          {{ formatMoney(latestClose, { empty: '--' }) }}
           {{ fmtPct(latestPct) }}
         </span>
         <el-select

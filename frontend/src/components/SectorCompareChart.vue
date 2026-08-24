@@ -19,6 +19,7 @@ import {
   priceMetricWindow,
   type PriceCompareSeries,
 } from '@/utils/marketCompare'
+import { formatMoney } from '@/utils/money'
 
 // 单个板块的序列：code/name 标识 + 该板块的日线 bars（升序）
 export interface CompareSeries {
@@ -248,7 +249,11 @@ function renderBar() {
           const value = typeof item.value === 'number' ? item.value : Number(item.value)
           const valid = item.value != null && Number.isFinite(value)
           const color = !valid || value === 0 ? t.text : value > 0 ? upColor : downColor
-          const valueText = valid ? `${value > 0 ? '+' : ''}${value.toFixed(2)}${unit}` : '--'
+          const valueText = valid
+            ? (props.metric === 'inflow'
+              ? `${formatMoney(value, { forceSign: true })}${unit}`
+              : `${value > 0 ? '+' : ''}${value.toFixed(2)}${unit}`)
+            : '--'
           return `<div style="display:flex;justify-content:space-between;gap:18px">`
             + `<span>${item.marker ?? ''}${escapeHtml(item.seriesName)}</span>`
             + `<span style="text-align:right"><strong style="color:${color}">${valueText}</strong></span>`
@@ -268,7 +273,13 @@ function renderBar() {
     yAxis: {
       scale: true,
       axisLine: { show: false },
-      axisLabel: { color: t.label, fontSize: 10, formatter: `{value}${unit}` },
+      axisLabel: {
+        color: t.label,
+        fontSize: 10,
+        formatter: props.metric === 'inflow'
+          ? (value: number) => `${formatMoney(value)}${unit}`
+          : `{value}${unit}`,
+      },
       splitLine: { lineStyle: { color: t.split } },
     },
     series,

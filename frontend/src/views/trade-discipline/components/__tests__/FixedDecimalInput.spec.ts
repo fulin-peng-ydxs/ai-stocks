@@ -46,4 +46,20 @@ describe('FixedDecimalInput', () => {
 
     expect(wrapper.emitted('update:modelValue')).toEqual([['0.25']])
   })
+
+  it('金额失焦显示千分位，聚焦编辑和回传时保持无分隔精确值', async () => {
+    const wrapper = mount(FixedDecimalInput, {
+      props: { modelValue: '1000000000', grouped: true },
+      global: { plugins: [ElementPlus] },
+    })
+    const input = wrapper.get('input')
+
+    expect(input.element.value).toBe('1,000,000,000.00')
+    wrapper.findComponent({ name: 'ElInput' }).vm.$emit('focus', new FocusEvent('focus'))
+    await wrapper.vm.$nextTick()
+    expect(input.element.value).toBe('1000000000')
+    await input.setValue('2,500,000.25')
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([['2500000.25']])
+  })
 })

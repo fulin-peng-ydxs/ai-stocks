@@ -1,7 +1,7 @@
 """交易纪律 Playwright 的确定性 PostgreSQL + DuckDB 夹具。
 
 夹具只允许在明确的本地/测试环境和 ``AI_STOCKS_E2E_WRITE=1`` 下运行。PG 写入按
-``debug_tenant + debug_* owner`` 归属，并使用 ``e2e_td_`` ID / ``E2E纪律-`` 名称前缀；
+``debug_tenant + debug_* owner`` 归属，并使用 ``e2e_td_`` ID / ``E2E纪律-``、``E2E类型-`` 名称前缀；
 DuckDB 只写 ``9988*.SZ`` 与 2098 年固定交易日。seed/cleanup 在任何物理写入前都会把
 调用方显式传入的后端 PG 指纹与夹具进程直连值做常量时间比较，禁止猜测数据库目标。
 """
@@ -28,6 +28,7 @@ FIXTURE_TENANT_ID = "debug_tenant"
 FIXTURE_ID_PREFIX = "e2e_td_"
 FIXTURE_NAME_PREFIX = "E2E纪律-"
 FIXTURE_REASON_PREFIX = "E2E原因-"
+FIXTURE_TYPE_PREFIX = "E2E类型-"
 FIXTURE_OWNER_ACCOUNTS = (
     "debug_normal",
     "debug_trade_discipline_view",
@@ -40,6 +41,7 @@ _PG_FINGERPRINT_RE = re.compile(r"^[a-f0-9]{64}$")
 _LIKE_ID_PREFIX = "e2e\\_td\\_%"
 _LIKE_NAME_PREFIX = f"{FIXTURE_NAME_PREFIX}%"
 _LIKE_REASON_PREFIX = f"{FIXTURE_REASON_PREFIX}%"
+_LIKE_TYPE_PREFIX = f"{FIXTURE_TYPE_PREFIX}%"
 
 
 def fixture_trade_dates() -> tuple[date, ...]:
@@ -98,7 +100,7 @@ def _cleanup_pg(cur, owners: Iterable[tuple[str, str]]) -> dict[str, int]:
     labels = (
         "operation", "violation", "reason", "checkin_revision", "checkin", "activation",
         "draft_action", "draft_stock", "draft", "action_rule", "stock_rule", "rule_version",
-        "name_claim", "rule",
+        "name_claim", "rule", "action_subtype",
     )
     removed.update(dict.fromkeys(labels, 0))
     for tenant_id, owner_user_id in targets:
@@ -118,7 +120,13 @@ def _cleanup_pg(cur, owners: Iterable[tuple[str, str]]) -> dict[str, int]:
             [tenant_id, owner_user_id, _LIKE_ID_PREFIX, _LIKE_REASON_PREFIX],
         )
         reason_ids = [str(row[0]) for row in cur.fetchall()]
-        if not rule_ids and not reason_ids:
+        cur.execute(
+            "SELECT normalized_name FROM trade_discipline_action_subtype "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND name LIKE %s",
+            [tenant_id, owner_user_id, _LIKE_TYPE_PREFIX],
+        )
+        subtype_names = [str(row[0]) for row in cur.fetchall()]
+        if not rule_ids and not reason_ids and not subtype_names:
             continue
         checkin_ids: list[str] = []
         if rule_ids:
@@ -149,6 +157,7 @@ def _cleanup_pg(cur, owners: Iterable[tuple[str, str]]) -> dict[str, int]:
             ("rule_version", "DELETE FROM trade_discipline_rule_version WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
             ("name_claim", "DELETE FROM trade_discipline_rule_name_claim WHERE tenant_id=%s AND owner_user_id=%s AND rule_id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
             ("rule", "DELETE FROM trade_discipline_rule WHERE tenant_id=%s AND owner_user_id=%s AND id=ANY(%s)", [tenant_id, owner_user_id, rule_ids]),
+            ("action_subtype", "DELETE FROM trade_discipline_action_subtype WHERE tenant_id=%s AND owner_user_id=%s AND normalized_name=ANY(%s)", [tenant_id, owner_user_id, subtype_names]),
         )
         for label, sql, params in statements:
             if not params[-1]:
@@ -172,10 +181,18 @@ def _cleanup_pg(cur, owners: Iterable[tuple[str, str]]) -> dict[str, int]:
             [tenant_id, owner_user_id, _LIKE_ID_PREFIX, _LIKE_REASON_PREFIX],
         )
         reasons_left = int(cur.fetchone()[0])
+        cur.execute(
+            "SELECT count(*) FROM trade_discipline_action_subtype "
+            "WHERE tenant_id=%s AND owner_user_id=%s AND name LIKE %s",
+            [tenant_id, owner_user_id, _LIKE_TYPE_PREFIX],
+        )
+        subtypes_left = int(cur.fetchone()[0])
         if rules_left:
             residual[f"rule:{owner_user_id}"] = rules_left
         if reasons_left:
             residual[f"reason:{owner_user_id}"] = reasons_left
+        if subtypes_left:
+            residual[f"action_subtype:{owner_user_id}"] = subtypes_left
     if residual:
         raise RuntimeError(f"交易纪律 PostgreSQL 夹具清理后仍有残留：{residual}")
     return removed

@@ -85,7 +85,7 @@ class ActionRuleBody(StrictBody):
     detail_id: str | None = None
     name: str | None = None
     action_type: Literal["buy", "sell"] | None = None
-    action_subtype: Literal["open_position", "add_position", "liquidate", "do_t"] | None = None
+    action_subtype: str | None = Field(default=None, max_length=40)
     content: str | None = None
     display_order: int = Field(ge=1)
     enabled: bool = True
@@ -177,6 +177,13 @@ def list_rules(trade_date: date | None = None) -> ApiResponse:
     service = _service()
     target_date = trade_date or _latest_market_date(service, required=False)
     return ok(_call(service.list_rules_with_state, target_date))
+
+
+@router.get(
+    "/rule-types", response_model=ApiResponse, dependencies=[Depends(require_perm(VIEW))]
+)
+def list_rule_types() -> ApiResponse:
+    return ok(_call(_service().list_action_subtypes))
 
 
 @router.post(

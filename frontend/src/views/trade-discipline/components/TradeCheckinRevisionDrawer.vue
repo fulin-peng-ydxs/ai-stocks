@@ -13,6 +13,7 @@ import {
 } from '@/api/tradeDiscipline'
 import { getErrorMessage } from '@/utils/error'
 import { formatDecimalString } from '@/utils/fixedDecimal'
+import { formatMoney } from '@/utils/money'
 
 const props = defineProps<{
   modelValue: boolean
@@ -160,14 +161,14 @@ watch(
         <h4>规则版本快照</h4>
         <dl class="fact-grid">
           <div><dt>规则名称</dt><dd>{{ ruleVersion.name }}</dd></div>
-          <div><dt>规则资金</dt><dd>¥ {{ formatDecimalString(ruleVersion.capital) }}</dd></div>
+          <div><dt>规则资金</dt><dd>¥ {{ formatMoney(ruleVersion.capital) }}</dd></div>
         </dl>
         <div class="rule-grid">
           <div>
             <strong>选股规则</strong>
             <article v-for="rule in ruleVersion.stock_rules" :key="rule.detail_id || rule.display_order" class="rule-snapshot">
               <span>{{ rule.name || '未命名规则' }} · {{ rule.enabled ? '启用' : '停用' }}</span>
-              <small>资金上限 ¥ {{ formatDecimalString(rule.max_capital) }}</small>
+              <small>资金上限 ¥ {{ formatMoney(rule.max_capital) }}</small>
               <p>{{ rule.content || '—' }}</p>
             </article>
           </div>
@@ -200,7 +201,7 @@ watch(
             <template #default="{ row }">{{ row.stock_rule_name || '—' }} / {{ row.action_rule_name || '—' }}</template>
           </AppTableColumn>
           <AppTableColumn label="成交事实" role="description">
-            <template #default="{ row }">价 {{ formatDecimalString(row.price, 4) }} · 量 {{ formatDecimalString(row.quantity, 4) }} · 额 {{ formatDecimalString(row.amount) }} · 费 {{ formatDecimalString(row.fee) }}</template>
+            <template #default="{ row }">价 {{ formatMoney(row.price, { digits: 4 }) }} · 量 {{ formatDecimalString(row.quantity, 4) }} · 额 {{ formatMoney(row.amount) }} · 费 {{ formatMoney(row.fee) }}</template>
           </AppTableColumn>
           <AppTableColumn label="操作时间"><template #default="{ row }">{{ formatTime(row.operated_at) }}</template></AppTableColumn>
           <AppTableColumn label="完整度">

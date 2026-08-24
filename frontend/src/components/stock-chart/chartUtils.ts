@@ -1,4 +1,5 @@
 import type { Bar } from '@/api/stocks'
+import { formatMoney } from '@/utils/money'
 import {
   chartCssVariable,
   echartsTheme,
@@ -119,9 +120,9 @@ export function movingAverage(values: number[], period: number): (number | null)
 
 export function formatAmount(yuan: number | null | undefined): string {
   if (yuan == null || !Number.isFinite(yuan)) return '--'
-  if (yuan >= 1e8) return `${(yuan / 1e8).toFixed(2)}亿`
-  if (yuan >= 1e4) return `${(yuan / 1e4).toFixed(0)}万`
-  return yuan.toFixed(0)
+  if (Math.abs(yuan) >= 1e8) return `${formatMoney(yuan / 1e8, { digits: 2, empty: '--' })}亿`
+  if (Math.abs(yuan) >= 1e4) return `${formatMoney(yuan / 1e4, { digits: 0, empty: '--' })}万`
+  return formatMoney(yuan, { digits: 0, empty: '--' })
 }
 
 export function formatVolume(shares: number | null | undefined): string {
@@ -133,7 +134,7 @@ export function formatVolume(shares: number | null | undefined): string {
 }
 
 export function formatChartNumber(value: number | null | undefined, digits = 2): string {
-  return value == null || !Number.isFinite(value) ? '--' : value.toFixed(digits)
+  return formatMoney(value, { digits, empty: '--' })
 }
 
 type KlineTooltipPalette = Pick<StockChartTheme, 'text' | 'label' | 'up' | 'down'>

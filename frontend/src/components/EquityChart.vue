@@ -4,6 +4,7 @@ import * as echarts from 'echarts'
 import type { EquityPoint } from '@/api/backtest'
 import type { BenchmarkEquity } from '@/utils/benchmarkEquity'
 import { chartCssVariable, useEChartsTheme } from '@/components/chartTheme'
+import { formatMoney } from '@/utils/money'
 
 // showBenchmark：缺省 true（默认展示基准）；父页显式传 false（回测选「不对比指数」）时整条基准线隐藏。
 // extraBenchmark 由父页按各自 trade_date 归一成资金净值曲线（与 points 同长同序）；有值渲染指数虚线，
@@ -122,7 +123,11 @@ function render() {
         axisLabel: { show: false }, axisTick: { show: false } },
     ],
     yAxis: [
-      { scale: true, axisLine: { show: false }, axisLabel: { color: t.label, fontSize: 10 },
+      { scale: true, axisLine: { show: false }, axisLabel: {
+        color: t.label,
+        fontSize: 10,
+        formatter: (value: number) => formatMoney(value, { digits: 0, empty: '--' }),
+      },
         splitLine: { lineStyle: { color: t.split } } },
       { gridIndex: 1, axisLine: { show: false }, splitNumber: 2,
         axisLabel: { color: t.label, fontSize: 10, formatter: '{value}%' },

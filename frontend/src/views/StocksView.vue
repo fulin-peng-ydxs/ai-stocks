@@ -53,6 +53,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageEntry, getPageLayout, type SlotConfigMeta } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
+import { formatMoney } from '@/utils/money'
 import {
   PRICE_COMPARE_METRIC_ORDER,
   type PriceCompareMetric,
@@ -410,8 +411,7 @@ function fmtPct(v: number | null | undefined): string {
   return (v > 0 ? '+' : '') + v.toFixed(2) + '%'
 }
 function fmtPrice(v: number | null | undefined): string {
-  if (v === null || v === undefined) return '—'
-  return v.toFixed(2)
+  return formatMoney(v, { digits: 2 })
 }
 function fmtPctRatio(v: number | null | undefined): string {
   if (v === null || v === undefined) return '—'

@@ -51,6 +51,12 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useAuthStore } from '@/stores/auth'
 import { hasPermission } from '@/utils/permission'
 import { getErrorMessage } from '@/utils/error'
+import {
+  formatCompactMoneyYuan,
+  formatMoney,
+  formatMoneyInput,
+  parseMoneyInput,
+} from '@/utils/money'
 
 type Visibility = 'private' | 'tenant' | 'public'
 const auth = useAuthStore()
@@ -1464,7 +1470,6 @@ const dlgLoading = ref(false)
 const dlgZoom = ref<{ start: number; end: number }>({ start: 55, end: 100 })
 
 const ymd = (s: string) => (s || '').slice(0, 10) // 容错：去掉可能的 " 00:00:00"
-const wan = (yuan: number) => (yuan / 1e4).toFixed(1) + '万' // 金额→万元
 
 // 点击交易的本笔摘要（左上角）：收益率 / 买入金额 / 卖出金额 / 股数
 const dlgSummary = computed(() => {
@@ -1802,7 +1807,15 @@ async function openTradeChart(row: TradeRow) {
             <el-input-number v-model="topN" :min="1" :max="50" controls-position="right" style="width: 100px" />
           </AppControlItem>
           <AppControlItem label="本金">
-            <el-input-number v-model="initCap" :min="100000" :step="100000" controls-position="right" style="width: 140px" />
+            <el-input-number
+              v-model="initCap"
+              :min="100000"
+              :step="100000"
+              :formatter="formatMoneyInput"
+              :parser="parseMoneyInput"
+              controls-position="right"
+              style="width: 140px"
+            />
           </AppControlItem>
           <AppControlItem>
             <template #label>
@@ -2062,9 +2075,9 @@ async function openTradeChart(row: TradeRow) {
                   @row-click="(r:any) => openTradeChart(r)">
           <AppTableColumn label="代码" prop="code" />
           <AppTableColumn label="买入" prop="entry_date" sortable :sort-by="(r:any)=>r.entry_date" />
-          <AppTableColumn label="买价"><template #default="{ row }">{{ num(row.entry_price) }}</template></AppTableColumn>
+          <AppTableColumn label="买价"><template #default="{ row }">{{ formatMoney(row.entry_price) }}</template></AppTableColumn>
           <AppTableColumn label="卖出" prop="exit_date" sortable :sort-by="(r:any)=>r.exit_date" />
-          <AppTableColumn label="卖价"><template #default="{ row }">{{ num(row.exit_price) }}</template></AppTableColumn>
+          <AppTableColumn label="卖价"><template #default="{ row }">{{ formatMoney(row.exit_price) }}</template></AppTableColumn>
           <AppTableColumn v-if="tradeColVisible('ret')" label="收益" prop="return_pct" sortable :sort-by="(r:any)=>r.return_pct">
             <template #default="{ row }">
               <span :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct, 2) }}</span>
@@ -2107,11 +2120,11 @@ async function openTradeChart(row: TradeRow) {
         <div v-if="dlgSummary" class="dlg-summary">
           <div class="ds-item"><span class="ds-k">本笔收益</span>
             <span class="ds-v" :class="dlgSummary.ret >= 0 ? 'up' : 'down'">{{ pct(dlgSummary.ret, 2) }}</span></div>
-          <div class="ds-item"><span class="ds-k">买入金额</span><span class="ds-v">{{ wan(dlgSummary.buyAmt) }}</span></div>
-          <div class="ds-item"><span class="ds-k">卖出金额</span><span class="ds-v">{{ wan(dlgSummary.sellAmt) }}</span></div>
+          <div class="ds-item"><span class="ds-k">买入金额</span><span class="ds-v">{{ formatCompactMoneyYuan(dlgSummary.buyAmt, { digits: 1 }) }}</span></div>
+          <div class="ds-item"><span class="ds-k">卖出金额</span><span class="ds-v">{{ formatCompactMoneyYuan(dlgSummary.sellAmt, { digits: 1 }) }}</span></div>
           <div class="ds-item"><span class="ds-k">股数</span><span class="ds-v">{{ dlgSummary.shares.toLocaleString() }}</span></div>
           <div class="ds-item"><span class="ds-k">盈亏</span>
-            <span class="ds-v" :class="dlgSummary.pnl >= 0 ? 'up' : 'down'">{{ wan(dlgSummary.pnl) }}</span></div>
+            <span class="ds-v" :class="dlgSummary.pnl >= 0 ? 'up' : 'down'">{{ formatCompactMoneyYuan(dlgSummary.pnl, { digits: 1 }) }}</span></div>
           <div class="ds-item">
             <span class="ds-k">买入优先级
               <HelpTip title="为什么买它？" :width="340">
@@ -2249,9 +2262,9 @@ async function openTradeChart(row: TradeRow) {
           <div class="setting-item">
             <div class="setting-label">初始资金</div>
             <PageSegmented v-model="settings.initCap" aria-label="初始资金" :options="[
-              { label: '50万', value: 500000 },
-              { label: '100万', value: 1000000 },
-              { label: '300万', value: 3000000 },
+              { label: '500,000 元', value: 500000 },
+              { label: '1,000,000 元', value: 1000000 },
+              { label: '3,000,000 元', value: 3000000 },
             ]" />
           </div>
           <PageToggleRow v-model="settings.robustExpanded" label="默认展开稳健性测试" />

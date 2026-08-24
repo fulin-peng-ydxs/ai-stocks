@@ -84,7 +84,7 @@ describe('全站按钮与图标操作契约', () => {
   })
 
   it('原生 button 只用于已声明的专用交互，不回流为页面私有命令按钮', () => {
-    const allowedSpecializedClasses = /class="(?:topbar-status|appearance-mode-option|navigation-option|theme-option|workspace-tab-close|primary-entry|secondary-entry|seg-btn|pt-group-toggle|slot-box(?: [^"]*)?|app-icon-button|login-[^"]+)"/
+    const allowedSpecializedClasses = /class="(?:topbar-status|appearance-mode-option|navigation-option|theme-option|workspace-tab-close|primary-entry|secondary-entry|seg-btn|pt-group-toggle|slot-box(?: [^"]*)?|app-icon-button|rule-summary-card__summary|login-[^"]+)"/
     const violations: string[] = []
 
     for (const file of vueFiles(SRC_DIR)) {

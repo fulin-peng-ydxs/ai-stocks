@@ -255,6 +255,18 @@ beforeEach(() => {
   vi.mocked(backtestApi.listRuns).mockResolvedValue({ runs: [] })
 })
 
+describe('BacktestView 金额格式契约', () => {
+  it('本金输入统一显示和解析千分位', async () => {
+    const wrapper = await mountView()
+    const capitalInput = wrapper.findAllComponents({ name: 'ElInputNumber' })
+      .find((input) => input.props('modelValue') === 1_000_000)!
+
+    expect(capitalInput.props('formatter')('1000000')).toBe('1,000,000')
+    expect(capitalInput.props('parser')('1,000,000')).toBe('1000000')
+    wrapper.unmount()
+  })
+})
+
 describe('BacktestView 三方案选择器（T5）', () => {
   it('评分/选股/买卖统一走 AssetProfileSelect，fetchMine/browse/copy 为函数、权限码正确', async () => {
     const wrapper = await mountView()

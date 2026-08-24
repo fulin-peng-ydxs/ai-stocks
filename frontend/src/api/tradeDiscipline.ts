@@ -56,7 +56,14 @@ export interface DraftStockRule {
 }
 
 export type ActionType = 'buy' | 'sell'
-export type ActionSubtype = 'open_position' | 'add_position' | 'liquidate' | 'do_t'
+export type ActionSubtype = string
+
+export interface ActionSubtypeOption {
+  name: string
+  label?: string
+  action_type: ActionType
+  builtin: boolean
+}
 
 export interface DraftActionRule {
   detail_id: string | null
@@ -254,6 +261,10 @@ export function listTradeDisciplineRules(
   return http.get('/trade-discipline/rules', {
     params: tradeDate ? { trade_date: tradeDate } : undefined,
   })
+}
+
+export function listTradeDisciplineRuleTypes(): Promise<ActionSubtypeOption[]> {
+  return http.get('/trade-discipline/rule-types')
 }
 
 export function getTradeDisciplineRule(

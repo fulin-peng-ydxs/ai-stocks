@@ -17,9 +17,17 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 from backend.storage.trade_discipline_repository import TradeDisciplineRepository
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
-_ACTION_SUBTYPES = {
-    "buy": {"open_position", "add_position"},
-    "sell": {"liquidate", "do_t"},
+_BUILTIN_ACTION_SUBTYPES: tuple[tuple[str, str, str], ...] = (
+    ("open_position", "建仓", "buy"),
+    ("add_position", "加仓", "buy"),
+    ("liquidate", "清仓", "sell"),
+    ("do_t", "做 T", "sell"),
+)
+_BUILTIN_SUBTYPE_SIDE = {value: side for value, _label, side in _BUILTIN_ACTION_SUBTYPES}
+_BUILTIN_SUBTYPE_ALIASES = {
+    unicodedata.normalize("NFKC", alias).strip().casefold(): (value, side)
+    for value, label, side in _BUILTIN_ACTION_SUBTYPES
+    for alias in (value, label)
 }
 BUILTIN_VIOLATION_REASONS: tuple[tuple[str, str], ...] = (
     ("impulsive_trade", "冲动交易"),
@@ -117,20 +125,21 @@ class TradeDisciplineService:
                     order_key = ("stock", item["display_order"])
                 else:
                     action_type = item.get("action_type") or None
-                    subtype = item.get("action_subtype") or None
+                    subtype = (
+                        unicodedata.normalize("NFKC", str(item["action_subtype"])).strip()
+                        if item.get("action_subtype") is not None
+                        else None
+                    )
+                    builtin = _BUILTIN_SUBTYPE_ALIASES.get(subtype.casefold()) if subtype else None
+                    if builtin:
+                        subtype = builtin[0]
                     item["action_type"] = action_type
                     item["action_subtype"] = subtype
-                    if action_type is not None and action_type not in _ACTION_SUBTYPES:
+                    if action_type is not None and action_type not in {"buy", "sell"}:
                         raise ValidationError("操作方向不正确")
-                    if subtype is not None and subtype not in set().union(
-                        *_ACTION_SUBTYPES.values()
-                    ):
-                        raise ValidationError("操作类型不正确")
-                    if (
-                        action_type is not None
-                        and subtype is not None
-                        and subtype not in _ACTION_SUBTYPES[action_type]
-                    ):
+                    if subtype is not None and len(subtype) > 40:
+                        raise ValidationError("操作类型最多 40 个字符")
+                    if builtin and action_type is not None and builtin[1] != action_type:
                         raise ValidationError("操作方向与类型不匹配")
                     order_key = (action_type, item["display_order"])
                 if order_key in seen_order:
@@ -138,6 +147,27 @@ class TradeDisciplineService:
                 seen_order.add(order_key)
                 prepared[kind].append(item)
         return prepared
+
+    @staticmethod
+    def _action_subtype_claims(draft: dict[str, Any]) -> list[dict[str, str]]:
+        claims: dict[str, dict[str, str]] = {}
+        for item in draft["action_rules"]:
+            subtype = item.get("action_subtype")
+            side = item.get("action_type")
+            if not subtype or not side:
+                continue
+            if subtype in _BUILTIN_SUBTYPE_SIDE:
+                continue
+            normalized = unicodedata.normalize("NFKC", str(subtype)).strip().casefold()
+            previous = claims.get(normalized)
+            if previous and previous["action_type"] != side:
+                raise ValidationError(f"类型名称不能同时用于买入和卖出：{subtype}")
+            claims[normalized] = {
+                "normalized_name": normalized,
+                "name": str(subtype),
+                "action_type": str(side),
+            }
+        return list(claims.values())
 
     @staticmethod
     def _claims(rule: dict[str, Any], draft: dict[str, Any] | None) -> dict[str, str]:
@@ -187,7 +217,9 @@ class TradeDisciplineService:
                 raise ValidationError("操作规则名称和内容不能为空")
             action_type = item.get("action_type")
             subtype = item.get("action_subtype")
-            if action_type not in _ACTION_SUBTYPES or subtype not in _ACTION_SUBTYPES[action_type]:
+            if action_type not in {"buy", "sell"} or not subtype:
+                raise ValidationError("操作方向和类型不能为空")
+            if subtype in _BUILTIN_SUBTYPE_SIDE and _BUILTIN_SUBTYPE_SIDE[subtype] != action_type:
                 raise ValidationError("操作方向与类型不匹配")
 
     @staticmethod
@@ -247,6 +279,7 @@ class TradeDisciplineService:
             self.repo.create_rule(conn, rule_id)
             rule = self.repo.lock_rule(conn, rule_id)
             self.repo.sync_name_claims(conn, rule_id, self._claims(rule, draft))
+            self.repo.claim_action_subtypes(conn, self._action_subtype_claims(draft))
             self.repo.replace_draft(conn, rule_id, draft, 1, None)
         return self.get_rule(rule_id)
 
@@ -260,6 +293,34 @@ class TradeDisciplineService:
 
     def list_rules(self) -> list[dict[str, Any]]:
         return self.repo.list_rules()
+
+    def list_action_subtypes(self) -> list[dict[str, Any]]:
+        saved = self.repo.list_action_subtypes()
+        by_name = {
+            unicodedata.normalize("NFKC", str(item["name"])).strip().casefold(): {
+                **item,
+                "builtin": False,
+            }
+            for item in saved
+        }
+        for value, label, side in _BUILTIN_ACTION_SUBTYPES:
+            by_name.setdefault(
+                value.casefold(),
+                {
+                    "name": value,
+                    "label": label,
+                    "action_type": side,
+                    "builtin": True,
+                },
+            )
+        return sorted(
+            by_name.values(),
+            key=lambda item: (
+                item["action_type"],
+                not item.get("builtin", False),
+                item.get("label") or item["name"],
+            ),
+        )
 
     @staticmethod
     def _lifecycle_state(row: dict[str, Any], trade_date: date | None) -> dict[str, Any]:
@@ -370,6 +431,7 @@ class TradeDisciplineService:
             if int(current["draft_revision"]) != expected_revision:
                 raise ConflictError("草稿已被其他操作更新，请刷新后重试")
             self.repo.sync_name_claims(conn, rule_id, self._claims(rule, draft))
+            self.repo.claim_action_subtypes(conn, self._action_subtype_claims(draft))
             self.repo.replace_draft(
                 conn,
                 rule_id,
@@ -532,6 +594,7 @@ class TradeDisciplineService:
             self.repo.create_rule(conn, copied_id)
             copied = self.repo.lock_rule(conn, copied_id)
             self.repo.sync_name_claims(conn, copied_id, self._claims(copied, draft))
+            self.repo.claim_action_subtypes(conn, self._action_subtype_claims(draft))
             self.repo.replace_draft(conn, copied_id, draft, 1, None)
         return self.get_rule(copied_id)
 
@@ -620,7 +683,7 @@ class TradeDisciplineService:
                 raise ValidationError("操作顺序必须为互不重复的正整数")
             seen_orders.add(display_order)
             side = item.get("side")
-            if side not in _ACTION_SUBTYPES:
+            if side not in {"buy", "sell"}:
                 raise ValidationError("操作方向必须为 buy 或 sell")
             stock_rule_id = str(item.get("stock_rule_id") or "")
             action_rule_id = str(item.get("action_rule_id") or "")

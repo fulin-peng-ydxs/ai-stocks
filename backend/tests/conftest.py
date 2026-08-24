@@ -45,6 +45,7 @@ _TRADE_DISCIPLINE_CLEAN_ORDER = (
     "trade_discipline_rule_version",
     "trade_discipline_rule_name_claim",
     "trade_discipline_rule",
+    "trade_discipline_action_subtype",
 )
 
 

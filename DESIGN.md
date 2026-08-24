@@ -209,6 +209,7 @@ Key Characteristics：
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用 |
 | `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 多个输入、选择器、按钮组成的横向行优先使用 `AppControlRow`；存在“说明文字 + 控件”时必须用 `AppControlItem` 包裹，避免标签和控件被拆到不同行；只有明确需要均分或撑满时才传 `fill` 或让具体 `AppControlItem` 设置 `grow` |
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
+| `RuleSummaryCard` | `frontend/src/components/trade-discipline/RuleSummaryCard.vue` | 买入、卖出和选股规则的紧凑摘要卡，统一序号、标题、摘要、启停、展开与编辑区边界 | 无直接系统组件种类；仅承载交易纪律规则编辑 | 同类规则统一复用；默认只展示摘要并一次展开一项，动作通过插槽注入；整块摘要使用带完整 `aria-expanded`、`aria-controls` 和可访问名称的专用原生 disclosure button，不得退化为普通命令按钮或在消费页复制卡片结构 |
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示、轻量“更多”菜单收纳和**宽度自适应折叠** | 无直接系统组件种类 | 表格 `label="操作"`、自绘表格行、列表项和编辑器条件行的行内按钮组优先复用；首个未显式指定语义色的行内高频动作使用主色，普通次要动作使用常规正文色，禁用态使用弱文本色并满足语义 token 规则定义的文字层级阈值，停用/禁用/终止/删除等破坏性动作使用危险色；动作始终清晰可见，不对整组做透明度弱显；低频或危险动作可设置 `placement: 'more'`，菜单命令继续使用 Element Plus 按钮并呈现真实 loading，不得在页面内手写多行按钮或原生命令按钮。**宽度折叠契约**：行内按钮按操作列实际可用宽度自适应折叠——宽度装不下的按钮自动收进“更多”菜单，不硬截断；`inline-limit` 退化为行内数量硬性上限（宽度能装下时仍不超过它）；显式 `placement: 'more'` 的动作恒入更多；可用宽度或按钮实测宽度不可用（如 jsdom）时退化为纯数量逻辑 |
 | `SystemBuiltinTag` | `frontend/src/components/SystemBuiltinTag.vue` | 全站“系统内置”来源标记，固定使用灰色文字、灰色描边和中性浅底 | 无直接系统组件种类 | 菜单、功能点、角色、租户、布局预设、技术指标和系统内置方案等来源标记统一复用；文案固定为“系统内置”，不追加对象名称或保护规则说明；与对象名称或标识并列时统一放在对象后面，独立的来源/类型字段保持标签单独展示 |
 | `AppDataTable` | `frontend/src/components/AppDataTable.vue` | 数据表格/宽表运行时外壳，统一表头排序布局、表体内滚、分页承载、加载分流、空态插槽、行点击样式和成长/嵌入模式 | 对应 `data-table`、`wide-table` 种类；读取页面传入的排序、分页、列显隐等消费结果 | 页面中的数据表格统一复用；`loading && data.length === 0` 自动显示 `AppStateBlock` 骨架，有旧数据刷新时保留表格并使用 `v-loading` 遮罩；主列表默认成长，抽屉、展开行和局部明细等非主表显式使用 `embedded`；`#empty` 只补充业务文案与操作并复用 `app-table-empty*`，禁止嵌套 `el-empty` 形成双图；`wide-table` 默认常显 Element Plus 内部滚动条，禁止页面再给 `el-table__body-wrapper` 添加第二层横向滚动；禁止用 `fill` 布尔值绕过主表语义；复杂单元格继续由业务页通过列插槽声明 |
@@ -260,10 +261,19 @@ Key Characteristics：
 - 图标统一使用 Element Plus 图标或项目既有 SVG，同一区域保持相同描边气质；禁止用 `⚙`、`✕`、emoji 等 Unicode 字符充当界面图标。
 - 纯图标异步操作必须使用 `AppIconButton` 的 `loading`，不得在页面内为图标按钮新增私有旋转动画或把 loading 混同为 disabled 灰态。外层 `el-tooltip` 承载完整说明时，应关闭 `AppIconButton` 原生 `title`，避免双提示。
 - Unicode 禁令针对交互图标、操作按钮和纯图标控件；业务公式、状态文案里的箭头/对勾/叉号可作为局部文案保留，但不得用于按钮图标。选择态勾选标记也使用 Element Plus 图标或项目 SVG，不使用 Unicode 字形。
-- 自定义原生 `<button>` 仅保留给导航、标签页关闭、登录主视觉切换等具有独立语义和结构的专用控件，并在实现中保持专用 class；普通命令和纯图标操作不得借此绕过统一组件。
+- 自定义原生 `<button>` 仅保留给导航、标签页关闭、登录主视觉切换、规则摘要 disclosure 等具有独立语义和结构的专用控件，并在实现中保持专用 class、键盘语义和必要的 ARIA 状态；普通命令和纯图标操作不得借此绕过统一组件。
 - 夜间模式的复选框、单选框、输入边界和表格行悬浮必须使用强边框或主色反馈；空框、选中、禁用三态均需肉眼可辨。
 - 工具栏按钮应贴近其影响区域，避免页面右上角堆积所有操作。
 - 顶栏状态和工具按 `32px` 控件基线对齐、间距 `6px`。交易日等状态项使用“图标 + 弱标签 + 强值 + 5px 状态点”的轻量结构；无详情权限时使用只读 `role=status`，不得伪装成禁用按钮，也不得使用永久渐变、内阴影或大胶囊底板。
+
+### 金额展示与输入
+
+- 金额格式化的唯一前端事实源是 `frontend/src/utils/money.ts`。本金、资金、现金、资产、成交金额、费用、盈亏、市值、净流入、价格，以及图表中的金额轴和金额 tooltip，必须消费 `formatMoney` 或该文件导出的缩放/输入 helper；页面和业务组件不得再定义私有 `money`、`wan`、金额 `toLocaleString` 或正则分组逻辑。
+- 所有可见金额从个位起每三位使用英文逗号分组，例如 `1,000,000,000`。金额精度沿用业务口径：普通金额默认两位小数，明确的整数金额可用零位，成交价等价格按接口口径使用两位或四位；千分位规范不得擅自改变存储精度。
+- 使用“万/亿”等缩放单位时必须明确展示单位，缩放后的数值部分仍使用三位分组；不得以缩写为由绕过格式化。正数是否显示 `+` 由涨跌、净流入等业务语义决定，负号保留在数值最前。
+- 精确十进制字符串禁止先转成 JavaScript `number` 再格式化；使用 `formatMoney` 保留数据库定点精度。既有浮点业务字段可按既有精度归整后格式化。
+- 金额输入控件展示千分位、业务状态和接口值不带分隔符：Element Plus 数字输入统一使用 `formatMoneyInput` / `parseMoneyInput`；精确定点字符串输入在非编辑态显示千分位，聚焦编辑时可以显示无分隔原值。粘贴带逗号金额必须能够正常解析。
+- 百分比、数量、手数、代码和日期不是金额，不得为了套用本规范改变其业务单位；其中确需数值分组时使用相应数值工具，不冒充金额格式化。
 
 ### 表格与列表
 

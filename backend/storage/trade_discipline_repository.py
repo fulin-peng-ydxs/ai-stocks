@@ -90,6 +90,36 @@ class TradeDisciplineRepository:
         )
         return df.to_dict("records")
 
+    def list_action_subtypes(self) -> list[dict[str, Any]]:
+        """返回当前归属者已保存的买卖类型候选，归一化名称在数据库中唯一。"""
+        df = self.pg.query_df(
+            "SELECT name,action_type FROM trade_discipline_action_subtype "
+            "WHERE tenant_id=%s AND owner_user_id=%s ORDER BY action_type,name",
+            list(self.owner),
+        )
+        return self._records(df)
+
+    def claim_action_subtypes(
+        self,
+        conn: psycopg.Connection,
+        items: list[dict[str, str]],
+    ) -> None:
+        """事务内登记类型；同一归一化名称不能同时属于买入和卖出。"""
+        with conn.cursor(row_factory=dict_row) as cur:
+            for item in items:
+                cur.execute(
+                    "INSERT INTO trade_discipline_action_subtype "
+                    "(tenant_id,owner_user_id,normalized_name,name,action_type) "
+                    "VALUES (%s,%s,%s,%s,%s) "
+                    "ON CONFLICT (tenant_id,owner_user_id,normalized_name) DO UPDATE SET "
+                    "name=EXCLUDED.name,updated_at=now() "
+                    "WHERE trade_discipline_action_subtype.action_type=EXCLUDED.action_type "
+                    "RETURNING action_type",
+                    [*self.owner, item["normalized_name"], item["name"], item["action_type"]],
+                )
+                if cur.fetchone() is None:
+                    raise ConflictError(f"类型名称已用于另一方向：{item['name']}")
+
     def list_rules_with_lifecycle(
         self,
         trade_date: date | None,

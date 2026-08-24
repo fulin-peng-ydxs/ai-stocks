@@ -6,7 +6,7 @@ import TradeRuleEditor from '@/views/trade-discipline/components/TradeRuleEditor
 
 const api = vi.hoisted(() => ({
   get: vi.fn(), open: vi.fn(), save: vi.fn(), discard: vi.fn(), publish: vi.fn(),
-  archive: vi.fn(), restore: vi.fn(), copy: vi.fn(), remove: vi.fn(),
+  archive: vi.fn(), restore: vi.fn(), copy: vi.fn(), remove: vi.fn(), types: vi.fn(),
 }))
 
 vi.mock('@/api/tradeDiscipline', () => ({
@@ -19,6 +19,7 @@ vi.mock('@/api/tradeDiscipline', () => ({
   restoreTradeDisciplineRule: (...args: unknown[]) => api.restore(...args),
   copyTradeDisciplineRule: (...args: unknown[]) => api.copy(...args),
   deleteTradeDisciplineRule: (...args: unknown[]) => api.remove(...args),
+  listTradeDisciplineRuleTypes: (...args: unknown[]) => api.types(...args),
 }))
 
 function draft(revision = 2) {
@@ -70,12 +71,19 @@ describe('TradeRuleEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     api.get.mockResolvedValue(detail())
+    api.types.mockResolvedValue([
+      { name: 'open_position', label: '建仓', action_type: 'buy', builtin: true },
+      { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: true },
+      { name: '趋势止盈', action_type: 'sell', builtin: false },
+    ])
     api.save.mockImplementation(async (_id, payload) => ({ ...draft(payload.expected_revision + 1), ...payload }))
   })
 
   it('保存时保留换行、启用态和调整后的展示顺序', async () => {
     const wrapper = await mountEditor()
     await wrapper.get('[aria-label="下移选股规则"]').trigger('click')
+    await wrapper.findAll('[data-testid="stock-rule-card"]')[0]!
+      .get('[data-testid="rule-card-toggle"]').trigger('click')
     const textareas = wrapper.findAll('textarea')
     await textareas[0].setValue('第一行\n\n第三行')
     await wrapper.get('.rule-editor__footer .el-button:nth-last-child(2)').trigger('click')
@@ -114,6 +122,19 @@ describe('TradeRuleEditor', () => {
     expect(api.save).toHaveBeenCalledWith('rule-1', expect.objectContaining({
       name: '保存后离开', expected_revision: 2,
     }))
+  })
+
+  it('重置恢复最近保存内容且不放弃已保存草稿', async () => {
+    const wrapper = await mountEditor()
+    await field(wrapper, '规则名称').get('input').setValue('临时名称')
+
+    const resetButton = wrapper.findAll('.rule-editor__footer .el-button')
+      .find((button) => button.text() === '重置')!
+    await resetButton.trigger('click')
+
+    expect(field(wrapper, '规则名称').get('input').element.value).toBe('趋势纪律')
+    expect((wrapper.vm as any).isDirty()).toBe(false)
+    expect(api.discard).not.toHaveBeenCalled()
   })
 
   it('三选中的保存草稿失败时不放行且保留当前输入', async () => {
@@ -176,6 +197,27 @@ describe('TradeRuleEditor', () => {
     expect(api.copy).toHaveBeenLastCalledWith('rule-1', 'published')
   })
 
+  it('买入卖出分组展示，并可复制卡片及复用可输入类型', async () => {
+    const wrapper = await mountEditor()
+
+    expect(wrapper.get('[data-testid="buy-rule-group"]').text()).toContain('买入规则')
+    expect(wrapper.get('[data-testid="sell-rule-group"]').text()).toContain('卖出规则')
+    expect(wrapper.find('[data-testid="action-rule-side-select"]').exists()).toBe(false)
+
+    await wrapper.get('[aria-label="复制买卖规则"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="action-rule-card"]')).toHaveLength(3)
+    expect((wrapper.get('[data-testid="action-rule-name-input"]').element as HTMLInputElement).value)
+      .toBe('建仓-副本')
+
+    await wrapper.get('[data-testid="sell-rule-group"]')
+      .get('[data-testid="rule-card-toggle"]').trigger('click')
+    const sellSelect = wrapper.findAllComponents({ name: 'ElSelect' })
+      .find((select) => select.props('modelValue') === 'liquidate')!
+    sellSelect.vm.$emit('update:modelValue', '趋势止盈')
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).isDirty()).toBe(true)
+  })
+
   it('快速切换规则时忽略迟到的旧详情响应', async () => {
     let resolveFirst!: (value: ReturnType<typeof detail>) => void
     api.get
@@ -218,7 +260,7 @@ describe('TradeRuleEditor', () => {
     const wrapper = await mountEditor(false)
 
     expect(wrapper.text()).toContain('当前账号只有查看权限')
-    expect(wrapper.find('.detail-card__moves').exists()).toBe(false)
+    expect(wrapper.find('.rule-summary-card__actions').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('添加选股规则')
     expect(wrapper.findAll('.el-switch').every((node) => node.classes().includes('is-disabled'))).toBe(true)
   })
@@ -257,8 +299,11 @@ describe('TradeRuleEditor', () => {
     })
     const wrapper = await mountEditor()
 
-    expect(field(wrapper, '总本金').get('input').element.value).toBe('999999999999999999.99')
+    expect(field(wrapper, '总本金').get('input').element.value)
+      .toBe('999,999,999,999,999,999.99')
     expect(wrapper.text()).toContain('剩余 0.01')
+    await wrapper.get('[data-testid="stock-rule-card"]')
+      .get('[data-testid="rule-card-toggle"]').trigger('click')
     await field(wrapper, '资金上限').get('input').setValue('9007199254740992.01')
     await wrapper.get('.rule-editor__footer .el-button:nth-last-child(2)').trigger('click')
     await flushPromises()
@@ -267,5 +312,25 @@ describe('TradeRuleEditor', () => {
       capital: '999999999999999999.99',
       stock_rules: [expect.objectContaining({ max_capital: '9007199254740992.01' })],
     }))
+  })
+
+  it('默认仅展示规则摘要，且同一时间只展开一张卡片', async () => {
+    const wrapper = await mountEditor()
+
+    expect(wrapper.findAll('[data-testid="rule-card-editor"]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('上限 · 40,000.00 元')
+    expect(wrapper.text()).toContain('第一行')
+    expect(wrapper.text()).toContain('第二行')
+    expect(wrapper.text()).toContain('建仓')
+
+    const stockCards = wrapper.findAll('[data-testid="stock-rule-card"]')
+    await stockCards[0]!.get('[data-testid="rule-card-toggle"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="rule-card-editor"]')).toHaveLength(1)
+    expect(stockCards[0]!.classes()).toContain('rule-card--wide')
+
+    await wrapper.get('[data-testid="buy-rule-group"]')
+      .get('[data-testid="rule-card-toggle"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="rule-card-editor"]')).toHaveLength(1)
+    expect(stockCards[0]!.classes()).not.toContain('rule-card--wide')
   })
 })

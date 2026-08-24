@@ -122,6 +122,37 @@ def test_draft_optimistic_lock_and_archived_edit_rejected(pg, market):
         service.open_draft(rule_id)
 
 
+def test_custom_action_subtype_is_reusable_and_unique_across_sides(pg, market):
+    service = _service(pg, market)
+    payload = _payload()
+    payload["action_rules"][0]["action_subtype"] = " 趋势回踩 "
+    rule_id = service.create_rule(payload)["id"]
+
+    options = service.list_action_subtypes()
+    assert any(
+        item["name"] == "趋势回踩"
+        and item["action_type"] == "buy"
+        and item["builtin"] is False
+        for item in options
+    )
+    assert any(item.get("label") == "建仓" and item["builtin"] is True for item in options)
+
+    draft = service.get_rule(rule_id)["draft"]
+    conflicting = _payload()
+    conflicting["action_rules"][1]["action_subtype"] = "ＴＲＥＮＤ"
+    saved = service.save_draft(
+        rule_id,
+        conflicting,
+        expected_revision=int(draft["draft_revision"]),
+    )
+    other = _payload("另一套纪律")
+    other["action_rules"][0]["action_subtype"] = "trend"
+    with pytest.raises(ConflictError, match="另一方向"):
+        service.create_rule(other)
+
+    assert int(saved["draft_revision"]) == 2
+
+
 def test_publish_effective_version_and_no_material_change(pg, market):
     first, _ = _seed_next_days(market)
     service = _service(pg, market)

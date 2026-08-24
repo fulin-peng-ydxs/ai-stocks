@@ -76,7 +76,7 @@ Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；�
 交易纪律聚焦运行统一使用 `npm run test:e2e:trade-discipline`。入口只在进程变量中保存
 `/api/health/e2e` 返回的 PG 指纹，停服后把同一值显式传给 cleanup/seed；夹具仅写
 `debug_tenant + debug_normal/debug_trade_discipline_view/debug_trade_discipline_submit/debug_tenant_admin`
-归属下的 `e2e_td_`/`E2E纪律-` 数据，以及 DuckDB 的 `9988*.SZ` 和 2098 年固定交易日。
+归属下的 `e2e_td_`/`E2E纪律-`/`E2E类型-` 数据，以及 DuckDB 的 `9988*.SZ` 和 2098 年固定交易日。
 被测后端以登录限流豁免和正常 DuckDB 读写模式启动，重启后必须复核指纹未变化；三视口
 固定 `--workers=1`。无论通过、失败或中断，EXIT trap 都先停服、按可信指纹精确清理，
 再恢复测试前后端运行/停止状态；未取得指纹时禁止尝试物理清理。账号校准必须把同一指纹

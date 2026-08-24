@@ -2,7 +2,12 @@
 import { computed, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
-import { decimalToMinorUnits, formatMinorUnits, multiplyToMinorUnits } from '@/utils/fixedDecimal'
+import {
+  decimalToMinorUnits,
+  formatMinorUnits,
+  multiplyToMinorUnits,
+} from '@/utils/fixedDecimal'
+import { formatMoney } from '@/utils/money'
 import FixedDecimalInput from './FixedDecimalInput.vue'
 import StockOptionSelect from './StockOptionSelect.vue'
 import type {
@@ -70,7 +75,7 @@ function changeSide(index: number, side: 'buy' | 'sell'): void {
 
 function computedAmount(operation: CheckinOperation): string | null {
   const units = multiplyToMinorUnits(operation.price, operation.quantity)
-  return units === null ? null : formatMinorUnits(units)
+  return units === null ? null : formatMoney(formatMinorUnits(units))
 }
 
 function amountMismatch(operation: CheckinOperation): boolean {
@@ -154,12 +159,12 @@ watch(() => props.version.version_no, () => {
         <el-form-item label="成交价"><FixedDecimalInput :model-value="operation.price" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { price: $event })" /></el-form-item>
         <el-form-item label="数量"><FixedDecimalInput :model-value="operation.quantity" :scale="4" :integer-digits="16" :disabled="disabled" placeholder="0.0000" @update:model-value="update(index, { quantity: $event })" /></el-form-item>
         <el-form-item label="成交金额">
-          <FixedDecimalInput :model-value="operation.amount" :disabled="disabled" @update:model-value="update(index, { amount: $event })" />
+          <FixedDecimalInput :model-value="operation.amount" grouped :disabled="disabled" @update:model-value="update(index, { amount: $event })" />
           <small v-if="computedAmount(operation) !== null" :class="{ 'field-error': amountMismatch(operation) }">
             价 × 量 = {{ computedAmount(operation) }}{{ amountMismatch(operation) ? '，与填写金额不一致' : '' }}
           </small>
         </el-form-item>
-        <el-form-item label="费用"><FixedDecimalInput :model-value="operation.fee" :disabled="disabled" @update:model-value="update(index, { fee: $event })" /></el-form-item>
+        <el-form-item label="费用"><FixedDecimalInput :model-value="operation.fee" grouped :disabled="disabled" @update:model-value="update(index, { fee: $event })" /></el-form-item>
         <el-form-item label="操作时间">
           <el-date-picker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
         </el-form-item>

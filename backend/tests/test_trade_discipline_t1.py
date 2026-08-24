@@ -29,6 +29,7 @@ TD_TABLES = {
     "trade_discipline_draft_action_rule",
     "trade_discipline_rule_version",
     "trade_discipline_stock_rule",
+    "trade_discipline_action_subtype",
     "trade_discipline_action_rule",
     "trade_discipline_rule_activation",
     "trade_discipline_checkin",

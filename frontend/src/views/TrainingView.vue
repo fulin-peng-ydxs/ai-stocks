@@ -50,6 +50,7 @@ import {
 } from '@/api/training'
 import type { Bar, IndicatorRow } from '@/api/stocks'
 import { getErrorMessage } from '@/utils/error'
+import { formatMoney, formatMoneyInput, parseMoneyInput } from '@/utils/money'
 import type { AppRowAction } from '@/components/rowActions'
 
 // ── 页面阶段：config(未开局) / running(训练中) / result(结算回看) ──
@@ -275,7 +276,9 @@ function presetHands(p: number): number {
   return isAmount.value ? (perHandCost.value > 0 ? Math.floor(p / perHandCost.value) : 0) : Math.floor(p)
 }
 const activePresets = computed(() => (isAmount.value ? amountPresets.value : handsPresets.value))
-function presetLabel(p: number): string { return isAmount.value ? `${p / 10000}万` : `${p}手` }
+function presetLabel(p: number): string {
+  return isAmount.value ? `${formatMoney(p, { digits: 0 })} 元` : `${p}手`
+}
 function buyPresetDisabled(p: number): boolean { const h = presetHands(p); return h < 1 || h > maxBuyHands.value }
 
 // 一键填入输入框（点 4：点高亮数字即填满仓位）
@@ -410,7 +413,6 @@ function roundEquityPoints(rd: DetailRound, initCap: number) {
 
 // ── 格式化 ──
 const pct = (v: number | null | undefined) => v == null ? '--' : (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%'
-const money = (v: number | null | undefined) => v == null ? '--' : Math.round(v).toLocaleString('zh-CN')
 const modeText = (m: string) => m === 'single' ? '单股' : '多股'
 const gradePalette = useStatusColorPalette()
 // 评级色统一消费语义色板：S=警示金、A=成功绿、B=主色蓝、C=中性灰、D=危险红。
@@ -657,11 +659,11 @@ onBeforeUnmount(detachKeyboard)
 
         <div v-permission="'training:trade'" class="action-panel">
           <div class="acct">
-            <div class="acct-item"><label>可用资金（可买上限）</label><b class="lim">{{ money(round.cash) }}</b></div>
-            <div class="acct-item"><label>持仓（可卖上限）</label><b class="lim">{{ round.pos_hands }} 手</b><span class="muted">@{{ round.pos_avg_price.toFixed(2) }}</span></div>
-            <div class="acct-item"><label>浮动盈亏</label><b :class="round.unrealized_pnl >= 0 ? 'up' : 'down'">{{ money(round.unrealized_pnl) }}</b></div>
-            <div class="acct-item"><label>总资产</label><b>{{ money(round.equity) }}</b><span :class="(round.equity - view!.initial_capital) >= 0 ? 'up' : 'down'">{{ pct((round.equity - view!.initial_capital) / view!.initial_capital) }}</span></div>
-            <div class="acct-item"><label>当前价</label><b>{{ round.cur_close.toFixed(2) }}</b></div>
+            <div class="acct-item"><label>可用资金（可买上限）</label><b class="lim">{{ formatMoney(round.cash, { digits: 0, empty: '--' }) }}</b></div>
+            <div class="acct-item"><label>持仓（可卖上限）</label><b class="lim">{{ round.pos_hands }} 手</b><span class="muted">@{{ formatMoney(round.pos_avg_price) }}</span></div>
+            <div class="acct-item"><label>浮动盈亏</label><b :class="round.unrealized_pnl >= 0 ? 'up' : 'down'">{{ formatMoney(round.unrealized_pnl, { digits: 0, empty: '--' }) }}</b></div>
+            <div class="acct-item"><label>总资产</label><b>{{ formatMoney(round.equity, { digits: 0, empty: '--' }) }}</b><span :class="(round.equity - view!.initial_capital) >= 0 ? 'up' : 'down'">{{ pct((round.equity - view!.initial_capital) / view!.initial_capital) }}</span></div>
+            <div class="acct-item"><label>当前价</label><b>{{ formatMoney(round.cur_close) }}</b></div>
           </div>
 
           <div v-if="round.pending" class="pending">
@@ -672,14 +674,23 @@ onBeforeUnmount(detachKeyboard)
           <template v-if="!isLast">
             <div class="ops order-input">
               <PageSegmented v-model="sessionConfig.orderMode" tone="primary" size="small" aria-label="本轮下单方式" :options="[{ label: '按手数', value: 'hands' }, { label: '按金额', value: 'amount' }]" />
-              <el-input-number v-model="order.qty" :min="inputMin" :max="inputMax" :step="inputStep" controls-position="right" style="width:160px" />
+              <el-input-number
+                v-model="order.qty"
+                :min="inputMin"
+                :max="inputMax"
+                :step="inputStep"
+                :formatter="isAmount ? formatMoneyInput : undefined"
+                :parser="isAmount ? parseMoneyInput : undefined"
+                controls-position="right"
+                style="width:160px"
+              />
               <span class="unit">{{ isAmount ? '元' : '手' }}</span>
               <span class="hint" v-if="!isAmount">
-                约需 ¥{{ money(estCost) }} · 最多可买
+                约需 ¥{{ formatMoney(estCost, { digits: 0, empty: '--' }) }} · 最多可买
                 <b class="hl" title="点击填入全仓" @click="fillBuyMax">{{ maxBuyHands }}</b> 手
               </span>
               <span class="hint" v-else>
-                可用资金 <b class="hl" title="点击全额填入" @click="fillBuyMax">¥{{ money(cash) }}</b> · 本单 ≈ {{ orderHands }} 手
+                可用资金 <b class="hl" title="点击全额填入" @click="fillBuyMax">¥{{ formatMoney(cash, { digits: 0, empty: '--' }) }}</b> · 本单 ≈ {{ orderHands }} 手
               </span>
             </div>
 
@@ -717,9 +728,9 @@ onBeforeUnmount(detachKeyboard)
           <AppDataTable :data="round.trades" height="100%" size="small" empty-text="尚无成交">
             <AppTableColumn label="相对日"><template #default="{ row }">D{{ row.rel_day }}</template></AppTableColumn>
             <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
-            <AppTableColumn label="成交价"><template #default="{ row }">{{ row.price.toFixed(2) }}</template></AppTableColumn>
+            <AppTableColumn label="成交价"><template #default="{ row }">{{ formatMoney(row.price) }}</template></AppTableColumn>
             <AppTableColumn label="手数"><template #default="{ row }">{{ row.hands }}</template></AppTableColumn>
-            <AppTableColumn label="盈亏"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ money(row.pnl) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="盈亏"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ formatMoney(row.pnl, { digits: 0, empty: '--' }) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
             <AppTableColumn label="收益率"><template #default="{ row }"><span v-if="row.return_pct != null" :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
             <AppTableColumn label="理由"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></AppTableColumn>
           </AppDataTable>
@@ -813,9 +824,9 @@ onBeforeUnmount(detachKeyboard)
             <AppTableColumn label="决策日"><template #default="{ row }">{{ row.decide_date }}</template></AppTableColumn>
             <AppTableColumn label="成交日"><template #default="{ row }">{{ row.fill_date }}</template></AppTableColumn>
             <AppTableColumn label="方向"><template #default="{ row }"><span :class="row.side === 'buy' ? 'up' : 'down'">{{ row.side === 'buy' ? '买入' : '卖出' }}</span></template></AppTableColumn>
-            <AppTableColumn label="成交价"><template #default="{ row }">{{ row.price.toFixed(2) }}</template></AppTableColumn>
+            <AppTableColumn label="成交价"><template #default="{ row }">{{ formatMoney(row.price) }}</template></AppTableColumn>
             <AppTableColumn label="手数"><template #default="{ row }">{{ row.hands }}</template></AppTableColumn>
-            <AppTableColumn label="盈亏"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ money(row.pnl) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
+            <AppTableColumn label="盈亏"><template #default="{ row }"><span v-if="row.pnl != null" :class="row.pnl >= 0 ? 'up' : 'down'">{{ formatMoney(row.pnl, { digits: 0, empty: '--' }) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
             <AppTableColumn label="收益率"><template #default="{ row }"><span v-if="row.return_pct != null" :class="row.return_pct >= 0 ? 'up' : 'down'">{{ pct(row.return_pct) }}</span><span v-else class="muted">—</span></template></AppTableColumn>
             <AppTableColumn label="理由"><template #default="{ row }">{{ row.reason || (row.auto_close ? '到期清算' : '') }}</template></AppTableColumn>
           </AppDataTable>
@@ -873,7 +884,15 @@ onBeforeUnmount(detachKeyboard)
         </div>
         <div class="setting-item">
           <div class="setting-label">初始资金（元）</div>
-          <el-input-number v-model="cfg.initial_capital" :min="10000" :step="10000" size="small" style="width:160px" />
+          <el-input-number
+            v-model="cfg.initial_capital"
+            :min="10000"
+            :step="10000"
+            :formatter="formatMoneyInput"
+            :parser="parseMoneyInput"
+            size="small"
+            style="width:160px"
+          />
         </div>
       </PageSettingSection>
       <template v-if="phase !== 'config'">
