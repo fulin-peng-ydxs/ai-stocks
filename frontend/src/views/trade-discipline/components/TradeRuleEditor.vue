@@ -745,7 +745,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
   margin-bottom: var(--app-space-4);
   padding: var(--app-space-3);
   border-left: 3px solid var(--el-color-primary);
-  background: transparent;
+  background: var(--el-fill-color-extra-light);
   color: var(--el-text-color-secondary);
 }
 .rule-editor__base { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.7fr) minmax(200px, 0.8fr); gap: var(--app-space-3); align-items: end; }
