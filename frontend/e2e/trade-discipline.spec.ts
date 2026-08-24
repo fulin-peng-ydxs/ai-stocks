@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import {
   authenticateDebugUser,
@@ -71,6 +71,32 @@ async function expectHistoryLayout(page: Page): Promise<void> {
   expect(Math.max(...geometry.controlWidths)).toBeLessThanOrEqual(300)
 }
 
+async function expectPrimaryOutline(locator: Locator): Promise<void> {
+  const styles = await locator.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const primaryProbe = document.createElement('span')
+    primaryProbe.style.color = 'var(--el-color-primary)'
+    element.append(primaryProbe)
+    const primaryColor = getComputedStyle(primaryProbe).color
+    primaryProbe.remove()
+    return {
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderTopColor,
+      borderStyle: style.borderTopStyle,
+      borderWidth: style.borderTopWidth,
+      color: style.color,
+      primaryColor,
+    }
+  })
+  expect(styles).toMatchObject({
+    backgroundColor: 'rgba(0, 0, 0, 0)',
+    borderColor: styles.primaryColor,
+    borderStyle: 'solid',
+    borderWidth: '1px',
+  })
+  expect(styles.color).not.toBe(styles.primaryColor)
+}
+
 test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历史与稳定布局', async ({ page, request }, testInfo) => {
   const consoleIssues = collectConsoleIssues(page)
   const auth = await authenticateDebugUser(request, 'debug_normal')
@@ -84,6 +110,7 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
   await expect(editor).toContainText('当前正式 v4')
   await expect(editor.getByLabel('规则双状态')).toContainText('当前按 v3 履约')
   await expect(editor.getByLabel('规则双状态')).toContainText('发布 v4，待 2098-06-11 生效')
+  await expectPrimaryOutline(editor.locator('.readonly-banner'))
 
   await page.getByRole('button', { name: '历史记录', exact: true }).click()
   const history = page.getByRole('table', { name: '履约历史', exact: true })
@@ -328,9 +355,11 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   await installAuthSnapshot(page, viewOnly)
   await page.goto(`/trade-discipline?tab=rules&rule_ref=e2e_td_trade_discipline_view_rule`)
   await expect(page.getByText('当前账号只有查看权限。')).toBeVisible()
+  await expectPrimaryOutline(page.locator('.readonly-banner'))
   await expect(page.getByRole('button', { name: '新建规则' })).toHaveCount(0)
   await page.getByRole('button', { name: '今日打卡', exact: true }).click()
   await expect(page.getByText('当前账号仅可查看，不能提交或修正打卡。')).toBeVisible()
+  await expectPrimaryOutline(page.locator('.permission-note'))
   await expect(page.getByRole('button', { name: '提交打卡' })).toHaveCount(0)
   await page.getByRole('button', { name: '历史记录', exact: true }).click()
   const readonlyStockSearch = page.waitForResponse((response) => (

@@ -737,7 +737,17 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 .rule-state-track > div + div { border-left: 1px solid var(--el-border-color-lighter); }
 .rule-state-track span { display: block; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-state-track strong { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
-.readonly-banner { margin-bottom: var(--app-space-4); padding: var(--app-space-3); border-left: 3px solid var(--el-color-warning); background: var(--el-color-warning-light-9); color: var(--el-text-color-secondary); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
+.readonly-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+  margin-bottom: var(--app-space-4);
+  padding: var(--app-space-3);
+  border: 1px solid var(--el-color-primary);
+  background: transparent;
+  color: var(--el-text-color-secondary);
+}
 .rule-editor__base { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.7fr) minmax(200px, 0.8fr); gap: var(--app-space-3); align-items: end; }
 .rule-editor__base :deep(.el-input) { width: 100%; }
 .capital-meter { min-height: var(--app-control-height-md); margin-bottom: 18px; padding: 0 var(--app-space-3); border-radius: 6px; background: var(--el-color-success-light-9); color: var(--el-color-success-dark-2); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); }

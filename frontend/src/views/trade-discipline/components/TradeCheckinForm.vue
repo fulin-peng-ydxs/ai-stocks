@@ -356,7 +356,14 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
 .checkin-section { padding: var(--app-space-4); border: 1px solid var(--el-border-color-lighter); border-radius: 8px; }
 .assessment-row { align-items: flex-start; }
 .breach-grid { display: grid; grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.3fr); gap: var(--app-space-4); }
-.permission-note { margin-top: var(--app-space-3); padding: var(--app-space-2) var(--app-space-3); border-radius: 6px; color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
+.permission-note {
+  margin-top: var(--app-space-3);
+  padding: var(--app-space-2) var(--app-space-3);
+  border: 1px solid var(--el-color-primary);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--el-text-color-secondary);
+}
 .checkin-actions { justify-content: flex-end; position: sticky; bottom: 0; padding: var(--app-space-3) 0 0; background: var(--el-bg-color-overlay); }
 .checkin-actions__hint { margin-right: auto; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 @media (max-width: 760px) {
