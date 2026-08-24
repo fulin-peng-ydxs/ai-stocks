@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { ArrowDown, ArrowUp, CopyDocument, Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
+import BuiltinOptionRow from '@/components/BuiltinOptionRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
@@ -676,18 +677,17 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
                           disabled
                         />
                         <el-option v-for="option in subtypeOptions(group.value)" :key="option.name" :label="option.label || option.name" :value="option.name">
-                          <span>{{ option.label || option.name }}</span>
-                          <span v-if="option.builtin" class="subtype-kind">全局</span>
-                          <AppIconButton
-                            v-else
-                            v-permission="'trade-discipline:rule-manage'"
-                            label="删除自定义买卖类型"
-                            size="sm"
-                            @click.stop="removeActionSubtype(option)"
-                          ><Delete /></AppIconButton>
+                          <BuiltinOptionRow :label="option.label || option.name" :builtin="option.builtin">
+                            <AppIconButton
+                              v-permission="'trade-discipline:rule-manage'"
+                              label="删除自定义买卖类型"
+                              size="sm"
+                              @click.stop="removeActionSubtype(option)"
+                            ><Delete /></AppIconButton>
+                          </BuiltinOptionRow>
                         </el-option>
                       </el-select>
-                      <small class="field-hint">全局类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除</small>
+                      <small class="field-hint">内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除</small>
                     </el-form-item>
                     <el-form-item class="rule-card-form__content" label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
                   </div>
@@ -769,7 +769,6 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 .action-group__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--app-space-2); margin-bottom: var(--app-space-3); }
 .action-group h5 { margin: 0; color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
 .field-hint { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
-.subtype-kind { float: right; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-editor__footer { position: sticky; bottom: calc(var(--app-space-5) * -1); z-index: 2; justify-content: flex-end; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color-overlay); }
 .dirty-copy { margin-right: auto; color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 .leave-decision-copy { margin: 0; color: var(--el-text-color-regular); line-height: var(--app-line-height-longform); }

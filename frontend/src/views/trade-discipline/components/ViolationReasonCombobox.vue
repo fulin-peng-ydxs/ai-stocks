@@ -12,6 +12,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
+import BuiltinOptionRow from '@/components/BuiltinOptionRow.vue'
 import {
   deleteTradeDisciplineReason,
   listTradeDisciplineReasons,
@@ -92,21 +93,19 @@ onMounted(load)
       disabled
     />
     <el-option v-for="reason in reasons" :key="keyOf(reason)" :label="reason.name" :value="keyOf(reason)">
-      <span>{{ reason.name }}</span>
-      <span v-if="reason.builtin" class="reason-kind">内置</span>
-      <AppIconButton
-        v-else
-        v-permission="'trade-discipline:checkin-submit'"
-        label="删除自定义原因"
-        size="sm"
-        :disabled="disabled"
-        @click.stop="remove(reason)"
-      ><Delete /></AppIconButton>
+      <BuiltinOptionRow :label="reason.name" :builtin="reason.builtin">
+        <AppIconButton
+          v-permission="'trade-discipline:checkin-submit'"
+          label="删除自定义原因"
+          size="sm"
+          :disabled="disabled"
+          @click.stop="remove(reason)"
+        ><Delete /></AppIconButton>
+      </BuiltinOptionRow>
     </el-option>
   </el-select>
 </template>
 
 <style scoped>
 .el-select { width: 100%; }
-.reason-kind { float: right; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 </style>

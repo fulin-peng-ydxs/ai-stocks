@@ -258,6 +258,12 @@ describe('TradeRuleEditor', () => {
     await wrapper.get('[data-testid="sell-rule-group"] .el-select__wrapper').trigger('click')
     await flushPromises()
 
+    const optionRows = Array.from(document.body.querySelectorAll('.builtin-option-row'))
+    expect(optionRows).toHaveLength(3)
+    expect(optionRows.filter((row) => row.querySelector('.builtin-option-label'))).toHaveLength(2)
+    expect(optionRows.filter((row) => row.querySelector('.builtin-option-row__action'))).toHaveLength(1)
+    expect(document.body.textContent).toContain('内置类型不可删除')
+    expect(document.body.textContent).not.toContain('全局类型不可删除')
     const deleteButtons = Array.from(
       document.body.querySelectorAll('[aria-label="删除自定义买卖类型"]'),
     )
