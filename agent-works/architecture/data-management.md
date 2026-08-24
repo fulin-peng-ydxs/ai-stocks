@@ -58,6 +58,7 @@
 - **协作式终止**：`cancel` 只置取消标记，执行器在每只股票/每个问题之间的检查点 `check_cancel()` 命中后抛 `TaskCancelled` → 状态转 `interrupted`（可续跑）。容错兜底块（缺口收口、补市值这类 `except` 隔离失败的尾部阶段）必须让 `TaskCancelled` 穿透，不得当成"子阶段失败"吞掉——否则终止会被吃掉、任务跑完变 `done`。
 - **续跑幂等**：`resume` 读 `result.checkpoint` 重新拉起。续跑不是"跳到中断的阶段"，而是从任务入口重进、各阶段按幂等跳过已完成项（`update`/`ingest_date` 按 checkpoint `done_codes`，`backfill` 按库内 `min(trade_date)` 覆盖判断，补市值按库内 `total_mv` 非空）。日历/指数/基础信息等前置用 `prep_done`/`target_end` 标记，续跑时跳过（已于首跑幂等入库）。
 - **并发续跑安全**：新浪日线内部使用 MiniRacer 解码；续跑可能跳过会串行初始化该运行时的日历/指数前置，因此日线适配器必须在进入并发请求前通过进程级锁完成一次性 V8 预热并保留上下文。禁止依赖“首次任务碰巧先调用过某个 AKShare 接口”，否则多个工作线程同时首次初始化会触发不可捕获的原生 FATAL，使服务子进程退出而 checkpoint 留在 `running`；应用重启后由 `reconcile` 标成 `interrupted`，完成项仍可续跑。
+- **受控停服安全**：健康端点公开且只公开 `pending/running` 任务数量。会切换后端进程的 E2E/夹具脚本必须先通过 `./start.sh assert-idle` 或 `stop-if-idle` 校验；健康状态或任务数量无法可信读取、或者仍有活跃任务时一律 fail-closed，不得停止服务。`./start.sh restart` 对健康服务执行相同检查，仅在服务已不可用时允许恢复性重启。脚本只有在成功接管后端后才能在退出清理中停服，避免前置检查失败反而触发清理陷阱中断业务任务。
 
 三类采集任务共用"日历→指数→逐股日线→刷净复权因子"主链，差异是**刻意**的，不应强行统一：
 

@@ -8,6 +8,8 @@
 #   ./start.sh stop       停止后端
 #   ./start.sh restart    重启（开发模式）
 #   ./start.sh status     查看运行状态
+#   ./start.sh assert-idle  确认没有待执行/运行中的后台任务
+#   ./start.sh stop-if-idle 仅在没有后台任务时停止后端
 #   ./start.sh logs       跟踪日志（Ctrl-C 退出跟踪，不影响服务）
 #   ./start.sh dev-users [参数]  在统一本机环境下维护调试账号
 #   ./start.sh e2e-user [参数]   Playwright 临时用户内部入口
@@ -223,12 +225,59 @@ status() {
   return 1
 }
 
+assert_idle() {
+  local body count
+  if ! body="$(curl -fsS --max-time 3 http://127.0.0.1:8000/api/health 2>/dev/null)"; then
+    echo "无法读取后端任务状态，拒绝执行可能中断任务的操作" >&2
+    return 1
+  fi
+  if ! count="$(HEALTH_BODY="$body" "$PY" - <<'PY'
+import json
+import os
+
+body = json.loads(os.environ["HEALTH_BODY"])
+value = (body.get("data") or {}).get("active_task_count") if body.get("code") == 0 else None
+if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+    raise SystemExit(1)
+print(value)
+PY
+  )"; then
+    echo "健康检查未返回可信的活跃任务数量，拒绝执行可能中断任务的操作" >&2
+    return 1
+  fi
+  if [[ "$count" != "0" ]]; then
+    echo "检测到 $count 个待执行或运行中的后台任务，拒绝停止后端；请等待任务结束或先显式终止任务" >&2
+    return 1
+  fi
+  echo "✅ 后端当前无待执行或运行中的后台任务"
+}
+
+restart_safely() {
+  local pid code
+  pid="$(running_pid)"
+  if [[ -z "$pid" ]]; then
+    start dev
+    return
+  fi
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+    http://127.0.0.1:8000/api/health 2>/dev/null)" || code="000"
+  if [[ "$code" == "200" ]]; then
+    assert_idle
+  else
+    echo "后端健康检查为 $code，执行恢复性重启" >&2
+  fi
+  stop
+  start dev
+}
+
 case "${1:-dev}" in
   dev|"")   start dev ;;
   prod)     start prod ;;
   stop)     stop ;;
-  restart)  stop; start dev ;;
+  restart)  restart_safely ;;
   status)   status ;;
+  assert-idle) assert_idle ;;
+  stop-if-idle) assert_idle; stop ;;
   snapshot-runtime)
     shift
     snapshot_runtime_state "${1:-}"
@@ -259,7 +308,7 @@ case "${1:-dev}" in
     "$PY" -m backend.devtools.e2e_trade_discipline "$@"
     ;;
   *)
-    echo "用法: ./start.sh [dev|prod|stop|restart|status|logs|dev-users|e2e-user|e2e-backtest-run|e2e-board-data|e2e-trade-discipline]"
+    echo "用法: ./start.sh [dev|prod|stop|restart|status|assert-idle|stop-if-idle|logs|dev-users|e2e-user|e2e-backtest-run|e2e-board-data|e2e-trade-discipline]"
     exit 1
     ;;
 esac

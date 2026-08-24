@@ -19,12 +19,17 @@ fi
 
 status_before="$(./start.sh status 2>&1 || true)"
 was_running=0
+owns_backend=0
 if [[ "$status_before" == *"运行中"* ]]; then
   was_running=1
+  "$PROJECT_ROOT/start.sh" assert-idle
 fi
 
 cleanup() {
   set +e
+  if [[ "$owns_backend" != "1" ]]; then
+    return
+  fi
   "$PROJECT_ROOT/start.sh" stop
   AI_STOCKS_ENV="$AI_STOCKS_ENV" AI_STOCKS_E2E_WRITE=1 \
     "$PROJECT_ROOT/start.sh" e2e-board-data cleanup
@@ -34,7 +39,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-./start.sh stop
+if [[ "$was_running" == "1" ]]; then
+  ./start.sh stop-if-idle
+else
+  ./start.sh stop
+fi
+owns_backend=1
 AI_STOCKS_ENV="$AI_STOCKS_ENV" AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data cleanup
 AI_STOCKS_ENV="$AI_STOCKS_ENV" AI_STOCKS_E2E_WRITE=1 ./start.sh e2e-board-data seed
 AI_STOCKS_ENV="$AI_STOCKS_ENV" AI_STOCKS_E2E_WRITE=1 \

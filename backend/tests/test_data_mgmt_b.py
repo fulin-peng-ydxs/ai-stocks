@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import pandas as pd
 import pytest
@@ -38,6 +38,29 @@ def _wait(svc, tid, timeout=8.0):
             return t
         time.sleep(0.05)
     raise AssertionError("任务超时")
+
+
+def test_health_reports_active_task_count(client, monkeypatch):
+    """停服型验收脚本可通过健康端点在中断业务任务前 fail-closed。"""
+    from backend.api import health as health_api
+
+    class AvailableDependency:
+        @staticmethod
+        def ping():
+            return True
+
+    monkeypatch.setattr(health_api, "get_pg_client", AvailableDependency)
+    monkeypatch.setattr(health_api, "get_redis_client", AvailableDependency)
+
+    assert health_api.health().data["active_task_count"] == 0
+    now = datetime.now(UTC)
+    client.execute(
+        "INSERT INTO async_task "
+        "(id, task_type, params, status, progress, message, result, created_at, updated_at) "
+        "VALUES ('task_health','update','{}','running',0,'运行中',NULL,?,?)",
+        [now, now],
+    )
+    assert health_api.health().data["active_task_count"] == 1
 
 
 # ── 并发互斥（FR-DM-11）──

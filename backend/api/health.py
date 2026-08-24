@@ -19,9 +19,14 @@ def health() -> ApiResponse:
     s = get_settings()
     duckdb_ok = False
     duckdb_detail = ""
+    active_task_count: int | None = None
     try:
         client = get_client()
         version = client.query_df("SELECT version() AS v").iloc[0]["v"]
+        task_row = client.query_df(
+            "SELECT count(*) AS n FROM async_task WHERE status IN ('pending', 'running')"
+        ).iloc[0]
+        active_task_count = int(task_row["n"])
         duckdb_ok = True
         duckdb_detail = f"duckdb {version} @ {client.db_path.name}"
     except Exception as e:  # noqa: BLE001
@@ -48,6 +53,7 @@ def health() -> ApiResponse:
             "status": "up",
             "duckdb_ok": duckdb_ok,
             "duckdb": duckdb_detail,
+            "active_task_count": active_task_count,
             "pg_ok": pg_ok,
             "postgres": pg_detail,
             "redis_ok": redis_ok,

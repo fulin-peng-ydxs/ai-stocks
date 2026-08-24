@@ -19,9 +19,11 @@ fi
 
 status_before="$(./start.sh status 2>&1 || true)"
 was_running=0
+owns_backend=0
 runtime_snapshot=""
 if [[ "$status_before" == *"运行中"* ]]; then
   was_running=1
+  "$PROJECT_ROOT/start.sh" assert-idle
   runtime_snapshot="$(mktemp "${TMPDIR:-/tmp}/ai-stocks-backend-runtime.XXXXXX")"
   rm -f "$runtime_snapshot"
   if ! "$PROJECT_ROOT/start.sh" snapshot-runtime "$runtime_snapshot"; then
@@ -94,6 +96,9 @@ restore_and_cleanup() {
   local restore_exit=0
   trap - EXIT
   set +e
+  if [[ "$owns_backend" != "1" ]]; then
+    exit "$original_exit"
+  fi
   "$PROJECT_ROOT/start.sh" stop
   if [[ -n "$pg_fingerprint" ]]; then
     cleanup_fixture_with_retry || cleanup_exit=$?
@@ -124,7 +129,8 @@ trap 'exit 143' TERM
 # 优先复用已按 E2E 模式运行的后端；否则受控切换后端，只把指纹保存在本脚本变量中。
 pg_fingerprint="$(read_pg_fingerprint || true)"
 if [[ -z "$pg_fingerprint" ]]; then
-  "$PROJECT_ROOT/start.sh" stop
+  "$PROJECT_ROOT/start.sh" stop-if-idle
+  owns_backend=1
   start_e2e_backend
   pg_fingerprint="$(read_pg_fingerprint || true)"
 fi
@@ -138,7 +144,8 @@ AI_STOCKS_ENV_FILE=/dev/null AI_STOCKS_ENV="$AI_STOCKS_ENV" \
   "$PROJECT_ROOT/start.sh" dev-users --keep-password \
     --expected-pg-fingerprint "$pg_fingerprint" >/dev/null
 
-"$PROJECT_ROOT/start.sh" stop
+"$PROJECT_ROOT/start.sh" stop-if-idle
+owns_backend=1
 cleanup_fixture_with_retry
 fixture seed
 start_e2e_backend
