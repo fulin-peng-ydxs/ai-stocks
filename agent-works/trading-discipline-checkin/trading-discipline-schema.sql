@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS trade_discipline_stock_rule (
             (tenant_id, owner_user_id, rule_id, version_no) ON DELETE RESTRICT
 );
 
--- 买卖规则二级类型候选：仅在同一 tenant + owner 内共享，归一化名称唯一；用户保存草稿时登记。
+-- 买卖规则自定义二级类型候选：仅在同一 tenant + owner 内共享，归一化名称唯一；
+-- 用户保存草稿时登记、可从候选目录删除；删除目录项不级联改写规则或历史快照。
 CREATE TABLE IF NOT EXISTS trade_discipline_action_subtype (
     tenant_id TEXT NOT NULL DEFAULT 'default', owner_user_id TEXT NOT NULL DEFAULT 'admin',
     normalized_name TEXT NOT NULL, name TEXT NOT NULL, action_type TEXT NOT NULL,

@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import ElementPlus, { ElMessageBox } from 'element-plus'
 import TradeRuleEditor from '@/views/trade-discipline/components/TradeRuleEditor.vue'
 
 const api = vi.hoisted(() => ({
   get: vi.fn(), open: vi.fn(), save: vi.fn(), discard: vi.fn(), publish: vi.fn(),
   archive: vi.fn(), restore: vi.fn(), copy: vi.fn(), remove: vi.fn(), types: vi.fn(),
+  deleteType: vi.fn(),
 }))
 
 vi.mock('@/api/tradeDiscipline', () => ({
@@ -20,6 +21,7 @@ vi.mock('@/api/tradeDiscipline', () => ({
   copyTradeDisciplineRule: (...args: unknown[]) => api.copy(...args),
   deleteTradeDisciplineRule: (...args: unknown[]) => api.remove(...args),
   listTradeDisciplineRuleTypes: (...args: unknown[]) => api.types(...args),
+  deleteTradeDisciplineRuleType: (...args: unknown[]) => api.deleteType(...args),
 }))
 
 function draft(revision = 2) {
@@ -73,10 +75,18 @@ describe('TradeRuleEditor', () => {
     api.get.mockResolvedValue(detail())
     api.types.mockResolvedValue([
       { name: 'open_position', label: '建仓', action_type: 'buy', builtin: true },
+      { name: 'add_position', label: '加仓', action_type: 'buy', builtin: true },
       { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: true },
+      { name: 'reduce_position', label: '减仓', action_type: 'sell', builtin: true },
       { name: '趋势止盈', action_type: 'sell', builtin: false },
     ])
+    api.deleteType.mockResolvedValue({ name: '趋势止盈', action_type: 'sell' })
     api.save.mockImplementation(async (_id, payload) => ({ ...draft(payload.expected_revision + 1), ...payload }))
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
   })
 
   it('保存时保留换行、启用态和调整后的展示顺序', async () => {
@@ -216,6 +226,46 @@ describe('TradeRuleEditor', () => {
     sellSelect.vm.$emit('update:modelValue', '趋势止盈')
     await wrapper.vm.$nextTick()
     expect((wrapper.vm as any).isDirty()).toBe(true)
+  })
+
+  it('默认类型按方向展示且自定义类型可从下拉项删除', async () => {
+    vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as never)
+    api.types
+      .mockResolvedValueOnce([
+        { name: 'open_position', label: '建仓', action_type: 'buy', builtin: true },
+        { name: 'add_position', label: '加仓', action_type: 'buy', builtin: true },
+        { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: true },
+        { name: 'reduce_position', label: '减仓', action_type: 'sell', builtin: true },
+        { name: '趋势止盈', action_type: 'sell', builtin: false },
+      ])
+      .mockResolvedValue([
+        { name: 'open_position', label: '建仓', action_type: 'buy', builtin: true },
+        { name: 'add_position', label: '加仓', action_type: 'buy', builtin: true },
+        { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: true },
+        { name: 'reduce_position', label: '减仓', action_type: 'sell', builtin: true },
+      ])
+    const wrapper = mount(TradeRuleEditor, {
+      attachTo: document.body,
+      props: { ruleId: 'rule-1', tradeDate: '2026-08-21', canManage: true },
+      global: { plugins: [ElementPlus], directives: { permission: {} } },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('建仓与加仓条件')
+    expect(wrapper.text()).toContain('止盈、止损与减仓条件')
+    await wrapper.get('[data-testid="sell-rule-group"]')
+      .get('[data-testid="rule-card-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="sell-rule-group"] .el-select__wrapper').trigger('click')
+    await flushPromises()
+
+    const deleteButtons = Array.from(
+      document.body.querySelectorAll('[aria-label="删除自定义买卖类型"]'),
+    )
+    expect(deleteButtons).toHaveLength(1)
+    await new DOMWrapper(deleteButtons[0] as Element).trigger('click')
+    await flushPromises()
+    expect(api.deleteType).toHaveBeenCalledWith('趋势止盈')
+    expect(api.types).toHaveBeenCalledTimes(2)
   })
 
   it('快速切换规则时忽略迟到的旧详情响应', async () => {

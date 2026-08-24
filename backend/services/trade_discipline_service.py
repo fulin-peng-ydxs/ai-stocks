@@ -21,13 +21,21 @@ _BUILTIN_ACTION_SUBTYPES: tuple[tuple[str, str, str], ...] = (
     ("open_position", "建仓", "buy"),
     ("add_position", "加仓", "buy"),
     ("liquidate", "清仓", "sell"),
+    ("reduce_position", "减仓", "sell"),
+)
+_LEGACY_ACTION_SUBTYPES: tuple[tuple[str, str, str], ...] = (
     ("do_t", "做 T", "sell"),
 )
-_BUILTIN_SUBTYPE_SIDE = {value: side for value, _label, side in _BUILTIN_ACTION_SUBTYPES}
+_SUPPORTED_ACTION_SUBTYPES = _BUILTIN_ACTION_SUBTYPES + _LEGACY_ACTION_SUBTYPES
+_BUILTIN_SUBTYPE_SIDE = {value: side for value, _label, side in _SUPPORTED_ACTION_SUBTYPES}
 _BUILTIN_SUBTYPE_ALIASES = {
     unicodedata.normalize("NFKC", alias).strip().casefold(): (value, side)
-    for value, label, side in _BUILTIN_ACTION_SUBTYPES
+    for value, label, side in _SUPPORTED_ACTION_SUBTYPES
     for alias in (value, label)
+}
+_BUILTIN_SUBTYPE_VALUES = {
+    unicodedata.normalize("NFKC", value).strip().casefold()
+    for value, _label, _side in _SUPPORTED_ACTION_SUBTYPES
 }
 BUILTIN_VIOLATION_REASONS: tuple[tuple[str, str], ...] = (
     ("impulsive_trade", "冲动交易"),
@@ -302,6 +310,9 @@ class TradeDisciplineService:
                 "builtin": False,
             }
             for item in saved
+            # 新增全局默认类型前可能已有同名自定义候选；全局项必须成为唯一展示项。
+            if unicodedata.normalize("NFKC", str(item["name"])).strip().casefold()
+            not in _BUILTIN_SUBTYPE_ALIASES
         }
         for value, label, side in _BUILTIN_ACTION_SUBTYPES:
             by_name.setdefault(
@@ -321,6 +332,24 @@ class TradeDisciplineService:
                 item.get("label") or item["name"],
             ),
         )
+
+    def delete_action_subtype(self, name: str) -> dict[str, str]:
+        display, normalized = normalize_rule_name(name)
+        if not display or not normalized:
+            raise ValidationError("买卖类型名称不能为空")
+        if normalized in _BUILTIN_SUBTYPE_VALUES:
+            raise ValidationError("全局默认买卖类型不可删除")
+        try:
+            removed = self.repo.delete_action_subtype(normalized)
+        except NotFoundError as exc:
+            # 全局项的中文标签不是目录主键，但 API 仍需给出明确的不可删除语义。
+            if normalized in _BUILTIN_SUBTYPE_ALIASES:
+                raise ValidationError("全局默认买卖类型不可删除") from exc
+            raise
+        return {
+            "name": str(removed["name"]),
+            "action_type": str(removed["action_type"]),
+        }
 
     @staticmethod
     def _lifecycle_state(row: dict[str, Any], trade_date: date | None) -> dict[str, Any]:

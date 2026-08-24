@@ -129,6 +129,17 @@ def test_custom_action_subtype_is_reusable_and_unique_across_sides(pg, market):
     rule_id = service.create_rule(payload)["id"]
 
     options = service.list_action_subtypes()
+    builtins = {
+        (item["action_type"], item["label"])
+        for item in options
+        if item["builtin"] is True
+    }
+    assert builtins == {
+        ("buy", "建仓"),
+        ("buy", "加仓"),
+        ("sell", "清仓"),
+        ("sell", "减仓"),
+    }
     assert any(
         item["name"] == "趋势回踩"
         and item["action_type"] == "buy"
@@ -151,6 +162,59 @@ def test_custom_action_subtype_is_reusable_and_unique_across_sides(pg, market):
         service.create_rule(other)
 
     assert int(saved["draft_revision"]) == 2
+
+
+def test_custom_action_subtype_delete_keeps_draft_snapshot_and_can_be_reclaimed(pg, market):
+    service = _service(pg, market)
+    payload = _payload()
+    payload["action_rules"][0]["action_subtype"] = "趋势回踩"
+    rule_id = service.create_rule(payload)["id"]
+
+    removed = service.delete_action_subtype("  趋势回踩 ")
+    assert removed == {"name": "趋势回踩", "action_type": "buy"}
+    assert all(item["name"] != "趋势回踩" for item in service.list_action_subtypes())
+    draft = service.get_rule(rule_id)["draft"]
+    assert draft["action_rules"][0]["action_subtype"] == "趋势回踩"
+
+    service.save_draft(rule_id, draft, expected_revision=int(draft["draft_revision"]))
+    assert any(item["name"] == "趋势回踩" for item in service.list_action_subtypes())
+
+    with pytest.raises(ValidationError, match="全局默认"):
+        service.delete_action_subtype("减仓")
+    with pytest.raises(NotFoundError, match="不存在或已删除"):
+        _service(pg, market, owner="other-owner").delete_action_subtype("趋势回踩")
+
+
+def test_historical_custom_subtype_matching_new_builtin_is_hidden_and_deletable(pg, market):
+    service = _service(pg, market)
+    pg.execute(
+        "INSERT INTO trade_discipline_action_subtype "
+        "(tenant_id,owner_user_id,normalized_name,name,action_type) VALUES (%s,%s,%s,%s,%s)",
+        [TEST_TENANT, TEST_OWNER, "减仓", "减仓", "sell"],
+    )
+
+    options = service.list_action_subtypes()
+    assert [item for item in options if item.get("label") == "减仓"] == [
+        {
+            "name": "reduce_position",
+            "label": "减仓",
+            "action_type": "sell",
+            "builtin": True,
+        }
+    ]
+    assert service.delete_action_subtype("减仓") == {"name": "减仓", "action_type": "sell"}
+    with pytest.raises(ValidationError, match="全局默认"):
+        service.delete_action_subtype("减仓")
+
+
+def test_legacy_do_t_remains_valid_but_is_not_a_default_option(pg, market):
+    service = _service(pg, market)
+    payload = _payload()
+    payload["action_rules"][1]["action_subtype"] = "do_t"
+    rule_id = service.create_rule(payload)["id"]
+
+    assert service.get_rule(rule_id)["draft"]["action_rules"][1]["action_subtype"] == "do_t"
+    assert all(item["name"] != "do_t" for item in service.list_action_subtypes())
 
 
 def test_publish_effective_version_and_no_material_change(pg, market):

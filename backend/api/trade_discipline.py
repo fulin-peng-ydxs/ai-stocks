@@ -186,6 +186,15 @@ def list_rule_types() -> ApiResponse:
     return ok(_call(_service().list_action_subtypes))
 
 
+@router.delete(
+    "/rule-types", response_model=ApiResponse, dependencies=[Depends(require_perm(RULE_MANAGE))]
+)
+def delete_rule_type(name: str = Query(min_length=1, max_length=40)) -> ApiResponse:
+    result = _call(_service().delete_action_subtype, name)
+    _audit("rule_type_delete", "trade_discipline_action_subtype", result["name"], RULE_MANAGE)
+    return ok(result, msg="自定义买卖类型已删除")
+
+
 @router.post(
     "/rules", response_model=ApiResponse, dependencies=[Depends(require_perm(RULE_MANAGE))]
 )

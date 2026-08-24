@@ -80,6 +80,10 @@ def test_trade_discipline_routes_are_openapi_visible_and_precisely_guarded(clien
             "trade-discipline:checkin-view",
         },
         ("GET", "/api/trade-discipline/rules"): {"trade-discipline:view"},
+        ("GET", "/api/trade-discipline/rule-types"): {"trade-discipline:view"},
+        ("DELETE", "/api/trade-discipline/rule-types"): {
+            "trade-discipline:rule-manage"
+        },
         ("POST", "/api/trade-discipline/rules"): {"trade-discipline:rule-manage"},
         ("GET", "/api/trade-discipline/rules/{rule_id}"): {"trade-discipline:view"},
         ("POST", "/api/trade-discipline/rules/{rule_id}/draft/open"): {
@@ -440,6 +444,12 @@ def test_all_trade_discipline_endpoint_contracts_return_unified_response(
         def delete_reason(self, reason_id):
             return None
 
+        def list_action_subtypes(self):
+            return []
+
+        def delete_action_subtype(self, name):
+            return {"name": name, "action_type": "buy"}
+
     stub = StubService()
     monkeypatch.setattr("backend.api.trade_discipline._service", lambda: stub)
     identity = _make_user(
@@ -466,6 +476,8 @@ def test_all_trade_discipline_endpoint_contracts_return_unified_response(
     calls = [
         ("GET", "/api/trade-discipline/summary?trade_date=2025-01-02", None),
         ("GET", "/api/trade-discipline/rules?trade_date=2025-01-02", None),
+        ("GET", "/api/trade-discipline/rule-types", None),
+        ("DELETE", "/api/trade-discipline/rule-types?name=自定义买入", None),
         ("POST", "/api/trade-discipline/rules", draft),
         ("GET", "/api/trade-discipline/rules/tdr_stub?trade_date=2025-01-02", None),
         ("POST", "/api/trade-discipline/rules/tdr_stub/draft/open", None),

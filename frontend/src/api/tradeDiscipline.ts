@@ -267,6 +267,12 @@ export function listTradeDisciplineRuleTypes(): Promise<ActionSubtypeOption[]> {
   return http.get('/trade-discipline/rule-types')
 }
 
+export function deleteTradeDisciplineRuleType(
+  name: string,
+): Promise<{ name: string; action_type: ActionType }> {
+  return http.delete('/trade-discipline/rule-types', { params: { name } })
+}
+
 export function getTradeDisciplineRule(
   ruleId: string,
   tradeDate?: string | null,

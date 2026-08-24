@@ -11,6 +11,7 @@ import RuleSummaryCard from '@/components/trade-discipline/RuleSummaryCard.vue'
 import {
   archiveTradeDisciplineRule,
   copyTradeDisciplineRule,
+  deleteTradeDisciplineRuleType,
   deleteTradeDisciplineRule,
   discardTradeDisciplineRuleDraft,
   getTradeDisciplineRule,
@@ -56,7 +57,7 @@ const actionSubtypeOptions = ref<ActionSubtypeOption[]>([
   { name: 'open_position', label: '建仓', action_type: 'buy', builtin: true },
   { name: 'add_position', label: '加仓', action_type: 'buy', builtin: true },
   { name: 'liquidate', label: '清仓', action_type: 'sell', builtin: true },
-  { name: 'do_t', label: '做 T', action_type: 'sell', builtin: true },
+  { name: 'reduce_position', label: '减仓', action_type: 'sell', builtin: true },
 ])
 let baseline = ''
 let resolveLeaveDecision: ((allowLeave: boolean) => void) | null = null
@@ -96,7 +97,35 @@ function subtypeLabel(item: DraftActionRule): string {
   const option = actionSubtypeOptions.value.find((candidate) => (
     candidate.action_type === item.action_type && candidate.name === item.action_subtype
   ))
-  return option?.label || item.action_subtype?.trim() || '未选择类型'
+  if (option) return option.label || option.name
+  if (item.action_subtype === 'do_t') return '做 T'
+  return item.action_subtype?.trim() || '未选择类型'
+}
+
+function missingSubtypeLabel(item: DraftActionRule): string {
+  const label = subtypeLabel(item)
+  return item.action_subtype === 'do_t' ? `${label}（历史类型）` : `${label}（已从列表删除）`
+}
+
+function subtypeIsMissing(item: DraftActionRule, side: ActionType): boolean {
+  return Boolean(item.action_subtype)
+    && !subtypeOptions(side).some((option) => option.name === item.action_subtype)
+}
+
+async function removeActionSubtype(option: ActionSubtypeOption): Promise<void> {
+  if (option.builtin || !canEditDetails.value) return
+  try {
+    await ElMessageBox.confirm(
+      `删除自定义买卖类型“${option.label || option.name}”？现有规则仍保留该类型，再次保存使用该类型的草稿时会重新加入列表。`,
+      '删除买卖类型',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+    await deleteTradeDisciplineRuleType(option.name)
+    actionSubtypeOptions.value = await listTradeDisciplineRuleTypes()
+    ElMessage.success('自定义买卖类型已删除')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') { /* 统一请求层已反馈 */ }
+  }
 }
 
 function stockCapitalMeta(item: DraftStockRule): string {
@@ -640,9 +669,25 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
                     <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>
                     <el-form-item label="类型">
                       <el-select v-model="item.action_subtype" filterable allow-create default-first-option maxlength="40" placeholder="选择或输入类型" data-testid="action-rule-type-select">
-                        <el-option v-for="option in subtypeOptions(group.value)" :key="option.name" :label="option.label || option.name" :value="option.name" />
+                        <el-option
+                          v-if="subtypeIsMissing(item, group.value)"
+                          :label="missingSubtypeLabel(item)"
+                          :value="item.action_subtype"
+                          disabled
+                        />
+                        <el-option v-for="option in subtypeOptions(group.value)" :key="option.name" :label="option.label || option.name" :value="option.name">
+                          <span>{{ option.label || option.name }}</span>
+                          <span v-if="option.builtin" class="subtype-kind">全局</span>
+                          <AppIconButton
+                            v-else
+                            v-permission="'trade-discipline:rule-manage'"
+                            label="删除自定义买卖类型"
+                            size="sm"
+                            @click.stop="removeActionSubtype(option)"
+                          ><Delete /></AppIconButton>
+                        </el-option>
                       </el-select>
-                      <small class="field-hint">输入新类型后保存草稿，即可在后续规则中复用</small>
+                      <small class="field-hint">全局类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除</small>
                     </el-form-item>
                     <el-form-item class="rule-card-form__content" label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
                   </div>
@@ -714,6 +759,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 .action-group__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--app-space-2); margin-bottom: var(--app-space-3); }
 .action-group h5 { margin: 0; color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
 .field-hint { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
+.subtype-kind { float: right; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-editor__footer { position: sticky; bottom: calc(var(--app-space-5) * -1); z-index: 2; justify-content: flex-end; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color-overlay); }
 .dirty-copy { margin-right: auto; color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 .leave-decision-copy { margin: 0; color: var(--el-text-color-regular); line-height: var(--app-line-height-longform); }

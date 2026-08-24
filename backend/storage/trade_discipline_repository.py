@@ -99,6 +99,20 @@ class TradeDisciplineRepository:
         )
         return self._records(df)
 
+    def delete_action_subtype(self, normalized_name: str) -> dict[str, Any]:
+        """删除当前归属者的自定义候选；规则与版本保存名称快照，不做级联修改。"""
+        with self.transaction() as conn, conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "DELETE FROM trade_discipline_action_subtype "
+                "WHERE tenant_id=%s AND owner_user_id=%s AND normalized_name=%s "
+                "RETURNING name,action_type",
+                [*self.owner, normalized_name],
+            )
+            row = self._one(cur)
+        if row is None:
+            raise NotFoundError("自定义买卖类型不存在或已删除")
+        return row
+
     def claim_action_subtypes(
         self,
         conn: psycopg.Connection,
