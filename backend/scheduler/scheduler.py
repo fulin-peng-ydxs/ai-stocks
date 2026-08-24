@@ -48,7 +48,7 @@ def _is_trading_day(d: date) -> bool:
     mx = c.query_df("SELECT max(trade_date) AS m FROM trade_calendar").iloc[0]["m"]
     if mx is not None and pd.Timestamp(mx).date() >= d:
         return False  # 日历已覆盖到 d 仍无此行 → 确属闭市（如周末/节假日）
-    try:  # 日历未采到 d → 补采后复查（ingest_calendar 会一并把上界延伸到年底）
+    try:  # 日历未采到 d → 补采后复查（ingest_calendar 会尝试把上界延伸到下一自然年末）
         from backend.services.ingest import IngestionService
         IngestionService().ingest_calendar(d - timedelta(days=30), d)
         df = c.query_df("SELECT is_open FROM trade_calendar WHERE trade_date = ?", [d])

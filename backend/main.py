@@ -202,6 +202,12 @@ def create_app() -> FastAPI:
             from backend.indicators.definition import IndicatorDefRepo
 
             builtin_count = IndicatorDefRepo(market).seed_builtins()
+            from backend.services.trade_calendar_readiness import (
+                calendar_readiness_detail,
+                inspect_trade_calendar,
+            )
+
+            calendar_readiness = inspect_trade_calendar(market)
         except Exception as e:
             raise RuntimeError(f"DuckDB 连通性或内置指标初始化失败：{e}") from e
         if not get_pg_client().ping():
@@ -214,6 +220,15 @@ def create_app() -> FastAPI:
         init_pg_db()
         # 认证密钥自检（stage2·T2）：JWT 签名密钥无弱默认，缺失即启动失败（不留到首个请求才 500）
         get_settings().jwt_secret()
+        if (
+            not calendar_readiness["lifecycle_ready"]
+            or not calendar_readiness["cross_year_ready"]
+        ):
+            log.warning(
+                "交易日历前瞻覆盖不足：%s；请执行日常数据更新，"
+                "数据源未发布前规则生命周期保持 fail-closed",
+                calendar_readiness_detail(calendar_readiness),
+            )
         log.info(
             "混合持久层自检通过：DuckDB + PostgreSQL + Redis 均连通，"
             "builtin 指标 %d 个、PG 资产表与 JWT 密钥已就绪",

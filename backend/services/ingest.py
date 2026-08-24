@@ -24,6 +24,11 @@ from backend.dataquality.checker import add_markers, sanitize_bars
 from backend.datasource.akshare_source import classify_board
 from backend.datasource.base import DataSource, get_source
 from backend.services.async_task import TaskCancelled
+from backend.services.trade_calendar_readiness import (
+    calendar_readiness_detail,
+    calendar_request_end,
+    inspect_trade_calendar,
+)
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import get_client
 from backend.storage.repository import MarketRepository
@@ -105,20 +110,39 @@ class IngestionService:
 
     # ── 交易日历 ──
     def ingest_calendar(self, start: date, end: date, ctx=None) -> int:
-        # 交易日历是「已知的未来」（数据源发布当年完整日历），故上界至少延伸到本年底：
-        # 让未来交易日提前入表，避免调度「非交易日」判断把"日历还没采到这天"误当"闭市"。
-        cal_end = max(end, date(end.year, 12, 31))
+        # 主动请求到下一自然年末；数据源尚未发布的日期保持缺失，绝不按工作日伪造。
+        # 这样源一旦发布跨年日历，日常更新和调度自愈都会自动吸收，无需等年末人工改参数。
+        cal_end = calendar_request_end(end)
         if ctx:
             ctx.log(f"子任务：交易日历采集开始（{start}~{cal_end}，源 {self.src.name}；"
-                    f"日历是「已知的未来」故按固定窗口回看补缺口、终点延至年底，"
+                    f"日历是「已知的未来」故按固定窗口回看补缺口、终点尝试延至下一自然年末，"
                     f"与日线按已入库最新日+1 增量不同口径）")
             ctx.flush()
         df = self.src.get_trade_calendar(start, cal_end)
         n = self.repo.upsert_trade_calendar(df)
-        self.repo.log_update("trade_calendar", self.src.name, start, cal_end, n, "success")
-        log.info("交易日历入库 %d 个交易日（采至 %s）", n, cal_end)
+        readiness = inspect_trade_calendar(self.c)
+        detail = calendar_readiness_detail(readiness)
+        # date_end 表示请求上界而非源端实际覆盖；detail 必须同时记录真实最远开市日，避免运维误读。
+        self.repo.log_update(
+            "trade_calendar",
+            self.src.name,
+            start,
+            cal_end,
+            n,
+            "success",
+            f"请求上界 {cal_end}；{detail}",
+        )
+        log.info("交易日历入库 %d 行（请求至 %s；%s）", n, cal_end, detail)
+        if not readiness["lifecycle_ready"] or not readiness["cross_year_ready"]:
+            message = (
+                f"交易日历前瞻覆盖不足（{detail}）；已请求至 {cal_end}，"
+                "若数据源尚未发布下一年度安排，规则发布/归档/恢复继续 fail-closed"
+            )
+            log.warning(message)
+            if ctx:
+                ctx.log(message, "warning")
         if ctx:
-            ctx.log(f"子任务：交易日历采集完成，写入/更新 {n} 行，覆盖到 {cal_end}")
+            ctx.log(f"子任务：交易日历采集完成，写入/更新 {n} 行；{detail}")
         return n
 
     # ── 指数 ──
@@ -893,6 +917,7 @@ class IngestionService:
             v = DataVerifier(self.c, quiet=True)
             v.check_structure()
             v.check_contract()
+            v.check_calendar_readiness()
             fails = v.fails()
             if fails:
                 log.warning("⚠️ 入库后校验发现 %d 项不达标: %s（详情跑 verify-data）", len(fails), fails)

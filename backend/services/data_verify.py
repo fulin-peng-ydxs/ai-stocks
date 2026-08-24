@@ -18,6 +18,10 @@ from datetime import date
 import pandas as pd
 
 from backend.common.logging import get_logger
+from backend.services.trade_calendar_readiness import (
+    calendar_readiness_detail,
+    inspect_trade_calendar,
+)
 from backend.storage.duckdb_client import DuckDBClient, get_client
 
 log = get_logger("services.data_verify")
@@ -86,6 +90,15 @@ class DataVerifier:
             "GROUP BY code, trade_date HAVING count(*)>1)"
         )
         self._check("无重复 (code,trade_date)", dup == 0, f"重复 {dup}")
+
+    def check_calendar_readiness(self, *, as_of: date | None = None) -> None:
+        """检查生命周期下一开市日与跨年覆盖；缺失只报告，不推算交易日。"""
+        self._cur_group = "F. 运行就绪度"
+        self._say("\nF. 运行就绪度")
+        readiness = inspect_trade_calendar(self.c, as_of=as_of)
+        detail = calendar_readiness_detail(readiness)
+        self._check("交易日历存在下一开市日", readiness["lifecycle_ready"], detail)
+        self._check("交易日历已覆盖下一自然年", readiness["cross_year_ready"], detail)
 
     # ── B. 价格正确性 ──
     def check_prices(self) -> None:
@@ -314,6 +327,7 @@ class DataVerifier:
         self.check_prices()
         self.check_contract()
         self.check_board()
+        self.check_calendar_readiness()
         if cross:
             self.cross_validate()
         passed = sum(1 for _, ok, _ in self.results if ok)
@@ -338,6 +352,7 @@ class DataVerifier:
         self.check_prices()
         self.check_contract()
         self.check_board()
+        self.check_calendar_readiness()
         if cross:
             self.cross_validate()
         groups: dict[str, list] = {}
