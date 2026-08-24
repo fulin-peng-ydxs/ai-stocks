@@ -150,6 +150,23 @@ describe('交易纪律 T5 工作台壳', () => {
     expect(wrapper.text()).not.toContain('待打卡')
   })
 
+  it('在标题帮助中解释草稿、待生效、今日日期和历史版本口径', async () => {
+    const wrapper = await mountPage(
+      ['trade-discipline:view', 'trade-discipline:checkin-view'],
+      '/trade-discipline',
+      {
+        HelpTip: defineComponent({
+          template: '<div data-testid="rendered-help-tip"><slot /></div>',
+        }),
+      },
+    )
+    const help = wrapper.get('[data-testid="rendered-help-tip"]')
+    expect(help.text()).toContain('新建时只是可编辑草稿，发布后才生成正式版本')
+    expect(help.text()).toContain('本地行情中最新已入库的交易日')
+    expect(help.text()).toContain('等生效日行情入库后')
+    expect(help.text()).toContain('每次打卡绑定当时生效的正式版本')
+  })
+
   it('KeepAlive 页面离开到其他路由时不把目标页 query 误当交易纪律参数', async () => {
     const rule = ruleState()
     listRules.mockResolvedValue([rule])
