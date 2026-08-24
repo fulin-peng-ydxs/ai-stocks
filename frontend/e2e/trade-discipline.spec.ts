@@ -123,7 +123,7 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
       && url.searchParams.get('sort_order') === 'asc'
       && response.ok()
   })
-  await page.getByRole('columnheader', { name: '交易日' }).click()
+  await page.getByRole('button', { name: '按 交易日 排序' }).press('Enter')
   await ascResponse
   await expect(firstMainRow).toContainText('2098-06-04')
 
@@ -133,7 +133,7 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
       && url.searchParams.get('sort_order') === 'desc'
       && response.ok()
   })
-  await page.getByRole('columnheader', { name: '交易日' }).click()
+  await page.getByRole('button', { name: '按 交易日 排序' }).press('Enter')
   await descResponse
   await expect(firstMainRow.locator('td').first()).toHaveText(latestDateBeforeSort)
 
@@ -292,6 +292,13 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   await checkin.getByRole('button', { name: '提交打卡' }).click()
   await expect(checkin).toContainText('已提交 · r1')
   await checkin.getByRole('button', { name: '修正打卡' }).click()
+  await expect(checkin.getByRole('button', { name: '提交修正' })).toBeDisabled()
+  await expect(checkin).toContainText('当前内容与最新修订一致；修改后才可提交')
+  await checkin.getByTestId('checkin-review-note').fill('应被取消的修正')
+  await checkin.getByRole('button', { name: '取消修正' }).click()
+  await expect(checkin.getByTestId('checkin-review-note')).toHaveValue('E2E 首次打卡现场')
+  await expect(checkin.getByTestId('checkin-review-note')).toBeDisabled()
+  await checkin.getByRole('button', { name: '修正打卡' }).click()
   await reasonSelect.press('ArrowDown')
   await page.getByRole('option', { name: /E2E原因-T13临时偏差/ })
     .getByRole('button', { name: '删除自定义原因' }).click()
@@ -303,7 +310,7 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   await page.getByRole('button', { name: '历史记录', exact: true }).click()
   await expect(page.getByRole('table', { name: '履约历史', exact: true }).getByText('r2 · 已修正', { exact: true })).toHaveCount(2)
   const currentHistoryRow = page.getByRole('row').filter({ hasText: fixture.currentTradeDate })
-  await expect(currentHistoryRow.getByRole('button', { name: '详情' })).toBeVisible()
+  await expect(currentHistoryRow.getByRole('button', { name: /^查看.+详情$/ })).toBeVisible()
 
   const submitOnly = await authenticateDebugUser(request, 'debug_trade_discipline_submit')
   await page.evaluate(() => localStorage.clear())

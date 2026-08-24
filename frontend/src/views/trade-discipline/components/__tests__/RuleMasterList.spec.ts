@@ -24,8 +24,39 @@ describe('RuleMasterList', () => {
     })
     expect(wrapper.text()).toContain('当前 v2')
     expect(wrapper.text()).toContain('有编辑中草稿')
+    expect(wrapper.get('.rule-master__management').classes()).toContain('is-warning')
     await wrapper.get('[role="option"]').trigger('keydown.enter')
     expect(wrapper.emitted('select')?.[0]).toEqual(['rule-1'])
+  })
+
+  it.each([
+    { assessment: 'complied', label: '已履约 · r2', tone: 'is-success' },
+    { assessment: 'breached', label: '未履约 · r2', tone: 'is-danger' },
+  ] as const)('$label 使用对应履约语义色', ({ assessment, label, tone }) => {
+    const wrapper = mount(RuleMasterList, {
+      props: {
+        rules: [{ ...rules[0], draft_revision: null }], selectedId: '', canManage: false,
+        checkinStates: [{
+          rule_id: 'rule-1', rule_name: '趋势突破', version_no: 2,
+          effective_from_trade_date: '2026-08-21', checkin_id: 'checkin-1',
+          current_revision_no: 2, status: 'amended', assessment, no_operation: true,
+        }],
+      },
+      global: { plugins: [ElementPlus], directives: { permission: {} } },
+    })
+    expect(wrapper.get('.rule-master__management').text()).toBe(label)
+    expect(wrapper.get('.rule-master__management').classes()).toContain(tone)
+  })
+
+  it('普通正式版本使用次要文字色而非警告色', () => {
+    const wrapper = mount(RuleMasterList, {
+      props: {
+        rules: [{ ...rules[0], draft_revision: null }], selectedId: '', canManage: false,
+      },
+      global: { plugins: [ElementPlus], directives: { permission: {} } },
+    })
+    expect(wrapper.get('.rule-master__management').text()).toBe('最新 v2')
+    expect(wrapper.get('.rule-master__management').classes()).toContain('is-secondary')
   })
 
   it('搜索无结果显示局部空态且新建命令保持可用', async () => {

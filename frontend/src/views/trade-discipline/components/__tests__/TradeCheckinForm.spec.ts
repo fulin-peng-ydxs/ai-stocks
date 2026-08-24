@@ -120,6 +120,29 @@ describe('TradeCheckinForm', () => {
     expect(amendedOperation).not.toHaveProperty('financial_complete')
   })
 
+  it('修正态无变化时禁用提交并可取消恢复当前修订快照', async () => {
+    getContext.mockResolvedValue({
+      ...emptyContext,
+      checkin: { ...saved, review_note: '当前修订说明' },
+    })
+    const wrapper = mountForm()
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text() === '修正打卡')!.trigger('click')
+
+    const submitButton = wrapper.findAll('button').find((button) => button.text() === '提交修正')!
+    expect(submitButton.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('当前内容与最新修订一致；修改后才可提交')
+    await submitButton.trigger('click')
+    expect(amendCheckin).not.toHaveBeenCalled()
+
+    await wrapper.get('textarea').setValue('尚未提交的修改')
+    expect(submitButton.attributes('disabled')).toBeUndefined()
+    await wrapper.findAll('button').find((button) => button.text() === '取消修正')!.trigger('click')
+    expect(wrapper.get('textarea').element.value).toBe('当前修订说明')
+    expect(wrapper.get('textarea').attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('button').some((button) => button.text() === '修正打卡')).toBe(true)
+  })
+
   it('历史入口可等待上下文加载完成后直接进入当前修订编辑态', async () => {
     getContext.mockResolvedValue({ ...emptyContext, checkin: saved })
     const wrapper = mountForm()
@@ -128,6 +151,8 @@ describe('TradeCheckinForm', () => {
     expect(getContext).toHaveBeenCalled()
     expect(wrapper.findAll('button').some((button) => button.text() === '修正打卡')).toBe(false)
     expect(wrapper.findAll('button').some((button) => button.text() === '提交修正')).toBe(true)
+    expect(wrapper.findAll('button').some((button) => button.text() === '取消修正')).toBe(true)
+    expect(wrapper.findAll('button').find((button) => button.text() === '提交修正')?.attributes('disabled')).toBeDefined()
     expect(wrapper.find('textarea').attributes('disabled')).toBeUndefined()
   })
 

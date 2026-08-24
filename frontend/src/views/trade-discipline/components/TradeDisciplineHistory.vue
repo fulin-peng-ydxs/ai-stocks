@@ -4,12 +4,10 @@ import AppControlItem from '@/components/AppControlItem.vue'
 import AppControlRow from '@/components/AppControlRow.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppFilterSelect from '@/components/AppFilterSelect.vue'
-import AppRowActions from '@/components/AppRowActions.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
-import type { AppRowAction } from '@/components/rowActions'
 import type { TableSortChange } from '@/composables/useTableSort'
 import {
   listTradeDisciplineCheckins,
@@ -115,13 +113,6 @@ function openDetail(row: CheckinHistoryRow): void {
   emit('detail', row)
 }
 
-function rowActions(row: CheckinHistoryRow): AppRowAction[] {
-  return [{
-    key: 'detail', label: '详情', testId: `history-detail-${row.id}`,
-    onClick: (event) => { event?.stopPropagation(); openDetail(row) },
-  }]
-}
-
 function formatTime(value: string | null | undefined): string {
   if (!value) return '—'
   return value.replace('T', ' ').replace(/\.\d+/, '').replace(/\+.*$/, '').slice(0, 16)
@@ -208,15 +199,24 @@ defineExpose({ reload: load })
       :default-sort="defaultSort"
       stripe
       framed
-      clickable
       :pagination="{ currentPage: page, pageSize, total }"
-      @row-click="openDetail"
       @page-change="emit('page-change', $event)"
       @size-change="emit('size-change', $event)"
       @sort-change="emit('sort-change', $event)"
     >
       <AppTableColumn v-if="colVisible('trade_date')" prop="trade_date" label="交易日" role="date" sortable="custom" :sort-orders="['descending', 'ascending']" />
-      <AppTableColumn v-if="colVisible('rule_name')" label="规则" role="name"><template #default="{ row }">{{ row.rule_name }} · v{{ row.version_no }}</template></AppTableColumn>
+      <AppTableColumn v-if="colVisible('rule_name')" label="规则" role="name">
+        <template #default="{ row }">
+          <el-button
+            link
+            type="primary"
+            size="small"
+            :data-testid="`history-detail-${row.id}`"
+            :aria-label="`查看${row.rule_name}详情`"
+            @click="openDetail(row)"
+          >{{ row.rule_name }} · v{{ row.version_no }}</el-button>
+        </template>
+      </AppTableColumn>
       <AppTableColumn v-if="colVisible('assessment')" prop="assessment" label="用户自评">
         <template #default="{ row }"><el-tag :type="row.assessment === 'complied' ? 'success' : 'danger'" effect="plain">{{ row.assessment === 'complied' ? '已履约' : '未履约' }}</el-tag></template>
       </AppTableColumn>
@@ -226,9 +226,6 @@ defineExpose({ reload: load })
         <template #default="{ row }"><el-tag :type="row.status === 'amended' ? 'warning' : 'info'" effect="plain">r{{ row.current_revision_no }}{{ row.status === 'amended' ? ' · 已修正' : '' }}</el-tag></template>
       </AppTableColumn>
       <AppTableColumn v-if="colVisible('updated_at')" prop="updated_at" label="最后更新"><template #default="{ row }">{{ formatTime(row.updated_at) }}</template></AppTableColumn>
-      <AppTableColumn label="操作" role="action-compact" fixed="right">
-        <template #default="{ row }"><AppRowActions :actions="rowActions(row)" :inline-limit="1" /></template>
-      </AppTableColumn>
       <template #empty>
         <div class="app-table-empty">
           <span class="app-table-empty__description">暂无符合条件的履约记录</span>

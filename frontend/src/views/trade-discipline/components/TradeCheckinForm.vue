@@ -53,6 +53,7 @@ const readonly = computed(() => !props.canSubmit || (!!existing.value && !editin
 const statusText = computed(() => existing.value
   ? `${existing.value.checkin_status === 'amended' ? '已修正' : '已提交'} · r${existing.value.current_revision_no}`
   : '尚未提交')
+const amendmentUnchanged = computed(() => !!existing.value && editing.value && !isDirty())
 
 function reasonFromContext(value: CheckinContext['checkin']): ReasonValue | null {
   if (!value?.reason_name_snapshot) return null
@@ -183,6 +184,7 @@ function payload(): CheckinContentPayload {
 
 async function submit(): Promise<void> {
   if (!props.canSubmit || readonly.value || submitting.value) return
+  if (existing.value && !isDirty()) return
   const invalid = validate()
   if (invalid) {
     ElMessage.warning(invalid)
@@ -227,6 +229,11 @@ async function startAmend(): Promise<boolean> {
 
 function enterEditing(): void {
   if (props.canSubmit && existing.value) editing.value = true
+}
+
+function cancelAmend(): void {
+  if (!existing.value || !context.value) return
+  applyContext(context.value)
 }
 
 function isDirty(): boolean {
@@ -312,13 +319,28 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
             v-permission="'trade-discipline:checkin-submit'"
             @click="enterEditing"
           >修正打卡</el-button>
-          <el-button
-            v-else-if="canSubmit"
-            v-permission="'trade-discipline:checkin-submit'"
-            type="primary"
-            :loading="submitting"
-            @click="submit"
-          >{{ existing ? '提交修正' : '提交打卡' }}</el-button>
+          <template v-else-if="canSubmit">
+            <span
+              v-if="amendmentUnchanged"
+              id="checkin-amend-unchanged-hint"
+              class="checkin-actions__hint"
+              role="status"
+            >当前内容与最新修订一致；修改后才可提交</span>
+            <el-button
+              v-if="existing"
+              v-permission="'trade-discipline:checkin-submit'"
+              :disabled="submitting"
+              @click="cancelAmend"
+            >取消修正</el-button>
+            <el-button
+              v-permission="'trade-discipline:checkin-submit'"
+              type="primary"
+              :loading="submitting"
+              :disabled="amendmentUnchanged"
+              :aria-describedby="amendmentUnchanged ? 'checkin-amend-unchanged-hint' : undefined"
+              @click="submit"
+            >{{ existing ? '提交修正' : '提交打卡' }}</el-button>
+          </template>
         </div>
       </el-form>
     </template>
@@ -336,6 +358,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
 .breach-grid { display: grid; grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.3fr); gap: var(--app-space-4); }
 .permission-note { margin-top: var(--app-space-3); padding: var(--app-space-2) var(--app-space-3); border-radius: 6px; color: var(--el-color-warning); background: var(--el-color-warning-light-9); }
 .checkin-actions { justify-content: flex-end; position: sticky; bottom: 0; padding: var(--app-space-3) 0 0; background: var(--el-bg-color-overlay); }
+.checkin-actions__hint { margin-right: auto; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 @media (max-width: 760px) {
   .checkin-head, .checkin-head__facts, .assessment-row { align-items: stretch; flex-direction: column; }
   .breach-grid { grid-template-columns: 1fr; }

@@ -57,6 +57,17 @@ function managementLabel(rule: TradeDisciplineRule): string {
   if (rule.management_status === 'active') return `最新 v${rule.latest_version_no ?? '—'}`
   return rule.management_status === 'archived' ? '管理状态已归档' : '草稿（未发布）'
 }
+
+function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warning' | 'secondary' {
+  const checkin = checkinByRule.value.get(rule.id)
+  if (checkin) {
+    if (!checkin.checkin_id) return 'warning'
+    return checkin.assessment === 'complied' ? 'success' : 'danger'
+  }
+  if (rule.has_pending_management_action || rule.draft_revision) return 'warning'
+  if (rule.management_status === 'unpublished') return 'warning'
+  return 'secondary'
+}
 </script>
 
 <template>
@@ -112,7 +123,10 @@ function managementLabel(rule: TradeDisciplineRule): string {
         </div>
         <div class="rule-master__states">
           <span>{{ checkinByRule.get(rule.id) ? `履约版本 v${checkinByRule.get(rule.id)?.version_no}` : effectiveLabel(rule) }}</span>
-          <small>{{ managementLabel(rule) }}</small>
+          <small
+            class="rule-master__management"
+            :class="`is-${managementTone(rule)}`"
+          >{{ managementLabel(rule) }}</small>
         </div>
       </div>
     </div>
@@ -148,7 +162,10 @@ function managementLabel(rule: TradeDisciplineRule): string {
 .rule-master__name { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-weight: var(--app-font-weight-section); }
 .rule-master__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rule-master__states { margin-top: var(--app-space-1); display: flex; justify-content: space-between; gap: var(--app-space-2); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
-.rule-master__states small { text-align: right; color: var(--el-color-warning); }
+.rule-master__management { text-align: right; color: var(--el-text-color-secondary); }
+.rule-master__management.is-success { color: var(--el-color-success); }
+.rule-master__management.is-danger { color: var(--app-danger-text); }
+.rule-master__management.is-warning { color: var(--app-warning-text); }
 @media (max-width: 1100px) {
   .rule-master { width: 100%; max-height: 210px; }
 }

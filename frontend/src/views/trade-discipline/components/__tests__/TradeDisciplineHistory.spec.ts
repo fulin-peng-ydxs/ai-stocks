@@ -58,7 +58,8 @@ describe('TradeDisciplineHistory', () => {
     const filterCard = wrapper.get('.filter-card')
     expect(filterCard.attributes('class')).toContain('history-filter-card')
     expect(filterCard.find('.filter-row[aria-label="履约历史筛选"]').exists()).toBe(true)
-    expect(wrapper.findAllComponents(AppTableColumn).at(-1)?.props('role')).toBe('action-compact')
+    expect(wrapper.findComponent({ name: 'AppDataTable' }).props('clickable')).toBe(false)
+    expect(wrapper.findAllComponents(AppTableColumn).some((column) => column.props('role') === 'action-compact')).toBe(false)
     expect(wrapper.get('.history-workspace').attributes('class')).toContain('history-workspace')
     expect(listCheckins).toHaveBeenCalledWith({
       page: 1, page_size: 20, sort_by: 'trade_date', sort_order: 'desc',
@@ -107,13 +108,13 @@ describe('TradeDisciplineHistory', () => {
     })
   })
 
-  it('按列表通用 hiddenColumns 配置隐藏历史字段且保留操作列', async () => {
+  it('按列表通用 hiddenColumns 配置隐藏历史字段且不补重复操作列', async () => {
     const wrapper = mountHistory({ hiddenColumns: ['rule_name', 'updated_at'] })
     await flushPromises()
     const columns = wrapper.findAllComponents(AppTableColumn)
     expect(columns.some((column) => column.props('prop') === 'updated_at')).toBe(false)
     expect(wrapper.text()).not.toContain('趋势纪律 · v3')
-    expect(columns.at(-1)?.props('role')).toBe('action-compact')
+    expect(columns.some((column) => column.props('role') === 'action-compact')).toBe(false)
   })
 
   it('查询失败由历史表格区接管且不保留旧数据', async () => {

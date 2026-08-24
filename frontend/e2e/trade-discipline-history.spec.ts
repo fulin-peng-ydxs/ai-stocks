@@ -80,7 +80,7 @@ test('交易纪律历史可筛选、切换不可变修订并完成修正返回',
   await expect.poll(() => historyQueries.some((query) => query.includes('assessment=breached'))).toBe(true)
   await expect(page.getByText('冲动交易').first()).toBeVisible()
 
-  await page.getByTestId('history-detail-e2e-checkin-1').click()
+  await page.getByTestId('history-detail-e2e-checkin-1').press('Enter')
   const drawer = page.getByTestId('checkin-revision-drawer')
   await expect(drawer).toContainText('规则版本快照')
   await expect(drawer).toContainText('只做趋势龙头')
@@ -93,8 +93,11 @@ test('交易纪律历史可筛选、切换不可变修订并完成修正返回',
   await drawer.getByTestId('revision-selector').getByRole('combobox').press('ArrowDown')
   await page.getByRole('option', { name: 'r2 · 当前' }).click()
   await drawer.getByRole('button', { name: '发起修正' }).click()
-  await expect(page.getByRole('button', { name: '提交修正' })).toBeVisible()
-  await page.getByRole('button', { name: '提交修正' }).click()
+  const amendButton = page.getByRole('button', { name: '提交修正' })
+  await expect(amendButton).toBeDisabled()
+  await page.getByTestId('checkin-review-note').fill('盘后复核（修正）')
+  await expect(amendButton).toBeEnabled()
+  await amendButton.click()
 
   await expect(page).toHaveURL(/tab=history/)
   await expect(page.getByText('r3 · 已修正')).toBeVisible()
