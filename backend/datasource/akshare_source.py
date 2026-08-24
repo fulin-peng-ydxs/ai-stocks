@@ -16,10 +16,12 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import date, timedelta
 
 import akshare as ak
 import pandas as pd
+import py_mini_racer
 import requests
 
 from backend.common.logging import get_logger
@@ -65,6 +67,25 @@ _MIN_REF_PRICE_DIFF = 0.01
 # requests 默认超时（模块级可变；由 set_default_request_timeout 运行时更新，
 # 配合前端「请求超时」配置——新建数据源实例时按生效配置刷新此值）。
 _DEFAULT_REQUEST_TIMEOUT: float = max(float(_s.socket_timeout_sec), 1.0)
+
+# AKShare 的新浪日线会为每次请求创建 MiniRacer。V8 的进程级 address pool 首次初始化
+# 不是线程安全的；续跑会跳过日历/指数串行前置，若直接让多个工作线程同时首次进入，
+# libmini_racer 会触发不可捕获的原生 FATAL 并杀死整个服务进程。保留一个进程级上下文，
+# 并把首次初始化收敛到单线程；后续各工作线程仍使用 AKShare 自己的独立上下文并发解码。
+_SINA_JS_RUNTIME_LOCK = threading.Lock()
+_SINA_JS_RUNTIME_CONTEXT = None
+
+
+def ensure_sina_js_runtime_ready() -> None:
+    """在并发新浪日线请求前，幂等且串行地初始化 MiniRacer 进程运行时。"""
+    global _SINA_JS_RUNTIME_CONTEXT
+    if _SINA_JS_RUNTIME_CONTEXT is not None:
+        return
+    with _SINA_JS_RUNTIME_LOCK:
+        if _SINA_JS_RUNTIME_CONTEXT is None:
+            context = py_mini_racer.MiniRacer()
+            context.eval("1 + 1")
+            _SINA_JS_RUNTIME_CONTEXT = context
 
 
 def set_default_request_timeout(timeout: float) -> None:
@@ -274,6 +295,7 @@ class AKShareSource(DataSource):
     def _sina_daily(self, code6: str, start: date, end: date, adjust: str) -> pd.DataFrame:
         # 请求超时已由模块级 _install_default_requests_timeout 全局注入，
         # 此处无需再局部包裹（也就不会再用锁串行化并发日线请求）。
+        ensure_sina_js_runtime_ready()
         return _ak_or_empty(
             lambda: ak.stock_zh_a_daily(
                 symbol=to_sina_symbol(code6),

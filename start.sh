@@ -215,7 +215,12 @@ status() {
   local code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
     http://127.0.0.1:8000/api/health 2>/dev/null)" || code="000"
-  echo "● 后端：运行中 (PID $pid)  /api/health=$code  端口 8000"
+  if [[ "$code" == "200" ]]; then
+    echo "● 后端：运行中 (PID $pid)  /api/health=200  端口 8000"
+    return 0
+  fi
+  echo "● 后端：异常（进程存活但服务不可用，PID $pid）  /api/health=$code  端口 8000"
+  return 1
 }
 
 case "${1:-dev}" in

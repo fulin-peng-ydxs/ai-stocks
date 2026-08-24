@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pandas as pd
 
 from backend.dataquality.checker import QualityChecker, add_markers, limit_pct_for
@@ -93,6 +95,54 @@ def test_compute_pre_close_exrights():
     pc2 = compute_pre_close(close2, factor2)
     # 63.97 × 1.503674/2.121851 ≈ 45.33（而非原始 63.97）
     assert abs(pc2.iloc[1] - 45.33) < 0.1
+
+
+def test_sina_js_runtime_initializes_once_under_concurrency(monkeypatch):
+    """续跑跳过串行前置时，多工作线程不得并发首次初始化 MiniRacer。"""
+    from backend.datasource import akshare_source
+
+    created = 0
+
+    class FakeMiniRacer:
+        def __init__(self):
+            nonlocal created
+            created += 1
+
+        def eval(self, expression):
+            assert expression == "1 + 1"
+
+    monkeypatch.setattr(akshare_source, "_SINA_JS_RUNTIME_CONTEXT", None)
+    monkeypatch.setattr(akshare_source.py_mini_racer, "MiniRacer", FakeMiniRacer)
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        list(executor.map(lambda _: akshare_source.ensure_sina_js_runtime_ready(), range(24)))
+
+    assert created == 1
+    assert akshare_source._SINA_JS_RUNTIME_CONTEXT is not None
+
+
+def test_sina_daily_prepares_js_runtime_before_fetch(monkeypatch):
+    """日线真实入口必须在调用 AKShare 前完成进程运行时预热。"""
+    from datetime import date
+
+    from backend.datasource import akshare_source
+
+    calls = []
+    monkeypatch.setattr(
+        akshare_source,
+        "ensure_sina_js_runtime_ready",
+        lambda: calls.append("runtime"),
+    )
+    monkeypatch.setattr(
+        akshare_source.ak,
+        "stock_zh_a_daily",
+        lambda **_kwargs: calls.append("fetch") or pd.DataFrame(),
+    )
+
+    source = akshare_source.AKShareSource()
+    source._sina_daily("600000", date(2026, 8, 24), date(2026, 8, 24), "")
+
+    assert calls == ["runtime", "fetch"]
 
 
 def test_dejitter_adj_factor():
