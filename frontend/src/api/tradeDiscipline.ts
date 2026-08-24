@@ -152,6 +152,8 @@ export interface StockOption {
   name: string
   board: string | null
   industry: string | null
+  list_date?: string | null
+  delist_date?: string | null
 }
 
 export interface StockOptionPage {
@@ -394,6 +396,10 @@ export function searchTradeDisciplineStocks(
   q: string,
   limit = 20,
   signal?: AbortSignal,
+  tradeDate?: string,
 ): Promise<StockOptionPage> {
-  return http.get('/trade-discipline/stock-options', { params: { q, limit }, signal })
+  return http.get('/trade-discipline/stock-options', {
+    params: { q, limit, trade_date: tradeDate },
+    signal,
+  })
 }

@@ -58,6 +58,7 @@ def fixture_trade_dates() -> tuple[date, ...]:
 FIXTURE_TRADE_DATES = fixture_trade_dates()
 FIXTURE_CURRENT_TRADE_DATE = FIXTURE_TRADE_DATES[6]
 FIXTURE_PENDING_TRADE_DATE = FIXTURE_TRADE_DATES[7]
+FIXTURE_DELIST_DATE = date(2098, 6, 9)
 
 
 def _assert_pg_target(pg: PostgresClient, expected_pg_fingerprint: str) -> None:
@@ -244,13 +245,18 @@ def _seed_duck(market: DuckDBClient) -> dict[str, int]:
     )
     market.conn.executemany(
         "INSERT INTO stock_basic "
-        "(code,name,exchange,board,list_date,industry,price_limit_pct) "
-        "VALUES (?,?,'SZ','主板',DATE '2090-01-01','E2E行业',0.10)",
-        [(code, f"E2E股票{index:02d}") for index, code in enumerate(STOCK_CODES, 1)],
+        "(code,name,exchange,board,list_date,delist_date,industry,price_limit_pct) "
+        "VALUES (?,?,'SZ','主板',DATE '2090-01-01',?,'E2E行业',0.10)",
+        [
+            (code, f"E2E股票{index:02d}", FIXTURE_DELIST_DATE if index == 3 else None)
+            for index, code in enumerate(STOCK_CODES, 1)
+        ],
     )
     bars = []
     for stock_index, code in enumerate(STOCK_CODES, 1):
         for day_index, current in enumerate(FIXTURE_TRADE_DATES[:7]):
+            if stock_index == 3 and current >= FIXTURE_DELIST_DATE:
+                continue
             close = Decimal("10.00") + Decimal(stock_index) + Decimal(day_index) / 10
             bars.append(
                 (code, current, close, close + 1, close - 1, close, close - Decimal("0.10"))

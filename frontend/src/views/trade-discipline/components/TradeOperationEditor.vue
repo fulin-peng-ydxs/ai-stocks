@@ -133,6 +133,7 @@ watch(() => props.version.version_no, () => {
           <StockOptionSelect
             :model-value="operation.stock_code ? { code: operation.stock_code, name: operation.stock_name_snapshot, board: null, industry: null } : null"
             :disabled="disabled"
+            :trade-date="tradeDate"
             @update:model-value="selectStock(index, $event)"
           />
         </el-form-item>

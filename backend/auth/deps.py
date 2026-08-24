@@ -1,7 +1,8 @@
 """鉴权路由依赖（多租户 RBAC）：粗粒度 system 守卫（stage2·R8）+ resource code 精确守卫（stage3·R8）。
 
 - `require_system`：系统管理页专属接口（角色/菜单/功能/租户管理 + 平台写）——非 system 一律 403。
-- `require_perm(code)`：接口级细粒度授权（用户管理等可授权给 tenant_admin 的接口）——system 恒过，
+- `require_perm(code)` / `require_any_perm(*codes)`：接口级细粒度授权（用户管理等可授权给
+  tenant_admin 的接口）——system 恒过，
   否则精确码 ∉ 上下文 resources → 403。**精确匹配、不用通配符**（Codex P0 整改）。
 - `require_system_perm(code)`（stage4·R21）：system-only 端点在 `require_system` 硬守卫外**挂精确资源码
   元数据**，供路由扫描（T8）与审计识别，运行时仍由 system 硬守卫兜底（非 system 一律 403，不因资源码授权放行）。
@@ -53,6 +54,36 @@ def require_perm(code: str) -> Callable[[], None]:
             raise ForbiddenError("无权访问该功能")
 
     _dep.resource_code = code   # type: ignore[attr-defined]  # 供 T8 路由扫描识别
+    return _dep
+
+
+def require_any_perm(*codes: str) -> Callable[[], None]:
+    """要求至少拥有一个精确功能码，并暴露完整候选集供路由扫描与审计识别。"""
+    unique_codes = tuple(dict.fromkeys(code for code in codes if code))
+    if not unique_codes:
+        raise ValueError("require_any_perm 至少需要一个功能码")
+    code_set = frozenset(unique_codes)
+
+    def _dep(request: Request = None) -> None:
+        set_current_resource_code(unique_codes[0])
+        if request is not None:
+            request.state.resource_code = unique_codes[0]
+        ctx = get_current_context()
+        if ctx is None:
+            raise AuthError("未登录")
+        matched = unique_codes[0] if ctx.is_system else next(
+            (code for code in unique_codes if code in ctx.resources),
+            None,
+        )
+        if matched is None:
+            raise ForbiddenError("无权访问该功能")
+        set_current_resource_code(matched)
+        if request is not None:
+            request.state.resource_code = matched
+
+    # 单码属性保持既有守卫扫描兼容，resource_codes 表达真实的任一权限契约。
+    _dep.resource_code = unique_codes[0]  # type: ignore[attr-defined]
+    _dep.resource_codes = code_set  # type: ignore[attr-defined]
     return _dep
 
 

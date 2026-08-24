@@ -6,6 +6,7 @@ const props = defineProps<{
   modelValue: StockOption | null
   disabled?: boolean
   clearable?: boolean
+  tradeDate?: string
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: StockOption | null] }>()
 
@@ -22,11 +23,25 @@ watch(() => props.modelValue, (value) => {
   }
 }, { immediate: true })
 
+watch(() => props.tradeDate, () => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  controller?.abort()
+  requestSeq += 1
+  options.value = props.modelValue ? [props.modelValue] : []
+  loading.value = false
+  searchError.value = false
+})
+
 async function runSearch(normalized: string, seq: number): Promise<void> {
   const requestController = new AbortController()
   controller = requestController
   try {
-    const result = await searchTradeDisciplineStocks(normalized, 20, requestController.signal)
+    const result = await searchTradeDisciplineStocks(
+      normalized,
+      20,
+      requestController.signal,
+      props.tradeDate,
+    )
     if (seq !== requestSeq) return
     searchError.value = false
     const selected = props.modelValue
@@ -84,7 +99,9 @@ onUnmounted(() => {
     >
       <el-option v-for="item in options" :key="item.code" :label="`${item.code} ${item.name}`" :value="item.code">
         <span>{{ item.code }} · {{ item.name }}</span>
-        <small v-if="item.industry">{{ item.industry }}</small>
+        <small v-if="item.industry || item.delist_date">
+          {{ [item.industry, item.delist_date ? '已退市' : ''].filter(Boolean).join(' · ') }}
+        </small>
       </el-option>
     </el-select>
     <small v-if="searchError" class="stock-option-select__error" role="alert">

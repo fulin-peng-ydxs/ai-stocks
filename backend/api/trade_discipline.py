@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.api.response import ApiResponse, ok
 from backend.auth.context import get_current_context
-from backend.auth.deps import require_perm
+from backend.auth.deps import require_any_perm, require_perm
 from backend.common.exceptions import NotFoundError, ValidationError
 from backend.services.audit_service import AuditService
 from backend.services.trade_discipline_service import TradeDisciplineService
@@ -113,7 +113,8 @@ class CopyRuleBody(StrictBody):
 class OperationBody(StrictBody):
     id: str | None = None
     stock_code: str
-    stock_name_snapshot: str
+    # 兼容旧客户端字段；保存时始终由服务端按 stock_code 解析权威名称。
+    stock_name_snapshot: str | None = None
     side: Literal["buy", "sell"]
     stock_rule_id: str
     action_rule_id: str
@@ -436,21 +437,38 @@ def delete_reason(reason_id: str) -> ApiResponse:
 @router.get(
     "/stock-options",
     response_model=ApiResponse,
-    dependencies=[Depends(require_perm(CHECKIN_SUBMIT))],
+    dependencies=[Depends(require_any_perm(CHECKIN_VIEW, CHECKIN_SUBMIT))],
 )
-def stock_options(q: str = Query(min_length=1), limit: int = Query(20, ge=1, le=20)) -> ApiResponse:
+def stock_options(
+    q: str = Query(min_length=1),
+    limit: int = Query(20, ge=1, le=20),
+    trade_date: date | None = None,
+) -> ApiResponse:
     keyword = q.strip()
     if not keyword:
         raise _ApiValidationError("股票搜索关键词不能为空")
     escaped = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     pattern = f"%{escaped}%"
+    point_in_time = ""
+    params: list[Any] = [pattern, pattern]
+    if trade_date is not None:
+        # stock_basic.delist_date 表示退出市场之日，项目点时口径不包含该日。
+        point_in_time = (
+            "AND (list_date IS NULL OR list_date <= ?) "
+            "AND (delist_date IS NULL OR ? < delist_date) "
+        )
+        params.extend([trade_date, trade_date])
+    params.extend([f"{escaped}%", f"{escaped}%", limit])
     frame = get_client().query_df(
-        "SELECT code,name,board,industry FROM stock_basic "
-        "WHERE delist_date IS NULL AND (code ILIKE ? ESCAPE '\\' OR name ILIKE ? ESCAPE '\\') "
+        "SELECT code,name,board,industry,"
+        "CAST(list_date AS VARCHAR) AS list_date,CAST(delist_date AS VARCHAR) AS delist_date "
+        "FROM stock_basic "
+        "WHERE (code ILIKE ? ESCAPE '\\' OR name ILIKE ? ESCAPE '\\') "
+        f"{point_in_time}"
         "ORDER BY CASE WHEN code ILIKE ? ESCAPE '\\' THEN 0 "
         "WHEN name ILIKE ? ESCAPE '\\' THEN 1 ELSE 2 END,code "
         "LIMIT ?",
-        [pattern, pattern, f"{escaped}%", f"{escaped}%", limit],
+        params,
     )
     rows = frame.astype(object).where(pd.notna(frame), None).to_dict("records")
     return ok({"q": keyword, "limit": limit, "list": rows})

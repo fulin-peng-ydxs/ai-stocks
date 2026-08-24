@@ -24,6 +24,7 @@ describe('TradeOperationEditor', () => {
     const created = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
     expect(created[0]).toMatchObject({ stock_rule_id: 'stock-1', action_rule_id: 'buy-1', side: 'buy' })
     await wrapper.setProps({ modelValue: [{ ...created[0], stock_code: '000001.SZ', stock_name_snapshot: '平安银行' }] })
+    expect(wrapper.findComponent({ name: 'StockOptionSelect' }).props('tradeDate')).toBe('2026-08-22')
     wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'sell')
     await flushPromises()
     const changed = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]

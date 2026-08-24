@@ -8,7 +8,7 @@
 - 本次不做：R18-R25 所述打卡服务端草稿、账户快照/资金流水、AI 或规则引擎结果、自动裁决、图表、券商同步、公开分享。
 - 计划输出目录：`agent-works/trading-discipline-checkin/`。
 - 准入结论：无剩余阻塞项；需求和原型已明确流程、数据、权限、接口验收与上线边界。
-- 当前开发阶段：T1-T13 均已完成并分别提交；T5-T9 已在 T13 的真实 PG/DuckDB 页面闭环、权限与三视口回归后完成阶段验收。2026-08-24 复审修复又补齐账号校准前 PG 指纹守卫、后端精确运行档案恢复、真实浏览器刷新/路由未保存验证，以及启动/测试/人工 SQL 默认不覆盖运行时菜单与功能点配置的统一契约；生产部署、生产 PG 备份与 RBAC 回滚演练不在本地开发验收授权范围内，仍明确为未执行。
+- 当前开发阶段：T1-T13 均已完成并分别提交；T5-T9 已在 T13 的真实 PG/DuckDB 页面闭环、权限与三视口回归后完成阶段验收。2026-08-24 复审修复又补齐账号校准前 PG 指纹守卫、后端精确运行档案恢复、真实浏览器刷新/路由未保存验证，以及启动/测试/人工 SQL 默认不覆盖运行时菜单与功能点配置的统一契约；同日业务核查第一批整改已关闭只读历史股票搜索、历史退市标的入口、股票点时存续校验和服务端名称快照四项缺口。生产部署、生产 PG 备份与 RBAC 回滚演练不在本地开发验收授权范围内，仍明确为未执行。
 
 ## 2. 当前项目依据
 
@@ -128,7 +128,7 @@
 | 历史 | `GET /checkins`、`GET /checkins/{ref}/revisions/{no}` | `checkin-view` | 服务端筛选、排序、分页；归属不匹配不泄露存在性 |
 | 原因 | `GET /reasons`、`DELETE /reasons/{ref}` | 读 `checkin-view`，删 `checkin-submit` | 自定义原因随打卡事务新增；删除为软删除 |
 | 快捷动作 | `POST /checkins/quick-no-operation` | `checkin-submit` | 服务端固定已履约+无操作，重复请求幂等，冲突返回现有引用 |
-| 股票选择 | `GET /stock-options?q=&limit=` | `checkin-submit` | 空查询拒绝；`limit<=20`；仅代码/名称/板块/行业 |
+| 股票选择 | `GET /stock-options?q=&limit=&trade_date=` | `checkin-view` 或 `checkin-submit` | 空查询拒绝；`limit<=20`；操作录入传履约日做点时过滤，历史筛选不传日期并可查退市股票；仅轻量主数据字段 |
 
 API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日志只记动作、对象引用、状态和错误码，不记录完整规则正文、操作清单或详细说明。
 
@@ -163,7 +163,7 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 | 今日规则轨道 | `GET /api/trade-discipline/summary?trade_date=` → 目标日规则、有效 vN、管理待生效动作、打卡状态/计数 | 日期变化、提交/修正、规则生命周期成功后刷新；同步全局摘要缓存 |
 | 打卡表单读取 | `GET /api/trade-discipline/checkins/current?rule_ref=&trade_date=` → 绑定版本、启用选股/买卖明细、当前修订和表单事实 | 规则/日期切换前 R17 preflight；无记录返回可补录模型，无有效版本返回阻断原因 |
 | 原因下拉 | `GET /api/trade-discipline/reasons` → 内置+本人个人原因；`DELETE /reasons/{ref}` | 删除成功移除候选；当前选中项被删则清空；提交自定义文本由打卡响应返回新 reason_ref 并并入候选 |
-| 操作股票搜索 | `GET /api/trade-discipline/stock-options?q=&limit=20` → code/name/board/industry | 300ms 防抖、取消迟到请求；只更新当前操作行候选，不清其他输入 |
+| 操作股票搜索 | `GET /api/trade-discipline/stock-options?q=&limit=20&trade_date=` → code/name/board/industry/list_date/delist_date | 250ms 防抖、取消迟到请求；操作录入固定传履约日，服务端提交再次点时校验并覆盖名称快照；只更新当前操作行候选，不清其他输入 |
 | 打卡提交/修正 | `POST /checkins` 或 `POST /checkins/{ref}/amendments`，输入 expected revision、用户自评、原因文本/引用、说明和操作 → 新 revision | 成功清脏并刷新 current、summary、history 和全局卡；409 保留表单并提示读取最新修订 |
 | 规则列表/详情 | `GET /rules?status=&q=` → 主体/双状态/草稿提示；`GET /rules/{ref}` → 正式版本、工作草稿、明细和 draft_revision | 切规则前 R17 preflight；列表失败不清右侧；生命周期成功刷新列表、详情、summary |
 | 规则草稿 | `POST /rules` 创建主体+草稿；`PUT /rules/{ref}/draft` 输入 expected draft_revision；`DELETE /rules/{ref}/draft` | 保存成功更新基线并清未保存态；放弃草稿恢复正式版；409 保留前端输入 |
@@ -179,7 +179,7 @@ API 不接收 `tenant_id`、`owner_user_id`、`activated_at` 或生效日。日�
 | 今日规则轨道 | 摘要同时要求 `view + checkin-view` | 待打卡计数、历史日期有效版本、局部错误重试 E2E |
 | 日期、自评、无操作 | 读取 `checkin-view`；可编辑/提交需 `checkin-submit` | 未来/非交易日/空日历、四组合和脏切换 E2E |
 | 原因、详细说明 | 候选读 `checkin-view`；删除/随提交新增需 `checkin-submit` | 单选、allow-create、行内删除、换行和事务回滚测试 |
-| 操作记录与股票搜索 | 查看既有操作需 `checkin-view`；编辑、R31 搜索和提交需 `checkin-submit` | 同股多笔、0/1/多候选、方向切换、防抖/迟到请求测试 |
+| 操作记录与股票搜索 | 查看既有操作需 `checkin-view`；R31 轻量搜索允许 `checkin-view` 或 `checkin-submit`，编辑和提交仍需 `checkin-submit` | 只读历史搜索、退市候选、点时上市/退市边界、服务端名称快照、同股多笔、0/1/多候选、方向切换、防抖/迟到请求测试 |
 | 打卡提交/修正 | `checkin-submit` | loading 防重、409 保留输入、提交后三处摘要联动 E2E |
 | 规则列表/双状态 | 页面可见需 `view`；进入维护态需 `rule-manage` | 正式 vN、草稿、待生效动作同时展示测试 |
 | 规则编辑、明细和资金 | `rule-manage`；无该码不渲染写命令 | 启用态/顺序/换行回显、金额边界、二级类型测试 |
@@ -328,7 +328,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 边界与异常：空 q、limit 超限、401/403/404、409、422、日历缺失均可区分。
 - 验证方式：API 权限矩阵、路由扫描、契约与响应测试。
 - 完成标准：无 `stocks:view` 的 submit 用户能搜索，不能访问完整 stocks API。
-- 实际落地情况：已新增 `backend/api/trade_discipline.py` 并在 `backend/main.py` 注册 21 个 OpenAPI 端点；规则、生命周期、打卡、历史、原因、摘要和快捷动作均使用统一响应，API 边界将归属隐藏映射为真实 404、业务输入映射为 422，并保留携带安全对象引用的 409。规则本金、资金上限、成交金额和费用复用 `max_digits=20, decimal_places=2` 的受约束 Decimal，成交价和数量复用 `max_digits=20, decimal_places=4`，整数位或小数位越界在进入服务与 PG 前统一返回 422；提交与修正共享同一操作请求模型。规则列表/详情刷新后可直接消费管理状态、最新管理事件、待生效标记、目标交易日有效状态及版本。摘要同时要求 `view + checkin-view`，其余 20 个端点均以 `(method,path) → 精确功能码集合` 完整矩阵校验；无角色 fail-closed。专用 `stock-options` 仍只返回四个轻量字段且不扩大 `/api/stocks` 权限。写动作审计不记录正文、操作清单或详细说明。未进入 T5 前端开发。
+- 实际落地情况：已新增 `backend/api/trade_discipline.py` 并在 `backend/main.py` 注册 21 个 OpenAPI 端点；规则、生命周期、打卡、历史、原因、摘要和快捷动作均使用统一响应，API 边界将归属隐藏映射为真实 404、业务输入映射为 422，并保留携带安全对象引用的 409。规则本金、资金上限、成交金额和费用复用 `max_digits=20, decimal_places=2` 的受约束 Decimal，成交价和数量复用 `max_digits=20, decimal_places=4`，整数位或小数位越界在进入服务与 PG 前统一返回 422；提交与修正共享同一操作请求模型。规则列表/详情刷新后可直接消费管理状态、最新管理事件、待生效标记、目标交易日有效状态及版本。摘要同时要求 `view + checkin-view`，其余端点均以 `(method,path) → 精确功能码集合` 完整矩阵校验；无角色 fail-closed。专用 `stock-options` 支持 `checkin-view` 或 `checkin-submit` 任一权限，返回代码、名称、板块、行业和上市/退市日期，仍不扩大 `/api/stocks` 权限；操作请求中的名称字段仅兼容旧客户端，服务端批量校验股票点时存续范围并生成权威名称快照。写动作审计不记录正文、操作清单或详细说明。
 
 ### 6.5 任务 T5：前端路由、工作台壳与配置闭环
 
@@ -530,6 +530,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 异常与边界测试：日历空/滞后、周末发布、同日等时间戳多事件、并发生命周期、草稿与修订并发、规则被归档、网络失败、原因删除、规则候选为零、财务字段不完整。具体完成情况：T2-T4/T10 已覆盖日历空、盘中/收盘后/周末/节假日、同生效日等时间戳多事件、并发发布/归档/恢复、事件分配后事务回滚、草稿乐观锁、修订乐观锁、归档态拒绝编辑、原因删除快照、规则候选非法和财务字段不完整；T5-T11 覆盖前端各类网络错误可观察性，T13 又以真实 PG 页面链路注入草稿保存 500，确认决策框、未保存状态和输入均保留。
 - 原型一致性：逐区对照 HTML 的页头、三页签、两套主从区、操作/原因/双状态、历史抽屉、设置抽屉、用户快捷卡和 1100×620/1366×768/1440×900 退化；原型批注和演示数据不得进入线上文案。具体完成情况：T5-T9 已核对页面框架、规则/打卡主从区、就地编辑、规则与履约状态、操作事实、原因输入、历史筛选表格、页面边界修订抽屉、修订切换、用户中心身份卡下快捷摘要及响应式样式契约；T13 已在三档目标视口完成真实正式/待生效规则、四类历史和主工作区的可观察验收，并以 document/main/panel 几何断言确认无横向溢出。本轮未额外产出人工截图评审件；视觉结论以前续页面复核和本轮三视口自动化为据。
 - 需求映射验证：用脚本核对 requirement 的 R1-R36 范围编号均在第 5 章出现，纳入项均有任务/状态/验证，跳过项均有原因。具体完成情况：2026-08-23 T10 复核脚本确认 28 个纳入项（R1-R17、R26-R36）在需求第 5 章和计划中均有映射，R18-R25 均有跳过/后续原因，缺失项为 0。
+- 业务核查第一批整改验证记录（2026-08-24）：确认 R31 原事实源把历史只读筛选与仅 `checkin-submit` 守卫写成冲突口径，现新增可扫描的 `require_any_perm`，轻量股票端点允许 `checkin-view` 或 `checkin-submit` 任一精确权限，仍不放宽 `/api/stocks`。同一个 `StockOptionSelect` 通过可选 `tradeDate` 区分两类消费：操作录入固定传履约日，按已知 `list_date <= trade_date < delist_date` 点时过滤；历史筛选不传日期，可检索并标注退市股票。服务层在一次 DuckDB 批量查询内完成代码存在、尚未上市、退市日/退市后校验，并以 `stock_basic.name` 覆盖客户端名称；写请求名称字段仅保留兼容且可省略。举一反三复核同步校准退市股票 E2E 夹具，不再生成退市日及之后的行情，并以 19 行专属行情及末笔日期断言锁定点时事实。后端聚焦 T3/T4 `29 passed`、夹具专项 `7 passed`、后端全量 `1012 passed`；前端聚焦 `3 files / 12 tests`、最终全量 `118 files / 910 tests`；`npm run build`、目标 Ruff、`py_compile`、`git diff --check` 均通过。真实 PG/DuckDB 交易纪律 Playwright 最终 `6 passed / 6 skipped`，只读调试账号在历史页真实搜索到带“已退市”标识的夹具股票，夹具按专属范围清理并恢复 dev 后端 `/api/health=200`。首轮前端全量有一项既有 KeepAlive 用例超出 5 秒，单文件 `12 passed` 且随后全量复跑全绿；首轮 Playwright 暴露既有自定义原因用例只按 Enter、未确认选项真正提交，页面前置校验因此未发 POST，改为真实点击 allow-create 选项并在离开保护前后断言保留后，整套复跑通过；夹具校准后的首次整套复跑又出现一次用户中心摘要接口已返回 200、卡片仍停留加载态的非稳定超时，未修改产品代码或放宽断言，完整清理后原命令再次运行 `6 passed / 6 skipped`，该现象未复现但保留为测试稳定性观察项。生产部署、生产 PG 迁移、真实生产 RBAC 和生产数据核查未执行，不作为本地整改已验证项。
 
 ## 9. 发布与回滚
 

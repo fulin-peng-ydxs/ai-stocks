@@ -66,11 +66,26 @@ def _remove_user(pg, identity: tuple[str, str, str]) -> None:
 
 
 def _route_codes(route) -> set[str]:
-    return {
-        dependency.call.resource_code
-        for dependency in route.dependant.dependencies
-        if hasattr(dependency.call, "resource_code")
-    }
+    codes: set[str] = set()
+    for dependency in route.dependant.dependencies:
+        call = dependency.call
+        if hasattr(call, "resource_code"):
+            codes.add(call.resource_code)
+        codes |= set(getattr(call, "resource_codes", set()))
+    return codes
+
+
+def test_operation_request_allows_server_owned_stock_name_snapshot():
+    from backend.api.trade_discipline import OperationBody
+
+    body = OperationBody(
+        stock_code="000001.SZ",
+        side="buy",
+        stock_rule_id="stock-1",
+        action_rule_id="buy-1",
+        display_order=1,
+    )
+    assert body.stock_name_snapshot is None
 
 
 def test_trade_discipline_routes_are_openapi_visible_and_precisely_guarded(client):
@@ -133,6 +148,7 @@ def test_trade_discipline_routes_are_openapi_visible_and_precisely_guarded(clien
             "trade-discipline:checkin-submit"
         },
         ("GET", "/api/trade-discipline/stock-options"): {
+            "trade-discipline:checkin-view",
             "trade-discipline:checkin-submit"
         },
     }
@@ -150,9 +166,10 @@ def test_trade_discipline_routes_are_openapi_visible_and_precisely_guarded(clien
 
 def test_permission_matrix_and_dedicated_stock_search(client, pg, market, monkeypatch):
     market.execute(
-        "INSERT INTO stock_basic (code,name,board,industry,delist_date) VALUES "
-        "('000001.SZ','平安银行','主板','银行',NULL),"
-        "('000002.SZ','已退市样本','主板','地产','2025-01-01')"
+        "INSERT INTO stock_basic (code,name,board,industry,list_date,delist_date) VALUES "
+        "('000001.SZ','平安银行','主板','银行','1991-04-03',NULL),"
+        "('000002.SZ','已退市样本','主板','地产','1991-01-29','2025-01-01'),"
+        "('000003.SZ','未上市样本','主板','制造','2026-01-01',NULL)"
     )
     monkeypatch.setattr("backend.api.trade_discipline.get_client", lambda: market)
 
@@ -182,8 +199,40 @@ def test_permission_matrix_and_dedicated_stock_search(client, pg, market, monkey
         )
         assert search.status_code == 200
         assert search.json()["data"]["list"] == [
-            {"code": "000001.SZ", "name": "平安银行", "board": "主板", "industry": "银行"}
+            {
+                "code": "000001.SZ",
+                "name": "平安银行",
+                "board": "主板",
+                "industry": "银行",
+                "list_date": "1991-04-03",
+                "delist_date": None,
+            }
         ]
+        readonly_search = client.get(
+            "/api/trade-discipline/stock-options?q=平安&limit=20",
+            headers=_auth(dual_viewer[0], dual_viewer[1]),
+        )
+        assert readonly_search.status_code == 200
+        historical_search = client.get(
+            "/api/trade-discipline/stock-options?q=样本&limit=20",
+            headers=_auth(dual_viewer[0], dual_viewer[1]),
+        )
+        assert [item["code"] for item in historical_search.json()["data"]["list"]] == [
+            "000002.SZ",
+            "000003.SZ",
+        ]
+        point_in_time_search = client.get(
+            "/api/trade-discipline/stock-options?q=样本&limit=20&trade_date=2024-12-31",
+            headers=_auth(submitter[0], submitter[1]),
+        )
+        assert [item["code"] for item in point_in_time_search.json()["data"]["list"]] == [
+            "000002.SZ"
+        ]
+        delist_day_search = client.get(
+            "/api/trade-discipline/stock-options?q=已退市&limit=20&trade_date=2025-01-01",
+            headers=_auth(submitter[0], submitter[1]),
+        )
+        assert delist_day_search.json()["data"]["list"] == []
         assert client.get(
             "/api/stocks",
             headers=_auth(submitter[0], submitter[1]),

@@ -279,7 +279,8 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   await checkin.getByTestId('checkin-no-operation').click()
   const reasonSelect = checkin.getByTestId('checkin-reason').getByRole('combobox')
   await reasonSelect.fill('E2E原因-T13临时偏差')
-  await reasonSelect.press('Enter')
+  await page.getByRole('option', { name: 'E2E原因-T13临时偏差', exact: true }).click()
+  await expect(checkin.getByTestId('checkin-reason')).toContainText('E2E原因-T13临时偏差')
   await checkin.getByTestId('checkin-violation-detail').fill('E2E 页面真实提交')
   await checkin.getByTestId('checkin-review-note').fill('E2E 首次打卡现场')
 
@@ -287,6 +288,7 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   await expect(page.getByRole('dialog', { name: '放弃未提交修改？' })).toBeVisible()
   await chooseDialog(page, '继续编辑')
   await expect(checkin.getByTestId('checkin-review-note')).toHaveValue('E2E 首次打卡现场')
+  await expect(checkin.getByTestId('checkin-reason')).toContainText('E2E原因-T13临时偏差')
   await checkin.getByRole('button', { name: '提交打卡' }).click()
   await expect(checkin).toContainText('已提交 · r1')
   await checkin.getByRole('button', { name: '修正打卡' }).click()
@@ -323,6 +325,14 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   await page.getByRole('button', { name: '今日打卡', exact: true }).click()
   await expect(page.getByText('当前账号仅可查看，不能提交或修正打卡。')).toBeVisible()
   await expect(page.getByRole('button', { name: '提交打卡' })).toHaveCount(0)
+  await page.getByRole('button', { name: '历史记录', exact: true }).click()
+  const readonlyStockSearch = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === '/api/trade-discipline/stock-options'
+      && response.status() === 200
+  ))
+  await page.locator('.stock-filter').getByRole('combobox').fill('998803')
+  await readonlyStockSearch
+  await expect(page.getByRole('option', { name: /998803\.SZ.*E2E股票03/ })).toContainText('已退市')
 
   const noPermission = await authenticateDebugUser(request, 'debug_board_only')
   await page.evaluate(() => localStorage.clear())

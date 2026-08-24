@@ -722,11 +722,8 @@ class TradeDisciplineService:
             if action_rule is None or action_rule["action_type"] != side:
                 raise ValidationError("操作关联的买卖规则不存在、未启用、方向错误或不属于绑定版本")
             stock_code = unicodedata.normalize("NFKC", str(item.get("stock_code") or "")).strip()
-            stock_name = unicodedata.normalize(
-                "NFKC", str(item.get("stock_name_snapshot") or "")
-            ).strip()
-            if not stock_code or not stock_name:
-                raise ValidationError("股票代码和名称不能为空")
+            if not stock_code:
+                raise ValidationError("股票代码不能为空")
             operated_at = item.get("operated_at")
             if isinstance(operated_at, str):
                 try:
@@ -744,7 +741,8 @@ class TradeDisciplineService:
                 {
                     "id": operation_id,
                     "stock_code": stock_code,
-                    "stock_name_snapshot": stock_name,
+                    # 名称在批量验证股票主数据后由服务端覆盖，禁止信任客户端快照。
+                    "stock_name_snapshot": "",
                     "side": side,
                     "stock_rule_id": stock_rule_id,
                     "action_rule_id": action_rule_id,
@@ -760,14 +758,36 @@ class TradeDisciplineService:
         codes = sorted({item["stock_code"] for item in prepared})
         if codes:
             placeholders = ",".join("?" for _ in codes)
-            existing = set(
-                self.market.query_df(
-                    f"SELECT code FROM stock_basic WHERE code IN ({placeholders})", codes
-                )["code"].astype(str)
+            frame = self.market.query_df(
+                "SELECT code,name,list_date,delist_date FROM stock_basic "
+                f"WHERE code IN ({placeholders})",
+                codes,
             )
-            missing = [code for code in codes if code not in existing]
+            stocks = {
+                str(row["code"]): row
+                for row in frame.astype(object).where(pd.notna(frame), None).to_dict("records")
+            }
+            missing = [code for code in codes if code not in stocks]
             if missing:
                 raise ValidationError(f"股票代码不存在：{'、'.join(missing)}")
+            not_listed = [
+                code for code in codes
+                if stocks[code]["list_date"] is not None
+                and pd.Timestamp(stocks[code]["list_date"]).date() > trade_date
+            ]
+            if not_listed:
+                raise ValidationError(f"履约日期尚未上市：{'、'.join(not_listed)}")
+            delisted = [
+                code for code in codes
+                if stocks[code]["delist_date"] is not None
+                and trade_date >= pd.Timestamp(stocks[code]["delist_date"]).date()
+            ]
+            if delisted:
+                raise ValidationError(f"履约日期已经退市：{'、'.join(delisted)}")
+            for item in prepared:
+                item["stock_name_snapshot"] = str(stocks[item["stock_code"]]["name"] or "").strip()
+                if not item["stock_name_snapshot"]:
+                    raise ValidationError(f"股票名称缺失：{item['stock_code']}")
         return prepared
 
     def _prepare_checkin(

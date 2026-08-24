@@ -400,6 +400,63 @@ def test_operation_rejects_unknown_stock_code_in_one_batch(pg, market):
         )
 
 
+def test_operation_enforces_point_in_time_stock_lifecycle_and_server_name(pg, market):
+    trade_date, _, _ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+
+    market.execute(
+        "UPDATE stock_basic SET list_date=?,delist_date=?,name='服务端名称' WHERE code='600000.SH'",
+        [trade_date - timedelta(days=1), trade_date + timedelta(days=1)],
+    )
+    operation = _operation(trade_date)
+    operation.pop("stock_name_snapshot")
+    submitted = service.submit_checkin(
+        rule_id,
+        trade_date,
+        {"assessment": "complied", "no_operation": False, "operations": [operation]},
+    )
+    assert submitted["operations"][0]["stock_name_snapshot"] == "服务端名称"
+
+
+@pytest.mark.parametrize(
+    ("list_date_offset", "delist_date_offset", "message"),
+    [
+        (1, None, "履约日期尚未上市：600000.SH"),
+        (-1, 0, "履约日期已经退市：600000.SH"),
+        (-2, -1, "履约日期已经退市：600000.SH"),
+    ],
+)
+def test_operation_rejects_stock_outside_point_in_time_lifecycle(
+    pg,
+    market,
+    list_date_offset,
+    delist_date_offset,
+    message,
+):
+    trade_date, _, _ = _seed_market(market)
+    service = _service(pg, market)
+    rule_id = _published_rule(service)
+    list_date = trade_date + timedelta(days=list_date_offset)
+    delist_date = (
+        None if delist_date_offset is None else trade_date + timedelta(days=delist_date_offset)
+    )
+    market.execute(
+        "UPDATE stock_basic SET list_date=?,delist_date=? WHERE code='600000.SH'",
+        [list_date, delist_date],
+    )
+    with pytest.raises(ValidationError, match=message):
+        service.submit_checkin(
+            rule_id,
+            trade_date,
+            {
+                "assessment": "complied",
+                "no_operation": False,
+                "operations": [_operation(trade_date)],
+            },
+        )
+
+
 def test_multiple_operations_validate_stock_codes_with_one_market_query(pg, market, monkeypatch):
     trade_date, _, _ = _seed_market(market)
     service = _service(pg, market)

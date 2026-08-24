@@ -109,6 +109,16 @@ def test_seed_is_deterministic_complete_and_cleanup_is_idempotent(pg, market, mo
         "SELECT count(*) AS n FROM stock_basic WHERE code IN (SELECT unnest(?::VARCHAR[]))",
         [list(fixture.STOCK_CODES)],
     ).iloc[0]["n"]) == 3
+    assert int(market.query_df(
+        "SELECT count(*) AS n FROM daily_bar "
+        "WHERE code IN (SELECT unnest(?::VARCHAR[]))",
+        [list(fixture.STOCK_CODES)],
+    ).iloc[0]["n"]) == 19
+    delisted_last_bar = market.query_df(
+        "SELECT max(trade_date) AS d FROM daily_bar WHERE code=?",
+        [fixture.STOCK_CODES[-1]],
+    ).iloc[0]["d"].date()
+    assert delisted_last_bar < fixture.FIXTURE_DELIST_DATE
     assert market.query_df(
         "SELECT max(trade_date) AS d FROM daily_bar "
         "WHERE code IN (SELECT unnest(?::VARCHAR[]))",
