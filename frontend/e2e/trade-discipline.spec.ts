@@ -111,6 +111,41 @@ async function expectPrimaryLeftAccent(
   expect(styles.color).not.toBe(styles.primaryColor)
 }
 
+async function expectWorkspaceSurface(locator: Locator): Promise<void> {
+  const colors = await locator.evaluate((element) => {
+    const probe = document.createElement('span')
+    probe.style.backgroundColor = 'var(--el-bg-color)'
+    element.append(probe)
+    const surfaceColor = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return {
+      backgroundColor: getComputedStyle(element).backgroundColor,
+      surfaceColor,
+    }
+  })
+  expect(colors.backgroundColor).toBe(colors.surfaceColor)
+}
+
+async function expectOperationEditorLayout(checkin: Locator): Promise<void> {
+  const geometry = await checkin.getByTestId('operation-card-editor').evaluate((editor) => {
+    const grid = editor.querySelector<HTMLElement>('.operation-grid')
+    const stock = editor.querySelector<HTMLElement>('.operation-field--stock')
+    const side = editor.querySelector<HTMLElement>('.operation-field--side')
+    const amounts = Array.from(editor.querySelectorAll<HTMLElement>('.operation-field--amount'))
+    return {
+      gridWidth: grid?.getBoundingClientRect().width ?? 0,
+      stockWidth: stock?.getBoundingClientRect().width ?? 0,
+      sideWidth: side?.getBoundingClientRect().width ?? 0,
+      amountWidths: amounts.map((item) => item.getBoundingClientRect().width),
+    }
+  })
+  expect(geometry.gridWidth).toBeGreaterThan(0)
+  expect(geometry.gridWidth).toBeLessThanOrEqual(1441)
+  expect(geometry.stockWidth).toBeGreaterThan(geometry.sideWidth)
+  expect(geometry.amountWidths).toHaveLength(4)
+  expect(Math.max(...geometry.amountWidths) - Math.min(...geometry.amountWidths)).toBeLessThanOrEqual(1)
+}
+
 test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历史与稳定布局', async ({ page, request }, testInfo) => {
   const consoleIssues = collectConsoleIssues(page)
   const auth = await authenticateDebugUser(request, 'debug_normal')
@@ -124,10 +159,31 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
   await expect(editor).toContainText('当前正式 v4')
   await expect(editor.getByLabel('规则双状态')).toContainText('当前按 v3 履约')
   await expect(editor.getByLabel('规则双状态')).toContainText('发布 v4，待 2098-06-11 生效')
-  await expectPrimaryLeftAccent(editor.locator('.readonly-banner'), 'fill')
+  await expectWorkspaceSurface(editor)
+  await expectPrimaryLeftAccent(editor.locator('.readonly-banner'))
   await expect(editor.getByTestId('rule-capital-input')).toBeDisabled()
   await editor.getByTestId('stock-rule-card').first().getByTestId('rule-card-toggle').click()
   await expect(editor.getByTestId('stock-rule-capital-input').first()).toBeDisabled()
+  await expectWorkspaceSurface(editor.getByTestId('rule-card-editor'))
+
+  await page.goto(`/trade-discipline?tab=checkin&rule_ref=${fixture.ruleId}&trade_date=${TRADE_DISCIPLINE_FIXTURE.operationTradeDate}`)
+  const checkin = page.getByTestId('checkin-form')
+  const operationCards = checkin.getByTestId('operation-card')
+  await expect(operationCards).toHaveCount(2)
+  await expect(checkin.getByTestId('operation-card-editor')).toHaveCount(0)
+  await expect(operationCards.first()).toContainText('E2E股票01 998801.SZ · 买入')
+  await expect(operationCards.first()).toContainText('成交金额 · 12,345.60')
+  const operationToggles = checkin.getByTestId('operation-card-toggle')
+  await operationToggles.first().click()
+  await expect(checkin.getByTestId('operation-card-editor')).toHaveCount(1)
+  await expect(operationToggles.first()).toHaveAttribute('aria-expanded', 'true')
+  await operationToggles.nth(1).click()
+  await expect(checkin.getByTestId('operation-card-editor')).toHaveCount(1)
+  await expect(operationToggles.first()).toHaveAttribute('aria-expanded', 'false')
+  await expect(operationToggles.nth(1)).toHaveAttribute('aria-expanded', 'true')
+  await expectWorkspaceSurface(page.locator('.panel-detail'))
+  await expectWorkspaceSurface(checkin.getByTestId('operation-card-editor'))
+  await expectOperationEditorLayout(checkin)
 
   await page.getByRole('button', { name: '历史记录', exact: true }).click()
   const history = page.getByRole('table', { name: '履约历史', exact: true })
@@ -372,7 +428,7 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   await installAuthSnapshot(page, viewOnly)
   await page.goto(`/trade-discipline?tab=rules&rule_ref=e2e_td_trade_discipline_view_rule`)
   await expect(page.getByText('当前账号只有查看权限。')).toBeVisible()
-  await expectPrimaryLeftAccent(page.locator('.readonly-banner'), 'fill')
+  await expectPrimaryLeftAccent(page.locator('.readonly-banner'))
   await expect(page.getByRole('button', { name: '新建规则' })).toHaveCount(0)
   await page.getByRole('button', { name: '今日打卡', exact: true }).click()
   await expect(page.getByText('当前账号仅可查看，不能提交或修正打卡。')).toBeVisible()

@@ -645,13 +645,20 @@ watch(tradeDisciplineChangeVersion, async () => {
 .discipline-rail { flex: none; }
 .discipline-rail :deep(.page-segmented) { min-width: 360px; }
 .discipline-panel { min-height: 0; flex: 1 1 auto; overflow: hidden; }
-.master-detail-shell { height: 100%; min-height: 0; display: flex; gap: var(--app-space-4); overflow-x: auto; }
+.master-detail-shell {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 304px minmax(0, 1fr);
+  gap: var(--app-space-3);
+  overflow-x: auto;
+}
 .panel-detail {
   border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-bg-color-overlay);
+  border-radius: var(--layout-card-radius);
+  background: var(--el-bg-color);
 }
-.panel-detail { min-width: 460px; flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--app-space-5); }
+.panel-detail { min-width: 0; min-height: 0; overflow: auto; padding: var(--app-space-5); }
 .detail-kicker { color: var(--el-color-primary); font-size: var(--app-font-size-caption); font-weight: var(--app-font-weight-section); }
 .panel-detail .app-section-title { margin: var(--app-space-1) 0 var(--app-space-4); }
 .rule-facts { display: grid; grid-template-columns: repeat(2, minmax(160px, 1fr)); gap: var(--app-space-3); margin: 0; }
@@ -661,7 +668,7 @@ watch(tradeDisciplineChangeVersion, async () => {
 .readonly-note { margin-top: var(--app-space-4); color: var(--el-color-warning); }
 .history-panel { display: flex; }
 @media (max-width: 1100px) {
-  .master-detail-shell { flex-direction: column; overflow: auto; }
+  .master-detail-shell { grid-template-columns: minmax(0, 1fr); overflow: auto; }
   .panel-detail { min-width: 0; overflow: visible; }
 }
 @media (max-width: 900px) {

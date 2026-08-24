@@ -727,13 +727,14 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 </template>
 
 <style scoped>
-.rule-editor { min-width: 520px; min-height: 0; overflow: auto; flex: 1 1 auto; padding: var(--app-space-5); border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-bg-color-overlay); }
+.rule-editor { min-width: 0; min-height: 0; overflow: auto; padding: var(--app-space-5); border: 1px solid var(--el-border-color); border-radius: var(--layout-card-radius); background: var(--el-bg-color); }
 .rule-editor__head, .rule-editor__commands, .detail-group > header, .rule-editor__footer { display: flex; align-items: center; }
 .rule-editor__head { justify-content: space-between; gap: var(--app-space-3); }
+.rule-editor__head, .rule-state-track, .readonly-banner, .rule-editor__form { max-width: 1680px; }
 .rule-editor__head .app-section-title { margin: var(--app-space-1) 0 0; }
 .rule-editor__commands { gap: var(--app-space-1); }
-.rule-state-track { margin: var(--app-space-4) 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--el-border-color-lighter); border-radius: 7px; overflow: hidden; }
-.rule-state-track > div { padding: var(--app-space-3); background: var(--el-fill-color-extra-light); }
+.rule-state-track { margin: var(--app-space-4) 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-control-radius); overflow: hidden; }
+.rule-state-track > div { padding: var(--app-space-3); background: transparent; }
 .rule-state-track > div + div { border-left: 1px solid var(--el-border-color-lighter); }
 .rule-state-track span { display: block; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-state-track strong { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
@@ -745,13 +746,13 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
   margin-bottom: var(--app-space-4);
   padding: var(--app-space-3);
   border-left: 3px solid var(--el-color-primary);
-  background: var(--el-fill-color-extra-light);
+  background: transparent;
   color: var(--el-text-color-secondary);
 }
-.rule-editor__base { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.7fr) minmax(200px, 0.8fr); gap: var(--app-space-3); align-items: end; }
+.rule-editor__base { display: grid; grid-template-columns: minmax(260px, 520px) minmax(220px, 360px) minmax(240px, 360px); gap: var(--app-space-3); align-items: end; justify-content: start; }
 .rule-editor__base :deep(.el-input) { width: 100%; }
-.capital-meter { min-height: var(--app-control-height-md); margin-bottom: 18px; padding: 0 var(--app-space-3); border-radius: 6px; background: var(--el-color-success-light-9); color: var(--el-color-success-dark-2); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); }
-.capital-meter.danger { background: var(--el-color-danger-light-9); color: var(--el-color-danger); }
+.capital-meter { min-height: var(--app-control-height-md); margin-bottom: 18px; padding: 0 var(--app-space-3); border: 1px solid color-mix(in srgb, var(--el-color-success) 38%, var(--el-border-color)); border-radius: var(--layout-control-radius); background: transparent; color: var(--el-color-success); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); }
+.capital-meter.danger { border-color: color-mix(in srgb, var(--el-color-danger) 42%, var(--el-border-color)); background: transparent; color: var(--el-color-danger); }
 .detail-group { margin-top: var(--app-space-5); }
 .detail-group > header { justify-content: space-between; gap: var(--app-space-3); margin-bottom: var(--app-space-2); }
 .detail-group h4 { margin: 0; font-size: var(--app-font-size-section); }
@@ -765,15 +766,15 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 .rule-card-form__content { grid-column: 1 / -1; }
 .rule-card-form :deep(.el-select), .rule-card-form :deep(.el-input) { width: 100%; }
 .action-group-grid { display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); gap: var(--app-space-3); }
-.action-group { min-width: 0; padding: var(--app-space-2); border: 1px solid var(--el-border-color); border-radius: 8px; background: var(--el-fill-color-extra-light); }
+.action-group { min-width: 0; padding-top: var(--app-space-2); border-top: 1px solid var(--el-border-color); background: transparent; }
 .action-group__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--app-space-2); margin-bottom: var(--app-space-3); }
 .action-group h5 { margin: 0; color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
 .field-hint { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
-.rule-editor__footer { position: sticky; bottom: calc(var(--app-space-5) * -1); z-index: 2; justify-content: flex-end; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color-overlay); }
+.rule-editor__footer { position: sticky; bottom: calc(var(--app-space-5) * -1); z-index: 2; justify-content: flex-end; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color); }
 .dirty-copy { margin-right: auto; color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
 .leave-decision-copy { margin: 0; color: var(--el-text-color-regular); line-height: var(--app-line-height-longform); }
 @media (max-width: 1100px) {
-  .rule-editor { min-width: 0; overflow: visible; }
+  .rule-editor { overflow: visible; }
   .rule-state-track, .rule-editor__base { grid-template-columns: 1fr; }
   .rule-state-track > div + div { border-left: 0; border-top: 1px solid var(--el-border-color-lighter); }
   .capital-meter { margin-bottom: 0; }

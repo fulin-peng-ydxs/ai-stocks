@@ -135,14 +135,13 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 
 <style scoped>
 .rule-master {
-  width: 304px;
-  flex: none;
+  width: 100%;
   min-height: 0;
   overflow: hidden;
   padding: var(--app-space-2);
   border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-bg-color-overlay);
+  border-radius: var(--layout-card-radius);
+  background: var(--el-bg-color);
   display: flex;
   flex-direction: column;
   gap: var(--app-space-2);
@@ -153,16 +152,20 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
   min-height: 70px;
   padding: var(--app-space-2) var(--app-space-3);
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--layout-control-radius);
   cursor: pointer;
 }
-.rule-master__item:hover { background: var(--el-fill-color-light); }
+.rule-master__item:hover { background: color-mix(in srgb, var(--el-fill-color-light) 58%, transparent); }
 .rule-master__item:focus-visible { outline: 2px solid var(--el-color-primary-light-3); outline-offset: 1px; }
-.rule-master__item.active { border-color: var(--el-color-primary-light-5); background: var(--el-color-primary-light-9); }
+.rule-master__item.active {
+  border-color: color-mix(in srgb, var(--el-color-primary) 62%, var(--el-border-color));
+  background: color-mix(in srgb, var(--el-color-primary-light-9) 72%, var(--el-bg-color));
+  box-shadow: inset 3px 0 0 var(--el-color-primary);
+}
 .rule-master__name { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-weight: var(--app-font-weight-section); }
 .rule-master__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rule-master__states { margin-top: var(--app-space-1); display: flex; justify-content: space-between; gap: var(--app-space-2); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
-.rule-master__management { text-align: right; color: var(--el-text-color-secondary); }
+.rule-master__states { margin-top: var(--app-space-1); display: flex; align-items: start; flex-direction: column; gap: 2px; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
+.rule-master__management { text-align: left; color: var(--el-text-color-secondary); overflow-wrap: anywhere; }
 .rule-master__management.is-success { color: var(--el-color-success); }
 .rule-master__management.is-danger { color: var(--app-danger-text); }
 .rule-master__management.is-warning { color: var(--app-warning-text); }

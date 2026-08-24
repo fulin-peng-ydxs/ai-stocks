@@ -9,6 +9,7 @@ export const TRADE_DISCIPLINE_FIXTURE = {
   namePrefix: 'E2E纪律-',
   currentTradeDate: '2098-06-10',
   pendingTradeDate: '2098-06-11',
+  operationTradeDate: '2098-06-05',
   stockCodes: ['998801.SZ', '998802.SZ', '998803.SZ'],
 } as const
 

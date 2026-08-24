@@ -42,6 +42,7 @@ const loadError = ref('')
 const context = ref<CheckinContext | null>(null)
 const editing = ref(false)
 const baseline = ref('')
+const operationEditor = ref<InstanceType<typeof TradeOperationEditor> | null>(null)
 let loadSeq = 0
 const form = reactive<CheckinFormState>({
   assessment: 'complied', no_operation: false, reason: null,
@@ -127,18 +128,22 @@ function validate(): string | null {
   if (form.assessment === 'breached' && !form.violation_detail.trim()) return '未履约时必须填写详细说明'
   for (const [index, operation] of form.operations.entries()) {
     const prefix = `操作 ${index + 1}`
-    if (!operation.stock_code || !operation.stock_name_snapshot) return `${prefix}：请选择股票`
-    if (!operation.stock_rule_id) return `${prefix}：请选择选股规则`
-    if (!operation.action_rule_id) return `${prefix}：请选择买卖规则`
+    const operationError = (message: string) => {
+      operationEditor.value?.expandOperation(index)
+      return `${prefix}：${message}`
+    }
+    if (!operation.stock_code || !operation.stock_name_snapshot) return operationError('请选择股票')
+    if (!operation.stock_rule_id) return operationError('请选择选股规则')
+    if (!operation.action_rule_id) return operationError('请选择买卖规则')
     if (operation.operated_at && operation.operated_at.slice(0, 10) !== props.tradeDate) {
-      return `${prefix}：操作时间必须属于当前交易日`
+      return operationError('操作时间必须属于当前交易日')
     }
     for (const field of ['price', 'quantity', 'amount', 'fee'] as const) {
       const value = operation[field]
       if (value === null || value === '') continue
       const units = decimalToMinorUnits(value, field === 'price' || field === 'quantity' ? 4 : 2)
-      if (units === null) return `${prefix}：金额与数量格式不正确`
-      if (units < 0n) return `${prefix}：金额与数量不能为负数`
+      if (units === null) return operationError('金额与数量格式不正确')
+      if (units < 0n) return operationError('金额与数量不能为负数')
     }
   }
   return null
@@ -307,6 +312,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
 
         <TradeOperationEditor
           v-if="!form.no_operation"
+          ref="operationEditor"
           v-model="form.operations"
           :version="context.version"
           :trade-date="tradeDate"
@@ -350,10 +356,11 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
 <style scoped>
 .checkin-detail { display: block; }
 .checkin-head, .checkin-head__facts, .assessment-row, .checkin-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
+.checkin-head, .permission-note, .checkin-form { max-width: 1440px; }
 .checkin-head { align-items: flex-start; padding-bottom: var(--app-space-3); border-bottom: 1px solid var(--el-border-color-lighter); }
 .checkin-head .app-section-title { margin: var(--app-space-1) 0 0; }
 .checkin-form { margin-top: var(--app-space-4); display: grid; gap: var(--app-space-4); }
-.checkin-section { padding: var(--app-space-4); border: 1px solid var(--el-border-color-lighter); border-radius: 8px; }
+.checkin-section { padding: var(--app-space-4); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-card-radius); }
 .assessment-row { align-items: flex-start; }
 .breach-grid { display: grid; grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.3fr); gap: var(--app-space-4); }
 .permission-note {
@@ -363,7 +370,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
   background: transparent;
   color: var(--el-text-color-secondary);
 }
-.checkin-actions { justify-content: flex-end; position: sticky; bottom: 0; padding: var(--app-space-3) 0 0; background: var(--el-bg-color-overlay); }
+.checkin-actions { justify-content: flex-end; position: sticky; bottom: 0; padding: var(--app-space-3) 0 0; background: var(--el-bg-color); }
 .checkin-actions__hint { margin-right: auto; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 @media (max-width: 760px) {
   .checkin-head, .checkin-head__facts, .assessment-row { align-items: stretch; flex-direction: column; }

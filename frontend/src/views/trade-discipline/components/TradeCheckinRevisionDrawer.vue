@@ -235,7 +235,7 @@ watch(
 .detail-hero h3 { margin: var(--app-space-1) 0; }
 .detail-hero p, .revision-switcher p { margin: 0; color: var(--el-text-color-secondary); }
 .hero-facts { justify-content: flex-end; flex-wrap: wrap; }
-.detail-card { padding: var(--app-space-4); border: 1px solid var(--el-border-color-lighter); border-radius: 8px; background: var(--el-fill-color-blank); }
+.detail-card { padding: var(--app-space-4); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-card-radius); background: var(--el-bg-color); }
 .detail-card h4 { margin: 0 0 var(--app-space-3); }
 .revision-switcher h4 { margin-bottom: var(--app-space-1); }
 .revision-switcher :deep(.app-filter-select) { width: 180px; flex: none; }
@@ -246,7 +246,7 @@ watch(
 .text-snapshot { margin-top: var(--app-space-3); }
 .text-snapshot p, .rule-snapshot p { margin: var(--app-space-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rule-grid { display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: var(--app-space-4); }
-.rule-snapshot { margin-top: var(--app-space-2); padding: var(--app-space-3); border-radius: 6px; background: var(--el-fill-color-light); }
+.rule-snapshot { margin-top: var(--app-space-2); padding: var(--app-space-3); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-control-radius); background: transparent; }
 .rule-snapshot span, .rule-snapshot small { display: block; }
 .rule-snapshot small, .empty-copy { color: var(--el-text-color-secondary); }
 .operation-section { min-width: 0; }

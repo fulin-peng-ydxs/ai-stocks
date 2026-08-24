@@ -90,6 +90,22 @@ describe('TradeCheckinForm', () => {
     expect(wrapper.text()).toContain('已提交 · r1')
   })
 
+  it('提交校验失败时自动展开对应操作卡', async () => {
+    const wrapper = mountForm()
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text() === '添加操作')!.trigger('click')
+    const toggle = wrapper.get('[data-testid="operation-card-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+
+    await wrapper.findAll('button').find((button) => button.text() === '提交打卡')!.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-testid="operation-card-editor"]').exists()).toBe(true)
+    expect(submitCheckin).not.toHaveBeenCalled()
+  })
+
   it('已有打卡以 expected_revision 修正且不改变绑定版本', async () => {
     const decoratedOperation = {
       ...operation,
