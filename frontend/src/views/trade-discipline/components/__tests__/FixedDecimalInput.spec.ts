@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import ElementPlus from 'element-plus'
 import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
 
@@ -61,5 +62,25 @@ describe('FixedDecimalInput', () => {
     await input.setValue('2,500,000.25')
 
     expect(wrapper.emitted('update:modelValue')).toEqual([['2500000.25']])
+  })
+
+  it('未显式传禁用态时继承外层表单的只读状态', () => {
+    const wrapper = mount(defineComponent({
+      components: { FixedDecimalInput },
+      template: '<el-form disabled><FixedDecimalInput model-value="100000.00" /></el-form>',
+    }), {
+      global: { plugins: [ElementPlus] },
+    })
+
+    expect((wrapper.get('input').element as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('显式禁用时在普通容器内保持只读', () => {
+    const wrapper = mount(FixedDecimalInput, {
+      props: { modelValue: '100000.00', disabled: true },
+      global: { plugins: [ElementPlus] },
+    })
+
+    expect((wrapper.get('input').element as HTMLInputElement).disabled).toBe(true)
   })
 })

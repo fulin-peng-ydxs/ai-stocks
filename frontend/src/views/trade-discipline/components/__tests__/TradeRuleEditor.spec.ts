@@ -304,6 +304,12 @@ describe('TradeRuleEditor', () => {
     expect(wrapper.text()).not.toContain('添加选股规则')
     expect(wrapper.text()).not.toContain('添加买卖规则')
     expect(wrapper.findAll('.el-switch').every((node) => node.classes().includes('is-disabled'))).toBe(true)
+    expect((wrapper.get('[data-testid="rule-capital-input"]').element as HTMLInputElement).disabled)
+      .toBe(true)
+    await wrapper.get('[data-testid="stock-rule-card"] [data-testid="rule-card-toggle"]')
+      .trigger('click')
+    expect((wrapper.get('[data-testid="stock-rule-capital-input"]').element as HTMLInputElement).disabled)
+      .toBe(true)
   })
 
   it('只有查看权限时即使存在工作草稿也不能修改明细结构或启停态', async () => {
@@ -313,6 +319,8 @@ describe('TradeRuleEditor', () => {
     expect(wrapper.find('.rule-summary-card__actions').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('添加选股规则')
     expect(wrapper.findAll('.el-switch').every((node) => node.classes().includes('is-disabled'))).toBe(true)
+    expect((wrapper.get('[data-testid="rule-capital-input"]').element as HTMLInputElement).disabled)
+      .toBe(true)
   })
 
   it('以分为单位精确判断 0.10 + 0.20 恰好等于 0.30', async () => {

@@ -125,6 +125,9 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
   await expect(editor.getByLabel('规则双状态')).toContainText('当前按 v3 履约')
   await expect(editor.getByLabel('规则双状态')).toContainText('发布 v4，待 2098-06-11 生效')
   await expectPrimaryLeftAccent(editor.locator('.readonly-banner'), 'fill')
+  await expect(editor.getByTestId('rule-capital-input')).toBeDisabled()
+  await editor.getByTestId('stock-rule-card').first().getByTestId('rule-card-toggle').click()
+  await expect(editor.getByTestId('stock-rule-capital-input').first()).toBeDisabled()
 
   await page.getByRole('button', { name: '历史记录', exact: true }).click()
   const history = page.getByRole('table', { name: '履约历史', exact: true })
