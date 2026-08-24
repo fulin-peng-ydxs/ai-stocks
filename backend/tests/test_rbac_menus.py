@@ -246,12 +246,47 @@ def test_delete_menu_with_children_rejected(client, env):
 # ── 排序 ──
 
 def test_reorder(client, env):
+    parent = env.mk_menu(is_group=True)
     m1 = env.mk_menu()
-    m2 = env.mk_menu()
+    try:
+        r = client.post("/api/menus/reorder", json={"items": [
+            {"id": m1, "sort": 50, "parentId": parent}]}, headers=env.sys_headers())
+        assert r.status_code == 200
+        row = env.pg.query_df(
+            "SELECT parent_id,sort FROM sys_menu WHERE id=%s", [m1]
+        ).iloc[0]
+        assert row["parent_id"] == parent and int(row["sort"]) == 50
+
+        audit = env.pg.query_df(
+            "SELECT target_id,target_label,changes,context FROM audit_log "
+            "WHERE event_category='rbac' AND action='menu_reorder' AND target_id=%s "
+            "ORDER BY event_time DESC LIMIT 1",
+            [m1],
+        ).iloc[0]
+        assert audit["target_id"] == m1
+        assert audit["target_label"]
+        changes = {item["field"]: item for item in audit["changes"]}
+        assert changes["parent_id"] == {"field": "parent_id", "before": None, "after": parent}
+        assert changes["sort"] == {"field": "sort", "before": 10, "after": 50}
+        assert audit["context"]["affected_count"] == 1
+    finally:
+        env.pg.execute(
+            "DELETE FROM audit_log WHERE event_category='rbac' AND action='menu_reorder' "
+            "AND target_id=%s",
+            [m1],
+        )
+
+
+def test_reorder_rejects_duplicate_menu(client, env):
+    mid = env.mk_menu()
     r = client.post("/api/menus/reorder", json={"items": [
-        {"id": m1, "sort": 50}, {"id": m2, "sort": 20}]}, headers=env.sys_headers())
+        {"id": mid, "sort": 20}, {"id": mid, "sort": 30},
+    ]}, headers=env.sys_headers())
     assert r.status_code == 200
-    assert int(env.pg.query_df("SELECT sort FROM sys_menu WHERE id=%s", [m1]).iloc[0]["sort"]) == 50
+    assert r.json()["code"] == 4000
+    assert int(env.pg.query_df(
+        "SELECT sort FROM sys_menu WHERE id=%s", [mid]
+    ).iloc[0]["sort"]) == 10
 
 
 # ── 缓存失效（删除 / 可见性变更 → 引用用户 perm_ver 自增）──

@@ -1859,9 +1859,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         />
         <div v-else class="sys-wrap" v-loading="sysLoading && sysGroups.length > 0">
           <div class="sys-head">
-            <div class="sys-summary">
-              <span>保存后即时影响访问安全、数据采集、审计留存和研究运行参数。</span>
-            </div>
             <div class="sys-actions">
               <el-alert
                 v-if="sysSaveError"
@@ -1988,24 +1985,9 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: var(--app-space-4);
   padding: 0;
-}
-.sys-summary {
-  min-width: 0;
-}
-.sys-summary strong,
-.sys-summary span {
-  display: block;
-}
-.sys-summary strong {
-  font-size: var(--app-font-size-data);
-  line-height: var(--app-line-height-compact);
-}
-.sys-summary span {
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-caption);
 }
 .sys-actions {
   display: flex;

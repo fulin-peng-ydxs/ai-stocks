@@ -198,6 +198,34 @@ def test_trade_discipline_seed_is_idempotent_and_rollback_tombstone_does_not_rev
     assert marker["applied"] is False and marker["rolled_back"] is True
 
 
+def test_trade_discipline_seed_preserves_runtime_menu_position(pg, td_rbac_sandbox):
+    """管理员移动内置菜单后，启动期 seed 不得恢复默认父级或排序。"""
+    parent_id = "pytest-td-menu-parent"
+    pg.execute(
+        "INSERT INTO sys_menu "
+        "(id,parent_id,code,title,type,route_path,icon,sort,visible,is_builtin) "
+        "VALUES (%s,NULL,%s,%s,'group',NULL,'Menu',900,'login',FALSE)",
+        [parent_id, parent_id, "交易测试分组"],
+    )
+    try:
+        pg.execute(
+            "UPDATE sys_menu SET parent_id=%s,sort=%s,updated_at=now() WHERE id=%s",
+            [parent_id, 70, "/trade-discipline"],
+        )
+        seed_rbac(pg)
+        row = pg.query_df(
+            "SELECT parent_id,sort FROM sys_menu WHERE id=%s", ["/trade-discipline"]
+        ).iloc[0]
+        assert row["parent_id"] == parent_id
+        assert int(row["sort"]) == 70
+    finally:
+        pg.execute(
+            "UPDATE sys_menu SET parent_id=NULL,sort=50,updated_at=NULL WHERE id=%s",
+            ["/trade-discipline"],
+        )
+        pg.execute("DELETE FROM sys_menu WHERE id=%s", [parent_id])
+
+
 def test_trade_discipline_seed_conflict_rolls_back_atomically(pg, td_rbac_sandbox):
     _rollback_trade_discipline_rbac(pg)
     pg.execute("DELETE FROM app_config WHERE key=%s", [TRADE_DISCIPLINE_RBAC_MARKER])

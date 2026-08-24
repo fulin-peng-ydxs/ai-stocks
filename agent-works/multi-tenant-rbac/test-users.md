@@ -25,9 +25,11 @@
 AI_STOCKS_ENV=dev ./start.sh dev-users                 # 创建/校准全部调试用户
 AI_STOCKS_ENV=dev ./start.sh dev-users --list          # 查看当前调试用户
 AI_STOCKS_ENV=dev ./start.sh dev-users --keep-password
+# 仅供已取得被测后端指纹的 E2E 自动入口；普通人工维护无需传入
+AI_STOCKS_ENV=dev ./start.sh dev-users --keep-password --expected-pg-fingerprint <64位十六进制>
 ```
 
-密码来源、默认回落和生产禁用规则见 [environment-configuration.md](../architecture/environment-configuration.md)。环境标记为空、未知、生产或共享公网时均拒绝写入。
+密码来源、默认回落和生产禁用规则见 [environment-configuration.md](../architecture/environment-configuration.md)。环境标记为空、未知、生产或共享公网时均拒绝写入。传入 `--expected-pg-fingerprint` 后，格式或目标不匹配会在 `init_pg_db()` 及任何账号写入前拒绝执行；自动化不得先校准账号、再校验被测后端目标。
 
 ## 固定租户
 

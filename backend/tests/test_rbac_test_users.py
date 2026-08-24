@@ -9,6 +9,7 @@ import pytest
 
 from backend.auth.constants import ROLE_NORMAL, ROLE_TENANT_ADMIN
 from backend.common.exceptions import StorageError
+from backend.devtools import rbac_test_users
 from backend.devtools.e2e_test_users import _lock_temporary_user, destroy_temporary_user
 from backend.devtools.rbac_test_users import (
     CUSTOM_ROLES,
@@ -18,6 +19,29 @@ from backend.devtools.rbac_test_users import (
     _ensure_users,
 )
 from backend.storage.pg_identity import pg_fingerprint
+
+
+def test_ensure_debug_users_rejects_invalid_or_mismatched_pg_before_schema_write(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("AI_STOCKS_ENV", "test")
+    schema_writes: list[object] = []
+    fake_pg = object()
+    monkeypatch.setattr(rbac_test_users, "init_pg_db", lambda pg: schema_writes.append(pg))
+    monkeypatch.setattr(rbac_test_users, "pg_fingerprint", lambda pg: "a" * 64)
+
+    with pytest.raises(RuntimeError, match="64 位 PostgreSQL 指纹"):
+        rbac_test_users.ensure_debug_users(
+            expected_pg_fingerprint="invalid",
+            pg=fake_pg,  # type: ignore[arg-type]
+        )
+    with pytest.raises(RuntimeError, match="与被测后端不一致"):
+        rbac_test_users.ensure_debug_users(
+            expected_pg_fingerprint="b" * 64,
+            pg=fake_pg,  # type: ignore[arg-type]
+        )
+
+    assert schema_writes == []
 
 
 def test_sector_only_debug_identity_keeps_stock_permission_out() -> None:

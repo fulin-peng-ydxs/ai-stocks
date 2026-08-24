@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import os
+import re
+import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -17,9 +19,11 @@ from backend.config import get_settings
 from backend.devtools.environment_guard import require_local_test_environment
 from backend.storage.pg_client import PostgresClient, get_pg_client
 from backend.storage.pg_ddl import DEFAULT_TENANT_ID, init_pg_db
+from backend.storage.pg_identity import pg_fingerprint
 
 DEBUG_TENANT_ID = "debug_tenant"
 DEFAULT_PASSWORD = "Test@12345"
+_PG_FINGERPRINT_RE = re.compile(r"^[a-f0-9]{64}$")
 
 
 @dataclass(frozen=True)
@@ -240,11 +244,21 @@ def _bump_user_permissions(cur, users: tuple[UserSpec, ...] = DEBUG_USERS) -> No
     )
 
 
-def ensure_debug_users(*, reset_password: bool = True,
-                       pg: PostgresClient | None = None) -> dict:
+def ensure_debug_users(
+    *,
+    reset_password: bool = True,
+    expected_pg_fingerprint: str | None = None,
+    pg: PostgresClient | None = None,
+) -> dict:
     """幂等创建/校准调试租户、角色、用户。返回摘要。"""
     _guard_local_test_environment()
     pg = pg or get_pg_client()
+    if expected_pg_fingerprint is not None:
+        if not _PG_FINGERPRINT_RE.fullmatch(expected_pg_fingerprint):
+            raise RuntimeError("缺少合法的 64 位 PostgreSQL 指纹，拒绝校准调试账号")
+        actual_fingerprint = pg_fingerprint(pg)
+        if not secrets.compare_digest(actual_fingerprint, expected_pg_fingerprint):
+            raise RuntimeError("调试账号 PostgreSQL 与被测后端不一致，拒绝执行数据写入")
     init_pg_db(pg)
     password, source = resolve_debug_password()
     pwd_hash = hash_password(password)

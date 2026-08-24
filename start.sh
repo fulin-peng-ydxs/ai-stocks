@@ -32,7 +32,9 @@ PY="${PYTHON:-python}"
 LOG_DIR="logs"
 LOG_FILE="$LOG_DIR/backend.log"
 PID_FILE="$LOG_DIR/backend.pid"
+RUNTIME_STATE_FILE="$LOG_DIR/backend-runtime.json"
 PROC_PATTERN="backend.cli serve"
+ENV_FILE_ARG="${AI_STOCKS_ENV_FILE:-.env.local}"
 
 mkdir -p "$LOG_DIR"
 
@@ -45,6 +47,50 @@ load_project_local_env
 # 是否有存活的后端进程；有则回显 PID
 running_pid() {
   pgrep -f "$PROC_PATTERN" | head -1 || true
+}
+
+write_runtime_state() {
+  local mode="$1"
+  local pid="$2"
+  umask 077
+  "$PY" -m backend.devtools.backend_runtime_state write \
+    --target "$RUNTIME_STATE_FILE" \
+    --mode "$mode" \
+    --pid "$pid" \
+    --env-file "$ENV_FILE_ARG" \
+    --python-command "$PY"
+}
+
+snapshot_runtime_state() {
+  local target="${1:-}"
+  local pid health_code
+  pid="$(running_pid)"
+  if [[ -z "$target" || -z "$pid" || ! -f "$RUNTIME_STATE_FILE" ]]; then
+    echo "无法取得可信后端运行档案，拒绝停止现有服务" >&2
+    return 1
+  fi
+  health_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+    http://127.0.0.1:8000/api/health 2>/dev/null)" || health_code="000"
+  if [[ "$health_code" != "200" ]]; then
+    echo "现有后端健康检查为 $health_code，拒绝快照并停止未知状态服务" >&2
+    return 1
+  fi
+  "$PY" -m backend.devtools.backend_runtime_state snapshot \
+    --source "$RUNTIME_STATE_FILE" \
+    --target "$target" \
+    --expected-pid "$pid"
+}
+
+restore_runtime_state() {
+  local source="${1:-}"
+  if [[ -z "$source" || ! -f "$source" ]]; then
+    echo "缺少可信后端运行档案，拒绝猜测恢复模式" >&2
+    return 1
+  fi
+  "$PY" -m backend.devtools.backend_runtime_state restore \
+    --source "$source" \
+    --start-script "$PWD/start.sh" \
+    --runtime-file "$RUNTIME_STATE_FILE"
 }
 
 start() {
@@ -72,6 +118,7 @@ start() {
   fi
 
   echo "🚀 启动后端（$mode 模式）…"
+  rm -f "$RUNTIME_STATE_FILE"
   "$PY" - "$PY" "${args[@]}" "$LOG_FILE" <<'PY'
 import os
 import subprocess
@@ -100,6 +147,11 @@ PY
     if curl -s -o /dev/null --max-time 2 http://127.0.0.1:8000/api/health 2>/dev/null; then
       pid="$(running_pid)"
       echo "$pid" > "$PID_FILE"
+      if ! write_runtime_state "$mode" "$pid"; then
+        echo "❌ 无法写入可信后端运行档案，停止本次服务" >&2
+        stop
+        return 1
+      fi
       echo "✅ 已启动 (PID $pid) — http://127.0.0.1:8000  | 日志：$LOG_FILE"
       return 0
     fi
@@ -112,21 +164,44 @@ PY
 }
 
 stop() {
-  local pid
+  local pid pgid i
   pid="$(running_pid)"
   if [[ -z "$pid" ]]; then
     echo "ℹ️  后端未在运行"
     rm -f "$PID_FILE"
+    rm -f "$RUNTIME_STATE_FILE"
     return 0
   fi
   echo "🛑 停止后端…"
-  pkill -f "$PROC_PATTERN" || true
-  sleep 1
-  if [[ -n "$(running_pid)" ]]; then
-    echo "进程未退出，强制结束…"
-    pkill -9 -f "$PROC_PATTERN" || true
+  pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
+  if [[ -n "$pgid" && "$pgid" == "$pid" ]]; then
+    kill -TERM -- "-$pgid" 2>/dev/null || true
+    for i in $(seq 1 20); do
+      if ! kill -0 -- "-$pgid" 2>/dev/null; then
+        break
+      fi
+      sleep 0.5
+    done
+    if kill -0 -- "-$pgid" 2>/dev/null; then
+      echo "进程组未在 10 秒内退出，强制结束…"
+      kill -KILL -- "-$pgid" 2>/dev/null || true
+    fi
+  else
+    echo "无法确认后端独立进程组，仅终止已识别父进程 PID $pid" >&2
+    kill -TERM "$pid" 2>/dev/null || true
+    for i in $(seq 1 20); do
+      if ! kill -0 "$pid" 2>/dev/null; then
+        break
+      fi
+      sleep 0.5
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      echo "后端父进程未在 10 秒内退出，强制结束…"
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
   fi
   rm -f "$PID_FILE"
+  rm -f "$RUNTIME_STATE_FILE"
   echo "✅ 已停止"
 }
 
@@ -138,7 +213,8 @@ status() {
     return 0
   fi
   local code
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 http://127.0.0.1:8000/api/health 2>/dev/null || echo 000)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+    http://127.0.0.1:8000/api/health 2>/dev/null)" || code="000"
   echo "● 后端：运行中 (PID $pid)  /api/health=$code  端口 8000"
 }
 
@@ -148,6 +224,14 @@ case "${1:-dev}" in
   stop)     stop ;;
   restart)  stop; start dev ;;
   status)   status ;;
+  snapshot-runtime)
+    shift
+    snapshot_runtime_state "${1:-}"
+    ;;
+  restore-runtime)
+    shift
+    restore_runtime_state "${1:-}"
+    ;;
   logs)     tail -f "$LOG_FILE" ;;
   dev-users)
     shift

@@ -611,7 +611,10 @@ def cmd_dev_users(args: argparse.Namespace) -> int:
                   f"roles={','.join(r['roles'])}")
         return 0
 
-    res = ensure_debug_users(reset_password=not getattr(args, "keep_password", False))
+    res = ensure_debug_users(
+        reset_password=not getattr(args, "keep_password", False),
+        expected_pg_fingerprint=getattr(args, "expected_pg_fingerprint", None),
+    )
     print(f"RBAC 调试用户已创建/校准：tenant={res['tenant_id']}")
     print(f"密码来源：{res['password_source']}"
           f"{'，本次统一密码=' + res['password'] if res['password_source'] == 'local-default' else ''}")
@@ -764,6 +767,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_dev.add_argument("--list", action="store_true", help="列出当前调试用户")
     p_dev.add_argument("--keep-password", action="store_true",
                        help="保留已有密码；仅为缺密码用户填充默认密码")
+    p_dev.add_argument(
+        "--expected-pg-fingerprint",
+        help="写入前必须匹配的 64 位 PostgreSQL 指纹（E2E 物理写入口使用）",
+    )
     p_dev.set_defaults(func=cmd_dev_users)
 
     sub.add_parser("audit-cleanup", help="按 audit.retention_days 清理超保留期审计日志").set_defaults(

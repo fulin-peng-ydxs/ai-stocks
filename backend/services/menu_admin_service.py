@@ -19,8 +19,8 @@
 from __future__ import annotations
 
 from backend.auth import perm_resolver
-from backend.common.ids import prefixed_readable_id
 from backend.common.exceptions import ForbiddenError, NotFoundError, ValidationError
+from backend.common.ids import prefixed_readable_id
 from backend.common.logging import get_logger
 from backend.storage.menu_repository import MenuRepository
 
@@ -72,14 +72,13 @@ class MenuAdminService:
             raise ValidationError("请填写菜单标题")
         route_path = self._normalize_route(type, route_path, exclude_id=menu_id)
         # 移动节点：目标父须存在且不成环
-        if parent_id != cur["parent_id"]:
-            if parent_id:
-                if parent_id == menu_id:
-                    raise ValidationError("上级菜单不能是自身")
-                if self.menus.get(parent_id) is None:
-                    raise ValidationError("上级菜单不存在")
-                if self.menus.is_descendant(parent_id, menu_id):
-                    raise ValidationError("不能移动到自身的子节点下")
+        if parent_id != cur["parent_id"] and parent_id:
+            if parent_id == menu_id:
+                raise ValidationError("上级菜单不能是自身")
+            if self.menus.get(parent_id) is None:
+                raise ValidationError("上级菜单不存在")
+            if self.menus.is_descendant(parent_id, menu_id):
+                raise ValidationError("不能移动到自身的子节点下")
         # 可见性变更（收紧/放开）或移动父节点（可能跨系统专属分支，改变非 system 用户可见菜单）→ 失效。
         vis_changed = visible != cur["visible"]
         moved = parent_id != cur["parent_id"]   # P2-c：移动跨可见域会改变非 system 用户可见菜单
@@ -120,12 +119,32 @@ class MenuAdminService:
 
     # ── 排序 / 移动 ──
     def reorder(self, items: list[dict]) -> list[dict]:
-        """批量排序/移动。纯排序不 bump；含移动(parent 变更)的节点 → bump（P2-c：跨可见域改变可见菜单）。"""
+        """批量排序/移动，并保持原有只返回菜单树的服务契约。"""
+        tree, _ = self.reorder_with_changes(items)
+        return tree
+
+    def reorder_with_changes(self, items: list[dict]) -> tuple[list[dict], list[dict]]:
+        """批量排序/移动，额外返回逐菜单 before/after，供 API 写精确审计。
+
+        纯排序不 bump；含移动(parent 变更)的节点 → bump（P2-c：跨可见域改变可见菜单）。
+        同一菜单在单次请求中只允许出现一次，避免最终状态和审计语义产生歧义。
+        """
         moved: list[str] = []
+        snapshots: list[dict] = []
+        seen: set[str] = set()
         for it in items:
             mid = it.get("id")
             if not mid:
                 raise ValidationError("包含不存在的菜单节点")
+            if mid in seen:
+                raise ValidationError("同一菜单不能重复排序")
+            seen.add(mid)
+            if "sort" not in it:
+                raise ValidationError("菜单排序值不能为空")
+            try:
+                target_sort = int(it["sort"])
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("菜单排序值必须为整数") from exc
             node = self.menus.get(mid)
             if node is None:
                 raise ValidationError("包含不存在的菜单节点")
@@ -139,6 +158,11 @@ class MenuAdminService:
                     if self.menus.is_descendant(pid, mid):
                         raise ValidationError("不能移动到自身的子节点下")
                 moved.append(mid)
+            after = dict(node)
+            after["sort"] = target_sort
+            if "parentId" in it:
+                after["parent_id"] = it["parentId"]
+            snapshots.append({"before": node, "after": after})
         # 被移动节点的 affected（各含子树）写前一次性算定；排序落库 +（如有移动）perm_ver 自增**同事务
         # 原子提交**（Codex 五轮 P1）→ 提交后 best-effort 清缓存。纯排序(无 parent 变更)不影响可见性、不失效。
         affected: set[str] = set()
@@ -152,7 +176,12 @@ class MenuAdminService:
         if affected_list:
             perm_resolver.clear_perms_cache(affected_list)
         log.info("菜单管理：排序更新 %d 项（其中移动 %d 项已失效）", len(items), len(moved))
-        return self.menus.tree()
+        changed = [
+            snapshot for snapshot in snapshots
+            if snapshot["before"]["sort"] != snapshot["after"]["sort"]
+            or snapshot["before"]["parent_id"] != snapshot["after"]["parent_id"]
+        ]
+        return self.menus.tree(), changed
 
     # ── 内部 ──
     def _load(self, menu_id: str) -> dict:

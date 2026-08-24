@@ -79,7 +79,12 @@ Playwright 固定使用前端 `5181`，避免抢占日常开发端口 `5173`；�
 归属下的 `e2e_td_`/`E2E纪律-` 数据，以及 DuckDB 的 `9988*.SZ` 和 2098 年固定交易日。
 被测后端以登录限流豁免和正常 DuckDB 读写模式启动，重启后必须复核指纹未变化；三视口
 固定 `--workers=1`。无论通过、失败或中断，EXIT trap 都先停服、按可信指纹精确清理，
-再恢复测试前后端运行/停止状态；未取得指纹时禁止尝试物理清理。
+再恢复测试前后端运行/停止状态；未取得指纹时禁止尝试物理清理。账号校准必须把同一指纹
+传给 `dev-users --expected-pg-fingerprint`，在 DDL 和账号写入前完成比对。若测试前后端正在运行，
+入口先快照 `start.sh` 启动时生成的不含密钥运行档案；档案记录环境文件和其余项目环境变量的
+不可逆摘要，退出时先核对摘要，再恢复原启动模式、Python 命令、环境文件、E2E/登录/DuckDB
+安全开关，并复核恢复后的 PG 指纹；档案缺失、PID 不匹配或内容非法时在停服前拒绝执行，
+不能猜测恢复为普通 dev。
 `npm run test:e2e` 和 `npm run test:e2e:ui` 均通过 `scripts/run-playwright.sh` 启动，
 并复用 `scripts/load-local-env.sh` 加载仓库根目录 `.env.local`；因此登录密码和 PG/E2E
 环境与后端使用相同的 `KEY=value` / `export KEY=value` 语义，不在 TypeScript helper 中二次解析变量文件。

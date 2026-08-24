@@ -20,6 +20,11 @@ async function chooseDialog(page: Page, label: string): Promise<void> {
   await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click()
 }
 
+async function navigateToDailyBoard(page: Page): Promise<void> {
+  await page.getByRole('menuitem', { name: '最新行情', exact: true }).click()
+  await page.getByRole('menuitem', { name: '每日榜单', exact: true }).click()
+}
+
 async function navigateToSystemManagement(page: Page): Promise<void> {
   const topEntry = page.getByRole('button', { name: '系统管理', exact: true })
   if (await topEntry.isVisible()) {
@@ -308,16 +313,15 @@ test('标准视口真实完成规则、打卡、修订、快捷入口与权限�
   expect(consoleIssues).toEqual([])
 })
 
-test('真实页面未保存协议拦截当前标签关闭、注销与浏览器刷新', async ({ page, request }, testInfo) => {
+test('真实页面未保存协议拦截路由、当前标签关闭、注销与浏览器刷新', async ({ page, request }, testInfo) => {
   test.setTimeout(60_000)
   test.skip(testInfo.project.name !== 'chromium-default', '未保存壳层链路只需在一个桌面视口执行')
   const auth = await authenticateDebugUser(request, 'debug_normal')
   await requireTradeDisciplineFixture(request, auth.accessToken)
   await useAuth(page, auth)
-  await page.getByRole('menuitem', { name: '最新行情' }).click()
-  await page.getByRole('menuitem', { name: '每日榜单' }).click()
+  await navigateToDailyBoard(page)
   await expect(page).toHaveURL(/\/board$/)
-  await page.getByRole('menuitem', { name: '交易纪律' }).click()
+  await page.getByRole('tab', { name: '交易纪律' }).click()
   await expect(page).toHaveURL(/\/trade-discipline/)
   await expect(page.getByRole('button', { name: '关闭 交易纪律' })).toBeVisible()
   await page.getByRole('button', { name: '规则管理', exact: true }).click()
@@ -333,12 +337,23 @@ test('真实页面未保存协议拦截当前标签关闭、注销与浏览器�
   await page.getByTestId('rule-name-input').fill('E2E纪律-T13未保存保护-修改中')
   await expect(page.getByText('有未保存修改', { exact: true })).toBeVisible()
 
-  const beforeUnloadPrevented = await page.evaluate(() => {
-    const event = new Event('beforeunload', { cancelable: true })
-    window.dispatchEvent(event)
-    return event.defaultPrevented
-  })
-  expect(beforeUnloadPrevented).toBe(true)
+  await navigateToDailyBoard(page)
+  await expect(page.getByRole('dialog', { name: '未保存的规则修改' })).toBeVisible()
+  await chooseDialog(page, '继续编辑')
+  await expect(page).toHaveURL(/\/trade-discipline/)
+  await expect(page.getByTestId('rule-name-input'))
+    .toHaveValue('E2E纪律-T13未保存保护-修改中')
+
+  const nativeDialog = page.waitForEvent('dialog')
+  const reloadAttempt = page.reload({ waitUntil: 'domcontentloaded', timeout: 10_000 })
+    .catch(() => null)
+  const dialog = await nativeDialog
+  expect(dialog.type()).toBe('beforeunload')
+  await dialog.dismiss()
+  await reloadAttempt
+  await expect(page).toHaveURL(/\/trade-discipline/)
+  await expect(page.getByTestId('rule-name-input'))
+    .toHaveValue('E2E纪律-T13未保存保护-修改中')
 
   await page.getByRole('button', { name: '关闭 交易纪律' }).click()
   await expect(page.getByRole('dialog', { name: '未保存的规则修改' })).toBeVisible()

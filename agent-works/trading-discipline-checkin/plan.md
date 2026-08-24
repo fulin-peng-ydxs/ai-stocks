@@ -8,7 +8,7 @@
 - 本次不做：R18-R25 所述打卡服务端草稿、账户快照/资金流水、AI 或规则引擎结果、自动裁决、图表、券商同步、公开分享。
 - 计划输出目录：`agent-works/trading-discipline-checkin/`。
 - 准入结论：无剩余阻塞项；需求和原型已明确流程、数据、权限、接口验收与上线边界。
-- 当前开发阶段：T1-T12 已完成并分别提交，下一开发任务为 T13；T5-T9 阶段验收尚未完成，须待 T13 的真实 PG 页面业务闭环及发布回归完成后才能判定通过。本轮只完成 T12，未连续开发 T13。
+- 当前开发阶段：T1-T13 均已完成并分别提交；T5-T9 已在 T13 的真实 PG/DuckDB 页面闭环、权限与三视口回归后完成阶段验收。2026-08-24 复审修复又补齐账号校准前 PG 指纹守卫、后端精确运行档案恢复和真实浏览器刷新/路由未保存验证；生产部署、生产 PG 备份与 RBAC 回滚演练不在本地开发验收授权范围内，仍明确为未执行。
 
 ## 2. 当前项目依据
 
@@ -41,39 +41,39 @@
 
 | 需求编号 | 实施内容 | 对应任务 | 状态 | 验证方式 |
 | --- | --- | --- | --- | --- |
-| R1 | 私人规则生命周期、名称唯一、明细启用/顺序/换行 | T1、T2、T6、T10-T13 | T1-T2 后端及 T6 页面管理已完成 | DDL/服务单测 + 页面 E2E |
-| R2 | 本金与启用选股规则资金上限校验 | T2、T6、T10-T11 | T2 后端校验及 T6 页面汇总/预校验已完成 | 金额边界参数化测试 |
-| R3 | 正式版本连续生成且历史不可变 | T1、T2、T6、T10 | T1-T2 后端基础及 T6 发布交互已完成 | 发布事务与历史快照测试 |
-| R4 | 规则 + 交易日唯一打卡 | T1、T3、T7、T10 | T1/T3 后端及 T7 首次/修正表单已完成 | 唯一性/幂等测试 |
-| R5 | 四种履约/操作组合 | T3、T7、T10-T13 | T3 服务及 T7 四组合表单已完成 | 服务组合测试 + E2E |
-| R6 | 多笔同股操作与股票关联 | T3、T4、T7、T10-T13 | T3-T4 后端及 T7 多操作编辑已完成 | 页面操作行测试 + E2E |
-| R7 | 每笔分别关联具体选股与方向匹配买卖规则 | T3、T7、T10-T13 | T3 服务及 T7 候选/方向联动已完成 | 候选 0/1/多条测试 |
-| R8 | 可选成交事实与完整度 | T1、T3、T7、T10-T11 | T1/T3 后端及 T7 可选事实字段已完成 | 字段边界与展示测试 |
-| R9 | 历史筛选、详情、不可变修订 | T1、T3、T8、T10-T13 | T1/T3 后端及 T8 页面已完成 | 分页/修订/API/E2E |
-| R10 | 真实交易日选择与校验 | T3、T4、T5、T7、T10-T13 | T3-T4 服务/API 及 T7 统一交易日控件已完成 | 页面日期状态 + E2E |
-| R11 | 私人归属和跨用户隔离 | T1-T4、T8、T10、T12-T13 | T1-T4 后端归属隔离与 404 防泄露已完成 | 页面权限 + E2E |
-| R12 | 用户中心摘要、状态点与跳转 | T4、T9、T11-T13 | T4 摘要 API 及 T9 全局卡片/跳转已完成 | App 组件测试 + 三视口 E2E |
-| R13 | 快捷无操作已履约 | T3、T4、T9、T10-T13 | T3-T4 幂等服务/API 及 T9 快捷交互已完成 | 用户中心交互 + E2E |
-| R14 | 原始事实稳定、派生能力不反写 | T1-T3、T10 | T1-T3 核心事实层已完成 | 外键/不可变仓库测试与数据契约审查 |
-| R15 | 三页签、主从布局和响应式闭环 | T5-T8、T11、T13 | T5 工作台壳、T6 规则主从区及 T7 打卡主从区已完成 | 布局契约 + 三视口 Playwright |
-| R26 | 单选可输入原因、自动新增、行内删除 | T1、T3、T7、T10-T13 | T1/T3 后端及 T7 原因组合框已完成 | 原因事务/交互 E2E |
-| R27 | 未履约详细说明必填并保留换行 | T1、T3、T7-T8、T10-T13 | T1/T3 后端及 T7 表单必填已完成 | API/页面/历史展示测试 |
-| R28 | 路由、菜单、四功能码、默认角色授权 | T1、T4-T9、T10-T13 | T1/T4 RBAC、T5 页面权限及 T9 快捷入口权限已完成 | 前端路由/按钮权限测试 |
-| R29 | pageRegistry、LayoutHost、维护矩阵 | T5、T11、T13 | T5 页面登记、LayoutHost 与 DESIGN marker 已完成 | pageRegistry/layout contract |
-| R30 | 补录按履约日有效版本解析 | T1-T4、T7、T10、T12-T13 | T1-T4 后端绑定/current API 及 T7 历史交易日入口已完成 | 页面补录 + E2E |
-| R31 | 专用轻量股票搜索 | T4、T7-T8、T10-T13 | T4 受限搜索 API 及 T7 防抖/中止选择器已完成 | 前端防抖、迟到请求 + E2E |
-| R32 | 页面设置保存、读取、消费、恢复默认 | T5、T8、T11、T13 | T5 密度、历史 pageSize/border 与恢复默认接入已完成 | 偏好/组件/E2E |
-| R33 | 通用表格、分页、状态、抽屉复用 | T5、T8、T11、T13 | T5 页面壳复用闭环已完成，T8 继续补历史筛选与详情 | 组件依赖与布局契约审查 |
-| R34 | 加载、空、错误、无权限四态 | T5-T9、T11、T13 | T5 页面及 T9 快捷卡状态边界已完成 | 独立状态组件测试 + E2E |
-| R35 | 每主体至多一个规则草稿、乐观锁、放弃/发布 | T1、T2、T6、T10-T13 | T1-T2 后端生命周期及 T6 草稿交互已完成 | 并发 409/事务/恢复 E2E |
-| R36 | 激活时间、下一真实交易日、双状态展示 | T1-T4、T6-T7、T10-T13 | T1-T4 事件/API、T6 管理双状态及 T7 履约版本轨道已完成 | 页面双状态 + E2E |
+| R1 | 私人规则生命周期、名称唯一、明细启用/顺序/换行 | T1、T2、T6、T10-T13 | 已完成（T13 验收闭环） | DDL/服务单测 + 页面 E2E |
+| R2 | 本金与启用选股规则资金上限校验 | T2、T6、T10-T11 | 已完成（T10-T11 验收闭环） | 金额边界参数化测试 |
+| R3 | 正式版本连续生成且历史不可变 | T1、T2、T6、T10 | 已完成（T10/T13 验收闭环） | 发布事务与历史快照测试 |
+| R4 | 规则 + 交易日唯一打卡 | T1、T3、T7、T10 | 已完成（T10/T13 验收闭环） | 唯一性/幂等测试 |
+| R5 | 四种履约/操作组合 | T3、T7、T10-T13 | 已完成（T12-T13 验收闭环） | 服务组合测试 + E2E |
+| R6 | 多笔同股操作与股票关联 | T3、T4、T7、T10-T13 | 已完成（T13 验收闭环） | 页面操作行测试 + E2E |
+| R7 | 每笔分别关联具体选股与方向匹配买卖规则 | T3、T7、T10-T13 | 已完成（T13 验收闭环） | 候选 0/1/多条测试 |
+| R8 | 可选成交事实与完整度 | T1、T3、T7、T10-T11 | 已完成（T10-T11 验收闭环） | 字段边界与展示测试 |
+| R9 | 历史筛选、详情、不可变修订 | T1、T3、T8、T10-T13 | 已完成（T13 验收闭环） | 分页/修订/API/E2E |
+| R10 | 真实交易日选择与校验 | T3、T4、T5、T7、T10-T13 | 已完成（T13 验收闭环） | 页面日期状态 + E2E |
+| R11 | 私人归属和跨用户隔离 | T1-T4、T8、T10、T12-T13 | 已完成（T12-T13 验收闭环） | 页面权限 + E2E |
+| R12 | 用户中心摘要、状态点与跳转 | T4、T9、T11-T13 | 已完成（T13 验收闭环） | App 组件测试 + 三视口 E2E |
+| R13 | 快捷无操作已履约 | T3、T4、T9、T10-T13 | 已完成（T13 验收闭环） | 用户中心交互 + E2E |
+| R14 | 原始事实稳定、派生能力不反写 | T1-T3、T10 | 已完成（T10 数据契约闭环） | 外键/不可变仓库测试与数据契约审查 |
+| R15 | 三页签、主从布局和响应式闭环 | T5-T8、T11、T13 | 已完成（T13 三视口验收闭环） | 布局契约 + 三视口 Playwright |
+| R26 | 单选可输入原因、自动新增、行内删除 | T1、T3、T7、T10-T13 | 已完成（T13 验收闭环） | 原因事务/交互 E2E |
+| R27 | 未履约详细说明必填并保留换行 | T1、T3、T7-T8、T10-T13 | 已完成（T13 验收闭环） | API/页面/历史展示测试 |
+| R28 | 路由、菜单、四功能码、默认角色授权 | T1、T4-T9、T10-T13 | 已完成（T13 权限验收闭环） | 前端路由/按钮权限测试 |
+| R29 | pageRegistry、LayoutHost、维护矩阵 | T5、T11、T13 | 已完成（T11/T13 契约闭环） | pageRegistry/layout contract |
+| R30 | 补录按履约日有效版本解析 | T1-T4、T7、T10、T12-T13 | 已完成（T13 验收闭环） | 页面补录 + E2E |
+| R31 | 专用轻量股票搜索 | T4、T7-T8、T10-T13 | 已完成（T13 独立权限闭环） | 前端防抖、迟到请求 + E2E |
+| R32 | 页面设置保存、读取、消费、恢复默认 | T5、T8、T11、T13 | 已完成（T11/T13 验收闭环） | 偏好/组件/E2E |
+| R33 | 通用表格、分页、状态、抽屉复用 | T5、T8、T11、T13 | 已完成（T11 组件契约闭环） | 组件依赖与布局契约审查 |
+| R34 | 加载、空、错误、无权限四态 | T5-T9、T11、T13 | 已完成（T11/T13 验收闭环） | 独立状态组件测试 + E2E |
+| R35 | 每主体至多一个规则草稿、乐观锁、放弃/发布 | T1、T2、T6、T10-T13 | 已完成（T13 验收闭环） | 并发 409/事务/恢复 E2E |
+| R36 | 激活时间、下一真实交易日、双状态展示 | T1-T4、T6-T7、T10-T13 | 已完成（T13 验收闭环） | 页面双状态 + E2E |
 
 ### 3.2 可选增强
 
 | 需求编号 | 增强内容 | 需求阶段处理状态 | 开发状态 | 对应任务 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| R16 | 复制规则 | 本次纳入 | T2 后端及 T6 页面来源选择已完成 | T2、T6、T10-T13 | 副本为无版本号的新主体草稿，可选复制正式版或草稿内容 |
-| R17 | 页面离开前未保存提醒 | 本次纳入 | T5 应用协议、T6 规则三选及 T7 打卡二选已完成 | T5-T8、T11、T13 | 应用壳先决策再改变标签/缓存；T8 继续复用打卡二选，浏览器刷新使用原生提示 |
+| R16 | 复制规则 | 本次纳入 | 已完成（T13 验收闭环） | T2、T6、T10-T13 | 副本为无版本号的新主体草稿，可选复制正式版或草稿内容 |
+| R17 | 页面离开前未保存提醒 | 本次纳入 | 已完成（T11 契约 + T13 真实浏览器闭环） | T5-T8、T11、T13 | 应用壳先决策后改变标签/缓存；真实路由、当前标签、注销和原生刷新由 Playwright 验证，非当前标签与容量淘汰由应用协议组件测试验证 |
 | R18 | 打卡服务端自动保存草稿 | 后续建议 | 跳过 | - | 创建、过期、冲突与清理策略未进入本期，且 D9 明确本期不建 |
 | R19 | 账户每日快照与入金/出金流水 | 后续建议 | 跳过 | - | 待收益曲线需求启动后独立设计，避免误称本期数据足以算完整收益 |
 | R20 | AI/规则引擎评估实体与生成链路 | 后续建议 | 跳过 | - | 本期仅提供稳定关联键和不可变事实，不接模型或判断器 |
@@ -220,7 +220,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 
 - 稳定常量：marker key 为 `migration.trade_discipline_default_grants_v1`，事务 advisory lock 为 `8410010005`；Python 和 SQL 留痕必须引用同一常量，不另写近似版本。
 - 稳定 seed 身份：菜单 `id=code=route_path='/trade-discipline'`、`title='交易纪律'`、`type='leaf'`、`visible='login'`；四个资源均 `id=code` 且 `menu_id='/trade-discipline'`，代表 method/path 固定为 `trade-discipline:view → GET /api/trade-discipline/summary`、`trade-discipline:rule-manage → POST /api/trade-discipline/rules`、`trade-discipline:checkin-view → GET /api/trade-discipline/checkins`、`trade-discipline:checkin-submit → POST /api/trade-discipline/checkins`。同一功能码可守卫该接口组其他端点，路由扫描以每个实际端点的守卫为准。
-- seed 顺序：`seed_rbac()` 先确保内置角色存在，再调用专用 `_seed_trade_discipline_rbac()`；通用 `_SEED_MENU_TREE/_SEED_RESOURCES` 循环对 `/trade-discipline` 和四个资源码跳过，由专用状态机唯一写入，避免 tombstone 后被通用 seed 复活。
+- seed 顺序：`seed_rbac()` 先确保内置角色存在，再调用专用 `_seed_trade_discipline_rbac()`；通用 `_SEED_MENU_TREE/_SEED_RESOURCES` 循环对 `/trade-discipline` 和四个资源码跳过，由专用状态机唯一写入，避免 tombstone 后被通用 seed 复活。新库首次迁移默认创建一级菜单；marker 已应用且菜单已存在时只校验稳定身份，不覆盖运行期维护的 `parent_id` 与 `sort`，并由回归测试锁定该契约。
 - marker 状态：缺失才允许正向；合法 applied 重启 no-op 并核验目标行仍与契约一致；合法 rolled_back/tombstone 永久 no-op；JSON 损坏、版本未知或 applied/rolled_back 冲突均为 invalid 并抛错，禁止补菜单、资源或授权。
 - 默认授权可维护性：applied 只持续校验 marker 固定账本结构以及菜单/资源不可变身份，不要求 normal/tenant_admin 的初始授权行永久存在；管理员后续撤销默认菜单或功能授权时，重启不得补回或失败。回滚允许账本内默认授权已缺失，只删除当前仍存在的同键行；发现账本外自定义角色授权仍拒绝级联回滚。
 - 正向冲突：marker 缺失但 `sys_menu.id`、`code` 或 `route_path` 任一命中 `/trade-discipline`，或 `sys_resource.id/code` 任一命中上述四个固定功能码时，均视为身份占用并使整事务 fail-closed；不因字段恰好相同就收编旧行，不覆盖、不改名、不授予角色权限，由运维先判定冲突来源。
@@ -438,7 +438,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 
 - 状态：已完成（2026-08-23，已独立提交）
 - 依赖：T1-T4、T10。
-- 涉及文件：新增 `backend/devtools/e2e_trade_discipline.py`、`frontend/e2e/helpers/tradeDiscipline.ts`、`scripts/run-trade-discipline-e2e.sh`；修改 `start.sh`、`frontend/package.json`、`backend/devtools/rbac_test_users.py`、`agent-works/multi-tenant-rbac/test-users.md`、`agent-works/e2e-automation/guide.md`。
+- 涉及文件：新增 `backend/devtools/e2e_trade_discipline.py`、`backend/devtools/backend_runtime_state.py`、`frontend/e2e/helpers/tradeDiscipline.ts`、`scripts/run-trade-discipline-e2e.sh`；修改 `start.sh`、`frontend/package.json`、`backend/devtools/rbac_test_users.py`、`agent-works/multi-tenant-rbac/test-users.md`、`agent-works/e2e-automation/guide.md`。
 - 目标：提供不依赖开发者真实数据、可重复 seed/cleanup、失败必清理的 PG + DuckDB 夹具，并固化权限账号和执行命令。
 - 操作：
   - `./start.sh e2e-trade-discipline seed --expected-pg-fingerprint <64位十六进制>` 与 `./start.sh e2e-trade-discipline cleanup --expected-pg-fingerprint <64位十六进制>` 调用 Python 夹具，`--expected-pg-fingerprint` 对两个动作均为必填；缺失、格式非法或与夹具进程直连 PG 计算值不一致时，必须在任何 PG/DuckDB 写入前 fail-closed。`npm run test:e2e:trade-discipline` 调用聚焦脚本并自动管理该参数。
@@ -446,15 +446,15 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
   - 固定账号：`debug_normal` 验证默认全功能；新增 `debug_trade_discipline_view`（菜单 + view/checkin-view）验证只读；新增 `debug_trade_discipline_submit`（菜单 + view/checkin-view/checkin-submit、无 rule-manage、无 stocks:view）验证 R31；`debug_board_only` 验证无权；`debug_tenant_admin/debug_system` 验证默认角色。账号均由 `dev-users` 幂等校准，不写密码。
   - PG 夹具归属固定 `debug_tenant + 对应 debug_* owner`，所有业务 ID 使用 `e2e_td_` 前缀，规则名使用 `E2E纪律-` 前缀；seed v1-v3、待生效 v4、发布/归档/恢复事件（含等时间戳不同 event_seq）、四种打卡、历史修订、自定义原因和多笔操作。
   - DuckDB 只写 `9988*.SZ` 股票及一段专属固定交易日/行情；seed/cleanup 前停止后端以独占写锁，测试后端以正常读写模式启动。cleanup 只按专属代码、日期和 PG 归属+前缀逆 FK 顺序删除，不碰真实数据。
-  - 聚焦脚本先记录测试前后端状态，再取得指纹：若当前 `/api/health/e2e` 已返回合法值则直接保存；若后端未运行或未以 E2E 写模式启动，则受控停止现有后端（如有），以 `AI_STOCKS_ENV` + `AI_STOCKS_E2E_WRITE=1` 临时启动后端，等待健康后读取并校验 64 位指纹。只有成功保存指纹后才停止后端，并把同一值显式传给 cleanup、seed 和退出清理。
-  - 完整顺序固定为“记录原状态 → 确保 E2E 后端可用并获取指纹 → stop → cleanup/seed（均传 expected fingerprint）→ 以 `AI_STOCKS_E2E_LOGIN_BYPASS=1` 启动被测后端 → 再读 `/api/health/e2e` 并断言指纹未变化 → 三视口 `--workers=1` 运行”。EXIT trap 无论通过、失败或中断均先 stop，再以已保存指纹精确 cleanup，最后恢复原后端运行/停止状态；若尚未取得指纹则禁止尝试物理清理，不遗留写开关或登录豁免。
+  - 聚焦脚本先记录测试前后端状态，再取得指纹：若当前 `/api/health/e2e` 已返回合法值则直接保存；若后端未运行或未以 E2E 写模式启动，则在停服前快照 `start.sh` 生成的不含密钥运行档案，以 `AI_STOCKS_ENV` + `AI_STOCKS_E2E_WRITE=1` 临时启动后端，等待健康后读取并校验 64 位指纹。原服务运行但档案缺失、PID 不符或内容非法时 fail-closed。只有成功保存指纹后才执行账号校准，并把同一值显式传给 `dev-users`、cleanup、seed 和退出清理。
+  - 完整顺序固定为“记录原状态/可信运行档案 → 确保 E2E 后端可用并获取指纹 → `dev-users --expected-pg-fingerprint` → stop → cleanup/seed（均传 expected fingerprint）→ 以 `AI_STOCKS_E2E_LOGIN_BYPASS=1` 启动被测后端 → 再读 `/api/health/e2e` 并断言指纹未变化 → 三视口 `--workers=1` 运行”。EXIT trap 无论通过、失败或中断均先 stop，再以已保存指纹精确 cleanup，最后按档案恢复原启动模式、环境文件、E2E/登录/DuckDB 安全开关并复核 PG 指纹；若尚未取得指纹则禁止尝试物理清理。
   - 人工直接执行 seed/cleanup 时不自动猜测 PG：调用者必须先以相同本地配置和 E2E 写门控启动后端，从 `/api/health/e2e` 取得指纹，停止后端，再通过必填参数执行；夹具进程随后以 `pg_fingerprint(pg)` 常量时间比对。需要自动流程时只使用聚焦脚本，不复制一套隐式取值逻辑。
 - 产出：确定性数据构造器、TS fail-fast helper、固定测试账号、`start.sh`/npm 命令和同步后的 E2E 事实文档。
 - 影响范围：仅本地 dev/test/local PG 与 DuckDB 专属前缀数据；生产/共享环境拒绝运行。
 - 边界与异常：重复 seed 先用同一已验证指纹精确 cleanup；部分 seed 失败由事务回滚；cleanup 可幂等重复；取得指纹后若 `.env.local`/PG 目标发生变化，后续直连比对或重启后的健康复核必须拒绝写入/测试；PG/DuckDB 任一清理失败使脚本非零退出并明确列出残留，不静默恢复成功状态。
 - 验证方式：夹具单测、seed→查询计数→cleanup→零残留、重复 seed/cleanup、缺少/非法/错误/停服前后变化的 PG 指纹、后端原本运行/未运行、后端持锁拒绝和 trap 状态恢复测试。
 - 完成标准：T13 不再依赖临时手工造数，固定命令可独立复现版本、生效、权限和历史修订场景。
-- 实际落地情况：新增 `e2e_trade_discipline.py`，在任何写入前执行 dev/test/local + `AI_STOCKS_E2E_WRITE=1` 双重环境守卫、64 位十六进制格式校验和直连 PG 常量时间指纹比对；以 `debug_tenant` 下 4 个固定 owner、`e2e_td_`/`E2E纪律-`、`9988*.SZ` 和 2098 年固定日期构造 v1-v3、待生效 v4、同一 `occurred_at/effective_from_trade_date` 的 archive seq3/restore seq4、四种履约组合、修订、自定义/内置原因和多笔操作。PG 与 DuckDB 各自事务化，PG 提交失败且 Duck 已提交时执行显式补偿；cleanup 先解除主体正式版本指针，再按归属和专属前缀逆 FK 删除，并精确清理专属股票/日期。新增只读与独立提交调试角色/账号，独立提交账号无 rule-manage/stocks:view；新增 TS helper 从真实接口 fail-fast 核验唯一规则、v4/v3 双状态、4 种组合与股票候选。`run-trade-discipline-e2e.sh` 负责原状态记录、受控取得进程内指纹、账号校准、停服 cleanup/seed、E2E 后端指纹复核、三视口串行运行及 EXIT/INT/TERM 清理恢复；未取得指纹时不清理。复用现有 `environment_guard`、`pg_fingerprint`、`start.sh`、`load-local-env.sh`、`run-playwright.sh` 与 E2E 健康响应解析口径，没有新增重复环境或密码解析器；交易纪律跨 PG + DuckDB 且具备专属生命周期，未强行并入只写单库的板块/回测夹具。聚焦 pytest 33/33 通过；真实项目库分别从“后端原运行”和“后端原停止”执行两轮入口，均成功 seed 4 owner/16 打卡/24 事件/16 版本/21 行情，并在 T13 spec 尚未创建导致 Playwright 预期失败后精确零残留、恢复原运行/停止状态。完整 `npm run test:e2e:trade-discipline` 成功路径未执行，原因是 T13 `trade-discipline.spec.ts` 按阶段尚未开发；后端全量、前端全量、构建与正式页面验收在本阶段最终回归记录中另列。
+- 实际落地情况：新增 `e2e_trade_discipline.py`，在任何写入前执行 dev/test/local + `AI_STOCKS_E2E_WRITE=1` 双重环境守卫、64 位十六进制格式校验和直连 PG 常量时间指纹比对；以 `debug_tenant` 下 4 个固定 owner、`e2e_td_`/`E2E纪律-`、`9988*.SZ` 和 2098 年固定日期构造 v1-v3、待生效 v4、同一 `occurred_at/effective_from_trade_date` 的 archive seq3/restore seq4、四种履约组合、修订、自定义/内置原因和多笔操作。PG 与 DuckDB 各自事务化，PG 提交失败且 Duck 已提交时执行显式补偿；cleanup 先解除主体正式版本指针，再按归属和专属前缀逆 FK 删除，并精确清理专属股票/日期。新增只读与独立提交调试角色/账号，独立提交账号无 rule-manage/stocks:view；新增 TS helper 从真实接口 fail-fast 核验唯一规则、v4/v3 双状态、4 种组合与股票候选。`run-trade-discipline-e2e.sh` 负责受控取得进程内指纹、带相同指纹校准账号、停服 cleanup/seed、E2E 后端指纹复核、三视口串行运行及 EXIT/INT/TERM 清理；`start.sh` 在健康启动后记录模式、Python 命令、环境文件摘要、额外项目环境变量不可逆摘要、安全开关、PID 与 PG 指纹，不落明文密钥。聚焦脚本只在档案与现进程及环境摘要匹配时停服，并按档案精确恢复及复核目标，未知状态不再猜测普通 dev。复用现有 `environment_guard`、`pg_fingerprint`、`start.sh`、`load-local-env.sh`、`run-playwright.sh` 与 E2E 健康响应解析口径，没有新增重复环境或密码解析器；交易纪律跨 PG + DuckDB 且具备专属生命周期，未强行并入只写单库的板块/回测夹具。T12 原有夹具验证和 T13 完整成功路径均已完成；2026-08-24 复审修复新增账号写前指纹单测，并以真实专项运行确认 seed/cleanup 零残留及原 dev 档案恢复。
 
 ### 6.13 任务 T13：Playwright、构建与发布验收
 
@@ -468,7 +468,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 - 边界与异常：固定 5181、`--workers=1`；普通全量 E2E 明确排除需专属夹具的 spec，随后必须单独运行 `npm run test:e2e:trade-discipline`；不得污染真实用户数据。
 - 验证方式：`cd frontend && npm test`、`npm run build`、`AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline`、其余全量 E2E、`git diff --check`。
 - 完成标准：R1-R17、R26-R36 验收可观察且无未解释偏差。
-- 实际落地情况：新增 `frontend/e2e/trade-discipline.spec.ts`，三视口共同读取真实 PG/DuckDB 夹具，验证 v3 当日履约、v4 待生效、同时间戳 `event_seq` 全序、四类历史、修订号及三档视口无横向溢出；标准视口以真实点击新建规则，覆盖三选未保存决策、一次保存 500 后保留现场、发布/归档/恢复、当日未履约无操作提交、自定义原因新增/删除、修正为已履约、历史回显、仅提交账号快捷无操作履约、仅查看只读和无页面权限路由守卫。默认视口覆盖浏览器刷新、当前工作标签关闭和注销的未保存阻断；路由/页签上下文切换、非当前标签和容量淘汰继续由 T5/T11 已通过的应用协议契约测试覆盖。为长期定位只在既有 feature 组件增加稳定 `data-testid`，未新增重复 UI/composable/util；复用现有登录、夹具校验、对话框和 Playwright 运行 helper。
+- 实际落地情况：新增 `frontend/e2e/trade-discipline.spec.ts`，三视口共同读取真实 PG/DuckDB 夹具，验证 v3 当日履约、v4 待生效、同时间戳 `event_seq` 全序、四类历史、修订号及三档视口无横向溢出；标准视口以真实点击新建规则，覆盖三选未保存决策、一次保存 500 后保留现场、发布/归档/恢复、当日未履约无操作提交、自定义原因新增/删除、修正为已履约、历史回显、仅提交账号快捷无操作履约、仅查看只读和无页面权限路由守卫。默认视口通过真实菜单导航验证 Vue Router 离开阻断，通过 Playwright 捕获并取消真实 `beforeunload` 原生对话框验证刷新阻断，同时覆盖当前工作标签关闭和注销；非当前标签关闭与容量淘汰无法从当前产品正常交互制造“后台脏页面”，因此明确由 T11 应用协议组件测试验证，未冒充浏览器已通过。为长期定位只在既有 feature 组件增加稳定 `data-testid`，未新增重复 UI/composable/util；复用现有登录、夹具校验、导航、对话框和 Playwright 运行 helper。
 
   T13 真实链路首轮暴露并整改三类问题：历史 SQL NULL 经 pandas 变成 `NaT/NaN` 导致 FastAPI 序列化 500，现在仓库边界统一还原为 `None`并增加 JSON 回归；T12 夹具原四条历史占用当前交易日、cleanup 只识别固定 ID，现改为历史日并按专属 ID/正式名/草稿名/原因名前缀精确发现页面生成记录，明确不删除其他匿名草稿；Uvicorn 退出后 DuckDB 子进程短暂持锁，聚焦脚本仅对 cleanup 增加有界 10 次重试，本轮真实执行第 5 次成功并零残留。举一反三的其余全量 E2E 还发现数据概览点击早于远程布局水合、个股对比重试依赖真实指数日期及若干宽泛文本/加载态断言，已按真实页面生命周期修正长期用例。
 
@@ -490,6 +490,8 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 
   本次验证：工作台聚焦 Vitest `11 passed`，前端全量 `116 files / 884 tests`，`npm run build`（含 `vue-tsc`）通过；真实 PG/DuckDB 专项 Playwright `6 passed / 6 skipped`，三视口断言两块头部均不存在，并使用 `debug_tenant_admin` 从历史页真实进入系统管理，切换后交易纪律 API 请求数和错误提示数均为 0。专项前两轮失败分别来自新增用例只定位双层顶栏、以及临时改用具有个人升序偏好的账号破坏既有排序前置，均为测试假设错误；恢复原三视口账号、把系统导航拆为最小权限独立用例并兼容两种导航模式后最终通过。夹具每轮均精确清理并恢复 dev 后端健康。未重跑后端 pytest/Ruff、普通全量 Playwright、生产部署、生产 PG 备份或 RBAC 回滚演练：本轮没有修改后端、权限、SQL 或生产配置。
 
+  复审阻塞项修复验证（2026-08-24）：`dev-users` 新增可选的写前 PG 指纹守卫，交易纪律自动入口强制传入后端同一指纹；非法或不匹配时在 `init_pg_db()` 前拒绝。`backend_runtime_state.py` 统一维护不含明文密钥的运行档案，记录模式、Python 命令、环境文件/额外项目环境摘要、安全开关、PID 与 PG 指纹；聚焦脚本在停服前验证档案，退出时按档案恢复并复核 PG，未知状态 fail-closed。`start.sh stop` 同步修正为只对已验证的独立后端进程组执行 TERM、有界等待和必要时 KILL，避免 reload worker 残留 DuckDB 锁；快照前要求健康码 200。真实 Playwright 已用稳定导航 helper 覆盖 Vue Router 离开，并捕获取消真实 `beforeunload` 对话框验证刷新保留输入；非当前标签与容量淘汰仍明确由组件契约覆盖。后端环境/夹具聚焦 `34 passed`，运行档案单测 `3 passed`，前端应用协议聚焦 `8 files / 40 tests`，完整交易纪律 Playwright `6 passed / 6 skipped`，最终运行档案 round-trip 字段一致且未保存链路复跑 `1 passed`；`npm run build`、Ruff、`py_compile`、`bash -n`、`git diff --check` 均通过。每次物理写均精确清理，最终 dev 后端 `/api/health=200`；普通全量 Playwright、后端全量 pytest、生产部署、生产 PG 备份和 RBAC 回滚演练本次未执行，不能据此记为本轮已验证。
+
 ## 7. 数据库与 SQL 计划
 
 | 路径/类别 | 用途 | 执行时机 | 影响范围 | 回滚方式 |
@@ -500,7 +502,7 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 | `backend/services/trade_discipline_service.py` 内置原因常量 | 返回八个只读内置原因；不写 `sys_dict`，个人原因才进入业务表 | 后端部署即生效 | 所有授权用户的原因候选，不修改历史快照 | 随代码回滚；已由用户创建的个人原因和历史违规事实保留 |
 | `frontend/src/layout/pageRegistry.ts` + 既有 layout/user preference 表 | 页面密度、历史 pageSize 元数据与个人值 | 前端发布后，用户首次保存设置时写既有 PG 链路 | 当前用户当前 pageKey | 恢复默认删除/重置用户覆盖；不新增 SQL 列或 app_config |
 | `backend/devtools/e2e_trade_discipline.py` + `start.sh e2e-trade-discipline` | T12 确定性 PG/DuckDB seed/cleanup；两个动作均要求 `--expected-pg-fingerprint`；PG 使用 `e2e_td_`/`E2E纪律-` 与固定 owner，DuckDB 仅用 `9988*.SZ` 和专属日期 | 仅在聚焦 E2E 前后执行；要求 `AI_STOCKS_ENV=dev\|test\|local`、`AI_STOCKS_E2E_WRITE=1`、停服前健康端点指纹与进程直连 PG 指纹一致，且 seed/cleanup 时后端已停 | 本地/测试 PG 的固定调试账号私有数据与 DuckDB 专属代码/日期；不触碰生产和开发者真实数据 | EXIT trap 使用停服前保存的同一指纹，按 FK 逆序和专属归属/前缀精确删除，恢复测试前后端状态；无指纹不清理，任一残留使命令失败并报告 |
-| `frontend/e2e/helpers/tradeDiscipline.ts` + `scripts/run-trade-discipline-e2e.sh` + `frontend/package.json` | 调用 seed/cleanup、校验夹具引用并以 5181/单 worker 执行三视口 spec | T13 聚焦验收时；普通全量 E2E 排除此专属 spec | 测试进程、临时登录豁免和 `frontend/dist`（构建时） | trap 清理、移除运行时环境变量并恢复原后端；脚本失败保持非零退出 |
+| `frontend/e2e/helpers/tradeDiscipline.ts` + `scripts/run-trade-discipline-e2e.sh` + `frontend/package.json` | 调用 seed/cleanup、校验夹具引用并以 5181/单 worker 执行三视口 spec | T13 聚焦验收时；普通全量 E2E 排除此专属 spec | 测试进程、临时登录豁免和 `frontend/dist`（构建时） | trap 清理；原服务运行时只接受 PID、环境文件及额外项目环境摘要匹配的可信启动档案，并恢复原模式、Python 命令、安全开关及 PG 目标；脚本失败保持非零退出 |
 
 生产步骤先备份 PG 并核验未来 `trade_calendar` 可用，再在低流量窗口部署/重启。若应用代码回滚，保留新增业务表避免丢失已提交事实；必须先回滚前端 `dist`，再趁本版本 CLI/SQL 尚未随代码切换移除时执行专用 RBAC 回滚，核验 tombstone、删除计数和 `perm_ver`，最后回滚后端 API。后端回滚并重启后验证 seed 不会复活任何目标行；不得以“隐藏菜单”代替完整回滚。待数据保留期和导出策略另行确认前，不提供生产删表回滚。
 
@@ -508,13 +510,14 @@ P2 数据/API 与事件流：打开用户抽屉时调用 `GET /api/trade-discipl
 
 - 单元测试：规则名称归一化、金额定点、版本实质变化、原因匹配、操作规则候选与完整度；生命周期覆盖相同 `occurred_at`、长事务、并发发布/归档/恢复和事务回滚，断言无幽灵事件或计数器误推进，并严格按 `(effective_from_trade_date,event_seq)` 得到唯一结果。具体完成情况：T2 已覆盖规则生命周期及列表单查询双状态；T3 已覆盖四种打卡组合、金额/时间/规则关联、批量股票代码校验、原因归一化复用与删除快照、故障回滚、旧版本固定、快捷来源/冲突/并发幂等、历史筛选分页和跨 owner 隔离。T10 新增盘中/收盘后/周末/节假日参数化、长事务动作时钟及发布/归档/恢复在激活事件写入后的事务失败回滚，专项回归 58 个 pytest、后端全量 979 个 pytest 通过。
 - 接口测试：所有端点成功/422/403/404/409、分页筛选、快捷幂等、R31 限流边界。具体完成情况：T4 已覆盖全部 21 个端点的统一成功响应契约、OpenAPI 可见性、权限矩阵、401/403/404/409/422、非法日期范围、专用股票搜索空值/上限/独立权限、跨 owner 隐藏和审计脱敏；分页筛选与快捷并发幂等已有 T3 服务测试，T10 完成后后端接口验收自动化已闭环，T12-T13 继续覆盖真实 PG 页面端到端链路。
-- 页面/交互测试：三页签、主从区、全部命令、四种打卡、修订抽屉、全局快捷卡；未保存保护逐项覆盖路由、当前/非当前工作标签关闭、容量淘汰、注销、浏览器刷新以及页签/规则/日期切换，分别断言打卡二选、规则三选、保存失败不放行且标签/KeepAlive/输入均未先删除。具体完成情况：T5-T11 的视图、组件和应用协议测试已覆盖三页签、四态、规则三选、打卡二选、当前/非当前标签、容量淘汰、路由 permit、注销和 `beforeunload`；T8-T9 拦截式三视口用例覆盖历史修订和快捷卡完整交互。T13 新增的真实 PG/DuckDB 用例覆盖规则创建/保存失败/发布/归档/恢复、打卡/原因/修正/历史、快捷提交、权限和三视口，并以真实页面验证保存 500 不丢现场、当前标签关闭、注销及浏览器刷新阻断。
+- 页面/交互测试：三页签、主从区、全部命令、四种打卡、修订抽屉、全局快捷卡；未保存保护逐项覆盖路由、当前/非当前工作标签关闭、容量淘汰、注销、浏览器刷新以及页签/规则/日期切换，分别断言打卡二选、规则三选、保存失败不放行且标签/KeepAlive/输入均未先删除。具体完成情况：T5-T11 的视图、组件和应用协议测试已覆盖三页签、四态、规则三选、打卡二选、当前/非当前标签、容量淘汰、路由 permit、注销和 `beforeunload`；T8-T9 拦截式三视口用例覆盖历史修订和快捷卡完整交互。T13 的真实 PG/DuckDB 用例覆盖规则创建/保存失败/发布/归档/恢复、打卡/原因/修正/历史、快捷提交、权限和三视口，并以真实页面验证保存 500 不丢现场、Vue Router 离开、当前标签关闭、注销及浏览器原生刷新阻断；非当前标签与容量淘汰按可达性边界由 T11 组件契约覆盖，明确不记为浏览器已验证。
 - 组件资产闭环测试：验证通用组件真实导入/渲染、feature 组件事件契约、pageRegistry、密度/pageSize 保存读取消费与重置；断言 `workspaceTabs` 使用真实 `tabs` kind 且唯一 `growMain`，三个业务 panel 是实际消费者，`defaultActive` 未进入长期偏好，滚动由活动 panel 承接；确认没有新增未消费字段。具体完成情况：T5 已通过 pageRegistry、layout、component-config、table/button system 与页面实挂载测试；T8 将历史表格迁入 feature 组件后，页面组件树仍真实消费 `pageSize/border`、`AppDataTable` 和 `PageDrawer`，并更新机器契约递归核验实际组件树。T11 已补齐交易纪律专属 registry/通用组件静态契约、历史分页默认变化后的真实重载及恢复默认双重重置，未新增配置字段。
 - T11 阶段验证记录：交易纪律页面、规则编辑器、工作标签、pageRegistry 和 router/App 契约专项 5 个文件、68 项通过；前端全量 Vitest 116 个文件、879 项全部通过，`npm run build`（含 `vue-tsc`）和 `git diff --check` 通过。首轮专项 66/68，通过复核发现两项测试假设偏差：标准 registry 会自动补齐历史 `border` 与设置抽屉字段，保存失败的三选 Promise 会保持待决供原框重试；按真实契约修正后全部通过。第三方复审另将新增三选用例从 `.el-dialog__footer` 层级选择器改为稳定 `ElDialog` 组件 helper，最终未发现生产代码、权限、配置或 DESIGN 漂移。后端 pytest、Playwright、真实页面及真实 PG 写入未执行：本轮只修改前端测试，相关验收仍归 T12-T13。
-- T12 阶段验证记录：夹具、调试账号和环境入口聚焦 pytest 33/33，通过真实 PG 与磁盘/内存 DuckDB 覆盖指纹格式/不匹配、环境门控、4 种组合、同时间戳事件序、双状态、重复 seed/cleanup、零残留与故障回滚；后端全量 990/990、前端全量 116 个文件 879/879、`npm run build`（含 `vue-tsc`）、Ruff、`py_compile`、`bash -n` 和 `git diff --check` 通过。真实项目库分别从原后端运行/停止两种状态执行聚焦入口，均 seed 4 owner、16 打卡、24 事件、16 版本、21 行情；因 T13 spec 未创建按预期返回 No tests found 后，trap 均完成精确清理并恢复原状态，只读探针确认 PG 规则、专属股票和固定日期均为 0。另以正确 PG 指纹在后端持有 DuckDB 锁时直接执行 cleanup，`init_db` 在 PG 删除事务前因锁冲突非零拒绝。第三方自审补上 PG/DuckDB 删除后的事务内残留计数，并让聚焦入口显式覆盖继承的 `AI_STOCKS_DUCKDB_READ_ONLY=1`；带该变量再次真实演练仍以 read_only=false 完成 seed/cleanup 和服务恢复。完整 Playwright 成功路径、页面点击与三视口验收未执行，原因是 T13 尚未开发；不能据此认领 T5-T9 阶段验收通过。构建仅有既存第三方 PURE 注释与大 chunk 警告，后端全量仅有既存 FastAPI `on_event` 弃用警告。
+- T12 阶段验证记录：夹具、调试账号和环境入口聚焦 pytest 33/33，通过真实 PG 与磁盘/内存 DuckDB 覆盖指纹格式/不匹配、环境门控、4 种组合、同时间戳事件序、双状态、重复 seed/cleanup、零残留与故障回滚；后端全量 990/990、前端全量 116 个文件 879/879、`npm run build`（含 `vue-tsc`）、Ruff、`py_compile`、`bash -n` 和 `git diff --check` 通过。真实项目库分别从原后端运行/停止两种状态执行聚焦入口，均成功 seed 4 owner/16 打卡/24 事件/16 版本/21 行情；当时 T13 spec 尚未创建，Playwright 预期返回 No tests found，trap 仍完成精确清理并恢复原状态，只读探针确认 PG 规则、专属股票和固定日期均为 0。另以正确 PG 指纹在后端持有 DuckDB 锁时直接执行 cleanup，`init_db` 在 PG 删除事务前因锁冲突非零拒绝。第三方自审补上 PG/DuckDB 删除后的事务内残留计数，并让聚焦入口显式覆盖继承的 `AI_STOCKS_DUCKDB_READ_ONLY=1`；带该变量再次真实演练仍以 read_only=false 完成 seed/cleanup 和服务恢复。该段仅记录 T12 当时的阶段边界；完整 Playwright、页面点击和三视口验收现已由第 6.13 节关闭，不代表当前仍未完成。构建仅有既存第三方 PURE 注释与大 chunk 警告，后端全量仅有既存 FastAPI `on_event` 弃用警告。
 - 权限与数据范围测试：system/normal/tenant_admin/自定义最小权限/无角色；跨 owner/tenant；有 submit 无 stocks:view；按钮和接口一致。具体完成情况：T1 已验证默认授权、管理员撤销后重启不补回/不失败、seed 幂等、冲突原子回滚、marker 严格结构、tombstone 不复活及账本外授权拒绝回滚；T4 已验证全部 21 端点精确权限矩阵、自定义最小权限、未认证、无角色 fail-closed、摘要双权限、跨 owner 404 和 submit/stocks:view 独立边界；T5 已验证 system/tenant_admin/normal 的菜单门控解除、页面只读/无权限分支和按钮系统契约，T6-T7 已让规则命令与打卡新增/删除/提交/修正按钮消费各自精确权限，并验证无查看权限接管、无提交权限只读；T8 验证历史查看权限接管、无提交权限不渲染修正命令、旧修订不可编辑，股票筛选继续复用独立于 `stocks:view` 的 R31 端点；T9 在应用壳同时校验 view + checkin-view 才展示卡片，并让快捷命令独立消费 checkin-submit，无权/失败均不产生头像状态点。
 - 确定性夹具测试：覆盖必填指纹缺失/格式非法/不匹配、后端原本运行和未运行两种取值路径、停服前后 PG 目标变化及后端持锁拒绝；再执行两轮 `获取指纹→stop→seed→计数与引用核验→cleanup→零残留`，模拟取值前、取值后、seed 后和测试中断验证 trap 只在已有可信指纹时清理并恢复原服务状态。具体完成情况：T12 已以 33 项夹具聚焦测试与真实项目库两种原服务状态完成上述闭环；T13 进一步完成成功 Playwright 路径、页面生成 ID/草稿名/原因名精确清理、DuckDB 锁释放有界重试和零残留恢复，最终收紧后聚焦 pytest 25/25 通过。
 - 回归测试：按锁规则运行后端聚焦及全量 pytest；运行前端 Vitest、build、普通全量 Playwright（排除专属 spec），再执行 `AI_STOCKS_ENV=dev AI_STOCKS_E2E_WRITE=1 npm run test:e2e:trade-discipline`；测试前后核验服务状态。具体完成情况：2026-08-23 的 T1-T4 复审已完成后端全量 967/967 等验证，详见前次提交记录。T5 前端全量 Vitest 105 个文件、824 项通过，`npm run build` 通过，并完成登录/权限/设置验收。T6 前端全量 Vitest 107 个文件、832 项全部通过，`npm run build` 通过；构建仅有既有 PURE 注释与大 chunk 警告。使用固定本地账号 `debug_normal` 完成登录态真实页面验收：创建未发布规则，填写两条选股和两条买卖明细，验证停用项不计资金、上下排序、买卖方向联动、换行内容经保存和整页刷新原样恢复；明确三选中“继续编辑”不离开，“保存草稿”成功后才切换页签；最后通过页面删除未发布规则，确认列表回到 0 条，退出账号并复原视口。1440×900、1366×768、1100×620 的 document/main/panel 均无横向溢出，1100×620 主从区为上下结构且动作可达。后端未改动，未重复运行 pytest/Ruff；运行中的 dev 后端保持 PID 80325，`/api/health=200`。真实发布、归档、恢复会留下不可删除的正式业务数据，本轮未在固定调试账号下执行，前端命令通过组件 mock、既有 T2/T4 后端测试和接口契约复核验证；普通全量 Playwright、交易纪律专属 Playwright及 T12 可清理夹具仍按计划归 T12-T13，本轮未执行。
+- 2026-08-24 菜单初始化与审计补强：确认菜单不存在独立数据库文件，运行期事实源为 PostgreSQL `sys_menu`；通用 seed 使用 `ON CONFLICT (id) DO NOTHING`，交易纪律 applied marker 只校验稳定身份，不覆盖父级和排序。新增交易纪律菜单移动后复跑 seed 的防回归测试；菜单批量排序/移动改为按实际变化的菜单分别记录 `target_id`，并在 `changes` 保存 `parent_id`、`sort` 的 before/after。菜单与交易纪律专项 31 项、RBAC schema 与审计关联 38 项、格式与静态检查通过；格式修正后菜单专项复跑 22 项通过。测试前后端由 `start.sh` 停止并恢复，最终健康检查通过。该修复不改变表结构和初始化数据定义，不新增 SQL 文件；现有交易纪律实际父级因旧审计缺少明细无法自动恢复，须按管理员确认的位置在菜单页调整，之后启动不会覆盖。
 - T7 阶段验证记录：交易纪律组件/视图专项 7 个文件、23 项通过，覆盖四组合、首次提交/修正、旧修订操作 ID 不复用、装饰字段不外泄、二选未保存保护、无提交权限只读、候选唯一/多条、方向联动、股票搜索防抖及旧请求中止、自定义原因行内删除和摘要局部错误；前端全量 Vitest 111 个文件、845 项全部通过，`npm run build` 和 `git diff --check` 通过，构建仅有既有 PURE 注释与大 chunk 警告。使用固定本地账号 `debug_normal` 在专用 5181 端口完成真实登录，未登录直达正确回跳登录页，登录后今日打卡/规则管理/历史记录三页签及各自空态加载正常，控制台无错误；1440×900、1366×768、1100×620 的 document/main/panel 均无横向溢出，紧凑视口信息层级和操作入口可达。该账号当前没有生效规则；为避免在 T12 可清理夹具尚未实现时留下不可删除的正式规则和打卡事实，本阶段没有在浏览器执行真实表单提交、修正、原因新增删除或股票选择，相关行为由本次组件测试和既有 T3-T4 后端测试覆盖，明确标记为未做登录态真实数据验证。普通全量 Playwright、交易纪律专属 Playwright仍按计划归 T12-T13，本轮未执行；后端代码未改动，未重复运行 pytest/Ruff，运行中的 dev 后端保持 PID 80325，`/api/health=200`。
 - T8 阶段验证记录：历史/修订/T7 复用表单与工作台专项 4 个文件、18 项通过；前端全量 Vitest 113 个文件、852 项全部通过，`npm run build`、`vue-tsc` 和 `git diff --check` 通过，构建仅有既有 PURE 注释与大 chunk 警告。新增长期 Playwright 使用真实 `debug_normal` 登录、页面级确定性只读/拦截夹具且不写 PG，在 1100×620、1366×768、1440×900 三视口 3/3 通过，完整覆盖服务端筛选参数、修订详情、旧修订只读、发起修正、提交后返回历史、筛选保留和新修订号。另用固定账号在专用 5181 端口读取真实后端空历史数据，验证筛选/重置、四列响应式布局、空态和控制台；实测 1280×720 的 document/history workspace 均无横向溢出且控制台无 warning/error。真实账号当前无打卡数据，且 T12 可清理业务夹具尚未实现，因此本阶段未对真实 PG 执行打卡修正，也未独立复核带真实数据的详情快照；相关前端点击链路由页面级确定性 Playwright 覆盖，后端修订行为由 T3-T4 测试事实支撑。普通全量 Playwright、T12 专用夹具、后端 pytest/Ruff 本阶段未执行：前两项仍归 T12-T13，后两项因本阶段未改后端。后端保持 PID 80325，`/api/health=200`。
 - T9 阶段验证记录：快捷卡、工作台参数恢复与设计契约专项 4 个文件、24 项通过；前端全量 Vitest 114 个文件、856 项全部通过，`npm run build`、`vue-tsc`、`git diff --check` 通过，构建仅有既有 PURE 注释与大 chunk 警告。首轮全量曾真实发现并整改新卡片的原生命令按钮、游离 gap 和宽泛微字号选择器三项设计契约违规；第三方复审又补充去除快捷成功的重复摘要请求，并为“同页查询参数切换被未保存保护拒绝”增加 URL 回滚和回归测试，整改后专项及全量复跑通过。新增长期 Playwright 使用真实 `debug_normal` 登录、页面级确定性拦截夹具且不写 PG，在 1100×620、1366×768、1440×900 三视口 3/3 通过，覆盖任意业务页头像待办点、用户抽屉、二次确认、快捷专用入参、摘要刷新、正式页 URL 及规则/日期恢复。另用该固定账号在专用 5181 端口读取真实后端：普通业务页可打开用户中心，真实最新日为 2026-08-21，账号当前无生效规则，卡片正确显示创建引导、身份卡与退出按钮顺序不变；可视复核修正空态孤行后无横向挤压，控制台无 warning/error。因 T12 可清理业务夹具尚未实现，未在真实 PG 创建正式规则或执行快捷打卡，避免留下不可删除事实；带待办规则的完整点击由真实账号登录 + 页面级确定性 Playwright 覆盖，后端快捷幂等/冲突仍由 T3-T4 测试事实支撑。普通全量 Playwright、T12 专用夹具、后端 pytest/Ruff 本阶段未执行：前两项归 T12-T13，后两项因本阶段未改后端。后端保持 PID 80325，`/api/health=200`。

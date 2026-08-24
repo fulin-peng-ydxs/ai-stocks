@@ -19,8 +19,15 @@ fi
 
 status_before="$(./start.sh status 2>&1 || true)"
 was_running=0
+runtime_snapshot=""
 if [[ "$status_before" == *"运行中"* ]]; then
   was_running=1
+  runtime_snapshot="$(mktemp "${TMPDIR:-/tmp}/ai-stocks-backend-runtime.XXXXXX")"
+  rm -f "$runtime_snapshot"
+  if ! "$PROJECT_ROOT/start.sh" snapshot-runtime "$runtime_snapshot"; then
+    echo "现有后端缺少可信运行档案；请先用 ./start.sh restart 受控重启后再执行 E2E" >&2
+    exit 1
+  fi
 fi
 pg_fingerprint=""
 
@@ -29,15 +36,6 @@ start_e2e_backend() {
     AI_STOCKS_ENV="$AI_STOCKS_ENV" \
     AI_STOCKS_E2E_WRITE=1 \
     AI_STOCKS_E2E_LOGIN_BYPASS=1 \
-    AI_STOCKS_DUCKDB_READ_ONLY=0 \
-    "$PROJECT_ROOT/start.sh"
-}
-
-start_normal_backend() {
-  AI_STOCKS_ENV_FILE=/dev/null \
-    AI_STOCKS_ENV="$AI_STOCKS_ENV" \
-    AI_STOCKS_E2E_WRITE=0 \
-    AI_STOCKS_E2E_LOGIN_BYPASS=0 \
     AI_STOCKS_DUCKDB_READ_ONLY=0 \
     "$PROJECT_ROOT/start.sh"
 }
@@ -106,7 +104,10 @@ restore_and_cleanup() {
     echo "尚未取得可信 PostgreSQL 指纹，按 fail-closed 规则跳过物理清理" >&2
   fi
   if [[ "$was_running" == "1" ]]; then
-    start_normal_backend || restore_exit=$?
+    "$PROJECT_ROOT/start.sh" restore-runtime "$runtime_snapshot" || restore_exit=$?
+  fi
+  if [[ -n "$runtime_snapshot" ]]; then
+    rm -f "$runtime_snapshot"
   fi
   if [[ "$original_exit" != "0" ]]; then
     exit "$original_exit"
@@ -134,7 +135,8 @@ fi
 
 # 账号校准与被测后端使用同一份已加载环境；密码仍由既有 dev-users 规则管理。
 AI_STOCKS_ENV_FILE=/dev/null AI_STOCKS_ENV="$AI_STOCKS_ENV" \
-  "$PROJECT_ROOT/start.sh" dev-users --keep-password >/dev/null
+  "$PROJECT_ROOT/start.sh" dev-users --keep-password \
+    --expected-pg-fingerprint "$pg_fingerprint" >/dev/null
 
 "$PROJECT_ROOT/start.sh" stop
 cleanup_fixture_with_retry

@@ -65,15 +65,23 @@ def create_menu(body: MenuCreate) -> ApiResponse:
 
 @router.post("/menus/reorder", response_model=ApiResponse)
 def reorder_menus(body: ReorderBody) -> ApiResponse:
-    tree = MenuAdminService().reorder(body.items)
-    record_rbac_action(
-        action="menu_reorder",
-        target_type="sys_menu",
-        target_id="reorder",
-        target_label="菜单排序",
-        resource_code="menu:reorder",
-        affected_count=len(body.items),
-    )
+    tree, changed_items = MenuAdminService().reorder_with_changes(body.items)
+    # 批量请求按菜单分别留痕，才能通过 target_id 还原具体节点的父级和排序变化。
+    for item in changed_items:
+        before = item["before"]
+        after = item["after"]
+        record_rbac_action(
+            action="menu_reorder",
+            target_type="sys_menu",
+            target_id=before["id"],
+            target_label=before["title"],
+            resource_code="menu:reorder",
+            changes=AuditService.build_changes(
+                before,
+                after,
+                fields=("parent_id", "sort"),
+            ),
+        )
     return ok(tree, msg="排序已保存")
 
 

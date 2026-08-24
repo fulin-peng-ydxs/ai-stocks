@@ -216,7 +216,7 @@
 
 ### 5.5 R10、R11、R28、R31：参考数据、权限与归属
 
-- 新页面固定路由 `/trade-discipline`，作为独立一级业务菜单“交易纪律”，不放入系统配置。
+- 新页面固定路由 `/trade-discipline`，新库默认创建为独立一级业务菜单“交易纪律”，不放入系统配置；`sys_menu` 是运行期菜单结构事实源，管理员可调整其父级和排序，应用重启与测试启动不得覆盖已有节点的位置。
 - 功能码固定区分：`trade-discipline:view`（页面与摘要）、`trade-discipline:rule-manage`（规则维护）、`trade-discipline:checkin-view`（履约和历史读取）、`trade-discipline:checkin-submit`（提交与修正）。系统角色恒过；普通用户和租户管理员首次迁移默认授予全部四项，之后管理员可按角色维护且应用重启不得补回或因撤销而失败；无角色 fail-closed。
 - 后端所有业务端点挂精确资源码并通过现有无守卫路由扫描测试。
 - 菜单 seed、资源 seed、默认角色授权、存量角色补授权和 `perm_ver` 自增必须形成同一迁移闭环。
