@@ -744,7 +744,7 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
   gap: var(--app-space-3);
   margin-bottom: var(--app-space-4);
   padding: var(--app-space-3);
-  border: 1px solid var(--el-color-primary);
+  border-left: 3px solid var(--el-color-primary);
   background: transparent;
   color: var(--el-text-color-secondary);
 }

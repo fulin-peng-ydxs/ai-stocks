@@ -359,8 +359,7 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
 .permission-note {
   margin-top: var(--app-space-3);
   padding: var(--app-space-2) var(--app-space-3);
-  border: 1px solid var(--el-color-primary);
-  border-radius: 6px;
+  border-left: 3px solid var(--el-color-primary);
   background: transparent;
   color: var(--el-text-color-secondary);
 }
