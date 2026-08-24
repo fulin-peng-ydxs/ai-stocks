@@ -99,7 +99,7 @@ class MenuAdminService:
         return self.menus.get(menu_id)  # type: ignore[return-value]
 
     # ── 删除 ──
-    def delete_menu(self, menu_id: str) -> None:
+    def delete_menu(self, menu_id: str) -> dict:
         cur = self._load(menu_id)
         if cur["is_builtin"]:
             raise ForbiddenError("内置菜单不可删除")
@@ -116,6 +116,7 @@ class MenuAdminService:
             perm_resolver.bump_perm_ver(affected, conn)
         perm_resolver.clear_perms_cache(affected)
         log.info("菜单管理：删除菜单 %s(%s)，%d 个用户失效", menu_id, cur["code"], len(affected))
+        return cur
 
     # ── 排序 / 移动 ──
     def reorder(self, items: list[dict]) -> list[dict]:

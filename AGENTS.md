@@ -29,6 +29,7 @@
 - 资产隔离：用户私有 PG 表必须带 `tenant_id + owner_user_id`；复合主键、`ON CONFLICT`、JOIN/子查询、UPDATE/DELETE/`max(seq)` 都必须带归属条件。归属取请求上下文，禁止信任前端传入。
 - 鉴权边界：`AuthMiddleware` 默认 deny；白名单仅健康检查和认证接口。新增业务端点必须同步 `require_perm`/`require_system_perm`、`sys_resource` seed、SQL 留痕和路由扫描测试。
 - 新页面接入：新增前端页面、系统页或可导航业务功能时，必须同步路由、菜单 seed、功能点 seed、后端守卫、按钮 `v-permission`、默认角色授权决策和租户归属；流程见 `agent-works/architecture/system-rbac-tenant.md`。
+- 菜单初始化：`sys_menu` / `sys_resource` 是运行时事实源；启动 seed、普通升级 SQL 和测试只允许补缺失行，禁止默认覆盖或删除现有父级、标题、类型、路由、图标、排序、可见性及功能点配置。确需覆盖时必须由系统管理员通过管理页面/API 显式操作并留 before/after 审计，或使用带独立 marker、确认口令和事务的专项迁移。
 - RBAC 口径：JWT 不携带角色/权限，权限以 PG 的用户/租户状态与 `perm_ver` 为准；授权变更与 `perm_ver` 自增必须同一 PG 事务提交。`layout:view`、`trade-calendar:view`、`indicator:registry` 是登录基线共享读，有角色的非 system 用户强制注入，无角色 fail-closed。
 - 资产可见性：评分、筛选、买卖方案和回测记录支持 `private|tenant|public`；前端透传 opaque `profile_ref`/`run_ref`，榜单、筛选、回测和评分服务必须解析真实 owner；非 owner 公开资产只读，方案类资产可复制为自己的 private，公开回测只允许复用参数重跑。
 - 长任务：采集、修复、重算等写库任务走 `async_task`；DuckDB 写任务同一时间只允许一个，PG 资产写不受该互斥限制。
@@ -73,6 +74,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 - `debug_*` 调试账号密码来源和生产禁用规则见 `agent-works/architecture/environment-configuration.md` 与 `agent-works/multi-tenant-rbac/test-users.md`；本地默认密码只允许用于开发测试，生产、共享公网或不确定环境禁止创建或使用这批账号。
 - 页面和接口测试按场景选择最小权限账号验证，不要默认用系统管理员账号覆盖权限态、空权限态或 fail-closed 场景。
 - pytest 继续使用用例内临时用户，不依赖固定调试账号。
+- 涉及平台级菜单、功能点、角色授权或 `app_config` 的 pytest 必须使用随机临时身份并精确清理，禁止删除、重建或改写真实内置菜单/功能点；无法命名空间隔离时必须使用独立测试库，不得用写死默认值“恢复”共享开发库。
 
 ## 端口与构建
 
@@ -107,7 +109,7 @@ CLI 入口是 `backend/cli.py`，FastAPI 装配在 `backend/main.py`。
 
 - 除命令、代码、日志和原文外，面向用户输出使用简体中文。
 - 改代码前先读同类实现并优先复用；偏离既有分层、命名、返回结构、异常、日志或配置方式时说明理由。
-- 最近一次 `git pull` 操作时间：2026-08-23 17:56:44 CST。
+- 最近一次 `git pull` 操作时间：2026-08-24 11:51:00 CST。
 - 技术方案、交互设计或关键业务规则不确定时，先给推荐方案与理由让用户确认。
 - 不在用户未要求时提交或推送；提交信息使用中文语义化风格，例如 `Agent 新增(基础功能): ...`。
 - 不提交 `data/` 本地数据库、`logs/`、个人环境配置或密钥。`prod` 绑定 `0.0.0.0:8000`，公网部署必须配合反向代理、TLS、限流和运维访问控制。

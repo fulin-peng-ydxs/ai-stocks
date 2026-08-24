@@ -10,7 +10,10 @@
 from __future__ import annotations
 
 import json
+import re
 from contextlib import contextmanager
+from pathlib import Path
+from uuid import uuid4
 
 from backend.auth.constants import (
     ASSET_PUBLIC_PUBLISH_RESOURCE_CODES,
@@ -19,6 +22,7 @@ from backend.auth.constants import (
     ROLE_SYSTEM,
     ROLE_TENANT_ADMIN,
 )
+from backend.storage import pg_ddl
 from backend.storage.pg_ddl import (
     _ASSET_PUBLISH_OPEN_LOCK,
     _ASSET_PUBLISH_OPEN_MARKER,
@@ -26,18 +30,22 @@ from backend.storage.pg_ddl import (
     _PUBLISH_STATE_INVALID,
     _PUBLISH_STATE_MISSING,
     _PUBLISH_STATE_ROLLED_BACK,
-    _STAGE4_BUSINESS_GRANTS_MARKER,
-    _STAGE6_ASSET_VISIBILITY_MARKER,
     _SECTOR_MENU_GRANTS_MARKER,
     _SEED_MENU_TREE,
     _SEED_RESOURCES,
+    _STAGE4_BUSINESS_GRANTS_MARKER,
+    _STAGE6_ASSET_VISIBILITY_MARKER,
     _USER_RESOURCE_CODES,
     _backfill_asset_publish_open_v1,
     _flatten_menu_tree,
     _publish_policy_state_cur,
     _publish_suppressed,
+    _record_config_split_legacy_menu_state,
     _remove_legacy_paid_role,
+    _seed_menu_rows,
+    _seed_resource_rows,
     _seed_role_grants,
+    init_pg_db,
     rollback_asset_publish_open_v1,
     seed_rbac,
     seed_stage6_asset_visibility,
@@ -214,90 +222,192 @@ def test_menu_tree_parent_linkage_and_type(pg):
 
 
 def test_seed_rbac_does_not_overwrite_db_menu_customization(pg):
-    parent_id = "pytest_menu_parent"
-    original = pg.query_df(
-        "SELECT parent_id, title, icon, sort, visible FROM sys_menu WHERE id=%s", ["/screen"]
-    ).iloc[0].to_dict()
+    menu_id = f"pytest_menu_{uuid4().hex[:10]}"
     try:
         pg.execute(
             "INSERT INTO sys_menu "
             "(id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
-            "VALUES (%s, NULL, %s, %s, 'group', NULL, %s, 999, 'login', FALSE) "
-            "ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title",
-            [parent_id, parent_id, "测试菜单分组", "Menu"],
+            "VALUES (%s, NULL, %s, %s, 'group', NULL, NULL, 777, 'system', FALSE)",
+            [menu_id, menu_id, "运行期菜单"],
         )
-        pg.execute(
-            "UPDATE sys_menu SET parent_id=%s, title=%s, icon=NULL, sort=%s, visible=%s "
-            "WHERE id=%s",
-            [parent_id, "运行期筛选", 777, "login", "/screen"],
-        )
-        seed_rbac(pg)
+        _seed_menu_rows(pg, [{
+            "code": menu_id,
+            "parent_code": None,
+            "title": "代码默认菜单",
+            "type": "leaf",
+            "route_path": "/code-default-menu",
+            "icon": "Menu",
+            "sort": 10,
+            "visible": "login",
+        }])
         row = pg.query_df(
-            "SELECT parent_id, title, icon, sort, visible FROM sys_menu WHERE id=%s", ["/screen"]
+            "SELECT parent_id,title,type,route_path,icon,sort,visible,is_builtin "
+            "FROM sys_menu WHERE id=%s",
+            [menu_id],
         ).iloc[0]
-        assert row["parent_id"] == parent_id
-        assert row["title"] == "运行期筛选"
+        assert row["parent_id"] is None
+        assert row["title"] == "运行期菜单"
+        assert row["type"] == "group"
+        assert row["route_path"] is None
         assert row["icon"] is None
         assert int(row["sort"]) == 777
-        assert row["visible"] == "login"
+        assert row["visible"] == "system"
+        assert not bool(row["is_builtin"])
     finally:
-        pg.execute(
-            "UPDATE sys_menu SET parent_id=%s, title=%s, icon=%s, sort=%s, visible=%s "
-            "WHERE id=%s",
-            [
-                original["parent_id"], original["title"], original["icon"], int(original["sort"]),
-                original["visible"], "/screen",
-            ],
-        )
-        pg.execute("DELETE FROM sys_menu WHERE id=%s", [parent_id])
+        pg.execute("DELETE FROM sys_menu WHERE id=%s", [menu_id])
 
 
 def test_seed_rbac_does_not_overwrite_db_resource_customization(pg):
-    resource_id = "score-profile:view"
-    menu_id = "pytest_resource_parent"
-    original = pg.query_df(
-        "SELECT menu_id, name, type, api_method, api_path, sort "
-        "FROM sys_resource WHERE id=%s",
-        [resource_id],
-    ).iloc[0].to_dict()
+    suffix = uuid4().hex[:10]
+    resource_id = f"pytest_resource_{suffix}"
+    menu_id = f"pytest_resource_menu_{suffix}"
     try:
         pg.execute(
             "INSERT INTO sys_menu "
             "(id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
-            "VALUES (%s, NULL, %s, %s, 'leaf', %s, NULL, 999, 'login', FALSE) "
-            "ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title",
+            "VALUES (%s, NULL, %s, %s, 'leaf', %s, NULL, 999, 'login', FALSE)",
             [menu_id, menu_id, "测试功能点菜单", "/pytest-resource-parent"],
         )
         pg.execute(
-            "UPDATE sys_resource SET menu_id=%s, name=%s, type=%s, api_method=%s, "
-            "api_path=%s, sort=%s WHERE id=%s",
+            "INSERT INTO sys_resource "
+            "(id,menu_id,code,name,type,api_method,api_path,sort,is_builtin) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,FALSE)",
             [
-                menu_id, "运行期评分查看", "button", "POST", "/api/custom-score-view", 777,
-                resource_id,
+                resource_id, menu_id, resource_id, "运行期功能点", "button", "POST",
+                "/api/runtime-resource", 777,
             ],
         )
-        seed_rbac(pg)
+        _seed_resource_rows(pg, ((
+            menu_id, resource_id, "代码默认功能点", "api", "GET", "/api/code-default",
+        ),))
         row = pg.query_df(
-            "SELECT menu_id, name, type, api_method, api_path, sort "
+            "SELECT menu_id,name,type,api_method,api_path,sort,is_builtin "
             "FROM sys_resource WHERE id=%s",
             [resource_id],
         ).iloc[0]
         assert row["menu_id"] == menu_id
-        assert row["name"] == "运行期评分查看"
+        assert row["name"] == "运行期功能点"
         assert row["type"] == "button"
         assert row["api_method"] == "POST"
-        assert row["api_path"] == "/api/custom-score-view"
+        assert row["api_path"] == "/api/runtime-resource"
         assert int(row["sort"]) == 777
+        assert not bool(row["is_builtin"])
     finally:
-        pg.execute(
-            "UPDATE sys_resource SET menu_id=%s, name=%s, type=%s, api_method=%s, "
-            "api_path=%s, sort=%s WHERE id=%s",
-            [
-                original["menu_id"], original["name"], original["type"],
-                original["api_method"], original["api_path"], int(original["sort"]), resource_id,
-            ],
-        )
+        pg.execute("DELETE FROM sys_resource WHERE id=%s", [resource_id])
         pg.execute("DELETE FROM sys_menu WHERE id=%s", [menu_id])
+
+
+def test_startup_init_preserves_every_existing_menu_and_resource_row(pg):
+    menu_sql = (
+        "SELECT id,parent_id,code,title,type,route_path,icon,sort,visible,is_builtin "
+        "FROM sys_menu ORDER BY id"
+    )
+    resource_sql = (
+        "SELECT id,menu_id,code,name,type,api_method,api_path,sort,is_builtin "
+        "FROM sys_resource ORDER BY id"
+    )
+    before_menus = pg.query_df(menu_sql).to_dict("records")
+    before_resources = pg.query_df(resource_sql).to_dict("records")
+
+    init_pg_db(pg)
+
+    assert pg.query_df(menu_sql).to_dict("records") == before_menus
+    assert pg.query_df(resource_sql).to_dict("records") == before_resources
+
+
+def test_config_split_startup_only_records_legacy_menu_without_overwrite(pg, monkeypatch):
+    suffix = uuid4().hex[:10]
+    legacy_id = f"pytest_legacy_score_{suffix}"
+    marker_key = f"pytest.config_split_marker_{suffix}"
+    original_config = pg.query_df(
+        "SELECT parent_id,title,type,route_path,icon,sort,visible,is_builtin "
+        "FROM sys_menu WHERE id=%s",
+        ["/system/config"],
+    ).iloc[0].to_dict()
+    try:
+        pg.execute(
+            "INSERT INTO sys_menu "
+            "(id,parent_id,code,title,type,route_path,icon,sort,visible,is_builtin) "
+            "VALUES (%s,NULL,%s,'运行期旧入口','leaf',%s,NULL,888,'login',FALSE)",
+            [legacy_id, legacy_id, f"/{legacy_id}"],
+        )
+        pg.execute(
+            "INSERT INTO sys_role_menu (role_id,menu_id) VALUES (%s,%s)",
+            ["normal", legacy_id],
+        )
+        monkeypatch.setattr(pg_ddl, "_LEGACY_SCORE_PROFILES_MENU_ID", legacy_id)
+        monkeypatch.setattr(pg_ddl, "_CONFIG_SPLIT_MENU_DISCOVERY_MARKER", marker_key)
+        monkeypatch.setattr(
+            pg_ddl,
+            "_CONFIG_SPLIT_MENU_DISCOVERY_LOCK",
+            8600000000 + int(suffix[:6], 16),
+        )
+
+        _record_config_split_legacy_menu_state(pg)
+        _record_config_split_legacy_menu_state(pg)
+
+        assert not pg.query_df("SELECT 1 FROM sys_menu WHERE id=%s", [legacy_id]).empty
+        assert not pg.query_df(
+            "SELECT 1 FROM sys_role_menu WHERE role_id=%s AND menu_id=%s",
+            ["normal", legacy_id],
+        ).empty
+        config = pg.query_df(
+            "SELECT parent_id,title,type,route_path,icon,sort,visible,is_builtin "
+            "FROM sys_menu WHERE id=%s",
+            ["/system/config"],
+        ).iloc[0].to_dict()
+        assert config == original_config
+        marker = json.loads(pg.query_df(
+            "SELECT value FROM app_config WHERE key=%s",
+            [marker_key],
+        ).iloc[0]["value"])
+        assert marker == {
+            "version": 1,
+            "recorded": True,
+            "menu_overwrite": False,
+            "legacy_detected_at_recording": True,
+        }
+    finally:
+        pg.execute("DELETE FROM app_config WHERE key=%s", [marker_key])
+        pg.execute("DELETE FROM sys_role_menu WHERE menu_id=%s", [legacy_id])
+        pg.execute("DELETE FROM sys_menu WHERE id=%s", [legacy_id])
+
+
+def test_manual_menu_resource_sql_requires_explicit_gate_for_existing_row_overwrite():
+    root = Path(__file__).resolve().parents[2]
+    sql_paths = tuple((root / "agent-works").rglob("*.sql"))
+    for path in sql_paths:
+        sql = path.read_text(encoding="utf-8")
+        explicit_gate = "AI_STOCKS_MENU_OVERWRITE: EXPLICIT_CONFIRMATION_REQUIRED" in sql
+        uncommented = "\n".join(line.split("--", 1)[0] for line in sql.splitlines())
+        overwrite_found = False
+        for statement in uncommented.split(";"):
+            normalized = " ".join(statement.split()).lower()
+            if not any(table in normalized for table in ("sys_menu", "sys_resource")):
+                continue
+            overwrite_found = bool(
+                overwrite_found
+                or re.search(r"\bupdate\s+sys_(?:menu|resource)\b", normalized)
+                or re.search(r"\bdelete\s+from\s+sys_(?:menu|resource)\b", normalized)
+            )
+            if re.search(r"\binsert\s+into\s+sys_(?:menu|resource)\b", normalized):
+                overwrite_found = bool(overwrite_found or re.search(
+                    r"on\s+conflict\s*\(\s*id\s*\)\s+do\s+update",
+                    normalized,
+                ))
+        if overwrite_found:
+            assert explicit_gate, path
+            assert "current_setting('ai_stocks.confirm_menu_overwrite', true)" in uncommented, path
+            assert "BEGIN;" in sql and "COMMIT;" in sql, path
+            assert "app_config" in uncommented, path
+
+    for relative in (
+        "agent-works/multi-tenant-rbac/stage4-public-profile-visibility/resource-codes.sql",
+        "agent-works/multi-tenant-rbac/stage5-platform-capabilities/resource-codes.sql",
+    ):
+        sql = (root / relative).read_text(encoding="utf-8")
+        assert sql.count("ON CONFLICT (id) DO NOTHING") >= 2
+        assert "BEGIN;" in sql and "COMMIT;" in sql
 
 
 def test_seed_resource_codes_are_unique():
@@ -348,7 +458,7 @@ def test_tenant_admin_grants_scope(pg):
         [ROLE_TENANT_ADMIN])["resource_id"])
     assert set(_USER_RESOURCE_CODES) <= resources
     assert "audit:view" not in resources
-    assert not any(c.startswith("role:") or c.startswith("tenant:") for c in resources)
+    assert not any(c.startswith(("role:", "tenant:")) for c in resources)
 
 
 def test_normal_role_business_only(pg):
@@ -374,8 +484,7 @@ def test_normal_role_business_only(pg):
     assert "score-profile:publish-public" in resources
     assert set(ASSET_TENANT_PUBLISH_RESOURCE_CODES) <= resources
     assert set(ASSET_PUBLIC_PUBLISH_RESOURCE_CODES) <= resources
-    assert not any(c.startswith("user:") or c.startswith("role:") or c.startswith("tenant:")
-                   for c in resources)
+    assert not any(c.startswith(("user:", "role:", "tenant:")) for c in resources)
 
 
 def test_tenant_admin_has_all_publish_by_default(pg):
@@ -610,7 +719,6 @@ def test_sector_menu_grants_backfilled_for_normal(pg):
 
 def test_sector_menu_grants_idempotent(pg):
     """marker 已存在时迁移 no-op：不增行、不 bump。"""
-    marker_key = _SECTOR_MENU_GRANTS_MARKER
     before = set(pg.query_df(
         "SELECT menu_id FROM sys_role_menu WHERE role_id=%s", [ROLE_NORMAL])["menu_id"])
     perm_snapshot = _snapshot_perm_versions(pg)

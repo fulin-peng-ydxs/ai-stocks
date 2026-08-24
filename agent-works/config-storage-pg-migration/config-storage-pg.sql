@@ -3,6 +3,9 @@
 -- 执行时机：后端服务停止后、正式执行 migrate-config-storage 前；也可由 init_pg_db() 幂等建表覆盖。
 -- 影响范围：新增 PG 表、资源码 seed 和 baseline 授权清理；不修改 DuckDB 行情/分析表。
 -- 回滚方式：首版回滚代码时保留新增 PG 表；如必须清理，可 DROP 新表并恢复 role_resource 显式授权，但会丢失迁移后产生的用户偏好。
+-- sys_resource 是运行期事实源：本普通迁移只补缺失行，不覆盖管理员已维护的功能点配置。
+
+BEGIN;
 
 -- 布局预设表：存平台级布局预设。config 保存 JSON 文本，schema_version 用于后续结构演进。
 CREATE TABLE IF NOT EXISTS layout_preset (
@@ -54,33 +57,17 @@ INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, s
 SELECT 'layout:user-config', '/board', 'layout:user-config', '保存个人页面偏好（基线）',
        'api', 'POST', '/api/layout/users/{page_key}', 805, TRUE, now()
 WHERE EXISTS (SELECT 1 FROM sys_menu WHERE id = '/board')
-ON CONFLICT (id) DO UPDATE SET
-    menu_id = EXCLUDED.menu_id,
-    code = EXCLUDED.code,
-    name = EXCLUDED.name,
-    type = EXCLUDED.type,
-    api_method = EXCLUDED.api_method,
-    api_path = EXCLUDED.api_path,
-    sort = EXCLUDED.sort,
-    is_builtin = TRUE,
-    updated_at = now();
+ON CONFLICT (id) DO NOTHING;
 
 -- 资源 seed：user-preference:manage 是当前用户非布局偏好写入能力，挂 login 可见菜单锚点。
 INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin, created_at)
 SELECT 'user-preference:manage', '/board', 'user-preference:manage', '保存个人通用偏好（基线）',
        'api', 'POST', '/api/user-preferences', 806, TRUE, now()
 WHERE EXISTS (SELECT 1 FROM sys_menu WHERE id = '/board')
-ON CONFLICT (id) DO UPDATE SET
-    menu_id = EXCLUDED.menu_id,
-    code = EXCLUDED.code,
-    name = EXCLUDED.name,
-    type = EXCLUDED.type,
-    api_method = EXCLUDED.api_method,
-    api_path = EXCLUDED.api_path,
-    sort = EXCLUDED.sort,
-    is_builtin = TRUE,
-    updated_at = now();
+ON CONFLICT (id) DO NOTHING;
 
 -- baseline 不落 role_resource；清理存量 layout:user-config 显式授权，避免角色页误以为它可反选。
 DELETE FROM sys_role_resource
 WHERE resource_id IN ('layout:user-config', 'user-preference:manage');
+
+COMMIT;

@@ -125,6 +125,12 @@ flowchart LR
 
 菜单是导航树，功能点是接口或按钮授权码。菜单控制“能进入哪里”，功能点控制“能执行什么”。系统菜单和功能点属于平台级全局配置，不能按租户各自维护，避免同一路由在不同租户出现不同安全语义。
 
+`sys_menu` 和 `sys_resource` 同时是运行时事实源。代码内 `_SEED_MENU_TREE` / `_SEED_RESOURCES` 只定义“缺失时采用什么默认值”，不持续同步数据库：启动、普通升级 SQL 和测试均使用 `INSERT ... ON CONFLICT DO NOTHING`，已有行的父级、标题、类型、路由、图标、排序、可见性、功能点绑定和 API 元数据全部保留。代码默认值调整不会自动改动存量库。
+
+覆盖能力保留在显式管理链路：系统管理员通过菜单与功能点页面/API 修改，服务层负责唯一性、防成环、权限版本失效和 before/after 审计。确有不可由管理页面完成的结构迁移时，必须使用独立版本 marker、事务级 advisory lock、精确旧身份校验、确认口令和变更审计；不得把 `UPDATE/DELETE sys_menu/sys_resource` 或 `ON CONFLICT ... DO UPDATE` 放进每次启动或可重复执行的普通 seed。特殊 SQL 菜单/功能点覆盖迁移还必须同时具备事务、`app_config` 迁移标记、人工显式开关 `ai_stocks.confirm_menu_overwrite` 和 `AI_STOCKS_MENU_OVERWRITE: EXPLICIT_CONFIRMATION_REQUIRED` 标识，否则 SQL 静态扫描测试必须拒绝。检测到旧菜单但不能无歧义迁移时只记录/告警，保留现状并交由管理员处理。
+
+测试不得把真实内置菜单当夹具。状态机测试使用随机菜单、功能点和 marker 命名空间；其他平台级写测试也应使用临时身份并精确清理。若无法隔离，必须改用独立测试数据库，禁止在共享开发库中先删除真实配置、测试后再按代码默认值重建。
+
 ### 4. 租户管理
 
 租户是用户资产隔离的顶层单元。停用租户后，该租户用户不能继续登录或刷新会话，已有 token 也会在下一次鉴权时被拒绝。默认租户承载初始化管理员和平台预设资产，不应随意删除。
@@ -231,8 +237,8 @@ flowchart LR
 | 环节 | 怎么维护 | 是否自动 |
 |------|----------|----------|
 | 前端路由 | 在 `frontend/src/router/index.ts` 增加静态路由，页面组件按 `DESIGN.md` 和 `page-template.md` 完成页面登记与布局验收 | 不自动 |
-| 菜单节点 | 内置页面在 `backend/storage/pg_ddl.py` 的 `_SEED_MENU_TREE` 登记；运行期自定义菜单可在「系统管理 → 菜单与功能」维护 | seed 后自动入库 |
-| 功能点 | 内置 API / 按钮权限在 `_SEED_RESOURCES` 登记，资源码全局唯一并绑定菜单 | seed 后自动入库 |
+| 菜单节点 | 内置页面在 `backend/storage/pg_ddl.py` 的 `_SEED_MENU_TREE` 登记；运行期自定义菜单可在「系统管理 → 菜单与功能」维护 | 仅缺失时由 seed 插入，存量配置不覆盖 |
+| 功能点 | 内置 API / 按钮权限在 `_SEED_RESOURCES` 登记，资源码全局唯一并绑定菜单 | 仅缺失时由 seed 插入，存量配置不覆盖 |
 | 接口守卫 | 业务功能挂 `require_perm("xxx:action")`，系统功能挂 `require_system_perm("xxx:action")` 或 `require_system()` | 不自动 |
 | 按钮权限 | 前端按钮、危险操作、导入导出等动作使用 `v-permission="'xxx:action'"` | 不自动 |
 | 默认授权 | system 角色每次 seed 自动补齐全量；normal / tenant_admin 不覆盖已配置授权，需要角色页授权或显式一次性回填 | system 自动，业务角色需决策 |
@@ -242,7 +248,7 @@ flowchart LR
 
 - **system-only 页面**：菜单 `visible=system`，接口挂 system 守卫，只让 system 角色自动拥有。
 - **普通业务页面**：菜单 `visible=login`，资源码加入业务授权集合；新库会随 seed 拿到默认授权，已有库要通过角色页或一次性回填给既有角色补授权。
-- **需要确定性撤回的普通业务页面**：可使用独立 marker 状态机登记在 `_SEED_MENU_TREE/_SEED_RESOURCES`，但通用写入循环必须显式跳过，避免 rolled-back tombstone 后被启动 seed 复活。交易纪律模块采用 `migration.trade_discipline_default_grants_v1` + advisory lock `8410010005`，只在 marker 缺失且固定菜单/资源身份无冲突时原子创建并给 system/normal/tenant_admin 初始授权；applied 重启只校验固定身份和路由契约，不校验或覆盖管理员可维护的 `parent_id`、`sort`、`icon`。normal/tenant_admin 后续由管理员撤销的默认授权不补回也不导致启动失败。回滚删除当前仍存在的账本内同键行，允许默认授权已缺失，但发现账本外自定义角色授权时拒绝级联；成功后同事务自增受影响用户 `perm_ver` 并保留 tombstone。回滚入口为 `python -m backend.cli trade-discipline-rbac rollback --confirm-marker migration.trade_discipline_default_grants_v1`。
+- **需要确定性撤回的普通业务页面**：可使用独立 marker 状态机登记在 `_SEED_MENU_TREE/_SEED_RESOURCES`，但通用写入循环必须显式跳过，避免 rolled-back tombstone 后被启动 seed 复活。交易纪律模块采用 `migration.trade_discipline_default_grants_v1` + advisory lock `8410010005`，只在 marker 缺失且固定菜单/资源身份无冲突时原子创建并给 system/normal/tenant_admin 初始授权；applied 重启只校验菜单与功能点的稳定 `id/code`，不校验或覆盖管理员可维护的其余菜单和功能点配置。normal/tenant_admin 后续由管理员撤销的默认授权不补回也不导致启动失败。回滚删除当前仍存在的账本内同键行，允许默认授权已缺失，但发现账本外自定义角色授权时拒绝级联；成功后同事务自增受影响用户 `perm_ver` 并保留 tombstone。回滚入口为 `python -m backend.cli trade-discipline-rbac rollback --confirm-marker migration.trade_discipline_default_grants_v1`。
 - **跨阶段页面发布门控**：后端菜单/资源/API 先行、正式前端尚未闭环时，菜单码必须进入 `STAGED_FRONTEND_MENU_CODES`，使 `/me` 对包括 system 在内的所有角色隐藏入口。只有前端静态路由、页面、pageRegistry、DESIGN marker 和路由解析测试同批就绪后才能移除；授权不等于可导航发布。
 - **租户管理员页面**：上级菜单不能是 system-only；资源码只授给 tenant_admin 或指定自定义角色，服务层仍按本租户收口。
 - **临时或租户自定义菜单**：可以走菜单与功能点管理页维护，但它只控制已有前端路由和已有后端 API 的可见与授权，不生成代码。

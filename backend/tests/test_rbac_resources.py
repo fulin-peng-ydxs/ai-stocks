@@ -187,6 +187,11 @@ def test_builtin_resource_name_editable(client, env):
 
 def test_delete_bumps_referencing_users(client, env):
     rid = env.mk_res()
+    before = env.pg.query_df(
+        "SELECT menu_id,code,name,type,api_method,api_path,sort,is_builtin "
+        "FROM sys_resource WHERE id=%s",
+        [rid],
+    ).iloc[0].to_dict()
     role = env.mk_role()
     env.grant_res(role, rid)
     tid = env.mk_tenant()
@@ -196,6 +201,22 @@ def test_delete_bumps_referencing_users(client, env):
     r = client.delete(f"/api/resources/{rid}", headers=env.sys_headers())
     assert r.status_code == 200
     assert _perm_ver(env.pg, holder) == v0 + 1
+    audit = env.pg.query_df(
+        "SELECT target_label,changes FROM audit_log "
+        "WHERE event_category='rbac' AND action='resource_delete' AND target_id=%s "
+        "ORDER BY event_time DESC LIMIT 1",
+        [rid],
+    ).iloc[0]
+    assert audit["target_label"] == before["name"]
+    changes = {item["field"]: item for item in audit["changes"]}
+    assert changes["menu_id"]["before"] == before["menu_id"]
+    assert changes["code"]["before"] == before["code"]
+    assert all(item["after"] is None for item in changes.values())
+    env.pg.execute(
+        "DELETE FROM audit_log WHERE event_category='rbac' AND action='resource_delete' "
+        "AND target_id=%s",
+        [rid],
+    )
 
 
 def test_code_change_bumps_referencing_users(client, env):

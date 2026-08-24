@@ -19,6 +19,7 @@
 --   - dict:read 是登录基线共享读，不写入 normal/tenant_admin 的 role_resource。
 --   - dict:read 必须挂 visible='login' 的叶子菜单锚点 /board，不得挂 /system/dicts。
 --   - /system/dicts 为 system-only 管理页；非 system 角色不得获得字典管理权限。
+--   - 菜单和功能点只补缺失行；现有运行时配置只允许管理员通过管理页面/API 显式覆盖并留审计。
 -- ============================================================================
 
 BEGIN;
@@ -27,15 +28,7 @@ INSERT INTO sys_menu (id, parent_id, code, title, type, route_path, icon, sort, 
 VALUES
   ('/system/audit', 'system', '/system/audit', '审计日志', 'leaf', '/system/audit', NULL, 40, 'login', TRUE),
   ('/system/dicts', 'system', '/system/dicts', '数据字典', 'leaf', '/system/dicts', NULL, 50, 'system', TRUE)
-ON CONFLICT (id) DO UPDATE SET
-  parent_id = EXCLUDED.parent_id,
-  title = EXCLUDED.title,
-  type = EXCLUDED.type,
-  route_path = EXCLUDED.route_path,
-  icon = EXCLUDED.icon,
-  sort = EXCLUDED.sort,
-  visible = EXCLUDED.visible,
-  is_builtin = EXCLUDED.is_builtin;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin)
 VALUES
@@ -44,15 +37,7 @@ VALUES
   ('dict:view', '/system/dicts', 'dict:view', '查看数据字典', 'api', 'GET', '/api/dict/types', 10020, TRUE),
   ('dict:type-manage', '/system/dicts', 'dict:type-manage', '维护字典类型', 'api', 'POST', '/api/dict/types', 10030, TRUE),
   ('dict:item-manage', '/system/dicts', 'dict:item-manage', '维护字典项', 'api', 'POST', '/api/dict/items', 10040, TRUE)
-ON CONFLICT (id) DO UPDATE SET
-  menu_id = EXCLUDED.menu_id,
-  code = EXCLUDED.code,
-  name = EXCLUDED.name,
-  type = EXCLUDED.type,
-  api_method = EXCLUDED.api_method,
-  api_path = EXCLUDED.api_path,
-  sort = EXCLUDED.sort,
-  is_builtin = EXCLUDED.is_builtin;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO sys_role_menu (role_id, menu_id)
 VALUES ('tenant_admin', '/system/audit')

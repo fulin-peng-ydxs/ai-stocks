@@ -1,6 +1,9 @@
 -- 阶段六其他资产公开能力资源码与默认授权（幂等）
 -- 用途：新增筛选方案、买卖方案、回测记录 publish 权限码，并回填 tenant_admin 默认授权。
 -- 默认口径：tenant publish 给 tenant_admin/system；public publish 仅 system。normal 需显式授权。
+-- sys_resource 是运行期事实源：本普通迁移只补缺失行，不覆盖管理员已维护的功能点配置。
+
+BEGIN;
 
 INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin)
 VALUES
@@ -10,14 +13,7 @@ VALUES
   ('trade-profile:publish-public', '/system/config/trade', 'trade-profile:publish-public', '全体公开买卖方案', 'api', 'POST', '/api/trade-profiles/{pid}/visibility', 10030, TRUE),
   ('backtest:publish-tenant', '/backtest', 'backtest:publish-tenant', '租户内公开回测记录', 'api', 'POST', '/api/backtest/runs/{run_id}/visibility', 10040, TRUE),
   ('backtest:publish-public', '/backtest', 'backtest:publish-public', '全体公开回测记录', 'api', 'POST', '/api/backtest/runs/{run_id}/visibility', 10050, TRUE)
-ON CONFLICT (id) DO UPDATE SET
-  menu_id = EXCLUDED.menu_id,
-  code = EXCLUDED.code,
-  name = EXCLUDED.name,
-  type = EXCLUDED.type,
-  api_method = EXCLUDED.api_method,
-  api_path = EXCLUDED.api_path,
-  is_builtin = EXCLUDED.is_builtin;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO sys_role_resource (role_id, resource_id)
 VALUES
@@ -59,6 +55,8 @@ VALUES ('migration.stage6_asset_visibility_v1', '{"applied":true}', now())
 ON CONFLICT (key) DO UPDATE
 SET value = EXCLUDED.value,
     updated_at = EXCLUDED.updated_at;
+
+COMMIT;
 
 -- 回滚说明：
 -- 1. 若撤回本阶段 publish 资源码，先删除 sys_role_resource，再删除 sys_resource。

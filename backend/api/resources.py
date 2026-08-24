@@ -82,11 +82,20 @@ def update_resource(resource_id: str, body: ResourceUpdate) -> ApiResponse:
 
 @router.delete("/resources/{resource_id}", response_model=ApiResponse)
 def delete_resource(resource_id: str) -> ApiResponse:
-    ResourceAdminService().delete_resource(resource_id)
+    before = ResourceAdminService().delete_resource(resource_id)
     record_rbac_action(
         action="resource_delete",
         target_type="sys_resource",
         target_id=resource_id,
+        target_label=before["name"],
         resource_code="resource:delete",
+        changes=AuditService.build_changes(
+            before,
+            None,
+            fields=(
+                "menu_id", "code", "name", "type", "api_method",
+                "api_path", "sort", "is_builtin",
+            ),
+        ),
     )
     return ok(msg="已删除")

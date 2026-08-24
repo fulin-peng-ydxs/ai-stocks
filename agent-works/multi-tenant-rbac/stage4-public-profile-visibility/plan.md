@@ -486,7 +486,7 @@
   - `agent-works/multi-tenant-rbac/stage4-public-profile-visibility/resource-codes.sql`
 - 用途：
   - `score-profile-visibility.sql`：既有库增加 `score_profile.visibility/published_at/published_by`、索引、历史数据初始化。
-  - `resource-codes.sql`：新增 publish 权限码、评分方案业务菜单/资源默认授权、必要的 `perm_ver` bump。
+  - `resource-codes.sql`：事务内补齐缺失的 publish 权限码、评分方案业务菜单/资源默认授权并执行必要的 `perm_ver` bump；对已存在菜单和功能点统一 `DO NOTHING`，运行时配置只能通过管理页面/API 显式覆盖并留审计。
 - 执行时机：
   - 开发期由 DDL 幂等逻辑自动建字段，SQL 作为人读留痕和既有库校验脚本。
   - 上线时先备份 PG 权限表和 `score_profile`，再执行 SQL 或等价迁移 CLI。
@@ -498,7 +498,7 @@
   - `sys_user.perm_ver`
 - 回滚方式或不可回滚原因：
   - 字段新增可保留不使用；回滚代码后旧逻辑会忽略新增字段。
-  - 资源码和菜单可删除或恢复备份，但需同步回滚前端 route 和后端 API 权限。
+  - 本脚本不删除或覆盖既有菜单；如需回滚本次新增行，应先依据执行前备份确认哪些行确由本次插入，再同步回滚前端 route 和后端 API 权限。
   - 已公开的方案如果回滚为私有语义，需要执行 SQL 将 `visibility` 置回 `private`，否则后续再启用功能会继续公开。
 
 ## 8. 测试与验证计划

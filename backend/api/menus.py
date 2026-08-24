@@ -112,11 +112,20 @@ def update_menu(menu_id: str, body: MenuUpdate) -> ApiResponse:
 
 @router.delete("/menus/{menu_id:path}", response_model=ApiResponse)
 def delete_menu(menu_id: str) -> ApiResponse:
-    MenuAdminService().delete_menu(menu_id)
+    before = MenuAdminService().delete_menu(menu_id)
     record_rbac_action(
         action="menu_delete",
         target_type="sys_menu",
         target_id=menu_id,
+        target_label=before["title"],
         resource_code="menu:delete",
+        changes=AuditService.build_changes(
+            before,
+            None,
+            fields=(
+                "parent_id", "code", "title", "type", "route_path",
+                "icon", "sort", "visible", "is_builtin",
+            ),
+        ),
     )
     return ok(msg="已删除")

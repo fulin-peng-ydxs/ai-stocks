@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
-from backend.auth.constants import TRADE_DISCIPLINE_RESOURCE_CODES
 from backend.cli import cmd_trade_discipline_rbac
 from backend.common.exceptions import StorageError
+from backend.storage import pg_ddl
 from backend.storage.pg_ddl import (
     ASSET_PK,
     TRADE_DISCIPLINE_RBAC_MARKER,
@@ -37,31 +39,65 @@ TD_TABLES = {
 }
 
 
-def _delete_td_rbac(pg) -> None:
-    resource_ids = list(TRADE_DISCIPLINE_RESOURCE_CODES)
+def _delete_td_rbac(pg, contract) -> None:
+    resource_ids = list(contract.resource_codes)
     with pg.transaction() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM sys_role_resource WHERE resource_id = ANY(%s)", [resource_ids])
-        cur.execute("DELETE FROM sys_role_menu WHERE menu_id=%s", ["/trade-discipline"])
+        cur.execute("DELETE FROM sys_role_menu WHERE menu_id=%s", [contract.menu_id])
         cur.execute("DELETE FROM sys_resource WHERE id = ANY(%s)", [resource_ids])
-        cur.execute("DELETE FROM sys_menu WHERE id=%s", ["/trade-discipline"])
-        cur.execute("DELETE FROM app_config WHERE key=%s", [TRADE_DISCIPLINE_RBAC_MARKER])
+        cur.execute("DELETE FROM sys_menu WHERE id=%s", [contract.menu_id])
+        cur.execute("DELETE FROM app_config WHERE key=%s", [contract.marker_key])
 
 
 @pytest.fixture
-def td_rbac_sandbox(pg):
-    perm_versions = pg.query_df("SELECT id, perm_ver FROM sys_user").to_dict("records")
-    _delete_td_rbac(pg)
+def td_rbac_sandbox(pg, monkeypatch):
+    """用随机 RBAC 身份验证状态机，禁止删除或重建运行中的真实菜单和授权。"""
+    suffix = uuid4().hex[:10]
+    menu_id = f"pytest_td_menu_{suffix}"
+    marker_key = f"pytest.td_marker_{suffix}"
+    role_ids = tuple(f"pytest_td_role_{suffix}_{kind}" for kind in ("system", "admin", "normal"))
+    resource_codes = tuple(f"pytest-td-{suffix}:{index}" for index in range(1, 5))
+    resources = tuple(
+        (
+            menu_id,
+            code,
+            f"交易纪律测试功能点{index}",
+            "api",
+            "GET" if index in (1, 3) else "POST",
+            f"/api/pytest-trade-discipline/{suffix}/{index}",
+        )
+        for index, code in enumerate(resource_codes, start=1)
+    )
+    contract = SimpleNamespace(
+        menu_id=menu_id,
+        marker_key=marker_key,
+        resource_codes=resource_codes,
+        system_role=role_ids[0],
+        tenant_admin_role=role_ids[1],
+        normal_role=role_ids[2],
+    )
+    for role_id in role_ids:
+        pg.execute(
+            "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
+            "VALUES (%s,%s,%s,'custom',FALSE,FALSE)",
+            [role_id, role_id, "交易纪律临时角色"],
+        )
+    monkeypatch.setattr(pg_ddl, "_TRADE_DISCIPLINE_MENU_ID", menu_id)
+    monkeypatch.setattr(pg_ddl, "TRADE_DISCIPLINE_RBAC_MARKER", marker_key)
+    monkeypatch.setattr(pg_ddl, "TRADE_DISCIPLINE_RBAC_LOCK", 8500000000 + int(suffix[:6], 16))
+    monkeypatch.setattr(pg_ddl, "TRADE_DISCIPLINE_RESOURCE_CODES", resource_codes)
+    monkeypatch.setattr(pg_ddl, "_SEED_RESOURCES", (*pg_ddl._SEED_RESOURCES, *resources))
+    monkeypatch.setattr(pg_ddl, "ROLE_SYSTEM", contract.system_role)
+    monkeypatch.setattr(pg_ddl, "ROLE_TENANT_ADMIN", contract.tenant_admin_role)
+    monkeypatch.setattr(pg_ddl, "ROLE_NORMAL", contract.normal_role)
+    _delete_td_rbac(pg, contract)
     _seed_trade_discipline_rbac(pg)
     try:
-        yield
+        yield contract
     finally:
-        _delete_td_rbac(pg)
-        _seed_trade_discipline_rbac(pg)
-        for row in perm_versions:
-            pg.execute(
-                "UPDATE sys_user SET perm_ver=%s WHERE id=%s",
-                [int(row["perm_ver"]), row["id"]],
-            )
+        _delete_td_rbac(pg, contract)
+        for role_id in role_ids:
+            pg.execute("DELETE FROM sys_role WHERE id=%s", [role_id])
 
 
 def test_trade_discipline_tables_primary_keys_and_numeric_money(pg):
@@ -181,26 +217,26 @@ def test_trade_discipline_seed_is_idempotent_and_rollback_tombstone_does_not_rev
     assert report["state"] == "rolled_back"
     assert report["deleted"] == 20
     assert pg.query_df(
-        "SELECT 1 FROM sys_menu WHERE id=%s", ["/trade-discipline"]
+        "SELECT 1 FROM sys_menu WHERE id=%s", [td_rbac_sandbox.menu_id]
     ).empty
     assert pg.query_df(
         "SELECT 1 FROM sys_resource WHERE id = ANY(%s)",
-        [list(TRADE_DISCIPLINE_RESOURCE_CODES)],
+        [list(td_rbac_sandbox.resource_codes)],
     ).empty
 
     seed_rbac(pg)
     assert pg.query_df(
-        "SELECT 1 FROM sys_menu WHERE id=%s", ["/trade-discipline"]
+        "SELECT 1 FROM sys_menu WHERE id=%s", [td_rbac_sandbox.menu_id]
     ).empty
     marker = json.loads(pg.query_df(
-        "SELECT value FROM app_config WHERE key=%s", [TRADE_DISCIPLINE_RBAC_MARKER]
+        "SELECT value FROM app_config WHERE key=%s", [td_rbac_sandbox.marker_key]
     ).iloc[0]["value"])
     assert marker["applied"] is False and marker["rolled_back"] is True
 
 
-def test_trade_discipline_seed_preserves_runtime_menu_position(pg, td_rbac_sandbox):
-    """管理员移动内置菜单后，启动期 seed 不得恢复默认父级或排序。"""
-    parent_id = "pytest-td-menu-parent"
+def test_trade_discipline_seed_preserves_runtime_menu_configuration(pg, td_rbac_sandbox):
+    """管理员维护菜单和功能点后，启动期状态机不得覆盖或拒绝运行时配置。"""
+    parent_id = f"{td_rbac_sandbox.menu_id}_parent"
     pg.execute(
         "INSERT INTO sys_menu "
         "(id,parent_id,code,title,type,route_path,icon,sort,visible,is_builtin) "
@@ -209,48 +245,75 @@ def test_trade_discipline_seed_preserves_runtime_menu_position(pg, td_rbac_sandb
     )
     try:
         pg.execute(
-            "UPDATE sys_menu SET parent_id=%s,sort=%s,updated_at=now() WHERE id=%s",
-            [parent_id, 70, "/trade-discipline"],
+            "UPDATE sys_menu SET parent_id=%s,title=%s,type='group',route_path=NULL,icon=NULL,"
+            "sort=%s,visible='system',updated_at=now() WHERE id=%s",
+            [parent_id, "运行期交易纪律", 70, td_rbac_sandbox.menu_id],
+        )
+        pg.execute(
+            "UPDATE sys_resource SET menu_id=%s,name=%s,type='button',api_method='PATCH',"
+            "api_path=%s,sort=700 WHERE id=%s",
+            [
+                td_rbac_sandbox.menu_id,
+                "运行期功能点",
+                "/api/runtime-trade-discipline",
+                td_rbac_sandbox.resource_codes[0],
+            ],
         )
         seed_rbac(pg)
         row = pg.query_df(
-            "SELECT parent_id,sort FROM sys_menu WHERE id=%s", ["/trade-discipline"]
+            "SELECT parent_id,title,type,route_path,icon,sort,visible FROM sys_menu WHERE id=%s",
+            [td_rbac_sandbox.menu_id],
         ).iloc[0]
         assert row["parent_id"] == parent_id
+        assert row["title"] == "运行期交易纪律"
+        assert row["type"] == "group"
+        assert row["route_path"] is None
+        assert row["icon"] is None
         assert int(row["sort"]) == 70
+        assert row["visible"] == "system"
+        resource = pg.query_df(
+            "SELECT name,type,api_method,api_path,sort FROM sys_resource WHERE id=%s",
+            [td_rbac_sandbox.resource_codes[0]],
+        ).iloc[0]
+        assert resource["name"] == "运行期功能点"
+        assert resource["type"] == "button"
+        assert resource["api_method"] == "PATCH"
+        assert resource["api_path"] == "/api/runtime-trade-discipline"
+        assert int(resource["sort"]) == 700
     finally:
         pg.execute(
-            "UPDATE sys_menu SET parent_id=NULL,sort=50,updated_at=NULL WHERE id=%s",
-            ["/trade-discipline"],
+            "UPDATE sys_menu SET parent_id=NULL WHERE id=%s",
+            [td_rbac_sandbox.menu_id],
         )
         pg.execute("DELETE FROM sys_menu WHERE id=%s", [parent_id])
 
 
 def test_trade_discipline_seed_conflict_rolls_back_atomically(pg, td_rbac_sandbox):
     _rollback_trade_discipline_rbac(pg)
-    pg.execute("DELETE FROM app_config WHERE key=%s", [TRADE_DISCIPLINE_RBAC_MARKER])
+    pg.execute("DELETE FROM app_config WHERE key=%s", [td_rbac_sandbox.marker_key])
+    conflict_id = f"{td_rbac_sandbox.menu_id}_conflict"
     pg.execute(
         "INSERT INTO sys_menu "
         "(id,code,title,type,route_path,visible,is_builtin) "
         "VALUES (%s,%s,%s,'leaf',%s,'login',FALSE)",
-        ["pytest-td-conflict", "pytest-td-conflict", "占用路由", "/trade-discipline"],
+        [conflict_id, conflict_id, "占用路由", td_rbac_sandbox.menu_id],
     )
     try:
         with pytest.raises(StorageError, match="身份已被占用"):
             _seed_trade_discipline_rbac(pg)
         assert pg.query_df(
             "SELECT 1 FROM sys_resource WHERE id = ANY(%s)",
-            [list(TRADE_DISCIPLINE_RESOURCE_CODES)],
+            [list(td_rbac_sandbox.resource_codes)],
         ).empty
         assert pg.query_df(
-            "SELECT 1 FROM app_config WHERE key=%s", [TRADE_DISCIPLINE_RBAC_MARKER]
+            "SELECT 1 FROM app_config WHERE key=%s", [td_rbac_sandbox.marker_key]
         ).empty
     finally:
-        pg.execute("DELETE FROM sys_menu WHERE id=%s", ["pytest-td-conflict"])
+        pg.execute("DELETE FROM sys_menu WHERE id=%s", [conflict_id])
 
 
 def test_trade_discipline_rollback_refuses_untracked_custom_role_grant(pg, td_rbac_sandbox):
-    role_id = "pytest-td-custom-role"
+    role_id = f"{td_rbac_sandbox.menu_id}_role"
     pg.execute(
         "INSERT INTO sys_role (id,code,name,kind,is_builtin,is_locked) "
         "VALUES (%s,%s,%s,'custom',FALSE,FALSE)",
@@ -259,12 +322,12 @@ def test_trade_discipline_rollback_refuses_untracked_custom_role_grant(pg, td_rb
     try:
         pg.execute(
             "INSERT INTO sys_role_resource (role_id,resource_id) VALUES (%s,%s)",
-            [role_id, "trade-discipline:view"],
+            [role_id, td_rbac_sandbox.resource_codes[0]],
         )
         with pytest.raises(StorageError, match="账本外授权"):
             _rollback_trade_discipline_rbac(pg)
         state = json.loads(pg.query_df(
-            "SELECT value FROM app_config WHERE key=%s", [TRADE_DISCIPLINE_RBAC_MARKER]
+            "SELECT value FROM app_config WHERE key=%s", [td_rbac_sandbox.marker_key]
         ).iloc[0]["value"])
         assert state["applied"] is True and state["rolled_back"] is False
     finally:
@@ -277,21 +340,21 @@ def test_trade_discipline_default_grants_can_be_revoked_without_restart_failure(
 ):
     pg.execute(
         "DELETE FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
-        ["normal", "trade-discipline:checkin-submit"],
+        [td_rbac_sandbox.normal_role, td_rbac_sandbox.resource_codes[3]],
     )
     pg.execute(
         "DELETE FROM sys_role_menu WHERE role_id=%s AND menu_id=%s",
-        ["tenant_admin", "/trade-discipline"],
+        [td_rbac_sandbox.tenant_admin_role, td_rbac_sandbox.menu_id],
     )
 
     assert _seed_trade_discipline_rbac(pg)["state"] == "applied"
     assert pg.query_df(
         "SELECT 1 FROM sys_role_resource WHERE role_id=%s AND resource_id=%s",
-        ["normal", "trade-discipline:checkin-submit"],
+        [td_rbac_sandbox.normal_role, td_rbac_sandbox.resource_codes[3]],
     ).empty
     assert pg.query_df(
         "SELECT 1 FROM sys_role_menu WHERE role_id=%s AND menu_id=%s",
-        ["tenant_admin", "/trade-discipline"],
+        [td_rbac_sandbox.tenant_admin_role, td_rbac_sandbox.menu_id],
     ).empty
 
     report = _rollback_trade_discipline_rbac(pg)

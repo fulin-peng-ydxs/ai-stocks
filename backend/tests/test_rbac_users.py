@@ -215,15 +215,24 @@ def test_list_users_sort_by_account(client, env):
 
 def test_list_users_sort_by_tenant_name(client, env):
     """system 全局列表按租户名排序：join 系统租户表按名称 order，而非租户 id。"""
-    t_b = env.mk_tenant(); env.pg.execute("UPDATE sys_tenant SET name='租户B' WHERE id=%s", [t_b])
-    t_a = env.mk_tenant(); env.pg.execute("UPDATE sys_tenant SET name='租户A' WHERE id=%s", [t_a])
-    t_c = env.mk_tenant(); env.pg.execute("UPDATE sys_tenant SET name='租户C' WHERE id=%s", [t_c])
+    t_b = env.mk_tenant()
+    env.pg.execute("UPDATE sys_tenant SET name='租户B' WHERE id=%s", [t_b])
+    t_a = env.mk_tenant()
+    env.pg.execute("UPDATE sys_tenant SET name='租户A' WHERE id=%s", [t_a])
+    t_c = env.mk_tenant()
+    env.pg.execute("UPDATE sys_tenant SET name='租户C' WHERE id=%s", [t_c])
     env.mk_user(t_b, ROLE_TENANT_ADMIN)
     env.mk_user(t_a, ROLE_TENANT_ADMIN)
     env.mk_user(t_c, ROLE_TENANT_ADMIN)
-    r = client.get("/api/users?sort_by=tenant&sort_order=asc", headers=env.sys_headers())
-    items = r.json()["data"]["items"]
-    # 列表按全局 scope 返回（可能混入持久 tenant 的用户），只对本次创建的 3 个租户用户断言相对顺序
+    query = "/api/users?sort_by=tenant&sort_order=asc&size=200"
+    first = client.get(query, headers=env.sys_headers()).json()["data"]
+    items = list(first["items"])
+    for page in range(2, (int(first["total"]) + 199) // 200 + 1):
+        items.extend(client.get(
+            f"{query}&page={page}",
+            headers=env.sys_headers(),
+        ).json()["data"]["items"])
+    # 全局 scope 可能包含任意数量的持久用户；遍历全部分页后只断言本次三个租户的相对顺序。
     order = [u["tenant_id"] for u in items]
     idx = {t: order.index(t) for t in (t_a, t_b, t_c)}
     assert idx[t_a] < idx[t_b] < idx[t_c]

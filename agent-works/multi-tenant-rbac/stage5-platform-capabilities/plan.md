@@ -1063,11 +1063,11 @@ Slot 与组件设计：
 | SQL 文件路径 | 用途 | 执行时机 | 影响范围 | 回滚方式或不可回滚原因 |
 | --- | --- | --- | --- | --- |
 | `agent-works/multi-tenant-rbac/stage5-platform-capabilities/stage5-platform-capabilities.sql` | 记录 `audit_log`、`dict_type`、`dict_item`、索引、默认字典、`app_config` 新增配置项 | 开发实现时同步生成；生产发布前随 `init_pg_db()` 幂等逻辑或人工迁移执行 | 新增 PG 表、索引、默认枚举和配置 key | 未产生业务数据前可 drop 新表并删除 config key；产生审计/字典数据后 drop 会丢历史，回滚应优先保留表并下线入口 |
-| `agent-works/multi-tenant-rbac/stage5-platform-capabilities/resource-codes.sql` | 记录新增菜单、资源码、角色授权、tenant_admin 审计回填、`perm_ver` bump | 表结构就绪后、应用发布前执行；也由启动 seed 幂等保障 | `sys_menu`、`sys_resource`、`sys_role_menu`、`sys_role_resource`、用户 `perm_ver` | 可删除新增菜单/资源和授权关系；`perm_ver` 自增不可有意义回退，但只会要求用户重新登录，属于可接受副作用 |
+| `agent-works/multi-tenant-rbac/stage5-platform-capabilities/resource-codes.sql` | 事务内补齐缺失菜单、资源码、角色授权、tenant_admin 审计回填和 `perm_ver` bump；已有菜单/功能点 `DO NOTHING` | 表结构就绪后、应用发布前执行；也由启动 seed 幂等保障；运行时结构调整走管理页面/API | `sys_menu`、`sys_resource`、`sys_role_menu`、`sys_role_resource`、用户 `perm_ver` | 仅能按执行前备份确认并删除本次实际新增关系；不得用代码默认值反向覆盖运行时配置；`perm_ver` 自增无需回退 |
 
 SQL 约束：
 
-- 所有 seed 使用 `ON CONFLICT` 或等效幂等逻辑。
+- 所有菜单/功能点 seed 使用 `ON CONFLICT DO NOTHING` 或等效“只补缺失”逻辑；普通启动和可重复 SQL 禁止覆盖运行时配置。
 - 字典项外键不得使用 `ON DELETE CASCADE`。
 - 新增配置项必须有默认值和校验范围。
 - 审计表只新增，不改写既有业务表。

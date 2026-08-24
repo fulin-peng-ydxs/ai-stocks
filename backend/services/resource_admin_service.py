@@ -93,7 +93,7 @@ class ResourceAdminService:
         return self.resources.get(resource_id)  # type: ignore[return-value]
 
     # ── 删除 ──
-    def delete_resource(self, resource_id: str) -> None:
+    def delete_resource(self, resource_id: str) -> dict:
         cur = self._load(resource_id)
         if cur["is_builtin"]:
             raise ForbiddenError("内置功能点不可删除")
@@ -105,6 +105,7 @@ class ResourceAdminService:
             perm_resolver.bump_perm_ver(affected, conn)
         perm_resolver.clear_perms_cache(affected)
         log.info("功能管理：删除功能点 %s(%s)，%d 个用户失效", resource_id, cur["code"], len(affected))
+        return cur
 
     # ── 内部 ──
     def _load(self, resource_id: str) -> dict:

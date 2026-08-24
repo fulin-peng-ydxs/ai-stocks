@@ -1,19 +1,11 @@
 -- 配置管理拆页 + 评分方案公开能力资源码（幂等）
 -- IA：系统管理 -> 配置管理，下设评分规则/买卖指标/技术指标/系统设置。
 -- 评分规则和买卖指标为业务可授权；技术指标和系统设置仍 system-only。
+-- 运行期菜单和功能点以 PostgreSQL 为事实源：本脚本只补缺失行，不覆盖已存在配置。
+-- 如需改变父级、标题、路由、可见性或排序，必须由系统管理员通过管理页面/API 显式操作，
+-- 以便执行校验、权限版本失效和 before/after 审计。
 
-DELETE FROM sys_role_menu WHERE menu_id = '/score-profiles';
-DELETE FROM sys_menu WHERE id = '/score-profiles';
-
-UPDATE sys_menu
-SET parent_id = 'system',
-    title = '配置管理',
-    type = 'group',
-    route_path = NULL,
-    icon = 'Files',
-    visible = 'login',
-    is_builtin = TRUE
-WHERE id = '/system/config';
+BEGIN;
 
 INSERT INTO sys_menu (id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin)
 VALUES
@@ -22,15 +14,7 @@ VALUES
   ('/system/config/trade', '/system/config', '/system/config/trade', '买卖指标', 'leaf', '/system/config/trade', NULL, 20, 'login', TRUE),
   ('/system/config/tech', '/system/config', '/system/config/tech', '技术指标', 'leaf', '/system/config/tech', NULL, 30, 'system', TRUE),
   ('/system/config/system', '/system/config', '/system/config/system', '系统设置', 'leaf', '/system/config/system', NULL, 40, 'system', TRUE)
-ON CONFLICT (id) DO UPDATE SET
-  parent_id = EXCLUDED.parent_id,
-  title = EXCLUDED.title,
-  type = EXCLUDED.type,
-  route_path = EXCLUDED.route_path,
-  icon = EXCLUDED.icon,
-  sort = EXCLUDED.sort,
-  visible = EXCLUDED.visible,
-  is_builtin = EXCLUDED.is_builtin;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin)
 VALUES
@@ -47,14 +31,7 @@ VALUES
   ('indicator:def-manage', '/system/config/tech', 'indicator:def-manage', '技术指标定义维护', 'api', 'POST', '/api/indicators/def', 10100, TRUE),
   ('config:view', '/system/config/system', 'config:view', '查看系统配置', 'api', 'GET', '/api/config', 10110, TRUE),
   ('config:reload', '/system/config/system', 'config:reload', '重载系统配置', 'api', 'POST', '/api/config/reload', 10120, TRUE)
-ON CONFLICT (id) DO UPDATE SET
-  menu_id = EXCLUDED.menu_id,
-  code = EXCLUDED.code,
-  name = EXCLUDED.name,
-  type = EXCLUDED.type,
-  api_method = EXCLUDED.api_method,
-  api_path = EXCLUDED.api_path,
-  is_builtin = EXCLUDED.is_builtin;
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO sys_role_menu (role_id, menu_id)
 SELECT r.id, x.menu_id
@@ -104,3 +81,5 @@ WHERE EXISTS (
   WHERE ur.user_id = u.id
     AND ur.role_id IN ('tenant_admin', 'normal')
 );
+
+COMMIT;

@@ -1391,6 +1391,9 @@ _ASSET_PUBLISH_OPEN_MARKER = "migration.asset_publish_open_v2"
 _ASSET_PUBLISH_OPEN_LOCK = 8410010002
 _TENANT_ADMIN_AUDIT_REVOKE_MARKER = "migration.tenant_admin_audit_default_revoke_v1"
 _DICT_ITEM_COLOR_BACKFILL_MARKER = "migration.dict_item_color_defaults_v1"
+_CONFIG_SPLIT_MENU_DISCOVERY_MARKER = "migration.config_split_menu_discovery_v1"
+_CONFIG_SPLIT_MENU_DISCOVERY_LOCK = 8410010006
+_LEGACY_SCORE_PROFILES_MENU_ID = "/score-profiles"
 TRADE_DISCIPLINE_RBAC_MARKER = "migration.trade_discipline_default_grants_v1"
 TRADE_DISCIPLINE_RBAC_LOCK = 8410010005
 _TRADE_DISCIPLINE_MENU_ID = "/trade-discipline"
@@ -1796,32 +1799,28 @@ def _trade_discipline_marker_state(raw: object) -> tuple[str, dict | None]:
     return "invalid", None
 
 
-def _validate_trade_discipline_applied_cur(cur, ledger: dict) -> None:
-    """applied marker 只校验迁移身份和不可变结构，不冻结可维护的默认授权。"""
+def _validate_trade_discipline_applied_cur(cur, _ledger: dict) -> None:
+    """applied marker 只校验稳定身份，不冻结管理员可维护的菜单与功能点配置。"""
     cur.execute(
-        "SELECT id, code, title, type, route_path, visible FROM sys_menu WHERE id=%s",
+        "SELECT id, code FROM sys_menu WHERE id=%s",
         [_TRADE_DISCIPLINE_MENU_ID],
     )
     menu = cur.fetchone()
-    expected_menu = (
-        _TRADE_DISCIPLINE_MENU_ID, _TRADE_DISCIPLINE_MENU_ID, "交易纪律",
-        "leaf", _TRADE_DISCIPLINE_MENU_ID, "login",
-    )
+    expected_menu = (_TRADE_DISCIPLINE_MENU_ID, _TRADE_DISCIPLINE_MENU_ID)
     if menu != expected_menu:
         raise RuntimeError("交易纪律 RBAC marker 已应用，但菜单契约缺失或被占用")
     cur.execute(
-        "SELECT count(*) FROM sys_menu WHERE id=%s OR code=%s OR route_path=%s",
-        [_TRADE_DISCIPLINE_MENU_ID] * 3,
+        "SELECT count(*) FROM sys_menu WHERE id=%s OR code=%s",
+        [_TRADE_DISCIPLINE_MENU_ID] * 2,
     )
     if cur.fetchone()[0] != 1:
         raise RuntimeError("交易纪律 RBAC marker 已应用，但菜单身份存在额外占用")
-    for menu_id, code, name, rtype, method, path in _trade_discipline_resource_rows():
+    for _, code, *_ in _trade_discipline_resource_rows():
         cur.execute(
-            "SELECT id, menu_id, code, name, type, api_method, api_path "
-            "FROM sys_resource WHERE id=%s",
+            "SELECT id, code FROM sys_resource WHERE id=%s",
             [code],
         )
-        if cur.fetchone() != (code, menu_id, code, name, rtype, method, path):
+        if cur.fetchone() != (code, code):
             raise RuntimeError(f"交易纪律 RBAC marker 已应用，但资源契约异常: {code}")
     # normal/tenant_admin 的初始行是“默认授权”，管理员可在角色页撤销；重启不得补回或失败。
     # ledger 仍保留迁移最初插入的精确身份，供回滚时删除当前仍存在的同键行。
@@ -2035,26 +2034,16 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
             [code, code, name, kind, is_locked, desc])
     # 2) 菜单树（父在子前）
     menu_rows = _flatten_menu_tree(_SEED_MENU_TREE)
-    for m in menu_rows:
-        if m["code"] == _TRADE_DISCIPLINE_MENU_ID:
-            continue
-        client.execute(
-            "INSERT INTO sys_menu (id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) "
-            "ON CONFLICT (id) DO NOTHING",
-            [m["code"], m["parent_code"], m["code"], m["title"], m["type"],
-             m["route_path"], m["icon"], m["sort"], m["visible"]])
+    _seed_menu_rows(client, menu_rows, excluded_codes={_TRADE_DISCIPLINE_MENU_ID})
     # 3) 功能点/资源（id=code）
-    for i, (menu_code, code, name, rtype, method, path) in enumerate(_SEED_RESOURCES, start=1):
-        if code in TRADE_DISCIPLINE_RESOURCE_CODES:
-            continue
-        client.execute(
-            "INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
-            [code, menu_code, code, name, rtype, method, path, i * 10])
+    _seed_resource_rows(
+        client,
+        _SEED_RESOURCES,
+        excluded_codes=set(TRADE_DISCIPLINE_RESOURCE_CODES),
+    )
     # 4) 默认授权（首次 seed + 存量库一次性回填）
     _seed_role_grants(client, [m["code"] for m in menu_rows])
-    _backfill_config_split_builtin_grants(client)
+    _record_config_split_legacy_menu_state(client)
     _backfill_stage4_builtin_business_grants(client)
     _backfill_sector_watchlist_grants(client)
     _backfill_sector_menu_grants(client)
@@ -2066,6 +2055,42 @@ def seed_rbac(client: PostgresClient | None = None) -> None:
         "WHERE NOT EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id=u.id) "
         "ON CONFLICT (user_id, role_id) DO NOTHING")
     _seed_trade_discipline_rbac(client)
+
+
+def _seed_menu_rows(
+    client: PostgresClient,
+    menu_rows: list[dict],
+    *,
+    excluded_codes: set[str] | None = None,
+) -> None:
+    """只补缺失菜单；现有行的全部运行时配置由数据库保留。"""
+    excluded_codes = excluded_codes or set()
+    for m in menu_rows:
+        if m["code"] in excluded_codes:
+            continue
+        client.execute(
+            "INSERT INTO sys_menu (id, parent_id, code, title, type, route_path, icon, sort, visible, is_builtin) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE) "
+            "ON CONFLICT (id) DO NOTHING",
+            [m["code"], m["parent_code"], m["code"], m["title"], m["type"],
+             m["route_path"], m["icon"], m["sort"], m["visible"]])
+
+
+def _seed_resource_rows(
+    client: PostgresClient,
+    resource_rows: tuple[tuple[str, str, str, str, str, str], ...],
+    *,
+    excluded_codes: set[str] | None = None,
+) -> None:
+    """只补缺失功能点；现有绑定、名称、接口描述和排序不由启动 seed 覆盖。"""
+    excluded_codes = excluded_codes or set()
+    for i, (menu_code, code, name, rtype, method, path) in enumerate(resource_rows, start=1):
+        if code in excluded_codes:
+            continue
+        client.execute(
+            "INSERT INTO sys_resource (id, menu_id, code, name, type, api_method, api_path, sort, is_builtin) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE) ON CONFLICT (id) DO NOTHING",
+            [code, menu_code, code, name, rtype, method, path, i * 10])
 
 
 def _remove_legacy_paid_role(client: PostgresClient) -> None:
@@ -2248,18 +2273,34 @@ def _seed_role_grants(client: PostgresClient, all_menu_codes: list[str]) -> None
             log.warning("_seed_role_grants: 清 perms 缓存失败（忽略，权威在 perm_ver）", exc_info=True)
 
 
-def _backfill_config_split_builtin_grants(client: PostgresClient) -> None:
-    """配置管理拆页结构回填：仅发现旧 `/score-profiles` 菜单时迁移，不重复覆盖 sys_menu。"""
-    legacy = client.query_df("SELECT 1 FROM sys_menu WHERE id=%s", ["/score-profiles"])
-    if legacy.empty:
-        return
-    client.execute("DELETE FROM sys_role_menu WHERE menu_id=%s", ["/score-profiles"])
-    client.execute("DELETE FROM sys_menu WHERE id=%s", ["/score-profiles"])
-    client.execute(
-        "UPDATE sys_menu SET parent_id=%s, title=%s, type=%s, route_path=NULL, icon=%s, "
-        "visible=%s, is_builtin=TRUE WHERE id=%s",
-        ["system", "配置管理", "group", "Files", "login", "/system/config"],
-    )
+def _record_config_split_legacy_menu_state(client: PostgresClient) -> None:
+    """一次性记录旧配置菜单状态；启动只观测，不删除或覆盖任何运行时菜单。"""
+    legacy_detected = False
+    with client.transaction() as conn, conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [_CONFIG_SPLIT_MENU_DISCOVERY_LOCK])
+        cur.execute(
+            "SELECT 1 FROM app_config WHERE key=%s",
+            [_CONFIG_SPLIT_MENU_DISCOVERY_MARKER],
+        )
+        marker_exists = cur.fetchone() is not None
+        cur.execute("SELECT 1 FROM sys_menu WHERE id=%s", [_LEGACY_SCORE_PROFILES_MENU_ID])
+        legacy_detected = cur.fetchone() is not None
+        if not marker_exists:
+            marker = {
+                "version": 1,
+                "recorded": True,
+                "menu_overwrite": False,
+                "legacy_detected_at_recording": legacy_detected,
+            }
+            cur.execute(
+                "INSERT INTO app_config (key,value,updated_at) VALUES (%s,%s,now())",
+                [_CONFIG_SPLIT_MENU_DISCOVERY_MARKER, json.dumps(marker, ensure_ascii=False)],
+            )
+    if legacy_detected:
+        log.warning(
+            "检测到旧菜单 %s；启动已保留现状，请由系统管理员在菜单管理中显式迁移并留审计",
+            _LEGACY_SCORE_PROFILES_MENU_ID,
+        )
 
 
 def _backfill_stage4_builtin_business_grants(client: PostgresClient) -> None:

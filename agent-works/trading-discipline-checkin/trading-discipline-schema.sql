@@ -322,22 +322,19 @@ BEGIN
         IF v_marker <> '{"version":1,"applied":true,"rolled_back":false,"inserted_menu_ids":["/trade-discipline"],"inserted_resource_ids":["trade-discipline:view","trade-discipline:rule-manage","trade-discipline:checkin-view","trade-discipline:checkin-submit"],"inserted_role_menus":[["system","/trade-discipline"],["tenant_admin","/trade-discipline"],["normal","/trade-discipline"]],"inserted_role_resources":[["system","trade-discipline:view"],["system","trade-discipline:rule-manage"],["system","trade-discipline:checkin-view"],["system","trade-discipline:checkin-submit"],["tenant_admin","trade-discipline:view"],["tenant_admin","trade-discipline:rule-manage"],["tenant_admin","trade-discipline:checkin-view"],["tenant_admin","trade-discipline:checkin-submit"],["normal","trade-discipline:view"],["normal","trade-discipline:rule-manage"],["normal","trade-discipline:checkin-view"],["normal","trade-discipline:checkin-submit"]]}'::jsonb THEN
             RAISE EXCEPTION '交易纪律 RBAC applied marker 账本结构非法';
         END IF;
-        -- applied 重启只核验，不覆盖运行期数据。
+        -- applied 重启只核验稳定 id/code，不覆盖或冻结运行期菜单与功能点配置。
         IF NOT EXISTS (
             SELECT 1 FROM sys_menu WHERE id='/trade-discipline' AND code='/trade-discipline'
-            AND route_path='/trade-discipline' AND title='交易纪律' AND type='leaf' AND visible='login'
         ) OR EXISTS (
             SELECT 1 FROM (VALUES
-                ('trade-discipline:view','查看交易纪律','api','GET','/api/trade-discipline/summary'),
-                ('trade-discipline:rule-manage','维护交易规则','api','POST','/api/trade-discipline/rules'),
-                ('trade-discipline:checkin-view','查看履约记录','api','GET','/api/trade-discipline/checkins'),
-                ('trade-discipline:checkin-submit','提交履约记录','api','POST','/api/trade-discipline/checkins')
-            ) AS expected(id,name,type,api_method,api_path)
+                ('trade-discipline:view'),
+                ('trade-discipline:rule-manage'),
+                ('trade-discipline:checkin-view'),
+                ('trade-discipline:checkin-submit')
+            ) AS expected(id)
             WHERE NOT EXISTS (
                 SELECT 1 FROM sys_resource r WHERE r.id=expected.id
-                AND r.menu_id='/trade-discipline' AND r.code=expected.id
-                AND r.name=expected.name AND r.type=expected.type
-                AND r.api_method=expected.api_method AND r.api_path=expected.api_path
+                AND r.code=expected.id
             )
         ) THEN
             RAISE EXCEPTION '交易纪律 RBAC applied 账本与目标行不一致';

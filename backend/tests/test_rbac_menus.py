@@ -292,7 +292,13 @@ def test_reorder_rejects_duplicate_menu(client, env):
 # ── 缓存失效（删除 / 可见性变更 → 引用用户 perm_ver 自增）──
 
 def test_delete_bumps_referencing_users(client, env):
-    mid = env.mk_menu()
+    parent = env.mk_menu(is_group=True)
+    mid = env.mk_menu(parent_id=parent)
+    before = env.pg.query_df(
+        "SELECT parent_id,code,title,type,route_path,icon,sort,visible,is_builtin "
+        "FROM sys_menu WHERE id=%s",
+        [mid],
+    ).iloc[0].to_dict()
     rid = env.mk_role()
     env.grant_menu(rid, mid)
     tid = env.mk_tenant()
@@ -302,6 +308,23 @@ def test_delete_bumps_referencing_users(client, env):
     r = client.delete(f"/api/menus/{mid}", headers=env.sys_headers())
     assert r.status_code == 200
     assert _perm_ver(env.pg, holder) == v0 + 1   # 删菜单 → 引用它的角色的用户失效
+    audit = env.pg.query_df(
+        "SELECT target_label,changes FROM audit_log "
+        "WHERE event_category='rbac' AND action='menu_delete' AND target_id=%s "
+        "ORDER BY event_time DESC LIMIT 1",
+        [mid],
+    ).iloc[0]
+    assert audit["target_label"] == before["title"]
+    changes = {item["field"]: item for item in audit["changes"]}
+    assert changes["parent_id"]["before"] == before["parent_id"]
+    assert changes["code"]["before"] == before["code"]
+    assert changes["route_path"]["before"] == before["route_path"]
+    assert all(item["after"] is None for item in changes.values())
+    env.pg.execute(
+        "DELETE FROM audit_log WHERE event_category='rbac' AND action='menu_delete' "
+        "AND target_id=%s",
+        [mid],
+    )
 
 
 def test_visibility_change_bumps_referencing_users(client, env):
