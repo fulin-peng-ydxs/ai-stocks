@@ -93,7 +93,7 @@ describe('TradeCheckinForm', () => {
   it('提交校验失败时自动展开对应操作卡', async () => {
     const wrapper = mountForm()
     await flushPromises()
-    await wrapper.findAll('button').find((button) => button.text() === '添加操作')!.trigger('click')
+    await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
     const toggle = wrapper.get('[data-testid="operation-card-toggle"]')
     expect(toggle.attributes('aria-expanded')).toBe('true')
     await toggle.trigger('click')

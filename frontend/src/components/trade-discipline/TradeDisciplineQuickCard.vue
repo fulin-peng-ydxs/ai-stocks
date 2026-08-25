@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, Refresh } from '@element-plus/icons-vue'
+import { ArrowRight } from '@element-plus/icons-vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import { quickNoOperationTradeDisciplineCheckin } from '@/api/tradeDiscipline'
 import { useTradeDisciplineSummary } from '@/composables/useTradeDisciplineSummary'
 import { getErrorMessage, getErrorStatus } from '@/utils/error'
@@ -95,25 +96,35 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
       </el-button>
     </header>
 
-    <div v-if="status === 'idle' || status === 'loading'" class="quick-state" role="status">
-      <span class="quick-spinner" />
-      <span>正在加载今日纪律…</span>
-    </div>
-    <div v-else-if="status === 'error'" class="quick-state quick-state--error">
-      <span>{{ errorMessage }}</span>
-      <el-button size="small" plain @click="refreshSummary(props.tradeDate)">
-        <el-icon><Refresh /></el-icon>重试
-      </el-button>
-    </div>
-    <div v-else-if="!summary?.total" class="quick-state quick-state--empty">
-      <div>
-        <strong>还没有生效的交易规则</strong>
-        <span>先建立规则，下一交易日起即可开始打卡。</span>
-      </div>
-      <el-button size="small" type="primary" plain @click="emit('navigate', { tab: 'rules' })">
-        创建第一套规则
-      </el-button>
-    </div>
+    <AppStateBlock
+      v-if="status === 'idle' || status === 'loading'"
+      state="loading"
+      size="tiny"
+      title="正在加载今日纪律…"
+      :skeleton-rows="2"
+    />
+    <AppStateBlock
+      v-else-if="status === 'error'"
+      state="error"
+      size="tiny"
+      title="今日纪律加载失败"
+      :description="errorMessage"
+      retry
+      @retry="refreshSummary(props.tradeDate)"
+    />
+    <AppStateBlock
+      v-else-if="!summary?.total"
+      state="empty"
+      size="tiny"
+      title="还没有生效的交易规则"
+      description="先建立规则，下一交易日起即可开始打卡。"
+    >
+      <template #extra>
+        <el-button size="small" type="primary" plain @click="emit('navigate', { tab: 'rules' })">
+          创建第一套规则
+        </el-button>
+      </template>
+    </AppStateBlock>
     <div v-else class="quick-rule-list">
       <article v-for="rule in summary.rules" :key="rule.rule_id" class="quick-rule-row">
         <div class="quick-rule-main">
@@ -165,7 +176,7 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: var(--app-space-3);
-  padding: 13px 14px;
+  padding: var(--app-space-3) var(--app-space-4);
   border-bottom: 1px solid var(--page-settings-divider);
 }
 .quick-head > div { display: flex; flex-direction: column; gap: var(--app-space-1); }
@@ -173,7 +184,7 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
 .quick-head strong { color: var(--page-settings-text); font-size: var(--app-font-size-data); }
 .quick-progress {
   min-width: 82px;
-  padding: 6px 9px;
+  padding: var(--app-space-control-gap) var(--app-space-2);
   border: 1px solid color-mix(in srgb, var(--el-color-warning) 35%, var(--page-settings-section-border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--el-color-warning) 8%, transparent);
@@ -185,28 +196,20 @@ async function quickSubmit(ruleId: string, ruleName: string): Promise<void> {
 .quick-progress-label { color: var(--page-settings-text-muted); font-size: var(--app-font-size-caption); }
 .quick-progress-value { font-variant-numeric: tabular-nums; }
 .quick-progress.is-complete { border-color: color-mix(in srgb, var(--el-color-success) 35%, var(--page-settings-section-border)); background: color-mix(in srgb, var(--el-color-success) 8%, transparent); }
-.quick-state { min-height: 88px; padding: 14px; display: flex; align-items: center; justify-content: center; gap: var(--app-space-2); color: var(--page-settings-text-muted); font-size: var(--app-font-size-caption); }
-.quick-state--error { justify-content: space-between; }
-.quick-state--empty { align-items: flex-start; flex-direction: column; }
-.quick-state--empty > div { display: flex; flex-direction: column; gap: var(--app-space-1); }
-.quick-state--empty strong { color: var(--page-settings-text); font-size: var(--app-font-size-table); }
-.quick-state--empty :deep(.el-button) { align-self: flex-end; }
-.quick-spinner { width: 14px; height: 14px; border: 2px solid var(--page-settings-section-border); border-top-color: var(--shell-accent); border-radius: 50%; animation: quick-spin .8s linear infinite; }
-.quick-rule-list { padding: 4px 12px 8px; }
-.quick-rule-row { padding: 10px 2px; border-bottom: 1px solid var(--page-settings-divider); }
+.quick-rule-list { padding: var(--app-space-1) var(--app-space-3) var(--app-space-2); }
+.quick-rule-row { padding: var(--app-space-3) 0; border-bottom: 1px solid var(--page-settings-divider); }
 .quick-rule-row:last-child { border-bottom: 0; }
 .quick-card-footer { display: flex; justify-content: flex-end; padding-top: var(--app-space-1); }
 .quick-rule-main { min-width: 0; display: flex; align-items: center; gap: var(--app-space-2); }
 .quick-rule-main > div { min-width: 0; display: flex; flex-direction: column; gap: var(--app-space-1); }
 .quick-rule-main strong { color: var(--page-settings-text); font-size: var(--app-font-size-table); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quick-rule-main span { color: var(--page-settings-text-muted); font-size: var(--app-font-size-caption); }
-.quick-rule-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.quick-rule-dot { width: var(--app-space-2); height: var(--app-space-2); border-radius: 50%; flex: none; }
 .quick-rule-dot.is-pending { background: var(--el-color-warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-warning) 13%, transparent); }
 .quick-rule-dot.is-done { background: var(--el-color-success); }
-.quick-rule-actions { margin-top: 8px; display: flex; justify-content: flex-end; gap: var(--app-space-1); }
+.quick-rule-actions { margin-top: var(--app-space-2); display: flex; justify-content: flex-end; gap: var(--app-space-1); }
 .quick-rule-actions :deep(.el-button + .el-button) { margin-left: 0; }
-.quick-rule-error { margin-top: 7px; color: var(--el-color-danger); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
-@keyframes quick-spin { to { transform: rotate(360deg); } }
+.quick-rule-error { margin-top: var(--app-space-2); color: var(--el-color-danger); font-size: var(--app-font-size-caption); line-height: var(--app-line-height-caption); }
 @media (max-width: 520px) {
   .quick-head { align-items: flex-start; }
   .quick-rule-actions { justify-content: flex-start; flex-wrap: wrap; }

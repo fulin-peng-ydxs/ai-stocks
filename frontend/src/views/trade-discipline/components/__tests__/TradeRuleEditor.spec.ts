@@ -65,8 +65,10 @@ function field(wrapper: ReturnType<typeof mount>, label: string) {
   return item
 }
 
-function leaveDecisionButtons(wrapper: ReturnType<typeof mount>) {
-  return wrapper.findComponent({ name: 'ElDialog' }).findAll('button')
+function latestLeaveResolver(wrapper: ReturnType<typeof mount>): (allowLeave: boolean) => void {
+  const event = wrapper.emitted('requestLeave')?.at(-1)
+  if (!event) throw new Error('missing requestLeave event')
+  return event[0] as (allowLeave: boolean) => void
 }
 
 describe('TradeRuleEditor', () => {
@@ -106,28 +108,26 @@ describe('TradeRuleEditor', () => {
     expect(payload.stock_rules[0].content).toBe('第一行\n\n第三行')
   })
 
-  it('未保存三选明确提供三个动作，并按继续、放弃和保存结果返回', async () => {
+  it('未保存时把离开决策交给页面浮层，并按继续、放弃和保存结果返回', async () => {
     const wrapper = await mountEditor()
     await field(wrapper, '规则名称').get('input').setValue('临时名称')
     const continueResult = (wrapper.vm as any).requestLeave()
-    await flushPromises()
-    await leaveDecisionButtons(wrapper)[0].trigger('click')
+    latestLeaveResolver(wrapper)(false)
     expect(await continueResult).toBe(false)
     expect((wrapper.vm as any).isDirty()).toBe(true)
 
     const discardResult = (wrapper.vm as any).requestLeave()
-    await flushPromises()
-    const buttons = leaveDecisionButtons(wrapper)
-    expect(buttons.map((button) => button.text())).toEqual(['继续编辑', '放弃修改', '保存草稿'])
-    await buttons[1].trigger('click')
+    const editor = wrapper.vm as any
+    editor.discardUnsavedChanges()
+    latestLeaveResolver(wrapper)(true)
     expect(await discardResult).toBe(true)
     expect((wrapper.vm as any).isDirty()).toBe(false)
     expect(field(wrapper, '规则名称').get('input').element.value).toBe('趋势纪律')
 
     await field(wrapper, '规则名称').get('input').setValue('保存后离开')
     const saveResult = (wrapper.vm as any).requestLeave()
-    await flushPromises()
-    await leaveDecisionButtons(wrapper)[2].trigger('click')
+    expect(await (wrapper.vm as any).saveDraft(false)).toBe(true)
+    latestLeaveResolver(wrapper)(true)
     expect(await saveResult).toBe(true)
     expect(api.save).toHaveBeenCalledWith('rule-1', expect.objectContaining({
       name: '保存后离开', expected_revision: 2,
@@ -147,22 +147,17 @@ describe('TradeRuleEditor', () => {
     expect(api.discard).not.toHaveBeenCalled()
   })
 
-  it('三选中的保存草稿失败时不放行且保留当前输入', async () => {
+  it('页面浮层保存草稿失败时不放行且保留当前输入', async () => {
     api.save.mockRejectedValueOnce(new Error('save failed'))
     const wrapper = await mountEditor()
     await field(wrapper, '规则名称').get('input').setValue('保存失败也不能丢')
     const leaveResult = (wrapper.vm as any).requestLeave()
-    await flushPromises()
-    await leaveDecisionButtons(wrapper)[2].trigger('click')
-    await flushPromises()
+    expect(await (wrapper.vm as any).saveDraft(false)).toBe(false)
 
     expect(api.save).toHaveBeenCalledTimes(1)
     expect((wrapper.vm as any).isDirty()).toBe(true)
     expect(field(wrapper, '规则名称').get('input').element.value).toBe('保存失败也不能丢')
-    expect(leaveDecisionButtons(wrapper).map((button) => button.text()))
-      .toEqual(['继续编辑', '放弃修改', '保存草稿'])
-
-    await leaveDecisionButtons(wrapper)[0].trigger('click')
+    latestLeaveResolver(wrapper)(false)
     await expect(leaveResult).resolves.toBe(false)
   })
 
@@ -262,7 +257,8 @@ describe('TradeRuleEditor', () => {
     expect(optionRows).toHaveLength(3)
     expect(optionRows.filter((row) => row.querySelector('.builtin-option-label'))).toHaveLength(2)
     expect(optionRows.filter((row) => row.querySelector('.builtin-option-row__action'))).toHaveLength(1)
-    expect(document.body.textContent).toContain('内置类型不可删除')
+    expect(wrapper.get('[data-testid="action-rule-type-help"]').attributes('aria-label')).toBe('说明')
+    expect(wrapper.text()).not.toContain('内置类型不可删除')
     expect(document.body.textContent).not.toContain('全局类型不可删除')
     const deleteButtons = Array.from(
       document.body.querySelectorAll('[aria-label="删除自定义买卖类型"]'),

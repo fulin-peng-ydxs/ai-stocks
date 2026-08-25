@@ -26,6 +26,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
+import { compareScheduleFrequency } from '@/utils/scheduleFrequencySort'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
 
 const router = useRouter()
@@ -69,13 +70,12 @@ const { sortBy, sortOrder, elementDefaultSort, onSortChange } = useTableSort<(ty
   allowedFields: JOB_SORT_FIELDS,
   defaultOrder: 'asc',
 })
-// 频率按触发疏密排序（每日→每周→每月→cron），同档再按名称稳定次序。
-const FREQ_RANK: Record<FreqType, number> = { daily: 0, weekly: 1, monthly: 2, cron: 3 }
+// 频率按真实配置排序（每日时间、每周星期与时间、每月日期与时间、cron 表达式）。
 const sortedJobs = computed(() => {
   const factor = sortOrder.value === 'desc' ? -1 : 1
   const byName = (a: ScheduledJob, b: ScheduledJob) => a.name.localeCompare(b.name, 'zh')
   return [...jobs.value].sort((a, b) => {
-    const primary = sortBy.value === 'freq' ? FREQ_RANK[a.freq_type] - FREQ_RANK[b.freq_type] : byName(a, b)
+    const primary = sortBy.value === 'freq' ? compareScheduleFrequency(a, b) : byName(a, b)
     return (primary || byName(a, b)) * factor
   })
 })
@@ -446,7 +446,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
             <template #default="{ row }">{{ taskDisplayLabel(row.task_type, row.params) }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('freq')" label="频率" prop="freq" show-overflow-tooltip sortable="custom">
-            <template #default="{ row }">{{ row.freq_text }}</template>
+            <template #default="{ row }"><span data-testid="schedule-frequency">{{ row.freq_text }}</span></template>
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('tradingDay')" label="仅交易日" align="center">
             <template #default="{ row }">

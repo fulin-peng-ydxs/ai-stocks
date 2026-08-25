@@ -164,7 +164,7 @@ function managementTone(rule: TradeDisciplineRule): 'success' | 'danger' | 'warn
 }
 .rule-master__name { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-weight: var(--app-font-weight-section); }
 .rule-master__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rule-master__states { margin-top: var(--app-space-1); display: flex; align-items: start; flex-direction: column; gap: 2px; color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
+.rule-master__states { margin-top: var(--app-space-1); display: flex; align-items: start; flex-direction: column; gap: var(--app-space-1); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-master__management { text-align: left; color: var(--el-text-color-secondary); overflow-wrap: anywhere; }
 .rule-master__management.is-success { color: var(--el-color-success); }
 .rule-master__management.is-danger { color: var(--app-danger-text); }

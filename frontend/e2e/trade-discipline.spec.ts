@@ -126,22 +126,43 @@ async function expectWorkspaceSurface(locator: Locator): Promise<void> {
   expect(colors.backgroundColor).toBe(colors.surfaceColor)
 }
 
+async function expectChildFillsContainer(container: Locator, childSelector: string): Promise<void> {
+  const geometry = await container.evaluate((element, selector) => {
+    const child = element.querySelector<HTMLElement>(selector)
+    const style = getComputedStyle(element)
+    const contentWidth = element.clientWidth
+      - Number.parseFloat(style.paddingLeft)
+      - Number.parseFloat(style.paddingRight)
+    return {
+      childWidth: child?.getBoundingClientRect().width ?? 0,
+      contentWidth,
+    }
+  }, childSelector)
+  expect(geometry.childWidth).toBeGreaterThan(0)
+  expect(Math.abs(geometry.contentWidth - geometry.childWidth)).toBeLessThanOrEqual(1)
+}
+
 async function expectOperationEditorLayout(checkin: Locator): Promise<void> {
   const geometry = await checkin.getByTestId('operation-card-editor').evaluate((editor) => {
     const grid = editor.querySelector<HTMLElement>('.operation-grid')
     const stock = editor.querySelector<HTMLElement>('.operation-field--stock')
-    const side = editor.querySelector<HTMLElement>('.operation-field--side')
+    const time = editor.querySelector<HTMLElement>('.operation-field--time')
+    const rules = Array.from(editor.querySelectorAll<HTMLElement>('.operation-field--rule'))
     const amounts = Array.from(editor.querySelectorAll<HTMLElement>('.operation-field--amount'))
     return {
       gridWidth: grid?.getBoundingClientRect().width ?? 0,
       stockWidth: stock?.getBoundingClientRect().width ?? 0,
-      sideWidth: side?.getBoundingClientRect().width ?? 0,
+      timeWidth: time?.getBoundingClientRect().width ?? 0,
+      ruleWidths: rules.map((item) => item.getBoundingClientRect().width),
       amountWidths: amounts.map((item) => item.getBoundingClientRect().width),
     }
   })
   expect(geometry.gridWidth).toBeGreaterThan(0)
-  expect(geometry.gridWidth).toBeLessThanOrEqual(1441)
-  expect(geometry.stockWidth).toBeGreaterThan(geometry.sideWidth)
+  expect(geometry.stockWidth).toBeGreaterThan(0)
+  expect(geometry.timeWidth).toBeGreaterThan(0)
+  expect(Math.abs(geometry.stockWidth - geometry.timeWidth)).toBeLessThanOrEqual(1)
+  expect(geometry.ruleWidths).toHaveLength(2)
+  expect(Math.abs(geometry.ruleWidths[0]! - geometry.ruleWidths[1]!)).toBeLessThanOrEqual(1)
   expect(geometry.amountWidths).toHaveLength(4)
   expect(Math.max(...geometry.amountWidths) - Math.min(...geometry.amountWidths)).toBeLessThanOrEqual(1)
 }
@@ -153,6 +174,10 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
     verifyStockSearch: true,
   })
   await useAuth(page, auth)
+  const initialViewport = page.viewportSize()
+  if (testInfo.project.name === 'chromium-default') {
+    await page.setViewportSize({ width: 2560, height: 1080 })
+  }
   await page.goto(`/trade-discipline?tab=rules&rule_ref=${fixture.ruleId}`)
 
   const editor = page.getByTestId('rule-editor')
@@ -165,25 +190,43 @@ test('真实夹具在三视口及超宽屏呈现生命周期全序、四类历�
   await editor.getByTestId('stock-rule-card').first().getByTestId('rule-card-toggle').click()
   await expect(editor.getByTestId('stock-rule-capital-input').first()).toBeDisabled()
   await expectWorkspaceSurface(editor.getByTestId('rule-card-editor'))
+  await editor.getByTestId('buy-rule-group').getByTestId('rule-card-toggle').first().click()
+  const typeHelp = editor.getByTestId('action-rule-type-help')
+  await typeHelp.hover()
+  await expect(page.getByText('内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除。', { exact: true })).toBeVisible()
+  await expectChildFillsContainer(editor, '.rule-editor__form')
 
   await page.goto(`/trade-discipline?tab=checkin&rule_ref=${fixture.ruleId}&trade_date=${TRADE_DISCIPLINE_FIXTURE.operationTradeDate}`)
   const checkin = page.getByTestId('checkin-form')
   const operationCards = checkin.getByTestId('operation-card')
   await expect(operationCards).toHaveCount(2)
+  await expect(checkin.getByTestId('buy-operation-group')).toContainText('买入操作')
+  await expect(checkin.getByTestId('sell-operation-group')).toContainText('卖出操作')
+  await expect(checkin.getByTestId('buy-operation-group').getByTestId('operation-card')).toHaveCount(1)
+  await expect(checkin.getByTestId('sell-operation-group').getByTestId('operation-card')).toHaveCount(1)
   await expect(checkin.getByTestId('operation-card-editor')).toHaveCount(0)
-  await expect(operationCards.first()).toContainText('E2E股票01 998801.SZ · 买入')
+  await expect(operationCards.first()).toContainText('E2E股票01 998801.SZ')
   await expect(operationCards.first()).toContainText('成交金额 · 12,345.60')
   const operationToggles = checkin.getByTestId('operation-card-toggle')
   await operationToggles.first().click()
   await expect(checkin.getByTestId('operation-card-editor')).toHaveCount(1)
   await expect(operationToggles.first()).toHaveAttribute('aria-expanded', 'true')
+  await expect(checkin.getByTestId('operation-card-editor').getByText('方向', { exact: true })).toHaveCount(0)
+  await expect(checkin.getByTestId('operation-card-editor').getByText('买入规则', { exact: true })).toBeVisible()
   await operationToggles.nth(1).click()
   await expect(checkin.getByTestId('operation-card-editor')).toHaveCount(1)
   await expect(operationToggles.first()).toHaveAttribute('aria-expanded', 'false')
   await expect(operationToggles.nth(1)).toHaveAttribute('aria-expanded', 'true')
+  await expect(checkin.getByTestId('operation-card-editor').getByText('卖出规则', { exact: true })).toBeVisible()
   await expectWorkspaceSurface(page.locator('.panel-detail'))
   await expectWorkspaceSurface(checkin.getByTestId('operation-card-editor'))
+  await expectChildFillsContainer(checkin, '.checkin-form')
+  await expectChildFillsContainer(checkin.getByTestId('operation-card-editor'), '.operation-grid')
   await expectOperationEditorLayout(checkin)
+
+  if (testInfo.project.name === 'chromium-default' && initialViewport) {
+    await page.setViewportSize(initialViewport)
+  }
 
   await page.getByRole('button', { name: '历史记录', exact: true }).click()
   const history = page.getByRole('table', { name: '履约历史', exact: true })

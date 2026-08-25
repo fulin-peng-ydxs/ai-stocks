@@ -128,7 +128,12 @@ const selectedRule = computed(
 const ruleEditorRef = ref<{
   isDirty: () => boolean
   requestLeave: () => Promise<boolean>
+  saveDraft: (showMessage?: boolean) => Promise<boolean>
+  discardUnsavedChanges: () => void
 } | null>(null)
+const ruleLeaveDecisionVisible = ref(false)
+const ruleLeaveSaving = ref(false)
+let resolveRuleLeaveDecision: ((allowLeave: boolean) => void) | null = null
 const checkinFormRef = ref<{
   isDirty: () => boolean
   requestLeave: () => Promise<boolean>
@@ -300,6 +305,40 @@ async function handleRuleCopied(ruleId: string): Promise<void> {
   selectedRuleId.value = ruleId
 }
 
+function requestRuleLeaveDecision(resolve: (allowLeave: boolean) => void): void {
+  if (resolveRuleLeaveDecision) {
+    resolve(false)
+    return
+  }
+  resolveRuleLeaveDecision = resolve
+  ruleLeaveDecisionVisible.value = true
+}
+
+function finishRuleLeaveDecision(allowLeave: boolean): void {
+  ruleLeaveDecisionVisible.value = false
+  resolveRuleLeaveDecision?.(allowLeave)
+  resolveRuleLeaveDecision = null
+}
+
+function continueRuleEditing(): void {
+  finishRuleLeaveDecision(false)
+}
+
+function discardRuleChangesAndLeave(): void {
+  ruleEditorRef.value?.discardUnsavedChanges()
+  finishRuleLeaveDecision(true)
+}
+
+async function saveRuleChangesAndLeave(): Promise<void> {
+  if (!ruleEditorRef.value || ruleLeaveSaving.value) return
+  ruleLeaveSaving.value = true
+  try {
+    if (await ruleEditorRef.value.saveDraft(false)) finishRuleLeaveDecision(true)
+  } finally {
+    ruleLeaveSaving.value = false
+  }
+}
+
 async function changeCheckinTradeDate(value: string): Promise<void> {
   if (value === checkinTradeDate.value) return
   if (!(await confirmLeave(route.path, 'context-change'))) return
@@ -369,7 +408,10 @@ onMounted(() => {
   })
   void loadPage().finally(() => { routeIntentReady = true })
 })
-onUnmounted(() => unregisterUnsavedHandler?.())
+onUnmounted(() => {
+  unregisterUnsavedHandler?.()
+  if (resolveRuleLeaveDecision) finishRuleLeaveDecision(false)
+})
 
 watch(
   () => [route.query.tab, route.query.rule_ref, route.query.trade_date] as const,
@@ -440,13 +482,13 @@ watch(tradeDisciplineChangeVersion, async () => {
                 <p>
                   <b>规则怎么生效：</b>新建时只是可编辑草稿，发布后才生成正式版本；发布新版本、归档或恢复，都从操作后的下一真实交易日起生效，避免事后改规则影响当日复盘。
                 </p>
-                <p style="margin:6px 0 0">
+                <p class="help-paragraph">
                   <b>“今日”是哪一天：</b>今日打卡和首页今日交易纪律使用本地行情中最新已入库的交易日。当天收盘数据尚未入库时，这里仍会显示上一个交易日。
                 </p>
-                <p style="margin:6px 0 0">
+                <p class="help-paragraph">
                   <b>为什么显示待生效：</b>正式版本已经发布，但生效日晚于当前可打卡交易日；等生效日行情入库后，规则会自动出现在今日打卡中。
                 </p>
-                <p style="margin:6px 0 0">
+                <p class="help-paragraph">
                   <b>历史如何保留：</b>每次打卡绑定当时生效的正式版本，之后修改规则不会覆盖既有记录。
                 </p>
               </HelpTip>
@@ -570,6 +612,7 @@ watch(tradeDisciplineChangeVersion, async () => {
               @changed="refreshRules"
               @deleted="handleRuleDeleted"
               @copied="handleRuleCopied"
+              @request-leave="requestRuleLeaveDecision"
             />
             <AppStateBlock
               v-else
@@ -610,6 +653,21 @@ watch(tradeDisciplineChangeVersion, async () => {
     </template>
 
     <template #overlays>
+      <el-dialog
+        v-model="ruleLeaveDecisionVisible"
+        title="未保存的规则修改"
+        width="460px"
+        :show-close="false"
+        :close-on-click-modal="false"
+        :close-on-press-escape="false"
+      >
+        <p class="leave-decision-copy">当前规则有未保存修改。请选择如何处理后再离开。</p>
+        <template #footer>
+          <el-button @click="continueRuleEditing">继续编辑</el-button>
+          <el-button v-permission="'trade-discipline:rule-manage'" type="danger" plain @click="discardRuleChangesAndLeave">放弃修改</el-button>
+          <el-button v-permission="'trade-discipline:rule-manage'" type="primary" :loading="ruleLeaveSaving" @click="saveRuleChangesAndLeave">保存草稿</el-button>
+        </template>
+      </el-dialog>
       <TradeCheckinRevisionDrawer
         v-model="historyDetailOpen"
         :row="historyDetailRow"
@@ -641,6 +699,8 @@ watch(tradeDisciplineChangeVersion, async () => {
   align-items: center;
 }
 .page-head-actions { gap: var(--app-space-2); }
+.help-paragraph { margin: var(--app-space-control-gap) 0 0; }
+.leave-decision-copy { margin: 0; color: var(--el-text-color-regular); line-height: var(--app-line-height-longform); }
 .discipline-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
 .discipline-rail { flex: none; }
 .discipline-rail :deep(.page-segmented) { min-width: 360px; }

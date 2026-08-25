@@ -15,21 +15,21 @@ const version: RuleVersionDetail = {
 }
 
 describe('TradeOperationEditor', () => {
-  it('候选唯一时自动关联规则，切换方向保留股票并重算买卖规则', async () => {
+  it('候选唯一时自动关联规则，方向由新增分组确定', async () => {
     const wrapper = mount(TradeOperationEditor, {
       props: { modelValue: [], version, tradeDate: '2026-08-22' },
       global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
     })
-    await wrapper.get('button.el-button').trigger('click')
+    expect(wrapper.get('[data-testid="buy-operation-group"]').text()).toContain('买入操作')
+    expect(wrapper.get('[data-testid="sell-operation-group"]').text()).toContain('卖出操作')
+    await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
     const created = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
     expect(created[0]).toMatchObject({ stock_rule_id: 'stock-1', action_rule_id: 'buy-1', side: 'buy' })
     await wrapper.setProps({ modelValue: [{ ...created[0], stock_code: '000001.SZ', stock_name_snapshot: '平安银行' }] })
     expect(wrapper.get('[data-testid="operation-card-toggle"]').attributes('aria-expanded')).toBe('true')
     expect(wrapper.findComponent({ name: 'StockOptionSelect' }).props('tradeDate')).toBe('2026-08-22')
-    wrapper.findComponent({ name: 'ElSegmented' }).vm.$emit('update:modelValue', 'sell')
-    await flushPromises()
-    const changed = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
-    expect(changed[0]).toMatchObject({ stock_code: '000001.SZ', stock_rule_id: 'stock-1', action_rule_id: 'sell-1', side: 'sell' })
+    expect(wrapper.findComponent({ name: 'ElSegmented' }).exists()).toBe(false)
+    expect(wrapper.get('[data-testid="operation-card-editor"]').text()).toContain('买入规则')
   })
 
   it('同方向存在多个候选时不擅自选择', async () => {
@@ -38,7 +38,7 @@ describe('TradeOperationEditor', () => {
       props: { modelValue: [], version: multi, tradeDate: '2026-08-22' },
       global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
     })
-    await wrapper.get('button.el-button').trigger('click')
+    await wrapper.get('button[aria-label="添加买入操作"]').trigger('click')
     const created = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
     expect(created[0].action_rule_id).toBe('')
   })
@@ -83,9 +83,12 @@ describe('TradeOperationEditor', () => {
     })
 
     expect(wrapper.findAll('[data-testid="operation-card-editor"]')).toHaveLength(0)
-    expect(wrapper.text()).toContain('平安银行 000001.SZ · 买入')
+    expect(wrapper.findAll('.app-summary-disclosure-card__title-row strong')[0]!.text())
+      .toBe('平安银行 000001.SZ')
     expect(wrapper.text()).toContain('成交金额 · 1,000.00')
     expect(wrapper.text()).toContain('唯一选股 · 唯一买入 · 2026-08-22 14:30')
+    expect(wrapper.get('[data-testid="buy-operation-group"]').findAll('[data-testid="operation-card"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="sell-operation-group"]').findAll('[data-testid="operation-card"]')).toHaveLength(1)
 
     const toggles = wrapper.findAll('[data-testid="operation-card-toggle"]')
     await toggles[0]!.trigger('click')
@@ -95,6 +98,22 @@ describe('TradeOperationEditor', () => {
     expect(wrapper.findAll('[data-testid="operation-card-editor"]')).toHaveLength(1)
     expect(toggles[0]!.attributes('aria-expanded')).toBe('false')
     expect(toggles[1]!.attributes('aria-expanded')).toBe('true')
+  })
+
+  it('从方向分组新增时预设对应方向及唯一买卖规则', async () => {
+    const wrapper = mount(TradeOperationEditor, {
+      props: { modelValue: [], version, tradeDate: '2026-08-22' },
+      global: { plugins: [ElementPlus], directives: { permission: {} }, stubs: { StockOptionSelect: true } },
+    })
+
+    await wrapper.get('button[aria-label="添加卖出操作"]').trigger('click')
+    const created = wrapper.emitted('update:modelValue')?.at(-1)?.[0] as any[]
+    expect(created[0]).toMatchObject({ side: 'sell', action_rule_id: 'sell-1' })
+    expect(wrapper.find('[data-testid="operation-card-editor"]').exists()).toBe(false)
+
+    await wrapper.setProps({ modelValue: created })
+    expect(wrapper.get('[data-testid="sell-operation-group"]').findAll('[data-testid="operation-card"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="operation-card-toggle"]').attributes('aria-expanded')).toBe('true')
   })
 
   it('可按校验结果展开指定操作', async () => {

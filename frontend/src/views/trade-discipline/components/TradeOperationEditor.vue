@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppSummaryDisclosureCard from '@/components/AppSummaryDisclosureCard.vue'
 import {
   decimalToMinorUnits,
@@ -11,6 +12,9 @@ import {
 import { formatMoney } from '@/utils/money'
 import FixedDecimalInput from './FixedDecimalInput.vue'
 import StockOptionSelect from './StockOptionSelect.vue'
+import TradeDirectionGroupGrid, {
+  type TradeDirectionGroup,
+} from '@/components/trade-discipline/TradeDirectionGroupGrid.vue'
 import type {
   CheckinOperation,
   RuleVersionDetail,
@@ -27,6 +31,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: CheckinOperation[]] }>()
 let operationKey = 0
 // 单一展开 key 保证多笔成交仍保持紧凑；新增和校验失败会主动切换到目标卡片。
 const expandedOperationKey = ref<string | null>(null)
+const operationGroups: TradeDirectionGroup[] = [
+  { value: 'buy', label: '买入操作', hint: '建仓与加仓成交事实', testId: 'buy-operation-group' },
+  { value: 'sell', label: '卖出操作', hint: '减仓与清仓成交事实', testId: 'sell-operation-group' },
+]
 
 const stockRules = computed(() => props.version.stock_rules.filter((item) => item.enabled && item.detail_id))
 function actionRules(side: 'buy' | 'sell') {
@@ -35,12 +43,12 @@ function actionRules(side: 'buy' | 'sell') {
   )
 }
 
-function emptyOperation(order: number): CheckinOperation {
+function emptyOperation(order: number, side: 'buy' | 'sell'): CheckinOperation {
   return {
     client_key: `operation-${Date.now()}-${++operationKey}`,
-    stock_code: '', stock_name_snapshot: '', side: 'buy',
+    stock_code: '', stock_name_snapshot: '', side,
     stock_rule_id: stockRules.value.length === 1 ? stockRules.value[0].detail_id! : '',
-    action_rule_id: actionRules('buy').length === 1 ? actionRules('buy')[0].detail_id! : '',
+    action_rule_id: actionRules(side).length === 1 ? actionRules(side)[0].detail_id! : '',
     price: null, quantity: null, amount: null, fee: null,
     operated_at: null, note: null, display_order: order,
   }
@@ -50,15 +58,20 @@ function itemKey(operation: CheckinOperation, index: number): string {
   return operation.client_key || operation.id || `loaded-${index}`
 }
 
+function groupedOperations(side: 'buy' | 'sell') {
+  return props.modelValue
+    .map((operation, index) => ({ operation, index }))
+    .filter(({ operation }) => operation.side === side)
+}
+
 function cardIndex(index: number): string {
   return String(index + 1).padStart(2, '0')
 }
 
-function cardTitle(operation: CheckinOperation, index: number): string {
-  const stock = operation.stock_name_snapshot && operation.stock_code
+function cardTitle(operation: CheckinOperation): string {
+  return operation.stock_name_snapshot && operation.stock_code
     ? `${operation.stock_name_snapshot} ${operation.stock_code}`
-    : `操作 ${index + 1} · 未选择股票`
-  return `${stock} · ${operation.side === 'sell' ? '卖出' : '买入'}`
+    : '未选择股票'
 }
 
 function ruleName(operation: CheckinOperation, kind: 'stock' | 'action'): string {
@@ -113,8 +126,8 @@ function update(index: number, patch: Partial<CheckinOperation>): void {
   emit('update:modelValue', next)
 }
 
-function add(): void {
-  const operation = emptyOperation(props.modelValue.length + 1)
+function add(side: 'buy' | 'sell'): void {
+  const operation = emptyOperation(props.modelValue.length + 1, side)
   expandedOperationKey.value = itemKey(operation, props.modelValue.length)
   emit('update:modelValue', [...props.modelValue, operation])
 }
@@ -131,14 +144,6 @@ function selectStock(index: number, stock: StockOption | null): void {
   update(index, {
     stock_code: stock?.code ?? '',
     stock_name_snapshot: stock?.name ?? '',
-  })
-}
-
-function changeSide(index: number, side: 'buy' | 'sell'): void {
-  const candidates = actionRules(side)
-  update(index, {
-    side,
-    action_rule_id: candidates.length === 1 ? candidates[0].detail_id! : '',
   })
 }
 
@@ -182,34 +187,44 @@ defineExpose({ expandOperation })
     <div class="operation-editor__head">
       <div>
         <h4>操作事实</h4>
-        <p class="app-caption-text">同一股票可记录多笔；规则关联以本次打卡绑定的版本为准。</p>
+        <p class="app-caption-text">按方向分组记录成交；规则关联以本次打卡绑定的版本为准。</p>
       </div>
-      <el-button
-        v-permission="'trade-discipline:checkin-submit'"
-        :icon="Plus"
-        :disabled="disabled"
-        @click="add"
-      >添加操作</el-button>
     </div>
 
-    <div v-if="!modelValue.length" class="operation-empty app-caption-text">
-      添加至少一条操作，或在上方选择“今日无操作”。
-    </div>
-    <AppSummaryDisclosureCard
-      v-for="(operation, index) in modelValue"
-      :key="itemKey(operation, index)"
-      :panel-id="`operation-panel-${itemKey(operation, index)}`"
-      :index-label="cardIndex(index)"
-      :title="cardTitle(operation, index)"
-      :toggle-label="`${expandedOperationKey === itemKey(operation, index) ? '收起' : '展开'}操作 ${index + 1}`"
-      :meta="cardMeta(operation)"
-      :preview="cardPreview(operation)"
-      :expanded="expandedOperationKey === itemKey(operation, index)"
-      toggle-test-id="operation-card-toggle"
-      editor-test-id="operation-card-editor"
-      data-testid="operation-card"
-      @toggle="toggle(operation, index)"
-    >
+    <TradeDirectionGroupGrid :groups="operationGroups">
+      <template #actions="{ group }">
+        <el-button
+          v-permission="'trade-discipline:checkin-submit'"
+          :icon="Plus"
+          size="small"
+          :disabled="disabled"
+          :aria-label="`添加${group.label}`"
+          @click="add(group.value)"
+        >添加</el-button>
+      </template>
+      <template #default="{ group }">
+        <AppStateBlock
+          v-if="!groupedOperations(group.value).length"
+          state="empty"
+          size="tiny"
+          :title="`尚未添加${group.label}`"
+        />
+        <div v-else class="operation-card-list">
+          <AppSummaryDisclosureCard
+            v-for="({ operation, index }, groupIndex) in groupedOperations(group.value)"
+            :key="itemKey(operation, index)"
+            :panel-id="`operation-panel-${itemKey(operation, index)}`"
+            :index-label="cardIndex(groupIndex)"
+            :title="cardTitle(operation)"
+            :toggle-label="`${expandedOperationKey === itemKey(operation, index) ? '收起' : '展开'}${group.label} ${groupIndex + 1}`"
+            :meta="cardMeta(operation)"
+            :preview="cardPreview(operation)"
+            :expanded="expandedOperationKey === itemKey(operation, index)"
+            toggle-test-id="operation-card-toggle"
+            editor-test-id="operation-card-editor"
+            data-testid="operation-card"
+            @toggle="toggle(operation, index)"
+          >
       <template #status>
         <span v-if="operationIssue(operation)" class="operation-card__issue">
           {{ operationIssue(operation) }}
@@ -236,14 +251,6 @@ defineExpose({ expandOperation })
             @update:model-value="selectStock(index, $event)"
           />
         </el-form-item>
-        <el-form-item label="方向" required class="operation-field operation-field--side">
-          <el-segmented
-            :model-value="operation.side"
-            :options="[{ label: '买入', value: 'buy' }, { label: '卖出', value: 'sell' }]"
-            :disabled="disabled"
-            @update:model-value="changeSide(index, $event as 'buy' | 'sell')"
-          />
-        </el-form-item>
         <el-form-item label="操作时间" class="operation-field operation-field--time">
           <el-date-picker :model-value="operation.operated_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" format="YYYY-MM-DD HH:mm" :disabled="disabled" @update:model-value="update(index, { operated_at: $event })" />
         </el-form-item>
@@ -253,7 +260,7 @@ defineExpose({ expandOperation })
           </el-select>
           <small v-if="!stockRules.length" class="field-error">当前版本没有可用选股规则</small>
         </el-form-item>
-        <el-form-item label="买卖规则" required class="operation-field operation-field--rule">
+        <el-form-item :label="operation.side === 'sell' ? '卖出规则' : '买入规则'" required class="operation-field operation-field--rule">
           <el-select :model-value="operation.action_rule_id" :disabled="disabled || !actionRules(operation.side).length" placeholder="选择规则" @update:model-value="update(index, { action_rule_id: $event })">
             <el-option v-for="rule in actionRules(operation.side)" :key="rule.detail_id!" :label="rule.name || '未命名规则'" :value="rule.detail_id!" />
           </el-select>
@@ -270,7 +277,10 @@ defineExpose({ expandOperation })
         <el-form-item label="费用" class="operation-field operation-field--amount"><FixedDecimalInput :model-value="operation.fee" grouped :disabled="disabled" @update:model-value="update(index, { fee: $event })" /></el-form-item>
         <el-form-item label="操作说明" class="operation-note"><el-input :model-value="operation.note" :disabled="disabled" maxlength="500" @update:model-value="update(index, { note: $event })" /></el-form-item>
       </div>
-    </AppSummaryDisclosureCard>
+          </AppSummaryDisclosureCard>
+        </div>
+      </template>
+    </TradeDirectionGroupGrid>
   </div>
 </template>
 
@@ -278,7 +288,7 @@ defineExpose({ expandOperation })
 .operation-editor { display: grid; gap: var(--app-space-3); }
 .operation-editor__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--app-space-3); }
 .operation-editor h4, .operation-editor p { margin: 0; }
-.operation-empty { padding: var(--app-space-4); border: 1px dashed var(--el-border-color); border-radius: var(--layout-card-radius); text-align: center; }
+.operation-card-list { display: grid; gap: var(--app-space-2); }
 .operation-card__issue {
   flex: none;
   color: var(--app-warning-text);
@@ -290,21 +300,17 @@ defineExpose({ expandOperation })
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   column-gap: var(--app-space-3);
-  max-width: 1440px;
 }
-.operation-field--stock { grid-column: span 5; }
-.operation-field--side { grid-column: span 2; }
+.operation-field--stock { grid-column: span 6; }
 .operation-field--rule { grid-column: span 6; }
 .operation-field--amount { grid-column: span 3; }
-.operation-field--time { grid-column: span 5; }
+.operation-field--time { grid-column: span 6; }
 .operation-grid :deep(.el-select), .operation-grid :deep(.el-input), .operation-grid :deep(.el-date-editor) { width: 100%; }
 .operation-grid :deep(.el-form-item__content) { display: block; }
 .operation-note { grid-column: 1 / -1; }
 .field-error { display: block; margin-top: var(--app-space-1); color: var(--el-color-danger); }
 @media (max-width: 1180px) {
-  .operation-field--stock { grid-column: span 8; }
-  .operation-field--side { grid-column: span 4; }
-  .operation-field--time { grid-column: span 12; }
+  .operation-field--stock, .operation-field--time { grid-column: span 12; }
   .operation-field--rule, .operation-field--amount { grid-column: span 6; }
 }
 @media (max-width: 760px) {

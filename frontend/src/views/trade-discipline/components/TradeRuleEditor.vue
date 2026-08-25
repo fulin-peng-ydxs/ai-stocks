@@ -5,10 +5,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import AppIconButton from '@/components/AppIconButton.vue'
 import BuiltinOptionRow from '@/components/BuiltinOptionRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import HelpTip from '@/components/HelpTip.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
 import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
 import RuleSummaryCard from '@/components/trade-discipline/RuleSummaryCard.vue'
+import TradeDirectionGroupGrid, {
+  type TradeDirectionGroup,
+} from '@/components/trade-discipline/TradeDirectionGroupGrid.vue'
 import {
   archiveTradeDisciplineRule,
   copyTradeDisciplineRule,
@@ -40,6 +44,7 @@ const emit = defineEmits<{
   changed: []
   deleted: []
   copied: [ruleId: string]
+  requestLeave: [resolve: (allowLeave: boolean) => void]
 }>()
 
 const detail = ref<TradeDisciplineRuleDetail | null>(null)
@@ -48,7 +53,6 @@ const loadError = ref(false)
 const command = ref('')
 const editing = ref(false)
 const draftRevision = ref<number | null>(null)
-const leaveDecisionVisible = ref(false)
 const form = ref<RuleDraftPayload>(emptyPayload())
 const expandedRule = ref<{
   kind: 'stock' | 'action'
@@ -61,7 +65,6 @@ const actionSubtypeOptions = ref<ActionSubtypeOption[]>([
   { name: 'reduce_position', label: '减仓', action_type: 'sell', builtin: true },
 ])
 let baseline = ''
-let resolveLeaveDecision: ((allowLeave: boolean) => void) | null = null
 let loadRequest = 0
 
 const dirty = computed(() => editing.value && fingerprint(form.value) !== baseline)
@@ -85,9 +88,9 @@ const canEditDetails = computed(() => props.canManage && editing.value && !isArc
 const latestVersionLabel = computed(() => detail.value?.latest_version_no
   ? `当前正式 v${detail.value.latest_version_no}` : '尚无正式版本')
 
-const actionGroups: Array<{ value: ActionType; label: string; hint: string }> = [
-  { value: 'buy', label: '买入规则', hint: '建仓与加仓条件' },
-  { value: 'sell', label: '卖出规则', hint: '止盈、止损与减仓条件' },
+const actionGroups: TradeDirectionGroup[] = [
+  { value: 'buy', label: '买入规则', hint: '建仓与加仓条件', testId: 'buy-rule-group' },
+  { value: 'sell', label: '卖出规则', hint: '止盈、止损与减仓条件', testId: 'sell-rule-group' },
 ]
 
 function subtypeOptions(side: ActionType): ActionSubtypeOption[] {
@@ -279,30 +282,13 @@ function restoreBaseline(): void {
   setEditorSource(source, detail.value?.draft?.draft_revision ?? null)
 }
 
-function finishLeaveDecision(allowLeave: boolean): void {
-  leaveDecisionVisible.value = false
-  resolveLeaveDecision?.(allowLeave)
-  resolveLeaveDecision = null
-}
-
-async function saveAndLeave(): Promise<void> {
-  if (await saveDraft(false)) finishLeaveDecision(true)
-}
-
-function discardAndLeave(): void {
+function discardUnsavedChanges(): void {
   restoreBaseline()
-  finishLeaveDecision(true)
-}
-
-function continueEditing(): void {
-  finishLeaveDecision(false)
 }
 
 function requestLeave(): Promise<boolean> {
   if (!dirty.value) return Promise.resolve(true)
-  if (leaveDecisionVisible.value) return Promise.resolve(false)
-  leaveDecisionVisible.value = true
-  return new Promise((resolve) => { resolveLeaveDecision = resolve })
+  return new Promise((resolve) => emit('requestLeave', resolve))
 }
 
 async function discardSavedDraft(): Promise<void> {
@@ -545,7 +531,12 @@ function effectiveText(): string {
 
 watch(() => [props.ruleId, props.tradeDate], load, { immediate: true })
 
-defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
+defineExpose({
+  isDirty: () => dirty.value,
+  requestLeave,
+  saveDraft,
+  discardUnsavedChanges,
+})
 </script>
 
 <template>
@@ -636,13 +627,11 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 
         <section class="detail-group">
           <header><div><h4>买卖规则</h4><p>按方向分组，正式发布至少启用一条买入和一条卖出规则</p></div></header>
-          <AppStateBlock v-if="!form.action_rules.length" state="empty" size="tiny" title="尚未添加买卖规则" />
-          <div class="action-group-grid">
-            <section v-for="group in actionGroups" :key="group.value" class="action-group" :data-testid="`${group.value}-rule-group`">
-              <header class="action-group__head">
-                <div><h5>{{ group.label }}</h5><p>{{ group.hint }}</p></div>
-                <el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" size="small" @click="addActionRule(group.value)">添加</el-button>
-              </header>
+          <TradeDirectionGroupGrid :groups="actionGroups">
+            <template #actions="{ group }">
+              <el-button v-if="canEditDetails" v-permission="'trade-discipline:rule-manage'" :icon="Plus" size="small" @click="addActionRule(group.value)">添加</el-button>
+            </template>
+            <template #default="{ group }">
               <AppStateBlock v-if="!groupedActionRules(group.value).length" state="empty" size="tiny" :title="`尚未添加${group.label}`" />
               <div v-else class="rule-card-grid rule-card-grid--single">
                 <RuleSummaryCard
@@ -668,7 +657,13 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
                   </template>
                   <div class="rule-card-form rule-card-form--action">
                     <el-form-item label="规则名称"><el-input v-model="item.name" data-testid="action-rule-name-input" maxlength="80" /></el-form-item>
-                    <el-form-item label="类型">
+                    <el-form-item>
+                      <template #label>
+                        类型
+                        <HelpTip title="类型说明" :width="360" test-id="action-rule-type-help">
+                          内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除。
+                        </HelpTip>
+                      </template>
                       <el-select v-model="item.action_subtype" filterable allow-create default-first-option maxlength="40" placeholder="选择或输入类型" data-testid="action-rule-type-select">
                         <el-option
                           v-if="subtypeIsMissing(item, group.value)"
@@ -687,14 +682,13 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
                           </BuiltinOptionRow>
                         </el-option>
                       </el-select>
-                      <small class="field-hint">内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除</small>
                     </el-form-item>
                     <el-form-item class="rule-card-form__content" label="规则内容"><el-input v-model="item.content" type="textarea" :autosize="{ minRows: 3, maxRows: 10 }" resize="vertical" /></el-form-item>
                   </div>
                 </RuleSummaryCard>
               </div>
-            </section>
-          </div>
+            </template>
+          </TradeDirectionGroupGrid>
         </section>
       </el-form>
 
@@ -706,22 +700,6 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
         <el-button v-permission="'trade-discipline:rule-manage'" type="primary" :loading="command === 'publish'" @click="publish">保存并启用</el-button>
       </footer>
 
-      <el-dialog
-        v-model="leaveDecisionVisible"
-        title="未保存的规则修改"
-        width="460px"
-        :show-close="false"
-        :close-on-click-modal="false"
-        :close-on-press-escape="false"
-        :teleported="false"
-      >
-        <p class="leave-decision-copy">当前规则有未保存修改。请选择如何处理后再离开。</p>
-        <template #footer>
-          <el-button @click="continueEditing">继续编辑</el-button>
-          <el-button v-permission="'trade-discipline:rule-manage'" type="danger" plain @click="discardAndLeave">放弃修改</el-button>
-          <el-button v-permission="'trade-discipline:rule-manage'" type="primary" :loading="command === 'save'" @click="saveAndLeave">保存草稿</el-button>
-        </template>
-      </el-dialog>
     </template>
   </section>
 </template>
@@ -730,7 +708,6 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 .rule-editor { min-width: 0; min-height: 0; overflow: auto; padding: var(--app-space-5); border: 1px solid var(--el-border-color); border-radius: var(--layout-card-radius); background: var(--el-bg-color); }
 .rule-editor__head, .rule-editor__commands, .detail-group > header, .rule-editor__footer { display: flex; align-items: center; }
 .rule-editor__head { justify-content: space-between; gap: var(--app-space-3); }
-.rule-editor__head, .rule-state-track, .readonly-banner, .rule-editor__form { max-width: 1680px; }
 .rule-editor__head .app-section-title { margin: var(--app-space-1) 0 0; }
 .rule-editor__commands { gap: var(--app-space-1); }
 .rule-state-track { margin: var(--app-space-4) 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--el-border-color-lighter); border-radius: var(--layout-control-radius); overflow: hidden; }
@@ -749,9 +726,9 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
   background: transparent;
   color: var(--el-text-color-secondary);
 }
-.rule-editor__base { display: grid; grid-template-columns: minmax(260px, 520px) minmax(220px, 360px) minmax(240px, 360px); gap: var(--app-space-3); align-items: end; justify-content: start; }
+.rule-editor__base { display: grid; grid-template-columns: minmax(260px, 2fr) minmax(220px, 1.3fr) minmax(240px, 1.3fr); gap: var(--app-space-3); align-items: end; }
 .rule-editor__base :deep(.el-input) { width: 100%; }
-.capital-meter { min-height: var(--app-control-height-md); margin-bottom: 18px; padding: 0 var(--app-space-3); border: 1px solid color-mix(in srgb, var(--el-color-success) 38%, var(--el-border-color)); border-radius: var(--layout-control-radius); background: transparent; color: var(--el-color-success); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); }
+.capital-meter { min-height: var(--app-control-height-md); margin-bottom: var(--app-space-4); padding: 0 var(--app-space-3); border: 1px solid color-mix(in srgb, var(--el-color-success) 38%, var(--el-border-color)); border-radius: var(--layout-control-radius); background: transparent; color: var(--el-color-success); display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-2); font-size: var(--app-font-size-caption); }
 .capital-meter.danger { border-color: color-mix(in srgb, var(--el-color-danger) 42%, var(--el-border-color)); background: transparent; color: var(--el-color-danger); }
 .detail-group { margin-top: var(--app-space-5); }
 .detail-group > header { justify-content: space-between; gap: var(--app-space-3); margin-bottom: var(--app-space-2); }
@@ -765,20 +742,14 @@ defineExpose({ isDirty: () => dirty.value, requestLeave, saveDraft })
 .rule-card-form--action { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
 .rule-card-form__content { grid-column: 1 / -1; }
 .rule-card-form :deep(.el-select), .rule-card-form :deep(.el-input) { width: 100%; }
-.action-group-grid { display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); gap: var(--app-space-3); }
-.action-group { min-width: 0; padding-top: var(--app-space-2); border-top: 1px solid var(--el-border-color); background: transparent; }
-.action-group__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--app-space-2); margin-bottom: var(--app-space-3); }
-.action-group h5 { margin: 0; color: var(--el-text-color-primary); font-size: var(--app-font-size-table); }
-.field-hint { display: block; margin-top: var(--app-space-1); color: var(--el-text-color-secondary); font-size: var(--app-font-size-caption); }
 .rule-editor__footer { position: sticky; bottom: calc(var(--app-space-5) * -1); z-index: 2; justify-content: flex-end; gap: var(--app-space-2); margin: var(--app-space-5) calc(var(--app-space-5) * -1) calc(var(--app-space-5) * -1); padding: var(--app-space-3) var(--app-space-5); border-top: 1px solid var(--el-border-color); background: var(--el-bg-color); }
 .dirty-copy { margin-right: auto; color: var(--el-color-warning); font-size: var(--app-font-size-caption); }
-.leave-decision-copy { margin: 0; color: var(--el-text-color-regular); line-height: var(--app-line-height-longform); }
 @media (max-width: 1100px) {
   .rule-editor { overflow: visible; }
   .rule-state-track, .rule-editor__base { grid-template-columns: 1fr; }
   .rule-state-track > div + div { border-left: 0; border-top: 1px solid var(--el-border-color-lighter); }
   .capital-meter { margin-bottom: 0; }
-  .rule-card-grid, .action-group-grid { grid-template-columns: 1fr; }
+  .rule-card-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
   .rule-editor__head, .detail-group > header { align-items: stretch; flex-direction: column; }

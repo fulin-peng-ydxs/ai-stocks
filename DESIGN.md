@@ -125,7 +125,7 @@ Key Characteristics：
 - 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
 - 微字号（`--app-font-size-micro`/`tiny`/`ornament`）不得通过无 `>` 限定的宽泛后代选择器（如 `.xx span`、`.xx strong`）声明——此类规则会把它误传给嵌套的数值、标题等本不该用小字号的元素。微字号只允许作用于语义类、`:global` 或 `>` 限定的直接子级；容器用常规字号，内部小字通过独立子级规则声明。该约束由 `typography-spacing-system.spec.ts` 强制，禁止用 `>` 缺失的选择器绕过。
 - 表格内长文本默认省略、tooltip 或详情承接，不默认自动换行撑高行高。
-- 说明性长文优先进入 `HelpTip` / `HelpHint`，页面上只保留必要短标签。
+- 单块纯文本说明优先进入 `HelpHint` 的 tooltip；需要标题、分段、列表、示例或同时解释多个独立要点时使用 `HelpTip` 的 popover。页面上只保留必要短标签，不以字符数作为两者的硬边界。
 - 组件内提示、说明、空状态、校验文案必须按容器宽度排版，避免长句硬塞一行；必要时分行、缩短文案或交给 tooltip / popover 承接，不得挤压主操作区或造成文本重叠。
 - 按钮、标签、抽屉标题、表格控件中的文字不得溢出容器。
 - 金融数字按列右对齐或按业务组件一致处理，避免同列数字参差。
@@ -203,13 +203,15 @@ Key Characteristics：
 | `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 消费 `pageRegistry.consumedComponentFields`、`componentMeta` 和 `COMPONENT_FIELD_DEFS` | 设置抽屉 user 层与页面布局编辑器 page 层共用；候选项可由页面按当前业务上下文传入运行时 meta 覆盖，避免不同面板的分区混显；枚举候选较多而使用下拉框时，输入框必须与 `PageSegmented` 共用连续底板、基础边框和明确聚焦态 |
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉的分组容器 | 无直接系统组件种类 | 页面设置抽屉分组优先复用；不直接用于主内容区配置面板 |
 | `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | `PageSettingsDrawer` 的业务选项统一复用；不得在页面内复制标题、说明和分区间距 |
-| `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组优先复用；配置项说明/默认值继续放 `HelpHint`，一级组说明在组头展示，二级分区说明随分区内容一起展开/收起 |
+| `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组优先复用；配置项中可作为单块纯文本理解的说明/默认值放 `HelpHint`，需要结构化排版时改用 `HelpTip`；一级组说明在组头展示，二级分区说明随分区内容一起展开/收起 |
 | `PageSegmented` | `frontend/src/components/PageSegmented.vue` | 页面设置和业务偏好的分段选择控件 | 无直接系统组件种类 | 业务选项、组件设置中的枚举选择优先复用；整组选项使用连续底板与基础边框，选中项在组内浮起，不把选项渲染成彼此分散的独立按钮；页面级模式/范围切换使用 `tone="primary"` 跟随系统主色，设置抽屉枚举保持默认中性色；固定操作区使用 `small`，设置抽屉与表单使用默认尺寸；每个选项必须通过 `aria-pressed` 暴露程序化选中状态，多组并列使用时由消费页提供可访问名称 |
 | `BoardTaskScopeFields` | `frontend/src/components/data/BoardTaskScopeFields.vue` | 板块采集范围和分阶段参数组 | 无直接系统组件种类 | 数据采集与任务调度的板块任务统一复用；模式、板块类型、采集内容和成分强刷文案/参数不得在消费页再维护第二套 |
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用 |
 | `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 多个输入、选择器、按钮组成的横向行优先使用 `AppControlRow`；存在“说明文字 + 控件”时必须用 `AppControlItem` 包裹，避免标签和控件被拆到不同行；只有明确需要均分或撑满时才传 `fill` 或让具体 `AppControlItem` 设置 `grow` |
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
+| `BuiltinOptionRow` | `frontend/src/components/BuiltinOptionRow.vue` | 可创建下拉项的统一行结构，区分内置项和可操作自定义项，并统一标签截断、来源提示与尾部动作对齐 | 无直接系统组件种类 | 交易纪律的内置/自定义原因和买卖类型选择统一复用；内置项只显示中性“内置”提示，自定义项的删除等动作通过默认插槽注入，不在消费页复制选项行布局 |
 | `AppSummaryDisclosureCard` | `frontend/src/components/AppSummaryDisclosureCard.vue` | 高密编辑器的通用折叠摘要卡外壳，统一序号、标题、元信息、单行摘要、工具区、展开边界与键盘可访问 disclosure | 无直接系统组件种类 | 规则、操作事实等“列表摘要 + 展开编辑”场景统一复用；业务状态和命令通过插槽注入，组件不持有启停、删除或校验等领域逻辑；展开编辑区保持基础表面并用边框与主色边线表达层级，不使用常驻填充色形成嵌套色块；整块摘要使用带完整 `aria-expanded`、`aria-controls` 和可访问名称的专用原生 disclosure button，不得在消费页复制卡片结构 |
+| `TradeDirectionGroupGrid` | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | 交易纪律中按买入、卖出方向并列组织卡片清单，统一分组标题、说明、动作区和桌面降级布局 | 无直接系统组件种类；仅承载交易纪律方向分组 | 买卖规则与操作事实统一消费；分组即方向事实源，组内卡片不得再展示重复方向选择器；规则或成交的领域状态留在调用方，通过分组动作和内容插槽注入；桌面宽屏保持买入在左、卖出在右，紧凑桌面视口降为单列，不在消费组件复制方向分组结构与样式 |
 | `RuleSummaryCard` | `frontend/src/components/trade-discipline/RuleSummaryCard.vue` | 买入、卖出和选股规则的紧凑摘要卡，基于 `AppSummaryDisclosureCard` 组合规则启停与动作区 | 无直接系统组件种类；仅承载交易纪律规则编辑 | 同类规则统一复用；默认只展示摘要并一次展开一项，动作通过插槽注入；不得把规则启停语义下沉到通用卡片外壳 |
 | `AppRowActions` | `frontend/src/components/AppRowActions.vue` | 表格行操作列和列表项操作区的统一动作组，按权限过滤、单行排列、动作颜色层级、禁用/加载态展示、轻量“更多”菜单收纳和**宽度自适应折叠** | 无直接系统组件种类 | 表格 `label="操作"`、自绘表格行、列表项和编辑器条件行的行内按钮组优先复用；首个未显式指定语义色的行内高频动作使用主色，普通次要动作使用常规正文色，禁用态使用弱文本色并满足语义 token 规则定义的文字层级阈值，停用/禁用/终止/删除等破坏性动作使用危险色；动作始终清晰可见，不对整组做透明度弱显；低频或危险动作可设置 `placement: 'more'`，菜单命令继续使用 Element Plus 按钮并呈现真实 loading，不得在页面内手写多行按钮或原生命令按钮。**宽度折叠契约**：行内按钮按操作列实际可用宽度自适应折叠——宽度装不下的按钮自动收进“更多”菜单，不硬截断；`inline-limit` 退化为行内数量硬性上限（宽度能装下时仍不超过它）；显式 `placement: 'more'` 的动作恒入更多；可用宽度或按钮实测宽度不可用（如 jsdom）时退化为纯数量逻辑 |
 | `SystemBuiltinTag` | `frontend/src/components/SystemBuiltinTag.vue` | 全站“系统内置”来源标记，固定使用灰色文字、灰色描边和中性浅底 | 无直接系统组件种类 | 菜单、功能点、角色、租户、布局预设、技术指标和系统内置方案等来源标记统一复用；文案固定为“系统内置”，不追加对象名称或保护规则说明；与对象名称或标识并列时统一放在对象后面，独立的来源/类型字段保持标签单独展示 |
@@ -239,7 +241,7 @@ Key Characteristics：
 | `ScoreGradeTag` | `frontend/src/components/ScoreGradeTag.vue` | 统一综合评分评级标签：主升浪核心=`danger`、龙头候选=`warning`、观察=`success`、未知评级=`info` | 无直接系统组件种类 | 每日榜单、策略筛选、评分试算、回测交易及回测当日榜单统一复用；训练模块的 S/A/B/C/D 属于另一套评级，不套用本组件 |
 | `AssetSearchDrawer` / `AssetProfileSelect` | `frontend/src/components/asset-search/AssetSearchDrawer.vue`、`frontend/src/components/asset-search/AssetProfileSelect.vue` | 统一跨来源资产搜索抽屉与“我的资产”选择器，支持 `select` / `list` 形态、服务端搜索分页、加载查看、复制或复用 | 无直接系统组件种类 | 公开资产页面统一消费，禁止私建同类选择器或搜索弹窗。无浏览权限时隐藏入口并显示明确无权态，不伪装成空态；加载查看默认不改变当前选择，需要外部展示时使用只读快照，只有“加载即展示结果”的场景才启用 `selectLoaded`。移除临时预览不等于删除资产，消费页必须同步清理对应请求和外部状态。mine-only 候选不显示“我的”，外部只读项保留来源；列表失败发 `loadFailed`，消费页结束等待并提供错误反馈和重试。mine ref 才进入选择器，系统或公开 ref 使用外部只读展示，不可解析时明示失效并阻止执行。具体 props、emits 和状态机以组件类型、实现及 `AssetProfileSelect.spec.ts` 为准 |
 | `ConfigGroupForm` | `frontend/src/components/config/ConfigGroupForm.vue` | 系统设置配置组表单 | 消费 `config-panel` 的折叠与说明展示配置 | 动态配置组字段渲染优先复用 |
-| `HelpTip` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpHint.vue` | 页面说明和短提示 | 无直接系统组件种类 | 说明性长文收进提示组件，不在页面堆长文 |
+| `HelpTip` / `HelpHint` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpHint.vue` | 页面说明和短提示 | 无直接系统组件种类 | 字段或配置项旁可作为一个纯文本块理解的说明使用 `HelpHint`；需要标题、分段、列表、示例或多要点结构化排版时使用 `HelpTip`；不按字符数机械分流，也不在页面堆长文 |
 
 ### 应用外壳
 
@@ -352,7 +354,7 @@ Key Characteristics：
 弹窗文案容量规则（解决窄弹窗内占位/说明文字被截断）：
 
 - 弹窗宽度只使用语义档位（420 / 440 / 460 / 480 / 520 / 560 / 640 px），窄档位只放短字段；宽度不足时优先压缩文案、调整字段布局或改用 `PageDrawer`，不靠继续加宽弹窗绕过。
-- 控件内提示文案（`placeholder`、单选/复选后缀、`el-tooltip` 内容）控制在 15 字以内；超 15 字的长说明移出控件，放在字段 `label` 下方的辅助说明行（`*` 起头）或 `el-form` 底部的补充说明行。
+- 控件内直接可见的提示文案（`placeholder`、单选/复选后缀）控制在 15 字以内；更完整的说明移出控件，按内容结构使用 `HelpHint` / `HelpTip`，或放在字段 `label` 下方的辅助说明行（`*` 起头）及 `el-form` 底部的补充说明行。tooltip 与 popover 的选择遵循 §3 和真实复用组件清单，不受该可见文案字数边界约束。
 - `el-select` 等多选控件的占位只写「动作 + 对象」（如「输入代码或名称搜索」）；「可多选」「留空=默认值」等可操作语义放到字段辅助说明行，不拼进 `placeholder`，占位文案在输入框内不换行、不省略。
 - 单选项文案过长时拆为「主文案（行内）+ 补充说明（辅助行）」，不让单选标签撑满或截断。
 - 验收自检：弹窗内最宽控件的可用宽度 = 弹窗宽度 − 左右内边距（约 48px）− `label-width`；文案超宽就压缩文案或改布局，不能靠改 `width` 硬撑。
@@ -477,7 +479,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 列表页筛选下拉优先复用 `AppFilterSelect`；默认多选、可搜索、可清空，业务只允许单选时必须传 `multiple=false`，最多展示 3 个选中标签并在溢出时提前折叠，选择变更即向页面发出筛选事件，页面负责触发服务端查询。
 - 普通命令使用 `el-button`，纯图标操作使用 `AppIconButton`；同一操作组只保留一个主按钮，并保持尺寸、图标和状态反馈一致。
 - 页面主体字体、字号、行高、字重和间距必须优先消费 `global.css` 的 `--app-font-*`、`--app-line-height-*`、`--app-space-*` token 或 `.app-*` 语义类；新增 px 值必须属于文档允许的局部特例。
-- 说明性/描述性文字只要不是极短标签或必要操作指引/实时状态说明，收进 `HelpTip` / `HelpHint`。
+- 说明性/描述性文字只要不是极短标签或必要操作指引/实时状态说明，按内容复杂度收进 `HelpHint` / `HelpTip`：单块纯文本用 tooltip，需要标题、分段、列表、示例或多要点排版时用 popover。
 - 新增系统组件 kind 必须维护组件能力事实源；新增 Web 配置字段必须同时维护字段配置事实源和页面消费事实源。只有 kind 语义能力发生变化时才同步修改 `COMPONENT_CATALOG`，不得为凑登记机械添加能力 key。
 
 ### 7.2 禁止事项

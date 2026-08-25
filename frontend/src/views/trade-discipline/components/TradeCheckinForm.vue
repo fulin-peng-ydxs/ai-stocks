@@ -356,7 +356,6 @@ defineExpose({ isDirty, requestLeave, load, startAmend })
 <style scoped>
 .checkin-detail { display: block; }
 .checkin-head, .checkin-head__facts, .assessment-row, .checkin-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3); }
-.checkin-head, .permission-note, .checkin-form { max-width: 1440px; }
 .checkin-head { align-items: flex-start; padding-bottom: var(--app-space-3); border-bottom: 1px solid var(--el-border-color-lighter); }
 .checkin-head .app-section-title { margin: var(--app-space-1) 0 0; }
 .checkin-form { margin-top: var(--app-space-4); display: grid; gap: var(--app-space-4); }
