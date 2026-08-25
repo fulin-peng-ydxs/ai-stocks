@@ -584,7 +584,6 @@ onMounted(() => {
 .page-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .setting-item { display: flex; flex-direction: column; gap: var(--app-space-2); }
 .setting-label { font-size: var(--app-font-size-body); color: var(--page-settings-text-subtle); }
-.qm { color: var(--el-color-primary); cursor: help; margin-left: 4px; }
 .layer-tag { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .filter-row { flex-wrap: wrap; }
 .summary { margin-left: auto; }

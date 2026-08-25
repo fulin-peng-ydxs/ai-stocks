@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * HelpTip 的结构化说明项：具体问题与通用注意项二选一，标签、警告色和排版由组件统一承载。
+ * HelpTip 的结构化说明项：question 展示传入的问题文本，warning 固定展示“注意”，二者只能选一个。
+ * 冒号、警告色和正文列表排版均由组件统一承载，调用方不重复拼接。
  */
 defineProps<{ question?: string; warning?: true }>()
 </script>

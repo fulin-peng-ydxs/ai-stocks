@@ -32,6 +32,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import AppIconButton from '@/components/AppIconButton.vue'
+import AppControlRow from '@/components/AppControlRow.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import HelpTip from '@/components/HelpTip.vue'
@@ -1258,7 +1259,24 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <div>
         <h2 class="page-title app-page-title">
           {{ pageTitle }}
-          <HelpTip v-if="activeTab === 'tech'" title="技术指标说明" :width="420" test-id="config-tech-help-tip">
+          <HelpTip v-if="activeTab === 'score'" title="评分规则说明" :width="420">
+            <HelpTipItem question="指标如何打分">
+              <ul>
+                <li>每个指标产出 0~100 达标分（布尔=满足100/否0；数值按阈值映射），按权重百分比加权得到综合分。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="权重如何调整">
+              <ul>
+                <li>调一个权重，其余自动按比例重分配，合计始终保持 100%。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="方案如何管理">
+              <ul>
+                <li>系统内置方案只读，可复制为我的方案后编辑；「用当前配置试算」按所选交易日预览评分结果。</li>
+              </ul>
+            </HelpTipItem>
+          </HelpTip>
+          <HelpTip v-else-if="activeTab === 'tech'" title="技术指标说明" :width="420" test-id="config-tech-help-tip">
             <HelpTipItem question="指标如何维护">
               <ul>
                 <li>系统内置不可删除，仅可启停；自定义指标是一段带参数的表达式，供评分、筛选和买卖引用。</li>
@@ -1276,10 +1294,53 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               </ul>
             </HelpTipItem>
           </HelpTip>
+          <HelpTip v-else-if="activeTab === 'trade'" title="买卖指标说明" :width="420">
+            <HelpTipItem question="条件如何组成">
+              <ul>
+                <li>买入/卖出各是一组技术指标条件，支持「且（全满足）」和「或（任一）」组合。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="卖出如何成交">
+              <ul>
+                <li>卖出以指标命中为主，止盈/止损/最大持仓为可选兜底，先到先卖。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="方案如何管理">
+              <ul>
+                <li>系统内置方案只读，可复制为我的方案后编辑；买入、卖出可分别「试算」命中只数。</li>
+              </ul>
+            </HelpTipItem>
+          </HelpTip>
+          <HelpTip v-else-if="activeTab === 'system'" title="系统设置说明" :width="420">
+            <HelpTipItem question="这里管什么">
+              <ul>
+                <li>访问安全、数据采集、审计留存和研究运行参数，按分组页签维护。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="保存何时生效">
+              <ul>
+                <li>「保存并生效」写入后立即影响全站运行；存在超出允许范围的配置项时无法保存。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="重置做什么">
+              <ul>
+                <li>「重置配置」将当前分组页签下所有配置恢复为默认值，未保存的编辑一并丢弃。</li>
+              </ul>
+            </HelpTipItem>
+          </HelpTip>
         </h2>
         <p class="page-subtitle">{{ pageSubtitle }}</p>
       </div>
       <div class="page-head-actions">
+        <el-button
+          v-if="activeTab === 'tech'"
+          v-permission="'indicator:def-manage'"
+          type="primary"
+          @click="openNewDef"
+        >
+          <template #icon><el-icon><Plus /></el-icon></template>
+          新建自定义指标
+        </el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
       </div>
     </div>
@@ -1367,11 +1428,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               size="compact"
               title="正在加载方案详情…"
             />
-
-            <p class="hint">
-              每个指标产出 0~100 达标分（布尔=满足100/否0；数值按阈值映射），按权重百分比加权 →
-              综合分。调一个权重，其余自动按比例重分配保持 100%。
-            </p>
 
             <AppDataTable :data="items" size="small" border class="item-table" embedded>
               <AppTableColumn label="指标">
@@ -1539,15 +1595,11 @@ watch(activeTab, (tab) => { initActivePage(tab) })
       <!-- ============ 技术指标 ============ -->
       <template v-else-if="activeTab === 'tech'">
         <div class="pane-fill tech-pane">
-        <div class="tech-head">
-          <div class="tech-actions">
-            <AppSearchInput v-model="techSearch" placeholder="搜索名称/标识/说明/分类" :debounce-ms="0" size="small" style="width: 220px" />
-            <el-button v-permission="'indicator:def-manage'" type="primary" plain size="small" @click="openNewDef">
-              <template #icon><el-icon><Plus /></el-icon></template>
-              新建自定义指标
-            </el-button>
-          </div>
-        </div>
+        <el-card shadow="never" class="filter-card tech-filter-card">
+          <AppControlRow>
+            <AppSearchInput v-model="techSearch" placeholder="搜索名称/标识/说明/分类" :debounce-ms="0" style="width: 220px" />
+          </AppControlRow>
+        </el-card>
         <div class="tech-table-wrap">
         <AppDataTable :data="techRows" size="small" :border="tableBorder('techTable')"
                   :default-sort="techDefaultSort" @sort-change="onTechSortChange">
@@ -1740,8 +1792,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               size="compact"
               title="正在加载方案详情…"
             />
-            <p class="hint">买入/卖出各是一组技术指标条件(且/或)。卖出以指标命中为主,止盈/止损/最大持仓为可选兜底,先到先卖。</p>
-
             <!-- 买入条件 -->
             <div class="cond-block">
               <div class="cond-head">
@@ -1872,42 +1922,6 @@ watch(activeTab, (tab) => { initActivePage(tab) })
           class="config-error"
         />
         <div v-else class="sys-wrap" v-loading="sysLoading && sysGroups.length > 0">
-          <div class="sys-head">
-            <div class="sys-actions">
-              <el-alert
-                v-if="sysSaveError"
-                type="error"
-                title="保存失败，已保留当前编辑值"
-                :closable="false"
-                show-icon
-              />
-              <el-alert
-                v-else-if="sysInvalidPaths.length"
-                type="warning"
-                title="存在超出允许范围的配置项"
-                :closable="false"
-                show-icon
-              />
-              <el-button
-                v-permission="'data-settings:manage'"
-                :loading="sysSaving"
-                :disabled="!activeSysPaths.length"
-                @click="resetActiveSystemTab"
-              >
-                重置配置
-              </el-button>
-              <el-button
-                v-permission="'data-settings:manage'"
-                type="primary"
-                :loading="sysSaving"
-                :disabled="!sysDirty || !!sysInvalidPaths.length"
-                @click="saveSystem"
-              >
-                保存并生效
-              </el-button>
-            </div>
-          </div>
-
           <el-empty
             v-if="!sysLoading && !sysGroups.length"
             class="app-empty"
@@ -1920,6 +1934,43 @@ watch(activeTab, (tab) => { initActivePage(tab) })
               :name="tab.key"
               :label="tab.label"
             >
+              <div v-if="tab.key === activeSysTab" class="sys-tab-toolbar">
+                <div v-if="sysSaveError || sysInvalidPaths.length" class="sys-alerts">
+                  <el-alert
+                    v-if="sysSaveError"
+                    type="error"
+                    title="保存失败，已保留当前编辑值"
+                    :closable="false"
+                    show-icon
+                  />
+                  <el-alert
+                    v-else-if="sysInvalidPaths.length"
+                    type="warning"
+                    title="存在超出允许范围的配置项"
+                    :closable="false"
+                    show-icon
+                  />
+                </div>
+                <div class="sys-actions">
+                  <el-button
+                    v-permission="'data-settings:manage'"
+                    :loading="sysSaving"
+                    :disabled="!activeSysPaths.length"
+                    @click="resetActiveSystemTab"
+                  >
+                    重置配置
+                  </el-button>
+                  <el-button
+                    v-permission="'data-settings:manage'"
+                    type="primary"
+                    :loading="sysSaving"
+                    :disabled="!sysDirty || !!sysInvalidPaths.length"
+                    @click="saveSystem"
+                  >
+                    保存并生效
+                  </el-button>
+                </div>
+              </div>
               <div class="sys-grid">
                 <ConfigGroupForm
                   v-for="group in tab.groups"
@@ -1995,24 +2046,23 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   flex-direction: column;
   gap: var(--app-space-2);
 }
-.sys-head {
-  flex: 0 0 auto;
+.sys-tab-toolbar {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--app-space-4);
-  padding: 0;
+  gap: var(--app-space-3);
+  margin-bottom: var(--app-space-3);
+}
+.sys-alerts {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .sys-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--app-space-2);
-  flex-wrap: wrap;
-}
-.sys-actions :deep(.el-alert) {
-  width: 260px;
-  padding: 4px 8px;
+  flex: none;
 }
 .sys-tabs {
   min-width: 0;
@@ -2237,24 +2287,13 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   font-size: var(--app-font-size-caption);
   color: var(--el-text-color-secondary);
 }
-.tech-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--app-space-4);
-  margin-bottom: 12px;
-  flex: none;
-}
-.tech-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--app-space-2);
-  flex-shrink: 0;
-}
 .tech-pane {
   flex-direction: column;
   gap: var(--app-space-3);
   min-height: 0;
+}
+.tech-filter-card {
+  flex: none;
 }
 /* 技术指标表承接复合面板内部的成长与表体滚动。 */
 .tech-table-wrap {
@@ -2381,15 +2420,12 @@ watch(activeTab, (tab) => { initActivePage(tab) })
   color: var(--el-text-color-secondary);
 }
 @media (max-width: 980px) {
-  .sys-head {
-    flex-direction: column;
+  .sys-tab-toolbar {
     align-items: stretch;
+    flex-direction: column;
   }
   .sys-actions {
     justify-content: flex-start;
-  }
-  .sys-actions :deep(.el-alert) {
-    width: 100%;
   }
   .sys-grid {
     grid-template-columns: 1fr;

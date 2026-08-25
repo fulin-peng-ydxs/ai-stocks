@@ -31,7 +31,7 @@ describe('HelpTip 主题样式契约', () => {
     expect(style).toContain('.help-icon:focus-visible')
   })
 
-  it('每项说明在具体问题与黄色注意项中二选一，内容统一使用点号列表', () => {
+  it('question 展示具体问题文本、warning 固定展示黄色注意项，内容统一使用点号列表', () => {
     expect(itemSource).toContain("warning ? '注意' : question")
     expect(itemSource).not.toContain('{{ topic }} /')
     expect(itemStyle).toContain('flex-direction: column')

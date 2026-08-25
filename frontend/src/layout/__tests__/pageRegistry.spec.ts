@@ -531,6 +531,9 @@ describe('页面注册表完整性', () => {
     expect(() => getPageLayout('config')).toThrow()
     expect(PAGE_REGISTRY.filter((entry) => entry.path.startsWith('/system/config/')).map((entry) => entry.pageKey).sort())
       .toEqual(['config-score', 'config-system', 'config-tech', 'config-trade'])
+    expect(getPageLayout('config-tech').slots).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'techFilters', component: 'filter-bar', parentId: 'body' }),
+    ]))
   })
 
   it('阶段五平台能力页已登记到布局系统', () => {

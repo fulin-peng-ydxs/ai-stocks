@@ -8,6 +8,7 @@ import {
   type Overview, type CatalogTable, type Dimension, type StockQuality,
 } from '@/api/data'
 import AppStateBlock from '@/components/AppStateBlock.vue'
+import HelpHint from '@/components/HelpHint.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
@@ -361,21 +362,15 @@ onMounted(load)
         />
         <div v-else class="stat-grid" data-testid="overview-kpi-grid" v-loading="loading && !!ov">
           <el-card v-if="settings.kpi.latestTradeDate" shadow="never" class="stat">
-            <el-tooltip content="库内 daily_bar 的最大交易日，全局鲜活度的基准日" placement="top">
-              <div class="stat-label">最新交易日 <span class="qm">?</span></div>
-            </el-tooltip>
+            <div class="stat-label">最新交易日 <HelpHint text="库内 daily_bar 的最大交易日，全局鲜活度的基准日" /></div>
             <div class="stat-val">{{ (ov?.latest_trade_date ?? '').slice(0, 10) || '—' }}</div>
           </el-card>
           <el-card v-if="settings.kpi.codes" shadow="never" class="stat">
-            <el-tooltip content="在市 = 未退市股票数；退市 = 已退市（保留历史以防幸存者偏差）" placement="top">
-              <div class="stat-label">在市 / 退市 <span class="qm">?</span></div>
-            </el-tooltip>
+            <div class="stat-label">在市 / 退市 <HelpHint text="在市 = 未退市股票数；退市 = 已退市（保留历史以防幸存者偏差）" /></div>
             <div class="stat-val">{{ ov?.codes.active ?? '—' }}<span class="sub"> / {{ ov?.codes.delisted ?? '—' }}</span></div>
           </el-card>
           <el-card v-if="settings.kpi.barRows" shadow="never" class="stat">
-            <el-tooltip content="daily_bar 日线行情总记录数（全市场×历史交易日）" placement="top">
-              <div class="stat-label">日线总行数 <span class="qm">?</span></div>
-            </el-tooltip>
+            <div class="stat-label">日线总行数 <HelpHint text="daily_bar 日线行情总记录数（全市场×历史交易日）" /></div>
             <div class="stat-val">{{ ov?.bar_rows?.toLocaleString() ?? '—' }}</div>
           </el-card>
           <el-card
@@ -385,24 +380,18 @@ onMounted(load)
             data-testid="overview-board-card"
             @click="gotoBoardTab()"
           >
-            <el-tooltip content="板块规模、覆盖与质量问题概览；点击进入下方「板块数据」专区" placement="top">
-              <div class="stat-label">板块数据 <span class="qm">?</span></div>
-            </el-tooltip>
+            <div class="stat-label">板块数据 <HelpHint text="板块规模、覆盖与质量问题概览；点击进入下方「板块数据」专区" @click.stop /></div>
             <div class="stat-val">{{ ov?.board ? (ov.board.board_dict ?? 0) + ' 板块' : '—' }}</div>
             <div class="stat-foot" v-if="ov?.board">
               概念 {{ ov.board.concept_count }} · 行业 {{ ov.board.industry_count }} · 待处理 {{ ov.board.open_issues }}
             </div>
           </el-card>
           <el-card v-if="settings.kpi.score" shadow="never" class="stat">
-            <el-tooltip content="在市股票中「四层质量全部达标」的占比（0~100），综合入库/契约/正确性/鲜活" placement="top">
-              <div class="stat-label">全局质量评分 <span class="qm">?</span></div>
-            </el-tooltip>
+            <div class="stat-label">全局质量评分 <HelpHint text="在市股票中「四层质量全部达标」的占比（0~100），综合入库/契约/正确性/鲜活" /></div>
             <div class="stat-val" :style="{ color: scoreColor }">{{ ov?.quality.score ?? '—' }}</div>
           </el-card>
           <el-card v-if="settings.kpi.quality" shadow="never" class="stat clickable" @click="gotoQuality()">
-            <el-tooltip content="尚未解决的质检问题数（按高/中/低危分级）；点击前往数据质量页逐条恢复" placement="top">
-              <div class="stat-label">未解决质检 <span class="qm">?</span></div>
-            </el-tooltip>
+            <div class="stat-label">未解决质检 <HelpHint text="尚未解决的质检问题数（按高/中/低危分级）；点击前往数据质量页逐条恢复" @click.stop /></div>
             <div class="stat-val" :class="{ danger: (ov?.quality.by_severity?.high ?? 0) > 0, warn: (ov?.quality.open ?? 0) > 0 }">
               {{ ov?.quality.open ?? '—' }}
             </div>
@@ -411,9 +400,7 @@ onMounted(load)
             </div>
           </el-card>
           <el-card v-if="settings.kpi.gaps" shadow="never" class="stat clickable" @click="gotoGap">
-            <el-tooltip content="近 90 个交易日内存在缺口(疑似漏采)或数据滞后的股票数(已排除确认停牌)；点此前往补数。下方逐股表 L4 列可见各股缺口/滞后明细" placement="top">
-              <div class="stat-label">缺口 / 滞后 <span class="qm">?</span></div>
-            </el-tooltip>
+            <div class="stat-label">缺口 / 滞后 <HelpHint text="近 90 个交易日内存在缺口(疑似漏采)或数据滞后的股票数(已排除确认停牌)；点此前往补数。下方逐股表 L4 列可见各股缺口/滞后明细" @click.stop /></div>
             <div class="stat-val" :class="{ warn: (ov?.gaps.stocks_with_gap ?? 0) > 0 }">
               {{ ov?.gaps.stocks_with_gap ?? '—' }}<span class="sub"> 只</span>
             </div>
@@ -592,7 +579,7 @@ onMounted(load)
                   </AppTableColumn>
                   <AppTableColumn v-for="k in ['L1', 'L2', 'L3', 'L4'].filter(shouldShowLayer)" :key="k" :label="LAYER_CN[k]" role="status" align="center">
                     <template #header>
-                      <el-tooltip :content="LAYER_DESC[k]" placement="top"><span>{{ LAYER_CN[k] }} <span class="qm">?</span></span></el-tooltip>
+                      <span>{{ LAYER_CN[k] }} <HelpHint :text="LAYER_DESC[k]" /></span>
                     </template>
                     <template #default="{ row }">
                       <el-tooltip :content="layerCell(k, row.layers[k]).tip" placement="top">
@@ -860,9 +847,6 @@ onMounted(load)
 .stat.clickable { cursor: pointer; transition: box-shadow .15s; }
 .stat.clickable:hover { box-shadow: 0 0 0 1px var(--el-color-primary) inset; }
 .stat-label { color: var(--el-text-color-secondary); font-size: var(--app-font-size-table); }
-.qm { display: inline-block; width: 13px; height: 13px; line-height: var(--app-line-height-ornament); font-size: var(--app-font-size-tiny);
-      text-align: center; border-radius: 50%; background: var(--el-fill-color-dark);
-      color: var(--el-text-color-secondary); cursor: help; }
 .stat-val { font-size: var(--app-font-size-data); font-weight: var(--app-font-weight-strong); color: var(--el-text-color-primary); margin-top: 6px; white-space: nowrap; }
 .stat-val .sub { font-size: var(--app-font-size-body); font-weight: var(--app-font-weight-regular); color: var(--el-text-color-secondary); }
 .stat-val.warn { color: var(--app-warning-text); }
