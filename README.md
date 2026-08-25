@@ -78,6 +78,7 @@
 | 📈 **每日榜单** | `BoardView` | `/api/board/*` | 按用户可见**评分方案**全市场排序（自己的方案、租户公开、全体公开、平台内置预设；0–100 综合分 + 评级 + 分项达标分） | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧮 **策略筛选** | `ScreenView` | `/api/screen*`, `/api/profiles` | 统一条件构建器（AND/OR 树，叶子可选指标条件或表达式，同一份 AST）；方案可存、版本回看、按权限公开和复制 | [screening-and-board.md](agent-works/architecture/screening-and-board.md) |
 | 🧪 **回测验证** | `BacktestView` | `/api/backtest/*` | ①策略回测：净值/绩效/逐笔成交（含卖出原因）；②评分验证：分层命中率与超额命中率；历史记录可按权限公开，公开记录可复用参数重跑 | [backtest.md](agent-works/architecture/backtest.md) |
+| ✅ **交易纪律** | `TradeDisciplineView`（`/trade-discipline`） | `/api/trade-discipline/*` | 维护私人交易规则和不可变版本，按真实交易日完成履约打卡、操作记录、历史修订；用户中心支持查看待办和快捷无操作履约 | [trade-discipline.md](agent-works/architecture/trade-discipline.md) |
 | 🔍 **个股与分组** | `StocksView` / `StockDetailView` | `/api/stocks/*`, `/api/stock-groups` | 服务端排序分页与跨页分组；查询页可在共享工作台中做多股走势对比和 K 线分析；详情页提供指标快照、买卖方案信号与连续翻看 | [stocks-and-groups.md](agent-works/architecture/stocks-and-groups.md) |
 | ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) |
@@ -104,10 +105,13 @@ flowchart LR
   DB --> STK["个股与分组\nK线 / 信号 / 股票篮子"]
   CFG --> STK
   DB --> TRN["盘感训练\n盲测 / T+1撮合 / 评分成长"]
+  DB --> TD["交易纪律\n交易日 / 股票参考"]
+  TD --> TDPG[("PostgreSQL\n私人规则 / 履约修订")]
   RBAC["系统菜单 / 权限 / 租户\n登录 / /me / 菜单树 / 功能码 / 归属上下文"] -. 控制入口与资产归属 .-> CFG
   RBAC -. 控制入口与资产归属 .-> SCR
   RBAC -. 控制入口与资产归属 .-> BRD
   RBAC -. 控制入口与资产归属 .-> BT
+  RBAC -. 控制入口与资产归属 .-> TD
 ```
 
 ### 2.2 常用工作流
@@ -121,6 +125,7 @@ flowchart LR
 | 验证策略能否交易 | 策略筛选 + 评分方案 + 买卖方案 → 回测验证 | 净值、回撤、逐笔成交、卖出原因、分层命中率 |
 | 跟踪一批股票 | 个股查询跨页勾选 → 工作台走势对比/K 线分析 → 存为分组 → 详情页连续翻看 | 统一交易日相对走势、分组篮子、组内涨幅与买卖信号 |
 | 练盘感 / 验手感 | 盘感训练 → 配置窗口/资金 → 盲测随机股逐日买卖 → 结算看评级与成长曲线 | 成交明细、资金曲线、评分、身份揭晓、跨局成长轨迹 |
+| 记录交易纪律 | 交易纪律 → 维护并发布规则 → 按交易日打卡 → 历史查看或修正 | 私人规则版本、履约结论、操作事实和不可变修订链 |
 
 ---
 
@@ -132,11 +137,12 @@ backend/
   api/            REST 路由（薄层）：auth / users / roles / menus / resources / tenants
                   / board / stocks / screen / backtest / config
                   / indicators / score_profiles / trade_profiles / stock_groups
-                  / data_tasks / data_admin / health / training / layout
+                  / data_tasks / data_admin / health / training / layout / trade_discipline
   services/       编排层：ingest（入库）· screen_score（筛选打分）· backtest
                   · pipeline（一键日常 DailyPipeline）· async_task（异步任务底座）
                   · auth_service / user_admin / role_admin / menu_admin / tenant_admin
                   · data_report / data_verify / data_sources · training（盘感训练）
+                  · trade_discipline（规则版本 / 履约打卡 / 历史修订）
   datasource/     数据源适配（akshare / baostock / ths_board 同花顺板块直连；限流·重试·超时·兜底·溯源）
   storage/        DuckDB 连接 / DDL / 点时安全仓库 / PG DDL / RBAC 仓库 / 资产归属仓库
                   / 配置覆盖层 / 布局配置(layout_config) / 数据目录
@@ -162,6 +168,7 @@ frontend/         Vue3 + TS + Element Plus + ECharts，构建产物 frontend/dis
   src/views/layout/  布局配置工作台：预设管理 / 页面布局 / 系统组件
 agent-works/architecture/ 各模块技术文档（核心技术 / 业务架构 / 业务流程 / 风险事项）
 agent-works/market-sense-training/ 盘感训练模块需求 / 开发计划 / 开发留痕 / DDL 归档
+agent-works/trading-discipline-checkin/ 交易纪律需求 / 开发计划 / 人工复核 SQL / 页面原型
 agent-works/configurable-layout-system/ 布局系统底座需求 / 新页面开发模板 page-template.md
 agent-works/layout-config-productization/ 布局配置产品化需求 / 开发计划 / 字段策略 DDL
 config/           settings.yaml —— 所有阈值/权重/参数（改参不改码）
