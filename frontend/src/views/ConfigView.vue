@@ -35,6 +35,7 @@ import AppIconButton from '@/components/AppIconButton.vue'
 import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import { getErrorMessage } from '@/utils/error'
@@ -1258,9 +1259,22 @@ watch(activeTab, (tab) => { initActivePage(tab) })
         <h2 class="page-title app-page-title">
           {{ pageTitle }}
           <HelpTip v-if="activeTab === 'tech'" title="技术指标说明" :width="420" test-id="config-tech-help-tip">
-            <p style="margin:0">系统内置不可删除，仅可启停；自定义 = 一段带参数的表达式，供评分/筛选/买卖引用。</p>
-            <p style="margin:8px 0 0">表达式函数：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C / O / H / L / V / TURN。</p>
-            <p style="margin:8px 0 0">分类可多选/自定义命名（直接输入新名回车即可）。</p>
+            <HelpTipItem question="指标如何维护">
+              <ul>
+                <li>系统内置不可删除，仅可启停；自定义指标是一段带参数的表达式，供评分、筛选和买卖引用。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="表达式支持什么">
+              <ul>
+                <li>函数支持 MA / HHV / LLV / REF / COUNT / SUM / ABS。</li>
+                <li>变量支持 C / O / H / L / V / TURN。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="分类如何维护">
+              <ul>
+                <li>分类可多选，也可直接输入新名称后回车创建。</li>
+              </ul>
+            </HelpTipItem>
           </HelpTip>
         </h2>
         <p class="page-subtitle">{{ pageSubtitle }}</p>

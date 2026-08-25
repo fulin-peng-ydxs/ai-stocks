@@ -11,6 +11,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -409,10 +410,26 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             <h2 class="app-page-title">
               用户管理
               <HelpTip title="用户管理说明" :width="420">
-                系统管理员可跨租户查看与管理；租户管理员仅限本租户。<br /><br />
-                一个用户可挂<b>多个角色</b>，权限取并集；系统管理员可任命新的系统管理员，租户管理员只能分配租户级系统内置角色。<br /><br />
-                租户管理员可以看到本租户的系统管理员，但不能编辑、重置密码、启停或删除。<br /><br />
-                <b>禁用 / 锁定 / 重置密码</b>保存后，该用户下次校验即失效，需重新登录。
+                <HelpTipItem question="管理员能管理谁">
+                  <ul>
+                    <li>系统管理员可跨租户查看与管理，租户管理员仅限本租户。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="角色如何分配">
+                  <ul>
+                    <li>一个用户可关联多个角色，权限取并集；系统管理员可任命新的系统管理员，租户管理员只能分配租户级系统内置角色。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="租户管理员有哪些限制">
+                  <ul>
+                    <li>可看到本租户的系统管理员，但不能编辑、重置密码、启停或删除。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="账号变更何时生效">
+                  <ul>
+                    <li>禁用、锁定或重置密码保存后，该用户会在下次校验时失效并需要重新登录。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </h2>
             <p class="page-subtitle">管理系统用户、账号状态与租户归属。</p>

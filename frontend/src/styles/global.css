@@ -335,6 +335,16 @@ html.dark {
   --perm-feature-color: #a78bfa;
 }
 
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--app-space-3);
+  flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+}
+
 .page-head-actions {
   display: flex;
   align-items: center;

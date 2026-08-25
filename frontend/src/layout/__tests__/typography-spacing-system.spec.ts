@@ -52,6 +52,7 @@ describe('字体与间距设计契约', () => {
     expect(globalCss).toContain('--app-font-weight-section: 600')
     expect(globalCss).toContain('--app-line-height-solid')
     expect(globalCss).toContain('--app-space-control-gap')
+    expect(globalCss).toMatch(/\.page-head\s*\{[\s\S]*?align-items:\s*flex-start/)
     expect(globalCss).toContain('.app-page-title')
     expect(globalCss).toContain('.app-cluster-md')
   })
@@ -235,6 +236,28 @@ describe('字体与间距设计契约', () => {
     }
 
     expect(violations).toEqual([])
+  })
+
+  it('布局管理页统一消费全局页头结构，不再维护私有工具栏与副标题样式', () => {
+    const layoutManagementPages = [
+      'views/layout/LayoutPresetsView.vue',
+      'views/layout/LayoutPagesView.vue',
+      'views/layout/LayoutComponentsView.vue',
+    ]
+
+    for (const rel of layoutManagementPages) {
+      const source = read(join(SRC_DIR, rel))
+      expect(source, rel).toMatch(
+        /<template #action>\s*<div class="lh-action">\s*<div class="page-head">/,
+      )
+      expect(source, rel).toMatch(/<h2 class="[^"]*\bapp-page-title\b[^"]*">/)
+      expect(source, rel).toMatch(/<p class="page-subtitle">/)
+      expect(source, rel).not.toContain('layout-toolbar')
+
+      for (const css of styleBlocks(join(SRC_DIR, rel))) {
+        expect(css, rel).not.toMatch(/\.page-subtitle\s*(?:,|\{)/)
+      }
+    }
   })
 
   it('新页面脚手架直接消费排版/间距事实源，并显式标记未完成占位', () => {

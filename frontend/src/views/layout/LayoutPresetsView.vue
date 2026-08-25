@@ -293,15 +293,17 @@ onMounted(reloadPresets)
 <template>
   <LayoutHost :layout="presetsLayout">
     <template #action>
-      <div class="layout-toolbar">
-        <div>
-          <div class="page-title">预设管理</div>
-          <div class="page-subtitle">全局风格预设、token、组件默认策略与引用关系（共 {{ presetCount }} 套）</div>
-        </div>
-        <div class="toolbar-actions">
-          <el-button @click="importExportVisible = true">导入导出</el-button>
-          <el-button @click="reloadPresets">刷新</el-button>
-          <el-button v-permission="'layout:preset-manage'" type="primary" @click="openNewPreset">新增预设</el-button>
+      <div class="lh-action">
+        <div class="page-head">
+          <div>
+            <h2 class="app-page-title">预设管理</h2>
+            <p class="page-subtitle">管理全局风格预设、Token、组件默认策略与引用关系（共 {{ presetCount }} 套）。</p>
+          </div>
+          <div class="page-head-actions">
+            <el-button @click="importExportVisible = true">导入导出</el-button>
+            <el-button @click="reloadPresets">刷新</el-button>
+            <el-button v-permission="'layout:preset-manage'" type="primary" @click="openNewPreset">新增预设</el-button>
+          </div>
         </div>
       </div>
     </template>
@@ -470,28 +472,11 @@ onMounted(reloadPresets)
 </template>
 
 <style scoped>
-.layout-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-4);
-  padding: 14px 16px;
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  border-radius: 6px;
-}
-.page-title {
-  font-size: var(--app-font-size-title-md);
-  font-weight: var(--app-font-weight-strong);
-  color: var(--el-text-color-primary);
-}
-.page-subtitle,
 .section-subtitle,
 .muted {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }
-.toolbar-actions,
 .inline-controls,
 .button-row {
   display: flex;
@@ -557,15 +542,8 @@ onMounted(reloadPresets)
   margin-top: 10px;
 }
 @media (max-width: 980px) {
-  .layout-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
   .ie-grid {
     grid-template-columns: 1fr;
-  }
-  .toolbar-actions {
-    flex-wrap: wrap;
   }
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 通用帮助气泡：标题旁一个 ❓，鼠标移入展示规则/注意事项（默认插槽）
+// 通用帮助气泡：默认插槽只承载 HelpTipItem，确保问题项、注意项和分行结构一致。
 defineProps<{ title?: string; width?: number; testId?: string }>()
 </script>
 
@@ -53,6 +53,8 @@ defineProps<{ title?: string; width?: number; testId?: string }>()
   outline: none;
 }
 .help-body {
+  display: flex;
+  flex-direction: column;
   font-size: var(--app-font-size-caption);
   line-height: var(--app-line-height-longform);
   color: var(--el-text-color-regular);

@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
@@ -266,10 +267,26 @@ onMounted(loadAll)
             <h2 class="app-page-title">
               角色管理
               <HelpTip title="角色管理说明" :width="440">
-                角色勾选菜单与功能点后保存，拥有该角色的用户权限即时生效（无权按钮消失 / 接口 403）。<br /><br />
-                授权按菜单分组展示，功能点默认收起；需要精细调整时再展开对应菜单，避免所有权限同时铺开。<br /><br />
-                「基线」是登录后的共享读权限，后端自动拥有、不可取消，也不作为角色授权保存。<br /><br />
-                系统管理员角色拥有全部菜单与功能点，页面仅展示已拥有且锁定；「仅系统管理员」资源不能授予其它角色。
+                <HelpTipItem question="授权何时生效">
+                  <ul>
+                    <li>角色勾选菜单与功能点后保存，拥有该角色的用户权限即时生效；无权按钮消失，接口返回 403。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="功能点如何展示">
+                  <ul>
+                    <li>授权按菜单分组，功能点默认收起；需要精细调整时再展开对应菜单。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="基线权限是什么">
+                  <ul>
+                    <li>登录后的共享读权限由后端自动授予、不可取消，也不作为角色授权保存。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="系统管理员如何授权">
+                  <ul>
+                    <li>系统管理员角色拥有全部菜单与功能点，页面仅展示已拥有且锁定；「仅系统管理员」资源不能授予其他角色。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </h2>
             <p class="page-subtitle">管理角色及其功能点/菜单授权，多角色可叠加权限。</p>

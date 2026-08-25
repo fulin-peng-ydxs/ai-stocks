@@ -28,6 +28,7 @@ import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import AssetProfileSelect from '@/components/asset-search/AssetProfileSelect.vue'
 import AssetVisibilityActions from '@/components/AssetVisibilityActions.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import type { AssetBrowseParams, ProfileSummary } from '@/components/asset-search/types'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -594,9 +595,21 @@ onMounted(initializeScreen)
         <h2 class="app-page-title page-title-row">
           策略筛选
           <HelpTip title="筛选 与 榜单 的区别" :width="400">
-            <p><b>筛选</b>：给一组布尔条件，返回<b>所有满足</b>的股票（命中即入，无门槛排序）。</p>
-            <p style="margin:6px 0"><b>榜单</b>：对全市场打分排序取 Top N。</p>
-            <p style="margin:0">本页一套构建器即可：每条条件可选<b>注册表指标</b>（含动态参数）或手写<b>表达式</b>，用 且/或 组合。命中结果用榜单同款评分打分并按分排序，方便判断质量；可「排除 ST」、存为方案。</p>
+            <HelpTipItem question="筛选是什么">
+              <ul>
+                <li>给定一组布尔条件，返回所有满足条件的股票，命中即入，不设置排名门槛。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="榜单是什么">
+              <ul>
+                <li>对全市场打分排序后取 Top N。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="本页如何构建条件">
+              <ul>
+                <li>每条条件可选带动态参数的注册表指标或手写表达式，再用且、或组合。命中结果使用榜单同款评分排序，并可排除 ST、保存为方案。</li>
+              </ul>
+            </HelpTipItem>
           </HelpTip>
         </h2>
         <p class="page-subtitle">组合技术指标条件筛选候选股，支持表达式与嵌套分组。</p>
@@ -791,8 +804,16 @@ onMounted(initializeScreen)
                 表达式条件
               </el-button>
               <HelpTip title="表达式语法" :width="400">
-                <p style="margin:0">算子：MA / HHV / LLV / REF / COUNT / SUM / ABS；变量：C 收 / O 开 / H 高 / L 低 / V 量 / TURN 换手。</p>
-                <p style="margin:6px 0 0">点时安全：仅用 ≤ 当日数据，无未来函数。</p>
+                <HelpTipItem question="支持哪些语法">
+                  <ul>
+                    <li>算子支持 MA / HHV / LLV / REF / COUNT / SUM / ABS；变量支持 C 收、O 开、H 高、L 低、V 量、TURN 换手。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="如何保证点时安全">
+                  <ul>
+                    <li>仅使用不晚于当日的数据，不使用未来函数。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </div>
             <pre v-if="settings.astExpanded && buildAst()" class="ast">{{ JSON.stringify(buildAst(), null, 2) }}</pre>

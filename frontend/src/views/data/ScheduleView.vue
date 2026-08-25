@@ -19,6 +19,7 @@ import AppRowActions from '@/components/AppRowActions.vue'
 import type { AppRowAction } from '@/components/rowActions'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -499,10 +500,18 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
       <h2 class="app-page-title">
         任务调度
         <HelpTip title="这页管什么？" :width="440">
-          ① <b>调度任务</b>——自定义多条调度任务（数据采集 / 评分维护 / 数据质检 / 按问题类型恢复 / 审计清理），
-          各自选择时间或任务依赖触发，可配置延迟和受控自身重试，也可启停、立即执行；实际任务记录在「数据采集」任务中心，
-          标注「定时·任务名」。<br />
-          ② <b>数据源健康</b>——AKShare / BaoStock / 同花顺板块源的连通性。
+          <HelpTipItem question="调度任务管什么">
+            <ul>
+              <li>可自定义数据采集、评分维护、数据质检、按问题类型恢复和审计清理任务。</li>
+              <li>可选择时间或任务依赖触发，配置延迟与受控重试，也可启停或立即执行。</li>
+              <li>实际执行记录进入「数据采集」任务中心，并标注「定时·任务名」。</li>
+            </ul>
+          </HelpTipItem>
+          <HelpTipItem question="数据源健康看什么">
+            <ul>
+              <li>用于查看 AKShare、BaoStock 和同花顺板块源的连通性。</li>
+            </ul>
+          </HelpTipItem>
         </HelpTip>
       </h2>
       <p class="page-subtitle">按时间或上游任务结果编排采集、评分、质检、恢复与审计任务，支持延迟触发和有上限重试。</p>

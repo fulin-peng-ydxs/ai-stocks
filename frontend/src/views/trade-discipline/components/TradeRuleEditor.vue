@@ -6,6 +6,7 @@ import AppIconButton from '@/components/AppIconButton.vue'
 import BuiltinOptionRow from '@/components/BuiltinOptionRow.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import { decimalToMinorUnits, formatMinorUnits } from '@/utils/fixedDecimal'
 import { formatMoney } from '@/utils/money'
 import FixedDecimalInput from '@/views/trade-discipline/components/FixedDecimalInput.vue'
@@ -661,7 +662,11 @@ defineExpose({
                       <template #label>
                         类型
                         <HelpTip title="类型说明" :width="360" test-id="action-rule-type-help">
-                          内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除。
+                          <HelpTipItem question="类型如何维护">
+                            <ul>
+                              <li>内置类型不可删除；输入新类型并保存后可复用，自定义类型可从下拉项删除。</li>
+                            </ul>
+                          </HelpTipItem>
                         </HelpTip>
                       </template>
                       <el-select v-model="item.action_subtype" filterable allow-create default-first-option maxlength="40" placeholder="选择或输入类型" data-testid="action-rule-type-select">

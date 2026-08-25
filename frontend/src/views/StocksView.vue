@@ -10,6 +10,7 @@ import AppSearchInput from '@/components/AppSearchInput.vue'
 import AppDataTable from '@/components/AppDataTable.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import MarketMasterDetailWorkspace from '@/components/MarketMasterDetailWorkspace.vue'
 import StockAnalysisNameCell from '@/components/StockAnalysisNameCell.vue'
@@ -734,7 +735,13 @@ onMounted(async () => {
       <div>
       <h2 class="app-page-title">
         个股查询
-        <HelpTip title="个股查询说明" :width="440">按代码/名称/板块筛选个股；支持分组查看与集合内翻页。</HelpTip>
+        <HelpTip title="个股查询说明" :width="440">
+          <HelpTipItem question="如何查询个股">
+            <ul>
+              <li>按代码、名称或板块筛选个股，并支持分组查看与集合内翻页。</li>
+            </ul>
+          </HelpTipItem>
+        </HelpTip>
       </h2>
       <p class="page-subtitle">按代码/名称/板块筛选个股行情，可跨分页勾选与分组管理。</p>
       </div>

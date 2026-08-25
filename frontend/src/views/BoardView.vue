@@ -21,6 +21,7 @@ import StockAnalysisPanel from '@/components/StockAnalysisPanel.vue'
 import StockChartSettingSection from '@/components/StockChartSettingSection.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -510,9 +511,21 @@ onMounted(async () => {
         <h2 class="app-page-title page-title-row">
           每日榜单
           <HelpTip title="榜单是怎么排出来的？" :width="420">
-            <p><b>不是筛选，是打分排序</b>：选一个<b>评分规则方案</b>，对全市场（仅排除 ST）每只股票按规则打分，按综合分降序取 Top N。</p>
-            <p style="margin:6px 0 2px">榜单使用你可见的评分规则方案：自己的方案、租户公开方案、全体公开方案或系统内置方案。每条规则 = 技术指标 + 权重 + 达标打分方式（布尔/分段/线性），权重自动归一到 100%。</p>
-            <p style="margin:6px 0 0;color:var(--app-warning-text)"><b>⚠️ 注意</b>：全市场排序、不设硬门槛，行情差时前排也是"矮个里的高个"，<b>要看分数高低而非排名</b>。</p>
+            <HelpTipItem question="榜单如何排序">
+              <ul>
+                <li>选择一个评分规则方案，对全市场中除 ST 外的每只股票按规则打分，再按综合分降序取 Top N。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="可以使用哪些方案">
+              <ul>
+                <li>可使用自己的方案、租户公开方案、全体公开方案或系统内置方案；每条规则由技术指标、权重和布尔/分段/线性达标打分方式组成，权重自动归一到 100%。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem warning>
+              <ul>
+                <li>全市场排序不设硬门槛，行情差时前排也可能只是“矮个里的高个”，应关注分数高低而非只看排名。</li>
+              </ul>
+            </HelpTipItem>
           </HelpTip>
         </h2>
         <p class="page-subtitle">

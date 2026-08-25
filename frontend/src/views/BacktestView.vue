@@ -24,6 +24,7 @@ import AppStateBlock from '@/components/AppStateBlock.vue'
 import ScoreGradeTag from '@/components/ScoreGradeTag.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -1587,12 +1588,23 @@ async function openTradeChart(row: TradeRow) {
         <h2 class="app-page-title page-title-row">
           策略回测
           <HelpTip title="回测在验证什么？" :width="460">
-            <p><b>两种模式</b>：</p>
-            <ul style="margin:0;padding-left:18px">
-              <li><b>策略回测</b>：逐日「先卖后买」事件驱动撮合——T 日选股、<b>T+1 开盘成交</b>，跌破 MA 卖出；含交易成本、涨跌停/停牌不可成交、退市强平。算真实资金曲线。</li>
-              <li><b>信号质量</b>：纯统计「分越高，N 日内摸到 X% 涨幅的概率是否越高」，并<b>减去全市场基线(base rate)</b>得超额——这才是评分的真实能力。</li>
-            </ul>
-            <p style="margin:6px 0 0;color:var(--app-warning-text)"><b>⚠️ 防坑</b>：① 用未来 N 日是「评估」非未来函数；② 短区间「年化/卡玛」会被放大，只看长周期；③ 样本量小(n小)的分档不可信。</p>
+            <HelpTipItem question="策略回测验证什么">
+              <ul>
+                <li>逐日按“先卖后买”事件驱动撮合：T 日选股、T+1 开盘成交，跌破 MA 卖出；计入交易成本、涨跌停或停牌不可成交、退市强平，并计算真实资金曲线。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem question="信号质量验证什么">
+              <ul>
+                <li>统计分数越高时，N 日内触及 X% 涨幅的概率是否越高，并减去全市场基线得到超额，用于判断评分的真实能力。</li>
+              </ul>
+            </HelpTipItem>
+            <HelpTipItem warning>
+              <ul>
+                <li>未来 N 日只用于评估，不是未来函数。</li>
+                <li>短区间的年化和卡玛会被放大，应观察长周期。</li>
+                <li>样本量小的分档不可信。</li>
+              </ul>
+            </HelpTipItem>
           </HelpTip>
         </h2>
         <p class="page-subtitle">用策略/评分方案做 T+1 开盘撮合回测，查看收益、交易与当日榜单。</p>
@@ -1699,7 +1711,16 @@ async function openTradeChart(row: TradeRow) {
           <template #label>
             评分方案
             <HelpTip title="评分方案" :width="340">
-              <p>策略回测里用于<b>候选超过持仓数时按分排序截断</b>；评分验证里用于<b>分档检验高分组是否更易涨</b>。去「配置管理 → 评分规则」定义。</p>
+              <HelpTipItem question="方案用于什么">
+                <ul>
+                  <li>策略回测中用于在候选超过持仓数时按分排序截断；评分验证中用于分档检验高分组是否更易上涨。</li>
+                </ul>
+              </HelpTipItem>
+              <HelpTipItem question="在哪里定义">
+                <ul>
+                  <li>前往「配置管理 → 评分规则」定义。</li>
+                </ul>
+              </HelpTipItem>
             </HelpTip>
           </template>
           <AssetProfileSelect
@@ -1746,8 +1767,16 @@ async function openTradeChart(row: TradeRow) {
             <template #label>
               选股方案
               <HelpTip title="选股方案 = 自定义策略入口" :width="360">
-                <p>决定<b>每天从哪些股票里挑</b>：选择方案后，只在命中该方案的股票里按评分取前 N 只；不选择时不额外限制范围，但仍会排除 ST，并继续执行评分和买入条件。</p>
-                <p style="margin:6px 0 0">想自定义策略？去<b>「策略筛选」页</b>写规则并「保存」，这里就会出现可选。</p>
+                <HelpTipItem question="方案如何限制范围">
+                  <ul>
+                    <li>选择方案后，只在命中该方案的股票中按评分取前 N 只；不选择时不额外限制范围，但仍排除 ST，并继续执行评分和买入条件。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="如何自定义方案">
+                  <ul>
+                    <li>前往「策略筛选」页编写规则并保存，之后即可在此选择。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </template>
             <!-- 悬浮显示方案具体选股条件 -->
@@ -1801,7 +1830,11 @@ async function openTradeChart(row: TradeRow) {
             <template #label>
               持仓数
               <HelpTip title="持仓数（Top N）" :width="300">
-                <p>同时最多持有几只：每个调仓日在候选里按综合分取<b>前 N 只</b>等权买入。</p>
+                <HelpTipItem question="持仓数如何生效">
+                  <ul>
+                    <li>每个调仓日在候选中按综合分取前 N 只等权买入，并限制同时最多持有的股票数量。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </template>
             <el-input-number v-model="topN" :min="1" :max="50" controls-position="right" style="width: 100px" />
@@ -1821,7 +1854,16 @@ async function openTradeChart(row: TradeRow) {
             <template #label>
               买卖方案
               <HelpTip title="买卖方案 = 买/卖/兜底" :width="380">
-                <p>选某买卖方案 → 买入须<b>筛选命中且买入条件成立</b>，卖出走方案的<b>卖出条件 + 兜底(止盈/止损/最大持有)</b>。去「配置管理 → 买卖指标」定义。</p>
+                <HelpTipItem question="方案如何决定买卖">
+                  <ul>
+                    <li>买入必须同时满足筛选命中和买入条件；卖出执行方案的卖出条件以及止盈、止损、最大持有等兜底。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="在哪里定义">
+                  <ul>
+                    <li>前往「配置管理 → 买卖指标」定义。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </template>
             <AssetProfileSelect
@@ -1946,8 +1988,16 @@ async function openTradeChart(row: TradeRow) {
               <template #title>
                 <span class="block-title" style="margin:0">稳健性测试
                   <HelpTip title="结果是否稳健 / 过拟合？" :width="380">
-                    <p><b>参数敏感性</b>：固定其它参数、扫一个参数的多个取值，看绩效是否平滑（而非靠某个魔法值）。</p>
-                    <p style="margin:6px 0 0"><b>样本内外</b>：把区间按某日一分为二分别回测，样本外仍成立才可信。基准参数=上方表单当前设置。</p>
+                    <HelpTipItem question="参数敏感性怎么看">
+                      <ul>
+                        <li>固定其他参数，扫描一个参数的多个取值，观察绩效是否平滑，而不是只依赖某个特殊取值。</li>
+                      </ul>
+                    </HelpTipItem>
+                    <HelpTipItem question="样本内外怎么看">
+                      <ul>
+                        <li>按某日把区间分为两部分分别回测，样本外仍成立才更可信；基准参数取上方表单当前设置。</li>
+                      </ul>
+                    </HelpTipItem>
                   </HelpTip>
                 </span>
               </template>
@@ -2128,8 +2178,16 @@ async function openTradeChart(row: TradeRow) {
           <div class="ds-item">
             <span class="ds-k">买入优先级
               <HelpTip title="为什么买它？" :width="340">
-                <p><b>方案内排名</b>=当天选股方案命中的票按评分排序后的优先级（买入就按这个顺序）。</p>
-                <p style="margin:6px 0 0"><b>全市场榜单 #</b>=它在当日<b>每日榜单</b>（全市场评分排序）里的名次——方案命中票不一定是榜单靠前的票。</p>
+                <HelpTipItem question="方案内排名是什么">
+                  <ul>
+                    <li>当天选股方案命中的股票按评分排序后的优先级，买入按此顺序执行。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="全市场榜单名次是什么">
+                  <ul>
+                    <li>该股票在当日每日榜单的全市场评分排序名次；方案命中的股票不一定处于榜单前列。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </span>
             <span class="ds-v ds-rank">

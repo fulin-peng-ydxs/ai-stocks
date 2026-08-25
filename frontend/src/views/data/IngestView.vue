@@ -14,6 +14,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
@@ -559,8 +560,16 @@ watch(
       <h2 class="app-page-title">
         数据采集
         <HelpTip title="这页能做什么？" :width="420">
-          手动触发数据采集 / 补数 / 评分维护，后台异步执行：可离开页面，回来在「任务中心」点开看实时日志、
-          支持中断后继续、失败后重试未完成部分。定时任务触发的执行也会出现在任务中心（标注「定时·任务名」），同样可看每一步日志。
+          <HelpTipItem question="手动任务怎么执行">
+            <ul>
+              <li>数据采集、补数和评分维护在后台异步执行；可离开页面，之后回到任务中心查看实时日志，并支持中断后继续或重试未完成部分。</li>
+            </ul>
+          </HelpTipItem>
+          <HelpTipItem question="定时任务在哪里看">
+            <ul>
+              <li>定时任务的执行也会进入任务中心，标注「定时·任务名」，并可查看每一步日志。</li>
+            </ul>
+          </HelpTipItem>
         </HelpTip>
       </h2>
       <p class="page-subtitle">手动触发采集/补数/评分维护，后台异步执行，可在任务中心查看实时日志与续跑。</p>
@@ -618,8 +627,16 @@ watch(
           <div class="act">
             <div class="act-t">生产公共榜单
               <HelpTip title="什么时候需要？" :width="360">
-                榜单页只读取已生产的公共快照；采集、补数、修复后相关评分会过期。
-                手动执行会刷新评分缓存，并按最新交易日生产平台公共预设榜单。
+                <HelpTipItem question="为什么需要执行">
+                  <ul>
+                    <li>榜单页只读取已生产的公共快照，采集、补数或修复后相关评分会过期。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="执行后会做什么">
+                  <ul>
+                    <li>刷新评分缓存，并按最新交易日生产平台公共预设榜单。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </div>
             <div class="act-d">刷新评分缓存，并生成最新交易日公共预设榜单快照</div>

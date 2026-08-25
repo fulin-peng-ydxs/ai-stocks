@@ -13,6 +13,7 @@ import AppTableColumn from '@/components/AppTableColumn.vue'
 import CompareQueueRail from '@/components/CompareQueueRail.vue'
 import type { CompareQueueItem } from '@/components/CompareQueueRail.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import KlineSettingSection from '@/components/KlineSettingSection.vue'
 import KlineRangeSelect from '@/components/KlineRangeSelect.vue'
 import MarketCompareMetricStrip from '@/components/MarketCompareMetricStrip.vue'
@@ -789,10 +790,26 @@ onMounted(async () => {
             <h2 class="app-page-title page-title-row">
               板块行情
               <HelpTip title="板块行情怎么看？" :width="460" test-id="sectors-help-tip">
-                <p><b>涨幅口径</b>：今日涨幅相对上一交易日收盘；5/10/20日涨幅相对对应交易日前收盘，历史不足显示“—”。</p>
-                <p><b>资金口径</b>：即时及多日净流入来自资金流快照，单位为亿元；资金快照日可能与行情交易日不同，以净流入表头日期为准。</p>
-                <p><b>排行操作</b>：点击列头切换排序；列显隐在页面设置中管理；点击板块行切换当前观察对象。</p>
-                <p><b>对比操作</b>：勾选板块加入走势对比，最多 {{ COMPARE_MAX }} 个；收起右侧分析区后可专注查看排行，再次展开会保留当前观察状态。</p>
+                <HelpTipItem question="涨幅口径是什么">
+                  <ul>
+                    <li>今日涨幅相对上一交易日收盘；5/10/20 日涨幅相对对应交易日前收盘，历史不足显示“—”。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="资金口径是什么">
+                  <ul>
+                    <li>即时及多日净流入来自资金流快照，单位为亿元；资金快照日可能与行情交易日不同，以净流入表头日期为准。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="排行如何操作">
+                  <ul>
+                    <li>点击列头切换排序；列显隐在页面设置中管理；点击板块行切换当前观察对象。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="对比如何操作">
+                  <ul>
+                    <li>勾选板块加入走势对比，最多 {{ COMPARE_MAX }} 个；收起右侧分析区后可专注查看排行，再次展开会保留当前观察状态。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </h2>
             <p class="page-subtitle">从强弱排行定位主线，点选板块后在同一视野比较走势。</p>

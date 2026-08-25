@@ -8,6 +8,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import {
@@ -447,7 +448,16 @@ onMounted(loadAll)
         <div class="dict-title">
           <h2 class="app-page-title">数据字典
             <HelpTip title="数据字典说明" :width="420">
-              维护系统枚举与稳定业务枚举。字典类型和字典项 code 创建后不可修改，业务判断只使用 code。
+              <HelpTipItem question="字典维护什么">
+                <ul>
+                  <li>维护系统枚举与稳定业务枚举。</li>
+                </ul>
+              </HelpTipItem>
+              <HelpTipItem question="code 如何使用">
+                <ul>
+                  <li>字典类型和字典项 code 创建后不可修改，业务判断只使用 code。</li>
+                </ul>
+              </HelpTipItem>
             </HelpTip>
           </h2>
           <p class="page-subtitle">维护数据字段、类型与口径说明。</p>

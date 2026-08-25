@@ -9,6 +9,7 @@ import {
 } from '@/api/data'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -330,8 +331,16 @@ onMounted(load)
       <h2 class="app-page-title">
         数据概览
         <HelpTip title="数据概览看什么？" :width="420">
-          家底全景：核心 KPI（交易日 / 股票数 / 行数 / 质量评分 / 缺口）、按数据维度归并的「数据资产表」、
-          四层质量达标率，以及逐股分层体检。所有质量/缺口数字均可点击，直达对应明细页处理。
+          <HelpTipItem question="页面提供什么">
+            <ul>
+              <li>展示核心 KPI、按数据维度归并的数据资产表、四层质量达标率和逐股分层体检。</li>
+            </ul>
+          </HelpTipItem>
+          <HelpTipItem question="问题如何处理">
+            <ul>
+              <li>所有质量和缺口数字均可点击，并直达对应明细页处理。</li>
+            </ul>
+          </HelpTipItem>
         </HelpTip>
       </h2>
       <p class="page-subtitle">家底全景：核心 KPI、数据资产表、四层质量达标率与逐股分层体检，数字可点击直达明细。</p>
@@ -511,12 +520,21 @@ onMounted(load)
                   <template #header>
                     <span>质量</span>
                     <HelpTip title="表级质量怎么判定？" :width="440">
-                      分两类：<br />
-                      <b>时序表</b>（日线行情 / 市值指标 / 指数）：最新数据时间须 ≥ 全局最新交易日才算鲜活；
-                      为空或滞后 → 「无数据 / 数据滞后」；有未解决质检问题 → 显示问题数。<br />
-                      <b>基础 / 台账表</b>（股票基础信息 / 交易日历 / 采集日志 / 质量台账）：无交易日时间维度，
-                      不判鲜活——最新时间显示「—」属正常，只要有数据即「正常」。<br />
-                      <b>规划中维度</b>（股东数 / 筹码分布）：尚无物理表，显示「规划中」。
+                      <HelpTipItem question="时序表如何判定">
+                        <ul>
+                          <li>日线行情、市值指标和指数的最新数据时间须不早于全局最新交易日才算鲜活；为空或滞后时显示「无数据 / 数据滞后」，有未解决质检问题时显示问题数。</li>
+                        </ul>
+                      </HelpTipItem>
+                      <HelpTipItem question="基础与台账表如何判定">
+                        <ul>
+                          <li>股票基础信息、交易日历、采集日志和质量台账没有交易日时间维度，不判断鲜活；最新时间显示「—」属正常，只要有数据即为「正常」。</li>
+                        </ul>
+                      </HelpTipItem>
+                      <HelpTipItem question="规划中维度如何显示">
+                        <ul>
+                          <li>股东数、筹码分布尚无物理表，统一显示「规划中」。</li>
+                        </ul>
+                      </HelpTipItem>
                     </HelpTip>
                   </template>
                   <template #default="{ row }">

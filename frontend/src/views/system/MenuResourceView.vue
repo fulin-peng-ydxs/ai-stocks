@@ -11,6 +11,7 @@ import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import AppTableColumn from '@/components/AppTableColumn.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import IconPicker from '@/components/IconPicker.vue'
 import MenuIcon from '@/components/MenuIcon.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
@@ -430,10 +431,26 @@ onMounted(() => { loadTree() })
             <h2 class="app-page-title">
               菜单功能
               <HelpTip title="菜单与功能管理说明" :width="440">
-                左侧菜单树可新增 / 拖拽排序 / 删除；选中节点后在右侧维护其属性与功能点。<br /><br />
-                菜单 icon 存 Element Plus 图标名，从图标选择器中选；分组不导航、无需路由。<br /><br />
-                功能点是角色授权的最小资源单位；「接口」类绑定后端接口路径，「按钮」类为前端动作。<br /><br />
-                「仅系统管理员」可见的菜单不会授予普通角色。
+                <HelpTipItem question="菜单树如何维护">
+                  <ul>
+                    <li>左侧菜单树可新增、拖拽排序和删除；选中节点后在右侧维护其属性与功能点。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="菜单图标与路由如何配置">
+                  <ul>
+                    <li>菜单 icon 存 Element Plus 图标名并从图标选择器中选择；分组不导航，无需路由。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="功能点是什么">
+                  <ul>
+                    <li>功能点是角色授权的最小资源单位；「接口」类绑定后端接口路径，「按钮」类代表前端动作。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="系统菜单如何隔离">
+                  <ul>
+                    <li>「仅系统管理员」可见的菜单不会授予普通角色。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </h2>
             <p class="page-subtitle">维护菜单树、功能点与接口绑定，支持拖拽排序。</p>
@@ -592,9 +609,21 @@ onMounted(() => { loadTree() })
                 <div class="mr-func-head">
                   <h4 style="margin: 0">功能点（供角色授权）
                     <HelpTip title="功能点说明" :width="360">
-                      功能码全局唯一、稳定不可复用（与后端接口权限码对账）；<br />
-                      「接口」类绑定后端接口路径，「按钮」类为前端动作；<br />
-                      系统内置功能点不可编辑、不可删除；删除被角色引用的功能点会同时解除授权。
+                      <HelpTipItem question="功能码有什么约束">
+                        <ul>
+                          <li>功能码全局唯一、稳定且不可复用，并与后端接口权限码对账。</li>
+                        </ul>
+                      </HelpTipItem>
+                      <HelpTipItem question="功能点类型表示什么">
+                        <ul>
+                          <li>「接口」类绑定后端接口路径，「按钮」类代表前端动作。</li>
+                        </ul>
+                      </HelpTipItem>
+                      <HelpTipItem question="删除与内置保护如何处理">
+                        <ul>
+                          <li>系统内置功能点不可编辑、不可删除；删除被角色引用的功能点会同时解除授权。</li>
+                        </ul>
+                      </HelpTipItem>
                     </HelpTip>
                   </h4>
                   <el-button v-permission="'resource:create'" size="small" :disabled="editingId === NEW_ROW"

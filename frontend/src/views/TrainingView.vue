@@ -22,6 +22,7 @@ import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -472,9 +473,21 @@ onBeforeUnmount(detachKeyboard)
           <h2 class="app-page-title page-title-row">
             盘感训练
             <HelpTip title="盘感训练是什么？" :width="440">
-              <p><b>针对个股的买卖手感训练</b>：系统在你指定的历史区间里随机抽一只个股、随机一个起点，<b>盲测</b>（隐藏股名/代码/真实日期）下逐日揭示 K 线，你负责买卖。</p>
-              <p style="margin:6px 0 2px"><b>买入当日按收盘价成交（T+0）</b>，<b>卖出次日开盘价成交（T+1）</b>；套用收盘/开盘涨跌停买不到、跌停卖不出、停牌顺延等真实约束；可选计入交易成本。</p>
-              <p style="margin:6px 0 0">一局可练单只或多只（每只一个回合），结束后揭晓身份、给出收益/胜率/回撤与综合评级，并沉淀到训练历史与成长曲线。</p>
+              <HelpTipItem question="训练如何进行">
+                <ul>
+                  <li>系统在指定历史区间内随机抽取个股和起点，隐藏股名、代码与真实日期，逐日揭示 K 线，由你负责买卖。</li>
+                </ul>
+              </HelpTipItem>
+              <HelpTipItem question="买卖如何成交">
+                <ul>
+                  <li>买入当日按收盘价成交（T+0），卖出次日按开盘价成交（T+1）；同时执行涨跌停不可成交、停牌顺延等真实约束，并可选择计入交易成本。</li>
+                </ul>
+              </HelpTipItem>
+              <HelpTipItem question="一局结束后得到什么">
+                <ul>
+                  <li>一局可训练单只或多只股票；结束后揭晓身份，给出收益、胜率、回撤与综合评级，并沉淀到训练历史和成长曲线。</li>
+                </ul>
+              </HelpTipItem>
             </HelpTip>
           </h2>
           <p class="page-subtitle">盲测 · 逐日揭示 · 买 T+0 / 卖 T+1 · 回溯思路与成长</p>
@@ -526,7 +539,21 @@ onBeforeUnmount(detachKeyboard)
         </el-card>
 
         <el-card v-if="growthLoading || growthData.length || growthError" shadow="never" class="growth-card">
-          <template #header><span class="card-title">成长曲线</span><span class="card-sub">历次评分 / 收益</span><HelpTip title="成长曲线是什么？" :width="380"><p><b>横轴为完成局序</b>，纵轴左为历次综合评分（0~100），右为整局收益。</p><p style="margin:6px 0 0">用于观察盘感是否在<b>稳定进步</b>：评分趋势向上说明买卖时机与纪律在变好；收益为负会画在 0 下方。每次结算一局后自动沉淀一个点。</p></HelpTip></template>
+          <template #header>
+            <span class="card-title">成长曲线</span><span class="card-sub">历次评分 / 收益</span>
+            <HelpTip title="成长曲线是什么？" :width="380">
+              <HelpTipItem question="坐标表示什么">
+                <ul>
+                  <li>横轴为完成局序，纵轴左侧为历次综合评分（0~100），右侧为整局收益。</li>
+                </ul>
+              </HelpTipItem>
+              <HelpTipItem question="曲线如何解读">
+                <ul>
+                  <li>用于观察盘感是否稳定进步；评分趋势向上说明买卖时机与纪律在改善，收益为负时会绘制在 0 下方。每次结算一局后自动沉淀一个点。</li>
+                </ul>
+              </HelpTipItem>
+            </HelpTip>
+          </template>
           <AppStateBlock
             v-if="growthLoading && !growthData.length"
             state="loading"
@@ -617,8 +644,16 @@ onBeforeUnmount(detachKeyboard)
           <h2 class="app-page-title title-row">
             盘感训练 · 进行中
             <HelpTip title="训练规则" :width="380">
-              <p><b>盲测</b>：隐藏个股身份与真实日期，横轴用相对日（D±n）。</p>
-              <p style="margin:6px 0 0"><b>买 T+0</b>：买入当日按收盘价即时成交（收盘封涨停买不到）。<b>卖 T+1</b>：卖出登记后次日开盘成交（开盘跌停卖不出、停牌顺延）。窗口末日仍持仓将按收盘价强制清算。</p>
+              <HelpTipItem question="盲测隐藏什么">
+                <ul>
+                  <li>隐藏个股身份与真实日期，横轴使用相对日（D±n）。</li>
+                </ul>
+              </HelpTipItem>
+              <HelpTipItem question="买卖何时成交">
+                <ul>
+                  <li>买入当日按收盘价即时成交，收盘封涨停时不可买入；卖出登记后于次日开盘成交，开盘跌停时不可卖出，停牌时顺延。窗口末日仍持仓则按收盘价强制清算。</li>
+                </ul>
+              </HelpTipItem>
             </HelpTip>
           </h2>
           <p class="page-subtitle">回合 {{ view!.cur_round + 1 }}/{{ view!.n_rounds }} · 第 {{ round.cursor_idx + 1 }}/{{ round.window_days }} 个交易日 · 盲测中
@@ -775,9 +810,24 @@ onBeforeUnmount(detachKeyboard)
           <template #header>
             <span class="card-title">评分规则</span>
             <HelpTip title="综合评分怎么算？" :width="420">
-              <p><b>综合评分</b> 是四项维度分数的加权和（0~100）：<b>超额收益×40% + 绝对收益×25% + 回撤控制×20% + 胜率×15%</b>。</p>
-              <p style="margin:6px 0 2px"><b>超额</b> = (总收益 − 同期满仓持有收益 + 10%) ÷ 20%，截断 0~1；<b>绝对</b> = (总收益 + 20%) ÷ 40%，截断 0~1；<b>回撤控制</b> = (最大回撤 + 25%) ÷ 25%，截断 0~1；<b>胜率</b> = 盈利卖出笔数 ÷ 卖出总笔数。</p>
-              <p style="margin:6px 0 0"><b>评级</b>：S ≥ 90，A ≥ 80，B ≥ 70，C ≥ 60，其余 D。</p>
+              <HelpTipItem question="综合评分如何加权">
+                <ul>
+                  <li>四项维度分数加权为 0~100 分：超额收益×40% + 绝对收益×25% + 回撤控制×20% + 胜率×15%。</li>
+                </ul>
+              </HelpTipItem>
+              <HelpTipItem question="各维度如何计算">
+                <ul>
+                  <li>超额 =（总收益 − 同期满仓持有收益 + 10%）÷ 20%。</li>
+                  <li>绝对 =（总收益 + 20%）÷ 40%。</li>
+                  <li>回撤控制 =（最大回撤 + 25%）÷ 25%；以上三项均截断到 0~1。</li>
+                  <li>胜率 = 盈利卖出笔数 ÷ 卖出总笔数。</li>
+                </ul>
+              </HelpTipItem>
+              <HelpTipItem question="评级如何划分">
+                <ul>
+                  <li>S ≥ 90，A ≥ 80，B ≥ 70，C ≥ 60，其余为 D。</li>
+                </ul>
+              </HelpTipItem>
             </HelpTip>
           </template>
           <div class="score-rule-grid">
@@ -916,7 +966,13 @@ onBeforeUnmount(detachKeyboard)
         <div class="setting-item">
           <div class="setting-label">
             计入交易成本
-            <HelpTip title="交易成本" :width="280">关闭则为「零摩擦」，不计佣金/印花税/过户费/滑点，用于专注练买卖时机。</HelpTip>
+            <HelpTip title="交易成本" :width="280">
+              <HelpTipItem question="关闭后如何计算">
+                <ul>
+                  <li>按“零摩擦”计算，不计佣金、印花税、过户费和滑点，用于专注训练买卖时机。</li>
+                </ul>
+              </HelpTipItem>
+            </HelpTip>
           </div>
           <el-switch v-model="cfg.fee_enabled" />
         </div>

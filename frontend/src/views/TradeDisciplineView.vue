@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -479,18 +480,26 @@ watch(tradeDisciplineChangeVersion, async () => {
                 :width="480"
                 test-id="trade-discipline-help-tip"
               >
-                <p>
-                  <b>规则怎么生效：</b>新建时只是可编辑草稿，发布后才生成正式版本；发布新版本、归档或恢复，都从操作后的下一真实交易日起生效，避免事后改规则影响当日复盘。
-                </p>
-                <p class="help-paragraph">
-                  <b>“今日”是哪一天：</b>今日打卡和首页今日交易纪律使用本地行情中最新已入库的交易日。当天收盘数据尚未入库时，这里仍会显示上一个交易日。
-                </p>
-                <p class="help-paragraph">
-                  <b>为什么显示待生效：</b>正式版本已经发布，但生效日晚于当前可打卡交易日；等生效日行情入库后，规则会自动出现在今日打卡中。
-                </p>
-                <p class="help-paragraph">
-                  <b>历史如何保留：</b>每次打卡绑定当时生效的正式版本，之后修改规则不会覆盖既有记录。
-                </p>
+                <HelpTipItem question="规则怎么生效">
+                  <ul>
+                    <li>新建时只是可编辑草稿，发布后才生成正式版本；发布新版本、归档或恢复，都从操作后的下一真实交易日起生效，避免事后改规则影响当日复盘。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="“今日”是哪一天">
+                  <ul>
+                    <li>今日打卡和首页今日交易纪律使用本地行情中最新已入库的交易日。当天收盘数据尚未入库时，这里仍会显示上一个交易日。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="为什么显示待生效">
+                  <ul>
+                    <li>正式版本已经发布，但生效日晚于当前可打卡交易日；等生效日行情入库后，规则会自动出现在今日打卡中。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="历史如何保留">
+                  <ul>
+                    <li>每次打卡绑定当时生效的正式版本，之后修改规则不会覆盖既有记录。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </h2>
             <p class="page-subtitle">把规则、执行和复盘留在同一条可追溯的纪律轨道上。</p>
@@ -699,7 +708,6 @@ watch(tradeDisciplineChangeVersion, async () => {
   align-items: center;
 }
 .page-head-actions { gap: var(--app-space-2); }
-.help-paragraph { margin: var(--app-space-control-gap) 0 0; }
 .leave-decision-copy { margin: 0; color: var(--el-text-color-regular); line-height: var(--app-line-height-longform); }
 .discipline-workspace { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: var(--app-space-3); }
 .discipline-rail { flex: none; }

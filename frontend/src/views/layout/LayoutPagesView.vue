@@ -552,15 +552,17 @@ onMounted(async () => {
 <template>
   <LayoutHost :layout="pagesLayout">
     <template #action>
-      <div class="layout-toolbar">
-        <div>
-          <div class="page-title app-page-title">页面布局</div>
-          <div class="page-subtitle app-body-text">面向单个页面的默认配置、组件特性、导入导出与校验报告（围绕同一页面）</div>
-        </div>
-        <div class="toolbar-actions">
-          <el-select v-model="selectedPageKey" class="page-select">
-            <el-option v-for="page in managedPages" :key="page.pageKey" :label="page.label" :value="page.pageKey" />
-          </el-select>
+      <div class="lh-action">
+        <div class="page-head">
+          <div>
+            <h2 class="app-page-title">页面布局</h2>
+            <p class="page-subtitle">配置单个页面的默认布局、组件特性、导入导出与校验报告。</p>
+          </div>
+          <div class="page-head-actions">
+            <el-select v-model="selectedPageKey" class="page-select" aria-label="选择配置页面">
+              <el-option v-for="page in managedPages" :key="page.pageKey" :label="page.label" :value="page.pageKey" />
+            </el-select>
+          </div>
         </div>
       </div>
     </template>
@@ -853,22 +855,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.layout-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-4);
-  padding: 14px 16px;
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  border-radius: 6px;
-}
-.page-title {
-  font-size: var(--app-font-size-title-md);
-  font-weight: var(--app-font-weight-strong);
-  color: var(--el-text-color-primary);
-}
-.page-subtitle,
 .section-subtitle,
 .muted {
   color: var(--el-text-color-secondary);
@@ -1040,7 +1026,6 @@ onMounted(async () => {
   width: 140px;
 }
 @media (max-width: 980px) {
-  .layout-toolbar,
   .tab-head {
     align-items: stretch;
     flex-direction: column;

@@ -13,6 +13,7 @@ import AppDataTable from '@/components/AppDataTable.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import SystemBuiltinTag from '@/components/SystemBuiltinTag.vue'
@@ -256,9 +257,21 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
             <h2 class="app-page-title">
               租户管理
               <HelpTip title="租户管理说明" :width="420">
-                租户增删改、指定管理员、启停。<br /><br />
-                默认租户不可停用 / 删除；<b>停用</b>后其下用户立即不可登录（在线会话下次校验即失效）。<br /><br />
-                删除仅限无用户的租户；「查看用户」跳用户管理并按该租户过滤。
+                <HelpTipItem question="可以维护什么">
+                  <ul>
+                    <li>支持租户增删改、指定管理员和启停。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="默认租户如何保护">
+                  <ul>
+                    <li>默认租户不可停用或删除；停用其他租户后，其下用户立即不可登录，在线会话在下次校验时失效。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="何时可以删除">
+                  <ul>
+                    <li>仅可删除没有用户的租户；「查看用户」会进入用户管理并按该租户过滤。</li>
+                  </ul>
+                </HelpTipItem>
               </HelpTip>
             </h2>
             <p class="page-subtitle">管理租户、默认套餐与租户级配置。</p>

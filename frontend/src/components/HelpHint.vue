@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 说明提示「?」——承载可作为一个纯文本块理解的解释性文案，避免说明占用常驻版面。
- * 需要标题、分段、列表、示例或多要点结构时改用 HelpTip；操作指引和极短标签仍用明文。
+ * 需要标题、分段、列表、示例或多要点结构时改用 HelpTip + HelpTipItem；操作指引和极短标签仍用明文。
  */
 defineProps<{ text: string }>()
 </script>

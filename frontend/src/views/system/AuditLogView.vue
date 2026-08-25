@@ -19,6 +19,7 @@ import AppFilterSelect from '@/components/AppFilterSelect.vue'
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -481,7 +482,16 @@ onBeforeUnmount(stopTimer)
         <div class="audit-title">
           <h2 class="app-page-title">审计日志
             <HelpTip title="审计日志说明" :width="420" test-id="audit-help-tip">
-              记录接口、任务、安全、权限、配置和字典事件。系统管理员查看全局，租户管理员仅查看本租户事件。
+              <HelpTipItem question="记录哪些事件">
+                <ul>
+                  <li>记录接口、任务、安全、权限、配置和字典事件。</li>
+                </ul>
+              </HelpTipItem>
+              <HelpTipItem question="谁能查看哪些记录">
+                <ul>
+                  <li>系统管理员查看全局，租户管理员仅查看本租户事件。</li>
+                </ul>
+              </HelpTipItem>
             </HelpTip>
           </h2>
           <p class="page-subtitle">查询登录、配置变更、数据操作等审计记录。</p>

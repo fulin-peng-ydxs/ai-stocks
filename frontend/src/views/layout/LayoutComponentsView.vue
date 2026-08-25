@@ -19,6 +19,8 @@ import LayoutComponentPreview from '@/layout/components/LayoutComponentPreview.v
 import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpHint from '@/components/HelpHint.vue'
+import HelpTip from '@/components/HelpTip.vue'
+import HelpTipItem from '@/components/HelpTipItem.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import {
   COMPONENT_CATALOG,
@@ -258,15 +260,26 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
 <template>
   <LayoutHost :layout="componentsLayout">
     <template #action>
-      <div class="layout-toolbar">
-        <div>
-          <div class="page-title">系统组件</div>
-          <div class="page-subtitle">
-            组件能力目录：共 {{ totalCount }} 种 · {{ consumedCount }} 种被页面消费 · {{ configurableCount }} 种已开放 Web 配置；点「预览」查看四态规范样板与字段可覆盖范围
+      <div class="lh-action">
+        <div class="page-head">
+          <div>
+            <h2 class="app-page-title page-title-row">
+              系统组件
+              <HelpTip title="系统组件说明" :width="420">
+                <HelpTipItem question="当前目录包含哪些组件">
+                  <ul>
+                    <li>共 {{ totalCount }} 种组件，{{ consumedCount }} 种已被页面消费，{{ configurableCount }} 种已开放 Web 配置。</li>
+                  </ul>
+                </HelpTipItem>
+                <HelpTipItem question="如何查看和配置">
+                  <ul>
+                    <li>使用“预览”查看四态规范样板与字段可覆盖范围；可覆盖范围在本页编辑，组件默认值在“预设管理”中维护。</li>
+                  </ul>
+                </HelpTipItem>
+              </HelpTip>
+            </h2>
+            <p class="page-subtitle">查看系统组件能力、页面使用情况与可配置字段范围。</p>
           </div>
-        </div>
-        <div class="toolbar-actions">
-          <el-tag type="success" effect="plain">可覆盖范围可编辑 · 组件默认请到「预设管理」</el-tag>
         </div>
       </div>
     </template>
@@ -384,7 +397,9 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
           <div class="detail-block">
             <div class="db-title">能力说明</div>
             <el-descriptions :column="1" size="small" border>
-              <el-descriptions-item label="说明">{{ selected.description }}</el-descriptions-item>
+              <el-descriptions-item label="说明">
+                <span class="app-body-text">{{ selected.description }}</span>
+              </el-descriptions-item>
               <el-descriptions-item label="类别">{{ CATEGORY_LABELS[selected.category] }}</el-descriptions-item>
               <el-descriptions-item label="宽度">{{ sizeText(selected, 'W') }}</el-descriptions-item>
               <el-descriptions-item label="高度">{{ sizeText(selected, 'H') }}</el-descriptions-item>
@@ -479,30 +494,14 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
 </template>
 
 <style scoped>
-.layout-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--app-space-4);
-  padding: 14px 16px;
-  border: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  border-radius: 6px;
-}
-.page-title {
-  font-size: var(--app-font-size-title-md);
-  font-weight: var(--app-font-weight-strong);
-  color: var(--el-text-color-primary);
-}
-.page-subtitle,
 .muted {
   color: var(--el-text-color-secondary);
   font-size: var(--app-font-size-caption);
 }
-.toolbar-actions {
+.page-title-row {
   display: flex;
   align-items: center;
-  gap: var(--app-space-2);
+  gap: var(--app-space-1);
 }
 .plain-panel {
   min-width: 0;

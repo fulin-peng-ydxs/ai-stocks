@@ -125,7 +125,7 @@ Key Characteristics：
 - 11px 只用于弱标签或极窄 chrome 信息；业务内容、表格单元格、表单 label、按钮文案不得小于 12px。
 - 微字号（`--app-font-size-micro`/`tiny`/`ornament`）不得通过无 `>` 限定的宽泛后代选择器（如 `.xx span`、`.xx strong`）声明——此类规则会把它误传给嵌套的数值、标题等本不该用小字号的元素。微字号只允许作用于语义类、`:global` 或 `>` 限定的直接子级；容器用常规字号，内部小字通过独立子级规则声明。该约束由 `typography-spacing-system.spec.ts` 强制，禁止用 `>` 缺失的选择器绕过。
 - 表格内长文本默认省略、tooltip 或详情承接，不默认自动换行撑高行高。
-- 单块纯文本说明优先进入 `HelpHint` 的 tooltip；需要标题、分段、列表、示例或同时解释多个独立要点时使用 `HelpTip` 的 popover。页面上只保留必要短标签，不以字符数作为两者的硬边界。
+- 单块纯文本说明优先进入 `HelpHint` 的 tooltip；需要标题、分段、列表、示例或同时解释多个独立要点时使用 `HelpTip` 的 popover。`HelpTip` 的默认插槽只放 `HelpTipItem`，每个独立说明项固定两层：第一行在“具体问题：”和“注意：”中二选一，第二行的全部内容无论长短都必须使用语义化 `ul/li`，由组件统一渲染为以 `.` 开头的无序列表；传 `warning` 时整项固定消费当前视觉预设的 `--app-warning-text`。同一项禁止同时传 `question` 与 `warning`，调用方不得自行拼接标签、列表符号、颜色或项间距。页面上只保留必要短标签，不以字符数作为两者的硬边界。
 - 组件内提示、说明、空状态、校验文案必须按容器宽度排版，避免长句硬塞一行；必要时分行、缩短文案或交给 tooltip / popover 承接，不得挤压主操作区或造成文本重叠。
 - 按钮、标签、抽屉标题、表格控件中的文字不得溢出容器。
 - 金融数字按列右对齐或按业务组件一致处理，避免同列数字参差。
@@ -209,6 +209,7 @@ Key Characteristics：
 | `PageToggleRow` | `frontend/src/components/PageToggleRow.vue` | 页面设置和业务偏好的开关行 | 无直接系统组件种类 | 业务选项、列显隐、布尔设置优先复用 |
 | `AppControlRow` / `AppControlItem` | `frontend/src/components/AppControlRow.vue`、`frontend/src/components/AppControlItem.vue` | 页面工具行、查询行和参数行的通用横向控件容器；控件行默认按控件自然宽度排列，空间不足时换行，不自动拉伸填满；控件项把标签和控件作为一个整体换行 | `filter-bar`、`toolbar` 等系统组件种类的真实渲染基础 | 多个输入、选择器、按钮组成的横向行优先使用 `AppControlRow`；存在“说明文字 + 控件”时必须用 `AppControlItem` 包裹，避免标签和控件被拆到不同行；只有明确需要均分或撑满时才传 `fill` 或让具体 `AppControlItem` 设置 `grow` |
 | `AppIconButton` | `frontend/src/components/AppIconButton.vue` | 全站纯图标操作按钮，统一可访问名称、尺寸、圆角、悬浮、聚焦、禁用、loading 和语义色 | 无直接系统组件种类 | 顶栏工具、抽屉关闭、刷新、页面设置等仅图标操作统一复用；必须传 `label`，异步纯图标操作使用 `AppIconButton` 的 `loading`，外层 `el-tooltip` 承载长说明时关闭原生 `title`；图形使用 Element Plus 图标或项目既有 SVG，禁止页面手写 Unicode 符号按钮 |
+| `HelpTip` / `HelpTipItem` | `frontend/src/components/HelpTip.vue`、`frontend/src/components/HelpTipItem.vue` | 全站结构化“？”说明入口与说明项，统一键盘可达、两层结构、点号列表和警告语义色 | 无直接系统组件种类 | `HelpTip` 默认插槽只放 `HelpTipItem`；每项第一行只能是“具体问题：”或黄色“注意：”，第二行无论内容长短都使用 `ul/li`，组件统一渲染为 `.` 开头的无序列表；禁止页面私写 `<br>`、列表符号、段落外边距或警告色 |
 | `BuiltinOptionRow` | `frontend/src/components/BuiltinOptionRow.vue` | 可创建下拉项的统一行结构，区分内置项和可操作自定义项，并统一标签截断、来源提示与尾部动作对齐 | 无直接系统组件种类 | 交易纪律的内置/自定义原因和买卖类型选择统一复用；内置项只显示中性“内置”提示，自定义项的删除等动作通过默认插槽注入，不在消费页复制选项行布局 |
 | `AppSummaryDisclosureCard` | `frontend/src/components/AppSummaryDisclosureCard.vue` | 高密编辑器的通用折叠摘要卡外壳，统一序号、标题、元信息、单行摘要、工具区、展开边界与键盘可访问 disclosure | 无直接系统组件种类 | 规则、操作事实等“列表摘要 + 展开编辑”场景统一复用；业务状态和命令通过插槽注入，组件不持有启停、删除或校验等领域逻辑；展开编辑区保持基础表面并用边框与主色边线表达层级，不使用常驻填充色形成嵌套色块；整块摘要使用带完整 `aria-expanded`、`aria-controls` 和可访问名称的专用原生 disclosure button，不得在消费页复制卡片结构 |
 | `TradeDirectionGroupGrid` | `frontend/src/components/trade-discipline/TradeDirectionGroupGrid.vue` | 交易纪律中按买入、卖出方向并列组织卡片清单，统一分组标题、说明、动作区和桌面降级布局 | 无直接系统组件种类；仅承载交易纪律方向分组 | 买卖规则与操作事实统一消费；分组即方向事实源，组内卡片不得再展示重复方向选择器；规则或成交的领域状态留在调用方，通过分组动作和内容插槽注入；桌面宽屏保持买入在左、卖出在右，紧凑桌面视口降为单列，不在消费组件复制方向分组结构与样式 |
