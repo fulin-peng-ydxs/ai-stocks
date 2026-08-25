@@ -188,6 +188,16 @@ export function recoverQualityBatch(
 
 // ── 定时任务（调度系统重构）──
 export type FreqType = 'daily' | 'weekly' | 'monthly' | 'cron'
+export type TriggerMode = 'time' | 'dependency'
+export type TriggerCondition = 'success' | 'failure' | 'completion'
+export type DelayUnit = 'second' | 'minute' | 'hour'
+export interface DelayConfig { value: number; unit: DelayUnit }
+export interface RetryConfig {
+  enabled: boolean
+  condition: TriggerCondition
+  delay: DelayConfig
+  max_retries: number
+}
 export interface FreqConfig {
   time?: string          // 'HH:MM'（daily/weekly/monthly）
   weekdays?: number[]    // 1..7（weekly）
@@ -199,8 +209,14 @@ export interface ScheduledJob {
   name: string
   task_type: TaskType
   params: Record<string, any>
-  freq_type: FreqType
+  freq_type: FreqType | null
   freq_config: FreqConfig
+  trigger_mode: TriggerMode
+  dependency_job_id: string | null
+  dependency_job_name?: string | null
+  dependency_condition: TriggerCondition | null
+  dependency_delay: DelayConfig
+  retry_config: RetryConfig
   trading_day_only: boolean
   enabled: boolean
   last_run_at: string | null
@@ -208,14 +224,22 @@ export interface ScheduledJob {
   created_at: string
   updated_at: string
   freq_text: string
+  trigger_text: string
+  waiting_trigger_count: number
+  next_dependency_run_at?: string | null
   next_run_time: string | null
 }
 export interface ScheduledJobInput {
   name: string
   task_type: TaskType
   params?: Record<string, unknown>
-  freq_type: FreqType
+  freq_type?: FreqType | null
   freq_config: FreqConfig
+  trigger_mode: TriggerMode
+  dependency_job_id?: string | null
+  dependency_condition?: TriggerCondition | null
+  dependency_delay: DelayConfig
+  retry_config: RetryConfig
   trading_day_only: boolean
   enabled: boolean
 }
@@ -240,6 +264,29 @@ export function deleteSchedule(id: string): Promise<{ id: string }> {
 }
 export function runSchedule(id: string): Promise<{ task_id: string }> {
   return http.post(`/data/schedules/${id}/run`)
+}
+export type TriggerEventStatus = 'waiting' | 'dispatching' | 'dispatched' | 'cancelled' | 'exhausted' | 'failed'
+export interface ScheduledTriggerEvent {
+  id: string
+  chain_id: string
+  source_task_id: string
+  source_attempt: number
+  source_status: TaskStatus
+  source_job_name?: string | null
+  target_job_id: string
+  trigger_kind: 'dependency' | 'retry'
+  trigger_condition?: TriggerCondition | null
+  retry_count: number
+  due_at: string | null
+  dispatched_at?: string | null
+  status: TriggerEventStatus
+  task_id?: string | null
+  message?: string | null
+  created_at: string
+  updated_at: string
+}
+export function listScheduleTriggerEvents(id: string, limit = 100): Promise<{ events: ScheduledTriggerEvent[] }> {
+  return http.get(`/data/schedules/${id}/trigger-events`, { params: { limit } })
 }
 
 // ── 数据源状态（FR-DM-5）──
@@ -308,7 +355,7 @@ export interface CheckupReport {
   groups: CheckupGroup[]
 }
 export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'interrupted'
-export type TriggerSource = 'manual' | 'scheduled'
+export type TriggerSource = 'manual' | 'scheduled' | 'dependency' | 'retry'
 export interface AsyncTask {
   id: string
   task_type: TaskType
@@ -320,6 +367,11 @@ export interface AsyncTask {
   trigger_source?: TriggerSource | null
   job_id?: string | null
   job_name?: string | null
+  chain_id?: string | null
+  parent_task_id?: string | null
+  trigger_event_id?: string | null
+  retry_count?: number
+  execution_attempt?: number
   capability?: {
     can_cancel?: boolean
     can_resume?: boolean

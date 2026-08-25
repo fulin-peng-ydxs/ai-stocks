@@ -1,8 +1,10 @@
 import type { FreqConfig, FreqType } from '@/api/data'
 
 export interface ScheduleFrequencyValue {
-  freq_type: FreqType
+  freq_type: FreqType | null
   freq_config?: FreqConfig | null
+  trigger_mode?: 'time' | 'dependency'
+  trigger_text?: string
 }
 
 const FREQ_RANK: Record<FreqType, number> = { daily: 0, weekly: 1, monthly: 2, cron: 3 }
@@ -27,8 +29,13 @@ export function compareScheduleFrequency(
   left: ScheduleFrequencyValue,
   right: ScheduleFrequencyValue,
 ): number {
-  const rankResult = FREQ_RANK[left.freq_type] - FREQ_RANK[right.freq_type]
+  const leftRank = left.trigger_mode === 'dependency' || !left.freq_type ? 4 : FREQ_RANK[left.freq_type]
+  const rightRank = right.trigger_mode === 'dependency' || !right.freq_type ? 4 : FREQ_RANK[right.freq_type]
+  const rankResult = leftRank - rightRank
   if (rankResult !== 0) return rankResult
+  if (leftRank === 4 && rightRank === 4) {
+    return compareText(left.trigger_text, right.trigger_text)
+  }
 
   const leftConfig = left.freq_config ?? {}
   const rightConfig = right.freq_config ?? {}

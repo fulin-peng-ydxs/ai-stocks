@@ -689,6 +689,12 @@ watch(
                 <el-tag v-if="row.trigger_source === 'scheduled'" type="warning" size="small" effect="plain">
                   定时{{ row.job_name ? `·${row.job_name}` : '' }}
                 </el-tag>
+                <el-tag v-else-if="row.trigger_source === 'dependency'" type="primary" size="small" effect="plain">
+                  依赖{{ row.job_name ? `·${row.job_name}` : '' }}
+                </el-tag>
+                <el-tag v-else-if="row.trigger_source === 'retry'" type="danger" size="small" effect="plain">
+                  重试{{ row.job_name ? `·${row.job_name}` : '' }}{{ row.retry_count ? ` #${row.retry_count}` : '' }}
+                </el-tag>
                 <el-tag v-else size="small" effect="plain" type="info">
                   {{ row.job_name ? `手动·${row.job_name}` : '手动' }}
                 </el-tag>

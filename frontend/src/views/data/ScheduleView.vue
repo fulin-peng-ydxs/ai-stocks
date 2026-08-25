@@ -6,9 +6,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
   listSchedules, createSchedule, updateSchedule, setScheduleEnabled, deleteSchedule, runSchedule,
+  listScheduleTriggerEvents,
   getSources, testSources, SOURCE_LABEL, TASK_LABEL, ISSUE_TYPE_LABEL, ISSUE_TYPES_ACTIVE,
   taskDisplayLabel, getSettingsView, saveSettings, resetSettings,
-  type ScheduledJob, type ScheduledJobInput, type SourceStatus, type TaskType, type FreqType,
+  type ScheduledJob, type ScheduledJobInput, type ScheduledTriggerEvent,
+  type SourceStatus, type TaskStatus, type TaskType, type FreqType, type TriggerMode,
+  type TriggerCondition,
+  type DelayUnit,
   type BoardIngestStage, type BoardTypeScope,
 } from '@/api/data'
 import AppRowActions from '@/components/AppRowActions.vue'
@@ -28,6 +32,7 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 import { compareScheduleFrequency } from '@/utils/scheduleFrequencySort'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
+import PageDrawer from '@/components/PageDrawer.vue'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -111,6 +116,16 @@ const FREQ_OPTIONS: { label: string; value: FreqType }[] = [
   { label: '每日', value: 'daily' }, { label: '每周', value: 'weekly' },
   { label: '每月', value: 'monthly' }, { label: '高级(cron)', value: 'cron' },
 ]
+const TRIGGER_MODE_OPTIONS: { label: string; value: TriggerMode }[] = [
+  { label: '按时间', value: 'time' }, { label: '按任务依赖', value: 'dependency' },
+]
+const CONDITION_OPTIONS: { label: string; value: TriggerCondition }[] = [
+  { label: '成功后', value: 'success' }, { label: '失败后', value: 'failure' },
+  { label: '完成后', value: 'completion' },
+]
+const DELAY_UNIT_OPTIONS: { label: string; value: DelayUnit }[] = [
+  { label: '秒', value: 'second' }, { label: '分钟', value: 'minute' }, { label: '小时', value: 'hour' },
+]
 const WEEKDAYS = [
   { label: '一', value: 1 }, { label: '二', value: 2 }, { label: '三', value: 3 },
   { label: '四', value: 4 }, { label: '五', value: 5 }, { label: '六', value: 6 }, { label: '日', value: 7 },
@@ -140,9 +155,15 @@ const form = reactive({
   date_start: '', date_end: '', years: null as number | null, concurrency: null as number | null,
   freq_type: 'daily' as FreqType,
   time: '15:30', weekdays: [1, 2, 3, 4, 5] as number[], day: 1, cron: '',
+  trigger_mode: 'time' as TriggerMode,
+  dependency_job_id: '', dependency_condition: 'completion' as TriggerCondition,
+  dependency_delay_value: 0, dependency_delay_unit: 'minute' as DelayUnit,
+  retry_enabled: false, retry_condition: 'failure' as TriggerCondition,
+  retry_delay_value: 5, retry_delay_unit: 'minute' as DelayUnit, max_retries: 1,
   trading_day_only: true, enabled: true,
 })
-const dlgTitle = computed(() => (editingId.value ? '编辑定时任务' : '新建定时任务'))
+const dlgTitle = computed(() => (editingId.value ? '编辑调度任务' : '新建调度任务'))
+const dependencyOptions = computed(() => jobs.value.filter((job) => job.id !== editingId.value))
 // 采集类任务（逐股拉取）才有并发概念；评分维护/质检无需并发
 const needsConcurrency = computed(() => ['update', 'backfill', 'ingest_date', 'ingest_codes'].includes(form.task_type))
 watch(() => form.task_type, (type, prev) => {
@@ -158,6 +179,10 @@ function openCreate() {
     board_force_members: false,
     date_start: '', date_end: '', years: null, concurrency: null,
     freq_type: 'daily', time: '15:30', weekdays: [1, 2, 3, 4, 5], day: 1, cron: '',
+    trigger_mode: 'time', dependency_job_id: '', dependency_condition: 'completion',
+    dependency_delay_value: 0, dependency_delay_unit: 'minute',
+    retry_enabled: false, retry_condition: 'failure', retry_delay_value: 5,
+    retry_delay_unit: 'minute', max_retries: 1,
     trading_day_only: true, enabled: true,
   })
   dlg.value = true
@@ -182,6 +207,15 @@ function openEdit(j: ScheduledJob) {
     weekdays: j.freq_config?.weekdays?.length ? [...j.freq_config.weekdays] : [1, 2, 3, 4, 5],
     day: j.freq_config?.day ?? 1,
     cron: j.freq_config?.cron || '',
+    trigger_mode: j.trigger_mode || 'time', dependency_job_id: j.dependency_job_id || '',
+    dependency_condition: j.dependency_condition || 'completion',
+    dependency_delay_value: j.dependency_delay?.value ?? 0,
+    dependency_delay_unit: j.dependency_delay?.unit || 'minute',
+    retry_enabled: j.retry_config?.enabled === true,
+    retry_condition: j.retry_config?.condition || 'failure',
+    retry_delay_value: j.retry_config?.delay?.value ?? 5,
+    retry_delay_unit: j.retry_config?.delay?.unit || 'minute',
+    max_retries: j.retry_config?.max_retries ?? 1,
     trading_day_only: j.trading_day_only, enabled: j.enabled,
   })
   dlg.value = true
@@ -207,19 +241,33 @@ function buildPayload(): ScheduledJobInput | null {
     if (form.board_force_members && form.board_stages.includes('members')) params.force_members = true
   }
   if (needsConcurrency.value && form.concurrency) params.concurrency = form.concurrency
+  if (form.trigger_mode === 'dependency' && !form.dependency_job_id) {
+    ElMessage.warning('请选择上游任务'); return null
+  }
   const fc: Record<string, unknown> = {}
-  if (form.freq_type === 'daily') fc.time = form.time
-  else if (form.freq_type === 'weekly') {
+  if (form.trigger_mode === 'time' && form.freq_type === 'daily') fc.time = form.time
+  else if (form.trigger_mode === 'time' && form.freq_type === 'weekly') {
     if (!form.weekdays.length) { ElMessage.warning('每周任务请至少选一个星期'); return null }
     fc.weekdays = [...form.weekdays].sort((a, b) => a - b); fc.time = form.time
-  } else if (form.freq_type === 'monthly') { fc.day = form.day; fc.time = form.time }
-  else if (form.freq_type === 'cron') {
+  } else if (form.trigger_mode === 'time' && form.freq_type === 'monthly') { fc.day = form.day; fc.time = form.time }
+  else if (form.trigger_mode === 'time' && form.freq_type === 'cron') {
     if (!form.cron.trim()) { ElMessage.warning('请填写 cron 表达式'); return null }
     fc.cron = form.cron.trim()
   }
   return {
     name: form.name.trim(), task_type: form.task_type, params,
     freq_type: form.freq_type, freq_config: fc,
+    trigger_mode: form.trigger_mode,
+    dependency_job_id: form.trigger_mode === 'dependency' ? form.dependency_job_id : null,
+    dependency_condition: form.trigger_mode === 'dependency' ? form.dependency_condition : null,
+    dependency_delay: {
+      value: form.dependency_delay_value, unit: form.dependency_delay_unit,
+    },
+    retry_config: {
+      enabled: form.retry_enabled, condition: form.retry_condition,
+      delay: { value: form.retry_delay_value, unit: form.retry_delay_unit },
+      max_retries: form.max_retries,
+    },
     trading_day_only: form.trading_day_only, enabled: form.enabled,
   }
 }
@@ -229,14 +277,23 @@ async function save() {
   if (!payload) return
   saving.value = true
   try {
-    if (editingId.value) { await updateSchedule(editingId.value, payload); ElMessage.success('定时任务已更新') }
-    else { await createSchedule(payload); ElMessage.success('定时任务已创建') }
+    if (editingId.value) { await updateSchedule(editingId.value, payload); ElMessage.success('调度任务已更新') }
+    else { await createSchedule(payload); ElMessage.success('调度任务已创建') }
     dlg.value = false
     await load()
   } catch { /* 拦截器弹错 */ } finally { saving.value = false }
 }
 
 async function toggleEnabled(j: ScheduledJob) {
+  if (j.enabled && j.waiting_trigger_count > 0) {
+    try {
+      await ElMessageBox.confirm(
+        `停用后会取消当前 ${j.waiting_trigger_count} 条等待或触发中的事件，重新启用不会自动恢复。确认停用「${j.name}」？`,
+        '停用调度任务',
+        { type: 'warning', confirmButtonText: '确认停用' },
+      )
+    } catch { return }
+  }
   togglingId.value = j.id
   try {
     await setScheduleEnabled(j.id, !j.enabled)
@@ -246,7 +303,7 @@ async function toggleEnabled(j: ScheduledJob) {
 
 async function remove(j: ScheduledJob) {
   try {
-    await ElMessageBox.confirm(`确认删除定时任务「${j.name}」？删除后不再自动触发。`, '删除定时任务', { type: 'warning' })
+    await ElMessageBox.confirm(`确认删除调度任务「${j.name}」？删除后不再自动触发。`, '删除调度任务', { type: 'warning' })
   } catch { return }
   try { await deleteSchedule(j.id); ElMessage.success('已删除'); await load() } catch { /* */ }
 }
@@ -265,6 +322,55 @@ async function runNow(j: ScheduledJob) {
   } catch { /* 409 等由拦截器弹出 */ }
 }
 
+const eventDrawer = ref(false)
+const eventJob = ref<ScheduledJob | null>(null)
+const triggerEvents = ref<ScheduledTriggerEvent[]>([])
+const eventLoading = ref(false)
+const eventError = ref('')
+async function loadTriggerEvents() {
+  if (!eventJob.value) return
+  eventLoading.value = true
+  eventError.value = ''
+  try {
+    triggerEvents.value = (await listScheduleTriggerEvents(eventJob.value.id)).events
+  } catch (error) {
+    eventError.value = getErrorMessage(error, '触发记录加载失败')
+  } finally {
+    eventLoading.value = false
+  }
+}
+async function openTriggerEvents(job: ScheduledJob) {
+  eventJob.value = job
+  triggerEvents.value = []
+  eventDrawer.value = true
+  await loadTriggerEvents()
+}
+const CONDITION_LABEL: Record<TriggerCondition, string> = {
+  success: '成功后', failure: '失败后', completion: '完成后',
+}
+const SOURCE_STATUS_LABEL: Partial<Record<TaskStatus, string>> = {
+  done: '成功', failed: '失败', interrupted: '已终止',
+}
+const EVENT_STATUS_LABEL: Record<ScheduledTriggerEvent['status'], string> = {
+  waiting: '等待中', dispatching: '触发中', dispatched: '已触发', cancelled: '已取消',
+  exhausted: '已达上限', failed: '触发失败',
+}
+function eventStatusLabel(status: ScheduledTriggerEvent['status']): string {
+  return EVENT_STATUS_LABEL[status] || status
+}
+function sourceStatusLabel(status: TaskStatus): string {
+  return SOURCE_STATUS_LABEL[status] || status
+}
+function triggerConditionLabel(condition?: TriggerCondition | null): string {
+  return condition ? CONDITION_LABEL[condition] : '—'
+}
+function retryText(job: ScheduledJob): string {
+  const retry = job.retry_config
+  if (!retry?.enabled) return '关闭'
+  const unit = DELAY_UNIT_OPTIONS.find((item) => item.value === retry.delay.unit)?.label || ''
+  return `${CONDITION_LABEL[retry.condition]}延迟${retry.delay.value}${unit}，最多${retry.max_retries}次`
+}
+
 function scheduleRowActions(row: ScheduledJob): AppRowAction[] {
   return [
     {
@@ -275,6 +381,10 @@ function scheduleRowActions(row: ScheduledJob): AppRowAction[] {
       onClick: () => runNow(row),
     },
     { key: 'edit', label: '编辑', permission: 'data-schedule:manage', onClick: () => openEdit(row) },
+    {
+      key: 'events', label: '触发记录', permission: 'data-schedule:manage', placement: 'more',
+      onClick: () => openTriggerEvents(row),
+    },
     {
       key: 'delete',
       label: '删除',
@@ -374,7 +484,7 @@ async function load() {
       ? r.quality_issue_types
       : [...ISSUE_TYPES_ACTIVE]
   } catch (error) {
-    loadError.value = getErrorMessage(error, '定时任务加载失败')
+    loadError.value = getErrorMessage(error, '调度任务加载失败')
   } finally { loading.value = false }
 }
 
@@ -389,13 +499,13 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
       <h2 class="app-page-title">
         任务调度
         <HelpTip title="这页管什么？" :width="440">
-          ① <b>定时任务</b>——自定义多条定时任务（数据采集 / 评分维护 / 数据质检 / 按问题类型恢复 / 审计清理），
-          各自设置频率（每日/每周/每月/cron）、是否仅交易日执行，可启停、立即执行；触发记录在「数据采集」任务中心，
+          ① <b>调度任务</b>——自定义多条调度任务（数据采集 / 评分维护 / 数据质检 / 按问题类型恢复 / 审计清理），
+          各自选择时间或任务依赖触发，可配置延迟和受控自身重试，也可启停、立即执行；实际任务记录在「数据采集」任务中心，
           标注「定时·任务名」。<br />
           ② <b>数据源健康</b>——AKShare / BaoStock / 同花顺板块源的连通性。
         </HelpTip>
       </h2>
-      <p class="page-subtitle">自定义定时任务（采集/评分/质检/恢复/审计清理），支持每日/每周/每月/cron，仅交易日可选。</p>
+      <p class="page-subtitle">按时间或上游任务结果编排采集、评分、质检、恢复与审计任务，支持延迟触发和有上限重试。</p>
       </div>
       <div class="page-head-actions">
         <el-button
@@ -403,7 +513,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           data-testid="schedule-create"
           type="primary"
           @click="openCreate"
-        >新建定时任务</el-button>
+        >新建调度任务</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty" @click="settingsOpen = true" />
       </div>
@@ -412,21 +522,21 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 
     <template #main>
     <div class="schedule-body">
-      <!-- ① 定时任务列表 -->
+      <!-- ① 调度任务列表 -->
       <el-card shadow="never" class="blk jobs-card">
         <template #header>
-          <div class="blk-head"><span>定时任务</span>
-            <span class="hint">到点自动创建对应任务；仅交易日的任务在非交易日跳过。</span></div>
+          <div class="blk-head"><span>调度任务</span>
+            <span class="hint">时间任务到点触发；依赖任务命中上游结果后可靠等待并按配置延迟执行。</span></div>
         </template>
         <AppStateBlock
           v-if="loading && !jobs.length"
           state="loading"
-          title="正在加载定时任务…"
+          title="正在加载调度任务…"
         />
         <AppStateBlock
           v-else-if="loadError"
           state="error"
-          :title="jobs.length ? '定时任务刷新失败' : '定时任务加载失败'"
+          :title="jobs.length ? '调度任务刷新失败' : '调度任务加载失败'"
           :description="loadError"
           retry
           @retry="load"
@@ -445,8 +555,8 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <AppTableColumn v-if="jobColVisible('taskType')" label="任务类型">
             <template #default="{ row }">{{ taskDisplayLabel(row.task_type, row.params) }}</template>
           </AppTableColumn>
-          <AppTableColumn v-if="jobColVisible('freq')" label="频率" prop="freq" show-overflow-tooltip sortable="custom">
-            <template #default="{ row }"><span data-testid="schedule-frequency">{{ row.freq_text }}</span></template>
+          <AppTableColumn v-if="jobColVisible('freq')" label="触发规则" prop="freq" show-overflow-tooltip sortable="custom">
+            <template #default="{ row }"><span data-testid="schedule-frequency">{{ row.trigger_text || row.freq_text }}</span></template>
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('tradingDay')" label="仅交易日" align="center">
             <template #default="{ row }">
@@ -457,11 +567,27 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('enabled')" label="启用" align="center">
             <template #default="{ row }">
-              <el-switch v-permission="'data-schedule:manage'" :model-value="row.enabled" :loading="togglingId === row.id" @change="toggleEnabled(row)" />
+              <el-switch
+                v-permission="'data-schedule:manage'"
+                :model-value="row.enabled"
+                :loading="togglingId === row.id"
+                :data-testid="`schedule-enabled-${row.id}`"
+                @change="toggleEnabled(row)"
+              />
             </template>
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('nextRun')" label="下次触发">
-            <template #default="{ row }">{{ row.enabled ? fmtTime(row.next_run_time) : '—' }}</template>
+            <template #default="{ row }">
+              <span v-if="!row.enabled">—</span>
+              <span v-else-if="row.trigger_mode === 'dependency' && !row.next_run_time">等待上游</span>
+              <span v-else>{{ fmtTime(row.next_run_time) }}</span>
+              <el-tag v-if="row.waiting_trigger_count" size="small" effect="plain" type="warning">
+                等待 {{ row.waiting_trigger_count }}
+              </el-tag>
+            </template>
+          </AppTableColumn>
+          <AppTableColumn v-if="jobColVisible('retry')" label="自身重试" show-overflow-tooltip>
+            <template #default="{ row }">{{ retryText(row) }}</template>
           </AppTableColumn>
           <AppTableColumn v-if="jobColVisible('lastRun')" label="最近触发">
             <template #default="{ row }">{{ fmtTime(row.last_run_at) }}</template>
@@ -471,7 +597,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
               <AppRowActions :actions="scheduleRowActions(row)" :inline-limit="2" />
             </template>
           </AppTableColumn>
-          <template #empty>暂无定时任务，点右上「新建定时任务」添加</template>
+          <template #empty>暂无调度任务，点右上「新建调度任务」添加</template>
         </AppDataTable>
       </el-card>
 
@@ -590,6 +716,58 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
       </template>
     </el-dialog>
 
+    <PageDrawer
+      v-model="eventDrawer"
+      size="xl"
+      :title="eventJob ? `${eventJob.name} · 触发记录` : '触发记录'"
+      class="schedule-trigger-events-drawer"
+    >
+      <AppStateBlock
+        v-if="eventLoading && !triggerEvents.length"
+        state="loading"
+        title="正在加载触发记录…"
+      />
+      <AppStateBlock
+        v-else-if="eventError"
+        state="error"
+        title="触发记录加载失败"
+        :description="eventError"
+        retry
+        @retry="loadTriggerEvents"
+      />
+      <AppDataTable v-else :data="triggerEvents" embedded size="small">
+        <AppTableColumn label="来源任务" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.source_job_name || row.source_task_id }}</template>
+        </AppTableColumn>
+        <AppTableColumn label="来源结果" align="center">
+          <template #default="{ row }">{{ sourceStatusLabel(row.source_status) }}</template>
+        </AppTableColumn>
+        <AppTableColumn label="类型" align="center">
+          <template #default="{ row }">{{ row.trigger_kind === 'retry' ? `重试 ${row.retry_count}` : '任务依赖' }}</template>
+        </AppTableColumn>
+        <AppTableColumn label="命中规则" align="center">
+          <template #default="{ row }">{{ triggerConditionLabel(row.trigger_condition) }}</template>
+        </AppTableColumn>
+        <AppTableColumn label="计划时间">
+          <template #default="{ row }">{{ fmtTime(row.due_at) }}</template>
+        </AppTableColumn>
+        <AppTableColumn label="实际触发">
+          <template #default="{ row }">{{ fmtTime(row.dispatched_at) }}</template>
+        </AppTableColumn>
+        <AppTableColumn label="状态" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain" :type="row.status === 'failed' || row.status === 'exhausted' ? 'danger' : row.status === 'waiting' || row.status === 'dispatching' ? 'warning' : row.status === 'dispatched' ? 'success' : 'info'">
+              {{ eventStatusLabel(row.status) }}
+            </el-tag>
+          </template>
+        </AppTableColumn>
+        <AppTableColumn label="下游任务" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.task_id || row.message || '—' }}</template>
+        </AppTableColumn>
+        <template #empty>暂无依赖或自身重试触发记录</template>
+      </AppDataTable>
+    </PageDrawer>
+
     <!-- 新建/编辑对话框 -->
     <el-dialog v-model="dlg" :title="dlgTitle" width="520px" data-testid="schedule-dialog">
       <el-form label-width="92px">
@@ -643,7 +821,11 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           <span class="hint">留空＝沿用全局默认并发；填数则覆盖。调高提速，但总请求速率↑，注意免费源封禁风险</span>
         </el-form-item>
 
-        <el-divider content-position="left" style="margin: 4px 0 14px">触发频率</el-divider>
+        <el-divider content-position="left" style="margin: 4px 0 14px">触发方式</el-divider>
+        <el-form-item label="触发方式">
+          <PageSegmented v-model="form.trigger_mode" :options="TRIGGER_MODE_OPTIONS" test-id="schedule-trigger-mode" aria-label="触发方式" />
+        </el-form-item>
+        <template v-if="form.trigger_mode === 'time'">
         <el-form-item label="频率">
           <PageSegmented v-model="form.freq_type" :options="FREQ_OPTIONS" aria-label="频率" />
         </el-form-item>
@@ -662,9 +844,62 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
         <el-form-item v-if="form.freq_type !== 'cron'" label="执行时间">
           <el-time-picker v-model="form.time" value-format="HH:mm" format="HH:mm" placeholder="HH:mm" :clearable="false" />
         </el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="上游任务">
+            <el-select
+              v-model="form.dependency_job_id"
+              data-testid="schedule-dependency-job"
+              placeholder="选择上游任务"
+              filterable
+              style="width: 100%"
+            >
+              <el-option
+                v-for="job in dependencyOptions"
+                :key="job.id"
+                :label="`${job.name}${job.enabled ? '' : '（已停用）'}`"
+                :value="job.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="结果条件">
+            <PageSegmented v-model="form.dependency_condition" :options="CONDITION_OPTIONS" test-id="schedule-dependency-condition" aria-label="依赖结果条件" />
+            <span class="hint">“完成后”包含成功和失败；人工终止不会触发</span>
+          </el-form-item>
+          <el-form-item label="触发延迟">
+            <el-input-number v-model="form.dependency_delay_value" data-testid="schedule-dependency-delay" :min="0" :precision="0" />
+            <el-select v-model="form.dependency_delay_unit" data-testid="schedule-dependency-delay-unit" class="delay-unit-select">
+              <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+        </template>
+
+        <el-divider content-position="left" style="margin: 4px 0 14px">自身重试</el-divider>
+        <el-form-item label="启用重试">
+          <el-switch v-model="form.retry_enabled" data-testid="schedule-retry-enabled" />
+          <span class="hint">本任务结果持续命中条件时循环执行，达到上限后结束</span>
+        </el-form-item>
+        <template v-if="form.retry_enabled">
+          <el-form-item label="循环条件">
+            <PageSegmented v-model="form.retry_condition" :options="CONDITION_OPTIONS" test-id="schedule-retry-condition" aria-label="循环结果条件" />
+            <span v-if="form.retry_condition === 'completion'" class="hint warn-hint">
+              成功和失败都会继续循环，直到达到次数上限；人工终止除外
+            </span>
+          </el-form-item>
+          <el-form-item label="重试延迟">
+            <el-input-number v-model="form.retry_delay_value" data-testid="schedule-retry-delay" :min="0" :precision="0" />
+            <el-select v-model="form.retry_delay_unit" data-testid="schedule-retry-delay-unit" class="delay-unit-select">
+              <el-option v-for="item in DELAY_UNIT_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="最大重试">
+            <el-input-number v-model="form.max_retries" data-testid="schedule-max-retries" :min="1" :max="20" :precision="0" />
+            <span class="hint">不含首次执行；最多 20 次</span>
+          </el-form-item>
+        </template>
 
         <el-divider content-position="left" style="margin: 4px 0 14px">选项</el-divider>
-        <el-form-item label="仅交易日">
+        <el-form-item v-if="form.trigger_mode === 'time'" label="仅交易日">
           <el-switch v-model="form.trading_day_only" />
           <span class="hint">开启后非交易日自动跳过（行情/质检类建议开）</span>
         </el-form-item>
@@ -722,6 +957,8 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .page-head-actions { display: flex; gap: var(--app-space-2); align-items: center; }
 /* 填满 LayoutHost 的条件成长区；放不下时整区内滚（兜底阶梯第 3 级） */
 .schedule-body { flex: 1 1 auto; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
+.delay-unit-select { width: 96px; margin-left: var(--space-2); }
+.warn-hint { color: var(--el-color-warning-dark-2); }
 .jobs-card {
   flex: 1 1 auto;
   min-height: 300px;

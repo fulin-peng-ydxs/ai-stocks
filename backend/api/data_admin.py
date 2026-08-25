@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.context import get_current_context
@@ -181,7 +181,7 @@ def hub() -> ApiResponse:
     for s in down:
         risk.append({"level": "danger", "text": f"数据源 {s} 不可达", "link": "/data/schedule"})
     if not sched.get("enabled"):
-        risk.append({"level": "info", "text": "未配置启用中的定时任务（数据不会自动更新/质检）",
+        risk.append({"level": "info", "text": "未配置启用中的调度任务（数据不会自动更新/质检）",
                      "link": "/data/schedule"})
     if not risk:
         risk.append({"level": "success", "text": "数据状态良好，无显著风险", "link": "/data/overview"})
@@ -701,9 +701,19 @@ def quality_mark_delisted(issue_id: int, body: MarkDelistedIn) -> ApiResponse:
 class ScheduledJobIn(BaseModel):
     name: str
     task_type: str
-    params: dict = {}
-    freq_type: str                 # daily | weekly | monthly | cron
-    freq_config: dict = {}         # {time} / {weekdays,time} / {day,time} / {cron}
+    params: dict = Field(default_factory=dict)
+    freq_type: str | None = None   # daily | weekly | monthly | cron（时间触发）
+    freq_config: dict = Field(default_factory=dict)
+    trigger_mode: str = "time"     # time | dependency
+    dependency_job_id: str | None = None
+    dependency_condition: str | None = None  # success | failure | completion
+    dependency_delay: dict = Field(default_factory=lambda: {"value": 0, "unit": "minute"})
+    retry_config: dict = Field(default_factory=lambda: {
+        "enabled": False,
+        "condition": "failure",
+        "delay": {"value": 5, "unit": "minute"},
+        "max_retries": 1,
+    })
     trading_day_only: bool = True
     enabled: bool = True
 
@@ -725,10 +735,13 @@ def schedules_create(body: ScheduledJobIn) -> ApiResponse:
         job = ScheduledJobService().create(
             name=body.name, task_type=body.task_type, params=body.params,
             freq_type=body.freq_type, freq_config=body.freq_config,
+            trigger_mode=body.trigger_mode, dependency_job_id=body.dependency_job_id,
+            dependency_condition=body.dependency_condition,
+            dependency_delay=body.dependency_delay, retry_config=body.retry_config,
             trading_day_only=body.trading_day_only, enabled=body.enabled)
     except ValueError as e:
         return err(400, str(e))
-    return ok(job, msg="定时任务已创建")
+    return ok(job, msg="调度任务已创建")
 
 
 @router.put("/schedules/{job_id}", response_model=ApiResponse, dependencies=_SCHEDULE)
@@ -738,10 +751,13 @@ def schedules_update(job_id: str, body: ScheduledJobIn) -> ApiResponse:
         job = ScheduledJobService().update(
             job_id, name=body.name, task_type=body.task_type, params=body.params,
             freq_type=body.freq_type, freq_config=body.freq_config,
+            trigger_mode=body.trigger_mode, dependency_job_id=body.dependency_job_id,
+            dependency_condition=body.dependency_condition,
+            dependency_delay=body.dependency_delay, retry_config=body.retry_config,
             trading_day_only=body.trading_day_only, enabled=body.enabled)
     except ValueError as e:
         return err(400, str(e))
-    return ok(job, msg="定时任务已更新")
+    return ok(job, msg="调度任务已更新")
 
 
 @router.post("/schedules/{job_id}/enabled", response_model=ApiResponse, dependencies=_SCHEDULE)
@@ -757,8 +773,21 @@ def schedules_set_enabled(job_id: str, enabled: bool) -> ApiResponse:
 @router.delete("/schedules/{job_id}", response_model=ApiResponse, dependencies=_SCHEDULE)
 def schedules_delete(job_id: str) -> ApiResponse:
     from backend.scheduler.scheduler import ScheduledJobService
-    ScheduledJobService().delete(job_id)
-    return ok({"id": job_id}, msg="定时任务已删除")
+    try:
+        ScheduledJobService().delete(job_id)
+    except ValueError as e:
+        return err(409, str(e))
+    return ok({"id": job_id}, msg="调度任务已删除")
+
+
+@router.get("/schedules/{job_id}/trigger-events", response_model=ApiResponse, dependencies=_SCHEDULE)
+def schedules_trigger_events(job_id: str, limit: int = 100) -> ApiResponse:
+    """依赖与自身重试的持久化触发记录，供调度页排障抽屉展示。"""
+    from backend.scheduler.scheduler import ScheduledJobService
+    svc = ScheduledJobService()
+    if not svc.get(job_id):
+        return err(404, "调度任务不存在")
+    return ok({"events": svc.list_events(job_id, limit)})
 
 
 @router.post("/schedules/{job_id}/run", response_model=ApiResponse, dependencies=_SCHEDULE)

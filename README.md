@@ -291,7 +291,7 @@ python -m backend.cli daily              # 增量更新行情(补最新交易日
 python -m backend.cli valuation --fill-gaps   # 一次性回补历史 total_mv 缺口（增量只保最新交易日，历史缺口走这里）
 ```
 
-也可在「数据管理 → 定时调度」页配置定时任务（`update`/`verify`/`checkup`/`audit_cleanup` 等，按 cron/每日/每周/每月触发；数据类任务通常仅交易日，审计清理不受交易日限制）。
+也可在「数据管理 → 任务调度」页配置任务（`update`/`verify`/`checkup`/`audit_cleanup` 等）：既可按 cron/每日/每周/每月触发，也可在指定上游任务成功、失败或完成后延迟触发；依赖任务支持有次数上限的固定延迟自身重试。数据类时间任务通常仅交易日，审计清理不受交易日限制。
 
 日常流程等价于页面里的"数据管理闭环"：
 

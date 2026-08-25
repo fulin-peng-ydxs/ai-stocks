@@ -15,6 +15,11 @@ test('任务调度频率列按实际执行时间升降序', async ({ page, reque
       params: {},
       freq_type: 'daily',
       freq_config: { time },
+      trigger_mode: 'time',
+      dependency_job_id: null,
+      dependency_condition: null,
+      dependency_delay: { value: 0, unit: 'minute' },
+      retry_config: { enabled: false, condition: 'failure', delay: { value: 5, unit: 'minute' }, max_retries: 1 },
       trading_day_only: true,
       enabled: true,
       last_run_at: null,
@@ -22,6 +27,8 @@ test('任务调度频率列按实际执行时间升降序', async ({ page, reque
       created_at: '2026-08-24T00:00:00',
       updated_at: '2026-08-24T00:00:00',
       freq_text: `每天 ${time}`,
+      trigger_text: `每天 ${time}`,
+      waiting_trigger_count: 0,
       next_run_time: null,
     }))
     await route.fulfill({
@@ -36,7 +43,7 @@ test('任务调度频率列按实际执行时间升降序', async ({ page, reque
 
   await openPageAndWaitForHeading(page, '/data/schedule', '任务调度')
   const frequencies = page.getByTestId('schedule-frequency')
-  const frequencyHeader = page.getByRole('columnheader', { name: /频率/ })
+  const frequencyHeader = page.getByRole('columnheader', { name: /触发规则/ })
 
   await frequencyHeader.click()
   await expect(frequencies).toHaveText([

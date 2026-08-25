@@ -838,15 +838,16 @@ const REGISTRY: PageRegistryEntry[] = [
         columns: [
           { key: 'name', label: '名称' },
           { key: 'taskType', label: '任务类型' },
-          { key: 'freq', label: '频率' },
+          { key: 'freq', label: '触发规则' },
           { key: 'tradingDay', label: '仅交易日' },
           { key: 'enabled', label: '启用' },
           { key: 'nextRun', label: '下次触发' },
           { key: 'lastRun', label: '最近触发' },
+          { key: 'retry', label: '自身重试' },
         ],
         sortFields: [
           { key: 'name', label: '名称' },
-          { key: 'freq', label: '频率' },
+          { key: 'freq', label: '触发规则' },
         ],
       },
       sourceTable: {
@@ -870,6 +871,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'body', component: 'section', region: 'main', order: 1 },
         { id: 'jobTable', component: 'data-table', region: 'main', parentId: 'body', label: '定时任务', order: 2, config: { defaultSort: 'name:asc' } },
         { id: 'sourceTable', component: 'data-table', region: 'main', parentId: 'body', label: '数据源健康', order: 3 },
+        { id: 'triggerEvents', component: 'detail', region: 'overlay', label: '触发记录抽屉', order: 4 },
       ],
       editable: [densityKnob()],
     },

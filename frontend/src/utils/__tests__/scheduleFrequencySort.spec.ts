@@ -59,4 +59,15 @@ describe('compareScheduleFrequency', () => {
       'daily', 'weekly', 'monthly', 'cron',
     ])
   })
+
+  it('依赖触发排在时间频率之后并按触发说明稳定排序', () => {
+    const values: ScheduleFrequencyValue[] = [
+      { freq_type: null, trigger_mode: 'dependency', trigger_text: '质检·完成后' },
+      frequency('cron', { cron: '0 1 * * *' }),
+      { freq_type: null, trigger_mode: 'dependency', trigger_text: '更新·成功后' },
+    ]
+    expect(values.sort(compareScheduleFrequency).map((item) => item.trigger_text || item.freq_type)).toEqual([
+      'cron', '更新·成功后', '质检·完成后',
+    ])
+  })
 })

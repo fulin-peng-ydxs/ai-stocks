@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import date
 
 import pandas as pd
 import pytest
 
-from backend.scheduler.scheduler import ScheduledJobService, compile_trigger, freq_text
+from backend.scheduler.scheduler import (
+    ScheduledJobService,
+    compile_trigger,
+    dispatch_due_events,
+    enqueue_terminal_events,
+    freq_text,
+)
 from backend.services.pipeline import DailyPipeline
 from backend.storage.ddl import init_db
 from backend.storage.duckdb_client import DuckDBClient
@@ -90,6 +98,343 @@ def test_scheduled_job_crud():
         svc.delete(cleanup["id"])
         svc.delete(job["id"])
         assert svc.list() == []
+
+
+def test_scheduled_dependency_validation_and_cycle_rejected():
+    """依赖任务只选一个上游，普通关系拒绝环路，引用中的上游不能删除。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        root = svc.create(
+            name="增量更新", task_type="recompute", params={}, freq_type="daily",
+            freq_config={"time": "16:00"}, trading_day_only=False, enabled=False)
+        child = svc.create(
+            name="更新后质检", task_type="checkup", params={}, freq_type=None, freq_config={},
+            trigger_mode="dependency", dependency_job_id=root["id"],
+            dependency_condition="completion",
+            dependency_delay={"value": 1, "unit": "minute"},
+            retry_config={"enabled": True, "condition": "failure",
+                          "delay": {"value": 5, "unit": "minute"}, "max_retries": 3},
+            trading_day_only=False, enabled=False)
+        assert child["trigger_text"] == "增量更新·完成后，延迟1分钟"
+        assert child["retry_config"]["max_retries"] == 3
+        with pytest.raises(ValueError, match="循环依赖"):
+            svc.update(
+                root["id"], name=root["name"], task_type=root["task_type"], params={},
+                freq_type=None, freq_config={}, trigger_mode="dependency",
+                dependency_job_id=child["id"], dependency_condition="success",
+                dependency_delay={"value": 0, "unit": "second"}, retry_config=None,
+                trading_day_only=False, enabled=False)
+        with pytest.raises(ValueError, match="仍被以下任务依赖"):
+            svc.delete(root["id"])
+
+
+def test_schedule_delay_and_retry_count_reject_decimals():
+    """延迟和最大重试次数声明为整数，不得把 API 小数静默截断。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        root = svc.create(
+            name="上游", task_type="recompute", params={}, freq_type="daily",
+            freq_config={"time": "16:00"}, trading_day_only=False, enabled=False)
+        with pytest.raises(ValueError, match="依赖延迟须为整数"):
+            svc.create(
+                name="小数延迟", task_type="checkup", params={}, freq_type=None, freq_config={},
+                trigger_mode="dependency", dependency_job_id=root["id"],
+                dependency_condition="success", dependency_delay={"value": 1.5, "unit": "minute"},
+                trading_day_only=False, enabled=False)
+        with pytest.raises(ValueError, match="最大重试次数须为整数"):
+            svc.create(
+                name="小数重试", task_type="checkup", params={}, freq_type="daily",
+                freq_config={"time": "17:00"},
+                retry_config={"enabled": True, "condition": "failure",
+                              "delay": {"value": 1, "unit": "minute"}, "max_retries": 1.5},
+                trading_day_only=False, enabled=False)
+
+
+def _insert_terminal_task(c, *, tid: str, job_id: str, status: str,
+                          retry_count: int = 0, attempt: int = 1):
+    from datetime import datetime
+
+    now = datetime.now()
+    c.execute(
+        "INSERT INTO async_task "
+        "(id,task_type,params,status,progress,message,trigger_source,job_id,job_name,chain_id,"
+        "retry_count,execution_attempt,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [tid, "recompute", "{}", status, 1.0, status, "manual", job_id, "上游", tid,
+         retry_count, attempt, now, now])
+
+
+def test_terminal_events_match_result_and_retry_limit():
+    """完成不包含 interrupted；失败依赖与自身重试均幂等，达到上限留 exhausted 记录。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        root = svc.create(
+            name="上游", task_type="recompute", params={}, freq_type="daily",
+            freq_config={"time": "16:00"},
+            retry_config={"enabled": True, "condition": "failure",
+                          "delay": {"value": 0, "unit": "second"}, "max_retries": 1},
+            trading_day_only=False, enabled=False)
+        c.execute("UPDATE scheduled_job SET enabled=true WHERE id=?", [root["id"]])
+        child = svc.create(
+            name="失败处理", task_type="checkup", params={}, freq_type=None, freq_config={},
+            trigger_mode="dependency", dependency_job_id=root["id"],
+            dependency_condition="failure", dependency_delay={"value": 0, "unit": "second"},
+            trading_day_only=False, enabled=True)
+        _insert_terminal_task(c, tid="failed_1", job_id=root["id"], status="failed")
+        with c.transaction():
+            assert enqueue_terminal_events("failed_1", client=c) == 2
+            enqueue_terminal_events("failed_1", client=c)  # 同一尝试重复收尾不得重复事件
+        events = c.query_df(
+            "SELECT trigger_kind,status,retry_count,target_job_id FROM scheduled_trigger_event "
+            "ORDER BY trigger_kind")
+        assert len(events) == 2
+        assert set(events["trigger_kind"]) == {"dependency", "retry"}
+        assert child["id"] in set(events["target_job_id"])
+
+        _insert_terminal_task(
+            c, tid="failed_retry", job_id=root["id"], status="failed", retry_count=1)
+        with c.transaction():
+            enqueue_terminal_events("failed_retry", client=c)
+        exhausted = c.query_df(
+            "SELECT status,message FROM scheduled_trigger_event "
+            "WHERE source_task_id='failed_retry' AND trigger_kind='retry'").iloc[0]
+        assert exhausted["status"] == "exhausted"
+        assert "最大重试次数" in exhausted["message"]
+
+        _insert_terminal_task(c, tid="stopped", job_id=root["id"], status="interrupted")
+        with c.transaction():
+            assert enqueue_terminal_events("stopped", client=c) == 0
+
+
+def test_one_upstream_fans_out_independent_events(monkeypatch):
+    """同一上游命中多个下游时分别留事件、规则快照和实际分发时间。"""
+    from backend.scheduler import scheduler as scheduler_module
+    from backend.services.async_task import AsyncTaskService
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        root = svc.create(
+            name="上游", task_type="recompute", params={}, freq_type="daily",
+            freq_config={"time": "16:00"}, trading_day_only=False, enabled=False)
+        child_ids = []
+        for name in ("下游一", "下游二"):
+            child = svc.create(
+                name=name, task_type="checkup", params={}, freq_type=None, freq_config={},
+                trigger_mode="dependency", dependency_job_id=root["id"],
+                dependency_condition="success", dependency_delay={"value": 0, "unit": "second"},
+                trading_day_only=False, enabled=True)
+            child_ids.append(child["id"])
+        _insert_terminal_task(c, tid="done_fanout", job_id=root["id"], status="done")
+        with c.transaction():
+            assert enqueue_terminal_events("done_fanout", client=c) == 2
+        monkeypatch.setattr(scheduler_module, "get_client", lambda: c)
+        created = []
+        monkeypatch.setattr(
+            AsyncTaskService, "create",
+            lambda self, *args, **kwargs: created.append(kwargs["job_id"]) or f"task_{len(created)}")
+        assert dispatch_due_events() == 2
+        events = c.query_df(
+            "SELECT target_job_id,trigger_condition,status,dispatched_at "
+            "FROM scheduled_trigger_event ORDER BY target_job_id")
+        assert set(events["target_job_id"]) == set(child_ids)
+        assert set(events["trigger_condition"]) == {"success"}
+        assert set(events["status"]) == {"dispatched"}
+        assert events["dispatched_at"].notna().all()
+        assert set(created) == set(child_ids)
+        c.execute(
+            "UPDATE scheduled_trigger_event SET trigger_condition=NULL WHERE target_job_id=?",
+            [child_ids[0]])
+        historical = svc.list_events(child_ids[0])
+        assert historical[0]["trigger_condition"] is None
+        assert historical[0]["dispatched_at"] is not None
+
+
+def test_write_task_creation_serializes_busy_check_and_insert(monkeypatch):
+    """并发创建写任务时 busy 检查不得并行，最终只能落一条 pending。"""
+    from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        services = [AsyncTaskService(c), AsyncTaskService(c)]
+        original = AsyncTaskService._running_write
+        active = 0
+        max_active = 0
+        active_lock = threading.Lock()
+
+        def observed_running_write(self):
+            nonlocal active, max_active
+            with active_lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.05)
+            try:
+                return original(self)
+            finally:
+                with active_lock:
+                    active -= 1
+
+        monkeypatch.setattr(AsyncTaskService, "_running_write", observed_running_write)
+        monkeypatch.setattr(AsyncTaskService, "_run", lambda *args, **kwargs: None)
+        monkeypatch.setattr(AsyncTaskService, "_audit_task", staticmethod(lambda **kwargs: None))
+        start = threading.Barrier(2)
+        outcomes = []
+
+        def create(service):
+            start.wait(timeout=2)
+            try:
+                outcomes.append(service.create("update"))
+            except ConcurrentTaskError:
+                outcomes.append("busy")
+
+        threads = [threading.Thread(target=create, args=(service,)) for service in services]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+        assert all(not thread.is_alive() for thread in threads)
+        assert max_active == 1
+        assert outcomes.count("busy") == 1
+        assert int(c.query_df(
+            "SELECT count(*) AS n FROM async_task WHERE status='pending'").iloc[0]["n"]) == 1
+
+
+def test_dependency_dispatch_waits_for_write_slot(monkeypatch):
+    """依赖事件遇写任务互斥不跳过；下一轮资源可用后只创建一个下游任务。"""
+    from backend.scheduler import scheduler as scheduler_module
+    from backend.services.async_task import AsyncTaskService, ConcurrentTaskError
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        root = svc.create(
+            name="上游", task_type="recompute", params={}, freq_type="daily",
+            freq_config={"time": "16:00"}, trading_day_only=False, enabled=False)
+        child = svc.create(
+            name="下游", task_type="checkup", params={}, freq_type=None, freq_config={},
+            trigger_mode="dependency", dependency_job_id=root["id"],
+            dependency_condition="success", dependency_delay={"value": 0, "unit": "second"},
+            trading_day_only=False, enabled=True)
+        _insert_terminal_task(c, tid="done_1", job_id=root["id"], status="done")
+        with c.transaction():
+            enqueue_terminal_events("done_1", client=c)
+        monkeypatch.setattr(scheduler_module, "get_client", lambda: c)
+        monkeypatch.setattr(
+            AsyncTaskService, "create",
+            lambda self, *args, **kwargs: (_ for _ in ()).throw(
+                ConcurrentTaskError("update", "task_busy")))
+        assert dispatch_due_events() == 0
+        waiting = c.query_df("SELECT status FROM scheduled_trigger_event").iloc[0]["status"]
+        assert waiting == "waiting"
+
+        created = []
+        monkeypatch.setattr(
+            AsyncTaskService, "create",
+            lambda self, *args, **kwargs: created.append(kwargs["trigger_event_id"]) or "task_child")
+        assert dispatch_due_events() == 1
+        event = c.query_df("SELECT status,task_id,target_job_id FROM scheduled_trigger_event").iloc[0]
+        assert event["status"] == "dispatched" and event["task_id"] == "task_child"
+        assert event["target_job_id"] == child["id"] and len(created) == 1
+
+
+def test_dispatch_and_disable_cannot_overwrite_each_other(monkeypatch):
+    """分发先认领时停用须等待；完成后不得把 dispatched 事件改为 cancelled。"""
+    from backend.scheduler import scheduler as scheduler_module
+    from backend.services.async_task import AsyncTaskService
+
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        root = svc.create(
+            name="上游", task_type="recompute", params={}, freq_type="daily",
+            freq_config={"time": "16:00"}, trading_day_only=False, enabled=False)
+        child = svc.create(
+            name="下游", task_type="checkup", params={}, freq_type=None, freq_config={},
+            trigger_mode="dependency", dependency_job_id=root["id"],
+            dependency_condition="success", dependency_delay={"value": 0, "unit": "second"},
+            trading_day_only=False, enabled=True)
+        _insert_terminal_task(c, tid="done_disable_race", job_id=root["id"], status="done")
+        with c.transaction():
+            enqueue_terminal_events("done_disable_race", client=c)
+        monkeypatch.setattr(scheduler_module, "get_client", lambda: c)
+        creating = threading.Event()
+        release = threading.Event()
+
+        def slow_create(self, *args, **kwargs):
+            creating.set()
+            assert release.wait(timeout=2)
+            return "task_claimed"
+
+        monkeypatch.setattr(AsyncTaskService, "create", slow_create)
+        dispatch_thread = threading.Thread(target=dispatch_due_events)
+        dispatch_thread.start()
+        assert creating.wait(timeout=2)
+        disable_thread = threading.Thread(target=svc.set_enabled, args=(child["id"], False))
+        disable_thread.start()
+        time.sleep(0.05)
+        assert disable_thread.is_alive()  # 分发持有事件锁，停用不能插入 claim 与落库之间。
+        release.set()
+        dispatch_thread.join(timeout=3)
+        disable_thread.join(timeout=3)
+        assert not dispatch_thread.is_alive() and not disable_thread.is_alive()
+        event = c.query_df(
+            "SELECT status,task_id,dispatched_at FROM scheduled_trigger_event").iloc[0]
+        assert event["status"] == "dispatched"
+        assert event["task_id"] == "task_claimed"
+        assert pd.notna(event["dispatched_at"])
+        assert svc.get(child["id"])["enabled"] is False
+
+
+def test_dependency_create_and_upstream_delete_share_relationship_lock(monkeypatch):
+    """新建下游与删除上游不能穿过引用检查，最终不得留下悬空依赖。"""
+    with DuckDBClient(db_path=":memory:") as c:
+        init_db(c)
+        svc = ScheduledJobService(c)
+        root = svc.create(
+            name="上游", task_type="recompute", params={}, freq_type="daily",
+            freq_config={"time": "16:00"}, trading_day_only=False, enabled=False)
+        original_validate = svc._validate
+        validating = threading.Event()
+        release = threading.Event()
+
+        def slow_validate(*args, **kwargs):
+            validating.set()
+            assert release.wait(timeout=2)
+            return original_validate(*args, **kwargs)
+
+        monkeypatch.setattr(svc, "_validate", slow_validate)
+        created = []
+        delete_errors = []
+
+        def create_child():
+            created.append(svc.create(
+                name="下游", task_type="checkup", params={}, freq_type=None, freq_config={},
+                trigger_mode="dependency", dependency_job_id=root["id"],
+                dependency_condition="success", dependency_delay={"value": 0, "unit": "second"},
+                trading_day_only=False, enabled=False))
+
+        def delete_root():
+            try:
+                svc.delete(root["id"])
+            except ValueError as exc:
+                delete_errors.append(str(exc))
+
+        create_thread = threading.Thread(target=create_child)
+        create_thread.start()
+        assert validating.wait(timeout=2)
+        delete_thread = threading.Thread(target=delete_root)
+        delete_thread.start()
+        time.sleep(0.05)
+        assert delete_thread.is_alive()
+        release.set()
+        create_thread.join(timeout=3)
+        delete_thread.join(timeout=3)
+        assert len(created) == 1
+        assert delete_errors and "仍被以下任务依赖" in delete_errors[0]
+        assert svc.get(root["id"]) is not None
+        assert created[0]["dependency_job_id"] == root["id"]
 
 
 # ── 板块采集步骤集成（R21，T6）───────────────────────────────

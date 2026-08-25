@@ -500,6 +500,14 @@ CREATE TABLE IF NOT EXISTS async_task (
     progress    DOUBLE,             -- 0~1
     message     VARCHAR,            -- 当前进度文案 / 结果摘要 / 失败原因
     result      VARCHAR,            -- 结果（JSON，可空）
+    trigger_source VARCHAR,         -- manual | scheduled | dependency | retry
+    job_id      VARCHAR,            -- 对应 scheduled_job（独立手工任务为空）
+    job_name    VARCHAR,
+    chain_id    VARCHAR,            -- 本次调度运行链根任务 id
+    parent_task_id VARCHAR,          -- 依赖/重试来源任务 id
+    trigger_event_id VARCHAR,       -- 产生本任务的持久化触发事件
+    retry_count INTEGER,            -- 自身重试序号，首次执行为 0
+    execution_attempt INTEGER,      -- 同一任务续跑时递增，终态事件据此幂等
     created_at  TIMESTAMP,
     updated_at  TIMESTAMP
 );
@@ -598,10 +606,38 @@ CREATE TABLE IF NOT EXISTS scheduled_job (
     params           VARCHAR,               -- 入参（JSON，按任务类型）
     freq_type        VARCHAR,               -- daily | weekly | monthly | cron
     freq_config      VARCHAR,               -- 频率配置（JSON）：{time} / {weekdays,time} / {day,time} / {cron}
+    trigger_mode     VARCHAR,               -- time | dependency
+    dependency_job_id VARCHAR,              -- 依赖的上游 scheduled_job id
+    dependency_condition VARCHAR,           -- success | failure | completion
+    dependency_delay VARCHAR,               -- {value,unit}，unit=second|minute|hour
+    retry_config     VARCHAR,                -- {enabled,condition,delay,max_retries}
     trading_day_only BOOLEAN,               -- 仅交易日执行（非交易日跳过）
     enabled          BOOLEAN,               -- 启停
     last_run_at      TIMESTAMP,             -- 最近一次触发时间（可空）
     last_task_id     VARCHAR,               -- 最近一次触发产生的 async_task id（可空）
+    created_at       TIMESTAMP,
+    updated_at       TIMESTAMP
+);
+"""
+
+# 依赖/重试触发事件：先持久化再延迟分发，服务重启或 DuckDB 写槽位繁忙时不丢链路。
+DDL_SCHEDULED_TRIGGER_EVENT = """
+CREATE TABLE IF NOT EXISTS scheduled_trigger_event (
+    id               VARCHAR PRIMARY KEY,
+    chain_id         VARCHAR,
+    source_task_id   VARCHAR,
+    source_attempt   INTEGER,
+    source_status    VARCHAR,
+    target_job_id    VARCHAR,
+    trigger_kind     VARCHAR,               -- dependency | retry
+    trigger_condition VARCHAR,              -- success | failure | completion（生成时规则快照）
+    retry_count      INTEGER,
+    due_at           TIMESTAMP,
+    dispatched_at    TIMESTAMP,             -- 实际创建下游 async_task 的时间
+    status           VARCHAR,               -- waiting | dispatching | dispatched | cancelled | exhausted | failed
+    task_id          VARCHAR,
+    job_snapshot     VARCHAR,
+    message          VARCHAR,
     created_at       TIMESTAMP,
     updated_at       TIMESTAMP
 );
@@ -613,6 +649,7 @@ M28_TABLES: dict[str, str] = {
     "data_dimension_registry": DDL_DATA_DIMENSION_REGISTRY,
     "data_source_provenance": DDL_DATA_SOURCE_PROVENANCE,
     "scheduled_job": DDL_SCHEDULED_JOB,
+    "scheduled_trigger_event": DDL_SCHEDULED_TRIGGER_EVENT,
 }
 
 # ── 盘感训练（agent-works/market-sense-training/）────────────────
@@ -836,6 +873,32 @@ _MIGRATIONS: list[str] = [
     "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS job_id VARCHAR",
     "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS job_name VARCHAR",
     "UPDATE async_task SET trigger_source='manual' WHERE trigger_source IS NULL",
+    "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS chain_id VARCHAR",
+    "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS parent_task_id VARCHAR",
+    "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS trigger_event_id VARCHAR",
+    "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS retry_count INTEGER",
+    "ALTER TABLE async_task ADD COLUMN IF NOT EXISTS execution_attempt INTEGER",
+    "UPDATE async_task SET chain_id=id WHERE chain_id IS NULL",
+    "UPDATE async_task SET retry_count=0 WHERE retry_count IS NULL",
+    "UPDATE async_task SET execution_attempt=1 WHERE execution_attempt IS NULL",
+    # 依赖调度：存量任务均为时间触发，新增配置列只补缺失值，不覆盖用户配置。
+    "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS trigger_mode VARCHAR",
+    "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS dependency_job_id VARCHAR",
+    "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS dependency_condition VARCHAR",
+    "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS dependency_delay VARCHAR",
+    "ALTER TABLE scheduled_job ADD COLUMN IF NOT EXISTS retry_config VARCHAR",
+    "UPDATE scheduled_job SET trigger_mode='time' WHERE trigger_mode IS NULL",
+    (
+        "UPDATE scheduled_job SET dependency_delay='{\"value\":0,\"unit\":\"minute\"}' "
+        "WHERE dependency_delay IS NULL"
+    ),
+    (
+        "UPDATE scheduled_job SET retry_config='{\"enabled\":false,\"condition\":\"failure\","
+        "\"delay\":{\"value\":5,\"unit\":\"minute\"},\"max_retries\":1}' "
+        "WHERE retry_config IS NULL"
+    ),
+    "ALTER TABLE scheduled_trigger_event ADD COLUMN IF NOT EXISTS trigger_condition VARCHAR",
+    "ALTER TABLE scheduled_trigger_event ADD COLUMN IF NOT EXISTS dispatched_at TIMESTAMP",
     # 废弃 daily 复合任务：旧库残留的每日任务记录改标为 update（语义上等价于其首步增量更新）
     "UPDATE async_task SET task_type='update' WHERE task_type='daily'",
     # 成分修复需证明问题检出后发生过新的完整快照，不能只看历史 member_count。

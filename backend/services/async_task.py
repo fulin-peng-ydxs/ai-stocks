@@ -37,6 +37,9 @@ WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes
 LOG_MAX_PER_TASK = 2000
 LOG_RETENTION_DAYS = 30
 _LOG_FLUSH_EVERY = 10  # 累计 N 条即 flush；长任务日志要比进度条更快出现在页面上
+# 创建锁覆盖“幂等查询 / 写任务槽位检查 / pending 落库”整个区间，避免多个
+# FastAPI/APScheduler 线程同时通过检查。项目运行契约为单后端进程，跨进程写由 DuckDB 文件锁拒绝。
+_TASK_CREATE_LOCK = threading.Lock()
 
 TASK_CAPABILITIES: dict[str, dict] = {
     "update": {
@@ -228,24 +231,35 @@ class AsyncTaskService:
     # ── 创建 / 执行 ──
     def create(self, task_type: str, params: dict | None = None, *,
                trigger_source: str = "manual", job_id: str | None = None,
-               job_name: str | None = None) -> str:
-        """创建并后台执行任务。trigger_source 标记来源（manual/scheduled），定时触发时
-        带上 job_id/job_name，供任务中心展示「定时·{job_name}」并据此筛选。"""
+               job_name: str | None = None, chain_id: str | None = None,
+               parent_task_id: str | None = None, trigger_event_id: str | None = None,
+               retry_count: int = 0) -> str:
+        """创建并后台执行任务，保留调度定义、运行链、父任务和幂等触发事件来源。"""
         if task_type not in TASK_TYPES:
             raise ValueError(f"未知任务类型: {task_type}（可选 {TASK_TYPES}）")
         params = params or {}
-        if task_type in WRITE_TASK_TYPES:
-            busy = self._running_write()
-            if busy:
-                raise ConcurrentTaskError(busy[1], busy[0])
-        tid = self._new_id(task_type)
-        now = datetime.now()
-        self.c.execute(
-            "INSERT INTO async_task (id, task_type, params, status, progress, message, result, "
-            "trigger_source, job_id, job_name, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            [tid, task_type, json.dumps(params, ensure_ascii=False, default=str),
-             "pending", 0.0, "已排队", None, trigger_source, job_id, job_name, now, now])
+        with _TASK_CREATE_LOCK:
+            if trigger_event_id:
+                existing = self.c.query_df(
+                    "SELECT id FROM async_task WHERE trigger_event_id=? ORDER BY created_at LIMIT 1",
+                    [trigger_event_id])
+                if not existing.empty:
+                    return str(existing.iloc[0]["id"])
+            if task_type in WRITE_TASK_TYPES:
+                busy = self._running_write()
+                if busy:
+                    raise ConcurrentTaskError(busy[1], busy[0])
+            tid = self._new_id(task_type)
+            chain_id = chain_id or tid
+            now = datetime.now()
+            self.c.execute(
+                "INSERT INTO async_task (id, task_type, params, status, progress, message, result, "
+                "trigger_source, job_id, job_name, chain_id, parent_task_id, trigger_event_id, "
+                "retry_count, execution_attempt, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                [tid, task_type, json.dumps(params, ensure_ascii=False, default=str),
+                 "pending", 0.0, "已排队", None, trigger_source, job_id, job_name, chain_id,
+                 parent_task_id, trigger_event_id, int(retry_count), 1, now, now])
         self._audit_task(
             action="create",
             result="success",
@@ -279,7 +293,10 @@ class AsyncTaskService:
                 raise ConcurrentTaskError(busy[1], busy[0])
         params = t.get("params") or {}
         pending_message = "重试未完成项排队…" if t["status"] == "failed" else "继续任务排队…"
-        self._set(tid, status="pending", progress=0.0, message=pending_message)
+        self.c.execute(
+            "UPDATE async_task SET status='pending', progress=0.0, message=?, "
+            "execution_attempt=COALESCE(execution_attempt,1)+1, updated_at=? WHERE id=?",
+            [pending_message, datetime.now(), tid])
         self._audit_task(
             action="resume",
             result="success",
@@ -322,8 +339,12 @@ class AsyncTaskService:
                 result_payload = dict(result)
                 if ctx.checkpoint:
                     result_payload["checkpoint"] = ctx.checkpoint
-                self._set(tid, status="failed", progress=1.0, message=message,
-                          result=json.dumps(result_payload, ensure_ascii=False, default=str))
+                self._finish_terminal(
+                    tid,
+                    status="failed",
+                    message=message,
+                    result=json.dumps(result_payload, ensure_ascii=False, default=str),
+                )
                 self._audit_task(
                     action="finish", result="failed", status="failed",
                     task_id=tid, task_type=task_type, error_summary=message,
@@ -331,9 +352,12 @@ class AsyncTaskService:
                 return
             ctx.log(f"■ 任务完成：{result.get('message', '完成')}")
             ctx.flush()
-            self._set(tid, status="done", progress=1.0,
-                      message=result.get("message", "完成"),
-                      result=json.dumps(result, ensure_ascii=False, default=str))
+            self._finish_terminal(
+                tid,
+                status="done",
+                message=result.get("message", "完成"),
+                result=json.dumps(result, ensure_ascii=False, default=str),
+            )
             self._audit_task(
                 action="finish",
                 result="success",
@@ -354,12 +378,12 @@ class AsyncTaskService:
                 task_type=task_type,
                 error_summary="任务被用户终止",
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.exception("异步任务失败 %s", tid)
             ctx.log(f"任务失败: {e}", "error")
             self._release_fixing(tid)
             ctx.flush()
-            self._set(tid, status="failed", progress=1.0, message=str(e))
+            self._finish_terminal(tid, status="failed", message=str(e))
             self._audit_task(
                 action="finish",
                 result="failed",
@@ -371,6 +395,24 @@ class AsyncTaskService:
         finally:
             with _CANCEL_LOCK:
                 _CANCELLED.discard(tid)
+
+    def _finish_terminal(
+        self,
+        tid: str,
+        *,
+        status: str,
+        message: str,
+        result: str | None = None,
+    ) -> None:
+        """原子写入终态和依赖事件，避免服务退出后下游链路永久丢失。"""
+        from backend.scheduler.scheduler import enqueue_terminal_events
+
+        fields = {"status": status, "progress": 1.0, "message": message}
+        if result is not None:
+            fields["result"] = result
+        with self.c.transaction():
+            self._set(tid, **fields)
+            enqueue_terminal_events(tid, client=self.c)
 
     def _release_fixing(self, tid: str) -> int:
         """把本任务名下仍卡在 fixing 的质检问题复位为 open（任务失败/中断时调用，不留孤儿）。"""
@@ -502,6 +544,9 @@ def _row(r) -> dict:
             d[k] = str(d[k])
     if d.get("progress") is not None and not pd.isna(d["progress"]):
         d["progress"] = float(d["progress"])
+    for key, default in (("retry_count", 0), ("execution_attempt", 1)):
+        value = d.get(key)
+        d[key] = default if value is None or pd.isna(value) else int(value)
     for k in ("params", "result"):
         if d.get(k):
             try:
