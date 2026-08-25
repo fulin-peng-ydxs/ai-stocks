@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * 「组件特性」唯一渲染器——由 pageRegistry 的 consumedComponentFields + componentMeta 驱动，
+ * 「组件特性」唯一渲染器——由组件种类字段定义 + pageRegistry 的实例元数据自动驱动，
  * 同时服务于**运行时页面设置抽屉**（user 层）与**页面布局编辑器**（page 层），各页不再手写
- * 列开关/排序/分页控件。每个被消费的 slot 渲染一个 SettingsGroup（level 2），内含：默认排序
+ * 列开关/排序/分页控件。每个适用字段的 slot 渲染一个 SettingsGroup（level 2），内含：默认排序
  * （可排序字段 + 方向）、每页条数、列显隐（独立 level 3 子组，每列一个开关）等。
  * 写值统一经组件配置层（config.setComponentKnob），与配置中心/后端校验同源。
  *
@@ -11,15 +11,20 @@
  */
 import { computed, nextTick, ref, watch } from 'vue'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
-import { ElInputNumber } from 'element-plus'
+import { ElInput, ElInputNumber } from 'element-plus'
 import AppRowActions from './AppRowActions.vue'
 import SettingsGroup from './SettingsGroup.vue'
 import PageSegmented from './PageSegmented.vue'
 import PageToggleRow from './PageToggleRow.vue'
 import SourceTag from './SourceTag.vue'
-import { getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
+import {
+  componentMetaForSlot,
+  getPageEntry,
+  type SlotConfigMeta,
+} from '@/layout/pageRegistry'
 import {
   getComponentFieldDef,
+  getApplicableComponentFieldDefs,
   type ComponentConfigLayer,
   type ComponentConfigSource,
   type ComponentFieldDef,
@@ -90,21 +95,29 @@ function layerAllowed(kind: string, field: string): boolean {
 
 const autoSlots = computed<AutoSlot[]>(() => {
   const entry = getPageEntry(props.pageKey)
-  if (!entry?.consumedComponentFields) return []
-  const byId = new Map(entry.layout.slots.map((s) => [s.id, s]))
-  const meta = entry.componentMeta ?? {}
+  if (!entry?.supportsComponentConfig) return []
   const metaOverrides = props.componentMetaOverrides ?? {}
-  return Object.entries(entry.consumedComponentFields)
-    .filter(([slotId]) => !props.slotIds || props.slotIds.includes(slotId))
-    .map(([slotId, fields]) => {
-      const slot = byId.get(slotId)
-      const slotMeta = { ...(meta[slotId] ?? {}), ...(metaOverrides[slotId] ?? {}) }
+  return entry.layout.slots
+    .filter((slot) => !props.slotIds || props.slotIds.includes(slot.id))
+    .map((slot) => {
+      const baseMeta = componentMetaForSlot(entry, slot)
+      const overrideMeta = metaOverrides[slot.id] ?? {}
+      const slotMeta = {
+        ...baseMeta,
+        ...overrideMeta,
+        fieldApplicability: {
+          ...(baseMeta.fieldApplicability ?? {}),
+          ...(overrideMeta.fieldApplicability ?? {}),
+        },
+      }
       return {
-        slotId,
-        kind: slot?.component ?? '',
-        label: slot?.label || slotId,
-        // 只渲染当前层（+策略）允许覆盖的字段；collapsibleSections 在 user 层天然被排除。
-        fields: fields.filter((field) => layerAllowed(slot?.component ?? '', field)),
+        slotId: slot.id,
+        kind: slot.component,
+        label: slot.label || slot.id,
+        // 组件种类字段自动继承；实例候选/明确例外决定适用性，开放策略决定当前层是否可编辑。
+        fields: getApplicableComponentFieldDefs(slot.component, slotMeta, props.layer)
+          .map((field) => field.key)
+          .filter((field) => layerAllowed(slot.component, field)),
         meta: slotMeta,
       }
     })
@@ -131,11 +144,6 @@ const DRAWER_SECTION_OPTIONS = [
   { label: '组件设置', value: 'components' },
   { label: '业务选项', value: 'business' },
 ]
-const DRAWER_SIZE_OPTIONS = [
-  { label: '小', value: 'sm' },
-  { label: '中', value: 'md' },
-  { label: '大', value: 'lg' },
-]
 const SEGMENTED_OPTION_LIMIT = 3
 const visibleDrawerSectionOptions = computed(() =>
   props.drawerBusinessVisible === false
@@ -160,6 +168,39 @@ function numericFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
     .filter((field) => field !== 'pageSize')
     .map((field) => getComponentFieldDef(slot.kind as never, field))
     .filter((def): def is ComponentFieldDef => def?.control === 'int' || def?.control === 'number')
+}
+function boolFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
+  return slot.fields
+    .map((field) => getComponentFieldDef(slot.kind as never, field))
+    .filter((def): def is ComponentFieldDef => def?.control === 'bool')
+}
+function enumFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
+  return slot.fields
+    .map((field) => getComponentFieldDef(slot.kind as never, field))
+    .filter((def): def is ComponentFieldDef => def?.control === 'enum' && Boolean(def.options?.length))
+}
+function enumOptions(field: ComponentFieldDef): { label: string; value: string | number }[] {
+  return (field.options ?? []).map((value) => ({
+    label: field.optionLabels?.[String(value)] ?? String(value),
+    value,
+  }))
+}
+function enumVal(slotId: string, field: ComponentFieldDef): string | number {
+  const value = props.config.componentValueOf(slotId, field.key)
+  if (typeof value === 'string' || typeof value === 'number') return value
+  return typeof field.default === 'number' ? field.default : String(field.default ?? '')
+}
+function stringFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
+  return slot.fields
+    .filter((field) => field !== 'defaultSort' && field !== 'defaultActive')
+    .map((field) => getComponentFieldDef(slot.kind as never, field))
+    .filter((def): def is ComponentFieldDef => def?.control === 'string')
+}
+function staticStringListFieldDefs(slot: AutoSlot): ComponentFieldDef[] {
+  return slot.fields
+    .filter((field) => field !== 'hiddenColumns' && field !== 'defaultCollapsed')
+    .map((field) => getComponentFieldDef(slot.kind as never, field))
+    .filter((def): def is ComponentFieldDef => def?.control === 'string[]' && Boolean(def.options?.length))
 }
 function boolVal(slotId: string, field: string, fallback: boolean): boolean {
   const v = props.config.componentValueOf(slotId, field)
@@ -332,27 +373,28 @@ function setSort(slotId: string, field: string, order: string): void {
         </div>
       </template>
 
-      <div v-if="s.fields.includes('border')" class="ca-item">
+      <div v-for="field in boolFieldDefs(s)" :key="field.key" class="ca-item">
         <div class="ca-label-row">
-          <span class="ca-label">显示表格边框</span>
+          <span class="ca-label">{{ field.label }}</span>
           <span class="ca-actions">
             <SourceTag
-              v-if="srcOf(s.slotId, 'border')"
-              :source="srcOf(s.slotId, 'border')!"
-              :values="srcValuesOf(s.slotId, 'border')"
+              v-if="srcOf(s.slotId, field.key)"
+              :source="srcOf(s.slotId, field.key)!"
+              :values="srcValuesOf(s.slotId, field.key)"
             />
             <AppRowActions
-              v-if="clearable && isOverridden(s.slotId, 'border')"
-              :actions="clearFieldActions(s.slotId, 'border')"
+              v-if="clearable && isOverridden(s.slotId, field.key)"
+              :actions="clearFieldActions(s.slotId, field.key)"
               :inline-limit="1"
             />
           </span>
         </div>
         <el-switch
-          :model-value="boolVal(s.slotId, 'border', false)"
+          :model-value="boolVal(s.slotId, field.key, Boolean(field.default))"
           inline-prompt
-          @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, 'border', v)"
+          @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, field.key, v)"
         />
+        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
       </div>
 
       <div v-if="s.fields.includes('pageSize')" class="ca-item">
@@ -435,52 +477,81 @@ function setSort(slotId: string, field: string, order: string): void {
         />
       </div>
 
-      <div v-if="s.fields.includes('size')" class="ca-item">
+      <div v-for="field in enumFieldDefs(s)" :key="field.key" class="ca-item">
         <div class="ca-label-row">
-          <span class="ca-label">抽屉尺寸</span>
+          <span class="ca-label">{{ field.label }}</span>
           <span class="ca-actions">
             <SourceTag
-              v-if="srcOf(s.slotId, 'size')"
-              :source="srcOf(s.slotId, 'size')!"
-              :values="srcValuesOf(s.slotId, 'size')"
+              v-if="srcOf(s.slotId, field.key)"
+              :source="srcOf(s.slotId, field.key)!"
+              :values="srcValuesOf(s.slotId, field.key)"
             />
             <AppRowActions
-              v-if="clearable && isOverridden(s.slotId, 'size')"
-              :actions="clearFieldActions(s.slotId, 'size')"
+              v-if="clearable && isOverridden(s.slotId, field.key)"
+              :actions="clearFieldActions(s.slotId, field.key)"
               :inline-limit="1"
             />
           </span>
         </div>
         <PageSegmented
-          :model-value="strVal(s.slotId, 'size') || 'md'"
-          :options="DRAWER_SIZE_OPTIONS"
-          :aria-label="`${s.label}：抽屉尺寸`"
-          :test-id="s.slotId === 'settings' ? 'drawer-size' : undefined"
-          @update:model-value="(v) => config.setComponentKnob(s.slotId, 'size', String(v))"
+          :model-value="enumVal(s.slotId, field)"
+          :options="enumOptions(field)"
+          :aria-label="`${s.label}：${field.label}`"
+          :test-id="s.slotId === 'settings' && field.key === 'size' ? 'drawer-size' : undefined"
+          @update:model-value="(v) => config.setComponentKnob(s.slotId, field.key, v)"
         />
+        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
       </div>
 
-      <div v-if="s.fields.includes('bodyScroll')" class="ca-item">
+      <div v-for="field in stringFieldDefs(s)" :key="field.key" class="ca-item">
         <div class="ca-label-row">
-          <span class="ca-label">内容区滚动</span>
+          <span class="ca-label">{{ field.label }}</span>
           <span class="ca-actions">
             <SourceTag
-              v-if="srcOf(s.slotId, 'bodyScroll')"
-              :source="srcOf(s.slotId, 'bodyScroll')!"
-              :values="srcValuesOf(s.slotId, 'bodyScroll')"
+              v-if="srcOf(s.slotId, field.key)"
+              :source="srcOf(s.slotId, field.key)!"
+              :values="srcValuesOf(s.slotId, field.key)"
             />
             <AppRowActions
-              v-if="clearable && isOverridden(s.slotId, 'bodyScroll')"
-              :actions="clearFieldActions(s.slotId, 'bodyScroll')"
+              v-if="clearable && isOverridden(s.slotId, field.key)"
+              :actions="clearFieldActions(s.slotId, field.key)"
               :inline-limit="1"
             />
           </span>
         </div>
-        <el-switch
-          :model-value="boolVal(s.slotId, 'bodyScroll', true)"
-          inline-prompt
-          @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, 'bodyScroll', v)"
+        <el-input
+          :model-value="strVal(s.slotId, field.key)"
+          clearable
+          @update:model-value="(value: string) => config.setComponentKnob(s.slotId, field.key, value)"
         />
+        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
+      </div>
+
+      <div v-for="field in staticStringListFieldDefs(s)" :key="field.key" class="ca-item">
+        <div class="ca-label-row">
+          <span class="ca-label">{{ field.label }}</span>
+          <span class="ca-actions">
+            <SourceTag
+              v-if="srcOf(s.slotId, field.key)"
+              :source="srcOf(s.slotId, field.key)!"
+              :values="srcValuesOf(s.slotId, field.key)"
+            />
+            <AppRowActions
+              v-if="clearable && isOverridden(s.slotId, field.key)"
+              :actions="clearFieldActions(s.slotId, field.key)"
+              :inline-limit="1"
+            />
+          </span>
+        </div>
+        <el-checkbox-group
+          :model-value="listVal(s.slotId, field.key)"
+          @update:model-value="(value: string[]) => config.setComponentKnob(s.slotId, field.key, value)"
+        >
+          <el-checkbox v-for="option in enumOptions(field)" :key="String(option.value)" :value="String(option.value)">
+            {{ option.label }}
+          </el-checkbox>
+        </el-checkbox-group>
+        <span v-if="field.help" class="ca-help">{{ field.help }}</span>
       </div>
 
       <SettingsGroup
@@ -513,29 +584,6 @@ function setSort(slotId: string, field: string, order: string): void {
         />
       </SettingsGroup>
 
-      <div v-if="s.fields.includes('collapsibleSections')" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">允许折叠分组</span>
-          <span class="ca-actions">
-            <SourceTag
-              v-if="srcOf(s.slotId, 'collapsibleSections')"
-              :source="srcOf(s.slotId, 'collapsibleSections')!"
-              :values="srcValuesOf(s.slotId, 'collapsibleSections')"
-            />
-            <AppRowActions
-              v-if="clearable && isOverridden(s.slotId, 'collapsibleSections')"
-              :actions="clearFieldActions(s.slotId, 'collapsibleSections')"
-              :inline-limit="1"
-            />
-          </span>
-        </div>
-        <el-switch
-          :model-value="boolVal(s.slotId, 'collapsibleSections', true)"
-          inline-prompt
-          @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, 'collapsibleSections', v)"
-        />
-      </div>
-
       <div v-if="s.fields.includes('defaultCollapsed')" class="ca-item">
         <div class="ca-label-row">
           <span class="ca-label">{{ s.kind === 'config-panel' ? '默认折叠分区' : '默认折叠段' }}</span>
@@ -562,51 +610,6 @@ function setSort(slotId: string, field: string, order: string): void {
         </el-checkbox-group>
       </div>
 
-      <div v-if="s.fields.includes('showGroupDescription')" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">显示组说明</span>
-          <span class="ca-actions">
-            <SourceTag
-              v-if="srcOf(s.slotId, 'showGroupDescription')"
-              :source="srcOf(s.slotId, 'showGroupDescription')!"
-              :values="srcValuesOf(s.slotId, 'showGroupDescription')"
-            />
-            <AppRowActions
-              v-if="clearable && isOverridden(s.slotId, 'showGroupDescription')"
-              :actions="clearFieldActions(s.slotId, 'showGroupDescription')"
-              :inline-limit="1"
-            />
-          </span>
-        </div>
-        <el-switch
-          :model-value="boolVal(s.slotId, 'showGroupDescription', true)"
-          inline-prompt
-          @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, 'showGroupDescription', v)"
-        />
-      </div>
-
-      <div v-if="s.fields.includes('showSectionDescription')" class="ca-item">
-        <div class="ca-label-row">
-          <span class="ca-label">显示分区说明</span>
-          <span class="ca-actions">
-            <SourceTag
-              v-if="srcOf(s.slotId, 'showSectionDescription')"
-              :source="srcOf(s.slotId, 'showSectionDescription')!"
-              :values="srcValuesOf(s.slotId, 'showSectionDescription')"
-            />
-            <AppRowActions
-              v-if="clearable && isOverridden(s.slotId, 'showSectionDescription')"
-              :actions="clearFieldActions(s.slotId, 'showSectionDescription')"
-              :inline-limit="1"
-            />
-          </span>
-        </div>
-        <el-switch
-          :model-value="boolVal(s.slotId, 'showSectionDescription', true)"
-          inline-prompt
-          @update:model-value="(v: boolean) => config.setComponentKnob(s.slotId, 'showSectionDescription', v)"
-        />
-      </div>
     </SettingsGroup>
   </div>
   <el-empty v-else class="app-empty app-empty--compact" description="该页暂无可配置的组件" />

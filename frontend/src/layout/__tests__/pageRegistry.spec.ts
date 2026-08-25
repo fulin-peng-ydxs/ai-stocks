@@ -7,7 +7,15 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
-import { PAGE_REGISTRY, getPageEntry, getPageLayout, listComponentUsage, listManagedPages } from '../pageRegistry'
+import {
+  PAGE_REGISTRY,
+  applicableComponentFields,
+  componentMetaForSlot,
+  getPageEntry,
+  getPageLayout,
+  listComponentUsage,
+  listManagedPages,
+} from '../pageRegistry'
 import { validateLayout } from '../validator'
 import { COMPONENT_CATALOG } from '../components'
 import { getComponentFieldDef } from '../componentConfig'
@@ -408,10 +416,9 @@ describe('页面注册表完整性', () => {
     ])
     expect(slots.filter((slot) => slot.parentId === 'workspaceTabs').map((slot) => slot.id))
       .toEqual(['checkinPanel', 'rulesPanel', 'history'])
-    expect(entry.consumedComponentFields).toEqual({
-      history: ['border', 'defaultSort', 'pageSize', 'hiddenColumns'],
-      settings: ['size', 'bodyScroll', 'collapsibleSections', 'defaultCollapsed'],
-    })
+    expect(applicableComponentFields(entry, 'history').map((field) => field.key)).toEqual([
+      'border', 'pageSize', 'defaultSort', 'hiddenColumns',
+    ])
     expect(entry.componentMeta?.history?.sortFields).toEqual([
       { key: 'trade_date', label: '交易日' },
     ])
@@ -430,16 +437,13 @@ describe('页面注册表完整性', () => {
     expect(drawer).toContain('<PageDrawer')
   })
 
-  it('登记列元数据的列表组件必须消费通用列显隐能力', () => {
+  it('登记列元数据的列表组件自动继承通用列显隐能力', () => {
     for (const entry of PAGE_REGISTRY) {
       for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {
         if (!meta.columns?.length) continue
         const slot = entry.layout.slots.find((candidate) => candidate.id === slotId)
         if (!slot || !['data-table', 'wide-table'].includes(slot.component)) continue
-        expect(
-          entry.consumedComponentFields?.[slotId],
-          `${entry.pageKey}.${slotId} 已登记 columns，却未声明组件字段消费关系`,
-        ).toContain('hiddenColumns')
+        expect(applicableComponentFields(entry, slotId).map((field) => field.key)).toContain('hiddenColumns')
       }
     }
   })
@@ -643,7 +647,6 @@ describe('页面注册表完整性', () => {
       const slot = entry.layout.slots.find((s) => s.id === 'settings')
       if (excluded.has(entry.pageKey)) {
         expect(slot, `${entry.pageKey} 不消费个人设置，不得登记假 settings slot`).toBeUndefined()
-        expect(entry.consumedComponentFields?.settings).toBeUndefined()
         expect(entry.supportsComponentConfig).toBe(false)
         const source = sourceForPage(entry.pageKey)
         expect(source).not.toContain('PageSettingsTrigger')
@@ -660,6 +663,10 @@ describe('页面注册表完整性', () => {
       expect(imports.has('PageSettingsDrawer'), `${entry.pageKey} 必须导入 PageSettingsDrawer`).toBe(true)
       expect(source, `${entry.pageKey} 必须真实渲染页面设置入口`).toContain('<PageSettingsTrigger')
       expect(source, `${entry.pageKey} 必须真实渲染页面设置抽屉`).toContain('<PageSettingsDrawer')
+      expect(
+        source,
+        `${entry.pageKey} 必须把后端组件字段允许层级传给页面设置抽屉，避免四层策略只在配置中心生效`,
+      ).toContain('componentAllowedLayers')
     }
   })
 
@@ -707,24 +714,12 @@ describe('组件消费关系与配置一致性（P4）', () => {
     }
   })
 
-  it('consumedComponentFields 登记必须指向真实 slot 且字段已在 componentConfig 登记', () => {
+  it('所有 slot 都按组件种类自动推导字段，不存在页面字段白名单', () => {
     for (const entry of PAGE_REGISTRY) {
-      const consumed = entry.consumedComponentFields
-      if (!consumed) {
-        // 未声明消费字段的页面不应标 supportsComponentConfig（避免配置中心渲染空块）。
-        if (entry.supportsComponentConfig) {
-          expect.fail(`${entry.pageKey} 标记 supportsComponentConfig 但无 consumedComponentFields`)
-        }
-        continue
-      }
-      for (const [slotId, fields] of Object.entries(consumed)) {
-        const slot = entry.layout.slots.find((s) => s.id === slotId)
-        expect(slot, `${entry.pageKey} consumed slot ${slotId} 不存在`).toBeTruthy()
-        for (const field of fields) {
-          expect(
-            getComponentFieldDef(slot!.component, field),
-            `${entry.pageKey}.${slotId}.${field} 未在 componentConfig 登记`,
-          ).toBeTruthy()
+      expect('consumedComponentFields' in entry, `${entry.pageKey} 不得保留逐页面字段白名单`).toBe(false)
+      for (const slot of entry.layout.slots) {
+        for (const field of applicableComponentFields(entry, slot.id)) {
+          expect(getComponentFieldDef(slot.component, field.key)).toBe(field)
         }
       }
     }
@@ -732,9 +727,8 @@ describe('组件消费关系与配置一致性（P4）', () => {
 
   it('可配置列必须由页面真实消费显隐状态，禁止设置候选与表格渲染漂移', () => {
     for (const entry of PAGE_REGISTRY) {
-      const configurableSlots = Object.entries(entry.componentMeta ?? {}).filter(([slotId, meta]) =>
-        Boolean(meta.columns?.length)
-        && (entry.consumedComponentFields?.[slotId] ?? []).includes('hiddenColumns'))
+      const configurableSlots = Object.entries(entry.componentMeta ?? {}).filter(([, meta]) =>
+        Boolean(meta.columns?.length))
       if (!configurableSlots.length) continue
 
       const source = sourceTreeForPage(entry.pageKey)
@@ -755,7 +749,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
     const sectorDetail = getPageEntry('sectors-detail')!
     const sectorWorkbench = getPageEntry('sectors')!
 
-    expect(stockDetail.consumedComponentFields?.chart).toContain('minHeight')
+    expect(applicableComponentFields(stockDetail, 'chart').map((field) => field.key)).toContain('minHeight')
     expect(stockDetail.layout.slots.find((slot) => slot.id === 'chart')).toMatchObject({
       component: 'chart',
       parentId: 'detail',
@@ -763,7 +757,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
     })
     expect(sourceForPage('stock-detail')).toContain("componentValueOf('chart', 'minHeight')")
 
-    expect(sectorDetail.consumedComponentFields?.chart).toContain('minHeight')
+    expect(applicableComponentFields(sectorDetail, 'chart').map((field) => field.key)).toContain('minHeight')
     expect(sectorDetail.layout.slots.find((slot) => slot.id === 'chart')).toMatchObject({
       component: 'chart',
       parentId: 'detail',
@@ -772,7 +766,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
     expect(sourceForPage('sectors-detail')).toContain("componentValueOf('chart', 'minHeight')")
 
     expect(sectorWorkbench.layout.slots.find((slot) => slot.id === 'chart')?.component).toBe('chart')
-    expect(sectorWorkbench.consumedComponentFields?.chart ?? []).not.toContain('minHeight')
+    expect(applicableComponentFields(sectorWorkbench, 'chart').map((field) => field.key)).not.toContain('minHeight')
   })
 
   it('板块列表与详情恢复默认同时重置业务偏好和组件配置', () => {
@@ -792,10 +786,7 @@ describe('组件消费关系与配置一致性（P4）', () => {
       const source = sourceForPage(entry.pageKey)
       expect(source, `${entry.pageKey} 使用表格组件但无法从 router 定位 Vue 页面源码`).not.toBe('')
       for (const slot of tableSlots) {
-        expect(
-          entry.consumedComponentFields?.[slot.id] ?? [],
-          `${entry.pageKey}.${slot.id} 表格 slot 必须消费 border 配置`,
-        ).toContain('border')
+        expect(applicableComponentFields(entry, slot.id).map((field) => field.key)).toContain('border')
         expect(
           source.includes(`tableBorder('${slot.id}')`) || source.includes(`tableBorder("${slot.id}")`),
           `${entry.pageKey}.${slot.id} 表格 slot 必须真实传入 :border="tableBorder('${slot.id}')"`,
@@ -840,13 +831,13 @@ describe('组件消费关系与配置一致性（P4）', () => {
       for (const [slotId, meta] of Object.entries(entry.componentMeta ?? {})) {
         if (!meta.sortFields?.length) continue
 
-        const consumed = entry.consumedComponentFields?.[slotId] ?? []
-        expect(
-          consumed,
-          `${entry.pageKey}.${slotId} 声明 sortFields 后必须消费 defaultSort，保证列头排序和设置抽屉默认排序同源`,
-        ).toContain('defaultSort')
+        expect(applicableComponentFields(entry, slotId).map((field) => field.key)).toContain('defaultSort')
 
         const defaultSort = entry.layout.slots.find((slot) => slot.id === slotId)?.config?.defaultSort
+        expect(
+          defaultSort,
+          `${entry.pageKey}.${slotId} 声明 sortFields 后必须在 slot.config 声明安全默认排序`,
+        ).toBeDefined()
         if (defaultSort == null) continue
         const defaultSortField = String(defaultSort).split(':')[0]
         const sortKeys = meta.sortFields.map((field) => field.key)
@@ -950,9 +941,9 @@ describe('组件消费关系与配置一致性（P4）', () => {
     // 并统一交给 useComponentPageSizeSession 初始化会话态，分页器改动不回写配置层。
     // 用 sourceForPage 精确映射页面，避免按 slotId 全局 grep 误配。
     for (const entry of PAGE_REGISTRY) {
-      const pageSizeSlots = Object.entries(entry.consumedComponentFields ?? {})
-        .filter(([, fields]) => (fields ?? []).includes('pageSize'))
-        .map(([slotId]) => slotId)
+      const pageSizeSlots = entry.layout.slots
+        .filter((slot) => applicableComponentFields(entry, slot.id).some((field) => field.key === 'pageSize'))
+        .map((slot) => slot.id)
       if (!pageSizeSlots.length) continue
 
       const source = sourceForPage(entry.pageKey)

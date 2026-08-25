@@ -76,11 +76,11 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf,
+  componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(detailLayout)
 
 // 抽屉的布局与图表区域高度由 PageSettingsDrawer 按 pageRegistry 元数据统一渲染。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 const chartDefaultHeight = Number(
   detailLayout.slots.find((slot) => slot.id === 'chart')?.config?.minHeight,
 )

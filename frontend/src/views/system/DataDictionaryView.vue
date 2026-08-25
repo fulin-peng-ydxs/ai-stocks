@@ -48,7 +48,7 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf,
+  componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(baseLayout)
 const drawerConfig = {
   knobs: layoutKnobs,
@@ -60,6 +60,7 @@ const drawerConfig = {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf,
+componentAllowedLayers,
 }
 
 const typeKeyword = ref('')

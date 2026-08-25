@@ -26,7 +26,10 @@ import {
   COMPONENT_CATALOG,
   getPageLayout,
   getComponentFieldDefs,
+  componentFieldApplicability,
+  componentMetaForSlot,
   listComponentUsage,
+  getPageEntry,
   type ComponentMeta,
   type ComponentState,
 } from '@/layout'
@@ -86,6 +89,17 @@ interface ComponentRow extends ComponentMeta {
   configurableFields: ConfigurableField[]
   /** 消费该组件的页面（按页面去重，附 slot 数）。 */
   usagePages: string[]
+  usageCoverage: UsageCoverageRow[]
+}
+
+interface UsageCoverageRow {
+  key: string
+  page: string
+  slot: string
+  field: string
+  status: 'inherited' | 'blocked' | 'not-applicable'
+  statusLabel: string
+  reason: string
 }
 
 const LAYER_LABELS: Record<string, string> = { preset: '预设', page: '页面', user: '个人' }
@@ -116,7 +130,36 @@ function buildRow(meta: ComponentMeta): ComponentRow {
   const byPage = new Map<string, number>()
   for (const u of usage) byPage.set(u.label, (byPage.get(u.label) ?? 0) + 1)
   const usagePages = [...byPage.entries()].map(([label, n]) => (n > 1 ? `${label}×${n}` : label))
-  return { ...meta, configurableFields, usagePages }
+  const usageCoverage: UsageCoverageRow[] = []
+  for (const item of usage) {
+    const entry = getPageEntry(item.pageKey)
+    const slot = entry?.layout.slots.find((candidate) => candidate.id === item.slotId)
+    if (!entry || !slot) continue
+    const slotMeta = componentMetaForSlot(entry, slot)
+    for (const def of fieldDefs.filter((field) => field.layers.includes('user'))) {
+      const applicability = componentFieldApplicability(def, slotMeta)
+      const allowed = policyMap.value.get(`${meta.kind}.${def.key}`)?.allowedLayers ?? def.layers
+      const status: UsageCoverageRow['status'] = !applicability.applicable
+        ? 'not-applicable'
+        : allowed.includes('user')
+          ? 'inherited'
+          : 'blocked'
+      usageCoverage.push({
+        key: `${item.pageKey}.${item.slotId}.${def.key}`,
+        page: entry.label,
+        slot: `${slot.label || slot.id}（${slot.id}）`,
+        field: def.label,
+        status,
+        statusLabel: status === 'inherited' ? '自动继承' : status === 'blocked' ? '策略关闭' : '不适用',
+        reason: status === 'inherited'
+          ? '组件种类个人字段自动进入该页面抽屉'
+          : status === 'blocked'
+            ? '当前字段开放策略不包含个人层'
+            : applicability.reason,
+      })
+    }
+  }
+  return { ...meta, configurableFields, usagePages, usageCoverage }
 }
 
 async function loadPolicies(): Promise<void> {
@@ -480,6 +523,35 @@ function sizeText(meta: ComponentRow, key: 'W' | 'H'): string {
               <el-tag v-for="p in selected.usagePages" :key="p" size="small" type="info" effect="plain">{{ p }}</el-tag>
               <span v-if="!selected.usagePages.length" class="muted">暂无页面消费</span>
             </div>
+          </div>
+
+          <div class="detail-block">
+            <div class="db-head">
+              <span class="db-title">个人层自动继承覆盖</span>
+              <HelpHint text="组件种类中开放个人层的字段会自动进入所有适用 slot 的页面设置抽屉；不适用必须由实例候选缺失或明确例外解释，不能靠页面漏登记。" />
+            </div>
+            <AppDataTable
+              v-if="selected.usageCoverage.length"
+              :data="selected.usageCoverage"
+              size="small"
+              embedded
+              data-testid="component-user-field-coverage"
+            >
+              <AppTableColumn prop="page" label="页面" />
+              <AppTableColumn prop="slot" label="组件实例" />
+              <AppTableColumn prop="field" label="个人字段" />
+              <AppTableColumn label="状态">
+                <template #default="{ row }">
+                  <el-tag
+                    size="small"
+                    effect="plain"
+                    :type="row.status === 'inherited' ? 'success' : row.status === 'blocked' ? 'info' : 'warning'"
+                  >{{ row.statusLabel }}</el-tag>
+                </template>
+              </AppTableColumn>
+              <AppTableColumn prop="reason" label="依据" show-overflow-tooltip />
+            </AppDataTable>
+            <div v-else class="muted">该组件没有个人层字段，或尚无页面消费。</div>
           </div>
 
           <el-alert

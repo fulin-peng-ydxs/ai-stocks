@@ -27,7 +27,7 @@ flowchart TD
 | `.env.local` | 本机后端敏感变量模板的实际文件 | `start.sh` | 由 `./start.sh` 的服务、`dev-users` 和 `e2e-user` 动作统一读取；直接 `python -m backend.cli ...` 与 `./start-web.sh` 不自动读取 |
 | `config/settings.yaml` | 非敏感默认值、路径、端口、运行参数基线 | `backend/config/settings.py` | `get_settings()` 缓存；改 YAML 后需 `/api/config/reload` 或重启刷新缓存 |
 | PostgreSQL `app_config` | Web 系统设置白名单覆盖值 | `backend/storage/app_config.py` | `get_effective_settings()` 每次重合并，下一次读取即生效；PG 不可用时回落 YAML |
-| PG 布局配置表 | 布局预设、页面默认、组件字段开放策略、页面布局/组件用户层 | `backend/storage/layout_config.py` | `default < preset < page < user` 合并；平台层和用户层均由 PG 承载 |
+| PG 布局配置表 | 布局预设、页面默认、组件字段开放策略、页面布局/组件用户层 | `backend/storage/layout_config.py` | `effective` 一次返回 preset/page/user 层与字段策略，前端结合代码 default 按 `default < preset < page < user` 合并 |
 | PG 用户偏好表 | 主题、导航模式、页面业务偏好、K 线偏好、回测参数记忆、设置抽屉跨页面偏好 | `backend/storage/user_preference.py`、`/api/user-preferences` | 只保存当前登录用户自己的偏好；未登录或接口失败时前端使用本地 fallback |
 | 方案/业务表 | 评分、买卖、筛选、定时任务等业务配置 | 各 repo/service | 不属于环境变量链路，按对应模块的版本和权限规则生效 |
 

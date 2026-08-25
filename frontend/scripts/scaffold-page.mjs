@@ -113,9 +113,10 @@ const {
   setComponentKnob,
   componentSourceOf,
   componentLayerValuesOf,
+  componentAllowedLayers,
 } = useRemoteLayoutConfig(pageLayout)
 
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, layerValuesOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, componentLayerValuesOf }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, layerValuesOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, componentLayerValuesOf, componentAllowedLayers }
 </script>
 
 <template>

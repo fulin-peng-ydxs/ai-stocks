@@ -61,11 +61,11 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf,
+  componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(scheduleLayout)
 
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 
 // 表格列显隐/边框消费（对齐 QualityView 模式）：字段由 pageRegistry.componentMeta.columns 提供候选
 const jobHiddenColumns = computed<string[]>(() => (componentValueOf('jobTable', 'hiddenColumns') as string[]) ?? [])

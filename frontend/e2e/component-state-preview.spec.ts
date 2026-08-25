@@ -56,6 +56,11 @@ test.describe('系统组件四态预览', () => {
     )).toBe(560)
     await expect(drawer).toContainText('业务页面仍需接入真实数据并单独通过四态测试')
     await expect(preview).toHaveAttribute('data-state', 'ready')
+    const coverage = page.getByTestId('component-user-field-coverage')
+    await expect(coverage).toContainText('用户管理')
+    await expect(coverage).toContainText('默认分页大小')
+    await expect(coverage).toContainText('自动继承')
+    await expect(coverage).toContainText('该组件实例不承载分页')
 
     const readyBox = await preview.boundingBox()
     expect(readyBox).not.toBeNull()

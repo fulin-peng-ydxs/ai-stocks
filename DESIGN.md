@@ -181,7 +181,7 @@ Key Characteristics：
 - 页面外壳、slot、滚动归属、可配置字段必须走系统组件种类和 `pageRegistry`。
 - 真实 UI 行为优先复用真实复用组件；当同类控件在两个及以上页面出现，或承载全局交互规则时，必须登记到下方“真实复用组件清单”。
 - 真实组件只有需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器时，才新增或关联系统组件种类。
-- `COMPONENT_CATALOG` 是系统允许的组件种类与能力词汇表，允许先登记当前尚无页面消费者的 kind，供 schema、预览和后续布局选型复用；“假配置”指 `COMPONENT_FIELD_DEFS` / `pageRegistry.consumedComponentFields` 暴露了页面并未真实读取应用的 Web 字段。已有真实复用组件时仍禁止页面复制同类控件行为。
+- `COMPONENT_CATALOG` 是系统允许的组件种类与能力词汇表，允许先登记当前尚无页面消费者的 kind，供 schema、预览和后续布局选型复用；“假配置”指 `COMPONENT_FIELD_DEFS` 暴露了组件实例并未真实读取应用的 Web 字段。已有真实复用组件时仍禁止页面复制同类控件行为。
 
 系统组件页信息维护规则：
 
@@ -189,7 +189,7 @@ Key Characteristics：
 - `configCapabilities` 是英文能力 key 摘要，用于系统组件页展示组件具备的能力，不等同于“已开放 Web 配置字段”；不要为了展示把它本地化成另一套中文映射。
 - 组件 kind 的语义变化时，必须同步检查 `components.ts` 的 `label`、`description`、`configCapabilities`，`componentSchemas.ts` 的 config shape，`componentPreview.ts` 的预览归类，以及 `schema.ts` 中该 kind 的说明。
 - 系统组件页的可视化预览是给开发和验收人员对照组件形态、状态语义、文案与稳定占位的规范样板，不是业务页面截图，也不证明消费页面已经完成接入。`ready` 可使用代表性原型；`loading / empty / error` 必须直接复用 `AppStateBlock`，不得在预览层维护第二套状态视觉。
-- 只有真实可被页面设置、页面布局或预设消费的字段，才进入 `COMPONENT_FIELD_DEFS`、后端 `layout_config.py` 字段规则和 `pageRegistry.consumedComponentFields`；否则只能停留在 `componentSchemas.ts` 的结构校验或 `configCapabilities` 的能力摘要。
+- 只有真实可被页面设置、页面布局或预设消费的字段，才进入 `COMPONENT_FIELD_DEFS` 和后端 `layout_config.py` 字段规则。页面登记某个组件 slot 后自动继承该 kind 的字段；候选型能力由 `componentMeta`、结构型能力由 slot `config`、明确例外由 `fieldApplicability` 判定是否适用。
 - 改动系统组件信息后至少运行相关布局测试；改动预览四态时必须验证预览复用 `AppStateBlock`；涉及前端源码时同时运行构建。
 
 核心真实复用组件清单：
@@ -200,7 +200,7 @@ Key Characteristics：
 | `PageSettingsTrigger` | `frontend/src/components/PageSettingsTrigger.vue` | 页面设置统一入口 | 触发 registry 页面中的 `settings-drawer` | 仅 `pageRegistry.supportsPageSettings !== false` 的真实消费页面显示；平台布局管理页不开放个人设置，不登记假入口 |
 | `PageDrawer` | `frontend/src/components/PageDrawer.vue` | 页面级抽屉边界组件 | 无直接系统组件种类 | 页面打开的设置、详情、日志抽屉统一挂载到 `LayoutHost` 内容区；宽度只传 `sm/md/lg/xl/xxl/wide` 语义档位，禁止页面私传 px/%；`wide` 仅供日志、字段差异和长 JSON 等宽内容，`xxl` 供资产搜索等需更宽横向空间的复杂详情；禁止直接覆盖应用顶栏与导航 |
 | `LayoutHost` | `frontend/src/layout/components/LayoutHost.vue` | registry 页面统一布局、slot、滚动和 overlay 运行时宿主 | 消费 `PageLayout` 中登记的系统组件种类与区域 | 所有 registry 业务页面统一消费；页面不得绕过宿主手写页面外壳、主成长区、滚动归属或 overlay 边界 |
-| `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 消费 `pageRegistry.consumedComponentFields`、`componentMeta` 和 `COMPONENT_FIELD_DEFS` | 设置抽屉 user 层与页面布局编辑器 page 层共用；候选项可由页面按当前业务上下文传入运行时 meta 覆盖，避免不同面板的分区混显；枚举候选较多而使用下拉框时，输入框必须与 `PageSegmented` 共用连续底板、基础边框和明确聚焦态 |
+| `ComponentAutoSettings` | `frontend/src/components/ComponentAutoSettings.vue` | 组件特性唯一渲染器 | 按 slot kind 自动消费 `COMPONENT_FIELD_DEFS`，再结合 `componentMeta` / slot `config` / `fieldApplicability` 判定实例适用性 | 设置抽屉 user 层与页面布局编辑器 page 层共用；候选项可由页面按当前业务上下文传入运行时 meta 覆盖，避免不同面板的分区混显；布尔、枚举、数值、字符串和静态字符串多选控件按字段元数据通用渲染，动态候选字段复用专用安全渲染器 |
 | `SettingsGroup` | `frontend/src/components/SettingsGroup.vue` | 设置抽屉的分组容器 | 无直接系统组件种类 | 页面设置抽屉分组优先复用；不直接用于主内容区配置面板 |
 | `PageSettingSection` | `frontend/src/components/PageSettingSection.vue` | 页面设置业务选项分区 | 无直接系统组件种类 | `PageSettingsDrawer` 的业务选项统一复用；不得在页面内复制标题、说明和分区间距 |
 | `ConfigPanelSection` | `frontend/src/components/config/ConfigPanelSection.vue` | 主内容区配置面板的可折叠分组容器 | 对应 `config-panel` 种类；读取 `collapsibleSections`、`defaultCollapsed`、`showGroupDescription`、`showSectionDescription` | 系统设置等主面板配置分组优先复用；配置项中可作为单块纯文本理解的说明/默认值放 `HelpHint`，需要结构化排版时改用 `HelpTip`；一级组说明在组头展示，二级分区说明随分区内容一起展开/收起 |
@@ -292,7 +292,7 @@ Key Characteristics：
 - 不使用隔行变色作为默认识别手段；当前全局样式会取消 stripe 背景。
 - 列宽按信息类型分配：编号、状态、日期、操作列稳定窄列；名称、标题、描述、备注更宽；数字列保持易比较。
 - `data-table` / `wide-table` 的稳定字段只要支持排序，就必须同时支持列头直接排序和设置抽屉默认排序；分页表优先服务端排序，纯本地完整数据表可用 Element Plus 本地排序。
-- `pageRegistry.componentMeta[slot].sortFields` 是可交互排序字段和默认排序候选的单一事实源；登记了 `sortFields` 的 slot 必须在 `consumedComponentFields` 消费 `defaultSort`，页面表格必须把对应列接入 `sortable` / `@sort-change`。**反向契约**：页面列头可排序的字段必须登记进 `sortFields`，二者双向一致，由 `pageRegistry.spec.ts` 契约测试强制拦截漂移。
+- `pageRegistry.componentMeta[slot].sortFields` 是可交互排序字段和默认排序候选的单一事实源；登记后该 slot 自动继承 `defaultSort`，页面表格必须把对应列接入 `sortable` / `@sort-change`。**反向契约**：页面列头可排序的字段必须登记进 `sortFields`，二者双向一致，由 `pageRegistry.spec.ts` 契约测试强制拦截漂移。
 - 操作列、展开列、按钮列、开关列、多值标签组合列、长说明/详情文本列默认不排序；若业务需要排序，必须明确映射到稳定字段并登记到 `sortFields`。
 - 操作列和列表项操作区优先单行可见；行内按钮组优先使用 `AppRowActions`，普通操作使用常规正文色，禁用操作降为弱文本色并满足语义 token 规则定义的文字层级阈值；hover / focus-visible 只做轻量文字色反馈，不对整组做透明度显隐；操作过多时用轻量“更多”菜单、分组、详情入口或抽屉，不用多行按钮堆叠；`AppRowActions` 按操作列实际宽度自适应折叠，放不下的按钮自动收进“更多”菜单，不硬截断；“更多”菜单不得引入重动画、布局跳动或遮挡表格内容，菜单命令仍消费 Element Plus 按钮的 disabled/loading 状态。
 - 宽表通过表体横向滚动承载，不让整页横向滚动。
@@ -372,7 +372,7 @@ Key Characteristics：
 - 「组件设置」段与系统管理→布局配置→**页面布局**编辑器的「组件特性」**共用唯一渲染器** `components/ComponentAutoSettings.vue`（抽屉=user 层、页面布局编辑器=page 层，经 `layer`/`slotIds`/`allowedLayersOf`/`collapsibleSlot`/`clearable` 适配），不得另写第二套组件特性表单。
 - 折叠规则统一：每个 slot 为可折叠组（`SettingsGroup` level 2；编辑器聚焦单 slot 时仅作标题锚点不折叠）；多行清单类特性（列显隐）为可折叠子组（level 3）；单字段为叶子不折叠。深层标题字号随层级递减但不低于正文。
 - **页面可改动属性单向默认机制**：抽屉/组件配置层只提供**默认值**，页面主区可直接交互改动的属性必须用独立会话 ref 承载；重复的默认值投影统一复用 `composables/useDefaultedSessionValue.ts`，组件配置分页统一经 `composables/useComponentPageSizeSession.ts` 完成默认值解析、会话投影、归页和重载，**页面改动只进会话态、绝不写回默认值**——刷新/重进页面后重新应用抽屉默认。这样「默认」才有意义：用户临时改动不污染长期偏好。禁止可写 computed 或主区 `v-model` 直写持久层；设置抽屉内的默认值编辑，以及带有明确“设为默认”语义的显式操作，才是默认值持久化入口。初始化优先级固定为：先完成页面业务偏好与远端布局默认值水合，再应用 URL query、返回列表态等显式会话恢复，最后才接受用户交互；迟到的默认值不得清除已经恢复的显式会话覆盖。URL query/分享链接恢复只写会话 ref，不触碰默认。**会话态清单**（本就该会话级、也不进抽屉）：纯查询条件（关键字/日期口径/方案选择）、业务资产选择、运行参数（如回测日期、所选方案和当次执行参数）。
-- **新增属性登记判断（开发闭环必经步骤）**：新增页面、改造页面或给页面/组件新增任何可交互属性后，必须逐一回答三个问题再收尾——①该属性是否需要跨会话记住（默认值/偏好）？②需要时登记到哪条链路（业务偏好进 `usePageSettings` defaults + `#business` 插槽；组件展示字段按 §7.3 进 `consumedComponentFields`/`componentMeta`/`COMPONENT_FIELD_DEFS`/后端规则）？③需要默认值时页面是否已按上条单向机制消费（读默认初始化会话 ref、不写回）？三问任一答「是」却未落地，即视为本次改动未完成。反向同样成立：不再需要或语义失效的已登记项（如已被主区表单覆盖、关闭后无法再开启的开关）必须及时下线，不得在抽屉里堆积死项。
+- **新增属性登记判断（开发闭环必经步骤）**：新增页面、改造页面或给页面/组件新增任何可交互属性后，必须逐一回答三个问题再收尾——①该属性是否需要跨会话记住（默认值/偏好）？②需要时登记到哪条链路（业务偏好进 `usePageSettings` defaults + `#business` 插槽；组件展示字段按 §7.3 进 `COMPONENT_FIELD_DEFS`/后端规则，页面 slot 自动继承，仅候选或实例例外进 `componentMeta`）？③需要默认值时页面是否已按上条单向机制消费（读默认初始化会话 ref、不写回）？三问任一答「是」却未落地，即视为本次改动未完成。反向同样成立：不再需要或语义失效的已登记项必须及时下线，不得在抽屉里堆积死项。
 
 ## 5. Layout Principles
 
@@ -507,33 +507,35 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 
 `slots.<slotId>.config.<field>`
 
-字段事实源为 `COMPONENT_FIELD_DEFS`。只登记页面真实消费的字段，不预设无消费项。新增字段必须同时满足：
+字段事实源为 `COMPONENT_FIELD_DEFS`。它描述组件 kind 真实支持的属性；页面只要登记该 kind 的 slot，就按 `default < preset < page < user` 自动继承适用字段，禁止再维护逐页字段白名单。新增字段必须同时满足：
 
 - 字段在 `COMPONENT_FIELD_DEFS` 中声明 label、control、layers、默认值和值域。
 - `componentSchemas.ts` 接受该字段。
 - 后端 `layout_config.py` 同步字段规则和归属校验；同名字段在不同组件种类中值域不同时，静态值域必须按 `(component kind, field)` 维护，不得只按字段名合并。
-- 消费页面在 `pageRegistry.consumedComponentFields` 登记。
+- 适用性为 `always` 的字段自动进入每个同 kind slot；候选型字段由 `componentMeta.columns/sortFields/tabs/collapseSections` 有值时自动启用；结构型字段由 slot `config` 声明，例如 `pagination: true` 启用 `pageSize`。
+- 实例明确不适用时必须在 `componentMeta.fieldApplicability[field]` 设置 `enabled: false` 并填写原因；不得以“没登记”隐式漏掉字段。
 - 页面通过 `componentMeta` 提供安全枚举（列、可交互排序字段、tabs 等）。
 - `componentMeta.columns` 只声明列显隐候选，不负责生成业务表格列；每个候选 key 必须在消费页面进入真实显隐判断并控制对应列或列内业务片段。该正向消费关系由 `pageRegistry.spec.ts` 契约测试强制，禁止“设置里可勾选、页面没有可渲染节点”的假配置。
 - 页面实际读取并应用字段值。
-- 配置中心和设置抽屉可按层级渲染。
-- 测试覆盖合并、越权、类型和值域。
+- 配置中心和设置抽屉共用 `ComponentAutoSettings`，且同时受字段代码最大层级与管理员当前开放策略限制。
+- 普通页面从 `/layout/effective/{pageKey}` 一次获取 preset/page/user 层和字段开放策略，前端结合本地 default 做四层合并；历史上已存但现策略禁止或实例不适用的值必须丢弃。
+- 测试覆盖自动继承、实例适用性、四层合并、策略收紧、越权、类型和值域。
 
 当前受控字段摘要：
 
-下表只记录字段和开放层级；消费页面、slot、候选列、排序字段和 tab 项不在 DESIGN 手写维护，统一以 `pageRegistry.consumedComponentFields`、`componentMeta` 和 `COMPONENT_FIELD_DEFS` 为准。`data-table` / `wide-table` 的 `border` 由 `pageRegistry.ts` 对所有表格 slot 自动补登，并由 `pageRegistry.spec.ts` 校验真实页面接入。
+下表只记录字段和开放层级；消费页面、slot、候选列、排序字段和 tab 项不在 DESIGN 手写维护，统一以 `COMPONENT_FIELD_DEFS`、slot `config` 和 `componentMeta` 为准。`pageRegistry.spec.ts` 校验每个适用字段都被页面真实消费，且明确例外都有原因。
 
 | 组件 | 字段 | 层级 | 归属事实源 |
 |---|---|---|---|
-| `data-table` | `border` | page | 全部 `data-table` slot 自动补登；页面需实际消费 `tableBorder(slotId)` |
-| `data-table` | `pageSize` | preset/page/user | 消费 slot 以 `pageRegistry.consumedComponentFields` 为准 |
+| `data-table` | `border` | page | 全部 `data-table` slot 自动继承；页面需实际消费 `tableBorder(slotId)` |
+| `data-table` | `pageSize` | preset/page/user | slot `config.pagination=true` 时自动启用 |
 | `data-table` | `defaultSort` | page/user | 候选排序字段以 `componentMeta.sortFields` 为准 |
 | `data-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
-| `wide-table` | `border` | page | 全部 `wide-table` slot 自动补登；页面需实际消费 `tableBorder(slotId)` |
-| `wide-table` | `pageSize` | preset/page/user | 消费 slot 以 `pageRegistry.consumedComponentFields` 为准 |
+| `wide-table` | `border` | page | 全部 `wide-table` slot 自动继承；页面需实际消费 `tableBorder(slotId)` |
+| `wide-table` | `pageSize` | preset/page/user | slot `config.pagination=true` 时自动启用 |
 | `wide-table` | `defaultSort` | page/user | 候选排序字段以 `componentMeta.sortFields` 为准 |
 | `wide-table` | `hiddenColumns` | page/user | 候选列以 `componentMeta.columns` 为准 |
-| `chart` | `minHeight` | page/user | 由独立详情行情的图表 slot 登记；控制包含标题和完整画布的区域高度，页面必须保留内部图表安全下限；随视口填充的主从工作台和流程内局部图表不机械套用 |
+| `chart` | `minHeight` | page/user | 图表 slot 以 `config.minHeight` 明确开放；自适应高度的工作台通过 `fieldApplicability.minHeight` 明确关闭并说明原因 |
 | `tabs` | `defaultActive` | page/user | 仅在页面登记 tabs slot 且 `componentMeta.tabs` 提供候选时渲染 |
 | `settings-drawer` | `size`、`defaultCollapsed` | preset/page/user（全局偏好持久化） | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot；具体 slotId 不作为存储判定条件 |
 | `settings-drawer` | `bodyScroll`、`collapsibleSections` | preset/page | `supportsPageSettings !== false` 的 registry 页面共享 `settings` overlay slot |
@@ -632,7 +634,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 | `sectors-detail` | `SectorDetailView`（板块详情） | `detail` | `density` | action:`toolbar` / main:`detail` / nested:`chart` / nested:`data-table` |
 <!-- page-registry:end -->
 
-除 `supportsPageSettings=false` 的预设管理、页面布局、系统组件三个平台管理页外，registry 页面必须有 `settings-drawer` overlay slot。三个管理页只管理系统配置，不开放或持久化个人页面设置。组件字段、slot 细节和候选项事实源在 `COMPONENT_FIELD_DEFS`、`pageRegistry.consumedComponentFields` 和 `componentMeta`，不要在本表重复维护。
+除 `supportsPageSettings=false` 的预设管理、页面布局、系统组件三个平台管理页外，registry 页面必须有 `settings-drawer` overlay slot。三个管理页只管理系统配置，不开放或持久化个人页面设置。组件字段、slot 结构、候选项和明确例外的事实源在 `COMPONENT_FIELD_DEFS`、slot `config` 和 `componentMeta`，不要在本表重复维护。
 
 ## 10. Scope & Exceptions
 

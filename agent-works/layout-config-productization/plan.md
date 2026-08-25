@@ -141,7 +141,7 @@ P9~P16 已全部完成。本文保留为开发计划、验收拆分和实施追�
 
 1. `pageRegistry` 为业务页面补 `settings` overlay slot。
 2. `PageSettingsDrawer` 固定布局 / 组件设置 / 业务选项三段。
-3. `ComponentAutoSettings` 根据 `consumedComponentFields` 和 `componentMeta` 自动渲染组件配置。
+3. `ComponentAutoSettings` 根据 slot kind 自动继承字段，再结合 slot `config` 和 `componentMeta` 渲染适用的组件配置。
 4. `SettingsGroup` 支持多级折叠标题。
 5. 页面只保留业务选项声明，组件设置不再手写。
 

@@ -381,7 +381,7 @@ CREATE TABLE IF NOT EXISTS user_preference (
 - 边界与异常：旧 localStorage 中的 `defaultCollapsed` 不自动视为用户明确默认设置。
 - 验证方式：Vitest 覆盖合并来源、保存 payload 带 layout、403 fallback、加载态、竞态保护；浏览器验证跨页面抽屉尺寸共享。
 - 完成标准：刷新、换页面后 PG 中用户偏好回显；点击临时展开不改变默认折叠配置；组件路径保存不触发后端归属校验错误。
-- 实际落地情况：已完成。`useLayoutConfig` 新增 `applyUserConfig`、`exportUserConfig`、`userConfigValues` 和拉取前 dirty path 保护，远端用户层返回时不会覆盖拉取期间的本地编辑；旧 `ai-stocks:layout-cc:<pageKey>` 中的 `slots.settings.config.size/defaultCollapsed` 不再自动进入页面用户层。`useRemoteLayoutConfig` 并行拉取 page/user 两层，用户修改布局旋钮或组件字段后 300ms debounce 保存 `/api/layout/users/{pageKey}`，payload 含 `{ schemaVersion, values }` 和真实 `PageLayout`。新增 `useDrawerPreferences` 与 `userPreferences` API 封装，`PageSettingsDrawer` 的 `settings-drawer.size/defaultCollapsed` 读写改走 `user_preference(global/settings-drawer)`，同时覆盖来源展示为 user；后续复用整改已把 `useDrawerPreferences` 的远端同步内核收敛到 `useGlobalPreferenceSync`。复用判断：继续复用既有 `useLayoutConfig`/`useRemoteLayoutConfig`/`PageSettingsDrawer`/`ComponentAutoSettings`，抽屉自身偏好统一由 `useDrawerPreferences` 消费共享同步内核；没有引入页面私有实现。
+- 实际落地情况：已完成。`useLayoutConfig` 提供 `applyUserConfig`、`exportUserConfig`、`userConfigValues` 和拉取前 dirty path 保护，远端用户层返回时不会覆盖拉取期间的本地编辑；旧 `ai-stocks:layout-cc:<pageKey>` 中的 `slots.settings.config.size/defaultCollapsed` 不再自动进入页面用户层。`useRemoteLayoutConfig` 从 `/layout/effective/{pageKey}` 一次拉取 preset/page/user 三层和组件字段开放策略，再与代码 default 合并；用户修改布局旋钮或组件字段后 300ms debounce 保存 `/api/layout/users/{pageKey}`，payload 含 `{ schemaVersion, values }` 和真实 `PageLayout`。`PageSettingsDrawer` 的 `settings-drawer.size/defaultCollapsed` 读写走 `user_preference(global/settings-drawer)`，远端同步内核收敛到 `useGlobalPreferenceSync`。复用判断：继续复用既有 `useLayoutConfig`/`useRemoteLayoutConfig`/`PageSettingsDrawer`/`ComponentAutoSettings`，没有引入页面私有实现。
 
 ### 6.8 任务 T8：前端业务偏好远端化
 

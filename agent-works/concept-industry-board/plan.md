@@ -22,7 +22,7 @@
 - DDL 与维度：[ddl.py](../../backend/storage/ddl.py)（`_DIMENSION_SEED:708`，seed 在 :778 幂等）。
 - 质检：[data_report.py](../../backend/services/data_report.py)（`data_quality_issue` 扫描与状态枚举 `open → fixing → resolved`、`ignored`）。
 - 权限：[auth/constants.py](../../backend/auth/constants.py)（`SHARED_RESOURCE_CODES:27`、`BUSINESS_RESOURCE_CODES:38`）；[pg_ddl.py](../../backend/storage/pg_ddl.py)（`_SEED_MENU_TREE:781` quotes 下已有 `/stocks`、`/board`；`_SEED_RESOURCES:847` 起；`perm_ver` 契约 :82/:1298/:1401；回填 marker 幂等模式 :934/:1114，参照 `asset-publish-open.sql` 确定性基线恢复）。
-- 前端基座：[pageRegistry.ts](../../frontend/src/layout/pageRegistry.ts)（`consumedComponentFields:51`、`componentMeta:59`、`groupTable` 嵌套 slot 模式 :204-257）；[page-template.md](../configurable-layout-system/page-template.md) 新页面固定流程；[DESIGN.md](../../DESIGN.md) §5 可配置布局系统。
+- 前端基座：[pageRegistry.ts](../../frontend/src/layout/pageRegistry.ts)（slot kind 自动继承字段、`componentMeta`、`groupTable` 嵌套 slot 模式）；[page-template.md](../configurable-layout-system/page-template.md) 新页面固定流程；[DESIGN.md](../../DESIGN.md) §5 可配置布局系统。
 - 页面样板：[StocksView.vue](../../frontend/src/views/StocksView.vue)（list）、[StockDetailView.vue](../../frontend/src/views/StockDetailView.vue)（detail）、[QualityView.vue](../../frontend/src/views/data/QualityView.vue)（质检列表复用）。
 - 配置：[settings.py](../../backend/config/settings.py)（`get_effective_settings:372`）。
 - 依赖核实：`py_mini_racer` 本机已可 import（随 akshare 传递依赖引入），生产直接 import 需在 `requirements.txt`/`pyproject.toml` 显式声明。
@@ -84,7 +84,7 @@ R1、R2、R3、R4、R5、R6、R7、R8、R9、R10、R21、R22、R23、R26（逐�
 - P1 选用原型：`list`。理由：单主表 + 顶部筛选 action 区，与 StocksView 同构；原型文件 `prototypes/sector-board.html` 即按 list 结构绘制。不需要新增布局原型。
 - P2 选用原型：`detail`。理由：摘要区 + 主区 detail（图表 + 嵌套成分股表），与 StockDetailView 同构；原型文件 `prototypes/sector-detail.html`。不需要新增布局原型。
 - 新增运行时复用组件：无（全复用 `AppDataTable`/`AppTableColumn`/`AppPagination`/`AppStateBlock`/`AppRowActions`/`PageSegmented`/`PageSettingsDrawer`/`TradeDatePicker`/`LayoutHost`/`usePageSettings`/`useEChartsTheme`；走势图为本页业务组件内 ECharts 实例，不沉淀通用组件）。
-- 配置化接入：`sectors`、`sectors-detail` 两个 pageKey 进 pageRegistry；组件字段经 `componentMeta`/`consumedComponentFields`/`componentValueOf` 承载；业务偏好走 `usePageSettings`。
+- 配置化接入：`sectors`、`sectors-detail` 两个 pageKey 进 pageRegistry；组件字段经 slot kind 自动继承，由 `componentMeta`/`componentValueOf` 承载候选与实际消费；业务偏好走 `usePageSettings`。
 
 #### Slot 与组件设计
 
@@ -168,7 +168,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 | 页面/区域 | 运行时复用组件 | 布局或配置组件种类 | 组件配置字段/页面注册 | 设计规范或组件清单更新 | 真实消费与验证 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- |
-| P2 全页 | 复用（走势图为本页业务组件内 ECharts 实例） | 复用 | 新增 `sectors-detail` pageKey 注册 + `memberTable` 嵌套 slot（componentMeta sortFields=pct/code；consumedComponentFields=pageSize/defaultSort/hiddenColumns） | 是：DESIGN.md `page-registry` 区块补一行 | SectorDetailView 真实消费 + pageRegistry.spec.ts 契约测试 | T12、T15 |
+| P2 全页 | 复用（走势图为本页业务组件内 ECharts 实例） | 复用 | 新增 `sectors-detail` pageKey 注册 + `memberTable` 嵌套 slot（pagination=true，componentMeta sortFields=pct/code，按 kind 自动继承列/排序/分页字段） | 是：DESIGN.md `page-registry` 区块补一行 | SectorDetailView 真实消费 + pageRegistry.spec.ts 契约测试 | T12、T15 |
 
 ### 4.3 页面 P3（数据质量页）技术实现
 
@@ -369,7 +369,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 
 - 状态：已完成（2026-08-11 T11 执行）
 - 依赖：T8（接口）、T10a（常量 + seed）；开工前先按 page-template.md §1 把原型/组件选型结论同步用户（本计划 §4 已给推荐与理由）
-- 涉及文件/模块：`frontend/src/views/SectorsView.vue`（新增，优先 `npm run scaffold-page -- --pageKey sectors --label 板块行情 --archetype list`）、`frontend/src/router/index.ts`（`/sectors`）、[pageRegistry.ts](../../frontend/src/layout/pageRegistry.ts)（`sectors` pageKey：slots/consumedComponentFields/componentMeta sortFields）、`frontend/src/api/sectors.ts`（新增 API 封装）、[DESIGN.md](../../DESIGN.md)（page-registry 区块登记）
+- 涉及文件/模块：`frontend/src/views/SectorsView.vue`（新增，优先 `npm run scaffold-page -- --pageKey sectors --label 板块行情 --archetype list`）、`frontend/src/router/index.ts`（`/sectors`）、[pageRegistry.ts](../../frontend/src/layout/pageRegistry.ts)（`sectors` pageKey：slots/config/componentMeta sortFields）、`frontend/src/api/sectors.ts`（新增 API 封装）、[DESIGN.md](../../DESIGN.md)（page-registry 区块登记）
 - 目标：R7、R10 + R22/R23 列表页部分，逐项承接 §4.1 功能点表与原型区域。
 - 操作：action 区全市场/自选、板块类型、交易日、搜索防抖与查询主命令；排序走列头；筛选态写 URL query；进详情携带来源 query；业务默认项由 `usePageSettings('sectors')` 承载，表格字段由 `componentValueOf('table', ...)` 承载；四态与权限态完整。
 - 产出：页面 + 路由 + registry 登记 + API 封装 + Vitest（筛选态还原、偏好优先级 URL>保存>默认、非法值回落）。
@@ -492,7 +492,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
   - 计划：T15 Playwright（列表筛选/排序/搜索/分页/列显隐、详情走势图周期/成分股统一分页、返回筛选态两路径、R9 权限两态、质检页 `board_member_incomplete` 重采）。
   - 具体完成情况：板块核心工作台三视口已覆盖列表、自选、指数基准、周期缩放、走势/K 线、量能、详情、返回与个股正向跳转；标准视口覆盖搜索、排序、分页、列显隐/恢复默认、无 `stocks:view` 的成分股禁用及直达个股路由 fail-closed；质量页确定性用例覆盖 `board_member_incomplete` 重采与任务完成后收敛。
 - 组件资产闭环测试：
-  - 计划：`sectors`/`sectors-detail` pageRegistry 契约测试（memberTable 嵌套 slot、consumedComponentFields 指向真实 slot）；两页组件字段保存/读取/非法回退/恢复默认参数化矩阵；DESIGN.md page-registry 登记核对。
+  - 计划：`sectors`/`sectors-detail` pageRegistry 契约测试（memberTable 嵌套 slot、slot kind 字段自动继承与真实消费）；两页组件字段保存/读取/非法回退/恢复默认参数化矩阵；DESIGN.md page-registry 登记核对。
   - 具体完成情况：pageRegistry、组件字段、数值范围、详情图表高度及列表/详情双重恢复默认契约已覆盖；2026-08-14 当前 HEAD 的实际结果见本节“回归测试”，历史数量不再作为当前绿色依据。
 - 权限与数据范围测试：
   - 计划：T10a/T10b 后端权限测试 + T14 前端菜单/守卫验收（最小权限调试账号，先读 `agent-works/multi-tenant-rbac/test-users.md`）。

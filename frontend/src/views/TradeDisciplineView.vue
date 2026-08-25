@@ -76,7 +76,7 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf,
+  componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(pageLayout)
 const drawerConfig = {
   knobs: layoutKnobs,
@@ -88,6 +88,7 @@ const drawerConfig = {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf,
+componentAllowedLayers,
 }
 const { reset: resetPageSettings } = usePageSettings(PAGE_KEY, {})
 const settingsOpen = ref(false)

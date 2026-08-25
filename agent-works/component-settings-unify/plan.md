@@ -29,7 +29,7 @@
 |---|---|
 | 页面定位 | 改造页面：运行时**页面设置抽屉**「组件设置」段 + 系统管理→布局配置→**页面布局**编辑器「组件特性配置」。主流程：用户/管理员按层级调组件展示能力。 |
 | 布局选型 | 不改原型、不改 slot、不改页面业务结构。仅改组件特性的**渲染组件与折叠交互**。无新增原型。 |
-| Slot 与组件设计 | 不变。仍按 `pageRegistry.consumedComponentFields` × `componentMeta` 驱动。 |
+| Slot 与组件设计 | 按 slot kind 自动继承 `COMPONENT_FIELD_DEFS`，再由 slot `config` 和 `componentMeta` 驱动实例适用性。 |
 | 配置设计 | 不新增字段、不改字段层级。沿用 `slots.<id>.config.<field>` 四层合并；抽屉=user 层、页面布局=page 层。 |
 | 复用与新增判断 | **删除** `ComponentSettingsSection.vue`；**泛化** `ComponentAutoSettings.vue` 为唯一共享渲染器（新增可选 props 适配 page 层 / 单 slot 聚焦 / 字段策略 / 高亮 / 清除），复用既有 `SettingsGroup`、`PageSegmented`、`SourceTag`、`PageToggleRow`。不新增组件种类 / 配置字段 / 页面业务态。 |
 | 维护清单 | 改：`ComponentAutoSettings.vue`、`LayoutPagesView.vue`、`SettingsGroup.vue`；删：`ComponentSettingsSection.vue`；同步 `DESIGN.md` 组件特性渲染说明。`pageRegistry` / 字段元数据 / 后端规则 / schema **不变**。 |

@@ -131,6 +131,7 @@ const {
   setComponentKnob,
   componentSourceOf,
   componentLayerValuesOf,
+  componentAllowedLayers,
   whenRemoteHydrated,
 } = useRemoteLayoutConfig(sectorsLayout)
 const drawerConfig = {
@@ -143,6 +144,7 @@ const drawerConfig = {
   setComponentKnob,
   componentSourceOf,
   componentLayerValuesOf,
+  componentAllowedLayers,
 }
 
 const DEFAULT_SORT = 'pct_today:desc'

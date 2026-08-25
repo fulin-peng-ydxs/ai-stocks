@@ -287,7 +287,7 @@
 - **功能描述**：列表/详情页业务偏好（`usePageSettings`）与组件字段（`layout_user_config`）的保存/读取/消费/回退闭环，及构建/布局/视口验收。
 - **前置条件**：阶段五页面实现。
 - **操作流程**：
-  - 列表页 `usePageSettings('sectors', {defaultType, defaultScope, defaultChartMode, benchmarkCode})` + `consumedComponentFields`（pageSize/defaultSort/hiddenColumns）。
+  - 列表页 `usePageSettings('sectors', {defaultType, defaultScope, defaultChartMode, benchmarkCode})`；表格 slot 按 kind 自动继承 pageSize/defaultSort/hiddenColumns。
   - 详情页范围直接复用全局 `useKlinePrefs`，不再维护页面私有周期偏好；成分表设置走 `memberTable` 组件字段。
   - 设置抽屉「恢复默认」：同时重置业务偏好（`reset()`）与组件字段（`resetLayout`）。
   - 非法偏好值回落默认并提示；URL query > 已保存偏好 > 默认值优先级。
@@ -404,7 +404,7 @@ board_fund_flow   板块资金流
 **pageRegistry/组件契约（列表页，正文登记）**：
 - `sectors` pageKey：`getPageLayout('sectors')`，原型 `master-detail`，`responsiveProfile: 'mixed-panel'`，slot `action(filter-bar) + main(workspace) + workspace/table + workspace/chart`，`supportsPageSettings !== false` → **`overlay:settings-drawer` 自动补登**。
 - `componentMeta['table'].columns`：`name/pct_today/pct_5d/pct_10d/pct_20d/net_inflow/net_inflow_3d/net_inflow_5d/net_inflow_10d/net_inflow_20d`；各候选必须进入页面真实显隐判断，`pageRegistry.spec.ts` 拦截候选与渲染漂移。`sortFields` 同步覆盖各涨幅、各周期净流入和上涨家数。
-- `consumedComponentFields`：`sectors` 消费 `wide-table` 的 `pageSize/defaultSort/hiddenColumns`（`border` 自动补登）。
+- `sectors` 的 `wide-table` slot 自动继承 `border/pageSize/defaultSort/hiddenColumns`；分页与候选项分别由 slot `config` 和 `componentMeta` 声明。
 - `minWidth=0` 基础断点；主表横向滚动兜底。
 
 #### 7.1.1 页面功能点：板块列表筛选
@@ -471,9 +471,9 @@ board_fund_flow   板块资金流
   ```ts
   { id: 'memberTable', component: 'data-table', region: 'main', parentId: 'detail', label: '成分股', order: 2, config: { defaultSort: 'pct:desc' } }
   ```
-  消费契约经 `componentMeta['memberTable']`、`consumedComponentFields['memberTable']`、`componentValueOf('memberTable', ...)` 统一承载，**不落到 `main`/`detail` slot 上**（否则 pageRegistry.spec.ts 契约测试失败：消费字段必须指向真实 slot）。
+  消费契约经 `memberTable` 的 slot kind/`config`、`componentMeta['memberTable']`、`componentValueOf('memberTable', ...)` 统一承载，**不落到 `main`/`detail` slot 上**。
 - `componentMeta['memberTable'].sortFields`：`pct/code`（成分股排序字段码）。
-- `consumedComponentFields['chart']`：`minHeight`；`memberTable`：`pageSize/defaultSort/hiddenColumns`（统一分页模式）。
+- `chart` 按 kind 继承 `minHeight`；`memberTable` 按 kind 继承 `pageSize/defaultSort/hiddenColumns`（统一分页模式）。
 - 图表保持紧凑稳定，外层默认高度约 560px；内部 K 线与量能双面板完整可见，紧凑工作区最小高度 480px，不得通过裁切量能压缩高度。成分股表作为主成长区，最小高度约 420px，并由表体内部滚动；低高度不足以容纳有效最小高度时，才由主内容区整体滚动兜底。
 
 #### 7.2.1 页面功能点：板块摘要卡

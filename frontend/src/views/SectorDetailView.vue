@@ -84,7 +84,7 @@ const {
   componentValueOf,
   setComponentKnob,
   componentSourceOf,
-  componentLayerValuesOf,
+  componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(layout)
 const drawerConfig = {
   knobs: layoutKnobs,
@@ -96,6 +96,7 @@ const drawerConfig = {
   setComponentKnob,
   componentSourceOf,
   componentLayerValuesOf,
+componentAllowedLayers,
 }
 
 const detailDefaults = { charts: createDefaultStockChartPreferences() }

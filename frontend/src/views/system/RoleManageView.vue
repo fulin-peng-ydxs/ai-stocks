@@ -28,9 +28,9 @@ const roleLayout = getPageLayout('role-manage')
 const {
   effective, knobs: layoutKnobs, setKnob, valueOf, sourceOf,
   isDirty: layoutDirty, resetAll: resetLayout,
-  componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf,
+  componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(roleLayout)
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 const { reset: resetBiz } = usePageSettings('role-manage', {})
 const settingsOpen = ref(false)
 

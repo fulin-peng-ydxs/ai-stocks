@@ -47,6 +47,7 @@ export interface EffectiveLayoutConfig {
   values: LayoutOverlayValues
   source: Record<string, 'preset' | 'page' | 'user'>
   layers: { layer: 'preset' | 'page' | 'user'; config: LayoutOverride }[]
+  componentFieldPolicies: FieldPolicyRecord[]
 }
 
 export interface SavePresetPayload {

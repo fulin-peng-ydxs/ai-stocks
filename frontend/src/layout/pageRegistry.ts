@@ -11,9 +11,14 @@
  *
  * 布局配置平台页（预设管理/页面布局/系统组件）也纳入注册表，保证「页面布局」工作台能查看和配置这些系统页面。
  */
-import type { Archetype, EditableKnob, PageLayout } from './schema'
+import type { Archetype, EditableKnob, PageLayout, SlotSpec } from './schema'
 import { cloneLayout } from './path'
 import { CONFIG_SYSTEM_COLLAPSE_SECTIONS, CONFIG_SYSTEM_GROUP_TABS } from './configPanel'
+import {
+  getApplicableComponentFieldDefs,
+  type ComponentConfigLayer,
+  type ComponentSlotConfigMeta,
+} from './componentConfig'
 
 /** 页面响应式策略（plan.md §14.3）。受控命名，不等于自由编辑断点。 */
 export type ResponsiveProfile =
@@ -42,13 +47,8 @@ export interface PageRegistryEntry {
    * 不消费 page/user 覆盖时必须显式为 false，避免登记 settings-drawer 假能力。
    */
   supportsPageSettings?: boolean
-  /** 是否已接入组件特性配置层（顶层 slot 可承载受控字段）；决定配置中心是否显示组件配置区块。 */
+  /** 是否开放组件特性配置层；字段由 slot.component 自动继承，不再逐页面登记。 */
   supportsComponentConfig: boolean
-  /**
-   * 该页实际消费的组件配置字段（slotId -> 字段 key 列表），单一事实源。
-   * 配置中心只渲染此处登记的字段，避免暴露页面不读的配置项；新增字段必须同时在此登记。
-   */
-  consumedComponentFields?: Record<string, string[]>
   /**
    * 组件配置自动渲染元数据（slotId -> 列/可交互排序字段），驱动设置抽屉「组件设置」段自动生成
    * （列显隐开关、默认排序下拉），并作为页面列头排序能力的事实源。
@@ -60,7 +60,7 @@ export interface PageRegistryEntry {
 }
 
 /** 某 slot 的组件配置自动渲染元数据。 */
-export interface SlotConfigMeta {
+export interface SlotConfigMeta extends ComponentSlotConfigMeta {
   /** 可显隐的列（驱动 hiddenColumns 开关组；key 为列标识、label 为中文名）。 */
   columns?: { key: string; label: string }[]
   /** 可交互排序字段，同时作为 defaultSort 下拉候选；key 可与列 key 不同，如 pct_chg。 */
@@ -125,7 +125,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'master-detail',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: { table: ['defaultSort', 'hiddenColumns'] },
     componentMeta: {
       table: {
         columns: [
@@ -143,6 +142,11 @@ const REGISTRY: PageRegistryEntry[] = [
         ],
         sortHasDirection: false,
       },
+      chart: {
+        fieldApplicability: {
+          minHeight: { enabled: false, reason: '主从工作台图表随剩余空间成长，不使用固定区域高度' },
+        },
+      },
     },
     layout: {
       pageKey: 'board',
@@ -153,7 +157,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '榜单股票行情工作台', order: 1 },
-        { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '榜单列表', order: 1, config: { defaultSort: 'score' } },
+        { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '榜单列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
         { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 2 },
       ],
       editable: [densityKnob()],
@@ -166,7 +170,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'list',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: { result: ['defaultSort', 'hiddenColumns'] },
     componentMeta: {
       result: {
         columns: [
@@ -192,7 +195,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'builder', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'result', component: 'data-table', region: 'main', growMain: true, label: '结果列表', order: 1, config: { defaultSort: 'score' } },
+        { id: 'result', component: 'data-table', region: 'main', growMain: true, label: '结果列表', order: 1, config: { pagination: false, defaultSort: 'score' } },
       ],
       editable: [densityKnob()],
     },
@@ -204,8 +207,7 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'master-detail',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    // table=列表视图主表；groupTable=分组视图表（另一套列集，P7 迁入组件配置层，单独可寻址）。
-    consumedComponentFields: { table: ['defaultSort', 'pageSize', 'hiddenColumns'], groupTable: ['defaultSort', 'pageSize', 'hiddenColumns'] },
+    // table=列表视图主表；groupTable=分组视图表，两者按组件种类自动继承字段并单独寻址。
     componentMeta: {
       table: {
         columns: [
@@ -246,6 +248,11 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'last_date', label: '截至日期' },
         ],
       },
+      chart: {
+        fieldApplicability: {
+          minHeight: { enabled: false, reason: '查询工作台图表随主从区域成长，不使用固定区域高度' },
+        },
+      },
     },
     layout: {
       pageKey: 'stocks',
@@ -256,9 +263,9 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'filter', component: 'filter-bar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', minH: 360, label: '个股行情分析工作台', order: 1 },
-        { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '普通查询列表', order: 1, config: { defaultSort: 'pct_chg:asc' } },
+        { id: 'table', component: 'wide-table', region: 'main', parentId: 'workspace', label: '普通查询列表', order: 1, config: { pagination: true, defaultSort: 'pct_chg:asc' } },
         // 分组视图表：与 table 互斥渲染（按 defaultView 模式），建模为 table 的可寻址子槽，承载独立列集，不进主流渲染。
-        { id: 'groupTable', component: 'wide-table', region: 'main', parentId: 'workspace', label: '分组视图', order: 2, config: { defaultSort: 'add_date:asc' } },
+        { id: 'groupTable', component: 'wide-table', region: 'main', parentId: 'workspace', label: '分组视图', order: 2, config: { pagination: true, defaultSort: 'add_date:asc' } },
         { id: 'chart', component: 'chart', region: 'main', parentId: 'workspace', label: '股票走势分析', order: 3 },
       ],
       editable: [densityKnob()],
@@ -271,7 +278,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'list',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: { table: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       table: {
         columns: [
@@ -299,7 +305,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '问题列表', order: 1, config: { defaultSort: 'time:desc' } },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '问题列表', order: 1, config: { pagination: true, defaultSort: 'time:desc' } },
       ],
       editable: [densityKnob()],
     },
@@ -311,9 +317,8 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
     // 逐笔表嵌套在 section 主区内（P5 建模为 parentId=body 的可寻址 data-table slot）；
-    // P7 已把页面逐笔表的列显隐/排序迁入组件配置层（trades slot），消除 usePageSettings 双入口。
+    // 逐笔表的列显隐/排序由 data-table 组件字段自动继承，消除 usePageSettings 双入口。
     supportsComponentConfig: true,
-    consumedComponentFields: { trades: ['defaultSort', 'hiddenColumns'] },
     componentMeta: {
       trades: {
         columns: [
@@ -342,7 +347,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', order: 1 },
         // 逐笔成交表：嵌套在 body 分区内，进入统一可寻址模型（slots.trades.config.*），P7 已接入页面消费（排序/列显隐）。
-        { id: 'trades', component: 'data-table', region: 'main', parentId: 'body', label: '逐笔成交', order: 2, config: { defaultSort: 'entry' } },
+        { id: 'trades', component: 'data-table', region: 'main', parentId: 'body', label: '逐笔成交', order: 2, config: { pagination: false, defaultSort: 'entry' } },
       ],
       editable: [densityKnob()],
     },
@@ -355,7 +360,6 @@ const REGISTRY: PageRegistryEntry[] = [
     responsiveProfile: 'mixed-panel',
     // 训练参数保留为业务态；训练历史表的排序/每页条数与图表区域高度进入组件配置层。
     supportsComponentConfig: true,
-    consumedComponentFields: { history: ['defaultSort', 'pageSize'], chart: ['minHeight'] },
     componentMeta: {
       history: {
         sortFields: [
@@ -378,7 +382,7 @@ const REGISTRY: PageRegistryEntry[] = [
         // body 槽统一走成长区（grow 策略）：各阶段收尾块（config 历史表 / running 成交明细 / result 复盘卡）
         // 吃满剩余高度，余量不足时主内容区滚动兜底（见 TrainingView）。
         { id: 'body', component: 'section', region: 'main', order: 1 },
-        { id: 'history', component: 'data-table', region: 'main', parentId: 'body', label: '训练历史', order: 2, config: { defaultSort: 'created_at:desc' } },
+        { id: 'history', component: 'data-table', region: 'main', parentId: 'body', label: '训练历史', order: 2, config: { pagination: true, defaultSort: 'created_at:desc' } },
         // 训练台/结算的 K 线工作区：进入统一可寻址模型（slots.chart.config.*），承载「图表区域高度」等组件特性。
         { id: 'chart', component: 'chart', region: 'main', parentId: 'body', label: '训练图表', order: 3, config: { minHeight: 650 } },
         // 设置抽屉：overlay 区，进入统一可寻址模型，不参与主流渲染（由页面自行渲染抽屉）。
@@ -394,7 +398,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: { history: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       history: {
         sortFields: [{ key: 'trade_date', label: '交易日' }],
@@ -420,7 +423,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'workspaceTabs', component: 'tabs', region: 'main', growMain: true, label: '交易纪律业务页签', order: 1 },
         { id: 'checkinPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '今日打卡', order: 1 },
         { id: 'rulesPanel', component: 'section', region: 'main', parentId: 'workspaceTabs', label: '规则管理', order: 2 },
-        { id: 'history', component: 'data-table', region: 'main', parentId: 'workspaceTabs', label: '历史记录', order: 3, config: { defaultSort: 'trade_date:desc', pageSize: 20 } },
+        { id: 'history', component: 'data-table', region: 'main', parentId: 'workspaceTabs', label: '历史记录', order: 3, config: { pagination: true, defaultSort: 'trade_date:desc', pageSize: 20 } },
         { id: 'historyDetail', component: 'detail', region: 'overlay', label: '履约修订详情抽屉', order: 1 },
       ],
       editable: [densityKnob()],
@@ -435,7 +438,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: { techTable: ['defaultSort'] },
     componentMeta: {
       techTable: {
         sortFields: [
@@ -457,7 +459,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', label: '技术指标', order: 1 },
         { id: 'techFilters', component: 'filter-bar', region: 'main', parentId: 'body', label: '技术指标筛选', order: 1 },
-        { id: 'techTable', component: 'data-table', region: 'main', parentId: 'body', label: '技术指标表', order: 2, config: { defaultSort: 'catOrder:asc' } },
+        { id: 'techTable', component: 'data-table', region: 'main', parentId: 'body', label: '技术指标表', order: 2, config: { pagination: false, defaultSort: 'catOrder:asc' } },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '设置抽屉', order: 1 },
       ],
       editable: [densityKnob()],
@@ -470,10 +472,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: {
-      configPanel: ['collapsibleSections', 'defaultCollapsed', 'showGroupDescription', 'showSectionDescription'],
-      sysTabs: ['defaultActive'],
-    },
     componentMeta: {
       configPanel: {
         collapseSections: CONFIG_SYSTEM_COLLAPSE_SECTIONS,
@@ -506,7 +504,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'list',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: { table: ['defaultSort', 'hiddenColumns'] },
     componentMeta: {
       table: {
         columns: [
@@ -533,7 +530,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '用户列表', order: 1, config: { defaultSort: 'created:desc' } },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '用户列表', order: 1, config: { pagination: true, defaultSort: 'created:desc' } },
       ],
       editable: [densityKnob()],
     },
@@ -566,7 +563,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'list',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: { table: ['defaultSort', 'hiddenColumns'] },
     componentMeta: {
       table: {
         columns: [
@@ -590,7 +586,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'head', component: 'filter-bar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '租户列表', order: 1, config: { defaultSort: 'created:desc' } },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, label: '租户列表', order: 1, config: { pagination: true, defaultSort: 'created:desc' } },
       ],
       editable: [densityKnob()],
     },
@@ -603,7 +599,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'master-detail',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: { resourceTable: ['border', 'hiddenColumns'] },
     componentMeta: {
       resourceTable: {
         columns: [
@@ -623,7 +618,7 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'head', component: 'toolbar', region: 'action', order: 1 },
         { id: 'content', component: 'master-detail', region: 'main', minH: 360, label: '菜单与功能工作台', order: 1 },
-        { id: 'resourceTable', component: 'wide-table', region: 'main', parentId: 'content', label: '功能点表', order: 2 },
+        { id: 'resourceTable', component: 'wide-table', region: 'main', parentId: 'content', label: '功能点表', order: 2, config: { pagination: false } },
       ],
       editable: [densityKnob()],
     },
@@ -635,7 +630,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'list',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: { auditTable: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       auditTable: {
         columns: [
@@ -669,7 +663,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'summary', component: 'kpi-grid', region: 'main', order: 1 },
         { id: 'filters', component: 'filter-bar', region: 'main', order: 2 },
-        { id: 'auditTable', component: 'wide-table', region: 'main', growMain: true, label: '审计日志表', order: 3, config: { defaultSort: 'event_time:desc', pageSize: 50 } },
+        { id: 'auditTable', component: 'wide-table', region: 'main', growMain: true, label: '审计日志表', order: 3, config: { pagination: true, defaultSort: 'event_time:desc', pageSize: 50 } },
         { id: 'detailDrawer', component: 'detail', region: 'overlay', label: '审计详情抽屉', order: 1 },
       ],
       editable: [densityKnob()],
@@ -682,7 +676,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'master-detail',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: { itemTable: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       itemTable: {
         columns: [
@@ -713,7 +706,7 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'workspace', component: 'master-detail', region: 'main', label: '数据字典工作台', order: 1 },
         { id: 'typeList', component: 'simple-list', region: 'main', parentId: 'workspace', label: '字典类型列表', order: 1 },
-        { id: 'itemTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '字典项表', order: 2, config: { defaultSort: 'sort:asc', pageSize: 50, hiddenColumns: ['remark', 'updated_at'] } },
+        { id: 'itemTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '字典项表', order: 2, config: { pagination: true, defaultSort: 'sort:asc', pageSize: 50, hiddenColumns: ['remark', 'updated_at'] } },
         { id: 'typeDialog', component: 'form', region: 'overlay', label: '字典类型弹窗', order: 1 },
         { id: 'itemDialog', component: 'form', region: 'overlay', label: '字典项弹窗', order: 2 },
         { id: 'deleteConfirm', component: 'dialog', region: 'overlay', label: '删除确认', order: 3 },
@@ -728,9 +721,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'detail',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: {
-      chart: ['minHeight'],
-    },
     layout: {
       pageKey: 'stock-detail',
       archetype: 'detail',
@@ -752,7 +742,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: { taskTable: ['defaultSort', 'pageSize'], logTable: ['defaultSort', 'pageSize'] },
     componentMeta: {
       taskTable: {
         sortFields: [
@@ -778,8 +767,8 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', order: 1 },
-        { id: 'taskTable', component: 'data-table', region: 'main', parentId: 'body', label: '任务中心', order: 2, config: { defaultSort: 'time:desc' } },
-        { id: 'logTable', component: 'data-table', region: 'main', parentId: 'body', label: '采集日志', order: 3, config: { defaultSort: 'time:desc' } },
+        { id: 'taskTable', component: 'data-table', region: 'main', parentId: 'body', label: '任务中心', order: 2, config: { pagination: true, defaultSort: 'time:desc' } },
+        { id: 'logTable', component: 'data-table', region: 'main', parentId: 'body', label: '采集日志', order: 3, config: { pagination: true, defaultSort: 'time:desc' } },
       ],
       editable: [densityKnob()],
     },
@@ -791,11 +780,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'workbench',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: {
-      workspace: ['defaultActive'],
-      assetTable: ['border'],
-      stockTable: ['border'],
-    },
     componentMeta: {
       workspace: {
         tabs: [
@@ -816,8 +800,8 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'summary', component: 'kpi-grid', region: 'main', label: '核心指标', order: 1 },
         { id: 'quality', component: 'stat-strip', region: 'main', label: '四层质量摘要', order: 2 },
         { id: 'workspace', component: 'tabs', region: 'main', growMain: true, label: '数据治理工作区', order: 3, config: { defaultActive: 'assets' } },
-        { id: 'assetTable', component: 'wide-table', region: 'main', parentId: 'workspace', label: '数据资产表', order: 4 },
-        { id: 'stockTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '逐股分层体检表', order: 5 },
+        { id: 'assetTable', component: 'wide-table', region: 'main', parentId: 'workspace', label: '数据资产表', order: 4, config: { pagination: false } },
+        { id: 'stockTable', component: 'data-table', region: 'main', parentId: 'workspace', label: '逐股分层体检表', order: 5, config: { pagination: true } },
         { id: 'settings', component: 'settings-drawer', region: 'overlay', label: '页面设置', order: 6 },
       ],
       editable: [densityKnob()],
@@ -830,10 +814,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'detail',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: {
-      jobTable: ['defaultSort', 'border', 'hiddenColumns'],
-      sourceTable: ['border', 'hiddenColumns'],
-    },
     componentMeta: {
       jobTable: {
         columns: [
@@ -870,8 +850,8 @@ const REGISTRY: PageRegistryEntry[] = [
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'body', component: 'section', region: 'main', order: 1 },
-        { id: 'jobTable', component: 'data-table', region: 'main', parentId: 'body', label: '定时任务', order: 2, config: { defaultSort: 'name:asc' } },
-        { id: 'sourceTable', component: 'data-table', region: 'main', parentId: 'body', label: '数据源健康', order: 3 },
+        { id: 'jobTable', component: 'data-table', region: 'main', parentId: 'body', label: '定时任务', order: 2, config: { pagination: false, defaultSort: 'name:asc' } },
+        { id: 'sourceTable', component: 'data-table', region: 'main', parentId: 'body', label: '数据源健康', order: 3, config: { pagination: false } },
         { id: 'triggerEvents', component: 'detail', region: 'overlay', label: '触发记录抽屉', order: 4 },
       ],
       editable: [densityKnob()],
@@ -893,7 +873,7 @@ const REGISTRY: PageRegistryEntry[] = [
       responsive: singleColumn(),
       slots: [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
-        { id: 'table', component: 'data-table', region: 'main', growMain: true, minH: 360, label: '预设列表', order: 1 },
+        { id: 'table', component: 'data-table', region: 'main', growMain: true, minH: 360, label: '预设列表', order: 1, config: { pagination: false } },
       ],
       editable: [],
     },
@@ -947,7 +927,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'master-detail',
     responsiveProfile: 'mixed-panel',
     supportsComponentConfig: true,
-    consumedComponentFields: { table: ['defaultSort', 'pageSize', 'hiddenColumns'] },
     componentMeta: {
       table: {
         columns: [
@@ -975,6 +954,11 @@ const REGISTRY: PageRegistryEntry[] = [
           { key: 'up_count', label: '上涨家数' },
         ],
       },
+      chart: {
+        fieldApplicability: {
+          minHeight: { enabled: false, reason: '板块主从工作台图表随剩余空间成长，不使用固定区域高度' },
+        },
+      },
     },
     layout: {
       pageKey: 'sectors',
@@ -993,6 +977,7 @@ const REGISTRY: PageRegistryEntry[] = [
           label: '板块强弱排行',
           order: 1,
           config: {
+            pagination: true,
             defaultSort: 'pct_today:desc',
             pageSize: 20,
             hiddenColumns: ['pct_20d', 'net_inflow_3d', 'net_inflow_5d', 'net_inflow_10d', 'net_inflow_20d'],
@@ -1010,10 +995,6 @@ const REGISTRY: PageRegistryEntry[] = [
     archetype: 'detail',
     responsiveProfile: 'single-column',
     supportsComponentConfig: true,
-    consumedComponentFields: {
-      chart: ['minHeight'],
-      memberTable: ['defaultSort', 'pageSize', 'hiddenColumns'],
-    },
     componentMeta: {
       memberTable: {
         columns: [
@@ -1039,26 +1020,45 @@ const REGISTRY: PageRegistryEntry[] = [
         { id: 'toolbar', component: 'toolbar', region: 'action', order: 1 },
         { id: 'detail', component: 'detail', region: 'main', label: '板块详情', order: 1 },
         { id: 'chart', component: 'chart', region: 'main', parentId: 'detail', label: '板块指数', order: 1, config: { minHeight: 560 } },
-        { id: 'memberTable', component: 'data-table', region: 'main', parentId: 'detail', label: '成分股', order: 2, config: { defaultSort: 'pct:desc', pageSize: 20 } },
+        { id: 'memberTable', component: 'data-table', region: 'main', parentId: 'detail', label: '成分股', order: 2, config: { pagination: true, defaultSort: 'pct:desc', pageSize: 20 } },
       ],
       editable: [densityKnob()],
     },
   },
 ]
 
-// P13 overlay 纳管：开放个人设置的业务页面统一补登 settings-drawer；平台布局管理页
-// 显式 supportsPageSettings=false，只管理系统配置，不声明或消费 page/user 设置能力。
-for (const entry of REGISTRY) {
-  for (const slot of entry.layout.slots) {
-    if (slot.component !== 'data-table' && slot.component !== 'wide-table') continue
-    const fields = entry.consumedComponentFields?.[slot.id] ?? []
-    if (!fields.includes('border')) {
-      entry.consumedComponentFields = {
-        ...(entry.consumedComponentFields ?? {}),
-        [slot.id]: ['border', ...fields],
-      }
-    }
+/** 合并组件实例元数据与可从 slot.config 稳定推导的适用性。 */
+export function componentMetaForSlot(entry: PageRegistryEntry, slot: SlotSpec): SlotConfigMeta {
+  const declared = entry.componentMeta?.[slot.id] ?? {}
+  const fieldApplicability = { ...(declared.fieldApplicability ?? {}) }
+  if (slot.component === 'data-table' || slot.component === 'wide-table') {
+    const pagination = slot.config?.pagination
+    fieldApplicability.pageSize = pagination === true
+      ? { enabled: true }
+      : { enabled: false, reason: '该组件实例不承载分页，分页大小不适用' }
   }
+  if (slot.component === 'chart' && !fieldApplicability.minHeight) {
+    fieldApplicability.minHeight = typeof slot.config?.minHeight === 'number'
+      ? { enabled: true }
+      : { enabled: false, reason: '该图表实例未声明固定区域高度' }
+  }
+  return { ...declared, fieldApplicability }
+}
+
+/** 页面 slot 自动继承的组件字段；页面和抽屉不得维护第二套字段白名单。 */
+export function applicableComponentFields(
+  entry: PageRegistryEntry,
+  slotId: string,
+  layer?: ComponentConfigLayer,
+) {
+  const slot = entry.layout.slots.find((candidate) => candidate.id === slotId)
+  if (!slot) return []
+  return getApplicableComponentFieldDefs(slot.component, componentMetaForSlot(entry, slot), layer)
+}
+
+// overlay 纳管：开放个人设置的业务页面统一补登 settings-drawer；平台布局管理页
+// 显式 supportsPageSettings=false，只管理系统配置，不声明 page/user 设置能力。
+for (const entry of REGISTRY) {
   if (entry.supportsPageSettings === false) continue
   if (!entry.layout.slots.some((s) => s.component === 'settings-drawer')) {
     const overlayCount = entry.layout.slots.filter((s) => s.region === 'overlay').length
@@ -1071,10 +1071,6 @@ for (const entry of REGISTRY) {
     })
   }
   entry.supportsComponentConfig = true
-  entry.consumedComponentFields = {
-    ...(entry.consumedComponentFields ?? {}),
-    settings: ['size', 'bodyScroll', 'collapsibleSections', 'defaultCollapsed'],
-  }
 }
 
 /** 全部已纳管页面（按注册顺序）。 */

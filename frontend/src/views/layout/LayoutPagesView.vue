@@ -42,7 +42,9 @@ import {
   listManagedPages,
   getPageEntry,
   getPageLayout,
-  getComponentFieldDef,
+  getComponentFieldDefs,
+  componentFieldApplicability,
+  componentMetaForSlot,
   componentConfigPath,
   isComponentConfigPath,
   resolveComponentConfig,
@@ -123,7 +125,13 @@ const pagePresetComponentValues = computed<Record<string, ComponentFieldValue>>(
 const pageDefaultComponentResult = computed(() => resolveComponentConfig(selectedPage.value.layout, [
   { layer: 'preset', overlay: { values: pagePresetComponentValues.value } },
   { layer: 'page', overlay: { values: componentPathValues(pageDraft.values) } },
-]))
+], {
+  metaBySlot: Object.fromEntries(selectedPage.value.layout.slots.map((slot) => [
+    slot.id,
+    componentMetaForSlot(selectedPage.value, slot),
+  ])),
+  allowedLayersOf: (kind, field) => componentAllowedLayers(kind, field),
+}))
 
 function getPageComponentValue(slotId: string, field: string): unknown {
   return pageDefaultComponentResult.value.configBySlot[slotId]?.[field]
@@ -169,19 +177,9 @@ interface ComponentDiagnosticRow {
   valueLabel: string
   sourceLabel: string
   layersLabel: string
-  status: 'editable' | 'blocked' | 'missing-meta' | 'unknown'
+  status: 'editable' | 'blocked' | 'not-applicable' | 'unknown'
   statusLabel: string
   detail: string
-}
-
-function canRenderPageComponentField(slotId: string, def: ComponentFieldDef): boolean {
-  if (def.control === 'bool' || def.control === 'int' || def.control === 'number' || def.control === 'enum') return true
-  if (def.control === 'string[]' && def.options?.length) return true
-  const meta: SlotConfigMeta | undefined = selectedPage.value.componentMeta?.[slotId]
-  if (def.key === 'defaultSort') return !!meta?.sortFields?.length
-  if (def.key === 'hiddenColumns') return !!meta?.columns?.length
-  if (def.key === 'defaultActive') return !!meta?.tabs?.length
-  return false
 }
 
 function formatDiagnosticValue(value: unknown): string {
@@ -209,48 +207,31 @@ function diagnosticLayers(kind: string, def: ComponentFieldDef): string {
 }
 
 const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
-  const consumed = selectedPage.value.consumedComponentFields ?? {}
-  const slots = new Map(selectedPage.value.layout.slots.map((s) => [s.id, s]))
   const rows: ComponentDiagnosticRow[] = []
-  for (const [slotId, fields] of Object.entries(consumed)) {
-    const slot = slots.get(slotId)
-    if (!slot) {
-      rows.push({
-        slotId,
-        slot: slotId,
-        component: '—',
-        field: fields.join(', '),
-        fieldLabel: fields.join(', '),
-        valueLabel: '—',
-        sourceLabel: '—',
-        layersLabel: '—',
-        status: 'unknown',
-        statusLabel: 'slot 未登记',
-        detail: 'pageRegistry.consumedComponentFields 指向了不存在的 slot。',
-      })
-      continue
-    }
-    for (const field of fields) {
-      const def = getComponentFieldDef(slot.component, field)
-      if (!def) {
+  for (const slot of selectedPage.value.layout.slots) {
+    const meta = componentMetaForSlot(selectedPage.value, slot)
+    for (const def of getComponentFieldDefs(slot.component)) {
+      const field = def.key
+      const applicability = componentFieldApplicability(def, meta)
+      if (!applicability.applicable) {
         rows.push({
-          slotId,
+          slotId: slot.id,
           slot: slot.label || slot.id,
           component: slot.component,
           field,
-          fieldLabel: field,
+          fieldLabel: def.label,
           valueLabel: '—',
-          sourceLabel: '—',
-          layersLabel: '—',
-          status: 'unknown',
-          statusLabel: '字段未登记',
-          detail: '该字段未进入 COMPONENT_FIELD_DEFS，页面布局不会开放编辑。',
+          sourceLabel: '组件实例',
+          layersLabel: diagnosticLayers(slot.component, def),
+          status: 'not-applicable',
+          statusLabel: '不适用',
+          detail: applicability.reason,
         })
         continue
       }
       if (!policyAllows(slot.component, def, 'page')) {
         rows.push({
-          slotId,
+          slotId: slot.id,
           slot: slot.label || slot.id,
           component: slot.component,
           field,
@@ -264,24 +245,8 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
         })
         continue
       }
-      if (!canRenderPageComponentField(slotId, def)) {
-        rows.push({
-          slotId,
-          slot: slot.label || slot.id,
-          component: slot.component,
-          field,
-          fieldLabel: def.label,
-          valueLabel: diagnosticValue(slot, field),
-          sourceLabel: diagnosticSource(slot, field),
-          layersLabel: diagnosticLayers(slot.component, def),
-          status: 'missing-meta',
-          statusLabel: '缺少安全枚举',
-          detail: '该字段需要页面提供列、排序字段或 tab 枚举；未提供时只做诊断展示。',
-        })
-        continue
-      }
       rows.push({
-        slotId,
+        slotId: slot.id,
         slot: slot.label || slot.id,
         component: slot.component,
         field,
@@ -291,7 +256,7 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
         layersLabel: diagnosticLayers(slot.component, def),
         status: 'editable',
         statusLabel: '可编辑',
-        detail: '已消费、允许 page 层覆盖，且具备安全控件元数据。',
+        detail: '由组件种类自动继承，允许 page 层覆盖，且组件实例适用。',
       })
     }
   }
@@ -300,7 +265,7 @@ const componentDiagnosticRows = computed<ComponentDiagnosticRow[]>(() => {
 
 function diagnosticTagType(status: ComponentDiagnosticRow['status']): 'success' | 'warning' | 'info' | 'danger' {
   if (status === 'editable') return 'success'
-  if (status === 'missing-meta') return 'warning'
+  if (status === 'not-applicable') return 'warning'
   if (status === 'blocked') return 'info'
   return 'danger'
 }

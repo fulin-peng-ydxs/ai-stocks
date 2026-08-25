@@ -3,7 +3,7 @@ import { computed, ref, useSlots, watch } from 'vue'
 import { Close } from '@element-plus/icons-vue'
 import type { EditableKnob } from '@/layout/schema'
 import type { LayoutConfigLayer } from '@/layout/merge'
-import { getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
+import { applicableComponentFields, getPageEntry, type SlotConfigMeta } from '@/layout/pageRegistry'
 import { getComponentFieldDef } from '@/layout/componentConfig'
 import SettingsGroup from './SettingsGroup.vue'
 import ComponentAutoSettings from './ComponentAutoSettings.vue'
@@ -25,6 +25,7 @@ export interface DrawerConfig {
   setComponentKnob: (slotId: string, field: string, value: unknown) => void
   componentSourceOf?: (slotId: string, field: string) => 'default' | 'preset' | 'page' | 'user'
   componentLayerValuesOf?: (slotId: string, field: string) => Partial<Record<'default' | 'preset' | 'page' | 'user', unknown>>
+  componentAllowedLayers?: (kind: string, field: string) => ('preset' | 'page' | 'user')[] | undefined
 }
 
 const props = withDefaults(defineProps<{
@@ -56,41 +57,50 @@ function usesGlobalPreference(slotId: string, field: string): boolean {
   return !!slot && getComponentFieldDef(slot.component, field)?.userPersistence === 'global-preference'
 }
 
+function userLayerAllowed(slotId: string, field: string): boolean {
+  const slot = props.pageKey
+    ? getPageEntry(props.pageKey)?.layout.slots.find((candidate) => candidate.id === slotId)
+    : undefined
+  if (!slot) return false
+  const def = getComponentFieldDef(slot.component, field)
+  return !!def && (props.config?.componentAllowedLayers?.(slot.component, field) ?? def.layers).includes('user')
+}
+
 const activeConfig = computed<DrawerConfig | undefined>(() => {
   if (!props.config) return undefined
   return {
     ...props.config,
     componentValueOf(slotId: string, field: string) {
-      if (usesGlobalPreference(slotId, field) && field === 'size') {
+      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size') {
         return drawerPreferences.size.value ?? props.config?.componentValueOf(slotId, field)
       }
-      if (usesGlobalPreference(slotId, field) && field === 'defaultCollapsed') {
+      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'defaultCollapsed') {
         return drawerPreferences.defaultCollapsed.value ?? props.config?.componentValueOf(slotId, field)
       }
       return props.config?.componentValueOf(slotId, field)
     },
     setComponentKnob(slotId: string, field: string, value: unknown) {
-      if (usesGlobalPreference(slotId, field) && field === 'size') {
+      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size') {
         drawerPreferences.setSize(value)
         return
       }
-      if (usesGlobalPreference(slotId, field) && field === 'defaultCollapsed') {
+      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'defaultCollapsed') {
         drawerPreferences.setDefaultCollapsed(value)
         return
       }
       props.config?.setComponentKnob(slotId, field, value)
     },
     componentSourceOf(slotId: string, field: string) {
-      if (usesGlobalPreference(slotId, field) && field === 'size' && drawerPreferences.size.value) return 'user'
-      if (usesGlobalPreference(slotId, field) && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) return 'user'
+      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size' && drawerPreferences.size.value) return 'user'
+      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) return 'user'
       return props.config?.componentSourceOf?.(slotId, field) ?? 'default'
     },
     componentLayerValuesOf(slotId: string, field: string) {
       const values = props.config?.componentLayerValuesOf?.(slotId, field) ?? {}
-      if (usesGlobalPreference(slotId, field) && field === 'size' && drawerPreferences.size.value) {
+      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'size' && drawerPreferences.size.value) {
         return { ...values, user: drawerPreferences.size.value }
       }
-      if (usesGlobalPreference(slotId, field) && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) {
+      if (usesGlobalPreference(slotId, field) && userLayerAllowed(slotId, field) && field === 'defaultCollapsed' && drawerPreferences.defaultCollapsed.value) {
         return { ...values, user: drawerPreferences.defaultCollapsed.value }
       }
       return values
@@ -100,7 +110,15 @@ const activeConfig = computed<DrawerConfig | undefined>(() => {
 
 const hasLayoutKnobs = computed(() => !!activeConfig.value?.knobs?.length)
 const hasComponentConfig = computed(
-  () => !!props.pageKey && !!getPageEntry(props.pageKey)?.consumedComponentFields,
+  () => {
+    const entry = props.pageKey ? getPageEntry(props.pageKey) : undefined
+    if (!entry) return false
+    return entry.layout.slots
+      .filter((slot) => !props.componentSlotIds || props.componentSlotIds.includes(slot.id))
+      .some((slot) => applicableComponentFields(entry, slot.id, 'user').some((def) =>
+        (activeConfig.value?.componentAllowedLayers?.(slot.component, def.key) ?? def.layers).includes('user'),
+      ))
+  },
 )
 const hasBusinessSlot = computed(() => props.businessVisible !== false && !!slots.business)
 
@@ -235,6 +253,7 @@ function handleReset(): void {
               :drawer-business-visible="hasBusinessSlot"
               :slot-ids="componentSlotIds"
               :component-meta-overrides="componentMetaOverrides"
+              :allowed-layers-of="activeConfig.componentAllowedLayers"
             />
           </SettingsGroup>
 

@@ -48,14 +48,40 @@ export interface ComponentFieldDef {
   highFrequency?: boolean
   /** 简短帮助文案。 */
   help?: string
+  /**
+   * 字段对组件实例的适用条件。缺省为 always；候选型字段由组件实例元数据自动判定，
+   * explicit 字段要求实例明确声明启用或给出不适用原因，禁止靠页面漏登记表达能力差异。
+   */
+  applicability?: 'always' | 'columns' | 'sortFields' | 'tabs' | 'collapseSections' | 'explicit'
+}
+
+export interface ComponentFieldApplicabilityOverride {
+  enabled: boolean
+  /** enabled=false 时必填，供系统组件页、契约报错和后续维护解释例外。 */
+  reason?: string
+}
+
+/** 页面只声明组件实例候选和明确例外；不再逐字段复制组件种类的配置白名单。 */
+export interface ComponentSlotConfigMeta {
+  columns?: { key: string; label: string }[]
+  sortFields?: { key: string; label: string }[]
+  tabs?: { key: string; label: string }[]
+  collapseSections?: { key: string; label: string }[]
+  fieldApplicability?: Record<string, ComponentFieldApplicabilityOverride>
+}
+
+export interface ComponentFieldApplicabilityResult {
+  applicable: boolean
+  reason: string
+  source: 'component-default' | 'instance-meta' | 'instance-override'
 }
 
 /**
  * 受控组件字段定义。
  *
- * 口径（响应 review）：本表**只登记已被页面真实消费的字段**，不预先铺设"将来可能用"的字段，
- * 避免配置中心暴露不生效的配置项。新增字段时必须同时：页面消费 + 在 pageRegistry.consumedComponentFields
- * 登记 + 后端 COMPONENT_CONFIG_FIELD_RULES 同步。其余结构性 config 仍由 componentSchemas.ts 宽松校验。
+ * 口径：本表登记组件种类真实支持的 Web 配置字段。页面只要登记该组件 slot，就自动继承其中
+ * 适用于该实例且在当前层开放的字段；页面不得再维护平行字段白名单。候选型能力由 componentMeta
+ * 提供安全候选，实例差异只能通过 fieldApplicability 明确启用/禁用并说明原因。
  *
  * 注：page 专属枚举/数组字段（defaultSort/hiddenColumns/defaultActive）的取值集合随页面而异，
  * 由共享渲染器 ComponentAutoSettings 用页面 componentMeta 提供的安全枚举控件编辑（设置抽屉=user 层、
@@ -64,15 +90,15 @@ export interface ComponentFieldDef {
 export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldDef[]>> = {
   'data-table': [
     { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false, highFrequency: true },
-    { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['preset', 'page', 'user'], min: 10, max: 200, default: 20, highFrequency: true },
-    { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], help: '字段:方向，如 score:desc（取值随页面而异）' },
-    { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], help: '列 key 列表（随页面而异）' },
+    { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['preset', 'page', 'user'], min: 10, max: 200, default: 20, highFrequency: true, applicability: 'explicit' },
+    { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], applicability: 'sortFields', help: '字段:方向，如 score:desc（取值随页面而异）' },
+    { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], applicability: 'columns', help: '列 key 列表（随页面而异）' },
   ],
   'wide-table': [
     { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false, highFrequency: true },
-    { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['preset', 'page', 'user'], min: 10, max: 200, default: 50, highFrequency: true },
-    { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], help: '字段:方向，如 event_time:desc（取值随页面而异）' },
-    { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], help: '列 key 列表（随页面而异）' },
+    { key: 'pageSize', label: '默认分页大小', control: 'int', layers: ['preset', 'page', 'user'], min: 10, max: 200, default: 50, highFrequency: true, applicability: 'explicit' },
+    { key: 'defaultSort', label: '默认排序', control: 'string', layers: ['page', 'user'], applicability: 'sortFields', help: '字段:方向，如 event_time:desc（取值随页面而异）' },
+    { key: 'hiddenColumns', label: '隐藏列', control: 'string[]', layers: ['page', 'user'], applicability: 'columns', help: '列 key 列表（随页面而异）' },
   ],
   chart: [
     {
@@ -85,10 +111,11 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       default: 560,
       highFrequency: true,
       help: '控制包含标题、K 线与量能的完整图表区域高度。',
+      applicability: 'explicit',
     },
   ],
   tabs: [
-    { key: 'defaultActive', label: '默认激活页', control: 'string', layers: ['page', 'user'], help: '激活的 tab name（随页面而异）' },
+    { key: 'defaultActive', label: '默认激活页', control: 'string', layers: ['page', 'user'], applicability: 'tabs', help: '激活的 tab name（随页面而异）' },
   ],
   'settings-drawer': [
     {
@@ -152,6 +179,7 @@ export const COMPONENT_FIELD_DEFS: Partial<Record<ComponentKind, ComponentFieldD
       default: [],
       highFrequency: true,
       help: '控制配置面板的组和分区默认折叠；取值由页面登记的分区 key 决定。',
+      applicability: 'collapseSections',
     },
     {
       key: 'showGroupDescription',
@@ -187,6 +215,52 @@ export function getComponentFieldDefs(kind: ComponentKind): ComponentFieldDef[] 
 /** 取某组件某字段定义。 */
 export function getComponentFieldDef(kind: ComponentKind, field: string): ComponentFieldDef | undefined {
   return FIELD_DEF_INDEX.get(`${kind}.${field}`)
+}
+
+const META_REQUIREMENT_LABELS: Record<Exclude<NonNullable<ComponentFieldDef['applicability']>, 'always' | 'explicit'>, string> = {
+  columns: '未声明可配置列',
+  sortFields: '未声明可排序字段',
+  tabs: '未声明标签页候选',
+  collapseSections: '未声明可折叠分区',
+}
+
+/** 组件字段对某个 slot 实例是否适用；显式例外优先于组件默认规则。 */
+export function componentFieldApplicability(
+  def: ComponentFieldDef,
+  meta: ComponentSlotConfigMeta = {},
+): ComponentFieldApplicabilityResult {
+  const override = meta.fieldApplicability?.[def.key]
+  if (override) {
+    return {
+      applicable: override.enabled,
+      reason: override.enabled ? '组件实例显式启用' : (override.reason?.trim() || '组件实例未说明不适用原因'),
+      source: 'instance-override',
+    }
+  }
+  const rule = def.applicability ?? 'always'
+  if (rule === 'always') {
+    return { applicable: true, reason: '组件种类默认适用', source: 'component-default' }
+  }
+  if (rule === 'explicit') {
+    return { applicable: false, reason: '组件实例必须明确声明是否适用', source: 'component-default' }
+  }
+  const applicable = (meta[rule]?.length ?? 0) > 0
+  return {
+    applicable,
+    reason: applicable ? `由 ${rule} 实例元数据自动启用` : META_REQUIREMENT_LABELS[rule],
+    source: 'instance-meta',
+  }
+}
+
+/** 取某组件实例自动继承的字段；可按四层中的目标层过滤。 */
+export function getApplicableComponentFieldDefs(
+  kind: ComponentKind,
+  meta: ComponentSlotConfigMeta = {},
+  layer?: ComponentConfigLayer,
+): ComponentFieldDef[] {
+  return getComponentFieldDefs(kind).filter((def) =>
+    (!layer || def.layers.includes(layer)) && componentFieldApplicability(def, meta).applicable,
+  )
 }
 
 /**
@@ -296,12 +370,23 @@ export interface ResolvedComponentConfig {
   dropped: { layer: ComponentConfigLayer; path: string; reason: string }[]
 }
 
+export interface ResolveComponentConfigOptions {
+  /** 当前生效字段开放策略；缺省回落代码最大层级。 */
+  allowedLayersOf?: (kind: ComponentKind, field: string) => ComponentConfigLayer[] | undefined
+  /** 提供时强制实例适用性；未提供用于低层纯合并测试和兼容调用。 */
+  metaBySlot?: Record<string, ComponentSlotConfigMeta>
+}
+
 /**
  * 合并组件配置：slot.config（default） < preset < page < user。
  * 每个覆盖项都要求 (1) 路径合法 (2) slot 存在 (3) 字段已登记 (4) 该字段允许在该层覆盖 (5) 取值合法，
  * 否则丢弃并记录原因，绝不让非法/越权项污染有效配置。
  */
-export function resolveComponentConfig(layout: PageLayout, layers: ComponentConfigLayerInput[]): ResolvedComponentConfig {
+export function resolveComponentConfig(
+  layout: PageLayout,
+  layers: ComponentConfigLayerInput[],
+  options: ResolveComponentConfigOptions = {},
+): ResolvedComponentConfig {
   const slotById = new Map<string, SlotSpec>(layout.slots.map((s) => [s.id, s]))
   const configBySlot: Record<string, Record<string, ComponentFieldValue>> = {}
   const source: Record<string, ComponentConfigSource> = {}
@@ -311,6 +396,7 @@ export function resolveComponentConfig(layout: PageLayout, layers: ComponentConf
   // default 层：slot.config 中已登记的字段
   for (const slot of layout.slots) {
     for (const def of getComponentFieldDefs(slot.component)) {
+      if (options.metaBySlot && !componentFieldApplicability(def, options.metaBySlot[slot.id]).applicable) continue
       if (def.default === undefined) continue
       const path = componentConfigPath(slot.id, def.key)
       ;(configBySlot[slot.id] ??= {})[def.key] = def.default
@@ -322,6 +408,7 @@ export function resolveComponentConfig(layout: PageLayout, layers: ComponentConf
     for (const [field, value] of Object.entries(cfg)) {
       const def = getComponentFieldDef(slot.component, field)
       if (!def) continue // slot.config 可含非受控结构字段，交给 componentSchemas，不在本层产品化
+      if (options.metaBySlot && !componentFieldApplicability(def, options.metaBySlot[slot.id]).applicable) continue
       try {
         const v = coerceComponentValue(def, value)
         ;(configBySlot[slot.id] ??= {})[field] = v
@@ -352,7 +439,12 @@ export function resolveComponentConfig(layout: PageLayout, layers: ComponentConf
         dropped.push({ layer, path, reason: 'field.unknown' })
         continue
       }
-      if (!isLayerAllowed(def, layer)) {
+      if (options.metaBySlot && !componentFieldApplicability(def, options.metaBySlot[slot.id]).applicable) {
+        dropped.push({ layer, path, reason: 'field.notApplicable' })
+        continue
+      }
+      const allowedLayers = options.allowedLayersOf?.(slot.component, parsed.field) ?? def.layers
+      if (!isLayerAllowed(def, layer) || !allowedLayers.includes(layer)) {
         dropped.push({ layer, path, reason: 'layer.notAllowed' })
         continue
       }

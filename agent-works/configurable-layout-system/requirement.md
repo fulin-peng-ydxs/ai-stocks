@@ -590,7 +590,7 @@ API 需求：
 - `POST /api/layout/users/{pageKey}`：保存当前用户配置。
 - `POST /api/layout/validate`：校验配置。
 - `POST /api/layout/reset`：按范围重置预设、页面或用户配置。
-- `GET /api/layout/effective/{pageKey}`：返回最终生效配置。
+- `GET /api/layout/effective/{pageKey}`：返回 preset/page/user 分层配置、最终值/来源与当前组件字段开放策略；页面运行时结合代码 default 完成四层合并。
 
 校验规则：
 

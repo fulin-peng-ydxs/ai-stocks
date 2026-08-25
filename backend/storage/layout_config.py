@@ -120,8 +120,8 @@ def check_component_config_ownership(values: dict[str, Any], layout: dict[str, A
     """
     if not isinstance(layout, dict) or not isinstance(layout.get("slots"), list):
         return []
-    slot_kind: dict[str, str] = {
-        s["id"]: str(s.get("component"))
+    slot_specs: dict[str, dict[str, Any]] = {
+        s["id"]: s
         for s in layout["slots"]
         if isinstance(s, dict) and isinstance(s.get("id"), str)
     }
@@ -131,13 +131,24 @@ def check_component_config_ownership(values: dict[str, Any], layout: dict[str, A
         if not m:
             continue
         slot_id, field = m.group(1), m.group(2)
-        kind = slot_kind.get(slot_id)
-        if kind is None:
+        slot = slot_specs.get(slot_id)
+        if slot is None:
             errors.append(f"组件配置 slot 不在该页面布局中: {slot_id}")
             continue
+        kind = str(slot.get("component"))
         allowed = COMPONENT_CONFIG_FIELDS_BY_KIND.get(kind)
         if not allowed or field not in allowed:
             errors.append(f"组件 {kind} 不支持配置字段 {field}（slot {slot_id}）")
+            continue
+        slot_config = slot.get("config") if isinstance(slot.get("config"), dict) else {}
+        if field == "pageSize" and slot_config.get("pagination") is not True:
+            errors.append(f"组件 {kind} 的当前实例未启用分页，不能配置 pageSize（slot {slot_id}）")
+            continue
+        if field == "minHeight" and "minHeight" not in slot_config:
+            errors.append(f"组件 {kind} 的当前实例使用自适应高度，不能配置 minHeight（slot {slot_id}）")
+            continue
+        if field == "defaultSort" and "defaultSort" not in slot_config:
+            errors.append(f"组件 {kind} 的当前实例未启用默认排序，不能配置 defaultSort（slot {slot_id}）")
             continue
         options = COMPONENT_CONFIG_OPTIONS_BY_KIND_FIELD.get((kind, field))
         value = values[path]
@@ -1148,6 +1159,9 @@ class LayoutConfigRepo:
             "values": values,
             "source": source,
             "layers": layers,
+            # 普通页面运行时需要同一份生效策略来过滤四层合并与抽屉字段；这里只返回
+            # 代码允许的组件字段及层级，不包含平台敏感配置。
+            "componentFieldPolicies": self.list_field_policies(),
         }
 
     @staticmethod

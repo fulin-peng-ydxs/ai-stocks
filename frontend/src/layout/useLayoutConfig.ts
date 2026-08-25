@@ -23,6 +23,7 @@ import { coerceEditableValue } from './validator'
 import { getRuntimeLayoutPreset, useLayoutPreset, presetComponentDefaults } from './useLayoutPreset'
 import {
   coerceComponentValue,
+  componentFieldApplicability,
   getComponentFieldDef,
   isComponentConfigPath,
   isLayerAllowed,
@@ -31,6 +32,7 @@ import {
   type ComponentConfigLayerInput,
   type ComponentConfigSource,
   type ComponentFieldValue,
+  type ComponentSlotConfigMeta,
 } from './componentConfig'
 
 export interface UseLayoutConfigOptions {
@@ -42,6 +44,8 @@ export interface UseLayoutConfigOptions {
   enablePresetLayer?: boolean
   /** 页面默认预设 key（来自 layout_page_config.preset_key）；决定预设层的密度等默认。 */
   presetKey?: string | null
+  /** 页面 registry 派生的组件实例候选与适用性；提供后四层合并会拒绝不适用字段。 */
+  componentMetaBySlot?: Record<string, ComponentSlotConfigMeta>
 }
 
 /** applyPageConfig 入参：后端页面配置（预设 key + 覆盖值）。 */
@@ -59,6 +63,12 @@ export interface UserConfigInput {
 export interface UserConfigExport {
   schemaVersion: number
   values: Record<string, unknown>
+}
+
+export interface ComponentFieldPolicyInput {
+  componentKind: string
+  field: string
+  allowedLayers: ComponentConfigLayerInput['layer'][]
 }
 
 type Overlay = LayoutOverlayValues
@@ -149,6 +159,11 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
   // 组件配置覆盖层（与 L2 布局参数并行的独立通道，路径 slots.<id>.config.<field>）。
   const pageComponentOverlay = reactive<ComponentOverlay>({})
   const userComponentOverlay = reactive<ComponentOverlay>(readStoredComponentOverlay(componentStorageKey, slotKindById))
+  const componentFieldPolicies = reactive<Record<string, ComponentConfigLayerInput['layer'][]>>({})
+
+  function componentAllowedLayers(kind: string, field: string): ComponentConfigLayerInput['layer'][] | undefined {
+    return componentFieldPolicies[`${kind}.${field}`]
+  }
 
   watch(
     userOverlay,
@@ -238,7 +253,10 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
       { layer: 'page', overlay: { values: { ...pageComponentOverlay } } },
       { layer: 'user', overlay: { values: { ...userComponentOverlay } } },
     ]
-    return resolveComponentConfig(base, layers)
+    return resolveComponentConfig(base, layers, {
+      metaBySlot: options.componentMetaBySlot,
+      allowedLayersOf: (kind, field) => componentAllowedLayers(kind, field),
+    })
   })
 
   /** 某 slot 的有效组件配置（含代码默认 + 各层覆盖）。 */
@@ -271,6 +289,8 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     const kind = slotKindById.get(parsedPath.slotId)
     const def = kind ? getComponentFieldDef(kind as never, parsedPath.field) : undefined
     if (!def || !isLayerAllowed(def, 'user')) return false
+    if (options.componentMetaBySlot && !componentFieldApplicability(def, options.componentMetaBySlot[parsedPath.slotId]).applicable) return false
+    if (componentAllowedLayers(kind!, parsedPath.field)?.includes('user') === false) return false
     try {
       target[path] = coerceComponentValue(def, value)
       return true
@@ -285,6 +305,12 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     const def = kind ? getComponentFieldDef(kind as never, field) : undefined
     if (!def) throw new Error(`未登记的组件配置项: ${slotId}.${field}`)
     if (!isLayerAllowed(def, 'user')) throw new Error(`该字段不允许用户层修改: ${slotId}.${field}`)
+    if (options.componentMetaBySlot && !componentFieldApplicability(def, options.componentMetaBySlot[slotId]).applicable) {
+      throw new Error(`该字段不适用于当前组件实例: ${slotId}.${field}`)
+    }
+    if (componentAllowedLayers(kind!, field)?.includes('user') === false) {
+      throw new Error(`当前字段策略不允许用户层修改: ${slotId}.${field}`)
+    }
     if (def.userPersistence === 'global-preference') {
       throw new Error(`该字段必须通过全局偏好入口修改: ${slotId}.${field}`)
     }
@@ -332,6 +358,14 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     for (const [path, value] of Object.entries(input.values ?? {})) {
       if (isComponentConfigPath(path)) pageComponentOverlay[path] = value as ComponentFieldValue
       else pageOverlay[path] = value as LayoutOverlayValue
+    }
+  }
+
+  /** 注入后端当前生效字段策略；组件抽屉、四层合并和写入口共同消费。 */
+  function applyComponentFieldPolicies(policies: ComponentFieldPolicyInput[]): void {
+    for (const key of Object.keys(componentFieldPolicies)) delete componentFieldPolicies[key]
+    for (const policy of policies) {
+      componentFieldPolicies[`${policy.componentKind}.${policy.field}`] = [...policy.allowedLayers]
     }
   }
 
@@ -417,6 +451,7 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     resetLayer,
     resetAll,
     applyPageConfig,
+    applyComponentFieldPolicies,
     applyUserConfig,
     exportUserConfig,
     remoteUserHydrated,
@@ -432,6 +467,7 @@ export function useLayoutConfig(base: PageLayout, options: UseLayoutConfigOption
     componentValueOf,
     componentSourceOf,
     componentLayerValuesOf,
+    componentAllowedLayers,
     setComponentKnob,
     resetComponentKnob,
     componentDropped: computed(() => componentResult.value.dropped),

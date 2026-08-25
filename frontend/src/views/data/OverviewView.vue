@@ -21,12 +21,12 @@ import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { getErrorMessage } from '@/utils/error'
 
 const router = useRouter()
 const settingsOpen = ref(false)
 const overviewDefaults = {
-  sqSize: DEFAULT_PAGE_SIZE,
   focusLayer: 'all' as 'all' | 'L12' | 'L34',
   kpi: { latestTradeDate: true, codes: true, barRows: true, board: true, score: true, quality: true, gaps: true },
 }
@@ -46,11 +46,11 @@ const {
   setComponentKnob,
   componentSourceOf,
   layerValuesOf,
-  componentLayerValuesOf,
+  componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(overviewLayout)
 
 // 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 // 工作区 tab 单向：组件配置层默认值（workspace.defaultActive）→ 会话 ref；切换不写回配置层。
 const workspaceTabDefault = computed<'assets' | 'stocks' | 'board'>(() =>
   (componentValueOf('workspace', 'defaultActive') as 'assets' | 'stocks' | 'board') || 'assets',
@@ -75,12 +75,12 @@ const sqOptions = ref<{ code: string; label: string }[]>([])
 const sqOptLoading = ref(false)
 const sqOptError = ref('')
 const sqPage = ref(1)
-// sqSize 单向：抽屉默认值 → 会话 ref；分页器改动只进会话态，不写回默认。
-const sqSize = ref(Number(settings.sqSize))
-watch(() => settings.sqSize, (value) => {
-  sqSize.value = Number(value)
-  sqPage.value = 1
-  if (sq.value) loadSq()
+const { pageSize: sqSize, changePageSize: changeSqSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('stockTable', 'pageSize'),
+  fallback: DEFAULT_PAGE_SIZE,
+  shouldSync: () => sq.value != null,
+  resetPage: () => { sqPage.value = 1 },
+  reload: () => loadSq(),
 })
 
 const DIM_STATUS: Record<string, { label: string; type: 'success' | 'info' | 'warning' }> = {
@@ -595,7 +595,7 @@ onMounted(load)
                   <el-pagination layout="total, sizes, prev, pager, next" :total="sq?.total ?? 0"
                                  :current-page="sqPage" :page-size="sqSize" :page-sizes="PAGE_SIZE_OPTIONS" background
                                  @current-change="(p: number) => { sqPage = p; loadSq() }"
-                                 @size-change="(s: number) => { sqSize = s; sqPage = 1; loadSq() }" />
+                                 @size-change="changeSqSize" />
                 </div>
               </template>
             </div>
@@ -748,14 +748,6 @@ onMounted(load)
     >
       <template #business>
         <PageSettingSection title="逐股体检">
-          <div class="setting-item">
-            <div class="setting-label">每页条数</div>
-            <PageSegmented v-model="settings.sqSize" aria-label="每页条数" :options="[
-              { label: '20', value: 20 },
-              { label: '50', value: 50 },
-              { label: '100', value: 100 },
-            ]" />
-          </div>
           <div class="setting-item">
             <div class="setting-label">默认关注层</div>
             <PageSegmented v-model="settings.focusLayer" aria-label="默认关注层" :options="[

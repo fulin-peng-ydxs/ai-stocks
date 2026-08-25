@@ -85,12 +85,13 @@ const {
   componentSourceOf,
   layerValuesOf,
   componentLayerValuesOf,
+  componentAllowedLayers,
   isDirty: layoutDirty,
   resetAll: resetLayout,
 } = useRemoteLayoutConfig(backtestLayout)
 
 // 抽屉「布局」「组件设置」两段由 PageSettingsDrawer 按元数据自动渲染（见 pageRegistry.componentMeta）。
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 
 // 逐笔表排序/列显隐（组件配置层 trades slot）：抽屉写值由 ComponentAutoSettings 自动渲染；页面只读 getter。
 type TradeSort = 'entry' | 'exit' | 'return' | 'hold'

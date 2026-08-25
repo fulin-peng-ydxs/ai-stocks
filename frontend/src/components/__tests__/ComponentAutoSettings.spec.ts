@@ -5,14 +5,27 @@ import type { Component } from 'vue'
 import ComponentAutoSettings from '@/components/ComponentAutoSettings.vue'
 
 vi.mock('@/layout/pageRegistry', () => ({
+  componentMetaForSlot: (entry: any, slot: any) => entry.componentMeta?.[slot.id] ?? {},
+  applicableComponentFields: (entry: any, slotId: string, layer: 'page' | 'user') => {
+    const fieldsByPage: Record<string, { key: string; layers: string[] }[]> = {
+      'sort-demo': [{ key: 'defaultSort', layers: ['page', 'user'] }],
+      'border-demo': [{ key: 'border', layers: ['page'] }],
+      'config-panel-demo': [{ key: 'defaultCollapsed', layers: ['page', 'user'] }],
+      'chart-demo': [{ key: 'minHeight', layers: ['page', 'user'] }],
+      'system-config': [
+        { key: 'bodyScroll', layers: ['preset', 'page'] },
+        { key: 'defaultCollapsed', layers: ['preset', 'page', 'user'] },
+      ],
+    }
+    return (fieldsByPage[entry.pageKey] ?? []).filter((field) => field.layers.includes(layer))
+  },
   getPageEntry: (pageKey: string) => {
     if (pageKey === 'sort-demo') {
       return {
+        pageKey,
+        supportsComponentConfig: true,
         layout: {
           slots: [{ id: 'table', component: 'data-table', label: '列表' }],
-        },
-        consumedComponentFields: {
-          table: ['defaultSort'],
         },
         componentMeta: {
           table: {
@@ -28,22 +41,20 @@ vi.mock('@/layout/pageRegistry', () => ({
     }
     if (pageKey === 'border-demo') {
       return {
+        pageKey,
+        supportsComponentConfig: true,
         layout: {
           slots: [{ id: 'table', component: 'data-table', label: '列表' }],
-        },
-        consumedComponentFields: {
-          table: ['border'],
         },
         componentMeta: {},
       }
     }
     if (pageKey === 'config-panel-demo') {
       return {
+        pageKey,
+        supportsComponentConfig: true,
         layout: {
           slots: [{ id: 'configPanel', component: 'config-panel', label: '系统设置面板' }],
-        },
-        consumedComponentFields: {
-          configPanel: ['defaultCollapsed'],
         },
         componentMeta: {
           configPanel: {
@@ -58,38 +69,51 @@ vi.mock('@/layout/pageRegistry', () => ({
     }
     if (pageKey === 'chart-demo') {
       return {
+        pageKey,
+        supportsComponentConfig: true,
         layout: {
           slots: [{ id: 'chart', component: 'chart', label: '板块指数' }],
-        },
-        consumedComponentFields: {
-          chart: ['minHeight'],
         },
         componentMeta: {},
       }
     }
     return {
+      pageKey,
+      supportsComponentConfig: true,
       layout: {
         slots: [{ id: 'settings', component: 'settings-drawer', label: '设置抽屉' }],
-      },
-      consumedComponentFields: {
-        settings: ['bodyScroll', 'defaultCollapsed'],
       },
       componentMeta: {},
     }
   },
 }))
 
-vi.mock('@/layout/componentConfig', () => ({
-  getComponentFieldDef: (_kind: string, field: string) => (
+vi.mock('@/layout/componentConfig', () => {
+  const fieldDef = (_kind: string, field: string) => (
     field === 'minHeight'
       ? { key: 'minHeight', label: '图表区域高度', control: 'int', layers: ['page', 'user'], min: 480, max: 900, default: 560 }
       : field === 'border'
-      ? { layers: ['page'] }
+      ? { key: 'border', label: '显示表格边框', control: 'bool', layers: ['page'], default: false }
       : field === 'bodyScroll'
-        ? { layers: ['preset', 'page'] }
-        : { layers: ['user'] }
-  ),
-}))
+        ? { key: 'bodyScroll', label: '内容区滚动', control: 'bool', layers: ['preset', 'page'], default: true }
+        : { key: field, label: field, control: 'string[]', layers: ['user'] }
+  )
+  return {
+    getComponentFieldDef: fieldDef,
+    getApplicableComponentFieldDefs: (kind: string, meta: any, layer: string) => {
+      const fields = kind === 'chart'
+        ? ['minHeight']
+        : kind === 'config-panel'
+          ? ['defaultCollapsed']
+          : kind === 'settings-drawer'
+            ? ['bodyScroll', 'defaultCollapsed']
+            : meta.sortFields?.length
+              ? ['defaultSort']
+              : ['border']
+      return fields.map((field) => fieldDef(kind, field)).filter((def) => def.layers.includes(layer))
+    },
+  }
+})
 
 function mountAuto(drawerBusinessVisible: boolean) {
   return mount(ComponentAutoSettings as Component, {

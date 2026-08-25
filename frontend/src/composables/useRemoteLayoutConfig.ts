@@ -9,11 +9,15 @@
  * 后端不可达或 403 时静默回落本地默认/缓存，页面照常渲染，不阻塞首屏。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { useLayoutConfig, type PageLayout } from '@/layout'
-import { getLayoutPageConfig, getLayoutUserConfig, saveLayoutUserConfig } from '@/api/layout'
+import { componentMetaForSlot, getPageEntry, useLayoutConfig, type PageLayout } from '@/layout'
+import { getEffectiveLayoutConfig, saveLayoutUserConfig } from '@/api/layout'
 
 export function useRemoteLayoutConfig(base: PageLayout) {
-  const config = useLayoutConfig(base)
+  const registryEntry = getPageEntry(base.pageKey)
+  const componentMetaBySlot = registryEntry
+    ? Object.fromEntries(registryEntry.layout.slots.map((slot) => [slot.id, componentMetaForSlot(registryEntry, slot)]))
+    : undefined
+  const config = useLayoutConfig(base, { componentMetaBySlot })
   const remoteHydrated = ref(false)
   const remoteError = ref(false)
   const saving = ref(false)
@@ -52,26 +56,21 @@ export function useRemoteLayoutConfig(base: PageLayout) {
   }
 
   onMounted(async () => {
-    const pageReq = getLayoutPageConfig(base.pageKey)
-    const userReq = getLayoutUserConfig(base.pageKey)
-    const [pageResult, userResult] = await Promise.allSettled([pageReq, userReq])
     let shouldFlushDirty = false
-
-    if (pageResult.status === 'fulfilled') {
-      const page = pageResult.value
-      config.applyPageConfig({ presetKey: page.presetKey, values: page.config?.values ?? {} })
-    } else {
-      remoteError.value = true
-    }
-
-    if (userResult.status === 'fulfilled') {
-      const user = userResult.value
+    try {
+      // effective 同时返回经过后端读取过滤的三层配置和当前字段开放策略；前端仍按
+      // default < preset < page < user 自主合并，以保留来源追踪和本地代码默认。
+      const effective = await getEffectiveLayoutConfig(base.pageKey)
+      config.applyComponentFieldPolicies(effective.componentFieldPolicies ?? [])
+      const page = effective.layers.find((item) => item.layer === 'page')?.config
+      const user = effective.layers.find((item) => item.layer === 'user')?.config
+      config.applyPageConfig({ presetKey: effective.presetKey, values: page?.values ?? {} })
       const applied = config.applyUserConfig(
-        { schemaVersion: user.config?.schemaVersion, values: user.config?.values ?? {} },
+        { schemaVersion: user?.schemaVersion, values: user?.values ?? {} },
         { preserveDirty: true },
       )
       shouldFlushDirty = applied.preservedDirty
-    } else {
+    } catch {
       remoteError.value = true
       config.applyUserConfig({ values: config.exportUserConfig().values }, { preserveDirty: false })
     }

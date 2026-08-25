@@ -57,8 +57,8 @@ function mountDrawer(defaultCollapsedRef: Ref<string[]>) {
     global: {
       stubs: {
         PageDrawer: {
-          props: ['modelValue'],
-          template: '<div v-if="modelValue" class="drawer"><slot /></div>',
+          props: ['modelValue', 'size'],
+          template: '<div v-if="modelValue" class="drawer" :data-size="size"><slot /></div>',
         },
         SettingsGroup: {
           props: ['title', 'modelValue'],
@@ -169,6 +169,41 @@ describe('PageSettingsDrawer', () => {
     const autoSettings = wrapper.findComponent({ name: 'ComponentAutoSettings' })
     expect(autoSettings.props('slotIds')).toEqual(['table'])
     expect(autoSettings.props('componentMetaOverrides')).toEqual(overrides)
+  })
+
+  it('当前策略关闭全部个人组件字段时不渲染空组件段', async () => {
+    const defaults = ref<string[]>([])
+    const { wrapper } = mountDrawer(defaults)
+    const current = wrapper.props('config')!
+
+    await wrapper.setProps({
+      config: {
+        ...current,
+        componentAllowedLayers: () => ['page'],
+      },
+    })
+
+    expect(wrapper.find('.settings-group[data-title="组件设置"]').exists()).toBe(false)
+  })
+
+  it('策略关闭抽屉尺寸个人层后，已存全局偏好不再进入实际效果', async () => {
+    login()
+    prefApi.listUserPreferences.mockResolvedValueOnce({ items: [{ value: { size: 'lg' } }] })
+    const defaults = ref<string[]>([])
+    const { wrapper } = mountDrawer(defaults)
+    const current = wrapper.props('config')!
+    await flushPromises()
+    expect(wrapper.find('.drawer').attributes('data-size')).toBe('lg')
+
+    await wrapper.setProps({
+      config: {
+        ...current,
+        componentAllowedLayers: (kind: string, field: string) =>
+          kind === 'settings-drawer' && field === 'size' ? ['preset', 'page'] : undefined,
+      },
+    })
+
+    expect(wrapper.find('.drawer').attributes('data-size')).toBe('md')
   })
 
   it('每次打开抽屉时从当前默认折叠配置重新初始化运行态', async () => {

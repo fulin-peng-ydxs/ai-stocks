@@ -313,7 +313,7 @@ def test_component_config_ownership_boundary(client):
     board_layout = {
         "slots": [
             {"id": "head", "component": "filter-bar"},
-            {"id": "table", "component": "data-table"},
+            {"id": "table", "component": "data-table", "config": {"pagination": True}},
         ]
     }
     # 含组件配置却不传 layout：无法校验归属，直接拒绝（数据边界收口，非仅 UI 收口）
@@ -358,7 +358,7 @@ def test_component_config_ownership_boundary(client):
             "board", {"values": {"slots.table.config.border": "false"}}, layout=board_layout
         )
 
-    chart_layout = {"slots": [{"id": "chart", "component": "chart"}]}
+    chart_layout = {"slots": [{"id": "chart", "component": "chart", "config": {"minHeight": 560}}]}
     saved = repo.set_user_config(
         "sectors-detail",
         {"values": {"slots.chart.config.minHeight": 620}},
@@ -396,9 +396,40 @@ def test_validate_api_rejects_misplaced_component_field(client):
     assert any("不支持配置字段" in e for e in body["data"]["errors"])
 
 
+def test_component_config_rejects_fields_not_applicable_to_slot_instance(client):
+    """组件种类自动继承字段，但实例结构未启用的能力不得伪配置。"""
+    repo = LayoutConfigRepo(client)
+    with pytest.raises(LayoutConfigValidationError, match="未启用分页"):
+        repo.set_user_config(
+            "board",
+            {"values": {"slots.table.config.pageSize": 50}},
+            user_id="u1",
+            layout={"slots": [{"id": "table", "component": "data-table", "config": {"pagination": False}}]},
+        )
+    with pytest.raises(LayoutConfigValidationError, match="自适应高度"):
+        repo.set_user_config(
+            "board",
+            {"values": {"slots.chart.config.minHeight": 620}},
+            user_id="u1",
+            layout={"slots": [{"id": "chart", "component": "chart", "config": {}}]},
+        )
+    with pytest.raises(LayoutConfigValidationError, match="未启用默认排序"):
+        repo.set_page_config(
+            "board",
+            {"values": {"slots.table.config.defaultSort": "score:desc"}},
+            layout={"slots": [{"id": "table", "component": "data-table", "config": {"pagination": True}}]},
+        )
+
+
 def test_component_config_page_user_priority(client):
     repo = LayoutConfigRepo(client)
-    board_layout = {"slots": [{"id": "table", "component": "data-table"}]}
+    board_layout = {
+        "slots": [{
+            "id": "table",
+            "component": "data-table",
+            "config": {"pagination": True, "defaultSort": "score:desc"},
+        }]
+    }
     repo.set_page_config(
         "board",
         config={"values": {"slots.table.config.pageSize": 50, "slots.table.config.defaultSort": "score:desc"}},
@@ -635,7 +666,9 @@ def test_field_policy_table_and_defaults(client):
 def test_field_policy_narrow_enforced_on_save(client):
     """P10：管理员把 pageSize 收紧为仅 page 后，user 层覆盖被拒、page 层仍可保存。"""
     repo = LayoutConfigRepo(client)
-    board_layout = {"slots": [{"id": "table", "component": "data-table"}]}
+    board_layout = {
+        "slots": [{"id": "table", "component": "data-table", "config": {"pagination": True}}]
+    }
     repo.set_field_policy("data-table", "pageSize", ["page"])
 
     with pytest.raises(LayoutConfigValidationError, match="开放策略不允许在 user 层"):

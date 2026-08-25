@@ -1,12 +1,10 @@
 /**
  * 组件配置字段 + 页面业务偏好 注册完整性契约。
  *
- * 背景：一个字段要真正进入设置抽屉并持久化，必须同时挂多个分散注册点；漏任何一处都是
- * 静默失效（页面不报错、抽屉不出现该字段，或前端看似保存但后端 schema 拒绝）。
- * 本测试把「漏挂」从静默失效变成测试失败：
+ * 背景：组件种类字段必须自动继承到所有适用 slot；页面不得再维护字段白名单。
+ * 本测试保证自动继承、实例适用性、前后端字段规则和持久化目标保持同一契约：
  *
- * A. pageRegistry.consumedComponentFields 登记的每个字段，必须在 COMPONENT_FIELD_DEFS 有定义；
- *    否则抽屉「组件设置」渲染不出该字段，且后端 schema 会拒收该字段的持久化（配置丢失）。
+ * A. 每个 slot 按组件种类自动继承字段；explicit 字段必须由实例明确启用或说明不适用原因。
  * B. 凡提供 settings-drawer slot 的页面，其 supportsPageSettings 不得为 false（防止登记假抽屉入口）。
  * C. 前端字段集合、类型、层级、通用边界及组件专属静态值域与后端双向一致；
  *    否则可能出现前端可配但后端拒收、后端私自放行，或同名字段值域互相污染。
@@ -16,9 +14,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { PAGE_REGISTRY } from '../pageRegistry'
-import { getComponentFieldDef } from '../componentConfig'
-import { COMPONENT_FIELD_DEFS } from '../componentConfig'
+import { PAGE_REGISTRY, applicableComponentFields, componentMetaForSlot } from '../pageRegistry'
+import { componentFieldApplicability, COMPONENT_FIELD_DEFS, getComponentFieldDefs } from '../componentConfig'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 
 // 后端组件字段规则源（backend/storage/layout_config.py 的 COMPONENT_CONFIG_FIELDS_BY_KIND），
@@ -96,23 +93,42 @@ function backendUserPersistenceByKindField(): Record<string, string> {
 }
 
 describe('组件配置字段注册契约', () => {
-  it('consumedComponentFields 每个字段都在 COMPONENT_FIELD_DEFS 有定义（否则抽屉不渲染且后端拒收）', () => {
-    const missing: string[] = []
+  it('每个受控字段都有统一抽屉渲染策略', () => {
+    const specialized = new Set([
+      'defaultSort', 'pageSize', 'defaultActive', 'hiddenColumns', 'defaultCollapsed',
+    ])
+    const unsupported: string[] = []
+    for (const [kind, defs] of Object.entries(COMPONENT_FIELD_DEFS)) {
+      for (const def of defs ?? []) {
+        const generic = ['bool', 'enum', 'int', 'number', 'string'].includes(def.control)
+          || (def.control === 'string[]' && Boolean(def.options?.length))
+        if (!generic && !specialized.has(def.key)) unsupported.push(`${kind}.${def.key}:${def.control}`)
+      }
+    }
+    expect(unsupported, `以下字段会自动继承但抽屉无安全控件:\n${unsupported.join('\n')}`).toEqual([])
+  })
+
+  it('组件字段由种类自动继承，explicit 字段必须明确声明实例适用性', () => {
+    const errors: string[] = []
     for (const entry of PAGE_REGISTRY) {
-      for (const [slotId, fields] of Object.entries(entry.consumedComponentFields ?? {})) {
-        const slot = entry.layout.slots.find((s) => s.id === slotId)
-        if (!slot) {
-          missing.push(`${entry.pageKey}.${slotId} 未在 layout.slots 登记`)
-          continue
-        }
-        for (const field of fields ?? []) {
-          if (!getComponentFieldDef(slot.component, field)) {
-            missing.push(`${entry.pageKey}.${slotId}.${field}（组件 ${slot.component}）缺 COMPONENT_FIELD_DEFS 定义`)
+      for (const slot of entry.layout.slots) {
+        const meta = componentMetaForSlot(entry, slot)
+        const inherited = applicableComponentFields(entry, slot.id).map((field) => field.key)
+        for (const def of getComponentFieldDefs(slot.component)) {
+          const applicability = componentFieldApplicability(def, meta)
+          expect(inherited.includes(def.key), `${entry.pageKey}.${slot.id}.${def.key} 自动继承结果漂移`)
+            .toBe(applicability.applicable)
+          if (def.applicability === 'explicit' && !meta.fieldApplicability?.[def.key]) {
+            errors.push(`${entry.pageKey}.${slot.id}.${def.key} 未明确声明实例适用性`)
+          }
+          const override = meta.fieldApplicability?.[def.key]
+          if (override?.enabled === false && !override.reason?.trim()) {
+            errors.push(`${entry.pageKey}.${slot.id}.${def.key} 禁用但未说明原因`)
           }
         }
       }
     }
-    expect(missing, `以下字段缺注册，会导致设置抽屉不渲染或后端拒绝持久化：\n${missing.join('\n')}`).toEqual([])
+    expect(errors, errors.join('\n')).toEqual([])
   })
 
   it('提供 settings-drawer slot 的页面 supportsPageSettings 不为 false（防假抽屉入口）', () => {

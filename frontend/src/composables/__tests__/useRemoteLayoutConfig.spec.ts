@@ -6,8 +6,7 @@ import { createLayout, type PageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 
 const layoutApi = vi.hoisted(() => ({
-  getLayoutPageConfig: vi.fn(),
-  getLayoutUserConfig: vi.fn(),
+  getEffectiveLayoutConfig: vi.fn(),
   saveLayoutUserConfig: vi.fn(),
 }))
 
@@ -46,21 +45,31 @@ function mountHarness(layout: PageLayout) {
   return { wrapper, get config() { return config } }
 }
 
+function effectiveConfig(
+  pageValues: Record<string, unknown> = {},
+  userValues: Record<string, unknown> = {},
+) {
+  return {
+    pageKey: 'remote-page',
+    userId: 'u',
+    presetKey: null,
+    schemaVersion: 1,
+    values: { ...pageValues, ...userValues },
+    source: {},
+    layers: [
+      { layer: 'page', config: { schemaVersion: 1, values: pageValues } },
+      { layer: 'user', config: { schemaVersion: 1, values: userValues } },
+    ],
+    componentFieldPolicies: [],
+  }
+}
+
 describe('useRemoteLayoutConfig', () => {
   beforeEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()
     localStorage.clear()
-    layoutApi.getLayoutPageConfig.mockResolvedValue({
-      pageKey: 'remote-page',
-      presetKey: null,
-      config: { schemaVersion: 1, values: {} },
-    })
-    layoutApi.getLayoutUserConfig.mockResolvedValue({
-      userId: 'u',
-      pageKey: 'remote-page',
-      config: { schemaVersion: 1, values: {} },
-    })
+    layoutApi.getEffectiveLayoutConfig.mockResolvedValue(effectiveConfig())
     layoutApi.saveLayoutUserConfig.mockResolvedValue({
       userId: 'u',
       pageKey: 'remote-page',
@@ -91,20 +100,12 @@ describe('useRemoteLayoutConfig', () => {
 
   it('远端用户层返回时保留加载期间的本地编辑并回写 PG', async () => {
     vi.useFakeTimers()
-    const userReq = deferred<{
-      userId: string
-      pageKey: string
-      config: { schemaVersion: number; values: Record<string, unknown> }
-    }>()
-    layoutApi.getLayoutUserConfig.mockReturnValue(userReq.promise)
+    const effectiveReq = deferred<ReturnType<typeof effectiveConfig>>()
+    layoutApi.getEffectiveLayoutConfig.mockReturnValue(effectiveReq.promise)
     const { config } = mountHarness(makeLayout())
 
     config.setKnob('density', 'comfortable')
-    userReq.resolve({
-      userId: 'u',
-      pageKey: 'remote-page',
-      config: { schemaVersion: 1, values: { density: 'compact' } },
-    })
+    effectiveReq.resolve(effectiveConfig({}, { density: 'compact' }))
     await flushPromises()
 
     expect(config.valueOf('density')).toBe('comfortable')
@@ -115,26 +116,37 @@ describe('useRemoteLayoutConfig', () => {
     }))
   })
 
-  it('whenRemoteHydrated 在页面层与用户层配置都处理完成后才解除等待', async () => {
-    const pageReq = deferred<{
-      pageKey: string
-      presetKey: null
-      config: { schemaVersion: number; values: Record<string, unknown> }
-    }>()
-    layoutApi.getLayoutPageConfig.mockReturnValue(pageReq.promise)
+  it('whenRemoteHydrated 在四层生效配置与字段策略都处理完成后才解除等待', async () => {
+    const effectiveReq = deferred<ReturnType<typeof effectiveConfig>>()
+    layoutApi.getEffectiveLayoutConfig.mockReturnValue(effectiveReq.promise)
     const { config } = mountHarness(makeLayout())
     let completed = false
     void config.whenRemoteHydrated().then(() => { completed = true })
     await flushPromises()
     expect(completed).toBe(false)
 
-    pageReq.resolve({
-      pageKey: 'remote-page',
-      presetKey: null,
-      config: { schemaVersion: 1, values: {} },
-    })
+    effectiveReq.resolve(effectiveConfig())
     await config.whenRemoteHydrated()
     expect(config.remoteHydrated.value).toBe(true)
     expect(completed).toBe(true)
+  })
+
+  it('管理员收紧字段策略后，历史用户值不再进入实际效果且写入入口同步拒绝', async () => {
+    layoutApi.getEffectiveLayoutConfig.mockResolvedValue({
+      ...effectiveConfig({}, { 'slots.table.config.pageSize': 100 }),
+      componentFieldPolicies: [{
+        componentKind: 'data-table',
+        field: 'pageSize',
+        maxLayers: ['preset', 'page', 'user'],
+        allowedLayers: ['preset', 'page'],
+        overridden: true,
+      }],
+    })
+    const { config } = mountHarness(makeLayout())
+    await config.whenRemoteHydrated()
+
+    expect(config.componentValueOf('table', 'pageSize')).toBe(20)
+    expect(() => config.setComponentKnob('table', 'pageSize', 50)).toThrow('当前字段策略不允许用户层修改')
+    expect(config.exportUserConfig().values).not.toHaveProperty('slots.table.config.pageSize')
   })
 })

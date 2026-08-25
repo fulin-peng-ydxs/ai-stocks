@@ -20,6 +20,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
 import { usePublicDictItems } from '@/composables/usePublicDictItems'
 import { useAuthStore } from '@/stores/auth'
@@ -48,9 +49,9 @@ const userLayout = getPageLayout('user-manage')
 const {
   effective, knobs: layoutKnobs, setKnob, valueOf, sourceOf,
   isDirty: layoutDirty, resetAll: resetLayout,
-  componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf,
+  componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(userLayout)
-const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf }
+const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 const settingsOpen = ref(false)
 
 const hiddenColumns = computed<string[]>(() => (componentValueOf('table', 'hiddenColumns') as string[]) ?? [])
@@ -139,7 +140,12 @@ const loadError = ref(false)   // 列表加载失败 → 页内错误态 + 重�
 const list = ref<AdminUser[]>([])
 const total = ref(0)
 const page = ref(1)
-const size = ref(DEFAULT_PAGE_SIZE)
+const { pageSize: size, changePageSize } = useComponentPageSizeSession({
+  resolveDefault: () => componentValueOf('table', 'pageSize'),
+  fallback: DEFAULT_PAGE_SIZE,
+  resetPage: () => { page.value = 1 },
+  reload: () => load(),
+})
 const filters = ref<{ tenant: string; role: string; status: string; q: string }>(
   { tenant: '', role: '', status: '', q: '' })
 const USER_SORT_FIELDS = ['created', 'lastLogin', 'account', 'tenant'] as const
@@ -491,7 +497,7 @@ watch(() => settings.defaultStatus, (v) => { filters.value.status = v === 'activ
           :pagination="{ currentPage: page, pageSize: size, total, pageSizes: PAGE_SIZE_OPTIONS }"
           @sort-change="onSortChange"
           @page-change="(p: number) => { page = p; load() }"
-          @size-change="(s: number) => { size = s; page = 1; load() }"
+          @size-change="changePageSize"
         >
           <AppTableColumn label="账号" prop="account" fixed="left" sortable="custom" />
           <AppTableColumn v-if="colVisible('email')" label="邮箱" prop="email"

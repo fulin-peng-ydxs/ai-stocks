@@ -267,6 +267,8 @@ describe('字体与间距设计契约', () => {
     expect(scaffold).toContain('gap: var(--app-space-3)')
     expect(scaffold).toContain('AppStateBlock')
     expect(scaffold).toContain('data-scaffold-placeholder')
+    expect(scaffold).toContain('componentAllowedLayers,')
+    expect(scaffold).toContain('componentLayerValuesOf, componentAllowedLayers }')
     expect(scaffold).not.toMatch(/\.page-toolbar h1\s*\{[\s\S]*?font-size\s*:/)
     expect(scaffold).not.toMatch(/\bgap\s*:\s*\d+px/)
   })
