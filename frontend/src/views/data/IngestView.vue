@@ -5,7 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { PAGE_SIZE_OPTIONS } from '@/constants/pagination'
 import {
-  getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, getStockQuality, searchBoards,
+  getUpdateLogs, listTasks, createTask, getTask, getTaskLogs, resumeTask, cancelTask, searchBoards,
   TASK_LABEL, STATUS_LABEL, taskDisplayLabel, SOURCE_LABEL,
   type AsyncTask, type TaskType, type TaskStatus, type TaskLogLine, type UpdateLog,
   type BoardIngestStage, type BoardTypeScope,
@@ -15,7 +15,6 @@ import AppRowActions from '@/components/AppRowActions.vue'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
-import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
@@ -23,6 +22,7 @@ import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
 import PageSettingsTrigger from '@/components/PageSettingsTrigger.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
+import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import { usePageSettings } from '@/composables/usePageSettings'
 import { useComponentPageSizeSession } from '@/composables/useComponentPageSizeSession'
 import { useTableSort } from '@/composables/useTableSort'
@@ -31,6 +31,12 @@ import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
+import {
+  buildStockIngestParams,
+  createStockIngestForm,
+  isHeavyStockIngestRecipe,
+  type StockIngestFormValue,
+} from '@/utils/stockIngest'
 
 const route = useRoute()
 const router = useRouter()
@@ -129,7 +135,7 @@ function tableBorder(slotId: string): boolean {
   return componentValueOf(slotId, 'border') === true
 }
 const TASK_TYPE_OPTIONS: { v: TaskType; l: string }[] = [
-  'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
+  'stock_ingest', 'update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
   'recompute', 'verify', 'checkup', 'fix', 'enrich_basic', 'board',
 ].map((v) => ({ v: v as TaskType, l: TASK_LABEL[v as TaskType] }))
 const TASK_STATUS_OPTIONS: { v: TaskStatus; l: string }[] = (
@@ -152,6 +158,8 @@ const PHASE_LABEL: Record<string, string> = {
   board_members: '板块成分',
   board_bar: '板块指数',
   board_fund_flow: '板块资金流',
+  delisted_history: '退市股历史',
+  stock_basic: '基础资料',
 }
 function taskPhaseText(t: AsyncTask): string {
   const cap = t.capability
@@ -189,7 +197,7 @@ function logRowClass({ row }: { row: { status: string } }): string {
 const writeRunning = computed(() =>
   tasks.value.some((t) => ['pending', 'running'].includes(t.status)
     && ['update', 'backfill', 'ingest_date', 'ingest_codes', 'rebuild_price_factors',
-      'verify', 'fix', 'enrich_basic', 'board'].includes(t.task_type)))
+      'verify', 'fix', 'enrich_basic', 'board', 'stock_ingest'].includes(t.task_type)))
 
 // 总耗时：进行中=开始到现在(随 now 每秒刷新)；已结束/人工终止=开始到截止时间(updated_at)。
 const now = ref(Date.now())
@@ -219,44 +227,36 @@ function taskDuration(t: AsyncTask): string {
 
 // ── 更多选项对话框 ──
 const optDlg = ref(false)
-const optType = ref<TaskType>('ingest_date')
+const optType = ref<'stock_ingest' | 'board'>('stock_ingest')
 type OptionForm = {
   codes: string[]
-  date_start: string
-  date_end: string
-  years: number | null
   mode: 'backfill' | 'update'
   board_type: BoardTypeScope
   board_stages: BoardIngestStage[]
   force_members: boolean
+  stock: StockIngestFormValue
 }
 const defaultOptionForm = (): OptionForm => ({
-  codes: [], date_start: '', date_end: '', years: null, mode: 'update', board_type: '',
-  board_stages: ['dict', 'members', 'bar', 'fund'], force_members: false,
+  codes: [], mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
+  force_members: false, stock: createStockIngestForm(),
 })
 const optForm = ref<OptionForm>(defaultOptionForm())
 
-// 指定股票/板块：下拉多选，输入代码或名称远程搜索（DM-D17）。
-// optType=board 搜板块（board_dict 代码/名称）；其余搜股票。
+// 指定板块下拉：个股搜索由共享 StockIngestScopeFields 承担，采集页/调度页口径一致。
 const codeOptions = ref<{ code: string; label: string }[]>([])
 const codeOptLoading = ref(false)
 async function remoteCode(q: string) {
   if (!q) { codeOptions.value = []; return }
   codeOptLoading.value = true
   try {
-    if (optType.value === 'board') {
-      const r = await searchBoards({ keyword: q, size: 30 })
-      codeOptions.value = r.list.map((x) => ({ code: x.code, label: `${x.code} ${x.name}` }))
-    } else {
-      const r = await getStockQuality({ keyword: q, size: 30 })
-      codeOptions.value = r.list.map((x) => ({ code: x.code, label: `${x.code} ${x.name}` }))
-    }
+    const r = await searchBoards({ keyword: q, size: 30 })
+    codeOptions.value = r.list.map((x) => ({ code: x.code, label: `${x.code} ${x.name}` }))
   } finally {
     codeOptLoading.value = false
   }
 }
 
-function openOptions(type: TaskType) {
+function openOptions(type: 'stock_ingest' | 'board') {
   optType.value = type
   optForm.value = defaultOptionForm()
   codeOptions.value = []
@@ -278,32 +278,36 @@ function openFromQuery() {
   if (!code) return
   const start = typeof q.start === 'string' ? q.start : ''
   const end = typeof q.end === 'string' ? q.end : start
-  optType.value = 'ingest_date'
-  optForm.value = { ...defaultOptionForm(), codes: [code], date_start: start, date_end: end, mode: 'backfill' }
-  codeOptions.value = [{ code, label: code }]   // 让多选框显示该代码
+  const recipe = q.recipe === 'daily_update' ? 'daily_update' : 'range_refetch'
+  optType.value = 'stock_ingest'
+  optForm.value = defaultOptionForm()
+  optForm.value.stock = createStockIngestForm({
+    recipe, scope: 'selected', codes: [code],
+    date_start: start, date_end: end,
+  })
   optDlg.value = true
   if (start) ElMessage.info(`已带入 ${code} 的待补区间 ${start}~${end}，点「执行」即重采`)
 }
 
 async function submitOptions() {
   const f = optForm.value
-  const codes = f.codes
   const params: Record<string, unknown> = {}
-  if (codes.length) params.codes = codes
-  if (optType.value === 'ingest_date') {
-    if (!f.date_start) { ElMessage.warning('请选择起始日期'); return }
-    params.date_start = f.date_start
-    params.date_end = f.date_end || f.date_start
-  } else if (optType.value === 'backfill') {
-    if (f.years) params.years = f.years
-  } else if (optType.value === 'ingest_codes') {
-    if (!codes.length) { ElMessage.warning('请填写股票代码'); return }
-  } else if (optType.value === 'board') {
+  if (optType.value === 'stock_ingest') {
+    const built = buildStockIngestParams(f.stock)
+    if (built.error) { ElMessage.warning(built.error); return }
+    Object.assign(params, built.params)
+  } else {
+    if (f.codes.length) params.codes = f.codes
     if (!f.board_stages.length) { ElMessage.warning('请至少选择一项板块采集内容'); return }
     params.mode = f.mode
     params.only = f.board_stages
     if (f.board_type) params.board_type = f.board_type
     if (f.force_members && f.board_stages.includes('members')) params.force_members = true
+  }
+  if (optType.value === 'stock_ingest' && isHeavyStockIngestRecipe(f.stock.recipe)) {
+    try {
+      await ElMessageBox.confirm('该采集方案可能运行较久，确认提交？', '个股采集', { type: 'warning' })
+    } catch { return }
   }
   optDlg.value = false
   await submit(optType.value, params)
@@ -412,6 +416,10 @@ async function cancel(t: AsyncTask) {
 const logDrawer = ref(false)
 const logTask = ref<AsyncTask | null>(null)
 const logs = ref<TaskLogLine[]>([])
+const logTaskFinished = computed(() => {
+  const status = logTask.value?.status
+  return status === 'done' || status === 'failed' || status === 'interrupted'
+})
 // autoScroll 单向：抽屉默认值 → 会话 ref；日志抽屉复选框改动只进会话态，不写回默认。
 const autoScroll = ref(Boolean(settings.autoScroll))
 watch(() => settings.autoScroll, (value) => { autoScroll.value = Boolean(value) })
@@ -505,6 +513,11 @@ function closeLogs() {
   logTimer = undefined
 }
 
+async function goToDataResult(path: '/data/overview' | '/data/quality') {
+  closeLogs()
+  await router.push(path)
+}
+
 let pageActive = false
 let pageInitialized = false
 function stopBackgroundWork() {
@@ -592,22 +605,11 @@ watch(
         </template>
         <div class="act-grid">
           <div class="act">
-            <div class="act-t">增量更新</div>
-            <div class="act-d">拉取至最新交易日</div>
-            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning" @click="submit('update')">执行</el-button>
-            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('ingest_codes')">指定股票…</el-button>
-          </div>
-          <div class="act">
-            <div class="act-t">历史补数</div>
-            <div class="act-d">回补缺失历史（可能较久）</div>
+            <div class="act-t">个股采集</div>
+            <div class="act-d">日常同步 / 历史行情 / 区间重采 / 市值 / 基础资料 / 退市股历史</div>
             <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning"
-                       @click="submit('backfill', undefined, '历史补数耗时可能较长，确认开始？')">执行</el-button>
-            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('backfill')">更多选项…</el-button>
-          </div>
-          <div class="act">
-            <div class="act-t">指定日期采集</div>
-            <div class="act-d">补单日 / 区间行情，可选指定股票（重采缺口即走这里）</div>
-            <el-button v-permission="'data-task:manage'" type="primary" plain size="small" :disabled="writeRunning" @click="openOptions('ingest_date')">设置并执行</el-button>
+                       @click="submit('stock_ingest', { recipe: 'daily_update' })">日常同步</el-button>
+            <el-button v-permission="'data-task:manage'" text size="small" @click="openOptions('stock_ingest')">配置采集…</el-button>
           </div>
           <div class="act">
             <div class="act-t">板块采集</div>
@@ -834,15 +836,11 @@ watch(
       data-testid="ingest-options-dialog"
     >
       <el-form label-width="92px">
-        <el-form-item v-if="optType === 'ingest_date'" label="起始日期">
-          <TradeDatePicker v-model="optForm.date_start" placeholder="必填，仅可选交易日" />
-        </el-form-item>
-        <el-form-item v-if="optType === 'ingest_date'" label="结束日期">
-          <TradeDatePicker v-model="optForm.date_end" placeholder="留空=仅起始日" clearable />
-        </el-form-item>
-        <el-form-item v-if="optType === 'backfill'" label="回填年限">
-          <el-input-number v-model="optForm.years" :min="1" :max="30" placeholder="留空=默认" />
-        </el-form-item>
+        <StockIngestScopeFields
+          v-if="optType === 'stock_ingest'"
+          v-model="optForm.stock"
+          test-id-prefix="ingest-stock"
+        />
         <BoardTaskScopeFields
           v-if="optType === 'board'"
           v-model:mode="optForm.mode"
@@ -851,13 +849,13 @@ watch(
           v-model:force-members="optForm.force_members"
           test-id-prefix="ingest-board"
         />
-        <el-form-item :label="optType === 'board' ? '指定板块' : '指定股票'">
+        <el-form-item v-if="optType === 'board'" label="指定板块">
           <el-select v-model="optForm.codes" multiple filterable remote clearable collapse-tags
                      :remote-method="remoteCode" :loading="codeOptLoading" :reserve-keyword="false"
-                     :placeholder="optType === 'board' ? '输入板块代码或名称搜索' : '输入代码或名称搜索'" style="width: 100%">
+                     placeholder="输入板块代码或名称搜索" style="width: 100%">
             <el-option v-for="o in codeOptions" :key="o.code" :label="o.label" :value="o.code" />
           </el-select>
-          <span class="hint">可多选；留空={{ optType === 'board' ? '全部板块' : '全市场' }}</span>
+          <span class="hint">可多选；留空=全部板块</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -875,6 +873,11 @@ watch(
         <span v-if="taskPhaseText(logTask)" class="lm-phase">{{ taskPhaseText(logTask) }}</span>
         <el-progress :percentage="Math.round((logTask.progress ?? 0) * 100)" :stroke-width="8" style="flex:1" />
         <el-checkbox v-model="autoScroll" size="small">自动滚动</el-checkbox>
+      </div>
+      <div v-if="logTaskFinished" class="log-followups">
+        <span>采集结果可继续在数据页核验</span>
+        <el-button link type="primary" @click="goToDataResult('/data/overview')">查看数据概览</el-button>
+        <el-button link type="primary" @click="goToDataResult('/data/quality')">查看数据质量</el-button>
       </div>
       <div ref="logBody" class="log-body">
         <div v-for="l in logs" :key="l.seq" class="log-line" :class="l.level">
@@ -971,6 +974,7 @@ watch(
 .act-d { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin: 4px 0 10px; }
 .task-id { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .log-meta { flex: 0 0 auto; display: flex; align-items: center; gap: var(--app-space-2); margin-bottom: 10px; }
+.log-followups { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: var(--app-space-2); margin: -2px 0 10px; font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); }
 .lm-msg { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lm-phase { font-size: var(--app-font-size-caption); color: var(--el-color-warning); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-body { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--el-fill-color-darker); border-radius: 6px; padding: 10px; font-family: var(--app-font-family-mono); font-size: var(--app-font-size-caption); }

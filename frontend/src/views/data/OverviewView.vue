@@ -163,7 +163,7 @@ function goLayer(k: string, row: any) {
     // 带 code + 区间跳采集页（缺口区间，或滞后起点→全局最新），采集页预填后可直接重采
     const lo = lay?.gap_lo || lay?.stale_lo
     const hi = lay?.gap_hi || sq.value?.latest_trade_date
-    const query: Record<string, string> = { code: row.code }
+    const query: Record<string, string> = { task_type: 'stock_ingest', recipe: 'range_refetch', code: row.code }
     if (lo) { query.start = (lo as string).slice(0, 10); query.end = ((hi as string) || lo).slice(0, 10) }
     router.push({ path: '/data/ingest', query })
   } else {

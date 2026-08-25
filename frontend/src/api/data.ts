@@ -1,5 +1,6 @@
 // 数据管理 API（对应 backend/api/data_admin.py + data_tasks.py + stocks.py 的 /data/*）
 import http from './client'
+import { STOCK_INGEST_RECIPE_LABEL } from '@/utils/stockIngest'
 
 // ── 四层质量模型（M2.9 DM-D15）──
 export interface QualityLayer {
@@ -342,7 +343,7 @@ export function resetSettings(paths: string[]): Promise<{ reset: number }> {
 export type TaskType =
   | 'update' | 'backfill' | 'ingest_date' | 'ingest_codes' | 'rebuild_price_factors'
   | 'recompute' | 'verify' | 'checkup' | 'fix'
-  | 'enrich_basic' | 'audit_cleanup' | 'board'
+  | 'enrich_basic' | 'audit_cleanup' | 'board' | 'stock_ingest'
 
 // ── 数据结构体检报告（checkup 任务 result.checkup）──
 export interface CheckupCheck { name: string; ok: boolean; detail: string }
@@ -427,7 +428,7 @@ export const TASK_LABEL: Record<TaskType, string> = {
   ingest_codes: '指定股票采集', rebuild_price_factors: '重算价格因子',
   recompute: '评分维护', verify: '数据质检',
   checkup: '结构体检', fix: '质检问题恢复', enrich_basic: '退市标记刷新',
-  audit_cleanup: '审计日志清理', board: '板块采集',
+  audit_cleanup: '审计日志清理', board: '板块采集', stock_ingest: '个股采集',
 }
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   pending: '排队中', running: '运行中', done: '已完成', failed: '失败', interrupted: '已中断',
@@ -458,6 +459,10 @@ export function taskDisplayLabel(
     ? params.issue_type
     : ''
   if (issueType) return `${base}·${ISSUE_TYPE_LABEL[issueType] ?? issueType}`
+  if (taskType === 'stock_ingest') {
+    const recipe = typeof params?.recipe === 'string' ? params.recipe : ''
+    return recipe ? `${base}·${STOCK_INGEST_RECIPE_LABEL[recipe as keyof typeof STOCK_INGEST_RECIPE_LABEL] ?? recipe}` : base
+  }
   if (taskType === 'board') {
     const parts = [params?.mode === 'backfill' ? '全量回填' : '增量']
     if (params?.board_type === 'concept') parts.push('概念')

@@ -20,7 +20,6 @@ import type { AppRowAction } from '@/components/rowActions'
 import AppStateBlock from '@/components/AppStateBlock.vue'
 import HelpTip from '@/components/HelpTip.vue'
 import HelpTipItem from '@/components/HelpTipItem.vue'
-import TradeDatePicker from '@/components/TradeDatePicker.vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageSettingSection from '@/components/PageSettingSection.vue'
 import PageSettingsDrawer from '@/components/PageSettingsDrawer.vue'
@@ -33,7 +32,15 @@ import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { getErrorMessage } from '@/utils/error'
 import { compareScheduleFrequency } from '@/utils/scheduleFrequencySort'
 import BoardTaskScopeFields from '@/components/data/BoardTaskScopeFields.vue'
+import StockIngestScopeFields from '@/components/data/StockIngestScopeFields.vue'
 import PageDrawer from '@/components/PageDrawer.vue'
+import {
+  buildStockIngestParams,
+  createStockIngestForm,
+  isHeavyStockIngestRecipe,
+  stockIngestFormFromTask,
+  type StockIngestFormValue,
+} from '@/utils/stockIngest'
 
 const router = useRouter()
 const settingsOpen = ref(false)
@@ -131,9 +138,13 @@ const WEEKDAYS = [
   { label: '一', value: 1 }, { label: '二', value: 2 }, { label: '三', value: 3 },
   { label: '四', value: 4 }, { label: '五', value: 5 }, { label: '六', value: 6 }, { label: '日', value: 7 },
 ]
-// 需要额外参数的任务类型：指定日期采集要日期；历史补数可填年限。其余无需参数（全市场）。
+// 新建调度只展示统一个股采集；历史原子任务仅保留展示、执行与编辑转换兼容。
 function taskTypeOptions() {
-  return taskTypes.value.map((v) => ({ value: v, label: TASK_LABEL[v] ?? v }))
+  const legacyStockTypes = new Set<TaskType>(['update', 'backfill', 'ingest_date', 'ingest_codes'])
+  // 对滚动更新期的旧列表响应容错：页面的统一入口始终可选，保存仍由服务端二次校验。
+  return Array.from(new Set<TaskType>(['stock_ingest', ...taskTypes.value]))
+    .filter((value) => !legacyStockTypes.has(value))
+    .map((v) => ({ value: v, label: TASK_LABEL[v] ?? v }))
 }
 
 function fmtTime(value?: string | null): string {
@@ -147,13 +158,13 @@ const dlg = ref(false)
 const editingId = ref('')
 const saving = ref(false)
 const form = reactive({
-  name: '', task_type: 'update' as TaskType,
+  name: '', task_type: 'stock_ingest' as TaskType,
+  stock: createStockIngestForm() as StockIngestFormValue,
   issue_type: 'null_close',
   board_mode: 'update' as 'update' | 'backfill',
   board_type: '' as BoardTypeScope,
   board_stages: ['dict', 'members', 'bar', 'fund'] as BoardIngestStage[],
   board_force_members: false,
-  date_start: '', date_end: '', years: null as number | null, concurrency: null as number | null,
   freq_type: 'daily' as FreqType,
   time: '15:30', weekdays: [1, 2, 3, 4, 5] as number[], day: 1, cron: '',
   trigger_mode: 'time' as TriggerMode,
@@ -166,7 +177,6 @@ const form = reactive({
 const dlgTitle = computed(() => (editingId.value ? '编辑调度任务' : '新建调度任务'))
 const dependencyOptions = computed(() => jobs.value.filter((job) => job.id !== editingId.value))
 // 采集类任务（逐股拉取）才有并发概念；评分维护/质检无需并发
-const needsConcurrency = computed(() => ['update', 'backfill', 'ingest_date', 'ingest_codes'].includes(form.task_type))
 watch(() => form.task_type, (type, prev) => {
   if (type === 'audit_cleanup') form.trading_day_only = false
   else if (prev === 'audit_cleanup' && !editingId.value) form.trading_day_only = true
@@ -175,10 +185,10 @@ watch(() => form.task_type, (type, prev) => {
 function openCreate() {
   editingId.value = ''
   Object.assign(form, {
-    name: '', task_type: 'update', issue_type: qualityIssueTypes.value[0] || 'null_close',
+    name: '', task_type: 'stock_ingest', stock: createStockIngestForm(),
+    issue_type: qualityIssueTypes.value[0] || 'null_close',
     board_mode: 'update', board_type: '', board_stages: ['dict', 'members', 'bar', 'fund'],
     board_force_members: false,
-    date_start: '', date_end: '', years: null, concurrency: null,
     freq_type: 'daily', time: '15:30', weekdays: [1, 2, 3, 4, 5], day: 1, cron: '',
     trigger_mode: 'time', dependency_job_id: '', dependency_condition: 'completion',
     dependency_delay_value: 0, dependency_delay_unit: 'minute',
@@ -191,8 +201,10 @@ function openCreate() {
 
 function openEdit(j: ScheduledJob) {
   editingId.value = j.id
+  const stock = stockIngestFormFromTask(j.task_type, j.params)
   Object.assign(form, {
-    name: j.name, task_type: j.task_type,
+    name: j.name, task_type: stock ? 'stock_ingest' : j.task_type,
+    stock: stock || createStockIngestForm(),
     issue_type: j.params?.issue_type || qualityIssueTypes.value[0] || 'null_close',
     board_mode: j.params?.mode === 'backfill' ? 'backfill' : 'update',
     board_type: j.params?.board_type === 'concept' || j.params?.board_type === 'industry'
@@ -201,8 +213,6 @@ function openEdit(j: ScheduledJob) {
       ? j.params.only.filter((x): x is BoardIngestStage => ['dict', 'members', 'bar', 'fund'].includes(x))
       : ['dict', 'members', 'bar', 'fund'],
     board_force_members: j.params?.force_members === true,
-    date_start: j.params?.date_start || '', date_end: j.params?.date_end || '',
-    years: j.params?.years ?? null, concurrency: j.params?.concurrency ?? null,
     freq_type: j.freq_type,
     time: j.freq_config?.time || '15:30',
     weekdays: j.freq_config?.weekdays?.length ? [...j.freq_config.weekdays] : [1, 2, 3, 4, 5],
@@ -225,12 +235,10 @@ function openEdit(j: ScheduledJob) {
 function buildPayload(): ScheduledJobInput | null {
   if (!form.name.trim()) { ElMessage.warning('请填写任务名称'); return null }
   const params: Record<string, unknown> = {}
-  if (form.task_type === 'ingest_date') {
-    if (!form.date_start) { ElMessage.warning('指定日期采集需填写起始日期'); return null }
-    params.date_start = form.date_start
-    params.date_end = form.date_end || form.date_start
-  } else if (form.task_type === 'backfill' && form.years) {
-    params.years = form.years
+  if (form.task_type === 'stock_ingest') {
+    const built = buildStockIngestParams(form.stock)
+    if (built.error) { ElMessage.warning(built.error); return null }
+    Object.assign(params, built.params)
   } else if (form.task_type === 'fix') {
     if (!form.issue_type) { ElMessage.warning('质检问题恢复需选择问题类型'); return null }
     params.issue_type = form.issue_type
@@ -241,7 +249,6 @@ function buildPayload(): ScheduledJobInput | null {
     if (form.board_type) params.board_type = form.board_type
     if (form.board_force_members && form.board_stages.includes('members')) params.force_members = true
   }
-  if (needsConcurrency.value && form.concurrency) params.concurrency = form.concurrency
   if (form.trigger_mode === 'dependency' && !form.dependency_job_id) {
     ElMessage.warning('请选择上游任务'); return null
   }
@@ -276,6 +283,15 @@ function buildPayload(): ScheduledJobInput | null {
 async function save() {
   const payload = buildPayload()
   if (!payload) return
+  if (form.task_type === 'stock_ingest' && isHeavyStockIngestRecipe(form.stock.recipe)) {
+    try {
+      await ElMessageBox.confirm(
+        '该采集方案耗时较长，周期触发可能与其他 DuckDB 写任务冲突。确认保存调度任务？',
+        '重任务调度确认',
+        { type: 'warning' },
+      )
+    } catch { return }
+  }
   saving.value = true
   try {
     if (editingId.value) { await updateSchedule(editingId.value, payload); ElMessage.success('调度任务已更新') }
@@ -814,23 +830,17 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           v-model:force-members="form.board_force_members"
           test-id-prefix="schedule-board"
         />
-        <template v-if="form.task_type === 'ingest_date'">
-          <el-form-item label="起始日期">
-            <TradeDatePicker v-model="form.date_start" placeholder="必填，仅可选交易日" />
-          </el-form-item>
-          <el-form-item label="结束日期">
-            <TradeDatePicker v-model="form.date_end" placeholder="留空=仅起始日" clearable />
-          </el-form-item>
-        </template>
-        <el-form-item v-if="form.task_type === 'backfill'" label="回填年限">
-          <el-input-number v-model="form.years" :min="1" :max="30" placeholder="留空=默认" />
-        </el-form-item>
-        <el-form-item v-if="needsConcurrency" label="采集并发数">
-          <el-input-number v-model="form.concurrency" :min="1" :max="16" placeholder="默认" />
-          <span class="hint">留空＝沿用全局默认并发；填数则覆盖。调高提速，但总请求速率↑，注意免费源封禁风险</span>
-        </el-form-item>
+        <StockIngestScopeFields
+          v-if="form.task_type === 'stock_ingest'"
+          v-model="form.stock"
+          test-id-prefix="schedule-stock"
+        />
 
-        <el-divider content-position="left" style="margin: 4px 0 14px">触发方式</el-divider>
+        <el-divider
+          content-position="left"
+          class="form-section-divider"
+          data-testid="schedule-trigger-divider"
+        >触发方式</el-divider>
         <el-form-item label="触发方式">
           <PageSegmented v-model="form.trigger_mode" :options="TRIGGER_MODE_OPTIONS" test-id="schedule-trigger-mode" aria-label="触发方式" />
         </el-form-item>
@@ -883,7 +893,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </el-form-item>
         </template>
 
-        <el-divider content-position="left" style="margin: 4px 0 14px">自身重试</el-divider>
+        <el-divider content-position="left" class="form-section-divider">自身重试</el-divider>
         <el-form-item label="启用重试">
           <el-switch v-model="form.retry_enabled" data-testid="schedule-retry-enabled" />
           <span class="hint">本任务结果持续命中条件时循环执行，达到上限后结束</span>
@@ -907,7 +917,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
           </el-form-item>
         </template>
 
-        <el-divider content-position="left" style="margin: 4px 0 14px">选项</el-divider>
+        <el-divider content-position="left" class="form-section-divider">选项</el-divider>
         <el-form-item v-if="form.trigger_mode === 'time'" label="仅交易日">
           <el-switch v-model="form.trading_day_only" />
           <span class="hint">开启后非交易日自动跳过（行情/质检类建议开）</span>
@@ -988,6 +998,7 @@ onMounted(async () => { await Promise.all([load(), loadSources(false)]) })
 .blk:last-child { margin-bottom: 0; }
 .blk-head { display: flex; justify-content: space-between; align-items: center; }
 .hint { font-size: var(--app-font-size-caption); color: var(--el-text-color-secondary); margin-left: 10px; }
+.form-section-divider { margin: var(--app-space-4) 0 14px; }
 .src-status { display: inline-flex; align-items: center; gap: var(--app-space-control-gap); }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .dot.up { background: var(--el-color-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--el-color-success) 18%, transparent); }

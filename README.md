@@ -83,7 +83,7 @@
 | ⚙️ **配置管理** | `ConfigView`（`/system/config/{score,trade,tech,system}`） | `/api/indicators`, `/api/trade-profiles`, `/api/score-profiles` | 四个子页：评分规则（可公开/复制/版本回看）/ 买卖指标（买入+卖出+兜底，可公开/复制）/ 技术指标（注册表）/ 系统设置（数据源、回测成本、认证与审计白名单） | [config-definitions.md](agent-works/architecture/config-definitions.md) |
 | 🎨 **布局配置** | `views/layout/{Presets,Pages,Components}`（`/system/layout/*`） | `/api/layout/*` | 可配置布局系统的产品化工作台 3 子页：预设管理（全局风格 token / 预设×组件默认 / 响应式默认）、页面布局（左预览右配置 + `default→preset→page→user` 四层来源追踪）、系统组件（组件能力目录 + 字段开放策略在线编辑） | [DESIGN.md](DESIGN.md) |
 | 🔐 **系统菜单 / 权限 / 租户** | `views/system/{UserManage,RoleManage,MenuResource,TenantManage}` | `/api/auth/*`, `/api/users`, `/api/roles`, `/api/menus`, `/api/resources`, `/api/tenants` | 登录会话、用户域、角色授权、菜单树、功能点和租户启停；接口、菜单、按钮同源授权 | [system-rbac-tenant.md](agent-works/architecture/system-rbac-tenant.md) |
-| 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 同步补数 / 质检修复 / 定时调度 | [data-management.md](agent-works/architecture/data-management.md) |
+| 🗄️ **数据管理** | `views/data/{Overview,Ingest,Quality,Schedule}` | `/api/data/*` | 采集闭环 4 子页：概览 / 数据采集 / 质检修复 / 定时调度；个股采集统一提供七类安全方案 | [data-management.md](agent-works/architecture/data-management.md) |
 | 🧩 **板块行情与采集** | `SectorsView` / `SectorDetailView` / `views/data/*` | `/api/sectors/*`, `/api/data/*` | 板块工作台支持概念/行业查询、连续指数对比、资金流和成分股钻取；数据管理承接字典/成分/指数/资金流采集、周频控制和专项质检修复 | [board-collection.md](agent-works/architecture/board-collection.md) |
 | 🎮 **盘感训练** | `TrainingView` | `/api/training/*` | 盲测随机个股 + 逐日揭示 K 线（含 MACD）+ T+1 真实撮合买卖；一局产出评分/评级/资金曲线，结算揭晓板块；跨局成长轨迹 | [market-sense-training.md](agent-works/architecture/market-sense-training.md) |
 
@@ -119,7 +119,7 @@ flowchart LR
 | 场景 | 推荐路径 | 结果 |
 |------|----------|------|
 | 首次搭建本地库 | `backfill` → `delisted --enrich` → `valuation` → `rebuild-price-factors` → `verify-data` | 近 5 年行情、退市股、总市值、复权口径与体检报告齐全 |
-| 每天收盘后更新 | 数据管理 → 同步补数 → 一键日常，或 `python -m backend.cli daily` | 最新行情入库、总市值补齐、质检台账更新 |
+| 每天收盘后更新 | 数据管理 → 数据采集 → 个股采集 → 日常同步，或 `python -m backend.cli daily` | 最新行情入库、总市值补齐；CLI `daily` 还会继续执行质检 |
 | 发现榜单异常 | 数据管理 → 概览/质量定位缺口 → 修复 → 回榜单重新打开对应日期 | 评分快照会被标记失效，下次打开按可见方案自动重算 |
 | 新建选股思路 | 配置管理 → 评分规则/买卖指标建方案 → 策略筛选试条件 → 每日榜单看排序 | 得到可保存、可版本回看、可按权限公开的评分方案 |
 | 验证策略能否交易 | 策略筛选 + 评分方案 + 买卖方案 → 回测验证 | 净值、回撤、逐笔成交、卖出原因、分层命中率 |
@@ -291,7 +291,7 @@ python -m backend.cli daily              # 增量更新行情(补最新交易日
 python -m backend.cli valuation --fill-gaps   # 一次性回补历史 total_mv 缺口（增量只保最新交易日，历史缺口走这里）
 ```
 
-也可在「数据管理 → 任务调度」页配置任务（`update`/`verify`/`checkup`/`audit_cleanup` 等）：既可按 cron/每日/每周/每月触发，也可在指定上游任务成功、失败或完成后延迟触发；依赖任务支持有次数上限的固定延迟自身重试。数据类时间任务通常仅交易日，审计清理不受交易日限制。
+也可在「数据管理 → 任务调度」页配置任务（个股采集统一使用 `stock_ingest`，另有 `verify`/`checkup`/`audit_cleanup` 等）：既可按 cron/每日/每周/每月触发，也可在指定上游任务成功、失败或完成后延迟触发；依赖任务支持有次数上限的固定延迟自身重试。数据类时间任务通常仅交易日，审计清理不受交易日限制。旧 `update/backfill/ingest_date` 调度继续执行，编辑保存时转换为统一模型。
 
 日常流程等价于页面里的"数据管理闭环"：
 
@@ -326,14 +326,26 @@ flowchart LR
 | `check-data` / `verify-data` | 完整性体检 / 正确性核查 |
 | `daily` | 一键日常流程 |
 
+Web 与 CLI 共用同一采集服务和行情口径。Web 是常用运维入口，CLI 保留为应急和批处理入口：
+
+| Web「个股采集」方案 | `stock_ingest.recipe` | CLI 对应能力 |
+|------|------|------|
+| 日常同步 | `daily_update` | `update`（完整日常流水线用 `daily`） |
+| 历史行情补全 | `history_backfill` | `backfill` |
+| 日期区间重采 | `range_refetch` | `refetch-daily` / 指定日期采集 |
+| 市值历史补采 | `valuation_history` | `valuation` |
+| 市值缺口修复 | `valuation_gaps` | `valuation --fill-gaps` |
+| 基础资料刷新 | `basic_refresh` | `delisted --enrich` 的基础资料阶段 |
+| 退市股历史补全 | `delisted_history` | `delisted --enrich` |
+
 ### 5.6 数据管理页面操作速查
 
 | 页面 | 主要用途 | 典型操作 |
 |------|----------|----------|
 | 数据概览 | 看数据新鲜度、质量分、缺口、数据字典 | 进入后先看风险摘要，点击风险跳到质量或榜单 |
-| 同步补数 | 发起异步采集/补数任务，看实时日志 | 一键日常、指定日期补采、指定股票补采、续跑/终止任务 |
+| 数据采集 | 发起异步采集/补数任务，看实时日志 | 在一个「个股采集」入口选择七类方案与全市场/指定股票范围，并续跑、重试或终止任务 |
 | 数据质量 | 质检台账、修复、忽略、结构体检 | 先筛高危 open 问题，批量修复后复检 |
-| 定时调度 | 配置自动更新、质检、体检、审计清理 | 建每日收盘后 update，再建定期 verify/checkup；审计清理默认每天 03:30 |
+| 定时调度 | 配置自动更新、质检、体检、审计清理 | 建每日收盘后「个股采集·日常同步」，再建定期 verify/checkup；审计清理默认每天 03:30 |
 
 写库任务全局互斥：采集、补数、修复、重算等同一时间只能跑一个。遇到 409 说明已有写任务在执行，去任务列表看进度，完成后再提交。
 

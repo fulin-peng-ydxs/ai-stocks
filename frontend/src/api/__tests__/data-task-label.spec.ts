@@ -18,6 +18,10 @@ describe('taskDisplayLabel', () => {
     expect(taskDisplayLabel('board', {
       mode: 'update', board_type: 'concept', only: ['bar', 'fund'],
     })).toBe('板块采集·增量·概念·指数+资金流')
+    expect(taskDisplayLabel('stock_ingest', { recipe: 'daily_update' }))
+      .toBe('个股采集·日常同步')
+    expect(taskDisplayLabel('stock_ingest', { recipe: 'valuation_gaps' }))
+      .toBe('个股采集·市值缺口修复')
   })
 
   it('板块质检类型、恢复文案和采集阶段使用同一套定义', () => {

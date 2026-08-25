@@ -514,11 +514,11 @@ class IngestionService:
                                   valuation_latest_done_codes=sorted(done_latest))
                 try:
                     rows += _one(code, src); ok += 1
+                    done_latest.add(code)
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
                     if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
                         ctx.log(f"{code} 最新日市值补采失败（{trade_date}）：{e}", "warn")
-                done_latest.add(code)
                 if i % 20 == 0 or i == n:
                     log.info("补最新日市值进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                     if ctx:
@@ -560,11 +560,11 @@ class IngestionService:
                                           valuation_latest_done_codes=sorted(done_latest))
                         try:
                             rows += fut.result(); ok += 1
+                            done_latest.add(code)
                         except Exception as e:  # noqa: BLE001
                             fail += 1; log.warning("%s 补最新日市值失败: %s", code, e)
                             if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
                                 ctx.log(f"{code} 最新日市值补采失败（{trade_date}）：{e}", "warn")
-                        done_latest.add(code)
                         if i % 20 == 0 or i == n:
                             log.info("补最新日市值进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                             if ctx:
@@ -622,11 +622,11 @@ class IngestionService:
                                   valuation_gap_done_codes=sorted(done_gap_codes))
                 try:
                     rows += _one(item, val_src); ok += 1
+                    done_gap_codes.add(item[0])
                 except Exception as e:  # noqa: BLE001
                     fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
                     if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
                         ctx.log(f"{item[0]} 市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
-                done_gap_codes.add(item[0])
                 if i % 20 == 0 or i == n:
                     log.info("市值回补进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                     if ctx:
@@ -668,11 +668,11 @@ class IngestionService:
                                           valuation_gap_done_codes=sorted(done_gap_codes))
                         try:
                             rows += fut.result(); ok += 1
+                            done_gap_codes.add(item[0])
                         except Exception as e:  # noqa: BLE001
                             fail += 1; log.warning("%s 市值回补失败: %s", item[0], e)
                             if ctx:   # 与日行情家族对齐：单只失败写实时日志，便于页内排查
                                 ctx.log(f"{item[0]} 市值缺口回补失败（{item[1]}~{item[2]}）：{e}", "warn")
-                        done_gap_codes.add(item[0])
                         if i % 20 == 0 or i == n:
                             log.info("市值回补进度 %d/%d（成功%d 失败%d，写入 %d行）", i, n, ok, fail, rows)
                             if ctx:
@@ -731,6 +731,35 @@ class IngestionService:
             )
 
     # ── 全量回填 ──
+    def _history_start_covered_codes(self, start: date) -> set[str]:
+        """返回历史行情已覆盖到目标起点的股票。
+
+        只有任意一行行情不足以判定历史已补全；以回填起点或上市日为边界，
+        并保留少量自然日缓冲吸收首个交易日差异。回填与退市股历史共用此口径。
+        """
+        min_df = self.repo.c.query_df(
+            "SELECT code, min(trade_date) AS mn FROM daily_bar GROUP BY code")
+        loaded_min = {
+            r["code"]: pd.Timestamp(r["mn"]).date()
+            for _, r in min_df.iterrows()
+            if not pd.isna(r["mn"])
+        }
+        ld_df = self.repo.c.query_df("SELECT code, list_date FROM stock_basic")
+        list_lut = {
+            r["code"]: (
+                pd.Timestamp(r["list_date"]).date() if not pd.isna(r["list_date"]) else None
+            )
+            for _, r in ld_df.iterrows()
+        }
+        buffer = timedelta(days=15)
+        covered = set()
+        for code, minimum in loaded_min.items():
+            list_date = list_lut.get(code)
+            threshold = list_date if (list_date and list_date > start) else start
+            if minimum <= threshold + buffer:
+                covered.add(code)
+        return covered
+
     def backfill(self, codes: list[str] | None = None, years: int | None = None, ctx=None,
                  concurrency: int | None = None) -> dict:
         """全量回填近 N 年。codes=None 表示全市场；可断点续跑（跳过已入库）。
@@ -766,23 +795,8 @@ class IngestionService:
         # 断点续跑 + 部分覆盖修复：旧逻辑"有任意数据就跳过"会把仅有部分近期数据的股票
         # （如经缺口兜底补了近窗口、或上次中断）误判为已完成，早期历史永远补不上。改为按
         # "最早入库日是否已覆盖到回填起点(或上市日)"判断：mn <= max(start, 上市日)+缓冲 才算已覆盖、跳过。
-        min_df = self.repo.c.query_df("SELECT code, min(trade_date) AS mn FROM daily_bar GROUP BY code")
-        loaded_min = {r["code"]: pd.Timestamp(r["mn"]).date()
-                      for _, r in min_df.iterrows() if not pd.isna(r["mn"])}
-        ld_df = self.repo.c.query_df("SELECT code, list_date FROM stock_basic")
-        list_lut = {r["code"]: (pd.Timestamp(r["list_date"]).date() if not pd.isna(r["list_date"]) else None)
-                    for _, r in ld_df.iterrows()}
-        buffer = timedelta(days=15)   # 吸收"回填起点/上市日 vs 首个交易日"的日历误差
-
-        def _covered(c: str) -> bool:
-            mn = loaded_min.get(c)
-            if mn is None:
-                return False           # 完全无数据 → 必补
-            ld = list_lut.get(c)
-            threshold = ld if (ld and ld > start) else start   # 上市晚于回填起点的，按上市日
-            return mn <= threshold + buffer                    # 最早日已到应有起点 → 视为已覆盖
-
-        pending = [c for c in target_codes if not _covered(c)]
+        covered_codes = self._history_start_covered_codes(start)
+        pending = [c for c in target_codes if c not in covered_codes]
         skip = len(target_codes) - len(pending)
         concurrency = concurrency if concurrency is not None else self.s.datasource.update_concurrency
         ok = fail = total_rows = 0
@@ -1045,9 +1059,14 @@ class IngestionService:
             basic = [c for c in basic if c in codes]
         # 续跑（FR-DM-10）：串行老任务按 done 兼容跳过；并发任务按 done_codes 精确跳过。
         n_total = len(basic)
-        done_codes = set(ctx.checkpoint.get("done_codes") or []) if (ctx and ctx.checkpoint) else set()
-        skip_done = 0 if done_codes else int(ctx.checkpoint.get("done", 0)) if (ctx and ctx.checkpoint) else 0
+        checkpoint = ctx.checkpoint if (ctx and ctx.checkpoint) else {}
+        has_exact_done_codes = "done_codes" in checkpoint
+        done_codes = set(checkpoint.get("done_codes") or [])
+        # 新版 checkpoint 即使成功集合为空也会显式写 done_codes=[]，不得回退
+        # 到旧版位置 done；只有真正没有该字段的历史 checkpoint 才按前 N 只兼容。
+        skip_done = 0 if has_exact_done_codes else int(checkpoint.get("done", 0))
         completed_codes = set(done_codes) | set(basic[:skip_done])
+        resumed_count = len(completed_codes)
         pending = [c for c in basic if c not in completed_codes]
         # 续跑锁定本次任务目标日：首跑就绪门通过后固化 target_end，续跑直接取回，避免被重算成
         # 「今天」后又因今天源未就绪整次跳过（连原目标日本该补的也补不到）。target_end 仅在首跑成功
@@ -1084,27 +1103,30 @@ class IngestionService:
         updated: set[str] = set()  # 实际有新行的股票 → 收尾增量刷新干净因子
         n = len(pending)
         if ctx:
-            tail = f"（续跑跳过已完成 {skip_done}）" if skip_done else ""
+            resumed_done = len(completed_codes)
+            tail = f"（续跑跳过已完成 {resumed_done}）" if resumed_done else ""
             ctx.set_phase("daily_bar", done=len(completed_codes), total=n_total,
                           phase_total=n_total, phase_done=len(completed_codes), current_item=None,
                           done_codes=sorted(completed_codes))
             ctx.log(f"▶ 开始增量更新：共 {n_total} 只在市股票，待补 {n} 只{tail}，"
                     f"各股从已入库最新日+1 补到 {end}（并发 {concurrency}）")
 
-        def _checkpoint(done_count: int) -> None:
+        def _checkpoint(processed_count: int) -> None:
             if not ctx:
                 return
-            data = {"phase": "daily_bar", "done": done_count, "total": n_total,
-                    "phase_total": n_total, "phase_done": done_count}
-            if concurrency > 1:
-                data["done_codes"] = sorted(completed_codes)
-            elif completed_codes:
-                data["done_codes"] = sorted(completed_codes)
+            data = {
+                "phase": "daily_bar",
+                "done": len(completed_codes),
+                "total": n_total,
+                "phase_total": n_total,
+                "phase_done": processed_count,
+                "done_codes": sorted(completed_codes),
+            }
             ctx.set_checkpoint(**data)
 
         def _tick(a: int, code: str, rows: int, *, in_flight: int = 0) -> None:
             if ctx:
-                ctx.set_phase("daily_bar", done=a, total=n_total, phase_total=n_total,
+                ctx.set_phase("daily_bar", done=len(completed_codes), total=n_total, phase_total=n_total,
                               phase_done=a, current_item=code, done_codes=sorted(completed_codes))
             if a % 20 == 0 or a == n_total:
                 log.info("增量进度 %d/%d（成功%d 失败%d，累计%d行，最近 %s +%d）",
@@ -1119,7 +1141,7 @@ class IngestionService:
 
         if concurrency <= 1:  # 串行（默认，最稳）
             for idx, code in enumerate(pending, 1):
-                a = skip_done + idx
+                a = resumed_count + idx
                 if ctx:
                     ctx.check_cancel()   # 协作式终止：每只之间检查
                     ctx.set_phase("daily_bar", phase_total=n_total, phase_done=a - 1, current_item=code,
@@ -1138,7 +1160,6 @@ class IngestionService:
                 except Exception as e:  # noqa: BLE001
                     fail += 1
                     log.warning("%s 增量失败: %s", code, e)
-                    completed_codes.add(code)
                     _checkpoint(a)
                     if ctx:
                         ctx.log(f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，主源+兜底源均未取到）: {e}", "error")
@@ -1185,7 +1206,6 @@ class IngestionService:
                             _tick(a, code, rows, in_flight=len(pending_futs))
                         except Exception as e:  # noqa: BLE001
                             fail += 1
-                            completed_codes.add(code)
                             log.warning("%s 增量失败: %s", code, e)
                             if ctx:
                                 ctx.log(f"[{a}/{n_total}] {code} 增量更新失败（补到 {end}，主源+兜底源均未取到）: {e}", "error")
@@ -1477,7 +1497,6 @@ class IngestionService:
                     _tick(i, code, rows)
                 except Exception as e:  # noqa: BLE001
                     fail += 1
-                    done_codes.add(code)
                     _fail(i, code, e)
         else:  # 并发：线程局部 DataSource（限流按线程隔离），写入由 DuckDB RLock 串行
             import threading
@@ -1522,7 +1541,6 @@ class IngestionService:
                             _tick(i, code, rows)
                         except Exception as e:  # noqa: BLE001
                             fail += 1
-                            done_codes.add(code)
                             _fail(i, code, e)
         if updated:
             if ctx:
@@ -1711,12 +1729,18 @@ class IngestionService:
         """补全 stock_basic 的上市/退市日 + 行业（含新增退市股），按能力选源。"""
         dates_src = self._source_for("basic_dates")
         if ctx:
+            ctx.check_cancel()
+            ctx.set_phase(
+                "stock_basic", done=0, total=1,
+                phase_done=0, phase_total=1, current_item="全市场基础资料",
+            )
             ctx.log(f"子任务：上市/退市日采集开始，源 {dates_src.name}")
             ctx.flush()
         df = dates_src.get_basic_dates()  # code,name,list_date,delist_date,is_delisted
         # 行业映射（证监会行业）
         try:
             if ctx:
+                ctx.check_cancel()
                 ctx.log("子任务：行业信息采集开始")
                 ctx.flush()
             ind = self._source_for("industry").get_industry()
@@ -1744,6 +1768,8 @@ class IngestionService:
                 }
             )
         out = pd.DataFrame(rows)
+        if ctx:
+            ctx.check_cancel()
         n = self.repo.upsert_stock_basic(out)
         self.repo.log_update("stock_basic", dates_src.name, None, None, n, "success", "补上市/退市日+行业")
         log.info("%s 补全基础信息 %d 只（含退市股+行业）", dates_src.name, n)
@@ -1754,6 +1780,10 @@ class IngestionService:
             except Exception as e:  # noqa: BLE001
                 log.warning("补全基础信息后标记评分快照失效失败: %s", e)
         if ctx:
+            ctx.set_phase(
+                "stock_basic", done=1, total=1,
+                phase_done=1, phase_total=1, current_item="全市场基础资料",
+            )
             ctx.log(f"子任务：上市/退市日与行业入库完成，写入/更新 {n} 只")
         return n
 
@@ -1776,17 +1806,20 @@ class IngestionService:
             dl = dl.head(limit)
         log.info("待灌退市股 %d 只（退市日 >= %s）", len(dl), start)
         if ctx:
+            ctx.set_phase("delisted_history", phase_total=len(dl), phase_done=0, current_item=None)
             ctx.log(f"子任务：退市股历史灌入开始，待处理 {len(dl)} 只，区间 {start}~{end}")
             ctx.flush()
 
-        loaded = self.repo.get_loaded_codes()
+        covered_codes = self._history_start_covered_codes(start)
         ok, skip, fail, total_rows = 0, 0, 0, 0
         total = len(dl)
         for i, (_, r) in enumerate(dl.iterrows(), 1):
             code = r["code"]
             if ctx:
                 ctx.check_cancel()
-            if code in loaded:
+                ctx.set_phase("delisted_history", phase_total=total, phase_done=i - 1,
+                              current_item=code)
+            if code in covered_codes:
                 skip += 1
                 if ctx and (i % 20 == 0 or i == total):
                     ctx.log(f"退市股灌入进度 {i}/{total}：成功{ok} 跳过{skip} 失败{fail}，累计 {total_rows} 行")
@@ -1810,6 +1843,8 @@ class IngestionService:
                 total_rows += rows
                 ok += 1
                 if ctx and (i == 1 or i % 20 == 0 or i == total):
+                    ctx.set_phase("delisted_history", phase_total=total, phase_done=i,
+                                  current_item=code)
                     ctx.log(f"退市股 {code} 完成：写入 {rows} 行；进度 {i}/{total}，成功{ok} 跳过{skip} 失败{fail}")
                     ctx.flush()
             except Exception as e:  # noqa: BLE001

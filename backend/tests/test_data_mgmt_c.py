@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 from datetime import date, datetime
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -605,6 +606,116 @@ def test_resume_pins_target_end_and_skips_prep(client, monkeypatch):
     ingest.IngestionService().update(ctx=ctx)
     assert calls == {"cal": 0, "idx": 0, "resolve": 0}      # 前置/就绪门全跳过
     assert ctx.checkpoint["target_end"] == "2024-01-05"     # 沿用原目标日，未被重算成今天
+
+
+def test_update_resume_retries_failed_code_with_empty_exact_checkpoint(client, monkeypatch):
+    """新版精确 checkpoint 的 done_codes=[] 表示没有成功项，不能按 phase_done 跳过失败股票。"""
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.services.async_task import TaskContext
+    from backend.storage.repository import MarketRepository
+
+    client.execute(
+        "INSERT INTO stock_basic (code, name, price_limit_pct) VALUES ('A.SH','甲',0.10)"
+    )
+
+    def _init(self, source=None):
+        self.s = get_effective_settings()
+        self.c = client
+        self.repo = MarketRepository(client)
+        self.src = SimpleNamespace(name="fake")
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    monkeypatch.setattr(DataIntegrityReport, "gapped_codes", lambda self: [], raising=True)
+    monkeypatch.setattr(
+        ingest.IngestionService, "ingest_valuation_latest", lambda self, *a, **k: {}, raising=True
+    )
+    monkeypatch.setattr(
+        ingest.IngestionService,
+        "ingest_valuation",
+        lambda self, *a, **k: {"total_mv_rows": 0},
+        raising=True,
+    )
+    monkeypatch.setattr(
+        ingest.IngestionService, "_mark_snapshots_stale", lambda self: 0, raising=True
+    )
+
+    calls = []
+
+    def _fail(self, code, end, **kwargs):
+        calls.append(code)
+        raise RuntimeError("source unavailable")
+
+    monkeypatch.setattr(ingest.IngestionService, "_update_one", _fail, raising=True)
+    checkpoint = {"target_end": "2024-01-05", "done_codes": []}
+    first_ctx = TaskContext(AsyncTaskService(client), "task_resume_failed", checkpoint=checkpoint)
+    first = ingest.IngestionService().update(ctx=first_ctx, concurrency=1)
+    assert first["fail"] == 1
+    assert first_ctx.checkpoint["done"] == 0
+    assert first_ctx.checkpoint["done_codes"] == []
+
+    monkeypatch.setattr(
+        ingest.IngestionService,
+        "_update_one",
+        lambda self, code, end, **kwargs: calls.append(code) or 0,
+        raising=True,
+    )
+    retry_ctx = TaskContext(
+        AsyncTaskService(client), "task_retry_failed", checkpoint=first_ctx.checkpoint.copy()
+    )
+    second = ingest.IngestionService().update(ctx=retry_ctx, concurrency=1)
+    assert second["ok"] == 1
+    assert calls == ["A.SH", "A.SH"]
+
+
+def test_delisted_history_does_not_skip_partially_covered_code(client, monkeypatch):
+    """退市股只有近期一行行情不等于历史已补全，应继续回补目标起点至退市日。"""
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.storage.repository import MarketRepository
+
+    client.execute(
+        "INSERT INTO stock_basic (code, name, list_date, delist_date, price_limit_pct) "
+        "VALUES ('600001.SH','退市样本',DATE '2020-01-01',DATE '2025-12-31',0.10)"
+    )
+    client.execute(
+        "INSERT INTO daily_bar (code, trade_date, close, pre_close) "
+        "VALUES ('600001.SH',DATE '2025-01-02',10.0,9.9)"
+    )
+
+    source = SimpleNamespace(
+        name="fake-delisted",
+        get_delisted_list=lambda: pd.DataFrame([{
+            "code": "600001.SH", "name": "退市样本", "delist_date": date(2025, 12, 31),
+        }]),
+    )
+
+    def _init(self, source=None):
+        self.s = get_effective_settings()
+        self.c = client
+        self.repo = MarketRepository(client)
+
+    calls = []
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    monkeypatch.setattr(
+        ingest.IngestionService, "_latest_open_day", lambda self: date(2026, 1, 5), raising=True
+    )
+    monkeypatch.setattr(
+        ingest.IngestionService, "_source_for", lambda self, capability: source, raising=True
+    )
+    monkeypatch.setattr(
+        ingest.IngestionService,
+        "ingest_one_daily",
+        lambda self, code, start, end, *a, **k: calls.append((code, start, end)) or 0,
+        raising=True,
+    )
+    monkeypatch.setattr(
+        ingest.IngestionService, "_mark_snapshots_stale", lambda self: 0, raising=True
+    )
+
+    result = ingest.IngestionService().ingest_delisted(years=5)
+    assert result["ok"] == 1 and result["skip"] == 0
+    assert calls == [("600001.SH", date(2021, 1, 5), date(2025, 12, 31))]
 
 
 def test_ingest_date_collects_indices_and_resume_skips_prep(client, monkeypatch):

@@ -15,8 +15,8 @@ from pydantic import BaseModel
 from backend.api.response import ApiResponse, err, ok
 from backend.auth.deps import require_system_perm
 from backend.services.async_task import (
-    TASK_TYPES,
     TASK_CAPABILITIES,
+    TASK_TYPES,
     AsyncTaskService,
     ConcurrentTaskError,
 )
@@ -29,7 +29,8 @@ _TASK_GUARD = [Depends(require_system_perm("data-task:manage"))]
 
 
 class TaskIn(BaseModel):
-    task_type: str                 # update|backfill|ingest_date|ingest_codes|recompute|verify|checkup|fix
+    # stock_ingest 是 Web 新建个股采集的统一入口；旧采集类型仅作历史兼容。
+    task_type: str
     params: dict | None = None
 
 

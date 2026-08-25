@@ -24,14 +24,14 @@ from backend.storage.duckdb_client import get_client
 
 log = get_logger("services.async_task")
 
-# 全部任务类型（原子任务：定时任务系统按需组合调度，不再有 daily 复合任务）
+# 全部任务类型：旧原子任务保持兼容，stock_ingest 按安全方案统一分派既有采集能力。
 TASK_TYPES = ("update", "backfill", "ingest_date", "ingest_codes", "rebuild_price_factors",
               "recompute", "verify", "checkup", "fix", "enrich_basic", "audit_cleanup",
-              "board")
+              "board", "stock_ingest")
 # 写类任务：互斥（写任务之间不并发），且服务重启需 reconcile。
 WRITE_TASK_TYPES = frozenset({"update", "backfill", "ingest_date", "ingest_codes",
                               "rebuild_price_factors", "verify", "fix", "enrich_basic",
-                              "board"})
+                              "board", "stock_ingest"})
 
 # 日志保留（DM-D8）
 LOG_MAX_PER_TASK = 2000
@@ -97,6 +97,11 @@ TASK_CAPABILITIES: dict[str, dict] = {
         "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
         "resume_granularity": "board_code_or_fund_period",
         "cancel_message": "会在当前板块或资金流类型/周期取数完成后的检查点停止",
+    },
+    "stock_ingest": {
+        "can_cancel": True, "can_resume": True, "cancel_mode": "checkpoint",
+        "resume_granularity": "phase_code",
+        "cancel_message": "会在当前股票或当前外部接口请求结束后的检查点停止",
     },
 }
 
@@ -238,6 +243,10 @@ class AsyncTaskService:
         if task_type not in TASK_TYPES:
             raise ValueError(f"未知任务类型: {task_type}（可选 {TASK_TYPES}）")
         params = params or {}
+        if task_type == "stock_ingest":
+            from backend.services.stock_ingest import normalize_stock_ingest_params
+
+            params = normalize_stock_ingest_params(params)
         with _TASK_CREATE_LOCK:
             if trigger_event_id:
                 existing = self.c.query_df(
@@ -671,6 +680,66 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
     stale = _mark_snapshots_stale()
     ctx.log(f"阶段 3/3：指定股票采集收尾，已标记 {stale} 项评分快照失效")
     return {"message": f"指定股票采集完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
+
+
+def _h_stock_ingest(params: dict, ctx: TaskContext) -> dict:
+    """按安全场景编排个股行情、估值、基础资料与退市股采集。"""
+    from datetime import date as _date
+
+    from backend.services.ingest import IngestionService
+    from backend.services.stock_ingest import (
+        STOCK_INGEST_RECIPE_LABELS,
+        normalize_stock_ingest_params,
+    )
+
+    normalized = normalize_stock_ingest_params(params)
+    recipe = normalized["recipe"]
+    label = STOCK_INGEST_RECIPE_LABELS[recipe]
+    codes = normalized.get("codes")
+    concurrency = _concurrency(normalized)
+    ing = IngestionService()
+    scope = f"指定 {len(codes)} 只股票" if codes else "全市场"
+    ctx.log(f"个股采集方案：{label}；范围：{scope}")
+    ctx.progress(0.08, f"{label}准备中…")
+
+    if recipe == "daily_update":
+        result = ing.update(codes=codes, concurrency=concurrency, ctx=ctx)
+    elif recipe == "history_backfill":
+        result = ing.backfill(
+            codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
+    elif recipe == "range_refetch":
+        result = ing.ingest_date(
+            _date.fromisoformat(normalized["date_start"]),
+            _date.fromisoformat(normalized["date_end"]),
+            codes=codes,
+            concurrency=concurrency,
+            ctx=ctx,
+        )
+    elif recipe == "valuation_history":
+        result = ing.ingest_valuation(
+            codes=codes, years=normalized.get("years"), concurrency=concurrency, ctx=ctx)
+    elif recipe == "valuation_gaps":
+        result = ing.ingest_valuation_gaps(codes=codes, concurrency=concurrency, ctx=ctx)
+    elif recipe == "basic_refresh":
+        rows = ing.enrich_basic_dates(ctx=ctx)
+        result = {"target": rows, "ok": rows, "fail": 0, "rows": rows}
+    else:  # delisted_history：与 CLI delisted --enrich 保持同一先后顺序。
+        basic_rows = ing.enrich_basic_dates(ctx=ctx)
+        result = ing.ingest_delisted(years=normalized.get("years"), ctx=ctx)
+        result["basic_rows"] = basic_rows
+
+    if result.get("skipped"):
+        return {"message": "主源当日数据未就绪，本次日常同步未执行", "ingest": result}
+    fail = int(result.get("fail") or 0)
+    message = f"{label}完成：{result}"
+    payload = {"message": message, "recipe": recipe, "ingest": result}
+    if fail:
+        payload["message"] = f"{label}部分完成（{fail} 项失败，可重试未完成项）"
+        payload["ok"] = False
+        ctx.log(payload["message"], "warn")
+        return payload
+    ctx.progress(1.0, f"{label}完成")
+    return payload
 
 
 def _h_recompute(params: dict, ctx: TaskContext) -> dict:
@@ -1225,4 +1294,5 @@ _HANDLERS = {
     "enrich_basic": _h_enrich_basic,
     "audit_cleanup": _h_audit_cleanup,
     "board": _h_board,
+    "stock_ingest": _h_stock_ingest,
 }
