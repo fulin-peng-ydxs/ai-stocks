@@ -1,6 +1,7 @@
 import { computed, type Ref } from 'vue'
 import { ALL_DAYS } from '@/composables/useKlinePrefs'
 import { useDefaultedSessionValue } from '@/composables/useDefaultedSessionValue'
+import { normalizeMarketBenchmarkCode } from '@/utils/marketBenchmarks'
 import {
   PRICE_COMPARE_METRIC_ORDER,
   isPriceCompareMetric,
@@ -24,11 +25,6 @@ export interface StockAnalysisDefaults {
 function normalizeCompareRange(value: unknown): number {
   const candidate = Number(value)
   return (STOCK_COMPARE_RANGES as readonly number[]).includes(candidate) ? candidate : 60
-}
-
-function normalizeBenchmarkCode(value: unknown): string {
-  const candidate = String(value ?? '')
-  return ['', '000905.SH', '000300.SH'].includes(candidate) ? candidate : '000905.SH'
 }
 
 function normalizeAdjustMode(value: unknown): '' | 'qfq' | 'hfq' {
@@ -61,7 +57,7 @@ export function useStockAnalysisSession(
       ? candidate
       : visibleCompareMetrics.value[0] ?? 'cum'
   })
-  const configuredBenchmarkCode = computed(() => normalizeBenchmarkCode(settings.benchmarkCode))
+  const configuredBenchmarkCode = computed(() => normalizeMarketBenchmarkCode(settings.benchmarkCode))
   const configuredAdjustMode = computed(() => normalizeAdjustMode(settings.adjustMode))
 
   return {

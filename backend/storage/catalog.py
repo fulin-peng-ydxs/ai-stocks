@@ -86,7 +86,10 @@ TABLE_CATALOG: dict[str, dict] = {
     },
     "index_bar": {
         "name_cn": "指数日线",
-        "purpose": "基准指数行情（沪深300/中证500/中证全指），回测基准与相对强弱计算。",
+        "purpose": (
+            "六类市场指数行情（中证 500、沪深 300、上证指数、科创 50、深证成指、"
+            "创业板指），用于回测基准与相对强弱计算。"
+        ),
         "date_col": "trade_date",
         "relations": ["trade_date → trade_calendar"],
         "fields": [

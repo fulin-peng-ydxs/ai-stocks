@@ -146,8 +146,20 @@ class IngestionService:
         return n
 
     # ── 指数 ──
-    def ingest_indices(self, start: date, end: date, ctx=None) -> int:
-        codes = [self.s.backtest.benchmark_main, *self.s.backtest.benchmark_others]
+    def ingest_indices(
+        self,
+        start: date,
+        end: date,
+        ctx=None,
+        codes: list[str] | None = None,
+    ) -> int:
+        """采集配置内指数；可指定子集供逐指数增量补采复用。"""
+        configured = [self.s.backtest.benchmark_main, *self.s.backtest.benchmark_others]
+        allowed = set(configured)
+        codes = list(dict.fromkeys(codes if codes is not None else configured))
+        unsupported = [code for code in codes if code not in allowed]
+        if unsupported:
+            raise ValueError(f"指数不在系统配置清单中: {unsupported}")
         total = 0
         if ctx:
             ctx.log(f"子任务：指数行情采集开始，{len(codes)} 个指数，区间 {start}~{end}")
@@ -169,17 +181,34 @@ class IngestionService:
         return total
 
     def _ingest_indices_incremental(self, end: date, ctx=None) -> int:
-        """指数行情增量：从 index_bar 已入库最新日 +1 补到 end（与日行情同口径）。
-
-        增量更新调用——避免原先每次固定拉「今天-30~今天」整窗导致"指数一直在更新"。已最新则跳过。
-        """
-        last = self.repo.c.query_df("SELECT max(trade_date) AS d FROM index_bar").iloc[0]["d"]
-        start = (pd.Timestamp(last).date() + timedelta(days=1)) if pd.notna(last) else (end - timedelta(days=30))
-        if start > end:
-            if ctx:
-                ctx.log(f"子任务：指数行情已是最新（到 {pd.Timestamp(last).date()}），本次跳过")
-            return 0
-        return self.ingest_indices(start, end, ctx=ctx)
+        """逐指数补到目标日；首次加入配置的指数自动回填系统历史窗口。"""
+        codes = list(dict.fromkeys([
+            self.s.backtest.benchmark_main,
+            *self.s.backtest.benchmark_others,
+        ]))
+        latest_df = self.repo.c.query_df(
+            "SELECT index_code, max(trade_date) AS d FROM index_bar GROUP BY index_code"
+        )
+        latest = {
+            str(row["index_code"]): pd.Timestamp(row["d"]).date()
+            for _, row in latest_df.iterrows()
+            if pd.notna(row["d"])
+        }
+        history_start = (
+            pd.Timestamp(end) - pd.DateOffset(years=self.s.datasource.history_years)
+        ).date()
+        total = 0
+        pending = 0
+        for code in codes:
+            last = latest.get(code)
+            start = last + timedelta(days=1) if last else history_start
+            if start > end:
+                continue
+            pending += 1
+            total += self.ingest_indices(start, end, ctx=ctx, codes=[code])
+        if pending == 0 and ctx:
+            ctx.log(f"子任务：{len(codes)} 个指数行情均已是最新，本次跳过")
+        return total
 
     # ── 股票列表 + 基础信息 ──
     def ingest_stock_basic(self, codes: list[str] | None = None, ctx=None) -> pd.DataFrame:

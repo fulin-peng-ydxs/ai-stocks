@@ -277,6 +277,23 @@ def test_get_benchmark_bars_range(c):
     assert bars[-1]["close"] == pytest.approx(6120.0)
 
 
+@pytest.mark.parametrize(
+    ("code", "name"),
+    [
+        ("000905.SH", "中证 500"),
+        ("000300.SH", "沪深 300"),
+        ("000001.SH", "上证指数"),
+        ("000688.SH", "科创 50"),
+        ("399001.SZ", "深证成指"),
+        ("399006.SZ", "创业板指"),
+    ],
+)
+def test_market_benchmark_registry_exposes_all_configured_indices(code, name):
+    """所有采集指数均进入共享查询白名单并返回稳定名称。"""
+    MarketBenchmarkService.validate_code(code)
+    assert MarketBenchmarkService.name(code) == name
+
+
 # ── members ───────────────────────────────────────────────
 
 

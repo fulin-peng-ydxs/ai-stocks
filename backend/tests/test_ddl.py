@@ -134,7 +134,10 @@ def test_index_to_sina_symbol():
 
     assert index_to_sina_symbol("000905.SH") == "sh000905"
     assert index_to_sina_symbol("000300.SH") == "sh000300"
+    assert index_to_sina_symbol("000001.SH") == "sh000001"
+    assert index_to_sina_symbol("000688.SH") == "sh000688"
     assert index_to_sina_symbol("399001.SZ") == "sz399001"
+    assert index_to_sina_symbol("399006.SZ") == "sz399006"
     assert index_to_sina_symbol("000905") == "sh000905"  # 兼容裸代码
 
 

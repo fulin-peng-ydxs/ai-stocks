@@ -115,7 +115,11 @@ class CostConfig(BaseModel):
 
 class BacktestConfig(BaseModel):
     benchmark_main: str = "000905.SH"
-    benchmark_others: list[str] = Field(default_factory=lambda: ["000300.SH"])
+    benchmark_others: list[str] = Field(
+        default_factory=lambda: [
+            "000300.SH", "000001.SH", "000688.SH", "399001.SZ", "399006.SZ",
+        ]
+    )
     initial_capital: float = 1_000_000.0
     top_n: int = 20
     lot_size: int = 100

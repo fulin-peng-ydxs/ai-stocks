@@ -2,8 +2,8 @@
 import { computed, watch } from 'vue'
 import PageSegmented from '@/components/PageSegmented.vue'
 import PageToggleRow from '@/components/PageToggleRow.vue'
+import { MARKET_BENCHMARK_OPTIONS } from '@/utils/marketBenchmarks'
 import {
-  MARKET_BENCHMARK_OPTIONS,
   PRICE_COMPARE_METRIC_META,
   PRICE_COMPARE_METRIC_ORDER,
   type PriceCompareMetric,

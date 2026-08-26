@@ -336,7 +336,7 @@ function onSubmit() {
             <span class="t-item"><em>SH 000001</em>上证指数<b class="up">3,247.18 ▲0.42%</b></span>
             <span class="t-item"><em>SZ 399001</em>深证成指<b class="up">10,562.4 ▲0.68%</b></span>
             <span class="t-item"><em>SZ 399006</em>创业板指<b class="down">2,118.9 ▼0.15%</b></span>
-            <span class="t-item"><em>SH 000688</em>科创50<b class="up">986.52 ▲1.03%</b></span>
+            <span class="t-item"><em>SH 000688</em>科创 50<b class="up">986.52 ▲1.03%</b></span>
             <span class="t-item"><em>LEAD</em>龙头梯队<b class="up">42只 ▲6</b></span>
             <span class="t-item"><em>ADV</em>晋级率<b class="up">38.2% ▲2.1</b></span>
             <span class="t-item"><em>TREND</em>趋势强度<b class="down">71 ▼3</b></span>
@@ -345,7 +345,7 @@ function onSubmit() {
             <span class="t-item"><em>SH 000001</em>上证指数<b class="up">3,247.18 ▲0.42%</b></span>
             <span class="t-item"><em>SZ 399001</em>深证成指<b class="up">10,562.4 ▲0.68%</b></span>
             <span class="t-item"><em>SZ 399006</em>创业板指<b class="down">2,118.9 ▼0.15%</b></span>
-            <span class="t-item"><em>SH 000688</em>科创50<b class="up">986.52 ▲1.03%</b></span>
+            <span class="t-item"><em>SH 000688</em>科创 50<b class="up">986.52 ▲1.03%</b></span>
             <span class="t-item"><em>LEAD</em>龙头梯队<b class="up">42只 ▲6</b></span>
             <span class="t-item"><em>ADV</em>晋级率<b class="up">38.2% ▲2.1</b></span>
             <span class="t-item"><em>TREND</em>趋势强度<b class="down">71 ▼3</b></span>

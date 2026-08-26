@@ -38,7 +38,7 @@ R1、R2、R3、R4、R5、R6、R7、R8、R9、R10、R21、R22、R23、R26（逐�
 
 | 需求编号 | 增强内容 | 需求阶段处理状态 | 开发状态 | 对应任务 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| R11 | 板块指数统一 K 线范围、市场指数基准、周期内横向缩放与图表高度拖拽 | 本次纳入 | 已完成 | T12 | 快捷周期的数据与缩放边界对齐；中证 500/沪深 300/不对比指数；超额涨跌提示；K线/量能高度分隔线 |
+| R11 | 板块指数统一 K 线范围、市场指数基准、周期内横向缩放与图表高度拖拽 | 本次纳入 | 已完成 | T12 | 快捷周期的数据与缩放边界对齐；六类市场指数/不对比指数；超额涨跌提示；K线/量能高度分隔线 |
 | R12 | 板块维度数据质量校验（指数缺口） | 本次纳入 | 已完成 | T7 | 复用 `data_quality_issue` |
 | R13 | 详情页成分股统一分页（`AppPagination` 默认 20，无 TopN 展开） | 本次纳入 | 已完成 | T8、T12 | members 服务端分页/排序与详情表已落地 |
 | R14 | 板块资金流统计卡（即时净流入额） | 本次纳入 | 已完成 | T8、T12 | 详情摘要指标条已落地 |
@@ -160,7 +160,7 @@ P2 `sectors-detail`（detail，`responsiveProfile: 'single-column'`）：
 | 页面功能点 | 对应需求编号 | 需求交互要点 | 技术实现 | 涉及组件/模块 | 数据/API | 状态与异常处理 | 对应任务 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 板块摘要卡（7.2.1） | R8、R14 | 名称/类型/最近快照返回数/今日涨幅/累计成员涨跌家数/即时净流入(含数据日期)/累计成员领涨股及涨幅；随路由 code 刷新 | 摘要区（DESIGN 统计项语义）；涨幅与净流入分别标注各自数据日期；领涨股按行情截面日历史累计关系涨幅第一计算 | SectorDetailView.vue | `GET /api/sectors/{code}` | 板块不存在 → error 态「板块不存在或数据未采集」；空值显示「—」 | T12 |
-| 板块指数走势图（7.2.2） | R8、R11 | 默认近 120 日；范围与个股统一；横向缩放限制在当前周期；走势默认对比中证 500，可切沪深 300/不对比；**多口径对比（2026-08-13 修订）**：头部指标槽点击切换，趋势指标折线、截面指标柱状，累计涨跌双基期；K 线高度可调整 | 列表/详情复用 `klineRangeQueryStart` 预取并按交易点精确截断，板块走势与指数基准共享截断日期；`SectorCompareChart` 按 `metric` 折线/柱状两分支，趋势指标以虚线区分市场指数并在 tooltip 计算超额涨跌，截面指标柱状且不叠加指数；累计·近一年基期强制 250 交易日区间；指标口径纯函数在 `utils/sectorCompare.ts`；详情复用 `StockChartWorkspace` + `KlineRangeSelect` + `useStockChartPreferences`，K 线与量能联动，高度比例单独持久化 | SectorsView.vue、SectorDetailView.vue、StockChartWorkspace、SectorCompareChart、KlineRangeSelect、AppFilterSelect | `GET /api/sectors/{code}/bars`、`GET /api/sectors/benchmarks/{index_code}/bars` | 板块走势失败进入图表错误态；基准失败降级显示板块走势并在图表脚注明 | T12 |
+| 板块指数走势图（7.2.2） | R8、R11 | 默认近 120 日；范围与个股统一；横向缩放限制在当前周期；走势默认对比中证 500，可切沪深 300、上证指数、科创 50、深证成指、创业板指或不对比；**多口径对比（2026-08-13 修订）**：头部指标槽点击切换，趋势指标折线、截面指标柱状，累计涨跌双基期；K 线高度可调整 | 列表/详情复用 `klineRangeQueryStart` 预取并按交易点精确截断，板块走势与指数基准共享截断日期；`SectorCompareChart` 按 `metric` 折线/柱状两分支，趋势指标以虚线区分市场指数并在 tooltip 计算超额涨跌，截面指标柱状且不叠加指数；累计·近一年基期强制 250 交易日区间；指标口径纯函数在 `utils/sectorCompare.ts`；详情复用 `StockChartWorkspace` + `KlineRangeSelect` + `useStockChartPreferences`，K 线与量能联动，高度比例单独持久化 | SectorsView.vue、SectorDetailView.vue、StockChartWorkspace、SectorCompareChart、KlineRangeSelect、AppFilterSelect | `GET /api/sectors/{code}/bars`、`GET /api/sectors/benchmarks/{index_code}/bars` | 板块走势失败进入图表错误态；基准失败降级显示板块走势并在图表脚注明 | T12 |
 | 历史累计成分股表（7.2.3） | R8、R9、R13 | 统一分页（默认 20，抽屉可配 10/20/30/50）；列头排序（默认涨跌幅降序）；有 `stocks:view` 点行跳 `/stocks/:code`，无权限行禁用 + hover 提示；从个股返回原板块详情 | AppDataTable（嵌套 slot `memberTable`，parentId=detail）+ AppPagination；进入个股前通过共享 `stockSet` 写入当前累计关系结果页集合及 `route.fullPath` 返回地址，覆盖其它页面遗留集合；`componentValueOf('memberTable', ...)` 消费 pageSize/defaultSort/hiddenColumns | AppDataTable、AppPagination、stockSet、pageRegistry `sectors-detail` | `GET /api/sectors/{code}/members?page=&size=`（size 默认 20） | 空态/错误重试；直接访问 `/stocks/:code` 路由守卫 fail-closed（现有机制） | T12 |
 | 返回列表保留筛选态（R8） | R8 | 面包屑/返回按钮始终 `router.replace` 显式跳列表并带白名单校验后的来源 query；无/非法来源 query 落默认；不使用 `router.back()`；浏览器原生后退按 history 还原 | 列表 URL query 承载筛选态；进详情时来源 query 透传进详情 URL；返回前白名单校验（`type/sort/order/keyword/page`） | vue-router、SectorsView/SectorDetailView | - | 非法 query 逐字段丢弃落默认 | T12 |
 

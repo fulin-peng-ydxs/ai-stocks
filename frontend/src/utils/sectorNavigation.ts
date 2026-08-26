@@ -1,5 +1,6 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 import type { BoardType, SectorSortField } from '@/api/sectors'
+import { normalizeMarketBenchmarkCode } from '@/utils/marketBenchmarks'
 
 export interface SectorSourceQuery {
   type?: BoardType
@@ -76,9 +77,7 @@ export function resolveSectorListState(
   const requestedScope = query.scope ?? (
     preferences.defaultScope === 'watchlist' ? 'watchlist' : 'all'
   )
-  const benchmarkCode = ['', '000905.SH', '000300.SH'].includes(preferences.benchmarkCode ?? '')
-    ? preferences.benchmarkCode ?? ''
-    : '000905.SH'
+  const benchmarkCode = normalizeMarketBenchmarkCode(preferences.benchmarkCode ?? '')
   return {
     query,
     boardType: query.type ?? savedType,

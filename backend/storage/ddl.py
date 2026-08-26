@@ -817,7 +817,10 @@ _DIMENSION_SEED: list[tuple] = [
     ("basic",        "股票基础",   "collected", "akshare/baostock",         '["stock_basic"]',
      "代码/名称/交易所/板块/上市退市日/行业/涨跌幅限制"),
     ("index",        "指数行情",   "collected", "akshare",                  '["index_bar"]',
-     "基准指数日线（沪深300/中证500/中证全指），回测基准与相对强弱"),
+     (
+         "六类市场指数日线（中证 500/沪深 300/上证指数/科创 50/深证成指/创业板指），"
+         "回测基准与相对强弱"
+     )),
     ("calendar",     "交易日历",   "collected", "akshare/baostock",         '["trade_calendar"]',
      "开市日判定，缺口检测与点时安全基础"),
     ("shareholders", "股东数据",   "planned",   "待定（东财/巨潮）",          '[]',

@@ -79,6 +79,14 @@ describe('resolveSectorListState', () => {
       page: 1,
     })
   })
+
+  it('新增市场指数可直接恢复为板块对比基准', () => {
+    expect(resolveSectorListState(
+      {},
+      { benchmarkCode: '399006.SZ' },
+      true,
+    ).benchmarkCode).toBe('399006.SZ')
+  })
 })
 
 describe('sectorListLocation', () => {

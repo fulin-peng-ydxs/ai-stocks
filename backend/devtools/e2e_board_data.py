@@ -20,7 +20,14 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 BOARD_PREFIX = "E2E9"
 BOARD_CODES = tuple(f"{BOARD_PREFIX}{i:03d}" for i in range(1, 25))
 STOCK_CODES = tuple(f"9999{i:02d}.SZ" for i in range(1, 26))
-BENCHMARK_CODES = ("000905.SH", "000300.SH")
+BENCHMARK_CODES = (
+    "000905.SH",
+    "000300.SH",
+    "000001.SH",
+    "000688.SH",
+    "399001.SZ",
+    "399006.SZ",
+)
 FIXTURE_START = date(2099, 1, 5)
 FIXTURE_POINTS = 140
 

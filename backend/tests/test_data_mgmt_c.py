@@ -550,6 +550,43 @@ def test_update_includes_valuation(client, monkeypatch):
     assert called["val"] is True and "valuation" in res
 
 
+def test_index_incremental_uses_each_code_latest_date_and_backfills_new_code(client, monkeypatch):
+    """旧指数已最新不能阻断新指数按系统历史窗口首次回填。"""
+    from backend.config import get_effective_settings
+    from backend.services import ingest
+    from backend.storage.repository import MarketRepository
+
+    client.execute(
+        "INSERT INTO index_bar (index_code, trade_date, close) VALUES "
+        "('000905.SH', DATE '2026-08-25', 6000), "
+        "('000300.SH', DATE '2026-08-20', 4000)"
+    )
+
+    def _init(self, source=None):
+        self.s = get_effective_settings()
+        self.c = client
+        self.repo = MarketRepository(client)
+
+    monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
+    calls = []
+    monkeypatch.setattr(
+        ingest.IngestionService,
+        "ingest_indices",
+        lambda self, start, end, ctx=None, codes=None: calls.append((codes[0], start, end)) or 1,
+        raising=True,
+    )
+
+    written = ingest.IngestionService()._ingest_indices_incremental(date(2026, 8, 25))
+    by_code = {code: (start, end) for code, start, end in calls}
+    assert "000905.SH" not in by_code
+    assert by_code["000300.SH"] == (date(2026, 8, 21), date(2026, 8, 25))
+    assert by_code["000001.SH"] == (date(2021, 8, 25), date(2026, 8, 25))
+    assert by_code["000688.SH"] == (date(2021, 8, 25), date(2026, 8, 25))
+    assert by_code["399001.SZ"] == (date(2021, 8, 25), date(2026, 8, 25))
+    assert by_code["399006.SZ"] == (date(2021, 8, 25), date(2026, 8, 25))
+    assert written == 5
+
+
 # ── 续跑修复：终止信号穿透尾部容错兜底 / 续跑锁定目标日且跳过前置 ──
 def test_update_cancel_in_valuation_propagates(client, monkeypatch):
     """回归：补市值阶段被终止时 TaskCancelled 必须穿透 update() 容错兜底（而非被

@@ -12,7 +12,8 @@ import { listProfiles, getProfile, browseProfiles, copyProfile, type Profile } f
 import { listScoreProfiles, browseScoreProfiles, copyScoreProfile, type ScoreProfileSummary } from '@/api/scoreProfile'
 import { listTradeProfiles, browseTradeProfiles, copyTradeProfile, type TradeProfileSummary } from '@/api/tradeProfile'
 import { getBars, type Bar } from '@/api/stocks'
-import { fetchBenchmarkEquity, BENCHMARK_OPTIONS, type BenchmarkEquity } from '@/utils/benchmarkEquity'
+import { fetchBenchmarkEquity, type BenchmarkEquity } from '@/utils/benchmarkEquity'
+import { MARKET_BENCHMARK_OPTIONS } from '@/utils/marketBenchmarks'
 import EquityChart from '@/components/EquityChart.vue'
 import CandleChart, { type TradeMarker } from '@/components/CandleChart.vue'
 import { Search, Close } from '@element-plus/icons-vue'
@@ -1970,7 +1971,7 @@ async function openTradeChart(row: TradeRow) {
               <span class="bench-choice-label">对比指数</span>
               <AppFilterSelect
                 v-model="benchChoice"
-                :options="BENCHMARK_OPTIONS"
+                :options="MARKET_BENCHMARK_OPTIONS"
                 :multiple="false"
                 :clearable="false"
                 :filterable="false"
@@ -2331,7 +2332,7 @@ async function openTradeChart(row: TradeRow) {
             <div class="setting-label">默认对比指数</div>
             <AppFilterSelect
               v-model="settings.benchmarkCode"
-              :options="BENCHMARK_OPTIONS"
+              :options="MARKET_BENCHMARK_OPTIONS"
               :multiple="false"
               :clearable="false"
               :filterable="false"

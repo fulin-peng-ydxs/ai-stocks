@@ -65,6 +65,13 @@ test.describe('板块行情工作台', () => {
       await page.getByRole('option', { name: '不对比指数' }).click()
       await expect(compareChart).toHaveAttribute('data-benchmark-code', '')
       await page.getByTestId('sectors-benchmark').click()
+      await page.getByRole('option', { name: '创业板指' }).click()
+      await expect(compareChart).toHaveAttribute('data-benchmark-code', '399006.SZ')
+      await expect.poll(async () => Number(
+        await compareChart.getAttribute('data-benchmark-point-count'),
+      )).toBeGreaterThan(0)
+      await expect(page.getByText('虚线为创业板指', { exact: false })).toBeVisible()
+      await page.getByTestId('sectors-benchmark').click()
       await page.getByRole('option', { name: '中证 500' }).click()
       await expect(compareChart).toHaveAttribute('data-benchmark-code', '000905.SH')
       await page.getByTestId('sectors-compare-range').click()

@@ -37,7 +37,8 @@ import {
 } from '@/utils/compareQueue'
 import {
   MARKET_BENCHMARK_OPTIONS,
-} from '@/utils/marketCompare'
+  normalizeMarketBenchmarkCode,
+} from '@/utils/marketBenchmarks'
 import {
   addSectorWatchlist,
   getSectorBenchmarkBars,
@@ -251,9 +252,7 @@ const configuredChartMode = computed<'compare' | 'kline'>(() => (
   settings.defaultChartMode === 'kline' ? 'kline' : 'compare'
 ))
 const configuredBenchmarkCode = computed(() => (
-  ['', '000905.SH', '000300.SH'].includes(settings.benchmarkCode)
-    ? settings.benchmarkCode
-    : '000905.SH'
+  normalizeMarketBenchmarkCode(settings.benchmarkCode)
 ))
 const configuredCompareMetric = computed(() => sanitizeCompareMetric(settings.defaultCompareMetric))
 const configuredCompareWindow = computed(() => (

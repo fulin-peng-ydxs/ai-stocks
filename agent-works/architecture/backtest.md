@@ -23,7 +23,7 @@
 
 **防未来机制（贯穿）**。① `T` 日决策、`T+1` 成交（`engine.py:315`）；② 卖出旧式信号 `below_ma` 用后向滚动均线（`engine.py:67-71`）；③ 筛选表达式预计算虽用 `≤date_end` 全序列，但每个调仓日只读该日及之前的布尔值（`precompute.py:8`）；④ 前向收益仅用于事后评估，不回流进信号。
 
-**稳健性测试**。`backend/backtest/robustness.py` 复用 `BacktestService.run_strategy(persist=False)` 不污染历史：`param_sweep` 固定其它参数扫单参数多取值看绩效是否平滑（`robustness.py:33`）；`in_out_sample` 区间一分为二做样本内外切分防过拟合（`robustness.py:42`）；同期基准（默认中证 500）即天然对照组，超额即相对全市场的优势。
+**稳健性测试**。`backend/backtest/robustness.py` 复用 `BacktestService.run_strategy(persist=False)` 不污染历史：`param_sweep` 固定其它参数扫单参数多取值看绩效是否平滑（`robustness.py:33`）；`in_out_sample` 区间一分为二做样本内外切分防过拟合（`robustness.py:42`）；同期基准（默认中证 500，可选沪深 300、上证指数、科创 50、深证成指、创业板指）即天然对照组，超额即相对全市场的优势。
 
 **性能优化**。① 筛选表达式批量预计算 `HitPrecomputer`（`backend/backtest/precompute.py`）：把 AST 的 expr 叶子在全历史一次性算成 `(code,date)->bool` 查找表（O(股) 次而非 O(股×日) 次），仅对尺度不变的相对条件成立，含绝对价比较的 expr 不适用（`precompute.py:10`）。② 策略回测与分层分析共享同一 `IndicatorEngine` 实例，区间指标快照只算一遍（`engine.py:40`、`backtest_service.py:155`）。
 

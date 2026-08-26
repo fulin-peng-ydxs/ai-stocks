@@ -12,6 +12,10 @@ from backend.storage.duckdb_client import DuckDBClient, get_client
 BENCHMARK_NAMES = {
     "000905.SH": "中证 500",
     "000300.SH": "沪深 300",
+    "000001.SH": "上证指数",
+    "000688.SH": "科创 50",
+    "399001.SZ": "深证成指",
+    "399006.SZ": "创业板指",
 }
 
 

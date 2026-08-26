@@ -74,11 +74,6 @@ vi.mock('@/api/board', () => ({
 }))
 
 vi.mock('@/utils/benchmarkEquity', () => ({
-  BENCHMARK_OPTIONS: [
-    { label: '不对比指数', value: '' },
-    { label: '中证 500', value: '000905.SH' },
-    { label: '沪深 300', value: '000300.SH' },
-  ],
   fetchBenchmarkEquity: vi.fn(async () => ({
     code: '000905.SH', name: '中证 500', equity: [1_000_000, 1_020_000],
   })),

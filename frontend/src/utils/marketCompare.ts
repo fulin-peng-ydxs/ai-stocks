@@ -32,12 +32,6 @@ export const PRICE_COMPARE_METRIC_META: Record<PriceCompareMetric, PriceCompareM
   roll_60d: { label: '60日涨幅', window: 60 },
 }
 
-export const MARKET_BENCHMARK_OPTIONS = [
-  { label: '不对比指数', value: '' },
-  { label: '中证 500', value: '000905.SH' },
-  { label: '沪深 300', value: '000300.SH' },
-]
-
 export interface AlignedPriceComparison {
   dates: string[]
   valuesByCode: Record<string, (number | null)[]>

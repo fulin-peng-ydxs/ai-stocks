@@ -1,12 +1,5 @@
 import { getSectorBenchmarkBars, type SectorBar } from '@/api/sectors'
 
-/** 基准指数选择项（与后端 benchmark_main / benchmark_others 放行集合一致）。 */
-export const BENCHMARK_OPTIONS = [
-  { label: '不对比指数', value: '' },
-  { label: '中证 500', value: '000905.SH' },
-  { label: '沪深 300', value: '000300.SH' },
-]
-
 export interface BenchmarkEquity {
   code: string
   name: string

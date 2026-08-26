@@ -63,6 +63,18 @@ describe('useStockAnalysisSession', () => {
     expect(session.adjustMode.value).toBe('qfq')
   })
 
+  it('新增市场指数可作为个股分析默认基准', () => {
+    const settings = reactive({
+      defaultChartMode: 'compare',
+      showAnalysisPanel: true,
+      compareRange: 60,
+      benchmarkCode: '000688.SH',
+    })
+    const session = useStockAnalysisSession(settings, ref(120))
+
+    expect(session.benchmarkCode.value).toBe('000688.SH')
+  })
+
   it('复权口径随抽屉默认单向进入会话', async () => {
     const settings = reactive({
       defaultChartMode: 'kline',

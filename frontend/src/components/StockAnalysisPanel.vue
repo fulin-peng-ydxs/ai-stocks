@@ -18,9 +18,9 @@ import { ALL_DAYS } from '@/composables/useKlinePrefs'
 import { STOCK_COMPARE_RANGES } from '@/composables/useStockAnalysisSession'
 import type { AuxiliaryChartType } from '@/composables/useStockChartPreferences'
 import { getErrorMessage } from '@/utils/error'
+import { MARKET_BENCHMARK_OPTIONS } from '@/utils/marketBenchmarks'
 import {
   PRICE_COMPARE_METRIC_META,
-  MARKET_BENCHMARK_OPTIONS,
   priceCompareSetLookback,
   priceMetricWindow,
   priceReturn,
