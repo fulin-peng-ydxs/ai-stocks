@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -173,6 +173,11 @@ L1_ISSUE_TYPES: tuple[str, ...] = ("null_close", "ohl_repaired")
 L2_ISSUE_TYPES: tuple[str, ...] = ("mv_missing", "mv_gap")
 L3_ISSUE_TYPES: tuple[str, ...] = ("abnormal_change", "adj_jump")
 L4_ISSUE_TYPES: tuple[str, ...] = ("data_gap", "stale")
+# 「标记正常」的精确豁免类型：只豁免同一对象、同一问题类型、同一交易日。
+# 其余状态型问题按对象与类型整体豁免，避免各扫描/采集入口自行写死而产生口径分叉。
+EXACT_IGNORE_ISSUE_TYPES: frozenset[str] = frozenset(
+    L1_ISSUE_TYPES + L3_ISSUE_TYPES + ("board_index_gap_daily", "board_index_invalid")
+)
 # 能进入质检台账的完整问题类型集。调度、恢复参数校验统一复用这一契约，
 # 避免新增质量层问题后只能手工处理。
 QUALITY_ISSUE_TYPES: tuple[str, ...] = (

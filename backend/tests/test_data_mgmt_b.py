@@ -802,21 +802,72 @@ def test_scan_board_quality_index_gap_daily(client, monkeypatch):
 
 
 def test_scan_board_quality_index_gap_daily_ignored(client, monkeypatch):
-    """板块指数逐日缺口：ignored 状态按 code 整体豁免。"""
+    """板块指数逐日缺口：ignored 只豁免同一日期，后续日期仍须上报。"""
     from backend.services.data_report import DataIntegrityReport
     _seed_board_scan(client)
     client.execute(
         "INSERT INTO trade_calendar (trade_date, is_open) VALUES (DATE '2026-08-07', TRUE) "
         "ON CONFLICT DO NOTHING")
     client.execute(
-        "INSERT INTO data_quality_issue (id, code, issue_type, severity, status, detected_at) "
-        "VALUES (990, '881121', 'board_index_gap_daily', 'mid', 'ignored', now())")
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (990, '881121', DATE '2026-08-06', "
+        "'board_index_gap_daily', 'mid', 'ignored', now())")
     rep = DataIntegrityReport(client)
     rep.scan_board_quality()
     daily = client.query_df(
-        "SELECT code FROM data_quality_issue "
+        "SELECT code, trade_date FROM data_quality_issue "
         "WHERE issue_type='board_index_gap_daily' AND status='open'")
-    assert "881121" not in daily["code"].astype(str).tolist()
+    hits = daily[daily["code"].astype(str) == "881121"]
+    assert len(hits) == 1
+    assert pd.Timestamp(hits.iloc[0]["trade_date"]).date() == date(2026, 8, 7)
+
+
+def test_scan_board_quality_index_gap_daily_ignored_same_date(client):
+    """板块指数逐日缺口：同一日期已 ignored 时不得重新生成 open。"""
+    _seed_board_scan(client)
+    client.execute(
+        "INSERT INTO trade_calendar (trade_date, is_open) VALUES (DATE '2026-08-07', TRUE) "
+        "ON CONFLICT DO NOTHING")
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (991, '881121', DATE '2026-08-07', "
+        "'board_index_gap_daily', 'mid', 'ignored', now())")
+
+    DataIntegrityReport(client).scan_board_quality()
+
+    daily = client.query_df(
+        "SELECT status FROM data_quality_issue "
+        "WHERE code='881121' AND trade_date=DATE '2026-08-07' "
+        "AND issue_type='board_index_gap_daily'")
+    assert daily["status"].tolist() == ["ignored"]
+
+
+def test_board_scan_upsert_rechecks_ignored_before_write(client):
+    """板块扫描落库前重读 ignored，计算期间人工忽略的同键不得被重新打开。"""
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (994, '881121', DATE '2026-08-07', "
+        "'board_index_gap_daily', 'mid', 'ignored', now())")
+
+    with client.transaction():
+        DataIntegrityReport(client)._upsert_scan_issues(
+            [{
+                "code": "881121",
+                "trade_date": date(2026, 8, 7),
+                "issue_type": "board_index_gap_daily",
+                "detail": "扫描开始后被人工忽略",
+            }],
+            ("board_index_gap_daily",),
+        )
+
+    issues = client.query_df(
+        "SELECT status FROM data_quality_issue "
+        "WHERE code='881121' AND trade_date=DATE '2026-08-07' "
+        "AND issue_type='board_index_gap_daily'")
+    assert issues["status"].tolist() == ["ignored"]
 
 
 def test_scan_board_quality_keeps_open_ids(client, monkeypatch):
@@ -968,7 +1019,6 @@ def test_scan_and_recheck_board_index_invalid(client):
     assert invalid["code"].tolist() == ["881121"]
     assert rep.recheck_clean(
         "board_index_invalid", "881121", date(2026, 8, 6)) is False
-
     client.execute(
         "UPDATE board_bar SET open=200, high=210, low=190, close=200 "
         "WHERE board_code='881121' AND trade_date=DATE '2026-08-06'")
@@ -978,6 +1028,47 @@ def test_scan_and_recheck_board_index_invalid(client):
         "DELETE FROM board_bar WHERE board_code='881121' AND trade_date=DATE '2026-08-06'")
     assert rep.recheck_clean(
         "board_index_invalid", "881121", date(2026, 8, 6)) is False
+
+
+def test_scan_board_index_invalid_ignored_is_date_exact(client):
+    """板块指数非法值：历史日期 ignored 不得屏蔽同板块新日期的问题。"""
+    _seed_board_scan(client)
+    client.execute(
+        "UPDATE board_bar SET open=220, high=210, low=190, close=200 "
+        "WHERE board_code='881121' AND trade_date=DATE '2026-08-06'")
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (992, '881121', DATE '2026-08-05', "
+        "'board_index_invalid', 'mid', 'ignored', now())")
+
+    DataIntegrityReport(client).scan_board_quality()
+
+    invalid = client.query_df(
+        "SELECT trade_date, status FROM data_quality_issue "
+        "WHERE code='881121' AND issue_type='board_index_invalid' ORDER BY trade_date")
+    assert invalid["status"].tolist() == ["ignored", "open"]
+    assert pd.Timestamp(invalid.iloc[1]["trade_date"]).date() == date(2026, 8, 6)
+
+
+def test_l1_record_respects_ignored_same_date(client):
+    """L1 单日问题：同日 ignored 不重开，其他日期仍正常上报。"""
+    from backend.services.ingest import IngestionService
+
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, trade_date, issue_type, severity, status, detected_at) "
+        "VALUES (993, 'A.SH', DATE '2026-08-06', 'ohl_repaired', 'low', 'ignored', now())")
+    svc = IngestionService.__new__(IngestionService)
+    svc.c = client
+
+    svc._record_issues(
+        "A.SH", [date(2026, 8, 6), date(2026, 8, 7)], "ohl_repaired", "开高低异常")
+
+    issues = client.query_df(
+        "SELECT trade_date, status FROM data_quality_issue "
+        "WHERE code='A.SH' AND issue_type='ohl_repaired' ORDER BY trade_date")
+    assert issues["status"].tolist() == ["ignored", "open"]
 
 
 def test_scan_board_quality_member_never_collected(client):

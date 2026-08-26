@@ -47,7 +47,8 @@
 - **幂等**：每次质检先删上轮 open 的自动问题（L2/L3/L4）再写当前快照，`resolved`/`ignored` 不动 → 反复跑收敛不堆积。
 - **事务边界**：全市场问题计算在事务外完成，每条 SQL 结束即释放共享 DuckDB 连接锁；仅最终“删除旧 open + 写入当前快照”使用短事务。计算失败不改旧台账，落库前会重读 `ignored` 防止覆盖计算期间的人工豁免；任务状态与日志查询可在扫描 SQL 间隙继续响应。
 - **`mv_gap` 不设上限**：命中多少在市股就写多少条（按 code 聚合），与概览 L2 实时口径完全一致——台账不再静默；缺口大时（如新交易日大面积未补）台账会一次出现大量 `mv_gap`，跑 `valuation --fill-gaps` 或一键恢复后随之清零。
-- **`ignored` 豁免**：L3 按 (code,类型,日期) 精确豁免；L2/L4 按 (code,类型) 整股豁免。
+- **`ignored` 豁免**：单日事件（L1、L3、板块指数逐日缺口、板块指数单日非法）按
+  `(code,类型,日期)` 精确豁免；L2/L4 与板块状态型问题按 `(code,类型)` 整体豁免。
 
 ### 数据体检（`backend/services/data_verify.py`，与质检互补）
 `DataVerifier` 做**结构/正确性/字段契约**逐行核查（孤儿行、键对齐、日历一致、OHLC 序、复权因子、整列字段缺失、在市股逐行市值无缺失），只读不写台账，结果以 PASS/FAIL 报告呈现（`run_structured`）。板块四表（`board_dict/board_member/board_bar/board_fund_flow`）同纳入体检（E 组）：孤儿板块、指数日历一致、OHLC/量额合法、枚举取值（board_type/period）、`has_bar/has_members/has_fund_flow` 能力标记与实际数据双向一致；板块缺口/新鲜度仍归质检台账+修复闭环，体检不重复。可选联网交叉验证（实时重拉对比原价/前复权价），仅 CLI 用。复权因子核查口径与业务一致：`COALESCE(adj_factor_clean, adj_factor)`，源 `adj_factor` 允许 NULL（仅审计，akshare 个别除权日源因子缺失时 clean 已回填前段因子）。

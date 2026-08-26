@@ -629,7 +629,7 @@ def test_update_includes_valuation(client, monkeypatch):
         self.repo = MarketRepository(client)
     monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
     monkeypatch.setattr(ingest.IngestionService, "ingest_calendar", lambda self, *a, **k: None, raising=True)
-    monkeypatch.setattr(ingest.IngestionService, "ingest_indices", lambda self, *a, **k: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_indices", lambda self, *a, **k: 0, raising=True)
     called = {"val": False}
     monkeypatch.setattr(ingest.IngestionService, "ingest_valuation",
                         lambda self, codes=None, concurrency=None: called.__setitem__("val", True) or {"total_mv_rows": 0},
@@ -690,7 +690,7 @@ def test_update_cancel_in_valuation_propagates(client, monkeypatch):
         self.repo = MarketRepository(client)
     monkeypatch.setattr(ingest.IngestionService, "__init__", _init, raising=True)
     monkeypatch.setattr(ingest.IngestionService, "ingest_calendar", lambda self, *a, **k: None, raising=True)
-    monkeypatch.setattr(ingest.IngestionService, "ingest_indices", lambda self, *a, **k: None, raising=True)
+    monkeypatch.setattr(ingest.IngestionService, "ingest_indices", lambda self, *a, **k: 0, raising=True)
 
     def _cancel(self, *a, **k):  # 模拟在补最新日市值的检查点点了终止
         raise TaskCancelled()

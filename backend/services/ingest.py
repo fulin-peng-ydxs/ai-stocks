@@ -724,18 +724,21 @@ class IngestionService:
         """
         from datetime import datetime
 
-        from backend.dataquality.checker import severity_for
+        from backend.dataquality.checker import EXACT_IGNORE_ISSUE_TYPES, severity_for
 
         sev = severity_for(issue_type)
         rows = []
         for td in trade_dates:
             now = datetime.now()
             existing = self.c.query_df(
-                "SELECT id FROM data_quality_issue WHERE code=? AND trade_date=? AND issue_type=? "
-                "AND status IN ('open','fixing') ORDER BY id LIMIT 1",
+                "SELECT id, status FROM data_quality_issue WHERE code=? AND trade_date=? AND issue_type=? "
+                "AND status IN ('open','fixing','ignored') ORDER BY id LIMIT 1",
                 [code, td, issue_type],
             )
             if not existing.empty:
+                if issue_type in EXACT_IGNORE_ISSUE_TYPES \
+                        and str(existing.iloc[0]["status"]) == "ignored":
+                    continue
                 self.c.execute(
                     "UPDATE data_quality_issue SET severity=?, status='open', detail=?, detected_at=?, "
                     "fix_task_id=NULL WHERE id=?",
