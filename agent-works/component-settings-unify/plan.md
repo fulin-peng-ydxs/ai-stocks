@@ -5,14 +5,14 @@
 
 ## 背景与问题
 
-「组件特性」（每个 slot 的 `defaultSort / pageSize / hiddenColumns` 等可调项）当前有**两套平行实现**，未复用：
+改造前，「组件特性」（每个 slot 的 `defaultSort / pageSize / hiddenColumns` 等可调项）存在两套平行实现：
 
 | 场景 | 渲染组件 | 控件 | 折叠 |
 |---|---|---|---|
 | 运行时设置抽屉 | `components/ComponentAutoSettings.vue` | `PageSegmented` / `el-switch` / `SettingsGroup` | slot(level2) + 列显隐(level3) |
 | 页面布局编辑器 | `layout/components/ComponentSettingsSection.vue` | `el-select` / `el-input-number` / `el-segmented` | （上轮加的 slot 级，但页面只显示一个 slot，无意义） |
 
-由此产生三个用户反馈：
+该旧结构产生三个问题：
 1. 抽屉里只有「列显隐」能折叠，「默认排序 / 分页」不能 —— 折叠是按"是不是多行组"零散贴的，没有按层级统一。
 2. 页面布局里折叠"整个 slot"无意义 —— 编辑器一次只显示当前点中的一个 slot。
 3. 两套不复用；折叠应按层级统一；深层级"内容比标题还高"，视觉层级倒挂。
@@ -29,11 +29,13 @@
 |---|---|
 | 页面定位 | 改造页面：运行时**页面设置抽屉**「组件设置」段 + 系统管理→布局配置→**页面布局**编辑器「组件特性配置」。主流程：用户/管理员按层级调组件展示能力。 |
 | 布局选型 | 不改原型、不改 slot、不改页面业务结构。仅改组件特性的**渲染组件与折叠交互**。无新增原型。 |
-| Slot 与组件设计 | 按 slot kind 自动继承 `COMPONENT_FIELD_DEFS`，再由 slot `config` 和 `componentMeta` 驱动实例适用性。 |
+| Slot 与组件设计 | 按 slot kind 自动继承 `COMPONENT_FIELD_DEFS`，再由 slot `config`、`componentMeta` 和 `fieldApplicability` 驱动实例适用性。 |
 | 配置设计 | 不新增字段、不改字段层级。沿用 `slots.<id>.config.<field>` 四层合并；抽屉=user 层、页面布局=page 层。 |
 | 复用与新增判断 | **删除** `ComponentSettingsSection.vue`；**泛化** `ComponentAutoSettings.vue` 为唯一共享渲染器（新增可选 props 适配 page 层 / 单 slot 聚焦 / 字段策略 / 高亮 / 清除），复用既有 `SettingsGroup`、`PageSegmented`、`SourceTag`、`PageToggleRow`。不新增组件种类 / 配置字段 / 页面业务态。 |
-| 维护清单 | 改：`ComponentAutoSettings.vue`、`LayoutPagesView.vue`、`SettingsGroup.vue`；删：`ComponentSettingsSection.vue`；同步 `DESIGN.md` 组件特性渲染说明。`pageRegistry` / 字段元数据 / 后端规则 / schema **不变**。 |
+| 维护清单 | `ComponentAutoSettings.vue` 与 `LayoutPagesView.vue` 共用渲染；`pageRegistry` 只保留结构、候选和明确例外；字段元数据、后端规则、schema、系统组件覆盖页与 `DESIGN.md` 同步维护。 |
 | 验收项 | `npm test`（全量布局契约/字段/校验）、`npm run build`；预览核查：抽屉（board/stocks）、页面布局编辑器三问复现点、设置抽屉无整页滚动；1440×900 主视口。 |
+
+当前事实：两处入口已经统一消费 `ComponentAutoSettings`；字段由组件 kind 自动继承，并由 slot `config`、`componentMeta`、`fieldApplicability` 与管理员字段策略共同过滤，不再存在逐页面字段白名单或第二套渲染器。
 
 对照 §7.4 维护矩阵：本次属于"既有组件渲染重构"，不落在新页面/新原型/新组件种类/新字段行；维护重点为组件文件 + DESIGN 说明，验证为 `componentConfig.spec`/`pageRegistry.spec`/build + 交互核查。
 

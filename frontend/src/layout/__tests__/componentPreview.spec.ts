@@ -48,7 +48,10 @@ describe('组件预览映射完整性（P6）', () => {
   })
 
   it('settings-drawer 已入库且为 overlay 预览', () => {
-    expect(COMPONENT_CATALOG['settings-drawer']).toBeTruthy()
+    const drawer = COMPONENT_CATALOG['settings-drawer']
+    expect(drawer).toBeTruthy()
     expect(previewArchetypeOf('settings-drawer')).toBe('overlay')
+    expect(drawer.description).toContain('布局、自动继承组件设置与显式业务选项')
+    expect(drawer.description).not.toContain('风格/布局/组件/个人偏好')
   })
 })

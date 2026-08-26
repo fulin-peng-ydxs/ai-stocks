@@ -179,8 +179,10 @@ Key Characteristics：
 关系规则：
 
 - 页面外壳、slot、滚动归属、可配置字段必须走系统组件种类和 `pageRegistry`。
+- 系统不会根据页面模板里的 Vue 标签自动推断系统组件 kind；`pageRegistry` 是组件实例登记事实源。页面把一个已有系统组件种类作为独立布局区、成长区、滚动区或可配置实例使用时，必须登记对应 slot；只作为另一个真实组件内部实现细节、且没有独立布局或配置语义的子组件不得登记假 slot。
 - 真实 UI 行为优先复用真实复用组件；当同类控件在两个及以上页面出现，或承载全局交互规则时，必须登记到下方“真实复用组件清单”。
 - 真实组件只有需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器时，才新增或关联系统组件种类。
+- 新开发 Vue 组件时先判断它是页面私有业务片段、业务域复用组件还是全局真实复用组件；复用组件必须维护组件清单、消费页面和测试。只有需要被布局或组件配置体系识别时，才继续新增系统组件 kind；只有存在真实可消费的 Web 可配置属性时，才继续登记 `COMPONENT_FIELD_DEFS` 并完成四层配置闭环。
 - `COMPONENT_CATALOG` 是系统允许的组件种类与能力词汇表，允许先登记当前尚无页面消费者的 kind，供 schema、预览和后续布局选型复用；“假配置”指 `COMPONENT_FIELD_DEFS` 暴露了组件实例并未真实读取应用的 Web 字段。已有真实复用组件时仍禁止页面复制同类控件行为。
 
 系统组件页信息维护规则：
@@ -190,6 +192,7 @@ Key Characteristics：
 - 组件 kind 的语义变化时，必须同步检查 `components.ts` 的 `label`、`description`、`configCapabilities`，`componentSchemas.ts` 的 config shape，`componentPreview.ts` 的预览归类，以及 `schema.ts` 中该 kind 的说明。
 - 系统组件页的可视化预览是给开发和验收人员对照组件形态、状态语义、文案与稳定占位的规范样板，不是业务页面截图，也不证明消费页面已经完成接入。`ready` 可使用代表性原型；`loading / empty / error` 必须直接复用 `AppStateBlock`，不得在预览层维护第二套状态视觉。
 - 只有真实可被页面设置、页面布局或预设消费的字段，才进入 `COMPONENT_FIELD_DEFS` 和后端 `layout_config.py` 字段规则。页面登记某个组件 slot 后自动继承该 kind 的字段；候选型能力由 `componentMeta`、结构型能力由 slot `config`、明确例外由 `fieldApplicability` 判定是否适用。
+- 系统组件页必须按“组件字段 × 消费页面 slot”展示自动继承、管理员策略关闭或实例不适用状态；不适用项必须显示可追溯原因，不能只展示组件级字段总表而掩盖页面漏接。
 - 改动系统组件信息后至少运行相关布局测试；改动预览四态时必须验证预览复用 `AppStateBlock`；涉及前端源码时同时运行构建。
 
 核心真实复用组件清单：
@@ -512,6 +515,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 字段在 `COMPONENT_FIELD_DEFS` 中声明 label、control、layers、默认值和值域。
 - `componentSchemas.ts` 接受该字段。
 - 后端 `layout_config.py` 同步字段规则和归属校验；同名字段在不同组件种类中值域不同时，静态值域必须按 `(component kind, field)` 维护，不得只按字段名合并。
+- 字段必须能由 `ComponentAutoSettings` 的通用控件安全渲染，或登记到专用动态候选渲染器；自动继承但没有安全控件的字段由组件配置契约测试直接拒绝。
 - 适用性为 `always` 的字段自动进入每个同 kind slot；候选型字段由 `componentMeta.columns/sortFields/tabs/collapseSections` 有值时自动启用；结构型字段由 slot `config` 声明，例如 `pagination: true` 启用 `pageSize`。
 - 实例明确不适用时必须在 `componentMeta.fieldApplicability[field]` 设置 `enabled: false` 并填写原因；不得以“没登记”隐式漏掉字段。
 - 页面通过 `componentMeta` 提供安全枚举（列、可交互排序字段、tabs 等）。
@@ -519,6 +523,7 @@ npm run scaffold-page -- --pageKey <key> --label <中文名> --archetype <原型
 - 页面实际读取并应用字段值。
 - 配置中心和设置抽屉共用 `ComponentAutoSettings`，且同时受字段代码最大层级与管理员当前开放策略限制。
 - 普通页面从 `/layout/effective/{pageKey}` 一次获取 preset/page/user 层和字段开放策略，前端结合本地 default 做四层合并；历史上已存但现策略禁止或实例不适用的值必须丢弃。
+- `useRemoteLayoutConfig` 返回的 `componentAllowedLayers` 必须传入 `PageSettingsDrawer`；页面脚手架和 `pageRegistry.spec.ts` 同时守卫该接线，禁止只在配置中心消费管理员策略。
 - 测试覆盖自动继承、实例适用性、四层合并、策略收紧、越权、类型和值域。
 
 当前受控字段摘要：

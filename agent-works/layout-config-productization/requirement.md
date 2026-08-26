@@ -12,7 +12,7 @@
 |---|---|---|
 | 菜单与工作区 | 已归入 `系统管理 → 布局配置 → 预设管理 / 页面布局 / 系统组件` | `DESIGN.md`、路由与菜单代码 |
 | 预设与组件默认 | token 全集、明暗模式、预设×组件默认、响应式枚举已接入 | `frontend/src/layout/presets.ts` |
-| 系统组件 | 组件目录、预览、消费关系、开放策略在线编辑已接入 | `frontend/src/views/layout/LayoutComponentsView.vue` |
+| 系统组件 | 组件目录、预览、消费关系、开放策略在线编辑及逐页面字段覆盖状态已接入 | `frontend/src/views/layout/LayoutComponentsView.vue` |
 | 页面设置抽屉 | `settings-drawer` 纳管，固定“布局 / 组件设置 / 业务选项”三段 | `PageSettingsDrawer`、`pageRegistry` |
 | 页面布局工作台 | 左预览右配置、点击 slot 定位、设备档位与响应式摘要已接入 | `LayoutPagesView` |
 | 新页面闭环 | 脚手架、登记校验、7 原型模板、页面设计闭环与维护矩阵已接入 | `DESIGN.md`、`page-template.md` |
@@ -48,6 +48,7 @@
 | D8 | 来源全链路可见：统一展示生效层和 default→preset→page→user 各层取值。 |
 | D9 | 菜单结构为系统管理 → 布局配置 → 预设管理 / 页面布局 / 系统组件；ConfigView 收进系统管理。 |
 | D10 | 单用户本地系统不保留旧路由重定向，直接换新路径。 |
+| D11 | 页面登记组件 slot 后按 kind 自动继承适用字段；页面只声明结构、候选和明确例外，不再维护逐页字段白名单。 |
 
 ## 4. 功能范围
 
@@ -83,12 +84,12 @@
 
 ## 6. 验收标准
 
-1. 系统组件库 `settings-drawer` 能显示 registry 页面消费关系。
-2. 任一业务页设置抽屉呈现固定三段，组件设置段由 registry 自动生成。
+1. 系统组件库能显示 registry 页面消费关系，并逐 slot 展示字段自动继承、策略关闭或实例不适用状态与原因。
+2. 任一业务页设置抽屉呈现固定三段，组件设置段按组件 kind 与实例适用性自动生成；管理员策略收紧后字段和值在普通页面同时失效。
 3. 系统组件页可在最大开放集内收紧/放开字段开放层级并持久化。
 4. 预设管理页可编辑 token 全集、预设×组件默认和响应式默认枚举。
 5. 页面布局工作区左预览右配置同屏，点击 slot 后右侧定位配置项。
 6. 四层配置项可见生效来源与逐层取值，业务字段标注“页面记忆”。
 7. 菜单为系统管理 → 布局配置 → 三个孙菜单。
-8. `npm run scaffold-page` 能产出合规新页面骨架并自动登记。
+8. `npm run scaffold-page` 能产出合规新页面骨架并自动登记，同时接入 `componentAllowedLayers`，不绕过四层字段策略。
 9. 前端 `npm test` 和 `npm run build` 通过。

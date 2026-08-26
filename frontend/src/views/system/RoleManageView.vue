@@ -23,7 +23,7 @@ import { listMenus, listResources, type MenuNode, type Resource } from '@/api/me
 
 const auth = useAuthStore()
 
-// ── 布局/设置抽屉（本页无业务旋钮，抽屉仅布局段）──
+// ── 页面设置（无业务选项；布局与 settings-drawer 个人字段由统一抽屉自动渲染）──
 const roleLayout = getPageLayout('role-manage')
 const {
   effective, knobs: layoutKnobs, setKnob, valueOf, sourceOf,

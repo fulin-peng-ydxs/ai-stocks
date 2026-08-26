@@ -6,7 +6,7 @@
  *   - 主表唯一（growMain）、滚动轴唯一（规范 §6）
  *   - 操作区一致性（规范 §1）
  *   - 重排多列三条件 + 断点合法性（规范 §5）
- *   - 可编辑白名单 path 真实性与取值域（L2「可改不能乱改」）
+ *   - 布局旋钮 path 真实性与取值域（L2「可改不能乱改」）
  * 而 **CSS/DOM 层** 的红线（100vh 硬编码、teleport+scoped 陷阱、真实渲染的单滚动轴，规范 §9）
  * 由 M2 渲染器「由构造即合规」保证，不在此处判定。
  *
@@ -26,8 +26,8 @@ export interface ValidationIssue {
   slotId?: string
 }
 
-/** slot 上允许被 editable 白名单指向的字段（防止 path 指向 id/component 等结构性字段）。 */
-const SLOT_EDITABLE_FIELDS = new Set([
+/** slot 上允许被布局 editable 旋钮指向的结构字段；与组件 config 字段自动继承机制相互独立。 */
+const SLOT_LAYOUT_KNOB_FIELDS = new Set([
   'minW',
   'minH',
   'idealW',
@@ -265,14 +265,14 @@ function validateEditable(
   }
 }
 
-/** path 是否指向 PageLayout 内真实可编辑字段。slot 字段按白名单字段名判定（允许当前未显式赋值的项）。 */
+/** path 是否指向 PageLayout 内真实布局旋钮字段（允许当前未显式赋值的 slot 结构项）。 */
 export function pathExists(layout: PageLayout, path: string): boolean {
   const parts = path.split('.')
   if (parts[0] === 'slots') {
     if (parts.length < 3) return false
     const slot = layout.slots.find((s) => s.id === parts[1])
     if (!slot) return false
-    return SLOT_EDITABLE_FIELDS.has(parts[2])
+    return SLOT_LAYOUT_KNOB_FIELDS.has(parts[2])
   }
   let node: unknown = layout
   for (const p of parts) {

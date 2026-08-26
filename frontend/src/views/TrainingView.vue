@@ -133,7 +133,7 @@ const {
   componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(trainingLayout)
 
-// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+// 抽屉「布局 / 组件设置」由 PageSettingsDrawer 自动渲染；历史表与训练图表字段按 registry 自动继承。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 
 // 三阶段共用同一布局：body 槽统一走默认成长区（grow 策略）。

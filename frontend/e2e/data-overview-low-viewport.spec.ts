@@ -6,18 +6,11 @@ import { openPageAndWaitForHeading } from './helpers/navigation'
 const API_URL = process.env.E2E_API_URL || 'http://127.0.0.1:8000/api'
 
 function waitForOverviewLayoutHydration(page: import('@playwright/test').Page) {
-  const isLayoutRead = (response: import('@playwright/test').Response) => {
+  return page.waitForResponse((response) => {
     const pathname = new URL(response.url()).pathname
     return response.request().method() === 'GET'
-      && (pathname.endsWith('/api/layout/pages/data-overview')
-        || pathname.endsWith('/api/layout/users/data-overview'))
-  }
-  return Promise.all([
-    page.waitForResponse((response) => isLayoutRead(response)
-      && new URL(response.url()).pathname.includes('/pages/')),
-    page.waitForResponse((response) => isLayoutRead(response)
-      && new URL(response.url()).pathname.includes('/users/')),
-  ])
+      && pathname.endsWith('/api/layout/effective/data-overview')
+  })
 }
 
 async function expectAdaptiveTableFillsContainer(

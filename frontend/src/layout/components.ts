@@ -488,7 +488,7 @@ export const COMPONENT_CATALOG: Record<ComponentKind, ComponentMeta> = {
   'settings-drawer': meta('settings-drawer', {
     category: 'overlay',
     label: '页面设置抽屉',
-    description: '承载当前页面风格/布局/组件/个人偏好的受控设置抽屉（用户层主要入口）。内容固定三段「布局/组件设置/业务选项」，分段与子分组均可折叠。',
+    description: '承载当前页面布局、自动继承组件设置与显式业务选项的受控抽屉。内容固定三段「布局/组件设置/业务选项」，分段与子分组均可折叠。',
     minW: 320,
     minH: 280,
     defaultScroll: 'body-y',

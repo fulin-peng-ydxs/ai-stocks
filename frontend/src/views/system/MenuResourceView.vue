@@ -35,7 +35,7 @@ const auth = useAuthStore()
 const canMenuUpdate = computed(() => hasPermission(auth.role, auth.permissions, 'menu:update'))
 const canMenuReorder = computed(() => hasPermission(auth.role, auth.permissions, 'menu:reorder'))
 
-// ── 布局/设置抽屉（本页无业务旋钮，抽屉仅布局段）──
+// ── 页面设置（无业务选项；布局、功能点表与 settings-drawer 字段由统一抽屉自动渲染）──
 const menuLayout = getPageLayout('menu-manage')
 const {
   effective, knobs: layoutKnobs, setKnob, valueOf, sourceOf,

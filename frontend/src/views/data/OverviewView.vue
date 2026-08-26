@@ -49,7 +49,7 @@ const {
   componentLayerValuesOf, componentAllowedLayers,
 } = useRemoteLayoutConfig(overviewLayout)
 
-// 抽屉「布局」段由 PageSettingsDrawer 按 config 自动渲染（本页无组件配置，仅布局段）。
+// 抽屉「布局 / 组件设置」由 PageSettingsDrawer 自动渲染；tabs 与表格字段按 registry 实例元数据继承。
 const drawerConfig = { knobs: layoutKnobs, valueOf, sourceOf, setKnob, componentValueOf, setComponentKnob, componentSourceOf, layerValuesOf, componentLayerValuesOf, componentAllowedLayers }
 // 工作区 tab 单向：组件配置层默认值（workspace.defaultActive）→ 会话 ref；切换不写回配置层。
 const workspaceTabDefault = computed<'assets' | 'stocks' | 'board'>(() =>

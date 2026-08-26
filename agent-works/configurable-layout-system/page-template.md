@@ -23,6 +23,19 @@
 9. 核对 DESIGN.md 的 `page-registry` 区块已有唯一同名行：脚手架会自动写入；仅未使用脚手架时按下方 §8 手工补一行，禁止重复登记。
 10. 新页面如需要出现在侧栏或有受控 API / 按钮动作，同步菜单 seed、功能点 seed、后端守卫、`v-permission`、默认角色授权决策，并按 [system-rbac-tenant.md](../architecture/system-rbac-tenant.md) 验收。
 
+### 1.1 页面使用或新增组件的登记决策
+
+按以下顺序判断，不能依赖系统从 Vue 标签自动猜测组件 kind：
+
+1. **先复用真实组件**：查 `DESIGN.md`“真实复用组件清单”、`frontend/src/components/**`、业务组件目录和同类页面。已有同类 UI 或行为时直接复用；相同模式第二次出现时按项目复用规则抽取组件、composable、util 或 schema。
+2. **判断是否是独立系统组件实例**：已有系统组件种类若在页面中承担独立布局区、成长区、滚动区或可配置能力，必须在 `pageRegistry.ts` 登记对应 slot，并由 `<LayoutHost>` 的同名插槽承载真实组件。仅作为另一个真实组件内部实现细节、没有独立布局或配置语义的子组件，不登记假 slot。
+3. **消费已有受控字段**：登记 slot 后按 kind 自动继承字段。结构能力写 `slot.config`，安全候选写 `componentMeta`，明确例外写 `fieldApplicability` 与原因；页面必须读取并应用生效值，普通页面必须把 `componentAllowedLayers` 接入 `PageSettingsDrawer`。不得增加逐页面字段白名单。
+4. **没有匹配的系统组件种类**：如果新能力只负责真实 UI 复用，不需要进入布局配置、系统组件页、页面设置抽屉或页面布局编辑器，不新增 kind；如果需要这些平台能力，则按本文 §3“新组件种类”维护目录、schema、预览、页面 slot 和测试。
+5. **新开发真实 Vue 组件**：先判定页面私有业务片段、业务域复用组件或全局真实复用组件。形成稳定复用单元时维护 `DESIGN.md` 真实组件清单、至少一个实际消费点和组件/消费页测试；不要为了组件文件存在而机械新增系统 kind。
+6. **新增可配置属性**：只有属性会被页面设置、页面布局或预设真实消费时，才进入组件配置层；按本文 §3“新组件配置字段”同步 `COMPONENT_FIELD_DEFS`、前端 schema、后端字段和值域/归属规则、安全渲染器、页面实际效果、系统组件覆盖状态和测试。纯组件内部 props 不进入该契约。
+
+最终判定只有四种：复用且登记已有 slot、复用但仅作为内部实现、新增真实组件但不新增系统 kind、新增真实组件并完成系统 kind/配置字段闭环。任何一种都必须在开发计划的“复用与新增判断”和“维护清单”中写明。
+
 ## 2. 开发计划页面设计块（复制到计划里）
 
 涉及新页面，或改造既有页面的布局、组件、设置抽屉、表格、弹窗/抽屉、页面设置入口时，开发计划必须包含本节；只改后端、接口、文案或不影响布局的业务逻辑时，在计划里写明“不涉及前端页面设计闭环”。
@@ -110,6 +123,8 @@
 - 复用已有布局：
 - 复用已有组件：
 - 复用/新增真实组件：
+- 是否为独立系统组件实例；若是，已有 kind 与 slotId：
+- 若仅作为内部实现而不登记 slot，理由：
 - 真实组件是否进入 DESIGN.md 清单：
 - 是否关联系统组件种类：
 - 是否新增组件种类：
@@ -147,8 +162,8 @@
 | 新页面 | 脚手架、`pageRegistry.ts`、`router/index.ts`、DESIGN 页面登记区块；四处 `pageKey` 必须一致；需要侧栏/权限时同步 RBAC 菜单与功能点 | `pageRegistry.spec.ts`、`layout-contract.spec.ts`、权限相关测试、build、关键视口 |
 | 新布局原型 | `archetypes.ts`、`schema.ts`、`validator.ts`、`LayoutHost.vue`、DESIGN 原型说明 | `validator.spec.ts`、布局契约测试 |
 | 新组件种类 | `COMPONENT_CATALOG`、`componentSchemas.ts`、`componentPreview.ts`、系统组件页展示 | `componentPreview.spec.ts`、`pageRegistry.spec.ts` |
-| 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py`、页面真实消费、DESIGN 字段治理入口 | `componentConfig.spec.ts`、后端 layout 测试、保存/回显验证 |
-| 页面消费已有字段 | 登记组件 slot 即自动继承该 kind 的适用字段；结构能力写 slot `config`，候选能力写 `componentMeta`，明确例外写 `fieldApplicability` 和原因；页面仍必须读取/应用值。需要会话交互时走“配置默认值 → session state”，页面操作不反写默认值 | `pageRegistry.spec.ts` 自动继承、适用性、正向消费与禁止页面直写契约，页面交互验证 |
+| 新组件配置字段 | `COMPONENT_FIELD_DEFS`、`componentSchemas.ts`、后端 `layout_config.py` 字段/值域/实例归属规则、`ComponentAutoSettings` 通用或专用安全渲染器、系统组件覆盖页、页面真实消费、DESIGN 字段治理入口 | `component-config-contract.spec.ts`、`componentConfig.spec.ts`、后端 layout 测试、保存/回显与策略收紧验证 |
+| 页面消费已有字段 | 登记组件 slot 即自动继承该 kind 的适用字段；结构能力写 slot `config`，候选能力写 `componentMeta`，明确例外写 `fieldApplicability` 和原因；页面仍必须读取/应用值，并把 `useRemoteLayoutConfig.componentAllowedLayers` 传给统一抽屉。需要会话交互时走“配置默认值 → session state”，页面操作不反写默认值 | `pageRegistry.spec.ts` 自动继承、适用性、策略接线、正向消费与禁止页面直写契约，页面交互验证 |
 | 新真实复用组件 | 组件文件、DESIGN 真实复用组件清单、至少一个消费页面；需要配置化时再同步系统组件种类/字段事实源 | 组件/消费页测试、build；涉及页面布局时做关键视口 |
 | 业务域内复用组件 | 组件文件、DESIGN 真实复用组件清单、明确业务边界与消费页面；仅在需要布局配置时登记系统组件 kind | 组件/消费页测试、build、对应业务页面交互验收 |
 | 按钮 / 图标操作体系 | `global.css` 控件 token、`AppIconButton`、DESIGN 按钮规范；确需新增专用原生按钮时同步契约允许项和理由 | `button-system.spec.ts`、组件测试、build、顶栏与操作区视觉验收 |
@@ -157,7 +172,7 @@
 | 页面抽屉 | `#overlays`、`PageDrawer` / `PageSettingsDrawer`、唯一浮层类；新增公共能力时同步 DESIGN 组件清单 | `PageDrawer.spec.ts`、`layout-contract.spec.ts`、页面与顶部栏边界、正文内滚、关闭行为 |
 | 纯业务偏好 | `usePageSettings` / 页面业务态，放入「业务选项」并标注「页面记忆」 | 业务行为验证、必要时 build |
 
-新增系统组件 kind 必须维护组件能力事实源（`COMPONENT_CATALOG`、schema、预览），即使当前尚无页面消费者也可作为受控能力词汇存在。新增 Web 配置字段必须维护字段配置事实源（`COMPONENT_FIELD_DEFS`、后端规则）；所有同 kind slot 自动继承，页面只维护 slot `config`、`componentMeta` 和真实读取逻辑。只有 kind 的语义能力摘要变化时才同步 `COMPONENT_CATALOG.configCapabilities`。`componentMeta.columns` 只提供设置候选，不自动生成业务列；每个候选 key 都必须由页面真实消费显隐状态。禁止新增页面不读取的 Web“假配置”；禁止绕过 `LayoutHost`、绕过 `pageRegistry` 或另建并行配置体系。
+新增系统组件 kind 必须维护组件能力事实源（`COMPONENT_CATALOG`、schema、预览），即使当前尚无页面消费者也可作为受控能力词汇存在。新增 Web 配置字段必须维护字段配置事实源（`COMPONENT_FIELD_DEFS`、后端规则）和安全渲染入口；所有同 kind slot 自动继承，页面只维护 slot `config`、`componentMeta` 和真实读取逻辑。结构型适用条件还必须同步后端实例归属校验，避免前端隐藏而保存接口仍放行。系统组件页逐 slot 展示自动继承、策略关闭和不适用原因。只有 kind 的语义能力摘要变化时才同步 `COMPONENT_CATALOG.configCapabilities`。`componentMeta.columns` 只提供设置候选，不自动生成业务列；每个候选 key 都必须由页面真实消费显隐状态。禁止新增页面不读取的 Web“假配置”；禁止绕过 `LayoutHost`、绕过 `pageRegistry` 或另建并行配置体系。
 字段允许 `user` 层不代表一定写 `layout_user_config`：跨页面偏好必须在字段定义声明专用 `userPersistence`，前端统一路由到对应偏好存储，后端布局写接口按 `(component kind, field)` 拒绝误写；未声明时才按页面布局用户层处理。不得用 pageKey 或固定 slotId 判断存储目标。
 新增真实复用组件不等于必须新增系统组件种类；只有当该组件需要被布局配置、系统组件页、页面设置抽屉或页面布局编辑器识别和调参时，才进入系统组件种类和组件配置字段闭环。
 
@@ -168,9 +183,10 @@
 ## 5. PageLayout 骨架（列表页示例）
 
 ```ts
-import { useLayoutConfig, type PageLayout } from '@/layout'
+// pageRegistry.ts：页面结构与组件实例适用性事实源。
+import type { PageLayout } from '@/layout'
 
-const pageLayout: PageLayout = {
+const registryLayout: PageLayout = {
   pageKey: 'my-page',          // 与 usePageSettings 同源，便于偏好聚合
   archetype: 'list',
   hasActionRegion: true,
@@ -178,15 +194,56 @@ const pageLayout: PageLayout = {
   responsive: { allowReflow: false, breakpoints: [{ minWidth: 0, columns: 1 }] },
   slots: [
     { id: 'filters', component: 'filter-bar', region: 'action', order: 1 },
-    { id: 'table', component: 'data-table', region: 'main', growMain: true, minH: 360, order: 1 },
+    {
+      id: 'table',
+      component: 'data-table',
+      region: 'main',
+      growMain: true,
+      minH: 360,
+      order: 1,
+      config: { pagination: true },
+    },
   ],
   editable: [
     { path: 'density', label: '信息密度', type: 'enum', options: ['compact', 'standard', 'comfortable'] },
     { path: 'slots.table.minH', label: '主表最低高', type: 'int', min: 300, max: 760 },
   ],
 }
+```
 
-const { effective, knobs: layoutKnobs, valueOf, sourceOf, setKnob } = useLayoutConfig(pageLayout)
+```ts
+// 页面运行时：必须从 registry 取布局并使用远端入口，不能直接 useLayoutConfig 绕过
+// preset/page/user 层与管理员字段策略。
+import { getPageLayout } from '@/layout'
+import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
+
+const pageLayout = getPageLayout('my-page')
+const {
+  effective,
+  knobs: layoutKnobs,
+  valueOf,
+  sourceOf,
+  layerValuesOf,
+  setKnob,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  componentLayerValuesOf,
+  componentAllowedLayers,
+} = useRemoteLayoutConfig(pageLayout)
+
+const drawerConfig = {
+  knobs: layoutKnobs,
+  valueOf,
+  sourceOf,
+  layerValuesOf,
+  setKnob,
+  componentValueOf,
+  setComponentKnob,
+  componentSourceOf,
+  componentLayerValuesOf,
+  componentAllowedLayers,
+}
 ```
 
 ## 6. 模板骨架
@@ -195,7 +252,7 @@ const { effective, knobs: layoutKnobs, valueOf, sourceOf, setKnob } = useLayoutC
 
 | 触发位置与用途 | 使用组件 | 覆盖范围 | 规则 |
 |---|---|---|---|
-| 页面内业务详情、日志、长流程 | `PageDrawer` | 当前 `LayoutHost` 内容区 | 放在 `#overlays`；正文内滚；宽度只用 `sm/md/lg/xl/wide` 语义档位；`wide` 仅日志、字段差异、长 JSON 等横向内容，`xl` 用于固定宽度复杂详情/预览；页面不得传 px/%；不得遮挡应用顶栏、导航和工作标签 |
+| 页面内业务详情、日志、长流程 | `PageDrawer` | 当前 `LayoutHost` 内容区 | 放在 `#overlays`；正文内滚；宽度只用 `sm/md/lg/xl/xxl/wide` 语义档位；`wide` 仅日志、字段差异、长 JSON 等横向内容，`xl` 用于固定宽度复杂详情/预览，`xxl` 用于资产搜索等需要更宽横向空间的复杂详情；页面不得传 px/%；不得遮挡应用顶栏、导航和工作标签 |
 | 页面右上角设置入口 | `PageSettingsDrawer` | 当前 `LayoutHost` 内容区 | 内部复用 `PageDrawer`；固定承载布局、组件设置和业务选项 |
 | 应用顶栏的用户中心、外观等全局能力 | 应用外壳中的 `el-drawer` | 整个视口 | 仅允许在 `App.vue` 等应用外壳使用，不属于业务页面模板 |
 

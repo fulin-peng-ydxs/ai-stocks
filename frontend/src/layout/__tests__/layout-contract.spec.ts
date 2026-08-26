@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+import { PAGE_DRAWER_WIDTHS } from '@/components/pageDrawerSize'
 
 const VIEWS_DIR = resolve(process.cwd(), 'src/views')
 const APP_SOURCE = readFileSync(resolve(process.cwd(), 'src/App.vue'), 'utf8')
@@ -22,15 +23,6 @@ const MIXED_GROW_SOURCE = readFileSync(
 )
 
 /**
- * 存量未迁移、仍手写 `.v-page/.v-grow/.v-scroll` 契约的页面白名单（相对 src/views）。
- * 迁移到 LayoutHost 后必须从这里移除并在 DESIGN.md 页面登记区块登记——本测试会反向校验，
- * 已不再手写布局类却仍留在名单里也会失败，迫使名单与实际迁移进度同步。
- */
-const LEGACY_HANDWRITTEN = new Set<string>([
-  // 全部存量页面已迁移到 LayoutHost；新页面若手写 .v-page/.v-grow 会被下方用例直接拦截。
-])
-
-/**
  * 视口高度红线：禁止用 height / min-height 绑定视口单位（vh/dvh/svh/lvh，含 calc）驱动布局高度。
  * 允许 max-height 作视口相对上限（drawer/dialog 目录里就有 maxHeight），也允许 el-dialog 的 top 偏移。
  */
@@ -43,7 +35,8 @@ const SCAFFOLD_PLACEHOLDER = /\bdata-scaffold-placeholder\b/
 const QUERY_BUTTON = /<el-button\b([^>]*)>\s*查询\s*<\/el-button>/gs
 const VIEWPORT_DRAWER = /<(?:el-drawer|ElDrawer)\b/
 const PAGE_DRAWER = /<PageDrawer\b[\s\S]*?>/g
-const CONTROLLED_DRAWER_SIZE = /\bsize\s*=\s*["'](?:sm|md|lg|xl|wide)["']/
+const DRAWER_SIZE_KEYS = Object.keys(PAGE_DRAWER_WIDTHS)
+const CONTROLLED_DRAWER_SIZE = new RegExp(`\\bsize\\s*=\\s*["'](?:${DRAWER_SIZE_KEYS.join('|')})["']`)
 
 function vueFiles(dir: string): string[] {
   const out: string[] = []
@@ -94,7 +87,7 @@ describe('布局契约守卫（M6）', () => {
   it('页面不得绕过 LayoutHost 手写 .v-page/.v-grow 契约', () => {
     const offenders: string[] = []
     for (const file of files) {
-      if (HANDWRITTEN_LAYOUT.test(readFileSync(file, 'utf8')) && !LEGACY_HANDWRITTEN.has(rel(file))) {
+      if (HANDWRITTEN_LAYOUT.test(readFileSync(file, 'utf8'))) {
         offenders.push(rel(file))
       }
     }
@@ -109,16 +102,6 @@ describe('布局契约守卫（M6）', () => {
       offenders,
       `以下页面仍保留脚手架占位内容，必须接入真实组件和四态后再交付：\n${offenders.join('\n')}`,
     ).toEqual([])
-  })
-
-  it('已迁移页面必须从存量白名单移除（保持名单与迁移进度同步）', () => {
-    const stale: string[] = []
-    for (const legacy of LEGACY_HANDWRITTEN) {
-      const full = join(VIEWS_DIR, legacy)
-      const exists = files.includes(full)
-      if (!exists || !HANDWRITTEN_LAYOUT.test(readFileSync(full, 'utf8'))) stale.push(legacy)
-    }
-    expect(stale, `这些页面已不再手写布局类，请从 LEGACY_HANDWRITTEN 移除并在 DESIGN.md 页面登记区块登记：\n${stale.join('\n')}`).toEqual([])
   })
 
   it('查询按钮必须使用 primary 主命令语义', () => {
@@ -159,7 +142,7 @@ describe('布局契约守卫（M6）', () => {
     }
     expect(
       offenders,
-      `页面业务抽屉必须使用 sm/md/lg/xl/wide 语义档位：\n${offenders.join('\n')}`,
+      `页面业务抽屉必须使用 ${DRAWER_SIZE_KEYS.join('/')} 语义档位：\n${offenders.join('\n')}`,
     ).toEqual([])
   })
 
