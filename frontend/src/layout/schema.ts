@@ -5,10 +5,10 @@
  * 抽象成机器可读的声明式描述符。每个页面用一份 PageLayout 声明其布局，
  * 由校验器（validator.ts）保证不越规、由渲染器（M2）产出页面外壳和条件成长/滚动区域。
  *
- * 三层配置模型（详见 agent-works/configurable-layout-system/plan.md）：
- *   L1 archetype（开发期选定、用户确认、运行期锁死）
- *   L2 布局参数（受限档位 + 白名单 editable + 取值域，越界即拒）
- *   L3 组件特性偏好（分页/排序/字段，复用 usePageSettings，本文件不涉及）
+ * 页面结构与配置模型（详见 agent-works/configurable-layout-system/plan.md）：
+ *   页面结构由 archetype + pageRegistry slots 声明，运行时不允许用户改写业务结构。
+ *   布局参数走受限 editable 白名单；组件字段按 slot kind 自动继承，并受实例适用性与字段策略约束。
+ *   两类配置统一按 default < preset < page < user 合并；usePageSettings 只承载页面业务记忆。
  */
 
 /** 页面布局原型（规范 §4 A~G）。弹窗/抽屉(H) 是覆盖层、不作为页面级原型，单独处理。 */

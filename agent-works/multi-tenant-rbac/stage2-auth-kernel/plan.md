@@ -39,7 +39,7 @@
 **前端**
 - 请求层 [frontend/src/api/client.ts](../../../frontend/src/api/client.ts)：axios 实例 `baseURL:/api`，响应拦截仅按业务 `code!==0` 提示。→ R20 需补 **请求拦截注 Authorization** + **响应拦截处理 HTTP 401/403/429**。（注：需求 R20 提及的 `http.ts` 即本文件）
 - 主题机制 [frontend/src/composables/useTheme.ts](../../../frontend/src/composables/useTheme.ts)：`initTheme/toggleTheme/useTheme`，切 `html.dark` 类 + localStorage `ai-stocks-theme` + `prefers-color-scheme` 兜底。**登录页黑白双主题直接复用，不另造**。
-- 预设体系 [frontend/src/layout/presets.ts](../../../frontend/src/layout/presets.ts) + [__tests__/presets.spec.ts](../../../frontend/src/layout/__tests__/presets.spec.ts)：`LAYOUT_PRESETS` 含 `technology` 预设，每预设维护 `light/dark` token 对等（[DESIGN.md](../../../DESIGN.md) §「新增或调整预设必须维护 light/dark 并过 presets.spec.ts」）。登录页科技风取该预设的色彩语汇。
+- 预设体系 [frontend/src/layout/presets.ts](../../../frontend/src/layout/presets.ts) + [__tests__/presets.spec.ts](../../../frontend/src/layout/__tests__/presets.spec.ts)：代码只保留 `balanced` 稳定内置 key，并维护 `light/dark` token 对等（[DESIGN.md](../../../DESIGN.md) 预设规则）。登录页“科技风”是独立全屏认证壳的视觉描述，不是布局内置预设 key；其颜色继续使用受控语义变量。
 - 入口 [frontend/src/main.ts](../../../frontend/src/main.ts)：`initTheme()`/`initLayoutPreset()` 挂载前执行；Pinia 已装配。
 - 路由 [frontend/src/router/index.ts](../../../frontend/src/router/index.ts)：`createWebHistory`，13+ 业务路由，**无 `/login`、无守卫**。→ 新增 `/login`（`meta.public`）+ 全局 `beforeEach` 守卫。
 - 主框架 [frontend/src/App.vue](../../../frontend/src/App.vue)：含顶栏（已用 useTheme），→ 顶栏右侧加用户区/退出；登录页需脱离主框架壳渲染。

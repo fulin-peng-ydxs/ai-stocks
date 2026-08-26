@@ -83,10 +83,10 @@
    - 加入 `QualityView`。
    - 记录 `BoardView` 和 `QualityView` 的原型、组件清单、可编辑项。
 
-2. 标注现有实现边界。
-   - `useLayoutConfig` 已从单一 localStorage 用户覆盖升级为多层配置源；旧 localStorage 仅作为迁移源和 fallback。
-   - `COMPONENT_CATALOG` 当前只是最低尺寸目录，不是完整组件能力目录。
-   - `LayoutSettingsSection` 当前只支持简单 knob，不支持复杂对象配置。
+2. 固化完成后的稳定边界。
+   - 页面运行时统一通过 `useRemoteLayoutConfig` 获取 PG 权威配置、字段策略和四层来源；`useLayoutConfig` 作为内部合并内核，旧 localStorage 仅作为迁移源和受控 fallback。
+   - `COMPONENT_CATALOG` 是完整组件能力目录；Web 字段由 `COMPONENT_FIELD_DEFS` 定义并按 slot kind 自动继承。
+   - 布局旋钮与组件字段分别由统一 schema 渲染器承载，页面不得另建私有配置表单或逐页字段白名单。
 
 3. 明确旧计划和新计划关系。
    - 旧底座视为已完成基础能力。
@@ -229,16 +229,14 @@
 ### 8.2 任务
 
 1. 定义配置层。
-   - `BaseLayoutDefinition`
-   - `PresetLayoutOverride`
-   - `PageLayoutOverride`
-   - `UserLayoutOverride`
+   - 代码 default：`PageLayout`、布局 `editable`、`COMPONENT_FIELD_DEFS`。
+   - 远端覆盖：`LayoutOverride`，分别由 preset/page/user 记录承载。
    - `EffectiveLayoutConfig`
-   - `EditablePolicy`
+   - `FieldPolicyRecord`
 
-2. 升级 `useLayoutConfig`。
-   - 从单一 localStorage 覆盖升级为多源输入。
-   - 支持显示配置来源 `sourceMeta`。
+2. 建立统一运行时入口。
+   - `useLayoutConfig` 负责本地四层合并内核，`useRemoteLayoutConfig` 负责 effective 接口、字段策略和保存编排。
+   - 通过 `sourceOf` / `layerValuesOf` 及组件对应访问器显示来源和逐层取值。
    - 支持按层重置。
    - 对旧 localStorage 值做兼容读取和非法项丢弃。
 
@@ -353,11 +351,12 @@
 ### 10.2 任务
 
 1. 新增路由和菜单。
-   - 建议路径：`/layout-config` 或 `/config/layout`。
-   - 不并入现有 `ConfigView`。
+   - 固定归入 `/system/layout/presets`、`/system/layout/pages`、`/system/layout/components`。
+   - 不并入现有 `ConfigView`，统一挂在系统管理下的布局配置菜单。
 
 2. 页面结构。
-   - 左侧或顶部 Tabs：预设管理、页面配置、导入导出、校验报告。
+   - 三个独立子页：预设管理、页面布局、系统组件。
+   - 导入导出与预设/页面配置操作放在对应工作台，不另造平行配置入口。
    - 使用布局系统自身构建，避免配置页成为规范例外。
 
 3. 预设管理。
@@ -371,7 +370,7 @@
    - 选择页面。
    - 选择默认预设。
    - 配置页面级覆盖。
-   - 配置 `EditablePolicy`。
+   - 系统组件页按 `(component kind, field)` 配置当前开放层级，且不得超过代码最大开放集。
    - 管理员调整组件顺序。
 
 5. 导入导出。

@@ -2,9 +2,9 @@
 
 ## 1. 背景与目标
 
-当前项目已经开始建设可配置布局系统，但现有方向偏向“把自适应布局规范代码化”，覆盖范围仍偏窄：它能约束页面外壳、主内容区、密度和少量布局参数，但还没有形成用户期望的“组件化、自适应化、可配置化、AI 开发稳定化”的完整 Web 布局系统。
+当前项目已经完成可配置布局系统产品化。本需求文档维护其稳定业务目标、边界和验收契约；页面开发的直接执行入口是 `DESIGN.md` 与同目录 `page-template.md`，运行时事实源是 `frontend/src/layout/`、`pageRegistry.ts` 和后端布局配置仓储。
 
-本需求目标是基于现有 `frontend/src/layout/` 底座，升级为一套面向后台系统页面开发的自定义 Web 布局系统。该系统不是自由拖拽大屏，也不是只切换主题色，而是以“组件目录 + 布局原型 + 响应式规则 + 配置覆盖层 + 校验器 + AI 开发流程”为核心，让新页面开发时能稳定地按以下模式推进：
+系统不是自由拖拽大屏，也不是只切换主题色，而是以“组件目录 + 布局原型 + 响应式规则 + 四层配置覆盖 + 字段开放策略 + 校验器 + AI 开发流程”为核心，让新页面开发稳定按以下模式推进：
 
 1. 选择页面原型。
 2. 选择组件清单。
@@ -17,16 +17,16 @@
 
 - 前端布局不再依赖 AI 临时手写 `.v-page`、`.v-grow`、`height: calc(100vh - Npx)` 等不稳定写法。
 - 列表、搜索、表单、抽屉、弹窗、图表、主从、工作台等常见后台场景都有可登记、可配置、可校验的最小组件单元。
-- 政务风、科技风、专业金融后台风等预设风格可存储、可切换，并支持页面级和用户级覆盖。
+- 代码内置 `balanced`（澄空蓝）稳定预设；管理员自定义预设可存储、启停、切换和导入导出，并支持页面级和用户级受控覆盖。
 - 新页面交给 AI 开发时，有明确的“选型-声明-填充-校验-登记”开发抓手，减少随机开发和页面规范漂移。
 
 ## 2. 当前项目现状
 
-### 2.1 已有布局规范依据
+### 2.1 布局规范依据
 
-项目已有硬性布局规范：[ai-agent/前端布局自适应规范.md](/Users/pengshuaifeng/ai-stocks/ai-agent/前端布局自适应规范.md)。
+页面设计与自适应硬约束统一维护在 [DESIGN.md](../../DESIGN.md)，新页面或页面改造流程统一维护在 [page-template.md](./page-template.md)。已经代码化退场的旧规范文件不再作为入口。
 
-该规范已经明确了核心模型：
+当前核心模型：
 
 - 整页/视口永不滚动。
 - 页面外壳分为固定操作区和主内容区。
@@ -34,40 +34,36 @@
 - 兜底顺序为组件内部滚动、满足条件才重排多列、最后主内容区整体滚动。
 - 列表、宽表格、筛选栏、表单、KPI、图表、主从、树、Tabs、抽屉、弹窗等都有最低尺寸和滚动归属要求。
 
-这部分是本需求必须继续保留并代码化的核心，不应退回成纯文档约束。
+这些约束同时由布局 schema、渲染器、契约测试和页面验证守卫，不得退回成只依赖人工阅读的规则。
 
 ### 2.2 已有代码底座
 
-项目已经有初版布局系统，位于 [frontend/src/layout](/Users/pengshuaifeng/ai-stocks/frontend/src/layout)：
+布局系统位于 [frontend/src/layout](../../frontend/src/layout)：
 
 - [schema.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/schema.ts)：定义 `PageLayout`、`Archetype`、`SlotSpec`、`ComponentKind`、`EditableKnob` 等类型。
-- [components.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components.ts)：已有组件最低尺寸目录 `COMPONENT_CATALOG`。
+- [components.ts](../../frontend/src/layout/components.ts)：`COMPONENT_CATALOG` 是组件种类、尺寸、滚动、成长、重排、四态和能力摘要事实源。
 - [archetypes.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/archetypes.ts)：已有 `list`、`master-detail`、`dashboard`、`form`、`detail`、`workbench`、`wizard` 原型预设。
 - [validator.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/validator.ts)：已有 schema 层校验器，能校验组件下限、主表唯一、操作区一致性、响应式断点和可编辑白名单。
 - [LayoutHost.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components/LayoutHost.vue)：布局宿主消费 `PageLayout`，统一输出页面外壳、`VAdaptiveGrow`、`VMixedGrow`、整区滚动与响应式多列容器。
-- [useLayoutConfig.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/useLayoutConfig.ts)：已有多层配置源合并能力，登录用户布局/组件覆盖以 PG `layout_user_config` 为权威，localStorage 仅作为 fallback 和旧值迁移源。
-- [LayoutSettingsSection.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/components/LayoutSettingsSection.vue)：已有基于 `editable` 自动渲染的布局设置表单。
+- [useLayoutConfig.ts](../../frontend/src/layout/useLayoutConfig.ts)：四层配置合并内核；页面运行时统一由 `useRemoteLayoutConfig` 包装，登录用户配置以 PG 为权威，localStorage 仅作为受控 fallback 和旧值迁移源。
+- [componentConfig.ts](../../frontend/src/layout/componentConfig.ts)：`COMPONENT_FIELD_DEFS` 定义组件 Web 配置字段、开放层级、值域和适用性。
+- [ComponentAutoSettings.vue](../../frontend/src/components/ComponentAutoSettings.vue)：页面设置抽屉和页面布局编辑器共用的组件字段安全渲染器。
 
 已有单测：
 
 - [validator.spec.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/__tests__/validator.spec.ts)：覆盖原型合规、尺寸下限、重排规则、滚动轴、editable path、取值域守门。
 - [path.spec.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/__tests__/path.spec.ts)：覆盖点分路径读写。
 
-### 2.3 已有页面接入情况
+### 2.3 页面接入情况
 
-已有页面开始使用 `LayoutHost`：
-
-- [BoardView.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/views/BoardView.vue)：每日榜单，使用 `list` 原型，开放 `density` 信息密度。
-- [QualityView.vue](/Users/pengshuaifeng/ai-stocks/frontend/src/views/data/QualityView.vue)：数据质量页也已接入 `LayoutHost` 和 `useLayoutConfig`。
-
-但 [DESIGN.md](/Users/pengshuaifeng/ai-stocks/DESIGN.md) 当前只登记了 `BoardView`，说明现有文档与实际改造进度已经有轻微不同步，后续需要把页面登记作为验收项。
+全部 `pageRegistry` 业务页面已经统一使用 `LayoutHost`、`getPageLayout` 和 `useRemoteLayoutConfig`。路由、registry、页面真实宿主消费与 `DESIGN.md` 页面登记由 `pageRegistry.spec.ts` 和布局契约测试双向守卫；新增页面不得依赖人工补记忆维持一致性。
 
 ### 2.4 已有配置存储能力
 
 当前前端已有两类用户设置入口，登录态均以后端持久化为权威：
 
 - [usePageSettings.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/composables/usePageSettings.ts)：页面业务偏好，消费 `useUserPreference` 并写入 PG `user_preference`；localStorage 仅作为未登录/接口失败 fallback 和旧值迁移源。
-- [useLayoutConfig.ts](/Users/pengshuaifeng/ai-stocks/frontend/src/layout/useLayoutConfig.ts)：布局和组件用户层覆盖，登录态写入 PG `layout_user_config`；组件路径保存必须带真实 `PageLayout` 校验归属。
+- `useRemoteLayoutConfig`：一次读取 preset/page/user 层和组件字段开放策略，结合代码 default 完成四层合并；登录态用户层写入 PG `layout_user_config`，组件路径保存必须带真实 `PageLayout` 校验归属。
 
 后端已有系统配置覆盖层：
 
@@ -77,14 +73,14 @@
 
 这些能力已经扩展为“预设-页面-用户”的布局配置优先级模型：平台布局配置写入 PG `layout_preset`、`layout_page_config`、`layout_field_policy`，真实页面用户层写入 PG `layout_user_config`，非布局用户偏好写入 PG `user_preference`。
 
-### 2.5 当前主要差距
+### 2.5 持续治理重点
 
-1. 组件目录偏基础，只覆盖了布局类型和最低尺寸，没有完整定义每类组件的共同特性、专属特性、状态、数据绑定、操作区、权限、空态、错误态、加载态等配置。
-2. 原型只有页面布局原型，缺少组件组合模板，例如“筛选 + 批量 + 主表 + 分页”、“主表 + 右抽屉详情”、“图表 + 明细表”等高频业务组合。
-3. 风格预设没有一等模型。当前只有 CSS 变量和 `density`，没有政务风、科技风、专业后台风等可存储、可切换预设。
-4. 覆盖优先级已形成 `default < preset < page < user` 的明确合并链路；后续改造重点是继续让新增页面和组件字段严格消费该链路，避免回退到页面私有 localStorage。
-5. Web 配置能力偏弱。当前设置面板只能渲染少量 `editable` 旋钮，不能管理全局预设、页面配置、组件目录、响应式规则、导入导出和重置范围。
-6. AI 开发流程还停留在文档提醒和代码约束，缺少面向 AI 的页面开发清单、页面 schema 模板、选型确认表、自动校验报告和登记机制。
+1. 新增真实组件时必须先复用同类实现，并判断它是内部实现、真实复用组件还是需要平台识别的系统组件 kind。
+2. 页面登记 slot 后按 kind 自动继承适用字段；页面只声明结构能力、候选元数据和带原因的明确例外，不得恢复逐页字段白名单。
+3. 新增组件字段必须同步前端字段定义与 schema、后端规则与实例归属、安全渲染、页面真实消费、系统组件覆盖状态和测试。
+4. 普通页面必须消费 effective 接口返回的字段策略；策略关闭或实例不适用的历史值不得进入四层合并。
+5. 新页面继续由脚手架、维护矩阵、页面登记测试、布局契约、构建和关键交互验收共同守卫。
+6. 视觉风格继续使用 `balanced` 稳定内置预设和管理员自定义预设，不重新增加散落 CSS 或历史内置 key。
 
 ## 3. 用户角色与使用场景
 
@@ -94,7 +90,7 @@
 
 典型场景：
 
-- 在后台设置中切换系统为“政务风”或“科技风”。
+- 在预设管理页启用 `balanced` 或管理员维护的自定义预设。
 - 为某个业务页面指定默认布局密度、表格分页大小、默认显示列。
 - 禁止普通用户修改某些关键布局项，例如主内容区策略、组件顺序。
 
@@ -126,8 +122,8 @@
 
 典型场景：
 
-- 新增“政务稳重风”预设，调整主色、边框、卡片密度、按钮风格、表格行高。
-- 为数据大屏类页面选择“科技风”，为管理台选择“专业后台风”。
+- 新增自定义预设，调整主色、边框、卡片密度、按钮风格和表格行高。
+- 为不同页面选择已启用的自定义预设，同时保持业务结构和可读性红线不变。
 
 ## 4. 功能范围
 
@@ -148,7 +144,7 @@
    - 组件必须声明最低尺寸、理想尺寸、滚动归属、是否可 grow、是否可重排、状态占位策略。
 
 3. 自适应能力：
-   - 继承 `前端布局自适应规范.md` 的两层模型和兜底阶梯。
+   - 继承 `DESIGN.md` 的两层布局模型和兜底阶梯。
    - 支持根据浏览器窗口、容器宽度、分辨率、密度档位自动调整布局。
    - 支持容器查询或等效 ResizeObserver 策略。
 
@@ -173,9 +169,9 @@
    - 新页面必须通过布局校验器和构建。
    - 新页面必须登记布局选型。
 
-7. 现有页面渐进迁移：
-   - 优先迁移高频列表页和已接近规范的页面。
-   - 每个页面迁移后要做小屏验证、滚动验证、密度切换验证。
+7. 页面覆盖持续治理：
+   - 全部 registry 业务页面统一消费布局宿主和远端四层配置入口。
+   - 新增或改造页面必须做小屏、滚动、密度、四态和关键交互验证。
 
 ### 4.2 建议实现
 
@@ -220,15 +216,15 @@
 
 功能描述：
 
-布局系统必须从当前 `PageLayout` 扩展为完整领域模型，至少包含以下对象：
+当前完整领域模型由以下事实对象组成：
 
-- `LayoutPreset`：风格预设，例如政务风、科技风、专业后台风。
-- `PageLayoutDefinition`：页面布局定义，包含页面原型、区域、组件槽、响应式规则。
-- `ComponentDefinition`：组件目录定义，描述组件共同特性和专属特性。
-- `ComponentInstanceConfig`：页面中某个组件实例的配置。
-- `ResponsiveRuleSet`：响应式规则集合。
+- `LayoutPreset`：代码内置 `balanced`，并支持管理员维护的自定义风格预设。
+- `PageLayout`：页面布局定义，包含页面原型、区域、组件 slot、响应式规则和布局旋钮。
+- `ComponentMeta` / `COMPONENT_CATALOG`：组件目录定义，描述组件共同特性和能力摘要。
+- `SlotSpec.config` / `ComponentInstanceConfig`：页面中某个组件实例的结构配置。
+- `ResponsivePlan`：响应式断点与重排规则集合。
 - `LayoutOverride`：配置覆盖记录，区分预设、页面、用户。
-- `EditablePolicy`：配置可编辑策略，说明哪些层级可改、哪些角色可改、取值范围是什么。
+- `COMPONENT_FIELD_DEFS` / `layout_field_policy`：字段最大开放集、值域、实例适用性和管理员当前开放策略。
 
 前置条件：
 
@@ -254,7 +250,7 @@
 
 - 未登记组件不得出现在页面布局中。
 - 组件实例配置不得低于组件目录声明的业务最低尺寸。
-- 用户配置只能覆盖 `EditablePolicy` 允许的字段。
+- 用户配置只能覆盖布局 `editable` 与组件字段最大层级、实例适用性、管理员当前策略共同允许的字段。
 - 页面配置可以覆盖比用户更多的字段，但仍不能违反布局红线。
 - 预设配置只能覆盖视觉 token、密度、组件默认表现，不得改变页面业务结构。
 
@@ -273,7 +269,7 @@
 
 对现有功能的影响：
 
-- `useLayoutConfig` 已从只读 localStorage 升级为多层配置源读取，后续新增布局/组件用户层字段必须继续走该链路。
+- 页面必须通过 `useRemoteLayoutConfig` 消费远端三层、字段策略和本地 default；`useLayoutConfig` 只作为该入口内部的四层合并内核。
 - `usePageSettings` 已纳入 PG 用户偏好骨架，后续页面业务偏好必须继续消费 `useUserPreference`，避免 L2 和 L3 两套入口割裂。
 
 ### 5.2 组件目录与组件共同特性
@@ -445,7 +441,7 @@
 
 功能描述：
 
-自适应规则必须承接 `前端布局自适应规范.md` 的核心精华，并扩展为可配置、可校验、可复用的代码模式。
+自适应规则必须承接 `DESIGN.md` 的布局、滚动和响应式红线，并保持为可配置、可校验、可复用的代码模式。
 
 必须实现的规则：
 
@@ -507,7 +503,7 @@
 
 功能描述：
 
-所有布局、组件、响应式、风格配置都必须可存储。最终生效配置按层合并。
+代码 default 保留在版本控制中；允许 preset/page/user 层覆盖的布局、组件、响应式和风格字段必须按其开放层级持久化。最终生效配置按层合并。
 
 配置优先级：
 
@@ -518,44 +514,16 @@
 层级说明：
 
 - 系统代码默认：由开发者维护，作为兜底，不允许 Web 修改。
-- 预设配置：管理员选择或维护，例如政务风、科技风。
+- 预设配置：管理员选择 `balanced` 或维护自定义预设。
 - 页面配置：管理员针对某个页面的默认布局和组件设置。
 - 用户配置：普通用户自己的显示偏好，优先级最高。
 
-建议数据表：
+当前存储模型：
 
-```sql
-layout_preset(
-  id,
-  name,
-  style_key,
-  schema_version,
-  config_json,
-  builtin,
-  enabled,
-  created_at,
-  updated_at
-)
-
-layout_page_config(
-  page_key,
-  schema_version,
-  preset_id,
-  config_json,
-  editable_policy_json,
-  updated_at
-)
-
-layout_user_config(
-  user_id,
-  page_key,
-  schema_version,
-  config_json,
-  updated_at
-)
-```
-
-`layout_user_config` 必须使用请求上下文中的真实租户与用户归属，禁止由前端传入 owner，也不得用空值或固定用户代替登录用户。
+- `layout_preset`：预设内容、启停和内置标记。
+- `layout_page_config`：页面选择的预设与页面层覆盖。
+- `layout_field_policy`：按 `(component_kind, field)` 维护当前开放层级。
+- `layout_user_config`：用户布局/组件覆盖；归属必须来自请求上下文中的真实租户与用户，禁止由前端传入 owner，也不得用空值或固定用户代替登录用户。
 
 API 需求：
 
@@ -575,12 +543,12 @@ API 需求：
 - 前端也必须在 `coerceEditableValue` 层做即时校验。
 - 前后端校验规则不能长期分叉，建议从同一份 schema 生成或共享规则定义。
 
-迁移策略：
+存储边界：
 
-- 第一阶段可继续使用 localStorage 验证交互。
-- 第二阶段将预设和页面配置落后端，形成管理员可维护的系统级和页面级默认值。
-- 第三阶段用户配置也接入后端，localStorage 只做离线缓存或降级。
-- 当前状态：配置存储 PG 迁移完成后，真实页面布局/组件用户层以 PostgreSQL `layout_user_config` 为权威，页面业务偏好、主题、导航、K 线、回测参数记忆和设置抽屉跨页面偏好以 PostgreSQL `user_preference` 为权威；localStorage 仅保留为未登录/接口失败 fallback、旧偏好迁移源、登录前主题读取和临时交互态。
+- 预设、页面默认和字段开放策略以 PostgreSQL 的布局配置表为权威。
+- 真实页面布局/组件用户层以 PostgreSQL `layout_user_config` 为权威。
+- 页面业务偏好、主题、导航、K 线、回测参数记忆和设置抽屉跨页面偏好以 PostgreSQL `user_preference` 为权威。
+- localStorage 仅保留为未登录/接口失败 fallback、旧偏好迁移源、登录前主题读取和临时交互态，不得重新成为登录用户配置权威。
 
 ### 5.7 Web 配置界面
 
@@ -590,7 +558,7 @@ API 需求：
 
 配置入口：
 
-- 新增独立“布局配置”页面：管理预设、默认风格、全局 token、页面默认配置和可编辑策略，不并入现有 `ConfigView`。
+- 独立“布局配置”工作台：管理预设、默认风格、全局 token、页面默认配置和字段开放策略，不并入现有 `ConfigView`。
 - 页面设置抽屉：当前页面的布局、自动继承的组件设置和显式业务选项。
 - 管理员页面配置页：针对页面配置默认值和可编辑策略。
 - 预设管理、页面布局和系统组件三个平台布局管理页只管理系统配置，不开放个人页面设置；`pageRegistry` 必须以 `supportsPageSettings=false` 明确排除，不得登记页面未消费的 `settings-drawer` 或配置字段。
@@ -633,13 +601,13 @@ API 需求：
 
 新页面开发流程：
 
-1. 读取 `DESIGN.md` 布局系统章和 `frontend/src/layout` 目录。
+1. 读取 `DESIGN.md`、同目录 `page-template.md` 和 `frontend/src/layout` 事实源。
 2. 根据需求判断页面类型。
 3. 从原型注册表选择页面原型，并给出理由。
-4. 列出组件清单，包括组件 kind、业务作用、区域、是否 grow、是否可配置。
+4. 先查真实复用组件，再列出组件清单，包括真实组件、系统 kind、业务作用、区域、是否 grow、是否可配置。
 5. 选择风格预设，默认继承系统预设。
-6. 声明页面级配置和用户可编辑项。
-7. 使用 `LayoutHost` 填业务 slot。
+6. 在 `pageRegistry` 登记独立系统组件 slot；已有 kind 自动继承字段，结构、候选和明确例外分别写入 slot `config`、`componentMeta` 和 `fieldApplicability`。
+7. 使用 `LayoutHost` 填业务 slot，并通过 `useRemoteLayoutConfig` 将 `componentAllowedLayers` 接入 `PageSettingsDrawer`。
 8. 运行布局校验器和前端构建。
 9. 做浏览器验证：至少覆盖 1100×620 和常规桌面宽度。
 10. 登记页面布局选型、组件清单和可编辑项。
@@ -661,77 +629,45 @@ AI 输出物要求：
 - 不得将页面业务结构放入用户级配置。
 - 不得把不可重排的大表格放进多列重排。
 
-### 5.9 现有页面迁移
+### 5.9 页面覆盖持续治理
 
 功能描述：
 
-当前项目页面需要按风险分批迁移，不应一次性大改。
-
-建议迁移顺序：
-
-1. 已接入页面补登记和修正：
-   - `BoardView`
-   - `QualityView`
-
-2. 高频列表页：
-   - `StocksView`
-   - `ScreenView`
-   - 数据管理相关列表页。
-
-3. 工作台和复杂页：
-   - `BacktestView`
-   - `OverviewView`
-   - `TrainingView`
-
-4. 配置和表单页：
-   - `ConfigView`
-   - 各 profile 配置页。
-
-每页迁移要求：
+全部 registry 业务页面已经完成统一迁移。新增页面或改造已有页面时继续满足：
 
 - 明确页面原型。
 - 明确组件清单。
-- 明确 L2 和 L3 可配置项。
+- 明确布局旋钮、组件字段、页面业务记忆及各自持久化边界。
+- 页面 slot 自动继承适用组件字段，并真实消费字段生效值和管理员字段策略。
 - 通过单测和构建。
 - 小屏不出现整页滚动。
 - 表格表头吸顶、分页固定。
-- 页面登记更新。
+- 路由、registry、页面宿主消费与 DESIGN 登记保持机器可校验的一致。
 
 ## 6. 数据与接口需求
 
 ### 6.1 前端数据结构
 
-建议扩展当前 `PageLayout`：
+当前 `/layout/effective/{pageKey}` 响应契约由 `frontend/src/api/layout.ts` 的 `EffectiveLayoutConfig` 维护：
 
 ```ts
 interface EffectiveLayoutConfig {
   pageKey: string
+  userId: string
   schemaVersion: number
-  presetKey: string
-  layout: PageLayoutDefinition
-  components: ComponentInstanceConfig[]
-  styleTokens: StyleTokenConfig
-  responsive: ResponsiveRuleSet
-  editablePolicy: EditablePolicy
-  sourceMeta: {
-    preset?: string
-    page?: string
-    user?: string
-  }
+  presetKey: string | null
+  values: LayoutOverlayValues
+  source: Record<string, 'preset' | 'page' | 'user'>
+  layers: Array<{ layer: 'preset' | 'page' | 'user'; config: LayoutOverride }>
+  componentFieldPolicies: FieldPolicyRecord[]
 }
 ```
 
-`sourceMeta` 用于 Web 配置界面展示某个值来自预设、页面还是用户，方便用户理解“为什么这个值生效”。
+前端再与代码 default 合并并生成完整来源链；`componentFieldPolicies` 同时约束普通页面渲染和写入，不能只在管理员配置中心展示。
 
 ### 6.2 后端存储
 
-推荐新增布局专用表，不建议把复杂布局配置塞入现有 `app_config`：
-
-- `app_config` 更适合系统运行参数。
-- 布局配置有预设、页面、用户、版本、导入导出、回滚等独立生命周期。
-- 使用专用表更利于校验和迁移。
-
-若短期为了快速落地，也可先复用 `app_config` 保存全局预设选择，但页面和用户配置仍建议独立表。
+布局配置使用 PostgreSQL 专用表：`layout_preset`、`layout_page_config`、`layout_field_policy`、`layout_user_config`；`app_config` 继续只承载系统运行参数，不作为布局配置的临时或并行存储入口。用户归属统一来自请求上下文中的 `tenant_id + owner_user_id`。
 
 ### 6.3 API 响应结构
 
@@ -839,7 +775,7 @@ interface EffectiveLayoutConfig {
    - 用户可以配置自己的体验，但不能破坏业务结构和布局红线。
 
 3. 形成“风格产品化”。
-   - 政务风、科技风、金融风不再是散落 CSS，而是可选择、可存储、可导出的配置资产。
+   - `balanced` 与管理员自定义预设都是可选择、可存储、可导出的配置资产，不把风格重新写成页面私有 CSS 或代码内置 key。
 
 4. 形成“规范可执行”。
    - 自适应规范不再只写在 Markdown，而是变成 schema、渲染器、校验器和测试。
@@ -849,67 +785,59 @@ interface EffectiveLayoutConfig {
 
 ## 11. 落地可行性与实施路径
 
-### 11.1 可行性判断
+### 11.1 当前落地结论
 
-该需求可以落地，而且当前项目已经具备较好的起点：
+该需求已经完整落地：组件能力目录、七类页面原型、`LayoutHost`、四层合并、PG 持久化、字段开放策略、统一设置抽屉、三页布局配置工作台、页面脚手架和机器契约均已投入使用。后续工作属于持续治理，不得重新启用逐页字段白名单、页面私有 localStorage、平行配置表单或旧内置预设 key。
 
-- 已有布局规范，规则完整。
-- 已有 `PageLayout` schema、组件目录、原型、校验器。
-- 已有 `LayoutHost` 渲染器。
-- 已有 `useLayoutConfig` 和设置抽屉。
-- 已有后端 `app_config` 的白名单校验范式可参考。
+### 11.2 已完成里程碑
 
-但必须明确：现有实现还不是完整目标系统，只是底座。要达到用户期望，需要新增配置模型、预设模型、组件目录扩展、后端持久化和 AI 开发流程闭环。
-
-### 11.2 推荐里程碑
-
-#### M1：需求定型与现状修正
+#### M1：需求定型与现状修正（已完成）
 
 - 补齐本需求文档。
-- 同步 `DESIGN.md` 页面登记，加入 `QualityView` 当前状态。
+- 建立 `DESIGN.md` 页面登记，并由机器契约保持全部 registry 页面一致。
 - 明确配置优先级为“系统代码默认 < 预设 < 页面 < 用户”。
 - 明确不做自由拖拽画布。
 
-#### M2：组件目录升级
+#### M2：组件目录升级（已完成）
 
 - 扩展 `ComponentKind`。
 - 为每类组件定义共同特性和专属配置 schema。
 - 将 `COMPONENT_CATALOG` 从“最低尺寸目录”升级为“组件能力目录”。
 - 增加组件目录单测。
 
-#### M3：风格预设模型
+#### M3：风格预设模型（已完成）
 
 - 新增 `LayoutPreset` 类型。
 - 内置唯一稳定预设 `balanced`（澄空蓝），并允许管理员维护自定义预设。
 - 将 CSS token 与预设配置关联。
 - 实现预设切换并持久化。
 
-#### M4：配置覆盖链路
+#### M4：配置覆盖链路（已完成）
 
 - 前端实现 `default -> preset -> page -> user` 合并。
 - 后端新增布局配置表和 API。
 - 前端设置面板显示配置来源。
 - 用户配置非法时按项丢弃，不影响页面。
 
-#### M5：Web 配置中心
+#### M5：Web 配置中心（已完成）
 
 - 新增独立“布局配置”页面。
 - 增加预设管理。
 - 增加页面配置管理。
 - 增加导入导出和重置。
 
-#### M6：AI 开发流程固化
+#### M6：AI 开发流程固化（已完成）
 
 - 增加页面开发模板。
 - 增加页面选型确认清单。
 - 增加布局校验报告。
 - 更新 `DESIGN.md` 和 `CLAUDE.md`。
 
-#### M7：存量页面迁移
+#### M7：存量页面迁移（已完成）
 
-- 按页面分批迁移。
-- 每页迁移后执行构建、单测和浏览器验证。
-- 页面登记和可配置项同步更新。
+- 全部 registry 业务页面统一迁移。
+- 新增或改造页面继续执行构建、单测和必要的浏览器验证。
+- 页面登记、组件 slot、可配置项和真实消费由机器契约持续同步。
 
 ## 12. 验收标准
 
@@ -955,7 +883,7 @@ interface EffectiveLayoutConfig {
    - 影响：代码默认、token 回退和测试以该稳定 key 为准；其他风格通过预设管理作为自定义配置维护，不扩张代码内置 key。
 
 2. 用户配置持久化采用推荐节奏。
-   - 决策：预设配置和页面配置优先后端化；用户配置随多用户和权限体系接入后端。当前已完成配置存储 PG 迁移，登录用户布局/组件用户层和非布局用户偏好均以 PostgreSQL 为权威，localStorage 不再作为登录用户配置权威。
+   - 决策：配置存储 PG 迁移已经完成；登录用户布局/组件用户层和非布局用户偏好均以 PostgreSQL 为权威，localStorage 不再作为登录用户配置权威。
 
 3. 布局配置复用现有多租户 RBAC。
    - 决策：平台预设、页面配置和字段策略使用系统级权限；用户配置按请求上下文写入真实 `tenant_id + owner_user_id`，前端不决定归属。
