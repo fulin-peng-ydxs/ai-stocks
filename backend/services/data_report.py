@@ -523,99 +523,125 @@ class DataIntegrityReport:
 
     # ── 市场级四层质检（写 data_quality_issue，DM-D20 统一口径）──
     def scan_quality_issues(self, gap_window_days: int = GAP_WINDOW_DAYS) -> dict:
-        """四层统一质检：L2 字段契约 / L3 正确性 / L4 覆盖鲜活，写 data_quality_issue。
+        """四层统一质检：L2 字段契约 / L3 正确性 / L4 覆盖鲜活。
 
-        L1（入库闸门）由采集即时记录，质检不重复扫；这里覆盖立即质检 + 每日自动任务质检步（同一方法）。
-        幂等（DM-D20）：扫描把上轮 **未解决** 的自动扫描类问题（L2/L3/L4）替换为当前快照，
-        已 resolved/ignored 的不动 → 反复跑收敛不堆积。停牌（已确认入 stock_suspension）不计入缺口。
+        L1 由采集即时记录，这里覆盖立即质检与每日自动质检。幂等扫描把上轮
+        未解决的 L2/L3/L4 自动问题替换为当前快照；resolved/ignored 不动。
+        已确认入 stock_suspension 的停牌日不计入缺口。
 
-        失败保留语义（对齐 scan_board_quality）：DELETE + 全部 INSERT 在同一事务内原子执行，
-        扫描中途失败不提交，旧问题保留。事务块内计算持写锁——质检扫描本身全局互斥（verify
-        任务独占，无并发写），与板块 scan 的事务替换语义一致。
+        先在事务外完整计算本轮问题；失败时旧问题不变。最后使用短事务原子替换台账。
+        verify 占用异步写任务全局槽位，避免其他数据任务并发写。
         """
         from backend.dataquality.checker import SCAN_ISSUE_TYPES
         ph = ",".join("?" * len(SCAN_ISSUE_TYPES))
-        # 已「标记为正常/忽略」的不再上报（DM-D22）：L3 按 (股,类型,日期) 精确豁免；
+        # 已「标记为正常/忽略」的不再上报：L3 按 (股,类型,日期) 精确豁免；
         # L2/L4 按 (股,类型) 整体豁免（缺口/滞后/市值是状态而非单日事件）。
+        def _ignored_keys(ignored: pd.DataFrame) -> tuple[set, set]:
+            exact, coarse = set(), set()
+            for _, r in ignored.iterrows():
+                coarse.add((r["code"], r["issue_type"]))
+                td = None if pd.isna(r["trade_date"]) else str(pd.Timestamp(r["trade_date"]).date())
+                exact.add((r["code"], r["issue_type"], td))
+            return exact, coarse
+
         ig = self.c.query_df(
             "SELECT code, issue_type, trade_date FROM data_quality_issue WHERE status='ignored'")
-        ig_exact, ig_coarse = set(), set()
-        for _, r in ig.iterrows():
-            ig_coarse.add((r["code"], r["issue_type"]))
-            td = None if pd.isna(r["trade_date"]) else str(pd.Timestamp(r["trade_date"]).date())
-            ig_exact.add((r["code"], r["issue_type"], td))
+        ig_exact, ig_coarse = _ignored_keys(ig)
+        # L3 异常涨跌幅：耗时扫描均在事务外完成，每条 SQL 结束即释放
+        # 共享连接锁，任务状态/日志轮询可在查询间隙进入。
+        df = self.c.query_df(
+            """
+            SELECT *
+            FROM (
+                SELECT b.code, b.trade_date, b.pre_close,
+                       abs(b.close / b.pre_close - 1) AS chg,
+                       COALESCE(sb.price_limit_pct, 0.10) AS lim,
+                       sb.name,
+                       sb.delist_date,
+                       b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                           AS gap_days,
+                       CASE
+                           WHEN sb.list_date IS NOT NULL
+                                AND min(b.trade_date) OVER (PARTITION BY b.code)
+                                    <= sb.list_date + INTERVAL 30 DAY
+                           THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
+                           ELSE NULL
+                       END AS listing_trade_seq
+                FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
+                WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
+            ) t
+            """)
+        df = df[self._active_l3_mask(df)]
+        bad = df[df["chg"] > df["lim"] + (0.011 / df["pre_close"]).clip(lower=0.005)]
+        ab_rows = [
+            {"code": r["code"], "trade_date": r["trade_date"], "issue_type": "abnormal_change",
+             "detail": f"涨跌幅 {r['chg']*100:.1f}% 超上限 {r['lim']*100:.0f}%"}
+            for _, r in bad.iterrows()
+            if (
+                r["code"], "abnormal_change", str(pd.Timestamp(r["trade_date"]).date())
+            ) not in ig_exact]
+        adj_rows = self._collect_adj_jump_issues(ignored_exact=ig_exact)
+        # L2 + L4：来自统一的覆盖鲜活全景（与 quality_model/stock_quality 同口径）
+        frame, _ = self._coverage_frame(gap_window_days)
+        rows = []
+        for _, r in frame.iterrows():
+            code = r["code"]
+            if not r["mv_ok"] and (code, "mv_missing") not in ig_coarse:
+                rows.append({"code": code, "issue_type": "mv_missing",
+                             "detail": f"{r['mv_detail']}（字段契约不全，需补估值/市值数据）"})
+            if int(r["gap_days"]) > 0 and (code, "data_gap") not in ig_coarse:
+                rows.append({"code": code, "trade_date": r["gap_lo"], "issue_type": "data_gap",
+                             "detail": f"近{gap_window_days}个交易日内 {int(r['gap_days'])} 天无行情"
+                                       f"（疑似漏采，待重采确认）：{r['gap_lo']}~{r['gap_hi']}"})
+            if int(r["stale_days"]) > 0 and (code, "stale") not in ig_coarse:
+                rows.append({"code": code, "trade_date": r["latest_date"], "issue_type": "stale",
+                             "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
+                                       f"（自 {r['stale_lo']} 起）"})
+        # L2 逐日市值缺口：在市股有日线但市值字段为空/缺行的近端缺口，
+        # 按 code 聚合一条。
+        # （detail 写缺失区间）。直接读同一份 frame 的 mv_gap_days（与概览/逐股 L2 完全统一，
+        # 同窗口同数据），命中多少写多少——与概览口径一致，台账不再静默。
+        for _, r in frame.iterrows():
+            code = r["code"]
+            if bool(r["mv_ok"]) and int(r["mv_gap_days"]) > 0 and (code, "mv_gap") not in ig_coarse:
+                rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
+                             "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天市值字段缺口"
+                                       f"（需补市值）：{r['mv_detail']}"})
+        # 仅台账替换使用短事务：失败回滚保留旧问题，计算期间不锁住轮询。
         with self.c.transaction():
-            # 原子替换：DELETE 与后续 INSERT 同一事务，失败回滚保留旧问题（对齐 scan_board_quality）
+            # 计算期间用户可能把问题「标记正常」；落库前重读 ignored，
+            # 防止用计算开始时的旧豁免快照重新插入 open 问题。
+            current_ignored = self.c.query_df(
+                "SELECT code, issue_type, trade_date FROM data_quality_issue "
+                "WHERE status='ignored'")
+            current_exact, current_coarse = _ignored_keys(current_ignored)
+            issue_rows = []
+            for issue in ab_rows + adj_rows + rows:
+                code, issue_type = issue["code"], issue["issue_type"]
+                td_raw = issue.get("trade_date")
+                td = None if td_raw is None or pd.isna(td_raw) else str(pd.Timestamp(td_raw).date())
+                if issue_type in ("abnormal_change", "adj_jump"):
+                    if (code, issue_type, td) in current_exact:
+                        continue
+                elif (code, issue_type) in current_coarse:
+                    continue
+                issue_rows.append(issue)
             self.c.execute(
                 f"DELETE FROM data_quality_issue WHERE status='open' AND issue_type IN ({ph})",
                 list(SCAN_ISSUE_TYPES))
-            # L3：异常涨跌幅（向量化，关联板块上限）
-            df = self.c.query_df(
-                """
-                SELECT *
-                FROM (
-                    SELECT b.code, b.trade_date, b.pre_close,
-                           abs(b.close / b.pre_close - 1) AS chg,
-                           COALESCE(sb.price_limit_pct, 0.10) AS lim,
-                           sb.name,
-                           sb.delist_date,
-                           b.trade_date - lag(b.trade_date) OVER (PARTITION BY b.code ORDER BY b.trade_date)
-                               AS gap_days,
-                           CASE
-                               WHEN sb.list_date IS NOT NULL
-                                    AND min(b.trade_date) OVER (PARTITION BY b.code)
-                                        <= sb.list_date + INTERVAL 30 DAY
-                               THEN row_number() OVER (PARTITION BY b.code ORDER BY b.trade_date)
-                               ELSE NULL
-                           END AS listing_trade_seq
-                    FROM daily_bar b LEFT JOIN stock_basic sb ON sb.code = b.code
-                    WHERE b.pre_close IS NOT NULL AND b.pre_close > 0
-                ) t
-                """)
-            df = df[self._active_l3_mask(df)]
-            bad = df[df["chg"] > df["lim"] + (0.011 / df["pre_close"]).clip(lower=0.005)]
-            ab_rows = [
-                {"code": r["code"], "trade_date": r["trade_date"], "issue_type": "abnormal_change",
-                 "detail": f"涨跌幅 {r['chg']*100:.1f}% 超上限 {r['lim']*100:.0f}%"}
-                for _, r in bad.iterrows()
-                if (r["code"], "abnormal_change", str(pd.Timestamp(r["trade_date"]).date())) not in ig_exact]
-            self._insert_issues(ab_rows)
-            adj = self._scan_adj_jump(ignored_exact=ig_exact)
-            # L2 + L4：来自统一的覆盖鲜活全景（与 quality_model/stock_quality 同口径）
-            frame, _ = self._coverage_frame(gap_window_days)
-            l2 = l4_gap = l4_stale = 0
-            rows = []
-            for _, r in frame.iterrows():
-                code = r["code"]
-                if not r["mv_ok"] and (code, "mv_missing") not in ig_coarse:
-                    rows.append({"code": code, "issue_type": "mv_missing",
-                                 "detail": f"{r['mv_detail']}（字段契约不全，需补估值/市值数据）"})
-                    l2 += 1
-                if int(r["gap_days"]) > 0 and (code, "data_gap") not in ig_coarse:
-                    rows.append({"code": code, "trade_date": r["gap_lo"], "issue_type": "data_gap",
-                                 "detail": f"近{gap_window_days}个交易日内 {int(r['gap_days'])} 天无行情"
-                                           f"（疑似漏采，待重采确认）：{r['gap_lo']}~{r['gap_hi']}"})
-                    l4_gap += 1
-                if int(r["stale_days"]) > 0 and (code, "stale") not in ig_coarse:
-                    rows.append({"code": code, "trade_date": r["latest_date"], "issue_type": "stale",
-                                 "detail": f"数据未更新到最新交易日，滞后 {int(r['stale_days'])} 个交易日"
-                                           f"（自 {r['stale_lo']} 起）"})
-                    l4_stale += 1
-            # L2 逐日市值缺口：在市股「有日线但市值字段为空/缺行」的近端缺口，按 code 聚合一条
-            # （detail 写缺失区间）。直接读同一份 frame 的 mv_gap_days（与概览/逐股 L2 完全统一，
-            # 同窗口同数据），命中多少写多少——与概览口径一致，台账不再静默。
-            l2_gap = 0
-            for _, r in frame.iterrows():
-                code = r["code"]
-                if bool(r["mv_ok"]) and int(r["mv_gap_days"]) > 0 and (code, "mv_gap") not in ig_coarse:
-                    rows.append({"code": code, "trade_date": r["mv_gap_hi"], "issue_type": "mv_gap",
-                                 "detail": f"近{gap_window_days}个交易日内 {int(r['mv_gap_days'])} 天市值字段缺口"
-                                           f"（需补市值）：{r['mv_detail']}"})
-                    l2_gap += 1
-            self._insert_issues(rows)
-        return {"abnormal_change_rows": len(ab_rows), "adj_jump_rows": adj,
-                "mv_missing_rows": l2, "mv_gap_rows": l2_gap,
-                "data_gap_rows": l4_gap, "stale_rows": l4_stale}
+            self._insert_issues(issue_rows)
+        inserted_counts = {
+            issue_type: sum(row["issue_type"] == issue_type for row in issue_rows)
+            for issue_type in SCAN_ISSUE_TYPES
+        }
+        return {
+            "abnormal_change_rows": inserted_counts["abnormal_change"],
+            "adj_jump_rows": inserted_counts["adj_jump"],
+            "mv_missing_rows": inserted_counts["mv_missing"],
+            "mv_gap_rows": inserted_counts["mv_gap"],
+            "data_gap_rows": inserted_counts["data_gap"],
+            "stale_rows": inserted_counts["stale"],
+        }
 
     # ── 板块维度质检（板块概念需求 R12，T7）──────────────────
     def scan_board_quality(self) -> dict:
@@ -1104,7 +1130,8 @@ class DataIntegrityReport:
             return True
         return True
 
-    def _scan_adj_jump(self, threshold: float = 0.5, ignored_exact: set | None = None) -> int:
+    def _collect_adj_jump_issues(self, threshold: float = 0.5,
+                                 ignored_exact: set | None = None) -> list[dict]:
         """全市场前复权价相邻日跳变 > threshold（T-M7-6，补 T-M1-8 遗留）→ 复权异常。
 
         阈值 0.5（50%）远超任一板块单日涨跌停（≤20%），故捕获的是粗粒度复权口径错误
@@ -1130,7 +1157,7 @@ class DataIntegrityReport:
             """
         )
         if df.empty:
-            return 0
+            return []
         parts = []
         for code, g in df.groupby("code", sort=False):
             af = g["adj_factor"].fillna(1.0)
@@ -1146,17 +1173,20 @@ class DataIntegrityReport:
                 parts.append(pd.DataFrame({"code": bad["code"], "trade_date": bad["trade_date"],
                                            "ratio": ratio[actionable]}))
         if not parts:
-            return 0
+            return []
         allbad = pd.concat(parts, ignore_index=True)
         ig = ignored_exact or set()
         keep = [(r["code"], r["trade_date"], r["ratio"]) for _, r in allbad.iterrows()
                 if (r["code"], "adj_jump", str(pd.Timestamp(r["trade_date"]).date())) not in ig]
-        if not keep:
-            return 0
-        return self._insert_issues([
+        return [
             {"code": c, "trade_date": td, "issue_type": "adj_jump",
              "detail": f"前复权相邻日跳变 {rt*100:.0f}%（疑复权口径异常）"}
-            for c, td, rt in keep])
+            for c, td, rt in keep]
+
+    def _scan_adj_jump(self, threshold: float = 0.5, ignored_exact: set | None = None) -> int:
+        """扫描并写入复权跳变问题；保留独立调用契约供运维与单测使用。"""
+        return self._insert_issues(
+            self._collect_adj_jump_issues(threshold=threshold, ignored_exact=ignored_exact))
 
     def _next_qid(self) -> int:
         return int(self.c.query_df("SELECT nextval('seq_quality_issue') AS v").iloc[0]["v"])

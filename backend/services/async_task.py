@@ -574,10 +574,32 @@ def _row(r) -> dict:
 
 # ── 任务处理器：(params, ctx) → result dict ─────────────────────────
 def _mark_snapshots_stale() -> int:
-    """标全量评分快照失效。兜底：IngestionService 编排方法收尾已标 stale（见 ingest.py
-    _mark_snapshots_stale），此处幂等重复 UPDATE 无害，保留作 handler 级保证。"""
+    """标全量评分快照失效，供评分维护及采集任务缺少失效结果时兜底。"""
     from backend.scoring.snapshot import ScoreSnapshotRepo
     return ScoreSnapshotRepo(get_client()).mark_stale_all()
+
+
+def _ensure_ingest_snapshots_stale(result: dict, dates: list | None = None) -> tuple[int, bool]:
+    """复用采集层失效结果；仅在采集层未返回结果时由任务层兜底。
+
+    返回 ``(失效数量, 是否由任务层兜底)``。采集服务通常已在数据写入收尾时完成失效
+    标记，任务处理器不得再次无条件 UPDATE，否则第二次幂等调用只会返回 0 并制造误导日志。
+    """
+    if "snapshots_marked_stale" in result:
+        return int(result.get("snapshots_marked_stale") or 0), False
+    if dates is not None:
+        from backend.scoring.snapshot import ScoreSnapshotRepo
+
+        stale = ScoreSnapshotRepo(get_client()).mark_stale_dates(dates) if dates else 0
+    else:
+        stale = _mark_snapshots_stale()
+    return stale, True
+
+
+def _log_snapshot_invalidation(ctx: TaskContext, stale: int, fallback: bool) -> None:
+    source = "任务层兜底标记" if fallback else "采集阶段已标记"
+    ctx.log(f"阶段 2/3：确认评分快照失效状态，{source} {stale} 项")
+    ctx.progress(0.9, "确认评分快照失效状态…")
 
 
 def _produce_public_board_snapshots(params: dict) -> dict:
@@ -621,10 +643,9 @@ def _h_update(params: dict, ctx: TaskContext) -> dict:
     res = IngestionService().update(codes=params.get("codes"), concurrency=_concurrency(params), ctx=ctx)
     if res.get("skipped"):
         return {"message": "主源当日数据未就绪，本次增量未执行", "ingest": res, "snapshots_marked_stale": 0}
-    ctx.log("阶段 2/3：刷新评分缓存")
-    ctx.progress(0.9, "刷新评分缓存…")
-    stale = _mark_snapshots_stale()
-    ctx.log(f"阶段 3/3：增量任务收尾，已标记 {stale} 项评分快照失效")
+    stale, fallback = _ensure_ingest_snapshots_stale(res)
+    _log_snapshot_invalidation(ctx, stale, fallback)
+    ctx.log("阶段 3/3：增量任务收尾，失效快照将在后续读取时按需重算")
     return {"message": f"更新完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
 
 
@@ -634,10 +655,9 @@ def _h_backfill(params: dict, ctx: TaskContext) -> dict:
     ctx.progress(0.1, "历史补数中（可能较久）…")
     res = IngestionService().backfill(codes=params.get("codes"), years=params.get("years"),
                                       concurrency=_concurrency(params), ctx=ctx)
-    ctx.log("阶段 2/3：刷新评分缓存")
-    ctx.progress(0.9, "刷新评分缓存…")
-    stale = _mark_snapshots_stale()
-    ctx.log(f"阶段 3/3：补数任务收尾，已标记 {stale} 项评分快照失效")
+    stale, fallback = _ensure_ingest_snapshots_stale(res)
+    _log_snapshot_invalidation(ctx, stale, fallback)
+    ctx.log("阶段 3/3：补数任务收尾，失效快照将在后续读取时按需重算")
     return {"message": f"补数完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
 
 
@@ -655,14 +675,14 @@ def _h_ingest_date(params: dict, ctx: TaskContext) -> dict:
     ctx.progress(0.1, f"采集 {start}~{end} 行情…")
     res = IngestionService().ingest_date(start, end, codes=params.get("codes"),
                                          concurrency=_concurrency(params), ctx=ctx)
-    ctx.log("阶段 2/3：刷新受影响日期评分缓存")
-    ctx.progress(0.9, "刷新受影响日期的评分缓存…")
-    from backend.scoring.snapshot import ScoreSnapshotRepo
     days = res.get("dates", [])
-    # 服务层已按 dates 细粒度标 stale（ingest_date 收尾）；此处幂等兜底，保证 handler 级覆盖
-    stale = ScoreSnapshotRepo(get_client()).mark_stale_dates(
-        [_date.fromisoformat(x) for x in days]) if days else 0
-    ctx.log(f"阶段 3/3：指定日期采集收尾，受影响交易日 {len(days)} 天，已标记 {stale} 项评分快照失效")
+    affected_dates = [_date.fromisoformat(x) for x in days]
+    stale, fallback = _ensure_ingest_snapshots_stale(res, dates=affected_dates)
+    _log_snapshot_invalidation(ctx, stale, fallback)
+    ctx.log(
+        f"阶段 3/3：指定日期采集收尾，受影响交易日 {len(days)} 天，"
+        "失效快照将在后续读取时按需重算"
+    )
     return {"message": f"指定采集完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
 
 
@@ -675,10 +695,15 @@ def _h_ingest_codes(params: dict, ctx: TaskContext) -> dict:
     ctx.log(f"阶段 1/3：指定股票增量采集，{len(codes)} 只")
     ctx.progress(0.1, f"采集 {len(codes)} 只指定股票…")
     res = IngestionService().update(codes=codes, concurrency=_concurrency(params), ctx=ctx)
-    ctx.log("阶段 2/3：刷新评分缓存")
-    ctx.progress(0.9, "刷新评分缓存…")
-    stale = _mark_snapshots_stale()
-    ctx.log(f"阶段 3/3：指定股票采集收尾，已标记 {stale} 项评分快照失效")
+    if res.get("skipped"):
+        return {
+            "message": "主源当日数据未就绪，本次指定股票采集未执行",
+            "ingest": res,
+            "snapshots_marked_stale": 0,
+        }
+    stale, fallback = _ensure_ingest_snapshots_stale(res)
+    _log_snapshot_invalidation(ctx, stale, fallback)
+    ctx.log("阶段 3/3：指定股票采集收尾，失效快照将在后续读取时按需重算")
     return {"message": f"指定股票采集完成：{res}", "ingest": res, "snapshots_marked_stale": stale}
 
 
@@ -771,10 +796,9 @@ def _h_rebuild_price_factors(params: dict, ctx: TaskContext) -> dict:
     ctx.progress(0.05, "重算价格因子…")
     codes = params.get("codes")
     res = IngestionService().rebuild_price_factors(codes=codes, ctx=ctx)
-    ctx.log("阶段 2/3：刷新评分缓存")
-    ctx.progress(0.95, "刷新评分缓存…")
-    stale = _mark_snapshots_stale()
-    ctx.log(f"阶段 3/3：价格因子任务收尾，已标记 {stale} 项评分快照失效")
+    stale, fallback = _ensure_ingest_snapshots_stale(res)
+    _log_snapshot_invalidation(ctx, stale, fallback)
+    ctx.log("阶段 3/3：价格因子任务收尾，失效快照将在后续读取时按需重算")
     return {"message": f"价格因子重算完成：{res}", "rebuild": res,
             "snapshots_marked_stale": stale}
 
@@ -1247,7 +1271,7 @@ def _h_fix(params: dict, ctx: TaskContext) -> dict:
                           phase_total=phase_total, phase_done=len(done_ids),
                           current_item=iid, issue_done_ids=sorted(done_ids))
             ctx.log(f"[{i}/{n}] 恢复失败 id={iid}: {e}（已退回待处理）", "error")
-    ctx.progress(0.95, "刷新评分缓存…")
+    ctx.progress(0.95, "更新评分快照失效状态…")
     if all_affected:
         stale = ScoreSnapshotRepo(c).mark_stale_dates(sorted(set(all_affected)))
     elif resolved and issue_types.intersection({"mv_missing", "mv_gap", "adj_jump"}):

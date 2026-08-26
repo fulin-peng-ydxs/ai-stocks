@@ -291,9 +291,15 @@ const boardFreshnessItems = computed(() => {
   const board = ov.value?.board
   const latest = ov.value?.latest_trade_date || ''
   return [
-    { key: 'trade', label: '最新交易日', value: ov.value?.latest_trade_date, stale: false },
-    { key: 'bar', label: '板块指数', value: board?.latest_bar_date, stale: Boolean(board?.latest_bar_date && board.latest_bar_date < latest) },
-    { key: 'fund', label: '资金流快照', value: board?.latest_fund_date, stale: Boolean(board?.latest_fund_date && board.latest_fund_date < latest) },
+    { key: 'trade', label: '最新交易日', value: ov.value?.latest_trade_date, stale: false, status: '基准' },
+    {
+      key: 'bar', label: '板块指数', value: board?.latest_bar_date,
+      ...coverageFreshness(board?.latest_bar_date, latest, board?.bar_ready, board?.bar_target),
+    },
+    {
+      key: 'fund', label: '资金流快照', value: board?.latest_fund_date,
+      ...coverageFreshness(board?.latest_fund_date, latest, board?.fund_ready, board?.fund_target),
+    },
   ]
 })
 function dateOnly(value?: string | null): string {
@@ -319,6 +325,18 @@ function coverageStatus(ready: number | undefined, total: number | undefined): '
   if (rate >= 0.99) return 'success'
   if (rate >= 0.9) return 'warning'
   return 'exception'
+}
+// 日期追平只代表至少一个板块有当日数据；覆盖率同时达标后才能称为整体“同步”。
+function coverageFreshness(
+  value: string | null | undefined,
+  latest: string,
+  ready: number | undefined,
+  target: number | undefined,
+): { stale: boolean; status: '无数据' | '滞后' | '未齐' | '同步' } {
+  if (!value) return { stale: true, status: '无数据' }
+  if (!latest || value < latest) return { stale: true, status: '滞后' }
+  if (coverageStatus(ready, target) !== 'success') return { stale: true, status: '未齐' }
+  return { stale: false, status: '同步' }
 }
 
 onMounted(load)
@@ -670,7 +688,7 @@ onMounted(load)
                     <div v-for="item in boardFreshnessItems" :key="item.key" class="fresh-cell" :class="{ stale: item.stale }">
                       <span class="fresh-label">{{ item.label }}</span>
                       <strong>{{ dateOnly(item.value) }}</strong>
-                      <span>{{ item.stale ? '滞后' : '同步' }}</span>
+                      <span>{{ item.status }}</span>
                     </div>
                   </div>
                 </div>

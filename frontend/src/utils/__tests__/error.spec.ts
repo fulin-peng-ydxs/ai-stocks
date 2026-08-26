@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getErrorMessage, getErrorStatus } from '@/utils/error'
+import { getApiErrorCode, getErrorMessage, getErrorStatus } from '@/utils/error'
 
 describe('error utils', () => {
   it('读取 API 状态码和服务端可读文案', () => {
@@ -19,6 +19,13 @@ describe('error utils', () => {
 
     expect(getErrorStatus(error)).toBeUndefined()
     expect(getErrorMessage(error)).toBe('网络断开')
+  })
+
+  it('区分统一响应业务码与 HTTP 状态码', () => {
+    const error = { apiCode: 404, response: { status: 200 } }
+
+    expect(getApiErrorCode(error)).toBe(404)
+    expect(getErrorStatus(error)).toBe(200)
   })
 
   it('优先取 client 拦截器挂上的 uiMessage（可读文案）', () => {

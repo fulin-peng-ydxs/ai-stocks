@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
+import threading
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 import pandas as pd
@@ -146,6 +147,93 @@ def test_scan_quality_idempotent(client):
     n2 = int(client.query_df("SELECT count(*) AS n FROM data_quality_issue "
                              "WHERE issue_type='abnormal_change'").iloc[0]["n"])
     assert n1 == 1 and n2 == 1   # 第二次扫描不再追加重复
+
+
+def test_scan_quality_calculation_does_not_hold_connection_lock(client, monkeypatch):
+    """全市质检计算期间不持有连接级长事务锁，状态/日志查询可插入。"""
+    rep = DataIntegrityReport(client)
+    entered = threading.Event()
+    release = threading.Event()
+    query_done = threading.Event()
+    errors: list[BaseException] = []
+    original = rep._coverage_frame
+
+    def slow_coverage(*args, **kwargs):
+        entered.set()
+        release.wait(timeout=2)
+        return original(*args, **kwargs)
+
+    def run_scan():
+        try:
+            rep.scan_quality_issues()
+        except BaseException as exc:  # pragma: no cover - 失败由主线程断言转发
+            errors.append(exc)
+
+    def read_status():
+        client.query_df("SELECT count(*) FROM async_task")
+        query_done.set()
+
+    monkeypatch.setattr(rep, "_coverage_frame", slow_coverage)
+    scan_thread = threading.Thread(target=run_scan, daemon=True)
+    scan_thread.start()
+    assert entered.wait(timeout=1)
+    query_thread = threading.Thread(target=read_status, daemon=True)
+    query_thread.start()
+    readable_during_calculation = query_done.wait(timeout=0.5)
+    release.set()
+    scan_thread.join(timeout=2)
+    query_thread.join(timeout=2)
+
+    assert readable_during_calculation is True
+    assert not scan_thread.is_alive() and not query_thread.is_alive()
+    assert errors == []
+
+
+def test_scan_quality_calculation_failure_keeps_previous_open_issues(client, monkeypatch):
+    """事务外计算失败时不能先删除上一轮未处理问题。"""
+    client.execute(
+        "INSERT INTO data_quality_issue "
+        "(id, code, issue_type, severity, status, detected_at) "
+        "VALUES (99, 'OLD.SH', 'stale', 'high', 'open', ?)",
+        [datetime.now(timezone.utc)],
+    )
+    rep = DataIntegrityReport(client)
+    def fail_scan(*_args, **_kwargs):
+        raise RuntimeError("scan failed")
+
+    monkeypatch.setattr(rep, "_coverage_frame", fail_scan)
+
+    with pytest.raises(RuntimeError, match="scan failed"):
+        rep.scan_quality_issues()
+
+    kept = client.query_df("SELECT status FROM data_quality_issue WHERE id=99")
+    assert kept.iloc[0]["status"] == "open"
+
+
+def test_scan_quality_keeps_ignore_added_during_calculation(client, monkeypatch):
+    """计算期间新增的人工豁免必须在最终短事务内重读，不得重新上报。"""
+    _seed(client)
+    rep = DataIntegrityReport(client)
+    original = rep._coverage_frame
+
+    def coverage_then_ignore(*args, **kwargs):
+        result = original(*args, **kwargs)
+        client.execute(
+            "INSERT INTO data_quality_issue "
+            "(id, code, issue_type, severity, status, detected_at) "
+            "VALUES (99, 'B.SH', 'data_gap', 'mid', 'ignored', ?)",
+            [datetime.now(timezone.utc)],
+        )
+        return result
+
+    monkeypatch.setattr(rep, "_coverage_frame", coverage_then_ignore)
+    result = rep.scan_quality_issues()
+
+    rows = client.query_df(
+        "SELECT status FROM data_quality_issue WHERE code='B.SH' AND issue_type='data_gap'"
+    )
+    assert rows["status"].tolist() == ["ignored"]
+    assert result["data_gap_rows"] == 0
 
 
 def test_scan_quality_keeps_resolved(client):

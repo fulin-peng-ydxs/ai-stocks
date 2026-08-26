@@ -5,6 +5,72 @@ import { collectConsoleIssues } from './helpers/console'
 import { openPageAndWaitForHeading } from './helpers/navigation'
 
 test.describe('板块数据质量恢复', () => {
+  test('立即质检提交后防重复操作并按失败终态反馈', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium-standard', '质检任务交互聚焦验证仅在标准视口执行')
+    const consoleIssues = collectConsoleIssues(page)
+    await loginAsDebugUser(page, request, 'debug_system')
+    let submitCount = 0
+    let taskReads = 0
+
+    await page.route('**/api/data/quality?*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: { summary: [], total: 0, page: 1, size: 20, list: [] },
+        }),
+      })
+    })
+    await page.route('**/api/data/tasks', async (route) => {
+      submitCount += 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 0, msg: 'ok', data: { task_id: 'e2e-verify' } }),
+      })
+    })
+    await page.route('**/api/data/tasks/e2e-verify', async (route) => {
+      taskReads += 1
+      const running = taskReads === 1
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 0,
+          msg: 'ok',
+          data: {
+            id: 'e2e-verify',
+            task_type: 'verify',
+            status: running ? 'running' : 'failed',
+            progress: running ? 0.3 : 1,
+            message: running ? '全市场四层数据质检中…' : '质检扫描失败',
+            result: null,
+          },
+        }),
+      })
+    })
+
+    await openPageAndWaitForHeading(page, '/data/quality', '数据质量')
+    const verifyButton = page.getByRole('button', { name: '立即质检', exact: true })
+    await verifyButton.click()
+
+    await expect(verifyButton).toBeDisabled()
+    await expect(page.getByText('质检任务已提交，可在「数据采集 › 任务中心」查看进度', {
+      exact: true,
+    })).toBeVisible()
+    expect(submitCount).toBe(1)
+
+    await expect(page.getByText('质检扫描失败', { exact: true })).toBeVisible()
+    await expect(verifyButton).toBeEnabled()
+    expect(taskReads).toBeGreaterThanOrEqual(2)
+    expect(consoleIssues).toEqual([])
+  })
+
   test('主动刷新失败后错误态接管列表，不继续展示旧质量记录', async ({
     page,
     request,

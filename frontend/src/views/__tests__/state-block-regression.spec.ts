@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import { computed, reactive, ref, type Component } from 'vue'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -98,6 +98,7 @@ vi.mock('@/api/data', () => ({
   ISSUE_LAYER: { data_gap: 'L4' },
   LAYER_LABEL: { L4: '覆盖鲜活' },
   RECOVER_ACTION_LABEL: { data_gap: '恢复' },
+  BOARD_ISSUE_ITEMS: [],
 }))
 vi.mock('@/api/screening', () => ({
   copyProfile: vi.fn(),
@@ -375,6 +376,70 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('board failed')
   })
 
+  it('默认榜单遇服务瞬时故障时保留默认偏好', async () => {
+    localStorage.setItem('ai-stocks-board-default-profile', JSON.stringify({
+      profile_ref: 'ref_default_score',
+      id: 'default-score',
+      name: '默认评分方案',
+      version: 3,
+      is_preset: false,
+      source: 'public',
+      owner_label: '其他用户',
+      readonly: true,
+    }))
+    ;(boardApi.listBoardProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockRejectedValue({
+      isAxiosError: true,
+      response: { status: 503, data: { msg: '服务暂时不可用，请稍后重试' } },
+    })
+
+    const wrapper = await mountView(BoardView)
+
+    expect(boardApi.runBoardProfile).toHaveBeenCalledWith(expect.objectContaining({
+      profile_ref: 'ref_default_score',
+    }))
+    expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('ref_default_score')
+    expect(wrapper.text()).toContain('服务暂时不可用，请稍后重试')
+    expect(JSON.parse(localStorage.getItem('ai-stocks-board-default-profile') || '{}'))
+      .toMatchObject({ profile_ref: 'ref_default_score', id: 'default-score' })
+
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockRejectedValueOnce({
+      apiCode: 404,
+      uiMessage: '方案不存在',
+    })
+    ;(wrapper.vm as unknown as { load: () => Promise<void> }).load()
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('')
+    expect(JSON.parse(localStorage.getItem('ai-stocks-board-default-profile') || '{}'))
+      .toMatchObject({ profile_ref: '', id: '' })
+  })
+
+  it('默认榜单被删除或取消可见时才清除默认偏好', async () => {
+    localStorage.setItem('ai-stocks-board-default-profile', JSON.stringify({
+      profile_ref: 'ref_missing_score',
+      id: 'missing-score',
+      name: '已失效评分方案',
+      version: 1,
+      is_preset: false,
+      source: 'public',
+      owner_label: '其他用户',
+      readonly: true,
+    }))
+    ;(boardApi.listBoardProfiles as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(boardApi.runBoardProfile as ReturnType<typeof vi.fn>).mockRejectedValue({
+      apiCode: 404,
+      uiMessage: '方案不存在',
+    })
+
+    const wrapper = await mountView(BoardView)
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as { profileRef: string }).profileRef).toBe('')
+    expect(JSON.parse(localStorage.getItem('ai-stocks-board-default-profile') || '{}'))
+      .toMatchObject({ profile_ref: '', id: '' })
+  })
+
   it('榜单方案列表加载失败结束首屏等待，重试成功后自动加载榜单', async () => {
     ;(boardApi.listBoardProfiles as ReturnType<typeof vi.fn>)
       .mockRejectedValueOnce(new Error('profiles failed'))
@@ -443,6 +508,42 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).not.toContain('数据概览加载失败')
   })
 
+  it('板块日期追平但覆盖率不足时不显示整体同步', async () => {
+    ;(dataApi.getOverview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      latest_trade_date: '2026-08-26',
+      codes: { active: 1, delisted: 0 },
+      bar_rows: 1,
+      board: {
+        board_dict: 100, board_member: 1, board_bar: 1, board_fund_flow: 1,
+        concept_count: 60, industry_count: 40,
+        member_target: 100, member_ready: 100,
+        bar_target: 100, bar_ready: 1,
+        fund_target: 100, fund_ready: 100,
+        latest_bar_date: '2026-08-26', latest_fund_date: '2026-08-26',
+        open_issues: 0, issues_by_type: {}, last_update: null,
+      },
+      quality: { score: 100, open: 0, by_severity: {}, by_layer: [] },
+      gaps: { stocks_with_gap: 0, gap_days_total: 0 },
+      last_scan_at: null,
+    })
+
+    const wrapper = await mountView(OverviewView)
+    const boardTab = wrapper.findAll('[role="tab"]')
+      .find((tab) => tab.text().includes('板块数据'))
+    expect(boardTab).toBeTruthy()
+    await boardTab!.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const freshness = wrapper.findAll('.fresh-cell')
+    const bar = freshness.find((cell) => cell.text().includes('板块指数'))
+    const fund = freshness.find((cell) => cell.text().includes('资金流快照'))
+    expect(bar?.text()).toContain('2026-08-26')
+    expect(bar?.text()).toContain('未齐')
+    expect(bar?.classes()).toContain('stale')
+    expect(fund?.text()).toContain('同步')
+    expect(fund?.classes()).not.toContain('stale')
+  })
+
   it('数据质量加载失败显示错误态', async () => {
     ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('quality failed'))
     const wrapper = await mountView(QualityView)
@@ -478,6 +579,49 @@ describe('代表性页面四态回归', () => {
     expect(wrapper.text()).toContain('数据质量刷新失败')
     expect(wrapper.text()).toContain('refresh failed')
     expect(wrapper.find('.app-data-table').exists()).toBe(false)
+  })
+
+  it('立即质检轮询超时后自动重试，运行中防重复提交并按失败终态提示', async () => {
+    vi.useFakeTimers()
+    const warning = vi.spyOn(ElMessage, 'warning')
+    const error = vi.spyOn(ElMessage, 'error')
+    const success = vi.spyOn(ElMessage, 'success')
+    ;(dataApi.getDataQuality as ReturnType<typeof vi.fn>).mockResolvedValue({
+      list: [], total: 0, summary: [],
+    })
+    ;(dataApi.createTask as ReturnType<typeof vi.fn>).mockResolvedValue({ task_id: 'task-verify-1' })
+    ;(dataApi.getTask as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce({
+        isAxiosError: true,
+        code: 'ECONNABORTED',
+        message: 'timeout of 30000ms exceeded',
+      })
+      .mockResolvedValueOnce({
+        id: 'task-verify-1', task_type: 'verify', status: 'failed', progress: 1,
+        message: '质检扫描失败', params: {}, created_at: '', updated_at: '',
+      })
+
+    const wrapper = await mountView(QualityView)
+    const verifyButton = wrapper.findAll('button').find((button) => button.text().includes('立即质检'))!
+    await verifyButton.trigger('click')
+    await verifyButton.trigger('click')
+    await flushPromises()
+
+    expect(dataApi.createTask).toHaveBeenCalledTimes(1)
+    expect(dataApi.getTask).toHaveBeenNthCalledWith(1, 'task-verify-1', { silent: true })
+    expect(verifyButton.attributes('disabled')).toBeDefined()
+    expect(warning).toHaveBeenCalledWith('状态查询暂时超时，后台任务仍在运行，正在自动重试')
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    await flushPromises()
+
+    expect(dataApi.getTask).toHaveBeenCalledTimes(2)
+    expect(error).toHaveBeenCalledWith('质检扫描失败')
+    expect(success).not.toHaveBeenCalledWith('质检扫描失败')
+    expect(verifyButton.attributes('disabled')).toBeUndefined()
+
+    wrapper.unmount()
+    vi.useRealTimers()
   })
 
   it('任务中心自动轮询静默失败时保留 ready 列表，不切换整区错误态', async () => {

@@ -15,10 +15,11 @@ export interface AppRequestConfig extends AxiosRequestConfig {
   skipGlobalError?: boolean
 }
 
-// 把可读文案挂到 error 上，便于跳过全局 toast 的调用方统一读取 error.uiMessage。
-function decorateError<E>(error: E, message: string): E {
+// 把可读文案和统一响应的业务码挂到 error 上，便于调用方区分精确业务失败与网络故障。
+function decorateError<E>(error: E, message: string, apiCode?: number): E {
   if (error && typeof error === 'object') {
     (error as { uiMessage?: string }).uiMessage = message
+    if (apiCode !== undefined) (error as { apiCode?: number }).apiCode = apiCode
   }
   return error
 }
@@ -127,7 +128,7 @@ http.interceptors.response.use(
       const message = body.msg || '请求失败'
       const skip = (resp.config as RetryableConfig | undefined)?.skipGlobalError
       if (!skip) ElMessage.error(message)
-      return Promise.reject(decorateError(new Error(message), message))
+      return Promise.reject(decorateError(new Error(message), message, body.code))
     }
     return body.data as unknown as never
   },

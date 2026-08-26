@@ -102,7 +102,7 @@ flowchart LR
 - **设置入口**：`AssetSearchDrawer`（浏览评分方案抽屉）行操作新增「设为默认加载方案 / 取消默认」。该动作由 `setDefaultItem` 回调控制渲染——**仅榜单页经 `AssetProfileSelect` 传入才出现**，筛选/配置/个股详情等其它消费页不传则不显示。单值互斥：以 `defaultItemKey === assetItemKey(item)` 行级比较，改设后其它行自动复原。
 - **持久化**：复用既有 `user_preference` 通道（`scope=feature / page_key=board / pref_key=default-score-profile`），前端经 `useUserPreference` 双写（localStorage 即时 + 远端 300ms 防抖），value 存方案 summary 快照（profile_ref/name/version/is_preset/source/owner_label）。**不新建表/端点/权限**（沿用 `user-preference:manage`）。
 - **装载时机**：进入榜单页时，**仅当「我的」评分方案列表为空**（`profiles.length===0`）且远端偏好已 `hydrated`，才经 `AssetProfileSelect.applyLoaded`（`selectLoaded` 同构、不开抽屉）把默认方案注入下拉并触发榜单刷新；若用户已有自己的方案，则维持「自动选中我的第一个」，默认偏好被忽略（不删除）。装载等 `hydrated` 完成再判定，避免远端偏好慢于 mine 列表时被过早置空态。
-- **失效兜底**：默认方案被 owner 取消公开或删除后，`runBoardProfile` 经 `get_visible` 返回 403/404；仅当本次 load 由默认装载触发（`pendingDefaultKey` 命中）且失败时，自动清除该偏好并提示，落回空态，下次进入不再报错。普通手动选公开方案失败不清默认。
+- **失效兜底**：默认方案被 owner 取消公开或删除后，`runBoardProfile` 经 `get_visible` 返回统一响应业务码 404；仅当本次 load 由默认装载触发（`pendingDefaultKey` 命中）且该业务码明确命中时，自动清除偏好并落回空态。服务重启、断网、超时、5xx 或其他权限异常保留默认偏好并显示可重试错误；普通手动选公开方案失败也不清默认。
 
 ### 2. 策略筛选页
 
@@ -181,7 +181,7 @@ flowchart LR
 - **ST 排除口径**：每日榜单强制排除当前名称含 `ST` 的股票；筛选页默认 `exclude_st=true`（前端默认值与后端默认值一致），可关闭后结果只标记 `is_st`。该口径不是点时 ST，历史回溯存在当前名称偏差，风险见下表。
 - **评分快照生成与失效**：
   - 生成：首次请求某 `(日期,方案,版本)` 触发 `_materialize` → 落 `score_snapshot` 明细 + meta(stale=false)。
-  - 失效：数据任务（`async_task.py`）变更行情后只标 stale——`_h_update`/`_h_backfill` 调 `mark_stale_all`，`_h_ingest_date` 按受影响日期调 `mark_stale_dates`；不立即重算。
+  - 失效：`IngestionService` 在行情变更收尾时只标 stale——全量影响调用 `mark_stale_all`，明确受影响日期时调用 `mark_stale_dates`；异步任务处理器复用该结果，仅在采集层未返回失效结果时兜底标记，不立即重算。
   - 重算：下次 `get_board` 读到 meta 缺失或 stale → 当场重算覆盖、meta 置 false 再返回。
 - **方案版本化**：`ProfileRepo.save` / `ScoreProfileRepo.save` 仅在名称或内容实质变更时 version+1 并归档历史版本（内容未变返回原版本，避免重复 seed 致版本虚增）。
 - **方案 id 自动生成**：三类方案的 `save`/`save_with_id` 均接受空 `pid`——新建时由 `_make_id(name)` 用 `prefixed_readable_id(name, prefix="screen_")` 派生可读 id，撞库追加 `_2/_3…` 后缀（[profile.py:271](backend/screening/profile.py:271)、[profile.py:280](backend/screening/profile.py:280)）；`save_with_id` 返回 `(id, version)` 供 API 在新建响应里回传真实 id，前端据此把「编辑器身份」绑到新方案上。名称必填，空名 `save` 抛 `ValueError`。

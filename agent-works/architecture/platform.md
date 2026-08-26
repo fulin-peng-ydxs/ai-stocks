@@ -126,7 +126,7 @@ flowchart LR
 
 ## 业务流程
 
-- **异步任务：创建→执行→完成**：`create(task_type, params, trigger_source)`（`async_task.py:164`）先校验类型、写任务类型则查 `_running_write()`（`:113`）有无在跑写任务、有则抛 `ConcurrentTaskError`（映射 409）；写入 `pending` 行后起守护线程跑 `_run()`（`:205`）。`_run` 置 `running`，调对应 `_HANDLERS` 处理器（边跑边 `ctx.progress/ctx.log`），正常完成置 `done` 并写 `result`；数据变更类任务收尾**惰性标记评分快照失效**（`_mark_snapshots_stale`，不立即重算）。
+- **异步任务：创建→执行→完成**：`create(task_type, params, trigger_source)`（`async_task.py:164`）先校验类型、写任务类型则查 `_running_write()`（`:113`）有无在跑写任务、有则抛 `ConcurrentTaskError`（映射 409）；写入 `pending` 行后起守护线程跑 `_run()`（`:205`）。`_run` 置 `running`，调对应 `_HANDLERS` 处理器（边跑边 `ctx.progress/ctx.log`），正常完成置 `done` 并写 `result`；数据变更类任务由采集服务在写入收尾时**惰性标记评分快照失效**，处理器复用失效数量并仅在结果缺失时兜底，不立即重算。
 - **协作式取消与续跑**：`cancel()`（`:277`）把 tid 加入进程内 `_CANCELLED` 集合并置"终止中"；处理器在步骤间 `ctx.check_cancel()` 探到即抛 `TaskCancelled`，`_run` 捕获后置 `interrupted`（已完成部分已入库、可续跑），并 `_release_fixing()` 把卡在 fixing 的质检问题复位 open。`resume()`（`:187`）读 `result.checkpoint` 重新拉起处理器，按 checkpoint 幂等跳过已完成项续做。
 - **重启恢复（reconcile）**：FastAPI `startup` 钩子（`backend/main.py:99`）调 `AsyncTaskService.reconcile()`（`async_task.py:251`）：残留 `running/pending` 任务标 `interrupted`（可续跑）；重启后无任务在跑故所有 fixing 必为孤儿→复位 open；清理超过 30 天的 `task_log`。
 - **定时任务触发**：`startup` 另一钩子调 `start_scheduler()`：迁移旧单一配置→确保默认 `audit_cleanup` 调度存在→加载所有 `enabled` 的 job 注册到 APScheduler。到点 `_fire_job()` 读最新 job→若 `trading_day_only` 且非交易日则跳过（`_is_trading_day` 缺日历会自愈补采再判，采集统一尝试覆盖下一自然年）→`create` 一条带 `job_id/job_name` 的 `async_task`，记 `last_run`。已有写任务在跑则本次跳过（不排队），失败仅记日志不崩调度。启动自检、采集收尾和数据体检均报告“下一开市日/跨年覆盖”状态；数据源未发布未来安排时告警但不伪造交易日。job 的增删改启停即时生效：CRUD 里 `register_job/unregister_job` 复用同进程单例重注册触发器，免重启。

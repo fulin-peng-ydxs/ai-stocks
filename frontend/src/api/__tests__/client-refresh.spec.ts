@@ -150,6 +150,22 @@ describe('api client silent refresh', () => {
     expect(ElMessage.error).toHaveBeenCalledWith('参数 size 不合法')
   })
 
+  it('保留 HTTP 200 统一响应中的业务错误码', async () => {
+    const adapter: AxiosAdapter = async (config) => ({
+      data: { code: 404, msg: '方案不存在', data: null },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    })
+    http.defaults.adapter = adapter
+
+    await expect(http.post('/board/run')).rejects.toMatchObject({
+      apiCode: 404,
+      uiMessage: '方案不存在',
+    })
+  })
+
   it('HTTP 500 后端兜底已给中文 msg 时优先展示 msg', async () => {
     const adapter: AxiosAdapter = async (config) => Promise.reject({
       config,

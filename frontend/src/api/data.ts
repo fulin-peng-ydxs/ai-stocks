@@ -1,5 +1,5 @@
 // 数据管理 API（对应 backend/api/data_admin.py + data_tasks.py + stocks.py 的 /data/*）
-import http from './client'
+import http, { type AppRequestConfig } from './client'
 import { STOCK_INGEST_RECIPE_LABEL } from '@/utils/stockIngest'
 
 // ── 四层质量模型（M2.9 DM-D15）──
@@ -391,8 +391,9 @@ export interface TaskLogLine { seq: number; ts: string; level: string; message: 
 export function createTask(task_type: TaskType, params?: Record<string, unknown>): Promise<{ task_id: string }> {
   return http.post('/data/tasks', { task_type, params: params || {} })
 }
-export function getTask(id: string): Promise<AsyncTask> {
-  return http.get(`/data/tasks/${id}`)
+export function getTask(id: string, options: { silent?: boolean } = {}): Promise<AsyncTask> {
+  const config: AppRequestConfig = { skipGlobalError: options.silent === true }
+  return http.get(`/data/tasks/${id}`, config)
 }
 export function getTaskLogs(id: string, afterSeq = 0): Promise<{ logs: TaskLogLine[] }> {
   return http.get(`/data/tasks/${id}/logs`, { params: { after_seq: afterSeq } })

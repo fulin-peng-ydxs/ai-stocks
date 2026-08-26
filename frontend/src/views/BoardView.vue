@@ -52,6 +52,7 @@ import {
   PRICE_COMPARE_METRIC_ORDER,
   type PriceCompareMetric,
 } from '@/utils/marketCompare'
+import { getApiErrorCode, getErrorMessage } from '@/utils/error'
 
 // 列表页布局（原型 A）：操作区=头部（标题+控件），主内容区=榜单表格（撑满·表体内滚）。
 // 布局声明统一取自 pageRegistry（单一事实源），不再页面内联手写 PageLayout。
@@ -440,9 +441,10 @@ async function load() {
     if (sequence === loadSequence && pendingDefaultKey === profileRef.value) pendingDefaultKey = ''
   } catch (e) {
     if (sequence !== loadSequence) return
-    // 默认方案失效兜底：本次 load 由默认装载触发且失败（被 owner 取消公开/删除，后端 get_visible 403/404），
-    // 自清偏好避免下次进入再报错，并落回空态。普通手动选公开方案失败不清默认（用户可能重试）。
-    if (pendingDefaultKey && pendingDefaultKey === profileRef.value) {
+    const loadingDefault = pendingDefaultKey !== '' && pendingDefaultKey === profileRef.value
+    // 只有后端明确返回“方案不存在/不可见”的业务 404 才清除默认偏好。
+    // 服务重启、断网、超时、5xx 或其他权限异常都保留偏好，让用户可以重试。
+    if (loadingDefault && getApiErrorCode(e) === 404) {
       pendingDefaultKey = ''
       defaultPref.reset()
       profileRef.value = ''
@@ -452,7 +454,7 @@ async function load() {
       ElMessage.warning('默认加载方案已不可见（可能已被取消公开或删除），已清除默认设置')
       return
     }
-    error.value = (e as Error).message
+    error.value = getErrorMessage(e, '榜单加载失败')
   } finally {
     if (sequence === loadSequence) loading.value = false
   }

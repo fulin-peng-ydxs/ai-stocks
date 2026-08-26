@@ -28,11 +28,16 @@ export function getErrorMessage(error: unknown, fallback = '请求失败'): stri
 }
 
 // axios 超时特征：code=ECONNABORTED 且 message 含 timeout（无 HTTP 响应）。
-function isTimeoutError(error: unknown): boolean {
+export function isTimeoutError(error: unknown): boolean {
   const e = error as { code?: string; message?: string }
   return e?.code === 'ECONNABORTED' && typeof e.message === 'string' && e.message.includes('timeout')
 }
 
 export function getErrorStatus(error: unknown): number | undefined {
   return (error as { response?: { status?: number } })?.response?.status
+}
+
+/** 读取统一 `{code,msg,data}` 响应在 HTTP 200 中返回的业务错误码。 */
+export function getApiErrorCode(error: unknown): number | undefined {
+  return (error as { apiCode?: number })?.apiCode
 }

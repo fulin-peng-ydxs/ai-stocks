@@ -30,7 +30,7 @@ import LayoutHost from '@/layout/components/LayoutHost.vue'
 import { getPageLayout } from '@/layout'
 import { useRemoteLayoutConfig } from '@/composables/useRemoteLayoutConfig'
 import { useTableSort } from '@/composables/useTableSort'
-import { getErrorMessage } from '@/utils/error'
+import { getErrorMessage, isTimeoutError } from '@/utils/error'
 import type { AppRowAction } from '@/components/rowActions'
 
 const route = useRoute()
@@ -162,9 +162,22 @@ watch(() => settings.defaultSeverity, () => { applyDefaultFilters() })
 
 // 轮询任务到终态后回调（完成即自动刷新列表，闭环4）。返回任务结果供按真实结果提示。
 async function waitTask(taskId: string): Promise<{ status: string; message: string; result?: Record<string, any> | null }> {
+  let timeoutWarned = false
   for (;;) {
-    const t = await getTask(taskId)
-    if (['done', 'failed', 'interrupted'].includes(t.status)) return { status: t.status, message: t.message, result: t.result }
+    try {
+      // 状态轮询的单次超时不代表后台任务失败：静默该请求的全局错误 toast，
+      // 保留 task_id 并继续轮询，避免用户重复提交实际仍在运行的写任务。
+      const t = await getTask(taskId, { silent: true })
+      if (['done', 'failed', 'interrupted'].includes(t.status)) {
+        return { status: t.status, message: t.message, result: t.result }
+      }
+    } catch (error) {
+      if (!isTimeoutError(error)) throw error
+      if (!timeoutWarned) {
+        timeoutWarned = true
+        ElMessage.warning('状态查询暂时超时，后台任务仍在运行，正在自动重试')
+      }
+    }
     await new Promise((r) => setTimeout(r, 1000))
   }
 }
@@ -282,14 +295,19 @@ function toggleIssueType(issueType: string) {
     : [...selected, issueType]
 }
 
+const verifyRunning = ref(false)
 async function runVerify() {
+  if (verifyRunning.value) return
+  verifyRunning.value = true
   try {
     const { task_id } = await createTask('verify')
-    ElMessage.info('数据质检中…（也可在「数据采集 › 任务中心」看实时日志）')
+    ElMessage.info('质检任务已提交，可在「数据采集 › 任务中心」查看进度')
     const t = await waitTask(task_id)
-    ElMessage.success(t.message || '质检完成')
+    if (t.status === 'done') ElMessage.success(t.message || '质检完成')
+    else if (t.status === 'failed') ElMessage.error(t.message || '质检失败，请前往任务中心查看日志')
+    else ElMessage.warning(t.message || '质检已终止')
     await load()
-  } catch { /* 并发/错误由拦截器提示 */ }
+  } catch { /* 并发/非超时错误由拦截器提示 */ } finally { verifyRunning.value = false }
 }
 
 // 结构体检（checkup 任务）：本地 SQL 的结构/价格正确性/字段契约核查，结果以只读报告弹窗呈现。
@@ -394,7 +412,8 @@ onMounted(() => {
                    :title="canBatch ? '' : '请先选择类型/严重度/代码再批量恢复'" @click="batchRecover">
           一键恢复
         </el-button>
-        <el-button v-permission="'data-task:manage'" type="primary" plain @click="runVerify">立即质检</el-button>
+        <el-button v-permission="'data-task:manage'" type="primary" plain
+                   :loading="verifyRunning" :disabled="verifyRunning" @click="runVerify">立即质检</el-button>
         <el-button v-permission="'data-task:manage'" type="success" plain :loading="checkupRunning" @click="runCheckup">结构体检</el-button>
         <el-button :loading="loading" @click="load">刷新</el-button>
         <PageSettingsTrigger :dirty="isDirty || layoutDirty" @click="settingsOpen = true" />
